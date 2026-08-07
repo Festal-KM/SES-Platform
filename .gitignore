@@ -1,0 +1,43 @@
+# ---- secrets ----------------------------------------------------------------
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# ---- dependencies -----------------------------------------------------------
+node_modules/
+.pnpm-store/
+.yarn/
+vendor/
+.venv/
+__pycache__/
+
+# ---- build output -----------------------------------------------------------
+dist/
+build/
+out/
+.next/
+.turbo/
+*.tsbuildinfo
+
+# ---- test / coverage --------------------------------------------------------
+coverage/
+test-results/
+playwright-report/
+.playwright/
+
+# ---- editor / OS ------------------------------------------------------------
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+
+# ---- Claude Code ------------------------------------------------------------
+# 個人のローカル設定はコミットしない。共有する設定は .claude/settings.json に置く
+.claude/settings.local.json
+
+# ---- 生成物 -----------------------------------------------------------------
+# ワイヤーフレーム画像 (docs/wireframes/**/*.png) は原則コミットする。
+# レビューの根拠になるため。リポジトリサイズが問題になる場合のみ、
+# 下行のコメントを外して除外する。
+# docs/wireframes/**/*.png
