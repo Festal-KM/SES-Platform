@@ -234,7 +234,7 @@ ses-platform/
 
 ### 4.2 ステートマシン
 
-中核エンティティは `Proposal`（提案）、`Assignment`（稼働）、`ProposalRequest`（提案依頼）の 3 つである。
+状態を持つエンティティは `Proposal`（提案）、`Assignment`（稼働）、`ProposalRequest`（提案依頼）、`Tenant`（契約）、`Contract`（契約書）の 5 つである。
 
 **`Proposal`**
 
@@ -274,6 +274,29 @@ REQUESTED ──ホストが取り下げ──> WITHDRAWN_BY_HOST
 REQUESTED ──期限到来──> EXPIRED
 ```
 
+**`Tenant`**（契約のライフサイクル。§10.4-4 / §11 の `sandbox` に対応）
+
+```
+SANDBOX ──本契約──> ACTIVE
+SANDBOX ──30 日の期限到来 / 見送り──> CLOSING
+ACTIVE ──運営者が停止（`PLATFORM_OWNER` のみ）──> SUSPENDED ──解消──> ACTIVE
+ACTIVE ──解約申請──> CLOSING
+SUSPENDED ──解約──> CLOSING
+CLOSING ──30 日経過──> PURGED
+```
+
+**`Contract`**（契約書。Phase 3）
+
+```
+DRAFT ──送付ジョブが CAS──> SENDING ─┬─ 成功 ─> UNDER_REVIEW
+                                     └─ 失敗 ─> SEND_FAILED ──人間の再実行──> DRAFT
+
+UNDER_REVIEW ──先方が署名──> EXECUTED
+UNDER_REVIEW ──差し戻し──> DRAFT
+UNDER_REVIEW ──取り下げ──> WITHDRAWN
+EXECUTED ──期間満了 / 解除──> EXPIRED
+```
+
 🔴 **上図がこのステートマシンの全体である。** 状態を追加したくなった場合は勝手に足さず、人間に提起する（§8.6）。
 
 - **`DECLINED`（パートナーが辞退した）を `LOST`（提案が見送られた）や `GATE_FAILED` と混同しない。** 辞退はまだ提案が存在しない段階の出来事であり、成約率の分母に入れてはならない。
@@ -283,6 +306,19 @@ REQUESTED ──期限到来──> EXPIRED
 - **`SUBMIT_FAILED` からの復帰は人間の操作に限る。**
 - `WON` / `LOST` / `WITHDRAWN` は終端。`ENDED` も終端。
 - 不正な遷移は `InvalidStateTransitionError`（HTTP 422）を返す。サイレントに無視しない。
+
+`Tenant` の規則（**暫定。[Issue #6](https://github.com/Festal-KM/SES-Platform/issues/6) で確認中**）:
+
+- **`SUSPENDED` はデータを消さない。** 利用者はログインでき閲覧もできるが、**実行系（提案の送信・承認・契約書の送付）は一切できない**。停止は `PLATFORM_OWNER` のみが行える（§10.1）。
+- **`CLOSING` では新規作成ができず、エクスポートのみ可能**（§9-8 の解約時のデータ返却）。
+- **`PURGED` は終端。** エンジニアの連絡先・スキルシート原本・チャット本文を削除する。監査ログは法令上の保持義務がある範囲のみ残す。
+- **`SANDBOX` → `ACTIVE` はデータを引き継ぐ**（別環境へコピーしない。§11.1）。
+
+`Contract` の規則（**暫定。[Issue #7](https://github.com/Festal-KM/SES-Platform/issues/7) で確認中**）:
+
+- **`SENDING` は片道である。** 入ったら必ず `UNDER_REVIEW` か `SEND_FAILED` に確定させる。**自動リトライしてはならない**（契約書の二重送付は §3.4 の最大事故）。再送は人間の明示操作のみ。
+- **`SEND_FAILED`（送付に失敗した）・`WITHDRAWN`（こちらから取り下げた）・`EXPIRED`（締結後に期間満了した）を混同しない。**
+- `EXECUTED` に到達した契約書は**内容を書き換えられない**。訂正は新しい `Contract` を起こす。
 
 ---
 
