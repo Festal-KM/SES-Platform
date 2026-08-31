@@ -7,14 +7,6 @@
 
 **構成**: 1 アーキテクチャ概観 / 2 リポジトリ構成 / 3 DB スキーマ / 4 データ分離設計 / 5 管理平面の設計 / 6 API 仕様 / 7 AI 層の設計 / 8 外部連携層の設計 / 9 ジョブ仕様 / 10 冪等性・不可逆事故の防止設計 / 11 品質ゲートのパイプライン設計 / 12 業務シーケンス / 13 環境分離の設計 / 14 ファイルストレージ規約 / 15 エラー処理方針 / 16 オブザーバビリティ / 17 テスト戦略 / 付録（`## Assumptions` / `## TBD` / 申し送りマッピング / 機能カバレッジ）
 
-**🔴 本書を読む人が最初に知るべき 5 つの結論**
-
-1. **DB アクセスの経路は 3 本しかない** — `withTenant`（主平面）/ `withPlatformRead`（管理平面の閲覧）/ `withPlatformWrite`（契約・クォータ・機能フラグ・お知らせのみ）。この 3 本以外から `PrismaClient` に触れる経路は ESLint と型で塞ぐ（§4.2 / §5.2）。
-2. **越境 4 経路は RLS のポリシー式で表現し、アプリの `if` で判断しない**（§4.4）。パートナー同士が相互参照できる経路は 1 つも存在しない。
-3. **外部送信は「①事前判定 → ②遅延判定 → ③CAS → ④`SendAttempt` INSERT → ⑤外部呼び出し」の順序でしか実行できない**。順序を守らせるために、コネクタの送信関数が `SendAttemptToken` を必須引数に取る（§10）。
-4. **AI 呼び出しの経路は `packages/ai` の `runRole()` 1 本**。`AiUsage` の記録は戻り値の型（`provenance`）で強制する（§7）。
-5. **削除完了の確認を返す API は `A-010` 用の 1 本だけ**（§6.9 / `F-062 AC-7` / `docs/04` 申し送り 13）。`A-013` / `A-003` / `S-042` 側には作らない。
-
 ---
 
 ## 1. アーキテクチャ概観
@@ -142,14 +134,12 @@ ses-platform/
       app/
         (main)/                           # 主平面。Auth.js #1 のセッションを使う
           layout.tsx                      # 環境バナー / お知らせ帯 / 代理閲覧バナー
-          (auth)/signin, invite/[token]   # S-001 / S-002
-          home/                           # S-003 / S-004（ロールで分岐）
-          engineers/, projects/, ...      # S-005〜S-034
-          settings/                       # S-035〜S-043
+          (auth)/signin, invite/[token]   # S-001 / S-002。home/ = S-003 / S-004（ロールで分岐）
+          engineers/, projects/, ...      # S-005〜S-034。settings/ = S-035〜S-043
         (admin)/admin/                    # 管理平面。Auth.js #2。別 middleware
           signin, tenants, usage, ...     # A-001〜A-014
         api/
-          (main)/**/route.ts              # 主平面 API。withTenant のみ
+          (main)/**/route.ts              # 主平面 API。withTenant のみ（未認証の #1/#6/#7 は §4.4.2 の限定スコープ）
           admin/**/route.ts               # 管理平面 API。withPlatform* のみ
           webhooks/[provider]/route.ts    # 受信 → 200 → enqueue（§8.5）
           realtime/threads/[id]/route.ts  # SSE（Phase 2）
@@ -167,12 +157,12 @@ ses-platform/
       matching/      # score.ts（Phase 2）/ ordering.ts（Phase 1 の決定的順序）
       anonymize/     # rounding.ts（U-06 の丸め）/ reference.ts（HMAC 参照子の入力組み立て）
       gate/          # consistency.ts（整合層の機械的照合。LLM 出力を引数に取らない）
-      recipient/     # classify.ts（宛先分類の判定規則。§8.2）
+      recipient/     # classify.ts（宛先分類の判定規則。§8.2）/ contract/ # merge.ts（F-048 の差し込み）
       money/, dates/ # 期日計算（満了 60/30 日前・保持期限・sandbox 期限）
     db/
-      prisma/schema.prisma
-      prisma/migrations/**                # RLS / ロール / パーティションも SQL で含む
-      src/index.ts                        # withTenant / TenantDb 型のみ export
+      prisma/schema.prisma、prisma/migrations/**  # RLS / ロール / トリガ / パーティションも SQL で含む
+      src/index.ts                        # withTenant / withSharedCandidateScope / TenantDb 型のみ export
+      src/system.ts                       # withSystemScope / withAuthLookup / withInvitationToken（§4.4.2）
       src/platform.ts                     # withPlatformRead / withPlatformWrite（別 export）
       src/context.ts                      # AuthenticatedTenantCtx の生成器（唯一）
       src/serializers/platform/*.ts       # 運営者向けシリアライザ（§5.7）
@@ -224,14 +214,15 @@ ses-platform/
 | **主キー** | `id String @id @default(uuid(7)) @db.Uuid`（UUIDv7。時系列順で B-tree に優しい） |
 | **テーブル名** | `@@map` で snake_case 複数形（`engineers` / `proposal_events`） |
 | **日時** | `DateTime @db.Timestamptz(3)`。**アプリの判定はすべて `Asia/Tokyo`**（`docs/03` §4.6）。DB は UTC |
-| **分離キー** | 🔴 **全業務テーブルに `tenantId String @db.Uuid`。** パートナーが持ち込む情報は加えて `ownerPartnerCompanyId String? @db.Uuid`。`tenant_id` を持たないのは `PlatformUser` / `Plan` / `Subscription` / `Skill` の 4 つのみ（`CLAUDE.md` §3.1。**これ以外の例外を作らない**） |
+| **テナントキー** | 🔴 **全業務テーブルがテナントキーを 1 つ持つ。既定は `tenantId String @db.Uuid`。** 例外は `Tenant`（自身の `id` がキー）と `Announcement`（`targetTenantIds String[]`）の 2 表のみで、いずれも**新しい例外ではなく「その表が分離単位そのものである」「全テナント配信である」ことの帰結**である。射程外は `PlatformUser` / `Plan` / `Subscription` / `Skill` の 4 表のみ（`CLAUDE.md` §3.1。**これ以外の例外を作らない**）。**キーを持たない表（`SchedulerRun` / `WebhookDelivery` / `EmailEvent` / `ImpersonationSession`）は `app_tenant` に一切の権限を与えない**（§4.4 の C0） |
+| **オーナー列** | 🔴 **パートナースコープが要る表は「オーナー列」を 1 つ持つ。既定名は `ownerPartnerCompanyId String? @db.Uuid`**（`null` = ホスト所属）。表によって既存の別名を使う（`Membership.partnerCompanyId` / `PartnerCompany.id` など）。**どの表がどの列をオーナー列とするかは §4.4 の対応表がすべてである。** 🔴 **子表のオーナー列は親から継承する**（§4.4.1 のトリガ。アプリに書かせない） |
 | **複合インデックス** | 🔴 **`tenant_id` を必ず先頭列に置く**（RLS のポリシー式が等値比較で枝刈りできるようにする。`docs/03` §3.7.2） |
 | **金額** | `Decimal @db.Decimal(12, 2)`（円）。AI コストのみ `Decimal @db.Decimal(12, 6)`（USD） |
 | **暗号化列** | `String`。値は `v1:{keyId}:{iv}:{ct}:{tag}`。カラム名は `...Encrypted` で終える（§8.6 / `docs/03` §4.4） |
 | **列挙** | Prisma の `enum` を使い、DB 側は `TEXT + CHECK` にマイグレーションで落とす（列挙値の追加でテーブルロックを起こさないため） |
 | **削除** | 🔴 **業務データは論理削除しない**（`deletedAt` を持たせると RLS ポリシーと `WHERE` の両方に条件が増え、漏れの温床になる）。`PURGED` と保持期間削除は**物理削除 + `AuditLog` に件数**（§9.7） |
 
-### 3.2 テーブル一覧（全 55 表）
+### 3.2 テーブル一覧（全 56 表）
 
 **ドメイン概念（`CLAUDE.md` §4.1 の 32 概念 + §10.3 の 5 概念）はすべて実体を持つ。**
 
@@ -239,9 +230,9 @@ ses-platform/
 |---|---|
 | **§4.1（32）** | `Tenant` `User` `Membership` `PartnerCompany` `Engineer` `Skill` `SkillAlias` `EngineerSkill` `SkillSheet` `SkillSheetExtraction` `Project` `ProjectRequirement` `ProjectVisibility` `MatchCandidate` `EngineerShare` `ProposalRequest` `Proposal` `EngineerSnapshot` `ProposalEvent` `ReviewGate` `ChatThread` `ThreadParticipant` `Message` `Contract` `ContractDocument` `Order` `Assignment` `ExtensionReview` `Task` `Notification` `AiUsage` `AuditLog` |
 | **§10.3（5）** | `PlatformUser` `Plan` `Subscription` `UsageCounter` `ImpersonationSession` |
-| **実装テーブル（18）** | `Invitation` `TwoFactorCredential` `TenantSendingDomain` `TenantEsignConnection` `TenantRoleApprovalMode` `TenantRoleModel` `TenantMatchWeight` `SendAttempt` `EmailDispatch` `EmailEvent` `FileScanResult` `WebhookDelivery` `TenantMonthlyCost` `BillingMeterSubmission` `Announcement`（機能フラグを含む）`SchedulerRun` `DataExportRequest` `TenantPurgeRun` |
+| **実装テーブル（19）** | `Invitation` `TwoFactorCredential` `TenantSendingDomain` `TenantEsignConnection` `TenantRoleApprovalMode` `TenantRoleModel` `TenantMatchWeight` `SendAttempt` `EmailDispatch` `EmailEvent` `FileScanResult` `WebhookDelivery` `TenantMonthlyCost` `BillingMeterSubmission` `Announcement`（機能フラグを含む）`SchedulerRun` `DataExportRequest` `TenantPurgeRun` `ContractTemplate` |
 
-🔴 **実装テーブルは新しいドメイン概念ではない。** それぞれ `docs/02` 章 6 が既存概念の**属性**として定義したものを、正規化・一意制約・監査の要請から独立した行に分解したものである。対応は次のとおりで、**この 18 表以外を勝手に足さない**。
+🔴 **実装テーブルは新しいドメイン概念ではない。** それぞれ `docs/02` 章 6 が既存概念の**属性**として定義したものを、正規化・一意制約・監査の要請から独立した行に分解したものである。対応は次のとおりで、**この 19 表以外を勝手に足さない**。
 
 | 実装テーブル | 分解元（`docs/02` 章 6） | 分解した理由 |
 |---|---|---|
@@ -253,13 +244,13 @@ ses-platform/
 | `SendAttempt` | `Proposal.idempotency_key` / `ContractDocument.署名依頼の idempotency_key` | 🔴 **`docs/03` §4.7**。`attempt_seq` を採番して `UNIQUE` を張るには行が要る |
 | `EmailDispatch` / `EmailEvent` | `Notification.送信状態` | `docs/03` §3.2.5（SNS は at-least-once） |
 | `FileScanResult` | `SkillSheet.ウイルススキャン状態` | `docs/03` §3.4.3-2（at-least-once の重複結果を冪等に扱う） |
-| `WebhookDelivery` | — | `docs/03` §4.11 |
+| `WebhookDelivery` / `SchedulerRun` | — | `docs/03` §4.11 / §4.6（最終実行時刻の監視。`BR-34` の生存監視） |
 | `TenantMonthlyCost` | `docs/02` 章 7.5 の粗利算出 | `docs/03` §4.15（月末スナップショットを固定する） |
 | `BillingMeterSubmission` | — | `docs/03` §3.8.3（Stripe の重複排除が 24 時間しか効かない） |
 | `Announcement` | — | `F-061`（お知らせ・機能フラグ） |
-| `SchedulerRun` | — | `docs/03` §4.6（最終実行時刻の監視。`BR-34` の生存監視） |
 | `DataExportRequest` | — | `F-064 AC-5` / `F-052`（生成ジョブの状態） |
 | `TenantPurgeRun` | — | `F-064 AC-1`〜`AC-3` / `F-062 AC-7`（削除完了の確認の唯一の根拠） |
+| `ContractTemplate` | `ContractDocument.テンプレートと差し込み項目のマッピング`（`docs/02` `F-048` の入力「テンプレート、差し込み項目のマッピング」） | 🔴 **`F-048 AC-1`（同一のテンプレートと契約情報から常に同一のドラフト）を成立させるには、テンプレート原本とマッピングを「版として固定した行」に持たせるしかない**。`Contract` / `ContractDocument` の列にすると、テンプレートを差し替えた瞬間に過去のドラフトを再現できなくなる。`S-027` の管理単位でもある |
 
 ### 3.3 テナント・利用者・境界
 
@@ -291,6 +282,7 @@ model Tenant {
 model User {
   id             String   @id @default(uuid(7)) @db.Uuid
   tenantId       String   @db.Uuid                    // 🔴 User もテナントに属する（越境ログインを作らない）
+  ownerPartnerCompanyId String? @db.Uuid              // 🔴 オーナー列（null = ホスト所属）。§4.4 C8
   email          String
   displayName    String
   passwordHash   String                               // Argon2id
@@ -318,6 +310,9 @@ model Membership {
 //   CHECK ( (role IN ('PARTNER_ADMIN','PARTNER_SALES')) = (partner_company_id IS NOT NULL) )
 //   → パートナーロールなのに所属が無い行、ホストロールなのに所属がある行を作れない。
 //     アプリを迂回しても書けないため、第二境界の判定材料が欠けることがない。
+// 🔴 AFTER INSERT OR UPDATE トリガ assert_user_owner_matches_membership():
+//   users.owner_partner_company_id IS DISTINCT FROM NEW.partner_company_id なら RAISE EXCEPTION。
+//   → User のオーナー列と Membership の所属が食い違う行を DB が受け付けない（§4.4 C8 の前提）。
 
 model PartnerCompany {
   id            String   @id @default(uuid(7)) @db.Uuid
@@ -426,6 +421,7 @@ model SkillAlias {
 model EngineerSkill {
   id                String  @id @default(uuid(7)) @db.Uuid
   tenantId          String  @db.Uuid
+  ownerPartnerCompanyId String? @db.Uuid                 // 🔴 engineers から継承（§4.4.1）。C3
   engineerId        String  @db.Uuid
   skillId           String  @db.Uuid
   yearsOfExperience Decimal @db.Decimal(4, 1)
@@ -444,6 +440,7 @@ model EngineerSkill {
 model SkillSheet {
   id            String   @id @default(uuid(7)) @db.Uuid
   tenantId      String   @db.Uuid
+  ownerPartnerCompanyId String? @db.Uuid                 // 🔴 engineers から継承（§4.4.1）。C3
   engineerId    String   @db.Uuid
   version       Int
   objectKey     String                                     // §14.1。🔴 運営者に GRANT しない
@@ -477,6 +474,7 @@ model FileScanResult {
 model SkillSheetExtraction {
   id             String   @id @default(uuid(7)) @db.Uuid
   tenantId       String   @db.Uuid
+  ownerPartnerCompanyId String? @db.Uuid                  // 🔴 skill_sheets から継承（§4.4.1）。C3
   skillSheetId   String   @db.Uuid
   payload        Json                                       // { careers[], skills[], unextracted[] }
   role           String                                     // 🔴 NOT NULL（docs/03 §4.20.2）
@@ -668,6 +666,7 @@ model Proposal {
 model EngineerSnapshot {                                        // 🔴 越境経路 2 でホストが読める唯一の実体
   id                String   @id @default(uuid(7)) @db.Uuid
   tenantId          String   @db.Uuid
+  ownerPartnerCompanyId String? @db.Uuid                        // 🔴 proposals から継承（§4.4.1）。C5
   proposalId        String   @unique @db.Uuid
   displayName       String
   affiliationLabel  String?
@@ -686,6 +685,7 @@ model EngineerSnapshot {                                        // 🔴 越境�
 model ProposalEvent {
   id           String   @id @default(uuid(7)) @db.Uuid
   tenantId     String   @db.Uuid
+  ownerPartnerCompanyId String? @db.Uuid                         // 🔴 proposals から継承（§4.4.1）。C5
   proposalId   String   @db.Uuid
   kind         String                                            // 'STATE'|'NOTE'|'ATTACHMENT'（CHECK）
   fromState    ProposalState?
@@ -701,7 +701,9 @@ model ProposalEvent {
 model ReviewGate {
   id               String   @id @default(uuid(7)) @db.Uuid
   tenantId         String   @db.Uuid
-  targetType       String                                        // 'PROPOSAL'|'SKILL_SHEET_SHARE'|'PROJECT_PUBLISH'|'CHAT_ATTACHMENT'
+  ownerPartnerCompanyId String? @db.Uuid                         // 🔴 対象から継承（§4.4.1 の CASE）。C5
+  targetType       String                                        // 'PROPOSAL'|'SKILL_SHEET_SHARE'|'PROJECT_PUBLISH'
+                                                                 // |'CHAT_ATTACHMENT'|'CONTRACT_DOCUMENT'（CHECK。5 種）
   targetId         String   @db.Uuid
   contentHash      String                                        // 🔴 §11.5。検査した内容のハッシュ
   piiVerdict       GateVerdict
@@ -729,7 +731,7 @@ type GateFinding = {
   kind: 'FULL_NAME' | 'BIRTH_DATE' | 'CONTACT' | 'PHOTO' | 'AFFILIATION'
       | 'UNIT_PRICE' | 'END_CLIENT' | 'OTHER_COMPANY'
       | 'MUST_REQUIREMENT_MISMATCH' | 'DUPLICATE_PROPOSAL' | 'SKILL_SHEET_MISMATCH';
-  field: 'subject' | 'body' | 'snapshot' | 'attachment' | 'public_summary';
+  field: 'subject' | 'body' | 'snapshot' | 'attachment' | 'public_summary' | 'contract_document';
   offsetStart: number | null;   // field 内の UTF-16 オフセット。null は「箇所を特定できない」
   offsetEnd: number | null;
   excerpt: string;              // 該当箇所の抜粋（最大 80 文字。PII はマスク済み）
@@ -774,6 +776,7 @@ model ThreadParticipant {                                        // 🔴 越境�
 model Message {
   id           String   @id @default(uuid(7)) @db.Uuid
   tenantId     String   @db.Uuid
+  ownerPartnerCompanyId String @db.Uuid                           // 🔴 chat_threads.partner_company_id を継承。C6
   threadId     String   @db.Uuid
   senderUserId String   @db.Uuid
   senderPartnerCompanyId String? @db.Uuid
@@ -823,6 +826,10 @@ model ContractDocument {
   contractId    String   @db.Uuid
   version       Int
   objectKey     String
+  templateId      String? @db.Uuid                                 // 🔴 F-048 由来の版（手動アップロードは null）
+  templateVersion Int?                                             // 🔴 生成時のテンプレート版を固定（F-048 AC-1）
+  mergeResult     Json?                                            // { filled: {...}, unfilled: string[] }（F-048 AC-2）
+  reviewGateId  String?  @db.Uuid                                  // 🔴 F-047 処理⑥ / F-048 AC-3。ハッシュは ReviewGate.contentHash
   scanStatus    ScanStatus @default(SCANNING)
   externalDocumentId String?                                     // 電子署名サービスの書類 ID（正規化済み）
   externalProvider   String?                                     // 'cloudsign'|'gmosign'|'mock'
@@ -833,6 +840,29 @@ model ContractDocument {
   @@unique([externalProvider, externalDocumentId])               // Webhook からの逆引き
   @@map("contract_documents")
 }
+// 🔴 CHECK ( requested_at IS NULL OR review_gate_id IS NOT NULL ) … ゲート結果を持たない版に署名依頼日時が入らない
+//    （F-047 処理⑥ / F-048 AC-3 を DB に落とす。§10.2 の事前判定と二重）
+
+model ContractTemplate {                                         // 🔴 F-048 / S-027。Phase 3
+  id            String   @id @default(uuid(7)) @db.Uuid
+  tenantId      String   @db.Uuid
+  name          String
+  kind          ContractKind
+  version       Int                                              // 🔴 上書きしない。差し替えは新しい版を起こす
+  objectKey     String                                           // docx 原本（§14.1）
+  scanStatus    ScanStatus @default(SCANNING)
+  placeholders  String[]                                         // 原本から機械抽出したプレースホルダ名
+  mapping       Json                                             // MergeMapping[]（下記）。🔴 版ごとに固定
+  isLatest      Boolean  @default(false)
+  archivedAt    DateTime? @db.Timestamptz(3)
+  createdBy     String   @db.Uuid
+  createdAt     DateTime @default(now()) @db.Timestamptz(3)
+  @@unique([tenantId, name, version])
+  @@index([tenantId, kind, isLatest])
+  @@map("contract_templates")
+}
+// 🔴 部分 UNIQUE: ON contract_templates(tenant_id, name) WHERE is_latest AND archived_at IS NULL;
+// 🔴 CHECK ( is_latest = false OR scan_status = 'CLEAN' )（BR-26）。版を上書き更新する API を作らない（F-048 AC-1）
 
 model Order {
   id           String   @id @default(uuid(7)) @db.Uuid
@@ -890,6 +920,16 @@ model ExtensionReview {
   @@unique([tenantId, assignmentId, openedAt])                    // 同一稼働で複数回の起票を許す（延長 → 再起票）
   @@map("extension_reviews")
 }
+```
+
+```ts
+// packages/domain/src/contract/merge.ts — 🔴 純粋関数。同一入力に同一出力（F-048 AC-1）。LLM を使わない（BR-12）
+export type MergeMapping = { placeholder: string; required: boolean;
+  source: 'CONTRACT'|'PROJECT'|'ENGINEER'|'ASSIGNMENT'|'PARTNER_COMPANY'|'TENANT'; field: string };
+export function mergeContract(i: { placeholders: string[]; mapping: MergeMapping[]; facts: MergeFacts }):
+  { filled: Record<string, string>; unfilled: string[] };   // 🔴 field は source ごとの許可列挙のみ（式を書かせない）
+// 🔴 解決できない項目は unfilled に入れ空欄にする（F-048 AC-2。推測で埋めない）。unfilled は
+//    ContractDocument.mergeResult に保存し、S-027 のプレビューと S-026 が空欄として明示する。
 ```
 
 ### 3.8 横断（タスク・通知・記録・計測）
@@ -1261,6 +1301,8 @@ model TenantMonthlyCost {                                          // A-011。�
   costAiByRole      Json                                           // { 'sheet-parser': 1.62, ... }
   costEmailUsd      Decimal @db.Decimal(14, 6)
   costStorageUsd    Decimal @db.Decimal(14, 6)
+  costEsignUsd      Decimal @db.Decimal(14, 6) @default(0)        // 🔴 BYO のため常に 0（§5.9 / TBD-1）
+  pricingRulesetVersion String                                    // 🔴 §8.8。過去分を遡って再計算しない
   storageBytesAtMonthEnd BigInt?                                   // 🔴 月末スナップショットを固定
   grossMarginRate   Decimal? @db.Decimal(6, 4)
   baselineRatio     Decimal? @db.Decimal(8, 4)                     // 🔴 基準ユニット比（docs/03 §7.5-3）
@@ -1308,7 +1350,7 @@ model BillingMeterSubmission {                                     // docs/03 §
 | ロール | `BYPASSRLS` | 権限 | 使う接続文字列 | 使う経路 |
 |---|---|---|---|---|
 | `app_migrator` | **なし**（`NOBYPASSRLS`） | DDL。テーブル所有者 | `MIGRATION_DATABASE_URL` | マイグレーションのみ（CI / デプロイ） |
-| `app_tenant` | 🔴 **なし** | 業務テーブルへの `SELECT/INSERT/UPDATE/DELETE`。`tenants` は `SELECT` のみ。`audit_logs` は `INSERT/SELECT` のみ | `DATABASE_URL` | `withTenant` |
+| `app_tenant` | 🔴 **なし** | 業務テーブルへの `SELECT/INSERT/UPDATE/DELETE`。`tenants` は `SELECT` のみ。`audit_logs` は `INSERT/SELECT` のみ。🔴 **C0 の 4 表（§4.4）は `withSystemScope` からのみ到達でき、テナント文脈では 0 件** | `DATABASE_URL` | `withTenant` / `withSystemScope` |
 | `app_platform` | 🔴 **なし** | 業務テーブルへの `SELECT` のみ（**列レベル**で §5.7 の非開示列を除外）。`audit_logs` は `INSERT/SELECT` | `PLATFORM_DATABASE_URL` | `withPlatformRead` / `withImpersonation` |
 | `app_platform_write` | 🔴 **なし** | `plans` / `subscriptions` / `announcements` / `usage_counters`（上書き列）/ `tenants`（ライフサイクル列のみ）/ `impersonation_sessions` / `audit_logs` への書き込み。**業務テーブルへの書き込み権限を一切持たない** | `PLATFORM_WRITE_DATABASE_URL` | `withPlatformWrite` |
 
@@ -1376,22 +1418,56 @@ CREATE FUNCTION app_partner_id() RETURNS uuid LANGUAGE sql STABLE AS
   $$ SELECT NULLIF(current_setting('app.partner_company_id', true), '')::uuid $$;
 CREATE FUNCTION app_is_host() RETURNS boolean LANGUAGE sql STABLE AS
   $$ SELECT app_partner_id() IS NULL $$;
+CREATE FUNCTION app_actor_user_id() RETURNS uuid LANGUAGE sql STABLE AS
+  $$ SELECT NULLIF(current_setting('app.actor_user_id', true), '')::uuid $$;
 ```
 
-**ポリシークラス**（全業務テーブルはこの 6 種のいずれかに属する。**新規テーブルはどれかを選ばなければ作れない** — §4.7 のテストが「クラス未割当のテーブル」を検出する）
+**ポリシークラス**（**全 56 表が操作ごとにこの 9 種のいずれかに割り当て済みで、漏れが無い**。読みと書きでクラスが分かれる表は両方を明記した。新規テーブルはどれかを選ばなければ作れない — §4.7 のテストが「app_tenant に権限がありながら `app_tenant_id()` を参照しないポリシー」と「ポリシーが 1 つも無い表」を検出する）
 
-| クラス | `USING` 式 | 適用テーブル | 対応する越境経路 |
-|---|---|---|---|
-| **C1 TENANT_ALL** | `tenant_id = app_tenant_id()` | `Skill`（射程外）を除く共通マスタ的な業務データ。`SkillAlias`（`SELECT` は `tenant_id = app_tenant_id() OR tenant_id IS NULL`）、`Announcement` の閲覧投影 | なし（テナント内は全員が見てよい語彙） |
-| **C2 HOST_ONLY** | `tenant_id = app_tenant_id() AND app_is_host()` | `Project`（`INSERT/UPDATE/DELETE`）、`ProjectRequirement`（同）、`ProjectVisibility`、`MatchCandidate`、`Assignment`、`ExtensionReview`、`Contract`、`ContractDocument`、`Order`、`TenantSendingDomain`、`TenantEsignConnection`、`TenantRole*`、`TenantMatchWeight`、`TenantMonthlyCost` | なし |
-| **C3 OWNER_SCOPED** | `tenant_id = app_tenant_id() AND owner_partner_company_id IS NOT DISTINCT FROM app_partner_id()` | `Engineer`、`EngineerSkill`、`SkillSheet`、`SkillSheetExtraction`、`EngineerShare`（`partner_company_id` を owner とみなす） | 🔴 **ここが `BR-06` の核**。ホストは他社の `Engineer` 行を 1 件も読めない |
-| **C4 VISIBILITY**（**経路 1**） | `tenant_id = app_tenant_id() AND ( app_is_host() OR EXISTS (SELECT 1 FROM project_visibilities v WHERE v.project_id = projects.id AND v.partner_company_id = app_partner_id() AND v.revoked_at IS NULL) )` | `Project`（`SELECT`）、`ProjectRequirement`（`SELECT`） | 経路 1 |
-| **C5 PARTY**（**経路 2 / 4**） | `tenant_id = app_tenant_id() AND ( app_is_host() OR owner_partner_company_id = app_partner_id() )` ※`ProposalRequest` は `partner_company_id = app_partner_id()` | `Proposal`、`EngineerSnapshot`、`ProposalEvent`、`ReviewGate`、`ProposalRequest`、`Task`、`Notification`（宛先で更に絞る）、`SendAttempt` | 経路 2 / 4 |
-| **C6 THREAD**（**経路 3**） | `tenant_id = app_tenant_id() AND ( app_is_host() OR EXISTS (SELECT 1 FROM thread_participants p WHERE p.thread_id = <thread_id> AND p.partner_company_id = app_partner_id() AND p.left_at IS NULL) )` | `ChatThread`、`Message`、`ThreadParticipant` | 経路 3 |
+式中の `<T>` = **テナントキー列**（既定 `tenant_id`）、`<O>` = **オーナー列**、`<A>` = **主体列**、`<P>` = その表の `project_id`、`<TH>` = その表の `thread_id`。**表ごとの実体は「適用テーブル」欄の括弧内がすべてであり、置換すれば実際に書く `USING` 式になる。**
+
+| クラス | `USING` 式 | 適用テーブル（括弧内 = `<O>` / `<A>` / 特記） |
+|---|---|---|
+| **C0 SYSTEM_ONLY** | `app_tenant_id() IS NULL` | 🔴 **テナントキーを持てない表**。`app_tenant` は `withSystemScope()`（§4.4.2）からのみ到達でき、テナント文脈では 0 件になる: `scheduler_runs`、`webhook_deliveries`（テナント確定前に受信する）、`email_events`（宛先解決前に届く）、`impersonation_sessions`（`app_tenant` に権限を与えない。`app_platform*` のみ） |
+| **C1 TENANT_ALL** | `<T> = app_tenant_id()` | `tenants`（🔴 `<T>` = `id`。`app_tenant` は `SELECT` のみ）、`skill_aliases`（`SELECT` は `OR tenant_id IS NULL`。書込は `tenant_id = app_tenant_id()`。`F-010 AC-2`）、`announcements`（🔴 `<T> = app_tenant_id()` を `cardinality(target_tenant_ids) = 0 OR app_tenant_id() = ANY(target_tenant_ids)` に読み替える。`SELECT` のみ）、`audit_logs`（🔴 **`INSERT` のみ C1**。パートナーの操作も記録されるため。`SELECT` は C2、`UPDATE`/`DELETE` は `REVOKE`） |
+| **C2 HOST_ONLY** | `<T> = app_tenant_id() AND app_is_host()` | `projects`（書込）、`project_requirements`（書込）、`project_visibilities`（書込）、`partner_companies`（書込）、`match_candidates`、`assignments`、`extension_reviews`、`contracts`、`contract_documents`、`contract_templates`、`orders`、`ai_usage`、`audit_logs`（`SELECT`）、`usage_counters`、`send_attempts`（🔴 送信の起動はホストのみ。多相のオーナー継承を作らない）、`email_dispatches`、`file_scan_results`、`tenant_sending_domains`、`tenant_esign_connections`、`tenant_role_approval_modes`、`tenant_role_models`、`tenant_match_weights`、`tenant_monthly_costs`、`billing_meter_submissions`、`data_export_requests`、`tenant_purge_runs` |
+| **C3 OWNER_SCOPED** | `<T> = app_tenant_id() AND <O> IS NOT DISTINCT FROM app_partner_id()` | `engineers`(`owner_partner_company_id`)、`engineer_skills`(同・継承)、`skill_sheets`(同・継承)、`skill_sheet_extractions`(同・継承)、`engineer_shares`(`partner_company_id`) |
+| **C4 VISIBILITY**（**経路 1**） | `<T> = app_tenant_id() AND ( app_is_host() OR EXISTS (SELECT 1 FROM project_visibilities v WHERE v.tenant_id = <T> AND v.project_id = <P> AND v.partner_company_id = app_partner_id() AND v.revoked_at IS NULL) )` | `projects`(`SELECT`。`<P>` = `projects.id`)、`project_requirements`(`SELECT`。`<P>` = `project_requirements.project_id`) |
+| **C5 PARTY**（**経路 2 / 4**） | `<T> = app_tenant_id() AND ( app_is_host() OR <O> = app_partner_id() )` | `proposals`(`owner_partner_company_id`)、`engineer_snapshots`(同・継承)、`proposal_events`(同・継承)、`review_gates`(同・継承)、`proposal_requests`(`partner_company_id`)、`tasks`(`owner_partner_company_id`)、`memberships`(`partner_company_id`)、`invitations`(`partner_company_id`)、`project_visibilities`(`SELECT`。`partner_company_id`。🔴 **パートナーが自社宛の行を読めることが C4 の `EXISTS` の前提**)、`thread_participants`(`partner_company_id`。🔴 **自表を参照しない**＝ RLS の再帰を避ける。パートナーは自社の参加行のみ)、`partner_companies`(`SELECT`。🔴 `<O>` = `id`。**パートナー文脈では自社 1 行のみ**。`F-004 AC-1`) |
+| **C6 THREAD**（**経路 3**） | `<T> = app_tenant_id() AND ( app_is_host() OR ( <O> = app_partner_id() AND EXISTS (SELECT 1 FROM thread_participants p WHERE p.tenant_id = <T> AND p.thread_id = <TH> AND p.partner_company_id = app_partner_id() AND p.left_at IS NULL) ) )` | `chat_threads`(`partner_company_id`。`<TH>` = `chat_threads.id`)、`messages`(`owner_partner_company_id`・継承。`<TH>` = `messages.thread_id`) |
+| **C7 SELF** | `<T> = app_tenant_id() AND <A> = app_actor_user_id()` | `notifications`(`recipient_user_id`。🔴 `INSERT` の `WITH CHECK` のみ **C1 式** — ジョブもチャット相手も他人宛に作るため。**読みは本人だけ**)、`two_factor_credentials`(`subject_id`。+ `subject_type = 'USER'`。`PLATFORM_USER` 行は `tenant_id IS NULL` で不可視) |
+| **C8 DIRECTORY** | `<T> = app_tenant_id() AND ( app_is_host() OR <O> IS NULL OR <O> = app_partner_id() )` | `users`(`SELECT`。`owner_partner_company_id`)。🔴 **ホスト所属の行だけが全員に見える**（チャットの送信者名・`ProposalEvent` の実行者名に要る）。**他パートナーの利用者は 1 行も見えない**。パートナー向けシリアライザは `email` を返さない。🔴 **書込は C2 式**（作成・更新は招待受諾とパスワード再設定のハンドラだけで、いずれもホスト相当のシステム文脈で実行する） |
+
+**射程外の 4 表**: `skills` / `platform_users` / `plans` / `subscriptions`（`CLAUDE.md` §3.1）。**これで 52 + 4 = 56 表すべてが片付いている。**
+
+🔴 **`WITH CHECK` の既定は `USING` と同じ式**。ただし **`engineers` / `memberships` / `engineer_shares` の 3 表は C3 の式に絞る**（自分の所属としてしか書けない）。継承列を持つ表は**トリガが親の値で上書きする**ためオーナーを偽装できず、かつ**見えない親に子をぶら下げられない**（トリガ内の親 `SELECT` にも RLS が効く）。
 
 🔴 **越境の判断をアプリの `if` に一切書かない**（`docs/03` §4.3.2）。`ProjectVisibility` / `ThreadParticipant` / `EngineerShare` は**それぞれ越境の根拠となる唯一の表**であり、行の有無がそのまま見える／見えないになる。
 
-🔴 **経路 4（匿名共有）の読み手はホストだけである**（`BR-56`）。`EngineerShare` は **C3**（OWNER_SCOPED）に属し、ホストからは読めない。**ホストが匿名候補を得る経路は `MatchCandidate`（C2）だけ**であり、その行は §9.3 の `match.build` ジョブが `withTenant` のホストコンテキストではなく**専用の「共有スコープ読み取り」で作る**（次項）。
+🔴 **経路 4（匿名共有）の読み手はホストだけである**（`BR-56`）。`EngineerShare` は **C3** に属し、ホストからは読めない。**ホストが匿名候補を得る経路は `MatchCandidate`（C2）だけ**であり、その行は §9.3 の `match.build` ジョブが `withTenant` のホストコンテキストではなく**専用の「共有スコープ読み取り」で作る**（§4.5）。
+
+#### 4.4.1 オーナー列の継承（アプリに書かせない）
+
+```sql
+CREATE TRIGGER ins_owner BEFORE INSERT OR UPDATE ON engineer_skills   -- 親: engineers.engineer_id
+  FOR EACH ROW EXECUTE FUNCTION inherit_owner_partner_company('engineers', 'engineer_id');
+-- 対応: engineer_skills / skill_sheets ← engineers、skill_sheet_extractions ← skill_sheets、
+--       engineer_snapshots / proposal_events ← proposals、messages ← chat_threads(partner_company_id)
+-- 🔴 NEW.owner_partner_company_id を親の値で必ず上書きする（呼び出し側の指定値を採用しない）。
+-- 🔴 親が見つからない（RLS で見えない）なら RAISE EXCEPTION。親のオーナー列は BEFORE UPDATE で不変にする
+--    （変更しようとしたら RAISE）。よって子は永久にずれず、FK の MATCH SIMPLE の NULL 素通り問題も生じない。
+-- 🔴 review_gates は多相なので CASE: PROPOSAL→proposals / SKILL_SHEET_SHARE→skill_sheets /
+--    CHAT_ATTACHMENT→messages / PROJECT_PUBLISH・CONTRACT_DOCUMENT→NULL / ELSE RAISE EXCEPTION
+--    → 🔴 新しい target_type を足すとこの CASE で落ちるため、境界の割り当てを取りこぼせない。
+```
+
+#### 4.4.2 テナント文脈を持たない経路（🔴 これ以外を作らない）
+
+| 経路 | 見えるもの | 実装 |
+|---|---|---|
+| `withSystemScope()` | **C0 の 4 表だけ**（他表のポリシーは `<T> = NULL` となり 0 件） | `app.tenant_id` を設定しない `app_tenant` 接続。ジョブと Webhook 受信のみ。ESLint で呼び出し元を `apps/web/app/api/webhooks/**` と `apps/worker/src/handlers/webhook/*` に限定 |
+| `withAuthLookup(email)` | `users` の**該当 1 行だけ** | `SET LOCAL app.auth_email`。`users` の追加 SELECT ポリシー `app_tenant_id() IS NULL AND lower(email) = current_setting('app.auth_email', true)`。パスワード検証後はテナントが確定するので、2FA 検証以降は `withTenant` |
+| `withInvitationToken(hash)` | `invitations` の**該当 1 行だけ** | `SET LOCAL app.invitation_token_hash`。同様の追加ポリシー。`#6` / `#7`（未認証経路）専用 |
 
 ### 4.5 共有スコープ読み取り（匿名候補の生成だけに許す限定経路）
 
@@ -1465,21 +1541,27 @@ test('全業務テーブルで RLS が有効かつ FORCE されている', async
   }
 });
 
-test('全業務テーブルに tenant_id 列とポリシークラスの割当がある', /* pg_attribute + pg_policy を走査 */);
+// 🔴 クラス割当は「tenant_id 列があること」では検査しない（C0 の 4 表が正しく存在するため。§4.4）。次の 3 本で挟む:
+test('全表にポリシーが 1 つ以上ある', /* pg_policy を走査。0 件の表があれば FAIL */);
+test('app_tenant に権限がある表は、適用される全ポリシーの式が app_tenant_id() を参照する',
+  /* role_table_grants で対象表を取り、pg_get_expr(polqual|polwithcheck) に 'app_tenant_id()' が現れるか。
+     C0 は app_tenant_id() IS NULL を含むので通り、「USING (true)」の類は必ず落ちる */);
+test('app_tenant に権限が無い表は、app_platform / app_platform_write のいずれかに権限がある', /* 孤児表の検出 */);
 test('app_tenant / app_platform / app_platform_write は BYPASSRLS を持たない', /* pg_roles.rolbypassrls */);
 test('app_platform は業務テーブルに INSERT/UPDATE/DELETE 権限を持たない', /* information_schema.role_table_grants */);
 test('§5.7 の非開示列が app_platform に GRANT されていない', /* column_privileges を走査 */);
 test('Prisma 拡張の対象モデル一覧が、除外 4 モデル以外のすべてを含む', /* Prisma DMMF を走査 */);
+test('オーナー列を持つ表すべてに継承トリガがある', /* pg_attribute に owner_partner_company_id がある表 × pg_trigger */);
 ```
 
-🔴 **除外リストは「4 表 + `_prisma_migrations`」だけ**であり、**新規テーブルは既定で検査対象に入る**。列挙式（対象テーブルを並べる）にすると新規テーブルを取りこぼすため、**必ず「全部から 4 つを引く」向きで書く**。
+🔴 **除外リストは「4 表 + `_prisma_migrations`」だけ**であり、**新規テーブルは既定で検査対象に入る**。列挙式（対象テーブルを並べる）にすると新規テーブルを取りこぼすため、**必ず「全部から 4 つを引く」向きで書く**。🔴 **除外リストを広げて通すのは、このテストが防ごうとしている壊し方そのものである。** 新規テーブルが落ちたら §4.4 のクラスを 1 つ選んでポリシーを書く。
 
 **加えて、二重防御の片方を落として検証するテスト**（Phase 0。`docs/03` §4.3.1）:
 
 | # | テスト | 期待 |
 |---|---|---|
 | 1 | Prisma 拡張を無効化した素のクライアント（`app_tenant` ロール）で他テナントの行を取る | **0 件**（RLS が止める） |
-| 2 | `SET LOCAL app.tenant_id` を発行せずにクエリする | **0 件または例外**（ポリシー式が `NULL` になり一致しない） |
+| 2 | `SET LOCAL app.tenant_id` を発行せずにクエリする | **C0 の 4 表を除き 0 件または例外**（ポリシー式が `NULL` になり一致しない）。🔴 C0 の 4 表に業務データが 1 列も無いことを併せて検査する |
 | 3 | RLS を一時的に `DISABLE` した DB で Prisma 拡張越しに他テナントを取る | **0 件**（拡張の `where` が止める） |
 | 4 | パートナーコンテキストで他パートナーの `Engineer` / `Proposal` / `Message` / 匿名候補を取る | **0 件**（C3 / C5 / C6） |
 | 5 | ホストコンテキストで他パートナーの `Engineer` を取る | **0 件**（C3。`BR-06`） |
@@ -1531,12 +1613,13 @@ export type PlatformOp = {
 export function withPlatformRead<T>(
   op: PlatformOp, fn: (db: PlatformReadDb) => Promise<T>): Promise<T>;
 
-/** 🔴 書き込みが許される 4 領域のみ。app_platform_write ロールで接続する。 */
+/** 🔴 書き込みが許される 6 領域のみ。app_platform_write ロールで接続する。 */
 export function withPlatformWrite<T>(
   op: PlatformWriteOp, fn: (db: PlatformWriteDb) => Promise<T>): Promise<T>;
 
 export type PlatformWriteOp = PlatformOp & {
-  /** 🔴 これ以外の値を取れない（CLAUDE.md §10.5 の「契約・クォータ・機能フラグ・お知らせ」） */
+  /** 🔴 これ以外の値を取れない。前 4 つが CLAUDE.md §10.5 の「契約・クォータ・機能フラグ・お知らせ」、後 2 つは
+   *  §10.5 が運営者に明示的に認めた操作（停止・解約 / 代理閲覧）。いずれも業務データではない */
   readonly domain: 'SUBSCRIPTION' | 'QUOTA' | 'FEATURE_FLAG' | 'ANNOUNCEMENT'
                  | 'TENANT_LIFECYCLE' | 'IMPERSONATION';
   readonly before: unknown;   // 🔴 必須。AuditLog に載せる
@@ -1574,7 +1657,7 @@ CREATE POLICY platform_read ON <table> FOR SELECT TO app_platform
           AND ( current_setting('app.target_tenant_id', true) = ''
                 OR tenant_id::text = current_setting('app.target_tenant_id', true) ) );
 ```
-🔴 **`app.target_tenant_id` が空のときだけテナント横断が成立する**。横断が許されるのは `F-058`（監査ログ横断検索）と `F-059` / `F-063` の集計であり、**`withPlatformRead` が `op.targetTenantId` を `SET LOCAL` するため、対象を指定した操作は自動的にそのテナントに閉じる**。
+🔴 **`app.target_tenant_id` が空のときだけテナント横断が成立する**。横断が許されるのは `F-058`（監査ログ横断検索）と `F-059` / `F-063` の集計であり、**`withPlatformRead` が `op.targetTenantId` を `SET LOCAL` するため、対象を指定した操作は自動的にそのテナントに閉じる**。🔴 **C0 の 4 表（§4.4）のうち `tenant_id` を持たない `scheduler_runs` / `webhook_deliveries` / `email_events` は、`platform_read` の `USING` を `current_setting('app.platform_user_id', true) <> ''` だけにする**（`A-005` の運用監視が読む。業務内容を 1 列も持たないため横断してよい）。`impersonation_sessions` は `tenant_id` 条件を併用する。
 
 ### 5.3 監査の担保（記録されない管理平面アクセスを型として作れない）
 
@@ -1633,6 +1716,7 @@ GRANT SELECT (id, tenant_id, owner_partner_company_id, availability, available_f
 | `users` | `password_hash` |
 | `projects` | `end_client_name` `internal_unit_price`（**運営者に商流を見せない**） |
 | `contracts` | `payment_terms` `counterparty_name` |
+| `contract_documents` / `contract_templates` | `object_key` `merge_result` / `object_key` `mapping`（**差し込み結果に単価とエンド企業名が入るため**） |
 | `audit_logs` | （列は全部見せるが `summary` は §16.2 の規約により PII を含まない） |
 
 🔴 **S3 に対しても `s3:GetObject` を管理平面のロール（IAM）に付与しない**（`docs/03` §3.6 / §4.3.3）。**`skill_sheets.object_key` を GRANT しないことと二重**にする。
@@ -1743,7 +1827,7 @@ type UsageView = {
 | **原価（AI）** | `AiUsage.estimatedCostUsd` の合計 | 🔴 **`role` で `GROUP BY` してロール別に分解**（`costAiByRole`）。`F-026 AC-2` に依存 |
 | **原価（メール）** | `UsageCounter(MONTH, 'EMAIL_COUNT')` | 🔴 **単価が用途で分かれる**: SES Essentials `$0.16/1,000` に加え、**SES Tenants の `$0.005/月/テナント + $0.005/1,000 通`**（`docs/03` §7.2.2）。計算式は `count/1000*0.16 + 0.005 + count/1000*0.005` |
 | **原価（ストレージ）** | `UsageCounter(MONTH, 'STORAGE_BYTES')` の**月末値** | 🔴 **月末スナップショットを `TenantMonthlyCost.storageBytesAtMonthEnd` に固定し、遡って再計算しない**（`docs/03` §4.15） |
-| **原価（電子署名）** | 🔴 **$0**（BYO 接続のためテナント持ち。`docs/03` §3.1.2） | `Q-T-1` が未承認のため、**フィールドは残し 0 を入れる**（承認されたら `docs/02` 章 7.5 の改訂に追随。§TBD-1） |
+| **原価（電子署名）** | 🔴 **$0**（BYO 接続のためテナント持ち。`docs/03` §3.1.2） | `Q-T-1` が未承認のため、**`TenantMonthlyCost.costEsignUsd` を残し 0 を入れる**（承認されたら `docs/02` 章 7.5 の改訂に追随。§TBD-1） |
 | **粗利率** | 上記 | `(売上 − 原価) / 売上` |
 | **基準比の倍率** | `costAiUsd / AI_BASELINE_COST_USD`（既定 12.82） | 🔴 **粗利率だけでは異常を検知できない**（通常価格帯では 90% に張り付く。`docs/03` §7.5-3） |
 | **メータリング差異** | `BillingMeterSubmission.value` と Stripe の請求額 | 🔴 **自動補正しない**（`docs/03` §3.8.3）。差異 ≠ 0 を `A-011` の上位に出す |
@@ -1786,18 +1870,20 @@ requireVerifiedSendingDomain(ctx);                     // 🔴 §8.3。未検証
 requireEsignConnection(ctx);                           // 🔴 §8.4。未接続なら 409 EsignNotConnectedError
 ```
 
+🔴 **テナントの `OWNER` / `ADMIN` の 2FA 必須（`BR-30` / `F-003 AC-2`）は `resolveTenantCtx` で強制する**（middleware ではなく）。`TwoFactorCredential.confirmedAt IS NULL` かつ `role ∈ {OWNER, ADMIN}` のとき `TwoFactorRequiredError`（403）を throw するため、**`AuthenticatedTenantCtx` が生成されず、`withTenant` に到達できない = 業務データを 1 件も取得できない**。middleware（Edge）は画面遷移（`/settings/security` へ 302）だけを担い、**データ境界の強制をそこに依存しない**（Edge から DB を読めないため）。
+
 🔴 **`requireExecutable` は `F-004` と同じ経路に置く**（`docs/03` 申し送り 11-①）。ロールごとの分岐に散らすと `SUSPENDED` の抜け穴になる。**実行系の Route Handler は例外なくこれを通す**（§17.2 の静的テストが「実行系一覧の全ルートが `requireExecutable` を呼ぶ」ことを検査する）。
 
 ### 6.3 主平面 API — 基盤・境界（Phase 0）
 
 | # | Method / Path | 機能 / 画面 | request | response | 認可 |
 |---|---|---|---|---|---|
-| 1 | `POST /api/auth/signin` | `F-003` / `S-001` | `{ email, password }` | `{ next: '2fa' \| 'home' }` | 未認証 |
+| 1 | `POST /api/auth/signin` | `F-003` / `S-001` | `{ email, password }` | `{ next: '2fa' \| 'home' }` | 未認証。🔴 `withAuthLookup(email)`（§4.4.2）で該当 1 行のみ可視 |
 | 2 | `POST /api/auth/2fa/verify` | `F-003` | `{ code }` | `{ ok: true }` | 一次認証済み |
 | 3 | `POST /api/auth/2fa/setup` | `F-003` | `{ }` → `{ otpauthUrl, recoveryCodes }` | | 一次認証済み |
 | 4 | `POST /api/auth/signout` | `F-003` | — | `204` | 認証済み |
 | 5 | `POST /api/auth/password-reset` | `F-003` | `{ email }` | `204`（**存在有無を返さない**） | 未認証 |
-| 6 | `GET /api/invitations/{token}` | `F-002` / `S-002` | — | `{ tenantName, role, email, expiresAt }` | 未認証（トークン） |
+| 6 | `GET /api/invitations/{token}` | `F-002` / `S-002` | — | `{ tenantName, role, email, expiresAt }` | 未認証。🔴 `withInvitationToken`（§4.4.2）でトークン一致の 1 行のみ可視 |
 | 7 | `POST /api/invitations/{token}/accept` | `F-002` | `{ displayName, password }` | `{ userId }` | 未認証（トークン）。🔴 `acceptedAt` の CAS で 1 回限り |
 | 8 | `GET /api/me` | `F-006` | — | `{ user, role, partnerCompanyId, capabilities, tenantState, env }` | 認証済み |
 | 9 | `GET /api/home` | `F-006` / `S-003` `S-004` | `?scope=mine` | `{ blocks: HomeBlock[], changedSince }` | 認証済み。🔴 ロールで**型が違う**（`HostHomeView` / `PartnerHomeView`） |
@@ -1809,7 +1895,7 @@ requireEsignConnection(ctx);                           // 🔴 §8.4。未接続
 
 | # | Method / Path | 機能 / 画面 | request | response | 認可 |
 |---|---|---|---|---|---|
-| 11 | `GET /api/partner-companies` | `F-007` / `S-014` | `?q=&status=` | `{ items, total }` | ホスト全ロール。🔴 パートナーは**自社 1 件のみ**（C1 + アプリ側で 1 件に絞る） |
+| 11 | `GET /api/partner-companies` | `F-007` / `S-014` | `?q=&status=` | `{ items, total }` | ホスト全ロール。🔴 パートナーは**自社 1 件のみ**。**RLS（C5。`<O>` = `id`）が母集団を 1 行に絞るため、アプリ側に絞り込みを書かない**（`F-004 AC-1`。API 直叩きでも 0 件） |
 | 12 | `POST /api/partner-companies` | `F-007` | `{ name, contactName?, contactEmail? }` | `{ id }` | `OWNER` / `ADMIN` |
 | 13 | `POST /api/partner-companies/{id}/suspend` / `/resume` | `F-007 AC-2` | `{ reason? }` | `204` | `OWNER` / `ADMIN` |
 | 14 | `POST /api/invitations` | `F-002` / `F-007` | `{ email, role, partnerCompanyId? }` | 🔴 `{ id, inviteUrl?: string }` | `OWNER` / `ADMIN`。`PARTNER_ADMIN` は**自社 + パートナーロールのみ** |
@@ -1876,29 +1962,30 @@ type SubmitAccepted = { attemptSeq: number; jobId: string; state: 'SUBMITTING' }
 | 55 | `GET /api/assignments/{id}` | `F-042`/`F-043`/`F-044` / `S-030` | — | `{ assignment, extensionReview: { facts, summary \| null, aiFailed } }` | 🔴 **`facts` は AI の成否と独立**（`docs/04` 申し送り 10） |
 | 56 | `POST /api/assignments/{id}/transition` | `F-042`/`F-045` | `{ to, actualLeaveDate? }` | `{ state }` | 422 の規律は #48 と同じ |
 | 57 | `POST /api/extension-reviews/{id}/decide` | `F-044` | `{ decision:'EXTEND'\|'END'\|'REPRICE', note }` | `{ state }` | `OWNER`/`ADMIN`/`SALES` |
-| 58 | `GET /api/contracts` / `POST /api/contracts` | `F-047` / `S-025` `S-026` | | | ホストのみ |
-| 59 | `POST /api/contracts/{id}/documents` | `F-047`/`F-048` | `{ templateId?, objectKey? }` | `{ id, version, jobId? }` | PDF 変換はワーカー（§9.6） |
+| 58 | `GET /api/contracts` / `POST /api/contracts` | `F-047` / `S-025` `S-026` | GET: `?state[]=&kind=&counterparty=&cursor=` / POST: `{ kind, counterpartyName, projectId?, engineerId?, assignmentId?, unitPrice?, periodStart?, periodEnd?, paymentTerms?, correctsContractId? }` | GET: `{ items: ContractView[], total, byState }` / POST: `{ id, state:'DRAFT' }` | ホストのみ（C2）。`OWNER`/`ADMIN`/`SALES`。`VIEWER` は GET のみ |
+| 59 | `POST /api/contracts/{id}/documents` | `F-047`/`F-048` | 🔴 `{ templateId, templateVersion } \| { objectKey }`（判別可能な合併。同時指定は 400） | `{ id, version, jobId, mergeResult?: { unfilled: string[] } }` | 差し込みとゲートは非同期（§9.6）。PDF 変換はワーカー |
+| 59b | `GET/POST /api/contract-templates`、`POST /api/contract-templates/{id}/versions`、`PUT /api/contract-templates/{id}/versions/{v}/mapping`、`POST /api/contract-templates/{id}/preview` | `F-048` / **`S-027`** | POST: `{ name, kind }` / versions: `{ objectKey }`（アップロードは #18 と同じ pre-signed URL 経路）/ mapping: `{ mapping: MergeMapping[] }` / preview: `{ sampleFacts? }` | `{ items: ContractTemplateView[] }` / `{ id, version, placeholders: string[], scanStatus }` / `204` / `{ filled, unfilled }` | ホストのみ（C2）。🔴 **版を上書き更新するルートを作らない**（`F-048 AC-1`）。`VIEWER` は GET / preview のみ |
 | 60 | `POST /api/contracts/{id}/send` | `F-049` / `S-026` | `{ documentVersion, signers[] }` | `{ attemptSeq, jobId }` | 🔴 `requireEsignConnection` + `requireExecutable` |
 | 61 | `POST /api/contracts/{id}/resend` | `F-049 AC-3` | `{ acknowledged: true }` | `{ attemptSeq, jobId }` | 🔴 `SEND_FAILED` → `DRAFT` を経てからのみ |
-| 62 | `GET /api/orders` / `POST /api/orders` | `F-050` / `S-028` | | | ホストのみ |
+| 62 | `GET /api/orders` / `POST /api/orders` | `F-050` / `S-028` | GET: `?contractId=&assignmentId=&periodFrom=&periodTo=&paymentState=&cursor=` / POST: `{ contractId?, assignmentId?, amount, periodStart, periodEnd, issuedOn?, paymentState }` | GET: `{ items: OrderView[], total }` / POST: `{ id }` | ホストのみ（C2）。🔴 `contractId` / `assignmentId` の**いずれかが必須**（Zod の refine + DB の `CHECK`。`F-050 AC-1`） |
 | 63 | `GET /api/kpi/conversion` | `F-051` / `S-034` | `?from=&to=&projectId=` | `{ funnel, failureRate, gateFailRate }` | 🔴 **分母から `GATE_FAILED`/`SUBMIT_FAILED`/`DECLINED`/`EXPIRED`/`WITHDRAWN_BY_HOST` を除外**（`F-051 AC-2`） |
 
 ### 6.7 主平面 API — 設定・運用（Phase 1〜2）
 
 | # | Method / Path | 機能 / 画面 | request | response | 認可 |
 |---|---|---|---|---|---|
-| 64 | `GET/PATCH /api/settings/organization` | `F-001`/`F-021` / `S-035` | `{ autoApproveEnabled }` | | `OWNER`/`ADMIN`。🔴 `autoApproveEnabled` は**テナント単位**でロール承認モードと別の経路 |
+| 64 | `GET/PATCH /api/settings/organization` | `F-001`/`F-021` / `S-035` | PATCH: `{ name?, autoApproveEnabled?, piiRetentionYears? }` | `{ name, environment, lifecycleState, autoApproveEnabled, piiRetentionYears, timezone }` | `OWNER`/`ADMIN`。🔴 `autoApproveEnabled` は**テナント単位**でロール承認モードと別の経路。`lifecycleState` は**読み取り専用**（§3.3） |
 | 65 | `GET /api/settings/ai-roles` | `F-035`/`F-036` / `S-039` | — | `{ roles: { role, approvalMode?, modelId }[] }` | 🔴 **`approvalMode` を持つ行は `Exclude<AiRole,'gate-inspector'>` のみ**（`docs/04` 申し送り 3） |
 | 66 | `PUT /api/settings/ai-roles/{role}/approval-mode` | `F-035` | `{ mode }` | `204` | 🔴 `role` の Zod は `z.enum(APPROVAL_MODE_CONFIGURABLE_ROLES)`。`gate-inspector` は **422** |
 | 67 | `PUT /api/settings/ai-roles/{role}/model` | `F-036` | `{ modelId }` | `204` | `role` は 6 ロール全部（`gate-inspector` を含む） |
-| 68 | `GET/PUT /api/settings/match-weights` | `F-030` / `S-040` | `{ weights }` | | 🔴 **Phase 1 ではルート自体を実装しない**（`F-030 AC-4`） |
+| 68 | `GET/PUT /api/settings/match-weights` | `F-030` / `S-040` | PUT: `{ weights: Record<MatchFactor, number> }`（6 因子すべて必須） | `{ weights, updatedAt, updatedBy }` | 🔴 **Phase 1 ではルート自体を実装しない**（`F-030 AC-4`） |
 | 69 | `GET /api/usage` | `F-026`/`F-027` / `S-038` | — | `UsageView`（§5.8） | ホストロールのみ |
 | 70 | `GET /api/usage/blocked-notice` | `F-027 AC-1` | — | `{ blocked: boolean, reasonKey }` | 全ロール（パートナーはこちらのみ） |
 | 71 | `GET/POST /api/settings/sending-domains` | `F-001`/`F-022` / `S-036` | `{ domain }` | `{ id, dkimRecords[], state }` | 🔴 **`state` は `NOT_CONFIGURED`/`PENDING`/`VERIFIED`/`FAILED` の状態であってエラーではない**（`docs/04` 申し送り 8） |
 | 72 | `POST /api/settings/sending-domains/{id}/verify` | 同上 | — | `{ state, failureReasonKey? }` | 回数制限なし |
 | 73 | `GET/POST/DELETE /api/settings/esign-connection` | `F-049` / `S-037` | `{ provider, clientId }` | `{ state: 'NOT_CONNECTED'\|'CONNECTED'\|'INVALIDATED' }` | 🔴 **`clientId` を応答に含めない**（書き込み専用） |
-| 74 | `GET /api/notifications` / `POST /api/notifications/{id}/read` | `F-039` / `S-032` | | | 宛先本人のみ |
-| 75 | `GET /api/tasks` / `POST /api/tasks/{id}/complete` | `F-040` / `S-033` | | | 🔴 `autoGenerated` の削除 API を作らない（`F-040 AC-1`） |
+| 74 | `GET /api/notifications` / `POST /api/notifications/{id}/read` | `F-039` / `S-032` | GET: `?unreadOnly=&kind=&cursor=` / read: `{ }` | GET: `{ items: { id, kind, title, bodyKey, bodyParams, targetType, targetId, readAt, createdAt }[], unreadCount, nextCursor }` / read: `204` | 🔴 **宛先本人のみ**（C7。RLS が母集団を絞る。`unreadCount` も同じ `where`） |
+| 75 | `GET /api/tasks` / `POST /api/tasks/{id}/complete` | `F-040` / `S-033` | GET: `?state=&kind=&assigneeUserId=&dueBefore=&cursor=` / complete: `{ note? }` | GET: `{ items: { id, kind, targetType, targetId, dueOn, assigneeUserId, state, autoGenerated }[], total, overdueCount }` / complete: `{ state:'DONE' }` | 境界内（C5）。🔴 `autoGenerated` の削除 API を作らない（`F-040 AC-1`） |
 | 76 | `GET /api/retention` | `F-046` / `S-042` | — | `{ retentionYears, upcoming: { count, earliestOn } }` | `OWNER`/`ADMIN` |
 | 77 | `POST /api/data-exports` | `F-064 AC-5` / `F-052` | `{ kind, scope }` | `{ id, status }` | `OWNER`/`ADMIN`。🔴 **運営者は 403**（`F-064 AC-7`） |
 | 78 | `GET /api/data-exports/{id}/download-url` | 同上 | — | `{ url, expiresIn }` | 同上 |
@@ -1918,27 +2005,27 @@ type SubmitAccepted = { attemptSeq: number; jobId: string; state: 'SUBMITTING' }
 
 ### 6.9 管理平面 API（`/api/admin/**`）
 
-| # | Method / Path | 機能 / 画面 | Phase | 認可 |
+| # 🔴 **API 行の識別子は `API-A{n}`**（画面 ID `A-{nnn}` と別体系。混同しない） | Method / Path | 機能 / 画面 | Phase | 認可 |
 |---|---|---|---|---|
-| A1 | `POST /api/admin/auth/signin` / `2fa/verify` | `F-055` / `A-001` | 0 | 未認証 |
-| A2 | `GET /api/admin/tenants` | `F-056` / `A-002` | 0→1 | `PO`/`PP`（閲覧） |
-| A3 | `GET /api/admin/tenants/{id}` | `F-056` / `A-003` | 0→1 | 同上。🔴 **`PURGED` はライフサイクル状態のみ返し、削除件数を含めない**（`docs/04` 申し送り 13） |
-| A4 | 🔴 `POST /api/admin/tenants` | `F-001` / `A-014` | **0** | 🔴 **`PLATFORM_OWNER` のみ**。`PP` はルート自体が 403 |
-| A5 | 🔴 `POST /api/admin/tenants/{id}/owner-invitation` | `F-001` / `A-014` | **0** | 同上。🔴 **A4 と分離**（`docs/04` 申し送り 12。招待失敗でテナントを作り直させない） |
-| A6 | `GET /api/admin/usage` / `PUT /api/admin/tenants/{id}/quota` | `F-057` / `A-004` | 1 | 閲覧 `PO`/`PP`、**変更 `PO` のみ**（`F-057 AC-2`）。引き下げは `effectiveFrom` 必須 |
-| A7 | `GET /api/admin/audit-logs` | `F-058` / `A-006` | 1 | 🔴 **`from` / `to` 必須**（`docs/03` 申し送り 9 / §8.3-3）。応答はマスク済み |
-| A8 | `GET /api/admin/monitoring` | `F-059` / `A-005` | 1→2→3 | `PO`/`PP`。項目ごとに独立して返す（`docs/04` §10.2 の `A-005`） |
-| A9 | `POST /api/admin/impersonations` | `F-060` / `A-007` | 2 | `PO`/`PP`。`{ tenantId, reason }` → `{ sessionId, expiresAt }` |
-| A10 | `GET /api/admin/impersonations` / `POST /{id}/end` | `F-060` / `A-008` | 2 | 強制終了は `PO` のみ |
-| A11 | `GET/POST /api/admin/announcements` | `F-061` / `A-009` | 2 | 作成 `PO`、閲覧 `PP` |
-| A12 | 🔴 `GET /api/admin/tenants/{id}/deletion-status` | `F-062 AC-7` / `A-010` | **1** | 🔴 **削除完了の確認を返す唯一の API**。`{ purgeRuns: { cause, status, completedAt, counts }[] }`。閲覧は `PP` も可 |
-| A13 | `POST /api/admin/tenants/{id}/lifecycle` | `F-062` / `A-010` | 3 | 🔴 `PLATFORM_OWNER` のみ |
-| A14 | `GET/PUT /api/admin/subscriptions/{tenantId}` | `F-062` / `A-010` | 3 | 変更 `PO` のみ |
-| A15 | `GET /api/admin/cost-margin` | `F-063` / `A-011` | 3 | 閲覧 `PO`/`PP`、閾値設定 `PO` |
-| A16 | `POST /api/admin/demo/seed` / `reset` | `F-053` / `A-012` | 1 | 🔴 **`APP_ENV ∈ {demo, development}` 以外は 403**（`F-053 AC-6`）。`packages/config` とミドルウェアの二重で拒否 |
-| A17 | `GET /api/admin/sandbox-tenants` / `POST /{id}/promote` / `/extend` / `/close` | `F-054` / `A-013` | 1 | 🔴 移行・延長・見送りは `PO` のみ（`F-054 AC-7` / `AC-8`） |
+| API-A1 | `POST /api/admin/auth/signin` / `2fa/verify` | `F-055` / `A-001` | 0 | 未認証 |
+| API-A2 | `GET /api/admin/tenants` | `F-056` / `A-002` | 0→1 | `PO`/`PP`（閲覧） |
+| API-A3 | `GET /api/admin/tenants/{id}` | `F-056` / `A-003` | 0→1 | 同上。🔴 **`PURGED` はライフサイクル状態のみ返し、削除件数を含めない**（`docs/04` 申し送り 13） |
+| API-A4 | 🔴 `POST /api/admin/tenants` | `F-001` / `A-014` | **0** | 🔴 **`PLATFORM_OWNER` のみ**。`PP` はルート自体が 403 |
+| API-A5 | 🔴 `POST /api/admin/tenants/{id}/owner-invitation` | `F-001` / `A-014` | **0** | 同上。🔴 **API-A4 と分離**（`docs/04` 申し送り 12。招待失敗でテナントを作り直させない） |
+| API-A6 | `GET /api/admin/usage` / `PUT /api/admin/tenants/{id}/quota` | `F-057` / `A-004` | 1 | 閲覧 `PO`/`PP`、**変更 `PO` のみ**（`F-057 AC-2`）。引き下げは `effectiveFrom` 必須 |
+| API-A7 | `GET /api/admin/audit-logs` | `F-058` / `A-006` | 1 | 🔴 **`from` / `to` 必須**（`docs/03` 申し送り 9 / §8.3-3）。応答はマスク済み |
+| API-A8 | `GET /api/admin/monitoring` | `F-059` / `A-005` | 1→2→3 | `PO`/`PP`。項目ごとに独立して返す（`docs/04` §10.2 の `A-005`） |
+| API-A9 | `POST /api/admin/impersonations` | `F-060` / `A-007` | 2 | `PO`/`PP`。`{ tenantId, reason }` → `{ sessionId, expiresAt }` |
+| API-A10 | `GET /api/admin/impersonations` / `POST /{id}/end` | `F-060` / `A-008` | 2 | 強制終了は `PO` のみ |
+| API-A11 | `GET/POST /api/admin/announcements` | `F-061` / `A-009` | 2 | 作成 `PO`、閲覧 `PP` |
+| API-A12 | 🔴 `GET /api/admin/tenants/{id}/deletion-status` | `F-062 AC-7` / `A-010` | **1** | 🔴 **削除完了の確認を返す唯一の API**。`{ purgeRuns: { cause, status, completedAt, counts }[] }`。閲覧は `PP` も可 |
+| API-A13 | `POST /api/admin/tenants/{id}/lifecycle` | `F-062` / `A-010` | 3 | 🔴 `PLATFORM_OWNER` のみ |
+| API-A14 | `GET/PUT /api/admin/subscriptions/{tenantId}` | `F-062` / `A-010` | 3 | 変更 `PO` のみ |
+| API-A15 | `GET /api/admin/cost-margin` | `F-063` / `A-011` | 3 | 閲覧 `PO`/`PP`、閾値設定 `PO` |
+| API-A16 | `POST /api/admin/demo/seed` / `reset` | `F-053` / `A-012` | 1 | 🔴 **`APP_ENV ∈ {demo, development}` 以外は 403**（`F-053 AC-6`）。`packages/config` とミドルウェアの二重で拒否 |
+| API-A17 | `GET /api/admin/sandbox-tenants` / `POST /{id}/promote` / `/extend` / `/close` | `F-054` / `A-013` | 1 | 🔴 移行・延長・見送りは `PO` のみ（`F-054 AC-7` / `AC-8`） |
 
-🔴 **A12 以外に削除完了の確認を返す API を作らない**（`docs/04` 申し送り 13）。具体的に**作らない**もの: `A-013` の `GET /api/admin/sandbox-tenants/{id}` に `deletionCounts` を含めない / `A-003` の応答に含めない / `S-042` の `GET /api/retention` に含めない / `A-005` は**削除ジョブの失敗**のみを `monitoring.items[kind='PURGE_JOB_FAILED']` として返し、**完了の事実は返さない**（`F-059 AC-2`）。
+🔴 **API-A12 以外に削除完了の確認を返す API を作らない**（`docs/04` 申し送り 13）。具体的に**作らない**もの: `A-013` の `GET /api/admin/sandbox-tenants/{id}` に `deletionCounts` を含めない / `A-003` の応答に含めない / `S-042` の `GET /api/retention` に含めない / `A-005` は**削除ジョブの失敗**のみを `monitoring.items[kind='PURGE_JOB_FAILED']` として返し、**完了の事実は返さない**（`F-059 AC-2`）。
 
 ### 6.10 OAuth コールバックと Webhook 受信
 
@@ -2497,7 +2584,7 @@ export function systemTenantCtx(tenantId: string, job: JobIdentity): Authenticat
 | `send.contract` | `{ tenantId, contractId, documentVersion, attemptSeq }` | 同上（`F-047` / `F-049`） | 🔴 `attempts: 1` | p95 60 秒 | 同上。**外部書類 ID があれば先に `fetchStatus` で照会**（`docs/03` §3.1.4-5） |
 | `email.dispatch` | `{ dispatchId }` | 分類 1 / 分類外の運用メール | `attempts: 3`（バックオフ 5s/30s） | p95 10 秒 | 🔴 `EmailDispatch.dedupeKey` の `UNIQUE`。**再試行しても 1 通** |
 | `send.hold-release` | 毎 10 分（スケジュール） | 🔴 **保留の自動復帰**（§10.4）。`sendHoldReasonKey IS NOT NULL` の行を再判定し、解消していれば NULL にして `send.*` を**同じ `attemptSeq` で再 enqueue**。🔴 **`GATE_STALE` は対象外**（§10.5） | `attempts: 3` | p95 10 秒 | 再判定は冪等。再 enqueue 後も §10.2 の ①②③ を最初から通る |
-| `webhook.process` | `{ deliveryId }` | §8.5 の受信後処理（プロバイダ別） | `attempts: 3` | p95 10 秒 | `WebhookDelivery.dedupeKey` の `UNIQUE` + `processedAt` の CAS |
+| `webhook.process` | `{ deliveryId }` | §8.5 の受信後処理（プロバイダ別）。🔴 `WebhookDelivery` / `EmailEvent` は **C0** なので `withSystemScope()`（§4.4.2）で扱い、テナントが判明した後の業務更新だけを `withTenant(system)` に切り替える | `attempts: 3` | p95 10 秒 | `WebhookDelivery.dedupeKey` の `UNIQUE` + `processedAt` の CAS |
 
 🔴 **`email.dispatch` だけ `attempts: 3` を許す理由**: 宛先が**自テナントの利用者または運営者**（分類 1 / 分類外）に限られ、`BR-21`（取引先への二重送信）の射程外である。それでも二重送信を避けるため `dedupeKey` の `UNIQUE` で冪等化する。**分類 2 / 3 / 4 の宛先を `email.dispatch` に渡せない**よう、payload の型を `HostOrPlatformDispatch` に限定する。
 
@@ -2520,7 +2607,7 @@ export function systemTenantCtx(tenantId: string, job: JobIdentity): Authenticat
 |---|---|---|---|---|---|
 | `scan.apply-result` | `{ deliveryId }` | `FileScanResult` に INSERT → `SkillSheet` / `Message.attachmentScanStatus` を更新。🔴 **`CLEAN` へ戻す遷移を禁止** | `attempts: 3` | p95 3 秒 | `UNIQUE(objectKey, versionId)` |
 | `scan.poll` | 毎 5 分 | `SCANNING` が `SCAN_STALL_ALERT_MINUTES` を超えたものを `getResult` で照会。不明なら `A-005` | `attempts: 3` | — | 読み取り + 冪等更新 |
-| `contract.render-pdf` | `{ tenantId, contractId, version }` | 🔴 **ワーカー側の LibreOffice headless**（`docs/03` 申し送り 22。Vercel では動かない） | `attempts: 2` | p95 60 秒 | `ContractDocument(contractId, version)` の `UNIQUE` |
+| `contract.render-pdf` | `{ tenantId, contractId, version }` | `mergeContract()`（§3.7。純粋関数）→ docx 差し込み → 🔴 **ワーカー側の LibreOffice headless** で PDF 化（`docs/03` 申し送り 22。Vercel では動かない）→ `mergeResult` 保存 → 🔴 **`gate.run{CONTRACT_DOCUMENT}` を enqueue**（§11.1） | `attempts: 2` | p95 60 秒 | `ContractDocument(contractId, version)` の `UNIQUE`。差し込みは決定的なので再実行しても同一（`F-048 AC-1`） |
 | `export.generate` | `{ tenantId, exportRequestId }` | CSV 一式を生成し S3 へ。🔴 **二重境界を適用して生成する**（`F-064 AC-6`） | `attempts: 2` | p95 5 分 | `DataExportRequest.status` の CAS |
 
 ### 9.7 保持期間・削除
@@ -2541,7 +2628,7 @@ export function systemTenantCtx(tenantId: string, job: JobIdentity): Authenticat
 export const PURGE_SPEC = {
   delete: [
     { table: 'engineers', columns: ['contact_email', 'contact_phone', 'birth_date', 'preference_note'] },
-    { table: 'skill_sheets', objects: 's3', columns: ['object_key'] },
+    { table: 'skill_sheets', objects: 's3', columns: ['object_key'] },   // contract_documents / contract_templates も同様
     { table: 'skill_sheet_extractions', columns: ['payload'] },
     { table: 'messages', columns: ['body', 'attachment_key'] },
   ],
@@ -2570,7 +2657,7 @@ export const PURGE_SPEC = {
 
 | ジョブ名 | スケジュール | 実行内容 |
 |---|---|---|
-| `scheduler.heartbeat` | 毎時 | `SchedulerRun` に記録。🔴 **24 時間更新が無ければ `A-005` に「スケジューラ停止」**（`docs/03` §4.6 / `BR-34` の生存監視） |
+| `scheduler.heartbeat` | 毎時 | `SchedulerRun`（**C0**。`withSystemScope`）に記録。🔴 **24 時間更新が無ければ `A-005` に「スケジューラ停止」**（`docs/03` §4.6 / `BR-34` の生存監視） |
 | `audit.create-partitions` | 毎日 00:30 JST | `audit_logs` の翌々月パーティションを先回りで作る（`docs/03` §8.3-1） |
 | `webhook.staleness-check` | 毎時 | プロバイダ別に「最後に受信した時刻」を確認し、閾値超過で `A-005` |
 | `esign.status-sync` | 毎日 05:00 JST | `Contract.UNDER_REVIEW` の `fetchStatus` 照会（Webhook 欠落の保険） |
@@ -2583,8 +2670,7 @@ export const PURGE_SPEC = {
 | 🔴 **不可** | `send.proposal` / `send.interview-invite` / `send.contract` | **1** | `BR-21` / `BR-22`。**外部への到達が確定した後のリトライは二重送信そのもの** |
 | 🔴 **不可** | `ai.*` / `gate.run` | **1** | 再試行は `runRole` 内部で完結。ジョブ再実行は `AiUsage` を二重に積む |
 | 可（限定） | `email.dispatch` | 3 | 宛先が分類 1 / 分類外に限られ、`dedupeKey` で冪等 |
-| 可 | 状態遷移・期限・集計・削除・監視の全ジョブ | 2〜3 | すべて「未処理条件」または一意制約で冪等 |
-| 可 | `webhook.process` | 3 | `WebhookDelivery` の `UNIQUE` で冪等 |
+| 可 | 状態遷移・期限・集計・削除・監視の全ジョブ / `webhook.process` | 2〜3 | すべて「未処理条件」または一意制約（`WebhookDelivery.dedupeKey` 等）で冪等 |
 
 🔴 **`attempts: 1` のジョブが失敗したとき、BullMQ の failed に入ったまま放置しない。** `A-005`（`F-059`）の「失敗ジョブ」に出し、**再実行は人間の明示操作のみ**（送信系は `F-023` / `F-049` の再送導線を通る。BullMQ の retry ボタンに相当する運営者操作を作らない）。
 
@@ -2666,7 +2752,20 @@ send.proposal(payload: { tenantId, proposalId, attemptSeq })
 
 🔴 **なぜ事前判定を CAS の前に置くか**（設計の要）: 事前判定を CAS の後に置くと、**抑止・失効・上限到達が「失敗」に倒れる**。すると `SUBMIT_FAILED` になり、「失敗からの復帰は人間のみ」（`BR-22`）を守るために「この失敗は自動復帰してよい / よくない」という条件分岐が必要になる。**その分岐の誤りが二重送信に直結する。** 事前判定を先に置けば、抵触時は `SUBMITTING` に入らず `SUBMIT_FAILED` にもならないため、**分岐が要らない**。
 
-🔴 **契約書（`send.contract`）も同一の仕組みで実装する**（`docs/03` 申し送り 11-③）。`DRAFT` → `SENDING` の CAS、`SendAttempt(entityType='CONTRACT')`、`attempts: 1`。**別実装にすると片方だけリトライが入る。** 状態名と前提条件だけが違う共通関数 `runExternalSend(spec)` に切り出す:
+🔴 **契約書（`send.contract`）も同一の仕組みで実装する**（`docs/03` 申し送り 11-③）。`DRAFT` → `SENDING` の CAS、`SendAttempt(entityType='CONTRACT')`、`attempts: 1`。**別実装にすると片方だけリトライが入る。** ①の事前判定は次に読み替える（**c を落とさない**）:
+
+```
+a. テナント状態 lifecycleState ∈ {ACTIVE, SANDBOX}（F-047 AC-6）   b. 契約の状態 state === 'DRAFT'
+c. 🔴 ゲート    ContractDocument.reviewGateId の ReviewGate が対象の版に一致し 3 層すべて PASS
+   （g.target_type='CONTRACT_DOCUMENT' AND g.target_id=doc.id AND g.content_hash=<版のハッシュ> AND 3 層 PASS）
+   不一致・FAIL・未実行なら 🔴 送付しない（sendHoldReasonKey='GATE_STALE'）→ F-047 処理⑥ / F-048 AC-3。
+   #60 のハンドラでも同じ条件を先に検査する（二重）
+d. スキャン     ContractDocument.scanStatus === 'CLEAN'（F-047 AC-2 / BR-26）
+e. 電子署名接続 TenantEsignConnection が有効（未接続なら保留 'ESIGN_DISCONNECTED'）
+f. レート上限   電子署名は 1 契約 1 リクエスト＝ SendAttempt の UNIQUE が担保（カウンタを持たない）
+```
+
+状態名と前提条件だけが違う共通関数 `runExternalSend(spec)` に切り出す:
 
 ```ts
 type ExternalSendSpec<S> = {
@@ -2756,7 +2855,9 @@ type ExternalSendSpec<S> = {
 
 ### 11.1 対象と実行の入口
 
-**テナント外へ共有される 4 種**（`F-020 AC-1`）: 提案（`PROPOSAL`）/ スキルシートの外部共有（`SKILL_SHEET_SHARE`）/ 案件の公開（`PROJECT_PUBLISH`）/ チャット添付（`CHAT_ATTACHMENT`）。
+**テナント外へ共有される 5 種**: 提案（`PROPOSAL`）/ スキルシートの外部共有（`SKILL_SHEET_SHARE`）/ 案件の公開（`PROJECT_PUBLISH`）/ チャット添付（`CHAT_ATTACHMENT`）/ 🔴 **契約書（`CONTRACT_DOCUMENT`）**。
+
+🔴 **契約書をゲート対象に含める理由**（`F-047` 処理⑥ / `F-048` 処理② / `F-048 AC-3`）: 契約書には**単価とエンド企業名**が載り、これは §3.3 の商流層が守る対象そのものである。**`CLAUDE.md` §3.3 の列挙 4 種に契約書が無いのは、列挙が書かれた時点で契約管理（Phase 3）の設計が無かったことによる漏れであり、対象を増やすのは §3.3 を弱めない上位互換である。** `CLAUDE.md` §3.3 への追記が必要なため **`TBD-16` に人間の承認事項として残す**（`CLAUDE.md` §8.6 / [Issue #15](https://github.com/Festal-KM/SES-Platform/issues/15)）。🔴 **発注書（`Order`）は対象外**（アプリ内の記録であり外部へ渡らない。同 Issue の②で確認中）。**入口**は `contract.render-pdf`（§9.6）が版を確定させた直後の `gate.run{ CONTRACT_DOCUMENT, contractDocumentId }` であり、整合層は**差し込みの未解決項目（`mergeResult.unfilled`）が空であること**と `Contract` の単価・期間との一致を機械的に照合し、PII 層・商流層は抽出テキストを `gate-inspector` に渡す（`field = 'contract_document'`）。`ReviewGate.contentHash` は `objectKey + versionId + mergeResult` から作る。
 
 🔴 **入口は `gate.run` ジョブ 1 本**（§9.3）。共有状態へ進める全ての経路がこのジョブの結果を参照する。**ゲートを経ずに共有状態へ進む API を作らない**（§6.8）。
 
@@ -2920,8 +3021,7 @@ sequenceDiagram
     W->>DB: 公開しない（F-014 AC-3）
   end
 
-  PS->>WEB: GET /api/projects（C4 のポリシーで公開分のみ）
-  DB-->>PS: 自社に公開された案件のみ（他社の公開先は見えない）
+  PS->>WEB: GET /api/projects → 🔴 C4 のポリシーで自社に公開された案件のみ（他社の公開先は見えない）
   PS->>WEB: POST /api/proposals（F-019 / S-020）
   WEB->>DB: Proposal(DRAFT) + EngineerSnapshot を凍結
   PS->>WEB: POST /api/proposals/{id}/gate
@@ -2932,10 +3032,7 @@ sequenceDiagram
   AI-->>W: 層別判定 + warnings + provenance
   W->>DB: ReviewGate 保存 → decideGate
   alt PASS
-    W->>DB: GATE_RUNNING → APPROVAL_PENDING
-    alt autoApproveEnabled かつ全層 PASS
-      W->>DB: → APPROVED（approvedBySystem=true / AuditLog: SYSTEM）
-    end
+    W->>DB: GATE_RUNNING → APPROVAL_PENDING<br/>（autoApproveEnabled かつ全層 PASS なら → APPROVED / approvedBySystem=true / AuditLog: SYSTEM）
   else FAIL
     W->>DB: GATE_RUNNING → GATE_FAILED（指摘を findings に）
   end
@@ -2985,10 +3082,7 @@ sequenceDiagram
   Note over DBP: 🔴 ここで初めて実名・所属会社名・スキルシートがホストに開示される（経路 2 に合流）
   WEB-->>PA: { proposalId }
 
-  alt 辞退
-    PA->>WEB: POST /api/proposal-requests/{id}/decline { reason }
-    WEB->>DBP: DECLINED + declineReason（🔴 HostProposalRequestView に該当フィールドが存在しない）
-  end
+  Note over PA,WEB: 辞退なら POST /{id}/decline { reason } → DECLINED + declineReason<br/>🔴 HostProposalRequestView に該当フィールドが存在しない
 ```
 
 ### 12.3 外部連携: 電子署名（BYO 接続）と Webhook
@@ -3006,9 +3100,8 @@ sequenceDiagram
   participant ES as クラウドサイン API
 
   AD->>WEB: POST /api/settings/esign-connection { provider, clientId }（S-037）
-  WEB->>CN: validate(clientId)  ※POST /token で疎通確認
-  CN->>ES: POST /token { client_id }
-  ES-->>CN: { access_token, expires_in: 3600 }
+  WEB->>CN: validate(clientId)
+  CN->>ES: POST /token { client_id } → { access_token, expires_in: 3600 }
   WEB->>DB: TenantEsignConnection（clientIdEncrypted。AAD = tenantId+column）
   Note over DB: 🔴 応答に clientId を含めない / 運営者に列 GRANT しない
 
@@ -3018,8 +3111,7 @@ sequenceDiagram
   W->>DB: ①事前判定（接続済み / CLEAN の版 / テナント状態）
   W->>DB: ②遅延判定 → ③CAS(DRAFT→SENDING) → ④SendAttempt INSERT
   W->>CN: createAndSend(input, token)
-  CN->>ES: POST /token（残 5 分ならプロセス内キャッシュ）
-  CN->>ES: 書類作成 → ファイル追加 → 宛先追加 → 送信
+  CN->>ES: POST /token（残 5 分ならプロセス内キャッシュ）→ 書類作成 → ファイル追加 → 宛先追加 → 送信
   ES-->>CN: { documentID }
   CN-->>W: 正規化した { externalDocumentId }
   W->>DB: ⑥SENDING→UNDER_REVIEW + ContractDocument.externalDocumentId
@@ -3053,8 +3145,7 @@ sequenceDiagram
   W->>DB: facts（稼働期間 / 改定履歴 / 代替候補の件数）を機械収集
   W->>AI: runRole(renewal-advisor)  ※単価の数値とエンド企業名は渡さない
   alt 成功
-    AI-->>W: { points, evidences, cautions } + provenance
-    W->>DB: ExtensionReview.summary + role/promptVersion/modelId
+    W->>DB: ExtensionReview.summary + role/promptVersion/modelId（+ provenance）
   else 失敗
     W->>DB: summary = null（🔴 起票と通知は成立済み。F-044 AC-1）
   end
@@ -3093,8 +3184,7 @@ sequenceDiagram
 
   SA->>WEB: GET /api/proposals?state[]=SUBMIT_FAILED（S-022）
   WEB-->>SA: 失敗理由 + 最終試行日時（🔴 LOST / GATE_FAILED / DECLINED と別区分）
-  SA->>WEB: （補助）外部照合の要求
-  WEB->>SES: MessageId が無いため確定できない
+  SA->>WEB: （補助）外部照合の要求 → MessageId が無いため確定できない
   Note over WEB: 🔴 「実行されていた」は断定できるが「されていなかった」は断定できない<br/>照合は人間確認の補助であり、確認の省略の根拠にしない
   WEB-->>SA: 「届いている可能性があります」を表示（F-023 AC-2）
   SA->>WEB: POST /api/proposals/{id}/resend { acknowledged: true }
@@ -3112,13 +3202,11 @@ sequenceDiagram
 sequenceDiagram
   autonumber
   participant W as apps/worker (send.proposal)
-  participant DOM as packages/domain/quota
   participant DB as withTenant(system)
   participant HR as send.hold-release（10 分ごと）
   actor AD as テナント管理者
 
-  W->>DB: ①事前判定: TenantSendingDomain.verifiedAt IS NULL
-  W->>DB: 🔴 Proposal は APPROVED のまま<br/>sendHoldReasonKey='DOMAIN_UNVERIFIED' / sendHoldSince=now
+  W->>DB: ①事前判定: TenantSendingDomain.verifiedAt IS NULL<br/>🔴 Proposal は APPROVED のまま / sendHoldReasonKey='DOMAIN_UNVERIFIED' / sendHoldSince=now
   Note over DB: SUBMITTING に入れない。SUBMIT_FAILED にもしない<br/>→ 障害率・成約率のどちらの分母にも入らない
   W->>AD: 通知（分類 1 = 共通ドメインで送れる）+ A-005 の「送信保留」
 
@@ -3132,7 +3220,7 @@ sequenceDiagram
     HR->>HR: 🔴 対象外。自動復帰しない。人間が S-021/S-022 から選ぶまで待つ
   end
 
-  Note over W,DOM: 分次レート超過（DEFER）は保留にしない<br/>同じ attemptSeq のまま retryAfterSec 後に再スケジュール
+  Note over W: 分次レート超過（DEFER）は保留にしない<br/>同じ attemptSeq のまま retryAfterSec 後に再スケジュール
 ```
 
 ---
@@ -3266,7 +3354,7 @@ packages/db/seed/
 | 🔴 **複数テナント** | `demo` は 2 テナント（片方は取引先 5 社・もう片方は 1 社）。`isolation` は 2 テナント × 2 パートナー。`perf` は 30 テナント（最大テナントにエンジニア 3,000 / 案件 3,000 / パートナー 15 社。`docs/03` §3.7.2） |
 | 🔴 **状態機械を正しく通す** | DB に直接 INSERT せず、**`packages/domain` の `transition()` を通して状態を進める**（不整合な状態を作らない） |
 | 🔴 **合成データの担保** | 企業名は「株式会社サンプルアルファ」等の明示的な架空名、氏名は架空名リスト、スキルシートはテンプレート生成。**実データ由来のファイルをリポジトリに置かない**（`F-053 AC-1`） |
-| 🔴 **実行できる環境の制限** | `APP_ENV ∈ {demo, development}` のときのみ。`packages/config` の検証と `A-016` のミドルウェアの**二重**で拒否（`F-053 AC-6`）。`sandbox` には合成データを投入しない（`F-053 AC-4`） |
+| 🔴 **実行できる環境の制限** | `APP_ENV ∈ {demo, development}` のときのみ。`packages/config` の検証と `API-A16`（画面は `A-012`）のミドルウェアの**二重**で拒否（`F-053 AC-6`）。`sandbox` には合成データを投入しない（`F-053 AC-4`） |
 
 ---
 
@@ -3290,8 +3378,7 @@ s3://{S3_BUCKET}/
 | **`{uuid}`** | 🔴 **ファイル名を推測不能にする**。元のファイル名は DB の列に持ち、キーには含めない（ファイル名に氏名が入ることがあるため） |
 | **バケット全体を GuardDuty の保護対象にする** | プレフィックス指定は使わない（最大 5 個の制限があるため） |
 | **暗号化** | SSE-KMS（`S3_KMS_KEY_ID`）。🔴 **管理平面の IAM ロールに `s3:GetObject` を付与しない**（§5.5） |
-| **バージョニング** | 有効。`FileScanResult` が `objectVersionId` を持つため |
-| **IAM 条件** | ワーカー / Web のロールに `s3:prefix` の条件を付け、`t/` 配下に限定する |
+| **バージョニング / IAM 条件** | バージョニング有効（`FileScanResult` が `objectVersionId` を持つため）。ワーカー / Web のロールに `s3:prefix` 条件を付け `t/` 配下に限定する |
 
 ### 14.2 pre-signed URL の発行ルール
 
@@ -3319,6 +3406,7 @@ AppError（抽象。code / httpStatus / userMessageKey / logLevel を持つ）
 ├── ImpersonationExpiredError           401  'error.impersonation.expired'
 ├── ForbiddenError                      403  'error.forbidden'
 │   ├── ViewerNotAllowedError           403  'error.viewer.notAllowed'
+│   ├── TwoFactorRequiredError          403  'error.2fa.required'   🔴 OWNER/ADMIN 未設定（§6.2 / BR-30）
 │   └── PlatformRoleRequiredError       403  'error.platform.ownerRequired'
 ├── NotFoundError                       404  'error.notFound'            🔴 境界外も必ずこれ
 ├── ConflictError                       409
@@ -3394,13 +3482,11 @@ export class InvalidStateTransitionError extends AppError {
 | `action` | フック箇所 | `actorKind` |
 |---|---|---|
 | `auth.login` / `auth.logout` / `auth.login_failed` | Auth.js のコールバック（主平面・管理平面の両方） | `USER` / `PLATFORM_USER` |
-| 🔴 `engineer.view` / `skill_sheet.view` / `skill_sheet.download` | `GET /api/engineers/{id}`（#17）/ `#21` / `#20`。🔴 **`issueDownloadUrl` の中で書く**（経路が 1 本なのでモバイル・共有 URL でも漏れない。`BR-28` 欠落 0 件） | `USER` |
-| `project.view` | `GET /api/projects/{id}`（#27） | `USER` |
+| 🔴 `engineer.view` / `skill_sheet.view` / `skill_sheet.download` / `project.view` | `#17` / `#21` / `#20` / `#27`。🔴 **DL は `issueDownloadUrl` の中で書く**（経路が 1 本なのでモバイル・共有 URL でも漏れない。`BR-28` 欠落 0 件） | `USER` |
 | `*.create` / `*.update` / `*.delete` | `withApiRoute` の `audit` オプション（各ハンドラで `action` を宣言） | `USER` / `SYSTEM` |
 | `proposal.submit` / `proposal.resend` | 送信ジョブの ⑥（§10.2） | `SYSTEM`（`summary.requestedBy` に人間を記録） |
 | `proposal.approve` / `proposal.reject` | `#41` / `#42`。自動承認は `SYSTEM` + `summary.reason='ALL_LAYERS_PASS'` | `USER` / `SYSTEM` |
-| `membership.role_change` / `membership.revoke` | `#14` 周辺 | `USER` |
-| `project.visibility_change` | `#28` | `USER` |
+| `membership.role_change` / `membership.revoke` / `project.visibility_change` | `#14` 周辺 / `#28` | `USER` |
 | `impersonation.start` / `impersonation.end` | `withImpersonation`（§5.6） | `PLATFORM_USER` |
 | 🔴 **運営者の全操作（閲覧を含む）** | `withPlatformRead` / `withPlatformWrite`（§5.3。`fn` の前に書く） | `PLATFORM_USER` |
 | `ai.approval_mode_change` / `ai.model_change` / `match_weight_change` | `#66` / `#67` / `#68`。🔴 **設定の書き込みと同一トランザクション**（`docs/03` §4.20.1-②） | `USER` |
@@ -3500,6 +3586,7 @@ export const logger = pino({
 | 13 | `platform-user-no-flag.test.ts` | 🔴 `users` に `platform` / `is_admin` / `is_operator` を含む列名が存在しない（`BR-36`） |
 | 14 | `domain-purity.test.ts` | 🔴 `packages/domain` に `Date` の直接参照・`process.env`・I/O import が無い |
 | 15 | `deletion-status-single-route.test.ts` | 🔴 **削除完了の確認を返すルートが `api/admin/tenants/[id]/deletion-status` の 1 本だけ**（`docs/04` 申し送り 13）。応答型 `DeletionStatusView` を返すハンドラが他に無いことを AST で検査 |
+| 16 | `contract-resend-human-only.test.ts` | 🔴 **`Contract` の `SEND_FAILED → DRAFT` を呼ぶコードが `apps/web/app/api/(main)/contracts/[id]/resend/route.ts` 以外に無い**（AST 走査）。`Proposal` の `SUBMIT_FAILED → APPROVED`（§10.6）と**対**にする。ジョブ・スケジューラ・Webhook ハンドラから呼ばれていたら FAIL（`F-049 AC-3`） |
 
 ### 17.3 E2E の主要シナリオ
 
@@ -3508,7 +3595,7 @@ export const logger = pino({
 | 1 | 2 テナント × 2 パートナーで、URL 直打ち・API 直叩きのいずれでも他テナント / 他パートナーのデータが 0 件 | 🔴 `CLAUDE.md` §5 Phase 0 の成功条件 / `F-004 AC-1` |
 | 2 | パートナーの全画面・API・集計・通知・エクスポートに他社由来の値が 0 件。**件数バッジ・並び順の変化・示唆も 0 件** | `F-004 AC-3` / `AC-4` |
 | 3 | 案件公開 → パートナーが提案 → ゲート → ホスト承認 → 送信 → 結果記録 | `CLAUDE.md` §5 Phase 1 |
-| 4 | 🔴 **ゲート FAIL の提案が送信できない**（「了解のうえ送信」の導線も API も無い） | `F-020 AC-2` |
+| 4 | 🔴 **ゲート FAIL の提案が送信できない**（「了解のうえ送信」の導線も API も無い）。🔴 **契約書も同じ**（`CONTRACT_DOCUMENT` のゲートが FAIL / 未実行 / ハッシュ不一致なら `send.contract` が発火しない。§10.2 ①-c） | `F-020 AC-2` / `F-047` 処理⑥ / `F-048 AC-3` |
 | 5 | 🔴 匿名候補が 5 項目でのみ現れ、`Proposal` 作成まで実名・所属会社名・スキルシートに到達できない | `F-017 AC-6`（0 件） |
 | 6 | 🔴 同一候補が複数案件に現れても `candidateRef` が異なり、突合できない | `F-017 AC-2` / `BR-55` |
 | 7 | 送信を 2 回起動しても外部呼び出しが 1 回（同一 `idempotency_key`） | `F-022 AC-1` |
@@ -3582,6 +3669,8 @@ export const logger = pino({
 | **P-A-08** | **`AuditLog` の月次レンジパーティションを Phase 1 から入れる** | §3.8 / §9.9 | `docs/03` T-A-11 を引き継ぐ |
 | **P-A-09** | **`ReviewGate` は `(targetType, targetId, contentHash)` が同じなら再実行しない** | §9.3 / §11.5 | 🔴 **本書が置いた最適化。** `F-020 AC-3`（同一入力に同じ結果）が成立するため安全。**ただし AI 失敗（`aiFailed=true`）の結果はキャッシュしない**（再実行で PASS になりうるため） |
 | **P-A-10** | **`Announcement` 1 表でお知らせと機能フラグの両方を扱う** | §3.10 | 🔴 **本書が置いた統合。** `F-061` が同一画面（`A-009`）で扱うため。統制を落とすフラグは `CHECK` で禁止（`F-061 AC-4`） |
+| **P-A-11** | 🔴 **パートナースコープは「オーナー列の非正規化 + 継承トリガ」で表現し、RLS ポリシーに多相な `EXISTS` を書かない**（§4.4 / §4.4.1） | §3 / §4.4 / §4.7 | 🔴 **本書が置いた決定。** 代替案（親を毎回 `EXISTS` で辿る）は ①多相な `ReviewGate` / `SendAttempt` で 5 分岐の `CASE` になる ②内側の表にも RLS が効くため「親が見えないと子も見えない」罠が発生する ③1 万件規模で行ごとの副問い合わせになる、の 3 点で退けた。**継承トリガが親の値で上書きするため、アプリが偽装できない** |
+| **P-A-12** | 🔴 **テナントキーを持てない 4 表を `C0 SYSTEM_ONLY`（`app_tenant_id() IS NULL`）として RLS の射程内に残す**（§4.4 / §4.4.2） | §4.4 / §4.7 | 🔴 **本書が置いた決定。** `CLAUDE.md` §3.1 の射程外は 4 表のみであり**新たな例外を作れない**ため、除外リストを広げずに扱う唯一の方法として置いた。テナント文脈が設定されている限り 0 件になるので、**主平面のどの経路からも到達できない** |
 
 ---
 
@@ -3606,8 +3695,9 @@ export const logger = pino({
 | **TBD-13** | **S3 / RDS / Fargate の実額**（`U-9` / `U-10`）と **Stripe の手数料率**（`U-11`） | `packages/config/src/pricing.ts` の設定値。§5.9 の原価計算は**単価を引数に取る** | `A-011` の金額の正しさ。**設計は値に依存していない** | `docs/03` §7.4 / §7.5 |
 | **TBD-14** | **Vercel Secure Compute の要否**（`U-15`） | 暫定は「RDS Proxy の公開エンドポイント + IP 制限 + TLS 必須」。**接続文字列は `packages/config` の 1 箇所** | Phase 0 のインフラ構築 | `docs/03` §4.14 |
 | **TBD-15** | **`CLAUDE.md` §5 の改訂（SPF/DKIM を Phase 1 へ）**（`Q-T-8` / Issue #13） | 🔴 **本書は `CLAUDE.md` を書き換えない。** `TenantSendingDomain` と `requireVerifiedSendingDomain` を Phase 1 に実装するが、**Phase 1 の完了条件にはしない**（`docs/03` `pm` 申し送り 1 の既定値③） | `docs/dev-plan.md` の Phase 1 スプリント分解 | `docs/03` `Q-T-8` |
+| **TBD-16** | 🔴 **`CLAUDE.md` §3.3 の改訂が必要**（ゲート対象の列挙に**契約書**を加える。[Issue #15](https://github.com/Festal-KM/SES-Platform/issues/15)）。**人間の承認事項**（`CLAUDE.md` §8.6） | 本書は `ReviewGate.targetType` に `CONTRACT_DOCUMENT` を追加し、`ContractDocument.reviewGateId` を持たせ、§10.2 の `send.contract` 事前判定 c に「ゲートが 3 層 PASS」を入れた（§11.1）。**契約書には単価とエンド企業名が載るため、これは §3.3 の商流層が守る対象そのものであり、対象を増やすのは §3.3 を弱めない上位互換である。** 🔴 **発注書（`Order`）は現状のまま対象外**（アプリ内の記録であり外部へ渡らない。Issue #15 の②で確認中）。承認されなかった場合は §11.1 の `CONTRACT_DOCUMENT` 節と §10.2 の c を落とすだけで戻せる | 🔴 **Phase 3 の `F-047` 処理⑥ / `F-048 AC-3` の実装可否**。承認前に実装しても `CLAUDE.md` の列挙と食い違ったままになる | `docs/02` `F-047` 処理⑥ / `F-048` 処理② / `CLAUDE.md` §3.3 |
 
-🔴 **`CLAUDE.md` §4.2 の改訂が必要になった項目は 0 件である。** 保留（§10.4）と遅延保留（§10.5）は**属性で表現し、状態を 1 つも追加していない**（`P-A-02`）。5 つの状態機械はいずれも `docs/02` 章 5 の定義をそのまま実装する。
+🔴 **`CLAUDE.md` §4.2 の改訂が必要になった項目は 0 件である。** 保留（§10.4）と遅延保留（§10.5）は**属性で表現し、状態を 1 つも追加していない**（`P-A-02`）。5 つの状態機械はいずれも `docs/02` 章 5 の定義をそのまま実装する。**ただし §3.3（ゲート対象の列挙）の改訂は必要である**（`TBD-16`）。
 
 ---
 
@@ -3661,9 +3751,9 @@ export const logger = pino({
 | 8 | `S-036` / `S-037` の「未検証」「未接続」「失効」をエラーではなく状態として返す | **§6.7**（#71 / #73）/ **§15.4** の末尾 / §8.3 / §8.4 |
 | 9 | 代理閲覧中のセッションで実行系の可否をレスポンスに含める | **§5.6**（`Capabilities`）/ §6.3（#8） |
 | 10 | `S-030` の根拠データを `renewal-advisor` の成否と独立に返す | **§6.6**（#55）/ §3.7（`ExtensionReview.facts`）/ §12.4 |
-| 11 | `A-014`（開設）と `A-010`（契約管理）の API を分ける。フェーズの異なる 3 つを 1 エンドポイントに束ねない | **§6.9**（A4 / A5 = Phase 0、A12 = Phase 1、A13 / A14 = Phase 3） |
-| 12 | テナント開設は、テナント作成と初期 `OWNER` 招待を分離して冪等にする | **§6.9**（A4 / A5）/ **§10.7** |
-| 13 | 🔴 **削除完了の確認を返す API は `A-010` 用の 1 本に限る**。`A-013` / `S-042` / `A-003` に作らない。`A-003` の `PURGED` に件数を含めない。`A-005` は削除ジョブの失敗を別フィールドで返す | **§6.9**（A12 とその直後の禁止事項）/ §16.5 / §17.2（テスト #15） |
+| 11 | `A-014`（開設）と `A-010`（契約管理）の API を分ける。フェーズの異なる 3 つを 1 エンドポイントに束ねない | **§6.9**（API-A4 / A5 = Phase 0、API-A12 = Phase 1、API-A13 / A14 = Phase 3） |
+| 12 | テナント開設は、テナント作成と初期 `OWNER` 招待を分離して冪等にする | **§6.9**（API-A4 / A5）/ **§10.7** |
+| 13 | 🔴 **削除完了の確認を返す API は `A-010` 用の 1 本に限る**。`A-013` / `S-042` / `A-003` に作らない。`A-003` の `PURGED` に件数を含めない。`A-005` は削除ジョブの失敗を別フィールドで返す | **§6.9**（API-A12 とその直後の禁止事項）/ §16.5 / §17.2（テスト #15） |
 
 ## 付録 C. `F-001`〜`F-064` の実装設計カバレッジ
 
@@ -3671,7 +3761,7 @@ export const logger = pino({
 
 | F | 主な該当箇所 | F | 主な該当箇所 |
 |---|---|---|---|
-| F-001 | §3.3 / §5.4 / §6.9(A4,A5) / §10.7 | F-033 | §7.1 / §9.3 / §3.4(`EngineerSkill.originalLabel`) |
+| F-001 | §3.3 / §5.4 / §6.9(API-A4,A5) / §10.7 | F-033 | §7.1 / §9.3 / §3.4(`EngineerSkill.originalLabel`) |
 | F-002 | §3.3(`Invitation`) / §6.4(#14) / §8.2 | F-034 | §7.1 / §9.3 / §6.5(#38) |
 | F-003 | §5.1 / §6.3(#1-#5) / §3.3(`TwoFactorCredential`) | F-035 | **§7.5** / §3.10 / §6.7(#66) |
 | F-004 | **§4 全体** / §6.2 / §17.2(#1) | F-036 | §3.10(`TenantRoleModel`) / §6.7(#67) |
@@ -3685,44 +3775,25 @@ export const logger = pino({
 | F-012 | §14.2 / §16.1 / §6.4(#20,#21) | F-044 | §7.1 / §9.3 / §6.6(#55) |
 | F-013 | §3.5(`Project`) / §6.4(#26) | F-045 | §9.5(`assignment.end`) / §12.4 |
 | F-014 | §3.5(`ProjectVisibility`) / §4.4(C4) / §6.4(#28) | F-046 | §9.7 / §3.4(`retentionExpiresAt`) |
-| F-015 | §6.4(#25) / §4.4(C4) | F-047 | §3.7(`Contract`) / §6.6(#58,#59) |
-| F-016 | §3.5(`EngineerShare`) / §6.4(#29) / §12.2 | F-048 | §9.6(`contract.render-pdf`) |
+| F-015 | §6.4(#25) / §4.4(C4) | F-047 | §3.7(`Contract`) / §6.6(#58,#59) / §11.1 |
+| F-016 | §3.5(`EngineerShare`) / §6.4(#29) / §12.2 | F-048 | §3.7(`ContractTemplate`,`mergeContract`) / §6.6(#59,#59b) / §9.6 / §11.1 |
 | F-017 | **§4.5 / §4.6** / §6.5(#30) / TBD-2 | F-049 | **§8.4** / §10.2 / §12.3 |
 | F-018 | §3.6(`ProposalRequest`) / §6.5(#31-#35) / §10.7 | F-050 | §3.7(`Order`) / §6.6(#62) |
 | F-019 | §3.6(`EngineerSnapshot`) / §6.5(#36) | F-051 | §6.6(#63) / §4.8 |
 | F-020 | **§11 全体** / §9.3(`gate.run`) | F-052 | §3.9(`DataExportRequest`) / §9.6 / §6.7(#77) |
-| F-021 | §11.5 / §11.6 / §6.5(#41,#42) | F-053 | **§13.6** / §6.9(A16) |
-| F-022 | **§10.2** / §9.4 / §6.5(#43) | F-054 | §5.4 / §9.7 / §6.9(A17) / §6.7(#79) |
+| F-021 | §11.5 / §11.6 / §6.5(#41,#42) | F-053 | **§13.6** / §6.9(API-A16) |
+| F-022 | **§10.2** / §9.4 / §6.5(#43) | F-054 | §5.4 / §9.7 / §6.9(API-A17) / §6.7(#79) |
 | F-023 | §10.6 / §6.5(#44) / §12.5 | F-055 | **§5.1** / §3.10(`PlatformUser`) |
-| F-024 | §3.6(`ProposalEvent`) / §6.5(#45,#48) / §15.3 | F-056 | §5.7 / §6.9(A2,A3) |
-| F-025 | §6.5(#47,#48) | F-057 | §5.8 / §6.9(A6) |
-| F-026 | §3.8(`AiUsage`,`UsageCounter`) / §7.3 / §9.8 | F-058 | §5.5(シリアライザ) / §6.9(A7) |
-| F-027 | **§5.8** / §7.6 / §8.7 / §6.7(#69,#70) | F-059 | **§16.5** / §6.9(A8) |
-| F-028 | **§13.5** / §6.3(#8 の `env`) | F-060 | **§5.6** / §6.9(A9,A10) / §17.3(#14) |
-| F-029 | §2.2(純粋関数) / §3.5(`MatchCandidate`) / TBD-5 | F-061 | §3.10(`Announcement`) / §6.9(A11) |
-| F-030 | §3.10(`TenantMatchWeight`) / §6.7(#68) | F-062 | **§6.9(A12,A13,A14)** / §5.4 |
+| F-024 | §3.6(`ProposalEvent`) / §6.5(#45,#48) / §15.3 | F-056 | §5.7 / §6.9(API-A2,A3) |
+| F-025 | §6.5(#47,#48) | F-057 | §5.8 / §6.9(API-A6) |
+| F-026 | §3.8(`AiUsage`,`UsageCounter`) / §7.3 / §9.8 | F-058 | §5.5(シリアライザ) / §6.9(API-A7) |
+| F-027 | **§5.8** / §7.6 / §8.7 / §6.7(#69,#70) | F-059 | **§16.5** / §6.9(API-A8) |
+| F-028 | **§13.5** / §6.3(#8 の `env`) | F-060 | **§5.6** / §6.9(API-A9,A10) / §17.3(#14) |
+| F-029 | §2.2(純粋関数) / §3.5(`MatchCandidate`) / TBD-5 | F-061 | §3.10(`Announcement`) / §6.9(API-A11) |
+| F-030 | §3.10(`TenantMatchWeight`) / §6.7(#68) | F-062 | **§6.9(API-A12,A13,A14)** / §5.4 |
 | F-031 | §7.1 / §9.3 / §4.6(`rationale`) | F-063 | **§5.9** / §3.10(`TenantMonthlyCost`) / §16.4 |
-| F-032 | §7.1 / §9.3 / §7.8 | F-064 | §9.7(`tenant.purge`) / §3.9(`TenantPurgeRun`) / §6.9(A12) |
+| F-032 | §7.1 / §9.3 / §7.8 | F-064 | §9.7(`tenant.purge`) / §3.9(`TenantPurgeRun`) / §6.9(API-A12) |
 
 ---
 
 **本書は `CLAUDE.md` のハードルール、`docs/01` のビジネスルール（`BR-01`〜`BR-64`）、`docs/02` の受け入れ基準、`docs/03` の技術的決定、`docs/04` の画面挙動を弱める記述を含まない。** 変更が必要な場合は `CLAUDE.md` §8.7 の手順に従い、上流を先に更新すること。
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
