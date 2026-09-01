@@ -1061,12 +1061,14 @@ model EmailDispatch {                                              // 分類 1 /
   recipientEmail String
   templateKey    String
   dedupeKey      String                                            // '{templateKey}:{targetId}:{recipientHash}'
-  status         String                                            // 'QUEUED'|'HELD_DOMAIN_UNVERIFIED'|'SENT'|'MOCKED'|'FAILED'|'SUPPRESSED'（CHECK）。HELD は §8.3（F-007 AC-5）
+  status         String                                            // 'QUEUED'|'HELD_DOMAIN_UNVERIFIED'|'HELD_PROVIDER_QUOTA'|'SENT'|'MOCKED'|'FAILED'|'SUPPRESSED'（CHECK。7 値）。HELD_DOMAIN_UNVERIFIED は §8.3（F-007 AC-5）。HELD_PROVIDER_QUOTA = 送信基盤（SES アカウント）のクォータ到達による保留（§8.3-Q。F-059 AC-7）。HELD_DOMAIN_UNVERIFIED とは原因が異なり A-005 の別項目（13）に計上する。🔴 HELD_* は「失敗」ではない（送信を 1 回も試みていない）
+  heldAt         DateTime? @db.Timestamptz(3)                      // HELD_* に入った時刻。A-005 項目 13 の「到達時刻」= MIN(held_at) WHERE status='HELD_PROVIDER_QUOTA'
   sesMessageId   String?
   sentAt         DateTime? @db.Timestamptz(3)
   failureReason  String?
   @@unique([dedupeKey])                                            // 🔴 再試行しても 1 通
   @@index([tenantId, status, sentAt])
+  @@index([status, heldAt])                                        // send.hold-release の走査（HELD_* を heldAt 昇順）と A-005 項目 13 の件数
   @@map("email_dispatches")
 }
 model EmailEvent {                                                 // SES のバウンス・苦情（SNS。at-least-once）
@@ -1849,8 +1851,7 @@ type UsageView = {
   email:   { usedToday: number; dailyLimit: number; usedLastMinute: number; minuteLimit: number; onExceed: 'STOP_DAILY_DEFER_MINUTE' };
   seats:   { used: number; limit: number };
 };
-// 運営者向け GET /api/admin/usage（API-A6）だけが { costUsd, capUsd, consumptionRate, baselineRatio, units } を返す（docs/03 §7.6.3-2）。
-// 🔴 §17.2 #18 が「apps/web/app/api/(main)/** の応答型に /Usd|usd/ を含むプロパティ名が無い（overageEstimateJpy を除く）」ことを検査する。
+// 運営者向け GET /api/admin/usage（API-A6）だけが { costUsd, capUsd, consumptionRate, baselineRatio, units } を返す（docs/03 §7.6.3-2）。🔴 §17.2 #18 が「apps/web/app/api/(main)/** の応答型に /Usd|usd/ を含むプロパティ名が無い（overageEstimateJpy を除く）」ことを検査する。
 ```
 🔴 **パートナー所属ロールにはこの応答を返さない**（`F-027 AC-1` / `docs/02` 章 4.2 の補足）。代わりに `GET /api/usage/blocked-notice` が「停止の事実と理由」だけを返す。
 
@@ -2054,7 +2055,7 @@ type SubmitAccepted = { attemptSeq: number; jobId: string; state: 'SUBMITTING' }
 | API-A5 | 🔴 `POST /api/admin/tenants/{id}/owner-invitation` | `F-001` / `A-014` | **0** | 同上。🔴 **API-A4 と分離**（`docs/04` 申し送り 14。招待失敗でテナントを作り直させない）。`invitations` に `INSERT`（§5.2 の `WITH CHECK` で `OWNER` 限定）→ `account.mail` を enqueue（§9.4） |
 | API-A6 | `GET /api/admin/usage` / `PUT /api/admin/tenants/{id}/quota` | `F-057` / `A-004` | 1 | 閲覧 `PO`/`PP`、**変更 `PO` のみ**（`F-057 AC-2`）。🔴 **応答は金額と件数の両方 + 消費率 + 基準比の倍率**（`docs/03` §7.6.3-2。金額はここと API-A15 にのみ現れる）。PUT body `{ quotaOverrideUsd?, unitQuotaOverride?: Partial<Record<AiUnit, number>>, effectiveFrom }`。引き下げは `effectiveFrom` 必須 |
 | API-A7 | `GET /api/admin/audit-logs` | `F-058` / `A-006` | 1 | 🔴 **`from` / `to` 必須**（`docs/03` 申し送り 9 / §8.3-3）。応答はマスク済み |
-| API-A8 | `GET /api/admin/monitoring` | `F-059` / `A-005` | 1→2→3 | `PO`/`PP`。項目ごとに独立して返す（`docs/04` §10.2 の `A-005`） |
+| API-A8 | `GET /api/admin/monitoring` | `F-059` / `A-005` | 1→2→3 | `PO`/`PP`。項目ごとに独立して返す（`docs/04` §10.2 の `A-005`）。🔴 項目 13（`F-059 AC-7`。§16.5）は `items[kind='MAIL_PROVIDER_QUOTA']: { scope: 'ENVIRONMENT'; providerReading: { available: true; max24h: number; sentLast24h: number; consumptionRate: number; observedAt: string } \| { available: false; localSentLast24h: number; lastObservedAt: string \| null }; reachedAt: string \| null; nearingSince: string \| null; heldCount: number }` — **`tenantId` を型に持たない**（環境全体。`A-003` / `A-004` への導線なし）。🔴 **クォータ API（`GetSendQuota`）が取得できないときは `available: false` を返し、`max24h` / `consumptionRate` を 0 で埋めない**。`available: false` が `A-005` の「上限を確認できていません」表示の唯一の根拠であり、`localSentLast24h`（Redis ZSET `mail:provider:sent24h`）は参考値として併記する（`docs/04` 申し送り 16）。宛先・本文・テンプレート名を含まない。🔴 項目 14（送信保留の理由別内訳。§16.5）は `items[kind='SEND_HOLD']: { byReason: Record<SendHoldReasonKey, { scope: 'TENANT'; rows: Array<{ tenantId: string; proposals: number; contracts: number; oldestSince: string \| null }> } \| { scope: 'ENVIRONMENT'; proposals: number; contracts: number; oldestSince: string \| null }> }`（`SendHoldReasonKey` = §10.4 の 7 値。🔴 **`PROVIDER_QUOTA` のみ `scope: 'ENVIRONMENT'` で `tenantId` を持たず（`docs/04` 申し送り 16）、`RATE_LIMIT` を含む他 6 値は `scope: 'TENANT'` のテナント行を持つ（画面の導線は `docs/04` §4.9 に従い、`RATE_LIMIT` は `A-004`、それ以外のテナント行は `A-003`）**。件数・時刻のみ）。🔴 項目 15（削除予告の未配送。`F-064 AC-10`。§16.5）は `items[kind='PURGE_NOTICE_PENDING']: { rows: Array<{ tenantId: string; cause: 'NOTICE_PENDING' \| 'NOTICE_UNDELIVERED'; overdueDays: number }> }`（`PURGE_JOB_FAILED` とは別 `kind`。宛先・本文を含まない） |
 | API-A9 | `POST /api/admin/impersonations` | `F-060` / `A-007` | 2 | `PO`/`PP`。`{ tenantId, reason }` → `{ sessionId, expiresAt }` |
 | API-A10 | `GET /api/admin/impersonations` / `POST /{id}/end` | `F-060` / `A-008` | 2 | 強制終了は `PO` のみ |
 | API-A11 | `GET/POST /api/admin/announcements` | `F-061` / `A-009` | 2 | 作成 `PO`、閲覧 `PP` |
@@ -2321,6 +2322,7 @@ export interface EmailSender {
     token: SendAttemptToken | DispatchToken;      // 🔴 経路を強制（§10.2）
   }): Promise<{ externalId: string }>;
   callCount(): number;                             // 🔴 モックと実装の共通シグネチャ（§13.3）
+  getQuota(): Promise<ProviderQuota>;              // 🔴 送信基盤（アカウント）全体の 24h 枠。SES = GetAccount().SendQuota（v1 の GetSendQuota 相当）/ モック = 自身の 24h 送信数（§8.3-Q）。ProviderQuota = { max24h: number; sentLast24h: number; observedAt: Date }。取得失敗は throw（0 を返さない）。§16.5 項目 13 の集計層が捕捉し API-A8 の providerReading.available=false に落とす
 }
 
 export interface ObjectStore {
@@ -2406,8 +2408,7 @@ export type RecipientFacts = {
 // packages/db 側。🔴 呼び出し側に自己申告させない
 export function resolveRecipientClass(db: TenantDb, subject: { userId: string } | { invitationId: string } | null,
                                       fallback: 'CLIENT' | 'ENGINEER'): Promise<RecipientClass>;
-// subject が null（テナント外の宛先）のときのみ fallback を使う。招待中の本人は Invitation.partner_company_id の
-// 有無で HOST_MEMBER / PARTNER_MEMBER に分類する（CLAUDE.md §11.1「招待中の本人を含む」。account.mail が使う。§9.4）。
+// subject が null（テナント外の宛先）のときのみ fallback を使う。招待中の本人は Invitation.partner_company_id の有無で HOST_MEMBER / PARTNER_MEMBER に分類する（CLAUDE.md §11.1「招待中の本人を含む」。account.mail が使う。§9.4）。
 ```
 | 担保 | 手段 |
 |---|---|
@@ -2445,6 +2446,7 @@ export function requireVerifiedSendingDomain(ctx): asserts ctx is CtxWithVerifie
 | 🔴 **SES Tenants と identity**（`docs/03` §3.2.1-3 / §3.2.7） | テナント開設（API-A4）または #71 が `domain.provision` ジョブを enqueue: `CreateTenant('t-{tenantId}')`（既存なら no-op）→ `CreateEmailIdentity(domain, ConfigurationSet=環境の set)` → `PutEmailIdentityMailFromAttributes('mail.' + domain)` → `CreateTenantResourceAssociation`（独自ドメイン identity と**共通ドメイン identity の両方**を関連付ける。分類 1 / 外の送信も `TenantName` を付けてテナント別レピュテーションに乗せる）→ `dkimTokens` / `mailFromDomain` を保存し `state='PENDING'`。**`EmailSender.send` は `SendEmail` に `TenantName` と `FromEmailAddress` を必ず渡す**（テナント別サプレッション・レピュテーション自動停止が効く） |
 | **検証**（#72 / `S-036`） | `domain.verify` ジョブ: `GetEmailIdentity` で `VerifiedForSendingStatus` + DKIM `Status` + MailFrom `Status` がすべて `SUCCESS` → `verifiedAt=now, state='VERIFIED'`、それ以外 → `state='FAILED', lastFailureReason`（「CNAME が見つかりません」等の i18n キー）。日次 `domain.recheck`（§9.9）が検証済みを再確認し、外れていたら `verifiedAt=NULL, state='FAILED'`（失効）→ 以後の送信は保留 + `A-005` + 通知 |
 | **運営者** | `A-014` 5b はドメインの**登録だけ**（`INSERT`。§5.2）。`A-005` 項目 11 = `tenants(lifecycle_state ∈ {ACTIVE}) LEFT JOIN tenant_sending_domains(state='VERIFIED')` が無い / `FAILED` のテナントを `created_at` からの経過日数付きで出す（`F-059 AC-5`。内容には立ち入らない）。`SANDBOX → ACTIVE` の移行は `verifiedAt IS NOT NULL` をサーバ側で再検証（§5.4） |
+| 🔴 **Q. 送信基盤（SES アカウント）全体のクォータ到達による保留 `HELD_PROVIDER_QUOTA`**（`F-059 AC-7` / `docs/02` 章 7.7「送信基盤（環境全体）の上限到達時の保留と復帰」/ `A-005` 項目 13。**TBD-12 の決着**） | 🔴 **テナント単位の日次上限（`F-027` 500 通 / 日。§8.7）とは別の枠**であり、SES アカウント（環境）全体で 24 時間ローリングの送信数上限がある（`sandbox` = SES サンドボックス状態のまま **200 通 / 24h**。`docs/03` §3.2.4）。到達している間は**外部への送信を 1 回も試みずに保留し、枠が回復したら自動で送る**（送信を試みていないので `BR-22` の自動リトライ禁止に当たらない。`docs/02` 章 7.7-①）。**判定はアプリ層で行い、SES の 429 / 例外に頼らない**（`CLAUDE.md` §3.4）: ①**判定位置** = `email.dispatch` / `account.mail` の**送信直前・`QUEUED → SENT` の CAS 相当更新より前**（`HELD_DOMAIN_UNVERIFIED` の判定と同じ位置。ドメイン判定 → クォータ判定の順）②**判定関数** = `packages/domain/src/quota/provider.ts` の純粋関数 `decideProviderQuota({ envLimit, provider: ProviderQuota \| null, localSent24h, now }): { kind:'ALLOW'; headroom: number } \| { kind:'HOLD' }`。`limit = min(envLimit, provider?.max24h ?? envLimit)`、`consumed = max(localSent24h, provider?.sentLast24h ?? 0)`、`consumed + 1 > limit` なら `HOLD`。`envLimit` は **`MAIL_PROVIDER_DAILY_QUOTA`**（`packages/config` §13.4。既定 `sandbox` / `development` / `demo` = 200、`staging` / `production` は既定なし = 必須。SES に付与された枠を超えて設定しても `min` で SES 側の値に丸まる）③**入力の取得** = `provider` は `EmailSender.getQuota()`（§8.1。SES `GetAccount`。Redis に 60 秒キャッシュ。取得失敗は `null` として `localSent24h` のみで判定 = 止めない側に倒さず**手元のカウンタで判定を続ける**）、`localSent24h` は Redis ZSET `mail:provider:sent24h`（`SesEmailSender.send` が実送信成功のたびに `ZADD score=now`、`ZREMRANGEBYSCORE` で 24h より古いものを落とす。**単一経路の内側で加算するので呼び出し側が忘れられない**。🔴 `SandboxEmailSender` で分類 2 / 3 / 4 をモック sink に流した分は加算しない = 枠を消費していないものを数えない）④**抵触時** = `UPDATE email_dispatches SET status='HELD_PROVIDER_QUOTA', held_at=now() WHERE id=$1 AND status='QUEUED'` → 外部を呼ばず**ジョブは正常終了**（throw しない = BullMQ の `attempts: 3` に乗らない。`FAILED` にしない。`failureReason` を書かない）。`account.mail` は平文トークンが payload と共に消えるため**復帰はトークンの再発行**（`HELD_DOMAIN_UNVERIFIED` と同じ手順を共用。§9.4）。#14 / #5 の応答 `deliveryState` に `'HELD_PROVIDER_QUOTA'` を加える（招待は作成される。送達は枠の回復後。利用者に「失敗」と見せない。`docs/02` 章 7.7-③）⑤**事後の安全網（🔴 適用先は `email.dispatch` / `account.mail` に限る）** = ③の判定をすり抜けて `SendEmail` が**日次枠超過を同期的に拒否**した場合（SESv2 `LimitExceededException` / `TooManyRequestsException` でメッセージが `Daily message quota exceeded` のもの。v1 の `Throttling` 相当。**`Maximum sending rate exceeded`（秒間レート）は別物で §8.7 のトークンバケット / 一時エラーの再試行に属する**）は `ses.ts` が `ProviderQuotaExceededError` に正規化し、ハンドラは④と同じ `HELD_PROVIDER_QUOTA` に置く（SES が拒否した送信は届いていないため安全。`FAILED` ではなく保留。`EmailDispatch` 行の UPDATE で完結する）。🔴 **`send.*` には適用しない** — `send.*` は `EmailDispatch` 行を持たず、①-e の事前判定を通過して CAS（`SUBMITTING` / `SENDING`）に入った後で SES が同期的に日次枠超過を返した稀な競合は、**外部呼び出しを 1 回行った以上 `SUBMIT_FAILED` / `SEND_FAILED` に落とす**（§10.2 ⑥ の明示的失敗。`BR-22` に忠実。復帰は人間の再送 #44 / #61 のみ。事前判定 ①-e が主経路でありこの競合は稀）⑥**射程** = 🔴 **本機構の対象は分類 1（テナント所属利用者宛）と分類外（運営者宛）= 実際に SES の枠を消費する送信**である。**業務上の外部送信（分類 2 / 3 / 4）は `sandbox` ではモックであり SES を通らないため本機構に入らない**。`production` では分類 2 / 3 も同じアカウントの枠を消費するため、`send.*` は §10.2 ①-e で同じ `decideProviderQuota` を評価し、`HOLD` なら **`sendHoldReasonKey='PROVIDER_QUOTA'`（7 番目の値。§10.4）で保留**する（`Proposal` は `APPROVED`、`Contract` は `DRAFT` のまま。`SUBMITTING` / `SENDING` に入れず `SUBMIT_FAILED` / `SEND_FAILED` にも落とさない。`docs/02` 章 7.7-②）。🔴 **`RATE_LIMIT`（テナント日次上限 = テナントの利用量。`decideQuota('EMAIL_COUNT')` の BLOCK）と DB で区別する** — 対処する相手が異なり（`F-059 AC-7`）、混ぜると環境枠で止まったテナントに `S-038` を案内してしまう。**状態は増やさない**（属性値の追加。`P-A-02` と同じ論法）⑦**指標** = `HELD_PROVIDER_QUOTA` と `sendHoldReasonKey='PROVIDER_QUOTA'` は失敗ジョブ数・未対応 `SUBMIT_FAILED` / `SEND_FAILED`・ゲート FAIL 率のいずれにも加算しない（§16.5 項目 13 / 項目 14 の理由別内訳） |
 | **`sandbox` の例外** | 🔴 `APP_ENV='sandbox'` では分類 2 / 3 / 4 がモックのため、**そもそも取引先に届かない**。`requireVerifiedSendingDomain` は `sandbox` では通過させ、#72 は `NOT_REQUIRED` を返す（`docs/03` §3.2.7-4）。`resolveRecipientClass` の判定順（②パートナー所属 → ③テナント所属）が「取引先担当者はテナント所属でもモック」（Issue #10）をそのまま満たす（§8.2） |
 | **状態として返す** | `GET /api/settings/sending-domains` は `state` を返す。**エラーではない**（`docs/04` 申し送り 8 / `S-036`） |
 
@@ -2581,8 +2583,7 @@ export interface RealtimeBus {
 
 ```ts
 // packages/connectors/src/queues.ts
-type ExternalSendQueueOptions = { attempts: 1; backoff?: undefined };   // 🔴 リテラル 1 固定
-type InternalQueueOptions     = { attempts: 1 | 2 | 3; backoff?: BackoffOptions };
+type ExternalSendQueueOptions = { attempts: 1; backoff?: undefined };  type InternalQueueOptions = { attempts: 1 | 2 | 3; backoff?: BackoffOptions };   // 🔴 前者はリテラル 1 固定
 
 export const externalSendQueue = <N extends ExternalSendJobName>(name: N) =>
   new Queue(name, { defaultJobOptions: { attempts: 1 } satisfies ExternalSendQueueOptions });
@@ -2618,9 +2619,9 @@ export function systemTenantCtx(tenantId: string, job: JobIdentity): HostTenantC
 | `send.proposal` | `{ tenantId, proposalId, attemptSeq }` | §10.3 の順序 | 🔴 **`attempts: 1`。禁止** | p95 60 秒（`docs/02` 章 7.1） | CAS + `SendAttempt` の 2 本の `UNIQUE` |
 | `send.interview-invite` | `{ tenantId, proposalId, attemptSeq }` | 同上（`F-041`） | 🔴 `attempts: 1` | p95 60 秒 | 同上 |
 | `send.contract` | `{ tenantId, contractId, documentVersion, attemptSeq }` | 同上（`F-047` / `F-049`） | 🔴 `attempts: 1` | p95 60 秒 | 同上。**外部書類 ID があれば先に `fetchStatus` で照会**（`docs/03` §3.1.4-5） |
-| `email.dispatch` | `{ dispatchId }` | 分類 1 / 分類外の運用メール | `attempts: 3`（バックオフ 5s/30s） | p95 10 秒 | 🔴 `EmailDispatch.dedupeKey` の `UNIQUE`。**再試行しても 1 通** |
-| `account.mail` | `{ tenantId, kind:'INVITATION'\|'PASSWORD_RESET', targetId, token }` | `systemTenantCtx` で `EmailDispatch` を作成し `resolveRecipientClass({ invitationId } \| { userId })` で分類して送る（API-A5 / #5 / #14 から enqueue。管理平面と未認証経路は `EmailDispatch` を直接書けないため）。🔴 **分類 2（取引先招待。`F-007`）は `production` で `TenantSendingDomain.verifiedAt` を確認し、未検証なら `status='HELD_DOMAIN_UNVERIFIED'` で外部を呼ばない**（§8.3。`fromDomain` は独自ドメイン。共通ドメインに落とさない）。🔴 **平文トークンは payload にのみ載せ**（Redis。完了で消える）、**DB・ログには載せない**（denylist `token`） | `attempts: 3` | p95 10 秒 | `EmailDispatch.dedupeKey = '{kind}:{targetId}:{sha256(token) の先頭 16 桁}'` |
-| `send.hold-release` | 毎 10 分（スケジュール） | 🔴 **保留の自動復帰**（§10.4）。`sendHoldReasonKey IS NOT NULL` の行を再判定し、解消していれば NULL にして `send.*` を**同じ `attemptSeq` で再 enqueue**。🔴 **`GATE_STALE` は対象外**（§10.5）。加えて `email_dispatches(status='HELD_DOMAIN_UNVERIFIED')` を走査し、ドメインが `VERIFIED` なら **§8.3 の手順（HELD 行の CAS → 期限判定 → `Invitation.tokenHash` の再発行 → 新トークンで `account.mail` を enqueue）**。平文トークンは保留中どこにも残っていないため、再発行以外に送る手段は無い | `attempts: 3` | p95 10 秒 | 再判定は冪等。再 enqueue 後も §10.2 の ①②③ を最初から通る。招待は HELD 行の CAS で 1 通（`dedupeKey` は新トークンで変わる。§8.3） |
+| `email.dispatch` | `{ dispatchId }` | 分類 1 / 分類外の運用メール。🔴 **送信直前（`QUEUED → SENT` 更新の前）に §8.3-Q の `decideProviderQuota` を評価し、`HOLD` なら `status='HELD_PROVIDER_QUOTA', heldAt=now` で外部を呼ばず正常終了**（throw しない = 再試行に乗らない。`FAILED` にしない） | `attempts: 3`（バックオフ 5s/30s） | p95 10 秒 | 🔴 `EmailDispatch.dedupeKey` の `UNIQUE`。**再試行しても 1 通** |
+| `account.mail` | `{ tenantId, kind:'INVITATION'\|'PASSWORD_RESET', targetId, token }` | `systemTenantCtx` で `EmailDispatch` を作成し `resolveRecipientClass({ invitationId } \| { userId })` で分類して送る（API-A5 / #5 / #14 から enqueue。管理平面と未認証経路は `EmailDispatch` を直接書けないため）。🔴 **分類 2（取引先招待。`F-007`）は `production` で `TenantSendingDomain.verifiedAt` を確認し、未検証なら `status='HELD_DOMAIN_UNVERIFIED'` で外部を呼ばない**（§8.3。`fromDomain` は独自ドメイン。共通ドメインに落とさない）。🔴 **平文トークンは payload にのみ載せ**（Redis。完了で消える）、**DB・ログには載せない**（denylist `token`）。分類 1 / 2 とも、送信直前に §8.3-Q の判定を通し `HOLD` なら `status='HELD_PROVIDER_QUOTA'` で外部を呼ばない（復帰はトークン再発行。下記） | `attempts: 3` | p95 10 秒 | `EmailDispatch.dedupeKey = '{kind}:{targetId}:{sha256(token) の先頭 16 桁}'` |
+| `send.hold-release` | 毎 10 分（スケジュール） | 🔴 **保留の自動復帰**（§10.4）。`sendHoldReasonKey IS NOT NULL` の行を再判定し、解消していれば NULL にして `send.*` を**同じ `attemptSeq` で再 enqueue**。🔴 **`GATE_STALE` は対象外**（§10.5）。🔴 **`PROVIDER_QUOTA`（§8.3-Q ⑥）は件数制限付き**: 実行の冒頭で `decideProviderQuota` を 1 回評価し、`ALLOW` の `headroom` を **`Proposal` / `Contract`（`sendHoldReasonKey='PROVIDER_QUOTA'`）と `EmailDispatch(HELD_PROVIDER_QUOTA)` が同じ枠として分け合う**。配分は `sendHoldSince` / `heldAt` の**古い順**に `headroom` 件だけ（残りは次回。全件を再 enqueue → 再保留の往復を 10 分ごとに繰り返させない）。`HOLD` なら `PROVIDER_QUOTA` 起因の行には触れない。加えて `email_dispatches(status IN ('HELD_DOMAIN_UNVERIFIED','HELD_PROVIDER_QUOTA'))` を `heldAt` 昇順で走査し、**`HELD_DOMAIN_UNVERIFIED`** はドメインが `VERIFIED` なら **§8.3 の手順（HELD 行の CAS → 期限判定 → `Invitation.tokenHash` の再発行 → 新トークンで `account.mail` を enqueue）**。🔴 **`HELD_PROVIDER_QUOTA`**（§8.3-Q）は**復帰条件を時刻で判定しない** — SES の枠はローリング 24 時間で固定時刻にリセットされない（`docs/03` §3.2.4）ため、実行のたびに `decideProviderQuota` を再評価し、`ALLOW` の `headroom` 件だけ古いものから復帰させる（残りは次回。一度に全件戻して再保留させない）。復帰手順: `templateKey` が `INVITATION` / `PASSWORD_RESET`（`account.mail` 由来。平文トークンが無い）なら **§8.3 のトークン再発行手順を共用**（①の CAS の `WHERE status='HELD_PROVIDER_QUOTA'` だけが違う）、それ以外の運用メールは `UPDATE ... SET status='QUEUED', held_at=NULL WHERE id=$1 AND status='HELD_PROVIDER_QUOTA'`（CAS。0 件なら他の実行が処理済み → 終了）→ commit 後に `email.dispatch{ dispatchId }` を再 enqueue。平文トークンは保留中どこにも残っていないため、再発行以外に送る手段は無い | `attempts: 3` | p95 10 秒 | 再判定は冪等。再 enqueue 後も §10.2 の ①②③ を最初から通る。招待は HELD 行の CAS で 1 通（`dedupeKey` は新トークンで変わる。§8.3）。🔴 **`HELD_PROVIDER_QUOTA` の復帰も CAS + `dedupeKey` の `UNIQUE` で 1 通**（再 enqueue された `email.dispatch` は §8.3-Q の判定を最初から通る = 復帰を経たものだけが判定を免れる経路を作らない） |
 | `webhook.process` | `{ deliveryId }` | §8.5 の受信後処理（プロバイダ別）。🔴 `WebhookDelivery` / `EmailEvent` は **C0** なので `withSystemScope()`（§4.4.2）で扱い、テナントが判明した後の業務更新だけを `withTenant(system)` に切り替える | `attempts: 3` | p95 10 秒 | `WebhookDelivery.dedupeKey` の `UNIQUE` + `processedAt` の CAS |
 
 🔴 **`email.dispatch` だけ `attempts: 3` を許す理由**: 宛先が**自テナントの利用者または運営者**（分類 1 / 分類外）に限られ、`BR-21`（取引先への二重送信）の射程外である。それでも二重送信を避けるため `dedupeKey` の `UNIQUE` で冪等化する。**分類 2 / 3 / 4 の宛先を `email.dispatch` に渡せない**よう、payload の型を `HostOrPlatformDispatch` に限定する。`account.mail` の宛先は招待中の本人 / 本人に限られ（分類 1 または 2。`sandbox` では 2 がモック）、業務上の外部送信を載せる型を持たない。
@@ -2654,8 +2655,9 @@ export function systemTenantCtx(tenantId: string, job: JobIdentity): HostTenantC
 | `retention.scan` | 毎日 02:00 JST | 🔴 **`Engineer.retentionExpiresAt <= today` かつ `piiPurgedAt IS NULL`** を抽出 → `retention.delete` を enqueue（`F-046`） | `attempts: 3` | 未処理条件 |
 | `retention.notify` | 毎日 02:05 JST | 削除の 14 日前予告をテナント管理者へ（`F-046 AC-3`） | `attempts: 3` | `EmailDispatch.dedupeKey` |
 | `retention.delete` | イベント | 🔴 **①S3 の `DeleteObject` → ②DB の列を NULL 化し `piiPurgedAt` を立てる の順**。①が失敗したら②に進まない（`docs/03` §4.12） | `attempts: 3` | ②が終わるまで再実行対象に残る |
-| `tenant.purge-scan` | 毎日 02:10 JST | 🔴 **`lifecycleState='CLOSING'` かつ `closingEnteredAt + 30日 <= today`** → `tenant.purge` を enqueue（`F-064 AC-1`） | `attempts: 3` | 未処理条件 |
-| `tenant.purge` | イベント | `TenantPurgeRun` を `RUNNING` で作成 → **エンジニアの連絡先 / スキルシート原本 / チャット本文を削除** → `lifecycleState='PURGED'` → `TenantPurgeRun` を `COMPLETED` + `counts`（`F-064 AC-2`） | `attempts: 3` | `TenantPurgeRun` の状態と各対象の `purgedAt` |
+| `tenant.closing-notify` | 毎日 02:08 JST | 🔴 **削除予告（`F-064 AC-10`）。`CLOSING → PURGED` の予告で、`retention.notify`（`F-046`）/ `tenant.sandbox-notify`（`F-054 AC-9`）とは別物。** 対象 = `lifecycleState='CLOSING'` のテナントの `OWNER` / `ADMIN`（`SANDBOX` 由来なら見込み客 = `OWNER`）。2 段: `phase='ENTERED'`（`closingEnteredAt <= today`。削除予定日を明記）/ `phase='D7'`（`closingEnteredAt + 23日 <= today`）。各段は「期限を過ぎ、かつ未処理」で起票し、`EmailDispatch(templateKey='TENANT_CLOSING_NOTICE', dedupeKey='TENANT_CLOSING_NOTICE:{tenantId}:{phase}:{yyyymmdd}:{recipientHash}')` を作成して `email.dispatch` を enqueue（分類 1 = 🔴 **`sandbox` でも実送信**。環境枠到達時は `HELD_PROVIDER_QUOTA` で保留され `send.hold-release` が配送する。§8.3-Q）。「未処理」= 当該 `(tenantId, phase)` に `status IN ('QUEUED','HELD_PROVIDER_QUOTA','SENT','MOCKED')` の行が無いこと。`FAILED`（宛先全員バウンス等）なら翌日に再起票（`dedupeKey` に日付を含むため `UNIQUE` に当たらない）し、`A-005` 項目 15 に `cause='NOTICE_UNDELIVERED'` で出す | `attempts: 3` | 未処理条件 + `EmailDispatch.dedupeKey` |
+| `tenant.purge-scan` | 毎日 02:10 JST | 🔴 **`lifecycleState='CLOSING'` かつ `closingEnteredAt + 30日 <= today`**、🔴 **かつ予告が配送済み（`F-064 AC-10`）** = `email_dispatches(tenantId, templateKey='TENANT_CLOSING_NOTICE')` に `status IN ('SENT','MOCKED')` の行が 1 件以上あり、**`status IN ('QUEUED','HELD_PROVIDER_QUOTA')` の行が 0 件** → `tenant.purge` を enqueue（`F-064 AC-1`）。🔴 **`MOCKED` を配送済みとみなすのは、送信系が全てモックの `development` / `demo` に限る。`sandbox` の `TENANT_CLOSING_NOTICE` は分類 1（`CLAUDE.md` §11.1 / `F-054 AC-9`）であり実送信されるため `MOCKED` にならない**（§13.2 の「疑似送信の記録」を配送済みの根拠にしない）。🔴 **予告が `HELD_PROVIDER_QUOTA` / `QUEUED` の間は enqueue せず次回に持ち越す**（上限到達を理由に予告を省いて削除に進む経路を作らない。`docs/02` 章 7.7-④）。予告が無い / 未配送のテナントは満了後も残るため `A-005` 項目 15 に `cause='NOTICE_PENDING'` で出す（件数・状態のみ。§16.5） | `attempts: 3` | 未処理条件 |
+| `tenant.purge` | イベント | 🔴 **開始時に `tenant.purge-scan` と同じ配送確認を再評価し（二重）、満たさなければ何もせず正常終了** → `TenantPurgeRun` を `RUNNING` で作成 → **エンジニアの連絡先 / スキルシート原本 / チャット本文を削除** → `lifecycleState='PURGED'` → `TenantPurgeRun` を `COMPLETED` + `counts`（`F-064 AC-2`） | `attempts: 3` | `TenantPurgeRun` の状態と各対象の `purgedAt` |
 | `tenant.sandbox-expiry` | 毎日 02:15 JST | `SANDBOX` かつ `sandboxExpiresAt <= today` → `CLOSING`（`F-054 AC-4`） | `attempts: 3` | 状態 CAS |
 | `tenant.sandbox-notify` | 毎日 02:20 JST | 期限の 7 日前 / 1 日前に見込み客へ予告（🔴 **分類 1 = `sandbox` でも実送信**。`F-054 AC-9`） | `attempts: 3` | `EmailDispatch.dedupeKey` |
 
@@ -2663,14 +2665,10 @@ export function systemTenantCtx(tenantId: string, job: JobIdentity): HostTenantC
 
 ```ts
 export const PURGE_SPEC = {
-  delete: [ { table: 'engineers', columns: ['contact_email', 'contact_phone', 'birth_date', 'preference_note'] },
-            { table: 'skill_sheets', objects: 's3', columns: ['object_key'] },   // contract_documents / contract_templates も同様
-            { table: 'skill_sheet_extractions', columns: ['payload'] }, { table: 'messages', columns: ['body', 'attachment_key'] } ],
-  retain: [ { table: 'audit_logs', reason: '法令上の保持義務がある範囲', policy: 'RETAIN_ALL' },
-            { table: 'ai_usage', reason: '請求根拠', policy: 'RETAIN_ALL' }, { table: 'usage_counters', reason: '請求根拠', policy: 'RETAIN_ALL' } ],
+  delete: [ { table: 'engineers', columns: ['contact_email', 'contact_phone', 'birth_date', 'preference_note'] }, { table: 'skill_sheets', objects: 's3', columns: ['object_key'] } /* contract_documents / contract_templates も同様 */, { table: 'skill_sheet_extractions', columns: ['payload'] }, { table: 'messages', columns: ['body', 'attachment_key'] } ],
+  retain: [ { table: 'audit_logs', reason: '法令上の保持義務がある範囲', policy: 'RETAIN_ALL' }, { table: 'ai_usage', reason: '請求根拠', policy: 'RETAIN_ALL' }, { table: 'usage_counters', reason: '請求根拠', policy: 'RETAIN_ALL' } ],
 } as const;
-// 🔴 暗黙の全件削除・全件保持にしない。§17.2 のテストが「業務テーブルの全部が
-//    delete か retain のどちらかに現れる」ことをカタログ走査で検証する。
+// 🔴 暗黙の全件削除・全件保持にしない。§17.2 のテストが「業務テーブルの全部が delete か retain のどちらかに現れる」ことをカタログ走査で検証する。
 ```
 ### 9.8 計測・集計・課金
 
@@ -2751,7 +2749,8 @@ send.proposal(payload: { tenantId, proposalId, attemptSeq })
      b. 提案の状態:        state === 'APPROVED' か（承認記録あり）
      c. ゲートの有効性:    ReviewGate.contentHash === Proposal.contentHash かつ全層 PASS（§11.5）
      d. 送信元ドメイン:    TenantSendingDomain.verifiedAt IS NOT NULL（§8.3。sandbox は免除）
-     e. レート上限:        decideQuota('EMAIL_COUNT') が ALLOW か DEFER か BLOCK か
+     e. レート上限:        decideQuota('EMAIL_COUNT') が ALLOW か DEFER か BLOCK か（BLOCK → sendHoldReasonKey='RATE_LIMIT'）。加えて送信基盤全体の枠 decideProviderQuota（§8.3-Q）。
+                          HOLD → sendHoldReasonKey='PROVIDER_QUOTA'（🔴 RATE_LIMIT と別の値。テナントの利用量ではなく環境全体の制約。F-059 AC-7 / docs/02 章 7.7-②）
      f. コスト上限:        （提案送信では AI を使わないため該当なし）
      → 🔴 抵触したら「保留」にする（§10.4）。SUBMITTING に入れない。SUBMIT_FAILED にもしない。
      → DEFER（分次レート）は同じ attemptSeq のまま retryAfterSec 後に再スケジュール
@@ -2776,7 +2775,7 @@ send.proposal(payload: { tenantId, proposalId, attemptSeq })
 
   ⑥ 確定
      成功       → SendAttempt.status='SUCCEEDED' + Proposal.state='SUBMITTED' + ProposalEvent + AuditLog
-     明示的失敗 → SendAttempt.status='FAILED'    + Proposal.state='SUBMIT_FAILED'
+     明示的失敗 → SendAttempt.status='FAILED'    + Proposal.state='SUBMIT_FAILED'（CAS 後に SES が同期的に日次枠超過を返した稀な競合を含む。§8.3-Q ⑤。保留に戻さない）
      応答不明   → SendAttempt.status='UNKNOWN'   + Proposal.state='SUBMIT_FAILED'（§10.6）
 ```
 🔴 **なぜ事前判定を CAS の前に置くか**（設計の要）: 事前判定を CAS の後に置くと、**抑止・失効・上限到達が「失敗」に倒れる**。すると `SUBMIT_FAILED` になり、「失敗からの復帰は人間のみ」（`BR-22`）を守るために「この失敗は自動復帰してよい / よくない」という条件分岐が必要になる。**その分岐の誤りが二重送信に直結する。** 事前判定を先に置けば、抵触時は `SUBMITTING` に入らず `SUBMIT_FAILED` にもならないため、**分岐が要らない**。
@@ -2820,17 +2819,17 @@ type ExternalSendSpec<S> = {
 🔴 **`CLAUDE.md` §4.2 は状態の追加を禁じている。** したがって保留は**状態ではなく属性**で表現する。§3.6 の `Proposal` と §3.7 の `Contract` に次の 2 列を含める。
 
 ```prisma
-  sendHoldReasonKey String?                 // 'RATE_LIMIT'|'DOMAIN_UNVERIFIED'|'ESIGN_DISCONNECTED'
-                                            // |'TENANT_SUSPENDED'|'GATE_STALE'|'AI_COST_LIMIT'（CHECK）
+  sendHoldReasonKey String?                 // 'RATE_LIMIT'|'DOMAIN_UNVERIFIED'|'ESIGN_DISCONNECTED'|'TENANT_SUSPENDED'
+                                            // |'GATE_STALE'|'AI_COST_LIMIT'|'PROVIDER_QUOTA'（CHECK。7 値。RATE_LIMIT = テナント日次上限 / PROVIDER_QUOTA = 送信基盤（環境全体）の枠。§8.3-Q ⑥）
   sendHoldSince     DateTime? @db.Timestamptz(3)
 ```
 | 論点 | 設計 |
 |---|---|
 | **保留に入る条件** | §10.2 の ① に抵触したとき。**状態は `APPROVED`（契約書は `DRAFT`）のまま**、`sendHoldReasonKey` を立てる |
-| **自動復帰** | 🔴 **原因解消で `予約済` へ自動復帰する。** `send.hold-release` ジョブ（毎 10 分）が、`sendHoldReasonKey IS NOT NULL` の行について**原因が解消したか**を再判定し、解消していれば `sendHoldReasonKey` を NULL にして **`send.proposal` を再 enqueue する**（上限引き上げ・日次枠の回復・ドメイン検証完了・電子署名の再接続・テナントの `SUSPENDED` 解除がトリガ） |
+| **自動復帰** | 🔴 **原因解消で `予約済` へ自動復帰する。** `send.hold-release` ジョブ（毎 10 分）が、`sendHoldReasonKey IS NOT NULL` の行について**原因が解消したか**を再判定し、解消していれば `sendHoldReasonKey` を NULL にして **`send.proposal` を再 enqueue する**（上限引き上げ・日次枠の回復・送信基盤の枠の回復（`PROVIDER_QUOTA`。`headroom` 配分。§9.4）・ドメイン検証完了・電子署名の再接続・テナントの `SUSPENDED` 解除がトリガ） |
 | 🔴 **復帰した対象も必ず遅延判定を通る** | 再 enqueue されたジョブは §10.2 の ①②③ を**最初から通る**。**保留を経たものだけが遅延判定を免れる経路を作らない**（`runExternalSend` の入口が 1 つしかないため、構造的に迂回できない） |
 | 🔴 **失敗率の指標に混入させない** | 保留は `SUBMIT_FAILED` ではないため、`F-051` の障害率にも `A-005` の「未対応の `SUBMIT_FAILED`」にも入らない。**`A-005` には「送信保留」という別項目として出す**（`F-059 AC-2` の「失敗と保留・完了を混ぜない」）。`S-021` / `S-022` にも別の表示として出す（`docs/04` 申し送り 8） |
-| **利用者への提示** | `docs/04` `S-036` / `S-037` の規律に従い、「壊れている」ではなく「送信元ドメインが未設定」「電子署名が未接続」「上限に達しているため保留中」として理由と設定導線を示す |
+| **利用者への提示** | `docs/04` `S-036` / `S-037` の規律に従い、「壊れている」ではなく「送信元ドメインが未設定」「電子署名が未接続」「上限に達しているため保留中」（`RATE_LIMIT`。`S-038` へ導線）として理由と設定導線を示す。🔴 **`PROVIDER_QUOTA` は「送信基盤の混雑により保留中。お客様側の設定では解消しません。自動で再送されます」とし、`S-038` への導線を出さない**（環境全体の制約であり残量潤沢な `S-038` に誘導しても打つ手が無い。`F-059 AC-7`）。文言は `packages/i18n` の `sendHold.{reasonKey}` |
 
 ### 10.5 遅延保留（状態にしない）
 
@@ -3270,6 +3269,7 @@ export class MockEmailSender implements EmailSender {
     return { externalId: `mock-${randomUUID()}` };
   }
   callCount(): number { return this.calls.length; }
+  async getQuota(): Promise<ProviderQuota> { const since = Date.now() - 86_400_000; return { max24h: env.MAIL_PROVIDER_DAILY_QUOTA, sentLast24h: this.calls.filter(c => c.at.getTime() > since).length, observedAt: new Date() }; }   // 🔴 §8.3-Q。E2E は MAIL_PROVIDER_DAILY_QUOTA を小さく設定して到達を再現する（テスト専用フックを作らない）
   callsOf(cls: RecipientClass): MockCall[] { return this.calls.filter(c => c.recipientClass === cls); }
 }
 ```
@@ -3293,11 +3293,11 @@ export class MockEmailSender implements EmailSender {
 
 ```ts
 // packages/config/src/env.ts
-const base = z.object({ /* §6 の共通項目 */ });
+const mailQuota = z.coerce.number().int().positive();  const base = z.object({ /* §6 の共通項目 */ MAIL_PROVIDER_DAILY_QUOTA: mailQuota, MAIL_PROVIDER_QUOTA_WARN_RATIO: z.coerce.number().min(0).max(1).default(0.8) });   // 🔴 MAIL_PROVIDER_DAILY_QUOTA = 送信基盤全体の 24h 枠（§8.3-Q）。staging / production は既定なし = 未設定なら起動失敗
 export const envSchema = z.discriminatedUnion('APP_ENV', [
-  base.extend({ APP_ENV: z.literal('development'), /* 実装系は mock 固定 */ }),
-  base.extend({ APP_ENV: z.literal('demo'),        MALWARE_SCANNER: z.literal('mock') }),
-  base.extend({ APP_ENV: z.literal('sandbox'),     ANTHROPIC_API_KEY: z.string().startsWith('sk-ant-'),
+  base.extend({ APP_ENV: z.literal('development'), MAIL_PROVIDER_DAILY_QUOTA: mailQuota.default(200) /* 実装系は mock 固定 */ }),
+  base.extend({ APP_ENV: z.literal('demo'),        MALWARE_SCANNER: z.literal('mock'), MAIL_PROVIDER_DAILY_QUOTA: mailQuota.default(200) }),
+  base.extend({ APP_ENV: z.literal('sandbox'),     ANTHROPIC_API_KEY: z.string().startsWith('sk-ant-'), MAIL_PROVIDER_DAILY_QUOTA: mailQuota.default(200),   // SES サンドボックスの 200 通 / 24h（docs/03 §3.2.4）
                                                     MALWARE_SCANNER: z.enum(['guardduty','clamav']) }),
   base.extend({ APP_ENV: z.literal('staging'),     /* ... */ }),
   base.extend({ APP_ENV: z.literal('production'),  // 🔴 モックを型として選べない
@@ -3536,13 +3536,15 @@ export const logger = pino({
 | 失敗ジョブ数 | BullMQ の failed（キュー別）。🔴 `gate.run` の failed は §9.10 の再依頼（#39）で `Job.remove()` されるため、再依頼が行われると減る（意図どおり。未対応分だけが残る） | 1 |
 | 🔴 `SUBMITTING` 滞留 | `proposals` の部分インデックス（`WHERE state='SUBMITTING'`）+ `updated_at` | 1 |
 | 未対応の `SUBMIT_FAILED` | `state='SUBMIT_FAILED'` かつ `updated_at` が閾値超過 | 1 |
-| 🔴 **送信保留**（`sendHoldReasonKey IS NOT NULL`） | 🔴 **失敗とは別項目**（§10.4） | 1 |
+| 🔴 **送信保留（理由別内訳）**（`sendHoldReasonKey IS NOT NULL`。`A-005` 項目 14。`docs/04` に並行追加） | 🔴 **失敗とは別項目**（§10.4）。`proposals` / `contracts` を **`GROUP BY sendHoldReasonKey, tenant_id`** し、理由 × テナントの件数と `MIN(sendHoldSince)` を出す。🔴 **`PROVIDER_QUOTA`（環境全体の制約）だけは `tenant_id` を落として 1 行に畳み（`scope: 'ENVIRONMENT'`）、`RATE_LIMIT`（テナントの利用量）を含む他 6 値はテナント行（`scope: 'TENANT'`）を持つ（画面の導線は `docs/04` §4.9 に従い、`RATE_LIMIT` は `A-004`、それ以外のテナント行は `A-003`）。両者を混ぜて集計しない**（`F-059 AC-7` / `docs/04` 申し送り 16。対処する相手が異なる）。項目 13（`EmailDispatch` の `HELD_PROVIDER_QUOTA`）と合わせて環境枠の影響が運用メールと業務送信の両方で見える。🔴 **CAS 後に SES が同期拒否した稀な経路は `SUBMIT_FAILED` / `SEND_FAILED` に計上される**（§8.3-Q ⑤。`F-059 AC-7` の非加算は事前保留分のみ）。件数・理由・時刻のみで本文・宛先に立ち入らない（`BR-40`） | 1 |
 | ウイルススキャン失敗 / `SCANNING` 滞留 | `skill_sheets(tenantId, scanStatus, uploadedAt)` | 1 |
 | ゲート FAIL 率 | `review_gates(tenantId, execution, executedAt)` の日次比率と急変検知。🔴 **分母・分子とも `execution='DONE'` のみ**（HELD を混ぜない） | 1 |
 | 🔴 **`GATE_RUNNING` 滞留**（`F-059 AC-6`） | `proposals(state='GATE_RUNNING')` の `updated_at` 超過を、`review_gates(execution='HELD_AI_COST_LIMIT')` の有無で **`AI_COST_LIMIT` / `JOB_FAILED` に区別**して件数・滞留時間を出す。🔴 **`AI_COST_LIMIT` は失敗ジョブ数・ゲート FAIL 率・未対応 `SUBMIT_FAILED` のいずれにも加算しない**（失敗と保留を混同しない） | 1 |
 | 🔴 **送信ドメインが未検証・失効のテナント**（`F-059 AC-5`。`A-005` 項目 11） | §8.3。`ACTIVE` かつ `VERIFIED` 行が無い / `FAILED` のテナントと `created_at` からの経過日数。**このテナントは取引先へ 1 通も送れない**（オンボーディング停滞の兆候） | 1 |
+| 🔴 **メール送信基盤の上限到達・接近（環境全体）**（`F-059 AC-7`。`A-005` 項目 13） | §8.3-Q。データ源 = ①`email_dispatches(status='HELD_PROVIDER_QUOTA')` の件数（`heldCount`）と `MIN(held_at)`（`reachedAt`。`withPlatform` の読み取り）②`EmailSender.getQuota()` の `Max24HourSend` / `SentLast24Hours`（Redis の 60 秒キャッシュ経由。`sentLast24h = max(SES, ZSET mail:provider:sent24h)`）。🔴 **`getQuota()` が throw しキャッシュも無いときは `providerReading: { available: false, localSentLast24h: ZSET の件数, lastObservedAt }` で返し、`max24h` / `consumptionRate` を 0 で埋めない**（API-A8。画面は「上限を確認できていません」を出し 0 件と表示しない。`docs/04` 申し送り 16）③`consumptionRate = sentLast24h / min(max24h, MAIL_PROVIDER_DAILY_QUOTA)`、`>= MAIL_PROVIDER_QUOTA_WARN_RATIO` になった最初の時刻を Redis `mail:provider:nearingSince` に置く（下回ったら削除。表示専用なので揮発してよい）。🔴 **テナント単位の日次上限（`F-027`。`A-004` のメール列）とは別行・別集計**で、`tenantId` を持たない（環境全体）。🔴 **失敗ジョブ数・未対応 `SUBMIT_FAILED` / `SEND_FAILED`・ゲート FAIL 率・「送信保留」（`sendHoldReasonKey`。`send.*` の `PROVIDER_QUOTA` 保留は項目 14 の理由別内訳に出る）のいずれにも加算しない**（保留は障害ではない。`docs/04` `A-005` 項目 13）。**再送の操作導線を置かない**（復帰は `send.hold-release` の自動。§9.4）。表示は件数・上限・時刻のみで宛先・本文に立ち入らない（`BR-40`） | 1 |
 | 計測欠測 | §9.8 | 1 |
-| 🔴 削除ジョブの失敗 | `TenantPurgeRun.status='FAILED'`。**完了の事実は返さない**（`docs/04` 申し送り 15） | 1 |
+| 🔴 削除ジョブの失敗 | `TenantPurgeRun.status='FAILED'`（`kind='PURGE_JOB_FAILED'`）。**完了の事実は返さない**（`docs/04` 申し送り 15） | 1 |
+| 🔴 **削除予告の未配送**（`F-064 AC-10`。`A-005` 項目 15。`kind='PURGE_NOTICE_PENDING'`） | `tenants(lifecycle_state='CLOSING')` かつ `closing_entered_at + 30日 <= today` のうち、`email_dispatches(template_key='TENANT_CLOSING_NOTICE')` に `SENT` / `MOCKED`（🔴 `MOCKED` は `development` / `demo` のみ。§9.7）が無いものを、`cause='NOTICE_PENDING'`（`QUEUED` / `HELD_PROVIDER_QUOTA` あり。予告行が 1 件も無い場合も `NOTICE_PENDING`。§9.7 と同じ）/ `'NOTICE_UNDELIVERED'`（`FAILED` のみ）に区別して件数・期限超過日数（`overdueDays = today - (closing_entered_at + 30日)`）を出す（`withPlatform` の読み取り）。🔴 **削除ジョブの失敗（`TenantPurgeRun.status='FAILED'`）とは別行**（`F-059 AC-2`「失敗と保留・完了を混ぜない」）。**失敗ジョブ数に加算しない**（予告待ちは障害ではない）。宛先・本文を含まない（`BR-40`） | 1 |
 | 満了アラート未起票 | `assignment.expiry-audit` の結果 | 2 |
 | スケジューラ停止 | `SchedulerRun` が 24 時間更新なし | 1 |
 | `SENDING` 滞留 / 未対応 `SEND_FAILED` / 電子署名の未着 | `contracts` / `contract_documents` | 3 |
@@ -3584,7 +3586,7 @@ export const logger = pino({
 | 16 | `contract-resend-human-only.test.ts` | 🔴 **`Contract` の `SEND_FAILED → DRAFT` を呼ぶコードが `apps/web/app/api/(main)/contracts/[id]/resend/route.ts` 以外に無い**（AST 走査）。`Proposal` の `SUBMIT_FAILED → APPROVED`（§10.6）と**対**にする。ジョブ・スケジューラ・Webhook ハンドラから呼ばれていたら FAIL（`F-049 AC-3`） |
 | 17 | `counterparty-readonly.test.ts` | 🔴 **経路 5 の書込経路が存在しない**（`BR-68` / `F-065 AC-4` / `F-066 AC-5`）: ①`apps/web/app/api/(main)/partner/**` の `route.ts` が `GET` 以外を export しない ②`withPartnerScope` の呼び出し元が `partner/**` と `S-029` / `S-025` のプレビュー用ハンドラに限られる ③`PartnerScopeDb` 以外の型で `partner*V` モデルを参照するコードが無い ④`apps/web/app/api/(main)/partner/**` から `extensionReview` デリゲート・`ExtensionReview` 型の識別子が現れない（`BR-67`） |
 | 18 | `tenant-usage-no-money.test.ts` | 🔴 **主平面（`apps/web/app/api/(main)/**`）の応答型に `/[Uu]sd|[Cc]ost|[Pp]rice/` を含むプロパティ名が無い**。例外は `overageEstimateJpy`（請求見込み。`BR-24`）と、業務データそのものの `unitPrice` / `offeredUnitPrice` / `amount`（契約・提案の項目でありクォータではない）。加えて `UsageView` に `gateInspector` / `gate` キーが無い（`F-027 AC-6` / `AC-7`） |
-| 19 | `docusign-scope.test.ts` / `queue-attempts` の追補 | 🔴 `buildAuthorizeUrl()` の出力に `scope=signature%20extended` が含まれる（`docs/03` §3.1.2a-3。忘れると 30 日で接続が切れる）。`gate.hold-release` が **`gate.run` 以外を enqueue しない**（送信系の再 enqueue に転用されていない）。🔴 **`gate.run` キューの `defaultJobOptions.removeOnComplete` が `true`**（§9.1。無いと HELD 後の同 `jobId` 再 enqueue が捨てられる） |
+| 19 | `docusign-scope.test.ts` / `queue-attempts` の追補 | 🔴 `buildAuthorizeUrl()` の出力に `scope=signature%20extended` が含まれる（`docs/03` §3.1.2a-3。忘れると 30 日で接続が切れる）。`gate.hold-release` が **`gate.run` 以外を enqueue しない**（送信系の再 enqueue に転用されていない）。🔴 **`gate.run` キューの `defaultJobOptions.removeOnComplete` が `true`**（§9.1。無いと HELD 後の同 `jobId` 再 enqueue が捨てられる）。🔴 **hold-release の追補（§8.3-Q）**: ①`email.dispatch` / `account.mail` のハンドラで `decideProviderQuota` の `HOLD` と `ProviderQuotaExceededError` の catch が `status='HELD_PROVIDER_QUOTA'` への更新で終わり、**再 throw・`status='FAILED'` 更新・`failureReason` 書込のいずれにも到達しない**（AST）②`send.hold-release` が走査する `EmailDispatch.status` の集合が `{'HELD_DOMAIN_UNVERIFIED','HELD_PROVIDER_QUOTA'}` と一致する（スナップショット。CHECK の 7 値から `HELD_` 接頭辞を持つものを導出して比較 = 列挙式にしない）③`packages/domain/src/quota/provider.ts` が `Date.now` / `process.env` を参照しない（§17.2 #14 と同じ検査を個別に固定） |
 | 20 | `counterparty-base-table-host-only.test.ts` | 🔴 **経路 5 の基底表がパートナー到達可能な経路から読めない**（§4.3-6）: ①`apps/web/**` における `withHostTenant` / `requireHost` の呼び出し元が `apps/web/app/api/(main)/{assignments,extension-reviews,contracts,contract-templates,orders,kpi}/**` に限られ、`/api/partner/**` と全ロール到達ルート（#8 / #9 / #17 / #46 等）に現れない（AST）。🔴 **`apps/worker/**` は呼び出し元の限定対象外**（§4.3-6 ③。ctx が常に `systemTenantCtx` = `HostTenantCtx`）。その前提として **`apps/worker/**` に `resolveTenantCtx` の呼び出しが無い**ことを同テストで検査する（ワーカーがパートナー文脈を持てないことの根拠）②`expectTypeOf<TenantDb>()` が `assignment` / `contract` / `contractDocument` / `order` / `extensionReview` を持たない（型テスト。`PartnerScopeDb` も同様）③Prisma 拡張に 5 モデルの「`app.partner_company_id <> ''` なら throw」フックが登録されている（DMMF 走査。#2 と同じ向き = 列挙ではなく全部から引く） |
 
 ### 17.3 E2E の主要シナリオ
@@ -3613,7 +3615,8 @@ export const logger = pino({
 | 20 | エンジニア 1 万件 / 案件 1 万件 / 匿名共有 2,000 件で `F-009` の p95 が 1 秒以内 | 🔴 `docs/03` §3.7.2 の分布で計測。Phase 1 の完了条件 |
 | 21 | 🔴 **経路 5**: 2 パートナーが同一案件に稼働 / 契約を持つ状態で、A 社の `S-044` / `S-045` と `#80`〜`#82` に B 社の行・件数・合計・「他 N 件」が 0 件、応答 JSON に販売単価・エンド企業名・粗利・`ExtensionReview` の列が 0 個、ドラフト版の DL が 404、`POST`/`PATCH`/`DELETE` を直叩きして 403、閲覧が `AuditLog` に残る。ホストのプレビューが A 社の応答と一致する | `UC-25` / `F-065 AC-1`〜`AC-5` / `F-066 AC-1`〜`AC-6` / `BR-67` / `BR-68` |
 | 22 | 🔴 **未接続テナントの ⑤ 契約**: 電子署名を接続せずに 契約作成 → ゲート → `via='EMAIL'` で送付 → 締結を記録 → `Assignment` 生成 が完了する。接続済みテナントでは `via='ESIGN'` で DocuSign（モック）の envelope が 1 通、署名者 2 名、HOST 署名後も `UNDER_REVIEW` のまま `signers` だけ更新、全員署名で `EXECUTED` | `F-049 AC-8` / `AC-9` / `docs/03` §3.1.10 |
-| 23 | 🔴 **AI 上限とゲート**: 1 日上限到達中にレビュー依頼 → `GATE_RUNNING` のまま `ReviewGate` は HELD、承認・送信 API が 409 / 422、`A-005` に `AI_COST_LIMIT` 理由で滞留が出て失敗件数・FAIL 率が増えない → 上限解除 → `gate.hold-release` が再実行し DONE になる。`S-038` の応答に USD が無く 4 単位の件数だけがある。取引先招待をドメイン未検証で発行 → `HELD_DOMAIN_UNVERIFIED` → 検証後に自動送達 | `F-027 AC-5`〜`AC-7` / `F-059 AC-5`・`AC-6` / `F-007 AC-5` |
+| 23 | 🔴 **AI 上限とゲート**: 1 日上限到達中にレビュー依頼 → `GATE_RUNNING` のまま `ReviewGate` は HELD、承認・送信 API が 409 / 422、`A-005` に `AI_COST_LIMIT` 理由で滞留が出て失敗件数・FAIL 率が増えない → 上限解除 → `gate.hold-release` が再実行し DONE になる。`S-038` の応答に USD が無く 4 単位の件数だけがある。取引先招待をドメイン未検証で発行 → `HELD_DOMAIN_UNVERIFIED` → 検証後に自動送達。🔴 **送信基盤クォータ（§8.3-Q）**: `MAIL_PROVIDER_DAILY_QUOTA=1` で分類 1 のメールを 2 通起動 → 2 通目が `HELD_PROVIDER_QUOTA`（**`FAILED` にならず**、失敗ジョブ数・`SUBMIT_FAILED`・ゲート FAIL 率が増えず、`A-005` 項目 13 に `heldCount=1` / `consumptionRate=1.0` / `reachedAt` が出る）→ `now` を 24h 進めて `send.hold-release` を実行 → 再送されて `SENT`、モックの `callCount()` が合計 2（招待の場合はトークンが再発行され旧リンクが無効）。🔴 **`send.*` の経路**（`production` 相当の分類 2 = 実 `EmailSender` をモックした構成）: `MAIL_PROVIDER_DAILY_QUOTA=1` で承認済み提案を 2 件送信 → 2 件目が `sendHoldReasonKey='PROVIDER_QUOTA'`（**`RATE_LIMIT` ではない**）で `APPROVED` のまま（`SUBMITTING` / `SUBMIT_FAILED` にならず、`S-022` の文言に `S-038` 導線が無く、`A-005` 項目 14 に `PROVIDER_QUOTA=1` / `RATE_LIMIT=0`）→ `now` を 24h 進めて `send.hold-release` → `SUBMITTED`、`callCount()` 合計 2、`SendAttempt` は提案ごとに 1 行 | `F-027 AC-5`〜`AC-7` / `F-059 AC-5`〜`AC-7` / `F-007 AC-5` / `F-022 AC-1` |
+| 24 | 🔴 **削除予告と環境枠**（`F-064 AC-10`）: `sandbox` 相当で `MAIL_PROVIDER_DAILY_QUOTA=1` により `TENANT_CLOSING_NOTICE` が `HELD_PROVIDER_QUOTA` のまま `closingEnteredAt + 30日` を過ぎても `tenant.purge-scan` が `tenant.purge` を enqueue せず（`TenantPurgeRun` 0 件。連絡先・スキルシート原本・チャット本文が残る。`A-005` 項目 15 に `kind='PURGE_NOTICE_PENDING'` / `cause='NOTICE_PENDING'` / `overdueDays >= 0`。削除ジョブの失敗 `PURGE_JOB_FAILED` は 0 件）→ `now` を 24h 進めて `send.hold-release` → 予告が `SENT` → 翌 `tenant.purge-scan` で初めて `PURGED`。`tenant.purge` を直接 enqueue しても配送未確認なら no-op | `F-064 AC-10` / `docs/02` 章 7.7-④ / `F-059 AC-7` |
 
 ### 17.4 環境分離の検証（`docs/02` 章 7.6 NFR-ENV-1 の 3 分類）
 
@@ -3695,7 +3698,7 @@ export const logger = pino({
 | **TBD-9** | **Anthropic の ZDR の適用条件**（`U-13` / `Q-T-5`） | 設計に影響しない（マスキングは ZDR の有無にかかわらず必須）。**適用時に `packages/ai/src/client.ts` のヘッダを足すだけ** | Phase 2 の着手判断（契約事項） | `docs/03` §3.3.6 |
 | **TBD-10** | **バッチ API（50% 引き）を適用するロール**（`docs/03` §3.3.1 が `program-design` に委ねた判断） | 🔴 **本書の結論: Phase 2 では適用しない。** 理由: ①`gate.run` は 30 秒、`send.*` は 60 秒の目標があり即時応答が要る ②`ai.sheet-parse` は 3 分の目標だがバッチの応答は数分〜24 時間で保証がない ③`ai.match-explain` は `S-016` の画面表示に同期する。**適用しうるのは `ai.renewal-advise` のみ**（起票と通知が先に成立するため。`F-044 AC-1`）だが、月 8 件で削減額が $0.07 であり導入コストに見合わない。**Phase 3 で `sheet-parser` の件数が月 1,000 件を超えたら再評価する** | しない（本書で決着） | `docs/03` §3.3.1 |
 | ~~**TBD-11**~~ | ~~取引先が `Assignment` / `Contract` をアプリ内で閲覧できるか~~ — 🔴 **決着済み（2026-09-01、Issue #8）。越境経路 5 として認める（読み取りのみ。`CLAUDE.md` §3.1-5 改訂済み）** | 予告どおりポリシークラス C9 を 1 つ足し（§4.4）、当事者列（§3.7）・射影ビュー（§4.9）・API #80〜#82・テスト（§4.7 #8〜#10 / §17.2 #17 / §17.3 #21）を追加。**開示項目は `BR-66` に固定し、増やすことは人間の承認事項** | — | `docs/02` A-23 / `F-065` / `F-066` |
-| **TBD-12** | **`sandbox` で SES のサンドボックス状態のまま送信クォータを引き上げられるか**（`U-6`） | 200 通 / 日で足りる前提（分類 1 / 分類外のみ実送信）。不足したら `A-005` に「`sandbox` のメール上限到達」として出す | `sandbox` 環境の構築時 | `docs/03` §3.2.8 |
+| ~~**TBD-12**~~ | ~~`sandbox` で SES のサンドボックス状態のまま送信クォータを引き上げられるか（`U-6`）~~ — 🔴 **決着済み（2026-09-01）。引き上げの可否に依存しない設計にした**: 送信基盤（環境全体）のクォータ到達は `EmailDispatch.status='HELD_PROVIDER_QUOTA'`（配送レコードの属性。**状態機械に状態を足さない**）で保留し、`send.hold-release` が枠の回復後に自動再送する。`sandbox` 固有ではなく本番の SES 枠にも同じ機構が効く（`F-059 AC-7` / `docs/02` 章 7.7 / `A-005` 項目 13）。`send.*` は `sendHoldReasonKey='PROVIDER_QUOTA'`（`RATE_LIMIT` と別値。項目 14） | **§8.3-Q**（判定・保留）/ **§9.4**（`send.hold-release` の復帰。招待はトークン再発行を共用）/ **§16.5**（`A-005` 項目 13 のデータ源）/ §3.9（CHECK 7 値 + `heldAt`）/ §13.4（`MAIL_PROVIDER_DAILY_QUOTA`。既定 `sandbox` 200）/ §17.2 #19 / §17.3 #23。`U-6` の申請自体は `sandbox` 構築時に人間が行ってよいが、**通らなくても設計は変わらない** | — | `docs/03` §3.2.4 / §3.2.8 |
 | **TBD-13** | **S3 / RDS / Fargate の実額**（`U-9` / `U-10`）と **Stripe の手数料率**（`U-11`） | `packages/config/src/pricing.ts` の設定値。§5.9 の原価計算は**単価を引数に取る** | `A-011` の金額の正しさ。**設計は値に依存していない** | `docs/03` §7.4 / §7.5 |
 | **TBD-14** | **Vercel Secure Compute の要否**（`U-15`） | 暫定は「RDS Proxy の公開エンドポイント + IP 制限 + TLS 必須」。**接続文字列は `packages/config` の 1 箇所** | Phase 0 のインフラ構築 | `docs/03` §4.14 |
 | ~~**TBD-15**~~ | ~~`CLAUDE.md` §5 の改訂（SPF/DKIM を Phase 1 へ）~~ — 🔴 **決着済み（2026-09-01、Issue #13）。`CLAUDE.md` §5 は改訂され、SES 本番アクセス申請と送信ドメイン認証は Phase 1 のクリティカルパス** | `TenantSendingDomain` / `requireVerifiedSendingDomain` / `domain.*` ジョブを Phase 1 に置く（§8.3）。**Phase 1 の完了条件に含める**（`docs/03` `pm` 申し送り 1 の改訂に追随） | — | `docs/03` §3.2.6 / `Q-T-8` |
@@ -3743,9 +3746,9 @@ export const logger = pino({
 | 29 | 越境経路 5 は当事者列 + RLS。行だけでなく列も絞る。`ExtensionReview` にパートナー読み取りのポリシーを書かない。書込ポリシーも書かない。当事者列はテーブル作成時から | **§4.4 C9** / **§4.9** / §3.7 / §4.4.1 / §4.7 #8〜#10 / §17.2 #17 |
 | 30 | `UsageCounter` は金額と件数の両方。`Plan` も 2 種の上限。1 件の定義は §7.6.1。再試行は件数に加算せず金額に計上。`AiUsage` の行数から数え直さない。`gate-inspector` は記録するがクォータ外、1 日上限には含めゲートも停止。スキップして PASS にしない。Stripe は 4 単位の件数 | **§7.6** / §3.8（`UsageCounter`）/ §3.10（`Plan`）/ §5.8 / §5.10 / §9.3 / §9.8 / §17.2 #18 |
 
-## 付録 B. `docs/04` の `program-design` 宛申し送り 15 項目（改訂 3 の連番 1〜15）と `docs/02` 申し送り 13〜14 のマッピング
+## 付録 B. `docs/04` の `program-design` 宛申し送り 16 項目（改訂 3 の連番 1〜16）と `docs/02` 申し送り 13〜14 のマッピング
 
-**全項目を反映した。欠けている項目は無い。** `docs/02` の `program-design` 宛申し送り 1〜12 は初版で反映済み（§4 / §7〜§11）。2026-09-01 追加分: **13**（経路 5 の当事者を行レベル分離と同じ層で表現。①当事者列 = `engineer_id` の所有パートナー / 相手方パートナー → §3.7 / §4.4.1 ②当事者判定は認証コンテキストのみ → §4.9 ③同じアクセサ・RLS 述語 → §4.4 C9 ④取得時の射影 → §4.9 のビュー ⑤書込ハンドラを実装しない → §6.6 / §17.2 #17）/ **14**（取引先へ届く送信の前提条件を単一経路で判定。①ジョブが検証状態を確認 → §10.2 ①-d ②フォールバックしない → §8.3 ③`SUBMIT_FAILED` ではなく設定未了 → §10.4 `DOMAIN_UNVERIFIED` ④`TenantEsignConnection` 前提・未接続では `SENDING` を起動しない → §8.4）。
+**全項目を反映した。欠けている項目は無い。** `docs/02` の `program-design` 宛申し送り 1〜12 は初版で反映済み（§4 / §7〜§11）。2026-09-01 追加分: **13**（経路 5 の当事者を行レベル分離と同じ層で表現。①当事者列 = `engineer_id` の所有パートナー / 相手方パートナー → §3.7 / §4.4.1 ②当事者判定は認証コンテキストのみ → §4.9 ③同じアクセサ・RLS 述語 → §4.4 C9 ④取得時の射影 → §4.9 のビュー ⑤書込ハンドラを実装しない → §6.6 / §17.2 #17）/ **14**（取引先へ届く送信の前提条件を単一経路で判定。①ジョブが検証状態を確認 → §10.2 ①-d ②フォールバックしない → §8.3 ③`SUBMIT_FAILED` ではなく設定未了 → §10.4 `DOMAIN_UNVERIFIED` ④`TenantEsignConnection` 前提・未接続では `SENDING` を起動しない → §8.4）。**`A-005` 項目 13 / `F-059 AC-7`**（送信基盤クォータ。環境全体・対象テナント欄なし・失敗に加算しない・再送導線なし）→ §8.3-Q / §9.4 / §16.5 / API-A8。**`docs/04` 申し送り 14 / 15**（項目 14 = 送信保留の理由別内訳。`PROVIDER_QUOTA` は `tenant_id` なし・`RATE_LIMIT` はテナント別で `A-004` へ / 項目 15 = 削除予告の未配送。`NOTICE_PENDING` / `NOTICE_UNDELIVERED` の区別・削除ジョブ失敗と別行）→ §8.3-Q / §9.4 / §9.7 / §16.5 / API-A8 / §17.3 #24。**16**（クォータ取得不能を「不明」で表現）→ API-A8 `providerReading.available=false` / §16.5 項目 13。
 
 | # | 申し送りの内容（要約） | 本書の該当箇所 |
 |---|---|---|
@@ -3785,16 +3788,13 @@ export const logger = pino({
 | F-012 | §14.2 / §16.1 / §6.4(#20,#21) | F-034 | §7.1 / §9.3 / §6.5(#38) | F-056 | §5.7 / §6.9(API-A2,A3) |
 | F-013 | §3.5(`Project`) / §6.4(#26) | F-035 | **§7.5** / §3.10 / §6.7(#66) | F-057 | §5.8 / §6.9(API-A6) |
 | F-014 | §3.5(`ProjectVisibility`) / §4.4(C4) / §6.4(#28) | F-036 | §3.10(`TenantRoleModel`) / §6.7(#67) | F-058 | §5.5(シリアライザ) / §6.9(API-A7) |
-| F-015 | §6.4(#25) / §4.4(C4) | F-037 | §11.3 / §4.8 / §6.5(#46) | F-059 | **§16.5** / §6.9(API-A8) |
+| F-015 | §6.4(#25) / §4.4(C4) | F-037 | §11.3 / §4.8 / §6.5(#46) | F-059 | **§16.5** / §6.9(API-A8) / §8.3-Q / §9.4(AC-7) |
 | F-016 | §3.5(`EngineerShare`) / §6.4(#29) / §12.2 | F-038 | §3.7 / §4.4(C6) / §8.9 / §6.5(#50-52) | F-060 | **§5.6** / §6.9(API-A9,A10) / §17.3(#14) |
 | F-017 | **§4.5 / §4.6** / §6.5(#30) / TBD-2 | F-039 | §3.8(`Notification`) / §8.2 / §9.4 | F-061 | §3.10(`Announcement`) / §6.9(API-A11) |
 | F-018 | §3.6(`ProposalRequest`) / §6.5(#31-#35) / §10.7 | F-040 | §3.8(`Task`) / §6.7(#75) | F-062 | **§6.9(API-A12,A13,A14)** / §5.4 |
 | F-019 | §3.6(`EngineerSnapshot`) / §6.5(#36) | F-041 | §6.5(#49) / §10.2 | F-063 | **§5.9** / §3.10(`TenantMonthlyCost`) / §16.4 |
-| F-020 | **§11 全体** / §9.3(`gate.run`) | F-042 | §3.7(`Assignment`) / §6.6(#53-#56) | F-064 | §9.7(`tenant.purge`) / §3.9(`TenantPurgeRun`) / §6.9(API-A12) |
-| F-021 | §11.5 / §11.6 / §6.5(#41,#42) | F-043 | **§9.5** / §12.4 / §16.5 | | |
+| F-020 | **§11 全体** / §9.3(`gate.run`) | F-042 | §3.7(`Assignment`) / §6.6(#53-#56) | F-064 | §9.7(`tenant.closing-notify` / `tenant.purge-scan` の配送確認 = AC-10 / `tenant.purge`) / §3.9(`TenantPurgeRun`) / §6.9(API-A12) / §17.3(#17,#24) |
+| F-021 | §11.5 / §11.6 / §6.5(#41,#42) | F-043 | **§9.5** / §12.4 / §16.5 | **F-066** | **§4.4(C9) / §4.9** / §3.7(`Contract`/`ContractDocument`/`Order` の当事者列・`signers`) / §6.6(#81,#82) / §14.2 / §17.3(#21) |
 | F-022 | **§10.2** / §9.4 / §6.5(#43) / §8.3 | F-044 | §7.1 / §9.3 / §6.6(#55) / §4.9（取引先に出ない） | **F-065** | **§4.4(C9) / §4.9** / §3.7(`Assignment.counterpartyPartnerCompanyId`) / §6.6(#80) / §4.7(#8-#10) / §17.2(#17) / §17.3(#21) |
-| | | | | **F-066** | **§4.4(C9) / §4.9** / §3.7(`Contract`/`ContractDocument`/`Order` の当事者列・`signers`) / §6.6(#81,#82) / §14.2 / §17.3(#21) |
-
----
 
 **本書は `CLAUDE.md` のハードルール、`docs/01` のビジネスルール（`BR-01`〜`BR-73`）、`docs/02` の受け入れ基準、`docs/03` の技術的決定、`docs/04` の画面挙動を弱める記述を含まない。** 変更が必要な場合は `CLAUDE.md` §8.7 の手順に従い、上流を先に更新すること。
