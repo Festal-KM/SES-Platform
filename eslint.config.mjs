@@ -43,6 +43,35 @@ const ANTHROPIC_SDK = '@anthropic-ai/sdk';
 const ANTHROPIC_SDK_MESSAGE =
   '@anthropic-ai/sdk の import は packages/ai/src/client.ts のみ許可されます（CLAUDE.md §3.2）。';
 
+// T-01-06（CLAUDE.md §3.1 / docs/05 §1.4 / §4.3）: withTenant / withHostTenant を経ない
+// DB アクセス経路を lint で塞ぐ。3 本の禁止:
+//   ①生 @prisma/client の import（packages/db 内部のみ許可）
+//   ②@ses/db から PrismaClient を named import すること（@ses/db は現状これを export しないが、
+//     将来のエクスポート追加による迂回を防ぐ防御的ルール。常時適用）
+//   ③@ses/db/testing サブパスの import（tests/isolation/** のみ許可。分離機構そのものを
+//     検証する専用の入口であり、汎用のエスケープハッチにしないため）
+const PRISMA_CLIENT_MODULE = '@prisma/client';
+const PRISMA_CLIENT_MESSAGE =
+  '@prisma/client の直接 import は packages/db 内部でのみ許可されます（生 PrismaClient の迂回経路。' +
+  'CLAUDE.md §3.1 / docs/05 §4.3）。@ses/db の withTenant / withHostTenant を使ってください。';
+const SES_DB_MODULE = '@ses/db';
+const SES_DB_PRISMA_CLIENT_MESSAGE =
+  '@ses/db から PrismaClient を import することはできません（CLAUDE.md §3.1 / docs/05 §4.3）。' +
+  'withTenant / withHostTenant 経由でアクセスしてください。';
+const SES_DB_TESTING_SUBPATH = '@ses/db/testing';
+const SES_DB_TESTING_MESSAGE =
+  '@ses/db/testing は tests/isolation/** からのみ import できます（分離機構そのものを検証する専用の' +
+  '入口のため。docs/05 §4.7 / packages/db/src/testing/isolation.ts 冒頭コメント）。';
+
+// T-01-06: $queryRaw / $queryRawUnsafe / $executeRaw / $executeRawUnsafe の呼び出し禁止
+// （no-restricted-syntax。import 制限だけでは「変数越しの呼び出し」を塞げないため）。
+// packages/db/src/** と tests/isolation/** だけを許可する（実装ガイドの指定）。
+const RAW_SQL_CALL_NAMES = ['$queryRaw', '$queryRawUnsafe', '$executeRaw', '$executeRawUnsafe'];
+const RAW_SQL_CALL_MESSAGE =
+  '$queryRaw / $queryRawUnsafe / $executeRaw / $executeRawUnsafe の呼び出しは packages/db/src/** と ' +
+  'tests/isolation/** 以外では禁止です（CLAUDE.md §3.1 / docs/05 §4.3）。withTenant / withHostTenant を' +
+  '使ってください。';
+
 const APPS_PACKAGES = ['@ses/web', '@ses/worker'];
 const APPS_PATH_PATTERNS = ['**/apps/web/**', '**/apps/worker/**'];
 const APPS_MESSAGE =
@@ -82,12 +111,19 @@ function escapeSlashes(value) {
   return value.split('/').join(`${BACKSLASH}/`);
 }
 
+/** 正規表現の特殊文字（`$` を含む）をエスケープする。プロパティ名の完全一致照合に使う。 */
+function escapeRegexLiteral(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, `${BACKSLASH}$&`);
+}
+
 /** 静的 import 用の禁止パターン（no-restricted-imports の patterns）を組み立てる。 */
 function buildPatterns({
   forbiddenSesPackages = [],
   forbidAllSes = false,
   forbidApps = false,
   allowSdk = false,
+  allowPrismaClient = false,
+  allowDbTestingSubpath = false,
   forbidNodeIo = false,
   zoneLabel = '',
 }) {
@@ -120,6 +156,28 @@ function buildPatterns({
   if (!allowSdk) {
     patterns.push({ group: withSubpaths([ANTHROPIC_SDK]), message: ANTHROPIC_SDK_MESSAGE });
   }
+  if (!allowPrismaClient) {
+    patterns.push({ group: withSubpaths([PRISMA_CLIENT_MODULE]), message: PRISMA_CLIENT_MESSAGE });
+  }
+  if (!allowDbTestingSubpath) {
+    patterns.push({
+      group: withSubpaths([SES_DB_TESTING_SUBPATH]),
+      message: SES_DB_TESTING_MESSAGE,
+    });
+  }
+  // 🔴 常時適用（防御的）: @ses/db から PrismaClient を named import することを禁止する。
+  //    @ses/db は現状これを export しないが、将来のエクスポート追加による迂回を防ぐ。
+  //    ゾーンが既に @ses/db 全体を禁止している場合（forbidAllSes、または
+  //    forbiddenSesPackages に @ses/db を含む）は、同じ import に対して重複したエラーを
+  //    出さないよう省く（意味は既存の禁止に含まれている）。
+  const sesDbAlreadyForbidden = forbidAllSes || forbiddenSesPackages.includes(SES_DB_MODULE);
+  if (!sesDbAlreadyForbidden) {
+    patterns.push({
+      group: [SES_DB_MODULE],
+      importNames: ['PrismaClient'],
+      message: SES_DB_PRISMA_CLIENT_MESSAGE,
+    });
+  }
   return patterns;
 }
 
@@ -134,6 +192,8 @@ function buildRestrictedNames({
   forbidAllSes = false,
   forbidApps = false,
   allowSdk = false,
+  allowPrismaClient = false,
+  allowDbTestingSubpath = false,
   forbidNodeIo = false,
 }) {
   const names = [];
@@ -145,6 +205,8 @@ function buildRestrictedNames({
   if (forbidApps) names.push(...APPS_PACKAGES);
   if (forbidNodeIo) names.push(...nodeIoNames());
   if (!allowSdk) names.push(ANTHROPIC_SDK);
+  if (!allowPrismaClient) names.push(PRISMA_CLIENT_MODULE);
+  if (!allowDbTestingSubpath) names.push(SES_DB_TESTING_SUBPATH);
   return names;
 }
 
@@ -182,6 +244,41 @@ function buildDynamicImportSelectors(options) {
   ];
 }
 
+// 🔴 buildRestrictedNames() に @ses/db（PrismaClient の named import 防御）を含めない理由:
+//    動的 import (`import('@ses/db')`) はモジュール全体を取得するだけで、取り出す束縛名
+//    （`PrismaClient` かどうか）は import 式そのものからは分からない。名前レベルの制限は
+//    静的 import（no-restricted-imports の importNames）でのみ意味を持つ。
+//    @ses/db 自体の動的 import は他の目的（withTenant 等）で正当に行われうるため、
+//    ここで @ses/db を丸ごと禁止リストに加えることはしない（意図的な残余）。
+
+/**
+ * T-01-06: `$queryRaw` / `$queryRawUnsafe` / `$executeRaw` / `$executeRawUnsafe` の呼び出しを
+ * 禁止する no-restricted-syntax セレクタ（CLAUDE.md §3.1 / docs/05 §4.3）。
+ *
+ * 呼び出しの構文は 2 通りある（実装ガイドの「呼び出し」が指すのはどちらも）:
+ *   - 関数呼び出し形: `tx.$queryRaw(Prisma.sql`…`)`（`CallExpression`）
+ *   - タグ付きテンプレート形: `` client.$queryRaw`SELECT …` ``（`TaggedTemplateExpression`。
+ *     Prisma のドキュメントで推奨される書き方であり、実際に tests/isolation/roles.test.ts が使う）
+ * 片方だけを塞ぐと、もう片方が素通しの経路になるため両方を検出する。
+ *
+ * `allowRawSqlCalls` が true のゾーン（packages/db 内部・tests/isolation/**）では空配列を返す。
+ */
+function buildRawSqlCallSelectors(allowRawSqlCalls) {
+  if (allowRawSqlCalls) return [];
+  const alternation = RAW_SQL_CALL_NAMES.map(escapeRegexLiteral).join('|');
+  const namePattern = `/^(${alternation})$/`;
+  return [
+    {
+      selector: `CallExpression[callee.type='MemberExpression'][callee.property.type='Identifier'][callee.property.name=${namePattern}]`,
+      message: RAW_SQL_CALL_MESSAGE,
+    },
+    {
+      selector: `TaggedTemplateExpression[tag.type='MemberExpression'][tag.property.type='Identifier'][tag.property.name=${namePattern}]`,
+      message: RAW_SQL_CALL_MESSAGE,
+    },
+  ];
+}
+
 // --- ゾーン定義（CLAUDE.md §2.1 ①②③、§3.2 ④）---
 // forbidApps: すべての packages/* ゾーンで一律 true にする（ルール①）。
 const PACKAGE_ZONES = [
@@ -195,6 +292,9 @@ const PACKAGE_ZONES = [
     label: 'packages/db',
     files: ['packages/db/**/*.{ts,tsx,mts,cts}'],
     forbiddenSesPackages: ['@ses/ai', '@ses/connectors'],
+    // 🔴 生 PrismaClient / $queryRaw 等の唯一の正当な置き場所（CLAUDE.md §3.1 / docs/05 §4.3）。
+    allowPrismaClient: true,
+    allowRawSqlCalls: true,
   },
   {
     label: 'packages/ai（packages/ai/src/client.ts を除く）',
@@ -238,6 +338,8 @@ function zoneConfigBlock(zone) {
     forbidAllSes: zone.forbidAllSes ?? false,
     forbidApps: true,
     allowSdk: zone.allowSdk ?? false,
+    allowPrismaClient: zone.allowPrismaClient ?? false,
+    allowDbTestingSubpath: zone.allowDbTestingSubpath ?? false,
     forbidNodeIo: zone.forbidNodeIo ?? false,
     zoneLabel: zone.label,
   };
@@ -247,7 +349,11 @@ function zoneConfigBlock(zone) {
       // patterns（group）のみを使う。paths は完全一致しかできず、node:fs/promises のような
       // subpath を素通りさせるため使わない（buildPatterns() が withSubpaths() で吸収する）。
       'no-restricted-imports': ['error', { patterns: buildPatterns(options) }],
-      'no-restricted-syntax': ['error', ...buildDynamicImportSelectors(options)],
+      'no-restricted-syntax': [
+        'error',
+        ...buildDynamicImportSelectors(options),
+        ...buildRawSqlCallSelectors(zone.allowRawSqlCalls ?? false),
+      ],
     },
   };
   if (zone.ignores) block.ignores = zone.ignores;
@@ -258,12 +364,40 @@ function zoneConfigBlock(zone) {
 // packages/domain 〜 packages/i18n の 7 ディレクトリのみが上の PACKAGE_ZONES で
 // 個別にカバーされるため、それ以外のファイルは一律ここで SDK 直接 import を禁止する
 // （CLAUDE.md §3.2 ④。packages/ai/src/client.ts だけが唯一の例外）。
+// 🔴 tests/isolation/** は生 PrismaClient アクセスが正当な唯一の非 packages/db 区画のため
+// （T-01-06。@ses/db/testing の唯一の import 元 + $queryRaw 等の直接呼び出しを要する）、
+// ここでは ignore し、専用の TESTS_ISOLATION_ZONE に完全な代替ルールセットを持たせる
+// （flat config は同一ルール名を「後勝ち・丸ごと置換」するため、ファイル集合を重ねずに分離する。
+//  同一ファイル集合に対して 'no-restricted-imports' / 'no-restricted-syntax' の設定ブロックを
+//  複数作らない。冒頭コメント参照）。
+const CATCH_ALL_IGNORES = [...PACKAGE_DIR_IGNORES_FOR_CATCH_ALL, 'tests/isolation/**'];
+const CATCH_ALL_OPTIONS = { allowSdk: false };
 const CATCH_ALL_ZONE = {
   files: ['**/*.{ts,tsx,mts,cts,js,mjs,cjs}'],
-  ignores: PACKAGE_DIR_IGNORES_FOR_CATCH_ALL,
+  ignores: CATCH_ALL_IGNORES,
   rules: {
-    'no-restricted-imports': ['error', { patterns: buildPatterns({ allowSdk: false }) }],
-    'no-restricted-syntax': ['error', ...buildDynamicImportSelectors({ allowSdk: false })],
+    'no-restricted-imports': ['error', { patterns: buildPatterns(CATCH_ALL_OPTIONS) }],
+    'no-restricted-syntax': [
+      'error',
+      ...buildDynamicImportSelectors(CATCH_ALL_OPTIONS),
+      ...buildRawSqlCallSelectors(false),
+    ],
+  },
+};
+
+// tests/isolation/** 専用ゾーン（T-01-06 申し送り 3）。CATCH_ALL_ZONE と同じ強度
+// （SDK 単一経路・生 @prisma/client 禁止）を維持しつつ、@ses/db/testing の import と
+// $queryRaw 等の直接呼び出しだけを許可する。
+const TESTS_ISOLATION_OPTIONS = { allowSdk: false, allowDbTestingSubpath: true };
+const TESTS_ISOLATION_ZONE = {
+  files: ['tests/isolation/**/*.{ts,tsx,mts,cts,js,mjs,cjs}'],
+  rules: {
+    'no-restricted-imports': ['error', { patterns: buildPatterns(TESTS_ISOLATION_OPTIONS) }],
+    'no-restricted-syntax': [
+      'error',
+      ...buildDynamicImportSelectors(TESTS_ISOLATION_OPTIONS),
+      ...buildRawSqlCallSelectors(true),
+    ],
   },
 };
 
@@ -310,10 +444,11 @@ export default tseslint.config(
 
   ...PACKAGE_ZONES.map(zoneConfigBlock),
 
+  TESTS_ISOLATION_ZONE,
   CATCH_ALL_ZONE,
 );
 
-// PACKAGE_ZONES / ALL_SES_PACKAGE_NAMES を静的テスト（tests/static/package-zone-coverage.test.ts）
-// から検証できるように名前付き export する。ESLint 本体は default export のみを見るため、
-// この export はランタイムの lint 挙動に影響しない。
-export { PACKAGE_ZONES, ALL_SES_PACKAGE_NAMES, APPS_PACKAGES };
+// PACKAGE_ZONES / ALL_SES_PACKAGE_NAMES / APPS_PATH_PATTERNS を静的テスト
+// （tests/static/package-zone-coverage.test.ts）から検証できるように名前付き export する。
+// ESLint 本体は default export のみを見るため、この export はランタイムの lint 挙動に影響しない。
+export { PACKAGE_ZONES, ALL_SES_PACKAGE_NAMES, APPS_PACKAGES, APPS_PATH_PATTERNS };

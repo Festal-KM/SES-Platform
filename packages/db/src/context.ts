@@ -1,10 +1,12 @@
 // packages/db/src/context.ts
 // 🔴 AuthenticatedTenantCtx の生成器はここだけ（docs/05 §4.3 / §4.1 第 3 防御）。
 //
-// T-01-04 の範囲では「ブランド型であること」「分離キーが認証情報からしか来ないこと」までを実装する。
-// deviceKind の判定・lifecycleState の DB 参照・Auth.js のセッション型への差し替えは T-01-06 / SP-02。
+// T-01-04 で「ブランド型であること」「分離キーが認証情報からしか来ないこと」を実装した。
+// T-01-06 で HostTenantCtx（docs/05 §4.3 実装の規約 6）を追加する。
+// deviceKind の判定・lifecycleState の DB 参照・Auth.js のセッション型への差し替えは SP-02 以降。
 
 declare const TenantCtxBrand: unique symbol;
+declare const HostBrand: unique symbol;
 
 export type TenantRole = 'OWNER' | 'ADMIN' | 'SALES' | 'PARTNER_ADMIN' | 'PARTNER_SALES' | 'VIEWER';
 
@@ -57,4 +59,47 @@ export async function resolveTenantCtx(
     lifecycleState: session.lifecycleState,
     deviceKind: req.deviceKind,
   } as AuthenticatedTenantCtx;
+}
+
+/**
+ * ホスト文脈であることが型で保証された ctx（docs/05 §4.3 実装の規約 6）。
+ * 🔴 `requireHost` 以外がこの型の値を構築できない（`apps/worker` 用の `systemTenantCtx` は SP-02 以降。
+ * docs/05 §9.2）。`partnerCompanyId` はブランドと同時に `null` へ絞り込まれる。
+ *
+ * 🔴 SP-01 時点のスキーマ（`Tenant` / `Engineer` の 2 表のみ）には経路 5 の基底表
+ * （`assignments` / `contracts` / `contract_documents` / `orders` / `extension_reviews`）が
+ * 存在しないため、本型は ctx の契約（「ホスト文脈しか `withHostTenant` に入れない」）だけを
+ * 実装する。`HostTenantDb` に 5 デリゲートを追加する作業（`Omit` / `Pick` と
+ * `PartnerBaseTableAccessError` の実行時フック）は、その表が揃う SP-02 で行う
+ * （`packages/db/src/with-tenant.ts` の `HostTenantDb` を参照）。
+ */
+export type HostTenantCtx = AuthenticatedTenantCtx & {
+  readonly partnerCompanyId: null;
+  readonly [HostBrand]: true;
+};
+
+/**
+ * 🔴 `requireHost` がパートナー文脈を弾いたことを示す。
+ * API 境界（`apps/web`。§15 のエラー階層が実装され次第）では `NotFoundError`（404）に写像する
+ * ——「見えない ＝ 存在しない」（docs/05 §4.8）を守るため、403 とは区別しない。
+ */
+export class HostOnlyContextError extends Error {
+  constructor() {
+    super(
+      'この操作はホスト所属の利用者のみが実行できます（docs/05 §4.3 実装の規約 6）。' +
+        'パートナー文脈からは 404 として扱ってください（§4.8「見えない ＝ 存在しない」）。',
+    );
+    this.name = 'HostOnlyContextError';
+  }
+}
+
+/**
+ * 🔴 `HostTenantCtx` の生成経路の 1 つ（もう 1 つは `apps/worker` の `systemTenantCtx`。SP-02 以降）。
+ * パートナー文脈（`partnerCompanyId !== null`）なら `HostOnlyContextError` を投げ、
+ * ホスト文脈だけを型で絞り込む（TypeScript のアサーション関数）。
+ */
+export function requireHost(ctx: AuthenticatedTenantCtx): asserts ctx is HostTenantCtx {
+  if (ctx.partnerCompanyId !== null) {
+    throw new HostOnlyContextError();
+  }
 }

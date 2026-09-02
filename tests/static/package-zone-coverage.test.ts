@@ -8,7 +8,12 @@ import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { ALL_SES_PACKAGE_NAMES, APPS_PACKAGES, PACKAGE_ZONES } from '../../eslint.config.mjs';
+import {
+  ALL_SES_PACKAGE_NAMES,
+  APPS_PACKAGES,
+  APPS_PATH_PATTERNS,
+  PACKAGE_ZONES,
+} from '../../eslint.config.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '..', '..');
@@ -61,6 +66,16 @@ describe('新規 packages/* が eslint.config.mjs のゾーン定義から漏れ
     const pkgName = packageNameOf('apps', dirName);
     expect(APPS_PACKAGES as string[]).toContain(pkgName);
   });
+
+  // T-01-01 レビューの申し送り: APPS_PATH_PATTERNS（相対パス脱出の検出リスト。CATCH_ALL_MESSAGE の
+  // 「相対パス経由の import も禁止」の実体）は APPS_PACKAGES と別の配列であり、新規アプリを
+  // 追加したとき片方だけ更新して他方を忘れる事故を、この対照テストが機械的に検知する。
+  it.each(appDirs)(
+    'apps/%s の相対パス脱出パターン(**/apps/%s/**)が APPS_PATH_PATTERNS に含まれる（新規アプリ追加時の脱出リスト漏れを検知する）',
+    (dirName) => {
+      expect(APPS_PATH_PATTERNS as string[]).toContain(`**/apps/${dirName}/**`);
+    },
+  );
 
   it('対照: packages/ 配下に 1 件以上のディレクトリが存在する（このテスト自体が空振りしていないこと）', () => {
     expect(packageDirs.length).toBeGreaterThan(0);
