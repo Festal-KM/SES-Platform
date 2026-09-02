@@ -1,0 +1,56 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`resolveConnectorSelection — APP_ENV の 5 値のスナップショット > APP_ENV=demo の選択結果 1`] = `
+{
+  "ai": "mock",
+  "billing": "mock",
+  "email": "mock",
+  "esign": "mock",
+  "malwareScanner": "mock",
+  "objectStore": "mock",
+}
+`;
+
+exports[`resolveConnectorSelection — APP_ENV の 5 値のスナップショット > APP_ENV=development の選択結果 1`] = `
+{
+  "ai": "mock",
+  "billing": "mock",
+  "email": "mock",
+  "esign": "mock",
+  "malwareScanner": "real",
+  "objectStore": "real",
+}
+`;
+
+exports[`resolveConnectorSelection — APP_ENV の 5 値のスナップショット > APP_ENV=production の選択結果 1`] = `
+{
+  "ai": "real",
+  "billing": "real",
+  "email": "real",
+  "esign": "real",
+  "malwareScanner": "real",
+  "objectStore": "real",
+}
+`;
+
+exports[`resolveConnectorSelection — APP_ENV の 5 値のスナップショット > APP_ENV=sandbox の選択結果 1`] = `
+{
+  "ai": "real",
+  "billing": "real",
+  "email": "sandboxRecipientScoped",
+  "esign": "mock",
+  "malwareScanner": "real",
+  "objectStore": "real",
+}
+`;
+
+exports[`resolveConnectorSelection — APP_ENV の 5 値のスナップショット > APP_ENV=staging の選択結果 1`] = `
+{
+  "ai": "real",
+  "billing": "real",
+  "email": "real",
+  "esign": "real",
+  "malwareScanner": "real",
+  "objectStore": "real",
+}
+`;

@@ -76,7 +76,7 @@ flowchart TB
 | `packages/db` | Prisma スキーマ、RLS 定義、`withTenant` / `withPlatformRead` / `withPlatformWrite`、シード | LLM 呼び出し、外部 API 呼び出し |
 | `packages/ai` | LLM 呼び出しの唯一の経路、PII マスキング、プロンプト版解決、`AiUsage` 記録、コスト上限ガード | DB のスキーマ知識（記録は注入された `recordUsage` 経由）、外部 API（Anthropic 以外） |
 | `packages/connectors` | SES / S3 / GuardDuty / 電子署名 / Stripe の正規化ラッパ、モック実装、BullMQ キュー定義 | 業務ロジック、`packages/db` への依存 |
-| `packages/config` | 環境変数の Zod スキーマ、`createConnectors(env)`、上限値の定数、ログ denylist | 実装の分岐（分岐は `createConnectors` の 1 箇所のみ） |
+| `packages/config` | 環境変数の Zod スキーマ、`resolveConnectorSelection(env)`、上限値の定数、ログ denylist | リクエストごとの分岐（`APP_ENV` の分岐は `resolveConnectorSelection` の 1 箇所のみ） |
 
 ### 1.3 Phase ごとの差分
 
@@ -156,11 +156,11 @@ ses-platform/
       src/usage.ts                        # コスト上限ガード + AiUsage 記録
       src/roles/*.ts                      # 6 ロールの入出力スキーマ定義
     connectors/
-      src/index.ts                        # createConnectors(env)（唯一の分岐点）
+      src/index.ts                        # createConnectors(selection)。選択結果を受け取って実装クラスを instantiate するだけ
       src/email/, storage/, scanner/, esign/, billing/
       src/queues.ts                       # BullMQ のキュー定義（送信系は attempts:1 固定）
       src/mock/                           # モック実装（E2E と同一実装。§13.3）
-    config/         # env.ts（Zod）/ limits.ts / redact.ts
+    config/         # schema.ts（Zod）/ load-env.ts / connector-selection.ts（🔴 APP_ENV 分岐の唯一の場所。resolveConnectorSelection(env)）/ limits.ts / redact.ts
     ui/, i18n/
   prompts/          # {role}.v{n}.ts。packages/ai からのみ読む
   scripts/
@@ -1314,7 +1314,7 @@ model BillingMeterSubmission {                                     // docs/03 §
 | `app_platform_write` | 🔴 **なし** | `plans` / `subscriptions` / `announcements` / `usage_counters`（上書き列）/ `tenants`（`INSERT` + ライフサイクル列の `UPDATE`）/ `invitations`（`INSERT` のみ。初期 `OWNER` 招待に `WITH CHECK` で固定。§5.2）/ `tenant_sending_domains`（`INSERT` のみ。`state='REGISTERED'` に `WITH CHECK` で固定。§5.2）/ `impersonation_sessions` / `audit_logs` への書き込み。**業務テーブルへの書き込み権限を一切持たない** | `PLATFORM_WRITE_DATABASE_URL` | `withPlatformWrite` |
 | `app_share_probe` | 🔴 **なし**（`NOLOGIN`） | `engineer_shares` の `SELECT (tenant_id, engineer_id, revoked_at)` のみ。**他表に一切の権限を持たない** | （接続しない） | `app_engineer_is_shared()` の `SECURITY DEFINER` 所有者としてのみ（§4.5） |
 
-🔴 **テーブル所有者は `app_migrator` であり、`FORCE ROW LEVEL SECURITY` を全業務テーブルに付ける。** これが無いと所有者が RLS を素通りする。**`app_migrator` の接続文字列を `apps/web` / `apps/worker` の実行時環境に渡さない**（`packages/config` の Zod スキーマで、`APP_ENV` が実行時のとき `MIGRATION_DATABASE_URL` が**未設定であること**を検証する）。
+🔴 **テーブル所有者は `app_migrator` であり、`FORCE ROW LEVEL SECURITY` を全業務テーブルに付ける。** これが無いと所有者が RLS を素通りする。**`app_migrator` の接続文字列を `apps/web` / `apps/worker` の実行時環境に渡さない**（`packages/config` の Zod スキーマで、`demo` / `sandbox` / `staging` / `production` の実行時 `APP_ENV` では `MIGRATION_DATABASE_URL` が**未設定であること**を検証する）。🔴 **`development` はこの検証の対象外（暫定。T-01-05 で解除）**（ロール分離〔`app_migrator` 等。T-01-05〕が入るまでは `DATABASE_URL` / `PLATFORM_DATABASE_URL` / `MIGRATION_DATABASE_URL` が同一値でよく、`.env.example` もその前提で構成されている）。**T-01-05 でロールが実在するようになった時点で `packages/config` の `development` 例外（本節および §13.4 規則 3・4）を解除し、`development` も他環境と同じ検証を受けるようにする**（`docs/sprints/SP-01-bootstrap.md` T-01-05 の完了条件に含める）。それまでは `.env.example` と `packages/config` の挙動が本節の記述と一致する。
 
 ### 4.3 `withTenant` の契約
 
@@ -2302,15 +2302,17 @@ export type KnownPiiValues = {          // 🔴 DB の台帳の値。これが�
 ### 8.1 共通インタフェース
 
 ```ts
-// packages/connectors/src/index.ts  — 🔴 実装の分岐はここ 1 箇所（起動時に 1 回）
+// packages/connectors/src/index.ts — 選択結果を instantiate するだけ。🔴 APP_ENV の分岐は packages/config の resolveConnectorSelection（§13.1）
 export type Connectors = {
   email: EmailSender;
-  storage: ObjectStore;
-  scanner: MalwareScanner;
+  objectStore: ObjectStore;
+  malwareScanner: MalwareScanner;
   esign: Record<EsignProviderKey, EsignProvider>;   // 🔴 テナントごとに provider が違う（§8.4）
   billing: BillingProvider;
+  ai: AiClient;
 };
-export function createConnectors(env: AppEnv): Connectors;
+export function createConnectors(selection: ConnectorSelection): Connectors;
+// ConnectorSelection は @ses/config（resolveConnectorSelection。§13.1）が返す型
 ```
 ```ts
 export interface EmailSender {
@@ -2415,7 +2417,7 @@ export function resolveRecipientClass(db: TenantDb, subject: { userId: string } 
 | **分類が未指定の送信を成立させない** | 🔴 **型**。`EmailSender.send` の `recipientClass` は必須プロパティであり、`RecipientClass` に既定値が無い。省略するとコンパイルエラー |
 | **自己申告させない** | 🔴 `resolveRecipientClass` が `Membership.partnerCompanyId` から機械的に導く。**送信ハンドラは `recipientUserId` か「テナント外の宛先である」ことしか渡せない** |
 | **既定値を置く場合** | 🔴 **モック側（`CLIENT`）に倒す**（`docs/02` 章 7.6 のタイブレーカー）。`resolveRecipientClass` の `fallback` の型が `'CLIENT' | 'ENGINEER'` に限られ、`'HOST_MEMBER'` を渡せない |
-| **`sandbox` の分岐** | 🔴 **`createConnectors` の中で 1 回だけ**。`APP_ENV='sandbox'` のとき `SandboxEmailSender` を返し、その `send` が `recipientClass` を見てモック / 実送信を選ぶ。**送信箇所ごとの `if` を書かない** |
+| **`sandbox` の分岐** | 🔴 `resolveConnectorSelection` が `sandbox` のとき `email: 'sandboxRecipientScoped'` を返す 1 箇所だけ。`createConnectors` はその選択を見て `SandboxRecipientScopedEmailSender` を instantiate し、その `send` が `recipientClass` を見てモック / 実送信を選ぶ。**送信箇所ごとの `if` を書かない** |
 | **基盤側の二重防御** | `sandbox` は本番と別 AWS アカウント + **SES サンドボックス状態のまま**。検証済み identity はホスト所属利用者と `PlatformUser` のアドレスのみ（`docs/03` §3.2.8） |
 | **環境変数の三重目** | `AWS_ACCOUNT_ID` が `AWS_ACCOUNT_ID_EXPECTED_PRODUCTION` と一致 かつ `APP_ENV !== 'production'` なら**起動失敗**（§13.4） |
 
@@ -3238,24 +3240,57 @@ sequenceDiagram
 ### 13.1 `APP_ENV` による起動時 DI（NFR-ENV-2）
 
 ```ts
-// packages/connectors/src/index.ts  — 🔴 唯一の分岐点
-export function createConnectors(env: AppEnv): Connectors {
-  switch (env.APP_ENV) {                       // 🔴 網羅性を型で強制（switch の exhaustive check）
-    case 'development': return devConnectors(env);
-    case 'demo':        return demoConnectors(env);       // 全モック
-    case 'sandbox':     return sandboxConnectors(env);    // 宛先分類で分岐する EmailSender
-    case 'staging':     return stagingConnectors(env);    // 各サービスの sandbox
-    case 'production':  return productionConnectors(env); // 🔴 モックが混ざったら throw
-    default:            return assertNever(env.APP_ENV);
+// packages/config/src/connector-selection.ts — 🔴 `switch (env.APP_ENV)` を持つ唯一の場所
+export function resolveConnectorSelection(env: AppEnv): ConnectorSelection {
+  const kind = env.APP_ENV;
+  let selection: ConnectorSelection;
+  switch (kind) {                                  // 🔴 網羅性を型で強制（switch の exhaustive check）
+    case 'development': selection = developmentSelection(); break;
+    case 'demo':        selection = demoSelection(); break;       // 全モック
+    case 'sandbox':     selection = sandboxSelection(); break;    // email のみ宛先分類で分岐
+    case 'staging':     selection = stagingSelection(); break;    // 各サービスの sandbox
+    case 'production':  selection = productionSelection(); break;
+    default:            return assertNever(kind, 'resolveConnectorSelection');
   }
+  assertNoMockInProduction(env, selection);         // 🔴 モックが混ざったら throw
+  return selection;
 }
 ```
+```ts
+// packages/connectors/src/index.ts — 選択結果を受け取ってクラスを instantiate するだけ（APP_ENV を自分で分岐しない）
+export function createConnectors(selection: ConnectorSelection): Connectors {
+  return {
+    email:          pickByKind(selection.email,          { real: RealEmailSender,   mock: MockEmailSender,   sandboxRecipientScoped: SandboxRecipientScopedEmailSender }),
+    objectStore:    pickByKind(selection.objectStore,    { real: RealObjectStore,   mock: MockObjectStore }),
+    malwareScanner: pickByKind(selection.malwareScanner, { real: RealMalwareScanner, mock: MockMalwareScanner }),
+    esign:          pickByKind(selection.esign,          { real: RealEsignProvider, mock: MockEsignProvider }), // テナント別プロバイダの選択は §13.1 の別表を参照
+    billing:        pickByKind(selection.billing,        { real: RealBillingProvider, mock: MockBillingProvider }),
+    ai:             pickByKind(selection.ai,              { real: RealAiClient,      mock: MockAiClient }),
+  };
+}
+// pickByKind は switch (selection[category]) で実装クラスを選ぶだけの内部ヘルパ。APP_ENV を参照しない。
+```
+🔴 **`APP_ENV` の分岐は `resolveConnectorSelection` の 1 箇所に閉じる。** `createConnectors` は `AppEnv` を受け取らず、`resolveConnectorSelection` が返した `ConnectorSelection`（`ConnectorCategory` ごとの `'real' | 'mock' | 'sandboxRecipientScoped'`）だけを見て `switch (selection[category])` でクラスを選ぶ。`production` でモックが混ざっていないかの実行時二重防御（`assertNoMockInProduction`）も `resolveConnectorSelection` が呼ぶ。
+
 | 規約 | 実装 |
 |---|---|
 | **起動時 1 回** | `apps/web` は `instrumentation.ts`、`apps/worker` は `src/main.ts` で 1 回だけ呼び、DI コンテナに入れる。🔴 **リクエストごとに呼ばない** |
 | **リクエストごとの `if` を作らない** | 🔴 **モック実装のモジュールを `packages/connectors/src/index.ts` 以外から import することを ESLint で禁止**（分岐の存在を静的に検出できる。`docs/03` §4.18.2） |
-| **`production` でモックなら起動失敗** | 🔴 `productionConnectors` の内部で、選択された実装が `isMock` なら `throw`。加えて `packages/config` の `z.discriminatedUnion('APP_ENV', [...])` が `production` のとき実装の必須環境変数を `required` にする（NFR-ENV-3） |
+| **`production` でモックなら起動失敗** | 🔴 `resolveConnectorSelection` 内の `assertNoMockInProduction` が、選択結果に `'mock'` が 1 件でも含まれれば `throw`。加えて `packages/config` の `z.discriminatedUnion('APP_ENV', [...])` が `production` のとき実装の必須環境変数を `required` にする（NFR-ENV-3） |
 | **テナント別プロバイダの例外** | 電子署名は `TenantEsignConnection.provider` で選ぶ。🔴 **DI コンテナには「全プロバイダの実装のマップ」を入れ、テナント設定でキーを引く**（`docs/03` §9.1）。リクエストごとの `if` にしない |
+
+**環境 × コネクタ区分の選択結果**（`resolveConnectorSelection` の実装を正とする。CLAUDE.md §11「demo は全モック」「sandbox は送信系のみモック、それ以外は本番同等」に準拠）:
+
+| `APP_ENV` | `email` | `objectStore` | `malwareScanner` | `esign` | `billing` | `ai` |
+|---|---|---|---|---|---|---|
+| `development` | mock | **real**（MinIO） | **real**（ClamAV） | mock | mock | mock |
+| `demo` | mock | mock | mock | mock | mock | mock |
+| `sandbox` | sandboxRecipientScoped | real | real | mock | **real** | real |
+| `staging` | real | real | real | real | real | real |
+| `production` | real | real | real | real | real | real |
+
+- **`development` の `objectStore` / `malwareScanner` が `real`** なのは、ローカル docker-compose の MinIO / ClamAV コンテナに実接続するため（モックではなく実サービス。§13.4 コードコメント参照）。外部の第三者に到達しないため §11.1 の 🔴 には抵触しない。
+- **`sandbox` の `billing` が `real`** なのは、`sandbox` テナントは `Tenant.lifecycleState='SANDBOX'` のままで Stripe の `Subscription` を持たず、課金フロー自体が発生しないため（§4.2 `Tenant` の規則）。「送信系（メール/電子署名）のみモック、それ以外は本番同等」の原則どおり。
 
 ### 13.2 モック実装の設計
 
@@ -3292,10 +3327,10 @@ export class MockEmailSender implements EmailSender {
 ### 13.4 環境変数の検証（`packages/config`。NFR-ENV-3 / NFR-ENV-4）
 
 ```ts
-// packages/config/src/env.ts
+// packages/config/src/schema.ts
 const mailQuota = z.coerce.number().int().positive();  const base = z.object({ /* §6 の共通項目 */ MAIL_PROVIDER_DAILY_QUOTA: mailQuota, MAIL_PROVIDER_QUOTA_WARN_RATIO: z.coerce.number().min(0).max(1).default(0.8) });   // 🔴 MAIL_PROVIDER_DAILY_QUOTA = 送信基盤全体の 24h 枠（§8.3-Q）。staging / production は既定なし = 未設定なら起動失敗
 export const envSchema = z.discriminatedUnion('APP_ENV', [
-  base.extend({ APP_ENV: z.literal('development'), MAIL_PROVIDER_DAILY_QUOTA: mailQuota.default(200) /* 実装系は mock 固定 */ }),
+  base.extend({ APP_ENV: z.literal('development'), MAIL_PROVIDER_DAILY_QUOTA: mailQuota.default(200), MALWARE_SCANNER: z.literal('clamav') /* 🔴 ローカル ClamAV コンテナ固定。mock は選ばせない（docs/03 §3.4-6）。送信系（メール/電子署名）の mock 固定は connectors 側の DI（§13.1）で行う */ }),
   base.extend({ APP_ENV: z.literal('demo'),        MALWARE_SCANNER: z.literal('mock'), MAIL_PROVIDER_DAILY_QUOTA: mailQuota.default(200) }),
   base.extend({ APP_ENV: z.literal('sandbox'),     ANTHROPIC_API_KEY: z.string().startsWith('sk-ant-'), MAIL_PROVIDER_DAILY_QUOTA: mailQuota.default(200),   // SES サンドボックスの 200 通 / 24h（docs/03 §3.2.4）
                                                     MALWARE_SCANNER: z.enum(['guardduty','clamav']) }),
@@ -3311,8 +3346,8 @@ export const envSchema = z.discriminatedUnion('APP_ENV', [
 |---|---|
 | 1 | 🔴 **`production` でモック実装が型として選べない**（`z.literal('mock')` が `production` の枝に無い） |
 | 2 | 🔴 **`APP_ENV !== 'production'` で本番の識別子を検出したら `throw`**: `AWS_ACCOUNT_ID === AWS_ACCOUNT_ID_EXPECTED_PRODUCTION` / `STRIPE_SECRET_KEY` が `sk_live_` / `ESIGN_API_BASE_URL` が本番 URL |
-| 3 | 🔴 **実行時環境に `MIGRATION_DATABASE_URL` が設定されていたら `throw`**（§4.2） |
-| 4 | `DATABASE_URL !== PLATFORM_DATABASE_URL`、`AUTH_SECRET !== AUTH_PLATFORM_SECRET` を検証 |
+| 3 | 🔴 **`demo` / `sandbox` / `staging` / `production` の実行時環境に `MIGRATION_DATABASE_URL` が設定されていたら `throw`**（§4.2）。**`development` は対象外**（ロール分離〔T-01-05〕導入までは 3 接続文字列が同一値になりうるため。`.env.example` 参照） |
+| 4 | `DATABASE_URL !== PLATFORM_DATABASE_URL`（かつ両方とも `sslmode=require` を含む）、`AUTH_SECRET !== AUTH_PLATFORM_SECRET` を検証。**`development` は `DATABASE_URL === PLATFORM_DATABASE_URL` と `sslmode=disable` を対象外（例外）とする**（規則 3 と同じ理由。ロール分離〔T-01-05〕導入までの暫定。`.env.example` / `docs/03` §6.1 参照） |
 | 5 | 検証エラーは**どの変数がなぜ不正かを列挙**して落とす。1 つ目で止めない |
 | 6 | 🔴 **検証結果のログにシークレットの値を出さない**（変数名と理由のみ） |
 

@@ -1141,14 +1141,16 @@ Claude の PDF サポートは技術的には xlsx を除く多くの文書を�
 #### 4.18.2 起動時 DI の実現方式（`docs/02` 申し送り 8 / NFR-ENV-2〜4）
 
 ```
-packages/config/src/env.ts       … Zod スキーマ。APP_ENV と全環境変数を検証
-packages/connectors/src/index.ts … createConnectors(env) が APP_ENV で実装を決める（唯一の分岐点）
+packages/config/src/schema.ts              … Zod スキーマ。APP_ENV と全環境変数を検証
+packages/config/src/load-env.ts            … process.env を schema.ts で検証して AppEnv を組み立てる
+packages/config/src/connector-selection.ts … resolveConnectorSelection(env)（唯一の分岐点。`switch (env.APP_ENV)` を持つのはここだけ）
+packages/connectors/src/index.ts           … createConnectors(selection) が選択結果を読んでクラスを instantiate するだけ（APP_ENV を再び分岐しない）
 ```
 
 | 要件 | 実現 |
 |---|---|
-| **NFR-ENV-2**（起動時 1 箇所の DI） | 🔴 **`createConnectors(env)` を `apps/web` / `apps/worker` の起動時に 1 回だけ呼び、結果を DI コンテナに入れる。** リクエストごとに呼ばない。**ESLint `no-restricted-imports` で、モック実装のモジュールを `packages/connectors/src/index.ts` 以外から import することを禁止する**（分岐の存在を静的に検出できる） |
-| **NFR-ENV-3**（`production` でモックなら起動失敗） | 🔴 **`createConnectors` の内部で、`env.APP_ENV === 'production'` かつ選択された実装がモックなら `throw` する。** 「未設定ならモックにフォールバック」の分岐を**書けない構造**にする — Zod スキーマ側で、`APP_ENV === 'production'` のとき実装の必須環境変数を `required` にする（`z.discriminatedUnion('APP_ENV', [...])`） |
+| **NFR-ENV-2**（起動時 1 箇所の DI） | 🔴 **`resolveConnectorSelection(env)` → `createConnectors(selection)` を `apps/web` / `apps/worker` の起動時に 1 回だけ呼び、結果を DI コンテナに入れる。** リクエストごとに呼ばない。**ESLint `no-restricted-imports` で、モック実装のモジュールを `packages/connectors/src/index.ts` 以外から import することを禁止する**（分岐の存在を静的に検出できる） |
+| **NFR-ENV-3**（`production` でモックなら起動失敗） | 🔴 **`packages/config` の `assertNoMockInProduction(env, selection)` が、`env.APP_ENV === 'production'` かつ選択結果に `'mock'` が 1 件でも含まれていれば `throw` する（`resolveConnectorSelection` の内部から呼ぶ）。** 「未設定ならモックにフォールバック」の分岐を**書けない構造**にする — Zod スキーマ側でも、`APP_ENV === 'production'` のとき実装の必須環境変数を `required` にする（`z.discriminatedUnion('APP_ENV', [...])`） |
 | **NFR-ENV-4**（非本番に本番キーがあれば起動失敗） | 🔴 **`packages/config` に「環境ごとに期待される固定値」を持たせて照合する。** 具体: `AWS_ACCOUNT_ID` / `SES_TENANT_PREFIX` / `STRIPE_SECRET_KEY` の接頭辞（`sk_live_` / `sk_test_`）/ `ANTHROPIC_API_KEY` のワークスペース。**`APP_ENV !== 'production'` で `sk_live_` を検出したら `throw`** |
 | 🔴 **NFR-ENV-1**（`sandbox` の宛先分類） | **メール送信の単一経路 `sendEmail({ recipientClass, ... })` が `recipientClass` を必須引数に取る。** `recipientClass` は**列挙型であり省略できない**（TypeScript の必須プロパティ）。🔴 **さらに、呼び出し側に自己申告させず、`resolveRecipientClass(recipientUserId)` が `Membership` の `partner_company_id` の有無から機械的に導く**（`docs/05` 申し送り 10）。判定順は「`PlatformUser` → パートナー所属 → テナント所属 → それ以外」。**既定値を置く場合はモック側（分類 3）に倒す** |
 | **二重防御** | §3.2.8 の第 2 層（SES サンドボックス）と第 3 層（環境変数の検証） |
@@ -1252,8 +1254,8 @@ packages/connectors/src/index.ts … createConnectors(env) が APP_ENV で実装
 | `APP_ENV` | 環境の識別。**外部連携の DI の唯一の分岐キー**（§4.18.2） | 🔴 必須 | `z.enum(['development','demo','sandbox','staging','production'])` |
 | `NODE_ENV` | Node の実行モード | 必須 | `z.enum(['development','test','production'])`。**`APP_ENV` と混同しない** |
 | `APP_URL` | 主平面の公開 URL（招待リンク・Webhook URL の生成に使う） | 🔴 必須 | `z.string().url()`。`production` では `https://` を強制 |
-| `DATABASE_URL` | 主平面の DB 接続（ロール `app_tenant`） | 🔴 必須 | `z.string().url()`。🔴 **`sslmode=require` を含むことを検証する** |
-| `PLATFORM_DATABASE_URL` | 🔴 **管理平面の DB 接続（ロール `app_platform`）。§4.3.3** | 🔴 必須 | 同上。**`DATABASE_URL` と異なることを検証する** |
+| `DATABASE_URL` | 主平面の DB 接続（ロール `app_tenant`） | 🔴 必須 | `z.string().url()`。🔴 **`sslmode=require` を含むことを検証する。** ⚠️ **`development` のみ例外**（ロール分離〔`app_migrator` 等。T-01-05〕導入までの暫定。`sslmode=disable` を許容する。`docs/05` §4.2 / §13.4 規則 4） |
+| `PLATFORM_DATABASE_URL` | 🔴 **管理平面の DB 接続（ロール `app_platform`）。§4.3.3** | 🔴 必須 | 同上。**`DATABASE_URL` と異なることを検証する。** ⚠️ **`development` のみ例外**（同上の理由。`DATABASE_URL` と同一値を許容する） |
 | `MIGRATION_DATABASE_URL` | マイグレーション用（ロール `app_migrator`） | CI / デプロイ時のみ | 同上 |
 | `REDIS_URL` | BullMQ / キャッシュ / トークンバケット | 🔴 必須 | `z.string().url()` |
 
@@ -1293,6 +1295,8 @@ packages/connectors/src/index.ts … createConnectors(env) が APP_ENV で実装
 | `EMAIL_DAILY_LIMIT_PER_TENANT` | テナント 1 日の上限（既定 500） | 必須 | `z.coerce.number().int().positive()` |
 | `EMAIL_MINUTE_LIMIT_PER_TENANT` | テナント 1 分の上限（既定 30） | 必須 | 同上 |
 | `SES_GLOBAL_RATE_PER_SECOND` | 🔴 **全テナント合計の送信レート（グローバルトークンバケット。§4.5）** | 必須 | 同上。**SES の本番クォータ以下であることを運用で担保する** |
+| `SMTP_HOST` | 🔴 **`development` 専用。MailHog（ローカル SMTP キャプチャ）への接続先**（`docker-compose.yml`。T-01-02） | `development` で必須 | `z.string()` |
+| `SMTP_PORT` | 同上のポート | `development` で必須 | `z.coerce.number().int().positive()` |
 
 ### 6.5 ストレージ・スキャン
 
@@ -1302,9 +1306,13 @@ packages/connectors/src/index.ts … createConnectors(env) が APP_ENV で実装
 | `S3_KMS_KEY_ID` | SSE-KMS の鍵 | `production` / `sandbox` で必須 | `z.string()` |
 | `S3_PRESIGNED_URL_TTL_SECONDS` | 署名付き URL の有効期限（既定 300） | 必須 | `z.coerce.number().int().min(60).max(3600)` |
 | `UPLOAD_MAX_BYTES` | アップロード上限（既定 20 MB） | 必須 | `z.coerce.number().int().positive()` |
-| `MALWARE_SCANNER` | スキャナの実装選択 | 🔴 必須 | `z.enum(['guardduty','clamav','mock'])`。🔴 **`production` で `mock` なら起動失敗** |
-| `CLAMAV_HOST` / `CLAMAV_PORT` | `MALWARE_SCANNER === 'clamav'` のとき | 条件付き必須 | — |
+| `MALWARE_SCANNER` | スキャナの実装選択 | 🔴 必須 | `z.enum(['guardduty','clamav','mock'])`。🔴 **`production` で `mock` なら起動失敗**。🔴 **`development` / CI は `clamav` 固定**（§3.4-6。`mock` は選ばせない） |
+| `CLAMAV_HOST` / `CLAMAV_PORT` | `MALWARE_SCANNER === 'clamav'` のとき（`development` を含む） | 条件付き必須 | — |
 | `SCAN_STALL_ALERT_MINUTES` | `SCANNING` 滞留の検知閾値（既定 10） | 必須 | `z.coerce.number().int().positive()` |
+| `S3_ENDPOINT` | 🔴 **`development` 専用。MinIO（S3 互換ストレージ）のエンドポイント上書き**。`staging` / `production` の AWS S3 では未設定（既定のリージョンエンドポイントを使う） | `development` で必須 | `z.string().url()` |
+| `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | 🔴 **`development` の MinIO 資格情報**。`staging` / `production` は AWS IAM ロールで認証し、静的キーを持たない（§4.6 ワーカーの IAM ロール方針） | `development` で必須。**`staging` / `production` で設定されていたら起動失敗**（NFR-ENV-4 と同種の取り違え防止） | `z.string()` |
+| `S3_REGION` | S3 クライアントのリージョン（MinIO は `us-east-1` 固定。AWS では `AWS_REGION` と同じ値を既定にする） | 必須 | `z.string()` |
+| `S3_FORCE_PATH_STYLE` | MinIO 向けのパススタイルアドレッシング | 任意（既定 `false`） | `z.coerce.boolean().default(false)`。🔴 **`production` で `true` なら起動失敗**（AWS S3 はバーチャルホスト形式のため誤設定を検知する） |
 
 ### 6.6 電子署名（Phase 3）
 

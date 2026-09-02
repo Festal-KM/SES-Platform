@@ -76,7 +76,8 @@ pnpm workspaces のモノレポとローカル開発環境を立ち上げ、🔴
   - `app_platform_write`（`tenants` / `invitations` / `tenant_sending_domains` の `INSERT` と、契約・クォータ・機能フラグ・お知らせのみ）
   - `app_share_probe`（`engineer_shares` の 3 列の `SELECT` のみ。SP-08 の経路 4 で使う）
 - **接続文字列は `packages/config` の 1 箇所**（`DATABASE_URL` / `PLATFORM_DATABASE_URL`）。専用接続プール・専用 Prisma インスタンスにする。
-- **完了の判定**: `tests/isolation/roles.test.ts` — ①5 ロールすべてが `pg_roles.rolbypassrls = false` ②`app_platform` が業務テーブルに書込権限を 0 件 ③`app_platform_write` の書込先が許可リストと一致（`docs/05` §17.2 #5）。
+- 🔴 **`packages/config` の `development` 例外を解除する**（code-reviewer 指摘。`docs/05` §4.2 / §13.4 規則 3・4）。ロールが実在するようになった時点で、`development` も他環境と同様に ①`DATABASE_URL !== PLATFORM_DATABASE_URL` ②`DATABASE_URL` / `PLATFORM_DATABASE_URL` の `sslmode=require` ③実行時に `MIGRATION_DATABASE_URL` が未設定であること、を検証する（`crossFieldChecks` の `isDevelopment` 分岐を削除し、`.env.example` のローカル docker-compose 用の値も分離済みロールの接続文字列に更新する）。
+- **完了の判定**: `tests/isolation/roles.test.ts` — ①5 ロールすべてが `pg_roles.rolbypassrls = false` ②`app_platform` が業務テーブルに書込権限を 0 件 ③`app_platform_write` の書込先が許可リストと一致（`docs/05` §17.2 #5）。④ `packages/config` の `development` 例外を解除した後も `schema.test.ts` が green（`development` を他環境と同じ検証に通しても既存の development フィクスチャが通ること）。
 
 ### T-01-06 `withTenant` の契約とブランド型（L）
 
