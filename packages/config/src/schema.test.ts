@@ -149,43 +149,51 @@ describe('SCHEDULER_TIMEZONE は z.literal("Asia/Tokyo") で固定する', () =>
   });
 });
 
-describe('development のみ許容される猶予（SP-01 T-01-03 申し送り 3 / 4。T-01-05 完了までの暫定）', () => {
-  it('development は DATABASE_URL の sslmode=disable を許容する', () => {
-    const env = loadAppEnv(buildValidEnv('development'));
-    expect(env.DATABASE_URL).toContain('sslmode=disable');
+describe('development も他環境と同じ DB 接続の検証を受ける（T-01-05。docs/05 §4.2 / §13.4 規則 3・4 の development 例外解除）', () => {
+  it('development は DATABASE_URL の sslmode=disable を拒否する（sslmode=require が必須）', () => {
+    const input = buildValidEnv('development', {
+      DATABASE_URL: 'postgresql://app_tenant:pw@localhost:5432/ses_platform?sslmode=disable',
+    });
+    expect(() => loadAppEnv(input)).toThrow(EnvValidationError);
   });
 
-  it('staging は sslmode=disable を拒否する（sslmode=require が必須）', () => {
+  it('development は sslmode=require の DATABASE_URL を許容する', () => {
+    const env = loadAppEnv(buildValidEnv('development'));
+    expect(env.DATABASE_URL).toContain('sslmode=require');
+  });
+
+  it('staging は sslmode=disable を拒否する（development と同じ規則）', () => {
     const input = buildValidEnv('staging', {
       DATABASE_URL: 'postgresql://ses:pw@staging-db.internal:5432/ses_platform?sslmode=disable',
     });
     expect(() => loadAppEnv(input)).toThrow(EnvValidationError);
   });
 
-  it('development は PLATFORM_DATABASE_URL === DATABASE_URL を許容する', () => {
-    const env = loadAppEnv(buildValidEnv('development'));
-    expect(env.PLATFORM_DATABASE_URL).toBe(env.DATABASE_URL);
+  it('development は PLATFORM_DATABASE_URL === DATABASE_URL を拒否する', () => {
+    const env = buildValidEnv('development');
+    const input = buildValidEnv('development', { PLATFORM_DATABASE_URL: env.DATABASE_URL });
+    expect(() => loadAppEnv(input)).toThrow(EnvValidationError);
   });
 
-  it('staging は PLATFORM_DATABASE_URL === DATABASE_URL を拒否する', () => {
+  it('staging は PLATFORM_DATABASE_URL === DATABASE_URL を拒否する（development と同じ規則）', () => {
     const input = buildValidEnv('staging', {
       PLATFORM_DATABASE_URL: 'postgresql://ses:pw@staging-db.internal:5432/ses_platform?sslmode=require',
     });
     expect(() => loadAppEnv(input)).toThrow(EnvValidationError);
   });
 
-  it('development は MIGRATION_DATABASE_URL の設定を許容する', () => {
-    const env = loadAppEnv(buildValidEnv('development'));
-    expect(env.MIGRATION_DATABASE_URL).toBeDefined();
-  });
-
-  it('demo / sandbox / staging / production は実行時に MIGRATION_DATABASE_URL があると失敗する', () => {
-    for (const kind of ['demo', 'sandbox', 'staging', 'production'] as const) {
+  it('development / demo / sandbox / staging / production のいずれも実行時に MIGRATION_DATABASE_URL があると失敗する', () => {
+    for (const kind of allAppEnvKinds()) {
       const input = buildValidEnv(kind, {
         MIGRATION_DATABASE_URL: 'postgresql://app_migrator:pw@db.internal:5432/ses_platform?sslmode=require',
       });
       expect(() => loadAppEnv(input), `APP_ENV=${kind}`).toThrow(EnvValidationError);
     }
+  });
+
+  it('development は MIGRATION_DATABASE_URL を省略すれば通る（未設定が既定）', () => {
+    const env = loadAppEnv(buildValidEnv('development'));
+    expect(env.MIGRATION_DATABASE_URL).toBeUndefined();
   });
 });
 

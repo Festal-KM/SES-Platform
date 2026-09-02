@@ -47,9 +47,10 @@ const perKind: Record<AppEnvKind, EnvRecord> = {
   development: {
     APP_URL: 'http://localhost:3000',
     NODE_ENV: 'development',
-    DATABASE_URL: 'postgresql://ses:pw@localhost:5432/ses_platform?sslmode=disable',
-    PLATFORM_DATABASE_URL: 'postgresql://ses:pw@localhost:5432/ses_platform?sslmode=disable',
-    MIGRATION_DATABASE_URL: 'postgresql://ses:pw@localhost:5432/ses_platform?sslmode=disable',
+    // T-01-05: development も他環境と同じ検証を受ける（docs/05 §4.2 / §13.4 規則 3・4 の
+    // development 例外解除）。ロール別に別値・sslmode=require・MIGRATION_DATABASE_URL 未設定。
+    DATABASE_URL: 'postgresql://app_tenant:pw@localhost:5432/ses_platform?sslmode=require',
+    PLATFORM_DATABASE_URL: 'postgresql://app_platform:pw@localhost:5432/ses_platform?sslmode=require',
     AWS_ACCOUNT_ID: '100000000001',
     MALWARE_SCANNER: 'clamav',
     CLAMAV_HOST: 'localhost',

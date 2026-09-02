@@ -15,16 +15,28 @@ services:
     image: postgres:17-bookworm
     container_name: ses-postgres
     restart: unless-stopped
+    # 🔴 T-01-05: development でも DATABASE_URL / PLATFORM_DATABASE_URL に sslmode=require を
+    #    要求する（docs/05 §4.2 / §13.4 規則 4 の development 例外解除）ため、自己署名証明書で
+    #    TLS を有効化した起動スクリプトに差し替える（docker/postgres/entrypoint-ssl.sh）。
+    entrypoint: ['bash', '/docker-entrypoint-ssl.sh']
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-ses}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ses_dev_password}
       POSTGRES_DB: ${POSTGRES_DB:-ses_platform}
+      # ロール別パスワード（docker/postgres/initdb/000-roles.sh。ローカル専用ダミー値）。
+      APP_MIGRATOR_PASSWORD: ${APP_MIGRATOR_PASSWORD:-app_migrator_dev_password}
+      APP_TENANT_PASSWORD: ${APP_TENANT_PASSWORD:-app_tenant_dev_password}
+      APP_PLATFORM_PASSWORD: ${APP_PLATFORM_PASSWORD:-app_platform_dev_password}
+      APP_PLATFORM_WRITE_PASSWORD: ${APP_PLATFORM_WRITE_PASSWORD:-app_platform_write_dev_password}
     ports:
       - '127.0.0.1:${POSTGRES_PORT:-5432}:5432'
     volumes:
       - ses_postgres_data:/var/lib/postgresql/data
       # pg_trgm を有効化し、pg_bigm は使える場合のみ有効化する（docs/03 §3.7.2 / TBD-8）。
+      # 000-roles.sh は packages/db/prisma/sql/000_roles.sql（唯一のロール定義）を適用する。
       - ./docker/postgres/initdb:/docker-entrypoint-initdb.d:ro
+      - ./packages/db/prisma/sql/000_roles.sql:/opt/ses/000_roles.sql:ro
+      - ./docker/postgres/entrypoint-ssl.sh:/docker-entrypoint-ssl.sh:ro
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
       interval: 5s

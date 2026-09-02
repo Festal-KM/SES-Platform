@@ -1254,8 +1254,8 @@ packages/connectors/src/index.ts           … createConnectors(selection) が�
 | `APP_ENV` | 環境の識別。**外部連携の DI の唯一の分岐キー**（§4.18.2） | 🔴 必須 | `z.enum(['development','demo','sandbox','staging','production'])` |
 | `NODE_ENV` | Node の実行モード | 必須 | `z.enum(['development','test','production'])`。**`APP_ENV` と混同しない** |
 | `APP_URL` | 主平面の公開 URL（招待リンク・Webhook URL の生成に使う） | 🔴 必須 | `z.string().url()`。`production` では `https://` を強制 |
-| `DATABASE_URL` | 主平面の DB 接続（ロール `app_tenant`） | 🔴 必須 | `z.string().url()`。🔴 **`sslmode=require` を含むことを検証する。** ⚠️ **`development` のみ例外**（ロール分離〔`app_migrator` 等。T-01-05〕導入までの暫定。`sslmode=disable` を許容する。`docs/05` §4.2 / §13.4 規則 4） |
-| `PLATFORM_DATABASE_URL` | 🔴 **管理平面の DB 接続（ロール `app_platform`）。§4.3.3** | 🔴 必須 | 同上。**`DATABASE_URL` と異なることを検証する。** ⚠️ **`development` のみ例外**（同上の理由。`DATABASE_URL` と同一値を許容する） |
+| `DATABASE_URL` | 主平面の DB 接続（ロール `app_tenant`） | 🔴 必須 | `z.string().url()`。🔴 **`sslmode=require` を含むことを検証する（`development` を含む全環境。T-01-05 でロールが実在するようになったため例外を解除した。`docs/05` §4.2 / §13.4 規則 4）** |
+| `PLATFORM_DATABASE_URL` | 🔴 **管理平面の DB 接続（ロール `app_platform`）。§4.3.3** | 🔴 必須 | 同上。**`DATABASE_URL` と異なることを検証する（`development` を含む全環境）** |
 | `MIGRATION_DATABASE_URL` | マイグレーション用（ロール `app_migrator`） | CI / デプロイ時のみ | 同上 |
 | `REDIS_URL` | BullMQ / キャッシュ / トークンバケット | 🔴 必須 | `z.string().url()` |
 

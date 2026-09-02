@@ -131,6 +131,61 @@ export async function readRoleBypassRls(
   return rows.map((row) => ({ role: row.rolname, bypassRls: row.rolbypassrls }));
 }
 
+/**
+ * 🔴 T-01-05（docs/05 §4.2 / §5.2 / §17.2 #5）: `public` スキーマの全テーブル名を
+ * カタログから走査する（列挙しない。docs/05 §4.7 と同じ方針）。
+ */
+export async function readPublicTables(client: RawQueryable): Promise<string[]> {
+  const rows = await client.$queryRaw<Array<{ relname: string }>>(Prisma.sql`
+    SELECT c.relname
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p')
+    ORDER BY c.relname`);
+  return rows.map((row) => row.relname);
+}
+
+/**
+ * `has_table_privilege(role, table, privilege)`。ANY の接続ロールから、他ロールの
+ * テーブル権限を調べられる（GRANT の可視性は接続ロールに依存しない。pg_class.relacl は
+ * 誰からでも読めるメタデータのため）。列レベルのみの GRANT（例: `UPDATE (col)`）は
+ * ここでは `false` になる（`hasColumnPrivilege` で見る）。
+ */
+export async function hasTablePrivilege(
+  client: RawQueryable,
+  role: string,
+  table: string,
+  privilege: 'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE',
+): Promise<boolean> {
+  const rows = await client.$queryRaw<Array<{ has: boolean }>>(
+    Prisma.sql`SELECT has_table_privilege(${role}, ${table}, ${privilege}) AS has`,
+  );
+  return rows[0]?.has ?? false;
+}
+
+/** `has_column_privilege(role, table, column, privilege)`。列レベル GRANT の有無を調べる。 */
+export async function hasColumnPrivilege(
+  client: RawQueryable,
+  role: string,
+  table: string,
+  column: string,
+  privilege: 'SELECT' | 'INSERT' | 'UPDATE',
+): Promise<boolean> {
+  const rows = await client.$queryRaw<Array<{ has: boolean }>>(
+    Prisma.sql`SELECT has_column_privilege(${role}, ${table}, ${column}, ${privilege}) AS has`,
+  );
+  return rows[0]?.has ?? false;
+}
+
+/** `information_schema.columns` から、指定テーブルの全列名を取得する（列挙しない）。 */
+export async function readTableColumns(client: RawQueryable, table: string): Promise<string[]> {
+  const rows = await client.$queryRaw<Array<{ column_name: string }>>(Prisma.sql`
+    SELECT column_name FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = ${table}
+    ORDER BY ordinal_position`);
+  return rows.map((row) => row.column_name);
+}
+
 export type ScopeSettingsSnapshot = {
   readonly tenantId: string;
   readonly partnerCompanyId: string;

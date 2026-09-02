@@ -1314,7 +1314,7 @@ model BillingMeterSubmission {                                     // docs/03 §
 | `app_platform_write` | 🔴 **なし** | `plans` / `subscriptions` / `announcements` / `usage_counters`（上書き列）/ `tenants`（`INSERT` + ライフサイクル列の `UPDATE`）/ `invitations`（`INSERT` のみ。初期 `OWNER` 招待に `WITH CHECK` で固定。§5.2）/ `tenant_sending_domains`（`INSERT` のみ。`state='REGISTERED'` に `WITH CHECK` で固定。§5.2）/ `impersonation_sessions` / `audit_logs` への書き込み。**業務テーブルへの書き込み権限を一切持たない** | `PLATFORM_WRITE_DATABASE_URL` | `withPlatformWrite` |
 | `app_share_probe` | 🔴 **なし**（`NOLOGIN`） | `engineer_shares` の `SELECT (tenant_id, engineer_id, revoked_at)` のみ。**他表に一切の権限を持たない** | （接続しない） | `app_engineer_is_shared()` の `SECURITY DEFINER` 所有者としてのみ（§4.5） |
 
-🔴 **テーブル所有者は `app_migrator` であり、`FORCE ROW LEVEL SECURITY` を全業務テーブルに付ける。** これが無いと所有者が RLS を素通りする。**`app_migrator` の接続文字列を `apps/web` / `apps/worker` の実行時環境に渡さない**（`packages/config` の Zod スキーマで、`demo` / `sandbox` / `staging` / `production` の実行時 `APP_ENV` では `MIGRATION_DATABASE_URL` が**未設定であること**を検証する）。🔴 **`development` はこの検証の対象外（暫定。T-01-05 で解除）**（ロール分離〔`app_migrator` 等。T-01-05〕が入るまでは `DATABASE_URL` / `PLATFORM_DATABASE_URL` / `MIGRATION_DATABASE_URL` が同一値でよく、`.env.example` もその前提で構成されている）。**T-01-05 でロールが実在するようになった時点で `packages/config` の `development` 例外（本節および §13.4 規則 3・4）を解除し、`development` も他環境と同じ検証を受けるようにする**（`docs/sprints/SP-01-bootstrap.md` T-01-05 の完了条件に含める）。それまでは `.env.example` と `packages/config` の挙動が本節の記述と一致する。
+🔴 **テーブル所有者は `app_migrator` であり、`FORCE ROW LEVEL SECURITY` を全業務テーブルに付ける。** これが無いと所有者が RLS を素通りする。**`app_migrator` の接続文字列を `apps/web` / `apps/worker` の実行時環境に渡さない**（`packages/config` の Zod スキーマで、`development` を含む全環境の実行時 `APP_ENV` では `MIGRATION_DATABASE_URL` が**未設定であること**を検証する。T-01-05 でロールが実在するようになったため `development` 例外〔本節および §13.4 規則 3・4〕を解除した）。ロールの定義は `packages/db/prisma/sql/000_roles.sql` を唯一の真実とし、ローカル docker-compose（`docker/postgres/initdb/000-roles.sh`）と Testcontainers（`tests/isolation/support/postgres.ts`）の両方がこのファイルを実行する。
 
 ### 4.3 `withTenant` の契約
 
@@ -3350,8 +3350,8 @@ export const envSchema = z.discriminatedUnion('APP_ENV', [
 |---|---|
 | 1 | 🔴 **`production` でモック実装が型として選べない**（`z.literal('mock')` が `production` の枝に無い） |
 | 2 | 🔴 **`APP_ENV !== 'production'` で本番の識別子を検出したら `throw`**: `AWS_ACCOUNT_ID === AWS_ACCOUNT_ID_EXPECTED_PRODUCTION` / `STRIPE_SECRET_KEY` が `sk_live_` / `ESIGN_API_BASE_URL` が本番 URL |
-| 3 | 🔴 **`demo` / `sandbox` / `staging` / `production` の実行時環境に `MIGRATION_DATABASE_URL` が設定されていたら `throw`**（§4.2）。**`development` は対象外**（ロール分離〔T-01-05〕導入までは 3 接続文字列が同一値になりうるため。`.env.example` 参照） |
-| 4 | `DATABASE_URL !== PLATFORM_DATABASE_URL`（かつ両方とも `sslmode=require` を含む）、`AUTH_SECRET !== AUTH_PLATFORM_SECRET` を検証。**`development` は `DATABASE_URL === PLATFORM_DATABASE_URL` と `sslmode=disable` を対象外（例外）とする**（規則 3 と同じ理由。ロール分離〔T-01-05〕導入までの暫定。`.env.example` / `docs/03` §6.1 参照） |
+| 3 | 🔴 **`development` を含む全環境の実行時環境に `MIGRATION_DATABASE_URL` が設定されていたら `throw`**（§4.2。T-01-05 でロールが実在するようになったため `development` 例外を解除した） |
+| 4 | `DATABASE_URL !== PLATFORM_DATABASE_URL`（かつ両方とも `sslmode=require` を含む）、`AUTH_SECRET !== AUTH_PLATFORM_SECRET` を検証。**`development` を含む全環境が対象**（T-01-05 で `development` 例外を解除した。`.env.example` / `docs/03` §6.1 参照） |
 | 5 | 検証エラーは**どの変数がなぜ不正かを列挙**して落とす。1 つ目で止めない |
 | 6 | 🔴 **検証結果のログにシークレットの値を出さない**（変数名と理由のみ） |
 

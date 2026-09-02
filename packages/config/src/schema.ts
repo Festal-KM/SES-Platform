@@ -5,8 +5,8 @@
 // 🔴 規則（docs/05 §13.4 / docs/03 §6.10）:
 //   1. production でモック実装が型として選べない（'mock' がその枝の union に無い）
 //   2. 非本番で本番の識別子（AWS アカウント ID 一致 / sk_live_ / DocuSign 本番 URL 等）を検出したら失敗
-//   3. 実行時（demo/sandbox/staging/production）に MIGRATION_DATABASE_URL が設定されていたら失敗。
-//      development のみ対象外（T-01-05 でロールが分離されるまでの暫定。SP-01 T-01-03 申し送り 3）
+//   3. 実行時（development を含む全環境）に MIGRATION_DATABASE_URL が設定されていたら失敗
+//      （T-01-05 でロールが実在するようになったため development 例外を解除した。docs/05 §4.2 / §13.4 規則 3）
 //   4. 検証エラーは「どの変数が、なぜ不正か」を全件列挙する（1 件目で止めない）
 //   5. 検証結果に環境変数の値そのものを含めない
 //
@@ -221,7 +221,6 @@ function addIssue(ctx: IssueSink, variable: string, message: string): void {
  */
 function crossFieldChecks(data: EnvUnionData, ctx: IssueSink): void {
   const isProduction = data.APP_ENV === 'production';
-  const isDevelopment = data.APP_ENV === 'development';
 
   if (isProduction && !data.APP_URL.startsWith('https://')) {
     addIssue(ctx, 'APP_URL', 'production では https:// で始まる必要があります');
@@ -256,21 +255,19 @@ function crossFieldChecks(data: EnvUnionData, ctx: IssueSink): void {
     addIssue(ctx, 'AUTH_PLATFORM_SECRET', 'AUTH_SECRET と同じ値は使用できません（主平面 / 管理平面で別の鍵にする）');
   }
 
-  // 🔴 development のみ、ロール分離（T-01-05）導入までの猶予として下記 3 点を対象外にする
-  // （SP-01 T-01-03 申し送り 3 / 4。docs/05 §4.2 / §13.4 規則 3 も development を除外する形に改訂済み）。
-  if (!isDevelopment) {
-    if (data.MIGRATION_DATABASE_URL !== undefined) {
-      addIssue(ctx, 'MIGRATION_DATABASE_URL', '実行時環境には設定できません（development を除く。app_migrator 専用）');
-    }
-    if (data.DATABASE_URL === data.PLATFORM_DATABASE_URL) {
-      addIssue(ctx, 'PLATFORM_DATABASE_URL', 'DATABASE_URL と同じ値は使用できません（development を除く）');
-    }
-    if (!hasSslModeRequire(data.DATABASE_URL)) {
-      addIssue(ctx, 'DATABASE_URL', 'sslmode=require を含める必要があります（development を除く）');
-    }
-    if (!hasSslModeRequire(data.PLATFORM_DATABASE_URL)) {
-      addIssue(ctx, 'PLATFORM_DATABASE_URL', 'sslmode=require を含める必要があります（development を除く）');
-    }
+  // 🔴 T-01-05 でロールが実在するようになったため、development も他環境と同じ検証を受ける
+  // （docs/05 §4.2 / §13.4 規則 3・4。development 例外の解除）。
+  if (data.MIGRATION_DATABASE_URL !== undefined) {
+    addIssue(ctx, 'MIGRATION_DATABASE_URL', '実行時環境には設定できません（app_migrator 専用。マイグレーション実行時のみ一時的に指定する）');
+  }
+  if (data.DATABASE_URL === data.PLATFORM_DATABASE_URL) {
+    addIssue(ctx, 'PLATFORM_DATABASE_URL', 'DATABASE_URL と同じ値は使用できません');
+  }
+  if (!hasSslModeRequire(data.DATABASE_URL)) {
+    addIssue(ctx, 'DATABASE_URL', 'sslmode=require を含める必要があります');
+  }
+  if (!hasSslModeRequire(data.PLATFORM_DATABASE_URL)) {
+    addIssue(ctx, 'PLATFORM_DATABASE_URL', 'sslmode=require を含める必要があります');
   }
 
   if ((data.APP_ENV === 'staging' || isProduction) && (data.S3_ACCESS_KEY_ID !== undefined || data.S3_SECRET_ACCESS_KEY !== undefined)) {
