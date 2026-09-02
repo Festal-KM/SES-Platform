@@ -100,6 +100,19 @@ model Tenant {
   partnerCompanies PartnerCompany[]
   invitations      Invitation[]
   sendingDomains   TenantSendingDomain[]
+  // 🔴 T-02-02（docs/05 §3.4 / §3.5）で追加した 10 表の逆リレーション。
+  //    tenant-relation.test.ts / scope-injection.test.ts の TENANT_KEY_MOVING_RELATION_OVERRIDES
+  //    と対で宣言する（宣言漏れは「テナントキー列を書き換えうる逆リレーション」の検知漏れになる）。
+  skillAliases          SkillAlias[]
+  engineerSkills        EngineerSkill[]
+  skillSheets           SkillSheet[]
+  skillSheetExtractions SkillSheetExtraction[]
+  fileScanResults       FileScanResult[]
+  projects              Project[]
+  projectRequirements   ProjectRequirement[]
+  projectVisibilities   ProjectVisibility[]
+  matchCandidates       MatchCandidate[]
+  engineerShares        EngineerShare[]
 
   @@index([lifecycleState, sandboxExpiresAt])
   @@index([lifecycleState, closingEnteredAt])
@@ -170,6 +183,12 @@ model PartnerCompany {
   users       User[]
   memberships Membership[]
   invitations Invitation[]
+  // 🔴 T-02-02: engineers.owner_partner_company_id / project_visibilities.partner_company_id /
+  //    engineer_shares.partner_company_id の逆リレーション（いずれもテナントキーではなく
+  //    オーナー列 / 当事者列を裏付けるため、TENANT_KEY_MOVING_RELATION_OVERRIDES の宣言対象ではない）。
+  engineers           Engineer[]
+  projectVisibilities ProjectVisibility[]
+  engineerShares      EngineerShare[]
 
   @@index([tenantId, suspendedAt])
   @@map("partner_companies")
@@ -249,22 +268,316 @@ model TenantSendingDomain {
 //   部分 UNIQUE: ON tenant_sending_domains(tenant_id) WHERE state = 'VERIFIED'（送信元は 1 テナント 1 ドメイン）。
 
 // ============================================================================
-// 検証用の業務表（docs/05 §3.4 Engineer の最小サブセット。T-01-04。拡張は T-02-02）
+// docs/05 §3.4 ① 集める（T-02-02。docs/sprints/SP-02-schema-isolation.md）
 // ============================================================================
+//
+// 🔴 列挙は §3.1 規約どおり Prisma の `enum` を使わず `String` + 許容値コメントで宣言する。
+//    許容値集合の単一の出所は packages/db/src/schema-value-sets.ts（ENGINEER_AVAILABILITIES /
+//    REMOTE_MODES / SKILL_ALIAS_STATUSES / SKILL_ALIAS_ORIGINS / ENGINEER_SKILL_SOURCES /
+//    SCAN_STATUSES / SKILL_SHEET_EXTRACTION_STATUSES）。CHECK との一致は
+//    tests/static/schema-enum-drift.test.ts が突合する。
+//    EngineerAvailability: 'WORKING'|'STANDBY_SCHEDULED'|'STANDBY'|'INACTIVE'（稼働中/待機予定/待機中/非稼働）
+//    RemoteMode: 'FULL_REMOTE'|'PARTIAL_REMOTE'|'ONSITE_ONLY'
+//    ScanStatus: 'SCANNING'|'CLEAN'|'INFECTED'|'UNSCANNABLE'|'FAILED'（🔴 UNSUPPORTED は UNSCANNABLE に正規化）
+//
+// 🔴 オーナー列（docs/05 §4.4 C3。継承・freeze トリガの本体は T-02-08）: engineers が根、
+//    engineer_skills / skill_sheets / skill_sheet_extractions が子。engineer_shares は
+//    partner_company_id 自体がオーナー列（§4.4 C3。engineers.owner_partner_company_id と同値）。
+//    本タスクでは列だけを持たせ、継承・freeze トリガと owner-column の COMMENT 宣言は T-02-08 の範囲。
 
-/// RLS のポリシークラスは C3 OWNER_SCOPED（docs/05 §4.4）。テナント境界とパートナー境界の
-/// 両方が同時に効くため、二重防御の実証には C1 のみの表より適している。
+/// RLS のポリシークラスは C3 OWNER_SCOPED（docs/05 §4.4）。
 model Engineer {
-  id                    String   @id @default(uuid(7)) @db.Uuid
-  tenantId              String   @map("tenant_id") @db.Uuid
-  /// null = ホスト所属。🔴 リクエスト入力で指定させない（docs/05 §3.4 / F-008 AC-2）
-  ownerPartnerCompanyId String?  @map("owner_partner_company_id") @db.Uuid
-  displayName           String   @map("display_name")
-  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt             DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id                    String    @id @default(uuid(7)) @db.Uuid
+  tenantId              String    @map("tenant_id") @db.Uuid
+  /// null = ホスト所属。🔴 リクエスト入力で指定させない（docs/05 §3.4 / F-008 AC-2）。owner-column: root（T-02-08）
+  ownerPartnerCompanyId String?   @map("owner_partner_company_id") @db.Uuid
+  displayName           String    @map("display_name") // 社内表示用の氏名（PII）
+  birthDate             DateTime? @map("birth_date") @db.Date // PII
+  contactEmail          String?   @map("contact_email") // PII。保持期間の対象
+  contactPhone          String?   @map("contact_phone") // PII。保持期間の対象
+  affiliationLabel      String?   @map("affiliation_label") // 現所属会社名（PII 扱い。ゲート PII 層の検査対象）
+  /// EngineerAvailability（上記参照。CHECK）
+  availability          String    @default("WORKING")
+  availableFrom         DateTime? @map("available_from") @db.Date // 稼働可能時期（F-045 が満了日/離任日で更新）
+  unitPriceMin          Decimal?  @map("unit_price_min") @db.Decimal(12, 2)
+  unitPriceMax          Decimal?  @map("unit_price_max") @db.Decimal(12, 2)
+  prefecture            String? // 都道府県コード
+  city                  String? // 🔴 匿名候補には出さない（U-06）
+  /// RemoteMode（上記参照。CHECK）
+  remoteMode            String?   @map("remote_mode")
+  preferenceNote        String?   @map("preference_note") // 希望条件。BR-52 の範囲に限る
+  retentionExpiresAt    DateTime? @map("retention_expires_at") @db.Timestamptz(3) // F-046。稼働/提案終了のたびに再計算
+  piiPurgedAt           DateTime? @map("pii_purged_at") @db.Timestamptz(3) // 削除済みの表示（S-006 の 404 文言）
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant              Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ownerPartnerCompany PartnerCompany? @relation(fields: [ownerPartnerCompanyId], references: [id], onDelete: Restrict)
+  engineerSkills      EngineerSkill[]
+  skillSheets         SkillSheet[]
+  matchCandidates     MatchCandidate[]
+  engineerShares      EngineerShare[]
+
+  @@index([tenantId, ownerPartnerCompanyId, availability, availableFrom])
+  @@index([tenantId, retentionExpiresAt, piiPurgedAt]) // 保持期間ジョブ（§9.7）
+  @@index([tenantId, updatedAt]) // Phase 1 の決定的順序（§4.6）
+  @@map("engineers")
+}
+
+/// グローバル。tenant_id を持たない（CLAUDE.md §3.1 射程外の 4 表の 1 つ）。RLS は適用しない
+/// （docs/05 §4.4「射程外の 4 表」/ §4.7 の BUSINESS_TABLE_EXCLUSIONS）。
+model Skill {
+  id       String @id @default(uuid(7)) @db.Uuid
+  name     String @unique
+  category String
+  sortKey  Int    @map("sort_key") // 匿名候補のスキル並び（同順の決定的タイブレーク）
+
+  skillAliases        SkillAlias[]
+  engineerSkills      EngineerSkill[]
+  projectRequirements ProjectRequirement[]
+
+  @@map("skills")
+}
+
+// 🔴 グローバル行（tenant_id IS NULL）はテナントから更新できない。RLS の UPDATE/DELETE ポリシーで
+//    tenant_id = current_tenant() を要求する（F-010 AC-2）。SELECT のみ tenant_id IS NULL を許す
+//    （C1 TENANT_ALL の読み替え。ポリシー本体は T-02-06）。
+model SkillAlias {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  /// null = グローバル別名。非 null = テナント固有
+  tenantId   String?   @map("tenant_id") @db.Uuid
+  alias      String
+  skillId    String?   @map("skill_id") @db.Uuid // 採用時に確定
+  /// 'PROPOSED'|'ACCEPTED'|'REJECTED'（CHECK）
+  status     String
+  /// 'HUMAN'|'AI'（CHECK）。AI は skill-normalizer
+  origin     String
+  proposedBy String?   @map("proposed_by") @db.Uuid
+  decidedBy  String?   @map("decided_by") @db.Uuid
+  decidedAt  DateTime? @map("decided_at") @db.Timestamptz(3)
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  skill  Skill?  @relation(fields: [skillId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, alias])
+  @@index([tenantId, status])
+  @@map("skill_aliases")
+}
+
+model EngineerSkill {
+  id                      String    @id @default(uuid(7)) @db.Uuid
+  tenantId                String    @map("tenant_id") @db.Uuid
+  /// engineers から継承（§4.4.1。継承トリガは T-02-08）。owner-column: child of engineers(engineer_id)
+  ownerPartnerCompanyId   String?   @map("owner_partner_company_id") @db.Uuid
+  engineerId              String    @map("engineer_id") @db.Uuid
+  skillId                 String    @map("skill_id") @db.Uuid
+  yearsOfExperience       Decimal   @map("years_of_experience") @db.Decimal(4, 1)
+  level                   Int? // 1..5
+  /// 'MANUAL'|'EXTRACTED'（CHECK）
+  source                  String
+  originalLabel           String?   @map("original_label") // 🔴 正規化前の元表記（F-033 AC-3 の巻き戻し）
+  normalizedAt            DateTime? @map("normalized_at") @db.Timestamptz(3)
+  normalizedRole          String?   @map("normalized_role") // 'skill-normalizer'
+  normalizedPromptVersion String?   @map("normalized_prompt_version")
+  normalizedModelId       String?   @map("normalized_model_id")
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  engineer Engineer @relation(fields: [engineerId], references: [id], onDelete: Cascade)
+  skill    Skill    @relation(fields: [skillId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, engineerId, skillId])
+  @@index([tenantId, skillId, yearsOfExperience]) // 複合検索（F-009）
+  @@map("engineer_skills")
+}
+
+model SkillSheet {
+  id                    String    @id @default(uuid(7)) @db.Uuid
+  tenantId              String    @map("tenant_id") @db.Uuid
+  /// engineers から継承（§4.4.1）。owner-column: child of engineers(engineer_id)
+  ownerPartnerCompanyId String?   @map("owner_partner_company_id") @db.Uuid
+  engineerId            String    @map("engineer_id") @db.Uuid
+  version               Int
+  objectKey             String    @map("object_key") // §14.1。🔴 運営者に GRANT しない
+  contentType           String    @map("content_type")
+  byteSize              BigInt    @map("byte_size")
+  /// ScanStatus（上記参照。CHECK）
+  scanStatus            String    @default("SCANNING") @map("scan_status")
+  scanUpdatedAt         DateTime? @map("scan_updated_at") @db.Timestamptz(3)
+  isLatest              Boolean   @default(false) @map("is_latest") // 🔴 CLEAN のみ true になれる
+  uploadedBy            String    @map("uploaded_by") @db.Uuid
+  uploadedAt            DateTime  @default(now()) @map("uploaded_at") @db.Timestamptz(3)
+  purgedAt              DateTime? @map("purged_at") @db.Timestamptz(3)
+
+  tenant      Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  engineer    Engineer               @relation(fields: [engineerId], references: [id], onDelete: Cascade)
+  extractions SkillSheetExtraction[]
+
+  @@unique([tenantId, engineerId, version])
+  @@index([tenantId, scanStatus, uploadedAt]) // SCANNING 滞留の検知（A-005）
+  @@map("skill_sheets")
+}
+// 🔴 DB 制約: CHECK ( is_latest = false OR scan_status = 'CLEAN' )   … F-011 AC-1 を DB に落とす
+// 🔴 部分 UNIQUE: ON skill_sheets(tenant_id, engineer_id) WHERE is_latest（migration.sql で手書き）。
+
+model FileScanResult {
+  id              String   @id @default(uuid(7)) @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  objectKey       String   @map("object_key")
+  objectVersionId String   @map("object_version_id")
+  /// ScanStatus（上記参照。CHECK）
+  status          String
+  rawStatus       String   @map("raw_status") // GuardDuty の生値（正規化前）
+  receivedAt      DateTime @default(now()) @map("received_at") @db.Timestamptz(3)
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  @@index([tenantId, ownerPartnerCompanyId])
-  @@map("engineers")
+  @@unique([objectKey, objectVersionId]) // 🔴 at-least-once の重複を弾く（docs/03 §3.4.3-2）
+  @@map("file_scan_results")
 }
+
+model SkillSheetExtraction {
+  id                    String    @id @default(uuid(7)) @db.Uuid
+  tenantId              String    @map("tenant_id") @db.Uuid
+  /// skill_sheets から継承（§4.4.1）。owner-column: child of skill_sheets(skill_sheet_id)
+  ownerPartnerCompanyId String?   @map("owner_partner_company_id") @db.Uuid
+  skillSheetId          String    @map("skill_sheet_id") @db.Uuid
+  payload               Json // { careers[], skills[], unextracted[] }
+  role                  String // 🔴 NOT NULL（docs/03 §4.20.2）
+  promptVersion         String    @map("prompt_version") // 🔴 NOT NULL
+  modelId               String    @map("model_id") // 🔴 NOT NULL
+  aiUsageId             String    @map("ai_usage_id") @db.Uuid // 🔴 NOT NULL。AiUsage への FK（表は T-02-05。今は列のみ）
+  /// 'PENDING_REVIEW'|'APPLIED'|'REJECTED'|'FAILED'（CHECK）
+  status                String
+  decidedBy             String?   @map("decided_by") @db.Uuid // 自動承認時は null（主体は AuditLog に system）
+  decidedAt             DateTime? @map("decided_at") @db.Timestamptz(3)
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  skillSheet SkillSheet @relation(fields: [skillSheetId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, skillSheetId, createdAt])
+  @@map("skill_sheet_extractions")
+}
+
+// ============================================================================
+// docs/05 §3.5 案件・公開範囲・マッチング・匿名共有（T-02-02）
+// ============================================================================
+//
+// 🔴 列挙は §3.1 規約どおり Prisma の `enum` を使わず `String` + 許容値コメントで宣言する。
+//    単一の出所は packages/db/src/schema-value-sets.ts（PROJECT_STATUSES / REQUIREMENT_KINDS）。
+//    ProjectStatus: 'OPEN'|'FILLED'|'SUCCESSOR_WANTED'（募集中/充足/後任募集）
+//    RequirementKind: 'MUST'|'NICE'
+
+model Project {
+  id                 String    @id @default(uuid(7)) @db.Uuid
+  tenantId           String    @map("tenant_id") @db.Uuid
+  name               String
+  endClientName      String?   @map("end_client_name") // 🔴 内部限定。公開表示・LLM・運営者に出さない
+  internalUnitPrice  Decimal?  @map("internal_unit_price") @db.Decimal(12, 2) // 🔴 内部限定（同上）
+  publicSummary      String?   @map("public_summary") // 外部公開用の記載（公開時に使うのはこれだけ）
+  unitPriceMin       Decimal?  @map("unit_price_min") @db.Decimal(12, 2)
+  unitPriceMax       Decimal?  @map("unit_price_max") @db.Decimal(12, 2)
+  startDate          DateTime? @map("start_date") @db.Date
+  prefecture         String?
+  /// RemoteMode（§3.4 冒頭参照。CHECK）
+  remoteMode         String?   @map("remote_mode")
+  headcount          Int       @default(1)
+  /// ProjectStatus（上記参照。CHECK）
+  status             String    @default("OPEN")
+  originAssignmentId String?   @map("origin_assignment_id") @db.Uuid // F-045 の後任募集の生成元（表は T-02-04。今は列のみ）
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant          Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  requirements    ProjectRequirement[]
+  visibilities    ProjectVisibility[]
+  matchCandidates MatchCandidate[]
+
+  @@index([tenantId, status, updatedAt])
+  @@index([tenantId, startDate])
+  @@map("projects")
+}
+
+model ProjectRequirement {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  projectId     String   @map("project_id") @db.Uuid
+  /// RequirementKind（上記参照。CHECK）。🔴 MUST は F-029 の足切り、F-020 整合層の照合対象
+  kind          String
+  skillId       String?  @map("skill_id") @db.Uuid
+  freeText      String?  @map("free_text")
+  requiredYears Decimal? @map("required_years") @db.Decimal(4, 1)
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  skill   Skill?  @relation(fields: [skillId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, projectId, kind])
+  @@map("project_requirements")
+}
+
+/// 🔴 越境経路 1 の唯一の根拠。
+model ProjectVisibility {
+  id               String    @id @default(uuid(7)) @db.Uuid
+  tenantId         String    @map("tenant_id") @db.Uuid
+  projectId        String    @map("project_id") @db.Uuid
+  partnerCompanyId String    @map("partner_company_id") @db.Uuid
+  publishedAt      DateTime  @map("published_at") @db.Timestamptz(3)
+  publishedBy      String    @map("published_by") @db.Uuid
+  revokedAt        DateTime? @map("revoked_at") @db.Timestamptz(3)
+  reviewGateId     String    @map("review_gate_id") @db.Uuid // 公開時のゲート結果（F-014 処理②。表は T-02-03。今は列のみ）
+
+  tenant         Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project        Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  partnerCompany PartnerCompany @relation(fields: [partnerCompanyId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, projectId, partnerCompanyId])
+  @@index([tenantId, partnerCompanyId, revokedAt]) // RLS ポリシーの EXISTS が使う（T-02-06）
+  @@map("project_visibilities")
+}
+
+/// 🔴 越境経路 4 の唯一の根拠。既定オフ（行の非存在で表現する。F-016 AC-1）。
+model EngineerShare {
+  id               String    @id @default(uuid(7)) @db.Uuid
+  tenantId         String    @map("tenant_id") @db.Uuid
+  engineerId       String    @map("engineer_id") @db.Uuid
+  partnerCompanyId String    @map("partner_company_id") @db.Uuid // 共有元（= Engineer.ownerPartnerCompanyId）
+  sharedAt         DateTime  @map("shared_at") @db.Timestamptz(3)
+  revokedAt        DateTime? @map("revoked_at") @db.Timestamptz(3) // 🔴 解除で即時に候補から消える（F-016 AC-2）
+  sharedBy         String    @map("shared_by") @db.Uuid
+
+  tenant         Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  engineer       Engineer       @relation(fields: [engineerId], references: [id], onDelete: Cascade)
+  partnerCompany PartnerCompany @relation(fields: [partnerCompanyId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, engineerId])
+  @@index([tenantId, revokedAt])
+  @@map("engineer_shares")
+}
+
+model MatchCandidate {
+  id                     String    @id @default(uuid(7)) @db.Uuid
+  tenantId               String    @map("tenant_id") @db.Uuid
+  projectId              String    @map("project_id") @db.Uuid
+  engineerId             String    @map("engineer_id") @db.Uuid // 🔴 API 応答には載せない（§4.6）
+  isAnonymous            Boolean   @map("is_anonymous") // 匿名候補フラグ
+  score                  Int? // Phase 2。Phase 1 は null
+  breakdown              Json? // 項目別得点
+  cutoffReason           String?   @map("cutoff_reason") // 足切り理由（F-029 AC-2）
+  weightsSnapshot        Json?     @map("weights_snapshot") // 🔴 算出時点の重み（F-030 AC-3）
+  rationale              String? // match-explainer の根拠文
+  rationaleRole          String?   @map("rationale_role")
+  rationalePromptVersion String?   @map("rationale_prompt_version")
+  rationaleModelId       String?   @map("rationale_model_id")
+  rationaleAiUsageId     String?   @map("rationale_ai_usage_id") @db.Uuid // 表は T-02-05。今は列のみ
+  computedAt             DateTime  @map("computed_at") @db.Timestamptz(3)
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project  Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  engineer Engineer @relation(fields: [engineerId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, projectId, engineerId])
+  @@index([tenantId, projectId, score])
+  @@map("match_candidates")
+}
+// 🔴 MatchCandidate は永続化するが、匿名候補の行を API 応答にそのまま載せない（docs/05 §4.6。SP-06 以降）。

@@ -13,8 +13,32 @@ export type {
   TenantLifecycleState,
   TenantRole,
 } from './context.js';
-export { TENANT_SENDING_DOMAIN_STATES, TWO_FACTOR_SUBJECT_TYPES } from './schema-value-sets.js';
-export type { TenantSendingDomainState, TwoFactorSubjectType } from './schema-value-sets.js';
+export {
+  ENGINEER_AVAILABILITIES,
+  ENGINEER_SKILL_SOURCES,
+  PROJECT_STATUSES,
+  REMOTE_MODES,
+  REQUIREMENT_KINDS,
+  SCAN_STATUSES,
+  SKILL_ALIAS_ORIGINS,
+  SKILL_ALIAS_STATUSES,
+  SKILL_SHEET_EXTRACTION_STATUSES,
+  TENANT_SENDING_DOMAIN_STATES,
+  TWO_FACTOR_SUBJECT_TYPES,
+} from './schema-value-sets.js';
+export type {
+  EngineerAvailability,
+  EngineerSkillSource,
+  ProjectStatus,
+  RemoteMode,
+  RequirementKind,
+  ScanStatus,
+  SkillAliasOrigin,
+  SkillAliasStatus,
+  SkillSheetExtractionStatus,
+  TenantSendingDomainState,
+  TwoFactorSubjectType,
+} from './schema-value-sets.js';
 export {
   CrossTenantWriteError,
   TENANT_SCOPE_EXCLUDED_MODELS,

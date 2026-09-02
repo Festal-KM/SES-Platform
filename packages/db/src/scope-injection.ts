@@ -32,6 +32,18 @@ export const TENANT_SCOPE_EXCLUDED_MODELS = [
  * C0（`SchedulerRun` / `WebhookDelivery` / `EmailEvent` / `ImpersonationSession`）は
  * テナントキーを持たないが、ここには現れない。到達経路が `withSystemScope`（docs/05 §4.4.2）
  * だけであり、本拡張を適用したクライアントからは触らないためである。
+ *
+ * ⚠️ 既知の gap（`SkillAlias` のグローバル行 ／ docs/05 §4.4 C1 との不一致。code-reviewer 指定、
+ * 2026-09-03）: `skill_aliases` は `tenantId` を持つがグローバル行（`tenant_id IS NULL`）を
+ * 許容し、第 1 防御（RLS、`docs/05` §4.4 C1）は `SELECT` を `OR tenant_id IS NULL` で許可する
+ * 想定（グローバル行も読める）。一方この拡張（第 2 防御）は `withScopedWhere` で
+ * 全操作の `where` に無条件で `AND tenantId = <ctx のテナント>` を注入するため、
+ * `withTenant` 経由では `tenant_id IS NULL` の行がこの `AND` に一致せず、
+ * RLS が許すはずのグローバル行を読めない（**漏れる方向ではなく隠れる方向の gap**。
+ * 情報境界としては安全側だが、`F-010 AC-2` の「グローバル辞書をテナントから読める」を
+ * 満たさない）。C1 ポリシーを実際に配線する T-02-06 で、`SkillAlias` の読み取り注入だけ
+ * `OR tenantId IS NULL` を許すよう緩めるか、モデル単位の注入方式を分けるかを設計判断すること。
+ * 書込（`INSERT`/`UPDATE`/`DELETE`）はグローバル行を作らせない意図と一致するため対象外。
  */
 const TENANT_KEY_OVERRIDES: Readonly<Record<string, string>> = {
   Tenant: 'id',
@@ -79,9 +91,29 @@ const TENANT_RELATION_OVERRIDES: Readonly<Record<string, string | null>> = {
  *
  * 🔴 T-02-01: docs/05 §3.3 の 6 表（User / Membership / PartnerCompany / Invitation /
  *    TenantSendingDomain の `tenant` リレーション。加えて Engineer は T-01-04 から）を追加した。
+ * 🔴 T-02-02: docs/05 §3.4 / §3.5 の 10 表（SkillAlias / EngineerSkill / SkillSheet /
+ *    SkillSheetExtraction / FileScanResult / Project / ProjectRequirement / ProjectVisibility /
+ *    MatchCandidate / EngineerShare の `tenant` リレーション）を追加した。
  */
 const TENANT_KEY_MOVING_RELATION_OVERRIDES: Readonly<Record<string, readonly string[]>> = {
-  Tenant: ['engineers', 'users', 'memberships', 'partnerCompanies', 'invitations', 'sendingDomains'],
+  Tenant: [
+    'engineers',
+    'users',
+    'memberships',
+    'partnerCompanies',
+    'invitations',
+    'sendingDomains',
+    'skillAliases',
+    'engineerSkills',
+    'skillSheets',
+    'skillSheetExtractions',
+    'fileScanResults',
+    'projects',
+    'projectRequirements',
+    'projectVisibilities',
+    'matchCandidates',
+    'engineerShares',
+  ],
 };
 
 const EXCLUDED = new Set<string>(TENANT_SCOPE_EXCLUDED_MODELS);

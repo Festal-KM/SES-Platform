@@ -15,6 +15,12 @@
 --    （app_tenant からは何も見えない・何も書けない。FORCE により所有者 app_migrator も同様）
 --    という安全側のデフォルトにする。GRANT も追加しない（ポリシーが無ければ意味を持たないため）。
 --    C0〜C8 の本適用は T-02-06 で行う。
+-- 🔴 T-02-02（docs/05 §3.4 / §3.5）で追加した 10 表（skill_aliases / engineer_skills /
+--    skill_sheets / skill_sheet_extractions / file_scan_results / projects /
+--    project_requirements / project_visibilities / engineer_shares / match_candidates）も
+--    同じ fail-closed 既定（ENABLE + FORCE のみ。ポリシー・GRANT 無し）にする。
+--    `skills` は対象外（CLAUDE.md §3.1 射程外の 4 表の 1 つ。グローバルマスタであり RLS を
+--    一切適用しない。docs/05 §4.4「射程外の 4 表」/ §4.7 BUSINESS_TABLE_EXCLUSIONS）。
 -- テーブル所有者として実行する（docs/05 §4.2「テーブル所有者は app_migrator であり、
 -- FORCE ROW LEVEL SECURITY を全業務テーブルに付ける。これが無いと所有者が RLS を素通りする」）。
 SET ROLE app_migrator;
@@ -53,6 +59,29 @@ ALTER TABLE two_factor_credentials  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE two_factor_credentials  FORCE  ROW LEVEL SECURITY;
 ALTER TABLE tenant_sending_domains  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tenant_sending_domains  FORCE  ROW LEVEL SECURITY;
+
+-- 🔴 T-02-02: 新規 10 表も ENABLE + FORCE のみ（ポリシー本体・GRANT は T-02-06 / T-02-07）。
+--    `skills` は含めない（射程外の 4 表。RLS を一切適用しない）。
+ALTER TABLE skill_aliases           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE skill_aliases           FORCE  ROW LEVEL SECURITY;
+ALTER TABLE engineer_skills         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE engineer_skills         FORCE  ROW LEVEL SECURITY;
+ALTER TABLE skill_sheets            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE skill_sheets            FORCE  ROW LEVEL SECURITY;
+ALTER TABLE skill_sheet_extractions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE skill_sheet_extractions FORCE  ROW LEVEL SECURITY;
+ALTER TABLE file_scan_results       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE file_scan_results       FORCE  ROW LEVEL SECURITY;
+ALTER TABLE projects                ENABLE ROW LEVEL SECURITY;
+ALTER TABLE projects                FORCE  ROW LEVEL SECURITY;
+ALTER TABLE project_requirements    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE project_requirements    FORCE  ROW LEVEL SECURITY;
+ALTER TABLE project_visibilities    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE project_visibilities    FORCE  ROW LEVEL SECURITY;
+ALTER TABLE engineer_shares         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE engineer_shares         FORCE  ROW LEVEL SECURITY;
+ALTER TABLE match_candidates        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE match_candidates        FORCE  ROW LEVEL SECURITY;
 
 -- --- C1 TENANT_ALL: tenants（<T> = id。app_tenant は SELECT のみ）------------------------
 DROP POLICY IF EXISTS tenants_c1_select ON tenants;

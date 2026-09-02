@@ -24,6 +24,15 @@ import { describe, expect, it } from 'vitest';
 import { APP_ENV_KINDS } from '../../packages/config/src/app-env.js';
 import { TENANT_ROLES } from '../../packages/db/src/context.js';
 import {
+  ENGINEER_AVAILABILITIES,
+  ENGINEER_SKILL_SOURCES,
+  PROJECT_STATUSES,
+  REMOTE_MODES,
+  REQUIREMENT_KINDS,
+  SCAN_STATUSES,
+  SKILL_ALIAS_ORIGINS,
+  SKILL_ALIAS_STATUSES,
+  SKILL_SHEET_EXTRACTION_STATUSES,
   TENANT_SENDING_DOMAIN_STATES,
   TWO_FACTOR_SUBJECT_TYPES,
 } from '../../packages/db/src/schema-value-sets.js';
@@ -158,5 +167,76 @@ describe('CHECK 制約と TS 単一出所の drift 検査（docs/05 §3.1「列�
   it('tenant_sending_domains_state_check ⇔ packages/db TENANT_SENDING_DOMAIN_STATES', () => {
     const values = extractCheckInValues(migrationSql, 'tenant_sending_domains_state_check');
     expectSameValueSet(values, TENANT_SENDING_DOMAIN_STATES);
+  });
+
+  // 🔴 T-02-02（docs/05 §3.4 / §3.5。docs/sprints/SP-02-schema-isolation.md）:
+  // 20260903010000_engineer_project_visibility_share/migration.sql が追加した CHECK 制約群。
+  describe('T-02-02: 新 migration の CHECK 制約', () => {
+    it('engineers_availability_check ⇔ packages/db ENGINEER_AVAILABILITIES', () => {
+      const values = extractCheckInValues(migrationSql, 'engineers_availability_check');
+      expectSameValueSet(values, ENGINEER_AVAILABILITIES);
+    });
+
+    it('対照: availability の CHECK が 1 値でも欠けたら検知する（改変 SQL での確認）', () => {
+      const tampered = migrationSql.replace("'INACTIVE'", "'INACTIVE_TYPO'");
+      const values = extractCheckInValues(tampered, 'engineers_availability_check');
+      expect(values).not.toEqual([...ENGINEER_AVAILABILITIES]);
+    });
+
+    it('engineers_remote_mode_check ⇔ packages/db REMOTE_MODES', () => {
+      const values = extractCheckInValues(migrationSql, 'engineers_remote_mode_check');
+      expectSameValueSet(values, REMOTE_MODES);
+    });
+
+    it('projects_remote_mode_check ⇔ packages/db REMOTE_MODES（engineers と同じ値集合を共有）', () => {
+      const values = extractCheckInValues(migrationSql, 'projects_remote_mode_check');
+      expectSameValueSet(values, REMOTE_MODES);
+    });
+
+    it('skill_aliases_status_check ⇔ packages/db SKILL_ALIAS_STATUSES', () => {
+      const values = extractCheckInValues(migrationSql, 'skill_aliases_status_check');
+      expectSameValueSet(values, SKILL_ALIAS_STATUSES);
+    });
+
+    it('skill_aliases_origin_check ⇔ packages/db SKILL_ALIAS_ORIGINS', () => {
+      const values = extractCheckInValues(migrationSql, 'skill_aliases_origin_check');
+      expectSameValueSet(values, SKILL_ALIAS_ORIGINS);
+    });
+
+    it('engineer_skills_source_check ⇔ packages/db ENGINEER_SKILL_SOURCES', () => {
+      const values = extractCheckInValues(migrationSql, 'engineer_skills_source_check');
+      expectSameValueSet(values, ENGINEER_SKILL_SOURCES);
+    });
+
+    it('skill_sheets_scan_status_check ⇔ packages/db SCAN_STATUSES', () => {
+      const values = extractCheckInValues(migrationSql, 'skill_sheets_scan_status_check');
+      expectSameValueSet(values, SCAN_STATUSES);
+    });
+
+    it('file_scan_results_status_check ⇔ packages/db SCAN_STATUSES（skill_sheets と同じ値集合を共有）', () => {
+      const values = extractCheckInValues(migrationSql, 'file_scan_results_status_check');
+      expectSameValueSet(values, SCAN_STATUSES);
+    });
+
+    it('skill_sheet_extractions_status_check ⇔ packages/db SKILL_SHEET_EXTRACTION_STATUSES', () => {
+      const values = extractCheckInValues(migrationSql, 'skill_sheet_extractions_status_check');
+      expectSameValueSet(values, SKILL_SHEET_EXTRACTION_STATUSES);
+    });
+
+    it('projects_status_check ⇔ packages/db PROJECT_STATUSES', () => {
+      const values = extractCheckInValues(migrationSql, 'projects_status_check');
+      expectSameValueSet(values, PROJECT_STATUSES);
+    });
+
+    it('🔴 project_requirements_kind_check ⇔ packages/db REQUIREMENT_KINDS（F-013 AC-1 の完了判定）', () => {
+      const values = extractCheckInValues(migrationSql, 'project_requirements_kind_check');
+      expectSameValueSet(values, REQUIREMENT_KINDS);
+    });
+
+    it('対照: kind の CHECK が 1 値でも欠けたら検知する（改変 SQL での確認）', () => {
+      const tampered = migrationSql.replace("'NICE'", "'NICE_TYPO'");
+      const values = extractCheckInValues(tampered, 'project_requirements_kind_check');
+      expect(values).not.toEqual([...REQUIREMENT_KINDS]);
+    });
   });
 });

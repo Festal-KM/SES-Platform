@@ -25,6 +25,11 @@ INSERT INTO tenants (id, name, environment, lifecycle_state, lifecycle_changed_a
   ('${TENANT_A}', 'Tenant A', 'production', 'ACTIVE', now(), 'seed-provisioning-tenant-a'),
   ('${TENANT_B}', 'Tenant B', 'production', 'ACTIVE', now(), 'seed-provisioning-tenant-b');
 
+-- 🔴 T-02-02: engineers.owner_partner_company_id が partner_companies への FK を持つようになった
+--    （T-02-01 からの申し送り）ため、参照先の行を先に投入する。
+INSERT INTO partner_companies (id, tenant_id, name, invited_at) VALUES
+  ('${PARTNER_A1}', '${TENANT_A}', 'Partner A1', now());
+
 INSERT INTO engineers (id, tenant_id, owner_partner_company_id, display_name) VALUES
   ('${ENGINEER_A_HOST}',    '${TENANT_A}', NULL,             'Engineer A-Host'),
   ('${ENGINEER_A_PARTNER}', '${TENANT_A}', '${PARTNER_A1}',  'Engineer A-Partner'),

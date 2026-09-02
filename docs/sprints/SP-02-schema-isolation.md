@@ -52,7 +52,7 @@
 - 🔴 **オーナー列**: `engineers` / `engineer_skills` / `skill_sheets` / `skill_sheet_extractions` は `ownerPartnerCompanyId`、`engineer_shares` は `partnerCompanyId`（`docs/05` §4.4 C3）。**根は `engineers`、他は子として継承**（トリガは T-02-08）。
 - 🔴 **`ProjectRequirement` は必須 / 尚可を別区分として保持する**（`F-013 AC-1`。整合層の照合とマッチングの足切りが区分を参照する）。
 - 🔴 **`Project` はエンド企業名・内部単価を「公開範囲の外に出さない項目」として保持する**（`F-013 AC-2`。射影は SP-06 の `PartnerProjectView`）。
-- **完了の判定**: migrate が通る。`ProjectRequirement.kind` が `REQUIRED` / `PREFERRED` の 2 値で `CHECK` されている。
+- **完了の判定**: migrate が通る。`ProjectRequirement.kind` が `MUST` / `NICE` の 2 値で `CHECK` されている。
 
 ### T-02-03 提案・提案依頼・品質ゲートの表（L）
 
@@ -96,6 +96,7 @@
 - 🔴 **`WITH CHECK` の既定は `USING` と同じ式**。ただし `engineers` / `memberships` / `engineer_shares` / `users` の 4 表は C3 の式に絞る（自分の所属としてしか書けない）。
 - 🔴 **越境の判断をアプリの `if` に一切書かない。** `ProjectVisibility` / `ThreadParticipant` / `EngineerShare` の**行の有無がそのまま見える / 見えない**になる。
 - **完了の判定**: T-02-09 のカタログ走査で「ポリシーが 0 件の表」と「`app_tenant` に権限がありながら `app_tenant_id()` を参照しないポリシー」が 0 件。
+- **T-02-02 からの申し送り（2026-09-03、code-reviewer 指定）**: `SkillAlias` の C1 ポリシー（`SELECT` は `OR tenant_id IS NULL`）を書く際、`withTenant`（第 2 防御）はグローバル行を無条件で除外する既知の gap がある（`packages/db/src/scope-injection.ts` の `TENANT_KEY_OVERRIDES` 直後の known-gap コメント参照）。読み取り注入の緩和方式をここで設計判断すること。
 
 ### T-02-07 🔴 C9（経路 5）と射影ビュー 4 本（L）
 

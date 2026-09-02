@@ -125,7 +125,7 @@ describe('🔴 逆リレーション（他モデルのテナントキー列を�
     },
   );
 
-  it('Tenant の逆リレーションは実体として宣言と一致する（宣言が空振りしていない対照。T-02-01 で docs/05 §3.3 の 5 表を追加）', () => {
+  it('Tenant の逆リレーションは実体として宣言と一致する（宣言が空振りしていない対照。T-02-01 で docs/05 §3.3 の 5 表、T-02-02 で §3.4・§3.5 の 10 表を追加）', () => {
     const tenant = MODELS.find((model) => model.name === 'Tenant');
     expect(tenant).toBeDefined();
     const expected = [
@@ -135,6 +135,16 @@ describe('🔴 逆リレーション（他モデルのテナントキー列を�
       'partnerCompanies',
       'invitations',
       'sendingDomains',
+      'skillAliases',
+      'engineerSkills',
+      'skillSheets',
+      'skillSheetExtractions',
+      'fileScanResults',
+      'projects',
+      'projectRequirements',
+      'projectVisibilities',
+      'matchCandidates',
+      'engineerShares',
     ];
     expect(inverseTenantKeyRelations(tenant as DmmfModel)).toEqual(expected);
     expect(tenantKeyMovingRelationsOf('Tenant')).toEqual(expected);

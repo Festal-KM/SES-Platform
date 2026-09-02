@@ -216,13 +216,28 @@ describe('app_share_probe は engineer_shares 以外に一切の権限を持た�
 /**
  * docs/05 §5.5「運営者に対するマスキング（二層）」第 1 層 = 列単位の GRANT。
  * `CLAUDE.md` §10.5「運営者にも見せないもの: エンジニアの氏名 …」の実装担保。
- * 現行スキーマ（tenants / engineers の 2 表）で該当するのは `engineers.display_name` のみだが、
- * SP-02 で §5.5 の表（`display_name` `birth_date` `contact_email` …）が増えたら
- * このオブジェクトへ追記する。追記を忘れても他のテストが自動で検知するわけではない
+ * SP-02 で §5.5 の非開示列が実在するようになった表を追記する。`skill_sheets` /
+ * `skill_sheet_extractions` / `projects` は本タスク（T-02-02）時点で `app_platform` への
+ * GRANT が 0 件（010_rls.sql 未追記）だが、それは「④ カタログ走査」テストが表単位で
+ * 検出する話であり、本リストは §5.5 の非開示列一覧そのものと突き合わせる独立防御である。
+ * 将来 GRANT を追加したときに §5.5 の見落とし（開示してはいけない列まで開けてしまう）を
+ * 検知するのが目的なので、GRANT が無い今の時点でも追記しておく。
+ * 追記を忘れても他のテストが自動で検知するわけではない
  * （§5.5 の表自体が唯一の真実であり、ここは実測用の固定リストである）。
  */
 const PLATFORM_READ_COLUMN_DENYLIST: Record<string, readonly string[]> = {
-  engineers: ['display_name'],
+  engineers: [
+    'display_name',
+    'birth_date',
+    'contact_email',
+    'contact_phone',
+    'affiliation_label',
+    'city',
+    'preference_note',
+  ],
+  skill_sheets: ['object_key'],
+  skill_sheet_extractions: ['payload'],
+  projects: ['end_client_name', 'internal_unit_price'],
 };
 
 /**
