@@ -1,5 +1,5 @@
 -- packages/db/prisma/sql/010_rls.sql
--- docs/05 §4.4（RLS ポリシー）/ §4.2・§5.2（GRANT）を、現時点の最小 2 表に対して適用する。
+-- docs/05 §4.4（RLS ポリシー）/ §4.2・§5.2（GRANT）を、現時点のスキーマに対して適用する。
 --
 -- 🔴 このファイルは CREATE ROLE を含まない。5 ロールの定義は
 --    packages/db/prisma/sql/000_roles.sql が唯一の真実（T-01-05。docs/05 §4.2）であり、
@@ -8,6 +8,13 @@
 -- 🔴 SP-02 で全 56 表に拡張するときは prisma/migrations/** の migration.sql へ移す
 --    （docs/05 §2.1「RLS / ロール / トリガ / パーティションも SQL で含む」）。
 --
+-- 🔴 T-02-01（docs/05 §3.3）で追加した 6 表（users / memberships / partner_companies /
+--    invitations / two_factor_credentials / tenant_sending_domains）は、C0〜C8 のポリシー本体
+--    （T-02-06 の範囲）をまだ持たない。「ポリシーが無い業務テーブルを放置しない」ため、
+--    ENABLE + FORCE ROW LEVEL SECURITY だけを先に付け、ポリシー 0 件 = 常に 0 行
+--    （app_tenant からは何も見えない・何も書けない。FORCE により所有者 app_migrator も同様）
+--    という安全側のデフォルトにする。GRANT も追加しない（ポリシーが無ければ意味を持たないため）。
+--    C0〜C8 の本適用は T-02-06 で行う。
 -- テーブル所有者として実行する（docs/05 §4.2「テーブル所有者は app_migrator であり、
 -- FORCE ROW LEVEL SECURITY を全業務テーブルに付ける。これが無いと所有者が RLS を素通りする」）。
 SET ROLE app_migrator;
@@ -32,6 +39,20 @@ ALTER TABLE tenants   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tenants   FORCE  ROW LEVEL SECURITY;
 ALTER TABLE engineers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE engineers FORCE  ROW LEVEL SECURITY;
+
+-- 🔴 T-02-01: 新規 6 表は ENABLE + FORCE のみ（ポリシー本体・GRANT は T-02-06）。
+ALTER TABLE users                   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE users                   FORCE  ROW LEVEL SECURITY;
+ALTER TABLE memberships             ENABLE ROW LEVEL SECURITY;
+ALTER TABLE memberships             FORCE  ROW LEVEL SECURITY;
+ALTER TABLE partner_companies       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE partner_companies       FORCE  ROW LEVEL SECURITY;
+ALTER TABLE invitations             ENABLE ROW LEVEL SECURITY;
+ALTER TABLE invitations             FORCE  ROW LEVEL SECURITY;
+ALTER TABLE two_factor_credentials  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE two_factor_credentials  FORCE  ROW LEVEL SECURITY;
+ALTER TABLE tenant_sending_domains  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tenant_sending_domains  FORCE  ROW LEVEL SECURITY;
 
 -- --- C1 TENANT_ALL: tenants（<T> = id。app_tenant は SELECT のみ）------------------------
 DROP POLICY IF EXISTS tenants_c1_select ON tenants;
@@ -98,8 +119,10 @@ CREATE POLICY tenants_platform_read ON tenants FOR SELECT TO app_platform
   );
 
 -- 🔴 tenants は §5.2 が挙げる 3 表のうちの 1 表。INSERT（全列。API-A4）と
---    ライフサイクル列の列レベル UPDATE のみを許す。現時点で存在するライフサイクル列は
---    lifecycle_state のみ（他の列は SP-02 でスキーマが増えたときに GRANT を追加する）。
+--    ライフサイクル列の列レベル UPDATE のみを許す。T-02-01 で lifecycle_changed_at /
+--    lifecycle_changed_by / suspend_reason / sandbox_expires_at / closing_entered_at が
+--    増えたため、下の GRANT UPDATE 対象に含める（docs/05 §5.2 の列挙どおり）。
+--    name / environment は開設時にしか書けない（UPDATE の GRANT に含めない）。
 DROP POLICY IF EXISTS tenants_platform_write_insert ON tenants;
 CREATE POLICY tenants_platform_write_insert ON tenants FOR INSERT TO app_platform_write
   WITH CHECK (current_setting('app.platform_user_id', true) <> '');
@@ -132,6 +155,9 @@ GRANT SELECT (id, tenant_id, owner_partner_company_id, created_at, updated_at) O
 -- 🔴 engineers を含む他の業務テーブルには一切 GRANT しない（docs/05 §5.2「業務テーブルへの
 --    書き込み権限を一切持たない」）。
 GRANT INSERT ON tenants TO app_platform_write;
-GRANT UPDATE (lifecycle_state) ON tenants TO app_platform_write;
+GRANT UPDATE (
+  lifecycle_state, lifecycle_changed_at, lifecycle_changed_by,
+  suspend_reason, sandbox_expires_at, closing_entered_at
+) ON tenants TO app_platform_write;
 
 RESET ROLE;

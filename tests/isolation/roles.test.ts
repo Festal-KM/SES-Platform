@@ -32,14 +32,28 @@ const OUT_OF_SCOPE_TABLES = ['platform_users', 'plans', 'subscriptions', 'skills
 /**
  * docs/05 §5.2 の許可リスト。`app_platform_write` が書き込んでよいのはこれだけ
  * （契約・クォータ・機能フラグ・お知らせ + tenants/invitations/tenant_sending_domains の INSERT）。
- * 現行スキーマに存在するのは `tenants` のみ。他の表は SP-02 以降で生まれた時点で追記する
- * （追記を忘れると、次の 2 項目目のテスト「許可リスト外は 0 件」でその表が捕捉され続ける）。
+ * 🔴 T-02-01 時点では `tenants` の UPDATE 許可列のみが実在する（`invitations` /
+ *    `tenant_sending_domains` への INSERT 許可は、withPlatformWrite の TENANT_PROVISIONING
+ *    ドメインを実際に配線する SP-03 / T-02-06 で GRANT + ポリシーを追加する）。
+ *    他の表は生まれた時点で追記する（追記を忘れると、次の 2 項目目のテスト
+ *    「許可リスト外は 0 件」でその表が捕捉され続ける）。
  */
 const PLATFORM_WRITE_ALLOWLIST: Record<
   string,
   { readonly insert: boolean; readonly delete: boolean; readonly updateColumns: readonly string[] }
 > = {
-  tenants: { insert: true, delete: false, updateColumns: ['lifecycle_state'] },
+  tenants: {
+    insert: true,
+    delete: false,
+    updateColumns: [
+      'lifecycle_state',
+      'lifecycle_changed_at',
+      'lifecycle_changed_by',
+      'suspend_reason',
+      'sandbox_expires_at',
+      'closing_entered_at',
+    ],
+  },
 };
 
 let database: IsolationDatabase;

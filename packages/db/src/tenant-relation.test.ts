@@ -125,11 +125,19 @@ describe('🔴 逆リレーション（他モデルのテナントキー列を�
     },
   );
 
-  it('Tenant.engineers は実体として逆リレーションである（宣言が空振りしていない対照）', () => {
+  it('Tenant の逆リレーションは実体として宣言と一致する（宣言が空振りしていない対照。T-02-01 で docs/05 §3.3 の 5 表を追加）', () => {
     const tenant = MODELS.find((model) => model.name === 'Tenant');
     expect(tenant).toBeDefined();
-    expect(inverseTenantKeyRelations(tenant as DmmfModel)).toEqual(['engineers']);
-    expect(tenantKeyMovingRelationsOf('Tenant')).toEqual(['engineers']);
+    const expected = [
+      'engineers',
+      'users',
+      'memberships',
+      'partnerCompanies',
+      'invitations',
+      'sendingDomains',
+    ];
+    expect(inverseTenantKeyRelations(tenant as DmmfModel)).toEqual(expected);
+    expect(tenantKeyMovingRelationsOf('Tenant')).toEqual(expected);
   });
 
   it('Engineer.tenant は逆リレーションではない（順方向の宣言が担当する二重計上を避ける）', () => {

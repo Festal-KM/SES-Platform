@@ -1,0 +1,162 @@
+// tests/static/schema-enum-drift.test.ts
+// T-02-01 code-reviewer 指摘 2:
+// docs/05 §3.1「列挙」規約（Prisma の `enum` を使わず `String` + CHECK にする。schema.prisma 冒頭
+// コメント参照）を採ると、DB 側の CHECK 制約の値集合と TS 側の単一出所の定数配列が「人手で揃える」
+// 状態になり、静かに drift しうる。本テストは
+// packages/db/prisma/migrations/**/migration.sql の CHECK 制約をテキストとして読み、
+// TS 側の単一出所（@ses/domain の TENANT_LIFECYCLE_STATES / packages/db の TENANT_ROLES /
+// @ses/config の APP_ENV_KINDS / packages/db の TWO_FACTOR_SUBJECT_TYPES・
+// TENANT_SENDING_DOMAIN_STATES）と機械的に突合する。
+//
+// 🔴 これは「静的テスト（コードの構造そのものを検査する）」であり DB を必要としない
+// （docs/05 §17.2 の分類。tests/static/platform-user-no-flag.test.ts と同じ位置づけ）。
+//
+// 🔴 新規依存を追加しない制約のため、@ses/domain / @ses/config は package 名ではなく相対パスで
+// ソースを直接 import する（tests/static/config-env-example.test.ts が既に採っているのと同じ
+// パターン。root の package.json はこの 2 パッケージを依存として宣言していないため、package 名での
+// import は pnpm の strict node_modules ではリンクされない）。packages/db 自体は root の
+// package.json に `@ses/db: workspace:*` が既にあるが、ここでも他と同じ相対パスに統一する
+// （ビルド〔dist〕を要求せず、ソースを直接見に行けるほうがドリフト検知として素直なため）。
+import { readFileSync, readdirSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { describe, expect, it } from 'vitest';
+import { APP_ENV_KINDS } from '../../packages/config/src/app-env.js';
+import { TENANT_ROLES } from '../../packages/db/src/context.js';
+import {
+  TENANT_SENDING_DOMAIN_STATES,
+  TWO_FACTOR_SUBJECT_TYPES,
+} from '../../packages/db/src/schema-value-sets.js';
+import { TENANT_LIFECYCLE_STATES } from '../../packages/domain/src/state/tenant.js';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(here, '..', '..');
+const migrationsDir = path.join(repoRoot, 'packages', 'db', 'prisma', 'migrations');
+
+/**
+ * `packages/db/prisma/migrations/**\/migration.sql` を全て連結したテキスト。
+ * 🔴 特定のマイグレーションフォルダ名（タイムスタンプ）に依存しない。将来マイグレーションが
+ * 増えても、対象の CONSTRAINT がどのファイルにあっても拾える。
+ */
+function readAllMigrationSql(): string {
+  const entries = readdirSync(migrationsDir, { withFileTypes: true }).filter((e) => e.isDirectory());
+  return entries
+    .map((entry) => readFileSync(path.join(migrationsDir, entry.name, 'migration.sql'), 'utf8'))
+    .join('\n');
+}
+
+/**
+ * `CONSTRAINT "<name>" CHECK ("col" IN ('A', 'B', ...))` 形式から値集合を抽出する。
+ * 対象の 6 制約はいずれも `col IN (...)` の前後に丸括弧のネストが無い単一行の宣言のため、
+ * 「CHECK の直後の開き括弧」〜「IN リストの閉じ括弧 + CHECK の閉じ括弧」を欲張らずに切り出せば足りる。
+ *
+ * 🔴 `matchAll`（`g` フラグ）で全マッチを取り、同名 `CONSTRAINT` が 2 件以上ヒットしたら throw する
+ * （code-reviewer 指摘）。migration.sql は複数ファイルを連結したテキストであり、将来 DROP + 再定義
+ * のような形で同名 CHECK が複数マイグレーションにまたがって現れても、素朴に「最初の 1 件」を拾うと
+ * 古い定義とだけ突合して silent に drift を見逃す。「最後の定義を採る」等へパーサを更新すべき状況を
+ * loud failure にする。
+ */
+function extractCheckInValues(sql: string, constraintName: string): string[] {
+  const pattern = new RegExp(
+    String.raw`CONSTRAINT\s+"${constraintName}"\s+CHECK\s*\([^()]*IN\s*\(([^)]*)\)\)`,
+    'g',
+  );
+  const matches = [...sql.matchAll(pattern)];
+  if (matches.length === 0) {
+    throw new Error(`CHECK constraint "${constraintName}" が migration.sql に見つかりません`);
+  }
+  if (matches.length > 1) {
+    throw new Error(
+      `CHECK constraint "${constraintName}" の定義が migration.sql 群に ${matches.length} 件見つかりました` +
+        `（再定義を検知した）。DROP + 再定義等で同名 CHECK が複数回宣言されています。` +
+        `extractCheckInValues を「最後の定義を採る」等の意図的な方針に更新してください。`,
+    );
+  }
+  const match = matches[0]!;
+  return match[1]!.split(',').map((raw) => {
+    const trimmed = raw.trim();
+    const valueMatch = /^'([^']*)'$/.exec(trimmed);
+    if (!valueMatch) {
+      throw new Error(`"${constraintName}" の値のパースに失敗しました: ${trimmed}`);
+    }
+    return valueMatch[1]!;
+  });
+}
+
+/** 値集合として順不同で一致するかを見る（CHECK の列挙順と TS 配列の宣言順は独立でよい）。 */
+function expectSameValueSet(actual: readonly string[], expected: readonly string[]): void {
+  expect([...actual].sort()).toEqual([...expected].sort());
+}
+
+const migrationSql = readAllMigrationSql();
+
+describe('CHECK 制約と TS 単一出所の drift 検査（docs/05 §3.1「列挙」規約）', () => {
+  it('対照: パーサ自体が空振りしていない（既知の制約から非空の値集合を取れる）', () => {
+    const values = extractCheckInValues(migrationSql, 'tenants_lifecycle_state_check');
+    expect(values.length).toBeGreaterThan(0);
+  });
+
+  it('対照: 存在しない制約名は例外になる（「常に一致」の空振りを防ぐ）', () => {
+    expect(() => extractCheckInValues(migrationSql, 'no_such_constraint_check')).toThrow();
+  });
+
+  it('tenants_lifecycle_state_check ⇔ @ses/domain TENANT_LIFECYCLE_STATES', () => {
+    const values = extractCheckInValues(migrationSql, 'tenants_lifecycle_state_check');
+    expectSameValueSet(values, TENANT_LIFECYCLE_STATES);
+  });
+
+  it('対照: lifecycle_state の CHECK が 1 値でも欠けたら検知する（改変 SQL での確認）', () => {
+    const tampered = migrationSql.replace("'PURGED'", "'PURGED_TYPO'");
+    const values = extractCheckInValues(tampered, 'tenants_lifecycle_state_check');
+    expect(values).not.toEqual([...TENANT_LIFECYCLE_STATES]);
+  });
+
+  it('memberships_role_check ⇔ packages/db TENANT_ROLES', () => {
+    const values = extractCheckInValues(migrationSql, 'memberships_role_check');
+    expectSameValueSet(values, TENANT_ROLES);
+  });
+
+  it('invitations_role_check ⇔ packages/db TENANT_ROLES', () => {
+    const values = extractCheckInValues(migrationSql, 'invitations_role_check');
+    expectSameValueSet(values, TENANT_ROLES);
+  });
+
+  it('対照: role の CHECK が 1 値でも欠けたら検知する（改変 SQL での確認）', () => {
+    const tampered = migrationSql.replace("'VIEWER'", "'VIEWER_TYPO'");
+    const values = extractCheckInValues(tampered, 'memberships_role_check');
+    expect(values).not.toEqual([...TENANT_ROLES]);
+  });
+
+  // docs/05 §3.3: Tenant.environment（AppEnvKind）はテナントの「種別」（本番顧客 / sandbox 見込み客 /
+  // デモ）であり、packages/config の APP_ENV（development/demo/sandbox/staging/production の 5 値。
+  // デプロイ環境）とは別概念（schema.prisma 冒頭コメント参照）。だが値そのものは
+  // APP_ENV_KINDS の部分集合であり、単一の出所は APP_ENV_KINDS に置く。
+  // 🔴 「除外リストで引く」書き方にする（config-env-example.test.ts 等と同じ思想。
+  //    tests/isolation の「除外は 4 表のみ」規約とも揃える）: APP_ENV_KINDS に新しい値が増えたとき、
+  //    ここで明示的に除外しない限り期待値に混入し、CHECK との不一致でテストが必ず落ちる
+  //    （「テナント種別として扱うか」を機械的に人間へ問い返す設計）。
+  const DEPLOYMENT_ONLY_APP_ENV_KINDS: readonly string[] = ['development', 'staging'];
+
+  it('tenants_environment_check ⇔ @ses/config APP_ENV_KINDS（development/staging を除く部分集合）', () => {
+    const expected = APP_ENV_KINDS.filter((kind) => !DEPLOYMENT_ONLY_APP_ENV_KINDS.includes(kind));
+    const values = extractCheckInValues(migrationSql, 'tenants_environment_check');
+    expectSameValueSet(values, expected);
+  });
+
+  it('対照: environment の CHECK が 1 値でも欠けたら検知する（改変 SQL での確認）', () => {
+    const tampered = migrationSql.replace("'demo'", "'demo_typo'");
+    const values = extractCheckInValues(tampered, 'tenants_environment_check');
+    const expected = APP_ENV_KINDS.filter((kind) => !DEPLOYMENT_ONLY_APP_ENV_KINDS.includes(kind));
+    expect(values).not.toEqual(expected);
+  });
+
+  it('two_factor_credentials_subject_type_check ⇔ packages/db TWO_FACTOR_SUBJECT_TYPES', () => {
+    const values = extractCheckInValues(migrationSql, 'two_factor_credentials_subject_type_check');
+    expectSameValueSet(values, TWO_FACTOR_SUBJECT_TYPES);
+  });
+
+  it('tenant_sending_domains_state_check ⇔ packages/db TENANT_SENDING_DOMAIN_STATES', () => {
+    const values = extractCheckInValues(migrationSql, 'tenant_sending_domains_state_check');
+    expectSameValueSet(values, TENANT_SENDING_DOMAIN_STATES);
+  });
+});

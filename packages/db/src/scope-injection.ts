@@ -76,9 +76,12 @@ const TENANT_RELATION_OVERRIDES: Readonly<Record<string, string | null>> = {
  *
  * 🔴 宣言漏れはこの防御を静かに無効化する。`tenant-relation.test.ts` が DMMF を
  *    逆方向に走査し、未宣言の逆リレーションが増えたら落とす（SP-02 の 56 表拡張への恒久対策）。
+ *
+ * 🔴 T-02-01: docs/05 §3.3 の 6 表（User / Membership / PartnerCompany / Invitation /
+ *    TenantSendingDomain の `tenant` リレーション。加えて Engineer は T-01-04 から）を追加した。
  */
 const TENANT_KEY_MOVING_RELATION_OVERRIDES: Readonly<Record<string, readonly string[]>> = {
-  Tenant: ['engineers'],
+  Tenant: ['engineers', 'users', 'memberships', 'partnerCompanies', 'invitations', 'sendingDomains'],
 };
 
 const EXCLUDED = new Set<string>(TENANT_SCOPE_EXCLUDED_MODELS);

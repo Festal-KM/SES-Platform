@@ -1,0 +1,18 @@
+// 違反 fixture: users に運営者フラグ相当の列（BR-36 違反）が紛れ込んだ場合の検出確認用。
+// 実際の schema.prisma には存在しない。テストがパーサそのものの検出力を確かめるためだけの断片。
+model User {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  email          String
+  isAdminFlag    Boolean  @default(false) @map("is_admin_flag")
+  platformNotes  String?  @map("platform_notes")
+
+  @@map("users")
+}
+
+model Unrelated {
+  id           String @id @default(uuid(7)) @db.Uuid
+  isOperatorId String @map("is_operator_id")
+
+  @@map("unrelated")
+}

@@ -177,13 +177,29 @@ export async function hasColumnPrivilege(
   return rows[0]?.has ?? false;
 }
 
-/** `information_schema.columns` から、指定テーブルの全列名を取得する（列挙しない）。 */
+/**
+ * 指定テーブルの全列名を取得する（列挙しない）。
+ *
+ * 🔴 T-02-01: `information_schema.columns` は「呼び出し元ロールがその列に何らかの権限を
+ *    持つ列だけ」を返す（PostgreSQL の仕様。`pg_has_role` / `has_column_privilege` による
+ *    可視性フィルタが view 定義に組み込まれている）。RLS の C0〜C8 本適用前（T-02-06 前）の
+ *    表は `app_tenant` へ何も GRANT していないため、`information_schema.columns` は 0 行を
+ *    返し、カタログ走査テスト（roles.test.ts ②〜④）が「空振り防止」の対照で落ちる。
+ *    `pg_attribute` は呼び出し元の権限に関わらずメタデータとして常に読めるため、
+ *    カタログ走査の土台としてはこちらが正しい（`hasColumnPrivilege` 側で権限の有無を別途判定する）。
+ */
 export async function readTableColumns(client: RawQueryable, table: string): Promise<string[]> {
-  const rows = await client.$queryRaw<Array<{ column_name: string }>>(Prisma.sql`
-    SELECT column_name FROM information_schema.columns
-    WHERE table_schema = 'public' AND table_name = ${table}
-    ORDER BY ordinal_position`);
-  return rows.map((row) => row.column_name);
+  const rows = await client.$queryRaw<Array<{ attname: string }>>(Prisma.sql`
+    SELECT a.attname
+    FROM pg_attribute a
+    JOIN pg_class c ON c.oid = a.attrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+      AND c.relname = ${table}
+      AND a.attnum > 0
+      AND NOT a.attisdropped
+    ORDER BY a.attnum`);
+  return rows.map((row) => row.attname);
 }
 
 export type ScopeSettingsSnapshot = {

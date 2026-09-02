@@ -296,10 +296,18 @@ describe('🔴 update 系 data のテナントキー検査（行の移動を止�
   //    tenant.update({ where: { id: 自テナント }, data: { engineers: { connect: { id: 他テナントの行 } } } })
   //    が例外なく成功し、実際に行が移動することが実測された。
   describe('🔴 逆リレーション経由のテナントキー書き換え（経路 ⑥）', () => {
-    it('宣言から逆リレーション名を解決できる', () => {
-      expect(tenantKeyMovingRelationsOf('Tenant')).toEqual(['engineers']);
+    it('宣言から逆リレーション名を解決できる（T-02-01: docs/05 §3.3 の 5 表を追加）', () => {
+      expect(tenantKeyMovingRelationsOf('Tenant')).toEqual([
+        'engineers',
+        'users',
+        'memberships',
+        'partnerCompanies',
+        'invitations',
+        'sendingDomains',
+      ]);
       // 子側は順方向の宣言（tenantRelationOf）が担当する。二重に持たない。
       expect(tenantKeyMovingRelationsOf('Engineer')).toEqual([]);
+      expect(tenantKeyMovingRelationsOf('User')).toEqual([]);
     });
 
     it('⑥ Tenant.update の data.engineers は値を問わず例外にする', () => {
@@ -307,6 +315,15 @@ describe('🔴 update 系 data のテナントキー検査（行の移動を止�
         inject('Tenant', 'update', {
           where: { id: TENANT_A },
           data: { engineers: { connect: { id: 'engineer-b' } } },
+        }),
+      ).toThrow(TenantRelationWriteError);
+    });
+
+    it('🔴 T-02-01: Tenant.update の data.users も値を問わず例外にする（docs/05 §3.3 の新表への横展開）', () => {
+      expect(() =>
+        inject('Tenant', 'update', {
+          where: { id: TENANT_A },
+          data: { users: { connect: { id: 'user-b' } } },
         }),
       ).toThrow(TenantRelationWriteError);
     });

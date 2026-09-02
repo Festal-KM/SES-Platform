@@ -200,7 +200,7 @@ ses-platform/
 | **複合インデックス** | 🔴 **`tenant_id` を必ず先頭列に置く**（RLS のポリシー式が等値比較で枝刈りできるようにする。`docs/03` §3.7.2） |
 | **金額** | `Decimal @db.Decimal(12, 2)`（円）。AI コストのみ `Decimal @db.Decimal(12, 6)`（USD） |
 | **暗号化列** | `String`。値は `v1:{keyId}:{iv}:{ct}:{tag}`。カラム名は `...Encrypted` で終える（§8.6 / `docs/03` §4.4） |
-| **列挙** | Prisma の `enum` を使い、DB 側は `TEXT + CHECK` にマイグレーションで落とす（列挙値の追加でテーブルロックを起こさないため） |
+| **列挙** | 🔴 **Prisma DSL では `String` で宣言する（Prisma の `enum` キーワードは使わない）。** enum 宣言はクエリエンジンがバインドパラメータへ `::"EnumName"` キャストを付与し、DB 側が `TEXT` だと実行時 `42704`（`type "..." does not exist`）で全書き込みが失敗する（2026-09-03 実測。`packages/db/prisma/schema.prisma` 冒頭コメント参照）。**許容値はフィールド直上の `///` コメントで明記**し、**DB 側は `TEXT + CHECK` をマイグレーションで手書き**する（列挙値の追加でテーブルロックを起こさないため、という当初の動機自体は変わらない）。**TS 側は単一出所の定数配列（`as const` 配列 + そこから導出した型）から型を導出し、CHECK の値集合との一致を静的テスト（`tests/static/`）で検証する**（`docs/05` §17.2）。 |
 | **削除** | 🔴 **業務データは論理削除しない**（`deletedAt` を持たせると RLS ポリシーと `WHERE` の両方に条件が増え、漏れの温床になる）。`PURGED` と保持期間削除は**物理削除 + `AuditLog` に件数**（§9.7） |
 
 ### 3.2 テーブル一覧（全 56 表）
@@ -236,15 +236,17 @@ ses-platform/
 ### 3.3 テナント・利用者・境界
 
 ```prisma
-enum TenantLifecycleState { SANDBOX ACTIVE SUSPENDED CLOSING PURGED }   // docs/02 章 5.4。5 状態がすべて
-enum AppEnvKind           { production sandbox demo }                    // Tenant.environment（F-001）
-enum TenantRole           { OWNER ADMIN SALES PARTNER_ADMIN PARTNER_SALES VIEWER }
-enum PlatformRole         { PLATFORM_OWNER PLATFORM_SUPPORT }
+// 🔴 列挙は Prisma の `enum` を使わず `String` + 許容値コメントで宣言する（§3.1「列挙」規約）。
+//    TenantLifecycleState: 'SANDBOX'|'ACTIVE'|'SUSPENDED'|'CLOSING'|'PURGED'（docs/02 章 5.4。5 状態がすべて。
+//    単一の出所は packages/domain の TENANT_LIFECYCLE_STATES）
+//    AppEnvKind（Tenant.environment。F-001）: 'production'|'sandbox'|'demo'
+//    TenantRole: 'OWNER'|'ADMIN'|'SALES'|'PARTNER_ADMIN'|'PARTNER_SALES'|'VIEWER'
+//    PlatformRole: 'PLATFORM_OWNER'|'PLATFORM_SUPPORT'
 model Tenant {
   id                    String   @id @default(uuid(7)) @db.Uuid
   name                  String                                   // 商号
-  environment           AppEnvKind
-  lifecycleState        TenantLifecycleState @default(ACTIVE)
+  environment           String                                   // AppEnvKind（上記参照。CHECK）
+  lifecycleState        String   @default("ACTIVE")               // TenantLifecycleState（上記参照。CHECK）
   lifecycleChangedAt    DateTime @db.Timestamptz(3)
   lifecycleChangedBy    String?  @db.Uuid                        // PlatformUser.id または null(system)
   suspendReason         String?
@@ -279,7 +281,7 @@ model Membership {
   id                    String     @id @default(uuid(7)) @db.Uuid
   tenantId              String     @db.Uuid
   userId                String     @db.Uuid
-  role                  TenantRole
+  role                  String                        // TenantRole（§3.3 冒頭参照。CHECK）
   partnerCompanyId      String?    @db.Uuid           // パートナーロールのみ NOT NULL
   joinedAt              DateTime   @db.Timestamptz(3)
   revokedAt             DateTime?  @db.Timestamptz(3)
@@ -311,7 +313,7 @@ model Invitation {
   id                String   @id @default(uuid(7)) @db.Uuid
   tenantId          String   @db.Uuid
   email             String
-  role              TenantRole
+  role              String                              // TenantRole（§3.3 冒頭参照。CHECK）
   partnerCompanyId  String?  @db.Uuid
   tokenHash         String                              // SHA-256。平文はメール/画面にのみ出す
   expiresAt         DateTime @db.Timestamptz(3)
@@ -343,9 +345,10 @@ model TwoFactorCredential {
 ### 3.4 ① 集める
 
 ```prisma
-enum EngineerAvailability { WORKING STANDBY_SCHEDULED STANDBY INACTIVE }  // 稼働中/待機予定/待機中/非稼働
-enum RemoteMode           { FULL_REMOTE PARTIAL_REMOTE ONSITE_ONLY }
-enum ScanStatus           { SCANNING CLEAN INFECTED UNSCANNABLE FAILED }  // 🔴 UNSUPPORTED は UNSCANNABLE に正規化
+// 🔴 列挙は Prisma の `enum` を使わず `String` + 許容値コメントで宣言する（§3.1「列挙」規約）。
+//    EngineerAvailability: 'WORKING'|'STANDBY_SCHEDULED'|'STANDBY'|'INACTIVE'（稼働中/待機予定/待機中/非稼働）
+//    RemoteMode: 'FULL_REMOTE'|'PARTIAL_REMOTE'|'ONSITE_ONLY'
+//    ScanStatus: 'SCANNING'|'CLEAN'|'INFECTED'|'UNSCANNABLE'|'FAILED'（🔴 UNSUPPORTED は UNSCANNABLE に正規化）
 model Engineer {
   id                     String   @id @default(uuid(7)) @db.Uuid
   tenantId               String   @db.Uuid
@@ -355,13 +358,13 @@ model Engineer {
   contactEmail           String?                         // PII。保持期間の対象
   contactPhone           String?                         // PII。保持期間の対象
   affiliationLabel       String?                         // 現所属会社名（PII 扱い。ゲート PII 層の検査対象）
-  availability           EngineerAvailability @default(WORKING)
+  availability           String   @default("WORKING")           // EngineerAvailability（上記参照。CHECK）
   availableFrom          DateTime? @db.Date              // 稼働可能時期（F-045 が満了日/離任日で更新）
   unitPriceMin           Decimal? @db.Decimal(12, 2)
   unitPriceMax           Decimal? @db.Decimal(12, 2)
   prefecture             String?                         // 都道府県コード
   city                   String?                         // 🔴 匿名候補には出さない（U-06）
-  remoteMode             RemoteMode?
+  remoteMode             String?                         // RemoteMode（上記参照。CHECK）
   preferenceNote         String?                         // 希望条件。BR-52 の範囲に限る
   retentionExpiresAt     DateTime? @db.Timestamptz(3)    // F-046。稼働/提案終了のたびに再計算
   piiPurgedAt            DateTime? @db.Timestamptz(3)    // 削除済みの表示（S-006 の 404 文言）
@@ -422,7 +425,7 @@ model SkillSheet {
   objectKey     String                                     // §14.1。🔴 運営者に GRANT しない
   contentType   String
   byteSize      BigInt
-  scanStatus    ScanStatus @default(SCANNING)
+  scanStatus    String   @default("SCANNING")               // ScanStatus（§3.4 冒頭参照。CHECK）
   scanUpdatedAt DateTime? @db.Timestamptz(3)
   isLatest      Boolean  @default(false)                   // 🔴 CLEAN のみ true になれる
   uploadedBy    String   @db.Uuid
@@ -439,7 +442,7 @@ model FileScanResult {
   tenantId     String   @db.Uuid
   objectKey    String
   objectVersionId String
-  status       ScanStatus
+  status       String                                      // ScanStatus（§3.4 冒頭参照。CHECK）
   rawStatus    String                                      // GuardDuty の生値（正規化前）
   receivedAt   DateTime @default(now()) @db.Timestamptz(3)
   @@unique([objectKey, objectVersionId])                   // 🔴 at-least-once の重複を弾く（docs/03 §3.4.3-2）
@@ -466,8 +469,9 @@ model SkillSheetExtraction {
 ### 3.5 案件・公開範囲・マッチング・匿名共有
 
 ```prisma
-enum ProjectStatus     { OPEN FILLED SUCCESSOR_WANTED }        // 募集中/充足/後任募集
-enum RequirementKind   { MUST NICE }
+// 🔴 列挙は Prisma の `enum` を使わず `String` + 許容値コメントで宣言する（§3.1「列挙」規約）。
+//    ProjectStatus: 'OPEN'|'FILLED'|'SUCCESSOR_WANTED'（募集中/充足/後任募集）
+//    RequirementKind: 'MUST'|'NICE'
 model Project {
   id                 String   @id @default(uuid(7)) @db.Uuid
   tenantId           String   @db.Uuid
@@ -479,9 +483,9 @@ model Project {
   unitPriceMax       Decimal? @db.Decimal(12, 2)
   startDate          DateTime? @db.Date
   prefecture         String?
-  remoteMode         RemoteMode?
+  remoteMode         String?                                     // RemoteMode（§3.4 冒頭参照。CHECK）
   headcount          Int      @default(1)
-  status             ProjectStatus @default(OPEN)
+  status             String   @default("OPEN")                   // ProjectStatus（上記参照。CHECK）
   originAssignmentId String?  @db.Uuid                        // F-045 の後任募集の生成元
   createdAt          DateTime @default(now()) @db.Timestamptz(3)
   updatedAt          DateTime @updatedAt @db.Timestamptz(3)
@@ -493,7 +497,7 @@ model ProjectRequirement {
   id            String @id @default(uuid(7)) @db.Uuid
   tenantId      String @db.Uuid
   projectId     String @db.Uuid
-  kind          RequirementKind                                 // 🔴 MUST は F-029 の足切り、F-020 整合層の照合対象
+  kind          String                                          // RequirementKind（上記参照。CHECK）。🔴 MUST は F-029 の足切り、F-020 整合層の照合対象
   skillId       String? @db.Uuid
   freeText      String?
   requiredYears Decimal? @db.Decimal(4, 1)
@@ -553,21 +557,21 @@ model MatchCandidate {
 ### 3.6 提案・提案依頼・品質ゲート
 
 ```prisma
-enum ProposalState {
-  DRAFT GATE_RUNNING GATE_FAILED APPROVAL_PENDING APPROVED
-  SUBMITTING SUBMITTED SUBMIT_FAILED
-  INTERVIEW_SCHEDULED INTERVIEWED RESULT_PENDING WON LOST WITHDRAWN
-}                                                              // 🔴 14 状態。docs/02 章 5.1 がすべて
-enum ProposalRequestState { REQUESTED ACCEPTED DECLINED WITHDRAWN_BY_HOST EXPIRED }
-enum GateLayer  { PII COMMERCE CONSISTENCY }
-enum GateVerdict { PASS FAIL }
+// 🔴 列挙は Prisma の `enum` を使わず `String` + 許容値コメントで宣言する（§3.1「列挙」規約）。
+//    ProposalState（🔴 14 状態。docs/02 章 5.1 がすべて）:
+//      'DRAFT'|'GATE_RUNNING'|'GATE_FAILED'|'APPROVAL_PENDING'|'APPROVED'|
+//      'SUBMITTING'|'SUBMITTED'|'SUBMIT_FAILED'|
+//      'INTERVIEW_SCHEDULED'|'INTERVIEWED'|'RESULT_PENDING'|'WON'|'LOST'|'WITHDRAWN'
+//    ProposalRequestState: 'REQUESTED'|'ACCEPTED'|'DECLINED'|'WITHDRAWN_BY_HOST'|'EXPIRED'
+//    GateLayer: 'PII'|'COMMERCE'|'CONSISTENCY'
+//    GateVerdict: 'PASS'|'FAIL'
 model ProposalRequest {
   id                String   @id @default(uuid(7)) @db.Uuid
   tenantId          String   @db.Uuid
   projectId         String   @db.Uuid
   engineerId        String   @db.Uuid                          // 🔴 ホスト向け応答に載せない
   partnerCompanyId  String   @db.Uuid                          // 依頼先
-  state             ProposalRequestState @default(REQUESTED)
+  state             String   @default("REQUESTED")             // ProposalRequestState（上記参照。CHECK）
   message           String                                     // 🔴 商流情報を含めない（API で検証）
   expiresAt         DateTime @db.Timestamptz(3)
   declineReason     String?                                    // 🔴 パートナー社内限定。ホストに返さない
@@ -590,7 +594,7 @@ model Proposal {
   projectId           String   @db.Uuid
   engineerId          String   @db.Uuid
   proposalRequestId   String?  @db.Uuid                        // 経路 4 由来
-  state               ProposalState @default(DRAFT)
+  state               String   @default("DRAFT")               // ProposalState（上記参照。CHECK）
   recipientCompanyName String                                  // 提案先（テナント外の企業）
   recipientEmail      String
   offeredUnitPrice    Decimal? @db.Decimal(12, 2)
@@ -640,7 +644,7 @@ model EngineerSnapshot {                                        // 🔴 越境�
   unitPriceMax      Decimal? @db.Decimal(12, 2)
   availableFrom     DateTime? @db.Date
   prefecture        String?
-  remoteMode        RemoteMode?
+  remoteMode        String?                                     // RemoteMode（§3.4 冒頭参照。CHECK）
   skillSheetId      String?  @db.Uuid                           // 参照した版（CLEAN のみ）
   frozenAt          DateTime @db.Timestamptz(3)
   @@map("engineer_snapshots")
@@ -651,8 +655,8 @@ model ProposalEvent {
   ownerPartnerCompanyId String? @db.Uuid                         // 🔴 proposals から継承（§4.4.1）。C5
   proposalId   String   @db.Uuid
   kind         String                                            // 'STATE'|'NOTE'|'ATTACHMENT'（CHECK）
-  fromState    ProposalState?
-  toState      ProposalState?
+  fromState    String?                                           // ProposalState（§3.6 冒頭参照。CHECK）
+  toState      String?                                           // ProposalState（§3.6 冒頭参照。CHECK）
   actorUserId  String?  @db.Uuid                                 // null = system
   note         String?
   attachmentKey String?
@@ -670,9 +674,9 @@ model ReviewGate {
   contentHash      String                                        // 🔴 §11.5。検査した内容のハッシュ
   execution        String   @default("DONE")                     // 'DONE'|'HELD_AI_COST_LIMIT'（CHECK）。🔴 実行の属性であり状態機械ではない（P-A-16。だから state と呼ばない）。§7.6: 1 日上限で AI が止まった「未実行」を保持する行
   heldSince        DateTime? @db.Timestamptz(3)                  // HELD のとき NOT NULL。A-005 の GATE_RUNNING 滞留理由（F-059 AC-6）
-  piiVerdict       GateVerdict?                                  // 🔴 HELD のときのみ NULL（PASS でも FAIL でもない = 未判定）
-  commerceVerdict  GateVerdict?
-  consistencyVerdict GateVerdict                                 // 🔴 機械的照合のみで決まる。HELD でも保持する（F-027 AC-5）
+  piiVerdict       String?                                       // GateVerdict（§3.6 冒頭参照。CHECK）。🔴 HELD のときのみ NULL（PASS でも FAIL でもない = 未判定）
+  commerceVerdict  String?                                       // GateVerdict（同上。CHECK）
+  consistencyVerdict String                                      // GateVerdict（同上。CHECK）。🔴 機械的照合のみで決まる。HELD でも保持する（F-027 AC-5）
   findings         Json                                          // [{ layer, kind, offsetStart, offsetEnd, excerpt, severity }]
   aiWarnings       Json                                          // 🔴 合否に影響しない。別フィールド（docs/03 申し送り 4）
   role             String?                                       // 'gate-inspector'。AI 失敗時は null
@@ -709,9 +713,10 @@ type GateFinding = {
 ### 3.7 チャット・契約・稼働
 
 ```prisma
-enum AssignmentState { SCHEDULED ACTIVE EXTENSION_REVIEW ENDING ENDED }   // 5 状態
-enum ContractState   { DRAFT SENDING SEND_FAILED UNDER_REVIEW EXECUTED WITHDRAWN EXPIRED } // 7 状態
-enum ContractKind    { NDA MASTER INDIVIDUAL }
+// 🔴 列挙は Prisma の `enum` を使わず `String` + 許容値コメントで宣言する（§3.1「列挙」規約）。
+//    AssignmentState（5 状態）: 'SCHEDULED'|'ACTIVE'|'EXTENSION_REVIEW'|'ENDING'|'ENDED'
+//    ContractState（7 状態）: 'DRAFT'|'SENDING'|'SEND_FAILED'|'UNDER_REVIEW'|'EXECUTED'|'WITHDRAWN'|'EXPIRED'
+//    ContractKind: 'NDA'|'MASTER'|'INDIVIDUAL'
 model ChatThread {
   id            String   @id @default(uuid(7)) @db.Uuid
   tenantId      String   @db.Uuid
@@ -746,7 +751,7 @@ model Message {
   senderPartnerCompanyId String? @db.Uuid
   body         String                                            // 🔴 運営者に GRANT しない（§5.7）
   attachmentKey String?
-  attachmentScanStatus ScanStatus?
+  attachmentScanStatus String?                                   // ScanStatus（§3.4 冒頭参照。CHECK）
   reviewGateId String?  @db.Uuid                                 // 添付があるときのみ
   sentAt       DateTime @default(now()) @db.Timestamptz(3)
   purgedAt     DateTime? @db.Timestamptz(3)                      // PURGED で本文を削除（F-064 AC-2）
@@ -756,8 +761,8 @@ model Message {
 model Contract {
   id                  String   @id @default(uuid(7)) @db.Uuid
   tenantId            String   @db.Uuid
-  kind                ContractKind
-  state               ContractState @default(DRAFT)
+  kind                String                                    // ContractKind（§3.7 冒頭参照。CHECK）
+  state               String   @default("DRAFT")                // ContractState（§3.7 冒頭参照。CHECK）
   counterpartyName    String
   counterpartyPartnerCompanyId String? @db.Uuid                 // 🔴 当事者列（根。freeze。§4.4 C9）。相手方がパートナーのとき必須。BR-66「自社との契約単価」は unitPrice
   projectId           String?  @db.Uuid
@@ -795,7 +800,7 @@ model ContractDocument {
   templateVersion Int?                                             // 🔴 生成時のテンプレート版を固定（F-048 AC-1）
   mergeResult     Json?                                            // { filled: {...}, unfilled: string[] }（F-048 AC-2）
   reviewGateId  String?  @db.Uuid                                  // 🔴 F-047 処理⑥ / F-048 AC-3。ハッシュは ReviewGate.contentHash
-  scanStatus    ScanStatus @default(SCANNING)
+  scanStatus    String   @default("SCANNING")                      // ScanStatus（§3.4 冒頭参照。CHECK）
   externalDocumentId String?                                     // 電子署名サービスの書類 ID（DocuSign = envelopeId。正規化済み）
   externalProvider   String?                                     // 'docusign'|'cloudsign'|'mock'（CHECK）
   sentVia       String?                                          // 'ESIGN'|'EMAIL'（CHECK）。F-047 処理⑧の送付手段
@@ -813,10 +818,10 @@ model ContractTemplate {                                         // 🔴 F-048 /
   id            String   @id @default(uuid(7)) @db.Uuid
   tenantId      String   @db.Uuid
   name          String
-  kind          ContractKind
+  kind          String                                           // ContractKind（§3.7 冒頭参照。CHECK）
   version       Int                                              // 🔴 上書きしない。差し替えは新しい版を起こす
   objectKey     String                                           // docx 原本（§14.1）
-  scanStatus    ScanStatus @default(SCANNING)
+  scanStatus    String   @default("SCANNING")                    // ScanStatus（§3.4 冒頭参照。CHECK）
   placeholders  String[]                                         // 原本から機械抽出したプレースホルダ名
   mapping       Json                                             // MergeMapping[]（下記）。🔴 版ごとに固定
   isLatest      Boolean  @default(false)
@@ -852,7 +857,7 @@ model Assignment {
   projectId           String   @db.Uuid
   proposalId          String   @unique @db.Uuid                  // WON からのみ生成（F-042 AC-1）
   counterpartyPartnerCompanyId String? @db.Uuid                  // 🔴 engineers.owner_partner_company_id から継承（§4.4.1）。null = 自社エンジニア。C9。入力で指定させない（F-065 処理①）
-  state               AssignmentState @default(SCHEDULED)
+  state               String   @default("SCHEDULED")               // AssignmentState（§3.7 冒頭参照。CHECK）
   startDate           DateTime @db.Date
   endDate             DateTime @db.Date                          // 🔴 NOT NULL（F-042 AC-3）
   actualLeaveDate     DateTime? @db.Date                         // 緊急離任の実離任日（F-045 処理①）
@@ -1141,7 +1146,7 @@ model PlatformUser {                                               // 🔴 tenan
   id           String   @id @default(uuid(7)) @db.Uuid
   email        String   @unique
   displayName  String
-  role         PlatformRole
+  role         String                                             // PlatformRole（§3.3 冒頭参照。CHECK）
   passwordHash String
   disabledAt   DateTime? @db.Timestamptz(3)
   lastLoginAt  DateTime? @db.Timestamptz(3)
@@ -3627,6 +3632,7 @@ export const logger = pino({
 | 18 | `tenant-usage-no-money.test.ts` | 🔴 **主平面（`apps/web/app/api/(main)/**`）の応答型に `/[Uu]sd|[Cc]ost|[Pp]rice/` を含むプロパティ名が無い**。例外は `overageEstimateJpy`（請求見込み。`BR-24`）と、業務データそのものの `unitPrice` / `offeredUnitPrice` / `amount`（契約・提案の項目でありクォータではない）。加えて `UsageView` に `gateInspector` / `gate` キーが無い（`F-027 AC-6` / `AC-7`） |
 | 19 | `docusign-scope.test.ts` / `queue-attempts` の追補 | 🔴 `buildAuthorizeUrl()` の出力に `scope=signature%20extended` が含まれる（`docs/03` §3.1.2a-3。忘れると 30 日で接続が切れる）。`gate.hold-release` が **`gate.run` 以外を enqueue しない**（送信系の再 enqueue に転用されていない）。🔴 **`gate.run` キューの `defaultJobOptions.removeOnComplete` が `true`**（§9.1。無いと HELD 後の同 `jobId` 再 enqueue が捨てられる）。🔴 **hold-release の追補（§8.3-Q）**: ①`email.dispatch` / `account.mail` のハンドラで `decideProviderQuota` の `HOLD` と `ProviderQuotaExceededError` の catch が `status='HELD_PROVIDER_QUOTA'` への更新で終わり、**再 throw・`status='FAILED'` 更新・`failureReason` 書込のいずれにも到達しない**（AST）②`send.hold-release` が走査する `EmailDispatch.status` の集合が `{'HELD_DOMAIN_UNVERIFIED','HELD_PROVIDER_QUOTA'}` と一致する（スナップショット。CHECK の 7 値から `HELD_` 接頭辞を持つものを導出して比較 = 列挙式にしない）③`packages/domain/src/quota/provider.ts` が `Date.now` / `process.env` を参照しない（§17.2 #14 と同じ検査を個別に固定） |
 | 20 | `counterparty-base-table-host-only.test.ts` | 🔴 **経路 5 の基底表がパートナー到達可能な経路から読めない**（§4.3-6）: ①`apps/web/**` における `withHostTenant` / `requireHost` の呼び出し元が `apps/web/app/api/(main)/{assignments,extension-reviews,contracts,contract-templates,orders,kpi}/**` に限られ、`/api/partner/**` と全ロール到達ルート（#8 / #9 / #17 / #46 等）に現れない（AST）。🔴 **`apps/worker/**` は呼び出し元の限定対象外**（§4.3-6 ③。ctx が常に `systemTenantCtx` = `HostTenantCtx`）。その前提として **`apps/worker/**` に `resolveTenantCtx` の呼び出しが無い**ことを同テストで検査する（ワーカーがパートナー文脈を持てないことの根拠）②`expectTypeOf<TenantDb>()` が `assignment` / `contract` / `contractDocument` / `order` / `extensionReview` を持たない（型テスト。`PartnerScopeDb` も同様）③Prisma 拡張に 5 モデルの「`app.partner_company_id <> ''` なら throw」フックが登録されている（DMMF 走査。#2 と同じ向き = 列挙ではなく全部から引く） |
+| 21 | `schema-enum-drift.test.ts` | 🔴 §3.1「列挙」規約（Prisma DSL は `String`・DB 側は手書き TEXT + CHECK）が生む「CHECK の値集合と TS 側の単一出所を人手で揃える」ドリフトを機械的に検知する。`packages/db/prisma/migrations/**/migration.sql` の CHECK 制約をテキストとして読み、TS 側の単一出所（`TENANT_LIFECYCLE_STATES` / `TENANT_ROLES` / `APP_ENV_KINDS` / `TWO_FACTOR_SUBJECT_TYPES` / `TENANT_SENDING_DOMAIN_STATES`）と値集合を突合する。同名 `CONSTRAINT` が migration.sql 群に 2 件以上見つかったら（DROP + 再定義など）読み取り側で例外にする（silent に古い定義と突合される穴を loud failure にする） |
 
 ### 17.3 E2E の主要シナリオ
 

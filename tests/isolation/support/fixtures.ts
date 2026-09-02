@@ -19,9 +19,11 @@ export const ENGINEER_A_PARTNER = '01930000-0000-7000-8000-0000000000e2';
 export const ENGINEER_B_HOST = '01930000-0000-7000-8000-0000000000e3';
 
 export const SEED_SQL = `
-INSERT INTO tenants (id, name, lifecycle_state) VALUES
-  ('${TENANT_A}', 'Tenant A', 'ACTIVE'),
-  ('${TENANT_B}', 'Tenant B', 'ACTIVE');
+-- 🔴 T-02-01: tenants に environment / lifecycle_changed_at / provisioning_request_id が
+--    NOT NULL で追加された（docs/05 §3.3）。
+INSERT INTO tenants (id, name, environment, lifecycle_state, lifecycle_changed_at, provisioning_request_id) VALUES
+  ('${TENANT_A}', 'Tenant A', 'production', 'ACTIVE', now(), 'seed-provisioning-tenant-a'),
+  ('${TENANT_B}', 'Tenant B', 'production', 'ACTIVE', now(), 'seed-provisioning-tenant-b');
 
 INSERT INTO engineers (id, tenant_id, owner_partner_company_id, display_name) VALUES
   ('${ENGINEER_A_HOST}',    '${TENANT_A}', NULL,             'Engineer A-Host'),

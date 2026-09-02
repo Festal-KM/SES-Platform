@@ -4,13 +4,39 @@
 // T-01-04 で「ブランド型であること」「分離キーが認証情報からしか来ないこと」を実装した。
 // T-01-06 で HostTenantCtx（docs/05 §4.3 実装の規約 6）を追加する。
 // deviceKind の判定・lifecycleState の DB 参照・Auth.js のセッション型への差し替えは SP-02 以降。
+//
+// 🔴 T-02-01（T-01-07 からの申し送り①）: TenantLifecycleState は本ファイルと
+//    packages/domain/src/state/tenant.ts の 2 箇所に重複定義されていた。
+//    単一の出所を packages/domain に一本化する（packages/db → @ses/domain の依存は
+//    docs/05 §2.2 で禁止されておらず、eslint.config.mjs の packages/db ゾーンも許可している。
+//    逆向き〔domain → db〕は禁止のまま）。schema.prisma の `tenants.lifecycle_state` 列は
+//    Prisma の `enum` ではなく `String`（TEXT + CHECK）である（schema.prisma 冒頭コメント参照。
+//    Prisma の `enum` はネイティブ Postgres ENUM 型を要求し、実行時にキャストエラーを起こすため
+//    使えなかった）。値の一致は tests/static/schema-enum-drift.test.ts が migration.sql の
+//    CHECK 制約と自動で突合する（code-reviewer 指摘。「自動検証は現状無い。TBD」は解消済み）。
+//    TenantRole は本ファイルの TENANT_ROLES（下記）が単一の出所。
+import type { TenantLifecycleState } from '@ses/domain';
+
+export type { TenantLifecycleState } from '@ses/domain';
 
 declare const TenantCtxBrand: unique symbol;
 declare const HostBrand: unique symbol;
 
-export type TenantRole = 'OWNER' | 'ADMIN' | 'SALES' | 'PARTNER_ADMIN' | 'PARTNER_SALES' | 'VIEWER';
+/**
+ * docs/05 §3.3 TenantRole の値の単一の出所。
+ * 🔴 tests/static/schema-enum-drift.test.ts が migration.sql の `memberships_role_check` /
+ *    `invitations_role_check` と突合する（code-reviewer 指摘。TENANT_LIFECYCLE_STATES と同じ扱い）。
+ */
+export const TENANT_ROLES = [
+  'OWNER',
+  'ADMIN',
+  'SALES',
+  'PARTNER_ADMIN',
+  'PARTNER_SALES',
+  'VIEWER',
+] as const;
 
-export type TenantLifecycleState = 'SANDBOX' | 'ACTIVE' | 'SUSPENDED' | 'CLOSING' | 'PURGED';
+export type TenantRole = (typeof TENANT_ROLES)[number];
 
 export type DeviceKind = 'desktop' | 'mobile' | 'tablet' | 'api';
 

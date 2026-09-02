@@ -1,16 +1,57 @@
 // packages/db/prisma/schema.prisma
-// T-01-04（docs/sprints/SP-01-bootstrap.md）: Prisma Client Extension + PostgreSQL RLS の
-// 二重防御が成立することを実証するための最小 2 表。
+// T-02-01（docs/sprints/SP-02-schema-isolation.md）: docs/05 §3.3「テナント・利用者・境界」の
+// 7 表（Tenant の 5 状態すべて / User / Membership / PartnerCompany / Invitation /
+// TwoFactorCredential / TenantSendingDomain。最後の 1 表は §3.9）を追加する。
+// T-01-04 の Engineer（最小サブセット）はそのまま残す（拡張は T-02-02 の範囲）。
 //
-// 🔴 本ファイルは全 56 表（docs/05 §3.2）の一部ではなく「土台の実証」である。
-//    SP-02 で全表に拡張する。そのとき次の共通規約（docs/05 §3.1）を引き継ぐこと:
-//      - 主キー: uuid(7) / テーブル名: @@map で snake_case 複数形 / 列名: @map で snake_case
-//      - 日時: @db.Timestamptz(3)
-//      - 🔴 全業務テーブルがテナントキーを 1 つ持つ（既定 tenant_id。Tenant は自身の id）
-//      - 🔴 複合インデックスは tenant_id を先頭列に置く
-//    列挙は docs/05 §3.1 のとおり「Prisma の enum + DB 側は TEXT + CHECK」へ落とすが、
-//    その変換はマイグレーションを起こす SP-02 / T-01-05 の範囲であり、本最小スキーマでは
-//    型を String にとどめて DB 表現の決定を先送りしない（enum 型を作ってしまうと後で移行が要る）。
+// 🔴 共通規約（docs/05 §3.1。全表で厳守）:
+//   - 主キー: uuid(7) / テーブル名: @@map で snake_case 複数形 / 列名: @map で snake_case
+//   - 日時: @db.Timestamptz(3)
+//   - 全業務テーブルがテナントキーを 1 つ持つ（既定 tenant_id。Tenant は自身の id）
+//   - 複合インデックスは tenant_id を先頭列に置く
+//   - 業務データは論理削除しない（deletedAt を持たせない）
+//   - 列挙は TEXT + CHECK に落とす（下記「列挙の表現方法」参照。Prisma の `enum` キーワードは使わない）
+//
+// 🔴 列挙の表現方法（docs/05 §3.1「列挙」規約。§3.1 は本方式〔Prisma DSL は `String`・DB 側は
+//    手書き TEXT + CHECK・TS 側は単一出所の定数配列〕を規約として定めており、本ファイルはそれに
+//    準拠する。以下は §3.1 がこの規約に至った実測記録であり、今も残す）:
+//   docs/05 §3.1 の確定前、列挙は Prisma の `enum` で書く案を試した
+//   （`enum TenantLifecycleState { ... }` を書き、生成された migration.sql の
+//   `CREATE TYPE ... AS ENUM` / 列型 `"TenantLifecycleState"` を手で `TEXT` + `CHECK (...)` に
+//   置き換える）ところ、Testcontainers での実行時テストで
+//   `PostgresError { code: "42704", message: "type \"public.TenantRole\" does not exist" }`
+//   が発生した（2026-09-03 実測）。原因: Prisma の PostgreSQL コネクタは、schema.prisma で
+//   `enum` 宣言されたフィールドに対して、バインドパラメータへ常に `$1::"EnumName"` のネイティブ
+//   Postgres ENUM 型キャストを付与する（マイグレーションが実際に何を作ったかとは無関係。
+//   schema.prisma の宣言だけを見て決まる、クエリエンジン側の固定動作）。したがって「Prisma の
+//   enum を書きつつ DB 側だけ TEXT にする」の組み合わせは **migrate 自体は通っても、Prisma
+//   Client 経由の create/update が全滅する**（マイグレーション時の drift ではなく実行時の
+//   恒久的な機能不全）。
+//
+//   この実測を受けて docs/05 §3.1 は「Prisma DSL では `String` で宣言し（`enum` キーワードは
+//   使わない）、許容値はフィールド直上の `///` コメントで明記、DB 側は TEXT + CHECK をマイグレー
+//   ションで手書きする」を規約として定めている。本ファイルはこれに準拠し、状態 / ロール / 環境
+//   種別のような列挙相当のフィールドを **`String` 型 + 許容値をコメントで明記** して宣言し、
+//   DB 側の TEXT + CHECK は migration.sql の手書き CHECK 制約だけで担保する
+//   （`String` は元々 TEXT にマップされるため、キャスト問題が起こらない）。
+//   これは docs/05 §3 の他の大半の列挙相当フィールド（`SkillAlias.status` `EngineerSkill.source`
+//   `TenantSendingDomain.state` `SendAttempt.status` 等）がもともと採っている書き方と同じであり、
+//   今回対象にした `TenantLifecycleState` / `AppEnvKind` / `TenantRole` だけが例外的に
+//   `enum X { ... }` ブロックとして書かれていた（docs/05 §3.3 冒頭）。
+//   🔴 TS 側の型安全性は失わない: `TenantLifecycleState` は `packages/domain` の
+//   `TENANT_LIFECYCLE_STATES` を単一の出所とする（`packages/db/src/context.ts`）。
+//   `TenantRole` は `packages/db/src/context.ts` の `TENANT_ROLES` 定数配列を単一の出所とする。
+//   CHECK 制約と TS 側の単一出所との一致は `tests/static/schema-enum-drift.test.ts`
+//   （docs/05 §17.2 #21）が自動で突合する。
+//
+// 🔴 RLS の判断（T-02-01 実装ガイドに基づく報告。プログラマ完了報告に詳細あり）:
+//   本タスクで追加する 6 表（tenants を除く）は、C0〜C8 のポリシー本体（T-02-06 の範囲）を
+//   まだ持たない。ただし「ポリシーが無い業務テーブル」を放置しない（docs/05 §4.1 第 1 防御の
+//   既定は fail-closed）ため、ENABLE + FORCE ROW LEVEL SECURITY だけを 010_rls.sql に追加し、
+//   ポリシー 0 件 = 常に 0 行（app_tenant からは何も見えない）という安全側のデフォルトにする。
+//   GRANT も追加しない（ポリシーが無い状態で GRANT だけ足しても意味を持たないため）。
+//   例外は tenants: 既存の app_platform_write 向け UPDATE 許可列を、本タスクで増えた
+//   ライフサイクル列（docs/05 §5.2）まで拡張する（010_rls.sql 側のコメント参照）。
 
 generator client {
   provider = "prisma-client-js"
@@ -21,21 +62,196 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ============================================================================
+// docs/05 §3.3 テナント・利用者・境界
+// ============================================================================
+
 /// 契約する SES 企業。分離の単位（CLAUDE.md §3.1 第一境界）。
 /// 🔴 テナントキーは自身の id である（docs/05 §3.1 の 2 例外のうちの 1 つ）。
+/// 🔴 lifecycleState を書けるのは withPlatformWrite 経由のみ（docs/05 §3.3 規約）。
+///    app_tenant には UPDATE を GRANT しない（010_rls.sql）。
 model Tenant {
-  id             String   @id @default(uuid(7)) @db.Uuid
-  name           String
-  /// docs/05 §3.3 TenantLifecycleState: SANDBOX | ACTIVE | SUSPENDED | CLOSING | PURGED
-  lifecycleState String   @default("ACTIVE") @map("lifecycle_state")
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  id                      String    @id @default(uuid(7)) @db.Uuid
+  name                    String
+  /// docs/05 §3.3 AppEnvKind: 'production' | 'sandbox' | 'demo'（TEXT + CHECK。F-001）。
+  /// 🔴 packages/config の APP_ENV（development/demo/sandbox/staging/production の 5 値。
+  ///    デプロイ環境）とは別物 —— こちらは「テナントの種別」（本番顧客 / sandbox 見込み客 / デモ）。
+  environment             String
+  /// docs/05 §3.3 TenantLifecycleState: 'SANDBOX'|'ACTIVE'|'SUSPENDED'|'CLOSING'|'PURGED'
+  /// （TEXT + CHECK。CLAUDE.md §4.2 の Tenant ステートマシン。5 状態がすべて）。
+  /// 🔴 単一の出所は packages/domain/src/state/tenant.ts の TENANT_LIFECYCLE_STATES
+  ///    （packages/db/src/context.ts はここから re-export する。T-01-07 からの申し送り①）。
+  lifecycleState          String    @default("ACTIVE") @map("lifecycle_state")
+  lifecycleChangedAt      DateTime  @map("lifecycle_changed_at") @db.Timestamptz(3)
+  lifecycleChangedBy      String?   @map("lifecycle_changed_by") @db.Uuid
+  suspendReason           String?   @map("suspend_reason")
+  sandboxExpiresAt        DateTime? @map("sandbox_expires_at") @db.Timestamptz(3)
+  closingEnteredAt        DateTime? @map("closing_entered_at") @db.Timestamptz(3)
+  autoApproveEnabled      Boolean   @default(false) @map("auto_approve_enabled")
+  piiRetentionYears       Int       @default(3) @map("pii_retention_years")
+  timezone                String    @default("Asia/Tokyo")
+  createdByPlatformUserId String?   @map("created_by_platform_user_id") @db.Uuid
+  provisioningRequestId   String    @unique @map("provisioning_request_id")
+  createdAt               DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  engineers Engineer[]
+  engineers        Engineer[]
+  users            User[]
+  memberships      Membership[]
+  partnerCompanies PartnerCompany[]
+  invitations      Invitation[]
+  sendingDomains   TenantSendingDomain[]
 
+  @@index([lifecycleState, sandboxExpiresAt])
+  @@index([lifecycleState, closingEnteredAt])
   @@map("tenants")
 }
 
-/// 検証用の業務表（docs/05 §3.4 Engineer の最小サブセット）。
+model User {
+  id                     String    @id @default(uuid(7)) @db.Uuid
+  tenantId               String    @map("tenant_id") @db.Uuid
+  /// null = ホスト所属。「根のオーナー列」（docs/05 §4.4.1）。継承・freeze トリガは T-02-08 の範囲。
+  ownerPartnerCompanyId  String?   @map("owner_partner_company_id") @db.Uuid
+  email                  String
+  displayName            String    @map("display_name")
+  passwordHash           String    @map("password_hash") // Argon2id
+  passwordResetTokenHash String?   @map("password_reset_token_hash") // SHA-256
+  passwordResetExpiresAt DateTime? @map("password_reset_expires_at") @db.Timestamptz(3)
+  disabledAt             DateTime? @map("disabled_at") @db.Timestamptz(3)
+  lastLoginAt            DateTime? @map("last_login_at") @db.Timestamptz(3)
+
+  tenant              Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ownerPartnerCompany PartnerCompany? @relation(fields: [ownerPartnerCompanyId], references: [id], onDelete: Restrict)
+  memberships         Membership[]
+
+  @@unique([tenantId, email])
+  @@index([tenantId, disabledAt])
+  @@map("users")
+}
+
+model Membership {
+  id               String    @id @default(uuid(7)) @db.Uuid
+  tenantId         String    @map("tenant_id") @db.Uuid
+  userId           String    @map("user_id") @db.Uuid
+  /// docs/05 §3.3 TenantRole（TEXT + CHECK）: OWNER|ADMIN|SALES|PARTNER_ADMIN|PARTNER_SALES|VIEWER。
+  role             String
+  /// パートナーロールのみ NOT NULL（DB CHECK。下記コメント参照）。
+  partnerCompanyId String?   @map("partner_company_id") @db.Uuid
+  joinedAt         DateTime  @map("joined_at") @db.Timestamptz(3)
+  revokedAt        DateTime? @map("revoked_at") @db.Timestamptz(3)
+
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  partnerCompany PartnerCompany? @relation(fields: [partnerCompanyId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, userId]) // 1 テナント 1 ユーザー 1 ロール
+  @@index([tenantId, role, revokedAt])
+  @@index([tenantId, partnerCompanyId])
+  @@map("memberships")
+}
+
+// 🔴 DB 制約（マイグレーションで追加。F-002 AC-1 を DB に落とす。docs/05 §3.3）:
+//   CHECK ( (role IN ('PARTNER_ADMIN','PARTNER_SALES')) = (partner_company_id IS NOT NULL) )
+//   → パートナーロールなのに所属が無い行、ホストロールなのに所属がある行を作れない。
+// 🔴 AFTER INSERT OR UPDATE トリガ assert_user_owner_matches_membership()（memberships 側）:
+//   users.owner_partner_company_id IS DISTINCT FROM NEW.partner_company_id なら RAISE EXCEPTION。
+//   （users.owner_partner_company_id 自体の freeze トリガは T-02-08 の範囲。ここでは
+//   「今ある値との整合」だけを見るため、T-02-08 を待たずに実装できる。）
+
+model PartnerCompany {
+  id           String    @id @default(uuid(7)) @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  name         String
+  contactName  String?   @map("contact_name")
+  contactEmail String?   @map("contact_email")
+  suspendedAt  DateTime? @map("suspended_at") @db.Timestamptz(3) // F-007 AC-2。データは残す
+  invitedAt    DateTime  @map("invited_at") @db.Timestamptz(3)
+
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  users       User[]
+  memberships Membership[]
+  invitations Invitation[]
+
+  @@index([tenantId, suspendedAt])
+  @@map("partner_companies")
+}
+
+model Invitation {
+  id                      String    @id @default(uuid(7)) @db.Uuid
+  tenantId                String    @map("tenant_id") @db.Uuid
+  email                   String
+  /// docs/05 §3.3 TenantRole（TEXT + CHECK）: OWNER|ADMIN|SALES|PARTNER_ADMIN|PARTNER_SALES|VIEWER。
+  role                    String
+  partnerCompanyId        String?   @map("partner_company_id") @db.Uuid
+  tokenHash               String    @map("token_hash") // SHA-256。平文はメール/画面にのみ出す
+  expiresAt               DateTime  @map("expires_at") @db.Timestamptz(3)
+  acceptedAt              DateTime? @map("accepted_at") @db.Timestamptz(3)
+  acceptedUserId          String?   @map("accepted_user_id") @db.Uuid
+  revokedAt               DateTime? @map("revoked_at") @db.Timestamptz(3)
+  invitedBy               String?   @map("invited_by") @db.Uuid // テナント利用者が招待（#14）
+  invitedByPlatformUserId String?   @map("invited_by_platform_user_id") @db.Uuid // 運営者が招待（API-A5）
+  createdAt               DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  partnerCompany PartnerCompany? @relation(fields: [partnerCompanyId], references: [id], onDelete: Restrict)
+
+  @@unique([tokenHash]) // 1 回限りの受諾は acceptedAt の CAS で担保
+  @@index([tenantId, email, acceptedAt])
+  @@map("invitations")
+}
+
+// 🔴 DB 制約: CHECK ( num_nonnulls(invited_by, invited_by_platform_user_id) = 1 )
+//   … 招待者は必ずどちらか一方（docs/05 §3.3）。
+
+model TwoFactorCredential {
+  id                 String    @id @default(uuid(7)) @db.Uuid
+  subjectType        String    @map("subject_type") // 'USER' | 'PLATFORM_USER'（CHECK）
+  subjectId          String    @map("subject_id") @db.Uuid
+  tenantId           String?   @map("tenant_id") @db.Uuid // USER のときのみ。PlatformUser は null
+  secretEncrypted    String    @map("secret_encrypted") // §8.6。AAD = subjectId + 'totp_secret'
+  recoveryCodeHashes String[]  @map("recovery_code_hashes") // Argon2id
+  confirmedAt        DateTime? @map("confirmed_at") @db.Timestamptz(3)
+
+  @@unique([subjectType, subjectId])
+  @@map("two_factor_credentials")
+}
+
+// 🔴 DB 制約: CHECK ( subject_type IN ('USER', 'PLATFORM_USER') )。
+//   tenantId には Tenant への FK を張らない（PLATFORM_USER 行は tenant_id IS NULL の
+//   多相列であり、USER 行についても RLS（C7 SELF。T-02-06）が唯一の境界になるため）。
+
+// ============================================================================
+// docs/05 §3.9 外部連携・送信・環境（本タスクの対象は TenantSendingDomain のみ）
+// ============================================================================
+
+model TenantSendingDomain {
+  id                         String    @id @default(uuid(7)) @db.Uuid
+  tenantId                   String    @map("tenant_id") @db.Uuid
+  domain                     String
+  state                      String    @default("REGISTERED") // 'REGISTERED'|'PENDING'|'VERIFIED'|'FAILED'（CHECK）
+  sesIdentityArn             String?   @map("ses_identity_arn")
+  sesTenantName              String?   @map("ses_tenant_name") // SES Tenants の名前 't-{tenantId}'
+  dkimTokens                 Json?     @map("dkim_tokens") // CNAME 3 本（画面に提示する。秘匿ではない）
+  mailFromDomain             String?   @map("mail_from_domain")
+  verifiedAt                 DateTime? @map("verified_at") @db.Timestamptz(3) // 🔴 NULL の間、取引先へ届く送信は実行されない
+  lastCheckedAt              DateTime? @map("last_checked_at") @db.Timestamptz(3)
+  lastFailureReason          String?   @map("last_failure_reason")
+  registeredByPlatformUserId String?   @map("registered_by_platform_user_id") @db.Uuid // A-014 で運営者が登録した場合
+  createdAt                  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, domain])
+  @@index([tenantId, verifiedAt])
+  @@map("tenant_sending_domains")
+}
+
+// 🔴 DB 制約: CHECK ( (state = 'VERIFIED') = (verified_at IS NOT NULL) )。
+//   部分 UNIQUE: ON tenant_sending_domains(tenant_id) WHERE state = 'VERIFIED'（送信元は 1 テナント 1 ドメイン）。
+
+// ============================================================================
+// 検証用の業務表（docs/05 §3.4 Engineer の最小サブセット。T-01-04。拡張は T-02-02）
+// ============================================================================
+
 /// RLS のポリシークラスは C3 OWNER_SCOPED（docs/05 §4.4）。テナント境界とパートナー境界の
 /// 両方が同時に効くため、二重防御の実証には C1 のみの表より適している。
 model Engineer {

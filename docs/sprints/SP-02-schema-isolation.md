@@ -38,7 +38,7 @@
 - **参照**: `docs/05` §3.1（共通規約）/ §3.3。
 - **実装するもの**: `Tenant`（`TenantLifecycleState` = `SANDBOX` / `ACTIVE` / `SUSPENDED` / `CLOSING` / `PURGED` の 5 状態がすべて。`AppEnvKind`）、`User`、`Membership`、`PartnerCompany`、`Invitation`、`TwoFactorCredential`、`TenantSendingDomain`。
 - 🔴 **共通規約を全表で守る**（§3.1）: 主キーは `uuid(7)`、`@@map` で snake_case 複数形、日時は `Timestamptz(3)`、**複合インデックスは `tenant_id` を必ず先頭列に置く**、金額は `Decimal(12,2)`（AI コストのみ `Decimal(12,6)`）、暗号化列は `...Encrypted`、**業務データは論理削除しない**。
-- 🔴 **列挙は Prisma の `enum` で書き、DB 側は `TEXT + CHECK` に落とす**（列挙値追加でテーブルロックを起こさないため）。
+- 🔴 **列挙は Prisma DSL では `String` で宣言する（Prisma の `enum` キーワードは使わない）。** enum 宣言はクエリエンジンがバインドパラメータへ `::"EnumName"` キャストを付与し、DB 側が `TEXT` だと実行時 `42704` で全書き込みが失敗する（2026-09-03 実測。`docs/05` §3.1）。許容値はコメントで明記し、DB 側の `TEXT + CHECK` はマイグレーションで手書きする（列挙値追加でテーブルロックを起こさないため）。**TS 側は単一出所の定数配列から型を導出し、CHECK の値集合との一致を静的テストで検証する**（`docs/05` §17.2）。
 - 🔴 **`users` に `platform` / `is_admin` / `is_operator` を含む列名を作らない**（`BR-36`。`docs/05` §17.2 #13 が検査する）。
 - **完了の判定**: `prisma migrate` が通り、`platform-user-no-flag.test.ts` が green。
 - **T-01-07 からの申し送り（2026-09-03、code-reviewer 指定）**:

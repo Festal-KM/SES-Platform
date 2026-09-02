@@ -1,7 +1,9 @@
 // tests/isolation/support/postgres.ts
 // docs/05 §17.1「結合（DB あり）: Vitest + Testcontainers（PostgreSQL）」の起動手順。
 // docs/05 §17.6 globalSetup の ①コンテナ起動 ②ロールと GRANT の適用 ③マイグレーション
-// （app_migrator）④RLS ポリシーと GRANT ⑤seed に相当する最小版（T-01-04 の 2 表ぶん）。
+// （app_migrator）④RLS ポリシーと GRANT ⑤seed に相当する最小版。
+// T-01-04（tenants / engineers の 2 表）→ T-02-01（docs/05 §3.3 の 7 表を追加。
+// `prisma db push` → `prisma migrate deploy` に切り替え）。
 //
 // 🔴 ロールのパスワードはリポジトリに置かない（CLAUDE.md §3.5）。起動のたびに生成し、
 //    そのプロセス内でだけ使う。コンテナはランダムポートで localhost にのみ公開される。
@@ -146,17 +148,17 @@ export async function startIsolationDatabase(): Promise<IsolationDatabase> {
 
   // ② スキーマの適用。🔴 app_migrator で実行するため、テーブル所有者は app_migrator になる
   //    （docs/05 §4.2。所有者と実行時ロールを分けないと FORCE ROW LEVEL SECURITY が意味を持たない）。
-  //    Prisma のマイグレーション本体は SP-02 で作る。ここでは schema.prisma を唯一の
-  //    真実として db push し、手書き DDL との乖離が起きない形にする。
-  execFileSync(
-    process.execPath,
-    [PRISMA_CLI, 'db', 'push', '--skip-generate', '--accept-data-loss'],
-    {
-      cwd: DB_PACKAGE_DIR,
-      env: { ...process.env, DATABASE_URL: migratorUrl },
-      stdio: 'pipe',
-    },
-  );
+  //    🔴 T-02-01（docs/05 §4.2「マイグレーションのみ（CI / デプロイ）」）から `prisma migrate deploy`
+  //    に切り替えた（T-01-04 は `db push` だった）。適用する内容は
+  //    `packages/db/prisma/migrations/**/migration.sql` を唯一の真実とする
+  //    （`migrate deploy` は shadow database を使わず、migration.sql をそのまま適用するだけの
+  //    コマンドのため、schema.prisma との突き合わせが起きない。列挙相当フィールドを
+  //    Prisma の `enum` にしなかった理由は schema.prisma 冒頭コメント参照）。
+  execFileSync(process.execPath, [PRISMA_CLI, 'migrate', 'deploy'], {
+    cwd: DB_PACKAGE_DIR,
+    env: { ...process.env, DATABASE_URL: migratorUrl },
+    stdio: 'pipe',
+  });
 
   // ③ RLS ポリシーと GRANT（packages/db/prisma/sql/010_rls.sql を唯一の定義として適用する）
   await execOrThrow(container, psql(RLS_SQL_CONTAINER_PATH), 'RLS ポリシーの適用');
