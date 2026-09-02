@@ -24,9 +24,15 @@ import { describe, expect, it } from 'vitest';
 import { APP_ENV_KINDS } from '../../packages/config/src/app-env.js';
 import { TENANT_ROLES } from '../../packages/db/src/context.js';
 import {
+  CHAT_THREAD_KINDS,
+  CONTRACT_DOCUMENT_EXTERNAL_PROVIDERS,
+  CONTRACT_DOCUMENT_SENT_VIAS,
+  CONTRACT_KINDS,
   ENGINEER_AVAILABILITIES,
   ENGINEER_SKILL_SOURCES,
+  EXTENSION_REVIEW_DECISIONS,
   GATE_VERDICTS,
+  ORDER_PAYMENT_STATES,
   PROJECT_STATUSES,
   PROPOSAL_EVENT_KINDS,
   REMOTE_MODES,
@@ -40,6 +46,8 @@ import {
   TENANT_SENDING_DOMAIN_STATES,
   TWO_FACTOR_SUBJECT_TYPES,
 } from '../../packages/db/src/schema-value-sets.js';
+import { ASSIGNMENT_STATES } from '../../packages/domain/src/state/assignment.js';
+import { CONTRACT_STATES } from '../../packages/domain/src/state/contract.js';
 import { PROPOSAL_STATES } from '../../packages/domain/src/state/proposal.js';
 import { PROPOSAL_REQUEST_STATES } from '../../packages/domain/src/state/proposalRequest.js';
 import { TENANT_LIFECYCLE_STATES } from '../../packages/domain/src/state/tenant.js';
@@ -316,6 +324,87 @@ describe('CHECK 制約と TS 単一出所の drift 検査（docs/05 §3.1「列�
     it('engineer_snapshots_remote_mode_check ⇔ packages/db REMOTE_MODES（engineers / projects と同じ値集合を共有）', () => {
       const values = extractCheckInValues(migrationSql, 'engineer_snapshots_remote_mode_check');
       expectSameValueSet(values, REMOTE_MODES);
+    });
+  });
+
+  // 🔴 T-02-04（docs/05 §3.7。docs/sprints/SP-02-schema-isolation.md）:
+  // 20260903030000_chat_contract_assignment/migration.sql が値集合の CHECK を持つ列。
+  // AssignmentState / ContractState の単一の出所は既存の @ses/domain（ASSIGNMENT_STATES /
+  // CONTRACT_STATES。T-01-07 から既存。新しい配列を作らずここと突合する）。
+  describe('T-02-04: 新 migration の CHECK 制約', () => {
+    it('chat_threads_kind_check ⇔ packages/db CHAT_THREAD_KINDS', () => {
+      const values = extractCheckInValues(migrationSql, 'chat_threads_kind_check');
+      expectSameValueSet(values, CHAT_THREAD_KINDS);
+    });
+
+    it('messages_attachment_scan_status_check ⇔ packages/db SCAN_STATUSES（messages / skill_sheets と同じ値集合を共有）', () => {
+      const values = extractCheckInValues(migrationSql, 'messages_attachment_scan_status_check');
+      expectSameValueSet(values, SCAN_STATUSES);
+    });
+
+    it('contracts_kind_check ⇔ packages/db CONTRACT_KINDS', () => {
+      const values = extractCheckInValues(migrationSql, 'contracts_kind_check');
+      expectSameValueSet(values, CONTRACT_KINDS);
+    });
+
+    it('🔴 contracts_state_check ⇔ @ses/domain CONTRACT_STATES（CLAUDE.md §4.2 の 7 状態）', () => {
+      const values = extractCheckInValues(migrationSql, 'contracts_state_check');
+      expectSameValueSet(values, CONTRACT_STATES);
+    });
+
+    it('対照: contracts の state CHECK が 1 値でも欠けたら検知する（改変 SQL での確認）', () => {
+      // 🔴 'WITHDRAWN' は proposals_state_check にも含まれ、かつ migrationSql は全 migration.sql の
+      //    連結テキストなので文字列 replace（最初の 1 件のみ置換）が先勝ちする proposals 側を
+      //    改変してしまう。contracts_state_check にしか出現しない値（'UNDER_REVIEW'）を使う。
+      const tampered = migrationSql.replace("'UNDER_REVIEW'", "'UNDER_REVIEW_TYPO'");
+      const values = extractCheckInValues(tampered, 'contracts_state_check');
+      expect(values).not.toEqual([...CONTRACT_STATES]);
+    });
+
+    it('contract_documents_scan_status_check ⇔ packages/db SCAN_STATUSES', () => {
+      const values = extractCheckInValues(migrationSql, 'contract_documents_scan_status_check');
+      expectSameValueSet(values, SCAN_STATUSES);
+    });
+
+    it('contract_documents_external_provider_check ⇔ packages/db CONTRACT_DOCUMENT_EXTERNAL_PROVIDERS（BYO 接続。決定済み Issue #11）', () => {
+      const values = extractCheckInValues(migrationSql, 'contract_documents_external_provider_check');
+      expectSameValueSet(values, CONTRACT_DOCUMENT_EXTERNAL_PROVIDERS);
+    });
+
+    it('contract_documents_sent_via_check ⇔ packages/db CONTRACT_DOCUMENT_SENT_VIAS', () => {
+      const values = extractCheckInValues(migrationSql, 'contract_documents_sent_via_check');
+      expectSameValueSet(values, CONTRACT_DOCUMENT_SENT_VIAS);
+    });
+
+    it('contract_templates_kind_check ⇔ packages/db CONTRACT_KINDS（contracts と同じ値集合を共有）', () => {
+      const values = extractCheckInValues(migrationSql, 'contract_templates_kind_check');
+      expectSameValueSet(values, CONTRACT_KINDS);
+    });
+
+    it('contract_templates_scan_status_check ⇔ packages/db SCAN_STATUSES', () => {
+      const values = extractCheckInValues(migrationSql, 'contract_templates_scan_status_check');
+      expectSameValueSet(values, SCAN_STATUSES);
+    });
+
+    it('🔴 assignments_state_check ⇔ @ses/domain ASSIGNMENT_STATES（CLAUDE.md §4.2 の 5 状態）', () => {
+      const values = extractCheckInValues(migrationSql, 'assignments_state_check');
+      expectSameValueSet(values, ASSIGNMENT_STATES);
+    });
+
+    it('対照: assignments の state CHECK が 1 値でも欠けたら検知する（改変 SQL での確認）', () => {
+      const tampered = migrationSql.replace("'EXTENSION_REVIEW'", "'EXTENSION_REVIEW_TYPO'");
+      const values = extractCheckInValues(tampered, 'assignments_state_check');
+      expect(values).not.toEqual([...ASSIGNMENT_STATES]);
+    });
+
+    it('orders_payment_state_check ⇔ packages/db ORDER_PAYMENT_STATES', () => {
+      const values = extractCheckInValues(migrationSql, 'orders_payment_state_check');
+      expectSameValueSet(values, ORDER_PAYMENT_STATES);
+    });
+
+    it('extension_reviews_decision_check ⇔ packages/db EXTENSION_REVIEW_DECISIONS', () => {
+      const values = extractCheckInValues(migrationSql, 'extension_reviews_decision_check');
+      expectSameValueSet(values, EXTENSION_REVIEW_DECISIONS);
     });
   });
 });

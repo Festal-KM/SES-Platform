@@ -94,12 +94,12 @@ model Tenant {
   provisioningRequestId   String    @unique @map("provisioning_request_id")
   createdAt               DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  engineers        Engineer[]
-  users            User[]
-  memberships      Membership[]
-  partnerCompanies PartnerCompany[]
-  invitations      Invitation[]
-  sendingDomains   TenantSendingDomain[]
+  engineers             Engineer[]
+  users                 User[]
+  memberships           Membership[]
+  partnerCompanies      PartnerCompany[]
+  invitations           Invitation[]
+  sendingDomains        TenantSendingDomain[]
   // 🔴 T-02-02（docs/05 §3.4 / §3.5）で追加した 10 表の逆リレーション。
   //    tenant-relation.test.ts / scope-injection.test.ts の TENANT_KEY_MOVING_RELATION_OVERRIDES
   //    と対で宣言する（宣言漏れは「テナントキー列を書き換えうる逆リレーション」の検知漏れになる）。
@@ -115,11 +115,22 @@ model Tenant {
   engineerShares        EngineerShare[]
   // 🔴 T-02-03（docs/05 §3.6）で追加した 5 表の逆リレーション。同じ理由で
   //    TENANT_KEY_MOVING_RELATION_OVERRIDES と対で宣言する。
-  proposalRequests  ProposalRequest[]
-  proposals         Proposal[]
-  engineerSnapshots EngineerSnapshot[]
-  proposalEvents    ProposalEvent[]
-  reviewGates       ReviewGate[]
+  proposalRequests      ProposalRequest[]
+  proposals             Proposal[]
+  engineerSnapshots     EngineerSnapshot[]
+  proposalEvents        ProposalEvent[]
+  reviewGates           ReviewGate[]
+  // 🔴 T-02-04（docs/05 §3.7）で追加した 9 表の逆リレーション。同じ理由で
+  //    TENANT_KEY_MOVING_RELATION_OVERRIDES と対で宣言する。
+  chatThreads           ChatThread[]
+  threadParticipants    ThreadParticipant[]
+  messages              Message[]
+  contracts             Contract[]
+  contractDocuments     ContractDocument[]
+  contractTemplates     ContractTemplate[]
+  orders                Order[]
+  assignments           Assignment[]
+  extensionReviews      ExtensionReview[]
 
   @@index([lifecycleState, sandboxExpiresAt])
   @@index([lifecycleState, closingEnteredAt])
@@ -186,10 +197,10 @@ model PartnerCompany {
   suspendedAt  DateTime? @map("suspended_at") @db.Timestamptz(3) // F-007 AC-2。データは残す
   invitedAt    DateTime  @map("invited_at") @db.Timestamptz(3)
 
-  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  users       User[]
-  memberships Membership[]
-  invitations Invitation[]
+  tenant              Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  users               User[]
+  memberships         Membership[]
+  invitations         Invitation[]
   // 🔴 T-02-02: engineers.owner_partner_company_id / project_visibilities.partner_company_id /
   //    engineer_shares.partner_company_id の逆リレーション（いずれもテナントキーではなく
   //    オーナー列 / 当事者列を裏付けるため、TENANT_KEY_MOVING_RELATION_OVERRIDES の宣言対象ではない）。
@@ -198,8 +209,15 @@ model PartnerCompany {
   engineerShares      EngineerShare[]
   // 🔴 T-02-03: proposals.owner_partner_company_id（根のオーナー列）と
   //    proposal_requests.partner_company_id（依頼先。継承規律の対象外）の逆リレーション。
-  proposals        Proposal[]
-  proposalRequests ProposalRequest[]
+  proposals           Proposal[]
+  proposalRequests    ProposalRequest[]
+  // 🔴 T-02-04: chat_threads.partner_company_id / thread_participants.partner_company_id /
+  //    messages.sender_partner_company_id（いずれも通常の FK。継承規律の対象外）と
+  //    contracts.counterparty_partner_company_id（根の当事者列。§4.4.1）の逆リレーション。
+  chatThreads         ChatThread[]
+  threadParticipants  ThreadParticipant[]
+  sentMessages        Message[]
+  contracts           Contract[]
 
   @@index([tenantId, suspendedAt])
   @@map("partner_companies")
@@ -322,14 +340,16 @@ model Engineer {
   createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt             DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  tenant              Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  ownerPartnerCompany PartnerCompany? @relation(fields: [ownerPartnerCompanyId], references: [id], onDelete: Restrict)
+  tenant              Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ownerPartnerCompany PartnerCompany?   @relation(fields: [ownerPartnerCompanyId], references: [id], onDelete: Restrict)
   engineerSkills      EngineerSkill[]
   skillSheets         SkillSheet[]
   matchCandidates     MatchCandidate[]
   engineerShares      EngineerShare[]
   proposalRequests    ProposalRequest[] // T-02-03
   proposals           Proposal[] // T-02-03
+  contracts           Contract[] // T-02-04
+  assignments         Assignment[] // T-02-04
 
   @@index([tenantId, ownerPartnerCompanyId, availability, availableFrom])
   @@index([tenantId, retentionExpiresAt, piiPurgedAt]) // 保持期間ジョブ（§9.7）
@@ -430,6 +450,7 @@ model SkillSheet {
   @@index([tenantId, scanStatus, uploadedAt]) // SCANNING 滞留の検知（A-005）
   @@map("skill_sheets")
 }
+
 // 🔴 DB 制約: CHECK ( is_latest = false OR scan_status = 'CLEAN' )   … F-011 AC-1 を DB に落とす
 // 🔴 部分 UNIQUE: ON skill_sheets(tenant_id, engineer_id) WHERE is_latest（migration.sql で手書き）。
 
@@ -508,6 +529,9 @@ model Project {
   matchCandidates  MatchCandidate[]
   proposalRequests ProposalRequest[] // T-02-03
   proposals        Proposal[] // T-02-03
+  chatThreads      ChatThread[] // T-02-04
+  contracts        Contract[] // T-02-04
+  assignments      Assignment[] // T-02-04
 
   @@index([tenantId, status, updatedAt])
   @@index([tenantId, startDate])
@@ -574,21 +598,21 @@ model EngineerShare {
 }
 
 model MatchCandidate {
-  id                     String    @id @default(uuid(7)) @db.Uuid
-  tenantId               String    @map("tenant_id") @db.Uuid
-  projectId              String    @map("project_id") @db.Uuid
-  engineerId             String    @map("engineer_id") @db.Uuid // 🔴 API 応答には載せない（§4.6）
-  isAnonymous            Boolean   @map("is_anonymous") // 匿名候補フラグ
+  id                     String   @id @default(uuid(7)) @db.Uuid
+  tenantId               String   @map("tenant_id") @db.Uuid
+  projectId              String   @map("project_id") @db.Uuid
+  engineerId             String   @map("engineer_id") @db.Uuid // 🔴 API 応答には載せない（§4.6）
+  isAnonymous            Boolean  @map("is_anonymous") // 匿名候補フラグ
   score                  Int? // Phase 2。Phase 1 は null
   breakdown              Json? // 項目別得点
-  cutoffReason           String?   @map("cutoff_reason") // 足切り理由（F-029 AC-2）
-  weightsSnapshot        Json?     @map("weights_snapshot") // 🔴 算出時点の重み（F-030 AC-3）
+  cutoffReason           String?  @map("cutoff_reason") // 足切り理由（F-029 AC-2）
+  weightsSnapshot        Json?    @map("weights_snapshot") // 🔴 算出時点の重み（F-030 AC-3）
   rationale              String? // match-explainer の根拠文
-  rationaleRole          String?   @map("rationale_role")
-  rationalePromptVersion String?   @map("rationale_prompt_version")
-  rationaleModelId       String?   @map("rationale_model_id")
-  rationaleAiUsageId     String?   @map("rationale_ai_usage_id") @db.Uuid // 表は T-02-05。今は列のみ
-  computedAt             DateTime  @map("computed_at") @db.Timestamptz(3)
+  rationaleRole          String?  @map("rationale_role")
+  rationalePromptVersion String?  @map("rationale_prompt_version")
+  rationaleModelId       String?  @map("rationale_model_id")
+  rationaleAiUsageId     String?  @map("rationale_ai_usage_id") @db.Uuid // 表は T-02-05。今は列のみ
+  computedAt             DateTime @map("computed_at") @db.Timestamptz(3)
 
   tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   project  Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -598,6 +622,7 @@ model MatchCandidate {
   @@index([tenantId, projectId, score])
   @@map("match_candidates")
 }
+
 // 🔴 MatchCandidate は永続化するが、匿名候補の行を API 応答にそのまま載せない（docs/05 §4.6。SP-06 以降）。
 
 // ============================================================================
@@ -696,6 +721,7 @@ model Proposal {
   proposalRequest     ProposalRequest?  @relation(fields: [proposalRequestId], references: [id], onDelete: Restrict)
   engineerSnapshot    EngineerSnapshot?
   events              ProposalEvent[]
+  assignment          Assignment? // T-02-04。WON からのみ生成される 1:1（Assignment.proposalId が unique）
 
   @@index([tenantId, state, updatedAt]) // 一覧・フィルタ（F-024）
   @@index([tenantId, ownerPartnerCompanyId, state])
@@ -703,6 +729,7 @@ model Proposal {
   @@index([tenantId, state, submittedAt]) // KPI（F-051）
   @@map("proposals")
 }
+
 // 🔴 DB 制約（§10.3 / §11.5 の担保。migration.sql で手書き）:
 //   CHECK ( state <> 'APPROVED'   OR (approved_at IS NOT NULL AND content_hash IS NOT NULL) )
 //   CHECK ( state <> 'SUBMITTING' OR approved_at IS NOT NULL )
@@ -791,13 +818,333 @@ model ReviewGate {
 
   tenant              Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   projectVisibilities ProjectVisibility[]
+  messages            Message[] // T-02-04（CHAT_ATTACHMENT）
+  contractDocuments   ContractDocument[] // T-02-04（CONTRACT_DOCUMENT）
 
   @@index([tenantId, targetType, targetId, executedAt])
   @@index([tenantId, execution, executedAt]) // ゲート FAIL 率の集計（A-005。execution='DONE' のみを分母にする）
   @@map("review_gates")
 }
+
 // 🔴 DB 制約（migration.sql で手書き）:
 //   CHECK ( (execution = 'DONE') = (pii_verdict IS NOT NULL AND commerce_verdict IS NOT NULL AND executed_at IS NOT NULL) )
 //   CHECK ( (execution = 'HELD_AI_COST_LIMIT') = (held_since IS NOT NULL) )
 // 🔴 部分 UNIQUE: ON review_gates(tenant_id, target_type, target_id) WHERE execution <> 'DONE' … 保留は対象ごとに 1 行。
 //    再実行（§9.3 gate.hold-release）は同じ行を DONE に完了させる（新しい行を足さない）。
+
+// ============================================================================
+// docs/05 §3.7 チャット・契約・稼働（T-02-04。docs/sprints/SP-02-schema-isolation.md）
+// ============================================================================
+//
+// 🔴 列挙は §3.1 規約どおり Prisma の `enum` を使わず `String` + 許容値コメントで宣言する。
+//    AssignmentState（5 状態）/ ContractState（7 状態）は CLAUDE.md §4.2 の状態機械そのもの。
+//    単一の出所は @ses/domain の ASSIGNMENT_STATES（packages/domain/src/state/assignment.ts）/
+//    CONTRACT_STATES（packages/domain/src/state/contract.ts。いずれも T-01-07 から既存。新しい
+//    配列を作らずここと突合する）。ChatThreadKind / ContractKind /
+//    ContractDocumentExternalProvider / ContractDocumentSentVia / OrderPaymentState /
+//    ExtensionReviewDecision は状態機械ではない単純な値集合のため、
+//    packages/db/src/schema-value-sets.ts に単一出所を置く。ScanStatus は §3.4 で定義済みの
+//    SCAN_STATUSES を messages.attachment_scan_status / contract_documents.scan_status /
+//    contract_templates.scan_status で共有する（新規定義しない）。CHECK との一致は
+//    tests/static/schema-enum-drift.test.ts が突合する。
+//
+// 🔴 当事者列（docs/05 §3.1 共通規約 / §4.4 C9 / §4.4.1）: 経路 5（CLAUDE.md §3.1-5）の対象は
+//    assignments / contracts / contract_documents / orders の 4 表**だけ**であり、
+//    counterparty_partner_company_id を持つ（null = 自社エンジニア / 相手方がパートナーでない）。
+//    根（root）は contracts（freeze）、子（child）は assignments（engineers(engineer_id) の
+//    owner_partner_company_id から継承）/ contract_documents（contracts(contract_id) から継承）/
+//    orders（CASE(contract_id IS NOT NULL → contracts / ELSE → assignments(assignment_id)) から
+//    継承）。継承・freeze トリガと owner-column の COMMENT 宣言は T-02-08 の範囲（本タスクでは
+//    列だけを持たせる。docs/05 §3.1「テーブル作成時から持ち、後から足して埋め直さない」）。
+//    root 以外（子）には Prisma レベルの FK を張らない（T-02-02/03 の owner_partner_company_id と
+//    同じ方針。継承トリガが親の値で確定させるため）。
+// 🔴 extension_reviews は当事者列を持たない（ホスト内部の検討内容は経路 5 の対象外。BR-67）。
+// 🔴 当事者列を持つ表を増やすことは経路 5 の対象を増やすことであり人間の承認事項
+//    （CLAUDE.md §8.6）。T-02-09 のカタログ走査が「4 表以外に増えたら FAIL」で固定する。
+//
+// 🔴 RLS: 新規 9 表は ENABLE + FORCE ROW LEVEL SECURITY のみを packages/db/prisma/sql/010_rls.sql
+//    に追加する（T-02-01/02/03 と同じ fail-closed 既定。C2/C5/C6/C9 のポリシー本体・GRANT・
+//    射影ビュー 4 本は T-02-06/07）。
+
+/// 🔴 F-038 AC-2「1 スレッドに複数パートナーが同席する構成を作成できない」を、
+/// partner_company_id をスレッドの列にすることで構造的に不可能にする。RLS のポリシークラスは
+/// C6 THREAD（docs/05 §4.4）。
+model ChatThread {
+  id               String    @id @default(uuid(7)) @db.Uuid
+  tenantId         String    @map("tenant_id") @db.Uuid
+  /// ChatThreadKind（'PROJECT'|'COMPANY'。CHECK）
+  kind             String
+  projectId        String?   @map("project_id") @db.Uuid
+  partnerCompanyId String    @map("partner_company_id") @db.Uuid // 🔴 ホストと 1 パートナーの組み合わせに限る
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  lastMessageAt    DateTime? @map("last_message_at") @db.Timestamptz(3)
+
+  tenant             Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project            Project?            @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  partnerCompany     PartnerCompany      @relation(fields: [partnerCompanyId], references: [id], onDelete: Restrict)
+  threadParticipants ThreadParticipant[]
+  messages           Message[]
+
+  @@unique([tenantId, kind, projectId, partnerCompanyId])
+  @@index([tenantId, partnerCompanyId, lastMessageAt])
+  @@map("chat_threads")
+}
+
+/// 🔴 越境経路 3 の唯一の根拠。RLS のポリシークラスは C5 PARTY（docs/05 §4.4）。
+model ThreadParticipant {
+  id               String    @id @default(uuid(7)) @db.Uuid
+  tenantId         String    @map("tenant_id") @db.Uuid
+  threadId         String    @map("thread_id") @db.Uuid
+  partnerCompanyId String?   @map("partner_company_id") @db.Uuid // null = ホスト
+  joinedAt         DateTime  @map("joined_at") @db.Timestamptz(3)
+  leftAt           DateTime? @map("left_at") @db.Timestamptz(3)
+
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  thread         ChatThread      @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  partnerCompany PartnerCompany? @relation(fields: [partnerCompanyId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, threadId, partnerCompanyId])
+  @@index([tenantId, partnerCompanyId, leftAt])
+  @@map("thread_participants")
+}
+
+/// RLS のポリシークラスは C6 THREAD（docs/05 §4.4）。
+model Message {
+  id                     String    @id @default(uuid(7)) @db.Uuid
+  tenantId               String    @map("tenant_id") @db.Uuid
+  /// chat_threads.partner_company_id から継承（§4.4.1）。NOT NULL（継承元の当該列自体が
+  /// NOT NULL のため）。owner-column: child of chat_threads(thread_id)。継承トリガは T-02-08。
+  ownerPartnerCompanyId  String    @map("owner_partner_company_id") @db.Uuid
+  threadId               String    @map("thread_id") @db.Uuid
+  senderUserId           String    @map("sender_user_id") @db.Uuid
+  senderPartnerCompanyId String?   @map("sender_partner_company_id") @db.Uuid
+  body                   String // 🔴 運営者に GRANT しない（§5.5）
+  attachmentKey          String?   @map("attachment_key") // 🔴 運営者に GRANT しない（§5.5）
+  /// ScanStatus（§3.4 冒頭参照。CHECK。nullable）
+  attachmentScanStatus   String?   @map("attachment_scan_status")
+  reviewGateId           String?   @map("review_gate_id") @db.Uuid // 添付があるときのみ
+  sentAt                 DateTime  @default(now()) @map("sent_at") @db.Timestamptz(3)
+  purgedAt               DateTime? @map("purged_at") @db.Timestamptz(3) // PURGED で本文を削除（F-064 AC-2）
+
+  tenant               Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  thread               ChatThread      @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  senderPartnerCompany PartnerCompany? @relation(fields: [senderPartnerCompanyId], references: [id], onDelete: Restrict)
+  reviewGate           ReviewGate?     @relation(fields: [reviewGateId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, threadId, sentAt])
+  @@map("messages")
+}
+
+/// RLS のポリシークラスは C2 HOST_ONLY（書込 + ホストの SELECT）/ C9 COUNTERPARTY_READ
+/// （パートナーの SELECT。docs/05 §4.4）。
+model Contract {
+  id                           String    @id @default(uuid(7)) @db.Uuid
+  tenantId                     String    @map("tenant_id") @db.Uuid
+  /// ContractKind（上記参照。CHECK）
+  kind                         String
+  /// ContractState（7 状態。上記参照。CHECK）。単一の出所は @ses/domain の CONTRACT_STATES。
+  state                        String    @default("DRAFT")
+  counterpartyName             String    @map("counterparty_name")
+  /// 🔴 当事者列（根。freeze。§4.4 C9）。相手方がパートナーのとき必須。
+  ///    BR-66「自社との契約単価」は unitPrice。
+  counterpartyPartnerCompanyId String?   @map("counterparty_partner_company_id") @db.Uuid
+  projectId                    String?   @map("project_id") @db.Uuid
+  engineerId                   String?   @map("engineer_id") @db.Uuid
+  assignmentId                 String?   @map("assignment_id") @db.Uuid
+  // 🔴 自社とパートナーの間の契約単価。ホストの販売単価は Project.internalUnitPrice（経路 5 に出ない）
+  unitPrice                    Decimal?  @map("unit_price") @db.Decimal(12, 2)
+  periodStart                  DateTime? @map("period_start") @db.Date
+  periodEnd                    DateTime? @map("period_end") @db.Date
+  paymentTerms                 String?   @map("payment_terms")
+  correctsContractId           String?   @map("corrects_contract_id") @db.Uuid // EXECUTED の訂正で起こした新契約（F-047 AC-5）
+  sendFailureReason            String?   @map("send_failure_reason")
+  sendHoldReasonKey            String?   @map("send_hold_reason_key") // 🔴 §10.4。保留は状態でなく属性
+  sendHoldSince                DateTime? @map("send_hold_since") @db.Timestamptz(3) // 🔴 §10.4
+  withdrawReason               String?   @map("withdraw_reason")
+  executedAt                   DateTime? @map("executed_at") @db.Timestamptz(3)
+  expiredAt                    DateTime? @map("expired_at") @db.Timestamptz(3)
+  createdAt                    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                    DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant                     Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  counterpartyPartnerCompany PartnerCompany?    @relation(fields: [counterpartyPartnerCompanyId], references: [id], onDelete: Restrict)
+  project                    Project?           @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  engineer                   Engineer?          @relation(fields: [engineerId], references: [id], onDelete: Restrict)
+  assignment                 Assignment?        @relation(fields: [assignmentId], references: [id], onDelete: Restrict)
+  correctsContract           Contract?          @relation("ContractCorrection", fields: [correctsContractId], references: [id], onDelete: Restrict)
+  correctedByContracts       Contract[]         @relation("ContractCorrection")
+  documents                  ContractDocument[]
+  orders                     Order[]
+
+  @@index([tenantId, state, updatedAt])
+  @@index([tenantId, counterpartyPartnerCompanyId, state]) // C9 の等値比較
+  @@map("contracts")
+}
+
+// 🔴 DB 制約: CHECK ( state <> 'EXECUTED' OR executed_at IS NOT NULL )
+// 🔴 F-047 AC-5（EXECUTED は書き換え不可）は BEFORE UPDATE トリガで担保する:
+//    OLD.state = 'EXECUTED' かつ変更列が (state, expired_at, updated_at) 以外なら RAISE EXCEPTION。
+//    アプリの分岐に頼らない（アプリを迂回しても書き換わらない）。
+
+/// RLS のポリシークラスは C2 HOST_ONLY（書込 + ホストの SELECT）/ C9 COUNTERPARTY_READ
+/// （パートナーの SELECT。§4.9「AND signed_at IS NOT NULL」= 署名済み最終版のみ）。
+model ContractDocument {
+  id                           String    @id @default(uuid(7)) @db.Uuid
+  tenantId                     String    @map("tenant_id") @db.Uuid
+  /// contracts から継承（§4.4.1）。owner-column: child of contracts(contract_id)。継承トリガは T-02-08。
+  counterpartyPartnerCompanyId String?   @map("counterparty_partner_company_id") @db.Uuid
+  contractId                   String    @map("contract_id") @db.Uuid
+  version                      Int
+  objectKey                    String    @map("object_key") // 🔴 運営者に GRANT しない（§5.5）
+  templateId                   String?   @map("template_id") @db.Uuid // 🔴 F-048 由来の版（手動アップロードは null）
+  templateVersion              Int?      @map("template_version") // 🔴 生成時のテンプレート版を固定（F-048 AC-1）
+  mergeResult                  Json?     @map("merge_result") // { filled: {...}, unfilled: string[] }（F-048 AC-2）
+  reviewGateId                 String?   @map("review_gate_id") @db.Uuid // 🔴 F-047 処理⑥ / F-048 AC-3
+  /// ScanStatus（§3.4 冒頭参照。CHECK）
+  scanStatus                   String    @default("SCANNING") @map("scan_status")
+  externalDocumentId           String?   @map("external_document_id") // 電子署名サービスの書類 ID（DocuSign = envelopeId。正規化済み）
+  /// ContractDocumentExternalProvider（上記参照。CHECK。nullable）
+  externalProvider             String?   @map("external_provider")
+  /// ContractDocumentSentVia（上記参照。CHECK。nullable）。F-047 処理⑧の送付手段
+  sentVia                      String?   @map("sent_via")
+  requestedAt                  DateTime? @map("requested_at") @db.Timestamptz(3)
+  // 🔴 全署名者の完了時刻（envelope completed）。C9 は signed_at IS NOT NULL の版しか見せない
+  signedAt                     DateTime? @map("signed_at") @db.Timestamptz(3)
+  // 🔴 NormalizedSigner[]（§8.1）。{ role, routingOrder, status, signedAt }。運営者に GRANT しない（§5.5）
+  signers                      Json?
+  normalizedStatus             Json?     @map("normalized_status") // 🔴 生応答は保存しない（F-049 AC-6）
+
+  tenant     Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contract   Contract          @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  template   ContractTemplate? @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  reviewGate ReviewGate?       @relation(fields: [reviewGateId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, contractId, version])
+  @@unique([externalProvider, externalDocumentId]) // Webhook からの逆引き
+  @@map("contract_documents")
+}
+
+// 🔴 CHECK ( requested_at IS NULL OR review_gate_id IS NOT NULL ) … ゲート結果を持たない版に
+//    署名依頼日時が入らない（F-047 処理⑥ / F-048 AC-3 を DB に落とす。§10.2 の事前判定と二重）
+
+/// 🔴 F-048 / S-027。Phase 3。RLS のポリシークラスは C2 HOST_ONLY（docs/05 §4.4）。
+model ContractTemplate {
+  id           String    @id @default(uuid(7)) @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  name         String
+  /// ContractKind（上記参照。CHECK）
+  kind         String
+  version      Int // 🔴 上書きしない。差し替えは新しい版を起こす
+  objectKey    String    @map("object_key") // docx 原本（§14.1）。🔴 運営者に GRANT しない（§5.5）
+  /// ScanStatus（§3.4 冒頭参照。CHECK）
+  scanStatus   String    @default("SCANNING") @map("scan_status")
+  placeholders String[] // 原本から機械抽出したプレースホルダ名
+  mapping      Json // MergeMapping[]。🔴 版ごとに固定。運営者に GRANT しない（§5.5）
+  isLatest     Boolean   @default(false) @map("is_latest")
+  archivedAt   DateTime? @map("archived_at") @db.Timestamptz(3)
+  createdBy    String    @map("created_by") @db.Uuid
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant    Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  documents ContractDocument[]
+
+  @@unique([tenantId, name, version])
+  @@index([tenantId, kind, isLatest])
+  @@map("contract_templates")
+}
+
+// 🔴 部分 UNIQUE: ON contract_templates(tenant_id, name) WHERE is_latest AND archived_at IS NULL
+// 🔴 CHECK ( is_latest = false OR scan_status = 'CLEAN' )（BR-26）。版を上書き更新する API を作らない（F-048 AC-1）
+
+/// RLS のポリシークラスは C2 HOST_ONLY（書込 + ホストの SELECT）/ C9 COUNTERPARTY_READ
+/// （パートナーの SELECT。docs/05 §4.4）。
+model Order {
+  id                           String    @id @default(uuid(7)) @db.Uuid
+  tenantId                     String    @map("tenant_id") @db.Uuid
+  /// contracts / assignments から継承（§4.4.1 の CASE）。owner-column: child of
+  /// CASE(contract_id IS NOT NULL → contracts / ELSE → assignments)。継承トリガは T-02-08。
+  counterpartyPartnerCompanyId String?   @map("counterparty_partner_company_id") @db.Uuid
+  contractId                   String?   @map("contract_id") @db.Uuid
+  assignmentId                 String?   @map("assignment_id") @db.Uuid
+  amount                       Decimal   @db.Decimal(12, 2)
+  periodStart                  DateTime  @map("period_start") @db.Date
+  periodEnd                    DateTime  @map("period_end") @db.Date
+  issuedOn                     DateTime? @map("issued_on") @db.Date
+  /// OrderPaymentState（上記参照。CHECK）
+  paymentState                 String    @map("payment_state")
+  createdAt                    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant     Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contract   Contract?   @relation(fields: [contractId], references: [id], onDelete: Restrict)
+  assignment Assignment? @relation(fields: [assignmentId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, periodEnd])
+  @@map("orders")
+}
+
+// 🔴 DB 制約: CHECK ( contract_id IS NOT NULL OR assignment_id IS NOT NULL )   … F-050 AC-1
+
+/// RLS のポリシークラスは C2 HOST_ONLY（書込 + ホストの SELECT）/ C9 COUNTERPARTY_READ
+/// （パートナーの SELECT。docs/05 §4.4）。
+model Assignment {
+  id                           String    @id @default(uuid(7)) @db.Uuid
+  tenantId                     String    @map("tenant_id") @db.Uuid
+  engineerId                   String    @map("engineer_id") @db.Uuid
+  projectId                    String    @map("project_id") @db.Uuid
+  proposalId                   String    @unique @map("proposal_id") @db.Uuid // WON からのみ生成（F-042 AC-1）
+  /// 🔴 当事者列（engineers.owner_partner_company_id から継承。§4.4.1）。null = 自社エンジニア。
+  ///    C9。入力で指定させない（F-065 処理①）
+  counterpartyPartnerCompanyId String?   @map("counterparty_partner_company_id") @db.Uuid
+  /// AssignmentState（5 状態。上記参照。CHECK）。単一の出所は @ses/domain の ASSIGNMENT_STATES。
+  state                        String    @default("SCHEDULED")
+  startDate                    DateTime  @map("start_date") @db.Date
+  endDate                      DateTime  @map("end_date") @db.Date // 🔴 NOT NULL（F-042 AC-3）
+  actualLeaveDate              DateTime? @map("actual_leave_date") @db.Date // 緊急離任の実離任日（F-045 処理①）
+  unitPrice                    Decimal?  @map("unit_price") @db.Decimal(12, 2)
+  reviewOpenedAt               DateTime? @map("review_opened_at") @db.Timestamptz(3) // 60 日前起票済み（フラグではなく日時）
+  reminder30SentAt             DateTime? @map("reminder30_sent_at") @db.Timestamptz(3) // 30 日前再通知済み（状態ではない。A-06）
+  ownerUserId                  String    @map("owner_user_id") @db.Uuid // 担当者
+
+  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  engineer         Engineer          @relation(fields: [engineerId], references: [id], onDelete: Cascade)
+  project          Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  proposal         Proposal          @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  contracts        Contract[]
+  orders           Order[]
+  extensionReviews ExtensionReview[]
+
+  @@index([tenantId, state, endDate]) // 🔴 満了アラートの走査（§9.4）
+  @@index([tenantId, state, startDate])
+  @@index([tenantId, counterpartyPartnerCompanyId, endDate]) // C9 + S-044 の満了日昇順
+  @@map("assignments")
+}
+
+// 🔴 部分インデックス（起票条件「60 日前を過ぎ、かつ未起票」を索引で表現する。F-043 AC-4）:
+//   CREATE INDEX assignments_pending_review ON assignments(tenant_id, end_date)
+//     WHERE state = 'ACTIVE' AND review_opened_at IS NULL;
+
+/// 🔴 当事者列を持たない（ホスト内部の検討内容は経路 5 の対象外。BR-67）。RLS のポリシークラスは
+/// C2 HOST_ONLY（SELECT も含めホストのみ。パートナー読み取りのポリシーを一切書かない）。
+model ExtensionReview {
+  id            String    @id @default(uuid(7)) @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  assignmentId  String    @map("assignment_id") @db.Uuid
+  openedAt      DateTime  @map("opened_at") @db.Timestamptz(3)
+  ownerUserId   String    @map("owner_user_id") @db.Uuid
+  facts         Json // 🔴 機械収集の根拠データ（AI と独立。docs/04 申し送り 12）
+  summary       Json? // renewal-advisor の出力
+  role          String?
+  promptVersion String?   @map("prompt_version")
+  modelId       String?   @map("model_id")
+  aiUsageId     String?   @map("ai_usage_id") @db.Uuid // FK は ai_usage 表が生まれる T-02-05 で追加する
+  /// ExtensionReviewDecision（上記参照。CHECK。nullable）
+  decision      String?
+  decidedBy     String?   @map("decided_by") @db.Uuid
+  decidedAt     DateTime? @map("decided_at") @db.Timestamptz(3)
+
+  tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  assignment Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, assignmentId, openedAt]) // 同一稼働で複数回の起票を許す（延長 → 再起票）
+  @@map("extension_reviews")
+}

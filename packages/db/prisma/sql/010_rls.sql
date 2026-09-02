@@ -98,6 +98,29 @@ ALTER TABLE proposal_events         FORCE  ROW LEVEL SECURITY;
 ALTER TABLE review_gates            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE review_gates            FORCE  ROW LEVEL SECURITY;
 
+-- 🔴 T-02-04（docs/05 §3.7）で追加した 9 表も同じ fail-closed 既定
+--    （ENABLE + FORCE のみ。C2/C5/C6/C9 のポリシー本体・GRANT・射影ビュー 4 本は T-02-06 / T-02-07）。
+--    当事者列（counterparty_partner_company_id）を持つ 4 表（assignments / contracts /
+--    contract_documents / orders）も例外なく含める。
+ALTER TABLE chat_threads            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE chat_threads            FORCE  ROW LEVEL SECURITY;
+ALTER TABLE thread_participants     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE thread_participants     FORCE  ROW LEVEL SECURITY;
+ALTER TABLE messages                ENABLE ROW LEVEL SECURITY;
+ALTER TABLE messages                FORCE  ROW LEVEL SECURITY;
+ALTER TABLE contracts               ENABLE ROW LEVEL SECURITY;
+ALTER TABLE contracts               FORCE  ROW LEVEL SECURITY;
+ALTER TABLE contract_documents      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE contract_documents      FORCE  ROW LEVEL SECURITY;
+ALTER TABLE contract_templates      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE contract_templates      FORCE  ROW LEVEL SECURITY;
+ALTER TABLE orders                  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE orders                  FORCE  ROW LEVEL SECURITY;
+ALTER TABLE assignments             ENABLE ROW LEVEL SECURITY;
+ALTER TABLE assignments             FORCE  ROW LEVEL SECURITY;
+ALTER TABLE extension_reviews       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE extension_reviews       FORCE  ROW LEVEL SECURITY;
+
 -- --- C1 TENANT_ALL: tenants（<T> = id。app_tenant は SELECT のみ）------------------------
 DROP POLICY IF EXISTS tenants_c1_select ON tenants;
 CREATE POLICY tenants_c1_select ON tenants

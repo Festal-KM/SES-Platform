@@ -247,6 +247,20 @@ const PLATFORM_READ_COLUMN_DENYLIST: Record<string, readonly string[]> = {
   proposal_events: ['note', 'attachment_key'],
   review_gates: ['findings', 'ai_warnings'],
   proposal_requests: ['message', 'decline_reason'],
+  // 🔴 T-02-04（docs/05 §3.7 / §5.5）: chat_threads / thread_participants / contracts /
+  //    contract_documents / contract_templates / orders / assignments / extension_reviews に
+  //    新たに非開示列が実在するようになった。GRANT は T-02-06/07 の範囲だが、追加を忘れると
+  //    将来 GRANT を足したときに §5.5 の見落としを検知できないため、GRANT が無い今の時点でも
+  //    追記しておく（既存コメントと同じ方針）。列は実在する表にのみ列挙する（§5.5 の該当行は
+  //    assignments / contracts / orders / contract_documents をまとめて列挙しているが、
+  //    unit_price / amount / counterparty_name / payment_terms / signers は表ごとに実在する
+  //    列だけが異なるため、ここでは表ごとに絞って書く）。
+  messages: ['body', 'attachment_key'],
+  assignments: ['unit_price'],
+  contracts: ['unit_price', 'counterparty_name', 'payment_terms'],
+  contract_documents: ['signers', 'object_key', 'merge_result'],
+  contract_templates: ['object_key', 'mapping'],
+  orders: ['amount'],
 };
 
 /**

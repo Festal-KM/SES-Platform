@@ -129,3 +129,41 @@ export type GateLayer = (typeof GATE_LAYERS)[number];
 export const PROPOSAL_EVENT_KINDS = ['STATE', 'NOTE', 'ATTACHMENT'] as const;
 
 export type ProposalEventKind = (typeof PROPOSAL_EVENT_KINDS)[number];
+
+// 🔴 T-02-04（docs/05 §3.7。docs/sprints/SP-02-schema-isolation.md）:
+// 20260903030000_chat_contract_assignment/migration.sql が値集合の CHECK を持つ列。
+// AssignmentState（5 状態）/ ContractState（7 状態）は CLAUDE.md §4.2 の状態機械であり、
+// 単一の出所は既存の @ses/domain（ASSIGNMENT_STATES / CONTRACT_STATES。T-01-07 から既存）のため、
+// ここには置かない。以下はいずれも状態機械ではない単純な値集合。ScanStatus は §3.4 で定義済みの
+// SCAN_STATUSES を messages.attachment_scan_status / contract_documents.scan_status /
+// contract_templates.scan_status で共有する（新規定義しない）。
+
+/** docs/05 §3.7 `ChatThread.kind`（TEXT + CHECK）。 */
+export const CHAT_THREAD_KINDS = ['PROJECT', 'COMPANY'] as const;
+
+export type ChatThreadKind = (typeof CHAT_THREAD_KINDS)[number];
+
+/** docs/05 §3.7 `ContractKind`（TEXT + CHECK）。`contracts.kind` / `contract_templates.kind` で共有する。 */
+export const CONTRACT_KINDS = ['NDA', 'MASTER', 'INDIVIDUAL'] as const;
+
+export type ContractKind = (typeof CONTRACT_KINDS)[number];
+
+/** docs/05 §3.7 `ContractDocument.externalProvider`（TEXT + CHECK。nullable。BYO 接続。決定済み Issue #11）。 */
+export const CONTRACT_DOCUMENT_EXTERNAL_PROVIDERS = ['docusign', 'cloudsign', 'mock'] as const;
+
+export type ContractDocumentExternalProvider = (typeof CONTRACT_DOCUMENT_EXTERNAL_PROVIDERS)[number];
+
+/** docs/05 §3.7 `ContractDocument.sentVia`（TEXT + CHECK。nullable）。F-047 処理⑧の送付手段。 */
+export const CONTRACT_DOCUMENT_SENT_VIAS = ['ESIGN', 'EMAIL'] as const;
+
+export type ContractDocumentSentVia = (typeof CONTRACT_DOCUMENT_SENT_VIAS)[number];
+
+/** docs/05 §3.7 `Order.paymentState`（TEXT + CHECK）。 */
+export const ORDER_PAYMENT_STATES = ['UNPAID', 'PAID'] as const;
+
+export type OrderPaymentState = (typeof ORDER_PAYMENT_STATES)[number];
+
+/** docs/05 §3.7 `ExtensionReview.decision`（TEXT + CHECK。nullable）。 */
+export const EXTENSION_REVIEW_DECISIONS = ['EXTEND', 'END', 'REPRICE'] as const;
+
+export type ExtensionReviewDecision = (typeof EXTENSION_REVIEW_DECISIONS)[number];

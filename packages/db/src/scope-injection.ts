@@ -96,6 +96,9 @@ const TENANT_RELATION_OVERRIDES: Readonly<Record<string, string | null>> = {
  *    MatchCandidate / EngineerShare の `tenant` リレーション）を追加した。
  * 🔴 T-02-03: docs/05 §3.6 の 5 表（ProposalRequest / Proposal / EngineerSnapshot /
  *    ProposalEvent / ReviewGate の `tenant` リレーション）を追加した。
+ * 🔴 T-02-04: docs/05 §3.7 の 9 表（ChatThread / ThreadParticipant / Message / Contract /
+ *    ContractDocument / ContractTemplate / Order / Assignment / ExtensionReview の
+ *    `tenant` リレーション）を追加した。
  */
 const TENANT_KEY_MOVING_RELATION_OVERRIDES: Readonly<Record<string, readonly string[]>> = {
   Tenant: [
@@ -120,6 +123,15 @@ const TENANT_KEY_MOVING_RELATION_OVERRIDES: Readonly<Record<string, readonly str
     'engineerSnapshots',
     'proposalEvents',
     'reviewGates',
+    'chatThreads',
+    'threadParticipants',
+    'messages',
+    'contracts',
+    'contractDocuments',
+    'contractTemplates',
+    'orders',
+    'assignments',
+    'extensionReviews',
   ],
 };
 
