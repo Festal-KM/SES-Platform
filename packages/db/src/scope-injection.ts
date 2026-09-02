@@ -46,6 +46,41 @@ export const TENANT_SCOPE_SYSTEM_ONLY_MODELS = [
 ] as const;
 
 /**
+ * 🔴 経路 5（当事者レコードの参照）の**基底表**のモデル（docs/05 §4.3-6 / §4.4 C9）。
+ *
+ * C9 の RLS は**行**を通すが、パートナーが**列**を読めてはならない（`F-065 AC-2` / `F-066 AC-3`）。
+ * パートナー文脈から到達してよいのは §4.9 の射影ビュー（`PARTNER_VIEW_MODELS`）だけであり、
+ * 基底表のデリゲートは 3 層で塞ぐ:
+ *   ①型: `TenantDb` から 5 デリゲートを `Omit` する（`with-tenant.ts`）
+ *   ②実行時: 本モジュールの `assertPartnerBaseTableNotAccessed`（Prisma 拡張の `$allOperations` から呼ぶ）
+ *   ③静的: `withHostTenant` / `requireHost` の呼び出し元限定（docs/05 §17.2 #20。SP-03 以降）
+ *
+ * 🔴 ②が要る理由: ①は `withHostTenant` を経ない「素の拡張越し」の呼び出しを止められない。
+ *    RLS の C9 は行を通してしまう（0 件にならない）ので、**例外**で露見させる。
+ * 🔴 `ExtensionReview` は C9 の対象ですらない（`BR-67`）が、ホスト内部の検討内容であることは同じであり、
+ *    docs/05 §4.3-6 は 5 デリゲートをまとめてホスト文脈専用としている。
+ * 🔴 この一覧を減らすことは経路 5 の情報境界を変えることであり、人間の承認事項（`CLAUDE.md` §8.6）。
+ */
+export const PARTNER_BASE_TABLE_MODELS = [
+  'Assignment',
+  'Contract',
+  'ContractDocument',
+  'Order',
+  'ExtensionReview',
+] as const;
+
+/**
+ * 🔴 経路 5 の射影ビューのモデル（docs/05 §4.9）。パートナーが当事者レコードに到達する唯一の経路。
+ * 到達関数は `withPartnerScope` だけである（`with-tenant.ts`）。
+ */
+export const PARTNER_VIEW_MODELS = [
+  'PartnerAssignmentsV',
+  'PartnerContractsV',
+  'PartnerContractDocumentsV',
+  'PartnerOrdersV',
+] as const;
+
+/**
  * テナントキー列がモデルごとに異なる場合の宣言（docs/05 §3.1 の 2 例外）。
  * 既定は `tenantId`。
  *
@@ -305,6 +340,75 @@ export class ReadOnlyModelWriteError extends Error {
     );
     this.name = 'ReadOnlyModelWriteError';
   }
+}
+
+/**
+ * 🔴 パートナー文脈で経路 5 の基底 5 表のデリゲートに触れたことを示す（docs/05 §4.3-6 / §15.1）。
+ *
+ * 正しいコードでは到達しない（`TenantDb` の型に 5 デリゲートが無い）ため、**実装バグの検知**である。
+ * docs/05 §15.1 では `InternalError`（500）配下に位置づけられる。`AppError` 階層が実装され次第
+ * そちらへ継承させる（現時点の `packages/db` の他のエラーと同じく素の `Error` にしてある）。
+ *
+ * 🔴 0 件を返さず例外にする理由（docs/05 §4.7 #9）: 0 件は「そういうデータが無い」と区別できず、
+ *    書き忘れが本番まで生き延びる。例外なら必ず露見する。
+ */
+export class PartnerBaseTableAccessError extends Error {
+  constructor(model: string, operation: string) {
+    super(
+      `${model} はホスト文脈専用です（${operation}）。` +
+        'パートナー文脈から経路 5 の基底表には到達できません。' +
+        'docs/05 §4.9 の射影ビュー（withPartnerScope）を使ってください（CLAUDE.md §3.1-5 / BR-66）。',
+    );
+    this.name = 'PartnerBaseTableAccessError';
+  }
+}
+
+/**
+ * 🔴 経路 5 の射影ビューへ書き込もうとしたことを示す。
+ *
+ * ビューは `GRANT SELECT` しか持たず、`partner_assignments_v` は結合を含むため PostgreSQL の
+ * 自動更新可能ビューにもならない。それでも**素通しにせず**例外にするのは、
+ * 「読み取り専用の経路」であることをアプリ層でも fail-closed に保つためである
+ * （`PartnerScopeDb` の型は `findMany` / `count` しか公開しないので、正しいコードでは到達しない）。
+ */
+export class PartnerViewWriteError extends Error {
+  constructor(model: string, operation: string) {
+    super(
+      `${model} は読み取り専用の射影ビューです（${operation}）。` +
+        '経路 5 に書き込みは無い（BR-68。docs/05 §4.9）。',
+    );
+    this.name = 'PartnerViewWriteError';
+  }
+}
+
+const PARTNER_BASE_TABLES = new Set<string>(PARTNER_BASE_TABLE_MODELS);
+const PARTNER_VIEWS = new Set<string>(PARTNER_VIEW_MODELS);
+
+/** モデルが経路 5 の基底表（ホスト文脈専用の 5 デリゲート）かどうか。 */
+export function isPartnerBaseTableModel(model: string): boolean {
+  return PARTNER_BASE_TABLES.has(model);
+}
+
+/** モデルが経路 5 の射影ビューかどうか。 */
+export function isPartnerViewModel(model: string): boolean {
+  return PARTNER_VIEWS.has(model);
+}
+
+/**
+ * 🔴 第 2 防御の実行時フック（docs/05 §4.3-6 ②）。
+ * `app.partner_company_id` が立った接続（= パートナー文脈）で経路 5 の基底表を操作したら例外にする。
+ *
+ * 🔴 `partnerCompanyId === null`（ホスト文脈 / systemTenantCtx）では何もしない。ホストは C2 で
+ *    これらの表を読み書きするのが正常系である。
+ */
+export function assertPartnerBaseTableNotAccessed(params: {
+  model: string;
+  operation: string;
+  partnerCompanyId: string | null;
+}): void {
+  if (params.partnerCompanyId === null) return;
+  if (!isPartnerBaseTableModel(params.model)) return;
+  throw new PartnerBaseTableAccessError(params.model, params.operation);
 }
 
 /**
@@ -572,4 +676,42 @@ export function injectTenantScope(params: {
   }
 
   throw new UnscopedOperationError(model, operation);
+}
+
+/**
+ * 🔴 経路 5 の射影ビューに「当事者」の述語を注入する（docs/05 §4.9）。
+ *
+ * 行の絞り込み自体は第 1 防御（RLS の C9）が行うため、これは**第 2 防御**である
+ * （RLS が静かに無効化されても、注入された `where` が他社の当事者レコードを排除する）。
+ * 加えてホストのプレビュー（`S-029` / `S-025` の「取引先にはこう見えています」）では、
+ * C9 がホスト文脈で偽になり C2 で全行が見えるため、**この注入だけが対象パートナーへ絞る**。
+ *
+ * 🔴 当事者の値は `withPartnerScope` が ①パートナー文脈なら `ctx.partnerCompanyId`
+ *    ②ホストのプレビューなら明示引数 のどちらか一方だけから決める（`BR-03`。
+ *    リクエスト入力で当事者を指定できるのはホストのプレビューに限られ、その検証は
+ *    `withPartnerScope` が実行時に行う）。
+ *
+ * 🔴 `PartnerContractDocumentsV` には「署名済み最終版のみ」（`F-066 AC-2`）も AND する。
+ *    C9 の `AND signed_at IS NOT NULL` と同じ述語である。ビューの定義（docs/05 §4.9）は
+ *    `SELECT … FROM contract_documents` のみで WHERE を持たないため、**RLS が静かに
+ *    無効化されるとドラフト版が射影に現れる**。C9 の述語を第 2 防御でもそのまま鏡写しにして、
+ *    「片方が落ちても止まる」を経路 5 でも成立させる（docs/05 §4.1 の二重防御）。
+ *
+ * 🔴 射影ビュー以外のモデルは素通しする（本拡張の責務は経路 5 の当事者スコープだけであり、
+ *    テナントスコープの注入は `injectTenantScope` が同じクライアントで別途行う）。
+ */
+export function injectPartnerViewScope(params: {
+  model: string;
+  operation: string;
+  args: unknown;
+  counterpartyPartnerCompanyId: string;
+}): unknown {
+  const { model, operation, args, counterpartyPartnerCompanyId } = params;
+  if (!isPartnerViewModel(model)) return args;
+  if (!READ_OPERATIONS.has(operation)) throw new PartnerViewWriteError(model, operation);
+  const predicate: UnknownRecord = { counterpartyPartnerCompanyId };
+  if (model === 'PartnerContractDocumentsV') {
+    predicate['signedAt'] = { not: null };
+  }
+  return withScopedWhere(asRecord(args), predicate);
 }

@@ -1625,6 +1625,7 @@ export function withPartnerScope<T>(ctx: AuthenticatedTenantCtx, target: { previ
 | 規律 | 実装 |
 |---|---|
 | **当事者判定** | `ctx.partnerCompanyId`（C9 が `app_partner_id()` で判定）。**リクエスト入力で当事者を指定できない**（`BR-03`）。ホストの**プレビュー**（`S-029` / `S-025` の「取引先にはこう見えています」）だけが `previewPartnerCompanyId` を取り、`withPartnerScope` が **ホストであることを実行時に検証**したうえで `where: { counterpartyPartnerCompanyId }` を注入する。**同じビュー・同じシリアライザ**を使い、別ロジックを書かない（`docs/04` 申し送り 9。2 実装にすると片方だけ開示が漏れる） |
+| **第 2 防御（アプリ層の注入）** | `withPartnerScope` は、パートナー本人・ホストのプレビューの別を問わず**常に** `where: { counterpartyPartnerCompanyId }` を Prisma 拡張で AND する（RLS の C9 が静かに無効化されても他社の当事者レコードを返さないための第 2 防御。§4.1 の二重防御を経路 5 でも成立させる）。🔴 `partner_contract_documents_v` には **C9 の `signed_at IS NOT NULL` を鏡写しで AND する** — ビュー定義は WHERE を持たないため、これが無いと ①RLS 停止時にドラフト版が射影に現れ（`F-066 AC-2`）②ホストのプレビュー（C9 が偽 = C2 で全行可視）にドラフト版が混ざり §17.3 #21「プレビュー一致」が破れる。**この述語を「RLS と重複」として削除してはならない**（T-02-07 実装。2026-09-03） |
 | **応答の型** | `PartnerAssignmentView` = `{ id, projectName: string \| null, startDate, endDate, remainingDays, state, extensionReviewOpen, engineerId }`（`engineerId` は自社台帳 `S-006` へのリンク用。自社行のみ）/ `PartnerContractView` = `{ id, kind, state, periodStart, periodEnd, unitPrice, documents: { version, signers: { role, routingOrder, status, signedAt }[], signedAt, downloadable }[], orders: { paymentState, periodStart, periodEnd, amount }[] }`。🔴 **`BR-66` 以外のフィールドは型に存在しない**（ホストの販売単価・エンド企業名・粗利・`ExtensionReview` の全列・ホスト担当者・内部メモ・ゲートの指摘・ドラフト版） |
 | **件数・示唆** | `total` は**同じビュー・同じ `where` の `COUNT`**（RLS 適用後の自社分）。🔴 **集計テーブル（`TenantMonthlyCost` 等）・案件単位の合計・「他 N 件」を返すフィールドを型に持たない**（`F-065 AC-3` / `F-066 AC-4`）。通知・タスク・満了アラート（`F-043` / `F-044`）はパートナーに一切出ない（`Task` / `Notification` は C5 / C7 で宛先が担当者 = ホスト） |
 | **書き込み** | 🔴 **`apps/web/app/api/(main)/partner/**` には `GET` ハンドラしか存在しない**（§17.2 #17 が AST で検査）。ホスト側の書込 API（#54 / #56〜#62）は `requireRole(['OWNER','ADMIN','SALES'])` でパートナーに **403**（`F-065 AC-4` / `F-066 AC-5`） |
@@ -3465,6 +3466,8 @@ AppError（抽象。code / httpStatus / userMessageKey / logLevel を持つ）
     ├── AiRoleFailedError               500（ジョブ内で捕捉。API には出さない）
     ├── ConnectorError                  502  'error.external'
     ├── PartnerBaseTableAccessError     500  🔴 パートナー文脈で基底 4 表 + extension_reviews のデリゲートに触れた（§4.3-6。正しいコードでは到達しない = 実装バグの検知）
+    ├── PartnerViewWriteError           500  🔴 経路 5 の射影ビューへの書込操作（`BR-68`。§4.9。正しいコードでは到達しない = 実装バグの検知）
+    ├── PartnerScopeTargetError         500  🔴 `withPartnerScope` の当事者が確定できない（§4.9。パートナー文脈での `previewPartnerCompanyId` 指定・ホスト文脈での指定漏れ。0 件を返さず例外にする）
     └── AuditWriteFailedError           500  🔴 監査ログ書き込み失敗（操作を成立させない）
 ```
 ### 15.2 ユーザー向けメッセージと内部ログの分離

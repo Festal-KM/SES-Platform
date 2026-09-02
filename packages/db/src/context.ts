@@ -129,3 +129,20 @@ export function requireHost(ctx: AuthenticatedTenantCtx): asserts ctx is HostTen
     throw new HostOnlyContextError();
   }
 }
+
+/**
+ * 🔴 `withPartnerScope`（docs/05 §4.9）の当事者が確定できないことを示す。
+ *
+ * 経路 5 の当事者は次のどちらか一方からしか決まらない:
+ *   ①パートナー文脈なら `ctx.partnerCompanyId`（認証コンテキスト。`CLAUDE.md` §3.1 / `BR-03`）
+ *   ②ホストのプレビュー（`S-029` / `S-025`）なら `previewPartnerCompanyId`
+ * 両方が来た場合（= パートナーがリクエスト入力で当事者を指定しようとした）と、
+ * どちらも無い場合（= ホストが対象を指定していない）は、0 件を返さず例外にする。
+ * **0 件は「そういうデータが無い」と区別できず、絞り忘れが本番まで生き延びるため。**
+ */
+export class PartnerScopeTargetError extends Error {
+  constructor(message: string) {
+    super(`${message}（docs/05 §4.9 / CLAUDE.md §3.1-5）`);
+    this.name = 'PartnerScopeTargetError';
+  }
+}

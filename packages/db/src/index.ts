@@ -3,7 +3,13 @@
 //    生 PrismaClient / TenantDb 型 / 生 SQL の入口は export しない。
 export { configureTenantDb, disconnectTenantDb } from './client.js';
 export type { TenantDbOptions } from './client.js';
-export { HostOnlyContextError, requireHost, resolveTenantCtx, TENANT_ROLES } from './context.js';
+export {
+  HostOnlyContextError,
+  PartnerScopeTargetError,
+  requireHost,
+  resolveTenantCtx,
+  TENANT_ROLES,
+} from './context.js';
 export type {
   AuthenticatedTenantCtx,
   DeviceKind,
@@ -119,6 +125,10 @@ export type {
 } from './schema-value-sets.js';
 export {
   CrossTenantWriteError,
+  PARTNER_BASE_TABLE_MODELS,
+  PARTNER_VIEW_MODELS,
+  PartnerBaseTableAccessError,
+  PartnerViewWriteError,
   ReadOnlyModelWriteError,
   TENANT_SCOPE_EXCLUDED_MODELS,
   TENANT_SCOPE_STRATEGY_DECLARATIONS,
@@ -142,4 +152,12 @@ export type {
   InvitationRow,
   PasswordResetIssueInput,
 } from './row-context.js';
-export { withHostTenant, withSystemScope, withTenant } from './with-tenant.js';
+export {
+  withHostTenant,
+  withPartnerScope,
+  withSystemScope,
+  withTenant,
+} from './with-tenant.js';
+// 🔴 経路 5（docs/05 §4.9）の読み取りの型。`TenantDb` / `HostTenantDb` と違い、
+//    API 層が `toPartnerView()` の入力型として参照するため export する。
+export type { PartnerScopeDb, PartnerScopeTarget } from './with-tenant.js';

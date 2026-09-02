@@ -5,6 +5,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   CrossTenantWriteError,
+  PARTNER_BASE_TABLE_MODELS,
+  PARTNER_VIEW_MODELS,
+  PartnerBaseTableAccessError,
+  PartnerViewWriteError,
   ReadOnlyModelWriteError,
   TENANT_SCOPE_EXCLUDED_MODELS,
   TENANT_SCOPE_STRATEGY_DECLARATIONS,
@@ -12,6 +16,8 @@ import {
   SystemOnlyModelAccessError,
   TenantRelationWriteError,
   UnscopedOperationError,
+  assertPartnerBaseTableNotAccessed,
+  injectPartnerViewScope,
   injectTenantScope,
   tenantKeyMovingRelationsOf,
   tenantKeyOf,
@@ -611,5 +617,152 @@ describe('🔴 C0 SYSTEM_ONLY はテナント文脈から触れない（docs/05 
 
   it('🔴 射程外モデル（素通し）と混同しない: 射程外は例外にならない', () => {
     expect(() => inject('Skill', 'findMany', {})).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-02-07: 越境経路 5（当事者レコードの参照）— docs/05 §4.3-6 / §4.4 C9 / §4.9
+// ---------------------------------------------------------------------------
+
+const PARTNER_A1 = '01930000-0000-7000-8000-0000000000c1';
+
+describe('🔴 パートナー文脈から経路 5 の基底表に触れると例外（docs/05 §4.3-6 ②）', () => {
+  it('宣言は assignments / contracts / contract_documents / orders / extension_reviews の 5 モデル', () => {
+    expect([...PARTNER_BASE_TABLE_MODELS]).toEqual([
+      'Assignment',
+      'Contract',
+      'ContractDocument',
+      'Order',
+      'ExtensionReview',
+    ]);
+  });
+
+  it.each([...PARTNER_BASE_TABLE_MODELS])(
+    '%s: パートナー文脈では読み書きのいずれも PartnerBaseTableAccessError になる（0 件ではなく例外）',
+    (model) => {
+      for (const operation of ['findMany', 'findUnique', 'count', 'create', 'update', 'deleteMany']) {
+        expect(() =>
+          assertPartnerBaseTableNotAccessed({ model, operation, partnerCompanyId: PARTNER_A1 }),
+        ).toThrow(PartnerBaseTableAccessError);
+      }
+    },
+  );
+
+  it('🔴 ホスト文脈（partnerCompanyId = null）では例外にならない（C2 の正常系）', () => {
+    for (const model of PARTNER_BASE_TABLE_MODELS) {
+      expect(() =>
+        assertPartnerBaseTableNotAccessed({ model, operation: 'findMany', partnerCompanyId: null }),
+      ).not.toThrow();
+    }
+  });
+
+  it('経路 5 と無関係のモデルは、パートナー文脈でも例外にならない（空振り防止の対照）', () => {
+    for (const model of ['Engineer', 'Proposal', 'Message', 'PartnerAssignmentsV']) {
+      expect(() =>
+        assertPartnerBaseTableNotAccessed({
+          model,
+          operation: 'findMany',
+          partnerCompanyId: PARTNER_A1,
+        }),
+      ).not.toThrow();
+    }
+  });
+});
+
+describe('🔴 経路 5 の射影ビューへの当事者スコープ注入（docs/05 §4.9）', () => {
+  it('宣言は射影ビュー 4 本である', () => {
+    expect([...PARTNER_VIEW_MODELS]).toEqual([
+      'PartnerAssignmentsV',
+      'PartnerContractsV',
+      'PartnerContractDocumentsV',
+      'PartnerOrdersV',
+    ]);
+  });
+
+  it.each([...PARTNER_VIEW_MODELS])('%s: findMany の where に当事者の述語が AND される', (model) => {
+    // 🔴 契約書のビューだけは「署名済み最終版のみ」（F-066 AC-2）も鏡写しにする。
+    const expected =
+      model === 'PartnerContractDocumentsV'
+        ? { counterpartyPartnerCompanyId: PARTNER_A1, signedAt: { not: null } }
+        : { counterpartyPartnerCompanyId: PARTNER_A1 };
+    expect(
+      injectPartnerViewScope({
+        model,
+        operation: 'findMany',
+        args: { where: { state: 'ACTIVE' } },
+        counterpartyPartnerCompanyId: PARTNER_A1,
+      }),
+    ).toEqual({
+      where: {
+        state: 'ACTIVE',
+        AND: [expected],
+      },
+    });
+  });
+
+  it('🔴 契約書のビューは「署名済み最終版のみ」も AND する（C9 の述語の鏡写し。F-066 AC-2）', () => {
+    expect(
+      injectPartnerViewScope({
+        model: 'PartnerContractDocumentsV',
+        operation: 'count',
+        args: {},
+        counterpartyPartnerCompanyId: PARTNER_A1,
+      }),
+    ).toEqual({
+      where: { AND: [{ counterpartyPartnerCompanyId: PARTNER_A1, signedAt: { not: null } }] },
+    });
+  });
+
+  it('🔴 count にも同じ述語が入る（total が境界適用後の母集団だけを数える。F-065 AC-3 / F-066 AC-4）', () => {
+    expect(
+      injectPartnerViewScope({
+        model: 'PartnerContractsV',
+        operation: 'count',
+        args: {},
+        counterpartyPartnerCompanyId: PARTNER_A1,
+      }),
+    ).toEqual({ where: { AND: [{ counterpartyPartnerCompanyId: PARTNER_A1 }] } });
+  });
+
+  it('🔴 呼び出し側が他社を明示指定しても、条件は狭まる方向にしか動かない（0 件になる）', () => {
+    const other = '01930000-0000-7000-8000-0000000000c2';
+    expect(
+      injectPartnerViewScope({
+        model: 'PartnerOrdersV',
+        operation: 'findMany',
+        args: { where: { counterpartyPartnerCompanyId: other } },
+        counterpartyPartnerCompanyId: PARTNER_A1,
+      }),
+    ).toEqual({
+      where: {
+        counterpartyPartnerCompanyId: other,
+        AND: [{ counterpartyPartnerCompanyId: PARTNER_A1 }],
+      },
+    });
+  });
+
+  it('🔴 書き込みは例外にする（経路 5 に書き込みは無い。BR-68）', () => {
+    for (const operation of ['create', 'createMany', 'update', 'updateMany', 'upsert', 'delete', 'deleteMany']) {
+      expect(() =>
+        injectPartnerViewScope({
+          model: 'PartnerAssignmentsV',
+          operation,
+          args: { data: {} },
+          counterpartyPartnerCompanyId: PARTNER_A1,
+        }),
+      ).toThrow(PartnerViewWriteError);
+    }
+  });
+
+  it('射影ビュー以外のモデルは素通しする（テナントスコープの注入は injectTenantScope の責務）', () => {
+    const args = { where: { id: 'x' } };
+    expect(
+      injectPartnerViewScope({
+        model: 'Engineer',
+        operation: 'findMany',
+        args,
+        counterpartyPartnerCompanyId: PARTNER_A1,
+      }),
+    ).toBe(args);
   });
 });

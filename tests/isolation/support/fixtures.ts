@@ -81,6 +81,57 @@ export const INVITATION_A_P1_TOKEN_HASH = 'seed-invitation-hash-partner1';
 /** パスワード再設定トークンのハッシュ（USER_B_HOST に設定済み）。 */
 export const PASSWORD_RESET_TOKEN_HASH_B = 'seed-password-reset-hash-b';
 
+// ---------------------------------------------------------------------------
+// T-02-07: 越境経路 5（当事者レコードの参照）の母集団（docs/05 §4.7 #8〜#10 / §4.9）
+// ---------------------------------------------------------------------------
+// 🔴 各パートナーが当事者の Assignment / Contract / ContractDocument / Order を 1 件ずつ持ち、
+//    **同一案件（PROJECT_A_PUBLISHED）に両社の稼働を置く**。他社が当事者の行が同じ表・同じ案件に
+//    あっても、一覧・COUNT・ID 直指定のいずれでも 0 件になることを確かめるための母集団である。
+// 🔴 `packages/domain` の transition() を通した本格版のシード（seed:isolation）は T-02-10 の範囲。
+//    ここは T-02-06 と同じく「静的な行」を置くだけである。
+
+/** 未公開案件（PROJECT_A_PRIVATE）に紐づく提案。稼働の FK を張るためだけの行。 */
+export const PROPOSAL_A_P1_PRIVATE = '01930000-0000-7000-8000-000000000114';
+
+/** PARTNER_A1 が当事者。案件は PARTNER_A1 に公開済み → project_name が見える（F-065 AC-1）。 */
+export const ASSIGNMENT_A_P1_PUBLISHED = '01930000-0000-7000-8000-0000000001a1';
+/** PARTNER_A1 が当事者。案件は未公開 → 稼働行は見えるが project_name は NULL（F-065 AC-1）。 */
+export const ASSIGNMENT_A_P1_PRIVATE = '01930000-0000-7000-8000-0000000001a2';
+/** 🔴 PARTNER_A2 が当事者。PARTNER_A1 からは 1 件も見えてはならない。 */
+export const ASSIGNMENT_A_P2 = '01930000-0000-7000-8000-0000000001a3';
+/** 自社エンジニアの稼働（当事者列 NULL）。どのパートナーからも見えてはならない。 */
+export const ASSIGNMENT_A_HOST = '01930000-0000-7000-8000-0000000001a4';
+
+/** 🔴 PARTNER_A2 が当事者の契約。PARTNER_A1 からは 1 件も見えてはならない。 */
+export const CONTRACT_A_P2 = '01930000-0000-7000-8000-000000000172';
+/** 当事者列が NULL の契約（ホストとエンド企業の契約に相当）。 */
+export const CONTRACT_A_HOST = '01930000-0000-7000-8000-000000000173';
+
+/** 署名済みの最終版（PARTNER_A1 が当事者）。 */
+export const CONTRACT_DOC_A_P1_SIGNED = '01930000-0000-7000-8000-0000000001b1';
+/** 🔴 未署名のドラフト版。C9 の `signed_at IS NOT NULL` により行として存在しない（F-066 AC-2）。 */
+export const CONTRACT_DOC_A_P1_DRAFT = '01930000-0000-7000-8000-0000000001b2';
+/** 🔴 PARTNER_A2 が当事者の署名済み版。PARTNER_A1 からは見えてはならない。 */
+export const CONTRACT_DOC_A_P2_SIGNED = '01930000-0000-7000-8000-0000000001b3';
+
+export const ORDER_A_P1 = '01930000-0000-7000-8000-0000000001c1';
+/** 🔴 PARTNER_A2 が当事者の発注。PARTNER_A1 からは見えてはならない。 */
+export const ORDER_A_P2 = '01930000-0000-7000-8000-0000000001c2';
+
+/** 🔴 ホスト内部の延長検討（BR-67）。パートナーはどの経路でも到達できてはならない。 */
+export const EXTENSION_REVIEW_A_P1 = '01930000-0000-7000-8000-0000000001d1';
+
+/** 経路 5 の射影に**現れてはならない**値。応答の JSON を走査して不在を確かめるために使う。 */
+export const FORBIDDEN_MARKERS = {
+  /** extension_reviews.facts / summary（ホスト内部の検討内容。BR-67）。 */
+  extensionReviewFacts: 'host-internal-renewal-facts',
+  extensionReviewSummary: 'host-internal-renewal-summary',
+  /** contracts.payment_terms（BR-66 の開示項目に無い）。 */
+  contractPaymentTerms: 'host-internal-payment-terms',
+  /** contract_documents.object_key（ダウンロードは issueDownloadUrl 経由。§14.2）。 */
+  contractDocumentObjectKey: 'host-internal-contract-object-key',
+} as const;
+
 export const SEED_SQL = `
 -- 🔴 T-02-01: tenants に environment / lifecycle_changed_at / provisioning_request_id が
 --    NOT NULL で追加された（docs/05 §3.3）。
@@ -205,7 +256,47 @@ INSERT INTO notifications (id, tenant_id, recipient_user_id, kind, title, body_k
 INSERT INTO two_factor_credentials (id, subject_type, subject_id, tenant_id, secret_encrypted, recovery_code_hashes) VALUES
   ('${TWO_FACTOR_A_HOST}', 'USER', '${USER_A_HOST}', '${TENANT_A}', 'enc:seed', ARRAY['hash1']::text[]);
 
--- C2: 契約（ホストのみが読み書きする。パートナーの SELECT = C9 は T-02-07）。
-INSERT INTO contracts (id, tenant_id, kind, state, counterparty_name, counterparty_partner_company_id) VALUES
-  ('${CONTRACT_A_P1}', '${TENANT_A}', 'INDIVIDUAL', 'DRAFT', 'Partner A1', '${PARTNER_A1}');
+-- ---------------------------------------------------------------------------
+-- 越境経路 5（当事者レコードの参照。T-02-07。docs/05 §4.4 C9 / §4.9 / BR-65〜BR-69）
+-- ---------------------------------------------------------------------------
+-- 🔴 各社が当事者の Assignment / Contract / ContractDocument / Order を 1 件ずつ持ち、
+--    同一案件（PROJECT_A_PUBLISHED）に PARTNER_A1 と PARTNER_A2 の稼働を置く。
+
+-- 未公開案件に紐づく提案（稼働の FK を張るための行。公開後に取り消された案件に相当する）。
+INSERT INTO proposals (id, tenant_id, owner_partner_company_id, project_id, engineer_id, state, recipient_company_name, recipient_email, created_by) VALUES
+  ('${PROPOSAL_A_P1_PRIVATE}', '${TENANT_A}', '${PARTNER_A1}', '${PROJECT_A_PRIVATE}', '${ENGINEER_A_PARTNER}', 'WON', 'Client Co', 'client@example.test', '${USER_A_PARTNER}');
+
+-- C2（ホストの読み書き）/ C9（パートナーの SELECT）。
+-- 🔴 unit_price は「自社（パートナー）とホストの間の契約単価」。ホストの販売単価は
+--    projects.internal_unit_price（900000 / 800000）であり、経路 5 のどのビューにも現れない。
+-- 🔴 CHECK (state <> 'EXECUTED' OR executed_at IS NOT NULL) があるため executed_at は INSERT で入れる
+--    （EXECUTED 行は BEFORE UPDATE トリガで書き換えられない。あとから UPDATE で補えない）。
+INSERT INTO contracts (id, tenant_id, kind, state, counterparty_name, counterparty_partner_company_id, unit_price, period_start, period_end, payment_terms, executed_at) VALUES
+  ('${CONTRACT_A_P1}',   '${TENANT_A}', 'INDIVIDUAL', 'DRAFT',    'Partner A1',   '${PARTNER_A1}', 650000, DATE '2026-10-01', DATE '2027-03-31', '${FORBIDDEN_MARKERS.contractPaymentTerms}', NULL),
+  ('${CONTRACT_A_P2}',   '${TENANT_A}', 'INDIVIDUAL', 'DRAFT',    'Partner A2',   '${PARTNER_A2}', 700000, DATE '2026-10-01', DATE '2027-03-31', '${FORBIDDEN_MARKERS.contractPaymentTerms}', NULL),
+  ('${CONTRACT_A_HOST}', '${TENANT_A}', 'MASTER',     'EXECUTED', 'End Client A', NULL,            900000, DATE '2026-04-01', DATE '2027-03-31', '${FORBIDDEN_MARKERS.contractPaymentTerms}', now());
+
+-- 🔴 署名済み最終版（C9 で見える）とドラフト版（C9 の signed_at IS NOT NULL で消える）を対にして置く。
+INSERT INTO contract_documents (id, tenant_id, counterparty_partner_company_id, contract_id, version, object_key, scan_status, signed_at, signers) VALUES
+  ('${CONTRACT_DOC_A_P1_DRAFT}',  '${TENANT_A}', '${PARTNER_A1}', '${CONTRACT_A_P1}', 1, '${FORBIDDEN_MARKERS.contractDocumentObjectKey}', 'CLEAN', NULL,  '[{"role":"HOST","routingOrder":1,"status":"CREATED"}]'::jsonb),
+  ('${CONTRACT_DOC_A_P1_SIGNED}', '${TENANT_A}', '${PARTNER_A1}', '${CONTRACT_A_P1}', 2, '${FORBIDDEN_MARKERS.contractDocumentObjectKey}', 'CLEAN', now(), '[{"role":"HOST","routingOrder":1,"status":"SIGNED"},{"role":"PARTNER","routingOrder":2,"status":"SIGNED"}]'::jsonb),
+  ('${CONTRACT_DOC_A_P2_SIGNED}', '${TENANT_A}', '${PARTNER_A2}', '${CONTRACT_A_P2}', 1, '${FORBIDDEN_MARKERS.contractDocumentObjectKey}', 'CLEAN', now(), '[{"role":"HOST","routingOrder":1,"status":"SIGNED"}]'::jsonb);
+
+-- 🔴 同一案件（PROJECT_A_PUBLISHED）に PARTNER_A1 / PARTNER_A2 / 自社の稼働を置く。
+--    ASSIGNMENT_A_P1_PRIVATE だけが未公開案件（PROJECT_A_PRIVATE）に紐づく（F-065 AC-1 の NULL 経路）。
+INSERT INTO assignments (id, tenant_id, engineer_id, project_id, proposal_id, counterparty_partner_company_id, state, start_date, end_date, unit_price, owner_user_id) VALUES
+  ('${ASSIGNMENT_A_P1_PUBLISHED}', '${TENANT_A}', '${ENGINEER_A_PARTNER}',  '${PROJECT_A_PUBLISHED}', '${PROPOSAL_A_P1}',         '${PARTNER_A1}', 'ACTIVE',            DATE '2026-10-01', DATE '2027-03-31', 650000, '${USER_A_HOST}'),
+  ('${ASSIGNMENT_A_P1_PRIVATE}',   '${TENANT_A}', '${ENGINEER_A_PARTNER}',  '${PROJECT_A_PRIVATE}',   '${PROPOSAL_A_P1_PRIVATE}', '${PARTNER_A1}', 'EXTENSION_REVIEW',  DATE '2026-04-01', DATE '2026-09-30', 600000, '${USER_A_HOST}'),
+  ('${ASSIGNMENT_A_P2}',           '${TENANT_A}', '${ENGINEER_A_PARTNER2}', '${PROJECT_A_PUBLISHED}', '${PROPOSAL_A_P2}',         '${PARTNER_A2}', 'ACTIVE',            DATE '2026-10-01', DATE '2027-03-31', 700000, '${USER_A_HOST}'),
+  ('${ASSIGNMENT_A_HOST}',         '${TENANT_A}', '${ENGINEER_A_HOST}',     '${PROJECT_A_PUBLISHED}', '${PROPOSAL_A_HOST}',       NULL,            'ACTIVE',            DATE '2026-10-01', DATE '2027-03-31', 800000, '${USER_A_HOST}');
+
+INSERT INTO orders (id, tenant_id, counterparty_partner_company_id, contract_id, assignment_id, amount, period_start, period_end, payment_state) VALUES
+  ('${ORDER_A_P1}', '${TENANT_A}', '${PARTNER_A1}', '${CONTRACT_A_P1}', '${ASSIGNMENT_A_P1_PUBLISHED}', 650000, DATE '2026-10-01', DATE '2026-10-31', 'UNPAID'),
+  ('${ORDER_A_P2}', '${TENANT_A}', '${PARTNER_A2}', '${CONTRACT_A_P2}', '${ASSIGNMENT_A_P2}',           700000, DATE '2026-10-01', DATE '2026-10-31', 'UNPAID');
+
+-- 🔴 ホスト内部の延長検討（BR-67）。当事者列を持たず、パートナー向けポリシーも射影も存在しない。
+INSERT INTO extension_reviews (id, tenant_id, assignment_id, opened_at, owner_user_id, facts, summary) VALUES
+  ('${EXTENSION_REVIEW_A_P1}', '${TENANT_A}', '${ASSIGNMENT_A_P1_PRIVATE}', now(), '${USER_A_HOST}',
+   '{"note":"${FORBIDDEN_MARKERS.extensionReviewFacts}"}'::jsonb,
+   '{"note":"${FORBIDDEN_MARKERS.extensionReviewSummary}"}'::jsonb);
 `;

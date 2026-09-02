@@ -255,11 +255,20 @@ function buildDynamicImportSelectors(options) {
  * T-01-06: `$queryRaw` / `$queryRawUnsafe` / `$executeRaw` / `$executeRawUnsafe` の呼び出しを
  * 禁止する no-restricted-syntax セレクタ（CLAUDE.md §3.1 / docs/05 §4.3）。
  *
- * 呼び出しの構文は 2 通りある（実装ガイドの「呼び出し」が指すのはどちらも）:
+ * 呼び出しの構文は 4 通りある（実装ガイドの「呼び出し」が指すのはどれも）:
  *   - 関数呼び出し形: `tx.$queryRaw(Prisma.sql`…`)`（`CallExpression`）
  *   - タグ付きテンプレート形: `` client.$queryRaw`SELECT …` ``（`TaggedTemplateExpression`。
  *     Prisma のドキュメントで推奨される書き方であり、実際に tests/isolation/roles.test.ts が使う）
- * 片方だけを塞ぐと、もう片方が素通しの経路になるため両方を検出する。
+ *   - 🔴 上記 2 つの **computed member access 形**（`tx['$queryRaw'](…)` /
+ *     `` tx['$executeRaw']`…` ``）。T-01-06 のレビュー申し送り。ドット記法だけを塞ぐと、
+ *     文字列添字で素通りする経路が残る（`callee.property` が `Identifier` ではなく `Literal` になる）。
+ * 片方だけを塞ぐと、もう片方が素通しの経路になるため 4 つとも検出する。
+ *
+ * 🔴 追跡できない残余（意図的に対象外。誤検知を避けるため）: 変数に束縛した名前での
+ *    computed access（`const k = '$queryRaw'; tx[k](…)`）と、分割代入した関数の呼び出し。
+ *    これらは静的には名前が確定しない。生 SQL の実行経路そのものは
+ *    「`withTenant` / `withHostTenant` が渡す型に `$queryRaw` 等が無い」（docs/05 §4.3 規約 3）
+ *    ことで塞がっており、この lint は補助である。
  *
  * `allowRawSqlCalls` が true のゾーン（packages/db 内部・tests/isolation/**）では空配列を返す。
  */
@@ -274,6 +283,14 @@ function buildRawSqlCallSelectors(allowRawSqlCalls) {
     },
     {
       selector: `TaggedTemplateExpression[tag.type='MemberExpression'][tag.property.type='Identifier'][tag.property.name=${namePattern}]`,
+      message: RAW_SQL_CALL_MESSAGE,
+    },
+    {
+      selector: `CallExpression[callee.type='MemberExpression'][callee.computed=true][callee.property.type='Literal'][callee.property.value=${namePattern}]`,
+      message: RAW_SQL_CALL_MESSAGE,
+    },
+    {
+      selector: `TaggedTemplateExpression[tag.type='MemberExpression'][tag.computed=true][tag.property.type='Literal'][tag.property.value=${namePattern}]`,
       message: RAW_SQL_CALL_MESSAGE,
     },
   ];

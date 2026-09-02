@@ -5,7 +5,8 @@
 //   ②@ses/db から PrismaClient を named import することは常に禁止（防御的ルール）
 //   ③@ses/db/testing サブパスの import は tests/isolation/** のみ許可
 //   ④$queryRaw / $queryRawUnsafe / $executeRaw / $executeRawUnsafe の直接呼び出しは
-//     packages/db/src/** と tests/isolation/** のみ許可
+//     packages/db/src/** と tests/isolation/** のみ許可（ドット記法・タグ付きテンプレート・
+//     computed member access〔client['$queryRaw']〕の 4 形すべて）
 //
 // fixture 自体は本体のビルド対象に含めず（vitest / tsc の include から除外）、
 // ここで文字列として読み込み、ESLint#lintText に架空の filePath を与えて検査する。
@@ -123,6 +124,24 @@ describe('④ $queryRaw / $executeRaw の直接呼び出しは packages/db/src/*
   it('packages/config からのタグ付きテンプレート形（$executeRaw`…`）を検出する', async () => {
     const result = await lintAs(
       readFixture('raw-execute-tagged-template.violation.ts'),
+      'packages/config/src/__violation__.ts',
+    );
+    expect(hasAnyRule(result.messages, ['no-restricted-syntax'])).toBe(true);
+  });
+
+  // 🔴 T-01-06 レビュー申し送り（T-02-07 で対応）: ドット記法だけを塞ぐと、文字列添字
+  //    （computed member access）が素通しの経路として残る。
+  it('apps/web からの computed member access 形（角括弧 + 文字列添字の $queryRaw 呼び出し）を検出する', async () => {
+    const result = await lintAs(
+      readFixture('raw-query-computed-call.violation.ts'),
+      'apps/web/src/__violation__.ts',
+    );
+    expect(hasAnyRule(result.messages, ['no-restricted-syntax'])).toBe(true);
+  });
+
+  it('packages/config からの computed member access + タグ付きテンプレート形を検出する', async () => {
+    const result = await lintAs(
+      readFixture('raw-execute-computed-tagged-template.violation.ts'),
       'packages/config/src/__violation__.ts',
     );
     expect(hasAnyRule(result.messages, ['no-restricted-syntax'])).toBe(true);

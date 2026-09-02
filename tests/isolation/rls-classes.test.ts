@@ -40,7 +40,9 @@ import {
   ANNOUNCEMENT_A,
   ANNOUNCEMENT_ALL,
   ANNOUNCEMENT_B,
+  CONTRACT_A_HOST,
   CONTRACT_A_P1,
+  CONTRACT_A_P2,
   ENGINEER_A_HOST,
   ENGINEER_A_PARTNER,
   ENGINEER_A_PARTNER2,
@@ -61,6 +63,7 @@ import {
   PROJECT_A_PUBLISHED,
   PROPOSAL_A_HOST,
   PROPOSAL_A_P1,
+  PROPOSAL_A_P1_PRIVATE,
   PROPOSAL_A_P2,
   REQUIREMENT_A_PRIVATE,
   REQUIREMENT_A_PUBLISHED,
@@ -269,7 +272,11 @@ describe('C2 HOST_ONLY（docs/05 §4.4）', () => {
       await tx.contract.findMany(),
     ]);
     expect(candidates.map((row) => row.id)).toEqual([MATCH_A_P1]);
-    expect(contracts.map((row) => row.id)).toEqual([CONTRACT_A_P1]);
+    // 🔴 T-02-07: 経路 5 の母集団として PARTNER_A2 が当事者の契約と、当事者列が NULL の契約
+    //    （ホストとエンド企業）が加わった。ホスト（C2）からは全 3 件が見える。
+    expect(sorted(contracts.map((row) => row.id))).toEqual(
+      sorted([CONTRACT_A_P1, CONTRACT_A_P2, CONTRACT_A_HOST]),
+    );
   });
 
   it('🔴 負: パートナーは match_candidates を 1 件も読めない（匿名候補の生成物）', async () => {
@@ -277,9 +284,14 @@ describe('C2 HOST_ONLY（docs/05 §4.4）', () => {
     expect(rows).toHaveLength(0);
   });
 
-  it('🔴 負: パートナーは contracts を読めない（C9 は T-02-07。この時点では 0 件）', async () => {
+  it('🔴 負: パートナーは自社が当事者の契約しか読めない（C9 COUNTERPARTY_READ。T-02-07 で追加）', async () => {
+    // 🔴 T-02-06 の時点では「パートナーは contracts を 0 件しか読めない」だったが、
+    //    T-02-07 で C9（経路 5）が入り、**自社が当事者の行だけ**が読めるようになった
+    //    （CLAUDE.md §3.1-5 / BR-65〜BR-69。人間が承認した越境経路）。
+    //    他社が当事者の契約と、当事者列が NULL の契約は引き続き 1 件も見えない。
+    //    列の絞り込み（射影ビュー）と全体像は tests/isolation/route5-counterparty.test.ts。
     const rows = await runUnextended(db, P1_A, (tx) => tx.contract.findMany());
-    expect(rows).toHaveLength(0);
+    expect(rows.map((row) => row.id)).toEqual([CONTRACT_A_P1]);
   });
 
   it('🔴 負: パートナーは案件を作成できない（書込は C2）', async () => {
@@ -379,16 +391,21 @@ describe('C5 PARTY（越境経路 2 / 4。docs/05 §4.4）', () => {
       runUnextended(db, P1_A, (tx) => tx.proposal.findMany()),
       runUnextended(db, P2_A, (tx) => tx.proposal.findMany()),
     ]);
+    // 🔴 T-02-07: 経路 5 の母集団として PROPOSAL_A_P1_PRIVATE（PARTNER_A1 所有。未公開案件の
+    //    稼働に紐づく）がシードに加わった。C5 の意味（ホストは全社分 / パートナーは自社分だけ）は
+    //    変わらないため、期待値だけを追随させる。
     expect(sorted(asHost.map((row) => row.id))).toEqual(
-      sorted([PROPOSAL_A_HOST, PROPOSAL_A_P1, PROPOSAL_A_P2]),
+      sorted([PROPOSAL_A_HOST, PROPOSAL_A_P1, PROPOSAL_A_P1_PRIVATE, PROPOSAL_A_P2]),
     );
-    expect(asP1.map((row) => row.id)).toEqual([PROPOSAL_A_P1]);
+    expect(sorted(asP1.map((row) => row.id))).toEqual(sorted([PROPOSAL_A_P1, PROPOSAL_A_P1_PRIVATE]));
     expect(asP2.map((row) => row.id)).toEqual([PROPOSAL_A_P2]);
   });
 
   it('🔴 proposals: 二重防御（withTenant）越しでもパートナーは自社分だけ', async () => {
     const rows = await withTenant(ctxAPartner1, (scoped) => scoped.proposal.findMany());
-    expect(rows.map((row) => row.id)).toEqual([PROPOSAL_A_P1]);
+    expect(sorted(rows.map((row) => row.id))).toEqual(
+      sorted([PROPOSAL_A_P1, PROPOSAL_A_P1_PRIVATE]),
+    );
   });
 
   it('🔴 proposals: 件数も漏れない（COUNT が境界適用後の母集団だけを数える。docs/05 §4.8）', async () => {
@@ -396,8 +413,9 @@ describe('C5 PARTY（越境経路 2 / 4。docs/05 §4.4）', () => {
       runUnextended(db, HOST_A, (tx) => tx.proposal.count()),
       runUnextended(db, P1_A, (tx) => tx.proposal.count()),
     ]);
-    expect(asHost).toBe(3);
-    expect(asP1).toBe(1);
+    // 🔴 T-02-07 のシード追加に追随（ホスト 4 件 = 自社 1 + PARTNER_A1 2 + PARTNER_A2 1）。
+    expect(asHost).toBe(4);
+    expect(asP1).toBe(2);
   });
 
   it('partner_companies: パートナー文脈では自社 1 行のみ（F-004 AC-1）', async () => {
