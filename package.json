@@ -12,7 +12,8 @@
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.tests.json && pnpm -r run typecheck",
     "test": "vitest run",
-    "test:unit": "vitest run"
+    "test:unit": "vitest run",
+    "test:smoke": "vitest run -c vitest.smoke.config.ts"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",

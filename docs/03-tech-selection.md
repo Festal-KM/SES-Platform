@@ -654,7 +654,7 @@ Claude の PDF サポートは技術的には xlsx を除く多くの文書を�
 | 要件 | PostgreSQL での実現 | 出典 / 確度 |
 |---|---|---|
 | **複合検索（スキル AND / OR、経験年数、単価、稼働可能時期、勤務地）** | 通常のインデックス（B-tree / GIN）で足りる。**スキルの多対多は `EngineerSkill` の GIN インデックス**または配列カラム | 一次情報（[PostgreSQL: Indexes](https://www.postgresql.org/docs/current/indexes.html)） |
-| **フリーテキスト検索（案件名・業務内容）** | `tsvector` + GIN インデックス。**日本語は既定の parser では分かち書きできない** → **`pg_bigm`（2-gram）または `pgroonga` が必要** | 一次情報（PostgreSQL 本体には日本語形態素解析器が含まれない） |
+| **フリーテキスト検索（案件名・業務内容）** | `tsvector` + GIN インデックス。**日本語は既定の parser では分かち書きできない** → **`pg_bigm`（2-gram）または `pgroonga` が必要**（採否は §3.7.2「懸念 3 の検証結果」で決着済み） | 一次情報（PostgreSQL 本体には日本語形態素解析器が含まれない） |
 | **表記ゆれの吸収（「Java8」「JavaSE」等）** | 🔴 **`pg_trgm` は補助である。主たる吸収は `SkillAlias` の辞書（`F-010`）と `skill-normalizer`（`F-033`）が行う**。`pg_trgm` は「辞書に無い語の候補提示」に使う。🔴 **`Skill` はテナントに属さないグローバルマスタ、`SkillAlias` は「グローバル + テナント固有」の 2 層**（`CLAUDE.md` §3.1 / §4.1）であり、**`F-010` の編集経路はこの 2 層を型で区別する**（テナント固有の別名がグローバル辞書を書き換えられない） | 一次情報（[pg_trgm](https://www.postgresql.org/docs/current/pgtrgm.html)）/ 2 層の設計は本書の判断 |
 | **匿名候補の混在検索（`F-017`）** | 🔴 **同一クエリで自社エンジニアと匿名候補を扱うと、境界の実装が 1 箇所に集まらない**。`docs/05` 申し送り 2「越境 5 経路の実装をそれぞれ 1 箇所に閉じる」に従い、**2 本のクエリ（自社スコープ / 共有スコープ）を別々に実行し、アプリ層で決定的な順序でマージする**。**匿名候補には永続 ID を返さない**（`docs/05` 申し送り 7） | 本書の判断 |
 
@@ -667,7 +667,8 @@ Claude の PDF サポートは技術的には xlsx を除く多くの文書を�
 | **データ規模** | エンジニア 1 万件 / 案件 1 万件は、**PostgreSQL にとって小さい**。適切なインデックスがあれば単純な複合検索はミリ秒オーダで返る |
 | **懸念 1: RLS のオーバーヘッド** | RLS のポリシー式が**インデックスを使えない形**（関数呼び出しを含む等）だと全件走査になる。**回避**: ポリシーは `tenant_id = current_setting('app.tenant_id')::uuid` の等値比較に限定し、`tenant_id` を**全業務テーブルの複合インデックスの先頭列**に置く |
 | **懸念 2: 2 本のクエリのマージ**（`F-017`） | 匿名候補が多いテナントで、両クエリの結果セットが大きくなるとアプリ層のマージが遅くなる。**回避**: 各クエリで上限件数（既定 200）を掛け、**ページングはカーソル方式**にする |
-| **懸念 3: 日本語の全文検索** | `pg_bigm` / `pgroonga` は**マネージド PostgreSQL で使えないことがある**。🔴 **未確認: 採用するマネージド PostgreSQL で `pg_bigm` / `pgroonga` / `pg_trgm` が利用できるかを、DB 選定時に確認する。担当: `programmer`。期限: Phase 0 の DB 構築時。** 使えない場合は `pg_trgm` の GIN インデックス（`gin_trgm_ops`）で代替する（3-gram なので日本語でも動くが、2 文字の検索語に弱い） |
+| **懸念 3: 日本語の全文検索** | ~~`pg_bigm` / `pgroonga` は**マネージド PostgreSQL で使えないことがある**。🔴 **未確認: 採用するマネージド PostgreSQL で `pg_bigm` / `pgroonga` / `pg_trgm` が利用できるかを、DB 選定時に確認する。担当: `programmer`。期限: Phase 0 の DB 構築時。**~~ 🔴 **決定済み（2026-09-02、E-12 / `docs/05` TBD-8 / SP-01 T-01-02）。** ローカル開発コンテナでは（後述の懸念 3 の検証結果のとおり `pg_bigm` を同梱できないため）`pg_trgm` の GIN インデックス（`gin_trgm_ops`）で代替する（3-gram なので日本語でも動くが、2 文字の検索語に弱い） |
+| 🔴 **懸念 3 の検証結果**（2026-09-02。担当: `programmer`。SP-01 T-01-02） | ①**`pg_trgm` / `pg_bigm` は Amazon RDS for PostgreSQL / Aurora PostgreSQL の両方でサポートされる**（AWS 公式ドキュメント + AWS Database Blog「Index types supported in Amazon Aurora PostgreSQL and Amazon RDS for PostgreSQL using extensions (Bloom, pg_trgm, and pg_bigm)」で確認。一次情報）。②**`pgroonga` は RDS / Aurora のサポート拡張一覧に存在せず、利用不可**。③本プロジェクトのホスティングは AWS（東京リージョン）に決定済みのため、①②がそのまま適用される。**結論: `pg_bigm` はマネージド環境（RDS/Aurora）では有効化できる。ローカル開発コンテナ（`docker-compose.yml`）では公式 `postgres` Docker Hub イメージに `pg_bigm` が同梱されておらず、本プロジェクトの外部ネットワーク制約（Docker Hub からの image pull 以外の外部アクセスを行わない）の下では追加取得ができないため、ローカルでは `pg_trgm` のみを有効化する**（本番相当の RDS/Aurora との差異）。`pgroonga` は RDS で使えないため**採用しない**（ローカルにも入れず、環境間で挙動を揃える）。**実装方針（SP-06）**: 日本語全文検索の実装は `packages/db/src/search/*.ts` の 1 箇所に閉じ、まず `pg_trgm` の GIN（`gin_trgm_ops`）を基本とする。**`pg_bigm` は RDS で利用可能であることが確認済みのため、`pg_trgm` だけでは日本語検索の精度が不足すると Phase 1 の負荷テストや実運用で判明した場合の代替として温存する**（ステージング/本番の RDS で有効化して切り替えられるよう、拡張の利用可否をコードでハードコードしない）。`pgroonga` は不採用。**拡張の作成経路**: `CREATE EXTENSION IF NOT EXISTS pg_trgm`（および有効化する場合の `pg_bigm`）は、ステージング / 本番（RDS / Aurora）では **Prisma マイグレーション（ロール `app_migrator` / `MIGRATION_DATABASE_URL`。`docs/05` §4.2）で実行する**。`docker/postgres/initdb/001-extensions.sql` は **ローカル開発コンテナの初回起動専用**であり、①RDS / Aurora には `docker-entrypoint-initdb.d` が存在しない ②ローカルでも既存の `ses_postgres_data` ボリュームがあると再実行されない、の 2 点からマイグレーションが唯一の確実な経路である。 |
 | **検証方法** | 🔴 **Phase 1 の完了条件に「エンジニア 1 万件 / 案件 1 万件 / 匿名共有 2,000 件のシードで、`F-009` の p95 が 1 秒以内」の負荷テストを含める**（`docs/02` 章 7.1 の目標をテストで判定する）。🔴 **シードの分布を固定する** — **30 テナント**に配分し、**最大テナント 1 社にエンジニア 3,000 件 / 案件 3,000 件 / パートナー 15 社**（1 万件のうち偏りの大きい側を作る。`docs/02` 章 7.1 の「1 万件」は 30 テナント分の合計と解釈しているため、**均等割りだと 1 テナント 333 件になり RLS + 複合インデックスの効きを検証できない**）、**残り 29 テナント**に 7,000 件を分散（1 社あたり約 240 件、パートナー 2〜5 社）。**匿名共有 2,000 件は最大テナントのパートナー 15 社に集中させる**（§3.7.1 の「2 本のクエリのマージ」の最悪ケースを作る）。**計測は最大テナントのホストユーザーで行う**（`F-017` の匿名候補混在が最も重い経路） |
 
 #### 3.7.3 満たせなかった場合の代替と導入フェーズ
@@ -1076,7 +1077,7 @@ Claude の PDF サポートは技術的には xlsx を除く多くの文書を�
 | **Web（`apps/web`）** | **Vercel**（`CLAUDE.md` §2 の確定事項）。**Pro プラン以上**（Fluid compute の 800 秒上限と 4 GB メモリが要る。§3.9.2） |
 | **ワーカー（`apps/worker`）** | 🔴 **AWS ECS Fargate（または App Runner）を推奨する。** 理由: ①SES / S3 / GuardDuty がすべて AWS にあり、**IAM ロールで認証できる**（長期の API キーを持たなくてよい）②常駐プロセスで BullMQ / SSE / ClamAV サイドカーを動かせる ③VPC 内に閉じられる |
 | **競合** | Fly.io / Railway / Render（いずれも運用は楽だが、**AWS の IAM ロールを使えず、長期キーを環境変数で持つことになる**。§4.4 のリスクが増える） |
-| **DB** | **Amazon RDS for PostgreSQL または Aurora PostgreSQL。** 🔴 **`pg_trgm` は標準で使えるが、`pg_bigm` / `pgroonga` は使えない可能性が高い（§3.7.2 の未確認事項）** |
+| **DB** | **Amazon RDS for PostgreSQL または Aurora PostgreSQL。** **`pg_trgm` / `pg_bigm` は RDS / Aurora で利用可、`pgroonga` は不可（§3.7.2、2026-09-02 決定）** |
 | **Redis** | **Amazon ElastiCache for Valkey / Redis OSS。** AOF を有効にする（§2.1） |
 | **Vercel → VPC の接続** | ⚠️ **Vercel の関数から VPC 内の RDS / Redis に接続するには、公開エンドポイント + IP 制限、または Vercel Secure Compute（Enterprise）が要る。** 🔴 **未確認: Secure Compute の要否と費用。担当: `programmer` / 人間。期限: Phase 0 のインフラ構築時。** 暫定は「RDS Proxy の公開エンドポイント + セキュリティグループの IP 制限 + TLS 必須」で進める |
 | **コネクション数** | 🔴 **Vercel は同時実行が最大 30,000 まで自動スケールし、ファイルディスクリプタは 1,024 共有**（§3.9.2）。**RDS Proxy（または PgBouncer）を必ず挟む。** Prisma の `connection_limit` を関数側で 1〜2 に絞る |
@@ -1223,7 +1224,7 @@ packages/connectors/src/index.ts … createConnectors(env) が APP_ENV で実装
 | **Tailwind CSS** | `^4` | `CLAUDE.md` §13.3「ブレークポイントは Tailwind の既定に従う」を守れること |
 | **shadcn/ui** | 取り込み方式（バージョン固定なし） | 取り込んだコンポーネントは `packages/ui` に一元管理（§2.1） |
 | **Prisma** | `^6`（Client Extensions が安定していること） | 🔴 **`$allOperations` フックと RLS の併用を Phase 0 の最初のタスクで実証する**（§4.3.1） |
-| **PostgreSQL** | **`^17`**（マネージドで選べる最新の安定メジャー） | `pg_trgm` は標準。`pg_bigm` / `pgroonga` の可否は §3.7.2 の未確認事項 |
+| **PostgreSQL** | **`^17`**（マネージドで選べる最新の安定メジャー） | `pg_trgm` / `pg_bigm` は RDS / Aurora で利用可、`pgroonga` は不可（§3.7.2、2026-09-02 決定） |
 | **Redis / Valkey** | `^7`（Redis OSS）または Valkey `^8` | BullMQ の要求に従う。AOF 有効 |
 | **BullMQ** | `^5` | 🔴 送信系キューは `attempts: 1` 固定（§2.1 / §4.7） |
 | **Auth.js（NextAuth）** | `^5` | v5 は API が変わりうる。ラッパで隔離する（§4.9） |
@@ -1731,7 +1732,7 @@ packages/connectors/src/index.ts … createConnectors(env) が APP_ENV で実装
 | **U-5** | ~~**DocuSign / Adobe Acrobat Sign の審査リードタイム**~~ — **一部確定（2026-09-01）**。DocuSign の Go-Live は「Pending Approval 到達後 3 営業日以内に昇格」とされる（**二次情報のみ・要再確認**。§3.1.6）。**Adobe Acrobat Sign は採らないため対象外** | §3.1.6。**Go-Live をクリティカルパスに置かない前提の妥当性は §3.1.6 で評価済み** | **`programmer`。Phase 3 の Go-Live 申請時に実績で確認する。** 3 営業日を超えた場合は `pm` に報告し、Phase 3 の計画を調整する |
 | **U-6** | **SES のサンドボックス状態のまま送信クォータだけ引き上げられるか** | §3.2.8。`sandbox` 環境の 200 通 / 日で足りない場合の対処 | **`programmer` / 人間。`sandbox` 環境の構築時（Phase 1）。** AWS サポートへ確認 |
 | **U-7** | **GuardDuty Malware Protection for S3 のスキャン所要時間** | 🔴 `docs/02` 章 7.1 の「2 分以内」を満たせるか。**満たせない場合は目標値の見直しが要る** | 🔴 **`programmer`。Phase 1 の `F-011` 実装時。** 代表的な xlsx / pdf（1〜10 MB）で実測 |
-| **U-8** | **マネージド PostgreSQL で `pg_bigm` / `pgroonga` が使えるか** | §3.7.2。日本語の全文検索の実現方式 | **`programmer`。Phase 0 の DB 構築時。** 使えなければ `pg_trgm` の GIN で代替 |
+| **U-8** | ~~**マネージド PostgreSQL で `pg_bigm` / `pgroonga` が使えるか**~~ — **決定済み（2026-09-02）**。`pg_trgm` / `pg_bigm` は RDS / Aurora で利用可、`pgroonga` は不可 | §3.7.2。日本語の全文検索の実現方式 | **`programmer`。Phase 0 の DB 構築時（SP-01 T-01-02）に実測で確認済み。** `pg_trgm` を基本とし、`pg_bigm` は精度不足時の代替として温存。`pgroonga` は不採用 |
 | **U-9** | **Amazon S3（東京リージョン）の実額** | §7.2.2 / §7.4 の試算 | **`programmer`。Phase 0 のストレージ構築時。** AWS Pricing Calculator |
 | **U-10** | **RDS / ElastiCache / Fargate / CloudWatch の実額** | §7.4 の固定費（**$400〜$900 / 月 のレンジで仮置き**） | **`programmer`。Phase 0 完了時。** AWS Pricing Calculator |
 | **U-11** | **Stripe の日本の決済手数料率** | §7.5 の損益分岐（**3.6% で仮置き**） | **人間（`CLAUDE.md` §8.6）。料金モデル決定時。** |

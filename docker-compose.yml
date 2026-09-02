@@ -1,0 +1,109 @@
+# docker-compose.yml — ローカル開発コンテナ（T-01-02 / CLAUDE.md §2 / §11）
+#
+# APP_ENV=development の既定接続先。5 サービス: PostgreSQL / Redis / MinIO / MailHog / ClamAV。
+# 起動: docker compose up -d
+# 疎通確認: tests/smoke/docker-services.test.ts（pnpm test:smoke）
+#
+# 🔴 本ファイルが定義するのは development 専用の最小構成である。
+#    demo / sandbox / staging / production は CLAUDE.md §11 のとおり外部サービス
+#    （RDS / ElastiCache / S3 / GuardDuty / 実 SMTP）を使う。ここで固定した資格情報は
+#    ローカル専用の既定値であり、本番相当の環境には絶対に流用しない。
+name: ses-platform
+
+services:
+  postgres:
+    image: postgres:17-bookworm
+    container_name: ses-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ses}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ses_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-ses_platform}
+    ports:
+      - '127.0.0.1:${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      - ses_postgres_data:/var/lib/postgresql/data
+      # pg_trgm を有効化し、pg_bigm は使える場合のみ有効化する（docs/03 §3.7.2 / TBD-8）。
+      - ./docker/postgres/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: ses-redis
+    restart: unless-stopped
+    # BullMQ の永続化前提（CLAUDE.md §2「Redis / Valkey ^7。AOF 有効」docs/03 §5.2）。
+    command: ['redis-server', '--appendonly', 'yes']
+    ports:
+      - '127.0.0.1:${REDIS_PORT:-6379}:6379'
+    volumes:
+      - ses_redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+
+  minio:
+    # 🔴 :latest の浮動タグを避け、RELEASE 日時タグに固定する（code-reviewer 指摘 #4）。
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    container_name: ses-minio
+    restart: unless-stopped
+    command: ['server', '/data', '--console-address', ':9001']
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID:-ses_dev_minio}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY:-ses_dev_minio_secret}
+    ports:
+      - '127.0.0.1:${MINIO_API_PORT:-9000}:9000'
+      - '127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001'
+    volumes:
+      - ses_minio_data:/data
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:9000/minio/health/live']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    container_name: ses-mailhog
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:${MAILHOG_SMTP_PORT:-1025}:1025'
+      - '127.0.0.1:${MAILHOG_WEB_PORT:-8025}:8025'
+    healthcheck:
+      test: ['CMD', 'wget', '--spider', '-q', 'http://localhost:8025/api/v2/messages']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+
+  clamav:
+    # 🔴 :stable の浮動タグを避け、確認済みのバージョンタグに固定する（code-reviewer 指摘 #4）。
+    image: clamav/clamav:1.5.4
+    container_name: ses-clamav
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:${CLAMAV_PORT:-3310}:3310'
+    volumes:
+      - ses_clamav_data:/var/lib/clamav
+    healthcheck:
+      # 🔴 初回起動はウイルス定義 DB のダウンロードで数分かかることがある
+      #    （SP-01 T-01-02 実装ガイド）。start_period を長く取り、スモークテストも待機を許容する。
+      test: ['CMD', 'clamdcheck.sh']
+      interval: 30s
+      timeout: 15s
+      retries: 20
+      start_period: 300s
+
+volumes:
+  ses_postgres_data:
+  ses_redis_data:
+  ses_minio_data:
+  ses_clamav_data:

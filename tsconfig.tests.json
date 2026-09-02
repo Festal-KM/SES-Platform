@@ -6,6 +6,6 @@
     "rootDir": ".",
     "allowJs": true
   },
-  "include": ["tests/**/*.ts", "vitest.config.ts"],
+  "include": ["tests/**/*.ts", "vitest.config.ts", "vitest.smoke.config.ts"],
   "exclude": ["tests/static/__fixtures__/**", "tests/e2e/**"]
 }
