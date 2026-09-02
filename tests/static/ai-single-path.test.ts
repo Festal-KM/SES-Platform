@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ESLint } from 'eslint';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '..', '..');
@@ -18,8 +18,19 @@ function readFixture(name: string): string {
   return readFileSync(path.join(fixturesDir, name), 'utf8');
 }
 
+// ESLint インスタンスの構築自体は数 ms で終わる（flat config は遅延解決のため）。
+// 実際に重いのは初回の lintText() で発生する flat config の解決 + typescript-eslint のロードで、
+// これが Vitest 既定 timeout (5000ms) を超えうる。ここで 1 回空 lint して解決コストを
+// beforeAll の timeout 予算（30000ms）に寄せておくことで、各 it は解決済みの状態から
+// 数十 ms で終わるようにする。
+let eslint: ESLint;
+
+beforeAll(async () => {
+  eslint = new ESLint({ cwd: repoRoot });
+  await eslint.lintText('', { filePath: path.join(repoRoot, 'packages/domain/src/__warmup__.ts') });
+}, 30000);
+
 async function lintAs(content: string, spoofedRelativePath: string) {
-  const eslint = new ESLint({ cwd: repoRoot });
   const filePath = path.join(repoRoot, spoofedRelativePath);
   const [result] = await eslint.lintText(content, { filePath });
   if (!result) {
