@@ -942,7 +942,7 @@ model AiUsage {
   tenantId       String   @db.Uuid
   role           String                                           // 🔴 NOT NULL。6 ロールのいずれか（CHECK）
   modelId        String
-  purpose        String                                           // 'gate'|'sheet_parse'|... （CHECK）
+  purpose        String                                           // 'sheet_parse'|'skill_normalize'|'match_rationale'|'gate'|'proposal_draft'|'renewal_summary'（CHECK。AI_ROLES と 1:1 対応。T-02-05 で確定）
   promptVersion  String
   targetType     String?
   targetId       String?  @db.Uuid

@@ -121,6 +121,55 @@ ALTER TABLE assignments             FORCE  ROW LEVEL SECURITY;
 ALTER TABLE extension_reviews       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE extension_reviews       FORCE  ROW LEVEL SECURITY;
 
+-- 🔴 T-02-05（docs/05 §3.8 / §3.9 / §3.10）で追加した 23 表のうち 20 表も同じ fail-closed 既定
+--    （ENABLE + FORCE のみ。C0〜C2 のポリシー本体・GRANT は T-02-06）。
+--    `platform_users` / `plans` / `subscriptions` は対象外（CLAUDE.md §3.1 射程外の 4 表のうちの
+--    3 つ。`skills` と同じく RLS を一切適用しない）。
+--    🔴 `audit_logs` は PARTITION BY RANGE (created_at) の親表であり、親に対する
+--    ENABLE + FORCE だけで足りる（パーティション経由の直接アクセスは GRANT が無いため別途
+--    permission denied になる。実測で確認済み。プログラマ完了報告参照）。個々のパーティション
+--    （audit_logs_2026_09 等）へ ENABLE/FORCE を明示的に適用する必要はない。
+ALTER TABLE tasks                    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tasks                    FORCE  ROW LEVEL SECURITY;
+ALTER TABLE notifications            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notifications            FORCE  ROW LEVEL SECURITY;
+ALTER TABLE ai_usage                 ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ai_usage                 FORCE  ROW LEVEL SECURITY;
+ALTER TABLE audit_logs               ENABLE ROW LEVEL SECURITY;
+ALTER TABLE audit_logs               FORCE  ROW LEVEL SECURITY;
+ALTER TABLE usage_counters           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE usage_counters           FORCE  ROW LEVEL SECURITY;
+ALTER TABLE tenant_esign_connections ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tenant_esign_connections FORCE  ROW LEVEL SECURITY;
+ALTER TABLE send_attempts            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE send_attempts            FORCE  ROW LEVEL SECURITY;
+ALTER TABLE email_dispatches         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE email_dispatches         FORCE  ROW LEVEL SECURITY;
+ALTER TABLE email_events             ENABLE ROW LEVEL SECURITY;
+ALTER TABLE email_events             FORCE  ROW LEVEL SECURITY;
+ALTER TABLE webhook_deliveries       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE webhook_deliveries       FORCE  ROW LEVEL SECURITY;
+ALTER TABLE data_export_requests     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE data_export_requests     FORCE  ROW LEVEL SECURITY;
+ALTER TABLE tenant_purge_runs        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tenant_purge_runs        FORCE  ROW LEVEL SECURITY;
+ALTER TABLE scheduler_runs           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE scheduler_runs           FORCE  ROW LEVEL SECURITY;
+ALTER TABLE impersonation_sessions   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE impersonation_sessions   FORCE  ROW LEVEL SECURITY;
+ALTER TABLE announcements            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE announcements            FORCE  ROW LEVEL SECURITY;
+ALTER TABLE tenant_role_approval_modes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tenant_role_approval_modes FORCE  ROW LEVEL SECURITY;
+ALTER TABLE tenant_role_models       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tenant_role_models       FORCE  ROW LEVEL SECURITY;
+ALTER TABLE tenant_match_weights     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tenant_match_weights     FORCE  ROW LEVEL SECURITY;
+ALTER TABLE tenant_monthly_costs     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tenant_monthly_costs     FORCE  ROW LEVEL SECURITY;
+ALTER TABLE billing_meter_submissions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE billing_meter_submissions FORCE  ROW LEVEL SECURITY;
+
 -- --- C1 TENANT_ALL: tenants（<T> = id。app_tenant は SELECT のみ）------------------------
 DROP POLICY IF EXISTS tenants_c1_select ON tenants;
 CREATE POLICY tenants_c1_select ON tenants

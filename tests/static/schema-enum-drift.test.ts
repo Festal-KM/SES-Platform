@@ -24,15 +24,31 @@ import { describe, expect, it } from 'vitest';
 import { APP_ENV_KINDS } from '../../packages/config/src/app-env.js';
 import { TENANT_ROLES } from '../../packages/db/src/context.js';
 import {
+  AI_ROLES,
+  AI_USAGE_FAILURE_KINDS,
+  AI_USAGE_PURPOSES,
+  ANNOUNCEMENT_KINDS,
+  APPROVAL_MODE_CONFIGURABLE_ROLES,
+  AUDIT_ACTOR_KINDS,
+  AUDIT_DEVICE_KINDS,
   CHAT_THREAD_KINDS,
   CONTRACT_DOCUMENT_EXTERNAL_PROVIDERS,
   CONTRACT_DOCUMENT_SENT_VIAS,
   CONTRACT_KINDS,
+  DATA_EXPORT_KINDS,
+  DATA_EXPORT_STATUSES,
+  EMAIL_DISPATCH_STATUSES,
+  EMAIL_EVENT_TYPES,
+  EMAIL_RECIPIENT_CLASSES,
   ENGINEER_AVAILABILITIES,
   ENGINEER_SKILL_SOURCES,
+  ESIGN_SIGNING_ORDERS,
   EXTENSION_REVIEW_DECISIONS,
   GATE_VERDICTS,
+  IMPERSONATION_END_KINDS,
+  MATCH_WEIGHT_FACTORS,
   ORDER_PAYMENT_STATES,
+  PLATFORM_ROLES,
   PROJECT_STATUSES,
   PROPOSAL_EVENT_KINDS,
   REMOTE_MODES,
@@ -40,11 +56,23 @@ import {
   REVIEW_GATE_EXECUTIONS,
   REVIEW_GATE_TARGET_TYPES,
   SCAN_STATUSES,
+  SCHEDULER_RUN_STATUSES,
+  SEND_ATTEMPT_ENTITY_TYPES,
+  SEND_ATTEMPT_STATUSES,
   SKILL_ALIAS_ORIGINS,
   SKILL_ALIAS_STATUSES,
   SKILL_SHEET_EXTRACTION_STATUSES,
+  SUBSCRIPTION_BILLING_STATES,
+  TASK_KINDS,
+  TASK_STATES,
+  TENANT_PURGE_CAUSES,
+  TENANT_PURGE_STATUSES,
+  TENANT_ROLE_APPROVAL_MODE_VALUES,
   TENANT_SENDING_DOMAIN_STATES,
   TWO_FACTOR_SUBJECT_TYPES,
+  USAGE_COUNTER_METRICS,
+  USAGE_COUNTER_PERIOD_KINDS,
+  WEBHOOK_PROVIDERS,
 } from '../../packages/db/src/schema-value-sets.js';
 import { ASSIGNMENT_STATES } from '../../packages/domain/src/state/assignment.js';
 import { CONTRACT_STATES } from '../../packages/domain/src/state/contract.js';
@@ -405,6 +433,175 @@ describe('CHECK 制約と TS 単一出所の drift 検査（docs/05 §3.1「列�
     it('extension_reviews_decision_check ⇔ packages/db EXTENSION_REVIEW_DECISIONS', () => {
       const values = extractCheckInValues(migrationSql, 'extension_reviews_decision_check');
       expectSameValueSet(values, EXTENSION_REVIEW_DECISIONS);
+    });
+  });
+
+  // 🔴 T-02-05（docs/05 §3.8 / §3.9 / §3.10。docs/sprints/SP-02-schema-isolation.md）:
+  // 20260903040000_cross_cutting_platform/migration.sql が値集合の CHECK を持つ列。
+  describe('T-02-05: 新 migration の CHECK 制約', () => {
+    it('tasks_kind_check ⇔ packages/db TASK_KINDS', () => {
+      const values = extractCheckInValues(migrationSql, 'tasks_kind_check');
+      expectSameValueSet(values, TASK_KINDS);
+    });
+
+    it('tasks_state_check ⇔ packages/db TASK_STATES', () => {
+      const values = extractCheckInValues(migrationSql, 'tasks_state_check');
+      expectSameValueSet(values, TASK_STATES);
+    });
+
+    it('🔴 ai_usage_role_check ⇔ packages/db AI_ROLES（F-026 AC-2 の完了判定）', () => {
+      const values = extractCheckInValues(migrationSql, 'ai_usage_role_check');
+      expectSameValueSet(values, AI_ROLES);
+    });
+
+    it('対照: ai_usage の role CHECK が 1 値でも欠けたら検知する（改変 SQL での確認）', () => {
+      const tampered = migrationSql.replace("'renewal-advisor'", "'renewal-advisor-typo'");
+      const values = extractCheckInValues(tampered, 'ai_usage_role_check');
+      expect(values).not.toEqual([...AI_ROLES]);
+    });
+
+    it('ai_usage_purpose_check ⇔ packages/db AI_USAGE_PURPOSES', () => {
+      const values = extractCheckInValues(migrationSql, 'ai_usage_purpose_check');
+      expectSameValueSet(values, AI_USAGE_PURPOSES);
+    });
+
+    it('ai_usage_failure_kind_check ⇔ packages/db AI_USAGE_FAILURE_KINDS', () => {
+      const values = extractCheckInValues(migrationSql, 'ai_usage_failure_kind_check');
+      expectSameValueSet(values, AI_USAGE_FAILURE_KINDS);
+    });
+
+    it('audit_logs_actor_kind_check ⇔ packages/db AUDIT_ACTOR_KINDS', () => {
+      const values = extractCheckInValues(migrationSql, 'audit_logs_actor_kind_check');
+      expectSameValueSet(values, AUDIT_ACTOR_KINDS);
+    });
+
+    it('audit_logs_device_kind_check ⇔ packages/db AUDIT_DEVICE_KINDS', () => {
+      const values = extractCheckInValues(migrationSql, 'audit_logs_device_kind_check');
+      expectSameValueSet(values, AUDIT_DEVICE_KINDS);
+    });
+
+    it('usage_counters_period_kind_check ⇔ packages/db USAGE_COUNTER_PERIOD_KINDS', () => {
+      const values = extractCheckInValues(migrationSql, 'usage_counters_period_kind_check');
+      expectSameValueSet(values, USAGE_COUNTER_PERIOD_KINDS);
+    });
+
+    it('usage_counters_metric_check ⇔ packages/db USAGE_COUNTER_METRICS', () => {
+      const values = extractCheckInValues(migrationSql, 'usage_counters_metric_check');
+      expectSameValueSet(values, USAGE_COUNTER_METRICS);
+    });
+
+    it('tenant_esign_connections_provider_check ⇔ packages/db CONTRACT_DOCUMENT_EXTERNAL_PROVIDERS（ContractDocument と同じ値集合を共有。決定済み Issue #11）', () => {
+      const values = extractCheckInValues(migrationSql, 'tenant_esign_connections_provider_check');
+      expectSameValueSet(values, CONTRACT_DOCUMENT_EXTERNAL_PROVIDERS);
+    });
+
+    it('tenant_esign_connections_signing_order_default_check ⇔ packages/db ESIGN_SIGNING_ORDERS', () => {
+      const values = extractCheckInValues(
+        migrationSql,
+        'tenant_esign_connections_signing_order_default_check',
+      );
+      expectSameValueSet(values, ESIGN_SIGNING_ORDERS);
+    });
+
+    it('🔴 send_attempts_entity_type_check ⇔ packages/db SEND_ATTEMPT_ENTITY_TYPES（docs/03 §4.7。K-5 の防御線）', () => {
+      const values = extractCheckInValues(migrationSql, 'send_attempts_entity_type_check');
+      expectSameValueSet(values, SEND_ATTEMPT_ENTITY_TYPES);
+    });
+
+    it('send_attempts_status_check ⇔ packages/db SEND_ATTEMPT_STATUSES', () => {
+      const values = extractCheckInValues(migrationSql, 'send_attempts_status_check');
+      expectSameValueSet(values, SEND_ATTEMPT_STATUSES);
+    });
+
+    it('email_dispatches_recipient_class_check ⇔ packages/db EMAIL_RECIPIENT_CLASSES', () => {
+      const values = extractCheckInValues(migrationSql, 'email_dispatches_recipient_class_check');
+      expectSameValueSet(values, EMAIL_RECIPIENT_CLASSES);
+    });
+
+    it('email_dispatches_status_check ⇔ packages/db EMAIL_DISPATCH_STATUSES（7 値）', () => {
+      const values = extractCheckInValues(migrationSql, 'email_dispatches_status_check');
+      expectSameValueSet(values, EMAIL_DISPATCH_STATUSES);
+    });
+
+    it('email_events_event_type_check ⇔ packages/db EMAIL_EVENT_TYPES（SES の実値）', () => {
+      const values = extractCheckInValues(migrationSql, 'email_events_event_type_check');
+      expectSameValueSet(values, EMAIL_EVENT_TYPES);
+    });
+
+    it('webhook_deliveries_provider_check ⇔ packages/db WEBHOOK_PROVIDERS', () => {
+      const values = extractCheckInValues(migrationSql, 'webhook_deliveries_provider_check');
+      expectSameValueSet(values, WEBHOOK_PROVIDERS);
+    });
+
+    it('data_export_requests_kind_check ⇔ packages/db DATA_EXPORT_KINDS', () => {
+      const values = extractCheckInValues(migrationSql, 'data_export_requests_kind_check');
+      expectSameValueSet(values, DATA_EXPORT_KINDS);
+    });
+
+    it('data_export_requests_status_check ⇔ packages/db DATA_EXPORT_STATUSES', () => {
+      const values = extractCheckInValues(migrationSql, 'data_export_requests_status_check');
+      expectSameValueSet(values, DATA_EXPORT_STATUSES);
+    });
+
+    it('tenant_purge_runs_cause_check ⇔ packages/db TENANT_PURGE_CAUSES', () => {
+      const values = extractCheckInValues(migrationSql, 'tenant_purge_runs_cause_check');
+      expectSameValueSet(values, TENANT_PURGE_CAUSES);
+    });
+
+    it('tenant_purge_runs_status_check ⇔ packages/db TENANT_PURGE_STATUSES', () => {
+      const values = extractCheckInValues(migrationSql, 'tenant_purge_runs_status_check');
+      expectSameValueSet(values, TENANT_PURGE_STATUSES);
+    });
+
+    it('scheduler_runs_status_check ⇔ packages/db SCHEDULER_RUN_STATUSES', () => {
+      const values = extractCheckInValues(migrationSql, 'scheduler_runs_status_check');
+      expectSameValueSet(values, SCHEDULER_RUN_STATUSES);
+    });
+
+    it('🔴 platform_users_role_check ⇔ packages/db PLATFORM_ROLES（BR-36 / CLAUDE.md §10.1）', () => {
+      const values = extractCheckInValues(migrationSql, 'platform_users_role_check');
+      expectSameValueSet(values, PLATFORM_ROLES);
+    });
+
+    it('subscriptions_billing_state_check ⇔ packages/db SUBSCRIPTION_BILLING_STATES', () => {
+      const values = extractCheckInValues(migrationSql, 'subscriptions_billing_state_check');
+      expectSameValueSet(values, SUBSCRIPTION_BILLING_STATES);
+    });
+
+    it('impersonation_sessions_end_kind_check ⇔ packages/db IMPERSONATION_END_KINDS', () => {
+      const values = extractCheckInValues(migrationSql, 'impersonation_sessions_end_kind_check');
+      expectSameValueSet(values, IMPERSONATION_END_KINDS);
+    });
+
+    it('announcements_kind_check ⇔ packages/db ANNOUNCEMENT_KINDS', () => {
+      const values = extractCheckInValues(migrationSql, 'announcements_kind_check');
+      expectSameValueSet(values, ANNOUNCEMENT_KINDS);
+    });
+
+    it('🔴 tenant_role_approval_modes_role_check ⇔ packages/db APPROVAL_MODE_CONFIGURABLE_ROLES（gate-inspector を含まない 5 値。CLAUDE.md §12.4）', () => {
+      const values = extractCheckInValues(migrationSql, 'tenant_role_approval_modes_role_check');
+      expectSameValueSet(values, APPROVAL_MODE_CONFIGURABLE_ROLES);
+    });
+
+    it('対照: tenant_role_approval_modes の role CHECK に gate-inspector が含まれない', () => {
+      const values = extractCheckInValues(migrationSql, 'tenant_role_approval_modes_role_check');
+      expect(values).not.toContain('gate-inspector');
+    });
+
+    it('tenant_role_approval_modes_mode_check ⇔ packages/db TENANT_ROLE_APPROVAL_MODE_VALUES', () => {
+      const values = extractCheckInValues(migrationSql, 'tenant_role_approval_modes_mode_check');
+      expectSameValueSet(values, TENANT_ROLE_APPROVAL_MODE_VALUES);
+    });
+
+    it('🔴 tenant_role_models_role_check ⇔ packages/db AI_ROLES（6 ロールすべて設定可。gate-inspector を含む）', () => {
+      const values = extractCheckInValues(migrationSql, 'tenant_role_models_role_check');
+      expectSameValueSet(values, AI_ROLES);
+      expect(values).toContain('gate-inspector');
+    });
+
+    it('tenant_match_weights_factor_check ⇔ packages/db MATCH_WEIGHT_FACTORS（[Issue #3]）', () => {
+      const values = extractCheckInValues(migrationSql, 'tenant_match_weights_factor_check');
+      expectSameValueSet(values, MATCH_WEIGHT_FACTORS);
     });
   });
 });

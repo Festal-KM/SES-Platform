@@ -94,43 +94,67 @@ model Tenant {
   provisioningRequestId   String    @unique @map("provisioning_request_id")
   createdAt               DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  engineers             Engineer[]
-  users                 User[]
-  memberships           Membership[]
-  partnerCompanies      PartnerCompany[]
-  invitations           Invitation[]
-  sendingDomains        TenantSendingDomain[]
+  engineers               Engineer[]
+  users                   User[]
+  memberships             Membership[]
+  partnerCompanies        PartnerCompany[]
+  invitations             Invitation[]
+  sendingDomains          TenantSendingDomain[]
   // 🔴 T-02-02（docs/05 §3.4 / §3.5）で追加した 10 表の逆リレーション。
   //    tenant-relation.test.ts / scope-injection.test.ts の TENANT_KEY_MOVING_RELATION_OVERRIDES
   //    と対で宣言する（宣言漏れは「テナントキー列を書き換えうる逆リレーション」の検知漏れになる）。
-  skillAliases          SkillAlias[]
-  engineerSkills        EngineerSkill[]
-  skillSheets           SkillSheet[]
-  skillSheetExtractions SkillSheetExtraction[]
-  fileScanResults       FileScanResult[]
-  projects              Project[]
-  projectRequirements   ProjectRequirement[]
-  projectVisibilities   ProjectVisibility[]
-  matchCandidates       MatchCandidate[]
-  engineerShares        EngineerShare[]
+  skillAliases            SkillAlias[]
+  engineerSkills          EngineerSkill[]
+  skillSheets             SkillSheet[]
+  skillSheetExtractions   SkillSheetExtraction[]
+  fileScanResults         FileScanResult[]
+  projects                Project[]
+  projectRequirements     ProjectRequirement[]
+  projectVisibilities     ProjectVisibility[]
+  matchCandidates         MatchCandidate[]
+  engineerShares          EngineerShare[]
   // 🔴 T-02-03（docs/05 §3.6）で追加した 5 表の逆リレーション。同じ理由で
   //    TENANT_KEY_MOVING_RELATION_OVERRIDES と対で宣言する。
-  proposalRequests      ProposalRequest[]
-  proposals             Proposal[]
-  engineerSnapshots     EngineerSnapshot[]
-  proposalEvents        ProposalEvent[]
-  reviewGates           ReviewGate[]
+  proposalRequests        ProposalRequest[]
+  proposals               Proposal[]
+  engineerSnapshots       EngineerSnapshot[]
+  proposalEvents          ProposalEvent[]
+  reviewGates             ReviewGate[]
   // 🔴 T-02-04（docs/05 §3.7）で追加した 9 表の逆リレーション。同じ理由で
   //    TENANT_KEY_MOVING_RELATION_OVERRIDES と対で宣言する。
-  chatThreads           ChatThread[]
-  threadParticipants    ThreadParticipant[]
-  messages              Message[]
-  contracts             Contract[]
-  contractDocuments     ContractDocument[]
-  contractTemplates     ContractTemplate[]
-  orders                Order[]
-  assignments           Assignment[]
-  extensionReviews      ExtensionReview[]
+  chatThreads             ChatThread[]
+  threadParticipants      ThreadParticipant[]
+  messages                Message[]
+  contracts               Contract[]
+  contractDocuments       ContractDocument[]
+  contractTemplates       ContractTemplate[]
+  orders                  Order[]
+  assignments             Assignment[]
+  extensionReviews        ExtensionReview[]
+  // 🔴 T-02-05（docs/05 §3.8 / §3.9 / §3.10）で追加した 15 表の逆リレーション。同じ理由で
+  //    TENANT_KEY_MOVING_RELATION_OVERRIDES と対で宣言する。射程外 4 表（PlatformUser / Plan /
+  //    Subscription / Skill）と、C0 SYSTEM_ONLY（EmailEvent / WebhookDelivery / SchedulerRun /
+  //    ImpersonationSession。§4.4）はここに現れない（前者は tenantKeyOf が null、後者は
+  //    Tenant への @relation を持たせない設計。各モデル定義のコメント参照）。
+  tasks                   Task[]
+  notifications           Notification[]
+  aiUsages                AiUsage[]
+  auditLogs               AuditLog[]
+  usageCounters           UsageCounter[]
+  sendAttempts            SendAttempt[]
+  emailDispatches         EmailDispatch[]
+  tenantEsignConnection   TenantEsignConnection?
+  tenantMonthlyCosts      TenantMonthlyCost[]
+  billingMeterSubmissions BillingMeterSubmission[]
+  dataExportRequests      DataExportRequest[]
+  tenantPurgeRuns         TenantPurgeRun[]
+  tenantRoleApprovalModes TenantRoleApprovalMode[]
+  tenantRoleModels        TenantRoleModel[]
+  tenantMatchWeights      TenantMatchWeight[]
+  // 🔴 Subscription は射程外モデル（tenantKeyOf('Subscription') === null）のため
+  //    TENANT_KEY_MOVING_RELATION_OVERRIDES の宣言対象ではない（tenant-relation.test.ts が
+  //    機械的に確認する）。tenantId 列を持つが RLS/scope-injection の対象外（§3.10 末尾）。
+  subscription            Subscription?
 
   @@index([lifecycleState, sandboxExpiresAt])
   @@index([lifecycleState, closingEnteredAt])
@@ -480,7 +504,7 @@ model SkillSheetExtraction {
   role                  String // 🔴 NOT NULL（docs/03 §4.20.2）
   promptVersion         String    @map("prompt_version") // 🔴 NOT NULL
   modelId               String    @map("model_id") // 🔴 NOT NULL
-  aiUsageId             String    @map("ai_usage_id") @db.Uuid // 🔴 NOT NULL。AiUsage への FK（表は T-02-05。今は列のみ）
+  aiUsageId             String    @map("ai_usage_id") @db.Uuid // 🔴 NOT NULL。AiUsage への FK
   /// 'PENDING_REVIEW'|'APPLIED'|'REJECTED'|'FAILED'（CHECK）
   status                String
   decidedBy             String?   @map("decided_by") @db.Uuid // 自動承認時は null（主体は AuditLog に system）
@@ -489,6 +513,9 @@ model SkillSheetExtraction {
 
   tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   skillSheet SkillSheet @relation(fields: [skillSheetId], references: [id], onDelete: Cascade)
+  // 🔴 T-02-05: ai_usage 表が実在するようになったため前方参照を解決する（docs/05 §3.4 の
+  //    「AiUsage への FK」コメントに従う）。
+  aiUsage    AiUsage    @relation(fields: [aiUsageId], references: [id], onDelete: Restrict)
 
   @@index([tenantId, skillSheetId, createdAt])
   @@map("skill_sheet_extractions")
@@ -519,7 +546,7 @@ model Project {
   headcount          Int       @default(1)
   /// ProjectStatus（上記参照。CHECK）
   status             String    @default("OPEN")
-  originAssignmentId String?   @map("origin_assignment_id") @db.Uuid // F-045 の後任募集の生成元（表は T-02-04。今は列のみ）
+  originAssignmentId String?   @map("origin_assignment_id") @db.Uuid // F-045 の後任募集の生成元。docs/05 §3.5 は relation を定義していないため FK を張らない（意図的）
   createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt          DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -611,12 +638,14 @@ model MatchCandidate {
   rationaleRole          String?  @map("rationale_role")
   rationalePromptVersion String?  @map("rationale_prompt_version")
   rationaleModelId       String?  @map("rationale_model_id")
-  rationaleAiUsageId     String?  @map("rationale_ai_usage_id") @db.Uuid // 表は T-02-05。今は列のみ
+  rationaleAiUsageId     String?  @map("rationale_ai_usage_id") @db.Uuid
   computedAt             DateTime @map("computed_at") @db.Timestamptz(3)
 
-  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  project  Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  engineer Engineer @relation(fields: [engineerId], references: [id], onDelete: Cascade)
+  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project          Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  engineer         Engineer @relation(fields: [engineerId], references: [id], onDelete: Cascade)
+  // 🔴 T-02-05: ai_usage 表が実在するようになったため前方参照を解決する。
+  rationaleAiUsage AiUsage? @relation(fields: [rationaleAiUsageId], references: [id], onDelete: Restrict)
 
   @@unique([tenantId, projectId, engineerId])
   @@index([tenantId, projectId, score])
@@ -701,7 +730,7 @@ model Proposal {
   draftRole             String?   @map("draft_role")
   draftPromptVersion    String?   @map("draft_prompt_version")
   draftModelId          String?   @map("draft_model_id")
-  draftAiUsageId        String?   @map("draft_ai_usage_id") @db.Uuid // FK は ai_usage 表が生まれる T-02-05 で追加する
+  draftAiUsageId        String?   @map("draft_ai_usage_id") @db.Uuid
   contentHash           String?   @map("content_hash") // 🔴 §11.5。ゲート対象の内容のハッシュ
   approvedBy            String?   @map("approved_by") @db.Uuid // null かつ approvedBySystem=true なら system
   approvedBySystem      Boolean   @default(false) @map("approved_by_system")
@@ -722,6 +751,8 @@ model Proposal {
   engineerSnapshot    EngineerSnapshot?
   events              ProposalEvent[]
   assignment          Assignment? // T-02-04。WON からのみ生成される 1:1（Assignment.proposalId が unique）
+  // 🔴 T-02-05: ai_usage 表が実在するようになったため前方参照を解決する。
+  draftAiUsage        AiUsage?          @relation(fields: [draftAiUsageId], references: [id], onDelete: Restrict)
 
   @@index([tenantId, state, updatedAt]) // 一覧・フィルタ（F-024）
   @@index([tenantId, ownerPartnerCompanyId, state])
@@ -812,7 +843,7 @@ model ReviewGate {
   role                  String? // 'gate-inspector'。AI 失敗時は null
   promptVersion         String?   @map("prompt_version")
   modelId               String?   @map("model_id")
-  aiUsageId             String?   @map("ai_usage_id") @db.Uuid // FK は ai_usage 表が生まれる T-02-05 で追加する
+  aiUsageId             String?   @map("ai_usage_id") @db.Uuid
   aiFailed              Boolean   @default(false) @map("ai_failed") // true なら PII/商流は FAIL 扱い（LLM 失敗）
   executedAt            DateTime? @map("executed_at") @db.Timestamptz(3) // DONE のとき NOT NULL
 
@@ -820,6 +851,8 @@ model ReviewGate {
   projectVisibilities ProjectVisibility[]
   messages            Message[] // T-02-04（CHAT_ATTACHMENT）
   contractDocuments   ContractDocument[] // T-02-04（CONTRACT_DOCUMENT）
+  // 🔴 T-02-05: ai_usage 表が実在するようになったため前方参照を解決する。
+  aiUsage             AiUsage?            @relation(fields: [aiUsageId], references: [id], onDelete: Restrict)
 
   @@index([tenantId, targetType, targetId, executedAt])
   @@index([tenantId, execution, executedAt]) // ゲート FAIL 率の集計（A-005。execution='DONE' のみを分母にする）
@@ -1136,7 +1169,7 @@ model ExtensionReview {
   role          String?
   promptVersion String?   @map("prompt_version")
   modelId       String?   @map("model_id")
-  aiUsageId     String?   @map("ai_usage_id") @db.Uuid // FK は ai_usage 表が生まれる T-02-05 で追加する
+  aiUsageId     String?   @map("ai_usage_id") @db.Uuid
   /// ExtensionReviewDecision（上記参照。CHECK。nullable）
   decision      String?
   decidedBy     String?   @map("decided_by") @db.Uuid
@@ -1144,7 +1177,574 @@ model ExtensionReview {
 
   tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   assignment Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  // 🔴 T-02-05: ai_usage 表が実在するようになったため前方参照を解決する。
+  aiUsage    AiUsage?   @relation(fields: [aiUsageId], references: [id], onDelete: Restrict)
 
   @@unique([tenantId, assignmentId, openedAt]) // 同一稼働で複数回の起票を許す（延長 → 再起票）
   @@map("extension_reviews")
+}
+
+// ============================================================================
+// docs/05 §3.8 横断（タスク・通知・記録・計測）（T-02-05。docs/sprints/SP-02-schema-isolation.md）
+// ============================================================================
+//
+// 🔴 列挙は §3.1 規約どおり Prisma の `enum` を使わず `String` + 許容値コメントで宣言する。
+//    単一の出所は packages/db/src/schema-value-sets.ts（TASK_KINDS / TASK_STATES / AI_ROLES /
+//    AI_USAGE_PURPOSES / AI_USAGE_FAILURE_KINDS / AUDIT_ACTOR_KINDS / AUDIT_DEVICE_KINDS /
+//    USAGE_COUNTER_PERIOD_KINDS / USAGE_COUNTER_METRICS）。CHECK との一致は
+//    tests/static/schema-enum-drift.test.ts が突合する。
+// 🔴 AiUsage.purpose の値集合はドキュメント上「'gate'|'sheet_parse'|...」と省略記法で示され
+//    フル値集合が明記されていない（docs/05 §3.8）。6 ロール（§7.1 AI_ROLES）と 1:1 対応する
+//    ことが、示された 2 例（'gate'=gate-inspector, 'sheet_parse'=sheet-parser）と
+//    docs/03 §7.6.1 のメーター名（sheetParse/matchRationale/proposalDraft/renewalSummary）から
+//    強く裏付けられるため、programmer 判断で 6 値に確定した（プログラマ完了報告に記載。
+//    値そのものに疑義が生じた場合は docs/05 §3.8 へ確定値を追記のうえ本コメントを更新すること）。
+// 🔴 Task / Notification / AuditLog / AiUsage の targetType はいずれも自由記述（多相の対象種別の
+//    識別に使うが、docs/05 は固定候補を列挙していない。ReviewGate.targetType のような閉じた
+//    5 種とは異なる）ため CHECK を付けない。AuditLog.action も同様（§16.1 が `*.create` 等の
+//    ワイルドカード・オープンな名前空間であることを示しており、閉じた値集合ではない）。
+//    SendAttempt.failureKind も同様（§15.4 は分類の説明であり固定の短縮コード一覧ではない）。
+
+/// RLS のポリシークラスは C5 PARTY（docs/05 §4.4）。root のオーナー列を持つ 4 表の 1 つ
+/// （他は users / engineers / proposals）。
+model Task {
+  id                    String    @id @default(uuid(7)) @db.Uuid
+  tenantId              String    @map("tenant_id") @db.Uuid
+  /// パートナー担当のタスク（null = ホスト担当）。owner-column: root（継承・freeze トリガは T-02-08）。
+  ownerPartnerCompanyId String?   @map("owner_partner_company_id") @db.Uuid
+  /// TaskKind（TEXT + CHECK）: 'EXTENSION_REVIEW'|'INTERVIEW'|'CONTRACT_PENDING'
+  kind                  String
+  targetType            String    @map("target_type")
+  targetId              String    @map("target_id") @db.Uuid
+  dueOn                 DateTime  @map("due_on") @db.Date
+  assigneeUserId        String    @map("assignee_user_id") @db.Uuid
+  /// TaskState（TEXT + CHECK）: 'OPEN'|'DONE'
+  state                 String    @default("OPEN")
+  autoGenerated         Boolean   @default(true) @map("auto_generated") // 🔴 true は利用者が削除できない（F-040 AC-1）
+  completedAt           DateTime? @map("completed_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, kind, targetType, targetId]) // 二重起票を DB で防ぐ
+  @@index([tenantId, assigneeUserId, state, dueOn])
+  @@map("tasks")
+}
+
+/// RLS のポリシークラスは C7 SELF（docs/05 §4.4。受信者本人のみが読む。INSERT の WITH CHECK のみ C1）。
+model Notification {
+  id                String    @id @default(uuid(7)) @db.Uuid
+  tenantId          String    @map("tenant_id") @db.Uuid
+  recipientUserId   String    @map("recipient_user_id") @db.Uuid
+  kind              String
+  targetType        String?   @map("target_type")
+  targetId          String?   @map("target_id") @db.Uuid
+  title             String
+  bodyKey           String    @map("body_key") // i18n キー（BR-32）
+  bodyParams        Json      @map("body_params")
+  readAt            DateTime? @map("read_at") @db.Timestamptz(3)
+  emailDispatchId   String?   @map("email_dispatch_id") @db.Uuid // メール送信を試みた場合
+  suppressedByLimit Boolean   @default(false) @map("suppressed_by_limit") // 🔴 上限で抑止（F-039 AC-3）
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  emailDispatch EmailDispatch? @relation(fields: [emailDispatchId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, recipientUserId, readAt, createdAt])
+  @@map("notifications")
+}
+
+/// RLS のポリシークラスは C2 HOST_ONLY（docs/05 §4.4）。
+model AiUsage {
+  id               String   @id @default(uuid(7)) @db.Uuid
+  tenantId         String   @map("tenant_id") @db.Uuid
+  /// AiRole（TEXT + CHECK）。🔴 NOT NULL（F-026 AC-2。ロール別原価分解の必須条件）。
+  role             String
+  modelId          String   @map("model_id")
+  /// AiUsagePurpose（TEXT + CHECK。上記コメント参照）
+  purpose          String
+  promptVersion    String   @map("prompt_version")
+  targetType       String?  @map("target_type")
+  targetId         String?  @map("target_id") @db.Uuid
+  inputTokens      Int      @map("input_tokens")
+  outputTokens     Int      @map("output_tokens")
+  cacheReadTokens  Int      @default(0) @map("cache_read_tokens")
+  cacheWriteTokens Int      @default(0) @map("cache_write_tokens")
+  estimatedCostUsd Decimal  @map("estimated_cost_usd") @db.Decimal(12, 6)
+  attemptNo        Int      @default(1) @map("attempt_no") // 🔴 再試行も 1 行として記録（docs/02 章 8.7）
+  succeeded        Boolean
+  /// AiUsageFailureKind（TEXT + CHECK。nullable）
+  failureKind      String?  @map("failure_kind")
+  startedAt        DateTime @map("started_at") @db.Timestamptz(3)
+  finishedAt       DateTime @map("finished_at") @db.Timestamptz(3)
+
+  tenant                Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  // 🔴 T-02-02〜04 で前方参照だった 5 表の逆リレーション（今回 FK を解決した）。
+  skillSheetExtractions SkillSheetExtraction[]
+  matchCandidates       MatchCandidate[]
+  proposals             Proposal[]
+  reviewGates           ReviewGate[]
+  extensionReviews      ExtensionReview[]
+
+  @@index([tenantId, startedAt])
+  @@index([tenantId, role, startedAt]) // 🔴 ロール別原価の分解（§10.2 / A-011）
+  @@map("ai_usage")
+}
+
+// 🔴 DB 制約: CHECK ( role IN ('sheet-parser','skill-normalizer','match-explainer',
+//                              'gate-inspector','proposal-drafter','renewal-advisor') )
+//    ロール識別子の欠損・誤記が DB に入らない（F-026 AC-2）。
+
+/// 🔴 created_at の月次レンジパーティション（docs/03 §8.3 / T-A-11。Phase 1 から。100 テナントで
+///    年間約 1 億行になるため後から入れるのは高くつく）。Prisma は宣言的パーティショニングを
+///    DSL として表現できないため、ここは通常モデルとして宣言し、実体の PARTITION BY と
+///    初期パーティション（`audit.create-partitions` 相当）は migration.sql に手書きする。
+///    🔴 実際の主キーは DB 側で `PRIMARY KEY (id, created_at)`（パーティション列を含める必要が
+///    ある Postgres の制約）。`id` 単独の一意性は UUIDv7 の生成規約に拠る（upsert 等は使わない
+///    運用のため実害はない。migration.sql 冒頭コメント参照）。
+/// RLS のポリシークラス: `INSERT` は C1 TENANT_ALL（パートナーの操作も記録されるため）、
+/// `SELECT` は C2 HOST_ONLY、`UPDATE`/`DELETE` は REVOKE（docs/05 §4.4）。
+model AuditLog {
+  id                     String   @id @default(uuid(7)) @db.Uuid
+  tenantId               String?  @map("tenant_id") @db.Uuid // 運営者操作でも対象テナントを入れる
+  /// AuditActorKind（TEXT + CHECK）: 'USER'|'PLATFORM_USER'|'SYSTEM'
+  actorKind              String   @map("actor_kind")
+  actorId                String?  @map("actor_id") @db.Uuid
+  action                 String // §16.1 の一覧（オープンな名前空間。CHECK なし）
+  targetType             String?  @map("target_type")
+  targetId               String?  @map("target_id") @db.Uuid
+  summary                Json // 🔴 PII を入れない（§16.2）
+  impersonationSessionId String?  @map("impersonation_session_id") @db.Uuid
+  ipAddress              String?  @map("ip_address")
+  /// AuditDeviceKind（TEXT + CHECK。nullable）: 'desktop'|'mobile'|'tablet'|'api'
+  deviceKind             String?  @map("device_kind")
+  createdAt              DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant               Tenant?               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  impersonationSession ImpersonationSession? @relation(fields: [impersonationSessionId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, createdAt, action])
+  @@index([actorKind, actorId, createdAt])
+  @@map("audit_logs")
+}
+
+// 🔴 REVOKE UPDATE, DELETE ON audit_logs FROM app_tenant, app_platform, app_platform_write;
+//    （F-005 AC-3「利用者・運営者のいずれからも編集・削除できない」を DB 権限で担保する）
+
+model UsageCounter {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  /// UsageCounterPeriodKind（TEXT + CHECK）: 'DAY'|'MONTH'
+  periodKind    String   @map("period_kind")
+  periodKey     String   @map("period_key") // 'YYYY-MM-DD' | 'YYYY-MM'（Asia/Tokyo）
+  /// UsageCounterMetric（TEXT + CHECK）。🔴 AI_UNIT_* は利用者向け件数（docs/03 §7.6.1。MONTH のみ）。
+  /// 金額と独立に加算し、AiUsage の行数から数え直さない（§7.6）
+  metric        String
+  value         Decimal  @db.Decimal(20, 6)
+  reservedValue Decimal  @default(0) @map("reserved_value") @db.Decimal(20, 6) // 🔴 AI の呼び出し前予約（§4.5 / §7.6）
+  observedAt    DateTime @map("observed_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, periodKind, periodKey, metric]) // 🔴 ON CONFLICT の対象
+  @@index([tenantId, metric, periodKey])
+  @@map("usage_counters")
+}
+
+// ============================================================================
+// docs/05 §3.9 外部連携・送信・環境（T-02-05。TenantSendingDomain は T-02-01 で実装済み）
+// ============================================================================
+
+/// docs/03 §3.1.2 / §3.1.2a（決定済み。Issue #11。BYO 接続。第一コネクタ DocuSign）。
+/// RLS のポリシークラスは C2 HOST_ONLY（docs/05 §4.4）。
+model TenantEsignConnection {
+  id                         String    @id @default(uuid(7)) @db.Uuid
+  tenantId                   String    @unique @map("tenant_id") @db.Uuid // 🔴 1 テナント 1 接続
+  /// EsignProvider（TEXT + CHECK）。ContractDocument.externalProvider と同じ値集合
+  /// （CONTRACT_DOCUMENT_EXTERNAL_PROVIDERS）を共有する。gmosign は第三候補で列挙に含めない。
+  provider                   String
+  credentialEncrypted        String    @map("credential_encrypted") // 🔴 §8.6。運営者に GRANT しない（§5.5）
+  externalAccountId          String    @map("external_account_id") // DocuSign accountId。秘匿ではない
+  baseUri                    String    @map("base_uri") // 🔴 DocuSign の API ベース URL（アカウントごと）
+  accountName                String    @map("account_name") // 接続した DocuSign アカウント名（S-037 / S-026）
+  connectHmacKeysEncrypted   String[]  @map("connect_hmac_keys_encrypted") // 🔴 運営者に GRANT しない（§5.5）
+  connectConfigId            String?   @map("connect_config_id")
+  webhookPathSecretEncrypted String?   @map("webhook_path_secret_encrypted") // 🔴 クラウドサインのみ。運営者に GRANT しない
+  /// EsignSigningOrder（TEXT + CHECK）: 'HOST_FIRST'|'PARALLEL'
+  signingOrderDefault        String    @default("HOST_FIRST") @map("signing_order_default")
+  connectedAt                DateTime  @map("connected_at") @db.Timestamptz(3)
+  lastVerifiedAt             DateTime? @map("last_verified_at") @db.Timestamptz(3)
+  invalidatedAt              DateTime? @map("invalidated_at") @db.Timestamptz(3) // 失効。再接続導線 1 本に収束
+  connectedBy                String    @map("connected_by") @db.Uuid
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("tenant_esign_connections")
+}
+
+/// 🔴 docs/03 §4.7。冪等性の中核（K-5 の防御線）。RLS のポリシークラスは C2 HOST_ONLY
+/// （docs/05 §4.4。送信の起動はホストのみ。多相のオーナー継承を作らない）。
+model SendAttempt {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  /// SendAttemptEntityType（TEXT + CHECK）: 'PROPOSAL'|'INTERVIEW'|'CONTRACT'
+  entityType     String    @map("entity_type")
+  entityId       String    @map("entity_id") @db.Uuid
+  attemptSeq     Int       @map("attempt_seq") // 🔴 人間の明示的な再送でのみ増える
+  idempotencyKey String    @map("idempotency_key") // '{entity}:{entityId}:{attemptSeq}'
+  /// SendAttemptStatus（TEXT + CHECK）: 'RESERVED'|'SUCCEEDED'|'FAILED'|'UNKNOWN'
+  status         String
+  externalId     String?   @map("external_id") // SES の MessageId / 電子署名の書類 ID
+  failureKind    String?   @map("failure_kind") // §15.4 の分類（オープン。CHECK なし）
+  failureDetail  String?   @map("failure_detail")
+  startedAt      DateTime  @default(now()) @map("started_at") @db.Timestamptz(3)
+  settledAt      DateTime? @map("settled_at") @db.Timestamptz(3)
+  requestedBy    String?   @map("requested_by") @db.Uuid // 再送を指示した人間（初回は null = system）
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([entityType, entityId, attemptSeq]) // 🔴 K-5 防御線 1/2
+  @@unique([idempotencyKey]) // 🔴 K-5 防御線 2/2
+  @@index([tenantId, status, startedAt])
+  @@map("send_attempts")
+}
+
+/// 分類 1 / 分類外の運用メール（docs/05 §8.2）。RLS のポリシークラスは C2 HOST_ONLY（docs/05 §4.4）。
+model EmailDispatch {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  tenantId       String?   @map("tenant_id") @db.Uuid // 運営者宛は null
+  /// EmailRecipientClass（TEXT + CHECK）: 'HOST_MEMBER'|'PARTNER_MEMBER'|'CLIENT'|'ENGINEER'|'PLATFORM'
+  recipientClass String    @map("recipient_class")
+  recipientEmail String    @map("recipient_email")
+  templateKey    String    @map("template_key")
+  dedupeKey      String    @map("dedupe_key") // '{templateKey}:{targetId}:{recipientHash}'
+  /// EmailDispatchStatus（TEXT + CHECK。7 値）。🔴 HELD_* は「失敗」ではない（送信を 1 回も試みていない）
+  status         String
+  heldAt         DateTime? @map("held_at") @db.Timestamptz(3) // HELD_* に入った時刻
+  sesMessageId   String?   @map("ses_message_id")
+  sentAt         DateTime? @map("sent_at") @db.Timestamptz(3)
+  failureReason  String?   @map("failure_reason")
+
+  tenant        Tenant?        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  notifications Notification[]
+
+  @@unique([dedupeKey]) // 🔴 再試行しても 1 通
+  @@index([tenantId, status, sentAt])
+  @@index([status, heldAt]) // send.hold-release の走査（HELD_* を heldAt 昇順）と A-005 項目 13 の件数
+  @@map("email_dispatches")
+}
+
+/// SES のバウンス・苦情（SNS。at-least-once）。🔴 C0 SYSTEM_ONLY（docs/05 §4.4 / §3.1 共通規約
+/// 「キーを持たない表」の 1 つ）。`tenantId` 列は宛先解決前に届くため未確定でありうる denormalize
+/// 目的の参照であり、Tenant への FK は張らない（two_factor_credentials と同じ方針）。
+model EmailEvent {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  tenantId     String?  @map("tenant_id") @db.Uuid
+  sesMessageId String   @map("ses_message_id")
+  /// EmailEventType（TEXT + CHECK）: 'Bounce'|'Complaint'|'Delivery'|'Reject'|'Delay'（SES の実値）
+  eventType    String   @map("event_type")
+  occurredAt   DateTime @map("occurred_at") @db.Timestamptz(3)
+  payload      Json // 🔴 宛先はハッシュ化して保存（§16.2）
+
+  @@unique([sesMessageId, eventType, occurredAt])
+  @@map("email_events")
+}
+
+/// 🔴 C0 SYSTEM_ONLY（docs/05 §4.4）。テナントキーを持たない表（docs/05 §3.1 共通規約）。
+model WebhookDelivery {
+  id              String    @id @default(uuid(7)) @db.Uuid
+  /// WebhookProvider（TEXT + CHECK）: 'ses'|'guardduty'|'docusign'|'cloudsign'|'stripe'
+  provider        String
+  externalEventId String?   @map("external_event_id") // 無いプロバイダは代替キーを入れる
+  dedupeKey       String    @map("dedupe_key") // '{provider}:{externalEventId}' または代替
+  receivedAt      DateTime  @default(now()) @map("received_at") @db.Timestamptz(3)
+  processedAt     DateTime? @map("processed_at") @db.Timestamptz(3)
+  processFailedAt DateTime? @map("process_failed_at") @db.Timestamptz(3)
+  failureReason   String?   @map("failure_reason")
+  payload         Json // 🔴 秘匿値は redact 後に保存
+
+  @@unique([dedupeKey])
+  @@index([provider, processedAt, receivedAt]) // 「最後に受信した時刻」の監視（§8.5）
+  @@map("webhook_deliveries")
+}
+
+/// F-064 AC-5 / F-052。RLS のポリシークラスは C2 HOST_ONLY（docs/05 §4.4）。
+model DataExportRequest {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  /// DataExportKind（TEXT + CHECK）: 'CLOSING_RETURN'|'OPERATIONAL'
+  kind        String
+  scope       Json
+  /// DataExportStatus（TEXT + CHECK）: 'QUEUED'|'RUNNING'|'READY'|'FAILED'|'EXPIRED'
+  status      String
+  objectKey   String?   @map("object_key")
+  requestedBy String    @map("requested_by") @db.Uuid
+  requestedAt DateTime  @default(now()) @map("requested_at") @db.Timestamptz(3)
+  readyAt     DateTime? @map("ready_at") @db.Timestamptz(3)
+  expiresAt   DateTime? @map("expires_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status, requestedAt])
+  @@map("data_export_requests")
+}
+
+/// 🔴 削除完了の確認の唯一の根拠（F-062 AC-7）。RLS のポリシークラスは C2 HOST_ONLY（docs/05 §4.4）。
+model TenantPurgeRun {
+  id            String    @id @default(uuid(7)) @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  /// TenantPurgeCause（TEXT + CHECK）: 'TENANT_PURGED'|'RETENTION'
+  cause         String
+  /// TenantPurgeStatus（TEXT + CHECK）: 'RUNNING'|'COMPLETED'|'FAILED'
+  status        String
+  startedAt     DateTime  @default(now()) @map("started_at") @db.Timestamptz(3)
+  completedAt   DateTime? @map("completed_at") @db.Timestamptz(3)
+  counts        Json // { engineerContacts, skillSheets, messages, ... }
+  failureReason String?   @map("failure_reason")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, cause, startedAt])
+  @@map("tenant_purge_runs")
+}
+
+/// 🔴 C0 SYSTEM_ONLY（docs/05 §4.4）。テナントキーを持たない表（docs/05 §3.1 共通規約）。
+model SchedulerRun {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  jobName    String    @map("job_name")
+  runKey     String    @map("run_key") // '{jobName}:{slot}'（slot = 発火予定時刻 ISO 8601 JST）
+  startedAt  DateTime  @default(now()) @map("started_at") @db.Timestamptz(3)
+  finishedAt DateTime? @map("finished_at") @db.Timestamptz(3)
+  /// SchedulerRunStatus（TEXT + CHECK）: 'RUNNING'|'OK'|'FAILED'
+  status     String
+  detail     Json?
+
+  @@unique([runKey]) // 🔴 同じ slot に 2 回起票されても 1 回だけ走る（§9.1 runScheduled）
+  @@index([jobName, startedAt])
+  @@map("scheduler_runs")
+}
+
+// ============================================================================
+// docs/05 §3.10 管理平面・課金・AI 設定（T-02-05）
+// ============================================================================
+
+/// 🔴 tenant_id を持たない。User と別テーブル・別認証（CLAUDE.md §10.5 / BR-36）。
+/// 射程外の 4 表の 1 つ（CLAUDE.md §3.1）。RLS は適用しない（skills と同じ方針）。
+model PlatformUser {
+  id           String    @id @default(uuid(7)) @db.Uuid
+  email        String    @unique
+  displayName  String    @map("display_name")
+  /// PlatformRole（TEXT + CHECK）: 'PLATFORM_OWNER'|'PLATFORM_SUPPORT'
+  role         String
+  passwordHash String    @map("password_hash")
+  disabledAt   DateTime? @map("disabled_at") @db.Timestamptz(3)
+  lastLoginAt  DateTime? @map("last_login_at") @db.Timestamptz(3)
+
+  // 🔴 AuditLog.actorId は actorKind に応じて User / PlatformUser / null のいずれかを指す多相列
+  //    であり FK を張らない（ほかの actor 系列と同じ方針。schema.prisma の他モデル参照）。
+  impersonationSessions ImpersonationSession[]
+
+  @@map("platform_users")
+}
+
+/// tenant_id を持たない。射程外の 4 表の 1 つ（CLAUDE.md §3.1）。RLS は適用しない。
+model Plan {
+  id                      String  @id @default(uuid(7)) @db.Uuid
+  code                    String  @unique // 'starter'|'standard'|'business'。業務データのため CHECK なし
+  name                    String
+  seatLimit               Int     @map("seat_limit")
+  aiCostCapUsd            Decimal @map("ai_cost_cap_usd") @db.Decimal(10, 2) // 🔴 月間の金額上限（運営者の内部指標）
+  aiDailyCostLimitUsd     Decimal @map("ai_daily_cost_limit_usd") @db.Decimal(10, 2) // 🔴 1 日の上限（遮断器）
+  unitQuotaSheetParse     Int     @map("unit_quota_sheet_parse") // 🔴 利用者向け件数上限 4 単位
+  unitQuotaMatchRationale Int     @map("unit_quota_match_rationale")
+  unitQuotaProposalDraft  Int     @map("unit_quota_proposal_draft")
+  unitQuotaRenewalSummary Int     @map("unit_quota_renewal_summary") // 🔴 gate-inspector の件数上限列は存在しない（クォータ外）
+  emailDailyLimit         Int     @default(500) @map("email_daily_limit")
+  emailMinuteLimit        Int     @default(30) @map("email_minute_limit")
+  storageLimitBytes       BigInt  @map("storage_limit_bytes")
+  grossMarginThreshold    Decimal @map("gross_margin_threshold") @db.Decimal(5, 4) // A-011 の閾値
+  monthlySeatPriceJpy     Decimal @map("monthly_seat_price_jpy") @db.Decimal(12, 2) // 席単価は未確定（Q-20 / TBD-4）
+  overageUnitPricesJpy    Json    @map("overage_unit_prices_jpy") // 🔴 Record<AiUnit, 円>。金額メーターは作らない
+  featureFlagDefaults     Json    @map("feature_flag_defaults")
+
+  subscriptions Subscription[]
+
+  @@map("plans")
+}
+
+// 🔴 DB 制約: CHECK ( unit_quota_sheet_parse >= 10 AND unit_quota_match_rationale >= 10
+//                 AND unit_quota_proposal_draft >= 10 AND unit_quota_renewal_summary >= 10 )
+//    … docs/03 §7.6.2「各単位の下限は 10 件」（0 件になる単位を作らない）。
+
+/// tenant_id 列は持つが RLS の射程外（CLAUDE.md §3.1）。主平面から読むときはアプリ層で
+/// tenantId 一致を強制する（packages/db/src/planAccess.ts の 1 関数に閉じる。docs/05 §3.10 末尾）。
+model Subscription {
+  id                         String    @id @default(uuid(7)) @db.Uuid
+  tenantId                   String    @unique @map("tenant_id") @db.Uuid
+  planId                     String    @map("plan_id") @db.Uuid
+  /// SubscriptionBillingState（TEXT + CHECK）: 'TRIAL'|'ACTIVE'|'SUSPENDED'|'CANCELED'
+  billingState               String    @map("billing_state")
+  seatCount                  Int       @map("seat_count")
+  quotaOverrideUsd           Decimal?  @map("quota_override_usd") @db.Decimal(10, 2) // 月間金額上限の上書き
+  unitQuotaOverride          Json?     @map("unit_quota_override") // Partial<Record<AiUnit, Int>>
+  quotaOverrideEffectiveFrom DateTime? @map("quota_override_effective_from") @db.Date // 🔴 引き下げは適用日必須（F-057 AC-3）
+  startedOn                  DateTime  @map("started_on") @db.Date
+  nextBillingOn              DateTime? @map("next_billing_on") @db.Date
+  stripeCustomerId           String?   @map("stripe_customer_id")
+  stripeSubscriptionId       String?   @map("stripe_subscription_id")
+
+  // 🔴 射程外モデル（CLAUDE.md §3.1）自身は scope-injection の対象外だが、tenantId は実在の
+  //    Tenant を指す通常の参照整合性として FK を張る（越境経路の追加ではない。プログラマ完了
+  //    報告で判断根拠を記載）。
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plan   Plan   @relation(fields: [planId], references: [id], onDelete: Restrict)
+
+  @@map("subscriptions")
+}
+
+/// 🔴 C0 SYSTEM_ONLY（docs/05 §4.4。app_tenant に一切の権限を与えない）。`tenantId` は
+/// 代理閲覧の対象テナントの参照だが、テナントキーを持たない表として扱う（docs/05 §3.1 共通規約）
+/// ため Tenant への FK は張らない（EmailEvent と同じ方針）。
+model ImpersonationSession {
+  id                 String    @id @default(uuid(7)) @db.Uuid
+  platformUserId     String    @map("platform_user_id") @db.Uuid
+  tenantId           String    @map("tenant_id") @db.Uuid
+  reason             String // 🔴 NOT NULL かつ空白不可（CHECK）
+  startedAt          DateTime  @default(now()) @map("started_at") @db.Timestamptz(3)
+  expiresAt          DateTime  @map("expires_at") @db.Timestamptz(3) // 🔴 開始 + 既定 30 分
+  endedAt            DateTime? @map("ended_at") @db.Timestamptz(3)
+  /// ImpersonationEndKind（TEXT + CHECK。nullable）: 'MANUAL'|'TIMEOUT'|'FORCED'
+  endKind            String?   @map("end_kind")
+  notifiedUserIds    String[]  @map("notified_user_ids") @db.Uuid // 通知した対象組織の管理者
+  notificationFailed Boolean   @default(false) @map("notification_failed") // A-008 の警告表示
+
+  platformUser PlatformUser @relation(fields: [platformUserId], references: [id], onDelete: Restrict)
+  auditLogs    AuditLog[]
+
+  @@index([tenantId, startedAt])
+  @@index([platformUserId, startedAt])
+  @@map("impersonation_sessions")
+}
+
+// 🔴 DB 制約: CHECK ( btrim(reason) <> '' )   … F-060 AC-1（空白・空文字を許容しない）を DB に落とす
+
+/// F-061。お知らせと機能フラグを 1 表で扱う。RLS のポリシークラスは C1 TENANT_ALL の読み替え
+/// （docs/05 §4.4。`SELECT` のみ。書込は `app_platform_write`）。
+model Announcement {
+  id              String    @id @default(uuid(7)) @db.Uuid
+  /// AnnouncementKind（TEXT + CHECK）: 'NOTICE'|'FEATURE_FLAG'
+  kind            String
+  /// 🔴 テナントキーの 2 例外の 1 つ（docs/05 §3.1。もう 1 つは Tenant 自身）。空 = 全テナント。
+  ///    複数テナントを指す配列のため通常の FK リレーションを張らない（RLS の読み替え式が
+  ///    cardinality() で判定する。§4.4 C1）。
+  targetTenantIds String[]  @map("target_tenant_ids") @db.Uuid
+  featureKey      String?   @map("feature_key")
+  enabled         Boolean?
+  titleKey        String?   @map("title_key")
+  bodyKey         String?   @map("body_key")
+  reasonKey       String?   @map("reason_key") // 🔴 閉鎖時の理由（F-061 AC-1）
+  visibleFrom     DateTime? @map("visible_from") @db.Timestamptz(3)
+  visibleTo       DateTime? @map("visible_to") @db.Timestamptz(3)
+  createdBy       String    @map("created_by") @db.Uuid
+
+  @@index([kind, featureKey])
+  @@map("announcements")
+}
+
+// 🔴 DB 制約: CHECK ( feature_key IS NULL OR feature_key NOT IN
+//            ('review_gate','tenant_isolation','audit_log','partner_scope') )
+//    … F-061 AC-4（統制を落とすフラグを作らせない）を DB 制約に落とす。
+
+/// docs/03 §4.20。RLS のポリシークラスは C2 HOST_ONLY（docs/05 §4.4）。
+model TenantRoleApprovalMode {
+  tenantId  String   @map("tenant_id") @db.Uuid
+  /// ApprovalModeConfigurableRole（TEXT + CHECK。5 値。gate-inspector を含まない。CLAUDE.md §12.4）
+  role      String
+  /// TenantRoleApprovalModeValue（TEXT + CHECK）: 'PER_ITEM'|'AUTO'
+  mode      String
+  updatedBy String   @map("updated_by") @db.Uuid
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, role])
+  @@map("tenant_role_approval_modes")
+}
+
+// 🔴 DB 制約: CHECK ( role <> 'gate-inspector' )   … 冗長だが「意図」を DDL に残す（docs/03 §4.20.1-③）。
+//    CLAUDE.md §12.4「gate-inspector に承認モードは存在しない。設定項目自体を作ってはならない」。
+// 🔴 既定は「レコード無し = 都度承認」。テナント作成時に行を作らない（F-035 AC-1）。
+
+/// docs/03 §4.20。RLS のポリシークラスは C2 HOST_ONLY（docs/05 §4.4）。
+model TenantRoleModel {
+  tenantId  String   @map("tenant_id") @db.Uuid
+  /// AiRole（TEXT + CHECK。6 ロールすべて設定可。gate-inspector を含む）
+  role      String
+  modelId   String   @map("model_id")
+  updatedBy String   @map("updated_by") @db.Uuid
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, role])
+  @@map("tenant_role_models")
+}
+
+// 🔴 承認モードとモデル設定でロールの集合が違う。同じ表に混ぜない（混ぜると CHECK が片方に合わせられない）。
+
+/// [Issue #3] マッチング重みはテナントごとの設定値として外出しし、ハードコードしない。
+/// RLS のポリシークラスは C2 HOST_ONLY（docs/05 §4.4）。
+model TenantMatchWeight {
+  tenantId  String   @map("tenant_id") @db.Uuid
+  /// MatchWeightFactor（TEXT + CHECK）: 'MUST'|'START_DATE'|'NICE'|'LOCATION'|'PRICE'|'YEARS'
+  factor    String
+  weight    Int
+  updatedBy String   @map("updated_by") @db.Uuid
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, factor])
+  @@map("tenant_match_weights")
+}
+
+/// A-011。日次更新、月末で固定（docs/03 §4.15）。RLS のポリシークラスは C2 HOST_ONLY（docs/05 §4.4）。
+model TenantMonthlyCost {
+  tenantId               String    @map("tenant_id") @db.Uuid
+  periodMonth            String    @map("period_month") // 'YYYY-MM'
+  revenueSeatJpy         Decimal   @map("revenue_seat_jpy") @db.Decimal(14, 2)
+  revenueOverageJpy      Decimal   @map("revenue_overage_jpy") @db.Decimal(14, 2)
+  costAiUsd              Decimal   @map("cost_ai_usd") @db.Decimal(14, 6)
+  costAiByRole           Json      @map("cost_ai_by_role") // { 'sheet-parser': 1.62, ... }
+  costEmailUsd           Decimal   @map("cost_email_usd") @db.Decimal(14, 6)
+  costStorageUsd         Decimal   @map("cost_storage_usd") @db.Decimal(14, 6)
+  costEsignUsd           Decimal   @default(0) @map("cost_esign_usd") @db.Decimal(14, 6) // 🔴 BYO のため常に 0
+  pricingRulesetVersion  String    @map("pricing_ruleset_version") // 🔴 §8.8。過去分を遡って再計算しない
+  storageBytesAtMonthEnd BigInt?   @map("storage_bytes_at_month_end") // 🔴 月末スナップショットを固定
+  grossMarginRate        Decimal?  @map("gross_margin_rate") @db.Decimal(6, 4)
+  baselineRatio          Decimal?  @map("baseline_ratio") @db.Decimal(8, 4) // 🔴 基準ユニット比（docs/03 §7.5-3）
+  quotaConsumptionRate   Decimal?  @map("quota_consumption_rate") @db.Decimal(6, 4)
+  meterDiffJpy           Decimal?  @map("meter_diff_jpy") @db.Decimal(14, 2) // 自社カウンタと Stripe の差異
+  finalizedAt            DateTime? @map("finalized_at") @db.Timestamptz(3)
+  updatedAt              DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, periodMonth])
+  @@index([periodMonth, grossMarginRate])
+  @@map("tenant_monthly_costs")
+}
+
+/// docs/03 §3.8.3。RLS のポリシークラスは C2 HOST_ONLY（docs/05 §4.4）。
+model BillingMeterSubmission {
+  tenantId         String   @map("tenant_id") @db.Uuid
+  eventName        String   @map("event_name")
+  periodEnd        DateTime @map("period_end") @db.Timestamptz(3)
+  value            Decimal  @db.Decimal(14, 6)
+  submittedAt      DateTime @default(now()) @map("submitted_at") @db.Timestamptz(3)
+  stripeIdentifier String   @map("stripe_identifier")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, eventName, periodEnd]) // 🔴 UNIQUE（Stripe は 24h しか効かない）
+  @@map("billing_meter_submissions")
 }

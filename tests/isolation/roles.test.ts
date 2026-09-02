@@ -261,6 +261,14 @@ const PLATFORM_READ_COLUMN_DENYLIST: Record<string, readonly string[]> = {
   contract_documents: ['signers', 'object_key', 'merge_result'],
   contract_templates: ['object_key', 'mapping'],
   orders: ['amount'],
+  // 🔴 T-02-05（docs/05 §3.9 / §5.5）: tenant_esign_connections に新たに非開示列が実在する
+  //    ようになった。GRANT は T-02-06/07 の範囲だが、追加を忘れると将来 GRANT を足したときに
+  //    §5.5 の見落としを検知できないため、GRANT が無い今の時点でも追記しておく（既存コメントと
+  //    同じ方針）。🔴 audit_logs / impersonation_sessions は §5.5 の表に非開示列の記載が無い
+  //    （audit_logs: summary は §16.2 の規約により PII を含まない設計であり列自体は全部見せる。
+  //    impersonation_sessions: §5.5 に記載が無く、対象外）ため、ここに追記しない
+  //    （追記しないこと自体が §5.5 との照合結果である）。
+  tenant_esign_connections: ['credential_encrypted', 'connect_hmac_keys_encrypted', 'webhook_path_secret_encrypted'],
 };
 
 /**

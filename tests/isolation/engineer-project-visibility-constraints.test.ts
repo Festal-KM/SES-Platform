@@ -83,12 +83,16 @@ describe('T-02-02: docs/05 §3.4 / §3.5 の新 10 表 + engineers 拡張', () =
     //    ポリシーの影響なく検証するため、一時 DISABLE の対象に含める。
     // 🔴 review_gates は T-02-03 で追加された表（fail-closed）。project_visibilities.review_gate_id
     //    が T-02-03 から FK を持つため、有効な参照先を作るのにここでも DISABLE が要る。
-    const TABLES_TO_DISABLE = [...NEW_TABLES, 'engineers', 'review_gates'] as const;
+    // 🔴 ai_usage は T-02-05 で追加された表（fail-closed）。skill_sheet_extractions.ai_usage_id が
+    //    T-02-05 から FK を持つため（docs/05 §3.4「AiUsage への FK」）、有効な参照先を作るのに
+    //    ここでも DISABLE が要る（review_gates と同じ理由）。
+    const TABLES_TO_DISABLE = [...NEW_TABLES, 'engineers', 'review_gates', 'ai_usage'] as const;
 
     let skillId: string;
     let projectId: string;
     let skillSheetId: string;
     let reviewGateId: string;
+    let aiUsageId: string;
 
     beforeAll(async () => {
       await setRowLevelSecurity({
@@ -139,6 +143,24 @@ describe('T-02-02: docs/05 §3.4 / §3.5 の新 10 表 + engineers 拡張', () =
         },
       });
       reviewGateId = reviewGate.id;
+
+      // 🔴 T-02-05: skill_sheet_extractions.ai_usage_id の FK 先（docs/05 §3.4「AiUsage への FK」）。
+      const aiUsage = await owner.aiUsage.create({
+        data: {
+          tenantId: TENANT_A,
+          role: 'sheet-parser',
+          modelId: 'claude-sonnet-5',
+          purpose: 'sheet_parse',
+          promptVersion: 'v1',
+          inputTokens: 100,
+          outputTokens: 50,
+          estimatedCostUsd: '0.033',
+          succeeded: true,
+          startedAt: new Date(),
+          finishedAt: new Date(),
+        },
+      });
+      aiUsageId = aiUsage.id;
     }, SETUP_TIMEOUT_MS);
 
     afterAll(async () => {
@@ -388,7 +410,7 @@ describe('T-02-02: docs/05 §3.4 / §3.5 の新 10 表 + engineers 拡張', () =
               role: 'sheet-parser',
               promptVersion: 'v1',
               modelId: 'claude-sonnet-5',
-              aiUsageId: randomUUID(),
+              aiUsageId, // 🔴 T-02-05: FK 先が実在する必要がある（存在しない ID だと FK 違反が先に出る）
               status: 'BOGUS',
             },
           }),
@@ -404,7 +426,7 @@ describe('T-02-02: docs/05 §3.4 / §3.5 の新 10 表 + engineers 拡張', () =
             role: 'sheet-parser',
             promptVersion: 'v1',
             modelId: 'claude-sonnet-5',
-            aiUsageId: randomUUID(),
+            aiUsageId,
             status: 'PENDING_REVIEW',
           },
         });

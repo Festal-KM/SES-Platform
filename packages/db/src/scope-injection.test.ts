@@ -296,7 +296,7 @@ describe('🔴 update 系 data のテナントキー検査（行の移動を止�
   //    tenant.update({ where: { id: 自テナント }, data: { engineers: { connect: { id: 他テナントの行 } } } })
   //    が例外なく成功し、実際に行が移動することが実測された。
   describe('🔴 逆リレーション経由のテナントキー書き換え（経路 ⑥）', () => {
-    it('宣言から逆リレーション名を解決できる（T-02-01: docs/05 §3.3 の 5 表 / T-02-02: §3.4・§3.5 の 10 表 / T-02-03: §3.6 の 5 表 / T-02-04: §3.7 の 9 表を追加）', () => {
+    it('宣言から逆リレーション名を解決できる（T-02-01: docs/05 §3.3 の 5 表 / T-02-02: §3.4・§3.5 の 10 表 / T-02-03: §3.6 の 5 表 / T-02-04: §3.7 の 9 表 / T-02-05: §3.8・§3.9・§3.10 の 15 表を追加）', () => {
       expect(tenantKeyMovingRelationsOf('Tenant')).toEqual([
         'engineers',
         'users',
@@ -328,10 +328,28 @@ describe('🔴 update 系 data のテナントキー検査（行の移動を止�
         'orders',
         'assignments',
         'extensionReviews',
+        'tasks',
+        'notifications',
+        'aiUsages',
+        'auditLogs',
+        'usageCounters',
+        'sendAttempts',
+        'emailDispatches',
+        'tenantEsignConnection',
+        'tenantMonthlyCosts',
+        'billingMeterSubmissions',
+        'dataExportRequests',
+        'tenantPurgeRuns',
+        'tenantRoleApprovalModes',
+        'tenantRoleModels',
+        'tenantMatchWeights',
       ]);
       // 子側は順方向の宣言（tenantRelationOf）が担当する。二重に持たない。
       expect(tenantKeyMovingRelationsOf('Engineer')).toEqual([]);
       expect(tenantKeyMovingRelationsOf('User')).toEqual([]);
+      // 🔴 T-02-05: Subscription は射程外モデルのため Tenant.subscription はここに現れない
+      //    （tenant-relation.test.ts が DMMF 側の対照を取る）。
+      expect(tenantKeyMovingRelationsOf('Tenant')).not.toContain('subscription');
     });
 
     it('⑥ Tenant.update の data.engineers は値を問わず例外にする', () => {

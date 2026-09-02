@@ -125,7 +125,7 @@ describe('🔴 逆リレーション（他モデルのテナントキー列を�
     },
   );
 
-  it('Tenant の逆リレーションは実体として宣言と一致する（宣言が空振りしていない対照。T-02-01 で docs/05 §3.3 の 5 表、T-02-02 で §3.4・§3.5 の 10 表、T-02-03 で §3.6 の 5 表、T-02-04 で §3.7 の 9 表を追加）', () => {
+  it('Tenant の逆リレーションは実体として宣言と一致する（宣言が空振りしていない対照。T-02-01 で docs/05 §3.3 の 5 表、T-02-02 で §3.4・§3.5 の 10 表、T-02-03 で §3.6 の 5 表、T-02-04 で §3.7 の 9 表、T-02-05 で §3.8・§3.9・§3.10 の 15 表を追加）', () => {
     const tenant = MODELS.find((model) => model.name === 'Tenant');
     expect(tenant).toBeDefined();
     const expected = [
@@ -159,9 +159,30 @@ describe('🔴 逆リレーション（他モデルのテナントキー列を�
       'orders',
       'assignments',
       'extensionReviews',
+      'tasks',
+      'notifications',
+      'aiUsages',
+      'auditLogs',
+      'usageCounters',
+      'sendAttempts',
+      'emailDispatches',
+      'tenantEsignConnection',
+      'tenantMonthlyCosts',
+      'billingMeterSubmissions',
+      'dataExportRequests',
+      'tenantPurgeRuns',
+      'tenantRoleApprovalModes',
+      'tenantRoleModels',
+      'tenantMatchWeights',
     ];
     expect(inverseTenantKeyRelations(tenant as DmmfModel)).toEqual(expected);
     expect(tenantKeyMovingRelationsOf('Tenant')).toEqual(expected);
+  });
+
+  it('🔴 T-02-05: Subscription は射程外モデルのため Tenant.subscription は逆リレーションに現れない', () => {
+    const tenant = MODELS.find((model) => model.name === 'Tenant');
+    expect(tenant).toBeDefined();
+    expect(inverseTenantKeyRelations(tenant as DmmfModel)).not.toContain('subscription');
   });
 
   it('Engineer.tenant は逆リレーションではない（順方向の宣言が担当する二重計上を避ける）', () => {

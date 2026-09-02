@@ -167,3 +167,224 @@ export type OrderPaymentState = (typeof ORDER_PAYMENT_STATES)[number];
 export const EXTENSION_REVIEW_DECISIONS = ['EXTEND', 'END', 'REPRICE'] as const;
 
 export type ExtensionReviewDecision = (typeof EXTENSION_REVIEW_DECISIONS)[number];
+
+// 🔴 T-02-05（docs/05 §3.8 / §3.9 / §3.10。docs/sprints/SP-02-schema-isolation.md）:
+// 20260903040000_cross_cutting_platform/migration.sql が値集合の CHECK を持つ列。
+// TenantLifecycleState 等の 5 状態機械はこのタスクの対象に含まれない（横断・外部連携・
+// 管理平面の表のみ）。以下はいずれも状態機械ではない単純な値集合。
+
+/** docs/05 §3.8 `Task.kind`（TEXT + CHECK）。 */
+export const TASK_KINDS = ['EXTENSION_REVIEW', 'INTERVIEW', 'CONTRACT_PENDING'] as const;
+
+export type TaskKind = (typeof TASK_KINDS)[number];
+
+/** docs/05 §3.8 `Task.state`（TEXT + CHECK）。🔴 CLAUDE.md §4.2 の状態機械ではない単純な OPEN/DONE。 */
+export const TASK_STATES = ['OPEN', 'DONE'] as const;
+
+export type TaskState = (typeof TASK_STATES)[number];
+
+/**
+ * docs/05 §3.8 `AiUsage.role`（TEXT + CHECK）/ CLAUDE.md §12.2 の 6 ロール。
+ * `TenantRoleModel.role`（6 値すべて）でも共有する。
+ * 🔴 `packages/ai` はまだ実装されていない（SP-07）。将来そちらに `AI_ROLES` が実装されたときは、
+ *    こちらを唯一の出所として re-export するか、依存方向（`packages/ai` → `packages/db` は
+ *    禁止。docs/05 §2.2）を踏まえて解消すること。
+ */
+export const AI_ROLES = [
+  'sheet-parser',
+  'skill-normalizer',
+  'match-explainer',
+  'gate-inspector',
+  'proposal-drafter',
+  'renewal-advisor',
+] as const;
+
+export type AiRole = (typeof AI_ROLES)[number];
+
+/**
+ * docs/05 §3.10 `TenantRoleApprovalMode.role`（TEXT + CHECK。5 値）。CLAUDE.md §12.4
+ * 「`gate-inspector` に承認モードは存在しない」により `AI_ROLES` から `gate-inspector` を除いた集合。
+ */
+export const APPROVAL_MODE_CONFIGURABLE_ROLES = AI_ROLES.filter(
+  (role): role is Exclude<AiRole, 'gate-inspector'> => role !== 'gate-inspector',
+);
+
+export type ApprovalModeConfigurableRole = (typeof APPROVAL_MODE_CONFIGURABLE_ROLES)[number];
+
+/**
+ * 🔴 docs/05 §3.8 `AiUsage.purpose`（TEXT + CHECK）。ドキュメント上は
+ * `'gate'|'sheet_parse'|...`（省略記法）としか示されておらず、フル値集合は明記されていない。
+ * 6 ロール（`AI_ROLES`）と 1:1 対応することが、示された 2 例（'gate' = gate-inspector,
+ * 'sheet_parse' = sheet-parser）と `docs/03` §7.6.1 のメーター名（sheetParse / matchRationale /
+ * proposalDraft / renewalSummary）から強く裏付けられるため、programmer 判断で 6 値に確定した
+ * （プログラマ完了報告に記載。値そのものに疑義が生じた場合は `docs/05` §3.8 へ確定値を
+ * 追記のうえ本コメントを更新すること）。
+ */
+export const AI_USAGE_PURPOSES = [
+  'sheet_parse',
+  'skill_normalize',
+  'match_rationale',
+  'gate',
+  'proposal_draft',
+  'renewal_summary',
+] as const;
+
+export type AiUsagePurpose = (typeof AI_USAGE_PURPOSES)[number];
+
+/** docs/05 §3.8 `AiUsage.failureKind`（TEXT + CHECK。nullable）。 */
+export const AI_USAGE_FAILURE_KINDS = ['SCHEMA', 'TIMEOUT', 'RATE', 'SPEND_CAP', 'API'] as const;
+
+export type AiUsageFailureKind = (typeof AI_USAGE_FAILURE_KINDS)[number];
+
+/** docs/05 §3.8 `AuditLog.actorKind`（TEXT + CHECK）。 */
+export const AUDIT_ACTOR_KINDS = ['USER', 'PLATFORM_USER', 'SYSTEM'] as const;
+
+export type AuditActorKind = (typeof AUDIT_ACTOR_KINDS)[number];
+
+/** docs/05 §3.8 `AuditLog.deviceKind`（TEXT + CHECK。nullable）。CLAUDE.md §13 のデバイス階層と対応。 */
+export const AUDIT_DEVICE_KINDS = ['desktop', 'mobile', 'tablet', 'api'] as const;
+
+export type AuditDeviceKind = (typeof AUDIT_DEVICE_KINDS)[number];
+
+/** docs/05 §3.8 `UsageCounter.periodKind`（TEXT + CHECK）。 */
+export const USAGE_COUNTER_PERIOD_KINDS = ['DAY', 'MONTH'] as const;
+
+export type UsageCounterPeriodKind = (typeof USAGE_COUNTER_PERIOD_KINDS)[number];
+
+/**
+ * docs/05 §3.8 `UsageCounter.metric`（TEXT + CHECK）。🔴 `AI_UNIT_*` は利用者向け件数
+ * （`docs/03` §7.6.1。`MONTH` のみ）。金額と独立に加算し、`AiUsage` の行数から数え直さない（§7.6）。
+ */
+export const USAGE_COUNTER_METRICS = [
+  'AI_COST_USD',
+  'EMAIL_COUNT',
+  'STORAGE_BYTES',
+  'SEAT_COUNT',
+  'ESIGN_REQUESTS',
+  'AI_UNIT_SHEET_PARSE',
+  'AI_UNIT_MATCH_RATIONALE',
+  'AI_UNIT_PROPOSAL_DRAFT',
+  'AI_UNIT_RENEWAL_SUMMARY',
+] as const;
+
+export type UsageCounterMetric = (typeof USAGE_COUNTER_METRICS)[number];
+
+/** docs/05 §3.9 `TenantEsignConnection.provider`。`ContractDocument.externalProvider` と同じ値集合
+ * を共有するため、`CONTRACT_DOCUMENT_EXTERNAL_PROVIDERS` をそのまま使う（新規定義しない）。 */
+
+/** docs/05 §3.9 `TenantEsignConnection.signingOrderDefault`（TEXT + CHECK）。docs/03 §3.1.10。 */
+export const ESIGN_SIGNING_ORDERS = ['HOST_FIRST', 'PARALLEL'] as const;
+
+export type EsignSigningOrder = (typeof ESIGN_SIGNING_ORDERS)[number];
+
+/** docs/05 §3.9 `SendAttempt.entityType`（TEXT + CHECK）。🔴 docs/03 §4.7。冪等性の中核。 */
+export const SEND_ATTEMPT_ENTITY_TYPES = ['PROPOSAL', 'INTERVIEW', 'CONTRACT'] as const;
+
+export type SendAttemptEntityType = (typeof SEND_ATTEMPT_ENTITY_TYPES)[number];
+
+/** docs/05 §3.9 `SendAttempt.status`（TEXT + CHECK）。 */
+export const SEND_ATTEMPT_STATUSES = ['RESERVED', 'SUCCEEDED', 'FAILED', 'UNKNOWN'] as const;
+
+export type SendAttemptStatus = (typeof SEND_ATTEMPT_STATUSES)[number];
+
+/** docs/05 §3.9 `EmailDispatch.recipientClass`（TEXT + CHECK）。 */
+export const EMAIL_RECIPIENT_CLASSES = [
+  'HOST_MEMBER',
+  'PARTNER_MEMBER',
+  'CLIENT',
+  'ENGINEER',
+  'PLATFORM',
+] as const;
+
+export type EmailRecipientClass = (typeof EMAIL_RECIPIENT_CLASSES)[number];
+
+/**
+ * docs/05 §3.9 `EmailDispatch.status`（TEXT + CHECK。7 値）。🔴 `HELD_*` は「失敗」ではない
+ * （送信を 1 回も試みていない）。
+ */
+export const EMAIL_DISPATCH_STATUSES = [
+  'QUEUED',
+  'HELD_DOMAIN_UNVERIFIED',
+  'HELD_PROVIDER_QUOTA',
+  'SENT',
+  'MOCKED',
+  'FAILED',
+  'SUPPRESSED',
+] as const;
+
+export type EmailDispatchStatus = (typeof EMAIL_DISPATCH_STATUSES)[number];
+
+/** docs/05 §3.9 `EmailEvent.eventType`（TEXT + CHECK）。SES の実値（大文字小文字を含め正確に一致）。 */
+export const EMAIL_EVENT_TYPES = ['Bounce', 'Complaint', 'Delivery', 'Reject', 'Delay'] as const;
+
+export type EmailEventType = (typeof EMAIL_EVENT_TYPES)[number];
+
+/** docs/05 §3.9 `WebhookDelivery.provider`（TEXT + CHECK）。 */
+export const WEBHOOK_PROVIDERS = ['ses', 'guardduty', 'docusign', 'cloudsign', 'stripe'] as const;
+
+export type WebhookProvider = (typeof WEBHOOK_PROVIDERS)[number];
+
+/** docs/05 §3.9 `DataExportRequest.kind`（TEXT + CHECK）。F-064 AC-5 / F-052。 */
+export const DATA_EXPORT_KINDS = ['CLOSING_RETURN', 'OPERATIONAL'] as const;
+
+export type DataExportKind = (typeof DATA_EXPORT_KINDS)[number];
+
+/** docs/05 §3.9 `DataExportRequest.status`（TEXT + CHECK）。 */
+export const DATA_EXPORT_STATUSES = ['QUEUED', 'RUNNING', 'READY', 'FAILED', 'EXPIRED'] as const;
+
+export type DataExportStatus = (typeof DATA_EXPORT_STATUSES)[number];
+
+/** docs/05 §3.9 `TenantPurgeRun.cause`（TEXT + CHECK）。 */
+export const TENANT_PURGE_CAUSES = ['TENANT_PURGED', 'RETENTION'] as const;
+
+export type TenantPurgeCause = (typeof TENANT_PURGE_CAUSES)[number];
+
+/** docs/05 §3.9 `TenantPurgeRun.status`（TEXT + CHECK）。F-062 AC-7。 */
+export const TENANT_PURGE_STATUSES = ['RUNNING', 'COMPLETED', 'FAILED'] as const;
+
+export type TenantPurgeStatus = (typeof TENANT_PURGE_STATUSES)[number];
+
+/** docs/05 §3.9 `SchedulerRun.status`（TEXT + CHECK）。 */
+export const SCHEDULER_RUN_STATUSES = ['RUNNING', 'OK', 'FAILED'] as const;
+
+export type SchedulerRunStatus = (typeof SCHEDULER_RUN_STATUSES)[number];
+
+/** docs/05 §3.3 冒頭 `PlatformRole`（TEXT + CHECK）。CLAUDE.md §10.1。 */
+export const PLATFORM_ROLES = ['PLATFORM_OWNER', 'PLATFORM_SUPPORT'] as const;
+
+export type PlatformRole = (typeof PLATFORM_ROLES)[number];
+
+/** docs/05 §3.10 `Subscription.billingState`（TEXT + CHECK）。 */
+export const SUBSCRIPTION_BILLING_STATES = ['TRIAL', 'ACTIVE', 'SUSPENDED', 'CANCELED'] as const;
+
+export type SubscriptionBillingState = (typeof SUBSCRIPTION_BILLING_STATES)[number];
+
+/** docs/05 §3.10 `ImpersonationSession.endKind`（TEXT + CHECK。nullable）。F-060。 */
+export const IMPERSONATION_END_KINDS = ['MANUAL', 'TIMEOUT', 'FORCED'] as const;
+
+export type ImpersonationEndKind = (typeof IMPERSONATION_END_KINDS)[number];
+
+/** docs/05 §3.10 `Announcement.kind`（TEXT + CHECK）。F-061。 */
+export const ANNOUNCEMENT_KINDS = ['NOTICE', 'FEATURE_FLAG'] as const;
+
+export type AnnouncementKind = (typeof ANNOUNCEMENT_KINDS)[number];
+
+/** docs/05 §3.10 `TenantRoleApprovalMode.mode`（TEXT + CHECK）。docs/03 §4.20。 */
+export const TENANT_ROLE_APPROVAL_MODE_VALUES = ['PER_ITEM', 'AUTO'] as const;
+
+export type TenantRoleApprovalModeValue = (typeof TENANT_ROLE_APPROVAL_MODE_VALUES)[number];
+
+/**
+ * docs/05 §3.10 `TenantMatchWeight.factor`（TEXT + CHECK）。[Issue #3]
+ * 事業判断で重みを外出しし、ハードコードしない。
+ */
+export const MATCH_WEIGHT_FACTORS = [
+  'MUST',
+  'START_DATE',
+  'NICE',
+  'LOCATION',
+  'PRICE',
+  'YEARS',
+] as const;
+
+export type MatchWeightFactor = (typeof MATCH_WEIGHT_FACTORS)[number];

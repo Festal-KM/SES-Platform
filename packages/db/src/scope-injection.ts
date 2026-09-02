@@ -132,6 +132,25 @@ const TENANT_KEY_MOVING_RELATION_OVERRIDES: Readonly<Record<string, readonly str
     'orders',
     'assignments',
     'extensionReviews',
+    // 🔴 T-02-05: docs/05 §3.8 / §3.9 / §3.10 の 15 表の `tenant` リレーション。
+    //    Subscription は射程外モデル（tenantKeyOf('Subscription') === null）のためここに
+    //    現れない（inverseTenantKeyRelations が自動的に除外する。tenant-relation.test.ts /
+    //    scope-injection.test.ts が機械的に確認する）。
+    'tasks',
+    'notifications',
+    'aiUsages',
+    'auditLogs',
+    'usageCounters',
+    'sendAttempts',
+    'emailDispatches',
+    'tenantEsignConnection',
+    'tenantMonthlyCosts',
+    'billingMeterSubmissions',
+    'dataExportRequests',
+    'tenantPurgeRuns',
+    'tenantRoleApprovalModes',
+    'tenantRoleModels',
+    'tenantMatchWeights',
   ],
 };
 
