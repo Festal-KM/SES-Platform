@@ -72,7 +72,7 @@
 |---|---|---|---|---|---|
 | **SP-01** | `bootstrap` | モノレポ・ローカル環境・CI を立ち上げ、**Prisma Client Extension + RLS の二重防御が成立することを最初に実証する**（`docs/03` `pm` 申し送り 4）。あわせて外部依存の申請を初日に出す | 基盤（`F-004` の土台） | 9 | `pnpm-workspace.yaml` / `packages/config` / `packages/db` の骨格 / `docker-compose.yml` / CI / SES 申請 |
 | **SP-02** | `schema-isolation` | **全 56 表 + ビュー 4 本のスキーマと RLS ポリシー C0〜C9 を敷き、分離機構が「有効であること自体」を機械検証する**（`docs/05` §4.7。カタログ走査 13 本 + 二重防御 10 件）。経路 5 の当事者列と C9 も Phase 0 で入れる | `F-004` | 10 | `schema.prisma` / `packages/db/rls/*.sql` / `tests/isolation/**` / `seed:isolation` |
-| **SP-03** | `auth-audit-admin0` | 認証 2 系統（テナント / 運営者）・2FA・招待受諾・監査ログ・役割別ホーム・管理平面 Phase 0（テナント一覧・作成）・`UsageCounter` の計測フックを入れ、**Phase 0 の成功条件を E2E で証明する** | `F-001`(一部) `F-002` `F-003` `F-005` `F-006` `F-055` `F-056`(一覧) `F-026`(フック) | 11 | `apps/web` の認証・`/admin` 基盤 / `AuditLog` / `tests/e2e/isolation.spec.ts` |
+| **SP-03** | `auth-audit-admin0` | 認証 2 系統（テナント / 運営者）・2FA・招待受諾・監査ログ・役割別ホーム・管理平面 Phase 0（テナント一覧・作成）・`UsageCounter` の計測フック・**起動時 DI の呼び出し側**を入れ、**Phase 0 の成功条件を E2E で証明する** | `F-001`(一部) `F-002` `F-003` `F-005` `F-006` `F-055` `F-056`(一覧) `F-026`(フック) | 12 | `apps/web` の認証・`/admin` 基盤 / `AuditLog` / `instrumentation.ts` と worker の起動検証 / `tests/e2e/isolation.spec.ts` |
 
 ### 3.2 Phase 1（MVP）— SP-04〜SP-12
 
@@ -86,7 +86,7 @@
 | **SP-09** | `proposal-flow` | **Phase 1 の中核**。提案作成と情報凍結（経路 2）・承認・**冪等送信**・人手再送・状態管理・商談結果 | `F-019` `F-021` `F-022` `F-023` `F-024` `F-025` | 11 | `S-019`〜`S-024` / `SendAttempt` / `send.proposal` |
 | **SP-10** | `usage-env-sandbox` | 利用量計測の完成（件数 4 単位 + 金額）・上限到達の表示・非本番バナー・`demo` 合成データ・`sandbox` 期限・**削除と返却**（🔴 **予告の配送確認を含む**） | `F-026` `F-027` `F-028` `F-053` `F-054` `F-064` | 12 | `S-038` `S-042` `S-043` / `A-012` `A-013` / `seed:demo` / `tenant.closing-notify` |
 | **SP-11** | `admin-console-p1` | 管理平面 Phase 1。テナント健全性・利用量 / クォータ（金額と件数の両方）・監査ログ横断検索・運用監視 | `F-056`(健全性) `F-057` `F-058` `F-059` | 8 | `A-002`〜`A-006` / `A-010`(削除確認) |
-| **SP-12** | `phase1-hardening` | **Phase 1 の完了判定**。負荷テスト（p95 1 秒）・E2E 総仕上げ・環境分離検証・リリース条件の人間確認 | 横断 | 8 | `seed:perf` / `tests/e2e/**` / リリース判定記録 |
+| **SP-12** | `phase1-hardening` | **Phase 1 の完了判定**。負荷テスト（p95 1 秒）・E2E 総仕上げ・環境分離検証・**本番 / `sandbox` の AWS アカウント分離（E-2）**・リリース条件の人間確認 | 横断 | 9 | `seed:perf` / `tests/e2e/**` / AWS アカウント分離の記録 / リリース判定記録 |
 
 ### 3.3 Phase 2 — SP-13〜SP-16（**主要タスクの見出しまで。詳細化は Phase 1 完了後の再計画で行う**）
 
@@ -179,8 +179,8 @@ flowchart LR
 | # | 外部依存 | リードタイム | 🔴 着手すべき時期 | 必要になるスプリント | 根拠 / 未確認 |
 |---|---|---|---|---|---|
 | **E-1** | 🔴 **Amazon SES の本番アクセス申請** | **初回応答 24 時間**（一次情報）。**ドメイン検証を先に済ませると承認が早い**と公式に明記 | 🔴 **SP-01 の初日**（T-01-09）。ドメイン検証 → 申請の順で出す | SP-04（開発）/ SP-12（本番相当の検証） | `docs/03` §3.2.6 / `docs/03` `pm` 申し送り 1。**`CLAUDE.md` §5 の例外としてクリティカルパス** |
-| **E-2** | **AWS アカウントの整備**（本番 / `sandbox` を**別アカウント**にする）、S3・GuardDuty Malware Protection for S3・RDS | 数日（社内手続き） | **SP-01 の初日**（T-01-09） | SP-02（RDS）/ SP-05（GuardDuty） | `docs/03` §3.2.8 / `docs/03` `program-design` 申し送り 6・16 |
-| **E-3** | **Anthropic API キーと tier**（Start → Build → Scale） | 即時。ただし **Start tier の $500 / 月は 39 テナントで頭打ち** | **SP-01**（キー取得）/ **SP-11**（80% 到達の検知を実装） | SP-07 | `docs/03` §8.2 / `docs/03` `pm` 申し送り 3 |
+| **E-2** | **AWS アカウントの整備**（本番 / `sandbox` を**別アカウント**にする）、S3・GuardDuty Malware Protection for S3・RDS | 数日（社内手続き） | **SP-01 の初日**（T-01-09。開発用アカウントは **2026-09-02 に整備済み**）/ 🔴 **本番 / `sandbox` の分離は Phase 1 リリース前（T-12-09）** | SP-02（RDS）/ SP-05（GuardDuty）/ 🔴 **SP-12（分離の実施と検証）** | `docs/03` §3.2.8 / `docs/03` `program-design` 申し送り 6・16。🔴 **現状（2026-09-03）: 開発用の単一アカウント（IAM `claude-cli` / `ap-northeast-1` / 予算アラート $50 / 月）のみ整備済みで、本番 / `sandbox` の AWS Organizations による分離は未実施。実行タスクは T-12-09**（§8 の 2026-09-03 の行） |
+| **E-3** | **Anthropic API キーと tier**（Start → Build → Scale） | 即時。ただし **Start tier の $500 / 月は 39 テナントで頭打ち** | **SP-01**（キー取得）/ **SP-11**（80% 到達の検知を実装） | SP-07 | `docs/03` §8.2 / `docs/03` `pm` 申し送り 3。🔴 **現状（2026-09-03）: 未着手（ユーザー作業）。SP-07 の着手条件**（`docs/sprints/SP-07-ai-layer-gate.md` ヘッダ）。**未取得でも `MockAnthropicClient` で開発と E2E は止まらない**が、実接続の確認と tier / 月次上限の記録ができない |
 | **E-4** | 🔴 **Stripe の制限業種への該当判定**（`U-19`） | 問い合わせ。数日〜 | 🔴 **Phase 1 のうちに**（T-10-11）。**Phase 3 の着手を待たない** | SP-20 | `docs/03` §3.8.5 / `docs/03` `pm` 申し送り 11。**該当が判明すると `F-062` が丸ごと止まる** |
 | **E-5** | **席単価と決済手数料率の事業判断**（`Q-T-3` / `Q-T-6` / [Issue #12](https://github.com/Festal-KM/SES-Platform/issues/12)） | 人間の判断待ち | 🔴 **Phase 1 のうちに再提起**（T-12-07） | SP-20（Stripe `Price` 設計） | `docs/03` `pm` 申し送り 14 / `docs/05` TBD-19 |
 | **E-6** | **DocuSign 開発者アカウントと Integration Key の発行** | **無料・即時** | **Phase 2 の終盤**（SP-16 の最終タスク） | SP-18 | `docs/03` §3.1.6 / `docs/03` `pm` 申し送り 2 |
@@ -197,17 +197,19 @@ flowchart LR
 ### 5.1 外部依存の着手タイムライン
 
 ```
-SP-01 ├─ E-1 SES ドメイン検証 → 本番アクセス申請（初回応答 24h）
-      ├─ E-2 AWS アカウント整備（本番 / sandbox 別）
-      ├─ E-3 Anthropic API キー
-      ├─ E-12 PostgreSQL 拡張の可否検証
+SP-01 ├─ E-1 SES ドメイン検証 → 本番アクセス申請（初回応答 24h）  ← 2026-09-02 提出。一次判定 DENIED → 再審査依頼中
+      ├─ E-2 AWS アカウント整備（開発用）                     ← 2026-09-02 完了。本番 / sandbox の分離は SP-12 へ
+      ├─ E-3 Anthropic API キー                             ← 🔴 未着手（ユーザー作業）。SP-07 の着手条件
+      ├─ E-12 PostgreSQL 拡張の可否検証                       ← 2026-09-02 決着
       └─ E-15 Issue #17 の督促 → ワイヤーフレーム残り 82 枚の生成  ← 🔴 画面タスクの入力
 SP-05 └─ E-13 GuardDuty スキャン所要時間の実測
+SP-07 └─ E-3 Anthropic API キーの取得（着手条件。未取得なら督促）
 SP-08 └─ E-9 Issue #5 の回答（着手前に督促。未回答なら暫定値）
 SP-10 ├─ E-4 Stripe 制限業種の該当判定  ← 🔴 Phase 3 を待たない
       └─ E-10 Issue #1 の回答（督促）
 SP-12 ├─ E-5 席単価・手数料率の再提起
-      └─ E-14 固定費の実額確定
+      ├─ E-14 固定費の実額確定
+      └─ 🔴 E-2 本番 / sandbox の AWS アカウント分離（T-12-09）  ← Phase 1 リリース前
 SP-13 └─ E-11 Issue #3 の回答（督促）
 SP-16 └─ E-6 DocuSign 開発者アカウント + Integration Key
 SP-17 └─ E-8 Stripe 本人確認の開始
@@ -263,7 +265,7 @@ SP-18 └─ E-7 DocuSign Go-Live 申請  ← 🔴 Phase 3 の中盤まで
 | R-02 | **外部審査の不通過・長期化による後続フェーズ遅延** | SES 本番アクセス却下 → Phase 1 の送信が本番で成立しない。Stripe 制限業種該当 → `F-062` が丸ごと止まる。DocuSign Go-Live 却下 → Phase 3 の `F-049` が遅延 | ①SES は **SP-01 初日**に申請（初回応答 24h でリードタイムが読める）②Stripe の該当判定を **Phase 1 のうちに**（E-4）③DocuSign Go-Live を **Phase 3 中盤まで**に（E-7）。④**いずれも `packages/connectors` のモックで開発と E2E が止まらない**（`docs/05` §13.2） |
 | R-03 | **AI 生成品質の不安定さと品質ゲートの誤検知** | ゲートが揺れると承認の根拠にも監査の根拠にもならない | 🔴 **整合層の合否は機械的照合のみ**（`decideConsistency` の引数型に AI 由来の型が現れないことを `gate-consistency-purity.test.ts` が検査）。AI の指摘は**警告フィールド**に載せる。PII / 商流層は**判定不能 = FAIL**（PASS へフォールバックしない） |
 | R-04 | **AI コストの想定超過** | §6.2 U-3 / U-5 参照 | テナント日次コスト上限で停止。🔴 **上限到達によるゲート未実行を `GATE_FAILED` に倒さない**（`ReviewGate.execution='HELD_AI_COST_LIMIT'`。混ぜるとゲート FAIL 率が汚れる）。`gate.hold-release` が上限解除後に自動再実行 |
-| R-05 | **データ分離不備** | §6.1 K-1 / K-2 / §6.3 参照 | §4.7 の機械検証を **CI で毎回**走らせる。🔴 **除外リストを広げて通すのは、このテストが防ごうとしている壊し方そのもの** |
+| R-05 | **データ分離不備** | §6.1 K-1 / K-2 / §6.3 参照 | §4.7 の機械検証を **CI で毎回**走らせる。🔴 **除外リストを広げて通すのは、このテストが防ごうとしている壊し方そのもの**。<br>🔴 **脚注（2026-09-03）: 「1 件でも落ちたら merge 不可」の機械的強制は未達である。** GitHub Free の非公開リポジトリではブランチ保護（ルールセット）を設定できず、CI green を merge の前提として強制できない（[Issue #25](https://github.com/Festal-KM/SES-Platform/issues/25) で確認中）。**暫定は運用 C — CI を run 単位で毎回実行し、green を確認してから次タスクへ進む。** 機械的強制が入るまでは、この行の緩和策は「運用で守る」ものであり、**壊れても止まらない**ことを前提に扱う（§8 の 2026-09-03 の行 / `docs/sprints/SP-01-bootstrap.md` T-01-08） |
 | R-06 | **E2E flakiness（外部 API モックの整合性）** | 偽陽性で開発が止まる / 偽陰性で事故を見逃す | ①**E2E と結合で同一のモック実装を使う**（テスト専用の別モックを書かない。`docs/05` §17.5）②分離検証のシナリオは**直列**（`workers: 1`）③テストごとに独立したテナントを作り共有しない ④時刻は `now` を引数で渡し**システム時刻を動かさない** ⑤`development` / `demo` の E2E は**コンテナのネットワークを外向き遮断**して外部到達を構造的に不可能にする |
 | R-07 | **検索が p95 1 秒を満たせない** | `F-009` / `F-015` の受け入れ基準が未達 → Phase 1 が閉じない | 日本語全文検索の実装を `packages/db/src/search/*.ts` の **1 箇所に閉じる**（`pg_trgm` の GIN で代替できる形）。**SP-12 の負荷テストで判定**し、満たせなければ OpenSearch の要否を人間に提起する |
 | R-08 | **スキルシート解析の対象範囲が広がりすぎる** | Phase 2 が膨らむ | 画像 PDF / 画像ファイルは「自動読み取りに対応していない」と**明示**し、アップロードは受け付けるが抽出は行わない（`docs/03` §3.5.2 / `docs/03` `ui-design` 申し送り 8）。**精度目標を受け入れ基準に置かない**（`A-15`） |
@@ -322,6 +324,12 @@ TARGET: SP-01        # または「Phase 1」
 | 2026-09-02 | 🔴 **T-01-09 / E-1 SES 本番アクセス申請を提出 → 一次判定 DENIED（原因: CLI 提出時に日本語の use case が文字化けして登録されたこと）** | AWS Support ケース **`178832016000877`** への訂正返信で再審査を依頼中。**返信文の送信はユーザー操作待ち**であり、却下ケースが開いている間は API からの再申請が `ConflictException` で不可。**承認の完了は T-01-09 の完了条件ではない**（`docs/sprints/SP-01-bootstrap.md` T-01-09）が、**SP-04 開始時点でなお未承認なら §5 リスク R-02 として再確認する** | `docs/dev-plan.md` §5 E-1 / [Issue #19](https://github.com/Festal-KM/SES-Platform/issues/19) |
 | 2026-09-02 | **T-01-09 / E-3 Anthropic API キー取得は未完了** | tier（Start / Build / Scale）と月次上限の記録はユーザー側の残タスクとして未着手のまま残置 | `docs/dev-plan.md` §5 E-3 |
 | 2026-09-02 | **T-01-09 / E-12 マネージド PostgreSQL の拡張可否検証結果を意思決定ログにも記録**（実体の決着は T-01-02、§5 / §9 は既出） | `pg_trgm` / `pg_bigm` は RDS / Aurora で利用可、`pgroonga` は不可。`docs/03` §3.7.2 に反映済み。`pg_trgm` の GIN を基本方式とし `pg_bigm` は精度不足時の代替として温存 | `docs/dev-plan.md` §5 E-12 / §9 `U-8` / TBD-8 |
+| 2026-09-03 | **SP-01 の T-01-01〜T-01-09 が完了**（`MODE: REVIEW` / `TARGET: SP-01` で確認） | 各タスクの完了記録（日付 + コミット）を `docs/sprints/SP-01-bootstrap.md` §4 に追記した: T-01-01 `97e8d23` / T-01-02 `fea6e1c` / T-01-03 `6bb7538` / T-01-04 `6eba20c` / T-01-05 `5d926a9`（以上 2026-09-02）/ T-01-06 `b3e20ee` / T-01-07 `e8bfb20` / T-01-08 `14ec7ed` / T-01-09 `16af2c2`（以上 2026-09-03） | 本書 §7 / `docs/sprints/SP-01-bootstrap.md` |
+| 2026-09-03 | 🔴 **T-01-08 の「分離テストが 1 件でも落ちたら merge 不可」の機械的強制が未達**（GitHub Free の非公開リポジトリではブランチ保護 / ルールセットを設定できない） | 🔴 **暫定は運用 C — CI を run 単位で毎回実行し、green を確認してから次タスクへ進む。** 機械的強制の手段（①リポジトリを public にする ②GitHub Team へ課金 ③運用で担保し続ける）は [Issue #25](https://github.com/Festal-KM/SES-Platform/issues/25) の決定待ち。反映先は **§6.4 R-05 の脚注** と **`docs/sprints/SP-01-bootstrap.md` T-01-08 の完了判定**。**「CI があるから守られている」と読み替えない** | [Issue #25](https://github.com/Festal-KM/SES-Platform/issues/25) / T-01-08 |
+| 2026-09-03 | **`prompts/` の衝突**（Claude Code ハーネスのエージェント資産と、`packages/ai` が読む製品プロンプトが同一ディレクトリに同居する） | **既定値 A で進める: 製品プロンプトは `prompts/roles/{role}/v{N}.md` に置き、`packages/ai/src/prompts.ts` は `prompts/roles/` のみを読む。** §9 に行を追加し、**SP-07 の着手条件**として `docs/sprints/SP-07-ai-layer-gate.md` のヘッダと T-07-05 に注記した。🔴 **確定したら `CLAUDE.md` §2.1 / `docs/05` を §8.7 の手順で先に直す**（スプリントファイルだけを直さない） | [Issue #23](https://github.com/Festal-KM/SES-Platform/issues/23) |
+| 2026-09-03 | **`app_platform_write` に `tenants` の `SELECT` 権限が無く、テナント開設直後の読み戻し（API-A4 の応答）ができない** | **既定値 A で進める: `tenants(id, lifecycle_state)` の列レベル `SELECT` のみを `app_platform_write` に付与する**（行全体・他列は与えない。`docs/05` §5.5 の列レベル `GRANT` の方針を崩さない）。§9 に行を追加し、**T-03-08 の着手前に決定を確認する**注記を置いた | [Issue #24](https://github.com/Festal-KM/SES-Platform/issues/24) / `docs/05` §5.5 / `P-A-13` |
+| 2026-09-03 | 🔴 **`packages/config` の起動時 DI に呼び出し側が存在しない** — T-01-03 で `loadAppEnv`（Zod 検証）と `resolveConnectorSelection`（`APP_ENV` による差し替え）は実装されたが、`apps/web` / `apps/worker` のどこからも呼ばれていないため、**`production` でモック実装が選択されても実行時にプロセスが止まらない**（`CLAUDE.md` §11.1 の 🔴 が空振りする） | 🔴 **SP-03 に `T-03-12`（起動時 DI の呼び出し側）を新設した。** `apps/web/instrumentation.ts` と `apps/worker` の起動処理から**プロセスにつき 1 回**呼び、失敗させる。**Phase 0 は 30 → 31 タスク**（§3.1 の SP-03 を 11 → 12 に更新） | `CLAUDE.md` §11.1 / `docs/05` §13.1 / SP-01 の `MODE: REVIEW` |
+| 2026-09-03 | **E-2 / E-3 の現状を §5 に反映し、担当タスクを割り当てた**（既定値を置いたまま実行タスクが無い状態を作らない） | 🔴 **E-2（本番 / `sandbox` の AWS アカウント分離）を SP-12 の `T-12-09` として実行タスク化**（Phase 1 リリース前。現状は開発用の単一アカウントのみ）。**E-3（Anthropic API キー。未着手・ユーザー作業）は SP-07 の着手条件**として注記。**Phase 1 は 87 → 88 タスク**（§3.2 の SP-12 を 8 → 9 に更新） | 本書 §5 E-2 / E-3 / SP-01 の `MODE: REVIEW` |
 
 ---
 
@@ -335,6 +343,8 @@ TARGET: SP-01        # または「Phase 1」
 | [Issue #3](https://github.com/Festal-KM/SES-Platform/issues/3) / TBD-5 | マッチング重みと、開始日の遅れ・勤務地不一致を「減点」で扱うか「候補から外す」か | `docs/02` A-03 の重み（必須 45 / 開始日 15 / 尚可 12 / 勤務地 10 / 単価 10 / 経験年数 8、必須は足切り）+ **「減点 + 明示フィルタ」**。重みは引数、既定値は `packages/domain` の定数 | SP-13 全般 | SP-13 着手前 |
 | 🔴 [Issue #5](https://github.com/Festal-KM/SES-Platform/issues/5) / TBD-2 | **匿名 5 項目の丸め粒度**（Phase 1 のリリース条件） | `docs/03` §4.13.1（= `docs/02` A-04）: 経験年数 5 段階 / 単価 10 万円刻み・100 万円以上打ち止め / 稼働可能時期 5 段階 / 勤務地は都道府県 + リモート 3 値 / スキルは辞書名の上位 8 件。**k-匿名性の件数閾値は Phase 1 では入れない** | 🔴 **T-08-01 / T-08-03**（実装）/ **T-12-06**（リリース判定の人間確認） | 🔴 **SP-08 着手前**。未回答なら暫定値で実装し T-12-06 で人間確認 |
 | [Issue #12](https://github.com/Festal-KM/SES-Platform/issues/12) / TBD-19 | **席単価**と、取引先の席を課金対象に含めるか | 決め打ちしない。`Plan.monthlySeatPriceJpy` は設定値。`usage.seat-snapshot` の集計関数に `countPartnerSeats: boolean` を引数で持たせる | T-10-04 / T-20-01 | Phase 1 のうちに再提起（T-12-07） |
+| [Issue #23](https://github.com/Festal-KM/SES-Platform/issues/23) | **`prompts/` の衝突** — Claude Code ハーネスのエージェント資産と、`packages/ai` が読む製品プロンプトが同一ディレクトリに同居する | 🔴 **既定値 A: 製品プロンプトは `prompts/roles/{role}/v{N}.md` 配下に置き、`packages/ai/src/prompts.ts` は `prompts/roles/` のみを読む。** 版管理と `ReviewGate` へのプロンプト版の保存（`BR-13`）は既定値に依存しない | **T-07-05**（プロンプト管理）/ T-07-01 / SP-14 の AI ロール追加時 | 🔴 **SP-07 着手前**（`docs/sprints/SP-07-ai-layer-gate.md` のヘッダに着手条件として明記） |
+| [Issue #24](https://github.com/Festal-KM/SES-Platform/issues/24) | **`app_platform_write` に `tenants` の `SELECT` が無く、テナント開設直後の読み戻し（API-A4 の応答）ができない** | 🔴 **既定値 A: `tenants(id, lifecycle_state)` の列レベル `SELECT` のみを付与する**（行全体・他列は与えない）。`docs/05` §5.5 の列レベル `GRANT` の方針と `BR-40`（運営者に非開示のもの）を崩さない。読み戻しが要らない設計に倒す案（B: 応答を入力のエコーに限る）も残す | **T-03-08**（`withPlatform` と `GRANT`）/ T-03-10（API-A4） | 🔴 **SP-03 着手前**（`docs/sprints/SP-03-auth-audit-admin0.md` T-03-08 に確認の注記） |
 | `Q-T-3`② / TBD-4 | プラン別の件数クォータ初期値 | `docs/03` §7.6.2 の表。内部金額上限は Starter $15 / Standard $40 / Business $120。**設計は値に依存させない** | T-10-04 / T-11-02 | Phase 2 の実測後（SP-14） |
 | `Q-T-6` / TBD-13 | Stripe の決済手数料率・S3 / RDS / Fargate の実額 | 手数料 3.6% で仮置き。`packages/config/src/pricing.ts` の設定値 | **T-12-08**（固定費の実額確定）/ **T-20-01**（Stripe `Price` 設計で手数料率を織り込む）/ **T-20-06**（`F-063` の粗利算出が手数料率を消費する） | 料金モデル決定時 |
 | `Q-T-5` / TBD-9 | Anthropic の ZDR を適用するか | 適用を目指すが、設計に影響しない（マスキングは ZDR の有無にかかわらず必須） | T-07-01 | Phase 2 着手前 |

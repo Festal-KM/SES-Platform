@@ -9,7 +9,7 @@
 
 ## 1. 目的
 
-テナント平面と管理平面の**別テーブル・別認証**を立ち上げ、監査ログと役割別ホーム（Phase 0 は空のダッシュボード）を通す。管理平面はテナント一覧・詳細・**テナント開設**まで。`UsageCounter` のテーブルは SP-02 で作ったので、本スプリントでは**計測フック**を置く（`CLAUDE.md` §10.6）。
+テナント平面と管理平面の**別テーブル・別認証**を立ち上げ、監査ログと役割別ホーム（Phase 0 は空のダッシュボード）を通す。管理平面はテナント一覧・詳細・**テナント開設**まで。`UsageCounter` のテーブルは SP-02 で作ったので、本スプリントでは**計測フック**を置く（`CLAUDE.md` §10.6）。あわせて 🔴 **SP-01 から引き継いだ残件「起動時 DI の呼び出し側が存在しない」を T-03-12 で解消する**（`apps/web` / `apps/worker` が実際に起動できるようになるのが本スプリントであるため、ここが最初の実行機会である）。
 
 🔴 **本スプリントの最終タスク（T-03-11）で `CLAUDE.md` §5 の Phase 0 成功条件を E2E で証明する。** ここが green にならない限り Phase 0 は閉じない。
 
@@ -32,6 +32,7 @@
 | T-03-09 | テナント一覧・詳細（`A-002` / `A-003`） | 詳細に氏名・スキルシート・提案本文・チャット本文が現れず導線も無い | `F-056 AC-1` `AC-3` `AC-4` | M |
 | T-03-10 | テナント開設（`A-014`）と `UsageCounter` 計測フック | API-A4 と A5 が分離。席数の日次スナップショットが動く | `F-001 AC-1` `AC-3` / `F-026` | L |
 | T-03-11 | 🔴 **Phase 0 成功条件の E2E** | 2 テナント × 2 パートナーで URL 直打ち・API 直叩きのいずれでも 0 件 | `CLAUDE.md` §5 | L |
+| T-03-12 | 🔴 **起動時 DI の呼び出し側**（`apps/web` / `apps/worker`） | 🔴 `production` でモック実装が選択されたら**プロセスが起動しない**（関数単体ではなく起動経路で証明する） | `CLAUDE.md` §11.1 / `docs/05` §13.1 | M |
 
 ## 4. タスク詳細
 
@@ -107,7 +108,8 @@
   - `/admin` は**別ルート・別ミドルウェア**で認可する（`CLAUDE.md` §10.5）。
   - `PlatformReadDb` に書き込みメソッドを持たせない（型で担保）。
 - 🔴 **運営者に非開示のものは列レベル `GRANT` で外す**（`docs/05` §5.5 / §5.7。`BR-40`）。S3 も `s3:GetObject` を付与しない。
-- **完了の判定**: `platform-grants.test.ts` / `platform-write-scope.test.ts`（SP-02 で書いた走査テスト）が green。`withPlatform` の監査失敗時にクエリが実行されないことの結合テスト。
+- 🔴 **着手前に [Issue #24](https://github.com/Festal-KM/SES-Platform/issues/24) の決定を確認する**（`app_platform_write` に `tenants` の `SELECT` が無く、**テナント開設直後の読み戻し（API-A4 の応答）ができない**）。**既定値 A で進める: `tenants(id, lifecycle_state)` の列レベル `SELECT` のみを `app_platform_write` に付与する**（行全体・他列を与えない。上の 🔴 の列レベル `GRANT` の方針を崩さない）。🔴 **`SELECT` を行全体に広げて通さない** — 広げると `BR-40` の「運営者に見せないもの」の担保が `platform-grants.test.ts` の除外リスト頼みになる。決定が既定値と異なる場合は、`docs/05` §5.5 / `P-A-13` を `CLAUDE.md` §8.7 の手順で先に直してから実装する（`docs/dev-plan.md` §9）。
+- **完了の判定**: `platform-grants.test.ts` / `platform-write-scope.test.ts`（SP-02 で書いた走査テスト）が green。`withPlatform` の監査失敗時にクエリが実行されないことの結合テスト。**`app_platform_write` の `tenants` に対する `SELECT` が `(id, lifecycle_state)` の 2 列に限られること**（走査テストの許可リストに列単位で載る）。
 
 ### T-03-09 テナント一覧・詳細（M）
 
@@ -144,13 +146,29 @@
 - 🔴 **分離検証のシナリオは直列（`workers: 1`）**。RLS の設定漏れは他テストの副作用で偽陽性・偽陰性になる。
 - **完了の判定**: 上記 5 つが green。CI（T-01-08）に E2E ステージを追加する。
 
+### T-03-12 🔴 起動時 DI の呼び出し側（`apps/web` / `apps/worker`）（M）
+
+- **背景**（SP-01 の `MODE: REVIEW` で判明。`docs/dev-plan.md` §8 の 2026-09-03 の行）: **T-01-03 で `packages/config` の `loadAppEnv`（環境変数の Zod 検証）と `resolveConnectorSelection`（`APP_ENV` による外部連携の差し替え）は実装済みだが、`apps/web` / `apps/worker` のどこからも呼ばれていない。** 🔴 **関数として正しくても、アプリが起動時に 1 回も呼ばなければ、`production` でモック実装が選択されても実行時にプロセスが止まらない**（`CLAUDE.md` §11.1 の 🔴 が空振りする）。**これは「成功したように見えて実際には送信されていない」という §11.1 が名指しで避けている壊れ方そのものである。**
+- **実装**:
+  - `apps/web/instrumentation.ts` の `register()` から `loadAppEnv()` → `resolveConnectorSelection()` を**プロセスにつき 1 回**呼ぶ。**例外を握りつぶさず、そのまま起動を失敗させる**（モックへのフォールバックを書かない）。
+  - `apps/worker` の起動エントリポイントでも同じ 2 関数を 1 回呼ぶ。🔴 **web と worker で別々の判定ロジックを書かない** — 判定は `packages/config` の 1 箇所を共有する（二重実装は必ず片方が古くなる）。
+  - 🔴 **リクエストごとの `if` 分岐にしない**（`CLAUDE.md` §11.1）。差し替えは**起動時の 1 箇所**。
+  - 解決結果（`APP_ENV` と各コネクタの実装種別）を起動ログに 1 行出す。🔴 **シークレット（API キー・接続文字列）をログに出さない**（`CLAUDE.md` §3.4 / §3.5）。
+  - 選択結果はプロセス内でキャッシュし、**2 回目以降の呼び出しで外部への再解決や再検証が走らない**（多重初期化を作らない）。
+- **参照**: `docs/05` §13.1（起動時 DI / ファクトリ 1 箇所）/ §13.4（環境変数の検証規則）/ `docs/02` 章 7.6 NFR-ENV-2〜4 / `CLAUDE.md` §11.1。
+- **完了の判定**（🔴 **T-01-03 のユニットテスト（関数単体）とは別に、呼び出し側を含む起動経路のテストであること**）:
+  1. `APP_ENV=production` かつモック実装が選択される環境変数でプロセスを起動すると、**web / worker のいずれも起動に失敗する**（結合テスト）。
+  2. **非本番（`development` / `demo` / `sandbox` / `staging`）に本番の API キーが設定されていると起動に失敗する**（NFR-ENV-4）。web / worker の両方。
+  3. `development` で正常起動し、解決結果のログが**プロセスにつき 1 回だけ**出る（多重初期化にならない）。
+  4. `instrumentation.ts` / worker の起動処理から `loadAppEnv` が呼ばれていることを静的に検査する（呼び出しを消すと落ちる）。**呼び出しが消えても他のテストが green のままになる状態を残さない。**
+
 ## 5. テスト計画
 
 | 層 | 内容 |
 |---|---|
 | **ユニット** | ガードの単体（`requireRole` / `requireExecutable` / `requireNotViewer`）。`HostHomeView` / `PartnerHomeView` の型テスト。Zod スキーマが分離キーを持たないことの型テスト。 |
-| **結合（DB あり）** | `F-002` / `F-003` / **`F-004`（`AC-7` の `SUSPENDED` を除く。SP-20 の T-20-05）** / `F-005` / `F-006` / `F-055` / `F-056` / `F-001` の各 AC。`withPlatform` の監査先行。招待受諾の CAS。`usage.seat-snapshot` の冪等性。 |
-| **静的テスト** | `execute-guard.test.ts`（#7）/ `platform-user-no-flag.test.ts`（#13）/ `no-restricted-imports`（`withPlatform` / `systemTenantCtx` の import 制限）。 |
+| **結合（DB あり）** | `F-002` / `F-003` / **`F-004`（`AC-7` の `SUSPENDED` を除く。SP-20 の T-20-05）** / `F-005` / `F-006` / `F-055` / `F-056` / `F-001` の各 AC。`withPlatform` の監査先行。招待受諾の CAS。`usage.seat-snapshot` の冪等性。🔴 **T-03-12 の起動経路検証（web / worker × 起動失敗 2 ケース + `development` の正常起動 1 ケース）。** |
+| **静的テスト** | `execute-guard.test.ts`（#7）/ `platform-user-no-flag.test.ts`（#13）/ `no-restricted-imports`（`withPlatform` / `systemTenantCtx` の import 制限）/ 🔴 **T-03-12 の起動時 DI 呼び出しの走査**（`instrumentation.ts` と worker のエントリから `loadAppEnv` が呼ばれること）。 |
 | **E2E** | 🔴 **T-03-11 の 5 シナリオ**（`docs/05` §17.3 #1 / #2 / #15）。モバイルビューポートで `S-003` / `S-004` が破綻しないスモーク。 |
 | **外部 API のモック方針** | 🔴 **招待メールとパスワード再設定メールは `packages/connectors/src/mock/**` を使う**（`APP_ENV=development`）。`account.mail` ジョブは enqueue され、モックの `callCount()` で検証する。**実送信の単一経路と宛先分類は SP-04**。テスト専用の別モックを書かない。 |
 
@@ -165,4 +183,5 @@
 4. `OWNER` / `ADMIN` が 2FA 未設定のまま業務データを取得できない。
 5. 運営者の全操作（閲覧を含む）が `AuditLog` に記録され、記録に失敗すると操作が成立しない。
 6. `UsageCounter` のテーブルと計測フック（席数の日次スナップショット + 原子的加算ヘルパ）が動作している（`CLAUDE.md` §10.6）。
-7. **次フェーズの前提**: `docs/dev-plan.md` §5 の E-1（SES 本番アクセス申請）の状況を確認し、未承認なら R-02 として明示的に記録する。
+7. 🔴 **`apps/web` / `apps/worker` の起動時に `loadAppEnv` + `resolveConnectorSelection` が 1 回呼ばれ、`production` でモック実装が選択された場合にプロセスが起動しない**（T-03-12。`CLAUDE.md` §11.1 / `docs/05` §13.1）。**関数単体のテスト（T-01-03）だけでは満たさない。**
+8. **次フェーズの前提**: `docs/dev-plan.md` §5 の E-1（SES 本番アクセス申請）の状況を確認し、未承認なら R-02 として明示的に記録する。

@@ -3,6 +3,7 @@
 > **Phase**: 1（MVP） / **前提**: SP-06 / **後続**: SP-09 / SP-10
 > **一次資料**: `docs/02` `F-020` `F-026` `F-027`（AI 上限）/ 章 8.5 / 章 8.7 / `docs/03` §3.3 / §4.1 / §4.2 / §4.5 / §7.6 / `docs/05` §7 / §9.3 / §11 / §16.5 / `CLAUDE.md` §3.2 / §3.3 / §12
 > **完了確認**: `MODE: REVIEW` / `TARGET: SP-07`
+> 🔴 **着手条件（2 件。いずれもブロッカーではないが、着手前に確認する）**: ① **E-3 Anthropic API キーの取得**（`docs/dev-plan.md` §5 E-3。**2026-09-03 時点で未着手・ユーザー作業**。未取得でも `MockAnthropicClient` で開発と E2E は止まらないが、実接続の確認と tier / 月次上限の記録ができないため督促する）② **[Issue #23](https://github.com/Festal-KM/SES-Platform/issues/23)（`prompts/` の衝突）の決定確認** — 既定値 A（**製品プロンプトは `prompts/roles/{role}/v{N}.md` 配下。`packages/ai/src/prompts.ts` は `prompts/roles/` のみを読む**）で進める（`docs/dev-plan.md` §9 / T-07-05）。
 
 ---
 
@@ -83,6 +84,7 @@
 ### T-07-05 プロンプト管理と `gate-inspector` のプロンプト（M）
 
 - **実装**: `prompts/gate-inspector/v1.md` ほか。`packages/ai/src/prompts.ts`（`prompts/` からのみ読む）。
+- 🔴 **配置場所は [Issue #23](https://github.com/Festal-KM/SES-Platform/issues/23)（`prompts/` の衝突）の決定待ち。既定値 A で進める** — 製品プロンプトは **`prompts/roles/{role}/v{N}.md`**（例: `prompts/roles/gate-inspector/v1.md`）に置き、`packages/ai/src/prompts.ts` は **`prompts/roles/` のみを読む**（Claude Code ハーネスのエージェント資産と同居させない）。**決定が既定値と異なる場合は、`CLAUDE.md` §2.1 / `docs/05` を §8.7 の手順で先に直してから実装する**（本ファイルだけを直さない）。版番号の付け方と `ReviewGate` へのプロンプト版の保存（`BR-13`）は、どちらに決まっても変わらない。
 - 🔴 **プロンプトをコード中にベタ書きしない**（`CLAUDE.md` §3.2）。**生成物に使用プロンプト版を保存し、後から再現できるようにする**（`BR-13`）。
 - **`gate-inspector` の責務**（`CLAUDE.md` §12.2）: PII 層・商流層の検査実行と、**整合層の警告の生成**。🔴 **整合層の合否は判定しない。**
 - **期待する構造化出力**: 層ごとの判定（PII / 商流）、指摘の配列（種別・該当箇所・重大度）、整合層の**警告**の配列。
