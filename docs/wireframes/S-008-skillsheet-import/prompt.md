@@ -85,7 +85,7 @@ Under the table a bordered note strip: `「読み取りを実行」を押すと�
 
 ### Three state strips at the very bottom, each with a small gray caption above it
 - Caption `読み取りに失敗したとき`: `読み取りに失敗しました。手入力で登録してください。台帳の既存値は変更されていません。` with `[ 手入力で登録 ]`
-- Caption `AI の利用上限に達したとき`: `AI の利用上限に達したため読み取りを実行できません。残り 0 / 上限 20.00 USD ・ リセット 明日 00:00` with `[ 利用量と上限を見る ]`
+- Caption `AI の利用上限に達したとき`: `スキルシート解析の月次上限に達したため読み取りを実行できません。あと 0 件 / 180 件 ・ リセット 明日 00:00` with `[ 利用量と上限を見る ]` — NO dollar figure and no old-style remaining/limit currency pairing anywhere in this line; the unit is always a count, matching `S-038` (`U-12`).
 - Caption `スキャンで感染が検出されたとき`: `このファイルは隔離されました。以後どのロールからもダウンロードできません。`
 ```
 
@@ -96,4 +96,5 @@ Under the table a bordered note strip: `「読み取りを実行」を押すと�
 - `未抽出` を語として明示し、推測で埋めない（`F-032 AC-4` / §10.3 の `null` 規約）。手入力欄を隣に置く。
 - 正規化は「元の表記に戻す」を必ず持つ（`F-033 AC-3`）。自動承認でも巻き戻せることが `F-035 AC-4` の要件。
 - AI 由来は文字で 1 行、比喩アイコンを使わない（§9.1 / §7.5）。業務画面では内部識別子ではなく業務上の呼び名を使う。
+- 🔴 2026-09-01 改訂: AI 上限到達時のメッセージから USD 表記（`残り 0 / 上限 20.00 USD`）を全廃し、`スキルシート解析` の件数クォータ（`あと 0 件 / 180 件`）に置き換えた（`U-12` / `F-027 AC-6`）。利用者に見せる残量は件数であり金額を出さない、という `S-038` と同じ規律をこの画面にも揃えた。
 - 関連 UC: UC-23（スキルシート取込）/ UC-02。

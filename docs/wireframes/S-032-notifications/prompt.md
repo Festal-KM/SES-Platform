@@ -32,7 +32,7 @@ Style rules:
 - Dense and realistic.
 
 Persistent UI on this screen:
-- Header bar across the full width: left = the wordmark `SES Platform` (the only place the product name is written), then the scope display `〇〇システム`; right = `通知 5` and the user menu `山田（営業）`. Do NOT draw a usage meter in the header.
+- Header bar across the full width: left = the wordmark `SES Platform` (the only place the product name is written), then the scope display `〇〇システム`; right = a usage indicator reading `AI 停止中` in a filled badge (same treatment as S-038 header — this tenant is over its AI daily cost ceiling; the badge shows only the fact, never a percentage and never a currency figure), then `通知 5` and the user menu `山田（営業）`.
 - Left sidebar, fixed width, text only, no icons: `ホーム`, `① 人材`, `① 案件`, `② 候補を探す`, `③ 提案`, `③ 提案依頼`, `④ 面談・結果`, `⑤ 契約`, `⑥ 稼働`, `チャット`, `タスク`, `実績`, `設定`. `ホーム` is the current item with a filled bar.
 - Content area top: breadcrumb `ホーム ＞ 通知`, the screen title `通知` as the single largest text, and on the right of the title row a secondary button `[ すべて既読にする ]`.
 - No environment banner (this wireframe depicts the production environment).
@@ -60,7 +60,7 @@ Each row: an unread marker square, a small square type glyph, the type name, the
 5. `提案依頼` — `提案依頼 R-0088 の返答期限まで 22 時間です` — `5 時間前` — unread
 6. `満了 60 日前` — `稼働 A-0071（伊藤 修）の延長確認を起票しました` — `昨日`
 7. `満了 30 日前（再通知）` — `稼働 A-0058（高橋 健）の満了まで 30 日です` — `2 日前`
-8. `上限接近` — `AI コストが日次上限の 82% に達しました` — `3 時間前`
+8. `AI 停止中` — `AI が日次上限に達したため停止中です（提案・契約書の品質ゲートは実行されません。リセット: 本日 24:00）` — `3 時間前`
 9. `お知らせ` — `9/5 02:00-04:00 にメンテナンスを実施します` — `昨日`
 10. `代理閲覧の開始` — `運営者による代理閲覧が開始されました（理由の記録あり）` — `4 日前`
 11. `承認待ち` — `提案 P-0145（けやきリテール / 渡辺 翔）が承認を待っています` — `4 時間前`
@@ -95,7 +95,7 @@ IMPORTANT: no chip is hidden behind a "more" control; the row wraps instead.
 Layout: mobile portrait view, single column, edge-to-edge rows.
 
 Order from top:
-1. Compact header: hamburger, wordmark `SES Platform`, `通知 5`; under it `〇〇システム`.
+1. Compact header: hamburger, wordmark `SES Platform`, a usage indicator badge `AI 停止中` filled (same fact as the desktop header, no percentage, no currency), `通知 5`; under it `〇〇システム`.
 2. Title row `通知` with the text link `すべて既読にする`.
 3. A single horizontally scrollable chip row: `[ 未読 ]` (active) `[ 既読 ]` `[ すべて ]` `[ 承認待ち ]` `[ 送信失敗 ]` `[ 提案依頼 ]` `[ 満了 60 日前 ]`.
 4. The `新着 3 件` strip inserted at the top of the list.
@@ -112,4 +112,7 @@ IMPORTANT: new arrivals are inserted as the `新着 3 件` strip at the top; the
 - メール上限で抑止された通知はアプリ内通知として残る旨を該当行に添える（`F-039 AC-3`）。
 - 通知本文に境界外の情報を含めない（`F-039 AC-1`）。本画像はホスト視点であり、取引先の通知には他社の社名・エンジニア名が入らない。
 - 満了 60 日前と 30 日前（再通知）を別の種別として列挙する（`U-03`）。
+- 🔴 2026-09-01 改訂: 行 8（`上限接近`）を `AI コストが日次上限の 82% に達しました` から件数クォータの接近通知に置き換えた（`BR-24` / `U-12` / `docs/04:301`）。AI の 1 日のコスト上限は金額もパーセンテージも一切見せない遮断器であり、到達時は「停止中」とだけ示す（`S-038` と同じ規律）。
+- 🔴 2026-09-01 改訂: 行 8 を `マッチング候補の根拠文` のクォータ（`S-038:54` / `S-035:74` / `A-004:53` と同じ `〇〇システム` の当月フィクスチャで あと 1,240 件 / 6,200 件 ＝ 約 80%）に揃えた。旧文言の `スキルシート解析 …（あと 36 件）` は同テナントの `S-038` 上の値（118/180・あと 62 件）と矛盾し、かつ月次カウンタが 3 時間で 62 件から 36 件まで減る想定になってしまうため置き換えた。あわせてヘッダの上限インジケータを「描かない」から「描く」に変更した（`docs/04:301` は件数クォータが 80% を超えたときにヘッダへ出すと定めており、本画面の通知はまさにその状態を伝えるものであるため、ヘッダを平常時のまま描くと矛盾する）。インジケータは件数のみで金額・パーセンテージは出さない。
+- 🔴 2026-09-01 改訂（Iteration 5・オーケストレーター決定）: `〇〇システム` の当月フィクスチャを AI 日次上限到達済み・停止中で全画面統一する（`S-038` / `A-004` / `S-035` / `S-003` と同一時点）。行 8 を `上限接近`（`根拠文 4,960/6,200` はちょうど 80.0% で「超えた」に該当しない）から `AI 停止中` の停止通知に差し替え、ヘッダの上限インジケータも `S-038:35` と同じ `AI 停止中` filled badge に統一した。desktop / tablet / mobile の 3 セクションで一致させている。
 - 関連 UC: UC-05 / UC-09 / UC-15 / UC-19 の通知経路。

@@ -86,15 +86,24 @@ Beside it, drawn with the small gray caption `未検証のとき`, an alternativ
 ### Section 7: `進行中の表現` — a small band at the bottom of the right column with the caption `ゲート実行中の見え方`
 Three chips in a row showing per-layer progress: `PII 層 < PASS >` / `商流層 < 検査中 > dashed 00:08` / `整合層 < 未実行 >`, plus the gray line `完了すると通知とホームの要対応に現れます`.
 
+### 🔴 Section 8: `AI の日次コスト上限で停止中のとき` — drawn as an alternative version of Section 5 (品質ゲートの結果), with a small gray caption `検査を依頼した後に上限へ到達したとき` above it
+- `PII 層` `< 検査中 >` dashed border with an elapsed time `00:42`, NOT orange, NOT `< FAIL >`
+- `商流層` `< 検査中 >` dashed border with an elapsed time, same treatment, NOT orange
+- `整合層` `< PASS >` outline (the machine-only check already ran and its result is kept as-is; only the AI-dependent layers are held)
+- Under the three, a bordered strip (not a red/orange alert — same neutral tone as an in-progress state): `AI が上限到達で停止しているため検査を実行できません（リセット: 本日 24:00）` with the text link `[ 利用量と上限を見る ]`
+- IMPORTANT: this strip does NOT say "修正して再実行" and does NOT contain a retry button — there is no source data to fix. A small gray line: `上限解除でゲートが自動的に再実行されます。手動でのレビュー再依頼も可能です。`
+- The `[ レビューに出す ]` primary button in the title row is NOT re-enabled and NOT drawn as a distinct error state — the screen stays exactly as it looked right after "レビューに出す" was pressed, just held.
+
 ### Two state strips at the very bottom, each with a small gray caption above it
 - Caption `添付できる版が無いとき`: `共有できるスキルシートがありません（検査中または未登録）` with `[ スキルシートを取り込む ]`
-- Caption `AI の利用上限に達したとき`: `AI の利用上限に達しています（残り 0 / 上限 20.00 USD ・ リセット 明日 00:00）。手入力での作成は続けられます。`
+- Caption `AI の下書き生成が上限で停止しているとき（F-034 AC-3。ゲートの停止とは別物）`: `AI の日次上限に達したため、下書きを生成できません（リセット: 本日 24:00）。手入力での作成は続けられます。` — NO dollar figure, no old-style remaining/limit currency pairing and NO gauge anywhere in this line: the message states only the stopped fact, the reason and the reset time (`U-12`).
 ```
 
 ## 設計意図メモ（画像生成には使われない）
 
 - 「不合格」と「警告」を視覚的に別物にする（申し送り 5 / `docs/02` 申し送り 5 / `BR-61`）。不合格は層ブロック全体を重い枠で FAIL 表示にして送信導線を閉じ、警告は PASS の層の中の 1 項目として併記する。
 - ゲート FAIL の解消手段は元データ修正のみ（`BR-18` / `F-020 AC-2`）。「了解のうえ送信」に相当する要素を画面に一切描かない。
+- 🔴 2026-09-01 改訂: AI の日次コスト上限による停止を `GATE_FAILED`（橙）ではなく `GATE_RUNNING` の保持（検査中のまま + 停止理由 + 再開条件）として描き直した（`F-027 AC-5` / `CLAUDE.md` §4.2「失敗と保留を混同しない」）。整合層の機械照合の結果は確定して保持し、PII / 商流層のみ検査中のまま止める。「修正して再実行」を促さない。あわせて、下書き生成（`F-034 AC-3`）の上限到達メッセージから USD 表記を全廃した（`U-12`）— 旧版が「残り 0 / 上限 20.00 USD」と書いていたのは決定前の暫定で、本改訂で修正した。
 - 凍結情報の注記を対象ブロックの直下に置く（`F-019 AC-2`）。SES では提案後に台帳が変わっても提案内容は変わらない。
 - AI ドラフトには単価とエンド企業名を渡さない（`BR-12` / `F-034 AC-1`）。「単価も含めて書かせる」に相当する選択肢を置かない。
 - 添付は `CLEAN` の版のみ選択肢に現れる（`F-011 AC-1` / `F-019 AC-3`）。検査中・隔離は選択肢そのものが無い。

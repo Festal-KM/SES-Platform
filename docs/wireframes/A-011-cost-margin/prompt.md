@@ -34,8 +34,8 @@ Style rules:
 Persistent UI on every operator screen:
 - A full-width BLACK-FILLED band at the very top reading `運営者コンソール` in reversed white text. The customer-facing plane has no such band.
 - Directly under the band, a header row: left = the wordmark `SES Platform`; right = `運営者: 田中（PLATFORM_OWNER）` with the role spelled out.
-- Navigation is a HORIZONTAL TAB STRIP directly beneath the header, NOT a left sidebar: `監視 (3)` / `テナント` / `契約` / `記録` / `運用`. The active tab is `契約`, drawn filled black.
-- A second, thinner row under the active tab: `契約管理` / `利用量・クォータ` / `原価・粗利` (current, underlined).
+- Navigation is a HORIZONTAL TAB STRIP directly beneath the header, NOT a left sidebar: `監視 (3)` / `テナント` / `契約` / `記録` / `運用`. The active tab is `監視 (3)`, drawn filled black, and it carries the alert count badge. (This dashboard sits in the `監視` group alongside 運用監視, answering "is something wrong right now", not in `契約`.)
+- A second, thinner row under the active tab: `運用監視` / `原価・粗利` (current, underlined).
 - To the right of the screen title, a badge shown at all times: `閲覧のみ（テナント業務データに対して）`.
 - No environment banner (this wireframe depicts the production environment).
 
@@ -45,22 +45,23 @@ IMPORTANT: this screen shows only amounts, counts and rates. There is no link an
 ## desktop.png プロンプト
 
 ```
-Layout: desktop browser view, landscape. Black band, header row and tab strip as in the shared prompt. Title row: `原価・粗利ダッシュボード` as the single largest text with the `閲覧のみ（テナント業務データに対して）` badge beside it, and at the far right the line `集計日時: 2026-08-31 03:00（日次更新）`. Breadcrumb above it: `契約 ＞ 原価・粗利`.
+Layout: desktop browser view, landscape. Black band, header row and tab strip as in the shared prompt. Title row: `原価・粗利ダッシュボード` as the single largest text with the `閲覧のみ（テナント業務データに対して）` badge beside it, and at the far right the line `集計日時: 2026-08-31 03:00（日次更新）`. Breadcrumb above it: `監視 ＞ 原価・粗利`.
 
 ### Section 1: `閾値割れの要約` — a bordered band at the very top
-Two large figures side by side: `閾値割れ 2 件` and `最も悪いテナント つばさネットワークス（粗利率 41.2% / 基準ユニット比 6.8 倍）`.
+Two large figures side by side: `閾値割れ 2 件` and `最も悪いテナント つばさネットワークス（粗利率 42.6% / 基準ユニット比 6.8 倍）`.
 Under them a period selector `対象月` `[ 2026-08 ▾ ]`.
 
 ### Section 2: `収支一覧` — table, 12 body rows, default sort ascending by gross margin rate
-Columns: `テナント` / `プラン` / `売上（席課金）` / `売上（従量）` / `原価（AI）` / `原価（メール）` / `原価（ストレージ）` / `粗利` / `粗利率` / `基準ユニット比の倍率` / `クォータ消化率`
-1. `つばさネットワークス / スタンダード / 140,000 / 6,400 / 78,200 / 3,100 / 1,900 / 63,200 / 41.2% / 6.8 倍 / 104%`
-2. `〇〇システム / スタンダード / 240,000 / 4,800 / 92,400 / 5,200 / 2,600 / 144,600 / 59.1% / 4.2 倍 / 118%`
-3. `北斗ソフトウェア / エンタープライズ / 820,000 / 12,000 / 141,000 / 9,800 / 8,400 / 672,800 / 80.8% / 2.1 倍 / 96%`
-4. `かなで情報技術 / トライアル / 0 / 0 / 3,200 / 200 / 100 / -3,500 / — / 1.4 倍 / 22%`
-5. `こもれびソリューション / ライト / 40,000 / 0 / 3,900 / 400 / 200 / 35,500 / 88.8% / 0.9 倍 / 61%`
-6. `さくらエンジニアリング / スタンダード / 80,000 / 0 / 1,600 / 100 / 300 / 78,000 / 97.5% / 0.2 倍 / 6%`
-7-12. six more rows of the same shape with margins between 88 and 98 percent and multiples between 0.2 and 1.6.
+Columns: `テナント` / `プラン` / `売上（席課金）` / `売上（従量）` / `原価（AI）` / `原価（メール）` / `原価（ストレージ）` / `原価（電子署名）` / `粗利` / `粗利率` / `基準ユニット比の倍率` / `金額上限に対する消費率` / `クォータ消化率（件数）`
+1. `つばさネットワークス / スタンダード / 140,000 / 6,400 / 78,200 / 3,100 / 1,900 / 800 / 62,400 / 42.6% / 6.8 倍 / 97% / 113%`
+2. `〇〇システム / スタンダード / 240,000 / 4,800 / 92,400 / 5,200 / 2,600 / 1,200 / 143,400 / 58.6% / 4.2 倍 / 100% / 109%`
+3. `北斗ソフトウェア / エンタープライズ / 820,000 / 12,000 / 141,000 / 9,800 / 8,400 / 3,600 / 669,200 / 80.4% / 2.1 倍 / 77% / 57%`
+4. `かなで情報技術 / トライアル / 0 / 0 / 3,200 / 200 / 100 / 0 / -3,500 / — / 1.4 倍 / 15% / 22%`
+5. `こもれびソリューション / ライト / 40,000 / 0 / 3,900 / 400 / 200 / 200 / 35,300 / 88.3% / 1.1 倍 / 56% / 67%`
+6. `さくらエンジニアリング / スタンダード / 80,000 / 0 / 1,600 / 100 / 300 / 100 / 77,900 / 97.4% / 0.2 倍 / 6% / 5%`
+7-12. six more rows of the same shape — all 13 columns present, including `原価（電子署名）` and `金額上限に対する消費率` — with margins between 88 and 98 percent and multiples between 0.2 and 1.6.
 The 粗利率 and 基準ユニット比の倍率 columns are adjacent so they can be read together, and the two rows below the threshold are marked at the row edge.
+IMPORTANT: `金額上限に対する消費率` (the AI daily cost ceiling, capped at 100 percent — same figure as `A-004`s `AI コスト` column) and `クォータ消化率（件数）` (the count quotas, which may exceed 100 percent because overage moves to pay-as-you-go rather than stopping) are two clearly separate columns with distinct headers; never merge them or let one be mistaken for the other.
 Under the table, paging `[ 前のページ ]` `1 - 100 / 148` `[ 次のページ ]`.
 
 ### Section 3: `ロール別原価の内訳（つばさネットワークス / 2026-08）` — table with EXACTLY 6 body rows
@@ -94,4 +95,7 @@ Button `[ 閾値を保存 ]` and a gray line `PLATFORM_OWNER のみが設定で�
 - 日次更新で集計日時を明示する（`CLAUDE.md` §10.2 の「月次を待たずに」が受け入れ基準）。
 - 自社カウンタと決済側の差異は警告表示にとどめ、自動補正しない（`docs/03` 申し送り 20）。
 - 金額・件数・率のみで、業務データの内容に到達する導線が存在しない（`F-063 AC-4`）。
+- 🔴 タブは「監視」に置く（`docs/04` §3.3 の確定表）。「その顧客は使えているか」（テナント）でも「契約と枠をどうするか」（契約）でもなく、「いま異常は起きているか」に答える画面であり、`A-005` 運用監視と並ぶ。
+- 🔴 2026-09-01 改訂: `docs/04:1588` の列構成に揃え、`原価（電子署名）` と `金額上限に対する消費率`（`F-063 AC-5`）の 2 列を追加した（従来は 11 列で、電子署名原価と金額ベースの消費率が欠けていた）。原価の合計が変わったため、6 行の例の `粗利` / `粗利率` を再計算し、要約バンドの `粗利率 41.2%` も `42.6%` に更新した。
+- 🔴 2026-09-01 改訂: 旧 `クォータ消化率` 列を `クォータ消化率（件数）` に改称した。これは `A-004` の 4 種の件数クォータ（スキルシート解析 / 候補の根拠文 / 提案ドラフト / 延長論点整理）のうち最大値であり、`A-004` の `AI コスト消化率`（`金額上限に対する消費率` として本画面に別列で持つ、上限 100% の遮断器指標）とは別の指標である。値は `A-004` の当月フィクスチャと整合させた（例: `〇〇システム` は `A-004` の `ドラフト 196/180` → `109%`、`つばさネットワークス` は `解析 204/180` → `113%`）。件数クォータは超過しても停止せず従量課金に移行するため 100% を超えてよいが、`金額上限に対する消費率` は遮断器であり 100% を超えない（`A-004` と同じ規律）。列名を並べて描くことで、運営者がこの 2 指標を取り違えないようにした。
 - 関連 UC: UC-10（収益性の監視）。

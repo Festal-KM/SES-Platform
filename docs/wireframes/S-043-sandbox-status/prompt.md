@@ -56,13 +56,15 @@ A gray line: `期限予告のメールはお使いのアドレスに実際に届
 3. `自社メンバー宛の招待・期限のお知らせは実際に届きます`
 IMPORTANT: do not write "メールは一切送信されません" and do not write "すべてのメールが届きます". The three rows must stay in this order and none may be merged.
 
-### Section 3: `本契約への移行チェックリスト` — table, 4 body rows
-Columns: `項目` / `状態` / `導線`
-- `[ ] 送信ドメインの検証 / 未完了（本契約では必須） / [ 送信ドメインを設定する ]`
-- `[x] メンバーの招待 / 完了（4 名） / [ メンバーを管理する ]`
-- `[ ] 取引先の招待 / 未完了（0 社） / [ 取引先を招待する ]`
-- `[x] 案件と人材の登録 / 完了（案件 6 件 / 人材 24 件） / [ 一覧を見る ]`
-The incomplete rows are sorted to the top and their `状態` cell is emphasised.
+### Section 3: `本契約への移行チェックリスト` — table, 5 body rows
+Columns: `項目` / **`区分`** / `状態` / `導線`
+- `[ ] 送信ドメインの検証 / < 必須 > filled / 未完了 / [ 送信ドメインを設定する ]`
+- 🔴 `[ ] 電子署名アカウントの接続 / < 任意 > outline / 未完了 / [ 電子署名を接続する ]` — beside this row, a small gray note: `未接続でも契約書はメール添付で送付でき、⑤ 契約は完了します`
+- `[x] メンバーの招待 / < 必須 > filled / 完了（4 名） / [ メンバーを管理する ]`
+- `[ ] 取引先の招待 / < 必須 > filled / 未完了（0 社） / [ 取引先を招待する ]`
+- `[x] 案件と人材の登録 / < 必須 > filled / 完了（案件 6 件 / 人材 24 件） / [ 一覧を見る ]`
+The incomplete REQUIRED rows are sorted to the top and their `状態` cell is emphasised. The optional row (電子署名アカウントの接続) is visually distinguished by its `< 任意 >` badge but is NOT sorted above the incomplete required rows, and is never treated as blocking the migration.
+A gray line under the table: `「必須」は本契約への移行前に完了させる項目、「任意」は未完了のまま移行しても業務に支障がない項目です。試用でできたことが本番でそのままできるとは限らないため、この区別を明示しています。`
 
 ### Section 4: `期限到来後に何が起きるか` — a bordered block of three wrapped lines
 `期限までに本契約に至らない場合、この組織は解約手続き中となります。`
@@ -82,6 +84,7 @@ With the text link `[ データの返却と保持期間を見る ]`.
 - 環境バナーの 3 点構成を画面本文にも再掲する（`U-07` / §3.5）。バナーは常時目に入るが、移行を検討する瞬間に必要な情報は操作の隣にあるべき。
 - 「メールは一切送信されません」「すべてのメールが届きます」のどちらも書かない（`F-028 AC-2` / `docs/01` `R-2`）。3 行の順序（送信されない → 代替手段がある → 実際に届く）を固定した。
 - 送信ドメインの検証を「本契約では必須」としてチェックリストの先頭に置く（`U-04` / `docs/03` 申し送り 2）。
+- 🔴 電子署名アカウントの接続を「任意」として追加した（2026-09-01、`F-054 AC-3`）。未接続でも契約書はメール添付で送付でき、⑤ 契約は完了する（`F-049 AC-8` / `AC-9`）。必須・任意をバッジで明確に区別し、任意項目が未完了でも移行を妨げないことを示した。
 - 移行そのものはテナント側から実行できない（`F-054 AC-7`）。その旨を導線の隣に明示する。
 - 期限到来後の説明を隠さない（`F-054 AC-4` / `F-064`）。返却と削除の順序を書く。
 - `production` のテナントではこの画面が存在せず、設定の目次にも出ない。

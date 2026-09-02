@@ -36,7 +36,7 @@ Persistent UI on every operator screen:
 - A full-width BLACK-FILLED band at the very top reading `運営者コンソール` in reversed white text. The customer-facing plane has no such band.
 - Directly under the band, a header row: left = the wordmark `SES Platform`; right = `運営者: 田中（PLATFORM_OWNER）` with the role spelled out.
 - Navigation is a HORIZONTAL TAB STRIP directly beneath the header, NOT a left sidebar: `監視 (3)` / `テナント` / `契約` / `記録` / `運用`. The active tab is `契約`, drawn filled black.
-- A second, thinner row under the active tab: `契約管理` (current, underlined) / `利用量・クォータ` / `原価・粗利`.
+- A second, thinner row under the active tab: `契約管理` (current, underlined) / `利用量・クォータ` / `サンドボックス`. (`原価・粗利` belongs to the `監視` tab group, not here.)
 - This screen allows writing (contract lifecycle), so it does NOT carry the `閲覧のみ` badge.
 - No environment banner (this wireframe depicts the production environment).
 

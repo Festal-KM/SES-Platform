@@ -40,7 +40,7 @@ Persistent UI on every operator screen:
 - Below the banner, a full-width BLACK-FILLED band reading `運営者コンソール` in reversed white text. The customer-facing plane has no such band.
 - Directly under the band, a header row: left = the wordmark `SES Platform`; right = `運営者: 田中（PLATFORM_OWNER）` with the role spelled out.
 - Navigation is a HORIZONTAL TAB STRIP directly beneath the header, NOT a left sidebar: `監視 (3)` / `テナント` / `契約` / `記録` / `運用`. The active tab is `テナント`, drawn filled black.
-- A second, thinner row under the active tab: `テナント一覧` / `テナント詳細` / `サンドボックス` / `テナントの開設` (current, underlined).
+- A second, thinner row under the active tab: `テナント一覧` / `テナント詳細` / `テナントの開設` (current, underlined). (`サンドボックス` belongs to the `契約` tab group, not here.)
 - This screen allows writing (tenant creation), so it does NOT carry the `閲覧のみ` badge.
 ```
 
@@ -51,7 +51,7 @@ Layout: desktop browser view, landscape. Environment banner, black band, header 
 
 Content is a 2-column split: the form on the left (about 58 percent) and the recent provisioning list on the right (about 42 percent).
 
-## Left column — SEVEN numbered sections in this exact order
+## Left column — EIGHT numbered sections in this exact order (1 / 2 / 3 / 4 / 5 / 5b / 6 / 7)
 
 ### 1. `開設先の環境`
 A read-only value box: `sandbox`
@@ -78,24 +78,29 @@ Directly under the selected radio, an indented note block of three lines: `期�
 A gray line: `招待できるのは 1 名だけです。以降のメンバー追加はテナント側で行います。`
 IMPORTANT: there is exactly one name field and one address field. There is no control for adding a second invitee, no plus button and no repeatable row.
 
+### 5b. `送信ドメインの登録`
+`送信元ドメイン（取引先へのメールに使う独自ドメイン）` ______________ showing `mirai-is.example.co.jp`, marked optional at this step (`未入力でも開設できます`).
+Under it, a bordered note of two lines: `DNS レコードの設定と検証はここでは行いません。受諾後に OWNER 自身が「送信ドメインの設定と検証」で行います。` / `開設直後は「未検証」（＝取引先へ 1 通も送れない状態）になり、未入力のまま開設すると運用監視の検証未了テナントに即日現れます。`
+IMPORTANT: this section has no DNS record table and no "検証を実行" button — verification happens on the tenant side, not here.
+
 ### 6. `開設後に自動で入る既定値` — a bordered read-only block placed immediately before the confirmation
 Three rows: `自動承認` `無効` / `AI 運用ロールの承認モード` `すべて都度承認` / `案件の公開範囲` `誰にも公開されない`
 A gray line: `危険側に倒れた既定では開設されません。`
 
 ### 7. `開設の確認`
-A bordered confirmation panel repeating: `企業名: みらい情報サービス株式会社` / `環境: sandbox` / `契約の初期状態: SANDBOX（30 日）` / `招待先: morimoto@mirai-is.example.co.jp`
+A bordered confirmation panel repeating: `企業名: みらい情報サービス株式会社` / `環境: sandbox` / `契約の初期状態: SANDBOX（30 日）` / `招待先: morimoto@mirai-is.example.co.jp` / `送信元ドメイン: mirai-is.example.co.jp（開設直後は未検証）`
 One primary button `[ テナントを開設する ]`.
 
 ## Right column
 
 ### `直近の開設` — table, 8 body rows
-Columns: `開設日時` / `企業名` / `環境` / `契約の初期状態` / `招待の状態`
-1. `2026-08-30 16:12 / ひまわりソリューション / sandbox / SANDBOX / < 送信済み > outline`
-2. `2026-08-28 10:45 / あおぞら技研 / sandbox / SANDBOX / < 受諾済み > filled`
-3. `2026-08-26 09:03 / かなで情報技術 / sandbox / SANDBOX / < 送信失敗 > filled` with the inline links `[ 招待を再送 ]` `[ リンクを取得 ]`
-4. `2026-08-24 14:31 / 北斗ソフトウェア / production / ACTIVE / < 受諾済み > filled`
-5-8. four more rows of the same shape, one showing `< 送信中 > dashed`.
-A gray line under the table: `開設して終わりにせず、受諾までを追えるようにしています。`
+Columns: `開設日時` / `企業名` / `環境` / `契約の初期状態` / `招待の状態` / `送信ドメインの検証状態`
+1. `2026-08-30 16:12 / ひまわりソリューション / sandbox / SANDBOX / < 送信済み > outline / 未検証`
+2. `2026-08-28 10:45 / あおぞら技研 / sandbox / SANDBOX / < 受諾済み > filled / 検証待ち`
+3. `2026-08-26 09:03 / かなで情報技術 / sandbox / SANDBOX / < 送信失敗 > filled / 未入力` with the inline links `[ 招待を再送 ]` `[ リンクを取得 ]`
+4. `2026-08-24 14:31 / 北斗ソフトウェア / production / ACTIVE / < 受諾済み > filled / 検証済み`
+5-8. four more rows of the same shape, one showing `< 送信中 > dashed` and a mix of `未検証` / `検証待ち` / `検証済み` in the last column.
+A gray line under the table: `開設して終わりにせず、受諾と送信ドメインの検証まで（＝取引先へ送信できる状態）を追えるようにしています。`
 
 ### Three state strips at the very bottom, each with a small gray caption above it
 - Caption `開設に失敗したとき`: `テナントは作成されていません` with `入力内容は保持しています` and `[ 再試行 ]`
@@ -112,4 +117,7 @@ A gray line under the table: `開設して終わりにせず、受諾までを�
 - 開設の失敗と招待メールの失敗を 2 つの事実として分けて示し、開設のやり直しに誘導しない（重複テナントが生まれる）。
 - `PLATFORM_SUPPORT` にはこの画面が存在せず、ナビにも現れない（グレーアウトもしない。`gate-inspector` と同じ原則）。
 - テナントの器と初期 `OWNER` だけを作り、業務データは 1 件も作らない（`BR-37`）。
+- セクション 5b（送信ドメインの登録）を追加した（`F-001 AC-4`）。DNS レコードの設定と検証は運営者が代行せず、`OWNER` が受諾後に主平面の `S-036` で行う。未入力でも開設できるが、その場合は `A-005` の監視項目 11 に即日現れる旨を明示する。
+- 「直近の開設」に送信ドメインの検証状態列を追加した。開設して終わりにせず、オンボーディングの到達点（「取引先へ送信できる状態」）まで追えることを示す（§2.3）。
+- 契約の管理（`A-010`）とサンドボックス管理（`A-013`）は「契約」タブに移動したため、本画面のタブ内訳は「テナント一覧 / テナント詳細 / テナントの開設」の 3 画面のみである（`docs/04` §3.3）。
 - 関連 UC: UC-01（テナント開設）。

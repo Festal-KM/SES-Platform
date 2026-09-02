@@ -71,8 +71,10 @@ A gray line: `招待は「送信を受け付けました」と表示され、状
 IMPORTANT: this block contains ONLY this one toggle. Do not place any AI-role approval-mode rows, any per-role toggles or any model settings inside or next to it.
 
 ### Section 5: `契約プランと利用量（要約）`
-Definition list: `プラン` `スタンダード` / `席数` `12 / 20` / `当月の AI 利用量` `消化率 63%` / `残量` `7.4 USD / 20.0 USD`
+Definition list: `プラン` `スタンダード` / `席数` `12 / 20` / `当月の AI 利用量（代表 1 種の件数クォータ）` `スキルシート解析 あと 62 件 / 180 件`
+A gray line: `他 3 種（候補の根拠文 / 提案ドラフト / 延長論点の整理）は詳細画面で確認できます`
 Text link `[ 利用量と上限の詳細を見る ]`.
+IMPORTANT: no currency amount of any kind and no remaining/limit currency pairing anywhere in this section — the unit is always a count, matching `S-038` (`U-12`).
 
 ### Section 6: `設定の目次` — a plain two-column list of text links
 `送信ドメインの設定と検証` / `電子署名サービスの接続` / `利用量と上限` / `AI 運用ロールの設定` / `マッチング重みの設定` / `監査ログ` / `データの返却と保持期間` / `取引先企業`
@@ -90,4 +92,5 @@ Text link `[ 利用量と上限の詳細を見る ]`.
 - ロール変更の確認に「できなくなること / できるようになること」を列挙する（`F-002 AC-3`）。
 - `PARTNER_ADMIN` は本画面に到達せず、自社配下は `S-014` の自社詳細から管理する（`F-002 AC-4`）。
 - 通貨は日本円固定で選択肢を置かない。
+- 🔴 2026-09-01 改訂: セクション 5 の `残量` を USD 表記（`7.4 USD / 20.0 USD`）から件数ベースの要約に置き換えた（`U-12` / `F-027 AC-6`）。`docs/04` §4.8 `S-035` は「当月の AI 利用量とクォータ消化率 / 残量」を挙げるのみで金額を指定しておらず、`S-038` の 4 単位のうち代表 1 種（スキルシート解析）のみを要約として示し、残りは詳細画面（`S-038`）へ誘導する形にした。
 - 関連 UC: UC-11（メンバー管理）/ UC-06（自動承認）。

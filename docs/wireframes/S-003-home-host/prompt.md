@@ -33,7 +33,7 @@ Style rules:
 - Very dense and realistic. Sales staff open this first thing in the morning; the first screenful must show at least 12 rows of work.
 
 Persistent UI on this screen:
-- Header bar across the full width: left = the wordmark `SES Platform` (the only place in the product where the product name is written), then the scope display `〇〇システム`; right = `通知 5` and the user menu `山田（営業）` with the role always in parentheses. Do NOT draw a usage meter in the header; it appears only above 80 percent usage.
+- Header bar across the full width: left = the wordmark `SES Platform` (the only place in the product where the product name is written), then the scope display `〇〇システム`; right = a usage indicator reading `AI 停止中` in a filled badge (same treatment as S-038 header — this tenant is over its AI daily cost ceiling; the badge shows only the fact, never a percentage and never a currency figure), then `通知 5` and the user menu `山田（営業）` with the role always in parentheses.
 - Left sidebar, fixed width, text only, no icons, items in business-loop order: `ホーム`, `① 人材`, `① 案件`, `② 候補を探す`, `③ 提案`, `③ 提案依頼`, `④ 面談・結果`, `⑤ 契約`, `⑥ 稼働`, `チャット`, `タスク`, `実績`, `設定`. `ホーム` is the current item, marked with a filled bar on its left edge.
 - Content area top: breadcrumb `ホーム`, the screen title `ホーム` as the single largest text, and the toggle `[x] 自分の担当のみ` at the right of the title row.
 - A thin bordered announcement strip directly under the header: `お知らせ: 9/5 02:00-04:00 にメンテナンスを実施します`.
@@ -122,6 +122,6 @@ IMPORTANT: sections 1 to 4 are never collapsed on mobile, because folding them h
 - 最上部を「1 本の要対応テーブル」にし、KPI カード 4 枚・グラフ・アクティビティフィードを描かない（申し送り 3 / §7.2 / §11-3）。種別ごとにカードを割ると「今日どれから手を付けるか」が判断できなくなる。
 - 並びの主キーは件数ではなく経過時間 × 取り返しのつかなさ。`送信失敗`（外部に届いたか不明）を最上位、`承認待ち` を次に置いた（`BR-21` / `BR-22` を前提にした順序）。
 - `満了が近い稼働` と `待機予定に戻った人材` / `後任募集の案件` を同じ画面に置くことで、⑥→① の還流の入口と出口が 1 枚で読める。
-- 上限インジケータは 80% 未満なのでヘッダに描かない（常時警告は無視されるため）。
+- 🔴 2026-09-01 改訂（Iteration 5・オーケストレーター決定）: ヘッダに `AI 停止中` の filled badge を描く（`S-038:35` と同一の描き方）。`〇〇システム` の当月フィクスチャは AI 日次上限到達済み・停止中で全画面統一するため（`S-038` / `A-004` / `S-035` / `S-032` と同一時点）。バッジは事実のみを示し、パーセンテージや金額は出さない。旧文「80% 未満なのでヘッダに描かない」は本フィクスチャでは該当しない。
 - AI ロールの確認待ちは業務上の呼び名で 1 行に出す（§8.4 / §9.2）。内部識別子は業務画面に出さない。
 - 関連 UC: UC-05（承認）/ UC-09（送信失敗の再送）/ UC-19（延長確認）の起点。

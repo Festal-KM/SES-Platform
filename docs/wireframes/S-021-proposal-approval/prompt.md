@@ -85,9 +85,10 @@ Beside it, with the small gray caption `未検証のとき`, an alternative stri
 `[ 承認して送信 ]` primary black-filled, then `[ 手直しして承認 ]`, `[ 却下（差し戻し） ]`, `[ 再生成を依頼 ]` as outlined buttons.
 Under the buttons a gray line: `「手直しして承認」を選ぶと、編集した内容で品質ゲートが再実行されます`.
 
-## Two state strips across the very bottom of the image, each with a small gray caption above it
+## Three state strips across the very bottom of the image, each with a small gray caption above it
 - Caption `ゲート FAIL の提案を開いたとき`: a band containing the heavily bordered `商流層 < FAIL >` block, the sentence `検査で不合格のため承認できません。作成者が元データを修正すると再度検査されます。`, a list of two findings — and NO action buttons of any kind in the action position.
 - Caption `送信を押した直後`: a band showing `送信を受け付けました` and the badge `< 送信中 >` dashed with `経過 00:06`, plus the gray line `自動での再送は行われません`. It does NOT say 送信済み.
+- 🔴 Caption `AI の日次コスト上限で停止中の提案について（S-019 の承認待ち一覧から見たとき）`: a narrow explanatory band, NOT a proposal card — just the sentence `AI が上限到達で停止している提案は、この承認待ちキューに現れません。対象は「検査中」のまま S-020 に留まり、停止理由と再開条件が表示されます。承認にも却下にも進みません。` This clarifies that such proposals are absent from this screen entirely, rather than appearing here in a special state.
 ```
 
 ## tablet.png プロンプト
@@ -137,4 +138,5 @@ IMPORTANT: the gate result is never folded away, the judgement header is never c
 - ゲート FAIL の提案では承認アクションを 1 つも描画しない（無効ボタンも置かない）。「了解のうえ送信」は存在しない（`BR-18`）。
 - 送信は押した瞬間に「送信済み」と出さない（`送信を受け付けました` → `送信中` → 確定。`BR-22`）。自動リトライしない旨を添える。
 - 重複提案はホストのみ（`F-037 AC-1` / `BR-08`）。一括承認は `S-019` 側にあり、モバイルには表示しない（`F-021 AC-6` / `BR-50`）。
-- 関連 UC: UC-05（承認 → 送信）/ UC-06（一括承認）/ UC-09（送信失敗）。
+- 🔴 2026-09-01 改訂: AI の日次コスト上限で停止中の提案は `GATE_RUNNING` に留まり `APPROVAL_PENDING` に進まないため、本画面の承認待ちキューには現れない（`F-027 AC-5`）。この「現れないこと」自体を状態記述として明示した（`S-020` 参照）。
+- 関連 UC: UC-05（承認 → 送信）/ UC-06（一括承認）/ UC-09（送信失敗）/ UC-12（AI コスト上限到達）。

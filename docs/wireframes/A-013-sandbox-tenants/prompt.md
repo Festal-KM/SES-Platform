@@ -34,8 +34,8 @@ Style rules:
 Persistent UI on every operator screen:
 - A full-width BLACK-FILLED band at the very top reading `運営者コンソール` in reversed white text. The customer-facing plane has no such band.
 - Directly under the band, a header row: left = the wordmark `SES Platform`; right = `運営者: 田中（PLATFORM_OWNER）` with the role spelled out.
-- Navigation is a HORIZONTAL TAB STRIP directly beneath the header, NOT a left sidebar: `監視 (3)` / `テナント` / `契約` / `記録` / `運用`. The active tab is `テナント`, drawn filled black.
-- A second, thinner row under the active tab: `テナント一覧` / `テナント詳細` / `サンドボックス` (current, underlined) / `テナントの開設`.
+- Navigation is a HORIZONTAL TAB STRIP directly beneath the header, NOT a left sidebar: `監視 (3)` / `テナント` / `契約` / `記録` / `運用`. The active tab is `契約`, drawn filled black. (Sandbox tenant management belongs to the `契約` tab group, alongside contract management and quota management, not to `テナント`.)
+- A second, thinner row under the active tab: `契約管理` / `利用量・クォータ` / `サンドボックス` (current, underlined).
 - This screen allows writing (conversion and deadline extension), so it does NOT carry the `閲覧のみ` badge.
 - No environment banner (this wireframe depicts the production environment).
 
@@ -45,7 +45,7 @@ IMPORTANT: this screen must NOT contain any deletion-completion confirmation. It
 ## desktop.png プロンプト
 
 ```
-Layout: desktop browser view, landscape. Black band, header row and tab strip as in the shared prompt. Title row: `サンドボックステナントの管理` as the single largest text. Breadcrumb above it: `テナント ＞ サンドボックス`.
+Layout: desktop browser view, landscape. Black band, header row and tab strip as in the shared prompt. Title row: `サンドボックステナントの管理` as the single largest text. Breadcrumb above it: `契約 ＞ サンドボックス`.
 
 Content is a 2-column split: list on the left (about 56 percent), detail of the selected tenant on the right (about 44 percent).
 

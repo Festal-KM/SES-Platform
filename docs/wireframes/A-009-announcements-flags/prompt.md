@@ -35,7 +35,7 @@ Persistent UI on every operator screen:
 - A full-width BLACK-FILLED band at the very top reading `運営者コンソール` in reversed white text. The customer-facing plane has no such band.
 - Directly under the band, a header row: left = the wordmark `SES Platform`; right = `運営者: 田中（PLATFORM_OWNER）` with the role spelled out.
 - Navigation is a HORIZONTAL TAB STRIP directly beneath the header, NOT a left sidebar: `監視 (3)` / `テナント` / `契約` / `記録` / `運用`. The active tab is `運用`, drawn filled black.
-- A second, thinner row under the active tab: `お知らせ・機能フラグ` (current, underlined) / `デモ環境データ`.
+- A second, thinner row under the active tab, with a SINGLE tab item only: `お知らせ・機能フラグ` (current, underlined). This wireframe depicts the production environment, where the sibling tab that manages synthetic demo data does not exist at all — it is a `demo`/`development`-only tab item and must not be drawn here, not even in a grayed-out or disabled form.
 - This screen allows writing (announcements and feature flags), so it does NOT carry the `閲覧のみ` badge.
 - No environment banner (this wireframe depicts the production environment).
 
@@ -100,4 +100,5 @@ Columns `日時` / `実施者` / `操作` / `対象`.
 - お知らせ本文に他テナントを特定できる情報を含められない（`F-061 AC-3`）。
 - `PLATFORM_SUPPORT` は閲覧のみで、作成・開放・閉鎖の導線が存在しない。その状態を 1 枚の下部に併記した。
 - 書き込みが許される 6 画面の 1 つなので `閲覧のみ` バッジを付けない（§3.3-4）。
+- 🔴 2026-09-01 改訂: サブナビから `デモ環境データ`（`A-012`）を外した。`docs/04` §3.3 は `A-012` を `demo` / `development` でのみ存在するタブ項目と定めており（`F-053 AC-6`）、本画像が描く `production` には存在しない。グレーアウト表示も避けた（`gate-inspector` の「存在しない選択肢を描画しない」原則と同じ）。
 - 関連 UC: UC-10（障害告知）。

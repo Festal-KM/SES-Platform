@@ -34,7 +34,7 @@ Style rules:
 
 Persistent UI on this screen:
 - Header bar across the full width: left = the wordmark `SES Platform` (the only place the product name is written), then a two-level scope display on two lines `〇〇システム` over `△△テック（御社）`; right = `通知 3` and the user menu `佐藤（取引先営業）` with the role always in parentheses. Do NOT draw a usage meter or any remaining-quota number in the header — partner-side roles never see quota amounts.
-- Left sidebar, fixed width, text only, no icons, in this exact order: `ホーム`, `① 自社の人材`, `① 公開された案件`, `② 自社の候補を探す`, `③ 提案`, `③ 提案依頼 (2)`, `④ 面談・結果`, `共有の設定`, `チャット`, `タスク`, `実績`, `設定`. `ホーム` is the current item, marked with a filled bar on its left edge. The sidebar has no 契約 item and no 稼働 item at all.
+- Left sidebar, fixed width, text only, no icons, in this exact order: `ホーム`, `① 自社の人材`, `① 公開された案件`, `② 自社の候補を探す`, `③ 提案`, `③ 提案依頼 (2)`, `④ 面談・結果`, `⑤ 自社が当事者の契約`, `⑥ 自社エンジニアの稼働`, `共有の設定`, `チャット`, `タスク`, `実績`, `設定`. `ホーム` is the current item, marked with a filled bar on its left edge. 🔴 `⑤` links to `S-045` (取引先ビューの契約・発注) and `⑥` links to `S-044` (取引先ビューの稼働) — these are dedicated read-only screens, NOT the host's own `S-025` / `S-029`, and neither carries a count badge (this list is unchanged from the host list except that the labels are prefixed `自社が当事者の` / `自社エンジニアの` to make the narrower scope explicit).
 - Content area top: breadcrumb `ホーム`, the screen title `ホーム` as the single largest text.
 - No environment banner (this wireframe depicts the production environment).
 
@@ -76,7 +76,7 @@ Columns: `氏名` / `稼働可能時期` / `共有設定`. The 共有設定 colu
 ## tablet.png プロンプト
 
 ```
-Layout: tablet landscape view. Header and sidebar as in the shared prompt; the sidebar is narrower but still text-only and fully listed, still without 契約 and 稼働.
+Layout: tablet landscape view. Header and sidebar as in the shared prompt; the sidebar is narrower but still text-only and fully listed, including `⑤ 自社が当事者の契約` and `⑥ 自社エンジニアの稼働`.
 
 The main content is ONE column, not a shrunken 2-column desktop. Order from top:
 1. `提案依頼（返答期限つき）`, 4 rows, with `返答期限までの残り` still the most emphasised value.
@@ -112,7 +112,7 @@ IMPORTANT: sections 1 to 4 are never collapsed on mobile. No count or hint about
 
 - 取引先は 1 日 4〜5 時間滞在する主利用者であり、`S-003` と同じ密度で描く（`U-09` / `CLAUDE.md` §1.2 の 🔴 段落）。簡易版にしない。
 - 最上部を「返答期限」にしたのは、取引先にとって最も時間切れが痛いのが `ProposalRequest` の `EXPIRED` だから（§11-4）。ホストの `S-003` が「放置時間」を主キーにしたのと対になる。
-- ナビから ⑤ 契約・⑥ 稼働を消したのは機能の省略ではなく、パートナーに `−` の機能をグレーアウトで見せないという原則（§3.1 の 🔴）。代わりにセクション 5 で自社台帳の属性として稼働可能時期を提供する。
+- 🔴 2026-09-01（Issue #8）、越境経路 5 の承認によりナビに ⑤ ⑥ が復活した（`docs/04` §3.1 の 🔴 段落。旧版の「表示しない」は取り下げ）。ただし遷移先はホストの `S-025` / `S-029` ではなく、開示項目を `BR-66` に固定した専用画面 `S-044` / `S-045` である（`U-11`）。セクション 5（稼働可能時期が近い自社エンジニア）は自社台帳の属性（越境ではない）であり、`S-044` の満了日・延長確認の状態（越境経路 5）とは別物として混ぜない。
 - 件数バッジは自社スコープのものだけ（「御社に公開された案件 14 件」「御社が作成した提案 24 件」）。他社に関する件数・存在・順位の示唆は 1 つも描かない（`BR-07` / `F-004 AC-4`）。
 - 上限インジケータの残量・上限値はパートナーには出さない（`F-027 AC-1`）。停止の事実と理由は操作の場所で示す。
 - 関連 UC: UC-13（取引先の 1 日）/ UC-14（匿名共有）/ UC-15（提案依頼への応諾）。

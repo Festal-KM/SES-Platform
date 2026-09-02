@@ -34,7 +34,7 @@ Style rules:
 Persistent UI on this screen:
 - Header bar across the full width: left = the wordmark `SES Platform` (the only place the product name is written), then the scope display `〇〇システム`; right = `通知 5` and the user menu `山田（営業）`. Do NOT draw a usage meter in the header.
 - Left sidebar, fixed width, text only, no icons: `ホーム`, `① 人材`, `① 案件`, `② 候補を探す`, `③ 提案`, `③ 提案依頼`, `④ 面談・結果`, `⑤ 契約`, `⑥ 稼働`, `チャット`, `タスク`, `実績`, `設定`. `⑤ 契約` is the current item with a filled bar.
-- Content area top: breadcrumb `ホーム ＞ 契約`, the screen title `契約一覧` as the single largest text, and exactly one primary button on the right of the title row: `[ 契約を作成 ]`.
+- Content area top: breadcrumb `ホーム ＞ 契約`, the screen title `契約一覧` as the single largest text, and on the right of the title row exactly two buttons: the primary `[ 契約を作成 ]` and, beside it, the secondary `[ 取引先にはこう見えています ]` which opens the partner-facing contracts screen as a read-only preview.
 - No environment banner (this wireframe depicts the production environment).
 ```
 
@@ -77,6 +77,7 @@ Columns `対象` / `期日` / `超過日数` / `担当`. Example: `A-0071 伊藤
 - 3 つの終わり方を別の語・別のフィルタ・別の集計にする（`F-047 AC-4` / `docs/02` 申し送り 11）。「失効」というまとめ表示を作らない。
 - `送付中` は片道であり自動リトライしない（`F-049 AC-2`）。滞留行に経過時間を添える。
 - 取引先はこの画面に到達しない（`F-047` の `PA`/`PS` = `−`）。ナビにも項目を出さないため、本画像はホスト視点のみ。
+- 🔴 2026-09-01 改訂: タイトル行に「取引先にはこう見えています」ボタンを追加した（`docs/04` §4.5 `S-025` / §5-2）。ホストが送付・公開の前に、販売単価・エンド企業名・ドラフト版が `S-045`（取引先ビュー）に見えていないことを自分の目で確認できる。`S-045` 側にプレビュー時の帯を新設し、対応関係を対にした。
 - 初回空は `WON` の提案から作る導線を出す（`F-042` と同じく `WON` 以外から作れない）。
 - Phase 3 の画面。`S-026` へ遷移し、そこで版と署名依頼を扱う。
 - 関連 UC: UC-08（契約締結）。
