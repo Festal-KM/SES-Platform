@@ -41,6 +41,9 @@
 - 🔴 **列挙は Prisma の `enum` で書き、DB 側は `TEXT + CHECK` に落とす**（列挙値追加でテーブルロックを起こさないため）。
 - 🔴 **`users` に `platform` / `is_admin` / `is_operator` を含む列名を作らない**（`BR-36`。`docs/05` §17.2 #13 が検査する）。
 - **完了の判定**: `prisma migrate` が通り、`platform-user-no-flag.test.ts` が green。
+- **T-01-07 からの申し送り（2026-09-03、code-reviewer 指定）**:
+  ① `TenantLifecycleState` が `packages/db/src/context.ts:13` と `packages/domain/src/state/tenant.ts:17` に二重定義されており、T-02-01 の Prisma enum で 3 重になる。**T-02-01 で単一の出所へ一本化する**（`packages/db` → `@ses/domain` の依存は CLAUDE.md §2.1 / docs/05 §2.2 で禁止されておらず ESLint も許可。逆向きは禁止）。
+  ② `tests/static/domain-purity.test.ts` は引数付き `new Date(<リテラル>)` / `Date.UTC()` も違反にするため、domain のユニットテストで固定日時が必要になっても**検査関数を弱めて解決しない**こと（緩めるなら `*.test.ts` 限定・リテラル引数限定として範囲を明示）。
 
 ### T-02-02 ① 集める / 案件・公開範囲・匿名共有の表（L）
 
