@@ -1225,7 +1225,7 @@ packages/connectors/src/index.ts           … createConnectors(selection) が�
 | **React** | Next.js 16.3 が要求するバージョンに従う（**個別に指定しない**） | Next.js のリリースノートに従う |
 | **Tailwind CSS** | `^4` | `CLAUDE.md` §13.3「ブレークポイントは Tailwind の既定に従う」を守れること |
 | **shadcn/ui** | 取り込み方式（バージョン固定なし） | 取り込んだコンポーネントは `packages/ui` に一元管理（§2.1） |
-| **Prisma** | `^6`（Client Extensions が安定していること） | 🔴 **`$allOperations` フックと RLS の併用を Phase 0 の最初のタスクで実証する**（§4.3.1） |
+| **Prisma** | ~~`^6`（Client Extensions が安定していること）~~ → **`6.19.3`** — **決定済み（2026-09-02、SP-01 T-01-04）**。`$allOperations` フックと RLS の併用を実際に通した版であり、`packages/db` はこの版を固定して依存する | 🔴 **`$allOperations` フックと RLS の併用を Phase 0 の最初のタスクで実証する**（§4.3.1） → **実証済み**（`tests/isolation/double-defense.test.ts`）。**併用時の要注意点**: ①`SET LOCAL` はバインドパラメータ不可のため `set_config(name, value, true)` を使う（`docs/05` §4.3 規約 1） ②`$allOperations` の `where` 注入だけでは書き込みの `data` による行の移動（`update` / `updateMany` / `upsert`(update 分岐) / `tenant: { connect }`）を止められず、`data` のテナントキー検査が別途要る（`docs/05` §4.1 第 2 防御） |
 | **PostgreSQL** | **`^17`**（マネージドで選べる最新の安定メジャー） | `pg_trgm` / `pg_bigm` は RDS / Aurora で利用可、`pgroonga` は不可（§3.7.2、2026-09-02 決定） |
 | **Redis / Valkey** | `^7`（Redis OSS）または Valkey `^8` | BullMQ の要求に従う。AOF 有効 |
 | **BullMQ** | `^5` | 🔴 送信系キューは `attempts: 1` 固定（§2.1 / §4.7） |

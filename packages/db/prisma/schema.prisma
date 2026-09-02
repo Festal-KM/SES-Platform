@@ -1,0 +1,54 @@
+// packages/db/prisma/schema.prisma
+// T-01-04（docs/sprints/SP-01-bootstrap.md）: Prisma Client Extension + PostgreSQL RLS の
+// 二重防御が成立することを実証するための最小 2 表。
+//
+// 🔴 本ファイルは全 56 表（docs/05 §3.2）の一部ではなく「土台の実証」である。
+//    SP-02 で全表に拡張する。そのとき次の共通規約（docs/05 §3.1）を引き継ぐこと:
+//      - 主キー: uuid(7) / テーブル名: @@map で snake_case 複数形 / 列名: @map で snake_case
+//      - 日時: @db.Timestamptz(3)
+//      - 🔴 全業務テーブルがテナントキーを 1 つ持つ（既定 tenant_id。Tenant は自身の id）
+//      - 🔴 複合インデックスは tenant_id を先頭列に置く
+//    列挙は docs/05 §3.1 のとおり「Prisma の enum + DB 側は TEXT + CHECK」へ落とすが、
+//    その変換はマイグレーションを起こす SP-02 / T-01-05 の範囲であり、本最小スキーマでは
+//    型を String にとどめて DB 表現の決定を先送りしない（enum 型を作ってしまうと後で移行が要る）。
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// 契約する SES 企業。分離の単位（CLAUDE.md §3.1 第一境界）。
+/// 🔴 テナントキーは自身の id である（docs/05 §3.1 の 2 例外のうちの 1 つ）。
+model Tenant {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  name           String
+  /// docs/05 §3.3 TenantLifecycleState: SANDBOX | ACTIVE | SUSPENDED | CLOSING | PURGED
+  lifecycleState String   @default("ACTIVE") @map("lifecycle_state")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  engineers Engineer[]
+
+  @@map("tenants")
+}
+
+/// 検証用の業務表（docs/05 §3.4 Engineer の最小サブセット）。
+/// RLS のポリシークラスは C3 OWNER_SCOPED（docs/05 §4.4）。テナント境界とパートナー境界の
+/// 両方が同時に効くため、二重防御の実証には C1 のみの表より適している。
+model Engineer {
+  id                    String   @id @default(uuid(7)) @db.Uuid
+  tenantId              String   @map("tenant_id") @db.Uuid
+  /// null = ホスト所属。🔴 リクエスト入力で指定させない（docs/05 §3.4 / F-008 AC-2）
+  ownerPartnerCompanyId String?  @map("owner_partner_company_id") @db.Uuid
+  displayName           String   @map("display_name")
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, ownerPartnerCompanyId])
+  @@map("engineers")
+}

@@ -152,6 +152,7 @@
   - 🔴 **`APP_ENV ∈ {demo, development}` のときのみ実行できる**（`F-053 AC-6`。`packages/config` の検証で拒否）。
 - **実装するテスト 10 件**（`docs/05` §4.7 の表をそのまま）: #1 拡張無効化 / #2 `SET LOCAL` 未発行 / #3 RLS `DISABLE` / #4 パートナー文脈で他パートナーの `Engineer` / `Proposal` / `Message` / 匿名候補 / #5 ホスト文脈で他パートナーの `Engineer` / #6 `withSharedCandidateScope` の外で `app.shared_scope` を立てる / #7 ホスト文脈で `engineer_shares` を直接 `SELECT` / #8 **パートナー文脈で他社が当事者の 4 表を一覧・`COUNT`・ID 直指定・ビュー越しに取る → 0 件 / 404、`total` が変わらない** / #9 **基底表の `SELECT *` はコンパイルエラー + 実行時 throw、ビューの応答に `unit_price`（ホスト販売）/ `internal_unit_price` / `end_client_name` / `summary` / `facts` / `note` が 1 つも無い** / #10 **経路 5 の 4 表への `INSERT` / `UPDATE` / `DELETE` が 0 件更新**。
 - **完了の判定**: 10 件すべてが green。`pnpm seed --preset=isolation --reset` が冪等に再実行できる。
+- **T-01-04 からの申し送り（2026-09-02、code-reviewer 指定）**: 子リレーションを持つ表を追加する際、**ネスト create の `tenantId` は Prisma 拡張では検査されず RLS の `WITH CHECK` が唯一の防御**（`packages/db/src/extension.ts` の known-gap コメント参照。対向 FK がテナントキーでないため DMMF 逆方向走査も検知しない）。isolation テストに「ネスト create で他テナント `tenantId` を注入 → RLS が拒否」の probe を追加すること。
 
 ## 5. テスト計画
 

@@ -1297,7 +1297,7 @@ model BillingMeterSubmission {                                     // docs/03 §
 | 防御 | 実体 | 破れたときに何が起きるか |
 |---|---|---|
 | **第 1 防御: PostgreSQL RLS** | 全業務テーブルに `ENABLE ROW LEVEL SECURITY` + `FORCE ROW LEVEL SECURITY`。ポリシーは `current_setting('app.tenant_id')` と `current_setting('app.partner_company_id')` を参照する | アプリの `where` 漏れがあっても 0 件が返る |
-| **第 2 防御: Prisma Client Extension** | `$allOperations` フックが対象モデルに `where: { tenantId }`（+ パートナー条件）を注入する | RLS が静かに無効化されても、注入された `where` が残る |
+| **第 2 防御: Prisma Client Extension** | `$allOperations` フックが対象モデルに `where: { tenantId }`（+ パートナー条件）を注入する。🔴 **加えて、書き込みの `data` のテナントキーを検査する** — `create` 系は `ctx` の値で確定させ、`update` / `updateMany` / `updateManyAndReturn` / `upsert`(update 分岐) は `data[tenantKey]` が `ctx` と異なれば `CrossTenantWriteError`（スカラーは素の値と `{ set: … }` の 2 形をとるため両方を見る。解釈できない更新演算子は fail-closed）、🔴 **テナントキー列を書き換えうるネスト write は方向を問わず** 値を問わず `TenantRelationWriteError` にする — 順方向（`Engineer.tenant`）だけでなく**逆リレーション（`Tenant.engineers`）も対象**である | RLS が静かに無効化されても、注入された `where` が残る。🔴 **`where` だけでは既存行の所属を `data` で書き換える攻撃（行の移動）が止まらない** — `update` / `updateMany` / `upsert`(update 分岐) / `tenant: { connect }` / `data.tenantId` の `{ set: 他テナント }` 形 / **`Tenant.update` の逆リレーション `engineers: { connect: { id: 他テナントの行 } }`** の **6 経路**で実際に突破されたため、書き込み側の検査を第 2 防御の一部として必須にした（回帰テストは §4.7 #3）。🔴 **逆リレーションは自モデルの列を 1 つも書かないため、順方向の走査には現れない** — 検査対象は宣言（`TENANT_KEY_MOVING_RELATION_OVERRIDES`）で持ち、DMMF の**逆方向走査**で宣言漏れを CI が落とす（`packages/db/src/tenant-relation.test.ts`）。宣言ベースにするのは、「オブジェクト値を一律拒否」にすると Json 列・`DateTime`・スカラーの `{ set: … }` が壊れるためである |
 | **第 3 防御（境界の入口）: 型** | `AuthenticatedTenantCtx` はブランド型であり、`resolveTenantCtx(session)` 以外が生成できない | リクエスト入力から分離キーを渡す実装が**書けない** |
 | **第 4 防御（経路の限定）: Lint** | 生 `PrismaClient` / `$queryRaw` / `$executeRaw` / `withPlatform*` の import 制限 | 迂回する経路が CI で落ちる |
 | **第 5 防御（有効性の検証）: 機械検証** | §4.7 の走査テスト | **RLS が無効化されてもアプリは正常に動くため、機能テストでは気づけない**。これが唯一の検知手段 |
@@ -1343,13 +1343,17 @@ export function withTenant<T>(
 ```
 **実装の規約**
 
-1. 🔴 **必ず `prisma.$transaction` を開き、その先頭で `SET LOCAL` を発行する。**
+1. 🔴 **必ず `prisma.$transaction` を開き、その先頭で `SET LOCAL` 相当を発行する。**
+   🔴 **`SET LOCAL <name> = $1` は書けない。`SET` / `SET LOCAL` はバインドパラメータを受け付けない**（値を SQL 文字列に連結するしかなくなり、分離キーを文字列連結で組み立てる経路を作ってしまう）。**`set_config(name, value, true)` に読み替える。** 第 3 引数の `is_local = true` は `SET LOCAL` と同一の意味（トランザクション終了で必ず戻る）を持ち、かつ**値をパラメータとして送れる**ため、分離キーを SQL に連結しないことを構造的に保証できる。
    ```sql
-   SET LOCAL app.tenant_id = $1;
-   SET LOCAL app.partner_company_id = $2;  -- ホストは '' （空文字）を入れる。NULL を入れない
-   SET LOCAL app.actor_user_id = $3;
+   -- 実装は packages/db/src/scope-settings.ts の 1 クエリ（値はすべてバインドパラメータ）
+   SELECT
+     set_config('app.tenant_id',         $1, true),
+     set_config('app.partner_company_id', $2, true),  -- ホストは '' （空文字）を入れる。NULL を入れない
+     set_config('app.actor_user_id',      $3, true),
+     set_config('app.shared_scope',   'off', true);   -- 🔴 §4.7 #6。毎回 'off' で上書きする
    ```
-   **トランザクション外の `SET` を書かない**（`docs/03` 申し送り 1）。`SET LOCAL` はトランザクション終了で必ず戻るため、PgBouncer の transaction モードでも別リクエストに漏れない。
+   **トランザクション外の `SET` を書かない**（`docs/03` 申し送り 1）。`set_config(..., true)` はトランザクション終了で必ず戻るため、PgBouncer の transaction モードでも別リクエストに漏れない。
 2. **`partner_company_id` に空文字を使う理由**: `current_setting('app.partner_company_id')` が未設定だと例外になり、`NULL` を入れると `= NULL` が常に偽になってホストが何も読めなくなる。**空文字を「ホスト」の明示値として扱い、ポリシー式で `= ''` を判定する。**
 3. `fn` に渡す `TenantDb` は Prisma Client Extension を適用した型で、**`$queryRaw` / `$executeRaw` / `$transaction` と、🔴 経路 5 の基底表 4 表 + `extensionReview` の 5 デリゲートを型から除去する**（`Omit`。規約 6）。
 4. **`fn` の外に `TenantDb` を持ち出せない**ようにする（返り値の型に `TenantDb` 由来の遅延クエリを含めない。返すのはプレーンなデータのみ）。
@@ -1553,7 +1557,7 @@ test('経路 5 の射影ビュー 4 本は security_invoker=true で、列集合
 |---|---|---|
 | 1 | Prisma 拡張を無効化した素のクライアント（`app_tenant` ロール）で他テナントの行を取る | **0 件**（RLS が止める） |
 | 2 | `SET LOCAL app.tenant_id` を発行せずにクエリする | **C0 の 4 表を除き 0 件または例外**（ポリシー式が `NULL` になり一致しない）。🔴 C0 の 4 表に業務データが 1 列も無いことを併せて検査する |
-| 3 | RLS を一時的に `DISABLE` した DB で Prisma 拡張越しに他テナントを取る | **0 件**（拡張の `where` が止める） |
+| 3 | RLS を一時的に `DISABLE` した DB で Prisma 拡張越しに他テナントを取る | **0 件**（拡張の `where` が止める）。🔴 **この「0 件」は、拡張がテナント条件を `AND` で注入する（最上位へマージ〔上書き〕しない）ことを前提にした期待値である** — 上書き実装では他テナント指定が自テナント指定に化け、`deleteMany` なら「自テナントを全消し」になって 0 件どころか破壊になる。**書き込みには「狭める」が無いため `AND` では守れず、`data` のテナントキー検査（§4.1 第 2 防御）で次の 6 経路を例外にすることまでを #3 の期待に含める**: ①`update` の `data.tenantId` ②`updateMany` の `data.tenantId` ③`upsert`(update 分岐) の `tenantId` ④`tenant: { connect }`（順方向のリレーション） ⑤`data.tenantId` の **`{ set: 他テナント }` 形**（Prisma のスカラー更新は 2 形をとる。片方だけでは素通し） ⑥🔴 **`tenant.update({ where: { id: 自テナント }, data: { engineers: { connect: { id: 他テナントの行 } } } })`（逆リレーション）** — 自テナントの行しか触っていないように見えて他テナントの行を引き寄せる。**テナントキー列を書き換えうるネスト write は方向を問わず第 2 防御の検査対象である。** 宣言漏れは DMMF の逆方向走査（`packages/db/src/tenant-relation.test.ts`）が落とす |
 | 4 | パートナーコンテキストで他パートナーの `Engineer` / `Proposal` / `Message` / 匿名候補を取る | **0 件**（C3 / C5 / C6） |
 | 5 | ホストコンテキストで他パートナーの `Engineer` を取る | **0 件**（C3。`BR-06`） |
 | 6 | `withSharedCandidateScope` の外で `app.shared_scope` を立てようとする | **ESLint で落ちる**（`$executeRaw` 禁止）+ 実行時も `withTenant` が毎回 `SET LOCAL app.shared_scope = 'off'` を発行して上書きする |
