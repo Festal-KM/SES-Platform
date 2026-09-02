@@ -1,0 +1,83 @@
+name: CI
+
+# T-01-08（docs/sprints/SP-01-bootstrap.md）。
+# 1 ジョブ内の直列 5 ステップ（build → lint → typecheck → test:unit → test:isolation）にしている。
+# ジョブを分けると build 成果物（各パッケージの dist / 生成済み Prisma Client）の受け渡しに
+# upload-artifact / download-artifact が要り、この規模ではシンプルさを損なうため
+# 1 ジョブに閉じた（docs/dev-plan.md §1.2 の「縦に切る」原則と同じ判断）。
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+# 同一ブランチへの後続 push で古い実行を打ち切る（Actions の消費を抑える）。
+# main への連続 push は打ち切らない（main の実行結果は履歴として残す。PR ブランチのみキャンセル対象）。
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: CI Pipeline
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # v4 系に留める（v7 系がリリース済みだが、ローカルでは実行結果を再検証できないため
+      # メジャー版を上げない。§5.1 方針 #5「メジャーアップグレードは Phase の切れ目にまとめて
+      # 行う」と同じ判断。v4 は node20 ランタイムを使い、現行の Actions ランナーで引き続き
+      # サポートされている）。checkout したコードで後続ジョブに認証情報を渡す必要が無いため、
+      # persist-credentials は無効化する。
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # packageManager フィールド（pnpm@10.12.1）をそのまま使う。v4 系に留める理由は上記と同じ。
+      - name: Enable pnpm
+        uses: pnpm/action-setup@v4
+
+      # docs/03-tech-selection.md §5.2 で確定した Node.js の LTS 系列（^24 Krypton）に揃える。
+      # v4 系に留める理由は Checkout ステップのコメントと同じ。
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # docs/03-tech-selection.md §5.1 方針 #3: セキュリティ更新は即時。Critical / High で落とす。
+      # 個別の無視設定は pnpm-workspace.yaml の `auditConfig.ignoreGhsas`（理由・再評価の契機つき）。
+      # 🔴 このコマンドに `--json` を付けてはならない。pnpm は --json 出力時に ignoreGhsas を
+      # exit code へ反映せず、無視済みの advisory でも exit 1 になる（実測: 非 JSON=0 / JSON=1）。
+      - name: Security audit (pnpm audit)
+        run: pnpm audit --audit-level high
+
+      # 🔴 実行順は build → lint → typecheck → test:unit → test:isolation。
+      # tests/isolation の型解決と test:unit（@prisma/client を import する packages/db の
+      # テスト）には packages/db の `prisma generate` / dist が要るため、build を先行させる
+      # （docs/sprints/SP-01-bootstrap.md T-01-04 の申し送り）。
+      - name: Build (includes prisma generate)
+        run: pnpm run build
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Unit tests
+        run: pnpm run test:unit
+
+      # 🔴 分離テスト（Testcontainers + PostgreSQL）を毎回走らせる。1 件でも落ちたら
+      # このジョブ自体が失敗するため、"CI Pipeline" を required status check に設定すれば
+      # 分離テストの失敗で merge がブロックされる（docs/dev-plan.md §6.4 R-05）。
+      # ubuntu-latest ランナーは Docker CLI + Compose v2 を同梱しており、
+      # Testcontainers はホストの Docker daemon にそのまま接続できる（追加セットアップ不要）。
+      - name: Isolation tests (Testcontainers)
+        run: pnpm run test:isolation

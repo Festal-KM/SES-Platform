@@ -1,3 +1,16 @@
 packages:
   - 'apps/*'
   - 'packages/*'
+
+# docs/03-tech-selection.md §5.1 方針 #3: `pnpm audit --audit-level high` を CI で必須にする。
+# 以下は個別に無視する既知の advisory。抑制は最小限にとどめ、必ず理由と再評価の契機を書く。
+auditConfig:
+  ignoreGhsas:
+    # GHSA-ggr8-5vv4-36mx: deepmerge-ts <8.0.0 のスタック枯渇。
+    # 経路: packages/db > prisma > @prisma/config > deepmerge-ts。
+    # Prisma CLI のビルド時ツール鎖にのみ含まれ、ランタイムでは使われない
+    # （packages/db の実行時依存は @prisma/client のみで、prisma / @prisma/config は devDependency 経由）。
+    # `pnpm.overrides` での deepmerge-ts メジャー引き上げは @prisma/config の互換性を壊しうるため採らない。
+    # 再評価: Prisma が @prisma/config の deepmerge-ts 依存を >=8.0.0 に上げた次版が出たら、
+    # このエントリを削除して `pnpm audit --audit-level high` を再実行する。
+    - GHSA-ggr8-5vv4-36mx
