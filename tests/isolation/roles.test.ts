@@ -54,6 +54,12 @@ const PLATFORM_WRITE_ALLOWLIST: Record<
       'closing_entered_at',
     ],
   },
+  // 🔴 T-02-06: impersonation_sessions は C0 SYSTEM_ONLY のうち唯一 app_tenant に権限を与えない表
+  //    （docs/05 §4.4 C0）。app_platform / app_platform_write に権限が無いと「どのロールからも
+  //    到達できない孤児表」になる（§4.7 テスト #4）ため、§5.2 が列挙するとおり INSERT を与える。
+  //    🔴 終了（ended_at / end_kind）の UPDATE は §5.6 を実装する SP-03 T-03-08 で許可列を
+  //    決めてから足す。ここで先に広げない。
+  impersonation_sessions: { insert: true, delete: false, updateColumns: [] },
 };
 
 let database: IsolationDatabase;
@@ -218,7 +224,7 @@ describe('app_share_probe は engineer_shares 以外に一切の権限を持た�
  * `CLAUDE.md` §10.5「運営者にも見せないもの: エンジニアの氏名 …」の実装担保。
  * SP-02 で §5.5 の非開示列が実在するようになった表を追記する。`skill_sheets` /
  * `skill_sheet_extractions` / `projects` は本タスク（T-02-02）時点で `app_platform` への
- * GRANT が 0 件（010_rls.sql 未追記）だが、それは「④ カタログ走査」テストが表単位で
+ * GRANT が 0 件（prisma/migrations/20260903050000_rls_policies/migration.sql 未追記）だが、それは「④ カタログ走査」テストが表単位で
  * 検出する話であり、本リストは §5.5 の非開示列一覧そのものと突き合わせる独立防御である。
  * 将来 GRANT を追加したときに §5.5 の見落とし（開示してはいけない列まで開けてしまう）を
  * 検知するのが目的なので、GRANT が無い今の時点でも追記しておく。
@@ -276,7 +282,7 @@ const PLATFORM_READ_COLUMN_DENYLIST: Record<string, readonly string[]> = {
  * `'ALL'` はテーブル全体（列レベル GRANT ではなくテーブル単位 GRANT）を意味し、
  * `readonly string[]` は列挙した列だけを意味する。**許可リストに無い表は SELECT 0 件**
  * （全列 false）を要求する。現行スキーマ（tenants / engineers の 2 表）は
- * `010_rls.sql` の GRANT と一致させてある。
+ * `prisma/migrations/20260903050000_rls_policies/migration.sql` の GRANT と一致させてある。
  *
  * ③（書込側 `PLATFORM_WRITE_ALLOWLIST`）と対称の役割: SP-02 で表・列が増えたとき、
  * docs/05 §5.5 の非開示列一覧と照合してからここへ追記しないと、次の「カタログ走査」テストが
@@ -284,7 +290,26 @@ const PLATFORM_READ_COLUMN_DENYLIST: Record<string, readonly string[]> = {
  */
 const PLATFORM_READ_ALLOWLIST: Record<string, 'ALL' | readonly string[]> = {
   tenants: 'ALL',
-  engineers: ['id', 'tenant_id', 'owner_partner_company_id', 'created_at', 'updated_at'],
+  // 🔴 T-02-06: docs/05 §5.5 が engineers について挙げている開示列と 1 対 1 にした
+  //    （T-02-02 で availability / available_from / prefecture / remote_mode /
+  //    retention_expires_at / pii_purged_at が実在するようになったため）。
+  //    非開示列（display_name / birth_date / contact_email / contact_phone /
+  //    affiliation_label / city / preference_note）は含めない。
+  engineers: [
+    'id',
+    'tenant_id',
+    'owner_partner_company_id',
+    'availability',
+    'available_from',
+    'prefecture',
+    'remote_mode',
+    'created_at',
+    'updated_at',
+    'retention_expires_at',
+    'pii_purged_at',
+  ],
+  // 🔴 T-02-06: §5.5 に非開示列の記載が無い（運営者が見るのは代理閲覧の記録そのもの）。
+  impersonation_sessions: 'ALL',
 };
 
 describe('④ app_platform への SELECT は §5.5 の非開示列を除外している（CLAUDE.md §10.5）', () => {

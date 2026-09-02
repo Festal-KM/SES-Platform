@@ -146,6 +146,64 @@ export async function readPublicTables(client: RawQueryable): Promise<string[]> 
 }
 
 /**
+ * 🔴 T-02-06: パーティションを除いた `public` の実テーブル（親テーブルと通常テーブル）。
+ *
+ * `readPublicTables` との違いは `relispartition = false` の 1 点だけである。
+ * RLS のポリシーと GRANT は**パーティションの親**に対して付ける（子パーティションへ直接
+ * アクセスする経路は GRANT が無く permission denied になる。T-02-05 実測）ため、
+ * 「ポリシーが 1 つも無い表」を数えるときは子パーティションを母集団から外す必要がある。
+ * 🔴 これは除外リスト（テーブル名の列挙）ではなくカタログ上の構造的な述語であり、
+ *    新しい表が検査対象から漏れることはない（docs/05 §4.7 の 🔴）。
+ */
+export async function readPublicBaseTables(client: RawQueryable): Promise<string[]> {
+  const rows = await client.$queryRaw<Array<{ relname: string }>>(Prisma.sql`
+    SELECT c.relname
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p') AND NOT c.relispartition
+    ORDER BY c.relname`);
+  return rows.map((row) => row.relname);
+}
+
+export type PolicyRow = {
+  readonly table: string;
+  readonly policy: string;
+  readonly command: string;
+  readonly roles: readonly string[];
+  readonly using: string | null;
+  readonly withCheck: string | null;
+};
+
+/**
+ * 🔴 T-02-06: `public` スキーマの全 RLS ポリシーをカタログから読む（docs/05 §4.7 テスト #2 / #3）。
+ * テーブル名を列挙せず、`pg_policies` をそのまま走査する。
+ */
+export async function readPolicies(client: RawQueryable): Promise<PolicyRow[]> {
+  const rows = await client.$queryRaw<
+    Array<{
+      tablename: string;
+      policyname: string;
+      cmd: string;
+      roles: string[];
+      qual: string | null;
+      with_check: string | null;
+    }>
+  >(Prisma.sql`
+    SELECT tablename, policyname, cmd, roles::text[] AS roles, qual, with_check
+    FROM pg_policies
+    WHERE schemaname = 'public'
+    ORDER BY tablename, policyname`);
+  return rows.map((row) => ({
+    table: row.tablename,
+    policy: row.policyname,
+    command: row.cmd,
+    roles: row.roles,
+    using: row.qual,
+    withCheck: row.with_check,
+  }));
+}
+
+/**
  * `has_table_privilege(role, table, privilege)`。ANY の接続ロールから、他ロールの
  * テーブル権限を調べられる（GRANT の可視性は接続ロールに依存しない。pg_class.relacl は
  * 誰からでも読めるメタデータのため）。列レベルのみの GRANT（例: `UPDATE (col)`）は

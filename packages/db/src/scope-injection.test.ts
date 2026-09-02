@@ -5,13 +5,18 @@
 import { describe, expect, it } from 'vitest';
 import {
   CrossTenantWriteError,
+  ReadOnlyModelWriteError,
   TENANT_SCOPE_EXCLUDED_MODELS,
+  TENANT_SCOPE_STRATEGY_DECLARATIONS,
+  TENANT_SCOPE_SYSTEM_ONLY_MODELS,
+  SystemOnlyModelAccessError,
   TenantRelationWriteError,
   UnscopedOperationError,
   injectTenantScope,
   tenantKeyMovingRelationsOf,
   tenantKeyOf,
   tenantRelationOf,
+  tenantScopeStrategyOf,
 } from './scope-injection.js';
 
 const TENANT_A = '01930000-0000-7000-8000-0000000000a1';
@@ -484,5 +489,127 @@ describe('fail-closed', () => {
 
   it('🔴 分類の無い操作は素通しせず例外にする', () => {
     expect(() => inject('Engineer', 'findRaw', {})).toThrow(UnscopedOperationError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 🔴 T-02-06: モデル別のスコープ注入方式（docs/05 §4.4 C1 の 2 つの読み替え）
+// ---------------------------------------------------------------------------
+describe('🔴 スコープ注入方式の宣言（T-02-02 からの申し送り: SkillAlias の known-gap）', () => {
+  it('既定以外の方式を宣言したモデルは SkillAlias / Announcement の 2 つだけである', () => {
+    // 🔴 この宣言を増やすことは第 2 防御の述語を緩めることであり、情報境界の前提を変える。
+    //    増やすときは docs/05 §4.4 のポリシークラスと必ず対で確認する（CLAUDE.md §8.6）。
+    expect([...TENANT_SCOPE_STRATEGY_DECLARATIONS]).toEqual([
+      { model: 'SkillAlias', kind: 'COLUMN_WITH_GLOBAL_ROWS' },
+      { model: 'Announcement', kind: 'ARRAY_MEMBERSHIP' },
+    ]);
+  });
+
+  it('宣言の無い業務モデルは既定の COLUMN である', () => {
+    expect(tenantScopeStrategyOf('Engineer')).toBe('COLUMN');
+    expect(tenantScopeStrategyOf('Tenant')).toBe('COLUMN');
+  });
+
+  it('射程外モデルには方式が無い（注入自体を行わない）', () => {
+    for (const model of TENANT_SCOPE_EXCLUDED_MODELS) {
+      expect(tenantScopeStrategyOf(model)).toBeNull();
+    }
+  });
+});
+
+describe('🔴 SkillAlias: グローバル行（tenant_id IS NULL）は読みだけ緩める（F-010 AC-2）', () => {
+  it.each(['findMany', 'findFirst', 'findUnique', 'count', 'aggregate', 'groupBy'])(
+    '%s の where は「自テナント OR グローバル行」で AND される',
+    (operation) => {
+      expect(inject('SkillAlias', operation, { where: { alias: 'React.js' } })).toEqual({
+        where: {
+          alias: 'React.js',
+          AND: [{ OR: [{ tenantId: TENANT_A }, { tenantId: null }] }],
+        },
+      });
+    },
+  );
+
+  it('🔴 他テナントを明示しても、緩和された述語と両立せず 0 件になる形になる', () => {
+    // OR は AND の内側に閉じており、呼び出し側の where と OR 結合されない。
+    expect(inject('SkillAlias', 'findMany', { where: { tenantId: TENANT_B } })).toEqual({
+      where: {
+        tenantId: TENANT_B,
+        AND: [{ OR: [{ tenantId: TENANT_A }, { tenantId: null }] }],
+      },
+    });
+  });
+
+  it('🔴 delete / deleteMany は緩めない（テナントからグローバル行を消せない）', () => {
+    for (const operation of ['delete', 'deleteMany']) {
+      expect(inject('SkillAlias', operation, { where: { id: 'alias-1' } })).toEqual({
+        where: { id: 'alias-1', AND: [{ tenantId: TENANT_A }] },
+      });
+    }
+  });
+
+  it('🔴 update も緩めない（グローバル行を書き換えられない）', () => {
+    expect(inject('SkillAlias', 'update', { where: { id: 'alias-1' }, data: { status: 'ACCEPTED' } })).toEqual({
+      where: { id: 'alias-1', AND: [{ tenantId: TENANT_A }] },
+      data: { status: 'ACCEPTED' },
+    });
+  });
+
+  it('🔴 create はテナントキーを ctx で確定させる（グローバル行を作らせない）', () => {
+    expect(inject('SkillAlias', 'create', { data: { alias: 'React.js' } })).toEqual({
+      data: { alias: 'React.js', tenantId: TENANT_A },
+    });
+  });
+
+  it('🔴 update で tenantId を null にしようとしたら例外にする（グローバル行への昇格を防ぐ）', () => {
+    expect(() =>
+      inject('SkillAlias', 'update', { where: { id: 'alias-1' }, data: { tenantId: null } }),
+    ).toThrow(CrossTenantWriteError);
+  });
+});
+
+describe('🔴 Announcement: テナントキーが配列（docs/05 §4.4 C1 の読み替え）', () => {
+  it('テナントキーは targetTenantIds である（既定の tenantId 列は存在しない）', () => {
+    expect(tenantKeyOf('Announcement')).toBe('targetTenantIds');
+  });
+
+  it('読み取りは「全テナント宛（空配列）または自テナントを含む」で AND される', () => {
+    expect(inject('Announcement', 'findMany', {})).toEqual({
+      where: {
+        AND: [
+          {
+            OR: [
+              { targetTenantIds: { isEmpty: true } },
+              { targetTenantIds: { has: TENANT_A } },
+            ],
+          },
+        ],
+      },
+    });
+  });
+
+  it('🔴 テナント文脈からの書き込みは例外にする（DB でも SELECT しか GRANT していない）', () => {
+    for (const operation of ['create', 'createMany', 'update', 'updateMany', 'upsert', 'delete', 'deleteMany']) {
+      expect(() => inject('Announcement', operation, { data: {} })).toThrow(ReadOnlyModelWriteError);
+    }
+  });
+
+  it('分類の無い操作は ReadOnlyModelWriteError ではなく UnscopedOperationError にする', () => {
+    expect(() => inject('Announcement', 'findRaw', {})).toThrow(UnscopedOperationError);
+  });
+});
+
+describe('🔴 C0 SYSTEM_ONLY はテナント文脈から触れない（docs/05 §4.4 / §4.4.2）', () => {
+  it.each([...TENANT_SCOPE_SYSTEM_ONLY_MODELS])(
+    '%s: 読み書きのいずれも例外にする（素通ししない）',
+    (model) => {
+      for (const operation of ['findMany', 'findUnique', 'count', 'create', 'update', 'deleteMany']) {
+        expect(() => inject(model, operation, { where: {} })).toThrow(SystemOnlyModelAccessError);
+      }
+    },
+  );
+
+  it('🔴 射程外モデル（素通し）と混同しない: 射程外は例外にならない', () => {
+    expect(() => inject('Skill', 'findMany', {})).not.toThrow();
   });
 });

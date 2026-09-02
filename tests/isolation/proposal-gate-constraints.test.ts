@@ -2,8 +2,9 @@
 // T-02-03（docs/sprints/SP-02-schema-isolation.md）: docs/05 §3.6「提案・提案依頼・品質ゲート」で
 // 追加した 5 表（proposal_requests / proposals / engineer_snapshots / proposal_events /
 // review_gates）について、
-//   ① ENABLE + FORCE ROW LEVEL SECURITY が既定でポリシー 0 件のまま入っていること
-//      （fail-closed。C5 PARTY 等のポリシー本体は T-02-06 / T-02-07。`skills` と違い
+//   ① ENABLE + FORCE ROW LEVEL SECURITY が入っており、所有者（app_migrator）からは
+//      1 行も見えない・書けないこと（T-02-06 でポリシーは `TO app_tenant` で本適用済み）
+//      （C5 PARTY 等のポリシー本体は T-02-06 で適用済み。`skills` と違い
 //      これらは射程外ではないため、後続タスクで必ずポリシーが付く）
 //   ② migration.sql に手で追加した CHECK 制約 / FK / 部分 UNIQUE が実際に機能すること
 // を検証する（tests/isolation/engineer-project-visibility-constraints.test.ts と同じ方針）。
@@ -57,12 +58,17 @@ describe('T-02-03: docs/05 §3.6 の新 5 表', () => {
     }
   });
 
-  it('① ポリシーが 0 件のため、所有者（app_migrator）接続でも SELECT は 0 件（T-02-06/07 前の既定 = fail-closed）', async () => {
+  // 🔴 T-02-06 でポリシー C0〜C8 を本適用した。ポリシーはすべて `TO app_tenant` で作られており、
+  //    テーブル所有者（app_migrator）に適用されるポリシーは 1 つも無い。したがって
+  //    FORCE ROW LEVEL SECURITY の下では所有者接続からも 0 件・書き込み不可のままである
+  //    （この 2 件が確かめているのは「所有者が RLS を素通りしないこと」であり、
+  //     T-02-06 前の「ポリシーが 0 件だから」から**理由は変わったが結論は同じ**）。
+  it('① 所有者（app_migrator）接続に適用されるポリシーが無いため SELECT は 0 件（fail-closed）', async () => {
     const rows = await owner.proposal.findMany();
     expect(rows).toEqual([]);
   });
 
-  it('① ポリシーが 0 件のため、所有者（app_migrator）接続でも INSERT は拒否される', async () => {
+  it('① 所有者（app_migrator）接続に適用されるポリシーが無いため INSERT は拒否される', async () => {
     await expect(
       owner.proposalRequest.create({
         data: {
@@ -78,7 +84,7 @@ describe('T-02-03: docs/05 §3.6 の新 5 表', () => {
     ).rejects.toThrow(/row-level security/i);
   });
 
-  describe('② CHECK 制約 / FK / 部分 UNIQUE（RLS を一時 DISABLE して直接検証。T-02-06/07 前提の暫定手段）', () => {
+  describe('② CHECK 制約 / FK / 部分 UNIQUE（RLS を一時 DISABLE して直接検証）', () => {
     // 🔴 projects は T-02-02 から fail-closed（0 ポリシー）。案件行を用意するために disable する。
     const TABLES_TO_DISABLE = [...NEW_TABLES, 'projects'] as const;
 

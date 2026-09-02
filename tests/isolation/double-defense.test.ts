@@ -29,6 +29,7 @@ import {
 import {
   ENGINEER_A_HOST,
   ENGINEER_A_PARTNER,
+  ENGINEER_A_PARTNER2,
   ENGINEER_B_HOST,
   PARTNER_A1,
   TENANT_A,
@@ -246,7 +247,7 @@ describe('#3 RLS を一時的に DISABLE した DB で、拡張越しに他テ�
   it('対照: RLS が確かに落ちている（素のクライアントがスコープ無しで全テナントの行を見る）', async () => {
     const rows = await runUnextended(unextended, null, (tx) => tx.engineer.findMany());
     expect(rows.map((row) => row.id).sort()).toEqual(
-      [ENGINEER_A_HOST, ENGINEER_A_PARTNER, ENGINEER_B_HOST].sort(),
+      [ENGINEER_A_HOST, ENGINEER_A_PARTNER, ENGINEER_A_PARTNER2, ENGINEER_B_HOST].sort(),
     );
   });
 
@@ -269,10 +270,13 @@ describe('#3 RLS を一時的に DISABLE した DB で、拡張越しに他テ�
       await db.engineer.findMany(),
       await db.engineer.count(),
     ] as const);
-    // 🔴 パートナー境界（C3）は RLS の担当なので、RLS を落とすとテナント A の 2 件が見える。
-    //    ここで確認しているのは「テナント境界は拡張だけでも保たれる」ことである。
-    expect(rows.map((row) => row.id).sort()).toEqual([ENGINEER_A_HOST, ENGINEER_A_PARTNER].sort());
-    expect(total).toBe(2);
+    // 🔴 パートナー境界（C3）は RLS の担当なので、RLS を落とすとテナント A の 3 件が見える
+    //    （ホスト 1 + パートナー 2 社の各 1）。ここで確認しているのは
+    //    「テナント境界は拡張だけでも保たれる」ことである。
+    expect(rows.map((row) => row.id).sort()).toEqual(
+      [ENGINEER_A_HOST, ENGINEER_A_PARTNER, ENGINEER_A_PARTNER2].sort(),
+    );
+    expect(total).toBe(3);
   });
 
   it('🔴 create で他テナントの tenantId を指定すると、静かに書き換えず例外になる', async () => {

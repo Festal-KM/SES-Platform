@@ -47,11 +47,12 @@
 // 🔴 RLS の判断（T-02-01 実装ガイドに基づく報告。プログラマ完了報告に詳細あり）:
 //   本タスクで追加する 6 表（tenants を除く）は、C0〜C8 のポリシー本体（T-02-06 の範囲）を
 //   まだ持たない。ただし「ポリシーが無い業務テーブル」を放置しない（docs/05 §4.1 第 1 防御の
-//   既定は fail-closed）ため、ENABLE + FORCE ROW LEVEL SECURITY だけを 010_rls.sql に追加し、
+//   既定は fail-closed）ため、ENABLE + FORCE ROW LEVEL SECURITY だけを
+//   prisma/migrations/20260903050000_rls_policies/migration.sql に追加し、
 //   ポリシー 0 件 = 常に 0 行（app_tenant からは何も見えない）という安全側のデフォルトにする。
 //   GRANT も追加しない（ポリシーが無い状態で GRANT だけ足しても意味を持たないため）。
 //   例外は tenants: 既存の app_platform_write 向け UPDATE 許可列を、本タスクで増えた
-//   ライフサイクル列（docs/05 §5.2）まで拡張する（010_rls.sql 側のコメント参照）。
+//   ライフサイクル列（docs/05 §5.2）まで拡張する（同マイグレーション側のコメント参照）。
 
 generator client {
   provider = "prisma-client-js"
@@ -69,7 +70,7 @@ datasource db {
 /// 契約する SES 企業。分離の単位（CLAUDE.md §3.1 第一境界）。
 /// 🔴 テナントキーは自身の id である（docs/05 §3.1 の 2 例外のうちの 1 つ）。
 /// 🔴 lifecycleState を書けるのは withPlatformWrite 経由のみ（docs/05 §3.3 規約）。
-///    app_tenant には UPDATE を GRANT しない（010_rls.sql）。
+///    app_tenant には UPDATE を GRANT しない（prisma/migrations/20260903050000_rls_policies/migration.sql）。
 model Tenant {
   id                      String    @id @default(uuid(7)) @db.Uuid
   name                    String
@@ -895,8 +896,9 @@ model ReviewGate {
 // 🔴 当事者列を持つ表を増やすことは経路 5 の対象を増やすことであり人間の承認事項
 //    （CLAUDE.md §8.6）。T-02-09 のカタログ走査が「4 表以外に増えたら FAIL」で固定する。
 //
-// 🔴 RLS: 新規 9 表は ENABLE + FORCE ROW LEVEL SECURITY のみを packages/db/prisma/sql/010_rls.sql
-//    に追加する（T-02-01/02/03 と同じ fail-closed 既定。C2/C5/C6/C9 のポリシー本体・GRANT・
+// 🔴 RLS: 新規 9 表は ENABLE + FORCE ROW LEVEL SECURITY のみを
+//    packages/db/prisma/migrations/20260903050000_rls_policies/migration.sql に追加する
+//    （T-02-01/02/03 と同じ fail-closed 既定。C2/C5/C6/C9 のポリシー本体・GRANT・
 //    射影ビュー 4 本は T-02-06/07）。
 
 /// 🔴 F-038 AC-2「1 スレッドに複数パートナーが同席する構成を作成できない」を、

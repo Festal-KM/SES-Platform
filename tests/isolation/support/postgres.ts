@@ -1,9 +1,9 @@
 // tests/isolation/support/postgres.ts
 // docs/05 §17.1「結合（DB あり）: Vitest + Testcontainers（PostgreSQL）」の起動手順。
-// docs/05 §17.6 globalSetup の ①コンテナ起動 ②ロールと GRANT の適用 ③マイグレーション
-// （app_migrator）④RLS ポリシーと GRANT ⑤seed に相当する最小版。
+// docs/05 §17.6 globalSetup の ①コンテナ起動 ②ロールの作成 ③マイグレーション（app_migrator。
+// スキーマ + RLS ポリシー + GRANT）④seed に相当する最小版。
 // T-01-04（tenants / engineers の 2 表）→ T-02-01（docs/05 §3.3 の 7 表を追加。
-// `prisma db push` → `prisma migrate deploy` に切り替え）。
+// `prisma db push` → `prisma migrate deploy` に切り替え）→ T-02-06（RLS をマイグレーションへ移設）。
 //
 // 🔴 ロールのパスワードはリポジトリに置かない（CLAUDE.md §3.5）。起動のたびに生成し、
 //    そのプロセス内でだけ使う。コンテナはランダムポートで localhost にのみ公開される。
@@ -24,8 +24,11 @@ const PRISMA_CLI = path.join(DB_PACKAGE_DIR, 'node_modules', 'prisma', 'build', 
 //    ローカル docker-compose（docker/postgres/initdb/000-roles.sh）と同じファイルを実行する。
 const ROLES_SQL_HOST_PATH = path.join(DB_PACKAGE_DIR, 'prisma', 'sql', '000_roles.sql');
 const ROLES_SQL_CONTAINER_PATH = '/opt/ses/000_roles.sql';
-const RLS_SQL_HOST_PATH = path.join(DB_PACKAGE_DIR, 'prisma', 'sql', '010_rls.sql');
-const RLS_SQL_CONTAINER_PATH = '/opt/ses/010_rls.sql';
+// 🔴 T-02-06: RLS（ENABLE + FORCE / ポリシー / GRANT）は packages/db/prisma/sql/010_rls.sql を
+//    廃止し、prisma/migrations/20260903050000_rls_policies/migration.sql へ移した
+//    （docs/05 §2.1「RLS もマイグレーションに含む」）。したがって起動手順は
+//    「①ロール → ②migrate deploy（スキーマ + RLS + GRANT）→ ③seed」の 3 段になり、
+//    旧「④RLS ポリシーと GRANT」のステップは無くなった。
 const SEED_SQL_CONTAINER_PATH = '/opt/ses/020_seed.sql';
 
 // docs/03 §5.2「PostgreSQL ^17」。docker-compose.yml（T-01-02）と同じタグに揃える。
@@ -102,10 +105,7 @@ export async function startIsolationDatabase(): Promise<IsolationDatabase> {
     .withDatabase(DATABASE_NAME)
     .withUsername('postgres')
     .withPassword(superPassword)
-    .withCopyFilesToContainer([
-      { source: ROLES_SQL_HOST_PATH, target: ROLES_SQL_CONTAINER_PATH },
-      { source: RLS_SQL_HOST_PATH, target: RLS_SQL_CONTAINER_PATH },
-    ])
+    .withCopyFilesToContainer([{ source: ROLES_SQL_HOST_PATH, target: ROLES_SQL_CONTAINER_PATH }])
     .start();
 
   const host = container.getHost();
@@ -154,16 +154,16 @@ export async function startIsolationDatabase(): Promise<IsolationDatabase> {
   //    （`migrate deploy` は shadow database を使わず、migration.sql をそのまま適用するだけの
   //    コマンドのため、schema.prisma との突き合わせが起きない。列挙相当フィールドを
   //    Prisma の `enum` にしなかった理由は schema.prisma 冒頭コメント参照）。
+  //    🔴 T-02-06 以降、この 1 コマンドで RLS の ENABLE + FORCE・ポリシー C0〜C8・GRANT まで
+  //    適用される（20260903050000_rls_policies）。ロールが実在することが前提のため ① の後に置く。
   execFileSync(process.execPath, [PRISMA_CLI, 'migrate', 'deploy'], {
     cwd: DB_PACKAGE_DIR,
     env: { ...process.env, DATABASE_URL: migratorUrl },
     stdio: 'pipe',
   });
 
-  // ③ RLS ポリシーと GRANT（packages/db/prisma/sql/010_rls.sql を唯一の定義として適用する）
-  await execOrThrow(container, psql(RLS_SQL_CONTAINER_PATH), 'RLS ポリシーの適用');
-
-  // ④ seed。superuser で投入する（app_tenant は tenants に INSERT 権限を持たない）。
+  // ③ seed。superuser で投入する（app_tenant は tenants に INSERT 権限を持たない。
+  //    superuser は RLS を素通りするため、C0〜C8 のポリシー適用後も投入できる）。
   await container.copyContentToContainer([
     { content: SEED_SQL, target: SEED_SQL_CONTAINER_PATH },
   ]);

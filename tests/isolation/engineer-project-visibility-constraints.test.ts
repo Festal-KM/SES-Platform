@@ -3,8 +3,9 @@
 // マッチング・匿名共有」で追加した 10 表（skill_aliases / engineer_skills / skill_sheets /
 // skill_sheet_extractions / file_scan_results / projects / project_requirements /
 // project_visibilities / engineer_shares / match_candidates）+ engineers の拡張について、
-//   ① ENABLE + FORCE ROW LEVEL SECURITY が既定でポリシー 0 件のまま入っていること
-//      （fail-closed。C0〜C8 のポリシー本体は T-02-06。`skills` は射程外のため対象外）
+//   ① ENABLE + FORCE ROW LEVEL SECURITY が入っており、所有者（app_migrator）からは
+//      1 行も見えない・書けないこと（T-02-06 でポリシーは `TO app_tenant` で本適用済み）
+//      （C0〜C8 のポリシー本体は T-02-06 で適用済み。`skills` は射程外のため対象外）
 //   ② migration.sql に手で追加した CHECK 制約 / FK / 部分 UNIQUE が実際に機能すること
 // を検証する（tests/isolation/tenant-boundary-constraints.test.ts と同じ方針）。
 //
@@ -66,18 +67,23 @@ describe('T-02-02: docs/05 §3.4 / §3.5 の新 10 表 + engineers 拡張', () =
     expect(status[0]?.rlsEnabled).toBe(false);
   });
 
-  it('① ポリシーが 0 件のため、所有者（app_migrator）接続でも SELECT は 0 件（T-02-06 前の既定 = fail-closed）', async () => {
+  // 🔴 T-02-06 でポリシー C0〜C8 を本適用した。ポリシーはすべて `TO app_tenant` で作られており、
+  //    テーブル所有者（app_migrator）に適用されるポリシーは 1 つも無い。したがって
+  //    FORCE ROW LEVEL SECURITY の下では所有者接続からも 0 件・書き込み不可のままである
+  //    （この 2 件が確かめているのは「所有者が RLS を素通りしないこと」であり、
+  //     T-02-06 前の「ポリシーが 0 件だから」から**理由は変わったが結論は同じ**）。
+  it('① 所有者（app_migrator）接続に適用されるポリシーが無いため SELECT は 0 件（fail-closed）', async () => {
     const rows = await owner.project.findMany();
     expect(rows).toEqual([]);
   });
 
-  it('① ポリシーが 0 件のため、所有者（app_migrator）接続でも INSERT は拒否される', async () => {
+  it('① 所有者（app_migrator）接続に適用されるポリシーが無いため INSERT は拒否される', async () => {
     await expect(
       owner.project.create({ data: { tenantId: TENANT_A, name: 'RLS 越境未検証案件' } }),
     ).rejects.toThrow(/row-level security/i);
   });
 
-  describe('② CHECK 制約 / FK / 部分 UNIQUE（RLS を一時 DISABLE して直接検証。T-02-06 前提の暫定手段）', () => {
+  describe('② CHECK 制約 / FK / 部分 UNIQUE（RLS を一時 DISABLE して直接検証）', () => {
     // 🔴 engineers は T-01-04 から C3 ポリシーが有効（fail-closed の対象外）だが、
     //    今回追加した CHECK（availability / remote_mode）と FK（owner_partner_company_id）を
     //    ポリシーの影響なく検証するため、一時 DISABLE の対象に含める。

@@ -26,27 +26,81 @@ export const TENANT_SCOPE_EXCLUDED_MODELS = [
 ] as const;
 
 /**
+ * 🔴 C0 SYSTEM_ONLY のモデル（docs/05 §4.4）。**テナントキーを持てない表**であり、
+ * 到達経路は `withSystemScope()`（docs/05 §4.4.2）だけである。
+ *
+ * 射程外の 4 モデル（`TENANT_SCOPE_EXCLUDED_MODELS`）と扱いが違う点に注意する:
+ * 射程外は「テナントに属さないマスタ / 運営データなので注入せず素通しする」が、
+ * こちらは「テナント文脈から触ってはならない」。したがって**素通しではなく例外**にする
+ * （`withSystemScope` は本拡張を適用しないクライアントを使うため、この経路には来ない）。
+ *
+ * 🔴 `EmailEvent` / `ImpersonationSession` は denormalize 目的の `tenant_id` 列を持つが、
+ *    docs/05 §4.4 は両者を C0 に置いている。列があることを理由にテナント文脈から
+ *    読み書きできる経路を作らない。
+ */
+export const TENANT_SCOPE_SYSTEM_ONLY_MODELS = [
+  'SchedulerRun',
+  'WebhookDelivery',
+  'EmailEvent',
+  'ImpersonationSession',
+] as const;
+
+/**
  * テナントキー列がモデルごとに異なる場合の宣言（docs/05 §3.1 の 2 例外）。
- * 既定は `tenantId`。`Announcement`（`targetTenantIds`）は SP-02 で追加する。
+ * 既定は `tenantId`。
  *
- * C0（`SchedulerRun` / `WebhookDelivery` / `EmailEvent` / `ImpersonationSession`）は
- * テナントキーを持たないが、ここには現れない。到達経路が `withSystemScope`（docs/05 §4.4.2）
- * だけであり、本拡張を適用したクライアントからは触らないためである。
+ * C0（`SchedulerRun` / `WebhookDelivery` / `ImpersonationSession`）はテナントキーを持たないが、
+ * ここには現れない。到達経路が `withSystemScope`（docs/05 §4.4.2）だけであり、
+ * 本拡張を適用したクライアントからは触らないためである。
  *
- * ⚠️ 既知の gap（`SkillAlias` のグローバル行 ／ docs/05 §4.4 C1 との不一致。code-reviewer 指定、
- * 2026-09-03）: `skill_aliases` は `tenantId` を持つがグローバル行（`tenant_id IS NULL`）を
- * 許容し、第 1 防御（RLS、`docs/05` §4.4 C1）は `SELECT` を `OR tenant_id IS NULL` で許可する
- * 想定（グローバル行も読める）。一方この拡張（第 2 防御）は `withScopedWhere` で
- * 全操作の `where` に無条件で `AND tenantId = <ctx のテナント>` を注入するため、
- * `withTenant` 経由では `tenant_id IS NULL` の行がこの `AND` に一致せず、
- * RLS が許すはずのグローバル行を読めない（**漏れる方向ではなく隠れる方向の gap**。
- * 情報境界としては安全側だが、`F-010 AC-2` の「グローバル辞書をテナントから読める」を
- * 満たさない）。C1 ポリシーを実際に配線する T-02-06 で、`SkillAlias` の読み取り注入だけ
- * `OR tenantId IS NULL` を許すよう緩めるか、モデル単位の注入方式を分けるかを設計判断すること。
- * 書込（`INSERT`/`UPDATE`/`DELETE`）はグローバル行を作らせない意図と一致するため対象外。
+ * 🔴 宣言と実体の一致は `tenant-relation.test.ts` が DMMF で検証する（`tenantKeyOf` が返す名前の
+ *    スカラーフィールドが実在すること）。`Announcement` はこれを満たさないまま T-02-05 まで
+ *    既定の `tenantId` に落ちており、`withTenant` 経由の読み取りが Prisma の引数検証で
+ *    落ちる状態だった（T-02-06 で是正）。
  */
 const TENANT_KEY_OVERRIDES: Readonly<Record<string, string>> = {
   Tenant: 'id',
+  Announcement: 'targetTenantIds',
+};
+
+/**
+ * 🔴 テナントスコープの注入方式（docs/05 §4.4 のポリシークラスに対応する第 2 防御側の宣言）。
+ *
+ * - `COLUMN`（既定）: テナントキー列 = ctx のテナント。読み書きとも同じ述語。
+ * - `COLUMN_WITH_GLOBAL_ROWS`: テナントキーが NULL の**グローバル行**を持つモデル。
+ *   🔴 **読み取りだけ** `テナントキー = ctx OR テナントキー IS NULL` に緩める。
+ *   書き込み（`create` / `update` / `upsert` / `delete`）は `= ctx` のまま絞る。
+ * - `ARRAY_MEMBERSHIP`: テナントキーが**配列**のモデル（`Announcement.targetTenantIds`）。
+ *   読み取りは「空配列（全テナント宛）または ctx を含む」。テナント文脈からの書き込みは
+ *   スコープを注入しようがないため `ReadOnlyModelWriteError` で fail-closed にする
+ *   （DB 側も `app_tenant` に `SELECT` しか GRANT していない）。
+ *
+ * 🔴 なぜ「宣言」にするか（T-02-02 からの申し送り / code-reviewer 指定、2026-09-03）:
+ * `skill_aliases` は第 1 防御（RLS の C1。`SELECT` は `OR tenant_id IS NULL`）ではグローバル行を
+ * 読めるのに、第 2 防御が無条件に `AND tenantId = ctx` を注入していたため、`withTenant` 経由では
+ * グローバル辞書が 1 件も読めなかった（`F-010 AC-2` を満たさない。**漏れる方向ではなく隠れる方向**
+ * の不一致）。解決方法は 2 つあった:
+ *   (a) 注入そのものをやめて RLS に任せる → 🔴 採らない。第 2 防御が消えるモデルを作ると、
+ *       RLS が静かに無効化されたときに他テナントの別名が読めてしまう（二重防御が単一防御になる）
+ *   (b) モデル単位に「グローバル行を許す読み取り」を宣言し、述語を `OR IS NULL` に緩める → 採用
+ * (b) なら第 2 防御は残り（他テナントの行は依然として `where` で排除される）、緩むのは
+ * 「テナントに属さない行」だけである。**緩和は読み取りに限り、書き込みは絞ったまま**にすることで、
+ * グローバル行をテナントから作る・書き換える経路は増えない（`F-010 AC-2` の後半）。
+ * 対象モデルを増やすことは情報境界の前提を変えるため、`scope-injection.test.ts` が
+ * 「宣言の集合そのもの」を固定し、`tenant-relation.test.ts` が DMMF で
+ * 「宣言されたモデルのテナントキーが実際に nullable / 配列であること」を検証する。
+ */
+export type TenantScopeStrategyKind =
+  | 'COLUMN'
+  | 'COLUMN_WITH_GLOBAL_ROWS'
+  | 'ARRAY_MEMBERSHIP'
+  | 'NO_TENANT_KEY';
+
+const TENANT_SCOPE_STRATEGY_OVERRIDES: Readonly<Record<string, TenantScopeStrategyKind>> = {
+  // docs/05 §4.4 C1: `skill_aliases` の SELECT は `OR tenant_id IS NULL`（グローバル別名。F-010 AC-2）
+  SkillAlias: 'COLUMN_WITH_GLOBAL_ROWS',
+  // docs/05 §4.4 C1 の読み替え: `announcements` は SELECT のみ（書込は app_platform_write）
+  Announcement: 'ARRAY_MEMBERSHIP',
 };
 
 /** テナントキーを裏付けるリレーションフィールドの既定名。 */
@@ -155,20 +209,26 @@ const TENANT_KEY_MOVING_RELATION_OVERRIDES: Readonly<Record<string, readonly str
 };
 
 const EXCLUDED = new Set<string>(TENANT_SCOPE_EXCLUDED_MODELS);
+const SYSTEM_ONLY = new Set<string>(TENANT_SCOPE_SYSTEM_ONLY_MODELS);
 
-/** where だけを持つ操作（読み取りと削除）。data を持たないため書き側の検査は要らない。 */
-const WHERE_ONLY_OPERATIONS = new Set([
+/**
+ * where だけを持つ読み取り操作。data を持たないため書き側の検査は要らない。
+ * 🔴 削除は別集合にする（`COLUMN_WITH_GLOBAL_ROWS` の緩和を読み取りだけに限るため。
+ *    削除にまで `OR IS NULL` を効かせると、テナントからグローバル行を消せてしまう）。
+ */
+const READ_OPERATIONS = new Set([
   'findUnique',
   'findUniqueOrThrow',
   'findFirst',
   'findFirstOrThrow',
   'findMany',
-  'delete',
-  'deleteMany',
   'aggregate',
   'count',
   'groupBy',
 ]);
+
+/** where だけを持つ削除操作。述語は常に「テナントキー = ctx」に絞る。 */
+const DELETE_OPERATIONS = new Set(['delete', 'deleteMany']);
 
 /** 🔴 where と data の両方を持つ更新操作。where の注入だけでは行の移動を止められない。 */
 const UPDATE_OPERATIONS = new Set(['update', 'updateMany', 'updateManyAndReturn']);
@@ -218,11 +278,58 @@ export class UnscopedOperationError extends Error {
   }
 }
 
-/** モデル名から注入先のテナントキー列名を返す。`null` は注入対象外（射程外 4 モデル）。 */
+/**
+ * 🔴 テナント文脈からは読み取りしかできないモデルへ書き込もうとしたことを示す
+ * （`ARRAY_MEMBERSHIP` 戦略のモデル。docs/05 §4.4 C1 の読み替え）。
+ * DB 側でも `app_tenant` に `SELECT` しか GRANT していないため、これは二重防御の TS 側である。
+ */
+/**
+ * 🔴 C0 SYSTEM_ONLY のモデル（docs/05 §4.4）へテナント文脈から触れようとしたことを示す。
+ * 正しい経路は `withSystemScope()`（docs/05 §4.4.2）だけである。
+ */
+export class SystemOnlyModelAccessError extends Error {
+  constructor(model: string, operation: string) {
+    super(
+      `${model} はテナント文脈から触れません（${operation}）。` +
+        'C0 SYSTEM_ONLY の表は withSystemScope() からのみ到達できます（docs/05 §4.4 / §4.4.2）。',
+    );
+    this.name = 'SystemOnlyModelAccessError';
+  }
+}
+
+export class ReadOnlyModelWriteError extends Error {
+  constructor(model: string, operation: string) {
+    super(
+      `${model} はテナント文脈からは読み取り専用です（${operation}）。` +
+        '書き込みは管理平面（withPlatformWrite）の経路だけが行います（docs/05 §4.4 C1 / §5.2）。',
+    );
+    this.name = 'ReadOnlyModelWriteError';
+  }
+}
+
+/**
+ * モデル名から注入先のテナントキー列名を返す。
+ * `null` は「注入先の列が無い」（射程外の 4 モデルと、C0 SYSTEM_ONLY の 4 モデル）。
+ */
 export function tenantKeyOf(model: string): string | null {
-  if (EXCLUDED.has(model)) return null;
+  if (EXCLUDED.has(model) || SYSTEM_ONLY.has(model)) return null;
   return TENANT_KEY_OVERRIDES[model] ?? 'tenantId';
 }
+
+/**
+ * モデル名からテナントスコープの注入方式を返す。`null` は注入対象外（射程外 4 モデル）。
+ * 宣言が無いモデルは既定の `COLUMN`。
+ */
+export function tenantScopeStrategyOf(model: string): TenantScopeStrategyKind | null {
+  if (EXCLUDED.has(model)) return null;
+  if (SYSTEM_ONLY.has(model)) return 'NO_TENANT_KEY';
+  return TENANT_SCOPE_STRATEGY_OVERRIDES[model] ?? 'COLUMN';
+}
+
+/** 🔴 既定（`COLUMN`）以外の注入方式を宣言したモデルの一覧。テストが集合そのものを固定する。 */
+export const TENANT_SCOPE_STRATEGY_DECLARATIONS = Object.freeze(
+  Object.entries(TENANT_SCOPE_STRATEGY_OVERRIDES).map(([model, kind]) => ({ model, kind })),
+);
 
 /**
  * モデル名からテナントキーを裏付けるリレーションフィールド名を返す。
@@ -271,11 +378,36 @@ function asRecord(value: unknown): UnknownRecord {
  * 🔴 `AND` に入れても `findUnique` は壊れない。呼び出し側の一意フィールドは最上位に残り、
  *    `AND` は追加のフィルタとして評価される（Prisma の extendedWhereUnique）。
  */
-function withScopedWhere(args: UnknownRecord, tenantKey: string, tenantId: string): UnknownRecord {
+function withScopedWhere(args: UnknownRecord, predicate: UnknownRecord): UnknownRecord {
   const where = asRecord(args['where']);
   const existing = where['AND'];
   const and = existing === undefined ? [] : Array.isArray(existing) ? existing : [existing];
-  return { ...args, where: { ...where, AND: [...and, { [tenantKey]: tenantId }] } };
+  return { ...args, where: { ...where, AND: [...and, predicate] } };
+}
+
+/**
+ * 注入する述語を作る。
+ *
+ * 🔴 `intent` が `READ` のときだけ、宣言された戦略に応じて述語を緩める（グローバル行 / 全テナント宛）。
+ *    `WRITE`（`update` / `upsert` / `delete`）は常に「テナントキー = ctx」に絞る。
+ *    緩和を書き込みにも効かせると、テナントからグローバル行を書き換え・削除できてしまう。
+ */
+function scopePredicate(
+  strategy: TenantScopeStrategyKind,
+  tenantKey: string,
+  tenantId: string,
+  intent: 'READ' | 'WRITE',
+): UnknownRecord {
+  if (strategy === 'ARRAY_MEMBERSHIP') {
+    // 読み取り専用モデル（呼び出し側は intent='READ' でしか到達しない）。
+    return {
+      OR: [{ [tenantKey]: { isEmpty: true } }, { [tenantKey]: { has: tenantId } }],
+    };
+  }
+  if (strategy === 'COLUMN_WITH_GLOBAL_ROWS' && intent === 'READ') {
+    return { OR: [{ [tenantKey]: tenantId }, { [tenantKey]: null }] };
+  }
+  return { [tenantKey]: tenantId };
 }
 
 /**
@@ -390,18 +522,39 @@ export function injectTenantScope(params: {
   tenantId: string;
 }): unknown {
   const { model, operation, args, tenantId } = params;
+  const strategy = tenantScopeStrategyOf(model);
+  // 🔴 C0 SYSTEM_ONLY はテナント文脈から触れない。素通しせず例外にする（fail-closed）。
+  if (strategy === 'NO_TENANT_KEY') throw new SystemOnlyModelAccessError(model, operation);
   const tenantKey = tenantKeyOf(model);
-  if (tenantKey === null) return args;
+  if (tenantKey === null || strategy === null) return args;
   const relations = guardedRelationsOf(model);
+  const readPredicate = scopePredicate(strategy, tenantKey, tenantId, 'READ');
+  const writePredicate = scopePredicate(strategy, tenantKey, tenantId, 'WRITE');
 
   const record = asRecord(args);
 
-  if (WHERE_ONLY_OPERATIONS.has(operation)) {
-    return withScopedWhere(record, tenantKey, tenantId);
+  if (READ_OPERATIONS.has(operation)) {
+    return withScopedWhere(record, readPredicate);
+  }
+
+  const isKnownWrite =
+    DELETE_OPERATIONS.has(operation) ||
+    UPDATE_OPERATIONS.has(operation) ||
+    CREATE_OPERATIONS.has(operation) ||
+    UPSERT_OPERATIONS.has(operation);
+
+  // 🔴 テナント文脈から書けないモデルは、ここで fail-closed にする（DB 権限との二重）。
+  //    分類の無い操作は最後の UnscopedOperationError に落とす（素通しはしない）。
+  if (strategy === 'ARRAY_MEMBERSHIP' && isKnownWrite) {
+    throw new ReadOnlyModelWriteError(model, operation);
+  }
+
+  if (DELETE_OPERATIONS.has(operation)) {
+    return withScopedWhere(record, writePredicate);
   }
 
   if (UPDATE_OPERATIONS.has(operation)) {
-    const scoped = withScopedWhere(record, tenantKey, tenantId);
+    const scoped = withScopedWhere(record, writePredicate);
     return { ...scoped, data: verifiedUpdateData(record['data'], tenantKey, tenantId, relations) };
   }
 
@@ -410,7 +563,7 @@ export function injectTenantScope(params: {
   }
 
   if (UPSERT_OPERATIONS.has(operation)) {
-    const scoped = withScopedWhere(record, tenantKey, tenantId);
+    const scoped = withScopedWhere(record, writePredicate);
     return {
       ...scoped,
       create: withScopedData(record['create'], tenantKey, tenantId, relations),

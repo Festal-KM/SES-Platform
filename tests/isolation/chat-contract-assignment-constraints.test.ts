@@ -3,8 +3,9 @@
 // 追加した 9 表（chat_threads / thread_participants / messages / contracts /
 // contract_documents / contract_templates / orders / assignments / extension_reviews）+
 // 当事者列（counterparty_partner_company_id。CLAUDE.md §3.1-5 の経路 5）について、
-//   ① ENABLE + FORCE ROW LEVEL SECURITY が既定でポリシー 0 件のまま入っていること
-//      （fail-closed。C2/C5/C6/C9 のポリシー本体・射影ビュー 4 本は T-02-06 / T-02-07）
+//   ① ENABLE + FORCE ROW LEVEL SECURITY が入っており、所有者（app_migrator）からは
+//      1 行も見えない・書けないこと（T-02-06 でポリシーは `TO app_tenant` で本適用済み）
+//      （fail-closed。C2/C5/C6 のポリシー本体は T-02-06 で適用済み。C9 と射影ビュー 4 本は T-02-07）
 //   ② migration.sql に手で追加した CHECK 制約 / FK / 部分 UNIQUE / トリガが実際に機能すること
 //   ③ 当事者列が assignments / contracts / contract_documents / orders の 4 表だけに存在し、
 //      他の 5 表（chat_threads / thread_participants / messages / contract_templates /
@@ -67,12 +68,17 @@ describe('T-02-04: docs/05 §3.7 の新 9 表 + 当事者列', () => {
     }
   });
 
-  it('① ポリシーが 0 件のため、所有者（app_migrator）接続でも SELECT は 0 件（T-02-06/07 前の既定 = fail-closed）', async () => {
+  // 🔴 T-02-06 でポリシー C0〜C8 を本適用した。ポリシーはすべて `TO app_tenant` で作られており、
+  //    テーブル所有者（app_migrator）に適用されるポリシーは 1 つも無い。したがって
+  //    FORCE ROW LEVEL SECURITY の下では所有者接続からも 0 件・書き込み不可のままである
+  //    （この 2 件が確かめているのは「所有者が RLS を素通りしないこと」であり、
+  //     T-02-06 前の「ポリシーが 0 件だから」から**理由は変わったが結論は同じ**）。
+  it('① 所有者（app_migrator）接続に適用されるポリシーが無いため SELECT は 0 件（fail-closed）', async () => {
     const rows = await owner.contract.findMany();
     expect(rows).toEqual([]);
   });
 
-  it('① ポリシーが 0 件のため、所有者（app_migrator）接続でも INSERT は拒否される', async () => {
+  it('① 所有者（app_migrator）接続に適用されるポリシーが無いため INSERT は拒否される', async () => {
     await expect(
       owner.chatThread.create({
         data: { tenantId: TENANT_A, kind: 'COMPANY', partnerCompanyId: PARTNER_A1 },
@@ -94,7 +100,7 @@ describe('T-02-04: docs/05 §3.7 の新 9 表 + 当事者列', () => {
     expect(columns).not.toContain('counterparty_partner_company_id');
   });
 
-  describe('② CHECK 制約 / FK / 部分 UNIQUE / トリガ（RLS を一時 DISABLE して直接検証。T-02-06/07 前提の暫定手段）', () => {
+  describe('② CHECK 制約 / FK / 部分 UNIQUE / トリガ（RLS を一時 DISABLE して直接検証）', () => {
     // 🔴 projects / proposals / review_gates は T-02-02/03 から fail-closed（0 ポリシー）。
     //    参照先の行を用意するために disable する（engineers は C3 ポリシーが効くが、FK 検証は
     //    RLS を経由しないため disable 不要）。

@@ -119,8 +119,27 @@ export type {
 } from './schema-value-sets.js';
 export {
   CrossTenantWriteError,
+  ReadOnlyModelWriteError,
   TENANT_SCOPE_EXCLUDED_MODELS,
+  TENANT_SCOPE_STRATEGY_DECLARATIONS,
+  TENANT_SCOPE_SYSTEM_ONLY_MODELS,
+  SystemOnlyModelAccessError,
   TenantRelationWriteError,
   UnscopedOperationError,
 } from './scope-injection.js';
-export { withHostTenant, withTenant } from './with-tenant.js';
+export type { TenantScopeStrategyKind } from './scope-injection.js';
+// 🔴 テナント文脈を持たない経路（docs/05 §4.4.2）。この 5 本以外を作らない。
+export {
+  withAuthLookup,
+  withInvitationAccept,
+  withInvitationToken,
+  withPasswordResetConfirm,
+  withPasswordResetIssue,
+} from './row-context.js';
+export type {
+  AuthLookupUser,
+  InvitationAcceptInput,
+  InvitationRow,
+  PasswordResetIssueInput,
+} from './row-context.js';
+export { withHostTenant, withSystemScope, withTenant } from './with-tenant.js';

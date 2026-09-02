@@ -6,7 +6,7 @@ import type { PrismaClient } from '@prisma/client';
 import { getBaseClient } from './client.js';
 import type { AuthenticatedTenantCtx, HostTenantCtx } from './context.js';
 import { tenantScopeExtension } from './extension.js';
-import { tenantScopeSettingsSql } from './scope-settings.js';
+import { systemScopeSettingsSql, tenantScopeSettingsSql } from './scope-settings.js';
 
 function extendWithTenantScope(client: PrismaClient, ctx: AuthenticatedTenantCtx) {
   return client.$extends(tenantScopeExtension({ tenantId: ctx.tenantId }));
@@ -78,4 +78,35 @@ export async function withHostTenant<T>(
   fn: (db: HostTenantDb) => Promise<T>,
 ): Promise<T> {
   return withTenant(ctx, fn);
+}
+
+/** 素の（拡張を適用していない）トランザクションクライアント。 */
+type RawTransactionClient = Parameters<Parameters<PrismaClient['$transaction']>[0]>[0];
+
+/**
+ * `withSystemScope` が `fn` に渡すクライアント。
+ * 🔴 C0 SYSTEM_ONLY の 3 表だけを型として渡す（docs/05 §4.4 / §4.4.2）。
+ *    `impersonation_sessions` は同じ C0 だが `app_tenant` に権限が無いため含めない
+ *    （管理平面の `app_platform*` 経由でのみ触れる）。
+ * 🔴 export しない（`fn` の引数型としてのみ現れる）。
+ */
+type SystemScopeDb = Pick<RawTransactionClient, 'schedulerRun' | 'webhookDelivery' | 'emailEvent'>;
+
+/**
+ * テナント文脈を持たない接続で C0 SYSTEM_ONLY の 3 表にだけ触れる（docs/05 §4.4.2）。
+ *
+ * 🔴 `app.tenant_id` を設定しない（空文字で上書きする）ため `app_tenant_id()` は NULL になり、
+ *    C0 以外の表のポリシーは 1 つも真にならない = 他表は 0 件・書き込み不可になる。
+ *    「見えないのは型のおかげ」ではなく、**RLS でも 0 件**である点が要点である。
+ * 🔴 Prisma 拡張（第 2 防御）は適用しない。注入すべき tenantId が存在しないためであり、
+ *    ここでの防御は RLS と、渡す型を 3 デリゲートに絞ることによる。
+ * 🔴 呼び出し元は docs/05 §4.4.2 の 3 箇所（webhook 受信 2 経路と `runScheduled()`）に限る。
+ *    ESLint による呼び出し元の限定は、その 3 箇所が実在するようになる SP-03 以降に入れる
+ *    （現時点で apps/** に呼び出し元は 1 つも無い）。
+ */
+export async function withSystemScope<T>(fn: (db: SystemScopeDb) => Promise<T>): Promise<T> {
+  return getBaseClient().$transaction(async (tx) => {
+    await tx.$queryRaw(systemScopeSettingsSql());
+    return fn(tx);
+  });
 }

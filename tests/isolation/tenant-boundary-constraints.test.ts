@@ -2,8 +2,9 @@
 // T-02-01（docs/sprints/SP-02-schema-isolation.md）: docs/05 §3.3 の 6 新表
 // （users / memberships / partner_companies / invitations / two_factor_credentials /
 // tenant_sending_domains）について、
-//   ① ENABLE + FORCE ROW LEVEL SECURITY が既定でポリシー 0 件のまま入っていること
-//      （fail-closed。C0〜C8 のポリシー本体は T-02-06）
+//   ① ENABLE + FORCE ROW LEVEL SECURITY が入っており、所有者（app_migrator）からは
+//      1 行も見えない・書けないこと（T-02-06 でポリシーは `TO app_tenant` で本適用済み）
+//      （C0〜C8 のポリシー本体は T-02-06 で適用済み）
 //   ② migration.sql に手で追加した CHECK 制約 / トリガが実際に機能すること
 // を検証する。
 //
@@ -61,12 +62,17 @@ describe('T-02-01: docs/05 §3.3 の新 6 表', () => {
     }
   });
 
-  it('① ポリシーが 0 件のため、所有者（app_migrator）接続でも SELECT は 0 件（T-02-06 前の既定 = fail-closed）', async () => {
+  // 🔴 T-02-06 でポリシー C0〜C8 を本適用した。ポリシーはすべて `TO app_tenant` で作られており、
+  //    テーブル所有者（app_migrator）に適用されるポリシーは 1 つも無い。したがって
+  //    FORCE ROW LEVEL SECURITY の下では所有者接続からも 0 件・書き込み不可のままである
+  //    （この 2 件が確かめているのは「所有者が RLS を素通りしないこと」であり、
+  //     T-02-06 前の「ポリシーが 0 件だから」から**理由は変わったが結論は同じ**）。
+  it('① 所有者（app_migrator）接続に適用されるポリシーが無いため SELECT は 0 件（fail-closed）', async () => {
     const rows = await owner.user.findMany();
     expect(rows).toEqual([]);
   });
 
-  it('① ポリシーが 0 件のため、所有者（app_migrator）接続でも INSERT は拒否される', async () => {
+  it('① 所有者（app_migrator）接続に適用されるポリシーが無いため INSERT は拒否される', async () => {
     await expect(
       owner.partnerCompany.create({
         data: { tenantId: TENANT_A, name: 'RLS 越境未検証', invitedAt: new Date() },
@@ -74,7 +80,7 @@ describe('T-02-01: docs/05 §3.3 の新 6 表', () => {
     ).rejects.toThrow(/row-level security/i);
   });
 
-  describe('② CHECK 制約 / トリガ（RLS を一時 DISABLE して直接検証。T-02-06 前提の暫定手段）', () => {
+  describe('② CHECK 制約 / トリガ（RLS を一時 DISABLE して直接検証）', () => {
     beforeAll(async () => {
       await setRowLevelSecurity({
         ownerDatasourceUrl: database.migratorUrl,
