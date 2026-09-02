@@ -21,6 +21,9 @@
 --    同じ fail-closed 既定（ENABLE + FORCE のみ。ポリシー・GRANT 無し）にする。
 --    `skills` は対象外（CLAUDE.md §3.1 射程外の 4 表の 1 つ。グローバルマスタであり RLS を
 --    一切適用しない。docs/05 §4.4「射程外の 4 表」/ §4.7 BUSINESS_TABLE_EXCLUSIONS）。
+-- 🔴 T-02-03（docs/05 §3.6）で追加した 5 表（proposal_requests / proposals /
+--    engineer_snapshots / proposal_events / review_gates）も同じ fail-closed 既定
+--    （ENABLE + FORCE のみ。C5 PARTY 等のポリシー本体・GRANT は T-02-06 / T-02-07）。
 -- テーブル所有者として実行する（docs/05 §4.2「テーブル所有者は app_migrator であり、
 -- FORCE ROW LEVEL SECURITY を全業務テーブルに付ける。これが無いと所有者が RLS を素通りする」）。
 SET ROLE app_migrator;
@@ -82,6 +85,18 @@ ALTER TABLE engineer_shares         ENABLE ROW LEVEL SECURITY;
 ALTER TABLE engineer_shares         FORCE  ROW LEVEL SECURITY;
 ALTER TABLE match_candidates        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE match_candidates        FORCE  ROW LEVEL SECURITY;
+
+-- 🔴 T-02-03: 新規 5 表も ENABLE + FORCE のみ（ポリシー本体・GRANT は T-02-06 / T-02-07）。
+ALTER TABLE proposal_requests       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE proposal_requests       FORCE  ROW LEVEL SECURITY;
+ALTER TABLE proposals               ENABLE ROW LEVEL SECURITY;
+ALTER TABLE proposals               FORCE  ROW LEVEL SECURITY;
+ALTER TABLE engineer_snapshots      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE engineer_snapshots      FORCE  ROW LEVEL SECURITY;
+ALTER TABLE proposal_events         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE proposal_events         FORCE  ROW LEVEL SECURITY;
+ALTER TABLE review_gates            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE review_gates            FORCE  ROW LEVEL SECURITY;
 
 -- --- C1 TENANT_ALL: tenants（<T> = id。app_tenant は SELECT のみ）------------------------
 DROP POLICY IF EXISTS tenants_c1_select ON tenants;

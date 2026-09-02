@@ -238,6 +238,15 @@ const PLATFORM_READ_COLUMN_DENYLIST: Record<string, readonly string[]> = {
   skill_sheets: ['object_key'],
   skill_sheet_extractions: ['payload'],
   projects: ['end_client_name', 'internal_unit_price'],
+  // 🔴 T-02-03（docs/05 §3.6 / §5.5）: proposals / engineer_snapshots / proposal_events /
+  //    review_gates / proposal_requests に新たに非開示列が実在するようになった。GRANT は
+  //    T-02-06/07 の範囲だが、追加を忘れると将来 GRANT を足したときに §5.5 の見落としを
+  //    検知できないため、GRANT が無い今の時点でも追記しておく（既存コメントと同じ方針）。
+  engineer_snapshots: ['display_name', 'affiliation_label', 'skills', 'careers'],
+  proposals: ['subject', 'body', 'draft_body', 'recipient_email'],
+  proposal_events: ['note', 'attachment_key'],
+  review_gates: ['findings', 'ai_warnings'],
+  proposal_requests: ['message', 'decline_reason'],
 };
 
 /**

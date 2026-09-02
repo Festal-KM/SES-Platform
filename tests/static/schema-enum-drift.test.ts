@@ -26,9 +26,13 @@ import { TENANT_ROLES } from '../../packages/db/src/context.js';
 import {
   ENGINEER_AVAILABILITIES,
   ENGINEER_SKILL_SOURCES,
+  GATE_VERDICTS,
   PROJECT_STATUSES,
+  PROPOSAL_EVENT_KINDS,
   REMOTE_MODES,
   REQUIREMENT_KINDS,
+  REVIEW_GATE_EXECUTIONS,
+  REVIEW_GATE_TARGET_TYPES,
   SCAN_STATUSES,
   SKILL_ALIAS_ORIGINS,
   SKILL_ALIAS_STATUSES,
@@ -36,6 +40,8 @@ import {
   TENANT_SENDING_DOMAIN_STATES,
   TWO_FACTOR_SUBJECT_TYPES,
 } from '../../packages/db/src/schema-value-sets.js';
+import { PROPOSAL_STATES } from '../../packages/domain/src/state/proposal.js';
+import { PROPOSAL_REQUEST_STATES } from '../../packages/domain/src/state/proposalRequest.js';
 import { TENANT_LIFECYCLE_STATES } from '../../packages/domain/src/state/tenant.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -237,6 +243,79 @@ describe('CHECK 制約と TS 単一出所の drift 検査（docs/05 §3.1「列�
       const tampered = migrationSql.replace("'NICE'", "'NICE_TYPO'");
       const values = extractCheckInValues(tampered, 'project_requirements_kind_check');
       expect(values).not.toEqual([...REQUIREMENT_KINDS]);
+    });
+  });
+
+  // 🔴 T-02-03（docs/05 §3.6。docs/sprints/SP-02-schema-isolation.md）:
+  // 20260903020000_proposal_request_gate/migration.sql が追加した CHECK 制約群。
+  // ProposalState / ProposalRequestState の単一の出所は既存の @ses/domain
+  // （PROPOSAL_STATES / PROPOSAL_REQUEST_STATES。T-01-07 から既存。新しい配列を作らずここと突合する）。
+  describe('T-02-03: 新 migration の CHECK 制約', () => {
+    it('proposal_requests_state_check ⇔ @ses/domain PROPOSAL_REQUEST_STATES', () => {
+      const values = extractCheckInValues(migrationSql, 'proposal_requests_state_check');
+      expectSameValueSet(values, PROPOSAL_REQUEST_STATES);
+    });
+
+    it('🔴 proposals_state_check ⇔ @ses/domain PROPOSAL_STATES（CLAUDE.md §4.2 の 14 状態）', () => {
+      const values = extractCheckInValues(migrationSql, 'proposals_state_check');
+      expectSameValueSet(values, PROPOSAL_STATES);
+    });
+
+    it('対照: proposals の state CHECK が 1 値でも欠けたら検知する（改変 SQL での確認）', () => {
+      const tampered = migrationSql.replace("'WITHDRAWN'", "'WITHDRAWN_TYPO'");
+      const values = extractCheckInValues(tampered, 'proposals_state_check');
+      expect(values).not.toEqual([...PROPOSAL_STATES]);
+    });
+
+    it('proposal_events_kind_check ⇔ packages/db PROPOSAL_EVENT_KINDS', () => {
+      const values = extractCheckInValues(migrationSql, 'proposal_events_kind_check');
+      expectSameValueSet(values, PROPOSAL_EVENT_KINDS);
+    });
+
+    it('proposal_events_from_state_check ⇔ @ses/domain PROPOSAL_STATES', () => {
+      const values = extractCheckInValues(migrationSql, 'proposal_events_from_state_check');
+      expectSameValueSet(values, PROPOSAL_STATES);
+    });
+
+    it('proposal_events_to_state_check ⇔ @ses/domain PROPOSAL_STATES', () => {
+      const values = extractCheckInValues(migrationSql, 'proposal_events_to_state_check');
+      expectSameValueSet(values, PROPOSAL_STATES);
+    });
+
+    it('🔴 review_gates_target_type_check ⇔ packages/db REVIEW_GATE_TARGET_TYPES（CONTRACT_DOCUMENT を含む 5 種。Issue #15）', () => {
+      const values = extractCheckInValues(migrationSql, 'review_gates_target_type_check');
+      expectSameValueSet(values, REVIEW_GATE_TARGET_TYPES);
+    });
+
+    it('review_gates_execution_check ⇔ packages/db REVIEW_GATE_EXECUTIONS（P-A-16。状態機械ではなく実行の属性）', () => {
+      const values = extractCheckInValues(migrationSql, 'review_gates_execution_check');
+      expectSameValueSet(values, REVIEW_GATE_EXECUTIONS);
+    });
+
+    it('対照: execution の CHECK が 1 値でも欠けたら検知する（改変 SQL での確認）', () => {
+      const tampered = migrationSql.replace("'HELD_AI_COST_LIMIT'", "'HELD_AI_COST_LIMIT_TYPO'");
+      const values = extractCheckInValues(tampered, 'review_gates_execution_check');
+      expect(values).not.toEqual([...REVIEW_GATE_EXECUTIONS]);
+    });
+
+    it('review_gates_pii_verdict_check ⇔ packages/db GATE_VERDICTS', () => {
+      const values = extractCheckInValues(migrationSql, 'review_gates_pii_verdict_check');
+      expectSameValueSet(values, GATE_VERDICTS);
+    });
+
+    it('review_gates_commerce_verdict_check ⇔ packages/db GATE_VERDICTS', () => {
+      const values = extractCheckInValues(migrationSql, 'review_gates_commerce_verdict_check');
+      expectSameValueSet(values, GATE_VERDICTS);
+    });
+
+    it('review_gates_consistency_verdict_check ⇔ packages/db GATE_VERDICTS', () => {
+      const values = extractCheckInValues(migrationSql, 'review_gates_consistency_verdict_check');
+      expectSameValueSet(values, GATE_VERDICTS);
+    });
+
+    it('engineer_snapshots_remote_mode_check ⇔ packages/db REMOTE_MODES（engineers / projects と同じ値集合を共有）', () => {
+      const values = extractCheckInValues(migrationSql, 'engineer_snapshots_remote_mode_check');
+      expectSameValueSet(values, REMOTE_MODES);
     });
   });
 });

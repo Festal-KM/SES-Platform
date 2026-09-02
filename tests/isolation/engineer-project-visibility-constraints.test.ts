@@ -81,11 +81,14 @@ describe('T-02-02: docs/05 §3.4 / §3.5 の新 10 表 + engineers 拡張', () =
     // 🔴 engineers は T-01-04 から C3 ポリシーが有効（fail-closed の対象外）だが、
     //    今回追加した CHECK（availability / remote_mode）と FK（owner_partner_company_id）を
     //    ポリシーの影響なく検証するため、一時 DISABLE の対象に含める。
-    const TABLES_TO_DISABLE = [...NEW_TABLES, 'engineers'] as const;
+    // 🔴 review_gates は T-02-03 で追加された表（fail-closed）。project_visibilities.review_gate_id
+    //    が T-02-03 から FK を持つため、有効な参照先を作るのにここでも DISABLE が要る。
+    const TABLES_TO_DISABLE = [...NEW_TABLES, 'engineers', 'review_gates'] as const;
 
     let skillId: string;
     let projectId: string;
     let skillSheetId: string;
+    let reviewGateId: string;
 
     beforeAll(async () => {
       await setRowLevelSecurity({
@@ -119,6 +122,23 @@ describe('T-02-02: docs/05 §3.4 / §3.5 の新 10 表 + engineers 拡張', () =
         },
       });
       skillSheetId = skillSheet.id;
+
+      // 🔴 T-02-03: project_visibilities.review_gate_id の FK 先（公開時のゲート結果）。
+      const reviewGate = await owner.reviewGate.create({
+        data: {
+          tenantId: TENANT_A,
+          targetType: 'PROJECT_PUBLISH',
+          targetId: projectId,
+          contentHash: `hash-${randomUUID()}`,
+          piiVerdict: 'PASS',
+          commerceVerdict: 'PASS',
+          consistencyVerdict: 'PASS',
+          findings: [],
+          aiWarnings: [],
+          executedAt: new Date(),
+        },
+      });
+      reviewGateId = reviewGate.id;
     }, SETUP_TIMEOUT_MS);
 
     afterAll(async () => {
@@ -446,7 +466,7 @@ describe('T-02-02: docs/05 §3.4 / §3.5 の新 10 表 + engineers 拡張', () =
             partnerCompanyId: PARTNER_A1,
             publishedAt: new Date(),
             publishedBy: randomUUID(),
-            reviewGateId: randomUUID(),
+            reviewGateId,
           },
         });
         await expect(
@@ -457,10 +477,32 @@ describe('T-02-02: docs/05 §3.4 / §3.5 の新 10 表 + engineers 拡張', () =
               partnerCompanyId: PARTNER_A1,
               publishedAt: new Date(),
               publishedBy: randomUUID(),
-              reviewGateId: randomUUID(),
+              reviewGateId,
             },
           }),
         ).rejects.toThrow(/Unique constraint failed/);
+      });
+    });
+
+    describe('🔴 project_visibilities_review_gate_id_fkey（docs/05 §3.5 / §3.6。T-02-03 で解決した前方参照）', () => {
+      it('存在しない review_gates を指すと拒否される', async () => {
+        // 🔴 直前のテストが (tenantId, projectId, partnerCompanyId) を使い切っているため、
+        //    UNIQUE 制約と衝突しないよう別の案件を用意する。
+        const otherProject = await owner.project.create({
+          data: { tenantId: TENANT_A, name: 'FK 制約検証用案件（別案件）' },
+        });
+        await expect(
+          owner.projectVisibility.create({
+            data: {
+              tenantId: TENANT_A,
+              projectId: otherProject.id,
+              partnerCompanyId: PARTNER_A1,
+              publishedAt: new Date(),
+              publishedBy: randomUUID(),
+              reviewGateId: randomUUID(),
+            },
+          }),
+        ).rejects.toThrow(/foreign key constraint/i);
       });
     });
 

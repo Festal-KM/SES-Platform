@@ -79,3 +79,53 @@ export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
 export const REQUIREMENT_KINDS = ['MUST', 'NICE'] as const;
 
 export type RequirementKind = (typeof REQUIREMENT_KINDS)[number];
+
+// 🔴 T-02-03（docs/05 §3.6。docs/sprints/SP-02-schema-isolation.md）:
+// 20260903020000_proposal_request_gate/migration.sql が値集合の CHECK を持つ列。
+// ProposalState / ProposalRequestState は CLAUDE.md §4.2 の状態機械であり、単一の出所は
+// 既存の @ses/domain（PROPOSAL_STATES / PROPOSAL_REQUEST_STATES。T-01-07 から既存）のため、
+// ここには置かない。以下はいずれも状態機械ではない単純な値集合。
+
+/**
+ * docs/05 §3.6 `ReviewGate.targetType`（TEXT + CHECK）。テナント外へ共有される 5 種。
+ * 🔴 `CONTRACT_DOCUMENT` を含む（契約書のゲート対象化。決定済み。Issue #15 / `BR-15`）。
+ */
+export const REVIEW_GATE_TARGET_TYPES = [
+  'PROPOSAL',
+  'SKILL_SHEET_SHARE',
+  'PROJECT_PUBLISH',
+  'CHAT_ATTACHMENT',
+  'CONTRACT_DOCUMENT',
+] as const;
+
+export type ReviewGateTargetType = (typeof REVIEW_GATE_TARGET_TYPES)[number];
+
+/**
+ * docs/05 §3.6 `ReviewGate.execution`（TEXT + CHECK）。🔴 状態機械の状態ではなく実行の属性
+ * （`P-A-16`。CLAUDE.md §4.2 の 5 状態機械に状態を 1 つも追加しない）。
+ */
+export const REVIEW_GATE_EXECUTIONS = ['DONE', 'HELD_AI_COST_LIMIT'] as const;
+
+export type ReviewGateExecution = (typeof REVIEW_GATE_EXECUTIONS)[number];
+
+/**
+ * docs/05 §3.6 `GateVerdict`（TEXT + CHECK）。`review_gates.pii_verdict` /
+ * `.commerce_verdict` / `.consistency_verdict` で共有する。
+ */
+export const GATE_VERDICTS = ['PASS', 'FAIL'] as const;
+
+export type GateVerdict = (typeof GATE_VERDICTS)[number];
+
+/**
+ * docs/05 §3.6 `GateLayer`。`review_gates.findings[].layer`（JSON）の値集合であり、
+ * 独立した DB 列の CHECK ではない（`findings` は JSONB）。🔴 そのため
+ * `tests/static/schema-enum-drift.test.ts` の突合対象には含めない。
+ */
+export const GATE_LAYERS = ['PII', 'COMMERCE', 'CONSISTENCY'] as const;
+
+export type GateLayer = (typeof GATE_LAYERS)[number];
+
+/** docs/05 §3.6 `ProposalEvent.kind`（TEXT + CHECK）。 */
+export const PROPOSAL_EVENT_KINDS = ['STATE', 'NOTE', 'ATTACHMENT'] as const;
+
+export type ProposalEventKind = (typeof PROPOSAL_EVENT_KINDS)[number];
