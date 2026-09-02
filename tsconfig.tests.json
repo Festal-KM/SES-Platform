@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "allowJs": true
+  },
+  "include": ["tests/**/*.ts", "vitest.config.ts"],
+  "exclude": ["tests/static/__fixtures__/**", "tests/e2e/**"]
+}

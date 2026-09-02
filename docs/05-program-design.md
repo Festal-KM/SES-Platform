@@ -171,7 +171,7 @@ ses-platform/
 
 | ルール | 強制手段 |
 |---|---|
-| `apps/*` → `packages/*` の一方向。逆は不可 | `eslint-plugin-import` の `no-restricted-paths` |
+| `apps/*` → `packages/*` の一方向。逆は不可 | コアの `no-restricted-imports`（patterns/group によるパッケージ名・パスの文字列照合）。`@ses/*` はビルド前は解決できず resolver 依存の `import/no-restricted-paths` が no-op になるため使わない |
 | `packages/domain` は**何にも依存しない**（`packages/*` にも `node:*` の I/O にも） | `no-restricted-imports`（`@ses/db` / `@ses/ai` / `@ses/connectors` / `node:fs` / `node:crypto` を禁止）。**`Date` の直接参照も禁止**（`now: Date` を引数で受ける） |
 | `packages/db` / `ai` / `connectors` は相互に依存しない | 同上。束ねるのは `apps/*` の handler 層のみ |
 | `apps/web/app/(main)/**` から `@ses/db/platform` を import しない | `no-restricted-imports`（§5.2） |
