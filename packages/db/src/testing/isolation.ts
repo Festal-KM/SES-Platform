@@ -12,6 +12,7 @@
 //    T-01-06 の ESLint（生 PrismaClient の import 禁止）を入れる際に、
 //    このサブパス（`@ses/db/testing`）の import 元を `tests/isolation/**` に限定する。
 import { Prisma, PrismaClient } from '@prisma/client';
+import { tenantKeyOf } from '../scope-injection.js';
 import { tenantScopeSettingsSql, type TenantScopeSettings } from '../scope-settings.js';
 
 export type UnextendedClient = PrismaClient;
@@ -258,6 +259,35 @@ export async function readTableColumns(client: RawQueryable, table: string): Pro
       AND NOT a.attisdropped
     ORDER BY a.attnum`);
   return rows.map((row) => row.attname);
+}
+
+export type TenantScopeCoverageRow = {
+  readonly model: string;
+  /** `null` = 射程外の 4 モデル、または C0 SYSTEM_ONLY の 4 モデル（注入先の列を持たない）。 */
+  readonly tenantKey: string | null;
+  /** `tenantKey` が非 null のとき、その名前のスカラーフィールドが DMMF に実在するか。 */
+  readonly declaredFieldExists: boolean;
+};
+
+/**
+ * 🔴 T-02-09（docs/05 §4.7 #8 / §17.2 #2）: Prisma 拡張の対象モデル一覧が「除外 4 モデル以外の
+ * すべて」を含むことを、DMMF を走査して確かめる土台。
+ *
+ * `tests/isolation/**` は生 `@prisma/client` の import を ESLint で禁止されている
+ * （`eslint.config.mjs` の `TESTS_ISOLATION_OPTIONS`。`@ses/db/testing` の外へ `Prisma.dmmf` を
+ * 持ち出させない）。DMMF の読み取りは `packages/db` の内部に閉じ、`tenantKeyOf`
+ * （`scope-injection.ts` の唯一の実装）をそのまま再利用することで、判定ロジックを
+ * 二重実装しない（`packages/db/src/tenant-relation.test.ts` と同じ関数を呼ぶ）。
+ */
+export function readTenantScopeCoverage(): TenantScopeCoverageRow[] {
+  return Prisma.dmmf.datamodel.models.map((model) => {
+    const tenantKey = tenantKeyOf(model.name);
+    const declaredFieldExists =
+      tenantKey === null
+        ? true // n/a（除外 4 モデル / C0 SYSTEM_ONLY）
+        : model.fields.some((field) => field.name === tenantKey && field.kind === 'scalar');
+    return { model: model.name, tenantKey, declaredFieldExists };
+  });
 }
 
 export type ScopeSettingsSnapshot = {

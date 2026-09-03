@@ -30,9 +30,6 @@ import {
 } from '@ses/db';
 import {
   createUnextendedClient,
-  hasTablePrivilege,
-  readPolicies,
-  readPublicBaseTables,
   runUnextended,
   type UnextendedClient,
 } from '@ses/db/testing';
@@ -725,79 +722,6 @@ describe('テナント文脈を持たない経路（docs/05 §4.4.2）', () => {
   });
 });
 
-// 🔴 T-02-06 の完了判定（docs/sprints/SP-02 T-02-06）。
-//    docs/05 §4.7 の**カタログ走査 13 本は T-02-09 の範囲**であり、ここではその前提となる
-//    #2（ポリシーが 0 件の表）と #3（app_tenant に権限がありながら app_tenant_id() を
-//    参照しないポリシー）だけを先に固定する。T-02-09 で 13 本に拡張する際、この 2 本は
-//    そちらへ移設してよい（同じ述語を二重に持たない）。
-describe('🔴 T-02-06 の完了判定（T-02-09 のカタログ走査のうち #2 / #3 の先取り）', () => {
-  // docs/05 §4.7 の除外リスト。🔴 「全部から 4 つを引く」向きで書き、ここを広げて通さない。
-  const OUT_OF_SCOPE = ['platform_users', 'plans', 'subscriptions', 'skills', '_prisma_migrations'];
-
-  it('ポリシーが 1 つも無い業務テーブルが 0 件である', async () => {
-    const tables = (await readPublicBaseTables(db)).filter((t) => !OUT_OF_SCOPE.includes(t));
-    expect(tables).toHaveLength(52); // 空振り防止（docs/05 §3.2 の 56 表 − 射程外 4 表）
-
-    const policies = await readPolicies(db);
-    const withPolicy = new Set(policies.map((policy) => policy.table));
-    expect(tables.filter((table) => !withPolicy.has(table))).toEqual([]);
-  });
-
-  it('🔴 app_tenant に権限がある表の、app_tenant に適用される全ポリシーが app_tenant_id() を参照する', async () => {
-    const tables = (await readPublicBaseTables(db)).filter((t) => !OUT_OF_SCOPE.includes(t));
-    const policies = await readPolicies(db);
-
-    const offenders: string[] = [];
-    let checked = 0;
-    for (const table of tables) {
-      const privileges = await Promise.all(
-        (['SELECT', 'INSERT', 'UPDATE', 'DELETE'] as const).map((privilege) =>
-          hasTablePrivilege(db, 'app_tenant', table, privilege),
-        ),
-      );
-      if (!privileges.some(Boolean)) continue;
-
-      for (const policy of policies.filter((candidate) => candidate.table === table)) {
-        // app_tenant に適用されるポリシー = TO app_tenant または TO PUBLIC。
-        if (!policy.roles.includes('app_tenant') && !policy.roles.includes('public')) continue;
-        checked += 1;
-        const expression = `${policy.using ?? ''} ${policy.withCheck ?? ''}`;
-        if (!expression.includes('app_tenant_id()')) {
-          offenders.push(`${table}.${policy.policy}: ${expression.trim()}`);
-        }
-      }
-    }
-    expect(checked).toBeGreaterThan(0); // 空振り防止（対照）
-    expect(offenders).toEqual([]);
-  });
-
-  it('🔴 USING (true) 相当のポリシーが 1 件も無い', async () => {
-    const policies = await readPolicies(db);
-    const suspicious = policies.filter(
-      (policy) => policy.using === 'true' || policy.withCheck === 'true',
-    );
-    expect(suspicious).toEqual([]);
-  });
-
-  it('🔴 app_tenant に権限が無い業務テーブルは app_platform / app_platform_write が持つ（孤児表の検出）', async () => {
-    const tables = (await readPublicBaseTables(db)).filter((t) => !OUT_OF_SCOPE.includes(t));
-    const orphans: string[] = [];
-    for (const table of tables) {
-      const tenant = await Promise.all(
-        (['SELECT', 'INSERT', 'UPDATE', 'DELETE'] as const).map((privilege) =>
-          hasTablePrivilege(db, 'app_tenant', table, privilege),
-        ),
-      );
-      if (tenant.some(Boolean)) continue;
-      const platform = await Promise.all(
-        (['app_platform', 'app_platform_write'] as const).flatMap((role) =>
-          (['SELECT', 'INSERT', 'UPDATE'] as const).map((privilege) =>
-            hasTablePrivilege(db, role, table, privilege),
-          ),
-        ),
-      );
-      if (!platform.some(Boolean)) orphans.push(table);
-    }
-    expect(orphans).toEqual([]);
-  });
-});
+// 🔴 T-02-09 申し送り 3: 旧「T-02-06 の完了判定」ブロック（docs/05 §4.7 #2〜#4 の先取り）は
+//    tests/isolation/rls-enforced.test.ts へ移設した（このファイル冒頭のコメントが予告していた
+//    とおり、同じ述語を二重に持たない）。カタログ走査 13 本は同ファイルの 1 箇所に集約されている。

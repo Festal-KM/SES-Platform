@@ -21,6 +21,7 @@ import {
   readTableColumns,
   type UnextendedClient,
 } from '@ses/db/testing';
+import { PLATFORM_READ_COLUMN_DENYLIST } from './support/platform-read-denylist.js';
 import { ROLE_NAMES, startIsolationDatabase, type IsolationDatabase } from './support/postgres.js';
 
 const SETUP_TIMEOUT_MS = 600_000;
@@ -268,63 +269,13 @@ describe('app_assignment_owner_probe は engineers の 3 列（tenant_id/id/owne
   });
 });
 
-/**
- * docs/05 §5.5「運営者に対するマスキング（二層）」第 1 層 = 列単位の GRANT。
- * `CLAUDE.md` §10.5「運営者にも見せないもの: エンジニアの氏名 …」の実装担保。
- * SP-02 で §5.5 の非開示列が実在するようになった表を追記する。`skill_sheets` /
- * `skill_sheet_extractions` / `projects` は本タスク（T-02-02）時点で `app_platform` への
- * GRANT が 0 件（prisma/migrations/20260903050000_rls_policies/migration.sql 未追記）だが、それは「④ カタログ走査」テストが表単位で
- * 検出する話であり、本リストは §5.5 の非開示列一覧そのものと突き合わせる独立防御である。
- * 将来 GRANT を追加したときに §5.5 の見落とし（開示してはいけない列まで開けてしまう）を
- * 検知するのが目的なので、GRANT が無い今の時点でも追記しておく。
- * 追記を忘れても他のテストが自動で検知するわけではない
- * （§5.5 の表自体が唯一の真実であり、ここは実測用の固定リストである）。
- */
-const PLATFORM_READ_COLUMN_DENYLIST: Record<string, readonly string[]> = {
-  engineers: [
-    'display_name',
-    'birth_date',
-    'contact_email',
-    'contact_phone',
-    'affiliation_label',
-    'city',
-    'preference_note',
-  ],
-  skill_sheets: ['object_key'],
-  skill_sheet_extractions: ['payload'],
-  projects: ['end_client_name', 'internal_unit_price'],
-  // 🔴 T-02-03（docs/05 §3.6 / §5.5）: proposals / engineer_snapshots / proposal_events /
-  //    review_gates / proposal_requests に新たに非開示列が実在するようになった。GRANT は
-  //    T-02-06/07 の範囲だが、追加を忘れると将来 GRANT を足したときに §5.5 の見落としを
-  //    検知できないため、GRANT が無い今の時点でも追記しておく（既存コメントと同じ方針）。
-  engineer_snapshots: ['display_name', 'affiliation_label', 'skills', 'careers'],
-  proposals: ['subject', 'body', 'draft_body', 'recipient_email'],
-  proposal_events: ['note', 'attachment_key'],
-  review_gates: ['findings', 'ai_warnings'],
-  proposal_requests: ['message', 'decline_reason'],
-  // 🔴 T-02-04（docs/05 §3.7 / §5.5）: chat_threads / thread_participants / contracts /
-  //    contract_documents / contract_templates / orders / assignments / extension_reviews に
-  //    新たに非開示列が実在するようになった。GRANT は T-02-06/07 の範囲だが、追加を忘れると
-  //    将来 GRANT を足したときに §5.5 の見落としを検知できないため、GRANT が無い今の時点でも
-  //    追記しておく（既存コメントと同じ方針）。列は実在する表にのみ列挙する（§5.5 の該当行は
-  //    assignments / contracts / orders / contract_documents をまとめて列挙しているが、
-  //    unit_price / amount / counterparty_name / payment_terms / signers は表ごとに実在する
-  //    列だけが異なるため、ここでは表ごとに絞って書く）。
-  messages: ['body', 'attachment_key'],
-  assignments: ['unit_price'],
-  contracts: ['unit_price', 'counterparty_name', 'payment_terms'],
-  contract_documents: ['signers', 'object_key', 'merge_result'],
-  contract_templates: ['object_key', 'mapping'],
-  orders: ['amount'],
-  // 🔴 T-02-05（docs/05 §3.9 / §5.5）: tenant_esign_connections に新たに非開示列が実在する
-  //    ようになった。GRANT は T-02-06/07 の範囲だが、追加を忘れると将来 GRANT を足したときに
-  //    §5.5 の見落としを検知できないため、GRANT が無い今の時点でも追記しておく（既存コメントと
-  //    同じ方針）。🔴 audit_logs / impersonation_sessions は §5.5 の表に非開示列の記載が無い
-  //    （audit_logs: summary は §16.2 の規約により PII を含まない設計であり列自体は全部見せる。
-  //    impersonation_sessions: §5.5 に記載が無く、対象外）ため、ここに追記しない
-  //    （追記しないこと自体が §5.5 との照合結果である）。
-  tenant_esign_connections: ['credential_encrypted', 'connect_hmac_keys_encrypted', 'webhook_path_secret_encrypted'],
-};
+// docs/05 §5.5「運営者に対するマスキング（二層）」第 1 層 = 列単位の GRANT。
+// `CLAUDE.md` §10.5「運営者にも見せないもの: エンジニアの氏名 …」の実装担保。
+// 🔴 T-02-09 申し送り 3: denylist の定義（`PLATFORM_READ_COLUMN_DENYLIST`）は
+//    tests/isolation/support/platform-read-denylist.ts に単一出所化した
+//    （roles.test.ts と rls-enforced.test.ts の両方が同じ一覧を実測する。§5.5 の表自体が
+//    唯一の真実であり、そちらは実測用の固定リストである。追記を忘れても他のテストが
+//    自動で検知するわけではない）。
 
 /**
  * docs/05 §5.5 第 1 層の許可リスト（唯一の真実）。`app_platform` に SELECT を許す列を宣言する。

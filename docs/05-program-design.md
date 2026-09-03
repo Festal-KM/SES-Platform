@@ -1555,14 +1555,14 @@ test('app_tenant に権限がある表は、適用される全ポリシーの式
 test('app_tenant に権限が無い表は、app_platform / app_platform_write のいずれかに権限がある', /* 孤児表の検出 */);
 test('app_tenant / app_platform / app_platform_write / app_share_probe / app_assignment_owner_probe は BYPASSRLS を持たない', /* pg_roles.rolbypassrls */);
 test('app_platform は業務テーブルに INSERT/UPDATE/DELETE 権限を持たない', /* information_schema.role_table_grants */);
-test('§5.7 の非開示列が app_platform に GRANT されていない', /* column_privileges を走査 */);
+test('§5.5 の非開示列が app_platform に GRANT されていない', /* column_privileges を走査 */);
 test('Prisma 拡張の対象モデル一覧が、除外 4 モデル以外のすべてを含む', /* Prisma DMMF を走査 */);
 test('オーナー列は root / child の宣言を持ち、宣言に応じたトリガがある',
   /* pg_attribute で owner_partner_company_id を持つ表 × pg_description（§4.4.1 の COMMENT）。宣言なし → FAIL。
      'owner-column: root'          → freeze_owner_partner_company の BEFORE UPDATE トリガがある
      'owner-column: child of P(fk)' → inherit_owner_partner_company(P, fk) の BEFORE INSERT OR UPDATE トリガがある
      根 4 表（users / engineers / proposals / tasks）と子 7 表を列挙せず、宣言と実体の一致だけを見る */);
-test('app_share_probe の権限は engineer_shares の 3 列の SELECT だけ、app_assignment_owner_probe の権限は engineers の 3 列の SELECT だけ', /* role_column_grants + role_table_grants を走査（migrator 接続で読む。§4.4.1） */);
+test('app_share_probe の権限は engineer_shares の 3 列の SELECT だけ、app_assignment_owner_probe の権限は engineers の 3 列の SELECT だけ', /* role_column_grants + role_table_grants を走査（migrator 接続で読む。§4.4.1）。🔴 app_share_probe への GRANT は engineer_shares 実装（SP-08）で付与する。000_roles.sql の予告どおり、それまでは 0 件が期待値 */);
 test('当事者列（counterparty_partner_company_id）も root / child の宣言と対応するトリガを持つ',
   /* オーナー列のテストと同じ述語。宣言の無い当事者列は FAIL。持つ表が 4 表以外に増えていたら FAIL（経路 5 の対象拡大は人間の承認事項） */);
 test('経路 5 の 4 表に、パートナー文脈で真になり得る INSERT/UPDATE/DELETE ポリシーが無く、extension_reviews にはパートナー文脈で真になる SELECT ポリシーも無い',

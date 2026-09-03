@@ -54,60 +54,15 @@ import {
   USER_A_PARTNER2,
 } from './support/fixtures.js';
 import { startIsolationDatabase, type IsolationDatabase } from './support/postgres.js';
+// 🔴 T-02-09 申し送り 2: 許可列の一覧は tests/isolation/support/route5-views.ts に単一出所化した
+//    （route5-counterparty.test.ts と rls-enforced.test.ts の両方が同じ期待値を実測する）。
+import { ALLOWED_VIEW_COLUMNS, ALLOWED_VIEW_DEPENDENCY_TABLES, VIEW_NAMES } from './support/route5-views.js';
 
 const SETUP_TIMEOUT_MS = 600_000;
 
 const SCOPE_HOST_A = { tenantId: TENANT_A, partnerCompanyId: null, actorUserId: USER_A_HOST };
 const SCOPE_P1 = { tenantId: TENANT_A, partnerCompanyId: PARTNER_A1, actorUserId: USER_A_PARTNER };
 const SCOPE_P2 = { tenantId: TENANT_A, partnerCompanyId: PARTNER_A2, actorUserId: USER_A_PARTNER2 };
-
-/** docs/05 §4.9「許可列の一覧」（BR-66 と 1 対 1）。🔴 これがビュー列テストの期待値そのものである。 */
-const ALLOWED_VIEW_COLUMNS: Readonly<Record<string, readonly string[]>> = {
-  partner_assignments_v: [
-    'id',
-    'tenant_id',
-    'counterparty_partner_company_id',
-    'engineer_id',
-    'state',
-    'start_date',
-    'end_date',
-    'project_name',
-    'extension_review_open',
-  ],
-  partner_contracts_v: [
-    'id',
-    'tenant_id',
-    'counterparty_partner_company_id',
-    'kind',
-    'state',
-    'period_start',
-    'period_end',
-    'unit_price',
-  ],
-  partner_contract_documents_v: [
-    'id',
-    'tenant_id',
-    'counterparty_partner_company_id',
-    'contract_id',
-    'version',
-    'signed_at',
-    'signers',
-    'scan_status',
-  ],
-  partner_orders_v: [
-    'id',
-    'tenant_id',
-    'counterparty_partner_company_id',
-    'contract_id',
-    'assignment_id',
-    'payment_state',
-    'period_start',
-    'period_end',
-    'amount',
-  ],
-};
-
-const VIEW_NAMES = Object.keys(ALLOWED_VIEW_COLUMNS);
 
 /** 経路 5 の基底表（docs/05 §4.4 C9）と、パートナー読み取りを一切許さない extension_reviews。 */
 const COUNTERPARTY_TABLES = ['assignments', 'contracts', 'contract_documents', 'orders'] as const;
@@ -532,14 +487,7 @@ describe('🔴 射影ビューの列集合が BR-66 の許可列と 1 対 1（do
         AND n.nspname = 'public'
       ORDER BY 1, 2`;
     expect(rows.length).toBeGreaterThan(0); // 空振り防止
-    const allowed = new Set([
-      'assignments',
-      'contracts',
-      'contract_documents',
-      'orders',
-      'projects',
-      'project_visibilities',
-    ]);
+    const allowed = new Set<string>(ALLOWED_VIEW_DEPENDENCY_TABLES);
     for (const row of rows) {
       expect(
         allowed.has(row.dependency),

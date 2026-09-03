@@ -134,7 +134,7 @@
   4. `app_tenant` に権限が無い表は `app_platform` / `app_platform_write` のいずれかに権限がある（孤児表の検出）
   5. 4 ロール + `app_share_probe` + `app_assignment_owner_probe` が `BYPASSRLS` を持たない
   6. `app_platform` が業務テーブルに `INSERT/UPDATE/DELETE` 権限を持たない
-  7. §5.7 の非開示列が `app_platform` に GRANT されていない
+  7. §5.5 の非開示列が `app_platform` に GRANT されていない（当初の「§5.7」は誤記。§5.7 は運営者向け画面の節であり、非開示列の一覧は §5.5。T-02-09 レビューで修正）
   8. Prisma 拡張の対象モデル一覧が、除外 4 モデル以外のすべてを含む
   9. オーナー列が root / child の宣言を持ち、宣言に応じたトリガがある
   10. `app_share_probe` の権限は `engineer_shares` の 3 列の `SELECT` だけ、`app_assignment_owner_probe` の権限は `engineers` の 3 列の `SELECT` だけ（`role_column_grants` / `role_table_grants` を migrator 接続で走査。§4.4.1）
