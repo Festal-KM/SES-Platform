@@ -96,6 +96,24 @@ const ja = {
   'error.unauthenticated': 'サインインが必要です。',
   'error.forbidden': 'この操作を行う権限がありません。',
   'error.notFound': '対象が見つかりません。',
+  // 🔴 docs/05 §15.1 `ViewerNotAllowedError`（403 / `BR-31` / `F-004 AC-6`）。
+  //    できないことを言い切る（「権限がありません」だけだと、設定で解決できるように読める）。
+  'error.viewer.notAllowed':
+    '閲覧のみのアカウントのため、承認・送信・ダウンロードは実行できません。',
+  // 🔴 docs/05 §15.1 `TenantNotExecutableError`（409 / `F-004 AC-7`〜`AC-9`）。
+  //    🔴 拒否の理由（停止中 / 解約手続き中）を利用者に示す（`F-004 AC-9`）。ここを 1 つの
+  //    文言に畳むと「なぜ実行できないのか」が伝わらず、AC-9 を満たさない。
+  'error.tenant.suspended':
+    'ご利用が停止されています。閲覧はできますが、この操作は実行できません。組織の管理者にお問い合わせください。',
+  'error.tenant.closing':
+    '解約のお手続き中のため、この操作は実行できません。閲覧とデータの返却のみご利用いただけます。',
+  // 🔴 `PURGED` は終端（データ削除済み）。docs/05 §15.1 は 2 キーしか挙げていないが、
+  //    §6.2 のゲート対象は `SUSPENDED` / `CLOSING` / `PURGED` の 3 状態であり、
+  //    `CLOSING` の文言（「返却のみ利用できます」）を流用すると事実と食い違う。
+  'error.tenant.purged': 'この組織のご利用は終了しています。',
+  // 🔴 docs/05 §15.1 / §15.3 `InvalidStateTransitionError`（422 / `BR-33`）。
+  'error.state.invalidTransition':
+    '現在の状態では、この操作を実行できません。画面を更新して最新の状態をご確認ください。',
   // 🔴 docs/05 §15.1 `TwoFactorRequiredError`（403）。
   'error.2fa.required': '2 要素認証の設定と確認が必要です。',
   'error.2fa.invalidCode': 'コードが正しくありません。',

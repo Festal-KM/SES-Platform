@@ -1,17 +1,24 @@
 // apps/web/lib/api/errors.ts
 // docs/05 §15.1 の例外階層と §15.2 の応答フォーマット。
 //
-// 🔴 本ファイルは T-03-01 で**必要な分だけ**を置いた土台である。
-//    `withApiRoute` の共通ガードと残りの例外型（Conflict / Unprocessable / Quota / …）は
-//    T-03-04 が同じ階層の上に足す。**階層と応答フォーマットを二重に作らない。**
+// 🔴 本ファイルは T-03-01 で**必要な分だけ**を置いた土台であり、T-03-04 が
+//    共通ガードの例外型（`ViewerNotAllowedError` / `TenantNotExecutableError` /
+//    `InvalidStateTransitionError`）を同じ階層の上に足した。残り（Quota / Connector / …）も
+//    ここに足す。**階層と応答フォーマットを二重に作らない。**
 //
 // 🔴 `userMessageKey` は `@ses/i18n` の `MessageKey` に型で縛る（BR-32 / CLAUDE.md §3.5）。
 //    サーバで文言を組み立てられない（キーしか返せない）ことをコンパイラが保証する。
 //
 // 🔴 `details` に入れてよいのは `ValidationError` のフィールドパスだけである（docs/05 §15.2）。
 //    DB のエラー本文・SQL・スタックトレース・外部 API の生応答を入れない。
-import { AuditLogWriteError, TwoFactorRequiredError as DbTwoFactorRequiredError } from '@ses/db';
-import type { TwoFactorRequirementReason } from '@ses/db';
+import {
+  AuditLogWriteError,
+  HostOnlyContextError,
+  TwoFactorRequiredError as DbTwoFactorRequiredError,
+} from '@ses/db';
+import type { TenantLifecycleState, TwoFactorRequirementReason } from '@ses/db';
+import { InvalidStateTransitionError as DomainInvalidStateTransitionError } from '@ses/domain';
+import type { StateMachineEntity } from '@ses/domain';
 import type { MessageKey } from '@ses/i18n';
 
 export type ErrorLogLevel = 'warn' | 'error';
@@ -74,6 +81,24 @@ export class ForbiddenError extends AppError {
   constructor() {
     super('この操作を実行する権限がありません。');
     this.name = 'ForbiddenError';
+  }
+}
+
+/**
+ * 🔴 `VIEWER` が実行系（承認 / 送信 / ダウンロード / エクスポート）を呼んだ
+ *    （docs/05 §15.1 / §6.2 / `BR-31` / `F-004 AC-6`）。403。
+ *
+ * 🔴 `ForbiddenError` と別コードにする理由: `VIEWER` の拒否は**ロールの設計どおりの結果**であり、
+ *    「権限が足りない（＝ 昇格すれば実行できる）」とは別の意味を持つ。画面は文言を出し分ける
+ *    （`error.viewer.notAllowed`）。区別しても情報境界は緩まない —— 自分のロールは本人が知っている。
+ */
+export class ViewerNotAllowedError extends ForbiddenError {
+  override readonly code = 'VIEWER_NOT_ALLOWED';
+  override readonly userMessageKey: MessageKey = 'error.viewer.notAllowed';
+
+  constructor() {
+    super();
+    this.name = 'ViewerNotAllowedError';
   }
 }
 
@@ -147,6 +172,30 @@ export class ConflictError extends AppError {
 }
 
 /**
+ * 🔴 テナントのライフサイクル状態が実行系を許さない（docs/05 §15.1 / §6.2 /
+ *    `F-004 AC-7`〜`AC-9`）。409。
+ *
+ * 🔴 これは**ロールの権限より優先する**（`F-004` 処理⑤）。`OWNER` でも拒否される。
+ * 🔴 `userMessageKey` を状態ごとに変える（`F-004 AC-9`「拒否の理由が利用者に表示される」）。
+ *    どの状態にどのキーを割り当てるかは `lib/api/guards.ts` の 1 つの表が決める
+ *    （**この型は判定を持たない**。判定の出所が 2 箇所に分かれると、片方だけ緩む）。
+ */
+export class TenantNotExecutableError extends ConflictError {
+  override readonly code = 'TENANT_NOT_EXECUTABLE';
+  override readonly userMessageKey: MessageKey;
+
+  constructor(
+    /** 🔴 応答ボディには載せない（内部ログ用。docs/05 §15.2）。 */
+    readonly lifecycleState: TenantLifecycleState,
+    userMessageKey: MessageKey,
+  ) {
+    super(`テナントの状態（${lifecycleState}）では実行系の操作を行えません。`);
+    this.name = 'TenantNotExecutableError';
+    this.userMessageKey = userMessageKey;
+  }
+}
+
+/**
  * 🔴 招待を受諾できない（docs/05 §6.3 #7。`acceptedAt` の CAS が 0 件）。
  *
  * 受諾済み / 取消済み / 期限切れ / トークン不一致 / 同時受諾に負けた、を**区別しない**。
@@ -175,6 +224,29 @@ export class UnprocessableError extends AppError {
   constructor(message = 'この内容では処理できません。') {
     super(message);
     this.name = 'UnprocessableError';
+  }
+}
+
+/**
+ * 🔴 `CLAUDE.md` §4.2 の遷移表に無い状態遷移（docs/05 §15.1 / §15.3 / `BR-33`）。422。
+ *
+ * 🔴 **状態機械そのものは `packages/domain` に 1 つだけある。** ここにあるのは
+ *    その例外（`@ses/domain` の `InvalidStateTransitionError`）を HTTP に写像する型である。
+ *    `packages/domain` は何にも依存できない（`CLAUDE.md` §2.1）ため `AppError` を継承できず、
+ *    写像は API 境界の責務になる（`toAppError` が唯一の変換点）。**判定を二重に持たない。**
+ */
+export class InvalidStateTransitionError extends UnprocessableError {
+  override readonly code = 'INVALID_STATE_TRANSITION';
+  override readonly userMessageKey: MessageKey = 'error.state.invalidTransition';
+
+  constructor(
+    /** 🔴 いずれも応答ボディには載せない（内部ログ用。docs/05 §15.2）。 */
+    readonly entity: StateMachineEntity,
+    readonly from: string,
+    readonly to: string,
+  ) {
+    super(`${entity}: ${from} -> ${to} は遷移表にありません。`);
+    this.name = 'InvalidStateTransitionError';
   }
 }
 
@@ -246,6 +318,20 @@ export class NotFoundError extends AppError {
   }
 }
 
+/**
+ * 🔴 「見えない ＝ 存在しない」を**呼び出し側で書き分けさせない**ための唯一のヘルパ
+ *    （docs/05 §4.8 / `F-004 AC-4`）。
+ *
+ * 境界の外の ID は `withTenant` の中で **RLS と Prisma 拡張が 0 件に落とす**ため、
+ * ハンドラの手元には `null` として届く。そこで 403 を返すか 404 を返すかを各ハンドラが
+ * 判断する構造にすると、いつか「存在はするが権限が無い」と答える実装が混ざる。
+ * **`null` を受け取ったら必ず 404** に畳む経路をここに 1 本だけ用意する。
+ */
+export function requireFound<T>(value: T | null | undefined): T {
+  if (value === null || value === undefined) throw new NotFoundError();
+  return value;
+}
+
 export class InternalError extends AppError {
   readonly code = 'INTERNAL';
   readonly httpStatus = 500;
@@ -282,6 +368,14 @@ export function toAppError(error: unknown): AppError {
   if (error instanceof AuditLogWriteError) return new AuditWriteFailedError(error.action);
   // 🔴 2FA 未充足は 403 として利用者に返す（500 に潰すと、設定すれば解決することが伝わらない）。
   if (error instanceof DbTwoFactorRequiredError) return new TwoFactorRequiredError(error.reason);
+  // 🔴 ホスト専用の経路にパートナー文脈が入った ＝ **404**（403 と区別しない。docs/05 §4.8 /
+  //    packages/db の `HostOnlyContextError` のコメント）。403 にすると「その機能は存在するが
+  //    あなたには使えない」ことが伝わり、ホスト側の業務の存在を示唆する。
+  if (error instanceof HostOnlyContextError) return new NotFoundError();
+  // 🔴 遷移表に無い状態遷移は **422**（サイレントに無視しない。docs/05 §15.3 / `BR-33`）。
+  if (error instanceof DomainInvalidStateTransitionError) {
+    return new InvalidStateTransitionError(error.entity, error.from, error.to);
+  }
   return new InternalError();
 }
 

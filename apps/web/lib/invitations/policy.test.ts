@@ -10,6 +10,7 @@ import { TENANT_ROLES, type TenantRole } from '@ses/db';
 import {
   decideInvitation,
   HOST_TENANT_ROLES,
+  INVITATION_ISSUER_ROLES,
   isHostRole,
   isPartnerRole,
   PARTNER_TENANT_ROLES,
@@ -31,6 +32,31 @@ describe('ロールの二分（`memberships` の CHECK 制約と同じ規律）'
     for (const role of TENANT_ROLES) {
       expect(isHostRole(role)).toBe(!isPartnerRole(role));
     }
+  });
+});
+
+describe('🔴 T-03-04: requireRole に渡すロール一覧が decideInvitation とずれない', () => {
+  /**
+   * `INVITATION_ISSUER_ROLES`（`requireRole` の引数）と、`decideInvitation` が
+   * `allowed: true` を返しうるロールの集合が一致することを機械的に確かめる。
+   * 🔴 ずれると「ルートは通すが判定が 403」または「ルートで弾くので判定に届かない」の
+   *    どちらかになり、片方だけ広げた変更が静かに通ってしまう。
+   */
+  function canEverInvite(role: TenantRole): boolean {
+    const partnerCompanyId = isPartnerRole(role) ? PARTNER_1 : null;
+    return TENANT_ROLES.some((targetRole) =>
+      [null, PARTNER_1].some(
+        (targetPartner) =>
+          decideInvitation(
+            { role, partnerCompanyId },
+            { role: targetRole, partnerCompanyId: targetPartner },
+          ).allowed,
+      ),
+    );
+  }
+
+  it('両者の集合が一致する（全 6 ロールを走査する）', () => {
+    expect(TENANT_ROLES.filter(canEverInvite).sort()).toEqual([...INVITATION_ISSUER_ROLES].sort());
   });
 });
 

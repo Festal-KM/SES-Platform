@@ -3,6 +3,12 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "noEmit": true,
+    // 🔴 T-03-04: 型宣言を出力しないプロジェクトで `declaration` を立てたままにすると、
+    //    「型に名前を付けられない」系の可搬性エラー（TS2883）だけがここで発生する
+    //    （`apps/web` 自身の tsconfig は `declaration: false`。next-auth の内部型がその典型）。
+    //    テストは .d.ts を出さないため、明示的に落とす。**型検査の厳しさは変わらない。**
+    "declaration": false,
+    "declarationMap": false,
     "rootDir": ".",
     "allowJs": true,
     // 🔴 T-03-01: Vitest（Vite の解決）と同じ規則で型検査する。
@@ -15,6 +21,12 @@
   },
   "include": [
     "tests/**/*.ts",
+    // 🔴 T-03-04: `tests/**` は `apps/web/**` の実装を直接 import する（結合テストがサーバを
+    //    立てずに同じ経路を実行するため）。その中には Auth.js の型拡張（`declare module`）に
+    //    依存するモジュールがあり、宣言ファイルを include しないと**このプロジェクトでだけ**
+    //    型エラーになる（`apps/web` 自身の tsconfig では通る）。
+    //    実装を追加するのではなく、既にある宣言を同じプログラムに載せるだけである。
+    "apps/**/*.d.ts",
     "vitest.config.ts",
     "vitest.smoke.config.ts",
     "vitest.isolation.config.ts"

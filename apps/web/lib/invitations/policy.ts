@@ -35,6 +35,18 @@ export function isHostRole(role: TenantRole): role is HostTenantRole {
   return (HOST_TENANT_ROLES as readonly TenantRole[]).includes(role);
 }
 
+/**
+ * 🔴 招待を発行**しうる**ロール（docs/05 §6.4 #14 の「認可」欄）。
+ *    `withApiRoute` の `requireRole`（docs/05 §6.2）に渡す粗いゲートであり、
+ *    宛先まで含めた可否は `decideInvitation` が決める（2 段構え）。
+ *
+ * 🔴 2 箇所に同じ知識を持つ以上、**ずれを機械的に検知する**（`policy.test.ts` が
+ *    「`decideInvitation` が `allowed` を返しうるロールの集合」と一致することを確かめる）。
+ *    ここだけ広げても `decideInvitation` が 403 を返し、逆も同じく閉じる（fail-closed）。
+ */
+export const INVITATION_ISSUER_ROLES = ['OWNER', 'ADMIN', 'PARTNER_ADMIN'] as const satisfies
+  readonly TenantRole[];
+
 /** 招待を実行する利用者（🔴 すべて認証コンテキスト由来）。 */
 export type InvitationActor = {
   readonly role: TenantRole;

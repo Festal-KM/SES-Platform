@@ -2,20 +2,18 @@
 // docs/05 §6.4 #14 `POST /api/invitations`（`F-002` / `S-035` / `S-014`）。
 //
 // 🔴 Route Handler である（Server Actions を使わない。docs/05 §6.1 / P-A-04）。
-// 🔴 認可は `OWNER` / `ADMIN`（ホスト）。`PARTNER_ADMIN` は自社 + パートナーロールのみだが、
-//    Phase 0 はホストロール宛だけなので 422 で拒否される（`lib/invitations/policy.ts` と
-//    `PartnerInvitationNotAvailableError` の説明を参照）。
+// 🔴 T-03-04: `withApiRoute` に載せ替え、**実行系のテナント状態ゲート（`requireExecutable`）を
+//    装着した**（T-03-03 の申し送り）。招待は外部へメールが出る実行系であり、
+//    `CLOSING` / `PURGED` のテナントでは実行できない（`F-004 AC-8`）。
+//    `tests/static/execute-guard.test.ts` が全ルートを走査し、この装着漏れを検知する。
 // 🔴 body に `tenantId` / `partnerCompanyId` を受け付けない（`F-003 AC-1` / `F-004 AC-2`）。
-//    所属は `requireTenantCtx()`（＝セッション + DB）からのみ決まる。
-//
-// ⚠️ T-03-04 への申し送り: 本ルートは実行系（外部へメールが出る）である。
-//    `withApiRoute` が入ったら **`requireExecutable`（テナント状態ゲート）を必ず通す**こと
-//    （docs/05 §6.2。`execute-guard.test.ts` の走査対象になる）。T-03-03 の時点では
-//    ガードの実装そのものが存在しないため、ここには置いていない。
-import { errorResponse } from '../../../../lib/api/errors';
-import { readRequestMeta, requireTenantCtx } from '../../../../lib/auth/session';
-import { ValidationError } from '../../../../lib/api/errors';
+//    所属は `withApiRoute` が解決する認証コンテキストからのみ決まる
+//    （スキーマが分離キーを持てば `withApiRoute` の構築時に落ちる）。
+import { readRequestMeta } from '../../../../lib/auth/session';
+import { requireExecutable, requireNotViewer, requireRole } from '../../../../lib/api/guards';
+import { withApiRoute } from '../../../../lib/api/withApiRoute';
 import { issueInvitation } from '../../../../lib/invitations/service';
+import { INVITATION_ISSUER_ROLES } from '../../../../lib/invitations/policy';
 import { createInvitationBodySchema } from '../../../../lib/invitations/schemas';
 import type { AccountMailDeliveryState } from '../../../../lib/jobs/account-mail';
 
@@ -33,24 +31,26 @@ export type CreateInvitationResponse = {
   readonly deliveryState: AccountMailDeliveryState;
 };
 
-export async function POST(request: Request): Promise<Response> {
-  try {
-    const ctx = await requireTenantCtx();
-    const raw: unknown = await request.json().catch(() => null);
-    const parsed = createInvitationBodySchema.safeParse(raw);
-    if (!parsed.success) {
-      return errorResponse(
-        new ValidationError(parsed.error.issues.map((issue) => issue.path.join('.'))),
-      );
-    }
-
-    const result = await issueInvitation(ctx, parsed.data, await readRequestMeta());
-    const body: CreateInvitationResponse = {
+export const POST = withApiRoute(
+  {
+    label: 'POST /api/invitations',
+    // 🔴 並び順ではなく `withApiRoute` が docs/05 §6.2 の順（role → executable → notViewer）で実行する。
+    guards: [
+      // 粗いロールゲート。宛先まで含めた可否は `decideInvitation`（`F-002 AC-1` / `AC-4`）。
+      requireRole(INVITATION_ISSUER_ROLES),
+      requireExecutable(),
+      // 🔴 `requireRole` と重なるが二重に掛ける: 許可ロール一覧を将来広げたときに
+      //    `VIEWER` が滑り込まないため（`BR-31` は「承認・送信・DL を一切できない」）。
+      requireNotViewer(),
+    ],
+    body: createInvitationBodySchema,
+  },
+  async ({ ctx, body }) => {
+    const result = await issueInvitation(ctx, body, await readRequestMeta());
+    const responseBody: CreateInvitationResponse = {
       id: result.id,
       deliveryState: result.deliveryState,
     };
-    return Response.json(body, { status: 201, headers: { 'cache-control': 'no-store' } });
-  } catch (error) {
-    return errorResponse(error);
-  }
-}
+    return Response.json(responseBody, { status: 201, headers: { 'cache-control': 'no-store' } });
+  },
+);

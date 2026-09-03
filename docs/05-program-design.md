@@ -3473,7 +3473,7 @@ AppError（抽象。code / httpStatus / userMessageKey / logLevel を持つ）
 │   └── PlatformRoleRequiredError       403  'error.platform.ownerRequired'
 ├── NotFoundError                       404  'error.notFound'            🔴 境界外も必ずこれ
 ├── ConflictError                       409
-│   ├── TenantNotExecutableError        409  'error.tenant.suspended' | 'error.tenant.closing'
+│   ├── TenantNotExecutableError        409  'error.tenant.suspended' | 'error.tenant.closing' | 'error.tenant.purged'
 │   ├── EsignNotConnectedError          409  'error.esign.notConnected'
 │   ├── GateStaleError                  409  'error.gate.stale'
 │   └── AlreadySettledError             409  'error.alreadySettled'      （再送競合）

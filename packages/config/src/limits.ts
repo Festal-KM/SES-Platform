@@ -44,3 +44,21 @@ export const EMAIL_MAX_LENGTH = 254;
 
 /** 表示名（`User.displayName`）の長さの上限。 */
 export const DISPLAY_NAME_MAX_LENGTH = 120;
+
+/**
+ * 一覧 API のページサイズ（docs/05 §6.1「カーソル方式。`?cursor=&limit=`（既定 50、最大 200）」）。
+ *
+ * 🔴 ページサイズは**性能の防御線**である（`CLAUDE.md` §7 のエンジニア 1 万件 / 案件 1 万件で
+ *    p95 1 秒）。ハンドラごとに違う既定値を持つと、どのルートが重いのかを比較できなくなる。
+ */
+export const PAGE_SIZE_DEFAULT = 50;
+
+/** 🔴 上限（docs/05 §6.1）。これを超える `limit` は 400 で拒否する（黙って丸めない）。 */
+export const PAGE_SIZE_MAX = 200;
+
+/**
+ * カーソル文字列の長さの上限。
+ * 🔴 カーソルは**サーバが発行した値の返送**であり、利用者が組み立てるものではない。
+ *    長大な入力をそのまま `where` に持ち込まないための境界。
+ */
+export const PAGE_CURSOR_MAX_LENGTH = 256;
