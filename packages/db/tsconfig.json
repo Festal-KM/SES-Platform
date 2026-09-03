@@ -2,7 +2,11 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": "src"
+    "rootDir": ".",
+    // 🔴 seed/cli.ts（`pnpm seed` の実行可能エントリ）が `node:process` を import するため、
+    //    このパッケージだけ Node の型を有効にする（ルートの tsconfig.json は "types": []）。
+    //    他のパッケージ（とくに packages/domain）には広げない。
+    "types": ["node"]
   },
-  "include": ["src"]
+  "include": ["src", "seed"]
 }

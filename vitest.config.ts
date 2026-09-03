@@ -9,6 +9,8 @@ export default defineConfig({
   test: {
     include: [
       'packages/*/src/**/*.test.ts',
+      // packages/db/seed/**（シードの引数解釈・環境ガード・ID 生成。DB を要らない部分）。
+      'packages/*/seed/**/*.test.ts',
       'apps/*/src/**/*.test.ts',
       'tests/static/**/*.test.ts',
     ],

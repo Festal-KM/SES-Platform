@@ -3,16 +3,20 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
     },
     "./testing": {
-      "types": "./dist/testing/isolation.d.ts",
-      "default": "./dist/testing/isolation.js"
+      "types": "./dist/src/testing/isolation.d.ts",
+      "default": "./dist/src/testing/isolation.js"
+    },
+    "./seed": {
+      "types": "./dist/seed/index.d.ts",
+      "default": "./dist/seed/index.js"
     }
   },
   "scripts": {
@@ -20,13 +24,18 @@
     "build": "prisma generate && tsc -p tsconfig.json",
     "typecheck": "prisma generate && tsc -p tsconfig.json --noEmit",
     "migrate:deploy": "prisma migrate deploy",
-    "migrate:status": "prisma migrate status"
+    "migrate:status": "prisma migrate status",
+    "seed": "node dist/seed/cli.js"
   },
   "devDependencies": {
+    "@types/node": "26.4.1",
+    "@types/seedrandom": "3.0.8",
     "prisma": "6.19.3"
   },
   "dependencies": {
     "@prisma/client": "6.19.3",
-    "@ses/domain": "workspace:*"
+    "@ses/config": "workspace:*",
+    "@ses/domain": "workspace:*",
+    "seedrandom": "3.0.5"
   }
 }

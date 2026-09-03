@@ -54,6 +54,14 @@ export const ROLE_NAMES = [
 export type IsolationDatabase = {
   /** app_tenant ロール（🔴 BYPASSRLS を持たない）。主平面のアプリ経路が使う。 */
   readonly tenantUrl: string;
+  /**
+   * 🔴 PostgreSQL のスーパーユーザー。**合成データの投入（`seed:isolation`）にだけ使う**。
+   *    app_tenant は `tenants` に INSERT できず、テーブル所有者 app_migrator も
+   *    FORCE ROW LEVEL SECURITY により適用ポリシーが 0 件で読み書きできない（docs/05 §4.2 / §4.4）。
+   *    したがって母集団の投入は superuser でしか行えない。**検証のクエリには使わない**
+   *    （superuser は RLS を素通りするため、テストが空振りする）。
+   */
+  readonly superuserUrl: string;
   /** 接続を 1 本に固定した app_tenant。SET LOCAL がトランザクション外へ漏れないことの検証に使う。 */
   readonly singleConnectionTenantUrl: string;
   /** app_migrator ロール（テーブル所有者）。RLS の一時 DISABLE にのみ使う。 */
@@ -98,7 +106,19 @@ function psql(file: string): string[] {
  * PostgreSQL コンテナを起動し、スキーマ・RLS・シードを適用して接続文字列を返す。
  * 🔴 ホストの 5432 は使わない（Testcontainers がランダムポートを割り当てる）。
  */
-export async function startIsolationDatabase(): Promise<IsolationDatabase> {
+export type StartIsolationDatabaseOptions = {
+  /**
+   * 投入する母集団の種類。
+   * - `fixtures`（既定）: `tests/isolation/support/fixtures.ts` の固定 SQL（T-02-06 / T-02-07 の最小実証）
+   * - `none`: 何も投入しない。🔴 `seed:isolation`（`@ses/db/seed`）を呼ぶテストが使う
+   *   （docs/05 §17.5「DB のフィクスチャは使わない。`packages/db/seed` のプリセットを使う」/ §17.6 ④）
+   */
+  readonly seed?: 'fixtures' | 'none';
+};
+
+export async function startIsolationDatabase(
+  options: StartIsolationDatabaseOptions = {},
+): Promise<IsolationDatabase> {
   const superPassword = randomBytes(24).toString('hex');
   const migratorPassword = randomBytes(24).toString('hex');
   const tenantPassword = randomBytes(24).toString('hex');
@@ -168,13 +188,23 @@ export async function startIsolationDatabase(): Promise<IsolationDatabase> {
 
   // ③ seed。superuser で投入する（app_tenant は tenants に INSERT 権限を持たない。
   //    superuser は RLS を素通りするため、C0〜C8 のポリシー適用後も投入できる）。
-  await container.copyContentToContainer([
-    { content: SEED_SQL, target: SEED_SQL_CONTAINER_PATH },
-  ]);
-  await execOrThrow(container, psql(SEED_SQL_CONTAINER_PATH), 'シードの投入');
+  //    🔴 `seed: 'none'` のときは投入しない（呼び出し側が `seed:isolation` を実行する）。
+  if ((options.seed ?? 'fixtures') === 'fixtures') {
+    await container.copyContentToContainer([
+      { content: SEED_SQL, target: SEED_SQL_CONTAINER_PATH },
+    ]);
+    await execOrThrow(container, psql(SEED_SQL_CONTAINER_PATH), 'シードの投入');
+  }
 
   return {
     tenantUrl: connectionUrl({ user: 'app_tenant', password: tenantPassword, host, port, connectionLimit: 5 }),
+    superuserUrl: connectionUrl({
+      user: 'postgres',
+      password: superPassword,
+      host,
+      port,
+      connectionLimit: 1,
+    }),
     singleConnectionTenantUrl: connectionUrl({
       user: 'app_tenant',
       password: tenantPassword,

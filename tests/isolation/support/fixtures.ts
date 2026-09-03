@@ -4,10 +4,13 @@
 //    テナント A にはホストと **2 社のパートナー**を置く。パートナーが 1 社だけだと
 //    「パートナー同士が相互に参照できない」（CLAUDE.md §3.1 の 🔴。最大の事故）を検証できない。
 //
-// 🔴 これは T-02-06 が各ポリシークラスの成立を最小限で確かめるための固定 SQL であり、
-//    `seed:isolation`（packages/db/seed/presets/isolation.ts。packages/domain の transition() を
-//    通して状態を進める本格版）は T-02-10 の範囲である。ここでは状態機械を経由しない
-//    「静的な行」しか作らない（proposals は DRAFT、contracts は DRAFT のみ）。
+// 🔴 これは T-02-06 / T-02-07 が各ポリシークラスの成立を最小限で確かめるための固定 SQL であり、
+//    状態機械を経由しない「静的な行」しか作らない（proposals は DRAFT、contracts は DRAFT のみ）。
+//    🔴 T-02-10 で `seed:isolation`（packages/db/seed/presets/isolation.ts）が実装された。
+//    そちらは packages/domain の transition() を通して状態を進める本格版であり、
+//    docs/05 §17.5「DB のフィクスチャは使わない。packages/db/seed のプリセットを使う」に沿う。
+//    二重防御 10 件（tests/isolation/double-defense-matrix.test.ts）はそちらを母集団にする。
+//    **新しい分離テストを書くときは、この固定 SQL ではなく seed:isolation を使うこと。**
 //
 // 🔴 superuser（postgres）で投入する。superuser は RLS を素通りするため、C0〜C8 の
 //    ポリシー適用後もそのまま投入できる（tests/isolation/support/postgres.ts の ③）。
@@ -87,7 +90,7 @@ export const PASSWORD_RESET_TOKEN_HASH_B = 'seed-password-reset-hash-b';
 // 🔴 各パートナーが当事者の Assignment / Contract / ContractDocument / Order を 1 件ずつ持ち、
 //    **同一案件（PROJECT_A_PUBLISHED）に両社の稼働を置く**。他社が当事者の行が同じ表・同じ案件に
 //    あっても、一覧・COUNT・ID 直指定のいずれでも 0 件になることを確かめるための母集団である。
-// 🔴 `packages/domain` の transition() を通した本格版のシード（seed:isolation）は T-02-10 の範囲。
+// 🔴 `packages/domain` の transition() を通した本格版（seed:isolation）は T-02-10 で実装済み。
 //    ここは T-02-06 と同じく「静的な行」を置くだけである。
 
 /** 未公開案件（PROJECT_A_PRIVATE）に紐づく提案。稼働の FK を張るためだけの行。 */
