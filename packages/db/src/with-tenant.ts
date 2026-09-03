@@ -10,11 +10,21 @@ import {
   type HostTenantCtx,
 } from './context.js';
 import { partnerViewScopeExtension, tenantScopeExtension } from './extension.js';
-import { systemScopeSettingsSql, tenantScopeSettingsSql } from './scope-settings.js';
+import {
+  systemScopeSettingsSql,
+  tenantScopeSettingsSql,
+  type TenantScopeSettings,
+} from './scope-settings.js';
 
-function extendWithTenantScope(client: PrismaClient, ctx: AuthenticatedTenantCtx) {
+/** 第 2 防御（Prisma 拡張）の注入に要るのは分離キー 2 つだけ（ロール・利用者 ID は使わない）。 */
+type ScopeKeys = {
+  readonly tenantId: string;
+  readonly partnerCompanyId: string | null;
+};
+
+function extendWithTenantScope(client: PrismaClient, scope: ScopeKeys) {
   return client.$extends(
-    tenantScopeExtension({ tenantId: ctx.tenantId, partnerCompanyId: ctx.partnerCompanyId }),
+    tenantScopeExtension({ tenantId: scope.tenantId, partnerCompanyId: scope.partnerCompanyId }),
   );
 }
 
@@ -59,25 +69,39 @@ type TenantDb = Omit<
 type HostTenantDb = TenantDb & Pick<TenantTransactionClient, CounterpartyDelegate>;
 
 /**
- * 🔴 `withTenant` / `withHostTenant` の共通実装。
+ * 🔴 `withTenant` / `withHostTenant` / `loadTenantMembership`（`auth-context.ts`）の共通実装。
  *    トランザクションを開き、その先頭で `SET LOCAL` 相当（`set_config(..., true)`）を発行する。
- *    2 つの関数で手順を書き分けない（片方だけ `SET LOCAL` を忘れる経路を作らないため）。
+ *    複数の関数で手順を書き分けない（どれか 1 つだけ `SET LOCAL` を忘れる経路を作らないため）。
+ *
+ * 🔴 T-03-01: 引数を `AuthenticatedTenantCtx` から `TenantScopeSettings`（分離キー 3 つ）へ
+ *    狭めた。`loadTenantMembership` は「ロールを DB から確定させる」関数であり、
+ *    呼び出し時点でロールが未確定である。ctx を要求すると**仮のロールを詰めた ctx**を
+ *    組み立てることになり、「ロールを騙った ctx が一瞬でも存在しうる」状態を作ってしまう。
+ *    RLS が参照するのは `app.tenant_id` / `app.partner_company_id` / `app.actor_user_id` の
+ *    3 つだけであり（docs/05 §4.4）、ロールは第 1・第 2 防御のいずれにも寄与しない。
+ * @internal packages/db の内部からのみ使う（index.ts から export しない）。
  */
-async function runInTenantTransaction<T>(
-  ctx: AuthenticatedTenantCtx,
+export async function runInTenantTransaction<T>(
+  scope: TenantScopeSettings,
   fn: (tx: TenantTransactionClient) => Promise<T>,
 ): Promise<T> {
-  const scoped = extendWithTenantScope(getBaseClient(), ctx);
+  const scoped = extendWithTenantScope(getBaseClient(), {
+    tenantId: scope.tenantId,
+    partnerCompanyId: scope.partnerCompanyId,
+  });
   return scoped.$transaction(async (tx) => {
-    await tx.$queryRaw(
-      tenantScopeSettingsSql({
-        tenantId: ctx.tenantId,
-        partnerCompanyId: ctx.partnerCompanyId,
-        actorUserId: ctx.userId,
-      }),
-    );
+    await tx.$queryRaw(tenantScopeSettingsSql(scope));
     return fn(tx);
   });
+}
+
+/** `ctx`（認証済み文脈）から `SET LOCAL` に渡す 3 つの分離キーを取り出す。 */
+function scopeOf(ctx: AuthenticatedTenantCtx): TenantScopeSettings {
+  return {
+    tenantId: ctx.tenantId,
+    partnerCompanyId: ctx.partnerCompanyId,
+    actorUserId: ctx.userId,
+  };
 }
 
 /**
@@ -90,7 +114,7 @@ export async function withTenant<T>(
   ctx: AuthenticatedTenantCtx,
   fn: (db: TenantDb) => Promise<T>,
 ): Promise<T> {
-  return runInTenantTransaction(ctx, (tx) => fn(tx));
+  return runInTenantTransaction(scopeOf(ctx), (tx) => fn(tx));
 }
 
 /**
@@ -107,7 +131,7 @@ export async function withHostTenant<T>(
   ctx: HostTenantCtx,
   fn: (db: HostTenantDb) => Promise<T>,
 ): Promise<T> {
-  return runInTenantTransaction(ctx, (tx) => fn(tx));
+  return runInTenantTransaction(scopeOf(ctx), (tx) => fn(tx));
 }
 
 // ---------------------------------------------------------------------------
@@ -119,7 +143,7 @@ function extendWithPartnerViewScope(
   ctx: AuthenticatedTenantCtx,
   counterpartyPartnerCompanyId: string,
 ) {
-  return extendWithTenantScope(client, ctx).$extends(
+  return extendWithTenantScope(client, scopeOf(ctx)).$extends(
     partnerViewScopeExtension({ counterpartyPartnerCompanyId }),
   );
 }
@@ -207,13 +231,7 @@ export async function withPartnerScope<T>(
     counterpartyPartnerCompanyId,
   );
   return scoped.$transaction(async (tx) => {
-    await tx.$queryRaw(
-      tenantScopeSettingsSql({
-        tenantId: ctx.tenantId,
-        partnerCompanyId: ctx.partnerCompanyId,
-        actorUserId: ctx.userId,
-      }),
-    );
+    await tx.$queryRaw(tenantScopeSettingsSql(scopeOf(ctx)));
     return fn(tx);
   });
 }

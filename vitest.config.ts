@@ -12,6 +12,10 @@ export default defineConfig({
       // packages/db/seed/**（シードの引数解釈・環境ガード・ID 生成。DB を要らない部分）。
       'packages/*/seed/**/*.test.ts',
       'apps/*/src/**/*.test.ts',
+      // 🔴 T-03-01: apps/web は Next.js（App Router）になり `src/` を持たない。
+      //    フレームワーク非依存のロジックは `apps/web/lib/**` に置き、ここで拾う
+      //    （`app/**` はルート定義とビューであり、ユニットテストを置かない）。
+      'apps/*/lib/**/*.test.ts',
       'tests/static/**/*.test.ts',
     ],
     exclude: [

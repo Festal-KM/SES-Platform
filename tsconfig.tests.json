@@ -4,7 +4,14 @@
   "compilerOptions": {
     "noEmit": true,
     "rootDir": ".",
-    "allowJs": true
+    "allowJs": true,
+    // 🔴 T-03-01: Vitest（Vite の解決）と同じ規則で型検査する。
+    //    tests/** は `packages/**`（NodeNext）だけでなく `apps/web/**`（Next.js = bundler。
+    //    相対 import に拡張子を付けない）も import するため、ルートの NodeNext のままでは
+    //    apps/web のモジュールを解決できない。bundler は「拡張子あり（.js → .ts の読み替え）」も
+    //    「拡張子なし」も解決できるので、既存の tests/** の書き方（.js 付き）はそのまま通る。
+    "module": "esnext",
+    "moduleResolution": "bundler"
   },
   "include": [
     "tests/**/*.ts",

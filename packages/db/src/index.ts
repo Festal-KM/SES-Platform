@@ -10,6 +10,14 @@ export {
   resolveTenantCtx,
   TENANT_ROLES,
 } from './context.js';
+// 🔴 T-03-01: ロール / テナント状態を DB で確定する唯一の関数（docs/05 §4.3 / F-003 AC-1）。
+//    セッション（JWT）に書かれたロールを信じる実装を apps/web 側で書けないようにするために、
+//    「認証で確定した分離キー → DB のロール」の写像を packages/db に閉じる。
+export { loadTenantMembership } from './auth-context.js';
+export type { TenantIdentity, TenantMembershipFacts } from './auth-context.js';
+// 🔴 T-03-01: AuditLog の書き込み（docs/05 §16.1 / F-005）。行の組み立てはここが唯一の出所。
+export { AuditLogWriteError, recordAuthAuditLog, writeAuditLog } from './audit.js';
+export type { AuditLogEntry, AuditLogWriter, AuditSummary } from './audit.js';
 export type {
   AuthenticatedTenantCtx,
   DeviceKind,

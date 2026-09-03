@@ -1,8 +1,29 @@
 {
+  "$schema": "https://json.schemastore.org/tsconfig",
   "extends": "../../tsconfig.json",
   "compilerOptions": {
-    "outDir": "dist",
-    "rootDir": "src"
+    // 🔴 T-01-01 からの申し送り: ルートは NodeNext だが、Next.js（バンドラ）配下では
+    //    "bundler" が必要（Next の型定義と `next/*` のサブパス解決が NodeNext では通らない）。
+    //    相対 import には拡張子 `.js` を付けたままにしてある — bundler では任意、
+    //    NodeNext では必須であり、`tests/**`（tsconfig.tests.json = NodeNext）から
+    //    `apps/web/lib/**` を import する結合テストが両方の解決方式で通るようにするため。
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "jsx": "preserve",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    "allowJs": true,
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "incremental": true,
+    "tsBuildInfoFile": ".next/tsconfig.tsbuildinfo",
+    "paths": {
+      "@/*": ["./*"]
+    },
+    "plugins": [{ "name": "next" }]
   },
-  "include": ["src"]
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "exclude": ["node_modules", ".next"]
 }

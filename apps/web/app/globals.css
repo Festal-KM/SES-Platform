@@ -1,0 +1,94 @@
+/* apps/web/app/globals.css
+ * 🔴 最小のベーススタイル。Tailwind CSS + shadcn/ui の導入（CLAUDE.md §2 / docs/04）は
+ *    T-03-01 のスコープ外である（依存追加は Next.js / Auth.js / パスワードハッシュに限る）。
+ *    導入時はこのファイルを Tailwind のエントリに置き換える。
+ * 🔴 ブレークポイントを独自定義しない（CLAUDE.md §13.3）。ここでは単一カラムのみを扱う。
+ */
+
+:root {
+  color-scheme: light;
+  --ses-fg: #111827;
+  --ses-muted: #6b7280;
+  --ses-border: #d1d5db;
+  --ses-danger: #b91c1c;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  color: var(--ses-fg);
+  font-family: system-ui, -apple-system, 'Segoe UI', 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+  line-height: 1.6;
+}
+
+.ses-auth-layout {
+  min-height: 100dvh;
+  display: flex;
+  justify-content: center;
+  padding: 1.5rem 1rem;
+}
+
+/* S-001 は T1（モバイル完結）。単一カラムで、機能の省略をしない（docs/04 §S-001）。 */
+.ses-auth-card {
+  width: 100%;
+  max-width: 24rem;
+}
+
+.ses-wordmark {
+  font-size: 1.125rem;
+  font-weight: 700;
+  margin-bottom: 2rem;
+}
+
+.ses-field {
+  display: block;
+  margin-bottom: 1rem;
+}
+
+.ses-field > span {
+  display: block;
+  font-size: 0.875rem;
+  margin-bottom: 0.25rem;
+}
+
+.ses-field input {
+  width: 100%;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--ses-border);
+  border-radius: 0.375rem;
+  font-size: 1rem;
+}
+
+.ses-submit {
+  width: 100%;
+  padding: 0.75rem;
+  border: 0;
+  border-radius: 0.375rem;
+  background: var(--ses-fg);
+  color: #fff;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.ses-submit[disabled] {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.ses-error {
+  color: var(--ses-danger);
+  font-size: 0.875rem;
+  margin-bottom: 1rem;
+}
+
+.ses-secondary-link {
+  display: inline-block;
+  margin-top: 1rem;
+  font-size: 0.875rem;
+  color: var(--ses-muted);
+}
