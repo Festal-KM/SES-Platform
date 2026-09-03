@@ -22,7 +22,7 @@
 |---|---|---|---|---|
 | T-02-01 | テナント・利用者・境界の表（§3.3） | `Tenant` の 5 状態、`Membership.partnerCompanyId`、`Invitation`、`TwoFactorCredential` が定義され migrate が通る | `F-001` `F-002` `F-003` | M |
 | T-02-02 | ① 集める / 案件・公開範囲・匿名共有の表（§3.4 / §3.5） | `Engineer` 系 5 表 + `Project` 系 3 表 + `MatchCandidate` + `EngineerShare`。**オーナー列を持つ** | `F-008`〜`F-017` | L |
-| T-02-03 | 提案・提案依頼・品質ゲートの表（§3.6） | `Proposal` 7 状態 + `EngineerSnapshot` / `ProposalEvent` / `ReviewGate` / `ProposalRequest`。`ReviewGate.execution` の HELD 部分 UNIQUE | `F-018`〜`F-025` | L |
+| T-02-03 | 提案・提案依頼・品質ゲートの表（§3.6） | `Proposal` 14 状態 + `EngineerSnapshot` / `ProposalEvent` / `ReviewGate` / `ProposalRequest`。`ReviewGate.execution` の HELD 部分 UNIQUE | `F-018`〜`F-025` | L |
 | T-02-04 | 🔴 チャット・契約・稼働の表 + **当事者列**（§3.7） | `assignments` / `contracts` / `contract_documents` / `orders` が **作成時から** `counterpartyPartnerCompanyId` を持つ | `F-038` `F-042` `F-047` `F-065` `F-066` | L |
 | T-02-05 | 横断・外部連携・管理平面の表（§3.8〜§3.10） | `AuditLog` の**月次レンジパーティション**、`UsageCounter`（金額 + 件数）、`SendAttempt` の 2 本の UNIQUE | `F-005` `F-026` `F-055`〜`F-063` | L |
 | T-02-06 | RLS ヘルパ関数とポリシークラス C0〜C8 の適用 | 全 52 表が操作ごとにクラス割当済み。`USING (true)` が 1 件も無い | `F-004 AC-1`〜`AC-3` | L |
@@ -44,6 +44,7 @@
 - **T-01-07 からの申し送り（2026-09-03、code-reviewer 指定）**:
   ① `TenantLifecycleState` が `packages/db/src/context.ts:13` と `packages/domain/src/state/tenant.ts:17` に二重定義されており、T-02-01 の Prisma enum で 3 重になる。**T-02-01 で単一の出所へ一本化する**（`packages/db` → `@ses/domain` の依存は CLAUDE.md §2.1 / docs/05 §2.2 で禁止されておらず ESLint も許可。逆向きは禁止）。
   ② `tests/static/domain-purity.test.ts` は引数付き `new Date(<リテラル>)` / `Date.UTC()` も違反にするため、domain のユニットテストで固定日時が必要になっても**検査関数を弱めて解決しない**こと（緩めるなら `*.test.ts` 限定・リテラル引数限定として範囲を明示）。
+- ✅ **完了（2026-09-03、コミット `6864114`）** — 🔴 **列挙規約を改訂した**: Prisma の `enum` 宣言はクエリエンジンが `::"EnumName"` キャストを付与し、DB 側が `TEXT` だと実行時 `42704` で全書き込みが失敗する（本タスクで実測）。**`String` + DB 側 `TEXT + CHECK` + TS 単一出所の定数配列**に変更し、`docs/05` §3.1 を改訂した（[Issue #26](https://github.com/Festal-KM/SES-Platform/issues/26) / `docs/dev-plan.md` §8・§9）。`TenantLifecycleState` の三重定義は単一の出所へ一本化済み。
 
 ### T-02-02 ① 集める / 案件・公開範囲・匿名共有の表（L）
 
@@ -53,15 +54,17 @@
 - 🔴 **`ProjectRequirement` は必須 / 尚可を別区分として保持する**（`F-013 AC-1`。整合層の照合とマッチングの足切りが区分を参照する）。
 - 🔴 **`Project` はエンド企業名・内部単価を「公開範囲の外に出さない項目」として保持する**（`F-013 AC-2`。射影は SP-06 の `PartnerProjectView`）。
 - **完了の判定**: migrate が通る。`ProjectRequirement.kind` が `MUST` / `NICE` の 2 値で `CHECK` されている。
+- ✅ **完了（2026-09-03、コミット `7c92c76`）**
 
 ### T-02-03 提案・提案依頼・品質ゲートの表（L）
 
 - **参照**: `docs/05` §3.6 / §9.3 / §11。
 - **実装するもの**: `Proposal`（`CLAUDE.md` §4.2 の全状態。`contentHash` / `sendHoldReasonKey` / `sendHoldSince` を持つ）/ `EngineerSnapshot` / `ProposalEvent` / `ReviewGate` / `ProposalRequest`（`REQUESTED` / `ACCEPTED` / `DECLINED` / `WITHDRAWN_BY_HOST` / `EXPIRED`）。
-- 🔴 **`ReviewGate.execution`**（`RUNNING` / `DONE` / `HELD_AI_COST_LIMIT`）と、**HELD 行の部分 UNIQUE**（`docs/05` `P-A-16` / §9.3）。**これは状態機械の状態ではなく実行の属性である**（`CLAUDE.md` §4.2 の 5 状態機械に状態を 1 つも追加しない）。
+- 🔴 **`ReviewGate.execution`**（🔴 **DB 列は `DONE` / `HELD_AI_COST_LIMIT` の 2 値**。`RUNNING` は `docs/05` §11.7 の API ビューが「行が無い間」を表すために持つ**導出値**であり、列の列挙には含めない）と、**HELD 行の部分 UNIQUE**（`docs/05` `P-A-16` / §9.3）。**これは状態機械の状態ではなく実行の属性である**（`CLAUDE.md` §4.2 の 5 状態機械に状態を 1 つも追加しない）。
 - 🔴 **`ReviewGate` は `(targetType, targetId, contentHash)` を持つ**（`F-020 AC-3` の再現性と §11.5 の再検証の根拠）。`targetType` に `CONTRACT_DOCUMENT` を含める（[Issue #15](https://github.com/Festal-KM/SES-Platform/issues/15)）。
 - 🔴 **`ProposalRequest` の辞退理由をホスト側の射影に出さない**列設計にする（`BR-57`。DTO の分離は SP-08）。
 - **完了の判定**: migrate が通る。`Proposal` / `ProposalRequest` の状態が `CLAUDE.md` §4.2 の列挙と 1 対 1 であることを型テストで固定する。
+- ✅ **完了（2026-09-03、コミット `8c6ea7c`）**
 
 ### T-02-04 🔴 チャット・契約・稼働の表 + 当事者列（L）
 
@@ -72,6 +75,7 @@
 - 🔴 **`ExtensionReview` には当事者列を持たせない**（ホスト内部の検討内容は経路 5 の対象外。`BR-67`）。
 - **画面と API は Phase 2 / 3**（`S-029` / `S-030` / `S-044` は SP-16、`S-025`〜`S-028` / `S-045` は SP-17〜19）。本スプリントは**スキーマと分離だけ**。
 - **完了の判定**: migrate が通る。当事者列が 4 表のみに存在することを T-02-09 のテストが確認する。
+- ✅ **完了（2026-09-03、コミット `2469ff0`）**
 
 ### T-02-05 横断・外部連携・管理平面の表（L）
 
@@ -84,6 +88,7 @@
 - 🔴 **`TenantRoleApprovalMode` に `CHECK (role <> 'gate-inspector')`**（`CLAUDE.md` §12.4。設定項目自体を作らせない）。
 - 🔴 **`AiUsage` はロール識別子を NOT NULL にする**（`F-026 AC-2`。欠損すると `F-063` のロール別原価が成立しない）。
 - **完了の判定**: migrate が通る。`audit.create-partitions` 相当の初期パーティションが作られる。`SendAttempt` の 2 本の UNIQUE が `pg_indexes` に存在する。
+- ✅ **完了（2026-09-03、コミット `e2e412f`）**
 
 ### T-02-06 RLS ヘルパ関数とポリシークラス C0〜C8 の適用（L）
 
@@ -97,6 +102,7 @@
 - 🔴 **越境の判断をアプリの `if` に一切書かない。** `ProjectVisibility` / `ThreadParticipant` / `EngineerShare` の**行の有無がそのまま見える / 見えない**になる。
 - **完了の判定**: T-02-09 のカタログ走査で「ポリシーが 0 件の表」と「`app_tenant` に権限がありながら `app_tenant_id()` を参照しないポリシー」が 0 件。
 - **T-02-02 からの申し送り（2026-09-03、code-reviewer 指定）**: `SkillAlias` の C1 ポリシー（`SELECT` は `OR tenant_id IS NULL`）を書く際、`withTenant`（第 2 防御）はグローバル行を無条件で除外する既知の gap がある（`packages/db/src/scope-injection.ts` の `TENANT_KEY_OVERRIDES` 直後の known-gap コメント参照）。読み取り注入の緩和方式をここで設計判断すること。
+- ✅ **完了（2026-09-03、コミット `6177ba7`）** — 🔴 **RLS の定義を Prisma migration に一元化した**（`packages/db/rls/010_rls.sql` を廃止）。従来はマイグレーション外の SQL ファイルに置いていたため、**`prisma migrate deploy` だけを行うローカル環境と実デプロイ先に RLS が入らない**既存の不備があった（K-1 / K-2 の防御線が環境によって欠落する）。以後、ポリシーは `packages/db/prisma/migrations/20260903050000_rls_policies/migration.sql` を唯一の出所とする（`docs/dev-plan.md` §8）。
 
 ### T-02-07 🔴 C9（経路 5）と射影ビュー 4 本（L）
 
@@ -112,6 +118,7 @@
 - 🔴 **列の絞り込みを「取得後のフィルタ」で実装しない。** ビューに無い列は SQL として取得できず、Prisma のモデルにも現れない（`docs/02` `program-design` 申し送り 13-④）。
 - **API と画面は Phase 2 / 3**（#80 は SP-16、#81 / #82 は SP-19）。
 - **完了の判定**: T-02-09 のビュー列テストと T-02-10 の #8〜#10 が green。
+- ✅ **完了（2026-09-03、コミット `f31d994`）**
 
 ### T-02-08 オーナー列 / 当事者列の継承・freeze トリガ（M）
 
@@ -123,6 +130,7 @@
   - **当事者列にも同じ規律**（根 = `contracts`、子 = `assignments` / `contract_documents` / `orders`）。
   - 🔴 **宣言を `COMMENT`（`owner-column: root` / `owner-column: child of P(fk)`）で持たせる。** T-02-09 のテストが宣言と実体の一致だけを見る（表を列挙しない）。
 - **完了の判定**: 継承・freeze のトリガテスト（偽装した値を INSERT しても親の値で上書きされる / 更新しようとすると RAISE）。
+- ✅ **完了（2026-09-03、コミット `218f847`）** — 🔴 **新しい DB ロール `app_assignment_owner_probe` を追加した**（`engineers` の 3 列の `SELECT` のみ。当事者列の継承トリガが親を引くための最小権限。`docs/05` `P-A-19` / [Issue #27](https://github.com/Festal-KM/SES-Platform/issues/27)）。**T-02-09 のロール走査（#5 / #10）は本ロールを含めて検査する。**
 
 ### T-02-09 🔴 分離機構の機械検証（カタログ走査 13 本）（L）
 
@@ -144,6 +152,7 @@
 - 🔴 **テーブル名を列挙しない。除外リストは「4 表（`platform_users` / `plans` / `subscriptions` / `skills`）+ `_prisma_migrations`」だけ**であり、**必ず「全部から 4 つを引く」向きで書く**。新規テーブルは既定で検査対象に入る。
 - 🔴 **除外リストを広げて通すのは、このテストが防ごうとしている壊し方そのものである。** 新規テーブルが落ちたら §4.4 のクラスを 1 つ選んでポリシーを書く。
 - **完了の判定**: 13 本すべてが green。CI（T-01-08）で毎回走る。
+- ✅ **完了（2026-09-03、コミット `beecc01`）**
 
 ### T-02-10 🔴 二重防御テスト 10 件 + `seed:isolation`（L）
 
@@ -157,6 +166,7 @@
 - **実装するテスト 10 件**（`docs/05` §4.7 の表をそのまま）: #1 拡張無効化 / #2 `SET LOCAL` 未発行 / #3 RLS `DISABLE` / #4 パートナー文脈で他パートナーの `Engineer` / `Proposal` / `Message` / 匿名候補 / #5 ホスト文脈で他パートナーの `Engineer` / #6 `withSharedCandidateScope` の外で `app.shared_scope` を立てる / #7 ホスト文脈で `engineer_shares` を直接 `SELECT` / #8 **パートナー文脈で他社が当事者の 4 表を一覧・`COUNT`・ID 直指定・ビュー越しに取る → 0 件 / 404、`total` が変わらない** / #9 **基底表の `SELECT *` はコンパイルエラー + 実行時 throw、ビューの応答に `unit_price`（ホスト販売）/ `internal_unit_price` / `end_client_name` / `summary` / `facts` / `note` が 1 つも無い** / #10 **経路 5 の 4 表への `INSERT` / `UPDATE` / `DELETE` が 0 件更新**。
 - **完了の判定**: 10 件すべてが green。`pnpm seed --preset=isolation --reset` が冪等に再実行できる。
 - **T-01-04 からの申し送り（2026-09-02、code-reviewer 指定）**: 子リレーションを持つ表を追加する際、**ネスト create の `tenantId` は Prisma 拡張では検査されず RLS の `WITH CHECK` が唯一の防御**（`packages/db/src/extension.ts` の known-gap コメント参照。対向 FK がテナントキーでないため DMMF 逆方向走査も検知しない）。isolation テストに「ネスト create で他テナント `tenantId` を注入 → RLS が拒否」の probe を追加すること。
+- ✅ **完了（2026-09-03、コミット `3ab4949`）** — 🔴 **`packages/domain` の `transition()` を本タスクで前倒し実装した**（`docs/05` §10.3 / §15.3 の設計どおりの配置。SP-02 の計画では状態機械の中身は後続だったが、`seed:isolation` が「DB に直接 INSERT せず `transition()` を通す」ことを要求するため依存関係上ここで必要になった）。`docs/dev-plan.md` §8 を参照。
 
 ## 5. テスト計画
 
@@ -176,3 +186,7 @@
 5. 射影ビュー 4 本が `security_invoker=true` で、列集合が `BR-66` の許可列と一致する。
 6. `pnpm seed --preset=isolation` が 2 テナント × 2 パートナー + 各社当事者レコードを冪等に投入できる。
 7. CI で 2 / 3 が毎回走る。
+
+🔴 **注記（2026-09-03）**: 7 の「CI で毎回走る」は充足しているが、**CI が落ちたときに merge を止める機械的強制は SP-01 から未達のまま引き継いでいる**（[Issue #25](https://github.com/Festal-KM/SES-Platform/issues/25)。暫定は運用 C。`docs/dev-plan.md` §6.4 R-05 の脚注 / §9）。
+
+**SP-02 の状態（2026-09-03）**: T-02-01〜T-02-10 の**全 10 タスクが完了**（§4 の各タスクの ✅ 行）。テストは **unit 651 / isolation 413** で、**全コミットが CI success**（T-02-10 の run 33…〔最新 run〕も success を確認済み）。本スプリントで生じた設計変更 4 件は `docs/dev-plan.md` §8 の 2026-09-03 の行に記録した — ①**列挙規約の改訂**（Prisma `enum` → `String` + `CHECK` + TS 単一出所。[Issue #26](https://github.com/Festal-KM/SES-Platform/issues/26)）②**RLS の migration 一元化**（`packages/db/rls/010_rls.sql` 廃止）③**`transition()` の前倒し実装** ④**新規 DB ロール `app_assignment_owner_probe`**（[Issue #27](https://github.com/Festal-KM/SES-Platform/issues/27)）。**後続へ引き継ぐ残件は Issue #27 の後半**（worker の `skill_sheets` 書き込み文脈）であり、**SP-07 着手時に `program-design` で設計する**（`docs/dev-plan.md` §9）。

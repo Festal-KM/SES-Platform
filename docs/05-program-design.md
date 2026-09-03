@@ -41,7 +41,7 @@ flowchart TB
   end
 
   subgraph Data["データストア"]
-    PG[("PostgreSQL 17<br/>RLS 有効 / ロール 5 種")]
+    PG[("PostgreSQL 17<br/>RLS 有効 / ロール 6 種")]
     RD[("Redis / Valkey<br/>Queue / Pub-Sub / トークンバケット")]
     S3[("S3（1 バケット + テナント別プレフィックス）")]
   end
@@ -93,7 +93,7 @@ flowchart TB
 |---|---|---|---|
 | §3.1 分離キーは認証コンテキスト由来 | **型**（ブランド型の `AuthenticatedTenantCtx` を `resolveTenantCtx` 以外が生成できない）+ **実行時ガード** | `packages/db/src/context.ts` | §4.3 |
 | §3.1 `withTenant` 経由の DB アクセス | **Lint**（生 `PrismaClient` / `$queryRaw` の import・呼び出し禁止）+ **DB 権限**（`app_tenant` は `BYPASSRLS` を持たない） | `.eslintrc` / マイグレーション | §4.2 |
-| §3.1 越境 **5** 経路のみ（経路 5 は読み取り専用・列も絞る） | **DB 制約**（RLS ポリシー式。経路 5 は C9 + `security_invoker` ビューで列を DB 側で射影）+ **機械検証**（全業務テーブル走査テスト） | `packages/db/rls/*.sql` / `tests/isolation` | §4.4 / §4.7 / §4.9 |
+| §3.1 越境 **5** 経路のみ（経路 5 は読み取り専用・列も絞る） | **DB 制約**（RLS ポリシー式。経路 5 は C9 + `security_invoker` ビューで列を DB 側で射影）+ **機械検証**（全業務テーブル走査テスト） | `packages/db/prisma/migrations/20260903050000_rls_policies/migration.sql` / `tests/isolation` | §4.4 / §4.7 / §4.9 |
 | §3.2 SDK 直接 import 禁止 | **Lint**（`no-restricted-imports`） | `.eslintrc` | §7.2 / §8.1 |
 | §3.2 全 AI 呼び出しを記録 | **型**（`runRole` の戻り値が `provenance` 必須）+ **実行時ガード**（記録失敗で throw） | `packages/ai/src/run.ts` | §7.3 |
 | §3.3 承認を経ない実行遷移の禁止 | **DB 制約**（部分 UNIQUE + CAS の `WHERE status='APPROVED'`）+ **型**（遷移関数が許可済み遷移のみ受け付ける） | `packages/domain/src/state/proposal.ts` | §10.3 |
@@ -1315,7 +1315,7 @@ model BillingMeterSubmission {                                     // docs/03 §
 |---|---|---|---|---|
 | `app_migrator` | **なし**（`NOBYPASSRLS`） | DDL。テーブル所有者 | `MIGRATION_DATABASE_URL` | マイグレーションのみ（CI / デプロイ） |
 | `app_tenant` | 🔴 **なし** | 業務テーブルへの `SELECT/INSERT/UPDATE/DELETE`。`tenants` は `SELECT` のみ。`audit_logs` は `INSERT/SELECT` のみ。🔴 **C0 の 4 表（§4.4）は `withSystemScope` からのみ到達でき、テナント文脈では 0 件** | `DATABASE_URL` | `withTenant` / `withSystemScope` |
-| `app_platform` | 🔴 **なし** | 業務テーブルへの `SELECT` のみ（**列レベル**で §5.7 の非開示列を除外）。`audit_logs` は `INSERT/SELECT` | `PLATFORM_DATABASE_URL` | `withPlatformRead` / `withImpersonation` |
+| `app_platform` | 🔴 **なし** | 業務テーブルへの `SELECT` のみ（**列レベル**で §5.5 の非開示列を除外）。`audit_logs` は `INSERT/SELECT` | `PLATFORM_DATABASE_URL` | `withPlatformRead` / `withImpersonation` |
 | `app_platform_write` | 🔴 **なし** | `plans` / `subscriptions` / `announcements` / `usage_counters`（上書き列）/ `tenants`（`INSERT` + ライフサイクル列の `UPDATE`）/ `invitations`（`INSERT` のみ。初期 `OWNER` 招待に `WITH CHECK` で固定。§5.2）/ `tenant_sending_domains`（`INSERT` のみ。`state='REGISTERED'` に `WITH CHECK` で固定。§5.2）/ `impersonation_sessions` / `audit_logs` への書き込み。**業務テーブルへの書き込み権限を一切持たない** | `PLATFORM_WRITE_DATABASE_URL` | `withPlatformWrite` |
 | `app_share_probe` | 🔴 **なし**（`NOLOGIN`） | `engineer_shares` の `SELECT (tenant_id, engineer_id, revoked_at)` のみ。**他表に一切の権限を持たない** | （接続しない） | `app_engineer_is_shared()` の `SECURITY DEFINER` 所有者としてのみ（§4.5） |
 | `app_assignment_owner_probe` | 🔴 **なし**（`NOLOGIN`） | `engineers` の `SELECT (tenant_id, id, owner_partner_company_id)` のみ。**他表に一切の権限を持たない** | （接続しない） | `inherit_assignment_counterparty()` の `SECURITY DEFINER` 所有者としてのみ（§4.4.1。T-02-08） |

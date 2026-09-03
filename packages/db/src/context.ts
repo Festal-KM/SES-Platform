@@ -92,12 +92,11 @@ export async function resolveTenantCtx(
  * 🔴 `requireHost` 以外がこの型の値を構築できない（`apps/worker` 用の `systemTenantCtx` は SP-02 以降。
  * docs/05 §9.2）。`partnerCompanyId` はブランドと同時に `null` へ絞り込まれる。
  *
- * 🔴 SP-01 時点のスキーマ（`Tenant` / `Engineer` の 2 表のみ）には経路 5 の基底表
- * （`assignments` / `contracts` / `contract_documents` / `orders` / `extension_reviews`）が
- * 存在しないため、本型は ctx の契約（「ホスト文脈しか `withHostTenant` に入れない」）だけを
- * 実装する。`HostTenantDb` に 5 デリゲートを追加する作業（`Omit` / `Pick` と
- * `PartnerBaseTableAccessError` の実行時フック）は、その表が揃う SP-02 で行う
- * （`packages/db/src/with-tenant.ts` の `HostTenantDb` を参照）。
+ * 経路 5 の基底表（`assignments` / `contracts` / `contract_documents` / `orders` /
+ * `extension_reviews`）と、`HostTenantDb` への 5 デリゲート追加（`Omit` / `Pick` と
+ * `assertPartnerBaseTableNotAccessed` の実行時フック）は T-02-07 で完了済み。
+ * 本型は ctx の契約（「ホスト文脈しか `withHostTenant` に入れない」）を担う
+ * （`packages/db/src/with-tenant.ts:48` の `TenantDb`（`Omit`）/ `:59` の `HostTenantDb` を参照）。
  */
 export type HostTenantCtx = AuthenticatedTenantCtx & {
   readonly partnerCompanyId: null;
