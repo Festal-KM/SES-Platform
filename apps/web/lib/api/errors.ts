@@ -131,6 +131,109 @@ export class TwoFactorThrottledError extends AppError {
   }
 }
 
+/**
+ * 409。docs/05 §15.1 の `ConflictError` 段。
+ * 🔴 T-03-04 が `TenantNotExecutableError` 等を同じ段に足す。**409 の基底を二重に作らない。**
+ */
+export class ConflictError extends AppError {
+  readonly code: string = 'CONFLICT';
+  readonly httpStatus = 409;
+  readonly userMessageKey: MessageKey = 'error.conflict';
+
+  constructor(message = '現在の状態では実行できません。') {
+    super(message);
+    this.name = 'ConflictError';
+  }
+}
+
+/**
+ * 🔴 招待を受諾できない（docs/05 §6.3 #7。`acceptedAt` の CAS が 0 件）。
+ *
+ * 受諾済み / 取消済み / 期限切れ / トークン不一致 / 同時受諾に負けた、を**区別しない**。
+ * 区別すると、無効なトークンを総当たりした側に「そのトークンは実在する」ことが伝わる。
+ * 画面（`S-002`）が出し分ける文言は `#6` の応答（トークンを持つ本人にだけ返る）から決める。
+ */
+export class InvitationNotAcceptableError extends ConflictError {
+  override readonly code = 'INVITATION_NOT_ACCEPTABLE';
+  override readonly userMessageKey: MessageKey = 'error.invitation.notAcceptable';
+
+  constructor() {
+    super('この招待は受諾できません。');
+    this.name = 'InvitationNotAcceptableError';
+  }
+}
+
+/**
+ * 422。docs/05 §15.1 の `UnprocessableError` 段。
+ * 🔴 T-03-04 以降が `InvalidStateTransitionError` / `SendingDomainNotVerifiedError` を同じ段に足す。
+ */
+export class UnprocessableError extends AppError {
+  readonly code: string = 'UNPROCESSABLE';
+  readonly httpStatus = 422;
+  readonly userMessageKey: MessageKey = 'error.unprocessable';
+
+  constructor(message = 'この内容では処理できません。') {
+    super(message);
+    this.name = 'UnprocessableError';
+  }
+}
+
+/**
+ * 🔴 取引先の担当者への招待は **Phase 0 では発行しない**（`docs/sprints/SP-03` T-03-03。
+ *    「Phase 0 はホストロール宛のみ。取引先招待は SP-04」）。
+ *
+ * なぜ「作れてしまう」より「拒否する」なのか: 取引先へ届くメールは
+ * **テナント独自ドメインの検証が前提**（`F-007 AC-5` / `BR-71` / docs/05 §8.3）であり、
+ * その判定（`requireVerifiedSendingDomain`）と保留（`HELD_DOMAIN_UNVERIFIED`）は SP-04 の実装である。
+ * 判定の無いまま招待だけ作れると、**未検証のドメインから取引先へ送る経路**が一時的に開く。
+ */
+export class PartnerInvitationNotAvailableError extends UnprocessableError {
+  override readonly code = 'PARTNER_INVITATION_NOT_AVAILABLE';
+  override readonly userMessageKey: MessageKey = 'error.invitation.partnerNotAvailable';
+
+  constructor() {
+    super('取引先の担当者への招待は、この段階では発行できません（SP-04）。');
+    this.name = 'PartnerInvitationNotAvailableError';
+  }
+}
+
+/**
+ * 🔴 招待先のメールアドレスの利用者が、すでにそのテナントに存在する（`users` の
+ *    `@@unique([tenantId, email])`。docs/05 §3.3）。422。
+ *
+ * なぜ 404 / 409 に畳まず存在を明かすか: このエラーを受け取るのは**招待を発行できる
+ * `OWNER` / `ADMIN`**（`F-002` 関連ロール）だけであり、自テナントのメンバー一覧を
+ * 見られる立場である。したがって情報境界（`CLAUDE.md` §3.1）の観点で新たに漏れるものは無く、
+ * 「招待ではなくロール変更が要る」という次の行動を伝えられる方が価値が高い。
+ * 🔴 **未認証経路（#6 / #7）ではこの型を使わない**（そちらは常に 409 で理由を区別しない）。
+ */
+export class InvitationEmailAlreadyMemberError extends UnprocessableError {
+  override readonly code = 'INVITATION_EMAIL_ALREADY_MEMBER';
+  override readonly userMessageKey: MessageKey = 'error.invitation.emailAlreadyMember';
+
+  constructor() {
+    super('このメールアドレスの利用者はすでにこのテナントに存在します。');
+    this.name = 'InvitationEmailAlreadyMemberError';
+  }
+}
+
+/**
+ * 🔴 パスワード再設定トークンが無効（docs/05 §6.3 #5b「トークン列の CAS で 1 回限り、
+ *    期限超過は 400」）。
+ *
+ * 不一致・期限切れ・使用済みを**区別しない**（区別するとトークンの実在が漏れる）。
+ */
+export class PasswordResetTokenInvalidError extends AppError {
+  readonly code = 'PASSWORD_RESET_TOKEN_INVALID';
+  readonly httpStatus = 400;
+  readonly userMessageKey: MessageKey = 'error.passwordReset.invalidToken';
+
+  constructor() {
+    super('パスワード再設定のリンクが無効です。');
+    this.name = 'PasswordResetTokenInvalidError';
+  }
+}
+
 /** 🔴 境界外の ID も必ずこれ（403 と区別しない。docs/05 §4.8）。対象 ID を含めない。 */
 export class NotFoundError extends AppError {
   readonly code = 'NOT_FOUND';

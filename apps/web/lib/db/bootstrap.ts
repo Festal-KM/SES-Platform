@@ -11,8 +11,9 @@
 // 🔴 リクエストごとに `APP_ENV` を分岐しない。ここは初期化の 1 箇所であり、
 //    外部連携の差し替え（`resolveConnectorSelection`）は T-03-12 が同じ初期化経路に載せる。
 import process from 'node:process';
-import { loadAppEnv } from '@ses/config';
+import { loadAppEnv, resolveConnectorSelection } from '@ses/config';
 import { configureTenantDb, configureTokenEncryption } from '@ses/db';
+import { configureAccountMailQueue, PendingAccountMailQueue } from '../jobs/account-mail';
 
 let initialized = false;
 
@@ -34,5 +35,14 @@ export function ensureDbConfigured(): void {
     keyId: env.TOKEN_ENCRYPTION_KEY_ID,
     previous: env.TOKEN_ENCRYPTION_KEY_PREVIOUS,
   });
+  // 🔴 T-03-03: `account.mail`（docs/05 §9.4）の enqueue 先を**起動時の 1 箇所**で決める。
+  //    判断材料は `resolveConnectorSelection`（APP_ENV 分岐の唯一の場所。CLAUDE.md §11.1）であり、
+  //    ここで `APP_ENV` を自分で分岐しない。
+  //    - email が `mock`（development / demo）→ 保留キュー（SP-04 のハンドラが処理するまで積むだけ）
+  //    - それ以外（sandbox / staging / production）→ **登録しない**。BullMQ のキュー実装は SP-04 の
+  //      範囲であり、未実装のまま「送ったつもり」にさせない（enqueue 時に例外 = 操作が成立しない）。
+  if (resolveConnectorSelection(env).email === 'mock') {
+    configureAccountMailQueue(new PendingAccountMailQueue());
+  }
   initialized = true;
 }

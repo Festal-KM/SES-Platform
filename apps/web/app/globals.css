@@ -110,3 +110,35 @@ body {
   font-size: 0.875rem;
   color: var(--ses-muted);
 }
+
+/* S-002 招待の受諾（T-03-03）。招待の内容は読み取り専用の定義リストで出す（docs/04 §S-002）。 */
+.ses-summary {
+  margin: 0 0 1.5rem;
+  font-size: 0.875rem;
+}
+
+.ses-summary dt {
+  color: var(--ses-muted);
+  margin-top: 0.75rem;
+}
+
+.ses-summary dd {
+  margin: 0.125rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+.ses-notice {
+  margin: 0 0 1rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--ses-border);
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+}
+
+/* ローディングは「招待内容の骨格」を出す（画面全体を空にしない。docs/04 §S-002）。 */
+.ses-skeleton-line {
+  height: 1rem;
+  margin: 0 0 0.75rem;
+  border-radius: 0.25rem;
+  background: var(--ses-border);
+}

@@ -82,6 +82,16 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
   loadTenantMembership: ['apps/web/lib/auth/tenant-context.ts'],
   // テナント確定前の限定スコープ（docs/05 §4.4.2）。サインインの照合だけが使う。
   withAuthLookup: ['apps/web/lib/auth/credentials.ts'],
+  // 🔴 T-03-03: 行由来コンテキスト（docs/05 §4.4.2）。**未認証の HTTP 経路が触れる唯一の DB 入口**
+  //    であり、呼び出し元が増えるほど「トークン照合で得た行以外を分離キーにする」実装が
+  //    書けてしまう。docs/05 §4.4.2 ④は呼び出し元を Route Handler に限定すると書いているが、
+  //    本リポジトリは T-03-01 以来「DB に触れるロジックは lib に置き、`app/**` からは呼ばない」
+  //    形を採っている（結合テストがサーバを立てずに同じ経路を実行できるようにするため。
+  //    `withAuthLookup` × `credentials.ts` と同じ）。ファイル数を 1 経路 1 ファイルに保つ点は同じ。
+  withInvitationToken: ['apps/web/lib/invitations/service.ts'],
+  withInvitationAccept: ['apps/web/lib/invitations/service.ts'],
+  withPasswordResetIssue: ['apps/web/lib/auth/password-reset.ts'],
+  withPasswordResetConfirm: ['apps/web/lib/auth/password-reset.ts'],
   // 認証の成否の記録（docs/05 §16.1）。サインイン / サインアウトと 2FA の失敗記録だけが使う。
   recordAuthAuditLog: [
     'apps/web/lib/auth/credentials.ts',

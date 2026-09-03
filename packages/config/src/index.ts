@@ -25,3 +25,12 @@ export {
   type ConnectorImplementationKind,
   type ConnectorSelection,
 } from './connector-selection.js';
+// 🔴 期限・長さの方針値（docs/05 §2.1 の limits.ts）。環境変数ではないので schema.ts に置かない。
+export {
+  DISPLAY_NAME_MAX_LENGTH,
+  EMAIL_MAX_LENGTH,
+  INVITATION_TTL_MS,
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+  PASSWORD_RESET_TTL_MS,
+} from './limits.js';

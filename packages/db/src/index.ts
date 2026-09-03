@@ -186,6 +186,8 @@ export type {
   AuthLookupUser,
   InvitationAcceptInput,
   InvitationRow,
+  InvitationTokenRow,
+  PasswordResetConfirmInput,
   PasswordResetIssueInput,
 } from './row-context.js';
 export {

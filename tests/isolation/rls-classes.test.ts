@@ -26,6 +26,7 @@ import {
   withPasswordResetIssue,
   withSystemScope,
   withTenant,
+  type AuditLogEntry,
   type AuthenticatedTenantCtx,
 } from '@ses/db';
 import {
@@ -615,6 +616,22 @@ describe('C8 DIRECTORY（docs/05 §4.4）', () => {
   });
 });
 
+/**
+ * 🔴 T-03-03: 行由来コンテキストの書き込み 3 関数は、**同一トランザクションで監査ログを書く**
+ *    （`F-005`「記録に失敗したら操作を成立させない」）。省略できない引数なので、
+ *    ここでも最小の entry を渡す。
+ */
+function auditEntryOf(action: string, userId: string): AuditLogEntry {
+  return {
+    action,
+    actorKind: 'USER',
+    actorId: userId,
+    targetType: 'User',
+    targetId: userId,
+    summary: {},
+  };
+}
+
 // 🔴 このブロックは最後に置く。withInvitationAccept が users / memberships に行を足すため、
 //    先に走らせると上の C5 / C8 の件数が変わる（テストの実行順に依存させない）。
 describe('テナント文脈を持たない経路（docs/05 §4.4.2）', () => {
@@ -641,6 +658,9 @@ describe('テナント文脈を持たない経路（docs/05 §4.4.2）', () => {
     expect(invitation?.tenantId).toBe(TENANT_A);
     expect(invitation?.partnerCompanyId).toBe(PARTNER_A1);
     expect(invitation?.role).toBe('PARTNER_SALES');
+    // 🔴 T-03-03: 第 2 段（招待行由来のテナント文脈）で組織名だけを読む（docs/05 §6.3 #6）。
+    expect(invitation?.tenantName).toBe('Tenant A');
+    expect(invitation?.partnerCompanyName).toBe('Partner A1');
   });
 
   it('🔴 withInvitationToken: 存在しないトークンは null', async () => {
@@ -648,11 +668,19 @@ describe('テナント文脈を持たない経路（docs/05 §4.4.2）', () => {
   });
 
   it('🔴 withPasswordResetConfirm: トークンからテナントが決まり、1 行だけ更新される', async () => {
-    const result = await withPasswordResetConfirm(PASSWORD_RESET_TOKEN_HASH_B, 'new-hash');
+    const result = await withPasswordResetConfirm(PASSWORD_RESET_TOKEN_HASH_B, {
+      passwordHash: 'new-hash',
+      buildAudit: (subject) => auditEntryOf('auth.password_reset_completed', subject.userId),
+    });
     expect(result?.userId).toBe(USER_B_HOST);
 
     // 使用済みトークンは 2 度目に通らない（消去済み）。
-    expect(await withPasswordResetConfirm(PASSWORD_RESET_TOKEN_HASH_B, 'newer-hash')).toBeNull();
+    expect(
+      await withPasswordResetConfirm(PASSWORD_RESET_TOKEN_HASH_B, {
+        passwordHash: 'newer-hash',
+        buildAudit: (subject) => auditEntryOf('auth.password_reset_completed', subject.userId),
+      }),
+    ).toBeNull();
 
     const updated = await runUnextended(db, HOST_B, (tx) =>
       tx.user.findMany({ where: { id: USER_B_HOST } }),
@@ -665,6 +693,7 @@ describe('テナント文脈を持たない経路（docs/05 §4.4.2）', () => {
     const issued = await withPasswordResetIssue('host-a@example.test', {
       tokenHash: 'issued-hash',
       expiresAt: new Date(Date.now() + 3_600_000),
+      buildAudit: (subject) => auditEntryOf('auth.password_reset_requested', subject.userId),
     });
     expect(issued).toEqual({ tenantId: TENANT_A, userId: USER_A_HOST });
 
@@ -679,6 +708,7 @@ describe('テナント文脈を持たない経路（docs/05 §4.4.2）', () => {
       await withPasswordResetIssue('nobody@example.test', {
         tokenHash: 'x',
         expiresAt: new Date(Date.now() + 1000),
+        buildAudit: (subject) => auditEntryOf('auth.password_reset_requested', subject.userId),
       }),
     ).toBeNull();
   });
@@ -687,6 +717,7 @@ describe('テナント文脈を持たない経路（docs/05 §4.4.2）', () => {
     const accepted = await withInvitationAccept(INVITATION_A_P1_TOKEN_HASH, {
       displayName: '受諾した人',
       passwordHash: 'accepted-hash',
+      buildAudit: (created) => auditEntryOf('invitation.accept', created.userId),
     });
     expect(accepted).not.toBeNull();
 
@@ -710,6 +741,7 @@ describe('テナント文脈を持たない経路（docs/05 §4.4.2）', () => {
       await withInvitationAccept(INVITATION_A_P1_TOKEN_HASH, {
         displayName: '二重受諾',
         passwordHash: 'x',
+        buildAudit: (created) => auditEntryOf('invitation.accept', created.userId),
       }),
     ).toBeNull();
   });
@@ -717,7 +749,11 @@ describe('テナント文脈を持たない経路（docs/05 §4.4.2）', () => {
   it('🔴 withInvitationAccept: 存在しないトークンでは何も作らない', async () => {
     const before = await runUnextended(db, HOST_A, (tx) => tx.user.count());
     expect(
-      await withInvitationAccept('not-a-real-hash', { displayName: 'x', passwordHash: 'y' }),
+      await withInvitationAccept('not-a-real-hash', {
+        displayName: 'x',
+        passwordHash: 'y',
+        buildAudit: (created) => auditEntryOf('invitation.accept', created.userId),
+      }),
     ).toBeNull();
     const after = await runUnextended(db, HOST_A, (tx) => tx.user.count());
     expect(after).toBe(before);

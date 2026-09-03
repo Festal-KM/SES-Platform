@@ -63,7 +63,14 @@ type TenantDbArg = Parameters<Parameters<typeof withTenant<void>>[1]>[0];
 /** `AuditLog` を書ける最小の能力。T-03-05 が業務操作と同じトランザクションから呼ぶ。 */
 export type AuditLogWriter = Pick<TenantDbArg, 'auditLog'>;
 
-function toRow(entry: AuditLogEntry) {
+/**
+ * `audit_logs` の 1 行分の値（`tenantId` を**含まない**）。
+ *
+ * 🔴 `tenantId` を持たないのは、通常経路では Prisma 拡張（第 2 防御）が文脈の値で確定させるためである
+ *    （CLAUDE.md §3.1「分離キーは認証コンテキストから取る」）。
+ * @internal packages/db の内部からのみ使う（index.ts から export しない）。
+ */
+export function auditLogRowValues(entry: AuditLogEntry) {
   return {
     actorKind: entry.actorKind,
     actorId: entry.actorId ?? null,
@@ -81,7 +88,7 @@ function toRow(entry: AuditLogEntry) {
  * 🔴 1 行書けなかったら例外にする（0 件を成功として扱わない）。
  */
 export async function writeAuditLog(db: AuditLogWriter, entry: AuditLogEntry): Promise<void> {
-  const result = await db.auditLog.createMany({ data: [toRow(entry)] });
+  const result = await db.auditLog.createMany({ data: [auditLogRowValues(entry)] });
   if (result.count !== 1) throw new AuditLogWriteError(entry.action);
 }
 

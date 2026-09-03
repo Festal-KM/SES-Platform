@@ -21,7 +21,8 @@
 // 🔴 本モジュールは Prisma 拡張（第 2 防御）を適用しない素のクライアントを使う。
 //    テナントが未確定の段階では注入すべき tenantId が無いためであり、
 //    ここでの防御は RLS（第 1 防御）と「触る表・列がコードとして固定であること」による。
-import type { PrismaClient } from '@prisma/client';
+import { Prisma, type PrismaClient } from '@prisma/client';
+import { AuditLogWriteError, auditLogRowValues, type AuditLogEntry } from './audit.js';
 import { getBaseClient } from './client.js';
 import type { TenantRole } from './context.js';
 import {
@@ -38,6 +39,29 @@ class InvitationRaceError extends Error {
     super('招待の受諾が競合しました（accepted_at の CAS が 0 件）。');
     this.name = 'InvitationRaceError';
   }
+}
+
+/** Prisma の一意制約違反。 */
+const PRISMA_UNIQUE_VIOLATION = 'P2002';
+
+/**
+ * 🔴 受諾のトランザクションで起きうる一意制約違反かどうか（`code-reviewer` 指摘）。
+ *
+ * この 1 トランザクションが書くのは `users`（`@@unique([tenantId, email])`）/
+ * `memberships`（`@@unique([tenantId, userId])`）/ `invitations`（CAS の UPDATE）/
+ * `audit_logs` の 4 つだけである。このうち現実に衝突しうるのは **`users` のメールアドレス**で、
+ * 起き方は 2 通りある:
+ *   ① すでに同じメールの利用者がそのテナントに存在する（退会・無効化済みを含む）
+ *   ② **並行受諾**で、`accepted_at` の CAS より先に `users` の UNIQUE に当たった
+ * どちらも「この招待は受諾できない」であり、**500 ではなく 409 として扱う**
+ * （`memberships` の衝突は直前に作った利用者の行なので起こりえず、`audit_logs` の
+ * PK は UUIDv7。いずれにせよトランザクションは巻き戻り、行は 1 つも残らない）。
+ */
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === PRISMA_UNIQUE_VIOLATION
+  );
 }
 
 async function inRowContext<T>(
@@ -69,6 +93,28 @@ async function switchToRowDerivedScope(
 
 /** 🔴 第 2 段で actor が未確定（利用者がまだ存在しない）ときに入れる値。空文字 = 未設定。 */
 const NO_ACTOR = '';
+
+/**
+ * 🔴 第 2 段の文脈で `AuditLog` を 1 行書く（`F-005` / `F-012 AC-2`）。
+ *
+ * なぜ `writeAuditLog`（`audit.ts`）を使わないか: この経路は Prisma 拡張（第 2 防御）を
+ * 適用しない素のクライアントで動くため、テナントキーが自動注入されない。
+ * **読み出した行の `tenant_id`** を明示して書く（呼び出し側の入力は使わない）。
+ * RLS は通常どおり効く（`audit_logs` の C1 INSERT が `tenant_id = app_tenant_id()` を判定する）。
+ *
+ * 🔴 1 行書けなかったら例外にする。呼び出し側はトランザクションごと巻き戻し、
+ *    対象操作（受諾 / パスワード再設定）を成立させない。
+ */
+async function writeRowDerivedAuditLog(
+  tx: TransactionClient,
+  tenantId: string,
+  entry: AuditLogEntry,
+): Promise<void> {
+  const result = await tx.auditLog.createMany({
+    data: [{ tenantId, ...auditLogRowValues(entry) }],
+  });
+  if (result.count !== 1) throw new AuditLogWriteError(entry.action);
+}
 
 // ---------------------------------------------------------------------------
 // withAuthLookup（docs/05 §4.4.2）
@@ -165,9 +211,51 @@ async function readInvitation(tx: TransactionClient): Promise<InvitationRow | nu
   };
 }
 
+/**
+ * `#6 GET /api/invitations/{token}` が返す 1 行（docs/05 §6.3 #6）。
+ *
+ * 🔴 `tenantName` / `partnerCompanyName` は `S-002` が「招待元の組織」「所属」を出すために要る
+ *    （docs/04 §S-002 セクション 1 / ワイヤーフレーム）。**トークンを持つ本人にだけ返る**値であり、
+ *    トークンは招待した側がその本人にしか渡していない。
+ * 🔴 いずれも第 2 段（招待行由来のテナント文脈）の通常ポリシー下で読む。
+ *    `tenants` は C1（`id = app_tenant_id()`）、`partner_companies` は C5（`id = app_partner_id()`）で
+ *    **その招待に関係する 1 行しか返らない**。
+ */
+export type InvitationTokenRow = InvitationRow & {
+  readonly tenantName: string;
+  /** ホスト所属への招待では null。 */
+  readonly partnerCompanyName: string | null;
+};
+
 /** 招待トークンのハッシュで `invitations` の該当 1 行だけを読む（未認証経路。docs/05 §4.4.2）。 */
-export async function withInvitationToken(tokenHash: string): Promise<InvitationRow | null> {
-  return inRowContext({ kind: 'INVITATION_TOKEN_HASH', value: tokenHash }, readInvitation);
+export async function withInvitationToken(
+  tokenHash: string,
+): Promise<InvitationTokenRow | null> {
+  return inRowContext({ kind: 'INVITATION_TOKEN_HASH', value: tokenHash }, async (tx) => {
+    const invitation = await readInvitation(tx);
+    if (invitation === null) return null;
+
+    // 🔴 第 2 段: 招待行の値でテナント文脈を立て直してから、組織名だけを読む。
+    await switchToRowDerivedScope(tx, {
+      tenantId: invitation.tenantId,
+      partnerCompanyId: invitation.partnerCompanyId,
+      actorUserId: NO_ACTOR,
+    });
+
+    const tenant = await tx.tenant.findFirst({ select: { name: true } });
+    if (tenant === null) return null; // テナントが読めない = 前提が壊れている。fail-closed。
+
+    const partnerCompany =
+      invitation.partnerCompanyId === null
+        ? null
+        : await tx.partnerCompany.findFirst({ select: { name: true } });
+
+    return {
+      ...invitation,
+      tenantName: tenant.name,
+      partnerCompanyName: partnerCompany?.name ?? null,
+    };
+  });
 }
 
 export type InvitationAcceptInput = {
@@ -176,12 +264,19 @@ export type InvitationAcceptInput = {
   readonly passwordHash: string;
   /** 期限判定の基準時刻（既定は現在時刻）。テストから固定するために引数にする。 */
   readonly now?: Date;
+  /**
+   * 🔴 受諾と**同一トランザクション**で書く監査ログ（`F-005` / `F-002 AC-3`）。
+   *    作成された利用者 ID は受諾の内側でしか分からないため、組み立てを関数で受け取る。
+   *    **省略できない**（記録されない受諾経路を型として作らせない）。
+   */
+  readonly buildAudit: (created: { readonly userId: string }) => AuditLogEntry;
 };
 
 /**
  * 招待を受諾し、`users` と `memberships` を 1 行ずつ作る（docs/05 §4.4.2）。
  *
- * 受諾できない（トークン不一致 / 取消済み / 期限切れ / 受諾済み / 同時受諾に負けた）ときは `null`。
+ * 受諾できない（トークン不一致 / 取消済み / 期限切れ / 受諾済み / 同時受諾に負けた /
+ * 🔴 **同じメールの利用者がすでにテナントに存在する**）ときは `null`。
  * 🔴 所属（tenantId / partnerCompanyId）とロールは**招待行**から取る。引数に持たない。
  */
 export async function withInvitationAccept(
@@ -234,10 +329,15 @@ export async function withInvitationAccept(
       });
       if (accepted.count !== 1) throw new InvitationRaceError();
 
+      // 🔴 記録できなければ受諾も成立しない（例外がトランザクションを巻き戻す）。
+      await writeRowDerivedAuditLog(tx, invitation.tenantId, input.buildAudit({ userId: user.id }));
+
       return { userId: user.id };
     });
   } catch (error) {
     if (error instanceof InvitationRaceError) return null;
+    // 🔴 一意制約違反も「受諾できない」に畳む（500 にしない）。上の isUniqueViolation を参照。
+    if (isUniqueViolation(error)) return null;
     throw error;
   }
 }
@@ -250,6 +350,11 @@ export type PasswordResetIssueInput = {
   /** 🔴 ハッシュ化済み（SHA-256）。平文トークンは packages/db に渡さない。 */
   readonly tokenHash: string;
   readonly expiresAt: Date;
+  /**
+   * 🔴 発行と**同一トランザクション**で書く監査ログ（`F-005`）。
+   *    対象の利用者 ID はメール照合の内側でしか分からないため、組み立てを関数で受け取る。
+   */
+  readonly buildAudit: (subject: { readonly userId: string }) => AuditLogEntry;
 };
 
 /**
@@ -285,9 +390,21 @@ export async function withPasswordResetIssue(
       data: { passwordResetTokenHash: input.tokenHash, passwordResetExpiresAt: input.expiresAt },
     });
     if (updated.count !== 1) return null;
+
+    await writeRowDerivedAuditLog(tx, row.tenantId, input.buildAudit({ userId: row.id }));
+
     return { tenantId: row.tenantId, userId: row.id };
   });
 }
+
+export type PasswordResetConfirmInput = {
+  /** 🔴 ハッシュ化済み（Argon2id）。平文パスワードを packages/db に渡さない。 */
+  readonly passwordHash: string;
+  /** 期限判定の基準時刻（既定は現在時刻）。テストから固定するために引数にする。 */
+  readonly now?: Date;
+  /** 🔴 確定と**同一トランザクション**で書く監査ログ（`F-005`）。 */
+  readonly buildAudit: (subject: { readonly userId: string }) => AuditLogEntry;
+};
 
 /**
  * パスワード再設定を確定する（`users.password_hash` の UPDATE + トークン列の消去）。
@@ -295,9 +412,9 @@ export async function withPasswordResetIssue(
  */
 export async function withPasswordResetConfirm(
   tokenHash: string,
-  passwordHash: string,
-  now: Date = new Date(),
+  input: PasswordResetConfirmInput,
 ): Promise<{ readonly userId: string } | null> {
+  const now = input.now ?? new Date();
   return inRowContext({ kind: 'PASSWORD_RESET_TOKEN_HASH', value: tokenHash }, async (tx) => {
     const rows = await tx.user.findMany({
       select: {
@@ -325,12 +442,15 @@ export async function withPasswordResetConfirm(
     const updated = await tx.user.updateMany({
       where: { id: row.id, passwordResetTokenHash: tokenHash },
       data: {
-        passwordHash,
+        passwordHash: input.passwordHash,
         passwordResetTokenHash: null,
         passwordResetExpiresAt: null,
       },
     });
     if (updated.count !== 1) return null;
+
+    await writeRowDerivedAuditLog(tx, row.tenantId, input.buildAudit({ userId: row.id }));
+
     return { userId: row.id };
   });
 }

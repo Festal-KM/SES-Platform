@@ -7,8 +7,16 @@
 //      ② 分離キーを混ぜた body を通しても、**解析結果が 1 バイトも変わらない**
 //    参照範囲そのものが変わらないことは tests/isolation/auth-tenant-ctx.test.ts が DB 付きで見る。
 import { describe, expect, expectTypeOf, it } from 'vitest';
+import { PASSWORD_MIN_LENGTH } from '@ses/config';
 import { ISOLATION_KEYS, assertNoIsolationKeys } from '../api/isolation-keys';
-import { signInBodySchema, type SignInBody } from './schemas';
+import {
+  passwordResetConfirmBodySchema,
+  passwordResetRequestBodySchema,
+  signInBodySchema,
+  type PasswordResetConfirmBody,
+  type PasswordResetRequestBody,
+  type SignInBody,
+} from './schemas';
 
 const CLEAN_BODY = { email: 'Host@Example.test', password: 'correct horse battery staple' };
 
@@ -47,6 +55,38 @@ describe('signInBodySchema は分離キーを受け付けない（F-003 AC-1）'
   it('email / password が無い body は検証に失敗する', () => {
     expect(signInBodySchema.safeParse({}).success).toBe(false);
     expect(signInBodySchema.safeParse({ email: 'a@b.test' }).success).toBe(false);
+  });
+});
+
+describe('パスワード再設定のスキーマ（docs/05 §6.3 #5 / #5b。T-03-03）', () => {
+  it('🔴 #5 は email だけを受け取る（分離キーを持たない）', () => {
+    expectTypeOf<keyof PasswordResetRequestBody>().toEqualTypeOf<'email'>();
+    const parsed = passwordResetRequestBodySchema.parse(POLLUTED_BODY);
+    expect(Object.keys(parsed)).toEqual(['email']);
+  });
+
+  it('🔴 #5b は token と password だけを受け取る', () => {
+    expectTypeOf<keyof PasswordResetConfirmBody>().toEqualTypeOf<'token' | 'password'>();
+    const parsed = passwordResetConfirmBodySchema.parse({
+      token: 'a'.repeat(43),
+      password: 'correct horse battery staple',
+      userId: '00000000-0000-7000-8000-000000000001',
+      tenantId: '00000000-0000-7000-8000-000000000002',
+    });
+    expect(Object.keys(parsed).sort()).toEqual(['password', 'token']);
+  });
+
+  it('🔴 新しいパスワードは設定時のポリシー（下限）を満たす必要がある', () => {
+    expect(
+      passwordResetConfirmBodySchema.safeParse({
+        token: 'a'.repeat(43),
+        password: 'a'.repeat(PASSWORD_MIN_LENGTH - 1),
+      }).success,
+    ).toBe(false);
+  });
+
+  it('🔴 サインイン（#1）にはパスワードの下限を適用しない（既存の資格情報で入れなくなるため）', () => {
+    expect(signInBodySchema.safeParse({ email: 'a@b.test', password: 'short' }).success).toBe(true);
   });
 });
 
