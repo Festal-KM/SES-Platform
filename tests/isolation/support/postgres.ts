@@ -20,7 +20,8 @@ export const REPO_ROOT = path.resolve(here, '..', '..', '..');
 
 const DB_PACKAGE_DIR = path.join(REPO_ROOT, 'packages', 'db');
 const PRISMA_CLI = path.join(DB_PACKAGE_DIR, 'node_modules', 'prisma', 'build', 'index.js');
-// 🔴 5 ロールの定義は packages/db/prisma/sql/000_roles.sql が唯一の真実（T-01-05。docs/05 §4.2）。
+// 🔴 6 ロールの定義は packages/db/prisma/sql/000_roles.sql が唯一の真実（T-01-05。docs/05 §4.2。
+//    app_assignment_owner_probe は T-02-08 で追加）。
 //    ローカル docker-compose（docker/postgres/initdb/000-roles.sh）と同じファイルを実行する。
 const ROLES_SQL_HOST_PATH = path.join(DB_PACKAGE_DIR, 'prisma', 'sql', '000_roles.sql');
 const ROLES_SQL_CONTAINER_PATH = '/opt/ses/000_roles.sql';
@@ -38,13 +39,16 @@ const DATABASE_NAME = 'ses_isolation';
 /** 二重防御の検証で使う 2 表（docs/05 §4.7）。 */
 export const BUSINESS_TABLES = ['tenants', 'engineers'] as const;
 
-/** docs/05 §4.2 の 5 ロール。 */
+/** docs/05 §4.2 の 6 ロール。 */
 export const ROLE_NAMES = [
   'app_migrator',
   'app_tenant',
   'app_platform',
   'app_platform_write',
   'app_share_probe',
+  // 🔴 T-02-08: assignments ← engineers(engineer_id) の SECURITY DEFINER 継承トリガ専用
+  //    （docs/05 §4.2 / §4.4.1。code-reviewer 指摘 1）。
+  'app_assignment_owner_probe',
 ] as const;
 
 export type IsolationDatabase = {
@@ -119,7 +123,7 @@ export async function startIsolationDatabase(): Promise<IsolationDatabase> {
     connectionLimit: 1,
   });
 
-  // ① 5 ロールの作成（packages/db/prisma/sql/000_roles.sql を唯一の定義として適用する。
+  // ① 6 ロールの作成（packages/db/prisma/sql/000_roles.sql を唯一の定義として適用する。
   //    ローカル docker-compose の docker/postgres/initdb/000-roles.sh と同じファイル）。
   //    パスワードはこのプロセス内で生成した値を psql の -v 変数として渡す（CLAUDE.md §3.5）。
   await execOrThrow(

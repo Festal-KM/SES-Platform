@@ -495,8 +495,13 @@ describe('T-02-03: docs/05 §3.6 の新 5 表', () => {
       });
     });
 
+    // 🔴 T-02-08: review_gates.owner_partner_company_id は target_type の CASE で継承される
+    //    （docs/05 §4.4.1）。PROPOSAL / SKILL_SHEET_SHARE / CHAT_ATTACHMENT は実在する親行を
+    //    要求し、親が無ければ BEFORE トリガが先に RAISE する。以下の execution / verdict 系の
+    //    CHECK 制約だけを検証したいテストは、target_type との組み合わせが問題にならない
+    //    PROJECT_PUBLISH（継承元 NULL。親のルックアップが発生しない）に統一する。
     describe('review_gates_target_type_check / execution_check / verdict チェック（docs/05 §3.6）', () => {
-      it('不正な target_type は拒否される', async () => {
+      it('🔴 不正な target_type は拒否される（T-02-08 以降は継承トリガの CASE が先に落ちる）', async () => {
         await expect(
           owner.reviewGate.create({
             data: {
@@ -512,7 +517,7 @@ describe('T-02-03: docs/05 §3.6 の新 5 表', () => {
               executedAt: new Date(),
             },
           }),
-        ).rejects.toThrow(/review_gates_target_type_check/);
+        ).rejects.toThrow(/review_gates_target_type_check|inherit_review_gate_owner/);
       });
 
       it('🔴 対照: CONTRACT_DOCUMENT は許容値である（決定済み。Issue #15 / BR-15）', async () => {
@@ -544,7 +549,7 @@ describe('T-02-03: docs/05 §3.6 の新 5 表', () => {
           owner.reviewGate.create({
             data: {
               tenantId: TENANT_A,
-              targetType: 'PROPOSAL',
+              targetType: 'PROJECT_PUBLISH',
               targetId: randomUUID(),
               contentHash: 'hash',
               execution: 'BOGUS',
@@ -561,7 +566,7 @@ describe('T-02-03: docs/05 §3.6 の新 5 表', () => {
           owner.reviewGate.create({
             data: {
               tenantId: TENANT_A,
-              targetType: 'PROPOSAL',
+              targetType: 'PROJECT_PUBLISH',
               targetId: randomUUID(),
               contentHash: 'hash',
               piiVerdict: 'BOGUS',
@@ -578,7 +583,7 @@ describe('T-02-03: docs/05 §3.6 の新 5 表', () => {
           owner.reviewGate.create({
             data: {
               tenantId: TENANT_A,
-              targetType: 'PROPOSAL',
+              targetType: 'PROJECT_PUBLISH',
               targetId: randomUUID(),
               contentHash: 'hash',
               piiVerdict: 'PASS',
@@ -595,7 +600,7 @@ describe('T-02-03: docs/05 §3.6 の新 5 表', () => {
           owner.reviewGate.create({
             data: {
               tenantId: TENANT_A,
-              targetType: 'PROPOSAL',
+              targetType: 'PROJECT_PUBLISH',
               targetId: randomUUID(),
               contentHash: 'hash',
               piiVerdict: 'PASS',
@@ -616,7 +621,7 @@ describe('T-02-03: docs/05 §3.6 の新 5 表', () => {
           owner.reviewGate.create({
             data: {
               tenantId: TENANT_A,
-              targetType: 'PROPOSAL',
+              targetType: 'PROJECT_PUBLISH',
               targetId: randomUUID(),
               contentHash: 'hash',
               consistencyVerdict: 'PASS',
@@ -635,7 +640,7 @@ describe('T-02-03: docs/05 §3.6 の新 5 表', () => {
           owner.reviewGate.create({
             data: {
               tenantId: TENANT_A,
-              targetType: 'PROPOSAL',
+              targetType: 'PROJECT_PUBLISH',
               targetId: randomUUID(),
               contentHash: 'hash',
               execution: 'HELD_AI_COST_LIMIT',
@@ -652,7 +657,7 @@ describe('T-02-03: docs/05 §3.6 の新 5 表', () => {
         const gate = await owner.reviewGate.create({
           data: {
             tenantId: TENANT_A,
-            targetType: 'PROPOSAL',
+            targetType: 'PROJECT_PUBLISH',
             targetId: target,
             contentHash: 'hash-held',
             execution: 'HELD_AI_COST_LIMIT',
@@ -705,7 +710,7 @@ describe('T-02-03: docs/05 §3.6 の新 5 表', () => {
         await owner.reviewGate.create({
           data: {
             tenantId: TENANT_A,
-            targetType: 'CHAT_ATTACHMENT',
+            targetType: 'PROJECT_PUBLISH',
             targetId: target,
             contentHash: 'hash-c1',
             piiVerdict: 'PASS',
@@ -719,7 +724,7 @@ describe('T-02-03: docs/05 §3.6 の新 5 表', () => {
         const second = await owner.reviewGate.create({
           data: {
             tenantId: TENANT_A,
-            targetType: 'CHAT_ATTACHMENT',
+            targetType: 'PROJECT_PUBLISH',
             targetId: target,
             contentHash: 'hash-c2',
             piiVerdict: 'FAIL',

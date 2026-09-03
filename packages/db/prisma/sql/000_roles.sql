@@ -59,6 +59,26 @@ SELECT 'CREATE ROLE app_share_probe NOLOGIN NOBYPASSRLS'
 WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_share_probe')
 \gexec
 
+-- app_assignment_owner_probe: NOLOGIN。engineers.owner_partner_company_id の SELECT のみ
+-- （T-02-08。docs/05 §4.4.1 の assignments ← engineers(engineer_id) 継承専用。§4.5 の
+-- app_share_probe と同じパターン: engineers は C3 OWNER_SCOPED のため、ホスト文脈からは
+-- パートナー所属エンジニアの行が見えない（CLAUDE.md §3.1 経路 2）。しかし assignments は
+-- C2 HOST_ONLY（書込はホストのみ）であり、ホストがパートナー所属エンジニアを稼働させる
+-- （＝counterparty_partner_company_id にパートナーの ID を継承させる）のは通常業務のため、
+-- 専用ロール + SECURITY DEFINER 関数でテナント境界のみのポリシー（パートナー境界は課さない）
+-- を与える。docs/05 §4.2 / §4.4.1 / P-A-19（T-02-08 で確定）。
+-- パスワード不要。GRANT とポリシーは packages/db/prisma/migrations/20260903070000_*/migration.sql。
+SELECT 'CREATE ROLE app_assignment_owner_probe NOLOGIN NOBYPASSRLS'
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_assignment_owner_probe')
+\gexec
+
+-- 🔴 `ALTER FUNCTION ... OWNER TO app_assignment_owner_probe`（migration 20260903070000）は
+-- app_migrator が app_assignment_owner_probe に対して SET ROLE できることを要求する
+-- （PostgreSQL の所有者変更の仕様。実行者は新旧いずれの所有者ロールにもなれる必要がある）。
+-- app_migrator はこのロールにログインしない（NOLOGIN のまま）が、所有権の付け替えだけができるよう
+-- メンバーシップを与える。
+GRANT app_assignment_owner_probe TO app_migrator;
+
 -- public スキーマの所有者を app_migrator にする（PostgreSQL 15 以降は既定で PUBLIC に
 -- CREATE 権限が無いため、これが無いとマイグレーションがテーブルを作れない。docs/05 §4.2）。
 ALTER SCHEMA public OWNER TO app_migrator;

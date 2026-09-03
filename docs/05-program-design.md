@@ -1318,6 +1318,7 @@ model BillingMeterSubmission {                                     // docs/03 §
 | `app_platform` | 🔴 **なし** | 業務テーブルへの `SELECT` のみ（**列レベル**で §5.7 の非開示列を除外）。`audit_logs` は `INSERT/SELECT` | `PLATFORM_DATABASE_URL` | `withPlatformRead` / `withImpersonation` |
 | `app_platform_write` | 🔴 **なし** | `plans` / `subscriptions` / `announcements` / `usage_counters`（上書き列）/ `tenants`（`INSERT` + ライフサイクル列の `UPDATE`）/ `invitations`（`INSERT` のみ。初期 `OWNER` 招待に `WITH CHECK` で固定。§5.2）/ `tenant_sending_domains`（`INSERT` のみ。`state='REGISTERED'` に `WITH CHECK` で固定。§5.2）/ `impersonation_sessions` / `audit_logs` への書き込み。**業務テーブルへの書き込み権限を一切持たない** | `PLATFORM_WRITE_DATABASE_URL` | `withPlatformWrite` |
 | `app_share_probe` | 🔴 **なし**（`NOLOGIN`） | `engineer_shares` の `SELECT (tenant_id, engineer_id, revoked_at)` のみ。**他表に一切の権限を持たない** | （接続しない） | `app_engineer_is_shared()` の `SECURITY DEFINER` 所有者としてのみ（§4.5） |
+| `app_assignment_owner_probe` | 🔴 **なし**（`NOLOGIN`） | `engineers` の `SELECT (tenant_id, id, owner_partner_company_id)` のみ。**他表に一切の権限を持たない** | （接続しない） | `inherit_assignment_counterparty()` の `SECURITY DEFINER` 所有者としてのみ（§4.4.1。T-02-08） |
 
 🔴 **テーブル所有者は `app_migrator` であり、`FORCE ROW LEVEL SECURITY` を全業務テーブルに付ける。** これが無いと所有者が RLS を素通りする。**`app_migrator` の接続文字列を `apps/web` / `apps/worker` の実行時環境に渡さない**（`packages/config` の Zod スキーマで、`development` を含む全環境の実行時 `APP_ENV` では `MIGRATION_DATABASE_URL` が**未設定であること**を検証する。T-01-05 でロールが実在するようになったため `development` 例外〔本節および §13.4 規則 3・4〕を解除した）。ロールの定義は `packages/db/prisma/sql/000_roles.sql` を唯一の真実とし、ローカル docker-compose（`docker/postgres/initdb/000-roles.sh`）と Testcontainers（`tests/isolation/support/postgres.ts`）の両方がこのファイルを実行する。
 
@@ -1446,6 +1447,20 @@ CREATE TRIGGER ins_owner BEFORE INSERT OR UPDATE ON engineer_skills   -- 親: en
 --    COMMENT は 'counterparty-column: root' / 'counterparty-column: child of <親>(<FK>)'。§4.7 のテストが owner と同じ述語で検査する。
 --    🔴 呼び出し側の指定値を採用しない（F-065 処理①「当事者判定を認証コンテキストのみから行う」を、DB 側でも入力に依存させない）。
 ```
+
+🔴 **`assignments ← engineers(engineer_id)` だけは `SECURITY INVOKER`（既定）では実装できない。** `engineers` は **C3 OWNER_SCOPED**（§4.4）であり、ホスト文脈（`app_is_host()`）から見えるのは `owner_partner_company_id IS NULL` の行だけ（経路 2「パートナーのエンジニア台帳全体をホストが読むことはできない」）。しかし `assignments` は **C2 HOST_ONLY**（書込はホストのみ）であり、ホストがパートナー所属エンジニアを案件に稼働させる（＝`counterparty_partner_company_id` にパートナーの ID を継承させる）のは通常業務である。素の `SECURITY INVOKER` 実装のままだと、この正当なホストの操作が「親が見えない」で毎回 `RAISE` してしまう。
+
+これを解決するため、**§4.5 の `app_engineer_is_shared()` / `app_share_probe` と同型**の「専用ロール + `SECURITY DEFINER` + 最小列 `GRANT`」を踏襲した:
+
+- 専用ロール `app_assignment_owner_probe`（`NOLOGIN` / `NOBYPASSRLS`。§4.2）に `engineers` の `SELECT (tenant_id, id, owner_partner_company_id)` の 3 列だけを `GRANT` する。
+- `inherit_assignment_counterparty()` を `SECURITY DEFINER` にし、所有者を `app_assignment_owner_probe` にする（`ALTER FUNCTION ... OWNER TO`）。
+- 🔴 **`app_share_probe` との相違点**: `app_engineer_is_shared()` は**通常の SQL 関数**であり `GRANT EXECUTE ... TO app_tenant` を経て `app_tenant` セッションから直接呼び出せる（呼び出し元の限定は ESLint。§4.5）。本件は**トリガ関数そのもの**（`RETURNS trigger`）を `SECURITY DEFINER` にした。トリガ関数は通常の関数呼び出し（`SELECT fn(...)`）の戻り値型として使えないため、`app_tenant` セッションがこれを直接呼び出して他パートナーの `engineers.owner_partner_company_id` を探索する経路が**型レベルで存在しない**（パートナー間相互参照は `CLAUDE.md` §3.1 の 🔴 に直結するため、ESLint ではなく DB レベルで到達不能にした。加えて `REVOKE ALL ON FUNCTION ... FROM PUBLIC` で `GRANT EXECUTE` を誰にも与えない防御を重ねる）。
+- テナント境界チェックは関数本体の `WHERE tenant_id = NEW.tenant_id`（呼び出し元の行そのものの値。`assignments` 自身の RLS で既に境界確定済み）が担う。
+- `ALTER FUNCTION ... OWNER TO` の実行に要る `CREATE ON SCHEMA public` は**実行時にだけ**付与し、直後に `REVOKE` する（境界バイパスロールに恒久的な作成権を持たせない）。
+- 他の 9 relationship（`engineer_skills` ← `engineers` 等）はすべて「host が無条件で親を見られる」クラス（C2 / C5 / C6）か「書き手が常に親の所有者と同一パートナーである」自己完結ケース（C3 の子表）であり、この特別扱いは不要である。
+
+`app_assignment_owner_probe` の権限は §4.7 テスト #5 / #10 が検証する（`tests/isolation/roles.test.ts`）。実証テストは `tests/isolation/owner-counterparty-inheritance.test.ts` の ④。
+
 #### 4.4.2 テナント文脈を持たない経路（🔴 これ以外を作らない）
 
 | 経路 | 見えるもの / 書けるもの | 実装 |
@@ -1538,7 +1553,7 @@ test('app_tenant に権限がある表は、適用される全ポリシーの式
   /* role_table_grants で対象表を取り、pg_get_expr(polqual|polwithcheck) に 'app_tenant_id()' が現れるか。
      C0 は app_tenant_id() IS NULL を含むので通り、「USING (true)」の類は必ず落ちる */);
 test('app_tenant に権限が無い表は、app_platform / app_platform_write のいずれかに権限がある', /* 孤児表の検出 */);
-test('app_tenant / app_platform / app_platform_write / app_share_probe は BYPASSRLS を持たない', /* pg_roles.rolbypassrls */);
+test('app_tenant / app_platform / app_platform_write / app_share_probe / app_assignment_owner_probe は BYPASSRLS を持たない', /* pg_roles.rolbypassrls */);
 test('app_platform は業務テーブルに INSERT/UPDATE/DELETE 権限を持たない', /* information_schema.role_table_grants */);
 test('§5.7 の非開示列が app_platform に GRANT されていない', /* column_privileges を走査 */);
 test('Prisma 拡張の対象モデル一覧が、除外 4 モデル以外のすべてを含む', /* Prisma DMMF を走査 */);
@@ -1547,7 +1562,7 @@ test('オーナー列は root / child の宣言を持ち、宣言に応じたト
      'owner-column: root'          → freeze_owner_partner_company の BEFORE UPDATE トリガがある
      'owner-column: child of P(fk)' → inherit_owner_partner_company(P, fk) の BEFORE INSERT OR UPDATE トリガがある
      根 4 表（users / engineers / proposals / tasks）と子 7 表を列挙せず、宣言と実体の一致だけを見る */);
-test('app_share_probe の権限は engineer_shares の 3 列の SELECT だけ', /* column_privileges + role_table_grants を走査 */);
+test('app_share_probe の権限は engineer_shares の 3 列の SELECT だけ、app_assignment_owner_probe の権限は engineers の 3 列の SELECT だけ', /* role_column_grants + role_table_grants を走査（migrator 接続で読む。§4.4.1） */);
 test('当事者列（counterparty_partner_company_id）も root / child の宣言と対応するトリガを持つ',
   /* オーナー列のテストと同じ述語。宣言の無い当事者列は FAIL。持つ表が 4 表以外に増えていたら FAIL（経路 5 の対象拡大は人間の承認事項） */);
 test('経路 5 の 4 表に、パートナー文脈で真になり得る INSERT/UPDATE/DELETE ポリシーが無く、extension_reviews にはパートナー文脈で真になる SELECT ポリシーも無い',
@@ -3730,6 +3745,7 @@ export const logger = pino({
 | **P-A-18** | 🔴 **利用者向け件数の加算を `runRole` の内部（手順 6b）に閉じ、`ROLE_UNIT` の写像表で 1 件を定義する**（§7.3 / §7.6） | §7.3 / §7.6 / §9.8 | 🔴 **本書が置いた実装位置。** `docs/03` §7.6.1 の「何を 1 件と数えるか」（`sheet-parser` 1 回 / 根拠文は候補数 / 再試行は加算しない）を、呼び出し側に書かせず単一経路で満たすため。**`AiUsage` の行数から数え直すジョブは作らない**（`docs/03` 申し送り 30） |
 | **P-A-14** | 🔴 **経路 4 の存在判定を `SECURITY DEFINER` 関数 `app_engineer_is_shared()` + 専用ロール `app_share_probe` に閉じる**（§4.5） | §4.2 / §4.5 / §4.7 | 🔴 **本書が置いた決定。** 代替案「`engineer_shares` にホスト向けの追加 SELECT ポリシー」は行（`partner_company_id` / `shared_by`）がホストに見え `BR-06` に抵触するため退けた。**越境経路は増えていない**（経路 4 の DB 側実装を確定させただけ） |
 | **P-A-15** | 🔴 **未認証の受諾・パスワード再設定は「行由来コンテキスト」の 3 関数で書く**（§4.4.2） | §4.4 C8 / §6.3 | 🔴 **本書が置いた決定。** `systemTenantCtx` を `apps/web` に開放する案は HTTP 経路が認証を迂回できるため退けた。分離キーは常にトークン照合で得た DB 行から取る |
+| **P-A-19** | 🔴 **`assignments ← engineers(engineer_id)` の当事者列継承だけ、`app_share_probe` と同型の専用ロール `app_assignment_owner_probe` + `SECURITY DEFINER` トリガ関数で実装する**（§4.2 / §4.4.1） | §4.2 / §4.4.1 / §4.7 | 🔴 **本書が置いた決定（T-02-08。programmer 実装 → code-reviewer 確認を経て確定）。** `engineers` は C3 のためホスト文脈から他パートナー所有の行が見えないが、`assignments` は C2（ホストがパートナー所属エンジニアを稼働させるのが通常業務）であるため、素の `SECURITY INVOKER` では正当なホスト操作が「親が見えない」で `RAISE` してしまう（`tests/isolation/route5-counterparty.test.ts` で実測）。トリガ関数（`RETURNS trigger`）を `SECURITY DEFINER` にする点が `app_engineer_is_shared()`（通常の SQL 関数。§4.5）と異なり、`app_tenant` セッションから直接呼び出す経路が型レベルで存在しない。**越境経路は増えていない**（`engineers` の 3 列以外は依然として見えない。パートナー間相互参照〔`CLAUDE.md` §3.1〕には抵触しない） |
 
 ## TBD
 

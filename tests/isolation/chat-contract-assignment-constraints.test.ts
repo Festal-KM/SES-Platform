@@ -102,9 +102,17 @@ describe('T-02-04: docs/05 §3.7 の新 9 表 + 当事者列', () => {
 
   describe('② CHECK 制約 / FK / 部分 UNIQUE / トリガ（RLS を一時 DISABLE して直接検証）', () => {
     // 🔴 projects / proposals / review_gates は T-02-02/03 から fail-closed（0 ポリシー）。
-    //    参照先の行を用意するために disable する（engineers は C3 ポリシーが効くが、FK 検証は
-    //    RLS を経由しないため disable 不要）。
-    const TABLES_TO_DISABLE = [...NEW_TABLES, 'projects', 'proposals', 'review_gates'] as const;
+    //    参照先の行を用意するために disable する（FK 検証自体は RLS を経由しないため本来は
+    //    disable 不要だが、engineers は T-02-08 の継承トリガ〔assignments ← engineers〕が
+    //    SELECT を発行するため、こちらは RLS の対象になる。disable しないと
+    //    owner.assignment.create() が「親が見えない」で毎回 RAISE する）。
+    const TABLES_TO_DISABLE = [
+      ...NEW_TABLES,
+      'projects',
+      'proposals',
+      'review_gates',
+      'engineers',
+    ] as const;
 
     let projectId: string;
 

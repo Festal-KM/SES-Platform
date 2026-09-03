@@ -64,18 +64,23 @@ const PLATFORM_WRITE_ALLOWLIST: Record<
 
 let database: IsolationDatabase;
 let unextended: UnextendedClient;
+// 🔴 T-02-08: role_table_grants / role_column_grants の走査専用（migrator 接続で読む必要がある。
+//    ④ 「app_assignment_owner_probe は engineers の 3 列だけ」参照）。
+let migrator: UnextendedClient;
 
 beforeAll(async () => {
   database = await startIsolationDatabase();
   unextended = createUnextendedClient(database.tenantUrl);
+  migrator = createUnextendedClient(database.migratorUrl);
 }, SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await unextended?.$disconnect();
+  await migrator?.$disconnect();
   await database?.stop();
 }, SETUP_TIMEOUT_MS);
 
-describe('① 5 ロールすべてが BYPASSRLS を持たない（docs/05 §4.2）', () => {
+describe('① 6 ロールすべてが BYPASSRLS を持たない（docs/05 §4.2）', () => {
   it('pg_roles.rolbypassrls = false', async () => {
     const roles = await readRoleBypassRls(unextended, [...ROLE_NAMES]);
     expect(roles.map((r) => r.role)).toEqual([...ROLE_NAMES].sort());
@@ -87,6 +92,13 @@ describe('① 5 ロールすべてが BYPASSRLS を持たない（docs/05 §4.2�
   it('app_share_probe は NOLOGIN である（docs/05 §4.2「（接続しない）」）', async () => {
     const rows = await unextended.$queryRaw<Array<{ rolcanlogin: boolean }>>`
       SELECT rolcanlogin FROM pg_roles WHERE rolname = 'app_share_probe'`;
+    expect(rows[0]?.rolcanlogin).toBe(false);
+  });
+
+  // 🔴 T-02-08（code-reviewer 指摘 1-②）: app_share_probe と同形の NOLOGIN 検証。
+  it('app_assignment_owner_probe は NOLOGIN である（docs/05 §4.2「（接続しない）」）', async () => {
+    const rows = await unextended.$queryRaw<Array<{ rolcanlogin: boolean }>>`
+      SELECT rolcanlogin FROM pg_roles WHERE rolname = 'app_assignment_owner_probe'`;
     expect(rows[0]?.rolcanlogin).toBe(false);
   });
 
@@ -216,6 +228,43 @@ describe('app_share_probe は engineer_shares 以外に一切の権限を持た�
       const select = await hasTablePrivilege(unextended, 'app_share_probe', table, 'SELECT');
       expect(select, `${table}: app_share_probe に SELECT 権限がある`).toBe(false);
     }
+  });
+});
+
+/**
+ * 🔴 T-02-08（code-reviewer 指摘 1-③）: app_assignment_owner_probe の権限が
+ * engineers.tenant_id / id / owner_partner_company_id の 3 列 SELECT だけであることを
+ * `information_schema.role_table_grants` / `role_column_grants` の走査で確認する（docs/05 §4.2 / §4.4.1）。
+ *
+ * 🔴 `migrator`（`app_migrator`）接続で読むこと。`role_table_grants` / `role_column_grants` は
+ * 「現在の接続ロールが grantor / grantee のいずれかである GRANT だけ」を返す
+ * （PostgreSQL の仕様。`information_schema.columns` が呼び出し元の権限でフィルタされるのと同じ理由。
+ * `readTableColumns` の JSDoc 参照）。`GRANT SELECT (...) ON engineers TO app_assignment_owner_probe`
+ * を実行したのは migration（`app_migrator` 接続）であり、`app_migrator` が grantor になる。
+ * `unextended`（`app_tenant` 接続）で読むと 0 行になり、空振りで PASS してしまう。
+ */
+describe('app_assignment_owner_probe は engineers の 3 列（tenant_id/id/owner_partner_company_id）の SELECT だけを持つ（docs/05 §4.2 / §4.4.1）', () => {
+  it('role_table_grants にこのロール宛の行が無い（テーブル単位の GRANT を一切持たない。列単位の GRANT のみ）', async () => {
+    const rows = await migrator.$queryRaw<Array<{ table_name: string; privilege_type: string }>>`
+      SELECT table_name, privilege_type
+      FROM information_schema.role_table_grants
+      WHERE grantee = 'app_assignment_owner_probe'`;
+    expect(rows).toEqual([]);
+  });
+
+  it('role_column_grants は engineers.id / owner_partner_company_id / tenant_id の SELECT だけ', async () => {
+    const rows = await migrator.$queryRaw<
+      Array<{ table_name: string; column_name: string; privilege_type: string }>
+    >`
+      SELECT table_name, column_name, privilege_type
+      FROM information_schema.role_column_grants
+      WHERE grantee = 'app_assignment_owner_probe'
+      ORDER BY table_name, column_name`;
+    expect(rows).toEqual([
+      { table_name: 'engineers', column_name: 'id', privilege_type: 'SELECT' },
+      { table_name: 'engineers', column_name: 'owner_partner_company_id', privilege_type: 'SELECT' },
+      { table_name: 'engineers', column_name: 'tenant_id', privilege_type: 'SELECT' },
+    ]);
   });
 });
 
