@@ -47,7 +47,7 @@ Layout: desktop browser view, landscape. Header and sidebar as in the shared pro
 `[ 未読 ]` (filled black, active) `[ 既読 ]` `[ すべて ]`
 
 ### Filter row 2: `種別`
-`[ すべて ]` `[ 承認待ち ]` `[ 検査で不合格 ]` `[ 送信失敗 ]` `[ 提案依頼 ]` `[ 満了 60 日前 ]` `[ 満了 30 日前（再通知） ]` `[ 上限接近 ]` `[ お知らせ ]` `[ 代理閲覧の開始 ]`
+`[ すべて ]` `[ 承認待ち ]` `[ 検査で不合格 ]` `[ 送信失敗 ]` `[ 提案依頼 ]` `[ 満了 60 日前 ]` `[ 満了 30 日前（再通知） ]` `[ 上限接近 ]` `[ AI 利用の停止 ]` `[ お知らせ ]` `[ 代理閲覧の開始 ]`
 
 ### A band above the list: `新着 3 件` — a thin bordered strip inserted at the top of the list
 
@@ -60,7 +60,7 @@ Each row: an unread marker square, a small square type glyph, the type name, the
 5. `提案依頼` — `提案依頼 R-0088 の返答期限まで 22 時間です` — `5 時間前` — unread
 6. `満了 60 日前` — `稼働 A-0071（伊藤 修）の延長確認を起票しました` — `昨日`
 7. `満了 30 日前（再通知）` — `稼働 A-0058（高橋 健）の満了まで 30 日です` — `2 日前`
-8. `AI 停止中` — `AI が日次上限に達したため停止中です（提案・契約書の品質ゲートは実行されません。リセット: 本日 24:00）` — `3 時間前`
+8. `AI 利用の停止` — `AI が日次上限に達したため停止中です（提案・契約書の品質ゲートは実行されません。リセット: 本日 24:00）　→ 利用状況を確認` — `3 時間前`
 9. `お知らせ` — `9/5 02:00-04:00 にメンテナンスを実施します` — `昨日`
 10. `代理閲覧の開始` — `運営者による代理閲覧が開始されました（理由の記録あり）` — `4 日前`
 11. `承認待ち` — `提案 P-0145（けやきリテール / 渡辺 翔）が承認を待っています` — `4 時間前`
@@ -81,7 +81,7 @@ Layout: tablet landscape view. Header and sidebar as in the shared prompt.
 
 Single column at full content width, in this order:
 1. The `未読 / 既読 / すべて` chip row.
-2. The type chip row, wrapping onto two lines so every one of the nine type chips is visible.
+2. The type chip row, wrapping onto two lines so every one of the ten type chips is visible.
 3. The `新着 3 件` strip.
 4. The 12-row notification list with the same content, each row still on one line: unread marker, type glyph, type name, body, relative time.
 5. Paging controls.
@@ -115,4 +115,5 @@ IMPORTANT: new arrivals are inserted as the `新着 3 件` strip at the top; the
 - 🔴 2026-09-01 改訂: 行 8（`上限接近`）を `AI コストが日次上限の 82% に達しました` から件数クォータの接近通知に置き換えた（`BR-24` / `U-12` / `docs/04:301`）。AI の 1 日のコスト上限は金額もパーセンテージも一切見せない遮断器であり、到達時は「停止中」とだけ示す（`S-038` と同じ規律）。
 - 🔴 2026-09-01 改訂: 行 8 を `マッチング候補の根拠文` のクォータ（`S-038:54` / `S-035:74` / `A-004:53` と同じ `〇〇システム` の当月フィクスチャで あと 1,240 件 / 6,200 件 ＝ 約 80%）に揃えた。旧文言の `スキルシート解析 …（あと 36 件）` は同テナントの `S-038` 上の値（118/180・あと 62 件）と矛盾し、かつ月次カウンタが 3 時間で 62 件から 36 件まで減る想定になってしまうため置き換えた。あわせてヘッダの上限インジケータを「描かない」から「描く」に変更した（`docs/04:301` は件数クォータが 80% を超えたときにヘッダへ出すと定めており、本画面の通知はまさにその状態を伝えるものであるため、ヘッダを平常時のまま描くと矛盾する）。インジケータは件数のみで金額・パーセンテージは出さない。
 - 🔴 2026-09-01 改訂（Iteration 5・オーケストレーター決定）: `〇〇システム` の当月フィクスチャを AI 日次上限到達済み・停止中で全画面統一する（`S-038` / `A-004` / `S-035` / `S-003` と同一時点）。行 8 を `上限接近`（`根拠文 4,960/6,200` はちょうど 80.0% で「超えた」に該当しない）から `AI 停止中` の停止通知に差し替え、ヘッダの上限インジケータも `S-038:35` と同じ `AI 停止中` filled badge に統一した。desktop / tablet / mobile の 3 セクションで一致させている。
+- 🔴 2026-09-03 修正（Iteration 6・design-reviewer 5 回目の残指摘 / `docs/04` 改訂 4・Issue #17 選択肢 A）: 行 8 の種別を、`docs/04` §4.7 で新設された `AI 利用の停止`（`F-027 AC-5` の停止通知の受け皿。`上限接近` とは別種別）に置き換えた。この種別を受信するのはホスト所属ロール（`OW`/`AD`/`SA`/`VI`）のみで、本プロンプトはホスト視点の描画なので該当する。あわせて本文末尾に `→ 利用状況を確認` の導線を足し、`docs/04:1200` が定める「停止理由 + `S-038` への導線」を満たす表現にした。desktop の種別フィルタチップ行にも `[ AI 利用の停止 ]` を追加し（`承認待ち` 〜 `代理閲覧の開始` の 10 種で `docs/04` と一致）、tablet の折り返し行の説明も「nine」から「ten」に合わせた。フィクスチャの時点（AI 日次上限到達済み・停止中）自体は変更していない。
 - 関連 UC: UC-05 / UC-09 / UC-15 / UC-19 の通知経路。

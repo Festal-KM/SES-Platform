@@ -103,7 +103,7 @@ IMPORTANT: columns are dropped rather than made horizontally scrollable, and sec
 Layout: mobile portrait view, single column, edge-to-edge blocks.
 
 Order from top:
-1. Compact header: a hamburger affordance on the left, the wordmark `SES Platform` centered, `通知 5` on the right. Under it a single line `〇〇システム`.
+1. Compact header: a hamburger affordance on the left, the wordmark `SES Platform` centered, a usage indicator badge `AI 停止中` filled (same fact as the desktop header, no percentage, no currency) and `通知 5` on the right. Under it a single line `〇〇システム`.
 2. Announcement strip `お知らせ: 9/5 02:00-04:00 にメンテナンスを実施します`.
 3. Title row `ホーム` with the toggle `[x] 自分の担当のみ`.
 4. Section `要対応`, expanded, 10 rows. Each row is exactly three elements on one line: a status badge, the target, and the elapsed time, for example `< 送信失敗 > P-0138 高橋 健 3 日 2 時間`.
@@ -123,5 +123,6 @@ IMPORTANT: sections 1 to 4 are never collapsed on mobile, because folding them h
 - 並びの主キーは件数ではなく経過時間 × 取り返しのつかなさ。`送信失敗`（外部に届いたか不明）を最上位、`承認待ち` を次に置いた（`BR-21` / `BR-22` を前提にした順序）。
 - `満了が近い稼働` と `待機予定に戻った人材` / `後任募集の案件` を同じ画面に置くことで、⑥→① の還流の入口と出口が 1 枚で読める。
 - 🔴 2026-09-01 改訂（Iteration 5・オーケストレーター決定）: ヘッダに `AI 停止中` の filled badge を描く（`S-038:35` と同一の描き方）。`〇〇システム` の当月フィクスチャは AI 日次上限到達済み・停止中で全画面統一するため（`S-038` / `A-004` / `S-035` / `S-032` と同一時点）。バッジは事実のみを示し、パーセンテージや金額は出さない。旧文「80% 未満なのでヘッダに描かない」は本フィクスチャでは該当しない。
+- 🔴 2026-09-03 修正（Iteration 6・design-reviewer 5 回目の残指摘）: mobile.png プロンプトのヘッダ列挙が desktop / tablet と別に書き起こされていたため `AI 停止中` バッジが漏れていた。desktop / tablet と同じ表現でバッジを追加し、3 デバイスで整合させた（機械的修正。共有フィクスチャの時点は変更なし）。
 - AI ロールの確認待ちは業務上の呼び名で 1 行に出す（§8.4 / §9.2）。内部識別子は業務画面に出さない。
 - 関連 UC: UC-05（承認）/ UC-09（送信失敗の再送）/ UC-19（延長確認）の起点。
