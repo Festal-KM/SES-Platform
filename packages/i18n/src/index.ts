@@ -168,6 +168,19 @@ const ja = {
   'auditLogs.category.PERMISSION_CHANGE': '権限変更',
   'auditLogs.category.VISIBILITY_CHANGE': '公開範囲の変更',
   'auditLogs.category.IMPERSONATION': '代理閲覧',
+
+  // --- S-003 / S-004 役割別ホーム（docs/04 §S-003 / §S-004 / F-006。T-03-06）---
+  // 🔴 Phase 0 は空のダッシュボード（CLAUDE.md §5）。要対応キュー等は Phase 1、満了間近は
+  //    Phase 2 が文言を追加する。ここに置くのは Phase 0 から出る文言だけ。
+  'home.title': 'ホーム',
+  // docs/04 §S-003「空 / ローディング / エラー」の初回空の文言をそのまま使う。
+  'home.host.empty.title': 'まだ案件と人材が登録されていません',
+  // docs/04 §S-004「空 / ローディング / エラー」の初回空の文言をそのまま使う。
+  'home.partner.empty.title':
+    'まだ御社に公開された案件はありません。案件が公開されると、この画面に表示されます。',
+  // 🔴 F-006 AC-2: 常時表示。件数・存在の示唆を含めない（docs/04 §S-004 セクション 6 の文言）。
+  'home.partner.visibilityNotice':
+    'この画面には、御社が登録した人材と、御社に公開された案件・御社が作成した提案のみが表示されます。',
 } as const;
 
 /** 🔴 文言キーの単一の出所。存在しないキーはコンパイルエラーになる。 */

@@ -1,0 +1,10 @@
+/* apps/web/app/tailwind.css
+ * Tailwind CSS v4（CLAUDE.md §2 / docs/03 §5.2）。T-03-06 が最初の本格 UI として導入した。
+ *
+ * 🔴 既存の `globals.css`（S-001 / S-002 / S-041 が使う手書き CSS）はそのまま残す
+ *    （全面移行は別タスク。docs/sprints/SP-03 T-03-06 追加スコープ）。本ファイルは
+ *    `app/layout.tsx` で `globals.css` より先に読み込み、カスケードの後勝ちで
+ *    既存ページの見た目を変えない（同じセレクタが競合した場合は `globals.css` を優先させる）。
+ * 🔴 ブレークポイントは Tailwind の既定のまま独自定義しない（CLAUDE.md §13.3）。
+ */
+@import 'tailwindcss';
