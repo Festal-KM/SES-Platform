@@ -3,7 +3,7 @@
 > **Phase**: 2 / **前提**: SP-13 / SP-14 / **後続**: SP-16
 > ⚠️ **本ファイルは主要タスクの見出しまでの粗い計画である。** タスク単位の受け入れ基準は Phase 1 完了時の再計画で書く（`docs/dev-plan.md` §3.4）。
 > **一次資料**: `CLAUDE.md` §3.1 経路 3 / §13 / `docs/01` `BR-08` `BR-26` / `docs/02` `F-037`〜`F-041` / `docs/03` §3.9 / `docs/04` `S-024` `S-031`〜`S-033` / `docs/05` §4.4 C6 / §8.9 / §9.4
-> 🔴 **ワイヤーフレーム（着手条件）**: 画面を伴うタスク（`S-024` / `S-031`〜`S-033`）は、**対象画面の `docs/wireframes/{S-xxx|A-xxx}-*/` に画像が存在すること**を着手条件とする（`docs/dev-plan.md` §5 E-15 / §6.4 R-11）。**85 枚中 3 枚のみ生成済み**であり、無ければ `node scripts/generate-wireframes.mjs --screen <ID>` で当該 1 枚だけを生成する（🔴 **`--force` での全画面再生成は課金が発生するため行わない**）。**`S-032` は [Issue #17](https://github.com/Festal-KM/SES-Platform/issues/17)（停止通知の種別）の決着が生成の前提である。**
+> 🔴 **ワイヤーフレーム（着手条件）**: 画面を伴うタスク（`S-024` / `S-031`〜`S-033`）は、**対象画面の `docs/wireframes/{S-xxx|A-xxx}-*/` に画像が存在すること**を着手条件とする（`docs/dev-plan.md` §5 E-15 / §6.4 R-11）。**全 88 枚が生成済みである**（2026-09-03。[Issue #17](https://github.com/Festal-KM/SES-Platform/issues/17) = A の決着後に残り 82 枚を生成し、`docs/04` 改訂 5 の `S-046` 分 3 枚を追加した）。**本スプリントの着手条件は満たされている。** 画面の新設・改訂で不足が生じた場合のみ `node scripts/generate-wireframes.mjs --screen <ID>` で当該 1 枚だけを生成する（🔴 **`--force` での全画面再生成は課金が発生するため行わない**）。**`S-032` は [Issue #17](https://github.com/Festal-KM/SES-Platform/issues/17)（停止通知の種別）が = A で決着し、`AI 利用の停止` を追加した `docs/04` 改訂 4 の内容で生成済みである。**
 
 ---
 

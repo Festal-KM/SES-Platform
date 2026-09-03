@@ -4,7 +4,8 @@
 > **一次資料は `CLAUDE.md`**。本書と矛盾する場合は `CLAUDE.md` が正。
 > **入力**: `docs/01`（`BR-01`〜`BR-73`）/ `docs/02`（`F-001`〜`F-066`・`UC-01`〜`UC-25`）/ `docs/03`（外部依存の裏取りと `pm` 宛申し送り 1〜15）/ `docs/04`（`S-001`〜`S-045` / `A-001`〜`A-014`）/ `docs/05`（56 表・RLS C0〜C9・API #1〜#82 / API-A1〜A17・ジョブ・テスト戦略・`## TBD`）
 > **タスクの実行単位**: 1 タスク = 1 回の `/iterate`（`programmer` → `code-reviewer` → `e2e-tester`）。`CLAUDE.md` §8.3。
-> **最終改訂**: 2026-09-01（改訂 3。`design-reviewer` の必須指摘 5 件 + コメント 4 件を反映。🔴 **`HELD_SANDBOX_QUOTA` という下流での状態の発明を撤回し、上流で決着した `HELD_PROVIDER_QUOTA` / `sendHoldReasonKey='PROVIDER_QUOTA'` / `A-005` 項目 13〜15 の ID 参照へ差し替えた**）
+> **最終改訂**: 2026-09-03（改訂 4。`docs/04` 改訂 5 で新設された `S-046`（パスワード再設定）の画面実装を **SP-03 の `T-03-13`** として追加した。**Phase 0 は 31 → 32 タスク**（§3.1 の SP-03 を 12 → 13）。API（#5 / #5b）は T-03-03 で実装済みであり**追加は画面のみ**）
+> 改訂 3（2026-09-01）: `design-reviewer` の必須指摘 5 件 + コメント 4 件を反映。🔴 **`HELD_SANDBOX_QUOTA` という下流での状態の発明を撤回し、上流で決着した `HELD_PROVIDER_QUOTA` / `sendHoldReasonKey='PROVIDER_QUOTA'` / `A-005` 項目 13〜15 の ID 参照へ差し替えた**
 > **申し送りの参照表記**: 🔴 **`docs/NN` の申し送りは必ず `` `docs/NN` `<宛先エージェント>` 申し送り M `` の形式で書く**（付録 B）。宛先を省いた `` `docs/03` 申し送り 7 `` のような表記は、宛先の異なる 3 系統（`ui-design` / `program-design` / `pm`）が同じ連番を持つため誤読を生む。
 
 ---
@@ -72,7 +73,7 @@
 |---|---|---|---|---|---|
 | **SP-01** | `bootstrap` | モノレポ・ローカル環境・CI を立ち上げ、**Prisma Client Extension + RLS の二重防御が成立することを最初に実証する**（`docs/03` `pm` 申し送り 4）。あわせて外部依存の申請を初日に出す | 基盤（`F-004` の土台） | 9 | `pnpm-workspace.yaml` / `packages/config` / `packages/db` の骨格 / `docker-compose.yml` / CI / SES 申請 |
 | **SP-02** | `schema-isolation` | **全 56 表 + ビュー 4 本のスキーマと RLS ポリシー C0〜C9 を敷き、分離機構が「有効であること自体」を機械検証する**（`docs/05` §4.7。カタログ走査 13 本 + 二重防御 10 件）。経路 5 の当事者列と C9 も Phase 0 で入れる | `F-004` | 10 | `schema.prisma` / `packages/db/prisma/migrations/20260903050000_rls_policies/migration.sql` / `tests/isolation/**` / `seed:isolation` |
-| **SP-03** | `auth-audit-admin0` | 認証 2 系統（テナント / 運営者）・2FA・招待受諾・監査ログ・役割別ホーム・管理平面 Phase 0（テナント一覧・作成）・`UsageCounter` の計測フック・**起動時 DI の呼び出し側**を入れ、**Phase 0 の成功条件を E2E で証明する** | `F-001`(一部) `F-002` `F-003` `F-005` `F-006` `F-055` `F-056`(一覧) `F-026`(フック) | 12 | `apps/web` の認証・`/admin` 基盤 / `AuditLog` / `instrumentation.ts` と worker の起動検証 / `tests/e2e/isolation.spec.ts` |
+| **SP-03** | `auth-audit-admin0` | 認証 2 系統（テナント / 運営者）・2FA・招待受諾・監査ログ・役割別ホーム・管理平面 Phase 0（テナント一覧・作成）・`UsageCounter` の計測フック・**起動時 DI の呼び出し側**を入れ、**Phase 0 の成功条件を E2E で証明する** | `F-001`(一部) `F-002` `F-003` `F-005` `F-006` `F-055` `F-056`(一覧) `F-026`(フック) | 13 | `apps/web` の認証・`/admin` 基盤 / `AuditLog` / `instrumentation.ts` と worker の起動検証 / `tests/e2e/isolation.spec.ts` |
 
 ### 3.2 Phase 1（MVP）— SP-04〜SP-12
 
@@ -192,7 +193,7 @@ flowchart LR
 | **E-12** | **マネージド PostgreSQL の拡張可否**（`pg_bigm` / `pgroonga`。`U-8`） | 🔴 **検証済み（2026-09-02、SP-01 T-01-02）**。`pg_trgm` / `pg_bigm` は RDS / Aurora で利用可、`pgroonga` は不可 | SP-01（T-01-02 で検証済み） | SP-06（`F-009` の実装方式） | `docs/05` TBD-8。**`pg_trgm` を基本とし `pg_bigm` は精度不足時の代替として温存、`pgroonga` は不採用** |
 | **E-13** | **GuardDuty のスキャン所要時間の実測**（`U-7`。目標 2 分以内） | 実測。SP-05 内 | **SP-05**（T-05-05） | SP-05 の受け入れ判定 | `docs/03` `pm` 申し送り 6 / `docs/05` TBD-7。**2 分を超えたら目標値の見直しを人間に提起する** |
 | **E-14** | **AWS Pricing Calculator による固定費の実額確定**（`U-9` / `U-10`） | 1 日 | **Phase 0 完了時**（T-12-08 で `docs/03` §7.4 を更新） | SP-20（`A-011` の金額） | `docs/03` `pm` 申し送り 8 |
-| **E-15** | 🔴 **ワイヤーフレーム画像（全 85 枚）の生成** — **現在 3 枚のみ生成済み**。残り 82 枚は [Issue #17](https://github.com/Festal-KM/SES-Platform/issues/17)（`S-032` の停止通知の種別が `docs/04` に無い）の決着後に生成する | 人間の回答待ち + 生成ジョブ（1 枚ごとに課金。`CLAUDE.md` §8.2） | 🔴 **SP-01 と並行**（Issue #17 の督促）。**画面実装タスクの着手前に、その画面の 1 枚が生成済みであること** | SP-03 以降のすべての画面タスク（`S-xxx` / `A-xxx`） | `CLAUDE.md` §8.2 / [Issue #17](https://github.com/Festal-KM/SES-Platform/issues/17)。**ワイヤーフレームは `programmer` の入力である**（`docs/04` の記述だけでは画面タスクの受け入れ判定ができない） |
+| **E-15** | **ワイヤーフレーム画像（全 88 枚）の生成**（`docs/04` 改訂 5 の `S-046` 追加で **85 → 88 枚**） | 🔴 **完了（2026-09-03）。全 88 枚が生成済み** — [Issue #17](https://github.com/Festal-KM/SES-Platform/issues/17)（`S-032` の停止通知の種別が `docs/04` に無い）が **= A** で決着したため残り 82 枚を生成し、あわせて `S-046` の 3 枚（desktop / tablet / mobile）を追加生成した | SP-01 と並行して着手し **2026-09-03 に完了**。**以後は画面が新設・改訂されるたびに `--screen` で 1 枚ずつ生成する**（🔴 **`--force` での全画面再生成は課金が発生するため行わない**） | **解消**（SP-03 以降のすべての画面タスクの着手条件は満たされている） | `CLAUDE.md` §8.2 / [Issue #17](https://github.com/Festal-KM/SES-Platform/issues/17)。**ワイヤーフレームは `programmer` の入力である**（`docs/04` の記述だけでは画面タスクの受け入れ判定ができない） |
 
 ### 5.1 外部依存の着手タイムライン
 
@@ -201,7 +202,7 @@ SP-01 ├─ E-1 SES ドメイン検証 → 本番アクセス申請（初回応
       ├─ E-2 AWS アカウント整備（開発用）                     ← 2026-09-02 完了。本番 / sandbox の分離は SP-12 へ
       ├─ E-3 Anthropic API キー                             ← 🔴 未着手（ユーザー作業）。SP-07 の着手条件
       ├─ E-12 PostgreSQL 拡張の可否検証                       ← 2026-09-02 決着
-      └─ E-15 Issue #17 の督促 → ワイヤーフレーム残り 82 枚の生成  ← 🔴 画面タスクの入力
+      └─ E-15 Issue #17 の督促 → ワイヤーフレーム全 88 枚の生成    ← 2026-09-03 完了（82 枚 + S-046 の 3 枚）
 SP-05 └─ E-13 GuardDuty スキャン所要時間の実測
 SP-07 └─ E-3 Anthropic API キーの取得（着手条件。未取得なら督促）
 SP-08 └─ E-9 Issue #5 の回答（着手前に督促。未回答なら暫定値）
@@ -271,7 +272,7 @@ SP-18 └─ E-7 DocuSign Go-Live 申請  ← 🔴 Phase 3 の中盤まで
 | R-08 | **スキルシート解析の対象範囲が広がりすぎる** | Phase 2 が膨らむ | 画像 PDF / 画像ファイルは「自動読み取りに対応していない」と**明示**し、アップロードは受け付けるが抽出は行わない（`docs/03` §3.5.2 / `docs/03` `ui-design` 申し送り 8）。**精度目標を受け入れ基準に置かない**（`A-15`） |
 | R-09 | **`gate.run` の失敗ジョブが `GATE_RUNNING` のまま滞留する** | 提案が承認にも送信にも進めず、利用者は理由が分からない | 🔴 **失敗した `gate.run` の再実行手順**（`docs/05` §9.10。[Issue #16](https://github.com/Festal-KM/SES-Platform/issues/16) で決着）を **T-07-08（API #39）の受け入れ基準に必ず含める**。入口はテナント利用者の #39 のみ。**運営者向けの retry 操作は作らない** |
 | R-10 | **`CLAUDE.md` §8.7 の上流更新漏れ** | 下流エージェントが古い前提で動き、広範囲のやり直しになる | 仕様変更が出たら**その場で**起点ドキュメントとそれより下流をすべて更新する。スプリント中に判明した差分は `docs/sprints/` にタスクとして追加し、実装済みコードとの差分を放置しない |
-| R-11 | 🔴 **ワイヤーフレーム画像の未生成**（85 枚中 3 枚のみ。E-15） | **画面タスクの入力が欠けたまま `programmer` が着手すると、`docs/04` の文章から各自が別々の画面を起こす**。後から差し替えると UI 実装のやり直しになる | ①[Issue #17](https://github.com/Festal-KM/SES-Platform/issues/17)（`S-032` の停止通知の種別）を **SP-01 と並行して督促する** ②決着後に `node scripts/generate-wireframes.mjs` で残り 82 枚を生成する ③🔴 **画面を伴うタスクの着手条件に「対象画面の `docs/wireframes/{S-xxx\|A-xxx}-*/` に画像が存在すること」を置く**（無ければ `--screen` で当該 1 枚だけ生成する。**`--force` での全画面再生成は課金が発生するため行わない**） |
+| R-11 | ~~🔴 **ワイヤーフレーム画像の未生成**（85 枚中 3 枚のみ。E-15）~~ — 🔴 **解消済み（2026-09-03）。全 88 枚が生成済み**（E-15） | **画面タスクの入力が欠けたまま `programmer` が着手すると、`docs/04` の文章から各自が別々の画面を起こす**。後から差し替えると UI 実装のやり直しになる | ①[Issue #17](https://github.com/Festal-KM/SES-Platform/issues/17)（`S-032` の停止通知の種別）は **= A で決着**（`docs/04` 改訂 4）②`node scripts/generate-wireframes.mjs` で残り 82 枚を生成し、`docs/04` 改訂 5 の `S-046` 分 3 枚を追加生成した（**85 → 88 枚**）③🔴 **画面を伴うタスクの着手条件（「対象画面の `docs/wireframes/{S-xxx\|A-xxx}-*/` に画像が存在すること」）は解消後も残す** — **画面が新設・改訂されるたびに同じ欠落が再発するため**（`S-046` がその実例。無ければ `--screen` で当該 1 枚だけ生成する。**`--force` での全画面再生成は課金が発生するため行わない**） |
 
 ---
 
@@ -335,6 +336,11 @@ TARGET: SP-01        # または「Phase 1」
 | 2026-09-03 | 🔴 **RLS の定義を Prisma migration に一元化**（T-02-06。`packages/db/rls/010_rls.sql` を廃止） | 🔴 **既存の不備の是正である。** RLS をマイグレーション外の SQL ファイルに置いていたため、**`prisma migrate deploy` だけを行うローカル環境と実デプロイ先に RLS が入らない**経路があった（**K-1 / K-2 の第一防御が環境によって静かに欠落する**。§6.1）。以後、ポリシーの唯一の出所は `packages/db/prisma/migrations/20260903050000_rls_policies/migration.sql`。**§3.1 の SP-02 成果物欄も同パスに修正した** | 本書 §3.1 / §6.1 K-1 / K-2 / T-02-06 |
 | 2026-09-03 | **`packages/domain` の `transition()` を SP-02（T-02-10）で前倒し実装** | **配置は `docs/05` §10.3 / §15.3 の設計どおりであり、設計変更ではない**（本計画が状態機械の中身を後続スプリントに置いていたのを、依存関係に合わせて前倒ししただけ）。理由: `seed:isolation` が 🔴 **「DB に直接 INSERT せず `transition()` を通して状態を進める」**（不整合な状態を作らない）ことを要求するため | `docs/05` §10.3 / §15.3 / T-02-10 |
 | 2026-09-03 | **新規 DB ロール `app_assignment_owner_probe` を追加**（T-02-08） | 当事者列の継承トリガが親（`engineers`）を引くための最小権限ロール。**`engineers` の 3 列の `SELECT` のみ**を持ち、`BYPASSRLS` を持たない。**T-02-09 のロール走査（#5 / #10）の検査対象に含めた**（§4.7 の除外リストを広げずに済ませる）。🔴 **[Issue #27](https://github.com/Festal-KM/SES-Platform/issues/27) の後半（worker の `skill_sheets` 書き込み文脈）は未決であり、SP-07 着手時に `program-design` で設計する**（§9） | [Issue #27](https://github.com/Festal-KM/SES-Platform/issues/27) / `docs/05` `P-A-19` / T-02-08 |
+| 2026-09-03 | **T-03-01 テナント認証と `resolveTenantCtx` が完了**（`bfcb7d3`） | Auth.js Credentials + `POST /api/auth/signin` / `signout` + `resolveTenantCtx` の接続。`S-001` の画面と `withAuthLookup(email)` による**該当 1 行のみ可視のメール照合**を含む。分離テスト `S-001` 系が green | `docs/sprints/SP-03-auth-audit-admin0.md` T-03-01 |
+| 2026-09-03 | **T-03-02 2 要素認証（`OWNER` / `ADMIN` 必須）が完了**（`b447986`） | TOTP + リカバリコード + `TwoFactorCredential`（暗号化・ハッシュ）。🔴 **必須の強制は middleware ではなく `resolveTenantCtx`** に置き、未設定の `OWNER` / `ADMIN` が `withTenant` に到達できない（= 業務データを 1 件も取得できない）ことを `tests/isolation/two-factor.test.ts` で証明した | `docs/sprints/SP-03-auth-audit-admin0.md` T-03-02 |
+| 2026-09-03 | **`docs/04` 改訂 4（[Issue #17](https://github.com/Festal-KM/SES-Platform/issues/17) = 選択肢 A）** — `S-032` の通知種別に `AI 利用の停止` を 1 種追加（`F-027 AC-5` の停止通知の受け皿。`上限接近` とは別種別） | **画面 ID・機能 ID の追加削除は無く、本計画のスプリント配置・タスク数に変更なし。** 受け皿は既存の SP-15（`F-039` 通知）/ SP-07・SP-10（`F-027` 上限ガード）のまま | [Issue #17](https://github.com/Festal-KM/SES-Platform/issues/17) / `docs/04` 改訂 4 |
+| 2026-09-03 | **`docs/04` 改訂 5（[Issue #30](https://github.com/Festal-KM/SES-Platform/issues/30) 既定値②）** — `S-046`（パスワード再設定）を新設。`S-001` の「パスワードをお忘れですか」リンクの遷移先が未採番だった**上流の欠落の解消**（`CLAUDE.md` §8.7）。関連機能は `F-002`（招待）ではなく **`F-003`**（`docs/05` §6.3 の逆引き対応表と整合） | 🔴 **SP-03 に `T-03-13`（`S-046` の画面実装、S）を新設した。** API（#5 / #5b）は **T-03-03 で実装済み**であり、**追加は画面のみ**（`/password-reset` が 404 のままだった）。**Phase 0 は 31 → 32 タスク**（§3.1 の SP-03 を 12 → 13 に更新） | [Issue #30](https://github.com/Festal-KM/SES-Platform/issues/30) / `docs/04` 改訂 5 / `docs/05` §6.3 #5・#5b |
+| 2026-09-03 | 🔴 **ワイヤーフレームが全枚数そろった（85 → 88 枚体制）** — [Issue #17](https://github.com/Festal-KM/SES-Platform/issues/17) の決着後に残り 82 枚を生成し、`docs/04` 改訂 5 の `S-046` 分 3 枚（desktop / tablet / mobile）を追加生成した | **§5 E-15 / §6.4 R-11 が想定した「画面タスクの入力が欠けたまま着手する」リスクは解消した**（着手条件そのものは残す。**新設画面が出るたびに 1 枚ずつ生成する運用は継続**）。**`S-046` の 3 枚は T-03-13 の着手条件を満たしている** | [Issue #17](https://github.com/Festal-KM/SES-Platform/issues/17) / `CLAUDE.md` §8.2 / 本書 §5 E-15 / §6.4 R-11 |
 
 ---
 

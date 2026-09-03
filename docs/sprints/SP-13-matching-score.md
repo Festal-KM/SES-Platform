@@ -3,7 +3,7 @@
 > **Phase**: 2 / **前提**: SP-12（Phase 1 完了） / **後続**: SP-15
 > ⚠️ **本ファイルは主要タスクの見出しまでの粗い計画である。** タスク単位の受け入れ基準は **Phase 1 完了時の再計画**で書く（`docs/dev-plan.md` §3.4 / `PM-A-08`）。理由: Phase 1 の実測（AI 原価・検索性能）と [Issue #3](https://github.com/Festal-KM/SES-Platform/issues/3) の回答がタスク分割を変えるため。
 > **一次資料**: `CLAUDE.md` §5（Phase 2 の成功条件）/ §9-9 / §12.2 / §12.3 / `docs/02` `F-029`〜`F-031` / `F-017`（Phase 2 差分）/ `docs/03` §7.3 / `docs/04` `S-016` `S-040` / `docs/05` §7.1 / §9.3
-> 🔴 **ワイヤーフレーム（着手条件）**: 画面を伴うタスク（`S-016` / `S-040`）は、**対象画面の `docs/wireframes/{S-xxx|A-xxx}-*/` に画像が存在すること**を着手条件とする（`docs/dev-plan.md` §5 E-15 / §6.4 R-11）。**85 枚中 3 枚のみ生成済み**であり、無ければ `node scripts/generate-wireframes.mjs --screen <ID>` で当該 1 枚だけを生成する（🔴 **`--force` での全画面再生成は課金が発生するため行わない**）。
+> 🔴 **ワイヤーフレーム（着手条件）**: 画面を伴うタスク（`S-016` / `S-040`）は、**対象画面の `docs/wireframes/{S-xxx|A-xxx}-*/` に画像が存在すること**を着手条件とする（`docs/dev-plan.md` §5 E-15 / §6.4 R-11）。**全 88 枚が生成済みである**（2026-09-03。[Issue #17](https://github.com/Festal-KM/SES-Platform/issues/17) = A の決着後に残り 82 枚を生成し、`docs/04` 改訂 5 の `S-046` 分 3 枚を追加した）。**本スプリントの着手条件は満たされている。** 画面の新設・改訂で不足が生じた場合のみ `node scripts/generate-wireframes.mjs --screen <ID>` で当該 1 枚だけを生成する（🔴 **`--force` での全画面再生成は課金が発生するため行わない**）。
 
 ---
 
