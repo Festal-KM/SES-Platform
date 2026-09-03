@@ -33,6 +33,10 @@ const VALID_SESSION = {
   userId: 'u1',
   role: 'SALES',
   lifecycleState: 'ACTIVE',
+  // 🔴 T-03-02: `MainSession` の必須フィールド（docs/05 §6.2）。
+  //    `SALES` は 2FA 必須ロールではないため未設定でも ctx を作れる（`F-003 AC-2` の但し書き）。
+  //    ゲートの振る舞いそのものは `two-factor-gate.test.ts` が固定する。
+  twoFactor: 'NOT_ENROLLED',
 } as const;
 
 describe('AuthenticatedTenantCtx はブランド型であり、resolveTenantCtx 以外が生成できない', () => {

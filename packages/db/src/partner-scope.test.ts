@@ -164,6 +164,7 @@ async function partnerCtx(): Promise<AuthenticatedTenantCtx> {
       userId: '01930000-0000-7000-8000-0000000000d2',
       role: 'PARTNER_SALES',
       lifecycleState: 'ACTIVE',
+      twoFactor: 'NOT_ENROLLED',
     },
     { deviceKind: 'api' },
   );
@@ -177,6 +178,7 @@ async function hostCtx(): Promise<AuthenticatedTenantCtx> {
       userId: '01930000-0000-7000-8000-0000000000d1',
       role: 'SALES',
       lifecycleState: 'ACTIVE',
+      twoFactor: 'NOT_ENROLLED',
     },
     { deviceKind: 'api' },
   );

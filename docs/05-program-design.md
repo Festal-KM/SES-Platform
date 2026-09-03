@@ -1419,6 +1419,8 @@ CREATE FUNCTION app_actor_user_id() RETURNS uuid LANGUAGE sql STABLE AS
 
 🔴 **`INSERT ... RETURNING` には `SELECT` ポリシーが適用される**（PostgreSQL の仕様）。Prisma の `create()` は常に `RETURNING` を伴うため、「書けるが自分では読み返せない」行は `create()` では作れない。該当するのは `notifications`（他人宛の通知。`INSERT` は C1 式 / `SELECT` は C7 = 本人のみ）と `audit_logs`（パートナーの操作の記録。`INSERT` は C1 / `SELECT` は C2 = ホストのみ）の 2 表であり、**いずれも `createMany()`（`RETURNING` 無し）で書く**（ポリシーを緩めて解決しない）。回帰は `tests/isolation/rls-classes.test.ts` が両方向（`createMany` は成功 / `create` は失敗）で固定する。
 
+🔴 **`readRecentTwoFactorFailures`（§16.1 の 2FA スロットル）のパートナー次元緩和（ホスト文脈への限定切替。暫定）と、恒久解（`audit_logs` への自己参照 `SELECT` ポリシー追加 = 本節のクラス割り当ての変更）は Issue #29 で確認中。**
+
 🔴 **`WITH CHECK` の既定は `USING` と同じ式**。ただし **`engineers` / `memberships` / `engineer_shares` / `users` の 4 表は C3 の式に絞る**（自分の所属としてしか書けない）。継承列を持つ表は**トリガが親の値で上書きする**ためオーナーを偽装できず、かつ**見えない親に子をぶら下げられない**（トリガ内の親 `SELECT` にも RLS が効く）。
 
 🔴 **越境の判断をアプリの `if` に一切書かない**（`docs/03` §4.3.2）。`ProjectVisibility` / `ThreadParticipant` / `EngineerShare` は**それぞれ越境の根拠となる唯一の表**であり、行の有無がそのまま見える／見えないになる。**経路 5 の根拠は 4 表の当事者列そのもの**であり、「当事者だから見せる」を業務ロジック側の `if` で書かない（`docs/02` 申し送り 13-③）。
@@ -2528,8 +2530,8 @@ POST /api/webhooks/{provider}
 ```ts
 // packages/db/src/crypto.ts
 export class EncryptedString {
-  static encrypt(plain: string, aad: { tenantId: string; column: string }): EncryptedString;
-  decrypt(aad: { tenantId: string; column: string }): string;   // 🔴 復号は明示呼び出しのみ
+  static encrypt(plain: string, aad: { scopeId: string; column: string }): EncryptedString;
+  decrypt(aad: { scopeId: string; column: string }): string;   // 🔴 復号は明示呼び出しのみ
   toString(): string { return '[REDACTED]'; }                    // 🔴
   toJSON(): string { return '[REDACTED]'; }                      // 🔴
   [Symbol.for('nodejs.util.inspect.custom')]() { return '[REDACTED]'; }  // 🔴 console.log 対策
@@ -2538,7 +2540,7 @@ export class EncryptedString {
 | 項目 | 設計 |
 |---|---|
 | **方式** | AES-256-GCM（`node:crypto`）。保存形式 `v1:{keyId}:{iv}:{ct}:{tag}` |
-| **AAD** | 🔴 `tenantId + ':' + columnName`。テナント A の暗号文をテナント B の行にコピーしても復号に失敗する |
+| **AAD** | 🔴 `scopeId + ':' + columnName`。**`scopeId` は行の帰属主体の ID**（テナント帰属行は `tenantId`、`two_factor_credentials` は `subjectId` — §3.3 の列コメント「AAD = subjectId + 'totp_secret'」と整合。`PLATFORM_USER` 行は `tenant_id IS NULL` のため `tenantId` を AAD にできない）。同一主体の暗号文を別の主体の行にコピーしても復号に失敗する |
 | **適用箇所** | `TenantEsignConnection.credentialEncrypted`（DocuSign リフレッシュトークン）/ `.connectHmacKeysEncrypted` / `.webhookPathSecretEncrypted`、`TwoFactorCredential.secretEncrypted`、招待トークン（トークンはハッシュなので暗号化不要だが、リンク生成のための平文は保持しない）。**DocuSign のアクセストークンは DB に置かない**（§8.4） |
 | **鍵ローテーション** | ①新鍵を `TOKEN_ENCRYPTION_KEY` + `TOKEN_ENCRYPTION_KEY_ID`、旧鍵を `TOKEN_ENCRYPTION_KEY_PREVIOUS`（`{keyId}:{base64}`）に置く ②新規書き込みは新鍵 ③`crypto.rotate-keys` ジョブ（§9.10）が全件を新鍵で再暗号化 ④旧鍵を外す。**②〜④の間は両方の鍵で復号できる** |
 | **ログ・エラー追跡へのマスキング** | 🔴 **3 重**。①`EncryptedString` の `toJSON` / `toString` / `inspect` ②pino の `redact`（`packages/config/redact.ts` の denylist）③Sentry の `beforeSend` に**同じ denylist**を適用 + `sendDefaultPii: false` |
@@ -3460,6 +3462,7 @@ s3://{S3_BUCKET}/
 AppError（抽象。code / httpStatus / userMessageKey / logLevel を持つ）
 ├── ValidationError                     400  'error.validation'
 ├── AuthenticationError                 401  'error.unauthenticated'
+│   └── TwoFactorCodeInvalidError       401  'error.2fa.invalidCode'
 ├── ImpersonationExpiredError           401  'error.impersonation.expired'
 ├── ForbiddenError                      403  'error.forbidden'
 │   ├── ViewerNotAllowedError           403  'error.viewer.notAllowed'
@@ -3477,6 +3480,7 @@ AppError（抽象。code / httpStatus / userMessageKey / logLevel を持つ）
 ├── QuotaExceededError                  429
 │   ├── AiCostLimitExceededError        429  'error.quota.aiDaily'
 │   └── EmailRateLimitExceededError     429  'error.quota.email'
+├── TwoFactorThrottledError             429  'error.2fa.throttled'   🔴 `QuotaExceededError` と同じ 429 段。`Retry-After` ヘッダで残り秒数。`retryable: true`
 └── InternalError                       500  'error.internal'
     ├── AiRoleFailedError               500（ジョブ内で捕捉。API には出さない）
     ├── ConnectorError                  502  'error.external'
@@ -3539,6 +3543,8 @@ export class InvalidStateTransitionError extends AppError {
 | `action` | フック箇所 | `actorKind` |
 |---|---|---|
 | `auth.login` / `auth.logout` / `auth.login_failed` | Auth.js のコールバック（主平面・管理平面の両方） | `USER` / `PLATFORM_USER` |
+| `auth.2fa.setup_started` / `auth.2fa.enabled` / `auth.2fa.verified` / `auth.2fa.recovery_used` / `auth.2fa.failed` | 2FA の設定開始・有効化・検証成功・リカバリコード使用・失敗。**登録・確定と同一トランザクションで記録** | `USER` / `PLATFORM_USER` |
+| `auth.2fa.throttled` | ロック中の拒否。🔴 **`auth.2fa.failed` とは別の action**（スロットル窓の母集団にロックの拒否自体を含めると自己延長するため） | `USER` / `PLATFORM_USER` |
 | 🔴 `engineer.view` / `skill_sheet.view` / `skill_sheet.download` / `project.view` | `#17` / `#21` / `#20` / `#27`。🔴 **DL は `issueDownloadUrl` の中で書く**（経路が 1 本なのでモバイル・共有 URL でも漏れない。`BR-28` 欠落 0 件） | `USER` |
 | `*.create` / `*.update` / `*.delete` | `withApiRoute` の `audit` オプション（各ハンドラで `action` を宣言） | `USER` / `SYSTEM` |
 | `proposal.submit` / `proposal.resend` | 送信ジョブの ⑥（§10.2） | `SYSTEM`（`summary.requestedBy` に人間を記録） |
@@ -3551,6 +3557,8 @@ export class InvalidStateTransitionError extends AppError {
 | `ai.approval_mode_change` / `ai.model_change` / `match_weight_change` | `#66` / `#67` / `#68`。🔴 **設定の書き込みと同一トランザクション**（`docs/03` §4.20.1-②） | `USER` |
 | `retention.delete` / `tenant.purge` | §9.7 のジョブ。🔴 **件数と対象種別のみ。削除された内容を記録しない** | `SYSTEM` |
 | `state.invalid_transition` | `transition()` の例外ハンドラ | 発生元に従う |
+
+🔴 **存在しないアカウントへのサインイン試行は `audit_logs` に書かない**（テナントが確定できず分離キー C1 に書けないため。`F-003 AC-3` の解釈確定）。
 
 🔴 **`AuditLog` はアプリケーションログではない**（`docs/03` §4.10）。DB のテーブルであり、pino / Sentry と同じ経路に流さない。**編集・削除は DB 権限で禁止**（§3.8）。
 

@@ -29,3 +29,23 @@ export type SignInBodyIsolationGuard = AssertNoIsolationKeys<SignInBody>;
 
 /** 🔴 実行時の対照（型テストの空振り検知）。モジュール読み込み時に 1 回だけ走る。 */
 assertNoIsolationKeys(Object.keys(signInBodySchema.shape), 'signInBodySchema');
+
+/**
+ * `POST /api/auth/2fa/verify`（docs/05 §6.3 #2）の body。
+ *
+ * 🔴 受け取るのは `code` だけである。**「誰の 2FA を検証するか」を入力で指定させない**
+ *    （主体はセッションからのみ決まる。CLAUDE.md §3.1 / `BR-03`）。
+ * 🔴 TOTP（6 桁）とリカバリコード（区切り付き）の両方が来るため、長さの上限だけを置き、
+ *    形式の判定は検証側（`totp.ts` / `recovery-codes.ts`）が行う。
+ */
+const MAX_TWO_FACTOR_CODE_LENGTH = 64;
+
+export const twoFactorVerifyBodySchema = z.object({
+  code: z.string().trim().min(1).max(MAX_TWO_FACTOR_CODE_LENGTH),
+});
+
+export type TwoFactorVerifyBody = z.infer<typeof twoFactorVerifyBodySchema>;
+
+export type TwoFactorVerifyBodyIsolationGuard = AssertNoIsolationKeys<TwoFactorVerifyBody>;
+
+assertNoIsolationKeys(Object.keys(twoFactorVerifyBodySchema.shape), 'twoFactorVerifyBodySchema');

@@ -8,8 +8,8 @@
 //
 // 🔴 分離キーはセッション（＝認証）から、ロールとライフサイクル状態は DB から確定する。
 //    リクエストの body / query / path は 1 バイトも参照しない（CLAUDE.md §3.1 / BR-03）。
-import type { AuthenticatedTenantCtx, DeviceKind } from '@ses/db';
-import { loadTenantMembership, resolveTenantCtx } from '@ses/db';
+import type { AuthenticatedTenantCtx, DeviceKind, TenantMembershipFacts } from '@ses/db';
+import { loadTenantMembership, resolveTenantCtx, twoFactorSessionState } from '@ses/db';
 import type { TenantSessionClaims } from './claims';
 
 /** ctx に載せてよいリクエスト由来の情報。🔴 分離キーを含めない。 */
@@ -40,7 +40,31 @@ export async function buildTenantCtx(
       userId: claims.userId,
       role: facts.role,
       lifecycleState: facts.lifecycleState,
+      // 🔴 DB の事実（設定済みか）とセッションの事実（このセッションで提示したか）を
+      //    `twoFactorSessionState`（packages/db）で 1 つに畳む。ここで真偽値を自前に
+      //    組み合わせない（畳み方が 2 箇所に分かれると、片方だけ緩む）。
+      twoFactor: twoFactorSessionState({
+        enrolled: facts.twoFactorEnrolled,
+        verifiedInSession: claims.twoFactorVerified === true,
+      }),
     },
     { deviceKind: meta.deviceKind },
   );
+}
+
+/**
+ * 🔴 ロール・テナント状態・2FA の設定状態を DB から確定するだけの経路（ctx は作らない）。
+ *
+ * `POST /api/auth/2fa/*`（docs/05 §6.3 #2 / #3）は「2FA 未設定の `OWNER`」が使う操作であり、
+ * `buildTenantCtx` は定義上そこで 403 を投げる。したがって**設定操作は ctx を作らずに
+ * 所属の有効性だけを確かめる**必要がある。`loadTenantMembership` の呼び出し元を
+ * 本ファイル 1 つに保つため（`tests/static/auth-db-callers.test.ts`）、その入口をここに置く。
+ *
+ * 🔴 これは認可の緩和ではない: 戻り値は事実だけで、`AuthenticatedTenantCtx` は生成されない。
+ *    業務データに触れる経路（`withTenant`）は依然として開かない。
+ */
+export async function loadAuthFacts(
+  claims: TenantSessionClaims,
+): Promise<TenantMembershipFacts | null> {
+  return loadTenantMembership(claims);
 }

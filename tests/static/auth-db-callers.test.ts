@@ -75,15 +75,32 @@ function filesMentioning(identifier: string): string[] {
     .sort();
 }
 
-/** 🔴 それぞれの関数を呼んでよい場所（docs/05 §4.3 / §4.4.2 / §16.1）。 */
+/** 🔴 それぞれの関数を呼んでよい場所（docs/05 §4.3 / §4.4.2 / §8.6 / §16.1）。 */
 const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
   // 認証コンテキストの唯一の生成箇所。
   resolveTenantCtx: ['apps/web/lib/auth/tenant-context.ts'],
   loadTenantMembership: ['apps/web/lib/auth/tenant-context.ts'],
   // テナント確定前の限定スコープ（docs/05 §4.4.2）。サインインの照合だけが使う。
   withAuthLookup: ['apps/web/lib/auth/credentials.ts'],
-  // 認証の成否の記録（docs/05 §16.1）。サインイン / サインアウトだけが使う。
-  recordAuthAuditLog: ['apps/web/lib/auth/credentials.ts'],
+  // 認証の成否の記録（docs/05 §16.1）。サインイン / サインアウトと 2FA の失敗記録だけが使う。
+  recordAuthAuditLog: [
+    'apps/web/lib/auth/credentials.ts',
+    'apps/web/lib/auth/two-factor.ts',
+  ],
+  // 🔴 T-03-02: `two_factor_credentials` に触れる経路（docs/05 §6.3 #2 / #3）。
+  //    RLS の C7 SELF が本人の 1 行に閉じているが、呼び出し元も 1 ファイルに固定する
+  //    （「2FA を無効化する API」が別の場所から生えるのを防ぐ）。
+  readTwoFactorCredential: ['apps/web/lib/auth/two-factor.ts'],
+  // 🔴 監査ログの自己参照カウント（試行スロットル）。ホスト文脈で読む唯一の経路であり、
+  //    ここを増やすと「本人以外の監査ログを数える」実装が書けてしまう。
+  readRecentTwoFactorFailures: ['apps/web/lib/auth/two-factor.ts'],
+  startTwoFactorEnrollment: ['apps/web/lib/auth/two-factor.ts'],
+  confirmTwoFactorEnrollment: ['apps/web/lib/auth/two-factor.ts'],
+  consumeRecoveryCode: ['apps/web/lib/auth/two-factor.ts'],
+  // 🔴 T-03-02: 秘匿値の暗号化（docs/05 §8.6）。暗号化・復号を行ってよい場所を固定する。
+  EncryptedString: ['apps/web/lib/auth/two-factor.ts'],
+  // 🔴 鍵の注入は起動時の 1 箇所だけ（CLAUDE.md §11.1 / docs/05 §13.1）。
+  configureTokenEncryption: ['apps/web/lib/db/bootstrap.ts'],
 };
 
 describe('認証コンテキストを組み立てられる場所を固定する（CLAUDE.md §3.1 / F-003 AC-1）', () => {

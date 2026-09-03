@@ -20,6 +20,7 @@
 //    リクエストの body / query / path を引数に取らない（CLAUDE.md §3.1 / BR-03 / F-003 AC-1）。
 import { TENANT_ROLES, type TenantLifecycleState, type TenantRole } from './context.js';
 import { TENANT_LIFECYCLE_STATES } from '@ses/domain';
+import { TWO_FACTOR_SUBJECT_TYPE_USER } from './two-factor.js';
 import { runInTenantTransaction } from './with-tenant.js';
 
 /**
@@ -38,6 +39,12 @@ export type TenantIdentity = {
 export type TenantMembershipFacts = {
   readonly role: TenantRole;
   readonly lifecycleState: TenantLifecycleState;
+  /**
+   * 🔴 T-03-02: `TwoFactorCredential.confirmedAt IS NOT NULL`（docs/05 §6.2 / `F-003 AC-2`）。
+   *    ロールと同じく**リクエストごとに DB から確定する**（セッションに焼き込まない）。
+   *    焼き込むと、2FA を解除しても既存セッションが生き続ける。
+   */
+  readonly twoFactorEnrolled: boolean;
 };
 
 function isTenantRole(value: string): value is TenantRole {
@@ -85,7 +92,23 @@ export async function loadTenantMembership(
       if (tenant === null) return null;
       if (!isTenantLifecycleState(tenant.lifecycleState)) return null;
 
-      return { role: membership.role, lifecycleState: tenant.lifecycleState };
+      // 🔴 2 要素認証の設定状態（docs/05 §6.2 / F-003 AC-2）。RLS の C7 SELF により、
+      //    ここで読めるのは**本人の行だけ**である（`subject_id = app_actor_user_id()` かつ
+      //    `subject_type = 'USER'`）。他人の設定状態は 1 行も見えない。
+      const twoFactor = await tx.twoFactorCredential.findFirst({
+        where: {
+          subjectId: identity.userId,
+          subjectType: TWO_FACTOR_SUBJECT_TYPE_USER,
+          confirmedAt: { not: null },
+        },
+        select: { id: true },
+      });
+
+      return {
+        role: membership.role,
+        lifecycleState: tenant.lifecycleState,
+        twoFactorEnrolled: twoFactor !== null,
+      };
     },
   );
 }

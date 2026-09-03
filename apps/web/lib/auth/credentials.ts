@@ -10,9 +10,16 @@
 //
 // 🔴 本モジュールは Next.js / Auth.js に依存しない（`@ses/db` と argon2 のみ）。
 //    結合テスト（tests/isolation）がサーバを立てずに同じ経路を実行できるようにするため。
-import { recordAuthAuditLog, withAuthLookup, type DeviceKind, type TenantIdentity } from '@ses/db';
+import {
+  recordAuthAuditLog,
+  requiresTwoFactor,
+  withAuthLookup,
+  type DeviceKind,
+  type TenantIdentity,
+} from '@ses/db';
 import { DUMMY_PASSWORD_HASH, verifyPassword } from './password';
 import type { TenantSessionClaims } from './claims';
+import { loadAuthFacts } from './tenant-context';
 
 /** docs/05 §16.1 のうち本タスクが書き込む 3 種。 */
 export const AUTH_AUDIT_ACTIONS = {
@@ -133,6 +140,33 @@ export async function authenticateCredentials(
   });
 
   return { outcome: 'AUTHENTICATED', claims: identity };
+}
+
+/** docs/05 §6.3 #1 の応答 `{ next }`。**UI の遷移先の手がかりであり、認可ではない。** */
+export type SignInNext = '2fa' | 'home';
+
+/**
+ * サインイン成功後の遷移先を決める（docs/05 §6.3 #1）。
+ *
+ * - 2FA を設定済み → `'2fa'`（このセッションでの提示がまだ必要）
+ * - 未設定でも `OWNER` / `ADMIN` → `'2fa'`（設定しないと業務データに到達できない。`BR-30`）
+ * - それ以外 → `'home'`
+ *
+ * 🔴 これは**表示の手がかり**にすぎない。値が古くても境界は緩まない ——
+ *    実際の遮断は `resolveTenantCtx`（docs/05 §6.2）が毎リクエスト行う。
+ * 🔴 認証に成功した本人にしか返さない（未知のメールアドレスに対して呼ばない）。
+ */
+export async function resolveSignInNext(email: string): Promise<SignInNext> {
+  const user = await withAuthLookup(email);
+  if (user === null) return 'home';
+  const facts = await loadAuthFacts({
+    tenantId: user.tenantId,
+    partnerCompanyId: user.partnerCompanyId,
+    userId: user.userId,
+  });
+  if (facts === null) return 'home';
+  if (facts.twoFactorEnrolled) return '2fa';
+  return requiresTwoFactor(facts.role) ? '2fa' : 'home';
 }
 
 /** サインアウトを監査ログに記録する（docs/05 §6.3 #4 / §16.1 / F-003 AC-3）。 */

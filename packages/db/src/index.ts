@@ -7,8 +7,15 @@ export {
   HostOnlyContextError,
   PartnerScopeTargetError,
   requireHost,
+  requiresTwoFactor,
   resolveTenantCtx,
   TENANT_ROLES,
+  // 🔴 T-03-02: 2 要素認証のゲート（docs/05 §6.2 / F-003 AC-2 / BR-30）。
+  TWO_FACTOR_REQUIRED_ROLES,
+  TWO_FACTOR_REQUIREMENT_REASONS,
+  TWO_FACTOR_SESSION_STATES,
+  TwoFactorRequiredError,
+  twoFactorSessionState,
 } from './context.js';
 // 🔴 T-03-01: ロール / テナント状態を DB で確定する唯一の関数（docs/05 §4.3 / F-003 AC-1）。
 //    セッション（JWT）に書かれたロールを信じる実装を apps/web 側で書けないようにするために、
@@ -26,7 +33,28 @@ export type {
   RequestMeta,
   TenantLifecycleState,
   TenantRole,
+  TwoFactorRequiredRole,
+  TwoFactorRequirementReason,
+  TwoFactorSessionState,
 } from './context.js';
+// 🔴 T-03-02: 秘匿値の暗号化（docs/05 §8.6 / docs/03 §4.4 / BR-25）。**この経路以外で暗号化しない。**
+export { configureTokenEncryption, EncryptedString, TokenEncryptionError } from './crypto.js';
+export type { EncryptionAad, TokenEncryptionOptions } from './crypto.js';
+// 🔴 T-03-02: TwoFactorCredential（docs/05 §6.3 #2 #3）。RLS の C7 SELF により本人の行のみ。
+export {
+  confirmTwoFactorEnrollment,
+  consumeRecoveryCode,
+  readRecentTwoFactorFailures,
+  readTwoFactorCredential,
+  startTwoFactorEnrollment,
+  TWO_FACTOR_FAILED_AUDIT_ACTION,
+  TWO_FACTOR_SUBJECT_TYPE_USER,
+} from './two-factor.js';
+export type {
+  TwoFactorCredentialRow,
+  TwoFactorEnrollmentInput,
+  TwoFactorEnrollmentResult,
+} from './two-factor.js';
 export {
   AI_ROLES,
   AI_USAGE_FAILURE_KINDS,

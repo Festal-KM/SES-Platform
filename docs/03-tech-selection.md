@@ -990,7 +990,7 @@ Claude の PDF サポートは技術的には xlsx を除く多くの文書を�
 | 項目 | 内容 |
 |---|---|
 | **対応機能** | `F-002` / `F-003` / `F-055`。`BR-03` / `BR-30` / `BR-36` |
-| **採用** | **Auth.js（v5）の Credentials + Email プロバイダ。2FA は TOTP（`otpauth` ライブラリ）を自前で上乗せする** |
+| **採用** | **Auth.js（v5）の Credentials + Email プロバイダ。2FA は TOTP を自前で上乗せする。** ~~TOTP は `otpauth` ライブラリ~~ — **決定済み（2026-09-03、T-03-02 実装レビュー）。`node:crypto` による自前実装（`apps/web/lib/auth/totp.ts`）に変更。** RFC 6238 Appendix B / RFC 4648 §10 の公式テストベクタでユニットテスト固定済み（動的切り詰めは RFC 4226 §5.3 準拠、`timingSafeEqual`、窓 ±1 ステップ、シークレット 160bit）。**新規依存を増やさないための判断であり、`otpauth` への差し替えは要承認** |
 | **なぜ TOTP を上乗せするか** | Auth.js は 2FA を標準機能として持たない（§2.2 の懸念 3）。**外部 IDaaS（Clerk / Auth0）へ乗り換えると `CLAUDE.md` §2 の確定事項を覆すことになるため、上乗せで解決する** |
 | **2 系統の分離** | 🔴 **主平面と管理平面で Auth.js のインスタンス・Cookie 名（`__Host-ses.session` / `__Host-ses-admin.session`）・Cookie の `path`（`/` / `/admin`）・セッションテーブルをすべて分ける。** `docs/02` `F-055 AC-1` / `AC-2`「テナント認証で `/admin` に到達できず、逆も成立しない」を Cookie の `path` とミドルウェアの二重で担保する |
 | **2FA の強制** | 🔴 **`OWNER` / `ADMIN` / 全 `PlatformUser` は、2FA 未設定だと業務データに到達できない**（`F-003 AC-2`）。**ミドルウェアで「2FA 未設定なら `/setup/2fa` 以外の全ルートを拒否する」**。ロールごとの `if` を各ページに散らさない |

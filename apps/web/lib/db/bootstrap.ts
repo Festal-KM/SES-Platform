@@ -12,7 +12,7 @@
 //    外部連携の差し替え（`resolveConnectorSelection`）は T-03-12 が同じ初期化経路に載せる。
 import process from 'node:process';
 import { loadAppEnv } from '@ses/config';
-import { configureTenantDb } from '@ses/db';
+import { configureTenantDb, configureTokenEncryption } from '@ses/db';
 
 let initialized = false;
 
@@ -27,5 +27,12 @@ export function ensureDbConfigured(): void {
   if (initialized) return;
   const env = loadAppEnv(process.env);
   configureTenantDb({ datasourceUrl: env.DATABASE_URL });
+  // 🔴 T-03-02: 秘匿値の暗号鍵も同じ初期化経路で注入する（docs/05 §8.6 / docs/03 §4.4）。
+  //    packages/db 側で `process.env` を読ませない（鍵の出所を packages/config に一本化する）。
+  configureTokenEncryption({
+    key: env.TOKEN_ENCRYPTION_KEY,
+    keyId: env.TOKEN_ENCRYPTION_KEY_ID,
+    previous: env.TOKEN_ENCRYPTION_KEY_PREVIOUS,
+  });
   initialized = true;
 }

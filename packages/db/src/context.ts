@@ -41,6 +41,90 @@ export type TenantRole = (typeof TENANT_ROLES)[number];
 export type DeviceKind = 'desktop' | 'mobile' | 'tablet' | 'api';
 
 /**
+ * 🔴 2 要素認証が必須のテナントロール（`CLAUDE.md` §3.5 / `BR-30` / `F-003 AC-2`）。
+ *    運営者（`PlatformUser`）は全員必須だが、それは管理平面（T-03-07）の別経路が扱う。
+ *    **ここを減らすことは 2FA の要求範囲を変えることであり、人間の承認事項**（`CLAUDE.md` §8.6）。
+ */
+export const TWO_FACTOR_REQUIRED_ROLES = ['OWNER', 'ADMIN'] as const satisfies readonly TenantRole[];
+
+export type TwoFactorRequiredRole = (typeof TWO_FACTOR_REQUIRED_ROLES)[number];
+
+/**
+ * このリクエストにおける 2 要素認証の状態。
+ *
+ * - `NOT_ENROLLED`: `TwoFactorCredential.confirmedAt IS NULL`（未設定 / 設定途中）
+ * - `ENROLLED_UNVERIFIED`: 設定済みだが、**このセッションでは第 2 要素を提示していない**
+ * - `VERIFIED`: 設定済みかつ、このセッションで提示済み（`POST /api/auth/2fa/verify`）
+ */
+export const TWO_FACTOR_SESSION_STATES = [
+  'NOT_ENROLLED',
+  'ENROLLED_UNVERIFIED',
+  'VERIFIED',
+] as const;
+
+export type TwoFactorSessionState = (typeof TWO_FACTOR_SESSION_STATES)[number];
+
+/**
+ * 🔴 「DB の事実（設定済みか）」と「セッションの事実（このセッションで提示したか）」を
+ *    1 つの状態に畳む**唯一の関数**。呼び出し側（`apps/web`）が 2 つの真偽値を自前で
+ *    組み合わせると、片方を見落とした実装が書けてしまう。
+ */
+export function twoFactorSessionState(params: {
+  /** `TwoFactorCredential.confirmedAt IS NOT NULL`（DB の事実）。 */
+  readonly enrolled: boolean;
+  /** このセッションで第 2 要素を検証済みか（JWT の主張）。 */
+  readonly verifiedInSession: boolean;
+}): TwoFactorSessionState {
+  if (!params.enrolled) return 'NOT_ENROLLED';
+  return params.verifiedInSession ? 'VERIFIED' : 'ENROLLED_UNVERIFIED';
+}
+
+/** 🔴 なぜ 2FA が要求されたか。UI の遷移先（設定 / コード入力）を決めるためだけに使う。 */
+export const TWO_FACTOR_REQUIREMENT_REASONS = ['SETUP_REQUIRED', 'VERIFICATION_REQUIRED'] as const;
+
+export type TwoFactorRequirementReason = (typeof TWO_FACTOR_REQUIREMENT_REASONS)[number];
+
+/**
+ * 🔴 2 要素認証が未充足のため**認証コンテキストを生成しなかった**（docs/05 §6.2 / §15.1 /
+ *    `BR-30` / `F-003 AC-2`）。API 境界では 403 に写像する。
+ *
+ * 🔴 これは「業務データを 0 件にする」ではなく「`withTenant` に到達させない」ための例外である。
+ *    `AuthenticatedTenantCtx` が存在しない ＝ DB アクセスの入口そのものが開かない。
+ */
+export class TwoFactorRequiredError extends Error {
+  constructor(readonly reason: TwoFactorRequirementReason) {
+    super(
+      reason === 'SETUP_REQUIRED'
+        ? '2 要素認証の設定が必要です（OWNER / ADMIN は必須。CLAUDE.md §3.5 / BR-30）。'
+        : '2 要素認証コードの入力が必要です（このセッションでは未検証）。',
+    );
+    this.name = 'TwoFactorRequiredError';
+  }
+}
+
+/** ロールが 2 要素認証を必須とするか（`BR-30`）。 */
+export function requiresTwoFactor(role: TenantRole): boolean {
+  return (TWO_FACTOR_REQUIRED_ROLES as readonly TenantRole[]).includes(role);
+}
+
+/**
+ * 🔴 2 要素認証のゲート（docs/05 §6.2）。`resolveTenantCtx` の中でだけ呼ぶ。
+ *
+ * 判定は 2 つある。**どちらか一方だけでは 2FA として成立しない**:
+ *   ① `OWNER` / `ADMIN` が未設定（`confirmedAt IS NULL`）→ `SETUP_REQUIRED`
+ *   ② 設定済みなのにこのセッションで未提示 → `VERIFICATION_REQUIRED`
+ *      （②が無いと「一度設定すれば以後はパスワードだけで入れる」ことになり、
+ *        2 要素目が実質存在しなくなる。ロールを問わず適用する）
+ */
+function assertTwoFactorSatisfied(role: TenantRole, state: TwoFactorSessionState): void {
+  if (state === 'NOT_ENROLLED') {
+    if (requiresTwoFactor(role)) throw new TwoFactorRequiredError('SETUP_REQUIRED');
+    return;
+  }
+  if (state === 'ENROLLED_UNVERIFIED') throw new TwoFactorRequiredError('VERIFICATION_REQUIRED');
+}
+
+/**
  * 認証済みのテナント文脈。🔴 ブランドプロパティは外部から書けないため、
  * `resolveTenantCtx` 以外がこの型の値を構築できない（docs/05 §4.3 の違反時の挙動 = コンパイルエラー）。
  */
@@ -65,6 +149,12 @@ export type MainSession = {
   readonly userId: string;
   readonly role: TenantRole;
   readonly lifecycleState: TenantLifecycleState;
+  /**
+   * 🔴 2 要素認証の状態（docs/05 §6.2 / `F-003 AC-2`）。**必須フィールドである。**
+   *    省略できると「渡し忘れた経路だけ 2FA を素通りする」ことが起こりうるため、
+   *    型で必ず決めさせる（値の組み立ては `twoFactorSessionState()` が唯一の経路）。
+   */
+  readonly twoFactor: TwoFactorSessionState;
 };
 
 /** ctx に載せてよいリクエスト由来の情報。🔴 分離キーを含めてはならない。 */
@@ -72,11 +162,20 @@ export type RequestMeta = {
   readonly deviceKind: DeviceKind;
 };
 
-/** 🔴 AuthenticatedTenantCtx の唯一の生成経路。 */
+/**
+ * 🔴 AuthenticatedTenantCtx の唯一の生成経路。
+ *
+ * 🔴 2 要素認証のゲートはここに置く（docs/05 §6.2。middleware ではない）。
+ *    未充足なら `TwoFactorRequiredError` を投げ、**ctx を生成しない**。
+ *    `withTenant` は ctx を要求するため、業務データへの入口そのものが開かない
+ *    （＝ API を直叩きしても 1 件も取得できない。`F-003 AC-2`）。
+ *    Edge の middleware は DB を読めないので、そこに境界の強制を置かない。
+ */
 export async function resolveTenantCtx(
   session: MainSession,
   req: RequestMeta,
 ): Promise<AuthenticatedTenantCtx> {
+  assertTwoFactorSatisfied(session.role, session.twoFactor);
   return {
     tenantId: session.tenantId,
     partnerCompanyId: session.partnerCompanyId,

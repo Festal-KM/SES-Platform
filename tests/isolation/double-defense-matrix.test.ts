@@ -113,6 +113,7 @@ beforeAll(async () => {
       userId: TENANT_1.hostUserId,
       role: 'SALES',
       lifecycleState: 'ACTIVE',
+      twoFactor: 'NOT_ENROLLED',
     },
     { deviceKind: 'api' },
   );
@@ -123,6 +124,7 @@ beforeAll(async () => {
       userId: PARTNER_1.userId,
       role: 'PARTNER_SALES',
       lifecycleState: 'ACTIVE',
+      twoFactor: 'NOT_ENROLLED',
     },
     { deviceKind: 'api' },
   );
@@ -133,6 +135,7 @@ beforeAll(async () => {
       userId: PARTNER_2.userId,
       role: 'PARTNER_SALES',
       lifecycleState: 'ACTIVE',
+      twoFactor: 'NOT_ENROLLED',
     },
     { deviceKind: 'api' },
   );

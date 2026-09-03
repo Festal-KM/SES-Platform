@@ -86,6 +86,24 @@ body {
   margin-bottom: 1rem;
 }
 
+/* S-001 の 2 要素認証（T-03-02）。長いセットアップ用アドレスとリカバリコードを、
+ * 狭い画面でも折り返して読める形で出す（CLAUDE.md §13.3「判断材料を隠さない」）。 */
+.ses-otpauth-uri {
+  display: block;
+  margin-top: 0.25rem;
+  padding: 0.5rem;
+  border: 1px solid var(--ses-border);
+  border-radius: 0.375rem;
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.ses-recovery-codes {
+  margin: 0 0 1rem;
+  padding-left: 1.25rem;
+  font-size: 0.875rem;
+}
+
 .ses-secondary-link {
   display: inline-block;
   margin-top: 1rem;

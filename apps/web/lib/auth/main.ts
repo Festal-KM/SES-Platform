@@ -12,7 +12,7 @@
 //    （`lib/auth/claims.ts` 参照）。
 import NextAuth from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
-import { parseTenantSessionClaims } from './claims';
+import { isTwoFactorVerifiedUpdate, parseTenantSessionClaims } from './claims';
 import { classifyDeviceKind } from './device';
 import { authenticateCredentials } from './credentials';
 import { ensureDbConfigured } from '../db/bootstrap';
@@ -43,7 +43,13 @@ function firstForwardedFor(value: string | null): string | null {
 //    Auth.js の既定ルート（`/api/auth/signin` の GET フォーム、`/api/auth/csrf` 等）を
 //    生やすと「仕様に無い認証経路」が増えて §17.2 の走査対象から漏れる。
 //    `auth()` / `signIn()` / `signOut()` は内部で `Auth()` を直接呼ぶため HTTP ルートを必要としない。
-export const { auth, signIn, signOut } = NextAuth({
+/**
+ * 🔴 `unstable_update` は「2 要素認証を検証した」ことだけをセッションへ書き戻すために使う
+ *    （`lib/auth/session.ts` の `markTwoFactorVerified`）。**それ以外の用途で使わない。**
+ *    Auth.js の `/api/auth/session` ルートは**マウントしていない**ため、外部から任意の
+ *    セッション更新を投げ込む経路は存在しない（`unstable_update` はプロセス内で `Auth()` を呼ぶ）。
+ */
+export const { auth, signIn, signOut, unstable_update } = NextAuth({
   // 🔴 自ホスト運用のため host ヘッダを信頼する（Vercel / 自前のリバースプロキシが
   //    Host を検証する構成であることが前提。Auth.js の自己ホスティング指針に従う）。
   trustHost: true,
@@ -95,11 +101,19 @@ export const { auth, signIn, signOut } = NextAuth({
   callbacks: {
     // 🔴 サインイン時にだけ主張を書き込む。以降のリクエストでは JWT を読むだけで、
     //    ロールやテナント状態は DB から引き直す（`loadTenantMembership`）。
-    jwt({ token, user }) {
+    jwt({ token, user, trigger, session }) {
       if (user !== undefined) {
         token.userId = user.id;
         token.tenantId = user.tenantId;
         token.partnerCompanyId = user.partnerCompanyId;
+        // 🔴 サインイン直後は必ず未検証から始める（第 2 要素はまだ提示されていない）。
+        token.twoFactorVerified = false;
+      }
+      // 🔴 更新で受け付けるのは「2 要素認証を検証した」の 1 ビットだけである。
+      //    分離キー（tenantId / partnerCompanyId / userId）は**更新経路では一切書き換えない**
+      //    （書き換えられると、セッション更新が境界の乗り換えになる。CLAUDE.md §3.1）。
+      if (trigger === 'update' && isTwoFactorVerifiedUpdate(session)) {
+        token.twoFactorVerified = true;
       }
       return token;
     },

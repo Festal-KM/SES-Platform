@@ -74,6 +74,7 @@ beforeAll(async () => {
       userId: USER_A_HOST,
       role: 'SALES',
       lifecycleState: 'ACTIVE',
+      twoFactor: 'NOT_ENROLLED',
     },
     { deviceKind: 'api' },
   );
@@ -84,6 +85,7 @@ beforeAll(async () => {
       userId: USER_A_PARTNER,
       role: 'PARTNER_SALES',
       lifecycleState: 'ACTIVE',
+      twoFactor: 'NOT_ENROLLED',
     },
     { deviceKind: 'api' },
   );

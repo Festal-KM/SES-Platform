@@ -22,5 +22,7 @@ declare module 'next-auth/jwt' {
     tenantId?: string;
     partnerCompanyId?: string | null;
     userId?: string;
+    /** 🔴 このセッションで第 2 要素を検証したか（T-03-02）。権限は載せない。 */
+    twoFactorVerified?: boolean;
   }
 }

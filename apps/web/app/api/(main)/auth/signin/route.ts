@@ -10,6 +10,7 @@
 //
 // 🔴 認証失敗の理由を区別しない（docs/04 §S-001）。応答は常に 401 / `error.unauthenticated`。
 import { AuthenticationError, ValidationError, errorResponse } from '../../../../../lib/api/errors';
+import { resolveSignInNext } from '../../../../../lib/auth/credentials';
 import { signInBodySchema } from '../../../../../lib/auth/schemas';
 import { signInWithCredentials } from '../../../../../lib/auth/session';
 
@@ -19,8 +20,9 @@ export const dynamic = 'force-dynamic';
 
 /**
  * docs/05 §6.3 #1 の応答。
- * ⚠️ `'2fa'` は T-03-02（`POST /api/auth/2fa/verify`）で返るようになる。
- *    本タスクでは 2FA の資格情報自体が未実装のため、常に `'home'` を返す。
+ * 🔴 `next` は**画面の遷移先の手がかり**であり、認可ではない（T-03-02）。
+ *    実際の遮断は毎リクエストの `resolveTenantCtx`（docs/05 §6.2）が行うため、
+ *    この値が古くても境界は緩まない。
  */
 export type SignInResponse = { readonly next: '2fa' | 'home' };
 
@@ -37,8 +39,9 @@ export async function POST(request: Request): Promise<Response> {
     const outcome = await signInWithCredentials(parsed.data);
     if (outcome === 'REJECTED') return errorResponse(new AuthenticationError());
 
-    const body: SignInResponse = { next: 'home' };
-    return Response.json(body);
+    // 🔴 認証に成功した本人にだけ返す（未知のメールアドレスに対しては到達しない）。
+    const body: SignInResponse = { next: await resolveSignInNext(parsed.data.email) };
+    return Response.json(body, { headers: { 'cache-control': 'no-store' } });
   } catch (error) {
     return errorResponse(error);
   }

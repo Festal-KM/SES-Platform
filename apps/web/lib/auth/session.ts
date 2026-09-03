@@ -5,11 +5,12 @@
 import { headers } from 'next/headers';
 import { AuthError, CredentialsSignin } from 'next-auth';
 import type { AuthenticatedTenantCtx } from '@ses/db';
+import { TwoFactorRequiredError as DbTwoFactorRequiredError } from '@ses/db';
 import { AuthenticationError } from '../api/errors';
 import { ensureDbConfigured } from '../db/bootstrap';
 import type { TenantSessionClaims } from './claims';
 import { classifyDeviceKind } from './device';
-import { auth, signIn, signOut } from './main';
+import { auth, signIn, signOut, unstable_update } from './main';
 import type { AuthAttemptMeta } from './credentials';
 import { buildTenantCtx } from './tenant-context';
 
@@ -51,6 +52,45 @@ export async function requireTenantCtx(): Promise<AuthenticatedTenantCtx> {
   const ctx = await buildTenantCtx(claims, { deviceKind: meta.deviceKind });
   if (ctx === null) throw new AuthenticationError();
   return ctx;
+}
+
+/**
+ * 認証コンテキストの解決結果（画面が遷移先を決めるために使う）。
+ * 🔴 `TWO_FACTOR_REQUIRED` は「未認証」とは別物である。パスワードは通っているが、
+ *    第 2 要素が未充足のため **ctx が存在しない**（= 業務データに到達できない）。
+ */
+export type TenantCtxOutcome =
+  | { readonly status: 'AUTHENTICATED'; readonly ctx: AuthenticatedTenantCtx }
+  | { readonly status: 'UNAUTHENTICATED' }
+  | { readonly status: 'TWO_FACTOR_REQUIRED' };
+
+/**
+ * ページ（Server Component）が遷移を決めるための解決。
+ * 🔴 例外に頼らず分岐したいのはページだけである。**API は `requireTenantCtx` を使い、
+ *    例外のまま §15 のエラー写像に載せる**（握り潰す経路を作らない）。
+ */
+export async function resolveTenantCtxOutcome(): Promise<TenantCtxOutcome> {
+  ensureDbConfigured();
+  const claims = await currentClaims();
+  if (claims === null) return { status: 'UNAUTHENTICATED' };
+  const meta = await readRequestMeta();
+  try {
+    const ctx = await buildTenantCtx(claims, { deviceKind: meta.deviceKind });
+    if (ctx === null) return { status: 'UNAUTHENTICATED' };
+    return { status: 'AUTHENTICATED', ctx };
+  } catch (error) {
+    if (error instanceof DbTwoFactorRequiredError) return { status: 'TWO_FACTOR_REQUIRED' };
+    throw error;
+  }
+}
+
+/**
+ * 🔴 このセッションで第 2 要素を検証したことを記録する（docs/05 §6.3 #2）。
+ *    Auth.js の `unstable_update` を使う唯一の場所。書き換わるのは
+ *    `twoFactorVerified` の 1 ビットだけである（`lib/auth/main.ts` の `jwt` コールバック）。
+ */
+export async function markTwoFactorVerified(claims: TenantSessionClaims): Promise<void> {
+  await unstable_update({ claims: { ...claims, twoFactorVerified: true } });
 }
 
 export type SignInOutcome = 'AUTHENTICATED' | 'REJECTED';
