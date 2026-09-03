@@ -1,23 +1,35 @@
 // apps/web/lib/api/withApiRoute.test.ts
-// docs/05 §6.1 の境界（認証 → ガード → Zod → ハンドラ）と §15.2 の応答フォーマットを固定する。
-// T-03-04（SP-03）。
+// docs/05 §6.1 の境界（認証 → ガード → Zod → 監査 → ハンドラ）と §15.2 の応答フォーマットを固定する。
+// T-03-04 / T-03-05（SP-03）。
 //
-// 🔴 `requireTenantCtx`（＝ Auth.js + DB）だけをモックする。ここで見たいのは
-//    「ハンドラに届く前に何が起きるか」であり、認証そのものは T-03-01 の結合テストの範囲。
+// 🔴 `requireTenantCtx`（＝ Auth.js + DB）と `@ses/db` の `recordAuditLog`（`audit` オプションが
+//    使う唯一の書き込み経路）をモックする。`recordAuditLog` 以外の `@ses/db` の実体
+//    （`HostOnlyContextError` 等）は `importOriginal` でそのまま通す（`errors.ts` 側の
+//    `instanceof` 判定が同じクラス参照のまま成立するようにするため）。ここで見たいのは
+//    「ハンドラに届く前に何が起きるか」であり、認証そのものは T-03-01 の結合テストの範囲、
+//    `recordAuditLog` が実際に DB へ書く経路は T-03-05 の結合テスト（`tests/isolation/`）の範囲。
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { z } from 'zod';
-import { HostOnlyContextError, type AuthenticatedTenantCtx } from '@ses/db';
+import type { AuthenticatedTenantCtx } from '@ses/db';
 import { InvalidStateTransitionError as DomainInvalidStateTransitionError } from '@ses/domain';
 
 const requireTenantCtx = vi.fn<() => Promise<AuthenticatedTenantCtx>>();
+const recordAuditLog = vi.fn<(...args: unknown[]) => Promise<void>>();
 
 vi.mock('../auth/session', () => ({
   requireTenantCtx: () => requireTenantCtx(),
+  readRequestMeta: async () => ({ deviceKind: 'api', ipAddress: '203.0.113.10' }),
 }));
+
+vi.mock('@ses/db', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@ses/db')>();
+  return { ...actual, recordAuditLog: (...args: unknown[]) => recordAuditLog(...args) };
+});
 
 const { withApiRoute, REQUEST_ID_HEADER, searchParamsToObject } = await import('./withApiRoute');
 const { requireExecutable, requireNotViewer, requireRole } = await import('./guards');
 const { AuthenticationError, NotFoundError } = await import('./errors');
+const { HostOnlyContextError, AuditLogWriteError } = await import('@ses/db');
 
 const CTX = {
   tenantId: '01930000-0000-7000-8000-0000000000a1',
@@ -53,6 +65,8 @@ function postRequest(body: unknown, url = 'https://app.test/api/x'): Request {
 beforeEach(() => {
   requireTenantCtx.mockReset();
   requireTenantCtx.mockResolvedValue(CTX);
+  recordAuditLog.mockReset();
+  recordAuditLog.mockResolvedValue(undefined);
 });
 
 describe('① 認証が最初（未認証にスキーマの形を教えない）', () => {
@@ -319,6 +333,135 @@ describe('x-request-id（docs/05 §16.2）', () => {
 
     expect(response.headers.get('cache-control')).toBe('no-store');
     expect(await response.json()).toEqual({ ok: true });
+  });
+});
+
+describe('🔴 監査（audit オプション。docs/05 §6.1 / §16.1。T-03-05）', () => {
+  it('ハンドラの前に記録され、resolve が受け取った params から targetId を導出できる', async () => {
+    const order: string[] = [];
+    recordAuditLog.mockImplementation(async () => {
+      order.push('audit');
+    });
+    const handler = vi.fn(async () => {
+      order.push('handler');
+      return Response.json({ ok: true });
+    });
+
+    const route = withApiRoute(
+      {
+        label: 'test',
+        guards: [],
+        params: z.object({ id: z.string() }),
+        audit: {
+          action: 'engineer.view',
+          resolve: ({ params }) => ({
+            targetType: 'Engineer',
+            targetId: params.id,
+            summary: { via: 'test' },
+          }),
+        },
+      },
+      handler,
+    );
+
+    const response = await route(new Request('https://app.test/api/engineers/e1'), {
+      params: Promise.resolve({ id: 'e1' }),
+    });
+
+    expect(response.status).toBe(200);
+    // 🔴 「ハンドラ本体の前に書く」ことを実行順で固定する。
+    expect(order).toEqual(['audit', 'handler']);
+    expect(recordAuditLog).toHaveBeenCalledTimes(1);
+    expect(recordAuditLog.mock.calls[0]?.[0]).toBe(CTX);
+    expect(recordAuditLog.mock.calls[0]?.[1]).toMatchObject({
+      action: 'engineer.view',
+      actorKind: 'USER',
+      actorId: CTX.userId,
+      targetType: 'Engineer',
+      targetId: 'e1',
+      summary: { via: 'test' },
+      ipAddress: '203.0.113.10',
+      deviceKind: CTX.deviceKind,
+    });
+  });
+
+  it('🔴 記録に失敗したらハンドラを呼ばず、500 AUDIT_WRITE_FAILED になる', async () => {
+    recordAuditLog.mockRejectedValue(new AuditLogWriteError('engineer.view'));
+    const handler = vi.fn(OK);
+    const route = withApiRoute(
+      {
+        label: 'test',
+        guards: [],
+        audit: { action: 'engineer.view', resolve: () => ({ summary: {} }) },
+      },
+      handler,
+    );
+
+    const response = await route(new Request('https://app.test/api/x'));
+
+    expect(response.status).toBe(500);
+    expect((await readError(response)).error.code).toBe('AUDIT_WRITE_FAILED');
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it('actorKind: SYSTEM を指定すると actorId の既定が null になる', async () => {
+    const route = withApiRoute(
+      {
+        label: 'test',
+        guards: [],
+        audit: { action: 'proposal.submit', actorKind: 'SYSTEM', resolve: () => ({ summary: {} }) },
+      },
+      OK,
+    );
+
+    await route(new Request('https://app.test/api/x'));
+
+    expect(recordAuditLog.mock.calls[0]?.[1]).toMatchObject({ actorKind: 'SYSTEM', actorId: null });
+  });
+
+  it('resolve が actorId を明示すれば既定を上書きできる', async () => {
+    const OVERRIDE_ACTOR_ID = '01930000-0000-7000-8000-0000000000c9';
+    const route = withApiRoute(
+      {
+        label: 'test',
+        guards: [],
+        audit: {
+          action: 'proposal.submit',
+          actorKind: 'SYSTEM',
+          resolve: () => ({ summary: {}, actorId: OVERRIDE_ACTOR_ID }),
+        },
+      },
+      OK,
+    );
+
+    await route(new Request('https://app.test/api/x'));
+
+    expect(recordAuditLog.mock.calls[0]?.[1]).toMatchObject({ actorId: OVERRIDE_ACTOR_ID });
+  });
+
+  it('audit を指定しなければ recordAuditLog は呼ばれない', async () => {
+    const route = withApiRoute({ label: 'test', guards: [] }, OK);
+
+    await route(new Request('https://app.test/api/x'));
+
+    expect(recordAuditLog).not.toHaveBeenCalled();
+  });
+
+  it('🔴 audit はガードの後に評価される（VIEWER 拒否では記録されない）', async () => {
+    requireTenantCtx.mockResolvedValue(ctxWith({ role: 'VIEWER' }));
+    const route = withApiRoute(
+      {
+        label: 'test',
+        guards: [requireNotViewer()],
+        audit: { action: 'engineer.view', resolve: () => ({ summary: {} }) },
+      },
+      OK,
+    );
+
+    const response = await route(new Request('https://app.test/api/x'));
+
+    expect(response.status).toBe(403);
+    expect(recordAuditLog).not.toHaveBeenCalled();
   });
 });
 

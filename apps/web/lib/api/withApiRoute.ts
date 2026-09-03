@@ -5,25 +5,39 @@
 //    `F-004 AC-9` /`F-060 AC-3` は「**API を直接呼んでも拒否される**」ことをテストで
 //    証明することを要求しており、経路が 1 本でなければ検証できない。
 //
-// 🔴 本モジュールが引き受けるのは次の 5 つで、**ハンドラ本体に書かせない**:
+// 🔴 本モジュールが引き受けるのは次の 6 つで、**ハンドラ本体に書かせない**:
 //    ① 認証コンテキストの解決（`requireTenantCtx`。ハンドラは自前でセッションを読まない）
 //    ② 共通ガードの実行（docs/05 §6.2 の**固定順**。`applyGuards` が並べ替える）
 //    ③ Zod による境界検証（params / query / body。失敗は 400）
 //    ④ 🔴 **分離キーをリクエスト入力に持てないこと**（`CLAUDE.md` §3.1 / `BR-03` /
 //       `F-003 AC-1` / `F-004 AC-2`）。スキーマに `tenantId` 等があればルート構築時に落ちる
-//    ⑤ 例外 → §15.2 の共通フォーマットへの写像と `x-request-id` の採番
+//    ⑤ `audit` オプション（T-03-05。ハンドラ本体の前に `AuditLog` を書く。docs/05 §16.1）
+//    ⑥ 例外 → §15.2 の共通フォーマットへの写像と `x-request-id` の採番
 //
-// 🔴 実行の順序（①→②→③）には理由がある:
+// 🔴 実行の順序（①→②→③→監査→ハンドラ）には理由がある:
 //    - ①が先 —— 未認証の呼び出しに、スキーマの形（400 のフィールドパス）を教えない。
 //    - ②が③より先 —— 権限もテナント状態も満たさない呼び出しの入力を解釈しない。
 //      ライフサイクル状態による拒否は**入力の妥当性より優先する**（`F-004` 処理⑤）。
+//    - 監査（`audit` オプション）が最後 —— ③までを通過した、実際にハンドラへ渡る入力から
+//      対象（`targetType` / `targetId`）を導出できる。記録に失敗したら **ハンドラを呼ばない**
+//      （docs/05 §6.1「ハンドラ本体の前に `AuditLog` を書く」/ `F-005` / `F-012 AC-2`）。
 //
-// ⚠️ `audit` オプション（docs/05 §6.1 / §16.1。ハンドラ本体の**前**に `AuditLog` を書き、
-//    記録に失敗したら操作を成立させない）は **T-03-05** が本モジュールに足す。
-//    半端に「何もしない `audit` フィールド」を先に作らない（掛けたつもりの状態を作らないため）。
+// 🔴 `audit` オプション（T-03-05。docs/05 §6.1 / §16.1）:
+//    - 書き込みは `@ses/db` の `recordAuditLog`（ctx だけで開ける専用トランザクション）**1 本**に
+//      委ねる。行の組み立て（`createMany` / `RETURNING` の回避）を二重実装しない
+//      （`packages/db/src/audit.ts` の意図的 seam）。
+//    - このオプションが開くトランザクションは、ハンドラが別途 `withTenant` で開く業務トランザクションと
+//      **別物**である（記録できなければハンドラを呼ばない、が優先原則。詳細は `recordAuditLog` の
+//      コメント）。行に紐づく詳細を要する記録は、引き続き業務トランザクション内の `writeAuditLog`
+//      （`issueInvitation` 等の既存の意図的 seam）を使う。
 import { z } from 'zod';
-import type { AuthenticatedTenantCtx } from '@ses/db';
-import { requireTenantCtx } from '../auth/session';
+import {
+  recordAuditLog,
+  type AuditActorKind,
+  type AuditSummary,
+  type AuthenticatedTenantCtx,
+} from '@ses/db';
+import { readRequestMeta, requireTenantCtx } from '../auth/session';
 import { errorResponse, ValidationError } from './errors';
 import { applyGuards, assertGuardDeclaration, type RouteGuard } from './guards';
 import { assertNoIsolationKeys } from './isolation-keys';
@@ -58,6 +72,43 @@ export type RouteInput<TParams, TQuery, TBody> = {
   readonly requestId: string;
 };
 
+/**
+ * `audit` オプションの `resolve` に渡す入力（docs/05 §16.1）。
+ * 🔴 ガード通過後・Zod 検証後の値のみ（`ctx` 以外に分離キーの出所が無いのはハンドラと同じ）。
+ */
+export type AuditHookInput<TParams, TQuery, TBody> = {
+  readonly ctx: AuthenticatedTenantCtx;
+  readonly params: TParams;
+  readonly query: TQuery;
+  readonly body: TBody;
+  readonly request: Request;
+};
+
+/** `resolve` が返す、`AuditLogEntry` のうち呼び出し側が決める部分。 */
+export type AuditHookOutcome = {
+  readonly targetType?: string | null;
+  readonly targetId?: string | null;
+  readonly summary: AuditSummary;
+  /**
+   * 🔴 既定は `actorKind === 'SYSTEM'` なら `null`、それ以外は `ctx.userId`。
+   *    `system` が主体でも人間の起点を残したい場合は `summary` に載せる
+   *    （docs/05 §16.1 の `summary.requestedBy` と同じ扱い）。ここを明示的に上書きしたい
+   *    まれなケースのためだけに存在する。
+   */
+  readonly actorId?: string | null;
+};
+
+/** `audit` オプション本体（docs/05 §6.1 / §16.1）。 */
+export type AuditHook<TParams, TQuery, TBody> = {
+  /** docs/05 §16.1 の一覧に載っている `action` 名。 */
+  readonly action: string;
+  /** 既定 `'USER'`。`system` が主体の操作（§16.1 の SYSTEM 行）だけ明示する。 */
+  readonly actorKind?: AuditActorKind;
+  readonly resolve: (
+    input: AuditHookInput<TParams, TQuery, TBody>,
+  ) => AuditHookOutcome;
+};
+
 export type RouteDefinition<TParams, TQuery, TBody> = {
   /**
    * 🔴 **必須**である（省略可能にしない）。ガードが不要な読み取り専用ルートでも
@@ -69,6 +120,13 @@ export type RouteDefinition<TParams, TQuery, TBody> = {
   readonly params?: z.ZodType<TParams>;
   readonly query?: z.ZodType<TQuery>;
   readonly body?: z.ZodType<TBody>;
+  /**
+   * 🔴 指定すると、ハンドラ本体の**前**に `AuditLog` を 1 行書く（docs/05 §6.1 / §16.1）。
+   *    記録に失敗したら `handler` を呼ばない（`AuditLogWriteError` → 500 `AUDIT_WRITE_FAILED`）。
+   *    `BR-27` の 11 種のうち、ここに載らないもの（閲覧の記録・送信ジョブ内の記録など）は
+   *    引き続き `packages/db` の `writeAuditLog` を業務トランザクション内で直接使う。
+   */
+  readonly audit?: AuditHook<TParams, TQuery, TBody>;
 };
 
 /**
@@ -200,6 +258,26 @@ export function withApiRoute<TParams = undefined, TQuery = undefined, TBody = un
               await request.json().catch(() => null),
               'body',
             );
+
+      // ④ 監査（`audit` オプション。ハンドラ本体の前。docs/05 §6.1 / §16.1）。
+      //    🔴 記録に失敗したら（`recordAuditLog` が投げたら）ハンドラを呼ばない。
+      if (definition.audit !== undefined) {
+        const hook = definition.audit;
+        const outcome = hook.resolve({ ctx, params, query, body, request });
+        const actorKind = hook.actorKind ?? 'USER';
+        const meta = await readRequestMeta();
+        await recordAuditLog(ctx, {
+          action: hook.action,
+          actorKind,
+          actorId:
+            outcome.actorId !== undefined ? outcome.actorId : actorKind === 'SYSTEM' ? null : ctx.userId,
+          targetType: outcome.targetType ?? null,
+          targetId: outcome.targetId ?? null,
+          summary: outcome.summary,
+          ipAddress: meta.ipAddress,
+          deviceKind: ctx.deviceKind,
+        });
+      }
 
       return finalizeResponse(
         await handler({ ctx, params, query, body, request, requestId }),

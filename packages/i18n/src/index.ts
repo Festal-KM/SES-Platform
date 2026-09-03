@@ -132,6 +132,42 @@ const ja = {
   'error.passwordReset.invalidToken':
     'このパスワード再設定のリンクは無効です。もう一度、再設定をお申し込みください。',
   'error.internal': '処理に失敗しました。時間をおいて再度お試しください。',
+
+  // --- S-041 監査ログ（自テナント。docs/04 §S-041 / F-005 / F-012。T-03-05）---
+  'auditLogs.title': '監査ログ',
+  'auditLogs.filter.from.label': '期間（開始）',
+  'auditLogs.filter.to.label': '期間（終了）',
+  'auditLogs.filter.category.label': '操作種別',
+  'auditLogs.filter.category.all': 'すべて',
+  'auditLogs.filter.actorId.label': '主体 ID（任意）',
+  'auditLogs.search': '検索',
+  'auditLogs.searching': '検索しています…',
+  'auditLogs.loadMore': 'さらに読み込む',
+  'auditLogs.loadingMore': '読み込んでいます…',
+  // 🔴 期間未指定では検索を実行させない（docs/04 §S-041）。
+  'auditLogs.error.periodRequired': '期間を指定してください。',
+  'auditLogs.error.searchFailed': '検索を実行できませんでした。',
+  'auditLogs.empty.beforeSearch': '期間を指定して検索してください。',
+  'auditLogs.empty.noMatch': '条件に一致する記録はありません。',
+  'auditLogs.column.date': '日時',
+  'auditLogs.column.actor': '主体',
+  'auditLogs.column.action': '操作',
+  'auditLogs.column.target': '対象',
+  'auditLogs.column.meta': 'IP・デバイス',
+  'auditLogs.actor.system': 'システム',
+  'auditLogs.actor.platform': '運営者',
+  // 🔴 BR-27 の記録対象を過不足なく網羅する（docs/04 §S-041。選択肢に無い種別は
+  //    「記録されていない」と読まれるため、Phase 0 でまだ発生しない種別も選択肢に含める）。
+  'auditLogs.category.LOGIN_LOGOUT': 'ログイン・ログアウト',
+  'auditLogs.category.ENGINEER_SKILL_SHEET_ACCESS':
+    'エンジニア詳細・スキルシートの閲覧／ダウンロード',
+  'auditLogs.category.PROJECT_VIEW': '案件詳細の閲覧',
+  'auditLogs.category.CREATE_UPDATE_DELETE': '作成・更新・削除',
+  'auditLogs.category.PROPOSAL_SUBMIT': '提案の送信',
+  'auditLogs.category.APPROVAL': '承認・却下',
+  'auditLogs.category.PERMISSION_CHANGE': '権限変更',
+  'auditLogs.category.VISIBILITY_CHANGE': '公開範囲の変更',
+  'auditLogs.category.IMPERSONATION': '代理閲覧',
 } as const;
 
 /** 🔴 文言キーの単一の出所。存在しないキーはコンパイルエラーになる。 */

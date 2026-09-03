@@ -23,7 +23,8 @@ export {
 export { loadTenantMembership } from './auth-context.js';
 export type { TenantIdentity, TenantMembershipFacts } from './auth-context.js';
 // 🔴 T-03-01: AuditLog の書き込み（docs/05 §16.1 / F-005）。行の組み立てはここが唯一の出所。
-export { AuditLogWriteError, recordAuthAuditLog, writeAuditLog } from './audit.js';
+// 🔴 T-03-05: recordAuditLog は withApiRoute の audit オプションが使う ctx 版（§16.1）。
+export { AuditLogWriteError, recordAuditLog, recordAuthAuditLog, writeAuditLog } from './audit.js';
 export type { AuditLogEntry, AuditLogWriter, AuditSummary } from './audit.js';
 export type {
   AuthenticatedTenantCtx,

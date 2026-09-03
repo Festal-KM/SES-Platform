@@ -16,7 +16,7 @@
 // 🔴 `tenantId` を引数に持たない。Prisma 拡張（第 2 防御）が文脈の値で確定させる
 //    （CLAUDE.md §3.1「分離キーは認証コンテキストから取る」）。
 import type { TenantIdentity } from './auth-context.js';
-import type { DeviceKind } from './context.js';
+import type { AuthenticatedTenantCtx, DeviceKind } from './context.js';
 import type { AuditActorKind } from './schema-value-sets.js';
 import { runInTenantTransaction, type withTenant } from './with-tenant.js';
 
@@ -121,6 +121,28 @@ export async function recordAuthAuditLog(
       partnerCompanyId: identity.partnerCompanyId,
       actorUserId: identity.userId,
     },
+    (tx) => writeAuditLog(tx, entry),
+  );
+}
+
+/**
+ * 🔴 `withApiRoute` の `audit` オプション（docs/05 §6.1 / §16.1 / T-03-05）が使う唯一の経路。
+ *    認証済みコンテキスト（`ctx`）だけで、ハンドラ本体の**前**に 1 行書く。
+ *
+ * 🔴 これは業務トランザクションとは**別のトランザクション**を開く。ハンドラが別途
+ *    `withTenant` を開いて業務データを書く場合、2 つの書き込みは連動しない。
+ *    「記録できなければハンドラを呼ばない」（本関数が例外を投げれば `withApiRoute` は
+ *    `handler` を呼ばない）を優先する設計であり、「記録はできたがハンドラが失敗した」の
+ *    逆方向のズレは許容する（ガード通過後の失敗はまれで、大半は 500 として運用側に見える）。
+ *    行に紐づく詳細（作成した ID 等）を要する記録は、この経路ではなく業務トランザクション内の
+ *    `writeAuditLog`（本ファイル上部。T-03-01 の意図的 seam）を引き続き使う。
+ */
+export async function recordAuditLog(
+  ctx: AuthenticatedTenantCtx,
+  entry: AuditLogEntry,
+): Promise<void> {
+  await runInTenantTransaction(
+    { tenantId: ctx.tenantId, partnerCompanyId: ctx.partnerCompanyId, actorUserId: ctx.userId },
     (tx) => writeAuditLog(tx, entry),
   );
 }

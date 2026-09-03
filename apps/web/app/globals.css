@@ -142,3 +142,60 @@ body {
   border-radius: 0.25rem;
   background: var(--ses-border);
 }
+
+/* S-041 監査ログ（T-03-05）。目次のある業務画面の共通レイアウト（単一カラム、幅を制限）。 */
+.ses-page {
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: 1.5rem 1rem;
+}
+
+.ses-filter-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  align-items: flex-end;
+  margin-bottom: 1.5rem;
+}
+
+.ses-filter-form .ses-field {
+  margin-bottom: 0;
+}
+
+.ses-filter-form .ses-submit {
+  width: auto;
+  padding: 0.625rem 1.25rem;
+}
+
+.ses-table-wrap {
+  overflow-x: auto;
+}
+
+.ses-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.ses-table th,
+.ses-table td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--ses-border);
+  text-align: left;
+  white-space: nowrap;
+}
+
+/* モバイルは日時 + 主体 + 操作の 3 要素に劣化する（docs/04 §S-041）。機能の省略ではなく列の間引き。
+ * ブレークポイントは Tailwind CSS の既定（sm = 640px）に合わせる（CLAUDE.md §13.3）。 */
+@media (max-width: 640px) {
+  .ses-table .ses-col-target,
+  .ses-table .ses-col-meta {
+    display: none;
+  }
+}
+
+.ses-empty {
+  padding: 2rem 0;
+  color: var(--ses-muted);
+  text-align: center;
+}
