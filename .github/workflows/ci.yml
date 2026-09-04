@@ -55,8 +55,17 @@ jobs:
       # 個別の無視設定は pnpm-workspace.yaml の `auditConfig.ignoreGhsas`（理由・再評価の契機つき）。
       # 🔴 このコマンドに `--json` を付けてはならない。pnpm は --json 出力時に ignoreGhsas を
       # exit code へ反映せず、無視済みの advisory でも exit 1 になる（実測: 非 JSON=0 / JSON=1）。
+      # npm audit エンドポイントの断続的 ERR_SOCKET_TIMEOUT 対策(2026-09-04)。全試行失敗なら fail = ゲートは弱めない。
       - name: Security audit (pnpm audit)
-        run: pnpm audit --audit-level high
+        run: |
+          for attempt in 1 2 3 4; do
+            pnpm audit --audit-level high && exit 0
+            echo "Security audit attempt ${attempt}/4 failed" >&2
+            if [ "${attempt}" -lt 4 ]; then
+              sleep 90
+            fi
+          done
+          exit 1
 
       # 🔴 実行順は build → lint → typecheck → test:unit → test:isolation。
       # tests/isolation の型解決と test:unit（@prisma/client を import する packages/db の
