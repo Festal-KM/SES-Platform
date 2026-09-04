@@ -14,6 +14,7 @@ import { TwoFactorRequiredError } from './context.js';
 import type { PlatformRole } from './schema-value-sets.js';
 
 declare const PlatformCtxBrand: unique symbol;
+declare const PlatformOwnerBrand: unique symbol;
 
 /**
  * 認証済みの運営者文脈。
@@ -70,4 +71,49 @@ export async function resolvePlatformCtx(
     platformRole: session.platformRole,
     deviceKind: req.deviceKind,
   } as AuthenticatedPlatformCtx;
+}
+
+/**
+ * 🔴 `PLATFORM_OWNER` であることが**型で**保証された ctx（`HostTenantCtx` と同じ仕掛け）。
+ *
+ * docs/02 章 4.4 / `BR-44` / `F-001` の `PP` = `−`: テナントの開設・停止・解約・プラン変更は
+ * `PLATFORM_OWNER` だけが行える。**`PLATFORM_SUPPORT` は監視・調査・サポートのみ**である
+ * （`CLAUDE.md` §10.1）。
+ *
+ * この型を引数に要求する関数（API-A4 / A5 の実装）は、`requirePlatformOwner` を通さない
+ * `AuthenticatedPlatformCtx` を渡された時点でコンパイルが落ちる。
+ */
+export type PlatformOwnerCtx = AuthenticatedPlatformCtx & {
+  readonly platformRole: 'PLATFORM_OWNER';
+  readonly [PlatformOwnerBrand]: true;
+};
+
+/**
+ * 🔴 `PLATFORM_SUPPORT` が `PLATFORM_OWNER` 専用の操作を要求した（`CLAUDE.md` §10.1 / `BR-44`）。
+ *
+ * API 境界では **403** に写像する（docs/02 章 5.4 の「`PLATFORM_SUPPORT` の要求は 403」）。
+ * 🔴 404 に畳まない: 運営者は対象テナントの存在をすでに一覧（`A-002`）で見られる立場であり、
+ *    隠すべき情報が無い。逆に 404 にすると「権限が足りない」ことが伝わらず、
+ *    `PLATFORM_OWNER` への依頼という次の行動に繋がらない。
+ */
+export class PlatformRoleNotAllowedError extends Error {
+  constructor(readonly required: PlatformRole) {
+    super(
+      `この操作は ${required} のみが実行できます（CLAUDE.md §10.1 / BR-44）。` +
+        'PLATFORM_SUPPORT は監視・調査・サポートに限られます。',
+    );
+    this.name = 'PlatformRoleNotAllowedError';
+  }
+}
+
+/**
+ * 🔴 `PlatformOwnerCtx` の唯一の生成経路（アサーション関数）。
+ *    `PLATFORM_SUPPORT` なら `PlatformRoleNotAllowedError` を投げる。
+ */
+export function requirePlatformOwner(
+  ctx: AuthenticatedPlatformCtx,
+): asserts ctx is PlatformOwnerCtx {
+  if (ctx.platformRole !== 'PLATFORM_OWNER') {
+    throw new PlatformRoleNotAllowedError('PLATFORM_OWNER');
+  }
 }

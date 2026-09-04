@@ -35,6 +35,22 @@ export type {
   PlatformTenantListQuery,
   PlatformRequestMeta as PlatformTenantRequestMeta,
 } from './queries/tenants.js';
+// A-014（テナントの開設 + 初期 OWNER 招待。API-A4 / API-A5。T-03-10）。
+export {
+  issueTenantOwnerInvitation,
+  listRecentProvisionings,
+  provisionTenant,
+  TenantProvisioningInputError,
+  TenantProvisioningRequestConflictError,
+} from './queries/provisioning.js';
+export type {
+  OwnerInvitationInput,
+  OwnerInvitationResult,
+  PlatformProvisioningMeta,
+  ProvisionTenantInput,
+  ProvisionTenantResult,
+  RecentProvisioningQuery,
+} from './queries/provisioning.js';
 // 応答のシリアライザ（docs/05 §5.5 第 2 層）。ルートが型を再宣言せずに参照できるようにする。
 export {
   toPlatformTenantDetail,
@@ -44,3 +60,11 @@ export type {
   PlatformTenantDetailView,
   PlatformTenantListItemView,
 } from '../serializers/platform/tenants.js';
+export {
+  PROVISIONING_INVITATION_STATES,
+  toPlatformProvisioningItem,
+} from '../serializers/platform/provisioning.js';
+export type {
+  PlatformProvisioningItemView,
+  ProvisioningInvitationState,
+} from '../serializers/platform/provisioning.js';

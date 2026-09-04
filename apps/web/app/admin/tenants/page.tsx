@@ -21,6 +21,8 @@ import {
   TENANT_LIFECYCLE_STATE_MESSAGE_KEYS,
   tenantEnvironmentMessageKey,
 } from './_lib/labels';
+// 🔴 `_lib/labels` は上 2 つを `apps/web/lib/tenants/labels` から re-export している
+//    （主平面の `S-035` と共有するため。管理平面のファイルを主平面から import させない）。
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -48,14 +50,33 @@ export default async function AdminTenantsPage({
     { ipAddress: meta.ipAddress },
   );
 
+  // 🔴 T-03-10: 開設（`A-014`）の導線は **`PLATFORM_OWNER` にのみ表示する**
+  //    （docs/04 §A-002 空状態 / §A-014 権限差分。`F-001` の `PP` = `−`）。
+  //    グレーアウトで見せない —— `PLATFORM_SUPPORT` には導線そのものが存在しない。
+  const canProvision = outcome.ctx.platformRole === 'PLATFORM_OWNER';
+  const provisionLink = canProvision ? (
+    <Link
+      className="text-sm font-medium text-slate-900 underline-offset-2 hover:underline"
+      href="/admin/tenants/new"
+    >
+      {t('admin.provisioning.link')}
+    </Link>
+  ) : null;
+
   return (
     <main className="mx-auto max-w-5xl px-4 py-8">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-xl font-bold text-slate-900">{t('admin.tenants.title')}</h1>
-        {/* 🔴 BR-37: 運営者コンソールは既定 read-only。書き込み操作なしを常時明示する。 */}
-        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-          {t('admin.readOnly.badge')}
-        </span>
+        <div className="flex items-center gap-3">
+          {provisionLink}
+          {/* 🔴 BR-37: 運営者コンソールは既定 read-only。書き込み操作なしを常時明示する。
+              🔴 バッジの射程は「テナントの**業務データ**に対して閲覧のみ」である
+              （docs/04 §4 の 4「read-only の明示」）。開設（`A-014`）は契約領域の操作であり、
+              このバッジと共存する。 */}
+          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+            {t('admin.readOnly.badge')}
+          </span>
+        </div>
       </div>
 
       {page.items.length === 0 ? (

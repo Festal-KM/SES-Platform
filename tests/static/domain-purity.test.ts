@@ -205,14 +205,43 @@ function listDomainSourceFiles(dir: string): string[] {
   return files;
 }
 
+/**
+ * 🔴 T-03-10: 走査対象は **`packages/domain/src` の非テストソース**である。
+ *
+ * 本テストが守るのは「**出荷される** domain のコードが決定的であること」（`CLAUDE.md` §2.1
+ * 「ここに DB・ネットワーク・現在時刻の取得を持ち込まない ——— テスト可能性と、
+ *  マッチングスコアの決定性を守るため」）である。ユニットテストは決定的な入力
+ * （固定日時 `new Date('2026-09-04T…')`）を**与える側**であり、現在時刻の取得ではない。
+ * ここで落とすと「domain の関数に日時を渡すテストが書けない」ことになり、
+ * **決定性を検証する手段そのものを塞ぐ**（規律が逆向きに働く）。
+ *
+ * 🔴 `tests/static/auth-db-callers.test.ts` が「検査対象は非テストソース。テストは出荷されない」
+ *    としているのと同じ理由・同じ射程である。除外は `*.test.ts` に限り、下の対照テストが
+ *    「除外されたのは全てテストファイルであること」「非テストソースが 1 件以上残ること」を確認する。
+ */
+function isTestFile(absolutePath: string): boolean {
+  return /\.test\.(ts|tsx|mts|cts)$/.test(absolutePath);
+}
+
 describe('packages/domain の純粋性（CLAUDE.md §2.1 / docs/05 §17.2 #14）', () => {
   it('対照: このテスト自体が空振りしていない（packages/domain/src に 1 件以上のソースがある）', () => {
-    const files = listDomainSourceFiles(domainSrcDir);
+    const files = listDomainSourceFiles(domainSrcDir).filter((file) => !isTestFile(file));
     expect(files.length).toBeGreaterThan(0);
   });
 
+  it('🔴 対照: 除外したのはテストファイルだけである（実装が除外に紛れていない）', () => {
+    const all = listDomainSourceFiles(domainSrcDir);
+    const excluded = all.filter((file) => isTestFile(file));
+    expect(excluded.length).toBeGreaterThan(0); // 除外の仕組み自体が空振りしていない
+    for (const file of excluded) {
+      expect(path.basename(file)).toMatch(/\.test\.(ts|tsx|mts|cts)$/);
+    }
+    // 🔴 除外が走査を空にしていない（実装ファイルが残っている）。
+    expect(all.length - excluded.length).toBeGreaterThan(0);
+  });
+
   it('packages/domain/src 配下の全ファイルに純粋性違反が 0 件', () => {
-    const files = listDomainSourceFiles(domainSrcDir);
+    const files = listDomainSourceFiles(domainSrcDir).filter((file) => !isTestFile(file));
     const allViolations = files.flatMap((file) =>
       findPurityViolations(readFileSync(file, 'utf8'), file).map((v) => ({
         ...v,

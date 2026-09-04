@@ -1,10 +1,15 @@
 // apps/web/lib/api/errors.test.ts
 // docs/05 §15.1 の階層と §4.8「見えない ＝ 存在しない」の写像。T-03-04（SP-03）。
 import { describe, expect, it } from 'vitest';
+import { PlatformRoleNotAllowedError } from '@ses/db';
 import {
   NotFoundError,
+  PlatformOwnerRequiredError,
   requireFound,
   TenantNotExecutableError,
+  TenantProvisioningConflictError,
+  TenantProvisioningInvalidError,
+  toAppError,
   toApiErrorBody,
   ViewerNotAllowedError,
 } from './errors';
@@ -60,5 +65,34 @@ describe('docs/05 §15.1 に足した 3 型の応答', () => {
     });
     // 内部ログ用に保持はする（応答には出ない）。
     expect(error.lifecycleState).toBe('CLOSING');
+  });
+});
+
+describe('🔴 管理平面の例外（T-03-10。CLAUDE.md §10.1 / BR-44 / docs/02 章 5.4）', () => {
+  it('🔴 PLATFORM_SUPPORT の要求は **403** になる（404 に畳まない）', () => {
+    const mapped = toAppError(new PlatformRoleNotAllowedError('PLATFORM_OWNER'));
+    expect(mapped).toBeInstanceOf(PlatformOwnerRequiredError);
+    expect(mapped.httpStatus).toBe(403);
+    expect(toApiErrorBody(mapped)).toEqual({
+      error: {
+        code: 'PLATFORM_OWNER_REQUIRED',
+        messageKey: 'error.admin.ownerRequired',
+        retryable: false,
+      },
+    });
+  });
+
+  it('開設要求の重複は 409（冪等。docs/05 §10.7）', () => {
+    const error = new TenantProvisioningConflictError();
+    expect(error.httpStatus).toBe(409);
+    expect(toApiErrorBody(error).error.code).toBe('TENANT_PROVISIONING_CONFLICT');
+  });
+
+  it('環境と初期状態の組み合わせの誤りは 422（400 と区別する）', () => {
+    const error = new TenantProvisioningInvalidError();
+    expect(error.httpStatus).toBe(422);
+    expect(toApiErrorBody(error).error.messageKey).toBe(
+      'error.admin.provisioning.invalidCombination',
+    );
   });
 });

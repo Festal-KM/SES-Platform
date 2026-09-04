@@ -41,3 +41,44 @@ export const tenantMachine = createStateMachine(
   TENANT_LIFECYCLE_STATES,
   TENANT_LIFECYCLE_TRANSITIONS,
 );
+
+/**
+ * docs/05 §3.3 `Tenant.environment`（テナントの種別）。
+ * 🔴 `packages/config` の `APP_ENV`（デプロイ環境。5 値）とは**別物**である
+ *    （schema.prisma の `Tenant.environment` のコメント）。
+ */
+export const TENANT_ENVIRONMENTS = ['production', 'sandbox', 'demo'] as const;
+
+export type TenantEnvironment = (typeof TENANT_ENVIRONMENTS)[number];
+
+/**
+ * 🔴 **開設（`F-001`）は遷移ではない**（docs/02 章 5.4 の規則）。したがって開設時に置ける
+ *    初期状態は `SANDBOX`（見込み客の試用）と `ACTIVE`（本契約）の 2 つだけである。
+ *
+ * この配列を `TENANT_LIFECYCLE_STATES` から導出しない: 「開設できる状態」と
+ * 「存在しうる状態」は別の概念であり、状態が増えたときに自動で開設可能になってはならない
+ * （`PURGED` で開設できる API は、それ自体が事故である）。
+ */
+export const TENANT_CREATION_STATES = ['SANDBOX', 'ACTIVE'] as const;
+
+export type TenantCreationState = (typeof TENANT_CREATION_STATES)[number];
+
+/**
+ * 開設時の `environment` と `lifecycleState` の整合（docs/02 章 5.4 の規則）。
+ *
+ * - 「見込み客の試用として開設すれば初期状態は `SANDBOX`」→ `sandbox` ⇒ `SANDBOX`
+ * - 「`demo` 環境のテナントは `ACTIVE` として扱う」→ `demo` ⇒ `ACTIVE`
+ * - 本契約（`production`）は `ACTIVE`
+ *
+ * 🔴 **開設時にだけ成り立つ規則である。** 試用から本契約への移行（`SANDBOX → ACTIVE`）は
+ *    データを引き継ぐ状態遷移であり `environment` を書き換えない（`CLAUDE.md` §11.1 /
+ *    docs/05 §5.2「`name` / `environment` は開設時にしか書けない」）。したがって
+ *    移行後は `environment='sandbox'` かつ `ACTIVE` の組み合わせが正当に存在する。
+ *    この関数を「不変条件」として遷移側で使い回さないこと。
+ */
+export function isValidTenantCreation(input: {
+  readonly environment: TenantEnvironment;
+  readonly lifecycleState: TenantCreationState;
+}): boolean {
+  return (input.environment === 'sandbox') === (input.lifecycleState === 'SANDBOX');
+}

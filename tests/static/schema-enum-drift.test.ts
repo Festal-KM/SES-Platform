@@ -78,7 +78,10 @@ import { ASSIGNMENT_STATES } from '../../packages/domain/src/state/assignment.js
 import { CONTRACT_STATES } from '../../packages/domain/src/state/contract.js';
 import { PROPOSAL_STATES } from '../../packages/domain/src/state/proposal.js';
 import { PROPOSAL_REQUEST_STATES } from '../../packages/domain/src/state/proposalRequest.js';
-import { TENANT_LIFECYCLE_STATES } from '../../packages/domain/src/state/tenant.js';
+import {
+  TENANT_ENVIRONMENTS,
+  TENANT_LIFECYCLE_STATES,
+} from '../../packages/domain/src/state/tenant.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '..', '..');
@@ -199,6 +202,20 @@ describe('CHECK 制約と TS 単一出所の drift 検査（docs/05 §3.1「列�
     const values = extractCheckInValues(tampered, 'tenants_environment_check');
     const expected = APP_ENV_KINDS.filter((kind) => !DEPLOYMENT_ONLY_APP_ENV_KINDS.includes(kind));
     expect(values).not.toEqual(expected);
+  });
+
+  // 🔴 T-03-10: API-A4 の Zod スキーマ（`createTenantBodySchema`）は `@ses/domain` の
+  //    `TENANT_ENVIRONMENTS` を enum の出所にしている（`packages/domain` は `@ses/config` に
+  //    依存できないため、値の写しがもう 1 つ生まれた）。**3 者が一致していること**を
+  //    ここで固定する（片方だけ増えると「API では受け付けるが DB が拒否する」が起きる）。
+  it('🔴 tenants_environment_check ⇔ @ses/domain TENANT_ENVIRONMENTS', () => {
+    const values = extractCheckInValues(migrationSql, 'tenants_environment_check');
+    expectSameValueSet(values, TENANT_ENVIRONMENTS);
+  });
+
+  it('🔴 @ses/domain TENANT_ENVIRONMENTS ⇔ @ses/config APP_ENV_KINDS（デプロイ専用の 2 値を除く）', () => {
+    const expected = APP_ENV_KINDS.filter((kind) => !DEPLOYMENT_ONLY_APP_ENV_KINDS.includes(kind));
+    expect([...TENANT_ENVIRONMENTS].sort()).toEqual([...expected].sort());
   });
 
   it('two_factor_credentials_subject_type_check ⇔ packages/db TWO_FACTOR_SUBJECT_TYPES', () => {

@@ -45,6 +45,15 @@ export const EMAIL_MAX_LENGTH = 254;
 /** 表示名（`User.displayName`）の長さの上限。 */
 export const DISPLAY_NAME_MAX_LENGTH = 120;
 
+/** 組織名（`Tenant.name`。`A-014` の企業名 / `S-035` の商号）の長さの上限。 */
+export const TENANT_NAME_MAX_LENGTH = 200;
+
+/**
+ * 送信元ドメイン（`TenantSendingDomain.domain`）の長さの上限。
+ * RFC 1035 のホスト名全体の上限（253 オクテット）。
+ */
+export const SENDING_DOMAIN_MAX_LENGTH = 253;
+
 /**
  * 一覧 API のページサイズ（docs/05 §6.1「カーソル方式。`?cursor=&limit=`（既定 50、最大 200）」）。
  *
@@ -55,6 +64,21 @@ export const PAGE_SIZE_DEFAULT = 50;
 
 /** 🔴 上限（docs/05 §6.1）。これを超える `limit` は 400 で拒否する（黙って丸めない）。 */
 export const PAGE_SIZE_MAX = 200;
+
+/**
+ * 🔴 席数の日次スナップショット（`usage.seat-snapshot`。docs/05 §9.8）が、
+ *    **取引先所属の席（`PARTNER_ADMIN` / `PARTNER_SALES`）を数に含めるか**の既定値。
+ *
+ * 🔴 **決め打ちしない**（docs/05 TBD-19 / [Issue #12](https://github.com/Festal-KM/SES-Platform/issues/12)）。
+ *    席単価と課金対象は事業判断であり未決である。集計関数（`snapshotSeatCount`）は
+ *    `countPartnerSeats: boolean` を**引数**で受け取り、その既定値だけをここが持つ。
+ *    決まったらこの 1 行を差し替える（呼び出し側のコードは変わらない）。
+ *
+ * 暫定 `false` の理由: 取引先の担当者はテナントが招いた「相手方」であり、
+ * 課金対象に含めると請求額が取引先の増減で動く。含める判断は増額側であり、
+ * 決まっていない状態では**安全側（請求に載せない）**に倒す。
+ */
+export const SEAT_SNAPSHOT_COUNTS_PARTNER_SEATS = false;
 
 /**
  * カーソル文字列の長さの上限。

@@ -29,6 +29,11 @@ let cachedAppEnv: AppEnvKind | null = null;
  *    ここから明示的に渡す。**`process.env` を直接読まない**（CLAUDE.md §3.5）。
  */
 let cachedPlatformAuthSecret: string | null = null;
+/**
+ * 🔴 T-03-10: `SANDBOX` で開設したテナントの試用期限（日数。docs/05 §6.9 API-A4 /
+ *    `CLAUDE.md` §9-12「有効期間は 30 日」）。`packages/config` の `SANDBOX_TRIAL_DAYS` が唯一の出所。
+ */
+let cachedSandboxTrialDays: number | null = null;
 
 /**
  * DB クライアントを 1 度だけ初期化する。
@@ -42,6 +47,7 @@ export function ensureDbConfigured(): void {
   const env = loadAppEnv(process.env);
   cachedAppEnv = env.APP_ENV;
   cachedPlatformAuthSecret = env.AUTH_PLATFORM_SECRET;
+  cachedSandboxTrialDays = env.SANDBOX_TRIAL_DAYS;
   configureTenantDb({ datasourceUrl: env.DATABASE_URL });
   // 🔴 T-03-07: 管理平面は**別の接続プール・別の DB ロール**（docs/03 §4.3.3 / docs/05 §4.2）。
   //    主平面の DATABASE_URL を流用しない（流用すると運営者の資格情報へ主平面のロールから
@@ -82,6 +88,20 @@ export function currentAppEnv(): AppEnvKind {
     throw new Error('APP_ENV が解決されていません（bootstrap の不変条件違反）。');
   }
   return cachedAppEnv;
+}
+
+/**
+ * 🔴 T-03-10: `A-014`（テナント開設）が `SANDBOX` の `sandboxExpiresAt` を計算するために読む。
+ *    値の出所は `packages/config`（`SANDBOX_TRIAL_DAYS`。既定 30 日）だけであり、
+ *    API ハンドラに日数をベタ書きしない。
+ */
+export function sandboxTrialDays(): number {
+  ensureDbConfigured();
+  if (cachedSandboxTrialDays === null) {
+    // `ensureDbConfigured()` が例外を投げずに戻った以上、この分岐には到達しない。
+    throw new Error('SANDBOX_TRIAL_DAYS が解決されていません（bootstrap の不変条件違反）。');
+  }
+  return cachedSandboxTrialDays;
 }
 
 /**

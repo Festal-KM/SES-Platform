@@ -229,6 +229,74 @@ export function requireHost(ctx: AuthenticatedTenantCtx): asserts ctx is HostTen
 }
 
 /**
+ * 🔴 ジョブの実行主体（docs/05 §9.2 の `JobIdentity`）。
+ *    キュー名と `jobId` を必須で受け取り、`AuditLog.summary` にそのまま載せられる形にする。
+ */
+export type JobIdentity = {
+  /** キュー名（`usage.seat-snapshot` 等。docs/05 §9）。 */
+  readonly queue: string;
+  /** BullMQ の `jobId`。冪等キーそのものであり、記録に残す価値がある。 */
+  readonly jobId: string;
+};
+
+/**
+ * 🔴 ジョブ文脈の「利用者 ID」。**空文字である**（docs/05 §9.2「`userId` は null 相当」）。
+ *
+ * `tenantScopeSettingsSql` はこの値を `set_config('app.actor_user_id', …)` に渡し、
+ * `app_actor_user_id()` は `NULLIF(…, '')::uuid` なので **NULL** になる。
+ * つまり C7 SELF（本人の行だけ）のポリシーはジョブ文脈で 1 つも真にならない。
+ *
+ * 🔴 ダミーの UUID にしない: 監査ログの `actorId` に誤って流し込まれたとき、
+ *    UUID なら「実在しない誰か」の記録として**静かに**残ってしまう。空文字なら
+ *    `uuid` へのキャストで即座に失敗する（`actorKind='SYSTEM'` + `actorId=null` で
+ *    記録するのが正しい。docs/05 §16.1 / `F-005 AC-4`）。
+ */
+export const SYSTEM_ACTOR_ID = '';
+
+/**
+ * ジョブ文脈の ctx。`HostTenantCtx` に**実行中のジョブの識別**を足したものである。
+ * 🔴 `job` を型に持たせる理由: 状態を変えるジョブは `AuditLog`（`actorKind='SYSTEM'`）を
+ *    書く（docs/05 §9.1）。そのとき「どのジョブが書いたか」を `summary` に載せられないと、
+ *    後から遡っても `SYSTEM` としか分からない。
+ */
+export type SystemTenantCtx = HostTenantCtx & { readonly job: JobIdentity };
+
+/**
+ * 🔴 ジョブ（`apps/worker`）が `withTenant` / `withHostTenant` を使うための文脈（docs/05 §9.2）。
+ *
+ * 🔴 **`apps/web` から呼んではならない**（同 §9.2 の ⚠️）。HTTP 経路がこれを呼べると、
+ *    リクエスト入力の `tenantId` で任意のテナントの文脈を作れてしまう（`CLAUDE.md` §3.1）。
+ *    呼び出し元の限定は `tests/static/auth-db-callers.test.ts` の走査が行う
+ *    （`withSystemScope` / 行由来コンテキスト 3 関数と同じ扱い）。
+ *
+ * 🔴 `partnerCompanyId` は常に `null`（ホスト相当）。ワーカーがパートナー文脈を持てないことが、
+ *    `docs/05` §17.2 #20 の「`apps/worker/**` を `withHostTenant` の呼び出し元限定から外す」
+ *    根拠になっている。
+ * 🔴 `lifecycleState` を引数に取らない: ジョブは「実行系ガード（`requireExecutable`）を通す
+ *    利用者操作」ではなく、状態に依らず走る計測・期限処理である。状態で分岐するジョブは
+ *    自分で `tenants` を読んで判断する（ctx に嘘の状態を詰めさせない）。
+ */
+export function systemTenantCtx(tenantId: string, job: JobIdentity): SystemTenantCtx {
+  if (tenantId === '') {
+    throw new Error('systemTenantCtx: tenantId が空です（テナント文脈を作れません）。');
+  }
+  return {
+    tenantId,
+    partnerCompanyId: null,
+    userId: SYSTEM_ACTOR_ID,
+    // 🔴 RLS はロールを判定材料にしない（§4.4 のポリシーは tenant_id / partner_company_id /
+    //    actor_user_id の 3 GUC しか見ない）。それでも `OWNER` / `ADMIN` を置かないのは、
+    //    ロールを見るアプリ側のガード（`requireRole`）にジョブが「管理者として」通る値を
+    //    与えないためである。ジョブは利用者を騙らない。
+    role: 'SALES',
+    // 🔴 ジョブは実行系ガードの対象ではないため、ここで停止状態を表現しない（下記コメント）。
+    lifecycleState: 'ACTIVE',
+    deviceKind: 'api',
+    job,
+  } as SystemTenantCtx;
+}
+
+/**
  * 🔴 `withPartnerScope`（docs/05 §4.9）の当事者が確定できないことを示す。
  *
  * 経路 5 の当事者は次のどちらか一方からしか決まらない:

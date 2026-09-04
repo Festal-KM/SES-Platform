@@ -35,14 +35,27 @@ export type {
   PlatformUserFacts,
 } from './platform-auth.js';
 // 🔴 T-03-07: 運営者 ctx の唯一の生成器（2FA 未充足なら生成しない。F-055 AC-3）。
-export { resolvePlatformCtx } from './platform-context.js';
-export type { AuthenticatedPlatformCtx, PlatformSession } from './platform-context.js';
+// 🔴 T-03-10: `PLATFORM_OWNER` 専用操作（API-A4 / A5。CLAUDE.md §10.1 / BR-44）のゲート。
+export {
+  PlatformRoleNotAllowedError,
+  requirePlatformOwner,
+  resolvePlatformCtx,
+} from './platform-context.js';
+export type {
+  AuthenticatedPlatformCtx,
+  PlatformOwnerCtx,
+  PlatformSession,
+} from './platform-context.js';
 export {
   HostOnlyContextError,
   PartnerScopeTargetError,
   requireHost,
   requiresTwoFactor,
   resolveTenantCtx,
+  // 🔴 T-03-10: ジョブ文脈（docs/05 §9.2）。**`apps/web` から呼ばない**
+  //    （呼び出し元の限定は tests/static/auth-db-callers.test.ts が走査する）。
+  SYSTEM_ACTOR_ID,
+  systemTenantCtx,
   TENANT_ROLES,
   // 🔴 T-03-02: 2 要素認証のゲート（docs/05 §6.2 / F-003 AC-2 / BR-30）。
   TWO_FACTOR_REQUIRED_ROLES,
@@ -64,8 +77,10 @@ export type {
   AuthenticatedTenantCtx,
   DeviceKind,
   HostTenantCtx,
+  JobIdentity,
   MainSession,
   RequestMeta,
+  SystemTenantCtx,
   TenantLifecycleState,
   TenantRole,
   TwoFactorRequiredRole,
@@ -231,6 +246,19 @@ export {
   withSystemScope,
   withTenant,
 } from './with-tenant.js';
+// 🔴 T-03-10: UsageCounter の計測フック（CLAUDE.md §10.6 / F-026 / docs/05 §7.6 / §9.8）。
+//    `usage_counters` を書いてよい唯一の経路（生 SQL の ON CONFLICT はここに閉じる）。
+export {
+  incrementUsageCounter,
+  recordUsageCounterSnapshot,
+  snapshotSeatCount,
+} from './usage-counters.js';
+export type {
+  SeatSnapshotOptions,
+  SeatSnapshotResult,
+  UsageCounterValue,
+  UsageCounterWrite,
+} from './usage-counters.js';
 // 🔴 経路 5（docs/05 §4.9）の読み取りの型。`TenantDb` / `HostTenantDb` と違い、
 //    API 層が `toPartnerView()` の入力型として参照するため export する。
 export type { PartnerScopeDb, PartnerScopeTarget } from './with-tenant.js';

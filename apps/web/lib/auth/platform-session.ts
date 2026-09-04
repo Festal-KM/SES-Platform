@@ -3,8 +3,11 @@
 //    Auth.js の型・関数はここから外へ出さない（docs/03 §4.9 の回避策）。
 import { headers } from 'next/headers';
 import { AuthError, CredentialsSignin } from 'next-auth';
-import type { AuthenticatedPlatformCtx } from '@ses/db';
-import { TwoFactorRequiredError as DbTwoFactorRequiredError } from '@ses/db';
+import type { AuthenticatedPlatformCtx, PlatformOwnerCtx } from '@ses/db';
+import {
+  requirePlatformOwner,
+  TwoFactorRequiredError as DbTwoFactorRequiredError,
+} from '@ses/db';
 import { AuthenticationError } from '../api/errors';
 import { ensureDbConfigured } from '../db/bootstrap';
 import type { AuthAttemptMeta } from './credentials';
@@ -49,6 +52,22 @@ export async function requirePlatformCtx(): Promise<AuthenticatedPlatformCtx> {
   const meta = await readPlatformRequestMeta();
   const ctx = await buildPlatformCtx(claims, { deviceKind: meta.deviceKind });
   if (ctx === null) throw new AuthenticationError();
+  return ctx;
+}
+
+/**
+ * 🔴 `PLATFORM_OWNER` 専用のルート（API-A4 / API-A5。`F-001` の `PP` = `−`）が使う入口。
+ *    `PLATFORM_SUPPORT` には `PlatformRoleNotAllowedError`（→ 403）を投げる。
+ *
+ * 🔴 **ルート自体が 403 である**（docs/05 §6.9 API-A4）。画面から導線を消すだけでは足りない
+ *    （`F-004 AC-9` と同じ規律 —— API を直接呼んでも拒否されることをテストで証明する）。
+ * 🔴 戻り値の型が `PlatformOwnerCtx` なので、`provisionTenant` /
+ *    `issueTenantOwnerInvitation` に `requirePlatformCtx()` の戻り値をそのまま渡すと
+ *    **コンパイルが落ちる**（型でも二重に縛る）。
+ */
+export async function requirePlatformOwnerCtx(): Promise<PlatformOwnerCtx> {
+  const ctx = await requirePlatformCtx();
+  requirePlatformOwner(ctx);
   return ctx;
 }
 

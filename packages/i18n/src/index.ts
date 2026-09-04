@@ -125,6 +125,117 @@ const ja = {
   //    削除完了の確認は A-010（Phase 3）の 1 本のみ。
   'admin.tenantDetail.purged.notice': 'このテナントのデータは削除済みです。',
 
+  // --- A-014 テナントの開設（docs/04 §A-014 / F-001。T-03-10）---
+  // 🔴 PLATFORM_OWNER のみが到達する画面（PLATFORM_SUPPORT にはナビにも現れない）。
+  'admin.provisioning.title': 'テナントの開設',
+  'admin.provisioning.link': 'テナントを開設する',
+  // セクション 1: 開設先の環境（読み取り専用。選ばせない）
+  'admin.provisioning.section.environment': '開設先の環境',
+  'admin.provisioning.environment.readOnlyNote':
+    '接続先で決まります。この画面では切り替えられません。',
+  // セクション 2: 企業の情報
+  'admin.provisioning.section.company': '企業の情報',
+  'admin.provisioning.name.label': '企業名・商号',
+  'admin.provisioning.timezone.label': 'タイムゾーン',
+  'admin.provisioning.currency.label': '通貨',
+  'admin.provisioning.currency.value': '日本円（固定）',
+  // 🔴 同名テナントの警告（開設は止めない。docs/04 §A-014）
+  'admin.provisioning.duplicateName.warning':
+    '同じ名前のテナントがすでにあります。取り違えて 2 つ目を開設すると、以後の業務が 2 つに割れます。',
+  // セクション 3: 契約の初期状態
+  'admin.provisioning.section.lifecycle': '契約の初期状態',
+  'admin.provisioning.lifecycle.SANDBOX': 'サンドボックス（試用）',
+  'admin.provisioning.lifecycle.ACTIVE': '本契約',
+  'admin.provisioning.lifecycle.sandboxNote':
+    '30 日の期限つきです。期限が到来すると解約手続き中に進み、サンドボックスの管理画面の対象になります。',
+  // セクション 4: プラン
+  'admin.provisioning.section.plan': 'プラン',
+  'admin.provisioning.plan.label': 'プランの識別子',
+  'admin.provisioning.plan.hint':
+    'プランの内容（席数上限・AI 利用量クォータ・メール上限）の設定と変更は、契約管理の画面で行います。',
+  // セクション 5: 初期 OWNER の招待
+  'admin.provisioning.section.owner': '初期オーナーの招待',
+  'admin.provisioning.owner.email.label': '招待先メールアドレス',
+  // 🔴 「複数名を一度に招待する」欄を置かない理由を運営者に示す（docs/04 §A-014）
+  'admin.provisioning.owner.singleNote':
+    '招待できるのは 1 名だけです。以降のメンバー追加は、テナントの組織設定から行われます。',
+  // セクション 5b: 送信ドメインの登録
+  'admin.provisioning.section.sendingDomain': '送信ドメインの登録',
+  'admin.provisioning.sendingDomain.label': '独自ドメイン（任意）',
+  'admin.provisioning.sendingDomain.note':
+    '登録するだけです。DNS レコードの設定と検証は、オーナーが受諾後に自分で行います。開設直後は未検証（取引先へ 1 通も送れない状態）です。',
+  // セクション 6: 開設後に自動で入る既定値の明示
+  'admin.provisioning.section.defaults': '開設後に自動で入る既定値',
+  'admin.provisioning.defaults.autoApprove': '提案の自動承認 — 無効',
+  'admin.provisioning.defaults.approvalMode': 'AI 運用ロールの承認モード — すべて都度承認',
+  'admin.provisioning.defaults.visibility': '案件の公開範囲 — 誰にも公開されない',
+  'admin.provisioning.defaults.sendingDomain': '送信ドメインの検証状態 — 未検証',
+  // セクション 7: 確認
+  'admin.provisioning.section.confirm': '開設の確認',
+  'admin.provisioning.confirm.lead': '次の内容で開設します。',
+  'admin.provisioning.confirm.review': '確認へ進む',
+  'admin.provisioning.confirm.back': '入力に戻る',
+  'admin.provisioning.submit': 'テナントを開設する',
+  'admin.provisioning.submitting': '開設しています…',
+  // 🔴 「テナントは作成されていません」と「作成されたが招待に失敗した」を分けて示す
+  'admin.provisioning.error.notCreated':
+    'テナントは作成されていません。入力内容を確認して、もう一度お試しください。',
+  'admin.provisioning.error.invitationFailed':
+    'テナントは作成されました。招待の送信に失敗しています。開設をやり直さず、招待の再送を行ってください。',
+  'admin.provisioning.error.duplicateRequest':
+    'この開設要求はすでに処理済みです。テナント一覧で結果を確認してください。',
+  'admin.provisioning.success': 'テナントを開設し、初期オーナーの招待を作成しました。',
+  'admin.provisioning.retryInvitation': '招待を再送する',
+  // 直近の開設
+  'admin.provisioning.recent.title': '直近の開設',
+  'admin.provisioning.recent.empty': 'まだテナントを開設していません。',
+  'admin.provisioning.recent.column.createdAt': '開設日時',
+  'admin.provisioning.recent.column.name': '企業名',
+  'admin.provisioning.recent.column.environment': '環境',
+  'admin.provisioning.recent.column.lifecycleState': '契約の状態',
+  'admin.provisioning.recent.column.invitation': '招待の状態',
+  'admin.provisioning.recent.column.sendingDomain': '送信ドメイン',
+  'admin.provisioning.invitation.NOT_ISSUED': '未発行',
+  'admin.provisioning.invitation.PENDING': '受諾待ち',
+  'admin.provisioning.invitation.ACCEPTED': '受諾済み',
+  'admin.provisioning.invitation.EXPIRED': '期限切れ',
+  'admin.provisioning.invitation.REVOKED': '取消済み',
+  'admin.provisioning.sendingDomain.none': '未登録',
+  'admin.provisioning.sendingDomain.REGISTERED': '未検証',
+  'admin.provisioning.sendingDomain.PENDING': '検証中',
+  'admin.provisioning.sendingDomain.VERIFIED': '検証済み',
+  'admin.provisioning.sendingDomain.FAILED': '検証に失敗',
+
+  // --- S-035 組織設定（docs/04 §S-035 / F-001 / F-021。T-03-10）---
+  'orgSettings.title': '組織設定',
+  'orgSettings.section.organization': '組織情報',
+  'orgSettings.name.label': '商号',
+  'orgSettings.timezone.label': 'タイムゾーン',
+  'orgSettings.currency.label': '通貨',
+  'orgSettings.currency.value': '日本円（固定）',
+  'orgSettings.environment.label': '環境',
+  // 🔴 lifecycleState は読み取り専用（テナント側のどのロールからも変更できない）
+  'orgSettings.lifecycleState.label': '契約の状態',
+  'orgSettings.lifecycleState.readOnlyNote':
+    '契約の状態はご自身では変更できません。変更が必要な場合はお問い合わせください。',
+  'orgSettings.piiRetentionYears.label': '個人情報の保持期間（年）',
+  'orgSettings.section.approvalPolicy': '承認ポリシー',
+  'orgSettings.autoApprove.label': '提案の承認を自動で付与する（品質ゲートの全層 PASS のときのみ）',
+  // 🔴 危険な操作としての確認（docs/04 §S-035）。1 層でも不合格なら人間に差し戻されることを明記する。
+  'orgSettings.autoApprove.warning':
+    '有効にすると、品質ゲートの全層 PASS の提案が人手の承認なしに送信されます。1 層でも不合格の提案は、この設定にかかわらず人間に差し戻されます。',
+  'orgSettings.autoApprove.confirm': '上記を理解したうえで有効にします',
+  // 🔴 S-039（AI ロール別の承認モード）との違いを明示し、同じブロックに置かない
+  'orgSettings.autoApprove.scopeNote':
+    'この設定は「提案の承認」に対するもので、AI 運用ロールごとの承認モードとは別の設定です。',
+  'orgSettings.save': '保存する',
+  'orgSettings.saving': '保存しています…',
+  'orgSettings.saved': '保存しました。',
+  'orgSettings.error.saveFailed': '保存できませんでした。もう一度お試しください。',
+  // 🔴 Phase 0 の範囲を利用者に説明する（メンバー一覧・招待は後続）
+  'orgSettings.members.comingSoon':
+    'メンバーの一覧と招待は、後続のリリースでこの画面から利用できるようになります。',
+
   // --- S-002 招待の受諾とアカウント初期設定（docs/04 §S-002 / F-002。T-03-03）---
   'invite.title': '招待の受諾',
   'invite.section.invitation': '招待の内容',
@@ -201,6 +312,14 @@ const ja = {
     '取引先の担当者への招待は、まだご利用いただけません。自社メンバーの招待のみ発行できます。',
   'error.passwordReset.invalidToken':
     'このパスワード再設定のリンクは無効です。もう一度、再設定をお申し込みください。',
+  // 🔴 T-03-10: 管理平面（CLAUDE.md §10.1 / BR-44）。PLATFORM_SUPPORT には
+  //    「権限が足りない」ことを伝え、PLATFORM_OWNER への依頼という次の行動へ導く。
+  'error.admin.ownerRequired':
+    'この操作は PLATFORM_OWNER のみが実行できます。権限を持つ運営者にご依頼ください。',
+  'error.admin.provisioning.duplicateRequest':
+    'この開設要求はすでに処理済みです。テナント一覧で結果をご確認ください。',
+  'error.admin.provisioning.invalidCombination':
+    '環境と契約の初期状態の組み合わせが正しくありません。試用はサンドボックス、本契約は契約中で開設してください。',
   'error.internal': '処理に失敗しました。時間をおいて再度お試しください。',
 
   // --- S-041 監査ログ（自テナント。docs/04 §S-041 / F-005 / F-012。T-03-05）---

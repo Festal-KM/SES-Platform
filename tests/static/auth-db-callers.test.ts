@@ -113,6 +113,18 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
   EncryptedString: ['apps/web/lib/auth/two-factor-core.ts'],
   // 🔴 鍵の注入は起動時の 1 箇所だけ（CLAUDE.md §11.1 / docs/05 §13.1）。
   configureTokenEncryption: ['apps/web/lib/db/bootstrap.ts'],
+  // 🔴 T-03-10: ジョブ文脈（docs/05 §9.2）。**`apps/web` から呼べてはならない** ——
+  //    呼べると、HTTP 経路がリクエスト入力の `tenantId` で任意のテナントの文脈を作れる
+  //    （`CLAUDE.md` §3.1 / `BR-03`）。許可先は `apps/worker` のジョブ実装だけである。
+  //    docs/05 §9.2 の ⚠️「この関数を `apps/web` から呼べないよう制限する」の実装。
+  systemTenantCtx: ['apps/worker/src/jobs/usage-seat-snapshot.ts'],
+  // 🔴 T-03-10: `usage_counters` を書く唯一の経路（docs/05 §7.6 / §9.8）。
+  //    ここを増やすと「計測を迂回した書き込み」が生まれ、原価と請求根拠が説明できなくなる。
+  snapshotSeatCount: ['apps/worker/src/jobs/usage-seat-snapshot.ts'],
+  incrementUsageCounter: [],
+  // 🔴 T-03-10: `PLATFORM_OWNER` 専用操作のゲート（`CLAUDE.md` §10.1 / `BR-44`）。
+  //    ロール判定を各ルートに散らさない（散らすと 1 本だけ緩む）。
+  requirePlatformOwner: ['apps/web/lib/auth/platform-session.ts'],
 
   // --- 🔴 T-03-07: 管理平面（運営者認証。`F-055` / `BR-36`）------------------------------
   // 主平面と**同じ規律**を管理平面にも適用する。運営者の資格情報・2FA・監査ログに触れる経路が
@@ -157,6 +169,13 @@ describe('認証コンテキストを組み立てられる場所を固定する�
       expect(filesMentioning(identifier)).toEqual([...allowed].sort());
     },
   );
+
+  it('🔴 apps/web/** に systemTenantCtx の参照が無い（docs/05 §9.2 の ⚠️）', () => {
+    const webFiles = filesMentioning('systemTenantCtx').filter((file) =>
+      file.startsWith('apps/web/'),
+    );
+    expect(webFiles).toEqual([]);
+  });
 
   it('🔴 apps/worker/** に resolveTenantCtx の参照が無い（docs/05 §17.2 #20 ①）', () => {
     const workerFiles = filesMentioning('resolveTenantCtx').filter((file) =>

@@ -14,6 +14,7 @@
 import {
   AuditLogWriteError,
   HostOnlyContextError,
+  PlatformRoleNotAllowedError,
   TwoFactorRequiredError as DbTwoFactorRequiredError,
 } from '@ses/db';
 import type { TenantLifecycleState, TwoFactorRequirementReason } from '@ses/db';
@@ -99,6 +100,24 @@ export class ViewerNotAllowedError extends ForbiddenError {
   constructor() {
     super();
     this.name = 'ViewerNotAllowedError';
+  }
+}
+
+/**
+ * 🔴 `PLATFORM_SUPPORT` が `PLATFORM_OWNER` 専用の操作を要求した（403。`CLAUDE.md` §10.1 /
+ *    `BR-44` / docs/02 章 5.4「`PLATFORM_SUPPORT` の要求は 403」）。T-03-10。
+ *
+ * 🔴 `ForbiddenError` と別コードにする理由: これは**ロール設計どおりの結果**であり、
+ *    運営者本人は自分のロールを知っている。「`PLATFORM_OWNER` に依頼する」という次の行動へ
+ *    導くために区別する（`ViewerNotAllowedError` と同じ考え方）。情報境界は緩まない。
+ */
+export class PlatformOwnerRequiredError extends ForbiddenError {
+  override readonly code = 'PLATFORM_OWNER_REQUIRED';
+  override readonly userMessageKey: MessageKey = 'error.admin.ownerRequired';
+
+  constructor() {
+    super();
+    this.name = 'PlatformOwnerRequiredError';
   }
 }
 
@@ -213,6 +232,22 @@ export class InvitationNotAcceptableError extends ConflictError {
 }
 
 /**
+ * 🔴 同じ `provisioningRequestId` での開設要求がすでに処理済み（409。docs/05 §10.7）。T-03-10。
+ *
+ * `Tenant.provisioningRequestId` の `UNIQUE` が冪等の担保であり、**重複テナントを作らない**
+ * ことがこのエラーの目的である（重複が生まれると、分離が正しく効いたまま業務が 2 つに割れる）。
+ */
+export class TenantProvisioningConflictError extends ConflictError {
+  override readonly code = 'TENANT_PROVISIONING_CONFLICT';
+  override readonly userMessageKey: MessageKey = 'error.admin.provisioning.duplicateRequest';
+
+  constructor() {
+    super('この開設要求はすでに処理済みです。');
+    this.name = 'TenantProvisioningConflictError';
+  }
+}
+
+/**
  * 422。docs/05 §15.1 の `UnprocessableError` 段。
  * 🔴 T-03-04 以降が `InvalidStateTransitionError` / `SendingDomainNotVerifiedError` を同じ段に足す。
  */
@@ -247,6 +282,23 @@ export class InvalidStateTransitionError extends UnprocessableError {
   ) {
     super(`${entity}: ${from} -> ${to} は遷移表にありません。`);
     this.name = 'InvalidStateTransitionError';
+  }
+}
+
+/**
+ * 🔴 開設時の環境と初期状態の組み合わせが `docs/02` 章 5.4 の規則に反する（422）。T-03-10。
+ *
+ * 「見込み客の試用として開設すれば `SANDBOX`、本契約として開設すれば `ACTIVE`。
+ *  `demo` 環境のテナントは `ACTIVE` として扱う」。判定の本体は
+ * `packages/domain` の `isValidTenantCreation`（**この型は判定を持たない**）。
+ */
+export class TenantProvisioningInvalidError extends UnprocessableError {
+  override readonly code = 'TENANT_PROVISIONING_INVALID';
+  override readonly userMessageKey: MessageKey = 'error.admin.provisioning.invalidCombination';
+
+  constructor() {
+    super('環境と契約の初期状態の組み合わせが不正です。');
+    this.name = 'TenantProvisioningInvalidError';
   }
 }
 
@@ -368,6 +420,9 @@ export function toAppError(error: unknown): AppError {
   if (error instanceof AuditLogWriteError) return new AuditWriteFailedError(error.action);
   // 🔴 2FA 未充足は 403 として利用者に返す（500 に潰すと、設定すれば解決することが伝わらない）。
   if (error instanceof DbTwoFactorRequiredError) return new TwoFactorRequiredError(error.reason);
+  // 🔴 T-03-10: `PLATFORM_OWNER` 専用操作を `PLATFORM_SUPPORT` が要求した ＝ **403**
+  //    （docs/02 章 5.4 / `BR-44`）。404 に畳まない（運営者は対象テナントを一覧で見られる立場）。
+  if (error instanceof PlatformRoleNotAllowedError) return new PlatformOwnerRequiredError();
   // 🔴 ホスト専用の経路にパートナー文脈が入った ＝ **404**（403 と区別しない。docs/05 §4.8 /
   //    packages/db の `HostOnlyContextError` のコメント）。403 にすると「その機能は存在するが
   //    あなたには使えない」ことが伝わり、ホスト側の業務の存在を示唆する。

@@ -64,23 +64,36 @@ const EXEMPT_ROUTES: Readonly<Record<string, string>> = {
     '第 2 要素の提示（#2）。同上、ctx が生成される前の経路である。',
   'apps/web/app/api/(main)/invitations/[token]/accept/route.ts':
     '未認証経路（#7）。所属は招待行から決まり、受諾時点では ctx が無い。',
-  // 🔴 T-03-07（管理平面の認証。API-A1 / `F-055`）。
-  //    `requireExecutable` は `AuthenticatedTenantCtx.lifecycleState`（= 特定テナントの
-  //    ライフサイクル）を見るガードである。管理平面の認証はどのテナントの操作でもなく、
-  //    `PlatformUser` の資格情報照合と 2FA だけを行う（`BR-36` の別テーブル・別認証）ため、
-  //    テナントの ctx が存在せず**掛けようがない**。
-  //    ⚠️ **テナントに触れる管理平面のルート（API-A2 以降。T-03-08 / T-03-09 / T-03-10）は
-  //    ここへ足さない。** それらは `withPlatformRead` / `withPlatformWrite`（監査先行 +
-  //    専用 DB ロール）を通す必要があり、免除ではなく別のガードの対象である。
-  'apps/web/app/api/admin/auth/signin/route.ts':
-    '未認証経路（API-A1）。運営者の資格情報照合であり、テナントの ctx を作らない。',
-  'apps/web/app/api/admin/auth/signout/route.ts':
-    '管理平面のセッション破棄。未認証でも 204 を返す（セッションの有無を漏らさない）。',
-  'apps/web/app/api/admin/auth/2fa/setup/route.ts':
-    '2FA 未設定の運営者が使う操作（API-A1）。定義上 `AuthenticatedPlatformCtx` すら作れない。',
-  'apps/web/app/api/admin/auth/2fa/verify/route.ts':
-    '第 2 要素の提示（API-A1）。同上、ctx が生成される前の経路である。',
 };
+
+/**
+ * 🔴 管理平面（`apps/web/app/api/admin/**`）は `requireExecutable` の対象ではない。
+ *
+ * `requireExecutable` は `AuthenticatedTenantCtx.lifecycleState`（= 特定テナントの
+ * ライフサイクル）を見るガードである。管理平面の操作は**どのテナントの利用者の操作でもなく**、
+ * `PlatformUser` として行われる（`BR-36` の別テーブル・別認証）ため、テナントの ctx が
+ * 存在せず掛けようがない。**免除ではなく、別のガードの対象である**（T-03-10 で構造化した）:
+ *
+ *   - 認証（API-A1。`apps/web/app/api/admin/auth/**`）… ctx が生成される前の経路。
+ *   - それ以外の管理平面の実行系（API-A4 / A5 …）… 🔴 **`@ses/db/platform` の
+ *     `withPlatformWrite`（監査先行 + 専用 DB ロール + ドメイン照合）を通る関数**を呼ぶこと。
+ *     下の describe がそれを走査する。
+ */
+const ADMIN_PLANE_PREFIX = 'apps/web/app/api/admin/';
+const ADMIN_AUTH_PREFIX = 'apps/web/app/api/admin/auth/';
+
+/** 管理平面の書き込み経路の出所（ここから import した識別子だけを根拠にする）。 */
+const PLATFORM_MODULE = '@ses/db/platform';
+
+/**
+ * 🔴 `withPlatformWrite` を**経由する**専用クエリ関数（docs/05 §5.2「汎用エスケープハッチを
+ *    作らない担保」）。`apps/**` は `withPlatformWrite` を直接呼ばない
+ *    （`tests/static/auth-db-callers.test.ts` が期待値 `[]` で固定している）ため、
+ *    ルートが呼ぶのは必ずこの層の関数である。
+ *    その関数が本当に `withPlatformWrite` を通ることは
+ *    `tests/static/platform-plane-boundary.test.ts` ④ が検査する。
+ */
+const PLATFORM_WRITE_FUNCTIONS = ['provisionTenant', 'issueTenantOwnerInvitation'];
 
 type RouteAnalysis = {
   /** export されている HTTP メソッド名。 */
@@ -97,6 +110,11 @@ type RouteAnalysis = {
   readonly executeGuardBindings: ReadonlySet<string>;
   /** ファイル中でコードとして参照されている識別子（コメントは含まない）。 */
   readonly referencedIdentifiers: ReadonlySet<string>;
+  /**
+   * 🔴 `@ses/db/platform` から import された**元名**の集合（T-03-10）。
+   *    管理平面の実行系ルートが「監査先行の書き込み経路」を通っているかの根拠にする。
+   */
+  readonly platformImportedNames: ReadonlySet<string>;
 };
 
 function analyzeRoute(sourceText: string, fileName: string): RouteAnalysis {
@@ -110,6 +128,7 @@ function analyzeRoute(sourceText: string, fileName: string): RouteAnalysis {
   const exportedMethods = new Set<string>();
   const executeGuardBindings = new Set<string>();
   const referencedIdentifiers = new Set<string>();
+  const platformImportedNames = new Set<string>();
 
   function hasExportModifier(node: ts.Node): boolean {
     return (ts.canHaveModifiers(node) ? (ts.getModifiers(node) ?? []) : []).some(
@@ -144,13 +163,27 @@ function analyzeRoute(sourceText: string, fileName: string): RouteAnalysis {
         }
       }
     }
+    // import { provisionTenant } from '@ses/db/platform'
+    if (
+      ts.isImportDeclaration(node) &&
+      ts.isStringLiteralLike(node.moduleSpecifier) &&
+      node.moduleSpecifier.text === PLATFORM_MODULE
+    ) {
+      const bindings = node.importClause?.namedBindings;
+      if (bindings && ts.isNamedImports(bindings)) {
+        for (const element of bindings.elements) {
+          platformImportedNames.add((element.propertyName ?? element.name).text);
+        }
+      }
+    }
+
     if (ts.isIdentifier(node)) referencedIdentifiers.add(node.text);
 
     ts.forEachChild(node, visit);
   }
 
   visit(sourceFile);
-  return { exportedMethods, executeGuardBindings, referencedIdentifiers };
+  return { exportedMethods, executeGuardBindings, referencedIdentifiers, platformImportedNames };
 }
 
 /** 実行系（状態を変えるメソッドを export している）か。 */
@@ -197,7 +230,14 @@ const routeFiles = listRouteFiles(webAppDir).map((file) => ({
 }));
 
 const mutatingRoutes = routeFiles.filter((route) => isMutatingRoute(route.analysis));
-const requiredRoutes = mutatingRoutes.filter((route) => !(route.file in EXEMPT_ROUTES));
+// 🔴 管理平面は別のガード体系（下の describe）。主平面だけを `requireExecutable` の対象にする。
+const mainPlaneMutatingRoutes = mutatingRoutes.filter(
+  (route) => !route.file.startsWith(ADMIN_PLANE_PREFIX),
+);
+const adminPlaneMutatingRoutes = mutatingRoutes.filter((route) =>
+  route.file.startsWith(ADMIN_PLANE_PREFIX),
+);
+const requiredRoutes = mainPlaneMutatingRoutes.filter((route) => !(route.file in EXEMPT_ROUTES));
 
 describe('🔴 実行系ルートは例外なく requireExecutable を通る（docs/05 §17.2 #7 / §6.2）', () => {
   it('対照: apps/web/app 配下に Route Handler が存在する（テストが空振りしていない）', () => {
@@ -231,6 +271,55 @@ describe('🔴 実行系ルートは例外なく requireExecutable を通る（d
   it('🔴 免除にはすべて理由が書かれている', () => {
     for (const [file, reason] of Object.entries(EXEMPT_ROUTES)) {
       expect(reason.length, `${file} の免除理由が空です`).toBeGreaterThan(20);
+    }
+  });
+
+  it('🔴 免除リストに管理平面のルートが紛れていない（別のガード体系で検査する）', () => {
+    for (const file of Object.keys(EXEMPT_ROUTES)) {
+      expect(file.startsWith(ADMIN_PLANE_PREFIX)).toBe(false);
+    }
+  });
+});
+
+/**
+ * 🔴 T-03-10: 管理平面の実行系ルート（API-A4 / A5 …）が「記録されない書き込み」にならないことを、
+ *    ルートの形として固定する（`BR-41` / docs/05 §5.3）。
+ *
+ * 認証（API-A1）以外の**状態を変える管理平面ルートは、`@ses/db/platform` の専用クエリ関数を
+ * 通らなければならない**。その関数は `withPlatformWrite`（監査を `fn` の前に同一トランザクションで
+ * 書く）を経由することが `tests/static/platform-plane-boundary.test.ts` ④ で保証されている。
+ * ルートが `@prisma/client` や `@ses/db` の別経路で書く実装を混ぜたら、ここで落ちる。
+ */
+describe('🔴 管理平面の実行系ルートは監査先行の書き込み経路を通る（CLAUDE.md §10.5 / BR-41）', () => {
+  const targets = adminPlaneMutatingRoutes.filter(
+    (route) => !route.file.startsWith(ADMIN_AUTH_PREFIX),
+  );
+
+  it('対照: 認証以外の管理平面の実行系ルートが 1 本以上ある（規則が空振りしていない）', () => {
+    expect(targets.map((route) => route.file)).not.toEqual([]);
+  });
+
+  it('すべてが `@ses/db/platform` の書き込み関数を import して呼んでいる', () => {
+    const missing = targets
+      .filter((route) => {
+        const imported = [...route.analysis.platformImportedNames];
+        return !imported.some(
+          (name) =>
+            PLATFORM_WRITE_FUNCTIONS.includes(name) &&
+            route.analysis.referencedIdentifiers.has(name),
+        );
+      })
+      .map((route) => route.file);
+    expect(missing).toEqual([]);
+  });
+
+  it('🔴 管理平面の認証ルートは対象外である（ctx が生成される前の経路）', () => {
+    const authRoutes = adminPlaneMutatingRoutes.filter((route) =>
+      route.file.startsWith(ADMIN_AUTH_PREFIX),
+    );
+    expect(authRoutes.length).toBeGreaterThan(0); // 対照: 認証ルートは実在する
+    for (const route of authRoutes) {
+      expect(route.analysis.platformImportedNames.size).toBe(0);
     }
   });
 });
