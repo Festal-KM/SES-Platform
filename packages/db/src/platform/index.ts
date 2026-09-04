@@ -28,3 +28,19 @@ export type {
 // 画面 1 対 1 の専用クエリ関数（docs/05 §5.2）。
 export { readAdminHomeSummary } from './queries/admin-home.js';
 export type { AdminHomeSummary, PlatformRequestMeta } from './queries/admin-home.js';
+// A-002 / A-003（テナント一覧・詳細。T-03-09）。
+export { getPlatformTenantDetail, listPlatformTenants } from './queries/tenants.js';
+export type {
+  PlatformTenantListPage,
+  PlatformTenantListQuery,
+  PlatformRequestMeta as PlatformTenantRequestMeta,
+} from './queries/tenants.js';
+// 応答のシリアライザ（docs/05 §5.5 第 2 層）。ルートが型を再宣言せずに参照できるようにする。
+export {
+  toPlatformTenantDetail,
+  toPlatformTenantListItem,
+} from '../serializers/platform/tenants.js';
+export type {
+  PlatformTenantDetailView,
+  PlatformTenantListItemView,
+} from '../serializers/platform/tenants.js';

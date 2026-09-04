@@ -66,12 +66,64 @@ const ja = {
   'admin.twoFactor.required.notice':
     '運営者アカウントは 2 要素認証の設定が必須です。設定を完了するまで管理平面のどの画面も利用できません。',
   'admin.home.title': '運営者コンソール',
-  'admin.home.placeholder':
-    'テナント一覧・利用量・監視は、後続のリリースでこの画面から利用できるようになります。',
+  // 🔴 T-03-09 でテナント一覧（A-002）が使えるようになったため、文言を「利用量・監視」に絞った。
+  'admin.home.placeholder': '利用量・監視は、後続のリリースでこの画面から利用できるようになります。',
   // 🔴 T-03-08: 運営者に見せてよいのは件数・状態・エラーだけである（CLAUDE.md §10.5）。
   //    テナント名・エンジニア名などの「内容」をこの画面に出さない。
   'admin.home.tenantCount.label': '契約テナント数',
   'admin.signout.submit': 'サインアウト',
+  // 🔴 A-002 / A-003 共通（BR-37「運営者コンソールは既定 read-only」）。書き込み操作が
+  //    無いことを画面タイトル右に常時明示する（docs/04 §A-002 / §A-003）。
+  'admin.readOnly.badge': '閲覧のみ',
+
+  // --- A-002 テナント一覧（docs/04 §A-002 / F-056。T-03-09）---
+  'admin.tenants.title': 'テナント一覧',
+  // 🔴 異常度順の並び替えは Phase 1（SP-11）。Phase 0 は「テナントがまだありません」のみ
+  //    （A-014 テナント開設の導線は T-03-10 で追加する）。
+  'admin.tenants.empty': 'テナントがまだありません。',
+  'admin.tenants.column.name': 'テナント名',
+  'admin.tenants.column.lifecycleState': 'ライフサイクル状態',
+  'admin.tenants.column.environment': '環境',
+  'admin.tenants.column.seats': '席数',
+  'admin.tenants.column.partners': 'パートナー数',
+  'admin.tenants.column.engineers': 'エンジニア数',
+  'admin.tenants.column.projects': '案件数',
+  'admin.tenants.column.lastActivity': '最終アクティビティ',
+  'admin.tenants.loadMore': 'さらに読み込む',
+  'admin.tenants.lastActivity.none': '記録なし',
+  // 🔴 CLAUDE.md §4.2 の Tenant ステートマシン 5 状態（欠落禁止。テンプレートリテラルで
+  //    動的にキーを組み立てず、apps/web/app/admin/tenants/_lib/labels.ts が固定の対応表を持つ）。
+  'admin.tenants.lifecycleState.SANDBOX': 'サンドボックス',
+  'admin.tenants.lifecycleState.ACTIVE': '契約中',
+  'admin.tenants.lifecycleState.SUSPENDED': '停止中',
+  'admin.tenants.lifecycleState.CLOSING': '解約手続き中',
+  'admin.tenants.lifecycleState.PURGED': '削除済み',
+  // 🔴 Tenant.environment（docs/05 §3.3。APP_ENV とは別物。テナントの契約種別）。
+  'admin.tenants.environment.production': '本番契約',
+  'admin.tenants.environment.sandbox': 'サンドボックス（契約前）',
+  'admin.tenants.environment.demo': 'デモ',
+
+  // --- A-003 テナント詳細（docs/04 §A-003 / F-056。T-03-09）---
+  'admin.tenantDetail.eyebrow': 'テナント詳細',
+  'admin.tenantDetail.section.contract': '契約',
+  'admin.tenantDetail.section.scale': '規模',
+  'admin.tenantDetail.section.activity': 'アクティビティ',
+  'admin.tenantDetail.field.lifecycleState': 'ライフサイクル状態',
+  'admin.tenantDetail.field.environment': '環境',
+  'admin.tenantDetail.field.createdAt': '契約開始日時',
+  'admin.tenantDetail.field.lifecycleChangedAt': '状態変更日時',
+  'admin.tenantDetail.field.sandboxExpiresAt': 'サンドボックス期限',
+  'admin.tenantDetail.field.closingEnteredAt': '解約手続き開始日時',
+  'admin.tenantDetail.field.seats': '席数',
+  'admin.tenantDetail.field.partners': 'パートナー数',
+  'admin.tenantDetail.field.engineers': 'エンジニア数',
+  'admin.tenantDetail.field.projects': '案件数',
+  'admin.tenantDetail.field.proposals': '提案数',
+  'admin.tenantDetail.field.lastActivity': '最終ログイン',
+  'admin.tenantDetail.field.recentActivity': '直近 30 日の操作件数',
+  // 🔴 F-062 AC-7 / docs/04 program-design 申し送り 15: 削除件数を出さない。
+  //    削除完了の確認は A-010（Phase 3）の 1 本のみ。
+  'admin.tenantDetail.purged.notice': 'このテナントのデータは削除済みです。',
 
   // --- S-002 招待の受諾とアカウント初期設定（docs/04 §S-002 / F-002。T-03-03）---
   'invite.title': '招待の受諾',

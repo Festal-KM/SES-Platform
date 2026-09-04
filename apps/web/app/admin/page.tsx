@@ -1,5 +1,5 @@
 // apps/web/app/admin/page.tsx
-// 管理平面のホーム（Phase 0 は枠だけ。`A-002` テナント一覧は T-03-09 が実装する）。
+// 管理平面のホーム（Phase 0 は枠だけ。`A-002` テナント一覧は T-03-09 が実装した）。
 //
 // 🔴 本ページの存在意義は `F-055 AC-3` の担保である:
 //    **2 要素認証を設定するまで管理平面のいずれの画面にも到達できない。**
@@ -16,6 +16,7 @@
 //    同関数は `withPlatformRead` 経由であり、**監査ログの INSERT が成功した後でないと
 //    クエリを実行しない**（記録の無い閲覧が構造的に起こらない）。
 import { redirect } from 'next/navigation';
+import Link from 'next/link';
 import { readAdminHomeSummary } from '@ses/db/platform';
 import { t } from '@ses/i18n';
 import { readPlatformRequestMeta, resolvePlatformCtxOutcome } from '../../lib/auth/platform-session';
@@ -40,6 +41,12 @@ export default async function AdminHomePage() {
         <dt className="text-sm text-slate-700">{t('admin.home.tenantCount.label')}</dt>
         <dd className="text-2xl font-bold text-slate-900">{summary.tenantCount}</dd>
       </dl>
+      {/* 🔴 A-002（テナント一覧。T-03-09）への導線。件数・状態・日時以外は出さない。 */}
+      <p className="mb-6 text-sm">
+        <Link className="text-slate-700 underline-offset-2 hover:underline" href="/admin/tenants">
+          {t('admin.tenants.title')}
+        </Link>
+      </p>
       <p className="text-sm text-slate-700">{t('admin.home.placeholder')}</p>
     </main>
   );

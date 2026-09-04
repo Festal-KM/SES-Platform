@@ -40,7 +40,11 @@ import type { PrismaClient } from '@prisma/client';
 import { AuditLogWriteError, auditLogRowValues, type AuditSummary } from './audit.js';
 import { getPlatformReadClient, getPlatformWriteClient } from './platform-client.js';
 import type { AuthenticatedPlatformCtx } from './platform-context.js';
-import { platformScopeSql } from './scope-settings.js';
+import {
+  clearPlatformTargetTenantSql,
+  platformScopeSql,
+  restorePlatformTargetTenantSql,
+} from './scope-settings.js';
 
 type PlatformTransactionClient = Parameters<Parameters<PrismaClient['$transaction']>[0]>[0];
 
@@ -309,6 +313,34 @@ export function auditEntryOf(op: PlatformOp): Parameters<typeof auditLogRowValue
 }
 
 /**
+ * 🔴 `audit_logs.tenant_id` は `tenants` への FK である。`op.targetTenantId` は URL 直打ちなど
+ *    **未検証の入力**（`admin.tenant.view` は「見ようとした ID」そのものが `targetTenantId` になる。
+ *    T-03-09）に由来しうるため、実在しない ID をそのまま `INSERT` すると FK 違反で例外になり、
+ *    「見えない ＝ 存在しない」（docs/05 §4.8）の 404 に畳めず 500 になってしまう。
+ *
+ * 🔴 この確認は `fn` の**前**（監査行を組み立てる過程）で行うため、「監査の記録が `fn` の学んだ
+ *    事実に依存する」ことにはならない（§5.3 の不変条件を保ったまま）。実在しなければ
+ *    `tenant_id` を `NULL`（横断相当）で記録する —— `targetId`（FK 制約なし）に元の ID が残るため、
+ *    「何を見ようとしたか」の記録は失われない。
+ *
+ * 🔴 このとき `writePlatformAuditRow` は `app.target_tenant_id` を `INSERT` の**間だけ**空にし、
+ *    `INSERT` が成功したら**元の（実在しない）ID へ戻してから `fn` を呼ぶ**
+ *    （`clearPlatformTargetTenantSql` / `restorePlatformTargetTenantSql`。`scope-settings.ts`）。
+ *    空にしたまま `fn` を実行すると RLS が「対象未指定＝全テナント可視」の文脈になり、`fn` が
+ *    アプリの `where` 句だけに頼って絞り込む状態になる。元の ID へ戻せば、その ID に一致する行は
+ *    元々存在しないため `fn` は RLS だけで自動的に 0 件へ閉じる（§5.2「`targetTenantId` を
+ *    指定した操作は RLS により自動的にそのテナントへ閉じる」という不変条件を、この分岐でも保つ）。
+ */
+async function resolveAuditTenantId(
+  tx: PlatformTransactionClient,
+  targetTenantId: string | null,
+): Promise<string | null> {
+  if (targetTenantId === null) return null;
+  const found = await tx.tenant.findUnique({ where: { id: targetTenantId }, select: { id: true } });
+  return found === null ? null : targetTenantId;
+}
+
+/**
  * 🔴 `fn` の**前に** `AuditLog` を 1 行書く（§5.3）。同一トランザクションなので、
  *    ここで例外になれば `fn` は 1 度も実行されず、書けた記録もロールバックされる。
  *
@@ -322,16 +354,35 @@ async function writePlatformAuditRow(
 ): Promise<void> {
   const entry = auditEntryOf(op);
   const values = auditLogRowValues(entry);
+  const originalTargetTenantId = op.targetTenantId;
+  const tenantId = await resolveAuditTenantId(tx, originalTargetTenantId);
+  // 🔴 対象が実在しなかった場合だけ真になる（`resolveAuditTenantId` は `targetTenantId === null`
+  //    のときも `null` を返すため、横断操作〔元々 null〕と取り違えないよう両方の条件を見る）。
+  const targetMissing = tenantId === null && originalTargetTenantId !== null;
+
+  if (targetMissing) {
+    // 🔴 対象が実在しなかった。`audit_logs` の `WITH CHECK`（migration 20260904010000 §3）は
+    //    「`app.target_tenant_id` が空のときだけ `tenant_id IS NULL` を許す」ため、`INSERT` の
+    //    **間だけ** GUC 側も横断相当（空）に下ろす（`scope-settings.ts` の対応コメント参照）。
+    await tx.$queryRaw(clearPlatformTargetTenantSql());
+  }
+
   const result = await tx.auditLog.createMany({
     data: [
       {
         ...values,
         summary: { ...(values.summary as AuditSummary), ...extra },
-        tenantId: op.targetTenantId,
+        tenantId,
       },
     ],
   });
   if (result.count !== 1) throw new AuditLogWriteError(op.action);
+
+  if (targetMissing && originalTargetTenantId !== null) {
+    // 🔴 `fn` の**前**に、実在しない元の ID へ戻す。以降 `fn` は RLS だけで「対象 0 件」に閉じる
+    //    ——「アプリの `where` に依存しない」という §5.2 の不変条件を、この分岐でも保つ。
+    await tx.$queryRaw(restorePlatformTargetTenantSql(originalTargetTenantId));
+  }
 }
 
 /**

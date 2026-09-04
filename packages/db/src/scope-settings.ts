@@ -152,6 +152,42 @@ export function platformScopeSql(scope: PlatformScopeSettings): Prisma.Sql {
     set_config('app.shared_scope', 'off', true)`;
 }
 
+/**
+ * 🔴 T-03-09: `withPlatformRead` / `withPlatformWrite` が、`op.targetTenantId` に対応する
+ *    テナントが実在しないと判明した**後**、`audit_logs` への `INSERT` の**間だけ**
+ *    `app.target_tenant_id` を空へ戻すための SQL。
+ *
+ * `audit_logs` の `WITH CHECK`（migration 20260904010000 §3）は
+ * 「`app.target_tenant_id` が空のときだけ `tenant_id IS NULL` を許す」ため、実在しない ID を
+ * そのまま `tenant_id` に使えず（FK 違反）、さりとて GUC を非空のまま `tenant_id = NULL` で
+ * `INSERT` すると RLS 違反になる。「見えない ＝ 存在しない」（docs/05 §4.8）を 404 に畳むには、
+ * `INSERT` の瞬間だけ GUC 側も横断相当（空）に戻す必要がある。
+ *
+ * 🔴 **`INSERT` の直後に `restorePlatformTargetTenantSql()` で元の値へ戻すこと。**
+ *    空のままにすると、その後 `fn` が実行時のクエリで「対象を指定していない」＝全テナント
+ *    可視の RLS 文脈になり、`fn` がアプリの `where` 句だけに頼って絞り込む状態になってしまう
+ *    （§5.2「`op.targetTenantId` を指定した操作は RLS により自動的にそのテナントへ閉じる」の
+ *    不変条件が破れる）。このペアはセットで使う。
+ *
+ * 🔴 `platformScopeSql` を丸ごと再発行しない: `platform_user_id` 等まで毎回再送する責務を
+ *    呼び出し側に増やさない。戻すのは `target_tenant_id` の 1 GUC だけである。
+ */
+export function clearPlatformTargetTenantSql(): Prisma.Sql {
+  return Prisma.sql`SELECT set_config('app.target_tenant_id', '', true)`;
+}
+
+/**
+ * 🔴 T-03-09: `clearPlatformTargetTenantSql()` とペアで使う。監査行の `INSERT` が成功した後、
+ *    `fn` を実行する**前**に `app.target_tenant_id` を元の値（実在しない ID）へ戻す。
+ *
+ * 実在しない ID に一致する行はどの表にも無いため、`fn` は RLS だけで自動的に 0 件へ閉じる
+ * （`tenants_platform_read` の `id::text = target_tenant_id` を含む全ポリシーの `USING` 句が、
+ *  この値と一致する行を 1 件も返さない）。アプリの `where` 句に頼らずに済む。
+ */
+export function restorePlatformTargetTenantSql(targetTenantId: string): Prisma.Sql {
+  return Prisma.sql`SELECT set_config('app.target_tenant_id', ${targetTenantId}, true)`;
+}
+
 export function rowDerivedTenantScopeSql(scope: TenantScopeSettings): Prisma.Sql {
   return Prisma.sql`SELECT
     set_config('app.tenant_id', ${scope.tenantId}, true),
