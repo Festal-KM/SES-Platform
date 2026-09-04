@@ -108,9 +108,28 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
   confirmTwoFactorEnrollment: ['apps/web/lib/auth/two-factor.ts'],
   consumeRecoveryCode: ['apps/web/lib/auth/two-factor.ts'],
   // 🔴 T-03-02: 秘匿値の暗号化（docs/05 §8.6）。暗号化・復号を行ってよい場所を固定する。
-  EncryptedString: ['apps/web/lib/auth/two-factor.ts'],
+  //    T-03-07 で 2FA の判断ロジックを `two-factor-core.ts` に抽出したため、
+  //    暗号化・復号もそこ 1 ファイルに集約された（主平面・管理平面のどちらも core を通る）。
+  EncryptedString: ['apps/web/lib/auth/two-factor-core.ts'],
   // 🔴 鍵の注入は起動時の 1 箇所だけ（CLAUDE.md §11.1 / docs/05 §13.1）。
   configureTokenEncryption: ['apps/web/lib/db/bootstrap.ts'],
+
+  // --- 🔴 T-03-07: 管理平面（運営者認証。`F-055` / `BR-36`）------------------------------
+  // 主平面と**同じ規律**を管理平面にも適用する。運営者の資格情報・2FA・監査ログに触れる経路が
+  // ファイル単位で固定されていないと、「運営者の 2FA を無効化する API」が別の場所から生える。
+  configurePlatformWriteDb: ['apps/web/lib/db/bootstrap.ts'],
+  withPlatformAuthLookup: ['apps/web/lib/auth/platform-credentials.ts'],
+  loadPlatformUserFacts: ['apps/web/lib/auth/platform-context.ts'],
+  resolvePlatformCtx: ['apps/web/lib/auth/platform-context.ts'],
+  recordPlatformAuditLog: [
+    'apps/web/lib/auth/platform-credentials.ts',
+    'apps/web/lib/auth/platform-two-factor.ts',
+  ],
+  readPlatformTwoFactorCredential: ['apps/web/lib/auth/platform-two-factor.ts'],
+  readRecentPlatformTwoFactorFailures: ['apps/web/lib/auth/platform-two-factor.ts'],
+  startPlatformTwoFactorEnrollment: ['apps/web/lib/auth/platform-two-factor.ts'],
+  confirmPlatformTwoFactorEnrollment: ['apps/web/lib/auth/platform-two-factor.ts'],
+  consumePlatformRecoveryCode: ['apps/web/lib/auth/platform-two-factor.ts'],
 };
 
 describe('認証コンテキストを組み立てられる場所を固定する（CLAUDE.md §3.1 / F-003 AC-1）', () => {
@@ -143,6 +162,71 @@ describe('認証コンテキストを組み立てられる場所を固定する�
     );
     expect(routeFiles).toEqual([]);
   });
+
+  it('🔴 apps/web/app/** （ルート・ページ）が resolvePlatformCtx を直接呼ばない（T-03-07）', () => {
+    const routeFiles = filesMentioning('resolvePlatformCtx').filter((file) =>
+      file.startsWith('apps/web/app/'),
+    );
+    expect(routeFiles).toEqual([]);
+  });
+});
+
+/**
+ * 🔴 T-03-07 / `F-055 AC-2`「テナント利用者の認証情報で `/admin` に到達できず、逆も成立しない」。
+ *    実行時の担保（別 Cookie 名 / 別署名鍵 / 別インスタンス / 別 DB ロール）は
+ *    `tests/isolation/platform-auth.test.ts` が実証する。ここでは**構造**を固定する ——
+ *    2 平面のルートが互いの認証入口を 1 つも参照していないこと。
+ *    参照が生まれた時点で「片方のセッションでもう片方に入れる」実装が書けるようになる。
+ */
+describe('主平面と管理平面のルートが互いの認証入口を参照しない（F-055 AC-2 / BR-36）', () => {
+  /** 主平面の認証入口（`app/(main)/**` と `app/api/(main)/**` だけが使ってよい）。 */
+  const MAIN_PLANE_ENTRYPOINTS = [
+    'currentClaims',
+    'requireTenantCtx',
+    'resolveTenantCtxOutcome',
+    'markTwoFactorVerified',
+    'signInWithCredentials',
+  ];
+
+  /** 管理平面の認証入口（`app/admin/**` と `app/api/admin/**` だけが使ってよい）。 */
+  const PLATFORM_PLANE_ENTRYPOINTS = [
+    'currentPlatformClaims',
+    'requirePlatformCtx',
+    'resolvePlatformCtxOutcome',
+    'markPlatformTwoFactorVerified',
+    'signInPlatformWithCredentials',
+  ];
+
+  function routeFilesUnder(prefixes: readonly string[], identifier: string): string[] {
+    return filesMentioning(identifier).filter(
+      (file) => file.startsWith('apps/web/app/') && prefixes.some((p) => file.startsWith(p)),
+    );
+  }
+
+  it('対照: 管理平面のルートは管理平面の入口を実際に使っている（空振り防止）', () => {
+    const used = PLATFORM_PLANE_ENTRYPOINTS.filter(
+      (id) => routeFilesUnder(['apps/web/app/admin/', 'apps/web/app/api/admin/'], id).length > 0,
+    );
+    expect(used.length).toBeGreaterThan(0);
+  });
+
+  it.each(MAIN_PLANE_ENTRYPOINTS)(
+    '🔴 管理平面のルートが主平面の入口 %s を参照しない',
+    (identifier) => {
+      expect(
+        routeFilesUnder(['apps/web/app/admin/', 'apps/web/app/api/admin/'], identifier),
+      ).toEqual([]);
+    },
+  );
+
+  it.each(PLATFORM_PLANE_ENTRYPOINTS)(
+    '🔴 主平面のルートが管理平面の入口 %s を参照しない',
+    (identifier) => {
+      expect(
+        routeFilesUnder(['apps/web/app/(main)/', 'apps/web/app/api/(main)/'], identifier),
+      ).toEqual([]);
+    },
+  );
 });
 
 /**

@@ -104,8 +104,12 @@ export const { auth, signIn, signOut, unstable_update } = NextAuth({
     jwt({ token, user, trigger, session }) {
       if (user !== undefined) {
         token.userId = user.id;
+        // 🔴 `User` は Auth.js の module augmentation で 1 つしか持てず、管理平面（T-03-07）と
+        //    キーを共有するため型としては optional である。ここで値が欠けたまま書くと
+        //    「テナントが確定していない JWT」が生まれるため、揃っていなければ主張を書かない。
+        //    実行時の最終防御は `parseTenantSessionClaims`（UUID を要求する fail-closed）。
         token.tenantId = user.tenantId;
-        token.partnerCompanyId = user.partnerCompanyId;
+        token.partnerCompanyId = user.partnerCompanyId ?? null;
         // 🔴 サインイン直後は必ず未検証から始める（第 2 要素はまだ提示されていない）。
         token.twoFactorVerified = false;
       }

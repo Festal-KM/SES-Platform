@@ -55,6 +55,21 @@ const ja = {
   'auth.twoFactor.error.throttled':
     '認証コードの入力回数が上限に達しました。しばらく時間をおいてから、もう一度お試しください。',
 
+  // --- A-001 運営者サインイン（docs/04 §A-001 / F-055。T-03-07）---
+  // 🔴 平面帯（セクション 1）。運営者コンソールであることを画面上部に常時示す。
+  'admin.plane.band': '運営者コンソール',
+  // 🔴 認証アプリに表示する発行者名。テナント利用者の登録と取り違えられないようにする。
+  'admin.console.issuer': 'SES Platform 運営者コンソール',
+  'admin.signin.title': '運営者サインイン',
+  'admin.signin.lead': '運営者アカウントでサインインしてください。',
+  // 🔴 2 要素認証は全運営者に必須（F-055 AC-3 / BR-30）。設定を促す文言を出す。
+  'admin.twoFactor.required.notice':
+    '運営者アカウントは 2 要素認証の設定が必須です。設定を完了するまで管理平面のどの画面も利用できません。',
+  'admin.home.title': '運営者コンソール',
+  'admin.home.placeholder':
+    'テナント一覧・利用量・監視は、後続のリリースでこの画面から利用できるようになります。',
+  'admin.signout.submit': 'サインアウト',
+
   // --- S-002 招待の受諾とアカウント初期設定（docs/04 §S-002 / F-002。T-03-03）---
   'invite.title': '招待の受諾',
   'invite.section.invitation': '招待の内容',

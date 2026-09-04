@@ -57,6 +57,12 @@ const commonShape = {
   // §6.1 基盤
   DATABASE_URL: z.string().url(),
   PLATFORM_DATABASE_URL: z.string().url(),
+  /**
+   * 🔴 `app_platform_write` ロールの接続文字列（docs/05 §4.2 の「使う接続文字列」欄）。
+   *    T-03-07（運営者認証）と T-03-08（`withPlatformWrite`）が使う。
+   *    必須項目にする —— 未設定を許すと「管理平面が黙って動かない」状態が本番まで残る。
+   */
+  PLATFORM_WRITE_DATABASE_URL: z.string().url(),
   MIGRATION_DATABASE_URL: z.string().url().optional(),
   REDIS_URL: z.string().url(),
 
@@ -263,11 +269,22 @@ function crossFieldChecks(data: EnvUnionData, ctx: IssueSink): void {
   if (data.DATABASE_URL === data.PLATFORM_DATABASE_URL) {
     addIssue(ctx, 'PLATFORM_DATABASE_URL', 'DATABASE_URL と同じ値は使用できません');
   }
+  // 🔴 T-03-07: 3 本ともロールが違う（app_tenant / app_platform / app_platform_write）。
+  //    同じ値が入っていたら、意図した権限より広い接続でアプリが動くことになる。
+  if (data.DATABASE_URL === data.PLATFORM_WRITE_DATABASE_URL) {
+    addIssue(ctx, 'PLATFORM_WRITE_DATABASE_URL', 'DATABASE_URL と同じ値は使用できません');
+  }
+  if (data.PLATFORM_DATABASE_URL === data.PLATFORM_WRITE_DATABASE_URL) {
+    addIssue(ctx, 'PLATFORM_WRITE_DATABASE_URL', 'PLATFORM_DATABASE_URL と同じ値は使用できません');
+  }
   if (!hasSslModeRequire(data.DATABASE_URL)) {
     addIssue(ctx, 'DATABASE_URL', 'sslmode=require を含める必要があります');
   }
   if (!hasSslModeRequire(data.PLATFORM_DATABASE_URL)) {
     addIssue(ctx, 'PLATFORM_DATABASE_URL', 'sslmode=require を含める必要があります');
+  }
+  if (!hasSslModeRequire(data.PLATFORM_WRITE_DATABASE_URL)) {
+    addIssue(ctx, 'PLATFORM_WRITE_DATABASE_URL', 'sslmode=require を含める必要があります');
   }
 
   if ((data.APP_ENV === 'staging' || isProduction) && (data.S3_ACCESS_KEY_ID !== undefined || data.S3_SECRET_ACCESS_KEY !== undefined)) {

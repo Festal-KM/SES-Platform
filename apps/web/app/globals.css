@@ -33,6 +33,18 @@ body {
   padding: 1.5rem 1rem;
 }
 
+/* A-001 セクション 1「平面帯」（docs/04 §A-001）。運営者コンソールであることを常時示す。
+   🔴 主平面と見分けがつかない状態を作らない（代理閲覧・停止操作の誤爆を防ぐ前提になる）。 */
+.ses-plane-band {
+  background: #1e293b;
+  color: #f8fafc;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 0.5rem 1rem;
+  text-align: center;
+}
+
 /* S-001 は T1（モバイル完結）。単一カラムで、機能の省略をしない（docs/04 §S-001）。 */
 .ses-auth-card {
   width: 100%;

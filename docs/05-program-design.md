@@ -1316,7 +1316,7 @@ model BillingMeterSubmission {                                     // docs/03 §
 | `app_migrator` | **なし**（`NOBYPASSRLS`） | DDL。テーブル所有者 | `MIGRATION_DATABASE_URL` | マイグレーションのみ（CI / デプロイ） |
 | `app_tenant` | 🔴 **なし** | 業務テーブルへの `SELECT/INSERT/UPDATE/DELETE`。`tenants` は `SELECT` のみ。`audit_logs` は `INSERT/SELECT` のみ。🔴 **C0 の 4 表（§4.4）は `withSystemScope` からのみ到達でき、テナント文脈では 0 件** | `DATABASE_URL` | `withTenant` / `withSystemScope` |
 | `app_platform` | 🔴 **なし** | 業務テーブルへの `SELECT` のみ（**列レベル**で §5.5 の非開示列を除外）。`audit_logs` は `INSERT/SELECT` | `PLATFORM_DATABASE_URL` | `withPlatformRead` / `withImpersonation` |
-| `app_platform_write` | 🔴 **なし** | `plans` / `subscriptions` / `announcements` / `usage_counters`（上書き列）/ `tenants`（`INSERT` + ライフサイクル列の `UPDATE`）/ `invitations`（`INSERT` のみ。初期 `OWNER` 招待に `WITH CHECK` で固定。§5.2）/ `tenant_sending_domains`（`INSERT` のみ。`state='REGISTERED'` に `WITH CHECK` で固定。§5.2）/ `impersonation_sessions` / `audit_logs` への書き込み。**業務テーブルへの書き込み権限を一切持たない** | `PLATFORM_WRITE_DATABASE_URL` | `withPlatformWrite` |
+| `app_platform_write` | 🔴 **なし** | `plans` / `subscriptions` / `announcements` / `usage_counters`（上書き列）/ `tenants`（`INSERT` + ライフサイクル列の `UPDATE`）/ `invitations`（`INSERT` のみ。初期 `OWNER` 招待に `WITH CHECK` で固定。§5.2）/ `tenant_sending_domains`（`INSERT` のみ。`state='REGISTERED'` に `WITH CHECK` で固定。§5.2）/ `impersonation_sessions` / `audit_logs` への書き込み。🔴 **加えて運営者認証経路（T-03-07。`packages/db/src/platform-auth.ts`）専用の権限を持つ**: `platform_users` の列レベル `SELECT`（`id, email, display_name, role, password_hash, disabled_at, last_login_at` の 7 列）+ `last_login_at` の列レベル `UPDATE` / `two_factor_credentials` の **`tenant_id IS NULL AND subject_type='PLATFORM_USER'` 行限定**の `INSERT` + 列レベル `UPDATE`（`secret_encrypted, recovery_code_hashes, confirmed_at` の 3 列。`DELETE` は与えない）/ `audit_logs` の **`SELECT`**（本人の 2FA 失敗履歴のみ。試行スロットル用）。**業務テーブルへの書き込み権限を一切持たない**（`platform_users` / `two_factor_credentials` の該当行 / `audit_logs` は認証・監査データであり業務データではないため抵触しない。詳細は §4.4.2・§5.2 の追記） | `PLATFORM_WRITE_DATABASE_URL` | `withPlatformWrite` / `platform-auth.ts` の認証経路（§4.4.2） |
 | `app_share_probe` | 🔴 **なし**（`NOLOGIN`） | `engineer_shares` の `SELECT (tenant_id, engineer_id, revoked_at)` のみ。**他表に一切の権限を持たない** | （接続しない） | `app_engineer_is_shared()` の `SECURITY DEFINER` 所有者としてのみ（§4.5） |
 | `app_assignment_owner_probe` | 🔴 **なし**（`NOLOGIN`） | `engineers` の `SELECT (tenant_id, id, owner_partner_company_id)` のみ。**他表に一切の権限を持たない** | （接続しない） | `inherit_assignment_counterparty()` の `SECURITY DEFINER` 所有者としてのみ（§4.4.1。T-02-08） |
 
@@ -1472,6 +1472,9 @@ CREATE TRIGGER ins_owner BEFORE INSERT OR UPDATE ON engineer_skills   -- 親: en
 | `withInvitationToken(hash)` | `invitations` の**該当 1 行だけ**（読み）+ `tenants.name` / `partner_companies.name`（読み） | `SET LOCAL app.invitation_token_hash`。同様の追加ポリシー。🔴 **第 2 段**として招待行由来のテナント文脈（`tenant_id` / `partner_company_id`）へ切り替え、`tenants.name` を C1、`partner_companies.name` を C5 の通常ポリシー下で**この 2 列だけ**追加で読む（`#6` の表示要件。`docs/04` §S-002）。`#6`（未認証経路）専用 |
 | 🔴 **行由来コンテキストの 3 関数** `withInvitationAccept(hash, { displayName, passwordHash })` / `withPasswordResetIssue(email, { tokenHash, expiresAt })` / `withPasswordResetConfirm(hash, passwordHash)` | 受諾: `users` + `memberships` の **`INSERT` 各 1 行** と `invitations.accepted_at` の CAS。発行: `users.password_reset_token_hash / _expires_at` の `UPDATE` 1 行。確定: `users.password_hash` の `UPDATE` 1 行 + トークン列の消去（CAS） | **同一トランザクション内で 2 段に `SET LOCAL` する**: ①資格情報を `SET LOCAL`（`app.invitation_token_hash` / `app.auth_email` / `app.password_reset_token_hash`）し、同形の追加 SELECT ポリシーで該当 1 行だけ読む ②**その行の `tenant_id` と `partner_company_id`（招待行）/ `owner_partner_company_id`（本人行）を `SET LOCAL app.tenant_id` / `app.partner_company_id` に入れ直し**、C3 / C5 の通常ポリシーの下で書く。🔴 **分離キーはリクエスト入力ではなく DB の行から来る**（`CLAUDE.md` §3.1）。戻り値はプレーンな ID のみ（`{ userId }` / `{ tenantId, userId } \| null`）。`#7` / `#5` / `#5b` 専用。🔴 **`withPasswordResetIssue` はトークンのハッシュと期限を引数で受け取る**（トークンの生成を `packages/db` に持ち込まない: 乱数と有効期間の方針が DB 層に散るため。分離キーではないので上記の原則には抵触しない） |
 | `app_engineer_is_shared(engineer_id, tenant_id)` | `engineer_shares` の**存在の真偽のみ**（行は 1 つも返らない） | `SECURITY DEFINER`。所有者 `app_share_probe`（§4.2）。§4.5 の追加ポリシーからのみ使う |
+| 🔴 **`packages/db/src/platform-auth.ts`（管理平面版の行由来コンテキスト。T-03-07）** | `platform_users` の該当 1 行 / 本人の `two_factor_credentials`（`PLATFORM_USER` 行）/ 本人の `audit_logs`（読み: 2FA 失敗履歴、書き: ログイン・ログアウト・2FA 登録・確定の記録） | 2 段の `SET LOCAL`（`set_config(..., true)` によるトランザクション封じ込め。§4.3 と同型）: ①`app.platform_auth_email`（メール完全一致で `platform_users` を 1 行だけ可視化。主平面の `users_auth_lookup_select` と**同形**に両辺 `lower()` で畳む）②`app.platform_auth_subject_id`（読み出した行 / セッション Cookie 由来の主体 ID で本人の 3 表だけを可視化）。🔴 **同経路は `app.platform_user_id` を空で上書き**し、§5.2 の provisioning ポリシー（`tenants` / `invitations` / `tenant_sending_domains`）が認証トランザクション中に 1 つも真にならないことを保証する |
+
+🔴 **管理平面版（`platform-auth.ts`）が汎用の抜け道でない理由**（`row-context.ts` の直上の 5 点と同じ形で担保する）: ①触れる表は `platform_users` / `two_factor_credentials` / `audit_logs` の 3 表、列も本ファイル固定の列だけで、引数に表名・列名・`tenant_id` が無い ②`SET LOCAL` する主体はメール照合で得た行かセッション Cookie であり、呼び出し側がリクエスト入力から渡せない（`CLAUDE.md` §3.1）③`AuthenticatedPlatformCtx` を生成しない（生成器は `resolvePlatformCtx` のまま。§4.3 の `AuthenticatedTenantCtx` と対）④呼び出し元は `tests/static/auth-db-callers.test.ts` の静的走査が `apps/web/lib/auth/**` の特定ファイルに固定する ⑤戻り値は認証に必要な最小限の列だけで、行オブジェクトをそのまま外へ出さない。🔴 **`platform_users` は射程外の 4 表（`CLAUDE.md` §3.1 / §4.1 の表）であり続ける** — 本経路のために RLS（`ENABLE ROW LEVEL SECURITY` + `FORCE`）を付けたのは分離の射程を広げるためではなく**運営者どうしの資格情報の読み出しを塞ぐため**であり、射程外＝「`tenant_id` を持たない」の意味であって「RLS を付けてはならない」ではない。
 
 🔴 **経路 5 はこの一覧に新しい関数を足さない。** パートナーは通常の `withTenant` 文脈で C9 + §4.9 の射影ビューを読むだけである。🔴 **経路 4 の `app_engineer_is_shared()`（§4.5）は経路 5 の追加によって一切緩めない**（`engineer_shares` の行はホストに見えないまま）。
 
@@ -1660,10 +1663,10 @@ export function withPartnerScope<T>(ctx: AuthenticatedTenantCtx, target: { previ
 | 項目 | 設計 |
 |---|---|
 | **認証主体** | `PlatformUser`（`users` とは**別テーブル**）。`users` に運営者フラグに相当する列を持たない（`BR-36`） |
-| **Auth.js のインスタンス** | 主平面と**別インスタンス**。Cookie 名 `__Host-ses-admin.session`、`path=/admin`、`sameSite=lax`、`secure` 固定。主平面は `__Host-ses.session` / `path=/` |
+| **Auth.js のインスタンス** | 主平面と**別インスタンス**。Cookie 名 `__Host-ses-admin.session`（🔴 管理平面の API は `/api/admin/**`〔§6.9〕にあり `/admin` の配下ではないため、RFC 6265 のパス照合により `path=/admin` では 2FA 検証以降の管理平面 API に Cookie が送られない。**`path=/` にする**。`__Host-` 接頭辞は `Path=/` かつ `Domain` 属性なしを要求するため、`path=/` 化により再び使え、直前の `__Secure-` 化〔`docs/03` §4.9 の 2026-09-04 修正〕より強い制約になる。本節はその修正をさらに修正するもの）、`path=/`、`sameSite=lax`、`secure` 固定。主平面は `__Host-ses.session` / `path=/`。🔴 **両平面の Cookie は `path` では区別できない**（下記「交差の禁止」参照） |
 | **ミドルウェア** | `apps/web/middleware.ts` の `matcher` を `['/((?!admin).*)', '/admin/:path*']` に分け、**内部で `adminMiddleware` / `mainMiddleware` を呼び分ける**。共有しない |
 | **2FA** | 🔴 **全 `PlatformUser` に必須**。未設定なら `/admin/setup/2fa` 以外の全ルートを拒否（`F-055 AC-3`）。ロールごとの `if` を各ページに書かない |
-| **交差の禁止** | 主平面のセッションで `/admin/*` に到達すると **302 → `/admin/signin`**（`F-055 AC-2`）。逆も同様。Cookie の `path` が異なるためブラウザから送られず、さらにミドルウェアが型で判別する |
+| **交差の禁止** | 主平面のセッションで `/admin/*` に到達すると **302 → `/admin/signin`**（`F-055 AC-2`）。逆も同様。🔴 両 Cookie は `path=/` で同居するため、**「path が異なるため送られない」は交差禁止の根拠にならない**（上記修正により削除した旧根拠）。交差を塞ぐのは次の 3 点である: ①**Cookie 名**（`__Host-ses.session` / `__Host-ses-admin.session`）②**別の署名鍵**（`AUTH_SECRET` / `AUTH_PLATFORM_SECRET`。Auth.js は JWT を JWE として暗号化する際、鍵導出〔HKDF〕に `secret` と `Cookie 名`〔`salt`〕の両方を使うため、`secret` を仮に取り違えても Cookie 名の不一致だけで導出鍵が別になる。二重に別鍵）③**fail-closed パーサ**（`parseTenantSessionClaims` / `parsePlatformSessionClaims` はフィールド名〔`userId`/`tenantId` 系と `platformUserId` 系〕が一致しなければ `null` を返す。§4.4.2 の行由来コンテキストと同型の「形が違えば無効」）。ミドルウェアは Cookie 名で画面遷移を振り分けるだけで、**境界の強制は鍵とパーサが担う** |
 | **監査** | 🔴 **`/admin/*` の全 GET を含めて `AuditLog` に記録する**（`BR-41`）。§5.3 の `withPlatformRead` が記録するため、記録漏れが構造的に起こらない |
 ### 5.2 分離バイパスの設計（`CLAUDE.md` §10.5 / `docs/03` §4.3.3）
 
@@ -1710,6 +1713,7 @@ export type PlatformReadDb = { [K in PlatformReadableModel]: ReadOnlyDelegate<Pr
   - `invitations`: **`INSERT` のみ（API-A5）**。ポリシー `WITH CHECK ( role = 'OWNER' AND partner_company_id IS NULL AND invited_by IS NULL AND invited_by_platform_user_id = current_setting('app.platform_user_id')::uuid )`。🔴 **運営者が発行できるのは初期 `OWNER` 招待だけ**であり、`SALES` / パートナーの招待、既存招待の変更・取消はできない（`UPDATE` / `DELETE` を GRANT しない）
   - `tenant_sending_domains`: **`INSERT` のみ（API-A4 の `sendingDomain`。`A-014` 5b）**。`WITH CHECK ( state = 'REGISTERED' AND verified_at IS NULL AND registered_by_platform_user_id = current_setting('app.platform_user_id')::uuid )`。🔴 **運営者は登録だけを代行し、DNS の設定・検証の実行・`verified_at` の書き込みはできない**（`UPDATE` を GRANT しない。検証は `OWNER` が `S-036` から行う）
 - 🔴 **この 3 表への `INSERT` が「業務データへの書き込み」でない理由**: `Tenant` は分離単位そのもので、`CLAUDE.md` §10.6 が Phase 0 の管理平面機能として「テナント作成」を置いている。`Invitation` は `Membership.招待状態` の分解（§3.2）で開設手続きの一部、`TenantSendingDomain` は `F-001` 処理⑤が開設フローの工程として定めた設定である。いずれも越境 5 経路（§3.1）の対象表に触れず、`INSERT` のみで既存行の読み書きを伴わない。**この 3 表以外へ `INSERT` を広げる変更は §10.5 の改訂（人間の承認事項）を要する**（`P-A-13`）。
+- 🔴 **`platform_users` / `two_factor_credentials`（T-03-07。運営者認証経路専用。上記 3 表とは別枠）**: `platform_users` は列レベル `SELECT`（認証に要る 7 列のみ）+ `last_login_at` の列レベル `UPDATE`。`two_factor_credentials` は `tenant_id IS NULL AND subject_type='PLATFORM_USER'` の行に限定した `INSERT` + 列レベル `UPDATE`（`secret_encrypted, recovery_code_hashes, confirmed_at` の 3 列。`DELETE` は与えない）。`audit_logs` には本人の 2FA 失敗履歴を読むための `SELECT` を追加する（§4.2 の既存 `INSERT` に加える）。🔴 **`app_platform`（§4.2 の読み取り専用ロール）ではなく `app_platform_write` を使う理由**: 認証には `platform_users.last_login_at` の更新・`two_factor_credentials` の登録/確定/リカバリコード消費・`audit_logs` へのログイン記録という**書き込み**が伴い、`SELECT` のみの `app_platform` では成立しない。主平面の `app_tenant` を流用する案は採らない — 主平面の DB ロールに運営者のパスワードハッシュへの到達経路を与えることになり `CLAUDE.md` §10.5「権限昇格の事故経路を作らない」に反する。🔴 **すべてのポリシーは `app.platform_auth_email` / `app.platform_auth_subject_id`（§4.4.2 の管理平面版）の GUC を要求し、`withPlatformRead` / `withPlatformWrite`（本節）はこれらを常に空で上書きする**（§5.3 の注記）ため、管理平面の通常操作からこの権限が使われることは無い。逆に認証経路は `app.platform_user_id` を空で上書きするため、`tenants` / `invitations` / `tenant_sending_domains` の provisioning ポリシーは認証トランザクション中に 1 つも真にならない。**この 2 表は上記「3 表以外へ広げない」制約の対象外**（provisioning ではなく認証であり、別の GUC・別の呼び出し元〔`apps/web/lib/auth/**` のみ。§4.4.2〕に閉じているため）だが、**認証以外の用途にこの 2 表の権限を広げる変更は同じく §10.5 の改訂を要する**。
 - 🔴 **`withPlatformWrite` の `domain` と、実際に触れるテーブルの対応を実行時に検証する**（`domain='ANNOUNCEMENT'` なら `announcements` 以外、`'TENANT_PROVISIONING'` なら `tenants` / `invitations` / `tenant_sending_domains` 以外のモデルにアクセスした時点で throw）。型と権限に加えた 3 枚目。
 
 **汎用エスケープハッチを作らない担保**
@@ -1739,12 +1743,18 @@ CREATE POLICY platform_write ON <table> FOR INSERT TO app_platform_write     -- 
 ```
 BEGIN;
   SET LOCAL app.platform_user_id = $1;
-  SET LOCAL app.target_tenant_id = $2;   -- 横断は ''
+  SET LOCAL app.target_tenant_id = $2;          -- 横断は ''
+  SET LOCAL app.platform_auth_email = '';        -- 🔴 空で上書き（下記）
+  SET LOCAL app.platform_auth_subject_id = '';   -- 🔴 空で上書き（下記）
   INSERT INTO audit_logs (...) VALUES (...);   -- 🔴 先に書く
   <fn の中のクエリ>
 COMMIT;
 ```
 `PlatformOp` の `action` / `targetTenantId` は**必須引数**であり省略できない。したがって「記録されない管理平面アクセス」は型として書けない。
+
+🔴 **`app.platform_auth_email` / `app.platform_auth_subject_id` を空で上書きする。** `packages/db/src/platform-auth.ts`（§4.4.2 の管理平面版）が `app.platform_user_id` を空で上書きするのと対称の担保であり、確定事項として扱う（プール実装のばらつきに依存しない）。この 2 GUC は運営者認証経路専用で `withPlatformRead` / `withPlatformWrite` は本来これらを使わないが、明示的に空文字で上書きするのは、**同じ物理接続で直前に走ったトランザクションの値が残っていないことをコネクションプールの実装に依存せず確定させるため**である（`scope-settings.ts` の他の関数と同じ方針。§4.3 実装の規約 1）。これにより `platform_users_auth_self_select` / `two_factor_credentials_platform_auth_*` 等の認証専用ポリシー（§4.4.2）が、管理平面の通常操作の接続で誤って真になることはない。
+
+🔴 **`F-055 AC-4`（運営者の画面閲覧を含む全操作の記録）は `/admin` ホームの `GET` を含む。** `/admin` のトップページを含む各画面（`A-002` 以降）が発行するデータ取得はすべて `withPlatformRead` を経由するため、本節冒頭の「`fn` の実行前に `INSERT`」が閲覧そのものにも適用され、画面閲覧の記録漏れは構造的に起こらない（§5.1 の「監査」行と同一の担保）。
 ### 5.4 テナントのライフサイクル操作（`A-010` / `A-013` / `A-014`）
 
 | 遷移 | 実行者 | エンドポイント | 実装 |
@@ -2080,7 +2090,7 @@ type SubmitAccepted = { attemptSeq: number; jobId: string; state: 'SUBMITTING' }
 
 | # 🔴 **API 行の識別子は `API-A{n}`**（画面 ID `A-{nnn}` と別体系。混同しない） | Method / Path | 機能 / 画面 | Phase | 認可 |
 |---|---|---|---|---|
-| API-A1 | `POST /api/admin/auth/signin` / `2fa/verify` | `F-055` / `A-001` | 0 | 未認証 |
+| API-A1 | `POST /api/admin/auth/signin` / `POST /api/admin/auth/2fa/setup` / `POST /api/admin/auth/2fa/verify` / `POST /api/admin/auth/signout` | `F-055` / `A-001` | 0 | `signin` は未認証。🔴 **`2fa/setup` は一次認証済み（パスワードは通ったが第 2 要素は未提示）で呼べる**——`requirePlatformCtx`（2FA 充足を要求する§4.3同型のゲート）を課さない。課すと `F-055 AC-3`（全 `PlatformUser` に 2FA 必須）の下で、2FA 未設定の運営者は `resolvePlatformCtx` が `TwoFactorRequiredError` を投げて ctx を生成せず、**2FA を設定する操作そのものに到達できず永久ロックアウトになる**。有効な `PlatformUser` であることだけを確かめ、DB 側は RLS（`platform_users_auth_self_select` / `two_factor_credentials_platform_auth_insert` 等。§4.4.2）が本人の `PLATFORM_USER` 行だけに閉じる。`2fa/verify` も一次認証済み。`signout` は未認証でも 204 を返す（セッションの有無を漏らさない。§4.8 と同型） |
 | API-A2 | `GET /api/admin/tenants` | `F-056` / `A-002` | 0→1 | `PO`/`PP`（閲覧） |
 | API-A3 | `GET /api/admin/tenants/{id}` | `F-056` / `A-003` | 0→1 | 同上。🔴 **`PURGED` はライフサイクル状態のみ返し、削除件数を含めない**（`docs/04` 申し送り 15） |
 | API-A4 | 🔴 `POST /api/admin/tenants` | `F-001` / `A-014` | **0** | 🔴 **`PLATFORM_OWNER` のみ**。`PP` はルート自体が 403。body `{ name, environment, lifecycleState, planId, provisioningRequestId, sendingDomain?: string }`。🔴 **`sendingDomain` は `tenant_sending_domains` に `state='REGISTERED'` で `INSERT` するだけ**（§5.2。DNS・検証は `OWNER` が `S-036` で行う。`A-014` 5b）。未入力でも開設でき、その場合は `A-005` 項目 11 に即日現れる |

@@ -3,6 +3,35 @@
 //    生 PrismaClient / TenantDb 型 / 生 SQL の入口は export しない。
 export { configureTenantDb, disconnectTenantDb } from './client.js';
 export type { TenantDbOptions } from './client.js';
+// 🔴 T-03-07: 管理平面の接続プール（docs/03 §4.3.3 / docs/05 §4.2）。**主平面とは別の
+//    PrismaClient・別の DB ロール（app_platform_write）**。T-03-08 が読み取り用を足す。
+export {
+  configurePlatformWriteDb,
+  disconnectPlatformWriteDb,
+} from './platform-client.js';
+export type { PlatformWriteDbOptions } from './platform-client.js';
+// 🔴 T-03-07: 運営者認証（F-055 / API-A1）。テナントの User とは別テーブル・別認証（BR-36）。
+export {
+  confirmPlatformTwoFactorEnrollment,
+  consumePlatformRecoveryCode,
+  loadPlatformUserFacts,
+  PLATFORM_TWO_FACTOR_FAILED_AUDIT_ACTION,
+  readPlatformTwoFactorCredential,
+  readRecentPlatformTwoFactorFailures,
+  recordPlatformAuditLog,
+  startPlatformTwoFactorEnrollment,
+  TWO_FACTOR_SUBJECT_TYPE_PLATFORM_USER,
+  withPlatformAuthLookup,
+} from './platform-auth.js';
+export type {
+  PlatformAuthUser,
+  PlatformIdentity,
+  PlatformTwoFactorEnrollmentResult,
+  PlatformUserFacts,
+} from './platform-auth.js';
+// 🔴 T-03-07: 運営者 ctx の唯一の生成器（2FA 未充足なら生成しない。F-055 AC-3）。
+export { resolvePlatformCtx } from './platform-context.js';
+export type { AuthenticatedPlatformCtx, PlatformSession } from './platform-context.js';
 export {
   HostOnlyContextError,
   PartnerScopeTargetError,

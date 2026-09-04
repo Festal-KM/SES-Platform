@@ -64,6 +64,22 @@ const EXEMPT_ROUTES: Readonly<Record<string, string>> = {
     '第 2 要素の提示（#2）。同上、ctx が生成される前の経路である。',
   'apps/web/app/api/(main)/invitations/[token]/accept/route.ts':
     '未認証経路（#7）。所属は招待行から決まり、受諾時点では ctx が無い。',
+  // 🔴 T-03-07（管理平面の認証。API-A1 / `F-055`）。
+  //    `requireExecutable` は `AuthenticatedTenantCtx.lifecycleState`（= 特定テナントの
+  //    ライフサイクル）を見るガードである。管理平面の認証はどのテナントの操作でもなく、
+  //    `PlatformUser` の資格情報照合と 2FA だけを行う（`BR-36` の別テーブル・別認証）ため、
+  //    テナントの ctx が存在せず**掛けようがない**。
+  //    ⚠️ **テナントに触れる管理平面のルート（API-A2 以降。T-03-08 / T-03-09 / T-03-10）は
+  //    ここへ足さない。** それらは `withPlatformRead` / `withPlatformWrite`（監査先行 +
+  //    専用 DB ロール）を通す必要があり、免除ではなく別のガードの対象である。
+  'apps/web/app/api/admin/auth/signin/route.ts':
+    '未認証経路（API-A1）。運営者の資格情報照合であり、テナントの ctx を作らない。',
+  'apps/web/app/api/admin/auth/signout/route.ts':
+    '管理平面のセッション破棄。未認証でも 204 を返す（セッションの有無を漏らさない）。',
+  'apps/web/app/api/admin/auth/2fa/setup/route.ts':
+    '2FA 未設定の運営者が使う操作（API-A1）。定義上 `AuthenticatedPlatformCtx` すら作れない。',
+  'apps/web/app/api/admin/auth/2fa/verify/route.ts':
+    '第 2 要素の提示（API-A1）。同上、ctx が生成される前の経路である。',
 };
 
 type RouteAnalysis = {

@@ -61,6 +61,22 @@ const PLATFORM_WRITE_ALLOWLIST: Record<
   //    🔴 終了（ended_at / end_kind）の UPDATE は §5.6 を実装する SP-03 T-03-08 で許可列を
   //    決めてから足す。ここで先に広げない。
   impersonation_sessions: { insert: true, delete: false, updateColumns: [] },
+  // 🔴 T-03-07（運営者認証。`F-055` / migration 20260904000000）: 管理平面の認証経路は
+  //    `app_platform_write` で動く（`app_platform` は SELECT のみで 2FA の登録・確定・
+  //    リカバリコード消費・監査ログの記録ができない）。**業務テーブルへの書き込みを開いたのではない**:
+  //    ポリシーが `tenant_id IS NULL AND subject_type='PLATFORM_USER' AND
+  //    subject_id = current_setting('app.platform_auth_subject_id')` を課すため、
+  //    テナント利用者（`subject_type='USER'`）の行には 1 行も到達できない。
+  //    DELETE は与えない（未確認の登録のやり直しは UPDATE で表現する）。
+  two_factor_credentials: {
+    insert: true,
+    delete: false,
+    updateColumns: ['secret_encrypted', 'recovery_code_hashes', 'confirmed_at'],
+  },
+  // 🔴 docs/05 §5.2 が `app_platform_write` の書き込み先として明示している表。
+  //    T-03-07 は運営者のログイン・ログアウト・2FA の記録に使う（`F-055 AC-4` / `BR-41`）。
+  //    UPDATE / DELETE は 20260903040000 の REVOKE のまま 0 件（`F-005 AC-3`）。
+  audit_logs: { insert: true, delete: false, updateColumns: [] },
 };
 
 let database: IsolationDatabase;

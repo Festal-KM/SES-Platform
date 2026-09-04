@@ -12,12 +12,18 @@
 //    外部連携の差し替え（`resolveConnectorSelection`）は T-03-12 が同じ初期化経路に載せる。
 import process from 'node:process';
 import { loadAppEnv, resolveConnectorSelection, type AppEnvKind } from '@ses/config';
-import { configureTenantDb, configureTokenEncryption } from '@ses/db';
+import { configurePlatformWriteDb, configureTenantDb, configureTokenEncryption } from '@ses/db';
 import { configureAccountMailQueue, PendingAccountMailQueue } from '../jobs/account-mail';
 
 let initialized = false;
 /** 🔴 `GET /api/me` の `env`（docs/05 §6.3 #8）が読む値。`ensureDbConfigured()` が 1 度だけ埋める。 */
 let cachedAppEnv: AppEnvKind | null = null;
+/**
+ * 🔴 T-03-07: 管理平面の Auth.js インスタンスの署名鍵（docs/03 §4.9「主平面と管理平面で
+ *    別の署名鍵」）。Auth.js は `AUTH_SECRET` しか自動で読まないため、管理平面のインスタンスには
+ *    ここから明示的に渡す。**`process.env` を直接読まない**（CLAUDE.md §3.5）。
+ */
+let cachedPlatformAuthSecret: string | null = null;
 
 /**
  * DB クライアントを 1 度だけ初期化する。
@@ -30,7 +36,12 @@ export function ensureDbConfigured(): void {
   if (initialized) return;
   const env = loadAppEnv(process.env);
   cachedAppEnv = env.APP_ENV;
+  cachedPlatformAuthSecret = env.AUTH_PLATFORM_SECRET;
   configureTenantDb({ datasourceUrl: env.DATABASE_URL });
+  // 🔴 T-03-07: 管理平面は**別の接続プール・別の DB ロール**（docs/03 §4.3.3 / docs/05 §4.2）。
+  //    主平面の DATABASE_URL を流用しない（流用すると運営者の資格情報へ主平面のロールから
+  //    到達できてしまう。CLAUDE.md §10.5「権限昇格の事故経路を作らない」）。
+  configurePlatformWriteDb({ datasourceUrl: env.PLATFORM_WRITE_DATABASE_URL });
   // 🔴 T-03-02: 秘匿値の暗号鍵も同じ初期化経路で注入する（docs/05 §8.6 / docs/03 §4.4）。
   //    packages/db 側で `process.env` を読ませない（鍵の出所を packages/config に一本化する）。
   configureTokenEncryption({
@@ -62,4 +73,19 @@ export function currentAppEnv(): AppEnvKind {
     throw new Error('APP_ENV が解決されていません（bootstrap の不変条件違反）。');
   }
   return cachedAppEnv;
+}
+
+/**
+ * 🔴 管理平面の Auth.js インスタンス（`lib/auth/platform.ts`）だけが読む署名鍵。
+ *    主平面の `AUTH_SECRET`（Auth.js が自動で読む）とは**別の値**であることを
+ *    `packages/config` の起動時検証が保証している（同値なら起動に失敗する）。
+ */
+export function platformAuthSecret(): string {
+  ensureDbConfigured();
+  if (cachedPlatformAuthSecret === null) {
+    // `ensureDbConfigured()` が例外を投げずに戻った以上、この分岐には到達しない
+    // （不変条件違反。フォールバックせず、そのまま失敗させる。CLAUDE.md §11.1）。
+    throw new Error('AUTH_PLATFORM_SECRET が解決されていません（bootstrap の不変条件違反）。');
+  }
+  return cachedPlatformAuthSecret;
 }

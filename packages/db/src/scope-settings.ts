@@ -81,6 +81,40 @@ export function rowCredentialScopeSql(credential: RowCredential): Prisma.Sql {
  *    この関数は引数の出どころを型で強制できないため、呼び出し元は `row-context.ts` の
  *    3 関数だけに限る（同ファイル冒頭のコメント参照）。
  */
+/**
+ * 🔴 管理平面の認証経路（T-03-07。`packages/db/src/platform-auth.ts` 専用）が発行する設定。
+ *
+ * 主平面の `rowCredentialScopeSql` / `rowDerivedTenantScopeSql` と同じ 2 段構えである:
+ *   - 第 1 段（`kind: 'EMAIL'`）: メールアドレスの完全一致で `platform_users` を 1 行だけ可視にする
+ *   - 第 2 段（`kind: 'SUBJECT'`）: **読み出した行 / セッション Cookie 由来の主体 ID**で、
+ *     本人の `platform_users` / `two_factor_credentials` / `audit_logs` だけを可視にする
+ *
+ * 🔴 `app.platform_user_id` を**空で上書きする**。この GUC は T-03-08 の
+ *    `withPlatformRead` / `withPlatformWrite` が使うものであり、認証トランザクションの中で
+ *    `tenants` / `invitations` / `tenant_sending_domains` の provisioning ポリシーが
+ *    1 つも真にならないことを、コードではなく設定値で保証する。
+ * 🔴 主平面のテナント GUC（`app.tenant_id` ほか）も空で上書きする。管理平面の接続は
+ *    `app_platform_write` ロールであり主平面のポリシーは適用されないが、同じ物理接続の
+ *    直前のトランザクションの値が残らないことをプールの実装に依存せず確定させる。
+ */
+export type PlatformAuthCredential =
+  | { readonly kind: 'EMAIL'; readonly value: string }
+  | { readonly kind: 'SUBJECT'; readonly value: string };
+
+export function platformAuthScopeSql(credential: PlatformAuthCredential): Prisma.Sql {
+  const email = credential.kind === 'EMAIL' ? credential.value : '';
+  const subjectId = credential.kind === 'SUBJECT' ? credential.value : '';
+  return Prisma.sql`SELECT
+    set_config('app.tenant_id', '', true),
+    set_config('app.partner_company_id', '', true),
+    set_config('app.actor_user_id', '', true),
+    set_config('app.shared_scope', 'off', true),
+    set_config('app.platform_user_id', '', true),
+    set_config('app.target_tenant_id', '', true),
+    set_config('app.platform_auth_email', ${email}, true),
+    set_config('app.platform_auth_subject_id', ${subjectId}, true)`;
+}
+
 export function rowDerivedTenantScopeSql(scope: TenantScopeSettings): Prisma.Sql {
   return Prisma.sql`SELECT
     set_config('app.tenant_id', ${scope.tenantId}, true),

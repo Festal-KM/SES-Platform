@@ -51,6 +51,9 @@ const perKind: Record<AppEnvKind, EnvRecord> = {
     // development 例外解除）。ロール別に別値・sslmode=require・MIGRATION_DATABASE_URL 未設定。
     DATABASE_URL: 'postgresql://app_tenant:pw@localhost:5432/ses_platform?sslmode=require',
     PLATFORM_DATABASE_URL: 'postgresql://app_platform:pw@localhost:5432/ses_platform?sslmode=require',
+    // 🔴 T-03-07: 管理平面の書き込みロール（docs/05 §4.2）。3 本ともロール別に別値。
+    PLATFORM_WRITE_DATABASE_URL:
+      'postgresql://app_platform_write:pw@localhost:5432/ses_platform?sslmode=require',
     AWS_ACCOUNT_ID: '100000000001',
     MALWARE_SCANNER: 'clamav',
     CLAMAV_HOST: 'localhost',
@@ -69,6 +72,8 @@ const perKind: Record<AppEnvKind, EnvRecord> = {
     NODE_ENV: 'production',
     DATABASE_URL: 'postgresql://ses:pw@demo-db.internal:5432/ses_platform?sslmode=require',
     PLATFORM_DATABASE_URL: 'postgresql://ses_platform:pw@demo-db.internal:5432/ses_platform?sslmode=require',
+    PLATFORM_WRITE_DATABASE_URL:
+      'postgresql://ses_platform_write:pw@demo-db.internal:5432/ses_platform?sslmode=require',
     AWS_ACCOUNT_ID: '100000000002',
     MALWARE_SCANNER: 'mock',
     SENTRY_DSN: 'https://example@o0.ingest.sentry.io/1',
@@ -80,6 +85,8 @@ const perKind: Record<AppEnvKind, EnvRecord> = {
     NODE_ENV: 'production',
     DATABASE_URL: 'postgresql://ses:pw@sandbox-db.internal:5432/ses_platform?sslmode=require',
     PLATFORM_DATABASE_URL: 'postgresql://ses_platform:pw@sandbox-db.internal:5432/ses_platform?sslmode=require',
+    PLATFORM_WRITE_DATABASE_URL:
+      'postgresql://ses_platform_write:pw@sandbox-db.internal:5432/ses_platform?sslmode=require',
     AWS_ACCOUNT_ID: '100000000003',
     ANTHROPIC_API_KEY: 'sk-ant-test-key',
     MALWARE_SCANNER: 'guardduty',
@@ -93,6 +100,8 @@ const perKind: Record<AppEnvKind, EnvRecord> = {
     NODE_ENV: 'production',
     DATABASE_URL: 'postgresql://ses:pw@staging-db.internal:5432/ses_platform?sslmode=require',
     PLATFORM_DATABASE_URL: 'postgresql://ses_platform:pw@staging-db.internal:5432/ses_platform?sslmode=require',
+    PLATFORM_WRITE_DATABASE_URL:
+      'postgresql://ses_platform_write:pw@staging-db.internal:5432/ses_platform?sslmode=require',
     AWS_ACCOUNT_ID: '100000000004',
     ANTHROPIC_API_KEY: 'sk-ant-test-key',
     MALWARE_SCANNER: 'guardduty',
@@ -105,6 +114,8 @@ const perKind: Record<AppEnvKind, EnvRecord> = {
     NODE_ENV: 'production',
     DATABASE_URL: 'postgresql://ses:pw@prod-db.internal:5432/ses_platform?sslmode=require',
     PLATFORM_DATABASE_URL: 'postgresql://ses_platform:pw@prod-db.internal:5432/ses_platform?sslmode=require',
+    PLATFORM_WRITE_DATABASE_URL:
+      'postgresql://ses_platform_write:pw@prod-db.internal:5432/ses_platform?sslmode=require',
     AWS_ACCOUNT_ID: FIXTURE_AWS_ACCOUNT_ID_EXPECTED_PRODUCTION,
     ANTHROPIC_API_KEY: 'sk-ant-test-key',
     MALWARE_SCANNER: 'guardduty',
