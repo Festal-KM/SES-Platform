@@ -21,7 +21,11 @@ import {
   readTableColumns,
   type UnextendedClient,
 } from '@ses/db/testing';
-import { PLATFORM_READ_COLUMN_DENYLIST } from './support/platform-read-denylist.js';
+import {
+  PLATFORM_READ_COLUMN_ALLOWLIST,
+  PLATFORM_READ_COLUMN_DENYLIST,
+  PLATFORM_WRITE_TENANTS_SELECT_COLUMNS,
+} from './support/platform-grants.js';
 import { ROLE_NAMES, startIsolationDatabase, type IsolationDatabase } from './support/postgres.js';
 
 const SETUP_TIMEOUT_MS = 600_000;
@@ -61,6 +65,14 @@ const PLATFORM_WRITE_ALLOWLIST: Record<
   //    🔴 終了（ended_at / end_kind）の UPDATE は §5.6 を実装する SP-03 T-03-08 で許可列を
   //    決めてから足す。ここで先に広げない。
   impersonation_sessions: { insert: true, delete: false, updateColumns: [] },
+  // 🔴 T-03-08（docs/05 §5.2 / API-A5）: 運営者が発行できるのは**初期 `OWNER` 招待だけ**である。
+  //    `INSERT` のみで `UPDATE` / `DELETE` を持たない（既存招待の変更・取消はできない）。
+  //    行の内容は RLS の `invitations_platform_write_insert`（`role='OWNER'` /
+  //    `partner_company_id IS NULL` / `invited_by IS NULL` / 発行者 = 自分）が固定する。
+  invitations: { insert: true, delete: false, updateColumns: [] },
+  // 🔴 T-03-08（docs/05 §5.2 / API-A4 の `sendingDomain`）: 運営者は**登録だけを代行**する。
+  //    DNS の設定・検証の実行・`verified_at` の書き込みはできない（`UPDATE` を GRANT しない）。
+  tenant_sending_domains: { insert: true, delete: false, updateColumns: [] },
   // 🔴 T-03-07（運営者認証。`F-055` / migration 20260904000000）: 管理平面の認証経路は
   //    `app_platform_write` で動く（`app_platform` は SELECT のみで 2FA の登録・確定・
   //    リカバリコード消費・監査ログの記録ができない）。**業務テーブルへの書き込みを開いたのではない**:
@@ -142,8 +154,20 @@ describe('① 6 ロールすべてが BYPASSRLS を持たない（docs/05 §4.2�
   });
 });
 
+/**
+ * 🔴 T-03-08: `app_platform` に `INSERT` を許す唯一の表（docs/05 §4.2「`audit_logs` は
+ *    `INSERT/SELECT`」/ §5.2「`audit_logs` の `INSERT` のみ許す」/ §5.3）。
+ *
+ *    §5.3 は「`fn` を実行する**前に**、**同一トランザクション**で `AuditLog` を `INSERT` する」と
+ *    定める。読み取り接続そのものが書けなければこれは成立しない（別接続にすると
+ *    「監査は commit されたがクエリは rollback」「その逆」が起こりうる）。
+ *    🔴 **業務テーブルへの書き込みは 1 つも開いていない**（下のループが毎回それを確認する）。
+ *    `UPDATE` / `DELETE` は 20260903040000 で `REVOKE` 済み（`F-005 AC-3`）。
+ */
+const PLATFORM_INSERT_ALLOWED_TABLES = ['audit_logs'];
+
 describe('② app_platform は業務テーブルへの書込権限を 0 件持つ（docs/05 §4.2 / §5.2）', () => {
-  it('SELECT 以外（INSERT/UPDATE/DELETE）がすべて 0 件', async () => {
+  it('SELECT 以外（INSERT/UPDATE/DELETE）がすべて 0 件（audit_logs の INSERT を除く）', async () => {
     const tables = (await readPublicTables(unextended)).filter((t) => !OUT_OF_SCOPE_TABLES.includes(t));
     expect(tables.length).toBeGreaterThan(0); // 空振り防止（対照）
 
@@ -152,7 +176,9 @@ describe('② app_platform は業務テーブルへの書込権限を 0 件持�
         hasTablePrivilege(unextended, 'app_platform', table, 'INSERT'),
         hasTablePrivilege(unextended, 'app_platform', table, 'DELETE'),
       ]);
-      expect(insert, `${table}: app_platform に INSERT 権限がある`).toBe(false);
+      expect(insert, `${table}: app_platform の INSERT 権限が許可リストと不一致`).toBe(
+        PLATFORM_INSERT_ALLOWED_TABLES.includes(table),
+      );
       expect(del, `${table}: app_platform に DELETE 権限がある`).toBe(false);
 
       const columns = await readTableColumns(unextended, table);
@@ -163,9 +189,19 @@ describe('② app_platform は業務テーブルへの書込権限を 0 件持�
     }
   });
 
-  it('対照: app_platform は tenants を（テーブル単位で）SELECT できる（0 件書込が「何も見えていない」からではない）', async () => {
-    const select = await hasTablePrivilege(unextended, 'app_platform', 'tenants', 'SELECT');
-    expect(select, 'tenants: app_platform に SELECT 権限が無い').toBe(true);
+  it('🔴 対照: audit_logs には INSERT がある（§5.3 の「監査を先に書く」が成立する）', async () => {
+    const insert = await hasTablePrivilege(unextended, 'app_platform', 'audit_logs', 'INSERT');
+    expect(insert, 'audit_logs: app_platform に INSERT 権限が無い（監査の先行が成立しない）').toBe(true);
+  });
+
+  it('🔴 tenants はテーブル単位の SELECT を持たない（§5.5「列を列挙して GRANT する」）', async () => {
+    // 🔴 T-03-08 で列レベルへ寄せた（20260903050000 のテーブル単位 GRANT は REVOKE 済み）。
+    //    テーブル単位が残っていると、後から追加された列が自動的に運営者へ開示される。
+    const wholeTable = await hasTablePrivilege(unextended, 'app_platform', 'tenants', 'SELECT');
+    expect(wholeTable, 'tenants: 列 GRANT のみのはずがテーブル単位の GRANT も存在する').toBe(false);
+
+    const disclosedColumn = await hasColumnPrivilege(unextended, 'app_platform', 'tenants', 'id', 'SELECT');
+    expect(disclosedColumn, 'tenants.id: app_platform に SELECT 権限が無い').toBe(true);
   });
 
   it('対照: app_platform は engineers を（列単位で）SELECT できる（§5.5 で開示列に限定されるため hasTablePrivilege は false になる）', async () => {
@@ -223,6 +259,44 @@ describe('③ app_platform_write の書込先が許可リストと一致する�
         const expectedUpdatable = allowed.updateColumns.includes(column);
         const actual = await hasColumnPrivilege(unextended, 'app_platform_write', table, column, 'UPDATE');
         expect(actual, `${table}.${column}: UPDATE 可否が許可リストと不一致`).toBe(expectedUpdatable);
+      }
+    }
+  });
+
+  /**
+   * 🔴 T-03-08 / Issue #24（決定 = 既定値 A）: `app_platform_write` の `tenants` に対する
+   *    `SELECT` は `(id, lifecycle_state)` の **2 列ちょうど**である。
+   *    テナント開設直後の読み戻し（API-A4 の `INSERT ... RETURNING`）に要る最小であり、
+   *    🔴 **行全体・他列に広げてはならない**（広げると `BR-40` の担保が除外リスト頼みになる）。
+   */
+  it('🔴 app_platform_write の tenants への SELECT は (id, lifecycle_state) の 2 列に限られる', async () => {
+    const wholeTable = await hasTablePrivilege(unextended, 'app_platform_write', 'tenants', 'SELECT');
+    expect(wholeTable, 'tenants: app_platform_write にテーブル単位の SELECT がある').toBe(false);
+
+    const columns = await readTableColumns(unextended, 'tenants');
+    expect(columns.length).toBeGreaterThan(2); // 空振り防止（対照。2 列しかない表ではない）
+    for (const column of columns) {
+      const expected = (PLATFORM_WRITE_TENANTS_SELECT_COLUMNS as readonly string[]).includes(column);
+      const actual = await hasColumnPrivilege(unextended, 'app_platform_write', 'tenants', column, 'SELECT');
+      expect(actual, `tenants.${column}: app_platform_write の SELECT 可否が Issue #24 の決定と不一致`).toBe(
+        expected,
+      );
+    }
+  });
+
+  it('🔴 app_platform_write は tenants 以外の表を 1 列も SELECT できない（認証経路の 3 表を除く）', async () => {
+    // 認証経路（T-03-07。migration 20260904000000）が使う 3 表は別枠である（docs/05 §5.2 の 🔴）。
+    const AUTH_PATH_TABLES = ['platform_users', 'two_factor_credentials', 'audit_logs'];
+    const tables = (await readPublicTables(unextended)).filter(
+      (t) => !OUT_OF_SCOPE_TABLES.includes(t) && t !== 'tenants' && !AUTH_PATH_TABLES.includes(t),
+    );
+    expect(tables.length).toBeGreaterThan(0); // 空振り防止（対照）
+
+    for (const table of tables) {
+      const columns = await readTableColumns(unextended, table);
+      for (const column of columns) {
+        const actual = await hasColumnPrivilege(unextended, 'app_platform_write', table, column, 'SELECT');
+        expect(actual, `${table}.${column}: app_platform_write に SELECT 権限がある`).toBe(false);
       }
     }
   });
@@ -286,47 +360,13 @@ describe('app_assignment_owner_probe は engineers の 3 列（tenant_id/id/owne
 });
 
 // docs/05 §5.5「運営者に対するマスキング（二層）」第 1 層 = 列単位の GRANT。
-// `CLAUDE.md` §10.5「運営者にも見せないもの: エンジニアの氏名 …」の実装担保。
-// 🔴 T-02-09 申し送り 3: denylist の定義（`PLATFORM_READ_COLUMN_DENYLIST`）は
-//    tests/isolation/support/platform-read-denylist.ts に単一出所化した
-//    （roles.test.ts と rls-enforced.test.ts の両方が同じ一覧を実測する。§5.5 の表自体が
-//    唯一の真実であり、そちらは実測用の固定リストである。追記を忘れても他のテストが
-//    自動で検知するわけではない）。
-
-/**
- * docs/05 §5.5 第 1 層の許可リスト（唯一の真実）。`app_platform` に SELECT を許す列を宣言する。
- * `'ALL'` はテーブル全体（列レベル GRANT ではなくテーブル単位 GRANT）を意味し、
- * `readonly string[]` は列挙した列だけを意味する。**許可リストに無い表は SELECT 0 件**
- * （全列 false）を要求する。現行スキーマ（tenants / engineers の 2 表）は
- * `prisma/migrations/20260903050000_rls_policies/migration.sql` の GRANT と一致させてある。
- *
- * ③（書込側 `PLATFORM_WRITE_ALLOWLIST`）と対称の役割: SP-02 で表・列が増えたとき、
- * docs/05 §5.5 の非開示列一覧と照合してからここへ追記しないと、次の「カタログ走査」テストが
- * 新表 / 新列を「許可リスト外 = SELECT 不可のはず」として検出し、GRANT を足した瞬間に落ちる。
- */
-const PLATFORM_READ_ALLOWLIST: Record<string, 'ALL' | readonly string[]> = {
-  tenants: 'ALL',
-  // 🔴 T-02-06: docs/05 §5.5 が engineers について挙げている開示列と 1 対 1 にした
-  //    （T-02-02 で availability / available_from / prefecture / remote_mode /
-  //    retention_expires_at / pii_purged_at が実在するようになったため）。
-  //    非開示列（display_name / birth_date / contact_email / contact_phone /
-  //    affiliation_label / city / preference_note）は含めない。
-  engineers: [
-    'id',
-    'tenant_id',
-    'owner_partner_company_id',
-    'availability',
-    'available_from',
-    'prefecture',
-    'remote_mode',
-    'created_at',
-    'updated_at',
-    'retention_expires_at',
-    'pii_purged_at',
-  ],
-  // 🔴 T-02-06: §5.5 に非開示列の記載が無い（運営者が見るのは代理閲覧の記録そのもの）。
-  impersonation_sessions: 'ALL',
-};
+// `CLAUDE.md` §10.5「運営者にも見せないもの: エンジニアの氏名 …」/ `BR-40` の実装担保。
+// 🔴 T-02-09 申し送り 3 / T-03-08: 許可リスト・非開示リストとも
+//    tests/isolation/support/platform-grants.ts に単一出所化した
+//    （roles.test.ts と rls-enforced.test.ts の両方が同じ一覧を実測する）。
+// 🔴 T-03-08: 3 表だけだった許可リストを **52 表すべて**へ広げ、`'ALL'`（テーブル単位 GRANT）を
+//    廃止した。テーブル単位の GRANT が 1 つでも残っていると「後から追加した列が自動的に
+//    運営者へ開示される」ため、§5.5 の「書き忘れても漏れない」が成立しない。
 
 describe('④ app_platform への SELECT は §5.5 の非開示列を除外している（CLAUDE.md §10.5）', () => {
   it('カタログ走査: app_platform への SELECT は許可リストの宣言と一致する（許可リスト外の表は全列 0 件）', async () => {
@@ -335,13 +375,13 @@ describe('④ app_platform への SELECT は §5.5 の非開示列を除外し�
 
     let checkedColumns = 0;
     for (const table of tables) {
-      const allowed = PLATFORM_READ_ALLOWLIST[table];
+      const allowed = PLATFORM_READ_COLUMN_ALLOWLIST[table];
       const columns = await readTableColumns(unextended, table);
       expect(columns.length).toBeGreaterThan(0); // 空振り防止（対照）
 
       for (const column of columns) {
         checkedColumns += 1;
-        const expectedSelectable = allowed === 'ALL' || (Array.isArray(allowed) && allowed.includes(column));
+        const expectedSelectable = allowed !== undefined && allowed.includes(column);
         const actual = await hasColumnPrivilege(unextended, 'app_platform', table, column, 'SELECT');
         expect(
           actual,
@@ -350,6 +390,25 @@ describe('④ app_platform への SELECT は §5.5 の非開示列を除外し�
       }
     }
     expect(checkedColumns).toBeGreaterThan(0); // 空振り防止（対照）
+  });
+
+  it('🔴 許可リストは 52 表すべてを覆う（走査の母集団と 1 対 1。表の追加を取りこぼさない）', async () => {
+    const tables = (await readPublicTables(unextended)).filter((t) => !OUT_OF_SCOPE_TABLES.includes(t));
+    // 🔴 partitioned table の子パーティションは readPublicTables に含まれうるため、
+    //    「許可リストに無い表」ではなく「母集団に無い許可リスト項目」を見る向きで検査する。
+    const population = new Set(tables);
+    const stale = Object.keys(PLATFORM_READ_COLUMN_ALLOWLIST).filter((t) => !population.has(t));
+    expect(stale, '許可リストに、実在しない表が残っている').toEqual([]);
+    expect(Object.keys(PLATFORM_READ_COLUMN_ALLOWLIST)).toHaveLength(52);
+  });
+
+  it('🔴 テーブル単位の GRANT SELECT を持つ表が 1 つも無い（§5.5「列を列挙して GRANT する」）', async () => {
+    const rows = await migrator.$queryRaw<Array<{ table_name: string; privilege_type: string }>>`
+      SELECT table_name, privilege_type
+      FROM information_schema.role_table_grants
+      WHERE grantee = 'app_platform' AND privilege_type = 'SELECT'
+      ORDER BY table_name`;
+    expect(rows, 'app_platform にテーブル単位の SELECT が残っている（新しい列が自動的に開示される）').toEqual([]);
   });
 
   it('固定リスト走査: §5.5 の非開示列に SELECT 権限が無い（denylist の実測。has_column_privilege）', async () => {

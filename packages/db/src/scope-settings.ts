@@ -115,6 +115,43 @@ export function platformAuthScopeSql(credential: PlatformAuthCredential): Prisma
     set_config('app.platform_auth_subject_id', ${subjectId}, true)`;
 }
 
+/**
+ * 🔴 管理平面の分離バイパス（T-03-08。`packages/db/src/platform.ts` 専用）が発行する設定。
+ *    docs/05 §5.3 の SQL をそのまま表す。
+ *
+ * ```
+ * SET LOCAL app.platform_user_id      = $1;
+ * SET LOCAL app.target_tenant_id      = $2;   -- 🔴 横断は ''
+ * SET LOCAL app.platform_auth_email       = '';  -- 🔴 空で上書き
+ * SET LOCAL app.platform_auth_subject_id  = '';  -- 🔴 空で上書き
+ * ```
+ *
+ * 🔴 `app.platform_auth_email` / `app.platform_auth_subject_id` を**空で上書きする**（§5.3 の注記）。
+ *    `platform-auth.ts` が `app.platform_user_id` を空で上書きするのと対称の担保であり、
+ *    これにより認証専用ポリシー（`platform_users_auth_self_select` /
+ *    `two_factor_credentials_platform_auth_*`）が管理平面の通常操作の接続で誤って真にならない。
+ *    「同じ物理接続で直前に走ったトランザクションの値が残っていないこと」を、
+ *    プールの実装に依存せず確定させる（§4.3 実装の規約 1 と同じ方針）。
+ * 🔴 主平面のテナント GUC も空で上書きする（同じ理由）。
+ */
+export type PlatformScopeSettings = {
+  readonly platformUserId: string;
+  /** 🔴 横断（`F-058` の監査ログ横断検索・`F-059` の集計）は `null`。空文字で設定される。 */
+  readonly targetTenantId: string | null;
+};
+
+export function platformScopeSql(scope: PlatformScopeSettings): Prisma.Sql {
+  return Prisma.sql`SELECT
+    set_config('app.platform_user_id', ${scope.platformUserId}, true),
+    set_config('app.target_tenant_id', ${scope.targetTenantId ?? ''}, true),
+    set_config('app.platform_auth_email', '', true),
+    set_config('app.platform_auth_subject_id', '', true),
+    set_config('app.tenant_id', '', true),
+    set_config('app.partner_company_id', '', true),
+    set_config('app.actor_user_id', '', true),
+    set_config('app.shared_scope', 'off', true)`;
+}
+
 export function rowDerivedTenantScopeSql(scope: TenantScopeSettings): Prisma.Sql {
   return Prisma.sql`SELECT
     set_config('app.tenant_id', ${scope.tenantId}, true),

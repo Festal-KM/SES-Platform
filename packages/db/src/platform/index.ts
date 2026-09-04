@@ -1,0 +1,30 @@
+// packages/db/src/platform/index.ts
+// 🔴 `@ses/db/platform` サブパスの唯一の入口（docs/05 §5.2 / docs/03 `program-design` 申し送り 2）。
+//
+// 🔴 **`@ses/db`（index.ts）からはここの中身を 1 つも re-export しない。**
+//    主平面のコードが `withPlatform*` に到達する経路を、モジュールの形として作らない。
+//    import 元の限定は `eslint.config.mjs` の ADMIN_PLANE_ZONE が行う
+//    （`apps/web/app/admin/**` / `apps/web/app/api/admin/**` と `tests/isolation/**` のみ）。
+export {
+  PLATFORM_ACTIONS,
+  PLATFORM_READABLE_MODELS,
+  PLATFORM_WRITE_DOMAIN_MODELS,
+  PLATFORM_WRITE_DOMAINS,
+  PlatformWriteDomainViolationError,
+  withPlatformRead,
+  withPlatformWrite,
+} from '../platform.js';
+export type {
+  PlatformAction,
+  PlatformChangeSnapshot,
+  PlatformOp,
+  PlatformReadDb,
+  PlatformReadableModel,
+  PlatformWriteDbFor,
+  PlatformWriteDomain,
+  PlatformWriteOp,
+} from '../platform.js';
+
+// 画面 1 対 1 の専用クエリ関数（docs/05 §5.2）。
+export { readAdminHomeSummary } from './queries/admin-home.js';
+export type { AdminHomeSummary, PlatformRequestMeta } from './queries/admin-home.js';

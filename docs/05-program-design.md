@@ -1664,7 +1664,7 @@ export function withPartnerScope<T>(ctx: AuthenticatedTenantCtx, target: { previ
 |---|---|
 | **認証主体** | `PlatformUser`（`users` とは**別テーブル**）。`users` に運営者フラグに相当する列を持たない（`BR-36`） |
 | **Auth.js のインスタンス** | 主平面と**別インスタンス**。Cookie 名 `__Host-ses-admin.session`（🔴 管理平面の API は `/api/admin/**`〔§6.9〕にあり `/admin` の配下ではないため、RFC 6265 のパス照合により `path=/admin` では 2FA 検証以降の管理平面 API に Cookie が送られない。**`path=/` にする**。`__Host-` 接頭辞は `Path=/` かつ `Domain` 属性なしを要求するため、`path=/` 化により再び使え、直前の `__Secure-` 化〔`docs/03` §4.9 の 2026-09-04 修正〕より強い制約になる。本節はその修正をさらに修正するもの）、`path=/`、`sameSite=lax`、`secure` 固定。主平面は `__Host-ses.session` / `path=/`。🔴 **両平面の Cookie は `path` では区別できない**（下記「交差の禁止」参照） |
-| **ミドルウェア** | `apps/web/middleware.ts` の `matcher` を `['/((?!admin).*)', '/admin/:path*']` に分け、**内部で `adminMiddleware` / `mainMiddleware` を呼び分ける**。共有しない |
+| **ミドルウェア** | `apps/web/proxy.ts`（🔴 **ファイル名の補正。T-03-08**: Next.js 16.3〔`docs/03` の採用版〕で `middleware` ファイル規約は非推奨になり `proxy` に置き換わった。挙動・`config.matcher` の意味・Edge で動くことはいずれも同じ）の `matcher` を `['/((?!admin|_next/static|_next/image|favicon.ico).*)', '/admin/:path*']` に分け、**内部で `adminMiddleware` / `mainMiddleware` を呼び分ける**。共有しない。🔴 **呼び分けは matcher ではなく `/admin` と `/api/admin` の 2 接頭辞で行う（T-03-08 の補正）** —— 管理平面の API は §6.9 のとおり `/api/admin/**` にあり `/admin` 配下ではないため、matcher の第 1 要素に該当してしまう。接頭辞で振り分けないと管理平面の API が主平面のミドルウェアへ流れる。🔴 **`/api/admin/**` は素通しする**（拒否は Route Handler の `requirePlatformCtx` が 401 / 403 で行う。§6.1「API を直接呼んでも拒否される」を証明する経路を 1 本に保つ）|
 | **2FA** | 🔴 **全 `PlatformUser` に必須**。未設定なら `/admin/setup/2fa` 以外の全ルートを拒否（`F-055 AC-3`）。ロールごとの `if` を各ページに書かない |
 | **交差の禁止** | 主平面のセッションで `/admin/*` に到達すると **302 → `/admin/signin`**（`F-055 AC-2`）。逆も同様。🔴 両 Cookie は `path=/` で同居するため、**「path が異なるため送られない」は交差禁止の根拠にならない**（上記修正により削除した旧根拠）。交差を塞ぐのは次の 3 点である: ①**Cookie 名**（`__Host-ses.session` / `__Host-ses-admin.session`）②**別の署名鍵**（`AUTH_SECRET` / `AUTH_PLATFORM_SECRET`。Auth.js は JWT を JWE として暗号化する際、鍵導出〔HKDF〕に `secret` と `Cookie 名`〔`salt`〕の両方を使うため、`secret` を仮に取り違えても Cookie 名の不一致だけで導出鍵が別になる。二重に別鍵）③**fail-closed パーサ**（`parseTenantSessionClaims` / `parsePlatformSessionClaims` はフィールド名〔`userId`/`tenantId` 系と `platformUserId` 系〕が一致しなければ `null` を返す。§4.4.2 の行由来コンテキストと同型の「形が違えば無効」）。ミドルウェアは Cookie 名で画面遷移を振り分けるだけで、**境界の強制は鍵とパーサが担う** |
 | **監査** | 🔴 **`/admin/*` の全 GET を含めて `AuditLog` に記録する**（`BR-41`）。§5.3 の `withPlatformRead` が記録するため、記録漏れが構造的に起こらない |
@@ -1674,8 +1674,11 @@ export function withPartnerScope<T>(ctx: AuthenticatedTenantCtx, target: { previ
 // packages/db/src/platform.ts  — 🔴 別モジュール。主平面から import できない
 
 export type PlatformOp = {
-  readonly platformUserId: string;
-  readonly platformRole: PlatformRole;
+  // 🔴 T-03-08 の補正: 操作者は `AuthenticatedPlatformCtx`（`resolvePlatformCtx` だけが作れる
+  //    ブランド型。§5.1）からのみ来る。`platformUserId` / `platformRole` を素のフィールドに
+  //    すると呼び出し側が任意の値を詰められ、`CLAUDE.md` §3.1「操作者・分離キーは認証
+  //    コンテキストから取る」に反する。**狭めた**のであり緩めていない。
+  readonly ctx: AuthenticatedPlatformCtx;
   readonly action: PlatformAction;        // 列挙。AuditLog の action と同一
   readonly targetTenantId: string | null; // 横断検索は null
   readonly reason?: string;               // 代理閲覧のときのみ必須（型で分岐。§5.6）
@@ -1694,8 +1697,12 @@ export type PlatformWriteOp = PlatformOp & {
    *  §10.5 / §10.6 が運営者に明示的に認めた操作（停止・解約 / 代理閲覧 / テナント開設と初期 OWNER 招待）。いずれも業務データではない */
   readonly domain: 'SUBSCRIPTION' | 'QUOTA' | 'FEATURE_FLAG' | 'ANNOUNCEMENT'
                  | 'TENANT_LIFECYCLE' | 'IMPERSONATION' | 'TENANT_PROVISIONING';
-  readonly before: unknown;   // 🔴 必須。AuditLog に載せる
-  readonly after: unknown;    // 🔴 必須
+  // 🔴 T-03-08 の補正: `unknown` ではなく **平坦なプリミティブの記録**に狭める
+  //    （`Readonly<Record<string, string | number | boolean | null>> | null`）。
+  //    この値は `AuditLog.summary` に載り、§16.2 が「PII を入れない。ID・件数・状態・
+  //    変更前後の列挙値のみ」と定めるため。新規作成は `before: null` を明示的に渡す。
+  readonly before: PlatformChangeSnapshot | null;   // 🔴 必須。AuditLog に載せる
+  readonly after: PlatformChangeSnapshot | null;    // 🔴 必須
 };
 ```
 🔴 **read-only を型で強制する方法**
@@ -1714,7 +1721,9 @@ export type PlatformReadDb = { [K in PlatformReadableModel]: ReadOnlyDelegate<Pr
   - `tenant_sending_domains`: **`INSERT` のみ（API-A4 の `sendingDomain`。`A-014` 5b）**。`WITH CHECK ( state = 'REGISTERED' AND verified_at IS NULL AND registered_by_platform_user_id = current_setting('app.platform_user_id')::uuid )`。🔴 **運営者は登録だけを代行し、DNS の設定・検証の実行・`verified_at` の書き込みはできない**（`UPDATE` を GRANT しない。検証は `OWNER` が `S-036` から行う）
 - 🔴 **この 3 表への `INSERT` が「業務データへの書き込み」でない理由**: `Tenant` は分離単位そのもので、`CLAUDE.md` §10.6 が Phase 0 の管理平面機能として「テナント作成」を置いている。`Invitation` は `Membership.招待状態` の分解（§3.2）で開設手続きの一部、`TenantSendingDomain` は `F-001` 処理⑤が開設フローの工程として定めた設定である。いずれも越境 5 経路（§3.1）の対象表に触れず、`INSERT` のみで既存行の読み書きを伴わない。**この 3 表以外へ `INSERT` を広げる変更は §10.5 の改訂（人間の承認事項）を要する**（`P-A-13`）。
 - 🔴 **`platform_users` / `two_factor_credentials`（T-03-07。運営者認証経路専用。上記 3 表とは別枠）**: `platform_users` は列レベル `SELECT`（認証に要る 7 列のみ）+ `last_login_at` の列レベル `UPDATE`。`two_factor_credentials` は `tenant_id IS NULL AND subject_type='PLATFORM_USER'` の行に限定した `INSERT` + 列レベル `UPDATE`（`secret_encrypted, recovery_code_hashes, confirmed_at` の 3 列。`DELETE` は与えない）。`audit_logs` には本人の 2FA 失敗履歴を読むための `SELECT` を追加する（§4.2 の既存 `INSERT` に加える）。🔴 **`app_platform`（§4.2 の読み取り専用ロール）ではなく `app_platform_write` を使う理由**: 認証には `platform_users.last_login_at` の更新・`two_factor_credentials` の登録/確定/リカバリコード消費・`audit_logs` へのログイン記録という**書き込み**が伴い、`SELECT` のみの `app_platform` では成立しない。主平面の `app_tenant` を流用する案は採らない — 主平面の DB ロールに運営者のパスワードハッシュへの到達経路を与えることになり `CLAUDE.md` §10.5「権限昇格の事故経路を作らない」に反する。🔴 **すべてのポリシーは `app.platform_auth_email` / `app.platform_auth_subject_id`（§4.4.2 の管理平面版）の GUC を要求し、`withPlatformRead` / `withPlatformWrite`（本節）はこれらを常に空で上書きする**（§5.3 の注記）ため、管理平面の通常操作からこの権限が使われることは無い。逆に認証経路は `app.platform_user_id` を空で上書きするため、`tenants` / `invitations` / `tenant_sending_domains` の provisioning ポリシーは認証トランザクション中に 1 つも真にならない。**この 2 表は上記「3 表以外へ広げない」制約の対象外**（provisioning ではなく認証であり、別の GUC・別の呼び出し元〔`apps/web/lib/auth/**` のみ。§4.4.2〕に閉じているため）だが、**認証以外の用途にこの 2 表の権限を広げる変更は同じく §10.5 の改訂を要する**。
-- 🔴 **`withPlatformWrite` の `domain` と、実際に触れるテーブルの対応を実行時に検証する**（`domain='ANNOUNCEMENT'` なら `announcements` 以外、`'TENANT_PROVISIONING'` なら `tenants` / `invitations` / `tenant_sending_domains` 以外のモデルにアクセスした時点で throw）。型と権限に加えた 3 枚目。
+- 🔴 **`withPlatformWrite` の `domain` と、実際に触れるテーブルの対応を実行時に検証する**（`domain='ANNOUNCEMENT'` なら `announcements` 以外、`'TENANT_PROVISIONING'` なら `tenants` / `invitations` / `tenant_sending_domains` 以外のモデルにアクセスした時点で throw）。型と権限に加えた 3 枚目。🔴 **DB 権限だけでは分離できない理由**: `tenants` は `TENANT_LIFECYCLE` と `TENANT_PROVISIONING` の**両方**に現れ、`GRANT` は表単位だからである。
+- 🔴 **`GRANT` はドメインごとに、その画面を実装するスプリントで足す**（T-03-08 の実装方針）。Phase 0 で配線されるのは `TENANT_PROVISIONING`（`A-014`）だけであり、`plans` / `subscriptions` / `announcements` / `usage_counters` の `GRANT` は `A-004` / `A-009` / `A-010`（Phase 1〜3）で許可リスト（`tests/isolation/support/platform-grants.ts`）と同時に追加する。**`GRANT` の無いドメインを使うと DB が `permission denied` を返す**（fail-closed）。先回りして広げない。
+- 🔴 **`app_platform`（読み取り専用ロール）に `audit_logs` の `INSERT` を与える**（§4.2 の表と同旨）。§5.3 の「`fn` の**前に**、**同一トランザクション**で `AuditLog` を `INSERT` する」は、読み取り接続そのものが書けなければ成立しない（別接続にすると「監査は commit されたがクエリは rollback」「その逆」が起こりうる）。**業務テーブルへの書き込みは 1 つも開かない**（`tests/isolation/roles.test.ts` ② / `rls-enforced.test.ts` #6 が、この 1 表を除く全表で毎回確認する）。`INSERT` のポリシーは「`actor_kind='PLATFORM_USER'` かつ `actor_id = app.platform_user_id` かつ `tenant_id` が `app.target_tenant_id`（空なら `NULL`）と一致」に固定し、**他人・他テナントになりすました記録を書けない**ようにする。
 
 **汎用エスケープハッチを作らない担保**
 
@@ -1798,6 +1807,16 @@ GRANT SELECT (id, tenant_id, owner_partner_company_id, availability, available_f
 | `contracts` | `payment_terms` `counterparty_name` |
 | `contract_documents` / `contract_templates` | `object_key` `merge_result` / `object_key` `mapping`（**差し込み結果に単価とエンド企業名が入るため**） |
 | `audit_logs` | （列は全部見せるが `summary` は §16.2 の規約により PII を含まない） |
+| 🔴 **以下は T-03-08 の追加**（`CLAUDE.md` §10.5「運営者に必要なのは『件数・状態・エラー』であって『内容』ではない」を、上表と同じ基準で横断適用した） | |
+| `engineers` / `engineer_snapshots` / `projects` | `unit_price_min` `unit_price_max`（**商流。単価**。上表の `engineers` の開示列一覧が単価列を含まないことに合わせ、同種の列を横断で揃えた） |
+| `proposals` | `offered_unit_price` `recipient_company_name`（同・商流。`contracts.counterparty_name` を外すのと同じ理由） |
+| `match_candidates` | `rationale`（`match-explainer` の生成文。エンジニアの経歴に触れる**内容**） |
+| `extension_reviews` | `facts` `summary`（`renewal-advisor` の出力 = ホスト内部の検討内容。`BR-67` が取引先にも見せない情報） |
+| `notifications` | `title` `body_params`（本文と差し込み値。氏名が入りうる。`body_key` は i18n キーなので見せる） |
+| `send_attempts` | `failure_detail`（外部 API の生エラー。宛先が混じりうる。`failure_kind` は種別なので見せる） |
+| `email_dispatches` | `recipient_email`（宛先。取引先・エンジニアの連絡先になりうる） |
+| `email_events` / `webhook_deliveries` | `payload`（外部から受けた生ペイロード） |
+| `file_scan_results` / `data_export_requests` | `object_key`（上表の `skill_sheets` / `contract_documents` / `contract_templates` と同じ理由） |
 
 🔴 **S3 に対しても `s3:GetObject` を管理平面のロール（IAM）に付与しない**（`docs/03` §3.6 / §4.3.3）。**`skill_sheets.object_key` を GRANT しないことと二重**にする。
 

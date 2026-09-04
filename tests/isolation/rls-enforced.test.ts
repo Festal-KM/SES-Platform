@@ -42,7 +42,7 @@ import {
   type PolicyRow,
   type UnextendedClient,
 } from '@ses/db/testing';
-import { PLATFORM_READ_COLUMN_DENYLIST } from './support/platform-read-denylist.js';
+import { PLATFORM_READ_COLUMN_DENYLIST } from './support/platform-grants.js';
 import { ROLE_NAMES, startIsolationDatabase, type IsolationDatabase } from './support/postgres.js';
 import { ALLOWED_VIEW_COLUMNS, ALLOWED_VIEW_DEPENDENCY_TABLES, VIEW_NAMES } from './support/route5-views.js';
 
@@ -172,8 +172,17 @@ describe('#5 6 ロールすべてが BYPASSRLS を持たない（docs/05 §4.7 #
   });
 });
 
+/**
+ * 🔴 T-03-08: `audit_logs` だけは `app_platform` に `INSERT` がある（docs/05 §4.2 の表
+ *    「`audit_logs` は `INSERT/SELECT`」/ §5.2 / §5.3）。
+ *    §5.3 の「`fn` の前に**同一トランザクションで** `AuditLog` を書く」は、読み取り接続そのものが
+ *    書けなければ成立しない。**業務テーブルへの書き込みは 1 つも開いていない**ことを、
+ *    この 1 表を除いた全表で毎回確認する（`UPDATE` / `DELETE` はこの表でも 0 件）。
+ */
+const PLATFORM_INSERT_ALLOWED_TABLES = ['audit_logs'];
+
 describe('#6 app_platform は業務テーブルに INSERT/UPDATE/DELETE 権限を持たない（docs/05 §4.7 #6）', () => {
-  it('全業務テーブルで INSERT / DELETE がすべて 0 件、UPDATE も全列で 0 件', async () => {
+  it('全業務テーブルで INSERT / DELETE がすべて 0 件（audit_logs の INSERT を除く）、UPDATE も全列で 0 件', async () => {
     const tables = await businessTables();
     expect(tables.length).toBeGreaterThan(0); // 空振り防止（対照）
 
@@ -182,7 +191,9 @@ describe('#6 app_platform は業務テーブルに INSERT/UPDATE/DELETE 権限�
         hasTablePrivilege(db, 'app_platform', table, 'INSERT'),
         hasTablePrivilege(db, 'app_platform', table, 'DELETE'),
       ]);
-      expect(insert, `${table}: app_platform に INSERT 権限がある`).toBe(false);
+      expect(insert, `${table}: app_platform の INSERT 権限が許可リストと不一致`).toBe(
+        PLATFORM_INSERT_ALLOWED_TABLES.includes(table),
+      );
       expect(del, `${table}: app_platform に DELETE 権限がある`).toBe(false);
 
       const columns = await readTableColumns(db, table);

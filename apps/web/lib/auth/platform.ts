@@ -27,6 +27,7 @@
 // 逆も同じ。`tests/isolation/platform-auth.test.ts` が両方向を実証する）。
 import NextAuth from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
+import { PLATFORM_SESSION_COOKIE_NAME } from './cookie-names';
 import { classifyDeviceKind } from './device';
 import { authenticatePlatformCredentials } from './platform-credentials';
 import {
@@ -39,8 +40,10 @@ import { ensureDbConfigured, platformAuthSecret } from '../db/bootstrap';
  * 🔴 主平面の `__Host-ses.session` と取り違えられない名前にする（docs/05 §5.1）。
  *    `__Host-` 接頭辞は「`Secure` かつ `Domain` 属性なし かつ `Path=/`」を**ブラウザ側で強制**する
  *    （上のコメント参照。`path: '/'` の確定により両立する）。
+ * 🔴 T-03-08: 名前の定義は `lib/auth/cookie-names.ts` の 1 箇所にある（Edge の
+ *    ミドルウェアが同じ名前を見るため。同ファイル冒頭の理由を参照）。
  */
-const SESSION_COOKIE_NAME = '__Host-ses-admin.session';
+const SESSION_COOKIE_NAME = PLATFORM_SESSION_COOKIE_NAME;
 
 /**
  * セッションの有効期間。

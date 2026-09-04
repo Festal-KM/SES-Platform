@@ -12,7 +12,12 @@
 //    外部連携の差し替え（`resolveConnectorSelection`）は T-03-12 が同じ初期化経路に載せる。
 import process from 'node:process';
 import { loadAppEnv, resolveConnectorSelection, type AppEnvKind } from '@ses/config';
-import { configurePlatformWriteDb, configureTenantDb, configureTokenEncryption } from '@ses/db';
+import {
+  configurePlatformReadDb,
+  configurePlatformWriteDb,
+  configureTenantDb,
+  configureTokenEncryption,
+} from '@ses/db';
 import { configureAccountMailQueue, PendingAccountMailQueue } from '../jobs/account-mail';
 
 let initialized = false;
@@ -42,6 +47,10 @@ export function ensureDbConfigured(): void {
   //    主平面の DATABASE_URL を流用しない（流用すると運営者の資格情報へ主平面のロールから
   //    到達できてしまう。CLAUDE.md §10.5「権限昇格の事故経路を作らない」）。
   configurePlatformWriteDb({ datasourceUrl: env.PLATFORM_WRITE_DATABASE_URL });
+  // 🔴 T-03-08: 管理平面の**読み取り専用**プール（`app_platform`。docs/05 §4.2 / §5.2）。
+  //    `withPlatformRead` はこちらで接続する。読みと書きを 1 本のプールに混ぜない ——
+  //    「read-only は DB 権限で担保する」（§5.2）が、同じ接続を使い回すと成立しない。
+  configurePlatformReadDb({ datasourceUrl: env.PLATFORM_DATABASE_URL });
   // 🔴 T-03-02: 秘匿値の暗号鍵も同じ初期化経路で注入する（docs/05 §8.6 / docs/03 §4.4）。
   //    packages/db 側で `process.env` を読ませない（鍵の出所を packages/config に一本化する）。
   configureTokenEncryption({

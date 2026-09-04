@@ -13,6 +13,7 @@
 import NextAuth from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
 import { isTwoFactorVerifiedUpdate, parseTenantSessionClaims } from './claims';
+import { MAIN_SESSION_COOKIE_NAME } from './cookie-names';
 import { classifyDeviceKind } from './device';
 import { authenticateCredentials } from './credentials';
 import { ensureDbConfigured } from '../db/bootstrap';
@@ -20,9 +21,11 @@ import { ensureDbConfigured } from '../db/bootstrap';
 /**
  * 🔴 Cookie 名は `__Host-ses.session`（docs/03 §4.9）。`__Host-` 接頭辞は
  *    「Secure かつ Domain 属性なし かつ Path=/」を**ブラウザ側で強制**する。
- *    管理平面の Cookie（`/admin` にスコープする）と取り違えられない。
+ *    管理平面の Cookie（`__Host-ses-admin.session`）と取り違えられない。
+ * 🔴 T-03-08: 名前の定義は `lib/auth/cookie-names.ts` の 1 箇所にある
+ *    （Edge のミドルウェアが同じ名前を見るため）。
  */
-const SESSION_COOKIE_NAME = '__Host-ses.session';
+const SESSION_COOKIE_NAME = MAIN_SESSION_COOKIE_NAME;
 
 /**
  * セッションの有効期間。

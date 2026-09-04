@@ -10,6 +10,10 @@
       "types": "./dist/src/index.d.ts",
       "default": "./dist/src/index.js"
     },
+    "./platform": {
+      "types": "./dist/src/platform/index.d.ts",
+      "default": "./dist/src/platform/index.js"
+    },
     "./testing": {
       "types": "./dist/src/testing/isolation.d.ts",
       "default": "./dist/src/testing/isolation.js"

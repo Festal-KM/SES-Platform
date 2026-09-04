@@ -170,3 +170,59 @@ describe('依存方向の ESLint ルール①②③（CLAUDE.md §2.1 / docs/05 
     expect(result.errorCount).toBe(0);
   });
 });
+
+/**
+ * 🔴 T-03-08 / docs/03 `program-design` 申し送り 2 / `CLAUDE.md` §10.5:
+ *    **主平面のコードから `withPlatform*` を import できない**ことを lint で担保する。
+ *    到達経路は `@ses/db/platform` サブパスだけ（`@ses/db` の index は re-export しない）であり、
+ *    それを管理平面の 2 区画と `tests/isolation/**` に限定する。
+ */
+describe('@ses/db/platform（分離バイパス）の import 元の限定（CLAUDE.md §10.5 / docs/05 §5.2）', () => {
+  const MAIN_PLANE_PATHS = [
+    'apps/web/app/(main)/__violation__.tsx',
+    'apps/web/app/api/(main)/__violation__/route.ts',
+    'apps/web/lib/__violation__.ts',
+    'apps/worker/src/__violation__.ts',
+    'packages/domain/src/__violation__.ts',
+    // 🔴 packages/db 自身も（相対 import で足りるため）パッケージ名経由では禁止する。
+    'packages/db/src/__violation__.ts',
+  ];
+
+  it.each(MAIN_PLANE_PATHS)('🔴 %s からの静的 import を検出する', async (spoofedPath) => {
+    const result = await lintAs(readFixture('db-platform-subpath.violation.ts'), spoofedPath);
+    expect(hasRule(result.messages, 'no-restricted-imports')).toBe(true);
+  });
+
+  it.each(MAIN_PLANE_PATHS)('🔴 %s からの動的 import (import()) も検出する', async (spoofedPath) => {
+    const result = await lintAs(
+      readFixture('db-platform-subpath-dynamic.violation.ts'),
+      spoofedPath,
+    );
+    expect(hasRule(result.messages, 'no-restricted-syntax')).toBe(true);
+  });
+
+  it.each([
+    'apps/web/app/admin/page.tsx',
+    'apps/web/app/api/admin/tenants/route.ts',
+    'tests/isolation/platform-plane.test.ts',
+  ])('対照: %s からの import は許可される（違反 0 件）', async (spoofedPath) => {
+    const result = await lintAs(readFixture('db-platform-subpath-admin.ok.ts'), spoofedPath);
+    expect(result.errorCount).toBe(0);
+  });
+
+  it('🔴 管理平面ゾーンでも生 @prisma/client は禁止のまま（許可を広げすぎていない）', async () => {
+    const raw = await lintAs(
+      "import { PrismaClient } from '@prisma/client';\nexport const c = PrismaClient;\n",
+      'apps/web/app/admin/__violation__.ts',
+    );
+    expect(hasRule(raw.messages, 'no-restricted-imports')).toBe(true);
+  });
+
+  it('🔴 管理平面ゾーンでも @ses/db/testing は禁止のまま（許可を広げすぎていない）', async () => {
+    const raw = await lintAs(
+      "import { createUnextendedClient } from '@ses/db/testing';\nexport const c = createUnextendedClient;\n",
+      'apps/web/app/api/admin/__violation__/route.ts',
+    );
+    expect(hasRule(raw.messages, 'no-restricted-imports')).toBe(true);
+  });
+});

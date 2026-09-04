@@ -118,6 +118,15 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
   // 主平面と**同じ規律**を管理平面にも適用する。運営者の資格情報・2FA・監査ログに触れる経路が
   // ファイル単位で固定されていないと、「運営者の 2FA を無効化する API」が別の場所から生える。
   configurePlatformWriteDb: ['apps/web/lib/db/bootstrap.ts'],
+  // 🔴 T-03-08: 管理平面の読み取り専用プール（`app_platform`）。初期化は起動時の 1 箇所だけ。
+  configurePlatformReadDb: ['apps/web/lib/db/bootstrap.ts'],
+  // 🔴 T-03-08: **`apps/**` から `withPlatform*` を 1 箇所も呼ばない**（期待値が空配列）。
+  //    分離バイパスの呼び出しは `packages/db/src/platform/queries/*.ts`（画面と 1 対 1 の
+  //    専用クエリ関数。docs/05 §5.2「汎用エスケープハッチを作らない担保」）に閉じる。
+  //    ESLint（`@ses/db/platform` の import 制限）と合わせて二重に固定する
+  //    —— lint はゾーン設定の書き換えで緩みうるが、この走査は「実際に書かれているか」を見る。
+  withPlatformRead: [],
+  withPlatformWrite: [],
   withPlatformAuthLookup: ['apps/web/lib/auth/platform-credentials.ts'],
   loadPlatformUserFacts: ['apps/web/lib/auth/platform-context.ts'],
   resolvePlatformCtx: ['apps/web/lib/auth/platform-context.ts'],

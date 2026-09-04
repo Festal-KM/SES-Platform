@@ -3,13 +3,18 @@
 //    生 PrismaClient / TenantDb 型 / 生 SQL の入口は export しない。
 export { configureTenantDb, disconnectTenantDb } from './client.js';
 export type { TenantDbOptions } from './client.js';
-// 🔴 T-03-07: 管理平面の接続プール（docs/03 §4.3.3 / docs/05 §4.2）。**主平面とは別の
-//    PrismaClient・別の DB ロール（app_platform_write）**。T-03-08 が読み取り用を足す。
+// 🔴 T-03-07 / T-03-08: 管理平面の接続プール 2 本（docs/03 §4.3.3 / docs/05 §4.2）。
+//    **主平面とは別の PrismaClient・別の DB ロール（app_platform / app_platform_write）**。
+// 🔴 ここで export するのは**起動時の初期化と切断だけ**である。`withPlatformRead` /
+//    `withPlatformWrite` は `@ses/db/platform` サブパスにあり、`@ses/db` からは到達できない
+//    （主平面のコードから import できないことを ESLint で担保する。docs/03 申し送り 2）。
 export {
+  configurePlatformReadDb,
   configurePlatformWriteDb,
+  disconnectPlatformReadDb,
   disconnectPlatformWriteDb,
 } from './platform-client.js';
-export type { PlatformWriteDbOptions } from './platform-client.js';
+export type { PlatformReadDbOptions, PlatformWriteDbOptions } from './platform-client.js';
 // 🔴 T-03-07: 運営者認証（F-055 / API-A1）。テナントの User とは別テーブル・別認証（BR-36）。
 export {
   confirmPlatformTwoFactorEnrollment,

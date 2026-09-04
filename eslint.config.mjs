@@ -63,6 +63,20 @@ const SES_DB_TESTING_MESSAGE =
   '@ses/db/testing は tests/isolation/** からのみ import できます（分離機構そのものを検証する専用の' +
   '入口のため。docs/05 §4.7 / packages/db/src/testing/isolation.ts 冒頭コメント）。';
 
+// T-03-08（docs/03 `program-design` 申し送り 2 / docs/05 §5.2 / CLAUDE.md §10.5）:
+// 🔴 主平面のコードから `withPlatform*`（テナント分離を越える唯一の経路）を import できないことを
+//    lint で担保する。`@ses/db` の index は platform.ts を 1 つも re-export しないため、
+//    到達経路は `@ses/db/platform` サブパスだけであり、それを次の 2 区画に限定する:
+//      - apps/web/app/admin/**       … 管理平面の画面（A-001〜A-014）
+//      - apps/web/app/api/admin/**   … 管理平面の API（API-A1〜A17。docs/05 §6.9）
+//      - tests/isolation/**          … 分離機構そのものを検証する専用の区画（@ses/db/testing と同じ扱い）
+const SES_DB_PLATFORM_SUBPATH = '@ses/db/platform';
+const SES_DB_PLATFORM_MESSAGE =
+  '@ses/db/platform（withPlatformRead / withPlatformWrite）は管理平面（apps/web/app/admin/** と ' +
+  'apps/web/app/api/admin/**）と tests/isolation/** からのみ import できます。' +
+  '主平面のコードがテナント分離を越える経路を持たないための制限です（CLAUDE.md §10.5 / ' +
+  'docs/05 §5.2 / docs/03 program-design 申し送り 2）。';
+
 // T-01-06: $queryRaw / $queryRawUnsafe / $executeRaw / $executeRawUnsafe の呼び出し禁止
 // （no-restricted-syntax。import 制限だけでは「変数越しの呼び出し」を塞げないため）。
 // packages/db/src/** と tests/isolation/** だけを許可する（実装ガイドの指定）。
@@ -124,6 +138,7 @@ function buildPatterns({
   allowSdk = false,
   allowPrismaClient = false,
   allowDbTestingSubpath = false,
+  allowDbPlatformSubpath = false,
   forbidNodeIo = false,
   zoneLabel = '',
 }) {
@@ -165,6 +180,12 @@ function buildPatterns({
       message: SES_DB_TESTING_MESSAGE,
     });
   }
+  if (!allowDbPlatformSubpath) {
+    patterns.push({
+      group: withSubpaths([SES_DB_PLATFORM_SUBPATH]),
+      message: SES_DB_PLATFORM_MESSAGE,
+    });
+  }
   // 🔴 常時適用（防御的）: @ses/db から PrismaClient を named import することを禁止する。
   //    @ses/db は現状これを export しないが、将来のエクスポート追加による迂回を防ぐ。
   //    ゾーンが既に @ses/db 全体を禁止している場合（forbidAllSes、または
@@ -194,6 +215,7 @@ function buildRestrictedNames({
   allowSdk = false,
   allowPrismaClient = false,
   allowDbTestingSubpath = false,
+  allowDbPlatformSubpath = false,
   forbidNodeIo = false,
 }) {
   const names = [];
@@ -207,6 +229,9 @@ function buildRestrictedNames({
   if (!allowSdk) names.push(ANTHROPIC_SDK);
   if (!allowPrismaClient) names.push(PRISMA_CLIENT_MODULE);
   if (!allowDbTestingSubpath) names.push(SES_DB_TESTING_SUBPATH);
+  // 🔴 動的 import / require でも `@ses/db/platform` に到達できないようにする
+  //    （静的 import だけ塞いでも `await import('@ses/db/platform')` で素通りするため）。
+  if (!allowDbPlatformSubpath) names.push(SES_DB_PLATFORM_SUBPATH);
   return names;
 }
 
@@ -357,6 +382,7 @@ function zoneConfigBlock(zone) {
     allowSdk: zone.allowSdk ?? false,
     allowPrismaClient: zone.allowPrismaClient ?? false,
     allowDbTestingSubpath: zone.allowDbTestingSubpath ?? false,
+    allowDbPlatformSubpath: zone.allowDbPlatformSubpath ?? false,
     forbidNodeIo: zone.forbidNodeIo ?? false,
     zoneLabel: zone.label,
   };
@@ -387,7 +413,19 @@ function zoneConfigBlock(zone) {
 // （flat config は同一ルール名を「後勝ち・丸ごと置換」するため、ファイル集合を重ねずに分離する。
 //  同一ファイル集合に対して 'no-restricted-imports' / 'no-restricted-syntax' の設定ブロックを
 //  複数作らない。冒頭コメント参照）。
-const CATCH_ALL_IGNORES = [...PACKAGE_DIR_IGNORES_FOR_CATCH_ALL, 'tests/isolation/**'];
+// 🔴 T-03-08: 管理平面の 2 区画（`@ses/db/platform` の唯一の import 許可先）。
+//    CATCH_ALL_ZONE から ignore し、ADMIN_PLANE_ZONE に完全な代替ルールセットを持たせる
+//    （flat config の「後勝ち・丸ごと置換」を避けるため、ファイル集合を重ねない。冒頭コメント）。
+const ADMIN_PLANE_FILES = [
+  'apps/web/app/admin/**/*.{ts,tsx,mts,cts,js,mjs,cjs}',
+  'apps/web/app/api/admin/**/*.{ts,tsx,mts,cts,js,mjs,cjs}',
+];
+
+const CATCH_ALL_IGNORES = [
+  ...PACKAGE_DIR_IGNORES_FOR_CATCH_ALL,
+  'tests/isolation/**',
+  ...ADMIN_PLANE_FILES,
+];
 const CATCH_ALL_OPTIONS = { allowSdk: false };
 const CATCH_ALL_ZONE = {
   files: ['**/*.{ts,tsx,mts,cts,js,mjs,cjs}'],
@@ -405,7 +443,14 @@ const CATCH_ALL_ZONE = {
 // tests/isolation/** 専用ゾーン（T-01-06 申し送り 3）。CATCH_ALL_ZONE と同じ強度
 // （SDK 単一経路・生 @prisma/client 禁止）を維持しつつ、@ses/db/testing の import と
 // $queryRaw 等の直接呼び出しだけを許可する。
-const TESTS_ISOLATION_OPTIONS = { allowSdk: false, allowDbTestingSubpath: true };
+const TESTS_ISOLATION_OPTIONS = {
+  allowSdk: false,
+  allowDbTestingSubpath: true,
+  // 🔴 T-03-08: 管理平面の分離バイパス（withPlatformRead / withPlatformWrite）が
+  //    「監査を先に書く」「対象テナントに閉じる」「read-only である」ことを実証するのは
+  //    この区画である（@ses/db/testing を許可するのと同じ理由。汎用の抜け道にはしない）。
+  allowDbPlatformSubpath: true,
+};
 const TESTS_ISOLATION_ZONE = {
   files: ['tests/isolation/**/*.{ts,tsx,mts,cts,js,mjs,cjs}'],
   rules: {
@@ -414,6 +459,21 @@ const TESTS_ISOLATION_ZONE = {
       'error',
       ...buildDynamicImportSelectors(TESTS_ISOLATION_OPTIONS),
       ...buildRawSqlCallSelectors(true),
+    ],
+  },
+};
+
+// 🔴 T-03-08: 管理平面ゾーン。CATCH_ALL_ZONE と同じ強度（SDK 単一経路・生 @prisma/client 禁止・
+//    生 SQL 禁止）を維持しつつ、`@ses/db/platform` の import だけを許可する。
+const ADMIN_PLANE_OPTIONS = { allowSdk: false, allowDbPlatformSubpath: true };
+const ADMIN_PLANE_ZONE = {
+  files: ADMIN_PLANE_FILES,
+  rules: {
+    'no-restricted-imports': ['error', { patterns: buildPatterns(ADMIN_PLANE_OPTIONS) }],
+    'no-restricted-syntax': [
+      'error',
+      ...buildDynamicImportSelectors(ADMIN_PLANE_OPTIONS),
+      ...buildRawSqlCallSelectors(false),
     ],
   },
 };
@@ -462,10 +522,11 @@ export default tseslint.config(
   ...PACKAGE_ZONES.map(zoneConfigBlock),
 
   TESTS_ISOLATION_ZONE,
+  ADMIN_PLANE_ZONE,
   CATCH_ALL_ZONE,
 );
 
 // PACKAGE_ZONES / ALL_SES_PACKAGE_NAMES / APPS_PATH_PATTERNS を静的テスト
 // （tests/static/package-zone-coverage.test.ts）から検証できるように名前付き export する。
 // ESLint 本体は default export のみを見るため、この export はランタイムの lint 挙動に影響しない。
-export { PACKAGE_ZONES, ALL_SES_PACKAGE_NAMES, APPS_PACKAGES, APPS_PATH_PATTERNS };
+export { PACKAGE_ZONES, ALL_SES_PACKAGE_NAMES, APPS_PACKAGES, APPS_PATH_PATTERNS, ADMIN_PLANE_FILES };
