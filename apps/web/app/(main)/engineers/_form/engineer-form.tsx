@@ -289,7 +289,10 @@ export function EngineerForm({
       // 🔴 離脱確認を先に解除してから遷移する（保存できているのに確認を出さない）。
       setDirty(false);
       if (mode === 'CREATE') {
-        window.location.assign(`/engineers/${created.id}/edit`);
+        // 🔴 T-05-02: 登録後は `S-006`（詳細）へ送る（docs/04 §S-007 関連画面「→ `S-006`」）。
+        //    以前は編集画面へ送り返していたが、それは `S-006` が未実装だったための暫定である。
+        //    詳細を開いた時点で `engineer.view` が記録される（`BR-27`）。
+        window.location.assign(`/engineers/${created.id}`);
         return;
       }
       setPhase('saved');

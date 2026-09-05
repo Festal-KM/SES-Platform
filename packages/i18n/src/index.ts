@@ -805,10 +805,36 @@ const ja = {
   'engineers.cancel': 'キャンセル',
   // 🔴 `docs/04` §10.1 `S-007`「離脱確認あり」。
   'engineers.leaveConfirm': '入力内容が保存されていません。このページを離れますか？',
-  // 🔴 `S-007`（編集）の 404 境界（`app/(main)/engineers/[id]/edit/not-found.tsx`）が使う。
+  // 🔴 `S-006`（詳細）/ `S-007`（編集）の 404 境界（`app/(main)/engineers/[id]/**/not-found.tsx`）が使う。
   //    境界外（他パートナー所有）と不存在（削除済み）を区別しない 1 文である
   //    （`F-008 AC-3` / docs/05 §4.8。区別すると他社に人材が居ることを教えてしまう）。
   'engineers.notFound': 'この人材の情報は見つかりませんでした。',
+
+  // --- S-006 エンジニア詳細（docs/04 §S-006 / `F-008` / docs/05 §6.4 #17。T-05-02）---
+  // 🔴 T2（モバイル閲覧可）。**狭い画面を理由に判断材料を隠さない**（`CLAUDE.md` §13.3）ため、
+  //    稼働状況・稼働可能時期・単価レンジは折りたたみの外に出す（`engineers.detail.section.*` の外）。
+  'engineers.detail.title': '人材の詳細',
+  'engineers.detail.section.basic': '基本情報',
+  'engineers.detail.section.skills': 'スキル',
+  'engineers.detail.section.skillSheets': 'スキルシートの版',
+  'engineers.detail.section.proposals': '提案履歴',
+  'engineers.detail.edit': 'この人材を編集',
+  // 🔴 未設定は空欄にせず `—` を置く（値が無いのか、読み込めていないのかを見分けられるように）。
+  'engineers.detail.valueNone': '—',
+  'engineers.detail.years.unit': '年',
+  'engineers.detail.unitPrice.orMore': '円以上',
+  'engineers.detail.unitPrice.orLess': '円以下',
+  // 🔴 `BR-27` / `F-008 AC-4`: 閲覧が記録されることを本人（利用者）にも明示する。
+  //    記録は画面の表示より先に成立しており、記録できなければこの画面は表示されない。
+  'engineers.detail.viewRecorded': 'この画面の閲覧は監査ログに記録されます。',
+  // 🔴 `BR-52` / `F-008 AC-1`: 集めていない情報を明示する（ワイヤーフレーム §S-006 の注記）。
+  'engineers.detail.collectionScope': '本籍・家族構成・健康情報・信条にあたる項目は保持していません。',
+  // 🔴 未実装のセクションを黙って消さない（`engineers.careers.comingSoon` と同じ規律）。
+  //    スキルシートの取込・閲覧・DL は T-05-06 / T-05-07、提案履歴と凍結差分は SP-09 が作る。
+  'engineers.detail.skillSheets.comingSoon':
+    'スキルシートの取込と版の管理は、後続のリリースで利用できるようになります。閲覧とダウンロードは、そのときも監査ログに記録されます。',
+  'engineers.detail.proposals.comingSoon':
+    'この人材の提案履歴と、提案時点の凍結情報との差分は、後続のリリースで表示されます。',
 
   // --- 都道府県（JIS X 0401。コードの出所は `@ses/domain` の `PREFECTURE_CODES`）---
   // 🔴 コードと文言キーの対応は `apps/web/lib/engineers/labels.ts` の `PREFECTURE_MESSAGE_KEYS`

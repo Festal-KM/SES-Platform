@@ -7,7 +7,19 @@
 //    （割り当て漏れが「コードがそのまま画面に出る」形で表に出るのを防ぐ）。
 import type { EngineerAvailability, RemoteMode } from '@ses/db';
 import type { PrefectureCode } from '@ses/domain';
-import type { MessageKey } from '@ses/i18n';
+import { t, type MessageKey } from '@ses/i18n';
+
+/**
+ * 🔴 所属区分の表示（`F-008 AC-2`）。**値は認証コンテキストから来る**（行の値でも入力でもない）。
+ *    パートナー所属の利用者には「取引先（自社）」と出す —— 他社の名前は出さない
+ *    （`CLAUDE.md` §3.1 の 🔴「パートナー同士が相互に参照できる経路を 1 つも作らない」）。
+ * 🔴 `S-006`（詳細）と `S-007`（登録・編集）の共通の出所。2 画面に書き写さない。
+ */
+export function engineerOwnershipLabel(partnerCompanyId: string | null): string {
+  return partnerCompanyId === null
+    ? t('engineers.ownership.host')
+    : t('engineers.ownership.partner');
+}
 
 /** `EngineerSkill.level`（1..5）。`null` は「未設定」。 */
 export const ENGINEER_SKILL_LEVELS = [1, 2, 3, 4, 5] as const;

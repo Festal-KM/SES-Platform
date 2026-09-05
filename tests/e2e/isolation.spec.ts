@@ -13,11 +13,17 @@
 //      （件数バッジ・並び順の変化・「他 N 件」も無い。`F-004 AC-3` / `AC-4`）
 //   ⑤ 運営者 → `A-002` / `A-003` の応答に氏名・本文・秘匿値の平文が現れない（`BR-40`）
 //
-// 🔴 **Phase 0 に実在する画面 / API だけで検証する**（SP-03 T-03-11 の読み替え指示）。
-//    `docs/05` §17.3 #1 は `GET /api/engineers/{id}` を例示しているが、エンジニア API は
-//    Phase 1（SP-05）である。ここでは「**実在する全 API での越境 0 件**」として満たす。
-//    Phase 1 以降にルートが増えたら、本ファイルの `MAIN_PLANE_PAGES` /
-//    `MAIN_PLANE_READ_APIS` に足す（足し忘れは `docs/05` §17.3 の穴になる）。
+// 🔴 **Phase 0 に実在する画面 / API を出発点にし、Phase 1 以降は増えたルートを足していく**
+//    （SP-03 T-03-11 の読み替え指示）。足し忘れは `docs/05` §17.3 の穴になる。
+//    🔴 T-05-02: `docs/05` §17.3 #1 が例示した `GET /api/engineers/{id}`（`S-006` / `S-007`）を
+//    `MAIN_PLANE_PAGES` / `MAIN_PLANE_READ_APIS` に足した。**`engineers` は RLS の
+//    C3 OWNER_SCOPED**（`docs/05` §4.4 / `apps/web/lib/engineers/service.ts`）であり、
+//    ホスト文脈（`app_partner_id() = NULL`）からはパートナー所有の行が**同一テナント内でも**
+//    1 件も見えない（越境経路 2 の外。`tests/isolation/engineers.test.ts` の
+//    `F-008 AC-3` が同じ境界を DB 層で固定する）。したがって「自テナントの実在 ID」の対照には
+//    **ホスト所有のエンジニア**（`tenantIds(1).hostEngineerId`）だけを使い、境界外の確認は
+//    ③・④に別テストを足して「他テナントのホスト所有 ID」と「同一テナント内の他パートナー所有 ID」の
+//    両方が同じ 404 に畳まれることを見る。
 //
 // 🔴 直列（`workers: 1`。`playwright.config.ts`）。RLS の設定漏れは他テストの副作用で
 //    偽陽性・偽陰性になる。
@@ -42,15 +48,32 @@ import {
   type Session,
 } from './support/sessions';
 
-/** Phase 0 に実在する主平面の画面（`S-003` / `S-041` / `S-035`）。 */
-const MAIN_PLANE_PAGES = ['/', '/audit-logs', '/settings/organization'] as const;
+/**
+ * 主平面の画面（`S-003` / `S-041` / `S-035` / `S-006` / `S-007`）。
+ * 🔴 ID を取る 2 画面（詳細・編集）は **テナント A のホスト所有エンジニア**
+ *    （`tenantIds(1).hostEngineerId`）で固定する —— この配列は `hostOwner(1)` のセッションで
+ *    しか走査しない（②）ため、対照に使えるのは「ホスト文脈から見える行」だけである
+ *    （C3 OWNER_SCOPED。上の 🔴 参照）。
+ */
+const MAIN_PLANE_PAGES = [
+  '/',
+  '/audit-logs',
+  '/settings/organization',
+  `/engineers/${tenantIds(1).hostEngineerId}`,
+  '/engineers/new',
+  `/engineers/${tenantIds(1).hostEngineerId}/edit`,
+] as const;
 
-/** Phase 0 に実在する主平面の読み取り API（docs/05 §6.3 #8 / #9 / #10 / #64）。 */
+/**
+ * 主平面の読み取り API（docs/05 §6.3 #8 / #9 / #10 / #64 / #17）。
+ * 🔴 `GET /api/engineers/{id}` も同じ理由で **ホスト所有エンジニア**の ID で固定する。
+ */
 const MAIN_PLANE_READ_APIS = [
   '/api/me',
   '/api/home',
   '/api/settings/organization',
   `/api/audit-logs?${auditLogPeriodQuery()}`,
+  `/api/engineers/${tenantIds(1).hostEngineerId}`,
 ] as const;
 
 /** 実在しない UUID（`404` と `403` を区別しないことの確認に使う）。 */
@@ -164,6 +187,34 @@ test.describe('② テナント A の OWNER で URL 直打ち（他テナント�
       await session.close();
     }
   });
+
+  test('🔴 T-05-02: ホスト所有のエンジニアには到達できるが、他テナント / 同一テナントの他パートナー所有には到達できない（S-006 / F-008 AC-3）', async ({
+    browser,
+  }: {
+    browser: Browser;
+  }) => {
+    const session = await openTenantSession(browser, hostOwner(1));
+    try {
+      // 対照: 自テナントのホスト所有エンジニアには実際に到達できる。
+      const own = await pageContent(session, `/engineers/${tenantIds(1).hostEngineerId}`);
+      expect(own).toContain(t('engineers.detail.title'));
+      expect(own).toContain(t('engineers.ownership.host'));
+
+      // 🔴 境界外: 他テナントのホスト所有エンジニア（第一境界）。
+      const foreignTenant = await pageContent(session, `/engineers/${tenantIds(2).hostEngineerId}`);
+      expect(foreignTenant).toContain(t('engineers.notFound'));
+
+      // 🔴 境界外: 同一テナント内の他パートナー所有エンジニア（第二境界。`engineers` は
+      //    C3 OWNER_SCOPED であり、ホスト文脈からはパートナー所有の行が同一テナント内でも
+      //    1 件も見えない）。
+      const foreignPartner = await pageContent(session, `/engineers/${partnerIds(1, 1).engineerId}`);
+      expect(foreignPartner).toContain(t('engineers.notFound'));
+
+      session.outbound.assertNone();
+    } finally {
+      await session.close();
+    }
+  });
 });
 
 test.describe('③ 同じ認証で API 直叩き（404 / 0 件。一覧の件数が変わらない）', () => {
@@ -206,6 +257,34 @@ test.describe('③ 同じ認証で API 直叩き（404 / 0 件。一覧の件数
       // 🔴 本文まで同一である（403 と 404 を区別しないだけでなく、理由も区別しない）。
       expect(foreignIdAsToken.text).toBe(unknownToken.text);
       expectNoMarkers('GET /api/invitations/{B の ID}', foreignIdAsToken.text, foreignTenantMarkers(2));
+
+      // 🔴 T-05-02: `GET /api/engineers/{id}`（`engineers` は C3 OWNER_SCOPED。docs/05 §4.4）。
+      //    他テナントのホスト所有 ID・同一テナント内の他パートナー所有 ID のどちらも、
+      //    存在しない ID と同じ 404 に畳まれる（`F-008 AC-3`）。
+      const unknownEngineer = await apiRequest(session.page, `/api/engineers/${ABSENT_UUID}`);
+      const foreignTenantEngineer = await apiRequest(
+        session.page,
+        `/api/engineers/${tenantIds(2).hostEngineerId}`,
+      );
+      const foreignPartnerEngineer = await apiRequest(
+        session.page,
+        `/api/engineers/${partnerIds(1, 1).engineerId}`,
+      );
+      expect(unknownEngineer.status).toBe(404);
+      expect(foreignTenantEngineer.status).toBe(404);
+      expect(foreignPartnerEngineer.status).toBe(404);
+      expect(foreignTenantEngineer.text).toBe(unknownEngineer.text);
+      expect(foreignPartnerEngineer.text).toBe(unknownEngineer.text);
+      expectNoMarkers(
+        'GET /api/engineers/{B のホスト所有}',
+        foreignTenantEngineer.text,
+        foreignTenantMarkers(2),
+      );
+      expectNoMarkers(
+        'GET /api/engineers/{A のパートナー所有}',
+        foreignPartnerEngineer.text,
+        foreignPartnerMarkers(1, 1),
+      );
     } finally {
       await session.close();
     }
@@ -357,6 +436,42 @@ test.describe('④ パートナー A1 で、パートナー A2 のものが 1 �
       // 画面は自分のホームへ戻される（docs/04 §S-041 の権限差分）。
       await session.page.goto('/audit-logs', { waitUntil: 'domcontentloaded' });
       expect(new URL(session.page.url()).pathname).toBe('/');
+    } finally {
+      await session.close();
+    }
+  });
+
+  test('🔴 T-05-02: 自社所有のエンジニアには到達できるが、ホスト所有・他社所有には到達できない（S-006 / F-008 AC-3。C3 OWNER_SCOPED）', async ({
+    browser,
+  }: {
+    browser: Browser;
+  }) => {
+    const session = await openTenantSession(browser, partnerSales(1, 1));
+    const ownId = partnerIds(1, 1).engineerId;
+    try {
+      // 対照: 自社所有のエンジニアには画面・API のどちらでも到達できる。
+      const ownDetail = await pageContent(session, `/engineers/${ownId}`);
+      expect(ownDetail).toContain(t('engineers.detail.title'));
+      expect(ownDetail).toContain(t('engineers.ownership.partner'));
+
+      const ownApi = await apiRequest(session.page, `/api/engineers/${ownId}`);
+      expect(ownApi.status).toBe(200);
+      expect((parseJson(ownApi) as { ownership: string }).ownership).toBe('PARTNER');
+
+      // 🔴 境界外: ホスト所有（同一テナント。第二境界）と、他社（パートナー A2。第二境界）の
+      //    どちらも 404 —— `engineers` は C3 OWNER_SCOPED であり、行そのものが見えない
+      //    （`tests/isolation/engineers.test.ts` の `F-008 AC-3` と同じ境界）。
+      const hostOwnedId = tenantIds(1).hostEngineerId;
+      const otherPartnerId = partnerIds(1, 2).engineerId;
+      for (const foreignId of [hostOwnedId, otherPartnerId]) {
+        const detail = await pageContent(session, `/engineers/${foreignId}`);
+        expect(detail).toContain(t('engineers.notFound'));
+
+        const api = await apiRequest(session.page, `/api/engineers/${foreignId}`);
+        expect(api.status).toBe(404);
+      }
+
+      session.outbound.assertNone();
     } finally {
       await session.close();
     }

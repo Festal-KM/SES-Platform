@@ -2071,6 +2071,20 @@ requireEsignConnection(ctx);                           // 🔴 §8.4。未接続
 - **`S-007` の編集フォームの読み取りは `engineer.view` を `AuditLog` に記録する**（`BR-27` / `F-008 AC-4`）。氏名・連絡先という PII を画面に出す以上、詳細（`#17`。T-05-02）と同じ扱いにする。記録は**業務トランザクションの内側**（`writeAuditLog`）で書き、失敗したら内容を返さない。`summary` は `{ via: 'EDIT_FORM' }` だけで、**氏名を載せない**。
 - **`engineer.create` の `AuditLog` は `targetId` を持てない**（採番前）。`summary` に載せるのは `{ skillCount, newSkillLabelCount }` だけで、🔴 **`displayName` を載せない**（`partner_company.create` が企業名を載せられるのは、企業名が PII ではないためである。エンジニアの氏名は運営者にも見せない値である。`CLAUDE.md` §10.5）。
 
+🔴 **#17 の実装の決着（T-05-02）**:
+
+- **`OwnEngineerDetailView` の項目**（`apps/web/lib/engineers/service.ts` が単一の出所）: `id` / `displayName` / `ownership`（`HOST` \| `PARTNER`）/ `availability` / `availableFrom` / `unitPriceMin` / `unitPriceMax` / `prefecture` / `remoteMode` / `preferenceNote` / `skills[]`（`{ skillId, name, yearsOfExperience, level }`）。
+  🔴 **連絡先（`contactEmail` / `contactPhone`）を含めない。** `docs/04` §S-006 のセクション 2 に連絡先の行が無く、提案の可否の判断にも要らない。**画面が出さない PII を API が返す状態を作らない**（返せば、詳細を開くだけで連絡先が経路に載る）。連絡先に到達できるのは編集の読み取り（`EngineerEditView`。`S-007`）だけである。
+- 🔴 **閲覧の `AuditLog` は `withApiRoute` の `audit` オプションではなく、`readEngineerDetail` の業務トランザクション内（`writeAuditLog`）で書く**（`BR-27` / `F-008 AC-4`）。`docs/sprints/SP-05` T-05-02 は当初「`audit` オプションで書く」と書いていたが、実装時に次の 2 点で退けた:
+  1. 🔴 **`S-006`（サーバコンポーネント）は Route Handler を通らない**（既存画面と同じく自己 fetch しない）。ルート側に置くと**画面経路だけ記録が漏れる** —— §16.1 が `skill_sheet.download` を `issueDownloadUrl` の中で書くと定めているのと同じ理由（**記録の経路を 1 本にする**）である。
+  2. 🔴 `audit` オプションは**ハンドラの前に別トランザクションで**書く（§6.1）ため、**404（境界外・不存在）でも「閲覧した」記録が残る**。`CLAUDE.md` §3.5 の「誰の経歴を、誰が、いつ見たか」に、**見ていない閲覧**が混ざる。
+  「記録が成立してからでなければ内容を返さない」（`F-012 AC-2`）はどちらでも同じである（`writeAuditLog` が失敗すればトランザクションごと巻き戻り、応答は 500 になる）。
+- **`action` は `engineer.view` の 1 種**（`engineer.detail_view` のような別 action を作らない。`S-041` の操作種別フィルタから漏れる）。経路の区別は `summary.via`（`'DETAIL'` \| `'EDIT_FORM'`）だけに置き、**氏名を載せない**。🔴 **詳細を開いてから編集を開くと 2 件残るが、これは重複ではなく別々の閲覧である**（片方を抑止すると、どちらの経路で PII に到達したかが追えなくなる）。
+- **認可は `guards: []`**（全ロール）。読み取り専用なので `requireExecutable` / `requireNotViewer` を掛けない —— `VIEWER` は閲覧のみ可（`F-012 AC-3` / `BR-31`）、`CLOSING` でも閲覧できる（`F-004 AC-8`）。**母集団は `engineers` の RLS（C3）が決める**ため、境界外の ID は 404 であり、ホスト所属の利用者は他パートナー所有のエンジニアの実名・所属会社名に到達できない（`F-008 AC-3`）。
+- ⚠️ **`docs/04` §S-006 の基本情報にある「経験年数」（1 件の集約値）を出していない。** §3.4 に集約列が無く、集約の定義（最大値か / 代表スキルか / 実務年数か）も決まっていないためである。**スキル別の経験年数はスキル表に出しているので判断材料は隠れていない。** 集約値の定義は `F-009` の `yearsMin` の評価（SP-06 T-06-04）と**同時に決める**。
+- ⚠️ **`S-006` のセクション 3〜7 は本タスクの範囲外**（3 スキルシートの版 = T-05-06 / T-05-07、4 提案履歴・5 凍結差分 = SP-09、6 稼働履歴 = SP-16、7 匿名共有 = SP-08）。画面では**セクションを消さずに「後続のリリースで利用できる」と明示する**（`engineers.careers.comingSoon` と同じ規律）。`piiPurgedAt` の 404 文言（「保持期間を過ぎて削除されました」。`F-046 AC-2`）は削除ジョブと同じ SP-16（T-16-06）で足す —— 到達できない状態のために先回りの分岐を書かない。
+- **登録後の遷移を `S-007`（編集）から `S-006`（詳細）に変えた**（`docs/04` §S-007 関連画面「→ `S-006`」）。T-05-01 が編集へ戻していたのは `S-006` が未実装だったための暫定である。編集のキャンセルも詳細へ戻す。
+
 ### 6.5 主平面 API — ②③④（Phase 1〜2）
 
 | # | Method / Path | 機能 / 画面 | request | response | 認可 |
@@ -3723,7 +3737,7 @@ export class InvalidStateTransitionError extends AppError {
 | `auth.login` / `auth.logout` / `auth.login_failed` | Auth.js のコールバック（主平面・管理平面の両方） | `USER` / `PLATFORM_USER` |
 | `auth.2fa.setup_started` / `auth.2fa.enabled` / `auth.2fa.verified` / `auth.2fa.recovery_used` / `auth.2fa.failed` | 2FA の設定開始・有効化・検証成功・リカバリコード使用・失敗。**登録・確定と同一トランザクションで記録** | `USER` / `PLATFORM_USER` |
 | `auth.2fa.throttled` | ロック中の拒否。🔴 **`auth.2fa.failed` とは別の action**（スロットル窓の母集団にロックの拒否自体を含めると自己延長するため） | `USER` / `PLATFORM_USER` |
-| 🔴 `engineer.view` / `skill_sheet.view` / `skill_sheet.download` / `project.view` | `#17` / `#21` / `#20` / `#27`。🔴 **DL は `issueDownloadUrl` の中で書く**（経路が 1 本なのでモバイル・共有 URL でも漏れない。`BR-28` 欠落 0 件） | `USER` |
+| 🔴 `engineer.view` / `skill_sheet.view` / `skill_sheet.download` / `project.view` | `#17` / `#21` / `#20` / `#27`。🔴 **DL は `issueDownloadUrl` の中で書く**（経路が 1 本なのでモバイル・共有 URL でも漏れない。`BR-28` 欠落 0 件）。🔴 **`engineer.view` も同じ形**（T-05-02）: `readEngineerDetail` / `readEngineerForEdit` の**業務トランザクション内**（`writeAuditLog`）で書き、`withApiRoute` の `audit` オプションを使わない —— 画面（サーバコンポーネント）は Route Handler を通らず、`audit` は 404 でも記録が残るため（§6.4「#17 の実装の決着」） | `USER` |
 | `*.create` / `*.update` / `*.delete` | `withApiRoute` の `audit` オプション（各ハンドラで `action` を宣言） | `USER` / `SYSTEM` |
 | 🔴 `partner_company.create` / `partner_company.update` | `#12` / `#13`（`F-007 AC-3`「登録・招待・停止・再開が監査ログに残る」）。**停止・再開も `*.update` に揃え、`summary.operation`（`SUSPEND` / `RESUME`）で区別する** —— `partner_company.suspend` のような独自 action を作ると `S-041` の操作種別フィルタ（`CREATE_UPDATE_DELETE` = 接尾辞一致）から漏れ、**記録されているのに検索で出てこない**状態になる。招待は既存の `invitation.create` に `summary.targetPartnerCompanyId` を載せる | `USER` |
 | `proposal.submit` / `proposal.resend` | 送信ジョブの ⑥（§10.2） | `SYSTEM`（`summary.requestedBy` に人間を記録） |

@@ -16,7 +16,6 @@ import { listSkillDictionary, readEngineerForEdit } from '../../../../../lib/eng
 import { EngineerForm } from '../../_form/engineer-form';
 import {
   availabilityOptions,
-  ENGINEER_FORM_CANCEL_HREF,
   engineerFormMessages,
   ownershipLabel,
   prefectureOptions,
@@ -71,7 +70,10 @@ export default async function EditEngineerPage({
         remoteModeOptions={remoteModeOptions}
         prefectureOptions={prefectureOptions}
         levelOptions={skillLevelOptions}
-        cancelHref={ENGINEER_FORM_CANCEL_HREF}
+        // 🔴 T-05-02: 編集のキャンセルは `S-006`（詳細）へ戻す（docs/04 §S-007 関連画面）。
+        //    新規登録（`/engineers/new`）は戻り先の詳細がまだ無いため
+        //    `ENGINEER_FORM_CANCEL_HREF` のままである。
+        cancelHref={`/engineers/${view.id}`}
         // 🔴 所属区分は**行の値**（`view.ownership`）ではなく、行が自社のものであることが
         //    RLS で確定している前提で ctx から表示する。どちらでも同じ値になるが、
         //    「入力でも行でもなく ctx が所属を決める」という規律に画面を合わせる。

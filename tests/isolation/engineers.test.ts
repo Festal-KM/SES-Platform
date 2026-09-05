@@ -37,7 +37,9 @@ vi.mock('../../apps/web/lib/auth/session', () => ({
 
 const { buildTenantCtx } = await import('../../apps/web/lib/auth/tenant-context');
 const { NotFoundError } = await import('../../apps/web/lib/api/errors');
-const { readEngineerForEdit } = await import('../../apps/web/lib/engineers/service');
+const { readEngineerDetail, readEngineerForEdit } = await import(
+  '../../apps/web/lib/engineers/service'
+);
 const engineersRoute = await import('../../apps/web/app/api/(main)/engineers/route');
 const engineerRoute = await import('../../apps/web/app/api/(main)/engineers/[id]/route');
 
@@ -73,6 +75,13 @@ const SKILL_AWS = GLOBAL_SKILL_IDS['AWS'] ?? '';
 
 type CreatedBody = { readonly id: string };
 type ErrorBody = { readonly error: { readonly code: string } };
+/** `OwnEngineerDetailView`（docs/05 §6.4 #17）。🔴 連絡先を持たない型である。 */
+type DetailBody = {
+  readonly id: string;
+  readonly displayName: string;
+  readonly ownership: 'HOST' | 'PARTNER';
+  readonly skills: readonly { readonly skillId: string; readonly name: string }[];
+};
 
 let database: IsolationDatabase;
 /** 🔴 前提づくりと事実確認だけに使う特権接続。検証のクエリには使わない。 */
@@ -82,6 +91,14 @@ async function setRole(identity: TenantIdentity, role: TenantRole): Promise<void
   await admin.membership.updateMany({
     where: { tenantId: identity.tenantId, userId: identity.userId },
     data: { role },
+  });
+}
+
+/** テナントのライフサイクル状態（`F-004 AC-7`〜`AC-9`。閲覧と実行系の差を確かめるため）。 */
+async function setLifecycle(tenantId: string, lifecycleState: string): Promise<void> {
+  await admin.tenant.update({
+    where: { id: tenantId },
+    data: { lifecycleState, lifecycleChangedAt: NOW },
   });
 }
 
@@ -138,6 +155,14 @@ async function patchEngineer(
   );
 }
 
+/** `GET /api/engineers/{id}`（docs/05 §6.4 #17）。T-05-02。 */
+async function getEngineer(ctx: AuthenticatedTenantCtx, id: string): Promise<Response> {
+  requireTenantCtxMock.mockResolvedValue(ctx);
+  return engineerRoute.GET(new Request(`https://app.test/api/engineers/${id}`), {
+    params: Promise.resolve({ id }),
+  });
+}
+
 async function createdIdOf(response: Response): Promise<string> {
   expect(response.status).toBe(201);
   return ((await response.json()) as CreatedBody).id;
@@ -185,6 +210,7 @@ beforeEach(() => {
 
 afterEach(async () => {
   // 🔴 テスト間で前提を持ち越さない。
+  await setLifecycle(TENANT_1.tenantId, 'ACTIVE');
   await setRole(HOST_1, 'SALES');
   await setRole(PARTNER_USER_1, 'PARTNER_SALES');
   await setRole(PARTNER_USER_2, 'PARTNER_SALES');
@@ -452,6 +478,164 @@ describe('🔴 F-008 AC-3: 境界外のエンジニアには到達できない',
     expect(rows[0]?.targetId).toBe(partnerEngineerId);
     // 🔴 PII を summary に載せない。
     expect(JSON.stringify(rows[0]?.summary)).not.toContain(MARKER);
+  });
+
+  // --- #17 `GET /api/engineers/{id}`（T-05-02）-------------------------------
+  it('🔴 ホストは他パートナーのエンジニアの詳細に到達できない（404。実名が本文に無い）', async () => {
+    const ctx = await ctxOf(HOST_1, 'ADMIN');
+
+    const outOfBoundary = await getEngineer(ctx, partnerEngineerId);
+    const nonexistent = await getEngineer(ctx, NONEXISTENT_ID);
+
+    expect(outOfBoundary.status).toBe(404);
+    expect(nonexistent.status).toBe(404);
+    // 🔴 境界外と不存在で応答が 1 バイトも変わらない（docs/05 §4.8「見えない ＝ 存在しない」）。
+    const outOfBoundaryBody = await outOfBoundary.text();
+    expect(outOfBoundaryBody).toBe(await nonexistent.text());
+    expect(outOfBoundaryBody).not.toContain(MARKER);
+  });
+
+  it('🔴 到達できなかった閲覧は `AuditLog` に残らない（見えない行の閲覧は無い）', async () => {
+    const ctx = await ctxOf(HOST_1, 'ADMIN');
+
+    expect((await getEngineer(ctx, partnerEngineerId)).status).toBe(404);
+
+    expect(await auditRows('engineer.view')).toHaveLength(0);
+  });
+
+  it('🔴 他パートナー（2 社目）も詳細に到達できない（パートナー間の相互参照 0 件）', async () => {
+    const ctx = await ctxOf(PARTNER_USER_2, 'PARTNER_ADMIN');
+
+    const response = await getEngineer(ctx, partnerEngineerId);
+
+    expect(response.status).toBe(404);
+    await expect(
+      readEngineerDetail(ctx, partnerEngineerId, { ipAddress: null }),
+    ).rejects.toBeInstanceOf(NotFoundError);
+    expect(await auditRows('engineer.view')).toHaveLength(0);
+  });
+});
+
+describe('🔴 F-008 AC-4: 詳細の閲覧が AuditLog に記録される（docs/05 §6.4 #17）', () => {
+  let engineerId: string;
+
+  beforeEach(async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+    engineerId = await createdIdOf(
+      await postEngineer(ctx, {
+        displayName: `${MARKER}詳細対象`,
+        availability: 'STANDBY_SCHEDULED',
+        availableFrom: '2026-11-01',
+        unitPriceMin: 650000,
+        unitPriceMax: 750000,
+        prefecture: '13',
+        remoteMode: 'PARTIAL_REMOTE',
+        preferenceNote: '長期案件を希望',
+        contactEmail: 'engineer@example.test',
+        contactPhone: '03-1234-5678',
+        skills: [{ skillId: SKILL_JAVA, yearsOfExperience: 8, level: 4 }],
+      }),
+    );
+    // 🔴 登録（`engineer.create`）の記録と混ざらないようにしてから閲覧を検証する。
+    await admin.auditLog.deleteMany({ where: { action: 'engineer.create' } });
+  });
+
+  it('API 経由の閲覧が 1 件記録される（`via=DETAIL` / 端末と IP も残る）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+
+    const response = await getEngineer(ctx, engineerId);
+    expect(response.status).toBe(200);
+
+    const rows = await auditRows('engineer.view');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.actorKind).toBe('USER');
+    expect(rows[0]?.actorId).toBe(TENANT_1.hostUserId);
+    expect(rows[0]?.targetType).toBe('Engineer');
+    expect(rows[0]?.targetId).toBe(engineerId);
+    expect(rows[0]?.summary).toEqual({ via: 'DETAIL' });
+    expect(rows[0]?.ipAddress).toBe(META.ipAddress);
+    expect(rows[0]?.deviceKind).toBe('api');
+    // 🔴 PII を summary に載せない（`F-058` で運営者に見えるため。docs/05 §16.2）。
+    expect(JSON.stringify(rows[0]?.summary)).not.toContain('詳細対象');
+  });
+
+  it('🔴 画面（サーバコンポーネント）経由でも同じ記録が残る（経路で漏れない）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+
+    // `S-006` は Route Handler を通らず、この関数を直接呼ぶ（`page.tsx`）。
+    const view = await readEngineerDetail(ctx, engineerId, { ipAddress: '203.0.113.44' });
+    expect(view.displayName).toBe(`${MARKER}詳細対象`);
+
+    const rows = await auditRows('engineer.view');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.summary).toEqual({ via: 'DETAIL' });
+    expect(rows[0]?.ipAddress).toBe('203.0.113.44');
+  });
+
+  it('詳細 → 編集の 2 経路は 2 件記録され、`via` で区別できる', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+
+    expect((await getEngineer(ctx, engineerId)).status).toBe(200);
+    await readEngineerForEdit(ctx, engineerId, { ipAddress: null });
+
+    const rows = await auditRows('engineer.view');
+    expect(rows).toHaveLength(2);
+    expect(rows.map((row) => (row.summary as { via: string }).via)).toEqual([
+      'DETAIL',
+      'EDIT_FORM',
+    ]);
+  });
+
+  it('🔴 応答に連絡先が含まれない（画面が出さない PII を API が返さない）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+
+    const response = await getEngineer(ctx, engineerId);
+    const raw = await response.text();
+    const body = JSON.parse(raw) as DetailBody;
+
+    expect(body.id).toBe(engineerId);
+    expect(body.ownership).toBe('HOST');
+    expect(body.skills.map((skill) => skill.skillId)).toEqual([SKILL_JAVA]);
+    expect(raw).not.toContain('engineer@example.test');
+    expect(raw).not.toContain('03-1234-5678');
+    expect(raw).not.toContain('contactEmail');
+  });
+
+  it('🔴 `VIEWER` も閲覧できる（`F-012 AC-3`。記録は同じように残る）', async () => {
+    const ctx = await ctxOf(HOST_1, 'VIEWER');
+
+    const response = await getEngineer(ctx, engineerId);
+
+    expect(response.status).toBe(200);
+    expect(await auditRows('engineer.view')).toHaveLength(1);
+  });
+
+  it('🔴 `CLOSING` のテナントでも閲覧できる（`F-004 AC-8`。実行系だけを止める）', async () => {
+    await setLifecycle(TENANT_1.tenantId, 'CLOSING');
+    const ctx = await ctxOf(HOST_1, 'SALES');
+    expect(ctx.lifecycleState).toBe('CLOSING');
+
+    const detail = await getEngineer(ctx, engineerId);
+    const update = await patchEngineer(ctx, engineerId, { displayName: `${MARKER}更新` });
+
+    expect(detail.status).toBe(200);
+    // 対照: 実行系（更新）は 409 のままである。
+    expect(update.status).toBe(409);
+    expect(await auditRows('engineer.view')).toHaveLength(1);
+  });
+
+  it('パートナーは自社エンジニアの詳細を読める（対照。母集団は所属で決まる）', async () => {
+    const partnerCtx = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
+    const partnerEngineerId = await createdIdOf(
+      await postEngineer(partnerCtx, { displayName: `${MARKER}自社詳細` }),
+    );
+    await admin.auditLog.deleteMany({ where: { action: 'engineer.create' } });
+
+    const response = await getEngineer(partnerCtx, partnerEngineerId);
+
+    expect(response.status).toBe(200);
+    expect(((await response.json()) as DetailBody).ownership).toBe('PARTNER');
+    expect(await auditRows('engineer.view')).toHaveLength(1);
   });
 });
 

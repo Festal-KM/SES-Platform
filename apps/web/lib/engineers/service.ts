@@ -34,9 +34,30 @@ import type { CreateEngineerBody, EngineerSkillInput, UpdateEngineerBody } from 
 export const ENGINEER_AUDIT_ACTIONS = {
   create: 'engineer.create',
   update: 'engineer.update',
-  /** 🔴 `BR-27` / `F-008 AC-4`。API 版（#17）は T-05-02。ここは `S-007` の編集フォームの読み取り。 */
+  /**
+   * 🔴 `BR-27` / `F-008 AC-4`。**詳細（`S-006` / `#17`）も編集フォーム（`S-007`）も同じ action** で
+   *    記録する（T-05-02）。経路の違いは `summary.via` にだけ残す —— `engineer.detail_view` の
+   *    ような別 action を作ると `S-041` の操作種別フィルタから漏れ、**記録されているのに
+   *    検索で出てこない**（docs/05 §16.1 の `partner_company.suspend` と同じ轍）。
+   */
   view: 'engineer.view',
 } as const;
+
+/**
+ * `engineer.view` の `summary.via`（🔴 PII を載せないため、残すのは経路の区別だけ）。
+ *
+ * 🔴 **詳細を開いてから編集を開けば 2 件記録される。これは重複ではなく別々の閲覧である**
+ *    （`CLAUDE.md` §3.5「誰の経歴を、誰が、いつ見たか」）。片方を抑止すると、どちらの経路で
+ *    PII に到達したのかが後から追えなくなる。
+ */
+export const ENGINEER_VIEW_VIA = {
+  /** `S-006` エンジニア詳細（`#17` / 画面の直接読み取りのどちらも同じ値）。 */
+  detail: 'DETAIL',
+  /** `S-007` 編集フォームの初期値読み取り。 */
+  editForm: 'EDIT_FORM',
+} as const;
+
+export type EngineerViewVia = (typeof ENGINEER_VIEW_VIA)[keyof typeof ENGINEER_VIEW_VIA];
 
 /** 台帳の所属区分（`S-007` セクション 1 の読み取り専用表示）。 */
 export type EngineerOwnership = 'HOST' | 'PARTNER';
@@ -49,11 +70,11 @@ export type EngineerSkillView = {
 };
 
 /**
- * `S-007`（編集）が必要とする項目だけ。
- * 🔴 `docs/05` §3.4 の列をすべて出さない —— `birthDate` / `affiliationLabel` は
- *    本画面の入力項目ではない（`BR-52` / `F-008 AC-1`）ため読み出しもしない。
+ * `S-006`（詳細）と `S-007`（編集）が共通で出す項目（docs/05 §6.4 #17 の `OwnEngineerDetailView`）。
+ * 🔴 `docs/05` §3.4 の列をすべて出さない —— `birthDate` / `affiliationLabel` / `city` は
+ *    どちらの画面の項目でもない（`BR-52` / `F-008 AC-1`）ため読み出しもしない。
  */
-export type EngineerEditView = {
+export type EngineerBaseView = {
   readonly id: string;
   readonly displayName: string;
   /** 🔴 読み取り専用（入力欄を持たない。`F-008 AC-2`）。 */
@@ -66,9 +87,23 @@ export type EngineerEditView = {
   readonly prefecture: PrefectureCode | null;
   readonly remoteMode: RemoteMode | null;
   readonly preferenceNote: string | null;
+  readonly skills: readonly EngineerSkillView[];
+};
+
+/**
+ * `GET /api/engineers/{id}`（docs/05 §6.4 #17）と `S-006` の応答。
+ *
+ * 🔴 **連絡先（`contactEmail` / `contactPhone`）を含めない。** `docs/04` §S-006 のセクション 2
+ *    （基本情報）に連絡先は無く、提案の可否を判断するのに要らない。**画面が出さない PII を
+ *    API が返す状態を作らない**（返せば、詳細を開くだけで連絡先が経路に載る）。連絡先を
+ *    読めるのは登録・編集の経路（`S-007` / `EngineerEditView`）だけである。
+ */
+export type EngineerDetailView = EngineerBaseView;
+
+/** `S-007`（編集）が必要とする項目。詳細に連絡先を足したもの。 */
+export type EngineerEditView = EngineerBaseView & {
   readonly contactEmail: string | null;
   readonly contactPhone: string | null;
-  readonly skills: readonly EngineerSkillView[];
 };
 
 /** 監査ログに残す実行環境（`withApiRoute` の `audit` と同じ値。画面経路は自前で渡す）。 */
@@ -315,12 +350,145 @@ export async function updateEngineer(
 }
 
 /**
+ * 詳細・編集が共通で読む列（docs/05 §3.4 のうち `BR-52` の範囲だけ）。
+ * 🔴 `birthDate` / `affiliationLabel` / `city` を**書かない**（読めば、いつか画面に出る）。
+ */
+const ENGINEER_BASE_SELECT = {
+  id: true,
+  ownerPartnerCompanyId: true,
+  displayName: true,
+  availability: true,
+  availableFrom: true,
+  unitPriceMin: true,
+  unitPriceMax: true,
+  prefecture: true,
+  remoteMode: true,
+  preferenceNote: true,
+} as const;
+
+/**
+ * `ENGINEER_BASE_SELECT` が返す行の形。
+ * 🔴 `@prisma/client` の生成型を import しない（ESLint が禁じる。`CLAUDE.md` §3.1）ため、
+ *    必要な形だけを構造的に書く（`decimalToNumber` が `toString()` だけを要求するのと同じ方針）。
+ */
+type EngineerBaseRow = {
+  readonly id: string;
+  readonly ownerPartnerCompanyId: string | null;
+  readonly displayName: string;
+  readonly availability: string;
+  readonly availableFrom: Date | null;
+  readonly unitPriceMin: { toString(): string } | null;
+  readonly unitPriceMax: { toString(): string } | null;
+  readonly prefecture: string | null;
+  readonly remoteMode: string | null;
+  readonly preferenceNote: string | null;
+};
+
+function toEngineerBaseView(
+  row: EngineerBaseRow,
+  skills: readonly EngineerSkillView[],
+): EngineerBaseView {
+  return {
+    id: row.id,
+    displayName: row.displayName,
+    ownership: row.ownerPartnerCompanyId === null ? 'HOST' : 'PARTNER',
+    availability: row.availability as EngineerAvailability,
+    availableFrom: toDateOnlyString(row.availableFrom),
+    unitPriceMin: decimalToNumber(row.unitPriceMin),
+    unitPriceMax: decimalToNumber(row.unitPriceMax),
+    prefecture: row.prefecture as PrefectureCode | null,
+    remoteMode: row.remoteMode as RemoteMode | null,
+    preferenceNote: row.preferenceNote,
+    skills,
+  };
+}
+
+async function readEngineerSkills(
+  db: EngineerDb,
+  engineerId: string,
+): Promise<readonly EngineerSkillView[]> {
+  const rows = await db.engineerSkill.findMany({
+    where: { engineerId },
+    select: {
+      skillId: true,
+      yearsOfExperience: true,
+      level: true,
+      skill: { select: { name: true } },
+    },
+    // 🔴 決定的な順序（同じ入力なら同じ並び。docs/05 §4.8）。
+    orderBy: [{ skillId: 'asc' }],
+  });
+  return rows.map((entry) => ({
+    skillId: entry.skillId,
+    name: entry.skill.name,
+    yearsOfExperience: Number(entry.yearsOfExperience.toString()),
+    level: entry.level,
+  }));
+}
+
+/**
+ * 🔴 **閲覧を `AuditLog` に記録する唯一の経路**（`BR-27` / `F-008 AC-4`）。
+ *
+ * 🔴 記録は**業務トランザクションの内側**（`writeAuditLog`）で書く。書けなければトランザクション
+ *    ごと巻き戻り、**内容は返らない**（`F-012 AC-2` と同じ規律）。`withApiRoute` の `audit`
+ *    オプションを使わない理由は docs/05 §6.4「#17 の実装の決着（T-05-02）」に書いた:
+ *    ①画面（サーバコンポーネント）は Route Handler を通らないため、ルート側に置くと
+ *    **画面経路だけ記録が漏れる** ②`audit` オプションはハンドラの前に別トランザクションで
+ *    書くため、**404（境界外・不存在）でも「閲覧した」記録が残る**。
+ */
+async function recordEngineerView(
+  db: EngineerDb,
+  ctx: AuthenticatedTenantCtx,
+  engineerId: string,
+  via: EngineerViewVia,
+  meta: EngineerViewMeta,
+): Promise<void> {
+  await writeAuditLog(db, {
+    action: ENGINEER_AUDIT_ACTIONS.view,
+    actorKind: 'USER',
+    actorId: ctx.userId,
+    targetType: 'Engineer',
+    targetId: engineerId,
+    // 🔴 PII を載せない（`AuditSummary` の規約）。経路の区別だけを残す。
+    summary: { via },
+    ipAddress: meta.ipAddress,
+    deviceKind: ctx.deviceKind,
+  });
+}
+
+/**
+ * `GET /api/engineers/{id}`（docs/05 §6.4 #17）と `S-006`（詳細）が読む経路。T-05-02。
+ *
+ * 🔴 **境界外・不存在はどちらも 404**（docs/05 §4.8 / `F-008 AC-3`）。母集団を絞るのは
+ *    `engineers` の RLS（C3 `OWNER_SCOPED`）であり、ここに `where` を足さない。ホスト所属の
+ *    利用者からは他パートナー所有の行がそもそも見えないため、**実名・所属会社名に到達できない**
+ *    （到達できるのは SP-08 の匿名 5 項目か SP-09 の `EngineerSnapshot` だけ）。
+ * 🔴 見えない行の「閲覧」は無いので、404 のときは記録も残さない。
+ *
+ * ⚠️ `piiPurgedAt`（保持期間の到来で連絡先とスキルシートを削除した行。`F-046` / `docs/04` §S-006 の
+ *    「保持期間を過ぎて削除されました」）の分岐は **SP-16 T-16-06 の範囲**であり、削除ジョブが
+ *    存在しない Phase 1 では到達しない。ここに先回りの分岐を書かない（動かせない分岐は腐る）。
+ */
+export async function readEngineerDetail(
+  ctx: AuthenticatedTenantCtx,
+  id: string,
+  meta: EngineerViewMeta,
+): Promise<EngineerDetailView> {
+  return withTenant(ctx, async (db) => {
+    const row = await db.engineer.findFirst({ where: { id }, select: ENGINEER_BASE_SELECT });
+    if (row === null) throw new NotFoundError();
+
+    await recordEngineerView(db, ctx, row.id, ENGINEER_VIEW_VIA.detail, meta);
+
+    return toEngineerBaseView(row, await readEngineerSkills(db, row.id));
+  });
+}
+
+/**
  * `S-007`（編集）が初期値を読む経路。
  *
  * 🔴 **閲覧を `AuditLog` に記録する**（`BR-27` / `F-008 AC-4`）。氏名・連絡先という PII を
- *    画面に出す以上、詳細画面（`S-006`。T-05-02 の `#17`）と同じ扱いにする。
- * 🔴 記録は**業務トランザクションの内側**で書く（`writeAuditLog`）。書けなければ
- *    トランザクションごと巻き戻り、**内容は返らない**（`F-012 AC-2` と同じ規律）。
+ *    画面に出す以上、詳細画面（`S-006` / `#17`）と同じ扱いにする（`summary.via` だけが違う）。
  * 🔴 境界外・不存在はどちらも 404（docs/05 §4.8）。記録も残さない（見えない行の閲覧は無い）。
  */
 export async function readEngineerForEdit(
@@ -331,66 +499,16 @@ export async function readEngineerForEdit(
   return withTenant(ctx, async (db) => {
     const row = await db.engineer.findFirst({
       where: { id },
-      select: {
-        id: true,
-        ownerPartnerCompanyId: true,
-        displayName: true,
-        availability: true,
-        availableFrom: true,
-        unitPriceMin: true,
-        unitPriceMax: true,
-        prefecture: true,
-        remoteMode: true,
-        preferenceNote: true,
-        contactEmail: true,
-        contactPhone: true,
-      },
+      select: { ...ENGINEER_BASE_SELECT, contactEmail: true, contactPhone: true },
     });
     if (row === null) throw new NotFoundError();
 
-    await writeAuditLog(db, {
-      action: ENGINEER_AUDIT_ACTIONS.view,
-      actorKind: 'USER',
-      actorId: ctx.userId,
-      targetType: 'Engineer',
-      targetId: row.id,
-      // 🔴 PII を載せない（`AuditSummary` の規約）。経路の区別だけを残す。
-      summary: { via: 'EDIT_FORM' },
-      ipAddress: meta.ipAddress,
-      deviceKind: ctx.deviceKind,
-    });
-
-    const skills = await db.engineerSkill.findMany({
-      where: { engineerId: row.id },
-      select: {
-        skillId: true,
-        yearsOfExperience: true,
-        level: true,
-        skill: { select: { name: true } },
-      },
-      // 🔴 決定的な順序（同じ入力なら同じ並び。docs/05 §4.8）。
-      orderBy: [{ skillId: 'asc' }],
-    });
+    await recordEngineerView(db, ctx, row.id, ENGINEER_VIEW_VIA.editForm, meta);
 
     return {
-      id: row.id,
-      displayName: row.displayName,
-      ownership: row.ownerPartnerCompanyId === null ? 'HOST' : 'PARTNER',
-      availability: row.availability as EngineerAvailability,
-      availableFrom: toDateOnlyString(row.availableFrom),
-      unitPriceMin: decimalToNumber(row.unitPriceMin),
-      unitPriceMax: decimalToNumber(row.unitPriceMax),
-      prefecture: row.prefecture as PrefectureCode | null,
-      remoteMode: row.remoteMode as RemoteMode | null,
-      preferenceNote: row.preferenceNote,
+      ...toEngineerBaseView(row, await readEngineerSkills(db, row.id)),
       contactEmail: row.contactEmail,
       contactPhone: row.contactPhone,
-      skills: skills.map((entry) => ({
-        skillId: entry.skillId,
-        name: entry.skill.name,
-        yearsOfExperience: Number(entry.yearsOfExperience.toString()),
-        level: entry.level,
-      })),
     };
   });
 }

@@ -89,13 +89,10 @@ export function toEngineerFormValues(view: EngineerEditView): EngineerFormValues
 }
 
 /**
- * 🔴 所属区分の表示（`F-008 AC-2`）。**値は ctx から来る**（入力ではない）。
- *    パートナー所属の利用者には「取引先（自社）」と出す —— 他社の名前は出さない
- *    （`CLAUDE.md` §3.1 の 🔴「パートナー同士が相互に参照できる経路を 1 つも作らない」）。
+ * 🔴 所属区分の表示（`F-008 AC-2`）。実体は `lib/engineers/labels.ts` にある
+ *    （T-05-02 で `S-006` と共有した。2 画面で文言がずれない形にするため）。
  */
-export function ownershipLabel(partnerCompanyId: string | null): string {
-  return partnerCompanyId === null ? t('engineers.ownership.host') : t('engineers.ownership.partner');
-}
+export { engineerOwnershipLabel as ownershipLabel } from '../../../../lib/engineers/labels';
 
 export function engineerFormMessages(ownershipValue: string): EngineerFormMessages {
   return {
