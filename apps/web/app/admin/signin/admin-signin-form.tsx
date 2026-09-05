@@ -139,14 +139,14 @@ export function AdminSignInForm({
 
   const errorBlock =
     error === null ? null : (
-      <p className="ses-error" role="alert">
+      <p className="ses-error" role="alert" data-testid="admin-signin-error">
         {error}
       </p>
     );
 
   if (stage === 'twoFactor') {
     return (
-      <form onSubmit={onSubmitCode} noValidate>
+      <form onSubmit={onSubmitCode} noValidate data-testid="admin-signin-2fa-form">
         <h2>{messages.twoFactorTitle}</h2>
         <p>{messages.twoFactorRequiredNotice}</p>
         {errorBlock}
@@ -158,7 +158,9 @@ export function AdminSignInForm({
             <p className="ses-field">
               <span>{messages.twoFactorUriLabel}</span>
               {/* 🔴 シークレットを含む。画面に出すだけで、どこにも保存・送信しない。 */}
-              <code className="ses-otpauth-uri">{enrollment.otpauthUrl}</code>
+              <code className="ses-otpauth-uri" data-testid="admin-signin-otpauth-uri">
+                {enrollment.otpauthUrl}
+              </code>
             </p>
             <h3>{messages.twoFactorRecoveryHeading}</h3>
             <p>{messages.twoFactorRecoveryNote}</p>
@@ -180,9 +182,15 @@ export function AdminSignInForm({
             autoComplete="one-time-code"
             required
             disabled={state === 'submitting'}
+            data-testid="admin-signin-2fa-code"
           />
         </label>
-        <button className="ses-submit" type="submit" disabled={state === 'submitting'}>
+        <button
+          className="ses-submit"
+          type="submit"
+          disabled={state === 'submitting'}
+          data-testid="admin-signin-2fa-submit"
+        >
           {state === 'submitting' ? messages.twoFactorSubmitting : messages.twoFactorSubmit}
         </button>
       </form>
@@ -190,7 +198,7 @@ export function AdminSignInForm({
   }
 
   return (
-    <form onSubmit={onSubmitCredentials} noValidate>
+    <form onSubmit={onSubmitCredentials} noValidate data-testid="admin-signin-form">
       {errorBlock}
       <label className="ses-field">
         <span>{messages.emailLabel}</span>
@@ -201,6 +209,7 @@ export function AdminSignInForm({
           inputMode="email"
           required
           disabled={state === 'submitting'}
+          data-testid="admin-signin-email"
         />
       </label>
       <label className="ses-field">
@@ -211,9 +220,15 @@ export function AdminSignInForm({
           autoComplete="current-password"
           required
           disabled={state === 'submitting'}
+          data-testid="admin-signin-password"
         />
       </label>
-      <button className="ses-submit" type="submit" disabled={state === 'submitting'}>
+      <button
+        className="ses-submit"
+        type="submit"
+        disabled={state === 'submitting'}
+        data-testid="admin-signin-submit"
+      >
         {state === 'submitting' ? messages.submitting : messages.submit}
       </button>
       {/* 🔴 主平面のパスワード再設定（`S-046`）への導線は置かない（`BR-36` の別テーブル・別認証。

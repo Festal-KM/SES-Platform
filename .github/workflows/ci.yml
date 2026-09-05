@@ -1,7 +1,8 @@
 name: CI
 
-# T-01-08（docs/sprints/SP-01-bootstrap.md）。
-# 1 ジョブ内の直列 5 ステップ（build → lint → typecheck → test:unit → test:isolation）にしている。
+# T-01-08（docs/sprints/SP-01-bootstrap.md）。T-03-11 で E2E ステージを追加した。
+# 1 ジョブ内の直列ステップ
+# （build → lint → typecheck → test:unit → test:isolation → typecheck:e2e → test:e2e）にしている。
 # ジョブを分けると build 成果物（各パッケージの dist / 生成済み Prisma Client）の受け渡しに
 # upload-artifact / download-artifact が要り、この規模ではシンプルさを損なうため
 # 1 ジョブに閉じた（docs/dev-plan.md §1.2 の「縦に切る」原則と同じ判断）。
@@ -24,7 +25,9 @@ jobs:
   ci:
     name: CI Pipeline
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # T-03-11 で E2E ステージ（ブラウザ導入 + コンテナ起動 + Playwright 実行）を追加したため、
+    # 30 分 → 45 分に広げる。**短縮のためにステージを削らない**（Phase 0 の成功条件は E2E にある）。
+    timeout-minutes: 45
     steps:
       # v4 系に留める（v7 系がリリース済みだが、ローカルでは実行結果を再検証できないため
       # メジャー版を上げない。§5.1 方針 #5「メジャーアップグレードは Phase の切れ目にまとめて
@@ -90,3 +93,34 @@ jobs:
       # Testcontainers はホストの Docker daemon にそのまま接続できる（追加セットアップ不要）。
       - name: Isolation tests (Testcontainers)
         run: pnpm run test:isolation
+
+      # 🔴 E2E（SP-03 T-03-11）。**CLAUDE.md §5 Phase 0 の成功条件をここで毎回証明する。**
+      # ブラウザは chromium のみ（playwright.config.ts の冒頭に理由）。
+      # 既存の分離テスト（Testcontainers）と同じ Docker daemon を使い、E2E も
+      # TLS を有効にした PostgreSQL コンテナを globalSetup で起動する
+      # （docker-compose の共有インスタンスに依存しないので、実行順の干渉が無い）。
+      - name: Install Playwright browser (chromium)
+        run: pnpm exec playwright install --with-deps chromium
+
+      # tests/e2e の仕様（*.spec.ts / support/**）は @playwright/test に依存するため、
+      # ブラウザ導入後の別ステップで型検査する（`pnpm typecheck` は Playwright 非依存のまま）。
+      - name: Typecheck (E2E)
+        run: pnpm run typecheck:e2e
+
+      - name: E2E tests (Playwright)
+        run: pnpm run test:e2e
+        env:
+          # 上の "Build" ステップで apps/web はビルド済み。globalSetup で二重にビルドしない。
+          SES_E2E_SKIP_BUILD: '1'
+
+      # 失敗時だけ、アプリのログ・トレース・スクリーンショットを残す（原因追跡のため）。
+      - name: Upload E2E artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-artifacts
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 7
+          if-no-files-found: ignore

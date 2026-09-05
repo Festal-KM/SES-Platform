@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "./tsconfig.tests.json",
+  // 🔴 E2E（`tests/e2e/**` と `playwright.config.ts`）専用の型検査（`pnpm typecheck:e2e`）。
+  //
+  //    なぜ `tsconfig.tests.json` と分けるか: 仕様（`*.spec.ts` と `support/**`）は
+  //    `@playwright/test` を import するため、**ブラウザバイナリを含む Playwright が
+  //    インストールされている環境でしか型検査できない**。`pnpm typecheck`（CI の必須ステップ）を
+  //    そこに依存させると、Playwright を入れていない環境で型検査が丸ごと落ちる。
+  //    ハーネス（`tests/e2e/harness/**` / `global-*.ts`）は Playwright に依存しないので、
+  //    そちらは `tsconfig.tests.json` 側で検査される（二重に検査されても問題は無い）。
+  "compilerOptions": {
+    "noEmit": true,
+    // `page.evaluate(() => document...)` のコールバックはブラウザ側で実行されるため、
+    // E2E の射程に限って DOM の型を足す（`pnpm typecheck` 本体の lib は ES2023 のまま）。
+    "lib": ["ES2023", "DOM"]
+  },
+  "include": ["tests/e2e/**/*.ts", "playwright.config.ts", "apps/**/*.d.ts"],
+  "exclude": []
+}

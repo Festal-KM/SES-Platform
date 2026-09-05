@@ -3453,6 +3453,7 @@ packages/db/seed/
 | 🔴 **状態機械を正しく通す** | DB に直接 INSERT せず、**`packages/domain` の `transition()` を通して状態を進める**（不整合な状態を作らない） |
 | 🔴 **合成データの担保** | 企業名は「株式会社サンプルアルファ」等の明示的な架空名、氏名は架空名リスト、スキルシートはテンプレート生成。**実データ由来のファイルをリポジトリに置かない**（`F-053 AC-1`） |
 | 🔴 **実行できる環境の制限** | `APP_ENV ∈ {demo, development}` のときのみ。`packages/config` の検証と `API-A16`（画面は `A-012`）のミドルウェアの**二重**で拒否（`F-053 AC-6`）。`sandbox` には合成データを投入しない（`F-053 AC-4`） |
+| 🔴 **サインインできる母集団**（T-03-11 で追加） | `isolation` は **E2E が実際にサインインして**越境 0 件を確かめるための母集団でもある（§17.3 #1）。したがって ①全利用者に**照合可能な Argon2id ハッシュ**（合成パスワード。`ISOLATION_SEED_PASSWORD`）を持たせる ②各テナントに **`OWNER` を 1 名**置く（`GET /api/audit-logs` は `OWNER` / `ADMIN` のみ。既存の `SALES` は付け替えない）③**`PlatformUser` を 2 名**（`PLATFORM_OWNER` / `PLATFORM_SUPPORT`）置く（§17.3 #15 の検証に要る）。🔴 **2 要素認証の資格情報はシードに置かない** —— 平文のシークレットをリポジトリに置かずに済み、E2E は `#3 setup` が本人の画面に返す `otpauth://` URL から RFC 6238 で計算する（テスト専用のログイン迂回を作らない）。🔴 `platform_users` と `PLATFORM_USER` の `two_factor_credentials` は `tenant_id` を持たず `reset()`（`tenant_id` で絞る削除）の射程外なので、**`upsert` と明示的な削除**で冪等性を保つ |
 
 ## 14. ファイルストレージ規約
 
@@ -3762,6 +3763,10 @@ export const logger = pino({
 | **時刻** | 満了アラート・保持期間・`sandbox` 期限のテストは、🔴 **`now` を引数で渡す設計（§2.2）を利用し、システム時刻を動かさない**。ジョブハンドラに `now` を注入する |
 | **モバイル** | `devices['iPhone 15']` で #13 を実行（`CLAUDE.md` §13.3） |
 | **後始末** | 各テストの後にそのテナントを削除。🔴 **`reset()` は `APP_ENV` ガードの内側**（`F-053 AC-6`） |
+| 🔴 **DB は TLS 必須**（T-03-11 で確定） | globalSetup の ① は**自己署名証明書で TLS を有効にした** PostgreSQL を起動する。`packages/config` が `DATABASE_URL` / `PLATFORM_DATABASE_URL` / `PLATFORM_WRITE_DATABASE_URL` に `sslmode=require` を**無条件で要求する**（§13.4 規則 4）ため、TLS 無しではアプリが起動しない。手順はローカル docker-compose と同じ `docker/postgres/entrypoint-ssl.sh` を共有する（`tests/isolation/**` の Testcontainers は `sslmode=disable` で接続しており、そのままでは流用できない） |
+| 🔴 **⑥ 外向き遮断の実装**（T-03-11 で確定） | E2E ではアプリを**ホスト上のプロセス**として起動する（DB は Testcontainers が割り当てた 127.0.0.1 のランダムポート）。そのため §17.4 の「コンテナのネットワークを外向き遮断」を、**`node --import` で先読みするフック**（`tests/e2e/harness/network-guard.mjs`）が `net.Socket.prototype.connect` を包み、ループバック以外への接続をその場で失敗させる形で実現する。フックは起動時に**自己診断**（到達不能アドレスへの接続が実際に弾かれること）を行い、成功した場合だけ目印を出力する。globalSetup は**その目印を待ってから**アプリの疎通確認へ進む。ブラウザ側も同じ規律で `context.route` により非ローカルの発信を遮断・記録する。⚠️ 残余: Prisma の Rust エンジン等、Node の `net` を経由しないネイティブ実装は本フックから見えない（接続先は 127.0.0.1 のテストコンテナのみ） |
+| 🔴 **ブラウザ**（T-03-11 で確定） | Chromium 系のみ（`desktop-chromium` / `mobile-chromium`）。セッション Cookie が `__Host-` + `Secure` であり、http のローカル環境で保存されるかは「ループバックを信頼できるオリジンとして扱うか」に依存するため。WebKit / Firefox を足す場合は**ローカルの HTTPS 起動**が前提になる |
+| **型検査** | `tests/e2e/**` のうち `@playwright/test` に依存するのは `*.spec.ts` と `support/**` だけであり、そこは `pnpm typecheck:e2e`（`tsconfig.e2e.json`）が検査する。ハーネス（`harness/**` / `global-*.ts`）は Playwright に依存させず、`pnpm typecheck` の射程に置く（E2E 基盤を無検査にしない） |
 
 ## Assumptions
 

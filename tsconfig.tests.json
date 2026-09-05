@@ -31,5 +31,11 @@
     "vitest.smoke.config.ts",
     "vitest.isolation.config.ts"
   ],
-  "exclude": ["tests/static/__fixtures__/**", "tests/e2e/**"]
+  // 🔴 T-03-11: `tests/e2e/**` のうち **`@playwright/test` に依存する部分だけ**を外す
+  //    （`*.spec.ts` と `support/**`）。Playwright は E2E 実行環境にしか入っていないため、
+  //    ここに含めると Playwright 未導入の環境で `pnpm typecheck` が丸ごと落ちる。
+  //    ハーネス（`tests/e2e/harness/**` / `global-setup.ts` / `global-teardown.ts`）は
+  //    Playwright に依存しないので**ここで型検査する**（E2E 基盤を無検査にしない）。
+  //    仕様側は `pnpm typecheck:e2e`（`tsconfig.e2e.json`）が検査する。
+  "exclude": ["tests/static/__fixtures__/**", "tests/e2e/**/*.spec.ts", "tests/e2e/support/**"]
 }

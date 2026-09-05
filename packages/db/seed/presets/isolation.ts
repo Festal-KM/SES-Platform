@@ -110,6 +110,14 @@ export type IsolationTenantIds = {
   readonly tenantId: string;
   readonly hostUserId: string;
   readonly hostMembershipId: string;
+  /**
+   * 🔴 T-03-11: `CLAUDE.md` §5 Phase 0 の成功条件は「テナント A の **`OWNER`** でログインし…」
+   *    と書かれている。`hostUserId` は `SALES` であり、`GET /api/audit-logs`（`OWNER` / `ADMIN` のみ）
+   *    や `S-041` に到達できないため、E2E が通れない。**既存の `SALES` を付け替えず**に
+   *    `OWNER` を 1 名足す（付け替えると既存の分離テストの前提が動く）。
+   */
+  readonly hostOwnerUserId: string;
+  readonly hostOwnerMembershipId: string;
   readonly hostEngineerId: string;
   /** パートナー 1 社目にだけ公開した案件（越境経路 1 の正負）。 */
   readonly publishedProjectId: string;
@@ -169,6 +177,10 @@ function buildTenantIds(tenantIndex: number): IsolationTenantIds {
     tenantId: id(tenantIndex, ENTITY.TENANT, 1),
     hostUserId: id(tenantIndex, ENTITY.USER, 1),
     hostMembershipId: id(tenantIndex, ENTITY.MEMBERSHIP, 1),
+    // 🔴 連番 2 はパートナー配下（`partnerSeq` = パートナー番号 × 16 + 連番 ＝ 17 以上）と
+    //    衝突しない（`seed.test.ts` の「ID がすべて相異なる」が守る）。
+    hostOwnerUserId: id(tenantIndex, ENTITY.USER, 2),
+    hostOwnerMembershipId: id(tenantIndex, ENTITY.MEMBERSHIP, 2),
     hostEngineerId: id(tenantIndex, ENTITY.ENGINEER, 1),
     publishedProjectId: id(tenantIndex, ENTITY.PROJECT, 1),
     privateProjectId: id(tenantIndex, ENTITY.PROJECT, 2),
@@ -190,12 +202,67 @@ function buildTenantIds(tenantIndex: number): IsolationTenantIds {
   };
 }
 
-/** 🔴 テストが参照する ID の唯一の出所（`tests/isolation/**` はここを import する）。 */
+/**
+ * 🔴 運営者アカウント（`PlatformUser`）。**テナントに属さない**（`CLAUDE.md` §10.5 /
+ *    `BR-36`。`tenant_id` を持つ表ではないので `reset()` の対象外であり、投入は `upsert` で行う）。
+ *
+ * 🔴 T-03-11 が足した理由: `CLAUDE.md` §5 Phase 0 の成功条件の 5 番目（運営者でログインして
+ *    `A-002` / `A-003` に非開示のものが現れないこと。`BR-40`）を E2E で確かめるには、
+ *    **`seed:isolation` の母集団に運営者が居る**必要がある（無いと、テスト側が運営者を作る
+ *    ことになり「シードのプリセットを使う」〔docs/05 §17.5〕の規律が崩れる）。
+ */
+const PLATFORM_USER_ENTITY = 0xf0;
+
+export type IsolationPlatformUser = {
+  readonly id: string;
+  readonly email: string;
+  readonly displayName: string;
+  readonly role: 'PLATFORM_OWNER' | 'PLATFORM_SUPPORT';
+};
+
+export const ISOLATION_SEED_PLATFORM_USERS: {
+  readonly owner: IsolationPlatformUser;
+  readonly support: IsolationPlatformUser;
+} = {
+  owner: {
+    // tenantIndex = 0 ＝「どのテナントにも属さない」ことを ID の形でも示す。
+    id: seedUuid({ presetCode: PRESET_CODE, tenantIndex: 0, entityCode: PLATFORM_USER_ENTITY, seq: 1 }),
+    email: 'platform-owner@seed-isolation.test',
+    // 🔴 テナント利用者の氏名リスト（`FICTIONAL_PERSON_NAMES`）と重ならない値にする。
+    //    E2E（`BR-40`）が「運営者の応答にテナント側の氏名が現れない」ことを文字列照合で
+    //    確かめるため、重なると偽陽性・偽陰性の両方が起きる。
+    displayName: '運営コンソール管理者（合成）',
+    role: 'PLATFORM_OWNER',
+  },
+  support: {
+    id: seedUuid({ presetCode: PRESET_CODE, tenantIndex: 0, entityCode: PLATFORM_USER_ENTITY, seq: 2 }),
+    email: 'platform-support@seed-isolation.test',
+    displayName: '運営コンソールサポート（合成）',
+    role: 'PLATFORM_SUPPORT',
+  },
+};
+
+/** 🔴 テストが参照する ID の唯一の出所（`tests/isolation/**` / `tests/e2e/**` はここを import する）。 */
 export const ISOLATION_SEED_IDS: {
   readonly tenants: readonly [IsolationTenantIds, IsolationTenantIds];
 } = {
   tenants: [buildTenantIds(1), buildTenantIds(2)],
 };
+
+/** シードが作る利用者のメールアドレス（E2E がサインインに使う）。 */
+export function isolationSeedEmails(tenantIndex: 1 | 2): {
+  readonly hostOwner: string;
+  readonly hostSales: string;
+  readonly partner1: string;
+  readonly partner2: string;
+} {
+  return {
+    hostOwner: seedEmail(`owner-t${tenantIndex}`),
+    hostSales: seedEmail(`host-t${tenantIndex}`),
+    partner1: seedEmail(`partner-t${tenantIndex}-p1`),
+    partner2: seedEmail(`partner-t${tenantIndex}-p2`),
+  };
+}
 
 /**
  * 🔴 経路 5 の射影・パートナー向けの応答に**現れてはならない**値。
@@ -249,7 +316,63 @@ function seedEmail(local: string): string {
   return `${local}@seed-isolation.test`;
 }
 
-const PASSWORD_HASH_PLACEHOLDER = 'seed:not-a-real-password-hash';
+/**
+ * 🔴 このプリセットが使う氏名の全集合。
+ *    E2E（`BR-40` / `CLAUDE.md` §5 の 5 番目）は「運営者の応答にテナント側の氏名が
+ *    1 つも現れない」ことを文字列照合で確かめる。**個々の行の氏名は疑似乱数で選ばれる**ため、
+ *    集合ごと突き合わせられるように公開する（テスト側に名前をベタ書きさせない）。
+ */
+export const ISOLATION_SEED_PERSON_NAMES: readonly string[] = FICTIONAL_PERSON_NAMES;
+
+/** テナント / パートナーの会社名（投入時と同じ式から導く。ずれ得ない）。 */
+export function isolationSeedCompanyNames(tenantIndex: number): {
+  readonly host: string;
+  readonly partners: readonly [string, string];
+} {
+  return {
+    host: FICTIONAL_HOST_COMPANIES[tenantIndex - 1] ?? '株式会社サンプル',
+    partners: [
+      FICTIONAL_PARTNER_COMPANIES[(tenantIndex - 1) * 2] ?? '株式会社ダミーパートナー',
+      FICTIONAL_PARTNER_COMPANIES[(tenantIndex - 1) * 2 + 1] ?? '株式会社ダミーパートナー',
+    ],
+  };
+}
+
+/** 案件名（同上）。 */
+export function isolationSeedProjectNames(tenantIndex: number): {
+  readonly published: string;
+  readonly private: string;
+} {
+  return { published: `公開案件 T${tenantIndex}`, private: `未公開案件 T${tenantIndex}` };
+}
+
+/**
+ * 🔴 合成データ専用のサインインパスワード（`F-053 AC-1` / `BR-47`）。
+ *
+ * なぜコードに置くか（`CLAUDE.md` §3.5「シークレットをコードに書かない」との関係）:
+ *   - これは**シークレットではない**。`assertSeedableAppEnv` により
+ *     `APP_ENV ∈ {development, demo}` でしか投入されず（`F-053 AC-6`）、この資格情報で
+ *     到達できるのは同じプリセットが作った合成データだけである。
+ *   - 🔴 これを置かないと、**Phase 0 の成功条件（`CLAUDE.md` §5）を E2E で証明できない**。
+ *     E2E は「URL 直打ち・API 直叩きで越境できないこと」を**実際にログインした状態**で
+ *     確かめる必要があり、ログインできない母集団では検証が成立しない。
+ *     代わりに「テスト専用のログイン迂回フック」を作るほうが、はるかに危険である。
+ * 🔴 本番・sandbox・staging には流用しない（そもそも投入できない）。
+ */
+export const ISOLATION_SEED_PASSWORD = 'seed-isolation-password-1';
+
+/**
+ * 上の平文に対応する Argon2id ハッシュ（`apps/web/lib/auth/password.ts` の
+ * `ARGON2_OPTIONS`（m=19456,t=2,p=1）で生成した PHC 文字列）。
+ *
+ * 🔴 ハッシュを**定数として持つ**のは、`packages/db` に `@node-rs/argon2`（ネイティブアドオン）を
+ *    足さないためである。シードのためだけに依存を増やすと、`packages/db` を読む全ての
+ *    ビルド・テスト環境がネイティブビルドを要求されるようになる。
+ *    パラメータの一致は `tests/isolation/**` の実ログイン（`authenticateCredentials`）と
+ *    `tests/e2e/**` の実サインインが実行ごとに証明する（ずれたら即座に落ちる）。
+ */
+const SEED_PASSWORD_HASH =
+  '$argon2id$v=19$m=19456,t=2,p=1$f+qGIrs8414/YRIcHU5L4Q$y/J87ho1fqIMF8noqAk3KKt3genDjT9Uf7XF/+EzOq4';
 
 // ---------------------------------------------------------------------------
 // 投入
@@ -352,7 +475,9 @@ async function seedTenant(ctx: SeedContext, tenantIndex: number): Promise<void> 
   const ids = ISOLATION_SEED_IDS.tenants[tenantIndex - 1];
   if (!ids) throw new Error(`isolation: tenantIndex=${tenantIndex} の ID がありません。`);
 
-  const hostCompanyName = FICTIONAL_HOST_COMPANIES[tenantIndex - 1] ?? '株式会社サンプル';
+  const companyNames = isolationSeedCompanyNames(tenantIndex);
+  const hostCompanyName = companyNames.host;
+  const projectNames = isolationSeedProjectNames(tenantIndex);
   const endClientName = rng.pick(FICTIONAL_END_CLIENTS);
   const [partner1] = ids.partners;
 
@@ -396,7 +521,7 @@ async function seedTenant(ctx: SeedContext, tenantIndex: number): Promise<void> 
       id: partner.partnerCompanyId,
       tenantId: ids.tenantId,
       name:
-        FICTIONAL_PARTNER_COMPANIES[(tenantIndex - 1) * 2 + index] ?? '株式会社ダミーパートナー',
+        companyNames.partners[index] ?? '株式会社ダミーパートナー',
       contactName: rng.pick(FICTIONAL_PERSON_NAMES),
       contactEmail: seedEmail(`partner-contact-t${tenantIndex}-p${index + 1}`),
       invitedAt: addDays(now, -120),
@@ -411,7 +536,18 @@ async function seedTenant(ctx: SeedContext, tenantIndex: number): Promise<void> 
         ownerPartnerCompanyId: null,
         email: seedEmail(`host-t${tenantIndex}`),
         displayName: rng.pick(FICTIONAL_PERSON_NAMES),
-        passwordHash: PASSWORD_HASH_PLACEHOLDER,
+        passwordHash: SEED_PASSWORD_HASH,
+      },
+      {
+        id: ids.hostOwnerUserId,
+        tenantId: ids.tenantId,
+        ownerPartnerCompanyId: null,
+        email: seedEmail(`owner-t${tenantIndex}`),
+        // 🔴 `rng` を消費しない直接添字にする。`rng.pick` を 1 回増やすと以降の抽選が
+        //    ずれ、既存の母集団（他の利用者・エンジニアの氏名）が丸ごと変わってしまう。
+        displayName:
+          FICTIONAL_PERSON_NAMES[tenantIndex % FICTIONAL_PERSON_NAMES.length] ?? '架空 太郎',
+        passwordHash: SEED_PASSWORD_HASH,
       },
       ...ids.partners.map((partner, index) => ({
         id: partner.userId,
@@ -419,7 +555,7 @@ async function seedTenant(ctx: SeedContext, tenantIndex: number): Promise<void> 
         ownerPartnerCompanyId: partner.partnerCompanyId,
         email: seedEmail(`partner-t${tenantIndex}-p${index + 1}`),
         displayName: rng.pick(FICTIONAL_PERSON_NAMES),
-        passwordHash: PASSWORD_HASH_PLACEHOLDER,
+        passwordHash: SEED_PASSWORD_HASH,
       })),
     ],
   });
@@ -431,6 +567,14 @@ async function seedTenant(ctx: SeedContext, tenantIndex: number): Promise<void> 
         tenantId: ids.tenantId,
         userId: ids.hostUserId,
         role: 'SALES',
+        partnerCompanyId: null,
+        joinedAt: addDays(now, -120),
+      },
+      {
+        id: ids.hostOwnerMembershipId,
+        tenantId: ids.tenantId,
+        userId: ids.hostOwnerUserId,
+        role: 'OWNER',
         partnerCompanyId: null,
         joinedAt: addDays(now, -120),
       },
@@ -481,7 +625,7 @@ async function seedTenant(ctx: SeedContext, tenantIndex: number): Promise<void> 
       {
         id: ids.publishedProjectId,
         tenantId: ids.tenantId,
-        name: `公開案件 T${tenantIndex}`,
+        name: projectNames.published,
         // 🔴 いずれも公開範囲の外に出さない項目（F-013 AC-2）。経路 5 の射影にも現れない。
         endClientName: `${ISOLATION_FORBIDDEN_MARKERS.endClientName}-${endClientName}`,
         internalUnitPrice: ISOLATION_FORBIDDEN_MARKERS.internalUnitPrice,
@@ -494,7 +638,7 @@ async function seedTenant(ctx: SeedContext, tenantIndex: number): Promise<void> 
       {
         id: ids.privateProjectId,
         tenantId: ids.tenantId,
-        name: `未公開案件 T${tenantIndex}`,
+        name: projectNames.private,
         endClientName: `${ISOLATION_FORBIDDEN_MARKERS.endClientName}-private`,
         internalUnitPrice: ISOLATION_FORBIDDEN_MARKERS.internalUnitPrice,
         publicSummary: null,
@@ -823,7 +967,7 @@ async function seedTenant(ctx: SeedContext, tenantIndex: number): Promise<void> 
         tenantId: ids.tenantId,
         kind: 'INDIVIDUAL',
         counterpartyName:
-          FICTIONAL_PARTNER_COMPANIES[(tenantIndex - 1) * 2 + index] ?? '株式会社ダミーパートナー',
+          companyNames.partners[index] ?? '株式会社ダミーパートナー',
         counterpartyPartnerCompanyId: partner.partnerCompanyId,
         projectId: ids.publishedProjectId,
         engineerId: partner.engineerId,
@@ -1010,6 +1154,42 @@ async function seedTenant(ctx: SeedContext, tenantIndex: number): Promise<void> 
   });
 }
 
+/**
+ * 運営者アカウントを投入する（`CLAUDE.md` §10.5 / `BR-36`）。
+ *
+ * 🔴 `platform_users` と `two_factor_credentials` の `PLATFORM_USER` 行は **`tenant_id` を
+ *    持たない**ため、`reset()`（`deleteTenantData`。`tenant_id` 列で絞る）の対象外である。
+ *    そのため投入は `upsert` で行い、2 要素認証の資格情報は投入のたびに作り直す
+ *    （`docs/05` §13.6「冪等に再生成できる」を、テナント外の 2 表でも成立させる）。
+ * 🔴 2 要素認証の資格情報を**シードでは作らない**（`confirmedAt` 済みの行を置かない）。
+ *    シークレットの平文をリポジトリに置かずに済み、E2E は `A-001` の登録ウィザードが
+ *    画面へ返す `otpauth://` URL からコードを計算できる（テスト専用のフックを作らない）。
+ */
+async function seedPlatformUsers(ctx: SeedContext): Promise<void> {
+  const { db } = ctx;
+  const users = [ISOLATION_SEED_PLATFORM_USERS.owner, ISOLATION_SEED_PLATFORM_USERS.support];
+
+  await db.twoFactorCredential.deleteMany({
+    where: { subjectType: 'PLATFORM_USER', subjectId: { in: users.map((user) => user.id) } },
+  });
+
+  for (const user of users) {
+    const values = {
+      email: user.email,
+      displayName: user.displayName,
+      role: user.role,
+      passwordHash: SEED_PASSWORD_HASH,
+      disabledAt: null,
+      lastLoginAt: null,
+    };
+    await db.platformUser.upsert({
+      where: { id: user.id },
+      create: { id: user.id, ...values },
+      update: values,
+    });
+  }
+}
+
 export const isolationPreset: SeedPreset = {
   name: 'isolation',
   rngSeed: 'ses-isolation-v1',
@@ -1018,5 +1198,6 @@ export const isolationPreset: SeedPreset = {
     for (let tenantIndex = 1; tenantIndex <= ISOLATION_SEED_IDS.tenants.length; tenantIndex += 1) {
       await seedTenant(ctx, tenantIndex);
     }
+    await seedPlatformUsers(ctx);
   },
 };

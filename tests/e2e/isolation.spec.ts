@@ -1,0 +1,443 @@
+// tests/e2e/isolation.spec.ts
+// 🔴 **`CLAUDE.md` §5 Phase 0 の成功条件そのもの**（docs/05 §17.3 #1 / #2 / #15。
+//    docs/sprints/SP-03-auth-audit-admin0.md T-03-11）:
+//
+//    「2 テナント × 2 パートナーを seed した状態で、**URL 直打ち・API 直叩きのいずれでも
+//      他テナント / 他パートナーのデータが 1 件も取得できない**ことを自動テストで証明できる」
+//
+// シナリオ（本ファイルの `describe` と 1 対 1）:
+//   ① `seed:isolation`（2 テナント × 2 パートナー）が投入されている
+//   ② テナント A の `OWNER` で **URL 直打ち** → テナント B のものが 1 つも現れない
+//   ③ 同じ認証で **API 直叩き** → 404 / 0 件。一覧の件数が B の活動で変わらない
+//   ④ パートナー A1 の `PARTNER_SALES` → パートナー A2 のものが画面・一覧・集計に 1 件も無い
+//      （件数バッジ・並び順の変化・「他 N 件」も無い。`F-004 AC-3` / `AC-4`）
+//   ⑤ 運営者 → `A-002` / `A-003` の応答に氏名・本文・秘匿値の平文が現れない（`BR-40`）
+//
+// 🔴 **Phase 0 に実在する画面 / API だけで検証する**（SP-03 T-03-11 の読み替え指示）。
+//    `docs/05` §17.3 #1 は `GET /api/engineers/{id}` を例示しているが、エンジニア API は
+//    Phase 1（SP-05）である。ここでは「**実在する全 API での越境 0 件**」として満たす。
+//    Phase 1 以降にルートが増えたら、本ファイルの `MAIN_PLANE_PAGES` /
+//    `MAIN_PLANE_READ_APIS` に足す（足し忘れは `docs/05` §17.3 の穴になる）。
+//
+// 🔴 直列（`workers: 1`。`playwright.config.ts`）。RLS の設定漏れは他テストの副作用で
+//    偽陽性・偽陰性になる。
+import { expect, test, type Browser } from '@playwright/test';
+import { ISOLATION_SEED_PASSWORD, isolationSeedEmails } from '@ses/db/seed';
+import { t } from '../../packages/i18n/src/index';
+import { apiRequest, auditLogPeriodQuery, parseJson, type ApiResponse } from './support/api';
+import { expectNoHiddenCountHints, expectNoMarkers } from './support/assertions';
+import {
+  foreignPartnerMarkers,
+  foreignTenantMarkers,
+  operatorForbiddenApiMarkers,
+  operatorForbiddenMarkers,
+  partnerIds,
+  tenantIds,
+} from './support/population';
+import {
+  hostOwner,
+  openPlatformSession,
+  openTenantSession,
+  partnerSales,
+  type Session,
+} from './support/sessions';
+
+/** Phase 0 に実在する主平面の画面（`S-003` / `S-041` / `S-035`）。 */
+const MAIN_PLANE_PAGES = ['/', '/audit-logs', '/settings/organization'] as const;
+
+/** Phase 0 に実在する主平面の読み取り API（docs/05 §6.3 #8 / #9 / #10 / #64）。 */
+const MAIN_PLANE_READ_APIS = [
+  '/api/me',
+  '/api/home',
+  '/api/settings/organization',
+  `/api/audit-logs?${auditLogPeriodQuery()}`,
+] as const;
+
+/** 実在しない UUID（`404` と `403` を区別しないことの確認に使う）。 */
+const ABSENT_UUID = '01999999-9999-7999-8999-999999999999';
+
+async function pageContent(session: Session, path: string): Promise<string> {
+  const response = await session.page.goto(path, { waitUntil: 'domcontentloaded' });
+  // 🔴 500 系は「越境していない」ではなく「壊れている」。空振りで green にしない。
+  expect(response?.status() ?? 0, `${path} が 5xx を返しました`).toBeLessThan(500);
+  return session.page.content();
+}
+
+function bodyOf(response: ApiResponse): string {
+  return response.text;
+}
+
+test.describe('① seed:isolation（2 テナント × 2 パートナー）の母集団', () => {
+  test('2 テナントの OWNER と、テナント A の 2 パートナーが互いに別の主体として認証される', async ({
+    browser,
+  }: {
+    browser: Browser;
+  }) => {
+    const sessions: Session[] = [];
+    try {
+      const ownerA = await openTenantSession(browser, hostOwner(1));
+      sessions.push(ownerA);
+      const ownerB = await openTenantSession(browser, hostOwner(2));
+      sessions.push(ownerB);
+      const partnerA1 = await openTenantSession(browser, partnerSales(1, 1));
+      sessions.push(partnerA1);
+      const partnerA2 = await openTenantSession(browser, partnerSales(1, 2));
+      sessions.push(partnerA2);
+
+      const meA = parseJson(await apiRequest(ownerA.page, '/api/me')) as {
+        user: { id: string };
+        role: string;
+        partnerCompanyId: string | null;
+        tenantState: string;
+        env: string;
+      };
+      const meB = parseJson(await apiRequest(ownerB.page, '/api/me')) as typeof meA;
+      const meP1 = parseJson(await apiRequest(partnerA1.page, '/api/me')) as typeof meA;
+      const meP2 = parseJson(await apiRequest(partnerA2.page, '/api/me')) as typeof meA;
+
+      expect(meA.role).toBe('OWNER');
+      expect(meB.role).toBe('OWNER');
+      expect(meA.partnerCompanyId).toBeNull();
+      expect(meA.user.id).toBe(tenantIds(1).hostOwnerUserId);
+      expect(meB.user.id).toBe(tenantIds(2).hostOwnerUserId);
+      expect(meA.user.id).not.toBe(meB.user.id);
+
+      expect(meP1.role).toBe('PARTNER_SALES');
+      expect(meP1.partnerCompanyId).toBe(partnerIds(1, 1).partnerCompanyId);
+      expect(meP2.partnerCompanyId).toBe(partnerIds(1, 2).partnerCompanyId);
+      expect(meP1.partnerCompanyId).not.toBe(meP2.partnerCompanyId);
+
+      // 🔴 実行環境は development（全コネクタがモック。`CLAUDE.md` §11）。
+      expect(meA.env).toBe('development');
+      expect(meA.tenantState).toBe('ACTIVE');
+    } finally {
+      for (const session of sessions) await session.close();
+    }
+  });
+});
+
+test.describe('② テナント A の OWNER で URL 直打ち（他テナントが 1 つも現れない）', () => {
+  test('主平面の全画面と管理平面の直打ちに、テナント B の値が 0 件', async ({
+    browser,
+  }: {
+    browser: Browser;
+  }) => {
+    const session = await openTenantSession(browser, hostOwner(1));
+    const foreign = foreignTenantMarkers(2);
+    try {
+      for (const path of MAIN_PLANE_PAGES) {
+        const html = await pageContent(session, path);
+        expectNoMarkers(`URL 直打ち ${path}`, html, foreign);
+        expectNoHiddenCountHints(`URL 直打ち ${path}`, html);
+      }
+
+      // 🔴 平面をまたいだ直打ち: **主平面のセッションでは管理平面に到達できない**
+      //    （`BR-36` / `F-055 AC-2`。別テーブル・別 Cookie・別署名鍵）。
+      for (const path of ['/admin', `/admin/tenants/${tenantIds(2).tenantId}`, '/admin/tenants']) {
+        await session.page.goto(path, { waitUntil: 'domcontentloaded' });
+        expect(session.page.url(), `${path} から /admin/signin へ送られること`).toContain(
+          '/admin/signin',
+        );
+        expectNoMarkers(`URL 直打ち ${path}`, await session.page.content(), foreign);
+      }
+
+      session.outbound.assertNone();
+    } finally {
+      await session.close();
+    }
+  });
+
+  test('自テナントの画面は実際に描画される（越境 0 件が「何も見えない」ことの言い換えでない）', async ({
+    browser,
+  }: {
+    browser: Browser;
+  }) => {
+    const session = await openTenantSession(browser, hostOwner(1));
+    try {
+      const home = await pageContent(session, '/');
+      expect(home).toContain(t('home.title'));
+      expect(home).toContain(t('home.host.empty.title'));
+
+      const auditLogs = await pageContent(session, '/audit-logs');
+      expect(auditLogs).toContain(t('auditLogs.title'));
+    } finally {
+      await session.close();
+    }
+  });
+});
+
+test.describe('③ 同じ認証で API 直叩き（404 / 0 件。一覧の件数が変わらない）', () => {
+  test('主平面の全読み取り API の応答に、テナント B の値が 0 件', async ({
+    browser,
+  }: {
+    browser: Browser;
+  }) => {
+    const session = await openTenantSession(browser, hostOwner(1));
+    const foreign = foreignTenantMarkers(2);
+    try {
+      for (const path of MAIN_PLANE_READ_APIS) {
+        const response = await apiRequest(session.page, path);
+        expect(response.status, `${path} が 200 を返すこと（対照）`).toBe(200);
+        expectNoMarkers(`API 直叩き ${path}`, bodyOf(response), foreign);
+        expectNoHiddenCountHints(`API 直叩き ${path}`, bodyOf(response));
+      }
+    } finally {
+      await session.close();
+    }
+  });
+
+  test('境界外の ID を指しても 404 で、存在する ID との区別が付かない', async ({
+    browser,
+  }: {
+    browser: Browser;
+  }) => {
+    const session = await openTenantSession(browser, hostOwner(1));
+    try {
+      // 🔴 「見えない ＝ 存在しない」（docs/05 §4.8）。
+      //    Phase 0 に実在する ID 受け取り型の主平面 API は `#6 GET /api/invitations/{token}` のみ。
+      //    テナント B のリソース ID をトークンとして渡しても、存在しないトークンと同じ 404 になる。
+      const foreignIdAsToken = await apiRequest(
+        session.page,
+        `/api/invitations/${tenantIds(2).hostOwnerUserId}`,
+      );
+      const unknownToken = await apiRequest(session.page, `/api/invitations/${ABSENT_UUID}`);
+      expect(foreignIdAsToken.status).toBe(404);
+      expect(unknownToken.status).toBe(404);
+      // 🔴 本文まで同一である（403 と 404 を区別しないだけでなく、理由も区別しない）。
+      expect(foreignIdAsToken.text).toBe(unknownToken.text);
+      expectNoMarkers('GET /api/invitations/{B の ID}', foreignIdAsToken.text, foreignTenantMarkers(2));
+    } finally {
+      await session.close();
+    }
+  });
+
+  test('監査ログ: 他テナントの利用者で絞り込んでも 0 件、他テナントの活動で件数が動かない', async ({
+    browser,
+  }: {
+    browser: Browser;
+  }) => {
+    const session = await openTenantSession(browser, hostOwner(1));
+    try {
+      const period = auditLogPeriodQuery();
+      const listBefore = parseJson(
+        await apiRequest(session.page, `/api/audit-logs?${period}&limit=200`),
+      ) as { items: Array<{ actorId: string | null }> };
+      expect(listBefore.items.length, '自テナントの監査ログが存在すること（対照）').toBeGreaterThan(0);
+
+      // 🔴 他テナントの利用者 ID で絞り込む → 0 件（存在しないのと区別が付かない）。
+      const foreignActor = parseJson(
+        await apiRequest(
+          session.page,
+          `/api/audit-logs?${period}&actorId=${tenantIds(2).hostOwnerUserId}`,
+        ),
+      ) as { items: unknown[] };
+      expect(foreignActor.items).toEqual([]);
+
+      // 🔴 テナント B で活動を起こしても、A の一覧の件数は変わらない
+      //    （`total` は境界適用後の COUNT。docs/05 §4.8）。
+      const otherTenant = await openTenantSession(browser, hostOwner(2));
+      await otherTenant.close();
+
+      const listAfter = parseJson(
+        await apiRequest(session.page, `/api/audit-logs?${period}&limit=200`),
+      ) as { items: unknown[] };
+      expect(listAfter.items.length).toBe(listBefore.items.length);
+    } finally {
+      await session.close();
+    }
+  });
+
+  test('主平面のセッションで管理平面 API を直叩きしても認証されない', async ({
+    browser,
+  }: {
+    browser: Browser;
+  }) => {
+    const session = await openTenantSession(browser, hostOwner(1));
+    const foreign = foreignTenantMarkers(2);
+    try {
+      for (const path of ['/api/admin/tenants', `/api/admin/tenants/${tenantIds(2).tenantId}`]) {
+        const response = await apiRequest(session.page, path);
+        expect(response.status, `${path} は 401`).toBe(401);
+        expectNoMarkers(`API 直叩き ${path}`, response.text, foreign);
+      }
+    } finally {
+      await session.close();
+    }
+  });
+
+  test('🔴 リクエスト入力に tenantId を混ぜても参照範囲が変わらない（F-003 AC-1 / BR-03）', async ({
+    browser,
+  }: {
+    browser: Browser;
+  }) => {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    try {
+      await page.goto('/signin');
+      // 🔴 サインインの body に**テナント B の ID を混ぜて**送る。
+      const signIn = await apiRequest(page, '/api/auth/signin', {
+        method: 'POST',
+        body: {
+          email: isolationSeedEmails(1).partner1,
+          password: ISOLATION_SEED_PASSWORD,
+          tenantId: tenantIds(2).tenantId,
+          partnerCompanyId: partnerIds(1, 2).partnerCompanyId,
+        },
+      });
+      expect(signIn.status).toBe(200);
+
+      const me = parseJson(await apiRequest(page, '/api/me')) as {
+        user: { id: string };
+        partnerCompanyId: string | null;
+      };
+      // 入力ではなく、認証で確定した所属が使われている。
+      expect(me.user.id).toBe(partnerIds(1, 1).userId);
+      expect(me.partnerCompanyId).toBe(partnerIds(1, 1).partnerCompanyId);
+    } finally {
+      await context.close();
+    }
+  });
+});
+
+test.describe('④ パートナー A1 で、パートナー A2 のものが 1 件も現れない', () => {
+  test('画面・API・集計のいずれにも A2 の値が無く、件数バッジも「他 N 件」も無い', async ({
+    browser,
+  }: {
+    browser: Browser;
+  }) => {
+    const session = await openTenantSession(browser, partnerSales(1, 1));
+    // 🔴 同一テナント内の他パートナー（第二境界）と、他テナント（第一境界）の両方を見る。
+    const forbidden = [...foreignPartnerMarkers(1, 2), ...foreignTenantMarkers(2)];
+    try {
+      const home = await pageContent(session, '/');
+      expectNoMarkers('パートナーのホーム', home, forbidden);
+      expectNoHiddenCountHints('パートナーのホーム', home);
+      // 対照: 「自社に見えない情報が存在すること」の説明文は常時表示される（`F-006 AC-2`）。
+      expect(home).toContain(t('home.partner.visibilityNotice'));
+
+      for (const path of ['/api/me', '/api/home']) {
+        const response = await apiRequest(session.page, path);
+        expect(response.status).toBe(200);
+        expectNoMarkers(`パートナーの ${path}`, response.text, forbidden);
+        expectNoHiddenCountHints(`パートナーの ${path}`, response.text);
+      }
+
+      const home9 = parseJson(await apiRequest(session.page, '/api/home')) as {
+        audience: string;
+        blocks: unknown[];
+        visibilityNotice?: { messageKey: string };
+      };
+      expect(home9.audience).toBe('PARTNER');
+      // Phase 0 は空のダッシュボード（`CLAUDE.md` §5）。件数を持つブロックが存在しない。
+      expect(home9.blocks).toEqual([]);
+      expect(home9.visibilityNotice?.messageKey).toBe('home.partner.visibilityNotice');
+
+      session.outbound.assertNone();
+    } finally {
+      await session.close();
+    }
+  });
+
+  test('ホスト専用の画面 / API に到達できない（UI で隠すだけでない）', async ({
+    browser,
+  }: {
+    browser: Browser;
+  }) => {
+    const session = await openTenantSession(browser, partnerSales(1, 1));
+    try {
+      // 🔴 API 直叩きで 403（`requireRole`。`F-004 AC-9`）。
+      const auditLogs = await apiRequest(
+        session.page,
+        `/api/audit-logs?${auditLogPeriodQuery()}`,
+      );
+      expect(auditLogs.status).toBe(403);
+      const settings = await apiRequest(session.page, '/api/settings/organization');
+      expect(settings.status).toBe(403);
+
+      // 画面は自分のホームへ戻される（docs/04 §S-041 の権限差分）。
+      await session.page.goto('/audit-logs', { waitUntil: 'domcontentloaded' });
+      expect(new URL(session.page.url()).pathname).toBe('/');
+    } finally {
+      await session.close();
+    }
+  });
+
+  test('パートナーのセッションで管理平面に到達できない', async ({
+    browser,
+  }: {
+    browser: Browser;
+  }) => {
+    const session = await openTenantSession(browser, partnerSales(1, 1));
+    try {
+      await session.page.goto('/admin/tenants', { waitUntil: 'domcontentloaded' });
+      expect(session.page.url()).toContain('/admin/signin');
+      const response = await apiRequest(session.page, '/api/admin/tenants');
+      expect(response.status).toBe(401);
+    } finally {
+      await session.close();
+    }
+  });
+});
+
+test.describe('⑤ 運営者の応答に、非開示のものが現れない（BR-40 / F-056 AC-1）', () => {
+  test('A-002 / A-003 の画面と API に、氏名・案件の内容・本文・秘匿値の平文が 0 件', async ({
+    browser,
+  }: {
+    browser: Browser;
+  }) => {
+    const session = await openPlatformSession(browser);
+    const forbidden = operatorForbiddenMarkers();
+    try {
+      // 対照: 運営者は自分の画面に到達できている（空振り防止）。
+      const adminHome = await pageContent(session, '/admin');
+      expect(adminHome).toContain(t('admin.home.title'));
+      expectNoMarkers('A-001 運営者ホーム', adminHome, forbidden);
+
+      const list = await pageContent(session, '/admin/tenants');
+      expect(list).toContain(t('admin.tenants.title'));
+      expectNoMarkers('A-002 テナント一覧（画面）', list, forbidden);
+
+      for (const index of [1, 2] as const) {
+        const detail = await pageContent(session, `/admin/tenants/${tenantIds(index).tenantId}`);
+        expect(detail).toContain(t('admin.readOnly.badge'));
+        expectNoMarkers(`A-003 テナント詳細（画面 / テナント ${index}）`, detail, forbidden);
+      }
+
+      const apiForbidden = operatorForbiddenApiMarkers();
+      const listApi = await apiRequest(session.page, '/api/admin/tenants?limit=200');
+      expect(listApi.status).toBe(200);
+      expectNoMarkers('API-A2 GET /api/admin/tenants', listApi.text, apiForbidden);
+
+      for (const index of [1, 2] as const) {
+        const detailApi = await apiRequest(
+          session.page,
+          `/api/admin/tenants/${tenantIds(index).tenantId}`,
+        );
+        expect(detailApi.status).toBe(200);
+        expectNoMarkers(`API-A3 GET /api/admin/tenants/{テナント ${index}}`, detailApi.text, apiForbidden);
+      }
+
+      session.outbound.assertNone();
+    } finally {
+      await session.close();
+    }
+  });
+
+  test('存在しないテナント ID は 404（403 と区別しない）', async ({
+    browser,
+  }: {
+    browser: Browser;
+  }) => {
+    const session = await openPlatformSession(browser);
+    try {
+      const missing = await apiRequest(session.page, `/api/admin/tenants/${ABSENT_UUID}`);
+      expect(missing.status).toBe(404);
+
+      await session.page.goto(`/admin/tenants/${ABSENT_UUID}`, { waitUntil: 'domcontentloaded' });
+      const content = await session.page.content();
+      expectNoMarkers('A-003（存在しないテナント）', content, operatorForbiddenMarkers());
+    } finally {
+      await session.close();
+    }
+  });
+});

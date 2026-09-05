@@ -155,14 +155,14 @@ export function SignInForm({
 
   const errorBlock =
     error === null ? null : (
-      <p className="ses-error" role="alert">
+      <p className="ses-error" role="alert" data-testid="signin-error">
         {error}
       </p>
     );
 
   if (stage === 'twoFactor') {
     return (
-      <form onSubmit={onSubmitCode} noValidate>
+      <form onSubmit={onSubmitCode} noValidate data-testid="signin-2fa-form">
         <h2>{messages.twoFactorTitle}</h2>
         {errorBlock}
         {enrollment === null ? (
@@ -173,7 +173,9 @@ export function SignInForm({
             <p className="ses-field">
               <span>{messages.twoFactorUriLabel}</span>
               {/* 🔴 シークレットを含む。画面に出すだけで、どこにも保存・送信しない。 */}
-              <code className="ses-otpauth-uri">{enrollment.otpauthUrl}</code>
+              <code className="ses-otpauth-uri" data-testid="signin-otpauth-uri">
+                {enrollment.otpauthUrl}
+              </code>
             </p>
             <h3>{messages.twoFactorRecoveryHeading}</h3>
             <p>{messages.twoFactorRecoveryNote}</p>
@@ -197,9 +199,15 @@ export function SignInForm({
             autoComplete="one-time-code"
             required
             disabled={state === 'submitting'}
+            data-testid="signin-2fa-code"
           />
         </label>
-        <button className="ses-submit" type="submit" disabled={state === 'submitting'}>
+        <button
+          className="ses-submit"
+          type="submit"
+          disabled={state === 'submitting'}
+          data-testid="signin-2fa-submit"
+        >
           {state === 'submitting' ? messages.twoFactorSubmitting : messages.twoFactorSubmit}
         </button>
       </form>
@@ -207,7 +215,7 @@ export function SignInForm({
   }
 
   return (
-    <form onSubmit={onSubmitCredentials} noValidate>
+    <form onSubmit={onSubmitCredentials} noValidate data-testid="signin-form">
       {errorBlock}
       <label className="ses-field">
         <span>{messages.emailLabel}</span>
@@ -218,6 +226,7 @@ export function SignInForm({
           inputMode="email"
           required
           disabled={state === 'submitting'}
+          data-testid="signin-email"
         />
       </label>
       <label className="ses-field">
@@ -228,9 +237,15 @@ export function SignInForm({
           autoComplete="current-password"
           required
           disabled={state === 'submitting'}
+          data-testid="signin-password"
         />
       </label>
-      <button className="ses-submit" type="submit" disabled={state === 'submitting'}>
+      <button
+        className="ses-submit"
+        type="submit"
+        disabled={state === 'submitting'}
+        data-testid="signin-submit"
+      >
         {state === 'submitting' ? messages.submitting : messages.submit}
       </button>
       {/* パスワード再設定（#5 / S-002 系）は T-03-03 が実装する。導線だけ先に置く。 */}

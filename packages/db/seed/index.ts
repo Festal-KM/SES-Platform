@@ -18,7 +18,14 @@ export { getSeedPreset, SeedPresetNotImplementedError } from './presets/index.js
 export {
   ISOLATION_FORBIDDEN_MARKERS,
   ISOLATION_SEED_IDS,
+  ISOLATION_SEED_PASSWORD,
+  ISOLATION_SEED_PERSON_NAMES,
+  ISOLATION_SEED_PLATFORM_USERS,
+  isolationSeedCompanyNames,
+  isolationSeedEmails,
+  isolationSeedProjectNames,
   type IsolationPartnerIds,
+  type IsolationPlatformUser,
   type IsolationTenantIds,
 } from './presets/isolation.js';
 export { createSeedRng, type SeedRng } from './rng.js';

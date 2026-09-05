@@ -15,10 +15,13 @@
     "test:unit": "vitest run",
     "test:smoke": "vitest run -c vitest.smoke.config.ts",
     "test:isolation": "vitest run -c vitest.isolation.config.ts",
+    "test:e2e": "playwright test",
+    "typecheck:e2e": "tsc -p tsconfig.e2e.json",
     "seed": "pnpm --filter @ses/db run seed"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",
+    "@playwright/test": "1.63.0",
     "@ses/db": "workspace:*",
     "@testcontainers/postgresql": "12.1.0",
     "@types/node": "26.4.1",
