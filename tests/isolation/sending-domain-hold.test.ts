@@ -182,7 +182,7 @@ async function verifyDomain(): Promise<void> {
 async function invitePartner(email: string) {
   return issueInvitation(
     ownerA,
-    { email, role: 'PARTNER_ADMIN', partnerCompanyId: PARTNER_A1 },
+    { email, role: 'PARTNER_ADMIN', targetPartnerCompanyId: PARTNER_A1 },
     META,
     REQUIRED,
     NOW,
@@ -201,6 +201,7 @@ beforeAll(async () => {
       userId: USER_A_HOST,
       role: 'ADMIN',
       lifecycleState: 'ACTIVE',
+      partnerSuspendedAt: null,
       twoFactor: 'VERIFIED',
     },
     { deviceKind: 'api' },
@@ -283,7 +284,7 @@ describe('🔴 ③ F-007 AC-5: 未検証でも招待は作られ、送達だけ�
   it('🔴 sandbox 相当（検証を求めない環境）では応答が保留にならない', async () => {
     const result = await issueInvitation(
       ownerA,
-      { email: 'partner-sandbox@hold-test.example', role: 'PARTNER_ADMIN', partnerCompanyId: PARTNER_A1 },
+      { email: 'partner-sandbox@hold-test.example', role: 'PARTNER_ADMIN', targetPartnerCompanyId: PARTNER_A1 },
       META,
       NOT_REQUIRED,
       NOW,

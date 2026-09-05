@@ -1337,6 +1337,7 @@ export type AuthenticatedTenantCtx = {
   readonly userId: string;
   readonly role: TenantRole;
   readonly lifecycleState: TenantLifecycleState;
+  readonly partnerSuspendedAt: Date | null;   // 🔴 T-04-07。所属取引先の停止（F-007 AC-2）。ホスト所属は常に null
   readonly deviceKind: 'desktop' | 'mobile' | 'tablet' | 'api';
   readonly [TenantCtxBrand]: true;            // 🔴 外部から構築できない
 };
@@ -1974,6 +1975,18 @@ requireEsignConnection(ctx);                           // 🔴 §8.4。未接続
 
 🔴 **`requireExecutable` は `F-004` と同じ経路に置く**（`docs/03` 申し送り 11-①）。ロールごとの分岐に散らすと `SUSPENDED` の抜け穴になる。**実行系の Route Handler は例外なくこれを通す**（§17.2 の静的テストが「実行系一覧の全ルートが `requireExecutable` を呼ぶ」ことを検査する）。
 
+🔴 **`requireExecutable` は 2 つの停止の軸を見る**（T-04-07 で確定）:
+
+| 軸 | 判定材料 | 例外 | 解除できる主体 |
+|---|---|---|---|
+| テナントのライフサイクル（`F-004 AC-7`〜`AC-9`） | `ctx.lifecycleState` ∈ `{SUSPENDED, CLOSING, PURGED}` | `TenantNotExecutableError`（409） | `PLATFORM_OWNER`（§10.1） |
+| **取引先企業の停止**（`F-007 AC-2`） | `ctx.partnerSuspendedAt !== null` | `PartnerCompanySuspendedError`（409。`error.partnerCompany.suspended`） | 招いたホストの `OWNER` / `ADMIN`（#13） |
+
+- 🔴 **ガードを分けない。** 別のガードにすると「掛け忘れたルートだけ取引先の停止が効かない」状態ができる（`requireExecutable` について書かれている「分岐に散らすと抜け穴になる」がそのまま当てはまる）。同居させることで §17.2 #7 の実行系ルート全数走査が取引先停止の網羅もそのまま担保する。
+- 🔴 **判定はテナント → 取引先の順**。より広い停止を先に返すほうが、利用者の次の行動（誰に解除を依頼するか）が正しく決まる。
+- 🔴 **例外の型（コード）は分ける。** 止まっている単位も解除の主体も違うため、1 つに畳むと画面も監視も「何が起きているか」を説明できない。
+- 🔴 **止めるのは実行系だけである**（`F-007 AC-2`「既存データは削除されない」）。閲覧・エクスポートには掛けない。`ctx.partnerSuspendedAt` は `loadTenantMembership` が**毎リクエスト** `partner_companies` から確定する（セッションに焼き込むと、停止しても既存セッションが通り続ける）。パートナー文脈で読めるのは RLS の C5 により**自社 1 行**だけである。
+
 ### 6.3 主平面 API — 基盤・境界（Phase 0）
 
 | # | Method / Path | 機能 / 画面 | request | response | 認可 |
@@ -1996,10 +2009,25 @@ requireEsignConnection(ctx);                           // 🔴 §8.4。未接続
 
 | # | Method / Path | 機能 / 画面 | request | response | 認可 |
 |---|---|---|---|---|---|
-| 11 | `GET /api/partner-companies` | `F-007` / `S-014` | `?q=&status=` | `{ items, total }` | ホスト全ロール。🔴 パートナーは**自社 1 件のみ**。**RLS（C5。`<O>` = `id`）が母集団を 1 行に絞るため、アプリ側に絞り込みを書かない**（`F-004 AC-1`。API 直叩きでも 0 件） |
+| 11 | `GET /api/partner-companies` | `F-007` / `S-014` | `?q=&status=` | `{ items, total }`（`items[]` = `{ id, name, contactName, contactEmail, status:'ACTIVE'\|'SUSPENDED', invitedAt, suspendedAt, accountCount, pendingInvitationCount, openProjectCount, proposalCount, lastActivityAt }`） | ホスト全ロール。🔴 パートナーは**自社 1 件のみ**。**RLS（C5。`<O>` = `id`）が母集団を 1 行に絞るため、アプリ側に絞り込みを書かない**（`F-004 AC-1`。API 直叩きでも 0 件） |
 | 12 | `POST /api/partner-companies` | `F-007` | `{ name, contactName?, contactEmail? }` | `{ id }` | `OWNER` / `ADMIN` |
 | 13 | `POST /api/partner-companies/{id}/suspend` / `/resume` | `F-007 AC-2` | `{ reason? }` | `204` | `OWNER` / `ADMIN` |
-| 14 | `POST /api/invitations` | `F-002` / `F-007` | `{ email, role, partnerCompanyId? }` | 🔴 `{ id, inviteUrl?: string, deliveryState: 'QUEUED' \| 'HELD_DOMAIN_UNVERIFIED' \| 'MOCKED' }` | `OWNER` / `ADMIN`。`PARTNER_ADMIN` は**自社 + パートナーロールのみ**。🔴 **パートナーロール宛（分類 2）は `production` で独自ドメイン検証済みが前提**（`F-007 AC-5`。未検証なら招待は作成され送達だけ `HELD`。§8.3）。ホストロール宛（`F-002`）はこの前提の対象外（`F-001 AC-5`） |
+| 14 | `POST /api/invitations` | `F-002` / `F-007` | 🔴 `{ email, role, targetPartnerCompanyId? }`（**キー名の決着は下記**） | 🔴 `{ id, inviteUrl?: string, deliveryState: 'QUEUED' \| 'HELD_DOMAIN_UNVERIFIED' \| 'MOCKED' }` | `OWNER` / `ADMIN`。`PARTNER_ADMIN` は**自社 + パートナーロールのみ**。🔴 **パートナーロール宛（分類 2）は `production` で独自ドメイン検証済みが前提**（`F-007 AC-5`。未検証なら招待は作成され送達だけ `HELD`。§8.3）。ホストロール宛（`F-002`）はこの前提の対象外（`F-001 AC-5`） |
+
+🔴 **#11 〜 #13 の規律**（T-04-07）:
+
+- **#11 の `?q=` / `?status=` は業務上の絞り込みであって境界の絞り込みではない。** 集計（`accountCount` 等）も同じ ctx の `withTenant` の内側で引くため、パートナー文脈では自社の値しか集まらない（他社の件数を経由して他社の存在を知る経路を作らない。`F-007 AC-1`「件数にも現れない」）。
+- **#11 はページングを持たない**（response が `{ items, total }` であり `nextCursor` を持たない）。`total` は一覧と同じ `where` の件数である（§4.8）。
+- **#13 は `/suspend` と `/resume` を別のルートに分ける**（1 本のハンドラでパラメータ切替にしない）。影響がまったく違う操作であり、値 1 つの取り違えで逆が起きてはならない。共通化するのはサービス層だけである。
+- **#13 は冪等である。** すでにその状態なら `suspended_at` を書き換えず `204` を返す（上書きすると「いつから止まっているか」が操作のたびに動く）。
+- **停止中の取引先には #14 で新しいアカウントを招けない**（409 `PartnerCompanySuspendedError`）。配下アカウントの実行系を止めている最中に招待だけ通ると、停止の意味が実質的に失われる。
+- ⚠️ **`docs/04` §S-014 の「招待の状態」テーブル（メール / 作成日 / `送信中`・`送信済み`・`受諾済み`・`送信失敗`）に対応する一覧 API は、本節にまだ存在しない**（#14 は発行のみ）。T-04-07 では #11 の `pendingInvitationCount`（未受諾・未取消の件数）までを実装し、明細は先送りした。状態の出所は `EmailDispatch`（§3.9）であり、**`Invitation` と `EmailDispatch` を突き合わせる読み取り API を新設する**必要がある。**配送状態の画面表示は `A-005` 項目 14 / 16 と同じデータ源に載せる**ため、SP-11（T-11-04）と併せて設計する。
+
+🔴 **#14 の `targetPartnerCompanyId`（キー名の決着。T-04-07）**: 当初の request は `{ …, partnerCompanyId? }` と書いていたが、`partnerCompanyId` は §6.1「分離キー」の禁止キーそのものであり、`withApiRoute` の構築時検査（`apps/web/lib/api/isolation-keys.ts`）で落ちる。**ガードを緩めるのではなくキー名を分ける**ことで決着させた ——
+
+- `partnerCompanyId`（禁止のまま）… **実行者自身の所属**。参照範囲を決める値であり `ctx` 以外から来てはならない。
+- `targetPartnerCompanyId`（許可）… **招待先の選択**。ホストの `OWNER` / `ADMIN` が「どの取引先に招くか」を選ぶ業務入力であり、参照範囲を決めない。
+- 🔴 このキーを受け取るルートには次の 2 つが**必ず**要る（片方でも欠けたらガードを緩めたのと同じになる）: ①実行者のスコープは引き続き `ctx` だけから決まること（`PARTNER_ADMIN` の指定値は採用せず、常に自社になる。`F-002 AC-4`）②指定された ID を **`withTenant` の内側で母集団（RLS）に照合してから使う**こと。照合しないと**他テナントの取引先企業の ID を書き込める**（`invitations.partner_company_id` の FK はテナントをまたいでも成立する）。見えなければ **404**（§4.8）。
 | 15 | `GET /api/engineers` | `F-009` / `S-005` | `?skills[]=&yearsMin=&priceMin=&priceMax=&availableBy=&prefecture=&remote=&ownership=&availability=&q=&onlyInTime=&onlyCommutable=&cursor=` | `{ items: (OwnEngineerView\|AnonymousCandidateView)[], total }` | 全ロール（母集団は所属で決まる） |
 | 16 | `POST /api/engineers` / `PATCH /api/engineers/{id}` | `F-008` / `S-007` | `EngineerInput`（🔴 `ownerPartnerCompanyId` を**含まない**） | `{ id }` | `OWNER`/`ADMIN`/`SALES`/`PA`/`PS` |
 | 17 | `GET /api/engineers/{id}` | `F-008` / `S-006` | — | `OwnEngineerDetailView` | 境界内のみ。**監査記録あり**（`BR-27`） |
@@ -3574,6 +3602,7 @@ AppError（抽象。code / httpStatus / userMessageKey / logLevel を持つ）
 ├── NotFoundError                       404  'error.notFound'            🔴 境界外も必ずこれ
 ├── ConflictError                       409
 │   ├── TenantNotExecutableError        409  'error.tenant.suspended' | 'error.tenant.closing' | 'error.tenant.purged'
+│   ├── PartnerCompanySuspendedError    409  'error.partnerCompany.suspended'  🔴 T-04-07。所属取引先の停止（F-007 AC-2）。§6.2 のとおり `requireExecutable` が投げる。**テナントの停止と畳まない**（止まる単位も解除の主体も違う）。#14 は停止中の取引先への招待もこれで拒否する
 │   ├── EsignNotConnectedError          409  'error.esign.notConnected'
 │   ├── GateStaleError                  409  'error.gate.stale'
 │   └── AlreadySettledError             409  'error.alreadySettled'      （再送競合）
@@ -3650,6 +3679,7 @@ export class InvalidStateTransitionError extends AppError {
 | `auth.2fa.throttled` | ロック中の拒否。🔴 **`auth.2fa.failed` とは別の action**（スロットル窓の母集団にロックの拒否自体を含めると自己延長するため） | `USER` / `PLATFORM_USER` |
 | 🔴 `engineer.view` / `skill_sheet.view` / `skill_sheet.download` / `project.view` | `#17` / `#21` / `#20` / `#27`。🔴 **DL は `issueDownloadUrl` の中で書く**（経路が 1 本なのでモバイル・共有 URL でも漏れない。`BR-28` 欠落 0 件） | `USER` |
 | `*.create` / `*.update` / `*.delete` | `withApiRoute` の `audit` オプション（各ハンドラで `action` を宣言） | `USER` / `SYSTEM` |
+| 🔴 `partner_company.create` / `partner_company.update` | `#12` / `#13`（`F-007 AC-3`「登録・招待・停止・再開が監査ログに残る」）。**停止・再開も `*.update` に揃え、`summary.operation`（`SUSPEND` / `RESUME`）で区別する** —— `partner_company.suspend` のような独自 action を作ると `S-041` の操作種別フィルタ（`CREATE_UPDATE_DELETE` = 接尾辞一致）から漏れ、**記録されているのに検索で出てこない**状態になる。招待は既存の `invitation.create` に `summary.targetPartnerCompanyId` を載せる | `USER` |
 | `proposal.submit` / `proposal.resend` | 送信ジョブの ⑥（§10.2） | `SYSTEM`（`summary.requestedBy` に人間を記録） |
 | `proposal.approve` / `proposal.reject` | `#41` / `#42`。自動承認は `SYSTEM` + `summary.reason='ALL_LAYERS_PASS'` | `USER` / `SYSTEM` |
 | `membership.role_change` / `membership.revoke` / `project.visibility_change` | `#14` 周辺 / `#28` | `USER` |

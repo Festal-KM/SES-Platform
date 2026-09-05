@@ -29,6 +29,7 @@ import {
 } from '../settings/sending-domains';
 import {
   ForbiddenError,
+  PartnerCompanySuspendedError,
   SendingDomainNotVerifiedError,
   TenantNotExecutableError,
   ViewerNotAllowedError,
@@ -136,6 +137,18 @@ export function executionDenialMessageKey(state: TenantLifecycleState): MessageK
  *
  * 🔴 `ctx.lifecycleState` はセッションに焼き込まれていない。`loadTenantMembership` が
  *    毎リクエスト `tenants` から読むため、遷移は**次のリクエストから**効く。
+ *
+ * 🔴 T-04-07: **取引先企業の停止（`F-007 AC-2`）も本ガードが見る。**「実行できるか」を
+ *    決める停止の軸は 2 つある（テナントのライフサイクル / 所属取引先の停止）が、
+ *    ガードを分けない —— docs/05 §6.2 が `requireExecutable` について書いている
+ *    「ロールごとの分岐に散らすと `SUSPENDED` の抜け穴になる」は取引先の停止にもそのまま当てはまり、
+ *    別のガードにすると**掛け忘れたルートだけ停止が効かない**状態ができる。
+ *    本ガードに同居させることで、`tests/static/execute-guard.test.ts`（実行系ルート全数走査）が
+ *    そのまま取引先停止の網羅も担保する（新しい実行系ルートは自動的に対象に入る）。
+ *
+ * 🔴 判定の順序（テナント → 取引先）にも理由がある: テナントが `CLOSING` / `PURGED` なら、
+ *    取引先の停止状態を問わず結論は同じであり、**より広い停止**を先に返すほうが
+ *    利用者の次の行動（誰に解除を依頼するか）が正しく決まる。
  */
 export function requireExecutable(): RouteGuard {
   return {
@@ -145,6 +158,9 @@ export function requireExecutable(): RouteGuard {
       if (messageKey !== null) {
         throw new TenantNotExecutableError(ctx.lifecycleState, messageKey);
       }
+      // 🔴 `partnerSuspendedAt` はホスト所属では必ず `null`（`resolveTenantCtx` の不変条件）。
+      //    したがってこの判定はパートナー所属の利用者にだけ効く。
+      if (ctx.partnerSuspendedAt !== null) throw new PartnerCompanySuspendedError();
     },
   };
 }

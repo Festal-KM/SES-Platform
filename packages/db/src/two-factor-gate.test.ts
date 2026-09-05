@@ -24,6 +24,8 @@ const BASE = {
   partnerCompanyId: null,
   userId: '0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a60',
   lifecycleState: 'ACTIVE',
+  // 🔴 T-04-07: ホスト所属（`partnerCompanyId: null`）なので常に `null`（`F-007 AC-2`）。
+  partnerSuspendedAt: null,
 } as const;
 
 function session(role: TenantRole, twoFactor: TwoFactorSessionState): MainSession {

@@ -21,8 +21,10 @@ describe('createInvitationBodySchema（docs/05 §6.4 #14）', () => {
     }
   });
 
-  it('出力の型は email / role だけ（型テスト）', () => {
-    expectTypeOf<keyof CreateInvitationBody>().toEqualTypeOf<'email' | 'role'>();
+  it('出力の型は email / role / targetPartnerCompanyId だけ（型テスト）', () => {
+    expectTypeOf<keyof CreateInvitationBody>().toEqualTypeOf<
+      'email' | 'role' | 'targetPartnerCompanyId'
+    >();
   });
 
   it('🔴 分離キーを混ぜても解析結果が変わらない（strip される）', () => {
@@ -35,6 +37,33 @@ describe('createInvitationBodySchema（docs/05 §6.4 #14）', () => {
     });
     expect(polluted).toEqual(clean);
     expect(Object.keys(polluted).sort()).toEqual(['email', 'role']);
+  });
+
+  /**
+   * 🔴 T-04-07（キー名の決着。`api/isolation-keys.ts` の `TARGET_SELECTION_KEYS`）:
+   *    `partnerCompanyId`（実行者の分離キー）は strip され、`targetPartnerCompanyId`
+   *    （招待先の選択）だけが通る。**この 2 つが同じ 1 つの値に合流しない**ことを固定する ——
+   *    合流させると、リクエスト入力で実行者のスコープを動かせる経路ができる。
+   */
+  it('🔴 targetPartnerCompanyId は通り、partnerCompanyId は捨てられる（別概念である）', () => {
+    const parsed = createInvitationBodySchema.parse({
+      email: 'a@b.test',
+      role: 'PARTNER_ADMIN',
+      targetPartnerCompanyId: '01930000-0000-7000-8000-0000000000c1',
+      partnerCompanyId: '01930000-0000-7000-8000-0000000000c2',
+    });
+    expect(parsed.targetPartnerCompanyId).toBe('01930000-0000-7000-8000-0000000000c1');
+    expect(Object.keys(parsed).sort()).toEqual(['email', 'role', 'targetPartnerCompanyId']);
+  });
+
+  it('targetPartnerCompanyId は UUID でなければ 400 になる', () => {
+    expect(
+      createInvitationBodySchema.safeParse({
+        email: 'a@b.test',
+        role: 'PARTNER_ADMIN',
+        targetPartnerCompanyId: 'not-a-uuid',
+      }).success,
+    ).toBe(false);
   });
 
   it('メールは小文字化される', () => {

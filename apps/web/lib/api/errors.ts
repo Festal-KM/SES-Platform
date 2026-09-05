@@ -232,6 +232,28 @@ export class TenantNotExecutableError extends ConflictError {
 }
 
 /**
+ * 🔴 所属する取引先企業が停止されている（`F-007 AC-2` / docs/05 §6.2）。409。T-04-07。
+ *
+ * 🔴 `TenantNotExecutableError`（テナントのライフサイクル）と**別のコードにする**理由:
+ *    止まっている単位が違い、解除できる主体も違う（テナントの停止は `PLATFORM_OWNER`、
+ *    取引先の停止はホストの `OWNER` / `ADMIN`）。同じコードに畳むと、利用者も運営者も
+ *    「誰に何を頼めば解けるのか」が分からなくなる。
+ * 🔴 これは**実行系だけ**の拒否である（`F-007 AC-2`「提案作成・送信・チャット投稿ができなく
+ *    なり、既存データは削除されない」）。閲覧・エクスポートは止めない。
+ * 🔴 ホストが停止中の取引先へ**新しいアカウントを招く**ことも拒否する（#14）。
+ *    許すと配下アカウントが増え続け、停止の意味が実質的に失われる。
+ */
+export class PartnerCompanySuspendedError extends ConflictError {
+  override readonly code = 'PARTNER_COMPANY_SUSPENDED';
+  override readonly userMessageKey: MessageKey = 'error.partnerCompany.suspended';
+
+  constructor() {
+    super('この取引先は停止されているため、実行系の操作を行えません。');
+    this.name = 'PartnerCompanySuspendedError';
+  }
+}
+
+/**
  * 🔴 招待を受諾できない（docs/05 §6.3 #7。`acceptedAt` の CAS が 0 件）。
  *
  * 受諾済み / 取消済み / 期限切れ / トークン不一致 / 同時受諾に負けた、を**区別しない**。

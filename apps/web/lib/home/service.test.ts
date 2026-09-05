@@ -16,6 +16,7 @@ async function ctxOf(role: TenantRole, partnerCompanyId: string | null): Promise
       userId: '00000000-0000-7000-8000-000000000002',
       role,
       lifecycleState: 'ACTIVE',
+      partnerSuspendedAt: null,
       twoFactor: 'VERIFIED',
     },
     { deviceKind: 'desktop' },

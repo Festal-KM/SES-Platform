@@ -135,6 +135,18 @@ export type AuthenticatedTenantCtx = {
   readonly userId: string;
   readonly role: TenantRole;
   readonly lifecycleState: TenantLifecycleState;
+  /**
+   * 🔴 T-04-07（`F-007 AC-2`）: 所属する取引先企業が停止されている場合の停止時刻。
+   *    `null` = 停止されていない。**ホスト所属では常に `null`**（停止の単位は取引先企業）。
+   *
+   * 🔴 `lifecycleState` と同じく**毎リクエスト DB から確定する**（`loadTenantMembership`）。
+   *    セッションに焼き込むと、停止しても既存セッションが実行系を通り続ける。
+   * 🔴 「実行系を拒否する」判定は本フィールドを見る `requireExecutable`（`apps/web/lib/api/guards.ts`）
+   *    が 1 箇所で行う。参照（一覧・詳細）は止めない —— `F-007 AC-2` は
+   *    「提案作成・送信・チャット投稿ができなくなる。既存データは削除されない」であり、
+   *    見えなくすることではない。
+   */
+  readonly partnerSuspendedAt: Date | null;
   readonly deviceKind: DeviceKind;
   readonly [TenantCtxBrand]: true;
 };
@@ -150,6 +162,13 @@ export type MainSession = {
   readonly userId: string;
   readonly role: TenantRole;
   readonly lifecycleState: TenantLifecycleState;
+  /**
+   * 🔴 T-04-07（`F-007 AC-2`）: 所属する取引先企業の停止時刻（`null` = 停止されていない）。
+   *    **必須フィールドである**（`twoFactor` と同じ理由）—— 省略できると、渡し忘れた
+   *    経路だけが停止中の取引先の実行系を通してしまう。値の出所は
+   *    `loadTenantMembership`（DB の `partner_companies.suspended_at`）だけである。
+   */
+  readonly partnerSuspendedAt: Date | null;
   /**
    * 🔴 2 要素認証の状態（docs/05 §6.2 / `F-003 AC-2`）。**必須フィールドである。**
    *    省略できると「渡し忘れた経路だけ 2FA を素通りする」ことが起こりうるため、
@@ -177,12 +196,21 @@ export async function resolveTenantCtx(
   req: RequestMeta,
 ): Promise<AuthenticatedTenantCtx> {
   assertTwoFactorSatisfied(session.role, session.twoFactor);
+  // 🔴 T-04-07: 「ホスト所属なのに取引先の停止時刻がある」は不変条件の破れである。
+  //    静かに `null` へ丸めない —— 丸めると、組み立て側のバグが「停止が効かない」形で
+  //    本番まで生き延びる（0 件で隠すのと同じ壊れ方。docs/05 §4.7 #9）。
+  if (session.partnerCompanyId === null && session.partnerSuspendedAt !== null) {
+    throw new Error(
+      'ホスト所属の文脈に partnerSuspendedAt が設定されています（停止の単位は取引先企業です。F-007 AC-2）。',
+    );
+  }
   return {
     tenantId: session.tenantId,
     partnerCompanyId: session.partnerCompanyId,
     userId: session.userId,
     role: session.role,
     lifecycleState: session.lifecycleState,
+    partnerSuspendedAt: session.partnerSuspendedAt,
     deviceKind: req.deviceKind,
   } as AuthenticatedTenantCtx;
 }
@@ -294,6 +322,9 @@ export function systemTenantCtx(tenantId: string, job: JobIdentity): SystemTenan
     role: 'SALES',
     // 🔴 ジョブは実行系ガードの対象ではないため、ここで停止状態を表現しない（下記コメント）。
     lifecycleState: 'ACTIVE',
+    // 🔴 ジョブ文脈は常にホスト相当（`partnerCompanyId: null`）であり、取引先企業の停止
+    //    （`F-007 AC-2`）の対象になりようがない。`resolveTenantCtx` の不変条件と同じ形にする。
+    partnerSuspendedAt: null,
     deviceKind: 'api',
     job,
   } as SystemTenantCtx;

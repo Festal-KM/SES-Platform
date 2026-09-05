@@ -23,6 +23,7 @@ import {
 } from './guards';
 import {
   ForbiddenError,
+  PartnerCompanySuspendedError,
   SendingDomainNotVerifiedError,
   TenantNotExecutableError,
   ViewerNotAllowedError,
@@ -41,6 +42,7 @@ function ctxOf(overrides: {
   readonly role: TenantRole;
   readonly lifecycleState?: TenantLifecycleState;
   readonly partnerCompanyId?: string | null;
+  readonly partnerSuspendedAt?: Date | null;
 }): AuthenticatedTenantCtx {
   return {
     tenantId: '01930000-0000-7000-8000-0000000000a1',
@@ -48,9 +50,14 @@ function ctxOf(overrides: {
     userId: '01930000-0000-7000-8000-0000000000b1',
     role: overrides.role,
     lifecycleState: overrides.lifecycleState ?? 'ACTIVE',
+    partnerSuspendedAt: overrides.partnerSuspendedAt ?? null,
     deviceKind: 'api',
   } as unknown as AuthenticatedTenantCtx;
 }
+
+/** 取引先企業の停止時刻（`F-007 AC-2`）。値そのものに意味は無い（`null` かどうかだけを見る）。 */
+const SUSPENDED_AT = new Date('2026-09-05T00:00:00.000Z');
+const PARTNER_COMPANY_ID = '01930000-0000-7000-8000-0000000000c1';
 
 describe('docs/05 §6.2 のガードの並び（この配列が実行順である）', () => {
   it('5 本が仕様どおりの順で宣言されている', () => {
@@ -145,6 +152,63 @@ describe('🔴 requireExecutable（409 / F-004 AC-7〜AC-9）', () => {
    */
   it('SUSPENDED は先取りで拒否側にある（T-20-05 の前倒し。fail-closed）', () => {
     expect(executionDenialMessageKey('SUSPENDED')).toBe('error.tenant.suspended');
+  });
+});
+
+/**
+ * 🔴 T-04-07（`F-007 AC-2`）: 取引先企業の停止も `requireExecutable` が見る。
+ *    **別のガードにしない**理由は `guards.ts` のコメントのとおり（掛け忘れたルートだけ
+ *    停止が効かない状態を作らない。`tests/static/execute-guard.test.ts` が網羅を担保する）。
+ */
+describe('🔴 requireExecutable — 取引先企業の停止（409 / F-007 AC-2）', () => {
+  it.each(['PARTNER_ADMIN', 'PARTNER_SALES'] as const)(
+    '停止中の取引先に所属する %s は実行系を実行できない',
+    async (role) => {
+      const error = await applyGuards(
+        ctxOf({ role, partnerCompanyId: PARTNER_COMPANY_ID, partnerSuspendedAt: SUSPENDED_AT }),
+        [requireExecutable()],
+      ).catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(PartnerCompanySuspendedError);
+      expect((error as PartnerCompanySuspendedError).httpStatus).toBe(409);
+      expect((error as PartnerCompanySuspendedError).userMessageKey).toBe(
+        'error.partnerCompany.suspended',
+      );
+    },
+  );
+
+  it('停止されていない取引先に所属する PARTNER_ADMIN は通る', async () => {
+    await expect(
+      applyGuards(ctxOf({ role: 'PARTNER_ADMIN', partnerCompanyId: PARTNER_COMPANY_ID }), [
+        requireExecutable(),
+      ]),
+    ).resolves.toBeUndefined();
+  });
+
+  it('🔴 ホスト所属は取引先の停止の影響を受けない（停止の単位は取引先企業である）', async () => {
+    await expect(
+      applyGuards(ctxOf({ role: 'ADMIN' }), [requireExecutable()]),
+    ).resolves.toBeUndefined();
+  });
+
+  it('🔴 テナントの状態を先に返す（より広い停止を優先する。誰に解除を頼むかが変わる）', async () => {
+    const error = await applyGuards(
+      ctxOf({
+        role: 'PARTNER_ADMIN',
+        lifecycleState: 'CLOSING',
+        partnerCompanyId: PARTNER_COMPANY_ID,
+        partnerSuspendedAt: SUSPENDED_AT,
+      }),
+      [requireExecutable()],
+    ).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(TenantNotExecutableError);
+    expect(error).not.toBeInstanceOf(PartnerCompanySuspendedError);
+  });
+
+  it('🔴 テナントの停止と取引先の停止は別のコードである（畳まない）', () => {
+    expect(new PartnerCompanySuspendedError().code).toBe('PARTNER_COMPANY_SUSPENDED');
+    expect(new PartnerCompanySuspendedError().code).not.toBe('TENANT_NOT_EXECUTABLE');
   });
 });
 

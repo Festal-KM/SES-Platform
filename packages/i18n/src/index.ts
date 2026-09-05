@@ -337,6 +337,13 @@ const ja = {
   //    次の行動（ロール変更）へ導ける文言にする。
   'error.invitation.emailAlreadyMember':
     'このメールアドレスの利用者はすでにこの組織に登録されています。招待ではなく、権限の変更をご確認ください。',
+  // 🔴 T-04-07: docs/05 §15.1 の 409 段 `PartnerCompanySuspendedError`（`F-007 AC-2`）。
+  //    🔴 テナントの停止（`error.tenant.suspended`）と**別の文言**にする。止まっている単位も、
+  //    解除を依頼する相手も違う（取引先の停止を解けるのは取引先を招いたホストの管理者である）。
+  //    🔴 「閲覧はできる」ことを書く —— データが消えていないことが伝わらないと、
+  //    利用者は「アカウントを失った」と受け取る（`F-007 AC-2`「既存データは削除されない」）。
+  'error.partnerCompany.suspended':
+    'この取引先は現在停止されています。閲覧はできますが、提案の作成・送信やチャットの投稿は実行できません。お取引先の担当者にお問い合わせください。',
   // 🔴 docs/05 §15.1 `SendingDomainNotVerifiedError`（422 / `BR-51` / `BR-71` / `F-022 AC-7`）。
   //    🔴 **「壊れている」ではなく「設定が済んでいない」として書く**（`docs/04` 申し送り 8）。
   //    次にやること（`S-036` で DNS レコードを設定する）が読み取れる文言にする。設定すべき
@@ -514,6 +521,91 @@ const ja = {
   // 🔴 F-049（電子署名での契約書送付）も対象外（F-001 AC-4 の 🔴 / F-049 AC-8）。
   'settings.sendingDomain.exclusion.esign':
     '電子署名での契約書送付（接続時）も対象外です。メールを送るのは電子署名サービス側であり、前提条件は本画面の検証ではなく電子署名サービスの接続です。',
+
+  // --- S-014 取引先企業の一覧・詳細と招待（docs/04 §S-014 / `F-007` `F-002`。T-04-07）---
+  'partnerCompanies.title': '取引先企業',
+  'partnerCompanies.breadcrumb.home': 'ホーム',
+  'partnerCompanies.breadcrumb.settings': '設定',
+  // 🔴 `F-007 AC-1`: パートナーには自社 1 社しか出ない。母集団を絞っているのは RLS だが、
+  //    「他社が出ていないのではなく、そもそも見えない」ことを画面でも明示する（`S-004` と同じ趣旨）。
+  'partnerCompanies.partnerScopeNotice': 'この画面には御社の情報のみが表示されます。',
+  'partnerCompanies.readOnlyNote': '閲覧のみの権限のため、登録・招待・停止は行えません。',
+
+  // セクション 1: 取引先一覧
+  'partnerCompanies.section.list': '取引先一覧',
+  'partnerCompanies.column.name': '企業名',
+  'partnerCompanies.column.status': '状態',
+  'partnerCompanies.column.accountCount': 'アカウント数',
+  'partnerCompanies.column.openProjectCount': '公開中の案件数',
+  'partnerCompanies.column.proposalCount': '提案数',
+  'partnerCompanies.column.lastActivity': '最終アクティビティ',
+  'partnerCompanies.status.ACTIVE': '有効',
+  'partnerCompanies.status.SUSPENDED': '停止',
+  'partnerCompanies.value.none': '—',
+  'partnerCompanies.select': '選択',
+  // 🔴 docs/04 §S-014「空 / ローディング / エラー」の初回空の文言（業務価値を 1 行添える）。
+  'partnerCompanies.empty':
+    '取引先が登録されていません。取引先を招待すると、案件を公開して提案を受け取れるようになります。',
+
+  // セクション 2: 取引先の登録（#12）
+  'partnerCompanies.section.register': '取引先の登録',
+  'partnerCompanies.register.name.label': '企業名',
+  'partnerCompanies.register.contactName.label': '担当者名（任意）',
+  'partnerCompanies.register.contactEmail.label': '担当者メールアドレス（任意）',
+  'partnerCompanies.register.submit': '登録する',
+  'partnerCompanies.register.submitting': '登録しています…',
+  'partnerCompanies.register.done': '取引先を登録しました。',
+  'partnerCompanies.register.error':
+    '登録できませんでした。入力内容をご確認のうえ、もう一度お試しください。',
+
+  // セクション 3: 詳細
+  'partnerCompanies.section.detail': '取引先の詳細',
+  'partnerCompanies.detail.selectPrompt':
+    '一覧から取引先を選ぶと、招待の発行と停止の操作が行えます。',
+  'partnerCompanies.detail.contactName': '担当者',
+  'partnerCompanies.detail.contactEmail': '担当者メールアドレス',
+  'partnerCompanies.detail.invitedAt': '登録日',
+  'partnerCompanies.detail.pendingInvitations': '未受諾の招待',
+  'partnerCompanies.detail.suspendedAt': '停止日時',
+
+  // セクション 4: 招待の発行（#14 のパートナーロール分）
+  'partnerCompanies.section.invite': '招待の発行',
+  'partnerCompanies.invite.email.label': 'メールアドレス',
+  'partnerCompanies.invite.role.label': 'ロール',
+  // 🔴 ホストがこの画面から招くのは取引先の管理者だけである。配下の営業アカウントは
+  //    取引先自身（`PARTNER_ADMIN`）が招く（`F-002 AC-4`）。
+  'partnerCompanies.invite.role.value': 'PARTNER_ADMIN（取引先の管理者）',
+  'partnerCompanies.invite.submit': '招待を作成',
+  'partnerCompanies.invite.submitting': '作成しています…',
+  // 🔴 docs/04 §S-014「非同期処理の表現」: 「送信しました」ではなく「送信を受け付けました」。
+  'partnerCompanies.invite.queued':
+    '送信を受け付けました。送達の状況は、招待の状態でご確認ください。',
+  // 🔴 `F-007 AC-5`: 未検証でも招待そのものは作られる。**失敗と書かない**（設定未了である）。
+  'partnerCompanies.invite.held':
+    '招待を作成しました。送信元ドメインの検証が完了してから送達されます。',
+  'partnerCompanies.invite.error':
+    '招待を作成できませんでした。入力内容をご確認のうえ、もう一度お試しください。',
+  // 🔴 docs/04 §S-014: 未検証のときは招待ボタンを描画せず、その位置に理由と `S-036` への導線を置く。
+  'partnerCompanies.invite.blocked': '送信元ドメインの検証が完了するまで、取引先を招待できません。',
+  'partnerCompanies.invite.blocked.link': '送信ドメインを設定する',
+  // 🔴 `F-001 AC-5`: 自社メンバーの招待とは扱いが違うことを、この画面の文言でも書き分ける。
+  'partnerCompanies.invite.blocked.memberInviteNote':
+    '※ 自社メンバーの招待（組織設定）は共通ドメインで送信されるため、検証の完了を待たずに実行できます。',
+
+  // セクション 5: 停止 / 再開（#13）
+  'partnerCompanies.section.suspension': '取引先の停止',
+  'partnerCompanies.suspension.reason.label': '理由（任意）',
+  'partnerCompanies.suspend.submit': 'この取引先を停止する',
+  'partnerCompanies.suspend.confirmTitle': '停止の確認',
+  // 🔴 docs/04 §S-014「操作と結果」の確認ステップの文言をそのまま使う（`F-007 AC-2`）。
+  'partnerCompanies.suspend.confirmText':
+    '配下アカウントは提案の作成・送信・チャット投稿ができなくなります。データは削除されません。',
+  'partnerCompanies.suspend.confirm': '停止する',
+  'partnerCompanies.suspend.cancel': 'キャンセル',
+  'partnerCompanies.suspend.submitting': '停止しています…',
+  'partnerCompanies.resume.submit': 'この取引先の停止を解除する',
+  'partnerCompanies.resume.submitting': '解除しています…',
+  'partnerCompanies.suspension.error': '実行できませんでした。もう一度お試しください。',
 } as const;
 
 /** 🔴 文言キーの単一の出所。存在しないキーはコンパイルエラーになる。 */

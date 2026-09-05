@@ -40,6 +40,9 @@ export async function buildTenantCtx(
       userId: claims.userId,
       role: facts.role,
       lifecycleState: facts.lifecycleState,
+      // 🔴 T-04-07（`F-007 AC-2`）: 取引先企業の停止は**セッションではなく DB の事実**である。
+      //    `lifecycleState` と同じく毎リクエスト確定するので、停止は次のリクエストから効く。
+      partnerSuspendedAt: facts.partnerSuspendedAt,
       // 🔴 DB の事実（設定済みか）とセッションの事実（このセッションで提示したか）を
       //    `twoFactorSessionState`（packages/db）で 1 つに畳む。ここで真偽値を自前に
       //    組み合わせない（畳み方が 2 箇所に分かれると、片方だけ緩む）。

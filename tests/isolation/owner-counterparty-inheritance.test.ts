@@ -83,7 +83,7 @@ describe('T-02-08: オーナー列 / 当事者列の継承・freeze トリガ（
     configureTenantDb({ datasourceUrl: database.tenantUrl });
 
     ctxHost = await resolveTenantCtx(
-      { tenantId: TENANT_A, partnerCompanyId: null, userId: USER_A_HOST, role: 'SALES', lifecycleState: 'ACTIVE', twoFactor: 'NOT_ENROLLED' },
+      { tenantId: TENANT_A, partnerCompanyId: null, userId: USER_A_HOST, role: 'SALES', lifecycleState: 'ACTIVE', partnerSuspendedAt: null, twoFactor: 'NOT_ENROLLED' },
       { deviceKind: 'api' },
     );
     ctxPartner1 = await resolveTenantCtx(
@@ -93,6 +93,7 @@ describe('T-02-08: オーナー列 / 当事者列の継承・freeze トリガ（
         userId: USER_A_PARTNER,
         role: 'PARTNER_SALES',
         lifecycleState: 'ACTIVE',
+        partnerSuspendedAt: null,
         twoFactor: 'NOT_ENROLLED',
       },
       { deviceKind: 'api' },
@@ -104,6 +105,7 @@ describe('T-02-08: オーナー列 / 当事者列の継承・freeze トリガ（
         userId: USER_A_PARTNER2,
         role: 'PARTNER_SALES',
         lifecycleState: 'ACTIVE',
+        partnerSuspendedAt: null,
         twoFactor: 'NOT_ENROLLED',
       },
       { deviceKind: 'api' },

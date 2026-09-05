@@ -45,6 +45,15 @@ export type TenantMembershipFacts = {
    *    焼き込むと、2FA を解除しても既存セッションが生き続ける。
    */
   readonly twoFactorEnrolled: boolean;
+  /**
+   * 🔴 T-04-07（`F-007 AC-2`）: 所属する取引先企業の停止時刻。`null` = 停止されていない。
+   *    ホスト所属（`partnerCompanyId === null`）では常に `null`。
+   *
+   *    ロール・ライフサイクル状態と同じく**リクエストごとに DB から確定する**。
+   *    セッションに焼き込むと、停止しても既存セッションが実行系を通り続ける
+   *    （＝ 停止が「次のログインまで効かない」ことになる）。
+   */
+  readonly partnerSuspendedAt: Date | null;
 };
 
 function isTenantRole(value: string): value is TenantRole {
@@ -104,10 +113,27 @@ export async function loadTenantMembership(
         select: { id: true },
       });
 
+      // 🔴 T-04-07（`F-007 AC-2`）: 所属する取引先企業の停止状態。
+      //    パートナー文脈でのみ読む —— ホストには「自分の所属取引先」が存在しない。
+      //    🔴 RLS の C5（`partner_companies`）により、パートナー文脈で読めるのは**自社 1 行**である
+      //    （`app_is_host() OR id = app_partner_id()`）。したがってここで他社の停止状態を
+      //    引くことはできない。行が読めない場合は `null` に丸めず**認証コンテキストを作らない**
+      //    （所属先が引けないのは異常事態であり、`membership.partnerCompanyId` の食い違いと同じ扱い）。
+      let partnerSuspendedAt: Date | null = null;
+      if (identity.partnerCompanyId !== null) {
+        const partner = await tx.partnerCompany.findFirst({
+          where: { id: identity.partnerCompanyId },
+          select: { suspendedAt: true },
+        });
+        if (partner === null) return null;
+        partnerSuspendedAt = partner.suspendedAt;
+      }
+
       return {
         role: membership.role,
         lifecycleState: tenant.lifecycleState,
         twoFactorEnrolled: twoFactor !== null,
+        partnerSuspendedAt,
       };
     },
   );

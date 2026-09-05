@@ -31,6 +31,8 @@ import {
   ForbiddenError,
   InvitationEmailAlreadyMemberError,
   InvitationNotAcceptableError,
+  NotFoundError,
+  PartnerCompanySuspendedError,
   UnprocessableError,
 } from '../api/errors';
 import type { AuthAttemptMeta } from '../auth/credentials';
@@ -57,8 +59,11 @@ export type IssueInvitationInput = {
    * ホストの `OWNER` / `ADMIN` が取引先の担当者を招くときの宛先企業（`S-014`）。
    * 🔴 これは実行者の分離キーではなく**招待先の選択**である（`decideInvitation` を参照）。
    *    `PARTNER_ADMIN` は指定できず、常に自社になる（`F-002 AC-4`）。
+   * 🔴 キー名を `partnerCompanyId` にしない（T-04-07 の決着。`api/isolation-keys.ts` の
+   *    `TARGET_SELECTION_KEYS` を参照）。API の body と 1 対 1 にして、
+   *    「実行者のスコープ」と読み違える余地を型の名前から消す。
    */
-  readonly partnerCompanyId?: string | null;
+  readonly targetPartnerCompanyId?: string | null;
 };
 
 export type IssueInvitationResult = {
@@ -110,7 +115,7 @@ export async function issueInvitation(
 ): Promise<IssueInvitationResult> {
   const verdict = decideInvitation(
     { role: ctx.role, partnerCompanyId: ctx.partnerCompanyId },
-    { role: input.role, partnerCompanyId: input.partnerCompanyId ?? null },
+    { role: input.role, partnerCompanyId: input.targetPartnerCompanyId ?? null },
   );
   // 🔴 判定の順序: ①認可 → ②入力の組み合わせ。
   //    ①を先に置くのは、権限の無い利用者に対象の存在を教えないためである
@@ -127,6 +132,24 @@ export async function issueInvitation(
   const expiresAt = new Date(now.getTime() + INVITATION_TTL_MS);
 
   const created = await withTenant(ctx, async (db) => {
+    // 🔴 T-04-07: **招待先の取引先企業を、母集団（RLS）に照合してから使う**（`F-007`）。
+    //    ここを飛ばすと `invitations.partner_company_id` に**他テナントの取引先企業の ID**を
+    //    書けてしまう（FK は `partner_companies(id)` を指すだけでテナントをまたいでも成立する）。
+    //    🔴 母集団は RLS の C5 が決める（ホスト = 自テナント全社 / パートナー = 自社 1 行）。
+    //    アプリ側に `tenantId` の絞り込みを書かない（`F-004 AC-1` / docs/05 §6.4 #11 と同じ規律）。
+    //    🔴 見えなければ **404**（「見えない ＝ 存在しない」。docs/05 §4.8）。他テナントの
+    //    取引先企業が実在するかどうかを応答から推測させない。
+    if (verdict.partnerCompanyId !== null) {
+      const partner = await db.partnerCompany.findFirst({
+        where: { id: verdict.partnerCompanyId },
+        select: { suspendedAt: true },
+      });
+      if (partner === null) throw new NotFoundError();
+      // 🔴 停止中の取引先に新しいアカウントを増やさない（`F-007 AC-2` の意図）。
+      //    配下アカウントの実行系を止めている最中に、招待だけ通れば停止の意味が失われる。
+      if (partner.suspendedAt !== null) throw new PartnerCompanySuspendedError();
+    }
+
     // 🔴 予防ガード（`code-reviewer` 指摘）: すでに同じメールの利用者がテナントに存在するなら、
     //    その招待は**受諾できない**（`users` の `@@unique([tenantId, email])`）。
     //    作れてしまうと「リンクは届くのに、開くと必ず失敗する招待」が残るため、発行時に止める。
@@ -178,6 +201,10 @@ export async function issueInvitation(
       summary: {
         role: input.role,
         partnerScoped: verdict.partnerCompanyId !== null,
+        // 🔴 T-04-07（`F-007 AC-3`「取引先企業の…招待…が監査ログに残る」）: どの取引先への
+        //    招待だったかを残す。取引先企業の内部 ID は PII ではなく、この監査ログを読む
+        //    ホストの `OWNER` / `ADMIN` は `S-014` で同じ一覧を見られる立場である。
+        targetPartnerCompanyId: verdict.partnerCompanyId,
         revokedPrevious: revoked.count,
       },
       ipAddress: meta.ipAddress,

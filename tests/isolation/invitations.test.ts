@@ -266,7 +266,7 @@ describe('🔴 F-002: 招待の発行（docs/05 §6.4 #14）', () => {
       {
         email: 'partner-admin-invitee@seed-isolation.test',
         role: 'PARTNER_ADMIN',
-        partnerCompanyId: PARTNER_1_1.partnerCompanyId,
+        targetPartnerCompanyId: PARTNER_1_1.partnerCompanyId,
       },
       META,
       NOW,
@@ -286,7 +286,7 @@ describe('🔴 F-002: 招待の発行（docs/05 §6.4 #14）', () => {
         {
           email: 'other-partner@seed-isolation.test',
           role: 'PARTNER_SALES',
-          partnerCompanyId: PARTNER_1_2.partnerCompanyId,
+          targetPartnerCompanyId: PARTNER_1_2.partnerCompanyId,
         },
         META,
         NOW,

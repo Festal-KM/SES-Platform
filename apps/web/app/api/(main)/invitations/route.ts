@@ -9,6 +9,10 @@
 // 🔴 body に `tenantId` / `partnerCompanyId` を受け付けない（`F-003 AC-1` / `F-004 AC-2`）。
 //    所属は `withApiRoute` が解決する認証コンテキストからのみ決まる
 //    （スキーマが分離キーを持てば `withApiRoute` の構築時に落ちる）。
+// 🔴 T-04-07: 取引先の担当者を招くための**招待先の選択**は `targetPartnerCompanyId` で受ける
+//    （`F-007`。キー名の決着の全文は `lib/api/isolation-keys.ts` の `TARGET_SELECTION_KEYS`）。
+//    実行者のスコープはこれまでどおり ctx だけから決まり、指定された ID は
+//    `issueInvitation` が **RLS の母集団に照合**してから使う（他テナントの ID を書けない）。
 import { readRequestMeta } from '../../../../lib/auth/session';
 import { requireExecutable, requireNotViewer, requireRole } from '../../../../lib/api/guards';
 import { withApiRoute } from '../../../../lib/api/withApiRoute';
