@@ -429,6 +429,91 @@ const ja = {
     '送信元の準備が完了していません。「検証状態を再確認する」をもう一度お試しください。',
   'settings.sendingDomain.failure.IDENTITY_NOT_VERIFIED':
     'DNS レコードの確認が完了していません。反映までしばらくお待ちください。',
+
+  // --- S-036 画面本体（docs/04 §S-036 / F-001 AC-4。T-04-06）---
+  // 🔴 設定画面ではなくオンボーディングの最終工程として書く（docs/02 `ui-design` 申し送り 13）。
+  'settings.sendingDomain.title': '送信ドメインの設定と検証',
+  'settings.sendingDomain.breadcrumb.home': 'ホーム',
+  'settings.sendingDomain.breadcrumb.settings': '設定',
+
+  // セクション 0: オンボーディングの位置づけ（§2.3 の鎖。A-014 → S-002 → S-035 → 本画面）
+  'settings.sendingDomain.onboarding.heading': 'オンボーディングの位置づけ',
+  'settings.sendingDomain.onboarding.step.provisioning': 'テナントの開設',
+  'settings.sendingDomain.onboarding.step.invitation': '招待の受諾',
+  'settings.sendingDomain.onboarding.step.organization': '組織設定',
+  'settings.sendingDomain.onboarding.step.current': '本画面（送信ドメインの検証）',
+  'settings.sendingDomain.onboarding.goal':
+    '到達点は「取引先へ送信できる状態」です。検証が終わるまで、組織設定とホームの最上部に「取引先へまだ 1 通も送れません」の帯が表示されます。',
+
+  // セクション 1: 現在の状態
+  'settings.sendingDomain.section.status': '現在の状態',
+  'settings.sendingDomain.status.domainLabel': '送信元ドメイン',
+  'settings.sendingDomain.status.none': '未設定',
+  'settings.sendingDomain.notRequired.notice':
+    'サンドボックス環境では共通ドメインで動作するため、ドメインの検証は不要です。本契約への移行時に検証が必要になります。',
+
+  // `S-035` / `S-003` 最上部の帯（docs/04 §S-036 1298 行。検証が未完了である間だけ表示）
+  'settings.sendingDomain.guardBanner.text': '取引先へまだ 1 通も送れません。',
+  'settings.sendingDomain.guardBanner.linkLabel': '送信ドメインを設定する',
+
+  // 空状態のバナー（docs/04 §S-036「空 / ローディング / エラー」）
+  'settings.sendingDomain.banner.unset':
+    '取引先へメールを送るには、御社のドメインの検証が必要です。検証が完了するまで、提案の送信・面談調整の連絡・取引先の招待・契約書のメール添付での送付は実行できません（自社メンバーの招待と、電子署名での契約書の送付は実行できます）。',
+  // 🔴 「検証が外れた」（失効）と「初回の検証失敗」は行のうえで区別できない（どちらも
+  //    state='FAILED' + verified_at=NULL。docs/05 §8.3）ため、共通の文言にする。
+  'settings.sendingDomain.banner.failed': 'DNS レコードが確認できなくなりました。送信は停止しています。',
+
+  // セクション 2: ドメインの登録（未登録のときのみ表示）
+  'settings.sendingDomain.section.register': 'ドメインの登録',
+  'settings.sendingDomain.register.domainLabel': '送信元ドメイン',
+  'settings.sendingDomain.register.placeholder': 'example.co.jp',
+  'settings.sendingDomain.register.submit': '登録する',
+  'settings.sendingDomain.register.submitting': '登録しています…',
+  'settings.sendingDomain.register.error':
+    '登録できませんでした。ドメインの形式をご確認のうえ、もう一度お試しください。',
+  // 🔴 登録は OWNER のみ（#71）。ADMIN には理由を示し、入力欄を出さない。
+  'settings.sendingDomain.register.ownerOnlyNote': 'ドメインの登録はオーナーのみ行えます。',
+
+  // セクション 3: DNS レコードの提示
+  'settings.sendingDomain.section.records': 'DNS レコードの提示',
+  'settings.sendingDomain.records.column.type': '種別',
+  'settings.sendingDomain.records.column.name': '名前',
+  'settings.sendingDomain.records.column.value': '値',
+  'settings.sendingDomain.records.column.copy': 'コピー',
+  'settings.sendingDomain.records.column.result': '確認結果',
+  'settings.sendingDomain.records.result.confirmed': '確認済み',
+  'settings.sendingDomain.records.result.unconfirmed': '未確認',
+  'settings.sendingDomain.records.copy': 'コピー',
+  'settings.sendingDomain.records.copied': 'コピーしました',
+  'settings.sendingDomain.records.copyFailed': 'コピーできませんでした',
+  'settings.sendingDomain.records.dkimPending':
+    'DKIM のレコードは準備中です。しばらくしてから再度ご確認ください。',
+
+  // 検証の実行（回数制限なし。docs/04 §S-036「非同期処理の表現」）
+  'settings.sendingDomain.verify.submit': '検証を実行',
+  'settings.sendingDomain.verify.submitting': '確認しています…',
+  'settings.sendingDomain.verify.requested':
+    '検証を実行しました。結果は次の確認、または通知でお知らせします。',
+  'settings.sendingDomain.verify.pending':
+    '検証しています（DNS の反映に数分〜数時間かかることがあります）。',
+  'settings.sendingDomain.verify.pendingNote':
+    '完了は通知でお知らせします。この画面を離れても検証は続きます。',
+  'settings.sendingDomain.verify.error': '確認できませんでした。もう一度お試しください。',
+
+  // セクション 4: この設定が影響する機能（docs/04 §S-036「影響範囲」）
+  'settings.sendingDomain.section.affects': 'この設定が影響する機能',
+  'settings.sendingDomain.affects.blocked': 'これらは検証が完了するまで実行できません。',
+  'settings.sendingDomain.affects.screen.S-021': '提案の送信',
+  'settings.sendingDomain.affects.screen.S-024': '面談調整の連絡',
+  'settings.sendingDomain.affects.screen.S-026': '契約書のメール添付での送付',
+  'settings.sendingDomain.affects.screen.S-014': '取引先の招待',
+  // 🔴 F-002（自社メンバー招待）は対象外（F-001 AC-5）。取引先の招待とは扱いが違うことを書き分ける。
+  'settings.sendingDomain.exclusion.memberInvite':
+    '自社メンバーの招待（組織設定）は対象外です。共通ドメインで送信されるため、検証の完了を待たずに実行できます。',
+  'settings.sendingDomain.exclusion.memberInvite.note': '※ 取引先の招待とは扱いが違います。',
+  // 🔴 F-049（電子署名での契約書送付）も対象外（F-001 AC-4 の 🔴 / F-049 AC-8）。
+  'settings.sendingDomain.exclusion.esign':
+    '電子署名での契約書送付（接続時）も対象外です。メールを送るのは電子署名サービス側であり、前提条件は本画面の検証ではなく電子署名サービスの接続です。',
 } as const;
 
 /** 🔴 文言キーの単一の出所。存在しないキーはコンパイルエラーになる。 */

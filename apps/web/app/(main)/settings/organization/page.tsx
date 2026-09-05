@@ -8,12 +8,19 @@
 // 🔴 Phase 0 の範囲は**組織情報と承認ポリシー**（= `#64` が返す項目）である。
 //    メンバー一覧・招待・プランと利用量の要約は Phase 1（`docs/04` §S-035 は Phase 0→P1）。
 //    実装していないことを画面で隠さず、その旨を表示する。
+// 🔴 T-04-06: 最上部の送信ドメイン未検証バナー（`docs/04` §S-036 1298 行）。本画面は
+//    すでに `OWNER` / `ADMIN` のみ到達するため、追加のロール判定は要らない
+//    （`_shared/sending-domain-guard-banner.tsx` 冒頭コメント参照）。
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { t } from '@ses/i18n';
 import { resolveTenantCtxOutcome } from '../../../../lib/auth/session';
+import { sendingDomainRuntime } from '../../../../lib/db/bootstrap';
 import { readOrganizationSettings } from '../../../../lib/settings/organization';
+import { isSendingDomainUnverified, resolveSendingDomainFact } from '../../../../lib/settings/sending-domain-fact';
+import { readSendingDomainSettings } from '../../../../lib/settings/sending-domains';
 import { TENANT_LIFECYCLE_STATE_MESSAGE_KEYS } from '../../../../lib/tenants/labels';
+import { SendingDomainGuardBanner } from '../../_shared/sending-domain-guard-banner';
 import { OrganizationForm } from './organization-form';
 
 export const runtime = 'nodejs';
@@ -30,9 +37,19 @@ export default async function OrganizationSettingsPage() {
   if (outcome.ctx.role !== 'OWNER' && outcome.ctx.role !== 'ADMIN') redirect(HOME_PATH);
 
   const settings = await readOrganizationSettings(outcome.ctx);
+  const showSendingDomainBanner = isSendingDomainUnverified(
+    resolveSendingDomainFact(await readSendingDomainSettings(outcome.ctx, sendingDomainRuntime())),
+  );
 
   return (
     <main className="ses-page">
+      <SendingDomainGuardBanner
+        visible={showSendingDomainBanner}
+        messages={{
+          text: t('settings.sendingDomain.guardBanner.text'),
+          linkLabel: t('settings.sendingDomain.guardBanner.linkLabel'),
+        }}
+      />
       <h1>{t('orgSettings.title')}</h1>
       <OrganizationForm
         initial={settings}

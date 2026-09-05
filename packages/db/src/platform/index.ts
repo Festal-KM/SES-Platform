@@ -5,6 +5,9 @@
 //    主平面のコードが `withPlatform*` に到達する経路を、モジュールの形として作らない。
 //    import 元の限定は `eslint.config.mjs` の ADMIN_PLANE_ZONE が行う
 //    （`apps/web/app/admin/**` / `apps/web/app/api/admin/**` と `tests/isolation/**` のみ）。
+//
+// 🔴 `import 'server-only'` は追加していない（`packages/db/src/index.ts` 冒頭コメントと同じ
+//    理由。T-04-06 Iteration 4 で検証済み）。
 export {
   PLATFORM_ACTIONS,
   PLATFORM_READABLE_MODELS,

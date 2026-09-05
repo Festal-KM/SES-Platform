@@ -440,16 +440,31 @@ const PACKAGE_ZONES = [
     allowConnectorMocks: true,
   },
   {
+    // 🔴 T-04-06 Iteration 5（code-reviewer 指摘 #1）: 以前はここに `forbiddenSesPackages` が
+    //    無く、`packages/config` が将来 `@ses/db` 等を値 import しても lint に掛からなかった。
+    //    `apps/web` の `'use client'` コンポーネントは `@ses/config` の型（`AppEnvKind` 等）を
+    //    参照しうるため、越境が起きると `tests/static/client-db-boundary.test.ts` の
+    //    「他パッケージへは深追いしない」前提が崩れる（P0 再発）。
     label: 'packages/config',
     files: ['packages/config/**/*.{ts,tsx,mts,cts}'],
+    forbiddenSesPackages: ['@ses/db', '@ses/ai', '@ses/connectors'],
   },
   {
+    // 🔴 T-04-06 Iteration 5（code-reviewer 指摘 #1）: `packages/ui` は `'use client'`
+    //    コンポーネント（`Button` / `Card` 等）から**現に値 import されている**唯一の
+    //    `@ses/*` パッケージである。ここが `@ses/db` に依存できてしまうと、
+    //    `client-db-boundary.test.ts` が「他パッケージへは深追いしない」判断の前提
+    //    （ESLint がここを既に塞いでいる）が崩れる。
     label: 'packages/ui',
     files: ['packages/ui/**/*.{ts,tsx,mts,cts}'],
+    forbiddenSesPackages: ['@ses/db', '@ses/ai', '@ses/connectors'],
   },
   {
+    // 🔴 T-04-06 Iteration 5（code-reviewer 指摘 #1）: `packages/i18n` も `t()` / `MessageKey`
+    //    としてクライアントコンポーネントから型・値の双方で参照されうる。理由は上記と同じ。
     label: 'packages/i18n',
     files: ['packages/i18n/**/*.{ts,tsx,mts,cts}'],
+    forbiddenSesPackages: ['@ses/db', '@ses/ai', '@ses/connectors'],
   },
 ];
 

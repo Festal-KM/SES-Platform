@@ -27,13 +27,19 @@ import {
 import type { MessageKey } from '@ses/i18n';
 import { NotFoundError, type SendingDomainNotVerifiedDetail } from '../api/errors';
 import { requireDomainJobQueue, type DomainJobQueue } from '../jobs/domain-jobs';
+import { SENDING_DOMAIN_NOT_REQUIRED } from './sending-domain-constants';
 
 /**
  * 🔴 `sandbox` を含む「検証を求めない」状態（`docs/03` §3.2.7-4）。
  *    `TenantSendingDomainState` の 4 値に**足さない**（DB の CHECK は 4 値のままである）。
  *    これは応答上の状態であり、行の状態ではない。
+ *
+ * 🔴 実体は `./sending-domain-constants`（何にも依存しない）にあり、ここは re-export する
+ *    だけである。クライアントコンポーネントから import される `sending-domain-fact.ts` が
+ *    この値を「型」ではなく「値」として要るため、`@ses/db` に依存する本ファイルを経由せずに
+ *    読めるようにするための分離である（`sending-domain-constants.ts` 冒頭コメント参照）。
  */
-export const SENDING_DOMAIN_NOT_REQUIRED = 'NOT_REQUIRED';
+export { SENDING_DOMAIN_NOT_REQUIRED };
 
 export type SendingDomainResponseState = TenantSendingDomainState | typeof SENDING_DOMAIN_NOT_REQUIRED;
 

@@ -11,11 +11,20 @@
 //    「画面遷移だけを担う」部分)。**遷移は UI の都合であり、境界の強制ではない** ——
 //    強制は `resolveTenantCtx` が毎リクエスト行う(ここで redirect を消しても、
 //    業務データが漏れることはない)。Edge の middleware に置かないのは DB を読めないため。
+//
+// 🔴 T-04-06: 最上部の送信ドメイン未検証バナー（`docs/04` §S-036 1298 行「`S-035` と `S-003` の
+//    最上部に...帯を出す」）。`getHomeView` 自体は純粋関数のままにし（Phase 1 のポーリング化に
+//    影響させない）、この帯のためだけに追加で `TenantSendingDomain` を読む（対象はホスト所属の
+//    `OWNER` / `ADMIN` のみ。理由は `_shared/sending-domain-guard-banner.tsx` 冒頭コメント）。
 import { redirect } from 'next/navigation';
 import { t } from '@ses/i18n';
 import { resolveTenantCtxOutcome } from '../../lib/auth/session';
+import { sendingDomainRuntime } from '../../lib/db/bootstrap';
 import { getHomeView } from '../../lib/home/service';
+import { isSendingDomainUnverified, resolveSendingDomainFact } from '../../lib/settings/sending-domain-fact';
+import { readSendingDomainSettings } from '../../lib/settings/sending-domains';
 import { HostHomeSections, PartnerHomeSections } from './_home/home-sections';
+import { SendingDomainGuardBanner } from './_shared/sending-domain-guard-banner';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -27,8 +36,25 @@ export default async function HomePage() {
 
   const view = getHomeView(outcome.ctx);
 
+  // 🔴 パートナー所属・`SALES` / `VIEWER` には判定材料すら取りに行かない（不要な DB 往復を
+  //    増やさない。パートナー所属は RLS（C2 HOST_ONLY）でどのみち 0 件になる）。
+  const canActOnSendingDomain =
+    view.audience === 'HOST' && (outcome.ctx.role === 'OWNER' || outcome.ctx.role === 'ADMIN');
+  const showSendingDomainBanner = canActOnSendingDomain
+    ? isSendingDomainUnverified(
+        resolveSendingDomainFact(await readSendingDomainSettings(outcome.ctx, sendingDomainRuntime())),
+      )
+    : false;
+
   return (
     <main className="mx-auto max-w-3xl px-4 py-8">
+      <SendingDomainGuardBanner
+        visible={showSendingDomainBanner}
+        messages={{
+          text: t('settings.sendingDomain.guardBanner.text'),
+          linkLabel: t('settings.sendingDomain.guardBanner.linkLabel'),
+        }}
+      />
       <h1 className="mb-6 text-xl font-bold text-slate-900">{t('home.title')}</h1>
       {view.audience === 'HOST' ? (
         <HostHomeSections />

@@ -1,6 +1,16 @@
 // packages/db/src/index.ts
 // 🔴 主平面から使ってよいものだけを export する（docs/05 §2.1）。
 //    生 PrismaClient / TenantDb 型 / 生 SQL の入口は export しない。
+//
+// 🔴 `import 'server-only'` は**意図的に追加していない**（T-04-06 Iteration 4 で検証済み）。
+//    `server-only` は Next.js の `react-server` condition が無い環境（`apps/worker` の素の
+//    Node 実行 / `vitest`）では常に throw する実装であり、追加すると `pnpm test:unit` が
+//    `@ses/db` を import する 9 ファイルで即落ちた
+//    （`apps/web/lib/api/guards.test.ts` 等。エラー: "This module cannot be imported from a
+//    Client Component module."）。条件分岐やモックで無理に通さず、追加を見送った
+//    （`packages/db/package.json` の依存宣言も外した）。クライアント混入の防御は
+//    `tests/static/client-db-boundary.test.ts`（ソースの import グラフを静的に検査し、
+//    `'use client'` から辿れる値 import に `@ses/db` が現れないことを固定する）が単独で担う。
 export { configureTenantDb, disconnectTenantDb } from './client.js';
 export type { TenantDbOptions } from './client.js';
 // 🔴 T-03-07 / T-03-08: 管理平面の接続プール 2 本（docs/03 §4.3.3 / docs/05 §4.2）。
