@@ -33,7 +33,7 @@ import {
   ForbiddenError,
   InvitationEmailAlreadyMemberError,
   InvitationNotAcceptableError,
-  PartnerInvitationNotAvailableError,
+  UnprocessableError,
 } from '../../apps/web/lib/api/errors';
 import type { AuthAttemptMeta } from '../../apps/web/lib/auth/credentials';
 import {
@@ -49,10 +49,31 @@ import {
 } from '../../apps/web/lib/jobs/account-mail';
 import {
   acceptInvitation,
-  issueInvitation,
+  issueInvitation as issueInvitationService,
   readInvitationByToken,
+  type IssueInvitationInput,
 } from '../../apps/web/lib/invitations/service';
+import type { SendingDomainResolver } from '../../apps/web/lib/settings/sending-domains';
 import { startIsolationDatabase, type IsolationDatabase } from './support/postgres.js';
+
+/**
+ * 🔴 T-04-05: `issueInvitation` は**送信ドメインの判定を必須引数に取る**
+ *    （既定値を置くと、渡し忘れたルートだけが未検証のまま取引先へ送る経路になる）。
+ *
+ * 本ファイルが見るのは `F-002`（自社メンバーの招待）であり、これは共通ドメインで送るため
+ * 検証状態に依存しない（`F-001 AC-5`）。したがって「検証を求めない環境」で固定してよい。
+ * 🔴 **取引先宛（`F-007 AC-5`）の保留は `sending-domain-hold.test.ts` が見る。**
+ */
+const SENDING_DOMAIN_NOT_REQUIRED: SendingDomainResolver = async () => ({ kind: 'NOT_REQUIRED' });
+
+async function issueInvitation(
+  ctx: AuthenticatedTenantCtx,
+  input: IssueInvitationInput,
+  meta: AuthAttemptMeta,
+  now: Date,
+): Promise<{ readonly id: string; readonly deliveryState: string }> {
+  return issueInvitationService(ctx, input, meta, SENDING_DOMAIN_NOT_REQUIRED, now);
+}
 
 const SETUP_TIMEOUT_MS = 600_000;
 /** 🔴 「実行日 = T」を固定する（docs/05 §17.6）。 */
@@ -219,7 +240,7 @@ describe('🔴 F-002: 招待の発行（docs/05 §6.4 #14）', () => {
     ).rejects.toBeInstanceOf(ForbiddenError);
   });
 
-  it('🔴 AC-1 / Phase 0: パートナーロール宛は発行できない（SP-04 に委ねる）', async () => {
+  it('🔴 AC-1: パートナーロール宛に取引先企業を指定しないと発行できない（422）', async () => {
     const ctx = await ctxOf(HOST_1, 'ADMIN');
     await expect(
       issueInvitation(
@@ -228,13 +249,49 @@ describe('🔴 F-002: 招待の発行（docs/05 §6.4 #14）', () => {
         META,
         NOW,
       ),
-    ).rejects.toBeInstanceOf(PartnerInvitationNotAvailableError);
+    ).rejects.toBeInstanceOf(UnprocessableError);
 
     // 🔴 拒否されたのだから、招待行もメールも 1 件も作られていない。
     const row = await admin.invitation.findFirst({
       where: { email: 'partner-invitee@seed-isolation.test' },
     });
     expect(row).toBeNull();
+    expect(mail.callCount()).toBe(0);
+  });
+
+  it('🔴 T-04-05: パートナーロール宛は取引先企業を指定すれば発行できる（分類 2 になる）', async () => {
+    const ctx = await ctxOf(HOST_1, 'ADMIN');
+    const result = await issueInvitation(
+      ctx,
+      {
+        email: 'partner-admin-invitee@seed-isolation.test',
+        role: 'PARTNER_ADMIN',
+        partnerCompanyId: PARTNER_1_1.partnerCompanyId,
+      },
+      META,
+      NOW,
+    );
+
+    const row = await admin.invitation.findFirst({ where: { id: result.id } });
+    expect(row?.partnerCompanyId).toBe(PARTNER_1_1.partnerCompanyId);
+    // 🔴 宛先分類は招待行から機械的に導かれる（docs/05 §8.2）。取引先の担当者なので分類 2。
+    expect(mail.jobsOf('INVITATION')[0]?.recipientClass).toBe('PARTNER_MEMBER');
+  });
+
+  it('🔴 AC-4: PARTNER_ADMIN は他社の取引先企業を指定できない（403）', async () => {
+    const ctx = await ctxOf(PARTNER_USER, 'PARTNER_ADMIN');
+    await expect(
+      issueInvitation(
+        ctx,
+        {
+          email: 'other-partner@seed-isolation.test',
+          role: 'PARTNER_SALES',
+          partnerCompanyId: PARTNER_1_2.partnerCompanyId,
+        },
+        META,
+        NOW,
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenError);
     expect(mail.callCount()).toBe(0);
   });
 

@@ -81,3 +81,26 @@ export function accountMailDedupeKey(input: {
 }): string {
   return `${input.kind}:${input.targetId}:${input.tokenHashPrefix}`;
 }
+
+/**
+ * 🔴 `dedupeKey` から `kind` と `targetId` を取り出す（`accountMailDedupeKey` の逆）。T-04-05。
+ *
+ * 🔴 **なぜ必要か**: 保留（`HELD_*`）からの復帰（docs/05 §8.3 / §9.4）は、`EmailDispatch` の
+ *    行だけを手がかりに「どの招待 / どの利用者のものか」を知る必要がある。**平文トークンも
+ *    payload も残っていない**ため、行に残る `dedupeKey` が唯一の手がかりである。
+ * 🔴 **組み立てと分解を同じファイルに置く。** 別々の場所に書くと、鍵の形式を変えたときに
+ *    片方だけが古くなり、保留からの復帰が黙って対象を取り違える（＝ 別人に招待が届く）。
+ *
+ * 形式に合わないものは `null`。**推測して埋めない**（`targetId` を取り違えると、
+ * 他人の招待のトークンを差し替えることになる）。
+ */
+export function parseAccountMailDedupeKey(
+  dedupeKey: string,
+): { readonly kind: AccountMailKind; readonly targetId: string } | null {
+  const parts = dedupeKey.split(':');
+  if (parts.length !== 3) return null;
+  const [kind, targetId] = parts;
+  if (kind === undefined || targetId === undefined || targetId === '') return null;
+  if (!(ACCOUNT_MAIL_KINDS as readonly string[]).includes(kind)) return null;
+  return { kind: kind as AccountMailKind, targetId };
+}

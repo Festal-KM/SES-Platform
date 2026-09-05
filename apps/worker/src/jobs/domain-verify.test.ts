@@ -171,6 +171,66 @@ describe('🔴 ① すべて SUCCESS のときだけ検証済みにする', () =
   });
 });
 
+/**
+ * 🔴 T-04-04 の申し送り 2（T-04-05 で修正）。
+ *
+ * `REGISTERED` は「#71 で登録されたが `domain.provision` がまだ SES に identity を作っていない」
+ * 状態である。この行に #72 を押されると `GetEmailIdentity` が `NotFoundException` を返し、
+ * **「まだ準備が終わっていない」という状態が失敗ジョブとして `A-005` に載る**。
+ * #71 の直後に「検証状態を再確認する」を押す利用者は普通に居るため、異常系ではない。
+ */
+describe('🔴 ② REGISTERED は検証対象にしない（provision 未完了は状態でありエラーではない）', () => {
+  const registered = { ...ROW, state: 'REGISTERED' as const, dkimTokens: [], mailFromDomain: null };
+
+  it('SES を 1 度も呼ばない（NotFound が失敗ジョブに載らない）', async () => {
+    readSendingDomain.mockResolvedValue(registered);
+    const { deps, getEmailIdentity } = makeDeps();
+
+    const outcome = await createDomainVerifyHandler(deps)(
+      { tenantId: TENANT_ID, sendingDomainId: DOMAIN_ID },
+      'j-1',
+    );
+
+    expect(getEmailIdentity).not.toHaveBeenCalled();
+    expect(outcome).toEqual({ state: 'REGISTERED', failureReason: null });
+  });
+
+  it('🔴 行を書き換えない（FAILED にすると「検証に失敗した」と誤って見える）', async () => {
+    readSendingDomain.mockResolvedValue(registered);
+    const { deps } = makeDeps();
+
+    await createDomainVerifyHandler(deps)({ tenantId: TENANT_ID, sendingDomainId: DOMAIN_ID }, 'j-1');
+
+    expect(expireSendingDomain).not.toHaveBeenCalled();
+    expect(markSendingDomainVerified).not.toHaveBeenCalled();
+  });
+
+  it('🔴 identity が存在しない SES 実装でも throw しない（回帰の防止）', async () => {
+    readSendingDomain.mockResolvedValue(registered);
+    const notFound = {
+      identityApi: {
+        getEmailIdentity: vi.fn(async () => {
+          throw Object.assign(new Error('identity not found'), { name: 'NotFoundException' });
+        }),
+      } as never,
+      now: () => NOW,
+    };
+
+    await expect(
+      createDomainVerifyHandler(notFound)({ tenantId: TENANT_ID, sendingDomainId: DOMAIN_ID }, 'j-1'),
+    ).resolves.toEqual({ state: 'REGISTERED', failureReason: null });
+  });
+
+  it('対照: PENDING の行では従来どおり SES を呼ぶ（検査が空振りしていない）', async () => {
+    readSendingDomain.mockResolvedValue(ROW);
+    const { deps, getEmailIdentity } = makeDeps();
+
+    await createDomainVerifyHandler(deps)({ tenantId: TENANT_ID, sendingDomainId: DOMAIN_ID }, 'j-1');
+
+    expect(getEmailIdentity).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('🔴 ③ domain.recheck（毎日 05:30 JST。docs/05 §9.9）', () => {
   it('スケジュールは 05:30 JST である', () => {
     expect(DOMAIN_RECHECK_SCHEDULE).toEqual({ cron: '30 5 * * *', timeZone: 'Asia/Tokyo' });

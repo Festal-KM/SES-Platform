@@ -23,15 +23,20 @@ import { usagePeriodKey } from '@ses/domain';
 import type { HostTenantCtx } from './context.js';
 import { EMAIL_DISPATCH_STATUSES } from './schema-value-sets.js';
 import type { EmailDispatchStatus, EmailRecipientClass } from './schema-value-sets.js';
+import { hashSecretToken } from './tokens.js';
 import { uuidV7 } from './uuid.js';
 import { runInTenantTransaction } from './with-tenant.js';
 
 /**
  * 🔴 `dedupeKey` に載せるトークンのハッシュ（docs/05 §9.4）。
  *    **平文トークンは DB に一切書かない。** ハッシュの先頭 16 桁だけを鍵の一部にする。
+ *
+ * 🔴 ハッシュ関数は `tokens.ts` の 1 つだけを使う（T-04-05）。ここで `createHash` を
+ *    もう一度書くと、保存されるハッシュ（`Invitation.tokenHash`）と `dedupeKey` の前提が
+ *    別々に変わりうる。
  */
 export function dispatchTokenHashPrefix(token: string): string {
-  return createHash('sha256').update(token, 'utf8').digest('hex').slice(0, 16);
+  return hashSecretToken(token).slice(0, 16);
 }
 
 /** 宛先アドレスのハッシュ（`dedupeKey` の `{recipientHash}` 部分。docs/05 §3.9）。 */
@@ -288,29 +293,57 @@ export async function failEmailDispatch(
 }
 
 /**
+ * 保留から抜けるときに行を閉じる理由（docs/05 §8.3 の復帰手順①②）。
+ *
+ * - `REISSUED`: 新しいトークンの行に**置き換わった**（この行は二度と送られない）
+ * - `EXPIRED`:  受諾期限を過ぎていた等で**再発行しなかった**（再招待 / 再要求は人の明示操作）
+ *
+ * 🔴 どちらも「失敗」ではない。`FAILED` に落とさないのは、`A-005` の失敗指標に
+ *    保留由来のものを混ぜないためである（§8.3-Q ⑦）。
+ */
+export type HeldEmailDispatchCloseReason = 'REISSUED' | 'EXPIRED';
+
+/**
+ * 🔴 保留（`HELD_*`）から抜ける CAS の SQL。**呼び出し側のトランザクションに載せる。**
+ *
+ * 文だけを返すのは、招待のトークン再発行が
+ * 「この CAS」と「`Invitation.tokenHash` の差し替え」を**同一トランザクション**で行う契約だから
+ * である（docs/05 §8.3）。関数として実行してしまうと別トランザクションになり、
+ * 片方だけ成立した状態（＝ 届かない招待 / 二重の有効リンク）が生まれうる。
+ */
+export function closeHeldEmailDispatchSql(input: {
+  readonly dispatchId: string;
+  readonly fromStatus: EmailDispatchHoldStatus;
+  readonly reason: HeldEmailDispatchCloseReason;
+}): Prisma.Sql {
+  return Prisma.sql`
+    UPDATE email_dispatches
+       SET status = 'SUPPRESSED', failure_reason = ${input.reason}
+     WHERE id = ${input.dispatchId}::uuid AND status = ${input.fromStatus}
+    RETURNING id::text AS id`;
+}
+
+/**
  * 🔴 保留（`HELD_*`）から抜ける 2 経路のうちの 1 つ（`send.hold-release`。docs/05 §9.4 / §8.3）。
  *
- * 用途は「保留中の招待 / パスワード再設定を**トークン再発行**で置き換える」ことである。
- * 平文トークンは payload（Redis）と共に消えており DB に残っていないため、
- * **再発行以外に送る手段が無い**（docs/05 §8.3 の復帰手順①）。
+ * 用途は「保留中の `account.mail` 由来の行を、送らずに閉じる」ことである。平文トークンは
+ * payload（Redis）と共に消えており DB に残っていないため、この行はもう送りようがない。
  *
- * 🔴 `failure_reason='REISSUED'` は失敗の記録ではなく「この行は新しい行に置き換わった」印である。
- *    CAS（`WHERE status = fromStatus`）が 0 件なら他の実行が処理済み ＝ 正常系。
- * 🔴 `SUPPRESSED` に落とすので、この行が二度と送られることはない（新しい `dedupeKey` の
- *    行が別に作られ、「1 通」はこの CAS が担保する）。
+ * 🔴 CAS（`WHERE status = fromStatus`）が 0 件なら他の実行が処理済み ＝ 正常系。
+ * 🔴 `SUPPRESSED` に落とすので、この行が二度と送られることはない。
  */
-export async function supersedeHeldEmailDispatch(
+export async function closeHeldEmailDispatch(
   ctx: HostTenantCtx,
-  input: { readonly dispatchId: string; readonly fromStatus: EmailDispatchHoldStatus },
+  input: {
+    readonly dispatchId: string;
+    readonly fromStatus: EmailDispatchHoldStatus;
+    readonly reason: HeldEmailDispatchCloseReason;
+  },
 ): Promise<boolean> {
   return runInTenantTransaction(
     { tenantId: ctx.tenantId, partnerCompanyId: null, actorUserId: ctx.userId },
     async (tx) => {
-      const updated = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
-        UPDATE email_dispatches
-           SET status = 'SUPPRESSED', failure_reason = 'REISSUED'
-         WHERE id = ${input.dispatchId}::uuid AND status = ${input.fromStatus}
-        RETURNING id::text AS id`);
+      const updated = await tx.$queryRaw<Array<{ id: string }>>(closeHeldEmailDispatchSql(input));
       return updated.length === 1;
     },
   );

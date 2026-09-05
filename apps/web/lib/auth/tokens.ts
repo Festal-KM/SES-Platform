@@ -1,29 +1,17 @@
 // apps/web/lib/auth/tokens.ts
 // 招待トークン（docs/05 §6.3 #6 / #7 / §6.4 #14）とパスワード再設定トークン（#5 / #5b）の
-// 生成・ハッシュ化。**平文とハッシュの対応をここ 1 箇所に閉じる。**
+// 生成・ハッシュ化。
 //
-// 🔴 平文は「メールの本文」と「`sandbox` の招待リンク表示」にしか出ない（CLAUDE.md §3.4）。
-//    DB に保存するのは常にハッシュだけであり、監査ログ・構造化ログ・エラーには載せない。
-//    `packages/db` の行由来コンテキスト（docs/05 §4.4.2）が受け取るのもハッシュだけである。
+// 🔴 T-04-05: **実装は `@ses/db`（`packages/db/src/tokens.ts`）へ移した。** ここは名前を
+//    合わせるための再輸出だけである。
 //
-// 🔴 ハッシュ関数は **SHA-256**（docs/05 §3.3 `Invitation.tokenHash` / `User.passwordResetTokenHash`
-//    のコメント）。Argon2id ではない —— トークンは 256 bit の乱数であり総当たりが成立しないため、
-//    ストレッチではなく「照合が定数時間で終わる一致検索」（`token_hash` の UNIQUE / 追加 SELECT
-//    ポリシーでの完全一致）が要件である。
-import { createHash, randomBytes } from 'node:crypto';
-
-/**
- * トークンの乱数長（バイト）。
- * 🔴 base64url で 43 文字になる。URL パス（`/invite/{token}`）に安全に載る文字集合だけを使う。
- */
-const TOKEN_BYTES = 32;
-
-/** 推測不能なトークンの平文を作る。🔴 戻り値をログ・DB・監査ログに渡さない。 */
-export function generateToken(): string {
-  return randomBytes(TOKEN_BYTES).toString('base64url');
-}
-
-/** 平文トークンから保存用のハッシュを作る（SHA-256 の 16 進表現）。 */
-export function hashToken(token: string): string {
-  return createHash('sha256').update(token, 'utf8').digest('hex');
-}
+//    移した理由: 保留（`HELD_*`）からの復帰でトークンを**再発行するのは `apps/worker`** に
+//    なった（docs/05 §8.3）。`apps/worker` は `apps/web` を import できない（`CLAUDE.md` §2.1 の
+//    依存方向）ため、ここに実装を残すとワーカー側に 2 つ目のハッシュ実装が生まれる。
+//    2 つが少しでもずれた瞬間、再発行された招待リンクは `withInvitationToken(hashToken(token))`
+//    で 1 行も引けず、**リンクが黙って死ぬ**（`CLAUDE.md` §11.1 の「成功したように見えて
+//    実際には起きていない」と同じ壊れ方）。
+//
+// 🔴 平文の扱いは変わらない（`CLAUDE.md` §3.4）: 出てよいのはメール本文と
+//    `sandbox` の招待リンク表示だけであり、DB・ログ・監査ログ・エラー追跡には載せない。
+export { generateSecretToken as generateToken, hashSecretToken as hashToken } from '@ses/db';

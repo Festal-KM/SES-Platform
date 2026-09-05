@@ -123,13 +123,36 @@ export class SesEmailSender implements EmailSender {
 
     // 🔴 加算は**成功後**に行う（失敗した送信は SES の枠を消費していない）。
     this.calls += 1;
-    await this.parts.sentCounter.record(this.now());
+    await this.recordSent();
 
     return { externalId: response.MessageId };
   }
 
   callCount(): number {
     return this.calls;
+  }
+
+  /**
+   * 🔴 手元の 24h カウンタへの加算（docs/05 §8.3-Q ③）。**失敗しても送信は成功のままにする。**
+   *
+   * 🔴 理由（T-04-04 の申し送り 1）: ここへ来た時点で `SendEmail` は成功しており `MessageId` を
+   *    受け取っている。カウンタ（Redis）の一時障害で throw すると、呼び出し側
+   *    （`performEmailSend` の⑦）は `UNKNOWN` として `EmailDispatch` を `FAILED` に確定させる。
+   *    **実際には届いている 1 通が「失敗」として記録される**ことになり、
+   *    `A-005` の障害指標が汚れ、人間の再送（`F-023`）を誘発して**二重送信**につながる。
+   * 🔴 取りこぼしても枠は守られる: `decideProviderQuota` は
+   *    `consumed = max(localSent24h, provider.sentLast24h)` を採るため（docs/05 §8.3-Q ②）、
+   *    手元のカウンタが 1 件抜けても SES 側の実測値が上限を守る。
+   *    **「数え漏らす」より「送ったのに失敗と記録する」ほうが危険である。**
+   * 🔴 握り潰しているのではない —— 加算できなかった事実は、次回の `getQuota()` が返す
+   *    `provider.sentLast24h`（SES の実測）との差として現れる。
+   */
+  private async recordSent(): Promise<void> {
+    try {
+      await this.parts.sentCounter.record(this.now());
+    } catch {
+      // 何もしない（上記のとおり、送信の成否を左右させない）。
+    }
   }
 
   /**

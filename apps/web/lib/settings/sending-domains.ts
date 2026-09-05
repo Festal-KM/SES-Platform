@@ -25,7 +25,7 @@ import {
   type TenantSendingDomainState,
 } from '@ses/db';
 import type { MessageKey } from '@ses/i18n';
-import { NotFoundError } from '../api/errors';
+import { NotFoundError, type SendingDomainNotVerifiedDetail } from '../api/errors';
 import { requireDomainJobQueue, type DomainJobQueue } from '../jobs/domain-jobs';
 
 /**
@@ -118,6 +118,80 @@ export function toSendingDomainView(row: SendingDomainRow, region: string): Send
     lastCheckedAt: row.lastCheckedAt?.toISOString() ?? null,
     failureReasonKey: failureMessageKeyOf(row.lastFailureReason),
     affects: SENDING_DOMAIN_AFFECTS,
+  };
+}
+
+/**
+ * 🔴 「このテナントは今、取引先へ届く送信を実行してよいか」の判定（docs/05 §8.3）。T-04-05。
+ *
+ * 🔴 **例外を投げない。** 同じ判定を 2 つの用途が使うためである:
+ *   - `requireVerifiedSendingDomain`（§6.2 のガード）… `UNVERIFIED` を 422 に写像する
+ *   - `#14` の招待発行 … 422 にせず**招待は作り**、`deliveryState='HELD_DOMAIN_UNVERIFIED'` を返す
+ *     （`F-007 AC-5`「招待そのものは作成できるが、送達は検証完了後」）
+ *   判定を 2 箇所に書くと、片方だけが「未登録」を見落とす（＝ 未検証のまま送れる経路ができる）。
+ *
+ * 🔴 `NOT_REQUIRED` は `sandbox` / `demo` / `development`（`docs/03` §3.2.7-4 / -5）。
+ *    そこでは取引先宛がそもそもモックであり、実在の取引先には届かない。
+ *    **判断材料は起動時に解決した `runtime.verificationRequired` だけ**であり、
+ *    ここで `APP_ENV` を読まない（`CLAUDE.md` §11.1）。
+ */
+export type SendingDomainRequirement =
+  | { readonly kind: 'NOT_REQUIRED' }
+  | { readonly kind: 'VERIFIED'; readonly domain: string }
+  | { readonly kind: 'UNVERIFIED'; readonly detail: SendingDomainNotVerifiedDetail };
+
+/**
+ * 判定を**遅延させて**受け渡すための形（`requireVerifiedSendingDomain` と #14 の共通の引数）。
+ *
+ * 🔴 解決済みの値ではなく関数を渡す理由: 分類 1（自社メンバー宛）の招待は
+ *    **検証状態にまったく依存しない**（`F-001 AC-5`）。値を先に解決する形にすると、
+ *    ドメインを 1 件も登録していないテナントでも「まず送信ドメインの設定を読む」ことになり、
+ *    依存していないはずのものに依存してしまう。**呼ばれないことが構造で分かる**形にする。
+ * 🔴 引数は `ctx` だけである（`CLAUDE.md` §3.1 / `BR-03`）。リクエスト入力を判定材料にできない。
+ */
+export type SendingDomainResolver = (
+  ctx: AuthenticatedTenantCtx,
+) => Promise<SendingDomainRequirement>;
+
+export async function evaluateSendingDomain(
+  ctx: AuthenticatedTenantCtx,
+  runtime: SendingDomainRuntime,
+): Promise<SendingDomainRequirement> {
+  if (!runtime.verificationRequired) return { kind: 'NOT_REQUIRED' };
+
+  // 🔴 絞り込みを書かない —— 母集団は RLS（C2 HOST_ONLY）が自テナントに閉じる。
+  const rows = await listSendingDomains(ctx);
+  const verified = rows.find((row) => row.state === 'VERIFIED' && row.verifiedAt !== null);
+  if (verified !== undefined) return { kind: 'VERIFIED', domain: verified.domain };
+
+  // 🔴 未検証。**理由と設定すべき DNS レコードを添える**（`F-001 AC-4` / `F-022 AC-7`）。
+  //    行が 1 件も無い（未登録）ときは `domain` / `state` を `null` にする ——
+  //    `TenantSendingDomainState` に 5 つ目の値を足さない（DB の CHECK は 4 値のままである）。
+  const row = rows[0];
+  if (row === undefined) {
+    return {
+      kind: 'UNVERIFIED',
+      detail: {
+        domain: null,
+        state: null,
+        failureReasonKey: null,
+        dkimRecords: [],
+        mailFromRecords: [],
+      },
+    };
+  }
+  const view = toSendingDomainView(row, runtime.region);
+  return {
+    kind: 'UNVERIFIED',
+    detail: {
+      domain: view.domain,
+      // `view.state` は `NOT_REQUIRED` を取りうる型だが、この分岐は
+      // `verificationRequired === true` の側なので行の状態（4 値）しか来ない。
+      state: row.state,
+      failureReasonKey: view.failureReasonKey,
+      dkimRecords: view.dkimRecords,
+      mailFromRecords: view.mailFromRecords,
+    },
   };
 }
 

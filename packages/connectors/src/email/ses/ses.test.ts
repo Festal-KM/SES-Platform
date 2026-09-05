@@ -146,6 +146,34 @@ describe('🔴 送信基盤の 24h カウンタ（docs/05 §8.3-Q ③）', () =>
     const nextDay = new Date(NOW.getTime() + 25 * 60 * 60 * 1000);
     expect(await sentCounter.countLast24h(nextDay)).toBe(0);
   });
+
+  /**
+   * 🔴 T-04-04 の申し送り 1（T-04-05 で修正）。
+   *
+   * ここへ来た時点で `SendEmail` は成功しており `MessageId` を受け取っている。
+   * カウンタ（Redis）の一時障害で throw すると、`performEmailSend` の⑦が `UNKNOWN` として
+   * `EmailDispatch` を `FAILED` に確定させ、**実際には届いている 1 通が「失敗」として記録される**。
+   * その記録は人間の再送（`F-023`）を誘発し、**二重送信**（`CLAUDE.md` §7 の 0 件）につながる。
+   * 取りこぼしは `consumed = max(local, provider)` が吸収する（docs/05 §8.3-Q ②）。
+   */
+  it('🔴 カウンタの加算が失敗しても送信は成功のままである（届いた 1 通を失敗にしない）', async () => {
+    const api = makeApi();
+    const failing = new InMemoryProviderSendCounter();
+    vi.spyOn(failing, 'record').mockRejectedValue(new Error('redis unavailable'));
+    const sender = new SesEmailSender({
+      api,
+      defaultFromAddress: 'no-reply@ses-platform.example',
+      configurationSet: 'ses-platform-test',
+      sentCounter: failing,
+      now: () => NOW,
+    });
+
+    await expect(sender.send(input())).resolves.toEqual({ externalId: 'ses-msg-1' });
+    // 🔴 外部への到達は 1 回として数えられている（`callCount()` は送信の事実であり、
+    //    カウンタの記録可否とは別物である）。
+    expect(sender.callCount()).toBe(1);
+    expect(api.sendEmail).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('例外の正規化（docs/05 §8.3-Q ⑤ / §15.4）', () => {

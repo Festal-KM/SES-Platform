@@ -22,7 +22,17 @@
 //    例外なくこれを通し、`tests/static/execute-guard.test.ts` が全ルートを AST で走査する。
 import type { AuthenticatedTenantCtx, TenantLifecycleState, TenantRole } from '@ses/db';
 import type { MessageKey } from '@ses/i18n';
-import { ForbiddenError, TenantNotExecutableError, ViewerNotAllowedError } from './errors';
+import { sendingDomainRuntime } from '../db/bootstrap';
+import {
+  evaluateSendingDomain,
+  type SendingDomainResolver,
+} from '../settings/sending-domains';
+import {
+  ForbiddenError,
+  SendingDomainNotVerifiedError,
+  TenantNotExecutableError,
+  ViewerNotAllowedError,
+} from './errors';
 
 /**
  * 🔴 docs/05 §6.2 のガード 5 本。**この配列の順序が実行順である。**
@@ -54,6 +64,8 @@ export const IMPLEMENTED_GUARD_STAGES = [
   'role',
   'executable',
   'notViewer',
+  // 🔴 T-04-05 で実装（docs/05 §8.3 / `BR-51` / `F-022 AC-7`）。
+  'verifiedSendingDomain',
 ] as const satisfies readonly GuardStage[];
 
 /**
@@ -151,6 +163,58 @@ export function requireNotViewer(): RouteGuard {
     },
   };
 }
+
+/**
+ * 🔴 送信元の独自ドメインが検証済みであることを要求する（docs/05 §6.2 / §8.3 / `BR-51` /
+ *    `BR-71` / `F-001 AC-4` / `F-022 AC-7` / `F-047 AC-7`）。422。T-04-05。
+ *
+ * 🔴 **掛ける先は「取引先へ届く送信」だけ**である（docs/05 §8.3 の「対象」）:
+ *    `F-007`（取引先招待の**送達**）/ `F-022`（提案送信 #43）/ `F-041`（面談調整）/
+ *    `F-047`（契約書のメール送付 #60 `via='EMAIL'`）。
+ *    🔴 **`F-002`（自社メンバーの招待）・`F-003` などホスト宛・運営者宛には掛けない**
+ *    （共通ドメインで送ってよい。`F-001 AC-5`。掛けると、ドメイン未設定のテナントが
+ *    自社の管理者すら招けなくなり、開設フローが完了不能になる）。
+ *    🔴 **`F-049`（電子署名依頼）にも掛けない** —— メールを送るのは電子署名サービスであり
+ *    テナントの SES を通らない（前提条件は `requireEsignConnection`。`F-049 AC-8`）。
+ *
+ * 🔴 **`#14`（招待の発行）にはこのガードを掛けない。** `F-007 AC-5` は
+ *    「招待そのものは作成できるが、送達は検証完了後」と定めており、422 で拒否すると
+ *    招待を作ることすらできなくなる。#14 は同じ判定（`evaluateSendingDomain`）を使って
+ *    `deliveryState='HELD_DOMAIN_UNVERIFIED'` を返す（`lib/invitations/service.ts`）。
+ *
+ * 🔴 未検証は**障害ではなく設定未了**である。呼び出し側は状態を進めてはならない
+ *    （`Proposal` は `APPROVED` のまま、`Contract` は `DRAFT` のまま）。ガードは
+ *    Route Handler の**本体より前**に走るので、状態を進める余地がそもそも無い。
+ *
+ * 🔴 `resolve` を差し替え可能にしてあるのはテストのためだけである。**既定値を
+ *    「常に通す」実装にしない** —— 掛けたつもりで掛かっていない状態を作らないため、
+ *    既定は必ず DB を見る実装である（`CLAUDE.md` §11.1）。
+ */
+export function requireVerifiedSendingDomain(deps?: {
+  readonly resolve: SendingDomainResolver;
+}): RouteGuard {
+  const resolve = deps?.resolve ?? defaultSendingDomainResolver;
+  return {
+    stage: 'verifiedSendingDomain',
+    run: async (ctx) => {
+      const requirement = await resolve(ctx);
+      if (requirement.kind === 'UNVERIFIED') {
+        throw new SendingDomainNotVerifiedError(requirement.detail);
+      }
+    },
+  };
+}
+
+/**
+ * 判定の実体（`lib/settings/sending-domains.ts` の `evaluateSendingDomain`）。
+ * 🔴 **ここで `APP_ENV` を分岐しない。** 環境差（`sandbox` / `demo` / `development` は
+ *    共通ドメインで動く）は `sendingDomainRuntime()` が起動時に解決済みである
+ *    （`CLAUDE.md` §11.1 / docs/05 §13.1）。
+ */
+export type { SendingDomainResolver };
+
+const defaultSendingDomainResolver: SendingDomainResolver = async (ctx) =>
+  evaluateSendingDomain(ctx, sendingDomainRuntime());
 
 /**
  * 🔴 ガードの宣言が破綻していないことを**ルート構築時**（モジュール読み込み時）に確かめる。

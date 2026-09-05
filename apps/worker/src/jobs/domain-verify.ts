@@ -78,6 +78,19 @@ async function verifyOne(
   ctx: SystemTenantCtx,
   row: SendingDomainRow,
 ): Promise<DomainVerifyOutcome> {
+  // 🔴 `REGISTERED` = **`domain.provision` がまだ SES に identity を作っていない**
+  //    （`applySendingDomainProvision` が成功して初めて `PENDING` になる）。
+  //    この状態で `GetEmailIdentity` を呼ぶと `NotFoundException` が生 throw され、
+  //    「まだ準備が終わっていない」という**状態**が失敗ジョブとして `A-005` に載ってしまう
+  //    （T-04-04 の申し送り 2）。#71 の直後に #72 を押す利用者は普通に居るため、
+  //    到達するのは異常系ではない。
+  // 🔴 したがって**外部を呼ばずに現在の状態を返す**。行は書き換えない（`FAILED` にすると
+  //    利用者には「検証に失敗した」と見え、実際には provision 待ちである事実が消える）。
+  //    `state` は 4 値の**状態であってエラーではない**（`docs/04` 申し送り 8 / `S-036`）。
+  if (row.state === 'REGISTERED') {
+    return { state: 'REGISTERED', failureReason: null };
+  }
+
   const verification = decideSendingDomainVerification(await deps.identityApi.getEmailIdentity(row.domain));
   const now = deps.now();
 

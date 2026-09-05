@@ -152,6 +152,31 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
   //    予約（`reserveEmailDispatch`）の結果からしか作らない ——
   //    ここが増えると「行が無いのに送れるトークン」を組み立てられる。
   dispatchTokenFor: ['apps/worker/src/jobs/email-send.ts'],
+  // --- 🔴 T-04-05: 送信元ドメインの判定と、保留からのトークン再発行 -----------------------
+  // 🔴 「取引先へ届く送信の送信元が引けるか」を決める関数（docs/05 §8.3 / `BR-51`）。
+  //    呼び出し元を固定するのは、**共通ドメインへフォールバックする分岐**が
+  //    どこかに生えていないことを数えられる状態に保つためである。
+  //    `apps/web` 側は `listSendingDomains`（#71 と同じ経路）を通るため、ここには現れない。
+  resolveVerifiedSendingDomain: [
+    'apps/worker/src/jobs/email-send.ts',
+    'apps/worker/src/jobs/send-hold-release.ts',
+  ],
+  // 🔴 `Invitation.tokenHash` を書き換えられる唯一の場所（docs/05 §8.3 の復帰手順）。
+  //    ここが増えると「保留を経ずにトークンだけ差し替える」経路が生まれ、
+  //    有効なリンクが 2 本存在しうる（`F-002` の「1 回限りの受諾」が実質的に破れる）。
+  reissueHeldInvitationToken: ['apps/worker/src/jobs/account-mail-reissue.ts'],
+  closeHeldEmailDispatch: ['apps/worker/src/jobs/account-mail-reissue.ts'],
+  // 🔴 平文トークンを生成できる場所（`CLAUDE.md` §3.4）。発行（`apps/web`）と
+  //    再発行（`apps/worker`）の 2 つだけであり、**ハッシュ関数は 1 実装**である
+  //    （ずれると再発行されたリンクが黙って死ぬ）。
+  generateSecretToken: [
+    'apps/web/lib/auth/tokens.ts',
+    'apps/worker/src/jobs/account-mail-reissue.ts',
+  ],
+  hashSecretToken: [
+    'apps/web/lib/auth/tokens.ts',
+    'apps/worker/src/jobs/account-mail-reissue.ts',
+  ],
   // 🔴 Webhook 受信は「検証 → INSERT → 200 → enqueue」の 1 経路だけ（docs/05 §8.5）。
   recordWebhookDelivery: ['apps/web/lib/webhooks/ses.ts'],
   readWebhookDelivery: ['apps/worker/src/jobs/webhook-process.ts'],

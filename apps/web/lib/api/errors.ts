@@ -11,13 +11,18 @@
 //
 // 🔴 `details` に入れてよいのは `ValidationError` のフィールドパスだけである（docs/05 §15.2）。
 //    DB のエラー本文・SQL・スタックトレース・外部 API の生応答を入れない。
+import type { SendingDomainDnsRecord } from '@ses/connectors';
 import {
   AuditLogWriteError,
   HostOnlyContextError,
   PlatformRoleNotAllowedError,
   TwoFactorRequiredError as DbTwoFactorRequiredError,
 } from '@ses/db';
-import type { TenantLifecycleState, TwoFactorRequirementReason } from '@ses/db';
+import type {
+  TenantLifecycleState,
+  TenantSendingDomainState,
+  TwoFactorRequirementReason,
+} from '@ses/db';
 import { InvalidStateTransitionError as DomainInvalidStateTransitionError } from '@ses/domain';
 import type { StateMachineEntity } from '@ses/domain';
 import type { MessageKey } from '@ses/i18n';
@@ -31,6 +36,16 @@ export type ApiErrorBody = {
     readonly messageKey: MessageKey;
     readonly retryable: boolean;
     readonly details?: readonly string[];
+    /**
+     * 🔴 docs/05 §15.2 の `params?`。**`messageKey` に添える構造化データ**である（T-04-05 で実装）。
+     *
+     * 🔴 `details` の代わりに使わない —— `details` は `ValidationError` のフィールドパス専用であり、
+     *    そこに DB のエラー本文・SQL・外部 API の生応答を入れてはならない（同節）。
+     *    `params` に載せてよいのは「利用者が次の行動を取るために必要で、かつ秘匿でない値」だけである。
+     *    現在の唯一の用途は `SendingDomainNotVerifiedError` の DNS レコード（DNS に公開する値であり
+     *    秘匿ではない。`F-022 AC-7` が「設定すべき DNS レコードが実行者に表示される」ことを要求する）。
+     */
+    readonly params?: Readonly<Record<string, unknown>>;
   };
 };
 
@@ -42,6 +57,8 @@ export abstract class AppError extends Error {
   readonly retryable: boolean = false;
   /** 🔴 `ValidationError` のフィールドパスのみ。 */
   readonly details?: readonly string[];
+  /** 🔴 §15.2 の `params?`。秘匿でない構造化データだけを載せる。 */
+  readonly params?: Readonly<Record<string, unknown>>;
 }
 
 export class ValidationError extends AppError {
@@ -303,23 +320,45 @@ export class TenantProvisioningInvalidError extends UnprocessableError {
 }
 
 /**
- * 🔴 取引先の担当者への招待は **Phase 0 では発行しない**（`docs/sprints/SP-03` T-03-03。
- *    「Phase 0 はホストロール宛のみ。取引先招待は SP-04」）。
+ * 🔴 送信元の独自ドメインが未検証（docs/05 §6.2 / §8.3 / §15.1 / `BR-51` / `BR-71` /
+ *    `F-001 AC-4` / `F-022 AC-7`）。**422**。T-04-05。
  *
- * なぜ「作れてしまう」より「拒否する」なのか: 取引先へ届くメールは
- * **テナント独自ドメインの検証が前提**（`F-007 AC-5` / `BR-71` / docs/05 §8.3）であり、
- * その判定（`requireVerifiedSendingDomain`）と保留（`HELD_DOMAIN_UNVERIFIED`）は SP-04 の実装である。
- * 判定の無いまま招待だけ作れると、**未検証のドメインから取引先へ送る経路**が一時的に開く。
+ * 🔴 **これは障害ではなく「設定未了」である。** 対象の状態を進めてはならない
+ *    （`Proposal` は `APPROVED` のまま、`Contract` は `DRAFT` のまま）。`SUBMIT_FAILED` /
+ *    `SEND_FAILED` と混ぜると、成約率と障害率の両方の指標が汚れる（`CLAUDE.md` §4.2）。
+ * 🔴 **共通ドメインへフォールバックしない**（`BR-51`）。フォールバックは
+ *    「成功したように見えて違反している」壊れ方を生む。
+ * 🔴 応答に**設定すべき DNS レコード**を載せる（`F-022 AC-7` / `F-001 AC-4`「理由と設定すべき
+ *    DNS レコードが実行者に表示される」）。DKIM の CNAME と MAIL FROM の MX / TXT は
+ *    **DNS に公開する値であり秘匿ではない**（`packages/connectors` の `SendingDomainDnsRecord`）。
+ *    伏せると利用者が設定できず、`S-036` へ移動しないと理由が分からなくなる。
  */
-export class PartnerInvitationNotAvailableError extends UnprocessableError {
-  override readonly code = 'PARTNER_INVITATION_NOT_AVAILABLE';
-  override readonly userMessageKey: MessageKey = 'error.invitation.partnerNotAvailable';
+export class SendingDomainNotVerifiedError extends UnprocessableError {
+  override readonly code = 'SENDING_DOMAIN_NOT_VERIFIED';
+  override readonly userMessageKey: MessageKey = 'error.sendingDomain.unverified';
+  override readonly params: Readonly<Record<string, unknown>>;
 
-  constructor() {
-    super('取引先の担当者への招待は、この段階では発行できません（SP-04）。');
-    this.name = 'PartnerInvitationNotAvailableError';
+  constructor(detail: SendingDomainNotVerifiedDetail) {
+    super('送信元ドメインが未検証のため、取引先へ届く送信は実行できません。');
+    this.name = 'SendingDomainNotVerifiedError';
+    this.params = { ...detail };
   }
 }
+
+/**
+ * `SendingDomainNotVerifiedError` が応答に載せる内容（docs/04 `S-036` の提示項目と同じ形）。
+ *
+ * 🔴 `state === null` / `domain === null` は「まだ 1 件も登録していない」を表す
+ *    （`TenantSendingDomainState` に値を足さない。DB の CHECK は 4 値のままである）。
+ * 🔴 文言ではなく**キー**を返す（`CLAUDE.md` §3.5 / `BR-32`）。
+ */
+export type SendingDomainNotVerifiedDetail = {
+  readonly domain: string | null;
+  readonly state: TenantSendingDomainState | null;
+  readonly failureReasonKey: MessageKey | null;
+  readonly dkimRecords: readonly SendingDomainDnsRecord[];
+  readonly mailFromRecords: readonly SendingDomainDnsRecord[];
+};
 
 /**
  * 🔴 招待先のメールアドレスの利用者が、すでにそのテナントに存在する（`users` の
@@ -441,6 +480,7 @@ export function toApiErrorBody(error: AppError): ApiErrorBody {
       messageKey: error.userMessageKey,
       retryable: error.retryable,
       ...(error.details === undefined ? {} : { details: error.details }),
+      ...(error.params === undefined ? {} : { params: error.params }),
     },
   };
 }

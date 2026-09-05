@@ -260,6 +260,7 @@ export type {
 // 🔴 T-04-03: EmailDispatch を書く唯一の経路（docs/05 §3.9 / §9.4）。
 //    `dedupeKey` の UNIQUE と `QUEUED` からの CAS がここに閉じている＝迂回した INSERT が書けない。
 export {
+  closeHeldEmailDispatch,
   dispatchRecipientHash,
   dispatchTokenHashPrefix,
   EMAIL_DISPATCH_HOLD_STATUSES,
@@ -275,7 +276,6 @@ export {
   requeueHeldEmailDispatch,
   reserveEmailDailyQuota,
   reserveEmailDispatch,
-  supersedeHeldEmailDispatch,
   suppressEmailDispatch,
 } from './email-dispatch.js';
 export type {
@@ -283,8 +283,16 @@ export type {
   EmailDispatchInput,
   EmailDispatchReservation,
   EmailDispatchRow,
+  HeldEmailDispatchCloseReason,
   HeldEmailDispatchRow,
 } from './email-dispatch.js';
+// 🔴 T-04-05: 保留（`HELD_*`）に入った `account.mail` の復帰（docs/05 §8.3 / §9.4）。
+//    平文トークンは残っていないため、復帰は**トークンの再発行**でしか行えない。
+export { reissueHeldInvitationToken } from './account-mail-reissue.js';
+export type { AccountMailReissueOutcome, InvitationReissueInput } from './account-mail-reissue.js';
+// 🔴 T-04-05: 招待 / パスワード再設定トークンの平文とハッシュの対応（docs/05 §3.3 の列の契約）。
+//    `apps/web`（発行）と `apps/worker`（再発行）が**同じ実装**を使うための唯一の出所。
+export { generateSecretToken, hashSecretToken } from './tokens.js';
 // 🔴 T-04-04: TenantSendingDomain（docs/05 §3.9 / §8.3 / docs/03 §3.2.7）を読み書きする唯一の経路。
 //    `verifiedAt` が NULL の間、取引先へ届く送信は実行されない（`BR-51` / `F-001 AC-4`）。
 export {

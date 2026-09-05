@@ -12,7 +12,9 @@
 import { readRequestMeta } from '../../../../lib/auth/session';
 import { requireExecutable, requireNotViewer, requireRole } from '../../../../lib/api/guards';
 import { withApiRoute } from '../../../../lib/api/withApiRoute';
+import { sendingDomainRuntime } from '../../../../lib/db/bootstrap';
 import { issueInvitation } from '../../../../lib/invitations/service';
+import { evaluateSendingDomain } from '../../../../lib/settings/sending-domains';
 import { INVITATION_ISSUER_ROLES } from '../../../../lib/invitations/policy';
 import { createInvitationBodySchema } from '../../../../lib/invitations/schemas';
 import type { AccountMailDeliveryState } from '../../../../lib/jobs/account-mail';
@@ -23,8 +25,10 @@ export const dynamic = 'force-dynamic';
 
 /**
  * docs/05 §6.4 #14 の応答。
- * 🔴 `inviteUrl` は返さない —— `APP_ENV='sandbox'` かつ**取引先の担当者宛**のときだけ返る値であり
- *    （`F-007 AC-4`）、Phase 0 のホストロール宛では定義上到達しない。**フィールドごと持たない。**
+ * 🔴 `inviteUrl` はまだ返さない —— `APP_ENV='sandbox'` かつ**取引先の担当者宛**のときだけ返る値
+ *    （`F-007 AC-4`）であり、`SandboxInvitationView` / `ProductionInvitationView` の
+ *    **判別可能な合併**として実装するのは **T-04-08** である（docs/05 §6.4）。
+ *    それまで**フィールドごと持たない**（`production` で誤って返さないための形）。
  */
 export type CreateInvitationResponse = {
   readonly id: string;
@@ -46,7 +50,15 @@ export const POST = withApiRoute(
     body: createInvitationBodySchema,
   },
   async ({ ctx, body }) => {
-    const result = await issueInvitation(ctx, body, await readRequestMeta());
+    // 🔴 `requireVerifiedSendingDomain` は**掛けない**（`F-007 AC-5`）。取引先宛でも
+    //    「招待そのものは作成できるが、送達は検証完了後」であり、422 で拒否すると
+    //    招待を作ることすらできなくなる。判定は同じ関数（`evaluateSendingDomain`）を
+    //    `issueInvitation` が使い、応答の `deliveryState` に写像する（docs/05 §8.3）。
+    // 🔴 関数のまま渡す ——自社メンバー宛（分類 1）では**1 度も呼ばれない**
+    //    （`F-001 AC-5`「送信ドメインの検証状態に依存しない」）。
+    const result = await issueInvitation(ctx, body, await readRequestMeta(), (invitationCtx) =>
+      evaluateSendingDomain(invitationCtx, sendingDomainRuntime()),
+    );
     const responseBody: CreateInvitationResponse = {
       id: result.id,
       deliveryState: result.deliveryState,

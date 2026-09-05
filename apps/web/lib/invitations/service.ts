@@ -22,6 +22,7 @@ import {
   withInvitationToken,
   withTenant,
   writeAuditLog,
+  type AccountMailRecipientClass,
   type AuditLogEntry,
   type AuthenticatedTenantCtx,
   type TenantRole,
@@ -30,7 +31,6 @@ import {
   ForbiddenError,
   InvitationEmailAlreadyMemberError,
   InvitationNotAcceptableError,
-  PartnerInvitationNotAvailableError,
   UnprocessableError,
 } from '../api/errors';
 import type { AuthAttemptMeta } from '../auth/credentials';
@@ -41,7 +41,8 @@ import {
   requireAccountMailRecipientClass,
   type AccountMailDeliveryState,
 } from '../jobs/account-mail';
-import { decideInvitation, isPartnerRole, type InvitationDenialReason } from './policy';
+import type { SendingDomainResolver } from '../settings/sending-domains';
+import { decideInvitation, type InvitationDenialReason } from './policy';
 
 /** docs/05 §16.1 の `*.create` / `*.update` に対応する招待の監査アクション。 */
 export const INVITATION_AUDIT_ACTIONS = {
@@ -54,7 +55,8 @@ export type IssueInvitationInput = {
   readonly role: TenantRole;
   /**
    * ホストの `OWNER` / `ADMIN` が取引先の担当者を招くときの宛先企業（`S-014`）。
-   * 🔴 Phase 0 では常に未指定である（パートナーロール宛は下の Phase ゲートで拒否する）。
+   * 🔴 これは実行者の分離キーではなく**招待先の選択**である（`decideInvitation` を参照）。
+   *    `PARTNER_ADMIN` は指定できず、常に自社になる（`F-002 AC-4`）。
    */
   readonly partnerCompanyId?: string | null;
 };
@@ -76,10 +78,18 @@ const AUTHORIZATION_DENIALS: ReadonlySet<InvitationDenialReason> = new Set([
 ]);
 
 /**
- * 招待を発行する（docs/05 §6.4 #14 / `F-002`）。
+ * 招待を発行する（docs/05 §6.4 #14 / `F-002` / `F-007`）。
  *
- * 🔴 Phase 0 は**ホストロール宛のみ**（`docs/sprints/SP-03` T-03-03）。取引先の担当者宛は
- *    独自ドメインの検証（`F-007 AC-5` / docs/05 §8.3）が前提であり、その判定と保留は SP-04。
+ * 🔴 T-04-05: **取引先の担当者宛（パートナーロール）の発行を開放した。** SP-03 で
+ *    `PartnerInvitationNotAvailableError` を置いていたのは、「未検証のドメインから取引先へ
+ *    送る経路が一時的に開く」ことを避けるためであり、その判定
+ *    （`evaluateSendingDomain` / `requireVerifiedSendingDomain`）と保留
+ *    （`HELD_DOMAIN_UNVERIFIED`）が本タスクで入ったため、前提が解消した。
+ *
+ * 🔴 **未検証でも招待そのものは作る**（`F-007 AC-5`「招待そのものは作成できるが、送達は
+ *    検証完了後」）。したがってここでは 422 にせず、`deliveryState='HELD_DOMAIN_UNVERIFIED'`
+ *    を返す。**共通ドメインへフォールバックしない**（`BR-51`）—— 実際に送るかどうかを決めるのは
+ *    `account.mail` の②（docs/05 §8.3）であり、この応答はその予測を利用者に見せるためのものである。
  *
  * 🔴 再発行で旧トークンを失効させる（同じ宛先・同じ所属の未受諾の招待を `revokedAt` で閉じる）。
  *    有効なリンクが複数同時に存在すると、「1 回限りの受諾」が実質的に破れる。
@@ -88,18 +98,24 @@ export async function issueInvitation(
   ctx: AuthenticatedTenantCtx,
   input: IssueInvitationInput,
   meta: AuthAttemptMeta,
+  /**
+   * 🔴 送信ドメインの検証状態の判定（`requireVerifiedSendingDomain` と**同じ関数**を使う）。
+   *    **既定値を置かない** —— 既定を「検証不要」にすると、渡し忘れたルートだけが
+   *    未検証のまま取引先へ送る経路になる（`CLAUDE.md` §11.1）。
+   * 🔴 関数で受け取るのは、**分類 1（自社メンバー宛）では 1 度も呼ばれない**ことを
+   *    構造で示すためである（`F-001 AC-5`。自社の招待は送信ドメインに依存しない）。
+   */
+  resolveSendingDomain: SendingDomainResolver,
   now: Date = new Date(),
 ): Promise<IssueInvitationResult> {
   const verdict = decideInvitation(
     { role: ctx.role, partnerCompanyId: ctx.partnerCompanyId },
     { role: input.role, partnerCompanyId: input.partnerCompanyId ?? null },
   );
-  // 🔴 判定の順序: ①認可 → ②Phase ゲート → ③入力の組み合わせ。
-  //    ①を先に置くのは、権限の無い利用者に「その機能はまだ無い」と教えないため。
-  //    ②を③より先に置くのは、Phase 0 で取引先企業を指定する術が無い（スキーマに無い）以上、
-  //    「取引先企業が必要です」より「まだ発行できません」の方が利用者にとって正確だからである。
+  // 🔴 判定の順序: ①認可 → ②入力の組み合わせ。
+  //    ①を先に置くのは、権限の無い利用者に対象の存在を教えないためである
+  //    （「他社を指定した」も 403 に畳む）。
   if (!verdict.allowed && AUTHORIZATION_DENIALS.has(verdict.reason)) throw new ForbiddenError();
-  if (isPartnerRole(input.role)) throw new PartnerInvitationNotAvailableError();
   if (!verdict.allowed) throw new UnprocessableError();
 
   // 🔴 副作用（招待行の作成）の前にキューの存在を確かめる。
@@ -181,7 +197,11 @@ export async function issueInvitation(
   });
 
   // 🔴 commit の後に enqueue する（未コミットの招待をワーカーが先に読む状態を作らない）。
-  const deliveryState = await queue.enqueue({
+  //    🔴 未検証でも **enqueue はする** —— 保留の判定と記録（`EmailDispatch` の
+  //    `HELD_DOMAIN_UNVERIFIED`）は `account.mail` の内側で行われ、`send.hold-release` が
+  //    検証完了後に自動で復帰させる（docs/05 §8.3）。ここで積むのをやめると、
+  //    「検証したのに届かない招待」になる。
+  const enqueued = await queue.enqueue({
     tenantId: ctx.tenantId,
     kind: 'INVITATION',
     targetId: created.id,
@@ -189,7 +209,40 @@ export async function issueInvitation(
     token,
   });
 
-  return { id: created.id, deliveryState };
+  return {
+    id: created.id,
+    deliveryState: await predictDeliveryState(
+      ctx,
+      created.recipientClass,
+      enqueued,
+      resolveSendingDomain,
+    ),
+  };
+}
+
+/**
+ * 🔴 #14 の応答に載せる送達の見込み（docs/05 §6.4 #14 / §8.3。`F-007 AC-5`）。
+ *
+ * 🔴 **これは予測であって記録ではない。** 実際に保留に入れるのは `account.mail` の②
+ *    （docs/05 §8.3）であり、そちらが唯一の権威である。ここで返すのは
+ *    「いま画面に何と表示すべきか」だけである（`docs/04` `S-014` / `S-036`）。
+ * 🔴 予測がずれてよい向きは 1 つだけである: 判定の後・送信の前にドメインが検証済みになれば、
+ *    `HELD` と返したものが実際には送られる（利用者にとって安全側）。逆向き
+ *    （`QUEUED` と返して実際は保留）も**障害ではなく設定未了**として `S-036` に現れる。
+ * 🔴 分類 1（自社メンバー）には適用しない —— 共通ドメインで送るため、検証状態に依存しない
+ *    （`F-001 AC-5`。ここを分けないと、ドメイン未設定のテナントで自社の招待まで
+ *    「保留」と表示され、開設フローが止まって見える）。
+ */
+async function predictDeliveryState(
+  ctx: AuthenticatedTenantCtx,
+  recipientClass: AccountMailRecipientClass,
+  enqueued: AccountMailDeliveryState,
+  resolveSendingDomain: SendingDomainResolver,
+): Promise<AccountMailDeliveryState> {
+  // 🔴 ここで打ち切ることが `F-001 AC-5` の実装である（判定を 1 度も呼ばない）。
+  if (recipientClass !== 'PARTNER_MEMBER') return enqueued;
+  const requirement = await resolveSendingDomain(ctx);
+  return requirement.kind === 'UNVERIFIED' ? 'HELD_DOMAIN_UNVERIFIED' : enqueued;
 }
 
 /** `#6` の応答（docs/05 §6.3 #6 + docs/04 §S-002 の期限切れ / 使用済みの出し分け）。 */

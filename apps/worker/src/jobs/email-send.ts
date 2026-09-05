@@ -54,6 +54,7 @@ import {
   markEmailDispatchSent,
   readEmailDailyCount,
   reserveEmailDailyQuota,
+  resolveVerifiedSendingDomain,
   suppressEmailDispatch,
   type EmailDispatchRow,
   type SystemTenantCtx,
@@ -138,6 +139,22 @@ export type EmailSendDeps = {
   /** 🔴 現在時刻の注入（レート窓・保留時刻をテストで固定するため）。 */
   readonly now: () => Date;
 };
+
+/**
+ * 🔴 `resolveSendingDomain` の**本番の実体**（T-04-05。docs/05 §8.3）。
+ *
+ * SP-07 の配線はこれを渡す。名前を与えておく理由は 2 つある:
+ *   ① 「seam があるが誰も実体を渡していない」状態を、配線を書く人が見落とさないようにする
+ *   ② 🔴 **代わりに渡してよいものが他に無い**ことを明示する ——
+ *      共通ドメインを返す実装をここに差せば `BR-51` が黙って破れる（`CLAUDE.md` §11.1 の
+ *      「成功したように見えて実際には違反している」）。差し替えてよいのはテストだけである。
+ *
+ * `resolveVerifiedSendingDomain` は**検証済みでなければ `null` を返す**（`packages/db`）。
+ * `null` は「共通ドメインで送れ」ではなく「取引先へは送るな」の意味であり、
+ * その解釈は `performEmailSend` の②が持つ。
+ */
+export const resolveSendingDomainFromDb: EmailSendDeps['resolveSendingDomain'] = (ctx) =>
+  resolveVerifiedSendingDomain(ctx);
 
 export type EmailSendRequest = {
   readonly ctx: SystemTenantCtx;

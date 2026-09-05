@@ -59,7 +59,7 @@ export {
   parseAccountMailPayload,
 } from './account-mail.js';
 export type { AccountMailDeps, AccountMailHandler } from './account-mail.js';
-export { performEmailSend } from './email-send.js';
+export { performEmailSend, resolveSendingDomainFromDb } from './email-send.js';
 export type { EmailSendDeps, EmailSendOutcome, EmailSendRequest } from './email-send.js';
 // 🔴 T-04-04: 送信元ドメインの登録・検証（docs/05 §8.3 / §9.9）。`domain.provision` /
 //    `domain.verify` はイベント起動（API-A4 / #71 / #72）、`domain.recheck` は日次で
@@ -109,6 +109,14 @@ export type {
   SendHoldReleaseOutcome,
   SendHoldReleasePayload,
 } from './send-hold-release.js';
+// 🔴 T-04-05: `reissueAccountMail` seam の実体（docs/05 §8.3 の復帰手順）。
+//    SP-07 の配線は `createAccountMailReissue(...)` の戻り値を `SendHoldReleaseDeps` に渡す
+//    （既定値を置かない = 渡し忘れたらコンパイルエラーになる）。
+export {
+  createAccountMailReissue,
+  UnparsableAccountMailDedupeKeyError,
+} from './account-mail-reissue.js';
+export type { AccountMailReissueDeps } from './account-mail-reissue.js';
 export {
   createWebhookProcessHandler,
   parseWebhookProcessPayload,

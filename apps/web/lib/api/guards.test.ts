@@ -17,9 +17,19 @@ import {
   requireExecutable,
   requireNotViewer,
   requireRole,
+  requireVerifiedSendingDomain,
   type RouteGuard,
+  type SendingDomainResolver,
 } from './guards';
-import { ForbiddenError, TenantNotExecutableError, ViewerNotAllowedError } from './errors';
+import {
+  ForbiddenError,
+  SendingDomainNotVerifiedError,
+  TenantNotExecutableError,
+  ViewerNotAllowedError,
+} from './errors';
+
+/** `verificationRequired === false`（`sandbox` / `demo` / `development`）に相当する判定。 */
+const notRequired: SendingDomainResolver = async () => ({ kind: 'NOT_REQUIRED' });
 
 /**
  * 🔴 `AuthenticatedTenantCtx` はブランド型であり、**本番コードからは
@@ -53,8 +63,13 @@ describe('docs/05 §6.2 のガードの並び（この配列が実行順であ�
     ]);
   });
 
-  it('未実装の 2 本（SP-04 / SP-17）は実装済み一覧に含まれない', () => {
-    expect([...IMPLEMENTED_GUARD_STAGES]).toEqual(['role', 'executable', 'notViewer']);
+  it('🔴 T-04-05 で verifiedSendingDomain が実装済みになり、残るは esignConnection（SP-17）だけ', () => {
+    expect([...IMPLEMENTED_GUARD_STAGES]).toEqual([
+      'role',
+      'executable',
+      'notViewer',
+      'verifiedSendingDomain',
+    ]);
   });
 });
 
@@ -147,6 +162,117 @@ describe('🔴 requireNotViewer（403 / BR-31 / F-004 AC-6）', () => {
   });
 });
 
+describe('🔴 requireVerifiedSendingDomain（422 / BR-51 / F-022 AC-7）', () => {
+  const DKIM = [
+    {
+      type: 'CNAME' as const,
+      name: 'tok1._domainkey.example.co.jp',
+      value: 'tok1.dkim.amazonses.com',
+      purposeKey: 'DKIM' as const,
+    },
+  ];
+  const MAIL_FROM = [
+    {
+      type: 'MX' as const,
+      name: 'mail.example.co.jp',
+      value: 'feedback-smtp.ap-northeast-1.amazonses.com',
+      priority: 10,
+      purposeKey: 'MAIL_FROM_MX' as const,
+    },
+  ];
+
+  const unverified: SendingDomainResolver = async () => ({
+    kind: 'UNVERIFIED',
+    detail: {
+      domain: 'example.co.jp',
+      state: 'PENDING',
+      failureReasonKey: 'settings.sendingDomain.failure.DKIM_NOT_VERIFIED',
+      dkimRecords: DKIM,
+      mailFromRecords: MAIL_FROM,
+    },
+  });
+
+  it('検証済みなら通る', async () => {
+    const verified: SendingDomainResolver = async () => ({
+      kind: 'VERIFIED',
+      domain: 'example.co.jp',
+    });
+    await expect(
+      applyGuards(ctxOf({ role: 'OWNER' }), [requireVerifiedSendingDomain({ resolve: verified })]),
+    ).resolves.toBeUndefined();
+  });
+
+  it('🔴 検証を求めない環境（sandbox / demo / development）では通る（docs/03 §3.2.7-4 / -5）', async () => {
+    await expect(
+      applyGuards(ctxOf({ role: 'OWNER' }), [requireVerifiedSendingDomain({ resolve: notRequired })]),
+    ).resolves.toBeUndefined();
+  });
+
+  it('🔴 未検証なら 422 になる（OWNER でも通らない = フォールバックしない）', async () => {
+    const error = await applyGuards(ctxOf({ role: 'OWNER' }), [
+      requireVerifiedSendingDomain({ resolve: unverified }),
+    ]).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(SendingDomainNotVerifiedError);
+    const typed = error as SendingDomainNotVerifiedError;
+    expect(typed.httpStatus).toBe(422);
+    expect(typed.userMessageKey).toBe('error.sendingDomain.unverified');
+  });
+
+  it('🔴 応答に設定すべき DNS レコードが載る（F-022 AC-7 / F-001 AC-4）', async () => {
+    const error = (await applyGuards(ctxOf({ role: 'SALES' }), [
+      requireVerifiedSendingDomain({ resolve: unverified }),
+    ]).catch((caught: unknown) => caught)) as SendingDomainNotVerifiedError;
+
+    expect(error.params).toEqual({
+      domain: 'example.co.jp',
+      state: 'PENDING',
+      failureReasonKey: 'settings.sendingDomain.failure.DKIM_NOT_VERIFIED',
+      dkimRecords: DKIM,
+      mailFromRecords: MAIL_FROM,
+    });
+  });
+
+  it('🔴 未登録（1 件も無い）でも 422 であり、理由と登録すべきことが分かる', async () => {
+    const notRegistered: SendingDomainResolver = async () => ({
+      kind: 'UNVERIFIED',
+      detail: {
+        domain: null,
+        state: null,
+        failureReasonKey: null,
+        dkimRecords: [],
+        mailFromRecords: [],
+      },
+    });
+    const error = (await applyGuards(ctxOf({ role: 'OWNER' }), [
+      requireVerifiedSendingDomain({ resolve: notRegistered }),
+    ]).catch((caught: unknown) => caught)) as SendingDomainNotVerifiedError;
+
+    expect(error).toBeInstanceOf(SendingDomainNotVerifiedError);
+    expect(error.params).toMatchObject({ domain: null, state: null });
+  });
+
+  it('🔴 SUBMIT_FAILED（障害）と混ざらない別のコードである（F-022 AC-7）', async () => {
+    const error = (await applyGuards(ctxOf({ role: 'OWNER' }), [
+      requireVerifiedSendingDomain({ resolve: unverified }),
+    ]).catch((caught: unknown) => caught)) as SendingDomainNotVerifiedError;
+
+    expect(error.code).toBe('SENDING_DOMAIN_NOT_VERIFIED');
+    expect(error.retryable).toBe(false);
+  });
+
+  it('🔴 判定材料は ctx だけである（リクエスト入力を受け取らない）', async () => {
+    const seen: unknown[] = [];
+    const spy: SendingDomainResolver = async (ctx) => {
+      seen.push(ctx);
+      return { kind: 'NOT_REQUIRED' };
+    };
+    const ctx = ctxOf({ role: 'ADMIN' });
+    await applyGuards(ctx, [requireVerifiedSendingDomain({ resolve: spy })]);
+    expect(seen).toEqual([ctx]);
+  });
+});
+
 describe('🔴 ガードの実行順は宣言順ではなく GUARD_STAGES の順である', () => {
   const GUARDS_IN_WRONG_ORDER: readonly RouteGuard[] = [
     requireNotViewer(),
@@ -182,7 +308,7 @@ describe('🔴 ガードの実行順は宣言順ではなく GUARD_STAGES の順
     expect((error as ViewerNotAllowedError).httpStatus).toBe(403);
   });
 
-  it('実行順そのものを観測する（宣言をどう並べても role → executable → notViewer）', async () => {
+  it('実行順そのものを観測する（宣言をどう並べても GUARD_STAGES の順）', async () => {
     const calls: string[] = [];
     const probe = (stage: RouteGuard['stage']): RouteGuard => ({
       stage,
@@ -191,11 +317,28 @@ describe('🔴 ガードの実行順は宣言順ではなく GUARD_STAGES の順
       },
     });
     await applyGuards(ctxOf({ role: 'OWNER' }), [
+      probe('verifiedSendingDomain'),
       probe('notViewer'),
       probe('executable'),
       probe('role'),
     ]);
-    expect(calls).toEqual(['role', 'executable', 'notViewer']);
+    expect(calls).toEqual(['role', 'executable', 'notViewer', 'verifiedSendingDomain']);
+  });
+
+  it('🔴 送信ドメインの判定は最後である（権限もテナント状態も満たさない呼び出しでは DB を見ない）', async () => {
+    let resolved = 0;
+    const spy: SendingDomainResolver = async () => {
+      resolved += 1;
+      return { kind: 'NOT_REQUIRED' };
+    };
+    await expect(
+      applyGuards(ctxOf({ role: 'VIEWER', lifecycleState: 'CLOSING' }), [
+        requireVerifiedSendingDomain({ resolve: spy }),
+        requireExecutable(),
+        requireRole(['OWNER', 'ADMIN']),
+      ]),
+    ).rejects.toBeInstanceOf(ForbiddenError);
+    expect(resolved).toBe(0);
   });
 });
 
@@ -206,9 +349,15 @@ describe('🔴 ガード宣言の破綻はルート構築時に落とす', () =>
     ).toThrow(/重複/);
   });
 
-  it('未実装の stage（SP-04 / SP-17）を宣言できない', () => {
-    const notImplemented: RouteGuard = { stage: 'verifiedSendingDomain', run: () => undefined };
+  it('未実装の stage（SP-17 の esignConnection）を宣言できない', () => {
+    const notImplemented: RouteGuard = { stage: 'esignConnection', run: () => undefined };
     expect(() => assertGuardDeclaration([notImplemented], 'テスト')).toThrow(/未実装/);
+  });
+
+  it('🔴 実装済みになった verifiedSendingDomain は宣言できる（T-04-05）', () => {
+    expect(() =>
+      assertGuardDeclaration([requireVerifiedSendingDomain({ resolve: notRequired })], 'テスト'),
+    ).not.toThrow();
   });
 
   it('未知の stage を宣言できない', () => {
