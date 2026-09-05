@@ -28,7 +28,9 @@ vi.mock('@ses/db', () => ({
   }),
 }));
 
-const { InMemoryMinuteWindowCounter } = await import('@ses/connectors');
+const { InMemoryMinuteWindowCounter, InMemoryProviderSendCounter } = await import('@ses/connectors');
+
+const NOW = new Date('2026-09-05T03:00:00.000Z');
 const {
   createEmailDispatchHandler,
   parseEmailDispatchPayload,
@@ -47,13 +49,21 @@ function makeHandler(resolveTemplateParams = vi.fn(async () => ({}))) {
     return { externalId: 'ses-1' };
   });
   const handler = createEmailDispatchHandler({
-    emailSender: { send, callCount: () => send.mock.calls.length, getQuota: vi.fn() },
+    emailSender: {
+      send,
+      callCount: () => send.mock.calls.length,
+      // 🔴 `getQuota()` の契約は「値か throw」（`undefined` を返さない。docs/05 §8.1）。
+      getQuota: vi.fn(async () => ({ max24h: 200, sentLast24h: 0, observedAt: NOW })),
+    },
     emailImplementationKind: 'real',
     minuteWindow: new InMemoryMinuteWindowCounter(),
     dailyLimit: 500,
     minuteLimit: 30,
+    // 🔴 T-04-04: 送信基盤（環境全体）の枠（docs/05 §8.3-Q）。枯渇の検証は email-send.test.ts。
+    providerDailyQuota: 200,
+    providerSentCounter: new InMemoryProviderSendCounter(),
     resolveSendingDomain: vi.fn(async () => null),
-    now: () => new Date('2026-09-05T03:00:00.000Z'),
+    now: () => NOW,
     resolveTemplateParams,
   } as never);
   return { handler, send };

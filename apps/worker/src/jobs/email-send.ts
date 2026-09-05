@@ -7,12 +7,17 @@
 //   ① `EmailDispatch` 行を読み、`QUEUED` でなければ何もしない（重複起動の正常系）
 //   ② ドメイン判定 —— 取引先へ届く分類で独自ドメインが未検証なら `HELD_DOMAIN_UNVERIFIED`
 //      （docs/05 §8.3。🔴 **共通ドメインへフォールバックしない**）
-//   ③ レート判定 —— 日次超過は `SUPPRESSED(RATE_LIMIT)`、分次超過は `DEFERRED`（docs/05 §8.7）
-//   ④ 日次枠の**原子的な予約**（並行実行の取りこぼしを閉じる）
-//   ⑤ 送信 → `QUEUED → SENT` / `MOCKED` の CAS
-//   ⑥ 例外の分類 —— 送信基盤の日次枠超過だけは `HELD_PROVIDER_QUOTA`（保留）にして**正常終了**
+//   ③ 🔴 **送信基盤（環境全体）のクォータ判定** —— 到達していたら `HELD_PROVIDER_QUOTA`
+//      （docs/05 §8.3-Q ④。**ドメイン判定の直後 = `QUEUED → SENT` の更新より前**）
+//   ④ レート判定 —— 日次超過は `SUPPRESSED(RATE_LIMIT)`、分次超過は `DEFERRED`（docs/05 §8.7）
+//   ⑤ 日次枠の**原子的な予約**（並行実行の取りこぼしを閉じる）
+//   ⑥ 送信 → `QUEUED → SENT` / `MOCKED` の CAS
+//   ⑦ 例外の分類 —— 送信基盤の日次枠超過だけは `HELD_PROVIDER_QUOTA`（保留）にして**正常終了**
 //
-// 🔴 ②③は「外部を呼ぶ前」でなければ意味がない（docs/05 §15.4「事前判定で防げるものは
+// 🔴 ③（環境全体の枠）を④（テナントの利用量）より**前**に置く。逆にすると、環境の枠で
+//    どのみち送れない 1 通のために `reserveEmailDailyQuota` がテナントの日次枠を消費してしまう
+//    （予約した枠は戻さない設計であり、保留の間ずっとテナントの残量が目減りする）。
+// 🔴 ②③④は「外部を呼ぶ前」でなければ意味がない（docs/05 §15.4「事前判定で防げるものは
 //    外部を呼ぶ前に保留。エラーにしない」）。
 // 🔴 保留・上限で **throw しない**。throw すると BullMQ の `attempts: 3` に乗り、
 //    5s / 30s 後に同じ判定へ戻ってくるだけである（保留は障害ではない）。
@@ -23,8 +28,8 @@
 //
 // 🔴 **「外部への到達を否定できない呼び出しの後」は、何が起きても throw しない**
 //    （iteration 2 / 3 の修正）。該当するのは 2 箇所であり、**規律は同じ**である:
-//      ⑤ 送信が成功した後の記録（`QUEUED → SENT` / `MOCKED`）… → `SENT_UNRECORDED`
-//      ⑥ `UNKNOWN` / `PERMANENT` の確定（`QUEUED → FAILED`）… → `FAILED{ recorded: false }`
+//      ⑥ 送信が成功した後の記録（`QUEUED → SENT` / `MOCKED`）… → `SENT_UNRECORDED`
+//      ⑦ `UNKNOWN` / `PERMANENT` の確定（`QUEUED → FAILED`）… → `FAILED{ recorded: false }`
 //    どちらも DB の一時障害で throw すると `attempts: 3` で再実行され、行は `QUEUED` のままなので
 //    **もう 1 通送る**。記録が欠けた 1 通は監視（docs/05 §16.5 の `QUEUED` 滞留）で拾えるが、
 //    二重送信は取り返しがつかない（`CLAUDE.md` §3.4 / §7 の 0 件）。
@@ -39,6 +44,7 @@ import {
   type ConnectorImplementationKind,
   type EmailSender,
   type MinuteWindowCounter,
+  type ProviderSendCounter,
   type VerifiedSendingDomain,
 } from '@ses/connectors';
 import {
@@ -52,7 +58,12 @@ import {
   type EmailDispatchRow,
   type SystemTenantCtx,
 } from '@ses/db';
-import { decideEmailRate, isExternalRecipientClass } from '@ses/domain';
+import {
+  decideEmailRate,
+  decideProviderQuota,
+  isExternalRecipientClass,
+  type ProviderQuotaObservation,
+} from '@ses/domain';
 
 /**
  * ジョブの結果。🔴 **どれも「例外ではない」終わり方**である。
@@ -104,6 +115,21 @@ export type EmailSendDeps = {
   readonly dailyLimit: number;
   readonly minuteLimit: number;
   /**
+   * 🔴 送信基盤（環境全体）の 24h 枠（`MAIL_PROVIDER_DAILY_QUOTA`。`packages/config` §13.4）。
+   *
+   * 🔴 **テナントの日次上限（`dailyLimit`）と混同しない**（docs/05 §8.3-Q ⑥）。こちらは
+   *    SES アカウントの枠であり、対処するのは運営者である。ハードコードしない。
+   */
+  readonly providerDailyQuota: number;
+  /**
+   * 🔴 手元の 24h ローリング件数（Redis ZSET `mail:provider:sent24h`。docs/05 §8.3-Q ③）。
+   *
+   * 🔴 **`SesEmailSender` に渡したものと同一のインスタンス**でなければならない。
+   *    加算は単一経路の内側（実送信成功の直後）で行われ、ここでは読むだけである
+   *    —— 読む側と書く側が別の入れ物を見ていると、枠が永久に空いているように見える。
+   */
+  readonly providerSentCounter: ProviderSendCounter;
+  /**
    * 🔴 送信元の独自ドメイン（docs/05 §8.3）。未検証なら `null` を返すこと。
    *    **共通ドメインを代わりに返してはならない**（`BR-51`。返した瞬間に
    *    「成功したように見えて違反している」状態になる）。
@@ -154,7 +180,27 @@ export async function performEmailSend(
     return { kind: 'HELD_DOMAIN_UNVERIFIED' };
   }
 
-  // ③ レート判定（docs/05 §8.7 / `F-027 AC-2`）。🔴 外部の 429 に頼らない。
+  // ③ 🔴 送信基盤（環境全体）のクォータ判定（docs/05 §8.3-Q ④）。
+  //    到達していたら**外部を 1 回も呼ばずに保留**し、ジョブは正常終了する。
+  //    🔴 throw しない = BullMQ の `attempts: 3` に乗らない。`FAILED` にしない。
+  //       `failureReason` を書かない（保留は「まだ 1 通も送っていない」状態であり失敗ではない）。
+  if (
+    decideProviderQuota({
+      envLimit: deps.providerDailyQuota,
+      provider: await readProviderQuota(deps),
+      localSent24h: await deps.providerSentCounter.countLast24h(now),
+      now,
+    }).kind === 'HOLD'
+  ) {
+    await holdEmailDispatch(ctx, {
+      dispatchId: dispatch.dispatchId,
+      status: 'HELD_PROVIDER_QUOTA',
+      heldAt: now,
+    });
+    return { kind: 'HELD_PROVIDER_QUOTA' };
+  }
+
+  // ④ レート判定（docs/05 §8.7 / `F-027 AC-2`）。🔴 外部の 429 に頼らない。
   const minute = await deps.minuteWindow.peek(ctx.tenantId, now);
   const decision = decideEmailRate({
     dailyLimit: deps.dailyLimit,
@@ -173,7 +219,7 @@ export async function performEmailSend(
     return { kind: 'DEFERRED', retryAfterSec: decision.retryAfterSec };
   }
 
-  // ④ 並行実行を閉じる原子的な予約。③をすり抜けた同時実行はここで落ちる。
+  // ⑤ 並行実行を閉じる原子的な予約。④をすり抜けた同時実行はここで落ちる。
   const reservation = await reserveEmailDailyQuota(ctx, { limit: deps.dailyLimit, observedAt: now });
   if (!reservation.allowed) {
     await suppressEmailDispatch(ctx, { dispatchId: dispatch.dispatchId, reason: 'RATE_LIMIT' });
@@ -181,7 +227,7 @@ export async function performEmailSend(
   }
   await deps.minuteWindow.record(ctx.tenantId, now);
 
-  // ⑤ 送信（単一経路）。予約を経ていない送信は型として書けない（`token` が必須）。
+  // ⑥ 送信（単一経路）。予約を経ていない送信は型として書けない（`token` が必須）。
   let externalId: string;
   try {
     const result = await deps.emailSender.send({
@@ -227,7 +273,25 @@ export async function performEmailSend(
 }
 
 /**
- * ⑥ 送信で投げられた例外の始末（docs/05 §8.3-Q ⑤ / §15.4）。
+ * 🔴 送信基盤の枠の観測（docs/05 §8.3-Q ③）。
+ *
+ * 🔴 **取得に失敗したら `null` を返し、判定を続ける**（止めない側に倒さない）。`getQuota()` は
+ *    契約上 0 を返さず throw するので、ここで `null` に倒すのが唯一の場所である。
+ *    `decideProviderQuota` は `consumed = max(localSent24h, provider?.sentLast24h ?? 0)` を採るため、
+ *    `null` でも手元のカウンタで枠を守れる（`null` を「枠が無限」と解釈しない）。
+ * 🔴 例外を握り潰しているのではない —— `GetAccount` が引けないことは送信を止める理由にならず、
+ *    かつ再試行させる理由にもならない（60 秒キャッシュの更新に失敗しただけである）。
+ */
+async function readProviderQuota(deps: EmailSendDeps): Promise<ProviderQuotaObservation | null> {
+  try {
+    return await deps.emailSender.getQuota();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * ⑦ 送信で投げられた例外の始末（docs/05 §8.3-Q ⑤ / §15.4）。
  *
  * 🔴 `TRANSIENT` だけを再 throw する。それ以外は**この場で確定させる** ——
  *    恒久的なエラーを再試行しても直らず、`attempts` を空撃ちして failed に積むだけになる。
@@ -238,7 +302,7 @@ export async function performEmailSend(
  * 🔴 **確定の書き込み自体が失敗しても throw しない**（iteration 3 の修正）。
  *    `UNKNOWN` は「外部への到達を否定できない」呼び出しであり、その後の `failEmailDispatch` が
  *    DB の一時障害で throw すると `attempts: 3` で再実行され、行は `QUEUED` のままなので
- *    **もう 1 通送る**。⑤（送信成功後）と**同じ規律**である —— 判断の軸は「送信が成功したか」
+ *    **もう 1 通送る**。⑥（送信成功後）と**同じ規律**である —— 判断の軸は「送信が成功したか」
  *    ではなく「**外部への到達を否定できるか**」だからである。
  *    🔴 `ProviderQuotaExceededError` はこの規律の対象外でよい: SES が受理を拒否したことが
  *    確定しており（1 通も出ていない）、再試行されても二重送信にならない。

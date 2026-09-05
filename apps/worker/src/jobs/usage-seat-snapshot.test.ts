@@ -32,6 +32,7 @@ const {
   USAGE_SEAT_SNAPSHOT_SCHEDULE,
 } = await import('./usage-seat-snapshot.js');
 const { SCHEDULED_JOBS } = await import('./index.js');
+type ScheduledJobDeps = import('./index.js').ScheduledJobDeps;
 
 const TENANT_ID = '01930000-0000-7000-8000-0000000000a1';
 
@@ -124,11 +125,38 @@ describe('スケジュール宣言（docs/05 §9.8 / §9.1）', () => {
 
   it('宣言からハンドラを合成できる', async () => {
     const declaration = SCHEDULED_JOBS.find((job) => job.name === USAGE_SEAT_SNAPSHOT_JOB);
-    const handler = declaration?.createHandler({
-      countPartnerSeats: false,
-      now: () => new Date('2026-09-04T16:00:00.000Z'),
-    });
+    const handler = declaration?.createHandler(scheduledJobDeps());
     await handler?.({ tenantId: TENANT_ID }, 'job-1');
     expect(snapshotSeatCount).toHaveBeenCalledTimes(1);
   });
+
+  // 🔴 T-04-04: `ScheduledJobDeps` は全スケジュールジョブの deps の**交差型**である
+  //    （足りない値のまま起動できないことが要点。`index.ts` の宣言を参照）。
+  //    ここで全項目を埋めているのは、その交差が壊れたら**このテストがコンパイルエラーになる**
+  //    ようにするためである（`as` キャストで埋めると、その担保が消える）。
+  function scheduledJobDeps(): ScheduledJobDeps {
+    return {
+      countPartnerSeats: false,
+      now: () => new Date('2026-09-04T16:00:00.000Z'),
+      identityApi: {
+        identityArn: (identity: string) => `arn:aws:ses:ap-northeast-1:000000000000:identity/${identity}`,
+        createTenant: async () => undefined,
+        createEmailIdentity: async () => ({ DkimAttributes: { Tokens: ['t1', 't2', 't3'] } }),
+        putEmailIdentityMailFromAttributes: async () => undefined,
+        createTenantResourceAssociation: async () => undefined,
+        getEmailIdentity: async () => ({
+          VerifiedForSendingStatus: true,
+          DkimAttributes: { Status: 'SUCCESS', Tokens: ['t1', 't2', 't3'] },
+          MailFromAttributes: { MailFromDomain: 'mail.example.co.jp', MailFromDomainStatus: 'SUCCESS' },
+        }),
+      },
+      emailSender: { getQuota: async () => ({ max24h: 200, sentLast24h: 0, observedAt: new Date() }) },
+      providerDailyQuota: 200,
+      providerQuotaWarnRatio: 0.8,
+      providerSentCounter: { record: async () => undefined, countLast24h: async () => 0 },
+      enqueueEmailDispatch: async () => undefined,
+      reissueAccountMail: async () => 'SKIPPED',
+      releaseSendHolds: async () => 0,
+    };
+  }
 });

@@ -9,7 +9,7 @@
 //    #64 の body に無い。**先回りして書けるようにしない。**
 // 🔴 分離キー（`tenantId`）も当然持たない（`assertNoIsolationKeys` が構造として固定する）。
 import { z } from 'zod';
-import { TENANT_NAME_MAX_LENGTH } from '@ses/config';
+import { SENDING_DOMAIN_MAX_LENGTH, TENANT_NAME_MAX_LENGTH } from '@ses/config';
 import { assertNoIsolationKeys, type AssertNoIsolationKeys } from '../api/isolation-keys';
 
 /**
@@ -46,3 +46,45 @@ export const ORGANIZATION_PATCHABLE_KEYS = [
   'autoApproveEnabled',
   'piiRetentionYears',
 ] as const;
+
+// --- #71 / #72 送信ドメイン（docs/05 §6.3 / §8.3。T-04-04）--------------------
+
+/**
+ * 🔴 送信元ドメインの形（`example.co.jp`）。
+ *
+ * ここで弾くのは**明らかな誤入力**である（スキーム付き URL・メールアドレス・空白・末尾ドット）。
+ * 実在性と所有の証明は DNS レコードの検証（`domain.verify`）が行うのであって、
+ * 正規表現の仕事ではない —— 厳しくしすぎると正当な国際化ドメインや長いサブドメインを弾く。
+ * 🔴 小文字に正規化する（DNS は大文字小文字を区別しないが、`UNIQUE(tenant_id, domain)` は区別する。
+ *    正規化しないと同じドメインを 2 行作れてしまい、「1 テナント 1 検証済みドメイン」が崩れる）。
+ */
+const DOMAIN_PATTERN = /^(?!-)[a-z0-9-]{1,63}(?<!-)(\.(?!-)[a-z0-9-]{1,63}(?<!-))+$/;
+
+export const createSendingDomainBodySchema = z.object({
+  domain: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .min(1)
+    .max(SENDING_DOMAIN_MAX_LENGTH)
+    .refine((value) => DOMAIN_PATTERN.test(value), {
+      message: 'ドメイン名の形式が正しくありません',
+    }),
+});
+
+export type CreateSendingDomainBody = z.infer<typeof createSendingDomainBodySchema>;
+
+export type CreateSendingDomainBodyIsolationGuard = AssertNoIsolationKeys<CreateSendingDomainBody>;
+
+assertNoIsolationKeys(Object.keys(createSendingDomainBodySchema.shape), 'createSendingDomainBodySchema');
+
+/**
+ * #72 の path パラメータ。
+ * 🔴 `id` は**分離キーではない**（対象の行の ID）。母集団は RLS が自テナントに閉じており、
+ *    他テナントの ID を渡しても 0 件 → 404 になる（docs/05 §4.8）。
+ */
+export const sendingDomainParamsSchema = z.object({ id: z.string().uuid() });
+
+export type SendingDomainParams = z.infer<typeof sendingDomainParamsSchema>;
+
+assertNoIsolationKeys(Object.keys(sendingDomainParamsSchema.shape), 'sendingDomainParamsSchema');

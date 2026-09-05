@@ -10,7 +10,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createConnectors } from '@ses/connectors';
 import type { Connectors } from '@ses/connectors';
-import { InMemoryMinuteWindowCounter } from '@ses/connectors';
+import { InMemoryMinuteWindowCounter, InMemoryProviderSendCounter } from '@ses/connectors';
 import {
   configureTenantDb,
   disconnectTenantDb,
@@ -60,6 +60,11 @@ function deps(overrides: Record<string, unknown> = {}) {
     minuteWindow: new InMemoryMinuteWindowCounter(),
     dailyLimit: DAILY_LIMIT,
     minuteLimit: MINUTE_LIMIT,
+    // 🔴 T-04-04: 送信基盤（環境全体）の枠（docs/05 §8.3-Q）。ここでは十分に空けておく
+    //    （枯渇の再現は `tests/isolation/provider-quota-hold.test.ts` が扱う）。
+    //    🔴 モックのメールコネクタはこのカウンタに加算しない（SES の枠を消費していないため）。
+    providerDailyQuota: 200,
+    providerSentCounter: new InMemoryProviderSendCounter(),
     // 分類 1 なので共通ドメインでよい（`F-001 AC-5`）。
     resolveSendingDomain: async () => null,
     now: () => NOW,

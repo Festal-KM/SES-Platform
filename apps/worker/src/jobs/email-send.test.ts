@@ -30,9 +30,12 @@ vi.mock('@ses/db', () => ({
   markEmailDispatchMocked,
 }));
 
-const { ExternalSendError, InMemoryMinuteWindowCounter, ProviderQuotaExceededError } = await import(
-  '@ses/connectors'
-);
+const {
+  ExternalSendError,
+  InMemoryMinuteWindowCounter,
+  InMemoryProviderSendCounter,
+  ProviderQuotaExceededError,
+} = await import('@ses/connectors');
 const { performEmailSend } = await import('./email-send.js');
 
 const TENANT_ID = '01930000-0000-7000-8000-0000000000a1';
@@ -66,22 +69,42 @@ function dispatchRow(overrides: Record<string, unknown> = {}) {
   } as never;
 }
 
-function makeDeps(overrides: Record<string, unknown> = {}) {
+/**
+ * 🔴 `EmailSender.getQuota()` の契約は「取得できたら値、失敗したら throw」である
+ *    （0 も `undefined` も返さない。docs/05 §8.1）。スタブもその契約を満たすこと ——
+ *    `vi.fn()` のまま（= `undefined` を返す）にすると、実装が受け取らないはずの値で
+ *    テストだけが通る / 落ちるという無意味な結果になる。
+ */
+function providerQuotaStub(sentLast24h = 0) {
+  return vi.fn(async () => ({ max24h: 200, sentLast24h, observedAt: NOW }));
+}
+
+function makeDeps(
+  overrides: Record<string, unknown> = {},
+  /** 🔴 `emailSender` ごと差し替えると `send` の呼び出し回数を検証できなくなるので、口を分ける。 */
+  getQuota: () => Promise<{ max24h: number; sentLast24h: number; observedAt: Date }> = providerQuotaStub(),
+) {
   const send = vi.fn(async (input: EmailSendInput) => {
     void input;
     return { externalId: 'ses-1' };
   });
+  // 🔴 T-04-04: 送信基盤（環境全体）の枠。既定は「枠が十分にある」状態にし、
+  //    枯渇の再現は `providerDailyQuota` / `providerSentCounter` を差し替えて行う
+  //    （テスト専用フックを実装側に置かない。docs/sprints/SP-04 §T-04-04）。
+  const providerSentCounter = new InMemoryProviderSendCounter();
   const deps = {
-    emailSender: { send, callCount: () => send.mock.calls.length, getQuota: vi.fn() },
+    emailSender: { send, callCount: () => send.mock.calls.length, getQuota },
     emailImplementationKind: 'real' as const,
     minuteWindow: new InMemoryMinuteWindowCounter(),
     dailyLimit: 500,
     minuteLimit: 30,
+    providerDailyQuota: 200,
+    providerSentCounter,
     resolveSendingDomain: vi.fn(async () => VERIFIED),
     now: () => NOW,
     ...overrides,
   };
-  return { deps: deps as never, send, minuteWindow: deps.minuteWindow };
+  return { deps: deps as never, send, minuteWindow: deps.minuteWindow, providerSentCounter };
 }
 
 beforeEach(() => {
@@ -158,7 +181,74 @@ describe('🔴 ② 送信元ドメイン（BR-51 / docs/05 §8.3）', () => {
   });
 });
 
-describe('🔴 ③ レート上限（docs/05 §8.7 / F-027 AC-2）', () => {
+describe('🔴 ③ 送信基盤（環境全体）のクォータ（docs/05 §8.3-Q / F-059 AC-7）', () => {
+  it('🔴 上限に達していたら HELD_PROVIDER_QUOTA で、外部を 1 回も呼ばない', async () => {
+    const providerSentCounter = new InMemoryProviderSendCounter();
+    await providerSentCounter.record(NOW);
+    const { deps, send } = makeDeps({ providerDailyQuota: 1, providerSentCounter });
+
+    const outcome = await performEmailSend(deps, { ctx: CTX, dispatch: dispatchRow(), params: {} });
+
+    expect(outcome).toEqual({ kind: 'HELD_PROVIDER_QUOTA' });
+    expect(send).not.toHaveBeenCalled();
+    expect(holdEmailDispatch.mock.calls[0]?.[1].status).toBe('HELD_PROVIDER_QUOTA');
+    expect(holdEmailDispatch.mock.calls[0]?.[1].heldAt).toEqual(NOW);
+  });
+
+  it('🔴 保留は失敗ではない（FAILED にせず failureReason も書かない）', async () => {
+    const providerSentCounter = new InMemoryProviderSendCounter();
+    await providerSentCounter.record(NOW);
+    const { deps } = makeDeps({ providerDailyQuota: 1, providerSentCounter });
+
+    await performEmailSend(deps, { ctx: CTX, dispatch: dispatchRow(), params: {} });
+
+    expect(failEmailDispatch).not.toHaveBeenCalled();
+    expect(suppressEmailDispatch).not.toHaveBeenCalled();
+    expect(holdEmailDispatch.mock.calls[0]?.[1]).not.toHaveProperty('failureReason');
+  });
+
+  it('🔴 テナントの日次枠を消費しない（クォータ判定はレート判定より前）', async () => {
+    const providerSentCounter = new InMemoryProviderSendCounter();
+    await providerSentCounter.record(NOW);
+    const { deps } = makeDeps({ providerDailyQuota: 1, providerSentCounter });
+
+    await performEmailSend(deps, { ctx: CTX, dispatch: dispatchRow(), params: {} });
+
+    // 予約した枠は戻さない設計なので、送らない 1 通のために消費してはならない。
+    expect(reserveEmailDailyQuota).not.toHaveBeenCalled();
+  });
+
+  it('🔴 GetAccount が失敗しても手元のカウンタで判定を続ける（止めない側に倒さない）', async () => {
+    const providerSentCounter = new InMemoryProviderSendCounter();
+    await providerSentCounter.record(NOW);
+    const { deps, send } = makeDeps({ providerDailyQuota: 1, providerSentCounter }, async () => {
+      throw new Error('GetAccount unavailable');
+    });
+
+    const outcome = await performEmailSend(deps, { ctx: CTX, dispatch: dispatchRow(), params: {} });
+
+    expect(outcome).toEqual({ kind: 'HELD_PROVIDER_QUOTA' });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('🔴 provider 側が枠を使い切っていれば、手元が 0 でも HOLD（consumed は max を採る）', async () => {
+    const { deps, send } = makeDeps({ providerDailyQuota: 200 }, providerQuotaStub(200));
+
+    const outcome = await performEmailSend(deps, { ctx: CTX, dispatch: dispatchRow(), params: {} });
+
+    expect(outcome).toEqual({ kind: 'HELD_PROVIDER_QUOTA' });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('枠が残っていれば通常どおり送る', async () => {
+    const { deps, send } = makeDeps({ providerDailyQuota: 2 });
+    const outcome = await performEmailSend(deps, { ctx: CTX, dispatch: dispatchRow(), params: {} });
+    expect(outcome.kind).toBe('SENT');
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('🔴 ④ レート上限（docs/05 §8.7 / F-027 AC-2）', () => {
   it('日次上限に達していたら SUPPRESSED(RATE_LIMIT) で外部を呼ばない', async () => {
     readEmailDailyCount.mockResolvedValue(500);
     const { deps, send } = makeDeps();
@@ -213,7 +303,7 @@ describe('🔴 ④ 送信基盤のクォータ（docs/05 §8.3-Q ⑤）', () => 
       throw new ProviderQuotaExceededError();
     });
     const { deps } = makeDeps({
-      emailSender: { send, callCount: () => 0, getQuota: vi.fn() },
+      emailSender: { send, callCount: () => 0, getQuota: providerQuotaStub() },
     });
     const outcome = await performEmailSend(deps, { ctx: CTX, dispatch: dispatchRow(), params: {} });
     expect(outcome).toEqual({ kind: 'HELD_PROVIDER_QUOTA' });
@@ -228,7 +318,7 @@ describe('🔴 ⑤ 例外の分類（docs/05 §15.4）', () => {
     const send = vi.fn(async () => {
       throw new ExternalSendError('TRANSIENT', 'ThrottlingException', 'slow down');
     });
-    const { deps } = makeDeps({ emailSender: { send, callCount: () => 0, getQuota: vi.fn() } });
+    const { deps } = makeDeps({ emailSender: { send, callCount: () => 0, getQuota: providerQuotaStub() } });
     await expect(
       performEmailSend(deps, { ctx: CTX, dispatch: dispatchRow(), params: {} }),
     ).rejects.toBeInstanceOf(ExternalSendError);
@@ -241,7 +331,7 @@ describe('🔴 ⑤ 例外の分類（docs/05 §15.4）', () => {
       const send = vi.fn(async () => {
         throw new ExternalSendError(kind, 'MessageRejected', 'rejected');
       });
-      const { deps } = makeDeps({ emailSender: { send, callCount: () => 0, getQuota: vi.fn() } });
+      const { deps } = makeDeps({ emailSender: { send, callCount: () => 0, getQuota: providerQuotaStub() } });
       const outcome = await performEmailSend(deps, { ctx: CTX, dispatch: dispatchRow(), params: {} });
       expect(outcome).toEqual({
         kind: 'FAILED',
@@ -263,7 +353,7 @@ describe('🔴 UNKNOWN の確定書き込みが失敗しても再試行に乗せ
     const send = vi.fn(async () => {
       throw error;
     });
-    return { emailSender: { send, callCount: () => 0, getQuota: vi.fn() }, send };
+    return { emailSender: { send, callCount: () => 0, getQuota: providerQuotaStub() }, send };
   }
 
   it('🔴 UNKNOWN + failEmailDispatch 例外でも throw されない（= attempts: 3 に乗らない）', async () => {

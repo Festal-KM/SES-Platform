@@ -103,6 +103,12 @@ export const INTERNAL_JOB_NAMES = [
   'account.mail',
   // Webhook 受信後の処理。外部 API を呼ばない（`WebhookDelivery.dedupeKey` + `processedAt` の CAS で冪等）。
   'webhook.process',
+  // 🔴 T-04-04（docs/05 §8.3 / §9.9）。**メールを 1 通も送らない**（SES の identity を
+  //    作る / 状態を読むだけ）。だから `attempts: 3` を許せる（§9.10「読み取り・作成系。送信ではない」）。
+  //    型でも担保されている —— ハンドラの deps は `SesIdentityApi` であり `sendEmail` を持たない。
+  'domain.provision',
+  'domain.verify',
+  'domain.recheck',
 ] as const;
 
 export type InternalJobName = (typeof INTERNAL_JOB_NAMES)[number];
@@ -174,6 +180,18 @@ export const QUEUE_DEFINITIONS = {
     attempts: 3,
     backoff: { type: 'exponential', delay: 5_000 },
   }),
+  // 🔴 T-04-04（docs/05 §9.9）。送信元ドメインの登録・検証・日次の再確認。
+  //    冪等: SES 側は「既にある」を成功として扱い、DB 側は `WHERE state <> 'VERIFIED'` /
+  //    `state='VERIFIED'` の条件付き更新である。
+  'domain.provision': internalQueue('domain.provision', {
+    attempts: 3,
+    backoff: { type: 'exponential', delay: 5_000 },
+  }),
+  'domain.verify': internalQueue('domain.verify', {
+    attempts: 3,
+    backoff: { type: 'exponential', delay: 5_000 },
+  }),
+  'domain.recheck': internalQueue('domain.recheck', { attempts: 3 }),
 } as const;
 
 export type QueueName = keyof typeof QUEUE_DEFINITIONS;

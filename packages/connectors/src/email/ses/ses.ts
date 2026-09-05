@@ -19,9 +19,9 @@ import type { ProviderQuota, VerifiedSendingDomain } from '../../types.js';
 import type { SesApi, SesSendEmailRequest } from './api.js';
 import type { ProviderSendCounter } from './counter.js';
 import { normalizeSesError } from './errors.js';
+import { InMemoryProviderQuotaCache, type ProviderQuotaCache } from './quota-cache.js';
 
-/** `GetAccount` の結果を保持する時間（docs/05 §8.3-Q ③「Redis に 60 秒キャッシュ」）。 */
-export const SES_QUOTA_CACHE_TTL_MS = 60_000;
+export { SES_QUOTA_CACHE_TTL_MS } from './quota-cache.js';
 
 export type SesEmailSenderParts = {
   readonly api: SesApi;
@@ -34,6 +34,12 @@ export type SesEmailSenderParts = {
   readonly configurationSet: string;
   /** 🔴 docs/05 §8.3-Q ③。実送信成功のたびに単一経路の内側で加算する。 */
   readonly sentCounter: ProviderSendCounter;
+  /**
+   * `GetAccount` の 60 秒キャッシュ（docs/05 §8.3-Q ③）。
+   * 🔴 省略時はプロセス内キャッシュ。複数プロセスで走る `production` / `staging` / `sandbox` では
+   *    `RedisProviderQuotaCache` を起動時 DI で渡す（`GetAccount` の 1 req/s に当たらないため）。
+   */
+  readonly quotaCache?: ProviderQuotaCache;
   /** 🔴 現在時刻の注入（テストの決定性）。既定は `new Date()`。 */
   readonly now?: () => Date;
 };
@@ -90,9 +96,11 @@ export function sesTenantName(tenantId: string): string {
 
 export class SesEmailSender implements EmailSender {
   private calls = 0;
-  private quotaCache: { readonly quota: ProviderQuota; readonly expiresAt: number } | null = null;
+  private readonly quotaCache: ProviderQuotaCache;
 
-  constructor(private readonly parts: SesEmailSenderParts) {}
+  constructor(private readonly parts: SesEmailSenderParts) {
+    this.quotaCache = parts.quotaCache ?? new InMemoryProviderQuotaCache();
+  }
 
   async send(input: EmailSendInput): Promise<{ externalId: string }> {
     // 🔴 モック（`MockEmailSender`）と**同じ関数**を通す。実装差で `BR-51` が緩まないようにする。
@@ -131,12 +139,12 @@ export class SesEmailSender implements EmailSender {
    *    手元のカウンタだけで判定を続ける（止めない側に倒さない）。
    * 🔴 60 秒キャッシュ。`GetAccount` は送信系以外の API であり **1 リクエスト / 秒**の
    *    上限がある（docs/03 §3.2.4）。送信のたびに呼ぶとそこで詰まる。
-   *    ⚠️ プロセス内キャッシュである。プロセス横断で共有する Redis 版は T-04-04。
+   *    保持先は `ProviderQuotaCache`（既定はプロセス内。`production` は Redis 版。T-04-04）。
    */
   async getQuota(): Promise<ProviderQuota> {
     const now = this.now();
-    const cached = this.quotaCache;
-    if (cached !== null && cached.expiresAt > now.getTime()) return cached.quota;
+    const cached = await this.quotaCache.read(now);
+    if (cached !== null) return cached;
 
     let account;
     try {
@@ -150,7 +158,7 @@ export class SesEmailSender implements EmailSender {
       sentLast24h: account.SendQuota.SentLast24Hours,
       observedAt: now,
     };
-    this.quotaCache = { quota, expiresAt: now.getTime() + SES_QUOTA_CACHE_TTL_MS };
+    await this.quotaCache.write(quota, now);
     return quota;
   }
 

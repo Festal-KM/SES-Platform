@@ -22,7 +22,13 @@ import {
 } from './mock/index.js';
 import { ConnectorImplementationNotAvailableError } from './errors.js';
 import { SandboxRecipientScopedEmailSender } from './email/sandbox-recipient-scoped.js';
-import { InMemoryProviderSendCounter, SesEmailSender, type SesApi, type ProviderSendCounter } from './email/ses/index.js';
+import {
+  InMemoryProviderSendCounter,
+  SesEmailSender,
+  type ProviderQuotaCache,
+  type ProviderSendCounter,
+  type SesApi,
+} from './email/ses/index.js';
 import type { BillingProvider, EmailSender, EsignProviderMap, MalwareScanner, ObjectStore } from './interfaces.js';
 import type { ConnectorCategory, ConnectorImplementationKind, ConnectorSelectionInput } from './types.js';
 
@@ -38,6 +44,8 @@ export * from './email/delivery-mode.js';
 // 🔴 T-04-03: `account.mail` の payload と送達状態（docs/05 §9.4 / §6.4）。
 //    `apps/web`（enqueue）と `apps/worker`（実行）の契約であり、どちらかのアプリに置かない。
 export * from './email/account-mail.js';
+// 🔴 T-04-04: `domain.provision` / `domain.verify` の payload とキューの契約（docs/05 §8.3 / §9.9）。
+export * from './email/domain-jobs.js';
 // 🔴 T-04-02: `sandbox` の宛先分類による差し替え（docs/05 §8.2）。**モック実装ではない**
 //    （分類 1 / 分類外は実送信側へ委譲する）ため、モックと違って re-export してよい。
 //    ✅ T-04-03 で `createConnectors` に登録した（`real` = SES 実装が揃ったため）。
@@ -107,9 +115,22 @@ export type SesRuntimeOptions = {
   readonly configurationSet: string;
   /**
    * 送信基盤の 24h ローリング件数（docs/05 §8.3-Q ③）。
-   * 🔴 省略時はプロセス内カウンタ。`production` では Redis 版を渡す（T-04-04）。
+   * 🔴 省略時はプロセス内カウンタ。**複数プロセスで走る環境では `RedisProviderSendCounter` を渡す**
+   *    （プロセスごとに数えると枠を過小評価し、実際には枠を超えて送ってしまう）。
    */
   readonly sentCounter?: ProviderSendCounter;
+  /**
+   * `GetAccount` の 60 秒キャッシュ（docs/05 §8.3-Q ③）。
+   * 🔴 省略時はプロセス内キャッシュ。複数プロセスでは `RedisProviderQuotaCache` を渡す
+   *    （`GetAccount` は 1 req/s の上限がある）。
+   */
+  readonly quotaCache?: ProviderQuotaCache;
+  /**
+   * 現在時刻の注入（既定は `new Date()`）。
+   * 🔴 24h カウンタへの加算時刻と `GetAccount` キャッシュの期限に使う。**判定側（ジョブ）と
+   *    同じ時計を渡すこと** —— ずれると「送った事実」と「枠の判定」が別の時間軸で動く。
+   */
+  readonly now?: () => Date;
 };
 
 export type ConnectorRuntimeOptions = {
@@ -133,6 +154,8 @@ function createSesEmailSender(
     defaultFromAddress: ses.defaultFromAddress,
     configurationSet: ses.configurationSet,
     sentCounter: ses.sentCounter ?? new InMemoryProviderSendCounter(),
+    ...(ses.quotaCache === undefined ? {} : { quotaCache: ses.quotaCache }),
+    ...(ses.now === undefined ? {} : { now: ses.now }),
   });
 }
 

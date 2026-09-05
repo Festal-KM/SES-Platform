@@ -23,6 +23,7 @@ import {
   configureTokenEncryption,
 } from '@ses/db';
 import { configureAccountMailQueue, PendingAccountMailQueue } from '../jobs/account-mail';
+import { configureDomainJobQueue, PendingDomainJobQueue } from '../jobs/domain-jobs';
 import {
   configureWebhookProcessQueue,
   confirmSnsSubscription,
@@ -50,6 +51,12 @@ let cachedSandboxTrialDays: number | null = null;
  *    署名検証は「Amazon が署名したこと」しか証明しないため、**受け入れるトピックを固定する**。
  */
 let cachedSesEventTopicArn: string | null = null;
+/**
+ * 🔴 T-04-04: 送信ドメイン設定（#71 / #72）が要る起動時解決済みの値（docs/05 §8.3 / docs/03 §3.2.7）。
+ *    ルートが `process.env` を読まない（`CLAUDE.md` §3.5）ための唯一の経路。
+ */
+let cachedSendingDomainRuntime: { readonly region: string; readonly verificationRequired: boolean } | null =
+  null;
 
 /**
  * DB クライアントを 1 度だけ初期化する。
@@ -102,8 +109,36 @@ export function ensureDbConfigured(): void {
   if (connectors.email === 'mock') {
     configureWebhookProcessQueue(new PendingWebhookProcessQueue());
   }
+  // 🔴 T-04-04: `domain.provision` / `domain.verify` の enqueue 先。判断材料は同じ（`connectors.email`）。
+  //    BullMQ の配線は SP-07 であり、それまで `sandbox` / `staging` / `production` では
+  //    **登録しない** = enqueue 時に例外になり、「登録したのに DNS レコードが出てこない」
+  //    状態を成立させない（`CLAUDE.md` §11.1）。
+  if (connectors.email === 'mock') {
+    configureDomainJobQueue(new PendingDomainJobQueue());
+  }
   cachedSesEventTopicArn = env.SES_EVENT_TOPIC_ARN;
+  // 🔴 `sandbox` / `demo` / `development` は共通ドメインで動く（`docs/03` §3.2.7-4 / -5）。
+  //    **分岐はここ 1 箇所**であり、リクエストごとに `APP_ENV` を見ない（`CLAUDE.md` §11.1）。
+  cachedSendingDomainRuntime = {
+    region: env.AWS_REGION,
+    verificationRequired: env.APP_ENV === 'staging' || env.APP_ENV === 'production',
+  };
   initialized = true;
+}
+
+/**
+ * 🔴 `#71` / `#72` が使う起動時解決済みの値（docs/05 §8.3）。
+ *    `verificationRequired === false` の環境では #72 が `{ state: 'NOT_REQUIRED' }` を返す。
+ */
+export function sendingDomainRuntime(): {
+  readonly region: string;
+  readonly verificationRequired: boolean;
+} {
+  ensureDbConfigured();
+  if (cachedSendingDomainRuntime === null) {
+    throw new Error('送信ドメインの実行時設定が解決されていません（bootstrap の不変条件違反）。');
+  }
+  return cachedSendingDomainRuntime;
 }
 
 /**

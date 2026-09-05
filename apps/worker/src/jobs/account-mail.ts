@@ -28,11 +28,28 @@ import { InvalidJobPayloadError, requireNonEmptyString, requireUuid } from './pa
 
 export const ACCOUNT_MAIL_JOB = 'account.mail';
 
-/** `kind` → `EmailDispatch.templateKey`。🔴 テンプレート名をハンドラ内に散らさない。 */
-const TEMPLATE_KEY: Readonly<Record<AccountMailKind, string>> = {
+/**
+ * `kind` → `EmailDispatch.templateKey`。🔴 テンプレート名をハンドラ内に散らさない。
+ *
+ * 🔴 `send.hold-release`（T-04-04）が「この保留行は `account.mail` 由来か（＝ 平文トークンが
+ *    どこにも残っておらず、復帰にはトークン再発行が要るか）」を判定するために読む。
+ *    **判定を文字列リテラルで書き分けない** —— 書き分けると、テンプレート名を変えたときに
+ *    保留からの復帰だけが静かに壊れる（招待が永久に届かない）。
+ */
+export const ACCOUNT_MAIL_TEMPLATE_KEY: Readonly<Record<AccountMailKind, string>> = {
   INVITATION: 'ACCOUNT_INVITATION',
   PASSWORD_RESET: 'ACCOUNT_PASSWORD_RESET',
 };
+
+const TEMPLATE_KEY = ACCOUNT_MAIL_TEMPLATE_KEY;
+
+/**
+ * 🔴 `templateKey` が `account.mail` 由来か（docs/05 §8.3 / §9.4 の復帰手順の分岐）。
+ *    真なら復帰は**トークンの再発行**でしか行えない。偽なら `QUEUED` へ戻して再 enqueue でよい。
+ */
+export function isAccountMailTemplateKey(templateKey: string): boolean {
+  return Object.values(ACCOUNT_MAIL_TEMPLATE_KEY).includes(templateKey);
+}
 
 /** `kind` → 受諾 / 再設定の画面パス（`APP_URL` からの相対）。 */
 const LINK_PATH: Readonly<Record<AccountMailKind, string>> = {

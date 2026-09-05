@@ -9,5 +9,5 @@
 //    「SDK を触るのは 1 ファイル」という構造がビルド成果物の上では成り立たなくなる。
 //    この入口を import してよいのは**起動時 DI の配線**（`apps/worker` の `main.ts` /
 //    `apps/web` の `instrumentation.ts`）だけである。
-export { createSesApi, toSendEmailCommand } from './email/ses/aws-sdk-api.js';
+export { createSesApi, sesIdentityArn, toSendEmailCommand } from './email/ses/aws-sdk-api.js';
 export type { SesApiOptions, SesCommandSender } from './email/ses/aws-sdk-api.js';

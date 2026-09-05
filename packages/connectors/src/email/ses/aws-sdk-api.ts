@@ -19,15 +19,33 @@
 //    主バレルに載せると Next.js のサーババンドルに AWS SDK 一式が入る。
 
 import {
+  CreateEmailIdentityCommand,
+  CreateTenantCommand,
+  CreateTenantResourceAssociationCommand,
   GetAccountCommand,
+  GetEmailIdentityCommand,
+  PutEmailIdentityMailFromAttributesCommand,
   SendEmailCommand,
   SESv2Client,
+  type CreateEmailIdentityCommandOutput,
+  type CreateTenantCommandOutput,
+  type CreateTenantResourceAssociationCommandOutput,
   type GetAccountCommandOutput,
+  type GetEmailIdentityCommandOutput,
+  type PutEmailIdentityMailFromAttributesCommandOutput,
   type SendEmailCommandOutput,
 } from '@aws-sdk/client-sesv2';
 
 import { ExternalSendError } from './errors.js';
-import type { SesApi, SesGetAccountResponse, SesSendEmailRequest, SesSendEmailResponse } from './api.js';
+import type {
+  SesApi,
+  SesCreateEmailIdentityResponse,
+  SesGetAccountResponse,
+  SesGetEmailIdentityResponse,
+  SesIdentityApi,
+  SesSendEmailRequest,
+  SesSendEmailResponse,
+} from './api.js';
 
 /**
  * `SESv2Client.send` の構造的部分型。
@@ -36,14 +54,57 @@ import type { SesApi, SesGetAccountResponse, SesSendEmailRequest, SesSendEmailRe
 export type SesCommandSender = {
   send(command: SendEmailCommand): Promise<SendEmailCommandOutput>;
   send(command: GetAccountCommand): Promise<GetAccountCommandOutput>;
+  send(command: CreateTenantCommand): Promise<CreateTenantCommandOutput>;
+  send(command: CreateEmailIdentityCommand): Promise<CreateEmailIdentityCommandOutput>;
+  send(
+    command: PutEmailIdentityMailFromAttributesCommand,
+  ): Promise<PutEmailIdentityMailFromAttributesCommandOutput>;
+  send(
+    command: CreateTenantResourceAssociationCommand,
+  ): Promise<CreateTenantResourceAssociationCommandOutput>;
+  send(command: GetEmailIdentityCommand): Promise<GetEmailIdentityCommandOutput>;
 };
 
 export type SesApiOptions = {
   /** `AWS_REGION`（`packages/config`）。🔴 ここで `process.env` を読まない。 */
   readonly region: string;
+  /**
+   * `AWS_ACCOUNT_ID`（`packages/config`）。identity の ARN を組み立てるために要る
+   * （`CreateTenantResourceAssociation` の `ResourceArn`。docs/05 §8.3）。
+   */
+  readonly accountId: string;
   /** 差し替え用（テストのスタブ）。省略時は `SESv2Client` を作る。 */
   readonly client?: SesCommandSender;
 };
+
+/**
+ * SES の identity ARN（`CreateTenantResourceAssociation` の `ResourceArn`）。
+ * 🔴 ここだけで組み立てる。呼び出し側に文字列連結を書かせない。
+ */
+export function sesIdentityArn(options: {
+  readonly region: string;
+  readonly accountId: string;
+  readonly identity: string;
+}): string {
+  return `arn:aws:ses:${options.region}:${options.accountId}:identity/${options.identity}`;
+}
+
+/**
+ * 🔴 「既に存在する」を成功として扱うための判定（docs/05 §8.3「既存なら no-op」）。
+ *
+ * `domain.provision` は `attempts: 3` であり、既存のテナント / identity に対して再実行されうる。
+ * 🔴 クラス（`AlreadyExistsException`）を import せず `name` で判定するのは、SDK のマイナー版で
+ *    公開エクスポートが変わっても壊れないようにするためである（名前は API 契約の一部で変わらない）。
+ * 🔴 それ以外の例外は握り潰さない（そのまま投げ、ジョブの再試行 / 失敗に載せる）。
+ */
+function isAlreadyExists(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'name' in error &&
+    (error as { name?: unknown }).name === 'AlreadyExistsException'
+  );
+}
 
 /**
  * 🔴 SDK の応答は**全フィールドが optional** である（`MessageId?` / `SendQuota?` /
@@ -81,6 +142,50 @@ function toProviderQuota(output: GetAccountCommandOutput): SesGetAccountResponse
 }
 
 /**
+ * 🔴 DKIM トークンが無い応答を「トークン 0 本」として通さない。
+ *    通すと画面に CNAME が 1 本も出ず、利用者は「設定するものが無い」と誤解したまま
+ *    永久に検証されない状態になる（`docs/04` 申し送り 8 の「状態であってエラーではない」の逆で、
+ *    これは**実際に異常**である）。
+ */
+function requireDkimTokens(tokens: readonly string[] | undefined): readonly string[] {
+  if (tokens === undefined || tokens.length === 0) {
+    throw new ExternalSendError(
+      'PERMANENT',
+      'MissingDkimTokens',
+      'SES が DKIM トークンを返しませんでした。DNS レコードを提示できません。',
+    );
+  }
+  return tokens;
+}
+
+/**
+ * `GetEmailIdentity` の応答を内部型へ正規化する。
+ *
+ * 🔴 SDK の応答は全フィールドが optional である。**欠けを「検証済み」側に倒さない** ——
+ *    `VerifiedForSendingStatus` が無ければ `false`、`DkimAttributes.Status` が無ければ
+ *    `'NOT_STARTED'` として扱い、`MailFromAttributes` が無ければ `null` にする。
+ *    判定（`decideSendingDomainVerification`）は「すべて `SUCCESS`」でのみ検証済みとするため、
+ *    欠けはそのまま未検証になる（fail-closed）。
+ */
+function toGetEmailIdentityResponse(output: GetEmailIdentityCommandOutput): SesGetEmailIdentityResponse {
+  const mailFrom = output.MailFromAttributes;
+  return {
+    VerifiedForSendingStatus: output.VerifiedForSendingStatus === true,
+    DkimAttributes: {
+      Status: output.DkimAttributes?.Status ?? 'NOT_STARTED',
+      Tokens: output.DkimAttributes?.Tokens ?? [],
+    },
+    MailFromAttributes:
+      mailFrom === undefined || mailFrom.MailFromDomain === undefined
+        ? null
+        : {
+            MailFromDomain: mailFrom.MailFromDomain,
+            MailFromDomainStatus: mailFrom.MailFromDomainStatus ?? 'PENDING',
+          },
+  };
+}
+
+/**
  * `SendEmail` のコマンド入力。
  *
  * 🔴 フィールド名は `SesSendEmailRequest`（ポート）と SDK で**同じ綴り**にしてあるため、
@@ -111,7 +216,7 @@ export function toSendEmailCommand(request: SesSendEmailRequest): SendEmailComma
  * docs/03 §6.5 と同じ方針）に委ねる。**アクセスキーを引数に取らない** ——
  * 受け取れるようにすると、環境変数から資格情報を渡す経路がここに生える。
  */
-export function createSesApi(options: SesApiOptions): SesApi {
+export function createSesApi(options: SesApiOptions): SesApi & SesIdentityApi {
   const client: SesCommandSender =
     options.client ??
     new SESv2Client({
@@ -119,6 +224,10 @@ export function createSesApi(options: SesApiOptions): SesApi {
       // 🔴 SDK 内部の再試行を止める（既定 3 回）。再試行の可否はジョブの `attempts` が決める。
       maxAttempts: 1,
     });
+
+  async function getEmailIdentity(domain: string): Promise<SesGetEmailIdentityResponse> {
+    return toGetEmailIdentityResponse(await client.send(new GetEmailIdentityCommand({ EmailIdentity: domain })));
+  }
 
   return {
     async sendEmail(request: SesSendEmailRequest): Promise<SesSendEmailResponse> {
@@ -128,5 +237,62 @@ export function createSesApi(options: SesApiOptions): SesApi {
     async getAccount(): Promise<SesGetAccountResponse> {
       return toProviderQuota(await client.send(new GetAccountCommand({})));
     },
+
+    // --- identity（docs/05 §8.3。すべて冪等）------------------------------------
+    identityArn(identity: string): string {
+      return sesIdentityArn({ region: options.region, accountId: options.accountId, identity });
+    },
+    async createTenant(tenantName: string): Promise<void> {
+      try {
+        await client.send(new CreateTenantCommand({ TenantName: tenantName }));
+      } catch (error) {
+        if (!isAlreadyExists(error)) throw error;
+      }
+    },
+    async createEmailIdentity(input): Promise<SesCreateEmailIdentityResponse> {
+      try {
+        const output = await client.send(
+          new CreateEmailIdentityCommand({
+            EmailIdentity: input.domain,
+            ConfigurationSetName: input.configurationSetName,
+          }),
+        );
+        return { DkimAttributes: { Tokens: requireDkimTokens(output.DkimAttributes?.Tokens) } };
+      } catch (error) {
+        if (!isAlreadyExists(error)) throw error;
+        // 🔴 既存 identity の DKIM トークンを読み直す。**新しいトークンを発行し直さない**
+        //    （利用者が既に DNS に入れた CNAME が無効になり、検証がやり直しになる）。
+        const existing = await getEmailIdentity(input.domain);
+        return { DkimAttributes: { Tokens: existing.DkimAttributes.Tokens } };
+      }
+    },
+    async putEmailIdentityMailFromAttributes(input): Promise<void> {
+      await client.send(
+        new PutEmailIdentityMailFromAttributesCommand({
+          EmailIdentity: input.domain,
+          MailFromDomain: input.mailFromDomain,
+          // 🔴 MX が引けないときに Amazon のサブドメインへ落とさない（`REJECT_MESSAGE`）。
+          //    落とすと「MAIL FROM が未検証のまま送れてしまう」= `BR-51` の抜け穴になる。
+          BehaviorOnMxFailure: 'REJECT_MESSAGE',
+        }),
+      );
+    },
+    async createTenantResourceAssociation(input): Promise<void> {
+      try {
+        await client.send(
+          new CreateTenantResourceAssociationCommand({
+            TenantName: input.tenantName,
+            ResourceArn: sesIdentityArn({
+              region: options.region,
+              accountId: options.accountId,
+              identity: input.identity,
+            }),
+          }),
+        );
+      } catch (error) {
+        if (!isAlreadyExists(error)) throw error;
+      }
+    },
+    getEmailIdentity,
   };
 }

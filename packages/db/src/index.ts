@@ -262,16 +262,20 @@ export type {
 export {
   dispatchRecipientHash,
   dispatchTokenHashPrefix,
+  EMAIL_DISPATCH_HOLD_STATUSES,
   EmailDispatchConflictError,
   emailDispatchDedupeKey,
   failEmailDispatch,
   holdEmailDispatch,
+  listHeldEmailDispatches,
   markEmailDispatchMocked,
   markEmailDispatchSent,
   readEmailDailyCount,
   readEmailDispatch,
+  requeueHeldEmailDispatch,
   reserveEmailDailyQuota,
   reserveEmailDispatch,
+  supersedeHeldEmailDispatch,
   suppressEmailDispatch,
 } from './email-dispatch.js';
 export type {
@@ -279,7 +283,25 @@ export type {
   EmailDispatchInput,
   EmailDispatchReservation,
   EmailDispatchRow,
+  HeldEmailDispatchRow,
 } from './email-dispatch.js';
+// 🔴 T-04-04: TenantSendingDomain（docs/05 §3.9 / §8.3 / docs/03 §3.2.7）を読み書きする唯一の経路。
+//    `verifiedAt` が NULL の間、取引先へ届く送信は実行されない（`BR-51` / `F-001 AC-4`）。
+export {
+  applySendingDomainProvision,
+  expireSendingDomain,
+  listSendingDomains,
+  listVerifiedSendingDomains,
+  markSendingDomainVerified,
+  readSendingDomain,
+  registerSendingDomain,
+  resolveVerifiedSendingDomain,
+} from './tenant-sending-domain.js';
+export type {
+  SendingDomainRegistration,
+  SendingDomainRow,
+  VerifiedSendingDomainRow,
+} from './tenant-sending-domain.js';
 // 🔴 T-04-03: Webhook 受信（docs/05 §8.5）。C0 SYSTEM_ONLY の 2 表に触れる唯一の経路。
 export {
   markWebhookDeliveryFailed,

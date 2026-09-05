@@ -73,3 +73,74 @@ export interface SesApi {
   sendEmail(request: SesSendEmailRequest): Promise<SesSendEmailResponse>;
   getAccount(): Promise<SesGetAccountResponse>;
 }
+
+// ============================================================================
+// 🔴 送信元ドメインの登録・検証（docs/05 §8.3 / docs/03 §3.2.7）。T-04-04
+// ============================================================================
+// 🔴 `SesApi`（送信）と分けてある。分ける理由は「実装が別」だからではなく（アダプタは
+//    `createSesApi` の 1 つで、両方を返す）、**依存の向きを狭く保つ**ためである:
+//      - `SesEmailSender` は identity 操作を呼べてはならない（送信の経路から
+//        `CreateEmailIdentity` を呼ぶコードが書けると、送信中にドメイン設定が変わりうる）
+//      - `domain.*` ジョブは `sendEmail` を呼べてはならない（検証のジョブが 1 通も送らないこと
+//        が、`attempts: 3` を許している根拠である。docs/05 §9.10）
+//    型を分けておくと、この 2 つがコンパイル時に成立する。
+
+/** `CreateEmailIdentity`（SESv2）の応答のうち本プロダクトが読む部分。 */
+export type SesCreateEmailIdentityResponse = {
+  /** 🔴 Easy DKIM の CNAME 3 本を組み立てる元（`{token}._domainkey.{domain}`）。秘匿ではない。 */
+  readonly DkimAttributes: { readonly Tokens: readonly string[] };
+};
+
+/** `GetEmailIdentity`（SESv2）の応答のうち本プロダクトが読む部分（docs/05 §8.3「検証」）。 */
+export type SesGetEmailIdentityResponse = {
+  /** identity 全体が送信に使える状態か。 */
+  readonly VerifiedForSendingStatus: boolean;
+  readonly DkimAttributes: {
+    /** `'SUCCESS' | 'PENDING' | 'FAILED' | 'TEMPORARY_FAILURE' | 'NOT_STARTED'`。 */
+    readonly Status: string;
+    readonly Tokens: readonly string[];
+  };
+  readonly MailFromAttributes: {
+    readonly MailFromDomain: string;
+    /** `'SUCCESS' | 'PENDING' | 'FAILED' | 'TEMPORARY_FAILURE'`。 */
+    readonly MailFromDomainStatus: string;
+  } | null;
+};
+
+/**
+ * 🔴 SES Tenants / identity / Custom MAIL FROM の操作（docs/05 §8.3 の「SES Tenants と identity」）。
+ *
+ * 🔴 **すべて冪等でなければならない**（`domain.provision` は `attempts: 3` であり、
+ *    既存のテナント / identity に対して再実行されうる）。「既に存在する」は成功として扱い、
+ *    アダプタが `AlreadyExistsException` を飲み込む（docs/05 §8.3「既存なら no-op」）。
+ */
+export interface SesIdentityApi {
+  /**
+   * identity の ARN（`TenantSendingDomain.sesIdentityArn` に保存する値）。
+   * 🔴 region / accountId を知っているのはアダプタだけなので、組み立てもアダプタに閉じる
+   *    （ジョブ側で文字列連結を書かせない）。ネットワークを使わない純粋な導出である。
+   */
+  identityArn(identity: string): string;
+  /** SES Tenant（`'t-{tenantId}'`）を作る。既存なら no-op。 */
+  createTenant(tenantName: string): Promise<void>;
+  /** ドメイン identity を作る。🔴 既存なら `GetEmailIdentity` の DKIM トークンを返す。 */
+  createEmailIdentity(input: {
+    readonly domain: string;
+    readonly configurationSetName: string;
+  }): Promise<SesCreateEmailIdentityResponse>;
+  /** Custom MAIL FROM（`mail.{domain}`）を設定する。何度呼んでも同じ状態になる。 */
+  putEmailIdentityMailFromAttributes(input: {
+    readonly domain: string;
+    readonly mailFromDomain: string;
+  }): Promise<void>;
+  /**
+   * identity を SES Tenant に関連付ける。既存なら no-op。
+   * 🔴 独自ドメインと**共通ドメインの両方**を関連付ける（docs/05 §8.3）。分類 1 / 分類外の
+   *    送信もテナント別レピュテーションに乗せるためである。
+   */
+  createTenantResourceAssociation(input: {
+    readonly tenantName: string;
+    readonly identity: string;
+  }): Promise<void>;
+  getEmailIdentity(domain: string): Promise<SesGetEmailIdentityResponse>;
+}

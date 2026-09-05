@@ -21,6 +21,7 @@ import { createHash } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { usagePeriodKey } from '@ses/domain';
 import type { HostTenantCtx } from './context.js';
+import { EMAIL_DISPATCH_STATUSES } from './schema-value-sets.js';
 import type { EmailDispatchStatus, EmailRecipientClass } from './schema-value-sets.js';
 import { uuidV7 } from './uuid.js';
 import { runInTenantTransaction } from './with-tenant.js';
@@ -206,11 +207,20 @@ export async function markEmailDispatchMocked(
   );
 }
 
-/** `HELD_*` に置ける状態（docs/05 §8.3 / §8.3-Q）。🔴 失敗ではない。 */
-export type EmailDispatchHoldStatus = Extract<
-  EmailDispatchStatus,
-  'HELD_DOMAIN_UNVERIFIED' | 'HELD_PROVIDER_QUOTA'
->;
+/**
+ * `HELD_*` に置ける状態（docs/05 §8.3 / §8.3-Q）。🔴 失敗ではない。
+ *
+ * 🔴 **`EMAIL_DISPATCH_STATUSES`（CHECK の 7 値）から `HELD_` 接頭辞で導出する。列挙しない。**
+ *    `send.hold-release` の走査対象と、保留に置ける状態と、この定数が**同じ 1 つの出所**から
+ *    出ていることが、docs/05 §17.2 #19-② の「走査対象が `{'HELD_DOMAIN_UNVERIFIED',
+ *    'HELD_PROVIDER_QUOTA'}` と一致する」の担保である（手で書き写すと、値が増えたときに
+ *    片方だけ古くなり、**新しい保留が永久に復帰しない**）。
+ */
+export const EMAIL_DISPATCH_HOLD_STATUSES = EMAIL_DISPATCH_STATUSES.filter(
+  (status): status is Extract<EmailDispatchStatus, `HELD_${string}`> => status.startsWith('HELD_'),
+);
+
+export type EmailDispatchHoldStatus = (typeof EMAIL_DISPATCH_HOLD_STATUSES)[number];
 
 /**
  * 🔴 保留に置く（`QUEUED → HELD_*`）。docs/05 §8.3 / §8.3-Q ④。
@@ -277,6 +287,62 @@ export async function failEmailDispatch(
   );
 }
 
+/**
+ * 🔴 保留（`HELD_*`）から抜ける 2 経路のうちの 1 つ（`send.hold-release`。docs/05 §9.4 / §8.3）。
+ *
+ * 用途は「保留中の招待 / パスワード再設定を**トークン再発行**で置き換える」ことである。
+ * 平文トークンは payload（Redis）と共に消えており DB に残っていないため、
+ * **再発行以外に送る手段が無い**（docs/05 §8.3 の復帰手順①）。
+ *
+ * 🔴 `failure_reason='REISSUED'` は失敗の記録ではなく「この行は新しい行に置き換わった」印である。
+ *    CAS（`WHERE status = fromStatus`）が 0 件なら他の実行が処理済み ＝ 正常系。
+ * 🔴 `SUPPRESSED` に落とすので、この行が二度と送られることはない（新しい `dedupeKey` の
+ *    行が別に作られ、「1 通」はこの CAS が担保する）。
+ */
+export async function supersedeHeldEmailDispatch(
+  ctx: HostTenantCtx,
+  input: { readonly dispatchId: string; readonly fromStatus: EmailDispatchHoldStatus },
+): Promise<boolean> {
+  return runInTenantTransaction(
+    { tenantId: ctx.tenantId, partnerCompanyId: null, actorUserId: ctx.userId },
+    async (tx) => {
+      const updated = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        UPDATE email_dispatches
+           SET status = 'SUPPRESSED', failure_reason = 'REISSUED'
+         WHERE id = ${input.dispatchId}::uuid AND status = ${input.fromStatus}
+        RETURNING id::text AS id`);
+      return updated.length === 1;
+    },
+  );
+}
+
+/**
+ * 🔴 保留から抜ける 2 経路のうちのもう 1 つ（`HELD_* → QUEUED`。docs/05 §9.4）。
+ *
+ * 招待・再設定**以外**の運用メールは本文が DB 側にあり、平文トークンを持たない。したがって
+ * 単に `QUEUED` へ戻して `email.dispatch` を再 enqueue すればよい。
+ *
+ * 🔴 再 enqueue されたジョブは §8.3-Q の判定を**最初から通る**（`held_at` を NULL に戻すのは
+ *    そのためである）。**保留を経たものだけが判定を免れる経路を作らない。**
+ * 🔴 CAS が 0 件なら他の実行が処理済み ＝ 正常系（`send.hold-release` は 10 分ごとに走る）。
+ */
+export async function requeueHeldEmailDispatch(
+  ctx: HostTenantCtx,
+  input: { readonly dispatchId: string; readonly fromStatus: EmailDispatchHoldStatus },
+): Promise<boolean> {
+  return runInTenantTransaction(
+    { tenantId: ctx.tenantId, partnerCompanyId: null, actorUserId: ctx.userId },
+    async (tx) => {
+      const updated = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        UPDATE email_dispatches
+           SET status = 'QUEUED', held_at = NULL
+         WHERE id = ${input.dispatchId}::uuid AND status = ${input.fromStatus}
+        RETURNING id::text AS id`);
+      return updated.length === 1;
+    },
+  );
+}
+
 export type EmailDispatchRow = {
   readonly dispatchId: string;
   readonly status: EmailDispatchStatus;
@@ -285,6 +351,61 @@ export type EmailDispatchRow = {
   readonly templateKey: string;
   readonly dedupeKey: string;
 };
+
+/** 保留中の 1 行（`send.hold-release` が走査する形）。 */
+export type HeldEmailDispatchRow = EmailDispatchRow & {
+  readonly status: EmailDispatchHoldStatus;
+  /** 🔴 復帰の順序（**古い順**）を決める唯一の根拠。docs/05 §9.4。 */
+  readonly heldAt: Date | null;
+};
+
+/**
+ * 🔴 `send.hold-release` が走査する保留行（docs/05 §9.4）。**`heldAt` の昇順**で返す。
+ *
+ * 🔴 走査対象は `EMAIL_DISPATCH_HOLD_STATUSES`（= CHECK の 7 値のうち `HELD_` 接頭辞を持つもの）
+ *    であり、**列挙を手で書かない**。値が増えたときに片方だけ更新される状態を作らないためである
+ *    （`tests/static/provider-quota-hold.test.ts` が集合の一致を固定する。docs/05 §17.2 #19-②）。
+ * 🔴 古い順に返す理由: 枠が回復しても一度に戻せる件数は限られる（`headroom`）。新しいものから
+ *    戻すと、古い保留が永久に後回しになる（招待が届かないまま期限切れになる）。
+ */
+export async function listHeldEmailDispatches(
+  ctx: HostTenantCtx,
+  input: { readonly limit: number },
+): Promise<readonly HeldEmailDispatchRow[]> {
+  if (!Number.isInteger(input.limit) || input.limit <= 0) {
+    throw new RangeError(`limit は 1 以上の整数である必要があります（${input.limit}）。`);
+  }
+  return runInTenantTransaction(
+    { tenantId: ctx.tenantId, partnerCompanyId: null, actorUserId: ctx.userId },
+    async (tx) => {
+      const rows = await tx.$queryRaw<
+        Array<{
+          id: string;
+          status: string;
+          recipient_class: string;
+          recipient_email: string;
+          template_key: string;
+          dedupe_key: string;
+          held_at: Date | null;
+        }>
+      >(Prisma.sql`
+        SELECT id::text AS id, status, recipient_class, recipient_email, template_key, dedupe_key, held_at
+          FROM email_dispatches
+         WHERE status IN (${Prisma.join([...EMAIL_DISPATCH_HOLD_STATUSES])})
+         ORDER BY held_at ASC NULLS FIRST, id ASC
+         LIMIT ${input.limit}`);
+      return rows.map((row) => ({
+        dispatchId: row.id,
+        status: row.status as EmailDispatchHoldStatus,
+        recipientClass: row.recipient_class as EmailRecipientClass,
+        recipientEmail: row.recipient_email,
+        templateKey: row.template_key,
+        dedupeKey: row.dedupe_key,
+        heldAt: row.held_at,
+      }));
+    },
+  );
+}
 
 /** 1 行を読む（ジョブが payload の `dispatchId` から復元するための唯一の経路）。 */
 export async function readEmailDispatch(

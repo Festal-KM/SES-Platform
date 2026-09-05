@@ -400,6 +400,31 @@ const ja = {
   // 🔴 F-006 AC-2: 常時表示。件数・存在の示唆を含めない（docs/04 §S-004 セクション 6 の文言）。
   'home.partner.visibilityNotice':
     'この画面には、御社が登録した人材と、御社に公開された案件・御社が作成した提案のみが表示されます。',
+
+  // --- S-036 送信ドメインの設定と検証（docs/04 §S-036 / F-001 AC-4 / docs/03 §3.2.7。T-04-04）---
+  // 🔴 **状態であってエラーではない**（docs/04 `program-design` 申し送り 8）。
+  //    「壊れている」ではなく「取引先へ送信できない状態」として、理由と手順とともに示す。
+  //    画面（`S-036`）そのものは T-04-06 が作る。ここに置くのは API が返すキーの実体である。
+  'settings.sendingDomain.state.REGISTERED': '登録済み（DNS レコードの準備中）',
+  'settings.sendingDomain.state.PENDING': 'DNS の反映待ち',
+  'settings.sendingDomain.state.VERIFIED': '検証済み',
+  'settings.sendingDomain.state.FAILED': 'DNS レコードが確認できません',
+  // 🔴 `sandbox` は共通ドメインで動くため検証を求めない（docs/03 §3.2.7-4）。
+  //    「できない」ではなく「不要」であることを示す。
+  'settings.sendingDomain.state.NOT_REQUIRED': 'この環境では設定は不要です',
+  // 提示する DNS レコードの説明（docs/03 §3.2.7 / §3.2.9）。
+  'settings.sendingDomain.record.DKIM': 'DKIM（送信元の署名）',
+  'settings.sendingDomain.record.MAIL_FROM_MX': 'MAIL FROM（バウンスの受け取り）',
+  'settings.sendingDomain.record.MAIL_FROM_SPF': 'SPF（送信元の許可）',
+  // 🔴 検証が成立しない理由。**次に何をすればよいか**が分かる文言にする（障害の説明にしない）。
+  'settings.sendingDomain.failure.DKIM_NOT_VERIFIED':
+    'DKIM の CNAME レコード（3 件）が確認できません。DNS に登録済みの場合は、反映までしばらくお待ちください。',
+  'settings.sendingDomain.failure.MAIL_FROM_NOT_VERIFIED':
+    'MAIL FROM の MX・TXT レコードが確認できません。DNS に登録済みの場合は、反映までしばらくお待ちください。',
+  'settings.sendingDomain.failure.MAIL_FROM_NOT_CONFIGURED':
+    '送信元の準備が完了していません。「検証状態を再確認する」をもう一度お試しください。',
+  'settings.sendingDomain.failure.IDENTITY_NOT_VERIFIED':
+    'DNS レコードの確認が完了していません。反映までしばらくお待ちください。',
 } as const;
 
 /** 🔴 文言キーの単一の出所。存在しないキーはコンパイルエラーになる。 */

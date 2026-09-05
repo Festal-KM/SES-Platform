@@ -123,6 +123,11 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
     //    ジョブ文脈を組み立てる。**`apps/web` 側には 1 つも無い**（下の it が固定する）。
     'apps/worker/src/jobs/account-mail.ts',
     'apps/worker/src/jobs/email-dispatch.ts',
+    // 🔴 T-04-04: 送信ドメインのジョブと保留の復帰（docs/05 §8.3 / §9.4 / §9.9）。
+    //    いずれも payload の `tenantId` からジョブ文脈を組み立てる（`apps/web` 側には無い）。
+    'apps/worker/src/jobs/domain-provision.ts',
+    'apps/worker/src/jobs/domain-verify.ts',
+    'apps/worker/src/jobs/send-hold-release.ts',
   ],
   // 🔴 T-03-10: `usage_counters` を書く唯一の経路（docs/05 §7.6 / §9.8）。
   //    ここを増やすと「計測を迂回した書き込み」が生まれ、原価と請求根拠が説明できなくなる。
