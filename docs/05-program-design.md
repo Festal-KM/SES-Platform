@@ -2370,12 +2370,18 @@ export type Connectors = {
   email: EmailSender;
   objectStore: ObjectStore;
   malwareScanner: MalwareScanner;
-  esign: Record<EsignProviderKey, EsignProvider>;   // 🔴 テナントごとに provider が違う（§8.4）
+  esign: EsignProviderMap;                         // 🔴 テナントごとに provider が違う（§8.4）
   billing: BillingProvider;
-  ai: AiClient;
 };
+export type EsignProviderMap = Readonly<Partial<Record<EsignProviderKey, EsignProvider>>>;
+// 🔴 未登録のキーは undefined（＝そのプロバイダは使えない）。フォールバックで別プロバイダを選ばない。
 export function createConnectors(selection: ConnectorSelection): Connectors;
 // ConnectorSelection は @ses/config（resolveConnectorSelection。§13.1）が返す型
+// 🔴 `ai` は Connectors に含めない（T-04-01 で確定）。AI クライアントは packages/ai が同じ
+//    `selection.ai` から組み立てる —— packages/connectors は @anthropic-ai/sdk を import できず
+//    （CLAUDE.md §3.2）、@ses/ai にも依存できない（§2.1）ため、ここでは作れない。
+//    §17.5 が MockAnthropicClient を packages/ai/src/mock/ に置くとしているのと同じ整理である。
+//    束ねるのは apps/* の DI コンテナ（§13.1）。
 ```
 ```ts
 export interface EmailSender {
@@ -2385,7 +2391,7 @@ export interface EmailSender {
     to: string; templateKey: string; params: Record<string, unknown>;
     tenantId: string | null; fromDomain: VerifiedSendingDomain | null;
     token: SendAttemptToken | DispatchToken;      // 🔴 経路を強制（§10.2）
-  }): Promise<{ externalId: string }>;
+  }): Promise<{ externalId: string }>;            // 🔴 実装の冒頭で assertSendingDomainForRecipientClass(input)（§8.3。モックも実装も同じ判定）
   callCount(): number;                             // 🔴 モックと実装の共通シグネチャ（§13.3）
   getQuota(): Promise<ProviderQuota>;              // 🔴 送信基盤（アカウント）全体の 24h 枠。SES = GetAccount().SendQuota（v1 の GetSendQuota 相当）/ モック = 自身の 24h 送信数（§8.3-Q）。ProviderQuota = { max24h: number; sentLast24h: number; observedAt: Date }。取得失敗は throw（0 を返さない）。§16.5 項目 13 の集計層が捕捉し API-A8 の providerReading.available=false に落とす
 }
@@ -2395,11 +2401,13 @@ export interface ObjectStore {
   presignGet(key: string, ttlSec: number): Promise<PresignedUrl>;
   delete(key: string): Promise<void>;
   head(key: string): Promise<{ byteSize: number; versionId: string } | null>;
+  callCount(): number;                             // 🔴 §13.2「全モックに callCount()」を共通シグネチャに置く
 }
 
 export interface MalwareScanner {
   enqueue(key: string): Promise<void>;             // GuardDuty は S3 の Put が契機なので no-op
   getResult(key: string, versionId: string): Promise<ScanStatus | null>;   // 保険のポーリング用
+  callCount(): number;
 }
 
 export interface EsignProvider {
@@ -2417,14 +2425,21 @@ export interface EsignProvider {
   fetchStatus(conn: EsignConnectionSecret, externalDocumentId: string): Promise<NormalizedEsignStatus>;
   withdraw(conn: EsignConnectionSecret, externalDocumentId: string): Promise<void>;
   downloadExecuted(conn: EsignConnectionSecret, externalDocumentId: string): Promise<Uint8Array>;
+  callCount(): number;
 }
 export type EsignSigner = { role: 'HOST' | 'COUNTERPARTY'; name: string; email: string; routingOrder: number };  // HOST_FIRST → 1 / 2、PARALLEL → 1 / 1
 
 export interface BillingProvider {
   submitMeterEvent(input: MeterEventInput, token: MeterSubmissionToken): Promise<void>;
-  fetchInvoiceTotals(customerId: string, period: Period): Promise<{ amountJpy: Decimal }>;
+  fetchInvoiceTotals(customerId: string, period: Period): Promise<{ amountJpy: DecimalString }>;
+  callCount(): number;
 }
+export type DecimalString = string;
+// 🔴 金額は 10 進の**文字列**で受け渡す（T-04-01 で確定）。`number`（IEEE754）で持たず、
+//    `Prisma.Decimal` も使わない —— `packages/connectors` は `@prisma/client` に依存できない
+//    （CLAUDE.md §2.1 / §3.1）。DB 型への変換は呼び出し側（apps/* → packages/db）が行う。
 ```
+🔴 **`callCount()` を 5 つのインタフェース全部に置く理由**（§13.2 の「全モックに `callCount()`」を共通シグネチャに載せた。T-04-01 で確定）: 検証用のメソッドをモック側にだけ生やすと、`§17.4` の環境分離テストが「モックにキャストできたときだけ数えられる」形になり、**E2E とアプリで別の経路を通る**。インタフェースに置けば、呼び出し側は実装がモックか実サービスかを知らずに呼び出し回数を読める。
 **サービス固有処理をどこに閉じ込めるか**
 
 | サービス固有 | 閉じ込め先 |
@@ -2475,6 +2490,7 @@ export function resolveRecipientClass(db: TenantDb, subject: { userId: string } 
                                       fallback: 'CLIENT' | 'ENGINEER'): Promise<RecipientClass>;
 // subject が null（テナント外の宛先）のときのみ fallback を使う。招待中の本人は Invitation.partner_company_id の有無で HOST_MEMBER / PARTNER_MEMBER に分類する（CLAUDE.md §11.1「招待中の本人を含む」。account.mail が使う。§9.4）。
 ```
+🔴 **`RecipientClass` の宣言場所（T-04-01 の申し送り。§10.1 のトークン型と同じ事情）**: `packages/domain`（分類する側）と `packages/connectors`（`EmailSender.send` の必須引数として受け取る側）の**両方**が同じ union を知る必要がある。恒久的な宣言場所は `packages/domain/src/recipient/classify.ts` であり、T-04-01 の時点では `packages/connectors` に workspace 依存（`@ses/domain`）を足していないため `packages/connectors/src/types.ts` にも同じ union を置いている。**T-04-02 で `classifyRecipient` を実装する際に依存を追加して一本化する。** 一本化しない場合は、`tests/static/connector-selection-mirror.test.ts`（`ConnectorSelection` の二重宣言を AST で突合している既存テスト）と同じ形で両者の値集合を突合させること。
 | 担保 | 手段 |
 |---|---|
 | **分類が未指定の送信を成立させない** | 🔴 **型**。`EmailSender.send` の `recipientClass` は必須プロパティであり、`RecipientClass` に既定値が無い。省略するとコンパイルエラー |
@@ -2511,7 +2527,7 @@ export function requireVerifiedSendingDomain(ctx): asserts ctx is CtxWithVerifie
 | 🔴 **SES Tenants と identity**（`docs/03` §3.2.1-3 / §3.2.7） | テナント開設（API-A4）または #71 が `domain.provision` ジョブを enqueue: `CreateTenant('t-{tenantId}')`（既存なら no-op）→ `CreateEmailIdentity(domain, ConfigurationSet=環境の set)` → `PutEmailIdentityMailFromAttributes('mail.' + domain)` → `CreateTenantResourceAssociation`（独自ドメイン identity と**共通ドメイン identity の両方**を関連付ける。分類 1 / 外の送信も `TenantName` を付けてテナント別レピュテーションに乗せる）→ `dkimTokens` / `mailFromDomain` を保存し `state='PENDING'`。**`EmailSender.send` は `SendEmail` に `TenantName` と `FromEmailAddress` を必ず渡す**（テナント別サプレッション・レピュテーション自動停止が効く） |
 | **検証**（#72 / `S-036`） | `domain.verify` ジョブ: `GetEmailIdentity` で `VerifiedForSendingStatus` + DKIM `Status` + MailFrom `Status` がすべて `SUCCESS` → `verifiedAt=now, state='VERIFIED'`、それ以外 → `state='FAILED', lastFailureReason`（「CNAME が見つかりません」等の i18n キー）。日次 `domain.recheck`（§9.9）が検証済みを再確認し、外れていたら `verifiedAt=NULL, state='FAILED'`（失効）→ 以後の送信は保留 + `A-005` + 通知 |
 | **運営者** | `A-014` 5b はドメインの**登録だけ**（`INSERT`。§5.2）。`A-005` 項目 11 = `tenants(lifecycle_state ∈ {ACTIVE}) LEFT JOIN tenant_sending_domains(state='VERIFIED')` が無い / `FAILED` のテナントを `created_at` からの経過日数付きで出す（`F-059 AC-5`。内容には立ち入らない）。`SANDBOX → ACTIVE` の移行は `verifiedAt IS NOT NULL` をサーバ側で再検証（§5.4） |
-| 🔴 **Q. 送信基盤（SES アカウント）全体のクォータ到達による保留 `HELD_PROVIDER_QUOTA`**（`F-059 AC-7` / `docs/02` 章 7.7「送信基盤（環境全体）の上限到達時の保留と復帰」/ `A-005` 項目 13。**TBD-12 の決着**） | 🔴 **テナント単位の日次上限（`F-027` 500 通 / 日。§8.7）とは別の枠**であり、SES アカウント（環境）全体で 24 時間ローリングの送信数上限がある（`sandbox` = SES サンドボックス状態のまま **200 通 / 24h**。`docs/03` §3.2.4）。到達している間は**外部への送信を 1 回も試みずに保留し、枠が回復したら自動で送る**（送信を試みていないので `BR-22` の自動リトライ禁止に当たらない。`docs/02` 章 7.7-①）。**判定はアプリ層で行い、SES の 429 / 例外に頼らない**（`CLAUDE.md` §3.4）: ①**判定位置** = `email.dispatch` / `account.mail` の**送信直前・`QUEUED → SENT` の CAS 相当更新より前**（`HELD_DOMAIN_UNVERIFIED` の判定と同じ位置。ドメイン判定 → クォータ判定の順）②**判定関数** = `packages/domain/src/quota/provider.ts` の純粋関数 `decideProviderQuota({ envLimit, provider: ProviderQuota \| null, localSent24h, now }): { kind:'ALLOW'; headroom: number } \| { kind:'HOLD' }`。`limit = min(envLimit, provider?.max24h ?? envLimit)`、`consumed = max(localSent24h, provider?.sentLast24h ?? 0)`、`consumed + 1 > limit` なら `HOLD`。`envLimit` は **`MAIL_PROVIDER_DAILY_QUOTA`**（`packages/config` §13.4。既定 `sandbox` / `development` / `demo` = 200、`staging` / `production` は既定なし = 必須。SES に付与された枠を超えて設定しても `min` で SES 側の値に丸まる）③**入力の取得** = `provider` は `EmailSender.getQuota()`（§8.1。SES `GetAccount`。Redis に 60 秒キャッシュ。取得失敗は `null` として `localSent24h` のみで判定 = 止めない側に倒さず**手元のカウンタで判定を続ける**）、`localSent24h` は Redis ZSET `mail:provider:sent24h`（`SesEmailSender.send` が実送信成功のたびに `ZADD score=now`、`ZREMRANGEBYSCORE` で 24h より古いものを落とす。**単一経路の内側で加算するので呼び出し側が忘れられない**。🔴 `SandboxEmailSender` で分類 2 / 3 / 4 をモック sink に流した分は加算しない = 枠を消費していないものを数えない）④**抵触時** = `UPDATE email_dispatches SET status='HELD_PROVIDER_QUOTA', held_at=now() WHERE id=$1 AND status='QUEUED'` → 外部を呼ばず**ジョブは正常終了**（throw しない = BullMQ の `attempts: 3` に乗らない。`FAILED` にしない。`failureReason` を書かない）。`account.mail` は平文トークンが payload と共に消えるため**復帰はトークンの再発行**（`HELD_DOMAIN_UNVERIFIED` と同じ手順を共用。§9.4）。#14 / #5 の応答 `deliveryState` に `'HELD_PROVIDER_QUOTA'` を加える（招待は作成される。送達は枠の回復後。利用者に「失敗」と見せない。`docs/02` 章 7.7-③）⑤**事後の安全網（🔴 適用先は `email.dispatch` / `account.mail` に限る）** = ③の判定をすり抜けて `SendEmail` が**日次枠超過を同期的に拒否**した場合（SESv2 `LimitExceededException` / `TooManyRequestsException` でメッセージが `Daily message quota exceeded` のもの。v1 の `Throttling` 相当。**`Maximum sending rate exceeded`（秒間レート）は別物で §8.7 のトークンバケット / 一時エラーの再試行に属する**）は `ses.ts` が `ProviderQuotaExceededError` に正規化し、ハンドラは④と同じ `HELD_PROVIDER_QUOTA` に置く（SES が拒否した送信は届いていないため安全。`FAILED` ではなく保留。`EmailDispatch` 行の UPDATE で完結する）。🔴 **`send.*` には適用しない** — `send.*` は `EmailDispatch` 行を持たず、①-e の事前判定を通過して CAS（`SUBMITTING` / `SENDING`）に入った後で SES が同期的に日次枠超過を返した稀な競合は、**外部呼び出しを 1 回行った以上 `SUBMIT_FAILED` / `SEND_FAILED` に落とす**（§10.2 ⑥ の明示的失敗。`BR-22` に忠実。復帰は人間の再送 #44 / #61 のみ。事前判定 ①-e が主経路でありこの競合は稀）⑥**射程** = 🔴 **本機構の対象は分類 1（テナント所属利用者宛）と分類外（運営者宛）= 実際に SES の枠を消費する送信**である。**業務上の外部送信（分類 2 / 3 / 4）は `sandbox` ではモックであり SES を通らないため本機構に入らない**。`production` では分類 2 / 3 も同じアカウントの枠を消費するため、`send.*` は §10.2 ①-e で同じ `decideProviderQuota` を評価し、`HOLD` なら **`sendHoldReasonKey='PROVIDER_QUOTA'`（7 番目の値。§10.4）で保留**する（`Proposal` は `APPROVED`、`Contract` は `DRAFT` のまま。`SUBMITTING` / `SENDING` に入れず `SUBMIT_FAILED` / `SEND_FAILED` にも落とさない。`docs/02` 章 7.7-②）。🔴 **`RATE_LIMIT`（テナント日次上限 = テナントの利用量。`decideQuota('EMAIL_COUNT')` の BLOCK）と DB で区別する** — 対処する相手が異なり（`F-059 AC-7`）、混ぜると環境枠で止まったテナントに `S-038` を案内してしまう。**状態は増やさない**（属性値の追加。`P-A-02` と同じ論法）⑦**指標** = `HELD_PROVIDER_QUOTA` と `sendHoldReasonKey='PROVIDER_QUOTA'` は失敗ジョブ数・未対応 `SUBMIT_FAILED` / `SEND_FAILED`・ゲート FAIL 率のいずれにも加算しない（§16.5 項目 13 / 項目 14 の理由別内訳） |
+| 🔴 **Q. 送信基盤（SES アカウント）全体のクォータ到達による保留 `HELD_PROVIDER_QUOTA`**（`F-059 AC-7` / `docs/02` 章 7.7「送信基盤（環境全体）の上限到達時の保留と復帰」/ `A-005` 項目 13。**TBD-12 の決着**） | 🔴 **テナント単位の日次上限（`F-027` 500 通 / 日。§8.7）とは別の枠**であり、SES アカウント（環境）全体で 24 時間ローリングの送信数上限がある（`sandbox` = SES サンドボックス状態のまま **200 通 / 24h**。`docs/03` §3.2.4）。到達している間は**外部への送信を 1 回も試みずに保留し、枠が回復したら自動で送る**（送信を試みていないので `BR-22` の自動リトライ禁止に当たらない。`docs/02` 章 7.7-①）。**判定はアプリ層で行い、SES の 429 / 例外に頼らない**（`CLAUDE.md` §3.4）: ①**判定位置** = `email.dispatch` / `account.mail` の**送信直前・`QUEUED → SENT` の CAS 相当更新より前**（`HELD_DOMAIN_UNVERIFIED` の判定と同じ位置。ドメイン判定 → クォータ判定の順）②**判定関数** = `packages/domain/src/quota/provider.ts` の純粋関数 `decideProviderQuota({ envLimit, provider: ProviderQuota \| null, localSent24h, now }): { kind:'ALLOW'; headroom: number } \| { kind:'HOLD' }`。`limit = min(envLimit, provider?.max24h ?? envLimit)`、`consumed = max(localSent24h, provider?.sentLast24h ?? 0)`、`consumed + 1 > limit` なら `HOLD`。`envLimit` は **`MAIL_PROVIDER_DAILY_QUOTA`**（`packages/config` §13.4。既定 `sandbox` / `development` / `demo` = 200、`staging` / `production` は既定なし = 必須。SES に付与された枠を超えて設定しても `min` で SES 側の値に丸まる）③**入力の取得** = `provider` は `EmailSender.getQuota()`（§8.1。SES `GetAccount`。Redis に 60 秒キャッシュ。取得失敗は `null` として `localSent24h` のみで判定 = 止めない側に倒さず**手元のカウンタで判定を続ける**）、`localSent24h` は Redis ZSET `mail:provider:sent24h`（`SesEmailSender.send` が実送信成功のたびに `ZADD score=now`、`ZREMRANGEBYSCORE` で 24h より古いものを落とす。**単一経路の内側で加算するので呼び出し側が忘れられない**。🔴 `SandboxRecipientScopedEmailSender` で分類 2 / 3 / 4 をモック sink に流した分は加算しない = 枠を消費していないものを数えない）④**抵触時** = `UPDATE email_dispatches SET status='HELD_PROVIDER_QUOTA', held_at=now() WHERE id=$1 AND status='QUEUED'` → 外部を呼ばず**ジョブは正常終了**（throw しない = BullMQ の `attempts: 3` に乗らない。`FAILED` にしない。`failureReason` を書かない）。`account.mail` は平文トークンが payload と共に消えるため**復帰はトークンの再発行**（`HELD_DOMAIN_UNVERIFIED` と同じ手順を共用。§9.4）。#14 / #5 の応答 `deliveryState` に `'HELD_PROVIDER_QUOTA'` を加える（招待は作成される。送達は枠の回復後。利用者に「失敗」と見せない。`docs/02` 章 7.7-③）⑤**事後の安全網（🔴 適用先は `email.dispatch` / `account.mail` に限る）** = ③の判定をすり抜けて `SendEmail` が**日次枠超過を同期的に拒否**した場合（SESv2 `LimitExceededException` / `TooManyRequestsException` でメッセージが `Daily message quota exceeded` のもの。v1 の `Throttling` 相当。**`Maximum sending rate exceeded`（秒間レート）は別物で §8.7 のトークンバケット / 一時エラーの再試行に属する**）は `ses.ts` が `ProviderQuotaExceededError` に正規化し、ハンドラは④と同じ `HELD_PROVIDER_QUOTA` に置く（SES が拒否した送信は届いていないため安全。`FAILED` ではなく保留。`EmailDispatch` 行の UPDATE で完結する）。🔴 **`send.*` には適用しない** — `send.*` は `EmailDispatch` 行を持たず、①-e の事前判定を通過して CAS（`SUBMITTING` / `SENDING`）に入った後で SES が同期的に日次枠超過を返した稀な競合は、**外部呼び出しを 1 回行った以上 `SUBMIT_FAILED` / `SEND_FAILED` に落とす**（§10.2 ⑥ の明示的失敗。`BR-22` に忠実。復帰は人間の再送 #44 / #61 のみ。事前判定 ①-e が主経路でありこの競合は稀）⑥**射程** = 🔴 **本機構の対象は分類 1（テナント所属利用者宛）と分類外（運営者宛）= 実際に SES の枠を消費する送信**である。**業務上の外部送信（分類 2 / 3 / 4）は `sandbox` ではモックであり SES を通らないため本機構に入らない**。`production` では分類 2 / 3 も同じアカウントの枠を消費するため、`send.*` は §10.2 ①-e で同じ `decideProviderQuota` を評価し、`HOLD` なら **`sendHoldReasonKey='PROVIDER_QUOTA'`（7 番目の値。§10.4）で保留**する（`Proposal` は `APPROVED`、`Contract` は `DRAFT` のまま。`SUBMITTING` / `SENDING` に入れず `SUBMIT_FAILED` / `SEND_FAILED` にも落とさない。`docs/02` 章 7.7-②）。🔴 **`RATE_LIMIT`（テナント日次上限 = テナントの利用量。`decideQuota('EMAIL_COUNT')` の BLOCK）と DB で区別する** — 対処する相手が異なり（`F-059 AC-7`）、混ぜると環境枠で止まったテナントに `S-038` を案内してしまう。**状態は増やさない**（属性値の追加。`P-A-02` と同じ論法）⑦**指標** = `HELD_PROVIDER_QUOTA` と `sendHoldReasonKey='PROVIDER_QUOTA'` は失敗ジョブ数・未対応 `SUBMIT_FAILED` / `SEND_FAILED`・ゲート FAIL 率のいずれにも加算しない（§16.5 項目 13 / 項目 14 の理由別内訳） |
 | **`sandbox` の例外** | 🔴 `APP_ENV='sandbox'` では分類 2 / 3 / 4 がモックのため、**そもそも取引先に届かない**。`requireVerifiedSendingDomain` は `sandbox` では通過させ、#72 は `NOT_REQUIRED` を返す（`docs/03` §3.2.7-4）。`resolveRecipientClass` の判定順（②パートナー所属 → ③テナント所属）が「取引先担当者はテナント所属でもモック」（Issue #10）をそのまま満たす（§8.2） |
 | **状態として返す** | `GET /api/settings/sending-domains` は `state` を返す。**エラーではない**（`docs/04` 申し送り 8 / `S-036`） |
 
@@ -2520,7 +2536,7 @@ export function requireVerifiedSendingDomain(ctx): asserts ctx is CtxWithVerifie
 | 項目 | 設計 |
 |---|---|
 | **接続単位** | 🔴 **テナント × 1 接続**（`TenantEsignConnection`）。環境変数（`ESIGN_ENABLED_PROVIDERS`）は**マップのキー一覧**であって実装の選択ではない |
-| **実装の選択** | 🔴 `createConnectors` が**全プロバイダの実装のマップ**を返し、`TenantEsignConnection.provider` でキーを引く（`docs/03` §9.1）。**リクエストごとの `if` にしない**。Phase 3 初期のマップは `{ docusign }` の 1 実装（+ 非本番の `mock`）。**クラウドサインは `connect.kind='CLIENT_ID'` の枝として差し替え余地を残すが実装しない**（`Q-T-9` / TBD-17。規約確認 `U-3` が先） |
+| **実装の選択** | 🔴 **型の正は §8.1 の `Connectors.esign: EsignProviderMap`（`EsignProviderKey → EsignProvider` の部分マップ。未登録キーは `undefined`）である**（T-04-01 で確定。§13.1 の擬似コードもこれに合わせた）。🔴 `createConnectors` が**全プロバイダの実装のマップ**を返し、`TenantEsignConnection.provider` でキーを引く（`docs/03` §9.1）。**リクエストごとの `if` にしない**。Phase 3 初期のマップは `{ docusign }` の 1 実装（+ 非本番の `mock`）。**クラウドサインは `connect.kind='CLIENT_ID'` の枝として差し替え余地を残すが実装しない**（`Q-T-9` / TBD-17。規約確認 `U-3` が先） |
 | **認可フロー** | Authorization Code Grant（§6.10 の手順①〜⑥）。🔴 **`extended` スコープを初回認可で必ず要求する**（忘れると 30 日で接続が黙って切れる。`oauth.test.ts` で固定） |
 | **資格情報** | 🔴 **保存するのはリフレッシュトークン（`credentialEncrypted`。AES-256-GCM / AAD = tenantId + 列名。§8.6）/ `externalAccountId` / `baseUri` / `accountName` / Connect の HMAC キー**。**アクセストークン（8 時間）は DB に永続化せずプロセス内キャッシュ**に留め、**残 30 分で更新**（`docs/03` §3.1.2a-2・4）。リフレッシュで返る新しいリフレッシュトークンを再暗号化して保存。🔴 **運営者に列 GRANT しない**（§5.5）。**アプリ自身の `DOCUSIGN_INTEGRATION_KEY` / `DOCUSIGN_SECRET_KEY` だけが環境変数** |
 | **ベース URL** | 🔴 **呼び出し先は接続時に保存した `baseUri`**（アカウントごとに異なる）。`ESIGN_API_BASE_URL` は環境判別（demo / 本番）にのみ使う（`docs/03` §3.1.2a-5） |
@@ -2651,8 +2667,15 @@ export interface RealtimeBus {
 type ExternalSendQueueOptions = { attempts: 1; backoff?: undefined };  type InternalQueueOptions = { attempts: 1 | 2 | 3; backoff?: BackoffOptions };   // 🔴 前者はリテラル 1 固定
 
 export const externalSendQueue = <N extends ExternalSendJobName>(name: N) =>
-  new Queue(name, { defaultJobOptions: { attempts: 1 } satisfies ExternalSendQueueOptions });
+  ({ name, defaultJobOptions: { attempts: 1 } satisfies ExternalSendQueueOptions });
 // 🔴 attempts: 2 を渡すとコンパイルエラー。キューの抽象化レイヤは作らない（docs/03 §9.2）
+// 🔴 返すのは「名前 + 既定ジョブオプション」の素のデータであり、BullMQ の `Queue` の実体化
+//    （`new Queue(def.name, { defaultJobOptions: def.defaultJobOptions })`）は起動時に apps/worker が行う
+//    （T-04-01 で確定）。packages/connectors が BullMQ に依存しないことで、キュー定義は Redis 無しで
+//    ユニットテスト・静的テスト（§17.2 #6）から検査できる。
+// 🔴 `send.hold-release`（§9.4）は `send.` 接頭辞を持つが外部 API を呼ばない内部ジョブであり attempts: 3。
+//    したがって**接頭辞で再試行可否を判定しない**。可否は ExternalSendJobName に載っているかで決まり、
+//    「send. 接頭辞を持つ内部ジョブ」の集合は §17.2 #6 がスナップショットで固定する。
 ```
 ### 9.2 システムコンテキスト（ジョブが `withTenant` を使う方法）
 
@@ -2802,6 +2825,7 @@ export type SendAttemptToken = {
 /** 🔴 CAS 成功 + SendAttempt INSERT 成功のときだけトークンを返す。他に生成経路が無い。 */
 export function reserveSendAttempt(db: TenantDb, input: ReserveInput): Promise<SendAttemptToken>;
 ```
+🔴 **トークン型の宣言場所（T-04-01 の申し送り）**: `SendAttemptToken` / `DispatchToken` / `MeterSubmissionToken` は **`packages/db` が生成し、`packages/connectors` が引数として受け取る**。両パッケージは相互に依存できない（`CLAUDE.md` §2.1）ため、**恒久的な宣言場所は両者が依存してよい `packages/domain`**（`§10.1` の `idempotencyKey` と同じ場所）である。T-04-01 の時点では `packages/connectors` に workspace 依存（`@ses/domain`）を足していないため、暫定的に `packages/connectors/src/types.ts` に置いている。**`reserveSendAttempt` を実装する時点（SP-09）で `packages/domain` へ移し、二重宣言を解消する。**
 `EmailSender.send` / `EsignProvider.createAndSend` が `SendAttemptToken` を**必須引数**に取るため、**予約を経ない外部送信はコンパイルできない**（`docs/03` 申し送り 3）。
 
 ### 10.2 実行ジョブの実行順序（🔴 **この順序が設計の要**）
@@ -3326,12 +3350,15 @@ export function createConnectors(selection: ConnectorSelection): Connectors {
     email:          pickByKind(selection.email,          { real: RealEmailSender,   mock: MockEmailSender,   sandboxRecipientScoped: SandboxRecipientScopedEmailSender }),
     objectStore:    pickByKind(selection.objectStore,    { real: RealObjectStore,   mock: MockObjectStore }),
     malwareScanner: pickByKind(selection.malwareScanner, { real: RealMalwareScanner, mock: MockMalwareScanner }),
-    esign:          pickByKind(selection.esign,          { real: RealEsignProvider, mock: MockEsignProvider }), // テナント別プロバイダの選択は §13.1 の別表を参照
+    esign:          createEsignProviderMap(selection.esign),   // 🔴 §8.1 の EsignProviderMap を組み立てる（1 実装を選ぶのではない。§8.4）
     billing:        pickByKind(selection.billing,        { real: RealBillingProvider, mock: MockBillingProvider }),
-    ai:             pickByKind(selection.ai,              { real: RealAiClient,      mock: MockAiClient }),
   };
 }
-// pickByKind は switch (selection[category]) で実装クラスを選ぶだけの内部ヘルパ。APP_ENV を参照しない。
+// pickByKind は selection[category] で実装クラスを選ぶだけの内部ヘルパ。APP_ENV を参照しない。
+// 🔴 登録の無い実装種別が選ばれたら throw する（ConnectorImplementationNotAvailableError）。
+//    **モックへフォールバックしない**（CLAUDE.md §11.1）。実装が揃うまで起動が失敗するのが正しい。
+// 🔴 `ai` はここで組み立てない（§8.1 の注記）。packages/ai が同じ `selection.ai` から作り、
+//    apps/* の DI コンテナが Connectors と並べて保持する。
 ```
 🔴 **`APP_ENV` の分岐は `resolveConnectorSelection` の 1 箇所に閉じる。** `createConnectors` は `AppEnv` を受け取らず、`resolveConnectorSelection` が返した `ConnectorSelection`（`ConnectorCategory` ごとの `'real' | 'mock' | 'sandboxRecipientScoped'`）だけを見て `switch (selection[category])` でクラスを選ぶ。`production` でモックが混ざっていないかの実行時二重防御（`assertNoMockInProduction`）も `resolveConnectorSelection` が呼ぶ。
 
@@ -3362,12 +3389,13 @@ export function createConnectors(selection: ConnectorSelection): Connectors {
 export class MockEmailSender implements EmailSender {
   private readonly calls: MockCall[] = [];
   async send(input): Promise<{ externalId: string }> {
+    assertSendingDomainForRecipientClass(input);   // 🔴 §8.3。実装（SES）と同じ判定を通す（development で通って production で落ちる差を作らない）
     this.calls.push({ at: new Date(), recipientClass: input.recipientClass, to: redact(input.to), templateKey: input.templateKey, tenantId: input.tenantId });
-    await this.sink.write(input);          // MailHog（development）/ DB（demo/sandbox）へ記録
+    await this.sink?.write(input);         // MailHog（development）へ記録。任意（既定は記録のみ）
     return { externalId: `mock-${randomUUID()}` };
   }
   callCount(): number { return this.calls.length; }
-  async getQuota(): Promise<ProviderQuota> { const since = Date.now() - 86_400_000; return { max24h: env.MAIL_PROVIDER_DAILY_QUOTA, sentLast24h: this.calls.filter(c => c.at.getTime() > since).length, observedAt: new Date() }; }   // 🔴 §8.3-Q。E2E は MAIL_PROVIDER_DAILY_QUOTA を小さく設定して到達を再現する（テスト専用フックを作らない）
+  async getQuota(): Promise<ProviderQuota> { const since = Date.now() - 86_400_000; return { max24h: this.options.max24h ?? Number.MAX_SAFE_INTEGER, sentLast24h: this.calls.filter(c => c.at.getTime() > since).length, observedAt: new Date() }; }   // 🔴 §8.3-Q。モック自身に枠は無く、`limit = min(envLimit, max24h)` により実効上限は MAIL_PROVIDER_DAILY_QUOTA になる。E2E はその環境変数を小さく設定して到達を再現する（テスト専用フックを作らない）
   callsOf(cls: RecipientClass): MockCall[] { return this.calls.filter(c => c.recipientClass === cls); }
 }
 ```
@@ -3376,7 +3404,8 @@ export class MockEmailSender implements EmailSender {
 | **共通インタフェースを満たす** | `EmailSender` / `ObjectStore` / `MalwareScanner` / `EsignProvider` / `BillingProvider` をすべて実装する |
 | **呼び出し回数を記録できる** | `callCount()` / `callsOf(class)` を全モックに持たせる |
 | 🔴 **E2E が使うモックと同一実装** | **`packages/connectors/src/mock/**` を E2E も本番コードも同じものを使う。** テスト専用のモックを `tests/` に別途書かない（二重メンテを避け「デモで動く = E2E が通る」を担保する） |
-| **可観測性** | `demo` / `sandbox` では送信内容を `EmailDispatch(status='MOCKED')` に記録し、`A-005` から「疑似送信の件数」を確認できるようにする |
+| **可観測性** | `demo` / `sandbox` では送信内容を `EmailDispatch(status='MOCKED')` に記録し、`A-005` から「疑似送信の件数」を確認できるようにする。🔴 **この記録を書くのはジョブハンドラ側**（`packages/connectors` は `@ses/db` に依存できない。§2.2）。モックが持つのは `callCount()` / `callsOf()` と、任意の `sink`（MailHog 等）だけである |
+| 🔴 **PII を保持しない** | モックが保持する記録の宛先は伏せ字にする（`***@example.co.jp`）。件数と宛先分類が分かれば §17.4 の検証には足りる（CLAUDE.md §3.5 / §8.6 の denylist に `email` / `recipientEmail` がある） |
 
 ### 13.3 本番以外の環境が安全に degrade する設計（二重防御）
 
@@ -3680,7 +3709,7 @@ export const logger = pino({
 | 3 | `no-restricted-imports.test.ts`（ESLint の実行） | §2.2 の依存方向、SDK の直接 import、`withPlatform` の import 制限、モックの import 制限、🔴 `withSystemScope` / 行由来コンテキスト 3 関数 / `withSharedCandidateScope` / `systemTenantCtx` の呼び出し元の限定（§4.4.2 / §4.5 / §9.2） |
 | 4 | `platform-grants.test.ts` | §5.5 の非開示列が `app_platform` に GRANT されていない（`information_schema.column_privileges` を走査） |
 | 5 | `platform-write-scope.test.ts` | `app_platform_write` が業務テーブルに書き込み権限を持たない。許可は §5.2 の表と `tenants` / `invitations` / `tenant_sending_domains` の `INSERT` のみで、**それ以外の表に 1 つでも書き込み権限があれば FAIL**。加えて `app_platform` / `app_platform_write` が §4.9 のビュー 4 本に権限を持たないこと |
-| 6 | `queue-attempts.test.ts` | 🔴 `send.*` キューの `attempts` が 1 であること。ソースを AST で走査 |
+| 6 | `queue-attempts.test.ts` | 🔴 **外部送信キュー（`send.proposal` / `send.interview-invite` / `send.contract`）の `attempts` が 1** であること。ソースを AST で走査。あわせて ①`externalSendQueue` が `backoff` を持たないこと ②送信系ジョブを `internalQueue` で定義し直す抜け道が無いこと（型はすり抜けるため AST で塞ぐ）③`attempts` が数値リテラルであること（設定値の注入を許さない）④**「`send.` 接頭辞を持つが外部送信ではないジョブ」の集合をスナップショットで固定**（現在は `send.hold-release` のみ。接頭辞で可否を判定しないことの担保）⑤🔴 **BullMQ の import と `Queue` の実体化が、`apps/worker` の起動配線 1 箇所以外に存在しないこと**（テスト内の許可リストに明示する。T-04-01 時点では実体化 0 件であり、**T-04-03 が許可リストにワーカーの起動配線を 1 件追加する**）。キュー定義（名前と `attempts`）は `packages/connectors/src/queues.ts` の 1 箇所に閉じ（§9.1）、その定義を BullMQ に渡す実体化はワーカー起動時の 1 箇所に閉じる —— 両方を 1 箇所に固定して初めて「`attempts` の上書きがどこでも起きない」と言える |
 | 7 | `execute-guard.test.ts` | 🔴 実行系ルート一覧の全ファイルが `requireExecutable` を呼ぶ（AST 走査） |
 | 8 | `approval-mode-isolation.test.ts` | 🔴 `apps/web/app/api/(main)/proposals/**` に `TenantRoleApprovalMode` / `decideRoleHandoff` が現れない（`F-035 AC-3`） |
 | 9 | `gate-consistency-purity.test.ts` | 🔴 `decideConsistency` の引数型に AI 由来の型が現れない（`BR-61`） |

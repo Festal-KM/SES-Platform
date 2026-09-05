@@ -2,7 +2,17 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": "src"
+    "rootDir": "src",
+    // 🔴 モックが `node:crypto`（HMAC / UUID）を使うため Node の型を有効にする
+    //    （ルートの tsconfig.json は "types": []）。packages/db と同じ理由・同じ書き方。
+    //    型は root の devDependency `@types/node` から解決される（packages/ui の
+    //    `@types/react` と違い、Node の型は全パッケージ共通のため root に置いてある）。
+    "types": ["node"]
   },
-  "include": ["src"]
+  "include": ["src"],
+  // build では出荷物にテストを含めない（packages/config / packages/db と同じ）。
+  // 🔴 型検査は tsconfig.typecheck.json（exclude を空にしたもの）が行う ——
+  //    `queues.test.ts` の `@ts-expect-error` 型テスト（`attempts: 2` がコンパイルエラーに
+  //    なること）は、テストが型検査されて初めて意味を持つため。
+  "exclude": ["src/**/*.test.ts"]
 }

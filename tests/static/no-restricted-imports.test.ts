@@ -172,6 +172,75 @@ describe('依存方向の ESLint ルール①②③（CLAUDE.md §2.1 / docs/05 
 });
 
 /**
+ * 🔴 T-04-01 / docs/05 §13.1 / §2.2 の表:
+ *    **モック実装（`packages/connectors/src/mock/**`）の import 元を
+ *    `packages/connectors/src/index.ts` に限定する。**
+ *    直接 import できると「この環境ならモック」というリクエストごとの分岐を業務コードに
+ *    書けてしまい、差し替えが起動時 1 箇所に閉じているという前提が静かに壊れる
+ *    （CLAUDE.md §11.1「production でモック実装が選ばれ得る経路を作らない」）。
+ */
+describe('モック実装の import 元の限定（docs/05 §13.1 / CLAUDE.md §11.1）', () => {
+  const OUTSIDE_PATHS = [
+    'apps/web/lib/__violation__.ts',
+    'apps/web/app/api/(main)/__violation__/route.ts',
+    'apps/worker/src/__violation__.ts',
+    'packages/connectors/src/__violation__.ts',
+    'tests/e2e/harness/__violation__.ts',
+  ];
+
+  it.each(OUTSIDE_PATHS)('🔴 %s からのサブパス import (@ses/connectors/mock) を検出する', async (spoofedPath) => {
+    const result = await lintAs(readFixture('connectors-mock-subpath.violation.ts'), spoofedPath);
+    expect(hasRule(result.messages, 'no-restricted-imports')).toBe(true);
+  });
+
+  it.each(OUTSIDE_PATHS)('🔴 %s からの動的 import (import()) も検出する', async (spoofedPath) => {
+    const result = await lintAs(readFixture('connectors-mock-dynamic.violation.ts'), spoofedPath);
+    expect(hasRule(result.messages, 'no-restricted-syntax')).toBe(true);
+  });
+
+  // 🔴 T-04-03 以降、`src/email/ses.ts` や `src/esign/docusign/oauth.ts` のようにサブディレクトリが
+  //    増える。1 階層（`./mock/...`）だけ塞いでも、深い階層からの `'../../mock/...'` が素通りする。
+  it.each([
+    ['connectors-mock-relative.violation.ts', 'packages/connectors/src/__violation__.ts', './mock/email.js'],
+    ['connectors-mock-relative-depth2.violation.ts', 'packages/connectors/src/email/ses.ts', '../mock/email.js'],
+    [
+      'connectors-mock-relative-depth3.violation.ts',
+      'packages/connectors/src/esign/docusign/oauth.ts',
+      '../../mock/esign.js',
+    ],
+    [
+      'connectors-mock-relative-depth4.violation.ts',
+      'packages/connectors/src/esign/docusign/internal/x.ts',
+      '../../../mock/esign.js',
+    ],
+  ])('🔴 packages/connectors 内部の相対 import を検出する（%s: %s から %s）', async (fixture, spoofedPath) => {
+    const result = await lintAs(readFixture(fixture), spoofedPath);
+    expect(hasRule(result.messages, 'no-restricted-imports')).toBe(true);
+  });
+
+  it('対照: packages/connectors/src/index.ts からの import は許可される（違反 0 件）', async () => {
+    const result = await lintAs(readFixture('connectors-mock-index.ok.ts'), 'packages/connectors/src/index.ts');
+    expect(result.errorCount).toBe(0);
+  });
+
+  it('対照: モック実装自身の相対 import は許可される（違反 0 件）', async () => {
+    const result = await lintAs(
+      readFixture('connectors-mock-index.ok.ts'),
+      'packages/connectors/src/mock/email.ts',
+    );
+    expect(result.errorCount).toBe(0);
+  });
+
+  it('🔴 モックの import が許される区画でも @ses/db は禁止のまま（許可を広げすぎていない）', async () => {
+    const result = await lintAs(
+      readFixture('connectors-import-db.violation.ts'),
+      'packages/connectors/src/index.ts',
+    );
+    expect(hasRule(result.messages, 'no-restricted-imports')).toBe(true);
+  });
+});
+
+/**
  * 🔴 T-03-08 / docs/03 `program-design` 申し送り 2 / `CLAUDE.md` §10.5:
  *    **主平面のコードから `withPlatform*` を import できない**ことを lint で担保する。
  *    到達経路は `@ses/db/platform` サブパスだけ（`@ses/db` の index は re-export しない）であり、

@@ -86,6 +86,54 @@ const RAW_SQL_CALL_MESSAGE =
   'tests/isolation/** 以外では禁止です（CLAUDE.md §3.1 / docs/05 §4.3）。withTenant / withHostTenant を' +
   '使ってください。';
 
+// T-04-01（docs/05 §13.1 / §2.2 の表 / `docs/03` §4.18.2）: 🔴 モック実装のモジュールを
+// `packages/connectors/src/index.ts` 以外から import することを禁止する。
+//   なぜ: モックを直接 import できると、業務コードの中に「この環境ならモック」という
+//   リクエストごとの分岐を書けてしまう。差し替えの判断が起動時 1 箇所
+//   （`resolveConnectorSelection` → `createConnectors`）に閉じている、という前提が静かに壊れる。
+//   `@ses/connectors` の index は Mock* クラスを re-export しないため、外からの到達経路は
+//   パッケージのサブパス（`@ses/connectors/mock` / `dist/mock/**`）と相対パスだけである。
+const CONNECTOR_MOCK_MESSAGE =
+  'モック実装（packages/connectors/src/mock/**）は packages/connectors/src/index.ts からのみ ' +
+  'import できます（docs/05 §13.1 / CLAUDE.md §11.1）。呼び出し側は createConnectors が返した ' +
+  'コネクタを使い、実装種別で分岐しないでください。';
+const CONNECTOR_MOCK_SUBPATH = '@ses/connectors/mock';
+// パッケージ名・パス経由での到達（全ゾーンで常時禁止）。
+const CONNECTOR_MOCK_EXTERNAL_PATTERNS = [
+  '@ses/connectors/mock',
+  '@ses/connectors/mock/**',
+  '@ses/connectors/src/mock/**',
+  '@ses/connectors/dist/mock/**',
+  '**/packages/connectors/src/mock/**',
+  '**/packages/connectors/dist/mock/**',
+];
+// packages/connectors 内部の相対 import（index.ts / mock 自身 / ユニットテスト以外で禁止）。
+// 🔴 深い階層からの脱出（`src/email/ses.ts` の `'../mock/email.js'`、
+//    `src/esign/docusign/oauth.ts` の `'../../mock/email.js'` 等）を必ず含める。
+//    1 階層だけ塞ぐと、T-04-03 以降に増えるサブディレクトリからは素通りになる
+//    （T-04-01 レビュー指摘 4）。`**` 形と明示の深さ形の**両方**を置き、
+//    minimatch の `.` / `..` セグメントの扱いに依存しないようにする
+//    （`tests/static/no-restricted-imports.test.ts` が 1 / 2 / 3 階層で実際に検出を確認する）。
+const CONNECTOR_MOCK_RELATIVE_PATTERNS = [
+  '**/mock',
+  '**/mock/*',
+  '**/mock/**',
+  './mock',
+  './mock/*',
+  './mock/**',
+  './src/mock/**',
+  '../mock',
+  '../mock/*',
+  '../mock/**',
+  '../../mock',
+  '../../mock/*',
+  '../../mock/**',
+  '../../../mock',
+  '../../../mock/*',
+  '../../../mock/**',
+  '../../src/mock/**',
+];
+
 const APPS_PACKAGES = ['@ses/web', '@ses/worker'];
 const APPS_PATH_PATTERNS = ['**/apps/web/**', '**/apps/worker/**'];
 const APPS_MESSAGE =
@@ -139,6 +187,8 @@ function buildPatterns({
   allowPrismaClient = false,
   allowDbTestingSubpath = false,
   allowDbPlatformSubpath = false,
+  allowConnectorMocks = false,
+  forbidRelativeConnectorMocks = false,
   forbidNodeIo = false,
   zoneLabel = '',
 }) {
@@ -186,6 +236,13 @@ function buildPatterns({
       message: SES_DB_PLATFORM_MESSAGE,
     });
   }
+  // 🔴 T-04-01: モック実装への到達経路を index.ts に限定する（docs/05 §13.1）。
+  if (!allowConnectorMocks) {
+    patterns.push({ group: CONNECTOR_MOCK_EXTERNAL_PATTERNS, message: CONNECTOR_MOCK_MESSAGE });
+  }
+  if (forbidRelativeConnectorMocks) {
+    patterns.push({ group: CONNECTOR_MOCK_RELATIVE_PATTERNS, message: CONNECTOR_MOCK_MESSAGE });
+  }
   // 🔴 常時適用（防御的）: @ses/db から PrismaClient を named import することを禁止する。
   //    @ses/db は現状これを export しないが、将来のエクスポート追加による迂回を防ぐ。
   //    ゾーンが既に @ses/db 全体を禁止している場合（forbidAllSes、または
@@ -216,6 +273,7 @@ function buildRestrictedNames({
   allowPrismaClient = false,
   allowDbTestingSubpath = false,
   allowDbPlatformSubpath = false,
+  allowConnectorMocks = false,
   forbidNodeIo = false,
 }) {
   const names = [];
@@ -232,6 +290,10 @@ function buildRestrictedNames({
   // 🔴 動的 import / require でも `@ses/db/platform` に到達できないようにする
   //    （静的 import だけ塞いでも `await import('@ses/db/platform')` で素通りするため）。
   if (!allowDbPlatformSubpath) names.push(SES_DB_PLATFORM_SUBPATH);
+  // 🔴 動的 import / require でもモック実装に到達できないようにする。
+  //    `buildDynamicImportSelectors` の正規表現が `^(name)(/.*)?$` を作るため、
+  //    `@ses/connectors/mock` の 1 件でサブパスまで覆う。
+  if (!allowConnectorMocks) names.push(CONNECTOR_MOCK_SUBPATH);
   return names;
 }
 
@@ -321,6 +383,14 @@ function buildRawSqlCallSelectors(allowRawSqlCalls) {
   ];
 }
 
+// 🔴 T-04-01: モック実装を import してよいファイル集合（docs/05 §13.1）。
+//    index.ts（唯一の instantiate 経路）/ モック実装自身 / モックのユニットテスト。
+const CONNECTOR_MOCK_IMPORTER_FILES = [
+  'packages/connectors/src/index.ts',
+  'packages/connectors/src/mock/**/*.{ts,tsx,mts,cts}',
+  'packages/connectors/**/*.test.{ts,tsx,mts,cts}',
+];
+
 // --- ゾーン定義（CLAUDE.md §2.1 ①②③、§3.2 ④）---
 // forbidApps: すべての packages/* ゾーンで一律 true にする（ルール①）。
 const PACKAGE_ZONES = [
@@ -351,9 +421,23 @@ const PACKAGE_ZONES = [
     allowSdk: true,
   },
   {
-    label: 'packages/connectors',
+    // 🔴 T-04-01: モック実装は index.ts からのみ import できる（docs/05 §13.1）。
+    //    このゾーンには相対 import（`./mock/...`）の禁止も掛ける。
+    label: 'packages/connectors（モック実装は index.ts からのみ import 可）',
     files: ['packages/connectors/**/*.{ts,tsx,mts,cts}'],
+    ignores: CONNECTOR_MOCK_IMPORTER_FILES,
     forbiddenSesPackages: ['@ses/db', '@ses/ai'],
+    forbidRelativeConnectorMocks: true,
+  },
+  {
+    // モックの唯一の import 元（index.ts）と、モック実装自身、およびそのユニットテスト。
+    // 🔴 ユニットテストを許可するのは、モックの振る舞い（callCount / 宛先マスキング /
+    //    ドメイン未検証の throw）を検証するのがこのファイル群だからである。テストは出荷されず、
+    //    「業務コードが実装種別で分岐しない」という本来の目的を損なわない。
+    label: 'packages/connectors/src/index.ts と mock 実装自身（モックの唯一の import 元）',
+    files: CONNECTOR_MOCK_IMPORTER_FILES,
+    forbiddenSesPackages: ['@ses/db', '@ses/ai'],
+    allowConnectorMocks: true,
   },
   {
     label: 'packages/config',
@@ -383,6 +467,8 @@ function zoneConfigBlock(zone) {
     allowPrismaClient: zone.allowPrismaClient ?? false,
     allowDbTestingSubpath: zone.allowDbTestingSubpath ?? false,
     allowDbPlatformSubpath: zone.allowDbPlatformSubpath ?? false,
+    allowConnectorMocks: zone.allowConnectorMocks ?? false,
+    forbidRelativeConnectorMocks: zone.forbidRelativeConnectorMocks ?? false,
     forbidNodeIo: zone.forbidNodeIo ?? false,
     zoneLabel: zone.label,
   };

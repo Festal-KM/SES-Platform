@@ -1,0 +1,132 @@
+// packages/connectors/src/interfaces.ts
+// docs/05 §8.1 の共通インタフェース。実装（実サービス / モック）はこの契約だけを満たす。
+//
+// 🔴 モックと実装が**同じシグネチャ**を持つ（docs/05 §13.2）。`callCount()` のような
+//    検証用のメソッドもインタフェース側に置く —— テストのためだけにモックへ生やすと、
+//    「E2E はモック、本番は実装」で経路が分岐してしまう。
+
+import { SendingDomainRequiredError } from './errors.js';
+import type {
+  DispatchToken,
+  EsignConnectionSecret,
+  EsignProviderKey,
+  EsignSendInput,
+  EsignSigner,
+  MeterEventInput,
+  MeterSubmissionToken,
+  NormalizedEsignStatus,
+  DecimalString,
+  Period,
+  PresignedUrl,
+  ProviderQuota,
+  RecipientClass,
+  ScanStatus,
+  SendAttemptToken,
+  VerifiedSendingDomain,
+} from './types.js';
+import { EXTERNAL_RECIPIENT_CLASSES } from './types.js';
+
+/** `EmailSender.send` の入力（docs/05 §8.1）。 */
+export type EmailSendInput = {
+  /** 🔴 必須。既定値を持たない = 省略するとコンパイルエラー（docs/05 §8.2）。 */
+  readonly recipientClass: RecipientClass;
+  readonly to: string;
+  readonly templateKey: string;
+  readonly params: Readonly<Record<string, unknown>>;
+  readonly tenantId: string | null;
+  /** 🔴 未検証のときは `null`。分類 2 / 3 / 4 で `null` を渡すと実装が throw する（§8.3）。 */
+  readonly fromDomain: VerifiedSendingDomain | null;
+  /** 🔴 予約を経ない送信をコンパイル不能にする（docs/05 §10.2）。 */
+  readonly token: SendAttemptToken | DispatchToken;
+};
+
+export interface EmailSender {
+  send(input: EmailSendInput): Promise<{ externalId: string }>;
+  /** 🔴 モックと実装の共通シグネチャ（docs/05 §13.3）。環境分離の検証がこれを読む。 */
+  callCount(): number;
+  /**
+   * 送信基盤（アカウント）全体の 24h 枠（docs/05 §8.3-Q ③）。
+   * 🔴 取得に失敗したら throw する（0 を返さない）。呼び出し側が `null` に落として判定を続ける。
+   */
+  getQuota(): Promise<ProviderQuota>;
+}
+
+/**
+ * 🔴 「共通ドメインへフォールバックしない」（`BR-51` / docs/05 §8.3）を、
+ *    **モックと実装の両方が同じコードで**守るための判定。
+ *
+ * 実装ごとに書くと片方で忘れ、`development` では通るのに `production` で落ちる（あるいはその逆で
+ * 未検証のまま取引先へ届く）差分が生まれる。ここ 1 箇所に置き、全 `EmailSender` 実装が呼ぶ。
+ */
+export function assertSendingDomainForRecipientClass(input: {
+  readonly recipientClass: RecipientClass;
+  readonly fromDomain: VerifiedSendingDomain | null;
+}): void {
+  if (!EXTERNAL_RECIPIENT_CLASSES.includes(input.recipientClass)) return;
+  if (input.fromDomain === null) throw new SendingDomainRequiredError(input.recipientClass);
+}
+
+export interface ObjectStore {
+  presignPut(key: string, contentType: string, maxBytes: number): Promise<PresignedUrl>;
+  presignGet(key: string, ttlSec: number): Promise<PresignedUrl>;
+  delete(key: string): Promise<void>;
+  head(key: string): Promise<{ byteSize: number; versionId: string } | null>;
+  callCount(): number;
+}
+
+export interface MalwareScanner {
+  /** GuardDuty は S3 の Put が契機なので実装によっては no-op。 */
+  enqueue(key: string): Promise<void>;
+  /** 保険のポーリング用（docs/05 §8.5）。未着なら `null`。 */
+  getResult(key: string, versionId: string): Promise<ScanStatus | null>;
+  callCount(): number;
+}
+
+/**
+ * 🔴 認可フローの差異はここに閉じる（`docs/03` §9.1）。ドメイン層は `kind` を知らない。
+ */
+export type EsignConnectFlow =
+  | {
+      readonly kind: 'OAUTH_AUTH_CODE';
+      /** 🔴 `scope` に `extended` を必ず含める（忘れると 30 日で接続が黙って切れる）。 */
+      buildAuthorizeUrl(state: string): string;
+      exchangeCode(code: string): Promise<EsignConnectionSecret & { accountName: string }>;
+      /** 新しいリフレッシュトークンを返す → 呼び出し側が再暗号化して保存する。 */
+      refresh(conn: EsignConnectionSecret): Promise<EsignConnectionSecret>;
+    }
+  | {
+      readonly kind: 'CLIENT_ID';
+      validate(conn: EsignConnectionSecret): Promise<{ ok: boolean; reason?: string }>;
+    };
+
+export interface EsignProvider {
+  readonly key: EsignProviderKey;
+  readonly connect: EsignConnectFlow;
+  ensureWebhook(conn: EsignConnectionSecret, url: string): Promise<{ configId: string; hmacKeys: string[] }>;
+  /** 🔴 生ボディに対する HMAC。いずれか 1 キーが一致すれば true。 */
+  verifyWebhook(rawBody: Uint8Array, headers: Headers, keys: readonly string[]): boolean;
+  createAndSend(
+    input: EsignSendInput & { readonly signers: readonly EsignSigner[] },
+    token: SendAttemptToken,
+  ): Promise<{ externalDocumentId: string }>;
+  fetchStatus(conn: EsignConnectionSecret, externalDocumentId: string): Promise<NormalizedEsignStatus>;
+  withdraw(conn: EsignConnectionSecret, externalDocumentId: string): Promise<void>;
+  downloadExecuted(conn: EsignConnectionSecret, externalDocumentId: string): Promise<Uint8Array>;
+  callCount(): number;
+}
+
+/**
+ * 🔴 **全プロバイダの実装のマップ**（docs/05 §8.1 / §8.4）。テナントごとに provider が違うため、
+ *    `TenantEsignConnection.provider` でキーを引く。**リクエストごとの `if` にしない。**
+ *
+ * 🔴 キーが無い（= そのプロバイダの実装が登録されていない）場合は `undefined` になり、
+ *    呼び出し側は「未接続」として扱うほかない（`requireEsignConnection` が 422）。
+ *    **フォールバックで別プロバイダを選ばない。**
+ */
+export type EsignProviderMap = Readonly<Partial<Record<EsignProviderKey, EsignProvider>>>;
+
+export interface BillingProvider {
+  submitMeterEvent(input: MeterEventInput, token: MeterSubmissionToken): Promise<void>;
+  fetchInvoiceTotals(customerId: string, period: Period): Promise<{ amountJpy: DecimalString }>;
+  callCount(): number;
+}
