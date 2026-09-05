@@ -3860,14 +3860,16 @@ export const logger = pino({
 
 ### 17.4 環境分離の検証（`docs/02` 章 7.6 NFR-ENV-1 の 3 分類）
 
-| 環境 | 検証 |
-|---|---|
-| `development` / `demo` | 🔴 **全分類の送信を実行し、外部エンドポイントへの発信が 0 件**。実装: **テストコンテナのネットワークを外向き遮断**（`--network none` 相当）し、外部到達を試みた時点で落ちる。加えてモックの `callCount()` を検証（二重。`docs/03` §4.17） |
-| `sandbox` ① | 分類 3 / 4（`F-022` / `F-041` / `F-047` / `F-049`）の送信で外部発信 0 件 |
-| `sandbox` ② | 🔴 分類 1 / 分類外（`F-002` / `F-003` / `F-011` / `F-027` / `F-039` / `F-054` / `F-064` / `F-055`）が**実際に送信され**、送信された全通の宛先が**ホスト所属利用者または `PlatformUser` のアドレスのみ**であること。MailHog で受信を検証 |
-| `sandbox` ③ | 🔴 分類 2（取引先招待 / パートナー担当者宛）で外部発信 0 件。**招待リンクが画面に表示・コピーでき、そのリンクから `PARTNER_ADMIN` が受諾・ログインできる**（`F-007 AC-4`）。**この経路でパートナー境界のテストを `production` と同じ内容で実行する**（`F-054 AC-1`） |
-| `staging` | 各サービスの sandbox エンドポイント以外への発信が 0 件。渡す宛先がテスト用アドレスのみ |
-| `production` の起動検証 | モック実装が選ばれたら起動失敗（`F-022 AC-5`）/ 非本番に本番キーがあれば起動失敗（NFR-ENV-4） |
+| 環境 | 検証 | 実装（T-04-10 で確定） |
+|---|---|---|
+| `development` / `demo` | 🔴 **全分類の送信を実行し、外部エンドポイントへの発信が 0 件**。実装: **テストコンテナのネットワークを外向き遮断**（`--network none` 相当）し、外部到達を試みた時点で落ちる。加えてモックの `callCount()` を検証（二重。`docs/03` §4.17） | `tests/isolation/env-separation.test.ts`（遮断は §17.6 ⑥ と**同一実装**）+ E2E |
+| `sandbox` ① | 分類 3 / 4（`F-022` / `F-041` / `F-047` / `F-049`）の送信で外部発信 0 件 | 🔴 **送信経路が入る SP-09 / SP-15 / SP-17 / SP-18 で追加**（Phase 1 の T-04-10 の射程外） |
+| `sandbox` ② | 🔴 分類 1 / 分類外（`F-002` / `F-003` / `F-011` / `F-027` / `F-039` / `F-054` / `F-064` / `F-055`）が**実際に送信され**、送信された全通の宛先が**ホスト所属利用者または `PlatformUser` のアドレスのみ**であること | 🔴 **観測点は `SesApi` ポート**（`tests/isolation/env-separation.test.ts`）。`sandbox` の分類 1 / 分類外は `SesEmailSender`（SES の HTTP API）を通るため、**MailHog（`development` のローカル SMTP キャッチャ）はこの経路上に無い** —— 当初「MailHog で受信を検証」と書いていたが SMTP で送る実装が存在せず成立しないため、実装に合わせて改訂した（`CLAUDE.md` §8.7）。許可集合は DB（`users` / `invitations` / `platform_users`）から導き、テストに書き写さない。🔴 `F-055` のジョブ経路は未実装であり、**黙ってモックに倒れず `PlatformDispatchNotSupportedError` で失敗する**ことを固定する（§9.4） |
+| `sandbox` ③ | 🔴 分類 2（取引先招待 / パートナー担当者宛）で外部発信 0 件。**招待リンクが画面に表示・コピーでき、そのリンクから `PARTNER_ADMIN` が受諾・ログインできる**（`F-007 AC-4`）。**この経路でパートナー境界のテストを `production` と同じ内容で実行する**（`F-054 AC-1`） | `tests/isolation/sandbox-invite-link.test.ts`（T-04-08） |
+| `staging` | 各サービスの sandbox エンドポイント以外への発信が 0 件。渡す宛先がテスト用アドレスのみ | 🔴 ステージング環境の構築時（Phase 1 の SP-12）に追加 |
+| `production` の起動検証 | モック実装が選ばれたら起動失敗（`F-022 AC-5`）/ 非本番に本番キーがあれば起動失敗（NFR-ENV-4） | `tests/startup/startup-di.test.ts`（T-03-12。web / worker の起動エントリを子プロセスで実際に起動する） |
+
+🔴 **同じ検証を 2 箇所に書かない**（T-04-10）。上表の「実装」列がその割り当てであり、`tests/isolation/env-separation.test.ts` は `sandbox` ③ と `production` の起動検証を**再実装しない**（片方だけ古くなる状態を作らないため）。
 
 ### 17.5 外部 API のモック方針
 
@@ -3896,7 +3898,7 @@ export const logger = pino({
 | **モバイル** | `devices['iPhone 15']` で #13 を実行（`CLAUDE.md` §13.3） |
 | **後始末** | 各テストの後にそのテナントを削除。🔴 **`reset()` は `APP_ENV` ガードの内側**（`F-053 AC-6`） |
 | 🔴 **DB は TLS 必須**（T-03-11 で確定） | globalSetup の ① は**自己署名証明書で TLS を有効にした** PostgreSQL を起動する。`packages/config` が `DATABASE_URL` / `PLATFORM_DATABASE_URL` / `PLATFORM_WRITE_DATABASE_URL` に `sslmode=require` を**無条件で要求する**（§13.4 規則 4）ため、TLS 無しではアプリが起動しない。手順はローカル docker-compose と同じ `docker/postgres/entrypoint-ssl.sh` を共有する（`tests/isolation/**` の Testcontainers は `sslmode=disable` で接続しており、そのままでは流用できない） |
-| 🔴 **⑥ 外向き遮断の実装**（T-03-11 で確定） | E2E ではアプリを**ホスト上のプロセス**として起動する（DB は Testcontainers が割り当てた 127.0.0.1 のランダムポート）。そのため §17.4 の「コンテナのネットワークを外向き遮断」を、**`node --import` で先読みするフック**（`tests/e2e/harness/network-guard.mjs`）が `net.Socket.prototype.connect` を包み、ループバック以外への接続をその場で失敗させる形で実現する。フックは起動時に**自己診断**（到達不能アドレスへの接続が実際に弾かれること）を行い、成功した場合だけ目印を出力する。globalSetup は**その目印を待ってから**アプリの疎通確認へ進む。ブラウザ側も同じ規律で `context.route` により非ローカルの発信を遮断・記録する。⚠️ 残余: Prisma の Rust エンジン等、Node の `net` を経由しないネイティブ実装は本フックから見えない（接続先は 127.0.0.1 のテストコンテナのみ） |
+| 🔴 **⑥ 外向き遮断の実装**（T-03-11 で確定） | E2E ではアプリを**ホスト上のプロセス**として起動する（DB は Testcontainers が割り当てた 127.0.0.1 のランダムポート）。そのため §17.4 の「コンテナのネットワークを外向き遮断」を、**`node --import` で先読みするフック**（`tests/e2e/harness/network-guard.mjs`）が `net.Socket.prototype.connect` を包み、ループバック以外への接続をその場で失敗させる形で実現する。フックは起動時に**自己診断**（到達不能アドレスへの接続が実際に弾かれること）を行い、成功した場合だけ目印を出力する。globalSetup は**その目印を待ってから**アプリの疎通確認へ進む。ブラウザ側も同じ規律で `context.route` により非ローカルの発信を遮断・記録する。🔴 **遮断そのものの実装は `tests/support/outbound-network-guard.mjs` の 1 箇所である**（T-04-10）—— E2E のフックと §17.4 の結合テスト（`tests/isolation/env-separation.test.ts`）が同じコードを使う。判定を書き分けると「E2E では止まるが結合テストでは素通り」という差が生まれ、どちらの green も根拠にならない。結合テスト側は**差し込みを復元できる形**で使う（Vitest のワーカーが再利用されるため、`node:net` への細工を後続ファイルへ残さない）。⚠️ 残余: Prisma の Rust エンジン等、Node の `net` を経由しないネイティブ実装は本フックから見えない（接続先は 127.0.0.1 のテストコンテナのみ） |
 | 🔴 **ブラウザ**（T-03-11 で確定） | Chromium 系のみ（`desktop-chromium` / `mobile-chromium`）。セッション Cookie が `__Host-` + `Secure` であり、http のローカル環境で保存されるかは「ループバックを信頼できるオリジンとして扱うか」に依存するため。WebKit / Firefox を足す場合は**ローカルの HTTPS 起動**が前提になる |
 | **型検査** | `tests/e2e/**` のうち `@playwright/test` に依存するのは `*.spec.ts` と `support/**` だけであり、そこは `pnpm typecheck:e2e`（`tsconfig.e2e.json`）が検査する。ハーネス（`harness/**` / `global-*.ts`）は Playwright に依存させず、`pnpm typecheck` の射程に置く（E2E 基盤を無検査にしない） |
 
