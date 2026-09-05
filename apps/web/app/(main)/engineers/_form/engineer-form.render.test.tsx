@@ -58,6 +58,7 @@ const messages: EngineerFormMessages = {
   newAliasAdd: '新語候補として起票',
   newAliasNote: '辞書には追加されず、採用されるまで検索には使われません。',
   newAliasEmpty: '起票する表記はありません。',
+  newAliasDictionaryLink: 'スキル辞書・新語候補の採否を開く',
 
   careersComingSoon: '経験内容と従事期間は、後続のリリースで登録できるようになります。',
 

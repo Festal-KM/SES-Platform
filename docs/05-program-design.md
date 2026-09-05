@@ -2040,7 +2040,7 @@ requireEsignConnection(ctx);                           // 🔴 §8.4。未接続
 | 20 | `GET /api/skill-sheets/{id}/download-url` | `F-012` | — | `{ url, expiresIn }` | 🔴 **`scanStatus='CLEAN'` かつ `AuditLog` の書き込み成功後にのみ発行**（`F-012 AC-2`）。`VIEWER` は 403 |
 | 21 | `GET /api/skill-sheets/{id}/preview` | `F-012` | — | `{ meta }`（本文は返さない） | 閲覧も `AuditLog` に記録 |
 | 22 | `POST /api/skill-sheets/{id}/extract` | `F-032` / Phase 2 | — | `{ jobId }` | `SALES` 以上 |
-| 23 | `GET /api/skills` / `GET /api/skill-aliases` | `F-010` / `S-009` | `?q=&status=` | `{ items }` | 全ロール |
+| 23 | `GET /api/skills` / `GET /api/skill-aliases` | `F-010` / `S-009` | `?q=`（`/skills`）/ `?q=&status=`（`/skill-aliases`。🔴 `status` は `skill_aliases` 側の値集合であり、`skills` に状態は無い。T-05-03） | `{ items }` | 全ロール |
 | 24 | `POST /api/skill-aliases/{id}/decide` | `F-010 AC-1` | `{ decision:'ACCEPT'\|'REJECT', skillId? }` | `204` | `ADMIN` / `SALES`。🔴 パートナーは起票のみ |
 | 25 | `GET /api/projects` | `F-015` / `S-010` | `?q=&status=&startFrom=&prefecture=&cursor=` | `{ items: (HostProjectView\|PartnerProjectView)[], total }` | 全ロール |
 | 26 | `POST /api/projects` / `PATCH /api/projects/{id}` | `F-013` / `S-012` | `ProjectInput` | `{ id }` | `OWNER`/`ADMIN`/`SALES` |
@@ -2084,6 +2084,22 @@ requireEsignConnection(ctx);                           // 🔴 §8.4。未接続
 - ⚠️ **`docs/04` §S-006 の基本情報にある「経験年数」（1 件の集約値）を出していない。** §3.4 に集約列が無く、集約の定義（最大値か / 代表スキルか / 実務年数か）も決まっていないためである。**スキル別の経験年数はスキル表に出しているので判断材料は隠れていない。** 集約値の定義は `F-009` の `yearsMin` の評価（SP-06 T-06-04）と**同時に決める**。
 - ⚠️ **`S-006` のセクション 3〜7 は本タスクの範囲外**（3 スキルシートの版 = T-05-06 / T-05-07、4 提案履歴・5 凍結差分 = SP-09、6 稼働履歴 = SP-16、7 匿名共有 = SP-08）。画面では**セクションを消さずに「後続のリリースで利用できる」と明示する**（`engineers.careers.comingSoon` と同じ規律）。`piiPurgedAt` の 404 文言（「保持期間を過ぎて削除されました」。`F-046 AC-2`）は削除ジョブと同じ SP-16（T-16-06）で足す —— 到達できない状態のために先回りの分岐を書かない。
 - **登録後の遷移を `S-007`（編集）から `S-006`（詳細）に変えた**（`docs/04` §S-007 関連画面「→ `S-006`」）。T-05-01 が編集へ戻していたのは `S-006` が未実装だったための暫定である。編集のキャンセルも詳細へ戻す。
+
+🔴 **#23 / #24 の実装の決着（T-05-03）**:
+
+- **`GET /api/skills` の応答は `{ items: { id, name, category }[] }`**、並びは `sort_key` 昇順（同順は `id`）。🔴 **書き込みの経路をこの名前空間に作らない** —— `skills` は射程外の 4 表であり、`app_tenant` には `GRANT SELECT` しか無い（migration 20260906000000 / `F-010 AC-2` / `BR-02`）。「拒否される API」を置くこと自体が「増やせる」という誤った説明になる。
+- **画面（`S-007` / `S-009`）も `#23` と同じ関数（`apps/web/lib/skills/service.ts` の `listSkills`）を通る。** T-05-01 が `lib/engineers/service.ts` に置いた `listSkillDictionary` はここへ移した（2 本あると並び順と絞り込みが画面と API でずれる）。
+- **`GET /api/skill-aliases` の応答項目**（`apps/web/lib/skills/service.ts` が単一の出所）: `id` / `alias` / `status` / `origin` / `scope`（`'GLOBAL' | 'TENANT'`）/ `skillId` / `skillName` / `proposedAt` / `decidedAt`。
+  - 🔴 **グローバル行（`tenant_id IS NULL`）が混ざるのは仕様である**（RLS の C1 の `SELECT` が `OR tenant_id IS NULL` を許す。§4.4）。画面は `scope` で区別し、`GLOBAL` には採否の導線を出さない（`F-010 AC-2`）。
+  - 🔴 **起票者（`proposed_by`）・決定者（`decided_by`）を返さない。** `skill_aliases` は C1（テナント全体が読む）であり、パートナー所属の利用者も他社が起票した候補を読む。そこに人物を添えると**他社に誰が居るかを知る経路**になる（`CLAUDE.md` §3.1 の 🔴）。表記そのものは分類のためのマスタであり他社の業務情報を含まないが、人物は含む。⚠️ `docs/04` §S-009 の別名テーブルは「作成者」列を挙げているが、上記の理由で出していない（出すなら「ホスト所属の決定者に限る」等の規則が要り、それは越境設計の変更 = 人間の承認事項になる）。
+  - 🔴 **`proposedAt` は `id`（`@default(uuid(7))`）の採番時刻から読み替える。** §3.4 の `SkillAlias` に作成時刻の列が無いためであり、§16.5 が `email_dispatches` の滞留判定で「`updated_at`（無ければ `id` の uuidv7 時刻）」としているのと同じ扱いである（**列を勝手に足さない**）。実装は `@ses/db` の `uuidV7TimeOf`（v7 でない値は `null`）。
+  - 並びは `alias` 昇順（同順は `id`）。**採否で並びが変わらない**ようにする（決めた瞬間に行が飛ぶと、続けて次を決めるときに取り違える）。
+  - ⚠️ **`docs/04` §S-009 の新語候補テーブルにある「出現件数」列を出していない。** その表記が何件のエンジニアで使われているかを引ける列が §3.4 に無い（`SkillAlias` は `Engineer` と関連を持たず、`EngineerSkill.original_label` は `F-033` の正規化が Phase 2 に埋める列である）。**列を勝手に足さず**、画面には「後続のリリースで表示できるようになる」と明示した（`engineers.careers.comingSoon` と同じ規律）。
+- 🔴 **#24 の認可は `ADMIN` / `SALES` だけである**（本節の表 / `docs/02` `F-010` 関連ロール）。判定の出所は `apps/web/lib/skills/policy.ts` の `SKILL_ALIAS_DECIDER_ROLES` 1 か所で、ルートの `requireRole` と画面の `canDecide` が同じ定数を見る。⚠️ **`docs/02` 章 4.2 の権限マトリクスは `F-010` の `OW` を `●` としており、`F-010 AC-1` / 本節の認可（`ADMIN` / `SALES`）と食い違っている。** T-05-03 は**権限を広げない側**（`ADMIN` / `SALES`）で実装した。⚠️ この結果、**`OWNER` しか居ないテナント（`F-001` 直後）では新語候補を採否できない**。どちらに寄せるかは人間の判断事項（`CLAUDE.md` §8.6）。
+- 🔴 **グローバル別名を採否できないことは 3 層で担保する**: ①RLS（`skill_aliases` の `UPDATE` は `tenant_id = app_tenant_id()`）②Prisma 拡張（`COLUMN_WITH_GLOBAL_ROWS` の緩和は**読み取りだけ**。§4.4）③`policy.ts` の `GLOBAL_ROW`。①②だけでも 0 件更新になるが、それでは理由が伝わらない（404 と区別できない）ため③が **403 `GLOBAL_SKILL_DICTIONARY_READ_ONLY`** を返す。🔴 **404 にしない** —— グローバル行は `S-009` のセクションに読み取り専用として見えており、隠すべき情報は無い。
+- 🔴 **`ACCEPT` には正規化先（`skillId`）が必須、`REJECT` には付けられない。** 組み合わせの判定は境界（Zod）ではなく `policy.ts` に置く（`.refine()` はトップレベルに使えず、判定を 2 箇所に書くと片方だけ緩む）。指定された `skillId` が辞書に実在することは `withTenant` の内側で確かめる（FK 違反を 500 にしない。`#16` の `assertSkillsExist` と同じ規律）。
+- 🔴 **更新は CAS**（`where: { id, status: 'PROPOSED' }`）。0 件なら行の存否を見て 404 / **409 `SKILL_ALIAS_ALREADY_DECIDED`** に分ける（`docs/04` §S-009「候補が他者に採用済み → 『すでに採用されました』」）。**自動再試行しない。**
+- 🔴 **監査は業務トランザクションの内側で書く**（§16.1 の `skill_alias.update` の行を参照）。**却下した候補は `S-009` の一覧から外れる**（「候補を閉じる」）ため、`AuditLog` が唯一の履歴である。
 
 ### 6.5 主平面 API — ②③④（Phase 1〜2）
 
@@ -3740,6 +3756,7 @@ export class InvalidStateTransitionError extends AppError {
 | 🔴 `engineer.view` / `skill_sheet.view` / `skill_sheet.download` / `project.view` | `#17` / `#21` / `#20` / `#27`。🔴 **DL は `issueDownloadUrl` の中で書く**（経路が 1 本なのでモバイル・共有 URL でも漏れない。`BR-28` 欠落 0 件）。🔴 **`engineer.view` も同じ形**（T-05-02）: `readEngineerDetail` / `readEngineerForEdit` の**業務トランザクション内**（`writeAuditLog`）で書き、`withApiRoute` の `audit` オプションを使わない —— 画面（サーバコンポーネント）は Route Handler を通らず、`audit` は 404 でも記録が残るため（§6.4「#17 の実装の決着」） | `USER` |
 | `*.create` / `*.update` / `*.delete` | `withApiRoute` の `audit` オプション（各ハンドラで `action` を宣言） | `USER` / `SYSTEM` |
 | 🔴 `partner_company.create` / `partner_company.update` | `#12` / `#13`（`F-007 AC-3`「登録・招待・停止・再開が監査ログに残る」）。**停止・再開も `*.update` に揃え、`summary.operation`（`SUSPEND` / `RESUME`）で区別する** —— `partner_company.suspend` のような独自 action を作ると `S-041` の操作種別フィルタ（`CREATE_UPDATE_DELETE` = 接尾辞一致）から漏れ、**記録されているのに検索で出てこない**状態になる。招待は既存の `invitation.create` に `summary.targetPartnerCompanyId` を載せる | `USER` |
+| 🔴 `skill_alias.update` | `#24`（`F-010 AC-3`「別名の採用・却下が監査ログに残る」）。**採用・却下に独自 action（`skill_alias.decide`）を作らず `*.update` に畳む** —— `S-041` の操作種別フィルタ（`CREATE_UPDATE_DELETE` = 接尾辞一致）から漏れ、**記録されているのに検索で出てこない**（`partner_company.suspend` を作らなかったのと同じ理由）。区別は `summary.decision`（`ACCEPT` / `REJECT`）。🔴 **`withApiRoute` の `audit` ではなく `decideSkillAlias` の業務トランザクション内**（`writeAuditLog`）で書く（`membership.role_change` と同じ形）: ①`audit` はハンドラの前に別トランザクションで書くため、**起きなかった採否**（403 / 404 / 409 / 400）まで記録に残る ②`summary` に載せる由来（`origin`）は行を読むまで分からない。🔴 `summary` に**別名の表記そのものを載せない**（利用者の自由入力であり PII が紛れうる。§16.2） | `USER` |
 | `proposal.submit` / `proposal.resend` | 送信ジョブの ⑥（§10.2） | `SYSTEM`（`summary.requestedBy` に人間を記録） |
 | `proposal.approve` / `proposal.reject` | `#41` / `#42`。自動承認は `SYSTEM` + `summary.reason='ALL_LAYERS_PASS'` | `USER` / `SYSTEM` |
 | `membership.role_change` / `membership.revoke` / `project.visibility_change` | `#14` 周辺 / `#28` | `USER` |

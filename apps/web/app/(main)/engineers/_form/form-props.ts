@@ -123,6 +123,7 @@ export function engineerFormMessages(ownershipValue: string): EngineerFormMessag
     newAliasAdd: t('engineers.skills.newAlias.add'),
     newAliasNote: t('engineers.skills.newAlias.note'),
     newAliasEmpty: t('engineers.skills.newAlias.empty'),
+    newAliasDictionaryLink: t('engineers.skills.newAlias.dictionaryLink'),
 
     careersComingSoon: t('engineers.careers.comingSoon'),
 

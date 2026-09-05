@@ -308,6 +308,11 @@ export type { AccountMailReissueOutcome, InvitationReissueInput } from './accoun
 // 🔴 T-04-05: 招待 / パスワード再設定トークンの平文とハッシュの対応（docs/05 §3.3 の列の契約）。
 //    `apps/web`（発行）と `apps/worker`（再発行）が**同じ実装**を使うための唯一の出所。
 export { generateSecretToken, hashSecretToken } from './tokens.js';
+// 🔴 T-05-03: UUID v7 に埋め込まれた採番時刻の読み出し（docs/05 §16.5 と同じ読み替え）。
+//    **作成時刻の列を持たない表**（`skill_aliases`。docs/05 §3.4）の「起票日」を出すために使う。
+//    生成器（`uuidV7`）は export しない —— ID の採番は `@default(uuid(7))` と
+//    `packages/db` の内部（`withPlatformWrite` 経路）だけの仕事である。
+export { uuidV7TimeOf } from './uuid.js';
 // 🔴 T-04-04: TenantSendingDomain（docs/05 §3.9 / §8.3 / docs/03 §3.2.7）を読み書きする唯一の経路。
 //    `verifiedAt` が NULL の間、取引先へ届く送信は実行されない（`BR-51` / `F-001 AC-4`）。
 export {

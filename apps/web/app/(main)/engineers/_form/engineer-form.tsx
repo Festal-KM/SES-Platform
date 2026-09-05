@@ -18,7 +18,11 @@
 // 🔴 Tier 3（デスクトップ主体）だが**モバイルで遮断しない**（`CLAUDE.md` §13.3）。
 //    1 カラムで積み、狭い画面では表を横スクロールで劣化させる。
 import { useEffect, useState, type FormEvent } from 'react';
+import Link from 'next/link';
 import { Button } from '@ses/ui';
+
+/** `S-009`（スキル辞書・別名・新語候補）。起票した候補の採否はこの画面で行う。 */
+const SKILL_DICTIONARY_HREF = '/skills';
 
 export type SelectOption = {
   readonly value: string;
@@ -88,6 +92,8 @@ export type EngineerFormMessages = {
   readonly newAliasAdd: string;
   readonly newAliasNote: string;
   readonly newAliasEmpty: string;
+  /** 🔴 T-05-03: `S-009` への導線（起票した候補の採否はそちらで行う）。 */
+  readonly newAliasDictionaryLink: string;
 
   readonly careersComingSoon: string;
 
@@ -529,6 +535,17 @@ export function EngineerForm({
               ))}
             </ul>
           )}
+          {/* 🔴 T-05-03: 起票した候補の行き先（`S-009`）。`docs/04` §S-007 関連画面「→ `S-009`」。
+              全ロールが到達してよい画面であり、採否の可否は `S-009` 側が判断する。 */}
+          <p className="mt-2 text-sm">
+            <Link
+              className="ses-secondary-link"
+              href={SKILL_DICTIONARY_HREF}
+              data-testid="engineer-new-alias-dictionary-link"
+            >
+              {messages.newAliasDictionaryLink}
+            </Link>
+          </p>
         </div>
       </section>
 

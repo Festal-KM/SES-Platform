@@ -70,3 +70,27 @@ export function uuidV7(at: Date): string {
     hex.slice(20, 32),
   ].join('-');
 }
+
+const UUID_HEX_LENGTH = 32;
+/** バージョン桁の位置（レイアウトの 7 バイト目の上位ニブル）。 */
+const VERSION_NIBBLE_INDEX = 12;
+/** 上位 48 bit（= 12 桁）が Unix ミリ秒。 */
+const TIMESTAMP_HEX_LENGTH = 12;
+
+/**
+ * UUID v7 に埋め込まれた生成時刻を取り出す（RFC 9562 §5.7 の上位 48 bit）。v7 でなければ `null`。
+ *
+ * 🔴 **「作成時刻の列」の代わりに使ってよい場面は限られる。** 使ってよいのは、
+ *    docs/05 §3 のスキーマに作成時刻の列が無く、かつ**その行の ID が `@default(uuid(7))` で
+ *    採番されている**表だけである（本リポジトリの全 ID がそれである。本ファイル冒頭の 🔴）。
+ *    docs/05 §16.5 が `email_dispatches` の滞留判定で「`updated_at`（無ければ `id` の uuidv7 時刻）」
+ *    と定めているのと同じ扱いであり、**列を勝手に足さない**ための読み替えである。
+ *    ⚠️ 逆に、列がある表でこれを使わない（列の値が正であり、ID は採番の順序でしかない）。
+ */
+export function uuidV7TimeOf(value: string): Date | null {
+  const hex = value.replace(/-/g, '').toLowerCase();
+  if (hex.length !== UUID_HEX_LENGTH || !/^[0-9a-f]+$/.test(hex)) return null;
+  if (hex[VERSION_NIBBLE_INDEX] !== '7') return null;
+  const milliseconds = Number.parseInt(hex.slice(0, TIMESTAMP_HEX_LENGTH), 16);
+  return Number.isFinite(milliseconds) ? new Date(milliseconds) : null;
+}

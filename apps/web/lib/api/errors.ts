@@ -315,6 +315,45 @@ export class MemberOutOfScopeError extends ForbiddenError {
 }
 
 /**
+ * 🔴 新語候補の採否がすでに決まっている（409。`F-010 AC-1`。docs/05 §6.4 #24）。T-05-03。
+ *
+ * 🔴 `ConcurrentUpdateError`（並行更新）と**別のコードにする**理由: `docs/04` §S-009 の
+ *    状態の齟齬は「候補が他者に採用済み → **『すでに採用されました』**」であり、利用者の
+ *    次の行動（やり直す／画面を更新して結果を確認する）が違う。
+ * 🔴 404 に畳まない —— 候補の行は一覧（#23）に見えている立場の利用者にしか返らない。
+ */
+export class SkillAliasAlreadyDecidedError extends ConflictError {
+  override readonly code = 'SKILL_ALIAS_ALREADY_DECIDED';
+  override readonly userMessageKey: MessageKey = 'error.skillAlias.alreadyDecided';
+
+  constructor() {
+    super('この新語候補の採否はすでに決まっています。');
+    this.name = 'SkillAliasAlreadyDecidedError';
+  }
+}
+
+/**
+ * 🔴 グローバル辞書（`Skill` / `tenant_id IS NULL` の `SkillAlias`）をテナントから
+ *    編集しようとした（403。`F-010 AC-2` / `BR-02` の射程）。T-05-03。
+ *
+ * 🔴 404 にしない理由: グローバル行は `S-009` のセクション 3 に**読み取り専用として
+ *    表示されている**（RLS の `SELECT` だけが `OR tenant_id IS NULL` を許す）。見えている行に
+ *    「存在しない」と答えると、利用者は自分の操作が届いていないのか対象が消えたのかを
+ *    区別できない。ここで隠すべき情報は無い（グローバル辞書はテナントに属さないマスタである）。
+ * 🔴 これは 3 層目の拒否である。1 層目は RLS の `UPDATE` ポリシー、2 層目は Prisma 拡張の
+ *    書込述語であり、どちらも 0 件更新にする。**理由を返すためにこの型がある。**
+ */
+export class GlobalSkillDictionaryReadOnlyError extends ForbiddenError {
+  override readonly code = 'GLOBAL_SKILL_DICTIONARY_READ_ONLY';
+  override readonly userMessageKey: MessageKey = 'error.skillAlias.globalReadOnly';
+
+  constructor() {
+    super();
+    this.name = 'GlobalSkillDictionaryReadOnlyError';
+  }
+}
+
+/**
  * 🔴 招待を受諾できない（docs/05 §6.3 #7。`acceptedAt` の CAS が 0 件）。
  *
  * 受諾済み / 取消済み / 期限切れ / トークン不一致 / 同時受諾に負けた、を**区別しない**。

@@ -513,26 +513,7 @@ export async function readEngineerForEdit(
   });
 }
 
-/** `S-007` のスキル選択に渡す辞書（`F-010`。読み取り専用）。 */
-export type SkillDictionaryEntry = {
-  readonly id: string;
-  readonly name: string;
-  readonly category: string;
-};
-
-/**
- * グローバルなスキル辞書を読む（`F-008` 処理② / `F-010 AC-2`）。
- * 🔴 `GET /api/skills`（#23。T-05-03）はこの一覧を API として出すが、`S-007` は
- *    サーバコンポーネントから直接読む（自己 fetch しない。既存画面と同じ方針）。
- * 🔴 並びは `sortKey` 昇順（docs/05 §3.4 の「決定的なタイブレーク」）。
- */
-export async function listSkillDictionary(
-  ctx: AuthenticatedTenantCtx,
-): Promise<readonly SkillDictionaryEntry[]> {
-  return withTenant(ctx, (db) =>
-    db.skill.findMany({
-      select: { id: true, name: true, category: true },
-      orderBy: [{ sortKey: 'asc' }, { id: 'asc' }],
-    }),
-  );
-}
+// 🔴 T-05-03: グローバル辞書の読み取り（`S-007` のスキル選択）は `lib/skills/service.ts` の
+//    `listSkills` に移した。`GET /api/skills`（#23）と画面が**同じ関数**を通るようにするため
+//    （2 本あると並び順と絞り込みがずれる）。`F-010 AC-2`「テナントから編集できない」は
+//    引き続き DB 権限（`GRANT SELECT` のみ）が担保する。

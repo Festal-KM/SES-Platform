@@ -12,7 +12,8 @@ import type { Metadata } from 'next';
 import { t } from '@ses/i18n';
 import { NotFoundError } from '../../../../../lib/api/errors';
 import { readRequestMeta, resolveTenantCtxOutcome } from '../../../../../lib/auth/session';
-import { listSkillDictionary, readEngineerForEdit } from '../../../../../lib/engineers/service';
+import { readEngineerForEdit } from '../../../../../lib/engineers/service';
+import { listSkills } from '../../../../../lib/skills/service';
 import { EngineerForm } from '../../_form/engineer-form';
 import {
   availabilityOptions,
@@ -52,7 +53,8 @@ export default async function EditEngineerPage({
     },
   );
 
-  const skillDictionary = await listSkillDictionary(outcome.ctx);
+  // 🔴 T-05-03: 辞書の読み取りは `#23` と同じ関数を通す（`new/page.tsx` と同じ理由）。
+  const skillDictionary = (await listSkills(outcome.ctx, {})).items;
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-8">

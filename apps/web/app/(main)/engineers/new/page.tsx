@@ -10,7 +10,7 @@ import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { t } from '@ses/i18n';
 import { resolveTenantCtxOutcome } from '../../../../lib/auth/session';
-import { listSkillDictionary } from '../../../../lib/engineers/service';
+import { listSkills } from '../../../../lib/skills/service';
 import { EngineerForm } from '../_form/engineer-form';
 import {
   availabilityOptions,
@@ -36,7 +36,10 @@ export default async function NewEngineerPage() {
   if (outcome.status === 'TWO_FACTOR_REQUIRED') redirect('/signin?step=2fa');
   if (outcome.ctx.role === 'VIEWER') redirect(HOME_PATH);
 
-  const skillDictionary = await listSkillDictionary(outcome.ctx);
+  // 🔴 T-05-03: 辞書の読み取りは `#23`（`GET /api/skills`）と**同じ関数**を通す
+  //    （`lib/skills/service.ts`）。画面用に別の読み取りを書くと、並び順と絞り込みが
+  //    API と画面でずれる。
+  const skillDictionary = (await listSkills(outcome.ctx, {})).items;
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-8">

@@ -360,6 +360,14 @@ const ja = {
     '最後の OWNER を変更・無効化することはできません。先にほかのメンバーへ OWNER を付与してください。',
   'error.member.revoked':
     'このアカウントはすでに無効化されています。再開する場合は、あらためて招待を発行してください。',
+  // 🔴 T-05-03: 新語候補の採否（`F-010 AC-1` / `AC-2`。docs/05 §6.4 #24）。
+  //    `docs/04` §S-009 の状態の齟齬「候補が他者に採用済み → 『すでに採用されました』」。
+  'error.skillAlias.alreadyDecided':
+    'この表記の採否はすでに決まっています。画面を更新して最新の状態をご確認ください。',
+  // 🔴 `F-010 AC-2` / `BR-02`。**「権限が足りない」ではなく「そもそも編集できない対象」**として書く
+  //    （昇格すれば編集できる、と読めてはならない）。
+  'error.skillAlias.globalReadOnly':
+    'これは全社共通のスキル辞書に含まれる表記のため、この組織からは編集できません。組織固有の別名は、新語候補から採用して追加してください。',
   // 🔴 docs/05 §15.1 `SendingDomainNotVerifiedError`（422 / `BR-51` / `BR-71` / `F-022 AC-7`）。
   //    🔴 **「壊れている」ではなく「設定が済んでいない」として書く**（`docs/04` 申し送り 8）。
   //    次にやること（`S-036` で DNS レコードを設定する）が読み取れる文言にする。設定すべき
@@ -768,6 +776,9 @@ const ja = {
   'engineers.skills.newAlias.note':
     '辞書に無い表記は新語候補として起票します。辞書には追加されず、採用されるまで検索には使われません。',
   'engineers.skills.newAlias.empty': '起票する表記はありません。',
+  // 🔴 T-05-03: `docs/04` §S-007 関連画面「→ `S-009`」。起票した候補の行き先を示す
+  //    （起票して終わりにせず、採否の画面へ辿れるようにする）。
+  'engineers.skills.newAlias.dictionaryLink': 'スキル辞書・新語候補の採否を開く',
 
   // 🔴 `docs/05` §3.4 に台帳側の保存先が無い項目（`docs/05` への追記提案が要る）。
   //    画面から隠さず、いまは登録できないことを書く（`orgSettings.members.comingSoon` と同じ規律）。
@@ -835,6 +846,73 @@ const ja = {
     'スキルシートの取込と版の管理は、後続のリリースで利用できるようになります。閲覧とダウンロードは、そのときも監査ログに記録されます。',
   'engineers.detail.proposals.comingSoon':
     'この人材の提案履歴と、提案時点の凍結情報との差分は、後続のリリースで表示されます。',
+
+  // --- S-009 スキル辞書・別名・新語候補（docs/04 §S-009 / `F-010` / docs/05 §6.4 #23 #24）---
+  // 🔴 T3（デスクトップ主体）だが**モバイルで遮断しない**（`CLAUDE.md` §13.3）。
+  // 🔴 `F-010 AC-1`: 「採用するまで検索の正規化に使われない」ことを候補の一覧に明示する
+  //    （起票したのに効かない、と受け取られないため）。
+  // 🔴 `F-010 AC-2`: グローバル辞書が**この組織から編集できない**ことを、
+  //    導線を消すだけでなく文言でも示す（`docs/04` §S-009「読み取り専用の表示で示す」）。
+  'skillDictionary.breadcrumb.home': 'ホーム',
+  'skillDictionary.breadcrumb.current': 'スキル辞書',
+  'skillDictionary.title': 'スキル辞書・別名・新語候補',
+
+  'skillDictionary.section.candidates': '新語候補（採否待ち）',
+  'skillDictionary.candidates.note':
+    '辞書に無い表記は新語候補として起票されます。採用して正規化先を決めるまで、この表記は検索の正規化に使われません。',
+  // 🔴 `docs/04` §10.1 `S-009`「この状態が正常であることを示す」。
+  'skillDictionary.candidates.empty':
+    '採否を待っている表記はありません。新しい表記が起票されると、ここに表示されます。',
+  'skillDictionary.candidates.column.alias': '表記',
+  'skillDictionary.candidates.column.origin': '起票元',
+  'skillDictionary.candidates.column.proposedAt': '起票日',
+  'skillDictionary.candidates.column.target': '正規化先',
+  'skillDictionary.candidates.column.actions': '採否',
+  'skillDictionary.candidates.target.placeholder': '正規化先を選ぶ',
+  'skillDictionary.candidates.accept': '採用',
+  'skillDictionary.candidates.reject': '却下',
+  'skillDictionary.candidates.submitting': '反映しています…',
+  'skillDictionary.candidates.acceptHint': '採用するには正規化先を選んでください。',
+  // 🔴 却下は「候補を閉じる」操作である（`docs/04` §S-009「操作と結果」）。消えることを先に伝える。
+  'skillDictionary.candidates.rejectNote':
+    '却下した表記は候補の一覧から外れます。採用・却下の記録は監査ログに残ります。',
+  'skillDictionary.candidates.error': '採否を反映できませんでした。もう一度お試しください。',
+  // 🔴 `docs/04` §S-009 権限差分「取引先は候補の起票のみ（採否の導線が無い）。`VIEWER` は閲覧のみ」。
+  //    導線を消すだけにせず、**誰が決めるのか**を書く（行き止まりにしない）。
+  'skillDictionary.candidates.readOnlyNote':
+    '採否の操作はこの画面では行えません。新語候補の採用・却下は、自社（発注元）の管理者または営業担当が行います。',
+  // 🔴 `docs/04` §S-009 の「出現件数」列に対応する保存先が docs/05 §3.4 に無い（本文の注記参照）。
+  //    列を勝手に足さず、いまは出せないことを画面に書く（`engineers.careers.comingSoon` と同じ規律）。
+  'skillDictionary.candidates.occurrenceComingSoon':
+    '同じ表記が何件のエンジニアで使われているかの集計は、スキルシートの取込（後続のリリース）と合わせて表示できるようになります。',
+
+  'skillDictionary.section.aliases': '別名の一覧',
+  'skillDictionary.aliases.note':
+    '採用済みの別名です。検索とマッチングでは、別名は正規化先のスキルとして扱われます。',
+  'skillDictionary.aliases.empty': '採用済みの別名はまだありません。',
+  'skillDictionary.aliases.column.alias': '別名',
+  'skillDictionary.aliases.column.target': '正規化先',
+  'skillDictionary.aliases.column.scope': '適用範囲',
+  'skillDictionary.aliases.column.decidedAt': '決定日',
+  'skillDictionary.scope.TENANT': 'この組織のみ',
+  'skillDictionary.scope.GLOBAL': '全社共通（編集不可）',
+
+  'skillDictionary.origin.HUMAN': '手入力',
+  // 🔴 `docs/04` §9 の「常時 1 行」。Phase 2 の `skill-normalizer` が起票した候補の由来。
+  'skillDictionary.origin.AI': 'AI が提案した正規化先',
+
+  'skillDictionary.section.dictionary': 'グローバル辞書（参照のみ）',
+  'skillDictionary.dictionary.readOnlyNote':
+    'グローバル辞書は全社共通のマスタです。この組織から追加・変更・削除はできません。組織固有の表記は、新語候補を採用して別名として追加してください。',
+  'skillDictionary.dictionary.search.label': 'スキル名で検索',
+  'skillDictionary.dictionary.search.submit': '検索',
+  'skillDictionary.dictionary.search.submitting': '検索しています…',
+  'skillDictionary.dictionary.column.name': 'スキル',
+  'skillDictionary.dictionary.column.category': '分類',
+  'skillDictionary.dictionary.empty': '条件に一致するスキルはありません。',
+  'skillDictionary.dictionary.error': 'スキル辞書を取得できませんでした。もう一度お試しください。',
+
+  'skillDictionary.value.none': '—',
 
   // --- 都道府県（JIS X 0401。コードの出所は `@ses/domain` の `PREFECTURE_CODES`）---
   // 🔴 コードと文言キーの対応は `apps/web/lib/engineers/labels.ts` の `PREFECTURE_MESSAGE_KEYS`
