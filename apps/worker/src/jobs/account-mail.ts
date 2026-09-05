@@ -16,6 +16,7 @@
 import {
   accountMailDedupeKey,
   ACCOUNT_MAIL_KINDS,
+  buildAccountMailLink,
   isAccountMailRecipientClass,
   RECIPIENT_CLASSES,
   type AccountMailJob,
@@ -51,11 +52,12 @@ export function isAccountMailTemplateKey(templateKey: string): boolean {
   return Object.values(ACCOUNT_MAIL_TEMPLATE_KEY).includes(templateKey);
 }
 
-/** `kind` → 受諾 / 再設定の画面パス（`APP_URL` からの相対）。 */
-const LINK_PATH: Readonly<Record<AccountMailKind, string>> = {
-  INVITATION: '/invitations',
-  PASSWORD_RESET: '/password-reset/confirm',
-};
+/**
+ * 🔴 受諾 / 再設定リンクの組み立ては `@ses/connectors` に移した（T-04-08）。
+ *    `sandbox` の招待リンク表示（`apps/web`。`F-007 AC-4`）と**同じ URL** でなければならず、
+ *    2 アプリで書き分けると片方だけが静かに壊れるため。ここでは再輸出だけを行う。
+ */
+export { buildAccountMailLink };
 
 function isAccountMailKind(value: unknown): value is AccountMailKind {
   return typeof value === 'string' && (ACCOUNT_MAIL_KINDS as readonly string[]).includes(value);
@@ -106,11 +108,6 @@ export type AccountMailDeps = EmailSendDeps & {
 };
 
 export type AccountMailHandler = (payload: unknown, jobId: string) => Promise<EmailSendOutcome>;
-
-/** 受諾 / 再設定リンク。🔴 これが**平文トークンの唯一の出口**である（メール本文の中）。 */
-export function buildAccountMailLink(appUrl: string, kind: AccountMailKind, token: string): string {
-  return new URL(`${LINK_PATH[kind]}/${encodeURIComponent(token)}`, appUrl).toString();
-}
 
 export function createAccountMailHandler(deps: AccountMailDeps): AccountMailHandler {
   return async (payload, jobId) => {

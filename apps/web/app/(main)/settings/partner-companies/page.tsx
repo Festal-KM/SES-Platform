@@ -13,7 +13,7 @@ import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { t } from '@ses/i18n';
 import { resolveTenantCtxOutcome } from '../../../../lib/auth/session';
-import { sendingDomainRuntime } from '../../../../lib/db/bootstrap';
+import { inviteUrlRuntime, sendingDomainRuntime } from '../../../../lib/db/bootstrap';
 import { listPartnerCompanies } from '../../../../lib/partner-companies/service';
 import {
   isSendingDomainUnverified,
@@ -59,6 +59,10 @@ export default async function PartnerCompaniesPage() {
         initial={view}
         canManage={canManage}
         invitationBlocked={invitationBlocked}
+        // 🔴 T-04-08: `sandbox` かどうかは**起動時に確定した値**から読む（`CLAUDE.md` §11.1）。
+        //    ここで `APP_ENV` を評価しない。操作前の予告にだけ使い、リンクを出すか否かは
+        //    `#14` の応答（`disclosure`）が決める。
+        sandboxLinkHandover={inviteUrlRuntime().kind === 'SANDBOX_LINK_HANDOVER'}
         messages={{
           partnerScopeNotice: t('partnerCompanies.partnerScopeNotice'),
           readOnlyNote: t('partnerCompanies.readOnlyNote'),
@@ -107,6 +111,15 @@ export default async function PartnerCompaniesPage() {
           inviteBlocked: t('partnerCompanies.invite.blocked'),
           inviteBlockedLink: t('partnerCompanies.invite.blocked.link'),
           inviteBlockedMemberInviteNote: t('partnerCompanies.invite.blocked.memberInviteNote'),
+
+          inviteLinkHeading: t('partnerCompanies.invite.link.heading'),
+          inviteLinkNotice: t('partnerCompanies.invite.link.notice'),
+          inviteLinkOnceOnly: t('partnerCompanies.invite.link.onceOnly'),
+          inviteLinkLabel: t('partnerCompanies.invite.link.label'),
+          inviteLinkCopy: t('partnerCompanies.invite.link.copy'),
+          inviteLinkCopied: t('partnerCompanies.invite.link.copied'),
+          inviteLinkCopyFailed: t('partnerCompanies.invite.link.copyFailed'),
+          inviteLinkPreNotice: t('partnerCompanies.invite.link.preNotice'),
 
           sectionSuspension: t('partnerCompanies.section.suspension'),
           suspensionReasonLabel: t('partnerCompanies.suspension.reason.label'),

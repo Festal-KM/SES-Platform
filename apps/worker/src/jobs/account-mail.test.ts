@@ -180,25 +180,19 @@ describe('🔴 ② ③ dedupeKey（docs/05 §9.4）', () => {
   });
 });
 
+// 🔴 T-04-08: リンクの形そのものの検証は `@ses/connectors` 側（`account-mail.test.ts`）に
+//    移した（`apps/web` の `sandbox` 招待リンクと同じ関数を共有するため）。ここで見るのは
+//    「ハンドラがその関数の結果を差し込み値として渡すこと」だけである。
 describe('🔴 ④ 平文トークンの唯一の出口（メール本文のリンク）', () => {
-  it('差し込み値にリンクとして現れる', async () => {
+  it('差し込み値にリンクとして現れる（実ルート `/invite/{token}` を指す）', async () => {
     const { handler, send } = makeHandler();
     await handler(VALID, 'j-1');
     expect(send.mock.calls[0]?.[0].params).toEqual({
-      link: `https://app.example.co.jp/invitations/${TOKEN}`,
+      link: buildAccountMailLink('https://app.example.co.jp', 'INVITATION', TOKEN),
     });
-  });
-
-  it('パスワード再設定は別のパスになる', () => {
-    expect(buildAccountMailLink('https://app.example.co.jp', 'PASSWORD_RESET', 'tok')).toBe(
-      'https://app.example.co.jp/password-reset/confirm/tok',
-    );
-  });
-
-  it('トークンは URL エンコードされる（パス区切りに化けない）', () => {
-    expect(buildAccountMailLink('https://app.example.co.jp', 'INVITATION', 'a/b?c')).toBe(
-      'https://app.example.co.jp/invitations/a%2Fb%3Fc',
-    );
+    expect(send.mock.calls[0]?.[0].params).toEqual({
+      link: `https://app.example.co.jp/invite/${TOKEN}`,
+    });
   });
 });
 

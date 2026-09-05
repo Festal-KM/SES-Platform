@@ -592,6 +592,24 @@ const ja = {
   'partnerCompanies.invite.blocked.memberInviteNote':
     '※ 自社メンバーの招待（組織設定）は共通ドメインで送信されるため、検証の完了を待たずに実行できます。',
 
+  // 🔴 T-04-08: `sandbox` の招待リンク（docs/04 §S-014 セクション 4 / `U-07` / `F-007 AC-4`）。
+  //    `production` では `#14` の応答に `inviteUrl` が存在しないため、これらは 1 つも表示されない。
+  //    🔴 「メールは一切送信されません」と書かない（docs/04 `U-07`）—— 自社メンバー宛は実際に届く。
+  'partnerCompanies.invite.link.preNotice':
+    'サンドボックス環境では、取引先の担当者宛のメール（招待を含む）は送信されません。招待を作成すると、この場に受諾リンクが表示されるので、取引先の担当者にお渡しください。',
+  'partnerCompanies.invite.link.heading': '招待リンク',
+  'partnerCompanies.invite.link.notice':
+    'サンドボックス環境では招待メールが送信されません。このリンクを取引先の担当者にお渡しください。',
+  'partnerCompanies.invite.link.label': '受諾リンク',
+  'partnerCompanies.invite.link.copy': 'リンクをコピー',
+  'partnerCompanies.invite.link.copied': 'コピーしました。',
+  'partnerCompanies.invite.link.copyFailed':
+    'コピーできませんでした。上のリンクを選択してコピーしてください。',
+  // 🔴 有効期限・1 回限りの受諾・受諾後の失効は本番の招待と同一の規律である（`F-007 AC-4`）。
+  //    再表示できないことも併せて明示する（この応答が平文リンクの唯一の出口である）。
+  'partnerCompanies.invite.link.onceOnly':
+    '※ このリンクは本番環境の招待と同じ扱いです。有効期限があり、受諾は 1 回限りで、受諾後は無効になります。この画面を離れると再表示できません。',
+
   // セクション 5: 停止 / 再開（#13）
   'partnerCompanies.section.suspension': '取引先の停止',
   'partnerCompanies.suspension.reason.label': '理由（任意）',

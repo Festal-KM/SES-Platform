@@ -53,6 +53,7 @@ import {
   readInvitationByToken,
   type IssueInvitationInput,
 } from '../../apps/web/lib/invitations/service';
+import { INVITE_URL_NOT_DISCLOSED } from '../../apps/web/lib/invitations/invite-link';
 import type { SendingDomainResolver } from '../../apps/web/lib/settings/sending-domains';
 import { startIsolationDatabase, type IsolationDatabase } from './support/postgres.js';
 
@@ -72,7 +73,16 @@ async function issueInvitation(
   meta: AuthAttemptMeta,
   now: Date,
 ): Promise<{ readonly id: string; readonly deliveryState: string }> {
-  return issueInvitationService(ctx, input, meta, SENDING_DOMAIN_NOT_REQUIRED, now);
+  // 🔴 T-04-08: 本ファイルは `sandbox` を扱わない（`F-007 AC-4` の検証は
+  //    `sandbox-invite-link.test.ts`）。開示しない runtime を明示的に渡す。
+  return issueInvitationService(
+    ctx,
+    input,
+    meta,
+    SENDING_DOMAIN_NOT_REQUIRED,
+    () => INVITE_URL_NOT_DISCLOSED,
+    now,
+  );
 }
 
 const SETUP_TIMEOUT_MS = 600_000;

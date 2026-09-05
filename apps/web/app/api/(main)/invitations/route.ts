@@ -16,28 +16,27 @@
 import { readRequestMeta } from '../../../../lib/auth/session';
 import { requireExecutable, requireNotViewer, requireRole } from '../../../../lib/api/guards';
 import { withApiRoute } from '../../../../lib/api/withApiRoute';
-import { sendingDomainRuntime } from '../../../../lib/db/bootstrap';
+import { inviteUrlRuntime, sendingDomainRuntime } from '../../../../lib/db/bootstrap';
 import { issueInvitation } from '../../../../lib/invitations/service';
 import { evaluateSendingDomain } from '../../../../lib/settings/sending-domains';
 import { INVITATION_ISSUER_ROLES } from '../../../../lib/invitations/policy';
 import { createInvitationBodySchema } from '../../../../lib/invitations/schemas';
-import type { AccountMailDeliveryState } from '../../../../lib/jobs/account-mail';
+import type { InvitationIssueView } from '../../../../lib/invitations/invite-link';
 
 // 🔴 Node ランタイム固定（Prisma / node:crypto は Edge で動かない）。
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * docs/05 §6.4 #14 の応答。
- * 🔴 `inviteUrl` はまだ返さない —— `APP_ENV='sandbox'` かつ**取引先の担当者宛**のときだけ返る値
- *    （`F-007 AC-4`）であり、`SandboxInvitationView` / `ProductionInvitationView` の
- *    **判別可能な合併**として実装するのは **T-04-08** である（docs/05 §6.4）。
- *    それまで**フィールドごと持たない**（`production` で誤って返さないための形）。
+ * docs/05 §6.4 #14 の応答（T-04-08）。
+ *
+ * 🔴 **`SandboxInvitationView` / `ProductionInvitationView` の判別可能な合併**である
+ *    （`lib/invitations/invite-link.ts`）。`inviteUrl` は `APP_ENV='sandbox'` かつ
+ *    宛先分類 2（パートナー所属）の枝にしか存在せず、`production` では**型としても持たない**。
+ * 🔴 応答をそのまま返す（ルートで組み立て直さない）。組み立て直すと、開示の条件が
+ *    サービス層とルートの 2 箇所に分かれる。
  */
-export type CreateInvitationResponse = {
-  readonly id: string;
-  readonly deliveryState: AccountMailDeliveryState;
-};
+export type CreateInvitationResponse = InvitationIssueView;
 
 export const POST = withApiRoute(
   {
@@ -60,13 +59,18 @@ export const POST = withApiRoute(
     //    `issueInvitation` が使い、応答の `deliveryState` に写像する（docs/05 §8.3）。
     // 🔴 関数のまま渡す ——自社メンバー宛（分類 1）では**1 度も呼ばれない**
     //    （`F-001 AC-5`「送信ドメインの検証状態に依存しない」）。
-    const result = await issueInvitation(ctx, body, await readRequestMeta(), (invitationCtx) =>
-      evaluateSendingDomain(invitationCtx, sendingDomainRuntime()),
+    const responseBody: CreateInvitationResponse = await issueInvitation(
+      ctx,
+      body,
+      await readRequestMeta(),
+      (invitationCtx) => evaluateSendingDomain(invitationCtx, sendingDomainRuntime()),
+      // 🔴 T-04-08: 開示の可否は**起動時に確定**している（`APP_ENV='sandbox'` のみ）。
+      //    ここで `APP_ENV` を読まない（`CLAUDE.md` §11.1 / §3.5）。
+      // 🔴 関数のまま渡す —— 自社メンバー宛（分類 1）では**1 度も呼ばれない**
+      //    （`resolveSendingDomain` と同じ扱い。起動時 DI に依存しない経路を保つ）。
+      inviteUrlRuntime,
     );
-    const responseBody: CreateInvitationResponse = {
-      id: result.id,
-      deliveryState: result.deliveryState,
-    };
+    // 🔴 `no-store`（応答に平文トークンが載りうる。中間キャッシュに残さない）。
     return Response.json(responseBody, { status: 201, headers: { 'cache-control': 'no-store' } });
   },
 );

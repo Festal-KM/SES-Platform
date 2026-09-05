@@ -45,6 +45,7 @@ import {
   configureAccountMailQueue,
   PendingAccountMailQueue,
 } from '../../apps/web/lib/jobs/account-mail.js';
+import { INVITE_URL_NOT_DISCLOSED } from '../../apps/web/lib/invitations/invite-link.js';
 import { issueInvitation, readInvitationByToken } from '../../apps/web/lib/invitations/service.js';
 import {
   evaluateSendingDomain,
@@ -185,6 +186,7 @@ async function invitePartner(email: string) {
     { email, role: 'PARTNER_ADMIN', targetPartnerCompanyId: PARTNER_A1 },
     META,
     REQUIRED,
+    () => INVITE_URL_NOT_DISCLOSED,
     NOW,
   );
 }
@@ -273,6 +275,7 @@ describe('🔴 ③ F-007 AC-5: 未検証でも招待は作られ、送達だけ�
       { email: 'host-member@hold-test.example', role: 'SALES' },
       META,
       REQUIRED,
+      () => INVITE_URL_NOT_DISCLOSED,
       NOW,
     );
     const outcome = await runAccountMail(mailQueue.jobsOf('INVITATION')[0] as never);
@@ -287,6 +290,7 @@ describe('🔴 ③ F-007 AC-5: 未検証でも招待は作られ、送達だけ�
       { email: 'partner-sandbox@hold-test.example', role: 'PARTNER_ADMIN', targetPartnerCompanyId: PARTNER_A1 },
       META,
       NOT_REQUIRED,
+      () => INVITE_URL_NOT_DISCLOSED,
       NOW,
     );
     expect(result.deliveryState).toBe('MOCKED');

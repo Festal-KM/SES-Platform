@@ -14,10 +14,17 @@
 //    送達だけを保留する（`F-007 AC-5`。「招待そのものは作成できるが、送達は検証完了後」）。
 // 🔴 「送信しました」と書かない（docs/04 §S-014「非同期処理の表現」）。**送信を受け付けた**
 //    ことと、保留（`HELD_DOMAIN_UNVERIFIED`）を書き分ける。
+// 🔴 T-04-08: `sandbox` では取引先招待メールがモックになる（Issue #9 / #10）ため、
+//    **招待リンクを画面に出して手渡す**（docs/04 §S-014 セクション 4 / `U-07` / `F-007 AC-4`）。
+//    - `production` では**応答に `inviteUrl` が存在しない**ので、この表示は原理的に出ない
+//      （画面側の `if` が唯一の防御ではない。判定は `#14` の応答型が持つ）
+//    - 🔴 **再表示しない。** 招待の発行直後の応答だけが平文トークンの出口であり、
+//      再表示 API を作らない（docs/04 §S-046 の「この画面を離れると再表示できません」と同じ規律）
 import { useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { Button } from '@ses/ui';
 import { formatDateTimeJst } from '../../../../lib/format/datetime';
+import type { InvitationIssueView } from '../../../../lib/invitations/invite-link';
 import type {
   PartnerCompanyListView,
   PartnerCompanyView,
@@ -72,6 +79,16 @@ export type PartnerCompaniesScreenMessages = {
   readonly inviteBlockedLink: string;
   readonly inviteBlockedMemberInviteNote: string;
 
+  /** 🔴 T-04-08（`sandbox` のみ。`production` では 1 つも描画されない）。 */
+  readonly inviteLinkHeading: string;
+  readonly inviteLinkNotice: string;
+  readonly inviteLinkOnceOnly: string;
+  readonly inviteLinkLabel: string;
+  readonly inviteLinkCopy: string;
+  readonly inviteLinkCopied: string;
+  readonly inviteLinkCopyFailed: string;
+  readonly inviteLinkPreNotice: string;
+
   readonly sectionSuspension: string;
   readonly suspensionReasonLabel: string;
   readonly suspendSubmit: string;
@@ -90,10 +107,95 @@ type Phase = 'idle' | 'submitting' | 'error';
 /** 🔴 ホストがこの画面から招けるのは取引先の管理者だけである（`F-002 AC-4`）。 */
 const INVITED_ROLE = 'PARTNER_ADMIN';
 
+/**
+ * 🔴 `sandbox` の招待リンク（docs/04 §S-014 セクション 4 / `F-007 AC-4`）。T-04-08。
+ *
+ * 🔴 表示・コピーの両方を出す。コピーだけにしないのは、`navigator.clipboard` が
+ *    安全なコンテキスト以外では使えないためである（使えないときに手段が無くなると、
+ *    見込み客は取引先を招けず `F-054 AC-1` のパートナースコープ検証まで止まる）。
+ * 🔴 リンクの有効期限・1 回限りの受諾・受諾後の失効は `production` の招待と**同一**である
+ *    （専用の別トークンでも別経路でもない）。その事実を文言で明示する。
+ */
+export function SandboxInviteLinkPanel({
+  inviteUrl,
+  messages,
+}: {
+  readonly inviteUrl: string;
+  readonly messages: Pick<
+    PartnerCompaniesScreenMessages,
+    | 'inviteLinkHeading'
+    | 'inviteLinkNotice'
+    | 'inviteLinkOnceOnly'
+    | 'inviteLinkLabel'
+    | 'inviteLinkCopy'
+    | 'inviteLinkCopied'
+    | 'inviteLinkCopyFailed'
+  >;
+}) {
+  const [copy, setCopy] = useState<'idle' | 'copied' | 'failed'>('idle');
+
+  async function onCopy(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(inviteUrl);
+      setCopy('copied');
+    } catch {
+      // 🔴 握り潰さない。コピーできなかったことを見せ、表示中のリンクを手で選べるようにする。
+      setCopy('failed');
+    }
+  }
+
+  return (
+    <div
+      className="mt-3 rounded-md border border-sky-300 bg-sky-50 p-3 text-sm text-sky-900"
+      data-testid="partner-company-invite-link"
+    >
+      <p className="mb-1 font-medium">{messages.inviteLinkHeading}</p>
+      <p className="mb-2">{messages.inviteLinkNotice}</p>
+      <label className="mb-2 block">
+        <span className="mb-1 block text-xs text-sky-800">{messages.inviteLinkLabel}</span>
+        {/* 🔴 読み取り専用の入力に出す（長い URL をモバイルでも選択・コピーできる）。 */}
+        <input
+          type="text"
+          readOnly
+          value={inviteUrl}
+          onFocus={(event) => event.currentTarget.select()}
+          className="w-full rounded-md border border-sky-300 bg-white px-3 py-2 font-mono text-xs"
+          data-testid="partner-company-invite-link-value"
+        />
+      </label>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          onClick={() => void onCopy()}
+          data-testid="partner-company-invite-link-copy"
+        >
+          {messages.inviteLinkCopy}
+        </Button>
+        {copy === 'idle' ? null : (
+          <span
+            role="status"
+            className={copy === 'copied' ? 'text-xs text-emerald-700' : 'text-xs text-red-700'}
+            data-testid="partner-company-invite-link-copy-status"
+          >
+            {copy === 'copied' ? messages.inviteLinkCopied : messages.inviteLinkCopyFailed}
+          </span>
+        )}
+      </div>
+      {/* 🔴 `production` の招待と同じ規律であることを明示する（期限 / 1 回限り / 再表示不可）。 */}
+      <p className="mt-2 text-xs text-sky-800" data-testid="partner-company-invite-link-once-only">
+        {messages.inviteLinkOnceOnly}
+      </p>
+    </div>
+  );
+}
+
 export function PartnerCompaniesScreen({
   initial,
   canManage,
   invitationBlocked,
+  sandboxLinkHandover,
   messages,
 }: {
   readonly initial: PartnerCompanyListView;
@@ -101,6 +203,13 @@ export function PartnerCompaniesScreen({
   readonly canManage: boolean;
   /** 🔴 送信元ドメインが未検証（`F-007 AC-5` / `S-036`）。招待の導線を出さない理由になる。 */
   readonly invitationBlocked: boolean;
+  /**
+   * 🔴 `sandbox` である（= 取引先招待メールが送られず、リンクを手渡す。`F-007 AC-4`）。T-04-08。
+   *    値の出所は起動時解決済みの `inviteUrlRuntime()` だけで、画面は `APP_ENV` を見ない。
+   *    ⚠️ これは**操作前の予告**のためだけに使う。リンクを出すかどうかを決めるのは
+   *    `#14` の応答（`disclosure`）であり、この真偽値ではない。
+   */
+  readonly sandboxLinkHandover: boolean;
   readonly messages: PartnerCompaniesScreenMessages;
 }) {
   const [items, setItems] = useState<readonly PartnerCompanyView[]>(initial.items);
@@ -115,12 +224,25 @@ export function PartnerCompaniesScreen({
   const [inviteEmail, setInviteEmail] = useState('');
   const [invitePhase, setInvitePhase] = useState<Phase>('idle');
   const [inviteResult, setInviteResult] = useState<InvitationDeliveryState | null>(null);
+  /** 🔴 `sandbox` × 分類 2 のときだけ値が入る（`production` の応答には存在しないフィールド）。 */
+  const [inviteUrl, setInviteUrl] = useState<string | null>(null);
 
   const [reason, setReason] = useState('');
   const [confirming, setConfirming] = useState(false);
   const [suspensionPhase, setSuspensionPhase] = useState<Phase>('idle');
 
   const selected = items.find((item) => item.id === selectedId) ?? null;
+
+  /**
+   * 取引先を選び直す。
+   * 🔴 発行済みの招待リンクを**必ず捨てる**（T-04-08）。残すと、別の取引先の詳細を見ながら
+   *    前の宛先の平文トークンが画面に出ている状態になり、渡す相手を取り違えうる。
+   */
+  function select(id: string): void {
+    setSelectedId(id);
+    setInviteUrl(null);
+    setInviteResult(null);
+  }
 
   /** 一覧を引き直す（件数・状態は API の値だけを正とし、クライアントで組み立てない）。 */
   async function reload(): Promise<void> {
@@ -161,7 +283,7 @@ export function PartnerCompaniesScreen({
       setRegistered(true);
       setRegisterPhase('idle');
       await reload();
-      setSelectedId(created.id);
+      select(created.id);
     } catch {
       setRegisterPhase('error');
     }
@@ -177,6 +299,8 @@ export function PartnerCompaniesScreen({
     }
     setInvitePhase('submitting');
     setInviteResult(null);
+    // 🔴 前回のリンクを消してから発行する（別の宛先のリンクが画面に残らないようにする）。
+    setInviteUrl(null);
     try {
       const response = await fetch('/api/invitations', {
         method: 'POST',
@@ -192,9 +316,12 @@ export function PartnerCompaniesScreen({
         setInvitePhase('error');
         return;
       }
-      const created = (await response.json()) as { readonly deliveryState: InvitationDeliveryState };
+      const created = (await response.json()) as InvitationIssueView;
       setInviteEmail('');
       setInviteResult(created.deliveryState);
+      // 🔴 判別子で分岐する（`inviteUrl` の有無を推測しない）。`production` の応答は
+      //    `disclosure: 'NONE'` であり、この枝には入らない。
+      if (created.disclosure === 'SANDBOX_INVITE_URL') setInviteUrl(created.inviteUrl);
       setInvitePhase('idle');
       await reload();
     } catch {
@@ -283,7 +410,7 @@ export function PartnerCompaniesScreen({
                         type="button"
                         variant="secondary"
                         size="sm"
-                        onClick={() => setSelectedId(item.id)}
+                        onClick={() => select(item.id)}
                         data-testid={`partner-company-select-${item.id}`}
                       >
                         {messages.select}
@@ -418,6 +545,16 @@ export function PartnerCompaniesScreen({
                     </div>
                   ) : (
                     <form onSubmit={onInvite} noValidate data-testid="partner-company-invite-form">
+                      {/* 🔴 docs/04 §3.5: `sandbox` では**操作の隣に**バナーと同じ趣旨を再掲する
+                          （バナーは常時目に入るが、招待の操作をする瞬間に必要な情報は操作の隣にある）。 */}
+                      {sandboxLinkHandover ? (
+                        <p
+                          className="mb-3 rounded-md border border-sky-300 bg-sky-50 p-2 text-xs text-sky-900"
+                          data-testid="partner-company-invite-sandbox-notice"
+                        >
+                          {messages.inviteLinkPreNotice}
+                        </p>
+                      ) : null}
                       <label className="mb-2 block text-sm">
                         <span className="mb-1 block text-slate-700">{messages.inviteEmailLabel}</span>
                         <input
@@ -456,6 +593,10 @@ export function PartnerCompaniesScreen({
                       <Button type="submit" disabled={invitePhase === 'submitting'} data-testid="partner-company-invite-submit">
                         {invitePhase === 'submitting' ? messages.inviteSubmitting : messages.inviteSubmit}
                       </Button>
+                      {/* 🔴 `sandbox` × 分類 2 のときだけ、応答に載ってきたリンクを出す（`F-007 AC-4`）。 */}
+                      {inviteUrl === null ? null : (
+                        <SandboxInviteLinkPanel inviteUrl={inviteUrl} messages={messages} />
+                      )}
                     </form>
                   )}
                 </section>

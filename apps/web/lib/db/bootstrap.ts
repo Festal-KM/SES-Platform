@@ -24,6 +24,7 @@ import {
 } from '@ses/db';
 import { configureAccountMailQueue, PendingAccountMailQueue } from '../jobs/account-mail';
 import { configureDomainJobQueue, PendingDomainJobQueue } from '../jobs/domain-jobs';
+import { resolveInviteUrlRuntime, type InviteUrlRuntime } from '../invitations/invite-link';
 import {
   configureWebhookProcessQueue,
   confirmSnsSubscription,
@@ -57,6 +58,12 @@ let cachedSesEventTopicArn: string | null = null;
  */
 let cachedSendingDomainRuntime: { readonly region: string; readonly verificationRequired: boolean } | null =
   null;
+/**
+ * 🔴 T-04-08: `#14` が招待リンク（平文トークン）を応答に載せてよいか（`F-007 AC-4`）。
+ *    `sandbox` では取引先招待メールがモックになる（Issue #9 / #10）ため、画面で手渡すしかない。
+ *    **判定はここ 1 箇所**であり、ルートにも画面にも `APP_ENV` の分岐を置かない（`CLAUDE.md` §11.1）。
+ */
+let cachedInviteUrlRuntime: InviteUrlRuntime | null = null;
 
 /**
  * DB クライアントを 1 度だけ初期化する。
@@ -123,7 +130,24 @@ export function ensureDbConfigured(): void {
     region: env.AWS_REGION,
     verificationRequired: env.APP_ENV === 'staging' || env.APP_ENV === 'production',
   };
+  // 🔴 T-04-08: 招待リンクの開示（`F-007 AC-4`）も**同じ 1 箇所**で決める。
+  //    判定式そのものは `resolveInviteUrlRuntime`（`invite-link.ts`）が持つ ——
+  //    結合テストが `buildValidEnv('sandbox')` から**同じ関数**で runtime を作れるようにするため
+  //    （テスト専用のフックも、テスト側での判定の書き写しも作らない）。
+  cachedInviteUrlRuntime = resolveInviteUrlRuntime(env);
   initialized = true;
+}
+
+/**
+ * 🔴 `#14`（`POST /api/invitations`）と `S-014` が読む、起動時解決済みの開示設定（`F-007 AC-4`）。
+ *    `NOT_DISCLOSED` の枝には `appUrl` が無いため、**呼び出し側は URL を組み立てられない**。
+ */
+export function inviteUrlRuntime(): InviteUrlRuntime {
+  ensureDbConfigured();
+  if (cachedInviteUrlRuntime === null) {
+    throw new Error('招待リンクの実行時設定が解決されていません（bootstrap の不変条件違反）。');
+  }
+  return cachedInviteUrlRuntime;
 }
 
 /**

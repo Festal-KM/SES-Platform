@@ -64,6 +64,42 @@ export type AccountMailQueue = {
 };
 
 /**
+ * 受諾 / 再設定リンクの形（`APP_URL` からの相対）。
+ *
+ * 🔴 **`apps/web` の実ルートと 1 対 1 でなければならない**:
+ *    - `INVITATION` … `app/(main)/(auth)/invite/[token]/page.tsx`（トークンはパス）
+ *    - `PASSWORD_RESET` … `app/(main)/(auth)/password-reset/confirm/page.tsx`（トークンはクエリ）
+ *    ルート側の形が違うので、`tokenIn` を持たせて 1 箇所で言い切る。
+ */
+const ACCOUNT_MAIL_LINK: Readonly<
+  Record<AccountMailKind, { readonly path: string; readonly tokenIn: 'PATH' | 'QUERY' }>
+> = {
+  INVITATION: { path: '/invite', tokenIn: 'PATH' },
+  PASSWORD_RESET: { path: '/password-reset/confirm', tokenIn: 'QUERY' },
+};
+
+/**
+ * 🔴 **平文トークンの唯一の出口**（メール本文の差し込み値、および `sandbox` の招待リンク表示）。
+ *
+ * 🔴 T-04-08 で `apps/worker/src/jobs/account-mail.ts` から**ここへ移設した**。`sandbox` の
+ *    `inviteUrl`（`F-007 AC-4`。`apps/web` が組み立てる）と、メール本文のリンク
+ *    （`apps/worker` が組み立てる）は**同一の URL でなければならない** ——
+ *    「専用の別トークン・別受諾経路を作らない」（T-04-08）を、2 つのアプリが同じ 1 つの関数を
+ *    呼ぶという形で担保する。片方のアプリに置くと、もう片方が同じ形を書き直すことになり、
+ *    そのときリンクが静かに食い違う（＝ `sandbox` で渡したリンクだけが 404 になる）。
+ */
+export function buildAccountMailLink(appUrl: string, kind: AccountMailKind, token: string): string {
+  const link = ACCOUNT_MAIL_LINK[kind];
+  if (link.tokenIn === 'QUERY') {
+    const url = new URL(link.path, appUrl);
+    url.searchParams.set('token', token);
+    return url.toString();
+  }
+  // 🔴 トークンを URL エンコードする（パス区切りに化けさせない）。
+  return new URL(`${link.path}/${encodeURIComponent(token)}`, appUrl).toString();
+}
+
+/**
  * 🔴 `EmailDispatch.dedupeKey`（docs/05 §9.4 の `'{kind}:{targetId}:{sha256(token) の先頭 16 桁}'`）。
  *
  * トークンのハッシュを含めるので、**同じトークンでの再試行は必ず同じキー**になり `UNIQUE` で

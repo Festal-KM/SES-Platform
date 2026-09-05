@@ -13,8 +13,11 @@
 // 🔴 平文トークンの扱い（CLAUDE.md §3.4）:
 //    - DB に入るのは `tokenHash`（SHA-256）だけ
 //    - 平文は `account.mail` の payload（Redis）にしか渡さない
-//    - 監査ログの `summary` にも、戻り値にも載せない
-//      （`sandbox` の `inviteUrl` 表示（`F-007 AC-4`）は取引先招待の機能であり SP-04）
+//    - 監査ログの `summary` に載せない
+//    - 🔴 T-04-08: 戻り値に載るのは **`APP_ENV='sandbox'` かつ宛先分類 2** のときだけである
+//      （`F-007 AC-4`。`sandbox` では取引先招待メールがモックになり、画面で手渡すしかない）。
+//      判定は `buildInvitationIssueView`（`invite-link.ts`）の 1 箇所にあり、
+//      **開示しない環境ではリンクを組み立てる材料（`appUrl`）を受け取らない**。
 import { INVITATION_TTL_MS } from '@ses/config';
 import {
   resolveRecipientClass,
@@ -44,6 +47,11 @@ import {
   type AccountMailDeliveryState,
 } from '../jobs/account-mail';
 import type { SendingDomainResolver } from '../settings/sending-domains';
+import {
+  buildInvitationIssueView,
+  type InvitationIssueView,
+  type InviteUrlRuntimeResolver,
+} from './invite-link';
 import { decideInvitation, type InvitationDenialReason } from './policy';
 
 /** docs/05 §16.1 の `*.create` / `*.update` に対応する招待の監査アクション。 */
@@ -66,10 +74,11 @@ export type IssueInvitationInput = {
   readonly targetPartnerCompanyId?: string | null;
 };
 
-export type IssueInvitationResult = {
-  readonly id: string;
-  readonly deliveryState: AccountMailDeliveryState;
-};
+/**
+ * 🔴 T-04-08: 発行の結果は **`SandboxInvitationView` / `ProductionInvitationView` の
+ *    判別可能な合併**である（docs/05 §6.4 #14）。`inviteUrl` は片方の枝にしか存在しない。
+ */
+export type IssueInvitationResult = InvitationIssueView;
 
 /**
  * 🔴 **認可**としての拒否（403 に写像する）。残り
@@ -111,6 +120,15 @@ export async function issueInvitation(
    *    構造で示すためである（`F-001 AC-5`。自社の招待は送信ドメインに依存しない）。
    */
   resolveSendingDomain: SendingDomainResolver,
+  /**
+   * 🔴 T-04-08: 招待リンクを応答に載せてよいか（`F-007 AC-4`）。**起動時に確定した値**を返す
+   *    （`lib/db/bootstrap.ts` の `inviteUrlRuntime`）。リクエストごとに `APP_ENV` を見ない。
+   * 🔴 `resolveSendingDomain` と同じく**関数で受け取り、既定値を置かない**。
+   *    関数なのは、分類 1（自社メンバー宛）で**起動時 DI を 1 度も参照しない**ためである。
+   *    既定値を置かないのは、渡し忘れに気づけなくなるためである
+   *    （非 `sandbox` の呼び出し側は `() => INVITE_URL_NOT_DISCLOSED` を明示的に渡す）。
+   */
+  resolveInviteUrl: InviteUrlRuntimeResolver,
   now: Date = new Date(),
 ): Promise<IssueInvitationResult> {
   const verdict = decideInvitation(
@@ -236,7 +254,9 @@ export async function issueInvitation(
     token,
   });
 
-  return {
+  // 🔴 応答の組み立ては 1 箇所（`buildInvitationIssueView`）に閉じる。ここで
+  //    `if (sandbox) { ... }` を書くと、開示条件がこの関数と画面の 2 箇所に散る。
+  return buildInvitationIssueView({
     id: created.id,
     deliveryState: await predictDeliveryState(
       ctx,
@@ -244,7 +264,10 @@ export async function issueInvitation(
       enqueued,
       resolveSendingDomain,
     ),
-  };
+    recipientClass: created.recipientClass,
+    token,
+    resolveInviteUrl,
+  });
 }
 
 /**

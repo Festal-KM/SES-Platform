@@ -18,6 +18,7 @@ import type {
 } from '../../../../lib/partner-companies/service';
 import {
   PartnerCompaniesScreen,
+  SandboxInviteLinkPanel,
   type PartnerCompaniesScreenMessages,
 } from './partner-companies-screen';
 
@@ -88,6 +89,16 @@ const messages: PartnerCompaniesScreenMessages = {
   inviteBlockedLink: '送信ドメインを設定する',
   inviteBlockedMemberInviteNote: '※ 自社メンバーの招待は検証の完了を待たずに実行できます。',
 
+  inviteLinkHeading: '招待リンク',
+  inviteLinkNotice: 'サンドボックス環境では招待メールが送信されません。このリンクをお渡しください。',
+  inviteLinkOnceOnly: '※ 有効期限があり、受諾は 1 回限りです。この画面を離れると再表示できません。',
+  inviteLinkLabel: '受諾リンク',
+  inviteLinkCopy: 'リンクをコピー',
+  inviteLinkCopied: 'コピーしました。',
+  inviteLinkCopyFailed: 'コピーできませんでした。',
+  inviteLinkPreNotice:
+    'サンドボックス環境では、取引先の担当者宛のメールは送信されません。招待を作成すると受諾リンクが表示されます。',
+
   sectionSuspension: '取引先の停止',
   suspensionReasonLabel: '理由（任意）',
   suspendSubmit: 'この取引先を停止する',
@@ -104,13 +115,18 @@ const messages: PartnerCompaniesScreenMessages = {
 
 function render(
   initial: PartnerCompanyListView,
-  options: { canManage?: boolean; invitationBlocked?: boolean } = {},
+  options: {
+    canManage?: boolean;
+    invitationBlocked?: boolean;
+    sandboxLinkHandover?: boolean;
+  } = {},
 ): string {
   return renderToStaticMarkup(
     createElement(PartnerCompaniesScreen, {
       initial,
       canManage: options.canManage ?? true,
       invitationBlocked: options.invitationBlocked ?? false,
+      sandboxLinkHandover: options.sandboxLinkHandover ?? false,
       messages,
     }),
   );
@@ -180,6 +196,48 @@ describe('S-014 ホストの ADMIN 視点（docs/04 §S-014）', () => {
   it('最終アクティビティが無い取引先は「—」になる（0 や現在時刻で埋めない）', () => {
     const html = render({ items: [company({ lastActivityAt: null })], total: 1 });
     expect(html).toContain(messages.valueNone);
+  });
+});
+
+// 🔴 T-04-08（`F-007 AC-4` / docs/04 §S-014 セクション 4 / §3.5 / `U-07`）。
+//    E2E は `development` 固定で `sandbox` を再現できないため、この粒度はここでしか押さえられない。
+describe('🔴 S-014 sandbox の招待リンク（T-04-08）', () => {
+  it('sandbox では招待フォームの隣に予告を再掲する（操作の隣に置く。docs/04 §3.5）', () => {
+    const html = render({ items: [company()], total: 1 }, { sandboxLinkHandover: true });
+
+    expect(html).toContain('data-testid="partner-company-invite-sandbox-notice"');
+    expect(html).toContain(messages.inviteLinkPreNotice);
+  });
+
+  it('🔴 production では予告もリンクも 1 つも描画されない', () => {
+    const html = render({ items: [company()], total: 1 }, { sandboxLinkHandover: false });
+
+    expect(html).not.toContain('data-testid="partner-company-invite-sandbox-notice"');
+    // 発行前なので当然だが、`sandbox` でも発行前は出ないことを対称に固定する。
+    expect(html).not.toContain('data-testid="partner-company-invite-link"');
+  });
+
+  it('🔴 発行直後でもリンクは自動では出ない（応答に `inviteUrl` があるときだけ出る）', () => {
+    const html = render({ items: [company()], total: 1 }, { sandboxLinkHandover: true });
+
+    expect(html).not.toContain('data-testid="partner-company-invite-link"');
+  });
+
+  it('リンクの表示・コピー導線・「1 回限り / 再表示不可」の注意書きが揃う', () => {
+    const inviteUrl = 'https://sandbox.example.com/invite/plain-token-0001';
+    const html = renderToStaticMarkup(
+      createElement(SandboxInviteLinkPanel, { inviteUrl, messages }),
+    );
+
+    expect(html).toContain('data-testid="partner-company-invite-link"');
+    // 🔴 コピーだけにしない（clipboard が使えない文脈では手で選べる必要がある）。
+    expect(html).toContain(inviteUrl);
+    expect(html).toContain('data-testid="partner-company-invite-link-copy"');
+    expect(html).toContain(messages.inviteLinkNotice);
+    // 🔴 本番の招待と同一の規律（期限 / 1 回限り / 受諾後の失効）を文言で明示する。
+    expect(html).toContain(messages.inviteLinkOnceOnly);
+    // コピー結果は操作前には出ない。
+    expect(html).not.toContain('data-testid="partner-company-invite-link-copy-status"');
   });
 });
 

@@ -2012,7 +2012,7 @@ requireEsignConnection(ctx);                           // 🔴 §8.4。未接続
 | 11 | `GET /api/partner-companies` | `F-007` / `S-014` | `?q=&status=` | `{ items, total }`（`items[]` = `{ id, name, contactName, contactEmail, status:'ACTIVE'\|'SUSPENDED', invitedAt, suspendedAt, accountCount, pendingInvitationCount, openProjectCount, proposalCount, lastActivityAt }`） | ホスト全ロール。🔴 パートナーは**自社 1 件のみ**。**RLS（C5。`<O>` = `id`）が母集団を 1 行に絞るため、アプリ側に絞り込みを書かない**（`F-004 AC-1`。API 直叩きでも 0 件） |
 | 12 | `POST /api/partner-companies` | `F-007` | `{ name, contactName?, contactEmail? }` | `{ id }` | `OWNER` / `ADMIN` |
 | 13 | `POST /api/partner-companies/{id}/suspend` / `/resume` | `F-007 AC-2` | `{ reason? }` | `204` | `OWNER` / `ADMIN` |
-| 14 | `POST /api/invitations` | `F-002` / `F-007` | 🔴 `{ email, role, targetPartnerCompanyId? }`（**キー名の決着は下記**） | 🔴 `{ id, inviteUrl?: string, deliveryState: 'QUEUED' \| 'HELD_DOMAIN_UNVERIFIED' \| 'MOCKED' }` | `OWNER` / `ADMIN`。`PARTNER_ADMIN` は**自社 + パートナーロールのみ**。🔴 **パートナーロール宛（分類 2）は `production` で独自ドメイン検証済みが前提**（`F-007 AC-5`。未検証なら招待は作成され送達だけ `HELD`。§8.3）。ホストロール宛（`F-002`）はこの前提の対象外（`F-001 AC-5`） |
+| 14 | `POST /api/invitations` | `F-002` / `F-007` | 🔴 `{ email, role, targetPartnerCompanyId? }`（**キー名の決着は下記**） | 🔴 **判別可能な合併**（T-04-08）= `{ disclosure:'NONE', id, deliveryState }` \| `{ disclosure:'SANDBOX_INVITE_URL', id, deliveryState, inviteUrl: string }`。`deliveryState` は `'QUEUED' \| 'MOCKED' \| 'HELD_DOMAIN_UNVERIFIED' \| 'HELD_PROVIDER_QUOTA'`（§8.3-Q ④） | `OWNER` / `ADMIN`。`PARTNER_ADMIN` は**自社 + パートナーロールのみ**。🔴 **パートナーロール宛（分類 2）は `production` で独自ドメイン検証済みが前提**（`F-007 AC-5`。未検証なら招待は作成され送達だけ `HELD`。§8.3）。ホストロール宛（`F-002`）はこの前提の対象外（`F-001 AC-5`） |
 
 🔴 **#11 〜 #13 の規律**（T-04-07）:
 
@@ -2045,6 +2045,15 @@ requireEsignConnection(ctx);                           // 🔴 §8.4。未接続
 | 29 | `GET /api/engineer-shares` / `PUT /api/engineers/{id}/share` | `F-016` / `S-015` | `{ shared: boolean }` | `{ shared, previewedFields }` | 🔴 **`PARTNER_ADMIN` / `PARTNER_SALES` のみ**。ホストは 403 |
 
 🔴 **#14 の `inviteUrl` は `APP_ENV='sandbox'` かつ宛先分類 2（パートナー所属）のときだけ返す**（`F-007 AC-4`）。`production` では**フィールドごと返さない**（型が違う。`SandboxInvitationView` / `ProductionInvitationView` の判別可能な合併）。
+
+🔴 **#14 の実装の決着（T-04-08）**:
+
+- **判別子は `disclosure`**（`'NONE'` / `'SANDBOX_INVITE_URL'`）。`ProductionInvitationView` は `inviteUrl?: never` を持ち、**うっかり入れた実装がコンパイルで落ちる**。
+- 開示の条件は **①`APP_ENV='sandbox'` ②宛先分類 2** の AND であり、判定は `apps/web/lib/invitations/invite-link.ts` の `buildInvitationIssueView` **1 箇所**にある。②を先に見るため、**分類 1 の招待は起動時 DI（`ensureDbConfigured`）を 1 度も参照しない**（`F-001 AC-5` と同じ構図。`resolveSendingDomain` を関数で渡すのと同じ理由で、開示設定も関数（`InviteUrlRuntimeResolver`）で渡す）。
+- ①の判定は `resolveInviteUrlRuntime(env)`（同ファイル）が持ち、**呼ぶのは起動時の 1 箇所**（`lib/db/bootstrap.ts`）だけである（§13.1 / `CLAUDE.md` §11.1）。runtime 自体も合併で、`appUrl` を持つのは `SANDBOX_LINK_HANDOVER` の枝だけ = **開示しない環境ではリンクを組み立てる材料が無い**。
+- 🔴 **リンクの組み立ては `@ses/connectors` の `buildAccountMailLink` に一本化した**（`packages/connectors/src/email/account-mail.ts`）。メール本文のリンク（`apps/worker`）と `sandbox` の `inviteUrl`（`apps/web`）が**同一の URL**でなければならず、2 アプリで書き分けると片方だけが静かに壊れるため。**専用の別トークン・別受諾経路は作らない**（有効期限・1 回限りの受諾・受諾後の失効はすべて `production` と同一）。
+  - ⚠️ **既存の不具合を同時に直した**: `LINK_PATH` が `/invitations/{token}` / `/password-reset/confirm/{token}` を指していたが、実ルートは `/invite/{token}`（`app/(main)/(auth)/invite/[token]`）と `/password-reset/confirm?token=`（クエリ）である。両方とも 404 になるリンクをメール本文に載せていた。
+- 🔴 **再表示 API を作らない。** 平文リンクの出口は発行直後のこの応答だけであり、画面（`S-014`）にも「この画面を離れると再表示できません」を明示する（`S-046` の再設定リンクと同じ規律）。
 
 ### 6.5 主平面 API — ②③④（Phase 1〜2）
 

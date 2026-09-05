@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ACCOUNT_MAIL_KINDS,
   accountMailDedupeKey,
+  buildAccountMailLink,
   parseAccountMailDedupeKey,
 } from './account-mail.js';
 
@@ -46,5 +47,35 @@ describe('🔴 parseAccountMailDedupeKey（保留からの復帰の唯一の手�
   it('🔴 運用メールの dedupeKey（`{templateKey}:{targetId}:{recipientHash}`）を招待と誤認しない', () => {
     // `packages/db` の `emailDispatchDedupeKey` が作る形。3 分割は同じだが `kind` が一致しない。
     expect(parseAccountMailDedupeKey(`TENANT_CLOSING_NOTICE:${TARGET_ID}:${PREFIX}`)).toBeNull();
+  });
+});
+
+// 🔴 T-04-08: メール本文のリンク（`apps/worker`）と `sandbox` の招待リンク（`apps/web`）は
+//    この 1 つの関数から出る。**`apps/web` の実ルートと一致していること**をここで固定する ——
+//    ずれると「渡したリンクを開いたら 404」になり、`F-007 AC-4` が静かに壊れる。
+describe('🔴 buildAccountMailLink（平文トークンの唯一の出口 / T-04-08）', () => {
+  const APP_URL = 'https://app.example.co.jp';
+
+  it('招待は `/invite/{token}`（`app/(main)/(auth)/invite/[token]/page.tsx` と一致）', () => {
+    expect(buildAccountMailLink(APP_URL, 'INVITATION', 'tok')).toBe(`${APP_URL}/invite/tok`);
+  });
+
+  it('パスワード再設定は `?token=`（`password-reset/confirm/page.tsx` はクエリで受ける）', () => {
+    expect(buildAccountMailLink(APP_URL, 'PASSWORD_RESET', 'tok')).toBe(
+      `${APP_URL}/password-reset/confirm?token=tok`,
+    );
+  });
+
+  it('🔴 トークンはエンコードされる（パス区切り・クエリ区切りに化けない）', () => {
+    expect(buildAccountMailLink(APP_URL, 'INVITATION', 'a/b?c')).toBe(`${APP_URL}/invite/a%2Fb%3Fc`);
+    expect(buildAccountMailLink(APP_URL, 'PASSWORD_RESET', 'a/b?c')).toBe(
+      `${APP_URL}/password-reset/confirm?token=a%2Fb%3Fc`,
+    );
+  });
+
+  it('APP_URL のパス・末尾スラッシュに依らず絶対 URL になる', () => {
+    expect(buildAccountMailLink('https://app.example.co.jp/', 'INVITATION', 'tok')).toBe(
+      `${APP_URL}/invite/tok`,
+    );
   });
 });

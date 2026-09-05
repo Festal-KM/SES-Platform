@@ -49,6 +49,9 @@ const { configureAccountMailQueue, PendingAccountMailQueue } = await import(
   '../../apps/web/lib/jobs/account-mail'
 );
 const { issueInvitation } = await import('../../apps/web/lib/invitations/service');
+// 🔴 T-04-08: 本ファイルは `production` 相当だけを見る（`sandbox` の招待リンクは
+//    `sandbox-invite-link.test.ts`）。開示しない runtime を明示的に渡す。
+const { INVITE_URL_NOT_DISCLOSED } = await import('../../apps/web/lib/invitations/invite-link');
 const { evaluateSendingDomain } = await import('../../apps/web/lib/settings/sending-domains');
 const partnerCompaniesRoute = await import(
   '../../apps/web/app/api/(main)/partner-companies/route'
@@ -198,6 +201,7 @@ async function invitePartner(
     { email: input.email, role: 'PARTNER_ADMIN', targetPartnerCompanyId: input.targetPartnerCompanyId },
     META,
     (invitationCtx) => evaluateSendingDomain(invitationCtx, runtime),
+    () => INVITE_URL_NOT_DISCLOSED,
     NOW,
   );
 }
@@ -472,6 +476,7 @@ describe('🔴 F-007 AC-2: 停止（#13）— 実行系だけを止め、デー�
       { email: 'resumed-invite@t0407.example', role: 'PARTNER_SALES' },
       META,
       (ctx) => evaluateSendingDomain(ctx, NOT_REQUIRED_RUNTIME),
+      () => INVITE_URL_NOT_DISCLOSED,
       NOW,
     );
     expect(invitation.id).toBeTruthy();
@@ -595,6 +600,7 @@ describe('🔴 F-007 AC-5: 未検証でも招待は作られ、送達だけが�
       { email: 'host-member@t0407.example', role: 'SALES' },
       META,
       (ctx) => evaluateSendingDomain(ctx, REQUIRED_RUNTIME),
+      () => INVITE_URL_NOT_DISCLOSED,
       NOW,
     );
 
@@ -641,6 +647,7 @@ describe('🔴 T-04-07: 招待先の選択（targetPartnerCompanyId）は母集�
         },
         META,
         (ctx) => evaluateSendingDomain(ctx, NOT_REQUIRED_RUNTIME),
+        () => INVITE_URL_NOT_DISCLOSED,
         NOW,
       ),
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
