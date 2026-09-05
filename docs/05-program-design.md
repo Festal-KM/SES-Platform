@@ -365,8 +365,8 @@ model Engineer {
   availableFrom          DateTime? @db.Date              // 稼働可能時期（F-045 が満了日/離任日で更新）
   unitPriceMin           Decimal? @db.Decimal(12, 2)
   unitPriceMax           Decimal? @db.Decimal(12, 2)
-  prefecture             String?                         // 都道府県コード
-  city                   String?                         // 🔴 匿名候補には出さない（U-06）
+  prefecture             String?                         // 都道府県コード（JIS X 0401。🔴 値集合は `@ses/domain` の PREFECTURE_CODES。CHECK は置かず API 境界の z.enum が守る。T-05-01）
+  city                   String?                         // 🔴 匿名候補には出さない（U-06）。⚠️ `S-007` の入力項目には含めない（BR-52。§6.4 #16）
   remoteMode             String?                         // RemoteMode（上記参照。CHECK）
   preferenceNote         String?                         // 希望条件。BR-52 の範囲に限る
   retentionExpiresAt     DateTime? @db.Timestamptz(3)    // F-046。稼働/提案終了のたびに再計算
@@ -1317,7 +1317,7 @@ model BillingMeterSubmission {                                     // docs/03 §
 | ロール | `BYPASSRLS` | 権限 | 使う接続文字列 | 使う経路 |
 |---|---|---|---|---|
 | `app_migrator` | **なし**（`NOBYPASSRLS`） | DDL。テーブル所有者 | `MIGRATION_DATABASE_URL` | マイグレーションのみ（CI / デプロイ） |
-| `app_tenant` | 🔴 **なし** | 業務テーブルへの `SELECT/INSERT/UPDATE/DELETE`。`tenants` は `SELECT` と、🔴 **`name` / `auto_approve_enabled` / `pii_retention_years` の 3 列だけの `UPDATE`**（#64 の `PATCH /api/settings/organization`。T-03-10 の migration `20260905000000_tenant_org_settings`。**`lifecycle_state` を含むライフサイクル列・`environment` / `timezone` は含めない** = テナント側のどのロールからも変更できないことを列レベル `GRANT` で担保する。`CLAUDE.md` §4.2 / §6.3 #64）。ポリシーは `tenants_c1_update`（`id = app_tenant_id() AND app_is_host()`）。`audit_logs` は `INSERT/SELECT` のみ。🔴 **C0 の 4 表（§4.4）は `withSystemScope` からのみ到達でき、テナント文脈では 0 件** | `DATABASE_URL` | `withTenant` / `withSystemScope` |
+| `app_tenant` | 🔴 **なし** | 業務テーブルへの `SELECT/INSERT/UPDATE/DELETE`。`tenants` は `SELECT` と、🔴 **`name` / `auto_approve_enabled` / `pii_retention_years` の 3 列だけの `UPDATE`**（#64 の `PATCH /api/settings/organization`。T-03-10 の migration `20260905000000_tenant_org_settings`。**`lifecycle_state` を含むライフサイクル列・`environment` / `timezone` は含めない** = テナント側のどのロールからも変更できないことを列レベル `GRANT` で担保する。`CLAUDE.md` §4.2 / §6.3 #64）。ポリシーは `tenants_c1_update`（`id = app_tenant_id() AND app_is_host()`）。`audit_logs` は `INSERT/SELECT` のみ。🔴 **`skills`（射程外 4 表のグローバル辞書）は `SELECT` のみ**（T-05-01 の migration `20260906000000_engineer_ledger_skill_dictionary_read`。`F-008` 処理②「スキルは `F-010` の辞書から選ぶ」に読み取りが要る一方、**`INSERT`/`UPDATE`/`DELETE` を与えないことで「グローバル辞書はテナントから編集できない」〔`F-010 AC-2` / `BR-02`〕をアプリの `if` ではなく DB 権限で担保する**。射程外＝ RLS が無い は「誰でも読める」ではなく「GRANT が無ければ `permission denied`」であり、20260903050000 §13 の 52 表の列挙には射程外 4 表が 1 つも入っていなかった）。🔴 **C0 の 4 表（§4.4）は `withSystemScope` からのみ到達でき、テナント文脈では 0 件** | `DATABASE_URL` | `withTenant` / `withSystemScope` |
 | `app_platform` | 🔴 **なし** | 業務テーブルへの `SELECT` のみ（**列レベル**で §5.5 の非開示列を除外）。`audit_logs` は `INSERT/SELECT` | `PLATFORM_DATABASE_URL` | `withPlatformRead` / `withImpersonation` |
 | `app_platform_write` | 🔴 **なし** | `plans` / `subscriptions` / `announcements` / `usage_counters`（上書き列）/ `tenants`（`INSERT` + ライフサイクル列の `UPDATE`）/ `invitations`（`INSERT` のみ。初期 `OWNER` 招待に `WITH CHECK` で固定。§5.2）/ `tenant_sending_domains`（`INSERT` のみ。`state='REGISTERED'` に `WITH CHECK` で固定。§5.2）/ `impersonation_sessions` / `audit_logs` への書き込み。🔴 **加えて運営者認証経路（T-03-07。`packages/db/src/platform-auth.ts`）専用の権限を持つ**: `platform_users` の列レベル `SELECT`（`id, email, display_name, role, password_hash, disabled_at, last_login_at` の 7 列）+ `last_login_at` の列レベル `UPDATE` / `two_factor_credentials` の **`tenant_id IS NULL AND subject_type='PLATFORM_USER'` 行限定**の `INSERT` + 列レベル `UPDATE`（`secret_encrypted, recovery_code_hashes, confirmed_at` の 3 列。`DELETE` は与えない）/ `audit_logs` の **`SELECT`**（本人の 2FA 失敗履歴のみ。試行スロットル用）。**業務テーブルへの書き込み権限を一切持たない**（`platform_users` / `two_factor_credentials` の該当行 / `audit_logs` は認証・監査データであり業務データではないため抵触しない。詳細は §4.4.2・§5.2 の追記） | `PLATFORM_WRITE_DATABASE_URL` | `withPlatformWrite` / `platform-auth.ts` の認証経路（§4.4.2） |
 | `app_share_probe` | 🔴 **なし**（`NOLOGIN`） | `engineer_shares` の `SELECT (tenant_id, engineer_id, revoked_at)` のみ。**他表に一切の権限を持たない** | （接続しない） | `app_engineer_is_shared()` の `SECURITY DEFINER` 所有者としてのみ（§4.5） |
@@ -2058,6 +2058,18 @@ requireEsignConnection(ctx);                           // 🔴 §8.4。未接続
 - 🔴 **リンクの組み立ては `@ses/connectors` の `buildAccountMailLink` に一本化した**（`packages/connectors/src/email/account-mail.ts`）。メール本文のリンク（`apps/worker`）と `sandbox` の `inviteUrl`（`apps/web`）が**同一の URL**でなければならず、2 アプリで書き分けると片方だけが静かに壊れるため。**専用の別トークン・別受諾経路は作らない**（有効期限・1 回限りの受諾・受諾後の失効はすべて `production` と同一）。
   - ⚠️ **既存の不具合を同時に直した**: `LINK_PATH` が `/invitations/{token}` / `/password-reset/confirm/{token}` を指していたが、実ルートは `/invite/{token}`（`app/(main)/(auth)/invite/[token]`）と `/password-reset/confirm?token=`（クエリ）である。両方とも 404 になるリンクをメール本文に載せていた。
 - 🔴 **再表示 API を作らない。** 平文リンクの出口は発行直後のこの応答だけであり、画面（`S-014`）にも「この画面を離れると再表示できません」を明示する（`S-046` の再設定リンクと同じ規律）。
+
+🔴 **#16 の実装の決着（T-05-01）**:
+
+- **`EngineerInput` の項目はこれがすべてである**（`BR-52` / `F-008 AC-1`。`apps/web/lib/engineers/schemas.ts` が単一の出所）:
+  `displayName` / `availability` / `availableFrom` / `unitPriceMin` / `unitPriceMax` / `prefecture` / `remoteMode` / `preferenceNote` / `contactEmail` / `contactPhone` / `skills[]`（`{ skillId, yearsOfExperience, level }`）/ `newSkillLabels[]`。
+  🔴 **`birthDate` / `affiliationLabel` / `city` は §3.4 に列があるが入力に含めない** —— `docs/04` §S-007 のセクション 1 / 5 / 6 に欄が無く、「集めていない情報は漏れない」（`BR-52`）を守るため、**列があることを理由に入力欄を作らない**（`affiliationLabel` は `F-032` の抽出が、`city` は将来の要否判断が埋める列である）。
+- **所有パートナーが入力から来ないことの担保は 4 枚**（`F-008 AC-2`）: ①スキーマにキーが無い ②`withApiRoute` の構築時検査（`assertNoIsolationKeys`）③Zod の既定（strip）でハンドラに届かない ④RLS の C3 の `WITH CHECK` と `engineers_freeze_owner` トリガ。🔴 **`.strict()` にして 400 で弾く形は採らない** —— 未知キーの有無で応答が変わると「このキーには意味がある」ことを外から探れる。必要なのは値が DB に届かないことであり、strip がそれを構造的に満たす。
+- **項目をまたぐ検証（単価レンジの大小・スキルの重複）は Zod ではなくサービス層に置く。** `.refine()` をトップレベルに使うと `withApiRoute` の `assertBoundarySchema` が `.shape` を読めなくなること、および **PATCH は既存値と合成しないと判定できない**ことの 2 つが理由である。
+- **`skills` は「置き換え」である**（差分適用ではない）。`S-007` はスキル表を丸ごと編集する画面であり、差分にすると「画面から消した行が消えない」ずれが出る。`newSkillLabels` は `SkillAlias(status='PROPOSED', skill_id=NULL, origin='HUMAN')` を起票するだけで、**`skills` 表には 1 行も足さない**（`F-010 AC-1` / `AC-2`）。既存の別名（グローバル行を含む）と同じ表記は起票しない。
+- ⚠️ **`docs/04` §S-007 のセクション 3「経験内容と従事期間」に対応する保存先が §3.4 に無い**（`Engineer` にも子表にも列が無く、`careers` は `SkillSheetExtraction.payload` と `EngineerSnapshot.careers`〔いずれも Json〕にしか現れない）。T-05-01 は**列を勝手に足さず**、画面では「後続のリリースで登録できるようになる」と明示するにとどめた（隠さない）。**台帳側の保存先（`Engineer.careers Json` を足すか、`EngineerCareer` を新設するか）は人間の判断事項**であり、`F-008` の入力一覧と `EngineerSnapshot.careers` の生成元の両方に波及する。Phase 1 の `Proposal` は careers が常に空の `EngineerSnapshot` を作ることになるため、**SP-09 の着手前に決める**必要がある。
+- **`S-007` の編集フォームの読み取りは `engineer.view` を `AuditLog` に記録する**（`BR-27` / `F-008 AC-4`）。氏名・連絡先という PII を画面に出す以上、詳細（`#17`。T-05-02）と同じ扱いにする。記録は**業務トランザクションの内側**（`writeAuditLog`）で書き、失敗したら内容を返さない。`summary` は `{ via: 'EDIT_FORM' }` だけで、**氏名を載せない**。
+- **`engineer.create` の `AuditLog` は `targetId` を持てない**（採番前）。`summary` に載せるのは `{ skillCount, newSkillLabelCount }` だけで、🔴 **`displayName` を載せない**（`partner_company.create` が企業名を載せられるのは、企業名が PII ではないためである。エンジニアの氏名は運営者にも見せない値である。`CLAUDE.md` §10.5）。
 
 ### 6.5 主平面 API — ②③④（Phase 1〜2）
 
@@ -3571,6 +3583,7 @@ packages/db/seed/
   index.ts / reset.ts               # CLI: pnpm seed --preset=demo|isolation|perf [--reset]。reset は対象テナントの業務データ削除（🔴 APP_ENV ガードの後）
   presets/{demo,isolation,perf}.ts  # demo: 複数の取引先・数十人の台帳・進行中の提案・満了が近い稼働・ゲートで止まる資料
                                     # isolation: 2 テナント × 2 パートナー（CLAUDE.md §5 Phase 0）/ perf: 1 万 / 1 万 / 匿名共有 2,000（docs/03 §3.7.2）
+  presets/global-skills.ts          # 🔴 グローバルなスキル辞書（skills。tenant_id を持たない = reset の射程外。upsert で冪等）
   rng.ts                            # seedrandom（固定シード）
 ```
 | 要件 | 実装 |
@@ -3581,6 +3594,7 @@ packages/db/seed/
 | 🔴 **状態機械を正しく通す** | DB に直接 INSERT せず、**`packages/domain` の `transition()` を通して状態を進める**（不整合な状態を作らない） |
 | 🔴 **合成データの担保** | 企業名は「株式会社サンプルアルファ」等の明示的な架空名、氏名は架空名リスト、スキルシートはテンプレート生成。**実データ由来のファイルをリポジトリに置かない**（`F-053 AC-1`） |
 | 🔴 **実行できる環境の制限** | `APP_ENV ∈ {demo, development}` のときのみ。`packages/config` の検証と `API-A16`（画面は `A-012`）のミドルウェアの**二重**で拒否（`F-053 AC-6`）。`sandbox` には合成データを投入しない（`F-053 AC-4`） |
+| 🔴 **グローバルなマスタ**（T-05-01 で追加） | 🔴 **`skills`（スキル辞書）は `tenant_id` を持たない射程外 4 表**であり、`reset()`（`tenant_id` で絞る削除）の射程外である。したがって固定 ID の `createMany` だと 2 回目の実行で一意制約に当たる —— **`upsert` で冪等に投入する**（`platform_users` と同じ扱い）。実体は `packages/db/seed/presets/global-skills.ts` で、プリセットに依らず同じ表を指す。🔴 **これは「マスタ」であって合成データではない**（実在の技術名を並べるのが正しく、個人・企業の情報を 1 つも含まないので `F-053 AC-1` に抵触しない）。🔴 **辞書を増やす経路はこのファイルだけ**である（`app_tenant` には `GRANT SELECT` しか無い。§4.2 / `F-010 AC-2`）。`sortKey` は配列の並びをそのまま採番するので、**行を途中に挿し込まず末尾に足す**（挿し込むと既存の匿名候補の表示順が理由なく変わる。§3.4） |
 | 🔴 **サインインできる母集団**（T-03-11 で追加） | `isolation` は **E2E が実際にサインインして**越境 0 件を確かめるための母集団でもある（§17.3 #1）。したがって ①全利用者に**照合可能な Argon2id ハッシュ**（合成パスワード。`ISOLATION_SEED_PASSWORD`）を持たせる ②各テナントに **`OWNER` を 1 名**置く（`GET /api/audit-logs` は `OWNER` / `ADMIN` のみ。既存の `SALES` は付け替えない）③**`PlatformUser` を 2 名**（`PLATFORM_OWNER` / `PLATFORM_SUPPORT`）置く（§17.3 #15 の検証に要る）。🔴 **2 要素認証の資格情報はシードに置かない** —— 平文のシークレットをリポジトリに置かずに済み、E2E は `#3 setup` が本人の画面に返す `otpauth://` URL から RFC 6238 で計算する（テスト専用のログイン迂回を作らない）。🔴 `platform_users` と `PLATFORM_USER` の `two_factor_credentials` は `tenant_id` を持たず `reset()`（`tenant_id` で絞る削除）の射程外なので、**`upsert` と明示的な削除**で冪等性を保つ |
 
 ## 14. ファイルストレージ規約

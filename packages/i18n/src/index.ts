@@ -421,6 +421,10 @@ const ja = {
   'home.title': 'ホーム',
   // docs/04 §S-003「空 / ローディング / エラー」の初回空の文言をそのまま使う。
   'home.host.empty.title': 'まだ案件と人材が登録されていません',
+  // 🔴 T-05-01: docs/04 §S-003 の初回空は「`S-012` / `S-007` への導線 2 本」である。
+  //    `S-007`（人材の登録）は本タスクで実在するようになったので有効化した。
+  //    `S-012`（案件の登録）は SP-06 で実装されるまで導線を作らない（404 のリンクを置かない）。
+  'home.host.empty.registerEngineer': '人材を登録する',
   // docs/04 §S-004「空 / ローディング / エラー」の初回空の文言をそのまま使う。
   'home.partner.empty.title':
     'まだ御社に公開された案件はありません。案件が公開されると、この画面に表示されます。',
@@ -713,6 +717,151 @@ const ja = {
   'members.invite.error': '招待できませんでした。入力内容をご確認ください。',
   'members.invite.preNotice':
     'サンドボックス環境では招待メールが送信されません。発行後に表示されるリンクをお渡しください。',
+
+  // --- S-007 エンジニアの登録・編集（docs/04 §S-007 / `F-008` / `F-010`。T-05-01）---
+  // 🔴 `BR-52` / `F-008 AC-1`: 本籍・家族構成・健康情報・信条にあたる文言をここに 1 つも置かない。
+  //    入力欄が無いだけでなく、**自由記述欄の推奨用途としても求めない**（`engineers.collectionScope`
+  //    がその逆、つまり「書かないでほしい」ことを明示する）。
+  'engineers.breadcrumb.home': 'ホーム',
+  'engineers.breadcrumb.list': '人材',
+  'engineers.breadcrumb.new': '新規登録',
+  'engineers.breadcrumb.edit': '編集',
+  'engineers.new.title': '人材の登録',
+  'engineers.edit.title': '人材の編集',
+
+  'engineers.section.basic': '基本',
+  'engineers.section.skills': 'スキル',
+  'engineers.section.careers': '経験内容と従事期間',
+  'engineers.section.availability': '稼働',
+  'engineers.section.conditions': '条件',
+  'engineers.section.contact': '連絡先',
+
+  'engineers.displayName.label': '氏名（社内表示用）',
+  // 🔴 `F-008 AC-2`: 所属パートナーは認証コンテキストから決まる。入力欄を持たない。
+  'engineers.ownership.label': '所属区分',
+  'engineers.ownership.host': '自社',
+  'engineers.ownership.partner': '取引先（自社）',
+  'engineers.ownership.readOnlyNote':
+    '所属はサインイン中のアカウントから決まります。この画面では変更できません。',
+  // 🔴 `BR-52`: 集めない情報を明示する（自由記述欄の推奨用途にもしない）。
+  'engineers.collectionScope':
+    '登録できるのは営業判断に必要な情報だけです。本籍・家族構成・健康状態・信条にあたる内容は、希望条件などの自由記述欄にも記入しないでください。',
+
+  'engineers.skills.search.label': 'スキル辞書から検索',
+  'engineers.skills.add': '追加',
+  'engineers.skills.column.skill': 'スキル',
+  'engineers.skills.column.years': '経験年数',
+  'engineers.skills.column.level': 'レベル',
+  'engineers.skills.column.actions': '操作',
+  'engineers.skills.remove': '削除',
+  'engineers.skills.empty': 'スキルが登録されていません。',
+  'engineers.skills.duplicate': 'このスキルはすでに追加されています。',
+  'engineers.skills.level.unset': '未設定',
+  'engineers.skills.level.1': '入門',
+  'engineers.skills.level.2': '初級',
+  'engineers.skills.level.3': '中級',
+  'engineers.skills.level.4': '上級',
+  'engineers.skills.level.5': 'エキスパート',
+  // 🔴 `F-010 AC-1`: 辞書に無い語は受け付けるが、採用されるまで検索の正規化に使われない。
+  'engineers.skills.newAlias.label': '辞書に無いスキル表記',
+  'engineers.skills.newAlias.add': '新語候補として起票',
+  'engineers.skills.newAlias.note':
+    '辞書に無い表記は新語候補として起票します。辞書には追加されず、採用されるまで検索には使われません。',
+  'engineers.skills.newAlias.empty': '起票する表記はありません。',
+
+  // 🔴 `docs/05` §3.4 に台帳側の保存先が無い項目（`docs/05` への追記提案が要る）。
+  //    画面から隠さず、いまは登録できないことを書く（`orgSettings.members.comingSoon` と同じ規律）。
+  'engineers.careers.comingSoon':
+    '経験内容と従事期間は、スキルシートの取込（後続のリリース）で登録できるようになります。現時点では台帳に保存できません。',
+
+  'engineers.availability.label': '稼働状況',
+  'engineers.availability.WORKING': '稼働中',
+  'engineers.availability.STANDBY_SCHEDULED': '待機予定',
+  'engineers.availability.STANDBY': '待機中',
+  'engineers.availability.INACTIVE': '非稼働',
+  'engineers.availableFrom.label': '稼働可能時期',
+
+  'engineers.unitPrice.label': '単価レンジ（月額）',
+  'engineers.unitPrice.min': '下限',
+  'engineers.unitPrice.max': '上限',
+  'engineers.unitPrice.unit': '円',
+  'engineers.prefecture.label': '勤務地（都道府県）',
+  'engineers.remoteMode.label': 'リモート可否',
+  'engineers.remoteMode.FULL_REMOTE': 'フルリモート可',
+  'engineers.remoteMode.PARTIAL_REMOTE': '一部リモート可',
+  'engineers.remoteMode.ONSITE_ONLY': '常駐のみ',
+  'engineers.preferenceNote.label': '希望条件',
+  'engineers.value.unset': '指定しない',
+
+  'engineers.contact.email.label': 'メールアドレス',
+  'engineers.contact.phone.label': '電話番号',
+  'engineers.contact.minimumNote': '連絡先は必要最小限のみを保持します。',
+
+  'engineers.save': '保存',
+  'engineers.saving': '保存しています…',
+  'engineers.saved': '保存しました。',
+  // 🔴 `docs/04` §10.1 `S-007`「保存失敗は入力値を保持」。何が起きていないかを書く。
+  'engineers.error.save': '保存できませんでした。入力内容はそのまま残しています。もう一度お試しください。',
+  'engineers.cancel': 'キャンセル',
+  // 🔴 `docs/04` §10.1 `S-007`「離脱確認あり」。
+  'engineers.leaveConfirm': '入力内容が保存されていません。このページを離れますか？',
+  // 🔴 `S-007`（編集）の 404 境界（`app/(main)/engineers/[id]/edit/not-found.tsx`）が使う。
+  //    境界外（他パートナー所有）と不存在（削除済み）を区別しない 1 文である
+  //    （`F-008 AC-3` / docs/05 §4.8。区別すると他社に人材が居ることを教えてしまう）。
+  'engineers.notFound': 'この人材の情報は見つかりませんでした。',
+
+  // --- 都道府県（JIS X 0401。コードの出所は `@ses/domain` の `PREFECTURE_CODES`）---
+  // 🔴 コードと文言キーの対応は `apps/web/lib/engineers/labels.ts` の `PREFECTURE_MESSAGE_KEYS`
+  //    （`Record<PrefectureCode, MessageKey>`）が持ち、全 47 件が空でない表示名を引けることは
+  //    `apps/web/lib/engineers/labels.test.ts` が確認する。突き合わせを本パッケージに置かないのは
+  //    `@ses/i18n` に `@ses/domain` への依存を足さないためである。
+  'prefecture.01': '北海道',
+  'prefecture.02': '青森県',
+  'prefecture.03': '岩手県',
+  'prefecture.04': '宮城県',
+  'prefecture.05': '秋田県',
+  'prefecture.06': '山形県',
+  'prefecture.07': '福島県',
+  'prefecture.08': '茨城県',
+  'prefecture.09': '栃木県',
+  'prefecture.10': '群馬県',
+  'prefecture.11': '埼玉県',
+  'prefecture.12': '千葉県',
+  'prefecture.13': '東京都',
+  'prefecture.14': '神奈川県',
+  'prefecture.15': '新潟県',
+  'prefecture.16': '富山県',
+  'prefecture.17': '石川県',
+  'prefecture.18': '福井県',
+  'prefecture.19': '山梨県',
+  'prefecture.20': '長野県',
+  'prefecture.21': '岐阜県',
+  'prefecture.22': '静岡県',
+  'prefecture.23': '愛知県',
+  'prefecture.24': '三重県',
+  'prefecture.25': '滋賀県',
+  'prefecture.26': '京都府',
+  'prefecture.27': '大阪府',
+  'prefecture.28': '兵庫県',
+  'prefecture.29': '奈良県',
+  'prefecture.30': '和歌山県',
+  'prefecture.31': '鳥取県',
+  'prefecture.32': '島根県',
+  'prefecture.33': '岡山県',
+  'prefecture.34': '広島県',
+  'prefecture.35': '山口県',
+  'prefecture.36': '徳島県',
+  'prefecture.37': '香川県',
+  'prefecture.38': '愛媛県',
+  'prefecture.39': '高知県',
+  'prefecture.40': '福岡県',
+  'prefecture.41': '佐賀県',
+  'prefecture.42': '長崎県',
+  'prefecture.43': '熊本県',
+  'prefecture.44': '大分県',
+  'prefecture.45': '宮崎県',
+  'prefecture.46': '鹿児島県',
+  'prefecture.47': '沖縄県',
 } as const;
 
 /** 🔴 文言キーの単一の出所。存在しないキーはコンパイルエラーになる。 */

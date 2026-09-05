@@ -362,8 +362,8 @@ model Engineer {
   availableFrom         DateTime? @map("available_from") @db.Date // 稼働可能時期（F-045 が満了日/離任日で更新）
   unitPriceMin          Decimal?  @map("unit_price_min") @db.Decimal(12, 2)
   unitPriceMax          Decimal?  @map("unit_price_max") @db.Decimal(12, 2)
-  prefecture            String? // 都道府県コード
-  city                  String? // 🔴 匿名候補には出さない（U-06）
+  prefecture            String? // 都道府県コード（JIS X 0401。🔴 値集合は @ses/domain の PREFECTURE_CODES。CHECK は置かず API 境界の z.enum が守る。T-05-01）
+  city                  String? // 🔴 匿名候補には出さない（U-06）。⚠️ S-007 の入力項目には含めない（BR-52。docs/05 §6.4 #16）
   /// RemoteMode（上記参照。CHECK）
   remoteMode            String?   @map("remote_mode")
   preferenceNote        String?   @map("preference_note") // 希望条件。BR-52 の範囲に限る

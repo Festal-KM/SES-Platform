@@ -1,0 +1,94 @@
+// apps/web/lib/engineers/labels.ts
+// エンジニア台帳の値集合 → 文言キーの写像（`S-007` / `S-005` / `S-006`）。T-05-01。
+//
+// 🔴 文言そのものは `packages/i18n` が唯一の出所（`CLAUDE.md` §3.5）。ここは写像だけを持つ。
+// 🔴 テンプレートリテラルでキーを組み立てない（`lib/tenants/labels.ts` と同じ規律）。
+//    `Record<値集合, MessageKey>` にすることで、**値が増えたら文言の割り当てをコンパイラが強制する**
+//    （割り当て漏れが「コードがそのまま画面に出る」形で表に出るのを防ぐ）。
+import type { EngineerAvailability, RemoteMode } from '@ses/db';
+import type { PrefectureCode } from '@ses/domain';
+import type { MessageKey } from '@ses/i18n';
+
+/** `EngineerSkill.level`（1..5）。`null` は「未設定」。 */
+export const ENGINEER_SKILL_LEVELS = [1, 2, 3, 4, 5] as const;
+
+export type EngineerSkillLevel = (typeof ENGINEER_SKILL_LEVELS)[number];
+
+export const ENGINEER_AVAILABILITY_MESSAGE_KEYS: Readonly<
+  Record<EngineerAvailability, MessageKey>
+> = {
+  WORKING: 'engineers.availability.WORKING',
+  STANDBY_SCHEDULED: 'engineers.availability.STANDBY_SCHEDULED',
+  STANDBY: 'engineers.availability.STANDBY',
+  INACTIVE: 'engineers.availability.INACTIVE',
+};
+
+export const REMOTE_MODE_MESSAGE_KEYS: Readonly<Record<RemoteMode, MessageKey>> = {
+  FULL_REMOTE: 'engineers.remoteMode.FULL_REMOTE',
+  PARTIAL_REMOTE: 'engineers.remoteMode.PARTIAL_REMOTE',
+  ONSITE_ONLY: 'engineers.remoteMode.ONSITE_ONLY',
+};
+
+export const ENGINEER_SKILL_LEVEL_MESSAGE_KEYS: Readonly<
+  Record<EngineerSkillLevel, MessageKey>
+> = {
+  1: 'engineers.skills.level.1',
+  2: 'engineers.skills.level.2',
+  3: 'engineers.skills.level.3',
+  4: 'engineers.skills.level.4',
+  5: 'engineers.skills.level.5',
+};
+
+/**
+ * 都道府県（JIS X 0401）。コードの出所は `@ses/domain` の `PREFECTURE_CODES`。
+ * 🔴 `Record<PrefectureCode, MessageKey>` なので、コードが増減したらここがコンパイルエラーになる。
+ */
+export const PREFECTURE_MESSAGE_KEYS: Readonly<Record<PrefectureCode, MessageKey>> = {
+  '01': 'prefecture.01',
+  '02': 'prefecture.02',
+  '03': 'prefecture.03',
+  '04': 'prefecture.04',
+  '05': 'prefecture.05',
+  '06': 'prefecture.06',
+  '07': 'prefecture.07',
+  '08': 'prefecture.08',
+  '09': 'prefecture.09',
+  '10': 'prefecture.10',
+  '11': 'prefecture.11',
+  '12': 'prefecture.12',
+  '13': 'prefecture.13',
+  '14': 'prefecture.14',
+  '15': 'prefecture.15',
+  '16': 'prefecture.16',
+  '17': 'prefecture.17',
+  '18': 'prefecture.18',
+  '19': 'prefecture.19',
+  '20': 'prefecture.20',
+  '21': 'prefecture.21',
+  '22': 'prefecture.22',
+  '23': 'prefecture.23',
+  '24': 'prefecture.24',
+  '25': 'prefecture.25',
+  '26': 'prefecture.26',
+  '27': 'prefecture.27',
+  '28': 'prefecture.28',
+  '29': 'prefecture.29',
+  '30': 'prefecture.30',
+  '31': 'prefecture.31',
+  '32': 'prefecture.32',
+  '33': 'prefecture.33',
+  '34': 'prefecture.34',
+  '35': 'prefecture.35',
+  '36': 'prefecture.36',
+  '37': 'prefecture.37',
+  '38': 'prefecture.38',
+  '39': 'prefecture.39',
+  '40': 'prefecture.40',
+  '41': 'prefecture.41',
+  '42': 'prefecture.42',
+  '43': 'prefecture.43',
+  '44': 'prefecture.44',
+  '45': 'prefecture.45',
+  '46': 'prefecture.46',
+  '47': 'prefecture.47',
+};

@@ -57,7 +57,12 @@ export default async function HomePage() {
       />
       <h1 className="mb-6 text-xl font-bold text-slate-900">{t('home.title')}</h1>
       {view.audience === 'HOST' ? (
-        <HostHomeSections />
+        // 🔴 T-05-01: `VIEWER` には `S-007`（人材の登録）への導線を出さない
+        //    （`docs/04` §S-007 権限差分「`VIEWER` は到達できない」）。判定材料は `role` だけで、
+        //    `deriveMainCapabilities`（`GET /api/me` の応答契約）には足さない ——
+        //    あれは承認 / 送信 / DL / エクスポートの 4 つに閉じた型であり、
+        //    「作成できるか」を混ぜると `#8` の応答の意味が変わる。
+        <HostHomeSections canRegisterEngineer={outcome.ctx.role !== 'VIEWER'} />
       ) : (
         <PartnerHomeSections noticeText={t(view.visibilityNotice.messageKey)} />
       )}

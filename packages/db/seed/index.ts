@@ -15,6 +15,14 @@ import { SEED_PRESET_NAMES, type SeedPresetName } from './types.js';
 
 export { SEED_PRESET_NAMES, type SeedContext, type SeedPreset, type SeedPresetName } from './types.js';
 export { getSeedPreset, SeedPresetNotImplementedError } from './presets/index.js';
+// 🔴 T-05-01: グローバルなスキル辞書（`skills`。射程外 4 表のマスタ）。
+export {
+  GLOBAL_SKILL_IDS,
+  GLOBAL_SKILLS,
+  globalSkillId,
+  seedGlobalSkills,
+  type GlobalSkillSeed,
+} from './presets/global-skills.js';
 export {
   ISOLATION_FORBIDDEN_MARKERS,
   ISOLATION_SEED_IDS,

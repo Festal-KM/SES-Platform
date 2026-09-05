@@ -33,6 +33,14 @@ export function getSeedPreset(name: SeedPresetName): SeedPreset {
 }
 
 export { isolationPreset };
+// 🔴 T-05-01: グローバルなスキル辞書（テナントに属さないマスタ）。プリセットに依らず同じ表を指す。
+export {
+  GLOBAL_SKILL_IDS,
+  GLOBAL_SKILLS,
+  globalSkillId,
+  seedGlobalSkills,
+  type GlobalSkillSeed,
+} from './global-skills.js';
 export {
   ISOLATION_FORBIDDEN_MARKERS,
   ISOLATION_SEED_IDS,

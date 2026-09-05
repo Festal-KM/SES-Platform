@@ -30,6 +30,7 @@ import {
 } from '@ses/domain';
 import { addDays, advanceState, dateOnly, seedUuid, type StateStep } from '../support.js';
 import type { SeedContext, SeedPreset } from '../types.js';
+import { seedGlobalSkills } from './global-skills.js';
 
 // ---------------------------------------------------------------------------
 // ID（🔴 決定的に組み立てる。乱数 UUID にしない。docs/05 §13.6「冪等な再生成」）
@@ -1195,6 +1196,11 @@ export const isolationPreset: SeedPreset = {
   rngSeed: 'ses-isolation-v1',
   tenantIds: ISOLATION_SEED_IDS.tenants.map((tenant) => tenant.tenantId),
   async seed(ctx: SeedContext): Promise<void> {
+    // 🔴 T-05-01: グローバルなスキル辞書（`skills`）。テナントに属さないマスタであり、
+    //    `reset()` の射程外なので `upsert` で冪等に投入する（`seedPlatformUsers` と同じ扱い）。
+    //    `F-008` 処理②「スキルは `F-010` の辞書から選ぶ」の前提であり、辞書が空だと
+    //    `S-007` のスキル選択と結合テストが成立しない。
+    await seedGlobalSkills(ctx.db);
     for (let tenantIndex = 1; tenantIndex <= ISOLATION_SEED_IDS.tenants.length; tenantIndex += 1) {
       await seedTenant(ctx, tenantIndex);
     }
