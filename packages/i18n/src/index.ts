@@ -264,6 +264,35 @@ const ja = {
   'invite.error.network': '接続できませんでした。時間をおいて再度お試しください。',
   'invite.signin.link': 'サインインへ',
 
+  // --- S-046 パスワード再設定（docs/04 §S-046 / F-003。T-03-13）---
+  // 🔴 未認証・全ロール共通の導線。運営者の再設定は別ルート（A-001）が持つ（`BR-36`）。
+  'passwordReset.title': 'パスワード再設定',
+  'passwordReset.request.eyebrow': '① メールアドレスを入力',
+  'passwordReset.request.email.label': 'メールアドレス',
+  'passwordReset.request.submit': 'パスワード再設定メールを送信',
+  'passwordReset.request.submitting': '送信しています…',
+  'passwordReset.request.backToSignIn': 'サインイン画面に戻る',
+  'passwordReset.request.complete.eyebrow': '② 送信完了',
+  // 🔴 固定文言。登録の有無によらず常に同一（docs/04 §S-046 / `CLAUDE.md` §7）。
+  'passwordReset.request.complete.message':
+    'ご登録のメールアドレス宛に、パスワード再設定のご案内をお送りしました',
+  'passwordReset.request.complete.note': '登録の有無にかかわらず、常にこの表示になります。',
+  'passwordReset.confirm.eyebrow': '③ 新しいパスワードの設定',
+  'passwordReset.confirm.newPassword.label': '新しいパスワード',
+  'passwordReset.confirm.newPasswordConfirm.label': '新しいパスワード（確認）',
+  // 🔴 しきい値は #5b の既存実装（`PASSWORD_MIN_LENGTH`）に合わせる。画面側で別の値を発明しない。
+  'passwordReset.confirm.passwordHint': '12 文字以上でご入力ください。',
+  'passwordReset.confirm.submit': 'パスワードを更新する',
+  'passwordReset.confirm.submitting': '更新しています…',
+  'passwordReset.confirm.mismatch': '新しいパスワードと確認用の入力が一致しません。',
+  'passwordReset.confirm.success':
+    'パスワードを更新しました。新しいパスワードでサインインしてください。',
+  'passwordReset.confirm.signInLink': 'サインインへ',
+  // 🔴 無効・期限切れの専用文言は `error.passwordReset.invalidToken` を共用する
+  //    （#5b の応答が同じ文言を返すため、画面のベタ書きと二重管理にしない）。
+  'passwordReset.confirm.invalidLink.retry': '再設定をやり直す',
+  'passwordReset.error.network': '接続できませんでした。時間をおいて再度お試しください。',
+
   // --- ロール名（docs/04 §S-002「付与されるロールを受諾前に明示する」）---
   'role.OWNER': 'オーナー（組織の全権）',
   'role.ADMIN': '管理者（メンバー・取引先・設定の管理）',
@@ -310,8 +339,9 @@ const ja = {
     'このメールアドレスの利用者はすでにこの組織に登録されています。招待ではなく、権限の変更をご確認ください。',
   'error.invitation.partnerNotAvailable':
     '取引先の担当者への招待は、まだご利用いただけません。自社メンバーの招待のみ発行できます。',
-  'error.passwordReset.invalidToken':
-    'このパスワード再設定のリンクは無効です。もう一度、再設定をお申し込みください。',
+  // 🔴 docs/04 §S-046 の固定文言（Err 列）。トークンの不一致・使用済み・期限切れ・形式不正を
+  //    区別しない（区別するとトークンの実在が漏れる。docs/05 §6.3 #5b）。
+  'error.passwordReset.invalidToken': 'このリンクは無効か、有効期限が切れています。',
   // 🔴 T-03-10: 管理平面（CLAUDE.md §10.1 / BR-44）。PLATFORM_SUPPORT には
   //    「権限が足りない」ことを伝え、PLATFORM_OWNER への依頼という次の行動へ導く。
   'error.admin.ownerRequired':

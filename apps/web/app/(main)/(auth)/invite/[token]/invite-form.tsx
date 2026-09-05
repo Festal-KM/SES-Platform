@@ -9,6 +9,7 @@
 // 🔴 受諾処理中はボタンを無効化する（二重送信防止）。入力途中の離脱は確認する。
 // 🔴 文言は props で受け取る（`packages/i18n` が唯一の出所。ここにベタ書きしない）。
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { formatDateTimeJst } from '../../../../../lib/format/datetime';
 
 export type InviteRoleName =
   | 'OWNER'
@@ -62,16 +63,6 @@ type LoadState =
 
 const HOME_PATH = '/';
 const SIGNIN_PATH = '/signin';
-
-function formatExpiresAt(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return iso;
-  // 🔴 表示は利用者の端末のロケール任せにせず、判読しやすい固定の形にする。
-  const pad = (value: number): string => String(value).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(
-    date.getHours(),
-  )}:${pad(date.getMinutes())}`;
-}
 
 export function InviteForm({
   token,
@@ -208,7 +199,7 @@ export function InviteForm({
         <dt>{messages.emailLabel}</dt>
         <dd>{view.email}</dd>
         <dt>{messages.expiresAtLabel}</dt>
-        <dd>{formatExpiresAt(view.expiresAt)}</dd>
+        <dd>{formatDateTimeJst(view.expiresAt)}</dd>
       </dl>
 
       {/* 🔴 VIEWER は「できないこと」を受諾前に示す（BR-31）。 */}
