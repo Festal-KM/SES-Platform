@@ -1,17 +1,21 @@
 // apps/web/lib/db/bootstrap.ts
-// 🔴 T-03-01 の暫定版。**起動時 DI の本体は T-03-12（`instrumentation.ts`）が実装する**
-//    （docs/sprints/SP-03 §4 T-03-12 / docs/05 §13.1 / CLAUDE.md §11.1）。
+// 🔴 DB クライアント・暗号鍵・キューの初期化（プロセスにつき 1 回）。
+//    **環境変数の検証と外部連携の選択そのものは `@ses/config` の `initializeRuntimeConfig`
+//    が唯一の経路であり、その最初の呼び出しは `apps/web/instrumentation.ts`（T-03-12）である。**
+//    ここはその解決済みの結果（`RuntimeConfig`）を読むだけで、`loadAppEnv` を直接呼ばない
+//    （docs/05 §13.1 / CLAUDE.md §11.1）。
 //
-// 本タスクの範囲では「DB クライアントが未初期化のまま認証経路が動く」ことだけを防ぐ:
-//   - `loadAppEnv(process.env)` は環境変数の Zod 検証の唯一の入口（packages/config）。
-//   - `configureTenantDb` はプロセスにつき 1 回だけ呼ぶ（多重初期化を作らない）。
+// 🔴 `initializeRuntimeConfig` はプロセス内でキャッシュされるため、instrumentation が
+//    先に走っていれば**ここで再検証も再ログも起きない**（多重初期化を作らない）。
+//    逆に instrumentation を通らない実行経路（結合テストが `apps/web/lib/**` を直接呼ぶ場合）
+//    でも、同じ 1 箇所を通って初期化される。
 //
 // 🔴 例外を握りつぶさない。検証に失敗したらそのまま throw する
 //    （「未設定ならモックにフォールバック」を作らない。CLAUDE.md §11.1）。
-// 🔴 リクエストごとに `APP_ENV` を分岐しない。ここは初期化の 1 箇所であり、
-//    外部連携の差し替え（`resolveConnectorSelection`）は T-03-12 が同じ初期化経路に載せる。
+// 🔴 リクエストごとに `APP_ENV` を分岐しない。差し替えの判断は `resolveConnectorSelection`
+//    （`initializeRuntimeConfig` の内部）で既に終わっており、ここは結果を読むだけである。
 import process from 'node:process';
-import { loadAppEnv, resolveConnectorSelection, type AppEnvKind } from '@ses/config';
+import { initializeRuntimeConfig, type AppEnvKind } from '@ses/config';
 import {
   configurePlatformReadDb,
   configurePlatformWriteDb,
@@ -38,13 +42,18 @@ let cachedSandboxTrialDays: number | null = null;
 /**
  * DB クライアントを 1 度だけ初期化する。
  *
- * 🔴 `instrumentation.ts`（T-03-12）が入ったあとは、そこから 1 回呼ばれた時点で
- *    `initialized` が立ち、以降のリクエストでは何もしない。呼び出しが二重になっても
- *    接続プールが増えない構造にしておく。
+ * 🔴 `initialized` はモジュールスコープに置く（`initializeRuntimeConfig` のように
+ *    `globalThis` へ逃がさない）。ここが守るのは「この Prisma クライアントを 1 度だけ作る」
+ *    ことであり、バンドラがモジュールを複製した場合は**複製ごとに専用のクライアントが要る**
+ *    （別インスタンスの `getBaseClient()` は未初期化のままになるため）。
  */
 export function ensureDbConfigured(): void {
   if (initialized) return;
-  const env = loadAppEnv(process.env);
+  // 🔴 起動時 DI の唯一の入口。instrumentation が先に呼んでいればキャッシュが返り、
+  //    環境変数の再検証も起動ログの再出力も起きない（T-03-12）。
+  const { env, connectors } = initializeRuntimeConfig(process.env, (line) => {
+    process.stdout.write(`${line}\n`);
+  });
   cachedAppEnv = env.APP_ENV;
   cachedPlatformAuthSecret = env.AUTH_PLATFORM_SECRET;
   cachedSandboxTrialDays = env.SANDBOX_TRIAL_DAYS;
@@ -65,12 +74,12 @@ export function ensureDbConfigured(): void {
     previous: env.TOKEN_ENCRYPTION_KEY_PREVIOUS,
   });
   // 🔴 T-03-03: `account.mail`（docs/05 §9.4）の enqueue 先を**起動時の 1 箇所**で決める。
-  //    判断材料は `resolveConnectorSelection`（APP_ENV 分岐の唯一の場所。CLAUDE.md §11.1）であり、
-  //    ここで `APP_ENV` を自分で分岐しない。
+  //    判断材料は `resolveConnectorSelection`（APP_ENV 分岐の唯一の場所。CLAUDE.md §11.1）が
+  //    起動時に解決した `connectors` であり、ここで `APP_ENV` を自分で分岐しない。
   //    - email が `mock`（development / demo）→ 保留キュー（SP-04 のハンドラが処理するまで積むだけ）
   //    - それ以外（sandbox / staging / production）→ **登録しない**。BullMQ のキュー実装は SP-04 の
   //      範囲であり、未実装のまま「送ったつもり」にさせない（enqueue 時に例外 = 操作が成立しない）。
-  if (resolveConnectorSelection(env).email === 'mock') {
+  if (connectors.email === 'mock') {
     configureAccountMailQueue(new PendingAccountMailQueue());
   }
   initialized = true;

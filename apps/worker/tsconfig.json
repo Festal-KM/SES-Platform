@@ -2,7 +2,12 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": "src"
+    "rootDir": "src",
+    // 🔴 T-03-12: `src/main.ts`（起動エントリ）が `node:process` を import するため、
+    //    このアプリでも Node の型を有効にする（ルートの tsconfig.json は "types": []）。
+    //    `packages/db` が `seed/cli.ts` のために同じことをしているのと同じ理由・同じ書き方。
+    //    型は workspace ルートの devDependency（@types/node）から解決される。
+    "types": ["node"]
   },
   "include": ["src"]
 }

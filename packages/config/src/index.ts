@@ -25,6 +25,20 @@ export {
   type ConnectorImplementationKind,
   type ConnectorSelection,
 } from './connector-selection.js';
+// 🔴 T-03-12: 起動時 DI の唯一の入口（docs/05 §13.1 / CLAUDE.md §11.1）。
+//    `apps/web` の instrumentation.ts と `apps/worker` の main.ts はこれだけを呼ぶ。
+//    `resetRuntimeConfigForTesting` は **export しない** —— アプリがキャッシュを消せると
+//    「起動時に 1 回」の保証が崩れる（packages/config 自身のテストだけが相対 import で使う）。
+//    🔴 `formatStartupLine` / `STARTUP_LINE_PREFIX` / `resetRuntimeConfigForTesting` は
+//    **export しない** —— アプリが要るのは「起動する」「失敗を 1 行で書く」の 2 つだけであり、
+//    ログの組み立てやキャッシュ操作をアプリ側から触れるようにしない
+//    （テストは `packages/config/src/startup.js` を相対 import して検証する）。
+export {
+  initializeRuntimeConfig,
+  formatStartupFailureLine,
+  type RuntimeConfig,
+  type StartupLogger,
+} from './startup.js';
 // 🔴 期限・長さの方針値（docs/05 §2.1 の limits.ts）。環境変数ではないので schema.ts に置かない。
 export {
   DISPLAY_NAME_MAX_LENGTH,

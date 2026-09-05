@@ -3,7 +3,8 @@
 //
 // T-01-04 で「ブランド型であること」「分離キーが認証情報からしか来ないこと」を実装した。
 // T-01-06 で HostTenantCtx（docs/05 §4.3 実装の規約 6）を追加する。
-// deviceKind の判定・lifecycleState の DB 参照・Auth.js のセッション型への差し替えは SP-02 以降。
+// deviceKind の判定（apps/web/lib/auth/device.ts）・lifecycleState の DB 参照・
+// Auth.js のセッション型への差し替えは T-03-01（SP-03）で実装済み。
 //
 // 🔴 T-02-01（T-01-07 からの申し送り①）: TenantLifecycleState は本ファイルと
 //    packages/domain/src/state/tenant.ts の 2 箇所に重複定義されていた。
@@ -188,8 +189,9 @@ export async function resolveTenantCtx(
 
 /**
  * ホスト文脈であることが型で保証された ctx（docs/05 §4.3 実装の規約 6）。
- * 🔴 `requireHost` 以外がこの型の値を構築できない（`apps/worker` 用の `systemTenantCtx` は SP-02 以降。
- * docs/05 §9.2）。`partnerCompanyId` はブランドと同時に `null` へ絞り込まれる。
+ * 🔴 `requireHost` 以外がこの型の値を構築できない（もう 1 つの生成経路は `apps/worker` 用の
+ * `systemTenantCtx`（本ファイル下部。docs/05 §9.2。T-03-10 で実装済み））。
+ * `partnerCompanyId` はブランドと同時に `null` へ絞り込まれる。
  *
  * 経路 5 の基底表（`assignments` / `contracts` / `contract_documents` / `orders` /
  * `extension_reviews`）と、`HostTenantDb` への 5 デリゲート追加（`Omit` / `Pick` と
@@ -218,7 +220,8 @@ export class HostOnlyContextError extends Error {
 }
 
 /**
- * 🔴 `HostTenantCtx` の生成経路の 1 つ（もう 1 つは `apps/worker` の `systemTenantCtx`。SP-02 以降）。
+ * 🔴 `HostTenantCtx` の生成経路の 1 つ（もう 1 つは `apps/worker` が使う `systemTenantCtx`。
+ * 本ファイル下部。T-03-10 で実装済み）。
  * パートナー文脈（`partnerCompanyId !== null`）なら `HostOnlyContextError` を投げ、
  * ホスト文脈だけを型で絞り込む（TypeScript のアサーション関数）。
  */

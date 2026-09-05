@@ -17,6 +17,12 @@ export default defineConfig({
       //    （`app/**` はルート定義とビューであり、ユニットテストを置かない）。
       'apps/*/lib/**/*.test.ts',
       'tests/static/**/*.test.ts',
+      // 🔴 T-03-12: 起動経路の検証（`apps/web` の instrumentation / `apps/worker` の main を
+      //    子プロセスで実際に起動する）。DB を要らないので tests/isolation（Testcontainers）
+      //    には置かず、**CI で毎回走る `test:unit` に載せる**（起動時 DI の担保が
+      //    スキップされうる場所にあってはならない）。ビルド済みの packages/config/dist を使う
+      //    ため、CI の実行順（build → test）に依存する（tests/startup/startup-di.test.ts 冒頭）。
+      'tests/startup/**/*.test.ts',
     ],
     exclude: [
       '**/node_modules/**',
