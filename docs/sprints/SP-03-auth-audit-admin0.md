@@ -44,13 +44,16 @@
 - 🔴 **サインイン時のメール照合は `withAuthLookup(email)`（`docs/05` §4.4.2）で該当 1 行のみ可視にする。** テナント確定前に全件を舐める経路を作らない。
 - **監査**: ログイン・ログアウト・認証失敗を `AuditLog` に記録（`F-003 AC-3`）。
 - **完了の判定**: `F-003 AC-1` の結合テスト（入力を改変しても結果が変わらない）。`F-004 AC-2`。
+- ✅ **完了（2026-09-03、コミット `bfcb7d3`）** — Auth.js Credentials + `POST /api/auth/signin` / `signout` + `resolveTenantCtx` を接続した。`S-001` の画面と `withAuthLookup(email)`（該当 1 行のみ可視のメール照合）を含む。
 
 ### T-03-02 2 要素認証（M）
 
 - **実装**: `POST /api/auth/2fa/setup`（#3）/ `verify`（#2）。TOTP + リカバリコード。`TwoFactorCredential`（暗号化・ハッシュ）。
 - 🔴 **`OWNER` / `ADMIN` の 2FA 必須は `resolveTenantCtx` で強制する**（middleware ではなく。`docs/05` §6.2）。`TwoFactorCredential.confirmedAt IS NULL` かつ `role ∈ {OWNER, ADMIN}` のとき `TwoFactorRequiredError`（403）を throw し、**`AuthenticatedTenantCtx` が生成されず `withTenant` に到達できない = 業務データを 1 件も取得できない**。
 - middleware（Edge）は画面遷移（`/settings/security` へ 302）だけを担う。**データ境界の強制をそこに依存しない**（Edge から DB を読めない）。
+- **ブロッカーではないが確認中**: 検証失敗のスロットルは **暫定 B（`AuditLog` を数える。15 分 / 5 回）** で実装している。恒久設計（専用カウンタ表 / Redis のいずれに寄せるか）は [Issue #29](https://github.com/Festal-KM/SES-Platform/issues/29) で確認中であり、**ブロッカーではない**（`docs/dev-plan.md` §9）。
 - **完了の判定**: `F-003 AC-2` の結合テスト（未設定の `OWNER` が API を直叩きしても業務データが 0 件）。
+- ✅ **完了（2026-09-03、コミット `b447986`）** — TOTP + リカバリコード + `TwoFactorCredential`（暗号化・ハッシュ）。🔴 **必須の強制は middleware ではなく `resolveTenantCtx`** に置き、未設定の `OWNER` / `ADMIN` が `withTenant` に到達できない（= 業務データを 1 件も取得できない）ことを `tests/isolation/two-factor.test.ts` で証明した。スロットルは上記のとおり暫定 B。
 
 ### T-03-03 招待の発行・受諾とパスワード再設定（L）
 
@@ -60,6 +63,7 @@
 - 🔴 **`Invitation` を別テーブルにしている理由**（`docs/05` §3.2）: 受諾前のレコードが `Membership` として存在すると席数（`UsageCounter`）を汚すため。**`Membership` の列にしない。**
 - **メール送信は SP-04 の単一経路に載せる。** 本タスクでは `account.mail` ジョブの enqueue までを実装し、**送信自体はモック**（`APP_ENV=development`）。
 - **完了の判定**: `F-002 AC-1`（パートナーロールはパートナー企業必須）/ `AC-3`（監査）/ `AC-4`（`PARTNER_ADMIN` は自社配下のみ）の結合テスト。
+- ✅ **完了（2026-09-04、コミット `3ae4f4d`）** — API #14 / #6 / #7 / #5 / #5b と `S-002` を実装。未認証経路は `docs/05` §4.4.2 の行由来コンテキスト 3 関数で書き、`systemTenantCtx` を `apps/web` に開放していない。受諾は `acceptedAt` の CAS で 1 回限り、パスワード再設定は常に 204（存在有無を返さない）。**#5 / #5b の API はここで完成しており、画面は T-03-13（`S-046`）で埋めた。**
 
 ### T-03-04 `withApiRoute` の共通ガードと Zod 境界（L）
 
@@ -73,6 +77,7 @@
   - エラーは `docs/05` §15 の共通フォーマット。`InvalidStateTransitionError` は **422**。
 - **静的テスト**: `execute-guard.test.ts`（実行系ルート一覧の全ファイルが `requireExecutable` を呼ぶことを AST で検査。`docs/05` §17.2 #7）。**実行系ルートが増えるたびにこのテストが効く。**
 - **完了の判定**: `F-004 AC-2` / `AC-6` / `AC-8` / `AC-9` の結合テスト + 静的テスト。
+- ✅ **完了（2026-09-04、コミット `a0b02f1`）** — `withApiRoute` / `guards.ts` を敷き、全ルートの認可土台を 1 本にした。ガードの呼び順を固定し、境界外の ID は 404（403 と区別しない）。`execute-guard.test.ts`（実行系ルートの AST 走査）が green。**`F-004 AC-7`（`SUSPENDED`）は §6-1 のとおり本スプリントの判定対象外で、`T-20-05` に送っている。**
 
 ### T-03-05 監査ログの記録と `S-041`（L）
 
@@ -82,6 +87,7 @@
 - 🔴 **`AuditLog` は利用者・運営者のいずれからも編集・削除できない**（`F-005 AC-3`）。`app_tenant` に `UPDATE` / `DELETE` を `REVOKE`（SP-02 の C1 / C2 で実装済み。本タスクで検証する）。
 - `system` が主体の操作は `actorKind='SYSTEM'` として記録（`F-005 AC-4`）。
 - **完了の判定**: `F-005 AC-1`〜`AC-4` の結合テスト。**記録に失敗させた注入テストで操作がロールバックされること。**
+- ✅ **完了（2026-09-04、コミット `75ffa85`）** — `withApiRoute` の `audit` オプション（ハンドラ本体の前に `AuditLog` を書き、記録に失敗したら操作を成立させない）と `GET /api/audit-logs`（#10。期間必須）+ `S-041`。**`BR-27` の 11 種のうち Phase 0 で発生する分（ログイン・ログアウト・作成・更新・削除・権限変更・運営者の全操作）を登録済み。残りは `F-012` = SP-05、公開範囲 = SP-06、送信・承認 = SP-09 で追加する。**
 
 ### T-03-06 役割別ホームと `/api/me`（M）
 
@@ -92,6 +98,7 @@
 - `#9` の応答に `changedSince` と各行の `rowVersion` を含める（`docs/04` `program-design` 申し送り 6。60 秒ポーリングの差分描画）。
 - **Tier**: `S-003` / `S-004` は **T1（モバイル完結）**（`docs/04`）。
 - **完了の判定**: `F-006 AC-1`〜`AC-3` の結合テスト + モバイルビューポートのスモーク。
+- ✅ **完了（2026-09-04、コミット `e1850ce`）** — `GET /api/me`（#8）/ `GET /api/home`（#9）と `HostHomeView` / `PartnerHomeView` の型分離（他社の件数・存在・順位に相当するフィールドを型に持たない）。あわせて **Tailwind CSS を導入**した（`CLAUDE.md` §2 の UI スタック。以後の画面タスクの前提）。
 
 ### T-03-07 運営者認証（M）
 
@@ -99,6 +106,7 @@
 - 🔴 **テナントの `User` とは別テーブル・別認証・別セッション**（`BR-36`）。**「運営者フラグ」に相当する属性・ロール・権限を `users` に作らない**（`docs/05` §17.2 #13 が列名を走査する）。
 - 🔴 **2FA を設定するまで管理平面のいずれの画面にも到達できない**（`F-055 AC-3`）。
 - **完了の判定**: `F-055 AC-1`〜`AC-4`。**テナント利用者の認証情報で `/admin` に到達できず、逆も成立しない**ことの結合テスト。
+- ✅ **完了（2026-09-04、コミット `0f30678`）** — `PlatformUser` の別テーブル・別認証・別セッション（`apps/web/lib/auth/platform*.ts` / `packages/db/src/platform-auth.ts`）と `A-001`。`platform-user-no-flag.test.ts`（#13。`users` に運営者フラグ相当の列が無いことの走査）が green。
 
 ### T-03-08 `withPlatform` と管理平面ミドルウェア（L）
 
@@ -111,6 +119,8 @@
 - 🔴 **運営者に非開示のものは列レベル `GRANT` で外す**（`docs/05` §5.5 / §5.7。`BR-40`）。S3 も `s3:GetObject` を付与しない。
 - 🔴 **着手前に [Issue #24](https://github.com/Festal-KM/SES-Platform/issues/24) の決定を確認する**（`app_platform_write` に `tenants` の `SELECT` が無く、**テナント開設直後の読み戻し（API-A4 の応答）ができない**）。**既定値 A で進める: `tenants(id, lifecycle_state)` の列レベル `SELECT` のみを `app_platform_write` に付与する**（行全体・他列を与えない。上の 🔴 の列レベル `GRANT` の方針を崩さない）。🔴 **`SELECT` を行全体に広げて通さない** — 広げると `BR-40` の「運営者に見せないもの」の担保が `platform-grants.test.ts` の除外リスト頼みになる。決定が既定値と異なる場合は、`docs/05` §5.5 / `P-A-13` を `CLAUDE.md` §8.7 の手順で先に直してから実装する（`docs/dev-plan.md` §9）。
 - **完了の判定**: `platform-grants.test.ts` / `platform-write-scope.test.ts`（SP-02 で書いた走査テスト）が green。`withPlatform` の監査失敗時にクエリが実行されないことの結合テスト。**`app_platform_write` の `tenants` に対する `SELECT` が `(id, lifecycle_state)` の 2 列に限られること**（走査テストの許可リストに列単位で載る）。
+- 🔴 **テストファイル名の読み替え（実体との対応を固定する）**: 本タスク計画時に書いた `platform-grants.test.ts` / `platform-write-scope.test.ts` という**独立ファイルは存在しない**。実体は **`tests/isolation/roles.test.ts` の ③（`app_platform` / `app_platform_write` の `GRANT` 走査）と、その中の列単位走査**であり、許可リスト（運営者に非開示の列の除外定義と `tenants(id, lifecycle_state)` の 2 列許可）は **`tests/isolation/support/platform-grants.ts`** に置いている。**以後この 2 つの名前が出てきたら上記 2 パスに読み替える**（`docs/05` §17.2 / SP-02 T-02-09 の走査テスト群の一部として実装されているため、別ファイルに切り出していない）。
+- ✅ **完了（2026-09-04、コミット `c18f2fd`）** — `app_platform` / `app_platform_write` の専用 DB ロール + 専用接続プール（`PLATFORM_DATABASE_URL`）+ 専用 Prisma インスタンス（`packages/db/src/platform-client.ts` / `platform-context.ts`）の 3 点セット。`withPlatform` は操作者・理由・対象を必須引数に取り、**`AuditLog` の書き込みが成功した後でないとクエリを実行しない**。主平面からの import は ESLint（`no-restricted-imports`）で禁止。[Issue #24](https://github.com/Festal-KM/SES-Platform/issues/24) は**既定値 A のとおり `tenants(id, lifecycle_state)` の列レベル `SELECT` のみ**で実装した（`docs/dev-plan.md` §9）。上記の読み替えのとおり `tests/isolation/roles.test.ts` の ③ + 列単位走査が green。
 
 ### T-03-09 テナント一覧・詳細（M）
 
@@ -120,6 +130,7 @@
 - 🔴 **運営者はテナントの業務データを作成・更新・削除できない**（`F-056 AC-3` / `BR-37`）。
 - 閲覧を `AuditLog` に記録（`F-056 AC-4`）。
 - **完了の判定**: `F-056 AC-1` / `AC-3` / `AC-4` の結合テスト。E2E #15 の一部（運営者に非開示のものが応答に現れない）。
+- ✅ **完了（2026-09-04、コミット `28e0e47`）** — API-A2 / API-A3 と `A-002` / `A-003`。件数・状態・日時のみを返し、氏名・スキルシート・提案本文・チャット本文へ**到達する導線が存在しない**。`PURGED` はライフサイクル状態のみを返す。閲覧を `AuditLog` に記録。**健全性の異常順は SP-11（`F-056` の Phase 1 分）に残置。**
 
 ### T-03-10 テナント開設と `UsageCounter` 計測フック（L）
 
@@ -133,6 +144,7 @@
   - 🔴 **`usage.seat-snapshot` の集計関数は `countPartnerSeats: boolean` を引数で持つ**（`docs/05` TBD-19。席単価と課金対象は未決。**決め打ちしない**）。
 - **ブロッカーではないが確認中**: [Issue #12](https://github.com/Festal-KM/SES-Platform/issues/12)（席単価 / 取引先の席を課金対象に含めるか）。既定は `countPartnerSeats` を設定値とし、値を決め打ちしない（`docs/dev-plan.md` §9）。
 - **完了の判定**: `F-001 AC-1` / `AC-3` の結合テスト。API-A4 が `PLATFORM_SUPPORT` に 403。`usage.seat-snapshot` の冪等性テスト（同日 2 回で 1 行）。
+- ✅ **完了（2026-09-04、コミット `392f5ad`）** — API-A4 / API-A5（分離）と `A-014`、`GET/PATCH /api/settings/organization`（#64）+ `S-035`。テナント既定値（自動承認 = 無効 / AI ロールはすべて都度承認 / 公開範囲 = 誰にも公開されない / 送信ドメイン未検証）を実装。🔴 **`UsageCounter` の計測フック（`usage.seat-snapshot` と `INSERT ... ON CONFLICT DO UPDATE ... RETURNING` の原子的加算ヘルパ）を Phase 0 で設置した**（`CLAUDE.md` §10.6 / §6.2 U-1。**AI / メール / ストレージの実計測は SP-07 / SP-10**）。`countPartnerSeats` は引数のままで決め打ちしていない（[Issue #12](https://github.com/Festal-KM/SES-Platform/issues/12)）。
 
 ### T-03-11 🔴 Phase 0 成功条件の E2E（L）
 
@@ -146,6 +158,7 @@
 - 🔴 **`globalSetup`**（`docs/05` §17.6）: コンテナ起動 → マイグレーション（`app_migrator`）→ ロールと `GRANT` の適用 → `seed:isolation` → `APP_ENV=development` でアプリ起動 → **外向きネットワークの遮断を確認**。
 - 🔴 **分離検証のシナリオは直列（`workers: 1`）**。RLS の設定漏れは他テストの副作用で偽陽性・偽陰性になる。
 - **完了の判定**: 上記 5 つが green。CI（T-01-08）に E2E ステージを追加する。
+- ✅ **完了（2026-09-05、コミット `3bc0528`）** — `tests/e2e/isolation.spec.ts` の 5 シナリオを含む **Playwright E2E 15 本**が green になり、**CI に E2E ステージを追加した**（`globalSetup` でコンテナ起動 → マイグレーション → ロールと `GRANT` → `seed:isolation` → `APP_ENV=development` で起動 → 外向きネットワークの遮断確認）。分離検証は `workers: 1` の直列で走る。🔴 **これが `CLAUDE.md` §5 の Phase 0 成功条件（2 テナント × 2 パートナーで URL 直打ち・API 直叩きのいずれでも 0 件）の証跡である。**
 
 ### T-03-12 🔴 起動時 DI の呼び出し側（`apps/web` / `apps/worker`）（M）
 
@@ -162,6 +175,7 @@
   2. **非本番（`development` / `demo` / `sandbox` / `staging`）に本番の API キーが設定されていると起動に失敗する**（NFR-ENV-4）。web / worker の両方。
   3. `development` で正常起動し、解決結果のログが**プロセスにつき 1 回だけ**出る（多重初期化にならない）。
   4. `instrumentation.ts` / worker の起動処理から `loadAppEnv` が呼ばれていることを静的に検査する（呼び出しを消すと落ちる）。**呼び出しが消えても他のテストが green のままになる状態を残さない。**
+- ✅ **完了（2026-09-05、コミット `35a3aa7`）** — 🔴 **SP-01 からの残件を解消した。** `apps/web/instrumentation.ts` の `register()` と `apps/worker` の起動エントリから `loadAppEnv()` → `resolveConnectorSelection()` を**プロセスにつき 1 回**呼び、例外を握りつぶさずそのまま起動を失敗させる（モックへのフォールバックを書いていない）。判定ロジックは `packages/config` の 1 箇所を web / worker で共有。解決結果は 1 行のログに出し、シークレットは出さない。**上記 4 つの判定（起動失敗 2 ケース + `development` 正常起動 + 呼び出しの静的走査）が green。**
 
 ### T-03-13 パスワード再設定の画面（`S-046`）（S）
 
@@ -181,6 +195,8 @@
   3. **存在するメールアドレスと存在しないメールアドレスで、①の応答・完了文言・遷移が同一である**ことの結合テスト（`docs/04` `S-046` 🔴）。
   4. 送信中にボタンが送信中表示へ置換され、**二重送信できない**こと。
   5. 🔴 **既存テスト（unit / isolation / 静的）が green のまま**であること（API 側に変更が無いことの裏返し）。
+- **ブロッカーではないが確認中**: ③の**無効・期限切れトークンをいつ検知するか**（画面表示時に事前検証するか、送信時に #5b の応答で検知するか）は [Issue #31](https://github.com/Festal-KM/SES-Platform/issues/31) で確認中。**既定 A（送信時に #5b の応答で検知し、Err 列の専用文言 + ①への導線を出す）で実装済み**であり、事前検証 API を足すかどうかは Phase 1 以降の判断（`docs/dev-plan.md` §9）。
+- ✅ **完了（2026-09-05、コミット `14baba6`）** — `/password-reset`（①②）と `/password-reset/confirm?token=…`（③）を実装し、**`S-001` からの導線が 404 でなくなった**。既存の #5 / #5b を呼ぶだけで **API 側の変更なし**。登録の有無によらず①の応答・完了文言・遷移が同一であること、②の文言がリトライ後も変化しないこと、送信中のボタン置換で二重送信できないこと、③が無効・期限切れトークンで 404 に落ちず専用文言 + ①への導線を出すことを結合テストで固定した。文言は `packages/i18n`。
 
 ## 5. テスト計画
 
@@ -205,3 +221,8 @@
 6. `UsageCounter` のテーブルと計測フック（席数の日次スナップショット + 原子的加算ヘルパ）が動作している（`CLAUDE.md` §10.6）。
 7. 🔴 **`apps/web` / `apps/worker` の起動時に `loadAppEnv` + `resolveConnectorSelection` が 1 回呼ばれ、`production` でモック実装が選択された場合にプロセスが起動しない**（T-03-12。`CLAUDE.md` §11.1 / `docs/05` §13.1）。**関数単体のテスト（T-01-03）だけでは満たさない。**
 8. **次フェーズの前提**: `docs/dev-plan.md` §5 の E-1（SES 本番アクセス申請）の状況を確認し、未承認なら R-02 として明示的に記録する。
+   - ✅ **確認済み（2026-09-05）。未承認のままである** — AWS Support ケース `178832016000877` が再審査中で、訂正返信の送信がユーザー操作待ち（[Issue #19](https://github.com/Festal-KM/SES-Platform/issues/19)）。🔴 **`docs/dev-plan.md` §6.4 R-02 に現況として記録した。** **SP-04（取引先へ届くメール）の着手前に要解消**であり、未承認のまま SP-04 に入る場合は**送信ドメイン検証（`S-036` / `TenantSendingDomain` / DNS 提示）を先行させ、実送信を要するタスクを後段に回す**。
+
+---
+
+**SP-03 の状態（2026-09-05）**: T-03-01〜T-03-13 の**全 13 タスクが完了**（§4 の各タスクの ✅ 行）。主な成果は 3 つある — ①🔴 **`tests/e2e/isolation.spec.ts` を含む Playwright E2E 15 本が green になり、CI に E2E ステージが入った**（T-03-11。**`CLAUDE.md` §5 の Phase 0 成功条件の証跡**）②🔴 **SP-01 から引き継いだ「起動時 DI の呼び出し側が存在しない」残件を解消した**（T-03-12。`production` でモック実装が選択されたら web / worker のいずれも起動しない）③**`docs/04` 改訂 5 で新設された `S-046`（パスワード再設定）の画面を埋め、`/password-reset` の 404 を解消した**（T-03-13）。本スプリントで生じた確認中の論点は 2 件で、いずれも**既定値で実装済み・ブロッカーではない** — [Issue #29](https://github.com/Festal-KM/SES-Platform/issues/29)（2FA スロットルの恒久設計。暫定 B）/ [Issue #31](https://github.com/Festal-KM/SES-Platform/issues/31)（`S-046` の無効トークン検知タイミング。既定 A）。**`docs/dev-plan.md` §9 に対応表の行がある。** 後続へ引き継ぐ残件は ①**E-1（SES 本番アクセス）が未承認**（上記 8。SP-04 の着手前に要解消）②**[Issue #27](https://github.com/Festal-KM/SES-Platform/issues/27) の後半**（worker の `skill_sheets` 書き込み文脈。SP-07 着手時に `program-design` で設計）③**`F-004 AC-7`（`SUSPENDED`）は T-20-05 へ送っている**（§6-1）。
