@@ -23,12 +23,16 @@
 import { useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { Button } from '@ses/ui';
+import type { TenantRole } from '@ses/db';
 import { formatDateTimeJst } from '../../../../lib/format/datetime';
 import type { InvitationIssueView } from '../../../../lib/invitations/invite-link';
+import type { MemberListView, MemberView } from '../../../../lib/members/service';
 import type {
   PartnerCompanyListView,
   PartnerCompanyView,
 } from '../../../../lib/partner-companies/service';
+import { SandboxInviteLinkPanel } from './invite-link-panel';
+import { MembersPanel, type MembersPanelMessages } from './members-panel';
 
 /** `#14` の応答のうち本画面が使う部分（`lib/jobs/account-mail.ts` の `AccountMailDeliveryState`）。 */
 type InvitationDeliveryState = string;
@@ -108,94 +112,29 @@ type Phase = 'idle' | 'submitting' | 'error';
 const INVITED_ROLE = 'PARTNER_ADMIN';
 
 /**
- * 🔴 `sandbox` の招待リンク（docs/04 §S-014 セクション 4 / `F-007 AC-4`）。T-04-08。
+ * 🔴 T-04-09: 配下アカウントの管理（`F-002 AC-3` / `AC-4`）を出すための材料。
  *
- * 🔴 表示・コピーの両方を出す。コピーだけにしないのは、`navigator.clipboard` が
- *    安全なコンテキスト以外では使えないためである（使えないときに手段が無くなると、
- *    見込み客は取引先を招けず `F-054 AC-1` のパートナースコープ検証まで止まる）。
- * 🔴 リンクの有効期限・1 回限りの受諾・受諾後の失効は `production` の招待と**同一**である
- *    （専用の別トークンでも別経路でもない）。その事実を文言で明示する。
+ * 🔴 **`null` = この利用者はアカウント管理の当事者ではない**（`SALES` / `VIEWER` /
+ *    `PARTNER_SALES`）。`#83` を呼ぶ資格が無いため、一覧そのものを持たない
+ *    （画面で隠すのではなく、材料が存在しない）。
  */
-export function SandboxInviteLinkPanel({
-  inviteUrl,
-  messages,
-}: {
-  readonly inviteUrl: string;
-  readonly messages: Pick<
-    PartnerCompaniesScreenMessages,
-    | 'inviteLinkHeading'
-    | 'inviteLinkNotice'
-    | 'inviteLinkOnceOnly'
-    | 'inviteLinkLabel'
-    | 'inviteLinkCopy'
-    | 'inviteLinkCopied'
-    | 'inviteLinkCopyFailed'
-  >;
-}) {
-  const [copy, setCopy] = useState<'idle' | 'copied' | 'failed'>('idle');
-
-  async function onCopy(): Promise<void> {
-    try {
-      await navigator.clipboard.writeText(inviteUrl);
-      setCopy('copied');
-    } catch {
-      // 🔴 握り潰さない。コピーできなかったことを見せ、表示中のリンクを手で選べるようにする。
-      setCopy('failed');
-    }
-  }
-
-  return (
-    <div
-      className="mt-3 rounded-md border border-sky-300 bg-sky-50 p-3 text-sm text-sky-900"
-      data-testid="partner-company-invite-link"
-    >
-      <p className="mb-1 font-medium">{messages.inviteLinkHeading}</p>
-      <p className="mb-2">{messages.inviteLinkNotice}</p>
-      <label className="mb-2 block">
-        <span className="mb-1 block text-xs text-sky-800">{messages.inviteLinkLabel}</span>
-        {/* 🔴 読み取り専用の入力に出す（長い URL をモバイルでも選択・コピーできる）。 */}
-        <input
-          type="text"
-          readOnly
-          value={inviteUrl}
-          onFocus={(event) => event.currentTarget.select()}
-          className="w-full rounded-md border border-sky-300 bg-white px-3 py-2 font-mono text-xs"
-          data-testid="partner-company-invite-link-value"
-        />
-      </label>
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          onClick={() => void onCopy()}
-          data-testid="partner-company-invite-link-copy"
-        >
-          {messages.inviteLinkCopy}
-        </Button>
-        {copy === 'idle' ? null : (
-          <span
-            role="status"
-            className={copy === 'copied' ? 'text-xs text-emerald-700' : 'text-xs text-red-700'}
-            data-testid="partner-company-invite-link-copy-status"
-          >
-            {copy === 'copied' ? messages.inviteLinkCopied : messages.inviteLinkCopyFailed}
-          </span>
-        )}
-      </div>
-      {/* 🔴 `production` の招待と同じ規律であることを明示する（期限 / 1 回限り / 再表示不可）。 */}
-      <p className="mt-2 text-xs text-sky-800" data-testid="partner-company-invite-link-once-only">
-        {messages.inviteLinkOnceOnly}
-      </p>
-    </div>
-  );
-}
+export type MemberPanelProps = {
+  readonly members: MemberListView;
+  /** 🔴 実行者の所属（null = ホスト）。**選択中の取引先が自社のときだけ**操作を出す。 */
+  readonly viewerPartnerCompanyId: string | null;
+  /** 🔴 `PARTNER_ADMIN` であるか（ホストは配下アカウントを閲覧のみ。C3 が書込を許さない）。 */
+  readonly canManageOwnAccounts: boolean;
+  readonly currentUserId: string;
+  readonly assignableRoles: readonly TenantRole[];
+  readonly messages: MembersPanelMessages;
+};
 
 export function PartnerCompaniesScreen({
   initial,
   canManage,
   invitationBlocked,
   sandboxLinkHandover,
+  memberPanel,
   messages,
 }: {
   readonly initial: PartnerCompanyListView;
@@ -210,10 +149,13 @@ export function PartnerCompaniesScreen({
    *    `#14` の応答（`disclosure`）であり、この真偽値ではない。
    */
   readonly sandboxLinkHandover: boolean;
+  /** 🔴 T-04-09。`null` = アカウント管理の当事者ではない（`#83` を呼べない）。 */
+  readonly memberPanel: MemberPanelProps | null;
   readonly messages: PartnerCompaniesScreenMessages;
 }) {
   const [items, setItems] = useState<readonly PartnerCompanyView[]>(initial.items);
   const [selectedId, setSelectedId] = useState<string | null>(initial.items[0]?.id ?? null);
+  const [members, setMembers] = useState<readonly MemberView[]>(memberPanel?.members.items ?? []);
 
   const [name, setName] = useState('');
   const [contactName, setContactName] = useState('');
@@ -250,6 +192,20 @@ export function PartnerCompaniesScreen({
     if (!response.ok) return;
     const view = (await response.json()) as PartnerCompanyListView;
     setItems(view.items);
+  }
+
+  /**
+   * 配下アカウントを引き直す（T-04-09）。
+   * 🔴 母集団は `#83`（RLS の C5）が決める。クライアントで足し引きしない ——
+   *    ロール変更・無効化・招待の結果を手元で合成すると、**サーバが拒否した操作を
+   *    成功したかのように見せる**状態が作れてしまう。
+   */
+  async function reloadMembers(): Promise<void> {
+    if (memberPanel === null) return;
+    const response = await fetch('/api/members', { headers: { accept: 'application/json' } });
+    if (!response.ok) return;
+    const view = (await response.json()) as MemberListView;
+    setMembers(view.items);
   }
 
   async function onRegister(event: FormEvent<HTMLFormElement>): Promise<void> {
@@ -519,6 +475,29 @@ export function PartnerCompaniesScreen({
                 </div>
               )}
             </dl>
+
+            {/* 🔴 T-04-09: 配下アカウント（`docs/04` §S-014 セクション 2）。
+                `PARTNER_ADMIN` の入口はここである（`S-035` には到達しない。`F-002 AC-4`）。
+                🔴 操作を出すのは**自社を見ている `PARTNER_ADMIN`** だけ。ホストは閲覧のみで、
+                書込は RLS の C3（`memberships` の UPDATE）が許さない（画面の判定は補助である）。 */}
+            {memberPanel === null ? null : (
+              <MembersPanel
+                members={members.filter((member) => member.partnerCompanyId === selected.id)}
+                canManage={
+                  memberPanel.canManageOwnAccounts &&
+                  memberPanel.viewerPartnerCompanyId === selected.id
+                }
+                assignableRoles={memberPanel.assignableRoles}
+                currentUserId={memberPanel.currentUserId}
+                sandboxLinkHandover={sandboxLinkHandover}
+                messages={memberPanel.messages}
+                onChanged={async () => {
+                  await reloadMembers();
+                  // 未受諾の招待件数・アカウント数（#11 の集計）も動くため一緒に引き直す。
+                  await reload();
+                }}
+              />
+            )}
 
             {canManage ? (
               <>

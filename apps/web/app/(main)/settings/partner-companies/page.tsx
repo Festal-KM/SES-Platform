@@ -14,12 +14,17 @@ import type { Metadata } from 'next';
 import { t } from '@ses/i18n';
 import { resolveTenantCtxOutcome } from '../../../../lib/auth/session';
 import { inviteUrlRuntime, sendingDomainRuntime } from '../../../../lib/db/bootstrap';
+import { isMemberManagerRole } from '../../../../lib/members/policy';
+import { listMembers } from '../../../../lib/members/service';
 import { listPartnerCompanies } from '../../../../lib/partner-companies/service';
 import {
   isSendingDomainUnverified,
   resolveSendingDomainFact,
 } from '../../../../lib/settings/sending-domain-fact';
 import { readSendingDomainSettings } from '../../../../lib/settings/sending-domains';
+import { PARTNER_TENANT_ROLES } from '../../../../lib/tenants/roles';
+import { TENANT_ROLE_MESSAGE_KEYS, TENANT_ROLE_CAPABILITY_MESSAGE_KEYS } from '../../../../lib/tenants/labels';
+import type { MemberPanelProps } from './partner-companies-screen';
 import { PartnerCompaniesScreen } from './partner-companies-screen';
 
 export const runtime = 'nodejs';
@@ -49,6 +54,99 @@ export default async function PartnerCompaniesPage() {
       )
     : false;
 
+  // 🔴 T-04-09: 配下アカウント（`F-002 AC-4`）。**アカウント管理の当事者でなければ引かない**
+  //    （`#83` と同じ `requireRole`。氏名とメールアドレスを見せる理由が無い側に倒す）。
+  //    母集団は `listMembers` の内側で RLS（C5）が決める —— パートナーには自社配下しか返らず、
+  //    ホスト（自社）のアカウントも他社のアカウントも 1 行も含まれない。
+  const memberPanel: MemberPanelProps | null = isMemberManagerRole(ctx.role)
+    ? {
+        members: await listMembers(ctx),
+        viewerPartnerCompanyId: ctx.partnerCompanyId,
+        // 🔴 ホストの `OWNER` / `ADMIN` は配下アカウントを**閲覧のみ**（RLS の C3 が書込を許さない）。
+        canManageOwnAccounts: ctx.role === 'PARTNER_ADMIN',
+        currentUserId: ctx.userId,
+        // 🔴 パートナー配下に付与できるのはパートナーロールだけである
+        //    （`memberships` の CHECK 制約と `decideMemberRoleChange` の規律）。
+        assignableRoles: PARTNER_TENANT_ROLES,
+        messages: {
+          section: t('members.section'),
+          readOnlyNote: t('members.readOnlyNote'),
+          empty: t('members.empty'),
+          valueNone: t('members.value.none'),
+
+          columnName: t('members.column.name'),
+          columnEmail: t('members.column.email'),
+          columnRole: t('members.column.role'),
+          columnStatus: t('members.column.status'),
+          columnLastLogin: t('members.column.lastLogin'),
+          columnActions: t('members.column.actions'),
+
+          statusLabels: {
+            ACTIVE: t('members.status.ACTIVE'),
+            REVOKED: t('members.status.REVOKED'),
+          },
+          roleLabels: {
+            OWNER: t(TENANT_ROLE_MESSAGE_KEYS.OWNER),
+            ADMIN: t(TENANT_ROLE_MESSAGE_KEYS.ADMIN),
+            SALES: t(TENANT_ROLE_MESSAGE_KEYS.SALES),
+            PARTNER_ADMIN: t(TENANT_ROLE_MESSAGE_KEYS.PARTNER_ADMIN),
+            PARTNER_SALES: t(TENANT_ROLE_MESSAGE_KEYS.PARTNER_SALES),
+            VIEWER: t(TENANT_ROLE_MESSAGE_KEYS.VIEWER),
+          },
+          roleCapabilities: {
+            OWNER: t(TENANT_ROLE_CAPABILITY_MESSAGE_KEYS.OWNER),
+            ADMIN: t(TENANT_ROLE_CAPABILITY_MESSAGE_KEYS.ADMIN),
+            SALES: t(TENANT_ROLE_CAPABILITY_MESSAGE_KEYS.SALES),
+            PARTNER_ADMIN: t(TENANT_ROLE_CAPABILITY_MESSAGE_KEYS.PARTNER_ADMIN),
+            PARTNER_SALES: t(TENANT_ROLE_CAPABILITY_MESSAGE_KEYS.PARTNER_SALES),
+            VIEWER: t(TENANT_ROLE_CAPABILITY_MESSAGE_KEYS.VIEWER),
+          },
+
+          self: t('members.self'),
+
+          roleChangeLabel: t('members.roleChange.label'),
+          roleChangeSubmit: t('members.roleChange.submit'),
+          roleChangeConfirmTitle: t('members.roleChange.confirmTitle'),
+          roleChangeConfirmBefore: t('members.roleChange.confirmBefore'),
+          roleChangeConfirmAfter: t('members.roleChange.confirmAfter'),
+          roleChangeConfirm: t('members.roleChange.confirm'),
+          roleChangeCancel: t('members.roleChange.cancel'),
+          roleChangeSubmitting: t('members.roleChange.submitting'),
+          roleChangeDone: t('members.roleChange.done'),
+          roleChangeError: t('members.roleChange.error'),
+
+          revokeSubmit: t('members.revoke.submit'),
+          revokeConfirmTitle: t('members.revoke.confirmTitle'),
+          revokeConfirmText: t('members.revoke.confirmText'),
+          revokeConfirm: t('members.revoke.confirm'),
+          revokeCancel: t('members.revoke.cancel'),
+          revokeSubmitting: t('members.revoke.submitting'),
+          revokeDone: t('members.revoke.done'),
+          revokeError: t('members.revoke.error'),
+
+          inviteSection: t('members.invite.section'),
+          inviteEmailLabel: t('members.invite.email.label'),
+          inviteRoleLabel: t('members.invite.role.label'),
+          inviteSubmit: t('members.invite.submit'),
+          inviteSubmitting: t('members.invite.submitting'),
+          inviteQueued: t('members.invite.queued'),
+          inviteHeld: t('members.invite.held'),
+          inviteError: t('members.invite.error'),
+          invitePreNotice: t('members.invite.preNotice'),
+
+          // 🔴 `sandbox` の招待リンク（`F-007 AC-4`）。取引先招待と同一の文言を使う ——
+          //    「1 回限り・再表示できない」という規律は宛先が誰であっても同じである。
+          inviteLinkHeading: t('partnerCompanies.invite.link.heading'),
+          inviteLinkNotice: t('partnerCompanies.invite.link.notice'),
+          inviteLinkOnceOnly: t('partnerCompanies.invite.link.onceOnly'),
+          inviteLinkLabel: t('partnerCompanies.invite.link.label'),
+          inviteLinkCopy: t('partnerCompanies.invite.link.copy'),
+          inviteLinkCopied: t('partnerCompanies.invite.link.copied'),
+          inviteLinkCopyFailed: t('partnerCompanies.invite.link.copyFailed'),
+        },
+      }
+    : null;
+
   return (
     <main className="mx-auto max-w-5xl px-4 py-8">
       <p className="mb-1 text-sm text-slate-500">
@@ -63,6 +161,7 @@ export default async function PartnerCompaniesPage() {
         //    ここで `APP_ENV` を評価しない。操作前の予告にだけ使い、リンクを出すか否かは
         //    `#14` の応答（`disclosure`）が決める。
         sandboxLinkHandover={inviteUrlRuntime().kind === 'SANDBOX_LINK_HANDOVER'}
+        memberPanel={memberPanel}
         messages={{
           partnerScopeNotice: t('partnerCompanies.partnerScopeNotice'),
           readOnlyNote: t('partnerCompanies.readOnlyNote'),

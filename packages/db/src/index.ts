@@ -251,10 +251,15 @@ export type {
   PasswordResetIssueInput,
 } from './row-context.js';
 export {
+  TransactionSerializationError,
   withHostTenant,
   withPartnerScope,
   withSystemScope,
   withTenant,
+} from './with-tenant.js';
+export type {
+  TenantTransactionIsolationLevel,
+  TenantTransactionOptions,
 } from './with-tenant.js';
 // 🔴 T-04-02: メール送信の単一経路の宛先分類（docs/05 §8.2）。**呼び出し側に自己申告させない。**
 //    `platformRecipientClass`（分類外）はここから export しない（`@ses/db/platform` だけが出す）。

@@ -16,9 +16,10 @@ import type {
   PartnerCompanyListView,
   PartnerCompanyView,
 } from '../../../../lib/partner-companies/service';
+import { SandboxInviteLinkPanel } from './invite-link-panel';
 import {
   PartnerCompaniesScreen,
-  SandboxInviteLinkPanel,
+  type MemberPanelProps,
   type PartnerCompaniesScreenMessages,
 } from './partner-companies-screen';
 
@@ -119,6 +120,8 @@ function render(
     canManage?: boolean;
     invitationBlocked?: boolean;
     sandboxLinkHandover?: boolean;
+    /** 🔴 T-04-09。既定 `null` = アカウント管理の当事者ではない（`#83` を呼べない）。 */
+    memberPanel?: MemberPanelProps | null;
   } = {},
 ): string {
   return renderToStaticMarkup(
@@ -127,6 +130,7 @@ function render(
       canManage: options.canManage ?? true,
       invitationBlocked: options.invitationBlocked ?? false,
       sandboxLinkHandover: options.sandboxLinkHandover ?? false,
+      memberPanel: options.memberPanel ?? null,
       messages,
     }),
   );

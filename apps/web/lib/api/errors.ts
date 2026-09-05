@@ -16,6 +16,7 @@ import {
   AuditLogWriteError,
   HostOnlyContextError,
   PlatformRoleNotAllowedError,
+  TransactionSerializationError,
   TwoFactorRequiredError as DbTwoFactorRequiredError,
 } from '@ses/db';
 import type {
@@ -254,6 +255,66 @@ export class PartnerCompanySuspendedError extends ConflictError {
 }
 
 /**
+ * 🔴 同時に実行された操作と競合した（409）。T-04-09。
+ *
+ * 出所は 2 つあり、いずれも**同じ事実**（＝ 自分が読んだ状態が、書く前に他者に書き換えられた）を指す:
+ *   ① 条件付き UPDATE（CAS）が 0 件だった —— 読んだ値を `where` に含めているため、
+ *      値が変わっていれば 0 件になる（`lib/members/service.ts`）。
+ *   ② `Serializable` の直列化失敗（`TransactionSerializationError`。PostgreSQL の `40001`）。
+ *
+ * 🔴 **500 に潰さない。** 利用者から見れば「画面を更新してやり直せば済む」ことであり、
+ *    障害率の指標に混ぜると監視が誤検知する（`CLAUDE.md` §4.2「失敗と保留を混同しない」）。
+ * 🔴 **サーバ側で自動再試行しない。** 判定（例: 最後の `OWNER` か）をやり直さずに書き直すと、
+ *    守ろうとしている不変条件がその場で破れる。
+ */
+export class ConcurrentUpdateError extends ConflictError {
+  override readonly code = 'CONCURRENT_UPDATE';
+  override readonly userMessageKey: MessageKey = 'error.concurrentUpdate';
+  override readonly retryable = true;
+
+  constructor() {
+    super('同時に実行された操作と競合しました。');
+    this.name = 'ConcurrentUpdateError';
+  }
+}
+
+/**
+ * 🔴 無効化済みの所属に対してロール変更を要求した（409）。T-04-09。
+ *
+ * 無効化からの復帰は招待の再発行（#14）であり、ロールの付け直しではない。
+ * ⚠️ **無効化そのものは冪等**である（すでに無効化済みなら 204。#13 の停止・再開と同じ規律）。
+ */
+export class MemberRevokedError extends ConflictError {
+  override readonly code = 'MEMBER_REVOKED';
+  override readonly userMessageKey: MessageKey = 'error.member.revoked';
+
+  constructor() {
+    super('この所属はすでに無効化されています。');
+    this.name = 'MemberRevokedError';
+  }
+}
+
+/**
+ * 🔴 対象のアカウントが実行者の所属の外にある（`F-002 AC-4`。docs/05 §6.7 #84 / #85）。403。T-04-09。
+ *
+ * 🔴 404 にしない理由: このコードが返るのは**ホストの `OWNER` / `ADMIN` がパートナー配下の
+ *    `Membership` を操作しようとした**ときだけである。ホストはその行を一覧（#83）で見られる立場
+ *    （RLS の C5）なので、存在を隠す意味が無く、「取引先自身の `PARTNER_ADMIN` が行う操作である」
+ *    という次の行動を伝えるほうが価値が高い。
+ * 🔴 逆向き（`PARTNER_ADMIN` → 他社 / ホスト）は**行が 1 つも見えない**ため、この型に到達する前に
+ *    404 になる（`F-002 AC-4`「他社および自社（ホスト）のアカウントは一覧にも現れない」）。
+ */
+export class MemberOutOfScopeError extends ForbiddenError {
+  override readonly code = 'MEMBER_OUT_OF_SCOPE';
+  override readonly userMessageKey: MessageKey = 'error.member.outOfScope';
+
+  constructor() {
+    super();
+    this.name = 'MemberOutOfScopeError';
+  }
+}
+
+/**
  * 🔴 招待を受諾できない（docs/05 §6.3 #7。`acceptedAt` の CAS が 0 件）。
  *
  * 受諾済み / 取消済み / 期限切れ / トークン不一致 / 同時受諾に負けた、を**区別しない**。
@@ -403,6 +464,54 @@ export class InvitationEmailAlreadyMemberError extends UnprocessableError {
 }
 
 /**
+ * 🔴 自分自身の所属を操作しようとした（422）。T-04-09。
+ *
+ * 自己昇格（`ADMIN` → `OWNER`）と自己ロックアウト（自分を無効化して復旧できなくする）の
+ * 両方を、同じ 1 つの規則で塞ぐ（`lib/members/policy.ts`）。
+ */
+export class MemberSelfManagementError extends UnprocessableError {
+  override readonly code = 'MEMBER_SELF_MANAGEMENT';
+  override readonly userMessageKey: MessageKey = 'error.member.selfManagement';
+
+  constructor() {
+    super('自分自身のロール変更・無効化はできません。');
+    this.name = 'MemberSelfManagementError';
+  }
+}
+
+/**
+ * 🔴 付与しようとしたロールが対象の所属と噛み合わない（422）。T-04-09。
+ *
+ * `memberships` の CHECK 制約（`(role IN (PARTNER_*)) = (partner_company_id IS NOT NULL)`）と
+ * 同じ規律である。DB でも弾かれるが、**理由が伝わる形で先に断る**ために型を分ける。
+ */
+export class MemberRoleNotAssignableError extends UnprocessableError {
+  override readonly code = 'MEMBER_ROLE_NOT_ASSIGNABLE';
+  override readonly userMessageKey: MessageKey = 'error.member.roleNotAssignable';
+
+  constructor() {
+    super('この所属に付与できるロールではありません。');
+    this.name = 'MemberRoleNotAssignableError';
+  }
+}
+
+/**
+ * 🔴 最後の有効な `OWNER` を降格・無効化しようとした（422）。T-04-09。
+ *
+ * `OWNER` が 1 人も居ないテナントは契約者・支払者が不在であり（`CLAUDE.md` §10.1）、
+ * テナント側の操作では復旧できない（運営者の関与が要る）。**不可逆な事故を作らない**ために止める。
+ */
+export class MemberLastOwnerError extends UnprocessableError {
+  override readonly code = 'MEMBER_LAST_OWNER';
+  override readonly userMessageKey: MessageKey = 'error.member.lastOwner';
+
+  constructor() {
+    super('最後の OWNER を降格・無効化することはできません。');
+    this.name = 'MemberLastOwnerError';
+  }
+}
+
+/**
  * 🔴 パスワード再設定トークンが無効（docs/05 §6.3 #5b「トークン列の CAS で 1 回限り、
  *    期限超過は 400」）。
  *
@@ -484,6 +593,9 @@ export function toAppError(error: unknown): AppError {
   // 🔴 T-03-10: `PLATFORM_OWNER` 専用操作を `PLATFORM_SUPPORT` が要求した ＝ **403**
   //    （docs/02 章 5.4 / `BR-44`）。404 に畳まない（運営者は対象テナントを一覧で見られる立場）。
   if (error instanceof PlatformRoleNotAllowedError) return new PlatformOwnerRequiredError();
+  // 🔴 T-04-09: 直列化失敗（PostgreSQL の `40001`。Prisma の `P2034`）は **409**。
+  //    500 に潰すと「やり直せば済むこと」が障害として記録され、監視が誤検知する。
+  if (error instanceof TransactionSerializationError) return new ConcurrentUpdateError();
   // 🔴 ホスト専用の経路にパートナー文脈が入った ＝ **404**（403 と区別しない。docs/05 §4.8 /
   //    packages/db の `HostOnlyContextError` のコメント）。403 にすると「その機能は存在するが
   //    あなたには使えない」ことが伝わり、ホスト側の業務の存在を示唆する。

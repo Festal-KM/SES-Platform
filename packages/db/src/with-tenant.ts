@@ -69,6 +69,51 @@ type TenantDb = Omit<
 type HostTenantDb = TenantDb & Pick<TenantTransactionClient, CounterpartyDelegate>;
 
 /**
+ * 🔴 トランザクションの分離レベル（T-04-09。docs/05 §6.7 #84 / #85）。
+ *
+ * **既定（省略時）は PostgreSQL の既定である `Read Committed`** であり、ほぼすべての経路は
+ * それでよい（RLS と第 2 防御は分離レベルに依存しない）。`'Serializable'` を要求するのは
+ * **「読んだ集合に対する判定の結果で書く」経路**だけである（write skew。下記）。
+ *
+ * 🔴 なぜ列挙で持つか: 呼び出し側が任意の文字列を渡せる形にすると、`Read Uncommitted` の
+ *    ような**弱める**指定が書けてしまう。強める方向の 1 値しか置かない。
+ */
+export type TenantTransactionIsolationLevel = 'Serializable';
+
+export type TenantTransactionOptions = {
+  readonly isolationLevel?: TenantTransactionIsolationLevel;
+};
+
+/**
+ * 🔴 直列化に失敗した（PostgreSQL の `40001` / `40P01`。Prisma の `P2034`）。T-04-09。
+ *
+ * **これは障害ではなく「同時に実行された」ことの通知である。** API 境界は 409 に写像し、
+ * 利用者に再実行を促す（`apps/web/lib/api/errors.ts` の `ConcurrentUpdateError`）。
+ * 🔴 **自動で再試行しない。** 本エラーが出る経路は「読んだ結果で書く」判定を含んでおり、
+ *    黙って再実行すると**判定をやり直したのか、同じ判定で書き直したのかが記録から読めない**
+ *    （`CLAUDE.md` §4.2「失敗と保留を混同しない」と同じ考え方）。
+ */
+export class TransactionSerializationError extends Error {
+  constructor(cause?: unknown) {
+    super(
+      '同時に実行された操作と競合したため、トランザクションを直列化できませんでした（docs/05 §6.7）。',
+    );
+    this.name = 'TransactionSerializationError';
+    this.cause = cause;
+  }
+}
+
+/** Prisma が直列化失敗・デッドロックに割り当てるコード（`P2034`）。 */
+function isSerializationFailure(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { readonly code?: unknown }).code === 'P2034'
+  );
+}
+
+/**
  * 🔴 `withTenant` / `withHostTenant` / `loadTenantMembership`（`auth-context.ts`）の共通実装。
  *    トランザクションを開き、その先頭で `SET LOCAL` 相当（`set_config(..., true)`）を発行する。
  *    複数の関数で手順を書き分けない（どれか 1 つだけ `SET LOCAL` を忘れる経路を作らないため）。
@@ -84,15 +129,28 @@ type HostTenantDb = TenantDb & Pick<TenantTransactionClient, CounterpartyDelegat
 export async function runInTenantTransaction<T>(
   scope: TenantScopeSettings,
   fn: (tx: TenantTransactionClient) => Promise<T>,
+  options?: TenantTransactionOptions,
 ): Promise<T> {
   const scoped = extendWithTenantScope(getBaseClient(), {
     tenantId: scope.tenantId,
     partnerCompanyId: scope.partnerCompanyId,
   });
-  return scoped.$transaction(async (tx) => {
-    await tx.$queryRaw(tenantScopeSettingsSql(scope));
-    return fn(tx);
-  });
+  try {
+    return await scoped.$transaction(
+      async (tx) => {
+        await tx.$queryRaw(tenantScopeSettingsSql(scope));
+        return fn(tx);
+      },
+      options?.isolationLevel === undefined ? undefined : { isolationLevel: options.isolationLevel },
+    );
+  } catch (error) {
+    // 🔴 直列化失敗を専用の型にする（T-04-09）。**握り潰さず、500 にも潰さない。**
+    //    ここは主平面のテナントトランザクションが必ず通る 1 箇所であり、写像を各所に散らさない。
+    //    🔴 分離レベルの指定が無い経路でもデッドロックで `P2034` は起こりうるため、
+    //       条件を `isolationLevel` の有無で絞らない（絞ると「たまに 500 になる」経路が残る）。
+    if (isSerializationFailure(error)) throw new TransactionSerializationError(error);
+    throw error;
+  }
 }
 
 /** `ctx`（認証済み文脈）から `SET LOCAL` に渡す 3 つの分離キーを取り出す。 */
@@ -109,12 +167,22 @@ function scopeOf(ctx: AuthenticatedTenantCtx): TenantScopeSettings {
  *
  * 🔴 `ctx` は `resolveTenantCtx` でしか作れない = 分離キーがリクエスト入力から来る経路が無い。
  * 🔴 必ず `$transaction` を開き、その先頭で `SET LOCAL`（= `set_config(..., true)`）を発行する。
+ *
+ * 🔴 `options.isolationLevel = 'Serializable'`（T-04-09）は、**「読んだ集合に対する判定の結果で
+ *    書く」経路にだけ**指定する。典型は「最後の 1 人の `OWNER` を降格・無効化させない」
+ *    （docs/05 §6.7 #84 / #85）で、これは write skew の教科書例そのものである ——
+ *    `COUNT` → 判定 → `UPDATE` を `Read Committed` で行うと、**2 つの要求が互いの書き込みを
+ *    見ないまま両方とも「まだ 2 人居る」と判断して通過し、`OWNER` が 0 人になる**。
+ *    PostgreSQL の SSI（`Serializable`）は述語の読みと書きの依存を検出して片方を
+ *    `40001` で落とすため、この 1 行で不変条件が守られる。
+ *    🔴 失敗は `TransactionSerializationError` として上がる（API 境界が 409 に写像）。
  */
 export async function withTenant<T>(
   ctx: AuthenticatedTenantCtx,
   fn: (db: TenantDb) => Promise<T>,
+  options?: TenantTransactionOptions,
 ): Promise<T> {
-  return runInTenantTransaction(scopeOf(ctx), (tx) => fn(tx));
+  return runInTenantTransaction(scopeOf(ctx), (tx) => fn(tx), options);
 }
 
 /**

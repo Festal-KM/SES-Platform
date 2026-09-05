@@ -8,13 +8,12 @@
 import { describe, expect, it } from 'vitest';
 import { TENANT_ROLES, type TenantRole } from '@ses/db';
 import {
-  decideInvitation,
   HOST_TENANT_ROLES,
-  INVITATION_ISSUER_ROLES,
   isHostRole,
   isPartnerRole,
   PARTNER_TENANT_ROLES,
-} from './policy';
+} from '../tenants/roles';
+import { decideInvitation, INVITATION_ISSUER_ROLES } from './policy';
 
 const PARTNER_1 = '01930000-0000-7000-8000-0000000000c1';
 const PARTNER_2 = '01930000-0000-7000-8000-0000000000c2';

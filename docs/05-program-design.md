@@ -1349,6 +1349,10 @@ export function resolveTenantCtx(session: MainSession, req: RequestMeta): Promis
 export function withTenant<T>(
   ctx: AuthenticatedTenantCtx,
   fn: (db: TenantDb) => Promise<T>,
+  // 🔴 T-04-09。既定（省略）は Read Committed。指定できる値は 'Serializable' の 1 つだけで、
+  //    分離レベルを**弱める**指定は型として書けない。用途は §6.7 #84 / #85 を参照
+  //    （「読んだ集合に対する判定の結果で書く」経路 = write skew を起こしうる経路だけ）。
+  options?: { isolationLevel?: 'Serializable' },
 ): Promise<T>;
 ```
 **実装の規約**
@@ -2132,6 +2136,24 @@ type SubmitAccepted = { attemptSeq: number; jobId: string; state: 'SUBMITTING' }
 | 77 | `POST /api/data-exports` | `F-064 AC-5` / `F-052` | `{ kind, scope }` | `{ id, status }` | `OWNER`/`ADMIN`。🔴 **運営者は 403**（`F-064 AC-7`） |
 | 78 | `GET /api/data-exports/{id}/download-url` | 同上 | — | `{ url, expiresIn }` | 同上 |
 | 79 | `GET /api/sandbox-status` | `F-054` / `S-043` | — | `{ expiresAt, remainingDays, checklist: { sendingDomainVerified, ... } }` | 🔴 `APP_ENV='sandbox'` 以外では **404** |
+| 83 | 🔴 `GET /api/members` | `F-002 AC-4` / `S-014`（配下アカウント）/ `S-035` | — | `{ items: MemberView[], total }`（`MemberView` = `{ id（= Membership.id）, userId, displayName, email, role, partnerCompanyId, partnerCompanyName, status:'ACTIVE'\|'REVOKED', joinedAt, revokedAt, lastLoginAt }`） | `OWNER` / `ADMIN` / `PARTNER_ADMIN`（`F-002` 関連ロール）。🔴 **母集団は `memberships` の RLS（C5）が決める。アプリ側に絞り込みを書かない** —— ホストには自社社員 + 各取引先の配下が、`PARTNER_ADMIN` には**自社配下だけ**が返る（`F-002 AC-4`「他社および自社（ホスト）のアカウントは一覧にも現れない」）。ページングを持たない（#11 と同じ） |
+| 84 | 🔴 `PUT /api/members/{id}/role` | `F-002 AC-3` / `AC-4` | `{ role }`（🔴 **所属を受け取らない**） | `204` | 同上 + `requireExecutable` + `requireNotViewer`。監査 `membership.role_change` |
+| 85 | 🔴 `POST /api/members/{id}/revoke` | `F-002 AC-3` / `AC-4` | —（body 無し） | `204` | 同上。監査 `membership.revoke` |
+
+🔴 **#83 〜 #85 の規律**（T-04-09）:
+
+- 🔴 **`users` を一覧の母集団にしない。** `users` の `SELECT` は **C8 DIRECTORY** であり、パートナー文脈からも**ホスト所属の利用者は見える**（チャットの送信者名などに要るため。§4.4）。利用者から数え上げると `F-002 AC-4` をその場で破る。母集団は `memberships`（C5）で確定させ、氏名・メールは**そこで確定した ID の分だけ**引く。
+- 🔴 **射程は「実行者と同じ所属」だけ**である（`decideMemberRoleChange` / `decideMemberRevoke`。`apps/web/lib/members/policy.ts`）。これは **`memberships` の `UPDATE` ポリシー（C3。`partner_company_id IS NOT DISTINCT FROM app_partner_id()`）と同じ述語**であり、①`PARTNER_ADMIN` → 他社 ②`PARTNER_ADMIN` → ホスト ③**ホスト → 取引先配下**の 3 方向をまとめて閉じる。③はホストからは行が見えるため **403（`MEMBER_OUT_OF_SCOPE`）**、①②は行が見えないため **404**（§4.8）。
+- 🔴 **所属（`Membership.partnerCompanyId`）を変更する経路を作らない。** 所属の変更は「他社のアカウントを自社に移す」ことと同義であり、第二境界をその場で破る。所属を変えるには無効化して招待し直す。
+- 🔴 **付与できるロールは対象の所属の側に閉じる**（ホスト所属にはホストロール、取引先配下にはパートナーロール）。`memberships` の CHECK 制約（§3.3）と同じ規律であり、DB でも弾かれるが**理由が伝わる形で先に断る**（422 `MEMBER_ROLE_NOT_ASSIGNABLE`）。
+- 🔴 **自分自身の `Membership` は対象にできない**（422 `MEMBER_SELF_MANAGEMENT`）。自己昇格（`ADMIN` → `OWNER`）と自己ロックアウトを同じ 1 つの規則で塞ぐ。
+- 🔴 **最後の有効な `OWNER` を降格・無効化できない**（422 `MEMBER_LAST_OWNER`）。`OWNER` が 0 人のテナントは契約者・支払者が不在であり（`CLAUDE.md` §10.1）、テナント側の操作では復旧できない。⚠️ **「最後の `PARTNER_ADMIN`」には同じ規則を置かない** —— ホストの `OWNER` / `ADMIN` が #14 で招き直せるため不可逆ではない。
+- 🔴 **この不変条件は並行実行でも守る。** `COUNT` → 判定 → `UPDATE` は `Read Committed` では write skew を起こし（2 つの要求が互いの書き込みを見ないまま「まだ 2 人居る」と判断して両方通過し、`OWNER` が 0 人になる）、**実測で再現する**。したがって **#84 / #85 のトランザクションは `Serializable` で開く**（`withTenant(ctx, fn, { isolationLevel: 'Serializable' })`。§4.3）。行ロック（`SELECT … FOR UPDATE`）を採らなかったのは、①`TenantDb` から生 SQL の入口を除去した規約（§4.3 規約 3）に穴を開けることになる ②守りたいのは特定の行ではなく**述語**（有効な `OWNER` の集合）である の 2 点による。🔴 **直列化失敗（PostgreSQL `40001` / Prisma `P2034`）は `TransactionSerializationError` として上がり、API 境界が 409 `CONCURRENT_UPDATE` に写像する**（500 に潰さない。障害率の指標を汚さない）。**サーバ側で自動再試行しない**（判定をやり直さずに書き直すと不変条件がその場で破れる）。
+- 🔴 **書き込みは条件付き UPDATE（CAS）で行う。** #84 は `WHERE id = $1 AND role = <読んだロール>`（`AuditLog` の `beforeRole` が**実際に置き換えたロール**と常に一致する。`F-002 AC-3`）、#85 は `WHERE id = $1 AND revoked_at IS NULL`（並行する二重の無効化で `revoked_at` が上書きされず、監査ログも 1 件に保たれる）。0 件のときは**再読して区別する** —— #84 は行が消えていれば 404 / 値が変わっていれば 409、#85 は行が消えていれば 404 / すでに無効化済みなら冪等な no-op（204・監査なし）。
+- 🔴 **無効化は `Membership.revokedAt` と `User.disabledAt` の両方を同一トランザクションで立てる。** 片方だけでは無効化にならない（`revokedAt` のみだと**サインインの資格情報照合が通り続け**、`disabledAt` のみだと既存セッションが生き続ける）。**データは 1 行も消さない**（`docs/04` §S-035）。**冪等**であり、すでに無効化済みなら時刻を上書きせず `204`（#13 と同じ）。**復帰の API を作らない**（復帰は #14 の招待の再発行）。
+- 🔴 **監査は業務トランザクションの内側で書く**（`withApiRoute` の `audit` オプションではない）。`F-002 AC-3` が「**変更前後の**ロール」を要求しており、変更前のロールはハンドラの前（行を読む前）には分からない。`action` は §16.1 の `membership.role_change` / `membership.revoke` をそのまま使う（`*.update` に畳むと `S-041` の**「権限変更」カテゴリから漏れる**）。**変更が起きなかった要求（同じロールへの変更・二重の無効化・拒否された要求）は記録しない。**
+- ⚠️ **`MemberView` に 2FA の設定状況を持たない。** `docs/04` §S-035 のメンバー一覧は「2FA の設定状況」を列に挙げているが、`two_factor_credentials` は **C7 SELF**（§4.4）であり**他人の設定状況は 1 行も読めない**。`false` で埋めると「未設定に見えるが実は設定済み」という嘘の列になるため、**列ごと持たない**。`S-035`（ホストのメンバー管理画面）を作る時点で、§4.5 の `app_engineer_is_shared()` と同型の「存在の真偽だけを返す `SECURITY DEFINER` 関数」を設計する（**申し送り**）。
+- ⚠️ **「パートナー所属の `VIEWER`」は現在のスキーマでは作れない。** `memberships` の CHECK（`(role IN ('PARTNER_ADMIN','PARTNER_SALES')) = (partner_company_id IS NOT NULL)`。§3.3）が禁じている。`docs/04` §S-044 / §S-045 と §6.6 #80 はパートナー所属 `VIEWER` を前提に書かれており、**Phase 2（経路 5）の着手前に、CHECK の緩和（+ `HOST_TENANT_ROLES` / `PARTNER_TENANT_ROLES` の二分の見直し）か記述の訂正かを決める必要がある**（**申し送り**。T-04-09 は既存の CHECK に従い、`PARTNER_ADMIN` が付与できるロールを `PARTNER_ADMIN` / `PARTNER_SALES` の 2 つに限った）。
 
 ### 6.8 主平面 API の「作らないもの」（明示）
 
@@ -2146,6 +2168,7 @@ type SubmitAccepted = { attemptSeq: number; jobId: string; state: 'SUBMITTING' }
 | `GET /api/proposals/{id}/duplicates`（パートナー向け） | 🔴 `BR-08`。型ごと存在しない |
 | `/api/partner/**` の書込ハンドラ / `GET /api/partner/assignments/{id}`（詳細） / `GET /api/partner/extension-reviews/**` | 🔴 `BR-68` / `BR-67` / `docs/04` §11-9。**経路 5 は一覧 + 右パネルで完結し、詳細エンドポイント（項目を足す置き場所）を作らない。`ExtensionReview` に到達する API はパートナー向けに存在しない** |
 | `GET /api/usage` に金額フィールドを足すこと / `gate-inspector` の残量 | 🔴 `F-027 AC-6` / `AC-7` / `BR-24`。金額は `A-004` / `A-011` の管理平面 API に閉じる |
+| 🔴 `POST /api/members/{id}/restore`（無効化の取り消し）/ `PATCH /api/members/{id}` の所属変更 | 🔴 T-04-09。前者は「無効化した相手のパスワードが生き返る」経路であり、復帰は #14 の招待の再発行に限る。後者は「他社のアカウントを自社に移す」ことと同義で、第二境界（`CLAUDE.md` §3.1）をその場で破る |
 
 ### 6.9 管理平面 API（`/api/admin/**`）
 

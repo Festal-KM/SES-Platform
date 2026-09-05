@@ -344,6 +344,22 @@ const ja = {
   //    利用者は「アカウントを失った」と受け取る（`F-007 AC-2`「既存データは削除されない」）。
   'error.partnerCompany.suspended':
     'この取引先は現在停止されています。閲覧はできますが、提案の作成・送信やチャットの投稿は実行できません。お取引先の担当者にお問い合わせください。',
+  // 🔴 T-04-09: 同時実行との競合（409）。**障害ではない**ため「失敗しました」と書かず、
+  //    最新の状態を見てからやり直す、という次の行動を示す。
+  'error.concurrentUpdate':
+    'ほかの操作と同時に実行されたため、この操作は反映されませんでした。画面を更新して最新の状態をご確認のうえ、もう一度お試しください。',
+  // 🔴 T-04-09: アカウント管理（`F-002 AC-3` / `AC-4`。docs/05 §6.7 #84 / #85）。
+  //    いずれも「拒否されたこと」だけでなく**次に取れる行動**を書く（行き止まりにしない）。
+  'error.member.outOfScope':
+    'このアカウントは取引先自身が管理します。ロールの変更・無効化は、その取引先の管理者にご依頼ください。',
+  'error.member.selfManagement':
+    'ご自身のロール変更・無効化はできません。ほかの管理者にご依頼ください。',
+  'error.member.roleNotAssignable':
+    'このアカウントには付与できないロールです。所属（自社 / 取引先）に応じたロールをお選びください。',
+  'error.member.lastOwner':
+    '最後の OWNER を変更・無効化することはできません。先にほかのメンバーへ OWNER を付与してください。',
+  'error.member.revoked':
+    'このアカウントはすでに無効化されています。再開する場合は、あらためて招待を発行してください。',
   // 🔴 docs/05 §15.1 `SendingDomainNotVerifiedError`（422 / `BR-51` / `BR-71` / `F-022 AC-7`）。
   //    🔴 **「壊れている」ではなく「設定が済んでいない」として書く**（`docs/04` 申し送り 8）。
   //    次にやること（`S-036` で DNS レコードを設定する）が読み取れる文言にする。設定すべき
@@ -624,6 +640,79 @@ const ja = {
   'partnerCompanies.resume.submit': 'この取引先の停止を解除する',
   'partnerCompanies.resume.submitting': '解除しています…',
   'partnerCompanies.suspension.error': '実行できませんでした。もう一度お試しください。',
+
+  // --- S-014 セクション 2「配下アカウント」/ アカウント管理（docs/04 §S-014 / §S-035 / F-002）。T-04-09 ---
+  'members.section': '配下アカウント',
+  // 🔴 ホスト（`OWNER` / `ADMIN`）向け。書き換えられないのは権限不足ではなく**役割分担**である。
+  'members.readOnlyNote':
+    'このお取引先のアカウントは、お取引先の管理者が管理します。ここでは状況の確認のみ行えます。',
+  'members.empty': 'このお取引先のアカウントはまだありません。',
+  'members.value.none': '—',
+
+  'members.column.name': '氏名',
+  'members.column.email': 'メールアドレス',
+  'members.column.role': 'ロール',
+  'members.column.status': '状態',
+  'members.column.lastLogin': '最終ログイン',
+  'members.column.actions': '操作',
+
+  'members.status.ACTIVE': '有効',
+  'members.status.REVOKED': '無効',
+  'members.self': 'ご自身',
+
+  // ロールの表示名（`CLAUDE.md` §10.1 の呼称に合わせる）。
+  'members.role.OWNER': 'オーナー',
+  'members.role.ADMIN': '管理者',
+  'members.role.SALES': '営業',
+  'members.role.PARTNER_ADMIN': '取引先管理者',
+  'members.role.PARTNER_SALES': '取引先営業',
+  'members.role.VIEWER': '閲覧のみ',
+
+  // 🔴 ロール変更の確認ステップに出す「できること」（`docs/04` §S-035）。
+  //    内容は `CLAUDE.md` §10.1 のロール階層そのもの。
+  'members.roleCapability.OWNER': '組織の全権（契約・支払い・すべての設定の変更）',
+  'members.roleCapability.ADMIN': 'メンバー管理・取引先の招待・公開範囲と設定の変更',
+  'members.roleCapability.SALES': '案件・エンジニア・提案の作成と編集、承認、チャット',
+  'members.roleCapability.PARTNER_ADMIN': '自社の営業アカウントと登録エンジニアの管理',
+  'members.roleCapability.PARTNER_SALES':
+    '自社エンジニアの更新、公開された案件の閲覧、提案、チャット',
+  'members.roleCapability.VIEWER': '閲覧のみ（承認・送信・ダウンロードは行えません）',
+
+  'members.roleChange.label': 'ロールを変更',
+  'members.roleChange.submit': 'ロールを変更する',
+  'members.roleChange.confirmTitle': 'ロール変更の確認',
+  'members.roleChange.confirmBefore': '変更前',
+  'members.roleChange.confirmAfter': '変更後',
+  'members.roleChange.confirm': 'この内容で変更する',
+  'members.roleChange.cancel': 'キャンセル',
+  'members.roleChange.submitting': '変更しています…',
+  'members.roleChange.done': 'ロールを変更しました。',
+  'members.roleChange.error': '変更できませんでした。画面を更新してご確認ください。',
+
+  'members.revoke.submit': '無効化',
+  'members.revoke.confirmTitle': '無効化の確認',
+  // 🔴 「何が起きて、何が起きないか」を両方書く（`docs/04` §S-035「データは削除されない」）。
+  'members.revoke.confirmText':
+    'このアカウントはサインインできなくなり、進行中の操作も行えなくなります。登録済みのエンジニア・提案・チャットは削除されません。',
+  'members.revoke.confirm': '無効化する',
+  'members.revoke.cancel': 'キャンセル',
+  'members.revoke.submitting': '無効化しています…',
+  'members.revoke.done': 'アカウントを無効化しました。',
+  'members.revoke.error': '無効化できませんでした。画面を更新してご確認ください。',
+
+  'members.invite.section': '自社アカウントの招待',
+  'members.invite.email.label': 'メールアドレス',
+  'members.invite.role.label': 'ロール',
+  'members.invite.submit': '招待を送る',
+  'members.invite.submitting': '送信しています…',
+  // 🔴 「送信しました」と書かない（`docs/04` §S-014「非同期処理の表現」）。
+  'members.invite.queued': '招待の送信を受け付けました。',
+  // 🔴 保留は障害ではない（`BR-51` / `F-007 AC-5`）。招待そのものは作成されている。
+  'members.invite.held':
+    '招待を作成しました。送信元ドメインの検証が完了していないため、送信は保留しています（検証の完了後に自動で送信されます）。',
+  'members.invite.error': '招待できませんでした。入力内容をご確認ください。',
+  'members.invite.preNotice':
+    'サンドボックス環境では招待メールが送信されません。発行後に表示されるリンクをお渡しください。',
 } as const;
 
 /** 🔴 文言キーの単一の出所。存在しないキーはコンパイルエラーになる。 */

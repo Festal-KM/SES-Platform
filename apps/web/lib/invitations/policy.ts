@@ -14,26 +14,11 @@
 //    - 実行者（actor）の所属は**認証コンテキスト**からしか来ない。
 //    - `PARTNER_ADMIN` が招く相手の所属は「実行者と同じ会社」であり、**入力で選ばせない**。
 //      判定はそれを `SAME_AS_ACTOR` として表現し、呼び出し側が ctx の値を入れる。
+// 🔴 T-04-09: ロールの分類（ホスト / パートナー）は `lib/tenants/roles.ts` に移した。
+//    招待とアカウント管理（ロール変更・無効化）が同じ分類を必要とするため、
+//    どちらか一方のモジュールに置くと他方が自前の判定を持つことになる。
 import type { TenantRole } from '@ses/db';
-
-/** ホスト（契約 SES 企業）側のロール。`Membership.partnerCompanyId` は必ず null。 */
-export const HOST_TENANT_ROLES = ['OWNER', 'ADMIN', 'SALES', 'VIEWER'] as const satisfies
-  readonly TenantRole[];
-
-/** 取引先側のロール。`Membership.partnerCompanyId` は必ず非 null（DB の CHECK 制約と対）。 */
-export const PARTNER_TENANT_ROLES = ['PARTNER_ADMIN', 'PARTNER_SALES'] as const satisfies
-  readonly TenantRole[];
-
-export type HostTenantRole = (typeof HOST_TENANT_ROLES)[number];
-export type PartnerTenantRole = (typeof PARTNER_TENANT_ROLES)[number];
-
-export function isPartnerRole(role: TenantRole): role is PartnerTenantRole {
-  return (PARTNER_TENANT_ROLES as readonly TenantRole[]).includes(role);
-}
-
-export function isHostRole(role: TenantRole): role is HostTenantRole {
-  return (HOST_TENANT_ROLES as readonly TenantRole[]).includes(role);
-}
+import { isPartnerRole } from '../tenants/roles';
 
 /**
  * 🔴 招待を発行**しうる**ロール（docs/05 §6.4 #14 の「認可」欄）。
