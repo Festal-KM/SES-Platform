@@ -186,6 +186,9 @@ describe('🔴 F-002: 招待の発行（docs/05 §6.4 #14）', () => {
     const job = mail.jobsOf('INVITATION')[0];
     expect(job?.targetId).toBe(result.id);
     expect(job?.tenantId).toBe(TENANT_1.tenantId);
+    // 🔴 T-04-02: 宛先分類は `resolveRecipientClass` が招待行から機械的に導く（docs/05 §8.2）。
+    //    ホスト所属の招待なので分類 1。呼び出し側は分類を渡していない。
+    expect(job?.recipientClass).toBe('HOST_MEMBER');
     expect(row?.tokenHash).toBe(hashToken(job?.token ?? ''));
     // 🔴 DB に平文が残っていない。
     expect(row?.tokenHash).not.toBe(job?.token);
@@ -621,10 +624,21 @@ describe('🔴 F-003: パスワード再設定（docs/05 §6.3 #5 / #5b）', () 
 
     const job = mail.jobsOf('PASSWORD_RESET')[0];
     expect(job?.targetId).toBe(TENANT_1.hostUserId);
+    // 🔴 T-04-02: 宛先分類は `Membership` から機械的に導かれる（docs/05 §8.2）。
+    expect(job?.recipientClass).toBe('HOST_MEMBER');
     const user = await admin.user.findFirst({ where: { id: TENANT_1.hostUserId } });
     expect(user?.passwordResetTokenHash).toBe(hashToken(job?.token ?? ''));
     expect(user?.passwordResetTokenHash).not.toBe(job?.token);
     expect(user?.passwordResetExpiresAt?.getTime()).toBe(NOW.getTime() + PASSWORD_RESET_TTL_MS);
+  });
+
+  it('🔴 T-04-02: パートナー所属の利用者は分類 2 として導かれる（実送信側に落ちない）', async () => {
+    // 🔴 判定順（②パートナー所属 → ③テナント所属）が実 DB + RLS の下でも保たれること。
+    //    ここが逆転すると `sandbox` から実在の取引先企業の担当者へメールが飛ぶ
+    //    （docs/02 章 7.6 NFR-ENV-1 / Issue #10）。
+    await requestPasswordReset('partner-t1-p1@seed-isolation.test', META, NOW);
+    expect(mail.callCount()).toBe(1);
+    expect(mail.jobsOf('PASSWORD_RESET')[0]?.recipientClass).toBe('PARTNER_MEMBER');
   });
 
   it('🔴 AC-3: 申し込みが監査ログに残る（summary は空。PII を持たない）', async () => {

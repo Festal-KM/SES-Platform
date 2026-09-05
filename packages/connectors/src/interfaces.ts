@@ -24,7 +24,7 @@ import type {
   SendAttemptToken,
   VerifiedSendingDomain,
 } from './types.js';
-import { EXTERNAL_RECIPIENT_CLASSES } from './types.js';
+import { isExternalRecipientClass } from './types.js';
 
 /** `EmailSender.send` の入力（docs/05 §8.1）。 */
 export type EmailSendInput = {
@@ -62,7 +62,7 @@ export function assertSendingDomainForRecipientClass(input: {
   readonly recipientClass: RecipientClass;
   readonly fromDomain: VerifiedSendingDomain | null;
 }): void {
-  if (!EXTERNAL_RECIPIENT_CLASSES.includes(input.recipientClass)) return;
+  if (!isExternalRecipientClass(input.recipientClass)) return;
   if (input.fromDomain === null) throw new SendingDomainRequiredError(input.recipientClass);
 }
 

@@ -17,6 +17,7 @@
 //      （`sandbox` の `inviteUrl` 表示（`F-007 AC-4`）は取引先招待の機能であり SP-04）
 import { INVITATION_TTL_MS } from '@ses/config';
 import {
+  resolveRecipientClass,
   withInvitationAccept,
   withInvitationToken,
   withTenant,
@@ -37,6 +38,7 @@ import { hashPassword } from '../auth/password';
 import { generateToken, hashToken } from '../auth/tokens';
 import {
   requireAccountMailQueue,
+  requireAccountMailRecipientClass,
   type AccountMailDeliveryState,
 } from '../jobs/account-mail';
 import { decideInvitation, isPartnerRole, type InvitationDenialReason } from './policy';
@@ -166,7 +168,16 @@ export async function issueInvitation(
       deviceKind: ctx.deviceKind,
     });
 
-    return invitation;
+    // 🔴 宛先分類は**作成した招待行から機械的に導く**（docs/05 §8.2 / T-04-02）。
+    //    `input.role` や `verdict.partnerCompanyId`（呼び出し側が組み立てた値）ではなく、
+    //    DB に書かれた行を読み直す —— 分類の出所を「保存された所属」1 つに保つため。
+    // 🔴 絞り込みも**トランザクションの中**で行う。分類 3 / 4 が導かれた（= 送れない）状態を
+    //    commit してしまうと、「作られたのに永久に届かない招待」が残る（CLAUDE.md §11.1）。
+    const recipientClass = requireAccountMailRecipientClass(
+      await resolveRecipientClass(db, { invitationId: invitation.id }, 'CLIENT'),
+    );
+
+    return { ...invitation, recipientClass };
   });
 
   // 🔴 commit の後に enqueue する（未コミットの招待をワーカーが先に読む状態を作らない）。
@@ -174,6 +185,7 @@ export async function issueInvitation(
     tenantId: ctx.tenantId,
     kind: 'INVITATION',
     targetId: created.id,
+    recipientClass: created.recipientClass,
     token,
   });
 

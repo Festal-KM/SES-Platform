@@ -111,7 +111,11 @@ importers:
         specifier: ^4.1.0
         version: 4.5.4
 
-  packages/connectors: {}
+  packages/connectors:
+    dependencies:
+      '@ses/domain':
+        specifier: workspace:*
+        version: link:../domain
 
   packages/db:
     dependencies:

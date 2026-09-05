@@ -22,6 +22,11 @@
 //    テナントが未確定の段階では注入すべき tenantId が無いためであり、
 //    ここでの防御は RLS（第 1 防御）と「触る表・列がコードとして固定であること」による。
 import { Prisma, type PrismaClient } from '@prisma/client';
+import {
+  classifyRecipient,
+  isAccountMailRecipientClass,
+  type AccountMailRecipientClass,
+} from '@ses/domain';
 import { AuditLogWriteError, auditLogRowValues, type AuditLogEntry } from './audit.js';
 import { getBaseClient } from './client.js';
 import type { TenantRole } from './context.js';
@@ -365,11 +370,20 @@ export type PasswordResetIssueInput = {
  *    分離キーではないので §3.1 に抵触しない）。
  * 🔴 該当が無くても `null` を返すだけで、呼び出し側は応答を出し分けてはならない
  *    （アカウントの存在を漏らさない。docs/05 §4.8 / F-002 AC-4）。
+ * 🔴 T-04-02: **宛先分類（docs/05 §8.2）を `Membership` から導いて返す。** 呼び出し側
+ *    （`apps/web/lib/auth/password-reset.ts`）に自己申告させないための形である。
+ *    ここで導けるのは `account.mail` に載る分類（1 / 2）だけであり、それ以外（所属が引けない
+ *    利用者）は**トークンを発行せずに `null`** を返す —— 送れない宛先に再設定トークンだけを
+ *    残さず、かつ「該当した / しなかった」の応答差も作らない（`null` は該当なしと同じ経路）。
  */
 export async function withPasswordResetIssue(
   email: string,
   input: PasswordResetIssueInput,
-): Promise<{ readonly tenantId: string; readonly userId: string } | null> {
+): Promise<{
+  readonly tenantId: string;
+  readonly userId: string;
+  readonly recipientClass: AccountMailRecipientClass;
+} | null> {
   return inRowContext({ kind: 'AUTH_EMAIL', value: email }, async (tx) => {
     const rows = await tx.user.findMany({
       select: { id: true, tenantId: true, ownerPartnerCompanyId: true, disabledAt: true },
@@ -385,6 +399,21 @@ export async function withPasswordResetIssue(
       actorUserId: row.id,
     });
 
+    // 🔴 分類の出所は `Membership` である（`users.owner_partner_company_id` ではない）。
+    //    第 2 段のスコープ下で読むため、ホストなら C5 の `app_is_host()`、パートナーなら
+    //    `partner_company_id = app_partner_id()` により**本人の 1 行**が引ける。
+    //    判定そのものは `@ses/domain` の `classifyRecipient` に閉じる（2 実装にしない）。
+    const membership = await tx.membership.findFirst({
+      where: { userId: row.id, revokedAt: null },
+      select: { tenantId: true, partnerCompanyId: true },
+    });
+    const recipientClass = classifyRecipient({
+      isPlatformUser: false,
+      membership,
+      tenantId: row.tenantId,
+    });
+    if (!isAccountMailRecipientClass(recipientClass)) return null;
+
     const updated = await tx.user.updateMany({
       where: { id: row.id },
       data: { passwordResetTokenHash: input.tokenHash, passwordResetExpiresAt: input.expiresAt },
@@ -393,7 +422,7 @@ export async function withPasswordResetIssue(
 
     await writeRowDerivedAuditLog(tx, row.tenantId, input.buildAudit({ userId: row.id }));
 
-    return { tenantId: row.tenantId, userId: row.id };
+    return { tenantId: row.tenantId, userId: row.id, recipientClass };
   });
 }
 

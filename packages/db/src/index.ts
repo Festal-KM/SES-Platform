@@ -246,6 +246,17 @@ export {
   withSystemScope,
   withTenant,
 } from './with-tenant.js';
+// 🔴 T-04-02: メール送信の単一経路の宛先分類（docs/05 §8.2）。**呼び出し側に自己申告させない。**
+//    `platformRecipientClass`（分類外）はここから export しない（`@ses/db/platform` だけが出す）。
+export { isAccountMailRecipientClass, resolveRecipientClass } from './recipient.js';
+export type {
+  AccountMailRecipientClass,
+  OutsiderRecipientClass,
+  RecipientClass,
+  RecipientLookupDb,
+  RecipientSubject,
+  TenantRecipientClass,
+} from './recipient.js';
 // 🔴 T-03-10: UsageCounter の計測フック（CLAUDE.md §10.6 / F-026 / docs/05 §7.6 / §9.8）。
 //    `usage_counters` を書いてよい唯一の経路（生 SQL の ON CONFLICT はここに閉じる）。
 export {

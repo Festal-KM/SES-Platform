@@ -28,6 +28,15 @@ export * from './types.js';
 export * from './errors.js';
 export * from './interfaces.js';
 export * from './queues.js';
+// 🔴 T-04-02: メール送信の単一経路が受け取る payload の型（docs/05 §9.4）。
+//    分類 2 / 3 / 4 を `email.dispatch` に渡せないことを型で固定する。
+export * from './email/dispatch.js';
+// 🔴 T-04-02: `sandbox` の宛先分類による差し替え（docs/05 §8.2）。**モック実装ではない**
+//    （分類 1 / 分類外は実送信側へ委譲する）ため、モックと違って re-export してよい。
+//    ⚠️ `createConnectors` への登録は T-04-03 が行う（`real` に渡す SES 実装が要るため）。
+//    それまで `sandbox` の起動は `ConnectorImplementationNotAvailableError` で失敗する
+//    —— これは意図した挙動である（モックで埋めない。CLAUDE.md §11.1）。
+export * from './email/sandbox-recipient-scoped.js';
 // 🔴 モック実装のクラスは **re-export しない**（docs/05 §13.1 / §2.2）。外に出すと
 //    「この環境ならモック」というリクエストごとの分岐を業務コードに書けてしまう。
 //    モックの呼び出し回数は `EmailSender.callCount()` 等、**インタフェース側**から読む

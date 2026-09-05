@@ -125,6 +125,14 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
   // 🔴 T-03-10: `PLATFORM_OWNER` 専用操作のゲート（`CLAUDE.md` §10.1 / `BR-44`）。
   //    ロール判定を各ルートに散らさない（散らすと 1 本だけ緩む）。
   requirePlatformOwner: ['apps/web/lib/auth/platform-session.ts'],
+  // 🔴 T-04-02: メール送信の単一経路の宛先分類（docs/05 §8.2）。呼び出し元を固定するのは
+  //    「分類を導く場所」を数えられる状態に保つためである。ここが散ると、どこかで
+  //    `resolveRecipientClass` を通さずに分類を組み立てる実装（= 自己申告）が紛れ込む。
+  //    T-04-03 以降で送信経路が増えたら、その 1 ファイルをここに追記する。
+  resolveRecipientClass: ['apps/web/lib/invitations/service.ts'],
+  // 🔴 分類外（運営者宛）を名乗れる場所は `apps/**` に 1 つも無い（`@ses/db/platform` にしか
+  //    export されておらず、テナント側のコードからは import 経路そのものが無い）。
+  platformRecipientClass: [],
 
   // --- 🔴 T-03-07: 管理平面（運営者認証。`F-055` / `BR-36`）------------------------------
   // 主平面と**同じ規律**を管理平面にも適用する。運営者の資格情報・2FA・監査ログに触れる経路が

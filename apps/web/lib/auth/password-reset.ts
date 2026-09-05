@@ -54,9 +54,9 @@ function auditEntry(
  *   - トークンの生成とハッシュ化は**分岐の前**に必ず 1 回行う。
  *   - `withPasswordResetIssue` は該当の有無にかかわらずトランザクションを開き、
  *     同じ `SET LOCAL` と同じ SELECT を実行する。
- *   - 残差: 該当したときだけ `UPDATE` + 監査ログ + enqueue のぶん遅い。これは
- *     「該当が無ければ書くものが無い」という構造から来るもので、書き込みを足して
- *     揃えることはできない（`credentials.ts` に記した残差と同種）。
+ *   - 残差: 該当したときだけ `Membership` の読み取り（宛先分類。T-04-02）と `UPDATE` +
+ *     監査ログ + enqueue のぶん遅い。これは「該当が無ければ読むものも書くものも無い」という
+ *     構造から来るもので、処理を足して揃えることはできない（`credentials.ts` の残差と同種）。
  */
 export async function requestPasswordReset(
   email: string,
@@ -80,10 +80,14 @@ export async function requestPasswordReset(
   if (issued === null) return;
 
   // 🔴 平文トークンはここ（payload = Redis）にしか渡らない。DB にはハッシュだけがある。
+  // 🔴 宛先分類は `withPasswordResetIssue` が `Membership` から導いた値である（docs/05 §8.2）。
+  //    ここで分類を組み立てない（自己申告させない）。型もすでに分類 1 / 2 に絞られている
+  //    （導けなかった場合は `issued` が `null` になり、この行に到達しない）。
   await queue.enqueue({
     tenantId: issued.tenantId,
     kind: 'PASSWORD_RESET',
     targetId: issued.userId,
+    recipientClass: issued.recipientClass,
     token,
   });
 }

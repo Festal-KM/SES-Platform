@@ -9,15 +9,16 @@
 //    - 生 JSON をそのまま表す型を作らない（実装側で Zod parse → この型へ変換する）。
 //
 // 🔴 依存の制約（CLAUDE.md §2.1）: `packages/connectors` は `@ses/db` / `@ses/ai` に依存できない。
-//    そのため、db と connectors の**両方**が知る必要のある型（`RecipientClass` / 送信トークン）を
-//    現時点では本ファイルに置いている。**恒久的な置き場所は `packages/domain`** である
+//    そのため、db と connectors の**両方**が知る必要のある型は `packages/domain` に置く
 //    （db も connectors も domain には依存してよく、共有点は domain しか無いため）。
-//    ⚠️ 申し送り（T-04-02 / T-09-01）: `packages/connectors` に `@ses/domain` への
-//       workspace 依存を追加する（`pnpm install` を伴う）タイミングで、
-//       `RecipientClass` と 3 種のトークン型を `packages/domain` へ移し、本ファイルからは消す。
-//       それまでの二重定義は `tests/static/connector-selection-mirror.test.ts` が突合する
-//       （`RECIPIENT_CLASSES` ↔ `EMAIL_RECIPIENT_CLASSES` / `SEND_ENTITY_TYPES` ↔
-//       `SEND_ATTEMPT_ENTITY_TYPES` / `SendAttemptToken` のプロパティ名 ↔ docs/05 §10.2）。
+//    ✅ T-04-02: `@ses/domain` への workspace 依存を追加し、**`RecipientClass` は
+//       `packages/domain/src/recipient/classify.ts` に一本化した**（本ファイルは re-export のみ）。
+//    ⚠️ 残りの申し送り（T-09-01）: 3 種の送信トークン型（`SendAttemptToken` / `DispatchToken` /
+//       `MeterSubmissionToken`）と `SEND_ENTITY_TYPES` は、`packages/db` が発行する値であり
+//       移設先の判断が SP-09（送信の予約）の設計に依存するため、本ファイルに残している。
+//       二重定義は `tests/static/connector-selection-mirror.test.ts` が突合する
+//       （`SEND_ENTITY_TYPES` ↔ `SEND_ATTEMPT_ENTITY_TYPES` /
+//       `SendAttemptToken` のプロパティ名 ↔ docs/05 §10.2）。
 
 /**
  * 起動時 DI（docs/05 §13.1）が選ぶ実装種別。
@@ -56,34 +57,28 @@ export type ConnectorCategory = (typeof CONNECTOR_CATEGORIES)[number];
 /**
  * 宛先分類（docs/05 §8.2 / `docs/02` 章 7.6 / CLAUDE.md §11.1）。
  *
- * 🔴 判定は `resolveRecipientClass`（T-04-02）が `Membership` から機械的に導く。
- *    **呼び出し側に自己申告させない。** 既定値を持たせない（省略はコンパイルエラー）。
+ * 🔴 **宣言の唯一の出所は `packages/domain`** である（T-04-02）。ここは re-export であり、
+ *    `@ses/connectors` の利用者が `RecipientClass` を追加の import 無しに扱えるようにするためだけに置く。
+ * 🔴 判定は `packages/db` の `resolveRecipientClass` が `Membership` / `Invitation` から
+ *    機械的に導く。**呼び出し側に自己申告させない。** 既定値を持たせない（省略はコンパイルエラー）。
  */
-/**
- * 🔴 `packages/db` の `EMAIL_RECIPIENT_CLASSES`（`EmailDispatch.recipientClass` の CHECK）と
- *    同じ値集合でなければならない。`tests/static/connector-selection-mirror.test.ts` が突合する。
- */
-export const RECIPIENT_CLASSES = [
-  /** 分類 1: ホスト（テナント）所属利用者。招待中の本人を含む。`sandbox` でも実送信。 */
-  'HOST_MEMBER',
-  /** 分類 2: パートナー所属利用者。🔴 `sandbox` ではモック（Issue #10）。 */
-  'PARTNER_MEMBER',
-  /** 分類 3: 提案先・エンド企業。テナント外の宛先の既定値（安全側）。 */
-  'CLIENT',
-  /** 分類 4: エンジニア本人。 */
-  'ENGINEER',
-  /** 分類外: 運営者（`PlatformUser`）。`sandbox` でも実送信。 */
-  'PLATFORM',
-] as const;
-
-export type RecipientClass = (typeof RECIPIENT_CLASSES)[number];
-
-/**
- * 🔴 業務上の外部送信（取引先・第三者へ届く）にあたる宛先分類。
- *    この分類では独自ドメインの検証済み送信元が必須であり、共通ドメインへ**フォールバックしない**
- *    （`BR-51` / docs/05 §8.3）。
- */
-export const EXTERNAL_RECIPIENT_CLASSES: readonly RecipientClass[] = ['PARTNER_MEMBER', 'CLIENT', 'ENGINEER'];
+export {
+  ACCOUNT_MAIL_RECIPIENT_CLASSES,
+  EXTERNAL_RECIPIENT_CLASSES,
+  HOST_OR_PLATFORM_RECIPIENT_CLASSES,
+  isAccountMailRecipientClass,
+  isExternalRecipientClass,
+  isHostOrPlatformRecipientClass,
+  OUTSIDER_RECIPIENT_CLASSES,
+  RECIPIENT_CLASSES,
+} from '@ses/domain';
+export type {
+  AccountMailRecipientClass,
+  ExternalRecipientClass,
+  HostOrPlatformRecipientClass,
+  OutsiderRecipientClass,
+  RecipientClass,
+} from '@ses/domain';
 
 /**
  * 検証済みの送信元ドメイン（docs/05 §8.3）。

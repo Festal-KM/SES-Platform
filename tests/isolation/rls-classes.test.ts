@@ -695,7 +695,13 @@ describe('テナント文脈を持たない経路（docs/05 §4.4.2）', () => {
       expiresAt: new Date(Date.now() + 3_600_000),
       buildAudit: (subject) => auditEntryOf('auth.password_reset_requested', subject.userId),
     });
-    expect(issued).toEqual({ tenantId: TENANT_A, userId: USER_A_HOST });
+    // 🔴 T-04-02: 宛先分類も同じトランザクションで `Membership` から導いて返す（docs/05 §8.2）。
+    //    ホスト所属の利用者なので分類 1。呼び出し側は分類を渡していない。
+    expect(issued).toEqual({
+      tenantId: TENANT_A,
+      userId: USER_A_HOST,
+      recipientClass: 'HOST_MEMBER',
+    });
 
     const rows = await runUnextended(db, HOST_A, (tx) =>
       tx.user.findMany({ where: { id: USER_A_HOST } }),

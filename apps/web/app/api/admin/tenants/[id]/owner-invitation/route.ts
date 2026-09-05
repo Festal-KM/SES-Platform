@@ -80,10 +80,13 @@ export async function POST(
     const invitation = requireFound(result);
 
     // 🔴 commit の後に enqueue する（未コミットの招待をワーカーが先に読む状態を作らない）。
+    // 🔴 宛先分類は `issueTenantOwnerInvitation` が**書き込んだ招待行の所属**から導いた値である
+    //    （docs/05 §8.2）。ここで `'HOST_MEMBER'` と書かない（自己申告させない）。
     const deliveryState = await queue.enqueue({
       tenantId: parsedParams.data.id,
       kind: 'INVITATION',
       targetId: invitation.invitationId,
+      recipientClass: invitation.recipientClass,
       token,
     });
 

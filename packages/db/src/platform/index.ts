@@ -25,6 +25,11 @@ export type {
   PlatformWriteOp,
 } from '../platform.js';
 
+// 🔴 T-04-02: 分類外（運営者宛。`F-055`）の宛先分類。**`@ses/db` からは出さない** ——
+//    テナント側のコードが「運営者宛」を名乗って実送信側（分類外）に倒す経路を、
+//    モジュールの形として作らない（docs/05 §8.2 / CLAUDE.md §10.5 / §11.1）。
+export { platformRecipientClass } from '../recipient.js';
+
 // 画面 1 対 1 の専用クエリ関数（docs/05 §5.2）。
 export { readAdminHomeSummary } from './queries/admin-home.js';
 export type { AdminHomeSummary, PlatformRequestMeta } from './queries/admin-home.js';

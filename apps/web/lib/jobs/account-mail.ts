@@ -12,6 +12,12 @@
 //       その判断材料は `resolveConnectorSelection`（`packages/config`。APP_ENV 分岐の唯一の場所）である
 //    ③ 「送られる予定」なのか「モックで終わる」のかを、呼び出し側が推測せず戻り値で受け取る
 //       （#14 の `deliveryState`。docs/05 §6.4）
+//
+// 🔴 T-04-02: payload は**宛先分類を必須で持つ**（docs/05 §8.2）。分類の値は
+//    `packages/db` の `resolveRecipientClass`（`Membership` / `Invitation` から機械的に導く）
+//    だけが供給し、ハンドラ・ルートが文字列で指定する経路は無い。
+import { isAccountMailRecipientClass } from '@ses/db';
+import type { AccountMailRecipientClass, RecipientClass } from '@ses/db';
 
 /** docs/05 §9.4 の `account.mail` payload の `kind`。 */
 export const ACCOUNT_MAIL_KINDS = ['INVITATION', 'PASSWORD_RESET'] as const;
@@ -23,12 +29,17 @@ export type AccountMailKind = (typeof ACCOUNT_MAIL_KINDS)[number];
  *
  * 🔴 `token` は**平文**である。payload（Redis）にだけ載り、ジョブの完了とともに消える。
  *    DB・ログ・監査ログには載せない（`packages/config` の redact denylist に `token` がある）。
+ * 🔴 T-04-02: `recipientClass` は**必須**である（docs/05 §8.2「分類が未指定の送信を成立させない」）。
+ *    型は `AccountMailRecipientClass`（分類 1 / 2）に限られており、業務上の外部送信
+ *    （分類 3 / 4）を載せられない。値は `resolveRecipientClass` が `Membership` /
+ *    `Invitation` から導いたものだけであり、**呼び出し側が文字列を書くことはない**。
  */
 export type AccountMailJob = {
   readonly tenantId: string;
   readonly kind: AccountMailKind;
   /** `INVITATION` なら `Invitation.id`、`PASSWORD_RESET` なら `User.id`。 */
   readonly targetId: string;
+  readonly recipientClass: AccountMailRecipientClass;
   readonly token: string;
 };
 
@@ -50,6 +61,37 @@ export type AccountMailDeliveryState = (typeof ACCOUNT_MAIL_DELIVERY_STATES)[num
 export type AccountMailQueue = {
   enqueue(job: AccountMailJob): Promise<AccountMailDeliveryState>;
 };
+
+/**
+ * 🔴 `account.mail` に載せられない宛先分類（分類 3 / 4）が導かれた（docs/05 §9.4）。
+ *
+ * 招待・パスワード再設定の宛先は「招待中の本人 / 本人」に限られるため、実際には起こらない。
+ * 起きるとすれば所属の引き当てが壊れているときであり、**その状態で送ってはならない**
+ * （分類 3 / 4 は業務上の外部送信であり、`account.mail` の経路には独自ドメインの検証も
+ * `sandbox` のモック分岐も無い）。握り潰さず操作ごと失敗させる（CLAUDE.md §11.1）。
+ */
+export class AccountMailRecipientClassError extends Error {
+  constructor(readonly recipientClass: RecipientClass) {
+    super(
+      `宛先分類 '${recipientClass}' は account.mail に載せられません（docs/05 §9.4）。` +
+        '招待・パスワード再設定の宛先は分類 1 / 2 に限られます。',
+    );
+    this.name = 'AccountMailRecipientClassError';
+  }
+}
+
+/**
+ * 🔴 `resolveRecipientClass` が返した分類を `account.mail` の payload 型へ絞る唯一の関数。
+ *    絞れないときは例外（fail-closed）。**`CLIENT` を黙って送信対象にしない。**
+ */
+export function requireAccountMailRecipientClass(
+  recipientClass: RecipientClass,
+): AccountMailRecipientClass {
+  if (!isAccountMailRecipientClass(recipientClass)) {
+    throw new AccountMailRecipientClassError(recipientClass);
+  }
+  return recipientClass;
+}
 
 /**
  * 🔴 キューが未登録のまま enqueue しようとした（起動時 DI の失敗）。

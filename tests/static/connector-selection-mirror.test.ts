@@ -1,23 +1,27 @@
 // tests/static/connector-selection-mirror.test.ts
 // T-04-01: 🔴 `packages/connectors` が**他パッケージと二重に宣言している値集合**を突合する。
 //
-// 対象は 3 組:
+// 対象は 4 組:
 //   ① `ConnectorSelectionInput` ↔ `packages/config` の `ConnectorSelection`
 //      ずれると「起動時に選んだ実装種別」と「実際に組み立てられる実装」が食い違い、
 //      `production` でモックが選ばれない保証（CLAUDE.md §11.1 / docs/05 §13.1）が静かに崩れる。
-//   ② `RECIPIENT_CLASSES` ↔ `packages/db` の `EMAIL_RECIPIENT_CLASSES`
+//   ② `packages/domain` の `RECIPIENT_CLASSES` ↔ `packages/db` の `EMAIL_RECIPIENT_CLASSES`
 //      ずれると `EmailDispatch.recipientClass` の CHECK に通らない値で送信経路が組み上がる。
+//      🔴 T-04-02 で `packages/connectors` 側の二重宣言は解消し（`@ses/domain` からの
+//      re-export に置き換えた）、突合の基準を **domain** に移した。本テストは合わせて
+//      「connectors が独自の `RECIPIENT_CLASSES` を再び宣言していないこと」も見る
+//      （再宣言が入った瞬間に、値集合が 3 箇所に散る）。
 //   ③ `SEND_ENTITY_TYPES` ↔ `packages/db` の `SEND_ATTEMPT_ENTITY_TYPES`
 //      🔴 ずれると `idempotencyKey()` が `send_attempts` の CHECK を通らない冪等キーを生み、
 //      **二重送信の唯一の防御線（docs/05 §10.1 の 2 本の UNIQUE）が機能しない**。
 //   ④ 送信トークン型のプロパティ名 ↔ docs/05 §10.2 の宣言（`packages/db/src/send.ts`）
 //
-// なぜ import で共有しないのか:
-//   `packages/connectors` は `packages/config` / `packages/domain` に依存していない
-//   （workspace 依存を足すには `pnpm install` が要る）。依存を足すまでの間、
-//   二重宣言を**機械的に突合**して守る。
-//   ⚠️ 申し送り: `@ses/config` / `@ses/domain` への依存を足すタイミングで、
-//      本テストは「型が 1 つであること」の確認に置き換えてよい。
+// なぜ ①③④ を import で共有しないのか:
+//   `packages/connectors` は `packages/config` / `packages/db` に依存できない（CLAUDE.md §2.1）。
+//   ③④ は `packages/db` が発行する値の型であり、移設先の判断が SP-09（送信の予約）の設計に
+//   依存するため、当面は二重宣言を**機械的に突合**して守る。
+//   ⚠️ 申し送り（T-09-01）: 送信トークン型を `packages/domain` へ移すタイミングで、
+//      ③④ も②と同じく「宣言が 1 つであること」の確認に置き換える。
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -28,6 +32,14 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '..', '..');
 const configFile = path.join(repoRoot, 'packages', 'config', 'src', 'connector-selection.ts');
 const connectorsFile = path.join(repoRoot, 'packages', 'connectors', 'src', 'types.ts');
+const domainRecipientFile = path.join(
+  repoRoot,
+  'packages',
+  'domain',
+  'src',
+  'recipient',
+  'classify.ts',
+);
 const dbValueSetsFile = path.join(repoRoot, 'packages', 'db', 'src', 'schema-value-sets.ts');
 const programDesignFile = path.join(repoRoot, 'docs', '05-program-design.md');
 
@@ -136,6 +148,7 @@ function propertyTypeTextsOfTypeAlias(sourceFile: ts.SourceFile, typeName: strin
 
 const config = parse(configFile);
 const connectors = parse(connectorsFile);
+const domainRecipient = parse(domainRecipientFile);
 const dbValueSets = parse(dbValueSetsFile);
 const docsSendTokens = parseText(
   tsCodeBlockContaining(readFileSync(programDesignFile, 'utf8'), 'packages/db/src/send.ts'),
@@ -176,10 +189,21 @@ describe('🔴 packages/db の CHECK 値集合との二重宣言が一致して�
     expect(arrayLiteralsOfConst(dbValueSets, 'SEND_ATTEMPT_ENTITY_TYPES').length).toBeGreaterThan(0);
   });
 
-  it('宛先分類（RECIPIENT_CLASSES ↔ EMAIL_RECIPIENT_CLASSES）が一致する', () => {
-    const fromConnectors = [...arrayLiteralsOfConst(connectors, 'RECIPIENT_CLASSES')].sort();
+  it('対照: packages/domain 側から宛先分類を取り出せている（テストが空振りしていない）', () => {
+    expect(arrayLiteralsOfConst(domainRecipient, 'RECIPIENT_CLASSES').length).toBeGreaterThan(0);
+  });
+
+  it('宛先分類（@ses/domain の RECIPIENT_CLASSES ↔ EMAIL_RECIPIENT_CLASSES）が一致する', () => {
+    const fromDomain = [...arrayLiteralsOfConst(domainRecipient, 'RECIPIENT_CLASSES')].sort();
     const fromDb = [...arrayLiteralsOfConst(dbValueSets, 'EMAIL_RECIPIENT_CLASSES')].sort();
-    expect(fromConnectors).toEqual(fromDb);
+    expect(fromDomain).toEqual(fromDb);
+  });
+
+  it('🔴 packages/connectors が宛先分類を再宣言していない（T-04-02 で domain に一本化した）', () => {
+    // 🔴 再宣言が入ると値集合が 3 箇所に散り、「connectors だけ古い」状態が起こりうる。
+    //    ここは re-export（`export { RECIPIENT_CLASSES } from '@ses/domain'`）でなければならない。
+    expect(arrayLiteralsOfConst(connectors, 'RECIPIENT_CLASSES')).toEqual([]);
+    expect(readFileSync(connectorsFile, 'utf8')).toContain("from '@ses/domain'");
   });
 
   it('🔴 送信エンティティ種別（SEND_ENTITY_TYPES ↔ SEND_ATTEMPT_ENTITY_TYPES）が一致する', () => {

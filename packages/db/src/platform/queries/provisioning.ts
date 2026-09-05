@@ -25,8 +25,8 @@
 // 要求する（migration 20260904010000 §5）。したがってテナント ID は**書く前に**確定して
 // いなければならない。ID は時系列に単調な UUID v7 で採る（`uuid.ts`）。
 import { Prisma } from '@prisma/client';
-import type { TenantCreationState, TenantEnvironment } from '@ses/domain';
-import { isValidTenantCreation } from '@ses/domain';
+import type { AccountMailRecipientClass, TenantCreationState, TenantEnvironment } from '@ses/domain';
+import { classifyRecipient, isAccountMailRecipientClass, isValidTenantCreation } from '@ses/domain';
 import { withPlatformRead, withPlatformWrite } from '../../platform.js';
 import type { AuthenticatedPlatformCtx, PlatformOwnerCtx } from '../../platform-context.js';
 import { requirePlatformOwner } from '../../platform-context.js';
@@ -231,7 +231,28 @@ export type OwnerInvitationInput = {
 
 export type OwnerInvitationResult = {
   readonly invitationId: string;
+  /**
+   * 🔴 T-04-02: `account.mail` に渡す宛先分類（docs/05 §8.2 / §9.4）。
+   *    **呼び出し側（ルート）に自己申告させない**ため、書き込んだ招待行の値から機械的に導く。
+   *    運営者が発行できるのは初期 `OWNER` 招待だけ（`partner_company_id IS NULL` を RLS の
+   *    `WITH CHECK` が固定している。docs/05 §5.2）なので、常に分類 1 になる。
+   */
+  readonly recipientClass: AccountMailRecipientClass;
 };
+
+/**
+ * 🔴 不変条件違反（初期 `OWNER` 招待の宛先分類が分類 1 / 2 以外になった）。
+ *    握り潰さずに操作を失敗させる（送れない宛先の招待を作らない。CLAUDE.md §11.1）。
+ */
+class OwnerInvitationRecipientClassError extends Error {
+  constructor(readonly recipientClass: string) {
+    super(
+      `初期 OWNER 招待の宛先分類が '${recipientClass}' になりました（不変条件違反）。` +
+        'account.mail に載せられるのは分類 1 / 2 だけです（docs/05 §9.4）。',
+    );
+    this.name = 'OwnerInvitationRecipientClassError';
+  }
+}
 
 /**
  * API-A5（`POST /api/admin/tenants/{id}/owner-invitation`）。docs/05 §6.9。
@@ -277,6 +298,7 @@ export async function issueTenantOwnerInvitation(
       });
       if (tenant === null) return null;
 
+      const partnerCompanyId = null;
       await db.invitation.createMany({
         data: [
           {
@@ -284,7 +306,7 @@ export async function issueTenantOwnerInvitation(
             tenantId,
             email: input.email,
             role: 'OWNER',
-            partnerCompanyId: null,
+            partnerCompanyId,
             tokenHash: input.tokenHash,
             expiresAt: input.expiresAt,
             // 🔴 `invited_by IS NULL` かつ `invited_by_platform_user_id = 自分` は
@@ -296,7 +318,20 @@ export async function issueTenantOwnerInvitation(
         ],
       });
 
-      return { invitationId };
+      // 🔴 T-04-02: 宛先分類は**書き込んだ行の値**から導く（docs/05 §8.2）。
+      //    `app_platform_write` は `invitations` に `SELECT` を持たない（読み返せない）ため、
+      //    引き当てではなく「今この行に書いた所属」を事実として `classifyRecipient` に渡す。
+      //    判定そのものは `@ses/domain` の 1 箇所に閉じており、ここで分類名を書いてはいない。
+      const recipientClass = classifyRecipient({
+        isPlatformUser: false,
+        membership: { tenantId, partnerCompanyId },
+        tenantId,
+      });
+      if (!isAccountMailRecipientClass(recipientClass)) {
+        throw new OwnerInvitationRecipientClassError(recipientClass);
+      }
+
+      return { invitationId, recipientClass };
     },
   );
 }
