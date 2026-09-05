@@ -91,7 +91,14 @@ importers:
         specifier: 6.0.3
         version: 6.0.3
 
-  apps/worker: {}
+  apps/worker:
+    dependencies:
+      '@ses/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@ses/db':
+        specifier: workspace:*
+        version: link:../../packages/db
 
   packages/ai: {}
 
