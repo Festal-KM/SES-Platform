@@ -257,6 +257,45 @@ export type {
   RecipientSubject,
   TenantRecipientClass,
 } from './recipient.js';
+// 🔴 T-04-03: EmailDispatch を書く唯一の経路（docs/05 §3.9 / §9.4）。
+//    `dedupeKey` の UNIQUE と `QUEUED` からの CAS がここに閉じている＝迂回した INSERT が書けない。
+export {
+  dispatchRecipientHash,
+  dispatchTokenHashPrefix,
+  EmailDispatchConflictError,
+  emailDispatchDedupeKey,
+  failEmailDispatch,
+  holdEmailDispatch,
+  markEmailDispatchMocked,
+  markEmailDispatchSent,
+  readEmailDailyCount,
+  readEmailDispatch,
+  reserveEmailDailyQuota,
+  reserveEmailDispatch,
+  suppressEmailDispatch,
+} from './email-dispatch.js';
+export type {
+  EmailDispatchHoldStatus,
+  EmailDispatchInput,
+  EmailDispatchReservation,
+  EmailDispatchRow,
+} from './email-dispatch.js';
+// 🔴 T-04-03: Webhook 受信（docs/05 §8.5）。C0 SYSTEM_ONLY の 2 表に触れる唯一の経路。
+export {
+  markWebhookDeliveryFailed,
+  markWebhookDeliveryProcessed,
+  readWebhookDelivery,
+  recordEmailEvent,
+  recordWebhookDelivery,
+} from './webhook-delivery.js';
+export type {
+  EmailEventInput,
+  JsonObject,
+  JsonValue,
+  WebhookDeliveryInput,
+  WebhookDeliveryPayload,
+  WebhookDeliveryRecord,
+} from './webhook-delivery.js';
 // 🔴 T-03-10: UsageCounter の計測フック（CLAUDE.md §10.6 / F-026 / docs/05 §7.6 / §9.8）。
 //    `usage_counters` を書いてよい唯一の経路（生 SQL の ON CONFLICT はここに閉じる）。
 export {

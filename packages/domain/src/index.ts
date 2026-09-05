@@ -12,3 +12,7 @@ export {
 //    `packages/connectors`（`EmailSender.send` の必須引数として受け取る側）の**両方**が
 //    同じ union を知る必要があり、両者の共有点は domain しか無い（T-04-02）。
 export * from './recipient/index.js';
+// 🔴 T-04-03: テナント単位のメール送信上限（docs/05 §8.7 / `F-027 AC-2`）。
+//    日次超過 = 停止 / 分次超過 = 待機 の区別を、判定する側（ジョブ）と表示する側（SP-10）が
+//    同じ 1 つの関数から得る。
+export * from './quota/index.js';

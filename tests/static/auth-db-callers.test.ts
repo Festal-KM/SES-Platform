@@ -117,11 +117,45 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
   //    呼べると、HTTP 経路がリクエスト入力の `tenantId` で任意のテナントの文脈を作れる
   //    （`CLAUDE.md` §3.1 / `BR-03`）。許可先は `apps/worker` のジョブ実装だけである。
   //    docs/05 §9.2 の ⚠️「この関数を `apps/web` から呼べないよう制限する」の実装。
-  systemTenantCtx: ['apps/worker/src/jobs/usage-seat-snapshot.ts'],
+  systemTenantCtx: [
+    'apps/worker/src/jobs/usage-seat-snapshot.ts',
+    // 🔴 T-04-03: 運用メールのジョブ（docs/05 §9.4）。どちらも payload の `tenantId` から
+    //    ジョブ文脈を組み立てる。**`apps/web` 側には 1 つも無い**（下の it が固定する）。
+    'apps/worker/src/jobs/account-mail.ts',
+    'apps/worker/src/jobs/email-dispatch.ts',
+  ],
   // 🔴 T-03-10: `usage_counters` を書く唯一の経路（docs/05 §7.6 / §9.8）。
   //    ここを増やすと「計測を迂回した書き込み」が生まれ、原価と請求根拠が説明できなくなる。
   snapshotSeatCount: ['apps/worker/src/jobs/usage-seat-snapshot.ts'],
   incrementUsageCounter: [],
+
+  // --- 🔴 T-04-03: 運用メールと Webhook 受信（docs/05 §8.5 / §9.4）--------------------------
+  // 🔴 `EmailDispatch` を作る経路を 1 ファイルに固定する。増えると `dedupeKey` の組み立てが
+  //    分散し、「再試行しても 1 通」の根拠（`UNIQUE`）を迂回する INSERT が書けてしまう。
+  reserveEmailDispatch: ['apps/worker/src/jobs/account-mail.ts'],
+  readEmailDispatch: ['apps/worker/src/jobs/email-dispatch.ts'],
+  // 🔴 送信の 1 手順（判定 → 予約 → 送信 → CAS）は `email-send.ts` の 1 箇所だけが持つ。
+  //    `email.dispatch` と `account.mail` で順序を書き分けると、片方だけ保留や上限が緩む。
+  readEmailDailyCount: ['apps/worker/src/jobs/email-send.ts'],
+  reserveEmailDailyQuota: ['apps/worker/src/jobs/email-send.ts'],
+  holdEmailDispatch: ['apps/worker/src/jobs/email-send.ts'],
+  suppressEmailDispatch: ['apps/worker/src/jobs/email-send.ts'],
+  failEmailDispatch: ['apps/worker/src/jobs/email-send.ts'],
+  markEmailDispatchSent: ['apps/worker/src/jobs/email-send.ts'],
+  markEmailDispatchMocked: ['apps/worker/src/jobs/email-send.ts'],
+  // 🔴 `DispatchToken` を作れる場所（docs/05 §10.2 / `packages/connectors/src/types.ts`）。
+  //    予約（`reserveEmailDispatch`）の結果からしか作らない ——
+  //    ここが増えると「行が無いのに送れるトークン」を組み立てられる。
+  dispatchTokenFor: ['apps/worker/src/jobs/email-send.ts'],
+  // 🔴 Webhook 受信は「検証 → INSERT → 200 → enqueue」の 1 経路だけ（docs/05 §8.5）。
+  recordWebhookDelivery: ['apps/web/lib/webhooks/ses.ts'],
+  readWebhookDelivery: ['apps/worker/src/jobs/webhook-process.ts'],
+  markWebhookDeliveryProcessed: ['apps/worker/src/jobs/webhook-process.ts'],
+  markWebhookDeliveryFailed: [
+    'apps/web/lib/webhooks/ses.ts',
+    'apps/worker/src/jobs/webhook-process.ts',
+  ],
+  recordEmailEvent: ['apps/worker/src/jobs/webhook-process.ts'],
   // 🔴 T-03-10: `PLATFORM_OWNER` 専用操作のゲート（`CLAUDE.md` §10.1 / `BR-44`）。
   //    ロール判定を各ルートに散らさない（散らすと 1 本だけ緩む）。
   requirePlatformOwner: ['apps/web/lib/auth/platform-session.ts'],

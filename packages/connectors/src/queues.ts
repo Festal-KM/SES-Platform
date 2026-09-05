@@ -6,9 +6,10 @@
 //    「自動リトライを禁止できている」ことの根拠である（`docs/03` program-design 申し送り 7）。
 //    ラッパで包むと、その根拠がコードから読めなくなり、静的テストも書けなくなる。
 //
-// 🔴 BullMQ の `Queue` / `Worker` の実体配線はここに書かない（T-04-03 以降で
+// 🔴 BullMQ の `Queue` / `Worker` の実体配線はここに書かない（**SP-07** で
 //    `apps/worker` が `QUEUE_DEFINITIONS` を読み `new Queue(def.name, { defaultJobOptions: def.defaultJobOptions })`
-//    を行う）。`packages/connectors` が BullMQ に依存しないことで、キュー**定義**は
+//    と `new Worker(..., { settings: { backoffStrategy: steppedBackoffDelayMs } })` を行う）。
+//    `packages/connectors` が BullMQ に依存しないことで、キュー**定義**は
 //    Redis が無くてもユニットテスト・静的テストで検査できる。
 //
 // なぜ `attempts: 1` が絶対なのか（CLAUDE.md §3.4 / §4.2 / §7）:
@@ -16,10 +17,39 @@
 //   `SUBMITTING` / `SENDING` は片道であり、失敗からの復帰は**人間の明示操作のみ**。
 
 /** BullMQ の `BackoffOptions` と構造的に一致する最小の形（内部ジョブ専用）。 */
-export type BackoffOptions = {
-  readonly type: 'fixed' | 'exponential';
-  readonly delay: number;
-};
+export type BackoffOptions =
+  | {
+      readonly type: 'fixed' | 'exponential';
+      readonly delay: number;
+    }
+  /**
+   * 🔴 T-04-03: BullMQ の**カスタム戦略**（`settings.backoffStrategy`）で表現する段階的な待ち時間。
+   *
+   * docs/05 §9.4 は `email.dispatch` のバックオフを **5s / 30s** と定めるが、これは BullMQ の
+   * 組み込み戦略では表現できない（`fixed` は毎回同じ、`exponential` は `delay * 2^(n-1)` なので
+   * 5s の次は 10s になる）。組み込みで近似して docs と食い違わせるのではなく、
+   * **遅延の表を定義として持ち**、`steppedBackoffDelayMs()` を worker が
+   * `settings.backoffStrategy` に渡す（キューの実体化と同じく SP-07 の配線）。
+   */
+  | {
+      readonly type: 'stepped';
+      /** 1 回目の再試行・2 回目の再試行 … の待ち時間（ミリ秒）。 */
+      readonly delaysMs: readonly [number, ...number[]];
+    };
+
+/**
+ * `stepped` バックオフの待ち時間を返す純粋関数（BullMQ の `backoffStrategy` の中身）。
+ *
+ * @param attemptsMade BullMQ が渡す「これまでに試した回数」（1 回目の失敗後は 1）。
+ * 🔴 表を超えた回数を要求されたら**最後の値**を返す（0 や `undefined` を返すと即時再試行になる）。
+ */
+export function steppedBackoffDelayMs(
+  attemptsMade: number,
+  delaysMs: readonly [number, ...number[]],
+): number {
+  const index = Math.max(0, Math.min(attemptsMade - 1, delaysMs.length - 1));
+  return delaysMs[index] ?? delaysMs[delaysMs.length - 1] ?? 0;
+}
 
 /**
  * 🔴 送信系キューの既定ジョブオプション。**`attempts` はリテラル `1` 固定**。
@@ -61,7 +91,19 @@ export type ExternalSendJobName = (typeof EXTERNAL_SEND_JOB_NAMES)[number];
  *    （`tests/static/queue-attempts.test.ts`）が、`send.` 接頭辞を持つ内部ジョブの集合を
  *    スナップショットで固定しており、ここに新しい `send.*` を足すと必ず落ちる。
  */
-export const INTERNAL_JOB_NAMES = ['send.hold-release'] as const;
+export const INTERNAL_JOB_NAMES = [
+  'send.hold-release',
+  // 🔴 T-04-03（docs/05 §9.4）。**`email.dispatch` だけが `attempts: 3` を許される送信**である。
+  //    根拠は「宛先が分類 1 / 分類外に限られ `BR-21`（取引先への二重送信）の射程外」であり、
+  //    その限定は payload の型（`HostOrPlatformDispatch`）が担保する。
+  //    二重送信そのものは `EmailDispatch.dedupeKey` の `UNIQUE` が止める（再試行しても 1 通）。
+  'email.dispatch',
+  // 🔴 招待・パスワード再設定。宛先は「招待中の本人 / 本人」に限られる（分類 1 / 2）。
+  //    業務上の外部送信を載せる型を持たない（`AccountMailJob.recipientClass`）。
+  'account.mail',
+  // Webhook 受信後の処理。外部 API を呼ばない（`WebhookDelivery.dedupeKey` + `processedAt` の CAS で冪等）。
+  'webhook.process',
+] as const;
 
 export type InternalJobName = (typeof INTERNAL_JOB_NAMES)[number];
 
@@ -99,12 +141,17 @@ export function internalQueue<N extends InternalJobName>(
 }
 
 /**
+ * 🔴 `email.dispatch` の再試行間隔（docs/05 §9.4「バックオフ 5s/30s」）。
+ *    `account.mail` も同じ表を使う（どちらも同じ性質の運用メールであり、待ち方を変える理由が無い）。
+ */
+export const EMAIL_DISPATCH_BACKOFF_DELAYS_MS = [5_000, 30_000] as const;
+
+/**
  * 🔴 キュー定義の唯一の表。ここに無いキューは存在しない。
  *
- * 本タスク（T-04-01）の射程は「送信系の `attempts: 1` を型と静的テストで固定する」ことなので、
- * 定義するのは送信系 3 本と、その復帰を担う `send.hold-release` である。
- * `email.dispatch` / `account.mail` / `gate.*` / 日次ジョブ等は、それぞれのジョブを実装する
- * タスク（T-04-03 ほか）が**この表に追記する**（別の場所に作らない）。
+ * T-04-01 で送信系 3 本と `send.hold-release` を、T-04-03 で運用メール 2 本と
+ * `webhook.process` を置いた。`gate.*` / `ai.*` / 日次ジョブ等は、それぞれのジョブを実装する
+ * タスクが**この表に追記する**（別の場所に作らない）。
  */
 export const QUEUE_DEFINITIONS = {
   // 🔴 不可（docs/05 §9.10）: 外部への到達が確定した後の再試行は二重送信そのもの。
@@ -113,6 +160,20 @@ export const QUEUE_DEFINITIONS = {
   'send.contract': externalSendQueue('send.contract'),
   // 保留の自動復帰（docs/05 §9.4）。外部 API を呼ばないので再試行してよい。
   'send.hold-release': internalQueue('send.hold-release', { attempts: 3 }),
+  // 🔴 運用メール（docs/05 §9.4 / §9.10「可（限定）」）。`dedupeKey` の `UNIQUE` で冪等。
+  'email.dispatch': internalQueue('email.dispatch', {
+    attempts: 3,
+    backoff: { type: 'stepped', delaysMs: EMAIL_DISPATCH_BACKOFF_DELAYS_MS },
+  }),
+  'account.mail': internalQueue('account.mail', {
+    attempts: 3,
+    backoff: { type: 'stepped', delaysMs: EMAIL_DISPATCH_BACKOFF_DELAYS_MS },
+  }),
+  // Webhook 受信後の処理（docs/05 §9.4）。`WebhookDelivery` の `UNIQUE` + CAS で冪等。
+  'webhook.process': internalQueue('webhook.process', {
+    attempts: 3,
+    backoff: { type: 'exponential', delay: 5_000 },
+  }),
 } as const;
 
 export type QueueName = keyof typeof QUEUE_DEFINITIONS;

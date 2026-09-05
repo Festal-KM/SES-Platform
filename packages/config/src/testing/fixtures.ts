@@ -35,6 +35,7 @@ const common: EnvRecord = {
   AWS_ACCOUNT_ID_EXPECTED_PRODUCTION: FIXTURE_AWS_ACCOUNT_ID_EXPECTED_PRODUCTION,
   SES_DEFAULT_FROM_ADDRESS: 'no-reply@example.com',
   SES_CONFIGURATION_SET: 'ses-platform-test',
+  SES_EVENT_TOPIC_ARN: 'arn:aws:sns:ap-northeast-1:100000000001:ses-platform-test-events',
   SES_GLOBAL_RATE_PER_SECOND: '14',
 
   S3_BUCKET: 'ses-platform-test',

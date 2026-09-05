@@ -248,6 +248,25 @@ export type DispatchToken = {
   readonly [DispatchTokenBrand]: true;
 };
 
+/**
+ * 🔴 `DispatchToken` を作れる**唯一の関数**（T-04-03）。
+ *
+ * 引数は `packages/db` の `reserveEmailDispatch` が返した予約（= `email_dispatches` の行が
+ * 実在し、`dedupeKey` の `UNIQUE` を通っていることの証拠）である。
+ * 🔴 `packages/connectors` は `@ses/db` に依存できない（`CLAUDE.md` §2.1）ため、
+ *    引数の型は構造的にしか縛れない。**呼び出し元の限定は
+ *    `tests/static/auth-db-callers.test.ts` の許可リスト**が担う（`resolveRecipientClass` と同じ扱い）。
+ *    予約を経ずにここを呼ぶコードが増えた瞬間に、その走査が落ちる。
+ * ⚠️ 申し送り（T-09-01）: 送信トークン型を `packages/domain` へ移す際に、この関数も
+ *    「予約の結果からしか作れない」形（`packages/db` 側のブランドを引数に取る）へ引き上げる。
+ */
+export function dispatchTokenFor(reservation: {
+  readonly dispatchId: string;
+  readonly dedupeKey: string;
+}): DispatchToken {
+  return { dispatchId: reservation.dispatchId, dedupeKey: reservation.dedupeKey } as DispatchToken;
+}
+
 declare const MeterSubmissionTokenBrand: unique symbol;
 
 /** 🔴 `BillingMeterSubmission` に INSERT できた実行だけが Stripe を呼ぶ（docs/05 §9.8）。 */

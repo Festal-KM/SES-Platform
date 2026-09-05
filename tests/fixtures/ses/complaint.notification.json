@@ -1,0 +1,10 @@
+{
+  "Type": "Notification",
+  "MessageId": "22222222-2222-4222-8222-222222222222",
+  "TopicArn": "arn:aws:sns:ap-northeast-1:100000000001:ses-platform-test-events",
+  "Message": "{\"eventType\":\"Complaint\",\"mail\":{\"messageId\":\"0100018f-0000-4000-8000-000000000002\",\"timestamp\":\"2026-09-05T02:00:00.000Z\",\"source\":\"no-reply@example.co.jp\",\"destination\":[\"someone@example.com\"]},\"complaint\":{\"complaintFeedbackType\":\"abuse\",\"timestamp\":\"2026-09-05T02:05:00.000Z\",\"feedbackId\":\"feedback-0002\",\"complainedRecipients\":[{\"emailAddress\":\"someone@example.com\"}]}}",
+  "Timestamp": "2026-09-05T02:05:01.000Z",
+  "SignatureVersion": "1",
+  "Signature": "PLACEHOLDER",
+  "SigningCertURL": "https://sns.ap-northeast-1.amazonaws.com/SimpleNotificationService-0000000000000000000000000000000a.pem"
+}

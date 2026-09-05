@@ -41,6 +41,15 @@ const domainRecipientFile = path.join(
   'classify.ts',
 );
 const dbValueSetsFile = path.join(repoRoot, 'packages', 'db', 'src', 'schema-value-sets.ts');
+const sesEventsFile = path.join(
+  repoRoot,
+  'packages',
+  'connectors',
+  'src',
+  'email',
+  'ses',
+  'events.ts',
+);
 const programDesignFile = path.join(repoRoot, 'docs', '05-program-design.md');
 
 function parse(file: string): ts.SourceFile {
@@ -150,6 +159,7 @@ const config = parse(configFile);
 const connectors = parse(connectorsFile);
 const domainRecipient = parse(domainRecipientFile);
 const dbValueSets = parse(dbValueSetsFile);
+const sesEvents = parse(sesEventsFile);
 const docsSendTokens = parseText(
   tsCodeBlockContaining(readFileSync(programDesignFile, 'utf8'), 'packages/db/src/send.ts'),
   'docs-05-send.ts',
@@ -211,6 +221,15 @@ describe('🔴 packages/db の CHECK 値集合との二重宣言が一致して�
     // 二重送信の唯一の防御線（docs/05 §10.1 の 2 本の UNIQUE）が機能しない。
     const fromConnectors = [...arrayLiteralsOfConst(connectors, 'SEND_ENTITY_TYPES')].sort();
     const fromDb = [...arrayLiteralsOfConst(dbValueSets, 'SEND_ATTEMPT_ENTITY_TYPES')].sort();
+    expect(fromConnectors).toEqual(fromDb);
+  });
+
+  it('🔴 SES のイベント種別（SES_EVENT_TYPES ↔ EMAIL_EVENT_TYPES）が一致する（T-04-03）', () => {
+    // ずれると `normalizeSesEvent` が導いた種別で `email_events` の CHECK に落ちる
+    // ＝ バウンス・苦情が記録されないまま実行時に壊れる（docs/03 §3.2.5 / docs/05 §3.9）。
+    const fromConnectors = [...arrayLiteralsOfConst(sesEvents, 'SES_EVENT_TYPES')].sort();
+    const fromDb = [...arrayLiteralsOfConst(dbValueSets, 'EMAIL_EVENT_TYPES')].sort();
+    expect(fromConnectors.length).toBeGreaterThan(0);
     expect(fromConnectors).toEqual(fromDb);
   });
 

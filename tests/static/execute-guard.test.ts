@@ -64,6 +64,12 @@ const EXEMPT_ROUTES: Readonly<Record<string, string>> = {
     '第 2 要素の提示（#2）。同上、ctx が生成される前の経路である。',
   'apps/web/app/api/(main)/invitations/[token]/accept/route.ts':
     '未認証経路（#7）。所属は招待行から決まり、受諾時点では ctx が無い。',
+  'apps/web/app/api/webhooks/ses/route.ts':
+    '🔴 Webhook 受信（docs/05 §6.10 / §8.5。T-04-03）。送信元は Amazon SNS であり ' +
+    'テナント利用者の操作ではない（Cookie もセッションも無く ctx を作れない）。認可は SNS の ' +
+    '署名検証とトピック照合が担う。加えて、受信は「検証 → WebhookDelivery に INSERT → 200 → ' +
+    'enqueue」だけを行い、テナントの業務データを 1 件も変更しない（バウンス・苦情の記録は ' +
+    'C0 SYSTEM_ONLY の email_events であり、テナントのライフサイクル状態に依存しない）。',
 };
 
 /**

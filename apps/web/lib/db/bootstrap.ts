@@ -23,6 +23,13 @@ import {
   configureTokenEncryption,
 } from '@ses/db';
 import { configureAccountMailQueue, PendingAccountMailQueue } from '../jobs/account-mail';
+import {
+  configureWebhookProcessQueue,
+  confirmSnsSubscription,
+  fetchSigningCertificate,
+  PendingWebhookProcessQueue,
+} from '../webhooks/runtime';
+import type { SigningCertificateLoader } from '../webhooks/sns';
 
 let initialized = false;
 /** 🔴 `GET /api/me` の `env`（docs/05 §6.3 #8）が読む値。`ensureDbConfigured()` が 1 度だけ埋める。 */
@@ -38,6 +45,11 @@ let cachedPlatformAuthSecret: string | null = null;
  *    `CLAUDE.md` §9-12「有効期間は 30 日」）。`packages/config` の `SANDBOX_TRIAL_DAYS` が唯一の出所。
  */
 let cachedSandboxTrialDays: number | null = null;
+/**
+ * 🔴 T-04-03: `POST /api/webhooks/ses` が受け入れる SNS トピック（`SES_EVENT_TOPIC_ARN`）。
+ *    署名検証は「Amazon が署名したこと」しか証明しないため、**受け入れるトピックを固定する**。
+ */
+let cachedSesEventTopicArn: string | null = null;
 
 /**
  * DB クライアントを 1 度だけ初期化する。
@@ -82,7 +94,36 @@ export function ensureDbConfigured(): void {
   if (connectors.email === 'mock') {
     configureAccountMailQueue(new PendingAccountMailQueue());
   }
+  // 🔴 T-04-03: Webhook 受信の enqueue 先。判断材料は `account.mail` と同じ（`connectors.email`）。
+  //    - email が `mock`（development / demo）→ 保留キュー（SP-07 のハンドラが処理するまで積むだけ）
+  //    - それ以外（sandbox / staging / production）→ **登録しない**。BullMQ の配線は SP-07 であり、
+  //      未実装のまま「受け取ったことにして捨てる」状態を作らない。受信時に例外 = 500 になり、
+  //      SNS が再送を続けるので通知は失われない（`CLAUDE.md` §11.1）。
+  if (connectors.email === 'mock') {
+    configureWebhookProcessQueue(new PendingWebhookProcessQueue());
+  }
+  cachedSesEventTopicArn = env.SES_EVENT_TOPIC_ARN;
   initialized = true;
+}
+
+/**
+ * 🔴 `POST /api/webhooks/ses` が使う起動時解決済みの値（docs/05 §8.5）。
+ *    ルートが `process.env` を読まない（`CLAUDE.md` §3.5）ための唯一の経路。
+ */
+export function sesWebhookRuntime(): {
+  readonly topicArn: string;
+  readonly loadCertificate: SigningCertificateLoader;
+  readonly confirmSubscription: (subscribeUrl: string) => Promise<void>;
+} {
+  ensureDbConfigured();
+  if (cachedSesEventTopicArn === null) {
+    throw new Error('SES_EVENT_TOPIC_ARN が解決されていません（bootstrap の不変条件違反）。');
+  }
+  return {
+    topicArn: cachedSesEventTopicArn,
+    loadCertificate: fetchSigningCertificate,
+    confirmSubscription: confirmSnsSubscription,
+  };
 }
 
 /**

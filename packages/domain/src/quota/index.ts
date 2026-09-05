@@ -1,0 +1,10 @@
+// packages/domain/src/quota/index.ts
+// 上限判定の純粋関数（docs/05 §8.7 / §8.3-Q）。
+// 🔴 `decideProviderQuota`（送信基盤全体の 24h 枠。docs/05 §8.3-Q）は T-04-04 が
+//    `provider.ts` として同じディレクトリに置く。**2 実装にしない。**
+export {
+  decideEmailRate,
+  EMAIL_MINUTE_WINDOW_MS,
+  type EmailRateDecision,
+  type EmailRateInput,
+} from './email-rate.js';

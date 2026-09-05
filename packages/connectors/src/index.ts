@@ -21,6 +21,8 @@ import {
   MockObjectStore,
 } from './mock/index.js';
 import { ConnectorImplementationNotAvailableError } from './errors.js';
+import { SandboxRecipientScopedEmailSender } from './email/sandbox-recipient-scoped.js';
+import { InMemoryProviderSendCounter, SesEmailSender, type SesApi, type ProviderSendCounter } from './email/ses/index.js';
 import type { BillingProvider, EmailSender, EsignProviderMap, MalwareScanner, ObjectStore } from './interfaces.js';
 import type { ConnectorCategory, ConnectorImplementationKind, ConnectorSelectionInput } from './types.js';
 
@@ -31,12 +33,22 @@ export * from './queues.js';
 // 🔴 T-04-02: メール送信の単一経路が受け取る payload の型（docs/05 §9.4）。
 //    分類 2 / 3 / 4 を `email.dispatch` に渡せないことを型で固定する。
 export * from './email/dispatch.js';
+// 🔴 T-04-03: `SENT` / `MOCKED` の記録を取り違えないための判定（docs/05 §13.2 / §9.7）。
+export * from './email/delivery-mode.js';
+// 🔴 T-04-03: `account.mail` の payload と送達状態（docs/05 §9.4 / §6.4）。
+//    `apps/web`（enqueue）と `apps/worker`（実行）の契約であり、どちらかのアプリに置かない。
+export * from './email/account-mail.js';
 // 🔴 T-04-02: `sandbox` の宛先分類による差し替え（docs/05 §8.2）。**モック実装ではない**
 //    （分類 1 / 分類外は実送信側へ委譲する）ため、モックと違って re-export してよい。
-//    ⚠️ `createConnectors` への登録は T-04-03 が行う（`real` に渡す SES 実装が要るため）。
-//    それまで `sandbox` の起動は `ConnectorImplementationNotAvailableError` で失敗する
-//    —— これは意図した挙動である（モックで埋めない。CLAUDE.md §11.1）。
+//    ✅ T-04-03 で `createConnectors` に登録した（`real` = SES 実装が揃ったため）。
 export * from './email/sandbox-recipient-scoped.js';
+// 🔴 T-04-03: SES コネクタ（docs/05 §8.3 / docs/03 §3.2）。`SesApi` は AWS SDK の
+//    アダプタが実装するポートであり、業務コードは触らない（`createConnectors` にだけ渡す）。
+export * from './email/ses/index.js';
+// 🔴 T-04-03: 分次のレート窓（docs/05 §8.7）。日次は `packages/db` の `UsageCounter` が正。
+export * from './rate/minute-window.js';
+// 🔴 T-04-03: Webhook 受信後の処理ジョブの payload（docs/05 §8.5 / §9.4）。
+export * from './webhooks/process.js';
 // 🔴 モック実装のクラスは **re-export しない**（docs/05 §13.1 / §2.2）。外に出すと
 //    「この環境ならモック」というリクエストごとの分岐を業務コードに書けてしまう。
 //    モックの呼び出し回数は `EmailSender.callCount()` 等、**インタフェース側**から読む
@@ -80,21 +92,75 @@ function createEsignProviderMap(kind: ConnectorImplementationKind): EsignProvide
 }
 
 /**
+ * SES 実装（`email: 'real'` / `'sandboxRecipientScoped'`）の組み立てに要る値（T-04-03）。
+ *
+ * 🔴 `api` は AWS SDK のアダプタ（`packages/connectors` は SDK を持たず、ポートだけを知る。
+ *    `email/ses/api.ts` 冒頭）。**起動時に 1 回だけ渡す。**
+ * 🔴 環境変数を `packages/connectors` から読まない（`CLAUDE.md` §3.5。設定の出所は
+ *    `packages/config` の 1 箇所であり、ここは受け取るだけ）。
+ */
+export type SesRuntimeOptions = {
+  readonly api: SesApi;
+  /** `SES_DEFAULT_FROM_ADDRESS`（共通ドメイン）。 */
+  readonly defaultFromAddress: string;
+  /** `SES_CONFIGURATION_SET`。 */
+  readonly configurationSet: string;
+  /**
+   * 送信基盤の 24h ローリング件数（docs/05 §8.3-Q ③）。
+   * 🔴 省略時はプロセス内カウンタ。`production` では Redis 版を渡す（T-04-04）。
+   */
+  readonly sentCounter?: ProviderSendCounter;
+};
+
+export type ConnectorRuntimeOptions = {
+  readonly ses?: SesRuntimeOptions;
+};
+
+/**
+ * 🔴 SES を要求する実装種別（`real` / `sandboxRecipientScoped`）のファクトリ。
+ *
+ * `runtime.ses` が無いときは **`ConnectorImplementationNotAvailableError` で起動を止める**。
+ * モックへ倒さない（`CLAUDE.md` §11.1。「未設定ならモック」は
+ * 「成功したように見えて実際には送信されていない」を生む）。
+ */
+function createSesEmailSender(
+  kind: ConnectorImplementationKind,
+  ses: SesRuntimeOptions | undefined,
+): SesEmailSender {
+  if (ses === undefined) throw new ConnectorImplementationNotAvailableError('email', kind);
+  return new SesEmailSender({
+    api: ses.api,
+    defaultFromAddress: ses.defaultFromAddress,
+    configurationSet: ses.configurationSet,
+    sentCounter: ses.sentCounter ?? new InMemoryProviderSendCounter(),
+  });
+}
+
+/**
  * 起動時に 1 回だけ呼ぶ（`apps/web` は `instrumentation.ts`、`apps/worker` は `src/main.ts`）。
  * 🔴 リクエストごとに呼ばない。
  *
- * 現時点で登録されている実装はモックだけであり、`real` / `sandboxRecipientScoped` を選ぶ環境
- * （`staging` / `production` / `sandbox`、および `development` の objectStore / malwareScanner）では
- * `ConnectorImplementationNotAvailableError` が起動時に throw される。
- * 🔴 これは意図した挙動である —— 実装が無いことを黙ってモックで埋めると
- * 「成功したように見えて実際には送信されていない」（CLAUDE.md §11.1）に直結する。
- * 各実装を足すタスク（SES = T-04-03、MinIO / ClamAV / DocuSign / Stripe = 後続）が
- * このファクトリ表に登録を追加していく。
+ * 🔴 実装が無い区分は**モックで代替せず throw する**（`CLAUDE.md` §11.1）。現時点で未登録なのは
+ *    `objectStore` / `malwareScanner`（MinIO / ClamAV。後続タスク）と `esign` / `billing` の
+ *    `real`（Phase 3）である。email は 3 種別すべて解決できる（T-04-03）。
  */
-export function createConnectors(selection: ConnectorSelectionInput): Connectors {
+export function createConnectors(
+  selection: ConnectorSelectionInput,
+  runtime: ConnectorRuntimeOptions = {},
+): Connectors {
   return {
     email: pickByKind<EmailSender>('email', selection.email, {
       mock: () => new MockEmailSender(),
+      // 🔴 `staging` / `production`。共通ドメイン / 独自ドメインの判定は `EmailSendInput.fromDomain`
+      //    が持ち、ここに環境分岐は無い。
+      real: () => createSesEmailSender('real', runtime.ses),
+      // 🔴 `sandbox`。分類 1 / 分類外だけが SES へ、分類 2 / 3 / 4 は
+      //    `development` / `demo` / E2E と**同一のモック実装**へ流れる（docs/05 §13.2 / §17.5）。
+      sandboxRecipientScoped: () =>
+        new SandboxRecipientScopedEmailSender({
+          real: createSesEmailSender('sandboxRecipientScoped', runtime.ses),
+          mock: new MockEmailSender(),
+        }),
     }),
     objectStore: pickByKind<ObjectStore>('objectStore', selection.objectStore, {
       mock: () => new MockObjectStore(),

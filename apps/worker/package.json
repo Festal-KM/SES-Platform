@@ -12,6 +12,8 @@
   },
   "dependencies": {
     "@ses/config": "workspace:*",
-    "@ses/db": "workspace:*"
+    "@ses/connectors": "workspace:*",
+    "@ses/db": "workspace:*",
+    "@ses/domain": "workspace:*"
   }
 }

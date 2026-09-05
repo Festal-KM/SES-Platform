@@ -87,6 +87,13 @@ const commonShape = {
   AWS_ACCOUNT_ID_EXPECTED_PRODUCTION: z.string().regex(/^\d{12}$/),
   SES_DEFAULT_FROM_ADDRESS: z.string().email(),
   SES_CONFIGURATION_SET: z.string().max(64),
+  /**
+   * 🔴 T-04-03: バウンス・苦情を受け取る SNS トピックの ARN（docs/05 §8.5 / docs/03 §3.2.5）。
+   *    `POST /api/webhooks/ses` はこのトピック以外のメッセージを 401 で拒否する。
+   *    **必須項目にする** —— 任意にすると「未設定なら検証しない」という fail-open を招き、
+   *    Amazon が署名した任意のトピック（＝誰でも作れる）を受け入れてしまう。
+   */
+  SES_EVENT_TOPIC_ARN: z.string().regex(/^arn:aws:sns:[a-z0-9-]+:\d{12}:[A-Za-z0-9_-]+$/),
   EMAIL_DAILY_LIMIT_PER_TENANT: z.coerce.number().int().positive().default(500),
   EMAIL_MINUTE_LIMIT_PER_TENANT: z.coerce.number().int().positive().default(30),
   SES_GLOBAL_RATE_PER_SECOND: z.coerce.number().int().positive(),

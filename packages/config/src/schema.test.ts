@@ -19,6 +19,38 @@ describe('envSchema / loadAppEnv — 正常系（APP_ENV の 5 値）', () => {
   }
 });
 
+describe('🔴 メール送信の上限（CLAUDE.md §3.4 / docs/05 §8.7 / F-027 AC-2）', () => {
+  it('🔴 既定値は 1 テナント 1 日 500 通 / 1 分 30 通（ハードコードせず設定で持つ）', () => {
+    const env = loadAppEnv(buildValidEnv('development'));
+    expect(env.EMAIL_DAILY_LIMIT_PER_TENANT).toBe(500);
+    expect(env.EMAIL_MINUTE_LIMIT_PER_TENANT).toBe(30);
+  });
+
+  it('プランごとの上書き（環境変数で別の値）を受け付ける', () => {
+    const env = loadAppEnv(
+      buildValidEnv('development', { EMAIL_DAILY_LIMIT_PER_TENANT: '1000' }),
+    );
+    expect(env.EMAIL_DAILY_LIMIT_PER_TENANT).toBe(1000);
+  });
+});
+
+describe('🔴 SES のイベント通知トピック（T-04-03 / docs/05 §8.5）', () => {
+  it('🔴 必須である（未設定を許すと「検証しない」fail-open になる）', () => {
+    const input = buildValidEnv('development');
+    delete input.SES_EVENT_TOPIC_ARN;
+    expect(() => loadAppEnv(input)).toThrow(EnvValidationError);
+  });
+
+  it.each(['not-an-arn', 'arn:aws:sns:ap-northeast-1:12345:topic', 'arn:aws:sqs:ap-northeast-1:100000000001:q'])(
+    'ARN の形が不正なら起動失敗（%s）',
+    (value) => {
+      expect(() => loadAppEnv(buildValidEnv('development', { SES_EVENT_TOPIC_ARN: value }))).toThrow(
+        EnvValidationError,
+      );
+    },
+  );
+});
+
 describe('🔴 production でモック実装が選ばれたら起動失敗（NFR-ENV-3 / F-022 AC-5）', () => {
   it('MALWARE_SCANNER=mock は production の型として選べず、パース自体が失敗する', () => {
     const input = buildValidEnv('production', { MALWARE_SCANNER: 'mock' });

@@ -9,12 +9,14 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  EMAIL_DISPATCH_BACKOFF_DELAYS_MS,
   EXTERNAL_SEND_JOB_NAMES,
   INTERNAL_JOB_NAMES,
   QUEUE_DEFINITIONS,
   externalSendQueue,
   internalQueue,
   queueDefinition,
+  steppedBackoffDelayMs,
   type ExternalSendQueueOptions,
   type InternalQueueOptions,
 } from './queues.js';
@@ -102,5 +104,49 @@ describe('キュー定義の実際の値（docs/05 §9.4 / §9.10）', () => {
 
   it('queueDefinition は定義済みのキューを引ける', () => {
     expect(queueDefinition('send.contract').defaultJobOptions.attempts).toBe(1);
+  });
+});
+
+describe('🔴 運用メールのキュー（T-04-03。docs/05 §9.4 / §9.10）', () => {
+  it.each(['email.dispatch', 'account.mail'] as const)(
+    '%s は attempts: 3（宛先が分類 1 / 2 / 分類外に限られ BR-21 の射程外）',
+    (name) => {
+      expect(QUEUE_DEFINITIONS[name].defaultJobOptions.attempts).toBe(3);
+    },
+  );
+
+  it('🔴 運用メールは送信系ジョブ名ではない（attempts: 1 の対象を増やしていない）', () => {
+    expect(EXTERNAL_SEND_JOB_NAMES as readonly string[]).not.toContain('email.dispatch');
+    expect(EXTERNAL_SEND_JOB_NAMES as readonly string[]).not.toContain('account.mail');
+    expect(EXTERNAL_SEND_JOB_NAMES).toHaveLength(3);
+  });
+
+  it('🔴 バックオフは docs/05 §9.4 の 5s / 30s（組み込み戦略で近似しない）', () => {
+    expect(EMAIL_DISPATCH_BACKOFF_DELAYS_MS).toEqual([5_000, 30_000]);
+    expect(QUEUE_DEFINITIONS['email.dispatch'].defaultJobOptions.backoff).toEqual({
+      type: 'stepped',
+      delaysMs: EMAIL_DISPATCH_BACKOFF_DELAYS_MS,
+    });
+  });
+
+  it('webhook.process は attempts: 3（外部 API を呼ばず、UNIQUE + CAS で冪等）', () => {
+    expect(QUEUE_DEFINITIONS['webhook.process'].defaultJobOptions.attempts).toBe(3);
+  });
+});
+
+describe('steppedBackoffDelayMs（BullMQ の backoffStrategy）', () => {
+  it('1 回目の再試行は 5 秒、2 回目は 30 秒', () => {
+    expect(steppedBackoffDelayMs(1, EMAIL_DISPATCH_BACKOFF_DELAYS_MS)).toBe(5_000);
+    expect(steppedBackoffDelayMs(2, EMAIL_DISPATCH_BACKOFF_DELAYS_MS)).toBe(30_000);
+  });
+
+  it('🔴 表を超えた回数でも最後の値を返す（0 を返すと即時再試行になる）', () => {
+    expect(steppedBackoffDelayMs(3, EMAIL_DISPATCH_BACKOFF_DELAYS_MS)).toBe(30_000);
+    expect(steppedBackoffDelayMs(99, EMAIL_DISPATCH_BACKOFF_DELAYS_MS)).toBe(30_000);
+  });
+
+  it('0 以下の attemptsMade でも先頭の値に丸める', () => {
+    expect(steppedBackoffDelayMs(0, EMAIL_DISPATCH_BACKOFF_DELAYS_MS)).toBe(5_000);
+    expect(steppedBackoffDelayMs(-1, EMAIL_DISPATCH_BACKOFF_DELAYS_MS)).toBe(5_000);
   });
 });

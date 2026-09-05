@@ -1,10 +1,11 @@
 // apps/web/lib/jobs/account-mail.ts
-// `account.mail` ジョブ（docs/05 §9.4）の **enqueue 側だけ**。
+// `account.mail`（docs/05 §9.4）の **enqueue 側だけ**。
 //
-// 本タスク（T-03-03）の射程は enqueue までである。ジョブ本体（`EmailDispatch` の作成・
-// `resolveRecipientClass` による宛先分類・実送信 / モックの選択）は **SP-04 の単一経路**が実装する。
-// キュー定義そのものの置き場所は `packages/connectors/src/queues.ts`（docs/05 §9.1）であり、
-// 🔴 **SP-04 でそこへ移す**。ここに BullMQ を持ち込まない（`apps/web` がキューの実装を知らない形を保つ）。
+// 🔴 T-04-03: payload の型（`AccountMailJob` / `AccountMailKind` / `AccountMailDeliveryState`）は
+//    **`@ses/connectors` へ移設した**（T-03-03 からの申し送り）。payload は `apps/web`（enqueue）と
+//    `apps/worker`（実行）の**契約**であり、片方のアプリに置くともう片方が同じ形を再定義する。
+//    ジョブ本体（`EmailDispatch` の作成・保留判定・送信）は `apps/worker/src/jobs/account-mail.ts`。
+//    キュー定義（名前・`attempts`・バックオフ）は `packages/connectors/src/queues.ts` の 1 箇所。
 //
 // 🔴 CLAUDE.md §11.1 の「成功したように見えて実際には送信されていない」を作らないための構造:
 //    ① 実装が **1 つも登録されていない状態で enqueue したら例外**（黙って捨てない）
@@ -12,54 +13,24 @@
 //       その判断材料は `resolveConnectorSelection`（`packages/config`。APP_ENV 分岐の唯一の場所）である
 //    ③ 「送られる予定」なのか「モックで終わる」のかを、呼び出し側が推測せず戻り値で受け取る
 //       （#14 の `deliveryState`。docs/05 §6.4）
-//
-// 🔴 T-04-02: payload は**宛先分類を必須で持つ**（docs/05 §8.2）。分類の値は
-//    `packages/db` の `resolveRecipientClass`（`Membership` / `Invitation` から機械的に導く）
-//    だけが供給し、ハンドラ・ルートが文字列で指定する経路は無い。
+import {
+  ACCOUNT_MAIL_DELIVERY_STATES,
+  ACCOUNT_MAIL_KINDS,
+  type AccountMailDeliveryState,
+  type AccountMailJob,
+  type AccountMailKind,
+  type AccountMailQueue,
+} from '@ses/connectors';
 import { isAccountMailRecipientClass } from '@ses/db';
 import type { AccountMailRecipientClass, RecipientClass } from '@ses/db';
 
-/** docs/05 §9.4 の `account.mail` payload の `kind`。 */
-export const ACCOUNT_MAIL_KINDS = ['INVITATION', 'PASSWORD_RESET'] as const;
-
-export type AccountMailKind = (typeof ACCOUNT_MAIL_KINDS)[number];
-
-/**
- * `account.mail` の payload（docs/05 §9.4）。
- *
- * 🔴 `token` は**平文**である。payload（Redis）にだけ載り、ジョブの完了とともに消える。
- *    DB・ログ・監査ログには載せない（`packages/config` の redact denylist に `token` がある）。
- * 🔴 T-04-02: `recipientClass` は**必須**である（docs/05 §8.2「分類が未指定の送信を成立させない」）。
- *    型は `AccountMailRecipientClass`（分類 1 / 2）に限られており、業務上の外部送信
- *    （分類 3 / 4）を載せられない。値は `resolveRecipientClass` が `Membership` /
- *    `Invitation` から導いたものだけであり、**呼び出し側が文字列を書くことはない**。
- */
-export type AccountMailJob = {
-  readonly tenantId: string;
-  readonly kind: AccountMailKind;
-  /** `INVITATION` なら `Invitation.id`、`PASSWORD_RESET` なら `User.id`。 */
-  readonly targetId: string;
-  readonly recipientClass: AccountMailRecipientClass;
-  readonly token: string;
-};
-
-/**
- * enqueue の結果。#14 の `deliveryState`（docs/05 §6.4）にそのまま対応する。
- *
- * - `QUEUED`: 実送信の経路に載った
- * - `MOCKED`: モックのメールコネクタで終わる（`development` / `demo`）
- *
- * 🔴 `HELD_DOMAIN_UNVERIFIED`（取引先招待 × 独自ドメイン未検証。docs/05 §8.3）は
- *    **SP-04 が足す**。Phase 0 の #14 はホストロール宛だけなので発生しない
- *    （`F-001 AC-5`: 自社メンバー宛は送信ドメインの検証状態に依存しない）。
- */
-export const ACCOUNT_MAIL_DELIVERY_STATES = ['QUEUED', 'MOCKED'] as const;
-
-export type AccountMailDeliveryState = (typeof ACCOUNT_MAIL_DELIVERY_STATES)[number];
-
-/** enqueue の実装（BullMQ / モック）が満たす契約。 */
-export type AccountMailQueue = {
-  enqueue(job: AccountMailJob): Promise<AccountMailDeliveryState>;
+export {
+  ACCOUNT_MAIL_DELIVERY_STATES,
+  ACCOUNT_MAIL_KINDS,
+  type AccountMailDeliveryState,
+  type AccountMailJob,
+  type AccountMailKind,
+  type AccountMailQueue,
 };
 
 /**
@@ -140,7 +111,7 @@ export function requireAccountMailQueue(): AccountMailQueue {
  * `development` / `demo`（= メールコネクタがモック）で使う保留キュー。
  *
  * 🔴 これは「モックのメール送信」ではない。**ジョブが積まれた事実だけを保持する**入れ物であり、
- *    実際の送信 / モック送信は SP-04 の `account.mail` ハンドラが
+ *    実際の送信 / モック送信は `apps/worker/src/jobs/account-mail.ts` が
  *    `packages/connectors/src/mock/**` の `MockEmailSender` で行う（docs/05 §13.2。
  *    テスト専用の別モックを作らない）。
  * 🔴 `production` でこれが選ばれることはない（`bootstrap.ts` が選択の根拠を

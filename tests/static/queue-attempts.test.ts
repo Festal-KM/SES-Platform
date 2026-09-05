@@ -34,8 +34,11 @@ const QUEUE_DEFINITION_FILE = 'packages/connectors/src/queues.ts';
  * **`apps/worker` の起動配線 1 箇所**に閉じる。両方が 1 箇所に固定されて初めて
  * 「`attempts` の上書きがどこでも起きない」と言える。
  *
- * T-04-01 時点では実体化は 0 件（BullMQ は依存にも入っていない）。
- * ⚠️ T-04-03 がワーカーの起動配線を 1 件だけここに追加する。**2 件目を足さない。**
+ * 🔴 T-04-03 時点でも実体化は 0 件である（BullMQ は依存にも入っていない）。
+ *    `email.dispatch` / `account.mail` / `webhook.process` の**ハンドラと payload の門番**までが
+ *    T-04-03 の範囲であり、`Queue` / `Worker` の配線は **SP-07** が担う
+ *    （`apps/worker/src/jobs/index.ts` 冒頭の宣言どおり）。
+ * ⚠️ SP-07 がワーカーの起動配線を 1 件だけここに追加する。**2 件目を足さない。**
  */
 const QUEUE_CONSTRUCTION_ALLOWLIST: readonly string[] = [];
 
@@ -245,6 +248,41 @@ function listSourceFiles(dir: string): string[] {
   return files;
 }
 
+/**
+ * 🔴 T-04-03: **`.add()` の per-job オプションによる `attempts` / `backoff` の上書き**を検出する。
+ *
+ * なぜ要るか: `QUEUE_DEFINITIONS` の `attempts: 1` は BullMQ の **`defaultJobOptions`** である。
+ * BullMQ は `queue.add(name, payload, { attempts: 3 })` の per-job オプションを既定値より優先する
+ * ため、キュー定義を 1 箇所に閉じただけでは「enqueue 側で自動リトライを復活させる」経路が残る。
+ * 🔴 送信系（`send.*`）でこれが起きると、それは二重送信そのものである（`BR-21` / `BR-22`）。
+ *
+ * 検出は「`.add(...)` の引数に `attempts` / `backoff` を持つオブジェクトリテラルがある」で行う。
+ * ジョブ名で絞らないのは、絞ると「変数に入れたキュー名」経由で抜けられるからである。
+ * per-job で待ち時間を変えたい正当な理由が生じたら、**ここに例外を追加するのではなく
+ * `QUEUE_DEFINITIONS` に別のキューを足す**（設定が 1 箇所に残る形にする）。
+ */
+function findPerJobRetryOverrides(text: string, fileName: string): number[] {
+  const sourceFile = sourceOf(text, fileName);
+  const lines: number[] = [];
+  function visit(node: ts.Node): void {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      (node.expression.name.text === 'add' || node.expression.name.text === 'addBulk')
+    ) {
+      for (const argument of node.arguments) {
+        if (!ts.isObjectLiteralExpression(argument)) continue;
+        if (propertyOf(argument, 'attempts') !== null || propertyOf(argument, 'backoff') !== null) {
+          lines.push(sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1);
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(sourceFile);
+  return lines;
+}
+
 /** BullMQ の `Queue` を実体化している箇所（キュー定義の場所が 1 箇所であることの検査）。 */
 function findQueueConstructionSites(text: string, fileName: string): number[] {
   const sourceFile = sourceOf(text, fileName);
@@ -306,6 +344,22 @@ describe('🔴 送信系キューの attempts が 1（docs/05 §17.2 #6 / §9.1 
         // このテスト自身（検出器のセレクタを文字列として持つ）は対象外。
         if (relative === 'tests/static/queue-attempts.test.ts') continue;
         if (findQueueConstructionSites(readFileSync(file, 'utf8'), file).length > 0) offenders.push(relative);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('🔴 `.add()` の per-job オプションで attempts / backoff を上書きしている箇所が無い（T-04-03）', () => {
+    // 🔴 `defaultJobOptions` は既定値でしかない。enqueue 側の上書きを塞がないと、
+    //    送信系キューの `attempts: 1` は「書いてあるだけ」になる。
+    const offenders: string[] = [];
+    for (const root of ['packages', 'apps', 'tests', 'scripts']) {
+      for (const file of listSourceFiles(path.join(repoRoot, root))) {
+        const relative = path.relative(repoRoot, file).split(path.sep).join('/');
+        if (relative === 'tests/static/queue-attempts.test.ts') continue;
+        if (findPerJobRetryOverrides(readFileSync(file, 'utf8'), file).length > 0) {
+          offenders.push(relative);
+        }
       }
     }
     expect(offenders).toEqual([]);
@@ -375,5 +429,18 @@ describe('違反 fixture（検出器そのものが働いていること）', ()
   it('対照: 正常な fixture は違反 0 件', () => {
     const { violations } = analyzeQueueSource(readFixture('clean.ok.ts'), 'clean.ok.ts');
     expect(violations).toEqual([]);
+  });
+
+  it('🔴 `.add()` の per-job オプションによる attempts / backoff の上書きを検出する（T-04-03）', () => {
+    const lines = findPerJobRetryOverrides(
+      readFixture('per-job-add.violation.ts'),
+      'per-job-add.violation.ts',
+    );
+    // attempts の上書きと backoff の上書きの 2 箇所。
+    expect(lines).toHaveLength(2);
+  });
+
+  it('対照: 正常な fixture には per-job の上書きが無い', () => {
+    expect(findPerJobRetryOverrides(readFixture('clean.ok.ts'), 'clean.ok.ts')).toEqual([]);
   });
 });

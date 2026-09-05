@@ -27,6 +27,11 @@
 //   - `countPartnerSeats` の既定値（`packages/config` の `SEAT_SNAPSHOT_COUNTS_PARTNER_SEATS`）は
 //     **合成側から渡す**（下記 `UsageSeatSnapshotDeps`）
 import { snapshotSeatCount, systemTenantCtx, type SeatSnapshotResult } from '@ses/db';
+// 🔴 T-04-03: payload の門番は `payload.ts` に集約した（`email.dispatch` / `account.mail` と共用）。
+//    同じ判定を 2 箇所に書くと、片方だけ緩む。
+import { InvalidJobPayloadError, requireUuid } from './payload.js';
+
+export { InvalidJobPayloadError } from './payload.js';
 
 /** キュー名（docs/05 §9.8）。`jobId` の接頭辞にもなる。 */
 export const USAGE_SEAT_SNAPSHOT_JOB = 'usage.seat-snapshot';
@@ -45,17 +50,6 @@ export type UsageSeatSnapshotPayload = {
   readonly tenantId: string;
 };
 
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/** payload の解釈に失敗した（ジョブを実行しない）。 */
-export class InvalidJobPayloadError extends Error {
-  constructor(job: string, reason: string) {
-    super(`${job}: payload が不正です（${reason}）。`);
-    this.name = 'InvalidJobPayloadError';
-  }
-}
-
 /**
  * payload の門番。🔴 **不正なら例外にする**（既定値で補完しない）。
  * 補完すると「別のテナントを計測した」「全テナント分が 1 テナントに積まれた」に化ける。
@@ -64,10 +58,11 @@ export function parseUsageSeatSnapshotPayload(raw: unknown): UsageSeatSnapshotPa
   if (typeof raw !== 'object' || raw === null) {
     throw new InvalidJobPayloadError(USAGE_SEAT_SNAPSHOT_JOB, 'オブジェクトではありません');
   }
-  const tenantId = (raw as { readonly tenantId?: unknown }).tenantId;
-  if (typeof tenantId !== 'string' || !UUID_PATTERN.test(tenantId)) {
-    throw new InvalidJobPayloadError(USAGE_SEAT_SNAPSHOT_JOB, 'tenantId が UUID ではありません');
-  }
+  const tenantId = requireUuid(
+    USAGE_SEAT_SNAPSHOT_JOB,
+    'tenantId',
+    (raw as { readonly tenantId?: unknown }).tenantId,
+  );
   return { tenantId };
 }
 

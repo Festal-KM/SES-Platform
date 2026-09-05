@@ -18,7 +18,6 @@ import {
 
 export {
   createUsageSeatSnapshotHandler,
-  InvalidJobPayloadError,
   parseUsageSeatSnapshotPayload,
   USAGE_SEAT_SNAPSHOT_JOB,
   USAGE_SEAT_SNAPSHOT_SCHEDULE,
@@ -28,6 +27,32 @@ export type {
   UsageSeatSnapshotHandler,
   UsageSeatSnapshotPayload,
 } from './usage-seat-snapshot.js';
+export { InvalidJobPayloadError, requireNonEmptyString, requireUuid } from './payload.js';
+// 🔴 T-04-03: 運用メールと Webhook 受信後の処理（docs/05 §9.4 / §8.5）。
+//    いずれも**イベント起動**であり `SCHEDULED_JOBS` には載らない（cron を持たない）。
+//    キュー実体（BullMQ）への登録は SP-07 の配線が `QUEUE_DEFINITIONS` を読んで行う。
+export {
+  createEmailDispatchHandler,
+  EMAIL_DISPATCH_JOB,
+  parseEmailDispatchPayload,
+  PlatformDispatchNotSupportedError,
+} from './email-dispatch.js';
+export type { EmailDispatchDeps, EmailDispatchHandler } from './email-dispatch.js';
+export {
+  ACCOUNT_MAIL_JOB,
+  buildAccountMailLink,
+  createAccountMailHandler,
+  parseAccountMailPayload,
+} from './account-mail.js';
+export type { AccountMailDeps, AccountMailHandler } from './account-mail.js';
+export { performEmailSend } from './email-send.js';
+export type { EmailSendDeps, EmailSendOutcome, EmailSendRequest } from './email-send.js';
+export {
+  createWebhookProcessHandler,
+  parseWebhookProcessPayload,
+  WEBHOOK_PROCESS_JOB,
+} from './webhook-process.js';
+export type { WebhookProcessDeps, WebhookProcessHandler, WebhookProcessOutcome } from './webhook-process.js';
 
 /** ジョブの合成に要る値（起動時に 1 度だけ解決する。`CLAUDE.md` §11.1 / docs/05 §13.1）。 */
 export type ScheduledJobDeps = UsageSeatSnapshotDeps;
