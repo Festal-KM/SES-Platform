@@ -88,6 +88,7 @@ export default async function SkillSheetsPage({
           uploadError: t('skillSheets.upload.error'),
           uploadErrorTooLarge: t('skillSheets.upload.errorTooLarge'),
           uploadErrorQuota: t('skillSheets.upload.errorQuota'),
+          uploadErrorTransfer: t('skillSheets.upload.errorTransfer'),
           uploadReadOnlyNote: t('skillSheets.upload.readOnlyNote'),
 
           versionsSection: t('skillSheets.versions.section'),

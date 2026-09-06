@@ -34,7 +34,10 @@ import type {
   SkillSheetPreviewView,
   SkillSheetVersionView,
 } from '../../../../../lib/skill-sheets/service';
-import { uploadSkillSheet } from '../../../../../lib/skill-sheets/upload-client';
+import {
+  SKILL_SHEET_TRANSFER_FAILED,
+  uploadSkillSheet,
+} from '../../../../../lib/skill-sheets/upload-client';
 
 export type SkillSheetScreenMessages = {
   readonly uploadSection: string;
@@ -49,6 +52,7 @@ export type SkillSheetScreenMessages = {
   readonly uploadError: string;
   readonly uploadErrorTooLarge: string;
   readonly uploadErrorQuota: string;
+  readonly uploadErrorTransfer: string;
   readonly uploadReadOnlyNote: string;
 
   readonly versionsSection: string;
@@ -106,6 +110,10 @@ type Phase = 'idle' | 'submitting' | 'error' | 'done';
 function uploadErrorMessage(code: string | null, messages: SkillSheetScreenMessages): string {
   if (code === 'UPLOAD_TOO_LARGE') return messages.uploadErrorTooLarge;
   if (code === 'STORAGE_LIMIT_EXCEEDED') return messages.uploadErrorQuota;
+  // 🔴 ブラウザ → ストレージの転送だけが失敗した（CORS のプリフライト拒否・ネットワーク断・
+  //    署名の期限切れ）。**サーバ側の失敗と同じ文言に畳まない** —— 畳むと、構成の問題
+  //    （バケットの CORS 未設定）がアプリのバグに見え、原因に辿り着けない。
+  if (code === SKILL_SHEET_TRANSFER_FAILED) return messages.uploadErrorTransfer;
   return messages.uploadError;
 }
 

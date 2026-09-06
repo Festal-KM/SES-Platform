@@ -15,11 +15,25 @@ export type OutboundWatcher = {
   readonly assertNone: () => void;
 };
 
-export async function guardOutboundRequests(context: BrowserContext): Promise<OutboundWatcher> {
+/**
+ * @param extraAllowedOrigins 🔴 T-05-10（K-7）: ダウンロードの署名付き URL（MinIO。development の
+ *   `objectStore` は `real`）へブラウザが実際にナビゲートする経路だけに使う、限定的な追加許可。
+ *   「何でも許可する」抜け道にしないため、**呼び出し側が明示的に渡した文字列だけ**を足す
+ *   （既定は空配列 = 従来どおりアプリのオリジンしか許可しない）。
+ */
+export async function guardOutboundRequests(
+  context: BrowserContext,
+  extraAllowedOrigins: readonly string[] = [],
+): Promise<OutboundWatcher> {
+  const allowedOrigins = [ALLOWED_ORIGIN, ...extraAllowedOrigins];
   const blocked: string[] = [];
   await context.route('**/*', async (route) => {
     const url = route.request().url();
-    if (url.startsWith(ALLOWED_ORIGIN) || url.startsWith('data:') || url.startsWith('blob:')) {
+    if (
+      allowedOrigins.some((origin) => url.startsWith(origin)) ||
+      url.startsWith('data:') ||
+      url.startsWith('blob:')
+    ) {
       await route.continue();
       return;
     }

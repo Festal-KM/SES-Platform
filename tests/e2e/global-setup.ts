@@ -10,6 +10,8 @@
 //    遮断確認）を Playwright 無しでも実行・検証できる形に保つため。
 import process from 'node:process';
 import { runSeed } from '@ses/db/seed';
+import { writeAdminDatabaseUrlEnv } from './harness/db-admin.js';
+import { startE2eObjectStorage, writeObjectStorageOriginEnv } from './harness/object-storage.js';
 import { startE2eDatabase } from './harness/postgres.js';
 import { setHarness } from './harness/state.js';
 import { resetTotpStore } from './harness/totp-store.js';
@@ -26,6 +28,15 @@ export default async function globalSetup(): Promise<void> {
 
   log('① PostgreSQL（TLS 有効）を起動し、②ロール ③マイグレーションを適用します');
   const database = await startE2eDatabase();
+  // 🔴 T-05-10（K-7）: `harness/db-admin.ts` がスキャン結果の適用（apps/worker 不在）を
+  //    代替するために使う特権接続。ワーカープロセスの起動より前に書けば、Playwright が
+  //    spawn するテストのワーカープロセスにも引き継がれる（`harness/endpoint.ts` と同じ理屈）。
+  writeAdminDatabaseUrlEnv(database.seedUrl);
+
+  log('① MinIO を起動し、バケットの作成とバージョニングの有効化を行います（T-05-10）');
+  const objectStorage = await startE2eObjectStorage();
+  writeObjectStorageOriginEnv(objectStorage.endpoint);
+  log(`   ${objectStorage.endpoint}（bucket=${objectStorage.bucket}）`);
 
   log('④ seed:isolation（2 テナント × 2 パートナー）を投入します');
   const seeded = await runSeed({
@@ -38,8 +49,8 @@ export default async function globalSetup(): Promise<void> {
   log(`   テナント: ${seeded.tenantIds.join(', ')}`);
 
   log('⑤ APP_ENV=development でアプリを起動し、⑥ 外向きネットワークの遮断を確認します');
-  const webServer = await startWebServer(database);
+  const webServer = await startWebServer(database, objectStorage);
   log(`   ${webServer.baseUrl} で待ち受け中（ログ: ${webServer.logPath}）`);
 
-  setHarness({ database, webServer });
+  setHarness({ database, objectStorage, webServer });
 }

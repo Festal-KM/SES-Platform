@@ -14,6 +14,22 @@
 // 「失敗したときに次に何を出すか」をテストで固定できる。
 import type { SkillSheetUploadTicket } from './service';
 
+/**
+ * 🔴 **転送（ブラウザ → S3 / MinIO）の失敗**を表すコード（T-05-06。サーバの
+ *    `ApiErrorBody.error.code` ではなく、このクライアントが付ける値）。
+ *
+ * 🔴 サーバのエラー（`code` が返る）と**区別する**理由: この段だけは失敗の原因が
+ *    **ブラウザとストレージの間**にある（CORS のプリフライト拒否・ネットワーク断・署名の期限切れ）。
+ *    「アップロードできませんでした」に畳むと、**バケットの CORS 未設定という構成の問題が
+ *    アプリのバグに見える**（サーバ側のテストは全て green のまま画面だけが動かない）。
+ *    ⚠️ `development` の MinIO は既定で全 origin を許可するため**ローカルでは再現しない** ——
+ *    実 S3（`PutBucketCors` が要る。docs/05 §14.2）で初めて出る失敗であり、そのときに
+ *    原因へ辿り着けるかどうかがこの分岐の存在理由である。
+ * 🔴 `fetch` が **throw する**経路（CORS 拒否は `TypeError` になり、応答オブジェクトすら得られない）
+ *    も同じコードに畳む。**握り潰して成功にしない。**
+ */
+export const SKILL_SHEET_TRANSFER_FAILED = 'TRANSFER_FAILED';
+
 /** 確定（#19）の応答。 */
 export type SkillSheetUploadOutcome =
   | { readonly ok: true; readonly version: number }
@@ -95,13 +111,23 @@ export async function uploadSkillSheet(
 
   // ② 実体の転送（ブラウザ → S3。Vercel のボディ上限を経由しない。docs/03 申し送り 23）。
   //    🔴 `requiredHeaders` を**そのまま**付ける（1 つでも欠けると署名が一致せず S3 が 403）。
+  //    🔴 この PUT は `Content-Type` / `Content-Length` を付ける**非単純リクエスト**であり、
+  //       ブラウザは必ず OPTIONS のプリフライトを送る。バケットに CORS が無いと（実 S3 は既定で
+  //       全拒否。docs/05 §14.2 / SP-12 T-12-09）、ここで `TypeError` になり**応答オブジェクトすら
+  //       得られない** —— **例外にせず、転送の失敗として画面に伝える**。
   if (requiresDirectTransfer(ticket.uploadUrl)) {
-    const put = await deps.fetch(ticket.uploadUrl, {
-      method: 'PUT',
-      headers: { ...ticket.requiredHeaders },
-      body: input.body,
-    });
-    if (!put.ok) return { ok: false, code: null };
+    const transferred = await deps
+      .fetch(ticket.uploadUrl, {
+        method: 'PUT',
+        headers: { ...ticket.requiredHeaders },
+        body: input.body,
+      })
+      // 🔴 CORS 拒否・ネットワーク断は `fetch` の reject である。`null` に写して次行で扱う
+      //    （握り潰して③へ進むと、**実体が無いのに確定しようとして**しまう）。
+      .catch(() => null);
+    if (transferred === null || !transferred.ok) {
+      return { ok: false, code: SKILL_SHEET_TRANSFER_FAILED };
+    }
   }
 
   // ③ 確定（版の採番・計上・監査はここで起きる）。

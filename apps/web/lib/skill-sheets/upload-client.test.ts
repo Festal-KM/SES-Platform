@@ -2,7 +2,11 @@
 // `S-008` のアップロード手順（#18 → S3 → #19）。T-05-06。
 // 🔴 実 S3 / 実 MinIO を叩かない（`fetch` をスタブする）。
 import { describe, expect, it, vi } from 'vitest';
-import { requiresDirectTransfer, uploadSkillSheet } from './upload-client';
+import {
+  requiresDirectTransfer,
+  SKILL_SHEET_TRANSFER_FAILED,
+  uploadSkillSheet,
+} from './upload-client';
 
 const ENGINEER = '01930000-0000-7000-8000-0000000000e1';
 const OBJECT_KEY = `t/01930000-0000-7000-8000-000000000001/skill-sheets/${ENGINEER}/1/01930000-0000-7000-8000-0000000000a1.xlsx`;
@@ -103,7 +107,7 @@ describe('uploadSkillSheet（#18 → S3 → #19）', () => {
     expect(fetchStub).toHaveBeenCalledTimes(1);
   });
 
-  it('🔴 転送に失敗したら確定しない（実体が無いのに版を作らない）', async () => {
+  it('🔴 転送が拒否されたら確定しない（実体が無いのに版を作らない）', async () => {
     const fetchStub = vi.fn(async (url: string | URL | Request) => {
       const href = String(url);
       if (href.endsWith('/skill-sheets/upload-url')) {
@@ -114,7 +118,28 @@ describe('uploadSkillSheet（#18 → S3 → #19）', () => {
 
     const outcome = await uploadSkillSheet(input(), { fetch: fetchStub as unknown as typeof fetch });
 
-    expect(outcome).toEqual({ ok: false, code: null });
+    // 🔴 サーバ側の失敗と区別できる形で返す（画面が文言を出し分ける）。
+    expect(outcome).toEqual({ ok: false, code: SKILL_SHEET_TRANSFER_FAILED });
+    expect(fetchStub).toHaveBeenCalledTimes(2);
+  });
+
+  // 🔴 e2e-tester の P1 所見（T-05-10）: バケットに CORS が無いと、この PUT は**応答を得られずに
+  //    `fetch` が reject する**（プリフライトの拒否は `TypeError`）。握り潰して③へ進むと、
+  //    **実体が無いのに確定しようとする**（そして 409 になり、原因が転送だったことが消える）。
+  it('🔴 転送が例外で終わっても（CORS 拒否 / ネットワーク断）確定へ進まない', async () => {
+    const fetchStub = vi.fn(async (url: string | URL | Request) => {
+      const href = String(url);
+      if (href.endsWith('/skill-sheets/upload-url')) {
+        return jsonResponse(ticket('https://s3.test/put'), 201);
+      }
+      // ブラウザが CORS で遮断したときの挙動（応答オブジェクトが得られない）。
+      throw new TypeError('Failed to fetch');
+    });
+
+    const outcome = await uploadSkillSheet(input(), { fetch: fetchStub as unknown as typeof fetch });
+
+    expect(outcome).toEqual({ ok: false, code: SKILL_SHEET_TRANSFER_FAILED });
+    // 🔴 確定（#19）を呼んでいない（署名の要求 → PUT の 2 回で止まっている）。
     expect(fetchStub).toHaveBeenCalledTimes(2);
   });
 

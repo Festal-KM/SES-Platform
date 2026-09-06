@@ -63,6 +63,7 @@ const messages: SkillSheetScreenMessages = {
   uploadError: 'アップロードできませんでした。',
   uploadErrorTooLarge: 'ファイルのサイズが上限を超えています。',
   uploadErrorQuota: 'ストレージの空き容量が不足しています。',
+  uploadErrorTransfer: 'ファイルをストレージへ送信できませんでした。',
   uploadReadOnlyNote: 'この画面ではアップロードできません。',
 
   versionsSection: '版の一覧',

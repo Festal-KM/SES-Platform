@@ -1138,7 +1138,9 @@ Claude の PDF サポートは技術的には xlsx を除く多くの文書を�
 
 🔴 **DB は環境ごとに別インスタンス。** 同一インスタンスの別スキーマにしない（`docs/02` NFR-ENV-8「本番の顧客データを他環境へ複製する経路が存在しない」を、**そもそも接続できないことで担保する**）。
 
-🔴 **`development` の MinIO はバケットの「作成 + バージョニング有効化」まで初期化する**（T-05-06。`docker-compose.yml` の `minio-init` が `mc mb` → `mc version enable` を 1 度だけ実行する）。`ObjectStore.head()` は `VersionId` が空なら**例外**にする（`FileScanResult` の重複排除キー `UNIQUE(object_key, object_version_id)` が版 ID を要求するため。`docs/05` §14.1）ので、バージョニングの無いバケットでは**アップロードの確定（#19）が必ず失敗する**。「空文字で代替」は全オブジェクトの重複排除キーが衝突する壊れ方になるため採らない。
+🔴 **`development` の MinIO はバケットの「作成 + バージョニング有効化」まで初期化する**（T-05-06。`docker-compose.yml` の `minio-init` が `mc mb` → `mc version enable` を 1 度だけ実行する）。
+
+🔴 **実 S3（`sandbox` / `staging` / `production`）のバケットには CORS（`PutBucketCors`）が必須**（T-05-06 / T-05-10 の e2e-tester 所見。`docs/05` §14.2）。スキルシートは**ブラウザから直接 PUT** するため（`docs/03` `program-design` 申し送り 23）、`Content-Type` を伴う非単純リクエストとしてプリフライト（OPTIONS）を受ける。**S3 は既定で CORS を一切許可しない**ので、未設定だと `S-008` の画面からのアップロードだけが必ず失敗する（サーバ側のテストは全て green のまま）。設定は環境構築（**SP-12 T-12-09**）で行い、`AllowedMethod: PUT` / `AllowedHeader: content-type, content-length` / `AllowedOrigin` は**そのアプリの origin だけ**（🔴 `*` にしない）。⚠️ **`development` の MinIO は既定で全 origin を許可する**（`api.cors_allow_origin` の既定が `*`。実測で確認）ため設定不要である —— **ローカルで動くことは `staging` で動く保証にならない**。⚠️ MinIO は `PutBucketCors` を実装していない（`mc cors set` は `not implemented` で失敗する。実測）ので、ローカルで絞りたい場合はサーバ設定 `api.cors_allow_origin` を使う。`ObjectStore.head()` は `VersionId` が空なら**例外**にする（`FileScanResult` の重複排除キー `UNIQUE(object_key, object_version_id)` が版 ID を要求するため。`docs/05` §14.1）ので、バージョニングの無いバケットでは**アップロードの確定（#19）が必ず失敗する**。「空文字で代替」は全オブジェクトの重複排除キーが衝突する壊れ方になるため採らない。
 
 🔴 **非本番であることの常時表示（`F-028` / NFR-ENV-9）**: **`APP_ENV !== 'production'` のときにバナーを出す**のではなく、**`APP_ENV` を判別可能な合併型として受け取り、`production` 以外のすべての枝でバナー要素を返すことを型で強制する**（`switch` の網羅性検査。§2.1 の TypeScript `strict`）。理由: 環境が増えるたびに `if (env === 'demo' || env === 'sandbox')` を書き足す構造だと、**新しい環境を足したときに表示が漏れる**（漏れても画面は正常に見えるため気づけない）。**バナーはレイアウトの最上位（主平面 `/` と管理平面 `/admin` の両方）に置き、モバイルビューポートでも消さない**（`F-028 AC-1` / `CLAUDE.md` §13.3）。
 

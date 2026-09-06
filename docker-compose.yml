@@ -84,6 +84,7 @@ services:
       start_period: 10s
 
   # 🔴 T-05-06: バケットの作成と**バージョニングの有効化**（1 回だけ走って終了する初期化）。
+  #    development のストレージ初期化はこの 1 箇所に集める。
   #
   # 🔴 なぜバージョニングが必須か: `ObjectStore.head()` は `VersionId` が空なら**例外**にする
   #    （`packages/connectors/src/storage/aws-sdk-s3.ts` の `toHeadResponse`）。理由は
@@ -92,6 +93,22 @@ services:
   #    無いバケットでは `VersionId` が返らず、**アップロードの確定（#19）が必ず失敗する**。
   #    「未設定なら空文字で代替」は、全オブジェクトの重複排除キーが衝突する壊れ方になる
   #    （`CLAUDE.md` §11.1 の「静かに degrade させない」と同じ判断）。
+  #
+  # 🔴 CORS はここでは設定しない（T-05-06 / T-05-10 の e2e-tester 所見への回答。実測に基づく）。
+  #    スキルシートは**ブラウザから S3 / MinIO へ直接 PUT** する（docs/05 §14.2）。この PUT は
+  #    `Content-Type` / `Content-Length` を伴う**非単純リクエスト**なので、ブラウザは必ず OPTIONS
+  #    のプリフライトを送る。ただし **MinIO は既定で全 origin を許可する**（`api.cors_allow_origin`
+  #    の既定は `*`）—— 素の MinIO へ任意の Origin でプリフライトを投げると
+  #    `204` + `Access-Control-Allow-Origin: <その origin>` が返ることを実測で確認した。
+  #    したがって `development` の設定は不要であり、**動かないものを設定で埋めない**。
+  # ⚠️ 絞りたい場合は `mc admin config set local api cors_allow_origin="<origins>"`（動的。再起動不要）
+  #    か `minio` サービスの `MINIO_API_CORS_ALLOW_ORIGIN` を使う。**両方は設定しない**
+  #    （環境変数があると設定値が上書き固定され、どちらが効いているのか分からなくなる）。
+  #    ⚠️ この MinIO（RELEASE.2025-09-07）は **`PutBucketCors`（バケット単位の CORS）を実装して
+  #    いない**（`mc cors set` は `... functionality that is not implemented.` で失敗する。実測）。
+  # 🔴 **実 S3（`sandbox` / `staging` / `production`）は既定で全拒否であり、`PutBucketCors` が
+  #    無いと S-008 のアップロードは必ず失敗する。** 設定は環境構築（SP-12 T-12-09）で行う
+  #    （docs/05 §14.2 / docs/03 §4.18.1）。
   #
   # ⚠️ このサービスは終了する（`restart: "no"`）。`docker compose up -d --wait` は
   #    「終了したコンテナ」を待てないため、起動は `docker compose up -d` を使うこと。

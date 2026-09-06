@@ -199,9 +199,10 @@ export type Session = {
 export async function openTenantSession(
   browser: Browser,
   persona: TenantPersona,
+  options: { readonly extraAllowedOrigins?: readonly string[] } = {},
 ): Promise<Session> {
   const context = await browser.newContext();
-  const outbound = await guardOutboundRequests(context);
+  const outbound = await guardOutboundRequests(context, options.extraAllowedOrigins ?? []);
   const page = await context.newPage();
   await signInAsTenantUser(page, persona);
   return { context, page, outbound, close: () => context.close() };

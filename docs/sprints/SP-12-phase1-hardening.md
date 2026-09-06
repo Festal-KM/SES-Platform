@@ -137,7 +137,8 @@
 - **背景**: T-01-09（2026-09-02）で整備したのは**開発用の単一 AWS アカウント**（IAM `claude-cli` / `ap-northeast-1` / 予算アラート $50 / 月）だけである。🔴 **`docs/03` §3.2.8 / `docs/03` `program-design` 申し送り 6 が求める「本番と `sandbox` を別アカウントにする」は未実施**（`docs/dev-plan.md` §5 E-2 / §8 の 2026-09-03 の行）。**Phase 1 のリリース前に解消する。**
 - **何を行うか**:
   1. AWS Organizations で**本番 / `sandbox` / 開発**を分ける。🔴 **少なくとも本番と `sandbox` は別アカウントにする**（`CLAUDE.md` §11.1 の「本番以外の環境から実在の取引先へ送信が飛ぶ」事故を、実装だけでなく**構成でも**不可能にするため）。
-  2. S3 は各アカウントに **1 バケット + テナント別プレフィックス**で用意する（GuardDuty Malware Protection for S3 の保護バケット上限 25。`docs/03` `program-design` 申し送り 16）。
+  2. S3 は各アカウントに **1 バケット + テナント別プレフィックス**で用意する（GuardDuty Malware Protection for S3 の保護バケット上限 25。`docs/03` `program-design` 申し送り 16）。**バージョニングを有効化する**（`FileScanResult` の重複排除キーが版 ID を要求する。`docs/05` §14.1）。
+  2b. 🔴 **バケットに CORS を設定する（`PutBucketCors`）**（T-05-06 / T-05-10 の e2e-tester 所見。`docs/05` §14.2 / `docs/03` §4.18.1）。スキルシートは**ブラウザから直接 PUT** するため、`Content-Type` を伴う非単純リクエストとしてプリフライトを受ける。**S3 は既定で CORS を一切許可しない**ので、未設定だと `S-008` の画面からのアップロードだけが必ず失敗する（サーバ側のテストは全て green のまま）。`AllowedMethod: PUT` / `AllowedHeader: content-type, content-length`（SSE-KMS を使う環境では `x-amz-server-side-encryption*` も）/ `AllowedOrigin` は**その環境のアプリ origin だけ**（🔴 `*` にしない）。⚠️ **`development`（MinIO）は既定で全 origin を許可するため設定が無い** —— **ローカルで動くことがこの設定を省いてよい理由にはならない**（この差自体が見落としの温床であり、だからチェックリストに項目として置く）。
   3. 🔴 **非本番アカウントの認証情報から本番の S3 / RDS / SES へ到達する権限を与えない。** IAM ロール・キーをアカウント間で共有しない。
   4. アカウントごとに予算アラートを設定する（開発用の $50 / 月 と同等以上の粒度）。
   5. 接続先・リージョン・バケット名は `packages/config` の環境変数から解決する。🔴 **アカウント ID やバケット名を実装にハードコードしない。**

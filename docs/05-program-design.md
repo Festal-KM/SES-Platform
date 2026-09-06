@@ -3800,6 +3800,18 @@ s3://{S3_BUCKET}/
 | **ダウンロード（契約書・添付）** | 同上 | 300 秒 | 同上 |
 | **返却データ（`F-064` / `F-052`）** | 同上 | 3600 秒 | 🔴 運営者は 403（`F-064 AC-7`） |
 
+🔴 **実 S3 のバケットには CORS の設定が要る**（T-05-06 / T-05-10 の e2e-tester 所見。`docs/03` §4.18.1）。アップロードは**ブラウザから直接 PUT** するため、`Content-Type` / `Content-Length` を伴う**非単純リクエスト**として必ず OPTIONS のプリフライトを受ける。許可 origin が無いとプリフライトで落ち、**サーバ側のテストが全て green のまま画面のアップロードだけが動かない**（外形からはアプリの不具合に見える）。要否は環境で違う:
+
+| 環境 | 設定 | 主体 |
+|---|---|---|
+| `development`（MinIO） | ⚠️ **設定は不要**。MinIO は **既定で全 origin を許可する**（`api.cors_allow_origin` の既定が `*`）—— 素の MinIO へ任意の Origin でプリフライトを投げると `204` + `Access-Control-Allow-Origin: <その origin>` が返ることを実測で確認した（T-05-06 / T-05-10）。**動かないものを設定で埋めない。** 絞る場合は `mc admin config set … api cors_allow_origin=…`（動的。再起動不要）か `MINIO_API_CORS_ALLOW_ORIGIN`（**両方は設定しない**）。⚠️ この MinIO は **`PutBucketCors`（バケット単位の CORS）を実装していない**（`mc cors set` は `not implemented` で失敗する。実測） | — |
+| `demo` | 不要（`objectStore` はモックであり、署名 URL は到達しないスキーム。§13.2。転送そのものが起きない） | — |
+| 🔴 `sandbox` / `staging` / `production`（実 S3） | 🔴 **`PutBucketCors` が必須。** S3 は**既定で CORS を一切許可しない**ため、未設定だと `S-008` のブラウザアップロードは**必ず**失敗する。`AllowedMethod: PUT` / `AllowedHeader: content-type, content-length`（SSE-KMS を使う環境では `x-amz-server-side-encryption*` も）/ `AllowedOrigin` は**そのアプリの origin だけ** | 環境構築（**SP-12 T-12-09**） |
+
+🔴 **`AllowedOrigin` を `*` にしない。** 署名付き URL は発行済みのものだけが有効なので `*` でも直ちに漏洩にはならないが、`*` は「どのサイトからでもこのバケットへ書ける前提」を残す設定であり、後から署名の運用が変わったときに気づけない。
+⚠️ **この差（`development` は既定で通り、実 S3 は既定で落ちる）自体が事故の温床である。** ローカルで動いたからといって `staging` で動く保証にはならないので、**`PutBucketCors` は環境構築のチェックリスト項目として持つ**（SP-12 T-12-09-2b）。
+🔴 **転送の失敗を握り潰さない**（`apps/web/lib/skill-sheets/upload-client.ts`）。CORS の拒否は `fetch` の reject（`TypeError`）であり応答オブジェクトすら得られないため、**`TRANSFER_FAILED` として確定（#19）へ進ませずに画面へ返す**。サーバ側の失敗と同じ文言に畳むと、構成の問題（CORS 未設定）がアプリのバグに見える。
+
 🔴 **アップロードの確定**: ブラウザ → S3 の直接アップロード（`docs/03` 申し送り 23。Vercel のボディ上限 4.5 MB を経由させない）。**アップロード完了は `POST /api/engineers/{id}/skill-sheets`（#19）で確定させ、そのときに `head()` で実サイズを取得して `UsageCounter(STORAGE_BYTES)` に加算する**（`docs/03` 申し送り 25）。**署名付き URL の発行時には加算しない**（アップロードされないまま終わることがあるため）。🔴 **保存する `byteSize` / `contentType` は `head()` が返した実体の値**であり、クライアントの申告ではない（T-05-06）。
 
 🔴 **版の削除（#19c）の順序**（T-05-06。`docs/03` §4.12）: **⓪削除してよいかの事前判定（`SCANNING` でない / `EngineerSnapshot` に参照されていない）→ ①S3 の `DeleteObject` → ②`UsageCounter` の減算（`releaseSkillSheetStorage` の CAS）→ ③行の削除 + 監査**。①より先に②③をやらない —— 実体が残っているのに枠だけ空くと、S3 の請求だけが増え続ける。🔴 **⓪を①の後ろへ移さない** —— FK が守るのは③の行だけであり、①の後で止めても実体は戻らない（§6.4 #19c の決着）。途中で落ちても、もう一度削除すれば同じ手順が最後まで進む（`DeleteObject` は冪等、②は CAS、③は 0 件なら 404）。
