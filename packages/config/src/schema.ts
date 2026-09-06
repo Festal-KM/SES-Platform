@@ -106,6 +106,23 @@ const commonShape = {
   S3_KMS_KEY_ID: z.string().optional(),
   S3_PRESIGNED_URL_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(300),
   UPLOAD_MAX_BYTES: z.coerce.number().int().positive().default(20 * 1024 * 1024),
+  /**
+   * 🔴 T-05-04: テナントあたりのストレージ上限（バイト。docs/03 §4.5 / docs/05 §8.7 / §14.2）。
+   *
+   * 🔴 `EMAIL_DAILY_LIMIT_PER_TENANT`（1 日 500 通）と同じ扱いである（`CLAUDE.md` §3.4
+   *    「既定値。`packages/config` で管理し、プランごとに上書き可能」）。**プラン別の値
+   *    （`Plan.storageLimitBytes`）が実装されるまでの既定値**であり、上書きの仕組みは
+   *    `Plan` / `Subscription` の読み取り経路（SP-10 / SP-11）が入る時点で被せる。
+   *    判定関数（`decideStorageUpload`）は `limitBytes` を**引数**で受け取るため、
+   *    上書きが入っても呼び出し側のコードは変わらない。
+   * 既定 50 GiB は `docs/03` §7.1 の基準ユニット（1 テナント 1.5 GB）の約 33 倍であり、
+   * 「通常運用では当たらないが、暴走は止まる」水準として置いた暫定値である。
+   */
+  STORAGE_LIMIT_BYTES_PER_TENANT: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(50 * 1024 * 1024 * 1024),
   SCAN_STALL_ALERT_MINUTES: z.coerce.number().int().positive().default(10),
   S3_REGION: z.string().min(1),
   S3_FORCE_PATH_STYLE: envBoolean(false),

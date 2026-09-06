@@ -567,6 +567,65 @@ export class PasswordResetTokenInvalidError extends AppError {
   }
 }
 
+/**
+ * 429。docs/05 §15.1 の `QuotaExceededError` 段。
+ * 🔴 これは**障害ではなく上限到達**である。`retryable` を安易に true にしない ——
+ *    どうすれば解消するかは上限の種類ごとに違う（AI の日次は翌日、ストレージは削除するまで）。
+ */
+export class QuotaExceededError extends AppError {
+  readonly code: string = 'QUOTA_EXCEEDED';
+  readonly httpStatus = 429;
+  readonly userMessageKey: MessageKey = 'error.quota.exceeded';
+
+  constructor(message = '利用量の上限に達しました。') {
+    super(message);
+    this.name = 'QuotaExceededError';
+  }
+}
+
+/**
+ * 🔴 ストレージ上限に達しているため、アップロード用の署名付き URL を**発行しなかった**
+ *    （docs/05 §14.2 / docs/03 §4.5 / `F-027`）。429。T-05-04。
+ *
+ * 🔴 **「発行してから失敗させる」ではない。** 発行すると S3 側には書けてしまい、
+ *    `UsageCounter`（正）と実体がずれる。ずれたカウンタは停止判定と月末原価の両方の根拠を失う。
+ * 🔴 応答に**残量も上限値も載せない**。パートナー所属の利用者もこの経路を通る（`F-011` の
+ *    関連ロール）ため、テナントの保管量が読み取れる形にしない（`F-027 AC-1`「パートナーには
+ *    停止の事実と理由だけ」）。文言も「管理者に連絡する」という次の行動だけを示す。
+ * 🔴 `retryable = false`。時間を置いても解消しない（削除するか上限を上げるまで）。
+ */
+export class StorageLimitExceededError extends QuotaExceededError {
+  override readonly code = 'STORAGE_LIMIT_EXCEEDED';
+  override readonly userMessageKey: MessageKey = 'error.quota.storage';
+
+  constructor() {
+    super('ストレージの上限に達しているため、アップロードを開始できません。');
+    this.name = 'StorageLimitExceededError';
+  }
+}
+
+/**
+ * 🔴 アップロードしようとしたファイルが `UPLOAD_MAX_BYTES` を超えている（docs/05 §14.2 ④）。413。
+ *
+ * 🔴 `ValidationError`（400）と分ける理由: 入力の書式は正しく、**大きさだけ**が問題である。
+ *    画面は「ファイルを分割する / 圧縮する」という別の行動へ導く必要がある。
+ * 🔴 判定はサーバで行う（画面の `accept` 属性や JS の事前チェックは迂回できる）。署名に
+ *    `Content-Length` を焼き込むため、申告より大きいものは S3 側でも通らない（二重防御）。
+ */
+export class UploadTooLargeError extends AppError {
+  readonly code = 'UPLOAD_TOO_LARGE';
+  readonly httpStatus = 413;
+  readonly userMessageKey: MessageKey = 'error.upload.tooLarge';
+  override readonly params: Readonly<Record<string, unknown>>;
+
+  constructor(maxBytes: number) {
+    super(`アップロードできる上限（${maxBytes} バイト）を超えています。`);
+    this.name = 'UploadTooLargeError';
+    // 🔴 上限値は秘匿ではない（画面に出す固定の設定値であり、テナントの利用状況を含まない）。
+    this.params = { maxBytes };
+  }
+}
+
 /** 🔴 境界外の ID も必ずこれ（403 と区別しない。docs/05 §4.8）。対象 ID を含めない。 */
 export class NotFoundError extends AppError {
   readonly code = 'NOT_FOUND';

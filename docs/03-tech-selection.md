@@ -1307,6 +1307,7 @@ packages/connectors/src/index.ts           … createConnectors(selection) が�
 | `S3_KMS_KEY_ID` | SSE-KMS の鍵 | `production` / `sandbox` で必須 | `z.string()` |
 | `S3_PRESIGNED_URL_TTL_SECONDS` | 署名付き URL の有効期限（既定 300） | 必須 | `z.coerce.number().int().min(60).max(3600)` |
 | `UPLOAD_MAX_BYTES` | アップロード上限（既定 20 MB） | 必須 | `z.coerce.number().int().positive()` |
+| `STORAGE_LIMIT_BYTES_PER_TENANT` | 🔴 **テナントあたりのストレージ上限**（§4.5。超過なら署名付き URL を発行しない）。**プラン別の値（`Plan.storageLimitBytes`）が入るまでの既定値**であり、`EMAIL_DAILY_LIMIT_PER_TENANT` と同じ扱い（T-05-04 で追加） | 必須 | `z.coerce.number().int().positive()`（既定 50 GiB = §7.1 の基準ユニット 1.5 GB の約 33 倍） |
 | `MALWARE_SCANNER` | スキャナの実装選択 | 🔴 必須 | `z.enum(['guardduty','clamav','mock'])`。🔴 **`production` で `mock` なら起動失敗**。🔴 **`development` / CI は `clamav` 固定**（§3.4-6。`mock` は選ばせない） |
 | `CLAMAV_HOST` / `CLAMAV_PORT` | `MALWARE_SCANNER === 'clamav'` のとき（`development` を含む） | 条件付き必須 | — |
 | `SCAN_STALL_ALERT_MINUTES` | `SCANNING` 滞留の検知閾値（既定 10） | 必須 | `z.coerce.number().int().positive()` |

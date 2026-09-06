@@ -472,6 +472,10 @@ model SkillSheet {
   uploadedBy            String    @map("uploaded_by") @db.Uuid
   uploadedAt            DateTime  @default(now()) @map("uploaded_at") @db.Timestamptz(3)
   purgedAt              DateTime? @map("purged_at") @db.Timestamptz(3)
+  /// 🔴 T-05-04: UsageCounter(STORAGE_BYTES) に byte_size を計上済みの時刻（NULL = 未計上）。
+  /// 加算・減算の冪等性のアンカー（migration 20260907000000 / docs/05 §14.2）。purged_at で
+  /// 代用しない（あちらは原本を消した事実、こちらは計上に含まれている事実）。
+  storageCountedAt      DateTime? @map("storage_counted_at") @db.Timestamptz(3)
 
   tenant            Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   engineer          Engineer               @relation(fields: [engineerId], references: [id], onDelete: Cascade)

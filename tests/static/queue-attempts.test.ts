@@ -248,6 +248,25 @@ function listSourceFiles(dir: string): string[] {
   return files;
 }
 
+/** 走査対象のルート（この 4 つ以外にソースは無い）。 */
+const SCAN_ROOTS = ['packages', 'apps', 'tests', 'scripts'] as const;
+
+/**
+ * 🔴 走査対象のファイル一覧と本文を**モジュールスコープで 1 回だけ**求める（T-05-04）。
+ *
+ * 下の 3 つの `it` は同じ集合を走査する。`it` の中で毎回ディレクトリを walk して読み直すと、
+ * ソースが増えるたびに 3 倍のコストがかかり、既定のテストタイムアウト（5 秒）に近づく
+ * （実測: ファイル追加で断続的にタイムアウトするようになった）。**検査の内容は変えない**
+ * ——読み取りの重複だけを取り除く。
+ */
+const SCAN_TARGETS: readonly (readonly [relative: string, text: string, absolute: string])[] =
+  SCAN_ROOTS.flatMap((root) =>
+    listSourceFiles(path.join(repoRoot, root)).map(
+      (file) =>
+        [path.relative(repoRoot, file).split(path.sep).join('/'), readFileSync(file, 'utf8'), file] as const,
+    ),
+  );
+
 /**
  * 🔴 T-04-03: **`.add()` の per-job オプションによる `attempts` / `backoff` の上書き**を検出する。
  *
@@ -337,14 +356,11 @@ describe('🔴 送信系キューの attempts が 1（docs/05 §17.2 #6 / §9.1 
 
   it('🔴 BullMQ の import / Queue の実体化が許可リスト以外に無い（docs/05 §17.2 #6 ⑤ / §9.1）', () => {
     const offenders: string[] = [];
-    for (const root of ['packages', 'apps', 'tests', 'scripts']) {
-      for (const file of listSourceFiles(path.join(repoRoot, root))) {
-        const relative = path.relative(repoRoot, file).split(path.sep).join('/');
-        if (QUEUE_CONSTRUCTION_ALLOWLIST.includes(relative)) continue;
-        // このテスト自身（検出器のセレクタを文字列として持つ）は対象外。
-        if (relative === 'tests/static/queue-attempts.test.ts') continue;
-        if (findQueueConstructionSites(readFileSync(file, 'utf8'), file).length > 0) offenders.push(relative);
-      }
+    for (const [relative, text, absolute] of SCAN_TARGETS) {
+      if (QUEUE_CONSTRUCTION_ALLOWLIST.includes(relative)) continue;
+      // このテスト自身（検出器のセレクタを文字列として持つ）は対象外。
+      if (relative === 'tests/static/queue-attempts.test.ts') continue;
+      if (findQueueConstructionSites(text, absolute).length > 0) offenders.push(relative);
     }
     expect(offenders).toEqual([]);
   });
@@ -353,14 +369,9 @@ describe('🔴 送信系キューの attempts が 1（docs/05 §17.2 #6 / §9.1 
     // 🔴 `defaultJobOptions` は既定値でしかない。enqueue 側の上書きを塞がないと、
     //    送信系キューの `attempts: 1` は「書いてあるだけ」になる。
     const offenders: string[] = [];
-    for (const root of ['packages', 'apps', 'tests', 'scripts']) {
-      for (const file of listSourceFiles(path.join(repoRoot, root))) {
-        const relative = path.relative(repoRoot, file).split(path.sep).join('/');
-        if (relative === 'tests/static/queue-attempts.test.ts') continue;
-        if (findPerJobRetryOverrides(readFileSync(file, 'utf8'), file).length > 0) {
-          offenders.push(relative);
-        }
-      }
+    for (const [relative, text, absolute] of SCAN_TARGETS) {
+      if (relative === 'tests/static/queue-attempts.test.ts') continue;
+      if (findPerJobRetryOverrides(text, absolute).length > 0) offenders.push(relative);
     }
     expect(offenders).toEqual([]);
   });
@@ -368,15 +379,13 @@ describe('🔴 送信系キューの attempts が 1（docs/05 §17.2 #6 / §9.1 
   it('🔴 キュー定義（attempts を持つ表）が queues.ts 以外に無い', () => {
     // `externalSendQueue` / `internalQueue` / `QUEUE_DEFINITIONS` の宣言がここ以外に現れない
     // ＝ 定義の分散（片方だけ attempts が違う 2 つ目の表）を防ぐ。
+    // 🔴 `tests/**` は対象外のまま（fixture が宣言を持つため。走査ルートの違いを保つ）。
     const offenders: string[] = [];
-    for (const root of ['packages', 'apps', 'scripts']) {
-      for (const file of listSourceFiles(path.join(repoRoot, root))) {
-        const relative = path.relative(repoRoot, file).split(path.sep).join('/');
-        if (relative === QUEUE_DEFINITION_FILE) continue;
-        const text = readFileSync(file, 'utf8');
-        if (/\b(?:export\s+)?(?:function|const)\s+(?:externalSendQueue|internalQueue|QUEUE_DEFINITIONS)\b/.test(text)) {
-          offenders.push(relative);
-        }
+    for (const [relative, text] of SCAN_TARGETS) {
+      if (relative.startsWith('tests/')) continue;
+      if (relative === QUEUE_DEFINITION_FILE) continue;
+      if (/\b(?:export\s+)?(?:function|const)\s+(?:externalSendQueue|internalQueue|QUEUE_DEFINITIONS)\b/.test(text)) {
+        offenders.push(relative);
       }
     }
     expect(offenders).toEqual([]);

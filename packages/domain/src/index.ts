@@ -19,3 +19,6 @@ export * from './quota/index.js';
 // 🔴 T-05-01: ① 集める の値集合（都道府県コード）。台帳の入力（`S-007`）・検索（`F-009`）・
 //    案件（`F-013`）・匿名候補（`F-017`）が同じ表を指す必要があるため domain に置く。
 export * from './ledger/index.js';
+// 🔴 T-05-04: オブジェクトキーの規約（docs/05 §14.1）。キーを組み立てる側（`apps/web`）と
+//    署名する側（`packages/connectors`）が**同じ 1 つの規約**を見る必要があるため domain に置く。
+export * from './storage/index.js';

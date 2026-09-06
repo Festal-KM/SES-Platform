@@ -359,6 +359,15 @@ export type {
   UsageCounterValue,
   UsageCounterWrite,
 } from './usage-counters.js';
+// 🔴 T-05-04: ストレージ使用量（docs/05 §8.7 / §14.2 / docs/03 §4.5 / `F-011` / `F-027`）。
+//    `UsageCounter(STORAGE_BYTES)` を読む・動かす唯一の経路であり、加算・減算は
+//    `skill_sheets.storage_counted_at` の CAS が成立したときだけ起きる（冪等）。
+export {
+  accountSkillSheetStorage,
+  readStorageBytesUsed,
+  releaseSkillSheetStorage,
+} from './storage-usage.js';
+export type { SkillSheetStorageInput, StorageAccountingOutcome } from './storage-usage.js';
 // 🔴 経路 5（docs/05 §4.9）の読み取りの型。`TenantDb` / `HostTenantDb` と違い、
 //    API 層が `toPartnerView()` の入力型として参照するため export する。
 export type { PartnerScopeDb, PartnerScopeTarget } from './with-tenant.js';

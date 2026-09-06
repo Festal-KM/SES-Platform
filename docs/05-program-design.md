@@ -434,12 +434,15 @@ model SkillSheet {
   uploadedBy    String   @db.Uuid
   uploadedAt    DateTime @default(now()) @db.Timestamptz(3)
   purgedAt      DateTime? @db.Timestamptz(3)
+  storageCountedAt DateTime? @db.Timestamptz(3)            // 🔴 T-05-04。UsageCounter(STORAGE_BYTES) に byte_size を計上済みの時刻（NULL = 未計上）
   @@unique([tenantId, engineerId, version])
   @@index([tenantId, scanStatus, uploadedAt])              // SCANNING 滞留の検知（A-005）
   @@map("skill_sheets")
 }
 // 🔴 DB 制約: CHECK ( is_latest = false OR scan_status = 'CLEAN' )   … F-011 AC-1 を DB に落とす
 // 🔴 部分 UNIQUE: CREATE UNIQUE INDEX ... ON skill_sheets(tenant_id, engineer_id) WHERE is_latest;
+// 🔴 部分 INDEX: CREATE INDEX ... ON skill_sheets(tenant_id) INCLUDE (byte_size) WHERE storage_counted_at IS NOT NULL;
+//    （`usage.storage-reconcile` の突き合わせ母集団。migration 20260907000000）
 model FileScanResult {
   id           String   @id @default(uuid(7)) @db.Uuid
   tenantId     String   @db.Uuid
@@ -1425,6 +1428,8 @@ CREATE FUNCTION app_actor_user_id() RETURNS uuid LANGUAGE sql STABLE AS
 
 **射程外の 4 表**: `skills` / `platform_users` / `plans` / `subscriptions`（`CLAUDE.md` §3.1）。**これで 52 + 4 = 56 表すべてが片付いている。**
 
+🔴 **C2 の唯一の例外: `usage_counters` の `metric = 'STORAGE_BYTES'` 行**（T-05-04。migration 20260907000000）。**行の値でポリシーを絞った限定的な緩和**であり、`SELECT` / `INSERT` / `UPDATE` を `tenant_id = app_tenant_id() AND metric = 'STORAGE_BYTES'` で許す（`DELETE` は開かない）。理由: `F-011` の関連ロールには `PARTNER_ADMIN` / `PARTNER_SALES` が含まれ（自社エンジニア分のスキルシート）、§14.2 は「上限に達していたら署名付き URL を発行しない」ことを**発行前の必須条件**としている。C2 のままだとパートナー文脈で ①上限を判定できない（＝上限が効かないアップロード経路が残る）②計上できない（＝取引先が置いたバイト数が原価に載らない）の両方が起き、`CLAUDE.md` §3.4 / §10.6 に反する。**開くのは「自テナントの総保管バイト数」だけ**であり、他社の名前・件数・業務データを含まない（`CLAUDE.md` §3.1 の 🔴 に抵触しない。パートナーは上限到達をどのみち `#70` で知る）。`AI_COST_USD` / `EMAIL_COUNT` / `SEAT_COUNT` / `AI_UNIT_*` は C2 のままである（`tests/isolation/storage-metering.test.ts` が「パートナー文脈で見える metric は `STORAGE_BYTES` だけ」を固定する）。
+
 🔴 **`INSERT ... RETURNING` には `SELECT` ポリシーが適用される**（PostgreSQL の仕様）。Prisma の `create()` は常に `RETURNING` を伴うため、「書けるが自分では読み返せない」行は `create()` では作れない。該当するのは `notifications`（他人宛の通知。`INSERT` は C1 式 / `SELECT` は C7 = 本人のみ）と `audit_logs`（パートナーの操作の記録。`INSERT` は C1 / `SELECT` は C2 = ホストのみ）の 2 表であり、**いずれも `createMany()`（`RETURNING` 無し）で書く**（ポリシーを緩めて解決しない）。回帰は `tests/isolation/rls-classes.test.ts` が両方向（`createMany` は成功 / `create` は失敗）で固定する。
 
 🔴 **`readRecentTwoFactorFailures`（§16.1 の 2FA スロットル）のパートナー次元緩和（ホスト文脈への限定切替。暫定）と、恒久解（`audit_logs` への自己参照 `SELECT` ポリシー追加 = 本節のクラス割り当ての変更）は Issue #29 で確認中。**
@@ -2035,7 +2040,7 @@ requireEsignConnection(ctx);                           // 🔴 §8.4。未接続
 | 15 | `GET /api/engineers` | `F-009` / `S-005` | `?skills[]=&yearsMin=&priceMin=&priceMax=&availableBy=&prefecture=&remote=&ownership=&availability=&q=&onlyInTime=&onlyCommutable=&cursor=` | `{ items: (OwnEngineerView\|AnonymousCandidateView)[], total }` | 全ロール（母集団は所属で決まる） |
 | 16 | `POST /api/engineers` / `PATCH /api/engineers/{id}` | `F-008` / `S-007` | `EngineerInput`（🔴 `ownerPartnerCompanyId` を**含まない**） | `{ id }` | `OWNER`/`ADMIN`/`SALES`/`PA`/`PS` |
 | 17 | `GET /api/engineers/{id}` | `F-008` / `S-006` | — | `OwnEngineerDetailView` | 境界内のみ。**監査記録あり**（`BR-27`） |
-| 18 | `POST /api/engineers/{id}/skill-sheets/upload-url` | `F-011` / `S-008` | `{ fileName, contentType, byteSize }` | `{ objectKey, uploadUrl, expiresIn }` | 🔴 **ストレージ上限超過なら発行しない**（`docs/03` §4.5） |
+| 18 | `POST /api/engineers/{id}/skill-sheets/upload-url` | `F-011` / `S-008` | `{ fileName, contentType, byteSize }` | `{ objectKey, uploadUrl, expiresIn, requiredHeaders }`（🔴 `requiredHeaders` は T-05-04 で追加。下記） | 🔴 **ストレージ上限超過なら発行しない**（`docs/03` §4.5） |
 | 19 | `POST /api/engineers/{id}/skill-sheets` | `F-011` | `{ objectKey, note? }` | `{ id, version, scanStatus:'SCANNING' }` | 同上 |
 | 20 | `GET /api/skill-sheets/{id}/download-url` | `F-012` | — | `{ url, expiresIn }` | 🔴 **`scanStatus='CLEAN'` かつ `AuditLog` の書き込み成功後にのみ発行**（`F-012 AC-2`）。`VIEWER` は 403 |
 | 21 | `GET /api/skill-sheets/{id}/preview` | `F-012` | — | `{ meta }`（本文は返さない） | 閲覧も `AuditLog` に記録 |
@@ -2084,6 +2089,17 @@ requireEsignConnection(ctx);                           // 🔴 §8.4。未接続
 - ⚠️ **`docs/04` §S-006 の基本情報にある「経験年数」（1 件の集約値）を出していない。** §3.4 に集約列が無く、集約の定義（最大値か / 代表スキルか / 実務年数か）も決まっていないためである。**スキル別の経験年数はスキル表に出しているので判断材料は隠れていない。** 集約値の定義は `F-009` の `yearsMin` の評価（SP-06 T-06-04）と**同時に決める**。
 - ⚠️ **`S-006` のセクション 3〜7 は本タスクの範囲外**（3 スキルシートの版 = T-05-06 / T-05-07、4 提案履歴・5 凍結差分 = SP-09、6 稼働履歴 = SP-16、7 匿名共有 = SP-08）。画面では**セクションを消さずに「後続のリリースで利用できる」と明示する**（`engineers.careers.comingSoon` と同じ規律）。`piiPurgedAt` の 404 文言（「保持期間を過ぎて削除されました」。`F-046 AC-2`）は削除ジョブと同じ SP-16（T-16-06）で足す —— 到達できない状態のために先回りの分岐を書かない。
 - **登録後の遷移を `S-007`（編集）から `S-006`（詳細）に変えた**（`docs/04` §S-007 関連画面「→ `S-006`」）。T-05-01 が編集へ戻していたのは `S-006` が未実装だったための暫定である。編集のキャンセルも詳細へ戻す。
+
+🔴 **#18 の実装の決着（T-05-04）**:
+
+- **オブジェクトキーはサーバが組み立てる。** body は `{ fileName, contentType, byteSize }` の 3 項目だけであり、**`objectKey` を受け取らない** —— 受け取ると他テナントのプレフィックスや別用途の領域へ署名を出せる（`CLAUDE.md` §3.1）。組み立ては `@ses/domain` の `buildSkillSheetObjectKey`（§14.1 の唯一の実装）で行い、`tenantId` は **ctx から**渡す。
+- 🔴 **応答に `requiredHeaders` を足した**（docs のこれまでの記述は `{ objectKey, uploadUrl, expiresIn }` だった）。SigV4 の署名には `Content-Type` / `Content-Length`（SSE-KMS を使う環境ではその 2 ヘッダも）が含まれ、**クライアントが同じ値を送らないと S3 が 403 を返す**。返さないと画面がヘッダを推測することになる。モック実装（`demo` / E2E）も**同じキー**で返す（`demo` では通るのに `production` で 403、という差を作らない）。
+- 🔴 **`byteSize` は「上限」ではなく「このサイズちょうど」として署名に焼き込む**（`Content-Length`）。SigV4 のクエリ署名では範囲を表現できない（範囲を表せるのは POST policy だけ）ため、上限として扱えるかのような実装にすると「実は何バイトでも通る」状態になる。この結果、**小さいと申告して大きいものを置くことで上限判定を迂回できない**。実サイズの確定は #19 の `head()` である。
+- **判定の順序は ①`UPLOAD_MAX_BYTES`（413）②拡張子（400）③対象エンジニアの可視性（404）④ストレージ上限（429）**。③を先に置くのは「見えない ＝ 存在しない」（§4.8）を上限判定より優先するためである（境界外の ID に上限の話をしない）。
+- 🔴 **`UsageCounter` をここでは 1 バイトも動かさない**（§14.2）。署名を出してもアップロードされないまま終わることがある。加算は #19（T-05-06）が `head()` の実サイズで行う。
+- 🔴 **`AuditLog` を書かない。** 行は 1 つも作られず、外部にも何も渡らない（§16.1 に本 API の行が無いのはそのため）。「署名を出した」だけの記録を足すと、`S-041` の操作種別フィルタに**実際には何も起きていない行**が混ざる。記録は #19（`skill_sheet.upload` = `*.create`）と #20（`skill_sheet.download`）が持つ。
+- **認可は `OWNER` / `ADMIN` / `SALES` / `PARTNER_ADMIN` / `PARTNER_SALES`**（`docs/02` `F-011` 関連ロール）。`VIEWER` は `requireRole` の段階で 403 になる（`requireNotViewer` も宣言し、`tests/static/execute-guard.test.ts` の走査対象に載せる）。
+- ⚠️ **キーに載る `{version}` は「発行時点の次版」であり、確定（#19）が採番する版そのものではない。** 同じエンジニアに 2 人が同時に署名を要求すると同じ版番号を載せたキーを受け取るが、`{uuid}` が違うためオブジェクトは衝突せず、確定は `@@unique([tenantId, engineerId, version])` により先着 1 件だけが成立する。**キーの一意性は `{uuid}` が担保する。**
 
 🔴 **#23 / #24 の実装の決着（T-05-03）**:
 
@@ -2722,7 +2738,7 @@ export class EncryptedString {
 | **AI コスト（テナント × 日）** | 🔴 **`UsageCounter`（DB）が正**。Redis は表示キャッシュ | `Asia/Tokyo` の暦日。`periodKey='YYYY-MM-DD'` | `INSERT ... ON CONFLICT DO UPDATE ... RETURNING`（§7.6） |
 | **AI クォータ（テナント × 月）** | 同上。`periodKey='YYYY-MM'` | 暦月 | 超過は停止せず従量 |
 | **メール（テナント × 日 500 / 分 30）** | 同上（日次）。**分次は Redis のスライディングウィンドウ**（60 秒、`ZADD`/`ZREMRANGEBYSCORE`） | 日 = 暦日、分 = スライディング 60 秒 | 🔴 **日次超過は停止（`BLOCK`）、分次超過は待機（`DEFER`）**。`DEFER` はジョブを `retryAfterSec` 後に**同じ `attemptSeq` のまま**再スケジュール（§10.5） |
-| **ストレージ（テナント × 現在使用量）** | 🔴 **`UsageCounter(metric='STORAGE_BYTES')` が正**。`PutObject` 完了確定時に加算、削除成功時に減算（`docs/03` §4.5） | 累積 | **上限超過なら署名付き URL を発行しない**（発行してから失敗させない） |
+| **ストレージ（テナント × 現在使用量）** | 🔴 **`UsageCounter(metric='STORAGE_BYTES')` が正**。`PutObject` 完了確定時に加算、削除成功時に減算（`docs/03` §4.5）。🔴 **加算・減算は `skill_sheets.storage_counted_at` の CAS が成立したときだけ動く**（冪等。§14.3） | 累積（🔴 `period_kind='MONTH'` の行に持ち、**月替わりで直前の月の値を引き継ぐ**。§14.3） | **上限超過なら署名付き URL を発行しない**（発行してから失敗させない）。上限値は `Plan.storageLimitBytes`、既定は `packages/config` の `STORAGE_LIMIT_BYTES_PER_TENANT`（`EMAIL_DAILY_LIMIT_PER_TENANT` と同じ扱い） |
 | **SES への送信レート（全テナント合計）** | 🔴 **Redis の Lua によるグローバルトークンバケット**（`SES_GLOBAL_RATE_PER_SECOND`） | 秒 | 揮発してよい（正確性より平準化が目的） |
 | **Anthropic の組織全体の月間支出** | `AiUsage` の全テナント合計を日次集計 | 暦月 | 80% で `A-005` に警告（`docs/03` §4.5） |
 | **電子署名（1 契約 1 リクエスト）** | 🔴 **カウンタではなく `SendAttempt` の `UNIQUE`** | — | §10.2 |
@@ -3521,6 +3537,10 @@ export function createConnectors(selection: ConnectorSelection): Connectors {
 | `production` | real | real | real | real | real | real |
 
 - **`development` の `objectStore` / `malwareScanner` が `real`** なのは、ローカル docker-compose の MinIO / ClamAV コンテナに実接続するため（モックではなく実サービス。§13.4 コードコメント参照）。外部の第三者に到達しないため §11.1 の 🔴 には抵触しない。
+- 🔴 **区分単位の入口を 1 つ用意した**（T-05-04 の `createObjectStore(kind, runtime)`）。`createConnectors` は 5 区分を**一度に**作るため、1 区分でも未登録（現時点では `malwareScanner` の `real`。T-05-05）だと起動そのものが落ちる。`apps/web` は先にストレージだけを必要とする（#18）ため、**同じファクトリ**を区分単位でも呼べるようにしてある（`createConnectors` も内部でこの関数を呼ぶ ＝ 実装は 1 つ）。**実装種別の決定は起動時のまま**であり、区分単位の入口も `APP_ENV` を見ない。
+- **`objectStore: 'real'` は AWS SDK のアダプタ（`@ses/connectors/aws` の `createS3Api`）を要求する**（T-05-04 で実装済み。`packages/connectors/src/storage/aws-sdk-s3.ts`）。渡されなければ**モックへフォールバックせず** `ConnectorImplementationNotAvailableError` で失敗する —— 「未設定ならモック」は**アップロードできたように見えてファイルがどこにも無い**という最悪の壊れ方を生む（§11.1）。
+- 🔴 **`apps/web` で `@ses/connectors/aws` を import してよいのは `lib/db/bootstrap.ts` だけである**（同ファイルが web の起動時 DI の実体）。**`instrumentation.ts` には置かない** —— Next.js はそこを **Edge ランタイム向けにもコンパイルする**ため、Node 組み込みに依存する AWS SDK を持ち込むとビルドが落ちる。Edge で動く `proxy.ts` は `bootstrap.ts` を import しない。
+- 🔴 **S3 の資格情報（`S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY`）は `storageRuntime()` の戻り値に載せない**。`objectStore()` の内側だけが読む（`CLAUDE.md` §3.5）。SES のアダプタと違って資格情報を引数に取るのは、**MinIO に IAM ロールが無い**ためであり、「`staging` / `production` で設定されていたら起動を止める」判定は `packages/config` の 1 箇所が持つ（docs/03 §6.5）。
 - **`sandbox` の `billing` が `real`** なのは、`sandbox` テナントは `Tenant.lifecycleState='SANDBOX'` のままで Stripe の `Subscription` を持たず、課金フロー自体が発生しないため（§4.2 `Tenant` の規則）。「送信系（メール/電子署名）のみモック、それ以外は本番同等」の原則どおり。
 
 ### 13.2 モック実装の設計
@@ -3652,7 +3672,7 @@ s3://{S3_BUCKET}/
 
 | 用途 | メソッド | 有効期限 | 🔴 発行の前提条件 |
 |---|---|---|---|
-| **アップロード** | `PUT`（`presignPut`） | `S3_PRESIGNED_URL_TTL_SECONDS`（既定 300） | ①`requireExecutable` ②`VIEWER` でない ③**ストレージ上限に達していない**（`docs/03` §4.5。発行してから失敗させない）④`Content-Length` を `UPLOAD_MAX_BYTES`（既定 20 MB）に制限する条件付き署名 |
+| **アップロード** | `PUT`（`presignPut`） | `S3_PRESIGNED_URL_TTL_SECONDS`（既定 300） | ①`requireExecutable` ②`VIEWER` でない ③**ストレージ上限に達していない**（`docs/03` §4.5。発行してから失敗させない）④`Content-Length` を `UPLOAD_MAX_BYTES`（既定 20 MB）以下に制限したうえで、🔴 **申告サイズちょうどを署名に焼き込む**（T-05-04。SigV4 のクエリ署名は範囲を表現できないため「上限」では署名できない。`signableHeaders` に `content-length` / `content-type` を入れて `SignedHeaders` に載せる） |
 | **ダウンロード（スキルシート）** | `GET`（`presignGet`） | 300 秒 | 🔴 ①`scanStatus === 'CLEAN'`（`BR-26` / `F-011 AC-1`）②`VIEWER` でない（`BR-31`）③**`AuditLog` の書き込みが成功している**（`F-012 AC-2`。記録なしの閲覧が成立しない）④代理閲覧中でない（`F-060 AC-3`） |
 | **ダウンロード（契約書・添付）** | 同上 | 300 秒 | 同上 |
 | **返却データ（`F-064` / `F-052`）** | 同上 | 3600 秒 | 🔴 運営者は 403（`F-064 AC-7`） |
@@ -3660,6 +3680,19 @@ s3://{S3_BUCKET}/
 🔴 **アップロードの確定**: ブラウザ → S3 の直接アップロード（`docs/03` 申し送り 23。Vercel のボディ上限 4.5 MB を経由させない）。**アップロード完了は `POST /api/engineers/{id}/skill-sheets`（#19）で確定させ、そのときに `head()` で実サイズを取得して `UsageCounter(STORAGE_BYTES)` に加算する**（`docs/03` 申し送り 25）。**署名付き URL の発行時には加算しない**（アップロードされないまま終わることがあるため）。
 
 🔴 **共有 URL の発行そのものを `AuditLog` に記録する**（`BR-28` / `F-012 AC-1`）。デスクトップ・モバイル・共有 URL のいずれの経路でも同じ関数（`issueDownloadUrl`）を通るため、**記録が漏れる経路が存在しない**。
+
+#### 14.3 ストレージ使用量の計上（T-05-04。`docs/03` §4.5 / §8.7）
+
+🔴 **`UsageCounter(metric='STORAGE_BYTES')` が正であり、S3 を数えに行かない**（プレフィックス配下の合計サイズを安価に返す API が無く、`F-027` の「アップロード前の停止判定」に間に合わない）。実装は `packages/db/src/storage-usage.ts` の 3 関数だけであり、これを迂回して `usage_counters` を書く経路を作らない。
+
+| 論点 | 決定（T-05-04） |
+|---|---|
+| **加算・減算の冪等性のアンカー** | 🔴 **`skill_sheets.storage_counted_at`**（NULL = 未計上）。**条件付き UPDATE（CAS）が成立したときだけ**、同一トランザクション内でカウンタを動かす。二重実行の 2 回目は 0 件更新になり、加算も減算も起きない（`ALREADY_SETTLED`）。**差分を素直に足し引きするだけの実装は、1 回の再実行で恒久的にずれる。** |
+| **`purged_at` で代用しない理由** | `purged_at` は「原本を削除した」という業務上の事実、`storage_counted_at` は「計上に含まれているか」という会計上の事実である。片方から他方を導出すると、**S3 の削除に失敗した（＝ まだ課金されている）ファイルが計上から外れる**。 |
+| **境界の扱い** | CAS が 0 件のとき、行が**見えない**なら `NOT_FOUND`（呼び出し側が 404 に写像）、**見えるが状態が済んでいる**なら `ALREADY_SETTLED`。**0 バイトの加算として握り潰さない**（握り潰すと、他テナントの ID を指定した呼び出しが成功に見える）。 |
+| **月キーと累積の両立** | 🔴 行は `period_kind='MONTH'` で持ち（§5.9 の月末値の固定に使う）、**新しい月の最初の書き込みで直前の月の値を引き継いでから**差分を適用する。引き継がないと月初に使用量が 0 に見え、上限が実質的に消える。読み取りも「`period_key <= 当月` の最新行」を見る。 |
+| **下限** | `GREATEST(…, 0)`。負のバイト数は意味を持たず、残すと実体の無い枠を与える。**乖離の自動補正はしない**（`usage.storage-reconcile` が `A-005` に出すだけ。`docs/03` §4.5）。 |
+| **パートナー文脈** | 🔴 RLS は C2 の **`metric = 'STORAGE_BYTES'` 限定の例外**で通す（§4.4）。**アプリ側でホスト文脈へ昇格させない**（昇格させると、その経路だけ RLS が何も制約しなくなる）。 |
 
 ## 15. エラー処理方針
 
@@ -3685,9 +3718,11 @@ AppError（抽象。code / httpStatus / userMessageKey / logLevel を持つ）
 ├── UnprocessableError                  422
 │   ├── InvalidStateTransitionError     422  'error.state.invalidTransition'  🔴 §4.2 の全 5 機械
 │   └── SendingDomainNotVerifiedError   422  'error.sendingDomain.unverified'  🔴 docs/04 申し送り 8。対象は APPROVED / DRAFT のまま据え置き、理由 + DNS レコードを返す
-├── QuotaExceededError                  429
+├── UploadTooLargeError                 413  'error.upload.tooLarge'   🔴 T-05-04。`UPLOAD_MAX_BYTES` 超過（§14.2 ④）。**書式は正しく大きさだけが問題**なので `ValidationError`（400）と分ける。`params.maxBytes` を返す（設定値であり秘匿ではない）
+├── QuotaExceededError                  429  'error.quota.exceeded'
 │   ├── AiCostLimitExceededError        429  'error.quota.aiDaily'
-│   └── EmailRateLimitExceededError     429  'error.quota.email'
+│   ├── EmailRateLimitExceededError     429  'error.quota.email'
+│   └── StorageLimitExceededError       429  'error.quota.storage'     🔴 T-05-04。**署名付き URL を発行しなかった**（§14.2 ③）。🔴 残量も上限値も返さない（パートナーもこの経路を通る。`F-027 AC-1`）。`retryable: false`（時間では解消しない）
 ├── TwoFactorThrottledError             429  'error.2fa.throttled'   🔴 `QuotaExceededError` と同じ 429 段。`Retry-After` ヘッダで残り秒数。`retryable: true`
 └── InternalError                       500  'error.internal'
     ├── AiRoleFailedError               500（ジョブ内で捕捉。API には出さない）

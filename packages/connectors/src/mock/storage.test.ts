@@ -14,6 +14,14 @@ describe('MockObjectStore', () => {
     expect(put.url.startsWith('mock-object-store:')).toBe(true);
     expect(put.expiresAt.getTime()).toBeGreaterThan(now().getTime());
     expect(put.headers['content-type']).toBe('application/vnd.ms-excel');
+    // 🔴 T-05-04: 実装（`S3ObjectStore`）と同じキーで返す（demo と production で差を作らない）。
+    expect(put.headers['content-length']).toBe('10000000');
+  });
+
+  it('🔴 presignPut したサイズで置かれたことにする（demo でストレージ計測が 0 のままにならない）', async () => {
+    const store = new MockObjectStore({ now });
+    await store.presignPut('k1', 'application/pdf', 4096);
+    expect(await store.head('k1')).toMatchObject({ byteSize: 4096 });
   });
 
   it('presignPut 後は head() が版 ID を返し、delete 後は null に戻る', async () => {

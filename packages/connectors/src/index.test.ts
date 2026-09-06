@@ -8,6 +8,7 @@ import { ConnectorImplementationNotAvailableError } from './errors.js';
 import { SandboxRecipientScopedEmailSender } from './email/sandbox-recipient-scoped.js';
 import { SesEmailSender } from './email/ses/index.js';
 import { MockEmailSender } from './mock/index.js';
+import { S3ObjectStore } from './storage/index.js';
 import {
   CONNECTOR_CATEGORIES,
   dispatchTokenFor,
@@ -148,5 +149,35 @@ describe('🔴 email の 3 種別すべてが解決できる（T-04-03。docs/05
       token: dispatchTokenFor({ dispatchId: 'd1', dedupeKey: 'k1' }),
     });
     expect(sendEmail).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('🔴 objectStore の real（T-05-04。docs/05 §13.1 の表）', () => {
+  const s3 = {
+    api: {
+      presignPut: async () => 'https://s3.test/put',
+      presignGet: async () => 'https://s3.test/get',
+      deleteObject: async () => undefined,
+      headObject: async () => null,
+    },
+    bucket: 'ses-platform-test',
+    presignedUrlTtlSeconds: 300,
+  };
+
+  it('S3 の設定（AWS SDK のアダプタ）を渡せば real が解決できる', () => {
+    const connectors = createConnectors(selectionWith('objectStore', 'real'), { s3 });
+    expect(connectors.objectStore).toBeInstanceOf(S3ObjectStore);
+    expect(connectors.objectStore.callCount()).toBe(0);
+  });
+
+  it('🔴 S3 の設定が無ければモックに倒さず throw する（CLAUDE.md §11.1）', () => {
+    let captured: unknown = null;
+    try {
+      createConnectors(selectionWith('objectStore', 'real'), {});
+    } catch (error) {
+      captured = error;
+    }
+    expect(captured).toBeInstanceOf(ConnectorImplementationNotAvailableError);
+    expect((captured as ConnectorImplementationNotAvailableError).category).toBe('objectStore');
   });
 });

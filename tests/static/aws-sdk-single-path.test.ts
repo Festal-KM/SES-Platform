@@ -20,8 +20,21 @@ import { describe, expect, it } from 'vitest';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '..', '..');
 
-/** 🔴 AWS SDK を import してよい唯一のファイル（docs/03 §3.2.9 / docs/05 §8.3）。 */
-const AWS_SDK_ADAPTER = 'packages/connectors/src/email/ses/aws-sdk-api.ts';
+/**
+ * 🔴 AWS SDK を import してよいアダプタ（docs/03 §3.2.9 / docs/05 §8.3 / §14.2）。
+ *
+ * **サービスごとに 1 ファイル**であり、それ以外から `@aws-sdk/*` に触れない。
+ * T-05-04 で S3（オブジェクトストレージ）が加わり 2 ファイルになった。
+ */
+const AWS_SDK_ADAPTERS = [
+  'packages/connectors/src/email/ses/aws-sdk-api.ts',
+  'packages/connectors/src/storage/aws-sdk-s3.ts',
+] as const;
+
+/** SESv2 のアダプタ（`maxAttempts: 1` の検査で名指しする）。 */
+const SES_ADAPTER = AWS_SDK_ADAPTERS[0];
+/** S3 のアダプタ（同上）。 */
+const S3_ADAPTER = AWS_SDK_ADAPTERS[1];
 
 /**
  * 🔴 SDK の入口を公開する唯一のサブパス。ここも SDK を直接 import はせず、
@@ -73,21 +86,38 @@ describe('🔴 AWS SDK の単一経路（CLAUDE.md §3.4 / BR-22 / docs/03 §3.2
     expect(sourceFiles.length).toBeGreaterThan(0);
   });
 
-  it('🔴 @aws-sdk/* を import しているのはアダプタ 1 ファイル（とそのユニットテスト）だけである', () => {
+  it('🔴 @aws-sdk/* を import しているのはアダプタ 2 ファイル（とそのユニットテスト）だけである', () => {
     const importers = sourceFiles.filter((file) =>
       AWS_SDK_REFERENCE.test(stripComments(readFileSync(path.join(repoRoot, file), 'utf8'))),
     );
     // 🔴 テストは出荷されないが、**アダプタのユニットテスト以外**に増えていないことは見る
     //    （増えた時点で「SDK の型が別の層に漏れている」ため）。
     expect(importers.sort()).toEqual(
-      [AWS_SDK_ADAPTER, 'packages/connectors/src/email/ses/aws-sdk-api.test.ts'].sort(),
+      [
+        ...AWS_SDK_ADAPTERS,
+        'packages/connectors/src/email/ses/aws-sdk-api.test.ts',
+        'packages/connectors/src/storage/aws-sdk-s3.test.ts',
+      ].sort(),
     );
   });
 
-  it('🔴 SDK 内部のリトライを止めている（maxAttempts: 1。既定の 3 回だと attempts: 1 が無意味になる）', () => {
-    const source = readFileSync(path.join(repoRoot, AWS_SDK_ADAPTER), 'utf8');
+  it('🔴 SES: SDK 内部のリトライを止めている（maxAttempts: 1。既定の 3 回だと attempts: 1 が無意味になる）', () => {
+    const source = readFileSync(path.join(repoRoot, SES_ADAPTER), 'utf8');
     expect(source).toMatch(/new SESv2Client\(/);
     expect(stripComments(source)).toMatch(/maxAttempts:\s*1/);
+  });
+
+  it('🔴 S3: SDK 内部のリトライを止めている（削除・照会はネットワークに出る。署名はローカル計算）', () => {
+    const source = readFileSync(path.join(repoRoot, S3_ADAPTER), 'utf8');
+    expect(source).toMatch(/new S3Client\(/);
+    expect(stripComments(source)).toMatch(/maxAttempts:\s*1/);
+  });
+
+  it('🔴 S3: Content-Length を署名対象に固定している（docs/05 §14.2 ④）', () => {
+    // 署名に載らないと「小さいと申告して大きいものを置く」ことで上限判定を迂回できる。
+    const source = stripComments(readFileSync(path.join(repoRoot, S3_ADAPTER), 'utf8'));
+    expect(source).toMatch(/signableHeaders/);
+    expect(source).toMatch(/content-length/);
   });
 
   it('🔴 主バレル（src/index.ts）がアダプタを re-export しない（サーババンドルに SDK を載せない）', () => {
@@ -95,12 +125,21 @@ describe('🔴 AWS SDK の単一経路（CLAUDE.md §3.4 / BR-22 / docs/03 §3.2
       readFileSync(path.join(repoRoot, 'packages/connectors/src/index.ts'), 'utf8'),
     );
     expect(barrel).not.toContain('aws-sdk-api');
+    expect(barrel).not.toContain('aws-sdk-s3');
     expect(barrel).not.toContain('./aws.js');
+  });
+
+  it('🔴 storage/index.ts（主バレルが読む面）もアダプタを re-export しない', () => {
+    const storageBarrel = stripComments(
+      readFileSync(path.join(repoRoot, 'packages/connectors/src/storage/index.ts'), 'utf8'),
+    );
+    expect(storageBarrel).not.toContain('aws-sdk-s3');
   });
 
   it('🔴 SDK への公開経路は @ses/connectors/aws サブパス 1 本だけである', () => {
     const entry = readFileSync(path.join(repoRoot, AWS_SUBPATH_ENTRY), 'utf8');
     expect(entry).toContain('./email/ses/aws-sdk-api.js');
+    expect(entry).toContain('./storage/aws-sdk-s3.js');
 
     const manifest = JSON.parse(
       readFileSync(path.join(repoRoot, 'packages/connectors/package.json'), 'utf8'),

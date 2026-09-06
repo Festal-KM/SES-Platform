@@ -133,6 +133,16 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
   //    ここを増やすと「計測を迂回した書き込み」が生まれ、原価と請求根拠が説明できなくなる。
   snapshotSeatCount: ['apps/worker/src/jobs/usage-seat-snapshot.ts'],
   incrementUsageCounter: [],
+  // 🔴 T-05-04: ストレージ計測（docs/05 §8.7 / §14.2 / docs/03 §4.5）。
+  //    `UsageCounter(STORAGE_BYTES)` を読む・動かす経路をファイル単位で固定する ——
+  //    増えると「上限を見ずに署名を出す」経路や「CAS を経ずに足し引きする」経路が生まれ、
+  //    停止判定と月末原価の根拠がどちらも説明できなくなる。
+  //    🔴 加算（`accountSkillSheetStorage`）の呼び出し元は #19（T-05-06）、減算
+  //    （`releaseSkillSheetStorage`）は削除ジョブ（SP-16）であり、**まだ 1 つも無い**。
+  //    空配列にしておくことで、追加時にこの一覧の更新が強制される。
+  readStorageBytesUsed: ['apps/web/lib/skill-sheets/service.ts'],
+  accountSkillSheetStorage: [],
+  releaseSkillSheetStorage: [],
 
   // --- 🔴 T-04-03: 運用メールと Webhook 受信（docs/05 §8.5 / §9.4）--------------------------
   // 🔴 `EmailDispatch` を作る経路を 1 ファイルに固定する。増えると `dedupeKey` の組み立てが

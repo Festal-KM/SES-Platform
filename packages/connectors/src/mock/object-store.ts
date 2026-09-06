@@ -26,14 +26,22 @@ export class MockObjectStore implements ObjectStore {
    *    実装（S3）との差はここだけであり、`demo` で版管理・スキャン・共有の導線が
    *    最後まで動くようにするための割り切りである。**この差を他の場所で吸収しない**
    *    （`if (mock)` を業務コードに書かないため、モック側で完結させる）。
+   *
+   * 🔴 T-05-04: 置かれたことにするサイズは **`maxBytes`（＝ 署名に焼き込んだ `Content-Length`）**
+   *    である。0 にしておくと `head()` が 0 を返し、`demo` でストレージ計測
+   *    （`UsageCounter(STORAGE_BYTES)`）が常に 0 バイトになる —— 「動いているのに数字が増えない」
+   *    という、実装のバグと見分けのつかない状態になる。
    */
   async presignPut(key: string, contentType: string, maxBytes: number): Promise<PresignedUrl> {
     this.calls += 1;
-    this.objects.set(key, { byteSize: 0, versionId: randomUUID(), contentType });
+    this.objects.set(key, { byteSize: maxBytes, versionId: randomUUID(), contentType });
     return {
       url: `${MOCK_URL_SCHEME}//put/${encodeURIComponent(key)}`,
       expiresAt: new Date(this.now().getTime() + 15 * 60 * 1000),
-      headers: { 'content-type': contentType, 'x-mock-max-bytes': String(maxBytes) },
+      // 🔴 T-05-04: 返すヘッダの**キーは実装（`S3ObjectStore`）と同じ**にする。画面は
+      //    `requiredHeaders` をそのまま PUT に付けるため、ここだけ別のキーにすると
+      //    「`demo` では通るのに `production` では 403」という差が生まれる（docs/05 §13.2）。
+      headers: { 'content-type': contentType, 'content-length': String(maxBytes) },
     };
   }
 

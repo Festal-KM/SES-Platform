@@ -16,6 +16,13 @@
 //    （`initializeRuntimeConfig` の内部）で既に終わっており、ここは結果を読むだけである。
 import process from 'node:process';
 import { initializeRuntimeConfig, type AppEnvKind } from '@ses/config';
+import { createObjectStore, type ConnectorImplementationKind, type ObjectStore } from '@ses/connectors';
+// 🔴 T-05-04: AWS SDK に到達する唯一の公開経路（`@ses/connectors/aws`）。**このファイルが
+//    `apps/web` の起動時 DI の実体**であり、ここ以外から import しない（`packages/connectors/src/aws.ts`）。
+//    🔴 `instrumentation.ts` に置かない —— あちらは Next.js が **Edge ランタイム向けにも
+//    コンパイルする**ため、Node 組み込みモジュールに依存する AWS SDK を持ち込むとビルドが落ちる
+//    （同ファイル冒頭の注記と同じ理由）。Edge で動く `proxy.ts` は本ファイルを import しない。
+import { createS3Api } from '@ses/connectors/aws';
 import {
   configurePlatformReadDb,
   configurePlatformWriteDb,
@@ -64,6 +71,18 @@ let cachedSendingDomainRuntime: { readonly region: string; readonly verification
  *    **判定はここ 1 箇所**であり、ルートにも画面にも `APP_ENV` の分岐を置かない（`CLAUDE.md` §11.1）。
  */
 let cachedInviteUrlRuntime: InviteUrlRuntime | null = null;
+/**
+ * 🔴 T-05-04: ストレージの上限・署名の設定と、**選ばれた実装種別**（docs/05 §13.1 / §14.2）。
+ *    `APP_ENV` の分岐は `resolveConnectorSelection` が起動時に済ませており、ここは結果を持つだけ。
+ */
+let cachedStorageRuntime: StorageRuntime | null = null;
+/** 🔴 起動時に選ばれた実装から 1 度だけ組み立てる（リクエストごとに作らない）。 */
+let cachedObjectStore: ObjectStore | null = null;
+/**
+ * 🔴 S3 クライアントの接続設定（資格情報を含む）。**export しない / `storageRuntime()` に載せない**
+ *    —— 鍵の到達経路を `objectStore()` の内側 1 か所に閉じる（`CLAUDE.md` §3.5）。
+ */
+let cachedS3ClientEnv: Parameters<typeof createS3Api>[0] | null = null;
 
 /**
  * DB クライアントを 1 度だけ初期化する。
@@ -135,7 +154,95 @@ export function ensureDbConfigured(): void {
   //    結合テストが `buildValidEnv('sandbox')` から**同じ関数**で runtime を作れるようにするため
   //    （テスト専用のフックも、テスト側での判定の書き写しも作らない）。
   cachedInviteUrlRuntime = resolveInviteUrlRuntime(env);
+  // 🔴 T-05-04: ストレージ（docs/05 §14.1 / §14.2 / docs/03 §4.5）。値の出所は `packages/config`
+  //    だけであり、ルートも画面も `process.env` を読まない（`CLAUDE.md` §3.5）。
+  //    🔴 実装種別（`connectors.objectStore`）もここで確定させる。**リクエストごとに
+  //    `APP_ENV` を見ない**（`CLAUDE.md` §11.1 / docs/05 §13.1）。
+  cachedStorageRuntime = {
+    implementation: connectors.objectStore,
+    bucket: env.S3_BUCKET,
+    ...(env.S3_KMS_KEY_ID === undefined ? {} : { kmsKeyId: env.S3_KMS_KEY_ID }),
+    presignedUrlTtlSeconds: env.S3_PRESIGNED_URL_TTL_SECONDS,
+    uploadMaxBytes: env.UPLOAD_MAX_BYTES,
+    // 🔴 プラン別の上書き（`Plan.storageLimitBytes`）が入るまでの既定値（`packages/config`）。
+    //    判定関数は `limitBytes` を引数で受け取るため、上書きが入っても呼び出し側は変わらない。
+    storageLimitBytes: BigInt(env.STORAGE_LIMIT_BYTES_PER_TENANT),
+  };
+  // 🔴 T-05-04: S3 クライアントの接続設定。**`storageRuntime()` には載せない** ——
+  //    あちらはルート・画面が読む値であり、資格情報を混ぜると「設定を読むついでに鍵が読める」
+  //    経路になる（`CLAUDE.md` §3.5）。ここだけが持ち、`objectStore()` 以外は参照しない。
+  //    🔴 静的キーは `development` の MinIO でしか設定されない（`staging` / `production` で
+  //    設定されていたら `packages/config` が起動を止める。docs/03 §6.5 / NFR-ENV-4）。
+  cachedS3ClientEnv = {
+    region: env.S3_REGION,
+    ...(env.S3_ENDPOINT === undefined ? {} : { endpoint: env.S3_ENDPOINT }),
+    forcePathStyle: env.S3_FORCE_PATH_STYLE,
+    ...(env.S3_ACCESS_KEY_ID === undefined || env.S3_SECRET_ACCESS_KEY === undefined
+      ? {}
+      : {
+          credentials: {
+            accessKeyId: env.S3_ACCESS_KEY_ID,
+            secretAccessKey: env.S3_SECRET_ACCESS_KEY,
+          },
+        }),
+  };
   initialized = true;
+}
+
+/**
+ * 🔴 T-05-04: ストレージの実行時設定（docs/05 §14.2）。
+ *
+ * `#18`（アップロード用署名の発行）と、後続の版管理・ダウンロード（T-05-06 / T-05-07）が読む。
+ */
+export type StorageRuntime = {
+  readonly implementation: ConnectorImplementationKind;
+  readonly bucket: string;
+  readonly kmsKeyId?: string;
+  readonly presignedUrlTtlSeconds: number;
+  readonly uploadMaxBytes: number;
+  readonly storageLimitBytes: bigint;
+};
+
+export function storageRuntime(): StorageRuntime {
+  ensureDbConfigured();
+  if (cachedStorageRuntime === null) {
+    throw new Error('ストレージの実行時設定が解決されていません（bootstrap の不変条件違反）。');
+  }
+  return cachedStorageRuntime;
+}
+
+/**
+ * 🔴 オブジェクトストレージの実装（docs/05 §8.1 / §13.1）。プロセスにつき 1 つ。
+ *
+ * 🔴 **`APP_ENV` を見ない。** 実装種別は起動時に `resolveConnectorSelection` が決めた値
+ *    （`storageRuntime().implementation`）であり、ここは `createObjectStore` に渡すだけである。
+ * 🔴 **未実装の区分をモックで代替しない**（`CLAUDE.md` §11.1）。`real`（MinIO / S3）は
+ *    AWS SDK のアダプタ（`@ses/connectors/aws` の `createS3Api`）を必要とし、渡さなければ
+ *    `ConnectorImplementationNotAvailableError` で失敗する。「未設定ならモック」に倒すと、
+ *    **アップロードできたように見えてファイルがどこにも無い**という最悪の壊れ方になる。
+ * 🔴 遅延生成にしているのは、**この区分だけ**を先に組み立てるためである（`createConnectors` は
+ *    全 5 区分を一度に作るため、未登録の `malwareScanner`〔T-05-05〕で起動そのものが落ちる）。
+ *    実装種別の決定は起動時のまま動かしていない。
+ * 🔴 `S3Client` の生成はネットワークに出ない（資格情報の解決は最初の呼び出しまで遅延する）。
+ *    したがって実装種別で分岐せずに常に組み立ててよく、`mock`（`demo`）でも副作用は無い ——
+ *    **「この環境なら S3 を作る」という分岐をここに書かない**ことのほうが重要である。
+ */
+export function objectStore(): ObjectStore {
+  const runtime = storageRuntime();
+  if (cachedObjectStore === null) {
+    if (cachedS3ClientEnv === null) {
+      throw new Error('S3 の接続設定が解決されていません（bootstrap の不変条件違反）。');
+    }
+    cachedObjectStore = createObjectStore(runtime.implementation, {
+      s3: {
+        api: createS3Api(cachedS3ClientEnv),
+        bucket: runtime.bucket,
+        ...(runtime.kmsKeyId === undefined ? {} : { kmsKeyId: runtime.kmsKeyId }),
+        presignedUrlTtlSeconds: runtime.presignedUrlTtlSeconds,
+      },
+    });
+  }
+  return cachedObjectStore;
 }
 
 /**

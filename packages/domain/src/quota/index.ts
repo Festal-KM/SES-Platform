@@ -19,3 +19,10 @@ export {
   type ProviderQuotaObservation,
   type ProviderQuotaUsage,
 } from './provider.js';
+// 🔴 T-05-04: ストレージ上限（docs/05 §8.7 / §14.2 / docs/03 §4.5）。**メールと同じ形に畳まない**
+//    （超過が時間で解消しないため、`DEFER` を持たない）。
+export {
+  decideStorageUpload,
+  type StorageQuotaDecision,
+  type StorageQuotaInput,
+} from './storage.js';

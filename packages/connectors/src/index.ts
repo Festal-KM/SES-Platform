@@ -30,6 +30,7 @@ import {
   type SesApi,
 } from './email/ses/index.js';
 import type { BillingProvider, EmailSender, EsignProviderMap, MalwareScanner, ObjectStore } from './interfaces.js';
+import { S3ObjectStore, type S3Api } from './storage/index.js';
 import type { ConnectorCategory, ConnectorImplementationKind, ConnectorSelectionInput } from './types.js';
 
 export * from './types.js';
@@ -53,6 +54,9 @@ export * from './email/sandbox-recipient-scoped.js';
 // 🔴 T-04-03: SES コネクタ（docs/05 §8.3 / docs/03 §3.2）。`SesApi` は AWS SDK の
 //    アダプタが実装するポートであり、業務コードは触らない（`createConnectors` にだけ渡す）。
 export * from './email/ses/index.js';
+// 🔴 T-05-04: オブジェクトストレージ（docs/05 §14）。`S3Api` は AWS SDK のアダプタが実装する
+//    ポートであり、業務コードは触らない（`createConnectors` にだけ渡す）。
+export * from './storage/index.js';
 // 🔴 T-04-03: 分次のレート窓（docs/05 §8.7）。日次は `packages/db` の `UsageCounter` が正。
 export * from './rate/minute-window.js';
 // 🔴 T-04-03: Webhook 受信後の処理ジョブの payload（docs/05 §8.5 / §9.4）。
@@ -133,8 +137,28 @@ export type SesRuntimeOptions = {
   readonly now?: () => Date;
 };
 
+/**
+ * S3 実装（`objectStore: 'real'`）の組み立てに要る値（T-05-04）。
+ *
+ * 🔴 `api` は AWS SDK のアダプタ（`packages/connectors` は SDK を持たず、ポートだけを知る。
+ *    `storage/api.ts` 冒頭）。**起動時に 1 回だけ渡す。**
+ * 🔴 環境変数を `packages/connectors` から読まない（`CLAUDE.md` §3.5）。バケット名も KMS 鍵も
+ *    `packages/config` が検証した値を受け取るだけである。
+ */
+export type S3RuntimeOptions = {
+  readonly api: S3Api;
+  /** `S3_BUCKET`。🔴 全テナントで 1 つ（docs/05 §14.1）。 */
+  readonly bucket: string;
+  /** `S3_KMS_KEY_ID`（`sandbox` / `production` では必須。MinIO では未設定）。 */
+  readonly kmsKeyId?: string;
+  /** `S3_PRESIGNED_URL_TTL_SECONDS`（既定 300）。 */
+  readonly presignedUrlTtlSeconds: number;
+  readonly now?: () => Date;
+};
+
 export type ConnectorRuntimeOptions = {
   readonly ses?: SesRuntimeOptions;
+  readonly s3?: S3RuntimeOptions;
 };
 
 /**
@@ -160,12 +184,56 @@ function createSesEmailSender(
 }
 
 /**
+ * 🔴 S3 を要求する実装種別（`real`）のファクトリ（T-05-04）。
+ *
+ * `runtime.s3` が無いときは **`ConnectorImplementationNotAvailableError` で起動を止める**。
+ * モックへ倒さない（`CLAUDE.md` §11.1）—— オブジェクトストレージのモックへ勝手に落ちると、
+ * 「アップロードできたのにファイルがどこにも無い」状態が本番同等の環境で成立してしまう。
+ */
+function createS3ObjectStore(
+  kind: ConnectorImplementationKind,
+  s3: S3RuntimeOptions | undefined,
+): S3ObjectStore {
+  if (s3 === undefined) throw new ConnectorImplementationNotAvailableError('objectStore', kind);
+  return new S3ObjectStore({
+    api: s3.api,
+    bucket: s3.bucket,
+    ...(s3.kmsKeyId === undefined ? {} : { kmsKeyId: s3.kmsKeyId }),
+    presignedUrlTtlSeconds: s3.presignedUrlTtlSeconds,
+    ...(s3.now === undefined ? {} : { now: s3.now }),
+  });
+}
+
+/**
+ * 🔴 オブジェクトストレージ**だけ**を組み立てる（T-05-04）。
+ *
+ * 🔴 なぜ `createConnectors` と別の入口があるか: `createConnectors` は 5 区分を**一度に**作るため、
+ *    1 区分でも未登録（現時点では `malwareScanner` の `real`。T-05-05）だと起動そのものが落ちる。
+ *    `apps/web` は先にストレージだけを必要とする（#18）ため、**同じファクトリ**を区分単位でも
+ *    呼べるようにした。実装は 1 つであり（`createConnectors` も本関数を呼ぶ）、
+ *    「web と worker で別の実装が選ばれる」ことは起こらない。
+ * 🔴 `APP_ENV` を見ない（引数の `kind` は `resolveConnectorSelection` の結果である）。
+ */
+export function createObjectStore(
+  kind: ConnectorImplementationKind,
+  runtime: ConnectorRuntimeOptions = {},
+): ObjectStore {
+  return pickByKind<ObjectStore>('objectStore', kind, {
+    mock: () => new MockObjectStore(),
+    // 🔴 `development`（MinIO）/ `sandbox` 以上（S3）。バケットは 1 つで、テナントは
+    //    キーのプレフィックスで分かれる（docs/05 §14.1）。ここに環境分岐は無い。
+    real: () => createS3ObjectStore('real', runtime.s3),
+  });
+}
+
+/**
  * 起動時に 1 回だけ呼ぶ（`apps/web` は `instrumentation.ts`、`apps/worker` は `src/main.ts`）。
  * 🔴 リクエストごとに呼ばない。
  *
  * 🔴 実装が無い区分は**モックで代替せず throw する**（`CLAUDE.md` §11.1）。現時点で未登録なのは
- *    `objectStore` / `malwareScanner`（MinIO / ClamAV。後続タスク）と `esign` / `billing` の
- *    `real`（Phase 3）である。email は 3 種別すべて解決できる（T-04-03）。
+ *    `malwareScanner`（ClamAV / GuardDuty。T-05-05）と `esign` / `billing` の `real`（Phase 3）である。
+ *    email は 3 種別すべて（T-04-03）、`objectStore` は `runtime.s3`（AWS SDK のアダプタ）が
+ *    渡されていれば `real` も解決できる（T-05-04）。
  */
 export function createConnectors(
   selection: ConnectorSelectionInput,
@@ -185,9 +253,8 @@ export function createConnectors(
           mock: new MockEmailSender(),
         }),
     }),
-    objectStore: pickByKind<ObjectStore>('objectStore', selection.objectStore, {
-      mock: () => new MockObjectStore(),
-    }),
+    // 🔴 区分単位の入口（`createObjectStore`）と**同じ実装**を通る（2 経路に書き分けない）。
+    objectStore: createObjectStore(selection.objectStore, runtime),
     malwareScanner: pickByKind<MalwareScanner>('malwareScanner', selection.malwareScanner, {
       mock: () => new MockMalwareScanner(),
     }),
