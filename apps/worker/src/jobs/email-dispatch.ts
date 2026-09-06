@@ -1,40 +1,55 @@
 // apps/worker/src/jobs/email-dispatch.ts
-// `email.dispatch`（docs/05 §9.4）。分類 1 / 分類外の運用メール。T-04-03。
+// `email.dispatch`（docs/05 §9.4）。テナント所属利用者宛（分類 1 / 2）と運営者宛（分類外）の
+// 運用メール。T-04-03（分類 2 の追加は T-05-08）。
 //
 // 🔴 このジョブだけが送信系で `attempts: 3` を許される（docs/05 §9.10）。根拠は 2 つあり、
 //    **どちらもコードの形で保証されている必要がある**:
-//      ① payload の型 `HostOrPlatformDispatch` が宛先分類 1 / 分類外しか載せられない
-//         （分類 2 / 3 / 4 = 取引先・提案先・エンジニア本人はコンパイルエラー）
+//      ① payload の型 `OperationalMailDispatch` が**業務上の外部送信（分類 3 / 4 =
+//         提案先・エンジニア本人）を載せられない**（コンパイルエラー）
 //      ② `EmailDispatch.dedupeKey` の `UNIQUE` と `QUEUED` からの CAS で、
 //         何回再試行しても実送信は 1 通に収束する
+//    ⚠️ 分類 2（パートナー所属利用者）が `sandbox` で実送信になるわけではない ——
+//       実送信 / モックの振り分けは `isMockedDelivery`（`HOST_OR_PLATFORM_RECIPIENT_CLASSES`）
+//       が別に行い、分類 2 はモックのままである（`CLAUDE.md` §11.1）。
 //
 // 🔴 payload に宛先・本文を載せない（docs/05 §9.4）。載っているのは `dispatchId` だけであり、
 //    宛先は DB の行から読む。Redis に PII を置かないための構造である。
-import type { HostOrPlatformDispatch } from '@ses/connectors';
+import {
+  isOperationalMailRecipientClass,
+  RECIPIENT_CLASSES,
+  type OperationalMailDispatch,
+  type RecipientClass,
+} from '@ses/connectors';
 import { readEmailDispatch, systemTenantCtx } from '@ses/db';
 import { performEmailSend, type EmailSendDeps, type EmailSendOutcome } from './email-send.js';
 import { InvalidJobPayloadError, requireUuid } from './payload.js';
 
 export const EMAIL_DISPATCH_JOB = 'email.dispatch';
 
+function isRecipientClass(value: unknown): value is RecipientClass {
+  return typeof value === 'string' && (RECIPIENT_CLASSES as readonly string[]).includes(value);
+}
+
 /**
- * 🔴 payload の門番。`recipientClass` は**必須**であり、分類 1 / 分類外以外は受け付けない
- *    （docs/05 §8.2「分類が未指定の送信を成立させない」/ §9.4）。
+ * 🔴 payload の門番。`recipientClass` は**必須**であり、分類 3 / 4（業務上の外部送信）は
+ *    受け付けない（docs/05 §8.2「分類が未指定の送信を成立させない」/ §9.4）。
  *
  * 🔴 既定値で補完しない。補完すると「分類が欠けた送信が、既定で実送信側に落ちる」ことになり、
- *    `attempts: 3` を許した前提（宛先が分類 1 / 分類外に限られる）が崩れる。
+ *    `attempts: 3` を許した前提（宛先が業務上の外部送信でない）が崩れる。
+ * 🔴 判定は `@ses/domain` の集合（`OPERATIONAL_MAIL_RECIPIENT_CLASSES`）を通す。
+ *    ここに文字列リテラルの列挙を書くと、集合が変わったときに片方だけが古くなる。
  */
-export function parseEmailDispatchPayload(raw: unknown): HostOrPlatformDispatch {
+export function parseEmailDispatchPayload(raw: unknown): OperationalMailDispatch {
   if (typeof raw !== 'object' || raw === null) {
     throw new InvalidJobPayloadError(EMAIL_DISPATCH_JOB, 'オブジェクトではありません');
   }
   const record = raw as Record<string, unknown>;
   const dispatchId = requireUuid(EMAIL_DISPATCH_JOB, 'dispatchId', record.dispatchId);
   const recipientClass = record.recipientClass;
-  if (recipientClass !== 'HOST_MEMBER' && recipientClass !== 'PLATFORM') {
+  if (!isRecipientClass(recipientClass) || !isOperationalMailRecipientClass(recipientClass)) {
     throw new InvalidJobPayloadError(
       EMAIL_DISPATCH_JOB,
-      'recipientClass が分類 1（HOST_MEMBER）/ 分類外（PLATFORM）ではありません',
+      'recipientClass が分類 1（HOST_MEMBER）/ 分類 2（PARTNER_MEMBER）/ 分類外（PLATFORM）ではありません',
     );
   }
   const tenantId =

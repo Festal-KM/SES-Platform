@@ -42,6 +42,40 @@ export const HOST_OR_PLATFORM_RECIPIENT_CLASSES = [
 export type HostOrPlatformRecipientClass = (typeof HOST_OR_PLATFORM_RECIPIENT_CLASSES)[number];
 
 /**
+ * 🔴 `email.dispatch`（運用メール。docs/05 §9.4）の **payload に載せてよい**宛先分類。T-05-08。
+ *
+ * ============================================================================
+ * 🔴 `HOST_OR_PLATFORM_RECIPIENT_CLASSES` と**役割が違う**（同じに見えるが混ぜてはならない）
+ * ============================================================================
+ * - `HOST_OR_PLATFORM_*` … 🔴 **`sandbox` で実送信してよいか**の判定
+ *   （`isMockedDelivery` / `SandboxRecipientScopedEmailSender`）。**ここに `PARTNER_MEMBER` を
+ *   足すと、取引先の担当者へ `sandbox` から実メールが飛ぶ**（`CLAUDE.md` §11.1 の最悪の事故）。
+ * - `OPERATIONAL_MAIL_*` … **どのキューに載せてよいか**の判定。載せた先の実送信 / モックの
+ *   振り分けは上の別判定が行う。
+ *
+ * ============================================================================
+ * 🔴 なぜ分類 2 を運用メールに載せられるようにしたか（T-05-08。`CLAUDE.md` §8.7 で docs 追従済み）
+ * ============================================================================
+ * `F-011` 処理④（スキャン失敗・隔離の周知）の宛先は**そのファイルの所有側の担当者**であり、
+ * パートナー所属（分類 2）でありうる。分類 2 を運べる運用メールの経路が無いと、
+ * **周知がホスト側にしか届かない**（`F-011` の 🔴「パートナーの担当者が隔離に気づけない状態に
+ * ならない」に反する）。
+ *
+ * `attempts: 3` の前提は次の 2 つであり、分類 2 を足しても崩れない:
+ *   ① 🔴 **業務上の外部送信（分類 3 / 4 = 提案先・エンジニア本人）を載せられない**
+ *      —— 下の `AssertOperationalMailExcludesOutsiders` が型で固定する
+ *   ② `EmailDispatch.dedupeKey` の `UNIQUE` と `QUEUED` からの CAS で、何回再試行しても 1 通
+ * ①②は `account.mail`（分類 1 / 2 を `attempts: 3` で運ぶ既存経路）とまったく同じ根拠である。
+ */
+export const OPERATIONAL_MAIL_RECIPIENT_CLASSES = [
+  'HOST_MEMBER',
+  'PARTNER_MEMBER',
+  'PLATFORM',
+] as const satisfies readonly RecipientClass[];
+
+export type OperationalMailRecipientClass = (typeof OPERATIONAL_MAIL_RECIPIENT_CLASSES)[number];
+
+/**
  * 🔴 `account.mail`（招待・パスワード再設定。docs/05 §9.4）の宛先分類 = **分類 1 と分類 2 だけ**。
  *
  * 宛先は「招待中の本人 / 本人」に限られる。業務上の外部送信（分類 3 / 4）を載せる型を持たない。
@@ -88,21 +122,52 @@ type AssertFallbackIsAlwaysMocked = [
 const FALLBACK_IS_ALWAYS_MOCKED: AssertFallbackIsAlwaysMocked = true;
 void FALLBACK_IS_ALWAYS_MOCKED;
 
+// 🔴 T-05-08: 運用メールのキュー（`attempts: 3`）に**テナントに所属しない宛先**（分類 3 / 4 =
+//    提案先・エンジニア本人）を載せられないことを型で固定する。これが崩れると
+//    「取引先・第三者への送信が自動リトライされる」＝ `BR-21` / `CLAUDE.md` §3.4 の直接違反になる。
+type AssertOperationalMailExcludesOutsiders = [
+  Extract<OperationalMailRecipientClass, OutsiderRecipientClass>,
+] extends [never]
+  ? true
+  : never;
+const OPERATIONAL_MAIL_EXCLUDES_OUTSIDERS: AssertOperationalMailExcludesOutsiders = true;
+void OPERATIONAL_MAIL_EXCLUDES_OUTSIDERS;
+
 /** 広い型として見た集合（`includes` の引数型を `RecipientClass` に保つための内部ビュー）。 */
 const EXTERNAL: readonly RecipientClass[] = EXTERNAL_RECIPIENT_CLASSES;
 const HOST_OR_PLATFORM: readonly RecipientClass[] = HOST_OR_PLATFORM_RECIPIENT_CLASSES;
 const ACCOUNT_MAIL: readonly RecipientClass[] = ACCOUNT_MAIL_RECIPIENT_CLASSES;
+const OPERATIONAL_MAIL: readonly RecipientClass[] = OPERATIONAL_MAIL_RECIPIENT_CLASSES;
 
 /** 🔴 独自ドメインの検証済み送信元が必須か（docs/05 §8.3 / `BR-51`）。 */
 export function isExternalRecipientClass(value: RecipientClass): value is ExternalRecipientClass {
   return EXTERNAL.includes(value);
 }
 
-/** 🔴 `email.dispatch` に載せてよいか（docs/05 §9.4）。 */
+/**
+ * 🔴 **`sandbox` で実送信してよいか**（docs/02 章 7.6 NFR-ENV-1 / `CLAUDE.md` §11.1）。
+ *
+ * ⚠️ **「`email.dispatch` に載せてよいか」ではない**（それは `isOperationalMailRecipientClass`）。
+ *    この関数の偽が「モックへ倒す」を意味する（`isMockedDelivery` /
+ *    `SandboxRecipientScopedEmailSender`）ため、ここに分類を足すことは
+ *    **その分類の宛先へ `sandbox` から実メールを送る**ことと同義である。
+ */
 export function isHostOrPlatformRecipientClass(
   value: RecipientClass,
 ): value is HostOrPlatformRecipientClass {
   return HOST_OR_PLATFORM.includes(value);
+}
+
+/**
+ * 🔴 `email.dispatch`（運用メール）に載せてよいか（docs/05 §9.4）。T-05-08。
+ *
+ * 分類 1 / 2 / 分類外が真。🔴 **分類 3 / 4（提案先・エンジニア本人）は偽**であり、
+ * 業務上の外部送信が `attempts: 3` のキューに載ることはない。
+ */
+export function isOperationalMailRecipientClass(
+  value: RecipientClass,
+): value is OperationalMailRecipientClass {
+  return OPERATIONAL_MAIL.includes(value);
 }
 
 /** 🔴 `account.mail` に載せてよいか（docs/05 §9.4）。 */

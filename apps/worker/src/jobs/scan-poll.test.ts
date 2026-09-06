@@ -7,10 +7,21 @@ import type { MalwareScanner } from '@ses/connectors';
 
 const listStalledScanTargets = vi.fn();
 const applyFileScanResult = vi.fn();
+// 🔴 T-05-08: 隔離の周知（`F-011` 処理④）。**保険の経路でも周知が落ちない**ことを見る。
+const readScanQuarantineNotice = vi.fn();
+const reserveEmailDispatch = vi.fn();
+const enqueueEmailDispatch = vi.fn();
 
 vi.mock('@ses/db', () => ({
   listStalledScanTargets,
   applyFileScanResult,
+  readScanQuarantineNotice,
+  reserveEmailDispatch,
+  emailDispatchDedupeKey: (input: {
+    templateKey: string;
+    targetId: string;
+    recipientEmail: string;
+  }) => `${input.templateKey}:${input.targetId}:${input.recipientEmail}`,
   systemTenantCtx: (tenantId: string, job: { queue: string; jobId: string }) => ({
     tenantId,
     partnerCompanyId: null,
@@ -30,6 +41,8 @@ const TENANT_ID = '01930000-0000-7000-8000-0000000000a1';
 const KEY_A = `t/${TENANT_ID}/skill-sheets/01930000-0000-7000-8000-0000000000b1/1/01930000-0000-7000-8000-0000000000c1.xlsx`;
 const KEY_B = `t/${TENANT_ID}/skill-sheets/01930000-0000-7000-8000-0000000000b2/1/01930000-0000-7000-8000-0000000000c2.pdf`;
 const NOW = new Date('2026-09-06T01:30:00.000Z');
+const DISPATCH_ID = '01930000-0000-7000-8000-0000000000e1';
+const PARTNER_ID = '01930000-0000-7000-8000-0000000000f1';
 
 type GetResult = MalwareScanner['getResult'];
 
@@ -40,8 +53,25 @@ function scanner(getResult: GetResult): MalwareScanner {
 beforeEach(() => {
   listStalledScanTargets.mockReset();
   applyFileScanResult.mockReset();
+  readScanQuarantineNotice.mockReset();
+  reserveEmailDispatch.mockReset();
+  enqueueEmailDispatch.mockReset();
   listStalledScanTargets.mockResolvedValue([]);
   applyFileScanResult.mockResolvedValue({ target: 'APPLIED', previousStatus: 'SCANNING', recorded: true });
+  // 既定は隔離ではない（`CLEAN`）。周知の経路は専用の describe が組み立てる。
+  readScanQuarantineNotice.mockResolvedValue({
+    target: { skillSheetId: 's1', ownerPartnerCompanyId: null, scanStatus: 'CLEAN' },
+    recipients: [],
+  });
+  reserveEmailDispatch.mockResolvedValue({
+    dispatchId: DISPATCH_ID,
+    dedupeKey: 'k',
+    created: true,
+    status: 'QUEUED',
+    recipientClass: 'PARTNER_MEMBER',
+    recipientEmail: 'to@example.test',
+    templateKey: 'SKILL_SHEET_QUARANTINE',
+  });
 });
 
 describe('payload の門番とスケジュール', () => {
@@ -66,6 +96,7 @@ describe('🔴 滞留の閾値（SCAN_STALL_ALERT_MINUTES。目標値に依存�
       malwareScanner: scanner(async () => null),
       stallAlertMinutes: 10,
       now: () => NOW,
+      enqueueEmailDispatch,
     });
     await handler({ tenantId: TENANT_ID }, 'job-1');
     expect(listStalledScanTargets).toHaveBeenCalledWith(
@@ -79,6 +110,7 @@ describe('🔴 滞留の閾値（SCAN_STALL_ALERT_MINUTES。目標値に依存�
       malwareScanner: scanner(async () => null),
       stallAlertMinutes: 3,
       now: () => NOW,
+      enqueueEmailDispatch,
     });
     await handler({ tenantId: TENANT_ID }, 'job-1');
     expect(listStalledScanTargets).toHaveBeenCalledWith(
@@ -95,11 +127,13 @@ describe('🔴 判定が付いていないものを推測で確定させない',
       malwareScanner: scanner(async () => null),
       stallAlertMinutes: 10,
       now: () => NOW,
+      enqueueEmailDispatch,
     });
     await expect(handler({ tenantId: TENANT_ID }, 'job-1')).resolves.toEqual({
       scanned: 1,
       resolved: 0,
       unresolved: 1,
+      quarantineNotified: 0,
     });
     expect(applyFileScanResult).not.toHaveBeenCalled();
   });
@@ -117,11 +151,13 @@ describe('🔴 照会で判定が取れたら「同じ経路」で適用する�
       malwareScanner: scanner(getResult),
       stallAlertMinutes: 10,
       now: () => NOW,
+      enqueueEmailDispatch,
     });
     await expect(handler({ tenantId: TENANT_ID }, 'job-1')).resolves.toEqual({
       scanned: 1,
       resolved: 1,
       unresolved: 0,
+      quarantineNotified: 0,
     });
     // 🔴 版を指定せず最新版を照会する（`skill_sheets` は版 ID を列として持たない）。
     expect(getResult).toHaveBeenCalledWith(KEY_A, null);
@@ -153,11 +189,13 @@ describe('🔴 照会で判定が取れたら「同じ経路」で適用する�
       })),
       stallAlertMinutes: 10,
       now: () => NOW,
+      enqueueEmailDispatch,
     });
     await expect(handler({ tenantId: TENANT_ID }, 'job-1')).resolves.toEqual({
       scanned: 1,
       resolved: 1,
       unresolved: 0,
+      quarantineNotified: 0,
     });
   });
 
@@ -172,11 +210,13 @@ describe('🔴 照会で判定が取れたら「同じ経路」で適用する�
       })),
       stallAlertMinutes: 10,
       now: () => NOW,
+      enqueueEmailDispatch,
     });
     await expect(handler({ tenantId: TENANT_ID }, 'job-1')).resolves.toEqual({
       scanned: 1,
       resolved: 0,
       unresolved: 1,
+      quarantineNotified: 0,
     });
   });
 
@@ -193,12 +233,63 @@ describe('🔴 照会で判定が取れたら「同じ経路」で適用する�
       malwareScanner: scanner(getResult),
       stallAlertMinutes: 10,
       now: () => NOW,
+      enqueueEmailDispatch,
     });
     await expect(handler({ tenantId: TENANT_ID }, 'job-1')).resolves.toEqual({
       scanned: 2,
       resolved: 1,
       unresolved: 1,
+      quarantineNotified: 0,
     });
     expect(getResult.mock.calls.map((call) => call[0])).toEqual([KEY_A, KEY_B]);
+  });
+});
+
+describe('🔴 T-05-08 隔離の周知は「保険の経路」でも成立する（docs/02 F-011 処理④）', () => {
+  it('🔴 Webhook が届かず scan.poll が隔離を確定させたときも email.dispatch を積む', async () => {
+    listStalledScanTargets.mockResolvedValue([{ skillSheetId: 's1', objectKey: KEY_A }]);
+    readScanQuarantineNotice.mockResolvedValue({
+      target: { skillSheetId: 's1', ownerPartnerCompanyId: PARTNER_ID, scanStatus: 'INFECTED' },
+      recipients: [{ userId: 'u1', email: 'to@example.test', recipientClass: 'PARTNER_MEMBER' }],
+    });
+    const handler = createScanPollHandler({
+      malwareScanner: scanner(async () => ({
+        status: 'INFECTED',
+        rawStatus: 'THREATS_FOUND',
+        objectVersionId: 'v',
+      })),
+      stallAlertMinutes: 10,
+      now: () => NOW,
+      enqueueEmailDispatch,
+    });
+    await expect(handler({ tenantId: TENANT_ID }, 'job-1')).resolves.toEqual({
+      scanned: 1,
+      resolved: 1,
+      unresolved: 1 - 1,
+      quarantineNotified: 1,
+    });
+    expect(enqueueEmailDispatch).toHaveBeenCalledWith({
+      dispatchId: DISPATCH_ID,
+      tenantId: TENANT_ID,
+      recipientClass: 'PARTNER_MEMBER',
+    });
+  });
+
+  it('🔴 対象が消えていた（NOT_FOUND）ときは周知しない', async () => {
+    listStalledScanTargets.mockResolvedValue([{ skillSheetId: 's1', objectKey: KEY_A }]);
+    applyFileScanResult.mockResolvedValue({ target: 'NOT_FOUND', previousStatus: null, recorded: false });
+    const handler = createScanPollHandler({
+      malwareScanner: scanner(async () => ({
+        status: 'INFECTED',
+        rawStatus: 'THREATS_FOUND',
+        objectVersionId: 'v',
+      })),
+      stallAlertMinutes: 10,
+      now: () => NOW,
+      enqueueEmailDispatch,
+    });
+    await handler({ tenantId: TENANT_ID }, 'job-1');
+    expect(readScanQuarantineNotice).not.toHaveBeenCalled();
+    expect(enqueueEmailDispatch).not.toHaveBeenCalled();
   });
 });

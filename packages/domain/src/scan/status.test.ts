@@ -4,8 +4,10 @@ import { describe, expect, it } from 'vitest';
 import {
   decideScanStatusTransition,
   InvalidScanStatusTransitionError,
+  isQuarantinedScanStatus,
   isScanStatus,
   isShareableScanStatus,
+  QUARANTINED_SCAN_STATUSES,
   scanStatusesReplaceableBy,
   SCAN_STATUSES,
   type ScanStatus,
@@ -112,5 +114,36 @@ describe('scanStatusesReplaceableBy（DB の CAS 述語）', () => {
 
   it('🔴 SCANNING を渡すと例外（空配列を返して静かに no-op にしない）', () => {
     expect(() => scanStatusesReplaceableBy('SCANNING')).toThrow(InvalidScanStatusTransitionError);
+  });
+});
+
+describe('isQuarantinedScanStatus / QUARANTINED_SCAN_STATUSES（T-05-08。F-011 処理④）', () => {
+  it('隔離は INFECTED / UNSCANNABLE / FAILED の 3 値である', () => {
+    expect([...QUARANTINED_SCAN_STATUSES].sort()).toEqual(['FAILED', 'INFECTED', 'UNSCANNABLE']);
+  });
+
+  it('🔴 SCANNING は隔離ではない（検査中を「失敗」として周知しない。F-011 AC-2）', () => {
+    expect(isQuarantinedScanStatus('SCANNING')).toBe(false);
+  });
+
+  it('🔴 CLEAN は隔離ではない（唯一の共有可。BR-26）', () => {
+    expect(isQuarantinedScanStatus('CLEAN')).toBe(false);
+  });
+
+  it('🔴 「確定済みかつ共有不可」と完全に一致する（列挙と述語が食い違わない）', () => {
+    for (const status of SCAN_STATUSES) {
+      const settledAndBlocked = status !== 'SCANNING' && !isShareableScanStatus(status);
+      expect(isQuarantinedScanStatus(status)).toBe(settledAndBlocked);
+    }
+  });
+
+  it('🔴 値集合は述語から導かれている（2 つの列挙が drift しない）', () => {
+    expect([...QUARANTINED_SCAN_STATUSES]).toEqual(SCAN_STATUSES.filter(isQuarantinedScanStatus));
+  });
+
+  it('🔴 共有可（CLEAN）と隔離は交差しない = 「隔離なのに共有できる」状態が存在しない', () => {
+    for (const status of QUARANTINED_SCAN_STATUSES) {
+      expect(isShareableScanStatus(status)).toBe(false);
+    }
   });
 });

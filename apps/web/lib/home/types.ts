@@ -7,17 +7,42 @@
 //    （docs/04 program-design 申し送り 1）。`PartnerHomeView` の境界は
 //    `apps/web/lib/home/types.test.ts` が型テストで固定する。
 //
-// 🔴 Phase 0 は空のダッシュボード（CLAUDE.md §5）。承認待ち・送信失敗・公開案件・提案依頼は
-//    Phase 1、満了間近は Phase 2 が `HomeBlock` にケースを追加する。**追加専用**
-//    （既存メンバーの意味を変えない）。Phase 0 の時点では実装済みのブロック種別が無いため、
-//    `HomeBlock = never` にして「実装していない中身を黙って返す」余地自体を型で塞ぐ
-//    （`blocks` は必ず空配列になる）。
+// 🔴 承認待ち・送信失敗・公開案件・提案依頼は Phase 1、満了間近は Phase 2 が
+//    `HomeBlock` にケースを追加する。**追加専用**（既存メンバーの意味を変えない）。
+//    T-05-08 で最初のケース（`SCAN_QUARANTINE`）が入った。
 import type { AppEnvKind } from '@ses/config';
 import type { TenantLifecycleState, TenantRole } from '@ses/db';
+import type { QuarantinedScanStatus } from '@ses/domain';
 import type { MessageKey } from '@ses/i18n';
 
-/** Phase 1 以降がケースを追加する（`kind` 判別子を持つ discriminated union を想定）。 */
-export type HomeBlock = never;
+/**
+ * 🔴 スキャン失敗・隔離の周知（`docs/02` `F-011` 処理④）。T-05-08。
+ *
+ * 🔴 **ホストにもパートナーにも同じ形で出る。** `F-011` 処理④ は「アプリ内表示は分類によらず
+ *    必ず行う（パートナーの担当者が隔離に気づけない状態にならない）」と定めており、
+ *    メールがモックになる `sandbox` の分類 2 でも、この表示だけは必ず成立する。
+ * 🔴 **他社の情報を含まない。** 中身は `skill_sheets` の RLS（C3 OWNER_SCOPED）で
+ *    絞られた自社所有の版だけであり、件数も自社スコープ内である
+ *    （`docs/04` §S-004「自社スコープ内の件数は許される」）。
+ * 🔴 **氏名を持たない**（`QuarantinedSkillSheetView` と同じ理由。`BR-27`）。
+ */
+export type ScanQuarantineHomeBlock = {
+  readonly kind: 'SCAN_QUARANTINE';
+  readonly items: readonly {
+    readonly skillSheetId: string;
+    readonly engineerId: string;
+    readonly version: number;
+    readonly scanStatus: QuarantinedScanStatus;
+    /** ISO 8601 / 未確定なら `null`。 */
+    readonly detectedAt: string | null;
+  }[];
+};
+
+/**
+ * ホームのブロック。**追加専用**（既存メンバーの意味を変えない）。
+ * Phase 1 / Phase 2 が要対応キュー・満了間近などのケースを足す。
+ */
+export type HomeBlock = ScanQuarantineHomeBlock;
 
 export type HostHomeView = {
   readonly audience: 'HOST';

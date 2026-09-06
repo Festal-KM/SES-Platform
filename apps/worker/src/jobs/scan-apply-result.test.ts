@@ -7,12 +7,23 @@ const readWebhookDelivery = vi.fn();
 const markWebhookDeliveryProcessed = vi.fn();
 const markWebhookDeliveryFailed = vi.fn();
 const applyFileScanResult = vi.fn();
+// 🔴 T-05-08: 隔離の周知（`F-011` 処理④）。`scan.apply-result` から必ず通ることを見る。
+const readScanQuarantineNotice = vi.fn();
+const reserveEmailDispatch = vi.fn();
+const enqueueEmailDispatch = vi.fn();
 
 vi.mock('@ses/db', () => ({
   readWebhookDelivery,
   markWebhookDeliveryProcessed,
   markWebhookDeliveryFailed,
   applyFileScanResult,
+  readScanQuarantineNotice,
+  reserveEmailDispatch,
+  emailDispatchDedupeKey: (input: {
+    templateKey: string;
+    targetId: string;
+    recipientEmail: string;
+  }) => `${input.templateKey}:${input.targetId}:${input.recipientEmail}`,
   systemTenantCtx: (tenantId: string, job: { queue: string; jobId: string }) => ({
     tenantId,
     partnerCompanyId: null,
@@ -32,6 +43,9 @@ const DELIVERY_ID = '01930000-0000-7000-8000-000000000901';
 const TENANT_ID = '01930000-0000-7000-8000-0000000000a1';
 const OBJECT_KEY = `t/${TENANT_ID}/skill-sheets/01930000-0000-7000-8000-0000000000b1/1/01930000-0000-7000-8000-0000000000c1.xlsx`;
 const NOW = new Date('2026-09-06T01:10:00.000Z');
+const SKILL_SHEET_ID = '01930000-0000-7000-8000-0000000000d1';
+const DISPATCH_ID = '01930000-0000-7000-8000-0000000000e1';
+const PARTNER_ID = '01930000-0000-7000-8000-0000000000f1';
 
 function payloadOf(status: string, rawStatus: string, objectKey = OBJECT_KEY) {
   return {
@@ -44,13 +58,16 @@ function payloadOf(status: string, rawStatus: string, objectKey = OBJECT_KEY) {
   };
 }
 
-const handler = createScanApplyResultHandler({ now: () => NOW });
+const handler = createScanApplyResultHandler({ now: () => NOW, enqueueEmailDispatch });
 
 beforeEach(() => {
   readWebhookDelivery.mockReset();
   markWebhookDeliveryProcessed.mockReset();
   markWebhookDeliveryFailed.mockReset();
   applyFileScanResult.mockReset();
+  readScanQuarantineNotice.mockReset();
+  reserveEmailDispatch.mockReset();
+  enqueueEmailDispatch.mockReset();
   readWebhookDelivery.mockResolvedValue({
     deliveryId: DELIVERY_ID,
     provider: 'guardduty',
@@ -59,6 +76,20 @@ beforeEach(() => {
   });
   markWebhookDeliveryProcessed.mockResolvedValue(true);
   applyFileScanResult.mockResolvedValue({ target: 'APPLIED', previousStatus: 'SCANNING', recorded: true });
+  // 既定は `CLEAN`（隔離ではない）。周知の経路は下の describe が個別に組み立てる。
+  readScanQuarantineNotice.mockResolvedValue({
+    target: { skillSheetId: SKILL_SHEET_ID, ownerPartnerCompanyId: null, scanStatus: 'CLEAN' },
+    recipients: [],
+  });
+  reserveEmailDispatch.mockImplementation(async () => ({
+    dispatchId: DISPATCH_ID,
+    dedupeKey: 'k',
+    created: true,
+    status: 'QUEUED',
+    recipientClass: 'HOST_MEMBER',
+    recipientEmail: 'owner@example.test',
+    templateKey: 'SKILL_SHEET_QUARANTINE',
+  }));
 });
 
 describe('payload の門番', () => {
@@ -71,7 +102,12 @@ describe('payload の門番', () => {
 describe('🔴 通常経路', () => {
   it('CLEAN を適用し、処理済みの CAS を立てる', async () => {
     const outcome = await handler({ deliveryId: DELIVERY_ID }, 'job-1');
-    expect(outcome).toEqual({ kind: 'PROCESSED', target: 'APPLIED', recorded: true });
+    expect(outcome).toEqual({
+      kind: 'PROCESSED',
+      target: 'APPLIED',
+      recorded: true,
+      quarantineNotified: false,
+    });
     expect(applyFileScanResult).toHaveBeenCalledWith(
       expect.objectContaining({ tenantId: TENANT_ID, partnerCompanyId: null }),
       expect.objectContaining({
@@ -120,6 +156,7 @@ describe('🔴 重複配信・順序逆転（正常系。エラーにしない�
       kind: 'PROCESSED',
       target: 'KEPT',
       recorded: false,
+      quarantineNotified: false,
     });
     expect(markWebhookDeliveryFailed).not.toHaveBeenCalled();
   });
@@ -128,6 +165,93 @@ describe('🔴 重複配信・順序逆転（正常系。エラーにしない�
     markWebhookDeliveryProcessed.mockResolvedValue(false);
     await expect(handler({ deliveryId: DELIVERY_ID }, 'job-1')).resolves.toEqual({
       kind: 'ALREADY_PROCESSED',
+    });
+  });
+});
+
+describe('🔴 T-05-08 隔離の周知（docs/02 F-011 処理④）', () => {
+  function quarantined(ownerPartnerCompanyId: string | null, recipientClass: string) {
+    readWebhookDelivery.mockResolvedValue({
+      deliveryId: DELIVERY_ID,
+      provider: 'guardduty',
+      payload: payloadOf('INFECTED', 'THREATS_FOUND'),
+      processed: false,
+    });
+    readScanQuarantineNotice.mockResolvedValue({
+      target: { skillSheetId: SKILL_SHEET_ID, ownerPartnerCompanyId, scanStatus: 'INFECTED' },
+      recipients: [{ userId: 'u1', email: 'to@example.test', recipientClass }],
+    });
+    reserveEmailDispatch.mockResolvedValue({
+      dispatchId: DISPATCH_ID,
+      dedupeKey: 'k',
+      created: true,
+      status: 'QUEUED',
+      recipientClass,
+      recipientEmail: 'to@example.test',
+      templateKey: 'SKILL_SHEET_QUARANTINE',
+    });
+  }
+
+  it('🔴 ホスト所有（分類 1）の隔離で email.dispatch を積む', async () => {
+    quarantined(null, 'HOST_MEMBER');
+    await expect(handler({ deliveryId: DELIVERY_ID }, 'job-1')).resolves.toEqual({
+      kind: 'PROCESSED',
+      target: 'APPLIED',
+      recorded: true,
+      quarantineNotified: true,
+    });
+    expect(enqueueEmailDispatch).toHaveBeenCalledWith({
+      dispatchId: DISPATCH_ID,
+      tenantId: TENANT_ID,
+      recipientClass: 'HOST_MEMBER',
+    });
+  });
+
+  it('🔴 パートナー所有（分類 2）の隔離でも同じ経路で積む（周知が片側だけにならない）', async () => {
+    quarantined(PARTNER_ID, 'PARTNER_MEMBER');
+    await handler({ deliveryId: DELIVERY_ID }, 'job-1');
+    expect(enqueueEmailDispatch).toHaveBeenCalledWith({
+      dispatchId: DISPATCH_ID,
+      tenantId: TENANT_ID,
+      recipientClass: 'PARTNER_MEMBER',
+    });
+  });
+
+  it('🔴 CLEAN では 1 通も積まない', async () => {
+    await handler({ deliveryId: DELIVERY_ID }, 'job-1');
+    expect(enqueueEmailDispatch).not.toHaveBeenCalled();
+    expect(reserveEmailDispatch).not.toHaveBeenCalled();
+  });
+
+  it('🔴 周知が失敗したら processedAt を立てない（届かないまま完了扱いにしない）', async () => {
+    quarantined(null, 'HOST_MEMBER');
+    enqueueEmailDispatch.mockRejectedValue(new Error('redis down'));
+    await expect(handler({ deliveryId: DELIVERY_ID }, 'job-1')).rejects.toThrow('redis down');
+    expect(markWebhookDeliveryProcessed).not.toHaveBeenCalled();
+  });
+
+  it('🔴 判定は「ジョブが受け取った状態」ではなく「適用後の DB の状態」で行う（順序逆転）', async () => {
+    // 後から軽い判定（CLEAN）が届いたが、DB 上は INFECTED のまま = 周知の対象である。
+    readWebhookDelivery.mockResolvedValue({
+      deliveryId: DELIVERY_ID,
+      provider: 'guardduty',
+      payload: payloadOf('CLEAN', 'NO_THREATS_FOUND'),
+      processed: false,
+    });
+    applyFileScanResult.mockResolvedValue({
+      target: 'KEPT',
+      previousStatus: 'INFECTED',
+      recorded: false,
+    });
+    readScanQuarantineNotice.mockResolvedValue({
+      target: { skillSheetId: SKILL_SHEET_ID, ownerPartnerCompanyId: null, scanStatus: 'INFECTED' },
+      recipients: [{ userId: 'u1', email: 'to@example.test', recipientClass: 'HOST_MEMBER' }],
+    });
+    await expect(handler({ deliveryId: DELIVERY_ID }, 'job-1')).resolves.toEqual({
+      kind: 'PROCESSED',
+      target: 'KEPT',
+      recorded: false,
+      quarantineNotified: true,
     });
   });
 });

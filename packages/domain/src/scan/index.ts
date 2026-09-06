@@ -3,9 +3,12 @@
 export {
   decideScanStatusTransition,
   InvalidScanStatusTransitionError,
+  isQuarantinedScanStatus,
   isScanStatus,
   isShareableScanStatus,
+  QUARANTINED_SCAN_STATUSES,
   scanStatusesReplaceableBy,
   SCAN_STATUSES,
+  type QuarantinedScanStatus,
   type ScanStatus,
 } from './status.js';

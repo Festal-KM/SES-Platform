@@ -109,10 +109,17 @@
 ### T-05-08 スキャン失敗・隔離の周知（M）
 
 - **実装**: `F-011` 処理④。**Phase 1 の周知手段はアプリ内表示とメール送信**（`F-001` / `F-002` と同じ送信経路。Phase 2 以降は `F-039` に集約）。
+  - ✅ **メールの経路は `email.dispatch`**（`EmailDispatch(templateKey='SKILL_SHEET_QUARANTINE')` を予約して enqueue）。🔴 **その前提として `email.dispatch` の payload に分類 2（パートナー所属利用者）を載せられるようにした**（`docs/05` §9.4 に追記済み。`CLAUDE.md` §8.7）—— 分類 2 を運べる運用メールの経路が無いと、**周知がホスト側にしか届かない**。`attempts: 3` の前提（**業務上の外部送信＝分類 3 / 4 が型として載らない** + `dedupeKey` の `UNIQUE`）は崩れておらず、これは `account.mail`（分類 1 / 2 を `attempts: 3` で運ぶ既存経路）と同じ根拠である。
+  - 🔴 **「キューに載せてよい分類」と「`sandbox` で実送信してよい分類」を混同しない。** 後者（`HOST_OR_PLATFORM_RECIPIENT_CLASSES` = `isMockedDelivery` / `SandboxRecipientScopedEmailSender` の判定）は**一切変えていない** —— 変えると `sandbox` から取引先へ実メールが飛ぶ（`CLAUDE.md` §11.1）。
+  - ✅ **周知は `scan.apply-result` と `scan.poll` の両方**が同じ関数（`notifyScanQuarantine`）を通す。Webhook 経路だけに実装すると、取りこぼした版の隔離が誰にも届かない。
+  - ✅ **「担当者」の定義を決めた**（`docs/02` `F-011` 処理④ / `docs/05` §9.6.1 に追記済み）: 🔴 **所有側の管理ロール**（ホスト = `OWNER` / `ADMIN` / 取引先 = `PARTNER_ADMIN`）。**所有側を越えない**。
+  - ✅ **所有側の引き当てに migration 20260910000000 を足した**（`app_scan_probe` に `skill_sheets.owner_partner_company_id` の `SELECT` を **1 列だけ** + `app_scan_quarantine_target()`）。`skill_sheets` は C3 OWNER_SCOPED でありジョブのホスト文脈から所有側を読めないため（T-05-05 と同型の問題・同型の解）。
 - 🔴 **`sandbox` でのメールの扱いは宛先の分類で分かれる** — 担当者がホスト所属（分類 1）なら実送信、パートナー所属（分類 2）ならモック（`A-22`）。
 - 🔴 **アプリ内表示は分類によらず必ず行う。** パートナーの担当者が隔離に気づけない状態にならない。
-- `F-059` の監視対象に載せる（画面は SP-11）。
-- **完了の判定**: 分類 1 / 2 の両方で周知が成立することの結合テスト（MailHog + アプリ内表示）。
+  - ✅ **実装は `S-003` / `S-004` の最上部の「共有できないスキルシート」ブロック**（`GET /api/home` の `HomeBlock` に `SCAN_QUARANTINE` を追加。`docs/04` §S-003 / §S-004 / §S-008 に追記済み）。`S-008` の状態バッジだけでは「そのエンジニアの画面を開かないと見えない」ため周知にならない。🔴 **氏名を出さない**（ホームは 60 秒ポーリングであり、出すと `engineer.view` が毎分積まれる。`BR-27`）。
+- `F-059` の監視対象に載せる（画面は SP-11）。✅ **新しい監視項目は足していない** —— 隔離そのものは既存の `A-005`「ウイルススキャン失敗 / `SCANNING` 滞留」（`skill_sheets(tenantId, scanStatus, uploadedAt)`。T-05-05 の索引）で見え、周知の未達は `EmailDispatch` の `QUEUED` 滞留（`docs/05` §16.5 項目 16）に合流する。
+- **完了の判定**: 分類 1 / 2 の両方で周知が成立することの結合テスト。
+  - ~~MailHog + アプリ内表示~~ → ✅ **SES ポートの観測 + `EmailDispatch.status`（`SENT` / `MOCKED`）+ アプリ内表示**（**訂正済み（2026-09-06、T-05-08）。`CLAUDE.md` §8.7**）。理由は T-04-10 が `docs/05` §17.4 について下したのと**同じ**である: **`sandbox` の分類 1 は `SesEmailSender`（SES の HTTP API）を通る**（`resolveConnectorSelection('sandbox')` → `sandboxRecipientScoped` → `real`）。MailHog は `development` のローカル SMTP キャッチャであり、**この経路上に存在しない**（SMTP で送る実装はリポジトリに 1 つも無い）。実装は `tests/isolation/scan-quarantine-notice.test.ts`。
 
 ### T-05-09 エンジニア一覧の骨格（M）
 
@@ -135,7 +142,7 @@
 |---|---|
 | **ユニット** | オブジェクトキーの生成。スキャン結果の正規化と遷移規則（`CLEAN` へ戻さない）。辞書の正規化。 |
 | **結合（DB + S3 + Redis）** | `F-008` / `F-010` / `F-011` / `F-012` の全 AC。所有パートナーの継承・freeze。ストレージ上限での URL 未発行。監査記録の先行と失敗時のロールバック。 |
-| **E2E** | `S-005`〜`S-009` の主要導線。🔴 **T-05-10（4 経路の監査記録）**。`CLEAN` でないファイルの共有導線が DOM に存在しないこと。 |
+| **E2E** | `S-005`〜`S-009` の主要導線。🔴 **T-05-10（4 経路の監査記録）**。`CLEAN` でないファイルの共有導線が DOM に存在しないこと。✅ **T-05-08 の隔離ブロックは `S-003` / `S-004` に出る**（描画は `apps/web/app/(main)/_home/home-sections.render.test.tsx`、周知の成立は `tests/isolation/scan-quarantine-notice.test.ts` が見る）。 |
 | **外部 API のモック方針** | 🔴 **S3 は `development` で MinIO の実コンテナ、ウイルススキャンは `packages/connectors/src/mock/**` と ClamAV コンテナを併用**（`docs/05` §17.5）。Webhook はフィクスチャ（`tests/fixtures/guardduty/*.json`）。**重複と順序逆転を必ずテストする。** 実データ由来のフィクスチャを置かない（`BR-47`）。 |
 
 ## 6. 完了判定

@@ -73,6 +73,34 @@ export function isShareableScanStatus(status: ScanStatus): status is 'CLEAN' {
 }
 
 /**
+ * 🔴 検査が確定しており、かつ共有できない状態（＝ **隔離**）か。T-05-08（`F-011` 処理④）。
+ *
+ * `INFECTED`（感染）/ `FAILED`（検査失敗）/ `UNSCANNABLE`（検査不能）の 3 つが該当する。
+ *
+ * 🔴 **3 値を列挙しない。** 「確定している（`SCANNING` でない）かつ共有できない
+ *    （`isShareableScanStatus` が偽）」から導く —— 状態が増えたときに列挙を書き足し忘れると、
+ *    **隔離されたのに誰にも周知されないファイル**が生まれる（`F-011` 処理④ / `AC-3`）。
+ * 🔴 `SCANNING` を含めない。検査中は「まだ何も分かっていない」であって隔離ではなく、
+ *    周知すると利用者は毎回のアップロードで警告を受け取ることになる（`F-011 AC-2` は
+ *    検査中を「検査中」と表示せよと定めており、失敗として扱えとは言っていない）。
+ */
+export function isQuarantinedScanStatus(status: ScanStatus): status is QuarantinedScanStatus {
+  return status !== 'SCANNING' && !isShareableScanStatus(status);
+}
+
+/** 隔離にあたる状態（`INFECTED` / `UNSCANNABLE` / `FAILED`）。 */
+export type QuarantinedScanStatus = Exclude<ScanStatus, 'SCANNING' | 'CLEAN'>;
+
+/**
+ * 🔴 隔離状態の値集合（DB の `where` / 画面の文言表が使う）。
+ *
+ * 🔴 **`isQuarantinedScanStatus` から導く**（別の配列として列挙しない）。列挙を 2 つ持つと、
+ *    状態が増えたときに片方だけが古くなり、**隔離なのに一覧にも周知にも出ない版**が生まれる。
+ */
+export const QUARANTINED_SCAN_STATUSES: readonly QuarantinedScanStatus[] =
+  SCAN_STATUSES.filter(isQuarantinedScanStatus);
+
+/**
  * 🔴 `incoming` で置き換えてよい `current` の集合（重篤度が `incoming` 未満のもの）。
  *
  * DB 側の CAS（`UPDATE ... WHERE scan_status = ANY($replaceable)`）の述語として使う。

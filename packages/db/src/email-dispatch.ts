@@ -6,7 +6,7 @@
 // ============================================================================
 // `email.dispatch` は送信系キューの中で唯一 `attempts: 3` を許される（docs/05 §9.4）。
 // その安全性は 2 つの仕掛けだけで成り立っている:
-//   ① payload の型（`HostOrPlatformDispatch` / `AccountMailJob`）が宛先分類 1 / 2 / 分類外に限る
+//   ① payload の型（`OperationalMailDispatch` / `AccountMailJob`）が宛先分類 1 / 2 / 分類外に限る
 //   ② 🔴 **`dedupeKey` の `UNIQUE`** —— 再試行しても行は 1 つで、送信も 1 通
 // ②を迂回する INSERT が 1 箇所でもあると、①だけでは二重送信を止められない。だから
 // 「`email_dispatches` に書く」操作は本ファイルの関数以外に存在しない形にする。

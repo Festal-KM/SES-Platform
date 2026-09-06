@@ -13,6 +13,8 @@ import {
   isAccountMailRecipientClass,
   isExternalRecipientClass,
   isHostOrPlatformRecipientClass,
+  isOperationalMailRecipientClass,
+  OPERATIONAL_MAIL_RECIPIENT_CLASSES,
   OUTSIDER_RECIPIENT_CLASSES,
 } from './scope.js';
 
@@ -127,11 +129,28 @@ describe('分類の部分集合（docs/05 §8.2 / §8.3 / §9.4）', () => {
     expect([...EXTERNAL_RECIPIENT_CLASSES]).toEqual(['PARTNER_MEMBER', 'CLIENT', 'ENGINEER']);
   });
 
-  it('🔴 email.dispatch に載せてよいのは分類 1 と分類外だけである（docs/05 §9.4）', () => {
+  it('🔴 sandbox で実送信してよいのは分類 1 と分類外だけである（CLAUDE.md §11.1）', () => {
     expect([...HOST_OR_PLATFORM_RECIPIENT_CLASSES]).toEqual(['HOST_MEMBER', 'PLATFORM']);
     expect(isHostOrPlatformRecipientClass('PARTNER_MEMBER')).toBe(false);
     expect(isHostOrPlatformRecipientClass('CLIENT')).toBe(false);
     expect(isHostOrPlatformRecipientClass('ENGINEER')).toBe(false);
+  });
+
+  it('🔴 email.dispatch に載せてよいのは分類 1 / 2 / 分類外である（docs/05 §9.4。T-05-08）', () => {
+    expect([...OPERATIONAL_MAIL_RECIPIENT_CLASSES]).toEqual([
+      'HOST_MEMBER',
+      'PARTNER_MEMBER',
+      'PLATFORM',
+    ]);
+    // 🔴 業務上の外部送信（提案先・エンジニア本人）は `attempts: 3` のキューに載らない。
+    expect(isOperationalMailRecipientClass('CLIENT')).toBe(false);
+    expect(isOperationalMailRecipientClass('ENGINEER')).toBe(false);
+  });
+
+  it('🔴 「キューに載せてよい」と「sandbox で実送信してよい」は別物である（混同禁止）', () => {
+    // 混ぜると sandbox から取引先の担当者へ実メールが飛ぶ（CLAUDE.md §11.1 の最悪の事故）。
+    expect(isOperationalMailRecipientClass('PARTNER_MEMBER')).toBe(true);
+    expect(isHostOrPlatformRecipientClass('PARTNER_MEMBER')).toBe(false);
   });
 
   it('🔴 account.mail に載せてよいのは分類 1 と分類 2 だけである（docs/05 §9.4）', () => {

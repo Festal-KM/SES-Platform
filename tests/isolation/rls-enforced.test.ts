@@ -378,7 +378,7 @@ describe('#10 probe 3 ロールの最小権限（docs/05 §4.7 #10 / §4.4.1 / �
    */
   it('🔴 app_scan_probe の権限は skill_sheets のスキャン関連の列 + engineers の 3 列だけである', () => {
     // 実測は下の it（非同期）で行う。ここは期待値の宣言そのものをレビュー可能にするための対照。
-    expect(SCAN_PROBE_EXPECTED_GRANTS).toHaveLength(12);
+    expect(SCAN_PROBE_EXPECTED_GRANTS).toHaveLength(13);
   });
 
   it('🔴 app_scan_probe の列単位 GRANT が期待どおり（増えたら必ず落ちる）', async () => {
@@ -413,13 +413,21 @@ describe('#10 probe 3 ロールの最小権限（docs/05 §4.7 #10 / §4.4.1 / �
 /**
  * 🔴 `app_scan_probe` に許した列（migration 20260908000000）。
  *
- *  - `skill_sheets`: SELECT 6 列 + UPDATE 3 列
+ *  - `skill_sheets`: SELECT 7 列 + UPDATE 3 列
  *  - `engineers`: SELECT 3 列 —— 🔴 **オーナー列の継承トリガ**
  *    （`inherit_owner_partner_company('engineers','engineer_id')`。docs/05 §4.4.1）が
  *    `skill_sheets` の UPDATE で必ず起動し、SECURITY INVOKER で親を読むため。
  *    `app_assignment_owner_probe` に与えているのと**同じ 3 列**である。
  *
- * 合計 12 行ちょうど。ここに列が増えることは「スキャン以外の情報がパートナー境界を越える」
+ * 🔴 T-05-08 で `skill_sheets.owner_partner_company_id` の SELECT を 1 列足した
+ *    （migration 20260910000000 / `app_scan_quarantine_target`）。**この 1 列だけで
+ *    「隔離の周知をホスト側へ送るのか取引先側へ送るのか」が決まる** ——
+ *    引けないと、`sandbox` で分類を取り違えて取引先へ実メールを送るか（`CLAUDE.md` §11.1）、
+ *    逆にパートナーが上げたファイルの隔離が誰にも届かない（`F-011` 処理④）。
+ *    🔴 それでも `engineer_id` / `version` / `note` は**足していない**: 周知メールは
+ *    「画面で確認してください」の 1 リンクだけであり、内容を 1 つも運ばないためである。
+ *
+ * 合計 13 行ちょうど。ここに列が増えることは「スキャン以外の情報がパートナー境界を越える」
  * ことを意味する。
  */
 const SCAN_PROBE_EXPECTED_GRANTS = [
@@ -430,6 +438,11 @@ const SCAN_PROBE_EXPECTED_GRANTS = [
   { table_name: 'skill_sheets', column_name: 'is_latest', privilege_type: 'SELECT' },
   { table_name: 'skill_sheets', column_name: 'is_latest', privilege_type: 'UPDATE' },
   { table_name: 'skill_sheets', column_name: 'object_key', privilege_type: 'SELECT' },
+  {
+    table_name: 'skill_sheets',
+    column_name: 'owner_partner_company_id',
+    privilege_type: 'SELECT',
+  },
   { table_name: 'skill_sheets', column_name: 'scan_status', privilege_type: 'SELECT' },
   { table_name: 'skill_sheets', column_name: 'scan_status', privilege_type: 'UPDATE' },
   { table_name: 'skill_sheets', column_name: 'scan_updated_at', privilege_type: 'UPDATE' },

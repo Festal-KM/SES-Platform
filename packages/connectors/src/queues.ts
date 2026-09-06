@@ -94,8 +94,9 @@ export type ExternalSendJobName = (typeof EXTERNAL_SEND_JOB_NAMES)[number];
 export const INTERNAL_JOB_NAMES = [
   'send.hold-release',
   // 🔴 T-04-03（docs/05 §9.4）。**`email.dispatch` だけが `attempts: 3` を許される送信**である。
-  //    根拠は「宛先が分類 1 / 分類外に限られ `BR-21`（取引先への二重送信）の射程外」であり、
-  //    その限定は payload の型（`HostOrPlatformDispatch`）が担保する。
+  //    根拠は「宛先が**業務上の外部送信（分類 3 / 4）ではない**」ことであり、その限定は
+  //    payload の型（`OperationalMailDispatch`）が担保する（T-05-08 で分類 2 を追加した。
+  //    理由は `packages/domain/src/recipient/scope.ts` の `OPERATIONAL_MAIL_RECIPIENT_CLASSES`）。
   //    二重送信そのものは `EmailDispatch.dedupeKey` の `UNIQUE` が止める（再試行しても 1 通）。
   'email.dispatch',
   // 🔴 招待・パスワード再設定。宛先は「招待中の本人 / 本人」に限られる（分類 1 / 2）。

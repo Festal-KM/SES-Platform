@@ -67,6 +67,13 @@ export {
 export type { AccountMailDeps, AccountMailHandler } from './account-mail.js';
 export { performEmailSend, resolveSendingDomainFromDb } from './email-send.js';
 export type { EmailSendDeps, EmailSendOutcome, EmailSendRequest } from './email-send.js';
+// 🔴 T-05-08: `email.dispatch` の差し込み値の実体（docs/05 §9.4 の `resolveTemplateParams`）。
+//    SP-07 の配線はこれを渡す（渡さないと運用メールが空欄で届く）。
+export {
+  createOperationalMailParamsResolver,
+  UnknownOperationalMailTemplateError,
+} from './operational-mail-params.js';
+export type { OperationalMailParamsDeps } from './operational-mail-params.js';
 // 🔴 T-04-04: 送信元ドメインの登録・検証（docs/05 §8.3 / §9.9）。`domain.provision` /
 //    `domain.verify` はイベント起動（API-A4 / #71 / #72）、`domain.recheck` は日次で
 //    `SCHEDULED_JOBS` に載る。
@@ -149,6 +156,17 @@ export {
   SCAN_POLL_SCHEDULE,
 } from './scan-poll.js';
 export type { ScanPollDeps, ScanPollHandler, ScanPollOutcome, ScanPollPayload } from './scan-poll.js';
+// 🔴 T-05-08: 隔離の周知（`docs/02` `F-011` 処理④）。`scan.apply-result` / `scan.poll` の
+//    **両方**が同じ関数を通す（周知が片方の経路だけで落ちることを構造として防ぐ）。
+export {
+  notifyScanQuarantine,
+  scanQuarantineTargetId,
+  SKILL_SHEET_QUARANTINE_TEMPLATE_KEY,
+} from './scan-quarantine-notice.js';
+export type {
+  ScanQuarantineNoticeDeps,
+  ScanQuarantineNoticeOutcome,
+} from './scan-quarantine-notice.js';
 
 /**
  * ジョブの合成に要る値（起動時に 1 度だけ解決する。`CLAUDE.md` §11.1 / docs/05 §13.1）。

@@ -10,11 +10,14 @@ export {
   isAccountMailRecipientClass,
   isExternalRecipientClass,
   isHostOrPlatformRecipientClass,
+  isOperationalMailRecipientClass,
+  OPERATIONAL_MAIL_RECIPIENT_CLASSES,
   OUTSIDER_RECIPIENT_CLASSES,
 } from './scope.js';
 export type {
   AccountMailRecipientClass,
   ExternalRecipientClass,
   HostOrPlatformRecipientClass,
+  OperationalMailRecipientClass,
   OutsiderRecipientClass,
 } from './scope.js';

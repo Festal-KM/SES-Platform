@@ -69,6 +69,8 @@ export {
   isAccountMailRecipientClass,
   isExternalRecipientClass,
   isHostOrPlatformRecipientClass,
+  isOperationalMailRecipientClass,
+  OPERATIONAL_MAIL_RECIPIENT_CLASSES,
   OUTSIDER_RECIPIENT_CLASSES,
   RECIPIENT_CLASSES,
 } from '@ses/domain';
@@ -76,6 +78,7 @@ export type {
   AccountMailRecipientClass,
   ExternalRecipientClass,
   HostOrPlatformRecipientClass,
+  OperationalMailRecipientClass,
   OutsiderRecipientClass,
   RecipientClass,
 } from '@ses/domain';

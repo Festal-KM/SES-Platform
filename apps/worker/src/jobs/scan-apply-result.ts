@@ -29,6 +29,10 @@ import {
 } from '@ses/db';
 import { tenantIdFromObjectKey } from '@ses/domain';
 import { InvalidJobPayloadError, requireUuid } from './payload.js';
+import {
+  notifyScanQuarantine,
+  type ScanQuarantineNoticeDeps,
+} from './scan-quarantine-notice.js';
 
 export const SCAN_APPLY_RESULT_JOB = 'scan.apply-result';
 
@@ -39,6 +43,12 @@ export type ScanApplyResultOutcome =
       readonly target: 'APPLIED' | 'KEPT';
       /** `FileScanResult` に新規 INSERT できたか。 */
       readonly recorded: boolean;
+      /**
+       * 🔴 T-05-08: 隔離として担当者へ周知したか（`F-011` 処理④）。
+       *    `false` は「隔離ではなかった」（`CLEAN` 等）を意味する。**周知の失敗ではない**
+       *    —— 周知に失敗した場合はジョブ自体が throw して再試行に乗る。
+       */
+      readonly quarantineNotified: boolean;
     }
   /** 既に他の実行が完了させている（重複配信の正常系）。 */
   | { readonly kind: 'ALREADY_PROCESSED' }
@@ -54,7 +64,7 @@ export function parseScanApplyResultPayload(raw: unknown): { readonly deliveryId
   return { deliveryId: requireUuid(SCAN_APPLY_RESULT_JOB, 'deliveryId', record.deliveryId) };
 }
 
-export type ScanApplyResultDeps = {
+export type ScanApplyResultDeps = ScanQuarantineNoticeDeps & {
   readonly now: () => Date;
 };
 
@@ -118,10 +128,28 @@ export function createScanApplyResultHandler(deps: ScanApplyResultDeps): ScanApp
         return { kind: 'FAILED', failureReason: 'SCAN_TARGET_NOT_FOUND' };
       }
 
+      // 🔴 T-05-08（`F-011` 処理④）: 隔離になったら所有側の担当者へ周知する。
+      //    🔴 **処理済みの CAS より前**に行う —— 後ろに置くと、周知だけが落ちたときに
+      //    `processedAt` が立っていて二度と再実行されない（届かないまま気づけない）。
+      //    ここで throw すれば `attempts: 3` に乗り、`applyFileScanResult` は冪等（2 回目は
+      //    `KEPT`）、状態は DB から読み直すので、再試行でも同じ周知が成立する。
+      //    🔴 隔離かどうかの判定は `notifyScanQuarantine` の中（＝ DB の適用後の値）で行う。
+      //    ジョブが受け取った `result.status` で判定すると、順序逆転で軽い判定が後から
+      //    届いたときに「隔離ではない」と誤って読んでしまう。
+      const notified = await notifyScanQuarantine(deps, ctx, {
+        objectKey: result.objectKey,
+        observedAt: now,
+      });
+
       // 🔴 CAS。`false` は他の実行が先に完了させたということであり、失敗ではない。
       const claimed = await markWebhookDeliveryProcessed(deliveryId, now);
       return claimed
-        ? { kind: 'PROCESSED', target: applied.target, recorded: applied.recorded }
+        ? {
+            kind: 'PROCESSED',
+            target: applied.target,
+            recorded: applied.recorded,
+            quarantineNotified: notified.kind === 'NOTIFIED',
+          }
         : { kind: 'ALREADY_PROCESSED' };
     } catch (error) {
       const failureReason =

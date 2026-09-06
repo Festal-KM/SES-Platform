@@ -20,10 +20,15 @@ import { redirect } from 'next/navigation';
 import { t } from '@ses/i18n';
 import { resolveTenantCtxOutcome } from '../../lib/auth/session';
 import { sendingDomainRuntime } from '../../lib/db/bootstrap';
+import { readHomeBlocks } from '../../lib/home/blocks';
 import { getHomeView } from '../../lib/home/service';
 import { isSendingDomainUnverified, resolveSendingDomainFact } from '../../lib/settings/sending-domain-fact';
 import { readSendingDomainSettings } from '../../lib/settings/sending-domains';
-import { HostHomeSections, PartnerHomeSections } from './_home/home-sections';
+import {
+  HostHomeSections,
+  PartnerHomeSections,
+  ScanQuarantineSection,
+} from './_home/home-sections';
 import { SendingDomainGuardBanner } from './_shared/sending-domain-guard-banner';
 
 export const runtime = 'nodejs';
@@ -34,7 +39,7 @@ export default async function HomePage() {
   if (outcome.status === 'UNAUTHENTICATED') redirect('/signin');
   if (outcome.status === 'TWO_FACTOR_REQUIRED') redirect('/signin?step=2fa');
 
-  const view = getHomeView(outcome.ctx);
+  const view = getHomeView(outcome.ctx, await readHomeBlocks(outcome.ctx));
 
   // 🔴 パートナー所属・`SALES` / `VIEWER` には判定材料すら取りに行かない（不要な DB 往復を
   //    増やさない。パートナー所属は RLS（C2 HOST_ONLY）でどのみち 0 件になる）。
@@ -56,6 +61,10 @@ export default async function HomePage() {
         }}
       />
       <h1 className="mb-6 text-xl font-bold text-slate-900">{t('home.title')}</h1>
+      {/* 🔴 T-05-08（`F-011` 処理④）: 隔離の周知は**宛先分類によらず必ず出す**。
+          `sandbox` でメールがモックになるパートナー（分類 2）にとっては、ここが
+          唯一の気づく場所である。ホスト / パートナーで同じ位置・同じ見せ方にする。 */}
+      <ScanQuarantineSection blocks={view.blocks} />
       {view.audience === 'HOST' ? (
         // 🔴 T-05-01: `VIEWER` には `S-007`（人材の登録）への導線を出さない
         //    （`docs/04` §S-007 権限差分「`VIEWER` は到達できない」）。判定材料は `role` だけで、

@@ -9,6 +9,8 @@
 import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@ses/ui';
 import { t } from '@ses/i18n';
+import { formatDateTimeJst } from '../../../lib/format/datetime';
+import type { HomeBlock, ScanQuarantineHomeBlock } from '../../../lib/home/types';
 
 /**
  * 🔴 T-05-01: `docs/04` §S-003 の初回空は「`S-012` / `S-007` への導線 2 本」である。
@@ -53,6 +55,75 @@ export function HostHomeSections({
  *    `noticeText` は固定文言（`home.partner.visibilityNotice`）のみを受け取り、
  *    件数・存在の示唆を一切含まない（呼び出し側で差し込みを行わない）。
  */
+/**
+ * 🔴 スキャン失敗・隔離の周知（`docs/02` `F-011` 処理④ / `docs/04` §S-008「スキャン失敗 /
+ *    感染検出」）。T-05-08。
+ *
+ * ============================================================================
+ * 🔴 なぜホームに出すのか
+ * ============================================================================
+ * `S-008`（スキルシートの版一覧）には既に状態バッジがあるが、**そのエンジニアの画面を開かないと
+ * 見えない**。隔離は「上げ直す」までファイルが一切使えない状態であり、気づかれないまま放置されると
+ * 提案の直前に発覚する。`F-011` 処理④ が「担当者に周知する」と定めているのはこのためである。
+ *
+ * 🔴 **宛先分類によらず必ず描く。** `sandbox` では取引先の担当者宛のメールがモックになる
+ *    （`A-22` / `CLAUDE.md` §11.1）ため、パートナーにとってはここが唯一の気づく場所である。
+ * 🔴 **ロールで隠さない。** `VIEWER` も見える —— 見せないと「なぜダウンロードできないのか」が
+ *    分からないままになる（`S-008` の隔離行に理由を出しているのと同じ判断）。
+ * 🔴 氏名を出さない（`BR-27`。ホームは 60 秒ごとに読み直される画面であり、氏名を出すと
+ *    `engineer.view` の記録が毎分積まれる）。誰のものかは、行から辿った `S-008` が示す。
+ * 🔴 **0 件のときはセクションごと出さない**（`docs/04` §S-004「0 件を出すと圧に見える」と
+ *    同じ判断。隔離が無いことは正常であり、常設の空箱は注意を薄める）。
+ */
+export function ScanQuarantineSection({ blocks }: { readonly blocks: readonly HomeBlock[] }) {
+  const block = blocks.find(
+    (candidate): candidate is ScanQuarantineHomeBlock => candidate.kind === 'SCAN_QUARANTINE',
+  );
+  if (block === undefined || block.items.length === 0) return null;
+
+  return (
+    <Card className="mb-4 border-red-200 bg-red-50" data-testid="home-scan-quarantine">
+      <CardHeader>
+        <CardTitle>{t('home.scanQuarantine.title')}</CardTitle>
+        <CardDescription className="text-slate-700">
+          {t('home.scanQuarantine.lead')}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <ul className="flex flex-col gap-2">
+          {block.items.map((item) => (
+            <li
+              key={item.skillSheetId}
+              className="text-sm text-slate-800"
+              data-testid={`home-scan-quarantine-item-${item.skillSheetId}`}
+              data-scan-status={item.scanStatus}
+            >
+              <span className="mr-2 font-semibold">
+                {t(`skillSheets.scanStatus.${item.scanStatus}`)}
+              </span>
+              <span className="mr-2">
+                {t('skillSheets.versions.versionPrefix')}
+                {item.version}
+              </span>
+              {item.detectedAt === null ? null : (
+                <span className="mr-2 text-slate-600">{formatDateTimeJst(item.detectedAt)}</span>
+              )}
+              {/* 🔴 行き止まりにしない —— 次の行動（上げ直す / 削除する）は `S-008` にある。 */}
+              <Link
+                className="ses-secondary-link"
+                href={`/engineers/${item.engineerId}/skill-sheets`}
+                data-testid={`home-scan-quarantine-link-${item.skillSheetId}`}
+              >
+                {t('home.scanQuarantine.open')}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
+  );
+}
+
 export function PartnerHomeSections({ noticeText }: { readonly noticeText: string }) {
   return (
     <div className="flex flex-col gap-4">

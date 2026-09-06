@@ -372,6 +372,14 @@ export type { SkillSheetStorageInput, StorageAccountingOutcome } from './storage
 //    `CLEAN` へ戻す遷移が存在しない経路であり、呼び出し元は `apps/worker` のジョブだけである。
 export { applyFileScanResult, listStalledScanTargets } from './file-scan.js';
 export type { FileScanResultInput, ScanApplyOutcome, StalledScanTarget } from './file-scan.js';
+// 🔴 T-05-08: 隔離の周知先の引き当て（`docs/02` `F-011` 処理④）。所有側（分類 1 / 2）を
+//    間違えると `sandbox` で取引先へ実メールが飛ぶため、呼び出し元をジョブ 1 ファイルに固定する。
+export { readScanQuarantineNotice } from './scan-notice.js';
+export type {
+  ScanNoticeRecipient,
+  ScanNoticeTarget,
+  ScanQuarantineNotice,
+} from './scan-notice.js';
 // 🔴 経路 5（docs/05 §4.9）の読み取りの型。`TenantDb` / `HostTenantDb` と違い、
 //    API 層が `toPartnerView()` の入力型として参照するため export する。
 export type { PartnerScopeDb, PartnerScopeTarget } from './with-tenant.js';

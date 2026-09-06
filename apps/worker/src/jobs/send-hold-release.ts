@@ -25,8 +25,8 @@
 //    共用する。CAS の `WHERE status` だけが違う）。実装は T-04-05 が `reissueAccountMail` に挿す。
 // ⑤ 🔴 **再 enqueue されたジョブは §8.3-Q の判定を最初から通る**（`held_at` を NULL に戻す）。
 //    保留を経たものだけが判定を免れる経路を作らない。
-import type { HostOrPlatformDispatch, EmailSender, ProviderSendCounter } from '@ses/connectors';
-import { isHostOrPlatformRecipientClass } from '@ses/connectors';
+import type { OperationalMailDispatch, EmailSender, ProviderSendCounter } from '@ses/connectors';
+import { isOperationalMailRecipientClass } from '@ses/connectors';
 import {
   listHeldEmailDispatches,
   requeueHeldEmailDispatch,
@@ -106,7 +106,7 @@ export type SendHoldReleaseDeps = {
   /** 🔴 `SesEmailSender` に渡したものと同一のインスタンス（`email-send.ts` と同じ規律）。 */
   readonly providerSentCounter: ProviderSendCounter;
   /** 保留中の運用メールを `email.dispatch` へ戻す。 */
-  readonly enqueueEmailDispatch: (job: HostOrPlatformDispatch) => Promise<void>;
+  readonly enqueueEmailDispatch: (job: OperationalMailDispatch) => Promise<void>;
   /** 🔴 T-04-05 が実装する（既定値を置かない）。 */
   readonly reissueAccountMail: AccountMailReissue;
   /** 🔴 SP-09 T-09-06 が実装する（既定値を置かない）。 */
@@ -218,15 +218,16 @@ async function releaseOne(
     return (await deps.reissueAccountMail(ctx, row)) === 'REISSUED';
   }
 
-  // 🔴 `email.dispatch` の payload は分類 1 / 分類外しか載せられない（`HostOrPlatformDispatch`）。
-  //    分類 2 / 3 / 4 の運用メールは存在しない（`account.mail` 側に入る）ため、ここで
-  //    分類が合わないことは実装バグである。**黙って送らずに落とす**（型の前提が崩れている）。
+  // 🔴 `email.dispatch` の payload は分類 1 / 2 / 分類外しか載せられない
+  //    （`OperationalMailDispatch`）。業務上の外部送信（分類 3 / 4）の運用メールは存在しない
+  //    ため、ここで分類が合わないことは実装バグである。**黙って送らずに落とす**
+  //    （型の前提が崩れている）。
   // 🔴 CAS の**前**に判定する。後ろに置くと「`QUEUED` に戻したのに enqueue しない行」が残り、
   //    保留にも戻らないので `send.hold-release` の走査対象から外れる（永久に届かない）。
-  if (!isHostOrPlatformRecipientClass(row.recipientClass)) {
+  if (!isOperationalMailRecipientClass(row.recipientClass)) {
     throw new Error(
       `保留の復帰で宛先分類 '${row.recipientClass}' の運用メールが現れました（docs/05 §9.4）。` +
-        'email.dispatch は分類 1 / 分類外しか運べません。',
+        'email.dispatch は分類 1 / 2 / 分類外しか運べません。',
     );
   }
 

@@ -89,8 +89,16 @@ describe('🔴 parseEmailDispatchPayload（docs/05 §9.4）', () => {
     ).toBeNull();
   });
 
-  it.each(['PARTNER_MEMBER', 'CLIENT', 'ENGINEER', undefined])(
-    '🔴 分類 %s は受け付けない（BR-21 の射程外という前提が崩れる）',
+  it('🔴 T-05-08: 分類 2（PARTNER_MEMBER）も通る（F-011 処理④ の周知が片側だけにならない）', () => {
+    // ⚠️ 「載せられる」と「`sandbox` で実送信される」は別物である ——
+    //    後者は `isMockedDelivery`（`HOST_OR_PLATFORM_RECIPIENT_CLASSES`）が決め、分類 2 はモック。
+    expect(parseEmailDispatchPayload({ ...VALID, recipientClass: 'PARTNER_MEMBER' }).recipientClass).toBe(
+      'PARTNER_MEMBER',
+    );
+  });
+
+  it.each(['CLIENT', 'ENGINEER', undefined, 'HOST', ''])(
+    '🔴 分類 %s は受け付けない（業務上の外部送信が attempts:3 に載らない = BR-21）',
     (recipientClass) => {
       expect(() => parseEmailDispatchPayload({ ...VALID, recipientClass })).toThrow(
         InvalidJobPayloadError,

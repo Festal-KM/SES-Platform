@@ -48,6 +48,8 @@ import {
   decideStorageUpload,
   objectKeyExtensionOf,
   parseSkillSheetObjectKey,
+  QUARANTINED_SCAN_STATUSES,
+  type QuarantinedScanStatus,
   type ScanStatus,
 } from '@ses/domain';
 import {
@@ -382,6 +384,61 @@ export async function readSkillSheetVersions(
       engineer: { id: engineer.id, displayName: engineer.displayName },
       versions: rows.map((row) => toVersionView(row, uploaderNames)),
     };
+  });
+}
+
+/**
+ * 🔴 隔離された版（`S-003` / `S-004` の周知ブロック。`F-011` 処理④）。T-05-08。
+ *
+ * 🔴 **氏名を返さない。** 返すのは版の識別子・版番号・状態・検出時刻だけである ——
+ *    ホームは 60 秒ごとに読み直される画面であり、氏名を出せば毎回 `engineer.view` を
+ *    記録しなければならなくなる（`BR-27` / `F-008 AC-4`）。誰のものかは、行から辿った
+ *    `S-008` が（そこで記録したうえで）示す。
+ * 🔴 **母集団は `skill_sheets` の RLS（C3 OWNER_SCOPED）が決める。** ホストには自社所有の版が、
+ *    パートナーには自社所有の版だけが出る。ここに `where` を足さない ——
+ *    足すと「境界の担保がアプリ側の条件式に移った」ことになる。
+ * 🔴 監査ログを書かない。ここが出すのはメタデータであり、原本にも氏名にも触れない
+ *    （版一覧 `readSkillSheetVersions` が `engineer.view` を書くのは氏名を出すからである）。
+ */
+export type QuarantinedSkillSheetView = {
+  readonly id: string;
+  readonly engineerId: string;
+  readonly version: number;
+  readonly scanStatus: QuarantinedScanStatus;
+  /** ISO 8601。スキャン結果が確定した時刻（未設定なら `null`）。 */
+  readonly detectedAt: string | null;
+};
+
+/** ホームに出す件数の上限（🔴 ホームは一覧画面ではない。全件は `S-008` で見る）。 */
+export const QUARANTINED_SKILL_SHEET_LIMIT = 20;
+
+export async function readQuarantinedSkillSheets(
+  ctx: AuthenticatedTenantCtx,
+): Promise<readonly QuarantinedSkillSheetView[]> {
+  return withTenant(ctx, async (db) => {
+    const rows = await db.skillSheet.findMany({
+      // 🔴 値集合は `@ses/domain` から導く（`['INFECTED', ...]` と書き写さない。
+      //    状態が増えたときに、ここだけが古くなって「隔離なのに出ない」版が生まれる）。
+      where: { scanStatus: { in: [...QUARANTINED_SCAN_STATUSES] } },
+      select: {
+        id: true,
+        engineerId: true,
+        version: true,
+        scanStatus: true,
+        scanUpdatedAt: true,
+        uploadedAt: true,
+      },
+      // 🔴 決定的な順序（新しいものが上。docs/05 §4.8）。
+      orderBy: [{ uploadedAt: 'desc' }, { id: 'desc' }],
+      take: QUARANTINED_SKILL_SHEET_LIMIT,
+    });
+    return rows.map((row) => ({
+      id: row.id,
+      engineerId: row.engineerId,
+      version: row.version,
+      scanStatus: row.scanStatus as QuarantinedScanStatus,
+      detectedAt: row.scanUpdatedAt?.toISOString() ?? null,
+    }));
   });
 }
 

@@ -26,6 +26,10 @@
 import type { MalwareScanner } from '@ses/connectors';
 import { applyFileScanResult, listStalledScanTargets, systemTenantCtx } from '@ses/db';
 import { InvalidJobPayloadError, requireUuid } from './payload.js';
+import {
+  notifyScanQuarantine,
+  type ScanQuarantineNoticeDeps,
+} from './scan-quarantine-notice.js';
 
 export const SCAN_POLL_JOB = 'scan.poll';
 
@@ -49,7 +53,7 @@ export function parseScanPollPayload(raw: unknown): ScanPollPayload {
   return { tenantId: requireUuid(SCAN_POLL_JOB, 'tenantId', record.tenantId) };
 }
 
-export type ScanPollDeps = {
+export type ScanPollDeps = ScanQuarantineNoticeDeps & {
   /** 🔴 起動時 DI で選ばれた実装（`demo` はモック / `sandbox` 以上は GuardDuty）。 */
   readonly malwareScanner: MalwareScanner;
   /** `SCAN_STALL_ALERT_MINUTES`（`packages/config`。既定 10）。 */
@@ -69,6 +73,8 @@ export type ScanPollOutcome = {
    *    GuardDuty 側に問題がある。
    */
   readonly unresolved: number;
+  /** 🔴 T-05-08: 隔離として周知した件数（`email.dispatch` を積んだ版の数）。 */
+  readonly quarantineNotified: number;
 };
 
 export type ScanPollHandler = (payload: unknown, jobId: string) => Promise<ScanPollOutcome>;
@@ -88,6 +94,7 @@ export function createScanPollHandler(deps: ScanPollDeps): ScanPollHandler {
 
     let resolved = 0;
     let unresolved = 0;
+    let quarantineNotified = 0;
     for (const target of targets) {
       // 🔴 版を指定せず最新版を照会する（`skill_sheets` は版 ID を持たない。docs/05 §14.1 では
       //    キーの `{uuid}` が発行ごとに新しいため、キー = 1 オブジェクトである）。
@@ -111,10 +118,22 @@ export function createScanPollHandler(deps: ScanPollDeps): ScanPollHandler {
       });
       // 🔴 `KEPT`（他の実行が先に適用した）も `NOT_FOUND`（照会中に消えた）も異常ではない。
       //    「照会して判定が取れた」ことを resolved として数える。
-      if (applied.target !== 'NOT_FOUND') resolved += 1;
-      else unresolved += 1;
+      if (applied.target === 'NOT_FOUND') {
+        unresolved += 1;
+        continue;
+      }
+      resolved += 1;
+
+      // 🔴 T-05-08（`F-011` 処理④）: 隔離になったら所有側の担当者へ周知する。
+      //    `scan.apply-result` と**同じ関数**を通す（2 実装にしない）—— こちらは Webhook が
+      //    届かなかった場合の経路であり、**周知だけが片方の経路で落ちる**ことがあってはならない。
+      const notified = await notifyScanQuarantine(deps, ctx, {
+        objectKey: target.objectKey,
+        observedAt: now,
+      });
+      if (notified.kind === 'NOTIFIED') quarantineNotified += 1;
     }
 
-    return { scanned: targets.length, resolved, unresolved };
+    return { scanned: targets.length, resolved, unresolved, quarantineNotified };
   };
 }
