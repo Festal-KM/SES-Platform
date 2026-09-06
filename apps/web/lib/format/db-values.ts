@@ -36,7 +36,14 @@ export function toDateOnlyString(value: Date | null): string | null {
   return value === null ? null : toIsoDay(value);
 }
 
-/** `YYYY-MM-DD` を `@db.Date` に渡す値にする（`null` は `null`）。 */
+/**
+ * `YYYY-MM-DD` を `@db.Date` に渡す値にする（`null` は `null`）。
+ * 🔴 オーバーロードを置くのは、**検索条件（`gte`）が `null` を受け付けない**ためである
+ *    （`lib/projects/list.ts` の `startFrom`）。実装は 1 つのまま、
+ *    「`null` を渡していない呼び出しは `Date` が返る」ことを型で示す。
+ */
+export function toDateOnly(value: string): Date;
+export function toDateOnly(value: string | null): Date | null;
 export function toDateOnly(value: string | null): Date | null {
   return value === null ? null : new Date(`${value}T00:00:00.000Z`);
 }

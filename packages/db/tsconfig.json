@@ -1,6 +1,7 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {
+    "noEmit": false,
     "outDir": "dist",
     "rootDir": ".",
     // 🔴 seed/cli.ts（`pnpm seed` の実行可能エントリ）が `node:process` を import するため、

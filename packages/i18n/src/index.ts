@@ -1263,6 +1263,72 @@ const ja = {
   'projects.detail.proposals.comingSoon': '提案の一覧は後続のリリースで表示されます。',
   'projects.detail.candidates.comingSoon': '候補の検索は後続のリリースで行えます。',
 
+  // --- S-010 案件一覧・検索（docs/04 §S-010 / `F-015` / docs/05 §6.4 #25。T-06-03）---
+  // 🔴 `F-015 AC-1` / `docs/04` §3.2 項目 2: **母集団が違うことを画面上で明示する。**
+  //    ホストは「自社案件」、取引先は「御社に公開された案件」であり、件数も母集団も別物である。
+  // 🔴 `F-014 AC-4` / `BR-07`: 取引先向けの文言に**他社の存在を示す語を 1 つも置かない**
+  //    （「他 N 社にも公開されています」「全 N 件中」に相当する語彙を作らない）。
+  // 🔴 `F-009 AC-2` と同じ Phase 1 の規律: **スコア・順位・重みの語を使わない。**
+  'projects.list.title': '案件一覧',
+  'projects.list.open': '案件一覧を開く',
+  'projects.list.population.host': '自社案件',
+  'projects.list.population.partner': '御社に公開された案件',
+  'projects.list.population.unit': '件',
+  // 🔴 取引先にだけ出す「見える範囲の説明」（`docs/04` §3.2 / `F-006 AC-2` と同じ規律）。
+  'projects.list.partnerScopeNotice':
+    'この一覧には、御社に公開された案件のみが表示されます。',
+  // 🔴 `docs/04` §S-010 状態バッジ:「後任募集は既定の並びで上位に置く」（`F-045` の還流）。
+  //    並び順は常時 1 行で説明する（`F-015 AC-3` の決定性を利用者にも見えるようにする）。
+  'projects.list.orderNote':
+    '後任募集 → 募集中 → 充足 の順に、同じ状態のなかでは更新日の新しい順に表示しています。',
+  // ⚠️ `docs/04` §S-010 の検索条件のうち、本リリースで効かないもの（docs/05 §6.4「#25 の
+  //    実装の決着」）。**押しても効かない入力欄を描くより、いま何ができないのかを書く。**
+  'projects.list.searchComingSoon':
+    'スキル要件・単価レンジ・リモート可否での絞り込みは、後続のリリースで行えます。',
+  'projects.list.register': '案件を登録',
+  'projects.list.readOnlyNote': '案件の登録は、閲覧のみの権限では行えません。',
+  'projects.list.column.name': '案件名',
+  'projects.list.column.status': '状態',
+  'projects.list.column.mustRequirements': '必須要件の要約',
+  'projects.list.column.unitPrice': '単価レンジ',
+  'projects.list.column.startDate': '開始日',
+  'projects.list.column.location': '勤務地・リモート',
+  'projects.list.column.headcount': '募集人数',
+  'projects.list.column.updatedOn': '更新日',
+  // 🔴 ホストのみの 9 列目（`docs/04` §S-010「🔴 取引先にはこの列を出さない」）。
+  'projects.list.column.visibility': '公開先の設定状況',
+  // 🔴 0 件は「0 社に公開中」ではなく**状態の語**で出す（`F-014 AC-2` の既定に気づかせる）。
+  'projects.list.visibility.unset': '未設定',
+  'projects.list.visibility.publishedTo': '社に公開中',
+  'projects.list.requirements.separator': '、',
+  'projects.list.requirements.yearsOrMore': '年以上',
+  // --- 検索条件（`docs/04` §S-010 セクション 1）---
+  'projects.list.search.legend': '検索条件',
+  'projects.list.search.q': 'フリーワード（案件名・外部公開用の記載）',
+  'projects.list.search.status': '案件の状態',
+  'projects.list.search.statusAll': 'すべて',
+  'projects.list.search.startFrom': '開始日（この日以降）',
+  'projects.list.search.prefecture': '勤務地（都道府県）',
+  'projects.list.search.prefectureAll': 'すべて',
+  'projects.list.search.submit': '検索',
+  'projects.list.search.clear': '条件をクリア',
+  // 🔴 `docs/04` §10.1 `S-010`: **初回空と絞込 0 を別文言にする。**
+  'projects.list.empty.host.title': 'まだ案件が登録されていません。',
+  'projects.list.empty.host.lead': '案件を登録すると、この一覧に表示されます。',
+  // 🔴 取引先には「案件が無い」ではなく「**公開されていない**」と書く（ホストに案件が
+  //    あるかどうかは取引先の知る範囲ではない。`F-014 AC-4` / `BR-07`）。
+  'projects.list.empty.partner.title': '御社に公開された案件はまだありません。',
+  'projects.list.empty.partner.lead':
+    '案件が公開されると、この画面と通知でお知らせします。',
+  'projects.list.filtered.empty.title': '条件に一致する案件はありません。',
+  'projects.list.filtered.empty.lead': '条件を外すと、母集団のすべてが表示されます。',
+  'projects.list.nextPage': '次のページ',
+  'projects.list.firstPage': '最初のページに戻る',
+  'projects.list.loading': '案件を読み込んでいます…',
+  'projects.list.error.title': '検索を実行できませんでした。',
+  'projects.list.error.lead': '指定した条件はそのまま残しています。もう一度お試しください。',
+  'projects.list.error.retry': 'もう一度試す',
+
   // --- 都道府県（JIS X 0401。コードの出所は `@ses/domain` の `PREFECTURE_CODES`）---
   // 🔴 コードと文言キーの対応は `apps/web/lib/format/prefectures.ts` の `PREFECTURE_MESSAGE_KEYS`
   //    （`Record<PrefectureCode, MessageKey>`）が持つ（T-06-01 で `lib/engineers/labels.ts` から

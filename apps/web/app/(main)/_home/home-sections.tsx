@@ -64,6 +64,10 @@ export function HostHomeSections({
               ロールで隠さない —— `VIEWER` も取引先も一覧に到達してよく、見えるものは
               `engineers` の RLS（C3）が決める。**登録できないことと、見られないことは別である。** */}
           <EngineerLedgerLink testId="home-host-engineer-ledger" />
+          {/* 🔴 T-06-03: `S-010`（案件一覧）への導線（docs/04 §3.3「`S-003` → `S-010`」/
+              §S-010 関連画面「← `S-003`」）。`S-005` と同じくロールで隠さない —— 見えるものは
+              `projects` の RLS（C4）が決める。 */}
+          <ProjectListLink testId="home-host-project-list" />
         </div>
       </CardContent>
     </Card>
@@ -79,6 +83,21 @@ function EngineerLedgerLink({ testId }: { readonly testId: string }) {
   return (
     <Link className="ses-secondary-link" href="/engineers" data-testid={testId}>
       {t('engineers.list.open')}
+    </Link>
+  );
+}
+
+/**
+ * 🔴 `S-010`（案件一覧）への導線。`S-003` / `S-004` の**両方**に同じ形で置く
+ *    （docs/04 §3.3 の遷移図は `S-003` / `S-004` の両方から `S-010` へ向かう）。
+ * 🔴 **文言は同じでも母集団は違う**（ホスト = 自社案件 / 取引先 = 御社に公開された案件）。
+ *    母集団の説明は `S-010` 側が 1 行で出す（docs/04 §3.2 項目 2）。ここで書き分けると、
+ *    「取引先には案件が少ない」ことをホーム側でも示唆することになる。
+ */
+function ProjectListLink({ testId }: { readonly testId: string }) {
+  return (
+    <Link className="ses-secondary-link" href="/projects" data-testid={testId}>
+      {t('projects.list.open')}
     </Link>
   );
 }
@@ -167,7 +186,13 @@ export function PartnerHomeSections({ noticeText }: { readonly noticeText: strin
         <CardContent>
           {/* 🔴 T-05-09: docs/04 §S-004「初回空 → …＋**自社台帳の登録導線**（先に台帳を
               整えておくと提案が早い）」/ 関連画面「→ `S-005`」。 */}
-          <EngineerLedgerLink testId="home-partner-engineer-ledger" />
+          <div className="flex flex-wrap gap-4">
+            <EngineerLedgerLink testId="home-partner-engineer-ledger" />
+            {/* 🔴 T-06-03: docs/04 §S-004「初回空 → 『御社に公開された案件はまだありません』」の
+                次の行き先。取引先は 1 日 4〜5 時間の主利用者であり、案件一覧への導線を
+                ホストの「ついで」にしない（`CLAUDE.md` §1.2）。 */}
+            <ProjectListLink testId="home-partner-project-list" />
+          </div>
         </CardContent>
       </Card>
       <Card className="border-slate-200 bg-slate-50">

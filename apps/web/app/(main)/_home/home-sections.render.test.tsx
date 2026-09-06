@@ -11,7 +11,11 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { HomeBlock } from '../../../lib/home/types';
-import { HostHomeSections, ScanQuarantineSection } from './home-sections';
+import {
+  HostHomeSections,
+  PartnerHomeSections,
+  ScanQuarantineSection,
+} from './home-sections';
 
 const SHEET_ID = '01930000-0000-7000-8000-0000000000d1';
 const ENGINEER_ID = '01930000-0000-7000-8000-0000000000b1';
@@ -112,11 +116,31 @@ describe('🔴 S-003 の初回空は S-012 / S-007 への導線 2 本（docs/04 
     expect(html).toContain('data-testid="home-host-register-engineer"');
   });
 
-  it('🔴 VIEWER 相当（どちらも false）でも、人材台帳の閲覧導線は残る', () => {
+  it('🔴 VIEWER 相当（どちらも false）でも、人材台帳・案件一覧の閲覧導線は残る', () => {
     const html = renderHost({ canRegisterEngineer: false, canRegisterProject: false });
 
     expect(html).not.toContain('home-host-register-project');
     expect(html).not.toContain('home-host-register-engineer');
     expect(html).toContain('data-testid="home-host-engineer-ledger"');
+    // 🔴 T-06-03: **登録できないことと、見られないことは別である**（`S-010` はロールで隠さない）。
+    expect(html).toContain('data-testid="home-host-project-list"');
+    expect(html).toContain('href="/projects"');
+  });
+});
+
+// 🔴 T-06-03: `S-003` / `S-004` の**両方**から `S-010`（案件一覧）へ行けること（docs/04 §3.3）。
+//    ホスト側だけに置くと、1 日 4〜5 時間を過ごす取引先（`CLAUDE.md` §1.2）が案件一覧へ
+//    URL 直打ちでしか到達できない。
+describe('🔴 S-004（取引先ホーム）からも S-005 / S-010 へ行ける（docs/04 §3.3）', () => {
+  it('人材台帳と案件一覧の導線が 2 本とも出る', () => {
+    const html = renderToStaticMarkup(
+      createElement(PartnerHomeSections, { noticeText: '見える範囲の説明（合成）' }),
+    );
+
+    expect(html).toContain('data-testid="home-partner-engineer-ledger"');
+    expect(html).toContain('data-testid="home-partner-project-list"');
+    expect(html).toContain('href="/projects"');
+    // 🔴 取引先のホームに「案件を登録」は無い（`docs/04` §S-012 権限差分）。
+    expect(html).not.toContain('href="/projects/new"');
   });
 });

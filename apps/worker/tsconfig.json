@@ -1,6 +1,7 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {
+    "noEmit": false,
     "outDir": "dist",
     "rootDir": "src",
     // 🔴 T-03-12: `src/main.ts`（起動エントリ）が `node:process` を import するため、

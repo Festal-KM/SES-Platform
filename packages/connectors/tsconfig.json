@@ -1,6 +1,7 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {
+    "noEmit": false,
     "outDir": "dist",
     "rootDir": "src",
     // 🔴 モックが `node:crypto`（HMAC / UUID）を使うため Node の型を有効にする

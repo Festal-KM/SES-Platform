@@ -7,8 +7,8 @@
 // ⚠️ **取引先が「以前は見えていた案件」を開いた場合はここに来ない**（`page.tsx` の
 //    `ProjectNotSharedError` の枝が「この案件は現在御社に公開されていません」を出す。
 //    docs/04 §10.1 `S-011`）。
-// ⚠️ 戻り先は `PROJECT_FORM_CANCEL_HREF` と共有する。`S-010`（案件一覧）が入る T-06-03 で
-//    1 か所を差し替える。
+// 🔴 T-06-03: 戻り先を `S-010`（案件一覧）にした（`PROJECT_FORM_CANCEL_HREF` と共有。
+//    T-06-02 の時点では `S-010` が未実装だったため暫定でホームを指していた）。
 import { t } from '@ses/i18n';
 import { PROJECT_FORM_CANCEL_HREF } from '../_form/form-props';
 
@@ -20,7 +20,7 @@ export default function ProjectDetailNotFound() {
         {t('projects.notFound')}
       </p>
       <a className="ses-secondary-link" href={PROJECT_FORM_CANCEL_HREF}>
-        {t('projects.breadcrumb.home')}
+        {t('projects.breadcrumb.list')}
       </a>
     </main>
   );

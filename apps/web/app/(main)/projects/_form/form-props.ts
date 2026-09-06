@@ -13,6 +13,8 @@ import { t } from '@ses/i18n';
 // 🔴 都道府県は機能に属さない共通語彙（`lib/format/prefectures.ts`）。
 //    エンジニアの labels から import しない（機能モジュール間の依存を作らない）。
 import { PREFECTURE_MESSAGE_KEYS } from '../../../../lib/format/prefectures';
+// 🔴 `S-010` の入口は 1 か所（`lib/projects/list-rows.ts`）から取る。パスを書き写さない。
+import { PROJECT_LIST_PATH } from '../../../../lib/projects/list-rows';
 import {
   PROJECT_REMOTE_MODE_MESSAGE_KEYS,
   PROJECT_STATUS_MESSAGE_KEYS,
@@ -31,14 +33,15 @@ import type {
 } from './project-form';
 
 /**
- * 保存後・キャンセル時の戻り先。
- * ⚠️ **暫定でホームを指す。** `docs/04` §S-012 関連画面は `← S-010`（案件一覧）だが、
- *    `S-010` は **T-06-03** で実装される。**存在しない画面へのリンクを置かない**
- *    （`S-003` の `S-012` 導線を T-05-01 で保留したのと同じ判断）。
- *    🔴 T-06-03 で `/projects` に差し替える。値をここ 1 か所に置いてあるので、
- *    キャンセル・404 境界・登録直後の遷移先が同時に動く。
+ * キャンセル時・404 境界の戻り先。
+ * 🔴 **`S-010`（案件一覧）である**（`docs/04` §S-012 / §S-011 の関連画面「← `S-010`」）。
+ *    ⚠️ T-06-01 / T-06-02 の時点では `S-010` が未実装だったため暫定でホーム（`/`）を指していた
+ *    （存在しない画面へのリンクを置かない）。**T-06-03 で本来の値にした。**
+ * 🔴 値をここ 1 か所に置いてあるので、キャンセル・404 境界（`[id]/not-found.tsx` /
+ *    `[id]/edit/not-found.tsx`）・`S-011` の戻り導線が同時に動く。
+ *    ⚠️ **登録直後の遷移先は別**である（`lib/projects/created-href.ts`。`S-011` へ送る）。
  */
-export const PROJECT_FORM_CANCEL_HREF = '/';
+export const PROJECT_FORM_CANCEL_HREF = PROJECT_LIST_PATH;
 
 // 🔴 登録直後の遷移先（`PROJECT_CREATED_HREF_PATTERN`）は `lib/projects/created-href.ts` にある。
 //    このファイル（`@ses/db` に依存するサーバ専用モジュール）にも

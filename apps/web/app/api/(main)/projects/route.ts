@@ -1,5 +1,6 @@
 // apps/web/app/api/(main)/projects/route.ts
-// docs/05 §6.4 #26 `POST /api/projects`（`F-013` / `S-012`）。T-06-01。
+// docs/05 §6.4 #25 `GET /api/projects`（`F-015` / `S-010`。T-06-03）と
+// #26 `POST /api/projects`（`F-013` / `S-012`。T-06-01）。
 //
 // 🔴 認可は docs/05 §6.4 #26 のとおり `OWNER` / `ADMIN` / `SALES`。ロールの一覧は
 //    `lib/projects/policy.ts` の `PROJECT_EDITOR_ROLES` が唯一の出所であり、
@@ -11,23 +12,45 @@
 //    `F-004 AC-6`。片方だけにしないのは、ロール一覧を書き換えたときに `VIEWER` が
 //    紛れ込んでも `requireNotViewer` が残るため）。
 // 🔴 `SUSPENDED` / `CLOSING` のテナントは `requireExecutable` が拒否する（`F-004 AC-7`）。
-//
-// ⚠️ **`GET /api/projects`（#25。`F-015` / `S-010`）は T-06-03 が足す。** 本タスクでは
-//    export しない —— 「受け取って捨てる」実装を置かないのと同じ理由で、まだ母集団も並び順も
-//    決めていない一覧を先に生やさない（docs/05 §6.4「#15 の実装の決着」と同じ判断）。
 import { requireExecutable, requireNotViewer, requireRole } from '../../../../lib/api/guards';
 import { withApiRoute } from '../../../../lib/api/withApiRoute';
+import { listProjects } from '../../../../lib/projects/list';
 import { PROJECT_EDITOR_ROLES } from '../../../../lib/projects/policy';
 import {
   createProject,
   PROJECT_AUDIT_ACTIONS,
   requirementCounts,
 } from '../../../../lib/projects/service';
-import { createProjectBodySchema } from '../../../../lib/projects/schemas';
+import {
+  createProjectBodySchema,
+  projectListQuerySchema,
+} from '../../../../lib/projects/schemas';
 
 // 🔴 Node ランタイム固定（Prisma は Edge で動かない）。
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+/**
+ * `GET /api/projects`（docs/05 §6.4 #25 / `F-015` / `S-010`）。T-06-03。
+ *
+ * 🔴 **認可は `guards: []`（全ロール）**。docs/05 §6.4 #25 の「全ロール」そのものである。
+ *    読み取り専用なので `requireExecutable` / `requireNotViewer` を掛けない —— `VIEWER` は
+ *    閲覧のみ可（`F-004 AC-6` / `BR-31`）、`CLOSING` でも閲覧できる（`F-004 AC-8`）。
+ *    **`guards: []` は「掛け忘れ」ではない**（`#15` / `#17` / `#27` と同じ判断）。
+ * 🔴 **母集団を絞るのは `projects` の RLS（C4 VISIBILITY）だけ**である。ここにも
+ *    `listProjects` にも `tenantId` / `partnerCompanyId` / 公開範囲の条件を書かない ——
+ *    パートナーが API を直接叩いても、自社に公開されていない案件は `items` にも `total` にも
+ *    現れない（`F-015 AC-1` / `F-014 AC-1` / `F-004 AC-3`）。
+ * 🔴 **`audit` オプションを使わない。** `BR-27` / `F-013 AC-3` の記録対象は「案件**詳細**の
+ *    閲覧」であり、一覧の記録は `docs/04` §S-010 のとおり**行クリック（→ `S-011`）**が持つ
+ *    （docs/05 §16.1 / `lib/projects/list.ts` 冒頭に理由を書いた）。
+ * 🔴 **不正なカーソル・未知の状態・上限超過の `limit` は 400** である
+ *    （`projectListQuerySchema`）。Prisma に届かせない（`lib/api/pagination.ts` の注記）。
+ */
+export const GET = withApiRoute(
+  { label: 'GET /api/projects', guards: [], query: projectListQuerySchema },
+  async ({ ctx, query }) => Response.json(await listProjects(ctx, query)),
+);
 
 export const POST = withApiRoute(
   {

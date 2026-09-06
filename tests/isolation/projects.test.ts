@@ -39,9 +39,14 @@ import {
   type TenantIdentity,
   type TenantRole,
 } from '@ses/db';
-import { createUnextendedClient, type UnextendedClient } from '@ses/db/testing';
+import {
+  createUnextendedClient,
+  runUnextended,
+  type UnextendedClient,
+} from '@ses/db/testing';
 import {
   GLOBAL_SKILL_IDS,
+  isolationSeedProjectNames,
   ISOLATION_FORBIDDEN_MARKERS,
   ISOLATION_SEED_IDS,
   runSeed,
@@ -189,6 +194,12 @@ async function getProject(ctx: AuthenticatedTenantCtx, id: string): Promise<Resp
   return projectRoute.GET(new Request(`https://app.test/api/projects/${id}`), {
     params: Promise.resolve({ id }),
   });
+}
+
+/** `GET /api/projects`（#25。T-06-03）を**実物の Route Handler**で叩く。 */
+async function getProjects(ctx: AuthenticatedTenantCtx, search = ''): Promise<Response> {
+  requireTenantCtxMock.mockResolvedValue(ctx);
+  return projectsRoute.GET(new Request(`https://app.test/api/projects${search}`));
 }
 
 async function createdIdOf(response: Response): Promise<string> {
@@ -904,5 +915,608 @@ describe('🔴 F-004 AC-6 / AC-8: 案件詳細の閲覧は止めない', () => {
     const ctx = await ctxOf(HOST_1, 'SALES');
 
     expect((await getProject(ctx, TENANT_1.publishedProjectId)).status).toBe(200);
+  });
+});
+
+// ===========================================================================
+// T-06-03: 案件の検索と一覧（`GET /api/projects` = #25 / `S-010`）
+// ===========================================================================
+//
+// 🔴 `F-015 AC-1`「パートナーの検索結果は、自社に公開された案件のみで構成される。
+//    **総件数の表示も同じ母集団から算出される**」と
+//    `F-015 AC-3`「同一条件・同一データで並び順が常に同じ」を、実 DB + RLS（C4）で実証する。
+//
+// 前提（`packages/db/seed/presets/isolation.ts`）: テナント 1 には
+//   ①`publishedProjectId`（パートナー 1 社目にだけ公開されている）
+//   ②`privateProjectId`（誰にも公開されていない）
+// が**実在する**。したがって「母集団の外に実在する案件がある」状態で件数を検証できる
+// （0 件同士の比較では、境界が効いているのかデータが無いのか区別できない）。
+
+/** 一覧の 1 件（🔴 **キーの有無**を数えるため、値は緩く受ける）。 */
+type ListItem = Record<string, unknown> & { readonly id: string };
+type ListBody = {
+  readonly items: readonly ListItem[];
+  readonly total: number;
+  readonly nextCursor: string | null;
+};
+
+async function listBodyOf(response: Response): Promise<ListBody> {
+  expect(response.status).toBe(200);
+  return (await response.json()) as ListBody;
+}
+
+function idsOf(body: ListBody): readonly string[] {
+  return body.items.map((item) => item.id);
+}
+
+describe('🔴 F-015 AC-1: 一覧の母集団は境界適用後のみ（件数にも現れない）', () => {
+  it('🔴 パートナーの一覧は自社に公開された案件だけで構成される（`items` も `total` も）', async () => {
+    const ctx = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
+
+    const body = await listBodyOf(await getProjects(ctx));
+
+    expect(idsOf(body)).toEqual([TENANT_1.publishedProjectId]);
+    // 🔴 未公開の案件は 1 件も現れない（存在自体が母集団の外）。
+    expect(idsOf(body)).not.toContain(TENANT_1.privateProjectId);
+    // 🔴 **件数にも現れない**（`total` は一覧と同じ `where` の `COUNT`。docs/05 §4.8）。
+    expect(body.total).toBe(1);
+    expect(body.items).toHaveLength(body.total);
+  });
+
+  it('🔴 同じテナントの 2 社目のパートナーには 1 件も見えない（`F-014 AC-1`）', async () => {
+    const ctx = await ctxOf(PARTNER_USER_2, 'PARTNER_ADMIN');
+
+    const body = await listBodyOf(await getProjects(ctx));
+
+    expect(body.items).toEqual([]);
+    expect(body.total).toBe(0);
+  });
+
+  it('ホストの一覧には自社の案件が公開・未公開ともに出る（対照）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+
+    const body = await listBodyOf(await getProjects(ctx));
+
+    expect(idsOf(body)).toContain(TENANT_1.publishedProjectId);
+    expect(idsOf(body)).toContain(TENANT_1.privateProjectId);
+    expect(body.total).toBe(2);
+  });
+
+  it('🔴 他テナントの案件は ID にも件数にも現れない', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+
+    const body = await listBodyOf(await getProjects(ctx));
+
+    expect(idsOf(body)).not.toContain(TENANT_2.publishedProjectId);
+    expect(idsOf(body)).not.toContain(TENANT_2.privateProjectId);
+  });
+
+  it('🔴 他テナント・自社に公開されていない案件の名前が応答本文に 1 バイトも現れない', async () => {
+    const ctx = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
+
+    const raw = await (await getProjects(ctx)).text();
+
+    expect(raw).not.toContain(isolationSeedProjectNames(2).published);
+    expect(raw).not.toContain(isolationSeedProjectNames(1).private);
+  });
+
+  it('🔴 公開を解除するとパートナーの一覧と件数から即座に消える（`F-014 AC-5` の一覧側）', async () => {
+    const ctx = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
+    expect((await listBodyOf(await getProjects(ctx))).total).toBe(1);
+
+    await revokeVisibilityOf(PARTNER_1_1.partnerCompanyId);
+
+    const body = await listBodyOf(await getProjects(ctx));
+    expect(body.items).toEqual([]);
+    expect(body.total).toBe(0);
+  });
+
+  it('公開すると、その相手の一覧と件数にだけ増える', async () => {
+    const partner2 = await ctxOf(PARTNER_USER_2, 'PARTNER_ADMIN');
+    expect((await listBodyOf(await getProjects(partner2))).total).toBe(0);
+
+    await publishTo(PARTNER_1_2.partnerCompanyId);
+
+    expect(idsOf(await listBodyOf(await getProjects(partner2)))).toEqual([
+      TENANT_1.publishedProjectId,
+    ]);
+    // 🔴 1 社目の母集団は変わらない（他社への公開が件数に現れない）。
+    const partner1 = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
+    expect((await listBodyOf(await getProjects(partner1))).total).toBe(1);
+  });
+
+  it('🔴 `CLOSING` のテナントでも一覧は読める（`F-004 AC-8`。実行系だけを止める）', async () => {
+    await setLifecycle(TENANT_1.tenantId, 'CLOSING');
+    const ctx = await ctxOf(HOST_1, 'SALES');
+
+    expect((await getProjects(ctx)).status).toBe(200);
+  });
+
+  it('🔴 `VIEWER` も一覧を読める（`F-004 AC-6` / `BR-31`。閲覧のみ可）', async () => {
+    const ctx = await ctxOf(HOST_1, 'VIEWER');
+
+    expect((await getProjects(ctx)).status).toBe(200);
+  });
+});
+
+describe('🔴 F-014 AC-4 / BR-07: 一覧に他社の存在が 1 つも現れない', () => {
+  it('ホストの行には公開先の社数が入る（対照）', async () => {
+    await publishTo(PARTNER_1_2.partnerCompanyId);
+    const ctx = await ctxOf(HOST_1, 'SALES');
+
+    const body = await listBodyOf(await getProjects(ctx));
+    const published = body.items.find((item) => item.id === TENANT_1.publishedProjectId);
+    const notPublished = body.items.find((item) => item.id === TENANT_1.privateProjectId);
+
+    expect(published?.['audience']).toBe('HOST');
+    // seed の 1 社 + ここで足した 1 社。
+    expect(published?.['visibleToCount']).toBe(2);
+    // 🔴 誰にも公開していない案件は 0（画面では `未設定`。`F-014 AC-2` の既定）。
+    expect(notPublished?.['visibleToCount']).toBe(0);
+  });
+
+  it('🔴 2 社に公開した案件でも、A 社の応答に B 社の存在が 0 件（社数のフィールドごと無い）', async () => {
+    await publishTo(PARTNER_1_2.partnerCompanyId);
+    const ctx = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
+
+    const body = await listBodyOf(await getProjects(ctx));
+    const item = body.items[0];
+
+    expect(item?.['audience']).toBe('PARTNER');
+    expect(item).not.toHaveProperty('visibleToCount');
+    expect(item).not.toHaveProperty('visibilities');
+    const raw = JSON.stringify(body);
+    expect(raw).not.toContain('visibleToCount');
+    expect(raw).not.toContain(PARTNER_1_2.partnerCompanyId);
+  });
+
+  it('🔴 一覧の応答は `items` / `total` / `nextCursor` だけである（「他に N 件」を持たない）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+
+    const body = await listBodyOf(await getProjects(ctx));
+
+    expect(Object.keys(body).sort()).toEqual(['items', 'nextCursor', 'total']);
+  });
+});
+
+describe('🔴 F-013 AC-2: 一覧にも商流情報が現れない', () => {
+  it('🔴 パートナーの応答にエンド企業名・内部単価が 1 バイトも無い', async () => {
+    const ctx = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
+
+    const raw = await (await getProjects(ctx)).text();
+
+    expect(raw).not.toContain(ISOLATION_FORBIDDEN_MARKERS.endClientName);
+    expect(raw).not.toContain(String(ISOLATION_FORBIDDEN_MARKERS.internalUnitPrice));
+    expect(raw).not.toContain('endClientName');
+    expect(raw).not.toContain('internalUnitPrice');
+  });
+
+  it('🔴 ホストの一覧にも商流情報が出ない（一覧は 2 列を取得しない）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+
+    const raw = await (await getProjects(ctx)).text();
+
+    expect(raw).not.toContain(ISOLATION_FORBIDDEN_MARKERS.endClientName);
+    expect(raw).not.toContain('endClientName');
+  });
+
+  it('🔴 フリーワードでエンド企業名を検索しても当たらない（検索対象が 2 列だけ）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+
+    const body = await listBodyOf(
+      await getProjects(ctx, `?q=${encodeURIComponent(ISOLATION_FORBIDDEN_MARKERS.endClientName)}`),
+    );
+
+    expect(body.items).toEqual([]);
+    expect(body.total).toBe(0);
+  });
+
+  it('一覧の 1 件が持つキーは `docs/04` §S-010 の列だけである', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+
+    const body = await listBodyOf(await getProjects(ctx));
+
+    expect(Object.keys(body.items[0] ?? {}).sort()).toEqual([
+      'audience',
+      'headcount',
+      'id',
+      'moreMustRequirementCount',
+      'mustRequirements',
+      'name',
+      'prefecture',
+      'remoteMode',
+      'startDate',
+      'status',
+      'unitPriceMax',
+      'unitPriceMin',
+      'updatedOn',
+      'visibleToCount',
+    ]);
+  });
+
+  it('🔴 更新日は日単位に丸めて返す（時刻を返さない）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+
+    const body = await listBodyOf(await getProjects(ctx));
+
+    expect(String(body.items[0]?.['updatedOn'])).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+});
+
+describe('🔴 F-015 AC-3: 並び順が決定的である', () => {
+  /** seed の 2 件 + ここで作る 4 件 = ホストの母集団 6 件。 */
+  const EXTRA = 4;
+  /**
+   * 🔴 **このブロックで作った案件だけを並べ替えの対象にする。** seed の 2 件（`publishedProjectId` /
+   *    `privateProjectId`）の状態や更新日時を書き換えると、`afterEach` は名前で消す作りなので
+   *    元に戻らず、**後続のテストの前提（母集団・並び）が静かに壊れる**（実際に一度壊した）。
+   */
+  let created: string[] = [];
+
+  beforeEach(async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+    created = [];
+    for (let index = 0; index < EXTRA; index += 1) {
+      created.push(await createdIdOf(await postProject(ctx, { name: `${MARKER}並び${String(index)}` })));
+    }
+  });
+
+  it('🔴 同じ条件を 10 回実行しても並び順が変わらない', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+
+    const first = idsOf(await listBodyOf(await getProjects(ctx)));
+    for (let attempt = 0; attempt < 9; attempt += 1) {
+      expect(idsOf(await listBodyOf(await getProjects(ctx)))).toEqual(first);
+    }
+  });
+
+  it('🔴 後任募集が先頭に来る（`docs/04` §S-010。`F-045` の還流を埋もれさせない）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+    // 🔴 **最初に作った行**（＝ 更新日順では母集団の最後尾）を後任募集にする。状態が第 1 キーで
+    //    なければ先頭に来ない ＝ この 1 本で「状態が更新日より優先される」ことが証明できる。
+    const target = created[0] ?? '';
+    await admin.project.update({
+      where: { id: target },
+      data: { status: 'SUCCESSOR_WANTED', updatedAt: new Date('2020-01-01T00:00:00.000Z') },
+    });
+
+    const body = await listBodyOf(await getProjects(ctx));
+
+    expect(body.items[0]?.id).toBe(target);
+    expect(body.items[0]?.['status']).toBe('SUCCESSOR_WANTED');
+  });
+
+  it('🔴 充足は同じ更新日でも募集中より後に来る（状態の優先順位が DB の照合順序と一致する）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+    const sameMoment = new Date('2026-09-06T12:00:00.000Z');
+    const filled = created[0] ?? '';
+    const open = created[1] ?? '';
+    await admin.project.update({
+      where: { id: filled },
+      data: { status: 'FILLED', updatedAt: sameMoment },
+    });
+    await admin.project.update({
+      where: { id: open },
+      data: { status: 'OPEN', updatedAt: sameMoment },
+    });
+
+    const after = idsOf(await listBodyOf(await getProjects(ctx)));
+
+    expect(after.indexOf(open)).toBeLessThan(after.indexOf(filled));
+  });
+
+  it('同じ状態のなかでは更新日の新しい順（更新した行が上がる）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+    // 🔴 母集団の中で**最も古い**行（このブロックが最初に作った行）を更新する。
+    const target = created[0] ?? '';
+    expect(idsOf(await listBodyOf(await getProjects(ctx))).indexOf(target)).toBeGreaterThan(0);
+
+    expect((await patchProject(ctx, target, { headcount: 3 })).status).toBe(200);
+
+    const body = await listBodyOf(await getProjects(ctx));
+    expect(body.items[0]?.id).toBe(target);
+    // 🔴 並びが変わっても母集団の件数は変わらない。
+    expect(body.total).toBe(EXTRA + 2);
+  });
+
+  it('`limit` で区切り、カーソルで続きを読める（重複も欠落もしない）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+
+    const first = await listBodyOf(await getProjects(ctx, '?limit=2'));
+    expect(first.items).toHaveLength(2);
+    expect(first.nextCursor).not.toBeNull();
+    // 🔴 `total` はページの件数ではなく母集団の件数である（同じ `where` の `COUNT`）。
+    expect(first.total).toBe(EXTRA + 2);
+
+    const seen = new Set(idsOf(first));
+    let cursor = first.nextCursor;
+    let guard = 0;
+    while (cursor !== null && guard < 10) {
+      const page = await listBodyOf(await getProjects(ctx, `?limit=2&cursor=${cursor}`));
+      for (const id of idsOf(page)) {
+        expect(seen.has(id), `${id} が 2 度現れた`).toBe(false);
+        seen.add(id);
+      }
+      expect(page.total).toBe(EXTRA + 2);
+      cursor = page.nextCursor;
+      guard += 1;
+    }
+
+    expect(seen.size).toBe(EXTRA + 2);
+  });
+
+  it('🔴 境界外の ID をカーソルに指定しても他社の案件に到達できない', async () => {
+    const ctx = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
+
+    // 形は妥当だがパートナーの母集団に無い ID（未公開案件）。
+    const response = await getProjects(ctx, `?cursor=${TENANT_1.privateProjectId}`);
+
+    // Prisma は母集団の中でカーソル行を探すため、見つからなければ 0 件になる。**500 にはしない。**
+    expect(response.status).toBe(200);
+    expect(idsOf(await listBodyOf(response))).not.toContain(TENANT_1.privateProjectId);
+  });
+});
+
+describe('検索条件（docs/05 §6.4 #25 / `F-015` の入力）', () => {
+  it('状態で絞れる（`total` も絞り込み後の母集団）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+    const id = await createdIdOf(
+      await postProject(ctx, { name: `${MARKER}後任`, status: 'SUCCESSOR_WANTED' }),
+    );
+
+    const body = await listBodyOf(await getProjects(ctx, '?status=SUCCESSOR_WANTED'));
+
+    expect(idsOf(body)).toEqual([id]);
+    expect(body.total).toBe(1);
+  });
+
+  it('フリーワードで案件名を絞れる', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+    const id = await createdIdOf(await postProject(ctx, { name: `${MARKER}保険基幹系` }));
+
+    const body = await listBodyOf(await getProjects(ctx, `?q=${encodeURIComponent('保険基幹系')}`));
+
+    expect(idsOf(body)).toEqual([id]);
+    expect(body.total).toBe(1);
+  });
+
+  it('フリーワードは外部公開用の記載も見る', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+    const id = await createdIdOf(
+      await postProject(ctx, { name: `${MARKER}概要一致`, publicSummary: '大規模な物流の刷新' }),
+    );
+
+    const body = await listBodyOf(await getProjects(ctx, `?q=${encodeURIComponent('物流の刷新')}`));
+
+    expect(idsOf(body)).toEqual([id]);
+  });
+
+  it('開始日は「この日以降」で絞る', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+    const soon = await createdIdOf(
+      await postProject(ctx, { name: `${MARKER}近い`, startDate: '2026-12-01' }),
+    );
+    await createdIdOf(await postProject(ctx, { name: `${MARKER}遠い`, startDate: '2026-01-01' }));
+
+    const body = await listBodyOf(await getProjects(ctx, '?startFrom=2026-11-01'));
+
+    expect(idsOf(body)).toEqual([soon]);
+  });
+
+  it('勤務地で絞れる', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+    const id = await createdIdOf(
+      await postProject(ctx, { name: `${MARKER}東京`, prefecture: '13' }),
+    );
+
+    const body = await listBodyOf(await getProjects(ctx, '?prefecture=13'));
+
+    expect(idsOf(body)).toContain(id);
+  });
+
+  it('🔴 パートナーが条件を指定しても母集団は広がらない（条件は絞るだけ）', async () => {
+    const hostCtx = await ctxOf(HOST_1, 'SALES');
+    await createdIdOf(
+      await postProject(hostCtx, { name: `${MARKER}非公開の東京`, prefecture: '13' }),
+    );
+    const ctx = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
+
+    const body = await listBodyOf(await getProjects(ctx, '?prefecture=13'));
+
+    expect(idsOf(body)).not.toContain(TENANT_1.privateProjectId);
+    expect(body.total).toBeLessThanOrEqual(1);
+  });
+
+  it('🔴 検索条件を空で送っても 400 にならない（素の `<form method="get">` の送信）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+
+    const response = await getProjects(ctx, '?q=&status=&startFrom=&prefecture=');
+
+    expect(response.status).toBe(200);
+    expect((await listBodyOf(response)).total).toBe(2);
+  });
+
+  it('🔴 未知の状態は 400（黙って無視しない）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+
+    const response = await getProjects(ctx, '?status=UNKNOWN');
+
+    expect(response.status).toBe(400);
+    expect(((await response.json()) as ErrorBody).error.code).toBe('VALIDATION');
+  });
+
+  it('🔴 UUID でないカーソルは 400（Prisma の `cursor` まで届かせない）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+
+    expect((await getProjects(ctx, '?cursor=not-a-uuid')).status).toBe(400);
+  });
+
+  it('🔴 `limit` の上限超過は黙って丸めず 400（docs/05 §6.1）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+
+    expect((await getProjects(ctx, '?limit=201')).status).toBe(400);
+  });
+});
+
+describe('必須要件の要約（docs/04 §S-010 の 3 列目）', () => {
+  it('必須要件だけが要約に載る（尚可要件は混ざらない）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+    const id = await createdIdOf(
+      await postProject(ctx, {
+        name: `${MARKER}要約`,
+        requirements: [
+          { kind: 'MUST', skillId: SKILL_JAVA, freeText: null, requiredYears: 5 },
+          { kind: 'NICE', skillId: SKILL_AWS, freeText: null, requiredYears: 1 },
+        ],
+      }),
+    );
+
+    const body = await listBodyOf(await getProjects(ctx));
+    const item = body.items.find((row) => row.id === id);
+    const requirements = item?.['mustRequirements'] as readonly Record<string, unknown>[];
+
+    expect(requirements).toHaveLength(1);
+    expect(requirements[0]?.['skillName']).toBe('Java');
+    expect(requirements[0]?.['requiredYears']).toBe(5);
+    expect(item?.['moreMustRequirementCount']).toBe(0);
+  });
+
+  it('4 件以上の必須要件は上位 3 件 + 超過件数になる', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+    const id = await createdIdOf(
+      await postProject(ctx, {
+        name: `${MARKER}要約4件`,
+        requirements: [1, 2, 3, 4].map((index) => ({
+          kind: 'MUST',
+          skillId: null,
+          freeText: `条件${String(index)}`,
+          requiredYears: null,
+        })),
+      }),
+    );
+
+    const body = await listBodyOf(await getProjects(ctx));
+    const item = body.items.find((row) => row.id === id);
+
+    expect(item?.['mustRequirements']).toHaveLength(3);
+    expect(item?.['moreMustRequirementCount']).toBe(1);
+  });
+
+  it('🔴 要約はパートナーからも読める（要件は公開範囲の相手に見せる情報である）', async () => {
+    const ctx = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
+
+    const body = await listBodyOf(await getProjects(ctx));
+    const requirements = body.items[0]?.['mustRequirements'] as readonly Record<string, unknown>[];
+
+    // seed の公開案件には必須要件が 1 件ある（`TypeScript 3 年`）。
+    expect(requirements).toHaveLength(1);
+    expect(requirements[0]?.['freeText']).toBe('TypeScript 3 年');
+  });
+});
+
+describe('🔴 一覧の閲覧は監査ログに記録しない（記録は詳細が持つ。`BR-27` / docs/05 §16.1）', () => {
+  it('一覧を読んでも `project.view` が 1 件も増えない', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+
+    expect((await getProjects(ctx)).status).toBe(200);
+
+    expect(await auditRows('project.view')).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 🔴 `F-015 AC-2`（案件 1 万件で p95 1 秒）の**前提**の確認
+// ---------------------------------------------------------------------------
+// 🔴 本タスクの射程は「インデックスと実行計画の確認まで」である（`docs/sprints/SP-06` T-06-03。
+//    p95 の判定は `seed:perf` を作る **SP-12 の T-12-02**）。
+// 🔴 `EXPLAIN` は**特権接続（`admin`）ではなく `app_tenant`** で実行する —— RLS のポリシー式
+//    （C4）が計画に含まれることを見たいため。
+// ⚠️ seed の行数（数十行）では Postgres が Seq Scan を選ぶのが**正しい**。ここで
+//    「Index Scan が選ばれること」を固定すると、SP-12 の実測とは違う計画を強制することになる。
+//    したがって固定するのは ①索引の定義（先頭列が `tenant_id`）②計画が `projects` に閉じており、
+//    RLS の述語が効いていること の 2 点である。
+
+/** 一覧の既定の並びの SQL（`PROJECT_LIST_ORDER_BY` と 1 対 1）。 */
+const LIST_ORDER_BY_SQL =
+  'ORDER BY status DESC, updated_at DESC, start_date ASC NULLS LAST, id DESC';
+
+/**
+ * `listProjects` が発行するのと同じ形の SELECT を `app_tenant` で `EXPLAIN` する。
+ * 🔴 `where` を書かない（母集団を絞るのは RLS の C4 だけ）。列と並びは実装と一致させる。
+ * 🔴 `forceIndex` は `enable_seqscan` を切る。**「いま索引が選ばれるか」ではなく「この
+ *    `ORDER BY` を索引で供給できるか」**を見たいためである —— seed の行数（数十行）では
+ *    Seq Scan + 全体ソートの方が安いこともあり、そこで計画を固定すると SP-12 の実測
+ *    （1 万件）とは違う形を要求してしまう。
+ */
+async function explainProjectList(
+  identity: TenantIdentity,
+  options: { readonly forceIndex?: boolean } = {},
+): Promise<string> {
+  const client = createUnextendedClient(database.tenantUrl);
+  try {
+    return await runUnextended(
+      client,
+      {
+        tenantId: identity.tenantId,
+        partnerCompanyId: identity.partnerCompanyId,
+        actorUserId: identity.userId,
+      },
+      async (tx) => {
+        if (options.forceIndex === true) {
+          await tx.$executeRawUnsafe('SET LOCAL enable_seqscan = off');
+        }
+        const rows = await tx.$queryRawUnsafe<{ 'QUERY PLAN': string }[]>(
+          `EXPLAIN SELECT id, name, status, headcount, start_date, unit_price_min, unit_price_max,
+                          prefecture, remote_mode, updated_at
+             FROM projects
+            ${LIST_ORDER_BY_SQL}
+            LIMIT 51`,
+        );
+        return rows.map((row) => row['QUERY PLAN']).join('\n');
+      },
+    );
+  } finally {
+    await client.$disconnect();
+  }
+}
+
+describe('🔴 F-015 AC-2 の前提: 索引と実行計画（判定は SP-12 / T-12-02）', () => {
+  it('🔴 `projects` の複合索引はいずれも `tenant_id` を先頭列に持つ（docs/03 §3.7.2）', async () => {
+    const rows = await admin.$queryRaw<{ indexname: string; indexdef: string }[]>`
+      SELECT indexname, indexdef FROM pg_indexes WHERE tablename = 'projects' ORDER BY indexname`;
+
+    for (const row of rows) {
+      if (row.indexname === 'projects_pkey') continue;
+      expect(row.indexdef, row.indexname).toMatch(/\(tenant_id[,)]/);
+    }
+    const defs = rows.map((row) => row.indexdef).join('\n');
+    // 既定の並び（状態 → 更新日時）と、開始日の絞り込みに対応する索引。
+    expect(defs).toContain('(tenant_id, status, updated_at)');
+    expect(defs).toContain('(tenant_id, start_date)');
+  });
+
+  it('🔴 既定の並びを複合索引が供給できる（`(tenant_id, status, updated_at)` の後方走査）', async () => {
+    const plan = await explainProjectList(HOST_1, { forceIndex: true });
+
+    // 🔴 索引の先頭 2 キーが並びの先頭 2 キーと一致するので、後方走査 + 増分ソートになる
+    //    （`start_date` / `id` は同値グループの中だけを並べ替える）。
+    expect(plan).toContain('Index Scan Backward using projects_tenant_id_status_updated_at_idx');
+    expect(plan).toContain('Presorted Key: projects.status, projects.updated_at');
+    expect(plan).toContain(
+      'Sort Key: projects.status DESC, projects.updated_at DESC, projects.start_date, projects.id DESC',
+    );
+  });
+
+  it('🔴 一覧の実行計画に RLS（C4）の述語が現れる —— 母集団を決めているのはアプリではない', async () => {
+    const plan = await explainProjectList(PARTNER_USER_1);
+
+    expect(plan).toContain('projects');
+    // 🔴 第 1 防御（テナント）。`app_tenant_id()` は計画にインライン展開される。
+    expect(plan).toContain("current_setting('app.tenant_id'");
+    // 🔴 C4 の EXISTS（`project_visibilities` の行の有無）が計画に現れる ——
+    //    **アプリの `where` ではなく RLS が母集団を決めている**ことの直接の証拠である。
+    expect(plan).toContain('project_visibilities');
+    expect(plan).toContain("current_setting('app.partner_company_id'");
+    expect(plan).toContain('revoked_at IS NULL');
   });
 });

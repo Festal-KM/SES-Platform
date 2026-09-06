@@ -30,6 +30,7 @@ import { z } from 'zod';
 import { PROJECT_STATUSES, REMOTE_MODES, REQUIREMENT_KINDS } from '@ses/db';
 import { PREFECTURE_CODES } from '@ses/domain';
 import { assertNoIsolationKeys, type AssertNoIsolationKeys } from '../api/isolation-keys';
+import { idCursorPageQuerySchema } from '../api/pagination';
 
 /** 案件名。DB は TEXT。過大な入力を境界で止める。 */
 const NAME_MAX_LENGTH = 200;
@@ -142,6 +143,62 @@ export type UpdateProjectBody = z.infer<typeof updateProjectBodySchema>;
 export type UpdateProjectBodyIsolationGuard = AssertNoIsolationKeys<UpdateProjectBody>;
 
 assertNoIsolationKeys(Object.keys(updateProjectBodySchema.shape), 'updateProjectBodySchema');
+
+/** フリーワード（`docs/04` §S-010 の検索条件）。過大な入力を境界で止める。 */
+const FREE_WORD_MAX_LENGTH = 200;
+
+/**
+ * 🔴 **空文字を「指定なし」に畳んでから検証する**（`S-010` の検索条件専用）。
+ *
+ * `S-010` の検索は素の `<form method="get">` である（`docs/04` §S-010「検索は同期」）。
+ * ブラウザは**未入力の欄も送る**ため、条件を 1 つも入れずに検索すると
+ * `?q=&status=&startFrom=&prefecture=` が届く。畳まないと `min(1)` / `enum` が落ちて
+ * **検索フォームの送信そのものが 400** になる。
+ * 🔴 空白だけの入力も同じ扱いにする（`'   '` を `%   %` として検索させない）。
+ * 🔴 `.strict()` にはしない（未知キーの有無で応答が変わると、キーの存在を外から探れる。
+ *    `engineers/schemas.ts` の注記と同じ）。
+ */
+function optionalFilter<T extends z.ZodType>(schema: T) {
+  return z.preprocess(
+    (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+    schema.optional(),
+  );
+}
+
+/**
+ * `GET /api/projects`（#25。`F-015` / `S-010`）の query。T-06-03。
+ *
+ * 🔴 **docs/05 §6.4 #25 の `?q=&status=&startFrom=&prefecture=&cursor=` と 1 対 1 である。**
+ *    `docs/04` §S-010 の検索条件はこれに加えて「スキル要件」「単価レンジ」「リモート可否」を
+ *    挙げているが、**本タスクでは受け取らない**（docs/05 §6.4「#25 の実装の決着（T-06-03）」）:
+ *      - スキル要件 … `project_requirements` への結合と AND / OR の評価が要り、
+ *        検索の実装を `packages/db/src/search/**` に閉じる **T-06-05**（docs/05 TBD-8）の射程
+ *      - 単価レンジ … 案件は**レンジ列 2 本**であり、検索条件のレンジとの「重なり」の定義
+ *        （NULL の扱いを含む）が必要になる。同じ定義を人材側（`#15` の `priceMin` /
+ *        `priceMax`。**T-06-04**）でも決めるため、**2 か所で別々に決めない**
+ *      - リモート可否 … 上の 2 つと同じフィルタ帯に並ぶ項目であり、単独で先に入れると
+ *        画面が「効く条件と効かない条件が混在する帯」になる
+ *    🔴 **受け取って捨てるキーを置かない**（`#19` / `#15` と同じ判断）。宣言だけしておくと、
+ *    指定しても効かない条件が「効いているように見える」状態になり、利用者からは絞り込みの
+ *    不具合と区別できない。画面（`S-010`）は「この 3 条件は後続のリリース」と明示する。
+ * 🔴 `cursor` は**行の ID**（`uuid(7)`）である（`idCursorPageQuerySchema` の注記）。
+ * 🔴 分離キーを持たない（`AssertNoIsolationKeys`）。母集団は RLS の C4 が決める。
+ */
+export const projectListQuerySchema = idCursorPageQuerySchema.extend({
+  /** フリーワード（案件名・外部公開用の記載を対象にする。`lib/projects/list.ts`）。 */
+  q: optionalFilter(z.string().trim().min(1).max(FREE_WORD_MAX_LENGTH)),
+  /** 案件の状態（募集中 / 充足 / 後任募集）。未指定は「すべて」。 */
+  status: optionalFilter(z.enum(PROJECT_STATUSES)),
+  /** 開始日が**この日以降**の案件に絞る（`YYYY-MM-DD`）。 */
+  startFrom: optionalFilter(z.iso.date()),
+  prefecture: optionalFilter(z.enum(PREFECTURE_CODES)),
+});
+
+export type ProjectListQuery = z.infer<typeof projectListQuerySchema>;
+
+export type ProjectListQueryIsolationGuard = AssertNoIsolationKeys<ProjectListQuery>;
+
+assertNoIsolationKeys(Object.keys(projectListQuerySchema.shape), 'projectListQuerySchema');
 
 /**
  * `PATCH /api/projects/{id}` の path params。

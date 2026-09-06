@@ -34,6 +34,13 @@
 //    （`tests/isolation/engineers.test.ts` の「他社のエンジニアの実名が応答本文に 1 バイトも
 //    現れない」と同じ観点。値は各所有者本人の正規の読み取り経路から導く。ベタ書きしない）。
 //
+// 🔴 T-06-03: `GET /api/projects`（一覧。`S-010` / `F-015`）と `/projects`（画面）を
+//    `MAIN_PLANE_PAGES` / `MAIN_PLANE_READ_APIS` に足した。**`projects` は RLS の
+//    C4 VISIBILITY** であり、パートナー文脈では `project_visibilities` の行の有無だけが
+//    母集団を決める（`tests/isolation/projects.test.ts` の `F-015 AC-1` が DB 層で固定する）。
+//    ④（パートナー視点）の掘り下げ —— 自社に公開された案件だけが出ること、他社の公開状況・
+//    社数が現れないこと —— は **e2e-tester が `S-010` の導線とあわせて足す**。
+//
 // 🔴 直列（`workers: 1`。`playwright.config.ts`）。RLS の設定漏れは他テストの副作用で
 //    偽陽性・偽陰性になる。
 import { randomUUID } from 'node:crypto';
@@ -85,6 +92,10 @@ const MAIN_PLANE_PAGES = [
   `/engineers/${tenantIds(1).hostEngineerId}/edit`,
   '/projects/new',
   `/projects/${tenantIds(1).publishedProjectId}/edit`,
+  // 🔴 T-06-03: `/projects`（一覧。`S-010`）を足した。`/engineers` と同じくロールで到達を
+  //    止めない（ID 不要）ため、固定 ID を要らない。母集団を決めるのは `projects` の
+  //    RLS（C4 VISIBILITY）である。
+  '/projects',
 ] as const;
 
 /**
@@ -100,6 +111,9 @@ const MAIN_PLANE_READ_APIS = [
   `/api/audit-logs?${auditLogPeriodQuery()}`,
   '/api/engineers',
   `/api/engineers/${tenantIds(1).hostEngineerId}`,
+  // 🔴 T-06-03: `GET /api/projects`（一覧。#25）を足した。既存の②③ループに載せることで、
+  //    「他テナントの値が 0 件」を一覧の `items` / `total` の両方で確かめる。
+  '/api/projects',
 ] as const;
 
 /** 実在しない UUID（`404` と `403` を区別しないことの確認に使う）。 */
