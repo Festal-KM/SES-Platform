@@ -90,8 +90,13 @@ export default async function EngineerDetailPage({
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-8">
+      {/* 🔴 T-05-09: 「人材」を `S-005`（一覧）へのリンクにした（docs/04 §S-006 関連画面
+          「← `S-005`」の戻り経路。パンくずが文字だけだと一覧へ戻れない）。 */}
       <p className="mb-1 text-sm text-slate-500">
-        {t('engineers.breadcrumb.home')} / {t('engineers.breadcrumb.list')}
+        {t('engineers.breadcrumb.home')} /{' '}
+        <Link className="underline" href="/engineers" data-testid="engineer-detail-list-link">
+          {t('engineers.breadcrumb.list')}
+        </Link>
       </p>
 
       <div className="mb-4 flex flex-wrap items-center gap-3">

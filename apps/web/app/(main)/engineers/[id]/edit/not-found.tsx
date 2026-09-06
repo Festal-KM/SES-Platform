@@ -5,8 +5,8 @@
 //    他テナント）と不存在（削除済み）を**区別しない**（docs/05 §4.8「見えない ＝ 存在しない」/
 //    `F-008 AC-3`）。したがって文言も「見つかりませんでした」の 1 種類しか持たない ——
 //    「他社の人材です」と書いた時点で、他社にその ID の人材が居ることを教えてしまう。
-// 🔴 戻り先は `S-005`（一覧）だが T-05-09 まで存在しないため、暫定でホームへ戻す
-//    （`ENGINEER_FORM_CANCEL_HREF` と同じ値を使い、2 箇所でずれないようにする）。
+// 🔴 T-05-09: 戻り先を `S-005`（一覧）にした（docs/04 §10.1 `S-007`「一覧へ戻す」の本来の指定）。
+//    値は `ENGINEER_FORM_CANCEL_HREF` と共有し、キャンセルと 404 で戻り先がずれないようにする。
 import { t } from '@ses/i18n';
 import { ENGINEER_FORM_CANCEL_HREF } from '../../_form/form-props';
 
@@ -18,7 +18,7 @@ export default function EditEngineerNotFound() {
         {t('engineers.notFound')}
       </p>
       <a className="ses-secondary-link" href={ENGINEER_FORM_CANCEL_HREF}>
-        {t('engineers.breadcrumb.home')}
+        {t('engineers.breadcrumb.list')}
       </a>
     </main>
   );

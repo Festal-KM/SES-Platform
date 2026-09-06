@@ -2,7 +2,12 @@
 // docs/05 §6.1（カーソル方式・既定 50・最大 200）/ §4.8（見えない ＝ 存在しない）。T-03-04。
 import { describe, expect, it } from 'vitest';
 import { PAGE_SIZE_DEFAULT, PAGE_SIZE_MAX } from '@ses/config';
-import { buildCursorPage, cursorPageQuerySchema, takeForCursorPage } from './pagination';
+import {
+  buildCursorPage,
+  cursorPageQuerySchema,
+  idCursorPageQuerySchema,
+  takeForCursorPage,
+} from './pagination';
 
 describe('cursorPageQuerySchema（docs/05 §6.1）', () => {
   it('未指定なら既定 50 件', () => {
@@ -30,6 +35,38 @@ describe('cursorPageQuerySchema（docs/05 §6.1）', () => {
 
   it('🔴 分離キーをキーとして持たない', () => {
     expect(Object.keys(cursorPageQuerySchema.shape).sort()).toEqual(['cursor', 'limit']);
+  });
+});
+
+describe('idCursorPageQuerySchema（カーソルが行の ID である一覧。T-05-09）', () => {
+  const ID = '01930000-0000-7000-8000-0000000000a1';
+
+  it('UUID のカーソルは通る', () => {
+    expect(idCursorPageQuerySchema.parse({ cursor: ID })).toEqual({
+      cursor: ID,
+      limit: PAGE_SIZE_DEFAULT,
+    });
+  });
+
+  it('未指定でも通る（1 ページ目）', () => {
+    expect(idCursorPageQuerySchema.parse({})).toEqual({ limit: PAGE_SIZE_DEFAULT });
+  });
+
+  it.each(['abc', '', '01930000-0000-7000-8000', `${ID} `, "'; DROP TABLE engineers; --"])(
+    '🔴 UUID でないカーソル（%s）は 400 になる（Prisma の uuid キャストまで届かせない）',
+    (cursor) => {
+      expect(idCursorPageQuerySchema.safeParse({ cursor }).success).toBe(false);
+    },
+  );
+
+  it('🔴 分離キーをキーとして持たない', () => {
+    expect(Object.keys(idCursorPageQuerySchema.shape).sort()).toEqual(['cursor', 'limit']);
+  });
+
+  it('limit の制約は共通スキーマと同じ（片方だけ緩まない）', () => {
+    expect(idCursorPageQuerySchema.safeParse({ limit: String(PAGE_SIZE_MAX + 1) }).success).toBe(
+      false,
+    );
   });
 });
 

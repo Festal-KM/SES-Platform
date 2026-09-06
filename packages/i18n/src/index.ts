@@ -888,6 +888,54 @@ const ja = {
   'engineers.detail.skillSheets.lead':
     'スキルシートの版・ウイルス検査の状態・最新版の切替は、専用の画面で管理します。',
 
+  // --- S-005 エンジニア台帳・一覧（docs/04 §S-005 / `F-009` / docs/05 §6.4 #15。T-05-09）---
+  // 🔴 T2（モバイル閲覧可）。列は間引くが**遮断しない**（`CLAUDE.md` §13.3）。
+  // 🔴 `F-009 AC-2`: **スコア・順位・重みに相当する語を 1 つも置かない**（Phase 1）。
+  //    並び順の説明は「更新日」までであり、「一致度」は検索条件が入る後続のリリースで足す。
+  // 🔴 `docs/04` §10.1 `S-005`: **初回空と絞り込み 0 件は文言も導線も別物**である。
+  //    絞り込みがまだ無い（T-06-04）ため、本リリースで到達するのは**初回空だけ**である
+  //    —— 到達しない状態の文言を先回りで置かない（`engineers.notFound` の判断と同じ）。
+  'engineers.list.title': '人材台帳',
+  'engineers.list.open': '人材台帳を開く',
+  // 🔴 `docs/04` §3.2 項目 2「一覧の母集団を 1 行で明示」。ホストと取引先で語を変える。
+  'engineers.list.population.host': '自社台帳',
+  'engineers.list.population.partner': '御社が登録した人材',
+  'engineers.list.population.unit': '件',
+  // 🔴 `F-006 AC-2` と同じ規律（見える範囲を常時示す）。フィルタ帯の直下に 1 行置く。
+  'engineers.list.partnerScopeNotice': 'この一覧には、御社が登録した人材のみが表示されます。',
+  // 🔴 `docs/04` §S-005「並び順の説明を一覧の上部に 1 行で書く」。
+  'engineers.list.orderNote': '更新日の新しい順に表示しています。',
+  // 🔴 未実装を隠さない（`engineers.careers.comingSoon` と同じ規律）。何ができないのかを書く。
+  'engineers.list.searchComingSoon':
+    '検索条件（スキル・経験年数・単価・稼働可能時期・勤務地・稼働状況・フリーワード）、「開始日に間に合う人だけ」「通勤可能な人だけ」の絞り込み、列の表示切替は、後続のリリースで追加されます。',
+  'engineers.list.experienceComingSoon':
+    '経験年数（1 人あたりの集約値）は、集約の定義が決まる後続のリリースで列に加わります。スキルごとの経験年数は人材の詳細で確認できます。',
+  'engineers.list.register': '人材を登録',
+  // 🔴 `docs/04` §S-005 権限差分「`VIEWER` は『人材を登録』が無い」。導線を消すだけにせず、
+  //    誰ができるのかを書く（行き止まりにしない）。
+  'engineers.list.readOnlyNote':
+    '閲覧のみの権限のため、人材の登録は行えません。担当の営業または管理者にご依頼ください。',
+  'engineers.list.column.name': '氏名',
+  'engineers.list.column.ownership': '所属区分',
+  'engineers.list.column.skills': '主要スキル',
+  'engineers.list.column.unitPrice': '単価レンジ',
+  'engineers.list.column.availableFrom': '稼働可能時期',
+  'engineers.list.column.location': '勤務地・リモート',
+  'engineers.list.column.availability': '稼働状況',
+  'engineers.list.column.updatedOn': '更新日',
+  // 🔴 `docs/04` §10.1 `S-005` 初回空:「人材が未登録」+ 登録 / 取込導線。
+  'engineers.list.empty.title': 'まだ人材が登録されていません。',
+  'engineers.list.empty.lead':
+    '人材を登録すると、この一覧から探せるようになります。スキルシートは、人材を登録したあとに取り込めます。',
+  'engineers.list.nextPage': '次のページ',
+  'engineers.list.firstPage': '最初のページに戻る',
+  // 🔴 `docs/04` §10.1 `S-005` Load:「テーブル骨格 12 行」。画面全体を空にしない。
+  'engineers.list.loading': '人材を読み込んでいます…',
+  // 🔴 `docs/04` §10.1 `S-005` Err:「検索を実行できませんでした」+ 条件保持の再試行。
+  'engineers.list.error.title': '検索を実行できませんでした。',
+  'engineers.list.error.lead': '指定した条件はそのまま残しています。もう一度お試しください。',
+  'engineers.list.error.retry': 'もう一度試す',
+
   // --- S-008 スキルシートの取込と版管理（docs/04 §S-008 / `F-011` / docs/05 §6.4 #18 #19）---
   // 🔴 `F-011 AC-1`: **`CLEAN` でない版には共有の導線を出さない。** 文言も「いまは選べない」
   //    ではなく「この版は共有できない」と書く（順番待ちだと読まれると、待てば送れると誤解される）。

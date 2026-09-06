@@ -6,6 +6,7 @@
 // 🔴 パートナー所属の利用者も到達してよい（自社エンジニアを登録する。`F-008` 関連ロール）。
 //    所有パートナーは ctx から決まるので、画面に選択肢を出さない（`F-008 AC-2`）。
 // 🔴 スキル辞書はサーバコンポーネントから直接読む（自己 fetch しない。`S-014` と同じ方針）。
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { t } from '@ses/i18n';
@@ -43,9 +44,13 @@ export default async function NewEngineerPage() {
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-8">
+      {/* 🔴 T-05-09: 「人材」を `S-005`（一覧）へのリンクにした（戻り経路を文字だけにしない）。 */}
       <p className="mb-1 text-sm text-slate-500">
-        {t('engineers.breadcrumb.home')} / {t('engineers.breadcrumb.list')} /{' '}
-        {t('engineers.breadcrumb.new')}
+        {t('engineers.breadcrumb.home')} /{' '}
+        <Link className="underline" href="/engineers">
+          {t('engineers.breadcrumb.list')}
+        </Link>{' '}
+        / {t('engineers.breadcrumb.new')}
       </p>
       <h1 className="mb-6 text-xl font-bold text-slate-900">{t('engineers.new.title')}</h1>
       <EngineerForm

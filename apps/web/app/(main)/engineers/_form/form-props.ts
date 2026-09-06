@@ -24,8 +24,13 @@ import type {
   SelectOption,
 } from './engineer-form';
 
-/** 保存後・キャンセル時の戻り先。🔴 `S-005`（一覧）は T-05-09 で実装されるまで存在しない。 */
-export const ENGINEER_FORM_CANCEL_HREF = '/';
+/**
+ * 保存後・キャンセル時の戻り先。
+ * 🔴 T-05-09: `S-005`（一覧）が実装されたので、暫定のホーム（`/`）から差し替えた
+ *    （docs/04 §S-007 関連画面「← `S-005`」）。**404 境界（`[id]/not-found.tsx` /
+ *    `[id]/edit/not-found.tsx`）も同じ定数を見る**ので、戻り先が 3 箇所でずれない。
+ */
+export const ENGINEER_FORM_CANCEL_HREF = '/engineers';
 
 export const availabilityOptions: readonly SelectOption[] = ENGINEER_AVAILABILITIES.map(
   (value) => ({ value, label: t(ENGINEER_AVAILABILITY_MESSAGE_KEYS[value]) }),

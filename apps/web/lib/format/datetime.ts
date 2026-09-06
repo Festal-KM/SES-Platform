@@ -18,6 +18,14 @@ const JST_FORMATTER = new Intl.DateTimeFormat('ja-JP', {
   hour12: false,
 });
 
+/** 日付だけを JST で切り出すフォーマッタ（`toJstIsoDay`）。 */
+const JST_DAY_FORMATTER = new Intl.DateTimeFormat('ja-JP', {
+  timeZone: 'Asia/Tokyo',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
 function part(parts: readonly Intl.DateTimeFormatPart[], type: Intl.DateTimeFormatPartTypes): string {
   return parts.find((entry) => entry.type === type)?.value ?? '';
 }
@@ -36,4 +44,23 @@ export function formatDateTimeJst(iso: string): string {
   const hour = part(parts, 'hour');
   const minute = part(parts, 'minute');
   return `${year}-${month}-${day} ${hour}:${minute} JST`;
+}
+
+/**
+ * タイムスタンプを **JST の暦日**（`YYYY-MM-DD`）に丸める。T-05-09。
+ *
+ * 🔴 用途は「日単位に丸めた更新日」（`S-005` の `updatedOn` / `docs/04` `U-06`）である。
+ *    **`Date#toISOString().slice(0, 10)`（UTC 切り出し）を使ってはならない** ——
+ *    JST の 0:00〜8:59 に更新された行が**前日の日付**で表示され、利用者から見れば
+ *    「今朝更新したのに昨日と出る」になる（`formatDateTimeJst` が明示的に JST へ固定したのと
+ *    同じ理由。実行環境の暗黙のローカル TZ にも依存させない）。
+ * 🔴 **丸めるのは表示だけである。** 並び順は `updated_at` の生値で決まる
+ *    （`lib/engineers/list.ts` の注記 / docs/05 §6.4「#15 の実装の決着」）。
+ * ⚠️ `@db.Date` の列（`available_from` 等。そもそも時刻を持たない）には**使わない**。
+ *    あちらは UTC 深夜として読み出される値であり、TZ 変換を掛けると日付がずれる
+ *    （`lib/engineers/service.ts` の `toIsoDay`）。**丸めの意味が別物である。**
+ */
+export function toJstIsoDay(value: Date): string {
+  const parts = JST_DAY_FORMATTER.formatToParts(value);
+  return `${part(parts, 'year')}-${part(parts, 'month')}-${part(parts, 'day')}`;
 }

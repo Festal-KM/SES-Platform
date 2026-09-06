@@ -18,8 +18,9 @@ export default function EngineerDetailNotFound() {
       <p className="mb-4 text-sm text-slate-700" data-testid="engineer-not-found">
         {t('engineers.notFound')}
       </p>
+      {/* 🔴 T-05-09: 戻り先を `S-005`（一覧）にした（`ENGINEER_FORM_CANCEL_HREF` と共有）。 */}
       <a className="ses-secondary-link" href={ENGINEER_FORM_CANCEL_HREF}>
-        {t('engineers.breadcrumb.home')}
+        {t('engineers.breadcrumb.list')}
       </a>
     </main>
   );

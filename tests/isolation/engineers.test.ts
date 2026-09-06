@@ -7,6 +7,11 @@
 //        🔴 **リクエスト入力で他社を指定しても変更されない**（アプリ・RLS・トリガの三重）
 //   AC-3 ホスト所属の利用者は、他パートナーが登録したエンジニアに到達できない（境界外は 404）
 //
+// 🔴 T-05-09（`GET /api/engineers`。#15 / `S-005`）を追加した。中心は `F-004 AC-3` /
+//    `F-009 AC-3`「パートナーが実行した一覧に他パートナーのエンジニアが 1 件も含まれない
+//    （**件数にも現れない**）」であり、`total` が一覧と同じ `where` の `COUNT` であること
+//    （docs/05 §4.8）を、母集団の外に他社の行が実在する状態で確かめる。
+//
 // 🔴 検証は `withApiRoute` が組み立てた**実物の Route Handler** に `Request` を渡して行う
 //    （`partner-companies.test.ts` と同じ方針）。差し替えるのは `requireTenantCtx` の 1 点だけで、
 //    その戻り値も `buildTenantCtx` が実 DB から確定した ctx である。
@@ -161,6 +166,31 @@ async function getEngineer(ctx: AuthenticatedTenantCtx, id: string): Promise<Res
   return engineerRoute.GET(new Request(`https://app.test/api/engineers/${id}`), {
     params: Promise.resolve({ id }),
   });
+}
+
+/** `GET /api/engineers`（docs/05 §6.4 #15 / `S-005`）。T-05-09。 */
+async function getEngineers(ctx: AuthenticatedTenantCtx, query = ''): Promise<Response> {
+  requireTenantCtxMock.mockResolvedValue(ctx);
+  return engineersRoute.GET(new Request(`https://app.test/api/engineers${query}`));
+}
+
+/** `OwnEngineerView` の一覧（docs/05 §6.4 #15）。 */
+type ListBody = {
+  readonly items: readonly {
+    readonly id: string;
+    readonly displayName: string;
+    readonly ownership: 'HOST' | 'PARTNER';
+    readonly primarySkills: readonly { readonly skillId: string; readonly name: string }[];
+    readonly moreSkillCount: number;
+    readonly updatedOn: string;
+  }[];
+  readonly total: number;
+  readonly nextCursor: string | null;
+};
+
+async function listBodyOf(response: Response): Promise<ListBody> {
+  expect(response.status).toBe(200);
+  return (await response.json()) as ListBody;
 }
 
 async function createdIdOf(response: Response): Promise<string> {
@@ -817,5 +847,274 @@ describe('認可（docs/05 §6.4 #16 / F-004）', () => {
 
     expect(await auditRows('engineer.create')).toHaveLength(2);
     expect(await admin.engineer.count({ where: { displayName: { startsWith: MARKER } } })).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 🔴 T-05-09: `GET /api/engineers`（#15 / `S-005`）の一覧の骨格
+// ---------------------------------------------------------------------------
+//
+// 前提（`packages/db/seed/presets/isolation.ts`）: テナント 1 には
+//   ①ホスト所有のエンジニア 1 件（`hostEngineerId`）
+//   ②パートナー 1 社目が所有するエンジニア 1 件
+//   ③パートナー 2 社目が所有するエンジニア 1 件
+// が**実在する**。したがって「母集団の外に他社の行が実在する」状態で件数を検証できる
+// （0 件同士の比較では、境界が効いているのかデータが無いのか区別できない）。
+
+describe('🔴 F-004 AC-3 / F-009 AC-3: 一覧の母集団は境界適用後のみ（件数にも現れない）', () => {
+  it('🔴 パートナーの一覧に他社のエンジニアが 1 件も含まれない（`items` にも `total` にも）', async () => {
+    const ctx = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
+
+    const body = await listBodyOf(await getEngineers(ctx));
+    const ids = body.items.map((item) => item.id);
+
+    // 自社の 1 件だけ（seed）。
+    expect(ids).toEqual([PARTNER_1_1.engineerId]);
+    // 🔴 他パートナーの行も、ホスト所有の行も、母集団に無い。
+    expect(ids).not.toContain(PARTNER_1_2.engineerId);
+    expect(ids).not.toContain(TENANT_1.hostEngineerId);
+    // 🔴 **件数にも現れない**（`total` は一覧と同じ `where` の `COUNT`。docs/05 §4.8）。
+    expect(body.total).toBe(1);
+    expect(body.items).toHaveLength(body.total);
+  });
+
+  it('🔴 2 社目のパートナーからも 1 社目のエンジニアが見えない（相互参照 0 件）', async () => {
+    const ctx = await ctxOf(PARTNER_USER_2, 'PARTNER_ADMIN');
+
+    const body = await listBodyOf(await getEngineers(ctx));
+
+    expect(body.items.map((item) => item.id)).toEqual([PARTNER_1_2.engineerId]);
+    expect(body.total).toBe(1);
+  });
+
+  it('🔴 ホストの一覧にパートナー所有のエンジニアが 1 件も含まれない（`F-008 AC-3`）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+
+    const body = await listBodyOf(await getEngineers(ctx));
+    const ids = body.items.map((item) => item.id);
+
+    expect(ids).toEqual([TENANT_1.hostEngineerId]);
+    expect(ids).not.toContain(PARTNER_1_1.engineerId);
+    expect(ids).not.toContain(PARTNER_1_2.engineerId);
+    expect(body.total).toBe(1);
+    expect(body.items[0]?.ownership).toBe('HOST');
+  });
+
+  it('🔴 他社のエンジニアの実名が応答本文に 1 バイトも現れない', async () => {
+    const partnerName = (await engineerRow(PARTNER_1_2.engineerId)).displayName;
+    const ctx = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
+
+    const raw = await (await getEngineers(ctx)).text();
+
+    expect(raw).not.toContain(partnerName);
+  });
+
+  it('登録した行は自分の一覧にだけ増える（件数も 1 増える）', async () => {
+    const partnerCtx = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
+    const hostCtx = await ctxOf(HOST_1, 'SALES');
+
+    const created = await createdIdOf(
+      await postEngineer(partnerCtx, { displayName: `${MARKER}一覧` }),
+    );
+
+    const partnerBody = await listBodyOf(await getEngineers(partnerCtx));
+    const hostBody = await listBodyOf(await getEngineers(hostCtx));
+
+    expect(partnerBody.total).toBe(2);
+    expect(partnerBody.items.map((item) => item.id)).toContain(created);
+    // 🔴 ホストの母集団は 1 件のまま（パートナーが登録した行は件数にも現れない）。
+    expect(hostBody.total).toBe(1);
+    expect(hostBody.items.map((item) => item.id)).not.toContain(created);
+  });
+
+  it('🔴 `CLOSING` のテナントでも一覧は読める（`F-004 AC-8`。実行系だけを止める）', async () => {
+    await setLifecycle(TENANT_1.tenantId, 'CLOSING');
+    const ctx = await ctxOf(HOST_1, 'SALES');
+
+    expect((await getEngineers(ctx)).status).toBe(200);
+  });
+
+  it('🔴 `VIEWER` も一覧を読める（`F-012 AC-3` / `BR-31`。閲覧のみ可）', async () => {
+    const ctx = await ctxOf(HOST_1, 'VIEWER');
+
+    expect((await getEngineers(ctx)).status).toBe(200);
+  });
+});
+
+describe('🔴 一覧の応答（docs/05 §6.4 #15 / §4.8）', () => {
+  it('🔴 連絡先・生年月日・現所属会社名を返さない（画面が出さない PII を API が返さない）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+    const id = await createdIdOf(
+      await postEngineer(ctx, {
+        displayName: `${MARKER}応答`,
+        contactEmail: 'engineer@example.test',
+        contactPhone: '03-1234-5678',
+      }),
+    );
+
+    const raw = await (await getEngineers(ctx)).text();
+
+    expect(raw).toContain(id);
+    expect(raw).not.toContain('engineer@example.test');
+    expect(raw).not.toContain('03-1234-5678');
+    expect(raw).not.toContain('contactEmail');
+    expect(raw).not.toContain('birthDate');
+    expect(raw).not.toContain('affiliationLabel');
+  });
+
+  it('🔴 「他に N 件」「順位」に相当するフィールドを持たない（docs/05 §4.8 / `F-009 AC-2`）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+
+    const body = await listBodyOf(await getEngineers(ctx));
+
+    expect(Object.keys(body).sort()).toEqual(['items', 'nextCursor', 'total']);
+    expect(Object.keys(body.items[0] ?? {}).sort()).toEqual([
+      'availability',
+      'availableFrom',
+      'displayName',
+      'id',
+      'moreSkillCount',
+      'ownership',
+      'prefecture',
+      'primarySkills',
+      'remoteMode',
+      'unitPriceMax',
+      'unitPriceMin',
+      'updatedOn',
+    ]);
+  });
+
+  it('🔴 更新日は日単位に丸めて返す（`docs/04` `U-06`。時刻を返さない）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+
+    const body = await listBodyOf(await getEngineers(ctx));
+
+    expect(body.items[0]?.updatedOn).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it('主要スキルは上位 3 件 + 超過件数（`docs/04` §S-005）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+    // 🔴 seed の辞書から 4 件取り、経験年数をばらして登録する。
+    const dictionary = await admin.skill.findMany({ select: { id: true }, orderBy: { sortKey: 'asc' }, take: 4 });
+    expect(dictionary).toHaveLength(4);
+    const id = await createdIdOf(
+      await postEngineer(ctx, {
+        displayName: `${MARKER}スキル4件`,
+        skills: dictionary.map((skill, index) => ({
+          skillId: skill.id,
+          yearsOfExperience: 10 - index,
+          level: null,
+        })),
+      }),
+    );
+
+    const body = await listBodyOf(await getEngineers(ctx));
+    const item = body.items.find((row) => row.id === id);
+
+    expect(item?.primarySkills).toHaveLength(3);
+    expect(item?.moreSkillCount).toBe(1);
+    // 🔴 経験年数の降順（決定的。`F-009 AC-1`）。
+    expect(item?.primarySkills.map((skill) => skill.skillId)).toEqual(
+      dictionary.slice(0, 3).map((skill) => skill.id),
+    );
+  });
+
+  it('🔴 一覧の閲覧は `engineer.view` に記録されない（記録は詳細が持つ。`BR-27` / docs/05 §16.1）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+
+    expect((await getEngineers(ctx)).status).toBe(200);
+
+    expect(await auditRows('engineer.view')).toHaveLength(0);
+  });
+});
+
+describe('🔴 ページングと決定的順序（docs/05 §6.1 / §4.8 / `F-009 AC-1`）', () => {
+  /** seed の 1 件 + ここで作る 4 件 = ホストの母集団 5 件。 */
+  const EXTRA = 4;
+
+  beforeEach(async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+    for (let index = 0; index < EXTRA; index += 1) {
+      await createdIdOf(await postEngineer(ctx, { displayName: `${MARKER}ページ${index}` }));
+    }
+  });
+
+  it('`limit` で区切り、カーソルで続きを読める（重複も欠落もしない）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+
+    const first = await listBodyOf(await getEngineers(ctx, '?limit=2'));
+    expect(first.items).toHaveLength(2);
+    expect(first.nextCursor).not.toBeNull();
+    // 🔴 `total` はページの件数ではなく母集団の件数である（同じ `where` の `COUNT`）。
+    expect(first.total).toBe(EXTRA + 1);
+
+    const seen = new Set(first.items.map((item) => item.id));
+    let cursor = first.nextCursor;
+    let guard = 0;
+    while (cursor !== null && guard < 10) {
+      const page = await listBodyOf(await getEngineers(ctx, `?limit=2&cursor=${cursor}`));
+      for (const item of page.items) {
+        expect(seen.has(item.id), `${item.id} が 2 度現れた`).toBe(false);
+        seen.add(item.id);
+      }
+      expect(page.total).toBe(EXTRA + 1);
+      cursor = page.nextCursor;
+      guard += 1;
+    }
+
+    expect(seen.size).toBe(EXTRA + 1);
+  });
+
+  it('🔴 同じ条件を 10 回実行しても並び順が変わらない（`F-009 AC-1`）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+
+    const first = (await listBodyOf(await getEngineers(ctx))).items.map((item) => item.id);
+    for (let attempt = 0; attempt < 9; attempt += 1) {
+      const again = (await listBodyOf(await getEngineers(ctx))).items.map((item) => item.id);
+      expect(again).toEqual(first);
+    }
+  });
+
+  it('更新した行が先頭に来る（既定順序は更新日の降順）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+    const oldest = (await listBodyOf(await getEngineers(ctx))).items.at(-1);
+    expect(oldest).toBeDefined();
+
+    expect(
+      (await patchEngineer(ctx, oldest?.id ?? '', { availability: 'STANDBY' })).status,
+    ).toBe(200);
+
+    const after = await listBodyOf(await getEngineers(ctx));
+    expect(after.items[0]?.id).toBe(oldest?.id);
+    // 🔴 並びが変わっても母集団の件数は変わらない。
+    expect(after.total).toBe(EXTRA + 1);
+  });
+
+  it('🔴 UUID でないカーソルは 400（Prisma の `cursor` まで届かせない）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+
+    const response = await getEngineers(ctx, '?cursor=not-a-uuid');
+
+    expect(response.status).toBe(400);
+    expect(((await response.json()) as ErrorBody).error.code).toBe('VALIDATION');
+  });
+
+  it('🔴 `limit` の上限超過は黙って丸めず 400（docs/05 §6.1）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+
+    expect((await getEngineers(ctx, '?limit=201')).status).toBe(400);
+  });
+
+  it('境界外の ID をカーソルに指定しても他社の行に到達できない', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+
+    // 🔴 形は妥当だがホストの母集団に無い ID（他パートナー所有）。
+    const response = await getEngineers(ctx, `?cursor=${PARTNER_1_1.engineerId}`);
+
+    // Prisma は母集団の中でカーソル行を探すため、見つからなければ 0 件になる
+    //（他社の行を起点にページを開けない）。**500 にはしない。**
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as ListBody;
+    expect(body.items.map((item) => item.id)).not.toContain(PARTNER_1_1.engineerId);
   });
 });

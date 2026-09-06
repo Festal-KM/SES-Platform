@@ -125,14 +125,30 @@ export type EngineerViewMeta = {
  * Prisma の `Decimal` を数値にする。
  * 🔴 `@prisma/client` を import しない（ESLint が禁じる。`CLAUDE.md` §3.1）ため、
  *    `toString()` だけを要求する構造的な型で受ける。
+ * 🔴 T-05-09 で `export` にした（一覧 `list.ts` と同じ変換を通す。2 本あると
+ *    詳細と一覧で単価の見え方がずれる）。
  */
-function decimalToNumber(value: { toString(): string } | null): number | null {
+export function decimalToNumber(value: { toString(): string } | null): number | null {
   return value === null ? null : Number(value.toString());
+}
+
+/**
+ * 🔴 **`@db.Date` の列専用**の変換（`available_from` など、そもそも時刻を持たない列）。
+ *    Prisma は `date` 列を UTC 深夜の `Date` として読み出すため、**UTC で切り出すのが正確**であり、
+ *    TZ 変換を掛けると日付が 1 日ずれる。
+ *
+ * 🔴 **タイムスタンプ（`updated_at` など）には使わない。** 「日単位に丸めた更新日」
+ *    （`S-005` の `updatedOn`）は **JST の暦日**であり、
+ *    `lib/format/datetime.ts` の `toJstIsoDay` が持つ（T-05-09 Iteration 2 の訂正）。
+ *    **date-only 列とタイムスタンプでは「丸め」の意味が別物である。**
+ */
+export function toIsoDay(value: Date): string {
+  return value.toISOString().slice(0, 10);
 }
 
 /** `@db.Date` の値を `YYYY-MM-DD` にする（UTC で切り出す。時刻を持たない列であるため）。 */
 function toDateOnlyString(value: Date | null): string | null {
-  return value === null ? null : (value.toISOString().slice(0, 10) as string);
+  return value === null ? null : toIsoDay(value);
 }
 
 /** `YYYY-MM-DD` を `@db.Date` に渡す値にする。 */
@@ -439,11 +455,21 @@ async function readEngineerSkills(
 /**
  * 🔴 **閲覧を `AuditLog` に記録する唯一の経路**（`BR-27` / `F-008 AC-4`）。
  *
- * 🔴 T-05-06 で `export` にした。呼び出してよいのは「**エンジニアの氏名を画面に出す読み取り**」
- *    だけであり、現時点では本ファイルの 2 経路と `lib/skill-sheets/service.ts` の
- *    `readSkillSheetVersions`（`S-008`）である。**記録を伴わない氏名の読み取りを増やさない**
- *    ために、新しい呼び出し元を足すときは `EngineerViewVia` に経路を足すこと
- *    （`via` を使い回すと、どの画面から PII に到達したかが追えなくなる）。
+ * 🔴 T-05-06 で `export` にした。呼び出してよいのは「**1 人のエンジニアの経歴・連絡先に
+ *    到達する読み取り**」だけであり、現時点では本ファイルの 2 経路と
+ *    `lib/skill-sheets/service.ts` の `readSkillSheetVersions`（`S-008`）である。
+ *    **記録を伴わないその種の読み取りを増やさない**ために、新しい呼び出し元を足すときは
+ *    `EngineerViewVia` に経路を足すこと（`via` を使い回すと、どの画面から PII に到達したかが
+ *    追えなくなる）。
+ *
+ * 🔴 **線引き（T-05-09 で明示した）**: 記録の対象は `BR-27` / `F-008 AC-4` が定める
+ *    「エンジニア**詳細**の閲覧」である。**台帳の一覧（`S-005` / `#15`）は対象外**であり、
+ *    `docs/04` §S-005 も記録を**行クリック（→ `S-006`）**に置いている（§16.1 の
+ *    `engineer.view` のフック箇所も `#17` である）。一覧の描画ごとに 50 行を記録すると、
+ *    「誰の経歴を、誰が、いつ見たか」が台帳を開いた記録で埋まって読めなくなり（`S-041`）、
+ *    1 回の検索の書き込みが 50 行増えて `F-009 AC-4`（p95 1 秒）も満たせない。
+ *    ⚠️ **この線引きを変えるのは人間の判断事項**である（`CLAUDE.md` §8.6 /
+ *    docs/05 §6.4「#15 の実装の決着（T-05-09）」）。
  *
  * 🔴 記録は**業務トランザクションの内側**（`writeAuditLog`）で書く。書けなければトランザクション
  *    ごと巻き戻り、**内容は返らない**（`F-012 AC-2` と同じ規律）。`withApiRoute` の `audit`

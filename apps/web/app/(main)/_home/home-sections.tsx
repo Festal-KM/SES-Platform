@@ -35,18 +35,37 @@ export function HostHomeSections({
       <CardHeader>
         <CardTitle>{t('home.host.empty.title')}</CardTitle>
       </CardHeader>
-      {canRegisterEngineer ? (
-        <CardContent>
-          <Link
-            className="ses-secondary-link"
-            href="/engineers/new"
-            data-testid="home-host-register-engineer"
-          >
-            {t('home.host.empty.registerEngineer')}
-          </Link>
-        </CardContent>
-      ) : null}
+      <CardContent>
+        <div className="flex flex-wrap gap-4">
+          {canRegisterEngineer ? (
+            <Link
+              className="ses-secondary-link"
+              href="/engineers/new"
+              data-testid="home-host-register-engineer"
+            >
+              {t('home.host.empty.registerEngineer')}
+            </Link>
+          ) : null}
+          {/* 🔴 T-05-09: `S-005`（人材台帳）への導線（docs/04 §S-005 関連画面「← `S-003`」）。
+              ロールで隠さない —— `VIEWER` も取引先も一覧に到達してよく、見えるものは
+              `engineers` の RLS（C3）が決める。**登録できないことと、見られないことは別である。** */}
+          <EngineerLedgerLink testId="home-host-engineer-ledger" />
+        </div>
+      </CardContent>
     </Card>
+  );
+}
+
+/**
+ * 🔴 `S-005`（人材台帳）への導線。`S-003` / `S-004` の**両方**に同じ形で置く
+ *    （docs/04 §S-004 関連画面は `S-005` を含み、§S-005 関連画面は `← S-003` を含む）。
+ *    取引先は 1 日 4〜5 時間の主利用者であり、ホームの「ついで」にしない（`CLAUDE.md` §1.2）。
+ */
+function EngineerLedgerLink({ testId }: { readonly testId: string }) {
+  return (
+    <Link className="ses-secondary-link" href="/engineers" data-testid={testId}>
+      {t('engineers.list.open')}
+    </Link>
   );
 }
 
@@ -131,6 +150,11 @@ export function PartnerHomeSections({ noticeText }: { readonly noticeText: strin
         <CardHeader>
           <CardTitle>{t('home.partner.empty.title')}</CardTitle>
         </CardHeader>
+        <CardContent>
+          {/* 🔴 T-05-09: docs/04 §S-004「初回空 → …＋**自社台帳の登録導線**（先に台帳を
+              整えておくと提案が早い）」/ 関連画面「→ `S-005`」。 */}
+          <EngineerLedgerLink testId="home-partner-engineer-ledger" />
+        </CardContent>
       </Card>
       <Card className="border-slate-200 bg-slate-50">
         <CardContent className="pt-4">

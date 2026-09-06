@@ -30,6 +30,7 @@ import { z } from 'zod';
 import { ENGINEER_AVAILABILITIES, REMOTE_MODES } from '@ses/db';
 import { PREFECTURE_CODES } from '@ses/domain';
 import { assertNoIsolationKeys, type AssertNoIsolationKeys } from '../api/isolation-keys';
+import { idCursorPageQuerySchema } from '../api/pagination';
 
 /** 氏名（社内表示用）。DB は TEXT。過大な入力を境界で止める。 */
 const DISPLAY_NAME_MAX_LENGTH = 100;
@@ -150,6 +151,30 @@ export type UpdateEngineerBody = z.infer<typeof updateEngineerBodySchema>;
 export type UpdateEngineerBodyIsolationGuard = AssertNoIsolationKeys<UpdateEngineerBody>;
 
 assertNoIsolationKeys(Object.keys(updateEngineerBodySchema.shape), 'updateEngineerBodySchema');
+
+/**
+ * `GET /api/engineers`（#15。`F-009` / `S-005`）の query。T-05-09（骨格）。
+ *
+ * 🔴 **本タスクの射程はページングと既定順序までである**（`docs/sprints/SP-05` T-05-09）。
+ *    docs/05 §6.4 #15 が列挙する検索条件
+ *    （`skills[]` / `yearsMin` / `priceMin` / `priceMax` / `availableBy` / `prefecture` /
+ *     `remote` / `ownership` / `availability` / `q` / `onlyInTime` / `onlyCommutable`）は
+ *    **SP-06 の T-06-04 が足す**。
+ * 🔴 ここに**受け取って捨てるキーを書かない。** 宣言だけしておくと、指定しても効かない条件が
+ *    「効いているように見える」状態になり、利用者からは絞り込みの不具合と区別できない
+ *    （`skill_sheets.note` を「受け取って捨てる」実装にしなかったのと同じ判断。docs/05 §6.4 #19）。
+ *    Zod の既定（strip）により、未知のキーは 400 にならず**ハンドラに届かないだけ**である
+ *    —— 画面側は「検索は後続のリリース」と明示する（`S-005` の注記）。
+ * 🔴 `cursor` は**行の ID**（`uuid(7)`）である。`idCursorPageQuerySchema` を使うのは、
+ *    UUID でない値を Prisma の `cursor: { id }` に渡すと 500 になるため（`pagination.ts` の注記）。
+ */
+export const engineerListQuerySchema = idCursorPageQuerySchema;
+
+export type EngineerListQuery = z.infer<typeof engineerListQuerySchema>;
+
+export type EngineerListQueryIsolationGuard = AssertNoIsolationKeys<EngineerListQuery>;
+
+assertNoIsolationKeys(Object.keys(engineerListQuerySchema.shape), 'engineerListQuerySchema');
 
 /**
  * `PATCH /api/engineers/{id}` の path params。

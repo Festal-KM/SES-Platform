@@ -36,6 +36,31 @@ export type CursorPageQueryIsolationGuard = AssertNoIsolationKeys<CursorPageQuer
 assertNoIsolationKeys(Object.keys(cursorPageQuerySchema.shape), 'cursorPageQuerySchema');
 
 /**
+ * 🔴 **カーソルが行の ID（`uuid(7)`）である一覧のためのスキーマ**（T-05-09）。
+ *
+ * `cursorPageQuerySchema` は「不透明な文字列」までしか見ない。ところが実装では
+ * `cursor` をそのまま Prisma の `cursor: { id }` に渡すため、**UUID でない値は
+ * Postgres の `uuid` キャストで落ち、境界検証を通り抜けたまま 500 になる**
+ * （`parseAdminTenantListQuery` が `isTenantIdLike` を足したのと同じ事故。
+ * `apps/web/lib/admin-tenants/schemas.ts` 冒頭の e2e-tester 指摘）。
+ *
+ * 🔴 管理平面は `withApiRoute` を通らないため関数で検証したが、主平面の一覧は
+ *    **スキーマ側で弾く**。`withApiRoute` の境界検証がそのまま **400** にするので、
+ *    ルートごとに検証コードを書き写さずに済む（書き写せば片方だけ緩む）。
+ * 🔴 形が違えば 400 であり、**「見えない ID を指した」ことは 404 と区別しない**
+ *    （形の妥当な ID は母集団に無ければ 0 件のページになる。docs/05 §4.8）。
+ */
+export const idCursorPageQuerySchema = cursorPageQuerySchema.extend({
+  cursor: z.uuid().optional(),
+});
+
+export type IdCursorPageQuery = z.infer<typeof idCursorPageQuerySchema>;
+
+export type IdCursorPageQueryIsolationGuard = AssertNoIsolationKeys<IdCursorPageQuery>;
+
+assertNoIsolationKeys(Object.keys(idCursorPageQuerySchema.shape), 'idCursorPageQuerySchema');
+
+/**
  * 一覧応答の共通形。
  * 🔴 `total` は**任意**である。持つ場合は必ず一覧と同じ `where` の `COUNT` にする
  *    （docs/05 §4.8）。持たない一覧に「概数」を足さない。

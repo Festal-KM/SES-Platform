@@ -7,6 +7,7 @@
 // 🔴 **閲覧を `AuditLog` に記録する**（`BR-27` / `F-008 AC-4`）。氏名・連絡先という PII を
 //    画面に出す以上、記録できないなら**内容を返さない**（記録は業務トランザクションの内側）。
 // 🔴 `VIEWER` は到達できない（docs/04 §S-007 権限差分）。
+import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { t } from '@ses/i18n';
@@ -58,9 +59,13 @@ export default async function EditEngineerPage({
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-8">
+      {/* 🔴 T-05-09: 「人材」を `S-005`（一覧）へのリンクにした（戻り経路を文字だけにしない）。 */}
       <p className="mb-1 text-sm text-slate-500">
-        {t('engineers.breadcrumb.home')} / {t('engineers.breadcrumb.list')} /{' '}
-        {t('engineers.breadcrumb.edit')}
+        {t('engineers.breadcrumb.home')} /{' '}
+        <Link className="underline" href="/engineers">
+          {t('engineers.breadcrumb.list')}
+        </Link>{' '}
+        / {t('engineers.breadcrumb.edit')}
       </p>
       <h1 className="mb-6 text-xl font-bold text-slate-900">{t('engineers.edit.title')}</h1>
       <EngineerForm

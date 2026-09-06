@@ -25,6 +25,15 @@
 //    ③・④に別テストを足して「他テナントのホスト所有 ID」と「同一テナント内の他パートナー所有 ID」の
 //    両方が同じ 404 に畳まれることを見る。
 //
+// 🔴 T-05-09: `docs/05` §17.3 が例示した `GET /api/engineers`（一覧。`S-005` / `F-009`）を
+//    `MAIN_PLANE_PAGES` / `MAIN_PLANE_READ_APIS` に足した（T-05-02 のときと同じ要領）。
+//    一覧はロールで到達を止めない（`app/(main)/engineers/page.tsx` 冒頭）ため ID 不要であり、
+//    `hostOwner(1)` セッションで走査すれば「ホスト文脈の母集団（ホスト所有のみ）」がそのまま
+//    ②③の境界対照になる。④（パートナー）には別途、一覧が**自社所有のみ**であり、
+//    ホスト所有・他パートナー所有の**氏名が生文字列に現れない**ことを見るケースを足した
+//    （`tests/isolation/engineers.test.ts` の「他社のエンジニアの実名が応答本文に 1 バイトも
+//    現れない」と同じ観点。値は各所有者本人の正規の読み取り経路から導く。ベタ書きしない）。
+//
 // 🔴 直列（`workers: 1`。`playwright.config.ts`）。RLS の設定漏れは他テストの副作用で
 //    偽陽性・偽陰性になる。
 import { expect, test, type Browser } from '@playwright/test';
@@ -46,33 +55,40 @@ import {
   openTenantSession,
   partnerSales,
   type Session,
+  type TenantPersona,
 } from './support/sessions';
 
 /**
- * 主平面の画面（`S-003` / `S-041` / `S-035` / `S-006` / `S-007`）。
+ * 主平面の画面（`S-003` / `S-041` / `S-035` / `S-006` / `S-007` / `S-005`）。
  * 🔴 ID を取る 2 画面（詳細・編集）は **テナント A のホスト所有エンジニア**
  *    （`tenantIds(1).hostEngineerId`）で固定する —— この配列は `hostOwner(1)` のセッションで
  *    しか走査しない（②）ため、対照に使えるのは「ホスト文脈から見える行」だけである
  *    （C3 OWNER_SCOPED。上の 🔴 参照）。
+ * 🔴 T-05-09: `/engineers`（一覧。`S-005`）を足した。一覧はロールで到達を止めない
+ *    （ID 不要）ため、他の 2 画面と違って固定 ID を要らない。
  */
 const MAIN_PLANE_PAGES = [
   '/',
   '/audit-logs',
   '/settings/organization',
+  '/engineers',
   `/engineers/${tenantIds(1).hostEngineerId}`,
   '/engineers/new',
   `/engineers/${tenantIds(1).hostEngineerId}/edit`,
 ] as const;
 
 /**
- * 主平面の読み取り API（docs/05 §6.3 #8 / #9 / #10 / #64 / #17）。
+ * 主平面の読み取り API（docs/05 §6.3 #8 / #9 / #10 / #64 / #17 / #15）。
  * 🔴 `GET /api/engineers/{id}` も同じ理由で **ホスト所有エンジニア**の ID で固定する。
+ * 🔴 T-05-09: `GET /api/engineers`（一覧。#15）を足した。既存の②③ループに載せることで、
+ *    「他テナントの値が 0 件」を一覧の `items` / `total` の両方で確かめる。
  */
 const MAIN_PLANE_READ_APIS = [
   '/api/me',
   '/api/home',
   '/api/settings/organization',
   `/api/audit-logs?${auditLogPeriodQuery()}`,
+  '/api/engineers',
   `/api/engineers/${tenantIds(1).hostEngineerId}`,
 ] as const;
 
@@ -470,6 +486,74 @@ test.describe('④ パートナー A1 で、パートナー A2 のものが 1 �
         const api = await apiRequest(session.page, `/api/engineers/${foreignId}`);
         expect(api.status).toBe(404);
       }
+
+      session.outbound.assertNone();
+    } finally {
+      await session.close();
+    }
+  });
+
+  test('🔴 T-05-09: `/engineers` 一覧は自社所有のみで、他社/ホスト所有の氏名が生文字列に現れない（S-005 / F-009 AC-3）', async ({
+    browser,
+  }: {
+    browser: Browser;
+  }) => {
+    const ownId = partnerIds(1, 1).engineerId;
+    const foreignHostId = tenantIds(1).hostEngineerId;
+    const foreignPartnerId = partnerIds(1, 2).engineerId;
+
+    /**
+     * 🔴 期待する氏名はベタ書きしない（合成氏名は疑似乱数で選ばれ、シード側のコード順序に
+     *    依存するため）。各所有者**本人**のセッションで `GET /api/engineers`（自分の一覧）を
+     *    通し、実際に投入された値を読む —— `tests/isolation/engineers.test.ts` の
+     *    `admin.engineer.findUnique`（DB への直結読み取り）を、E2E では「本人が正規に
+     *    到達できる読み取り経路」に置き換えたものである。
+     */
+    async function ownDisplayName(persona: TenantPersona, engineerId: string): Promise<string> {
+      const owner = await openTenantSession(browser, persona);
+      try {
+        const body = parseJson(await apiRequest(owner.page, '/api/engineers')) as {
+          items: ReadonlyArray<{ id: string; displayName: string }>;
+        };
+        const item = body.items.find((row) => row.id === engineerId);
+        if (item === undefined) {
+          throw new Error(`${persona.label}: 自社のエンジニア（${engineerId}）が一覧にありません。`);
+        }
+        return item.displayName;
+      } finally {
+        await owner.close();
+      }
+    }
+
+    const foreignHostName = await ownDisplayName(hostOwner(1), foreignHostId);
+    const foreignPartnerName = await ownDisplayName(partnerSales(1, 2), foreignPartnerId);
+
+    const session = await openTenantSession(browser, partnerSales(1, 1));
+    try {
+      const listBody = parseJson(await apiRequest(session.page, '/api/engineers')) as {
+        items: ReadonlyArray<{ id: string; displayName: string }>;
+        total: number;
+      };
+      // 🔴 母集団は自社所有のみ（`F-009 AC-3`）。件数（`total`）にも他社の行が現れない。
+      expect(listBody.items.map((item) => item.id)).toEqual([ownId]);
+      expect(listBody.total).toBe(1);
+      const ownName = listBody.items[0]?.displayName;
+      const names = listBody.items.map((item) => item.displayName);
+
+      // 🔴 合成氏名は 8 種を使い回す（`ISOLATION_SEED_PERSON_NAMES`）。自社の氏名と
+      //    偶然一致した場合はその文字列だけでは判定できない —— その場合の担保は上の
+      //    ID ベースの母集団検査（`toEqual([ownId])`）である。
+      if (foreignHostName !== ownName) expect(names).not.toContain(foreignHostName);
+      if (foreignPartnerName !== ownName) expect(names).not.toContain(foreignPartnerName);
+
+      // 画面（サーバコンポーネント。API と**同じ** `listEngineers` を通る）でも同じであることを見る。
+      const html = await pageContent(session, '/engineers');
+      expect(html).toContain(`engineer-list-row-${ownId}`);
+      expect(html).not.toContain(`engineer-list-row-${foreignHostId}`);
+      expect(html).not.toContain(`engineer-list-row-${foreignPartnerId}`);
+      if (foreignHostName !== ownName) expect(html).not.toContain(foreignHostName);
+      if (foreignPartnerName !== ownName) expect(html).not.toContain(foreignPartnerName);
+      expectNoHiddenCountHints('パートナーの /engineers', html);
 
       session.outbound.assertNone();
     } finally {
