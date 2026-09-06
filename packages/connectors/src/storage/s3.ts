@@ -10,7 +10,7 @@
 //    漏れないためでもある（`CLAUDE.md` §3.4）。
 
 import { isTenantScopedObjectKey } from '@ses/domain';
-import type { ObjectStore } from '../interfaces.js';
+import type { ObjectHead, ObjectStore } from '../interfaces.js';
 import type { PresignedUrl } from '../types.js';
 import type { S3Api } from './api.js';
 
@@ -111,13 +111,17 @@ export class S3ObjectStore implements ObjectStore {
     await this.options.api.deleteObject({ Bucket: this.options.bucket, Key: key });
   }
 
-  async head(key: string): Promise<{ byteSize: number; versionId: string } | null> {
+  async head(key: string): Promise<ObjectHead | null> {
     this.assertKey(key);
     this.calls += 1;
     const found = await this.options.api.headObject({ Bucket: this.options.bucket, Key: key });
     return found === null
       ? null
-      : { byteSize: found.ContentLength, versionId: found.VersionId };
+      : {
+          byteSize: found.ContentLength,
+          versionId: found.VersionId,
+          contentType: found.ContentType,
+        };
   }
 
   callCount(): number {

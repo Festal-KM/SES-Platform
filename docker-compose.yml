@@ -1,7 +1,8 @@
 # docker-compose.yml — ローカル開発コンテナ（T-01-02 / CLAUDE.md §2 / §11）
 #
 # APP_ENV=development の既定接続先。5 サービス: PostgreSQL / Redis / MinIO / MailHog / ClamAV。
-# 起動: docker compose up -d
+# 加えて 1 回だけ走る初期化コンテナ minio-init（バケット作成 + バージョニング有効化。T-05-06）。
+# 起動: docker compose up -d（🔴 `--wait` は使わない。minio-init は終了するコンテナであり待てない）
 # 疎通確認: tests/smoke/docker-services.test.ts（pnpm test:smoke）
 #
 # 🔴 本ファイルが定義するのは development 専用の最小構成である。
@@ -81,6 +82,39 @@ services:
       timeout: 5s
       retries: 20
       start_period: 10s
+
+  # 🔴 T-05-06: バケットの作成と**バージョニングの有効化**（1 回だけ走って終了する初期化）。
+  #
+  # 🔴 なぜバージョニングが必須か: `ObjectStore.head()` は `VersionId` が空なら**例外**にする
+  #    （`packages/connectors/src/storage/aws-sdk-s3.ts` の `toHeadResponse`）。理由は
+  #    docs/05 §14.1 が「バージョニング有効」を前提にしており、`FileScanResult` の重複排除キー
+  #    （`UNIQUE(object_key, object_version_id)`）が版 ID を要求するためである。バージョニングの
+  #    無いバケットでは `VersionId` が返らず、**アップロードの確定（#19）が必ず失敗する**。
+  #    「未設定なら空文字で代替」は、全オブジェクトの重複排除キーが衝突する壊れ方になる
+  #    （`CLAUDE.md` §11.1 の「静かに degrade させない」と同じ判断）。
+  #
+  # ⚠️ このサービスは終了する（`restart: "no"`）。`docker compose up -d --wait` は
+  #    「終了したコンテナ」を待てないため、起動は `docker compose up -d` を使うこと。
+  minio-init:
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    container_name: ses-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    restart: 'no'
+    environment:
+      S3_BUCKET: ${S3_BUCKET:-ses-platform-dev}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-ses_dev_minio}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-ses_dev_minio_secret}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        mc alias set local http://minio:9000 "$${S3_ACCESS_KEY_ID}" "$${S3_SECRET_ACCESS_KEY}"
+        mc mb --ignore-existing "local/$${S3_BUCKET}"
+        mc version enable "local/$${S3_BUCKET}"
+        mc version info "local/$${S3_BUCKET}"
 
   mailhog:
     image: mailhog/mailhog:v1.0.1

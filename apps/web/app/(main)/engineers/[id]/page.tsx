@@ -187,11 +187,21 @@ export default async function EngineerDetailPage({
 
         <div className="flex flex-col gap-4">
           {/* 🔴 未実装のセクションを黙って消さない（docs/04 §S-006 セクション 3 / 4）。
-              スキルシートの取込・閲覧・DL は T-05-06 / T-05-07、提案履歴と凍結差分は SP-09。 */}
+              提案履歴と凍結差分は SP-09。 */}
+          {/* 🔴 T-05-06: 版の管理は `S-008`（docs/04 §S-006 関連画面「→ `S-008`」）。
+              ⚠️ 版の一覧をこの画面に**再掲しない** —— 出すと「どちらが正か」が分かれ、
+              スキャン状態の見え方が 2 実装になる（`F-011 AC-2` の担保が割れる）。 */}
           <DetailSection id="skill-sheets" title={t('engineers.detail.section.skillSheets')}>
-            <p className="text-sm text-slate-600" data-testid="engineer-detail-skill-sheets-coming-soon">
-              {t('engineers.detail.skillSheets.comingSoon')}
+            <p className="mb-3 text-sm text-slate-600" data-testid="engineer-detail-skill-sheets-lead">
+              {t('engineers.detail.skillSheets.lead')}
             </p>
+            <Link
+              className="ses-secondary-link"
+              href={`/engineers/${view.id}/skill-sheets`}
+              data-testid="engineer-detail-skill-sheets-link"
+            >
+              {t('engineers.detail.skillSheets.link')}
+            </Link>
           </DetailSection>
 
           <DetailSection id="proposals" title={t('engineers.detail.section.proposals')}>

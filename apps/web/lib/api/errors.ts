@@ -354,6 +354,83 @@ export class GlobalSkillDictionaryReadOnlyError extends ForbiddenError {
 }
 
 /**
+ * 🔴 アップロードの確定（#19）で、申告された `objectKey` に**実体が無かった**（409）。T-05-06。
+ *
+ * 🔴 400 にしない理由: 入力の形は正しい（我々が #18 で発行したキーの形をしている）。起きたのは
+ *    「置いたと申告されたが S3 に無い」という**状態の食い違い**であり、利用者の次の行動は
+ *    「もう一度アップロードする」である（入力を直すことではない）。
+ * 🔴 **実体が無いまま行を作らない。** 作ると、台帳に「開けない版」が並び、`UsageCounter` にも
+ *    存在しないバイト数が載る（docs/05 §14.3 の突き合わせが恒久的にずれる）。
+ */
+export class SkillSheetObjectMissingError extends ConflictError {
+  override readonly code = 'SKILL_SHEET_OBJECT_MISSING';
+  override readonly userMessageKey: MessageKey = 'error.skillSheet.objectMissing';
+
+  constructor() {
+    super('アップロードされたファイルが見つかりません。');
+    this.name = 'SkillSheetObjectMissingError';
+  }
+}
+
+/**
+ * 🔴 `CLEAN` でない版に対して、最新版への切替を要求した（409。`F-011` 処理③ / `BR-26`）。T-05-06。
+ *
+ * 🔴 画面（`S-008`）には**導線が無い**（`F-011 AC-1`）。この型が返るのは API を直接呼んだ場合か、
+ *    画面を開いたままスキャン結果が動いた場合である。**「無視して切り替える」経路は無い。**
+ * 🔴 403 にしない: ロールの問題ではない（`OWNER` でも同じ）。対象の状態の問題である。
+ */
+export class SkillSheetNotCleanError extends ConflictError {
+  override readonly code = 'SKILL_SHEET_NOT_CLEAN';
+  override readonly userMessageKey: MessageKey = 'error.skillSheet.notClean';
+
+  constructor() {
+    super('この版は検査に合格していないため、最新版にできません。');
+    this.name = 'SkillSheetNotCleanError';
+  }
+}
+
+/**
+ * 🔴 提案に凍結添付された版を削除しようとした（409）。T-05-06（Iteration 2）。
+ *
+ * 🔴 **これは「順序の事故」を防ぐための事前チェックである。** 版の削除は
+ *    ①S3 の実体 → ②`UsageCounter` の減算 → ③行 + 監査 の順で進む（`docs/03` §4.12）。
+ *    `engineer_snapshots.skill_sheet_id` の FK（`ON DELETE RESTRICT`）が守るのは**③の行だけ**で
+ *    あり、①が先に走る以上、**FK が発火したときには実体がすでに消えている**。
+ *    `EngineerSnapshot` は越境経路 2（提案時点の凍結情報）の証跡であり、
+ *    復元できない形で失うと「誰に何を提案したか」を後から説明できなくなる
+ *    （`CLAUDE.md` §7 の説明責任）。したがって**①より前**に止める。
+ * 🔴 FK は最終防衛線として残る（事前チェックと③の間に凍結が入る競合をカバーする）。
+ *    **どちらか一方にしない。**
+ */
+export class SkillSheetReferencedError extends ConflictError {
+  override readonly code = 'SKILL_SHEET_REFERENCED';
+  override readonly userMessageKey: MessageKey = 'error.skillSheet.referenced';
+
+  constructor() {
+    super('この版は提案に添付されているため削除できません。');
+    this.name = 'SkillSheetReferencedError';
+  }
+}
+
+/**
+ * 🔴 検査中（`SCANNING`）の版に対して削除を要求した（409）。T-05-06。
+ *
+ * 検査中のオブジェクトを消すと、後から届くスキャン結果の適用が `SCAN_TARGET_NOT_FOUND` になり
+ * （docs/05 §9.6）、**本物の取りこぼしと区別できない雑音**が `A-005` に流れ込む。
+ * 待てば必ず確定する（`scan.poll` が滞留を拾う）ため、`retryable` は `true` にする。
+ */
+export class SkillSheetScanInProgressError extends ConflictError {
+  override readonly code = 'SKILL_SHEET_SCAN_IN_PROGRESS';
+  override readonly userMessageKey: MessageKey = 'error.skillSheet.scanInProgress';
+  override readonly retryable = true;
+
+  constructor() {
+    super('検査中の版は操作できません。');
+    this.name = 'SkillSheetScanInProgressError';
+  }
+}
+
+/**
  * 🔴 招待を受諾できない（docs/05 §6.3 #7。`acceptedAt` の CAS が 0 件）。
  *
  * 受諾済み / 取消済み / 期限切れ / トークン不一致 / 同時受諾に負けた、を**区別しない**。

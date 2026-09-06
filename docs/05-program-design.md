@@ -431,6 +431,9 @@ model SkillSheet {
   scanStatus    String   @default("SCANNING")               // ScanStatus（§3.4 冒頭参照。CHECK）
   scanUpdatedAt DateTime? @db.Timestamptz(3)
   isLatest      Boolean  @default(false)                   // 🔴 CLEAN のみ true になれる
+  note          String?                                    // 🔴 T-05-06: 版のメモ（docs/02 F-011 の入力 /
+                                                           //    #19 の `note?` / S-008）。migration 20260909000000。
+                                                           //    🔴 自由入力なので app_platform に GRANT しない（§5.5）
   uploadedBy    String   @db.Uuid
   uploadedAt    DateTime @default(now()) @db.Timestamptz(3)
   purgedAt      DateTime? @db.Timestamptz(3)
@@ -1813,7 +1816,7 @@ GRANT SELECT (id, tenant_id, owner_partner_company_id, availability, available_f
 |---|---|
 | `engineers` | `display_name` `birth_date` `contact_email` `contact_phone` `affiliation_label` `city` `preference_note` |
 | `engineer_snapshots` | `display_name` `affiliation_label` `skills` `careers` |
-| `skill_sheets` | `object_key` |
+| `skill_sheets` | `object_key` `note`（🔴 **版のメモは利用者の自由入力**であり、氏名・案件名・単価が書かれうる。T-05-06） |
 | `skill_sheet_extractions` | `payload` |
 | `messages` | `body` `attachment_key` |
 | `proposals` | `subject` `body` `draft_body` `recipient_email` |
@@ -2047,7 +2050,9 @@ requireEsignConnection(ctx);                           // 🔴 §8.4。未接続
 | 16 | `POST /api/engineers` / `PATCH /api/engineers/{id}` | `F-008` / `S-007` | `EngineerInput`（🔴 `ownerPartnerCompanyId` を**含まない**） | `{ id }` | `OWNER`/`ADMIN`/`SALES`/`PA`/`PS` |
 | 17 | `GET /api/engineers/{id}` | `F-008` / `S-006` | — | `OwnEngineerDetailView` | 境界内のみ。**監査記録あり**（`BR-27`） |
 | 18 | `POST /api/engineers/{id}/skill-sheets/upload-url` | `F-011` / `S-008` | `{ fileName, contentType, byteSize }` | `{ objectKey, uploadUrl, expiresIn, requiredHeaders }`（🔴 `requiredHeaders` は T-05-04 で追加。下記） | 🔴 **ストレージ上限超過なら発行しない**（`docs/03` §4.5） |
-| 19 | `POST /api/engineers/{id}/skill-sheets` | `F-011` | `{ objectKey, note? }` | `{ id, version, scanStatus:'SCANNING' }` | 同上 |
+| 19 | `POST /api/engineers/{id}/skill-sheets` | `F-011` / `S-008` | `{ objectKey, note? }` | `{ id, version, scanStatus }`（🔴 新規確定は必ず `'SCANNING'`。**再確定では現在の状態が返る**。下記 T-05-06） | 同上 |
+| 19b | `POST /api/skill-sheets/{id}/latest` | `F-011` 処理③ / `AC-4` / `S-008` | — | `204` | 同上。🔴 **`CLEAN` の版だけが最新版になれる**（非 `CLEAN` は 409 `SKILL_SHEET_NOT_CLEAN`）。すでに最新版なら冪等に `204`（記録も残さない） |
+| 19c | `DELETE /api/skill-sheets/{id}` | `F-011 AC-4` / `S-008` | — | `204` | 同上。🔴 **`SCANNING` の版は削除できない**（409 `SKILL_SHEET_SCAN_IN_PROGRESS`）。手順は ①S3 → ②`UsageCounter` の減算 → ③行 + 監査 |
 | 20 | `GET /api/skill-sheets/{id}/download-url` | `F-012` | — | `{ url, expiresIn }` | 🔴 **`scanStatus='CLEAN'` かつ `AuditLog` の書き込み成功後にのみ発行**（`F-012 AC-2`）。`VIEWER` は 403 |
 | 21 | `GET /api/skill-sheets/{id}/preview` | `F-012` | — | `{ meta }`（本文は返さない） | 閲覧も `AuditLog` に記録 |
 | 22 | `POST /api/skill-sheets/{id}/extract` | `F-032` / Phase 2 | — | `{ jobId }` | `SALES` 以上 |
@@ -2090,10 +2095,10 @@ requireEsignConnection(ctx);                           // 🔴 §8.4。未接続
   1. 🔴 **`S-006`（サーバコンポーネント）は Route Handler を通らない**（既存画面と同じく自己 fetch しない）。ルート側に置くと**画面経路だけ記録が漏れる** —— §16.1 が `skill_sheet.download` を `issueDownloadUrl` の中で書くと定めているのと同じ理由（**記録の経路を 1 本にする**）である。
   2. 🔴 `audit` オプションは**ハンドラの前に別トランザクションで**書く（§6.1）ため、**404（境界外・不存在）でも「閲覧した」記録が残る**。`CLAUDE.md` §3.5 の「誰の経歴を、誰が、いつ見たか」に、**見ていない閲覧**が混ざる。
   「記録が成立してからでなければ内容を返さない」（`F-012 AC-2`）はどちらでも同じである（`writeAuditLog` が失敗すればトランザクションごと巻き戻り、応答は 500 になる）。
-- **`action` は `engineer.view` の 1 種**（`engineer.detail_view` のような別 action を作らない。`S-041` の操作種別フィルタから漏れる）。経路の区別は `summary.via`（`'DETAIL'` \| `'EDIT_FORM'`）だけに置き、**氏名を載せない**。🔴 **詳細を開いてから編集を開くと 2 件残るが、これは重複ではなく別々の閲覧である**（片方を抑止すると、どちらの経路で PII に到達したかが追えなくなる）。
+- **`action` は `engineer.view` の 1 種**（`engineer.detail_view` のような別 action を作らない。`S-041` の操作種別フィルタから漏れる）。経路の区別は `summary.via`（`'DETAIL'` \| `'EDIT_FORM'` \| 🔴 **`'SKILL_SHEETS'`**（`S-008`。T-05-06 で追加。版一覧も氏名を出すため））だけに置き、**氏名を載せない**。🔴 **`recordEngineerView` は 1 実装であり、氏名を出す新しい読み取りを足すときは `via` を足す**（使い回すと、どの画面から PII に到達したかが追えなくなる）。🔴 **詳細を開いてから編集を開くと 2 件残るが、これは重複ではなく別々の閲覧である**（片方を抑止すると、どちらの経路で PII に到達したかが追えなくなる）。
 - **認可は `guards: []`**（全ロール）。読み取り専用なので `requireExecutable` / `requireNotViewer` を掛けない —— `VIEWER` は閲覧のみ可（`F-012 AC-3` / `BR-31`）、`CLOSING` でも閲覧できる（`F-004 AC-8`）。**母集団は `engineers` の RLS（C3）が決める**ため、境界外の ID は 404 であり、ホスト所属の利用者は他パートナー所有のエンジニアの実名・所属会社名に到達できない（`F-008 AC-3`）。
 - ⚠️ **`docs/04` §S-006 の基本情報にある「経験年数」（1 件の集約値）を出していない。** §3.4 に集約列が無く、集約の定義（最大値か / 代表スキルか / 実務年数か）も決まっていないためである。**スキル別の経験年数はスキル表に出しているので判断材料は隠れていない。** 集約値の定義は `F-009` の `yearsMin` の評価（SP-06 T-06-04）と**同時に決める**。
-- ⚠️ **`S-006` のセクション 3〜7 は本タスクの範囲外**（3 スキルシートの版 = T-05-06 / T-05-07、4 提案履歴・5 凍結差分 = SP-09、6 稼働履歴 = SP-16、7 匿名共有 = SP-08）。画面では**セクションを消さずに「後続のリリースで利用できる」と明示する**（`engineers.careers.comingSoon` と同じ規律）。`piiPurgedAt` の 404 文言（「保持期間を過ぎて削除されました」。`F-046 AC-2`）は削除ジョブと同じ SP-16（T-16-06）で足す —— 到達できない状態のために先回りの分岐を書かない。
+- ⚠️ **`S-006` のセクション 3〜7 は本タスクの範囲外**（3 スキルシートの版 = T-05-06 / T-05-07、4 提案履歴・5 凍結差分 = SP-09、6 稼働履歴 = SP-16、7 匿名共有 = SP-08）。画面では**セクションを消さずに「後続のリリースで利用できる」と明示する**（`engineers.careers.comingSoon` と同じ規律）。✅ **セクション 3 は T-05-06 で `S-008` への導線に置き換えた**（`docs/04` §S-006 関連画面「→ `S-008`」）。🔴 **版の一覧を `S-006` に再掲しない** —— 出すと「どちらが正か」が分かれ、スキャン状態の見せ方が 2 実装になる（`F-011 AC-2` の担保が割れる）。`piiPurgedAt` の 404 文言（「保持期間を過ぎて削除されました」。`F-046 AC-2`）は削除ジョブと同じ SP-16（T-16-06）で足す —— 到達できない状態のために先回りの分岐を書かない。
 - **登録後の遷移を `S-007`（編集）から `S-006`（詳細）に変えた**（`docs/04` §S-007 関連画面「→ `S-006`」）。T-05-01 が編集へ戻していたのは `S-006` が未実装だったための暫定である。編集のキャンセルも詳細へ戻す。
 
 🔴 **#18 の実装の決着（T-05-04）**:
@@ -2103,9 +2108,26 @@ requireEsignConnection(ctx);                           // 🔴 §8.4。未接続
 - 🔴 **`byteSize` は「上限」ではなく「このサイズちょうど」として署名に焼き込む**（`Content-Length`）。SigV4 のクエリ署名では範囲を表現できない（範囲を表せるのは POST policy だけ）ため、上限として扱えるかのような実装にすると「実は何バイトでも通る」状態になる。この結果、**小さいと申告して大きいものを置くことで上限判定を迂回できない**。実サイズの確定は #19 の `head()` である。
 - **判定の順序は ①`UPLOAD_MAX_BYTES`（413）②拡張子（400）③対象エンジニアの可視性（404）④ストレージ上限（429）**。③を先に置くのは「見えない ＝ 存在しない」（§4.8）を上限判定より優先するためである（境界外の ID に上限の話をしない）。
 - 🔴 **`UsageCounter` をここでは 1 バイトも動かさない**（§14.2）。署名を出してもアップロードされないまま終わることがある。加算は #19（T-05-06）が `head()` の実サイズで行う。
-- 🔴 **`AuditLog` を書かない。** 行は 1 つも作られず、外部にも何も渡らない（§16.1 に本 API の行が無いのはそのため）。「署名を出した」だけの記録を足すと、`S-041` の操作種別フィルタに**実際には何も起きていない行**が混ざる。記録は #19（`skill_sheet.upload` = `*.create`）と #20（`skill_sheet.download`）が持つ。
+- 🔴 **`AuditLog` を書かない。** 行は 1 つも作られず、外部にも何も渡らない（§16.1 に本 API の行が無いのはそのため）。「署名を出した」だけの記録を足すと、`S-041` の操作種別フィルタに**実際には何も起きていない行**が混ざる。記録は #19（**`skill_sheet.create`**。当初ここに書いていた `skill_sheet.upload` は T-05-06 で退けた。下記）と #20（`skill_sheet.download`）が持つ。
 - **認可は `OWNER` / `ADMIN` / `SALES` / `PARTNER_ADMIN` / `PARTNER_SALES`**（`docs/02` `F-011` 関連ロール）。`VIEWER` は `requireRole` の段階で 403 になる（`requireNotViewer` も宣言し、`tests/static/execute-guard.test.ts` の走査対象に載せる）。
 - ⚠️ **キーに載る `{version}` は「発行時点の次版」であり、確定（#19）が採番する版そのものではない。** 同じエンジニアに 2 人が同時に署名を要求すると同じ版番号を載せたキーを受け取るが、`{uuid}` が違うためオブジェクトは衝突せず、確定は `@@unique([tenantId, engineerId, version])` により先着 1 件だけが成立する。**キーの一意性は `{uuid}` が担保する。**
+
+🔴 **#19 / #19b / #19c の実装の決着（T-05-06）**:
+
+- 🔴 **#19 は申告された `objectKey` を信じない。** ①`@ses/domain` の **`parseSkillSheetObjectKey`**（T-05-06 で追加。`buildSkillSheetObjectKey` と同じ規約の上で分解し、再構成が一致しないキーを弾く）で形を確かめ ②`tenantId` が **ctx と一致**し `engineerId` が**経路の ID と一致**することを確かめ（不一致は **404**。形が違えば **400**）③`objectStore.head()` で**実体の存在**を確かめる（無ければ **409 `SKILL_SHEET_OBJECT_MISSING`**）。②が無いと、他テナント・他エンジニアのプレフィックスに置かれたオブジェクトを自分の版として登録できる（`CLAUDE.md` §3.1）。③が無いと、台帳に**開けない版**が並び、`UsageCounter` に存在しないバイト数が載る。
+- 🔴 **`contentType` と `byteSize` は `head()` の実体を正とする**（申告を保存しない。§14.2）。このため `ObjectStore.head()` の戻り値に **`contentType` を足した**（`ObjectHead`。T-05-06。S3 / MinIO / モックの 3 実装とも同じ値を返す）。⚠️ SDK 応答の `ContentType` が欠けていた場合だけは `application/octet-stream` に落とす（`ContentLength` / `VersionId` と違い**計上にも重複排除にも使わない**付帯情報であり、ここで落とすと「S3 に実体はあるのに確定できない ＝ 計上もされない」というずれ方をする）。
+- 🔴 **二重送信は 1 行に収束する。** `skill_sheets(object_key)` の `UNIQUE`（migration 20260908000000）により、同じキーの 2 回目は**既存の行をそのまま返す**（版を採番し直さない）。`INSERT` は **`createMany({ skipDuplicates: true })`**（= `ON CONFLICT DO NOTHING`）で行う —— `create` の一意制約違反を例外で受けると、その時点でトランザクションが中断状態になり後続の照会が全て失敗する（`packages/db/src/webhook-delivery.ts` の実測メモと同じ罠）。版番号（`@@unique([tenantId, engineerId, version])`）の競合と区別し、後者は **409 `CONCURRENT_UPDATE`**（**サーバ側で採番し直して自動再実行しない**）。
+- 🔴 **ストレージ上限を #19 で再判定しない。** 判定は #18 で終わっており、実体はすでに S3 に置かれている。ここで 429 にして行を作らないと **S3 には在るのに計上されないオブジェクト**が残り、`UsageCounter`（正）と実体が恒久的にずれる（§14.3 の突き合わせが常に乖離を出す）。上限は**発行の側で止める**のが設計であり、確定は「置かれてしまったものを必ず数える」側に倒す。
+- 🔴 **計上（`accountSkillSheetStorage`）は再確定の経路でも呼ぶ。** 前回の確定が「行の作成には成功したが計上の前に落ちた」場合、次の確定で回収されるためである。CAS（`storage_counted_at`）があるので 2 回目以降は `ALREADY_SETTLED` でカウンタは動かない（§14.3）。
+- 🔴 **`is_latest` を立てない / スキャンをここから起動しない。** 生まれた行は `SCANNING` であり、`CLEAN` の版だけが最新版になれる（DB の `skill_sheets_latest_clean_check`）。スキャンは S3 の Put イベントで動く（§8.5。`MalwareScanner.enqueue` は GuardDuty では no-op であり、**`apps/web` はスキャナのインスタンスを持たない**）。
+- 🔴 **監査の action は `skill_sheet.create` / `skill_sheet.update` / `skill_sheet.delete`**（`F-011 AC-4`）。**`skill_sheet.upload` のような独自 action を作らない** —— `S-041` の操作種別フィルタ（`CREATE_UPDATE_DELETE` = 接尾辞一致）から漏れ、**記録されているのに検索で出てこない**（`partner_company.suspend` / `skill_alias.decide` を作らなかったのと同じ理由。§16.1）。版の切替は `skill_sheet.update` + `summary.operation='SET_LATEST'` で区別する。
+- 🔴 **3 つとも `withApiRoute` の `audit` オプションではなく業務トランザクション内（`writeAuditLog`）で書く。** `audit` はハンドラの**前**に別トランザクションで書くため、**起きなかった操作**（404 / 409 / 競合 / 冪等な no-op）まで記録に残る（`skill_alias.update` と同じ判断）。`summary` に**版のメモ・ファイル名・氏名を載せない**（§16.2）。
+- 🔴 **#19b（版の切替）を新設した。** §8.5.1 が「スキャン結果の適用が `is_latest` を立てることは無い（版の切替は #19 の責務）」と書いているが、#19 が作る行は `SCANNING` であり **`is_latest` を立てられない**（CHECK が拒否する）。したがって切替は「`CLEAN` になった後の、利用者の明示操作」でしかありえない。判定は `apps/web/lib/skill-sheets/policy.ts`（**画面と同じ関数**）→ CAS（`scan_status = 'CLEAN'` を `where` に含める）→ DB の CHECK の 3 段。部分 UNIQUE（`(tenant_id, engineer_id) WHERE is_latest`）があるため、同一トランザクションで**先に落としてから立てる**。
+- 🔴 **#19c（削除）を新設した**（`F-011 AC-4` が削除の記録を要求している以上、削除の経路が存在しなければならない）。手順は **①S3 の実体 → ②`UsageCounter` の減算（CAS）→ ③行 + 監査**（`docs/03` §4.12）。①より先に②③をやらない（実体が残っているのに枠だけ空くと S3 の請求は増え続ける）。途中で落ちても、もう一度削除すれば同じ手順が最後まで進む。🔴 **`SCANNING` の版は削除できない**（409）—— 検査中のオブジェクトを消すと、後から届く結果の適用が `SCAN_TARGET_NOT_FOUND` になり（§9.6）、**本物の取りこぼしと区別できない雑音**が `A-005` に流れ込む。🔴 **最新版を消しても別の版を自動で最新にしない**（どの版を見せるかは業務判断であり推測しない）。🔴 **提案に凍結添付された版（`EngineerSnapshot.skill_sheet_id` が参照する版）は①より前に 409 `SKILL_SHEET_REFERENCED` で止める**（T-05-06 Iteration 2）—— FK（`ON DELETE RESTRICT`）が守るのは**③の行だけ**であり、①が先に走る以上 **FK が発火したときには実体がすでに消えている**（行だけ残り、開けない添付になる）。凍結情報は越境経路 2 の証跡であり、復元できない形で失うのは不可逆な事故である（`CLAUDE.md` §7）。**事前チェックが防御の本体、FK は最終防衛線**（事前チェックと③の間に凍結が入る競合をカバーする）であり、どちらか一方にしない。⚠️ 参照の可視性は `engineer_snapshots` の RLS（C5 PARTY）が決めるが、**自社が所有する版を凍結できるのは自社の提案だけ**（`BR-59` / `F-012 AC-4`）なので削除者から見えない参照は生じない。**SP-09 は snapshot を作る側との競合（凍結中の版のロック等）を検討すること。**
+- 🔴 **`note`（版のメモ）の保存先を `skill_sheets.note` として足した**（migration 20260909000000）。`docs/02` `F-011` の入力と #19 の request には最初から `note?` があったが §3.4 に列が無く、**受け取って捨てる**実装は利用者からはバグと区別できない。運営者には GRANT しない（§5.5）。
+- **認可は #18 と同じ**（`OWNER` / `ADMIN` / `SALES` / `PARTNER_ADMIN` / `PARTNER_SALES` + `requireExecutable` + `requireNotViewer`）。片方だけ広い / 狭いという状態を作らない。
+- ⚠️ **`S-008` の版一覧を読む API は無い**（画面がサーバコンポーネントから `readSkillSheetVersions` を直接呼ぶ）。氏名を出す画面なので**閲覧を `engineer.view`（`summary.via='SKILL_SHEETS'`）として業務トランザクション内で記録する**（`BR-27` / `F-008 AC-4`。記録できなければ表示されない）。版の**中身**の閲覧（`skill_sheet.view`。#21）は T-05-07 の範囲であり、一覧はメタデータしか出さないので記録しない。
+- ⚠️ **元のファイル名を保存していない**（§14.1 は「元のファイル名は DB の列に持つ」と書いているが §3.4 に列が無く、#19 の request にも `fileName` が無い）。**ダウンロード時の表示名を決める T-05-07 が、列を足すか `Content-Disposition` を版番号で組み立てるかを決める**（キーには載せない、という §14.1 の規約は不変）。
 
 🔴 **#23 / #24 の実装の決着（T-05-03）**:
 
@@ -2527,7 +2549,8 @@ export interface ObjectStore {
   presignPut(key: string, contentType: string, maxBytes: number): Promise<PresignedUrl>;
   presignGet(key: string, ttlSec: number): Promise<PresignedUrl>;
   delete(key: string): Promise<void>;
-  head(key: string): Promise<{ byteSize: number; versionId: string } | null>;
+  head(key: string): Promise<ObjectHead | null>;   // ObjectHead = { byteSize: number; versionId: string; contentType: string }
+                                                   // 🔴 T-05-06: contentType を足した。確定（#19）は申告ではなく**実体**を保存する（§14.2）
   callCount(): number;                             // 🔴 §13.2「全モックに callCount()」を共通シグネチャに置く
 }
 
@@ -2730,7 +2753,7 @@ POST /api/webhooks/{provider}
 | 🔴 **`CLEAN` へ戻さないの実装** | 「特定の 1 組み合わせの禁止」にしない（`FAILED → CLEAN` 等の同じ性質の抜け道が残る）。全状態に**重篤度**の全順序 `SCANNING(0) < CLEAN(1) < UNSCANNABLE(2) < FAILED(3) < INFECTED(4)` を与え、**重篤度が上がる方向にしか遷移しない**とする（`packages/domain/src/scan/status.ts`）。これにより ①`CLEAN` へ戻る経路が 1 本も無い ②冪等 ③**到着順に依存しない**（最終状態は受け取った結果の最大重篤度）が同時に成り立つ。DB 側は「置き換えてよい現在値の一覧」を受け取る CAS であり、**重篤度の表を SQL に書き写さない** |
 | 🔴 **未知の生ステータス** | `CLEAN` にも `FAILED` にも**推測で寄せない**。`GuardDutyEventParseError` として 200 + 未処理で記録し（`A-005`）、対象ファイルは `SCANNING` のまま残る（`scan.poll` の滞留検知にも現れる = 二重に見える） |
 | 🔴 **パートナー所有のファイルへ届かせる** | `skill_sheets` は **C3 OWNER_SCOPED** であり、ジョブのホスト文脈（`systemTenantCtx`。§9.2 は `partner_company_id` を常に `null` と定める）からはパートナー所属エンジニアの版が 1 行も見えない。しかしスキャンは所有者と無関係に起きるため、素のままだと **「パートナーが上げたファイルだけ永久に `SCANNING`」**になり `BR-26` / `F-011 AC-3` が成立しない。§4.4.1 の `assignments ← engineers` と**同型の解**（専用ロール `app_scan_probe` + `SECURITY DEFINER` + 最小列 `GRANT`）を採る: `app_apply_scan_status(objectKey, status, replaceable[], observedAt)` と `app_list_stalled_scan_targets(before, limit)` の 2 関数だけを置き、いずれも本体で **`app_tenant_id() IS NULL` を拒否**（fail-closed）し **`tenant_id = app_tenant_id()` に閉じる**。緩むのは「同一テナント内で、スキャンの 3 列だけ」であり、氏名・スキル・他テナントには 1 列も届かない。呼び出し元は `packages/db/src/file-scan.ts` の 2 関数だけ（`TenantDb` に `$queryRaw` が無いため `apps/**` から呼ぶ経路は存在せず、`tests/static/auth-db-callers.test.ts` が固定する）。🔴 **本機構は [Issue #27](https://github.com/Festal-KM/SES-Platform/issues/27) 後半（ワーカーからパートナー所有の `skill_sheets` へ書き込む文脈をどう与えるか）の既定解を、「スキャンの 3 列」に限って前倒しで実装したものである。** 同じ問いの残りの射程 —— `SkillSheetExtraction` の生成（`sheet-parser` / `skill-normalizer`。SP-14）と `gate.run` の実行文脈（SP-09）—— は **SP-07 の設計判断として残る**（それらは本機構の 3 列では足りず、書き込む列も表も違う）。本節の解を「ワーカーがパートナー所有行に触れるときの汎用の入口」として流用しないこと |
-| 🔴 **`is_latest` の扱い** | `skill_sheets_latest_clean_check`（`is_latest = false OR scan_status = 'CLEAN'`）があるため、**最新版が `CLEAN` から非 `CLEAN` へ動くときはフラグを落とす**（残すと CHECK 違反で更新そのものが失敗する）。落とすのが正しい（`F-011 AC-1`）。🔴 逆に、スキャン結果の適用が `is_latest` を**立てる**ことは無い（版の切替は #19 の責務） |
+| 🔴 **`is_latest` の扱い** | `skill_sheets_latest_clean_check`（`is_latest = false OR scan_status = 'CLEAN'`）があるため、**最新版が `CLEAN` から非 `CLEAN` へ動くときはフラグを落とす**（残すと CHECK 違反で更新そのものが失敗する）。落とすのが正しい（`F-011 AC-1`）。🔴 逆に、スキャン結果の適用が `is_latest` を**立てる**ことは無い（🔴 **立てるのは #19b（版の切替）＝ 利用者の明示操作だけ**である。#19 が作る行は `SCANNING` なので立てられない。T-05-06 で #19b を新設した経緯は §6.4 の決着を参照） |
 | 🔴 **`skill_sheets(object_key)` の `UNIQUE`** | スキャン結果は「バケット + キー + 版」しか教えてくれない（`docs/03` §3.4.1）。同じキーの行が 2 つあると適用先が決まらないため、**曖昧さを DB で禁止する**（migration 20260908000000）。キーは `{uuid}` を含み発行のたびに新しい（§14.1）ので、実運用で衝突しない |
 | ⚠️ **`clamav`（`development`）は未実装** | `MALWARE_SCANNER=clamav` を選ぶと `createConnectors` が `ConnectorImplementationNotAvailableError` で**起動を止める**（モックへ倒さない。`CLAUDE.md` §11.1 —— スキャンのモックに勝手に落ちると「検査していないファイルが `CLEAN` になる」）。GuardDuty は S3 のイベント駆動だが ClamAV は自前でオブジェクトを取得して `clamd` に流す必要があり、`ObjectStore` に無い「本体の取得」と INSTREAM 実装が要る（`docs/03` §3.4.3-6）。**後続タスクで実装する**（`development` の起動配線は SP-07 のため、現時点で `createConnectors` を呼ぶ実行経路は無い） |
 
@@ -3593,6 +3616,7 @@ export class MockEmailSender implements EmailSender {
 | 🔴 **E2E が使うモックと同一実装** | **`packages/connectors/src/mock/**` を E2E も本番コードも同じものを使う。** テスト専用のモックを `tests/` に別途書かない（二重メンテを避け「デモで動く = E2E が通る」を担保する） |
 | **可観測性** | `demo` / `sandbox` では送信内容を `EmailDispatch(status='MOCKED')` に記録し、`A-005` から「疑似送信の件数」を確認できるようにする。🔴 **この記録を書くのはジョブハンドラ側**（`packages/connectors` は `@ses/db` に依存できない。§2.2）。モックが持つのは `callCount()` / `callsOf()` と、任意の `sink`（MailHog 等）だけである |
 | 🔴 **PII を保持しない** | モックが保持する記録の宛先は伏せ字にする（`***@example.co.jp`）。件数と宛先分類が分かれば §17.4 の検証には足りる（CLAUDE.md §3.5 / §8.6 の denylist に `email` / `recipientEmail` がある） |
+| 🔴 **`MockObjectStore` の署名 URL は到達しないスキーム**（`mock-object-store://`） | `demo` では「署名を出した ＝ そのキーに置かれた」とみなす（`head()` が値を返す）。したがって**ブラウザからの転送先が存在しない**。画面（`S-008`）は **URL の形（`http(s)` か）だけ**を見て転送の要否を決める（`apps/web/lib/skill-sheets/upload-client.ts` の `requiresDirectTransfer`。T-05-06）。🔴 これは `APP_ENV` の分岐ではない —— `production` / `staging` / `sandbox` / `development`（MinIO）はいずれも `http(s)` の URL を返すため、**実装側の分岐は 1 つも増えない**（`CLAUDE.md` §11.1） |
 
 ### 13.3 本番以外の環境が安全に degrade する設計（二重防御）
 
@@ -3711,7 +3735,9 @@ s3://{S3_BUCKET}/
 | **ダウンロード（契約書・添付）** | 同上 | 300 秒 | 同上 |
 | **返却データ（`F-064` / `F-052`）** | 同上 | 3600 秒 | 🔴 運営者は 403（`F-064 AC-7`） |
 
-🔴 **アップロードの確定**: ブラウザ → S3 の直接アップロード（`docs/03` 申し送り 23。Vercel のボディ上限 4.5 MB を経由させない）。**アップロード完了は `POST /api/engineers/{id}/skill-sheets`（#19）で確定させ、そのときに `head()` で実サイズを取得して `UsageCounter(STORAGE_BYTES)` に加算する**（`docs/03` 申し送り 25）。**署名付き URL の発行時には加算しない**（アップロードされないまま終わることがあるため）。
+🔴 **アップロードの確定**: ブラウザ → S3 の直接アップロード（`docs/03` 申し送り 23。Vercel のボディ上限 4.5 MB を経由させない）。**アップロード完了は `POST /api/engineers/{id}/skill-sheets`（#19）で確定させ、そのときに `head()` で実サイズを取得して `UsageCounter(STORAGE_BYTES)` に加算する**（`docs/03` 申し送り 25）。**署名付き URL の発行時には加算しない**（アップロードされないまま終わることがあるため）。🔴 **保存する `byteSize` / `contentType` は `head()` が返した実体の値**であり、クライアントの申告ではない（T-05-06）。
+
+🔴 **版の削除（#19c）の順序**（T-05-06。`docs/03` §4.12）: **⓪削除してよいかの事前判定（`SCANNING` でない / `EngineerSnapshot` に参照されていない）→ ①S3 の `DeleteObject` → ②`UsageCounter` の減算（`releaseSkillSheetStorage` の CAS）→ ③行の削除 + 監査**。①より先に②③をやらない —— 実体が残っているのに枠だけ空くと、S3 の請求だけが増え続ける。🔴 **⓪を①の後ろへ移さない** —— FK が守るのは③の行だけであり、①の後で止めても実体は戻らない（§6.4 #19c の決着）。途中で落ちても、もう一度削除すれば同じ手順が最後まで進む（`DeleteObject` は冪等、②は CAS、③は 0 件なら 404）。
 
 🔴 **共有 URL の発行そのものを `AuditLog` に記録する**（`BR-28` / `F-012 AC-1`）。デスクトップ・モバイル・共有 URL のいずれの経路でも同じ関数（`issueDownloadUrl`）を通るため、**記録が漏れる経路が存在しない**。
 
@@ -3824,6 +3850,7 @@ export class InvalidStateTransitionError extends AppError {
 | `auth.2fa.throttled` | ロック中の拒否。🔴 **`auth.2fa.failed` とは別の action**（スロットル窓の母集団にロックの拒否自体を含めると自己延長するため） | `USER` / `PLATFORM_USER` |
 | 🔴 `engineer.view` / `skill_sheet.view` / `skill_sheet.download` / `project.view` | `#17` / `#21` / `#20` / `#27`。🔴 **DL は `issueDownloadUrl` の中で書く**（経路が 1 本なのでモバイル・共有 URL でも漏れない。`BR-28` 欠落 0 件）。🔴 **`engineer.view` も同じ形**（T-05-02）: `readEngineerDetail` / `readEngineerForEdit` の**業務トランザクション内**（`writeAuditLog`）で書き、`withApiRoute` の `audit` オプションを使わない —— 画面（サーバコンポーネント）は Route Handler を通らず、`audit` は 404 でも記録が残るため（§6.4「#17 の実装の決着」） | `USER` |
 | `*.create` / `*.update` / `*.delete` | `withApiRoute` の `audit` オプション（各ハンドラで `action` を宣言） | `USER` / `SYSTEM` |
+| 🔴 `skill_sheet.create` / `skill_sheet.update` / `skill_sheet.delete` | `#19` / `#19b` / `#19c`（`F-011 AC-4`「アップロード・版の切替・削除が監査ログに残る」）。**`skill_sheet.upload` のような独自 action を作らず `*.create` / `*.update` / `*.delete` に畳む**（`S-041` の操作種別フィルタから漏れるため。`partner_company.suspend` と同じ理由）。版の切替は `summary.operation='SET_LATEST'` で区別する。🔴 **3 つとも業務トランザクション内（`writeAuditLog`）で書く** —— `audit` オプションはハンドラの前に別トランザクションで書くため、**起きなかった操作**（404 / 409 / 冪等な no-op）まで残る。🔴 `summary` に**版のメモ・ファイル名・氏名・オブジェクトキーを載せない**（§16.2 / §5.5） | `USER` |
 | 🔴 `partner_company.create` / `partner_company.update` | `#12` / `#13`（`F-007 AC-3`「登録・招待・停止・再開が監査ログに残る」）。**停止・再開も `*.update` に揃え、`summary.operation`（`SUSPEND` / `RESUME`）で区別する** —— `partner_company.suspend` のような独自 action を作ると `S-041` の操作種別フィルタ（`CREATE_UPDATE_DELETE` = 接尾辞一致）から漏れ、**記録されているのに検索で出てこない**状態になる。招待は既存の `invitation.create` に `summary.targetPartnerCompanyId` を載せる | `USER` |
 | 🔴 `skill_alias.update` | `#24`（`F-010 AC-3`「別名の採用・却下が監査ログに残る」）。**採用・却下に独自 action（`skill_alias.decide`）を作らず `*.update` に畳む** —— `S-041` の操作種別フィルタ（`CREATE_UPDATE_DELETE` = 接尾辞一致）から漏れ、**記録されているのに検索で出てこない**（`partner_company.suspend` を作らなかったのと同じ理由）。区別は `summary.decision`（`ACCEPT` / `REJECT`）。🔴 **`withApiRoute` の `audit` ではなく `decideSkillAlias` の業務トランザクション内**（`writeAuditLog`）で書く（`membership.role_change` と同じ形）: ①`audit` はハンドラの前に別トランザクションで書くため、**起きなかった採否**（403 / 404 / 409 / 400）まで記録に残る ②`summary` に載せる由来（`origin`）は行を読むまで分からない。🔴 `summary` に**別名の表記そのものを載せない**（利用者の自由入力であり PII が紛れうる。§16.2） | `USER` |
 | `proposal.submit` / `proposal.resend` | 送信ジョブの ⑥（§10.2） | `SYSTEM`（`summary.requestedBy` に人間を記録） |
@@ -4145,7 +4172,7 @@ export const logger = pino({
 | F-008 | §3.4(`Engineer`) / §6.4(#16,#17) | F-030 | §3.10(`TenantMatchWeight`) / §6.7(#68) | F-052 | §3.9(`DataExportRequest`) / §9.6 / §6.7(#77) |
 | F-009 | §4.5 / §4.6 / §6.4(#15) / TBD-8 | F-031 | §7.1 / §9.3 / §4.6(`rationale`) | F-053 | **§13.6** / §6.9(API-A16) |
 | F-010 | §3.4(`Skill`,`SkillAlias`) / §6.4(#23,#24) | F-032 | §7.1 / §9.3 / §7.8 | F-054 | §5.4 / §9.7 / §6.9(API-A17) / §6.7(#79) |
-| F-011 | §3.4(`SkillSheet`) / §8.5 / §14.2 | F-033 | §7.1 / §9.3 / §3.4(`EngineerSkill.originalLabel`) | F-055 | **§5.1** / §3.10(`PlatformUser`) |
+| F-011 | §3.4(`SkillSheet`) / §8.5 / §14.2 / **§6.4(#18,#19,#19b,#19c)** | F-033 | §7.1 / §9.3 / §3.4(`EngineerSkill.originalLabel`) | F-055 | **§5.1** / §3.10(`PlatformUser`) |
 | F-012 | §14.2 / §16.1 / §6.4(#20,#21) | F-034 | §7.1 / §9.3 / §6.5(#38) | F-056 | §5.7 / §6.9(API-A2,A3) |
 | F-013 | §3.5(`Project`) / §6.4(#26) | F-035 | **§7.5** / §3.10 / §6.7(#66) | F-057 | §5.8 / §6.9(API-A6) |
 | F-014 | §3.5(`ProjectVisibility`) / §4.4(C4) / §6.4(#28) | F-036 | §3.10(`TenantRoleModel`) / §6.7(#67) | F-058 | §5.5(シリアライザ) / §6.9(API-A7) |

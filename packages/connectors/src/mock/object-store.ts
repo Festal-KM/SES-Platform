@@ -3,7 +3,7 @@
 
 import { randomUUID } from 'node:crypto';
 
-import type { ObjectStore } from '../interfaces.js';
+import type { ObjectHead, ObjectStore } from '../interfaces.js';
 import type { PresignedUrl } from '../types.js';
 
 /** 署名付き URL のスキーム。🔴 実在しないスキームにして、誤って外部へ渡っても到達しないようにする。 */
@@ -59,10 +59,19 @@ export class MockObjectStore implements ObjectStore {
     this.objects.delete(key);
   }
 
-  async head(key: string): Promise<{ byteSize: number; versionId: string } | null> {
+  async head(key: string): Promise<ObjectHead | null> {
     this.calls += 1;
     const found = this.objects.get(key);
-    return found === undefined ? null : { byteSize: found.byteSize, versionId: found.versionId };
+    return found === undefined
+      ? null
+      : {
+          byteSize: found.byteSize,
+          versionId: found.versionId,
+          // 🔴 T-05-06: 実装（S3）と同じく **署名時の content-type がそのまま返る**
+          //    （実装では署名に焼き込んだ値が保管される）。ここで `application/octet-stream` に
+          //    固定すると、`demo` だけ版一覧の形式表示と抽出可否の判定が変わる。
+          contentType: found.contentType,
+        };
   }
 
   callCount(): number {

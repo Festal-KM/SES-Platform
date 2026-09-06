@@ -6,6 +6,7 @@ import {
   InvalidObjectKeyPartError,
   isTenantScopedObjectKey,
   objectKeyExtensionOf,
+  parseSkillSheetObjectKey,
   tenantIdFromObjectKey,
 } from './object-key.js';
 
@@ -162,5 +163,47 @@ describe('🔴 tenantIdFromObjectKey（スキャン結果の引き当て。T-05-
     for (const key of keys) {
       expect(tenantIdFromObjectKey(key) !== null).toBe(isTenantScopedObjectKey(key));
     }
+  });
+});
+
+describe('🔴 parseSkillSheetObjectKey（#19 の申告キーの照合。T-05-06）', () => {
+  it('組み立てたキーを元の構成要素に戻せる（往復する）', () => {
+    const input = {
+      tenantId: TENANT,
+      engineerId: ENGINEER,
+      version: 12,
+      objectId: OBJECT,
+      extension: 'pdf',
+    };
+    expect(parseSkillSheetObjectKey(buildSkillSheetObjectKey(input))).toEqual(input);
+  });
+
+  it.each([
+    ['他の用途のプレフィックス', `t/${TENANT}/contracts/${ENGINEER}/1/${OBJECT}.pdf`],
+    ['一時領域', `t/${TENANT}/tmp/${ENGINEER}/1/${OBJECT}.pdf`],
+    ['セグメントが足りない', `t/${TENANT}/skill-sheets/${ENGINEER}/${OBJECT}.pdf`],
+    ['セグメントが多い', `t/${TENANT}/skill-sheets/${ENGINEER}/1/x/${OBJECT}.pdf`],
+    ['エンジニア ID が UUID でない', `t/${TENANT}/skill-sheets/all/1/${OBJECT}.pdf`],
+    ['版が 0', `t/${TENANT}/skill-sheets/${ENGINEER}/0/${OBJECT}.pdf`],
+    ['版が先頭ゼロ', `t/${TENANT}/skill-sheets/${ENGINEER}/01/${OBJECT}.pdf`],
+    ['版が数値でない', `t/${TENANT}/skill-sheets/${ENGINEER}/latest/${OBJECT}.pdf`],
+    ['オブジェクト ID が UUID でない', `t/${TENANT}/skill-sheets/${ENGINEER}/1/report.pdf`],
+    ['拡張子が無い', `t/${TENANT}/skill-sheets/${ENGINEER}/1/${OBJECT}`],
+    ['拡張子が大文字（組み立て側では作れない形）', `t/${TENANT}/skill-sheets/${ENGINEER}/1/${OBJECT}.PDF`],
+    ['相対参照を含む', `t/${TENANT}/skill-sheets/${ENGINEER}/1/../${OBJECT}.pdf`],
+    ['テナントプレフィックスの外', `skill-sheets/${ENGINEER}/1/${OBJECT}.pdf`],
+    ['空文字', ''],
+  ])('🔴 %s は null（推測で補わない）', (_label, key) => {
+    expect(parseSkillSheetObjectKey(key)).toBeNull();
+  });
+
+  it('🔴 別テナント・別エンジニアのキーも「形としては」通る（照合は呼び出し側の責務）', () => {
+    // ここが `null` を返さないことを明示しておく。**ctx との一致を確かめるのは
+    // `confirmSkillSheetUpload` 側**であり、この関数は形式しか知りようがない。
+    const other = '01930000-0000-7000-8000-0000000000ff';
+    const parsed = parseSkillSheetObjectKey(
+      `t/${other}/skill-sheets/${ENGINEER}/1/${OBJECT}.xlsx`,
+    );
+    expect(parsed?.tenantId).toBe(other);
   });
 });

@@ -693,7 +693,10 @@ export const PLATFORM_READ_COLUMN_DENYLIST: Record<string, readonly string[]> = 
     'unit_price_min',
     'unit_price_max',
   ],
-  skill_sheets: ['object_key'],
+  // 🔴 T-05-06: `note`（版のメモ）は利用者の自由入力であり、氏名・案件名・単価が書かれうる
+  //    （`CLAUDE.md` §10.5「運営者に必要なのは件数・状態・エラーであって内容ではない」）。
+  //    migration 20260909000000 は GRANT を足していない（fail-closed）。ここは名指しの側から固定する。
+  skill_sheets: ['object_key', 'note'],
   skill_sheet_extractions: ['payload'],
   projects: ['end_client_name', 'internal_unit_price', 'unit_price_min', 'unit_price_max'],
   engineer_snapshots: [

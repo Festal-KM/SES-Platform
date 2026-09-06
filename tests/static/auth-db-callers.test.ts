@@ -143,12 +143,16 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
   //    `UsageCounter(STORAGE_BYTES)` を読む・動かす経路をファイル単位で固定する ——
   //    増えると「上限を見ずに署名を出す」経路や「CAS を経ずに足し引きする」経路が生まれ、
   //    停止判定と月末原価の根拠がどちらも説明できなくなる。
-  //    🔴 加算（`accountSkillSheetStorage`）の呼び出し元は #19（T-05-06）、減算
-  //    （`releaseSkillSheetStorage`）は削除ジョブ（SP-16）であり、**まだ 1 つも無い**。
-  //    空配列にしておくことで、追加時にこの一覧の更新が強制される。
+  //    🔴 T-05-06 で 3 関数とも `lib/skill-sheets/service.ts` の 1 ファイルに集まった:
+  //      - `readStorageBytesUsed` … #18（署名を出す前の上限判定）
+  //      - `accountSkillSheetStorage` … #19（アップロードの確定。`head()` の実サイズで加算）
+  //      - `releaseSkillSheetStorage` … 版の削除（🔴 **S3 の削除に成功した後**にだけ呼ぶ）
+  //    ⚠️ 保持期間の削除ジョブ（`retention.delete`。SP-16）が同じ減算を使うときは、
+  //       `apps/worker/src/jobs/retention-delete.ts` をここに足す（順序 ①S3 → ②減算 → ③行 を
+  //       ジョブ側でも守ること）。**「どこからでも足し引きできる」状態にしない。**
   readStorageBytesUsed: ['apps/web/lib/skill-sheets/service.ts'],
-  accountSkillSheetStorage: [],
-  releaseSkillSheetStorage: [],
+  accountSkillSheetStorage: ['apps/web/lib/skill-sheets/service.ts'],
+  releaseSkillSheetStorage: ['apps/web/lib/skill-sheets/service.ts'],
 
   // --- 🔴 T-04-03: 運用メールと Webhook 受信（docs/05 §8.5 / §9.4）--------------------------
   // 🔴 `EmailDispatch` を作る経路を 1 ファイルに固定する。増えると `dedupeKey` の組み立てが

@@ -55,6 +55,16 @@ export const ENGINEER_VIEW_VIA = {
   detail: 'DETAIL',
   /** `S-007` 編集フォームの初期値読み取り。 */
   editForm: 'EDIT_FORM',
+  /**
+   * 🔴 T-05-06: `S-008`（スキルシートの取込と版管理）の読み取り。
+   *
+   * この画面は**氏名を出す**（誰のスキルシートかを取り違えないため。docs/04 §S-008 のパンくず）。
+   * 氏名は `CLAUDE.md` §3.5 が「誰の経歴を、誰が、いつ見たか」を記録せよと定める対象そのもの
+   * であり、詳細（`DETAIL`）・編集（`EDIT_FORM`）と**同じ扱い**にする。
+   * ⚠️ これは `skill_sheet.view`（版の**中身**の閲覧。#21。T-05-07）とは別物である ——
+   *    版の一覧はメタデータ（版・日時・スキャン状態）であって本文ではない。
+   */
+  skillSheets: 'SKILL_SHEETS',
 } as const;
 
 export type EngineerViewVia = (typeof ENGINEER_VIEW_VIA)[keyof typeof ENGINEER_VIEW_VIA];
@@ -429,6 +439,12 @@ async function readEngineerSkills(
 /**
  * 🔴 **閲覧を `AuditLog` に記録する唯一の経路**（`BR-27` / `F-008 AC-4`）。
  *
+ * 🔴 T-05-06 で `export` にした。呼び出してよいのは「**エンジニアの氏名を画面に出す読み取り**」
+ *    だけであり、現時点では本ファイルの 2 経路と `lib/skill-sheets/service.ts` の
+ *    `readSkillSheetVersions`（`S-008`）である。**記録を伴わない氏名の読み取りを増やさない**
+ *    ために、新しい呼び出し元を足すときは `EngineerViewVia` に経路を足すこと
+ *    （`via` を使い回すと、どの画面から PII に到達したかが追えなくなる）。
+ *
  * 🔴 記録は**業務トランザクションの内側**（`writeAuditLog`）で書く。書けなければトランザクション
  *    ごと巻き戻り、**内容は返らない**（`F-012 AC-2` と同じ規律）。`withApiRoute` の `audit`
  *    オプションを使わない理由は docs/05 §6.4「#17 の実装の決着（T-05-02）」に書いた:
@@ -436,7 +452,7 @@ async function readEngineerSkills(
  *    **画面経路だけ記録が漏れる** ②`audit` オプションはハンドラの前に別トランザクションで
  *    書くため、**404（境界外・不存在）でも「閲覧した」記録が残る**。
  */
-async function recordEngineerView(
+export async function recordEngineerView(
   db: EngineerDb,
   ctx: AuthenticatedTenantCtx,
   engineerId: string,

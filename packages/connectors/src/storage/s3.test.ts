@@ -14,7 +14,11 @@ function stubApi(overrides: Partial<S3Api> = {}): S3Api {
     presignPut: vi.fn(async (request: S3PresignPutRequest) => `https://s3.test/${request.Key}?put`),
     presignGet: vi.fn(async ({ Key }) => `https://s3.test/${Key}?get`),
     deleteObject: vi.fn(async () => undefined),
-    headObject: vi.fn(async () => ({ ContentLength: 1234, VersionId: 'v1' })),
+    headObject: vi.fn(async () => ({
+      ContentLength: 1234,
+      VersionId: 'v1',
+      ContentType: 'application/pdf',
+    })),
     ...overrides,
   };
 }
@@ -99,7 +103,12 @@ describe('🔴 テナントプレフィックスの外には署名しない（do
 
 describe('S3ObjectStore の残りの操作', () => {
   it('head() は S3 の応答を内部型へ正規化する（サービス固有の綴りを外に出さない）', async () => {
-    expect(await store(stubApi()).head(KEY)).toEqual({ byteSize: 1234, versionId: 'v1' });
+    expect(await store(stubApi()).head(KEY)).toEqual({
+      byteSize: 1234,
+      versionId: 'v1',
+      // 🔴 T-05-06: 確定（#19）は申告ではなくこの値を `SkillSheet.contentType` に保存する。
+      contentType: 'application/pdf',
+    });
   });
 
   it('head() は存在しないキーで null（404 を例外にしない）', async () => {

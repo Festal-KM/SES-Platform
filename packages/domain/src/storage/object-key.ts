@@ -130,3 +130,56 @@ export function tenantIdFromObjectKey(objectKey: string): string | null {
   if (!isTenantScopedObjectKey(objectKey)) return null;
   return objectKey.split('/')[1] ?? null;
 }
+
+/** `parseSkillSheetObjectKey` が返す構成要素（`buildSkillSheetObjectKey` の入力と同じ形）。 */
+export type SkillSheetObjectKeyParts = SkillSheetObjectKeyInput;
+
+/**
+ * 🔴 スキルシートのキーを構成要素に分解する（T-05-06。形が合わなければ `null`）。
+ *
+ * 🔴 用途は 1 つで、**アップロード確定（`POST /api/engineers/{id}/skill-sheets`。#19）が
+ *    クライアントの申告した `objectKey` を照合する**ことである。#19 は body でキーを受け取る
+ *    唯一の API であり（#18 と違い、確定するのは「どこに置いたか」だから受け取らざるを得ない）、
+ *    照合しなければ **他テナント・他エンジニアのプレフィックスのオブジェクトを自分の版として
+ *    登録できる**（`CLAUDE.md` §3.1）。
+ *
+ * 🔴 **これは「リクエスト入力からテナントを決める」ことではない。** 呼び出し側は
+ *    `ctx.tenantId` / 経路の `engineerId` と**一致すること**を確かめるためだけに使う
+ *    （一致しなければ 404）。ここから得た値を分離キーとして使ってはならない。
+ * 🔴 組み立て（`buildSkillSheetObjectKey`）と同じ規約の上で判定する ——
+ *    **組み立てた結果と再構成が一致すること**を最後に確かめるため、
+ *    ここに規約の写しが増えない（片方だけが緩むことが起こらない）。
+ */
+export function parseSkillSheetObjectKey(objectKey: string): SkillSheetObjectKeyParts | null {
+  if (!isTenantScopedObjectKey(objectKey)) return null;
+  const segments = objectKey.split('/');
+  if (segments.length !== 6) return null;
+  const [, tenantId, kind, engineerId, versionSegment, fileName] = segments as [
+    string,
+    string,
+    string,
+    string,
+    string,
+    string,
+  ];
+  if (kind !== OBJECT_KIND_SEGMENTS.skillSheet) return null;
+  if (!UUID_PATTERN.test(engineerId)) return null;
+  // 🔴 `0`・先頭ゼロ・符号付きを通さない（`Number.parseInt` は '01' も '1abc' も通す）。
+  if (!/^[1-9][0-9]*$/.test(versionSegment)) return null;
+  const version = Number(versionSegment);
+  const extension = objectKeyExtensionOf(fileName);
+  if (extension === null) return null;
+  const objectId = fileName.slice(0, fileName.length - extension.length - 1);
+  if (!UUID_PATTERN.test(objectId)) return null;
+
+  const parts: SkillSheetObjectKeyParts = {
+    tenantId,
+    engineerId,
+    version,
+    objectId,
+    extension,
+  };
+  // 🔴 規約の唯一の出所は `buildSkillSheetObjectKey` である。再構成が一致しないキー
+  //    （大文字の拡張子など、組み立て側では作れない形）は通さない。
+  return buildSkillSheetObjectKey(parts) === objectKey ? parts : null;
+}

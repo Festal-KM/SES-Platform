@@ -99,10 +99,14 @@ export type S3ApiOptions = {
   readonly client?: S3Client;
 };
 
+/** content-type が欠けていたときの既定（RFC 9110 の「不明」の扱い）。 */
+const DEFAULT_CONTENT_TYPE = 'application/octet-stream';
+
 /**
  * 🔴 SDK の応答は**全フィールドが optional** である。欠けていたときに既定値で埋めない ——
  *    `ContentLength` を 0 に埋めると**置いたはずのバイト数が計上されず**、
  *    `VersionId` を空文字に埋めると `FileScanResult` がスキャン結果を版に結び付けられなくなる。
+ *    （例外は `ContentType` だけである。理由は下の 🔴 に書いた。）
  */
 function toHeadResponse(output: HeadObjectCommandOutput): S3HeadObjectResponse {
   if (typeof output.ContentLength !== 'number') {
@@ -117,7 +121,19 @@ function toHeadResponse(output: HeadObjectCommandOutput): S3HeadObjectResponse {
       'S3 の HeadObject が VersionId を返しませんでした（バケットのバージョニングが有効か確認してください。docs/05 §14.1）。',
     );
   }
-  return { ContentLength: output.ContentLength, VersionId: output.VersionId };
+  return {
+    ContentLength: output.ContentLength,
+    VersionId: output.VersionId,
+    // 🔴 T-05-06: `ContentType` は欠けても**例外にしない**（既定へ落とす）。`ContentLength` /
+    //    `VersionId` は計上と重複排除の根拠であり欠けたら続行できないが、content-type は
+    //    表示とダウンロード時のヘッダに使う付帯情報である。ここで throw すると、
+    //    メタデータが 1 つ欠けただけで**アップロードの確定ができなくなる**（S3 には実体があり、
+    //    確定できなければ計上もされない = 実体とカウンタがずれる）。
+    ContentType:
+      typeof output.ContentType === 'string' && output.ContentType !== ''
+        ? output.ContentType
+        : DEFAULT_CONTENT_TYPE,
+  };
 }
 
 /** `HeadObject` の 404（存在しない）。🔴 これだけをポートの `null` に写す。 */

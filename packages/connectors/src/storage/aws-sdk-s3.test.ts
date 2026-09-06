@@ -187,12 +187,32 @@ describe('🔴 ③ ④ headObject / deleteObject（`send` を差し替え、ネ�
     vi.spyOn(client, 'send').mockResolvedValue({
       ContentLength: 2048,
       VersionId: 'v-1',
+      ContentType: 'application/pdf',
       $metadata: {},
     } as never);
 
     expect(await api({ client }).headObject({ Bucket: BUCKET, Key: KEY })).toEqual({
       ContentLength: 2048,
       VersionId: 'v-1',
+      ContentType: 'application/pdf',
+    });
+  });
+
+  // 🔴 T-05-06: `ContentType` だけは欠落を例外にしない（既定へ落とす）。ここで落とすと、
+  //    実体は S3 にあるのに**確定（#19）ができず計上もされない**状態になり、
+  //    `UsageCounter` と実体がずれる（`ContentLength` / `VersionId` とは性質が違う）。
+  it('ContentType が欠けていたら application/octet-stream に落とす（確定を止めない）', async () => {
+    const client = localClient();
+    vi.spyOn(client, 'send').mockResolvedValue({
+      ContentLength: 2048,
+      VersionId: 'v-1',
+      $metadata: {},
+    } as never);
+
+    expect(await api({ client }).headObject({ Bucket: BUCKET, Key: KEY })).toEqual({
+      ContentLength: 2048,
+      VersionId: 'v-1',
+      ContentType: 'application/octet-stream',
     });
   });
 

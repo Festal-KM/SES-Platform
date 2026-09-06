@@ -31,6 +31,9 @@ describe('MockObjectStore', () => {
     await store.presignPut('k1', 'text/plain', 100);
     const head = await store.head('k1');
     expect(head?.versionId).toBeTruthy();
+    // 🔴 T-05-06: 署名時の content-type がそのまま返る（実装と同じ。demo だけ形式表示が
+    //    変わらないようにする）。
+    expect(head?.contentType).toBe('text/plain');
 
     await store.delete('k1');
     expect(await store.head('k1')).toBeNull();

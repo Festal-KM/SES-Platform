@@ -469,6 +469,9 @@ model SkillSheet {
   scanStatus            String    @default("SCANNING") @map("scan_status")
   scanUpdatedAt         DateTime? @map("scan_updated_at") @db.Timestamptz(3)
   isLatest              Boolean   @default(false) @map("is_latest") // 🔴 CLEAN のみ true になれる
+  /// 🔴 T-05-06: 版のメモ（docs/02 `F-011` の入力 / docs/05 §6.4 #19 の `note?` / `S-008`）。
+  /// 利用者の自由入力であり運営者に GRANT しない（migration 20260909000000）。
+  note                  String?
   uploadedBy            String    @map("uploaded_by") @db.Uuid
   uploadedAt            DateTime  @default(now()) @map("uploaded_at") @db.Timestamptz(3)
   purgedAt              DateTime? @map("purged_at") @db.Timestamptz(3)

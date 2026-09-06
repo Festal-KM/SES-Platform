@@ -66,11 +66,24 @@ export function assertSendingDomainForRecipientClass(input: {
   if (input.fromDomain === null) throw new SendingDomainRequiredError(input.recipientClass);
 }
 
+/**
+ * `ObjectStore.head()` が返す**保管されている実体**の属性（T-05-06 で `contentType` を追加）。
+ *
+ * 🔴 アップロード確定（#19）は、クライアントの申告ではなく**この値**を正として
+ *    `SkillSheet` の行を作る（docs/05 §14.2）。`byteSize` は `UsageCounter(STORAGE_BYTES)` の
+ *    加算値であり、`versionId` はスキャン結果の重複排除キーの一部である。
+ */
+export type ObjectHead = {
+  readonly byteSize: number;
+  readonly versionId: string;
+  readonly contentType: string;
+};
+
 export interface ObjectStore {
   presignPut(key: string, contentType: string, maxBytes: number): Promise<PresignedUrl>;
   presignGet(key: string, ttlSec: number): Promise<PresignedUrl>;
   delete(key: string): Promise<void>;
-  head(key: string): Promise<{ byteSize: number; versionId: string } | null>;
+  head(key: string): Promise<ObjectHead | null>;
   callCount(): number;
 }
 

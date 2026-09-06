@@ -395,6 +395,20 @@ const ja = {
   // 🔴 docs/05 §14.2 ④（`UPLOAD_MAX_BYTES`）。「壊れた」ではなく「大きすぎる」ことを伝え、
   //    分割・圧縮という次の行動へ導く。
   'error.upload.tooLarge': 'ファイルのサイズが上限を超えています。',
+  // 🔴 T-05-06: アップロードの確定（docs/05 §6.4 #19）。**「壊れた」ではなく「届いていない」**
+  //    として書き、もう一度アップロードするという次の行動へ導く。
+  'error.skillSheet.objectMissing':
+    'アップロードされたファイルを確認できませんでした。通信が途中で切れた可能性があります。もう一度アップロードしてください。',
+  // 🔴 `F-011` 処理③ / `BR-26`。**「無視して切り替える」余地を文言でも作らない。**
+  'error.skillSheet.notClean':
+    'この版はウイルス検査に合格していないため、最新版にできません。検査に合格した版を選ぶか、ファイルを上げ直してください。',
+  // 🔴 T-05-06: 提案に凍結添付された版（`EngineerSnapshot`）は削除できない。
+  //    「消せない」ではなく「なぜ残るのか」を書く（提案時点の記録であること）。
+  'error.skillSheet.referenced':
+    'この版は提案に添付されているため削除できません。提案時点の記録として保持されます。',
+  // 🔴 `F-011 AC-2`。検査は必ず終わる（`scan.poll` が滞留を拾う）ので、待てばよいことを伝える。
+  'error.skillSheet.scanInProgress':
+    'この版は検査中のため操作できません。検査が終わってからもう一度お試しください。',
   'error.internal': '処理に失敗しました。時間をおいて再度お試しください。',
 
   // --- S-041 監査ログ（自テナント。docs/04 §S-041 / F-005 / F-012。T-03-05）---
@@ -851,11 +865,97 @@ const ja = {
   // 🔴 `BR-52` / `F-008 AC-1`: 集めていない情報を明示する（ワイヤーフレーム §S-006 の注記）。
   'engineers.detail.collectionScope': '本籍・家族構成・健康情報・信条にあたる項目は保持していません。',
   // 🔴 未実装のセクションを黙って消さない（`engineers.careers.comingSoon` と同じ規律）。
-  //    スキルシートの取込・閲覧・DL は T-05-06 / T-05-07、提案履歴と凍結差分は SP-09 が作る。
-  'engineers.detail.skillSheets.comingSoon':
-    'スキルシートの取込と版の管理は、後続のリリースで利用できるようになります。閲覧とダウンロードは、そのときも監査ログに記録されます。',
+  //    提案履歴と凍結差分は SP-09 が作る。
+  //    ⚠️ `engineers.detail.skillSheets.comingSoon` は T-05-06 で `S-008` が実装され、
+  //       導線（`engineers.detail.skillSheets.link`）に置き換わったため削除した。
   'engineers.detail.proposals.comingSoon':
     'この人材の提案履歴と、提案時点の凍結情報との差分は、後続のリリースで表示されます。',
+  // 🔴 T-05-06: `S-006` セクション 3 → `S-008` への導線（docs/04 §S-006 関連画面「→ `S-008`」）。
+  'engineers.detail.skillSheets.link': 'スキルシートの取込と版管理を開く',
+  'engineers.detail.skillSheets.lead':
+    'スキルシートの版・ウイルス検査の状態・最新版の切替は、専用の画面で管理します。',
+
+  // --- S-008 スキルシートの取込と版管理（docs/04 §S-008 / `F-011` / docs/05 §6.4 #18 #19）---
+  // 🔴 `F-011 AC-1`: **`CLEAN` でない版には共有の導線を出さない。** 文言も「いまは選べない」
+  //    ではなく「この版は共有できない」と書く（順番待ちだと読まれると、待てば送れると誤解される）。
+  // 🔴 `F-011 AC-2`: 検査中は「検査中」と表示し、操作を出さない。
+  // 🔴 `F-011 AC-3`: 感染を検出した版は隔離であり、**どのロールからもダウンロードできない**。
+  // 🔴 T3（デスクトップ主体）だが**モバイルで遮断しない**（`CLAUDE.md` §13.3）。
+  'skillSheets.title': 'スキルシートの取込と版管理',
+  'skillSheets.breadcrumb.home': 'ホーム',
+  'skillSheets.breadcrumb.engineers': '人材',
+  'skillSheets.breadcrumb.current': 'スキルシート',
+  'skillSheets.backToEngineer': '人材の詳細に戻る',
+
+  'skillSheets.upload.section': 'アップロード',
+  'skillSheets.upload.fileLabel': 'ファイルを選択',
+  'skillSheets.upload.noteLabel': '版のメモ（任意）',
+  'skillSheets.upload.submit': 'アップロード',
+  'skillSheets.upload.submitting': 'アップロードしています…',
+  'skillSheets.upload.done': 'アップロードしました。ウイルス検査が終わるまで共有できません。',
+  'skillSheets.upload.formats': '対応形式: xlsx / xls / docx / doc / pdf / png / jpeg（1 ファイル 20 MB まで）',
+  // 🔴 `docs/03` `ui-design` 申し送り 8。**受け付けは拒否しない**が、読み取れないことを先に伝える。
+  'skillSheets.upload.imageNotice':
+    '画像 PDF・画像ファイルは自動読み取りに対応していません。アップロードは可能ですが、内容は手入力になります。',
+  // 🔴 アップロード直後は必ず「検査中」である（`F-011 AC-2`）。共有できる時期を約束しない。
+  'skillSheets.upload.scanNotice':
+    'アップロードした版はウイルス検査を経て「検査済み」になります。検査に合格するまで、共有・ダウンロード・提案への添付はできません。',
+  'skillSheets.upload.error': 'アップロードできませんでした。もう一度お試しください。',
+  'skillSheets.upload.errorTooLarge': 'ファイルのサイズが上限を超えています。',
+  'skillSheets.upload.errorQuota':
+    'ストレージの空き容量が不足しているため、アップロードを開始できません。不要な版を削除するか、組織の管理者にお問い合わせください。',
+  // 🔴 `docs/04` §S-008 権限差分「`VIEWER` はアップロード・ダウンロード・採否の導線が無い」。
+  //    導線を消すだけにせず、誰ができるのかを書く（行き止まりにしない）。
+  'skillSheets.upload.readOnlyNote':
+    'スキルシートのアップロードと版の管理は、この画面では行えません。担当の営業または管理者にご依頼ください。',
+
+  'skillSheets.versions.section': '版の一覧',
+  'skillSheets.versions.empty':
+    'スキルシートが登録されていません。上のアップロード欄から登録してください。',
+  'skillSheets.versions.column.version': '版',
+  'skillSheets.versions.column.uploadedAt': 'アップロード日時',
+  'skillSheets.versions.column.uploadedBy': 'アップロード者',
+  'skillSheets.versions.column.scanStatus': 'スキャン状態',
+  'skillSheets.versions.column.extraction': '抽出状態',
+  'skillSheets.versions.column.latest': '最新版',
+  'skillSheets.versions.column.actions': '操作',
+  'skillSheets.versions.versionPrefix': 'v',
+  'skillSheets.versions.latestBadge': '最新',
+  'skillSheets.versions.notLatest': '—',
+  'skillSheets.versions.uploaderUnknown': '—',
+  'skillSheets.versions.noteLabel': 'メモ',
+
+  // スキャン状態（`ScanStatus` の 5 値。値の出所は `@ses/domain` の `SCAN_STATUSES`）。
+  'skillSheets.scanStatus.SCANNING': '検査中（通常 2 分以内）',
+  'skillSheets.scanStatus.CLEAN': '検査済み',
+  'skillSheets.scanStatus.INFECTED': '隔離',
+  'skillSheets.scanStatus.UNSCANNABLE': '検査不能',
+  'skillSheets.scanStatus.FAILED': '検査失敗',
+
+  // 操作欄。🔴 **`CLEAN` 以外の行にはボタンを 1 つも描かない**（`F-011 AC-1`〜`AC-3`）。
+  'skillSheets.actions.blocked.SCANNING': '検査中のため、操作は選択できません。',
+  'skillSheets.actions.blocked.INFECTED':
+    'このファイルは隔離されました。以後どのロールからもダウンロードできません。',
+  'skillSheets.actions.blocked.UNSCANNABLE': '検査を完了できなかったため、この版は共有できません。',
+  'skillSheets.actions.blocked.FAILED': '検査に失敗したため、この版は共有できません。',
+  'skillSheets.actions.setLatest': '最新版にする',
+  'skillSheets.actions.setLatestSubmitting': '切り替えています…',
+  'skillSheets.actions.delete': '削除',
+  'skillSheets.actions.deleteSubmitting': '削除しています…',
+  'skillSheets.actions.deleteConfirm':
+    'この版を削除します。ファイルの実体も削除され、元に戻せません。よろしいですか？',
+  'skillSheets.actions.error': '操作を反映できませんでした。画面を更新して、もう一度お試しください。',
+  // 🔴 ダウンロード・提案添付・チャット添付は T-05-07 / SP-09 / SP-13。**`CLEAN` の行にだけ**
+  //    出す（`CLEAN` でない行にこの文言を出すと「そのうち共有できる」と読める）。
+  'skillSheets.actions.shareComingSoon':
+    'この版のダウンロードと、提案・チャットへの添付は、後続のリリースでこの画面から行えます。',
+
+  'skillSheets.extraction.section': '抽出結果と採否',
+  'skillSheets.extraction.notRun': '未実行',
+  // 🔴 `docs/03` `ui-design` 申し送り 8。行ごとに「この形式は読み取れない」と明示する。
+  'skillSheets.extraction.unsupported': '自動読み取り非対応',
+  'skillSheets.extraction.comingSoon':
+    'スキルシートの自動読み取りと、抽出結果の採否・スキル正規化は後続のリリースで利用できるようになります。現時点ではスキルの登録は人材の編集画面から手入力してください。',
 
   // --- S-009 スキル辞書・別名・新語候補（docs/04 §S-009 / `F-010` / docs/05 §6.4 #23 #24）---
   // 🔴 T3（デスクトップ主体）だが**モバイルで遮断しない**（`CLAUDE.md` §13.3）。

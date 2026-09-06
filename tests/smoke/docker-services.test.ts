@@ -57,7 +57,7 @@ describe.skipIf(SKIP)('docker-compose 開発コンテナの疎通（T-01-02）',
   beforeAll(() => {
     if (!isStackRunning(EXPECTED_SERVICES)) {
       throw new Error(
-        'docker-compose のスタックが起動していません。`docker compose up -d --wait` を実行してから ' +
+        'docker-compose のスタックが起動していません。`docker compose up -d` を実行してから ' +
           '`pnpm test:smoke` を再実行してください（起動待ちのタイムアウトで判定せず、ここで即座に失敗させています）。',
       );
     }

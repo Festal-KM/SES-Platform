@@ -13,10 +13,11 @@
 import { requireExecutable, requireNotViewer, requireRole } from '../../../../../../../lib/api/guards';
 import { withApiRoute } from '../../../../../../../lib/api/withApiRoute';
 import { objectStore, storageRuntime } from '../../../../../../../lib/db/bootstrap';
+import { SKILL_SHEET_MANAGER_ROLES } from '../../../../../../../lib/skill-sheets/policy';
 import { issueSkillSheetUploadUrl } from '../../../../../../../lib/skill-sheets/service';
 import {
   skillSheetUploadUrlBodySchema,
-  skillSheetUploadUrlParamsSchema,
+  skillSheetEngineerParamsSchema,
 } from '../../../../../../../lib/skill-sheets/schemas';
 
 export const runtime = 'nodejs';
@@ -33,11 +34,11 @@ export const POST = withApiRoute(
   {
     label: 'POST /api/engineers/{id}/skill-sheets/upload-url',
     guards: [
-      requireRole(['OWNER', 'ADMIN', 'SALES', 'PARTNER_ADMIN', 'PARTNER_SALES']),
+      requireRole(SKILL_SHEET_MANAGER_ROLES),
       requireExecutable(),
       requireNotViewer(),
     ],
-    params: skillSheetUploadUrlParamsSchema,
+    params: skillSheetEngineerParamsSchema,
     body: skillSheetUploadUrlBodySchema,
   },
   async ({ ctx, params, body }) => {

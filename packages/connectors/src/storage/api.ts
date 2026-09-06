@@ -53,6 +53,12 @@ export type S3HeadObjectResponse = {
   readonly ContentLength: number;
   /** バージョニング有効なバケットの版 ID（`FileScanResult.objectVersionId` の出所）。 */
   readonly VersionId: string;
+  /**
+   * 🔴 T-05-06: 実際に保管されている content-type（`SkillSheet.contentType` の出所）。
+   *    署名（`presignPut`）に `Content-Type` を焼き込んでいるため、これは #18 で検証済みの
+   *    申告値と必ず一致する。**確定（#19）では申告を受け取らず、この値だけを保存する。**
+   */
+  readonly ContentType: string;
 };
 
 /**
