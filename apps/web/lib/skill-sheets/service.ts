@@ -43,6 +43,7 @@ import {
 } from '@ses/db';
 import type { ObjectStore } from '@ses/connectors';
 import {
+  buildSkillSheetDownloadFileName,
   buildSkillSheetObjectKey,
   decideStorageUpload,
   objectKeyExtensionOf,
@@ -68,6 +69,13 @@ import {
   recordEngineerView,
   type EngineerViewMeta,
 } from '../engineers/service';
+// 🔴 T-05-07: 署名付き DL URL を発行できる唯一の経路（docs/05 §14.2 / §16.1）。
+//    ここで `presignGet` を直接呼ばない —— 呼ぶと「監査の後に署名する」順序が 2 実装になる。
+import {
+  issueDownloadUrl,
+  type DownloadTicket,
+  type IssueDownloadUrlDeps,
+} from '../storage/download';
 import { canBecomeLatestSkillSheet, isScanSettled } from './policy';
 import type { SkillSheetConfirmBody, SkillSheetUploadUrlBody } from './schemas';
 
@@ -208,6 +216,14 @@ export const SKILL_SHEET_AUDIT_ACTIONS = {
   create: 'skill_sheet.create',
   update: 'skill_sheet.update',
   delete: 'skill_sheet.delete',
+  /**
+   * 🔴 T-05-07: 版の**中身**を開いた（#21）。docs/05 §16.1 の `skill_sheet.view`。
+   *    ⚠️ 版一覧（`readSkillSheetVersions`）は `engineer.view`（`via='SKILL_SHEETS'`）であり、
+   *       こちらとは別物である —— 一覧はメタデータ、こちらは「この人のこの版を開いた」である。
+   */
+  view: 'skill_sheet.view',
+  /** 🔴 T-05-07: 署名付き URL の発行（#20）。docs/05 §16.1 の `skill_sheet.download`。 */
+  download: 'skill_sheet.download',
 } as const;
 
 /** `skill_sheet.update` の `summary.operation`（版の切替以外が増えたらここに足す）。 */
@@ -689,4 +705,139 @@ export async function deleteSkillSheet(
       deviceKind: ctx.deviceKind,
     });
   });
+}
+
+// ===========================================================================
+// 🔴 T-05-07 閲覧（#21）とダウンロード（#20）。`F-012` / K-7（`CLAUDE.md` §7 の許容 0 指標）。
+// ===========================================================================
+//
+// 🔴 **閲覧とダウンロードは別々に記録する**（`F-012 AC-1` / `BR-28`）。片方に畳むと
+//    「見ただけの人」と「手元にファイルを持って行った人」が区別できなくなり、
+//    取引先への説明（`CLAUDE.md` §1.1-5 / §3.5）が成り立たない。
+// 🔴 **記録が成立してからでなければ結果を返さない**（`F-012 AC-2`）。閲覧はここ（業務
+//    トランザクション内の `writeAuditLog`）、ダウンロードは `issueDownloadUrl` が守る。
+// 🔴 **`VIEWER` は閲覧できるがダウンロードできない**（`F-012 AC-3` / `BR-31`）。拒否の本体は
+//    ルートのガード（#20 は `requireNotViewer`、#21 は無し）であり、画面の導線は
+//    `policy.ts` の `canDownloadSkillSheet` が決める（同じ規則を 2 度書かない）。
+
+/**
+ * `GET /api/skill-sheets/{id}/preview`（docs/05 §6.4 #21）の応答。
+ *
+ * 🔴 **本文（原本の中身）を返さない。** サーバがスキルシートの中身を握って配る経路を作らない
+ *    —— 原本に到達できるのは #20 が出す短命の署名付き URL だけであり、そこは
+ *    `CLEAN` + 監査 + `VIEWER` 拒否の 3 条件を通る。ここが本文を返すと、その 3 条件を
+ *    迂回する 2 本目の経路になる。
+ * 🔴 `objectKey` を返さない（画面に要らず、運営者にも見せない値。docs/05 §5.5）。
+ */
+export type SkillSheetPreviewView = SkillSheetVersionView & {
+  /** 版がどのエンジニアのものか（画面の戻り導線に使う）。 */
+  readonly engineerId: string;
+};
+
+/**
+ * 版の**中身を開く**（#21）。T-05-07。
+ *
+ * 🔴 **`skill_sheet.view` を業務トランザクション内で記録し、書けなければ内容を返さない**
+ *    （`F-012 AC-1` / `AC-2`）。`withApiRoute` の `audit` オプションを使わないのは、
+ *    あちらがハンドラの**前**に別トランザクションで書くため **404（境界外・不存在）でも
+ *    「閲覧した」記録が残る**からである（§16.1 / `engineer.view` と同じ判断）。
+ *
+ * 🔴 **`CLEAN` を要求しない。** ここが返すのはメタデータであって原本ではなく、隔離された版に
+ *    ついても「いつ・どの版が・なぜ渡せないのか」を確かめられなければ利用者は次の行動
+ *    （上げ直す / 削除する）を選べない。原本に触れる #20 だけが `CLEAN` を要求する。
+ * 🔴 境界外・不存在はどちらも 404（docs/05 §4.8）。母集団は `skill_sheets` の RLS
+ *    （C3 OWNER_SCOPED）が決めるので、**ホストはパートナー所有の版に `Proposal` 作成前は
+ *    到達できない**（`F-012 AC-4` / `BR-59`）。ここに `where` を足さない。
+ */
+export async function readSkillSheetPreview(
+  ctx: AuthenticatedTenantCtx,
+  skillSheetId: string,
+  meta: SkillSheetActionMeta,
+): Promise<SkillSheetPreviewView> {
+  return withTenant(ctx, async (db) => {
+    const row = await db.skillSheet.findFirst({
+      where: { id: skillSheetId },
+      select: { ...SKILL_SHEET_VIEW_SELECT, engineerId: true },
+    });
+    if (row === null) throw new NotFoundError();
+
+    await writeAuditLog(db, {
+      action: SKILL_SHEET_AUDIT_ACTIONS.view,
+      actorKind: 'USER',
+      actorId: ctx.userId,
+      targetType: 'SkillSheet',
+      targetId: row.id,
+      // 🔴 PII を載せない（氏名・メモ・ファイル名・オブジェクトキー。§16.2 / §5.5）。
+      summary: { engineerId: row.engineerId, version: row.version, scanStatus: row.scanStatus },
+      ipAddress: meta.ipAddress,
+      deviceKind: ctx.deviceKind,
+    });
+
+    const uploaderNames = await readUploaderNames(db, [row]);
+    return { ...toVersionView(row, uploaderNames), engineerId: row.engineerId };
+  });
+}
+
+export type SkillSheetDownloadDeps = {
+  readonly objectStore: ObjectStore;
+};
+
+/**
+ * `GET /api/skill-sheets/{id}/download-url`（docs/05 §6.4 #20）。T-05-07。
+ *
+ * 🔴 発行の前提条件（`CLEAN` / 監査の先行）を**この関数が判定しない**。判定は
+ *    `issueDownloadUrl`（docs/05 §14.2 が定める唯一の発行経路）にあり、ここは
+ *    「どの行を対象にするか」と「何を記録するか」だけを渡す。条件式をここに写すと、
+ *    契約書（#82）・返却データ（#78）が増えたときに判定が 3 実装になる。
+ *
+ * 🔴 **ダウンロード名は版番号から作る**（`buildSkillSheetDownloadFileName`）。原本の
+ *    ファイル名は保存していない（docs/05 §14.1 の決着。氏名を含みうるため）。キーの形が
+ *    壊れていて名前を作れない場合は名前を付けない（S3 のキー名で落ちる）—— **名前が作れない
+ *    ことを理由にダウンロードを止めない**（利用者から見れば、開けるはずのファイルが
+ *    開けなくなるだけである）。
+ */
+export async function issueSkillSheetDownloadUrl(
+  ctx: AuthenticatedTenantCtx,
+  skillSheetId: string,
+  deps: SkillSheetDownloadDeps,
+  meta: SkillSheetActionMeta,
+): Promise<DownloadTicket> {
+  const downloadDeps: IssueDownloadUrlDeps = {
+    objectStore: deps.objectStore,
+    ipAddress: meta.ipAddress,
+  };
+  return issueDownloadUrl(
+    ctx,
+    async (db) => {
+      const row = await db.skillSheet.findFirst({
+        where: { id: skillSheetId },
+        select: {
+          id: true,
+          engineerId: true,
+          version: true,
+          scanStatus: true,
+          objectKey: true,
+        },
+      });
+      // 🔴 見えない版は `null`（→ 404）。`where` にテナント・パートナーを足さない（RLS が決める）。
+      if (row === null) return null;
+      const downloadFileName = buildSkillSheetDownloadFileName(row.objectKey);
+      return {
+        objectKey: row.objectKey,
+        scanStatus: row.scanStatus as ScanStatus,
+        ...(downloadFileName === null ? {} : { downloadFileName }),
+        audit: {
+          action: SKILL_SHEET_AUDIT_ACTIONS.download,
+          targetType: 'SkillSheet',
+          targetId: row.id,
+          summary: {
+            engineerId: row.engineerId,
+            version: row.version,
+            scanStatus: row.scanStatus,
+          },
+        },
+      };
+    },
+    downloadDeps,
+  );
 }

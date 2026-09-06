@@ -38,6 +38,31 @@ export function canManageSkillSheets(role: TenantRole): boolean {
 }
 
 /**
+ * 🔴 スキルシートを**ダウンロードできる**ロール（`F-012 AC-3` / `BR-31` / `docs/02` `F-012`
+ *    関連ロール）。T-05-07。
+ *
+ * 🔴 **管理ロールと同じ定数を指す**（別に列挙しない）。現時点で両者は同じ集合であり、
+ *    2 つ書くとロールが増減したときに片方だけ変わる。**分ける必要が生じたらここで枝分かれさせる**
+ *    —— そのときも「画面の導線」と「`#20` の `requireRole`」は同じ定数を見続ける。
+ * 🔴 `VIEWER` を含めない。`VIEWER` は閲覧（`#21` / 版一覧）はできるがダウンロードはできない。
+ */
+export const SKILL_SHEET_DOWNLOADER_ROLES = SKILL_SHEET_MANAGER_ROLES;
+
+/**
+ * 🔴 そのロールがダウンロードを実行できるか（`F-012 AC-3` / `BR-31`）。
+ *
+ * 🔴 **版の状態（`CLEAN` か）はここで見ない。** ダウンロードの可否は
+ *    「ロール」×「版の状態」の AND だが、後者は `isSkillSheetShareable` が持っている ——
+ *    2 つを 1 つの関数に畳むと、画面が「行ごとにロールを渡す」不自然な形になるか、
+ *    さもなくば片方の条件だけを見る枝が生まれる。**画面も API も、同じ 2 つの述語の AND**
+ *    として表現する（`canDownloadSkillSheet(role) && isSkillSheetShareable(scanStatus)`）。
+ *    無効化したボタンは置かない（「押せるが拒否される」は `F-011 AC-1` が禁じる状態そのもの）。
+ */
+export function canDownloadSkillSheet(role: TenantRole): boolean {
+  return (SKILL_SHEET_DOWNLOADER_ROLES as readonly TenantRole[]).includes(role);
+}
+
+/**
  * 🔴 共有してよい版か（`BR-26` / `F-011 AC-1`）。
  *
  * 🔴 **`CLEAN` だけが `true`。** `SCANNING`（検査中）も `UNSCANNABLE` / `FAILED`（判定不能）も

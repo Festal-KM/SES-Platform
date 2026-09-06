@@ -30,7 +30,10 @@ import {
   isSkillSheetShareable,
   supportsAutoExtraction,
 } from '../../../../../lib/skill-sheets/policy';
-import type { SkillSheetVersionView } from '../../../../../lib/skill-sheets/service';
+import type {
+  SkillSheetPreviewView,
+  SkillSheetVersionView,
+} from '../../../../../lib/skill-sheets/service';
 import { uploadSkillSheet } from '../../../../../lib/skill-sheets/upload-client';
 
 export type SkillSheetScreenMessages = {
@@ -75,6 +78,22 @@ export type SkillSheetScreenMessages = {
   readonly actionError: string;
   readonly shareComingSoon: string;
 
+  /** T-05-07（`F-012`）。閲覧（#21）とダウンロード（#20）は**別の操作**である。 */
+  readonly preview: string;
+  readonly previewSubmitting: string;
+  readonly previewClose: string;
+  readonly download: string;
+  readonly downloadSubmitting: string;
+  readonly auditNotice: string;
+  readonly downloadReadOnlyNote: string;
+  readonly previewTitle: string;
+  readonly previewContentType: string;
+  readonly previewByteSize: string;
+  readonly previewByteSizeUnit: string;
+  readonly previewBodyNotice: string;
+  readonly previewError: string;
+  readonly downloadError: string;
+
   readonly extractionSection: string;
   readonly extractionNotRun: string;
   readonly extractionUnsupported: string;
@@ -94,6 +113,7 @@ export function SkillSheetScreen({
   engineerId,
   versions,
   canManage,
+  canDownload,
   messages,
 }: {
   readonly engineerId: string;
@@ -104,6 +124,16 @@ export function SkillSheetScreen({
    *    ⚠️ これは UI の配慮であって拒否の本体ではない（本体は各ルートのガードと RLS）。
    */
   readonly canManage: boolean;
+  /**
+   * 🔴 T-05-07: ダウンロードの導線を出すか（`F-012 AC-3` / `BR-31`。
+   *    「`VIEWER` はダウンロード操作を実行できず、**導線も表示されない**。閲覧は可能」）。
+   *    値の出所は `page.tsx` の `canDownloadSkillSheet`（＝ `#20` の `requireRole` と同じ定数）。
+   * 🔴 `canManage` と**別の props** にしてある —— 同じ集合であることは `policy.ts` の
+   *    1 行（`SKILL_SHEET_DOWNLOADER_ROLES = SKILL_SHEET_MANAGER_ROLES`）が保証しており、
+   *    画面側で「管理できる ＝ ダウンロードできる」と読み替えると、集合が分かれた日に
+   *    静かに間違った導線を描く。
+   */
+  readonly canDownload: boolean;
   readonly messages: SkillSheetScreenMessages;
 }) {
   const [file, setFile] = useState<File | null>(null);
@@ -112,6 +142,11 @@ export function SkillSheetScreen({
   const [uploadErrorCode, setUploadErrorCode] = useState<string | null>(null);
   const [actionPhase, setActionPhase] = useState<Phase>('idle');
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [previewPhase, setPreviewPhase] = useState<Phase>('idle');
+  const [previewId, setPreviewId] = useState<string | null>(null);
+  const [preview, setPreview] = useState<SkillSheetPreviewView | null>(null);
+  const [downloadPhase, setDownloadPhase] = useState<Phase>('idle');
+  const [downloadId, setDownloadId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   /**
@@ -197,6 +232,61 @@ export function SkillSheetScreen({
     }
   }
 
+  /**
+   * 🔴 版の**中身を開く**（#21）。応答は `{ meta }` だけであり本文は来ない
+   *    （docs/05 §6.4 #21）。それでもサーバ側で `skill_sheet.view` が記録される ——
+   *    「誰の経歴を、誰が、いつ見たか」を残すのが目的であって、本文を運ぶことではない。
+   */
+  async function onPreview(id: string): Promise<void> {
+    if (previewPhase === 'submitting') return;
+    // すでに開いている版をもう一度押したら閉じる（記録を無駄に増やさない）。
+    if (previewId === id && preview !== null) {
+      setPreviewId(null);
+      setPreview(null);
+      setPreviewPhase('idle');
+      return;
+    }
+    setPreviewPhase('submitting');
+    setPreviewId(id);
+    setPreview(null);
+    try {
+      const response = await fetch(`/api/skill-sheets/${id}/preview`);
+      if (!response.ok) {
+        setPreviewPhase('error');
+        return;
+      }
+      const body = (await response.json()) as { readonly meta: SkillSheetPreviewView };
+      setPreview(body.meta);
+      setPreviewPhase('idle');
+    } catch {
+      setPreviewPhase('error');
+    }
+  }
+
+  /**
+   * 🔴 ダウンロード（#20）。**サーバは URL を返すだけ**であり、記録はその URL を出す前に
+   *    済んでいる（`issueDownloadUrl`）。ここで `window.location` に入れる URL は
+   *    S3 の短命な署名付き URL である。
+   * 🔴 発行に失敗したら**何も起こらない**（別タブを開いて空振りさせない）。
+   */
+  async function onDownload(id: string): Promise<void> {
+    if (downloadPhase === 'submitting') return;
+    setDownloadPhase('submitting');
+    setDownloadId(id);
+    try {
+      const response = await fetch(`/api/skill-sheets/${id}/download-url`);
+      if (!response.ok) {
+        setDownloadPhase('error');
+        return;
+      }
+      const body = (await response.json()) as { readonly url: string };
+      setDownloadPhase('idle');
+      window.location.assign(body.url);
+    } catch {
+      setDownloadPhase('error');
+    }
+  }
+
   return (
     <div data-testid="skill-sheet-screen">
       <section className="mb-8" data-testid="skill-sheet-upload-section">
@@ -269,6 +359,11 @@ export function SkillSheetScreen({
 
       <section className="mb-8" data-testid="skill-sheet-versions-section">
         <h2 className="mb-2 text-sm font-semibold text-slate-700">{messages.versionsSection}</h2>
+        {/* 🔴 T-05-07: 閲覧・DL が記録されることを**隠さない**（`CLAUDE.md` §3.5 の説明責任は、
+            見る側にも伝わっていなければ抑止として働かない）。ロールを問わず出す。 */}
+        <p className="mb-2 text-xs text-slate-500" data-testid="skill-sheet-audit-notice">
+          {messages.auditNotice}
+        </p>
         {versions.length === 0 ? (
           <p
             className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700"
@@ -348,11 +443,47 @@ export function SkillSheetScreen({
                         )}
                       </td>
                       <td className="px-3 py-2">
+                        {/* 🔴 T-05-07: 閲覧（#21）の導線は**ロールも状態も問わず**出す。
+                            `VIEWER` も閲覧はできる（`F-012 AC-3`）し、隔離された版でも
+                            「いつ・どの版が・なぜ渡せないのか」を確かめられなければ、
+                            利用者は次の行動（上げ直す / 削除する）を選べない。
+                            🔴 応答は `{ meta }` だけであり本文は来ない（原本に触れるのは #20 のみ）。 */}
+                        <div className="mb-2 flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            disabled={previewPhase === 'submitting'}
+                            onClick={() => void onPreview(version.id)}
+                            data-testid={`skill-sheet-preview-${version.id}`}
+                          >
+                            {previewPhase === 'submitting' && previewId === version.id
+                              ? messages.previewSubmitting
+                              : previewId === version.id && preview !== null
+                                ? messages.previewClose
+                                : messages.preview}
+                          </Button>
+                        </div>
                         {/* 🔴 共有の導線は `CLEAN` の行にしか存在しない（`F-011 AC-1`）。
                             `CLEAN` でない行には**理由だけ**を出し、要素そのものを描かない。 */}
                         {shareable ? (
                           <div className="flex flex-col gap-2">
                             <div className="flex flex-wrap gap-2">
+                              {/* 🔴 ダウンロードは `CLEAN` かつ `VIEWER` でないときだけ描く
+                                  （`F-011 AC-1` / `F-012 AC-3`）。無効化したボタンを置かない。 */}
+                              {canDownload ? (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  disabled={downloadPhase === 'submitting'}
+                                  onClick={() => void onDownload(version.id)}
+                                  data-testid={`skill-sheet-download-${version.id}`}
+                                >
+                                  {downloadPhase === 'submitting' && downloadId === version.id
+                                    ? messages.downloadSubmitting
+                                    : messages.download}
+                                </Button>
+                              ) : null}
                               {canSetLatest ? (
                                 <Button
                                   type="button"
@@ -377,8 +508,18 @@ export function SkillSheetScreen({
                                 </Button>
                               ) : null}
                             </div>
-                            {/* ダウンロード（#20）・提案添付（SP-09）・チャット添付（SP-13）の
-                                置き場所。🔴 **`CLEAN` の行にだけ**出す。 */}
+                            {/* 🔴 `VIEWER` にはダウンロードの導線が無い（`F-012 AC-3`）。
+                                消すだけにせず、**誰に頼めばよいか**を書く（行き止まりにしない）。 */}
+                            {canDownload ? null : (
+                              <p
+                                className="text-xs text-slate-500"
+                                data-testid={`skill-sheet-download-read-only-${version.id}`}
+                              >
+                                {messages.downloadReadOnlyNote}
+                              </p>
+                            )}
+                            {/* 提案添付（SP-09）・チャット添付（SP-13）の置き場所。
+                                🔴 **`CLEAN` の行にだけ**出す。 */}
                             <p
                               className="text-xs text-slate-500"
                               data-testid={`skill-sheet-share-${version.id}`}
@@ -412,6 +553,47 @@ export function SkillSheetScreen({
                             ) : null}
                           </div>
                         )}
+
+                        {/* 🔴 開いた版の情報（#21 の `{ meta }`）。**本文は無い**ことを明示する。 */}
+                        {previewId === version.id && preview !== null ? (
+                          <dl
+                            className="mt-2 rounded-md border border-slate-200 bg-slate-50 p-2 text-xs text-slate-700"
+                            data-testid={`skill-sheet-preview-panel-${version.id}`}
+                          >
+                            <dt className="font-semibold">{messages.previewTitle}</dt>
+                            <dd className="mb-1">
+                              {messages.versionPrefix}
+                              {preview.version} / {messages.scanStatusLabels[preview.scanStatus]}
+                            </dd>
+                            <dt>{messages.previewContentType}</dt>
+                            <dd className="mb-1">{preview.contentType}</dd>
+                            <dt>{messages.previewByteSize}</dt>
+                            <dd className="mb-1">
+                              {preview.byteSize} {messages.previewByteSizeUnit}
+                            </dd>
+                            <dd data-testid={`skill-sheet-preview-body-notice-${version.id}`}>
+                              {messages.previewBodyNotice}
+                            </dd>
+                          </dl>
+                        ) : null}
+                        {previewId === version.id && previewPhase === 'error' ? (
+                          <p
+                            role="alert"
+                            className="mt-2 text-xs text-red-700"
+                            data-testid={`skill-sheet-preview-error-${version.id}`}
+                          >
+                            {messages.previewError}
+                          </p>
+                        ) : null}
+                        {downloadId === version.id && downloadPhase === 'error' ? (
+                          <p
+                            role="alert"
+                            className="mt-2 text-xs text-red-700"
+                            data-testid={`skill-sheet-download-error-${version.id}`}
+                          >
+                            {messages.downloadError}
+                          </p>
+                        ) : null}
                       </td>
                     </tr>
                   );

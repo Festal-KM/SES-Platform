@@ -10,7 +10,12 @@
 //    漏れないためでもある（`CLAUDE.md` §3.4）。
 
 import { isTenantScopedObjectKey } from '@ses/domain';
-import type { ObjectHead, ObjectStore } from '../interfaces.js';
+import {
+  contentDispositionOf,
+  type ObjectHead,
+  type ObjectStore,
+  type PresignGetOptions,
+} from '../interfaces.js';
 import type { PresignedUrl } from '../types.js';
 import type { S3Api } from './api.js';
 
@@ -93,14 +98,22 @@ export class S3ObjectStore implements ObjectStore {
    * ダウンロード用の署名。
    * 🔴 発行の前提条件（`scanStatus='CLEAN'` / `VIEWER` でない / 監査記録が成功している）は
    *    **呼び出し側（`issueDownloadUrl`。T-05-07）** が持つ。コネクタは業務判断をしない。
+   * 🔴 ダウンロード名（`Content-Disposition`）はここで**組み立てる**（呼び出し側にヘッダの
+   *    文字列を作らせない）。値は ASCII の安全な形しか通さない（上の 🔴）。
    */
-  async presignGet(key: string, ttlSec: number): Promise<PresignedUrl> {
+  async presignGet(
+    key: string,
+    ttlSec: number,
+    options?: PresignGetOptions,
+  ): Promise<PresignedUrl> {
     this.assertKey(key);
+    const disposition = contentDispositionOf(options?.downloadFileName);
     this.calls += 1;
     const url = await this.options.api.presignGet({
       Bucket: this.options.bucket,
       Key: key,
       ExpiresInSeconds: ttlSec,
+      ...(disposition === undefined ? {} : { ResponseContentDisposition: disposition }),
     });
     return { url, expiresAt: this.expiresAt(ttlSec), headers: {} };
   }

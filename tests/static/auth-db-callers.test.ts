@@ -153,6 +153,18 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
   readStorageBytesUsed: ['apps/web/lib/skill-sheets/service.ts'],
   accountSkillSheetStorage: ['apps/web/lib/skill-sheets/service.ts'],
   releaseSkillSheetStorage: ['apps/web/lib/skill-sheets/service.ts'],
+  // 🔴 T-05-07: ダウンロード用の署名（docs/05 §14.2 / §16.1 / K-7）。
+  //    **`ObjectStore.presignGet` を呼んでよいのは `lib/storage/download.ts` だけ**である ——
+  //    あの関数だけが「①`CLEAN` である ②`AuditLog` が commit されている」を満たしてから署名する。
+  //    ここが増えると、**記録の無いダウンロード URL** を出す経路がその数だけ生まれ、
+  //    `BR-28`（欠落 0 件）が「レビューで気をつける」に退化する。
+  //    ⚠️ 契約書（#82。SP-17）・返却データ（#78。SP-18）も**同じ関数**を通すこと。
+  //       それらのサービス層は `issueDownloadUrl` の側に足す（`presignGet` の側ではない）。
+  presignGet: ['apps/web/lib/storage/download.ts'],
+  issueDownloadUrl: [
+    'apps/web/lib/skill-sheets/service.ts',
+    'apps/web/lib/storage/download.ts',
+  ],
 
   // --- 🔴 T-04-03: 運用メールと Webhook 受信（docs/05 §8.5 / §9.4）--------------------------
   // 🔴 `EmailDispatch` を作る経路を 1 ファイルに固定する。増えると `dedupeKey` の組み立てが

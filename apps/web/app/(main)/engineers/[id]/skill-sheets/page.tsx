@@ -17,7 +17,10 @@ import type { Metadata } from 'next';
 import { t } from '@ses/i18n';
 import { NotFoundError } from '../../../../../lib/api/errors';
 import { readRequestMeta, resolveTenantCtxOutcome } from '../../../../../lib/auth/session';
-import { canManageSkillSheets } from '../../../../../lib/skill-sheets/policy';
+import {
+  canDownloadSkillSheet,
+  canManageSkillSheets,
+} from '../../../../../lib/skill-sheets/policy';
 import { readSkillSheetVersions } from '../../../../../lib/skill-sheets/service';
 import { SkillSheetScreen } from './skill-sheet-screen';
 
@@ -69,6 +72,9 @@ export default async function SkillSheetsPage({
         versions={view.versions}
         // 🔴 判定は `lib/skill-sheets/policy.ts` の 1 か所（**API の `requireRole` と同じ定数**）。
         canManage={canManageSkillSheets(outcome.ctx.role)}
+        // 🔴 T-05-07: `VIEWER` はダウンロードの導線を持たない（`F-012 AC-3` / `BR-31`）。
+        //    版の状態（`CLEAN` か）は画面側が `isSkillSheetShareable` で行ごとに見る。
+        canDownload={canDownloadSkillSheet(outcome.ctx.role)}
         messages={{
           uploadSection: t('skillSheets.upload.section'),
           uploadFileLabel: t('skillSheets.upload.fileLabel'),
@@ -120,6 +126,21 @@ export default async function SkillSheetsPage({
           deleteConfirm: t('skillSheets.actions.deleteConfirm'),
           actionError: t('skillSheets.actions.error'),
           shareComingSoon: t('skillSheets.actions.shareComingSoon'),
+
+          preview: t('skillSheets.actions.preview'),
+          previewSubmitting: t('skillSheets.actions.previewSubmitting'),
+          previewClose: t('skillSheets.actions.previewClose'),
+          download: t('skillSheets.actions.download'),
+          downloadSubmitting: t('skillSheets.actions.downloadSubmitting'),
+          auditNotice: t('skillSheets.actions.auditNotice'),
+          downloadReadOnlyNote: t('skillSheets.actions.downloadReadOnlyNote'),
+          previewTitle: t('skillSheets.preview.title'),
+          previewContentType: t('skillSheets.preview.contentType'),
+          previewByteSize: t('skillSheets.preview.byteSize'),
+          previewByteSizeUnit: t('skillSheets.preview.byteSizeUnit'),
+          previewBodyNotice: t('skillSheets.preview.bodyNotice'),
+          previewError: t('skillSheets.preview.error'),
+          downloadError: t('skillSheets.download.error'),
 
           extractionSection: t('skillSheets.extraction.section'),
           extractionNotRun: t('skillSheets.extraction.notRun'),

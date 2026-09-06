@@ -92,12 +92,19 @@
 ### T-05-07 🔴 閲覧・DL と監査ログ欠落 0 件（L）
 
 - **実装**: `GET /api/skill-sheets/{id}/download-url`（#20）/ `GET /api/skill-sheets/{id}/preview`（#21）。`docs/05` §14.2 の `issueDownloadUrl`。
+  - ✅ **`issueDownloadUrl` を `apps/web/lib/storage/download.ts` に置いた**（`docs/05` §14.2 に決着を追記済み）。**`ObjectStore.presignGet` を呼んでよいのはこの 1 ファイルだけ**であり、`tests/static/auth-db-callers.test.ts` の `ALLOWED_CALLERS` が固定する（契約書 #82 / 返却データ #78 も同じ関数を通すこと）。
+  - ✅ **T-05-06 の申し送り（元ファイル名）を決着させた**: 🔴 **列を足さず、`Content-Disposition` を版番号で組み立てる**（`skill-sheet-v3.xlsx`）。ファイル名は氏名を含みうる PII であり、①保存すれば運営者 GRANT・監査・エクスポートの全経路で除外し続ける必要が生じ ②ダウンロード名は署名付き URL のクエリに載るため履歴・ログ・Sentry に氏名が現れる ③`docs/04` §S-008 の版一覧はそもそもファイル名を出さない。理由と規約は `docs/05` §14.1（`docs/05` §6.4 #19 の ⚠️ も打ち消し済み）。
+  - ✅ **非 `CLEAN` の DL は 409 `FILE_NOT_CLEAN`**（`SKILL_SHEET_NOT_CLEAN`〔＝ 最新版にできない〕と畳まない。止めている操作も次の行動も違う）。
+  - ✅ **`S-008` に「この版を開く」（#21）と「ダウンロード」（#20）の導線を足した**（`docs/04` §S-008 に追記済み。`CLAUDE.md` §8.7）。**閲覧は全ロール・全状態**、**DL は `CLEAN` かつ `VIEWER` 以外**にだけ描く。
+  - ⚠️ **`docs/05` §14.2 の前提条件④「代理閲覧中でない」（`F-060 AC-3`）は未実装**（`ImpersonationSession` は Phase 2 で、ctx に代理閲覧中を表す値が無い）。動かせない分岐を先回りで書いていない。🔴 **実装が入るときの追加箇所は `issueDownloadUrl` の 1 箇所**である（発行経路がそこしかない）。
 - 🔴 **`scanStatus='CLEAN'` かつ `AuditLog` の書き込みが成功した後にのみ署名付き URL を発行する**（`F-012 AC-2`）。**記録なしの閲覧が成立しない。**
 - 🔴 **閲覧とダウンロードを個別に記録する**（`F-012 AC-1` / `BR-28`）。**デスクトップ・モバイル・共有 URL のいずれの経路でも**記録される（T-05-10 で証明）。
 - 🔴 **`VIEWER` はダウンロードを実行できず、導線も表示されない。閲覧は可能**（`F-012 AC-3` / `BR-31`）。
 - 🔴 **ホスト所属の利用者は、パートナー所属エンジニアのスキルシートに `Proposal` が作成される前は到達できない**（`F-012 AC-4` / `BR-59`）。SP-08 / SP-09 で経路 4 → 経路 2 の合流として検証する。
 - **プレビューは本文を返さない**（`{ meta }` のみ）。
 - **完了の判定**: `F-012 AC-1`〜`AC-4` の結合テスト + **監査ログの書き込みを失敗させる注入テストでファイルが返らないこと**。
+  - ✅ `tests/isolation/skill-sheet-download.test.ts`（30 件）。注入は**実装に seam を作らず** `audit_logs` の `BEFORE INSERT` トリガで行う（作った seam はそのまま「記録を書かずに進める経路」になる）。🔴 **`raise`（例外）と `swallow`（静かに 0 行）の 2 通り**を試す —— 後者は `writeAuditLog` の `count !== 1` 判定だけが検出できる最も危険な壊れ方であり、ルート経由で `AUDIT_WRITE_FAILED`（500）になることまで固定した。
+  - ✅ **`deviceKind` の 4 値すべて**（`desktop` / `mobile` / `tablet` / `api`）で記録されることを確かめる（`CLAUDE.md` §13.3）。画面 3 経路の E2E は T-05-10。
 
 ### T-05-08 スキャン失敗・隔離の周知（M）
 

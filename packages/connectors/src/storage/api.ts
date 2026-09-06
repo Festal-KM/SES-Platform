@@ -41,6 +41,14 @@ export type S3PresignGetRequest = {
   readonly Bucket: string;
   readonly Key: string;
   readonly ExpiresInSeconds: number;
+  /**
+   * 🔴 T-05-07: ダウンロード名（`Content-Disposition`）。**署名に含まれるクエリ**である
+   *    （`response-content-disposition`）ので、後から差し替えられない。
+   *
+   * 🔴 組み立てる（＝ 値の形を決める）のは `S3ObjectStore` 1 箇所だけであり、
+   *    そこが ASCII の安全な形しか通さない。**原本のファイル名を載せない**（docs/05 §14.1）。
+   */
+  readonly ResponseContentDisposition?: string;
 };
 
 export type S3ObjectRequest = {

@@ -2,6 +2,7 @@
 // docs/05 §14.1（オブジェクトキー）。T-05-04。
 import { describe, expect, it } from 'vitest';
 import {
+  buildSkillSheetDownloadFileName,
   buildSkillSheetObjectKey,
   InvalidObjectKeyPartError,
   isTenantScopedObjectKey,
@@ -205,5 +206,49 @@ describe('🔴 parseSkillSheetObjectKey（#19 の申告キーの照合。T-05-06
       `t/${other}/skill-sheets/${ENGINEER}/1/${OBJECT}.xlsx`,
     );
     expect(parsed?.tenantId).toBe(other);
+  });
+});
+
+/**
+ * 🔴 T-05-07: ダウンロード名（docs/05 §14.1 の ⚠️ の決着）。
+ *    **原本のファイル名を保存しない**ことを選んだので、名前はキーだけから決まる。
+ */
+describe('buildSkillSheetDownloadFileName（docs/05 §14.1 / T-05-07）', () => {
+  it('版番号と拡張子だけの名前になる', () => {
+    expect(
+      buildSkillSheetDownloadFileName(`t/${TENANT}/skill-sheets/${ENGINEER}/3/${OBJECT}.xlsx`),
+    ).toBe('skill-sheet-v3.xlsx');
+  });
+
+  it('🔴 個人を特定できる要素（氏名・テナント ID・エンジニア ID・UUID）を 1 つも含まない', () => {
+    const name = buildSkillSheetDownloadFileName(
+      `t/${TENANT}/skill-sheets/${ENGINEER}/12/${OBJECT}.pdf`,
+    );
+    expect(name).toBe('skill-sheet-v12.pdf');
+    expect(name).not.toContain(TENANT);
+    expect(name).not.toContain(ENGINEER);
+    expect(name).not.toContain(OBJECT);
+  });
+
+  it('🔴 ASCII の安全な形だけになる（`Content-Disposition` に入れても注入が起きない）', () => {
+    for (const version of [1, 2, 99]) {
+      const name = buildSkillSheetDownloadFileName(
+        `t/${TENANT}/skill-sheets/${ENGINEER}/${version}/${OBJECT}.docx`,
+      );
+      expect(name).toMatch(/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/);
+    }
+  });
+
+  it('🔴 同じキーからは必ず同じ名前になる（DB を読まないのでずれようがない）', () => {
+    const key = `t/${TENANT}/skill-sheets/${ENGINEER}/7/${OBJECT}.doc`;
+    expect(buildSkillSheetDownloadFileName(key)).toBe(buildSkillSheetDownloadFileName(key));
+  });
+
+  it.each([
+    ['他の用途のプレフィックス', `t/${TENANT}/contracts/${ENGINEER}/1/${OBJECT}.pdf`],
+    ['形が壊れている', `t/${TENANT}/skill-sheets/${ENGINEER}/1/${OBJECT}`],
+    ['空文字', ''],
+  ])('🔴 %s は null（推測で名前を作らない）', (_label, key) => {
+    expect(buildSkillSheetDownloadFileName(key)).toBeNull();
   });
 });

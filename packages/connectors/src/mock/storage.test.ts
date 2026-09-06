@@ -2,6 +2,7 @@
 // MockObjectStore / MockMalwareScanner（docs/05 §13.2 / §14）。
 import { describe, expect, it } from 'vitest';
 
+import { UnsafeDownloadFileNameError } from '../interfaces.js';
 import { MockObjectStore } from './object-store.js';
 import { MockMalwareScanner } from './scanner.js';
 
@@ -44,6 +45,38 @@ describe('MockObjectStore', () => {
     await store.presignPut('k1', 'text/plain', 100);
     await store.presignGet('k1', 60);
     expect(store.callCount()).toBe(2);
+  });
+
+  /**
+   * 🔴 T-05-07: ダウンロード名の扱いを**実装（`S3ObjectStore`）と揃える**。
+   *    ここが素通しだと、`demo` / E2E では通るのに `production` で
+   *    `UnsafeDownloadFileNameError` になる差が生まれる（docs/05 §13.2）。
+   */
+  describe('presignGet のダウンロード名（実装と同じ検査を通す）', () => {
+    it('指定した名前が URL に運ばれる（`attachment` として組み立てられている）', async () => {
+      const store = new MockObjectStore({ now });
+      const presigned = await store.presignGet('k1', 60, {
+        downloadFileName: 'skill-sheet-v2.pdf',
+      });
+      expect(
+        new URL(presigned.url.replace('mock-object-store://', 'https://mock/')).searchParams.get(
+          'response-content-disposition',
+        ),
+      ).toBe('attachment; filename="skill-sheet-v2.pdf"');
+    });
+
+    it('指定しなければクエリを付けない', async () => {
+      const store = new MockObjectStore({ now });
+      expect((await store.presignGet('k1', 60)).url).not.toContain('response-content-disposition');
+    });
+
+    it('🔴 原本のファイル名（氏名を含む日本語）はモックでも拒否される', async () => {
+      const store = new MockObjectStore({ now });
+      await expect(
+        store.presignGet('k1', 60, { downloadFileName: '山田 太郎 スキルシート.xlsx' }),
+      ).rejects.toBeInstanceOf(UnsafeDownloadFileNameError);
+      expect(store.callCount()).toBe(0);
+    });
   });
 });
 

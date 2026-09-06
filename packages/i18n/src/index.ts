@@ -409,6 +409,11 @@ const ja = {
   // 🔴 `F-011 AC-2`。検査は必ず終わる（`scan.poll` が滞留を拾う）ので、待てばよいことを伝える。
   'error.skillSheet.scanInProgress':
     'この版は検査中のため操作できません。検査が終わってからもう一度お試しください。',
+  // 🔴 T-05-07: 検査に合格していないファイルのダウンロード（`BR-26` / `F-011 AC-1` / `AC-3`）。
+  //    **「無視してダウンロード」の余地を文言でも作らない。** 隔離されたファイルは
+  //    「まだ」ではなく「以後」渡らないので、待てば渡るとも読めない書き方にする。
+  'error.file.notClean':
+    'このファイルはウイルス検査に合格していないため、ダウンロードできません。検査に合格した版を選ぶか、ファイルを上げ直してください。',
   'error.internal': '処理に失敗しました。時間をおいて再度お試しください。',
 
   // --- S-041 監査ログ（自テナント。docs/04 §S-041 / F-005 / F-012。T-03-05）---
@@ -945,10 +950,38 @@ const ja = {
   'skillSheets.actions.deleteConfirm':
     'この版を削除します。ファイルの実体も削除され、元に戻せません。よろしいですか？',
   'skillSheets.actions.error': '操作を反映できませんでした。画面を更新して、もう一度お試しください。',
-  // 🔴 ダウンロード・提案添付・チャット添付は T-05-07 / SP-09 / SP-13。**`CLEAN` の行にだけ**
-  //    出す（`CLEAN` でない行にこの文言を出すと「そのうち共有できる」と読める）。
+  // 🔴 提案添付・チャット添付は SP-09 / SP-13。**`CLEAN` の行にだけ**出す
+  //    （`CLEAN` でない行にこの文言を出すと「そのうち共有できる」と読める）。
+  //    ✅ T-05-07 でダウンロードは実装されたので、この文言からは外した。
   'skillSheets.actions.shareComingSoon':
-    'この版のダウンロードと、提案・チャットへの添付は、後続のリリースでこの画面から行えます。',
+    'この版の提案・チャットへの添付は、後続のリリースでこの画面から行えます。',
+
+  // --- T-05-07 閲覧（#21）とダウンロード（#20）。`F-012` / `BR-28`（記録の欠落 0 件）---
+  // 🔴 **「見た」ことと「持ち出した」ことは別の記録である**（`F-012 AC-1`）。ボタンも文言も
+  //    分け、どちらの操作をしたのかが利用者にも分かるようにする。
+  // 🔴 ラベルは「この版を開く」である（「内容を確認」にしない）—— #21 は**本文を返さない**ので、
+  //    中身が読めると受け取られる語を使わない。記録される `skill_sheet.view` の意味とも一致する。
+  'skillSheets.actions.preview': 'この版を開く',
+  'skillSheets.actions.previewSubmitting': '開いています…',
+  'skillSheets.actions.previewClose': '閉じる',
+  'skillSheets.actions.download': 'ダウンロード',
+  'skillSheets.actions.downloadSubmitting': '準備しています…',
+  // 🔴 記録されることを隠さない（`CLAUDE.md` §3.5 の説明責任は、見る側にも伝わっている必要がある）。
+  'skillSheets.actions.auditNotice':
+    'スキルシートの閲覧とダウンロードは、日時・利用者とあわせて監査ログに記録されます。',
+  // 🔴 `VIEWER` にダウンロードの導線を出さない代わりに、**なぜ無いのか**を書く（行き止まりにしない）。
+  'skillSheets.actions.downloadReadOnlyNote':
+    'この画面ではダウンロードできません（閲覧のみの権限です）。必要な場合は担当の営業または管理者にご依頼ください。',
+  'skillSheets.preview.title': '版の情報',
+  'skillSheets.preview.contentType': '形式',
+  'skillSheets.preview.byteSize': 'サイズ',
+  'skillSheets.preview.byteSizeUnit': 'バイト',
+  // 🔴 プレビューは**本文を返さない**（docs/05 §6.4 #21）。「中身が見られる」と誤解させない。
+  'skillSheets.preview.bodyNotice':
+    'この画面には本文を表示しません。内容を読むにはダウンロードしてください。',
+  'skillSheets.preview.error': '版の情報を読み込めませんでした。もう一度お試しください。',
+  'skillSheets.download.error':
+    'ダウンロードを開始できませんでした。画面を更新して、もう一度お試しください。',
 
   'skillSheets.extraction.section': '抽出結果と採否',
   'skillSheets.extraction.notRun': '未実行',

@@ -131,6 +131,48 @@ export function tenantIdFromObjectKey(objectKey: string): string | null {
   return objectKey.split('/')[1] ?? null;
 }
 
+/**
+ * ダウンロード時に見せるファイル名の接頭辞（T-05-07。docs/05 §14.1）。
+ *
+ * 🔴 **版番号だけで組み立てる**（原本のファイル名を使わない）。理由は
+ *    `buildSkillSheetDownloadFileName` の 🔴 を参照。
+ */
+const DOWNLOAD_FILE_NAME_PREFIX = 'skill-sheet-v';
+
+/**
+ * 🔴 スキルシートのダウンロード名（`Content-Disposition: attachment`）。T-05-07。
+ *
+ * ```
+ * t/{tenant}/skill-sheets/{engineer}/3/{uuid}.xlsx  →  skill-sheet-v3.xlsx
+ * ```
+ *
+ * ============================================================================
+ * 🔴 なぜ「原本のファイル名」を使わないのか（docs/05 §14.1 の ⚠️ の決着。T-05-07）
+ * ============================================================================
+ * §14.1 は当初「元のファイル名は DB の列に持つ」と書いていたが、保存先の列は §3.4 に無く、
+ * #19 の request にも `fileName` が無かった。T-05-07 は**列を足さない**ことを選んだ:
+ *
+ *   ① 🔴 **ファイル名は氏名を含みうる PII である**（実際に「山田 太郎 スキルシート.xlsx」の形で
+ *      来る）。保存すると、運営者 GRANT の除外・監査 `summary` への不載・エクスポートの除外を
+ *      **これから増える全経路で**守り続ける必要が生じる（`CLAUDE.md` §10.5 / `BR-52`
+ *      「集めていない情報は漏れない」）。
+ *   ② 🔴 ダウンロード名は**署名付き URL のクエリ**（`response-content-disposition`）に載る。
+ *      氏名入りの名前を使うと、ブラウザ履歴・リファラ・アクセスログ・Sentry のパンくずに
+ *      氏名が現れ、§16.2 の redact では追いきれない。
+ *   ③ 画面（`docs/04` §S-008 の版一覧）は **版 / 日時 / 者 / 状態 / 抽出 / 最新版**しか出さない。
+ *      利用者は最初からファイル名で版を識別していないので、版番号の名前と齟齬がない。
+ *
+ * 🔴 したがって名前は**キーだけから決まる**（DB を読まない = ずれようがない）。
+ *    形が合わないキーは `null`（推測で埋めない）。
+ * 🔴 生成されるのは ASCII の `[a-z-]`・数字・`.` だけであり、ヘッダに入れても
+ *    引用符・改行の注入が起こらない（受け取る側の `S3ObjectStore` も同じ形を検査する）。
+ */
+export function buildSkillSheetDownloadFileName(objectKey: string): string | null {
+  const parts = parseSkillSheetObjectKey(objectKey);
+  if (parts === null) return null;
+  return `${DOWNLOAD_FILE_NAME_PREFIX}${parts.version}.${parts.extension}`;
+}
+
 /** `parseSkillSheetObjectKey` が返す構成要素（`buildSkillSheetObjectKey` の入力と同じ形）。 */
 export type SkillSheetObjectKeyParts = SkillSheetObjectKeyInput;
 

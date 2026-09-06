@@ -2,6 +2,8 @@
 // `S3ObjectStore`（docs/05 §14.1 / §14.2）。T-05-04。
 // 🔴 実 S3 / 実 MinIO を叩かない（`S3Api` ポートのスタブを注入する）。
 import { describe, expect, it, vi } from 'vitest';
+import { buildSkillSheetDownloadFileName } from '@ses/domain';
+import { UnsafeDownloadFileNameError } from '../interfaces.js';
 import type { S3Api, S3PresignPutRequest } from './api.js';
 import { ObjectKeyOutOfTenantScopeError, S3ObjectStore } from './s3.js';
 
@@ -98,6 +100,65 @@ describe('🔴 テナントプレフィックスの外には署名しない（do
     await expect(target.delete('evil.xlsx')).rejects.toBeInstanceOf(ObjectKeyOutOfTenantScopeError);
     await expect(target.head('evil.xlsx')).rejects.toBeInstanceOf(ObjectKeyOutOfTenantScopeError);
     expect(target.callCount()).toBe(0);
+  });
+});
+
+/**
+ * 🔴 T-05-07: ダウンロード名（`Content-Disposition`）。docs/05 §14.1 の決着 ——
+ *    **原本のファイル名を保存せず、版番号から作った ASCII の名前だけを署名に載せる**。
+ */
+describe('S3ObjectStore.presignGet のダウンロード名（docs/05 §14.1 / §14.2）', () => {
+  it('指定しなければ `ResponseContentDisposition` を送らない（S3 のキー名で落ちる）', async () => {
+    const api = stubApi();
+    await store(api).presignGet(KEY, 300);
+    expect(api.presignGet).toHaveBeenCalledWith({
+      Bucket: 'ses-platform-test',
+      Key: KEY,
+      ExpiresInSeconds: 300,
+    });
+  });
+
+  it('版番号ベースの名前を `attachment` として署名に載せる', async () => {
+    const api = stubApi();
+    await store(api).presignGet(KEY, 300, { downloadFileName: 'skill-sheet-v3.xlsx' });
+    expect(api.presignGet).toHaveBeenCalledWith({
+      Bucket: 'ses-platform-test',
+      Key: KEY,
+      ExpiresInSeconds: 300,
+      // 🔴 常に `attachment`（`inline` にするとブラウザが開いてしまい、
+      //    「ダウンロードを記録する」前提と実際の閲覧経路がずれる）。
+      ResponseContentDisposition: 'attachment; filename="skill-sheet-v3.xlsx"',
+    });
+  });
+
+  it.each([
+    // 🔴 原本のファイル名（氏名を含みうる / 日本語）は**渡せない**。
+    ['山田 太郎 スキルシート.xlsx', '氏名を含む日本語のファイル名'],
+    ['a".xlsx', '引用符でヘッダを閉じる'],
+    ['a\r\nX-Injected: 1', 'CRLF でヘッダを増やす'],
+    ['', '空文字'],
+    [`${'a'.repeat(101)}.pdf`, '長すぎる'],
+  ])('🔴 %s（%s）は署名する前に例外で止まる', async (fileName) => {
+    const api = stubApi();
+    const target = store(api);
+    await expect(
+      target.presignGet(KEY, 300, { downloadFileName: fileName }),
+    ).rejects.toBeInstanceOf(UnsafeDownloadFileNameError);
+    // 🔴 署名付き URL は発行した時点で有効なので、**発行してから拒否する**形にしない。
+    expect(api.presignGet).not.toHaveBeenCalled();
+    expect(target.callCount()).toBe(0);
+  });
+
+  it('🔴 `@ses/domain` が作る名前はそのまま通る（2 つの規約がずれていない）', async () => {
+    const fileName = buildSkillSheetDownloadFileName(KEY);
+    expect(fileName).toBe('skill-sheet-v1.xlsx');
+    const api = stubApi();
+    await store(api).presignGet(KEY, 300, { downloadFileName: fileName ?? undefined });
+    expect(api.presignGet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ResponseContentDisposition: 'attachment; filename="skill-sheet-v1.xlsx"',
+      }),
+    );
   });
 });
 

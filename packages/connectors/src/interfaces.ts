@@ -79,9 +79,63 @@ export type ObjectHead = {
   readonly contentType: string;
 };
 
+/**
+ * `presignGet` の任意指定（T-05-07）。
+ *
+ * 🔴 **原本のファイル名を渡してはならない。** ダウンロード名は署名付き URL のクエリ
+ *    （`response-content-disposition`）に載り、ブラウザ履歴・アクセスログ・エラー追跡に残る。
+ *    スキルシートの原本名には氏名が入りうるため、渡してよいのは
+ *    `@ses/domain` の `buildSkillSheetDownloadFileName`（版番号だけで組み立てる）の結果である
+ *    （docs/05 §14.1 の決着。T-05-07）。実装側も ASCII の安全な形だけを受け付ける。
+ */
+export type PresignGetOptions = {
+  /** 省略すると S3 のキー（`{uuid}.{ext}`）がそのままダウンロード名になる。 */
+  readonly downloadFileName?: string;
+};
+
+/**
+ * 🔴 ダウンロード名として通す形（T-05-07）。**ASCII の英数字・`.` `_` `-` だけ**。
+ *
+ * 引用符・改行・非 ASCII を弾くことで、`Content-Disposition` への注入（`"; x=` / CRLF）が
+ * 構造的に起こらない。`@ses/domain` の `buildSkillSheetDownloadFileName` が返す
+ * `skill-sheet-v3.xlsx` は必ずこの形である —— つまりこの検査は
+ * **原本のファイル名（氏名を含みうる / 日本語を含む）を渡す実装を実行時に落とす最後の砦**
+ * でもある（docs/05 §14.1）。
+ */
+const SAFE_DOWNLOAD_FILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+
+/**
+ * 🔴 ダウンロード名として使えない値を渡された（**署名する前**に止める）。
+ *
+ * `ObjectKeyOutOfTenantScopeError` と同じ理由で例外にする —— 署名付き URL は
+ * 発行した時点で有効であり、後から取り消せない。
+ */
+export class UnsafeDownloadFileNameError extends Error {
+  constructor() {
+    super(
+      'ダウンロード名に使えない文字が含まれています（ASCII の英数字・. _ - のみ。docs/05 §14.1）。',
+    );
+    this.name = 'UnsafeDownloadFileNameError';
+  }
+}
+
+/**
+ * 🔴 `Content-Disposition` の値を組み立てる**唯一の実装**（`assertSendingDomainForRecipientClass`
+ *    と同じ理由でここに置く）。実装ごとに書くと、`demo`（モック）と `production`（S3）で
+ *    ダウンロード名が変わったり、片方だけ検査を忘れたりする。
+ *
+ * 🔴 常に `attachment` である。`inline` にするとブラウザがスキルシートを開いてしまい、
+ *    「ダウンロードを記録する」という前提（`BR-28`）と実際の閲覧経路がずれる。
+ */
+export function contentDispositionOf(downloadFileName: string | undefined): string | undefined {
+  if (downloadFileName === undefined) return undefined;
+  if (!SAFE_DOWNLOAD_FILE_NAME.test(downloadFileName)) throw new UnsafeDownloadFileNameError();
+  return `attachment; filename="${downloadFileName}"`;
+}
+
 export interface ObjectStore {
   presignPut(key: string, contentType: string, maxBytes: number): Promise<PresignedUrl>;
-  presignGet(key: string, ttlSec: number): Promise<PresignedUrl>;
+  presignGet(key: string, ttlSec: number, options?: PresignGetOptions): Promise<PresignedUrl>;
   delete(key: string): Promise<void>;
   head(key: string): Promise<ObjectHead | null>;
   callCount(): number;

@@ -7,7 +7,10 @@ import { SCAN_STATUSES, type ScanStatus } from '@ses/domain';
 import { describe, expect, it } from 'vitest';
 import {
   canBecomeLatestSkillSheet,
+  canDownloadSkillSheet,
   canManageSkillSheets,
+  SKILL_SHEET_DOWNLOADER_ROLES,
+  SKILL_SHEET_MANAGER_ROLES,
   isScanSettled,
   isSkillSheetShareable,
   supportsAutoExtraction,
@@ -52,6 +55,33 @@ describe('🔴 canManageSkillSheets（`docs/02` `F-011` 関連ロール / `docs/
 
   it('🔴 `VIEWER` は操作できない（閲覧のみ。`F-012 AC-3` / `BR-31`）', () => {
     expect(canManageSkillSheets('VIEWER')).toBe(false);
+  });
+});
+
+describe('🔴 canDownloadSkillSheet（`F-012 AC-3` / `BR-31`。T-05-07）', () => {
+  it.each(['OWNER', 'ADMIN', 'SALES', 'PARTNER_ADMIN', 'PARTNER_SALES'] as const)(
+    '%s はダウンロードできる',
+    (role) => {
+      expect(canDownloadSkillSheet(role)).toBe(true);
+    },
+  );
+
+  it('🔴 `VIEWER` はダウンロードできない（閲覧はできる）', () => {
+    expect(canDownloadSkillSheet('VIEWER')).toBe(false);
+  });
+
+  it('🔴 DL のロール集合と管理のロール集合は同じ定数を指す（2 か所に列挙しない）', () => {
+    expect(SKILL_SHEET_DOWNLOADER_ROLES).toBe(SKILL_SHEET_MANAGER_ROLES);
+  });
+
+  it('🔴 版の状態はここで見ない（AND の相手は `isSkillSheetShareable`）', () => {
+    // 状態を渡す引数が無いこと自体が仕様である。画面も API も
+    // `canDownloadSkillSheet(role) && isSkillSheetShareable(status)` の形で判定する。
+    expect(canDownloadSkillSheet.length).toBe(1);
+    const downloadable = SCAN_STATUSES.filter(
+      (status) => canDownloadSkillSheet('SALES') && isSkillSheetShareable(status),
+    );
+    expect(downloadable).toEqual(['CLEAN']);
   });
 });
 

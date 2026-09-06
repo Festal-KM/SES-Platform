@@ -100,7 +100,22 @@ const messages: SkillSheetScreenMessages = {
   deleteSubmitting: '削除しています…',
   deleteConfirm: 'この版を削除します。',
   actionError: '操作を反映できませんでした。',
-  shareComingSoon: 'ダウンロードと添付は後続のリリースで行えます。',
+  shareComingSoon: '提案・チャットへの添付は後続のリリースで行えます。',
+
+  preview: 'この版を開く',
+  previewSubmitting: '開いています…',
+  previewClose: '閉じる',
+  download: 'ダウンロード',
+  downloadSubmitting: '準備しています…',
+  auditNotice: '閲覧とダウンロードは監査ログに記録されます。',
+  downloadReadOnlyNote: 'この画面ではダウンロードできません（閲覧のみの権限です）。',
+  previewTitle: '版の情報',
+  previewContentType: '形式',
+  previewByteSize: 'サイズ',
+  previewByteSizeUnit: 'バイト',
+  previewBodyNotice: 'この画面には本文を表示しません。',
+  previewError: '版の情報を読み込めませんでした。',
+  downloadError: 'ダウンロードを開始できませんでした。',
 
   extractionSection: '抽出結果と採否',
   extractionNotRun: '未実行',
@@ -111,9 +126,20 @@ const messages: SkillSheetScreenMessages = {
 function render(
   versions: readonly SkillSheetVersionView[],
   canManage = true,
+  /**
+   * 🔴 T-05-07: ダウンロードの導線を出すか（`F-012 AC-3`）。**`canManage` と独立に渡す** ——
+   *    「管理できる ＝ ダウンロードできる」と読み替えると、集合が分かれた日に検査が空振りする。
+   */
+  canDownload = canManage,
 ): string {
   return renderToStaticMarkup(
-    createElement(SkillSheetScreen, { engineerId: ENGINEER, versions, canManage, messages }),
+    createElement(SkillSheetScreen, {
+      engineerId: ENGINEER,
+      versions,
+      canManage,
+      canDownload,
+      messages,
+    }),
   );
 }
 
@@ -147,11 +173,17 @@ describe('🔴 `F-011 AC-1`: `CLEAN` でない版に共有の導線が DOM に�
     expect(hasTestId(html, `skill-sheet-set-latest-${IDS.CLEAN}`)).toBe(true);
   });
 
-  it('🔴 ダウンロードの URL 発行経路（#20）へのリンクが DOM に 1 つも無い', () => {
-    // T-05-07 で追加されるまで、この画面から署名付き URL を要求する導線は存在しない。
+  it.each(SCAN_STATUSES.filter((status) => status !== 'CLEAN'))(
+    '🔴 %s の行にダウンロードのボタンが無い（`F-011 AC-1` / `AC-3`。T-05-07）',
+    (status) => {
+      const html = render(ALL_STATUS_ROWS);
+      expect(hasTestId(html, `skill-sheet-download-${IDS[status]}`)).toBe(false);
+    },
+  );
+
+  it('🔴 対照: `CLEAN` の行にはダウンロードのボタンがある（空振りするテストにしない）', () => {
     const html = render(ALL_STATUS_ROWS);
-    expect(html).not.toContain('download-url');
-    expect(html).not.toContain('/preview');
+    expect(hasTestId(html, `skill-sheet-download-${IDS.CLEAN}`)).toBe(true);
   });
 
   it('🔴 共有できない理由は状態ごとに書き分ける（「順番待ち」と読める文言に畳まない）', () => {
@@ -169,11 +201,12 @@ describe('🔴 `F-011 AC-2`: 検査中は「検査中」と表示し、操作を
     expect(html).toContain(messages.blockedReasons.SCANNING);
   });
 
-  it('🔴 検査中の行には削除も含めてボタンが 1 つも無い（結果の適用先が消えない）', () => {
+  it('🔴 検査中の行には共有・切替・削除のボタンが 1 つも無い（結果の適用先が消えない）', () => {
     const html = render([version('SCANNING')]);
     expect(hasTestId(html, `skill-sheet-delete-${IDS.SCANNING}`)).toBe(false);
     expect(hasTestId(html, `skill-sheet-set-latest-${IDS.SCANNING}`)).toBe(false);
     expect(hasTestId(html, `skill-sheet-share-${IDS.SCANNING}`)).toBe(false);
+    expect(hasTestId(html, `skill-sheet-download-${IDS.SCANNING}`)).toBe(false);
   });
 });
 
@@ -188,6 +221,59 @@ describe('🔴 `F-011 AC-3`: 感染したファイルは隔離され、ダウン
   it('隔離された版は削除できる（検査は終わっている）', () => {
     const html = render([version('INFECTED')]);
     expect(hasTestId(html, `skill-sheet-delete-${IDS.INFECTED}`)).toBe(true);
+  });
+
+  it('🔴 隔離された版でも「この版を開く」は出る（メタデータの確認であり本文は返らない）', () => {
+    const html = render([version('INFECTED')]);
+    expect(hasTestId(html, `skill-sheet-preview-${IDS.INFECTED}`)).toBe(true);
+    // 🔴 ただしダウンロードは無い（`F-011 AC-3`「以後どのロールからもダウンロードできない」）。
+    expect(hasTestId(html, `skill-sheet-download-${IDS.INFECTED}`)).toBe(false);
+  });
+});
+
+/**
+ * 🔴 T-05-07（`F-012`）。**閲覧とダウンロードは別の導線**であり、`VIEWER` の扱いも別である。
+ *    ここで固定するのは「DOM に何があるか」だけであり、拒否の本体はルートのガードと RLS である
+ *    （`tests/isolation/skill-sheet-download.test.ts` が実証する）。
+ */
+describe('🔴 `F-012 AC-3`: `VIEWER` は DL の導線が無く、閲覧の導線はある', () => {
+  it('🔴 `canDownload` が false なら、`CLEAN` の行にもダウンロードのボタンが無い', () => {
+    const html = render(ALL_STATUS_ROWS, false, false);
+    for (const status of SCAN_STATUSES) {
+      expect(hasTestId(html, `skill-sheet-download-${IDS[status]}`)).toBe(false);
+    }
+  });
+
+  it('🔴 導線を消すだけにせず、誰に頼めばよいかを書く（行き止まりにしない）', () => {
+    const html = render(ALL_STATUS_ROWS, false, false);
+    expect(hasTestId(html, `skill-sheet-download-read-only-${IDS.CLEAN}`)).toBe(true);
+    expect(html).toContain(messages.downloadReadOnlyNote);
+  });
+
+  it('🔴 `canDownload` が false でも「この版を開く」は全状態にある（閲覧は可）', () => {
+    const html = render(ALL_STATUS_ROWS, false, false);
+    for (const status of SCAN_STATUSES) {
+      expect(hasTestId(html, `skill-sheet-preview-${IDS[status]}`)).toBe(true);
+    }
+  });
+
+  it('🔴 対照: `canDownload` が true なら注記は出さない（読めるのにお願いしろと書かない）', () => {
+    const html = render(ALL_STATUS_ROWS, true, true);
+    expect(hasTestId(html, `skill-sheet-download-read-only-${IDS.CLEAN}`)).toBe(false);
+  });
+
+  it('🔴 閲覧・DL が記録されることをロールを問わず明示する（`CLAUDE.md` §3.5 の説明責任）', () => {
+    for (const canManage of [true, false]) {
+      const html = render(ALL_STATUS_ROWS, canManage, canManage);
+      expect(hasTestId(html, 'skill-sheet-audit-notice')).toBe(true);
+    }
+  });
+
+  it('🔴 本文はこの画面に出ない（プレビューのパネルは押すまで DOM に無い）', () => {
+    const html = render(ALL_STATUS_ROWS);
+    for (const status of SCAN_STATUSES) {
+      expect(hasTestId(html, `skill-sheet-preview-panel-${IDS[status]}`)).toBe(false);
+    }
   });
 });
 
@@ -255,5 +341,18 @@ describe('🔴 権限差分（docs/04 §S-008「`VIEWER` はアップロード�
     for (const status of SCAN_STATUSES) {
       expect(hasTestId(html, `skill-sheet-scan-status-${IDS[status]}`)).toBe(true);
     }
+  });
+
+  /**
+   * 🔴 T-05-07: 管理はできないがダウンロードはできる、という組み合わせを想定していない
+   *    （`SKILL_SHEET_DOWNLOADER_ROLES = SKILL_SHEET_MANAGER_ROLES`）。それでも
+   *    props を独立にしてあるので、**片方だけ true** にしたときの描画を固定しておく ——
+   *    集合が分かれた日に、この行が期待の宣言として効く。
+   */
+  it('`canManage` が false / `canDownload` が true なら DL だけが出る', () => {
+    const html = render([version('CLEAN')], false, true);
+    expect(hasTestId(html, `skill-sheet-download-${IDS.CLEAN}`)).toBe(true);
+    expect(hasTestId(html, `skill-sheet-delete-${IDS.CLEAN}`)).toBe(false);
+    expect(hasTestId(html, `skill-sheet-set-latest-${IDS.CLEAN}`)).toBe(false);
   });
 });

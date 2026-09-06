@@ -2053,8 +2053,8 @@ requireEsignConnection(ctx);                           // 🔴 §8.4。未接続
 | 19 | `POST /api/engineers/{id}/skill-sheets` | `F-011` / `S-008` | `{ objectKey, note? }` | `{ id, version, scanStatus }`（🔴 新規確定は必ず `'SCANNING'`。**再確定では現在の状態が返る**。下記 T-05-06） | 同上 |
 | 19b | `POST /api/skill-sheets/{id}/latest` | `F-011` 処理③ / `AC-4` / `S-008` | — | `204` | 同上。🔴 **`CLEAN` の版だけが最新版になれる**（非 `CLEAN` は 409 `SKILL_SHEET_NOT_CLEAN`）。すでに最新版なら冪等に `204`（記録も残さない） |
 | 19c | `DELETE /api/skill-sheets/{id}` | `F-011 AC-4` / `S-008` | — | `204` | 同上。🔴 **`SCANNING` の版は削除できない**（409 `SKILL_SHEET_SCAN_IN_PROGRESS`）。手順は ①S3 → ②`UsageCounter` の減算 → ③行 + 監査 |
-| 20 | `GET /api/skill-sheets/{id}/download-url` | `F-012` | — | `{ url, expiresIn }` | 🔴 **`scanStatus='CLEAN'` かつ `AuditLog` の書き込み成功後にのみ発行**（`F-012 AC-2`）。`VIEWER` は 403 |
-| 21 | `GET /api/skill-sheets/{id}/preview` | `F-012` | — | `{ meta }`（本文は返さない） | 閲覧も `AuditLog` に記録 |
+| 20 | `GET /api/skill-sheets/{id}/download-url` | `F-012` | — | `{ url, expiresIn }` | 🔴 **`scanStatus='CLEAN'` かつ `AuditLog` の書き込み成功後にのみ発行**（`F-012 AC-2`）。`VIEWER` は 403。非 `CLEAN` は 409 `FILE_NOT_CLEAN` |
+| 21 | `GET /api/skill-sheets/{id}/preview` | `F-012` | — | `{ meta }`（本文は返さない） | 閲覧も `AuditLog` に記録。🔴 **全ロール**（`VIEWER` も可。`guards: []`） |
 | 22 | `POST /api/skill-sheets/{id}/extract` | `F-032` / Phase 2 | — | `{ jobId }` | `SALES` 以上 |
 | 23 | `GET /api/skills` / `GET /api/skill-aliases` | `F-010` / `S-009` | `?q=`（`/skills`）/ `?q=&status=`（`/skill-aliases`。🔴 `status` は `skill_aliases` 側の値集合であり、`skills` に状態は無い。T-05-03） | `{ items }` | 全ロール |
 | 24 | `POST /api/skill-aliases/{id}/decide` | `F-010 AC-1` | `{ decision:'ACCEPT'\|'REJECT', skillId? }` | `204` | `ADMIN` / `SALES`。🔴 パートナーは起票のみ |
@@ -2127,7 +2127,18 @@ requireEsignConnection(ctx);                           // 🔴 §8.4。未接続
 - 🔴 **`note`（版のメモ）の保存先を `skill_sheets.note` として足した**（migration 20260909000000）。`docs/02` `F-011` の入力と #19 の request には最初から `note?` があったが §3.4 に列が無く、**受け取って捨てる**実装は利用者からはバグと区別できない。運営者には GRANT しない（§5.5）。
 - **認可は #18 と同じ**（`OWNER` / `ADMIN` / `SALES` / `PARTNER_ADMIN` / `PARTNER_SALES` + `requireExecutable` + `requireNotViewer`）。片方だけ広い / 狭いという状態を作らない。
 - ⚠️ **`S-008` の版一覧を読む API は無い**（画面がサーバコンポーネントから `readSkillSheetVersions` を直接呼ぶ）。氏名を出す画面なので**閲覧を `engineer.view`（`summary.via='SKILL_SHEETS'`）として業務トランザクション内で記録する**（`BR-27` / `F-008 AC-4`。記録できなければ表示されない）。版の**中身**の閲覧（`skill_sheet.view`。#21）は T-05-07 の範囲であり、一覧はメタデータしか出さないので記録しない。
-- ⚠️ **元のファイル名を保存していない**（§14.1 は「元のファイル名は DB の列に持つ」と書いているが §3.4 に列が無く、#19 の request にも `fileName` が無い）。**ダウンロード時の表示名を決める T-05-07 が、列を足すか `Content-Disposition` を版番号で組み立てるかを決める**（キーには載せない、という §14.1 の規約は不変）。
+- ~~⚠️ **元のファイル名を保存していない**（§14.1 は「元のファイル名は DB の列に持つ」と書いているが §3.4 に列が無く、#19 の request にも `fileName` が無い）。ダウンロード時の表示名を決める T-05-07 が、列を足すか `Content-Disposition` を版番号で組み立てるかを決める~~ → ✅ **決着（T-05-07）: 列を足さず、`Content-Disposition` を版番号で組み立てる**（`skill-sheet-v3.xlsx`）。理由と規約は **§14.1** に書いた。#19 の request も `{ objectKey, note? }` のままである（`fileName` を受け取らない）。
+
+🔴 **#20 / #21 の実装の決着（T-05-07。K-7 の本丸）**:
+
+- 🔴 **発行・記録の順序と条件は `issueDownloadUrl`（§14.2）1 か所**にあり、**#20 のルートには条件式が 1 つも無い**。デスクトップ・モバイル・共有 URL のどの経路も同じ関数を通るので、記録が漏れる経路が存在しない（`BR-28` / K-7）。
+- 🔴 **#20 / #21 のどちらも `withApiRoute` の `audit` オプションを使わない**（業務トランザクション内の `writeAuditLog`）。`audit` はハンドラの**前**に別トランザクションで書くため、**404（境界外・不存在）や 409（非 `CLEAN`）でも「閲覧した / ダウンロードした」記録が残る**（§16.1 / `engineer.view` と同じ判断）。「誰の経歴を、誰が、いつ見たか」に**見ていない閲覧**を混ぜない。
+- 🔴 **`requireExecutable` を掛けない**（#20 / #21 とも）。`CLOSING` でも「閲覧と返却（エクスポート）のみ実行できる」（`F-004 AC-8` / §6.2）。自社のスキルシートを取り出せなくすることは、解約時のデータ返却（`docs/03` §9-8）を止めることに等しい。§14.2 の DL 行の前提条件にも `requireExecutable` は無い（アップロード行には有る）。GET のみのルートなので `tests/static/execute-guard.test.ts` の対象にも入らない。
+- **#20 の認可は `requireRole(SKILL_SHEET_DOWNLOADER_ROLES)` + `requireNotViewer()`**。定数は `SKILL_SHEET_MANAGER_ROLES` と**同じものを指す**（`apps/web/lib/skill-sheets/policy.ts` の 1 行）—— 2 か所に列挙すると、ロールが増減したときに片方だけ変わる。画面（`S-008` の導線）も同じ定数を見る。
+- **#21 の認可は `guards: []`（全ロール）**。`VIEWER` は閲覧できてダウンロードできない（`F-012 AC-3` / `BR-31`）。
+- 🔴 **#21 は `CLEAN` を要求しない。** 返すのはメタデータであって原本ではなく、隔離された版についても「いつ・どの版が・なぜ渡せないのか」を確かめられなければ利用者は次の行動（上げ直す / 削除する）を選べない。**原本に触れる #20 だけが `CLEAN` を要求する**。
+- **#21 の応答は `{ meta: SkillSheetPreviewView }`**（`SkillSheetVersionView` + `engineerId`）。🔴 **`objectKey` を返さない**（画面に要らず、運営者にも見せない値。§5.5）。🔴 **本文を返さない** —— サーバが原本を握って配る経路を作ると、#20 の 3 条件（`CLEAN` + 監査 + `VIEWER` 拒否）を迂回する 2 本目の経路になる。
+- ✅ **画面（`S-008`）に閲覧（`この版を開く`）とダウンロードの導線を足した**（`docs/04` §S-008 に追記済み。`CLAUDE.md` §8.7）。閲覧は**全ロール・全スキャン状態**に出し、ダウンロードは **`CLEAN` かつ `VIEWER` でない**ときだけ描く（無効化したボタンを置かない。`F-011 AC-1`）。`VIEWER` には「なぜ導線が無いか」を書く（行き止まりにしない）。**閲覧・DL が記録されることを画面に明示する**（`CLAUDE.md` §3.5 の説明責任は、見る側に伝わっていなければ抑止として働かない）。
 
 🔴 **#23 / #24 の実装の決着（T-05-03）**:
 
@@ -3721,7 +3732,13 @@ s3://{S3_BUCKET}/
 ```
 | 規約 | 内容 |
 |---|---|
-| **`{uuid}`** | 🔴 **ファイル名を推測不能にする**。元のファイル名は DB の列に持ち、キーには含めない（ファイル名に氏名が入ることがあるため） |
+| **`{uuid}`** | 🔴 **ファイル名を推測不能にする**。キーに元のファイル名を含めない（ファイル名に氏名が入ることがあるため）。~~元のファイル名は DB の列に持つ~~ → 🔴 **持たないことに決着した（T-05-07。下記）** |
+
+🔴 **元のファイル名を保存しない（T-05-07 の決着。当初 §14.1 は「DB の列に持つ」と書いていたが、§3.4 に列が無く #19 の request にも `fileName` が無かった）**:
+
+- ダウンロード時の表示名は **`@ses/domain` の `buildSkillSheetDownloadFileName` が版番号だけから組み立てる**（`skill-sheet-v3.xlsx`）。名前は**キーだけから決まる**ので DB を読まず、ずれようがない。
+- 🔴 **列を足さなかった理由**: ①ファイル名は**氏名を含みうる PII** であり（実際に「山田 太郎 スキルシート.xlsx」の形で来る）、保存すると運営者 GRANT の除外・監査 `summary` への不載・エクスポートの除外を**これから増える全経路で**守り続ける必要が生じる（`CLAUDE.md` §10.5 / `BR-52`「集めていない情報は漏れない」）②ダウンロード名は**署名付き URL のクエリ**（`response-content-disposition`）に載るため、氏名入りの名前はブラウザ履歴・リファラ・アクセスログ・Sentry のパンくずに現れ、§16.2 の redact では追いきれない ③`docs/04` §S-008 の版一覧は **版 / 日時 / 者 / 状態 / 抽出 / 最新版**しか出さず、利用者はそもそもファイル名で版を識別していない。
+- **`Content-Disposition` は必ず `attachment`**（`inline` にするとブラウザが開いてしまい、「ダウンロードを記録する」前提（`BR-28`）と実際の閲覧経路がずれる）。組み立ては `packages/connectors` の `contentDispositionOf` **1 実装**（モックと S3 が同じ関数を通る）であり、**ASCII の英数字・`.` `_` `-` 以外は例外で止める**（ヘッダ注入の防止と、「原本のファイル名を渡す実装」を実行時に落とす最後の砦を兼ねる）。
 | **バケット全体を GuardDuty の保護対象にする** | プレフィックス指定は使わない（最大 5 個の制限があるため） |
 | **暗号化** | SSE-KMS（`S3_KMS_KEY_ID`）。🔴 **管理平面の IAM ロールに `s3:GetObject` を付与しない**（§5.5） |
 | **バージョニング / IAM 条件** | バージョニング有効（`FileScanResult` が `objectVersionId` を持つため）。ワーカー / Web のロールに `s3:prefix` 条件を付け `t/` 配下に限定する |
@@ -3740,6 +3757,16 @@ s3://{S3_BUCKET}/
 🔴 **版の削除（#19c）の順序**（T-05-06。`docs/03` §4.12）: **⓪削除してよいかの事前判定（`SCANNING` でない / `EngineerSnapshot` に参照されていない）→ ①S3 の `DeleteObject` → ②`UsageCounter` の減算（`releaseSkillSheetStorage` の CAS）→ ③行の削除 + 監査**。①より先に②③をやらない —— 実体が残っているのに枠だけ空くと、S3 の請求だけが増え続ける。🔴 **⓪を①の後ろへ移さない** —— FK が守るのは③の行だけであり、①の後で止めても実体は戻らない（§6.4 #19c の決着）。途中で落ちても、もう一度削除すれば同じ手順が最後まで進む（`DeleteObject` は冪等、②は CAS、③は 0 件なら 404）。
 
 🔴 **共有 URL の発行そのものを `AuditLog` に記録する**（`BR-28` / `F-012 AC-1`）。デスクトップ・モバイル・共有 URL のいずれの経路でも同じ関数（`issueDownloadUrl`）を通るため、**記録が漏れる経路が存在しない**。
+
+🔴 **`issueDownloadUrl` の実装の決着（T-05-07。`apps/web/lib/storage/download.ts`）**:
+
+- **手順は ①対象の確定（`loadSubject`）→ ②`CLEAN` 判定 → ③`writeAuditLog` → （commit）→ ④`presignGet`** である。🔴 **③が commit された後でなければ④に到達しない**（`F-012 AC-2`）。逆順にしてはならない —— 署名付き URL は**発行した時点で有効**であり、後から記録に失敗しても取り消せない（＝ 記録の無いダウンロードが 1 件生まれる）。
+- 🔴 **対象の読み取りは `loadSubject`（トランザクションの内側で走るコールバック）が行う。** 呼び出し側は「見えている行」からしか `DownloadSubject` を作れず、母集団を決めるのは RLS である（境界外の ID は `null` → **404**、記録も残さない）。
+- 🔴 **`CLEAN` 判定と監査はこの関数が持ち、呼び出し側に渡さない**（`BR-26` / `F-011 AC-1` / `AC-3`）。渡すと、DL 経路（#20 / #82 / #78）が増えるたびに条件式が写され、どれかが緩む。非 `CLEAN` は **409 `FILE_NOT_CLEAN`**（`SKILL_SHEET_NOT_CLEAN`〔＝ 最新版にできない〕と**畳まない**。止めている操作も次の行動も違う）。
+- 🔴 **`presignGet` を呼んでよいのはこのファイルだけ**である（`tests/static/auth-db-callers.test.ts` の `ALLOWED_CALLERS` が固定する）。契約書（#82）・返却データ（#78）も**同じ関数**を通すこと。
+- **`expiresIn` は要求した TTL（300 秒）をそのまま返す**（`PresignedUrl.expiresAt` との差分から求め直さない。差分は同じ値を呼び出し側の時計で計算し直すだけであり、時計のずれの分だけ嘘になる）。
+- 🔴 **`VIEWER` の拒否はルートの `requireNotViewer`** が持つ（`F-012 AC-3`）。ここに置かないのは、ガードの宣言を `withApiRoute` の構築時検査と静的走査が読める形（＝ ルート定義）に保つためである。
+- ⚠️ **前提条件④「代理閲覧中でない」（`F-060 AC-3`）は未実装**（`ImpersonationSession` と `withImpersonation` は Phase 2。`AuthenticatedTenantCtx` に代理閲覧中を表す値が無い）。**動かせない分岐を先回りで書かない**（`piiPurgedAt` と同じ規律）。🔴 実装が入るときの追加箇所は**この関数の 1 箇所**である。
 
 #### 14.3 ストレージ使用量の計上（T-05-04。`docs/03` §4.5 / §8.7）
 
@@ -3848,7 +3875,7 @@ export class InvalidStateTransitionError extends AppError {
 | `auth.login` / `auth.logout` / `auth.login_failed` | Auth.js のコールバック（主平面・管理平面の両方） | `USER` / `PLATFORM_USER` |
 | `auth.2fa.setup_started` / `auth.2fa.enabled` / `auth.2fa.verified` / `auth.2fa.recovery_used` / `auth.2fa.failed` | 2FA の設定開始・有効化・検証成功・リカバリコード使用・失敗。**登録・確定と同一トランザクションで記録** | `USER` / `PLATFORM_USER` |
 | `auth.2fa.throttled` | ロック中の拒否。🔴 **`auth.2fa.failed` とは別の action**（スロットル窓の母集団にロックの拒否自体を含めると自己延長するため） | `USER` / `PLATFORM_USER` |
-| 🔴 `engineer.view` / `skill_sheet.view` / `skill_sheet.download` / `project.view` | `#17` / `#21` / `#20` / `#27`。🔴 **DL は `issueDownloadUrl` の中で書く**（経路が 1 本なのでモバイル・共有 URL でも漏れない。`BR-28` 欠落 0 件）。🔴 **`engineer.view` も同じ形**（T-05-02）: `readEngineerDetail` / `readEngineerForEdit` の**業務トランザクション内**（`writeAuditLog`）で書き、`withApiRoute` の `audit` オプションを使わない —— 画面（サーバコンポーネント）は Route Handler を通らず、`audit` は 404 でも記録が残るため（§6.4「#17 の実装の決着」） | `USER` |
+| 🔴 `engineer.view` / `skill_sheet.view` / `skill_sheet.download` / `project.view` | `#17` / `#21` / `#20` / `#27`。🔴 **DL は `issueDownloadUrl` の中で書く**（経路が 1 本なのでモバイル・共有 URL でも漏れない。`BR-28` 欠落 0 件）。🔴 **`engineer.view` も同じ形**（T-05-02）: `readEngineerDetail` / `readEngineerForEdit` の**業務トランザクション内**（`writeAuditLog`）で書き、`withApiRoute` の `audit` オプションを使わない —— 画面（サーバコンポーネント）は Route Handler を通らず、`audit` は 404 でも記録が残るため（§6.4「#17 の実装の決着」）。🔴 **`skill_sheet.view` も同じ形**（T-05-07。`readSkillSheetPreview` の業務トランザクション内）。🔴 **閲覧と DL を 1 つの action に畳まない**（`F-012 AC-1`）—— 畳むと「見ただけの人」と「手元にファイルを持って行った人」が区別できず、取引先への説明が成り立たない。🔴 `summary` は **`{ engineerId, version, scanStatus }` だけ**（氏名・版のメモ・ファイル名・オブジェクトキーを載せない。§16.2 / §5.5）。🔴 **`deviceKind` を必ず残す**（`ctx.deviceKind`。`CLAUDE.md` §13.3「モバイルだけ記録が漏れる実装にしない」） | `USER` |
 | `*.create` / `*.update` / `*.delete` | `withApiRoute` の `audit` オプション（各ハンドラで `action` を宣言） | `USER` / `SYSTEM` |
 | 🔴 `skill_sheet.create` / `skill_sheet.update` / `skill_sheet.delete` | `#19` / `#19b` / `#19c`（`F-011 AC-4`「アップロード・版の切替・削除が監査ログに残る」）。**`skill_sheet.upload` のような独自 action を作らず `*.create` / `*.update` / `*.delete` に畳む**（`S-041` の操作種別フィルタから漏れるため。`partner_company.suspend` と同じ理由）。版の切替は `summary.operation='SET_LATEST'` で区別する。🔴 **3 つとも業務トランザクション内（`writeAuditLog`）で書く** —— `audit` オプションはハンドラの前に別トランザクションで書くため、**起きなかった操作**（404 / 409 / 冪等な no-op）まで残る。🔴 `summary` に**版のメモ・ファイル名・氏名・オブジェクトキーを載せない**（§16.2 / §5.5） | `USER` |
 | 🔴 `partner_company.create` / `partner_company.update` | `#12` / `#13`（`F-007 AC-3`「登録・招待・停止・再開が監査ログに残る」）。**停止・再開も `*.update` に揃え、`summary.operation`（`SUSPEND` / `RESUME`）で区別する** —— `partner_company.suspend` のような独自 action を作ると `S-041` の操作種別フィルタ（`CREATE_UPDATE_DELETE` = 接尾辞一致）から漏れ、**記録されているのに検索で出てこない**状態になる。招待は既存の `invitation.create` に `summary.targetPartnerCompanyId` を載せる | `USER` |

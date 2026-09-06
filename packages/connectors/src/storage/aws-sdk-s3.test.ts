@@ -179,6 +179,39 @@ describe('presignGet（ローカル署名）', () => {
     expect(url.pathname).toBe(`/${BUCKET}/${KEY}`);
     expect(url.searchParams.get('X-Amz-Expires')).toBe('60');
   });
+
+  it('指定しなければ `response-content-disposition` を載せない', async () => {
+    const url = new URL(
+      await api().presignGet({ Bucket: BUCKET, Key: KEY, ExpiresInSeconds: 300 }),
+    );
+    expect(url.searchParams.get('response-content-disposition')).toBeNull();
+  });
+
+  /**
+   * 🔴 T-05-07: ダウンロード名は**署名済みクエリ**として載る（後から差し替えられない）。
+   *    `X-Amz-SignedHeaders` ではなくクエリなので、`X-Amz-Signature` が変わることで
+   *    「署名に含まれている」ことを確かめる。
+   */
+  it('🔴 ダウンロード名がクエリに載り、署名が変わる（改ざんできない）', async () => {
+    const plain = new URL(
+      await api().presignGet({ Bucket: BUCKET, Key: KEY, ExpiresInSeconds: 300 }),
+    );
+    const named = new URL(
+      await api().presignGet({
+        Bucket: BUCKET,
+        Key: KEY,
+        ExpiresInSeconds: 300,
+        ResponseContentDisposition: 'attachment; filename="skill-sheet-v3.xlsx"',
+      }),
+    );
+
+    expect(named.searchParams.get('response-content-disposition')).toBe(
+      'attachment; filename="skill-sheet-v3.xlsx"',
+    );
+    expect(named.searchParams.get('X-Amz-Signature')).not.toBe(
+      plain.searchParams.get('X-Amz-Signature'),
+    );
+  });
 });
 
 describe('🔴 ③ ④ headObject / deleteObject（`send` を差し替え、ネットワークに出ない）', () => {

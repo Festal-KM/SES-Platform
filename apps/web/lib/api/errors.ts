@@ -390,6 +390,26 @@ export class SkillSheetNotCleanError extends ConflictError {
 }
 
 /**
+ * 🔴 ウイルス検査に合格していないファイルのダウンロードを要求した（409）。T-05-07。
+ *
+ * 🔴 `SkillSheetNotCleanError`（＝ 最新版にできない）と**畳まない**。止めている操作が違い、
+ *    利用者が次に取る行動も違う（あちらは「別の版を選ぶ」、こちらは「そもそも渡さない」）。
+ *    文言を 1 つにすると、隔離されたファイルのダウンロードを断るときに
+ *    「最新版にできません」と表示されることになる。
+ * 🔴 スキルシート専用にしない —— 発行経路（`issueDownloadUrl`）は契約書（#82。SP-17）や
+ *    返却データ（#78）でも同じであり、判定も 1 箇所である（`lib/storage/download.ts`）。
+ */
+export class FileNotCleanError extends ConflictError {
+  override readonly code = 'FILE_NOT_CLEAN';
+  override readonly userMessageKey: MessageKey = 'error.file.notClean';
+
+  constructor() {
+    super('このファイルはウイルス検査に合格していないため、ダウンロードできません。');
+    this.name = 'FileNotCleanError';
+  }
+}
+
+/**
  * 🔴 提案に凍結添付された版を削除しようとした（409）。T-05-06（Iteration 2）。
  *
  * 🔴 **これは「順序の事故」を防ぐための事前チェックである。** 版の削除は

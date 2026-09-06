@@ -3,7 +3,12 @@
 
 import { randomUUID } from 'node:crypto';
 
-import type { ObjectHead, ObjectStore } from '../interfaces.js';
+import {
+  contentDispositionOf,
+  type ObjectHead,
+  type ObjectStore,
+  type PresignGetOptions,
+} from '../interfaces.js';
 import type { PresignedUrl } from '../types.js';
 
 /** 署名付き URL のスキーム。🔴 実在しないスキームにして、誤って外部へ渡っても到達しないようにする。 */
@@ -45,10 +50,26 @@ export class MockObjectStore implements ObjectStore {
     };
   }
 
-  async presignGet(key: string, ttlSec: number): Promise<PresignedUrl> {
+  /**
+   * 🔴 T-05-07: ダウンロード名の検査（`contentDispositionOf`）は**実装と同じ関数**を通す。
+   *    ここを素通しにすると、`demo` / E2E では通るのに `production` で
+   *    `UnsafeDownloadFileNameError` になる差が生まれる（docs/05 §13.2）。
+   * 🔴 組み立てた値は URL のクエリに載せる（実装が `response-content-disposition` として
+   *    署名に載せるのと同じ位置）。テストはこれを見て「名前が最後まで運ばれたか」を確かめられる。
+   */
+  async presignGet(
+    key: string,
+    ttlSec: number,
+    options?: PresignGetOptions,
+  ): Promise<PresignedUrl> {
+    const disposition = contentDispositionOf(options?.downloadFileName);
     this.calls += 1;
+    const query =
+      disposition === undefined
+        ? ''
+        : `?response-content-disposition=${encodeURIComponent(disposition)}`;
     return {
-      url: `${MOCK_URL_SCHEME}//get/${encodeURIComponent(key)}`,
+      url: `${MOCK_URL_SCHEME}//get/${encodeURIComponent(key)}${query}`,
       expiresAt: new Date(this.now().getTime() + ttlSec * 1000),
       headers: {},
     };

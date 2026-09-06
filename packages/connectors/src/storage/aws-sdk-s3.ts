@@ -190,7 +190,15 @@ export function createS3Api(options: S3ApiOptions): S3Api {
     },
 
     async presignGet(request: S3PresignGetRequest): Promise<string> {
-      const command = new GetObjectCommand({ Bucket: request.Bucket, Key: request.Key });
+      const command = new GetObjectCommand({
+        Bucket: request.Bucket,
+        Key: request.Key,
+        // 🔴 T-05-07: 署名済みクエリ `response-content-disposition` として載る。
+        //    未指定なら S3 のキー（`{uuid}.{ext}`）がそのまま名前になる。
+        ...(request.ResponseContentDisposition === undefined
+          ? {}
+          : { ResponseContentDisposition: request.ResponseContentDisposition }),
+      });
       return getSignedUrl(client, command, { expiresIn: request.ExpiresInSeconds });
     },
 
