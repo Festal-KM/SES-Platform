@@ -37,10 +37,14 @@ export type RemoteMode = (typeof REMOTE_MODES)[number];
 /**
  * docs/05 §3.4 `ScanStatus`（TEXT + CHECK）。`skill_sheets.scan_status` / `file_scan_results.status`
  * で共有する。🔴 UNSUPPORTED は UNSCANNABLE に正規化する（docs/03 §3.4.3）。
+ *
+ * 🔴 **宣言の唯一の出所は `packages/domain`**（T-05-05）。ここは re-export である ——
+ *    正規化する側（`packages/connectors`）と CHECK を持つ側（本パッケージ）は相互に依存できず
+ *    （`CLAUDE.md` §2.1）、共有点が domain しか無い（`RecipientClass` と同じ整理）。
+ *    `tests/static/schema-enum-drift.test.ts` は引き続き `@ses/db` の名前で突合する。
  */
-export const SCAN_STATUSES = ['SCANNING', 'CLEAN', 'INFECTED', 'UNSCANNABLE', 'FAILED'] as const;
-
-export type ScanStatus = (typeof SCAN_STATUSES)[number];
+export { SCAN_STATUSES } from '@ses/domain';
+export type { ScanStatus } from '@ses/domain';
 
 /** docs/05 §3.4 `SkillAlias.status`（TEXT + CHECK）。 */
 export const SKILL_ALIAS_STATUSES = ['PROPOSED', 'ACCEPTED', 'REJECTED'] as const;

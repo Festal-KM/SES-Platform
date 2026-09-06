@@ -20,7 +20,7 @@ import type {
   PresignedUrl,
   ProviderQuota,
   RecipientClass,
-  ScanStatus,
+  ScanResultReading,
   SendAttemptToken,
   VerifiedSendingDomain,
 } from './types.js';
@@ -77,8 +77,17 @@ export interface ObjectStore {
 export interface MalwareScanner {
   /** GuardDuty は S3 の Put が契機なので実装によっては no-op。 */
   enqueue(key: string): Promise<void>;
-  /** 保険のポーリング用（docs/05 §8.5）。未着なら `null`。 */
-  getResult(key: string, versionId: string): Promise<ScanStatus | null>;
+  /**
+   * 保険のポーリング用（docs/05 §8.5「Webhook が届かない場合の保険」）。**未着なら `null`**。
+   *
+   * 🔴 `versionId` に `null` を渡すと**最新版**を照会する（T-05-05）。`skill_sheets` は版 ID を
+   *    列として持たない（キーの `{uuid}` が版を跨がない前提。docs/05 §14.1）ため、
+   *    `scan.poll` は `null` で呼ぶ。戻り値の `objectVersionId` が実際に判定の付いた版であり、
+   *    それを `FileScanResult` の重複排除キーに使う。
+   * 🔴 **`SCANNING`（未確定）を返さない。** 「まだ判定が無い」は `null` で表す ——
+   *    未確定を状態として返すと、呼び出し側が「確定した SCANNING」を適用しようとしてしまう。
+   */
+  getResult(key: string, versionId: string | null): Promise<ScanResultReading | null>;
   callCount(): number;
 }
 

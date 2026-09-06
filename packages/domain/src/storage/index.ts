@@ -6,5 +6,6 @@ export {
   isTenantScopedObjectKey,
   objectKeyExtensionOf,
   OBJECT_KIND_SEGMENTS,
+  tenantIdFromObjectKey,
   type SkillSheetObjectKeyInput,
 } from './object-key.js';

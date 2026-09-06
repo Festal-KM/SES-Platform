@@ -6,7 +6,12 @@
 //    そのイベントは永久に処理されない**。だから enqueue 先の解決は**副作用の前**に行い、
 //    未登録なら例外にする（`account.mail` の `requireAccountMailQueue` と同じ規律）。
 
-import type { WebhookProcessJob, WebhookProcessQueue } from '@ses/connectors';
+import type {
+  ScanApplyResultJob,
+  ScanApplyResultQueue,
+  WebhookProcessJob,
+  WebhookProcessQueue,
+} from '@ses/connectors';
 
 /** 🔴 enqueue 先が未登録のまま受信しようとした（起動時 DI の失敗）。 */
 export class WebhookProcessQueueUnavailableError extends Error {
@@ -54,6 +59,63 @@ export class PendingWebhookProcessQueue implements WebhookProcessQueue {
   }
 
   /** 積まれた件数（docs/05 §13.2 の `callCount()` と同じ用途）。 */
+  callCount(): number {
+    return this.jobs.length;
+  }
+
+  jobIds(): readonly string[] {
+    return this.jobs.map((job) => job.deliveryId);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// `scan.apply-result`（T-05-05。docs/05 §9.6）
+// ---------------------------------------------------------------------------
+// 🔴 `webhook.process` と**別のキュー**にする（docs/05 §9.6 が別ジョブとして定義している）。
+//    1 本に畳むと、スキャン結果の適用とバウンスの記録が同じ再試行・同じ滞留指標に混ざる。
+
+/** 🔴 enqueue 先が未登録のまま受信しようとした（起動時 DI の失敗）。 */
+export class ScanApplyResultQueueUnavailableError extends Error {
+  constructor() {
+    super(
+      'scan.apply-result キューが登録されていません（起動時 DI の失敗）。' +
+        '処理されないまま受信を成立させることはできません（CLAUDE.md §11.1 / docs/05 §8.5）。',
+    );
+    this.name = 'ScanApplyResultQueueUnavailableError';
+  }
+}
+
+let scanQueue: ScanApplyResultQueue | null = null;
+
+/** 🔴 起動時に 1 回だけ呼ぶ（`lib/db/bootstrap.ts`）。 */
+export function configureScanApplyResultQueue(implementation: ScanApplyResultQueue): void {
+  scanQueue = implementation;
+}
+
+/** 🔴 テスト用の後始末。本番経路からは呼ばない。 */
+export function resetScanApplyResultQueue(): void {
+  scanQueue = null;
+}
+
+/** 🔴 **副作用（`WebhookDelivery` の INSERT）より前に**呼ぶ。 */
+export function requireScanApplyResultQueue(): ScanApplyResultQueue {
+  if (scanQueue === null) throw new ScanApplyResultQueueUnavailableError();
+  return scanQueue;
+}
+
+/**
+ * `development` / `demo` で使う保留キュー（`PendingWebhookProcessQueue` と同じ性質）。
+ *
+ * 🔴 これは「処理した」ふりをするものではない。`WebhookDelivery.processedAt` は NULL のまま残り、
+ *    `A-005`（未処理の Webhook）で見える。**黙って消えない**ことが要点である。
+ */
+export class PendingScanApplyResultQueue implements ScanApplyResultQueue {
+  private readonly jobs: ScanApplyResultJob[] = [];
+
+  async enqueue(job: ScanApplyResultJob): Promise<void> {
+    this.jobs.push(job);
+  }
+
   callCount(): number {
     return this.jobs.length;
   }

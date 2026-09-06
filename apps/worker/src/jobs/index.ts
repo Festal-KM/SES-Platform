@@ -22,6 +22,12 @@ import {
   type SendHoldReleaseDeps,
 } from './send-hold-release.js';
 import {
+  createScanPollHandler,
+  SCAN_POLL_JOB,
+  SCAN_POLL_SCHEDULE,
+  type ScanPollDeps,
+} from './scan-poll.js';
+import {
   createUsageSeatSnapshotHandler,
   USAGE_SEAT_SNAPSHOT_JOB,
   USAGE_SEAT_SNAPSHOT_SCHEDULE,
@@ -123,6 +129,26 @@ export {
   WEBHOOK_PROCESS_JOB,
 } from './webhook-process.js';
 export type { WebhookProcessDeps, WebhookProcessHandler, WebhookProcessOutcome } from './webhook-process.js';
+// 🔴 T-05-05: ウイルススキャン結果の適用（イベント起動）と滞留の保険（毎 5 分）。
+//    docs/05 §8.5 / §9.6。どちらも外部への**書き込み**を行わない（`attempts: 3`）。
+export {
+  createScanApplyResultHandler,
+  parseScanApplyResultPayload,
+  SCAN_APPLY_RESULT_JOB,
+} from './scan-apply-result.js';
+export type {
+  ScanApplyResultDeps,
+  ScanApplyResultHandler,
+  ScanApplyResultOutcome,
+} from './scan-apply-result.js';
+export {
+  createScanPollHandler,
+  parseScanPollPayload,
+  SCAN_POLL_JOB,
+  SCAN_POLL_LIMIT,
+  SCAN_POLL_SCHEDULE,
+} from './scan-poll.js';
+export type { ScanPollDeps, ScanPollHandler, ScanPollOutcome, ScanPollPayload } from './scan-poll.js';
 
 /**
  * ジョブの合成に要る値（起動時に 1 度だけ解決する。`CLAUDE.md` §11.1 / docs/05 §13.1）。
@@ -131,7 +157,10 @@ export type { WebhookProcessDeps, WebhookProcessHandler, WebhookProcessOutcome }
  *    どのジョブが何を要るかを型が積み上げる。**足りない値のまま起動できない**ことが要点である
  *    （足りなければ SP-07 の配線がコンパイルエラーになる）。
  */
-export type ScheduledJobDeps = UsageSeatSnapshotDeps & DomainVerifyDeps & SendHoldReleaseDeps;
+export type ScheduledJobDeps = UsageSeatSnapshotDeps &
+  DomainVerifyDeps &
+  SendHoldReleaseDeps &
+  ScanPollDeps;
 
 /**
  * スケジュール実行するジョブの宣言。
@@ -176,5 +205,14 @@ export const SCHEDULED_JOBS: readonly ScheduledJobDeclaration[] = [
     cron: SEND_HOLD_RELEASE_SCHEDULE.cron,
     timeZone: SEND_HOLD_RELEASE_SCHEDULE.timeZone,
     createHandler: (deps) => createSendHoldReleaseHandler(deps),
+  },
+  // 🔴 T-05-05: スキャン結果が届かなかったときの保険（docs/05 §8.5）。**これが無いと
+  //    `SCANNING` のまま滞留したファイルに誰も気づけない**（EventBridge の一度きりの
+  //    取りこぼしが、そのファイルの共有不能として恒久的に残る）。
+  {
+    name: SCAN_POLL_JOB,
+    cron: SCAN_POLL_SCHEDULE.cron,
+    timeZone: SCAN_POLL_SCHEDULE.timeZone,
+    createHandler: (deps) => createScanPollHandler(deps),
   },
 ];

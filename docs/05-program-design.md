@@ -436,6 +436,9 @@ model SkillSheet {
   purgedAt      DateTime? @db.Timestamptz(3)
   storageCountedAt DateTime? @db.Timestamptz(3)            // 🔴 T-05-04。UsageCounter(STORAGE_BYTES) に byte_size を計上済みの時刻（NULL = 未計上）
   @@unique([tenantId, engineerId, version])
+  @@unique([objectKey])                                    // 🔴 T-05-05: スキャン結果は「バケット + キー + 版」しか
+                                                           //    教えてくれない（docs/03 §3.4.1）。同じキーの行が 2 つあると
+                                                           //    適用先が決まらない（migration 20260908000000。§8.5.1）
   @@index([tenantId, scanStatus, uploadedAt])              // SCANNING 滞留の検知（A-005）
   @@map("skill_sheets")
 }
@@ -452,6 +455,8 @@ model FileScanResult {
   rawStatus    String                                      // GuardDuty の生値（正規化前）
   receivedAt   DateTime @default(now()) @db.Timestamptz(3)
   @@unique([objectKey, objectVersionId])                   // 🔴 at-least-once の重複を弾く（docs/03 §3.4.3-2）
+  // 🔴 T-05-05: 書き手は `applyFileScanResult`（packages/db/src/file-scan.ts）だけである。
+  //    重複は例外にせず `createMany({ skipDuplicates: true })` で 0 件挿入として受ける（§8.5.1）
   @@map("file_scan_results")
 }
 model SkillSheetExtraction {
@@ -1325,6 +1330,7 @@ model BillingMeterSubmission {                                     // docs/03 §
 | `app_platform_write` | 🔴 **なし** | `plans` / `subscriptions` / `announcements` / `usage_counters`（上書き列）/ `tenants`（`INSERT` + ライフサイクル列の `UPDATE`）/ `invitations`（`INSERT` のみ。初期 `OWNER` 招待に `WITH CHECK` で固定。§5.2）/ `tenant_sending_domains`（`INSERT` のみ。`state='REGISTERED'` に `WITH CHECK` で固定。§5.2）/ `impersonation_sessions` / `audit_logs` への書き込み。🔴 **加えて運営者認証経路（T-03-07。`packages/db/src/platform-auth.ts`）専用の権限を持つ**: `platform_users` の列レベル `SELECT`（`id, email, display_name, role, password_hash, disabled_at, last_login_at` の 7 列）+ `last_login_at` の列レベル `UPDATE` / `two_factor_credentials` の **`tenant_id IS NULL AND subject_type='PLATFORM_USER'` 行限定**の `INSERT` + 列レベル `UPDATE`（`secret_encrypted, recovery_code_hashes, confirmed_at` の 3 列。`DELETE` は与えない）/ `audit_logs` の **`SELECT`**（本人の 2FA 失敗履歴のみ。試行スロットル用）。**業務テーブルへの書き込み権限を一切持たない**（`platform_users` / `two_factor_credentials` の該当行 / `audit_logs` は認証・監査データであり業務データではないため抵触しない。詳細は §4.4.2・§5.2 の追記） | `PLATFORM_WRITE_DATABASE_URL` | `withPlatformWrite` / `platform-auth.ts` の認証経路（§4.4.2） |
 | `app_share_probe` | 🔴 **なし**（`NOLOGIN`） | `engineer_shares` の `SELECT (tenant_id, engineer_id, revoked_at)` のみ。**他表に一切の権限を持たない** | （接続しない） | `app_engineer_is_shared()` の `SECURITY DEFINER` 所有者としてのみ（§4.5） |
 | `app_assignment_owner_probe` | 🔴 **なし**（`NOLOGIN`） | `engineers` の `SELECT (tenant_id, id, owner_partner_company_id)` のみ。**他表に一切の権限を持たない** | （接続しない） | `inherit_assignment_counterparty()` の `SECURITY DEFINER` 所有者としてのみ（§4.4.1。T-02-08） |
+| `app_scan_probe` | 🔴 **なし**（`NOLOGIN`） | `skill_sheets` の `SELECT (id, tenant_id, object_key, scan_status, uploaded_at, is_latest)` + `UPDATE (scan_status, scan_updated_at, is_latest)`、および `engineers` の `SELECT (tenant_id, id, owner_partner_company_id)`（🔴 オーナー列の継承トリガが `skill_sheets` の `UPDATE` で親を読むため。§4.4.1 と同じ 3 列）。**他表に一切の権限を持たない** | （接続しない） | `app_apply_scan_status()` / `app_list_stalled_scan_targets()` の `SECURITY DEFINER` 所有者としてのみ（§8.5。T-05-05） |
 
 🔴 **テーブル所有者は `app_migrator` であり、`FORCE ROW LEVEL SECURITY` を全業務テーブルに付ける。** これが無いと所有者が RLS を素通りする。**`app_migrator` の接続文字列を `apps/web` / `apps/worker` の実行時環境に渡さない**（`packages/config` の Zod スキーマで、`development` を含む全環境の実行時 `APP_ENV` では `MIGRATION_DATABASE_URL` が**未設定であること**を検証する。T-01-05 でロールが実在するようになったため `development` 例外〔本節および §13.4 規則 3・4〕を解除した）。ロールの定義は `packages/db/prisma/sql/000_roles.sql` を唯一の真実とし、ローカル docker-compose（`docker/postgres/initdb/000-roles.sh`）と Testcontainers（`tests/isolation/support/postgres.ts`）の両方がこのファイルを実行する。
 
@@ -1574,7 +1580,7 @@ test('app_tenant に権限がある表は、適用される全ポリシーの式
   /* role_table_grants で対象表を取り、pg_get_expr(polqual|polwithcheck) に 'app_tenant_id()' が現れるか。
      C0 は app_tenant_id() IS NULL を含むので通り、「USING (true)」の類は必ず落ちる */);
 test('app_tenant に権限が無い表は、app_platform / app_platform_write のいずれかに権限がある', /* 孤児表の検出 */);
-test('app_tenant / app_platform / app_platform_write / app_share_probe / app_assignment_owner_probe は BYPASSRLS を持たない', /* pg_roles.rolbypassrls */);
+test('app_tenant / app_platform / app_platform_write / app_share_probe / app_assignment_owner_probe / app_scan_probe は BYPASSRLS を持たない', /* pg_roles.rolbypassrls */);
 test('app_platform は業務テーブルに INSERT/UPDATE/DELETE 権限を持たない', /* information_schema.role_table_grants */);
 test('§5.5 の非開示列が app_platform に GRANT されていない', /* column_privileges を走査 */);
 test('Prisma 拡張の対象モデル一覧が、除外 4 モデル以外のすべてを含む', /* Prisma DMMF を走査 */);
@@ -1583,7 +1589,7 @@ test('オーナー列は root / child の宣言を持ち、宣言に応じたト
      'owner-column: root'          → freeze_owner_partner_company の BEFORE UPDATE トリガがある
      'owner-column: child of P(fk)' → inherit_owner_partner_company(P, fk) の BEFORE INSERT OR UPDATE トリガがある
      根 4 表（users / engineers / proposals / tasks）と子 7 表を列挙せず、宣言と実体の一致だけを見る */);
-test('app_share_probe の権限は engineer_shares の 3 列の SELECT だけ、app_assignment_owner_probe の権限は engineers の 3 列の SELECT だけ', /* role_column_grants + role_table_grants を走査（migrator 接続で読む。§4.4.1）。🔴 app_share_probe への GRANT は engineer_shares 実装（SP-08）で付与する。000_roles.sql の予告どおり、それまでは 0 件が期待値 */);
+test('app_share_probe の権限は engineer_shares の 3 列の SELECT だけ、app_assignment_owner_probe の権限は engineers の 3 列の SELECT だけ、app_scan_probe の権限は skill_sheets の 9 行（SELECT 6 列 + UPDATE 3 列）+ engineers の 3 列の SELECT だけ（T-05-05。§8.5）', /* role_column_grants + role_table_grants を走査（migrator 接続で読む。§4.4.1）。🔴 app_share_probe への GRANT は engineer_shares 実装（SP-08）で付与する。000_roles.sql の予告どおり、それまでは 0 件が期待値 */);
 test('当事者列（counterparty_partner_company_id）も root / child の宣言と対応するトリガを持つ',
   /* オーナー列のテストと同じ述語。宣言の無い当事者列は FAIL。持つ表が 4 表以外に増えていたら FAIL（経路 5 の対象拡大は人間の承認事項） */);
 test('経路 5 の 4 表に、パートナー文脈で真になり得る INSERT/UPDATE/DELETE ポリシーが無く、extension_reviews にはパートナー文脈で真になる SELECT ポリシーも無い',
@@ -2527,9 +2533,14 @@ export interface ObjectStore {
 
 export interface MalwareScanner {
   enqueue(key: string): Promise<void>;             // GuardDuty は S3 の Put が契機なので no-op
-  getResult(key: string, versionId: string): Promise<ScanStatus | null>;   // 保険のポーリング用
+  /** 🔴 保険のポーリング用（§8.5）。versionId=null で最新版を照会する。未着なら null（SCANNING を返さない）。
+   *  ⚠️ T-05-05 で戻り値を ScanStatus から ScanResultReading に変えた —— 照会で得た判定を
+   *     Webhook と**同じ経路**（FileScanResult の UNIQUE(object_key, version_id)）で記録するには、
+   *     判定が付いていた「版」と「生値」が要る。状態だけでは記録できない。 */
+  getResult(key: string, versionId: string | null): Promise<ScanResultReading | null>;
   callCount(): number;
 }
+export type ScanResultReading = { status: ScanStatus; rawStatus: string; objectVersionId: string };
 
 export interface EsignProvider {
   readonly key: EsignProviderKey;                  // 'docusign' | 'cloudsign' | 'mock'（第一コネクタ = docusign。docs/03 §3.1.2）
@@ -2566,7 +2577,7 @@ export type DecimalString = string;
 | サービス固有 | 閉じ込め先 |
 |---|---|
 | SES の configuration set / Tenant 指定 / SigV4 | `packages/connectors/src/email/ses/**`（T-04-03 で確定）。🔴 **`@aws-sdk/client-sesv2` を import してよいのは `aws-sdk-api.ts` の 1 ファイルだけ**であり、他は `SesApi` ポート（`api.ts`。SDK の `SendEmailCommandInput` / `GetAccountCommandOutput` と構造的に一致させ、詰め替えを持たない）だけを見る。SES の例外の分類（日次枠 / 秒間レート / 恒久 / 応答不明）は `errors.ts` の `normalizeSesError` に、バウンス・苦情の正規化は `events.ts` に閉じる。公開経路は `@ses/connectors/aws` サブパス 1 本（§17.2 #10b） |
-| GuardDuty の `NO_THREATS_FOUND` などの生ステータス | `packages/connectors/src/scanner/guardduty.ts` の `normalizeScanStatus()` |
+| GuardDuty の `NO_THREATS_FOUND` などの生ステータス、EventBridge のイベント形、受信の HMAC 検証 | `packages/connectors/src/scan/**`（T-05-05 で確定。`guardduty.ts` の `normalizeScanStatus()` / `parseGuardDutyScanEvent()` / `verifyGuardDutySignature()`、`guardduty-scanner.ts` の `GuardDutyMalwareScanner`）。判定の照会は S3 の `GetObjectTagging`（`GuardDutyMalwareScanStatus` タグ）であり、アダプタは `storage/aws-sdk-s3.ts` の `createObjectTagApi`（AWS SDK の import を 1 ファイルに保つ）。🔴 **`ScanStatus` の値集合と遷移規則そのものは `packages/domain/src/scan/status.ts`**（`packages/connectors` と `packages/db` が相互に依存できないため。`RecipientClass` と同じ整理） |
 | DocuSign の OAuth（`account.docusign.com`）/ `userinfo` / `baseUri` / envelope・recipients・`routingOrder` / Connect 設定 / SDK `docusign-esign` の import | `packages/connectors/src/esign/docusign/*.ts`（SDK の応答は Zod で parse してから内部型へ。`docs/03` §3.1.8） |
 | クラウドサインのクライアント ID → トークン交換、6 操作の URL（第二コネクタ。未実装） | `packages/connectors/src/esign/cloudsign/*.ts` |
 | Stripe の Meter Event の `identifier` 組み立て | `packages/connectors/src/billing/stripe.ts` |
@@ -2688,7 +2699,9 @@ POST /api/webhooks/{provider}
   2. dedupeKey を組み立てて WebhookDelivery に INSERT
      → 一意制約違反なら「処理済み」として 200 を返して終了（冪等）
   3. 🔴 即座に 200 を返す
-  4. webhook.process ジョブを enqueue（処理はここ）
+  4. 処理ジョブを enqueue（処理はここ）。🔴 **ジョブ名はプロバイダで違う**:
+     ses / stripe / docusign / cloudsign → `webhook.process`、guardduty → **`scan.apply-result`**（§9.6）
+     （1 本に畳むと、スキャン結果の適用とバウンスの記録が同じ再試行・同じ滞留指標に混ざる）
 ```
 🔴 **バリデーション失敗で 4xx を返さない**（クラウドサインは 400 番台を成功扱いにして再送しないため、通知が永久に失われる。`docs/03` §3.1.5b-4。DocuSign も同じ構造にし、プロバイダで受信の形を変えない）。**処理の失敗は `WebhookDelivery.processFailedAt` に記録し `A-005` で拾う。**
 
@@ -2696,7 +2709,7 @@ POST /api/webhooks/{provider}
 |---|---|---|
 | `stripe` | `stripe:{event.id}` | 請求状態の同期。🔴 **テナントを自動停止しない** |
 | `ses` | `ses:{messageId}:{eventType}:{timestamp}` | `EmailEvent` を記録。バウンス / 苦情は**テナント別サプレッション**（`docs/03` §3.2.5） |
-| `guardduty` | `gd:{objectKey}:{versionId}` | `FileScanResult` に `UNIQUE(objectKey, versionId)` で INSERT → `SkillSheet.scanStatus` を更新。🔴 **`THREATS_FOUND` の後に `NO_THREATS_FOUND` が来ても `CLEAN` に戻さない**（安全側に固定。`docs/03` 申し送り 15） |
+| `guardduty` | `gd:{objectKey}:{versionId}`（🔴 **ステータスを鍵に含めない** —— 含めると同じ版への再送が 2 回処理される） | `FileScanResult` に `UNIQUE(objectKey, versionId)` で INSERT → `SkillSheet.scanStatus` を更新。🔴 **`THREATS_FOUND` の後に `NO_THREATS_FOUND` が来ても `CLEAN` に戻さない**（安全側に固定。`docs/03` 申し送り 15）。実装は `scan.apply-result`（§9.6） |
 | `docusign` | `docusign:{envelopeId}:{event}:{generatedDateTime}`（SIM / JSON モデル。**Aggregate モデルは使わない** — 公式に重複・欠落が明記。`docs/03` §3.1.5a） | 🔴 **HMAC 署名検証があってもペイロードで状態を確定させない。`fetchStatus` で envelope を再照会してから `Contract` を遷移し、`ContractDocument.signers` を更新**（遅延配信・順序逆転で古い状態を上書きしうる。`docs/03` 申し送り 4）。HMAC キーは `connectHmacKeysEncrypted` の全キーで試行（ローテーション中は複数） |
 | `cloudsign`（第二コネクタ時のみ） | `cloudsign:{documentID}:{status}` | 同上（署名検証無し → URL パスのシークレット。`docs/03` §3.1.5b） |
 
@@ -2707,6 +2720,19 @@ POST /api/webhooks/{provider}
 | ファイルの `SCANNING` | `SCAN_STALL_ALERT_MINUTES`（既定 10）を超えたら `scan.poll` ジョブで `getResult` を照会し、なお不明なら `A-005` |
 | `Contract` の `UNDER_REVIEW` | 日次で `fetchStatus` を照会（読み取り系なのでバックオフ再試行を許す） |
 | プロバイダ別の途絶 | `WebhookDelivery` の「最後に受信した時刻」を日次で確認し、閾値超過で `A-005` |
+
+#### 8.5.1 ウイルススキャン結果の受信（`guardduty`）の決着（T-05-05）
+
+| 論点 | 決定 |
+|---|---|
+| 🔴 **HMAC の署名者** | 🔴 **EventBridge の API Destination（Connection）は本文の HMAC を計算できない**（認証方式は静的ヘッダ / Basic / OAuth のいずれか）。`docs/03` §3.1.5 が「GuardDuty: EventBridge → **自前の受信であれば HMAC を自分で載せる**」と書いているのはこの制約を指す。したがって経路は **GuardDuty → EventBridge → 署名を付与する転送処理（Lambda 等） → `POST /api/webhooks/guardduty`** とし、**署名仕様の正は `packages/connectors/src/scan/guardduty.ts`** に置く（転送側がこれに合わせる）。仕様: ヘッダ `x-ses-platform-signature: t={unixSeconds},v1={hex(HMAC-SHA256(secret, "{t}.{rawBody}"))}`、🔴 **生ボディ**に対して計算、許容時刻差 300 秒（過去・未来の両方向）、**複数鍵をいずれか 1 つ一致で受理**（無停止ローテーション。DocuSign Connect と同じ扱い）、比較は `timingSafeEqual`。鍵は `GUARDDUTY_WEBHOOK_HMAC_SECRET`（+ `_PREVIOUS`。§13.4）。🔴 **鍵が 1 つも無ければ必ず 401**（fail-closed。「未設定なら検証しない」を作らない）。⚠️ **インフラ側（転送処理）の構築は本タスクの射程外**であり、AWS 環境構築（SP-12 前後）で行う |
+| 🔴 **バケットとテナントの検査** | GuardDuty は保護バケット**全体**の結果を送る（`docs/03` §3.4.3-1）。受信側で ①バケットが `S3_BUCKET` と一致するか ②キーが `t/{tenantId}/` 配下か（`tenantIdFromObjectKey`）を確かめ、満たさないものは **200 + 未処理として記録**（`A-005`）。🔴 **401 にしない** —— 署名は正しく送信元は我々自身であり、設定の誤りであって攻撃ではない（再送させても直らない） |
+| 🔴 **`CLEAN` へ戻さないの実装** | 「特定の 1 組み合わせの禁止」にしない（`FAILED → CLEAN` 等の同じ性質の抜け道が残る）。全状態に**重篤度**の全順序 `SCANNING(0) < CLEAN(1) < UNSCANNABLE(2) < FAILED(3) < INFECTED(4)` を与え、**重篤度が上がる方向にしか遷移しない**とする（`packages/domain/src/scan/status.ts`）。これにより ①`CLEAN` へ戻る経路が 1 本も無い ②冪等 ③**到着順に依存しない**（最終状態は受け取った結果の最大重篤度）が同時に成り立つ。DB 側は「置き換えてよい現在値の一覧」を受け取る CAS であり、**重篤度の表を SQL に書き写さない** |
+| 🔴 **未知の生ステータス** | `CLEAN` にも `FAILED` にも**推測で寄せない**。`GuardDutyEventParseError` として 200 + 未処理で記録し（`A-005`）、対象ファイルは `SCANNING` のまま残る（`scan.poll` の滞留検知にも現れる = 二重に見える） |
+| 🔴 **パートナー所有のファイルへ届かせる** | `skill_sheets` は **C3 OWNER_SCOPED** であり、ジョブのホスト文脈（`systemTenantCtx`。§9.2 は `partner_company_id` を常に `null` と定める）からはパートナー所属エンジニアの版が 1 行も見えない。しかしスキャンは所有者と無関係に起きるため、素のままだと **「パートナーが上げたファイルだけ永久に `SCANNING`」**になり `BR-26` / `F-011 AC-3` が成立しない。§4.4.1 の `assignments ← engineers` と**同型の解**（専用ロール `app_scan_probe` + `SECURITY DEFINER` + 最小列 `GRANT`）を採る: `app_apply_scan_status(objectKey, status, replaceable[], observedAt)` と `app_list_stalled_scan_targets(before, limit)` の 2 関数だけを置き、いずれも本体で **`app_tenant_id() IS NULL` を拒否**（fail-closed）し **`tenant_id = app_tenant_id()` に閉じる**。緩むのは「同一テナント内で、スキャンの 3 列だけ」であり、氏名・スキル・他テナントには 1 列も届かない。呼び出し元は `packages/db/src/file-scan.ts` の 2 関数だけ（`TenantDb` に `$queryRaw` が無いため `apps/**` から呼ぶ経路は存在せず、`tests/static/auth-db-callers.test.ts` が固定する）。🔴 **本機構は [Issue #27](https://github.com/Festal-KM/SES-Platform/issues/27) 後半（ワーカーからパートナー所有の `skill_sheets` へ書き込む文脈をどう与えるか）の既定解を、「スキャンの 3 列」に限って前倒しで実装したものである。** 同じ問いの残りの射程 —— `SkillSheetExtraction` の生成（`sheet-parser` / `skill-normalizer`。SP-14）と `gate.run` の実行文脈（SP-09）—— は **SP-07 の設計判断として残る**（それらは本機構の 3 列では足りず、書き込む列も表も違う）。本節の解を「ワーカーがパートナー所有行に触れるときの汎用の入口」として流用しないこと |
+| 🔴 **`is_latest` の扱い** | `skill_sheets_latest_clean_check`（`is_latest = false OR scan_status = 'CLEAN'`）があるため、**最新版が `CLEAN` から非 `CLEAN` へ動くときはフラグを落とす**（残すと CHECK 違反で更新そのものが失敗する）。落とすのが正しい（`F-011 AC-1`）。🔴 逆に、スキャン結果の適用が `is_latest` を**立てる**ことは無い（版の切替は #19 の責務） |
+| 🔴 **`skill_sheets(object_key)` の `UNIQUE`** | スキャン結果は「バケット + キー + 版」しか教えてくれない（`docs/03` §3.4.1）。同じキーの行が 2 つあると適用先が決まらないため、**曖昧さを DB で禁止する**（migration 20260908000000）。キーは `{uuid}` を含み発行のたびに新しい（§14.1）ので、実運用で衝突しない |
+| ⚠️ **`clamav`（`development`）は未実装** | `MALWARE_SCANNER=clamav` を選ぶと `createConnectors` が `ConnectorImplementationNotAvailableError` で**起動を止める**（モックへ倒さない。`CLAUDE.md` §11.1 —— スキャンのモックに勝手に落ちると「検査していないファイルが `CLEAN` になる」）。GuardDuty は S3 のイベント駆動だが ClamAV は自前でオブジェクトを取得して `clamd` に流す必要があり、`ObjectStore` に無い「本体の取得」と INSTREAM 実装が要る（`docs/03` §3.4.3-6）。**後続タスクで実装する**（`development` の起動配線は SP-07 のため、現時点で `createConnectors` を呼ぶ実行経路は無い） |
 
 ### 8.6 トークン暗号化（`docs/03` §4.4 / `BR-25`）
 
@@ -2888,8 +2914,8 @@ export type HostOrPlatformDispatch = {
 
 | ジョブ名 | payload | 実行内容 | 再試行 | 想定実行時間 | 冪等性 |
 |---|---|---|---|---|---|
-| `scan.apply-result` | `{ deliveryId }` | `FileScanResult` に INSERT → `SkillSheet` / `Message.attachmentScanStatus` を更新。🔴 **`CLEAN` へ戻す遷移を禁止** | `attempts: 3` | p95 3 秒 | `UNIQUE(objectKey, versionId)` |
-| `scan.poll` | 毎 5 分 | `SCANNING` が `SCAN_STALL_ALERT_MINUTES` を超えたものを `getResult` で照会。不明なら `A-005` | `attempts: 3` | — | 読み取り + 冪等更新 |
+| `scan.apply-result` | `{ deliveryId }` | 受信済みの `WebhookDelivery` を読み、`FileScanResult` に INSERT → `SkillSheet.scanStatus` を適用（`applyFileScanResult`）。🔴 **`CLEAN` へ戻す遷移を禁止**（重篤度の単調増加。§8.5.1）。🔴 テナントは**オブジェクトキーの `t/{tenantId}`** から導く（受信時にも同じ関数で検査済み。§8.5.1）。対象が見つからなければ `processedAt` を立てず `failureReason='SCAN_TARGET_NOT_FOUND'` で記録し `A-005` に出す（**成功に畳まない**）。⚠️ `Message.attachmentScanStatus` の更新は**チャット添付が実装される SP-13** で同じ関数に分岐を足す（現時点では対象が `skill_sheets` だけなので `NOT_FOUND` になる） | `attempts: 3` | p95 3 秒 | ①`WebhookDelivery.processedAt` の CAS ②`UNIQUE(objectKey, versionId)` ③状態遷移の単調性（3 段の重ね掛け） |
+| `scan.poll` | 毎 5 分（payload `{ tenantId }`。テナント単位のファンアウトは SP-07） | `SCANNING` が `SCAN_STALL_ALERT_MINUTES`（既定 10）を超えたものを `getResult` で照会し、判定が付いていれば **`scan.apply-result` と同じ経路**（`applyFileScanResult`）で適用する（2 実装にしない = 単調性も `FileScanResult` の記録も共有される）。🔴 判定が付いていなければ**何もしない**（`SCANNING` のまま次回も対象になり、`A-005` の「`SCANNING` 滞留」に出続ける。**推測で `CLEAN` にも `FAILED` にもしない**）。母集団は `app_list_stalled_scan_targets`（§8.5.1。所有者を問わずテナント内を見る） | `attempts: 3` | — | 読み取り + 冪等更新 |
 | `contract.render-pdf` | `{ tenantId, contractId, version }` | `mergeContract()`（§3.7。純粋関数）→ docx 差し込み → 🔴 **ワーカー側の LibreOffice headless** で PDF 化（`docs/03` 申し送り 22。Vercel では動かない）→ `mergeResult` 保存 → 🔴 **`gate.run{CONTRACT_DOCUMENT}` を enqueue**（§11.1） | `attempts: 2` | p95 60 秒 | `ContractDocument(contractId, version)` の `UNIQUE`。差し込みは決定的なので再実行しても同一（`F-048 AC-1`） |
 | `export.generate` | `{ tenantId, exportRequestId }` | CSV 一式を生成し S3 へ。🔴 **二重境界を適用して生成する**（`F-064 AC-6`） | `attempts: 2` | p95 5 分 | `DataExportRequest.status` の CAS |
 
@@ -3604,6 +3630,14 @@ export const envSchema = z.discriminatedUnion('APP_ENV', [
 | 5 | 検証エラーは**どの変数がなぜ不正かを列挙**して落とす。1 つ目で止めない |
 | 6 | 🔴 **検証結果のログにシークレットの値を出さない**（変数名と理由のみ） |
 
+🔴 **T-05-05 で追加した項目**（§8.5.1）:
+
+| 変数 | 用途 | 必須 | 検証 |
+|---|---|---|---|
+| `GUARDDUTY_WEBHOOK_HMAC_SECRET` | `POST /api/webhooks/guardduty` の HMAC 共有鍵 | 🔴 **必須（全環境）** | 32 バイト以上の base64。🔴 **任意にしない** —— 未設定を許すと fail-open になり、誰でも `NO_THREATS_FOUND` を流し込めて `BR-26` を外から破れる（`SES_EVENT_TOPIC_ARN` と同じ理由）。`WEBHOOK_PATH_SECRET` と同値なら起動失敗 |
+| `GUARDDUTY_WEBHOOK_HMAC_SECRET_PREVIOUS` | ローテーション中の旧鍵 | 任意 | 同上。**新鍵と同値なら起動失敗**（両方が同時に失効し、ローテーションの意味が消える） |
+| `SCAN_STALL_ALERT_MINUTES` | `scan.poll` が滞留とみなす分数（既定 10） | 任意 | 正の整数。🔴 **`docs/02` 章 7.1 の目標値（2 分）に設計を依存させないための値**であり、E-13 の実測結果でこの 1 つだけを調整する |
+
 ### 13.5 本番でないことの UI 表示（`F-028` / NFR-ENV-9）
 
 ```ts
@@ -4020,7 +4054,7 @@ export const logger = pino({
 | **TBD-4** | **プラン別 AI クォータの初期値と為替**（`Q-T-3` / `Q-15` / `A-14`） | `Plan.aiCostCapUsd` / `aiDailyCostLimitUsd` を**設定値**として持ち、コードに埋め込まない。為替は `FX_JPY_PER_USD`（§5.9） | `F-057` / `F-062` / `A-011` の運用開始。**設計は値に依存していない** | `docs/03` §7.5-4 |
 | **TBD-5** | **マッチング重みの初期値と、開始日の遅れ・勤務地不一致の扱い**（`Q-5` / Issue #3） | スコア関数は**重みを引数で受け取る純粋関数**。既定値は `packages/domain` の定数（§2.2 / `docs/03` §4.20.3）。🔴 **「減点 + 明示フィルタ」を既定とする**（`docs/02` A-03）が、**足切りに切り替えても関数の外側だけで済む** | Phase 2 の `F-029` / `F-030` | `docs/02` A-03 |
 | **TBD-6** | **保持期間 3 年 / `sandbox` 30 日 / `CLOSING` 30 日**（`Q-4` / `Q-9` / `Q-16`） | `PII_RETENTION_YEARS` / `SANDBOX_TRIAL_DAYS` / `TENANT_PURGE_GRACE_DAYS` の環境変数 + `Tenant.piiRetentionYears`。**ジョブの起票条件は「期限を過ぎ、かつ未処理」なので値が変わっても実装は変わらない** | 値の確定のみ。実装は進められる | `docs/02` A-05 / A-07 / A-08 |
-| **TBD-7** | **GuardDuty のスキャン所要時間が 2 分以内か**（`U-7`） | `SCAN_STALL_ALERT_MINUTES`（既定 10）で滞留を検知する設計にし、**目標値に依存しない**（§8.5）。実測が 2 分を超える場合は `docs/02` 章 7.1 の見直しを人間に提起する | Phase 1 の `F-011` の受け入れ判定 | `docs/03` `U-7` |
+| **TBD-7** | **GuardDuty のスキャン所要時間が 2 分以内か**（`U-7`） | `SCAN_STALL_ALERT_MINUTES`（既定 10）で滞留を検知する設計にし、**目標値に依存しない**（§8.5 / §8.5.1）。実測が 2 分を超える場合は `docs/02` 章 7.1 の見直しを人間に提起する。🔴 **実測（E-13）は T-05-05 の時点では実施していない** —— GuardDuty Malware Protection for S3 を有効化した実 AWS アカウントと保護バケットが要り、現環境には存在しないためである。**設計・実装は既に目標値に依存していない**（滞留の判定は設定値 1 つで、コードにも状態機械にも所要時間の前提が無い）ので、実測は **AWS 環境の構築時（SP-12 前後）** に行い、結果で `SCAN_STALL_ALERT_MINUTES` だけを調整する。🔴 **実測時期の変更は [Issue #37](https://github.com/Festal-KM/SES-Platform/issues/37) で確認中（`assumption`）** —— 回答が来るまでは本行の既定で進める | Phase 1 の `F-011` の受け入れ判定 | `docs/03` `U-7` |
 | ~~**TBD-8**~~ | ~~マネージド PostgreSQL で `pg_bigm` / `pgroonga` が使えるか~~（`U-8`） — 🔴 **決着済み（2026-09-02、SP-01 T-01-02）。`pg_trgm` / `pg_bigm` は RDS / Aurora で利用可、`pgroonga` は不可** | 🔴 **本書は日本語全文検索の実装を `packages/db/src/search/*.ts` の 1 箇所に閉じる**。`pg_trgm` の GIN を基本とし、`pg_bigm` は精度不足時に切り替えられる形で温存する。`pgroonga` は採らない。**拡張の作成経路**: ステージング / 本番（RDS / Aurora）では `CREATE EXTENSION` を **Prisma マイグレーション（ロール `app_migrator` / `MIGRATION_DATABASE_URL`。§4.2）で実行する**。`docker/postgres/initdb/001-extensions.sql` は**ローカル開発コンテナの初回起動専用**（RDS/Aurora には `docker-entrypoint-initdb.d` が存在せず、既存ボリュームがあると再実行もされないため） | Phase 0 の DB 構築。`F-009` / `F-015` の実装方式 | `docs/03` §3.7.2 |
 | **TBD-9** | **Anthropic の ZDR の適用条件**（`U-13` / `Q-T-5`） | 設計に影響しない（マスキングは ZDR の有無にかかわらず必須）。**適用時に `packages/ai/src/client.ts` のヘッダを足すだけ** | Phase 2 の着手判断（契約事項） | `docs/03` §3.3.6 |
 | **TBD-10** | **バッチ API（50% 引き）を適用するロール**（`docs/03` §3.3.1 が `program-design` に委ねた判断） | 🔴 **本書の結論: Phase 2 では適用しない。** 理由: ①`gate.run` は 30 秒、`send.*` は 60 秒の目標があり即時応答が要る ②`ai.sheet-parse` は 3 分の目標だがバッチの応答は数分〜24 時間で保証がない ③`ai.match-explain` は `S-016` の画面表示に同期する。**適用しうるのは `ai.renewal-advise` のみ**（起票と通知が先に成立するため。`F-044 AC-1`）だが、月 8 件で削減額が $0.07 であり導入コストに見合わない。**Phase 3 で `sheet-parser` の件数が月 1,000 件を超えたら再評価する** | しない（本書で決着） | `docs/03` §3.3.1 |

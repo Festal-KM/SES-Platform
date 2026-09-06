@@ -33,9 +33,11 @@ import { configureAccountMailQueue, PendingAccountMailQueue } from '../jobs/acco
 import { configureDomainJobQueue, PendingDomainJobQueue } from '../jobs/domain-jobs';
 import { resolveInviteUrlRuntime, type InviteUrlRuntime } from '../invitations/invite-link';
 import {
+  configureScanApplyResultQueue,
   configureWebhookProcessQueue,
   confirmSnsSubscription,
   fetchSigningCertificate,
+  PendingScanApplyResultQueue,
   PendingWebhookProcessQueue,
 } from '../webhooks/runtime';
 import type { SigningCertificateLoader } from '../webhooks/sns';
@@ -59,6 +61,12 @@ let cachedSandboxTrialDays: number | null = null;
  *    署名検証は「Amazon が署名したこと」しか証明しないため、**受け入れるトピックを固定する**。
  */
 let cachedSesEventTopicArn: string | null = null;
+/**
+ * 🔴 T-05-05: `POST /api/webhooks/guardduty` の HMAC 共有鍵（`GUARDDUTY_WEBHOOK_HMAC_SECRET` と、
+ *    ローテーション中の旧鍵）。**空配列にならない**（`packages/config` が新鍵を必須にしている）。
+ *    空になれば `verifyGuardDutySignature` は必ず false を返す（fail-closed）。
+ */
+let cachedGuardDutyWebhookSecrets: readonly string[] | null = null;
 /**
  * 🔴 T-04-04: 送信ドメイン設定（#71 / #72）が要る起動時解決済みの値（docs/05 §8.3 / docs/03 §3.2.7）。
  *    ルートが `process.env` を読まない（`CLAUDE.md` §3.5）ための唯一の経路。
@@ -142,7 +150,20 @@ export function ensureDbConfigured(): void {
   if (connectors.email === 'mock') {
     configureDomainJobQueue(new PendingDomainJobQueue());
   }
+  // 🔴 T-05-05: `scan.apply-result` の enqueue 先。判断材料は上の 3 つと同じである
+  //    （`connectors.email === 'mock'` = BullMQ の配線がまだ無い `development` / `demo`）。
+  //    それ以外では**登録しない** = 受信時に例外 → 500 → 送信側が再送するので結果は失われない。
+  //    「受け取ったことにして捨てる」状態を作らない（`CLAUDE.md` §11.1）。
+  if (connectors.email === 'mock') {
+    configureScanApplyResultQueue(new PendingScanApplyResultQueue());
+  }
   cachedSesEventTopicArn = env.SES_EVENT_TOPIC_ARN;
+  // 🔴 T-05-05: HMAC の鍵。旧鍵が設定されている間は**新旧どちらの署名も受理する**
+  //    （無停止のローテーション。docs/05 §8.5）。分岐はここ 1 箇所である。
+  cachedGuardDutyWebhookSecrets =
+    env.GUARDDUTY_WEBHOOK_HMAC_SECRET_PREVIOUS === undefined
+      ? [env.GUARDDUTY_WEBHOOK_HMAC_SECRET]
+      : [env.GUARDDUTY_WEBHOOK_HMAC_SECRET, env.GUARDDUTY_WEBHOOK_HMAC_SECRET_PREVIOUS];
   // 🔴 `sandbox` / `demo` / `development` は共通ドメインで動く（`docs/03` §3.2.7-4 / -5）。
   //    **分岐はここ 1 箇所**であり、リクエストごとに `APP_ENV` を見ない（`CLAUDE.md` §11.1）。
   cachedSendingDomainRuntime = {
@@ -290,6 +311,24 @@ export function sesWebhookRuntime(): {
     loadCertificate: fetchSigningCertificate,
     confirmSubscription: confirmSnsSubscription,
   };
+}
+
+/**
+ * 🔴 `POST /api/webhooks/guardduty` が使う起動時解決済みの値（docs/05 §6.10 / §8.5）。T-05-05。
+ *    ルートが `process.env` を読まない（`CLAUDE.md` §3.5）ための唯一の経路。
+ *
+ * 🔴 `bucket` は `storageRuntime()` と**同じ 1 つの値**である（別々に読むと、署名を出した
+ *    バケットとスキャン結果を受け入れるバケットがずれる）。
+ */
+export function guardDutyWebhookRuntime(): {
+  readonly secrets: readonly string[];
+  readonly bucket: string;
+} {
+  const storage = storageRuntime();
+  if (cachedGuardDutyWebhookSecrets === null) {
+    throw new Error('GUARDDUTY_WEBHOOK_HMAC_SECRET が解決されていません（bootstrap の不変条件違反）。');
+  }
+  return { secrets: cachedGuardDutyWebhookSecrets, bucket: storage.bucket };
 }
 
 /**

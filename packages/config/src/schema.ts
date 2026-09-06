@@ -124,6 +124,23 @@ const commonShape = {
     .positive()
     .default(50 * 1024 * 1024 * 1024),
   SCAN_STALL_ALERT_MINUTES: z.coerce.number().int().positive().default(10),
+  /**
+   * 🔴 T-05-05: `POST /api/webhooks/guardduty` の HMAC 共有鍵（docs/05 §6.10 / §8.5）。
+   *
+   * 🔴 **必須項目にする。** 任意にすると「未設定なら検証しない」という fail-open を招き、
+   *    誰でも任意のスキャン結果（例: `NO_THREATS_FOUND`）を流し込めてしまう
+   *    —— それは `BR-26`（`CLEAN` になるまで共有しない）を外から破れるということである。
+   *    `SES_EVENT_TOPIC_ARN` を必須にしたのと同じ理由。
+   * 🔴 署名の仕様（署名対象・ヘッダ名・許容時間）は
+   *    `packages/connectors/src/scan/guardduty.ts` が唯一の正である。
+   */
+  GUARDDUTY_WEBHOOK_HMAC_SECRET: base64AtLeastBytes(32),
+  /**
+   * 🔴 ローテーション中の旧鍵（任意）。設定されている間は**新旧どちらの署名も受理する**
+   *    （DocuSign Connect の複数 HMAC キーと同じ扱い。docs/05 §8.5）。
+   *    無停止で鍵を入れ替えるためであり、入れ替え後は必ず外す。
+   */
+  GUARDDUTY_WEBHOOK_HMAC_SECRET_PREVIOUS: base64AtLeastBytes(32).optional(),
   S3_REGION: z.string().min(1),
   S3_FORCE_PATH_STYLE: envBoolean(false),
   // development 専用（MinIO）。staging / production では設定できない（crossFieldChecks で検証）
@@ -320,6 +337,22 @@ function crossFieldChecks(data: EnvUnionData, ctx: IssueSink): void {
 
   if (data.MALWARE_SCANNER === 'clamav' && (data.CLAMAV_HOST === undefined || data.CLAMAV_PORT === undefined)) {
     addIssue(ctx, 'CLAMAV_HOST', 'MALWARE_SCANNER=clamav のとき CLAMAV_HOST / CLAMAV_PORT の両方が必須です');
+  }
+
+  // 🔴 T-05-05: 旧鍵に新鍵と同じ値を置くとローテーションの意味が消える（両方が同時に失効する）。
+  if (
+    data.GUARDDUTY_WEBHOOK_HMAC_SECRET_PREVIOUS !== undefined &&
+    data.GUARDDUTY_WEBHOOK_HMAC_SECRET_PREVIOUS === data.GUARDDUTY_WEBHOOK_HMAC_SECRET
+  ) {
+    addIssue(
+      ctx,
+      'GUARDDUTY_WEBHOOK_HMAC_SECRET_PREVIOUS',
+      'GUARDDUTY_WEBHOOK_HMAC_SECRET と同じ値は使用できません（ローテーションの旧鍵です）',
+    );
+  }
+  // 🔴 Webhook の共有鍵どうしを使い回さない（1 本が漏れたときの影響範囲を分ける）。
+  if (data.GUARDDUTY_WEBHOOK_HMAC_SECRET === data.WEBHOOK_PATH_SECRET) {
+    addIssue(ctx, 'GUARDDUTY_WEBHOOK_HMAC_SECRET', 'WEBHOOK_PATH_SECRET と同じ値は使用できません');
   }
 
   if (data.ESIGN_PROVIDER_DEFAULT !== undefined && data.ESIGN_ENABLED_PROVIDERS !== undefined) {

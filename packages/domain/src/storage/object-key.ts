@@ -110,3 +110,23 @@ export function isTenantScopedObjectKey(objectKey: string): boolean {
   }
   return UUID_PATTERN.test(segments[1] ?? '');
 }
+
+/**
+ * 🔴 キーの先頭 2 セグメント（`t/{tenantId}`）からテナント ID を取り出す（T-05-05）。
+ *    形が合わなければ `null`（推測で埋めない）。
+ *
+ * 🔴 **これは「リクエスト入力からテナントを決める」ことではない**（`CLAUDE.md` §3.1）。
+ *    用途は 1 つだけで、**ウイルススキャン結果の受信**（`POST /api/webhooks/guardduty`）である。
+ *    スキャン結果は利用者のリクエストではなく S3 のイベントであり、そこに現れるオブジェクトキーは
+ *    **こちらが `buildSkillSheetObjectKey` で組み立ててアップロードしたもの**である。
+ *    加えて次の 3 段で「どのテナントか」を騙れないようにしている:
+ *      ① 受信は HMAC を検証した要求だけを通す（`packages/connectors/src/scan/guardduty.ts`）
+ *      ② バケット名が起動時設定（`S3_BUCKET`）と一致しない結果は捨てる
+ *      ③ 実際の更新は「そのテナントに `object_key` が一致する行があること」を条件にする
+ *         （無ければ `NOT_FOUND`。存在しないテナントを名乗っても 1 行も動かない）
+ *    利用者の HTTP 経路からこの関数を呼ぶ実装を足してはならない。
+ */
+export function tenantIdFromObjectKey(objectKey: string): string | null {
+  if (!isTenantScopedObjectKey(objectKey)) return null;
+  return objectKey.split('/')[1] ?? null;
+}

@@ -16,3 +16,6 @@ export type { SesApiOptions, SesCommandSender } from './email/ses/aws-sdk-api.js
 //    `runtime.s3.api` に渡す（docs/05 §13.1 / §14.2）。
 export { createS3Api } from './storage/aws-sdk-s3.js';
 export type { S3ApiOptions } from './storage/aws-sdk-s3.js';
+// 🔴 T-05-05: GuardDuty の判定を照会する（S3 のオブジェクトタグ）アダプタ。
+//    `createConnectors` の `runtime.scan.api` に渡す（docs/05 §8.5 の保険 = `scan.poll`）。
+export { createObjectTagApi } from './storage/aws-sdk-s3.js';

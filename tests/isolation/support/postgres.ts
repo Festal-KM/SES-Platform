@@ -49,6 +49,9 @@ export const ROLE_NAMES = [
   // 🔴 T-02-08: assignments ← engineers(engineer_id) の SECURITY DEFINER 継承トリガ専用
   //    （docs/05 §4.2 / §4.4.1。code-reviewer 指摘 1）。
   'app_assignment_owner_probe',
+  // 🔴 T-05-05: ウイルススキャン結果の適用と滞留照会の SECURITY DEFINER 関数専用
+  //    （docs/05 §4.2 / §8.5 / §9.6。migration 20260908000000）。
+  'app_scan_probe',
 ] as const;
 
 export type IsolationDatabase = {

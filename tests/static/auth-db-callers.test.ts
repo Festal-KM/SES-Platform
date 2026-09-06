@@ -128,6 +128,12 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
     'apps/worker/src/jobs/domain-provision.ts',
     'apps/worker/src/jobs/domain-verify.ts',
     'apps/worker/src/jobs/send-hold-release.ts',
+    // 🔴 T-05-05: スキャン結果の適用と滞留の照会（docs/05 §8.5 / §9.6）。
+    //    `scan.apply-result` はオブジェクトキーの `t/{tenantId}` からジョブ文脈を組み立てる
+    //    （受信は HMAC 検証済みであり、キーはこちらが組み立てたものである。
+    //    `packages/domain/src/storage/object-key.ts` の `tenantIdFromObjectKey` の 🔴）。
+    'apps/worker/src/jobs/scan-apply-result.ts',
+    'apps/worker/src/jobs/scan-poll.ts',
   ],
   // 🔴 T-03-10: `usage_counters` を書く唯一の経路（docs/05 §7.6 / §9.8）。
   //    ここを増やすと「計測を迂回した書き込み」が生まれ、原価と請求根拠が説明できなくなる。
@@ -188,14 +194,31 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
     'apps/worker/src/jobs/account-mail-reissue.ts',
   ],
   // 🔴 Webhook 受信は「検証 → INSERT → 200 → enqueue」の 1 経路だけ（docs/05 §8.5）。
-  recordWebhookDelivery: ['apps/web/lib/webhooks/ses.ts'],
-  readWebhookDelivery: ['apps/worker/src/jobs/webhook-process.ts'],
-  markWebhookDeliveryProcessed: ['apps/worker/src/jobs/webhook-process.ts'],
+  //    プロバイダごとに 1 ファイル（`ses.ts` / `guardduty.ts`）であり、手順は書き分けない。
+  recordWebhookDelivery: ['apps/web/lib/webhooks/guardduty.ts', 'apps/web/lib/webhooks/ses.ts'],
+  readWebhookDelivery: [
+    'apps/worker/src/jobs/scan-apply-result.ts',
+    'apps/worker/src/jobs/webhook-process.ts',
+  ],
+  markWebhookDeliveryProcessed: [
+    'apps/worker/src/jobs/scan-apply-result.ts',
+    'apps/worker/src/jobs/webhook-process.ts',
+  ],
   markWebhookDeliveryFailed: [
+    'apps/web/lib/webhooks/guardduty.ts',
     'apps/web/lib/webhooks/ses.ts',
+    'apps/worker/src/jobs/scan-apply-result.ts',
     'apps/worker/src/jobs/webhook-process.ts',
   ],
   recordEmailEvent: ['apps/worker/src/jobs/webhook-process.ts'],
+  // 🔴 T-05-05: スキャン結果の記録と適用（docs/05 §8.5 / §9.6 / `BR-26`）。
+  //    ここを増やすと「単調性（`CLEAN` へ戻さない）を経ない状態更新」が生まれ、
+  //    感染ファイルが共有可能に戻る経路ができる。**Webhook 経路と保険の 2 つだけ**である。
+  applyFileScanResult: [
+    'apps/worker/src/jobs/scan-apply-result.ts',
+    'apps/worker/src/jobs/scan-poll.ts',
+  ],
+  listStalledScanTargets: ['apps/worker/src/jobs/scan-poll.ts'],
   // 🔴 T-03-10: `PLATFORM_OWNER` 専用操作のゲート（`CLAUDE.md` §10.1 / `BR-44`）。
   //    ロール判定を各ルートに散らさない（散らすと 1 本だけ緩む）。
   requirePlatformOwner: ['apps/web/lib/auth/platform-session.ts'],

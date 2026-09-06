@@ -64,6 +64,15 @@ const EXEMPT_ROUTES: Readonly<Record<string, string>> = {
     '第 2 要素の提示（#2）。同上、ctx が生成される前の経路である。',
   'apps/web/app/api/(main)/invitations/[token]/accept/route.ts':
     '未認証経路（#7）。所属は招待行から決まり、受諾時点では ctx が無い。',
+  'apps/web/app/api/webhooks/guardduty/route.ts':
+    '🔴 Webhook 受信（docs/05 §6.10 / §8.5。T-05-05）。送信元は GuardDuty の結果を運ぶ ' +
+    'EventBridge 経路であり、テナント利用者の操作ではない（Cookie もセッションも無く ctx を ' +
+    '作れない）。認可は HMAC 署名の検証が担う。受信は「検証 → WebhookDelivery に INSERT → ' +
+    '200 → enqueue」だけを行い、テナントの業務データを 1 件も変更しない。' +
+    '🔴 加えて、ウイルススキャンの結果はテナントの契約状態に依存して良いものではない —— ' +
+    'SUSPENDED / CLOSING のテナントでも、感染したファイルは INFECTED として隔離されなければ ' +
+    'ならない（requireExecutable を掛けると、停止中のテナントのファイルが SCANNING のまま ' +
+    '残り、BR-26 の判定が永久に確定しない）。',
   'apps/web/app/api/webhooks/ses/route.ts':
     '🔴 Webhook 受信（docs/05 §6.10 / §8.5。T-04-03）。送信元は Amazon SNS であり ' +
     'テナント利用者の操作ではない（Cookie もセッションも無く ctx を作れない）。認可は SNS の ' +

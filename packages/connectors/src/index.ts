@@ -30,6 +30,7 @@ import {
   type SesApi,
 } from './email/ses/index.js';
 import type { BillingProvider, EmailSender, EsignProviderMap, MalwareScanner, ObjectStore } from './interfaces.js';
+import { GuardDutyMalwareScanner, type ObjectTagApi } from './scan/index.js';
 import { S3ObjectStore, type S3Api } from './storage/index.js';
 import type { ConnectorCategory, ConnectorImplementationKind, ConnectorSelectionInput } from './types.js';
 
@@ -57,6 +58,9 @@ export * from './email/ses/index.js';
 // 🔴 T-05-04: オブジェクトストレージ（docs/05 §14）。`S3Api` は AWS SDK のアダプタが実装する
 //    ポートであり、業務コードは触らない（`createConnectors` にだけ渡す）。
 export * from './storage/index.js';
+// 🔴 T-05-05: ウイルススキャン結果の正規化・HMAC 検証・ジョブの payload（docs/05 §8.5 / §9.6）。
+//    `apps/web`（受信）と `apps/worker`（適用）の契約であり、どちらかのアプリに置かない。
+export * from './scan/index.js';
 // 🔴 T-04-03: 分次のレート窓（docs/05 §8.7）。日次は `packages/db` の `UsageCounter` が正。
 export * from './rate/minute-window.js';
 // 🔴 T-04-03: Webhook 受信後の処理ジョブの payload（docs/05 §8.5 / §9.4）。
@@ -156,9 +160,26 @@ export type S3RuntimeOptions = {
   readonly now?: () => Date;
 };
 
+/**
+ * ウイルススキャン実装（`malwareScanner: 'real'`）の組み立てに要る値（T-05-05）。
+ *
+ * 🔴 `provider` は `packages/config` の `MALWARE_SCANNER`（`'guardduty' | 'clamav'`）である。
+ *    `ConnectorSelection` の `real` / `mock` だけでは `development`（ClamAV コンテナ）と
+ *    `sandbox` 以上（GuardDuty）を区別できないため、**起動時に解決済みの値**を受け取る。
+ *    🔴 ここで `APP_ENV` を見ない（見るのは `resolveConnectorSelection` の 1 箇所だけ）。
+ */
+export type MalwareScannerRuntimeOptions = {
+  readonly provider: 'guardduty' | 'clamav';
+  /** GuardDuty のときに必須（`@ses/connectors/aws` の `createObjectTagApi`）。 */
+  readonly api?: ObjectTagApi;
+  /** `S3_BUCKET`。🔴 全テナントで 1 つ（docs/05 §14.1）。 */
+  readonly bucket: string;
+};
+
 export type ConnectorRuntimeOptions = {
   readonly ses?: SesRuntimeOptions;
   readonly s3?: S3RuntimeOptions;
+  readonly scan?: MalwareScannerRuntimeOptions;
 };
 
 /**
@@ -205,6 +226,31 @@ function createS3ObjectStore(
 }
 
 /**
+ * 🔴 ウイルススキャン実装（`real`）のファクトリ（T-05-05）。
+ *
+ * `runtime.scan` が無いときは **`ConnectorImplementationNotAvailableError` で起動を止める**
+ * （`CLAUDE.md` §11.1）。モックへ倒さない —— スキャンのモックに勝手に落ちると、
+ * **検査していないファイルが `CLEAN` になって外部に共有される**という最悪の壊れ方になる
+ * （`BR-26` / `CLAUDE.md` §7「PII 未マスキングでの外部共有 0 件」と同じ性質の事故）。
+ *
+ * ⚠️ **`clamav`（`development` のローカルコンテナ）は本タスクの射程外である。**
+ *    GuardDuty は S3 のイベント駆動だが ClamAV は自前でオブジェクトを取得して `clamd` に
+ *    流す必要があり、`ObjectStore` に無い「本体の取得」と clamd の INSTREAM 実装が要る
+ *    （docs/03 §3.4.3-6）。**未登録のまま throw する**ことで、`development` の起動配線
+ *    （SP-07）が「スキャンしていないのに CLEAN になる」状態を作れないようにしている。
+ */
+function createMalwareScanner(
+  kind: ConnectorImplementationKind,
+  scan: MalwareScannerRuntimeOptions | undefined,
+): MalwareScanner {
+  if (scan === undefined) throw new ConnectorImplementationNotAvailableError('malwareScanner', kind);
+  if (scan.provider !== 'guardduty' || scan.api === undefined) {
+    throw new ConnectorImplementationNotAvailableError('malwareScanner', kind);
+  }
+  return new GuardDutyMalwareScanner({ api: scan.api, bucket: scan.bucket });
+}
+
+/**
  * 🔴 オブジェクトストレージ**だけ**を組み立てる（T-05-04）。
  *
  * 🔴 なぜ `createConnectors` と別の入口があるか: `createConnectors` は 5 区分を**一度に**作るため、
@@ -231,9 +277,10 @@ export function createObjectStore(
  * 🔴 リクエストごとに呼ばない。
  *
  * 🔴 実装が無い区分は**モックで代替せず throw する**（`CLAUDE.md` §11.1）。現時点で未登録なのは
- *    `malwareScanner`（ClamAV / GuardDuty。T-05-05）と `esign` / `billing` の `real`（Phase 3）である。
- *    email は 3 種別すべて（T-04-03）、`objectStore` は `runtime.s3`（AWS SDK のアダプタ）が
- *    渡されていれば `real` も解決できる（T-05-04）。
+ *    `esign` / `billing` の `real`（Phase 3）と、`malwareScanner` の **ClamAV**（`development`。
+ *    T-05-05 の射程外。`createMalwareScanner` の ⚠️）である。
+ *    email は 3 種別すべて（T-04-03）、`objectStore` は `runtime.s3`（T-05-04）、
+ *    `malwareScanner` は `runtime.scan`（GuardDuty。T-05-05）が渡されていれば `real` も解決できる。
  */
 export function createConnectors(
   selection: ConnectorSelectionInput,
@@ -257,6 +304,9 @@ export function createConnectors(
     objectStore: createObjectStore(selection.objectStore, runtime),
     malwareScanner: pickByKind<MalwareScanner>('malwareScanner', selection.malwareScanner, {
       mock: () => new MockMalwareScanner(),
+      // 🔴 `sandbox` / `staging` / `production` = GuardDuty（docs/03 §3.4）。
+      //    `development` の ClamAV は未登録であり、選ばれたら起動を止める（上の ⚠️）。
+      real: () => createMalwareScanner('real', runtime.scan),
     }),
     esign: createEsignProviderMap(selection.esign),
     billing: pickByKind<BillingProvider>('billing', selection.billing, {

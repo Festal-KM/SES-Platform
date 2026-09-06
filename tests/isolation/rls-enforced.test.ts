@@ -162,10 +162,12 @@ describe('#4 孤児表の検出（docs/05 §4.7 #4）', () => {
   });
 });
 
-describe('#5 6 ロールすべてが BYPASSRLS を持たない（docs/05 §4.7 #5 / §4.2）', () => {
-  it('4 ロール + app_share_probe + app_assignment_owner_probe のいずれも rolbypassrls = false', async () => {
+describe('#5 全ロールが BYPASSRLS を持たない（docs/05 §4.7 #5 / §4.2）', () => {
+  it('4 ロール + probe 3 ロールのいずれも rolbypassrls = false', async () => {
     const roles = await readRoleBypassRls(db, [...ROLE_NAMES]);
-    expect(roles).toHaveLength(6); // 空振り防止（対照。ROLE_NAMES = 4 ロール + 2 probe）
+    // 空振り防止（対照）。🔴 ROLE_NAMES が唯一の出所であり、ここに数値を書き写さない
+    //    （T-05-05 で app_scan_probe を足したとき、この行だけが取り残された）。
+    expect(roles).toHaveLength(ROLE_NAMES.length);
     for (const role of roles) {
       expect(role.bypassRls, `${role.role}: BYPASSRLS を持っている`).toBe(false);
     }
@@ -326,11 +328,11 @@ describe('#9 オーナー列（owner_partner_company_id）の宣言とトリガ�
   });
 });
 
-describe('#10 probe 2 ロールの最小権限（docs/05 §4.7 #10 / §4.4.1）', () => {
-  it('app_share_probe / app_assignment_owner_probe はいずれもテーブル単位の GRANT を持たない', async () => {
+describe('#10 probe 3 ロールの最小権限（docs/05 §4.7 #10 / §4.4.1 / §8.5）', () => {
+  it('probe ロールはいずれもテーブル単位の GRANT を持たない（列単位だけを持つ）', async () => {
     const rows = await migrator.$queryRaw<Array<{ grantee: string; table_name: string }>>`
       SELECT grantee, table_name FROM information_schema.role_table_grants
-      WHERE grantee IN ('app_share_probe', 'app_assignment_owner_probe')`;
+      WHERE grantee IN ('app_share_probe', 'app_assignment_owner_probe', 'app_scan_probe')`;
     expect(rows).toEqual([]);
   });
 
@@ -365,7 +367,75 @@ describe('#10 probe 2 ロールの最小権限（docs/05 §4.7 #10 / §4.4.1）'
       { table_name: 'engineers', column_name: 'tenant_id', privilege_type: 'SELECT' },
     ]);
   });
+
+  /**
+   * 🔴 T-05-05: `app_scan_probe` の権限が **`skill_sheets` のスキャン関連の列だけ**であることを
+   *    固定する（docs/05 §4.2 / §8.5。migration 20260908000000 の判断事項）。
+   *
+   * 🔴 ここに列が増えることは「スキャン以外の情報がパートナー境界を越える」ことを意味する。
+   *    `engineer_id` / `uploaded_by` / `byte_size` などが混ざれば、ホスト文脈のジョブから
+   *    パートナー所属エンジニアの台帳へ間接的に届く経路が開く。**期待値を固定して気づけるようにする。**
+   */
+  it('🔴 app_scan_probe の権限は skill_sheets のスキャン関連の列 + engineers の 3 列だけである', () => {
+    // 実測は下の it（非同期）で行う。ここは期待値の宣言そのものをレビュー可能にするための対照。
+    expect(SCAN_PROBE_EXPECTED_GRANTS).toHaveLength(12);
+  });
+
+  it('🔴 app_scan_probe の列単位 GRANT が期待どおり（増えたら必ず落ちる）', async () => {
+    const rows = await migrator.$queryRaw<
+      Array<{ table_name: string; column_name: string; privilege_type: string }>
+    >`
+      SELECT table_name, column_name, privilege_type
+      FROM information_schema.role_column_grants
+      WHERE grantee = 'app_scan_probe'
+      ORDER BY table_name, column_name, privilege_type`;
+    expect(rows).toEqual(SCAN_PROBE_EXPECTED_GRANTS);
+  });
+
+  it('🔴 app_scan_probe に skill_sheets / engineers 以外のテーブルの GRANT が 1 つも無い', async () => {
+    const rows = await migrator.$queryRaw<Array<{ table_name: string }>>`
+      SELECT DISTINCT table_name FROM information_schema.role_column_grants
+      WHERE grantee = 'app_scan_probe'
+      ORDER BY table_name`;
+    expect(rows).toEqual([{ table_name: 'engineers' }, { table_name: 'skill_sheets' }]);
+  });
+
+  it('🔴 app_scan_probe は NOLOGIN であり、スキーマの CREATE 権限を持たない', async () => {
+    const rows = await migrator.$queryRaw<Array<{ rolcanlogin: boolean; can_create: boolean }>>`
+      SELECT rolcanlogin, has_schema_privilege('app_scan_probe', 'public', 'CREATE') AS can_create
+        FROM pg_roles WHERE rolname = 'app_scan_probe'`;
+    expect(rows[0]?.rolcanlogin).toBe(false);
+    // 🔴 ALTER FUNCTION ... OWNER TO のために一時的に付与し、直後に REVOKE している。
+    expect(rows[0]?.can_create).toBe(false);
+  });
 });
+
+/**
+ * 🔴 `app_scan_probe` に許した列（migration 20260908000000）。
+ *
+ *  - `skill_sheets`: SELECT 6 列 + UPDATE 3 列
+ *  - `engineers`: SELECT 3 列 —— 🔴 **オーナー列の継承トリガ**
+ *    （`inherit_owner_partner_company('engineers','engineer_id')`。docs/05 §4.4.1）が
+ *    `skill_sheets` の UPDATE で必ず起動し、SECURITY INVOKER で親を読むため。
+ *    `app_assignment_owner_probe` に与えているのと**同じ 3 列**である。
+ *
+ * 合計 12 行ちょうど。ここに列が増えることは「スキャン以外の情報がパートナー境界を越える」
+ * ことを意味する。
+ */
+const SCAN_PROBE_EXPECTED_GRANTS = [
+  { table_name: 'engineers', column_name: 'id', privilege_type: 'SELECT' },
+  { table_name: 'engineers', column_name: 'owner_partner_company_id', privilege_type: 'SELECT' },
+  { table_name: 'engineers', column_name: 'tenant_id', privilege_type: 'SELECT' },
+  { table_name: 'skill_sheets', column_name: 'id', privilege_type: 'SELECT' },
+  { table_name: 'skill_sheets', column_name: 'is_latest', privilege_type: 'SELECT' },
+  { table_name: 'skill_sheets', column_name: 'is_latest', privilege_type: 'UPDATE' },
+  { table_name: 'skill_sheets', column_name: 'object_key', privilege_type: 'SELECT' },
+  { table_name: 'skill_sheets', column_name: 'scan_status', privilege_type: 'SELECT' },
+  { table_name: 'skill_sheets', column_name: 'scan_status', privilege_type: 'UPDATE' },
+  { table_name: 'skill_sheets', column_name: 'scan_updated_at', privilege_type: 'UPDATE' },
+  { table_name: 'skill_sheets', column_name: 'tenant_id', privilege_type: 'SELECT' },
+  { table_name: 'skill_sheets', column_name: 'uploaded_at', privilege_type: 'SELECT' },
+];
 
 describe('#11 当事者列（counterparty_partner_company_id）の宣言とトリガの一致 + 4 表限定（docs/05 §4.7 #11 / BR-65〜68）', () => {
   it('宣言（root/child）を持つ全表に、宣言どおりのトリガがある', async () => {

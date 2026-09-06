@@ -582,6 +582,8 @@ const response = await client.messages.parse({
 | 4 | **タグ付けは「アップロード前に有効化しておく必要がある」ため、バケット作成時の Terraform / CDK に含める。** 後から有効化すると既存オブジェクトにタグが付かない |
 | 5 | **アプリはタグではなく EventBridge を正とする。** タグはデバッグと TBAC（タグベースのアクセス制御）用の副次的な確認手段とする。**加えて、EventBridge が届かなかった場合の保険として、`SCANNING` のまま N 分（既定 10 分）経過したファイルを検出して `F-059` に出す**（`docs/02` 章 7.9 の「滞留」） |
 | 6 | **`development` / CI では ClamAV（`clamd`）のコンテナを使う。** `packages/connectors` の `MalwareScanner` インタフェース（`enqueue` / `getResult`）で差し替える（`CLAUDE.md` §11.1 の「起動時 1 箇所の DI」） |
+| 7 | 🔴 **結果の受信経路は「EventBridge → 署名を付与する転送処理 → `POST /api/webhooks/guardduty`」**（T-05-05）。**EventBridge の API Destination（Connection）は本文の HMAC を計算できない**（認証方式は静的ヘッダ / Basic / OAuth のいずれか）ため、§3.1.5 の「自前の受信であれば HMAC を自分で載せる」を文字どおり実装する。署名仕様の正は `packages/connectors/src/scan/guardduty.ts` であり、転送側がこれに合わせる（`docs/05` §8.5.1）。⚠️ **転送処理の構築は AWS 環境の構築（SP-12 前後）で行う** |
+| 8 | 🔴 **`U-7`（スキャン所要時間）の実測は AWS 環境の構築時に行う**（T-05-05 では実施していない。GuardDuty を有効化した実アカウントと保護バケットが要るため）。**設計はすでに所要時間に依存していない** —— 滞留の判定は `SCAN_STALL_ALERT_MINUTES` の 1 設定値だけであり、コードにも状態機械にも「N 分で終わるはず」という前提が無い（`docs/05` TBD-7）。🔴 **実測時期の変更は [Issue #37](https://github.com/Festal-KM/SES-Platform/issues/37) で確認中（`assumption`）** |
 
 ---
 
@@ -1310,6 +1312,9 @@ packages/connectors/src/index.ts           … createConnectors(selection) が�
 | `STORAGE_LIMIT_BYTES_PER_TENANT` | 🔴 **テナントあたりのストレージ上限**（§4.5。超過なら署名付き URL を発行しない）。**プラン別の値（`Plan.storageLimitBytes`）が入るまでの既定値**であり、`EMAIL_DAILY_LIMIT_PER_TENANT` と同じ扱い（T-05-04 で追加） | 必須 | `z.coerce.number().int().positive()`（既定 50 GiB = §7.1 の基準ユニット 1.5 GB の約 33 倍） |
 | `MALWARE_SCANNER` | スキャナの実装選択 | 🔴 必須 | `z.enum(['guardduty','clamav','mock'])`。🔴 **`production` で `mock` なら起動失敗**。🔴 **`development` / CI は `clamav` 固定**（§3.4-6。`mock` は選ばせない） |
 | `CLAMAV_HOST` / `CLAMAV_PORT` | `MALWARE_SCANNER === 'clamav'` のとき（`development` を含む） | 条件付き必須 | — |
+| `SCAN_STALL_ALERT_MINUTES` | 🔴 **`SCANNING` のまま滞留とみなすまでの分数**（既定 10。§3.4.3-5 / `docs/05` §8.5.1）。`scan.poll`（毎 5 分）がこれを超えたものだけを照会する。**`docs/02` 章 7.1 の目標値（2 分）に設計を依存させないための値**であり、`U-7` の実測結果で調整するのはこの 1 つだけである（T-05-05 で明示） | 必須 | `z.coerce.number().int().positive()` |
+| `GUARDDUTY_WEBHOOK_HMAC_SECRET` | 🔴 **`POST /api/webhooks/guardduty` の HMAC 共有鍵**（T-05-05。`docs/05` §8.5.1）。EventBridge の API Destination は本文の HMAC を計算できないため、署名を載せるのは**こちら側の転送処理**である（§3.1.5 の「自前の受信であれば HMAC を自分で載せる」） | 🔴 必須 | 32 バイト以上の base64。🔴 **任意にしない**（未設定を許すと fail-open になり、誰でも `NO_THREATS_FOUND` を流し込めて `BR-26` を外から破れる）。`WEBHOOK_PATH_SECRET` と同値なら起動失敗 |
+| `GUARDDUTY_WEBHOOK_HMAC_SECRET_PREVIOUS` | 同上のローテーション中の旧鍵（新旧どちらの署名も受理する） | 任意 | 同上。**新鍵と同値なら起動失敗** |
 | `SCAN_STALL_ALERT_MINUTES` | `SCANNING` 滞留の検知閾値（既定 10） | 必須 | `z.coerce.number().int().positive()` |
 | `S3_ENDPOINT` | 🔴 **`development` 専用。MinIO（S3 互換ストレージ）のエンドポイント上書き**。`staging` / `production` の AWS S3 では未設定（既定のリージョンエンドポイントを使う） | `development` で必須 | `z.string().url()` |
 | `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | 🔴 **`development` の MinIO 資格情報**。`staging` / `production` は AWS IAM ロールで認証し、静的キーを持たない（§4.6 ワーカーの IAM ロール方針） | `development` で必須。**`staging` / `production` で設定されていたら起動失敗**（NFR-ENV-4 と同種の取り違え防止） | `z.string()` |
@@ -1741,7 +1746,7 @@ packages/connectors/src/index.ts           … createConnectors(selection) が�
 | **U-4** | **GMO サインの API 資格情報の帰属**（アカウント単位か） | 第三候補としての BYO 接続の成立性 | **人間。第三コネクタを実装する判断時。** |
 | **U-5** | ~~**DocuSign / Adobe Acrobat Sign の審査リードタイム**~~ — **一部確定（2026-09-01）**。DocuSign の Go-Live は「Pending Approval 到達後 3 営業日以内に昇格」とされる（**二次情報のみ・要再確認**。§3.1.6）。**Adobe Acrobat Sign は採らないため対象外** | §3.1.6。**Go-Live をクリティカルパスに置かない前提の妥当性は §3.1.6 で評価済み** | **`programmer`。Phase 3 の Go-Live 申請時に実績で確認する。** 3 営業日を超えた場合は `pm` に報告し、Phase 3 の計画を調整する |
 | **U-6** | **SES のサンドボックス状態のまま送信クォータだけ引き上げられるか** | §3.2.8。`sandbox` 環境の 200 通 / 日で足りない場合の対処 | **`programmer` / 人間。`sandbox` 環境の構築時（Phase 1）。** AWS サポートへ確認 |
-| **U-7** | **GuardDuty Malware Protection for S3 のスキャン所要時間** | 🔴 `docs/02` 章 7.1 の「2 分以内」を満たせるか。**満たせない場合は目標値の見直しが要る** | 🔴 **`programmer`。Phase 1 の `F-011` 実装時。** 代表的な xlsx / pdf（1〜10 MB）で実測 |
+| **U-7** | **GuardDuty Malware Protection for S3 のスキャン所要時間** | 🔴 `docs/02` 章 7.1 の「2 分以内」を満たせるか。**満たせない場合は目標値の見直しが要る** | 🔴 **`programmer`。~~Phase 1 の `F-011` 実装時~~ → AWS 環境の構築時（SP-12 前後）へ移す**（T-05-05、2026-09-06）。理由: 実測には GuardDuty Malware Protection for S3 を有効化した実 AWS アカウントと保護バケットが要り、実装時点では存在しない。**設計・実装は既に所要時間に依存していない**（§3.4.3-8 / `docs/05` TBD-7）ため、実測の遅れが Phase 1 の受け入れをブロックしない。代表的な xlsx / pdf（1〜10 MB）で実測し、結果で `SCAN_STALL_ALERT_MINUTES` だけを調整する。🔴 **時期の変更は [Issue #37](https://github.com/Festal-KM/SES-Platform/issues/37) で確認中（`assumption`。回答が来るまでは本行の既定で進める）** |
 | **U-8** | ~~**マネージド PostgreSQL で `pg_bigm` / `pgroonga` が使えるか**~~ — **決定済み（2026-09-02）**。`pg_trgm` / `pg_bigm` は RDS / Aurora で利用可、`pgroonga` は不可 | §3.7.2。日本語の全文検索の実現方式 | **`programmer`。Phase 0 の DB 構築時（SP-01 T-01-02）に実測で確認済み。** `pg_trgm` を基本とし、`pg_bigm` は精度不足時の代替として温存。`pgroonga` は不採用 |
 | **U-9** | **Amazon S3（東京リージョン）の実額** | §7.2.2 / §7.4 の試算 | **`programmer`。Phase 0 のストレージ構築時。** AWS Pricing Calculator |
 | **U-10** | **RDS / ElastiCache / Fargate / CloudWatch の実額** | §7.4 の固定費（**$400〜$900 / 月 のレンジで仮置き**） | **`programmer`。Phase 0 完了時。** AWS Pricing Calculator |
@@ -1915,7 +1920,7 @@ packages/connectors/src/index.ts           … createConnectors(selection) が�
 3. 🔴 **Anthropic の tier 昇格（Start → Build → Scale）を運用計画に織り込む**（§8.2）。**Start tier の $500 / 月では 39 テナントで頭打ちになる。** 80% 到達の検知（`F-057` / `F-059`）を Phase 1 のスコープに入れる。
 4. 🔴 **Phase 0 の最初のタスクに「Prisma Client Extension + RLS の併用が成立することの実証」を置く**（§4.3.1 / §5.2）。**ここが成立しないと `CLAUDE.md` §3.1 の二重防御が崩れる。**
 5. 🔴 **Phase 1 の完了条件に「エンジニア 1 万件 / 案件 1 万件 / 匿名共有 2,000 件のシードでの負荷テスト（`F-009` の p95 1 秒）」を含める**（§3.7.2）。**検索基盤の代替（OpenSearch）の要否はこの結果で判断する。**
-6. **Phase 1 の `F-011` 実装時に GuardDuty のスキャン所要時間を実測する**（U-7）。**`docs/02` 章 7.1 の「2 分以内」を満たせない場合は、目標値の見直しを人間に提起する。**
+6. ~~**Phase 1 の `F-011` 実装時に GuardDuty のスキャン所要時間を実測する**（U-7）~~ — **実測時期を AWS 環境の構築時（SP-12 前後）へ移した（T-05-05、2026-09-06。§3.4.3-8 / `docs/05` TBD-7）。** 実 AWS アカウント + 保護バケットが無いと計測できず、かつ**設計は既に所要時間に依存していない**（滞留の判定は `SCAN_STALL_ALERT_MINUTES` の 1 設定値のみ）。**`docs/02` 章 7.1 の「2 分以内」を満たせない場合に目標値の見直しを人間に提起する点は変わらない。** 🔴 **時期の変更は [Issue #37](https://github.com/Festal-KM/SES-Platform/issues/37) で確認中（`assumption`）。**
 7. **Phase 2 の `F-032` 実装直後に、代表的な 20 件のスキルシートで AI の実測原価を出す**（§3.5.4 / T-A-01）。**`Q-15`（`Q-T-3`）の確定はこれを待つ。** 🔴 **実測に差し替えるときは §3.3.2 / §3.5.4 の「1 回あたり推定コスト」と §7.6.1 の「1 件あたり標準原価」と §7.6.2 の件数表を同時に更新する**（片方だけ直すと、利用者に見せる件数と実際の原価がずれる）。🔴 **再計算では §7.6.2 の丸め規則（切り捨て / 10 の倍数 / 1,000 件超は 100 の倍数 / **各単位の下限 10 件**）を必ず適用する** — 下限を省くと、按分比率の小さい単位（延長論点 1.2%）が Starter で 0 件になり、**`F-044` が使えないプランができあがる。**
 8. **Phase 0 完了時に、AWS Pricing Calculator で固定費の実額を確定させる**（U-9 / U-10）。**§7.4 の $400〜$900 / 月 のレンジを実額に置き換え、本書を更新する**（`CLAUDE.md` §8.7）。
 9. 🔴 **`Q-T-1`（電子署名の BYO 接続）は承認済み（2026-09-01）。`docs/02` の更新が残っている**（`CLAUDE.md` §8.7）。①`docs/02` 章 7.5 の原価定義から「④電子署名（リクエスト数 × 単価）」を外す ②`F-049` の受け入れ基準に「未接続テナントでは `Contract` が `DRAFT` → `SENDING` に遷移しない」を追加する ③`F-063` の原価内訳から電子署名を外す ④🔴 **`F-047` / `F-049` に「双方署名は 1 エンベロープの複数署名者で表現し、`Contract` の状態を増やさない」を追加する**（§3.1.10）。**本書（下流）だけを直して `docs/02` を放置しない** — 次に `functional-requirements` を回した瞬間に古い原価定義で上書きされる。

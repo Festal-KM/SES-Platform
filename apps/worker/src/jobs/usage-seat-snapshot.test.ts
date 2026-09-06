@@ -157,6 +157,14 @@ describe('スケジュール宣言（docs/05 §9.8 / §9.1）', () => {
       enqueueEmailDispatch: async () => undefined,
       reissueAccountMail: async () => 'SKIPPED',
       releaseSendHolds: async () => 0,
+      // 🔴 T-05-05: `scan.poll`（毎 5 分）の deps。ここを埋め忘れるとコンパイルエラーになる
+      //    （＝ 起動配線が「スキャンの滞留を誰も見ていない」状態で立ち上がれない）。
+      malwareScanner: {
+        enqueue: async () => undefined,
+        getResult: async () => null,
+        callCount: () => 0,
+      },
+      stallAlertMinutes: 10,
     };
   }
 });

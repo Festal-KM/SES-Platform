@@ -6,6 +6,7 @@ import {
   InvalidObjectKeyPartError,
   isTenantScopedObjectKey,
   objectKeyExtensionOf,
+  tenantIdFromObjectKey,
 } from './object-key.js';
 
 const TENANT = '01930000-0000-7000-8000-000000000001';
@@ -130,5 +131,36 @@ describe('🔴 isTenantScopedObjectKey（署名する前の門番）', () => {
     ['プレフィックスだけ', `t/${TENANT}`],
   ])('🔴 %s は通さない', (_label, key) => {
     expect(isTenantScopedObjectKey(key)).toBe(false);
+  });
+});
+
+describe('🔴 tenantIdFromObjectKey（スキャン結果の引き当て。T-05-05）', () => {
+  it('t/{tenantId}/ 配下のキーからテナント ID を取り出す', () => {
+    expect(tenantIdFromObjectKey(`t/${TENANT}/skill-sheets/${ENGINEER}/1/${OBJECT}.xlsx`)).toBe(
+      TENANT,
+    );
+  });
+
+  it.each([
+    ['バケット直下', `${OBJECT}.xlsx`],
+    ['別のプレフィックス', `exports/${TENANT}/dump.zip`],
+    ['テナント ID が UUID でない', 't/all/skill-sheets/x/1/a.xlsx'],
+    ['相対参照を含む', `t/${TENANT}/../${TENANT}/a.xlsx`],
+    ['空文字', ''],
+  ])('🔴 %s は null（推測で埋めない）', (_label, key) => {
+    expect(tenantIdFromObjectKey(key)).toBeNull();
+  });
+
+  it('🔴 isTenantScopedObjectKey と判定が一致する（門番を 2 実装にしない）', () => {
+    const keys = [
+      `t/${TENANT}/skill-sheets/${ENGINEER}/1/${OBJECT}.xlsx`,
+      `${OBJECT}.xlsx`,
+      `exports/${TENANT}/dump.zip`,
+      't/all/skill-sheets/x/1/a.xlsx',
+      `t/${TENANT}//a.xlsx`,
+    ];
+    for (const key of keys) {
+      expect(tenantIdFromObjectKey(key) !== null).toBe(isTenantScopedObjectKey(key));
+    }
   });
 });

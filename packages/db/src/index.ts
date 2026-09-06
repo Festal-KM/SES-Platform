@@ -368,6 +368,10 @@ export {
   releaseSkillSheetStorage,
 } from './storage-usage.js';
 export type { SkillSheetStorageInput, StorageAccountingOutcome } from './storage-usage.js';
+// 🔴 T-05-05: ウイルススキャン結果の記録と適用（docs/05 §8.5 / §9.6 / `BR-26`）。
+//    `CLEAN` へ戻す遷移が存在しない経路であり、呼び出し元は `apps/worker` のジョブだけである。
+export { applyFileScanResult, listStalledScanTargets } from './file-scan.js';
+export type { FileScanResultInput, ScanApplyOutcome, StalledScanTarget } from './file-scan.js';
 // 🔴 経路 5（docs/05 §4.9）の読み取りの型。`TenantDb` / `HostTenantDb` と違い、
 //    API 層が `toPartnerView()` の入力型として参照するため export する。
 export type { PartnerScopeDb, PartnerScopeTarget } from './with-tenant.js';

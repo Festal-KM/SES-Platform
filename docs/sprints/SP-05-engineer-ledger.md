@@ -73,8 +73,8 @@
 - 🔴 **`THREATS_FOUND` の後に `NO_THREATS_FOUND` が来ても `CLEAN` に戻さない**（順序逆転）。
 - 🔴 **`UNSUPPORTED` / `ACCESS_DENIED` / `FAILED` を `CLEAN` として扱わない**（`BR-26`）。
 - `scan.poll`（毎 5 分）が `SCAN_STALL_ALERT_MINUTES`（既定 10）を超えた `SCANNING` を照会し、不明なら `A-005`。
-- 🔴 **E-13 の実測**（`docs/03` `pm` 申し送り 6 / `docs/05` TBD-7）: 本タスクの実装時に **GuardDuty のスキャン所要時間を実測する**。`docs/02` 章 7.1 の「2 分以内」を満たせない場合は、**目標値の見直しを人間に提起する**（`docs/dev-plan.md` §5 E-13）。**設計は `SCAN_STALL_ALERT_MINUTES` で滞留を検知する形にし、目標値に依存させない。**
-- **完了の判定**: 重複配信・順序逆転・4 種のステータスのフィクスチャテストが green。実測結果が記録されている。
+- 🔴 **E-13 の実測**（`docs/03` `pm` 申し送り 6 / `docs/05` TBD-7）: **設計は `SCAN_STALL_ALERT_MINUTES` で滞留を検知する形にし、目標値に依存させない**（T-05-05 で実装済み）。~~本タスクの実装時に GuardDuty のスキャン所要時間を実測する~~ → 🔴 **実測は AWS 環境の構築時（SP-12 前後）へ移した（2026-09-06）** —— GuardDuty Malware Protection for S3 を有効化した実 AWS アカウントと保護バケットが無いと計測できず、かつ**滞留の判定は設定値 1 つだけ**でコードにも状態機械にも所要時間の前提が無いため、実測の遅れが本スプリントの受け入れをブロックしない（`docs/03` §3.4.3-8 / `docs/05` §8.5.1 / `docs/dev-plan.md` §5 E-13）。`docs/02` 章 7.1 の「2 分以内」を満たせない場合に**目標値の見直しを人間に提起する**点は変わらない。🔴 **実測時期の変更は [Issue #37](https://github.com/Festal-KM/SES-Platform/issues/37) で確認中（`assumption`）。**
+- **完了の判定**: 重複配信・順序逆転・4 種のステータスのフィクスチャテストが green（**実測は上記のとおり別扱い**）。
 
 ### T-05-06 スキルシートの版管理と `CLEAN` ゲート（L）
 
@@ -137,4 +137,4 @@
 4. 🔴 **`UNSUPPORTED` / `ACCESS_DENIED` / `FAILED` が `CLEAN` として扱われず、`THREATS_FOUND` 後の `NO_THREATS_FOUND` で `CLEAN` に戻らない。**
 5. 所有パートナーが認証コンテキストから決まり、入力で偽装できない（アプリと DB トリガの二重）。
 6. ストレージ上限超過で署名付き URL が発行されない。
-7. **申し送り**: E-13（GuardDuty のスキャン所要時間の実測結果）を `docs/dev-plan.md` §8 に追記する。2 分を超えていれば `docs/02` 章 7.1 の目標値見直しを人間に提起する。
+7. **申し送り**: ~~E-13（GuardDuty のスキャン所要時間の実測結果）を `docs/dev-plan.md` §8 に追記する~~ → 🔴 **実測は AWS 環境の構築時（SP-12 前後）へ移した（2026-09-06、T-05-05。§4 T-05-05 の理由を参照）。本スプリントの完了判定には含めない（[Issue #37](https://github.com/Festal-KM/SES-Platform/issues/37) で確認中の `assumption`）。** 2 分を超えていれば `docs/02` 章 7.1 の目標値見直しを人間に提起する点は変わらない。

@@ -72,12 +72,28 @@ SELECT 'CREATE ROLE app_assignment_owner_probe NOLOGIN NOBYPASSRLS'
 WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_assignment_owner_probe')
 \gexec
 
+-- app_scan_probe: NOLOGIN。skill_sheets の**スキャン関連の列だけ**の SELECT / UPDATE
+-- （T-05-05。docs/05 §4.4.1 の app_assignment_owner_probe と同じパターン）。
+-- 🔴 なぜ要るか: skill_sheets は C3 OWNER_SCOPED であり、ホスト文脈（ジョブの systemTenantCtx。
+-- docs/05 §9.2 は partner_company_id を常に null と定める）からはパートナー所属エンジニアの
+-- スキルシートが 1 行も見えない。しかしウイルススキャン結果の適用（scan.apply-result）と
+-- 滞留の照会（scan.poll）は、**所有者を問わずテナント内の全ファイルに届かなければならない**
+-- （パートナーがアップロードしたファイルだけスキャン結果が反映されない = BR-26 の穴になる）。
+-- 🔴 緩めるのは「テナント境界の内側で、スキャンの 3 列だけ」である（列レベル GRANT）。
+-- パスワード不要。GRANT・ポリシー・関数は
+-- packages/db/prisma/migrations/20260908000000_scan_result_pipeline/migration.sql。
+SELECT 'CREATE ROLE app_scan_probe NOLOGIN NOBYPASSRLS'
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_scan_probe')
+\gexec
+
 -- 🔴 `ALTER FUNCTION ... OWNER TO app_assignment_owner_probe`（migration 20260903070000）は
 -- app_migrator が app_assignment_owner_probe に対して SET ROLE できることを要求する
 -- （PostgreSQL の所有者変更の仕様。実行者は新旧いずれの所有者ロールにもなれる必要がある）。
 -- app_migrator はこのロールにログインしない（NOLOGIN のまま）が、所有権の付け替えだけができるよう
 -- メンバーシップを与える。
 GRANT app_assignment_owner_probe TO app_migrator;
+-- 同上（T-05-05。migration 20260908000000 の ALTER FUNCTION ... OWNER TO app_scan_probe）。
+GRANT app_scan_probe TO app_migrator;
 
 -- public スキーマの所有者を app_migrator にする（PostgreSQL 15 以降は既定で PUBLIC に
 -- CREATE 権限が無いため、これが無いとマイグレーションがテーブルを作れない。docs/05 §4.2）。

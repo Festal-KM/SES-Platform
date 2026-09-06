@@ -109,6 +109,12 @@ export const INTERNAL_JOB_NAMES = [
   'domain.provision',
   'domain.verify',
   'domain.recheck',
+  // 🔴 T-05-05（docs/05 §9.6）。**外部への書き込みを 1 つも行わない**（GuardDuty の結果を
+  //    受け取って DB を更新するだけ / タグを読むだけ）ので `attempts: 3` を許せる。
+  //    冪等性は `FileScanResult` の `UNIQUE(object_key, version_id)` と
+  //    `WebhookDelivery.processedAt` の CAS、そして状態遷移の単調性（domain）が担う。
+  'scan.apply-result',
+  'scan.poll',
 ] as const;
 
 export type InternalJobName = (typeof INTERNAL_JOB_NAMES)[number];
@@ -192,6 +198,14 @@ export const QUEUE_DEFINITIONS = {
     backoff: { type: 'exponential', delay: 5_000 },
   }),
   'domain.recheck': internalQueue('domain.recheck', { attempts: 3 }),
+  // 🔴 T-05-05（docs/05 §9.6）。スキャン結果の適用と滞留の保険。
+  //    `scan.apply-result` は `webhook.process` と同じ性質（受信済みの行を処理するだけ）なので
+  //    同じバックオフにする。`scan.poll` はスケジュール実行（毎 5 分）でありバックオフ不要。
+  'scan.apply-result': internalQueue('scan.apply-result', {
+    attempts: 3,
+    backoff: { type: 'exponential', delay: 5_000 },
+  }),
+  'scan.poll': internalQueue('scan.poll', { attempts: 3 }),
 } as const;
 
 export type QueueName = keyof typeof QUEUE_DEFINITIONS;

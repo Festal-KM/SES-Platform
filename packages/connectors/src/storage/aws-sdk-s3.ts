@@ -27,6 +27,7 @@
 import {
   DeleteObjectCommand,
   GetObjectCommand,
+  GetObjectTaggingCommand,
   HeadObjectCommand,
   PutObjectCommand,
   S3Client,
@@ -34,6 +35,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
+import type { ObjectTagApi, ObjectTagRequest, ObjectTagResponse } from '../scan/api.js';
 import type {
   S3Api,
   S3HeadObjectResponse,
@@ -131,8 +133,8 @@ function isNotFound(error: unknown): boolean {
  *
  * 起動時に 1 回だけ作る（`apps/web` は `lib/db/bootstrap.ts`、`apps/worker` は `src/main.ts`）。
  */
-export function createS3Api(options: S3ApiOptions): S3Api {
-  const client =
+function createClient(options: S3ApiOptions): S3Client {
+  return (
     options.client ??
     new S3Client({
       region: options.region,
@@ -141,7 +143,12 @@ export function createS3Api(options: S3ApiOptions): S3Api {
       ...(options.endpoint === undefined ? {} : { endpoint: options.endpoint }),
       ...(options.forcePathStyle === undefined ? {} : { forcePathStyle: options.forcePathStyle }),
       ...(options.credentials === undefined ? {} : { credentials: options.credentials }),
-    });
+    })
+  );
+}
+
+export function createS3Api(options: S3ApiOptions): S3Api {
+  const client = createClient(options);
 
   return {
     /**
@@ -182,6 +189,50 @@ export function createS3Api(options: S3ApiOptions): S3Api {
         );
       } catch (error) {
         // 🔴 404 だけを `null` に写す（ポートの契約）。それ以外は握り潰さずそのまま投げる。
+        if (isNotFound(error)) return null;
+        throw error;
+      }
+    },
+  };
+}
+
+/**
+ * 🔴 `ObjectTagApi` の実装（T-05-05。`GuardDutyMalwareScanner` の `runtime.scan.api` に渡す）。
+ *
+ * GuardDuty の判定は `GuardDutyMalwareScanStatus` タグとしてオブジェクトに付く（docs/03 §3.4.1）。
+ * 🔴 `createS3Api` と**同じ `S3ApiOptions`** を受け取り、同じ `S3Client` 設定（`maxAttempts: 1`）で
+ *    動く。別ファイルに書かないのは、SDK の import を 1 ファイルに閉じる規律のためである
+ *    （`tests/static/aws-sdk-single-path.test.ts`）。
+ * 🔴 `S3Api` に生やさない理由: `S3ObjectStore`（保管という機能）が使わない操作を混ぜると、
+ *    そのポートを実装するモックが「使わないメソッド」を持たされる。層を分けたままにする。
+ */
+export function createObjectTagApi(options: S3ApiOptions): ObjectTagApi {
+  const client = createClient(options);
+
+  return {
+    async getObjectTagging(request: ObjectTagRequest): Promise<ObjectTagResponse | null> {
+      try {
+        const output = await client.send(
+          new GetObjectTaggingCommand({
+            Bucket: request.Bucket,
+            Key: request.Key,
+            ...(request.VersionId === undefined ? {} : { VersionId: request.VersionId }),
+          }),
+        );
+        if (typeof output.VersionId !== 'string' || output.VersionId === '') {
+          // 🔴 空文字に丸めない（`FileScanResult` の重複排除キーが全オブジェクトで衝突する）。
+          throw new Error(
+            'S3 の GetObjectTagging が VersionId を返しませんでした（バケットのバージョニングが有効か確認してください。docs/05 §14.1）。',
+          );
+        }
+        const tags: Record<string, string> = {};
+        for (const tag of output.TagSet ?? []) {
+          if (typeof tag.Key === 'string' && typeof tag.Value === 'string') tags[tag.Key] = tag.Value;
+        }
+        return { Tags: tags, VersionId: output.VersionId };
+      } catch (error) {
+        // 🔴 404（削除済み）だけを `null` に写す。それ以外は握り潰さずそのまま投げる
+        //    —— 権限不足を「判定が無い」に畳むと、滞留の原因が永久に分からなくなる。
         if (isNotFound(error)) return null;
         throw error;
       }

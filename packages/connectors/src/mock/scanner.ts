@@ -1,8 +1,13 @@
 // packages/connectors/src/mock/scanner.ts
 // docs/05 §13.2。`demo` で使う（`development` は ClamAV の実接続 = `real`。docs/05 §13.1）。
+//
+// 🔴 E2E も `demo` も**この 1 実装**を使う（docs/05 §17.5「テスト専用の別モックを書かない」）。
 
 import type { MalwareScanner } from '../interfaces.js';
-import type { ScanStatus } from '../types.js';
+import type { ScanResultReading, ScanStatus } from '../types.js';
+
+/** モックが返す既定の版 ID（バージョニング有効なバケットの版に相当する擬似値）。 */
+const MOCK_VERSION_ID = 'mock-version-1';
 
 export type MockMalwareScannerOptions = {
   /**
@@ -24,9 +29,14 @@ export class MockMalwareScanner implements MalwareScanner {
     if (!this.results.has(key)) this.results.set(key, this.options.defaultResult ?? 'CLEAN');
   }
 
-  async getResult(key: string, versionId: string): Promise<ScanStatus | null> {
+  async getResult(key: string, versionId: string | null): Promise<ScanResultReading | null> {
     this.calls += 1;
-    return this.results.get(this.compositeKey(key, versionId)) ?? this.results.get(key) ?? null;
+    const status =
+      (versionId === null ? undefined : this.results.get(this.compositeKey(key, versionId))) ??
+      this.results.get(key);
+    // 🔴 「まだ判定が無い」は `null`（`SCANNING` を確定結果として返さない。`MalwareScanner` の契約）。
+    if (status === undefined || status === 'SCANNING') return null;
+    return { status, rawStatus: `mock:${status}`, objectVersionId: versionId ?? MOCK_VERSION_ID };
   }
 
   /**

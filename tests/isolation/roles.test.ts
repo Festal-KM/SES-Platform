@@ -109,7 +109,7 @@ afterAll(async () => {
   await database?.stop();
 }, SETUP_TIMEOUT_MS);
 
-describe('① 6 ロールすべてが BYPASSRLS を持たない（docs/05 §4.2）', () => {
+describe('① 全ロールが BYPASSRLS を持たない（docs/05 §4.2）', () => {
   it('pg_roles.rolbypassrls = false', async () => {
     const roles = await readRoleBypassRls(unextended, [...ROLE_NAMES]);
     expect(roles.map((r) => r.role)).toEqual([...ROLE_NAMES].sort());
@@ -128,6 +128,13 @@ describe('① 6 ロールすべてが BYPASSRLS を持たない（docs/05 §4.2�
   it('app_assignment_owner_probe は NOLOGIN である（docs/05 §4.2「（接続しない）」）', async () => {
     const rows = await unextended.$queryRaw<Array<{ rolcanlogin: boolean }>>`
       SELECT rolcanlogin FROM pg_roles WHERE rolname = 'app_assignment_owner_probe'`;
+    expect(rows[0]?.rolcanlogin).toBe(false);
+  });
+
+  // 🔴 T-05-05: 同形の NOLOGIN 検証（ウイルススキャンの SECURITY DEFINER 関数の所有者）。
+  it('app_scan_probe は NOLOGIN である（docs/05 §4.2「（接続しない）」）', async () => {
+    const rows = await unextended.$queryRaw<Array<{ rolcanlogin: boolean }>>`
+      SELECT rolcanlogin FROM pg_roles WHERE rolname = 'app_scan_probe'`;
     expect(rows[0]?.rolcanlogin).toBe(false);
   });
 

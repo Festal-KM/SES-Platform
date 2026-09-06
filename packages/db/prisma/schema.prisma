@@ -483,6 +483,10 @@ model SkillSheet {
   engineerSnapshots EngineerSnapshot[] // T-02-03（参照した版。skillSheetId）
 
   @@unique([tenantId, engineerId, version])
+  /// 🔴 T-05-05: スキャン結果はオブジェクトキーでしか対象を引き当てられない（GuardDuty は
+  /// バケット + キー + 版しか教えない。docs/03 §3.4.1）。同じキーの行が 2 つあると
+  /// 「どちらに適用するか」が決まらないため UNIQUE にする（migration 20260908000000）。
+  @@unique([objectKey])
   @@index([tenantId, scanStatus, uploadedAt]) // SCANNING 滞留の検知（A-005）
   @@map("skill_sheets")
 }

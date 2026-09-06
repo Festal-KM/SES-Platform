@@ -48,25 +48,47 @@ describe('MockMalwareScanner', () => {
   it('既定は CLEAN（demo で後続の導線が動く）', async () => {
     const scanner = new MockMalwareScanner();
     await scanner.enqueue('k1');
-    expect(await scanner.getResult('k1', 'v1')).toBe('CLEAN');
+    // 🔴 T-05-05: `getResult` は「状態 + 生値 + 版」を返す（`MalwareScanner` の契約）。
+    //    版を `FileScanResult` の重複排除キーに使うため、状態だけでは記録できない。
+    expect(await scanner.getResult('k1', 'v1')).toEqual({
+      status: 'CLEAN',
+      rawStatus: 'mock:CLEAN',
+      objectVersionId: 'v1',
+    });
   });
 
   it('既定の判定を差し替えられる（INFECTED の導線を同じモックで確かめる）', async () => {
     const scanner = new MockMalwareScanner({ defaultResult: 'INFECTED' });
     await scanner.enqueue('k1');
-    expect(await scanner.getResult('k1', 'v1')).toBe('INFECTED');
+    expect((await scanner.getResult('k1', 'v1'))?.status).toBe('INFECTED');
   });
 
   it('キー × 版ごとに判定を上書きできる', async () => {
     const scanner = new MockMalwareScanner();
     await scanner.enqueue('k1');
     scanner.setResult('k1', 'v2', 'UNSCANNABLE');
-    expect(await scanner.getResult('k1', 'v1')).toBe('CLEAN');
-    expect(await scanner.getResult('k1', 'v2')).toBe('UNSCANNABLE');
+    expect((await scanner.getResult('k1', 'v1'))?.status).toBe('CLEAN');
+    expect((await scanner.getResult('k1', 'v2'))?.status).toBe('UNSCANNABLE');
+  });
+
+  it('版を指定しなければ（null）キー単位の判定を返す', async () => {
+    const scanner = new MockMalwareScanner();
+    await scanner.enqueue('k1');
+    expect(await scanner.getResult('k1', null)).toEqual({
+      status: 'CLEAN',
+      rawStatus: 'mock:CLEAN',
+      objectVersionId: 'mock-version-1',
+    });
   });
 
   it('未登録のキーは null（「まだ結果が無い」と「CLEAN」を混同しない）', async () => {
     const scanner = new MockMalwareScanner();
     expect(await scanner.getResult('unknown', 'v1')).toBeNull();
+  });
+
+  it('🔴 SCANNING は確定結果として返さない（未確定は null で表す）', async () => {
+    const scanner = new MockMalwareScanner();
+    scanner.setResult('k1', null, 'SCANNING');
+    expect(await scanner.getResult('k1', null)).toBeNull();
   });
 });

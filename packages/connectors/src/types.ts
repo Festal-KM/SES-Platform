@@ -122,10 +122,41 @@ export type PresignedUrl = {
  *
  * 🔴 プロバイダの生ステータスを `CLEAN` に寄せない（`docs/03` §3.4.3-3）:
  *    `UNSUPPORTED` → `UNSCANNABLE`、`ACCESS_DENIED` / `FAILED` → `FAILED`。
+ *
+ * 🔴 **宣言の唯一の出所は `packages/domain`** である（T-05-05。`RecipientClass` と同じ整理）。
+ *    ここは re-export であり、遷移規則（`decideScanStatusTransition`）も domain 側にある
+ *    —— 正規化する側（本パッケージ）と CHECK を持つ側（`packages/db`）が相互に依存できないため、
+ *    値集合を 2 か所に書くと片方だけが増減する。
  */
-export const SCAN_STATUSES = ['SCANNING', 'CLEAN', 'INFECTED', 'UNSCANNABLE', 'FAILED'] as const;
+import type { ScanStatus } from '@ses/domain';
 
-export type ScanStatus = (typeof SCAN_STATUSES)[number];
+export {
+  decideScanStatusTransition,
+  isScanStatus,
+  isShareableScanStatus,
+  scanStatusesReplaceableBy,
+  SCAN_STATUSES,
+} from '@ses/domain';
+export type { ScanStatus } from '@ses/domain';
+
+/**
+ * `MalwareScanner.getResult()` の戻り値（T-05-05）。
+ *
+ * ⚠️ docs/05 §8.1 は `Promise<ScanStatus | null>` と書いていたが、実装では
+ *    **`objectVersionId` と `rawStatus` も返す**形にした（docs 側も追従済み）。理由は 2 つある:
+ *    ① 照会結果を `FileScanResult` に記録するには `UNIQUE(object_key, version_id)` の版が要る。
+ *       照会時点で版が分からないと、保険のポーリング（`scan.poll`）で得た判定を
+ *       Webhook 経由の判定と**同じ 1 つの経路で**記録できない（2 経路に分けると冪等性が割れる）。
+ *    ② `rawStatus` はプロバイダの生値であり、`file_scan_results.raw_status` が要求する
+ *       （docs/05 §3.4）。正規化後の値だけでは、後から「何が起きたか」を遡れない。
+ */
+export type ScanResultReading = {
+  readonly status: ScanStatus;
+  /** プロバイダの生値（GuardDuty のタグ値など）。 */
+  readonly rawStatus: string;
+  /** 🔴 実際に判定が付いている版。 */
+  readonly objectVersionId: string;
+};
 
 // --- 電子署名（docs/05 §8.1 / §8.4）----------------------------------------
 
