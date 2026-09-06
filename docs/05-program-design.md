@@ -4,6 +4,7 @@
 > **上流**: `CLAUDE.md`（一次資料。2026-09-01 改訂: §3.1 越境経路 4 → **5** / §3.3 契約書 / §4.2 確定 / §2 件数クォータ / §9-2 DocuSign / §9-3 独自ドメイン / §11.1 sandbox 射程）→ `docs/01-business-requirements.md`（`BR-01`〜`BR-73`）→ `docs/02-functional-requirements.md`（`F-001`〜`F-066` / `UC-01`〜`UC-25`）→ `docs/03-tech-selection.md`（`U-1`〜`U-22` / `Q-T-1`〜`Q-T-9`）→ `docs/04-ui-design.md`（`S-001`〜`S-045` / `A-001`〜`A-014` / `U-01`〜`U-12`）。**本版（2026-09-01）は Issue #6〜#15 の人間の決定を反映した改訂版**であり、決着済みの論点に「暫定 / 確認中」の表記を残していない。
 > **矛盾する場合は `CLAUDE.md` が正。** 本書は上流のハードルール・ビジネスルール・受け入れ基準を弱める記述を含まない。
 > **本書に無いものを実装しない。** 判断に迷う箇所が残っていたら `## TBD` を見ること。そこにも無ければ `pm` に上げる。
+> 改訂（2026-09-07）: [Issue #33](https://github.com/Festal-KM/SES-Platform/issues/33) **既定 C** を反映し、**§3.3.1「パートナー FK 列の複合 FK 化」を新設**した（§3.1 に規約 1 行 / §4.7 にカタログ走査テスト 1 本 / §6.4 #14 に条件②の理由の書き換え / §17.1 の本数を 13 → 14 に追随）。🔴 **SP-06 着手前に migration で入れる。** 実装・migration の実ファイルは次の `programmer` タスクの範囲であり、本改訂は `docs/05` のみを変更している。
 
 **構成**: 1 アーキテクチャ概観 / 2 リポジトリ構成 / 3 DB スキーマ / 4 データ分離設計 / 5 管理平面の設計 / 6 API 仕様 / 7 AI 層の設計 / 8 外部連携層の設計 / 9 ジョブ仕様 / 10 冪等性・不可逆事故の防止設計 / 11 品質ゲートのパイプライン設計 / 12 業務シーケンス / 13 環境分離の設計 / 14 ファイルストレージ規約 / 15 エラー処理方針 / 16 オブザーバビリティ / 17 テスト戦略 / 付録（`## Assumptions` / `## TBD` / 申し送りマッピング / 機能カバレッジ）
 
@@ -200,6 +201,7 @@ ses-platform/
 | **テナントキー** | 🔴 **全業務テーブルがテナントキーを 1 つ持つ。既定は `tenantId String @db.Uuid`。** 例外は `Tenant`（自身の `id` がキー）と `Announcement`（`targetTenantIds String[]`）の 2 表のみで、いずれも**新しい例外ではなく「その表が分離単位そのものである」「全テナント配信である」ことの帰結**である。射程外は `PlatformUser` / `Plan` / `Subscription` / `Skill` の 4 表のみ（`CLAUDE.md` §3.1。**これ以外の例外を作らない**）。**キーを持たない表（`SchedulerRun` / `WebhookDelivery` / `EmailEvent` / `ImpersonationSession`）は `app_tenant` に一切の権限を与えない**（§4.4 の C0） |
 | **オーナー列** | 🔴 **パートナースコープが要る表は「オーナー列」を 1 つ持つ。既定名は `ownerPartnerCompanyId String? @db.Uuid`**（`null` = ホスト所属）。表によって既存の別名を使う（`Membership.partnerCompanyId` / `PartnerCompany.id` など）。**どの表がどの列をオーナー列とするかは §4.4 の対応表がすべてである。** 🔴 **子表のオーナー列は親から継承する**（§4.4.1 のトリガ。アプリに書かせない） |
 | **当事者列** | 🔴 **経路 5（`CLAUDE.md` §3.1-5）の 4 表（`assignments` / `contracts` / `contract_documents` / `orders`）だけが `counterpartyPartnerCompanyId String? @db.Uuid` を持つ**（`null` = 自社エンジニア / 相手方がパートナーでない）。**テーブル作成時から持ち、後から足して埋め直さない**（`docs/03` §4.3.2-5）。継承・freeze の規律はオーナー列と同じ（§4.4.1）。**当事者列を持つ表を増やすことは経路 5 の対象を増やすことであり人間の承認事項** |
+| **パートナー FK** | 🔴 **`partner_companies` を参照する FK は、必ず `(tenant_id, <パートナー列>) REFERENCES partner_companies(tenant_id, id)` の複合 FK にする**（単一列 FK は禁止）。単一列だと「別テナントの取引先 ID を指す行」を DB が拒否できず、第二境界の担保がアプリ層の照合だけに乗る（Issue #33 既定 C。**§3.3.1 が対象列・移行手順・機械検証のすべてである**） |
 | **複合インデックス** | 🔴 **`tenant_id` を必ず先頭列に置く**（RLS のポリシー式が等値比較で枝刈りできるようにする。`docs/03` §3.7.2） |
 | **金額** | `Decimal @db.Decimal(12, 2)`（円）。AI コストのみ `Decimal @db.Decimal(12, 6)`（USD） |
 | **暗号化列** | `String`。値は `v1:{keyId}:{iv}:{ct}:{tag}`。カラム名は `...Encrypted` で終える（§8.6 / `docs/03` §4.4） |
@@ -344,6 +346,184 @@ model TwoFactorCredential {
 }
 ```
 **規約**: `Tenant.lifecycleState` を変更できるのは `withPlatformWrite` 経由のみ（§5.4）。テナント側のどのロールからも書けないことを、**`app_tenant` に `tenants` の `UPDATE` を付与しない**ことで担保する（`F-004` 関連ロール / `docs/02` 章 5.4）。
+
+#### 3.3.1 パートナー FK 列の複合 FK 化（[Issue #33](https://github.com/Festal-KM/SES-Platform/issues/33) 既定 C で 2026-09-07 に反映）
+
+**決着の記録**: `T-04-07`（`#14` の `targetPartnerCompanyId`）の Fable レビューで、**ホスト文脈の `INSERT` はパートナーを指す FK 列の値を DB 単独では検証できない**ことが判明した。RLS の C5 は `WITH CHECK` が `app_is_host()` で真になるため、ホストが `invitations.partner_company_id` に**他テナントの取引先 ID** を書いても第一防御は素通りする。単一列 FK（`REFERENCES partner_companies(id)`）は「その ID が実在すること」しか見ないため、**テナントをまたいだ参照が成立してしまう**。現状の防御は `issueInvitation` の RLS 母集団照合（見えなければ 404）＝ **アプリ層の規約 + レビュー**であり、パートナー由来の列を持つ経路が増えるたびに書き漏れうる。**複合 FK にすれば構造的に不可能になる**（`CLAUDE.md` §3.1 第二境界は DB 側で閉じるのが本筋。§6.3「越境の判断をアプリの `if` に書かない」と同じ理由）。
+
+**方針**（`CLAUDE.md` §3 の担保区分では **DB 制約** — 書き忘れても漏れない）:
+
+1. `partner_companies` に **`@@unique([tenantId, id])`** を追加する（複合 FK の参照先には一意制約が要る。`id` 単独の主キーは残す）。
+2. **パートナーを指す FK 列を持つ全表**の FK を **`FOREIGN KEY (tenant_id, <パートナー列>) REFERENCES partner_companies(tenant_id, id)`** に付け替える。
+3. **既定 C の適用時期**: **SP-06 の着手前に既存列へ一括で適用する。以後、パートナーを指す列を持つ新規テーブルは最初から複合 FK で作る**（§4.7 の走査が単一列 FK を FAIL にするため、あとから足す経路が残らない）。**適用済み**（2026-09-07。`packages/db/prisma/migrations/20260911000000_partner_composite_fk/migration.sql`）。
+4. 🔴 **`MATCH SIMPLE`（PostgreSQL の既定）のまま使う。`MATCH FULL` と書かない。** 複合 FK は**参照側の列が 1 つでも `NULL` なら検査そのものを行わない**。本設計ではこれが好都合である —— パートナー列の `NULL` は「ホスト所有」を意味する正当な値であり（`Engineer.ownerPartnerCompanyId` / `ThreadParticipant.partnerCompanyId` など）、その行は照合なしで通る。一方 `tenant_id` は全業務テーブルで `NOT NULL` なので、**パートナー列が非 `NULL` のときだけ必ず 2 列の組で検査される**。`MATCH FULL` にすると「`tenant_id` はあるがパートナー列は `NULL`」の行が拒否され、ホスト所有行を 1 行も作れなくなる。
+5. **`ON DELETE RESTRICT ON UPDATE CASCADE`（現行と同じ）を維持する。** `partner_companies.tenant_id` は不変であり `CASCADE` は実質作動しない。停止は `suspendedAt` であって削除ではない（`F-007 AC-2`）ため `RESTRICT` の検査コストは問題にならない。**本移行でインデックスは足さない**（`users` / `invitations` / `engineer_shares` / `messages(sender)` / `tasks` の 5 列は `(tenant_id, パートナー列)` の先頭 2 列一致インデックスを持たないが、削除が起きない以上不要。必要になったら実測で足す）。
+
+##### 対象列の全量（`schema.prisma` 走査。**この表がすべてであり、ここに無い列は存在しない**）
+
+**A. 複合 FK 化する（13 列）** — `partner_companies` を直接指し、テナントキーを持つ列。
+
+| # | 表 | 列 | NULL | 現行 FK | 位置づけ（§4.4） | 措置 |
+|---|---|---|---|---|---|---|
+| 1 | `users` | `owner_partner_company_id` | 可（`NULL` = ホスト） | あり | オーナー列 root / C8 | 付け替え |
+| 2 | `memberships` | `partner_company_id` | 可 | あり | C5 の `<O>` | 付け替え |
+| 3 | `invitations` | `partner_company_id` | 可 | あり | C5 の `<O>`（招待先の選択） | 付け替え（🔴 **本 Issue の発端**） |
+| 4 | `engineers` | `owner_partner_company_id` | 可 | あり | オーナー列 root / C3 | 付け替え |
+| 5 | `project_visibilities` | `partner_company_id` | **不可** | あり | 越境経路 1 の根拠 / C5 | 付け替え |
+| 6 | `engineer_shares` | `partner_company_id` | **不可** | あり | オーナー列（C3 の `<O>`）/ 経路 4 の根拠 | 付け替え |
+| 7 | `proposal_requests` | `partner_company_id` | **不可** | あり | 依頼先。C5 の `<O>` | 付け替え |
+| 8 | `proposals` | `owner_partner_company_id` | 可 | あり | オーナー列 root / C5 | 付け替え |
+| 9 | `chat_threads` | `partner_company_id` | **不可** | あり | C6 の `<O>`（1 スレッド 1 パートナー） | 付け替え |
+| 10 | `thread_participants` | `partner_company_id` | 可（`NULL` = ホスト） | あり | 越境経路 3 の根拠 / C5 | 付け替え |
+| 11 | `messages` | `sender_partner_company_id` | 可（`NULL` = ホスト送信） | あり | 送信者の所属（通常 FK） | 付け替え |
+| 12 | `contracts` | `counterparty_partner_company_id` | 可 | あり | 当事者列 root / 経路 5 | 付け替え |
+| 13 | `tasks` | `owner_partner_company_id` | 可 | 🔴 **無し** | オーナー列 root / C5 | **新規に複合 FK を張る** |
+
+🔴 **#13 `tasks` は「根のオーナー列なのに FK が 1 本も無い」既存の穴**である（`§4.4.1` の根 4 表のうち、`users` / `engineers` / `proposals` は FK を持つのに `tasks` だけ持たない）。本移行で **`DROP` ではなく `ADD` のみ**を行う。
+
+**B. 複合 FK を張らない（10 列。継承の子）** — 値を書くのは §4.4.1 の継承トリガだけであり、トリガは親を **`WHERE id = $1 AND tenant_id = NEW.tenant_id`** で引く。したがって**同一テナントの親行の値しか入りえず、その親の値は A の複合 FK が保証する**（推移的に正しい）。「子には Prisma レベルの FK を張らない」という既存の設計判断（T-02-02 / 03 / 04）を本改訂で変えない。
+
+| 表 | 列 | 継承元（§4.4.1） |
+|---|---|---|
+| `engineer_skills` / `skill_sheets` | `owner_partner_company_id` | `engineers(engineer_id)` |
+| `skill_sheet_extractions` | `owner_partner_company_id` | `skill_sheets(skill_sheet_id)` |
+| `engineer_snapshots` / `proposal_events` | `owner_partner_company_id` | `proposals(proposal_id)` |
+| `messages` | `owner_partner_company_id` | `chat_threads(thread_id).partner_company_id` |
+| `review_gates` | `owner_partner_company_id` | `CASE(target_type)`（多相） |
+| `assignments` | `counterparty_partner_company_id` | `engineers(engineer_id).owner_partner_company_id` |
+| `contract_documents` | `counterparty_partner_company_id` | `contracts(contract_id)` |
+| `orders` | `counterparty_partner_company_id` | `CASE(contract_id → contracts / ELSE → assignments)` |
+
+**C. 対象外（パートナーを指す列を持たない）** — `email_dispatches` は `recipient_class`（`'PARTNER_MEMBER'` を含む）を持つが、これは**宛先の分類であって参照ではない**ため FK 化の対象ではない（`partner_company_id` 列を足さない）。`two_factor_credentials` / `notifications` / `audit_logs` / `ai_usage` / `usage_counters` ほかも同様に該当列を持たない。射程外の 4 表（`skills` / `platform_users` / `plans` / `subscriptions`）も同様。**経路 5 の射影ビュー 4 本（§4.9）はビューであり FK を持てない**（`relkind = 'v'`。§4.7 の走査は基底表 `relkind = 'r'` に限る）。
+
+##### Prisma DSL での表現
+
+```prisma
+model PartnerCompany {
+  id       String @id @default(uuid(7)) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  // ...
+  @@unique([tenantId, id])                       // 🔴 複合 FK の参照先。id 単独の @id は残す
+  @@map("partner_companies")
+}
+
+model Invitation {
+  tenantId         String  @map("tenant_id") @db.Uuid
+  partnerCompanyId String? @map("partner_company_id") @db.Uuid
+  // 🔴 references は PartnerCompany の @@unique([tenantId, id]) を指す
+  partnerCompany PartnerCompany? @relation(fields: [tenantId, partnerCompanyId], references: [tenantId, id], onDelete: Restrict)
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+```
+
+- 🔴 **`tenantId` が 2 つの `@relation` の `fields` に現れる。** Prisma はスカラー列の関係間共有を許すが、**入れ子 write（`connect` / ネスト `create`）では両関係から同じ列が書かれうる**。したがって **第 2 防御の宣言を必ず広げる**（`packages/db/src/scope-injection.ts`。実装で判明した必須の追随、2026-09-07）:
+  - 順方向: これまで「テナントキーを裏付けるリレーションは `tenant` 1 本」を前提にしていた（`tenantRelationOf`）。複合 FK 化で **A の 13 モデルは 2 本**になる（`tenant` + パートナー側）。`PARTNER_COMPOSITE_FK_RELATION_OVERRIDES` に宣言し、`tenantKeyBackingRelationsOf()` を唯一の出所にして `tenant` と同格に拒否する。宣言しないと `data: { partnerCompany: { connect: … } }` が `<表>.tenant_id` を書く経路として静かに開く。
+  - 逆方向: `PartnerCompany` 側に**逆リレーション 13 本**（`users` / `invitations` / … / `tasks`）が生まれる。複合 FK 化前は相手側の FK に `tenant_id` が無かったのでテナントキーに届かなかったが、以後は届く（`Tenant.engineers` と同型の経路 ⑥）。`TENANT_KEY_MOVING_RELATION_OVERRIDES` に `PartnerCompany` を追加する。
+  - 🔴 **スカラーの `partnerCompanyId` 自体は第 2 防御の対象にしない**（`targetPartnerCompanyId` の業務入力を殺してしまう）。越境は DB の複合 FK（最終防衛線）とアプリ層の RLS 母集団照合（404）が受け持つ。
+  - 宣言漏れは `packages/db/src/tenant-relation.test.ts` の DMMF 走査が落とす（複合 FK を張った表を書き忘れたら CI が止まる）。
+- 🔴 **実装の最初に `prisma validate` と `prisma generate` が通ることを確認する。** 通らなかった場合の代替は **当該 `@relation` と `PartnerCompany` 側の逆リレーションを `schema.prisma` から外し、複合 FK は `migration.sql` に手書きする**（B の 10 列と同じ形になる。**関係ナビゲーション（`include: { partnerCompany: true }`）を使っているコードは現時点で 1 箇所も無い**ため影響が無い）。🔴 **「`schema.prisma` には単一列 FK を宣言したまま DB 側だけ複合にする」は採らない** —— drift を放置すると、いつか `migrate dev` が複合 FK を単一列へ戻す。
+- 制約名は Prisma の既定規約（`{表}_{列1}_{列2}_fkey`）に合わせる（例: `invitations_tenant_id_partner_company_id_fkey`）。**現行の名前（`invitations_partner_company_id_fkey`）は使い回さない** —— 名前だけ同じで定義が違う制約は、あとから `migration.sql` をテキスト検索したときに誤読を生む。FK 制約名を参照しているテストは現在存在しない（`tests/static/schema-enum-drift.test.ts` が読むのは `CHECK` 制約のみ）。
+
+##### migration の指針（**1 migration で完結させる**）
+
+```sql
+-- 🔴 0-a. FORCE ROW LEVEL SECURITY の一時解除（**必須**。2026-09-07 に PostgreSQL 17 で実測）。
+--    マイグレーションは app_migrator（= テーブル所有者）で流す（§4.2）。全業務テーブルは
+--    FORCE ROW LEVEL SECURITY であり、所有者にも RLS が適用される。app_migrator に適用される
+--    ポリシーは 0 件なので、**所有者から見える行も 0 件**になる。これは 2 つの静かな壊れ方を生む:
+--      ① 手順 0-b の違反行チェックが常に 0 件を返す（検査したつもりで何も見ていない）。
+--      ② 🔴 `ADD CONSTRAINT ... FOREIGN KEY` の**検証まで素通りする**。PostgreSQL の
+--         `RI_Initial_Check`（高速パスの LEFT JOIN クエリ）は「RLS 有効 **かつ 所有者でない**」
+--         ときにだけ行単位トリガへフォールバックする。所有者が実行すると高速パスが選ばれ、
+--         そのクエリ自体が FORCE RLS で絞られるため、**違反行があっても convalidated = true の
+--         制約が張れてしまう**（＝「制約はあるが違反行がある」という最も避けたい状態）。
+--         実行時の INSERT/UPDATE 検査（RI トリガ）は SECURITY_NOFORCE_RLS で走り RLS を素通りするため、
+--         「入れるときは弾くが、張るときは見ていない」という非対称になる。
+--    したがって関係する 14 表（partner_companies + A の 13 表）の FORCE をこの migration の中だけ外し、
+--    手順 4 で必ず戻す。安全性は ①1 トランザクションでの適用（失敗すればロールバックで戻る）
+--    ②手順 5 の事後検査（このファイル自身がカタログを見て失敗させる）③§4.7 #1 の常設テスト、で担保する。
+--    🔴 ENABLE ROW LEVEL SECURITY は外さない（非所有者には常時 RLS が効いたまま）。
+ALTER TABLE "partner_companies" NO FORCE ROW LEVEL SECURITY;
+ALTER TABLE "users" NO FORCE ROW LEVEL SECURITY;
+-- … A の 13 表すべて
+
+-- 0-b. 🔴 事前チェック。既存データは全て正のはず（アプリ層照合が守ってきた）だが、
+--    「はず」で流さない。1 行でも違反があれば migration ごと失敗させる。
+--    ⚠️ この DO ブロックは A の 13 列を明示的に列挙する（制約がまだ無い時点の検査であり、
+--       カタログからは導けない）。恒久的な網羅性の担保は §4.7 の走査が受け持つ。
+DO $$
+DECLARE bad bigint;
+BEGIN
+  SELECT count(*) INTO bad FROM (
+    SELECT 1 FROM users t JOIN partner_companies p ON p.id = t.owner_partner_company_id
+      WHERE p.tenant_id IS DISTINCT FROM t.tenant_id
+    UNION ALL
+    SELECT 1 FROM invitations t JOIN partner_companies p ON p.id = t.partner_company_id
+      WHERE p.tenant_id IS DISTINCT FROM t.tenant_id
+    -- … A の 13 列すべてを同じ形で並べる（memberships / engineers / project_visibilities /
+    --    engineer_shares / proposal_requests / proposals / chat_threads / thread_participants /
+    --    messages(sender_partner_company_id) / contracts / tasks）
+  ) x;
+  IF bad > 0 THEN
+    RAISE EXCEPTION 'Issue #33: 別テナントの partner_company を指す行が % 件あります。移行前に是正が必要です', bad;
+  END IF;
+END $$;
+
+-- 1. 参照先の一意制約
+ALTER TABLE "partner_companies"
+  ADD CONSTRAINT "partner_companies_tenant_id_id_key" UNIQUE ("tenant_id", "id");
+
+-- 2. 既存 FK の付け替え（12 列。DROP → ADD を同一トランザクションで）
+ALTER TABLE "invitations" DROP CONSTRAINT "invitations_partner_company_id_fkey";
+ALTER TABLE "invitations" ADD CONSTRAINT "invitations_tenant_id_partner_company_id_fkey"
+  FOREIGN KEY ("tenant_id", "partner_company_id")
+  REFERENCES "partner_companies"("tenant_id", "id") ON DELETE RESTRICT ON UPDATE CASCADE;
+-- … 残り 11 列も同形
+
+-- 3. tasks は既存 FK が無いので ADD のみ（DROP を書かない）
+ALTER TABLE "tasks" ADD CONSTRAINT "tasks_tenant_id_owner_partner_company_id_fkey"
+  FOREIGN KEY ("tenant_id", "owner_partner_company_id")
+  REFERENCES "partner_companies"("tenant_id", "id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- 4. 🔴 FORCE ROW LEVEL SECURITY を必ず戻す（手順 0-a の対称。14 表）
+ALTER TABLE "partner_companies" FORCE ROW LEVEL SECURITY;
+-- … A の 13 表すべて
+
+-- 5. 🔴 事後検査: 手順 4 の書き漏れをこのファイル自身で落とす。14 表を再列挙せず、
+--    「RLS 有効なのに FORCE でない実表が 1 つも無い」をカタログ走査で確かめる（§4.7 #1 と同じ向き）。
+DO $$
+DECLARE unforced text;
+BEGIN
+  SELECT string_agg(c.relname, ', ' ORDER BY c.relname) INTO unforced
+    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+   WHERE n.nspname = 'public' AND c.relkind IN ('r','p')
+     AND c.relrowsecurity AND NOT c.relforcerowsecurity;
+  IF unforced IS NOT NULL THEN
+    RAISE EXCEPTION 'Issue #33: FORCE ROW LEVEL SECURITY が戻っていない表があります: %', unforced;
+  END IF;
+END $$;
+```
+
+- 🔴 **`NOT VALID` で逃げない。** `ADD CONSTRAINT` は既存行の全件検査を伴う（`ACCESS EXCLUSIVE` ロック）が、Phase 1 のデータ量では一瞬であり、**検査を後回しにすると「制約はあるが違反行がある」状態を作れてしまう**。
+- 🔴 **手順 0-a を省略しない。** 上記のとおり、FORCE RLS を外さないと**手順 0-b も `ADD CONSTRAINT` の検証も両方が盲目になる**。「違反行があれば `ADD CONSTRAINT` が `23503` で落ちるから最悪でも気づける」は**この構成では成り立たない**（所有者が実行するため高速パスが選ばれ、RLS で絞られた 0 件を見て検証済みにしてしまう）。
+- 🔴 **手順 0-b も省略しない。** 違反行があるまま手順 2 に入ると `ADD CONSTRAINT` が `23503`（`foreign_key_violation`）で落ちるが、そのメッセージは制約名しか教えず「どの表に何件あるか」が分からない。**先に全表を数えて明示的に落とす**ほうが復旧が速い。
+- 🔴 **事前チェックの「空振りしないこと」自体をテストで固定する**（`tests/isolation/partner-composite-fk.test.ts`）。FK を一時的に外して違反行を差し込み、DO ブロックが必ず `RAISE` することを確かめる。**これが無いと「常に 0 件を返しているだけ」と区別できない。**
+
+##### アプリ層照合（`TARGET_SELECTION_KEYS` の許可条件②）との関係
+
+🔴 **複合 FK 化後も「見えなければ 404」のアプリ層照合は残す。外さない。** 役割が変わるだけである。
+
+| | 複合 FK 化前 | 複合 FK 化後 |
+|---|---|---|
+| アプリ層の RLS 母集団照合（`issueInvitation` の 404 等） | **防御の本体**（これが無いと他テナントの ID を書ける） | **一次防御**。正しい応答（404）を返す責務に降格 |
+| DB の FK | 実在性しか見ない | **最終防衛線**。書き漏れても他テナント参照を拒否する |
+
+残す理由は 2 つある。
+
+1. 🔴 **FK 違反は `23503` であり、写像しなければ 500 になる。** 500 と 404 が区別できると、**他テナントに実在する ID かどうかを応答コードで探れる**（500 = 実在するが他テナント / 404 = そもそも無い）。§4.8「見えない ＝ 存在しない」が崩れる。アプリ層照合が先に 404 を返すことで、**FK 違反が利用者応答に到達する経路そのものが無くなる**。
+2. 🔴 **FK はテナント境界しか見ない。第二境界の判定はそれより狭い。** 同一テナント内で、実行者に**見えてよい**取引先かどうか（C5 の母集団に入るか）は FK では判定できない。パートナー文脈の実行者が他パートナーの ID を指定するケースは FK を通ってしまう。
+
+**実装時の必須の追随**（`apps/web/lib/api/isolation-keys.ts` / `docs/05` §6.4 #14）: `TARGET_SELECTION_KEYS` のコメントにある「`invitations.partner_company_id` の FK はテナントをまたいでも成立する」という一文は**本改訂で事実でなくなる**。**条件②そのものは維持したまま**、理由を上記 1・2 に書き換える。🔴 **「FK が守るから照合は不要」と読み替えられる書き方にしないこと。**
 
 ### 3.4 ① 集める
 
@@ -1600,6 +1780,26 @@ test('経路 5 の 4 表に、パートナー文脈で真になり得る INSERT/
 test('経路 5 の射影ビュー 4 本は security_invoker=true で、列集合が §4.9 の許可列一覧と一致し、依存する表が基底 4 表 + projects + project_visibilities 以外に無い',
   /* pg_class.reloptions と information_schema.columns（table_name LIKE 'partner_%_v'）+ pg_depend / pg_rewrite を走査。列の追加は FAIL（BR-66 の項目追加は人間の承認事項）。
      extension_reviews 等 C2 の表を結合・副問い合わせしていたら FAIL（BR-67。結合先にも RLS が効くため、依存先の増加は開示か行消失のどちらかを生む） */);
+// 🔴 #14（Issue #33 / §3.3.1。2026-09-07 追加）。**末尾に置く**: 途中へ挿入して以降を繰り上げると、
+//    既存の #11〜#13 を参照している実装側のコメント（seed / route5-counterparty.test.ts 等）が
+//    一斉に指し違える。番号は「並び順」ではなく「安定した識別子」として扱う。
+test('partner_companies を参照する FK は 1 本残らず複合 FK であり、パートナー列は「複合 FK」か「継承の子の宣言」のどちらかを必ず持つ（§3.3.1 / Issue #33）',
+  /* 🔴 列挙リストを持たない（新規テーブルを取りこぼさないため、必ずカタログ走査で書く）。3 本立て:
+     ① pg_constraint の contype='f' AND confrelid='partner_companies'::regclass を全件取り、
+        conkey が 2 列で、その 1 列目が tenant_id、confkey が (tenant_id, id) であることを要求する。
+        単一列 FK（conkey が 1 列 / confkey が id 単独）が 1 本でもあれば FAIL。
+        （実装は conparentid = 0 も足す。パーティション子へ複製された FK の写しを重複計上しないため）
+     ② pg_attribute × pg_class(relkind='r') で名前が '%partner_company_id' に一致する列を全件取り
+        （🔴 relkind='v' の射影ビュー 4 本は除く。ビューは FK を持てない）、各列が
+        (a) ① の複合 FK の 1 列である、または
+        (b) pg_description が 'owner-column: child of ...' / 'counterparty-column: child of ...' である
+        のどちらかを満たすことを要求する。どちらでもない列があれば FAIL
+        —— 新しい表を足すとき「複合 FK を張る」か「継承の子として宣言する」かを決めずには通せない。
+     ③ partner_companies に UNIQUE(tenant_id, id) が存在する（① の参照先。これが消えると ① が張れない）。
+        🔴 実装は制約名ではなく pg_index の意味（unique / 非部分 / 列が (tenant_id, id) ちょうど）で見る。
+        `ADD CONSTRAINT ... UNIQUE` でも Prisma の `CREATE UNIQUE INDEX` でも成立させるため。
+     🔴 conppeqop 等ではなく confmatchtype も見る: 'MATCH FULL'（'f'）なら FAIL（§3.3.1-4。
+        ホスト所有行〔パートナー列 NULL〕が 1 行も作れなくなるため、既定の MATCH SIMPLE のみを許す） */);
 ```
 🔴 **除外リストは「4 表 + `_prisma_migrations`」だけ**であり、**新規テーブルは既定で検査対象に入る**。列挙式（対象テーブルを並べる）にすると新規テーブルを取りこぼすため、**必ず「全部から 4 つを引く」向きで書く**。🔴 **除外リストを広げて通すのは、このテストが防ごうとしている壊し方そのものである。** 新規テーブルが落ちたら §4.4 のクラスを 1 つ選んでポリシーを書く。
 
@@ -2051,7 +2251,8 @@ requireEsignConnection(ctx);                           // 🔴 §8.4。未接続
 
 - `partnerCompanyId`（禁止のまま）… **実行者自身の所属**。参照範囲を決める値であり `ctx` 以外から来てはならない。
 - `targetPartnerCompanyId`（許可）… **招待先の選択**。ホストの `OWNER` / `ADMIN` が「どの取引先に招くか」を選ぶ業務入力であり、参照範囲を決めない。
-- 🔴 このキーを受け取るルートには次の 2 つが**必ず**要る（片方でも欠けたらガードを緩めたのと同じになる）: ①実行者のスコープは引き続き `ctx` だけから決まること（`PARTNER_ADMIN` の指定値は採用せず、常に自社になる。`F-002 AC-4`）②指定された ID を **`withTenant` の内側で母集団（RLS）に照合してから使う**こと。照合しないと**他テナントの取引先企業の ID を書き込める**（`invitations.partner_company_id` の FK はテナントをまたいでも成立する）。見えなければ **404**（§4.8）。
+- 🔴 このキーを受け取るルートには次の 2 つが**必ず**要る（片方でも欠けたらガードを緩めたのと同じになる）: ①実行者のスコープは引き続き `ctx` だけから決まること（`PARTNER_ADMIN` の指定値は採用せず、常に自社になる。`F-002 AC-4`）②指定された ID を **`withTenant` の内側で母集団（RLS）に照合してから使う**こと。見えなければ **404**（§4.8）。
+- 🔴 **条件②は §3.3.1 の複合 FK 化（Issue #33 既定 C）後も外さない。** 複合 FK は「別テナントの取引先 ID」を DB で拒否するが、**それは `23503` = 500 であって 404 ではない**（500 と 404 が区別できると、他テナントに実在する ID かどうかを応答コードで探れてしまう）。かつ **FK が見るのはテナント境界だけ**であり、「実行者に見えてよい取引先か」（C5 の母集団）はそれより狭い判定である。**アプリ層照合 = 一次防御（正しい応答）/ 複合 FK = 最終防衛線（書き漏れの受け止め）** の役割分担であり、片方で他方を代替しない（詳細は §3.3.1）。
 | 15 | `GET /api/engineers` | `F-009` / `S-005` | `?skills[]=&yearsMin=&priceMin=&priceMax=&availableBy=&prefecture=&remote=&ownership=&availability=&q=&onlyInTime=&onlyCommutable=&cursor=&limit=`（🔴 **T-05-09 の骨格で実在するのは `cursor` / `limit` だけ**。検索条件は T-06-04。下記） | `{ items: (OwnEngineerView\|AnonymousCandidateView)[], total, nextCursor }`（🔴 `nextCursor` は T-05-09 で追加。下記） | 全ロール（母集団は所属で決まる）。**認可は `guards: []`**（読み取り専用。`VIEWER` も `CLOSING` も可） |
 | 16 | `POST /api/engineers` / `PATCH /api/engineers/{id}` | `F-008` / `S-007` | `EngineerInput`（🔴 `ownerPartnerCompanyId` を**含まない**） | `{ id }` | `OWNER`/`ADMIN`/`SALES`/`PA`/`PS` |
 | 17 | `GET /api/engineers/{id}` | `F-008` / `S-006` | — | `OwnEngineerDetailView` | 境界内のみ。**監査記録あり**（`BR-27`） |
@@ -4024,7 +4225,7 @@ export const logger = pino({
 | 層 | ツール | 検証するもの |
 |---|---|---|
 | **ユニット** | Vitest | `packages/domain` の純粋関数（🔴 **決定性**: スコア `F-029 AC-1` / 丸め `F-017 AC-3` / 整合層 `F-020 AC-3` / 期日計算 / 宛先分類 / 状態遷移の可否）、`packages/ai` のマスキング、`packages/connectors` の正規化 |
-| **結合（DB あり）** | Vitest + Testcontainers（PostgreSQL） | 🔴 **分離の検証**（§4.7 のカタログ走査テスト 13 本 + 二重防御テスト 10 件。経路 5 の C9 / ビュー / 書込不可を含む）、RLS ポリシー、CAS と `UNIQUE` による冪等性、パーティション、列レベル `GRANT` |
+| **結合（DB あり）** | Vitest + Testcontainers（PostgreSQL） | 🔴 **分離の検証**（§4.7 のカタログ走査テスト **14 本**〔うち 1 本は §3.3.1 のパートナー複合 FK。Issue #33〕 + 二重防御テスト 10 件。経路 5 の C9 / ビュー / 書込不可を含む）、RLS ポリシー、CAS と `UNIQUE` による冪等性、パーティション、列レベル `GRANT` |
 | **結合（キューあり）** | Vitest + ローカル Redis | ジョブの冪等性、`attempts: 1` の実効性、保留 → 自動復帰 |
 | **E2E** | Playwright | `UC-01`〜`UC-25` の主要フロー、環境分離の 3 分類、モバイルビューポートでの承認、代理閲覧の操作不可 |
 

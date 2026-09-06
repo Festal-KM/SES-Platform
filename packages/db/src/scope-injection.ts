@@ -157,6 +157,40 @@ const TENANT_RELATION_OVERRIDES: Readonly<Record<string, string | null>> = {
 };
 
 /**
+ * 🔴 Issue #33 / docs/05 §3.3.1: **パートナーを指す複合 FK が生んだ 2 本目の裏付けリレーション**。
+ *
+ * A 群 13 列の FK は
+ * `@relation(fields: [tenantId, <パートナー列>], references: [tenantId, id])` になった。
+ * その結果、これらのモデルでは **`tenantId` が 2 つの `@relation` の `fields` に現れる**
+ * （`tenant` と、ここに挙げるパートナー側の 1 本）。Prisma はスカラー列の関係間共有を許すが、
+ * **入れ子 write（`connect` / ネスト `create`）では両方の関係から同じ列が書かれうる**。
+ *
+ * したがって第 2 防御の観点では `tenant` と完全に同格であり、**同じように書き込みを拒否する**。
+ * ここに宣言しないと `data: { partnerCompany: { connect: … } }` が
+ * `<表>.tenant_id` を書き換える経路として静かに開く（`Engineer.tenant` を塞いでも
+ * `Tenant.engineers` から書けた経路 ⑥ と同型の穴）。
+ *
+ * 🔴 宣言漏れは `tenant-relation.test.ts` が DMMF 走査で落とす（新しく複合 FK を張った表を
+ *    ここに書き忘れたら CI が止まる）。DB 側の網羅性は
+ *    `tests/isolation/rls-enforced.test.ts` #14（`pg_constraint` 走査）が受け持つ。
+ */
+const PARTNER_COMPOSITE_FK_RELATION_OVERRIDES: Readonly<Record<string, readonly string[]>> = {
+  User: ['ownerPartnerCompany'],
+  Membership: ['partnerCompany'],
+  Invitation: ['partnerCompany'],
+  Engineer: ['ownerPartnerCompany'],
+  ProjectVisibility: ['partnerCompany'],
+  EngineerShare: ['partnerCompany'],
+  ProposalRequest: ['partnerCompany'],
+  Proposal: ['ownerPartnerCompany'],
+  ChatThread: ['partnerCompany'],
+  ThreadParticipant: ['partnerCompany'],
+  Message: ['senderPartnerCompany'],
+  Contract: ['counterpartyPartnerCompany'],
+  Task: ['ownerPartnerCompany'],
+};
+
+/**
  * 🔴 逆リレーション（親 → 子）の宣言。
  *
  * `Engineer.tenant`（子 → 親）を塞いでも、**同じ `engineers.tenant_id` 列は
@@ -240,6 +274,30 @@ const TENANT_KEY_MOVING_RELATION_OVERRIDES: Readonly<Record<string, readonly str
     'tenantRoleApprovalModes',
     'tenantRoleModels',
     'tenantMatchWeights',
+  ],
+  /**
+   * 🔴 Issue #33 / docs/05 §3.3.1: `PartnerCompany` 側の逆リレーション 13 本。
+   *
+   * 複合 FK 化までは、これらの逆リレーション（`partnerCompany.update({ data: { users: {…} } })`）
+   * が書けるのは `users.owner_partner_company_id` だけで、テナントキーには届かなかった。
+   * 複合 FK 化後は **相手側の FK に `tenant_id` が含まれる**ため、同じネスト write が
+   * `users.tenant_id` を書き換えうる（`Tenant.engineers` と同型の経路 ⑥）。
+   * `Tenant` と同じ扱いで一律拒否する。
+   */
+  PartnerCompany: [
+    'users',
+    'memberships',
+    'invitations',
+    'engineers',
+    'projectVisibilities',
+    'engineerShares',
+    'proposals',
+    'proposalRequests',
+    'chatThreads',
+    'threadParticipants',
+    'sentMessages',
+    'contracts',
+    'tasks',
   ],
 };
 
@@ -446,6 +504,20 @@ export function tenantRelationOf(model: string): string | null {
 }
 
 /**
+ * 🔴 そのモデルのテナントキー列を**順方向に**裏付けるリレーションの全体（Issue #33）。
+ *
+ * `tenantRelationOf`（`tenant` 1 本）に、複合 FK が生んだパートナー側の 1 本を足したもの。
+ * 「テナントキーを書けるリレーションは `tenant` だけ」という前提は複合 FK 化で成り立たなくなった
+ * ため、**この関数を唯一の出所**にする（`tenant-relation.test.ts` が DMMF と突き合わせる）。
+ */
+export function tenantKeyBackingRelationsOf(model: string): readonly string[] {
+  if (EXCLUDED.has(model)) return [];
+  const primary = tenantRelationOf(model);
+  const partner = PARTNER_COMPOSITE_FK_RELATION_OVERRIDES[model] ?? [];
+  return primary === null ? partner : [primary, ...partner];
+}
+
+/**
  * モデル名から「そのフィールドへのネスト write が**他モデルの**テナントキー列を
  * 書き換えうる」リレーションフィールド名（逆リレーション）を返す。
  * 宣言の引き当てのみを行う（射程の判断は `tenantKeyOf` が済ませている）。
@@ -460,9 +532,8 @@ export function tenantKeyMovingRelationsOf(model: string): readonly string[] {
  * 束ねる。**どちらか一方だけを見ると、もう片方が素通しの経路になる**（経路 ④ と経路 ⑥）。
  */
 function guardedRelationsOf(model: string): readonly string[] {
-  const forward = tenantRelationOf(model);
-  const inverse = tenantKeyMovingRelationsOf(model);
-  return forward === null ? inverse : [forward, ...inverse];
+  // 🔴 Issue #33: 順方向は `tenant` だけではない（複合 FK のパートナー側も同じ列を書ける）。
+  return [...tenantKeyBackingRelationsOf(model), ...tenantKeyMovingRelationsOf(model)];
 }
 
 type UnknownRecord = Record<string, unknown>;

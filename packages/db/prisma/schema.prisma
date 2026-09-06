@@ -183,7 +183,8 @@ model User {
   lastLoginAt            DateTime? @map("last_login_at") @db.Timestamptz(3)
 
   tenant              Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  ownerPartnerCompany PartnerCompany? @relation(fields: [ownerPartnerCompanyId], references: [id], onDelete: Restrict)
+  // 🔴 Issue #33 / docs/05 §3.3.1（A-1）: 複合 FK。references は PartnerCompany の @@unique([tenantId, id])。
+  ownerPartnerCompany PartnerCompany? @relation(fields: [tenantId, ownerPartnerCompanyId], references: [tenantId, id], onDelete: Restrict)
   memberships         Membership[]
 
   @@unique([tenantId, email])
@@ -204,7 +205,8 @@ model Membership {
 
   tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  partnerCompany PartnerCompany? @relation(fields: [partnerCompanyId], references: [id], onDelete: Restrict)
+  // 🔴 Issue #33 / docs/05 §3.3.1（A-2）: 複合 FK。
+  partnerCompany PartnerCompany? @relation(fields: [tenantId, partnerCompanyId], references: [tenantId, id], onDelete: Restrict)
 
   @@unique([tenantId, userId]) // 1 テナント 1 ユーザー 1 ロール
   @@index([tenantId, role, revokedAt])
@@ -250,7 +252,15 @@ model PartnerCompany {
   threadParticipants  ThreadParticipant[]
   sentMessages        Message[]
   contracts           Contract[]
+  // 🔴 Issue #33 / docs/05 §3.3.1 A-13: tasks.owner_partner_company_id は「根のオーナー列なのに
+  //    FK が 1 本も無い」既存の穴だった。本改訂で複合 FK を新規に張る（DROP ではなく ADD のみ）。
+  tasks               Task[]
 
+  // 🔴 Issue #33 / docs/05 §3.3.1-1: パートナーを指す列の複合 FK
+  //    `(tenant_id, <パートナー列>) REFERENCES partner_companies(tenant_id, id)` の参照先。
+  //    複合 FK の参照先には一意制約が要る。`id` 単独の @id は残す（既存の FK・クエリを壊さない）。
+  //    🔴 これを消すと A 群 13 本の FK が張れなくなる（rls-enforced.test.ts #14 ③ が固定する）。
+  @@unique([tenantId, id])
   @@index([tenantId, suspendedAt])
   @@map("partner_companies")
 }
@@ -272,7 +282,10 @@ model Invitation {
   createdAt               DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
 
   tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  partnerCompany PartnerCompany? @relation(fields: [partnerCompanyId], references: [id], onDelete: Restrict)
+  // 🔴 Issue #33 の発端（docs/05 §3.3.1 A-3）: ホスト文脈の INSERT では RLS の C5 が
+  //    WITH CHECK を app_is_host() で真にするため、他テナントの取引先 ID を書いても第一防御は
+  //    素通しだった。複合 FK にして DB 単独で拒否する（アプリ層の 404 照合は一次防御として残す）。
+  partnerCompany PartnerCompany? @relation(fields: [tenantId, partnerCompanyId], references: [tenantId, id], onDelete: Restrict)
 
   @@unique([tokenHash]) // 1 回限りの受諾は acceptedAt の CAS で担保
   @@index([tenantId, email, acceptedAt])
@@ -373,7 +386,8 @@ model Engineer {
   updatedAt             DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   tenant              Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  ownerPartnerCompany PartnerCompany?   @relation(fields: [ownerPartnerCompanyId], references: [id], onDelete: Restrict)
+  // 🔴 Issue #33 / docs/05 §3.3.1（A-4）: 複合 FK。
+  ownerPartnerCompany PartnerCompany?   @relation(fields: [tenantId, ownerPartnerCompanyId], references: [tenantId, id], onDelete: Restrict)
   engineerSkills      EngineerSkill[]
   skillSheets         SkillSheet[]
   matchCandidates     MatchCandidate[]
@@ -615,7 +629,8 @@ model ProjectVisibility {
 
   tenant         Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   project        Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  partnerCompany PartnerCompany @relation(fields: [partnerCompanyId], references: [id], onDelete: Restrict)
+  // 🔴 Issue #33 / docs/05 §3.3.1（A-5）: 複合 FK。
+  partnerCompany PartnerCompany @relation(fields: [tenantId, partnerCompanyId], references: [tenantId, id], onDelete: Restrict)
   // 🔴 T-02-03: T-02-02 では列のみだった review_gate_id の FK をここで解決する（前方参照の解決）。
   reviewGate     ReviewGate     @relation(fields: [reviewGateId], references: [id], onDelete: Restrict)
 
@@ -636,7 +651,8 @@ model EngineerShare {
 
   tenant         Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   engineer       Engineer       @relation(fields: [engineerId], references: [id], onDelete: Cascade)
-  partnerCompany PartnerCompany @relation(fields: [partnerCompanyId], references: [id], onDelete: Restrict)
+  // 🔴 Issue #33 / docs/05 §3.3.1（A-6）: 複合 FK。
+  partnerCompany PartnerCompany @relation(fields: [tenantId, partnerCompanyId], references: [tenantId, id], onDelete: Restrict)
 
   @@unique([tenantId, engineerId])
   @@index([tenantId, revokedAt])
@@ -718,7 +734,8 @@ model ProposalRequest {
   tenant         Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   project        Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
   engineer       Engineer       @relation(fields: [engineerId], references: [id], onDelete: Cascade)
-  partnerCompany PartnerCompany @relation(fields: [partnerCompanyId], references: [id], onDelete: Restrict)
+  // 🔴 Issue #33 / docs/05 §3.3.1（A-7）: 複合 FK。
+  partnerCompany PartnerCompany @relation(fields: [tenantId, partnerCompanyId], references: [tenantId, id], onDelete: Restrict)
   proposals      Proposal[]
 
   @@unique([tenantId, projectId, engineerId]) // 同一案件 × 同一候補への重複依頼を防ぐ
@@ -763,7 +780,8 @@ model Proposal {
   updatedAt             DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   tenant              Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  ownerPartnerCompany PartnerCompany?   @relation(fields: [ownerPartnerCompanyId], references: [id], onDelete: Restrict)
+  // 🔴 Issue #33 / docs/05 §3.3.1（A-8）: 複合 FK。
+  ownerPartnerCompany PartnerCompany?   @relation(fields: [tenantId, ownerPartnerCompanyId], references: [tenantId, id], onDelete: Restrict)
   project             Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
   engineer            Engineer          @relation(fields: [engineerId], references: [id], onDelete: Cascade)
   proposalRequest     ProposalRequest?  @relation(fields: [proposalRequestId], references: [id], onDelete: Restrict)
@@ -934,7 +952,8 @@ model ChatThread {
 
   tenant             Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   project            Project?            @relation(fields: [projectId], references: [id], onDelete: Restrict)
-  partnerCompany     PartnerCompany      @relation(fields: [partnerCompanyId], references: [id], onDelete: Restrict)
+  // 🔴 Issue #33 / docs/05 §3.3.1（A-9）: 複合 FK。
+  partnerCompany     PartnerCompany      @relation(fields: [tenantId, partnerCompanyId], references: [tenantId, id], onDelete: Restrict)
   threadParticipants ThreadParticipant[]
   messages           Message[]
 
@@ -954,7 +973,9 @@ model ThreadParticipant {
 
   tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   thread         ChatThread      @relation(fields: [threadId], references: [id], onDelete: Cascade)
-  partnerCompany PartnerCompany? @relation(fields: [partnerCompanyId], references: [id], onDelete: Restrict)
+  // 🔴 Issue #33 / docs/05 §3.3.1（A-10）: 複合 FK。partner_company_id が NULL（= ホスト）の行は
+  //    MATCH SIMPLE により照合そのものが行われない（§3.3.1-4。MATCH FULL と書かない）。
+  partnerCompany PartnerCompany? @relation(fields: [tenantId, partnerCompanyId], references: [tenantId, id], onDelete: Restrict)
 
   @@unique([tenantId, threadId, partnerCompanyId])
   @@index([tenantId, partnerCompanyId, leftAt])
@@ -981,7 +1002,9 @@ model Message {
 
   tenant               Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   thread               ChatThread      @relation(fields: [threadId], references: [id], onDelete: Cascade)
-  senderPartnerCompany PartnerCompany? @relation(fields: [senderPartnerCompanyId], references: [id], onDelete: Restrict)
+  // 🔴 Issue #33 / docs/05 §3.3.1（A-11）: 複合 FK。owner_partner_company_id は B 群（継承の子）で
+  //    あり FK を張らない（継承トリガが同一テナントの親からのみ値を取るため推移的に正しい）。
+  senderPartnerCompany PartnerCompany? @relation(fields: [tenantId, senderPartnerCompanyId], references: [tenantId, id], onDelete: Restrict)
   reviewGate           ReviewGate?     @relation(fields: [reviewGateId], references: [id], onDelete: Restrict)
 
   @@index([tenantId, threadId, sentAt])
@@ -1020,7 +1043,8 @@ model Contract {
   updatedAt                    DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   tenant                     Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  counterpartyPartnerCompany PartnerCompany?    @relation(fields: [counterpartyPartnerCompanyId], references: [id], onDelete: Restrict)
+  // 🔴 Issue #33 / docs/05 §3.3.1（A-12）: 複合 FK。
+  counterpartyPartnerCompany PartnerCompany?    @relation(fields: [tenantId, counterpartyPartnerCompanyId], references: [tenantId, id], onDelete: Restrict)
   project                    Project?           @relation(fields: [projectId], references: [id], onDelete: Restrict)
   engineer                   Engineer?          @relation(fields: [engineerId], references: [id], onDelete: Restrict)
   assignment                 Assignment?        @relation(fields: [assignmentId], references: [id], onDelete: Restrict)
@@ -1243,7 +1267,10 @@ model Task {
   autoGenerated         Boolean   @default(true) @map("auto_generated") // 🔴 true は利用者が削除できない（F-040 AC-1）
   completedAt           DateTime? @map("completed_at") @db.Timestamptz(3)
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant              Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  // 🔴 Issue #33 / docs/05 §3.3.1（A-13）: **FK を新規に張る**。根 4 表（users / engineers /
+  //    proposals / tasks）のうち tasks だけが FK を 1 本も持たない既存の穴だった。
+  ownerPartnerCompany PartnerCompany? @relation(fields: [tenantId, ownerPartnerCompanyId], references: [tenantId, id], onDelete: Restrict)
 
   @@unique([tenantId, kind, targetType, targetId]) // 二重起票を DB で防ぐ
   @@index([tenantId, assigneeUserId, state, dueOn])

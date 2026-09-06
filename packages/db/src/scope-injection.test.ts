@@ -19,6 +19,7 @@ import {
   assertPartnerBaseTableNotAccessed,
   injectPartnerViewScope,
   injectTenantScope,
+  tenantKeyBackingRelationsOf,
   tenantKeyMovingRelationsOf,
   tenantKeyOf,
   tenantRelationOf,
@@ -412,6 +413,79 @@ describe('🔴 update 系 data のテナントキー検査（行の移動を止�
         expect(() => inject('Tenant', operation, args)).toThrow(TenantRelationWriteError);
       },
     );
+
+    /**
+     * 🔴 Issue #33 / docs/05 §3.3.1: パートナーを指す FK が複合 FK
+     * （`fields: [tenantId, <パートナー列>]`）になったことで、**`tenant` 以外にも
+     * テナントキー列を書けるリレーションが生まれた**。第 2 防御はこれも塞ぐ。
+     *
+     * 塞がないと `invitation.create({ data: { partnerCompany: { connect: … } } })` が
+     * `invitations.tenant_id` を書く経路になり、`tenant` だけを塞いだ意味が無くなる
+     * （`Engineer.tenant` を塞いでも `Tenant.engineers` から書けた経路 ⑥ と同型）。
+     */
+    describe('🔴 Issue #33: 複合 FK が生んだ 2 本目の裏付けリレーション', () => {
+      it('宣言（tenantKeyBackingRelationsOf）が tenant + パートナー側の 2 本を返す', () => {
+        expect(tenantKeyBackingRelationsOf('Invitation')).toEqual(['tenant', 'partnerCompany']);
+        expect(tenantKeyBackingRelationsOf('Message')).toEqual(['tenant', 'senderPartnerCompany']);
+        expect(tenantKeyBackingRelationsOf('Contract')).toEqual([
+          'tenant',
+          'counterpartyPartnerCompany',
+        ]);
+        expect(tenantKeyBackingRelationsOf('Task')).toEqual(['tenant', 'ownerPartnerCompany']);
+        // 複合 FK を持たない表は 1 本のまま（宣言が広がりすぎていない対照）。
+        expect(tenantKeyBackingRelationsOf('Project')).toEqual(['tenant']);
+        // 射程外モデルは 0 本。
+        expect(tenantKeyBackingRelationsOf('Skill')).toEqual([]);
+      });
+
+      it.each([
+        ['Invitation', 'partnerCompany'],
+        ['Membership', 'partnerCompany'],
+        ['User', 'ownerPartnerCompany'],
+        ['Engineer', 'ownerPartnerCompany'],
+        ['ProjectVisibility', 'partnerCompany'],
+        ['EngineerShare', 'partnerCompany'],
+        ['ProposalRequest', 'partnerCompany'],
+        ['Proposal', 'ownerPartnerCompany'],
+        ['ChatThread', 'partnerCompany'],
+        ['ThreadParticipant', 'partnerCompany'],
+        ['Message', 'senderPartnerCompany'],
+        ['Contract', 'counterpartyPartnerCompany'],
+        ['Task', 'ownerPartnerCompany'],
+      ])('%s.create の data.%s は値を問わず例外にする', (model, relation) => {
+        expect(() =>
+          inject(model, 'create', { data: { [relation]: { connect: { id: 'partner-b' } } } }),
+        ).toThrow(TenantRelationWriteError);
+      });
+
+      it('🔴 PartnerCompany 側の逆リレーションも塞ぐ（partnerCompany.update から子の tenant_id を書けない）', () => {
+        expect(() =>
+          inject('PartnerCompany', 'update', {
+            where: { id: 'partner-a' },
+            data: { invitations: { connect: { id: 'invitation-b' } } },
+          }),
+        ).toThrow(TenantRelationWriteError);
+        expect(() =>
+          inject('PartnerCompany', 'update', {
+            where: { id: 'partner-a' },
+            data: { tasks: { connect: { id: 'task-b' } } },
+          }),
+        ).toThrow(TenantRelationWriteError);
+      });
+
+      it('🔴 パートナー列そのもの（スカラー）の書き込みは第 2 防御の対象外である（対照）', () => {
+        // スカラーの partnerCompanyId は「実行者の所属」ではなく業務入力になりうる
+        // （docs/05 §6.4 #14 の targetPartnerCompanyId）。ここを一律拒否すると招待が作れない。
+        // 越境は DB の複合 FK（最終防衛線）とアプリ層の RLS 母集団照合（404）が受け持つ。
+        expect(
+          inject('Invitation', 'create', {
+            data: { email: 'x@example.com', partnerCompanyId: 'partner-a' },
+          }),
+        ).toEqual({
+          data: { email: 'x@example.com', partnerCompanyId: 'partner-a', tenantId: TENANT_A },
+        });
+      });
+    });
 
     it('🔴 「オブジェクト値を一律拒否」にはしない（Json 列・DateTime・{ set: } が壊れる）', () => {
       // 宣言に無いフィールドのオブジェクト値は通ること。SP-02 で Json 列が来るため。

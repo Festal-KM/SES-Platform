@@ -1,7 +1,13 @@
 // tests/isolation/rls-enforced.test.ts
 // T-02-09（docs/sprints/SP-02-schema-isolation.md）: 🔴 分離機構が「有効であること自体」の
-// 機械検証（docs/05 §4.7 / §17.2 #1 / #2 / #4 / #5）。**docs/05 §4.7 のカタログ走査 13 本を
-// そのままテストに落とす、唯一の場所**（監査上「13 本が 1 箇所で読める」ことを優先する）。
+// 機械検証（docs/05 §4.7 / §17.2 #1 / #2 / #4 / #5）。**docs/05 §4.7 のカタログ走査 14 本を
+// そのままテストに落とす、唯一の場所**（監査上「14 本が 1 箇所で読める」ことを優先する）。
+//
+// 🔴 Issue #33（docs/05 §3.3.1 / §17.1「14 本」）で #14（パートナー FK の複合 FK 化）を足した。
+//    docs/05 §4.7 の本文では #10 と #11 の間に書かれているが、**実装では末尾の #14 とする**:
+//    途中に挿入して以降を繰り上げると、既存の #11〜#13 を参照している本ファイル外のコメント
+//    （seed / route5-counterparty.test.ts 等）が一斉に指し違える。番号は「並び順」ではなく
+//    「安定した識別子」として扱う。docs/05 §4.7 側も末尾へ移動して並びを揃えてある。
 //
 // 🔴 RLS が無効化されてもアプリは正常に動くため、機能テストでは気づけない。この網はカタログ
 //    （`pg_class` / `pg_policy` / `information_schema.role_*_grants` / Prisma DMMF）を走査し、
@@ -534,5 +540,156 @@ describe('#13 射影ビュー 4 本: security_invoker + 列集合 + 依存先の
       ).toBe(true);
     }
     expect(rows.map((row) => row.dependency)).not.toContain('extension_reviews');
+  });
+});
+
+/**
+ * 🔴 #14（docs/05 §4.7 / §3.3.1 / Issue #33）: `partner_companies` を参照する FK は
+ *    1 本残らず複合 FK であり、パートナー列は「複合 FK」か「継承の子の宣言」の
+ *    どちらかを必ず持つ。
+ *
+ * なぜ要るか: 単一列 FK（`REFERENCES partner_companies(id)`）は「その ID が実在すること」しか
+ * 見ない。ホスト文脈の `INSERT` は RLS の C5 が `app_is_host()` で `WITH CHECK` を真にするため、
+ * **他テナントの取引先 ID を書いても第一防御は素通しになる**（Issue #33 の発端）。
+ * 複合 FK `(tenant_id, <パートナー列>) REFERENCES partner_companies(tenant_id, id)` にすれば
+ * 構造的に不可能になる（`CLAUDE.md` §3.1 第二境界を DB 側で閉じる）。
+ *
+ * 🔴 **列挙リストを持たない**（新規テーブルを取りこぼさないため、必ずカタログ走査で書く）。
+ *    SP-06 以降にパートナーを指す列を持つ表が増えたとき、「複合 FK を張る」か
+ *    「継承の子として宣言する」かを決めずには通せない、という形にする。
+ */
+type PartnerFkRow = {
+  readonly table_name: string;
+  readonly conname: string;
+  readonly match_type: string;
+  readonly fk_columns: string[];
+  readonly referenced_columns: string[];
+};
+
+/** 継承の子（B 群）の宣言。docs/05 §4.4.1 の COMMENT 表記。 */
+const CHILD_DECLARATION_PREFIXES = ['owner-column: child of', 'counterparty-column: child of'];
+
+async function readPartnerCompanyForeignKeys(): Promise<PartnerFkRow[]> {
+  // 🔴 conparentid = 0: パーティション子へ複製された FK の写しを重複計上しない
+  //    （現時点で該当は無いが、将来パーティション表がパートナー列を持ったときに効く）。
+  return db.$queryRaw<PartnerFkRow[]>`
+    SELECT c.conrelid::regclass::text AS table_name,
+           c.conname,
+           c.confmatchtype::text AS match_type,
+           (SELECT array_agg(a.attname ORDER BY k.ord)
+              FROM unnest(c.conkey) WITH ORDINALITY AS k(attnum, ord)
+              JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum) AS fk_columns,
+           (SELECT array_agg(a.attname ORDER BY k.ord)
+              FROM unnest(c.confkey) WITH ORDINALITY AS k(attnum, ord)
+              JOIN pg_attribute a ON a.attrelid = c.confrelid AND a.attnum = k.attnum) AS referenced_columns
+      FROM pg_constraint c
+     WHERE c.contype = 'f'
+       AND c.confrelid = 'partner_companies'::regclass
+       AND c.conparentid = 0
+     ORDER BY 1, 2`;
+}
+
+describe('#14 partner_companies を指す FK は全て複合 FK である（docs/05 §4.7 / §3.3.1 / Issue #33）', () => {
+  it('① すべての FK が (tenant_id, <パートナー列>) → (tenant_id, id) の 2 列である', async () => {
+    const rows = await readPartnerCompanyForeignKeys();
+    // 空振り防止（対照）。docs/05 §3.3.1 の A 群 13 列が下限であり、
+    // 🔴 減ることは「複合 FK が単一列へ差し戻された / FK ごと消えた」を意味する。
+    expect(rows.length).toBeGreaterThanOrEqual(13);
+
+    const offenders = rows.filter(
+      (row) =>
+        row.fk_columns.length !== 2 ||
+        row.fk_columns[0] !== 'tenant_id' ||
+        row.referenced_columns.length !== 2 ||
+        row.referenced_columns[0] !== 'tenant_id' ||
+        row.referenced_columns[1] !== 'id',
+    );
+    expect(
+      offenders.map(
+        (row) =>
+          `${row.table_name}.${row.conname}: (${row.fk_columns.join(',')}) -> (${row.referenced_columns.join(',')})`,
+      ),
+      '単一列 FK（テナントをまたいで成立する）が残っています',
+    ).toEqual([]);
+  });
+
+  it('🔴 ① MATCH FULL（confmatchtype = f）の FK が 1 本も無い（既定の MATCH SIMPLE のみ）', async () => {
+    // 🔴 docs/05 §3.3.1-4: パートナー列の NULL は「ホスト所有」を意味する正当な値であり、
+    //    MATCH SIMPLE では照合そのものが行われない。MATCH FULL にすると
+    //    「tenant_id はあるがパートナー列は NULL」の行が拒否され、ホスト所有行を 1 行も作れなくなる。
+    const rows = await readPartnerCompanyForeignKeys();
+    expect(rows.length).toBeGreaterThan(0); // 空振り防止（対照）
+    expect(
+      rows.filter((row) => row.match_type !== 's').map((row) => `${row.conname}: ${row.match_type}`),
+    ).toEqual([]);
+  });
+
+  it('② パートナー列は「複合 FK の 1 列」か「継承の子の宣言」のどちらかを必ず持つ', async () => {
+    // 🔴 relkind で絞る: 経路 5 の射影ビュー（relkind = 'v'）にも
+    //    counterparty_partner_company_id 列があり、ビューは FK を持てない（#9 / #11 と同じ理由）。
+    const columns = await db.$queryRaw<
+      Array<{ table_name: string; column_name: string; description: string | null }>
+    >`
+      SELECT c.relname AS table_name, a.attname AS column_name, d.description
+      FROM pg_class c
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      JOIN pg_attribute a ON a.attrelid = c.oid AND NOT a.attisdropped AND a.attnum > 0
+      LEFT JOIN pg_description d ON d.objoid = c.oid AND d.objsubid = a.attnum
+      WHERE n.nspname = 'public'
+        AND c.relkind IN ('r', 'p')
+        AND NOT c.relispartition
+        AND a.attname LIKE '%partner\\_company\\_id'
+      ORDER BY 1, 2`;
+    expect(columns.length).toBeGreaterThanOrEqual(23); // 空振り防止（A 群 13 + B 群 10）
+
+    const fkColumns = new Set(
+      (await readPartnerCompanyForeignKeys()).map((row) => `${row.table_name}.${row.fk_columns[1]}`),
+    );
+
+    const offenders = columns
+      .filter((column) => !fkColumns.has(`${column.table_name}.${column.column_name}`))
+      .filter(
+        (column) =>
+          !CHILD_DECLARATION_PREFIXES.some((prefix) => (column.description ?? '').startsWith(prefix)),
+      )
+      .map((column) => `${column.table_name}.${column.column_name} (COMMENT: ${column.description ?? 'なし'})`);
+
+    expect(
+      offenders,
+      '複合 FK も継承の子の宣言も持たないパートナー列があります（docs/05 §3.3.1 の A / B のどちらかに決めてください）',
+    ).toEqual([]);
+  });
+
+  it('③ partner_companies に UNIQUE(tenant_id, id) がある（① の参照先。消えると ① が張れない）', async () => {
+    // 🔴 `ADD CONSTRAINT ... UNIQUE`（本移行）でも Prisma の `CREATE UNIQUE INDEX` でも成立する
+    //    ように、制約名ではなく「一意インデックスの意味」で検査する（複合 FK の前提条件そのもの）。
+    const rows = await db.$queryRaw<Array<{ index_name: string; columns: string[] }>>`
+      SELECT i.relname AS index_name,
+             (SELECT array_agg(a.attname ORDER BY k.ord)
+                FROM unnest(x.indkey::int2[]) WITH ORDINALITY AS k(attnum, ord)
+                JOIN pg_attribute a ON a.attrelid = x.indrelid AND a.attnum = k.attnum) AS columns
+        FROM pg_index x
+        JOIN pg_class i ON i.oid = x.indexrelid
+       WHERE x.indrelid = 'partner_companies'::regclass
+         AND x.indisunique
+         AND x.indpred IS NULL`;
+    const matching = rows.filter(
+      (row) => row.columns?.length === 2 && row.columns[0] === 'tenant_id' && row.columns[1] === 'id',
+    );
+    expect(matching.length, 'partner_companies の UNIQUE(tenant_id, id) が見つかりません').toBe(1);
+  });
+
+  it('🔴 ② の走査が射影ビューを誤検出していない（B 群を「宣言なし」と誤判定しない対照）', async () => {
+    // ビューは relkind = 'v' なので ② の母集団に入らない。入っていたら FK を持てないため
+    // 必ず FAIL する = このテスト自体が「ビューを除外できているか」の対照になる。
+    const rows = await db.$queryRaw<Array<{ relname: string }>>`
+      SELECT DISTINCT c.relname
+      FROM pg_class c
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      JOIN pg_attribute a ON a.attrelid = c.oid AND NOT a.attisdropped AND a.attnum > 0
+      WHERE n.nspname = 'public'
+        AND c.relkind = 'v'
+        AND a.attname LIKE '%partner\\_company\\_id'`;
+    expect(rows.map((row) => row.relname).sort()).toEqual([...VIEW_NAMES].sort());
   });
 });

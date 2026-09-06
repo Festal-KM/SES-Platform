@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest';
 import {
   TENANT_SCOPE_EXCLUDED_MODELS,
   TENANT_SCOPE_SYSTEM_ONLY_MODELS,
+  tenantKeyBackingRelationsOf,
   tenantKeyMovingRelationsOf,
   tenantKeyOf,
   tenantRelationOf,
@@ -76,27 +77,38 @@ describe('テナントキーを裏付けるリレーションの宣言（scope-i
         .filter((field) => (field.relationFromFields ?? []).includes(tenantKey))
         .map((field) => field.name);
 
-      const declared = tenantRelationOf(modelName);
-      // 宣言が無い（null）なら裏付けリレーションは 1 つも無いこと。
-      // 宣言があるなら、実体は宣言どおりの 1 本か、まだ存在しないかのどちらかであること。
+      // 🔴 Issue #33（docs/05 §3.3.1）: 複合 FK 化で、パートナーを指す `@relation` も
+      //    `fields` に `tenantId` を含むようになった（= 裏付けリレーションが 2 本になる表がある）。
+      //    宣言の出所は `tenantKeyBackingRelationsOf`（`tenant` + パートナー側）1 つに揃える。
+      // 宣言が空なら裏付けリレーションは 1 つも無いこと。
+      // 宣言があるなら、実体は宣言どおりのものか、まだ存在しないかのどちらかであること。
       // 🔴 「宣言に無い名前のリレーションが同じ列を書ける」状態だけを落とす。
-      const allowed = declared === null ? [] : [declared];
+      const allowed = tenantKeyBackingRelationsOf(modelName);
       expect(
         backingRelations.filter((name) => !allowed.includes(name)),
         `${modelName}: ${tenantKey} を書けるリレーション ${backingRelations.join(' / ')} が ` +
-          'scope-injection.ts の TENANT_RELATION_OVERRIDES に宣言されていません',
+          'scope-injection.ts の TENANT_RELATION_OVERRIDES / ' +
+          'PARTNER_COMPOSITE_FK_RELATION_OVERRIDES に宣言されていません',
       ).toEqual([]);
     },
   );
 
-  it('Engineer の裏付けリレーションは実体として tenant である（宣言が空振りしていない対照）', () => {
+  it('🔴 Engineer の裏付けリレーションは tenant と ownerPartnerCompany の 2 本である（Issue #33 の対照）', () => {
     const engineer = MODELS.find((model) => model.name === 'Engineer');
     const backing = (engineer?.fields ?? [])
       .filter((field) => field.kind === 'object')
       .filter((field) => (field.relationFromFields ?? []).includes('tenantId'))
       .map((field) => field.name);
-    expect(backing).toEqual(['tenant']);
+    // 🔴 複合 FK 化前は ['tenant'] だった。ここが 1 本に戻ったら、パートナー FK が
+    //    単一列へ差し戻されている（= テナントをまたぐ参照が再び成立する）。
+    expect(backing).toEqual(['tenant', 'ownerPartnerCompany']);
     expect(tenantRelationOf('Engineer')).toBe('tenant');
+    expect(tenantKeyBackingRelationsOf('Engineer')).toEqual(['tenant', 'ownerPartnerCompany']);
+  });
+
+  it('🔴 複合 FK を持たないモデルの裏付けリレーションは tenant の 1 本だけ（宣言が広がりすぎていない対照）', () => {
+    expect(tenantKeyBackingRelationsOf('Project')).toEqual(['tenant']);
+    expect(tenantKeyBackingRelationsOf('Notification')).toEqual(['tenant']);
   });
 
   it('Tenant はテナントキー（id）を裏付けるリレーションを持たない', () => {
@@ -179,6 +191,31 @@ describe('🔴 逆リレーション（他モデルのテナントキー列を�
     ];
     expect(inverseTenantKeyRelations(tenant as DmmfModel)).toEqual(expected);
     expect(tenantKeyMovingRelationsOf('Tenant')).toEqual(expected);
+  });
+
+  it('🔴 Issue #33: PartnerCompany の逆リレーション 13 本が実体と宣言で一致する（複合 FK の対照）', () => {
+    const partnerCompany = MODELS.find((model) => model.name === 'PartnerCompany');
+    expect(partnerCompany).toBeDefined();
+    // 🔴 docs/05 §3.3.1 の A 群 13 列に 1 対 1 で対応する。ここが 0 本に戻ったら、
+    //    パートナー FK が単一列へ差し戻されている（テナントをまたぐ参照が再び成立する）。
+    const expected = [
+      'users',
+      'memberships',
+      'invitations',
+      'engineers',
+      'projectVisibilities',
+      'engineerShares',
+      'proposals',
+      'proposalRequests',
+      'chatThreads',
+      'threadParticipants',
+      'sentMessages',
+      'contracts',
+      'tasks',
+    ];
+    expect(inverseTenantKeyRelations(partnerCompany as DmmfModel)).toEqual(expected);
+    expect(tenantKeyMovingRelationsOf('PartnerCompany')).toEqual(expected);
+    expect(expected).toHaveLength(13);
   });
 
   it('🔴 T-02-05: Subscription は射程外モデルのため Tenant.subscription は逆リレーションに現れない', () => {
