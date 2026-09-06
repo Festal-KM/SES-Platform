@@ -298,13 +298,21 @@ describe('🔴 F-010 AC-1: 採用されるまで正規化に使われない', ()
     expect((await aliasRow(candidateId)).status).toBe('PROPOSED');
   });
 
-  it('⚠️ `OWNER` も採否できない（docs/05 §6.4 #24 の認可が `ADMIN` / `SALES` のため）', async () => {
+  // 🔴 T-06-01（[Issue #36](https://github.com/Festal-KM/SES-Platform/issues/36) の既定 A）:
+  //    このテストは T-05-03 の時点では「`OWNER` も採否できない（403）」を固定していた。
+  //    `docs/02` `F-010 AC-1` → `docs/04` §S-009 → `docs/05` §6.4 #24 → 実装の順に
+  //    `OWNER` を採否ロールへ追加したため、**同じ論点を正のケースとして固定し直す**
+  //    （テストを消すと「`OWNER` が採否できること」を誰も守らなくなる）。
+  it('⚠️ `OWNER` は採否できる（Issue #36 既定 A。暫定）', async () => {
     const ctx = await ctxOf(HOST_1, 'OWNER');
 
-    const response = await decide(ctx, candidateId, { decision: 'REJECT' });
+    const response = await decide(ctx, candidateId, { decision: 'ACCEPT', skillId: SKILL_JAVA });
 
-    expect(response.status).toBe(403);
-    expect((await aliasRow(candidateId)).status).toBe('PROPOSED');
+    expect(response.status).toBe(204);
+    const row = await aliasRow(candidateId);
+    expect(row.status).toBe('ACCEPTED');
+    expect(row.skillId).toBe(SKILL_JAVA);
+    expect(row.decidedBy).toBe(TENANT_1.hostUserId);
   });
 
   it('🔴 正規化先を指定しない採用は 400（辞書に無い表記のまま採用されない）', async () => {

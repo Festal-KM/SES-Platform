@@ -14,9 +14,10 @@ import {
   ENGINEER_AVAILABILITY_MESSAGE_KEYS,
   ENGINEER_SKILL_LEVELS,
   ENGINEER_SKILL_LEVEL_MESSAGE_KEYS,
-  PREFECTURE_MESSAGE_KEYS,
   REMOTE_MODE_MESSAGE_KEYS,
 } from '../../../../lib/engineers/labels';
+// 🔴 T-06-01: 都道府県の写像は機能に属さない共通語彙として `lib/format/prefectures.ts` にある。
+import { PREFECTURE_MESSAGE_KEYS } from '../../../../lib/format/prefectures';
 import type { EngineerEditView } from '../../../../lib/engineers/service';
 import type {
   EngineerFormMessages,

@@ -24,6 +24,11 @@ import {
 } from '@ses/db';
 import type { PrefectureCode } from '@ses/domain';
 import { NotFoundError, ValidationError } from '../api/errors';
+// 🔴 T-06-01: `decimalToNumber` / `toIsoDay` はこのファイルにあったが、案件側
+//    （`lib/projects/service.ts`）も同じ変換を要するため `lib/format/db-values.ts` へ移した。
+//    「エンジニアのサービスから案件のサービスが import する」形にすると、機能モジュール間に
+//    意味の無い依存が生まれるため（re-export も置かない —— 入口が 2 つあると片方だけが残る）。
+import { decimalToNumber, toDateOnly, toDateOnlyString } from '../format/db-values';
 import type { CreateEngineerBody, EngineerSkillInput, UpdateEngineerBody } from './schemas';
 
 /**
@@ -120,41 +125,6 @@ export type EngineerEditView = EngineerBaseView & {
 export type EngineerViewMeta = {
   readonly ipAddress: string | null;
 };
-
-/**
- * Prisma の `Decimal` を数値にする。
- * 🔴 `@prisma/client` を import しない（ESLint が禁じる。`CLAUDE.md` §3.1）ため、
- *    `toString()` だけを要求する構造的な型で受ける。
- * 🔴 T-05-09 で `export` にした（一覧 `list.ts` と同じ変換を通す。2 本あると
- *    詳細と一覧で単価の見え方がずれる）。
- */
-export function decimalToNumber(value: { toString(): string } | null): number | null {
-  return value === null ? null : Number(value.toString());
-}
-
-/**
- * 🔴 **`@db.Date` の列専用**の変換（`available_from` など、そもそも時刻を持たない列）。
- *    Prisma は `date` 列を UTC 深夜の `Date` として読み出すため、**UTC で切り出すのが正確**であり、
- *    TZ 変換を掛けると日付が 1 日ずれる。
- *
- * 🔴 **タイムスタンプ（`updated_at` など）には使わない。** 「日単位に丸めた更新日」
- *    （`S-005` の `updatedOn`）は **JST の暦日**であり、
- *    `lib/format/datetime.ts` の `toJstIsoDay` が持つ（T-05-09 Iteration 2 の訂正）。
- *    **date-only 列とタイムスタンプでは「丸め」の意味が別物である。**
- */
-export function toIsoDay(value: Date): string {
-  return value.toISOString().slice(0, 10);
-}
-
-/** `@db.Date` の値を `YYYY-MM-DD` にする（UTC で切り出す。時刻を持たない列であるため）。 */
-function toDateOnlyString(value: Date | null): string | null {
-  return value === null ? null : toIsoDay(value);
-}
-
-/** `YYYY-MM-DD` を `@db.Date` に渡す値にする。 */
-function toDateOnly(value: string | null): Date | null {
-  return value === null ? null : new Date(`${value}T00:00:00.000Z`);
-}
 
 /**
  * 🔴 単価レンジの大小関係（`docs/04` §S-007 の 2 値入力）。

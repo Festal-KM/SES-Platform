@@ -36,6 +36,7 @@
 //
 // 🔴 直列（`workers: 1`。`playwright.config.ts`）。RLS の設定漏れは他テストの副作用で
 //    偽陽性・偽陰性になる。
+import { randomUUID } from 'node:crypto';
 import { expect, test, type Browser } from '@playwright/test';
 import { ISOLATION_SEED_PASSWORD, isolationSeedEmails } from '@ses/db/seed';
 import { t } from '../../packages/i18n/src/index';
@@ -59,13 +60,20 @@ import {
 } from './support/sessions';
 
 /**
- * 主平面の画面（`S-003` / `S-041` / `S-035` / `S-006` / `S-007` / `S-005`）。
- * 🔴 ID を取る 2 画面（詳細・編集）は **テナント A のホスト所有エンジニア**
- *    （`tenantIds(1).hostEngineerId`）で固定する —— この配列は `hostOwner(1)` のセッションで
- *    しか走査しない（②）ため、対照に使えるのは「ホスト文脈から見える行」だけである
- *    （C3 OWNER_SCOPED。上の 🔴 参照）。
+ * 主平面の画面（`S-003` / `S-041` / `S-035` / `S-006` / `S-007` / `S-005` / `S-012`）。
+ * 🔴 ID を取る画面（詳細・編集）は **テナント A のホスト所有の行**で固定する —— この配列は
+ *    `hostOwner(1)` のセッションでしか走査しない（②）ため、対照に使えるのは「ホスト文脈から
+ *    見える行」だけである（エンジニアは C3 OWNER_SCOPED。上の 🔴 参照）。
  * 🔴 T-05-09: `/engineers`（一覧。`S-005`）を足した。一覧はロールで到達を止めない
  *    （ID 不要）ため、他の 2 画面と違って固定 ID を要らない。
+ * 🔴 T-06-01: `/projects/new`（`S-012` 新規）と `/projects/{id}/edit`（同・編集）を足した。
+ *    編集側の ID は **`seed:isolation` に既に実在するホスト所有の公開案件**
+ *    （`tenantIds(1).publishedProjectId`）を使う —— `readProjectForEdit` は `requireHost` で
+ *    パートナー文脈を締め出すだけで母集団は絞らない（`projects` の RLS は C4 VISIBILITY。
+ *    `lib/projects/service.ts` 冒頭）ため、この配列を歩く `hostOwner(1)` からは公開 / 未公開の
+ *    どちらでも到達できるが、`privateProjectId`（未公開）ではなくあえて `publishedProjectId`
+ *    を選んだ理由は無い（どちらでもホスト文脈からは 200 になる）。**新規に案件を作らない**
+ *    （E2E がシードの外に行を増やすと、他テストの母集団に対する前提が崩れる）。
  */
 const MAIN_PLANE_PAGES = [
   '/',
@@ -75,6 +83,8 @@ const MAIN_PLANE_PAGES = [
   `/engineers/${tenantIds(1).hostEngineerId}`,
   '/engineers/new',
   `/engineers/${tenantIds(1).hostEngineerId}/edit`,
+  '/projects/new',
+  `/projects/${tenantIds(1).publishedProjectId}/edit`,
 ] as const;
 
 /**
@@ -448,9 +458,28 @@ test.describe('④ パートナー A1 で、パートナー A2 のものが 1 �
       expect(auditLogs.status).toBe(403);
       const settings = await apiRequest(session.page, '/api/settings/organization');
       expect(settings.status).toBe(403);
+      // 🔴 T-06-01: `POST /api/projects`（`S-012`。`PROJECT_EDITOR_ROLES` は `OWNER` /
+      //    `ADMIN` / `SALES` のみ。`lib/projects/policy.ts`）も同じ 1 層目で 403。
+      //    パートナーは案件を作れない（`docs/04` §S-012 権限差分「取引先・`VIEWER` は
+      //    到達できない」）。body は最小限（`name` は必須だが 403 は body 検証より前で決まる）。
+      const createProject = await apiRequest(session.page, '/api/projects', {
+        method: 'POST',
+        // 🔴 403 は `applyGuards` がボディの検証（Zod）より前に決める（`withApiRoute` 冒頭
+        //    「② ガード ③ Zod による境界検証」の順）ため、値そのものは判定に効かない。
+        //    それでもベタ書きしない（`audit-k7.spec.ts` の合成データ規約に倣う）。
+        body: { name: `T0601合成-isolation-forbidden-${randomUUID().slice(0, 8)}` },
+      });
+      expect(createProject.status).toBe(403);
 
       // 画面は自分のホームへ戻される（docs/04 §S-041 の権限差分）。
       await session.page.goto('/audit-logs', { waitUntil: 'domcontentloaded' });
+      expect(new URL(session.page.url()).pathname).toBe('/');
+
+      // 🔴 T-06-01: `/projects/new`（`S-012`）も同じくホームへ戻される
+      //    （`app/(main)/projects/new/page.tsx` 冒頭「到達できるのは `OWNER` / `ADMIN` /
+      //    `SALES` だけ」）。画面で止めるのは補助であり、拒否の本体は上の 403 と
+      //    `projects` の RLS（C2 の `WITH CHECK` に `app_is_host()`）である。
+      await session.page.goto('/projects/new', { waitUntil: 'domcontentloaded' });
       expect(new URL(session.page.url()).pathname).toBe('/');
     } finally {
       await session.close();

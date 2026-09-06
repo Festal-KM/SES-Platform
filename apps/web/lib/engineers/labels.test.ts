@@ -9,11 +9,13 @@ import { describe, expect, it } from 'vitest';
 import { ENGINEER_AVAILABILITIES, REMOTE_MODES } from '@ses/db';
 import { PREFECTURE_CODES } from '@ses/domain';
 import { t } from '@ses/i18n';
+// 🔴 T-06-01: 都道府県の写像は `lib/format/prefectures.ts` へ移した（案件も同じ写像を使うため）。
+//    網羅の検証は引き続きここが持つ（テストを分けると、どちらかだけが更新される）。
+import { PREFECTURE_MESSAGE_KEYS } from '../format/prefectures';
 import {
   ENGINEER_AVAILABILITY_MESSAGE_KEYS,
   ENGINEER_SKILL_LEVELS,
   ENGINEER_SKILL_LEVEL_MESSAGE_KEYS,
-  PREFECTURE_MESSAGE_KEYS,
   REMOTE_MODE_MESSAGE_KEYS,
 } from './labels';
 

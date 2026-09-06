@@ -8,11 +8,11 @@
 // 🔴 文言は `packages/i18n` が唯一の出所（`CLAUDE.md` §3.5）。本ファイルは**日本語の語を書かない**。
 //    数値の桁区切りと範囲記号（`〜`）だけが書式であり、単位・接尾辞はすべて `t()` から引く。
 import { t, type MessageKey } from '@ses/i18n';
+import { PREFECTURE_MESSAGE_KEYS } from '../format/prefectures';
 import type { EngineerDetailView, EngineerSkillView } from './service';
 import {
   ENGINEER_AVAILABILITY_MESSAGE_KEYS,
   ENGINEER_SKILL_LEVEL_MESSAGE_KEYS,
-  PREFECTURE_MESSAGE_KEYS,
   REMOTE_MODE_MESSAGE_KEYS,
 } from './labels';
 

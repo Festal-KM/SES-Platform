@@ -19,8 +19,13 @@ function target(scope: SkillAliasScope, status: string) {
 }
 
 describe('SKILL_ALIAS_DECIDER_ROLES（docs/05 §6.4 #24 / F-010 AC-1）', () => {
-  it('🔴 採否を行えるのは ADMIN / SALES だけである', () => {
-    expect([...SKILL_ALIAS_DECIDER_ROLES]).toEqual(['ADMIN', 'SALES']);
+  // ⚠️ `OWNER` は T-06-01 で追加した（Issue #36 の既定 A。暫定）。
+  it('🔴 採否を行えるのは OWNER / ADMIN / SALES だけである', () => {
+    expect([...SKILL_ALIAS_DECIDER_ROLES]).toEqual(['OWNER', 'ADMIN', 'SALES']);
+  });
+
+  it('OWNER は採否できる（Issue #36 既定 A。docs/02 章 4.2 の権限マトリクスに寄せた）', () => {
+    expect(isSkillAliasDeciderRole('OWNER')).toBe(true);
   });
 
   it('🔴 パートナーロールは 1 つも含まれない（起票のみ）', () => {
@@ -52,7 +57,13 @@ describe('decideSkillAliasDecision（採否の可否）', () => {
     });
   });
 
-  it.each(['OWNER', 'VIEWER', 'PARTNER_ADMIN', 'PARTNER_SALES'] as const)(
+  it('OWNER は PROPOSED のテナント別名を採用できる（Issue #36 既定 A）', () => {
+    expect(decideSkillAliasDecision('OWNER', target('TENANT', 'PROPOSED'), ACCEPT)).toEqual({
+      allowed: true,
+    });
+  });
+
+  it.each(['VIEWER', 'PARTNER_ADMIN', 'PARTNER_SALES'] as const)(
     '🔴 %s は採否できない（ACTOR_ROLE_NOT_ALLOWED）',
     (role) => {
       expect(decideSkillAliasDecision(role, target('TENANT', 'PROPOSED'), ACCEPT)).toEqual({

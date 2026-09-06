@@ -280,8 +280,7 @@ const SCAN_TARGETS: readonly (readonly [relative: string, text: string, absolute
  * per-job で待ち時間を変えたい正当な理由が生じたら、**ここに例外を追加するのではなく
  * `QUEUE_DEFINITIONS` に別のキューを足す**（設定が 1 箇所に残る形にする）。
  */
-function findPerJobRetryOverrides(text: string, fileName: string): number[] {
-  const sourceFile = sourceOf(text, fileName);
+function findPerJobRetryOverrides(sourceFile: ts.SourceFile): number[] {
   const lines: number[] = [];
   function visit(node: ts.Node): void {
     if (
@@ -303,8 +302,7 @@ function findPerJobRetryOverrides(text: string, fileName: string): number[] {
 }
 
 /** BullMQ の `Queue` を実体化している箇所（キュー定義の場所が 1 箇所であることの検査）。 */
-function findQueueConstructionSites(text: string, fileName: string): number[] {
-  const sourceFile = sourceOf(text, fileName);
+function findQueueConstructionSites(sourceFile: ts.SourceFile): number[] {
   const lines: number[] = [];
   function visit(node: ts.Node): void {
     if (ts.isNewExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'Queue') {
@@ -323,6 +321,38 @@ function findQueueConstructionSites(text: string, fileName: string): number[] {
   visit(sourceFile);
   return lines;
 }
+
+/**
+ * 🔴 走査対象を**モジュールスコープで 1 回だけパースし、検出も 1 回だけ行う**（T-06-01）。
+ *
+ * T-05-04 は「ディレクトリの walk と読み取り」を 1 回に畳んだが（`SCAN_TARGETS`）、
+ * **`ts.createSourceFile` は `it` ごとに走ったまま**だった（下の 2 つの検出器がそれぞれ
+ * 全ファイルを parse していた）。リポジトリのソースが増えるにつれて 1 つの `it` が
+ * 既定のテストタイムアウト（5 秒）を超えるようになったため（T-06-01 で `apps/web` に
+ * 案件のモジュール群を足した時点で恒常的に超えた）、**parse と検出をここへ引き上げる**。
+ *
+ * 🔴 **検査の内容は 1 文字も変えない。** 変えたのは「いつ走るか」だけであり、
+ *    走査対象・許可リスト・自己除外の条件はそのままである。
+ */
+const SCAN_SOURCE_FILES: readonly (readonly [relative: string, sourceFile: ts.SourceFile])[] =
+  SCAN_TARGETS.map(
+    ([relative, text, absolute]) => [relative, sourceOf(text, absolute)] as const,
+  );
+
+/** このテスト自身（検出器のセレクタを文字列として持つ）は対象外。 */
+const SELF_RELATIVE_PATH = 'tests/static/queue-attempts.test.ts';
+
+const QUEUE_CONSTRUCTION_OFFENDERS: readonly string[] = SCAN_SOURCE_FILES.filter(
+  ([relative, sourceFile]) =>
+    !QUEUE_CONSTRUCTION_ALLOWLIST.includes(relative) &&
+    relative !== SELF_RELATIVE_PATH &&
+    findQueueConstructionSites(sourceFile).length > 0,
+).map(([relative]) => relative);
+
+const PER_JOB_RETRY_OFFENDERS: readonly string[] = SCAN_SOURCE_FILES.filter(
+  ([relative, sourceFile]) =>
+    relative !== SELF_RELATIVE_PATH && findPerJobRetryOverrides(sourceFile).length > 0,
+).map(([relative]) => relative);
 
 describe('🔴 送信系キューの attempts が 1（docs/05 §17.2 #6 / §9.1 / CLAUDE.md §3.4）', () => {
   const analysis = analyzeQueueSource(readFileSync(queuesFile, 'utf8'), queuesFile);
@@ -355,25 +385,13 @@ describe('🔴 送信系キューの attempts が 1（docs/05 §17.2 #6 / §9.1 
   });
 
   it('🔴 BullMQ の import / Queue の実体化が許可リスト以外に無い（docs/05 §17.2 #6 ⑤ / §9.1）', () => {
-    const offenders: string[] = [];
-    for (const [relative, text, absolute] of SCAN_TARGETS) {
-      if (QUEUE_CONSTRUCTION_ALLOWLIST.includes(relative)) continue;
-      // このテスト自身（検出器のセレクタを文字列として持つ）は対象外。
-      if (relative === 'tests/static/queue-attempts.test.ts') continue;
-      if (findQueueConstructionSites(text, absolute).length > 0) offenders.push(relative);
-    }
-    expect(offenders).toEqual([]);
+    expect(QUEUE_CONSTRUCTION_OFFENDERS).toEqual([]);
   });
 
   it('🔴 `.add()` の per-job オプションで attempts / backoff を上書きしている箇所が無い（T-04-03）', () => {
     // 🔴 `defaultJobOptions` は既定値でしかない。enqueue 側の上書きを塞がないと、
     //    送信系キューの `attempts: 1` は「書いてあるだけ」になる。
-    const offenders: string[] = [];
-    for (const [relative, text, absolute] of SCAN_TARGETS) {
-      if (relative === 'tests/static/queue-attempts.test.ts') continue;
-      if (findPerJobRetryOverrides(text, absolute).length > 0) offenders.push(relative);
-    }
-    expect(offenders).toEqual([]);
+    expect(PER_JOB_RETRY_OFFENDERS).toEqual([]);
   });
 
   it('🔴 キュー定義（attempts を持つ表）が queues.ts 以外に無い', () => {
@@ -442,14 +460,15 @@ describe('違反 fixture（検出器そのものが働いていること）', ()
 
   it('🔴 `.add()` の per-job オプションによる attempts / backoff の上書きを検出する（T-04-03）', () => {
     const lines = findPerJobRetryOverrides(
-      readFixture('per-job-add.violation.ts'),
-      'per-job-add.violation.ts',
+      sourceOf(readFixture('per-job-add.violation.ts'), 'per-job-add.violation.ts'),
     );
     // attempts の上書きと backoff の上書きの 2 箇所。
     expect(lines).toHaveLength(2);
   });
 
   it('対照: 正常な fixture には per-job の上書きが無い', () => {
-    expect(findPerJobRetryOverrides(readFixture('clean.ok.ts'), 'clean.ok.ts')).toEqual([]);
+    expect(findPerJobRetryOverrides(sourceOf(readFixture('clean.ok.ts'), 'clean.ok.ts'))).toEqual(
+      [],
+    );
   });
 });

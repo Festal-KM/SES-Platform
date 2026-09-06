@@ -11,7 +11,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { HomeBlock } from '../../../lib/home/types';
-import { ScanQuarantineSection } from './home-sections';
+import { HostHomeSections, ScanQuarantineSection } from './home-sections';
 
 const SHEET_ID = '01930000-0000-7000-8000-0000000000d1';
 const ENGINEER_ID = '01930000-0000-7000-8000-0000000000b1';
@@ -80,5 +80,43 @@ describe('0 件のときはセクションごと出さない（docs/04 §S-004 �
 
   it('ブロックはあるが items が空なら何も描かない', () => {
     expect(render([blockOf([])])).toBe('');
+  });
+});
+
+// 🔴 T-06-01: `docs/04` §S-003 の初回空は「`S-012` / `S-007` への導線 **2 本**」である。
+//    T-03-06 で保留（両画面が未実装）→ T-05-01 で `S-007` のみ → 本タスクで 2 本そろった。
+//    「2 本あること」を固定しておかないと、片方が消えても誰も気づかない。
+describe('🔴 S-003 の初回空は S-012 / S-007 への導線 2 本（docs/04 §S-003）', () => {
+  function renderHost(options: {
+    readonly canRegisterEngineer: boolean;
+    readonly canRegisterProject: boolean;
+  }): string {
+    return renderToStaticMarkup(createElement(HostHomeSections, options));
+  }
+
+  it('両方できるロールでは、案件の登録と人材の登録の 2 本が出る', () => {
+    const html = renderHost({ canRegisterEngineer: true, canRegisterProject: true });
+
+    expect(html).toContain('data-testid="home-host-register-project"');
+    expect(html).toContain('href="/projects/new"');
+    expect(html).toContain('data-testid="home-host-register-engineer"');
+    expect(html).toContain('href="/engineers/new"');
+  });
+
+  it('🔴 案件を登録できないロールでは、その導線が DOM に存在しない（隠すのではなく描かない）', () => {
+    const html = renderHost({ canRegisterEngineer: true, canRegisterProject: false });
+
+    expect(html).not.toContain('home-host-register-project');
+    expect(html).not.toContain('href="/projects/new"');
+    // 人材側は残る（2 つのフラグを 1 つに畳んでいない）。
+    expect(html).toContain('data-testid="home-host-register-engineer"');
+  });
+
+  it('🔴 VIEWER 相当（どちらも false）でも、人材台帳の閲覧導線は残る', () => {
+    const html = renderHost({ canRegisterEngineer: false, canRegisterProject: false });
+
+    expect(html).not.toContain('home-host-register-project');
+    expect(html).not.toContain('home-host-register-engineer');
+    expect(html).toContain('data-testid="home-host-engineer-ledger"');
   });
 });

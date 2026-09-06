@@ -16,8 +16,8 @@
 import type { TenantRole } from '@ses/db';
 
 /**
- * 🔴 採否を行えるロール（docs/05 §6.4 #24 の認可 / `F-010 AC-1`「`ADMIN` または `SALES` が
- *    明示的に採用するまで」/ `docs/02` §F-010 関連ロール）。
+ * 🔴 採否を行えるロール（docs/05 §6.4 #24 の認可 / `F-010 AC-1` / `docs/02` §F-010 関連ロール /
+ *    `docs/04` §S-009 権限差分）。
  *
  * 🔴 **パートナーロール（`PARTNER_ADMIN` / `PARTNER_SALES`）は含まない**（「起票のみ」）。
  *    採用されたテナント別名はテナント全体の検索に効くため、他社が持ち込んだ表記の扱いを
@@ -25,12 +25,25 @@ import type { TenantRole } from '@ses/db';
  * 🔴 `VIEWER` も含まない（`BR-31`）。API 側では `requireRole` と `requireNotViewer` の
  *    両方で落ちる（片方だけにしない。`POST /api/engineers` と同じ規律）。
  *
- * ⚠️ **`OWNER` を含めていない。** docs/05 §6.4 #24 と `docs/02` `F-010` の関連ロールが
- *    どちらも `ADMIN` / `SALES` と書いているためであり、**権限を勝手に広げない**判断である
- *    （`docs/02` 章 4.2 の権限マトリクスは `F-010` の `OW` を `●` としており、両者は
- *    食い違っている。どちらに寄せるかは人間の判断事項。`CLAUDE.md` §8.6）。
+ * ⚠️ **`OWNER` は 2026-09-06（T-06-01）に追加した。暫定である**
+ *    （[Issue #36](https://github.com/Festal-KM/SES-Platform/issues/36) の既定 A。
+ *    `docs/dev-plan.md` §9 / `docs/sprints/SP-06` T-06-01）。
+ *    T-05-03 の時点では `docs/05` §6.4 #24 と `docs/02` `F-010` 関連ロールがどちらも
+ *    `ADMIN` / `SALES` と書いていたため 2 ロールに絞っていたが、**`docs/02` 章 4.2 の
+ *    権限マトリクスは `F-010` の `OW` を `●`** としており、記述が食い違っていた。
+ *    Issue #36 の回答が SP-05 完了確認までに得られなかったため、既定 A（マトリクス側に寄せる）で
+ *    実装する。🔴 **順序は `docs/02` → `docs/04` → `docs/05` → 実装とテスト**（`CLAUDE.md` §8.7）で
+ *    行い、3 ドキュメントとも「暫定。Issue #36 で確認中」を付した。回答が来たら 4 箇所を同時に戻す。
+ *
+ * 🔴 **並び順は `TENANT_ROLES`（`@ses/db`）と同じにする。** `policy.test.ts` の
+ *    「全ロールのうち判定が true になるのは宣言したロールだけ」が `filter` の結果と
+ *    直接比較しており、順序がずれると意味の無い赤になる。
  */
-export const SKILL_ALIAS_DECIDER_ROLES = ['ADMIN', 'SALES'] as const satisfies readonly TenantRole[];
+export const SKILL_ALIAS_DECIDER_ROLES = [
+  'OWNER',
+  'ADMIN',
+  'SALES',
+] as const satisfies readonly TenantRole[];
 
 export function isSkillAliasDeciderRole(role: TenantRole): boolean {
   return (SKILL_ALIAS_DECIDER_ROLES as readonly TenantRole[]).includes(role);
@@ -47,7 +60,7 @@ export const SKILL_ALIAS_SCOPES = ['GLOBAL', 'TENANT'] as const;
 export type SkillAliasScope = (typeof SKILL_ALIAS_SCOPES)[number];
 
 export const SKILL_ALIAS_DENIAL_REASONS = [
-  /** 実行者のロールに採否の権限が無い（`OWNER` / `VIEWER` / パートナーロール）。 */
+  /** 実行者のロールに採否の権限が無い（`VIEWER` / パートナーロール）。 */
   'ACTOR_ROLE_NOT_ALLOWED',
   /**
    * 🔴 グローバル辞書の別名である（`F-010 AC-2` / `BR-02`）。**テナントから編集できない。**

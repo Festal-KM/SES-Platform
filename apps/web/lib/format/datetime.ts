@@ -58,7 +58,7 @@ export function formatDateTimeJst(iso: string): string {
  *    （`lib/engineers/list.ts` の注記 / docs/05 §6.4「#15 の実装の決着」）。
  * ⚠️ `@db.Date` の列（`available_from` 等。そもそも時刻を持たない）には**使わない**。
  *    あちらは UTC 深夜として読み出される値であり、TZ 変換を掛けると日付がずれる
- *    （`lib/engineers/service.ts` の `toIsoDay`）。**丸めの意味が別物である。**
+ *    （`lib/format/db-values.ts` の `toIsoDay`）。**丸めの意味が別物である。**
  */
 export function toJstIsoDay(value: Date): string {
   const parts = JST_DAY_FORMATTER.formatToParts(value);

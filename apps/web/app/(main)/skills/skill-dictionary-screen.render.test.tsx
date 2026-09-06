@@ -98,7 +98,9 @@ function render(options: {
   );
 }
 
-describe('🔴 F-010 AC-1: 採否の導線は ADMIN / SALES にしか無い', () => {
+// ⚠️ T-06-01（Issue #36 既定 A）: 採否ロールに `OWNER` を足した。画面は `canDecide` の
+//    真偽しか見ないため、ロール一覧の出所（`SKILL_ALIAS_DECIDER_ROLES`）は 1 か所のままである。
+describe('🔴 F-010 AC-1: 採否の導線は OWNER / ADMIN / SALES にしか無い', () => {
   it('採否できる立場では、採用・却下のボタンと正規化先の選択が出る', () => {
     const html = render({ aliases: [alias()], canDecide: true });
 

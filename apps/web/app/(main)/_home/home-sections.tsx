@@ -13,22 +13,27 @@ import { formatDateTimeJst } from '../../../lib/format/datetime';
 import type { HomeBlock, ScanQuarantineHomeBlock } from '../../../lib/home/types';
 
 /**
- * 🔴 T-05-01: `docs/04` §S-003 の初回空は「`S-012` / `S-007` への導線 2 本」である。
+ * 🔴 T-05-01 / T-06-01: `docs/04` §S-003 の初回空は「`S-012` / `S-007` への導線 2 本」である。
  *    T-03-06 の時点では両画面とも未実装だったため導線を置かなかった（404 のリンクを作らない
- *    判断。T-03-06 の申し送り）。本タスクで `S-007` が実在するようになったので有効化する。
- *    🔴 **`S-012`（案件の登録）は SP-06 まで導線を作らない** —— 存在しない画面へのリンクは、
- *    利用者にとって「壊れている」であって「これから作る」ではない。
+ *    判断。T-03-06 の申し送り）。`S-007` は T-05-01 で、**`S-012`（案件の登録）は T-06-01 で**
+ *    実在するようになった。**これで指定どおり導線が 2 本そろった**（T-03-06 の追跡依頼を解消）。
  *
- * 🔴 `canRegisterEngineer = false`（`VIEWER`）のときは導線を**描かない**（`docs/04` §S-007
- *    権限差分「`VIEWER` は到達できない」）。到達できない画面へのリンクを出すと、押した利用者は
- *    ホームへ黙って戻されるだけで、何が起きたのか分からない。
- *    ⚠️ これは UI の配慮であって境界の担保ではない。拒否の本体は `#16` の `requireRole` /
- *    `requireNotViewer`（`BR-31` / `F-004 AC-6` / `AC-9`）と `S-007` のリダイレクトである。
+ * 🔴 `canRegisterEngineer` / `canRegisterProject` が `false` のときは導線を**描かない**
+ *    （`docs/04` §S-007 / §S-012 権限差分「到達できない」）。到達できない画面へのリンクを
+ *    出すと、押した利用者はホームへ黙って戻されるだけで、何が起きたのか分からない。
+ *    ⚠️ これは UI の配慮であって境界の担保ではない。拒否の本体は `#16` / `#26` の
+ *    `requireRole` / `requireNotViewer`（`BR-31` / `F-004 AC-6` / `AC-9`）と各画面の
+ *    リダイレクトである。
+ * 🔴 **2 つのフラグを 1 つにまとめない。** 案件の登録は `OWNER` / `ADMIN` / `SALES` のみ、
+ *    人材の登録はパートナーロールも含む（`docs/04` §S-007 / §S-012）。1 つのフラグに畳むと、
+ *    どちらかの画面で権限差分が実際とずれる。
  */
 export function HostHomeSections({
   canRegisterEngineer,
+  canRegisterProject,
 }: {
   readonly canRegisterEngineer: boolean;
+  readonly canRegisterProject: boolean;
 }) {
   return (
     <Card>
@@ -37,6 +42,15 @@ export function HostHomeSections({
       </CardHeader>
       <CardContent>
         <div className="flex flex-wrap gap-4">
+          {canRegisterProject ? (
+            <Link
+              className="ses-secondary-link"
+              href="/projects/new"
+              data-testid="home-host-register-project"
+            >
+              {t('home.host.empty.registerProject')}
+            </Link>
+          ) : null}
           {canRegisterEngineer ? (
             <Link
               className="ses-secondary-link"

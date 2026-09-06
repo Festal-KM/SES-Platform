@@ -38,7 +38,8 @@ export default async function SkillDictionaryPage() {
       <SkillDictionaryScreen
         initialAliases={aliases}
         initialSkills={skills}
-        // 🔴 パートナー所属は `ADMIN` / `SALES` になりえない（`memberships` の CHECK 制約）ため、
+        // 🔴 パートナー所属は `OWNER` / `ADMIN` / `SALES` になりえない（`memberships` の
+        //    `memberships_partner_role_check`。パートナー列と `PARTNER_*` ロールは同値）ため、
         //    このロール判定だけで「取引先は起票のみ」（`F-010 AC-1`）が成立する。
         canDecide={isSkillAliasDeciderRole(ctx.role)}
         messages={{

@@ -459,9 +459,10 @@ const ja = {
   // docs/04 §S-003「空 / ローディング / エラー」の初回空の文言をそのまま使う。
   'home.host.empty.title': 'まだ案件と人材が登録されていません',
   // 🔴 T-05-01: docs/04 §S-003 の初回空は「`S-012` / `S-007` への導線 2 本」である。
-  //    `S-007`（人材の登録）は本タスクで実在するようになったので有効化した。
-  //    `S-012`（案件の登録）は SP-06 で実装されるまで導線を作らない（404 のリンクを置かない）。
+  //    `S-007`（人材の登録）は T-05-01 で、🔴 **`S-012`（案件の登録）は T-06-01 で**
+  //    実在するようになったので、導線 2 本がここで揃った。
   'home.host.empty.registerEngineer': '人材を登録する',
+  'home.host.empty.registerProject': '案件を登録する',
   // docs/04 §S-004「空 / ローディング / エラー」の初回空の文言をそのまま使う。
   'home.partner.empty.title':
     'まだ御社に公開された案件はありません。案件が公開されると、この画面に表示されます。',
@@ -1119,11 +1120,111 @@ const ja = {
 
   'skillDictionary.value.none': '—',
 
+  // --- S-012 案件の登録・編集（docs/04 §S-012 / `F-013` / `F-010` / docs/05 §6.4 #26。T-06-01）---
+  // 🔴 `F-013 AC-1`: **必須要件と尚可要件は別区分**である。文言でも 2 ブロックを明確に分け、
+  //    「必須」が足切りに、「尚可」が加点に使われることを利用者に説明する（区分の意味が
+  //    伝わらないと、営業は全部を必須に入れて候補が 0 件になる）。
+  // 🔴 `F-013 AC-2`: **商流情報ブロックには「公開範囲の相手には表示されません」を常時添える**
+  //    （`docs/04` §S-012 主要コンポーネント）。入力欄の隣に書く（設定画面の奥に隠さない）。
+  'projects.breadcrumb.home': 'ホーム',
+  'projects.breadcrumb.list': '案件',
+  'projects.breadcrumb.new': '新規登録',
+  'projects.breadcrumb.edit': '編集',
+  'projects.new.title': '案件の登録',
+  'projects.edit.title': '案件の編集',
+
+  'projects.section.basic': '基本',
+  'projects.section.must': '必須要件',
+  'projects.section.nice': '尚可要件',
+  'projects.section.conditions': '条件',
+  'projects.section.commerce': '商流情報（内部用）',
+  'projects.section.publicSummary': '外部公開用の記載',
+
+  'projects.name.label': '案件名',
+  'projects.headcount.label': '募集人数',
+  'projects.headcount.unit': '名',
+  'projects.startDate.label': '稼働開始日',
+  'projects.status.label': '案件の状態',
+  'projects.status.OPEN': '募集中',
+  'projects.status.FILLED': '充足',
+  // 🔴 `F-045` の還流でも自動生成される状態である（`docs/04` §S-010 の状態バッジ）。
+  //    手動でも選べるが、「自動で付くことがある」ことを説明に書く。
+  'projects.status.SUCCESSOR_WANTED': '後任募集',
+  'projects.status.note':
+    '「後任募集」は、稼働が終了した案件に対して自動で設定されることがあります（後続のリリース）。',
+
+  // --- 要件エディタ（必須 / 尚可で同じ部品を使い、見出しと説明だけを変える）---
+  'projects.requirements.must.note':
+    '必須要件は候補の足切りに使われます。ここに入れた条件を満たさない候補は、マッチングの対象から外れます。',
+  'projects.requirements.nice.note':
+    '尚可要件は足切りには使われず、候補の評価にだけ使われます。「できれば欲しい」条件はこちらに入れてください。',
+  // 🔴 `docs/04` §10.1 `S-012`「必須要件 0 件で保存しようとすると警告だが保存は許す」。
+  //    止めずに、何が起きるかだけを伝える（後から埋める運用があるため）。
+  'projects.requirements.must.empty':
+    '必須要件がありません。このままでも保存できますが、候補の足切りが効きません。',
+  'projects.requirements.nice.empty': '尚可要件は登録されていません。',
+  'projects.requirements.skill.label': 'スキル（辞書から選ぶ）',
+  'projects.requirements.skill.search': 'スキル辞書から検索',
+  'projects.requirements.years.label': '必要な経験年数',
+  'projects.requirements.freeText.label': 'その他の条件（自由記述）',
+  'projects.requirements.add': 'この要件を追加',
+  'projects.requirements.remove': '削除',
+  'projects.requirements.column.requirement': '要件',
+  'projects.requirements.column.years': '必要年数',
+  'projects.requirements.column.actions': '操作',
+  'projects.requirements.years.unit': '年',
+  // 🔴 空行（スキルも自由記述も無い要件）は保存できない。理由を先に書く。
+  'projects.requirements.error.empty':
+    'スキルか自由記述のどちらかを入力してください。どちらも空の要件は登録できません。',
+  // 🔴 同じスキルを必須と尚可の両方に置けない（区分の意味が壊れるため）。
+  'projects.requirements.error.duplicate':
+    'このスキルはすでに要件に含まれています。同じスキルを必須と尚可の両方に置くことはできません。',
+
+  'projects.unitPrice.label': '単価レンジ（月額・外部公開用）',
+  'projects.unitPrice.min': '下限',
+  'projects.unitPrice.max': '上限',
+  'projects.unitPrice.unit': '円',
+  'projects.prefecture.label': '勤務地（都道府県）',
+  'projects.remoteMode.label': 'リモート可否',
+  'projects.remoteMode.FULL_REMOTE': 'フルリモート可',
+  'projects.remoteMode.PARTIAL_REMOTE': '一部リモート可',
+  'projects.remoteMode.ONSITE_ONLY': '常駐のみ',
+  'projects.value.unset': '指定しない',
+
+  // 🔴 `F-013 AC-2` / `docs/04` §S-012: 商流情報ブロックに常時添える 1 行。
+  'projects.commerce.notice':
+    'この情報は公開範囲の相手には表示されません。案件を公開しても、エンド企業名と自社単価は取引先の画面・通知・エクスポートのいずれにも出ません。',
+  'projects.endClientName.label': 'エンド企業名',
+  'projects.internalUnitPrice.label': '自社単価（月額）',
+
+  // 🔴 `docs/04` §S-012: 外部公開用の記載には「商流層の観点」を注意書きで示す（合否は判定しない）。
+  'projects.publicSummary.label': '外部公開用の記載',
+  'projects.publicSummary.note':
+    '取引先に公開されるのはこの欄の内容です。エンド企業名・自社単価・他社名を書かないでください。公開時の検査（品質ゲート）で見つかった場合、公開できません。',
+
+  'projects.save': '保存',
+  'projects.saving': '保存しています…',
+  'projects.saved': '保存しました。',
+  // 🔴 `docs/04` §10.1 `S-012`「保存失敗は入力値保持で再試行」。何が起きていないかを書く。
+  'projects.error.save': '保存できませんでした。入力内容はそのまま残しています。もう一度お試しください。',
+  'projects.cancel': 'キャンセル',
+  // 🔴 `docs/04` §10.1 `S-012`「離脱確認あり」。
+  'projects.leaveConfirm': '入力内容が保存されていません。このページを離れますか？',
+  // 🔴 `docs/04` §S-012「操作と結果」: **保存だけでは公開されない**（`F-014 AC-2`）。
+  //    ⚠️ `S-013`（公開範囲の設定）は T-06-06 で実装する。存在しない画面へのリンクは置かず、
+  //    「保存しただけでは公開されない」という事実だけを先に伝える（`careers.comingSoon` と同じ規律）。
+  'projects.visibility.comingSoon':
+    '保存しただけでは、この案件はどの取引先にも公開されません。公開範囲の設定は後続のリリースで行えます。',
+  // 🔴 境界外（他テナント）と不存在（削除済み）を区別しない 1 文（docs/05 §4.8）。
+  'projects.notFound': 'この案件の情報は見つかりませんでした。',
+
   // --- 都道府県（JIS X 0401。コードの出所は `@ses/domain` の `PREFECTURE_CODES`）---
-  // 🔴 コードと文言キーの対応は `apps/web/lib/engineers/labels.ts` の `PREFECTURE_MESSAGE_KEYS`
-  //    （`Record<PrefectureCode, MessageKey>`）が持ち、全 47 件が空でない表示名を引けることは
-  //    `apps/web/lib/engineers/labels.test.ts` が確認する。突き合わせを本パッケージに置かないのは
-  //    `@ses/i18n` に `@ses/domain` への依存を足さないためである。
+  // 🔴 コードと文言キーの対応は `apps/web/lib/format/prefectures.ts` の `PREFECTURE_MESSAGE_KEYS`
+  //    （`Record<PrefectureCode, MessageKey>`）が持つ（T-06-01 で `lib/engineers/labels.ts` から
+  //    移した。案件〔`S-012`〕も同じ写像を使うため、機能モジュールに置かない）。
+  //    全 47 件が空でない表示名を引けることは `apps/web/lib/engineers/labels.test.ts` が確認する
+  //    （検証は移さない —— 台帳の他の値集合と同じテストで一緒に見るほうが、片方だけ更新される事故が減る）。
+  //    突き合わせを本パッケージに置かないのは `@ses/i18n` に `@ses/domain` への依存を足さないためである。
   'prefecture.01': '北海道',
   'prefecture.02': '青森県',
   'prefecture.03': '岩手県',

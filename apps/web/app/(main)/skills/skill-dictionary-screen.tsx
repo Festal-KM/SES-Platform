@@ -10,7 +10,8 @@
 //    読み取り専用である旨を文言でも示す（docs/04 §S-009「空 / ローディング / エラー」）。
 //    ⚠️ 画面に操作が無いことは補助であり、拒否の本体は DB 権限（`skills` は `GRANT SELECT` のみ）と
 //    RLS（`skill_aliases` の書込は `tenant_id = app_tenant_id()`）と `#24` の認可である。
-// 🔴 **採否は `ADMIN` / `SALES` のみ**（docs/04 §S-009 権限差分 / docs/05 §6.4 #24）。
+// 🔴 **採否は `OWNER` / `ADMIN` / `SALES` のみ**（docs/04 §S-009 権限差分 / docs/05 §6.4 #24。
+//    🔴 `OWNER` は T-06-01 で追加した暫定値である。Issue #36 既定 A）。
 //    取引先（`PARTNER_ADMIN` / `PARTNER_SALES`）は起票のみ、`VIEWER` は閲覧のみ。
 //    導線を消すだけにせず「誰が決めるのか」を書く（行き止まりにしない）。
 // 🔴 Tier 3（デスクトップ主体）だが**モバイルで遮断しない**（`CLAUDE.md` §13.3）。
@@ -78,7 +79,8 @@ const ALIAS_STATUS = 'ACCEPTED';
  * 🔴 **行単位の採否可否**（`F-010 AC-2`）。ロール（`canDecide`）だけでは足りない ——
  *    `skill_aliases` の一覧にはグローバル行（`tenant_id IS NULL`）が混ざる（RLS の C1 の
  *    `SELECT` が `OR tenant_id IS NULL` を許すため。docs/05 §4.4）。グローバル行は
- *    `ADMIN` / `SALES` でも編集できない（`#24` は 403、RLS と Prisma 拡張は 0 件更新）。
+ *    採否ロール（`SKILL_ALIAS_DECIDER_ROLES`）でも編集できない（`#24` は 403、RLS と
+ *    Prisma 拡張は 0 件更新）。
  *    **拒否されるボタンを描かない**ために、行の `scope` でも判定する
  *    （`policy.ts` の `GLOBAL_ROW` と同じ規則を画面側でも 1 か所に持つ）。
  */

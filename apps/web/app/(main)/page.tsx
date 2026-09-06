@@ -22,6 +22,7 @@ import { resolveTenantCtxOutcome } from '../../lib/auth/session';
 import { sendingDomainRuntime } from '../../lib/db/bootstrap';
 import { readHomeBlocks } from '../../lib/home/blocks';
 import { getHomeView } from '../../lib/home/service';
+import { isProjectEditorRole } from '../../lib/projects/policy';
 import { isSendingDomainUnverified, resolveSendingDomainFact } from '../../lib/settings/sending-domain-fact';
 import { readSendingDomainSettings } from '../../lib/settings/sending-domains';
 import {
@@ -71,7 +72,14 @@ export default async function HomePage() {
         //    `deriveMainCapabilities`（`GET /api/me` の応答契約）には足さない ——
         //    あれは承認 / 送信 / DL / エクスポートの 4 つに閉じた型であり、
         //    「作成できるか」を混ぜると `#8` の応答の意味が変わる。
-        <HostHomeSections canRegisterEngineer={outcome.ctx.role !== 'VIEWER'} />
+        // 🔴 T-06-01: `S-012`（案件の登録）の導線を有効化した。判定は `#26` と同じ定数
+        //    （`PROJECT_EDITOR_ROLES`）を見る `isProjectEditorRole` であり、
+        //    `role !== 'VIEWER'` で代用しない —— 案件の登録はホストの 3 ロールに限られ、
+        //    人材の登録（パートナーロールも可）とは母集団が違う。
+        <HostHomeSections
+          canRegisterEngineer={outcome.ctx.role !== 'VIEWER'}
+          canRegisterProject={isProjectEditorRole(outcome.ctx.role)}
+        />
       ) : (
         <PartnerHomeSections noticeText={t(view.visibilityNotice.messageKey)} />
       )}

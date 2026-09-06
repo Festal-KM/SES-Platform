@@ -7,12 +7,9 @@
 //    ここは **I/O を持たない純粋関数だけ**で、`@ses/db` にも Prisma にも触れない。
 // 🔴 文言は `packages/i18n` が唯一の出所（`CLAUDE.md` §3.5）。本ファイルは**日本語の語を書かない**。
 import { t } from '@ses/i18n';
+import { PREFECTURE_MESSAGE_KEYS } from '../format/prefectures';
 import { formatThousands, formatUnitPriceRange } from './detail';
-import {
-  ENGINEER_AVAILABILITY_MESSAGE_KEYS,
-  PREFECTURE_MESSAGE_KEYS,
-  REMOTE_MODE_MESSAGE_KEYS,
-} from './labels';
+import { ENGINEER_AVAILABILITY_MESSAGE_KEYS, REMOTE_MODE_MESSAGE_KEYS } from './labels';
 import type { OwnEngineerView } from './list';
 
 /**

@@ -32,9 +32,12 @@ import { withTenant, type AuthenticatedTenantCtx, type EngineerAvailability, typ
 import type { PrefectureCode } from '@ses/domain';
 import { buildCursorPage, takeForCursorPage } from '../api/pagination';
 import { toJstIsoDay } from '../format/datetime';
+// 🔴 T-06-01: `decimalToNumber` / `toIsoDay` は `lib/format/db-values.ts` に移した
+//    （案件側と共有するため。`service.ts` 冒頭の注記）。詳細と一覧が**同じ変換**を通る点は変わらない。
+import { decimalToNumber, toIsoDay } from '../format/db-values';
 import { pickPrimarySkills, type EngineerSkillCandidate } from './list-rows';
 import type { EngineerListQuery } from './schemas';
-import { decimalToNumber, toIsoDay, type EngineerOwnership } from './service';
+import type { EngineerOwnership } from './service';
 
 /** 一覧に出すスキル（`docs/04` §S-005「主要スキル（上位 3 のみ表示、超過は `+N`）」）。 */
 export type OwnEngineerSkillView = {
