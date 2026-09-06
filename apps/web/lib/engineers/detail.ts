@@ -8,6 +8,10 @@
 // 🔴 文言は `packages/i18n` が唯一の出所（`CLAUDE.md` §3.5）。本ファイルは**日本語の語を書かない**。
 //    数値の桁区切りと範囲記号（`〜`）だけが書式であり、単位・接尾辞はすべて `t()` から引く。
 import { t, type MessageKey } from '@ses/i18n';
+// 🔴 3 桁区切りと単価レンジの**書式**は機能に属さない共通語彙（`lib/format/number.ts`。T-06-02 で
+//    案件詳細〔`S-011`〕も同じ書式を使うようになったため移した）。**語（単位・接尾辞）だけは
+//    画面ごとに違う**ので、ここで `packages/i18n` から引いて渡す。
+import { formatUnitPriceRange as formatRange } from '../format/number';
 import { PREFECTURE_MESSAGE_KEYS } from '../format/prefectures';
 import type { EngineerDetailView, EngineerSkillView } from './service';
 import {
@@ -38,30 +42,17 @@ function none(): string {
 }
 
 /**
- * 3 桁区切り。
- * 🔴 `toLocaleString` を使わない —— 実行環境の ICU の有無で桁区切りが変わると、
- *    サーバ描画とクライアント描画で文字列がずれる（`lib/format/datetime.ts` と同じ理由）。
- */
-export function formatThousands(value: number): string {
-  const sign = value < 0 ? '-' : '';
-  const digits = Math.abs(Math.trunc(value)).toString();
-  return sign + digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-}
-
-/**
- * 単価レンジ（月額・円）。
- * 🔴 **片側しか登録されていないレンジを `—` に畳まない。** 「60 万円以上」は営業判断に使える
- *    情報であり、両側そろっていないことを理由に隠すと `docs/01` §1.2-2 の「見えていない候補」に
- *    逆戻りする。
+ * 単価レンジ（月額・円）— **人材（`S-005` / `S-006`）の語彙で束ねたもの**。
+ * 🔴 書式そのものは `lib/format/number.ts` にあり、ここが渡すのは語だけである。
+ *    案件（`S-011`）は同じ書式を**別の語**（`projects.*`）で使う（`docs/04` の画面別文言の原則）。
  */
 export function formatUnitPriceRange(min: number | null, max: number | null): string {
-  const unit = t('engineers.unitPrice.unit');
-  if (min !== null && max !== null) {
-    return `${formatThousands(min)}〜${formatThousands(max)} ${unit}`;
-  }
-  if (min !== null) return `${formatThousands(min)} ${t('engineers.detail.unitPrice.orMore')}`;
-  if (max !== null) return `${formatThousands(max)} ${t('engineers.detail.unitPrice.orLess')}`;
-  return none();
+  return formatRange(min, max, {
+    unit: t('engineers.unitPrice.unit'),
+    orMore: t('engineers.detail.unitPrice.orMore'),
+    orLess: t('engineers.detail.unitPrice.orLess'),
+    none: none(),
+  });
 }
 
 /** 経験年数（`Decimal(4,1)`。`8` → `8 年` / `2.5` → `2.5 年`）。 */

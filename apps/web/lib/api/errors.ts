@@ -725,13 +725,41 @@ export class UploadTooLargeError extends AppError {
 
 /** 🔴 境界外の ID も必ずこれ（403 と区別しない。docs/05 §4.8）。対象 ID を含めない。 */
 export class NotFoundError extends AppError {
-  readonly code = 'NOT_FOUND';
+  // 🔴 派生（`ProjectNotSharedError`）が別のコードを名乗れるようリテラル型に固定しない
+  //    （`ForbiddenError` / `ConflictError` と同じ形）。**`httpStatus` は 404 のまま**であり、
+  //    派生を作っても「存在するが権限が無い」を漏らす 403 にはならない。
+  readonly code: string = 'NOT_FOUND';
   readonly httpStatus = 404;
   readonly userMessageKey: MessageKey = 'error.notFound';
 
   constructor() {
     super('対象が見つかりません。');
     this.name = 'NotFoundError';
+  }
+}
+
+/**
+ * 🔴 **公開が解除された案件を、以前その案件を見ていたパートナーが開いた**（404）。T-06-02。
+ *
+ * 🔴 なぜ素の `NotFoundError` と区別してよいのか（`docs/05` §4.8 との関係）:
+ *    §4.8 が禁じているのは「**知らないはずの存在**を応答コードから探れること」である。この型を
+ *    返す条件は「**自社宛の `ProjectVisibility` の行が存在する**（`revoked_at` が入っている）」の
+ *    一点であり、その行はパートナー自身が RLS の C5 で読める自社の行である。つまりこの応答が
+ *    伝えるのは**相手がすでに持っている事実**だけで、新たに漏れる情報は 1 ビットも無い。
+ *    ⚠️ 逆に、一度も公開されたことのない案件・他テナントの案件・存在しない ID は**すべて
+ *    素の `NotFoundError`** になる（区別できない）。
+ * 🔴 `httpStatus` は **404 のまま**である（`docs/05` §6.4 #27「公開範囲外のパートナーには 404」）。
+ *    変えるのは `code` と文言だけであり、`docs/04` §10.1 `S-011`「取引先: 『この案件は現在御社に
+ *    公開されていません』（404 にしない）」——すなわち**汎用の 404 ページを出さない**——を
+ *    満たすためにある（`docs/04` §S-011 の根拠は「存在は既に知っているため、404 は不正確」）。
+ */
+export class ProjectNotSharedError extends NotFoundError {
+  override readonly code = 'PROJECT_NOT_SHARED';
+  override readonly userMessageKey: MessageKey = 'projects.detail.notShared';
+
+  constructor() {
+    super();
+    this.name = 'ProjectNotSharedError';
   }
 }
 

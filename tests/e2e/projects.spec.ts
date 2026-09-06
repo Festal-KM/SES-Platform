@@ -32,12 +32,20 @@ function syntheticProjectName(): string {
   return `T0601合成案件-${randomUUID().slice(0, 8)}`;
 }
 
-/** 遷移先パスの正の形（`/projects/{uuid(7)}/edit`）。`packages/db/prisma/schema.prisma` の `Project.id` は `@default(uuid(7))`。 */
+/**
+ * 遷移先パスの正の形（`/projects/{uuid(7)}`）。`packages/db/prisma/schema.prisma` の
+ * `Project.id` は `@default(uuid(7))`。
+ *
+ * ⚠️ **T-06-02 で末尾の `/edit` を落とした。** T-06-01 は `S-011`（案件詳細）が未実装だったため
+ * 保存後に編集画面へ戻していたが、`docs/04` §S-012 関連画面は `→ S-011` である
+ * （`apps/web/lib/projects/created-href.ts`）。本テストの目的（＝ **遷移先が実行時に壊れて
+ * いないこと**の検知）は変わらないため、正規表現と保存後の確認対象だけを追従させた。
+ */
 const CREATED_HREF_PATTERN =
-  /^\/projects\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/edit$/;
+  /^\/projects\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
-test.describe('S-012 案件の登録・編集（T-06-01）', () => {
-  test('ホスト OWNER が最小入力で保存すると、実際に /projects/{採番された id}/edit へ遷移する', async ({
+test.describe('S-012 案件の登録・編集（T-06-01 / 遷移先は T-06-02 で S-011 へ）', () => {
+  test('ホスト OWNER が最小入力で保存すると、実際に /projects/{採番された id} へ遷移する', async ({
     browser,
   }: {
     browser: Browser;
@@ -69,16 +77,21 @@ test.describe('S-012 案件の登録・編集（T-06-01）', () => {
       expect(pathname, `壊れた遷移先に "Error" が含まれていないこと（実際: ${pathname}）`).not.toContain(
         'Error',
       );
-      expect(
-        pathname,
-        `遷移先が /projects/{id}/edit の形であること（実際: ${pathname}）`,
-      ).toMatch(CREATED_HREF_PATTERN);
+      expect(pathname, `遷移先が /projects/{id} の形であること（実際: ${pathname}）`).toMatch(
+        CREATED_HREF_PATTERN,
+      );
 
-      // 🔴 形だけでなく実体も見る: 編集フォームが実際に描画され、直前に保存した値を持つ
-      //    （壊れた ID で 404 に畳まれていない・別の行を指していないことの対照）。
-      await expect(session.page.getByTestId('project-form')).toBeVisible();
-      await expect(session.page.getByTestId('project-form')).toHaveAttribute('data-mode', 'EDIT');
-      await expect(session.page.getByTestId('project-name')).toHaveValue(name);
+      // 🔴 形だけでなく実体も見る: `S-011`（案件詳細）が実際に描画され、直前に保存した案件名を
+      //    出している（壊れた ID で 404 に畳まれていない・別の行を指していないことの対照）。
+      await expect(session.page.getByTestId('project-detail-screen')).toBeVisible();
+      // 🔴 ホスト文脈で開いていること（＝ 商流情報の枝。`data-audience` は射影の判別子そのもの）。
+      await expect(session.page.getByTestId('project-detail-screen')).toHaveAttribute(
+        'data-audience',
+        'HOST',
+      );
+      await expect(session.page.getByTestId('project-detail-name')).toHaveText(name);
+      // 🔴 `F-014 AC-2`: 保存しただけでは誰にも公開されていない。登録者がその場で気づける。
+      await expect(session.page.getByTestId('project-detail-visibility-warning')).toBeVisible();
 
       session.outbound.assertNone();
     } finally {

@@ -1218,6 +1218,51 @@ const ja = {
   // 🔴 境界外（他テナント）と不存在（削除済み）を区別しない 1 文（docs/05 §4.8）。
   'projects.notFound': 'この案件の情報は見つかりませんでした。',
 
+  // --- S-011 案件詳細（docs/04 §S-011 / `F-013` / `F-014` / docs/05 §6.4 #27。T-06-02）---
+  // 🔴 `F-013 AC-2`: **取引先の画面にエンド企業名・自社単価が出ない。** 担保は文言ではなく
+  //    応答の型（`PartnerProjectDetailView`）と `select` であり、ここにあるのは
+  //    「取引先には何が見えているのか」を取引先自身に説明するための文言である。
+  // 🔴 `F-014 AC-4` / `BR-07`: **公開先の社数・社名を指す文言を 1 つも置かない**
+  //    （「他 N 社にも公開されています」に相当する語彙を作らない）。
+  'projects.detail.title': '案件詳細',
+  'projects.detail.valueNone': '—',
+  'projects.detail.unitPrice.orMore': '円以上',
+  'projects.detail.unitPrice.orLess': '円以下',
+  'projects.detail.section.headline': '見出し',
+  'projects.detail.section.requirements': '要件',
+  'projects.detail.section.conditions': '条件',
+  'projects.detail.section.commerce': '商流情報（内部用）',
+  'projects.detail.section.publicSummary': '外部公開用の記載',
+  'projects.detail.section.visibility': '公開範囲',
+  'projects.detail.section.proposals': 'この案件への提案',
+  // 🔴 `docs/04` §S-011「セクション 5 の見出しに母集団を添える」（取引先側）。
+  'projects.detail.section.ownProposals': '提案（御社が作成した提案）',
+  'projects.detail.edit': '編集',
+  // 🔴 `BR-27` / `F-013 AC-3`: 閲覧が記録されることを本人に伝える（`S-006` と同じ規律）。
+  'projects.detail.viewRecorded': 'この案件の閲覧は監査ログに記録されます。',
+  // 🔴 `docs/04` §S-011「公開範囲未設定（ホスト）→ 警告として要件の上に置く」（`F-014 AC-2`）。
+  'projects.detail.visibility.empty':
+    'この案件はまだどの取引先にも公開されていません。公開範囲を設定するまで、取引先の一覧・検索・通知のいずれにも現れません。',
+  'projects.detail.visibility.column.partner': '取引先',
+  'projects.detail.visibility.column.publishedOn': '公開日',
+  // ⚠️ `docs/04` §S-011 の公開先テーブルは「提案数」列を持つが、`Proposal` は後続のリリース。
+  'projects.detail.visibility.proposalCountComingSoon':
+    '公開先ごとの提案数は、提案機能とあわせて後続のリリースで表示されます。',
+  'projects.detail.visibility.settingsComingSoon':
+    '公開範囲の設定は後続のリリースで行えます。',
+  // 🔴 `docs/04` §S-011 取引先セクション 4「公開されている旨の説明」。
+  'projects.detail.partner.published':
+    'この案件は御社に公開されています。表示されているのは、公開範囲の相手に向けて用意された内容だけです。',
+  // 🔴 `docs/04` §10.1 `S-011`: 取引先が公開解除された案件を開いた場合。**汎用の 404 ページに
+  //    しない**（存在は既に知っているため、「見つかりません」は不正確である）。
+  'projects.detail.notShared':
+    'この案件は現在御社に公開されていません。公開範囲が変更された可能性があります。ご不明な点は担当者にお問い合わせください。',
+  // 🔴 `docs/04` §10.1 `S-011`「提案 0 件 → ホスト / 取引先で別文言」。
+  'projects.detail.proposals.emptyHost': 'まだ提案はありません。',
+  'projects.detail.proposals.emptyPartner': '御社からの提案はまだありません。',
+  'projects.detail.proposals.comingSoon': '提案の一覧は後続のリリースで表示されます。',
+  'projects.detail.candidates.comingSoon': '候補の検索は後続のリリースで行えます。',
+
   // --- 都道府県（JIS X 0401。コードの出所は `@ses/domain` の `PREFECTURE_CODES`）---
   // 🔴 コードと文言キーの対応は `apps/web/lib/format/prefectures.ts` の `PREFECTURE_MESSAGE_KEYS`
   //    （`Record<PrefectureCode, MessageKey>`）が持つ（T-06-01 で `lib/engineers/labels.ts` から

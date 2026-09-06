@@ -1,15 +1,25 @@
 // tests/isolation/projects.test.ts
-// 🔴 SP-06 T-06-01 の完了判定を **DB + RLS 付きで**実証する（`F-013 AC-1` / `AC-3`）:
+// 🔴 SP-06 T-06-01 / T-06-02 の完了判定を **DB + RLS 付きで**実証する（`F-013 AC-1`〜`AC-3`）:
 //
 //   AC-1 🔴 **必須要件と尚可要件が別の区分として保持され、後続（`F-020` の整合層 /
 //        `F-029` の足切り）が区分を参照できる**
 //        → `project_requirements.kind` で `MUST` / `NICE` を**区分ごとに取得できる**ことを
 //          DB の行で確かめる（本ファイルの中心）
+//   AC-2 🔴 **エンド企業名と内部単価が、公開範囲に含まれる相手の画面・エクスポート・通知の
+//        いずれにも表示されない**（T-06-02）
+//        → `GET /api/projects/{id}`（#27）の**取引先向け応答にフィールドが存在しない**ことを、
+//          実 DB + RLS を通した応答ボディで確かめる（型の担保は
+//          `apps/web/lib/projects/detail-view.types.test.ts`。**片方だけにしない**）
 //   AC-3 案件（詳細相当）の閲覧が `AuditLog` に記録される
-//        → `S-012`（編集フォーム）の初期値読み取りが `project.view` を残す。
+//        → `S-012`（編集フォーム）の初期値読み取りが `project.view` を残す（`via=EDIT_FORM`）。
+//          `S-011` / `#27` の詳細閲覧も同じ action を残す（`via=DETAIL`。T-06-02）。
 //          🔴 **境界外（404）では記録が残らない**（起きなかった閲覧を記録しない）
 //
 // 併せて次を固定する:
+//   - 🔴 `F-014 AC-4` / `BR-07`: 2 社に公開した案件で、**A 社の応答に B 社の存在が 0 件**。
+//   - 🔴 `docs/04` §10.1 `S-011`: 公開が**解除された**取引先だけが「公開されていません」を受け取り、
+//     一度も公開されていない取引先・他テナントは**素の 404 と区別できない**。
+//   - 🔴 `F-004 AC-6` / `AC-8`: `VIEWER` も `CLOSING` のテナントも**詳細を閲覧できる**。
 //   - 認可（docs/05 §6.4 #26 / `docs/04` §S-012）: **パートナーと `VIEWER` は案件を作れない**。
 //     🔴 パートナーは `requireRole` の 403 だけでなく、RLS の C2（`app_is_host()`）でも止まる。
 //   - 境界（docs/05 §4.8）: 他テナントの案件 ID を直接叩いても **404**（不存在と区別しない）。
@@ -30,7 +40,12 @@ import {
   type TenantRole,
 } from '@ses/db';
 import { createUnextendedClient, type UnextendedClient } from '@ses/db/testing';
-import { GLOBAL_SKILL_IDS, ISOLATION_SEED_IDS, runSeed } from '@ses/db/seed';
+import {
+  GLOBAL_SKILL_IDS,
+  ISOLATION_FORBIDDEN_MARKERS,
+  ISOLATION_SEED_IDS,
+  runSeed,
+} from '@ses/db/seed';
 import { startIsolationDatabase, type IsolationDatabase } from './support/postgres.js';
 
 const SETUP_TIMEOUT_MS = 600_000;
@@ -46,14 +61,17 @@ vi.mock('../../apps/web/lib/auth/session', () => ({
 }));
 
 const { buildTenantCtx } = await import('../../apps/web/lib/auth/tenant-context');
-const { NotFoundError } = await import('../../apps/web/lib/api/errors');
-const { readProjectForEdit } = await import('../../apps/web/lib/projects/service');
+const { NotFoundError, ProjectNotSharedError } = await import('../../apps/web/lib/api/errors');
+const { PROJECT_DETAIL_SELECT_KEYS, readProjectDetail, readProjectForEdit } = await import(
+  '../../apps/web/lib/projects/service'
+);
 const projectsRoute = await import('../../apps/web/app/api/(main)/projects/route');
 const projectRoute = await import('../../apps/web/app/api/(main)/projects/[id]/route');
 
 const TENANT_1 = ISOLATION_SEED_IDS.tenants[0];
 const TENANT_2 = ISOLATION_SEED_IDS.tenants[1];
 const PARTNER_1_1 = TENANT_1.partners[0];
+const PARTNER_1_2 = TENANT_1.partners[1];
 
 const HOST_1: TenantIdentity = {
   tenantId: TENANT_1.tenantId,
@@ -70,12 +88,21 @@ const PARTNER_USER_1: TenantIdentity = {
   partnerCompanyId: PARTNER_1_1.partnerCompanyId,
   userId: PARTNER_1_1.userId,
 };
+/** 🔴 2 社目。**同じテナントの別パートナー**であり、経路 1 の越境が社ごとに閉じることの対照。 */
+const PARTNER_USER_2: TenantIdentity = {
+  tenantId: TENANT_1.tenantId,
+  partnerCompanyId: PARTNER_1_2.partnerCompanyId,
+  userId: PARTNER_1_2.userId,
+};
 
 /** 実在しない ID（境界外の ID と応答が一致することの比較対象。docs/05 §4.8）。 */
 const NONEXISTENT_ID = '01930000-0000-7000-8000-00000000fee1';
 
 /** 🔴 テストが作った行だけを片付けるための目印。 */
 const MARKER = 'T0601-';
+
+/** seed が作った公開範囲の行（テストが足した行だけを消すための基準）。 */
+const SEED_VISIBILITY_IDS = [TENANT_1.visibilityId, TENANT_2.visibilityId];
 
 const SKILL_JAVA = GLOBAL_SKILL_IDS['Java'] ?? '';
 const SKILL_AWS = GLOBAL_SKILL_IDS['AWS'] ?? '';
@@ -156,6 +183,14 @@ async function patchProject(
   );
 }
 
+/** `GET /api/projects/{id}`（#27。T-06-02）を**実物の Route Handler**で叩く。 */
+async function getProject(ctx: AuthenticatedTenantCtx, id: string): Promise<Response> {
+  requireTenantCtxMock.mockResolvedValue(ctx);
+  return projectRoute.GET(new Request(`https://app.test/api/projects/${id}`), {
+    params: Promise.resolve({ id }),
+  });
+}
+
 async function createdIdOf(response: Response): Promise<string> {
   expect(response.status).toBe(201);
   return ((await response.json()) as CreatedBody).id;
@@ -220,7 +255,12 @@ afterEach(async () => {
   await setRole(HOST_1, 'SALES');
   await setRole(HOST_2, 'SALES');
   await setRole(PARTNER_USER_1, 'PARTNER_SALES');
+  await setRole(PARTNER_USER_2, 'PARTNER_SALES');
   await admin.partnerCompany.updateMany({ data: { suspendedAt: null } });
+  // 🔴 T-06-02: 公開範囲は seed の 1 行（パートナー 1 社目）だけに戻す
+  //    （公開解除・2 社公開のテストが seed の前提を書き換えるため）。
+  await admin.projectVisibility.deleteMany({ where: { id: { notIn: SEED_VISIBILITY_IDS } } });
+  await admin.projectVisibility.updateMany({ data: { revokedAt: null } });
   // 🔴 `project_requirements` は `ON DELETE CASCADE`（migration 20260903010000）。
   await admin.project.deleteMany({ where: { name: { startsWith: MARKER } } });
   await admin.auditLog.deleteMany({ where: { action: { in: PROJECT_AUDIT_ACTIONS } } });
@@ -621,5 +661,248 @@ describe('単価レンジの整合（docs/04 §S-012 セクション 4）', () =
 
     expect(response.status).toBe(400);
     expect((await projectRow(id)).unitPriceMax?.toString()).toBe('800000');
+  });
+});
+
+// ===========================================================================
+// T-06-02: 案件詳細と商流情報の射影（`GET /api/projects/{id}` = #27 / `S-011`）
+// ===========================================================================
+
+/** 応答ボディを素のオブジェクトとして読む（🔴 **キーの有無**を数えるため型を付けない）。 */
+type DetailBody = Record<string, unknown>;
+
+async function detailBodyOf(response: Response): Promise<DetailBody> {
+  expect(response.status).toBe(200);
+  return (await response.json()) as DetailBody;
+}
+
+/** 公開範囲の行を足す（🔴 経路 1 の唯一の根拠。ゲート結果は seed の 1 件を使い回す）。 */
+async function publishTo(partnerCompanyId: string): Promise<void> {
+  await admin.projectVisibility.create({
+    data: {
+      tenantId: TENANT_1.tenantId,
+      projectId: TENANT_1.publishedProjectId,
+      partnerCompanyId,
+      publishedAt: NOW,
+      publishedBy: TENANT_1.hostUserId,
+      reviewGateId: TENANT_1.publishGateId,
+    },
+  });
+}
+
+/** 公開解除（`revoked_at` を入れる。RLS の C4 が `revoked_at IS NULL` を見る）。 */
+async function revokeVisibilityOf(partnerCompanyId: string): Promise<void> {
+  const updated = await admin.projectVisibility.updateMany({
+    where: { projectId: TENANT_1.publishedProjectId, partnerCompanyId },
+    data: { revokedAt: NOW },
+  });
+  if (updated.count !== 1) throw new Error('公開範囲の行が 1 件ではありません（前提の破綻）。');
+}
+
+describe('🔴 F-013 AC-2: 商流情報の射影（取得時に分ける）', () => {
+  it('ホストの応答には商流情報が含まれる（対照）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+
+    const body = await detailBodyOf(await getProject(ctx, TENANT_1.publishedProjectId));
+
+    expect(body['audience']).toBe('HOST');
+    expect(String(body['endClientName'])).toContain(ISOLATION_FORBIDDEN_MARKERS.endClientName);
+    expect(body['internalUnitPrice']).toBe(ISOLATION_FORBIDDEN_MARKERS.internalUnitPrice);
+  });
+
+  it('🔴 取引先の応答に `endClientName` / `internalUnitPrice` の**キーが存在しない**', async () => {
+    const ctx = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
+
+    const body = await detailBodyOf(await getProject(ctx, TENANT_1.publishedProjectId));
+
+    expect(body['audience']).toBe('PARTNER');
+    // 🔴 `undefined` で返しているのではなく、キーそのものが無い。
+    expect(Object.keys(body)).not.toContain('endClientName');
+    expect(Object.keys(body)).not.toContain('internalUnitPrice');
+    // 🔴 値も 1 文字も現れない（別のキー名に紛れ込んでいないことの確認）。
+    const serialized = JSON.stringify(body);
+    expect(serialized).not.toContain(ISOLATION_FORBIDDEN_MARKERS.endClientName);
+    expect(serialized).not.toContain(String(ISOLATION_FORBIDDEN_MARKERS.internalUnitPrice));
+  });
+
+  it('🔴 取引先にも判断材料（要件・外部公開用のレンジ・公開用の記載）は届く', async () => {
+    const ctx = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
+
+    const body = await detailBodyOf(await getProject(ctx, TENANT_1.publishedProjectId));
+
+    expect(body['publicSummary']).toBe('公開用の概要（合成データ）');
+    expect(body['remoteMode']).toBe('PARTIAL_REMOTE');
+    const requirements = body['requirements'] as readonly Record<string, unknown>[];
+    expect(requirements).toHaveLength(1);
+    expect(requirements[0]?.['kind']).toBe('MUST');
+    expect(requirements[0]?.['freeText']).toBe('TypeScript 3 年');
+  });
+
+  it('🔴 取引先向けの `select` に商流情報の列が 1 つも無い（SQL としても取得していない）', () => {
+    expect(PROJECT_DETAIL_SELECT_KEYS.partner).not.toContain('endClientName');
+    expect(PROJECT_DETAIL_SELECT_KEYS.partner).not.toContain('internalUnitPrice');
+    // 対照: ホスト側は読んでいる（＝ 列の存在ではなく **読む／読まない** で分かれている）。
+    expect(PROJECT_DETAIL_SELECT_KEYS.host).toContain('endClientName');
+    expect(PROJECT_DETAIL_SELECT_KEYS.host).toContain('internalUnitPrice');
+  });
+});
+
+describe('🔴 F-014 AC-4 / BR-07: 他のパートナーの存在が現れない', () => {
+  it('2 社に公開した案件で、A 社の応答に B 社の社名・件数が 0 件', async () => {
+    await publishTo(PARTNER_1_2.partnerCompanyId);
+    const partnerB = await admin.partnerCompany.findUniqueOrThrow({
+      where: { id: PARTNER_1_2.partnerCompanyId },
+      select: { name: true },
+    });
+    const ctx = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
+
+    const body = await detailBodyOf(await getProject(ctx, TENANT_1.publishedProjectId));
+    const serialized = JSON.stringify(body);
+
+    expect(Object.keys(body)).not.toContain('visibilities');
+    expect(Object.keys(body)).not.toContain('visibleToCount');
+    expect(serialized).not.toContain(partnerB.name);
+    expect(serialized).not.toContain(PARTNER_1_2.partnerCompanyId);
+  });
+
+  it('ホストには公開先が見える（対照。2 社が決定的な順序で並ぶ）', async () => {
+    await publishTo(PARTNER_1_2.partnerCompanyId);
+    const ctx = await ctxOf(HOST_1, 'SALES');
+
+    const body = await detailBodyOf(await getProject(ctx, TENANT_1.publishedProjectId));
+
+    const visibilities = body['visibilities'] as readonly Record<string, unknown>[];
+    expect(visibilities).toHaveLength(2);
+    const names = visibilities.map((row) => String(row['partnerCompanyName']));
+    expect([...names].sort((a, b) => a.localeCompare(b))).toEqual(names);
+  });
+
+  it('🔴 解除済みの公開先はホストの「現在の公開先」に出ない', async () => {
+    await revokeVisibilityOf(PARTNER_1_1.partnerCompanyId);
+    const ctx = await ctxOf(HOST_1, 'SALES');
+
+    const body = await detailBodyOf(await getProject(ctx, TENANT_1.publishedProjectId));
+
+    expect(body['visibilities']).toEqual([]);
+  });
+});
+
+describe('🔴 案件詳細の境界（docs/05 §4.8 / docs/04 §10.1 S-011）', () => {
+  it('公開されていない案件・他テナント・不存在は取引先からすべて同じ 404', async () => {
+    const ctx = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
+
+    const unpublished = await getProject(ctx, TENANT_1.privateProjectId);
+    const missing = await getProject(ctx, NONEXISTENT_ID);
+    const foreign = await getProject(ctx, TENANT_2.publishedProjectId);
+
+    for (const response of [unpublished, missing, foreign]) {
+      expect(response.status).toBe(404);
+      expect(((await response.json()) as ErrorBody).error.code).toBe('NOT_FOUND');
+    }
+  });
+
+  it('🔴 1 社目に公開中の案件でも、2 社目には 404（社ごとに閉じている）', async () => {
+    const ctx = await ctxOf(PARTNER_USER_2, 'PARTNER_SALES');
+
+    const response = await getProject(ctx, TENANT_1.publishedProjectId);
+
+    expect(response.status).toBe(404);
+    expect(((await response.json()) as ErrorBody).error.code).toBe('NOT_FOUND');
+  });
+
+  it('🔴 公開が解除された取引先だけが「公開されていません」を受け取る（HTTP は 404 のまま）', async () => {
+    await revokeVisibilityOf(PARTNER_1_1.partnerCompanyId);
+    const revokedCtx = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
+    const neverSharedCtx = await ctxOf(PARTNER_USER_2, 'PARTNER_SALES');
+
+    const revoked = await getProject(revokedCtx, TENANT_1.publishedProjectId);
+    const neverShared = await getProject(neverSharedCtx, TENANT_1.publishedProjectId);
+
+    // 🔴 HTTP は 404 のまま（docs/05 §6.4 #27）。変わるのは文言を選ぶためのコードだけである。
+    expect(revoked.status).toBe(404);
+    expect(((await revoked.json()) as ErrorBody).error.code).toBe('PROJECT_NOT_SHARED');
+    // 🔴 一度も公開されていない相手には**この区別が漏れない**（素の 404）。
+    expect(neverShared.status).toBe(404);
+    expect(((await neverShared.json()) as ErrorBody).error.code).toBe('NOT_FOUND');
+  });
+
+  it('🔴 画面が受け取る例外も同じ（`ProjectNotSharedError` は `NotFoundError` の派生）', async () => {
+    await revokeVisibilityOf(PARTNER_1_1.partnerCompanyId);
+    const ctx = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
+
+    const error = await readProjectDetail(ctx, TENANT_1.publishedProjectId, {
+      ipAddress: null,
+    }).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ProjectNotSharedError);
+    expect(error).toBeInstanceOf(NotFoundError);
+  });
+
+  it('🔴 ホストが他テナントの案件を叩いても 404', async () => {
+    const ctx = await ctxOf(HOST_2, 'SALES');
+
+    const response = await getProject(ctx, TENANT_1.publishedProjectId);
+
+    expect(response.status).toBe(404);
+    expect(((await response.json()) as ErrorBody).error.code).toBe('NOT_FOUND');
+  });
+});
+
+describe('🔴 F-013 AC-3 / BR-27: 詳細閲覧の監査ログ', () => {
+  it('ホストの詳細閲覧が `project.view`（`via=DETAIL`）を残す', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+
+    await detailBodyOf(await getProject(ctx, TENANT_1.publishedProjectId));
+
+    const rows = await auditRows('project.view');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.targetType).toBe('Project');
+    expect(rows[0]?.targetId).toBe(TENANT_1.publishedProjectId);
+    expect(summaryOf(rows[0]!)['via']).toBe('DETAIL');
+    // 🔴 `CLAUDE.md` §13.3: デバイス種別を必ず残す（モバイルだけ漏れる実装にしない）。
+    expect(rows[0]?.deviceKind).toBe('api');
+    // 🔴 docs/05 §16.2: 案件名・エンド企業名・単価を `summary` に載せない。
+    const serialized = JSON.stringify(summaryOf(rows[0]!));
+    expect(serialized).not.toContain(ISOLATION_FORBIDDEN_MARKERS.endClientName);
+    expect(serialized).not.toContain(String(ISOLATION_FORBIDDEN_MARKERS.internalUnitPrice));
+  });
+
+  it('🔴 取引先の詳細閲覧も同じ action で残る（記録が視点で漏れない）', async () => {
+    const ctx = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
+
+    await detailBodyOf(await getProject(ctx, TENANT_1.publishedProjectId));
+
+    const rows = await auditRows('project.view');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.actorId).toBe(PARTNER_1_1.userId);
+    expect(summaryOf(rows[0]!)['via']).toBe('DETAIL');
+  });
+
+  it('🔴 404 でも「公開解除」でも閲覧は記録されない（起きなかった閲覧を残さない）', async () => {
+    const ctx1 = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
+    expect((await getProject(ctx1, TENANT_1.privateProjectId)).status).toBe(404);
+
+    await revokeVisibilityOf(PARTNER_1_1.partnerCompanyId);
+    const ctx2 = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
+    expect((await getProject(ctx2, TENANT_1.publishedProjectId)).status).toBe(404);
+
+    expect(await auditRows('project.view')).toHaveLength(0);
+  });
+});
+
+describe('🔴 F-004 AC-6 / AC-8: 案件詳細の閲覧は止めない', () => {
+  it('`VIEWER` も案件詳細を読める（閲覧のみ可）', async () => {
+    const ctx = await ctxOf(HOST_1, 'VIEWER');
+
+    const body = await detailBodyOf(await getProject(ctx, TENANT_1.publishedProjectId));
+
+    expect(body['audience']).toBe('HOST');
+  });
+
+  it('`CLOSING` のテナントでも案件詳細を読める（実行系だけを止める）', async () => {
+    await setLifecycle(TENANT_1.tenantId, 'CLOSING');
+    const ctx = await ctxOf(HOST_1, 'SALES');
+
+    expect((await getProject(ctx, TENANT_1.publishedProjectId)).status).toBe(200);
   });
 });

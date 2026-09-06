@@ -33,16 +33,16 @@ describe('🔴 登録直後の遷移先パターン（S-012）', () => {
     expect(typeof CREATED_HREF_ID_PLACEHOLDER).toBe('string');
   });
 
-  it('🔴 パターンが `/projects/{id}/edit` そのものである（暫定値。T-06-02 で差し替え）', () => {
-    expect(PROJECT_CREATED_HREF_PATTERN).toBe('/projects/{id}/edit');
+  it('🔴 パターンが `/projects/{id}` そのものである（T-06-02 で `S-011` に差し替えた）', () => {
+    expect(PROJECT_CREATED_HREF_PATTERN).toBe('/projects/{id}');
   });
 
   it('🔴 パターンに関数のソースが混ざっていない（client reference の混入検知）', () => {
     expect(PROJECT_CREATED_HREF_PATTERN).toContain(CREATED_HREF_ID_PLACEHOLDER);
     expect(PROJECT_CREATED_HREF_PATTERN).not.toContain('function');
     expect(PROJECT_CREATED_HREF_PATTERN).not.toContain('Error');
-    // パス区切りは 3 つだけ（`/projects` / `/{id}` / `/edit`）。
-    expect(PROJECT_CREATED_HREF_PATTERN.split('/')).toHaveLength(4);
+    // パス区切りは 2 つだけ（`/projects` / `/{id}`）。
+    expect(PROJECT_CREATED_HREF_PATTERN.split('/')).toHaveLength(3);
   });
 });
 
@@ -50,13 +50,11 @@ describe('buildCreatedHref', () => {
   it('差し込み記号を採番された ID で置き換える', () => {
     expect(
       buildCreatedHref(PROJECT_CREATED_HREF_PATTERN, '01930000-0000-7000-8000-0000000000f1'),
-    ).toBe('/projects/01930000-0000-7000-8000-0000000000f1/edit');
+    ).toBe('/projects/01930000-0000-7000-8000-0000000000f1');
   });
 
   it('🔴 ID は URL エンコードされる（応答の値をそのまま連結しない）', () => {
-    expect(buildCreatedHref(PROJECT_CREATED_HREF_PATTERN, 'a/b?c')).toBe(
-      '/projects/a%2Fb%3Fc/edit',
-    );
+    expect(buildCreatedHref(PROJECT_CREATED_HREF_PATTERN, 'a/b?c')).toBe('/projects/a%2Fb%3Fc');
   });
 
   it('差し込み記号を持たないパターンはそのまま返る（置換に失敗しても壊れた URL を作らない）', () => {

@@ -1,20 +1,18 @@
 // apps/web/app/api/(main)/projects/[id]/route.ts
-// docs/05 §6.4 #26 `PATCH /api/projects/{id}`（`F-013` / `S-012`）。T-06-01。
+// docs/05 §6.4 #26 `PATCH /api/projects/{id}`（`F-013` / `S-012`。T-06-01）と
+// #27 `GET /api/projects/{id}`（`F-013` / `S-011`。T-06-02）。
 //
 // 🔴 `{id}` は**操作対象の指定**であって実行者のスコープではない。母集団は RLS が決め、
 //    境界外の ID は 404 になる（docs/05 §4.8「見えない ＝ 存在しない」）。
-// 🔴 認可は `PROJECT_EDITOR_ROLES`（`OWNER` / `ADMIN` / `SALES`）。パートナーは 403 であり、
+// 🔴 PATCH の認可は `PROJECT_EDITOR_ROLES`（`OWNER` / `ADMIN` / `SALES`）。パートナーは 403 であり、
 //    かつ `projects` の RLS（C2 の UPDATE。`app_is_host()`）が DB でも拒否する。
-//
-// ⚠️ **`GET /api/projects/{id}`（#27。`HostProjectDetailView` / `PartnerProjectDetailView` の
-//    射影）は T-06-02 が足す。** 本タスクで export しない —— 商流情報の射影を分ける設計が
-//    T-06-02 の中核であり、先に「ホスト用だけ返す GET」を置くと、パートナー向けの型を
-//    後から**削る**作業になる（`docs/sprints/SP-06` T-06-02 の 🔴）。
 import { requireExecutable, requireNotViewer, requireRole } from '../../../../../lib/api/guards';
 import { withApiRoute } from '../../../../../lib/api/withApiRoute';
+import { readRequestMeta } from '../../../../../lib/auth/session';
 import { PROJECT_EDITOR_ROLES } from '../../../../../lib/projects/policy';
 import {
   PROJECT_AUDIT_ACTIONS,
+  readProjectDetail,
   requirementCounts,
   updateProject,
 } from '../../../../../lib/projects/service';
@@ -25,6 +23,30 @@ import {
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+/**
+ * `GET /api/projects/{id}`（docs/05 §6.4 #27 / `F-013` / `S-011`）。T-06-02。
+ *
+ * 🔴 **応答の型はホストと取引先で違う**（`HostProjectDetailView` / `PartnerProjectDetailView`）。
+ *    分けているのは**取得時の射影**であり（`readProjectDetail`）、このハンドラは受け取った
+ *    view をそのまま返す。**ここでフィールドを落とす後処理を書かない**（書いた時点で
+ *    「取得後に隠す」実装に戻る。`docs/sprints/SP-06` T-06-02 の 🔴）。
+ * 🔴 **閲覧の `AuditLog` は `readProjectDetail` の中（業務トランザクション）で書く**
+ *    （`BR-27` / `F-013 AC-3`。`#17` と同じ判断）。ここに `audit` オプションを置かないのは、
+ *    ①`S-011` の画面（サーバコンポーネント）は Route Handler を通らないためルート側に置くと
+ *    **画面経路だけ記録が漏れる** ②`audit` はハンドラの前に別トランザクションで書くため、
+ *    **404（境界外・不存在）でも「閲覧した」記録が残る** —— の 2 点による。
+ * 🔴 読み取り専用なので `requireExecutable` / `requireNotViewer` を掛けない
+ *    （`CLOSING` でも閲覧できる = `F-004 AC-8`。`VIEWER` は閲覧のみ可 = `F-004 AC-6`）。
+ *    全ロールが到達するが、**見える行は RLS の C4 が決める**（`guards: []` は「掛け忘れ」ではない）。
+ */
+export const GET = withApiRoute(
+  { label: 'GET /api/projects/{id}', guards: [], params: projectParamsSchema },
+  async ({ ctx, params }) => {
+    const meta = await readRequestMeta();
+    return Response.json(await readProjectDetail(ctx, params.id, { ipAddress: meta.ipAddress }));
+  },
+);
 
 /** 監査ログに残す「どの項目を更新したか」（🔴 値ではなくキー名。商流情報の値を残さない）。 */
 function changedFieldsOf(body: Record<string, unknown>): string {

@@ -12,7 +12,6 @@ import {
   engineerBasicRows,
   engineerDetailSkillRows,
   engineerHeadlineRows,
-  formatThousands,
   formatUnitPriceRange,
   formatYears,
 } from './detail';
@@ -37,19 +36,9 @@ function view(overrides: Partial<EngineerDetailView> = {}): EngineerDetailView {
   };
 }
 
-describe('formatThousands', () => {
-  it.each([
-    [0, '0'],
-    [999, '999'],
-    [1000, '1,000'],
-    [650000, '650,000'],
-    [99999999, '99,999,999'],
-  ])('%s を %s にする', (value, expected) => {
-    expect(formatThousands(value)).toBe(expected);
-  });
-});
-
-describe('formatUnitPriceRange（🔴 片側だけの登録を畳まない）', () => {
+// 🔴 `formatThousands` そのものの検証は `lib/format/number.test.ts` へ移した（T-06-02。
+//    案件詳細も同じ書式を使うようになったため）。ここに残すのは**人材の語彙で束ねた結果**である。
+describe('formatUnitPriceRange（🔴 片側だけの登録を畳まない。語は engineers.* から引く）', () => {
   it('両端がある', () => {
     expect(formatUnitPriceRange(650000, 750000)).toBe(`650,000〜750,000 ${t('engineers.unitPrice.unit')}`);
   });

@@ -5,10 +5,12 @@
 //    区分は `project_requirements.kind`（CHECK 付き）で持ち、`F-020` の整合層と `F-029` の足切りが
 //    **区分だけを見て**照合できる形にする。順序・フラグ・命名規約で代用しない。
 //
-// 🔴 **商流情報（`endClientName` / `internalUnitPrice`）はここでは「保持するだけ」である**
-//    （`F-013` 処理②）。公開範囲の相手に出さない担保は**取得時の射影**（T-06-02 の
-//    `PartnerProjectDetailView`。docs/05 §6.4 #27）であり、本モジュールは書き込み経路として
-//    列を持つ。🔴 **監査ログの `summary` には値を載せない**（docs/05 §16.2「単価・エンド企業名を
+// 🔴 **商流情報（`endClientName` / `internalUnitPrice`）を公開範囲の相手に出さない担保は
+//    「取得時の射影」である**（`F-013 AC-2`。T-06-02 で `readProjectDetail` が実装した）:
+//    パートナー文脈の `select`（`PARTNER_PROJECT_DETAIL_SELECT`）に 2 列が現れないため、
+//    SQL としても取得しておらず、応答型（`PartnerProjectDetailView`）にもフィールドが無い。
+//    **取得してから隠す経路を 1 つも作らない。**
+//    🔴 **監査ログの `summary` には値を載せない**（docs/05 §16.2「単価・エンド企業名を
 //    入れない」）—— 載せると運営者の横断検索（`F-058`）から商流情報が読めてしまう。
 //
 // 🔴 本モジュールは Next.js / Auth.js に依存しない（`@ses/db` のみ）。結合テストがサーバを
@@ -23,7 +25,8 @@ import {
   type RequirementKind,
 } from '@ses/db';
 import type { PrefectureCode } from '@ses/domain';
-import { NotFoundError, ValidationError } from '../api/errors';
+import { NotFoundError, ProjectNotSharedError, ValidationError } from '../api/errors';
+import { toJstIsoDay } from '../format/datetime';
 import { decimalToNumber, toDateOnly, toDateOnlyString } from '../format/db-values';
 import type {
   CreateProjectBody,
@@ -54,12 +57,14 @@ export const PROJECT_AUDIT_ACTIONS = {
 
 /**
  * `project.view` の `summary.via`。
- * 🔴 T-06-01 の時点で存在する経路は編集フォームだけである。**`DETAIL`（`S-011` / `#27`）は
- *    T-06-02 が足す** —— 動かせない値を先回りで宣言しない（`ENGINEER_VIEW_VIA` と同じ規律）。
+ * 🔴 経路の違いは**ここにだけ**残す（action 名を分けない。`S-041` の操作種別フィルタは
+ *    接尾辞一致であり、`project.detail_view` のような名前は検索から漏れる）。
  */
 export const PROJECT_VIEW_VIA = {
-  /** `S-012` 編集フォームの初期値読み取り。 */
+  /** `S-012` 編集フォームの初期値読み取り（T-06-01）。 */
   editForm: 'EDIT_FORM',
+  /** `S-011` 案件詳細 / `GET /api/projects/{id}`（#27。T-06-02）。 */
+  detail: 'DETAIL',
 } as const;
 
 export type ProjectViewVia = (typeof PROJECT_VIEW_VIA)[keyof typeof PROJECT_VIEW_VIA];
@@ -83,9 +88,8 @@ export type ProjectRequirementView = {
  *
  * 🔴 **これはホスト専用の view である**（`docs/04` §S-012 権限差分「取引先・`VIEWER` は
  *    到達できない」）。商流情報（`endClientName` / `internalUnitPrice`）を含むため、
- *    **パートナー向けの応答型として流用してはならない**。パートナー向けの
- *    `PartnerProjectDetailView`（商流フィールドを**型として持たない**）は T-06-02 が定義する
- *    （docs/05 §6.4 #27 / `docs/sprints/SP-06` T-06-02）。
+ *    **パートナー向けの応答型として流用してはならない**。パートナーが読むのは
+ *    `PartnerProjectDetailView`（商流フィールドを**型として持たない**。本ファイル下部）だけである。
  */
 export type ProjectEditView = {
   readonly id: string;
@@ -105,6 +109,81 @@ export type ProjectEditView = {
   readonly publicSummary: string | null;
   readonly requirements: readonly ProjectRequirementView[];
 };
+
+// ============================================================================
+// 🔴 `GET /api/projects/{id}`（#27）/ `S-011` の応答型 —— **ホストと取引先で型が違う**
+// ============================================================================
+// `F-013 AC-2` / `F-014 AC-3` / `docs/sprints/SP-06` T-06-02:
+//   「エンド企業名と内部単価は、公開範囲に含まれる相手の画面・エクスポート・通知のいずれにも
+//    表示されない」。担保は **`undefined` を返すこと**ではなく **型が違うこと**である
+//   （docs/05 §4.8 の `PartnerProposalView` / `HostProposalView` と同じ思想）。
+// 🔴 さらに `F-014 AC-4` / `BR-07`:「公開先パートナーは、同じ案件に公開されている他のパートナーの
+//    社名・件数を知る手段を持たない」。したがって `PartnerProjectDetailView` は
+//    `visibilities` / `visibleToCount` に相当するフィールドも**型として**持たない。
+
+/** ホスト・取引先の双方に出す項目（`docs/04` §S-011 のセクション 1〜3）。 */
+type ProjectDetailShared = {
+  readonly id: string;
+  readonly name: string;
+  readonly status: ProjectStatus;
+  readonly headcount: number;
+  /** `YYYY-MM-DD` または `null`。 */
+  readonly startDate: string | null;
+  /**
+   * 🔴 **外部公開用の単価レンジ**（`docs/04` §S-011 取引先セクション 3「外部公開用の単価レンジのみ」）。
+   *    内部限定の `internalUnitPrice`（自社単価）とは**別の列**である（`docs/05` §3.5）。
+   */
+  readonly unitPriceMin: number | null;
+  readonly unitPriceMax: number | null;
+  readonly prefecture: PrefectureCode | null;
+  readonly remoteMode: RemoteMode | null;
+  /** 🔴 公開時に外へ出るのはこの列だけである（`docs/05` §3.5）。 */
+  readonly publicSummary: string | null;
+  readonly requirements: readonly ProjectRequirementView[];
+};
+
+/** `S-011` セクション 5（ホストのみ）の公開先 1 件。 */
+export type ProjectVisibilityView = {
+  readonly partnerCompanyId: string;
+  readonly partnerCompanyName: string;
+  /** 公開日（`YYYY-MM-DD`。JST の暦日）。 */
+  readonly publishedOn: string;
+};
+
+/**
+ * ホスト向けの案件詳細（`docs/04` §S-011 のセクション 1〜6）。
+ * 🔴 商流情報（`endClientName` / `internalUnitPrice`）と公開範囲を**ここにだけ**置く。
+ */
+export type HostProjectDetailView = ProjectDetailShared & {
+  readonly audience: 'HOST';
+  /** 🔴 内部限定（`F-013 AC-2`）。 */
+  readonly endClientName: string | null;
+  /** 🔴 内部限定（同上）。 */
+  readonly internalUnitPrice: number | null;
+  /** 現在の公開先（解除済みは含まない）。`docs/04` §S-011 セクション 5。 */
+  readonly visibilities: readonly ProjectVisibilityView[];
+};
+
+/**
+ * 取引先向けの案件詳細（`docs/04` §S-011 の取引先セクション 1〜3・5）。
+ *
+ * 🔴 **商流情報のフィールドが「存在しない」。** `?: never` を置くのは、うっかり値を入れた実装が
+ *    **コンパイルで落ちる**ようにするためである（docs/05 §6.4 #14 の `ProductionInvitationView`
+ *    の `inviteUrl?: never` と同じ手法）。単に omit すると、判別可能な合併の枝を取り違えたときに
+ *    「余剰プロパティ検査をすり抜ける経路」が残る。
+ * 🔴 **他社の存在を示すフィールドも同じ扱い**（`F-014 AC-4` / `BR-07` / `docs/04` §3.2
+ *    「`S-011` の案件詳細に『公開先: 3 社』を出さない」）。件数・社名・「他 N 件」のいずれも無い。
+ */
+export type PartnerProjectDetailView = ProjectDetailShared & {
+  readonly audience: 'PARTNER';
+  readonly endClientName?: never;
+  readonly internalUnitPrice?: never;
+  readonly visibilities?: never;
+  readonly visibleToCount?: never;
+};
+
+/** `#27` の応答（🔴 判別子は `audience`）。 */
+export type ProjectDetailView = HostProjectDetailView | PartnerProjectDetailView;
 
 /**
  * 🔴 単価レンジの大小関係（`docs/04` §S-012 セクション 4 の 2 値入力）。
@@ -378,8 +457,8 @@ async function recordProjectView(
  *    保証されない**。呼び出し元（`S-012`）は `PROJECT_EDITOR_ROLES` で絞っているが、
  *    それは 1 層目に過ぎない。`HostOnlyContextError` は API 境界で **404** に写像される
  *    （`lib/api/errors.ts`）ので、誤った経路が生えても商流情報は 1 バイトも出ない。
- *    ⚠️ パートナー向けの `PartnerProjectDetailView`（商流フィールドを**型として持たない**）は
- *    T-06-02 が別に定義する（docs/05 §6.4 #27）。**この関数を流用しない。**
+ *    ⚠️ パートナーの読み取りは `readProjectDetail`（本ファイル下部）だけである。
+ *    **この関数を流用しない。**
  * 🔴 見えない行の「閲覧」は無いので、404 のときは記録も残さない。
  */
 export async function readProjectForEdit(
@@ -425,6 +504,197 @@ export async function readProjectForEdit(
       publicSummary: row.publicSummary,
       requirements: await readProjectRequirements(db, row.id),
     };
+  });
+}
+
+// ============================================================================
+// 🔴 `GET /api/projects/{id}`（#27）/ `S-011` —— **取得時の射影で分ける**
+// ============================================================================
+// 🔴 「取得後に隠す」実装にしない（`docs/02` 申し送り 13-④ / `docs/05` §4.9 の選択と同じ理由）:
+//    取得してからシリアライザで落とす形は、API 応答・ログ・エクスポート・将来の別経路の
+//    どこか 1 つで必ず漏れる。**読まない列は `select` に書かない。**
+// 🔴 したがって `select` の定数を 2 本に分け、パートナー側の定数には
+//    `endClientName` / `internalUnitPrice` という**識別子が 1 度も現れない**
+//    （T-05-03 の `SKILL_ALIAS_SELECT` が `proposedBy` / `decidedBy` を書かないのと同じ形）。
+//    実行時の担保は `tests/isolation/projects.test.ts`、型の担保は
+//    `apps/web/lib/projects/detail-view.types.test.ts` である。
+
+/** ホスト・取引先の双方が読む列（`ProjectDetailShared` と 1 対 1）。 */
+const PROJECT_DETAIL_SHARED_SELECT = {
+  id: true,
+  name: true,
+  status: true,
+  headcount: true,
+  startDate: true,
+  unitPriceMin: true,
+  unitPriceMax: true,
+  prefecture: true,
+  remoteMode: true,
+  publicSummary: true,
+} as const;
+
+/**
+ * 🔴 **パートナー文脈が読む列の全部**。商流情報の 2 列がここに無いことが `F-013 AC-2` の担保である。
+ *    ⚠️ この定数に列を足すことは、公開範囲の相手へ出す項目を増やすことと同義である。
+ */
+const PARTNER_PROJECT_DETAIL_SELECT = PROJECT_DETAIL_SHARED_SELECT;
+
+/** ホスト文脈が読む列（共通 + 商流情報の 2 列）。 */
+const HOST_PROJECT_DETAIL_SELECT = {
+  ...PROJECT_DETAIL_SHARED_SELECT,
+  endClientName: true,
+  internalUnitPrice: true,
+} as const;
+
+/** 🔴 レビューが「増えていないこと」を数えられるように、両定数の列を export する。 */
+export const PROJECT_DETAIL_SELECT_KEYS = {
+  host: Object.keys(HOST_PROJECT_DETAIL_SELECT),
+  partner: Object.keys(PARTNER_PROJECT_DETAIL_SELECT),
+} as const;
+
+/** `PROJECT_DETAIL_SHARED_SELECT` で読んだ行 → 共通部分の view。 */
+function toSharedDetail(
+  row: {
+    readonly id: string;
+    readonly name: string;
+    readonly status: string;
+    readonly headcount: number;
+    readonly startDate: Date | null;
+    readonly unitPriceMin: { toString(): string } | null;
+    readonly unitPriceMax: { toString(): string } | null;
+    readonly prefecture: string | null;
+    readonly remoteMode: string | null;
+    readonly publicSummary: string | null;
+  },
+  requirements: readonly ProjectRequirementView[],
+): ProjectDetailShared {
+  return {
+    id: row.id,
+    name: row.name,
+    status: row.status as ProjectStatus,
+    headcount: row.headcount,
+    startDate: toDateOnlyString(row.startDate),
+    unitPriceMin: decimalToNumber(row.unitPriceMin),
+    unitPriceMax: decimalToNumber(row.unitPriceMax),
+    prefecture: row.prefecture as PrefectureCode | null,
+    remoteMode: row.remoteMode as RemoteMode | null,
+    publicSummary: row.publicSummary,
+    requirements,
+  };
+}
+
+/**
+ * 現在の公開先（`docs/04` §S-011 セクション 5。**ホストだけが呼ぶ**）。
+ *
+ * 🔴 `revokedAt: null` に絞る。解除済みは「現在の公開先」ではない（`F-014` 処理④ の
+ *    「公開解除時、対象パートナーの一覧からその案件が消える」と同じ述語であり、
+ *    RLS の C4 が `revoked_at IS NULL` を見るのと鏡写しである）。
+ * ⚠️ `docs/04` §S-011 の公開先テーブルは「会社名 / 公開日 / **提案数**」だが、**提案数は
+ *    出していない**（`proposals` は SP-09 で入る。0 が並ぶ列を先に置くと「提案が無い」と
+ *    「まだ数えられない」が区別できない）。
+ */
+async function readProjectVisibilities(
+  db: ProjectDb,
+  projectId: string,
+): Promise<readonly ProjectVisibilityView[]> {
+  const rows = await db.projectVisibility.findMany({
+    where: { projectId, revokedAt: null },
+    select: {
+      partnerCompanyId: true,
+      publishedAt: true,
+      // 🔴 `partner_companies` は同じ ctx の RLS（ホストは C2 / C5 で自テナント全社）で絞られる。
+      partnerCompany: { select: { name: true } },
+    },
+    // 🔴 決定的な順序（docs/05 §4.8）。会社名 → ID でタイブレークする。
+    orderBy: [{ partnerCompany: { name: 'asc' } }, { partnerCompanyId: 'asc' }],
+  });
+  return rows.map((row) => ({
+    partnerCompanyId: row.partnerCompanyId,
+    partnerCompanyName: row.partnerCompany.name,
+    publishedOn: toJstIsoDay(row.publishedAt),
+  }));
+}
+
+/**
+ * 🔴 **パートナー文脈で案件が読めなかったときに、404 と「公開解除された」を分ける唯一の判定。**
+ *
+ * `docs/04` §S-011 / §10.1: 取引先が公開解除された案件を開いた場合は「この案件は現在御社に
+ * 公開されていません」を出す（**汎用の 404 ページにしない**）。理由は「存在は既に知っているため、
+ * 404 は不正確」であり、その「既に知っている」の根拠が**自社宛の `ProjectVisibility` の行**である。
+ *
+ * 🔴 したがってこの判定は**自社の行の有無だけ**を見る。他社の行は RLS の C5
+ * （`partner_company_id = app_partner_id()`）で 1 行も見えず、加えてアプリ側でも
+ * `partnerCompanyId`（🔴 **ctx から取る。リクエスト入力ではない**）を `where` に入れて
+ * **第 2 防御**にする（docs/05 §4.1 / §4.9 と同じ二重防御。C5 が静かに無効化されても、
+ * 他社の公開状況からこの分岐が動くことはない）。
+ * 🔴 「越境の判断をアプリの `if` に書かない」（`CLAUDE.md` §3.1）に反しない —— 案件が**見える／
+ * 見えない**を決めているのは最後まで RLS の C4 であり、ここで決めているのは
+ * **すでに見えなかったものの断り方**（文言）だけである。
+ */
+async function projectWasSharedWithPartner(
+  db: ProjectDb,
+  projectId: string,
+  partnerCompanyId: string,
+): Promise<boolean> {
+  const row = await db.projectVisibility.findFirst({
+    where: { projectId, partnerCompanyId },
+    select: { id: true },
+  });
+  return row !== null;
+}
+
+/**
+ * `GET /api/projects/{id}`（#27）と `S-011` の唯一の読み取り経路。T-06-02。
+ *
+ * 🔴 **応答の型はホストと取引先で違う**（`HostProjectDetailView` / `PartnerProjectDetailView`）。
+ *    分岐は `ctx.partnerCompanyId`（🔴 認証コンテキスト）だけで決まり、リクエスト入力は見ない。
+ * 🔴 **境界外の ID は 404**（docs/05 §4.8）。母集団を絞るのは `projects` の RLS（C4。
+ *    ホストは全件、パートナーは**自社に公開中の案件のみ**）であり、ここに `where` を足さない。
+ *    公開が解除されると C4 の `revoked_at IS NULL` が偽になり、行はその時点で消える。
+ * 🔴 **閲覧を `AuditLog` に記録する**（`BR-27` / `F-013 AC-3`）。記録は業務トランザクションの
+ *    内側にあり、書けなければ内容は返らない。**見えなかった案件の「閲覧」は記録しない。**
+ * 🔴 画面（サーバコンポーネント）と Route Handler が**同じこの関数**を通る。経路によって
+ *    記録が漏れない（`CLAUDE.md` §13.3「モバイルだけ記録が漏れる実装にしない」）。
+ */
+export async function readProjectDetail(
+  ctx: AuthenticatedTenantCtx,
+  id: string,
+  meta: ProjectViewMeta,
+): Promise<ProjectDetailView> {
+  const { partnerCompanyId } = ctx;
+
+  if (partnerCompanyId === null) {
+    return withTenant(ctx, async (db) => {
+      const row = await db.project.findFirst({ where: { id }, select: HOST_PROJECT_DETAIL_SELECT });
+      if (row === null) throw new NotFoundError();
+
+      const requirements = await readProjectRequirements(db, row.id);
+      const visibilities = await readProjectVisibilities(db, row.id);
+      await recordProjectView(db, ctx, row.id, PROJECT_VIEW_VIA.detail, meta);
+
+      return {
+        ...toSharedDetail(row, requirements),
+        audience: 'HOST',
+        endClientName: row.endClientName,
+        internalUnitPrice: decimalToNumber(row.internalUnitPrice),
+        visibilities,
+      };
+    });
+  }
+
+  return withTenant(ctx, async (db) => {
+    // 🔴 商流情報の 2 列は `select` に無い ＝ SQL としても取得していない。
+    const row = await db.project.findFirst({ where: { id }, select: PARTNER_PROJECT_DETAIL_SELECT });
+    if (row === null) {
+      throw (await projectWasSharedWithPartner(db, id, partnerCompanyId))
+        ? new ProjectNotSharedError()
+        : new NotFoundError();
+    }
+
+    const requirements = await readProjectRequirements(db, row.id);
+    await recordProjectView(db, ctx, row.id, PROJECT_VIEW_VIA.detail, meta);
+
+    return { ...toSharedDetail(row, requirements), audience: 'PARTNER' };
   });
 }
 

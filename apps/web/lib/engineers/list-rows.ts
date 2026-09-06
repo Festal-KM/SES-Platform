@@ -7,8 +7,10 @@
 //    ここは **I/O を持たない純粋関数だけ**で、`@ses/db` にも Prisma にも触れない。
 // 🔴 文言は `packages/i18n` が唯一の出所（`CLAUDE.md` §3.5）。本ファイルは**日本語の語を書かない**。
 import { t } from '@ses/i18n';
+// 🔴 T-06-02: 3 桁区切りは機能に属さない共通語彙（`lib/format/number.ts`）。
+import { formatThousands } from '../format/number';
 import { PREFECTURE_MESSAGE_KEYS } from '../format/prefectures';
-import { formatThousands, formatUnitPriceRange } from './detail';
+import { formatUnitPriceRange } from './detail';
 import { ENGINEER_AVAILABILITY_MESSAGE_KEYS, REMOTE_MODE_MESSAGE_KEYS } from './labels';
 import type { OwnEngineerView } from './list';
 
@@ -121,7 +123,7 @@ export function engineerPopulationLabel(partnerCompanyId: string | null, total: 
     partnerCompanyId === null
       ? t('engineers.list.population.host')
       : t('engineers.list.population.partner');
-  // 🔴 3 桁区切りは `detail.ts` の `formatThousands` を使う（`toLocaleString` を使わない理由も
+  // 🔴 3 桁区切りは `lib/format/number.ts` の `formatThousands` を使う（`toLocaleString` を使わない理由も
   //    そちらに書いてある。2 実装にすると単価と件数で桁区切りがずれる）。
   return `${scope} ${formatThousands(total)} ${t('engineers.list.population.unit')}`;
 }
