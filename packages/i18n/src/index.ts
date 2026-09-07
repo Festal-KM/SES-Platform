@@ -905,12 +905,58 @@ const ja = {
   // 🔴 `F-006 AC-2` と同じ規律（見える範囲を常時示す）。フィルタ帯の直下に 1 行置く。
   'engineers.list.partnerScopeNotice': 'この一覧には、御社が登録した人材のみが表示されます。',
   // 🔴 `docs/04` §S-005「並び順の説明を一覧の上部に 1 行で書く」。
+  // 🔴 `F-009 AC-2`: **スコア・順位・重み・一致度の語を使わない。** `docs/04` §S-005 の例文
+  //    （「一致度と更新日の順で表示しています」）は「一致度」という**度合い**の語を含むため
+  //    採らず、**何が先に来るか**を事実として書く（`docs/05` §6.4「#15 の実装の決着（T-06-04）」）。
   'engineers.list.orderNote': '更新日の新しい順に表示しています。',
+  // 🔴 稼働可能時期・勤務地を指定し、対応する絞り込みがオフのとき（＝ 条件に合わない人材も
+  //    一覧に出るとき）だけ、こちらを出す（`F-009 AC-5`）。並びの説明が実態とずれないようにする。
+  'engineers.list.orderNote.fit':
+    '指定した条件（稼働可能時期・勤務地）に合う人材を先に、そのうえで更新日の新しい順に表示しています。',
   // 🔴 未実装を隠さない（`engineers.careers.comingSoon` と同じ規律）。何ができないのかを書く。
+  //    ✅ T-06-04 で検索条件と 2 つの絞り込みが入ったため、残りだけを書く。
   'engineers.list.searchComingSoon':
-    '検索条件（スキル・経験年数・単価・稼働可能時期・勤務地・稼働状況・フリーワード）、「開始日に間に合う人だけ」「通勤可能な人だけ」の絞り込み、列の表示切替は、後続のリリースで追加されます。',
+    '列の表示切替（希望条件・登録日・担当）は、後続のリリースで追加されます。所属区分は、この一覧に出る人材が常に自社の人材のみであるため、検索条件として置いていません。',
+  // 🔴 検索条件の「経験年数」が何を指すかを明示する（集約の定義は `docs/05` §6.4
+  //    「#15 の実装の決着（T-06-04）」で決着済み）。列としての表示だけが後続である。
   'engineers.list.experienceComingSoon':
-    '経験年数（1 人あたりの集約値）は、集約の定義が決まる後続のリリースで列に加わります。スキルごとの経験年数は人材の詳細で確認できます。',
+    '「経験年数」は、登録されたスキルの経験年数で判定します（スキルを指定した場合はそのスキル、指定しない場合は最も長いスキル）。1 人あたりの集約値を列として表示するのは、後続のリリースです。スキルごとの経験年数は人材の詳細で確認できます。',
+  // --- 検索条件（`docs/04` §S-005 セクション 1・2 / `F-009`）。T-06-04 ---
+  'engineers.list.search.legend': '検索条件',
+  'engineers.list.search.q': 'フリーワード（氏名・希望条件）',
+  'engineers.list.search.skills': 'スキル',
+  'engineers.list.search.skillsHint': '辞書から選択します（Ctrl / Command で複数選択）。',
+  'engineers.list.search.skillMode': 'スキルの組み合わせ',
+  'engineers.list.search.skillMode.AND': '指定したスキルをすべて持つ',
+  'engineers.list.search.skillMode.OR': '指定したスキルのいずれかを持つ',
+  'engineers.list.search.yearsMin': '経験年数（この年数以上）',
+  'engineers.list.search.priceMin': '単価（下限）',
+  'engineers.list.search.priceMax': '単価（上限）',
+  'engineers.list.search.availableBy': '稼働可能時期（この日まで）',
+  'engineers.list.search.prefecture': '勤務地（都道府県）',
+  'engineers.list.search.prefectureAll': 'すべて',
+  'engineers.list.search.remote': 'リモート可否',
+  'engineers.list.search.remoteAll': 'すべて',
+  'engineers.list.search.availability': '稼働状況',
+  'engineers.list.search.availabilityAll': 'すべて',
+  // 🔴 `F-009 AC-5` / `docs/02` A-03: **既定オフ**。オフのとき何が起きるかを画面に書く
+  //    （「フィルタは利用者が明示的にオンにしたときだけ効く」ことが伝わらないと、
+  //    出てきた候補を「絞り込みの不具合」と受け取られる）。
+  'engineers.list.search.onlyInTime': '開始日に間に合う人だけ',
+  'engineers.list.search.onlyCommutable': '通勤可能な人だけ',
+  'engineers.list.search.checkboxNote':
+    'この 2 つは既定でオフです。オフのときは、稼働可能時期が指定日より後の人材や、勤務地が一致しない人材も一覧に出ます（並びは後ろになります）。',
+  'engineers.list.search.submit': '検索',
+  'engineers.list.search.clear': '条件をクリア',
+  // 🔴 `docs/04` §10.1 `S-005` 絞込 0 件:「効いている条件を列挙して 1 つずつ外せる導線」。
+  'engineers.list.filtered.empty.title': '条件に一致する人材はいません。',
+  'engineers.list.filtered.empty.lead':
+    '効いている条件を 1 つずつ外して、対象を広げられます。すべて外すと、台帳のすべてが表示されます。',
+  'engineers.list.filtered.activeTitle': 'いま効いている条件',
+  'engineers.list.filtered.remove': 'を外す',
+  // 🔴 同上:「絞り込みチェックボックスがオンです」の注意（オンのときだけ）。
+  'engineers.list.filtered.checkboxNotice':
+    '「開始日に間に合う人だけ」または「通勤可能な人だけ」がオンです。オフにすると、条件から外れる人材も一覧に出ます。',
   'engineers.list.register': '人材を登録',
   // 🔴 `docs/04` §S-005 権限差分「`VIEWER` は『人材を登録』が無い」。導線を消すだけにせず、
   //    誰ができるのかを書く（行き止まりにしない）。

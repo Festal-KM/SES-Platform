@@ -1,4 +1,4 @@
-// apps/web/app/(main)/projects/page.tsx
+// apps/web/app/(main)/projects/(list)/page.tsx
 // `S-010` 案件一覧・検索。docs/04 §S-010 / `F-015` / docs/05 §6.4 #25。T-06-03。
 //
 // 🔴 **ロールで到達を止めない**（docs/04 §S-010 の必要ロールは全ロール）。取引先も `VIEWER` も
@@ -13,23 +13,23 @@
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { t } from '@ses/i18n';
-import { resolveTenantCtxOutcome } from '../../../lib/auth/session';
-import { listProjects } from '../../../lib/projects/list';
+import { resolveTenantCtxOutcome } from '../../../../lib/auth/session';
+import { listProjects } from '../../../../lib/projects/list';
 import {
   hasProjectListFilters,
   projectListHref,
   projectListRows,
   projectPopulationLabel,
   PROJECT_LIST_PATH,
-} from '../../../lib/projects/list-rows';
-import { isProjectEditorRole } from '../../../lib/projects/policy';
-import { projectListQuerySchema } from '../../../lib/projects/schemas';
+} from '../../../../lib/projects/list-rows';
+import { isProjectEditorRole } from '../../../../lib/projects/policy';
+import { projectListQuerySchema } from '../../../../lib/projects/schemas';
 import {
   projectListScreenMessages,
   projectPrefectureFilterOptions,
   projectStatusFilterOptions,
-} from './list-props';
-import { ProjectListScreen } from './project-list-screen';
+} from '../list-props';
+import { ProjectListScreen } from '../project-list-screen';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

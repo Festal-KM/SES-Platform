@@ -31,6 +31,9 @@ import { PROJECT_STATUSES, REMOTE_MODES, REQUIREMENT_KINDS } from '@ses/db';
 import { PREFECTURE_CODES } from '@ses/domain';
 import { assertNoIsolationKeys, type AssertNoIsolationKeys } from '../api/isolation-keys';
 import { idCursorPageQuerySchema } from '../api/pagination';
+// 🔴 T-06-04: `optionalFilter` は `lib/api/query-filters.ts` に移した（`S-005` の検索フォームが
+//    同じ前処理を必要とし、2 本になると片方だけが空文字を畳まなくなるため）。
+import { optionalFilter } from '../api/query-filters';
 
 /** 案件名。DB は TEXT。過大な入力を境界で止める。 */
 const NAME_MAX_LENGTH = 200;
@@ -146,24 +149,6 @@ assertNoIsolationKeys(Object.keys(updateProjectBodySchema.shape), 'updateProject
 
 /** フリーワード（`docs/04` §S-010 の検索条件）。過大な入力を境界で止める。 */
 const FREE_WORD_MAX_LENGTH = 200;
-
-/**
- * 🔴 **空文字を「指定なし」に畳んでから検証する**（`S-010` の検索条件専用）。
- *
- * `S-010` の検索は素の `<form method="get">` である（`docs/04` §S-010「検索は同期」）。
- * ブラウザは**未入力の欄も送る**ため、条件を 1 つも入れずに検索すると
- * `?q=&status=&startFrom=&prefecture=` が届く。畳まないと `min(1)` / `enum` が落ちて
- * **検索フォームの送信そのものが 400** になる。
- * 🔴 空白だけの入力も同じ扱いにする（`'   '` を `%   %` として検索させない）。
- * 🔴 `.strict()` にはしない（未知キーの有無で応答が変わると、キーの存在を外から探れる。
- *    `engineers/schemas.ts` の注記と同じ）。
- */
-function optionalFilter<T extends z.ZodType>(schema: T) {
-  return z.preprocess(
-    (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
-    schema.optional(),
-  );
-}
 
 /**
  * `GET /api/projects`（#25。`F-015` / `S-010`）の query。T-06-03。

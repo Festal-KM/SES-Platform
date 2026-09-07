@@ -1,6 +1,9 @@
 'use client';
 
-// apps/web/app/(main)/engineers/error.tsx
+// apps/web/app/(main)/engineers/(list)/error.tsx
+// 🔴 `(list)` ルートグループに置く理由は、同ディレクトリの `loading.tsx` 冒頭
+//    （T-06-04 Iteration 3）。ここを `engineers/` 直下に戻すと、`/engineers/new` の失敗に
+//    「検索を実行できませんでした」が出るうえ、子ルートの `redirect()` が 307 でなくなる。
 // `S-005` の取得失敗（docs/04 §10.1 `S-005` Err「検索を実行できませんでした」+ 条件保持の再試行）。
 // T-05-09。
 //

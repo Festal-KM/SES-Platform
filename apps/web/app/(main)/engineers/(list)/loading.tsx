@@ -1,4 +1,12 @@
-// apps/web/app/(main)/engineers/loading.tsx
+// apps/web/app/(main)/engineers/(list)/loading.tsx
+//
+// 🔴 **`(list)` ルートグループの中に置く理由は `projects/(list)/loading.tsx` 冒頭と同一である**
+//    （T-06-04 Iteration 3）。`engineers/` の直下に置くと、`/engineers/new`（`S-007`）や
+//    `/engineers/{id}`（`S-006`）にこの骨格が出るうえ、**それらのルートの `redirect()` が
+//    HTTP 307 ではなくハイドレーション後のクライアント遷移になる**（`VIEWER` を
+//    `/engineers/new` からホームへ戻す挙動が JS 依存になる）。
+//    不変条件は `tests/static/route-boundaries.test.ts` が守る。
+//
 // `S-005` のローディング（docs/04 §10.1 `S-005` Load「テーブル骨格 12 行」）。T-05-09。
 //
 // 🔴 **画面全体を空にしない。** 何が出てくるのかが分かる形（テーブルの骨格）で待たせる

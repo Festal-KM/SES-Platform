@@ -76,6 +76,22 @@ body {
   font-size: 1rem;
 }
 
+/* T-06-04: 検索条件のプルダウン（`S-005` / `S-010`）。入力欄と同じ見え方に揃える
+ * （同じ帯に並ぶ条件で、効く条件と効かない条件が見た目で分かれないようにする）。 */
+.ses-field select {
+  width: 100%;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--ses-border);
+  border-radius: 0.375rem;
+  font-size: 1rem;
+}
+
+/* 🔴 T-06-04: 絞り込みチェックボックス（`S-005` の 2 種）は幅いっぱいに伸ばさない
+ * （`.ses-field input { width: 100% }` の例外。伸びると押下領域が帯全体になり誤操作を招く）。 */
+.ses-field input[type='checkbox'] {
+  width: auto;
+}
+
 .ses-submit {
   width: 100%;
   padding: 0.75rem;

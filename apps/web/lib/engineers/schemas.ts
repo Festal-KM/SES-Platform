@@ -31,6 +31,7 @@ import { ENGINEER_AVAILABILITIES, REMOTE_MODES } from '@ses/db';
 import { PREFECTURE_CODES } from '@ses/domain';
 import { assertNoIsolationKeys, type AssertNoIsolationKeys } from '../api/isolation-keys';
 import { idCursorPageQuerySchema } from '../api/pagination';
+import { checkboxFilter, optionalFilter, optionalListFilter } from '../api/query-filters';
 
 /** 氏名（社内表示用）。DB は TEXT。過大な入力を境界で止める。 */
 const DISPLAY_NAME_MAX_LENGTH = 100;
@@ -152,23 +153,78 @@ export type UpdateEngineerBodyIsolationGuard = AssertNoIsolationKeys<UpdateEngin
 
 assertNoIsolationKeys(Object.keys(updateEngineerBodySchema.shape), 'updateEngineerBodySchema');
 
+/** フリーワード（`docs/04` §S-005 の検索条件）。過大な入力を境界で止める。 */
+const FREE_WORD_MAX_LENGTH = 200;
+/** 1 回の検索で指定できるスキルの数（AND のときスキル数だけ副問い合わせが増えるため上限を置く）。 */
+const SKILL_FILTER_MAX = 20;
+
 /**
- * `GET /api/engineers`（#15。`F-009` / `S-005`）の query。T-05-09（骨格）。
+ * スキル条件の組み合わせ（`docs/02` `F-009` 入力「スキル（複数・AND / OR）」）。
+ * 🔴 **既定は `AND`**（`docs/02` / `docs/04` のいずれも `AND` を先に挙げている）。案件の必須要件から
+ *    候補を探す業務では「指定したスキルをすべて持つ人」が既定の期待である。1 件しか指定しなければ
+ *    `AND` と `OR` は同じ結果になるので、既定値が候補を隠す向きに働くのは複数指定時だけであり、
+ *    そのときは画面の選択肢（`S-005`）で切り替えられる。
+ */
+export const ENGINEER_SKILL_MODES = ['AND', 'OR'] as const;
+
+export type EngineerSkillMode = (typeof ENGINEER_SKILL_MODES)[number];
+
+export const ENGINEER_SKILL_MODE_DEFAULT: EngineerSkillMode = 'AND';
+
+/**
+ * `GET /api/engineers`（#15。`F-009` / `S-005`）の query。T-06-04（検索条件）。
  *
- * 🔴 **本タスクの射程はページングと既定順序までである**（`docs/sprints/SP-05` T-05-09）。
- *    docs/05 §6.4 #15 が列挙する検索条件
- *    （`skills[]` / `yearsMin` / `priceMin` / `priceMax` / `availableBy` / `prefecture` /
- *     `remote` / `ownership` / `availability` / `q` / `onlyInTime` / `onlyCommutable`）は
- *    **SP-06 の T-06-04 が足す**。
- * 🔴 ここに**受け取って捨てるキーを書かない。** 宣言だけしておくと、指定しても効かない条件が
- *    「効いているように見える」状態になり、利用者からは絞り込みの不具合と区別できない
- *    （`skill_sheets.note` を「受け取って捨てる」実装にしなかったのと同じ判断。docs/05 §6.4 #19）。
- *    Zod の既定（strip）により、未知のキーは 400 にならず**ハンドラに届かないだけ**である
- *    —— 画面側は「検索は後続のリリース」と明示する（`S-005` の注記）。
+ * 🔴 **docs/05 §6.4 #15 の列挙と 1 対 1 である**（T-05-09 の骨格は `cursor` / `limit` だけだった）。
+ *    差分は 2 つあり、どちらも docs/05 §6.4「#15 の実装の決着（T-06-04）」に記録した:
+ *      - **`ownership` を置かない** …… `engineers` の RLS（C3 OWNER_SCOPED）により、母集団の
+ *        所属区分は**実行者の文脈と必ず一致する**（ホスト文脈は `owner_partner_company_id IS NULL`
+ *        の行だけ、パートナー文脈は自社の行だけ）。したがってこの条件は「全件」か「0 件」しか
+ *        返さず、**絞り込みとして意味を持たない**。🔴 意味を持たせようとすると `where` に
+ *        `owner_partner_company_id` を書くことになり、「境界の判断がアプリの条件式に移る」
+ *        （`CLAUDE.md` §3.1）。所属区分が条件として意味を持つのは、匿名候補
+ *        （`AnonymousCandidateView`）が混ざる **SP-08** からである。
+ *      - **`skillMode` を足した** …… `docs/02` `F-009` 入力の「スキル（複数・**AND / OR**）」を
+ *        表す手段が #15 の列挙に無かった（キーが無いと AND / OR を選べない）。
+ * 🔴 ここに**受け取って捨てるキーを書かない**（`skill_sheets.note` / `originAssignmentId` と
+ *    同じ判断。docs/05 §6.4 #19 / #26）。宣言だけしておくと、指定しても効かない条件が
+ *    「効いているように見える」状態になり、利用者からは絞り込みの不具合と区別できない。
+ * 🔴 **`onlyInTime` / `onlyCommutable` は既定オフ**（`F-009 AC-5` / `docs/02` A-03）。
+ *    オフのとき、稼働可能時期が遅い候補・勤務地が合わない候補は**一覧から消えず**、
+ *    並びで後ろに回る（`lib/engineers/search.ts` の「適合」）。
  * 🔴 `cursor` は**行の ID**（`uuid(7)`）である。`idCursorPageQuerySchema` を使うのは、
  *    UUID でない値を Prisma の `cursor: { id }` に渡すと 500 になるため（`pagination.ts` の注記）。
+ * 🔴 分離キーを持たない（`AssertNoIsolationKeys`）。母集団は RLS の C3 が決める。
  */
-export const engineerListQuerySchema = idCursorPageQuerySchema;
+export const engineerListQuerySchema = idCursorPageQuerySchema.extend({
+  /** スキル（グローバル辞書の ID。複数可）。 */
+  skills: optionalListFilter(z.array(z.uuid()).min(1).max(SKILL_FILTER_MAX)),
+  /** 🔴 既定は `AND`（上記）。`skills` が 1 件以下のときは結果に影響しない。 */
+  skillMode: optionalFilter(z.enum(ENGINEER_SKILL_MODES)).default(ENGINEER_SKILL_MODE_DEFAULT),
+  /**
+   * 経験年数の下限。
+   * 🔴 **1 人あたりの集約値の定義は「登録されたスキルの経験年数の最大値」**である
+   *    （docs/05 §6.4「#15 の実装の決着（T-06-04）」で決着。`S-006` の基本情報が保留していた
+   *    集約の定義もこれに揃える）。`skills` を指定した場合は**そのスキルの経験年数**を見る
+   *    （評価の詳細は `lib/engineers/search.ts`）。
+   */
+  yearsMin: optionalFilter(z.coerce.number().min(0).max(YEARS_MAX)),
+  /** 単価レンジ（月額・円）。🔴 台帳のレンジとの**重なり**で判定する（`search.ts`）。 */
+  priceMin: optionalFilter(z.coerce.number().int().min(0).max(UNIT_PRICE_MAX)),
+  priceMax: optionalFilter(z.coerce.number().int().min(0).max(UNIT_PRICE_MAX)),
+  /** 稼働可能時期（`YYYY-MM-DD`）。「この日までに稼働できる」。🔴 ソフト条件（`onlyInTime`）。 */
+  availableBy: optionalFilter(z.iso.date()),
+  /** 勤務地（都道府県）。🔴 ソフト条件（`onlyCommutable`）。 */
+  prefecture: optionalFilter(z.enum(PREFECTURE_CODES)),
+  /** リモート可否。🔴 こちらは**ハード条件**である（`search.ts` の注記）。 */
+  remote: optionalFilter(z.enum(REMOTE_MODES)),
+  availability: optionalFilter(z.enum(ENGINEER_AVAILABILITIES)),
+  /** フリーワード（氏名・希望条件を対象にする。`lib/engineers/search.ts`）。 */
+  q: optionalFilter(z.string().trim().min(1).max(FREE_WORD_MAX_LENGTH)),
+  /** 🔴 既定オフ（`F-009 AC-5`）。「開始日に間に合う人だけ」。 */
+  onlyInTime: checkboxFilter(),
+  /** 🔴 既定オフ（`F-009 AC-5`）。「通勤可能な人だけ」。 */
+  onlyCommutable: checkboxFilter(),
+});
 
 export type EngineerListQuery = z.infer<typeof engineerListQuerySchema>;
 

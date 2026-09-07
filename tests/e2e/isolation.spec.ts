@@ -493,8 +493,21 @@ test.describe('④ パートナー A1 で、パートナー A2 のものが 1 �
       //    （`app/(main)/projects/new/page.tsx` 冒頭「到達できるのは `OWNER` / `ADMIN` /
       //    `SALES` だけ」）。画面で止めるのは補助であり、拒否の本体は上の 403 と
       //    `projects` の RLS（C2 の `WITH CHECK` に `app_is_host()`）である。
-      await session.page.goto('/projects/new', { waitUntil: 'domcontentloaded' });
+      const newProjectNav = await session.page.goto('/projects/new', {
+        waitUntil: 'domcontentloaded',
+      });
       expect(new URL(session.page.url()).pathname).toBe('/');
+      // 🔴 **サーバが返した遷移であること**まで確かめる（T-06-04 Iteration 3）。
+      //    最終 URL だけを見ていると、`app/(main)/projects/loading.tsx` のような
+      //    **祖先の Suspense 境界**が入った瞬間に挙動が変わったことに気づけない ——
+      //    境界があると Next はシェルを先に flush し、`redirect()` は
+      //    `NEXT_REDIRECT` のストリーム中の digest として届くため、応答は 200 + シェルになり、
+      //    遷移は**クライアントのハイドレーション後**になる（この検証はそのとき
+      //    ハイドレーションとの競争になり、**運で green になる**）。
+      //    `redirectedFrom()` が非 null であることは「HTTP のリダイレクトを辿ってここに来た」
+      //    ことを意味し、JS の到着に依存しない。構造側の担保は
+      //    `tests/static/route-boundaries.test.ts`。
+      expect(newProjectNav?.request().redirectedFrom()).not.toBeNull();
     } finally {
       await session.close();
     }

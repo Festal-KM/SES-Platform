@@ -1118,3 +1118,388 @@ describe('🔴 ページングと決定的順序（docs/05 §6.1 / §4.8 / `F-00
     expect(body.items.map((item) => item.id)).not.toContain(PARTNER_1_1.engineerId);
   });
 });
+
+// ============================================================================
+// 🔴 T-06-04: 複合検索と決定的順序（`F-009 AC-1` / `AC-2` / `AC-3` / `AC-5`）
+// ============================================================================
+// docs/05 §6.4 #15 の検索条件を、**実 DB + RLS 付きの母集団**に対して評価する。
+// 🔴 述語の形（境界の条件を書いていないこと・単価レンジの重なり・適合の 2 分）は
+//    `apps/web/lib/engineers/search.test.ts` が固定する。ここで見るのは
+//    **実データでどう見えるか**であり、両方が要る。
+//
+// 🔴 母集団を本ブロックが作った 4 名に限るため、すべての検索に `q=<SEARCH_MARKER>` を付ける
+//    （seed のホストエンジニア 1 名を巻き込まないため）。`q` は氏名を見るハード条件である。
+
+/** 本ブロックが作る行の目印（外側の `afterEach` の `MARKER` 掃除に載る）。 */
+const SEARCH_MARKER = `${MARKER}S-`;
+
+/** 検索の基準日（`NOW` = 2026-09-06 に対する「約 2 か月後」）。 */
+const AVAILABLE_BY = '2026-11-01';
+
+type SearchFixture = { a: string; b: string; c: string; d: string };
+
+describe('🔴 F-009: エンジニアの複合検索と決定的順序（T-06-04）', () => {
+  let ids: SearchFixture;
+
+  /**
+   * 4 名の台帳を作る。**作成順 = `updated_at` の昇順**なので、既定の並び（更新日の降順）は
+   * 常に `d → c → b → a` である。
+   *
+   *   a … 東京都 / 常駐のみ / 2026-10-01 から / 60〜70 万 / 待機中 / Java 6 年
+   *   b … 東京都 / 常駐のみ / 2026-12-01 から / 80〜90 万 / 稼働中 / Java 2 年 + AWS 4 年
+   *   c … 大阪府 / 一部リモート可 / **稼働可能時期なし** / **単価なし** / 稼働中 / AWS 8 年
+   *   d … 大阪府 / **フルリモート可** / 2026-10-15 から / 50 万〜上限なし / 稼働中 / Java 10 年
+   */
+  beforeEach(async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+    const create = async (body: Record<string, unknown>): Promise<string> =>
+      createdIdOf(await postEngineer(ctx, body));
+
+    ids = {
+      a: await create({
+        displayName: `${SEARCH_MARKER}A`,
+        availability: 'STANDBY',
+        availableFrom: '2026-10-01',
+        unitPriceMin: 600_000,
+        unitPriceMax: 700_000,
+        prefecture: '13',
+        remoteMode: 'ONSITE_ONLY',
+        skills: [{ skillId: SKILL_JAVA, yearsOfExperience: 6, level: null }],
+      }),
+      b: await create({
+        displayName: `${SEARCH_MARKER}B`,
+        availableFrom: '2026-12-01',
+        unitPriceMin: 800_000,
+        unitPriceMax: 900_000,
+        prefecture: '13',
+        remoteMode: 'ONSITE_ONLY',
+        skills: [
+          { skillId: SKILL_JAVA, yearsOfExperience: 2, level: null },
+          { skillId: SKILL_AWS, yearsOfExperience: 4, level: null },
+        ],
+      }),
+      c: await create({
+        displayName: `${SEARCH_MARKER}C`,
+        prefecture: '27',
+        remoteMode: 'PARTIAL_REMOTE',
+        skills: [{ skillId: SKILL_AWS, yearsOfExperience: 8, level: null }],
+      }),
+      d: await create({
+        displayName: `${SEARCH_MARKER}D`,
+        availableFrom: '2026-10-15',
+        unitPriceMin: 500_000,
+        prefecture: '27',
+        remoteMode: 'FULL_REMOTE',
+        skills: [{ skillId: SKILL_JAVA, yearsOfExperience: 10, level: null }],
+      }),
+    };
+  });
+
+  /** 本ブロックの母集団（4 名）に絞った検索。`extra` は追加の条件（先頭に `&` を付けない）。 */
+  async function search(ctx: AuthenticatedTenantCtx, extra = ''): Promise<ListBody> {
+    const suffix = extra === '' ? '' : `&${extra}`;
+    return listBodyOf(await getEngineers(ctx, `?q=${encodeURIComponent(SEARCH_MARKER)}${suffix}`));
+  }
+
+  describe('検索条件の評価（`docs/02` `F-009` の入力）', () => {
+    it('条件を付けなければ 4 名すべてが更新日の降順で並ぶ', async () => {
+      const ctx = await ctxOf(HOST_1, 'SALES');
+
+      const body = await search(ctx);
+
+      expect(body.items.map((item) => item.id)).toEqual([ids.d, ids.c, ids.b, ids.a]);
+      expect(body.total).toBe(4);
+    });
+
+    it('🔴 スキル AND は指定したスキルを**すべて**持つ人だけ', async () => {
+      const ctx = await ctxOf(HOST_1, 'SALES');
+
+      const body = await search(ctx, `skills=${SKILL_JAVA}&skills=${SKILL_AWS}&skillMode=AND`);
+
+      expect(body.items.map((item) => item.id)).toEqual([ids.b]);
+      expect(body.total).toBe(1);
+    });
+
+    it('スキル OR は指定したスキルのいずれかを持つ人', async () => {
+      const ctx = await ctxOf(HOST_1, 'SALES');
+
+      const body = await search(ctx, `skills=${SKILL_JAVA}&skills=${SKILL_AWS}&skillMode=OR`);
+
+      expect(body.total).toBe(4);
+    });
+
+    it('🔴 経験年数はスキルと組で評価される（Java 2 年の人は「Java 5 年以上」に出ない）', async () => {
+      const ctx = await ctxOf(HOST_1, 'SALES');
+
+      const body = await search(ctx, `skills=${SKILL_JAVA}&yearsMin=5`);
+
+      expect([...body.items.map((item) => item.id)].sort()).toEqual([ids.a, ids.d].sort());
+    });
+
+    it('🔴 スキル未指定の経験年数は「登録スキルの最大値」の下限である（集約の定義）', async () => {
+      const ctx = await ctxOf(HOST_1, 'SALES');
+
+      const body = await search(ctx, 'yearsMin=8');
+
+      // c は AWS 8 年、d は Java 10 年。a（6 年）と b（最大 4 年）は出ない。
+      expect(body.items.map((item) => item.id)).toEqual([ids.d, ids.c]);
+    });
+
+    it('🔴 単価は「レンジの重なり」で判定する（下限だけの指定）', async () => {
+      const ctx = await ctxOf(HOST_1, 'SALES');
+
+      const body = await search(ctx, 'priceMin=850000');
+
+      // b（〜90 万）は重なる。a（〜70 万）は重ならない。
+      // 🔴 c（単価なし）と d（上限なし）は**消えない**（NULL = 制約なし）。
+      expect(body.items.map((item) => item.id)).toEqual([ids.d, ids.c, ids.b]);
+    });
+
+    it('🔴 単価は「レンジの重なり」で判定する（上限だけの指定）', async () => {
+      const ctx = await ctxOf(HOST_1, 'SALES');
+
+      const body = await search(ctx, 'priceMax=550000');
+
+      expect(body.items.map((item) => item.id)).toEqual([ids.d, ids.c]);
+    });
+
+    it('リモート可否はハード条件（指定したモードだけ）', async () => {
+      const ctx = await ctxOf(HOST_1, 'SALES');
+
+      const body = await search(ctx, 'remote=FULL_REMOTE');
+
+      expect(body.items.map((item) => item.id)).toEqual([ids.d]);
+    });
+
+    it('稼働状況で絞れる', async () => {
+      const ctx = await ctxOf(HOST_1, 'SALES');
+
+      const body = await search(ctx, 'availability=STANDBY');
+
+      expect(body.items.map((item) => item.id)).toEqual([ids.a]);
+    });
+
+    it('フリーワードは氏名に効く（母集団を 1 名に絞れる）', async () => {
+      const ctx = await ctxOf(HOST_1, 'SALES');
+
+      const body = await listBodyOf(
+        await getEngineers(ctx, `?q=${encodeURIComponent(`${SEARCH_MARKER}B`)}`),
+      );
+
+      expect(body.items.map((item) => item.id)).toEqual([ids.b]);
+      expect(body.total).toBe(1);
+    });
+  });
+
+  describe('🔴 F-009 AC-5: 絞り込みチェックボックスは既定オフ（`docs/02` A-03）', () => {
+    it('🔴 オフなら、稼働可能時期が遅い候補も**一覧に出る**（並びが後ろになるだけ）', async () => {
+      const ctx = await ctxOf(HOST_1, 'SALES');
+
+      const body = await search(ctx, `availableBy=${AVAILABLE_BY}`);
+
+      // 適合（10-01 の a / 10-15 の d）が先、不適合（12-01 の b / 未設定の c）が後。
+      // 各バケットの中は更新日の降順（d → a、c → b）。
+      expect(body.items.map((item) => item.id)).toEqual([ids.d, ids.a, ids.c, ids.b]);
+      // 🔴 **1 件も消えない**（`F-009 AC-5`）。
+      expect(body.total).toBe(4);
+      expect(body.items).toHaveLength(body.total);
+    });
+
+    it('オンにすると「間に合う人だけ」に絞られる（件数も減る）', async () => {
+      const ctx = await ctxOf(HOST_1, 'SALES');
+
+      const body = await search(ctx, `availableBy=${AVAILABLE_BY}&onlyInTime=1`);
+
+      expect(body.items.map((item) => item.id)).toEqual([ids.d, ids.a]);
+      expect(body.total).toBe(2);
+    });
+
+    it('🔴 オフなら、勤務地が合わない候補も**一覧に出る**', async () => {
+      const ctx = await ctxOf(HOST_1, 'SALES');
+
+      const body = await search(ctx, 'prefecture=13');
+
+      // 適合 = 東京都（a / b）+ フルリモート可（d）。不適合 = c（大阪 / 一部リモート）。
+      expect(body.items.map((item) => item.id)).toEqual([ids.d, ids.b, ids.a, ids.c]);
+      expect(body.total).toBe(4);
+    });
+
+    it('🔴 「通勤可能な人だけ」はフルリモート可を通勤可能として扱う', async () => {
+      const ctx = await ctxOf(HOST_1, 'SALES');
+
+      const body = await search(ctx, 'prefecture=13&onlyCommutable=1');
+
+      expect(body.items.map((item) => item.id)).toEqual([ids.d, ids.b, ids.a]);
+      expect(body.total).toBe(3);
+    });
+
+    it('🔴 2 つの条件を同時に指定しても、オフのあいだは 1 件も消えない', async () => {
+      const ctx = await ctxOf(HOST_1, 'SALES');
+
+      const body = await search(ctx, `availableBy=${AVAILABLE_BY}&prefecture=13`);
+
+      // 適合 = 「間に合う」かつ「通勤できる」（a と d）。他は 1 ビットの不適合に落ちる。
+      expect(body.items.map((item) => item.id)).toEqual([ids.d, ids.a, ids.c, ids.b]);
+      expect(body.total).toBe(4);
+      expect(body.items).toHaveLength(body.total);
+    });
+
+    it('🔴 稼働可能時期が未設定の人材も、オフのあいだは消えない（NULL が両バケットから落ちない）', async () => {
+      const ctx = await ctxOf(HOST_1, 'SALES');
+
+      const body = await search(ctx, `availableBy=${AVAILABLE_BY}`);
+
+      expect(body.items.map((item) => item.id)).toContain(ids.c);
+    });
+  });
+
+  describe('🔴 F-009 AC-1: 同一条件・同一データなら実行のたびに同じ並び', () => {
+    it('検索条件つきで 10 回実行しても並び順が変わらない', async () => {
+      const ctx = await ctxOf(HOST_1, 'SALES');
+      const condition = `availableBy=${AVAILABLE_BY}&prefecture=13&skills=${SKILL_JAVA}&skillMode=OR`;
+
+      const first = (await search(ctx, condition)).items.map((item) => item.id);
+      expect(first.length).toBeGreaterThan(1);
+      for (let attempt = 0; attempt < 9; attempt += 1) {
+        expect((await search(ctx, condition)).items.map((item) => item.id)).toEqual(first);
+      }
+    });
+
+    it('🔴 適合バケットをまたぐページングでも重複も欠落もしない', async () => {
+      const ctx = await ctxOf(HOST_1, 'SALES');
+      const condition = `availableBy=${AVAILABLE_BY}&limit=1`;
+
+      const order: string[] = [];
+      let cursor: string | null = null;
+      let guard = 0;
+      for (;;) {
+        const page: ListBody = await search(
+          ctx,
+          cursor === null ? condition : `${condition}&cursor=${cursor}`,
+        );
+        expect(page.total).toBe(4);
+        for (const item of page.items) {
+          expect(order.includes(item.id), `${item.id} が 2 度現れた`).toBe(false);
+          order.push(item.id);
+        }
+        cursor = page.nextCursor;
+        guard += 1;
+        if (cursor === null || guard > 10) break;
+      }
+
+      // 🔴 1 ページ 1 件でも、全体の並びは 1 ページ 50 件のときと同じである。
+      expect(order).toEqual([ids.d, ids.a, ids.c, ids.b]);
+    });
+  });
+
+  describe('🔴 F-009 AC-2: スコア・順位・重みに相当する項目が応答に無い', () => {
+    it('検索条件を指定しても応答のキーが増えない', async () => {
+      const ctx = await ctxOf(HOST_1, 'SALES');
+
+      const body = await search(ctx, `availableBy=${AVAILABLE_BY}&prefecture=13`);
+
+      expect(Object.keys(body).sort()).toEqual(['items', 'nextCursor', 'total']);
+      expect(Object.keys(body.items[0] ?? {}).sort()).toEqual([
+        'availability',
+        'availableFrom',
+        'displayName',
+        'id',
+        'moreSkillCount',
+        'ownership',
+        'prefecture',
+        'primarySkills',
+        'remoteMode',
+        'unitPriceMax',
+        'unitPriceMin',
+        'updatedOn',
+      ]);
+    });
+
+    it('🔴 応答本文に score / rank / weight の語が現れない', async () => {
+      const ctx = await ctxOf(HOST_1, 'SALES');
+
+      const raw = await (
+        await getEngineers(
+          ctx,
+          `?q=${encodeURIComponent(SEARCH_MARKER)}&availableBy=${AVAILABLE_BY}`,
+        )
+      ).text();
+
+      for (const word of ['score', 'rank', 'weight']) {
+        expect(raw.toLowerCase(), `${word} が応答に現れている`).not.toContain(word);
+      }
+    });
+  });
+
+  describe('🔴 F-009 AC-3 / BR-56: パートナーの検索結果に他社の人材が 1 件も含まれない', () => {
+    it('ホストが作った 4 名は、条件を変えてもパートナーからは 0 件である', async () => {
+      const partnerCtx = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
+
+      for (const condition of [
+        '',
+        `skills=${SKILL_JAVA}&skillMode=OR`,
+        'priceMin=1&priceMax=99999999',
+        `availableBy=${AVAILABLE_BY}`,
+        'prefecture=13',
+        'availability=STANDBY',
+      ]) {
+        const body = await search(partnerCtx, condition);
+        expect(body.items, `条件「${condition}」で他社の行が出た`).toHaveLength(0);
+        // 🔴 **件数にも現れない**（`total` は一覧と同じ `where` の `COUNT`。docs/05 §4.8）。
+        expect(body.total).toBe(0);
+      }
+    });
+
+    it('🔴 パートナーが検索しても、自社の母集団の外へは出られない', async () => {
+      const partnerCtx = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
+      const created = await createdIdOf(
+        await postEngineer(partnerCtx, {
+          displayName: `${SEARCH_MARKER}P`,
+          prefecture: '13',
+          skills: [{ skillId: SKILL_JAVA, yearsOfExperience: 6, level: null }],
+        }),
+      );
+
+      const body = await search(partnerCtx, `skills=${SKILL_JAVA}&yearsMin=5`);
+
+      expect(body.items.map((item) => item.id)).toEqual([created]);
+      expect(body.total).toBe(1);
+    });
+
+    it('🔴 2 社目のパートナーからも 1 社目の人材が見えない（条件付きでも）', async () => {
+      const partner1 = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
+      const created = await createdIdOf(
+        await postEngineer(partner1, { displayName: `${SEARCH_MARKER}P1`, prefecture: '13' }),
+      );
+      const partner2 = await ctxOf(PARTNER_USER_2, 'PARTNER_ADMIN');
+
+      const body = await search(partner2, 'prefecture=13');
+
+      expect(body.items.map((item) => item.id)).not.toContain(created);
+      expect(body.total).toBe(0);
+    });
+  });
+
+  describe('検索条件の境界検証（`withApiRoute` が 400 にする）', () => {
+    it('🔴 値集合の外の値は 400（黙って無視しない）', async () => {
+      const ctx = await ctxOf(HOST_1, 'SALES');
+
+      expect((await getEngineers(ctx, '?prefecture=99')).status).toBe(400);
+      expect((await getEngineers(ctx, '?remote=HYBRID')).status).toBe(400);
+      expect((await getEngineers(ctx, '?skills=not-a-uuid')).status).toBe(400);
+    });
+
+    it('🔴 条件を 1 つも入れずに送信された空文字の束は 200（素の GET フォーム）', async () => {
+      const ctx = await ctxOf(HOST_1, 'SALES');
+
+      const response = await getEngineers(
+        ctx,
+        '?q=&skills=&skillMode=&yearsMin=&priceMin=&priceMax=&availableBy=&prefecture=&remote=&availability=',
+      );
+
+      expect(response.status).toBe(200);
+      // 🔴 空文字は「指定なし」なので、母集団は絞られない（seed の 1 名 + 本ブロックの 4 名）。
+      expect(((await response.json()) as ListBody).total).toBe(5);
+    });
+  });
+});
