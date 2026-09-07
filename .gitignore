@@ -41,3 +41,6 @@ Thumbs.db
 # レビューの根拠になるため。リポジトリサイズが問題になる場合のみ、
 # 下行のコメントを外して除外する。
 # docs/wireframes/**/*.png
+
+# エージェントの一時 worktree（Agent tool の isolation: worktree）
+.claude/worktrees/

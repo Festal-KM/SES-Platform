@@ -581,7 +581,9 @@ const ADMIN_PLANE_ZONE = {
 
 export default tseslint.config(
   {
-    ignores: ['**/dist/**', '**/node_modules/**', '**/coverage/**', '**/.next/**', '**/.turbo/**', 'tests/static/__fixtures__/**'],
+    // .claude/worktrees はエージェントの一時 worktree。走査するとパスパターン依存の
+    // ルール（apps/web/app/admin/** 許可等）が接頭辞ずれで偽陽性を量産する
+    ignores: ['**/dist/**', '**/node_modules/**', '**/coverage/**', '**/.next/**', '**/.turbo/**', 'tests/static/__fixtures__/**', '.claude/worktrees/**'],
   },
 
   js.configs.recommended,
