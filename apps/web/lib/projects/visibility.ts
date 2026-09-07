@@ -1,6 +1,6 @@
 // apps/web/lib/projects/visibility.ts
 // 🔴 **越境経路 1（案件の公開）の唯一の書き込み経路**（docs/05 §6.4 #28 `PUT /api/projects/{id}/visibility`。
-//    `F-014` / `S-013`）。T-06-06。
+//    `F-014` / `S-013`）。T-06-06 → T-06-07（監査の内容と公開解除の挙動）。
 //
 // ============================================================================
 // 🔴 この経路が守るもの
@@ -34,6 +34,7 @@ import {
   requireHost,
   withTenant,
   writeAuditLog,
+  type AuditSummary,
   type AuthenticatedTenantCtx,
 } from '@ses/db';
 import { NotFoundError, ValidationError } from '../api/errors';
@@ -125,6 +126,45 @@ export function diffProjectVisibility(
   };
 }
 
+/** 1 回の要求が公開範囲に対して起こしたこと（`diffProjectVisibility` の結果 + 文脈）。 */
+export type ProjectVisibilityChange = {
+  /** 変更前の公開先（`revoked_at IS NULL` の集合）。 */
+  readonly before: readonly string[];
+  /** 変更後の公開先（＝ 現在も公開されている相手。`diffProjectVisibility` の `kept`）。 */
+  readonly kept: readonly string[];
+  /** 要求された集合（`after` との差が「ゲート待ち」である）。 */
+  readonly requested: readonly string[];
+  /** ゲートに預けた公開先（🔴 **まだ公開されていない**）。 */
+  readonly added: readonly string[];
+  readonly revoked: readonly string[];
+  readonly verdict: ProjectVisibilityVerdict;
+};
+
+/**
+ * 監査ログの `summary`（`F-014 AC-5`「実施者・**変更前後の公開先**」。T-06-07）。
+ *
+ * 🔴 **純粋関数として切り出す**（`diffProjectVisibility` と同じ理由）。ここが `AC-5` の
+ *    「何を残すか」の唯一の定義であり、ユニットテストが**キー集合と値の形**を固定する。
+ * 🔴 **載せてよいのは ID・列挙値だけである**（docs/05 §16.2 / `F-058`）。取引先の**社名**を
+ *    載せない —— 運営者の監査ログ横断検索に出るためであり、戻り値の型（`AuditSummary`）も
+ *    値を文字列・数値・真偽・`null` に限っている。
+ * 🔴 **`after` は「変更後に公開されている相手」であって「要求された相手」ではない。**
+ *    追加はゲートを通るまで行にならない（`F-014 AC-3`）ので `pending` に出る。ここを
+ *    混ぜると、記録だけを見た人が「公開済み」と読み違える。
+ * 🔴 いずれも **ID の昇順で連結する**（`diffProjectVisibility` が昇順にそろえている）。
+ *    入力順で揺れると、同じ変更が別の記録に見えて連鎖（前の `after` = 次の `before`）が切れる。
+ */
+export function projectVisibilityAuditSummary(change: ProjectVisibilityChange): AuditSummary {
+  return {
+    before: change.before.join(','),
+    after: change.kept.join(','),
+    requested: change.requested.join(','),
+    pending: change.added.join(','),
+    revoked: change.revoked.join(','),
+    verdict: change.verdict,
+  };
+}
+
 /** `withTenant` が `fn` に渡すクライアントのうち、本モジュールが使うデリゲートだけ。 */
 type VisibilityDb = Parameters<Parameters<typeof withTenant<void>>[1]>[0];
 
@@ -204,7 +244,7 @@ async function assertPartnerCompaniesExist(
 }
 
 /**
- * `PUT /api/projects/{id}/visibility`（#28。`F-014`）。T-06-06。
+ * `PUT /api/projects/{id}/visibility`（#28。`F-014`）。T-06-06 / T-06-07。
  *
  * 手順（🔴 順序に意味がある）:
  *   1. 案件が見えること（見えなければ 404。境界外と不存在を区別しない）
@@ -214,7 +254,9 @@ async function assertPartnerCompaniesExist(
  *      🔴 **行を消さない**（`revoked_at` を入れるだけ）。**作成済みの提案は残る**ため、
  *      「誰にいつ公開していたか」は後から遡れなければならない。
  *   5. 🔴 **追加はゲートに預けるだけ**（`publish-gate.ts`）。**ここで行を作らない。**
- *   6. 監査ログを 1 行（変更前 / 要求 / 変更後 / 保留中）
+ *   6. 監査ログを 1 行（`projectVisibilityAuditSummary`。変更前 / 要求 / 変更後 / 保留中 / 解除）
+ *      🔴 **書くのは 1〜5 をすべて通り抜けた要求だけである。** 404 / 400 でここに到達しない
+ *      ＝ **起きなかった変更**は記録に残らない（`withApiRoute` の `audit` を使わない理由）。
  *
  * 🔴 **解除と追加が同じ要求に混ざったとき、解除だけが成立する。** 中途半端に見えるが、
  *    「広げる操作だけがゲートを待つ」という規則の当然の帰結であり、安全側である
@@ -269,25 +311,17 @@ export async function updateProjectVisibility(
     const verdict: ProjectVisibilityVerdict =
       gate === null ? 'NO_PUBLISH_REQUESTED' : 'PENDING_GATE';
 
-    // 🔴 `summary` に載せてよいのは ID・件数・列挙値だけである（docs/05 §16.2）。
-    //    取引先の**社名**を載せない（運営者の横断検索〔`F-058`〕に出るため）。
+    // 🔴 実施者は `ctx.userId`（＝ 認証コンテキスト）である。リクエスト入力から受け取らない。
+    //    `summary` の中身は `projectVisibilityAuditSummary`（純粋関数）が唯一決める。
     await writeAuditLog(db, {
       action: PROJECT_VISIBILITY_AUDIT_ACTION,
       actorKind: 'USER',
       actorId: ctx.userId,
       targetType: 'Project',
       targetId: projectId,
-      summary: {
-        // 🔴 `F-014 AC-5`「変更前後の公開先」。ID の昇順で結合する（順序で揺れない）。
-        before: before.join(','),
-        after: kept.join(','),
-        /** 要求された集合（`after` との差が「ゲート待ち」である）。 */
-        requested: requested.join(','),
-        pending: added.join(','),
-        revoked: revoked.join(','),
-        verdict,
-      },
+      summary: projectVisibilityAuditSummary({ before, kept, requested, added, revoked, verdict }),
       ipAddress: meta.ipAddress,
+      // 🔴 `CLAUDE.md` §13.3「モバイルだけ記録が漏れる実装にしない」。
       deviceKind: ctx.deviceKind,
     });
 

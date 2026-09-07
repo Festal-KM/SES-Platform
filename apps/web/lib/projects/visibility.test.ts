@@ -1,11 +1,12 @@
 // apps/web/lib/projects/visibility.test.ts
-// `#28`（公開範囲の設定）のうち、**DB を要しない規則**。T-06-06。
+// `#28`（公開範囲の設定）のうち、**DB を要しない規則**。T-06-06 / T-06-07。
 //
-// 🔴 実 DB + RLS での挙動（`F-014 AC-1` / `AC-2`、ゲート保留、監査ログ、認可）は
+// 🔴 実 DB + RLS での挙動（`F-014 AC-1` / `AC-2` / `AC-5`、ゲート保留、公開解除、認可）は
 //    `tests/isolation/project-visibility.test.ts` が固定する。**片方だけにしない。**
 import { describe, expect, it } from 'vitest';
 import {
   diffProjectVisibility,
+  projectVisibilityAuditSummary,
   PROJECT_VISIBILITY_AUDIT_ACTION,
   PROJECT_VISIBILITY_VERDICTS,
 } from './visibility';
@@ -60,6 +61,81 @@ describe('🔴 `verdict` は「公開できたか」ではなく「要求をど�
     expect([...PROJECT_VISIBILITY_VERDICTS]).toEqual(['PENDING_GATE', 'NO_PUBLISH_REQUESTED']);
     expect(PROJECT_VISIBILITY_VERDICTS).not.toContain('PASS');
     expect(PROJECT_VISIBILITY_VERDICTS).not.toContain('PUBLISHED');
+  });
+});
+
+describe('🔴 F-014 AC-5: 監査ログに残す「変更前後の公開先」（T-06-07）', () => {
+  /** 解除のみの要求（1 社目を残し、2 社目を解除した）。 */
+  const revokeOnly = projectVisibilityAuditSummary({
+    before: ['a', 'b'],
+    kept: ['a'],
+    requested: ['a'],
+    added: [],
+    revoked: ['b'],
+    verdict: 'NO_PUBLISH_REQUESTED',
+  });
+
+  it('`before` / `after` が変更前後の公開先である（ID の昇順の連結）', () => {
+    expect(revokeOnly['before']).toBe('a,b');
+    expect(revokeOnly['after']).toBe('a');
+    expect(revokeOnly['revoked']).toBe('b');
+  });
+
+  it('🔴 追加は `after` に入らない（ゲートを通るまで公開は成立していない）', () => {
+    const summary = projectVisibilityAuditSummary({
+      before: ['a'],
+      kept: ['a'],
+      requested: ['a', 'c'],
+      added: ['c'],
+      revoked: [],
+      verdict: 'PENDING_GATE',
+    });
+
+    expect(summary['after']).toBe('a');
+    expect(summary['pending']).toBe('c');
+    // 🔴 要求（`requested`）と成立（`after`）の差が「ゲート待ち」である。ここを畳むと、
+    //    記録だけを見た人が「公開済み」と読み違える。
+    expect(summary['requested']).toBe('a,c');
+  });
+
+  it('🔴 全解除でも空文字として残る（キーごと消して「記録が無い」に見せない）', () => {
+    const summary = projectVisibilityAuditSummary({
+      before: ['a'],
+      kept: [],
+      requested: [],
+      added: [],
+      revoked: ['a'],
+      verdict: 'NO_PUBLISH_REQUESTED',
+    });
+
+    expect(summary['after']).toBe('');
+    expect(summary['revoked']).toBe('a');
+  });
+
+  it('🔴 連鎖して遡れる（次の記録の `before` は前の記録の `after`）', () => {
+    const next = projectVisibilityAuditSummary({
+      before: ['a'],
+      kept: [],
+      requested: [],
+      added: [],
+      revoked: ['a'],
+      verdict: 'NO_PUBLISH_REQUESTED',
+    });
+
+    expect(next['before']).toBe(revokeOnly['after']);
+  });
+
+  it('🔴 キーは 6 つで固定（社名・案件名を足す余地を作らない。docs/05 §16.2）', () => {
+    expect(Object.keys(revokeOnly).sort()).toEqual([
+      'after',
+      'before',
+      'pending',
+      'requested',
+      'revoked',
+      'verdict',
+    ]);
+    // 🔴 値はすべて ID の連結か列挙値である（自由入力が紛れ込む型になっていない）。
+    expect(Object.values(revokeOnly).every((value) => typeof value === 'string')).toBe(true);
   });
 });
 
