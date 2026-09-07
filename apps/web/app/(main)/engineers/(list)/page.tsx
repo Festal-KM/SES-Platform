@@ -1,6 +1,6 @@
-// apps/web/app/(main)/engineers/page.tsx
+// apps/web/app/(main)/engineers/(list)/page.tsx
 // `S-005` エンジニア台帳（一覧・複合検索）。docs/04 §S-005 / `F-009` / docs/05 §6.4 #15。
-// T-05-09（骨格）→ T-06-04（検索条件）。
+// T-05-09（骨格）→ T-06-04（検索条件）→ T-06-05（並びの説明の判定を `@ses/db` の 1 本に寄せた）。
 //
 // 🔴 **ロールで到達を止めない**（docs/04 §S-005 の必要ロールは全ロール）。取引先も `VIEWER` も
 //    この画面に到達してよい —— 見えるものが変わるのはロール判定ではなく `engineers` の
@@ -13,6 +13,9 @@
 //    （理由は `lib/engineers/list.ts` 冒頭 / docs/05 §6.4「#15 の実装の決着」）。
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
+// 🔴 T-06-05: 「適合が並びに効くか」の判定は `@ses/db` の `search/engineers.ts` に 1 本化した
+//    （画面の説明文と母集団の分割が同じ関数を通る）。ここに条件式を書き写さない。
+import { ordersByFit } from '@ses/db';
 import { t } from '@ses/i18n';
 import { resolveTenantCtxOutcome } from '../../../../lib/auth/session';
 import { listEngineers } from '../../../../lib/engineers/list';
@@ -64,11 +67,6 @@ export default async function EngineerLedgerPage({
   const skillOptions = skills.items.map((skill) => ({ value: skill.id, label: skill.name }));
   const skillNames = new Map(skills.items.map((skill) => [skill.id, skill.name]));
   const filtered = hasEngineerListFilters(query);
-  // 🔴 並びの第 1 キー（適合）が効くのは、ソフト条件が指定されていて対応する
-  //    チェックボックスがオフのときだけである（`lib/engineers/search.ts`）。
-  const ordersByFit =
-    (query.availableBy !== undefined && !query.onlyInTime) ||
-    (query.prefecture !== undefined && !query.onlyCommutable);
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
@@ -110,7 +108,10 @@ export default async function EngineerLedgerPage({
           populationLabel: engineerPopulationLabel(ctx.partnerCompanyId, view.total),
           isPartner: ctx.partnerCompanyId !== null,
           filtered,
-          ordersByFit,
+          // 🔴 並びの説明を切り替える判定は `engineerSearchPlan` と**同じ関数**である
+          //    （`@ses/db` の `ordersByFit`）。条件式をここに書き写すと、並びは分割したのに
+          //    説明は分割前のまま（またはその逆）が静かに起きる ＝ 説明が嘘になる。
+          ordersByFit: ordersByFit(query),
           checkboxOn: query.onlyInTime || query.onlyCommutable,
         })}
       />

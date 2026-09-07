@@ -220,7 +220,7 @@ afterAll(async () => {
 beforeEach(async () => {
   await admin.emailDispatch.deleteMany({});
   await admin.tenantSendingDomain.deleteMany({});
-  await admin.invitation.deleteMany({ where: { email: { contains: '@hold-test.example' } } });
+  await admin.invitation.deleteMany({ where: { email: { endsWith: '@hold-test.example' } } });
   await admin.usageCounter.deleteMany({ where: { metric: 'EMAIL_COUNT' } });
   connectors = createConnectors({
     email: 'mock',

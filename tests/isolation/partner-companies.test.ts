@@ -246,7 +246,7 @@ afterEach(async () => {
   await setRole(HOST_2, 'SALES');
   await setRole(PARTNER_USER_1, 'PARTNER_SALES');
   await admin.partnerCompany.updateMany({ data: { suspendedAt: null } });
-  await admin.invitation.deleteMany({ where: { email: { contains: '@t0407.example' } } });
+  await admin.invitation.deleteMany({ where: { email: { endsWith: '@t0407.example' } } });
   await admin.partnerCompany.deleteMany({ where: { name: { startsWith: '架空' } } });
   await admin.auditLog.deleteMany({
     where: { action: { in: ['partner_company.create', 'partner_company.update', 'invitation.create'] } },

@@ -9,6 +9,15 @@
 //
 // 🔴 `@prisma/client` を import しない（ESLint が禁じる。`CLAUDE.md` §3.1）。`Decimal` は
 //    `toString()` だけを要求する構造的な型で受ける。
+//
+// 🔴 **T-06-05 で `toDateOnly` の実装は `@ses/db`（`packages/db/src/date-only.ts`）へ移した。**
+//    検索の述語（`packages/db/src/search/**`）と本アプリの書き込み経路が**同じ変換**を通る
+//    必要があるためである（2 本あると「検索は UTC 深夜、書き込みは JST 深夜」のずれが入りうる）。
+//    ここでは re-export だけを行う —— 既存の import 先（`engineers/service.ts` /
+//    `projects/service.ts`）を変えないための措置であり、**定義は 1 か所しかない**。
+import { toDateOnly } from '@ses/db';
+
+export { toDateOnly };
 
 /**
  * Prisma の `Decimal` を数値にする。
@@ -36,14 +45,3 @@ export function toDateOnlyString(value: Date | null): string | null {
   return value === null ? null : toIsoDay(value);
 }
 
-/**
- * `YYYY-MM-DD` を `@db.Date` に渡す値にする（`null` は `null`）。
- * 🔴 オーバーロードを置くのは、**検索条件（`gte`）が `null` を受け付けない**ためである
- *    （`lib/projects/list.ts` の `startFrom`）。実装は 1 つのまま、
- *    「`null` を渡していない呼び出しは `Date` が返る」ことを型で示す。
- */
-export function toDateOnly(value: string): Date;
-export function toDateOnly(value: string | null): Date | null;
-export function toDateOnly(value: string | null): Date | null {
-  return value === null ? null : new Date(`${value}T00:00:00.000Z`);
-}

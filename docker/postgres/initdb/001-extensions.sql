@@ -17,6 +17,12 @@
 -- packages/db/src/search/*.ts の 1 箇所に閉じ、pg_trgm の GIN で代替できる形にする
 -- （SP-01 完了判定 / SP-06 で実装）。
 
+-- 🔴 T-06-05: 本番相当環境での作成経路は
+-- packages/db/prisma/migrations/20260912000000_search_indexes/migration.sql であり、
+-- 本ファイルは**ローカルの初回起動のためだけ**の重複である（IF NOT EXISTS なので順序は問わない）。
+-- 🔴 同 migration のとおり、**trigram の GIN 索引は作らない**（RLS 下では `ILIKE` を索引条件に
+-- 降ろせず、索引を作っても使われない。docs/03 §3.7.2 懸念 4）。pg_trgm は `similarity()` を
+-- 関数として使うために有効化する。
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 DO $$

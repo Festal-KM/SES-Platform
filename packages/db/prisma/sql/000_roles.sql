@@ -99,3 +99,16 @@ GRANT app_scan_probe TO app_migrator;
 -- CREATE 権限が無いため、これが無いとマイグレーションがテーブルを作れない。docs/05 §4.2）。
 ALTER SCHEMA public OWNER TO app_migrator;
 GRANT USAGE ON SCHEMA public TO app_tenant, app_platform, app_platform_write;
+
+-- 🔴 T-06-05: app_migrator が **trusted 拡張**（pg_trgm）を CREATE EXTENSION できるようにする
+--    （docs/03 §3.7.2「拡張の作成経路は Prisma マイグレーション」/
+--    migrations/20260912000000_search_indexes）。
+--    PostgreSQL の規則: trusted な拡張は「**現在のデータベースに対する CREATE 権限**」を持つ
+--    非スーパーユーザーが作成できる。app_migrator は public スキーマの所有者だが、
+--    データベース自身の所有者ではない（ローカルも Testcontainers も DB は postgres が作る）ため、
+--    この GRANT が無いと CREATE EXTENSION が権限エラーで落ちる。
+--    🔴 スーパーユーザー権限を与えるのではない。付与するのは「このデータベースにスキーマ / 拡張を
+--    作れる」ことだけであり、app_migrator は元々全テーブルの所有者である（権限は増えていない）。
+--    ステージング / 本番（RDS / Aurora）では、マスターユーザーが同じ GRANT を 1 度だけ実行する。
+SELECT format('GRANT CREATE ON DATABASE %I TO app_migrator', current_database())
+\gexec

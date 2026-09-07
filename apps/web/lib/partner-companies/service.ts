@@ -10,7 +10,9 @@
 //
 // 🔴 本モジュールは Next.js / Auth.js に依存しない（`@ses/db` のみ）。結合テストが
 //    サーバを立てずに同じ経路を実行できるようにするため（`settings/organization.ts` と同じ方針）。
-import { withTenant, type AuthenticatedTenantCtx } from '@ses/db';
+// 🔴 T-06-05: フリーワードの述語は `@ses/db` の `search/free-word.ts` が唯一の出所である
+//    （docs/05 TBD-8。`contains` / `mode: 'insensitive'` をここに書かない）。
+import { freeWordFilter, withTenant, type AuthenticatedTenantCtx, type FreeWordFilter } from '@ses/db';
 import { NotFoundError } from '../api/errors';
 import type { PartnerCompanyListQuery, PartnerCompanyStatus } from './schemas';
 
@@ -80,15 +82,13 @@ type PartnerCompanyRow = {
 
 /** 業務上の絞り込み（境界の絞り込みではない。本ファイル冒頭の 🔴 を参照）。 */
 type BusinessFilter = {
-  readonly name?: { readonly contains: string; readonly mode: 'insensitive' };
+  readonly name?: FreeWordFilter;
   readonly suspendedAt?: null | { readonly not: null };
 };
 
 function businessFilterOf(query: PartnerCompanyListQuery): BusinessFilter {
   return {
-    ...(query.q === undefined || query.q === ''
-      ? {}
-      : { name: { contains: query.q, mode: 'insensitive' as const } }),
+    ...(query.q === undefined || query.q === '' ? {} : { name: freeWordFilter(query.q) }),
     ...(query.status === undefined
       ? {}
       : query.status === 'ACTIVE'

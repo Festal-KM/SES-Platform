@@ -280,7 +280,7 @@ afterEach(async () => {
     },
     data: { disabledAt: null },
   });
-  await admin.invitation.deleteMany({ where: { email: { contains: '@t0409invite.example' } } });
+  await admin.invitation.deleteMany({ where: { email: { endsWith: '@t0409invite.example' } } });
   await admin.auditLog.deleteMany({
     where: { action: { in: ['membership.role_change', 'membership.revoke', 'invitation.create'] } },
   });

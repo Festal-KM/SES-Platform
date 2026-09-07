@@ -27,6 +27,9 @@
 // 🔴 本モジュールは Next.js / Auth.js に依存しない（`@ses/db` のみ）。結合テストがサーバを
 //    立てずに同じ経路を実行できるようにするため（`engineers/service.ts` と同じ方針）。
 import {
+  // 🔴 T-06-05: フリーワードの述語は `@ses/db` の `search/free-word.ts` が唯一の出所である
+  //    （docs/05 TBD-8。`contains` / `mode: 'insensitive'` をここに書かない）。
+  freeWordFilter,
   uuidV7TimeOf,
   withTenant,
   writeAuditLog,
@@ -132,7 +135,7 @@ export async function listSkills(
   const q = query.q ?? '';
   return withTenant(ctx, async (db) => {
     const items = await db.skill.findMany({
-      where: q === '' ? {} : { name: { contains: q, mode: 'insensitive' } },
+      where: q === '' ? {} : { name: freeWordFilter(q) },
       select: { id: true, name: true, category: true },
       orderBy: [{ sortKey: 'asc' }, { id: 'asc' }],
     });
@@ -197,7 +200,7 @@ export async function listSkillAliases(
   return withTenant(ctx, async (db) => {
     const rows: readonly SkillAliasRow[] = await db.skillAlias.findMany({
       where: {
-        ...(q === '' ? {} : { alias: { contains: q, mode: 'insensitive' as const } }),
+        ...(q === '' ? {} : { alias: freeWordFilter(q) }),
         ...(query.status === undefined ? {} : { status: query.status }),
       },
       select: SKILL_ALIAS_SELECT,

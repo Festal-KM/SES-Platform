@@ -383,3 +383,35 @@ export type {
 // 🔴 経路 5（docs/05 §4.9）の読み取りの型。`TenantDb` / `HostTenantDb` と違い、
 //    API 層が `toPartnerView()` の入力型として参照するため export する。
 export type { PartnerScopeDb, PartnerScopeTarget } from './with-tenant.js';
+// 🔴 T-06-05: `@db.Date` に渡す値の組み立て（docs/05 §6.4 #15 / #25 / #26）。
+//    検索の述語（`search/**`）と `apps/web` の書き込み経路が**同じ変換**を通るための唯一の出所。
+export { toDateOnly } from './date-only.js';
+// 🔴 T-06-05: **検索の実装の唯一の置き場所**（docs/05 TBD-8 / `docs/03` §3.7 / SP-06 T-06-05）。
+//    フリーワードの述語・検索条件の評価・決定的な `ORDER BY` はここにしか無い
+//    （`tests/static/search-sql-single-path.test.ts` が全ソースを AST で走査して固定する）。
+export {
+  assertStatusPriority,
+  ENGINEER_LIST_ORDER_BY,
+  ENGINEER_SKILL_MODE_DEFAULT,
+  ENGINEER_SKILL_MODES,
+  engineerPriceConditions,
+  engineerSearchPlan,
+  engineerSkillConditions,
+  freeWordFilter,
+  freeWordOr,
+  ordersByFit,
+  PROJECT_LIST_ORDER_BY,
+  PROJECT_STATUS_LIST_PRIORITY,
+  projectSearchWhere,
+} from './search/index.js';
+export type {
+  EngineerSearchCriteria,
+  EngineerSearchPlan,
+  EngineerSkillMode,
+  EngineerWhereFragment,
+  FreeWordFilter,
+  ProjectSearchCriteria,
+  ProjectWhereFragment,
+  SearchPlan,
+  SoftCondition,
+} from './search/index.js';

@@ -27,7 +27,12 @@
 //    スキルの重複といった**項目をまたぐ検証は `service.ts` 側**で行う（PATCH では既存値と
 //    合成しないと判定できないため、そもそも境界では判定しきれない）。
 import { z } from 'zod';
-import { ENGINEER_AVAILABILITIES, REMOTE_MODES } from '@ses/db';
+import {
+  ENGINEER_AVAILABILITIES,
+  ENGINEER_SKILL_MODE_DEFAULT,
+  ENGINEER_SKILL_MODES,
+  REMOTE_MODES,
+} from '@ses/db';
 import { PREFECTURE_CODES } from '@ses/domain';
 import { assertNoIsolationKeys, type AssertNoIsolationKeys } from '../api/isolation-keys';
 import { idCursorPageQuerySchema } from '../api/pagination';
@@ -160,16 +165,15 @@ const SKILL_FILTER_MAX = 20;
 
 /**
  * スキル条件の組み合わせ（`docs/02` `F-009` 入力「スキル（複数・AND / OR）」）。
- * 🔴 **既定は `AND`**（`docs/02` / `docs/04` のいずれも `AND` を先に挙げている）。案件の必須要件から
- *    候補を探す業務では「指定したスキルをすべて持つ人」が既定の期待である。1 件しか指定しなければ
- *    `AND` と `OR` は同じ結果になるので、既定値が候補を隠す向きに働くのは複数指定時だけであり、
- *    そのときは画面の選択肢（`S-005`）で切り替えられる。
+ *
+ * 🔴 **T-06-05 で値の出所を `@ses/db`（`packages/db/src/search/engineers.ts`）へ移した。**
+ *    述語を組み立てる側が値集合を持つ形にそろえるためである（`ENGINEER_AVAILABILITIES` /
+ *    `REMOTE_MODES` と同じ扱い）。ここでは **API 境界の語彙としての入口**を保つために
+ *    re-export だけを行う —— 画面と `list-rows.ts` の import 先を変えないための措置であり、
+ *    **定義は 1 か所しかない**。
  */
-export const ENGINEER_SKILL_MODES = ['AND', 'OR'] as const;
-
-export type EngineerSkillMode = (typeof ENGINEER_SKILL_MODES)[number];
-
-export const ENGINEER_SKILL_MODE_DEFAULT: EngineerSkillMode = 'AND';
+export { ENGINEER_SKILL_MODE_DEFAULT, ENGINEER_SKILL_MODES };
+export type { EngineerSkillMode } from '@ses/db';
 
 /**
  * `GET /api/engineers`（#15。`F-009` / `S-005`）の query。T-06-04（検索条件）。
@@ -190,7 +194,7 @@ export const ENGINEER_SKILL_MODE_DEFAULT: EngineerSkillMode = 'AND';
  *    「効いているように見える」状態になり、利用者からは絞り込みの不具合と区別できない。
  * 🔴 **`onlyInTime` / `onlyCommutable` は既定オフ**（`F-009 AC-5` / `docs/02` A-03）。
  *    オフのとき、稼働可能時期が遅い候補・勤務地が合わない候補は**一覧から消えず**、
- *    並びで後ろに回る（`lib/engineers/search.ts` の「適合」）。
+ *    並びで後ろに回る（`@ses/db` の `search/engineers.ts` の「適合」）。
  * 🔴 `cursor` は**行の ID**（`uuid(7)`）である。`idCursorPageQuerySchema` を使うのは、
  *    UUID でない値を Prisma の `cursor: { id }` に渡すと 500 になるため（`pagination.ts` の注記）。
  * 🔴 分離キーを持たない（`AssertNoIsolationKeys`）。母集団は RLS の C3 が決める。
@@ -205,7 +209,7 @@ export const engineerListQuerySchema = idCursorPageQuerySchema.extend({
    * 🔴 **1 人あたりの集約値の定義は「登録されたスキルの経験年数の最大値」**である
    *    （docs/05 §6.4「#15 の実装の決着（T-06-04）」で決着。`S-006` の基本情報が保留していた
    *    集約の定義もこれに揃える）。`skills` を指定した場合は**そのスキルの経験年数**を見る
-   *    （評価の詳細は `lib/engineers/search.ts`）。
+   *    （評価の詳細は `@ses/db` の `search/engineers.ts`）。
    */
   yearsMin: optionalFilter(z.coerce.number().min(0).max(YEARS_MAX)),
   /** 単価レンジ（月額・円）。🔴 台帳のレンジとの**重なり**で判定する（`search.ts`）。 */
@@ -218,7 +222,7 @@ export const engineerListQuerySchema = idCursorPageQuerySchema.extend({
   /** リモート可否。🔴 こちらは**ハード条件**である（`search.ts` の注記）。 */
   remote: optionalFilter(z.enum(REMOTE_MODES)),
   availability: optionalFilter(z.enum(ENGINEER_AVAILABILITIES)),
-  /** フリーワード（氏名・希望条件を対象にする。`lib/engineers/search.ts`）。 */
+  /** フリーワード（氏名・希望条件を対象にする。`@ses/db` の `search/engineers.ts`）。 */
   q: optionalFilter(z.string().trim().min(1).max(FREE_WORD_MAX_LENGTH)),
   /** 🔴 既定オフ（`F-009 AC-5`）。「開始日に間に合う人だけ」。 */
   onlyInTime: checkboxFilter(),

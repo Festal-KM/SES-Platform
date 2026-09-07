@@ -219,7 +219,7 @@ afterAll(async () => {
 beforeEach(async () => {
   await admin.emailDispatch.deleteMany({});
   await admin.tenantSendingDomain.deleteMany({});
-  await admin.invitation.deleteMany({ where: { email: { contains: '@sandbox-invite.example' } } });
+  await admin.invitation.deleteMany({ where: { email: { endsWith: '@sandbox-invite.example' } } });
   await admin.usageCounter.deleteMany({ where: { metric: 'EMAIL_COUNT' } });
   sesSent = [];
   // 🔴 `sandbox` の実配線（`resolveConnectorSelection('sandbox').email`）と同じ選択で組み立てる。

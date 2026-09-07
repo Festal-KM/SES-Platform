@@ -1490,21 +1490,26 @@ describe('🔴 F-015 AC-2 の前提: 索引と実行計画（判定は SP-12 / T
       expect(row.indexdef, row.indexname).toMatch(/\(tenant_id[,)]/);
     }
     const defs = rows.map((row) => row.indexdef).join('\n');
-    // 既定の並び（状態 → 更新日時）と、開始日の絞り込みに対応する索引。
-    expect(defs).toContain('(tenant_id, status, updated_at)');
+    // 🔴 T-06-05: 既定の並び（4 段）を**向きまで**覆う索引に張り替えた
+    //    （旧 `(tenant_id, status, updated_at)` は先頭 2 列として覆われるので落とした。
+    //    migration `20260912000000_search_indexes`）。
+    expect(defs).toContain('(tenant_id, status DESC, updated_at DESC, start_date, id DESC)');
     expect(defs).toContain('(tenant_id, start_date)');
+    // 🔴 T-06-05: フリーワード用の trigram GIN は**置かない**（RLS 下では `ILIKE` を索引条件に
+    //    降ろせないため。根拠は `tests/isolation/search-indexes.test.ts` ④ が固定する）。
+    expect(defs).not.toContain('trgm_ops');
   });
 
-  it('🔴 既定の並びを複合索引が供給できる（`(tenant_id, status, updated_at)` の後方走査）', async () => {
+  it('🔴 既定の並びを複合索引が「そのまま」供給できる（ソートが計画に現れない。T-06-05）', async () => {
     const plan = await explainProjectList(HOST_1, { forceIndex: true });
 
-    // 🔴 索引の先頭 2 キーが並びの先頭 2 キーと一致するので、後方走査 + 増分ソートになる
-    //    （`start_date` / `id` は同値グループの中だけを並べ替える）。
-    expect(plan).toContain('Index Scan Backward using projects_tenant_id_status_updated_at_idx');
-    expect(plan).toContain('Presorted Key: projects.status, projects.updated_at');
+    // 🔴 索引の 4 キーが並びの 4 キーと**向きまで**一致するので、増分ソートすら要らない。
+    //    （`start_date` は `ASC` の既定が `NULLS LAST` であり、`ORDER BY … NULLS LAST` と一致する。）
     expect(plan).toContain(
-      'Sort Key: projects.status DESC, projects.updated_at DESC, projects.start_date, projects.id DESC',
+      'Index Scan using projects_tenant_id_status_updated_at_start_date_id_idx',
     );
+    expect(plan).not.toContain('Sort Key:');
+    expect(plan).not.toContain('Incremental Sort');
   });
 
   it('🔴 一覧の実行計画に RLS（C4）の述語が現れる —— 母集団を決めているのはアプリではない', async () => {

@@ -1,24 +1,16 @@
-// apps/web/lib/engineers/search.ts
-// `GET /api/engineers`（docs/05 §6.4 #15。`F-009` / `S-005`）の**検索条件の評価**。T-06-04。
-//
-// ============================================================================
-// 🔴 この 1 モジュールに閉じる（SP-06 T-06-05 / docs/05 TBD-8）
-// ============================================================================
-// 検索の実装は **`packages/db/src/search/*.ts` の 1 箇所に閉じる**のが T-06-05 の完了条件である。
-// 本タスクではまだそこへ移していないが、**移せる形**にしてある:
-//   - I/O を持たない（`withTenant` も Prisma のインスタンスも触らない。述語を組み立てるだけ）
-//   - `next/*` にも `@ses/i18n` にも依存しない
-//   - 入口は `engineerSearchPlan` の 1 本だけ（`list.ts` はこれ以外の述語を作らない）
-// フリーワードは `contains`（`ILIKE '%…%'`）の **seam** である（T-06-03 の `projectListWhere` と
-// 同じ）。`pg_trgm` の GIN を使わず、`%` / `_` がワイルドカードとして働くという 2 点の限界は
-// **母集団の外へは出ない**（RLS が先に効く）ので情報境界の問題ではなく、T-06-05 が実装ごと差し替える。
+// packages/db/src/search/engineers.ts
+// エンジニアの複合検索（`GET /api/engineers`。docs/05 §6.4 #15 / `F-009` / `S-005`）の
+// **検索条件の評価と決定的順序**。T-06-04 → 🔴 T-06-05 で `apps/web/lib/engineers/search.ts`
+// から**そのままここへ移した**（docs/05 TBD-8 / SP-06 T-06-05 の完了条件）。
 //
 // ============================================================================
 // 🔴 ここに境界の条件を 1 つも書かない（`F-009 AC-3` / `BR-56` / `CLAUDE.md` §3.1）
 // ============================================================================
 // `engineers` の RLS は C3 OWNER_SCOPED であり、母集団はそれだけが決める。本モジュールが返す
 // 述語は**すべて業務上の絞り込み**であり、`tenant_id` / `partner_company_id` /
-// `owner_partner_company_id` は 1 度も現れない（`search.test.ts` が文字列として数える）。
+// `owner_partner_company_id` は 1 度も現れない（`engineers.test.ts` が文字列として数える）。
+// 🔴 **`packages/db` に置いても意味は変わらない。** ここは「検索の実装の置き場所」であって
+//    「境界の実装の置き場所」ではない（境界は RLS と `withTenant` / `scope-injection` が持つ）。
 //
 // ============================================================================
 // 🔴 Phase 1 の並び順（`F-009 AC-1` / `AC-2` / `docs/02` `F-009` 処理②）
@@ -41,12 +33,13 @@
 //    [Issue #3](https://github.com/Festal-KM/SES-Platform/issues/3) が確定させる Phase 2 の
 //    論点であり、Phase 1 で先取りしない）。
 // 🔴 ソフト条件が 1 つも無いとき（＝ 稼働可能時期も勤務地も指定していない、または両方の
-//    チェックボックスがオン）は**適合の差が生じない**ので、並びは `updated_at` 降順 → `id` 降順
-//    だけになる（T-05-09 の既定順序と完全に同じ。既定の見え方を変えない）。
+//    チェックボックスがオン）は**適合の差が生じない**ので、`buckets` は 1 要素になり、
+//    並びは `updated_at` 降順 → `id` 降順だけになる（T-05-09 の既定順序と完全に同じ）。
 import type { PrefectureCode } from '@ses/domain';
-import type { EngineerAvailability, RemoteMode } from '@ses/db';
-import { toDateOnly } from '../format/db-values';
-import type { EngineerListQuery } from './schemas';
+import { toDateOnly } from '../date-only.js';
+import type { EngineerAvailability, RemoteMode } from '../schema-value-sets.js';
+import { freeWordOr, type FreeWordFilter } from './free-word.js';
+import type { SearchPlan, SoftCondition } from './plan.js';
 
 /**
  * 本モジュールが組み立てる述語の形（Prisma の `EngineerWhereInput` の部分集合）。
@@ -66,21 +59,73 @@ export type EngineerWhereFragment = {
   prefecture?: null | PrefectureCode | { not: PrefectureCode };
   remoteMode?: null | RemoteMode | { not: RemoteMode };
   availability?: EngineerAvailability;
-  displayName?: { contains: string; mode: 'insensitive' };
-  preferenceNote?: { contains: string; mode: 'insensitive' };
+  displayName?: FreeWordFilter;
+  preferenceNote?: FreeWordFilter;
   AND?: EngineerWhereFragment[];
   OR?: EngineerWhereFragment[];
 };
 
 /**
- * 🔴 **並びの第 2・第 3 キー**（第 1 キーは「適合」＝ `EngineerSearchPlan.fit`）。
+ * スキル条件の組み合わせ（`docs/02` `F-009` 入力「スキル（複数・AND / OR）」）。
+ * 🔴 **既定は `AND`**（`docs/02` / `docs/04` のいずれも `AND` を先に挙げている）。案件の必須要件から
+ *    候補を探す業務では「指定したスキルをすべて持つ人」が既定の期待である。1 件しか指定しなければ
+ *    `AND` と `OR` は同じ結果になるので、既定値が候補を隠す向きに働くのは複数指定時だけであり、
+ *    そのときは画面の選択肢（`S-005`）で切り替えられる。
+ * 🔴 T-06-05 で `apps/web/lib/engineers/schemas.ts` からここへ移した。値集合は**述語を組み立てる
+ *    側が持つ**のが筋である（API 境界の Zod スキーマはこれを参照するだけ。
+ *    `ENGINEER_AVAILABILITIES` などと同じ扱いになる）。
+ */
+export const ENGINEER_SKILL_MODES = ['AND', 'OR'] as const;
+
+export type EngineerSkillMode = (typeof ENGINEER_SKILL_MODES)[number];
+
+export const ENGINEER_SKILL_MODE_DEFAULT: EngineerSkillMode = 'AND';
+
+/**
+ * `GET /api/engineers`（#15）の検索条件。
+ *
+ * 🔴 **API 境界の Zod スキーマ（`apps/web/lib/engineers/schemas.ts` の `EngineerListQuery`）が
+ *    この型に構造的に適合する**。`packages/db` から `apps/web` を import できない（`CLAUDE.md` §2.1）
+ *    ため、契約は「型の形」で結ぶ。ずれたら `apps/web` 側の呼び出しがコンパイルで落ちる。
+ * 🔴 ページング（`cursor` / `limit`）を含めない。**母集団と並びの話ではない**ためである。
+ * 🔴 分離キー（`tenantId` / `partnerCompanyId` / `ownerPartnerCompanyId`）を持たない。
+ */
+export type EngineerSearchCriteria = {
+  /** スキル（グローバル辞書 `Skill` の ID。複数可）。 */
+  readonly skills?: readonly string[];
+  readonly skillMode: EngineerSkillMode;
+  /** 経験年数の下限（集約の定義は `engineerSkillConditions` の JSDoc）。 */
+  readonly yearsMin?: number;
+  readonly priceMin?: number;
+  readonly priceMax?: number;
+  /** 稼働可能時期（`YYYY-MM-DD`）。「この日までに稼働できる」。🔴 ソフト条件。 */
+  readonly availableBy?: string;
+  /** 勤務地（都道府県）。🔴 ソフト条件。 */
+  readonly prefecture?: PrefectureCode;
+  /** リモート可否。🔴 こちらは**ハード条件**である（下記）。 */
+  readonly remote?: RemoteMode;
+  readonly availability?: EngineerAvailability;
+  /** フリーワード。 */
+  readonly q?: string;
+  /** 🔴 既定オフ（`F-009 AC-5`）。「開始日に間に合う人だけ」。 */
+  readonly onlyInTime: boolean;
+  /** 🔴 既定オフ（`F-009 AC-5`）。「通勤可能な人だけ」。 */
+  readonly onlyCommutable: boolean;
+};
+
+/**
+ * 🔴 **並びの第 2・第 3 キー**（第 1 キーは「適合」＝ `SearchPlan.buckets` の順序）。
  *
  * `updated_at` の降順 → `id` の降順。`id` は `uuid(7)`（時系列で単調増加）なので、同時刻の行でも
  * 順序が**一意**に決まる（`F-009 AC-1`「実行のたびに同じ並び順」）。
  * 🔴 **`ORDER BY` に「全体件数」「順位」「スコア」を持ち込まない**（docs/05 §4.8）。境界外の行の
  *    有無で順位が動くと、並び順そのものが他社の存在を漏らす。両キーとも**その行の列の値**だけで
  *    決まり、母集団の大きさに依存しない。
- * 索引は `@@index([tenantId, updatedAt])`（docs/05 §4.6 / schema.prisma）。
+ * 🔴 索引は `@@index([tenantId, updatedAt(sort: Desc), id(sort: Desc)])`（T-06-05。
+ *    migration `20260912000000_search_indexes`）。**`tenant_id` が先頭列**であり、RLS の
+ *    `tenant_id = app_tenant_id()`（STABLE）が等値で枝刈りできる（`docs/03` §3.7.2 懸念 1）。
+ * 🔴 SP-08 では、この配列が**自社スコープと共有スコープのマージ比較子の出所**になる
+ *    （`plan.ts` の「第 2 軸」）。並びのキーを 2 箇所に書かないこと。
  */
 export const ENGINEER_LIST_ORDER_BY = [{ updatedAt: 'desc' }, { id: 'desc' }] as const;
 
@@ -93,18 +138,15 @@ export const ENGINEER_LIST_ORDER_BY = [{ updatedAt: 'desc' }, { id: 'desc' }] as
 const COMMUTABLE_REMOTE_MODE: RemoteMode = 'FULL_REMOTE';
 
 /**
- * ソフト条件 1 つ分。`match`（適合）と `miss`（不適合）を**両方**明示的に持つ。
+ * 🔴 フリーワードの対象列（`docs/04` §S-005 の検索条件）。
  *
- * 🔴 **`miss` を `NOT: match` で作らない。** SQL の三値論理では `NOT (available_from <= X)` は
- *    `available_from IS NULL` の行に対して NULL（＝ 偽）になり、**その行がどちらのバケットにも
- *    入らない ＝ 一覧から消える**。Prisma の `NOT` が nullable 列をどう展開するかはバージョン
- *    依存でもある。`match` と `miss` が**母集団を過不足なく 2 分する**ことは実装で保証し、
- *    `tests/isolation/engineers.test.ts` が「チェックボックスがオフなら 1 件も消えない」で固定する。
+ * 🔴 探索先は **氏名（`display_name`）と 希望条件（`preference_note`）の 2 列だけ**である。
+ *    連絡先・現所属会社名を検索対象にしない —— どちらも画面が出さない PII であり
+ *    （docs/05 §6.4 #17 の決着）、**一致・不一致から値を推測できる経路**を作らないためである。
+ * 🔴 フリーワードは索引で加速されない（`free-word.ts` 冒頭の実測）。母集団は RLS の
+ *    `tenant_id` 等値（索引条件）でテナント分に絞られており、その中を走査する。
  */
-type SoftCondition = {
-  readonly match: EngineerWhereFragment;
-  readonly miss: EngineerWhereFragment;
-};
+const ENGINEER_FREE_WORD_COLUMNS = ['displayName', 'preferenceNote'] as const;
 
 /**
  * 稼働可能時期（`availableBy`）— 「この日までに稼働できるか」。
@@ -115,7 +157,7 @@ type SoftCondition = {
  *    「間に合う人だけ」（チェックボックス）の約束が守られない。
  *    🔴 既定（チェックボックスがオフ）では**一覧から消えず**、後ろに並ぶだけである。
  */
-function inTimeCondition(availableBy: string): SoftCondition {
+function inTimeCondition(availableBy: string): SoftCondition<EngineerWhereFragment> {
   const limit = toDateOnly(availableBy);
   return {
     match: { availableFrom: { lte: limit } },
@@ -130,7 +172,7 @@ function inTimeCondition(availableBy: string): SoftCondition {
  *    人材は通勤しないので、勤務地の不一致は障害にならない。
  * 🔴 勤務地が未設定（NULL）の人材は、フルリモート可でない限り不適合とする（上と同じ理由）。
  */
-function commutableCondition(prefecture: PrefectureCode): SoftCondition {
+function commutableCondition(prefecture: PrefectureCode): SoftCondition<EngineerWhereFragment> {
   return {
     match: { OR: [{ prefecture }, { remoteMode: COMMUTABLE_REMOTE_MODE }] },
     miss: {
@@ -159,17 +201,21 @@ function commutableCondition(prefecture: PrefectureCode): SoftCondition {
  *        ＝ **最大値 ≧ `yearsMin`**（上の集約の定義と一致する）
  * 🔴 `engineer_skills` にも同じ RLS（C3 + 継承トリガ。docs/05 §4.4.1）が効くため、
  *    関連の副問い合わせから他社の行に到達することはない。
+ * 🔴 副問い合わせの索引は `@@index([tenantId, skillId, yearsOfExperience])`（`schema.prisma`）。
+ *    **`tenant_id` が先頭列**である（`docs/03` §3.7.2 懸念 1）。
  */
-export function engineerSkillConditions(query: EngineerListQuery): EngineerWhereFragment[] {
+export function engineerSkillConditions(
+  criteria: EngineerSearchCriteria,
+): EngineerWhereFragment[] {
   const years =
-    query.yearsMin === undefined ? {} : { yearsOfExperience: { gte: query.yearsMin } as const };
-  const skills = query.skills ?? [];
+    criteria.yearsMin === undefined ? {} : { yearsOfExperience: { gte: criteria.yearsMin } as const };
+  const skills = criteria.skills ?? [];
 
   if (skills.length === 0) {
     // 経験年数だけの指定は「いずれかのスキルがその年数以上」＝ 集約（最大値）の下限。
-    return query.yearsMin === undefined ? [] : [{ engineerSkills: { some: { ...years } } }];
+    return criteria.yearsMin === undefined ? [] : [{ engineerSkills: { some: { ...years } } }];
   }
-  if (query.skillMode === 'OR') {
+  if (criteria.skillMode === 'OR') {
     return [{ engineerSkills: { some: { skillId: { in: [...skills] }, ...years } } }];
   }
   // AND: スキルごとに「そのスキルを持つ（かつ年数を満たす）」を重ねる。
@@ -199,32 +245,17 @@ export function engineerSkillConditions(query: EngineerListQuery): EngineerWhere
  *    トップレベルの `.refine()` で書くと `withApiRoute` の `assertBoundarySchema` が `.shape` を
  *    読めなくなる（`engineers/schemas.ts` 冒頭の制約）。
  */
-export function engineerPriceConditions(query: EngineerListQuery): EngineerWhereFragment[] {
+export function engineerPriceConditions(
+  criteria: EngineerSearchCriteria,
+): EngineerWhereFragment[] {
   const conditions: EngineerWhereFragment[] = [];
-  if (query.priceMax !== undefined) {
-    conditions.push({ OR: [{ unitPriceMin: null }, { unitPriceMin: { lte: query.priceMax } }] });
+  if (criteria.priceMax !== undefined) {
+    conditions.push({ OR: [{ unitPriceMin: null }, { unitPriceMin: { lte: criteria.priceMax } }] });
   }
-  if (query.priceMin !== undefined) {
-    conditions.push({ OR: [{ unitPriceMax: null }, { unitPriceMax: { gte: query.priceMin } }] });
+  if (criteria.priceMin !== undefined) {
+    conditions.push({ OR: [{ unitPriceMax: null }, { unitPriceMax: { gte: criteria.priceMin } }] });
   }
   return conditions;
-}
-
-/**
- * フリーワード（`docs/04` §S-005 の検索条件）。
- *
- * 🔴 探索先は **氏名（`display_name`）と 希望条件（`preference_note`）の 2 列だけ**である。
- *    連絡先・現所属会社名を検索対象にしない —— どちらも画面が出さない PII であり
- *    （docs/05 §6.4 #17 の決着）、**一致・不一致から値を推測できる経路**を作らないためである。
- * 🔴 `contains` は T-06-05 が差し替える seam である（本ファイル冒頭）。
- */
-function freeWordCondition(q: string): EngineerWhereFragment {
-  return {
-    OR: [
-      { displayName: { contains: q, mode: 'insensitive' } },
-      { preferenceNote: { contains: q, mode: 'insensitive' } },
-    ],
-  };
 }
 
 /**
@@ -233,70 +264,77 @@ function freeWordCondition(q: string): EngineerWhereFragment {
  * チェックボックスがオンのものは `where`（母集団）側へ移るので、ここには現れない
  * （＝ 母集団の全行がその条件を満たしており、適合の差にならない）。
  */
-function softConditions(query: EngineerListQuery): SoftCondition[] {
-  const conditions: SoftCondition[] = [];
-  if (query.availableBy !== undefined && !query.onlyInTime) {
-    conditions.push(inTimeCondition(query.availableBy));
+function softConditions(
+  criteria: EngineerSearchCriteria,
+): SoftCondition<EngineerWhereFragment>[] {
+  const conditions: SoftCondition<EngineerWhereFragment>[] = [];
+  if (criteria.availableBy !== undefined && !criteria.onlyInTime) {
+    conditions.push(inTimeCondition(criteria.availableBy));
   }
-  if (query.prefecture !== undefined && !query.onlyCommutable) {
-    conditions.push(commutableCondition(query.prefecture));
+  if (criteria.prefecture !== undefined && !criteria.onlyCommutable) {
+    conditions.push(commutableCondition(criteria.prefecture));
   }
   return conditions;
 }
 
 /**
- * 検索条件を評価するための計画。
+ * 🔴 **「並びの第 1 キー（適合）が効くか」の唯一の判定**（T-06-04 のレビュー申し送り 2 の解消）。
  *
- * 🔴 **`where` が母集団であり、一覧と `COUNT` はこの 1 つの値を共有する**（docs/05 §4.8）。
- *    `fit` / `miss` は `where` を**過不足なく 2 分する**ので、`COUNT(where)` は
- *    2 つのバケットの合計と必ず一致する（＝ 並びの都合で件数が変わらない）。
+ * `engineerSearchPlan`（母集団を分割するか）と画面（`S-005` の並び順の説明文を切り替えるか）は、
+ * **同じ関数**を通る。条件式を 2 か所に書くと、「並びは分割したのに説明は分割前のまま」
+ * （またはその逆）が静かに起きる —— 利用者から見れば**並び順の説明が嘘になる**。
+ * 🔴 `engineerSearchPlan(criteria).buckets.length > 1` と必ず一致する
+ *    （`engineers.test.ts` が両者の一致を固定する）。
  */
-export type EngineerSearchPlan = {
-  /** 母集団（検索条件 + チェックボックスがオンのソフト条件）。 */
-  readonly where: EngineerWhereFragment;
-  /** 🔴 並びの第 1 キー（適合）。`null` なら適合の差が無い ＝ 分割しない。 */
-  readonly fit: EngineerWhereFragment | null;
-  /** 🔴 `fit` の補集合。`fit` が `null` なら `null`。 */
-  readonly miss: EngineerWhereFragment | null;
-};
+export function ordersByFit(criteria: EngineerSearchCriteria): boolean {
+  return softConditions(criteria).length > 0;
+}
+
+/** `#15` の計画（`where` = 母集団 / `buckets` = 適合による分割。`plan.ts`）。 */
+export type EngineerSearchPlan = SearchPlan<EngineerWhereFragment>;
 
 /**
- * `GET /api/engineers`（#15）の検索条件 → 述語（`F-009` の入力）。**唯一の入口**である。
+ * `GET /api/engineers`（#15）の検索条件 → 計画（`F-009` の入力）。**唯一の入口**である。
  *
- * 🔴 条件を 1 つも指定しなければ `where` は `{}`（＝ 母集団そのもの）、`fit` は `null` になり、
+ * 🔴 条件を 1 つも指定しなければ `where` は `{}`（＝ 母集団そのもの）、`buckets` は `[{}]` になり、
  *    T-05-09 の骨格と**完全に同じ挙動**になる（既定の見え方を変えない）。
+ * 🔴 **「分割するかどうか」を決めるのはこの関数だけ**である（`plan.ts` の 🔴）。読み出し側は
+ *    `buckets` を先頭から読むだけで、適合の判定を持たない。
  */
-export function engineerSearchPlan(query: EngineerListQuery): EngineerSearchPlan {
-  const softs = softConditions(query);
+export function engineerSearchPlan(criteria: EngineerSearchCriteria): EngineerSearchPlan {
+  const softs = softConditions(criteria);
 
   const and: EngineerWhereFragment[] = [
-    ...engineerSkillConditions(query),
-    ...engineerPriceConditions(query),
+    ...engineerSkillConditions(criteria),
+    ...engineerPriceConditions(criteria),
   ];
   // 🔴 チェックボックスがオンのソフト条件は**母集団を絞る**（`F-009 AC-5` の「オンのとき」）。
-  if (query.availableBy !== undefined && query.onlyInTime) {
-    and.push(inTimeCondition(query.availableBy).match);
+  if (criteria.availableBy !== undefined && criteria.onlyInTime) {
+    and.push(inTimeCondition(criteria.availableBy).match);
   }
-  if (query.prefecture !== undefined && query.onlyCommutable) {
-    and.push(commutableCondition(query.prefecture).match);
+  if (criteria.prefecture !== undefined && criteria.onlyCommutable) {
+    and.push(commutableCondition(criteria.prefecture).match);
   }
-  if (query.q !== undefined) and.push(freeWordCondition(query.q));
+  if (criteria.q !== undefined) and.push(freeWordOr(criteria.q, ENGINEER_FREE_WORD_COLUMNS));
 
   const where: EngineerWhereFragment = {
-    ...(query.availability === undefined ? {} : { availability: query.availability }),
+    ...(criteria.availability === undefined ? {} : { availability: criteria.availability }),
     // 🔴 リモート可否は**ハード条件**である。`docs/02` A-03 が「減点 + 明示的なフィルタ」で
     //    扱うと定めたのは**勤務地の不一致**であり、「フルリモート可の人を探す」は
     //    利用者が明示的に選んだ絞り込みそのものである（`commutableCondition` が
     //    フルリモートを救済に使うのとは役割が違う）。
-    ...(query.remote === undefined ? {} : { remoteMode: query.remote }),
+    ...(criteria.remote === undefined ? {} : { remoteMode: criteria.remote }),
     ...(and.length === 0 ? {} : { AND: and }),
   };
 
-  if (softs.length === 0) return { where, fit: null, miss: null };
+  if (softs.length === 0) return { where, buckets: [where] };
   return {
     where,
-    fit: { AND: softs.map((condition) => condition.match) },
-    // 🔴 ド・モルガン: 「すべて満たす」の否定は「どれか 1 つを満たさない」。
-    miss: { OR: softs.map((condition) => condition.miss) },
+    buckets: [
+      // 適合: ソフト条件を**すべて**満たす。
+      { AND: [where, { AND: softs.map((condition) => condition.match) }] },
+      // 🔴 ド・モルガン: 「すべて満たす」の否定は「どれか 1 つを満たさない」。
+      { AND: [where, { OR: softs.map((condition) => condition.miss) }] },
+    ],
   };
 }

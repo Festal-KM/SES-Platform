@@ -399,7 +399,15 @@ model Engineer {
 
   @@index([tenantId, ownerPartnerCompanyId, availability, availableFrom])
   @@index([tenantId, retentionExpiresAt, piiPurgedAt]) // 保持期間ジョブ（§9.7）
-  @@index([tenantId, updatedAt]) // Phase 1 の決定的順序（§4.6）
+  // 🔴 T-06-05: Phase 1 の決定的順序（§4.6 / `F-009 AC-1`）。`ENGINEER_LIST_ORDER_BY` と
+  //    **向きまで 1 対 1**（`updated_at DESC, id DESC`）。向きが違うと ORDER BY がソートに落ちる。
+  //    `tenant_id` が先頭列（§3.1 共通規約 / `docs/03` §3.7.2 懸念 1）。
+  @@index([tenantId, updatedAt(sort: Desc), id(sort: Desc)])
+  // 🔴 T-06-05: **フリーワード用の trigram GIN 索引は置かない。** RLS 下では `ILIKE`
+  //    （`texticlike`。`proleakproof = false`）を索引条件に降ろせず、索引を作っても
+  //    `app_tenant` からは 1 度も使われない（実測: `docs/03` §3.7.2「懸念 4」/
+  //    `tests/isolation/search-indexes.test.ts` ④）。母集団はテナント分に絞られるため、
+  //    Phase 1 の規模では絞り込み後のフィルタで十分である。
   @@map("engineers")
 }
 
@@ -593,8 +601,12 @@ model Project {
   contracts        Contract[] // T-02-04
   assignments      Assignment[] // T-02-04
 
-  @@index([tenantId, status, updatedAt])
+  // 🔴 T-06-05: 一覧の既定の並び（`F-015 AC-3`）。`PROJECT_LIST_ORDER_BY` と**向きまで 1 対 1**
+  //    （`status DESC, updated_at DESC, start_date ASC〔NULLS LAST = 既定〕, id DESC`）。
+  //    先頭 2 列が旧 `@@index([tenantId, status, updatedAt])` を覆うので、旧索引は落とす。
+  @@index([tenantId, status(sort: Desc), updatedAt(sort: Desc), startDate, id(sort: Desc)])
   @@index([tenantId, startDate])
+  // 🔴 T-06-05: フリーワード用の trigram GIN 索引は置かない（`engineers` と同じ理由）。
   @@map("projects")
 }
 

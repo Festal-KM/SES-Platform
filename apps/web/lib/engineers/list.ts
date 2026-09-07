@@ -2,11 +2,14 @@
 // エンジニア台帳の一覧・複合検索（docs/05 §6.4 #15 `GET /api/engineers`。`F-009` / `S-005`）。
 // T-05-09（骨格）→ T-06-04（検索条件の評価と決定的順序）。
 //
-// 🔴 **検索条件の評価は `search.ts` の 1 モジュールに閉じている**（SP-06 T-06-05 / docs/05 TBD-8）。
+// 🔴 **検索条件の評価は `@ses/db` の `search/**` に閉じている**（SP-06 T-06-05 / docs/05 TBD-8）。
 //    本ファイルが組み立てる述語は 1 つも無く、`engineerSearchPlan` の戻り値をそのまま使う。
+//    🔴 **「適合で分割するかどうか」の判定も本ファイルには無い** —— `plan.buckets` を先頭から
+//    読むだけである（判定が 2 本になると、述語と読み出しが静かにずれる。T-06-04 の申し送り 2）。
 //    匿名候補（`AnonymousCandidateView`。越境経路 4）の混在は **SP-08** である
 //    —— そのときも「2 本のクエリをアプリ層で決定的にマージする」（`docs/03` `program-design`
-//    申し送り 18）形になるので、本ファイルの `readOrderedRows` がその足場になる。
+//    申し送り 18）形になるので、本ファイルの `readOrderedRows` がその足場になる
+//    （合成のしかたは `packages/db/src/search/plan.ts` の「第 2 軸」）。
 //
 // ============================================================================
 // 🔴 母集団はアプリが決めない（`F-004 AC-3` / `F-009 AC-3` / `CLAUDE.md` §3.1）
@@ -31,7 +34,16 @@
 //    満たせなくなる。**氏名を出す読み取りに記録を伴わせる規律**（`recordEngineerView` の注記）は
 //    「経歴・連絡先に到達する読み取り」に対するものであり、その線引きは同注記に明記した。
 //    ⚠️ この判断は docs/05 §6.4「#15 の実装の決着（T-05-09）」に記録してある。
-import { withTenant, type AuthenticatedTenantCtx, type EngineerAvailability, type RemoteMode } from '@ses/db';
+import {
+  ENGINEER_LIST_ORDER_BY,
+  engineerSearchPlan,
+  withTenant,
+  type AuthenticatedTenantCtx,
+  type EngineerAvailability,
+  type EngineerSearchPlan,
+  type EngineerWhereFragment,
+  type RemoteMode,
+} from '@ses/db';
 import type { PrefectureCode } from '@ses/domain';
 import { buildCursorPage, takeForCursorPage } from '../api/pagination';
 import { toJstIsoDay } from '../format/datetime';
@@ -40,12 +52,6 @@ import { toJstIsoDay } from '../format/datetime';
 import { decimalToNumber, toIsoDay } from '../format/db-values';
 import { pickPrimarySkills, type EngineerSkillCandidate } from './list-rows';
 import type { EngineerListQuery } from './schemas';
-import {
-  ENGINEER_LIST_ORDER_BY,
-  engineerSearchPlan,
-  type EngineerSearchPlan,
-  type EngineerWhereFragment,
-} from './search';
 import type { EngineerOwnership } from './service';
 
 /** 一覧に出すスキル（`docs/04` §S-005「主要スキル（上位 3 のみ表示、超過は `+N`）」）。 */
@@ -227,23 +233,47 @@ function findOrderedPage(
 }
 
 /**
+ * カーソル行がどのバケットに属するかを引き当てる（`readOrderedRows` の前段）。
+ *
+ * 🔴 **カーソルはどのバケットの行かを判定してから使う。** 先のバケットの続きを後のバケットの
+ *    カーソルで読むと、ページの境目で行が重複・欠落する。
+ * 🔴 判定は「そのカーソル行がそのバケットの母集団に居るか」を 1 件引くだけである。
+ *    **最後のバケットは引かない**（そこに居ないなら、どこにも居ない ＝ 境界外か母集団を
+ *    外れた行であり、いずれにせよ最後のバケットをカーソル付きで読んで 0 件になる。
+ *    docs/05 §4.8「見えない ＝ 存在しない」。500 にしない）。
+ *    バケットが 2 つのときの問い合わせ回数は T-06-04 実装（`fit` に居るかを 1 回引く）と同じである。
+ */
+async function locateCursorBucket(
+  db: EngineerListDb,
+  buckets: readonly EngineerWhereFragment[],
+  cursor: string,
+): Promise<number> {
+  for (const [index, bucket] of buckets.slice(0, -1).entries()) {
+    const found = await db.engineer.findFirst({
+      where: { AND: [bucket, { id: cursor }] },
+      select: { id: true },
+    });
+    if (found !== null) return index;
+  }
+  return buckets.length - 1;
+}
+
+/**
  * 🔴 **Phase 1 の並び順そのもの**（`F-009 AC-1` / `docs/02` `F-009` 処理②
  * 「検索条件への適合と更新日時による決定的な順序」）。
  *
- * 適合（`plan.fit`）と不適合（`plan.miss`）は母集団を過不足なく 2 分するので、
- * **適合バケットを読み切ってから不適合バケットを読む**だけで「適合 → 更新日時 → id」の
+ * `plan.buckets` は母集団を**過不足なく分割**したものなので（`packages/db/src/search/plan.ts`）、
+ * **先頭のバケットを読み切ってから次のバケットを読む**だけで「適合 → 更新日時 → id」の
  * 3 段の並びになる。各バケットの中は `ENGINEER_LIST_ORDER_BY` で一意に決まるため、
  * **同じ条件・同じデータなら何度実行しても同じ並び**である。
  *
- * 🔴 なぜ 2 クエリに分けるか: 「適合」は列の値ではなく**述語**であり、`ORDER BY` に載せるには
- *    `CASE` 式（＝ raw SQL）が要る。それは「検索 SQL を `packages/db/src/search/**` の 1 箇所に
+ * 🔴 なぜバケットに分けるか: 「適合」は列の値ではなく**述語**であり、`ORDER BY` に載せるには
+ *    `CASE` 式（＝ raw SQL）が要る。それは「検索の実装を `packages/db/src/search/**` の 1 箇所に
  *    閉じる」（T-06-05 / docs/05 TBD-8）と衝突する。**アプリ層で決定的にマージする**形は
  *    SP-08（自社スコープ + 共有スコープ）でも使う（`docs/03` `program-design` 申し送り 18）。
- * 🔴 **カーソルはどちらのバケットの行かを判定してから使う。** 適合バケットの続きを
- *    不適合バケットのカーソルで読むと、ページの境目で行が重複・欠落する。
- *    判定は「そのカーソル行が適合バケットの母集団に居るか」を 1 件引くだけで、
- *    **境界外の ID なら居ないので 0 件のページになる**（docs/05 §4.8。500 にしない）。
- * 🔴 `plan.fit === null`（ソフト条件が無い）のときは**分割せず 1 クエリ**である
+ * 🔴 **本関数はバケットの中身を見ない。** 「分割するかどうか」の判定は `engineerSearchPlan` に
+ *    しか無く（`buckets.length`）、ここには `fit` / `miss` という語すら現れない。
+ * 🔴 バケットが 1 つ（ソフト条件が無い）のときは**そのまま 1 クエリ**である
  *    ＝ T-05-09 の骨格と同じ経路であり、既定の一覧に余計な問い合わせを足さない。
  */
 async function readOrderedRows(
@@ -252,27 +282,19 @@ async function readOrderedRows(
   cursor: string | undefined,
   take: number,
 ): Promise<EngineerListRow[]> {
-  if (plan.fit === null || plan.miss === null) {
-    return findOrderedPage(db, plan.where, cursor, take);
+  const { buckets } = plan;
+  if (buckets.length === 1) return findOrderedPage(db, buckets[0], cursor, take);
+
+  const startIndex = cursor === undefined ? 0 : await locateCursorBucket(db, buckets, cursor);
+
+  const rows: EngineerListRow[] = [];
+  for (const [offset, bucket] of buckets.slice(startIndex).entries()) {
+    if (rows.length >= take) break;
+    // 🔴 カーソルは「続きから読む」最初のバケットにだけ効く。以降のバケットは**先頭から**継ぐ。
+    const bucketCursor = offset === 0 ? cursor : undefined;
+    rows.push(...(await findOrderedPage(db, bucket, bucketCursor, take - rows.length)));
   }
-
-  const fitWhere: EngineerWhereFragment = { AND: [plan.where, plan.fit] };
-  const missWhere: EngineerWhereFragment = { AND: [plan.where, plan.miss] };
-
-  if (cursor !== undefined) {
-    const inFitBucket = await db.engineer.findFirst({
-      where: { AND: [fitWhere, { id: cursor }] },
-      select: { id: true },
-    });
-    // 適合バケットを読み終えた後のカーソルなので、不適合バケットの続きだけを読む。
-    if (inFitBucket === null) return findOrderedPage(db, missWhere, cursor, take);
-  }
-
-  const fitRows = await findOrderedPage(db, fitWhere, cursor, take);
-  if (fitRows.length >= take) return fitRows;
-  // 適合バケットを読み切ったので、不適合バケットの**先頭から**足りない分を継ぐ。
-  const missRows = await findOrderedPage(db, missWhere, undefined, take - fitRows.length);
-  return [...fitRows, ...missRows];
+  return rows;
 }
 
 /**
@@ -283,14 +305,16 @@ async function readOrderedRows(
  *
  * 🔴 **並び順**（`F-009 AC-1`「実行のたびに同じ並び順」/ docs/05 §4.8）:
  *    **①検索条件への適合 → ②`updated_at` の降順 → ③`id` の降順**。①の定義（1 ビットであり、
- *    重み・順位ではないこと）は `search.ts` 冒頭に、②③は `ENGINEER_LIST_ORDER_BY` にある。
+ *    重み・順位ではないこと）は `packages/db/src/search/engineers.ts` 冒頭に、
+ *    ②③は `ENGINEER_LIST_ORDER_BY` にある。
  *    `id` は `uuid(7)`（時系列で単調増加）なので、同時刻の行でも順序が一意に決まる。
  *    **`ORDER BY` に「全体件数」「順位」を持ち込まない**（境界外の行の有無で順位が動くと、
- *    並び順そのものが他社の存在を漏らす）。索引は `@@index([tenantId, updatedAt])`。
+ *    並び順そのものが他社の存在を漏らす）。索引は
+ *    `@@index([tenantId, updatedAt(sort: Desc), id(sort: Desc)])`（T-06-05）。
  *    ⚠️ `docs/04` §S-005 は並び順を「…→ 更新日（**日単位に丸める**）→ 決定的な内部順」と
  *    書いているが、**丸めるのは表示（`updatedOn`）だけにした**。理由は 2 つ:
  *      ①`date_trunc('day', updated_at)` で並べると式インデックスと **raw SQL** が要り、
- *        「検索 SQL を `packages/db/src/search/**` の 1 箇所に閉じる」（SP-06 T-06-05 / TBD-8）と
+ *        「検索の実装を `packages/db/src/search/**` の 1 箇所に閉じる」（SP-06 T-06-05 / TBD-8）と
  *        衝突する。加えて Prisma の `cursor` は一意な列しか取れず、日単位の複合カーソルを作れない。
  *      ②丸めの目的（`U-06` / `docs/03` §4.13.2-2）は**匿名候補の再識別防止**であり、
  *        実名で表示する自社台帳の並びには当てはまらない。日をまたぐ順序は docs/04 の指定と
@@ -303,7 +327,7 @@ export async function listEngineers(
 ): Promise<EngineerListView> {
   // 🔴 **述語の出所は `engineerSearchPlan` の 1 本だけ**である（本ファイル冒頭）。
   //    `plan.where` を 1 つの値にしておくのは、一覧と `COUNT` で書き分けられないようにするため
-  //    である（`plan.fit` / `plan.miss` は `plan.where` を 2 分するだけなので、
+  //    である（`plan.buckets` は `plan.where` を過不足なく分割するだけなので、
   //    **並びの都合で母集団が変わらない**）。
   const plan = engineerSearchPlan(query);
 
