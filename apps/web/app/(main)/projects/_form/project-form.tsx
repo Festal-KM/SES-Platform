@@ -124,7 +124,9 @@ export type ProjectFormMessages = {
   readonly publicSummaryLabel: string;
   readonly publicSummaryNote: string;
 
-  readonly visibilityComingSoon: string;
+  readonly visibilityNotice: string;
+  /** ✅ T-06-06: `S-013` への導線のラベル（`docs/04` §S-012「操作と結果」の secondary）。 */
+  readonly visibilitySettings: string;
   readonly save: string;
   readonly saving: string;
   readonly saved: string;
@@ -154,6 +156,12 @@ export type ProjectFormProps = {
    *    サーバ側の `form-props.ts` には置けない（このファイルからも読むため）。
    */
   readonly createdHrefPattern: string;
+  /**
+   * ✅ T-06-06: `S-013`（公開範囲の設定）への導線（`docs/04` §S-012「保存だけでは公開されない」）。
+   * 🔴 **`EDIT` のときだけ非 `null`。** 新規登録では案件がまだ存在せず `S-013` に渡す ID が無い
+   *    （保存後に遷移する `S-011` に同じ導線がある）。**存在しない画面・ID へのリンクを作らない。**
+   */
+  readonly visibilityHref: string | null;
   readonly messages: ProjectFormMessages;
 };
 
@@ -210,6 +218,7 @@ export function ProjectForm({
   requirementKinds,
   cancelHref,
   createdHrefPattern,
+  visibilityHref,
   messages,
 }: ProjectFormProps) {
   const [values, setValues] = useState<ProjectFormValues>(initial);
@@ -704,18 +713,24 @@ export function ProjectForm({
         </label>
       </section>
 
-      {/* 🔴 docs/04 §S-012「保存だけでは公開されない」。`S-013` は T-06-06。 */}
+      {/* 🔴 docs/04 §S-012「保存だけでは公開されない」（`F-014 AC-2`）。 */}
       <p
         className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700"
-        data-testid="project-visibility-coming-soon"
+        data-testid="project-visibility-notice"
       >
-        {messages.visibilityComingSoon}
+        {messages.visibilityNotice}
       </p>
 
-      <div className="flex items-center gap-4">
+      <div className="flex flex-wrap items-center gap-4">
         <Button type="submit" disabled={phase === 'submitting'} data-testid="project-submit">
           {phase === 'submitting' ? messages.saving : messages.save}
         </Button>
+        {/* ✅ T-06-06: `S-013` への secondary（編集時のみ。新規は ID が無いので出さない）。 */}
+        {visibilityHref === null ? null : (
+          <a className="ses-secondary-link" href={visibilityHref} data-testid="project-visibility-link">
+            {messages.visibilitySettings}
+          </a>
+        )}
         <a className="ses-secondary-link" href={cancelHref} data-testid="project-cancel">
           {messages.cancel}
         </a>

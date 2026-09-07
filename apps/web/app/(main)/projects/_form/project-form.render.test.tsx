@@ -34,6 +34,7 @@ const DICTIONARY: readonly SkillDictionaryOption[] = [
 const COMMERCE_NOTICE =
   'この情報は公開範囲の相手には表示されません。エンド企業名と自社単価は取引先の画面に出ません。';
 const VISIBILITY_NOTE = '保存しただけでは、この案件はどの取引先にも公開されません。';
+const VISIBILITY_SETTINGS = '公開範囲を設定';
 const MUST_EMPTY = '必須要件がありません。このままでも保存できますが、候補の足切りが効きません。';
 const NICE_EMPTY = '尚可要件は登録されていません。';
 
@@ -81,7 +82,8 @@ const messages: ProjectFormMessages = {
   publicSummaryLabel: '外部公開用の記載',
   publicSummaryNote: 'エンド企業名・自社単価・他社名を書かないでください。',
 
-  visibilityComingSoon: VISIBILITY_NOTE,
+  visibilityNotice: VISIBILITY_NOTE,
+  visibilitySettings: VISIBILITY_SETTINGS,
   save: '保存',
   saving: '保存しています…',
   saved: '保存しました。',
@@ -121,6 +123,7 @@ function render(overrides: Partial<ProjectFormProps> = {}): string {
     requirementKinds: ['MUST', 'NICE'],
     cancelHref: '/',
     createdHrefPattern: '/projects/{id}/edit',
+    visibilityHref: null,
     messages,
     ...overrides,
   };
@@ -225,15 +228,27 @@ describe('🔴 docs/04 §S-012: 保存だけでは公開されない（F-014 AC-
   it('公開されない旨が画面に常時出る', () => {
     const html = render();
 
-    expect(html).toContain('data-testid="project-visibility-coming-soon"');
+    expect(html).toContain('data-testid="project-visibility-notice"');
     expect(html).toContain(VISIBILITY_NOTE);
   });
 
-  it('🔴 `S-013`（公開範囲の設定）への導線をまだ置かない（存在しない画面へ送らない）', () => {
-    const html = render();
+  it('🔴 新規登録では `S-013` への導線を置かない（案件がまだ存在せず、渡す ID が無い）', () => {
+    const html = render({ mode: 'CREATE', projectId: null, visibilityHref: null });
 
     expect(html).not.toContain('/visibility');
-    expect(html).not.toContain('href="/projects/');
+    expect(html).not.toContain('data-testid="project-visibility-link"');
+  });
+
+  it('✅ T-06-06: 編集では `S-013`（公開範囲の設定）への secondary を出す', () => {
+    const html = render({
+      mode: 'EDIT',
+      projectId: '01930000-0000-7000-8000-0000000000c1',
+      visibilityHref: '/projects/01930000-0000-7000-8000-0000000000c1/visibility',
+    });
+
+    expect(html).toContain('data-testid="project-visibility-link"');
+    expect(html).toContain('href="/projects/01930000-0000-7000-8000-0000000000c1/visibility"');
+    expect(html).toContain(VISIBILITY_SETTINGS);
   });
 });
 

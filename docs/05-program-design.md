@@ -2282,7 +2282,7 @@ requireEsignConnection(ctx);                           // 🔴 §8.4。未接続
 | 25 | `GET /api/projects` | `F-015` / `S-010` | `?q=&status=&startFrom=&prefecture=&cursor=` | `{ items: (HostProjectView\|PartnerProjectView)[], total }` | 全ロール |
 | 26 | `POST /api/projects` / `PATCH /api/projects/{id}` | `F-013` / `S-012` | `ProjectInput` | `{ id }` | `OWNER`/`ADMIN`/`SALES` |
 | 27 | `GET /api/projects/{id}` | `F-013` / `S-011` | — | `HostProjectDetailView` \| `PartnerProjectDetailView`（🔴 判別子は `audience`） | 全ロール。🔴 公開範囲外のパートナーには **404**（403 と区別しない）。🔴 **公開が解除された相手だけ** `PROJECT_NOT_SHARED`（**HTTP は 404 のまま**。`docs/04` §10.1 の `S-011`「404 にしない」＝ 汎用の 404 **画面**を出さない、の意。下記の決着） |
-| 28 | `PUT /api/projects/{id}/visibility` | `F-014` / `S-013` | `{ partnerCompanyIds: string[], publicSummary }` | `{ reviewGateId, verdict }` | `OWNER`/`ADMIN`/`SALES`。🔴 **ゲート FAIL なら公開しない**（`F-014 AC-3`） |
+| 28 | `PUT /api/projects/{id}/visibility` | `F-014` / `S-013` | `{ partnerCompanyIds: string[] }`（🔴 **`publicSummary` は受け取らない** —— 理由は下記「#28 の実装の決着」。T-06-06） | `{ reviewGateId, verdict }`（🔴 `verdict` は `'PENDING_GATE' \| 'NO_PUBLISH_REQUESTED'`。**合否ではない**。`reviewGateId` は `PUT` 時点で常に `null`） | `OWNER`/`ADMIN`/`SALES`。🔴 **ゲート FAIL なら公開しない**（`F-014 AC-3`） |
 | 29 | `GET /api/engineer-shares` / `PUT /api/engineers/{id}/share` | `F-016` / `S-015` | `{ shared: boolean }` | `{ shared, previewedFields }` | 🔴 **`PARTNER_ADMIN` / `PARTNER_SALES` のみ**。ホストは 403 |
 
 🔴 **#14 の `inviteUrl` は `APP_ENV='sandbox'` かつ宛先分類 2（パートナー所属）のときだけ返す**（`F-007 AC-4`）。`production` では**フィールドごと返さない**（型が違う。`SandboxInvitationView` / `ProductionInvitationView` の判別可能な合併）。
@@ -2484,6 +2484,24 @@ requireEsignConnection(ctx);                           // 🔴 §8.4。未接続
 - **`S-003` / `S-004` の両方から `S-010` への導線を置いた**（`docs/04` §3.3 の遷移図。`S-005` への導線を T-05-09 が両方に置いたのと同じ形）。🔴 **ロールで隠さない** —— 取引先も `VIEWER` も一覧に到達してよく、見えるものは C4 が決める（**登録できないことと、見られないことは別である**）。🔴 **文言は同じでも母集団は違う**ので、母集団の説明は `S-010` 側が 1 行で出す —— ホーム側で書き分けると「取引先には案件が少ない」ことをホームでも示唆することになる。
 - **ページングのリンクは検索条件を保つ**（`projectListHref`。`docs/04` §10.1 `S-010` Err「条件保持の再試行」と同じ趣旨）。🔴 **「全 N ページ中 M ページ目」を出さない**（§4.8 の「順位」に当たる）。`limit` は既定値と違うときだけ URL に載せる。
 - ⚠️ **`docs/04` §S-010 の「自動で追加されました」の新着印（`F-045` の還流）を出していない。** `projects.origin_assignment_id` を書くのは SP-16 の還流ジョブだけで、Phase 1 では**常に `null`** である。常に偽になるフラグを先に置くと「還流していない」と「まだ還流の仕組みが無い」が区別できない（`S-011` の提案数列を出さなかったのと同じ判断）。**印は `F-045` と同時に入れる。**
+
+🔴 **#28 の実装の決着（T-06-06。`F-014 AC-1` / `AC-2`。越境経路 1 の入口）**:
+
+- 🔴 **書き込みの経路は `apps/web/lib/projects/visibility.ts` の 1 本だけである。** `createProject`（#26）は `ProjectVisibility` を 1 行も作らず、行を作れる / 取り消せるのはこのモジュールだけである（`F-014 AC-2`「既定は誰にも公開されない」）。🔴 **入力は「公開先の集合」だけであり、「全公開」に相当するフラグ・既定値・特別な値をスキーマに持たない。** `partnerCompanyIds` に `.default([])` も置かない —— 置くと**書き忘れた要求が全解除として静かに成立する**（境界を動かす経路に、意図しない省略を通さない）。
+- 🔴 **`added`（広げる）と `revoked`（狭める）を非対称に扱う。**
+  - **解除は即時に適用する**（`revoked_at` を入れる）。外へ出る情報を増やさない操作にゲートは要らず、逆に保留すると「公開をやめたい相手に案件が見え続ける」。🔴 **行は消さない** —— `F-014` 処理④の「作成済みの提案は残る」を成立させるには「誰にいつ公開していたか」が後から遡れる必要がある。
+  - **追加はゲートを通るまで行にしない**（`F-014 AC-3`）。したがって 1 回の要求で解除だけが成立することがあり、その事実は `verdict` と `S-013` の文言が明示する。
+- 🔴 **`verdict` は合否ではない。** ゲートは非同期（§12.1 のシーケンス / §11.1「入口は `gate.run` ジョブ 1 本」）なので、`PUT` の応答時点に PII 層・商流層の判定は存在しない。返すのは「要求をどう扱ったか」（`PENDING_GATE` ＝ ゲートに預けた ＝ **まだ公開されていない** / `NO_PUBLISH_REQUESTED` ＝ 追加が無くゲートを起動していない）である。**`PASS` / `PUBLISHED` の枝を型に持たない。**
+- 🔴 **`reviewGateId` は `PUT` 時点で常に `null` である。** `review_gates` は CHECK により `execution='DONE'` の**確定した行**しか持てず（§3.6）、「実行中のゲート」を指す ID がそもそも採番されない（§11.7 の `GateResultView.execution='RUNNING'` ＝「まだ行が無い」と同じ表現）。`project_visibilities.review_gate_id` が **NOT NULL + FK** であることと合わせて、**ゲート結果の行が無ければ公開範囲の行は物理的に作れない**。
+- 🔴 **SP-06 のゲート接続点は「保留」だけを行うスタブである**（`apps/web/lib/projects/publish-gate.ts`。`docs/sprints/SP-06` T-06-06「本スプリントでは呼び出しの接続点まで」）。**`ProjectPublishGateOutcome` は `held: true` の 1 形しかなく、「未実装だから素通しする」実装はコンパイルできない**（`CLAUDE.md` §11.1 の「未設定ならモックにフォールバック」と同型の壊れ方 —— ゲートを 1 度も通していない案件が取引先に見え、しかも画面は「公開しました」と表示する —— を型で塞ぐ）。**SP-07（T-07-09）が差し替える**ときも、①差し替えは port の実装 1 本で行い ②`PUT` は `gate.run` を積むだけで**同期的に公開が成立する枝を作らない** ③`contentHash` は `packages/domain` の `gateContentHash`（§11.5。SP-07 で新設）を唯一の出所とする（先に別実装を置かない）。
+- 🔴 **`publicSummary` を受け取らない**（`docs/05` §6.4 #28 の当初の request からの差分）。理由は 2 つ: ①`gate.run` の payload は `{ tenantId, targetType, targetId, contentHash }`（§9.3）であり、**検査する内容はワーカーが DB から読む** —— 要求に本文を載せると内容の出所が 2 つになる ②`projects.public_summary` を書く経路が `#26` と 2 本になり、**公開範囲の変更（`project.visibility_change`）の下に内容の編集が隠れる**（監査の意味が壊れる）。外部公開用の記載を直す画面は `S-012` である（`docs/04` §S-012 セクション 6。同節に ⚠️ を追記済み）。
+- 🔴 **監査は業務トランザクションの内側で書く**（`writeAuditLog`。`#24` / `#84` と同じ形）。`audit` オプションを使わない理由は 2 つ: ①`F-014 AC-5` が要求する「**変更前の公開先**」は行を読むまで分からない ②`audit` はハンドラの前に別トランザクションで書くため、**起きなかった変更**（404 / 400）まで残る。`action` は §16.1 の **`project.visibility_change`**（`project.update` に畳まない。畳むと `S-041` の `VISIBILITY_CHANGE` で 0 件になる）。`summary` は `{ before, after, requested, pending, revoked, verdict }` で、**いずれも ID の昇順の連結・列挙値だけ**である（🔴 取引先の**社名を載せない**。§16.2 / `F-058`）。
+- 🔴 **ホスト専用である。** 担保は 4 枚: ①`requireRole(PROJECT_EDITOR_ROLES)`（403）②`updateProjectVisibility` / `listProjectVisibilityChoices` の `requireHost`（`HostOnlyContextError` → **404**）③`project_visibilities` の RLS（C2。書込は `app_is_host()`）④画面（`S-013`）がパートナーロールをホームへ戻す。**公開先の一覧（他社の社名）が出てよいのはホストだけである**（`CLAUDE.md` §3.1 / `F-014 AC-4`）。
+- 🔴 **`requireExecutable` を掛ける**（`F-004 AC-7`）。`SUSPENDED` / `CLOSING` では公開範囲を変更できない（`docs/04` §S-013 権限差分「公開操作の導線が無く、理由が表示される」の**本体**であり、画面側はその理由の表示にすぎない）。
+- **選択肢に指定できるのは自テナントに実在する取引先だけ**（`assertPartnerCompaniesExist` → 400）。🔴 他テナントの取引先 ID も**同じ 400** になる（存在を教えない。§4.8）。⚠️ **停止中の取引先は選択肢から落とさない** —— 停止（`F-007 AC-2`）が止めるのは**その取引先の配下アカウントの実行系**であって、ホスト側の公開範囲の設定ではない。落とすと「停止を解除したら公開範囲が消えていた」という、状態をまたいで意味が変わる挙動になる。
+- **`S-013` は案件の内容（商流情報を含む）を読むので、閲覧を `project.view` に記録する**（`summary.via='VISIBILITY'`。§16.1 の `S-012` `EDIT_FORM` と同じ理由。action は分けない）。
+- ⚠️ **プレビューの「該当箇所のハイライト」を文字単位で作っていない**（`docs/04` §S-013 に ⚠️ を追記済み）。オフセット付きの指摘（`GateFinding.offsetStart` / `offsetEnd`。§11.7）は**ゲートの表現**であり、ゲートより先に別実装のオフセットを作ると `S-013` の 2 つの表示（プレビューの印とゲートの指摘）が別の位置を指しうる。本タスクは**どの欄に混ざっているか**までを機械的な文字列照合で出す（`apps/web/lib/projects/publish-preview.ts`。🔴 **AI を呼ばず決定的**であり、🔴 **警告であって合否ではない**）。
+- **`S-011` / `S-012` に `S-013` への導線を置いた**（T-06-02 / T-06-01 が「存在しない画面へのリンクを作らない」として保留していたもの）。🔴 `S-012` の導線は**編集時だけ**である —— 新規登録では案件がまだ存在せず `S-013` に渡す ID が無い（保存後に遷移する `S-011` に同じ導線がある）。
 
 ### 6.5 主平面 API — ②③④（Phase 1〜2）
 

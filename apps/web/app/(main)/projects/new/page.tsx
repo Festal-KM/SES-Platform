@@ -63,6 +63,9 @@ export default async function NewProjectPage() {
         requirementKinds={projectRequirementKinds}
         cancelHref={PROJECT_FORM_CANCEL_HREF}
         createdHrefPattern={PROJECT_CREATED_HREF_PATTERN}
+        // 🔴 新規登録では案件がまだ存在せず、`S-013` に渡す ID が無い（T-06-06）。
+        //    保存後に遷移する `S-011`（`PROJECT_CREATED_HREF_PATTERN`）に同じ導線がある。
+        visibilityHref={null}
         messages={projectFormMessages()}
       />
     </main>

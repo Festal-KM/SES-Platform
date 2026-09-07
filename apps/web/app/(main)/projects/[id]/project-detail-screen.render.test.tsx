@@ -86,7 +86,7 @@ const messages: ProjectDetailScreenMessages = {
   visibilityColumnPartner: '取引先',
   visibilityColumnPublishedOn: '公開日',
   visibilityProposalCountComingSoon: '提案数は後続のリリース。',
-  visibilitySettingsComingSoon: '公開範囲の設定は後続のリリース。',
+  visibilitySettings: '公開範囲を設定',
   partnerPublished: 'この案件は御社に公開されています。',
   proposalsEmpty: 'まだ提案はありません。',
   proposalsComingSoon: '提案の一覧は後続のリリース。',
@@ -153,6 +153,27 @@ describe('🔴 F-014 AC-4 / BR-07: 取引先が他社の存在を知る手段が
     expect(html).toContain('data-testid="project-detail-visibility-table"');
     expect(html).toContain(PARTNER_A_NAME);
     expect(html).toContain(PARTNER_B_NAME);
+  });
+});
+
+describe('✅ T-06-06: `S-013`（公開範囲の設定）への導線', () => {
+  it('ホストの編集可能なロールには導線が出る', () => {
+    const html = render(hostView());
+
+    expect(html).toContain('data-testid="project-detail-visibility-settings"');
+    expect(html).toContain(`href="/projects/${SHARED.id}/visibility"`);
+    expect(html).toContain(messages.visibilitySettings);
+  });
+
+  it('🔴 `VIEWER`（`canEdit=false`）には出さない（公開範囲を変更できない。`BR-31`）', () => {
+    const html = render(hostView(), false);
+
+    expect(html).not.toContain('data-testid="project-detail-visibility-settings"');
+    expect(html).not.toContain('/visibility');
+  });
+
+  it('🔴 取引先には出さない（公開範囲セクション自体がホスト専用）', () => {
+    expect(render(partnerView())).not.toContain('/visibility');
   });
 });
 

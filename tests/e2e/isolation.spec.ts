@@ -92,6 +92,11 @@ const MAIN_PLANE_PAGES = [
   `/engineers/${tenantIds(1).hostEngineerId}/edit`,
   '/projects/new',
   `/projects/${tenantIds(1).publishedProjectId}/edit`,
+  // 🔴 T-06-06: `/projects/{id}/visibility`（`S-013`）を足した。**ホスト専用の画面**であり
+  //    （`PROJECT_EDITOR_ROLES`）、取引先の社名一覧が出る唯一の画面である。`hostOwner(1)` の
+  //    セッションで走査するので、テナント B の取引先名が 1 つも現れないことがそのまま
+  //    ②③の対照になる。ID は編集画面と同じ**ホスト所有の公開案件**を使う。
+  `/projects/${tenantIds(1).publishedProjectId}/visibility`,
   // 🔴 T-06-03: `/projects`（一覧。`S-010`）を足した。`/engineers` と同じくロールで到達を
   //    止めない（ID 不要）ため、固定 ID を要らない。母集団を決めるのは `projects` の
   //    RLS（C4 VISIBILITY）である。
@@ -508,6 +513,29 @@ test.describe('④ パートナー A1 で、パートナー A2 のものが 1 �
       //    ことを意味し、JS の到着に依存しない。構造側の担保は
       //    `tests/static/route-boundaries.test.ts`。
       expect(newProjectNav?.request().redirectedFrom()).not.toBeNull();
+
+      // 🔴 T-06-06: `PUT /api/projects/{id}/visibility`（`#28`。越境経路 1 を動かす唯一の API）も
+      //    1 層目で 403 になる。取引先が自社を公開先に加える経路を作らない（`F-014` は
+      //    ホストの機能である）。拒否は 3 重（`requireRole` / `requireHost` / RLS の C2）。
+      const putVisibility = await apiRequest(
+        session.page,
+        `/api/projects/${tenantIds(1).publishedProjectId}/visibility`,
+        {
+          method: 'PUT',
+          // 🔴 403 はガードがボディの検証より前に決める（`withApiRoute` の順序）。
+          //    自社を公開先に加えようとする形にしておく（通れば実害が出る入力である）。
+          body: { partnerCompanyIds: [partnerIds(1, 1).partnerCompanyId] },
+        },
+      );
+      expect(putVisibility.status).toBe(403);
+
+      // 🔴 画面（`S-013`）もホームへ戻される（`docs/04` §S-013 権限差分）。
+      const visibilityNav = await session.page.goto(
+        `/projects/${tenantIds(1).publishedProjectId}/visibility`,
+        { waitUntil: 'domcontentloaded' },
+      );
+      expect(new URL(session.page.url()).pathname).toBe('/');
+      expect(visibilityNav?.request().redirectedFrom()).not.toBeNull();
     } finally {
       await session.close();
     }

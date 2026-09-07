@@ -158,6 +158,24 @@ describe('🔴 起動時 DI の入口が 1 つである（web と worker で別�
     (file) => !isTestFile(file),
   );
 
+  /**
+   * 🔴 **`apps/**` の読み込みは 1 回だけにする**（2026-09-07。T-06-06）。
+   *
+   * ⚠️ 以前は `it` ごとに全ファイルを `readFileSync` + `ts.createSourceFile` していた
+   *    （`it.each` の 3 本 + 2 本 = 5 回の全走査）。所要時間はソース数に比例して伸びるため、
+   *    ファイルが増えるにつれ `testTimeout`（既定 5 秒）に近づき、**他のテストファイルと
+   *    並列に走ったときだけ落ちる**フレークになる（同じ理由で
+   *    `no-test-module-imports.test.ts` の走査もモジュールスコープへ移した）。
+   *    検査の対象・判定は 1 つも変えていない。
+   */
+  const appSources = appSourceFiles.map((file) => ({ file, source: readFileSync(file, 'utf8') }));
+
+  function appCallersOf(functionName: string): string[] {
+    return appSources
+      .filter(({ file, source }) => callsFunction(source, file, functionName))
+      .map(({ file }) => toRepoRelative(file));
+  }
+
   it('対照: apps/** に走査対象のソースが存在する', () => {
     expect(appSourceFiles.length).toBeGreaterThan(0);
   });
@@ -165,29 +183,18 @@ describe('🔴 起動時 DI の入口が 1 つである（web と worker で別�
   it.each(['loadAppEnv', 'resolveConnectorSelection', 'assertNoMockInProduction'])(
     'apps/** の非テストソースが %s を直接呼ばない（判定は packages/config の 1 箇所）',
     (functionName) => {
-      const offenders = appSourceFiles
-        .filter((file) => callsFunction(readFileSync(file, 'utf8'), file, functionName))
-        .map(toRepoRelative);
-      expect(offenders).toEqual([]);
+      expect(appCallersOf(functionName)).toEqual([]);
     },
   );
 
   it('🔴 apps/** がテスト用のキャッシュ解除（resetRuntimeConfigForTesting）に触れない', () => {
     // 触れると「起動時に 1 回」の保証をアプリ側から崩せる。`@ses/config` の index からも
     // export していない（`packages/config/src/index.ts`）が、走査でも押さえる。
-    const offenders = appSourceFiles
-      .filter((file) =>
-        callsFunction(readFileSync(file, 'utf8'), file, 'resetRuntimeConfigForTesting'),
-      )
-      .map(toRepoRelative);
-    expect(offenders).toEqual([]);
+    expect(appCallersOf('resetRuntimeConfigForTesting')).toEqual([]);
   });
 
   it('initializeRuntimeConfig を呼ぶ apps/** のファイルが起動経路に限られる', () => {
-    const callers = appSourceFiles
-      .filter((file) => callsFunction(readFileSync(file, 'utf8'), file, 'initializeRuntimeConfig'))
-      .map(toRepoRelative)
-      .sort();
+    const callers = appCallersOf('initializeRuntimeConfig').sort();
     expect(callers).toEqual(
       [
         WEB_ENTRY,

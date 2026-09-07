@@ -65,6 +65,14 @@ export const PROJECT_VIEW_VIA = {
   editForm: 'EDIT_FORM',
   /** `S-011` 案件詳細 / `GET /api/projects/{id}`（#27。T-06-02）。 */
   detail: 'DETAIL',
+  /**
+   * 🔴 `S-013` 公開範囲の設定（T-06-06）。**同じ内容を出すので同じ action で記録する。**
+   *    `S-013` は公開時の見え方をプレビューするために、案件の要件・条件・外部公開用の記載に加えて
+   *    **商流情報**（混入の警告を出すため。`lib/projects/publish-preview.ts`）まで読む。
+   *    `S-012` の編集フォームを `EDIT_FORM` として記録したのと**同じ理由**であり、
+   *    ここだけ記録しないと「誰が案件の中身を見たか」に穴があく（`BR-27` / `F-013 AC-3`）。
+   */
+  visibility: 'VISIBILITY',
 } as const;
 
 export type ProjectViewVia = (typeof PROJECT_VIEW_VIA)[keyof typeof PROJECT_VIEW_VIA];
@@ -660,6 +668,12 @@ export async function readProjectDetail(
   ctx: AuthenticatedTenantCtx,
   id: string,
   meta: ProjectViewMeta,
+  /**
+   * 🔴 記録に残す経路（`summary.via`）。**action は分けない**（`S-041` の操作種別フィルタは
+   *    接尾辞一致であり、`project.detail_view` のような名前は検索から漏れる）。
+   *    既定は `S-011` / `#27`（T-06-02）。`S-013`（T-06-06）だけが `VISIBILITY` を渡す。
+   */
+  via: ProjectViewVia = PROJECT_VIEW_VIA.detail,
 ): Promise<ProjectDetailView> {
   const { partnerCompanyId } = ctx;
 
@@ -670,7 +684,7 @@ export async function readProjectDetail(
 
       const requirements = await readProjectRequirements(db, row.id);
       const visibilities = await readProjectVisibilities(db, row.id);
-      await recordProjectView(db, ctx, row.id, PROJECT_VIEW_VIA.detail, meta);
+      await recordProjectView(db, ctx, row.id, via, meta);
 
       return {
         ...toSharedDetail(row, requirements),
@@ -692,6 +706,7 @@ export async function readProjectDetail(
     }
 
     const requirements = await readProjectRequirements(db, row.id);
+    // 🔴 取引先の経路は `via` を受け取らない（`S-013` はホスト専用であり、ここには来ない）。
     await recordProjectView(db, ctx, row.id, PROJECT_VIEW_VIA.detail, meta);
 
     return { ...toSharedDetail(row, requirements), audience: 'PARTNER' };

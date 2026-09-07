@@ -54,7 +54,8 @@ export type ProjectDetailScreenMessages = {
   readonly visibilityColumnPartner: string;
   readonly visibilityColumnPublishedOn: string;
   readonly visibilityProposalCountComingSoon: string;
-  readonly visibilitySettingsComingSoon: string;
+  /** ✅ T-06-06: `S-013` への導線（それまでは「後続のリリース」の告知だった）。 */
+  readonly visibilitySettings: string;
   readonly partnerPublished: string;
   readonly proposalsEmpty: string;
   readonly proposalsComingSoon: string;
@@ -308,10 +309,18 @@ export function ProjectDetailScreen({
                 <p className="mt-3 text-xs text-slate-500" data-testid="project-detail-visibility-proposal-count">
                   {messages.visibilityProposalCountComingSoon}
                 </p>
-                {/* ⚠️ `S-013`（公開範囲の設定）は T-06-06。存在しない画面へのリンクを置かない。 */}
-                <p className="mt-1 text-xs text-slate-500" data-testid="project-detail-visibility-settings">
-                  {messages.visibilitySettingsComingSoon}
-                </p>
+                {/* ✅ T-06-06: `S-013`（公開範囲の設定）への導線（`docs/04` §S-011 操作と結果）。
+                    🔴 `canEdit`（＝ `PROJECT_EDITOR_ROLES`）のときだけ出す —— `VIEWER` は
+                    公開範囲を変更できない（`BR-31`）。取引先はこのセクション自体に到達しない。 */}
+                {canEdit ? (
+                  <Link
+                    className="ses-secondary-link mt-1 inline-block"
+                    href={`/projects/${view.id}/visibility`}
+                    data-testid="project-detail-visibility-settings"
+                  >
+                    {messages.visibilitySettings}
+                  </Link>
+                ) : null}
               </Section>
             </>
           ) : null}

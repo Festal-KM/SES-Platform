@@ -1257,10 +1257,11 @@ const ja = {
   // 🔴 `docs/04` §10.1 `S-012`「離脱確認あり」。
   'projects.leaveConfirm': '入力内容が保存されていません。このページを離れますか？',
   // 🔴 `docs/04` §S-012「操作と結果」: **保存だけでは公開されない**（`F-014 AC-2`）。
-  //    ⚠️ `S-013`（公開範囲の設定）は T-06-06 で実装する。存在しない画面へのリンクは置かず、
-  //    「保存しただけでは公開されない」という事実だけを先に伝える（`careers.comingSoon` と同じ規律）。
-  'projects.visibility.comingSoon':
-    '保存しただけでは、この案件はどの取引先にも公開されません。公開範囲の設定は後続のリリースで行えます。',
+  //    ✅ T-06-06 で `S-013` が入ったため、事実に加えて**行き先**を書く（編集時のみ導線を出す。
+  //    新規登録では案件がまだ存在せず `S-013` に ID を渡せないため、保存後の `S-011` から辿る）。
+  'projects.visibility.notice':
+    '保存しただけでは、この案件はどの取引先にも公開されません。公開先は「公開範囲を設定」で 1 社ずつ指定します。',
+  'projects.visibility.settings': '公開範囲を設定',
   // 🔴 境界外（他テナント）と不存在（削除済み）を区別しない 1 文（docs/05 §4.8）。
   'projects.notFound': 'この案件の情報は見つかりませんでした。',
 
@@ -1294,8 +1295,8 @@ const ja = {
   // ⚠️ `docs/04` §S-011 の公開先テーブルは「提案数」列を持つが、`Proposal` は後続のリリース。
   'projects.detail.visibility.proposalCountComingSoon':
     '公開先ごとの提案数は、提案機能とあわせて後続のリリースで表示されます。',
-  'projects.detail.visibility.settingsComingSoon':
-    '公開範囲の設定は後続のリリースで行えます。',
+  // ✅ T-06-06: `S-013` が入ったので導線のラベルにした（それまでは「後続のリリース」の告知）。
+  'projects.detail.visibility.settings': '公開範囲を設定',
   // 🔴 `docs/04` §S-011 取引先セクション 4「公開されている旨の説明」。
   'projects.detail.partner.published':
     'この案件は御社に公開されています。表示されているのは、公開範囲の相手に向けて用意された内容だけです。',
@@ -1374,6 +1375,84 @@ const ja = {
   'projects.list.error.title': '検索を実行できませんでした。',
   'projects.list.error.lead': '指定した条件はそのまま残しています。もう一度お試しください。',
   'projects.list.error.retry': 'もう一度試す',
+
+  // --- S-013 案件の公開範囲設定（docs/04 §S-013 / `F-014` / `F-020` / docs/05 §6.4 #28。T-06-06）---
+  // 🔴 **越境経路 1 の入口の文言である。** ここで守るのは 3 つ:
+  //    ①`F-014 AC-2`「既定は誰にも公開されない」——「全公開」「すべて選択」に相当する語を
+  //      1 つも置かない（操作の側でも既定で広げない）
+  //    ②`F-014 AC-3` / `BR-18`「ゲート FAIL を無視して公開する導線を作らない」——
+  //      「了解のうえ公開」に相当する語を置かない
+  //    ③🔴 **保留を「公開しました」と書かない**（`CLAUDE.md` §11.1 の「成功したように見えて
+  //      実際には起きていない」を文言でも作らない）。ゲート本体は SP-07 であり、
+  //      現時点で公開先の**追加**は成立しない。その事実をそのまま書く。
+  'projects.visibilitySettings.title': '公開範囲の設定',
+  'projects.visibilitySettings.breadcrumb': '公開範囲',
+  'projects.visibilitySettings.lead':
+    'この案件をどの取引先に見せるかを指定します。選んだ取引先だけが、案件の一覧・検索・通知でこの案件を見られるようになります。',
+  'projects.visibilitySettings.section.current': '現在の公開状態',
+  'projects.visibilitySettings.section.select': '公開先の選択',
+  'projects.visibilitySettings.section.preview': '公開されたときの見え方',
+  'projects.visibilitySettings.section.gate': '品質ゲート',
+  'projects.visibilitySettings.section.execute': '公開の実行',
+  'projects.visibilitySettings.current.empty':
+    'この案件はまだどの取引先にも公開されていません。',
+  'projects.visibilitySettings.current.column.partner': '取引先',
+  'projects.visibilitySettings.current.column.publishedOn': '公開日',
+  'projects.visibilitySettings.select.legend': '公開する取引先',
+  // 🔴 `docs/04` §S-013:「すべて選択」を置かない（既定で広げないという設計を操作でも守る）。
+  //    置いていないことを黙っていると「機能が足りない」と読まれるため、理由を書く。
+  'projects.visibilitySettings.select.note':
+    '公開先は 1 社ずつ選びます。まとめて選ぶ操作は用意していません（既定で広げないためです）。',
+  'projects.visibilitySettings.select.publishedBadge': '公開中',
+  'projects.visibilitySettings.select.suspendedBadge': '停止中',
+  'projects.visibilitySettings.select.suspendedNote':
+    '停止中の取引先にも公開範囲は設定できます（停止が止めるのは、その取引先の提案・チャットなどの操作です）。',
+  'projects.visibilitySettings.select.empty.title': '取引先が登録されていません。',
+  'projects.visibilitySettings.select.empty.lead':
+    '先に取引先を招待すると、公開先として選べるようになります。',
+  'projects.visibilitySettings.select.empty.link': '取引先を招待する',
+  // 🔴 プレビューは「取引先の画面での見え方」を模す（`docs/04` §S-013 / §5-2）。
+  'projects.visibilitySettings.preview.note':
+    'ここに出ているものが、公開先の取引先に見えるすべてです。エンド企業名と自社単価は含まれません。',
+  'projects.visibilitySettings.preview.warning.title':
+    '外部に出る欄に、商流情報が含まれている可能性があります。',
+  // 🔴 これは**警告であって合否ではない**（合否は品質ゲートが出す。`BR-61` と同じ規律）。
+  'projects.visibilitySettings.preview.warning.lead':
+    'これは文字列の照合による注意喚起です。公開してよいかどうかは品質ゲートが判定します。内容の修正は「案件を編集」から行えます。',
+  'projects.visibilitySettings.preview.warning.field.name': '案件名',
+  'projects.visibilitySettings.preview.warning.field.publicSummary': '外部公開用の記載',
+  'projects.visibilitySettings.preview.warning.field.requirement': '要件（自由記述）',
+  'projects.visibilitySettings.preview.warning.kind.endClientName': 'エンド企業名',
+  'projects.visibilitySettings.preview.warning.kind.internalUnitPrice': '自社単価',
+  // 🔴 ゲートの現状をそのまま書く（保留を成功と書かない）。
+  'projects.visibilitySettings.gate.pending.title':
+    '公開の前に品質ゲート（PII 層・商流層・整合層）を実行します。',
+  'projects.visibilitySettings.gate.pending.lead':
+    'ゲートの実行は後続のリリースで有効になります。それまで、公開先の追加は保留され、この案件は取引先に表示されません。公開の解除はすぐに反映されます。',
+  'projects.visibilitySettings.submit': '保存する',
+  'projects.visibilitySettings.submitting': '送信しています…',
+  // 🔴 `docs/04` §5-4:「公開解除は確認ステップ + 『作成済みの提案は残ります』」。
+  'projects.visibilitySettings.revoke.confirm.title': '公開を解除しますか？',
+  'projects.visibilitySettings.revoke.confirm.lead':
+    '選択から外した取引先の一覧・検索・通知から、この案件が消えます。作成済みの提案は残ります。',
+  'projects.visibilitySettings.revoke.confirm.submit': '解除して保存',
+  'projects.visibilitySettings.revoke.confirm.cancel': 'やめる',
+  'projects.visibilitySettings.result.pendingGate':
+    '公開の要求を受け付けました。品質ゲートを通過するまで公開されません。',
+  'projects.visibilitySettings.result.noPublish': '公開範囲を更新しました。',
+  'projects.visibilitySettings.error.save':
+    '公開範囲を保存できませんでした。選択はそのまま残しています。もう一度お試しください。',
+  // 🔴 `F-004 AC-7` / `docs/04` §S-013 権限差分: 停止中・解約手続き中は公開操作の導線を出さず、
+  //    理由を表示する（理由の文言は `error.tenant.*` が持つ。ここは見出しだけ）。
+  'projects.visibilitySettings.denied.title': '公開の操作を行えません。',
+  'projects.visibilitySettings.backToDetail': '案件詳細へ戻る',
+  'projects.visibilitySettings.editProject': '案件を編集',
+  // 🔴 `docs/04` §10.1 `S-013`「選択変更の途中で離脱 → 確認」。
+  //    `projects.leaveConfirm`（`S-012` の「入力内容」）と**キーを共有しない** —— 未保存なのは
+  //    入力ではなく**公開先の選択**であり、片方だけ言い換えたくなったときに両方が動く
+  //    （`docs/04` の画面別文言の原則。`lib/projects/labels.ts` 冒頭と同じ規律）。
+  'projects.visibilitySettings.leaveConfirm':
+    '公開先の選択が保存されていません。このページを離れますか？',
 
   // --- 都道府県（JIS X 0401。コードの出所は `@ses/domain` の `PREFECTURE_CODES`）---
   // 🔴 コードと文言キーの対応は `apps/web/lib/format/prefectures.ts` の `PREFECTURE_MESSAGE_KEYS`

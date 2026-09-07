@@ -185,6 +185,38 @@ export type ProjectListQueryIsolationGuard = AssertNoIsolationKeys<ProjectListQu
 
 assertNoIsolationKeys(Object.keys(projectListQuerySchema.shape), 'projectListQuerySchema');
 
+/** 1 案件の公開先の上限（1 リクエストの大きさを境界で抑える。取引先の実数は 1 テナント数十社）。 */
+const VISIBILITY_PARTNER_COMPANIES_MAX = 200;
+
+/**
+ * `PUT /api/projects/{id}/visibility`（#28。`F-014` / `S-013`）の body。T-06-06。
+ *
+ * 🔴 **入力は「公開先の集合」だけである。** 「全公開」に相当するフラグ・既定値・特別な値を
+ *    1 つも持たない（`F-014 AC-2`）。空配列は「誰にも公開しない」であり、**省略も既定値も無い**
+ *    （`.default([])` を置かない —— 置くと「公開先を書き忘れた要求」が
+ *    **全解除**として静かに成立する。ここは境界を動かす経路であり、意図しない省略を通さない）。
+ * 🔴 **`docs/05` §6.4 #28 の `publicSummary` を受け取らない**（下記「#28 の実装の決着」に記録）。
+ *    ゲート（`gate.run`）は対象を `targetId` で受け取り、検査する内容を**DB から読む**
+ *    （docs/05 §9.3 の payload に本文が無い）。ここで本文を受け取ると、
+ *    ①`projects.public_summary` を書く経路が `#26` と 2 本になり
+ *    ②公開範囲の変更（`project.visibility_change`）の下に**内容の編集**が隠れる。
+ *    外部公開用の記載を直す画面は `S-012` である（`docs/04` §S-012 セクション 6）。
+ * 🔴 分離キーを持たない（`AssertNoIsolationKeys`）。`tenant_id` は ctx からしか決まらない。
+ */
+export const projectVisibilityBodySchema = z.object({
+  /** 🔴 公開先の**明示的な**集合。重複は `service` 側で畳む（同じ相手を 2 回選べても 1 回の公開）。 */
+  partnerCompanyIds: z.array(z.uuid()).max(VISIBILITY_PARTNER_COMPANIES_MAX),
+});
+
+export type ProjectVisibilityBody = z.infer<typeof projectVisibilityBodySchema>;
+
+export type ProjectVisibilityBodyIsolationGuard = AssertNoIsolationKeys<ProjectVisibilityBody>;
+
+assertNoIsolationKeys(
+  Object.keys(projectVisibilityBodySchema.shape),
+  'projectVisibilityBodySchema',
+);
+
 /**
  * `PATCH /api/projects/{id}` の path params。
  * 🔴 `id` は**操作対象の指定**であって実行者のスコープではない。母集団は RLS（C4 の SELECT /

@@ -84,6 +84,25 @@ function moduleSpecifiersOf(sourceText: string, fileName: string): string[] {
 const allFiles = SOURCE_ROOTS.flatMap((root) => listSourceFiles(path.join(repoRoot, root)));
 const productionFiles = allFiles.filter((file) => !isTestFile(file));
 
+/**
+ * 🔴 **走査（全ソースの AST パース）はモジュールスコープで行う**（`allFiles` と同じ理由）。
+ *
+ * ⚠️ 2026-09-07（T-06-06）に `it` の中で走査していたのを移した。ここは**リポジトリ全体を
+ *    TypeScript でパースする**テストであり、所要時間はソース数に比例して伸びる。`it` の中に
+ *    置くと `testTimeout`（既定 5 秒）の対象になり、**他のテストファイルと並列に走ったときだけ
+ *    落ちる**（実測: 単独 2.7 秒 / 並列 6.5 秒でタイムアウト）。ファイルが数本増えるたびに
+ *    フレーク率が上がる形は、検査そのものより先に信頼を失わせる。
+ *    モジュールスコープなら収集フェーズで実行され、`it` は純粋な表明だけになる。
+ */
+const offenders = productionFiles.flatMap((file) =>
+  moduleSpecifiersOf(readFileSync(file, 'utf8'), file)
+    .filter((specifier) => TEST_MODULE_PATTERN.test(specifier))
+    .map(
+      (specifier) =>
+        `${path.relative(repoRoot, file).split(path.sep).join('/')} -> ${specifier}`,
+    ),
+);
+
 describe('🔴 非テストソースが *.test モジュールを import していない（走査テストの前提）', () => {
   it('対照: 走査対象のソースが存在する', () => {
     expect(productionFiles.length).toBeGreaterThan(0);
@@ -94,11 +113,6 @@ describe('🔴 非テストソースが *.test モジュールを import して�
   });
 
   it('apps/** と packages/** の非テストソースに .test モジュールの import が 0 件', () => {
-    const offenders = productionFiles.flatMap((file) =>
-      moduleSpecifiersOf(readFileSync(file, 'utf8'), file)
-        .filter((specifier) => TEST_MODULE_PATTERN.test(specifier))
-        .map((specifier) => `${path.relative(repoRoot, file).split(path.sep).join('/')} -> ${specifier}`),
-    );
     expect(offenders).toEqual([]);
   });
 

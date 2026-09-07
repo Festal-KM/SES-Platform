@@ -76,6 +76,9 @@ export default async function EditProjectPage({
         requirementKinds={projectRequirementKinds}
         cancelHref={PROJECT_FORM_CANCEL_HREF}
         createdHrefPattern={PROJECT_CREATED_HREF_PATTERN}
+        // ✅ T-06-06: `S-013` への secondary（`docs/04` §S-012 操作と結果）。
+        //    🔴 ID が確定している編集時だけ出す（新規は保存後の `S-011` から辿る）。
+        visibilityHref={`/projects/${view.id}/visibility`}
         messages={projectFormMessages()}
       />
     </main>

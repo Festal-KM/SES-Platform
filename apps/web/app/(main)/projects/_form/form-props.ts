@@ -164,7 +164,8 @@ export function projectFormMessages(): ProjectFormMessages {
     publicSummaryLabel: t('projects.publicSummary.label'),
     publicSummaryNote: t('projects.publicSummary.note'),
 
-    visibilityComingSoon: t('projects.visibility.comingSoon'),
+    visibilityNotice: t('projects.visibility.notice'),
+    visibilitySettings: t('projects.visibility.settings'),
     save: t('projects.save'),
     saving: t('projects.saving'),
     saved: t('projects.saved'),

@@ -50,7 +50,7 @@ export function projectDetailScreenMessages(
     visibilityColumnPartner: t('projects.detail.visibility.column.partner'),
     visibilityColumnPublishedOn: t('projects.detail.visibility.column.publishedOn'),
     visibilityProposalCountComingSoon: t('projects.detail.visibility.proposalCountComingSoon'),
-    visibilitySettingsComingSoon: t('projects.detail.visibility.settingsComingSoon'),
+    visibilitySettings: t('projects.detail.visibility.settings'),
     partnerPublished: t('projects.detail.partner.published'),
     // 🔴 `docs/04` §10.1 `S-011`「提案 0 件 → ホスト / 取引先で別文言」。
     proposalsEmpty: isHost
