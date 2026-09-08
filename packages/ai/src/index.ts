@@ -33,11 +33,37 @@ export {
   AiUsageNotRecordedError,
   type AiClientErrorKind,
 } from './errors.js';
-export { type ContentBlock, type MaskedText } from './mask.js';
+// 🔴 マスキング（`BR-11` / `BR-12`）。`MaskedText` を作れるのは `mask`（実行時のデータ）と
+//    `maskedTemplate`（ソース上のリテラル）だけであり、ここでもそれ以外を出さない
+//    （`as MaskedText` が `packages/ai/src/mask.ts` 以外に現れないことは
+//    `tests/static/masked-text-single-path.test.ts` が検査する）。
+export {
+  mask,
+  maskedTemplate,
+  MASK_CATEGORIES,
+  type ContentBlock,
+  type KnownCommerceValues,
+  type KnownPiiValues,
+  type KnownSensitiveValues,
+  type MaskCategory,
+  type MaskedText,
+  type MaskHit,
+  type MaskMethod,
+  type MaskResult,
+} from './mask.js';
 export { catalogRoleModelResolver, type ModelCatalog, type RoleModelQuery, type RoleModelResolver } from './models.js';
 export { decideRetry, MAX_LLM_ATTEMPTS, RETRY_BACKOFF_MS, RETRY_JITTER_RATIO, type RetryDecision, type RetryInput } from './retry.js';
 export * from './roles/types.js';
 export { createRoleRunner, estimateInputTokens, type AiRoleRunner, type AiRuntime } from './run.js';
+// 🔴 プロンプトインジェクションの境界（docs/05 §7.8）。ロールのプロンプトは外部由来の本文を
+//    `wrapUntrusted` で囲み、システム側に `UNTRUSTED_BOUNDARY_INSTRUCTION` を必ず含める。
+export {
+  UNTRUSTED_BOUNDARY_INSTRUCTION,
+  UNTRUSTED_CLOSE_TAG,
+  UNTRUSTED_DOCUMENT_TAG_NAME,
+  UNTRUSTED_OPEN_TAG,
+  wrapUntrusted,
+} from './untrusted.js';
 export {
   type AiAttemptUsage,
   type AiCostGuard,
