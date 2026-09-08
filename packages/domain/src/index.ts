@@ -29,6 +29,10 @@ export * from './storage/index.js';
 //    実行する側（`packages/ai`）と CHECK を持つ側（`packages/db`）は相互に依存できないため、
 //    値集合の単一出所を domain に置く（`RecipientClass` / `ScanStatus` と同じ整理）。
 export * from './ai/index.js';
+// 🔴 T-07-05: 品質ゲートの値集合と指摘の構造（docs/05 §3.6 / §11）。出力スキーマを組み立てる側
+//    （`packages/ai`）・整合層の照合（T-07-07）・保存と整形（`packages/db` / `apps/web`）が
+//    同じ 1 つの構造を見るため domain に置く。
+export * from './gate/index.js';
 // 🔴 T-05-05: スキャン状態の値集合と遷移規則（docs/05 §3.4 / §8.5 / §9.6）。
 //    正規化する側（`packages/connectors`）と CHECK を持つ側（`packages/db`）は相互に
 //    依存できない（`CLAUDE.md` §2.1）ため、値集合の単一出所を domain に置く。

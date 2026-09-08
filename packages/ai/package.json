@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@ses/domain": "workspace:*",
+    "@ses/prompts": "workspace:*",
     "zod": "^4.1.0"
   }
 }

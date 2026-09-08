@@ -1,0 +1,12 @@
+{
+  "name": "@ses/prompts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/roles/index.js",
+  "types": "dist/roles/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  }
+}

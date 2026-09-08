@@ -241,6 +241,68 @@ describe('モック実装の import 元の限定（docs/05 §13.1 / CLAUDE.md §
 });
 
 /**
+ * 🔴 T-07-05 / docs/05 §7.7「参照制限」/ `CLAUDE.md` §2.1（`prompts/` は packages/ai からのみ読む）:
+ *    **製品プロンプト（`prompts/roles/**` = `@ses/prompts`）の import 元を `packages/ai` に限定する。**
+ *    プロンプトは「AI に何をさせるか」の定義そのものであり、`packages/ai` を経ずに読めると
+ *    `runRole` を通らない組み立て（= `AiUsage` に残らない呼び出し / 版を記録しない生成）が
+ *    書けるようになる（docs/05 §7.2 / §7.3 / `BR-13`）。
+ */
+describe('製品プロンプト（@ses/prompts）の import 元の限定（docs/05 §7.7 / CLAUDE.md §2.1）', () => {
+  const OUTSIDE_PATHS = [
+    'apps/web/lib/__violation__.ts',
+    'apps/web/app/api/(main)/__violation__/route.ts',
+    'apps/worker/src/__violation__.ts',
+    'packages/db/src/__violation__.ts',
+    'packages/domain/src/__violation__.ts',
+    'packages/connectors/src/__violation__.ts',
+    'tests/e2e/harness/__violation__.ts',
+    'tests/isolation/__violation__.test.ts',
+    'scripts/__violation__.ts',
+  ];
+
+  it.each(OUTSIDE_PATHS)('🔴 %s からの import (@ses/prompts) を検出する', async (spoofedPath) => {
+    const result = await lintAs(readFixture('prompts-package.violation.ts'), spoofedPath);
+    expect(hasRule(result.messages, 'no-restricted-imports')).toBe(true);
+  });
+
+  it.each(OUTSIDE_PATHS)('🔴 %s からの動的 import (import()) も検出する', async (spoofedPath) => {
+    const result = await lintAs(readFixture('prompts-package-dynamic.violation.ts'), spoofedPath);
+    expect(hasRule(result.messages, 'no-restricted-syntax')).toBe(true);
+  });
+
+  it.each(OUTSIDE_PATHS)('🔴 %s からの相対パス経由の到達も検出する', async (spoofedPath) => {
+    const result = await lintAs(readFixture('prompts-relative.violation.ts'), spoofedPath);
+    expect(hasRule(result.messages, 'no-restricted-imports')).toBe(true);
+  });
+
+  it('対照: packages/ai からの import は許可される（違反 0 件）', async () => {
+    const result = await lintAs(readFixture('prompts-package.ok.ts'), 'packages/ai/src/prompts.ts');
+    expect(result.errorCount).toBe(0);
+  });
+
+  it('🔴 プロンプトを読める packages/ai でも @ses/db は禁止のまま（許可を広げすぎていない）', async () => {
+    const result = await lintAs(readFixture('connectors-import-db.violation.ts'), 'packages/ai/src/prompts.ts');
+    expect(hasRule(result.messages, 'no-restricted-imports')).toBe(true);
+  });
+
+  it('🔴 プロンプト自身は @ses/* に依存できない（プロンプトはデータであり実行主体ではない）', async () => {
+    const result = await lintAs(
+      readFixture('domain-import-package.violation.ts'),
+      'prompts/roles/__violation__.ts',
+    );
+    expect(hasRule(result.messages, 'no-restricted-imports')).toBe(true);
+  });
+
+  it('🔴 プロンプト自身は Node の I/O にも依存できない', async () => {
+    const result = await lintAs(
+      readFixture('domain-import-node-io.violation.ts'),
+      'prompts/roles/__violation__.ts',
+    );
+    expect(hasRule(result.messages, 'no-restricted-imports')).toBe(true);
+  });
+});
+
+/**
  * 🔴 T-03-08 / docs/03 `program-design` 申し送り 2 / `CLAUDE.md` §10.5:
  *    **主平面のコードから `withPlatform*` を import できない**ことを lint で担保する。
  *    到達経路は `@ses/db/platform` サブパスだけ（`@ses/db` の index は re-export しない）であり、

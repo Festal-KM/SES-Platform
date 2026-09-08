@@ -14,6 +14,9 @@ importers:
       '@playwright/test':
         specifier: 1.63.0
         version: 1.63.0
+      '@ses/ai':
+        specifier: workspace:*
+        version: link:packages/ai
       '@ses/connectors':
         specifier: workspace:*
         version: link:packages/connectors
@@ -123,6 +126,9 @@ importers:
       '@ses/domain':
         specifier: workspace:*
         version: link:../domain
+      '@ses/prompts':
+        specifier: workspace:*
+        version: link:../../prompts
       zod:
         specifier: ^4.1.0
         version: 4.5.4
@@ -188,6 +194,8 @@ importers:
       typescript:
         specifier: 6.0.3
         version: 6.0.3
+
+  prompts: {}
 
 packages:
 

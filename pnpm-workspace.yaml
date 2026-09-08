@@ -1,6 +1,11 @@
 packages:
   - 'apps/*'
   - 'packages/*'
+  # 🔴 製品プロンプト（@ses/prompts）。**依存を 1 つも持たないパッケージ**であり、
+  #    `packages/ai` だけがこれを読む（CLAUDE.md §2.1 / docs/05 §7.7 / Issue #23 決定 A）。
+  #    packages/* に置かないのは、CLAUDE.md §2.1 のリポジトリ構成が prompts/ を
+  #    トップレベルに定めているためである（配置は人間の承認事項）。
+  - 'prompts'
 
 # docs/03-tech-selection.md §5.1 方針 #3: `pnpm audit --audit-level high` を CI で必須にする。
 # 以下は個別に無視する既知の advisory。抑制は最小限にとどめ、必ず理由と再評価の契機を書く。

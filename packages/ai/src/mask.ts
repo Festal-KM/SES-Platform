@@ -180,19 +180,32 @@ export type MaskResult = {
  *
  * 🔴 `packages/i18n` に置かない。**利用者向けの文言ではなく LLM との機械的な取り決め**であり、
  *    ロケールで変わってはならない（変わると抽出結果が変わり、`promptVersion` による再現性も壊れる）。
+ *
+ * 🔴 T-07-05: 型を `MaskedText` にした。**伏せ字は定義上マスキング済みの文字列**であり
+ *    （原文を 1 文字も含まない）、`gate-inspector` のプロンプトはこの語彙を
+ *    「ここにあった値は既に取り除かれている」と伝えるために埋め込む（docs/05 §7.13）。
+ *    プロンプト側で語彙を書き写すと、表を変えたときに静かにずれる。
  */
-const PLACEHOLDER: Record<MaskCategory, string> = {
-  EMAIL: '[メール]',
-  PHONE: '[電話番号]',
-  PERSONAL_NUMBER: '[個人番号]',
-  POSTAL_CODE: '[郵便番号]',
-  BIRTH_DATE: '[生年月日]',
-  UNIT_PRICE: '[単価]',
-  NAME: '[名前]',
-  AFFILIATION: '[所属会社]',
-  END_CLIENT: '[企業名]',
-  BOUNDARY_TAG: '[除去済みタグ]',
+const PLACEHOLDER: Record<MaskCategory, MaskedText> = {
+  EMAIL: maskedTemplate`[メール]`,
+  PHONE: maskedTemplate`[電話番号]`,
+  PERSONAL_NUMBER: maskedTemplate`[個人番号]`,
+  POSTAL_CODE: maskedTemplate`[郵便番号]`,
+  BIRTH_DATE: maskedTemplate`[生年月日]`,
+  UNIT_PRICE: maskedTemplate`[単価]`,
+  NAME: maskedTemplate`[名前]`,
+  AFFILIATION: maskedTemplate`[所属会社]`,
+  END_CLIENT: maskedTemplate`[企業名]`,
+  BOUNDARY_TAG: maskedTemplate`[除去済みタグ]`,
 };
+
+/**
+ * 🔴 伏せ字の語彙（種別 → 表示）。**唯一の出所はこの表である。**
+ *
+ * プロンプト（`prompts/roles/**`）はこの値を受け取って「伏せ字を指摘しない・復元しない」を
+ * 指示する（docs/05 §7.13）。個人情報そのものは含まれないため、外へ出してよい。
+ */
+export const MASK_PLACEHOLDERS: Readonly<Record<MaskCategory, MaskedText>> = PLACEHOLDER;
 
 // ============================================================================
 // 3. 表記ゆれの吸収（既知値 → 正規表現）

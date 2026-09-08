@@ -41,6 +41,9 @@ export {
   mask,
   maskedTemplate,
   MASK_CATEGORIES,
+  // 🔴 伏せ字の語彙（種別 → 表示）。ゲートの画面・プロンプトが同じ表を見るための出所であり、
+  //    個人情報を含まない（T-07-05）。
+  MASK_PLACEHOLDERS,
   type ContentBlock,
   type KnownCommerceValues,
   type KnownPiiValues,
@@ -52,6 +55,47 @@ export {
   type MaskResult,
 } from './mask.js';
 export { catalogRoleModelResolver, type ModelCatalog, type RoleModelQuery, type RoleModelResolver } from './models.js';
+// 🔴 プロンプト管理（docs/05 §7.7 / T-07-05）。**文面ではなく「版で引く手段」だけを出す。**
+//    `PROMPT_KIT`（プロンプトの組み立て道具）は出さない —— 出すと、ロール定義を経ない
+//    プロンプトを外で自作できるようになる（docs/05 §7.2）。
+export {
+  currentGateInspectorPrompt,
+  gateInspectorPromptAtVersion,
+  MASK_PLACEHOLDER_LIST,
+  PromptRegistryError,
+  registeredPromptRoles,
+  UnknownPromptVersionError,
+} from './prompts.js';
+// 🔴 ロール定義の登録口（docs/05 §7.4 の「登録時の静的チェック」）と `gate-inspector`。
+export {
+  assertOutputSchemaSupported,
+  defineRoleSpec,
+  InvalidRoleSpecError,
+  parsePromptVersion,
+  PROMPT_VERSION_PATTERN,
+  UnsupportedOutputSchemaError,
+  type ParsedPromptVersion,
+} from './roles/define.js';
+export {
+  GATE_INSPECTOR_COMMERCE_KINDS,
+  GATE_INSPECTOR_CONSISTENCY_KINDS,
+  GATE_INSPECTOR_MAX_FINDINGS,
+  GATE_INSPECTOR_MAX_OUTPUT_TOKENS,
+  GATE_INSPECTOR_MAX_SECTIONS,
+  GATE_INSPECTOR_MAX_WARNINGS,
+  GATE_INSPECTOR_PII_KINDS,
+  GATE_INSPECTOR_TIMEOUT_MS,
+  gateInspectorOutputSchema,
+  gateInspectorSpec,
+  gateInspectorSpecAtVersion,
+  type GateInspectorCommerceFinding,
+  type GateInspectorFinding,
+  type GateInspectorInput,
+  type GateInspectorOutput,
+  type GateInspectorPiiFinding,
+  type GateInspectorSection,
+  type GateInspectorWarning,
+} from './roles/gate-inspector.js';
 export { decideRetry, MAX_LLM_ATTEMPTS, RETRY_BACKOFF_MS, RETRY_JITTER_RATIO, type RetryDecision, type RetryInput } from './retry.js';
 export * from './roles/types.js';
 export { createRoleRunner, estimateInputTokens, type AiRoleRunner, type AiRuntime } from './run.js';

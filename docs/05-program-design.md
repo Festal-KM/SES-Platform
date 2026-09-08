@@ -167,7 +167,9 @@ ses-platform/
       src/mock/                           # モック実装（E2E と同一実装。§13.3）
     config/         # schema.ts（Zod）/ load-env.ts / connector-selection.ts（🔴 APP_ENV 分岐の唯一の場所。resolveConnectorSelection(env)）/ limits.ts / redact.ts
     ui/, i18n/
-  prompts/          # 製品プロンプトは roles/{role}.v{n}.ts（Issue #23 決定 A、2026-09-08）。packages/ai からのみ読む
+  prompts/          # 🔴 ワークスペースパッケージ @ses/prompts（依存ゼロ。T-07-05 / §7.13 ①）
+    roles/          # 製品プロンプト {role}.v{n}.ts + index.ts（Issue #23 決定 A、2026-09-08）。packages/ai からのみ読む
+                    # 直下の *.md はハーネスの指示文テンプレートであり、パッケージの include に入らない
   scripts/
   tests/e2e/
   docs/
@@ -184,7 +186,8 @@ ses-platform/
 | `packages/connectors/src/mock/**` を `packages/connectors/src/index.ts` 以外から import しない | `no-restricted-imports`（`docs/03` §4.18.2 / NFR-ENV-2） |
 | アプリコードから `@prisma/client` / `@anthropic-ai/sdk` / `@aws-sdk/*` / `stripe` を import しない | `no-restricted-imports`。例外は `packages/db` / `ai` / `connectors` 内のみ |
 | `$queryRaw` / `$executeRaw` / `$transaction` の直接呼び出し | `no-restricted-syntax`。例外は `packages/db/src/**` のみ（`docs/03` §4.3.1） |
-| `prompts/**` を `packages/ai` 以外から import しない | `no-restricted-imports` |
+| `prompts/roles/**`（= `@ses/prompts`）を `packages/ai` 以外から import しない | `no-restricted-imports`（パッケージ名・相対パス・動的 import の 3 経路。T-07-05）。**さらに `packages/ai` の中でも読み込み口は `src/prompts.ts` の 1 本**（§17.2 #25） |
+| 🔴 `prompts/roles/**` は**何にも依存しない**（`@ses/*` にも `node:*` にも） | `no-restricted-imports`（専用ゾーン。§7.13 ①）+ §17.2 #25。プロンプトはデータであって実行主体ではない（`CLAUDE.md` §12.3） |
 
 🔴 **`packages/domain` から `Date` を追放する理由**: マッチングスコア（`F-029 AC-1`）・匿名化の丸め（`F-017 AC-3`）・満了判定（`F-043 AC-4`）はすべて「同じ入力に同じ出力」をテストで証明する必要がある。現在時刻を内部で読むとこれが成立しない。**`now: Date` を引数で受け取り、呼び出し側（handler / job）が渡す。**
 
@@ -2688,7 +2691,7 @@ POST /api/webhooks/esign/cloudsign/{tenantId}/{secret}  // 第二コネクタの
 
 🔴 **ロールは自律エージェントではない。入出力スキーマが定義されたパイプライン工程である**（`CLAUDE.md` §12.3）。共通インタフェースは次のとおり。
 
-⚠️ **本節以下のスケッチは T-07-01 で実装され、一部が確定値に置き換わった。差分は §7.9「§7 の実装の決着（T-07-01）」を正とする**（`CLAUDE.md` §8.7）。
+⚠️ **本節以下のスケッチは T-07-01 で実装され、一部が確定値に置き換わった。差分は §7.9「§7 の実装の決着（T-07-01）」を正とする**（`CLAUDE.md` §8.7）。🔴 **`gate-inspector` の入出力（下表）と `buildPrompt` の実体は T-07-05 で確定した。差分は §7.13 を正とする**（入力は `knownPiiTokens` を持たない）。
 
 ```ts
 // packages/ai/src/roles/types.ts（🔴 AI_ROLES の宣言そのものは packages/domain へ移した。§7.9 ⑤）
@@ -2860,6 +2863,8 @@ export async function reserveAiCost(tenantId: string, estimatedUsd: Decimal, now
 | 🔴 **件数の加算**（`docs/03` §7.6.1 / 申し送り 30） | `ROLE_UNIT: { 'sheet-parser': ['sheetParse', 1], 'match-explainer': ['matchRationale', output.rationales.length], 'proposal-drafter': ['proposalDraft', 1], 'renewal-advisor': ['renewalSummary', 1] }`（`skill-normalizer` / `gate-inspector` は無い）。**`runRole` の手順 6b で `ok:true` のときだけ、1 呼び出しにつき 1 度加算**する。したがって **内部再試行は件数に加算されず金額（`AiUsage`）にのみ計上**され、**利用者の再生成操作（新しい `runRole` 呼び出し）は 1 件として加算**される。🔴 **`UsageCounter` の件数を `AiUsage` の行数から数え直すジョブ・SQL を書かない**（`usage.daily-rollup` は `AI_COST_USD` のみを突き合わせる。§9.8） |
 
 ### 7.7 プロンプト管理
+
+⚠️ **本節のスケッチは T-07-05 で実装され、一部が確定値に置き換わった。差分は §7.13「§7.7 / §7.1 の実装の決着（T-07-05）」を正とする**（`CLAUDE.md` §8.7）。
 
 ```
 prompts/
@@ -3165,6 +3170,91 @@ apps/worker/src/ai/cost-guard.ts    createAiCostGuard（ポートへの配線と
 | ユニット（worker） | ポートへの配線（ctx の組み立て・`tenantId` の出所・`LIMIT_REACHED` → `AiCostLimitExceededError` の写像・失敗の伝播・証以外を返さないこと） |
 | 結合（`tests/isolation/ai-cost-guard.test.ts`） | 予約 → 補正の実挙動 / 🔴 **10 並列でも予約の総和が上限を超えない** / 🔴 **TTL（翌日は新しい行 / 当日は空かない）** / 🔴 **日またぎの補正が予約した日の行に入る** / 単価未登録は行を 1 つも作らない / テナント境界 |
 | 既存（`packages/ai/src/run.test.ts`） | 🔴 **予約に失敗したら外部呼び出しは 0 回で `AiUsage` も 0 行**（T-07-01 で緑。本タスクはその `reserve` の実体を与えた） |
+
+### 7.13 🔴 §7.7 / §7.1 の実装の決着（T-07-05。2026-09-08）
+
+**§7.7（プロンプト管理）と `gate-inspector` の入出力は T-07-06（ゲート）/ T-07-09 / SP-09 の一次資料である。** T-07-05（プロンプト管理と `gate-inspector` のプロンプト）で確定した形を、上のスケッチとの差分として記録する（`CLAUDE.md` §8.7。§7.9〜§7.12 と同じ作法）。**以降のタスクは本節を正とする。**
+
+#### ① `prompts/` を「依存を 1 つも持たないワークスペースパッケージ（`@ses/prompts`）」にした
+
+```
+prompts/package.json          name: @ses/prompts（dependencies なし）/ main: dist/roles/index.js
+prompts/tsconfig.json         include: ["roles"] → prompts/dist/roles/**
+prompts/roles/kit.ts          PromptKit<M> / MaskedTemplateTag<M> / RolePrompt<M>（型のみ）
+prompts/roles/contracts.ts    ロールごとの入力契約（🔴 版をまたいで不変）
+prompts/roles/gate-inspector.v1.ts   🔴 検査基準そのもの（プロンプト本文）
+prompts/roles/index.ts        ROLE_PROMPTS（現行版）/ GATE_INSPECTOR_PROMPTS（全版）
+packages/ai/src/prompts.ts    🔴 @ses/prompts を import する唯一のファイル（PROMPT_KIT を与える）
+packages/ai/src/roles/define.ts        defineRoleSpec（登録時の静的チェック。§7.4）
+packages/ai/src/roles/gate-inspector.ts 入出力スキーマとロール定義（🔴 プロンプト本文を持たない）
+packages/domain/src/gate/types.ts       ゲートの値集合と `GateFinding`（§3.6 の構造）
+```
+
+- 🔴 **プロンプトは `@ses/ai` を import しない。** import すると **tsc のビルドが循環する**（`packages/ai` が `prompts` を読み、`prompts` が `packages/ai` の `.d.ts` を要求する）。したがって「マスキング済みテキストの型」を**型変数 `M`** として受け取り、それを作る手段（タグ付きテンプレート等）も引数 `PromptKit<M>` で受け取る形にした。
+- 🔴 **副産物として担保が 1 つ増えた**: プロンプトは `M` の作り方を知らないため、**生の `string` をプロンプトに混ぜる経路が型として存在しない**（`as MaskedText` を書く余地すら無い。§7.10 ①）。さらに import が 1 つも無いので、プロンプトから DB・LLM・I/O に到達できない（「ロールは自律エージェントではない」を構造で保つ。`CLAUDE.md` §12.3）。
+- `pnpm-workspace.yaml` に `- 'prompts'` を足した。**`CLAUDE.md` §2.1 のリポジトリ構成（`prompts/` はトップレベル）は変えていない**（配置は人間の承認事項）。`prompts/*.md`（ハーネスの指示文テンプレート）はパッケージの `include` に入らない。
+
+#### ② 版の表は 2 つある（現行版と全版）
+
+| 表 | 意味 |
+|---|---|
+| `ROLE_PROMPTS` | 🔴 **現行版**。版の切替は**この 1 行**を書き換える（§7.7 の規約どおり） |
+| `GATE_INSPECTOR_PROMPTS` | 🔴 **全版**（版番号 → モジュール）。**古い版のファイルを消さない**の実体であり、生成物に残った `promptVersion` からの再現はこの表を引く |
+
+- 再現の入口は **`gateInspectorSpecAtVersion(version)`**（`packages/ai`）。**未登録の版は `UnknownPromptVersionError` で落とす** —— 現行版へ暗黙に倒すと「同じ版で再現した」という記録が嘘になる（`BR-13`）。
+- 🔴 **出力スキーマは版に依らず同一**である（§7.7「プロンプト版を上げるたびに出力スキーマを変えない」）。`gateInspectorSpecAtVersion` が差し替えるのは `promptVersion` と `buildPrompt` だけである。
+- ⚠️ 現在 `ROLE_PROMPTS` にあるのは `gate-inspector` の 1 件だけである（残る 5 ロールは後続スプリント）。未登録のロールを引くと例外になる（**既定のプロンプトへフォールバックしない**）。
+
+#### ③ 🔴 `knownPiiTokens` は採らなかった（入力に PII を渡す口を作らない）
+
+- §7.1 のスケッチは `gate-inspector` の入力を `{ content, audienceKind, knownPiiTokens: string[] }` と書いていた。**`knownPiiTokens` という名前は「台帳の氏名などの実値を渡す」と読め、渡した瞬間に `BR-11`（PII を LLM に送らない）を破る。**
+- 実際に渡すのは**伏せ字の語彙**（`[名前]` `[単価]` 等）であり、**呼び出し側は組み立てられない** —— ロールの入力には含めず、`buildPrompt` が `mask()` の表（`MASK_PLACEHOLDERS`）から与える。プロンプトはこれを「そこにあった値は既に取り除かれている / 指摘も復元もするな」と伝えるために使う。
+- 確定した入力: **`{ audienceKind: GateAudienceKind, sections: { field: GateFindingField, text: MaskedText }[] }`**。`content` を**欄ごとに分けた**のは、`GateFinding.field` と「オフセットは欄内の位置」（§11.7）を成立させるためである。
+- ⚠️ **T-07-06 への申し送り（3 点）**:
+  1. `GateInput.text`（`subject` / `body` / `publicSummary`）と `snapshot` を `sections` に写すのはゲート側の責務である。`mask()` の `MaskHit` は `AiCallContext.maskHits` に渡すこと（§7.11 ③）。
+  2. 🔴 **`KnownSensitiveValues` を組み立てるとき、台帳が持つ氏名の全表記を `fullNames` に渡す**（漢字・カナ・ローマ字の列があれば**全部**。会社名も同様に `affiliations` / `endClientNames` へ）。**表記の欠けはそのまま漏れになる** —— `mask()` の既知値置換（主）が拾えなかった表記は、パターン検出（補助）では拾えない（氏名に形の手掛かりが無いため）。ゲートの機械的 PII 検出（§11.4 の `mechanicalPii`）も同じ集合を使うので、欠けると **AI の見落としに対する保険まで同時に外れる**。
+  3. `gate-inspector` の失敗（`RoleResult.ok=false`）は PII / 商流を FAIL に、`AiCostLimitExceededError` は HELD に写す（§7.4 / §7.6）。**両者を同じ枝で扱わない。**
+
+#### ④ 🔴 「整合層の合否を判定しない」を**出力スキーマ**で担保した（`BR-61`）
+
+| 手段 | 実装 |
+|---|---|
+| 整合層は警告だけ | `consistencyWarnings[].severity` が **`z.literal('WARN')`**（JSON Schema でも `const: "WARN"`）。**`BLOCK` を返す形が存在しない** |
+| 層をまたげない | `kind` を層ごとに分けた（PII 5 種 / 商流 3 種 / 整合 2 種）。🔴 **`DUPLICATE_PROPOSAL` は AI の種別に入れない**（`F-037` の機械的照合の領分であり、LLM は本文から知りようがない） |
+| 合否と根拠の整合 | `superRefine` で **`FAIL` には `BLOCK` が 1 件以上 / `PASS` には `BLOCK` が 0 件**を受信後に検査する（JSON Schema では表現できない）。矛盾した応答はスキーマ違反 → 再試行 → 最終的に失敗 = **PII / 商流は FAIL**（§7.4）であり、🔴 **PASS へ倒れる経路は無い** |
+| オフセット | 「両方 `null`」か「`start < end`」のみ受理（`-1` や片方だけの値を画面へ渡さない。§11.7） |
+| 余分なキー | **落として通す**（失敗にしない）。`gate-inspector` の失敗は PII / 商流の FAIL を意味するため、合否に触れないゴミで FAIL 率を汚さない。**到達しないことが担保である** |
+
+- `layer` は AI の出力に含めない（**どちらの配列に入ったか**で決まる）。ゲート側（T-07-06）が `GateFinding.layer` を付けて `ReviewGate.findings` / `aiWarnings` に保存する。
+
+#### ⑤ 登録時の静的チェックの実体（§7.4「ビルド時に落とす」）
+
+- `defineRoleSpec(spec)` が ①`purpose` と `ROLE_PURPOSE[role]` の一致 ②`promptVersion` が `{role}.v{n}` でロール名が一致 ③**出力スキーマが構造化出力で使える形**（`$ref` / `$defs` / `minItems > 1` が無い）④`maxOutputTokens` / `timeoutMs` が正の整数、を検査する。**モジュールのトップレベルで走るため、壊れた定義を含むワーカーは起動できない。**
+- 🔴 **検査は `z.toJSONSchema()` を通した後の形に対して行う。** Zod スキーマを目で見る形にすると、`z.lazy` や循環参照のように**変換して初めて `$ref` になる**ものを取りこぼす。
+- 🔴 **キーワードとプロパティ名を取り違えない**（`properties` の下は利用者のフィールド名であり、`$ref` という名前の出力項目を誤検知しない）。
+- ⚠️ `maxLength` / `minimum` は JSON Schema には載るが **API 側では無視される**（`docs/03` 申し送り 10）。だから受信後の `safeParse` が唯一の担保である、という関係は変わらない。
+
+#### ⑥ ゲートの値集合は `packages/domain/src/gate/types.ts` に置いた
+
+- `GATE_LAYERS` / `GATE_VERDICTS` / `GATE_FINDING_KINDS` / `GATE_FINDING_FIELDS` / `GATE_FINDING_SEVERITIES` / `GATE_FINDING_EXCERPT_MAX_LENGTH` / `GATE_AUDIENCE_KINDS` と `GateFinding`（§3.6 の構造そのもの）。理由は §7.9 ⑤ と同じ（出力スキーマを組み立てる `packages/ai` と、整合層の照合・保存・整形をする側の共有点は domain しか無い）。
+- ⚠️ **T-07-06 / T-07-07 への申し送り**: `decideGate` / `decideConsistency` は**ここに足す**。新しい値集合を作らない。
+- 🔴 `prompts/roles/contracts.ts` の `PromptGateField` / `PromptGateAudienceKind` は**上の写し**である（プロンプトは domain に依存できない）。ずれると `packages/ai/src/roles/gate-inspector.ts` の代入がコンパイルエラーになる —— **欄や共有先の区分を増やしたときに、検査基準（プロンプト）の改訂と版上げを強制する**ための意図的な作りである。
+
+#### ⑦ 参照制限（ESLint + 静的テスト）
+
+- **ESLint**: `@ses/prompts` と `prompts/roles/**` への到達（静的 import / 動的 import / `require` / 相対パス）を **`packages/ai` 以外で禁止**した。`prompts/**` 自身のゾーンは `forbidAllSes` + `forbidApps` + `forbidNodeIo`（依存を持てない）。
+- **静的テスト（§17.2 #25）**: ①`@ses/prompts` を import する非テストソースが `packages/ai/src/prompts.ts` の 1 本 ②`prompts/roles/**` が外部 import と親ディレクトリへの相対 import を 1 つも持たない ③版リテラル・ファイル名・登録表の 3 つが一致する。
+- 🔴 **`UNTRUSTED_BOUNDARY_INSTRUCTION` の実文をユニットテストで固定した**（§7.10 ⑥ の「変えたら全ロールの `promptVersion` を上げる」を、宣言ではなく機械で気づけるようにした）。
+
+#### ⑧ 検証（T-07-05 で緑にしたもの）
+
+| 層 | 何を固定したか |
+|---|---|
+| ユニット（`packages/ai/src/prompts.test.ts`） | 版の形と登録表 / 🔴 **保存された版での再現**（現行版と同一文面）/ 境界タグの対数と閉じタグ注入の無効化 / 伏せ字の語彙が `mask()` の表と一致 / 境界の宣言文のピン留め |
+| ユニット（`roles/gate-inspector.test.ts`） | 🔴 整合層の警告が `BLOCK` を作れない / `DUPLICATE_PROPOSAL` を返せない / `FAIL` と `BLOCK` の整合 / 層をまたいだ種別を弾く / オフセットと抜粋長 / JSON Schema に `$ref`・`minItems > 1` が無い / プロンプトに 3 層の基準と「整合層の合否は決めない」が書かれている |
+| ユニット（`roles/define.test.ts`） | 登録時チェックの 4 点（`purpose` / 版の形 / 出力スキーマ / 上限）。再帰スキーマと `minItems > 1` を実際に落とす |
+| 結合（`tests/isolation/gate-prompt-version.test.ts`） | 🔴 **`ReviewGate.promptVersion` に版が残り、その版だけで実際に送ったプロンプトを再現できる** / `AiUsage` にも同じ版が入る / 警告が `aiWarnings` 列に分かれる / 送信本文がマスキング済み / テナント境界 |
+| 静的（§17.2 #25） | プロンプトの読み込み口・依存ゼロ・版とファイル名の一致 |
 
 ## 8. 外部連携層（コネクタ）の設計（`CLAUDE.md` §3.4）
 
@@ -4684,6 +4774,7 @@ export const logger = pino({
 | 22 | `search-sql-single-path.test.ts` | 🔴 **検索の実装が `packages/db/src/search/**` 以外に現れない**（T-06-05 / TBD-8 / `docs/03` §3.7.3 の代替に進むとき書き換わるのがこの 1 ディレクトリだけであることの担保）。TypeScript の AST を走査し、**①`contains` プロパティ ②`mode: 'insensitive'` ③生 SQL の検索式**（`ILIKE` / `to_tsvector` / `*_tsquery` / `similarity()` / trigram 演算子）を数える。🔴 **コメントは対象外**（AST のノードだけを見る。本書と各ソースの説明文が引っかからないようにするため）。加えて ④`schema.prisma` の `previewFeatures` に `fullTextSearchPostgres` が**無い**こと（Prisma の `search` フィルタはプロパティ名が一般的すぎて AST で誤検知なく数えられないため、**そもそも型として存在しない**ことを別角度で固定する）。🔴 **射程外を明示する**: 一覧の単純な `SELECT`（`select` する列 / `count` / ページング / 応答型の組み立て）と、`startsWith` / `endsWith`（前方・後方の完全一致。識別子の分類に使う）。🔴 **例外は 1 ファイルだけ**（`tests/isolation/search-indexes.test.ts`。索引の利用を `EXPLAIN` で確かめるには加速対象の SQL 自体を書く必要がある）。テストは例外リストの長さも固定する |
 | 23 | `masked-text-single-path.test.ts` | 🔴 **`MaskedText` へのキャスト（`as MaskedText` / `<MaskedText>`）を持つ非テストソースが `packages/ai/src/mask.ts` の 1 本だけ**（T-07-02。§7.10 ①）。走査は `apps` / `packages` / `prompts` / `scripts`。理由: 「PII 未マスキングでの LLM 送信 0 件」（`CLAUDE.md` §7 / `BR-11` / `F-032 AC-1`）を守っているのは型そのものではなく「**型を握り潰す記述がどこにも無い**」という構造であり、`as MaskedText` を 1 行書けば担保は静かに全部消える。あわせて `packages/ai` のバレルが `unsafeAsMasked` 相当の無条件変換を公開していないことも見る |
 | 24 | `ai-usage-cost-single-path.test.ts` | 🔴 **AI の金額と件数の置き場所を固定する**（T-07-03。§7.11 ① / ②）: ①単価表 `AI_MODEL_PRICING` を**宣言**する非テストソースが `packages/domain/src/ai/pricing.ts` の 1 つだけ（`ROLE_UNIT` も同様に `units.ts` の 1 つだけ）②🔴 **`packages/ai/**` に `AI_MODEL_PRICING` / `estimateAiCostUsd` / `resolveAiModelPrice` の識別子が 1 つも現れない**（`AiUsageRecordInput` に金額が無い状態は型では守れない。domain は `packages/ai` からも import できるため）③`estimateAiCostUsd` を呼ぶのは `packages/db/src/**` だけ（記録と、呼び出し前の予約）④🔴 **`units.ts` が `pricing.ts` を import しない**（「件数を金額から割り戻さない」＝ `F-026 AC-6` の機械的な根拠）⑤`resolveAiUnitCount` を呼ぶ非テストソースが `packages/db/src/ai-usage.ts` の 1 本（件数の加算経路が 1 つであることの担保。`P-A-18`） |
+| 25 | `prompt-registry-single-path.test.ts` | 🔴 **製品プロンプトの読み込み口と依存を固定する**（T-07-05。§7.7 / §7.13 ⑦）: ①`@ses/prompts`（= `prompts/roles/**`）を import する非テストソースが **`packages/ai/src/prompts.ts` の 1 本だけ**（ESLint は「`packages/ai` 以外は不可」までしか言えず、パッケージ内部で読み込みが散ると `runRole` を経ないプロンプト組み立てが成立する）②🔴 **`prompts/roles/**` が外部 import と親ディレクトリへの相対 import を 1 つも持たない**（プロンプトはデータであって実行主体ではない。`CLAUDE.md` §12.3。ここから DB・LLM・I/O に到達できないことの担保であり、`packages/ai` との依存循環を作らないことの担保でもある）③**版リテラル・ファイル名・登録表の 3 つが一致する**（`{role}.v{n}.ts` ↔ `version: '{role}.v{n}'` ↔ `prompts/roles/index.ts`。ずれると生成物に残った版から文面を再現できない = `BR-13` が壊れる） |
 
 ### 17.3 E2E の主要シナリオ
 

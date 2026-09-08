@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "dist",
+    "rootDir": "."
+  },
+  // 🔴 `roles/` だけがこのパッケージのソースである（`prompts/*.md` は Claude Code ハーネスの
+  //    指示文テンプレートであり、製品とは無関係。Issue #23 決定 A / docs/05 §7.7）。
+  "include": ["roles"]
+}

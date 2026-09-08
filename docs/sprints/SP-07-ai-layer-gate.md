@@ -83,7 +83,7 @@
 
 ### T-07-05 プロンプト管理と `gate-inspector` のプロンプト（M）
 
-- **実装**: `prompts/gate-inspector/v1.md` ほか。`packages/ai/src/prompts.ts`（`prompts/` からのみ読む）。
+- **実装**: `prompts/roles/gate-inspector.v1.ts` ほか（~~`prompts/gate-inspector/v1.md`~~ は Issue #23 決定前の旧記載。プロンプトは md ではなく `export const prompt = { role, version, build }` の TS モジュールである）。`packages/ai/src/prompts.ts`（🔴 **`prompts/roles/` を読む唯一のファイル**）。**実装済み（2026-09-08）。確定形は `docs/05` §7.13 を正とする。**
 - 🔴 ~~配置場所は [Issue #23](https://github.com/Festal-KM/SES-Platform/issues/23) の決定待ち~~ ✅ **決着（2026-09-08、回答 A）** — 製品プロンプトは **`prompts/roles/{role}.v{n}.ts`**（例: `prompts/roles/gate-inspector.v1.ts`。形式は `docs/05` §7.7 が正。旧記載 `{role}/v{N}.md` は誤りとして是正）に置き、`packages/ai` は **`prompts/roles/` のみを読む**（Claude Code ハーネスのエージェント資産と同居させない）。**決定が既定値と異なる場合は、`CLAUDE.md` §2.1 / `docs/05` を §8.7 の手順で先に直してから実装する**（本ファイルだけを直さない）。版番号の付け方と `ReviewGate` へのプロンプト版の保存（`BR-13`）は、どちらに決まっても変わらない。
 - 🔴 **プロンプトをコード中にベタ書きしない**（`CLAUDE.md` §3.2）。**生成物に使用プロンプト版を保存し、後から再現できるようにする**（`BR-13`）。
 - **`gate-inspector` の責務**（`CLAUDE.md` §12.2）: PII 層・商流層の検査実行と、**整合層の警告の生成**。🔴 **整合層の合否は判定しない。**

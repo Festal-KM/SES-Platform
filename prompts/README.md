@@ -4,6 +4,11 @@ Claude Code に渡す指示文の雛形。**コピーして `{{...}}` を埋め�
 
 手順の全体像は [`docs/GETTING-STARTED.md`](../docs/GETTING-STARTED.md) を参照。
 
+> 🔴 **`roles/` は別物である。** このディレクトリ直下の `*.md` は**ハーネス（Claude Code）に貼る指示文**だが、
+> [`roles/`](roles) は**製品が LLM に送るプロンプト**（ワークスペースパッケージ `@ses/prompts`）である。
+> 混ぜないこと。`roles/` は `packages/ai` からのみ読まれ（`CLAUDE.md` §2.1 / `docs/05` §7.7 / §7.13）、
+> 版（`{role}.v{n}.ts`）は生成物に記録されて後から再現できる（`BR-13`）。**古い版のファイルは消さない。**
+
 ## ファイル一覧
 
 | ファイル | いつ使うか |

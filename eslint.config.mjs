@@ -134,6 +134,28 @@ const CONNECTOR_MOCK_RELATIVE_PATTERNS = [
   '../../src/mock/**',
 ];
 
+// T-07-05（CLAUDE.md §2.1「prompts/ … packages/ai からのみ読む」/ docs/05 §7.7 の「参照制限」/
+// Issue #23 決定 A）: 🔴 **製品プロンプト（`prompts/roles/**` = `@ses/prompts`）を import できるのは
+// `packages/ai` だけである。**
+//   なぜ: プロンプトは「AI に何をさせるか」の定義そのものであり、`packages/ai` を経ずに読める
+//   ようにすると、`runRole` を通らないプロンプトの組み立て（＝ `AiUsage` に残らない呼び出しや、
+//   版の記録を伴わない生成）が書けるようになる（docs/05 §7.2 / §7.3 / `BR-13`）。
+//   到達経路はパッケージ名（`@ses/prompts`）とリポジトリ相対のパスの 2 つなので両方を塞ぐ。
+const PROMPTS_PACKAGE = '@ses/prompts';
+const PROMPTS_MESSAGE =
+  '製品プロンプト（prompts/roles/** = @ses/prompts）を import できるのは packages/ai だけです' +
+  '（CLAUDE.md §2.1 / docs/05 §7.7）。プロンプトの読み込みは packages/ai/src/prompts.ts に閉じ、' +
+  '呼び出し側は runRole 経由でロール定義を使ってください。';
+const PROMPTS_PATH_PATTERNS = [
+  '**/prompts/roles',
+  '**/prompts/roles/**',
+  '../prompts/roles/**',
+  '../../prompts/roles/**',
+  '../../../prompts/roles/**',
+  '../../../../prompts/roles/**',
+  './prompts/roles/**',
+];
+
 const APPS_PACKAGES = ['@ses/web', '@ses/worker'];
 const APPS_PATH_PATTERNS = ['**/apps/web/**', '**/apps/worker/**'];
 const APPS_MESSAGE =
@@ -153,6 +175,8 @@ const ALL_SES_PACKAGE_NAMES = [
   '@ses/i18n',
   '@ses/web',
   '@ses/worker',
+  // 🔴 T-07-05: 製品プロンプト（`prompts/`。packages/* の外にあるワークスペースパッケージ）。
+  PROMPTS_PACKAGE,
 ];
 
 /**
@@ -189,6 +213,7 @@ function buildPatterns({
   allowDbPlatformSubpath = false,
   allowConnectorMocks = false,
   forbidRelativeConnectorMocks = false,
+  allowPrompts = false,
   forbidNodeIo = false,
   zoneLabel = '',
 }) {
@@ -243,6 +268,15 @@ function buildPatterns({
   if (forbidRelativeConnectorMocks) {
     patterns.push({ group: CONNECTOR_MOCK_RELATIVE_PATTERNS, message: CONNECTOR_MOCK_MESSAGE });
   }
+  // 🔴 T-07-05: 製品プロンプトの読み込み元を packages/ai に限定する（docs/05 §7.7）。
+  //    forbidAllSes のゾーン（packages/domain / prompts 自身）は '@ses/**' が既に覆っているので、
+  //    同じ import に 2 つのエラーを出さないようパッケージ名だけを省く（パス経由は残す）。
+  if (!allowPrompts) {
+    const promptGroup = forbidAllSes
+      ? PROMPTS_PATH_PATTERNS
+      : [...withSubpaths([PROMPTS_PACKAGE]), ...PROMPTS_PATH_PATTERNS];
+    patterns.push({ group: promptGroup, message: PROMPTS_MESSAGE });
+  }
   // 🔴 常時適用（防御的）: @ses/db から PrismaClient を named import することを禁止する。
   //    @ses/db は現状これを export しないが、将来のエクスポート追加による迂回を防ぐ。
   //    ゾーンが既に @ses/db 全体を禁止している場合（forbidAllSes、または
@@ -274,6 +308,7 @@ function buildRestrictedNames({
   allowDbTestingSubpath = false,
   allowDbPlatformSubpath = false,
   allowConnectorMocks = false,
+  allowPrompts = false,
   forbidNodeIo = false,
 }) {
   const names = [];
@@ -294,6 +329,9 @@ function buildRestrictedNames({
   //    `buildDynamicImportSelectors` の正規表現が `^(name)(/.*)?$` を作るため、
   //    `@ses/connectors/mock` の 1 件でサブパスまで覆う。
   if (!allowConnectorMocks) names.push(CONNECTOR_MOCK_SUBPATH);
+  // 🔴 T-07-05: 動的 import / require でも製品プロンプトに到達できないようにする
+  //    （`forbidAllSes` のゾーンは ALL_SES_PACKAGE_NAMES 経由で既に含んでいる）。
+  if (!allowPrompts && !forbidAllSes) names.push(PROMPTS_PACKAGE);
   return names;
 }
 
@@ -409,10 +447,14 @@ const PACKAGE_ZONES = [
     allowRawSqlCalls: true,
   },
   {
+    // 🔴 T-07-05: 製品プロンプト（`@ses/prompts`）を import してよい唯一のゾーン（docs/05 §7.7）。
+    //    ゾーン内での更なる限定（`packages/ai/src/prompts.ts` の 1 本）は
+    //    `tests/static/prompt-registry-single-path.test.ts` が行う。
     label: 'packages/ai（packages/ai/src/client.ts を除く）',
     files: ['packages/ai/**/*.{ts,tsx,mts,cts}'],
     ignores: ['packages/ai/src/client.ts'],
     forbiddenSesPackages: ['@ses/db', '@ses/connectors'],
+    allowPrompts: true,
   },
   {
     label: 'packages/ai/src/client.ts（唯一の SDK 例外経路。CLAUDE.md §3.2 ④）',
@@ -484,6 +526,7 @@ function zoneConfigBlock(zone) {
     allowDbPlatformSubpath: zone.allowDbPlatformSubpath ?? false,
     allowConnectorMocks: zone.allowConnectorMocks ?? false,
     forbidRelativeConnectorMocks: zone.forbidRelativeConnectorMocks ?? false,
+    allowPrompts: zone.allowPrompts ?? false,
     forbidNodeIo: zone.forbidNodeIo ?? false,
     zoneLabel: zone.label,
   };
@@ -522,10 +565,16 @@ const ADMIN_PLANE_FILES = [
   'apps/web/app/api/admin/**/*.{ts,tsx,mts,cts,js,mjs,cjs}',
 ];
 
+// 🔴 T-07-05: 製品プロンプトのゾーン（`prompts/roles/**`）。CATCH_ALL_ZONE から ignore し、
+//    専用の PROMPTS_ZONE に完全な代替ルールセットを持たせる（flat config の「後勝ち・丸ごと置換」を
+//    避けるため、ファイル集合を重ねない。冒頭コメント）。
+const PROMPTS_ZONE_FILES = ['prompts/**/*.{ts,tsx,mts,cts}'];
+
 const CATCH_ALL_IGNORES = [
   ...PACKAGE_DIR_IGNORES_FOR_CATCH_ALL,
   'tests/isolation/**',
   ...ADMIN_PLANE_FILES,
+  ...PROMPTS_ZONE_FILES,
 ];
 const CATCH_ALL_OPTIONS = { allowSdk: false };
 const CATCH_ALL_ZONE = {
@@ -579,6 +628,32 @@ const ADMIN_PLANE_ZONE = {
   },
 };
 
+// 🔴 T-07-05: 製品プロンプト（`@ses/prompts`）自身のゾーン。
+//    **依存を 1 つも持たせない**（`forbidAllSes` + `forbidApps` + `forbidNodeIo`）。
+//    プロンプトは「データ」であって実行主体ではなく（CLAUDE.md §12.3）、ここから DB・LLM・
+//    ファイル I/O に到達できないことを構造で保証する。`allowPrompts` は自ファイル群どうしの
+//    相対 import のためではなく（相対指定は対象外）、パス形の禁止パターンで自分自身が
+//    引っかからないようにするためである。
+const PROMPTS_ZONE_OPTIONS = {
+  forbidAllSes: true,
+  forbidApps: true,
+  forbidNodeIo: true,
+  allowPrompts: true,
+  allowSdk: false,
+  zoneLabel: 'prompts（製品プロンプト）',
+};
+const PROMPTS_ZONE = {
+  files: PROMPTS_ZONE_FILES,
+  rules: {
+    'no-restricted-imports': ['error', { patterns: buildPatterns(PROMPTS_ZONE_OPTIONS) }],
+    'no-restricted-syntax': [
+      'error',
+      ...buildDynamicImportSelectors(PROMPTS_ZONE_OPTIONS),
+      ...buildRawSqlCallSelectors(false),
+    ],
+  },
+};
+
 export default tseslint.config(
   {
     // .claude/worktrees はエージェントの一時 worktree。走査するとパスパターン依存の
@@ -626,10 +701,19 @@ export default tseslint.config(
 
   TESTS_ISOLATION_ZONE,
   ADMIN_PLANE_ZONE,
+  PROMPTS_ZONE,
   CATCH_ALL_ZONE,
 );
 
 // PACKAGE_ZONES / ALL_SES_PACKAGE_NAMES / APPS_PATH_PATTERNS を静的テスト
 // （tests/static/package-zone-coverage.test.ts）から検証できるように名前付き export する。
 // ESLint 本体は default export のみを見るため、この export はランタイムの lint 挙動に影響しない。
-export { PACKAGE_ZONES, ALL_SES_PACKAGE_NAMES, APPS_PACKAGES, APPS_PATH_PATTERNS, ADMIN_PLANE_FILES };
+export {
+  PACKAGE_ZONES,
+  ALL_SES_PACKAGE_NAMES,
+  APPS_PACKAGES,
+  APPS_PATH_PATTERNS,
+  ADMIN_PLANE_FILES,
+  PROMPTS_PACKAGE,
+  PROMPTS_ZONE_FILES,
+};

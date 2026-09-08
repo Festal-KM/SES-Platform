@@ -13,6 +13,8 @@ import {
   APPS_PACKAGES,
   APPS_PATH_PATTERNS,
   PACKAGE_ZONES,
+  PROMPTS_PACKAGE,
+  PROMPTS_ZONE_FILES,
 } from '../../eslint.config.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -79,5 +81,23 @@ describe('新規 packages/* が eslint.config.mjs のゾーン定義から漏れ
 
   it('対照: packages/ 配下に 1 件以上のディレクトリが存在する（このテスト自体が空振りしていないこと）', () => {
     expect(packageDirs.length).toBeGreaterThan(0);
+  });
+});
+
+// 🔴 T-07-05: `prompts/`（@ses/prompts）は packages/* の外にあるワークスペースパッケージであり、
+//    上の packages/* 走査では拾えない。ゾーン定義と動的 import 検出リストから漏れると、
+//    「プロンプトは何にも依存しない」「packages/ai 以外から読めない」が静かに効かなくなる
+//    （CLAUDE.md §2.1 / docs/05 §7.7 / §7.13 ⑦）。
+describe('prompts/（@ses/prompts）が eslint.config.mjs のゾーン定義から漏れていないこと', () => {
+  it('prompts/package.json の name が PROMPTS_PACKAGE と一致する', () => {
+    expect(packageNameOf('.', 'prompts')).toBe(PROMPTS_PACKAGE);
+  });
+
+  it('PROMPTS_PACKAGE が ALL_SES_PACKAGE_NAMES に含まれる（動的 import 検出の対象になっている）', () => {
+    expect(ALL_SES_PACKAGE_NAMES as string[]).toContain(PROMPTS_PACKAGE);
+  });
+
+  it('PROMPTS_ZONE_FILES が prompts/ 配下の TS を覆う', () => {
+    expect(PROMPTS_ZONE_FILES as string[]).toContain('prompts/**/*.{ts,tsx,mts,cts}');
   });
 });
