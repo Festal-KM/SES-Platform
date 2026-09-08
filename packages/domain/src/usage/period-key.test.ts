@@ -27,3 +27,7 @@ describe('usagePeriodKey（docs/05 §3.8 / §9.8）', () => {
     expect(() => usagePeriodKey('DAY', new Date('not-a-date'))).toThrow(RangeError);
   });
 });
+
+// 🔴 期間が切り替わる時刻（`F-027` の `resetAt`）は `packages/db/src/usage-period.ts` にある
+//    （domain は `Date` を生成できない。docs/05 §17.2 #14）。両者が同じ暦を指していることは
+//    `packages/db/src/usage-period.test.ts` が本モジュールの `usagePeriodKey` と突き合わせる。

@@ -52,3 +52,11 @@ export function usagePeriodKey(kind: UsagePeriodKind, at: Date): string {
   const { year, month, day } = tokyoParts(at);
   return kind === 'DAY' ? `${year}-${month}-${day}` : `${year}-${month}`;
 }
+
+/**
+ * 🔴 期間が切り替わる時刻（`F-027` の `resetAt`）は **`packages/db` の `usagePeriodResetAt`** が持つ
+ *    （T-07-04）。ここに置けない理由は 1 つ ——`Date` の**生成**は `packages/domain` の純粋性検査
+ *    （`tests/static/domain-purity.test.ts` / docs/05 §17.2 #14）が禁じており、引数から決定的に
+ *    組み立てる場合も例外が無いためである。`packages/db` 側は本モジュールの `usagePeriodKey` と
+ *    突き合わせるテスト（境界の 1 ms 前後でキーが変わること）を持つので、暦の定義は 1 つのままである。
+ */

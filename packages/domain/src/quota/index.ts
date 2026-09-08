@@ -4,6 +4,13 @@
 //    `provider.ts` として同じディレクトリに置いた。**2 実装にしない** ——
 //    `send.*`（`Proposal` / `Contract`）側の `PROVIDER_QUOTA` 保留（SP-09 T-09-06）も
 //    ここを再利用する（SP-04 完了判定 8-③）。
+// 🔴 T-07-04: テナントの 1 日の AI コスト上限（docs/05 §7.6 / `F-027`）。**遮断器**であり、
+//    メール（待機あり）ともストレージ（時間で解けない）とも挙動が違うため別の関数にする。
+export {
+  decideAiDailyCost,
+  type AiDailyCostDecision,
+  type AiDailyCostInput,
+} from './ai-cost.js';
 export {
   decideEmailRate,
   EMAIL_MINUTE_WINDOW_MS,

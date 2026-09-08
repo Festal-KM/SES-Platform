@@ -23,10 +23,16 @@
 //   3. 🔴 **`AI_ROLES` / `ROLE_PURPOSE` を domain に置いた判断（§7.9 ⑤）と同型**である。
 //      「実行する側（`packages/ai`）と記録する側（`packages/db`）の共有点は domain しか無い」。
 //
+// 🔴 T-07-04: micro-USD ↔ 十進文字列の変換は `usage/usd.ts` の 1 実装に寄せた。予約・補正
+//    （`packages/db/src/ai-cost-guard.ts`）が同じ金額を同じ丸めで扱うためであり、片方だけ
+//    書式が変わると「記録された原価」と「上限に積まれた原価」が静かにずれる。
+//
 // 🔴 ただし §7.9 ④ の**禁止は維持する**: `packages/ai` はこのモジュールを参照しない
 //    （`AiUsageRecordInput` に `estimatedCostUsd` が無い状態を保つ）。domain は `packages/ai` から
 //    も import 可能なので、その規律は `tests/static/ai-usage-cost-single-path.test.ts` が
 //    機械的に固定する。**型で塞げないものは静的テストで塞ぐ**（`masked-text-single-path` と同じ）。
+
+import { formatUsdMicros } from '../usage/usd.js';
 
 /** 課金に効くトークン数（docs/05 §3.8 `AiUsage` の 4 列と 1:1）。 */
 export type AiTokenCounts = {
@@ -159,13 +165,6 @@ function assertTokenCount(name: string, value: number): void {
   }
 }
 
-/** micro-USD（`Decimal(12,6)` の最小単位）→ 十進文字列。 */
-function formatMicroUsd(microUsd: bigint): string {
-  const whole = microUsd / 1_000_000n;
-  const fraction = (microUsd % 1_000_000n).toString().padStart(6, '0');
-  return `${whole.toString()}.${fraction}`;
-}
-
 /**
  * 🔴 1 回の試行の推定コスト（USD）を算出する（純粋関数）。docs/05 §3.8 `AiUsage.estimatedCostUsd`。
  *
@@ -196,5 +195,5 @@ export function estimateAiCostUsd(input: {
     BigInt(cacheWriteTokens) * toCenti(price.cacheWrite5mUsdPerMTok);
 
   // 四捨五入（値は常に非負なので +50 の切り捨てで足りる）。
-  return formatMicroUsd((totalCenti + 50n) / 100n);
+  return formatUsdMicros((totalCenti + 50n) / 100n);
 }

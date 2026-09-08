@@ -1,9 +1,9 @@
 // packages/ai/src/usage.ts
 // 🔴 `AiUsage` の記録と、コスト上限ガードの**接続点（ポート）**（docs/05 §7.3 / §7.6）。
 //
-// ⚠️ 実装はここに置かない:
-//    - `AiUsageRecorder` の実装（`ai_usage` への INSERT と `UsageCounter` の件数加算）… **T-07-03**
-//    - `AiCostGuard` の実装（`reserveAiCost` / `settleAiCost`）… **T-07-04**
+// ⚠️ 実装はここに置かない（実装先は `packages/db`、配線は `apps/worker`）:
+//    - `AiUsageRecorder` … `packages/db/src/ai-usage.ts` + `apps/worker/src/ai/usage-recorder.ts`（T-07-03）
+//    - `AiCostGuard`     … `packages/db/src/ai-cost-guard.ts` + `apps/worker/src/ai/cost-guard.ts`（T-07-04）
 //    `packages/ai` は `@ses/db` に依存できない（CLAUDE.md §2.1）ため、実装は `apps/*` が
 //    起動時に注入する。**ポートを必須にする**ことで「記録を経由しない呼び出し経路」が
 //    型として存在しなくなる（docs/05 §7.3 の記録の強制手段 ①）。
@@ -97,6 +97,12 @@ export type AiAttemptUsage = {
  *   🔴 上限の対象は 6 ロールすべて（`gate-inspector` を含む）。「上限到達時に
  *   `gate-inspector` をスキップして PASS にする」分岐は存在しない（docs/05 §7.6）。
  * - `settle` … 呼び出し後に実績で補正する。**失敗した試行の分も渡す**（原価は発生している）。
+ *   🔴 実装（T-07-04）は**冪等ではない**。`runRole` の手順 7 以外から呼ばないこと
+ *   （呼び出し元の固定は `tests/static/auth-db-callers.test.ts`）。
+ *
+ * 🔴 補正されずに残った予約の扱い（記録失敗・想定外例外で手順 7 に到達しなかった場合）は
+ *    **docs/05 §7.12 ② が唯一の定義**である: 予約の TTL は暦日（`Asia/Tokyo`）であり、
+ *    当日中は解放しない（残留は上限に対して厳しい側にしか働かない）。
  */
 export type AiCostGuard = {
   reserve(input: {

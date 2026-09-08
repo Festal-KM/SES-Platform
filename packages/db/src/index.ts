@@ -374,6 +374,17 @@ export type { SkillSheetStorageInput, StorageAccountingOutcome } from './storage
 //    依存できないため、形の一致はそのアダプタのコンパイルが証明する）。
 export { countAiUnit, recordAiUsage } from './ai-usage.js';
 export type { AiUnitCountValues, AiUsageMaskHit, AiUsageRecordValues } from './ai-usage.js';
+// 🔴 T-07-04: AI の 1 日コスト上限のガード（docs/05 §7.6 / §7.12 / docs/03 §4.5 / `F-027`）。
+//    `packages/ai` の `AiCostGuard`（ポート）の実装本体であり、アダプタは
+//    `apps/worker/src/ai/cost-guard.ts` が持つ。🔴 **予約に失敗したら LLM を呼ばない**。
+export { readAiDailyCost, reserveAiCost, settleAiCost } from './ai-cost-guard.js';
+export type {
+  AiCostReservationOutcome,
+  AiCostReserveInput,
+  AiCostSettleInput,
+  AiCostSettlement,
+  AiDailyCost,
+} from './ai-cost-guard.js';
 // 🔴 T-05-05: ウイルススキャン結果の記録と適用（docs/05 §8.5 / §9.6 / `BR-26`）。
 //    `CLEAN` へ戻す遷移が存在しない経路であり、呼び出し元は `apps/worker` のジョブだけである。
 export { applyFileScanResult, listStalledScanTargets } from './file-scan.js';

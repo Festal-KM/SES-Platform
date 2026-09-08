@@ -2836,7 +2836,7 @@ export function decideRoleHandoff(input: {
 
 ### 7.6 コスト上限ガード
 
-⚠️ **「件数の加算」の行は T-07-03 で実装され、`ROLE_UNIT` の置き場所と `null` の意味が確定した。差分は §7.11 を正とする**（コスト上限ガード本体は T-07-04）。
+⚠️ **「件数の加算」の行は T-07-03 で実装され、`ROLE_UNIT` の置き場所と `null` の意味が確定した。差分は §7.11 を正とする。コスト上限ガード本体は T-07-04 で実装され、差分は §7.12「§7.6 の実装の決着」を正とする**（🔴 **予約の TTL と清掃のセマンティクスは §7.12 ② が唯一の定義である**）。
 
 ```ts
 // packages/ai/src/usage.ts
@@ -3071,6 +3071,8 @@ export type MaskHit = { category: MaskCategory; method: 'KNOWN_VALUE' | 'PATTERN
 
 #### ④ ポートの実装は `packages/db`、アダプタは `apps/worker` に置いた
 
+⚠️ **本項の「外部資源を持つ 3 ポート（`client` / `costGuard` / `models`）は起動時 1 回」は T-07-04 で読み替えた（§7.12 ⑤）。`costGuard` も DB を書くためジョブ単位で組み立てる**（起動時 1 回でよいのは `client` / `models` の 2 つ）。
+
 - `packages/ai` は `@ses/db` に依存できず、`packages/db` も `@ses/ai` に依存できない（`CLAUDE.md` §2.1）。**束ねるのは `apps/*` の層**であり、`apps/worker/src/ai/usage-recorder.ts` の `createAiUsageRecorder(job)` が `AiUsageRecorder` を返す。**この代入が「ポートの形」と「DB の実装の形」が一致していることのコンパイル時の証明**である（他に突合できる場所が無い）。
 - 🔴 **記録器だけがジョブ単位である。** `AiUsage` を書くには `HostTenantCtx` が要り、ワーカーでの唯一の生成経路は `systemTenantCtx(tenantId, job)`（§9.2）である。`tenantId` は `AiUsageRecordInput` が持つが**ジョブ識別は持たない**（`packages/ai` はジョブを知らないし、知るべきでもない）。したがって **ロールジョブは 1 回の実行につき `createRoleRunner({ ...base, usage: createAiUsageRecorder(job) })` を組み立てる**。§7.9 ① の「起動時に 1 回」は**外部資源を持つ 3 ポート（`client` / `costGuard` / `models`）に掛かる**のであって、`createRoleRunner` 自体は外部資源を持たない純粋な合成であり、ジョブごとに呼んでも接続やクライアントは作り直されない。
 - 🔴 `apps/web` は `systemTenantCtx` を呼べない（`tests/static/auth-db-callers.test.ts`）。**AI の実行単位はジョブである**（`CLAUDE.md` §12.3 / §9.3）という前提がここでも効いている。
@@ -3092,6 +3094,77 @@ export type MaskHit = { category: MaskCategory; method: 'KNOWN_VALUE' | 'PATTERN
 | ユニット（worker） | ポートと実装の配線（ctx の組み立て・失敗の伝播・金額を渡さないこと） |
 | 結合（`tests/isolation/ai-usage.test.ts`） | `F-026 AC-1`（試行 1 回 = 1 行）/ `AC-2`（記録項目とロールの CHECK）/ `AC-6`（件数と金額が独立。**単価の違う 2 回が同じ 1 件ずつ**）/ テナント境界と C2 HOST_ONLY / 単価未登録で 1 行も書かれないこと |
 | 静的（§17.2 #24） | 単価表の宣言が 1 箇所 / `packages/ai` が金額に触れない / `units.ts` が `pricing.ts` を参照しない / `resolveAiUnitCount` の呼び出し元が 1 本 |
+
+### 7.12 🔴 §7.6 の実装の決着（T-07-04。2026-09-08）
+
+**§7.6（コスト上限ガード）は T-07-06（ゲート）/ T-07-10（HELD と自動復帰）/ SP-10（残量表示）の一次資料である。** T-07-04（コスト上限ガード）で確定した形を、上のスケッチとの差分として記録する（`CLAUDE.md` §8.7。§7.9〜§7.11 と同じ作法）。**以降のタスクは本節を正とする。**
+
+#### ① 置き場所（ポート / 実装 / アダプタ / 判定式）
+
+```
+packages/ai/src/usage.ts            AiCostGuard（ポート。§7.9 ④ のまま。変更なし）
+packages/domain/src/quota/ai-cost.ts  decideAiDailyCost（判定式。純粋関数）
+packages/domain/src/usage/usd.ts      parseUsdMicros / formatUsdMicros（金額の整数表現）
+packages/db/src/ai-cost-guard.ts    reserveAiCost / settleAiCost / readAiDailyCost（実装本体）
+packages/db/src/usage-period.ts     usagePeriodResetAt（リセット時刻。下記 ⑥）
+apps/worker/src/ai/cost-guard.ts    createAiCostGuard（ポートへの配線と例外への写像）
+```
+- 🔴 **`packages/db` は例外ではなく値を返す**（`{ kind: 'RESERVED' | 'LIMIT_REACHED' }`）。`AiCostLimitExceededError` は `packages/ai` の型であり `packages/db` から import できない（`CLAUDE.md` §2.1）。**写像はアダプタ 1 箇所**であり、`AiCostLimitExceededError`（呼ばなかった → HELD）と `AiUsageFailureKind='SPEND_CAP'`（呼んで弾かれた → 失敗）の取り違えが構造的に起きない（§7.9 ④）。
+- 🔴 **`packages/ai` は金額に触れない**（§7.9 ④ / §7.11 ①）。見積り（トークン数 → USD）は `packages/db` が `estimateAiCostUsd` で行い、`packages/ai` は**予約証（不透明な文字列）**だけを運ぶ。`tests/static/ai-usage-cost-single-path.test.ts` の「`estimateAiCostUsd` の呼び出し元は `packages/db/src/**`」がそのまま効いている。
+
+#### ② 🔴 予約の TTL と清掃のセマンティクス（本節の中心。T-07-03 レビューの申し送りへの回答）
+
+**問題**: `settle`（手順 7）は `AiUsage` の記録失敗や想定外の例外が伝播したときには走らない。そのとき予約は `reserved_value` に残る。
+
+**決定**:
+
+1. 🔴 **予約の寿命は「その予約が載っている暦日（`Asia/Tokyo`）」である。** 判定が読むのは常に当日の行であり、日が変われば新しい行（`reserved_value = 0`）になる。**残留予約は JST 翌 0 時に必ず消える。これが TTL であり、清掃ジョブを必要としない。**
+2. 🔴 **当日中に残留予約を解放しない（意図的）。** 予約が残るのは「記録に失敗した」「バグで落ちた」ときであり、**そのとき実際に使った金額はどこにも残っていない**（`ai_usage` にも `value` にも入らない）。予約だけを戻すと、使った分が上限判定から完全に消えて上限が緩む。**残す方が保守的**であり、遮断器としての目的に合う。
+3. 🔴 **したがって残留は常に「上限に対して厳しい側」にしか働かない。** 上限を越えて外部を呼ぶ事故にはならない（`CLAUDE.md` §7 の 0 件はこの向きで守られる）。最悪の帰結は「そのテナントの AI がその日だけ早めに止まる」ことであり、それは `F-027` の**正しい停止**である（停止理由とリセット時刻は表示される）。
+4. **前日以前の行の `reserved_value` は掃除しない。** 判定に使われないため実害が無く、事実の記録として残す。🔴 **`usage.daily-rollup`（§9.8）は `value` だけを突き合わせ、`reserved_value` に触れない。**
+5. 🔴 **予約ごとの行（新テーブル）を作らなかった。** 理由: ①判定は「呼び出しの前に即答」する必要があり（`docs/03` §4.5）、1 行の upsert で閉じるのが最短 ②予約行を作れば「予約行を掃除するジョブ」という**新しい失敗経路**が増え、そのジョブが止まったときの壊れ方（枠が永久に埋まる）は今より悪い ③§3.2 の表を 1 つ増やす価値が、上記 3 の「保守側にしか倒れない」性質に見合わない。
+6. **監視項目を新設しない。** 残留の帰結（ゲートが実行できない）は既存の `A-005`「`GATE_RUNNING` 滞留（理由 `AI_COST_LIMIT`）」（§16.5 / `F-059 AC-6`）にそのまま現れる。**失敗件数・ゲート FAIL 率には加算されない**（保留であって失敗ではない。`CLAUDE.md` §4.2）。
+
+#### ③ 予約の SQL は `INSERT ... SELECT ... WHERE` + `ON CONFLICT DO UPDATE ... WHERE` である
+
+- §7.6 のスケッチは `UPDATE ... WHERE (value + reserved_value + $est) <= $limit` だけを書いていたが、**行が無い日の最初の 1 回**を素の `INSERT ... ON CONFLICT DO UPDATE ... WHERE` で書くと、`DO UPDATE ... WHERE` は衝突時にしか評価されないため **上限を無視して通ってしまう**。したがって INSERT 側にも `WHERE $est <= $limit` を付ける。
+- 🔴 **「1 回の見積りが上限そのものを超える要求」は、その日の最初の 1 回でも通らない**（通すと上限が上限でなくなる）。`tests/isolation/ai-cost-guard.test.ts` が「行が作られないこと」で固定する。
+
+#### ④ `settle` は「予約した日」の行を補正する（現在時刻の日ではない）
+
+- 呼び出しが JST の 0 時をまたぐ（23:59 に予約 → 00:00 に完了）ことは起こる。今日の行を補正すると**昨日の予約が永久に残り、今日の枠が昨日の実コストで削られる**。したがって予約証（`AiCostReservation.handle` = `v1:{periodKey}:{micro-USD}`）に**日と額**を載せ、予約と補正が必ず同じ行で対になるようにした。
+- 🔴 **`settle` は冪等ではない**（`value` は呼ばれた回数だけ積まれる。`reserved_value` は `GREATEST(…, 0)` で下限だけ守る）。呼び出し元は `runRole` の手順 7 の 1 箇所に限り、`tests/static/auth-db-callers.test.ts` が `reserveAiCost` / `settleAiCost` の呼び出し元をアダプタ 1 ファイルに固定する。
+
+#### ⑤ `costGuard` も**ジョブ単位**で組み立てる（§7.11 ④ の読み替え）
+
+- ~~「外部資源を持つ 3 ポート（`client` / `costGuard` / `models`）は起動時 1 回」~~ → 🔴 **`costGuard` は DB を書く**（`usage_counters`）。DB を書くには `HostTenantCtx` が要り、ワーカーでの唯一の生成経路は `systemTenantCtx(tenantId, job)` である（§9.2）。`packages/ai` はジョブを知らない（知るべきでもない）ため、**記録器と同じくロールジョブが `JobIdentity` を渡して組み立てる**。起動時 1 回でよいのは `client` / `models` の 2 つである。
+- `createRoleRunner` は外部資源を持たない純粋な合成なので、ジョブごとに呼んでも接続は増えない（§7.11 ④ と同じ理由）。
+
+#### ⑥ 判定式は `packages/domain`、リセット時刻は `packages/db`
+
+- `decideAiDailyCost`（`used + reserved + requested <= limit`。上限ちょうどは許す）は純粋関数として domain に置いた。予約の可否は SQL が原子的に決めるが、**同じ式が表示・`gate.hold-release` の再判定（T-07-10）にも要る**ためである。
+- 🔴 **`resetAt`（JST の翌 0 時）は domain では作れない。** `tests/static/domain-purity.test.ts`（§17.2 #14）が `new Date(...)` / `Date.*()` を**例外なく**禁じており、引数から決定的に組み立てる場合も同じである。その規律は緩めない。したがって **暦（`usagePeriodKey`）は domain / 境界の時刻（`usagePeriodResetAt`）は `packages/db`** とし、**両者が同じ暦を指すこと**を `packages/db/src/usage-period.test.ts` が突き合わせる（境界の 1 ms 前は同じキー、境界そのものは次のキー）。
+- 金額は**十進文字列 ↔ micro-USD の整数**で扱い、変換は `packages/domain/src/usage/usd.ts` の 1 実装に寄せた（単価計算 `ai/pricing.ts` もこれを使う。丸めの向きが 2 箇所に分かれない）。
+
+#### ⑦ 上限を超えうる幅は「1 呼び出しぶん」である（許容する）
+
+- 予約は **1 試行ぶんの見積り**であり、`runRole` 内部の再試行（最大 3 試行。§7.4）では予約を増やさない。したがって 1 呼び出しにつき最大で「実コスト合計 − 見積り」だけ上限を超えうる。**次の予約が必ず弾く**ため遮断器としては成立する。
+- 🔴 **再試行ぶんを先に予約しない理由**: 予約額を 3 倍にすると、**1 回で成功する通常の呼び出しが上限の 1/3 で止まる**。1 日上限は「異常な使い方に対する遮断器」（`docs/03` §7.6.1）であり、通常利用を早めに止める設定は目的に反する。
+
+#### ⑧ 上限値の出所（既定 + プラン上書き）と申し送り
+
+- 現在の値は `packages/config` の `AI_DAILY_COST_LIMIT_USD_DEFAULT` であり、**呼び出し側（ロールジョブ）が `createAiCostGuard({ job, dailyLimitUsd })` に渡す**（`decideStorageUpload` の `limitBytes` と同じ扱い。`CLAUDE.md` §3.4「既定値。`packages/config` で管理し、プランごとに上書き可能」）。
+- ⚠️ **申し送り（SP-13 / `A-004` / `F-057`）**: `Plan.aiDailyCostLimitUsd` を主平面の経路から読むには **`app_tenant` に `plans` / `subscriptions` の GRANT が要る**（migration 20260903050000 §13 の列挙に射程外 4 表は含まれていない）。🔴 **表単位の GRANT は「他テナントの `subscriptions` を読める状態」を作る**（RLS 射程外の表であり `tenant_id` の述語はアプリが強制する。§3.10 末尾の `planAccess.ts`）。したがって **GRANT の追加は `planAccess.ts` の実装と同時に行い、`tests/isolation` で「他テナントの契約情報が読めない」ことを実証してから**にする。**判定側（SQL / `decideAiDailyCost`）のコードは変わらない**（渡す値が変わるだけである）。
+
+#### ⑨ 検証（T-07-04 で緑にしたもの）
+
+| 層 | 何を固定したか |
+|---|---|
+| ユニット（domain） | 判定式（予約中の分を必ず含める）/ 境界値（上限ちょうどは許し 1 micro-USD 超で止まる）/ 1 回で上限を超える見積りは消費 0 でも止まる / 金額の往復（micro-USD） |
+| ユニット（db） | 予約証の往復と、壊れた証を握り潰さないこと / `usagePeriodResetAt` と `usagePeriodKey` の突き合わせ |
+| ユニット（worker） | ポートへの配線（ctx の組み立て・`tenantId` の出所・`LIMIT_REACHED` → `AiCostLimitExceededError` の写像・失敗の伝播・証以外を返さないこと） |
+| 結合（`tests/isolation/ai-cost-guard.test.ts`） | 予約 → 補正の実挙動 / 🔴 **10 並列でも予約の総和が上限を超えない** / 🔴 **TTL（翌日は新しい行 / 当日は空かない）** / 🔴 **日またぎの補正が予約した日の行に入る** / 単価未登録は行を 1 つも作らない / テナント境界 |
+| 既存（`packages/ai/src/run.test.ts`） | 🔴 **予約に失敗したら外部呼び出しは 0 回で `AiUsage` も 0 行**（T-07-01 で緑。本タスクはその `reserve` の実体を与えた） |
 
 ## 8. 外部連携層（コネクタ）の設計（`CLAUDE.md` §3.4）
 

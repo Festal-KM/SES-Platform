@@ -81,16 +81,20 @@ describe('🔴 MaskedText を作れる場所が 1 ファイルに閉じている
     }
   }).filter((file) => !isTestFile(file));
 
+  // 🔴 T-07-04: 全ソースの AST 走査は `it` の**外**で 1 回だけ行う（判定の内容は変えていない）。
+  //    `it` の中に置くと、ファイルが増えるにつれ Vitest 既定の 5 秒タイムアウトに触れて
+  //    **検査の中身とは無関係に赤くなる**（`ai-single-path` / `ai-usage-cost-single-path` も同じ整理）。
+  const brandingSites = sourceFiles
+    .filter((file) => castsToMaskedText(readFileSync(file, 'utf8'), file))
+    .map(toRepoRelative)
+    .sort();
+
   it('対照: 走査対象のソースが十分にある（テストが空振りしていない）', () => {
     expect(sourceFiles.length).toBeGreaterThan(50);
   });
 
   it('MaskedText へキャストする非テストソースは許可リストと完全に一致する', () => {
-    const sites = sourceFiles
-      .filter((file) => castsToMaskedText(readFileSync(file, 'utf8'), file))
-      .map(toRepoRelative)
-      .sort();
-    expect(sites).toEqual([...ALLOWED_BRANDING_SITES].sort());
+    expect(brandingSites).toEqual([...ALLOWED_BRANDING_SITES].sort());
   });
 
   it('🔴 許可されているのは 1 ファイルだけである（増やすときは docs/05 §7.10 と併せて人間が判断する）', () => {

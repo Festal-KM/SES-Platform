@@ -65,49 +65,54 @@ function parse(sourceText: string, fileName: string): ts.SourceFile {
   return ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.ES2023, true);
 }
 
-/** `const X = ...` / `function X` / `class X` の**宣言**（re-export は含まない）。 */
-function declaresName(sourceText: string, fileName: string, name: string): boolean {
+/**
+ * 1 ファイルから、本テストが問うことのできる事実を**1 回の走査で**すべて集める。
+ *
+ * 🔴 T-07-04: 以前は「検査する名前 1 つにつき 1 回パースする」形だったため、走査回数が
+ *    **ファイル数 × 検査の数**になっていた（`apps` + `packages` の全ソースを 4 往復する）。
+ *    ファイルが増えるにつれ 5 秒の既定タイムアウトに触れるようになったので、
+ *    `tests/static/startup-di-callers.test.ts`（T-06-09）と同じ整理に寄せた。
+ *    🔴 **判定の内容は変えていない** —— 集合への所属判定は、以前の「その名前が 1 つでも
+ *    現れるか」と同値である。
+ */
+type FileFacts = {
+  /** `const X = ...` / `function X` / `class X` の**宣言**（re-export は含まない）。 */
+  readonly declared: ReadonlySet<string>;
+  /** `foo(...)` / `ns.foo(...)` の**呼び出し**（識別子の言及だけでは真にならない）。 */
+  readonly called: ReadonlySet<string>;
+  /** AST 上に現れる識別子（コメントでの言及は含まれない）。 */
+  readonly identifiers: ReadonlySet<string>;
+};
+
+function collectFacts(sourceText: string, fileName: string): FileFacts {
   const sourceFile = parse(sourceText, fileName);
-  let found = false;
+  const declared = new Set<string>();
+  const called = new Set<string>();
+  const identifiers = new Set<string>();
+
   function visit(node: ts.Node): void {
-    if (found) return;
-    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === name) {
-      found = true;
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
+      declared.add(node.name.text);
     }
     if (
       (ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node)) &&
-      node.name !== undefined &&
-      node.name.text === name
+      node.name !== undefined
     ) {
-      found = true;
+      declared.add(node.name.text);
     }
-    ts.forEachChild(node, visit);
-  }
-  visit(sourceFile);
-  return found;
-}
-
-/** `foo(...)` / `ns.foo(...)` の**呼び出し**（識別子の言及だけでは真にならない）。 */
-function callsFunction(sourceText: string, fileName: string, name: string): boolean {
-  const sourceFile = parse(sourceText, fileName);
-  let found = false;
-  function visit(node: ts.Node): void {
-    if (found) return;
     if (ts.isCallExpression(node)) {
       const callee = node.expression;
-      if (ts.isIdentifier(callee) && callee.text === name) found = true;
-      if (
-        ts.isPropertyAccessExpression(callee) &&
-        ts.isIdentifier(callee.name) &&
-        callee.name.text === name
-      ) {
-        found = true;
+      if (ts.isIdentifier(callee)) called.add(callee.text);
+      if (ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.name)) {
+        called.add(callee.name.text);
       }
     }
+    if (ts.isIdentifier(node)) identifiers.add(node.text);
     ts.forEachChild(node, visit);
   }
+
   visit(sourceFile);
-  return found;
+  return { declared, called, identifiers };
 }
 
 /** 静的 import / 動的 import / re-export のモジュール指定子を集める。 */
@@ -140,6 +145,17 @@ const sourceFiles = SCAN_ROOTS.flatMap((root) => listSourceFiles(path.join(repoR
   (file) => !isTestFile(file),
 );
 
+/** 🔴 全ソースを 1 回だけ走査して事実を集める（以降の検査はこの表を引くだけ）。 */
+const factsByFile = new Map<string, FileFacts>(
+  sourceFiles.map((file) => [file, collectFacts(readFileSync(file, 'utf8'), file)]),
+);
+
+function factsOf(file: string): FileFacts {
+  const facts = factsByFile.get(file);
+  if (facts === undefined) throw new Error(`走査対象に含まれていません: ${file}`);
+  return facts;
+}
+
 describe('🔴 AI の金額と件数の単一経路（docs/05 §7.9 ④ / §7.11 / F-026 AC-6）', () => {
   it('対照: 走査対象のソースが十分にある（テストが空振りしていない）', () => {
     expect(sourceFiles.length).toBeGreaterThan(50);
@@ -152,39 +168,24 @@ describe('🔴 AI の金額と件数の単一経路（docs/05 §7.9 ④ / §7.11
 
   it('① 単価表（AI_MODEL_PRICING）を宣言する非テストソースは 1 つだけ', () => {
     const declarers = sourceFiles
-      .filter((file) => declaresName(readFileSync(file, 'utf8'), file, 'AI_MODEL_PRICING'))
+      .filter((file) => factsOf(file).declared.has('AI_MODEL_PRICING'))
       .map(toRepoRelative);
     expect(declarers).toEqual([PRICING_MODULE]);
   });
 
   it('🔴 ② packages/ai は単価表にも推定コストにも触れない（AiUsageRecordInput に金額が無い状態を保つ）', () => {
+    // 🔴 コメントでの言及は許す（AST 上の識別子の出現だけを見る）。
+    const forbidden = ['AI_MODEL_PRICING', 'estimateAiCostUsd', 'resolveAiModelPrice'];
     const offenders = sourceFiles
-      .map(toRepoRelative)
-      .filter((file) => file.startsWith('packages/ai/'))
-      .filter((file) => {
-        const source = readFileSync(path.join(repoRoot, file), 'utf8');
-        // 🔴 コメントでの言及は許す（AST 上の識別子の出現だけを見る）。
-        const sourceFile = parse(source, file);
-        let touches = false;
-        function visit(node: ts.Node): void {
-          if (touches) return;
-          if (
-            ts.isIdentifier(node) &&
-            ['AI_MODEL_PRICING', 'estimateAiCostUsd', 'resolveAiModelPrice'].includes(node.text)
-          ) {
-            touches = true;
-          }
-          ts.forEachChild(node, visit);
-        }
-        visit(sourceFile);
-        return touches;
-      });
+      .filter((file) => toRepoRelative(file).startsWith('packages/ai/'))
+      .filter((file) => forbidden.some((name) => factsOf(file).identifiers.has(name)))
+      .map(toRepoRelative);
     expect(offenders).toEqual([]);
   });
 
   it('② 推定コストを算出する非テストソースは packages/db/src/** に限る', () => {
     const callers = sourceFiles
-      .filter((file) => callsFunction(readFileSync(file, 'utf8'), file, 'estimateAiCostUsd'))
+      .filter((file) => factsOf(file).called.has('estimateAiCostUsd'))
       .map(toRepoRelative);
     expect(callers.length).toBeGreaterThan(0);
     for (const caller of callers) {
@@ -201,14 +202,14 @@ describe('🔴 AI の金額と件数の単一経路（docs/05 §7.9 ④ / §7.11
 
   it('🔴 ④ 件数の解決（resolveAiUnitCount）を呼ぶ非テストソースは記録側の 1 本だけ', () => {
     const callers = sourceFiles
-      .filter((file) => callsFunction(readFileSync(file, 'utf8'), file, 'resolveAiUnitCount'))
+      .filter((file) => factsOf(file).called.has('resolveAiUnitCount'))
       .map(toRepoRelative);
     expect(callers).toEqual([RECORDER_MODULE]);
   });
 
   it('④ 件数の写像表（ROLE_UNIT）を宣言する非テストソースも 1 つだけ', () => {
     const declarers = sourceFiles
-      .filter((file) => declaresName(readFileSync(file, 'utf8'), file, 'ROLE_UNIT'))
+      .filter((file) => factsOf(file).declared.has('ROLE_UNIT'))
       .map(toRepoRelative);
     expect(declarers).toEqual([UNITS_MODULE]);
   });

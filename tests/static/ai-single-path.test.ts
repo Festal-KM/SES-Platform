@@ -190,16 +190,20 @@ describe('🔴 LLM の呼び出し元が runRole の 1 箇所に閉じている�
     (file) => !isTestFile(file),
   );
 
+  // 🔴 T-07-04: 全ソースの AST 走査は `it` の**外**で 1 回だけ行う（判定の内容は変えていない）。
+  //    `it` の中に置くと、ファイルが増えるにつれ Vitest 既定の 5 秒タイムアウトに触れて
+  //    **検査の中身とは無関係に赤くなる**（同じ整理を `ai-usage-cost-single-path.test.ts` にも入れた）。
+  const llmCallers = sourceFiles
+    .filter((file) => callsLlm(readFileSync(file, 'utf8'), file))
+    .map(toRepoRelative)
+    .sort();
+
   it('対照: 走査対象のソースが十分にある（テストが空振りしていない）', () => {
     expect(sourceFiles.length).toBeGreaterThan(50);
   });
 
   it('createStructuredMessage を呼ぶ非テストソースは許可リストと完全に一致する', () => {
-    const callers = sourceFiles
-      .filter((file) => callsLlm(readFileSync(file, 'utf8'), file))
-      .map(toRepoRelative)
-      .sort();
-    expect(callers).toEqual([...ALLOWED_LLM_CALL_SITES].sort());
+    expect(llmCallers).toEqual([...ALLOWED_LLM_CALL_SITES].sort());
   });
 
   it('🔴 バレル（packages/ai/src/index.ts）がクライアントのポートを公開していない', () => {

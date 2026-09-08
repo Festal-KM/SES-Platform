@@ -8,3 +8,6 @@ export * from './jobs/index.js';
 // 🔴 T-07-03: AI ロールのジョブ（T-07-06 以降）が `createRoleRunner` に渡す `AiUsage` の記録器
 //    （docs/05 §7.11 ④）。ジョブ宣言と同じく、import しても起動処理は走らない。
 export { createAiUsageRecorder } from './ai/usage-recorder.js';
+// 🔴 T-07-04: 同じく `createRoleRunner` に渡す AI コスト上限のガード（docs/05 §7.6 / §7.12）。
+//    🔴 予約に失敗したら LLM を呼ばない（`F-027`）。
+export { createAiCostGuard, type AiCostGuardOptions } from './ai/cost-guard.js';

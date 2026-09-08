@@ -8,6 +8,9 @@ export {
   usagePeriodKey,
   type UsagePeriodKind,
 } from './usage/period-key.js';
+// 🔴 T-07-04: 金額（USD）の十進文字列 ↔ micro-USD の変換。単価計算（`ai/pricing.ts`）・
+//    上限判定（`quota/ai-cost.ts`）・予約と補正（`packages/db`）が同じ 1 実装を使う。
+export { USD_MICRO_SCALE, formatUsdMicros, parseUsdMicros } from './usage/usd.js';
 // 🔴 宛先分類（docs/05 §8.2 / docs/02 章 7.6 NFR-ENV-1）。`packages/db`（分類する側）と
 //    `packages/connectors`（`EmailSender.send` の必須引数として受け取る側）の**両方**が
 //    同じ union を知る必要があり、両者の共有点は domain しか無い（T-04-02）。

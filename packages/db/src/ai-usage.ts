@@ -110,6 +110,10 @@ export function summarizePatternMaskHits(
  *    欠損・誤記が入らないことが `F-063`（ロール別原価の分解）の前提である。
  * 🔴 推定コストはここで算出する（`estimateAiCostUsd`）。単価が引けないモデルは
  *    `UnknownAiModelPriceError` になり、**行は 1 つも書かれない**（0 円で記録しない）。
+ * 🔴 **金額のカウンタ（`UsageCounter(DAY,'AI_COST_USD')`）をここで動かさない**（T-07-04）。
+ *    上限に効く加算は予約 → 補正（`ai-cost-guard.ts` の `settleAiCost`）が 1 回だけ行い、
+ *    両者の突き合わせは `usage.daily-rollup`（docs/05 §9.8）が担う。ここにも加算を足すと
+ *    **同じ原価が 2 回積まれ**、上限が実際の半分の消費で発動する。
  *
  * @returns 書き込んだ `AiUsage.id`（`Provenance.aiUsageIds` と生成物の `ai_usage_id` が使う）。
  */

@@ -139,11 +139,26 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
     //    `tenantId`）からジョブ文脈を作る。**ここが `apps/web` に生えないことが重要**であり、
     //    AI の実行単位はジョブである（`CLAUDE.md` §12.3 / docs/05 §9.3）。
     'apps/worker/src/ai/usage-recorder.ts',
+    // 🔴 T-07-04: AI コスト上限のガード（docs/05 §7.6 / §7.12）。記録器と同じく
+    //    ロールジョブが `JobIdentity` を渡して組み立て、予約の引数 `tenantId` から文脈を作る。
+    //    🔴 **`costGuard` も DB を書く**（`usage_counters`）ため、起動時 1 回では組み立てられない
+    //    （§7.11 ④ の「3 ポートは起動時 1 回」の読み替え。判断は §7.12 に記録）。
+    'apps/worker/src/ai/cost-guard.ts',
   ],
   // 🔴 T-03-10: `usage_counters` を書く唯一の経路（docs/05 §7.6 / §9.8）。
   //    ここを増やすと「計測を迂回した書き込み」が生まれ、原価と請求根拠が説明できなくなる。
   snapshotSeatCount: ['apps/worker/src/jobs/usage-seat-snapshot.ts'],
   incrementUsageCounter: [],
+  // 🔴 T-07-04: AI の 1 日コスト上限（docs/05 §7.6 / §7.12 / `F-027`）。
+  //    予約と補正の呼び出し元をアダプタ 1 本に固定する。理由は 2 つ:
+  //      ① 🔴 **`settleAiCost` は冪等ではない**（呼んだ回数だけ実コストが積まれる）。
+  //         呼べる場所が増えると、二重補正で原価と上限判定の両方が狂う
+  //      ② 🔴 「予約せずに LLM を呼ぶ」経路を数えられる状態に保つ（予約は `runRole` の
+  //         手順 3 の中だけで起きる。`tests/static/ai-single-path.test.ts` と対になる）
+  reserveAiCost: ['apps/worker/src/ai/cost-guard.ts'],
+  settleAiCost: ['apps/worker/src/ai/cost-guard.ts'],
+  // 🔴 停止判定の読み取り側。`gate.hold-release`（T-07-10）と残量表示（SP-10）が入るまでは 0 件。
+  readAiDailyCost: [],
   // 🔴 T-05-04: ストレージ計測（docs/05 §8.7 / §14.2 / docs/03 §4.5）。
   //    `UsageCounter(STORAGE_BYTES)` を読む・動かす経路をファイル単位で固定する ——
   //    増えると「上限を見ずに署名を出す」経路や「CAS を経ずに足し引きする」経路が生まれ、
