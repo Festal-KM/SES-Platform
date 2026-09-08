@@ -3998,6 +3998,7 @@ export type ConsistencyInput = Pick<GateInput,
   'requirements' | 'registeredSkills' | 'snapshot' | 'duplicateFindings'>;
 // 🔴 この型に AI の出力（string / warnings）が入らないことが担保そのもの。
 ```
+🔴 **`decideConsistency` の確定形は §11.8（T-07-07）を正とする。** 上のスケッチとの差分（`ConsistencyInput` を `Pick<GateInput, …>` にせず 3 項目を束ねたこと、`duplicateFindings` を「空配列しか渡せない継ぎ目」にしたこと）は §11.8 ② / ⑤ に記録した。
 **整合層が照合するもの**（`docs/02` 章 8.5）
 
 | # | 照合 | Phase |
@@ -4080,6 +4081,71 @@ type GateResultView = {
 type LayerView = { state: 'RUNNING' | 'PASS' | 'FAIL' | 'HELD'; findings: GateFinding[] };   // HELD = 上限到達で未実行（pii / commerce のみ取り得る。consistency は常に確定）
 ```
 🔴 **`offsetStart` / `offsetEnd` は `field` 内の UTF-16 オフセット**。画面はこれを使って該当箇所をハイライトする（`docs/04` `S-020` / `S-021`）。**特定できない指摘は `null` を入れ、画面は「箇所を特定できませんでした」と表示する**（空文字や `-1` を使わない）。
+
+### 11.8 🔴 §11.3 / §11.4（整合層）の実装の決着（T-07-07。2026-09-08）
+
+**整合層の機械的照合は T-07-06（パイプライン）/ T-07-09 / SP-09（承認画面）/ SP-15（`F-037`）の一次資料である。** T-07-07 で確定した形を、上のスケッチとの差分として記録する（`CLAUDE.md` §8.7。§7.9〜§7.13 と同じ作法）。**以降のタスクは本節を正とする。**
+
+#### ① 置き場所
+
+```
+packages/domain/src/gate/consistency.ts        decideConsistency と入力の型（🔴 import は ./types.js だけ）
+packages/domain/src/gate/consistency.test.ts   照合規則 / 決定性（同一入力 100 回）/ 境界値
+tests/static/gate-consistency-purity.test.ts   §17.2 #9（引数型の出所・語彙・引数の数・呼び出し式）
+packages/ai/src/gate-consistency-independence.test.ts
+                                               🔴 モック応答 5 通りで整合層の結果が 1 ビットも変わらないこと
+```
+
+#### ② 🔴 `ConsistencyInput` は `Pick<GateInput, …>` にしなかった（3 項目を束ねた）
+
+- 確定した形: **`{ subject?: ConsistencySubject; duplicateFindings?: readonly never[] }`**。
+  `ConsistencySubject = { snapshot: EngineerSnapshotFacts; requirements: ProjectRequirementFacts[]; registeredSkills: EngineerSkillFacts[] }`。
+- 🔴 **理由**: スケッチの形（3 つが独立した任意項目）は、**`requirements` だけが渡って `snapshot` が渡らない**入力を型として許す。それは「必須要件の照合が黙って行われないのに PASS」という壊れ方であり、`F-020` の中核が空回りしていることが誰にも見えない。3 つは常に同時に決まるので束ねる。
+- 🔴 **依存の向きを逆にする**: `GateInput`（T-07-06）が `ConsistencyInput` を**内包**する（`GateInput.consistency: ConsistencyInput`）。`decideConsistency` が `GateInput` に依存すると、`text` / `forbiddenTerms` / `knownPii` を含む大きな型が引数型に現れ、§17.2 #9 の検査が実質的に成立しなくなる。
+- エンジニアについて何も主張しない対象（`PROJECT_PUBLISH` / `SKILL_SHEET_SHARE`）は **`subject` を渡さない**（＝ 照合するものが無い ＝ `PASS`）。
+
+#### ③ 照合規則（🔴 Phase 1 の 2 項目。`docs/02` 章 8.5）
+
+| 照合 | 規則 | 種別 |
+|---|---|---|
+| ① 必須要件 | `skill` を持つ `MUST` 要件について、**主張に同じ `skillId` が無い**、または**主張年数 < 要求年数** | `MUST_REQUIREMENT_MISMATCH` |
+| ③ 登録スキルとの矛盾 | 主張が台帳の裏付けを**超えている**（台帳に無いスキル / 年数の超過 / レベルの超過） | `SKILL_SHEET_MISMATCH` |
+
+- 🔴 **③は一方向だけを見る**（台帳の方が大きい＝控えめな主張は FAIL にしない）。提案は作成時点で凍結され、以後の台帳更新は提案内容を変えない（`F-019 AC-2`）。台帳は時間とともに増えるので、両方向を見ると**古い提案がすべて FAIL になり、しかも直す手段が無い**。
+- 🔴 **フリーテキストだけの `MUST` は照合対象外**（`skill` が `null`）。「照合できないから FAIL」は、直せる元データが無い FAIL であり `BR-18`（解消手段は元データの修正のみ）を空回りさせる。意味的な齟齬は `gate-inspector` が**警告**として併記する（`F-020` 処理③の「AI は補助的に指摘するだけ」がこの領分）。
+- **`NICE`（尚可）は整合層の合否に効かない**（`F-029` の足切りと同じ区分）。
+- 年数は **1/10 年の整数**に正規化して比較する（`Decimal(4,1)` に対応）。**不正な数値（`NaN` / 負値 / 非整数のレベル）は `RangeError`** —— 黙って `PASS` に倒さない。
+- 🔴 **入力の並びに依存しない**: `skillId` で束ねてから照合する（主張は**強い方**、裏付けは**弱い方**、要件は**厳しい方**を採る）。指摘は `(kind, skillId, excerpt)` で整列する（`localeCompare` は使わない）。
+
+#### ④ 指摘の形（🔴 SP-09 の承認画面が依存する契約）
+
+- `layer='CONSISTENCY'` / `field='snapshot'` / `offsetStart = offsetEnd = null`（凍結された主張そのものの不一致であり、本文中の位置ではない）/ `severity` は**必ず `'BLOCK'`**（整合層は警告を 1 件も返さない）。
+- `excerpt` は**ロケールに依存しないデータ表記**である: `{ラベル}` または **`{ラベル} {主張}/{要求 or 裏付け}`**（年数は 1 桁小数、レベルは `L{n}`、値が無い側は `-`）。例: `TypeScript -/3.0` / `React 2.0/3.0` / `React L5/L3`。**種別名や説明文はここに入れない**（ユーザー向け文言は `packages/i18n`。`CLAUDE.md` §3.5）。
+- 80 文字を超える場合は**ラベル側を詰める**（数値を残す）。切り詰めで**サロゲートペアを割らない**。
+
+#### ⑤ 🔴 ②重複提案は「空配列しか渡せない継ぎ目」にした（`F-037` / SP-15）
+
+- `duplicateFindings?: readonly never[]` —— **要素を 1 つでも書くとコンパイルエラー**になる。普通の配列型で置いて中身を無視する実装にすると、`F-037` を有効化した日に**検知結果が黙って捨てられる**（重複提案を検知できているのにゲートが素通りする）。SP-15 は**型を広げることと照合を実装することを同時にしか行えない**。
+- 型を握り潰して渡された場合の保険として、非空なら `RangeError` を投げる（「渡されたのに見なかった」を作らない）。
+
+#### ⑥ 静的テスト（§17.2 #9）の中身
+
+| # | 検査 | 破り方の例 |
+|---|---|---|
+| ① | 引数から到達できる型の宣言が **`packages/domain/src/gate/**` に閉じている**（型チェッカで到達可能な型を走査） | `import type { GateInspectorOutput } from '@ses/ai'` |
+| ② | 型名・プロパティ名に **AI 由来の語が無い**（識別子をトークンに割って完全一致。`ai` / `warning` / `prompt` / `model` / `inspector` …） | domain の中で `aiWarnings` を再宣言する |
+| ③ | **引数は 1 つだけ** | 第 2 引数に `gate-inspector` の結果を足す |
+| ④ | 呼び出し式の**実引数に AI 由来の識別子が無い** | T-07-06 で `as` を 1 つ書いて警告を流し込む |
+
+- 🔴 加えて **`consistency.ts` が `./` 以外を参照しない**ことを構文でも固定する（import 宣言 / `export … from` / **`import(...)` 型** / 動的 import のすべて）。型別名がプリミティブに解決されると型チェッカ側で出所（別名）が消えるため、①だけでは `import('../ai/roles.js').AiRole` のような参照を取り逃がす（実測して分かった）。
+- 各検査は fixture で対照を取る（`tests/static/__fixtures__/gate-consistency-purity/**`）。**呼び出し元は T-07-06 が最初に作る**ため④の実対象は現時点で 0 件であり、検出ロジックが動くことは fixture が保証している。
+
+#### ⑦ ⚠️ T-07-06 / SP-15 への申し送り
+
+1. `decideGate` は **`aiWarnings` を `overall` の計算に入れない**（§11.4）。`ReviewGate.findings` に入るのは `decideConsistency` の指摘 + 機械的 PII + AI の `BLOCK` であり、`aiWarnings` には AI の `WARN` だけを入れる。
+2. `GateInput` は **`consistency: ConsistencyInput` を内包する形**で定義する（②）。`ProjectRequirementFacts.skill` / `SnapshotSkillFacts.label` に渡すのは**辞書名**であり、PII を入れない（`excerpt` にそのまま出る）。
+3. 🔴 **パイプラインを通した検証は T-07-06 が引き継ぐ**: 「LLM のモック応答を変えても `ReviewGate.consistencyVerdict` と対象の状態が変わらない」ことと、「HELD（`F-027 AC-5`）でも整合層の結果が保存され、上限解除後の再実行に使われる」こと。T-07-07 で実証したのは**AI の実行経路と整合層を併置して結果が独立であること**（`packages/ai/src/gate-consistency-independence.test.ts`）までである。
+4. Phase 3 の契約書（§11.1）の整合層は `mergeResult.unfilled` と `Contract` の単価・期間の照合であり、欄は `contract_document` である。**`ConsistencySubject` と型を無理に共用しない**（照合する対象が別物である）。
 
 ## 12. 業務シーケンス
 
@@ -4757,7 +4823,7 @@ export const logger = pino({
 | 6 | `queue-attempts.test.ts` | 🔴 **外部送信キュー（`send.proposal` / `send.interview-invite` / `send.contract`）の `attempts` が 1** であること。ソースを AST で走査。あわせて ①`externalSendQueue` が `backoff` を持たないこと ②送信系ジョブを `internalQueue` で定義し直す抜け道が無いこと（型はすり抜けるため AST で塞ぐ）③`attempts` が数値リテラルであること（設定値の注入を許さない）④**「`send.` 接頭辞を持つが外部送信ではないジョブ」の集合をスナップショットで固定**（現在は `send.hold-release` のみ。接頭辞で可否を判定しないことの担保）⑤🔴 **BullMQ の import と `Queue` の実体化が、`apps/worker` の起動配線 1 箇所以外に存在しないこと**（テスト内の許可リストに明示する。**T-04-03 時点でも実体化 0 件 = 許可リストは空である** —— BullMQ の `Queue` / `Worker` の配線は SP-07 の範囲であり、そのタスクが許可リストにワーカーの起動配線を 1 件追加する）。キュー定義（名前と `attempts`）は `packages/connectors/src/queues.ts` の 1 箇所に閉じ（§9.1）、その定義を BullMQ に渡す実体化はワーカー起動時の 1 箇所に閉じる —— 両方を 1 箇所に固定して初めて「`attempts` の上書きがどこでも起きない」と言える ⑥🔴 **`.add()` / `.addBulk()` の per-job オプションで `attempts` / `backoff` を上書きしている箇所が 1 件も無いこと**（T-04-03。`QUEUE_DEFINITIONS` の値は BullMQ の `defaultJobOptions` でしかなく、per-job オプションが**それより優先される**。enqueue 側の上書きを塞がなければ、送信系の `attempts: 1` は「書いてあるだけ」になる。§9.1） |
 | 7 | `execute-guard.test.ts` | 🔴 実行系ルート一覧の全ファイルが `requireExecutable` を呼ぶ（AST 走査） |
 | 8 | `approval-mode-isolation.test.ts` | 🔴 `apps/web/app/api/(main)/proposals/**` に `TenantRoleApprovalMode` / `decideRoleHandoff` が現れない（`F-035 AC-3`） |
-| 9 | `gate-consistency-purity.test.ts` | 🔴 `decideConsistency` の引数型に AI 由来の型が現れない（`BR-61`） |
+| 9 | `gate-consistency-purity.test.ts` | 🔴 `decideConsistency` の引数型に AI 由来の型が現れない（`BR-61`）。**T-07-07 で実装済み。検査は 4 つ**（引数型の**出所** / **語彙** / **引数の数** / **呼び出し式の実引数**）**+ `consistency.ts` が `./` 以外を参照しないことの構文検査**（型別名がプリミティブに解決されると型チェッカ側で出所が消えるため。詳細と fixture は §11.8 ⑥） |
 | 10 | `ai-single-path.test.ts` | 🔴 `@anthropic-ai/sdk` の import が `packages/ai/src/client.ts` のみ。🔴 **加えて「呼び出し経路」も固定する**（T-07-01。§7.9 ⑦）: `createStructuredMessage` を呼ぶ非テストソースが `packages/ai/src/run.ts` の 1 本だけであり、`packages/ai/src/index.ts` がクライアントのポート（`AnthropicClient` / `AnthropicApiClient` / `AiClientRequest` / `AiClientResponse`）を re-export していないこと。**import 経路だけを塞いでも、`createAiClient()` の戻り値を直接呼べば `AiUsage` に残らない呼び出しが成立する** |
 | 10b | `aws-sdk-single-path.test.ts` | 🔴 **`@aws-sdk/*` の import が `packages/connectors/src/email/ses/aws-sdk-api.ts`（とそのユニットテスト）のみ**（T-04-03。#10 と同じ発想）。理由は 3 つ: ①🔴 **SDK 内部のリトライ（既定 3 回）を止められるのはクライアントを生成する場所だけ**であり、別の場所で `new SESv2Client()` が作られると送信系の `attempts: 1` を SDK が内側から無効化する（`BR-21` / `BR-22`）。同テストがアダプタに `maxAttempts: 1` が書かれていることも固定する ②サービス固有の型（`SendEmailCommand` / `SESv2Client`）がドメイン層・ジョブ層へ漏れない（`CLAUDE.md` §3.4）③🔴 **主バレル（`@ses/connectors`）から SDK に到達できないこと** —— `apps/web` は宛先分類・payload の型のために `@ses/connectors` を import しており、主バレルに載せると Next.js のサーババンドルに AWS SDK 一式が同梱される。SDK への公開経路は **`@ses/connectors/aws` サブパス 1 本**（`package.json` の `exports` が `"."` と `"./aws"` の 2 つだけであること、`src/index.ts` と `src/email/ses/index.ts` が `aws-sdk-api` を re-export しないことを検査する） |
 | 11 | `redact-snapshot.test.ts` | denylist のスナップショット固定（削られたら落ちる） |

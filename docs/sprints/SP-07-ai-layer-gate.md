@@ -104,13 +104,13 @@
 
 ### T-07-07 🔴 整合層の機械的照合（純粋関数）（L）
 
-- **実装**: `packages/domain/src/gate/consistency.ts` の `decideConsistency`（純粋関数）。
+- **実装**: `packages/domain/src/gate/consistency.ts` の `decideConsistency`（純粋関数）。**実装済み（2026-09-08）。確定形は `docs/05` §11.8 を正とする**（`ConsistencyInput` は `Pick<GateInput, …>` ではなく 3 項目を束ねた形、`duplicateFindings` は「空配列しか渡せない継ぎ目」、`excerpt` の表記契約、T-07-06 への申し送り 4 点）。
 - 🔴 **整合層の判定関数に LLM の出力を入力として渡さない**（`docs/02` `program-design` 申し送り 4 / `BR-61`）。**警告は別のフィールドに載せる。**
 - **静的テスト**: `gate-consistency-purity.test.ts`（`docs/05` §17.2 #9）— **`decideConsistency` の引数型に AI 由来の型が現れない**ことを AST / 型で検査する。
 - 🔴 **Phase 1 の整合層が照合するのは 2 項目のみ**（`F-020` 処理③ / `docs/02` 章 8.5）: ①案件の必須要件との齟齬 ③スキルシートと登録スキルの矛盾。**②重複提案の照合は `F-037`（Phase 2 / SP-15）で有効化される。**
 - 🔴 **整合層の合否は、同一入力に対して常に同じ結果になる**（`F-020 AC-3`）。**LLM の応答が変わっても整合層の合否は変わらない。**
 - 🔴 **AI の指摘は「警告」として表示され、警告のみが存在する状態でも当該層は PASS**（`F-020 AC-4`）。承認画面では警告が承認者に見える（SP-09 の `F-021 AC-4`）。
-- **完了の判定**: 同一入力で 100 回実行して同じ結果になるユニットテスト + 静的テスト green。**LLM のモック応答を変えても合否が変わらない**結合テスト。
+- **完了の判定**: 同一入力で 100 回実行して同じ結果になるユニットテスト + 静的テスト green。**LLM のモック応答を変えても合否が変わらない**結合テスト（`packages/ai/src/gate-consistency-independence.test.ts`。モック応答 5 通り）。🔴 **パイプラインを通した検証（応答を変えても `ReviewGate.consistencyVerdict` と対象状態が変わらない）は T-07-06 が引き継ぐ**（`docs/05` §11.8 ⑦-3）。
 
 ### T-07-08 🔴 API #39 / #40 と失敗した `gate.run` の再実行（L）
 
