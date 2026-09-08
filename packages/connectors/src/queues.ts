@@ -116,6 +116,11 @@ export const INTERNAL_JOB_NAMES = [
   //    `WebhookDelivery.processedAt` の CAS、そして状態遷移の単調性（domain）が担う。
   'scan.apply-result',
   'scan.poll',
+  // 🔴 T-07-06（docs/05 §9.3）。品質ゲートの実行。**外部への送信ではない**が
+  //    `attempts: 1` である —— 理由は送信系とは別で、**LLM の再試行は `runRole` の内部で
+  //    最大 2 回まで行うため**（docs/05 §7.4）。ジョブ単位で再試行すると、マスキングと
+  //    プロンプト構築からやり直しになり `AiUsage` が二重に積まれる（原価が実態と合わなくなる）。
+  'gate.run',
 ] as const;
 
 export type InternalJobName = (typeof INTERNAL_JOB_NAMES)[number];
@@ -207,7 +212,55 @@ export const QUEUE_DEFINITIONS = {
     backoff: { type: 'exponential', delay: 5_000 },
   }),
   'scan.poll': internalQueue('scan.poll', { attempts: 3 }),
+  // 🔴 T-07-06（docs/05 §9.1 / §9.3）。品質ゲートの実行。
+  //    - `attempts: 1` … LLM の再試行は `runRole` の内部で完結する（上記 `INTERNAL_JOB_NAMES` の 🔴）。
+  //    - 🔴 `removeOnComplete: true` … **`jobId` を冪等キーに使うキューだから必須**である。
+  //      BullMQ は同じ `jobId` が completed / failed セットに残っている間 `add` を無視するため、
+  //      HELD（AI 上限で未実行）として**正常終了**した記録が残ると、`gate.hold-release` と
+  //      #39 の再 enqueue が**静かに捨てられ**、対象が `GATE_RUNNING` に留まり続ける
+  //      （`CLAUDE.md` §11.1 の「成功したように見えて実際には起きていない」と同型の壊れ方）。
+  //    - 🔴 `removeOnFail` は付けない。failed の記録は §16.5 の失敗ジョブ数の根拠であり、
+  //      失敗した `gate.run` の再実行（§9.10）は「その failed 記録を消す」ことを手順に含む。
+  'gate.run': internalQueue('gate.run', { attempts: 1, removeOnComplete: true }),
 } as const;
+
+// ---------------------------------------------------------------------------
+// gate.run の冪等キー（docs/05 §9.3 / §9.10。T-07-06）
+// ---------------------------------------------------------------------------
+
+/**
+ * `gate.run` の payload（docs/05 §9.3）。
+ *
+ * 🔴 **enqueue 側（`apps/web` の #39 / `gate.hold-release`）と実行側（`apps/worker`）の契約**を
+ *    1 箇所に置く（`AccountMailJob` / `DomainJob` と同じ整理）。両側が別々に型を持つと、
+ *    片方だけが項目を増やしたときに `jobId` の材料がずれ、**重複排除が静かに効かなくなる**。
+ * 🔴 `contentHash` を payload に含めるのは、**その内容を検査したという事実**を
+ *    `ReviewGate.contentHash` に残すためである（§11.5。承認 CAS がこの値で一致を見る）。
+ */
+export type GateRunJob = {
+  readonly tenantId: string;
+  /** `ReviewGate.targetType`（値集合の出所は `@ses/domain` の `GATE_TARGET_TYPES`）。 */
+  readonly targetType: string;
+  readonly targetId: string;
+  readonly contentHash: string;
+};
+
+/** `gate.run` のキュー名（`QUEUE_DEFINITIONS` のキーと同じ。文字列を書き写さない）。 */
+export const GATE_RUN_JOB = 'gate.run' satisfies InternalJobName;
+
+/**
+ * 🔴 `gate.run` の `jobId`（docs/05 §9.3）。**同一対象・同一内容のゲートを多重化させない。**
+ *
+ * BullMQ は同じ `jobId` の待機中・実行中ジョブを重複排除する。#39 の手動再実行と
+ * `gate.hold-release` の自動再実行が同時に走っても、**キューに乗るのは 1 本**である
+ * （確定後の抑止は DB 側 —— 開始時の `execution='DONE'` 行チェックと HELD 完了 CAS。§9.3）。
+ *
+ * 🔴 **組み立てを 2 箇所に書かない。** 材料の順序が 1 つでも違えば別の `jobId` になり、
+ *    重複排除は「書いてあるだけ」になる。
+ */
+export function gateRunJobId(job: Pick<GateRunJob, 'targetType' | 'targetId' | 'contentHash'>): string {
+  return `${GATE_RUN_JOB}:${job.targetType}:${job.targetId}:${job.contentHash}`;
+}
 
 export type QueueName = keyof typeof QUEUE_DEFINITIONS;
 

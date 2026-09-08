@@ -144,6 +144,10 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
     //    🔴 **`costGuard` も DB を書く**（`usage_counters`）ため、起動時 1 回では組み立てられない
     //    （§7.11 ④ の「3 ポートは起動時 1 回」の読み替え。判断は §7.12 に記録）。
     'apps/worker/src/ai/cost-guard.ts',
+    // 🔴 T-07-06: 品質ゲートのパイプライン（docs/05 §9.3 / §11）。payload の `tenantId` から
+    //    ジョブ文脈を組み立て、`ReviewGate` の保存・提案の状態確定・`AuditLog` を同じ文脈で行う。
+    //    🔴 **`apps/web` 側には 1 つも無い**（ゲートの実行単位はジョブである。`CLAUDE.md` §12.3）。
+    'apps/worker/src/jobs/gate-run.ts',
   ],
   // 🔴 T-03-10: `usage_counters` を書く唯一の経路（docs/05 §7.6 / §9.8）。
   //    ここを増やすと「計測を迂回した書き込み」が生まれ、原価と請求根拠が説明できなくなる。

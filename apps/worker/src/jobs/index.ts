@@ -167,6 +167,16 @@ export type {
   ScanQuarantineNoticeDeps,
   ScanQuarantineNoticeOutcome,
 } from './scan-quarantine-notice.js';
+// 🔴 T-07-06: 品質ゲートのパイプライン（docs/05 §9.3 / §11。`F-020`）。**イベント起動**であり
+//    `SCHEDULED_JOBS` には載らない（cron を持たない）。enqueue は #39（T-07-08）と
+//    `gate.hold-release`（T-07-10）が行う。
+// 🔴 `attempts: 1`（`packages/connectors/src/queues.ts`）。LLM の再試行は `runRole` の内部で完結する。
+export {
+  createGateRunHandler,
+  GATE_RUN_JOB,
+  parseGateRunPayload,
+} from './gate-run.js';
+export type { GateRunDeps, GateRunHandler, GateRunOutcome, GateRunPayload } from './gate-run.js';
 
 /**
  * ジョブの合成に要る値（起動時に 1 度だけ解決する。`CLAUDE.md` §11.1 / docs/05 §13.1）。

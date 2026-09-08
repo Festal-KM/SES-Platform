@@ -3954,6 +3954,8 @@ type ExternalSendSpec<S> = {
 
 🔴 **入口は `gate.run` ジョブ 1 本**（§9.3）。共有状態へ進める全ての経路がこのジョブの結果を参照する。**ゲートを経ずに共有状態へ進む API を作らない**（§6.8）。
 
+⚠️ **Phase 1 で実際に実行できるのは 3 種のうち `PROPOSAL` と `PROJECT_PUBLISH` である**（T-07-06。`SKILL_SHEET_SHARE` の入口は T-07-09）。🔴 **未配線の対象種別は「対応していないので PASS」にせず例外にする**（`UnsupportedGateTargetError`。§11.9 ⑧-6）。
+
 ### 11.2 層の実行順と並列可否
 
 ```mermaid
@@ -3975,6 +3977,8 @@ flowchart LR
 🔴 **AI 呼び出しは 1 回**（PII 層 + 商流層 + 整合層の警告をまとめて返す）。コスト（`docs/03` §3.3.2 で 1 回 $0.020）と 30 秒の目標（`docs/02` 章 7.1）の両方から、層ごとに 3 回呼ばない。
 
 ### 11.3 入出力の型
+
+⚠️ **本節のスケッチは T-07-06 で実装され、一部が確定値に置き換わった。差分は §11.9「§11.1〜§11.7（パイプライン）の実装の決着」を正とする**（`CLAUDE.md` §8.7）。🔴 **`GateInput` は対象種別で判別する合併になった**（§11.9 ②）。
 
 ```ts
 // packages/domain/src/gate/types.ts
@@ -4008,6 +4012,8 @@ export type ConsistencyInput = Pick<GateInput,
 | ③ | スキルシートの抽出結果と登録スキルの矛盾（登録値どうしの突合） | Phase 1 |
 
 ### 11.4 合否判定ロジック
+
+⚠️ **確定形は §11.9 を正とする**（`decideGate` の引数に `mechanicalCommerce` が加わった。理由は §11.9 ③）。
 
 ```ts
 // packages/domain/src/gate/decide.ts
@@ -4065,6 +4071,8 @@ export function shouldAutoApprove(input: {
 - 1 層でも FAIL なら `GATE_FAILED` に留まり、人間に差し戻る。
 
 ### 11.7 指摘の構造化フォーマットと画面への渡し方
+
+⚠️ **`GateResultView` は T-07-06 で `packages/domain/src/gate/view.ts` に実装された。確定形は §11.9 ①・④ を正とする**（AI が返すオフセットは**マスキング済みの欄**の位置なので、保存前に原文の位置へ戻す）。
 
 `GateFinding`（§3.6）を `ReviewGate.findings` に格納し、`GET /api/proposals/{id}/gate`（#40）が層ごとに返す。
 
@@ -4146,6 +4154,93 @@ packages/ai/src/gate-consistency-independence.test.ts
 2. `GateInput` は **`consistency: ConsistencyInput` を内包する形**で定義する（②）。`ProjectRequirementFacts.skill` / `SnapshotSkillFacts.label` に渡すのは**辞書名**であり、PII を入れない（`excerpt` にそのまま出る）。
 3. 🔴 **パイプラインを通した検証は T-07-06 が引き継ぐ**: 「LLM のモック応答を変えても `ReviewGate.consistencyVerdict` と対象の状態が変わらない」ことと、「HELD（`F-027 AC-5`）でも整合層の結果が保存され、上限解除後の再実行に使われる」こと。T-07-07 で実証したのは**AI の実行経路と整合層を併置して結果が独立であること**（`packages/ai/src/gate-consistency-independence.test.ts`）までである。
 4. Phase 3 の契約書（§11.1）の整合層は `mergeResult.unfilled` と `Contract` の単価・期間の照合であり、欄は `contract_document` である。**`ConsistencySubject` と型を無理に共用しない**（照合する対象が別物である）。
+
+### 11.9 🔴 §11.1〜§11.7（パイプライン）の実装の決着（T-07-06。2026-09-08）
+
+**§11 は T-07-08（API #39 / #40）/ T-07-09（案件公開・スキルシート共有の接続）/ T-07-10（HELD の自動復帰）/ SP-09（承認画面）の一次資料である。** T-07-06（品質ゲートのパイプライン）で確定した形を、上のスケッチとの差分として記録する（`CLAUDE.md` §8.7。§7.9〜§7.13 / §11.8 と同じ作法）。**以降のタスクは本節を正とする。**
+
+#### ① 置き場所
+
+```
+packages/domain/src/gate/types.ts     GATE_TARGET_TYPES / PHASE1_GATE_TARGET_TYPES / GATE_EXECUTIONS（🔴 宣言の唯一の出所をここへ移した）
+packages/domain/src/gate/input.ts     GateInput（🔴 対象種別で判別する合併）
+packages/domain/src/gate/decide.ts    decideGate（§11.4）
+packages/domain/src/gate/view.ts      GateResultView / toGateResultView（§11.7）
+packages/ai/src/mask.ts               locateSensitive（🔴 mask() と同じ 1 つの照合。位置だけを返す）
+packages/ai/src/gate/examine.ts       prepareGateExamination / interpretGateInspection
+packages/db/src/gate-target.ts        loadGateInput（🔴 「出してはならない語」を決める唯一の場所）
+packages/db/src/review-gate.ts        findCachedReviewGate / holdReviewGate / completeReviewGate / readReviewGateResult
+packages/connectors/src/queues.ts     gate.run のキュー定義 / GateRunJob / gateRunJobId
+apps/worker/src/jobs/gate-run.ts      ジョブ本体（3 層の実行順・枝分け・状態確定）
+```
+
+- 🔴 **`REVIEW_GATE_TARGET_TYPES` / `REVIEW_GATE_EXECUTIONS` / `GATE_VERDICTS` / `GATE_LAYERS` の宣言は `packages/domain` に移し、`packages/db/src/schema-value-sets.ts` は re-export にした**（§7.9 ⑤ / `ScanStatus` と同じ整理）。パイプラインの入力型を組み立てる側（`packages/ai` / `apps/worker`）と CHECK を持つ側（`packages/db`）は相互に依存できない。**`tests/static/schema-enum-drift.test.ts` の突合の入口（`@ses/db` の名前）は変えていない。**
+
+#### ② 🔴 `GateInput` は対象種別で判別する合併にした（§11.3 のスケッチとの差分）
+
+- スケッチの形（`snapshot?` / `requirements?` / `text: { subject?, body?, publicSummary? }` を任意項目で並べる）は、次の 3 つを**型として許してしまう**: ①提案なのに `ConsistencySubject` を渡し忘れる（＝ 必須要件の照合が黙って行われないのに PASS）②案件の公開に `snapshot` を渡す ③案件の公開の指摘に `field='snapshot'` が付く（承認画面が存在しない欄をハイライトする）。
+- 確定形: `GateInput = ProposalGateInput | ProjectPublishGateInput | SkillSheetShareGateInput`。**欄（`GateFindingField`）も種別ごとに絞る**（提案 = `subject` / `body`、案件の公開 = `public_summary`、スキルシート共有 = `attachment`）。`consistency` は提案で `subject` **必須**、他は `subject?: undefined`（**値を書くとコンパイルエラー**）。
+- 🔴 **提案の検査対象の本文に `EngineerSnapshot` を入れない。** スナップショットは経路 2 で**ホストが読む**ための凍結コピーであり、氏名と所属会社名を持っているのが正常である（`CLAUDE.md` §3.1 経路 2）。本文に入れると既知値が必ず一致し、**すべての提案が直しようのない PII FAIL になる**（`BR-18` の解消手段が存在しなくなる）。外部へ出るのは件名・本文であり、そこに氏名が残っていれば FAIL になる（`F-020 AC-5`）。スナップショットは**整合層の照合対象**としてのみ使う。
+
+#### ③ 🔴 機械的検出を商流層にも置いた（§11.4 の `mechanicalPii` に `mechanicalCommerce` を追加）
+
+- `decideGate` の引数に `mechanicalCommerce` を足した。理由: **「エンド企業名・内部単価・他社名がその公開範囲に出ていないか」は `forbiddenTerms` との完全一致の照合で決まる**のであり、LLM の応答に委ねる必要が無い。委ねると `F-014 AC-3`（ゲート FAIL なら公開しない）が応答のゆらぎで通る。
+- 実装は `mask()` と**同じ 1 つの照合**（`locateSensitive`）を使う。別実装にすると表記ゆれの吸収（全角・区切り・法人格の略記）が 2 箇所に分かれ、**LLM には伏せて送っているのにゲートは見逃す**（またはその逆）という最も気づきにくい壊れ方になる。
+- 🔴 **機械的検出が FAIL にするのは「既知値」だけである**（`locateSensitive(..., { includePatterns: false })`）。パターン検出（メール・電話の形）まで FAIL にすると、提案本文の末尾にある**自社担当者の署名**だけで毎回 FAIL になり、直しようのない FAIL を作る。台帳に無い氏名・連絡先の指摘は `gate-inspector` の領分である。
+- 指摘の `excerpt` は**伏せ字そのもの**（`[名前]` / `[企業名]` …）にした。原文を切り出すと `ReviewGate.findings`（JSON）が PII と商流情報の保管場所になり、承認画面・監査・エクスポートのすべてに載る。位置は `offsetStart` / `offsetEnd` が示すので抜粋に原文は要らない。
+
+#### ④ AI の指摘のオフセットは**原文の位置に戻して**保存する
+
+- `gate-inspector` が返すオフセットは**マスキング済みの欄**の中の位置である。画面がハイライトするのは利用者が編集する**生の本文**なので、そのまま保存すると伏せ字の長さの差だけずれる。`prepareGateExamination` が欄ごとの対応表（`MaskOffsetMap`）を作り、`interpretGateInspection` が戻す。
+- 伏せ字の内側を指す位置は**原文の区間の端**へ丸める（`start` は左端 / `end` は右端）。伏せ字は原文と長さが違うので内側に 1 対 1 の対応が無く、丸めれば「伏せられていた値の全体」を覆う。戻せない位置は `null`（＝「箇所を特定できませんでした」。§11.7）。
+
+#### ⑤ 保存の順序（多重化防止の 3 段目 = 完了 CAS）
+
+`completeReviewGate` は 1 トランザクションで次の順に試す:
+
+1. 保留行（`execution <> 'DONE'`）があれば **`WHERE execution='HELD_AI_COST_LIMIT'` の CAS で `DONE` にする**。0 件なら `RACED` を返し**結果を破棄する**（`P-A-09`。他の実行が先に確定させている）。
+2. 🔴 前回 **AI が失敗した**同じ内容（`content_hash` 一致 かつ `ai_failed = true`）の行があれば**上書きする**。`aiFailed` の結果はキャッシュにしない（再実行で PASS になりうる）ため、上書きしないと再実行のたびに行が増える。
+3. どちらでもなければ新しい行を作る。
+
+- 🔴 **`aiFailed = true` の行は `findCachedReviewGate` が返さない**（＝ キャッシュにならない）。返すと「一度 LLM がタイムアウトした提案は、内容を変えるまで永久に送れない」という直しようのない状態になる。
+- 🔴 AI が失敗したときは `role` / `promptVersion` / `modelId` / `aiUsageId` を **`null` のままにする**（「その版で検査した」という記録にしないため。`BR-13`）。
+- 保留行の upsert（`holdReviewGate`）は **`ON CONFLICT (tenant_id, target_type, target_id) WHERE execution <> 'DONE'`** の 1 文である（述語付き索引を競合ターゲットにするため Prisma の `upsert` では書けない）。`held_since` は**最初に保留した時刻を保つ**（更新すると `A-005` の滞留検知が永久に「今さっき」になる）。
+
+#### ⑥ 対象の状態を動かすのは提案だけである
+
+- `gate.run` は `Proposal` を `GATE_RUNNING` → `APPROVAL_PENDING` / `GATE_FAILED` へ **CAS** で確定させる（`WHERE state='GATE_RUNNING'`）。0 件なら何もしない（利用者が編集して `DRAFT` へ戻したか、他の実行が先に確定させた。上書きすると §11.5 が防いでいる事故になる）。`ProposalEvent`（`actorKind` 相当は `actorUserId = null` = system）と `AuditLog`（`action='proposal.update'` / `actorKind='SYSTEM'` / `summary.operation='GATE_RESULT'`）を同じトランザクションで書く。**独自の action を作らない**（`S-041` の操作種別フィルタから漏れる。§16.1）。
+- **案件の公開（`ProjectVisibility` の作成）とスキルシートの共有 URL 発行は T-07-09 の範囲**である。ゲートは結果を残すだけで、公開そのものは行わない。
+- **自動承認（`shouldAutoApprove`。§11.6）はここで呼ばない。** 承認は `F-021`（SP-09）の範囲であり、`Proposal.approvedBy` / `approvedAt` / `ProposalEvent` の記録と一体である。
+
+#### ⑦ 🔴 未解決: パートナー所属エンジニアの提案はゲートを通せない（人間の判断が要る）
+
+- **事象**: ジョブの文脈は常にホスト相当である（`systemTenantCtx`。§9.2）。`engineers` / `engineer_skills` は **C3 OWNER_SCOPED** なので、**パートナー所属エンジニアの台帳がジョブから 1 行も読めない**。したがって ①`knownPii`（氏名・生年月日・連絡先）を組み立てられず ②整合層の `registeredSkills`（台帳の裏付け）も空になる。
+- **現在の実装**: `loadGateInput` は `GateFactsUnavailableError('ENGINEER_LEDGER_UNREADABLE')` を投げ、**`ReviewGate` を 1 行も書かずに落ちる**。対象は共有状態へ進めない（承認 CAS も送信の事前判定も満たさない）。🔴 **`knownPii` を空にして続行しない** —— 空にすると「マスキングも機械的 PII 検出も効かないまま PASS」になり、`CLAUDE.md` §7 の「PII 未マスキングでの外部共有 0 件」を静かに破る。
+- 🔴 **これは設計の穴であり、実装で回避してよいものではない。** `CLAUDE.md` §3.1 経路 2 は「パートナーのエンジニア台帳全体をホストが読むことはできない」と定め、§4.4.2 は「テナント文脈を持たない経路をこれ以外に作らない」と定めている。**選択肢は次の 3 つで、いずれも人間の承認事項である**（`CLAUDE.md` §8.6）:
+  1. **`app_engineer_is_shared`（§4.5）と同型の `SECURITY DEFINER` 経路を足す** —— 「その提案の対象エンジニアに限り、マスキングに要る値だけを読む」関数。`app_apply_scan_status`（migration 20260908000000）の前例がある。**開示先はゲートの内部だけであり、指摘には伏せ字しか出ない**（③）。
+  2. **`EngineerSnapshot` にマスキング用の値を凍結する** —— 提案作成時（パートナー文脈）に氏名の全表記・連絡先・生年月日と `registeredSkills` を凍結しておく。**ホストが読める列が増える**ため、経路 2 の開示範囲の再確認が要る。
+  3. **ゲートをパートナー文脈で実行する** —— ジョブが `HostTenantCtx` 以外を持てるようにする。§9.2 の前提を変えるため影響が最も広い。
+- **暫定の既定**: 1 が最も射程が狭い（読む対象が「その提案のエンジニア 1 人」に限られ、戻り値がゲートの外へ出ない）。**T-07-08 / SP-09 が Phase 1 の中核 E2E（パートナーが提案 → ホストが承認 → 送信）を通す前に決着が要る。**
+
+#### ⑧ ⚠️ T-07-08 / T-07-09 / T-07-10 への申し送り
+
+1. 🔴 **`gateContentHash`（§11.5）は未実装である。** `gate.run` は payload の `contentHash` をそのまま `ReviewGate.contentHash` に保存する。**計算するのは #39（enqueue 側）**であり、`jobId` の材料でもある（`gateRunJobId`）。⚠️ `packages/domain` は `node:crypto` を import できない（§17.2 #14）ため、**「正規化された連結を作る純粋関数（domain）」と「SHA-256 を取る側（`packages/db` か `apps/web`）」に分ける**こと。承認 CAS が `proposals.content_hash` と突き合わせるので、**提案側のハッシュと同じ 1 実装**でなければならない。
+2. `gate.run` の enqueue は `packages/connectors` の `GateRunJob` / `gateRunJobId(job)` / `GATE_RUN_JOB` を使う（両側で組み立てを書かない）。キューは `attempts: 1` / `removeOnComplete: true`（§9.1。`tests/static/queue-attempts.test.ts` が固定）。
+3. **BullMQ の `Queue` / `Worker` の実体化は未了である**（`bullmq` が依存に入っていない。`tests/static/queue-attempts.test.ts` の許可リストは空のまま）。`@anthropic-ai/sdk`（§7.9 ⑥）と同じ扱いで、依存追加は人間の承認事項である。
+4. `#40` は `readReviewGateResult`（`packages/db`）→ `toGateResultView`（domain）で組み立てる。🔴 **`held` は `execution='HELD_AI_COST_LIMIT'` のときだけ渡す**（`resetAt` は暦の計算なので `usagePeriodResetAt`（`packages/db`）から取る。domain では作れない。§7.12 ⑥）。
+5. **T-07-09 へ**: `PROJECT_PUBLISH` の `audience.partnerCompanyIds` には**現時点で公開済みの相手**しか入っていない。`#28`（公開範囲の設定）が「これから公開する相手」をゲートまで運ぶ手段は SP-06 では作られなかった（`ProjectVisibility` の行はゲート PASS 後にしか作れない = `review_gate_id` NOT NULL）。**新規公開先を含めるには、その一覧を運ぶ経路（`gate.run` の payload か中間テーブル）が要る。** 運ばないと「新規公開先の名前が公開文に出ていても他社名として検出されない」。
+6. **T-07-09 へ**: `SKILL_SHEET_SHARE` の `loadGateInput` は `UnsupportedGateTargetError` を投げる（＝ PASS にならない）。Phase 1 には抽出テキストが無い（`sheet-parser` は Phase 2）ため、**何を検査対象の本文にするか**を決めるところから T-07-09 の範囲である。
+7. **T-07-10 へ**: `gate.hold-release` は `findPendingReviewGate` で保留行を引き、**同じ payload・同じ `jobId`** で `gate.run` を再 enqueue する。完了 CAS（⑤-1）が多重化の最後の防波堤であり、**`gate.hold-release` 側に「先に DONE にする」処理を書かない**。
+
+#### ⑨ 検証（T-07-06 で緑にしたもの）
+
+| 層 | 何を固定したか |
+|---|---|
+| ユニット（domain） | `decideGate` の 3 層合成 / AI 失敗は PII・商流を FAIL（PASS へ倒れない）/ 警告は合否に効かない / 機械的検出が AI の判定を上書きする / 層の取り違えを `RangeError` にする / 同一入力 50 回で同結果 / `GateResultView` の 3 値と HELD の判別 |
+| ユニット（ai） | マスキング済みの本文しか LLM へ渡らない / 既知値だけが機械的 FAIL になる（署名のメールは FAIL にしない）/ 他社名と エンド企業名の種別の区別 / 抜粋に原文が入らない / オフセットの往復 |
+| ユニット（worker） | 枝分け（PASS / FAIL / AI 失敗 3 種 / HELD / キャッシュ / `RACED` / 対象なし）/ `GATE_RUNNING` 以外は状態を上書きしない / `AuditLog` の形 |
+| 結合（`tests/isolation/gate-run.test.ts`） | 🔴 `F-020 AC-5` / `AC-6`（エンド企業名・内部単価・他社名）/ `AC-7` / AI 失敗で FAIL かつ**キャッシュしない** / `P-A-09` のキャッシュ / 🔴 **HELD でも整合層の結果が保存され、再実行が同じ行を CAS で確定させる**（行が増えない）/ 🔴 **モック応答 5 通りで `consistencyVerdict` と対象の状態が 1 ビットも変わらない**（§11.8 ⑦-3 の引き継ぎ）/ テナント境界 / パートナー所属の提案は結果を 1 行も書かずに落ちる（⑦） |
+| 静的 | `gate.run` の `removeOnComplete: true` と `attempts: 1`（§17.2 #19 / #6）/ `systemTenantCtx` の呼び出し元にジョブ 1 本を追加 |
 
 ## 12. 業務シーケンス
 
@@ -4834,7 +4929,7 @@ export const logger = pino({
 | 16 | `contract-resend-human-only.test.ts` | 🔴 **`Contract` の `SEND_FAILED → DRAFT` を呼ぶコードが `apps/web/app/api/(main)/contracts/[id]/resend/route.ts` 以外に無い**（AST 走査）。`Proposal` の `SUBMIT_FAILED → APPROVED`（§10.6）と**対**にする。ジョブ・スケジューラ・Webhook ハンドラから呼ばれていたら FAIL（`F-049 AC-3`） |
 | 17 | `counterparty-readonly.test.ts` | 🔴 **経路 5 の書込経路が存在しない**（`BR-68` / `F-065 AC-4` / `F-066 AC-5`）: ①`apps/web/app/api/(main)/partner/**` の `route.ts` が `GET` 以外を export しない ②`withPartnerScope` の呼び出し元が `partner/**` と `S-029` / `S-025` のプレビュー用ハンドラに限られる ③`PartnerScopeDb` 以外の型で `partner*V` モデルを参照するコードが無い ④`apps/web/app/api/(main)/partner/**` から `extensionReview` デリゲート・`ExtensionReview` 型の識別子が現れない（`BR-67`） |
 | 18 | `tenant-usage-no-money.test.ts` | 🔴 **主平面（`apps/web/app/api/(main)/**`）の応答型に `/[Uu]sd|[Cc]ost|[Pp]rice/` を含むプロパティ名が無い**。例外は `overageEstimateJpy`（請求見込み。`BR-24`）と、業務データそのものの `unitPrice` / `offeredUnitPrice` / `amount`（契約・提案の項目でありクォータではない）。加えて `UsageView` に `gateInspector` / `gate` キーが無い（`F-027 AC-6` / `AC-7`） |
-| 19 | `docusign-scope.test.ts` / `queue-attempts` の追補 | 🔴 `buildAuthorizeUrl()` の出力に `scope=signature%20extended` が含まれる（`docs/03` §3.1.2a-3。忘れると 30 日で接続が切れる）。`gate.hold-release` が **`gate.run` 以外を enqueue しない**（送信系の再 enqueue に転用されていない）。🔴 **`gate.run` キューの `defaultJobOptions.removeOnComplete` が `true`**（§9.1。無いと HELD 後の同 `jobId` 再 enqueue が捨てられる）。🔴 **hold-release の追補（§8.3-Q）**: ①`email.dispatch` / `account.mail` のハンドラで `decideProviderQuota` の `HOLD` と `ProviderQuotaExceededError` の catch が `status='HELD_PROVIDER_QUOTA'` への更新で終わり、**再 throw・`status='FAILED'` 更新・`failureReason` 書込のいずれにも到達しない**（AST）②`send.hold-release` が走査する `EmailDispatch.status` の集合が `{'HELD_DOMAIN_UNVERIFIED','HELD_PROVIDER_QUOTA'}` と一致する（スナップショット。CHECK の 7 値から `HELD_` 接頭辞を持つものを導出して比較 = 列挙式にしない）③`packages/domain/src/quota/provider.ts` が `Date.now` / `process.env` を参照しない（§17.2 #14 と同じ検査を個別に固定） |
+| 19 | `docusign-scope.test.ts` / `queue-attempts` の追補 | 🔴 `buildAuthorizeUrl()` の出力に `scope=signature%20extended` が含まれる（`docs/03` §3.1.2a-3。忘れると 30 日で接続が切れる）。`gate.hold-release` が **`gate.run` 以外を enqueue しない**（送信系の再 enqueue に転用されていない。**T-07-10**）。✅ 🔴 **`gate.run` キューの `defaultJobOptions.removeOnComplete` が `true`**（§9.1。無いと HELD 後の同 `jobId` 再 enqueue が捨てられる）—— **T-07-06 で `tests/static/queue-attempts.test.ts` に実装済み**（`attempts: 1` と「`removeOnFail` を付けない」も同時に固定した。**ソースの記述**を見る = 型では任意項目なので抜けても落ちないため）。🔴 **hold-release の追補（§8.3-Q）**: ①`email.dispatch` / `account.mail` のハンドラで `decideProviderQuota` の `HOLD` と `ProviderQuotaExceededError` の catch が `status='HELD_PROVIDER_QUOTA'` への更新で終わり、**再 throw・`status='FAILED'` 更新・`failureReason` 書込のいずれにも到達しない**（AST）②`send.hold-release` が走査する `EmailDispatch.status` の集合が `{'HELD_DOMAIN_UNVERIFIED','HELD_PROVIDER_QUOTA'}` と一致する（スナップショット。CHECK の 7 値から `HELD_` 接頭辞を持つものを導出して比較 = 列挙式にしない）③`packages/domain/src/quota/provider.ts` が `Date.now` / `process.env` を参照しない（§17.2 #14 と同じ検査を個別に固定） |
 | 20 | `counterparty-base-table-host-only.test.ts` | 🔴 **経路 5 の基底表がパートナー到達可能な経路から読めない**（§4.3-6）: ①`apps/web/**` における `withHostTenant` / `requireHost` の呼び出し元が `apps/web/app/api/(main)/{assignments,extension-reviews,contracts,contract-templates,orders,kpi}/**` に限られ、`/api/partner/**` と全ロール到達ルート（#8 / #9 / #17 / #46 等）に現れない（AST）。🔴 **`apps/worker/**` は呼び出し元の限定対象外**（§4.3-6 ③。ctx が常に `systemTenantCtx` = `HostTenantCtx`）。その前提として **`apps/worker/**` に `resolveTenantCtx` の呼び出しが無い**ことを同テストで検査する（ワーカーがパートナー文脈を持てないことの根拠）②`expectTypeOf<TenantDb>()` が `assignment` / `contract` / `contractDocument` / `order` / `extensionReview` を持たない（型テスト。`PartnerScopeDb` も同様）③Prisma 拡張に 5 モデルの「`app.partner_company_id <> ''` なら throw」フックが登録されている（DMMF 走査。#2 と同じ向き = 列挙ではなく全部から引く） |
 | 21 | `schema-enum-drift.test.ts` | 🔴 §3.1「列挙」規約（Prisma DSL は `String`・DB 側は手書き TEXT + CHECK）が生む「CHECK の値集合と TS 側の単一出所を人手で揃える」ドリフトを機械的に検知する。`packages/db/prisma/migrations/**/migration.sql` の CHECK 制約をテキストとして読み、TS 側の単一出所（`TENANT_LIFECYCLE_STATES` / `TENANT_ROLES` / `APP_ENV_KINDS` / `TWO_FACTOR_SUBJECT_TYPES` / `TENANT_SENDING_DOMAIN_STATES`）と値集合を突合する。同名 `CONSTRAINT` が migration.sql 群に 2 件以上見つかったら（DROP + 再定義など）読み取り側で例外にする（silent に古い定義と突合される穴を loud failure にする） |
 | 22 | `search-sql-single-path.test.ts` | 🔴 **検索の実装が `packages/db/src/search/**` 以外に現れない**（T-06-05 / TBD-8 / `docs/03` §3.7.3 の代替に進むとき書き換わるのがこの 1 ディレクトリだけであることの担保）。TypeScript の AST を走査し、**①`contains` プロパティ ②`mode: 'insensitive'` ③生 SQL の検索式**（`ILIKE` / `to_tsvector` / `*_tsquery` / `similarity()` / trigram 演算子）を数える。🔴 **コメントは対象外**（AST のノードだけを見る。本書と各ソースの説明文が引っかからないようにするため）。加えて ④`schema.prisma` の `previewFeatures` に `fullTextSearchPostgres` が**無い**こと（Prisma の `search` フィルタはプロパティ名が一般的すぎて AST で誤検知なく数えられないため、**そもそも型として存在しない**ことを別角度で固定する）。🔴 **射程外を明示する**: 一覧の単純な `SELECT`（`select` する列 / `count` / ページング / 応答型の組み立て）と、`startsWith` / `endsWith`（前方・後方の完全一致。識別子の分類に使う）。🔴 **例外は 1 ファイルだけ**（`tests/isolation/search-indexes.test.ts`。索引の利用を `EXPLAIN` で確かめるには加速対象の SQL 自体を書く必要がある）。テストは例外リストの長さも固定する |

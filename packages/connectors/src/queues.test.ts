@@ -11,9 +11,11 @@ import { describe, expect, it } from 'vitest';
 import {
   EMAIL_DISPATCH_BACKOFF_DELAYS_MS,
   EXTERNAL_SEND_JOB_NAMES,
+  GATE_RUN_JOB,
   INTERNAL_JOB_NAMES,
   QUEUE_DEFINITIONS,
   externalSendQueue,
+  gateRunJobId,
   internalQueue,
   queueDefinition,
   steppedBackoffDelayMs,
@@ -131,6 +133,38 @@ describe('🔴 運用メールのキュー（T-04-03。docs/05 §9.4 / §9.10）
 
   it('webhook.process は attempts: 3（外部 API を呼ばず、UNIQUE + CAS で冪等）', () => {
     expect(QUEUE_DEFINITIONS['webhook.process'].defaultJobOptions.attempts).toBe(3);
+  });
+});
+
+describe('🔴 gate.run のキューと冪等キー（T-07-06。docs/05 §9.1 / §9.3 / §17.2 #19）', () => {
+  it('🔴 attempts: 1（LLM の再試行は runRole の内部で完結する。AiUsage を二重に積まない）', () => {
+    expect(QUEUE_DEFINITIONS['gate.run'].defaultJobOptions.attempts).toBe(1);
+  });
+
+  it('🔴 removeOnComplete: true（HELD 後の同 jobId 再 enqueue が捨てられないため）', () => {
+    expect(QUEUE_DEFINITIONS['gate.run'].defaultJobOptions.removeOnComplete).toBe(true);
+  });
+
+  it('🔴 removeOnFail は付けない（failed は失敗ジョブ数の根拠。§9.10 の再実行手順が消す）', () => {
+    expect(QUEUE_DEFINITIONS['gate.run'].defaultJobOptions).not.toHaveProperty('removeOnFail');
+  });
+
+  it('🔴 送信系ジョブではない（attempts: 1 の理由が二重送信の禁止ではない）', () => {
+    expect(EXTERNAL_SEND_JOB_NAMES as readonly string[]).not.toContain('gate.run');
+    expect(INTERNAL_JOB_NAMES as readonly string[]).toContain('gate.run');
+  });
+
+  it('🔴 jobId は {targetType}:{targetId}:{contentHash} で組み立てる（多重化しない）', () => {
+    expect(
+      gateRunJobId({ targetType: 'PROPOSAL', targetId: 'p1', contentHash: 'h1' }),
+    ).toBe('gate.run:PROPOSAL:p1:h1');
+    expect(GATE_RUN_JOB).toBe('gate.run');
+  });
+
+  it('🔴 内容が 1 文字でも違えば別の jobId になる（同じ内容なら同じ結果、という前提の裏返し）', () => {
+    const base = { targetType: 'PROPOSAL', targetId: 'p1', contentHash: 'h1' } as const;
+    expect(gateRunJobId(base)).not.toBe(gateRunJobId({ ...base, contentHash: 'h2' }));
+    expect(gateRunJobId(base)).not.toBe(gateRunJobId({ ...base, targetType: 'PROJECT_PUBLISH' }));
   });
 });
 

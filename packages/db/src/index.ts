@@ -385,6 +385,28 @@ export type {
   AiCostSettlement,
   AiDailyCost,
 } from './ai-cost-guard.js';
+// 🔴 T-07-06: 品質ゲートの結果の読み書き（docs/05 §3.6 / §9.3 / §11 / `F-020 AC-7`）。
+//    保留（HELD）の upsert と完了 CAS がここに閉じている ＝ 迂回した INSERT で
+//    「実行していないゲートを DONE として書く」ことが `packages/db` の外からはできない。
+export {
+  completeReviewGate,
+  findCachedReviewGate,
+  findPendingReviewGate,
+  holdReviewGate,
+  readReviewGateResult,
+} from './review-gate.js';
+export type {
+  CompletedReviewGate,
+  PendingReviewGate,
+  ReviewGateHoldInput,
+  ReviewGateKey,
+  ReviewGateResultInput,
+  ReviewGateSaveOutcome,
+} from './review-gate.js';
+// 🔴 T-07-06: ゲートの対象を読み `GateInput` に組み立てる唯一の経路（docs/05 §11.2 の BUILD）。
+//    🔴 「その公開範囲で出してはならない語」を決めるのはここだけである（ゲート本体に分岐が無い）。
+export { GateFactsUnavailableError, loadGateInput, UnsupportedGateTargetError } from './gate-target.js';
+export type { GateTargetLookup } from './gate-target.js';
 // 🔴 T-05-05: ウイルススキャン結果の記録と適用（docs/05 §8.5 / §9.6 / `BR-26`）。
 //    `CLEAN` へ戻す遷移が存在しない経路であり、呼び出し元は `apps/worker` のジョブだけである。
 export { applyFileScanResult, listStalledScanTargets } from './file-scan.js';

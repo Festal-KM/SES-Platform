@@ -354,8 +354,45 @@ const PER_JOB_RETRY_OFFENDERS: readonly string[] = SCAN_SOURCE_FILES.filter(
     relative !== SELF_RELATIVE_PATH && findPerJobRetryOverrides(sourceFile).length > 0,
 ).map(([relative]) => relative);
 
+/**
+ * 🔴 `internalQueue('gate.run', { ... })` の**既定ジョブオプションのソース上の値**を読む（§17.2 #19）。
+ *
+ * 値そのものではなくソースの記述を見るのは、`queue-attempts.test.ts` の他の検査と同じ理由である
+ * ——「型では任意項目だから抜けても落ちない」ものを、**書いてあること**で固定する。
+ */
+export function queueOptionLiterals(text: string, fileName: string, queueName: string): Record<string, string> {
+  const sourceFile = sourceOf(text, fileName);
+  const found: Record<string, string> = {};
+  function visit(node: ts.Node): void {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === INTERNAL_QUEUE_FACTORY &&
+      node.arguments[0] !== undefined &&
+      ts.isStringLiteralLike(node.arguments[0]) &&
+      node.arguments[0].text === queueName
+    ) {
+      const options = node.arguments[1];
+      if (options !== undefined && ts.isObjectLiteralExpression(options)) {
+        for (const property of options.properties) {
+          if (!ts.isPropertyAssignment(property)) continue;
+          const key = property.name;
+          const keyText = ts.isIdentifier(key) || ts.isStringLiteralLike(key) ? key.text : null;
+          if (keyText !== null) found[keyText] = property.initializer.getText(sourceFile);
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(sourceFile);
+  return found;
+}
+
 describe('🔴 送信系キューの attempts が 1（docs/05 §17.2 #6 / §9.1 / CLAUDE.md §3.4）', () => {
-  const analysis = analyzeQueueSource(readFileSync(queuesFile, 'utf8'), queuesFile);
+  const queuesSource = readFileSync(queuesFile, 'utf8');
+  const analysis = analyzeQueueSource(queuesSource, queuesFile);
+  const gateRunOptions = (): Record<string, string> =>
+    queueOptionLiterals(queuesSource, queuesFile, 'gate.run');
 
   it('対照: このテストが空振りしていない（キュー定義が 1 件以上ある）', () => {
     expect(analysis.definitions.length).toBeGreaterThan(0);
@@ -392,6 +429,22 @@ describe('🔴 送信系キューの attempts が 1（docs/05 §17.2 #6 / §9.1 
     // 🔴 `defaultJobOptions` は既定値でしかない。enqueue 側の上書きを塞がないと、
     //    送信系キューの `attempts: 1` は「書いてあるだけ」になる。
     expect(PER_JOB_RETRY_OFFENDERS).toEqual([]);
+  });
+
+  it('🔴 gate.run の removeOnComplete が true（docs/05 §17.2 #19 / §9.1）', () => {
+    // 🔴 なぜ静的に固定するか: `gate.run` は `jobId`（= `gate.run:{targetType}:{targetId}:{contentHash}`）を
+    //    冪等キーに使う。BullMQ は同じ `jobId` が completed セットに残っている間 `add` を無視するため、
+    //    HELD（AI 上限で未実行）として**正常終了**した記録が残ると、`gate.hold-release` と #39 の
+    //    再 enqueue が**静かに捨てられ**、対象が `GATE_RUNNING` に留まり続ける。
+    //    型（`InternalQueueOptions.removeOnComplete?`）は任意項目なので、抜けても落ちない。
+    const definition = analysis.definitions.find((entry) => entry.name === 'gate.run');
+    expect(definition, 'gate.run のキュー定義が無い').toBeDefined();
+    expect(definition?.factory).toBe(INTERNAL_QUEUE_FACTORY);
+    expect(gateRunOptions()).toMatchObject({ attempts: '1', removeOnComplete: 'true' });
+  });
+
+  it('🔴 removeOnFail は付けない（failed は §16.5 の失敗ジョブ数の根拠。§9.10 の再実行手順が消す）', () => {
+    expect(gateRunOptions()).not.toHaveProperty('removeOnFail');
   });
 
   it('🔴 キュー定義（attempts を持つ表）が queues.ts 以外に無い', () => {

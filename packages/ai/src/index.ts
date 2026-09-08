@@ -54,6 +54,19 @@ export {
   type MaskMethod,
   type MaskResult,
 } from './mask.js';
+// 🔴 T-07-06: 品質ゲートのパイプラインが使う写像（docs/05 §11.2 / §11.4 / §11.7）。
+//    `prepareGateExamination` は **`mask()` を必ず通す**唯一の入口であり、
+//    ここを迂回して `runRole(gateInspectorSpec, ...)` に生の本文を渡すことは型としてできない
+//    （`GateInspectorSection.text` は `MaskedText`）。
+export {
+  EmptyGateContentError,
+  interpretGateInspection,
+  prepareGateExamination,
+  toRawOffset,
+  type InterpretedGateInspection,
+  type MaskOffsetMap,
+  type PreparedGateExamination,
+} from './gate/examine.js';
 export { catalogRoleModelResolver, type ModelCatalog, type RoleModelQuery, type RoleModelResolver } from './models.js';
 // 🔴 プロンプト管理（docs/05 §7.7 / T-07-05）。**文面ではなく「版で引く手段」だけを出す。**
 //    `PROMPT_KIT`（プロンプトの組み立て道具）は出さない —— 出すと、ロール定義を経ない

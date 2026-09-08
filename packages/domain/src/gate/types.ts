@@ -15,6 +15,58 @@ export const GATE_LAYERS = ['PII', 'COMMERCE', 'CONSISTENCY'] as const;
 
 export type GateLayer = (typeof GATE_LAYERS)[number];
 
+/**
+ * ゲートの対象（`ReviewGate.targetType`。docs/05 §3.6 / §11.1）。テナント外へ共有される 5 種。
+ *
+ * 🔴 **宣言の唯一の出所をここに移した**（T-07-06）。理由は `AI_ROLES`（docs/05 §7.9 ⑤）と同じで、
+ *    ①パイプラインの入力型（`GateInput`。§11.3）②CHECK を持つ側（`packages/db`）
+ *    ③ジョブの payload と `jobId`（`packages/connectors`）が**同じ 1 つの値集合**を要るのに、
+ *    3 者は相互に依存できない（`CLAUDE.md` §2.1）。共有点は domain しか無い。
+ *    `packages/db/src/schema-value-sets.ts` の `REVIEW_GATE_TARGET_TYPES` は本定数の re-export
+ *    であり、`tests/static/schema-enum-drift.test.ts` の突合の入口は変えていない。
+ */
+export const GATE_TARGET_TYPES = [
+  'PROPOSAL',
+  'SKILL_SHEET_SHARE',
+  'PROJECT_PUBLISH',
+  'CHAT_ATTACHMENT',
+  'CONTRACT_DOCUMENT',
+] as const;
+
+export type GateTargetType = (typeof GATE_TARGET_TYPES)[number];
+
+/** ジョブ payload・API 入力の絞り込み（🔴 未知の値を黙って通さない）。 */
+export function isGateTargetType(value: unknown): value is GateTargetType {
+  return typeof value === 'string' && (GATE_TARGET_TYPES as readonly string[]).includes(value);
+}
+
+/**
+ * 🔴 Phase 1 でゲートを実行できる対象（`F-020` の入力欄。docs/sprints/SP-07 T-07-06）。
+ *
+ * `CHAT_ATTACHMENT` は Phase 2（`F-038`）、`CONTRACT_DOCUMENT` は Phase 3（`F-047`）である。
+ * 🔴 **値集合を先に 5 種で確定させ、実行できる範囲だけを狭める**（`ReviewGate.targetType` の
+ *    CHECK は SP-02 で 5 種を持っている）。後から `targetType` を足す形にすると、
+ *    DB の CHECK・継承トリガ（§4.4.1）・本表の 3 箇所を同時に直す必要が生じる。
+ */
+export const PHASE1_GATE_TARGET_TYPES = [
+  'PROPOSAL',
+  'SKILL_SHEET_SHARE',
+  'PROJECT_PUBLISH',
+] as const satisfies readonly GateTargetType[];
+
+export type Phase1GateTargetType = (typeof PHASE1_GATE_TARGET_TYPES)[number];
+
+/**
+ * ゲートの実行属性（`ReviewGate.execution`。docs/05 §3.6 / §7.6）。
+ *
+ * 🔴 **状態機械の状態ではない**（`P-A-16`。`CLAUDE.md` §4.2 の 5 状態機械に状態を 1 つも足さない）。
+ *    `HELD_AI_COST_LIMIT` は「AI の日次コスト上限で**呼べなかった**ので未判定のまま保持している」
+ *    という実行の属性であり、`GATE_FAILED`（元データの欠陥）とは別物である（`F-027 AC-5`）。
+ */
+export const GATE_EXECUTIONS = ['DONE', 'HELD_AI_COST_LIMIT'] as const;
+
+export type GateExecution = (typeof GATE_EXECUTIONS)[number];
+
 /** 層ごとの合否（docs/05 §3.6 `GateVerdict`）。🔴 「保留」はここに無い（`ReviewGate.execution` の属性）。 */
 export const GATE_VERDICTS = ['PASS', 'FAIL'] as const;
 

@@ -93,41 +93,40 @@ export type RequirementKind = (typeof REQUIREMENT_KINDS)[number];
 /**
  * docs/05 §3.6 `ReviewGate.targetType`（TEXT + CHECK）。テナント外へ共有される 5 種。
  * 🔴 `CONTRACT_DOCUMENT` を含む（契約書のゲート対象化。決定済み。Issue #15 / `BR-15`）。
+ *
+ * 🔴 **宣言の唯一の出所は `packages/domain`**（T-07-06）。ここは re-export である ——
+ *    パイプラインの入力型（`GateInput`。docs/05 §11.3）を組み立てる側（`packages/ai` /
+ *    `apps/worker`）と CHECK を持つ側（本パッケージ）は相互に依存できず（`CLAUDE.md` §2.1）、
+ *    共有点が domain しか無い（`ScanStatus` / `AI_ROLES` と同じ整理。docs/05 §7.9 ⑤）。
+ *    `tests/static/schema-enum-drift.test.ts` は引き続き `@ses/db` の名前で突合する。
  */
-export const REVIEW_GATE_TARGET_TYPES = [
-  'PROPOSAL',
-  'SKILL_SHEET_SHARE',
-  'PROJECT_PUBLISH',
-  'CHAT_ATTACHMENT',
-  'CONTRACT_DOCUMENT',
-] as const;
-
-export type ReviewGateTargetType = (typeof REVIEW_GATE_TARGET_TYPES)[number];
+export { GATE_TARGET_TYPES as REVIEW_GATE_TARGET_TYPES } from '@ses/domain';
+export type { GateTargetType as ReviewGateTargetType } from '@ses/domain';
 
 /**
  * docs/05 §3.6 `ReviewGate.execution`（TEXT + CHECK）。🔴 状態機械の状態ではなく実行の属性
  * （`P-A-16`。CLAUDE.md §4.2 の 5 状態機械に状態を 1 つも追加しない）。
+ * 🔴 宣言の出所は `packages/domain`（上記と同じ理由）。
  */
-export const REVIEW_GATE_EXECUTIONS = ['DONE', 'HELD_AI_COST_LIMIT'] as const;
-
-export type ReviewGateExecution = (typeof REVIEW_GATE_EXECUTIONS)[number];
+export { GATE_EXECUTIONS as REVIEW_GATE_EXECUTIONS } from '@ses/domain';
+export type { GateExecution as ReviewGateExecution } from '@ses/domain';
 
 /**
  * docs/05 §3.6 `GateVerdict`（TEXT + CHECK）。`review_gates.pii_verdict` /
  * `.commerce_verdict` / `.consistency_verdict` で共有する。
+ * 🔴 宣言の出所は `packages/domain`（T-07-05 で `gate/types.ts` に入った）。
  */
-export const GATE_VERDICTS = ['PASS', 'FAIL'] as const;
-
-export type GateVerdict = (typeof GATE_VERDICTS)[number];
+export { GATE_VERDICTS } from '@ses/domain';
+export type { GateVerdict } from '@ses/domain';
 
 /**
  * docs/05 §3.6 `GateLayer`。`review_gates.findings[].layer`（JSON）の値集合であり、
  * 独立した DB 列の CHECK ではない（`findings` は JSONB）。🔴 そのため
  * `tests/static/schema-enum-drift.test.ts` の突合対象には含めない。
+ * 🔴 宣言の出所は `packages/domain`（同上）。
  */
-export const GATE_LAYERS = ['PII', 'COMMERCE', 'CONSISTENCY'] as const;
-
-export type GateLayer = (typeof GATE_LAYERS)[number];
+export { GATE_LAYERS } from '@ses/domain';
+export type { GateLayer } from '@ses/domain';
 
 /** docs/05 §3.6 `ProposalEvent.kind`（TEXT + CHECK）。 */
 export const PROPOSAL_EVENT_KINDS = ['STATE', 'NOTE', 'ATTACHMENT'] as const;

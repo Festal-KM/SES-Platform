@@ -476,6 +476,33 @@ function collect(
   }
 }
 
+/**
+ * 伏せるべき箇所（**位置と種別だけ**。T-07-06）。
+ *
+ * 🔴 **一致した文字列を持たない**（`MaskHit` と同じ理由。docs/05 §7.10 ⑤）。品質ゲートの
+ *    機械的検出（§11.4）が `GateFinding.offsetStart` / `offsetEnd` を作るために位置を要るが、
+ *    そこに原文を載せると `ReviewGate.findings`（JSON）が PII の再出現経路になる。
+ */
+export type SensitiveSpan = {
+  /** 原文（マスキング前）の UTF-16 オフセット。 */
+  readonly start: number;
+  readonly end: number;
+  readonly category: MaskCategory;
+  readonly method: MaskMethod;
+};
+
+export type LocateSensitiveOptions = {
+  /**
+   * パターン検出（補助）を含めるか（既定 `true`）。
+   *
+   * 🔴 品質ゲートの機械的検出は `false` で呼ぶ。§11.4 が FAIL の根拠にするのは
+   *    **既知値**（台帳の氏名・公開範囲外の企業名）に限られる —— パターン検出まで FAIL に
+   *    すると、提案本文の末尾に自社担当者の署名（自分のメール・電話）が入っているだけで
+   *    毎回 FAIL になり、`BR-18`（解消手段は元データの修正のみ）が空回りする。
+   */
+  readonly includePatterns?: boolean;
+};
+
 type Span = { start: number; end: number; best: RawMatch };
 
 /**
@@ -523,6 +550,44 @@ function isBetter(candidate: RawMatch, current: RawMatch): boolean {
  * @param known DB の台帳から取得した既知値。🔴 呼び出し側は対象エンジニア・対象案件の値を必ず渡す。
  */
 export function mask(raw: string, known: KnownSensitiveValues): MaskResult {
+  const spans = locateSensitive(raw, known);
+  const counts = new Map<string, number>();
+  let out = '';
+  let cursor = 0;
+  for (const span of spans) {
+    out += raw.slice(cursor, span.start) + PLACEHOLDER[span.category];
+    cursor = span.end;
+    const key = `${span.category} ${span.method}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  out += raw.slice(cursor);
+
+  const hits: MaskHit[] = [...counts.entries()]
+    .map(([key, count]) => {
+      const [category, method] = key.split(' ') as [MaskCategory, MaskMethod];
+      return { category, method, count };
+    })
+    .sort((a, b) => rankOf(a.category) - rankOf(b.category) || a.method.localeCompare(b.method));
+
+  return { text: brand(out), hits };
+}
+
+/**
+ * 🔴 **伏せるべき箇所の位置だけ**を返す（T-07-06。docs/05 §11.4 の機械的検出が使う）。
+ *
+ * `mask()` と**同じ 1 つの照合**である（`mask()` は本関数の結果を置換に使う）。品質ゲートが
+ * 独自に「台帳の氏名を本文から探す」実装を持つと、表記ゆれの吸収（全角・区切り・法人格の略記）が
+ * 2 箇所に分かれ、片方だけが直る —— そのとき **LLM には伏せて送っているのにゲートは見逃す**
+ * （またはその逆）という、最も気づきにくい壊れ方になる。
+ *
+ * 🔴 戻り値は位置と種別だけであり、一致した文字列を含まない（`SensitiveSpan` の 🔴）。
+ * 🔴 重なりは結合済み・`start` の昇順（`buildSpans`）。したがって置換にもハイライトにも使える。
+ */
+export function locateSensitive(
+  raw: string,
+  known: KnownSensitiveValues,
+  options: LocateSensitiveOptions = {},
+): readonly SensitiveSpan[] {
   const matches: RawMatch[] = [];
 
   for (const rule of KNOWN_FIELD_RULES) {
@@ -533,28 +598,16 @@ export function mask(raw: string, known: KnownSensitiveValues): MaskResult {
       }
     }
   }
-  for (const rule of PATTERN_RULES) {
-    collect(raw, rule.regex, rule.category, 'PATTERN', matches, rule.validate);
+  if (options.includePatterns !== false) {
+    for (const rule of PATTERN_RULES) {
+      collect(raw, rule.regex, rule.category, 'PATTERN', matches, rule.validate);
+    }
   }
 
-  const spans = buildSpans(matches);
-  const counts = new Map<string, number>();
-  let out = '';
-  let cursor = 0;
-  for (const span of spans) {
-    out += raw.slice(cursor, span.start) + PLACEHOLDER[span.best.category];
-    cursor = span.end;
-    const key = `${span.best.category} ${span.best.method}`;
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-  }
-  out += raw.slice(cursor);
-
-  const hits: MaskHit[] = [...counts.entries()]
-    .map(([key, count]) => {
-      const [category, method] = key.split(' ') as [MaskCategory, MaskMethod];
-      return { category, method, count };
-    })
-    .sort((a, b) => rankOf(a.category) - rankOf(b.category) || a.method.localeCompare(b.method));
-
-  return { text: brand(out), hits };
+  return buildSpans(matches).map((span) => ({
+    start: span.start,
+    end: span.end,
+    category: span.best.category,
+    method: span.best.method,
+  }));
 }
