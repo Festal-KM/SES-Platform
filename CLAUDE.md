@@ -96,7 +96,7 @@ ses-platform/
     config/         # 環境変数の Zod スキーマ。APP_ENV による実装差し替え（DI）
     ui/             # 共有 UI コンポーネント
     i18n/           # ユーザー向け文言
-  prompts/          # バージョン付きプロンプト。packages/ai からのみ読む
+  prompts/          # バージョン付きプロンプト。製品プロンプトは prompts/roles/{role}.v{n}.ts に置く（[Issue #23](https://github.com/Festal-KM/SES-Platform/issues/23) で決定、2026-09-08。直下のテンプレート文書はハーネス由来でありそのまま）。packages/ai からのみ読む
   scripts/          # 運用スクリプト（ワイヤーフレーム生成など）
   tests/e2e/        # Playwright
   docs/             # 設計ドキュメント（§8 の成果物）

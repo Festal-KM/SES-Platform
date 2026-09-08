@@ -167,7 +167,7 @@ ses-platform/
       src/mock/                           # モック実装（E2E と同一実装。§13.3）
     config/         # schema.ts（Zod）/ load-env.ts / connector-selection.ts（🔴 APP_ENV 分岐の唯一の場所。resolveConnectorSelection(env)）/ limits.ts / redact.ts
     ui/, i18n/
-  prompts/          # {role}.v{n}.ts。packages/ai からのみ読む
+  prompts/          # 製品プロンプトは roles/{role}.v{n}.ts（Issue #23 決定 A、2026-09-08）。packages/ai からのみ読む
   scripts/
   tests/e2e/
   docs/
@@ -2852,15 +2852,16 @@ export async function reserveAiCost(tenantId: string, estimatedUsd: Decimal, now
 
 ```
 prompts/
-  {role}.v{n}.ts            # 例: sheet-parser.v1.ts → export const prompt = { system, user, version: 'sheet-parser.v1' }
-  index.ts                  # ROLE_PROMPTS: Record<AiRole, PromptModule>（現行版を指す）
+  roles/                    # 製品プロンプトはこの配下（Issue #23 決定 A、2026-09-08。prompts/ 直下のテンプレート文書はハーネス由来で対象外）
+    {role}.v{n}.ts          # 例: sheet-parser.v1.ts → export const prompt = { system, user, version: 'sheet-parser.v1' }
+    index.ts                # ROLE_PROMPTS: Record<AiRole, PromptModule>（現行版を指す）
 ```
 | 規約 | 内容 |
 |---|---|
 | **命名** | `{ロール}.v{n}.ts`（`CLAUDE.md` §3.2 の「用途」= ロール） |
-| **版の切替** | `prompts/index.ts` の 1 行を書き換える。**古い版のファイルを消さない**（生成物から再現するため） |
+| **版の切替** | `prompts/roles/index.ts` の 1 行を書き換える。**古い版のファイルを消さない**（生成物から再現するため） |
 | **記録** | 生成物に `promptVersion` を NOT NULL で保存（§7.3） |
-| **参照制限** | `prompts/**` を import できるのは `packages/ai` のみ（ESLint） |
+| **参照制限** | `prompts/roles/**` を import できるのは `packages/ai` のみ（ESLint。制限の対象を roles/ 配下に明確化 — Issue #23 決定 A。直下のテンプレート文書 *.md は import 対象になり得ないため射程外） |
 | **スキーマとの結合** | 🔴 **プロンプト版を上げるたびに出力スキーマを変えない**（Anthropic のスキーマキャッシュが 24 時間効く。変えると初回レイテンシが毎回発生し、`F-020` の 30 秒目標に効く。`docs/03` §3.3.3） |
 
 ### 7.8 PII マスキングとプロンプトインジェクション対策
