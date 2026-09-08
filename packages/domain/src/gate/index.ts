@@ -11,6 +11,16 @@ export type {
   GateDecisionInput,
   GateLayerResult,
 } from './decide.js';
+// 🔴 T-07-08: 内容のハッシュの材料（docs/05 §11.5）。SHA-256 を取るのは `packages/db` 側である
+//    （domain は `node:crypto` を import できない。§17.2 #14）。
+export { GATE_HASH_ALGORITHM_VERSION, gateHashSource, GateHashInputError } from './hash.js';
+export type {
+  GateHashAttachment,
+  GateHashInput,
+  GateHashSkill,
+  GateHashSnapshot,
+  ProposalGateHashInput,
+} from './hash.js';
 export { hasInspectableText } from './input.js';
 export type {
   GateAudience,

@@ -249,7 +249,19 @@ export type GateRunJob = {
 export const GATE_RUN_JOB = 'gate.run' satisfies InternalJobName;
 
 /**
- * 🔴 `gate.run` の `jobId`（docs/05 §9.3）。**同一対象・同一内容のゲートを多重化させない。**
+ * 🔴 区切り文字（docs/05 §9.3 のスケッチは `:` だったが **`.` に変えた**。T-07-08 / §11.10）。
+ *
+ * 🔴 **理由は BullMQ の実装制約である**（実測。`bullmq@6` の `Job.validateOptions`）:
+ *    カスタム `jobId` に `:` を含められない（Redis のキー名前空間が `bull:{queue}:{id}` の形で
+ *    `:` を使うため）。`:` を使うと `add` が例外になり、**レビュー依頼が丸ごと失敗する**。
+ * 🔴 意味は 1 ビットも変わらない —— この ID に求められるのは
+ *    「(対象種別 × 対象 × 内容) が同じなら同じ文字列」だけであり、区切りの見た目ではない。
+ *    **この ID をパースする実装を書かないこと**（`jobId` は不透明な鍵である）。
+ */
+const GATE_RUN_JOB_ID_SEPARATOR = '.';
+
+/**
+ * 🔴 `gate.run` の `jobId`（docs/05 §9.3 / §11.10）。**同一対象・同一内容のゲートを多重化させない。**
  *
  * BullMQ は同じ `jobId` の待機中・実行中ジョブを重複排除する。#39 の手動再実行と
  * `gate.hold-release` の自動再実行が同時に走っても、**キューに乗るのは 1 本**である
@@ -258,8 +270,57 @@ export const GATE_RUN_JOB = 'gate.run' satisfies InternalJobName;
  * 🔴 **組み立てを 2 箇所に書かない。** 材料の順序が 1 つでも違えば別の `jobId` になり、
  *    重複排除は「書いてあるだけ」になる。
  */
-export function gateRunJobId(job: Pick<GateRunJob, 'targetType' | 'targetId' | 'contentHash'>): string {
-  return `${GATE_RUN_JOB}:${job.targetType}:${job.targetId}:${job.contentHash}`;
+export function gateRunJobId(job: GateRunJobKey): string {
+  return [GATE_RUN_JOB, job.targetType, job.targetId, job.contentHash].join(
+    GATE_RUN_JOB_ID_SEPARATOR,
+  );
+}
+
+/** `jobId` を決める材料（対象 1 件 × 内容 1 版）。 */
+export type GateRunJobKey = Pick<GateRunJob, 'targetType' | 'targetId' | 'contentHash'>;
+
+/**
+ * 🔴 失敗した `gate.run` を消したかどうか（docs/05 §9.10 ②）。T-07-08。
+ *
+ * - `REMOVED` … `failed` だったので消した（同 `jobId` の再 enqueue が通るようになる）
+ * - 🔴 `NOT_FAILED` … `waiting` / `active` だった。**消さない**（走っているものを止めない。
+ *   この場合の再 enqueue は BullMQ の重複排除で no-op になる）
+ * - `NOT_FOUND` … その `jobId` のジョブが無い（`removeOnComplete: true` で消えている等）
+ */
+export type GateRunFailedJobRemoval = 'REMOVED' | 'NOT_FAILED' | 'NOT_FOUND';
+
+/**
+ * 🔴 `gate.run` の enqueue 側の契約（`apps/web` の #39 と `apps/worker` の
+ *    `gate.hold-release` が使う。docs/05 §9.3 / §9.10）。
+ *
+ * 🔴 **`jobId` を引数に取らない。** 実装が `gateRunJobId(job)` で組み立てるため、
+ *    呼び出し側が別の文字列を渡す余地が無い（組み立てが 2 箇所に散ると重複排除が
+ *    「書いてあるだけ」になる。`gateRunJobId` の 🔴）。
+ * 🔴 **`attempts` / `backoff` を引数に取らない**（既定ジョブオプションは `QUEUE_DEFINITIONS`
+ *    だけが決める。§9.1 / §17.2 #6）。
+ */
+export type GateRunJobQueue = {
+  enqueue(job: GateRunJob): Promise<void>;
+  /**
+   * 🔴 §9.10 ②「**状態が `failed` のときだけ** `Job.remove()`」。
+   *    `removeOnFail` を付けていない（§9.1）ため、失敗の記録が残ったままだと
+   *    **同じ `jobId` の `add` が静かに捨てられる**（対象が `GATE_RUNNING` に留まり続ける）。
+   */
+  removeFailedJob(key: GateRunJobKey): Promise<GateRunFailedJobRemoval>;
+};
+
+/**
+ * 🔴 「消してよいのは `failed` だけ」という規則（docs/05 §9.10 ②）。**判定はここ 1 箇所**である。
+ *
+ * 実装（BullMQ）はこの関数を通してから `Job.remove()` を呼ぶ。規則を実装の中に
+ * インラインで書くと、Redis を立てないと検証できない判断になってしまう。
+ *
+ * @param state `Job.getState()` の値（未存在は `null`）。BullMQ の `JobState` は
+ *        `completed` / `failed` / `active` / `delayed` / `prioritized` / `waiting` /
+ *        `waiting-children` と `unknown` を取りうる。
+ */
+export function shouldRemoveGateRunJob(state: string | null): boolean {
+  return state === 'failed';
 }
 
 export type QueueName = keyof typeof QUEUE_DEFINITIONS;

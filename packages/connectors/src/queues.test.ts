@@ -18,6 +18,7 @@ import {
   gateRunJobId,
   internalQueue,
   queueDefinition,
+  shouldRemoveGateRunJob,
   steppedBackoffDelayMs,
   type ExternalSendQueueOptions,
   type InternalQueueOptions,
@@ -154,17 +155,45 @@ describe('🔴 gate.run のキューと冪等キー（T-07-06。docs/05 §9.1 / 
     expect(INTERNAL_JOB_NAMES as readonly string[]).toContain('gate.run');
   });
 
-  it('🔴 jobId は {targetType}:{targetId}:{contentHash} で組み立てる（多重化しない）', () => {
+  it('🔴 jobId は {targetType}.{targetId}.{contentHash} で組み立てる（多重化しない）', () => {
     expect(
       gateRunJobId({ targetType: 'PROPOSAL', targetId: 'p1', contentHash: 'h1' }),
-    ).toBe('gate.run:PROPOSAL:p1:h1');
+    ).toBe('gate.run.PROPOSAL.p1.h1');
     expect(GATE_RUN_JOB).toBe('gate.run');
+  });
+
+  it('🔴 jobId に `:` を含めない（BullMQ の `Job.validateOptions` が拒否する。§11.10）', () => {
+    // 🔴 実測で分かった制約。`:` を使うと `queue.add` が例外になり、レビュー依頼が丸ごと失敗する。
+    expect(
+      gateRunJobId({
+        targetType: 'PROPOSAL',
+        targetId: '01930000-0000-7000-8000-000000000111',
+        contentHash: 'a'.repeat(64),
+      }),
+    ).not.toContain(':');
   });
 
   it('🔴 内容が 1 文字でも違えば別の jobId になる（同じ内容なら同じ結果、という前提の裏返し）', () => {
     const base = { targetType: 'PROPOSAL', targetId: 'p1', contentHash: 'h1' } as const;
     expect(gateRunJobId(base)).not.toBe(gateRunJobId({ ...base, contentHash: 'h2' }));
     expect(gateRunJobId(base)).not.toBe(gateRunJobId({ ...base, targetType: 'PROJECT_PUBLISH' }));
+  });
+});
+
+describe('🔴 shouldRemoveGateRunJob（docs/05 §9.10 ②「failed のときだけ削除する」）', () => {
+  it('failed のときだけ true', () => {
+    expect(shouldRemoveGateRunJob('failed')).toBe(true);
+  });
+
+  it.each(['waiting', 'active', 'delayed', 'prioritized', 'waiting-children', 'completed', 'unknown'])(
+    '🔴 %s は削除しない（走っているものを止めない / 確定した結果を消さない）',
+    (state) => {
+      expect(shouldRemoveGateRunJob(state)).toBe(false);
+    },
+  );
+
+  it('ジョブが無いとき（null）も削除の対象にならない', () => {
+    expect(shouldRemoveGateRunJob(null)).toBe(false);
   });
 });
 

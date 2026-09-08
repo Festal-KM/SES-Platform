@@ -25,7 +25,9 @@
 
 import { Prisma } from '@prisma/client';
 import type { GateExecution, GateFinding, GateTargetType, GateVerdict, PersistedGateResult } from '@ses/domain';
-import type { SystemTenantCtx } from './context.js';
+import { AI_COST_PERIOD_KIND } from './ai-cost-guard.js';
+import type { AuthenticatedTenantCtx, SystemTenantCtx } from './context.js';
+import { usagePeriodResetAt } from './usage-period.js';
 import { uuidV7 } from './uuid.js';
 import { runInTenantTransaction } from './with-tenant.js';
 
@@ -125,11 +127,14 @@ function fromJson(value: unknown): readonly GateFinding[] {
  *    という直しようのない状態になる（`BR-18` の解消手段が存在しなくなる）。
  */
 export async function findCachedReviewGate(
-  ctx: SystemTenantCtx,
+  ctx: AuthenticatedTenantCtx,
   key: ReviewGateKey,
 ): Promise<CompletedReviewGate | null> {
   return runInTenantTransaction(
-    { tenantId: ctx.tenantId, partnerCompanyId: null, actorUserId: ctx.userId },
+    // 🔴 分離キーは ctx から**そのまま**取る（`readReviewGateResult` と同じ理由。T-07-08 で
+    //    #39 が利用者の文脈から呼ぶようになった）。ホスト相当に固定すると、パートナー所属の
+    //    利用者の判定が他社の行を見てしまう。
+    { tenantId: ctx.tenantId, partnerCompanyId: ctx.partnerCompanyId, actorUserId: ctx.userId },
     async (tx) => {
       const row = await tx.reviewGate.findFirst({
         where: {
@@ -169,11 +174,12 @@ export async function findCachedReviewGate(
 
 /** 保留中の行を読む（対象ごとに 1 行。部分 UNIQUE）。 */
 export async function findPendingReviewGate(
-  ctx: SystemTenantCtx,
+  ctx: AuthenticatedTenantCtx,
   target: Pick<ReviewGateKey, 'targetType' | 'targetId'>,
 ): Promise<PendingReviewGate | null> {
   return runInTenantTransaction(
-    { tenantId: ctx.tenantId, partnerCompanyId: null, actorUserId: ctx.userId },
+    // 🔴 `findCachedReviewGate` と同じ（#39 が利用者の文脈から呼ぶ。T-07-08）。
+    { tenantId: ctx.tenantId, partnerCompanyId: ctx.partnerCompanyId, actorUserId: ctx.userId },
     async (tx) => {
       const row = await tx.reviewGate.findFirst({
         where: {
@@ -344,13 +350,22 @@ export async function completeReviewGate(
  *
  * 🔴 保留行（`execution <> 'DONE'`）を優先して返す。保留中に古い `DONE` の行を返すと、
  *    画面は「確定済み」と表示し、利用者は上限で止まっていることに気づけない（`F-027 AC-5`）。
+ *
+ * 🔴 **本関数だけは利用者の文脈（`AuthenticatedTenantCtx`）でも呼ぶ**（#40。T-07-08）。
+ *    したがって分離キーは ctx から**そのまま**取る —— 上の書き込み系のように
+ *    `partnerCompanyId: null`（ホスト相当）に固定してはならない。固定すると、パートナー所属の
+ *    利用者の読み取りがホスト文脈で走り、`review_gates` の C5 ポリシー
+ *    （`app_is_host() OR owner_partner_company_id = app_partner_id()`）が**他社のゲート結果まで
+ *    見せてしまう**（`CLAUDE.md` §3.1 の第二境界をその場で破る）。
+ *    `SystemTenantCtx` は `AuthenticatedTenantCtx` の部分型であり、その `partnerCompanyId` は
+ *    常に `null` なので、ジョブ側の呼び出しの振る舞いは 1 ビットも変わらない。
  */
 export async function readReviewGateResult(
-  ctx: SystemTenantCtx,
+  ctx: AuthenticatedTenantCtx,
   target: Pick<ReviewGateKey, 'targetType' | 'targetId'>,
 ): Promise<(PersistedGateResult & { readonly id: string; readonly heldSince: Date | null }) | null> {
   return runInTenantTransaction(
-    { tenantId: ctx.tenantId, partnerCompanyId: null, actorUserId: ctx.userId },
+    { tenantId: ctx.tenantId, partnerCompanyId: ctx.partnerCompanyId, actorUserId: ctx.userId },
     async (tx) => {
       const rows = await tx.reviewGate.findMany({
         where: { targetType: target.targetType, targetId: target.targetId },
@@ -385,4 +400,30 @@ export async function readReviewGateResult(
       };
     },
   );
+}
+
+/** `GateHeldView`（docs/05 §11.7）の時刻 2 つ。ISO 8601。 */
+export type GateHoldTimestamps = {
+  readonly heldSince: string;
+  readonly resetAt: string;
+};
+
+/**
+ * 🔴 保留の「いつから」と「いつ再開するか」（#40 が `GateHeldView` を組み立てるために使う。
+ *    docs/05 §11.7 / §11.9 ⑧-4）。T-07-08。
+ *
+ * 🔴 **`packages/domain` では作れない。** `resetAt` は暦（`Asia/Tokyo` の翌 0 時）の計算であり、
+ *    domain は `new Date(...)` を持てない（`tests/static/domain-purity.test.ts`。§17.2 #14）。
+ * 🔴 期間の種別は AI の日次コスト上限と**同じ 1 つの定数**（`AI_COST_PERIOD_KIND`）から取る。
+ *    ここに `'DAY'` を書き写すと、上限の集計期間を変えたときに「表示だけ古い暦」になる。
+ * 🔴 金額（USD）を返さない（`F-027 AC-6`。利用者に見せてよいのは理由と再開時刻だけ）。
+ */
+export function gateHoldTimestamps(input: {
+  readonly heldSince: Date;
+  readonly now: Date;
+}): GateHoldTimestamps {
+  return {
+    heldSince: input.heldSince.toISOString(),
+    resetAt: usagePeriodResetAt(AI_COST_PERIOD_KIND, input.now).toISOString(),
+  };
 }

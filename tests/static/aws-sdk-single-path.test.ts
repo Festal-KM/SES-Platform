@@ -144,7 +144,17 @@ describe('🔴 AWS SDK の単一経路（CLAUDE.md §3.4 / BR-22 / docs/03 §3.2
     const manifest = JSON.parse(
       readFileSync(path.join(repoRoot, 'packages/connectors/package.json'), 'utf8'),
     ) as { exports: Record<string, unknown> };
-    expect(Object.keys(manifest.exports).sort()).toEqual(['.', './aws']);
+    // 🔴 **サブパスの集合を閉じたまま保つ**（増えたら必ずここが落ち、意図を書かせる）。
+    //    `./bullmq` は T-07-08 で足した BullMQ の実体化の入口（docs/05 §11.10）であり、
+    //    AWS SDK には触れない（下の検査がそれを固定する）。
+    expect(Object.keys(manifest.exports).sort()).toEqual(['.', './aws', './bullmq']);
+
+    // 🔴 `./bullmq` から AWS SDK に到達できないこと（サブパスが増えても SDK の経路は 1 本のまま）。
+    const bullmqEntry = stripComments(
+      readFileSync(path.join(repoRoot, 'packages/connectors/src/bullmq.ts'), 'utf8'),
+    );
+    expect(bullmqEntry).not.toContain('aws-sdk');
+    expect(bullmqEntry).not.toContain('@aws-sdk/');
   });
 
   it('🔴 ses/index.ts（主バレルが読む面）もアダプタを re-export しない', () => {

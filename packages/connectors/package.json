@@ -13,6 +13,10 @@
     "./aws": {
       "types": "./dist/aws.d.ts",
       "default": "./dist/aws.js"
+    },
+    "./bullmq": {
+      "types": "./dist/bullmq.d.ts",
+      "default": "./dist/bullmq.js"
     }
   },
   "scripts": {
@@ -23,6 +27,8 @@
     "@aws-sdk/client-s3": "3.1127.0",
     "@aws-sdk/client-sesv2": "3.1127.0",
     "@aws-sdk/s3-request-presigner": "3.1127.0",
-    "@ses/domain": "workspace:*"
+    "@ses/domain": "workspace:*",
+    "bullmq": "^6.3.4",
+    "ioredis": "^6.0.0"
   }
 }

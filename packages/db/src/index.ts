@@ -392,9 +392,19 @@ export {
   completeReviewGate,
   findCachedReviewGate,
   findPendingReviewGate,
+  gateHoldTimestamps,
   holdReviewGate,
   readReviewGateResult,
 } from './review-gate.js';
+export type { GateHoldTimestamps } from './review-gate.js';
+// 🔴 T-07-08: ゲート対象の内容のハッシュ（docs/05 §11.5）の唯一の出所。
+//    #37（内容の更新）・#39（レビュー依頼）・承認 CAS（#41）が**同じ 1 実装**を通る。
+export {
+  computeProposalContentHash,
+  gateContentHash,
+  readProposalGateHashInput,
+} from './gate-content-hash.js';
+export type { ProposalContentHashReader } from './gate-content-hash.js';
 export type {
   CompletedReviewGate,
   PendingReviewGate,

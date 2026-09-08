@@ -2546,8 +2546,8 @@ requireEsignConnection(ctx);                           // 🔴 §8.4。未接続
 | 36 | `POST /api/proposals` | `F-019` / `S-020` | `{ projectId, engineerId?, proposalRequestId?, recipient..., offered..., subject?, body? }` | `{ id }` | 作成者の境界内 |
 | 37 | `PATCH /api/proposals/{id}` | `F-019` | 部分更新 | `{ id, contentHash }` | 🔴 `DRAFT` のみ。他状態は 422 |
 | 38 | `POST /api/proposals/{id}/draft` | `F-034` / Phase 2 | — | `{ jobId }` | 同上 |
-| 39 | `POST /api/proposals/{id}/gate` | `F-020` / `F-027` / `S-020` | — | `{ jobId }`（非同期） | `DRAFT` → 🔴 `GATE_RUNNING` へ CAS して `gate.run` を enqueue。🔴 **`GATE_RUNNING` かつ `review_gates.execution='HELD_AI_COST_LIMIT'` の行があるときも許可 = 手動再実行**（`F-027 AC-5`。作成者 / `SALES` / `ADMIN`）: 状態は変えず、`gate.run` を**同じ payload・同じ `jobId`** で enqueue する。§9.3 の 3 段（HELD 部分 UNIQUE / `jobId` 重複排除 / 完了 CAS）で `gate.hold-release` と多重化しない。🔴 **HELD 行の無い `GATE_RUNNING`（= `gate.run` の failed 滞留。§16.5 の `JOB_FAILED`）も同じ主体に許可 = 失敗ジョブの再依頼**（Issue #16）: 状態は変えず、§9.10 の手順（`failed` の同 `jobId` を `Job.remove()` → `DONE` 行が無いことを確認 → 同じ payload・同じ `jobId` で再 enqueue）を実行する。**運営者向けの retry 操作は作らない**。`DONE` 行があるときと他状態は 422 |
-| 40 | `GET /api/proposals/{id}/gate` | `F-020` / `F-027` | — | `GateResultView`（§11.7）= `{ execution:'RUNNING'\|'DONE'\|'HELD_AI_COST_LIMIT', layers:{pii,commerce,consistency}, aiWarnings, aiFailed, contentHash, held? }` | 🔴 **層ごとに確定を返し、ゲート状態は 3 値**（`docs/04` 申し送り 5 / 11）。HELD のとき `held.heldReasonKey` / `resetAt` / 上限引き上げの導線と、保持済みの整合層結果を返す（`F-027 AC-5`） |
+| 39 | `POST /api/proposals/{id}/gate` | `F-020` / `F-027` / `S-020` | — | `{ jobId }`（非同期。**202**） | ⚠️ **実装済み（T-07-08）。確定形は §11.10 を正とする**（`jobId` の区切り / 3 経路の畳み方 / 認可 / 監査）。`DRAFT` → 🔴 `GATE_RUNNING` へ CAS して `gate.run` を enqueue。🔴 **`GATE_RUNNING` かつ `review_gates.execution='HELD_AI_COST_LIMIT'` の行があるときも許可 = 手動再実行**（`F-027 AC-5`。作成者 / `SALES` / `ADMIN`）: 状態は変えず、`gate.run` を**同じ payload・同じ `jobId`** で enqueue する。§9.3 の 3 段（HELD 部分 UNIQUE / `jobId` 重複排除 / 完了 CAS）で `gate.hold-release` と多重化しない。🔴 **HELD 行の無い `GATE_RUNNING`（= `gate.run` の failed 滞留。§16.5 の `JOB_FAILED`）も同じ主体に許可 = 失敗ジョブの再依頼**（Issue #16）: 状態は変えず、§9.10 の手順（`failed` の同 `jobId` を `Job.remove()` → `DONE` 行が無いことを確認 → 同じ payload・同じ `jobId` で再 enqueue）を実行する。**運営者向けの retry 操作は作らない**。`DONE` 行があるときと他状態は 422 |
+| 40 | `GET /api/proposals/{id}/gate` | `F-020` / `F-027` | — | `GateResultView`（§11.7）= `{ execution:'RUNNING'\|'DONE'\|'HELD_AI_COST_LIMIT', layers:{pii,commerce,consistency}, aiWarnings, aiFailed, contentHash, held? }` | ⚠️ **実装済み（T-07-08。§11.10 ⑦）**。🔴 **層ごとに確定を返し、ゲート状態は 3 値**（`docs/04` 申し送り 5 / 11）。HELD のとき `held.heldReasonKey` / `resetAt` / 上限引き上げの導線と、保持済みの整合層結果を返す（`F-027 AC-5`） |
 | 41 | `POST /api/proposals/{id}/approve` | `F-021` / `S-021` | 🔴 `{ }`（**空。ゲート結果を引数に取らない**） | `{ state:'APPROVED' }` | `OWNER`/`ADMIN`/`SALES`。`VIEWER`・代理閲覧は 403 |
 | 42 | `POST /api/proposals/{id}/reject` | `F-021` | `{ reason }` | `{ state:'DRAFT' }` | 同上 |
 | 43 | `POST /api/proposals/{id}/submit` | `F-022` / `S-021` | `{ }` | `{ attemptSeq, jobId }` | 🔴 `requireExecutable` + `requireVerifiedSendingDomain` |
@@ -3599,9 +3599,12 @@ type ExternalSendQueueOptions = { attempts: 1; backoff?: undefined };  type Inte
 export const externalSendQueue = <N extends ExternalSendJobName>(name: N) =>
   ({ name, defaultJobOptions: { attempts: 1 } satisfies ExternalSendQueueOptions });
 // 🔴 attempts: 2 を渡すとコンパイルエラー。キューの抽象化レイヤは作らない（docs/03 §9.2）
-// 🔴 返すのは「名前 + 既定ジョブオプション」の素のデータであり、BullMQ の `Queue` の実体化
-//    （`new Queue(def.name, { defaultJobOptions: def.defaultJobOptions })`）は起動時に apps/worker が行う
-//    （T-04-01 で確定）。packages/connectors が BullMQ に依存しないことで、キュー定義は Redis 無しで
+// 🔴 返すのは「名前 + 既定ジョブオプション」の素のデータである。⚠️ **BullMQ の `Queue` の実体化の
+//    場所は T-07-08 で変わった**（当初は「起動時に apps/worker が行う」。§11.10 ④）:
+//    `gate.run` の enqueue 側は apps/web にもある（#39 / §9.10 の failed 削除）ため、
+//    apps/worker に置くと apps/web → apps/worker の依存になり CLAUDE.md §2.1 を破る。
+//    実体化は **packages/connectors/src/bullmq.ts（`@ses/connectors/bullmq` サブパス）の 1 ファイル**に
+//    閉じる。**このファイル（queues.ts）は BullMQ に依存しないまま**なので、キュー定義は Redis 無しで
 //    ユニットテスト・静的テスト（§17.2 #6）から検査できる。
 // 🔴 `send.hold-release`（§9.4）は `send.` 接頭辞を持つが外部 API を呼ばない内部ジョブであり attempts: 3。
 //    したがって**接頭辞で再試行可否を判定しない**。可否は ExternalSendJobName に載っているかで決まり、
@@ -3636,7 +3639,7 @@ export function systemTenantCtx(tenantId: string, job: JobIdentity): HostTenantC
 | `ai.match-explain` | `{ tenantId, projectId, refs[] }` | 🔴 **上位 N 件（既定 10）を 1 リクエストにまとめる**（`docs/03` 申し送り 9） | `attempts: 1` | p95 20 秒 | `MatchCandidate.rationale` が非 null なら再生成しない |
 | `ai.proposal-draft` | `{ tenantId, proposalId }` | `runRole(proposalDrafter)` → `Proposal.draftBody` | `attempts: 1` | p95 30 秒 | `DRAFT` 以外は no-op |
 | `ai.renewal-advise` | `{ tenantId, extensionReviewId }` | `runRole(renewalAdvisor)` → `ExtensionReview.summary` | `attempts: 1` | p95 30 秒 | `summary` が非 null なら no-op |
-| `gate.run` | `{ tenantId, targetType, targetId, contentHash }` | §11 のパイプライン。🔴 **`reserveAiCost` が `AiCostLimitExceededError` なら `ReviewGate` を `execution='HELD_AI_COST_LIMIT'` で upsert し正常終了**（§7.6。対象は `GATE_RUNNING` のまま。`GATE_FAILED` にしない） | `attempts: 1` | 🔴 **p95 30 秒**（`docs/02` 章 7.1） | 🔴 **`jobId = 'gate.run:{targetType}:{targetId}:{contentHash}'`** で enqueue（BullMQ が待機中・実行中の同 ID を重複排除）。開始時に `ReviewGate(targetType, targetId, contentHash, execution='DONE')` があれば再実行しない（同じ内容なら同じ結果。`F-020 AC-3`）。HELD 行があれば**同じ行を CAS で DONE に完了**させる（`UPDATE review_gates SET execution='DONE', … WHERE id=$held AND execution='HELD_AI_COST_LIMIT'`。0 件なら結果を破棄。`P-A-09`）。🔴 **HELD 部分 UNIQUE + `jobId` + 完了 CAS の 3 段**で、#39 の手動再実行と `gate.hold-release` が同時に走っても結果は 1 行・遷移は 1 回（`F-027 AC-5`） |
+| `gate.run` | `{ tenantId, targetType, targetId, contentHash }` | §11 のパイプライン。🔴 **`reserveAiCost` が `AiCostLimitExceededError` なら `ReviewGate` を `execution='HELD_AI_COST_LIMIT'` で upsert し正常終了**（§7.6。対象は `GATE_RUNNING` のまま。`GATE_FAILED` にしない） | `attempts: 1` | 🔴 **p95 30 秒**（`docs/02` 章 7.1） | 🔴 **`jobId = gateRunJobId({ targetType, targetId, contentHash })`**（⚠️ **区切りは `.`**。`'gate.run.{targetType}.{targetId}.{contentHash}'`。当初のスケッチは `:` だったが、**BullMQ はカスタム `jobId` に `:` を含められない**〔実測。§11.10 ③〕）で enqueue（BullMQ が待機中・実行中の同 ID を重複排除）。開始時に `ReviewGate(targetType, targetId, contentHash, execution='DONE')` があれば再実行しない（同じ内容なら同じ結果。`F-020 AC-3`）。HELD 行があれば**同じ行を CAS で DONE に完了**させる（`UPDATE review_gates SET execution='DONE', … WHERE id=$held AND execution='HELD_AI_COST_LIMIT'`。0 件なら結果を破棄。`P-A-09`）。🔴 **HELD 部分 UNIQUE + `jobId` + 完了 CAS の 3 段**で、#39 の手動再実行と `gate.hold-release` が同時に走っても結果は 1 行・遷移は 1 回（`F-027 AC-5`） |
 | `gate.hold-release` | 毎 10 分（スケジュール） | 🔴 **AI 上限で保留したゲートの自動再試行**（送信系ではないので許される。`F-027 AC-5`）。`review_gates(execution='HELD_AI_COST_LIMIT')` を走査し、そのテナントの日次カウンタに見積り分の余地があれば（`decideQuota` が `ALLOW`）`gate.run` を**同じ payload・同じ `jobId` で再 enqueue**。余地が無ければ何もしない | `attempts: 3` | p95 10 秒 | `gate.run` と同じ 3 段（HELD 部分 UNIQUE / `jobId` / 完了 CAS）。#39 の手動再実行と重なっても 2 回目は重複排除か 0 件更新で no-op |
 
 🔴 **AI ジョブの `attempts: 1`**: LLM の再試行は `runRole` の内部で最大 2 回まで行い、**ジョブ単位での再試行は行わない**。ジョブが再実行されるとマスキング・プロンプト構築からやり直しになり、`AiUsage` が二重に積まれる。🔴 **`gate.run` の重複排除の役割分担**: BullMQ の `jobId` 重複排除は**待機中・実行中**にのみ効かせる（completed は §9.1 の `removeOnComplete: true` で即座に消え、再 enqueue を阻まない）。**確定後の抑止は DB 側** — 開始時の `execution='DONE'` 行チェック（同じ内容なら再実行しない）と HELD 完了 CAS（0 件なら結果を破棄。`P-A-09`）が担う。
@@ -3772,7 +3775,7 @@ export const PURGE_SPEC = {
 
 🔴 **`attempts: 1` のジョブが失敗したとき、BullMQ の failed に入ったまま放置しない。** `A-005`（`F-059`）の「失敗ジョブ」に出し、**再実行は人間の明示操作のみ**（送信系は `F-023` / `F-049` の再送導線を通る。BullMQ の retry ボタンに相当する運営者操作を作らない）。
 
-🔴 **失敗した `gate.run` の再実行手順**（§9.1 / §15.5 / #39 が参照する「運用操作」の本体。[Issue #16](https://github.com/Festal-KM/SES-Platform/issues/16) で決定、2026-09-01）: ①**入口はテナント利用者の #39 だけ**（作成者 / `SALES` / `ADMIN` の「レビュー依頼」を、`GATE_RUNNING` かつ HELD 行が無い対象 = §16.5 の `JOB_FAILED` に対しても受け付ける）。運営者は `A-005` 項目 12 で滞留を検知しテナント利用者に再依頼を促すだけで、**BullMQ の retry に相当する運営者操作は作らない**（`CLAUDE.md` §10.5 の既定 read-only。`app_platform*` に `proposals` / `review_gates` の書き込みが無いため、作ろうとしても権限で弾かれる。§5.2）②DB トランザクションの**外**で `Queue.getJob('gate.run:{targetType}:{targetId}:{contentHash}')` を取得し、**状態が `failed` のときだけ `Job.remove()`** で削除する（`removeOnFail` を付けない §9.1 の帰結。削除しないと同 `jobId` の `add` が捨てられる。**削除で §16.5「失敗ジョブ数」が減るのは意図どおり** = 再依頼された failed は未対応ではない）。`waiting` / `active` なら削除しない（走っているものを止めない。この場合の再 enqueue は BullMQ の重複排除で no-op）③`withTenant(ctx)` で `review_gates(targetType, targetId, contentHash, execution='DONE')` が**無い**ことを確認し、あれば enqueue せず 422（`P-A-09`。ワーカー開始時と同じ判定を API で先に行う）④同じ payload・同じ `jobId` で `gate.run` を enqueue ⑤`Proposal` は **`GATE_RUNNING` のまま**（状態を足さず、この時点では遷移も起こさない）。再実行の結果で `APPROVAL_PENDING` か `GATE_FAILED` に確定する（`CLAUDE.md` §4.2 の既存遷移のみ）。**多重化防止**: HELD 行が無いので §9.3 の 3 段のうち **`jobId` 重複排除（待機・実行中）と `DONE` 行チェック（確定後）の 2 段**で成立する（HELD 部分 UNIQUE と完了 CAS は関与しない）。`gate.hold-release` は HELD 行だけを走査するため、失敗経路とは交差しない。
+🔴 **失敗した `gate.run` の再実行手順**（§9.1 / §15.5 / #39 が参照する「運用操作」の本体。[Issue #16](https://github.com/Festal-KM/SES-Platform/issues/16) で決定、2026-09-01）: ①**入口はテナント利用者の #39 だけ**（作成者 / `SALES` / `ADMIN` の「レビュー依頼」を、`GATE_RUNNING` かつ HELD 行が無い対象 = §16.5 の `JOB_FAILED` に対しても受け付ける）。運営者は `A-005` 項目 12 で滞留を検知しテナント利用者に再依頼を促すだけで、**BullMQ の retry に相当する運営者操作は作らない**（`CLAUDE.md` §10.5 の既定 read-only。`app_platform*` に `proposals` / `review_gates` の書き込みが無いため、作ろうとしても権限で弾かれる。§5.2）②DB トランザクションの**外**で `Queue.getJob(gateRunJobId(...))`（⚠️ 区切りは `.`。§11.10 ③）を取得し、**状態が `failed` のときだけ `Job.remove()`** で削除する（`removeOnFail` を付けない §9.1 の帰結。削除しないと同 `jobId` の `add` が捨てられる。**削除で §16.5「失敗ジョブ数」が減るのは意図どおり** = 再依頼された failed は未対応ではない）。`waiting` / `active` なら削除しない（走っているものを止めない。この場合の再 enqueue は BullMQ の重複排除で no-op）③`withTenant(ctx)` で `review_gates(targetType, targetId, contentHash, execution='DONE')` が**無い**ことを確認し、あれば enqueue せず 422（`P-A-09`。ワーカー開始時と同じ判定を API で先に行う）④同じ payload・同じ `jobId` で `gate.run` を enqueue ⑤`Proposal` は **`GATE_RUNNING` のまま**（状態を足さず、この時点では遷移も起こさない）。再実行の結果で `APPROVAL_PENDING` か `GATE_FAILED` に確定する（`CLAUDE.md` §4.2 の既存遷移のみ）。**多重化防止**: HELD 行が無いので §9.3 の 3 段のうち **`jobId` 重複排除（待機・実行中）と `DONE` 行チェック（確定後）の 2 段**で成立する（HELD 部分 UNIQUE と完了 CAS は関与しない）。`gate.hold-release` は HELD 行だけを走査するため、失敗経路とは交差しない。
 
 ## 10. 冪等性・不可逆事故の防止設計（最重要）
 
@@ -4038,6 +4041,8 @@ export function decideGate(input: {
 
 ### 11.5 🔴 内容が変更された成果物が、再検証を経ずに承認できないことの担保
 
+⚠️ **本節のスケッチは T-07-08 で実装され、置き場所が 2 つに分かれた。差分は §11.10 を正とする**（`CLAUDE.md` §8.7）。🔴 **`packages/domain` は `node:crypto` を import できない**（§17.2 #14）ため、「正規化された連結を作る」側（domain）と「SHA-256 を取る / 行から材料を読む」側（`packages/db`）に分けた。
+
 ```ts
 // packages/domain/src/gate/hash.ts（純粋関数）
 export function gateContentHash(input: GateHashInput): string;   // SHA-256 の hex
@@ -4241,6 +4246,93 @@ apps/worker/src/jobs/gate-run.ts      ジョブ本体（3 層の実行順・枝�
 | ユニット（worker） | 枝分け（PASS / FAIL / AI 失敗 3 種 / HELD / キャッシュ / `RACED` / 対象なし）/ `GATE_RUNNING` 以外は状態を上書きしない / `AuditLog` の形 |
 | 結合（`tests/isolation/gate-run.test.ts`） | 🔴 `F-020 AC-5` / `AC-6`（エンド企業名・内部単価・他社名）/ `AC-7` / AI 失敗で FAIL かつ**キャッシュしない** / `P-A-09` のキャッシュ / 🔴 **HELD でも整合層の結果が保存され、再実行が同じ行を CAS で確定させる**（行が増えない）/ 🔴 **モック応答 5 通りで `consistencyVerdict` と対象の状態が 1 ビットも変わらない**（§11.8 ⑦-3 の引き継ぎ）/ テナント境界 / パートナー所属の提案は結果を 1 行も書かずに落ちる（⑦） |
 | 静的 | `gate.run` の `removeOnComplete: true` と `attempts: 1`（§17.2 #19 / #6）/ `systemTenantCtx` の呼び出し元にジョブ 1 本を追加 |
+
+### 11.10 🔴 §6.5 #39 / #40 と §9.10（失敗した `gate.run` の再実行）の実装の決着（T-07-08。2026-09-09）
+
+**本節は T-07-09（案件公開・スキルシート共有の接続）/ T-07-10（HELD の自動復帰）/ SP-09（承認・送信）の一次資料である。** T-07-08 で確定した形を、上のスケッチとの差分として記録する（`CLAUDE.md` §8.7。§7.9〜§7.13 / §11.8 / §11.9 と同じ作法）。**以降のタスクは本節を正とする。**
+
+#### ① 置き場所
+
+```
+packages/domain/src/gate/hash.ts          gateHashSource（🔴 正規化された連結だけ。SHA-256 を取らない）
+packages/db/src/gate-content-hash.ts      gateContentHash / readProposalGateHashInput / computeProposalContentHash
+packages/db/src/review-gate.ts            gateHoldTimestamps（#40 の heldSince / resetAt）を追加
+packages/connectors/src/queues.ts         GateRunJobQueue（ポート）/ GateRunJobKey / shouldRemoveGateRunJob
+packages/connectors/src/bullmq.ts         🔴 BullMQ に触れる唯一のファイル（Queue / Worker の実体化）
+apps/web/lib/jobs/gate-run-queue.ts       enqueue 先の起動時 DI（未登録なら例外）
+apps/web/lib/proposals/policy.ts          canRequestProposalGate（§9.10 ① の入口）
+apps/web/lib/proposals/gate.ts            requestProposalGate（#39）/ readProposalGateResult（#40）
+apps/web/app/api/(main)/proposals/[id]/gate/route.ts   #39（POST・202）/ #40（GET）
+tests/isolation/proposal-gate-api.test.ts 実 DB + 実 Redis での 5 手順の実証
+tests/isolation/support/redis.ts          Testcontainers の Redis
+```
+
+#### ② `gateContentHash`（§11.5）は 2 つに割った
+
+- **domain**: `gateHashSource(input): string` —— 「材料の並べ方」だけを持つ純粋関数。値は必ず `名前=長さ:値` の形で書き出すため、**値の中に区切り文字が現れても境界が動かない**（衝突を作らない）。スキルは `skillId` → ラベル → 年数 → レベルの順に整列してから綴じる（凍結 JSON の並びに依存させない。`localeCompare` は使わない）。先頭に版（`gate-content/v1`）を置き、**材料や書式を変えるときは版を上げる**（上げ忘れると「中身が違うのに同じハッシュ」が生まれ、§11.5 が静かに破れる）。
+- **`packages/db`**: `gateContentHash(input)`（SHA-256 の hex）と `readProposalGateHashInput(db, id)`（行から材料を読む）。🔴 **`Proposal.contentHash` 列を読み返さない** —— 列は「最後にレビュー依頼した内容」であり、承認 CAS はその列と `review_gates` を突き合わせる（§11.5 手順 3）。ここが列を読む実装だと「内容が変わったこと」を誰も検出できない。
+- 🔴 **§11.5 の「添付の `objectKey` + `versionId`」は `skillSheetId` + `objectKey` + `SkillSheet.version` で表す。** `skill_sheets` は S3 の版 ID を列として持たない（§3.4）ため。`objectKey` は版ごとに異なる（§14.1）ので 2 つで版を一意に特定できる。
+- 🔴 **凍結コピー（`EngineerSnapshot`）が壊れていたら握り潰さない**（`GateHashInputError`）。読み飛ばすと「スキルが 1 件消えたのにハッシュが同じ」＝ **再検証を経ずに承認できる**状態になる。
+
+#### ③ 🔴 `jobId` の区切りを `:` から `.` にした（§9.3 のスケッチとの差分）
+
+- **理由は BullMQ の実装制約である**（実測。`bullmq@6` の `Job.validateOptions` は、カスタム `jobId` に `:` が含まれると例外を投げる。Redis のキー名前空間が `bull:{queue}:{id}` の形で `:` を使うため）。**`:` のままではレビュー依頼が丸ごと失敗する。**
+- 確定形は **`gate.run.{targetType}.{targetId}.{contentHash}`**（`gateRunJobId()` の 1 実装だけが組み立てる）。意味は 1 ビットも変わらない —— この ID に求められるのは「(対象種別 × 対象 × 内容) が同じなら同じ文字列」だけである。🔴 **`jobId` をパースする実装を書かない**（不透明な鍵として扱う）。
+
+#### ④ 🔴 BullMQ の実体化は `packages/connectors/src/bullmq.ts` に置いた（§9.1 の記述の訂正）
+
+- §9.1 は当初「実体化は起動時に `apps/worker` が行う」としていたが、**`gate.run` の enqueue 側は `apps/web` にもある**（#39 と §9.10 ② の failed 削除）。`apps/worker` に置くと `apps/web` → `apps/worker` の依存になり、`CLAUDE.md` §2.1（`apps/*` → `packages/*` の一方向）を破る。
+- したがって `@ses/connectors/bullmq` **サブパス**（`@ses/connectors/aws` と同じ理由 —— バレルを import しただけで BullMQ / ioredis が引きずり込まれないようにする）に置き、`tests/static/queue-attempts.test.ts` の `QUEUE_CONSTRUCTION_ALLOWLIST` に**この 1 件だけ**を登録した。🔴 **2 件目を足さない**（`gate.hold-release` / 送信系の配線は、このファイルに関数を足す形で実装する）。
+- 🔴 **`ioredis` を直接 import してクライアントを我々が作る**（`connection: { url }` を渡さない）。`bullmq@6` は `ioredis` を optional peer にしており、接続設定だけを渡すと内部で `require('ioredis')` を試みる。`apps/worker` は素の ESM で動くため `require` が無く、**本番だけ「起動はするが最初の enqueue で落ちる」**という壊れ方になる。⚠️ **依存を 1 つ足した**（`packages/connectors` の `ioredis`。`bullmq` の Redis バックエンドを使う以上必須である）。
+- 🔴 `stepped` バックオフ（`email.dispatch` の 5s / 30s。§9.1）は**まだ写像していない**（`UnsupportedQueueOptionError` で落とす）。組み込み戦略で近似すると設計値と実際の待ち時間が黙ってずれるため、ワーカーの `settings.backoffStrategy` を配線するタスクがこの例外を消す形で対応する。
+- 🔴 **`Queue` は最初の呼び出しまで作らない**（起動時 DI は「登録」だけで Redis へ接続しにいかない）。`apps/web` の `bootstrap.ts` は**環境で分岐せず常に BullMQ を登録する** —— メール系の保留キュー（`connectors.email === 'mock'` のときだけ登録）と違い、ゲートに「積んだだけで誰も実行しないキュー」という選択肢は無い（対象が `GATE_RUNNING` のまま残る＝ `CLAUDE.md` §11.1 の壊れ方）。
+
+#### ⑤ #39 は 3 つの経路を 1 本の入口に畳んだ（§9.10 ①）
+
+| 対象の状態 | 保留（HELD）行 | 挙動 |
+|---|---|---|
+| `DRAFT` | — | `DRAFT → GATE_RUNNING` の **CAS**（`WHERE state='DRAFT'`）+ `Proposal.contentHash` を同じ 1 文で書く + `ProposalEvent` + 監査 → commit 後に enqueue |
+| `GATE_RUNNING` | 有り | 🔴 **保留行の `contentHash`** で enqueue（`gate.hold-release` と**同じ payload・同じ `jobId`**）。状態は動かさない |
+| `GATE_RUNNING` | 無し（= `JOB_FAILED`） | §9.10 ②③④。`failed` の同 `jobId` を削除 → `DONE` 行チェック → enqueue。状態は動かさない |
+| それ以外 | — | **422**（`InvalidStateTransitionError`）。判定は `CLAUDE.md` §4.2 の遷移表 1 つに委ね、状態を列挙しない |
+
+- 🔴 **`DONE` 行チェックは `DRAFT` からの依頼にも掛ける**（#39 の「`DONE` 行があるときは 422」をそのまま実装）。**これは最適化ではなく行き止まりの防止である** —— 確定済みの内容で `GATE_RUNNING` にすると、ジョブはキャッシュを見て何もせず（`ALREADY_DONE`）、対象は**永久に `GATE_RUNNING` のまま**残る。解消手段は元データの修正だけである（`BR-18`）。`aiFailed = true` の行はキャッシュではない（§11.9 ⑤）ので、LLM が落ちた提案は同じ内容のまま再実行できる。
+- 🔴 **失敗ジョブの削除は `DRAFT` の経路でも行う。** 内容を元に戻した結果、前回と同じ `jobId` の失敗記録が残っていることがあり、残っていると `add` が静かに捨てられる（§9.1）。削除するのは `failed` だけである（`shouldRemoveGateRunJob`。`waiting` / `active` は消さない）。
+- 🔴 **enqueue は commit の後**（未コミットの `GATE_RUNNING` をワーカーが先に読むと、結果の確定 CAS〔`WHERE state='GATE_RUNNING'`〕が 0 件になり対象が取り残される）。enqueue に失敗した場合は対象が `GATE_RUNNING` で残るが、**それはこの手順が扱える状態（`JOB_FAILED`）そのもの**であり、利用者は #39 をもう一度呼べば復帰できる。
+
+#### ⑥ 認可と監査
+
+- 🔴 入口は **「作成者」または「ホスト所属の `OWNER` / `ADMIN` / `SALES`」**（`canRequestProposalGate`。純粋関数）。ロール（`requireRole`）だけでは「取引先の別の担当者が他人の提案のゲートを回す」を止められないため、**行を読んでから**判定する（403 `PROPOSAL_GATE_FORBIDDEN`。見えない提案は先に 404）。
+- 🔴 監査は **`proposal.update` に畳む**（独自の `proposal.gate_request` を作らない。§16.1 / `S-041` の操作種別フィルタは接尾辞一致で拾うため、独自 action は「記録されているのに検索で出てこない」状態になる）。区別は `summary.operation`（`GATE_REQUEST` / `GATE_RERUN`）と `summary.rerunReason`（`HELD_AI_COST_LIMIT` / `JOB_FAILED`）に置く。`gate.run` が結果を書くときの `operation='GATE_RESULT'`（§11.9 ⑥）と同じ形である。
+- 🔴 監査は**業務トランザクションの内側**で書く（`withApiRoute` の `audit` オプションを使わない）。`audit` はハンドラの前に別トランザクションで書くため、**起きなかった依頼**（403 / 404 / 422）まで残る。
+
+#### ⑦ #40 の `RUNNING` は「確定した行がまだ無い」を意味する
+
+- `review_gates` は `execution='DONE'` の行に判定を要求する CHECK を持つ（§3.6）ため、**実行中を表す行は存在しえない**。したがって一度も依頼していない `DRAFT` の提案も `RUNNING` になる（画面は提案の状態と合わせて描く。#46）。この場合 `contentHash` には**現在の内容のハッシュ**を返す（画面が「承認後に内容が変わった」を検知するのに使う）。
+- `held` は `execution='HELD_AI_COST_LIMIT'` のときだけ組み立てる。`resetAt` は暦の計算なので `packages/db` の `gateHoldTimestamps`（`usagePeriodResetAt` + AI コスト上限と**同じ期間の定数**）が出す。🔴 金額（USD）を 1 つも載せない（`F-027 AC-6`）。
+
+#### ⑧ `packages/db` の読み取り 3 関数の ctx を広げた
+
+- `findCachedReviewGate` / `findPendingReviewGate` / `readReviewGateResult` の引数を `SystemTenantCtx` から **`AuthenticatedTenantCtx`** にし、分離キーを **ctx からそのまま**取るようにした（従来は `partnerCompanyId: null` 固定）。#39 / #40 は**利用者の文脈**で呼ぶため、ホスト相当に固定すると**パートナー所属の利用者が他社のゲート結果を読める**（第二境界をその場で破る）。`SystemTenantCtx` は `AuthenticatedTenantCtx` の部分型で `partnerCompanyId` が常に `null` なので、**ジョブ側の振る舞いは 1 ビットも変わらない**。書き込み系（`holdReviewGate` / `completeReviewGate`）は `SystemTenantCtx` のままである（ジョブだけが書く）。
+
+#### ⑨ 検証（T-07-08 で緑にしたもの）
+
+| 層 | 何を固定したか |
+|---|---|
+| ユニット（domain） | `gateHashSource` の決定性 / 並び替え耐性 / 1 文字の差 / null と空文字の区別 / 区切り文字の混入で衝突しないこと / 不正な年数・レベルを `RangeError` にすること |
+| ユニット（connectors） | `jobId` の形（`:` を含まない）/ `shouldRemoveGateRunJob` が `failed` 以外を消さないこと |
+| ユニット（web） | `canRequestProposalGate`（作成者 / ホストの 3 ロール / 取引先の非作成者 / `VIEWER`） |
+| 結合（実 DB + 実 Redis） | `DRAFT → GATE_RUNNING` の CAS・`contentHash`・`ProposalEvent`・監査・enqueue / 🔴 **§9.10 の 5 手順**（failed の削除 → `waiting` への復帰 → 状態不変）/ `waiting` を消さないこと / `DONE` 行で 422 かつ積まないこと / HELD の手動再開（同じ `jobId`・`GATE_FAILED` にしない）/ #40 の 3 値と `held` / 他社・他テナント・不存在が同じ 404（本文まで同一）/ `?force=true` が 1 バイトも結果を変えないこと |
+| 静的 | `QUEUE_CONSTRUCTION_ALLOWLIST` が 1 件であること / `@ses/connectors` のサブパスが `.` `./aws` `./bullmq` の 3 つに閉じていること |
+
+#### ⑩ ⚠️ T-07-09 / T-07-10 / SP-09 への申し送り
+
+1. **T-07-10 へ**: `createBullMqGateRunWorker`（`@ses/connectors/bullmq`）は実装済みだが、**`apps/worker/src/main.ts` の配線はまだ無い**。`gate.hold-release` の実装と合わせて、①`gate.run` の Worker ②`gate.hold-release` のスケジュール登録 を同じファイルで行うこと（`QUEUE_CONSTRUCTION_ALLOWLIST` に 2 件目を足さない）。
+2. **T-07-10 へ**: `gate.hold-release` は `findPendingReviewGate` → **同じ payload・同じ `jobId`** で再 enqueue する。#39 の HELD 経路と完全に同じ材料になるため、両方が同時に走ってもキューに乗るのは 1 本である。
+3. **SP-09 へ**: 承認 CAS（§11.5 手順 3）は `proposals.content_hash` と `review_gates.content_hash` の一致を条件にする。**その列を書くのは #39 である**（`DRAFT → GATE_RUNNING` の CAS と同じ 1 文）。#37（`PATCH`）を実装するときは、**同じ `computeProposalContentHash` を使って**列を更新すること（別実装を書くと承認が永久に通らない）。
+4. **SP-09 へ**: 提案の作成（#36）は `EngineerSnapshot` を同時に凍結する。**凍結が無い提案は `gate.run` が `GateFactsUnavailableError` で落ちる**（§11.9 ⑦）。#39 はそれを事前に弾かない（ハッシュは `snapshot=null` として決定的に計算できる）ので、**#36 の側で不変条件を守ること**。
+5. 🔴 **未解決（Issue #41 / §11.9 ⑦）**: パートナー所属エンジニアの提案はゲートを通せない（`loadGateInput` が `ENGINEER_LEDGER_UNREADABLE` で落ちる）。#39 / #40 はパートナー文脈でも動くが、**中核 E2E（パートナーが提案 → ホストが承認 → 送信）は決着待ち**である。
+6. **`@anthropic-ai/sdk` のアダプタ（§7.9 ⑥）は未実装のまま**である（依存は追加済み）。`packages/ai/src/client.ts` の 1 関数 + `maxRetries: 0` のテスト固定が残っている。
 
 ## 12. 業務シーケンス
 

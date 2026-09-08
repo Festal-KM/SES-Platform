@@ -31,16 +31,19 @@ const QUEUE_DEFINITION_FILE = 'packages/connectors/src/queues.ts';
  *
  * `queues.ts` が返すのは「名前 + 既定ジョブオプション」の素のデータであり（§9.1）、
  * それを `new Queue(def.name, { defaultJobOptions: def.defaultJobOptions })` に渡す実体化は
- * **`apps/worker` の起動配線 1 箇所**に閉じる。両方が 1 箇所に固定されて初めて
+ * **1 箇所**に閉じる。両方が 1 箇所に固定されて初めて
  * 「`attempts` の上書きがどこでも起きない」と言える。
  *
- * 🔴 T-04-03 時点でも実体化は 0 件である（BullMQ は依存にも入っていない）。
- *    `email.dispatch` / `account.mail` / `webhook.process` の**ハンドラと payload の門番**までが
- *    T-04-03 の範囲であり、`Queue` / `Worker` の配線は **SP-07** が担う
- *    （`apps/worker/src/jobs/index.ts` 冒頭の宣言どおり）。
- * ⚠️ SP-07 がワーカーの起動配線を 1 件だけここに追加する。**2 件目を足さない。**
+ * 🔴 **T-07-08 で 1 件だけ追加した**（docs/05 §11.10）。当初 §9.1 は「実体化は `apps/worker`」と
+ *    書いていたが、`gate.run` の enqueue 側は **`apps/web` にもある**（#39 と §9.10 の
+ *    「failed の削除」）。`apps/worker` に置くと `apps/web` → `apps/worker` の依存になり、
+ *    `CLAUDE.md` §2.1（`apps/*` → `packages/*` の一方向）を破るため、
+ *    `packages/connectors/src/bullmq.ts`（`@ses/connectors/bullmq` サブパス）に置いた。
+ *    キュー**定義**（`queues.ts`）は BullMQ に依存しないままであり、Redis 無しで検査できる。
+ * ⚠️ **2 件目を足さない。** `Queue` / `Worker` の配線が要るタスク（`gate.hold-release` /
+ *    送信系）は、このファイルに関数を足す形で実装する。
  */
-const QUEUE_CONSTRUCTION_ALLOWLIST: readonly string[] = [];
+const QUEUE_CONSTRUCTION_ALLOWLIST: readonly string[] = ['packages/connectors/src/bullmq.ts'];
 
 const EXTERNAL_SEND_QUEUE_FACTORY = 'externalSendQueue';
 const INTERNAL_QUEUE_FACTORY = 'internalQueue';

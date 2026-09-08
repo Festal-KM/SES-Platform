@@ -451,6 +451,25 @@ export class SkillSheetScanInProgressError extends ConflictError {
 }
 
 /**
+ * 🔴 レビュー依頼（#39）を出せる立場ではない（403）。T-07-08。
+ *
+ * 🔴 `ForbiddenError` と別コードにする理由: 拒否の理由が**ロールではなく立場**だからである
+ *    （docs/05 §9.10 ① の入口は「作成者 / ホストの `SALES` / `ADMIN`」）。`PARTNER_SALES` は
+ *    自分が作った提案なら依頼できるので、「権限が足りない」と伝えると事実に反する。
+ * 🔴 404 にしない: この型が返るのは**その提案が見えている**利用者だけである
+ *    （見えない提案は `requireFound` が先に 404 にする。§4.8）。
+ */
+export class ProposalGateForbiddenError extends ForbiddenError {
+  override readonly code = 'PROPOSAL_GATE_FORBIDDEN';
+  override readonly userMessageKey: MessageKey = 'error.proposal.gateForbidden';
+
+  constructor() {
+    super();
+    this.name = 'ProposalGateForbiddenError';
+  }
+}
+
+/**
  * 🔴 招待を受諾できない（docs/05 §6.3 #7。`acceptedAt` の CAS が 0 件）。
  *
  * 受諾済み / 取消済み / 期限切れ / トークン不一致 / 同時受諾に負けた、を**区別しない**。
@@ -628,6 +647,26 @@ export class MemberRoleNotAssignableError extends UnprocessableError {
   constructor() {
     super('この所属に付与できるロールではありません。');
     this.name = 'MemberRoleNotAssignableError';
+  }
+}
+
+/**
+ * 🔴 同じ内容の検査がすでに確定している（422。docs/05 §6.5 #39「`DONE` 行があるときは 422」/
+ *    §9.10 ③ / `P-A-09`）。T-07-08。
+ *
+ * 🔴 **これは「無駄な再実行を断った」のではない。** 確定済みの内容で `GATE_RUNNING` に進めると、
+ *    ジョブはキャッシュを見て何もせず（`ALREADY_DONE`）、対象は**永久に `GATE_RUNNING` のまま**
+ *    残る。行き止まりを作らないために、その手前で断る。
+ * 🔴 解消手段は**元データの修正だけ**である（`BR-18`）。内容が変われば `contentHash` が変わり、
+ *    同じ経路がそのまま通る。「無視して実行する」導線は作らない（`F-020 AC-2`）。
+ */
+export class GateAlreadyCompletedError extends UnprocessableError {
+  override readonly code = 'GATE_ALREADY_COMPLETED';
+  override readonly userMessageKey: MessageKey = 'error.gate.alreadyCompleted';
+
+  constructor() {
+    super('この内容の検査はすでに完了しています。');
+    this.name = 'GateAlreadyCompletedError';
   }
 }
 

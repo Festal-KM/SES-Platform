@@ -30,6 +30,8 @@ import type * as engineerService from '../engineers/service';
 import type * as projectList from '../projects/list';
 import type * as projectService from '../projects/service';
 import type * as projectVisibility from '../projects/visibility';
+// 🔴 T-07-08: SP-07 で足した #39 / #40（`docs/05` §6.5）。表に足すだけで全名前が自動的に効く。
+import type * as proposalGate from '../proposals/gate';
 
 // ============================================================================
 // 禁止する「名前」の集合
@@ -133,6 +135,11 @@ type SprintResponseType = {
   '#27 GET /api/projects/{id}（ホスト）': projectService.HostProjectDetailView;
   '#27 GET /api/projects/{id}（取引先）': projectService.PartnerProjectDetailView;
   '#28 PUT /api/projects/{id}/visibility': projectVisibility.ProjectVisibilityUpdateView;
+  // 🔴 T-07-08（`docs/05` §6.5）。#40 は**取引先も到達する**（自社が当事者の提案のゲート結果）。
+  '#39 POST /api/proposals/{id}/gate': proposalGate.ProposalGateRequestView;
+  '#40 GET /api/proposals/{id}/gate': Awaited<
+    ReturnType<typeof proposalGate.readProposalGateResult>
+  >;
 };
 
 /**
@@ -152,10 +159,14 @@ type PartnerReachableResponseType = Pick<
   | '#25 GET /api/projects'
   | '#25 GET /api/projects（items の 1 件・取引先）'
   | '#27 GET /api/projects/{id}（取引先）'
+  // 🔴 T-07-08: 取引先は**自社が作った提案**のゲート結果に到達する（`review_gates` は C5）。
+  //    指摘の抜粋（`excerpt`）は伏せ字であり原文を含まない（`docs/05` §11.9 ③）。
+  | '#39 POST /api/proposals/{id}/gate'
+  | '#40 GET /api/proposals/{id}/gate'
 >;
 
 describe('🔴 docs/05 §4.8: 「他にも N 件」「あなたは N 番目」に相当するフィールドを型に持たない', () => {
-  it('SP-06 の全ルート（#15 / #17 / #25〜#28）の応答型が、件数・順位の示唆を 1 つも運べない', () => {
+  it('SP-06 / SP-07 の全ルート（#15 / #17 / #25〜#28 / #39 / #40）の応答型が、件数・順位の示唆を 1 つも運べない', () => {
     expectTypeOf<RoutesCarrying<SprintResponseType, ExistenceHintKey>>().toEqualTypeOf<never>();
   });
 

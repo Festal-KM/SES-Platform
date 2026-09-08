@@ -56,7 +56,12 @@ import { runInTenantTransaction } from './with-tenant.js';
 
 /** 🔴 本モジュールが触る唯一の metric と期間（docs/05 §3.8 / §7.6。日次の遮断器）。 */
 const AI_COST_METRIC = 'AI_COST_USD';
-const AI_COST_PERIOD_KIND = 'DAY';
+/**
+ * 🔴 T-07-08: `review-gate.ts` の `gateHoldTimestamps`（#40 の `resetAt`）も**この 1 つ**を読む。
+ *    上限の集計期間と、利用者に見せる再開時刻の暦が別々に決まると、
+ *    「表示された時刻を過ぎても再開しない」という追跡不能なずれになる。
+ */
+export const AI_COST_PERIOD_KIND = 'DAY';
 
 /** 予約証（`AiCostReservation.handle`）の書式。版を前置してあり、後から形を変えられる。 */
 const HANDLE_VERSION = 'v1';

@@ -23,6 +23,10 @@ import { createObjectStore, type ConnectorImplementationKind, type ObjectStore }
 //    コンパイルする**ため、Node 組み込みモジュールに依存する AWS SDK を持ち込むとビルドが落ちる
 //    （同ファイル冒頭の注記と同じ理由）。Edge で動く `proxy.ts` は本ファイルを import しない。
 import { createS3Api } from '@ses/connectors/aws';
+// 🔴 T-07-08: BullMQ に触れる唯一のファイル（`packages/connectors/src/bullmq.ts`）への入口。
+//    `@ses/connectors/aws` と同じく**サブパス**にしてあるのは、バレル（`@ses/connectors`）を
+//    import しただけで BullMQ / ioredis が引きずり込まれないようにするためである。
+import { createBullMqGateRunQueue } from '@ses/connectors/bullmq';
 import {
   configurePlatformReadDb,
   configurePlatformWriteDb,
@@ -31,6 +35,7 @@ import {
 } from '@ses/db';
 import { configureAccountMailQueue, PendingAccountMailQueue } from '../jobs/account-mail';
 import { configureDomainJobQueue, PendingDomainJobQueue } from '../jobs/domain-jobs';
+import { configureGateRunJobQueue } from '../jobs/gate-run-queue';
 import { resolveInviteUrlRuntime, type InviteUrlRuntime } from '../invitations/invite-link';
 import {
   configureScanApplyResultQueue,
@@ -157,6 +162,14 @@ export function ensureDbConfigured(): void {
   if (connectors.email === 'mock') {
     configureScanApplyResultQueue(new PendingScanApplyResultQueue());
   }
+  // 🔴 T-07-08: `gate.run` の enqueue 先（docs/05 §9.3 / §9.10 / §11.10）。
+  //    🔴 **環境で分岐しない。** 上の 4 つ（メール系・Webhook・スキャン）は「BullMQ の配線が
+  //    まだ無い」ことを理由に `connectors.email === 'mock'` で保留キューを選んでいるが、
+  //    ゲートにその選択肢は無い —— Redis は全環境で必須（`REDIS_URL`）であり、
+  //    **積んだだけで誰も実行しないキュー**は「レビュー依頼したのに永久に結果が出ない」
+  //    （対象が `GATE_RUNNING` のまま残る）という壊れ方そのものである（`CLAUDE.md` §11.1）。
+  //    🔴 `Queue` の実体化は最初の enqueue まで遅延する（登録しただけで Redis へ繋ぎにいかない）。
+  configureGateRunJobQueue(createBullMqGateRunQueue({ url: env.REDIS_URL }));
   cachedSesEventTopicArn = env.SES_EVENT_TOPIC_ARN;
   // 🔴 T-05-05: HMAC の鍵。旧鍵が設定されている間は**新旧どちらの署名も受理する**
   //    （無停止のローテーション。docs/05 §8.5）。分岐はここ 1 箇所である。

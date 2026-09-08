@@ -115,7 +115,7 @@
 
 ### T-07-08 🔴 API #39 / #40 と失敗した `gate.run` の再実行（L）
 
-- **実装**: `POST /api/proposals/{id}/gate`（#39）/ `GET /api/proposals/{id}/gate`（#40）。
+- **実装**: `POST /api/proposals/{id}/gate`（#39）/ `GET /api/proposals/{id}/gate`（#40）。**実装済み（2026-09-09）。確定形は `docs/05` §11.10 を正とする**（`gateContentHash` を domain と `packages/db` に割ったこと、🔴 **`jobId` の区切りを `:` から `.` に変えたこと**〔BullMQ がカスタム `jobId` に `:` を許さない。実測〕、BullMQ の実体化を `packages/connectors/src/bullmq.ts` に置いたこと〔+ `ioredis` の依存追加〕、`DONE` 行チェックを `DRAFT` の経路にも掛けたこと、T-07-09 / T-07-10 / SP-09 への申し送り 6 点）。
 - **#39 の通常経路**: `DRAFT` → `GATE_RUNNING` へ CAS して `gate.run` を enqueue する。🔴 **`jobId = 'gate.run:{targetType}:{targetId}:{contentHash}'`**（BullMQ が待機中・実行中の同 ID を重複排除）。
 - 🔴 **`gate.run` キューの `defaultJobOptions.removeOnComplete` を `true` にする**（`docs/05` §9.1 / §17.2 #19）。**無いと HELD 後の同 `jobId` 再 enqueue が静かに捨てられ、対象が `GATE_RUNNING` に留まり続ける。** `removeOnFail` は付けない。
 - 🔴 **本タスクの受け入れ基準に、`docs/05` §9.10「失敗した `gate.run` の再実行手順」の 5 手順をそのまま含める**（[Issue #16](https://github.com/Festal-KM/SES-Platform/issues/16) で 2026-09-01 に決定。**`docs/03` の申し送りには載っていないため、ここで明示する**）:

@@ -141,6 +141,14 @@ const MAIN_PLANE_READ_APIS = [
   // 🔴 T-06-03: `GET /api/projects`（一覧。#25）を足した。既存の②③ループに載せることで、
   //    「他テナントの値が 0 件」を一覧の `items` / `total` の両方で確かめる。
   '/api/projects',
+  // 🔴 T-07-08: `GET /api/proposals/{id}/gate`（#40。`F-020` / `F-027 AC-5`）を足した。
+  //    ゲート結果は **`review_gates` の RLS（C5）** が母集団を決める（ホストは自テナントの全件、
+  //    取引先は自社が当事者の分だけ）。ID は `seed:isolation` に実在する**ホスト所有の提案**で
+  //    固定する —— この配列を歩くのは `hostOwner(1)` のセッションだけであり（②）、
+  //    ③（他テナント）・④（取引先）には境界外の ID として同じ経路が現れる。
+  //    ⚠️ 応答には `contentHash`（内容のハッシュ）が載るが、これは**内容そのものではない**
+  //    （`docs/05` §11.5）。他テナントのマーカー文字列は 1 つも含まれない。
+  `/api/proposals/${tenantIds(1).hostProposalId}/gate`,
 ] as const;
 
 /** 実在しない UUID（`404` と `403` を区別しないことの確認に使う）。 */
