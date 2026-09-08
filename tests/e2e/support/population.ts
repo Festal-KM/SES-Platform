@@ -105,6 +105,28 @@ export function foreignPartnerMarkers(
 }
 
 /**
+ * 🔴 **同一テナントのホスト側にしか無い案件の値**（`F-013 AC-2` / `F-014 AC-1`。T-06-09）。
+ *
+ * 第一境界（テナント）でも第二境界（パートナー）でもなく、**同じテナントの中で公開範囲と
+ * 射影が作る 3 つ目の線**である。取引先の応答に 1 バイトも現れてはならない:
+ *   ①未公開案件の名前（`ProjectVisibility` の行が無い ＝ C4 の外）
+ *   ②エンド企業名（商流情報。`F-013 AC-2`）
+ * 🔴 内部単価（数値）は含めない —— `operatorForbiddenApiMarkers` と同じ理由で、
+ *    HTML には 6 桁の数字列が偶然現れうる。JSON にだけ当てる版を下に分ける。
+ */
+export function hostOnlyProjectMarkers(index: TenantIndex): readonly string[] {
+  return [isolationSeedProjectNames(index).private, ISOLATION_FORBIDDEN_MARKERS.endClientName];
+}
+
+/** JSON 応答にだけ当てる版（内部単価の数値を足す）。 */
+export function hostOnlyProjectApiMarkers(index: TenantIndex): readonly string[] {
+  return [
+    ...hostOnlyProjectMarkers(index),
+    String(ISOLATION_FORBIDDEN_MARKERS.internalUnitPrice),
+  ];
+}
+
+/**
  * 🔴 **運営者に見せてはならないもの**（`BR-40` / `CLAUDE.md` §10.5 / `F-056 AC-1`）。
  *    運営者に必要なのは「件数・状態・エラー」であって「内容」ではない。
  *

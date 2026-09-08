@@ -41,6 +41,20 @@
 //    ④（パートナー視点）の掘り下げ —— 自社に公開された案件だけが出ること、他社の公開状況・
 //    社数が現れないこと —— は **e2e-tester が `S-010` の導線とあわせて足す**。
 //
+// 🔴 T-06-09: 上の「④の掘り下げ」を本ファイルの④に実装した（`docs/05` §17.3 **#2** の案件部分。
+//    「パートナーの全画面・API・集計・通知・エクスポートに他社由来の値が 0 件。**件数バッジ・
+//    並び順の変化・示唆も 0 件**」）。3 ケースに分かれる:
+//      (a) 公開されている取引先（A1）… 見えるのは自社に公開された 1 件だけで、未公開案件・
+//          商流情報・他社の存在が画面にも API にも 0 件。境界外の ID は不存在と同じ 404
+//      (b) 公開されていない取引先（A2）… 同じ案件が**存在しないように見える**（0 件・404）
+//      (c) 🔴 **境界の外で母集団が増えても、取引先の応答が 1 バイトも変わらない**
+//          （件数バッジ・並び順の変化・示唆を「列挙して否定する」のではなく、
+//           **バイト列の同一性**でまとめて否定する）
+//    ⚠️ DB 層の同じ主張は `tests/isolation/project-population-c4.test.ts`（T-06-08）にある。
+//    重ねているのは**経路が違う**からである（あちらは RLS とアクセサ、こちらは実ブラウザ +
+//    `next start` のサーバ）。片方だけでは「アプリが後から足して返している」/「RLS が効いて
+//    いない」のどちらかを見逃す。
+//
 // 🔴 直列（`workers: 1`。`playwright.config.ts`）。RLS の設定漏れは他テストの副作用で
 //    偽陽性・偽陰性になる。
 import { randomUUID } from 'node:crypto';
@@ -52,6 +66,8 @@ import { expectNoHiddenCountHints, expectNoMarkers } from './support/assertions'
 import {
   foreignPartnerMarkers,
   foreignTenantMarkers,
+  hostOnlyProjectApiMarkers,
+  hostOnlyProjectMarkers,
   operatorForbiddenApiMarkers,
   operatorForbiddenMarkers,
   partnerIds,
@@ -79,8 +95,14 @@ import {
  *    パートナー文脈を締め出すだけで母集団は絞らない（`projects` の RLS は C4 VISIBILITY。
  *    `lib/projects/service.ts` 冒頭）ため、この配列を歩く `hostOwner(1)` からは公開 / 未公開の
  *    どちらでも到達できるが、`privateProjectId`（未公開）ではなくあえて `publishedProjectId`
- *    を選んだ理由は無い（どちらでもホスト文脈からは 200 になる）。**新規に案件を作らない**
- *    （E2E がシードの外に行を増やすと、他テストの母集団に対する前提が崩れる）。
+ *    を選んだ理由は無い（どちらでもホスト文脈からは 200 になる）。**この配列のために
+ *    新規の案件を作らない**（E2E がシードの外に行を増やすと、他テストの母集団に対する前提が
+ *    崩れる）。
+ * ⚠️ T-06-09 の④(c) だけは**意図的に 1 件だけ作る**（境界の外で母集団が増えても取引先の
+ *    一覧が変わらないことの検証）。作った案件は `F-014 AC-2` により**誰にも公開されない**ため
+ *    パートナー側の母集団は増えず、ホスト側は行が 1 件増えるだけである ——
+ *    **本ファイルはホストの一覧の件数を 1 度も表明していない**（表明を足すときは、この
+ *    副作用を前提にすること）。
  */
 const MAIN_PLANE_PAGES = [
   '/',
@@ -642,6 +664,225 @@ test.describe('④ パートナー A1 で、パートナー A2 のものが 1 �
       session.outbound.assertNone();
     } finally {
       await session.close();
+    }
+  });
+
+  test('🔴 T-06-09: 案件の一覧・詳細（#25 / #27 / S-010 / S-011）に、他社の値も未公開案件も商流情報も 0 件', async ({
+    browser,
+  }: {
+    browser: Browser;
+  }) => {
+    const session = await openTenantSession(browser, partnerSales(1, 1));
+    const own = tenantIds(1);
+    /**
+     * 🔴 3 つの境界をまとめて当てる:
+     *    ①他テナント（第一境界）②同一テナントの他パートナー（第二境界）
+     *    ③同一テナントのホスト側にしか無い値（未公開案件・エンド企業名。C4 と射影が作る線）
+     * 🔴 HTML と JSON で集合を分ける（`operatorForbiddenMarkers` / `…ApiMarkers` と同じ理由）:
+     *    内部単価は**数値**なので、Next.js のチャンク名・ハッシュを含む HTML では
+     *    6 桁の数字列が偶然一致しうる（＝ 偽陽性で不安定になる）。JSON にだけ当てる。
+     */
+    const forbiddenInHtml = [
+      ...foreignPartnerMarkers(1, 2),
+      ...foreignTenantMarkers(2),
+      ...hostOnlyProjectMarkers(1),
+    ];
+    const forbiddenInJson = [
+      ...foreignPartnerMarkers(1, 2),
+      ...foreignTenantMarkers(2),
+      ...hostOnlyProjectApiMarkers(1),
+    ];
+    try {
+      // --- API（#25 一覧）---------------------------------------------------
+      const listResponse = await apiRequest(session.page, '/api/projects');
+      expect(listResponse.status).toBe(200);
+      expectNoMarkers('パートナーの GET /api/projects', listResponse.text, forbiddenInJson);
+      expectNoHiddenCountHints('パートナーの GET /api/projects', listResponse.text);
+
+      const list = parseJson(listResponse) as {
+        items: ReadonlyArray<Record<string, unknown>>;
+        total: number;
+        nextCursor: string | null;
+      };
+      // 🔴 母集団は「自社に公開された案件」だけ（`F-015 AC-1`）。`total` も同じ母集団である。
+      expect(list.items.map((item) => item.id)).toEqual([own.publishedProjectId]);
+      expect(list.total).toBe(1);
+      // 🔴 `nextCursor` は次ページの起点だけ（残件数を返さない。docs/05 §4.8）。
+      expect(list.nextCursor).toBeNull();
+
+      const item = list.items[0] ?? {};
+      expect(item.audience).toBe('PARTNER');
+      // 🔴 **キーごと存在しない**（`undefined` で返すのではない。`F-014 AC-4` / `F-013 AC-2`）。
+      for (const forbiddenKey of ['visibleToCount', 'endClientName', 'internalUnitPrice']) {
+        expect(Object.keys(item), `一覧の 1 件に ${forbiddenKey} が現れました`).not.toContain(
+          forbiddenKey,
+        );
+      }
+
+      // --- 画面（`S-010`）---------------------------------------------------
+      const listHtml = await pageContent(session, '/projects');
+      expect(listHtml).toContain(`project-list-row-${own.publishedProjectId}`);
+      // 🔴 未公開案件は行として存在しない（描画されて隠れているのではない）。
+      expect(listHtml).not.toContain(`project-list-row-${own.privateProjectId}`);
+      // 🔴 公開先の設定状況（9 列目）は取引先には出ない（`docs/04` §S-010）。
+      expect(listHtml).not.toContain(`project-list-visibility-${own.publishedProjectId}`);
+      expectNoMarkers('パートナーの /projects', listHtml, forbiddenInHtml);
+      expectNoHiddenCountHints('パートナーの /projects', listHtml);
+      // 対照: 母集団が「御社に公開された案件」であることは画面に明示される（`F-006 AC-2`）。
+      expect(listHtml).toContain(t('projects.list.population.partner'));
+
+      // --- API（#27 詳細）--------------------------------------------------
+      const detailResponse = await apiRequest(
+        session.page,
+        `/api/projects/${own.publishedProjectId}`,
+      );
+      expect(detailResponse.status).toBe(200);
+      expectNoMarkers('パートナーの GET /api/projects/{id}', detailResponse.text, forbiddenInJson);
+      const detail = parseJson(detailResponse) as Record<string, unknown>;
+      expect(detail.audience).toBe('PARTNER');
+      for (const forbiddenKey of [
+        'endClientName',
+        'internalUnitPrice',
+        'visibilities',
+        'visibleToCount',
+      ]) {
+        expect(Object.keys(detail), `詳細に ${forbiddenKey} が現れました`).not.toContain(
+          forbiddenKey,
+        );
+      }
+
+      // --- 境界外の ID は「不存在」と区別が付かない（docs/05 §4.8）-----------
+      const unknown = await apiRequest(session.page, `/api/projects/${ABSENT_UUID}`);
+      const notPublished = await apiRequest(session.page, `/api/projects/${own.privateProjectId}`);
+      const otherTenant = await apiRequest(
+        session.page,
+        `/api/projects/${tenantIds(2).publishedProjectId}`,
+      );
+      expect(unknown.status).toBe(404);
+      expect(notPublished.status).toBe(404);
+      expect(otherTenant.status).toBe(404);
+      // 🔴 本文まで同一である（403 と区別しないだけでなく、理由も区別しない）。
+      expect(notPublished.text).toBe(unknown.text);
+      expect(otherTenant.text).toBe(unknown.text);
+
+      session.outbound.assertNone();
+    } finally {
+      await session.close();
+    }
+  });
+
+  test('🔴 T-06-09: 公開されていない取引先（A2）には、同じ案件が「存在しない」ように見える', async ({
+    browser,
+  }: {
+    browser: Browser;
+  }) => {
+    // 🔴 A1 に公開されている案件を、同じテナントの A2 が見に行く（`F-014 AC-1` / `BR-07`）。
+    const session = await openTenantSession(browser, partnerSales(1, 2));
+    const own = tenantIds(1);
+    try {
+      const list = parseJson(await apiRequest(session.page, '/api/projects')) as {
+        items: unknown[];
+        total: number;
+        nextCursor: string | null;
+      };
+      // 🔴 0 件であり、`total` も 0 である（「見えない案件が N 件ある」を数えさせない）。
+      expect(list.items).toEqual([]);
+      expect(list.total).toBe(0);
+      expect(list.nextCursor).toBeNull();
+
+      const html = await pageContent(session, '/projects');
+      // 🔴 空状態の文言は「案件が無い」ではなく「御社に公開された案件はまだありません」
+      //    （`docs/04` §10.1 `S-010`）。**「他社には公開されています」を示唆しない。**
+      expect(html).toContain(t('projects.list.empty.partner.title'));
+      expectNoHiddenCountHints('A2 の /projects（空）', html);
+      expectNoMarkers('A2 の /projects（空）', html, [
+        ...foreignPartnerMarkers(1, 1),
+        ...hostOnlyProjectMarkers(1),
+      ]);
+
+      const unknown = await apiRequest(session.page, `/api/projects/${ABSENT_UUID}`);
+      const shownToOtherPartner = await apiRequest(
+        session.page,
+        `/api/projects/${own.publishedProjectId}`,
+      );
+      expect(shownToOtherPartner.status).toBe(404);
+      // 🔴 「他社には公開されている案件」と「そもそも存在しない ID」の応答が同一である。
+      expect(shownToOtherPartner.text).toBe(unknown.text);
+
+      // 画面も同じ（一度も公開されたことが無い相手には、汎用の 404 文言が出る ——
+      // 「現在は公開されていません」〔`ProjectNotSharedError`〕は**解除された相手だけ**）。
+      const detailHtml = await pageContent(session, `/projects/${own.publishedProjectId}`);
+      expect(detailHtml).toContain(t('projects.notFound'));
+      expect(detailHtml).not.toContain(t('projects.detail.notShared'));
+
+      session.outbound.assertNone();
+    } finally {
+      await session.close();
+    }
+  });
+
+  test('🔴 T-06-09: 境界の外で案件が増減しても、取引先の一覧の応答が 1 バイトも変わらない（件数バッジ・並び順の変化・示唆が 0 件）', async ({
+    browser,
+  }: {
+    browser: Browser;
+  }) => {
+    /**
+     * 🔴 **「示唆が無い」を列挙ではなくバイト列で否定する。**
+     *    件数バッジ・並び順の変化・「他 N 件」は、いずれも「境界の外が動いたときに
+     *    こちらの応答が動く」形でしか漏れない。**動かないこと**を 1 つの表明で言い切る。
+     * 🔴 ホストが起こす変化は 2 種類そろえる:
+     *      ①母集団が**増える**（新しい案件。誰にも公開されない = `F-014 AC-2`）
+     *      ②境界外の既存行が**更新される**（未公開案件の更新 → `updated_at` が動く ＝
+     *        並び順に影響しうる変化）
+     */
+    const partner = await openTenantSession(browser, partnerSales(1, 1));
+    const host = await openTenantSession(browser, hostOwner(1));
+    const syntheticName = `T0609合成案件-${randomUUID().slice(0, 8)}`;
+    try {
+      const before = await apiRequest(partner.page, '/api/projects');
+      expect(before.status).toBe(200);
+
+      // --- 境界の外を動かす（ホスト）----------------------------------------
+      const created = await apiRequest(host.page, '/api/projects', {
+        method: 'POST',
+        body: { name: syntheticName },
+      });
+      expect(created.status).toBe(201);
+      const createdId = (parseJson(created) as { id: string }).id;
+
+      const patched = await apiRequest(
+        host.page,
+        `/api/projects/${tenantIds(1).privateProjectId}`,
+        { method: 'PATCH', body: { headcount: 2 } },
+      );
+      expect(patched.status).toBe(200);
+
+      // 対照: 変化は**実在した**（ホスト自身の一覧には新しい案件が出る）。
+      //    これが無いと「何も起きなかったから変わらなかった」を green にしてしまう。
+      const hostList = parseJson(await apiRequest(host.page, '/api/projects')) as {
+        items: ReadonlyArray<{ id: string }>;
+      };
+      expect(hostList.items.map((row) => row.id)).toContain(createdId);
+
+      // --- 取引先の応答は 1 バイトも変わらない -------------------------------
+      const after = await apiRequest(partner.page, '/api/projects');
+      expect(after.status).toBe(200);
+      expect(
+        after.text,
+        '境界の外の変化が取引先の応答（件数・並び順・本文）に現れました',
+      ).toBe(before.text);
+
+      // 画面にも新しい案件は現れない（API だけを見て満足しない）。
+      const html = await pageContent(partner, '/projects');
+      expect(html).not.toContain(syntheticName);
+      expect(html).not.toContain(`project-list-row-${createdId}`);
+      expectNoHiddenCountHints('境界外の変化のあとの /projects', html);
+
+      partner.outbound.assertNone();
+      host.outbound.assertNone();
+    } finally {
+      await host.close();
+      await partner.close();
     }
   });
 

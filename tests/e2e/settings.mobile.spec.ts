@@ -29,20 +29,22 @@
 // 🔴 Phase 1 で設定系画面（`S-021` / `S-024` / `S-026` など）や、台帳・一覧系の画面が
 //    増えたら、本ファイルにケースを足す（新規ファイルを乱立させず、Tier 2 / Tier 3 の
 //    モバイル非破綻はここに集約する）。
+//
+// ⚠️ **例外: 案件系の 4 画面（`S-010`〜`S-013`）は `tests/e2e/projects.mobile.spec.ts` に分けた**
+//    （T-06-09）。上の「乱立させない」に対する判断の理由は 2 つ:
+//      ①**4 画面がひと続きの導線**（一覧 → 詳細 → 登録 / 公開範囲）であり、`S-013` では
+//        「公開先の選択状態が狭い画面でも確認できる」（`CLAUDE.md` §13.3「判断材料を隠さない」）
+//        という**案件固有の観点**を見る。本ファイルの「描画される / 溢れない」だけの型に収まらない。
+//      ②1 ファイルに 7 画面（設定 2 + 台帳 1 + 案件 4）が同居すると、失敗時に
+//        どのスプリントの回帰かが読み取れなくなる。
+//    🔴 判定そのものは共有する（`expectNoHorizontalOverflow`。実装は `support/assertions.ts` の 1 本）。
 import { expect, test, type Browser } from '@playwright/test';
 import { t } from '../../packages/i18n/src/index';
+// 🔴 T-06-09: 横溢れの判定は `support/assertions.ts` に集約した（`home.mobile.spec.ts` /
+//    `projects.mobile.spec.ts` と同じ 1 実装を通す）。
+import { expectNoHorizontalOverflow } from './support/assertions';
 import { tenantIds } from './support/population';
 import { hostOwner, openTenantSession } from './support/sessions';
-
-/** 横スクロールが出ていないこと（狭い画面での破綻の代表的な症状）。 */
-async function assertNoHorizontalOverflow(session: {
-  page: import('@playwright/test').Page;
-}): Promise<void> {
-  const overflow = await session.page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  );
-  expect(overflow, '横スクロールが発生しています（モバイルで破綻している）').toBeLessThanOrEqual(1);
-}
 
 test.describe('モバイルビューポートのスモーク（S-036 / S-014 は Tier 3、S-005 は Tier 2・遮断禁止）', () => {
   test('S-036 送信ドメインの設定と検証がモバイルで描画され、横に溢れない（T-04-06）', async ({
@@ -68,7 +70,7 @@ test.describe('モバイルビューポートのスモーク（S-036 / S-014 は
       await expect(session.page.getByTestId('sending-domain-fact')).toBeVisible();
 
       // ② 横スクロールが出ない（Tier 3 だが遮断しない。CLAUDE.md §13.3）。
-      await assertNoHorizontalOverflow(session);
+      await expectNoHorizontalOverflow('S-036 送信ドメイン', session.page);
       // ④ 外向き発信が 0 件。
       session.outbound.assertNone();
     } finally {
@@ -99,7 +101,7 @@ test.describe('モバイルビューポートのスモーク（S-036 / S-014 は
       await expect(session.page.getByTestId('partner-companies-list-section')).toBeVisible();
 
       // ② 横スクロールが出ない（Tier 3 だが遮断しない。CLAUDE.md §13.3）。
-      await assertNoHorizontalOverflow(session);
+      await expectNoHorizontalOverflow('S-014 取引先企業', session.page);
       // ④ 外向き発信が 0 件。
       session.outbound.assertNone();
     } finally {
@@ -134,7 +136,7 @@ test.describe('モバイルビューポートのスモーク（S-036 / S-014 は
       ).toBeVisible();
 
       // ② 横スクロールが出ない（Tier 2。列を間引くが遮断しない。CLAUDE.md §13.3）。
-      await assertNoHorizontalOverflow(session);
+      await expectNoHorizontalOverflow('S-005 エンジニア台帳一覧', session.page);
       // ④ 外向き発信が 0 件。
       session.outbound.assertNone();
     } finally {

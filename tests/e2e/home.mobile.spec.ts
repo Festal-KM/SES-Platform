@@ -11,17 +11,10 @@
 //    モバイルで完結することを、デスクトップと同じ経路で確かめる。
 import { expect, test, type Browser } from '@playwright/test';
 import { t } from '../../packages/i18n/src/index';
+// 🔴 T-06-09: 横溢れの判定は `support/assertions.ts` に集約した（同じ判定が spec ごとに
+//    散ると、1 箇所だけ閾値が緩められたことに気づけない）。
+import { expectNoHorizontalOverflow } from './support/assertions';
 import { hostOwner, openTenantSession, partnerSales } from './support/sessions';
-
-/** 横スクロールが出ていないこと（狭い画面での破綻の代表的な症状）。 */
-async function assertNoHorizontalOverflow(session: {
-  page: import('@playwright/test').Page;
-}): Promise<void> {
-  const overflow = await session.page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  );
-  expect(overflow, '横スクロールが発生しています（モバイルで破綻している）').toBeLessThanOrEqual(1);
-}
 
 test.describe('モバイルビューポートのスモーク（S-003 / S-004 は T1）', () => {
   test('ホストのホームがモバイルで描画され、横に溢れない', async ({
@@ -35,7 +28,7 @@ test.describe('モバイルビューポートのスモーク（S-003 / S-004 は
       await session.page.goto('/', { waitUntil: 'domcontentloaded' });
       await expect(session.page.getByRole('heading', { name: t('home.title') })).toBeVisible();
       await expect(session.page.getByText(t('home.host.empty.title')).first()).toBeVisible();
-      await assertNoHorizontalOverflow(session);
+      await expectNoHorizontalOverflow('S-003 ホストのホーム', session.page);
       session.outbound.assertNone();
     } finally {
       await session.close();
@@ -52,7 +45,7 @@ test.describe('モバイルビューポートのスモーク（S-003 / S-004 は
       await session.page.goto('/', { waitUntil: 'domcontentloaded' });
       // 🔴 「自社に見えない情報が存在すること」の説明文は**モバイルでも常時表示**。
       await expect(session.page.getByText(t('home.partner.visibilityNotice')).first()).toBeVisible();
-      await assertNoHorizontalOverflow(session);
+      await expectNoHorizontalOverflow('S-004 取引先のホーム', session.page);
       session.outbound.assertNone();
     } finally {
       await session.close();

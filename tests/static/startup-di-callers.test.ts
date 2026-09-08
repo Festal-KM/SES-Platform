@@ -59,29 +59,36 @@ function read(repoRelative: string): string {
  * 🔴 コメントではなく **AST 上の呼び出し**を見る（`readFileSync` + 正規表現だと
  *    「コメントに関数名を書いただけ」で緑になる）。
  *    `initializeRuntimeConfig(...)` / `config.initializeRuntimeConfig(...)` の両形を拾う。
+ *
+ * 🔴 1 ファイルにつき **1 回のパースで、呼ばれている関数名を全部集める**（T-06-09）。
+ *    以前は「関数名 1 つにつき 1 回パースする」形だったため、`apps/**` を対象にすると
+ *    パース回数が **ファイル数 × 検査する関数名の数**になっていた（下の `appCallees` 参照）。
+ *    判定の内容は変えていない —— 集めた名前の集合に対する所属判定は、
+ *    「その名前の呼び出しが 1 つでもあるか」と同値である。
  */
-function callsFunction(sourceText: string, fileName: string, functionName: string): boolean {
+function calleeNamesOf(sourceText: string, fileName: string): ReadonlySet<string> {
   const sourceFile = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.ES2023, true);
-  let found = false;
+  const names = new Set<string>();
 
   function visit(node: ts.Node): void {
-    if (found) return;
     if (ts.isCallExpression(node)) {
       const callee = node.expression;
-      if (ts.isIdentifier(callee) && callee.text === functionName) found = true;
-      if (
-        ts.isPropertyAccessExpression(callee) &&
-        ts.isIdentifier(callee.name) &&
-        callee.name.text === functionName
-      ) {
-        found = true;
+      // `foo(...)`
+      if (ts.isIdentifier(callee)) names.add(callee.text);
+      // `ns.foo(...)`（名前空間 import 形）
+      if (ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.name)) {
+        names.add(callee.name.text);
       }
     }
     ts.forEachChild(node, visit);
   }
 
   visit(sourceFile);
-  return found;
+  return names;
+}
+
+function callsFunction(sourceText: string, fileName: string, functionName: string): boolean {
+  return calleeNamesOf(sourceText, fileName).has(functionName);
 }
 
 /** 静的 import / 動的 import / require のモジュール指定子を集める。 */
@@ -159,20 +166,28 @@ describe('🔴 起動時 DI の入口が 1 つである（web と worker で別�
   );
 
   /**
-   * 🔴 **`apps/**` の読み込みは 1 回だけにする**（2026-09-07。T-06-06）。
+   * 🔴 **`apps/**` の読み込みと AST パースは、収集フェーズで 1 回だけ行う**
+   *    （2026-09-07。T-06-06 で読み込みを、**T-06-09 でパースを**移した）。
    *
-   * ⚠️ 以前は `it` ごとに全ファイルを `readFileSync` + `ts.createSourceFile` していた
-   *    （`it.each` の 3 本 + 2 本 = 5 回の全走査）。所要時間はソース数に比例して伸びるため、
+   * ⚠️ 経緯: 当初は `it` ごとに全ファイルを `readFileSync` + `ts.createSourceFile` していた。
+   *    T-06-06 で `readFileSync` だけをモジュールスコープへ移したが、**パースは
+   *    `appCallersOf` の中に残っていた** —— `it.each` が検査する関数名は 3 + 1 + 1 = 5 つあり、
+   *    `apps/**` 全体を **5 回**パースし直していた（`callsFunction` が関数名ごとに
+   *    `ts.createSourceFile` を呼ぶ形だったため）。所要時間はソース数に比例して伸びるので、
    *    ファイルが増えるにつれ `testTimeout`（既定 5 秒）に近づき、**他のテストファイルと
-   *    並列に走ったときだけ落ちる**フレークになる（同じ理由で
-   *    `no-test-module-imports.test.ts` の走査もモジュールスコープへ移した）。
-   *    検査の対象・判定は 1 つも変えていない。
+   *    並列に走ったときだけ落ちる**フレークになる（実測で 2 回顕在化した。
+   *    `no-test-module-imports.test.ts` が走査をモジュールスコープへ移したのと同じ理由）。
+   *    いまはファイルごとに 1 回だけパースして**呼び出し先の名前の集合**にし、
+   *    `it` は集合への所属判定だけを行う。**検査の対象・判定は 1 つも変えていない。**
    */
-  const appSources = appSourceFiles.map((file) => ({ file, source: readFileSync(file, 'utf8') }));
+  const appCallees = appSourceFiles.map((file) => ({
+    file,
+    callees: calleeNamesOf(readFileSync(file, 'utf8'), file),
+  }));
 
   function appCallersOf(functionName: string): string[] {
-    return appSources
-      .filter(({ file, source }) => callsFunction(source, file, functionName))
+    return appCallees
+      .filter(({ callees }) => callees.has(functionName))
       .map(({ file }) => toRepoRelative(file));
   }
 

@@ -3,7 +3,7 @@
 //
 // 🔴 `expect(text).not.toContain(x)` を並べると、落ちたときに「何が漏れたか」は分かるが
 //    「どの応答か」が分からない。分離の失敗は原因追跡が最重要なので、経路名を必ず添える。
-import { expect } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 
 export type Sighting = { readonly source: string; readonly marker: string };
 
@@ -34,4 +34,22 @@ const COUNT_HINT_PATTERNS: readonly RegExp[] = [
 export function expectNoHiddenCountHints(source: string, haystack: string): void {
   const hits = COUNT_HINT_PATTERNS.filter((pattern) => pattern.test(haystack)).map(String);
   expect(hits, `${source} に「見えない件数」を示唆する表現が現れました`).toEqual([]);
+}
+
+/**
+ * 🔴 狭い画面で**横スクロールが出ていない**こと（`CLAUDE.md` §13.3。破綻の代表的な症状）。
+ *
+ * 🔴 T-06-09 で `home.mobile.spec.ts` / `settings.mobile.spec.ts` の同一実装をここへ集約した
+ *    （3 本目〔`projects.mobile.spec.ts`〕を足すにあたり、同じ判定が 3 箇所に散ると
+ *    「1 箇所だけ緩い閾値に直された」ことに気づけなくなるため）。**判定は変えていない。**
+ * ⚠️ 1px の許容は、`scrollWidth` / `clientWidth` が端数を丸めるため（元実装と同じ）。
+ */
+export async function expectNoHorizontalOverflow(source: string, page: Page): Promise<void> {
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(
+    overflow,
+    `${source}: 横スクロールが発生しています（モバイルで破綻している）`,
+  ).toBeLessThanOrEqual(1);
 }
