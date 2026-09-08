@@ -134,6 +134,11 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
     //    `packages/domain/src/storage/object-key.ts` の `tenantIdFromObjectKey` の 🔴）。
     'apps/worker/src/jobs/scan-apply-result.ts',
     'apps/worker/src/jobs/scan-poll.ts',
+    // 🔴 T-07-03: `AiUsage` の記録器（docs/05 §7.3 / §7.11）。ロールジョブが実行中の
+    //    `JobIdentity` を渡して組み立て、`AiUsageRecordInput.tenantId`（＝ ジョブ payload の
+    //    `tenantId`）からジョブ文脈を作る。**ここが `apps/web` に生えないことが重要**であり、
+    //    AI の実行単位はジョブである（`CLAUDE.md` §12.3 / docs/05 §9.3）。
+    'apps/worker/src/ai/usage-recorder.ts',
   ],
   // 🔴 T-03-10: `usage_counters` を書く唯一の経路（docs/05 §7.6 / §9.8）。
   //    ここを増やすと「計測を迂回した書き込み」が生まれ、原価と請求根拠が説明できなくなる。

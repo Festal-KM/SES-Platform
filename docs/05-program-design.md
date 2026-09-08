@@ -1152,6 +1152,7 @@ model AiUsage {
   attemptNo      Int      @default(1)                             // 🔴 再試行も 1 行として記録（docs/02 章 8.7）
   succeeded      Boolean
   failureKind    String?                                          // 'SCHEMA'|'TIMEOUT'|'RATE'|'SPEND_CAP'|'API'
+  maskPatternHits Json    @default("{}")                          // 🔴 T-07-03: パターン検出（補助）による追加マスキングの要約 {種別: 件数}（docs/03 §4.2 / §7.10 ⑤）。一致した文字列は入れない
   startedAt      DateTime @db.Timestamptz(3)
   finishedAt     DateTime @db.Timestamptz(3)
   @@index([tenantId, startedAt])
@@ -2756,6 +2757,8 @@ export type Provenance = {
 
 ### 7.3 `AiUsage` 記録の強制（記録しない経路を作らない）
 
+⚠️ **本節のスケッチは T-07-01 / T-07-03 で実装され、一部が確定値に置き換わった。差分は §7.9 と §7.11「§7.3 / §7.6 の実装の決着（T-07-03）」を正とする**（`CLAUDE.md` §8.7）。
+
 ```ts
 // runRole の内部順序（🔴 この順序を変えない）
 // 0. 🔴 T-07-01 で追加: spec.purpose と ROLE_PURPOSE[spec.role] の食い違いを検出したら throw（§7.9 ③）
@@ -2832,6 +2835,8 @@ export function decideRoleHandoff(input: {
 - **スコープの違いをスキーマで表現する**: `TenantRoleApprovalMode` は **PK = (tenant_id, role)**、`Tenant.autoApproveEnabled` は **テナント単位の列**。テーブルが違うため、片方の更新がもう片方に波及する実装が書けない（`F-035 AC-6`）。
 
 ### 7.6 コスト上限ガード
+
+⚠️ **「件数の加算」の行は T-07-03 で実装され、`ROLE_UNIT` の置き場所と `null` の意味が確定した。差分は §7.11 を正とする**（コスト上限ガード本体は T-07-04）。
 
 ```ts
 // packages/ai/src/usage.ts
@@ -3031,6 +3036,62 @@ export type MaskHit = { category: MaskCategory; method: 'KNOWN_VALUE' | 'PATTERN
   ```
 - 🔴 **`UNTRUSTED_BOUNDARY_INSTRUCTION` を `prompts/roles/**` に置かない。** これは**ロール固有のプロンプト本文ではなく、機構（タグ）の意味の宣言**であり、囲む側と一体で変わる。§7.7 の「プロンプトをベタ書きしない」の趣旨（＝ ロールのプロンプトを版管理して再現可能にする）とは別物である。🔴 **ただしこの文言を変えたら全ロールの `promptVersion` を上げること**（`BR-13` の再現性が壊れるため）。
 - 🔴 **本文そのものは削らない**（「以前の指示を無視せよ」等も残す）。削ると `gate-inspector` の検査対象が欠ける。指示として読ませないのは境界とシステム指示の役割である。
+
+### 7.11 🔴 §7.3 / §7.6 の実装の決着（T-07-03。2026-09-08）
+
+**§7.3（記録の強制）と §7.6（件数の加算）は T-07-04（コスト上限ガード）/ T-07-06（ゲート）の一次資料である。** T-07-03（`AiUsage` の記録強制と件数カウンタ）で確定した形を、上のスケッチとの差分として記録する（`CLAUDE.md` §8.7。§7.9 / §7.10 と同じ作法）。**以降のタスクは本節を正とする。**
+
+#### ① 単価表と `ROLE_UNIT` は `packages/domain` に置いた（§7.9 ④ の読み替え）
+
+- §7.9 ④ は「**金額を持つのは 1 箇所**」「単価表と `ROLE_UNIT` は**記録側**に置く」と決めた。その趣旨（`docs/03` §3.3.1 の表・`packages/ai`・原価集計の 3 箇所に散らさない）は維持したまま、置き場所を **`packages/db` ではなく `packages/domain`** にした。
+  ```
+  packages/domain/src/ai/pricing.ts   AI_MODEL_PRICING / estimateAiCostUsd / resolveAiModelPrice
+  packages/domain/src/ai/units.ts     ROLE_UNIT / resolveAiUnitCount（🔴 pricing.ts を import しない）
+  packages/db/src/ai-usage.ts         recordAiUsage / countAiUnit（= AiUsageRecorder の実装本体）
+  ```
+- **採用の理由**（3 点）:
+  1. **単価 × トークン数 → USD は I/O を持たない決定的な計算**であり、`packages/domain` の定義（純粋関数のみ。`CLAUDE.md` §2.1）にそのまま合致する。**DB を立てずに単価と丸めを検証できる**。
+  2. 🔴 **読む側が 1 つではない。** 記録（T-07-03）に加えて、**呼び出しの前**に見積もる `AiCostGuard.reserve`（T-07-04）と、`F-063` のロール別原価（SP-13）が同じ単価を要る。`packages/db/src/ai-usage.ts` に埋めると、外から使いたくなった時点で 2 箇所目が生まれる。
+  3. **`AI_ROLES` / `ROLE_PURPOSE` を domain に移した §7.9 ⑤ と同型**である（実行する側と記録する側の共有点は domain しか無い）。
+- 🔴 **§7.9 ④ の禁止は維持する** —— `packages/ai` は単価に触れない（`AiUsageRecordInput` に `estimatedCostUsd` を持たせない）。domain は `packages/ai` からも import できてしまうため、**型では守れない**。`tests/static/ai-usage-cost-single-path.test.ts`（§17.2 #24）が AST で固定する。
+
+#### ② 「件数を金額から割り戻さない」を**モジュールの依存関係**で担保した（`F-026 AC-6`）
+
+- `units.ts` は `pricing.ts` を import しない。**件数の算出に単価が 1 つも入力されない**ことが、「1 件あたり標準原価を変更しても過去の期間の件数消費と残量表示が変化しない」ことの機械的な根拠である（`docs/03` §7.6.3-1）。
+- 🔴 **`resolveAiUnitCount` を呼ぶ非テストソースは `packages/db/src/ai-usage.ts` の 1 本**（§17.2 #24）。ここが増えると「呼び出し側が 1 件を自分で決める」実装と「`AiUsage` の行数から数え直す」実装の両方が入り込む。
+- `countAiUnit` は **数えないロール（`skill-normalizer` / `gate-inspector`）と件数 0 のときに `null` を返し、`usage_counters` の行を作らない**。🔴 これは**エラーではない**（呼び出し側は成功として扱う）。逆に、`match-explainer` の出力から候補数を読めない場合は **0 件で通さず throw する**（使われたのに残量が減らない ＝ 請求できない状態を静かに積まない）。
+
+#### ③ マスキング要約の記録先を作った（§7.10 ⑤ の申し送りの解消）
+
+- 経路: `mask()` → **`AiCallContext.maskHits`**（ロールジョブが渡す）→ `runRole` が試行ごとに転送 → `AiUsageRecordInput.maskHits` → `ai_usage.mask_pattern_hits`（migration `20260913000000_ai_usage_mask_hits`）。
+- 🔴 **`AiCallContext` に置いたのは、他に運ぶ口が無いからである。** `mask()` を呼ぶのは入力を用意する側であり、`buildPrompt` は `MaskedText` を受け取って組み立てるだけである（`RolePrompt` は `MaskedText` しか返さない）。
+- 🔴 **記録するのは `PATTERN`（補助）だけ**で、種別ごとの件数だけを `{"EMAIL": 2}` の形で持つ。理由: ①`KNOWN_VALUE`（台帳の値による置換）は起きて当然の主経路であり、混ぜると**補助が拾ってしまった＝台帳に無い個人情報が混じっていた**という兆候が埋もれる ②一致した文字列を入れると、マスキングの記録自体が PII の再出現経路になる（§7.10 ⑤）。
+- 🔴 **選別は記録側（`packages/db`）の 1 箇所で行う。** `packages/ai` は受け取ったものをそのまま渡す（選別を 2 箇所に置くと、片方だけ変わったときに記録の意味が静かにずれる）。
+- **試行ごとの全行に載る**（各行がその試行の入力を自己記述する）。再試行は同じ入力を送り直すため同じ値になるので、**出現回数を数えるときは `attempt_no = 1` で絞る**（列コメントに明記した）。
+
+#### ④ ポートの実装は `packages/db`、アダプタは `apps/worker` に置いた
+
+- `packages/ai` は `@ses/db` に依存できず、`packages/db` も `@ses/ai` に依存できない（`CLAUDE.md` §2.1）。**束ねるのは `apps/*` の層**であり、`apps/worker/src/ai/usage-recorder.ts` の `createAiUsageRecorder(job)` が `AiUsageRecorder` を返す。**この代入が「ポートの形」と「DB の実装の形」が一致していることのコンパイル時の証明**である（他に突合できる場所が無い）。
+- 🔴 **記録器だけがジョブ単位である。** `AiUsage` を書くには `HostTenantCtx` が要り、ワーカーでの唯一の生成経路は `systemTenantCtx(tenantId, job)`（§9.2）である。`tenantId` は `AiUsageRecordInput` が持つが**ジョブ識別は持たない**（`packages/ai` はジョブを知らないし、知るべきでもない）。したがって **ロールジョブは 1 回の実行につき `createRoleRunner({ ...base, usage: createAiUsageRecorder(job) })` を組み立てる**。§7.9 ① の「起動時に 1 回」は**外部資源を持つ 3 ポート（`client` / `costGuard` / `models`）に掛かる**のであって、`createRoleRunner` 自体は外部資源を持たない純粋な合成であり、ジョブごとに呼んでも接続やクライアントは作り直されない。
+- 🔴 `apps/web` は `systemTenantCtx` を呼べない（`tests/static/auth-db-callers.test.ts`）。**AI の実行単位はジョブである**（`CLAUDE.md` §12.3 / §9.3）という前提がここでも効いている。
+
+#### ⑤ 単価が引けないモデルでは **1 行も書かない**（0 円で記録しない）
+
+- `resolveAiModelPrice` は **完全一致 →（`-YYYYMMDD` のスナップショット接尾辞を落として）完全一致** の 2 段だけで引く。**前方一致で緩く拾わない**（`claude-sonnet-5` と将来の `claude-sonnet-5-5` は別料金でありうる）。2 段目が要るのは、`AiUsage.modelId` に**応答側の ID** を記録するためである。
+- 引けなければ `UnknownAiModelPriceError` を throw し、**`ai_usage` の行は書かれない**。0 円で記録すると ①§10.2 の粗利が実態より良く見える ②`F-027` の 1 日コスト上限が実質的に無効になる（いくら使っても加算されない）。
+- 🔴 **この例外は呼び出しの「前」に出る。** T-07-04 の `AiCostGuard.reserve`（手順 3）が同じ関数で見積もるため、単価未登録のモデルは LLM を呼ぶ前に落ちる（原価だけが出ることはない）。**申し送り（SP-14 / `F-036`）**: `TenantRoleModel` の保存時も `AI_MODEL_PRICING` を通してから受理すること。
+- 金額は**整数（micro-USD）だけで計算し**、`Decimal(12,6)` にそのまま入る十進文字列を返す（`number` を経由しない）。1 micro-USD 未満は四捨五入する（切り捨てだと安価な試行が常に 0 円、切り上げだと呼び出し回数だけ水増しになる）。
+- ⚠️ **キャッシュ書込は 5 分キャッシュの単価で計上する**（`docs/03` §3.3.2 の適用方針）。`AiTokenUsage` はキャッシュ書込を 1 つしか数えないため、**1 時間キャッシュを使うことになったら、まず `AiTokenUsage` を分けること**（単価だけ足すと記録される原価が実費の 1/1.6 になる）。
+
+#### ⑥ 検証（T-07-03 で緑にしたもの）
+
+| 層 | 何を固定したか |
+|---|---|
+| ユニット（domain） | 単価表が `docs/03` §3.3.1 と一致 / 推定コストの丸め・決定性 / `ROLE_UNIT` の写像（`skill-normalizer` と `gate-inspector` は数えない、根拠文は候補数） |
+| ユニット（ai） | `AiCallContext.maskHits` が試行ごとの記録に転送される |
+| ユニット（worker） | ポートと実装の配線（ctx の組み立て・失敗の伝播・金額を渡さないこと） |
+| 結合（`tests/isolation/ai-usage.test.ts`） | `F-026 AC-1`（試行 1 回 = 1 行）/ `AC-2`（記録項目とロールの CHECK）/ `AC-6`（件数と金額が独立。**単価の違う 2 回が同じ 1 件ずつ**）/ テナント境界と C2 HOST_ONLY / 単価未登録で 1 行も書かれないこと |
+| 静的（§17.2 #24） | 単価表の宣言が 1 箇所 / `packages/ai` が金額に触れない / `units.ts` が `pricing.ts` を参照しない / `resolveAiUnitCount` の呼び出し元が 1 本 |
 
 ## 8. 外部連携層（コネクタ）の設計（`CLAUDE.md` §3.4）
 
@@ -4549,6 +4610,7 @@ export const logger = pino({
 | 21 | `schema-enum-drift.test.ts` | 🔴 §3.1「列挙」規約（Prisma DSL は `String`・DB 側は手書き TEXT + CHECK）が生む「CHECK の値集合と TS 側の単一出所を人手で揃える」ドリフトを機械的に検知する。`packages/db/prisma/migrations/**/migration.sql` の CHECK 制約をテキストとして読み、TS 側の単一出所（`TENANT_LIFECYCLE_STATES` / `TENANT_ROLES` / `APP_ENV_KINDS` / `TWO_FACTOR_SUBJECT_TYPES` / `TENANT_SENDING_DOMAIN_STATES`）と値集合を突合する。同名 `CONSTRAINT` が migration.sql 群に 2 件以上見つかったら（DROP + 再定義など）読み取り側で例外にする（silent に古い定義と突合される穴を loud failure にする） |
 | 22 | `search-sql-single-path.test.ts` | 🔴 **検索の実装が `packages/db/src/search/**` 以外に現れない**（T-06-05 / TBD-8 / `docs/03` §3.7.3 の代替に進むとき書き換わるのがこの 1 ディレクトリだけであることの担保）。TypeScript の AST を走査し、**①`contains` プロパティ ②`mode: 'insensitive'` ③生 SQL の検索式**（`ILIKE` / `to_tsvector` / `*_tsquery` / `similarity()` / trigram 演算子）を数える。🔴 **コメントは対象外**（AST のノードだけを見る。本書と各ソースの説明文が引っかからないようにするため）。加えて ④`schema.prisma` の `previewFeatures` に `fullTextSearchPostgres` が**無い**こと（Prisma の `search` フィルタはプロパティ名が一般的すぎて AST で誤検知なく数えられないため、**そもそも型として存在しない**ことを別角度で固定する）。🔴 **射程外を明示する**: 一覧の単純な `SELECT`（`select` する列 / `count` / ページング / 応答型の組み立て）と、`startsWith` / `endsWith`（前方・後方の完全一致。識別子の分類に使う）。🔴 **例外は 1 ファイルだけ**（`tests/isolation/search-indexes.test.ts`。索引の利用を `EXPLAIN` で確かめるには加速対象の SQL 自体を書く必要がある）。テストは例外リストの長さも固定する |
 | 23 | `masked-text-single-path.test.ts` | 🔴 **`MaskedText` へのキャスト（`as MaskedText` / `<MaskedText>`）を持つ非テストソースが `packages/ai/src/mask.ts` の 1 本だけ**（T-07-02。§7.10 ①）。走査は `apps` / `packages` / `prompts` / `scripts`。理由: 「PII 未マスキングでの LLM 送信 0 件」（`CLAUDE.md` §7 / `BR-11` / `F-032 AC-1`）を守っているのは型そのものではなく「**型を握り潰す記述がどこにも無い**」という構造であり、`as MaskedText` を 1 行書けば担保は静かに全部消える。あわせて `packages/ai` のバレルが `unsafeAsMasked` 相当の無条件変換を公開していないことも見る |
+| 24 | `ai-usage-cost-single-path.test.ts` | 🔴 **AI の金額と件数の置き場所を固定する**（T-07-03。§7.11 ① / ②）: ①単価表 `AI_MODEL_PRICING` を**宣言**する非テストソースが `packages/domain/src/ai/pricing.ts` の 1 つだけ（`ROLE_UNIT` も同様に `units.ts` の 1 つだけ）②🔴 **`packages/ai/**` に `AI_MODEL_PRICING` / `estimateAiCostUsd` / `resolveAiModelPrice` の識別子が 1 つも現れない**（`AiUsageRecordInput` に金額が無い状態は型では守れない。domain は `packages/ai` からも import できるため）③`estimateAiCostUsd` を呼ぶのは `packages/db/src/**` だけ（記録と、呼び出し前の予約）④🔴 **`units.ts` が `pricing.ts` を import しない**（「件数を金額から割り戻さない」＝ `F-026 AC-6` の機械的な根拠）⑤`resolveAiUnitCount` を呼ぶ非テストソースが `packages/db/src/ai-usage.ts` の 1 本（件数の加算経路が 1 つであることの担保。`P-A-18`） |
 
 ### 17.3 E2E の主要シナリオ
 
@@ -4644,7 +4706,7 @@ export const logger = pino({
 | **P-A-13** | 🔴 **テナント開設と初期 `OWNER` 招待・送信ドメインの登録（API-A4 / A5）を `app_platform_write` の `INSERT`（`tenants` / `invitations` / `tenant_sending_domains`）で実装し、`CLAUDE.md` §10.5 の「契約」への書き込みに含まれると解釈する**（§5.2） | §5.2 / §6.9 / §10.7 / §8.3 | 🔴 **本書が置いた解釈。** §10.6 が Phase 0 の管理平面に「テナント作成」を置き、招待とドメイン登録（`F-001` 処理⑤ / `A-014` 5b）はその一部。業務データ（越境 5 経路の対象表）には触れない。**`CLAUDE.md` の改訂は不要と判断した**が、§10.5 の列挙に「テナント開設」を明記する文言補強を望むなら `pm` が Issue 化する |
 | **P-A-16** | 🔴 **AI 1 日上限によるゲート未実行を `ReviewGate.execution='HELD_AI_COST_LIMIT'` の行で保持する**（§3.6 / §7.6） | §3.6 / §7.6 / §9.3 / §11.4 / §16.5 | 🔴 **本書が置いた表現。** `F-027 AC-5` は「未実行のまま保持し `GATE_RUNNING` に留める。整合層の結果は保持して再実行に用いる」を要求する。`Proposal` に列を足す案は 5 種の対象に同じ列が要り、新テーブル案は 19 表を増やすため、`ReviewGate.execution`（実行の属性。**状態機械ではないことを列名でも示す**。`P-A-02` の保留と同じ性質）+ 部分 UNIQUE で表した。**状態機械の状態は増えていない**（`Proposal` は `GATE_RUNNING` のまま） |
 | **P-A-17** | 🔴 **経路 5 の列の絞り込みを `security_invoker` ビュー 4 本で行う**（§4.9） | §4.4 C9 / §4.9 / §6.6 / §17.2 #17 | 🔴 **本書が置いた決定。** `docs/03` §4.3.2-1 は「ビューまたは列レベル `GRANT`」を挙げるが、`app_tenant` はホストとパートナーで同一ロールのため列 `GRANT` では分けられない。シリアライザ単独は取得後のフィルタであり退けた（`docs/02` 申し送り 13-④）。**ビュー + `PartnerScopeDb` 型 + シリアライザの三重** |
-| **P-A-18** | 🔴 **利用者向け件数の加算を `runRole` の内部（手順 6b）に閉じ、`ROLE_UNIT` の写像表で 1 件を定義する**（§7.3 / §7.6） | §7.3 / §7.6 / §9.8 | 🔴 **本書が置いた実装位置。** `docs/03` §7.6.1 の「何を 1 件と数えるか」（`sheet-parser` 1 回 / 根拠文は候補数 / 再試行は加算しない）を、呼び出し側に書かせず単一経路で満たすため。**`AiUsage` の行数から数え直すジョブは作らない**（`docs/03` 申し送り 30） |
+| **P-A-18** | 🔴 **利用者向け件数の加算を `runRole` の内部（手順 6b）に閉じ、`ROLE_UNIT` の写像表で 1 件を定義する**（§7.3 / §7.6） | §7.3 / §7.6 / **§7.11** / §9.8 | 🔴 **本書が置いた実装位置。** `docs/03` §7.6.1 の「何を 1 件と数えるか」（`sheet-parser` 1 回 / 根拠文は候補数 / 再試行は加算しない）を、呼び出し側に書かせず単一経路で満たすため。**`AiUsage` の行数から数え直すジョブは作らない**（`docs/03` 申し送り 30）。**実装済み（T-07-03。§7.11 ①②）**: 写像表は `packages/domain/src/ai/units.ts`、加算は `packages/db/src/ai-usage.ts` の `countAiUnit` 1 本（§17.2 #24 が固定） |
 | **P-A-14** | 🔴 **経路 4 の存在判定を `SECURITY DEFINER` 関数 `app_engineer_is_shared()` + 専用ロール `app_share_probe` に閉じる**（§4.5） | §4.2 / §4.5 / §4.7 | 🔴 **本書が置いた決定。** 代替案「`engineer_shares` にホスト向けの追加 SELECT ポリシー」は行（`partner_company_id` / `shared_by`）がホストに見え `BR-06` に抵触するため退けた。**越境経路は増えていない**（経路 4 の DB 側実装を確定させただけ） |
 | **P-A-15** | 🔴 **未認証の受諾・パスワード再設定は「行由来コンテキスト」の 3 関数で書く**（§4.4.2） | §4.4 C8 / §6.3 | 🔴 **本書が置いた決定。** `systemTenantCtx` を `apps/web` に開放する案は HTTP 経路が認証を迂回できるため退けた。分離キーは常にトークン照合で得た DB 行から取る |
 | **P-A-19** | 🔴 **`assignments ← engineers(engineer_id)` の当事者列継承だけ、`app_share_probe` と同型の専用ロール `app_assignment_owner_probe` + `SECURITY DEFINER` トリガ関数で実装する**（§4.2 / §4.4.1） | §4.2 / §4.4.1 / §4.7 | 🔴 **本書が置いた決定（T-02-08。programmer 実装 → code-reviewer 確認を経て確定）。** `engineers` は C3 のためホスト文脈から他パートナー所有の行が見えないが、`assignments` は C2（ホストがパートナー所属エンジニアを稼働させるのが通常業務）であるため、素の `SECURITY INVOKER` では正当なホスト操作が「親が見えない」で `RAISE` してしまう（`tests/isolation/route5-counterparty.test.ts` で実測）。トリガ関数（`RETURNS trigger`）を `SECURITY DEFINER` にする点が `app_engineer_is_shared()`（通常の SQL 関数。§4.5）と異なり、`app_tenant` セッションから直接呼び出す経路が型レベルで存在しない。**越境経路は増えていない**（`engineers` の 3 列以外は依然として見えない。パートナー間相互参照〔`CLAUDE.md` §3.1〕には抵触しない） |

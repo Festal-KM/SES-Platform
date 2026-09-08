@@ -10,6 +10,7 @@
 
 import type { AiRole, AiUsageFailureKind, AiUsagePurpose } from '@ses/domain';
 import type { AiTokenUsage } from './client.js';
+import type { MaskHit } from './mask.js';
 
 /**
  * `ai_usage` の 1 行（docs/05 §3.8 / §7.3 手順 6）。
@@ -33,6 +34,14 @@ export type AiUsageRecordInput = {
   readonly succeeded: boolean;
   /** 成功時は undefined。失敗時は必ず入る（`ai_usage_failure_kind_check` の 5 値）。 */
   readonly failureKind?: AiUsageFailureKind;
+  /**
+   * 🔴 T-07-03: 「パターン検出による追加マスキング」の記録（docs/03 §4.2 / docs/05 §7.10 ⑤）。
+   *
+   * `AiCallContext.maskHits` をそのまま運ぶ。**どの種別を残すかを決めるのは記録側**であり
+   * （`packages/db` が `PATTERN` だけを畳む）、ここでは選別しない ——
+   * 選別を 2 箇所に置くと、片方だけ変わったときに記録の意味が静かにずれる。
+   */
+  readonly maskHits?: readonly MaskHit[];
   readonly startedAt: Date;
   readonly finishedAt: Date;
 };

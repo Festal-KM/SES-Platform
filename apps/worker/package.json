@@ -11,6 +11,7 @@
     "start": "node dist/main.js"
   },
   "dependencies": {
+    "@ses/ai": "workspace:*",
     "@ses/config": "workspace:*",
     "@ses/connectors": "workspace:*",
     "@ses/db": "workspace:*",

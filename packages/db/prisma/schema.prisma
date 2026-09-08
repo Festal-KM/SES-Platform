@@ -1333,6 +1333,10 @@ model AiUsage {
   succeeded        Boolean
   /// AiUsageFailureKind（TEXT + CHECK。nullable）
   failureKind      String?  @map("failure_kind")
+  /// 🔴 T-07-03: パターン検出（補助）による追加マスキングの要約 `{種別: 件数}`（docs/03 §4.2 /
+  /// docs/05 §7.10 ⑤）。**一致した文字列は入れない**（記録自体が PII の再出現経路になる）。
+  /// 既定 `{}` の NOT NULL（「検出が無かった」と「記録し忘れた」を区別できる形にする）。
+  maskPatternHits  Json     @default("{}") @map("mask_pattern_hits")
   startedAt        DateTime @map("started_at") @db.Timestamptz(3)
   finishedAt       DateTime @map("finished_at") @db.Timestamptz(3)
 

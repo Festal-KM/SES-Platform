@@ -4,7 +4,7 @@
 
 import type { z } from 'zod';
 import type { AiRole, AiUsageFailureKind, AiUsagePurpose } from '@ses/domain';
-import type { MaskedText } from '../mask.js';
+import type { MaskedText, MaskHit } from '../mask.js';
 
 // 🔴 値集合の唯一の出所は `packages/domain`（T-07-01。`packages/db` の CHECK と同じ 1 表を見る）。
 //    ここは `@ses/ai` の利用者が追加の import 無しにロールを扱えるようにするための re-export である。
@@ -77,6 +77,19 @@ export type AiCallContext = {
   /** `AiUsage.targetType`（`'PROPOSAL'` / `'SKILL_SHEET'` など）。 */
   readonly targetType?: string;
   readonly targetId?: string;
+  /**
+   * 🔴 この呼び出しの入力に対して `mask()` が伏せた要約（T-07-03。docs/05 §7.10 ⑤ の申し送り）。
+   *
+   * **なぜ `ctx` に置くか**: `mask()` を呼ぶのは入力を用意する側（ロールジョブ）であり、
+   * `buildPrompt` は `MaskedText` を受け取って**組み立てるだけ**である（`RolePrompt` は
+   * `MaskedText` しか返さない）。要約を `runRole` まで運ぶ口が他に無い。
+   *
+   * 🔴 一致した文字列を持たない型である（`MaskHit`）。原文を運ばせない。
+   * 🔴 **省略できる**（渡さなければ「検出なし」として記録される）。必須にしないのは、
+   *    マスキングを経ない入力があってよいという意味ではない ——
+   *    マスキングの強制は `MaskedText` の型が担っており（§7.10 ①）、こちらは**観測の記録**である。
+   */
+  readonly maskHits?: readonly MaskHit[];
   readonly now: () => Date;
 };
 

@@ -196,6 +196,10 @@ export function createRoleRunner(runtime: AiRuntime): AiRoleRunner {
           attemptNo,
           succeeded: outcome.kind === 'ok',
           ...(outcome.kind === 'ok' ? {} : { failureKind: outcome.failureKind }),
+          // 🔴 T-07-03: 入力のマスキング要約をそのまま記録側へ渡す（docs/03 §4.2）。
+          //    **試行ごとの行すべてに載せる**（各行がその試行の入力を自己記述する）。
+          //    再試行は同じ入力を送り直すため同じ値になる。
+          ...(ctx.maskHits === undefined ? {} : { maskHits: ctx.maskHits }),
           startedAt,
           finishedAt,
         });

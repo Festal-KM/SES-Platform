@@ -102,6 +102,9 @@ importers:
 
   apps/worker:
     dependencies:
+      '@ses/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
       '@ses/config':
         specifier: workspace:*
         version: link:../../packages/config

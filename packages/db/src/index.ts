@@ -368,6 +368,12 @@ export {
   releaseSkillSheetStorage,
 } from './storage-usage.js';
 export type { SkillSheetStorageInput, StorageAccountingOutcome } from './storage-usage.js';
+// 🔴 T-07-03: `AiUsage` の記録と利用者向け件数の加算（docs/05 §7.3 / §7.6 / §7.11 /
+//    `F-026 AC-1` `AC-2` `AC-6`）。`packages/ai` の `AiUsageRecorder`（ポート）の実装本体であり、
+//    アダプタは `apps/worker/src/ai/usage-recorder.ts` が持つ（`packages/db` は `@ses/ai` に
+//    依存できないため、形の一致はそのアダプタのコンパイルが証明する）。
+export { countAiUnit, recordAiUsage } from './ai-usage.js';
+export type { AiUnitCountValues, AiUsageMaskHit, AiUsageRecordValues } from './ai-usage.js';
 // 🔴 T-05-05: ウイルススキャン結果の記録と適用（docs/05 §8.5 / §9.6 / `BR-26`）。
 //    `CLEAN` へ戻す遷移が存在しない経路であり、呼び出し元は `apps/worker` のジョブだけである。
 export { applyFileScanResult, listStalledScanTargets } from './file-scan.js';

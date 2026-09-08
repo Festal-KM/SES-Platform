@@ -171,6 +171,34 @@ describe('runRole の正常系（docs/05 §7.2 / §7.3）', () => {
     expect(h.settlements[0]?.attempts).toHaveLength(1);
   });
 
+  it('🔴 マスキングの要約（パターン検出）が記録側へ渡る（T-07-03。docs/03 §4.2 / docs/05 §7.10 ⑤）', async () => {
+    const h = harness({ script: [{ kind: 'output', output: OK_OUTPUT }] });
+    const maskHits = [
+      { category: 'NAME', method: 'KNOWN_VALUE', count: 2 },
+      { category: 'EMAIL', method: 'PATTERN', count: 1 },
+    ] as const;
+    await createRoleRunner(h.runtime).runRole(gateSpec(), { content: '本文' }, callContext({ maskHits }));
+
+    // 🔴 選別（どの種別を残すか）は記録側の責務。ここでは**そのまま**渡っていることだけを見る。
+    expect(h.rows[0]?.maskHits).toEqual(maskHits);
+  });
+
+  it('マスキングの要約が無ければ記録項目にも現れない（「検出なし」として扱われる）', async () => {
+    const h = harness({ script: [{ kind: 'output', output: OK_OUTPUT }] });
+    await createRoleRunner(h.runtime).runRole(gateSpec(), { content: '本文' }, callContext());
+
+    expect(h.rows[0]).not.toHaveProperty('maskHits');
+  });
+
+  it('🔴 再試行の行にも同じマスキング要約が載る（各行がその試行の入力を自己記述する）', async () => {
+    const h = harness({ script: [{ kind: 'output', output: { verdict: 'MAYBE', findings: [] } }] });
+    const maskHits = [{ category: 'PHONE', method: 'PATTERN', count: 3 }] as const;
+    await createRoleRunner(h.runtime).runRole(gateSpec(), { content: '本文' }, callContext({ maskHits }));
+
+    expect(h.rows).toHaveLength(MAX_LLM_ATTEMPTS);
+    expect(h.rows.every((row) => row.maskHits === maskHits)).toBe(true);
+  });
+
   it('ロールの段（CHEAP）に応じたモデルが使われ、AiUsage にもそのモデルが記録される（CLAUDE.md §12.3）', async () => {
     const h = harness({ script: [{ kind: 'output', output: OK_OUTPUT }] });
     await createRoleRunner(h.runtime).runRole(
