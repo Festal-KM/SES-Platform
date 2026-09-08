@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  // 🔴 `pnpm typecheck` 用。build（tsconfig.json）はテストを出荷物から外すが、
+  //    型検査は **テストも含めて**行う。`mask.test.ts` の `@ts-expect-error` は
+  //    「生の `string` / `image` ブロックが実際にコンパイルエラーになる」ことをここで検査される
+  //    （型検査されなければ、その行は単なるコメントと同じで何も保証しない）。
+  //    packages/connectors と同じ整理。
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "exclude": []
+}

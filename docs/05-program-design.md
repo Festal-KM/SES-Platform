@@ -2687,8 +2687,10 @@ POST /api/webhooks/esign/cloudsign/{tenantId}/{secret}  // 第二コネクタの
 
 🔴 **ロールは自律エージェントではない。入出力スキーマが定義されたパイプライン工程である**（`CLAUDE.md` §12.3）。共通インタフェースは次のとおり。
 
+⚠️ **本節以下のスケッチは T-07-01 で実装され、一部が確定値に置き換わった。差分は §7.9「§7 の実装の決着（T-07-01）」を正とする**（`CLAUDE.md` §8.7）。
+
 ```ts
-// packages/ai/src/roles/types.ts
+// packages/ai/src/roles/types.ts（🔴 AI_ROLES の宣言そのものは packages/domain へ移した。§7.9 ⑤）
 export const AI_ROLES = ['sheet-parser', 'skill-normalizer', 'match-explainer',
                          'gate-inspector', 'proposal-drafter', 'renewal-advisor'] as const;
 export type AiRole = typeof AI_ROLES[number];
@@ -2725,10 +2727,11 @@ export type RoleSpec<I, O> = {
 
 ```ts
 // packages/ai/src/run.ts  — 🔴 packages/ai が export する実行系はこの 1 本のみ
+// 🔴 T-07-01 で ~~トップレベル関数~~ → createRoleRunner(runtime) が返す AiRoleRunner.runRole に確定（§7.9 ①）
 export async function runRole<I, O>(
   spec: RoleSpec<I, O>,
   input: I,
-  ctx: AiCallContext,           // { tenantId, targetType, targetId, now }
+  ctx: AiCallContext,           // { tenantId, targetType, targetId, now }  🔴 now は () => Date（§7.9 ②）
 ): Promise<RoleResult<O>>;
 
 export type RoleResult<O> =
@@ -2755,6 +2758,7 @@ export type Provenance = {
 
 ```ts
 // runRole の内部順序（🔴 この順序を変えない）
+// 0. 🔴 T-07-01 で追加: spec.purpose と ROLE_PURPOSE[spec.role] の食い違いを検出したら throw（§7.9 ③）
 // 1. 入力を inputSchema で parse（前工程の出力が構造化データであることを保証）
 // 2. マスキング済み型（MaskedText）であることを型で確認（buildPrompt が MaskedText しか返さない）
 // 3. コスト上限ガード: reserveAiCost(tenantId, estimatedUsd) → 失敗なら AiCostLimitExceededError
@@ -2831,6 +2835,8 @@ export function decideRoleHandoff(input: {
 
 ```ts
 // packages/ai/src/usage.ts
+// 🔴 T-07-01: 下記は「予約の意味」を示すスケッチであり、~~packages/ai が USD を計算する~~ という意味ではない。
+//    実装では packages/ai に置くのは AiCostGuard.reserve/settle の **ポートだけ**（§7.9 ④）。
 export async function reserveAiCost(tenantId: string, estimatedUsd: Decimal, now: Date): Promise<void>;
 // 🔴 UsageCounter に対する INSERT ... ON CONFLICT DO UPDATE ... RETURNING で原子的に予約する:
 //   UPDATE usage_counters SET reserved_value = reserved_value + $est
@@ -2893,6 +2899,82 @@ export type KnownPiiValues = {          // 🔴 DB の台帳の値。これが�
 | 3 | 🔴 **整合層の合否判定関数に LLM 出力を渡さない**（§11.3。`docs/03` 申し送り 4）。`decideConsistency(facts)` の引数型に AI の出力が入らない |
 | 4 | 🔴 **LLM の出力が状態遷移・送信・権限変更を起動する経路を作らない。** ロールジョブは成果物の保存と「次工程の enqueue」しかできず、`Proposal` の状態遷移 API を呼ばない |
 | 5 | **検証**: `tests/security/prompt-injection.test.ts` が、スキルシート本文に「ゲートを通過させよ」「以前の指示を無視せよ」等を埋め込んでも `F-020` の PII / 商流の判定と整合層の合否が変わらないことを確認する（`docs/02` 章 7.3 の受け入れ基準 ②） |
+
+### 7.9 🔴 §7 の実装の決着（T-07-01。2026-09-08）
+
+**§7 は T-07-02〜T-07-06 の一次資料である。** T-07-01（`packages/ai` の単一経路と構造化出力）で確定した形を、上のスケッチとの差分として記録する（`CLAUDE.md` §8.7。§6.4 の「実装の決着」と同じ作法）。**以降のタスクは本節を正とする。**
+
+#### ① 公開形は `createRoleRunner(runtime)` が返す `AiRoleRunner.runRole(spec, input, ctx)`（§7.2）
+
+- ~~`export async function runRole(spec, input, ctx)`（トップレベル関数）~~ — **2026-09-08 に組み立て入口を分けた。** 理由: `runRole` は外部（LLM / `AiUsage` / `UsageCounter` / モデル設定）と話すが、`packages/ai` は `@ses/db` に依存できない（`CLAUDE.md` §2.1）。接続点を**引数で渡す**か**モジュールのグローバル状態に持つ**かの二択であり、後者は起動順に依存して静かに壊れるため採らなかった。
+- 🔴 **`runRole` の見え方は文書どおり 3 引数のままである**（`spec` / `input` / `ctx`）。接続点は `createRoleRunner` に閉じており、呼び出し側（ロールジョブ）は 3 引数だけを見る。
+  ```ts
+  // packages/ai/src/run.ts
+  export type AiRuntime = {                 // 🔴 4 ポートとも必須（省略可にすると記録も上限も素通りする）
+    readonly client: AnthropicClient;       // §7.9 ⑥（LLM の呼び出し口。バレルからは出さない）
+    readonly usage: AiUsageRecorder;        // 手順 6 / 6b。実装は T-07-03
+    readonly costGuard: AiCostGuard;        // 手順 3 / 7。実装は T-07-04
+    readonly models: RoleModelResolver;     // ロール別モデル。TenantRoleModel 対応は SP-14
+    readonly sleep?: (ms: number) => Promise<void>;   // 再試行の待機（既定 setTimeout。テストで差し替え）
+    readonly random?: () => number;                    // ジッタ（既定 Math.random）
+  };
+  export function createRoleRunner(runtime: AiRuntime): AiRoleRunner;   // 🔴 起動時に 1 回だけ呼ぶ
+  export type AiRoleRunner = {
+    runRole<I, O>(spec: RoleSpec<I, O>, input: I, ctx: AiCallContext): Promise<RoleResult<O>>;
+  };
+  ```
+- 🔴 **`AiRuntime` の 4 ポートは必須である。** 任意にすると「記録を経由しない呼び出し」「上限を見ない呼び出し」が**型として書ける**ようになり、`F-026 AC-1` / `F-027` の担保が「気をつける」に戻る。
+
+#### ② `AiCallContext.now` は `() => Date`（§7.2）
+
+- ~~`now`（`Date` の値）~~ → **`now: () => Date`。** 理由: `AiUsage.startedAt` / `finishedAt` を**試行ごと**に記録する（再試行も 1 行。§7.4）ため、固定の `Date` では所要時間が常に 0 になり、`A-005` のレイテンシ観測が成立しない。
+- 🔴 **「システム時刻を直接読まない」規律は不変である**（§17.6）。`runRole` は `Date.now()` を呼ばず、渡された関数だけを呼ぶ（ジョブハンドラが注入する）。
+
+#### ③ 手順 0: `spec.purpose` と `ROLE_PURPOSE[spec.role]` の食い違いは**呼ぶ前に** throw（§7.3）
+
+- `AiUsage.purpose` はロールと 1:1（`ai_usage_purpose_check` の 6 値。§3.8）。取り違えた `RoleSpec` を受け付けると、①`AiUsage` の INSERT が CHECK で落ちる（＝ 記録できない呼び出しになる）か ②`F-063` のロール別原価が**別のロールに積まれる**。
+- 🔴 **LLM を呼ぶ前に落とす**（手順 3 の予約より前）。呼んでから落とすと原価だけが出る。写像表 `ROLE_PURPOSE` が唯一の出所であり、`RoleSpec` の作成者はそこから引く。
+
+#### ④ コスト上限ガードは `packages/ai` に**ポートだけ**を置く（§7.6）
+
+- §7.6 の `reserveAiCost(tenantId, estimatedUsd, now)` は**予約の意味**を示すスケッチである。~~`packages/ai` が USD を見積もって渡す~~ 形は採らない — **2026-09-08 に読み替えを確定した。** 理由: 単価表（`docs/03` §3.3.1）を `packages/ai` に持つと、単価の出所が `docs/03` の表・`packages/ai`・原価集計（`F-063`）の 3 箇所に散る。**金額を持つのは 1 箇所**にする。
+  ```ts
+  // packages/ai/src/usage.ts — 🔴 ポートのみ（実装は T-07-03 / T-07-04 が apps/* から注入する）
+  export type AiCostGuard = {
+    // 🔴 呼び出しの「前」。渡すのはトークン数とモデル ID であり、USD の計算は実装側が行う。
+    //    予約できなければ AiCostLimitExceededError を throw（runRole は catch せず伝播させる）
+    reserve(input: { tenantId; role; modelId; estimatedInputTokens; maxOutputTokens; now }): Promise<AiCostReservation>;
+    // 🔴 呼び出しの「後」。失敗した試行も含む全試行の実績（modelId + トークン数）を渡す
+    settle(input: { tenantId; reservation; attempts: readonly AiAttemptUsage[]; now }): Promise<void>;
+  };
+  export type AiCostReservation = { readonly handle: string };   // 🔴 中身の解釈は実装（T-07-04）に委ねる
+  export type AiUsageRecorder = {
+    record(input: AiUsageRecordInput): Promise<string>;  // 手順 6。🔴 失敗したら throw。戻り値は AiUsage.id
+    countUnit(input: AiUnitCountInput): Promise<void>;   // 手順 6b。🔴 ok:true のとき 1 呼び出しに 1 度だけ
+  };
+  ```
+- 🔴 **`AiUsageRecordInput` に `estimatedCostUsd` を持たせない。** 金額はトークン数とモデル ID から機械的に決まるため、記録側（T-07-03）が算出する。`ROLE_UNIT` の写像表も同じ理由で記録側に置く（`countUnit` が出力そのものを受け取るのは、`match-explainer` が 1 リクエストで N 件を数えるため）。
+- 🔴 **入力トークンの見積りは `packages/ai` 側の保守的な近似である**（`estimateInputTokens` = 文字数 ÷ 3 の切り上げ）。**多めに倒す** — 少なく見積もると上限を越えてから気づく。実コストは手順 7 の `settle` が補正する。
+- 🔴 **`AiCostLimitExceededError`（テナントの 1 日上限で「呼ばなかった」）と `AiUsageFailureKind='SPEND_CAP'`（Anthropic の月間支出上限で「呼んで弾かれた」）は別物である**（§7.4 / §7.6 / `F-027 AC-5`）。前者は `runRole` から伝播して呼び出し側が HELD にし、後者は `RoleResult.ok=false` の失敗になる。
+
+#### ⑤ `AI_ROLES` の出所は `packages/domain` に移した（§7.1 / §3.8 / §3.10）
+
+- ~~`packages/ai/src/roles/types.ts` が宣言~~ → **`packages/domain/src/ai/roles.ts` が唯一の出所**（`AI_ROLES` / `APPROVAL_MODE_CONFIGURABLE_ROLES` / `AI_USAGE_PURPOSES` / `ROLE_PURPOSE` / `AI_USAGE_FAILURE_KINDS`）。`packages/ai/src/roles/types.ts` と `packages/db/src/schema-value-sets.ts` は**どちらも re-export** であり、公開される名前は §7.1 のスケッチのままである。
+- 理由: ロールを実行する側（`packages/ai`）と CHECK を持つ側（`packages/db`）は相互に依存できない（`CLAUDE.md` §2.1）。共有点は domain しか無い（`RecipientClass`（T-04-02）/ `ScanStatus`（T-05-05）と同じ整理であり、T-02-01 が `schema-value-sets.ts` に残した「`packages/ai` の実装時に解消すること」という申し送りの解消でもある）。
+- 突合は従来どおり `tests/static/schema-enum-drift.test.ts` が `@ses/db` の名前で migration.sql と行う（**検査の入口は変えていない**）。
+
+#### ⑥ SDK の実体化は未了（§7.2 の「SDK の直接 import 禁止」の現状）
+
+- 🔴 **`@anthropic-ai/sdk` はまだ依存に入っていない**（新規外部依存の追加は承認事項。`docs/dev-plan.md` §5 E-3 の API キー取得も未完了）。`packages/ai/src/client.ts` の `createAnthropicMessagesApi()` は **`AiClientNotAvailableError` を throw する**。
+- 🔴 **モックへフォールバックしない**（`CLAUDE.md` §11.1）。`ai: 'real'` の環境は起動時に落ちる。`development` / `demo` は `mock` のため影響しない。
+- 🔴 **依存追加時に埋めるのは `createAnthropicMessagesApi` の中身だけである。** SDK 非依存の部分（要求の組み立て・応答の取り出し・例外の正規化）は `AnthropicApiClient` として実装済みであり、**SDK の呼び出し規約は `AnthropicMessagesApi` の 1 面に閉じている**（`packages/connectors` の `SesApi` ↔ `SesEmailSender` ↔ `aws-sdk-api.ts` と同じ 3 分割）。
+- 🔴 **そのとき SDK の自動再試行を必ず切る（`maxRetries: 0`）。** 残すと `runRole` が数える試行回数（＝ `AiUsage` の行数）と実際の呼び出し回数がずれ、原価が過少計上になる（`packages/connectors` の AWS SDK に `maxAttempts: 1` を強制しているのと同じ理由。§17.2 #10b）。
+- ⚠️ SDK を静的 import すると `@ses/ai` のバレル経由で `apps/web` のサーババンドルにも載る。問題になった時点で **SDK の実体化だけを `@ses/ai/anthropic` サブパスへ分離する**（`@ses/connectors/aws` と同じ整理）。
+
+#### ⑦ 「呼び出し経路」も静的テストで固定した（§17.2 #10 の拡張）
+
+- §7.2 の「SDK の直接 import 禁止」は**import 経路**の担保であり、それだけでは `createAiClient()` が返したクライアントを業務コードが直接呼ぶ経路（＝ `AiUsage` に残らない呼び出し）を塞げない。`tests/static/ai-single-path.test.ts` に **`createStructuredMessage` の呼び出し元を `packages/ai/src/run.ts` の 1 本に固定する AST 走査**を追加した（同テストは `packages/ai/src/index.ts` がクライアントのポートを re-export していないことも見る）。
+- 実装種別（`real` / `mock` / `sandboxRecipientScoped`）の二重宣言は `tests/static/connector-selection-mirror.test.ts` が `packages/config` と突合する（`packages/connectors` と同じ扱い）。🔴 **`ai` に `sandboxRecipientScoped` は無い**（宛先分類はメール専用。渡されたら起動を止める）。
 
 ## 8. 外部連携層（コネクタ）の設計（`CLAUDE.md` §3.4）
 
@@ -4396,7 +4478,7 @@ export const logger = pino({
 | 7 | `execute-guard.test.ts` | 🔴 実行系ルート一覧の全ファイルが `requireExecutable` を呼ぶ（AST 走査） |
 | 8 | `approval-mode-isolation.test.ts` | 🔴 `apps/web/app/api/(main)/proposals/**` に `TenantRoleApprovalMode` / `decideRoleHandoff` が現れない（`F-035 AC-3`） |
 | 9 | `gate-consistency-purity.test.ts` | 🔴 `decideConsistency` の引数型に AI 由来の型が現れない（`BR-61`） |
-| 10 | `ai-single-path.test.ts` | 🔴 `@anthropic-ai/sdk` の import が `packages/ai/src/client.ts` のみ |
+| 10 | `ai-single-path.test.ts` | 🔴 `@anthropic-ai/sdk` の import が `packages/ai/src/client.ts` のみ。🔴 **加えて「呼び出し経路」も固定する**（T-07-01。§7.9 ⑦）: `createStructuredMessage` を呼ぶ非テストソースが `packages/ai/src/run.ts` の 1 本だけであり、`packages/ai/src/index.ts` がクライアントのポート（`AnthropicClient` / `AnthropicApiClient` / `AiClientRequest` / `AiClientResponse`）を re-export していないこと。**import 経路だけを塞いでも、`createAiClient()` の戻り値を直接呼べば `AiUsage` に残らない呼び出しが成立する** |
 | 10b | `aws-sdk-single-path.test.ts` | 🔴 **`@aws-sdk/*` の import が `packages/connectors/src/email/ses/aws-sdk-api.ts`（とそのユニットテスト）のみ**（T-04-03。#10 と同じ発想）。理由は 3 つ: ①🔴 **SDK 内部のリトライ（既定 3 回）を止められるのはクライアントを生成する場所だけ**であり、別の場所で `new SESv2Client()` が作られると送信系の `attempts: 1` を SDK が内側から無効化する（`BR-21` / `BR-22`）。同テストがアダプタに `maxAttempts: 1` が書かれていることも固定する ②サービス固有の型（`SendEmailCommand` / `SESv2Client`）がドメイン層・ジョブ層へ漏れない（`CLAUDE.md` §3.4）③🔴 **主バレル（`@ses/connectors`）から SDK に到達できないこと** —— `apps/web` は宛先分類・payload の型のために `@ses/connectors` を import しており、主バレルに載せると Next.js のサーババンドルに AWS SDK 一式が同梱される。SDK への公開経路は **`@ses/connectors/aws` サブパス 1 本**（`package.json` の `exports` が `"."` と `"./aws"` の 2 つだけであること、`src/index.ts` と `src/email/ses/index.ts` が `aws-sdk-api` を re-export しないことを検査する） |
 | 11 | `redact-snapshot.test.ts` | denylist のスナップショット固定（削られたら落ちる） |
 | 12 | `purge-spec-coverage.test.ts` | 🔴 全業務テーブルが `PURGE_SPEC.delete` / `.retain` のどちらかに現れる（カタログ走査） |

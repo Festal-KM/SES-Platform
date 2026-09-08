@@ -188,57 +188,29 @@ export const TASK_STATES = ['OPEN', 'DONE'] as const;
 export type TaskState = (typeof TASK_STATES)[number];
 
 /**
- * docs/05 §3.8 `AiUsage.role`（TEXT + CHECK）/ CLAUDE.md §12.2 の 6 ロール。
- * `TenantRoleModel.role`（6 値すべて）でも共有する。
- * 🔴 `packages/ai` はまだ実装されていない（SP-07）。将来そちらに `AI_ROLES` が実装されたときは、
- *    こちらを唯一の出所として re-export するか、依存方向（`packages/ai` → `packages/db` は
- *    禁止。docs/05 §2.2）を踏まえて解消すること。
+ * docs/05 §3.8 `AiUsage.role` / `.purpose` / `.failureKind`、§3.10 `TenantRoleModel.role` /
+ * `TenantRoleApprovalMode.role`（いずれも TEXT + CHECK）。CLAUDE.md §12.2 の 6 ロール。
+ *
+ * 🔴 **宣言の唯一の出所は `packages/domain`**（T-07-01）。ここは re-export である ——
+ *    ロールを実行する側（`packages/ai`）と CHECK を持つ側（本パッケージ）は相互に依存できず
+ *    （`CLAUDE.md` §2.1。`packages/ai` → `@ses/db` は ESLint で禁止）、共有点が domain しか無い
+ *    （`ScanStatus` / `RecipientClass` と同じ整理）。T-02-01 に置いた
+ *    「`packages/ai` が実装されたときに解消すること」という申し送りの解消である。
+ *    `tests/static/schema-enum-drift.test.ts` は引き続き `@ses/db` の名前で migration.sql と突合する。
  */
-export const AI_ROLES = [
-  'sheet-parser',
-  'skill-normalizer',
-  'match-explainer',
-  'gate-inspector',
-  'proposal-drafter',
-  'renewal-advisor',
-] as const;
-
-export type AiRole = (typeof AI_ROLES)[number];
-
-/**
- * docs/05 §3.10 `TenantRoleApprovalMode.role`（TEXT + CHECK。5 値）。CLAUDE.md §12.4
- * 「`gate-inspector` に承認モードは存在しない」により `AI_ROLES` から `gate-inspector` を除いた集合。
- */
-export const APPROVAL_MODE_CONFIGURABLE_ROLES = AI_ROLES.filter(
-  (role): role is Exclude<AiRole, 'gate-inspector'> => role !== 'gate-inspector',
-);
-
-export type ApprovalModeConfigurableRole = (typeof APPROVAL_MODE_CONFIGURABLE_ROLES)[number];
-
-/**
- * 🔴 docs/05 §3.8 `AiUsage.purpose`（TEXT + CHECK）。ドキュメント上は
- * `'gate'|'sheet_parse'|...`（省略記法）としか示されておらず、フル値集合は明記されていない。
- * 6 ロール（`AI_ROLES`）と 1:1 対応することが、示された 2 例（'gate' = gate-inspector,
- * 'sheet_parse' = sheet-parser）と `docs/03` §7.6.1 のメーター名（sheetParse / matchRationale /
- * proposalDraft / renewalSummary）から強く裏付けられるため、programmer 判断で 6 値に確定した
- * （プログラマ完了報告に記載。値そのものに疑義が生じた場合は `docs/05` §3.8 へ確定値を
- * 追記のうえ本コメントを更新すること）。
- */
-export const AI_USAGE_PURPOSES = [
-  'sheet_parse',
-  'skill_normalize',
-  'match_rationale',
-  'gate',
-  'proposal_draft',
-  'renewal_summary',
-] as const;
-
-export type AiUsagePurpose = (typeof AI_USAGE_PURPOSES)[number];
-
-/** docs/05 §3.8 `AiUsage.failureKind`（TEXT + CHECK。nullable）。 */
-export const AI_USAGE_FAILURE_KINDS = ['SCHEMA', 'TIMEOUT', 'RATE', 'SPEND_CAP', 'API'] as const;
-
-export type AiUsageFailureKind = (typeof AI_USAGE_FAILURE_KINDS)[number];
+export {
+  AI_ROLES,
+  AI_USAGE_FAILURE_KINDS,
+  AI_USAGE_PURPOSES,
+  APPROVAL_MODE_CONFIGURABLE_ROLES,
+  ROLE_PURPOSE,
+} from '@ses/domain';
+export type {
+  AiRole,
+  AiUsageFailureKind,
+  AiUsagePurpose,
+  ApprovalModeConfigurableRole,
+} from '@ses/domain';
 
 /** docs/05 §3.8 `AuditLog.actorKind`（TEXT + CHECK）。 */
 export const AUDIT_ACTOR_KINDS = ['USER', 'PLATFORM_USER', 'SYSTEM'] as const;

@@ -41,6 +41,9 @@ const domainRecipientFile = path.join(
   'classify.ts',
 );
 const dbValueSetsFile = path.join(repoRoot, 'packages', 'db', 'src', 'schema-value-sets.ts');
+// 🔴 T-07-01: `packages/ai` も `packages/config` の実装種別を二重宣言する（`@ses/config` に
+//    依存しないため。`packages/connectors` と同じ理由）。ここで同じ突合の対象にする。
+const aiIndexFile = path.join(repoRoot, 'packages', 'ai', 'src', 'index.ts');
 const sesEventsFile = path.join(
   repoRoot,
   'packages',
@@ -157,6 +160,7 @@ function propertyTypeTextsOfTypeAlias(sourceFile: ts.SourceFile, typeName: strin
 
 const config = parse(configFile);
 const connectors = parse(connectorsFile);
+const ai = parse(aiIndexFile);
 const domainRecipient = parse(domainRecipientFile);
 const dbValueSets = parse(dbValueSetsFile);
 const sesEvents = parse(sesEventsFile);
@@ -190,6 +194,16 @@ describe('🔴 コネクタ選択の二重宣言が一致していること（do
     const properties = [...propertyNamesOfTypeAlias(connectors, 'ConnectorSelectionInput')].sort();
     const categories = [...arrayLiteralsOfConst(connectors, 'CONNECTOR_CATEGORIES')].sort();
     expect(properties).toEqual(categories);
+  });
+
+  it('🔴 packages/ai の AI_IMPLEMENTATION_KINDS も config と完全に一致する（T-07-01）', () => {
+    // `selection.ai` をそのまま `createAiClient` に渡すため、値集合がずれると
+    // 「production で real を選んだのに AI クライアントが組み立てられない」等が
+    // 起動時ではなく最初の呼び出しまで表面化しない（CLAUDE.md §11.1 / docs/05 §13.1）。
+    const fromConfig = [...unionLiteralsOfTypeAlias(config, 'ConnectorImplementationKind')].sort();
+    const fromAi = [...arrayLiteralsOfConst(ai, 'AI_IMPLEMENTATION_KINDS')].sort();
+    expect(fromAi.length).toBeGreaterThan(0);
+    expect(fromAi).toEqual(fromConfig);
   });
 });
 

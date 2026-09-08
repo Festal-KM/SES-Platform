@@ -3,7 +3,16 @@
   "compilerOptions": {
     "noEmit": false,
     "outDir": "dist",
-    "rootDir": "src"
+    "rootDir": "src",
+    // 🔴 再試行の待機（`setTimeout`）に Node の型が要る（ルートの tsconfig.json は "types": []）。
+    //    packages/db / packages/connectors と同じ理由・同じ書き方。型は root の devDependency
+    //    `@types/node` から解決される。
+    "types": ["node"]
   },
-  "include": ["src"]
+  "include": ["src"],
+  // build では出荷物にテストを含めない（packages/config / packages/connectors と同じ）。
+  // 🔴 型検査は tsconfig.typecheck.json（exclude を空にしたもの）が行う ——
+  //    `run.test.ts` / `mask.test.ts` の `@ts-expect-error` 型テスト（生の string や
+  //    image ブロックを渡すとコンパイルエラーになること）は、テストが型検査されて初めて意味を持つ。
+  "exclude": ["src/**/*.test.ts"]
 }

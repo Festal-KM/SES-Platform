@@ -22,6 +22,10 @@ export * from './ledger/index.js';
 // 🔴 T-05-04: オブジェクトキーの規約（docs/05 §14.1）。キーを組み立てる側（`apps/web`）と
 //    署名する側（`packages/connectors`）が**同じ 1 つの規約**を見る必要があるため domain に置く。
 export * from './storage/index.js';
+// 🔴 T-07-01: AI ロールの値集合（docs/05 §7.1 / §3.8 / CLAUDE.md §12.2）。
+//    実行する側（`packages/ai`）と CHECK を持つ側（`packages/db`）は相互に依存できないため、
+//    値集合の単一出所を domain に置く（`RecipientClass` / `ScanStatus` と同じ整理）。
+export * from './ai/index.js';
 // 🔴 T-05-05: スキャン状態の値集合と遷移規則（docs/05 §3.4 / §8.5 / §9.6）。
 //    正規化する側（`packages/connectors`）と CHECK を持つ側（`packages/db`）は相互に
 //    依存できない（`CLAUDE.md` §2.1）ため、値集合の単一出所を domain に置く。
