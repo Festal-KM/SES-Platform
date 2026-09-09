@@ -1,7 +1,12 @@
 // packages/ai/src/untrusted.test.ts
 // 🔴 プロンプトインジェクション対策の**プロンプト側の防御**（docs/05 §7.8 の対策 1 / docs/02 章 7.3）。
-//    ここで検証するのは「囲みが破れないこと」であり、ゲートの判定が変わらないことの検証は
-//    T-07-06 以降（結合）と E2E #18 で行う。
+//    ここで検証するのは「囲みが破れないこと」だけである。
+//
+// 🔴 **「ゲートの判定が変わらない」ことの検証は `tests/isolation/gate-injection.test.ts` にある**
+//    （K-3 の証明テスト。docs/dev-plan.md §6.1 / docs/05 §11.13）。同テストは実 DB を通した
+//    `gate.run` の 1 本の経路で、①本文の指示が合否を変えない ②LLM が釣られても PASS へ倒れない
+//    ③整合層の合否が本文に影響されない ④**この囲いが結合経路でも成立する**ことを見る。
+//    ブラウザ経路の E2E #18 は `gate.run` の Worker 配線（T-07-11）の後に足す。
 import { describe, expect, it } from 'vitest';
 import { mask, type KnownSensitiveValues } from './mask.js';
 import {

@@ -16,12 +16,13 @@
 //    `aws-sdk-api.ts`（SDK アダプタ）と同じ 3 分割である。
 //
 // ============================================================================
-// ⚠️ T-07-01 時点で **SDK の実体化（`createAnthropicMessagesApi`）は未実装**である
+// ⚠️ **SDK の実体化（`createAnthropicMessagesApi`）は未実装**である（docs/05 §7.9 ⑥）
 // ============================================================================
-// 理由: `@anthropic-ai/sdk` はまだ依存に入っていない（新規依存の追加は承認事項。
-// `docs/dev-plan.md` §5 E-3 の API キー取得も未完了）。**モックへフォールバックしない**ため、
-// `real` が選ばれたら `AiClientNotAvailableError` で起動を止める（CLAUDE.md §11.1）。
-// 🔴 依存を追加する後続タスクは、**この関数の中身だけ**を埋めれば実接続に切り替わる
+// 🔴 `@anthropic-ai/sdk` の**依存は追加済み**（T-07-08。`packages/ai/package.json`）。未了なのは
+//    このファイルのアダプタ本体と `docs/dev-plan.md` §5 E-3（API キー取得）である。
+//    **モックへフォールバックしない**ため、`real` が選ばれたら `AiClientNotAvailableError` で
+//    起動を止める（CLAUDE.md §11.1）。持ち主は T-07-11（docs/05 §11.12 ⑧-1）。
+// 🔴 実体化する後続タスクは、**この関数の中身だけ**を埋めれば実接続に切り替わる
 //    （`AnthropicApiClient` 以降のロジックとそのテストは書き換えずに済む）。
 // 🔴 そのとき `import Anthropic from '@anthropic-ai/sdk'` は**このファイルの静的 import** になる。
 //    `@ses/ai` のバレル（`index.ts`）は本ファイルを値 import するため、`apps/web` の
@@ -261,7 +262,7 @@ export type AnthropicSdkOptions = {
  * 🔴 **`@anthropic-ai/sdk` を実体化する唯一の関数**（= 将来の唯一の SDK import 地点）。
  *
  * ⚠️ 現時点では未実装であり `AiClientNotAvailableError` を投げる（本ファイル冒頭の ⚠️ 参照）。
- *    **モックへ倒さない。** 依存追加後にここへ書くのは、およそ次の 4 行である:
+ *    **モックへ倒さない。** ここへ書くのは、およそ次の 4 行である（依存は追加済み）:
  *
  *    ```ts
  *    const client = new Anthropic({ apiKey: options.apiKey, maxRetries: 0, ... });
@@ -275,10 +276,11 @@ export type AnthropicSdkOptions = {
  *    （`packages/connectors` の AWS SDK に `maxAttempts: 1` を強制しているのと同じ理由）。
  */
 export function createAnthropicMessagesApi(options: AnthropicSdkOptions): AnthropicMessagesApi {
-  // 🔴 まだ SDK を実体化しない。引数の形は依存追加後にそのまま使うため残す（握り潰しではない）。
+  // 🔴 まだ SDK を実体化しない。引数の形は実装時にそのまま使うため残す（握り潰しではない）。
   void options;
   throw new AiClientNotAvailableError(
     'real',
-    '`@anthropic-ai/sdk` の依存追加（承認事項）と E-3（API キー取得）が完了していません。',
+    'SDK アダプタが未実装です（docs/05 §7.9 ⑥。持ち主は T-07-11）。' +
+      '`@anthropic-ai/sdk` の依存は追加済みであり、残るのは本関数の実装と E-3（API キー取得）です。',
   );
 }

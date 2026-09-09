@@ -2903,7 +2903,7 @@ prompts/
 
 ### 7.8 PII マスキングとプロンプトインジェクション対策
 
-⚠️ **本節のスケッチは T-07-02 で実装され、一部が確定値に置き換わった。差分は §7.10「§7.8 の実装の決着（T-07-02）」を正とする**（`CLAUDE.md` §8.7）。
+⚠️ **本節のスケッチは T-07-02 で実装され、一部が確定値に置き換わった。差分は §7.10「§7.8 の実装の決着（T-07-02）」を正とする**（`CLAUDE.md` §8.7）。🔴 **下の対策 5（検証）の置き場所は §11.13 を正とする**（`tests/security/prompt-injection.test.ts` は作られていない。実体は `tests/isolation/gate-injection.test.ts` である）。
 
 ```ts
 // packages/ai/src/mask.ts  — 🔴 MaskedText を作れる唯一の関数
@@ -2998,9 +2998,9 @@ export type KnownPiiValues = {          // 🔴 DB の台帳の値。これが�
 
 #### ⑥ SDK の実体化は未了（§7.2 の「SDK の直接 import 禁止」の現状）
 
-- 🔴 **`@anthropic-ai/sdk` はまだ依存に入っていない**（新規外部依存の追加は承認事項。`docs/dev-plan.md` §5 E-3 の API キー取得も未完了）。`packages/ai/src/client.ts` の `createAnthropicMessagesApi()` は **`AiClientNotAvailableError` を throw する**。
+- ~~🔴 **`@anthropic-ai/sdk` はまだ依存に入っていない**（新規外部依存の追加は承認事項）~~ — **依存は追加済み（2026-09-09、T-07-08）。** `packages/ai/package.json` に `@anthropic-ai/sdk ^0.124.0` が入っており、インストールも済んでいる。🔴 **それでも `createAnthropicMessagesApi()` は今も `AiClientNotAvailableError` を throw する** —— 未了なのは**アダプタの実装**（と `docs/dev-plan.md` §5 E-3 の API キー取得）であり、⑥ の結論（**SDK の実体化は未了**）は変わらない。変わったのは理由が「依存が無い」から「アダプタが空である」になったことだけである（持ち主は `T-07-11`。§11.12 ⑧-1）。
 - 🔴 **モックへフォールバックしない**（`CLAUDE.md` §11.1）。`ai: 'real'` の環境は起動時に落ちる。`development` / `demo` は `mock` のため影響しない。
-- 🔴 **依存追加時に埋めるのは `createAnthropicMessagesApi` の中身だけである。** SDK 非依存の部分（要求の組み立て・応答の取り出し・例外の正規化）は `AnthropicApiClient` として実装済みであり、**SDK の呼び出し規約は `AnthropicMessagesApi` の 1 面に閉じている**（`packages/connectors` の `SesApi` ↔ `SesEmailSender` ↔ `aws-sdk-api.ts` と同じ 3 分割）。
+- 🔴 **実体化で埋めるのは `createAnthropicMessagesApi` の中身だけである。** SDK 非依存の部分（要求の組み立て・応答の取り出し・例外の正規化）は `AnthropicApiClient` として実装済みであり、**SDK の呼び出し規約は `AnthropicMessagesApi` の 1 面に閉じている**（`packages/connectors` の `SesApi` ↔ `SesEmailSender` ↔ `aws-sdk-api.ts` と同じ 3 分割）。
 - 🔴 **そのとき SDK の自動再試行を必ず切る（`maxRetries: 0`）。** 残すと `runRole` が数える試行回数（＝ `AiUsage` の行数）と実際の呼び出し回数がずれ、原価が過少計上になる（`packages/connectors` の AWS SDK に `maxAttempts: 1` を強制しているのと同じ理由。§17.2 #10b）。
 - ⚠️ SDK を静的 import すると `@ses/ai` のバレル経由で `apps/web` のサーババンドルにも載る。問題になった時点で **SDK の実体化だけを `@ses/ai/anthropic` サブパスへ分離する**（`@ses/connectors/aws` と同じ整理）。
 
@@ -4531,6 +4531,41 @@ E2E #23 の前半を**ブラウザ経路で**書くには、次の 3 つが揃�
 1b. ⚠️ **提案・案件の削除を実装するタスクへ**: `gate.run` が `TARGET_NOT_FOUND` を返した保留行は残り続け、`gate.hold-release` の走査で毎回 1 枠を消費する（LLM は呼ばれないので原価は増えない）。削除の実装は**保留行の掃除を併せて**決めること（現時点では削除 API が無いため到達しない）。
 2. **SP-09 へ**: 承認・送信の事前判定は `findPassedReviewGate` を使うこと（保留行は `execution='DONE'` を満たさないので、**保留が「まだ検査していない」ではなく「PASS ではない」として扱われる**）。
 3. **SP-10 へ**: 残量表示（`S-038`）も金額を `apps/**` に持ち出さないこと（②の 🔴）。件数（`AI_UNIT_*`）と `resetAt` だけを返す。
+
+### 11.13 🔴 §7.8 対策 5（プロンプトインジェクション）の証明テストの置き場所（2026-09-09）
+
+**本節は `docs/dev-plan.md` §6.1 の `K-3` を読み替えるための一次資料である。** §7.8 の対策 5 は検証の置き場所を `tests/security/prompt-injection.test.ts` と書いていたが、**そのディレクトリは作らなかった。** 確定した実体は次のとおりである（`CLAUDE.md` §8.7）。
+
+| 主張 | 実体 |
+|---|---|
+| 🔴 **本文に埋め込まれた指示がゲートの合否を変えない**（対策 5 の本体） | **`tests/isolation/gate-injection.test.ts`**（結合。実 DB + RLS + `gate.run` の 1 本の経路） |
+| 囲いが構文として破れない（対策 1） | `packages/ai/src/untrusted.test.ts`（ユニット）+ 上記の ④（結合経路でも成立すること） |
+| 出力は構造化スキーマ適合のみ受理（対策 2） | `packages/ai/src/run.test.ts` / `roles/gate-inspector.test.ts` + 上記の ② |
+| 整合層の合否判定に LLM 出力を渡さない（対策 3） | `packages/ai/src/gate-consistency-independence.test.ts`（応答を変えて固定）/ `tests/static/gate-consistency-purity.test.ts`（型と AST）+ 上記の ③（**本文を変えて固定**） |
+| LLM 出力が状態遷移・送信を起動しない（対策 4） | `tests/isolation/gate-run.test.ts` / `proposal-gate-api.test.ts` |
+
+#### ① 🔴 なぜ結合層に置いたか（E2E #18 との関係）
+
+- 対策 5 が求めているのは「**判定が変わらない**」ことであり、これは**プロンプトの組み立てから合否の保存まで**を通さないと実証できない。`untrusted.test.ts` が固定しているのは構文レベルの囲いだけで、「囲いが破れない」ことと「判定が変わらない」ことは**別の主張**である。
+- 🔴 **ブラウザ経路の E2E #18 は現時点では書けない** —— `gate.run` の Worker が未配線であり（§11.12 ⑧ / `T-07-11`）、画面から提案を作ってゲートを回す経路が存在しない。**「配線が済むまで証明を持たない」は採らなかった**（`K-3` は `CLAUDE.md` §7 の「0 件」指標であり、SP-07 の中で証明が要る）。
+- したがって**ブラウザ操作だけが欠けた同じ経路**を結合で通す: `gate.run` ハンドラ → `loadGateInput`（実 DB + RLS）→ `decideConsistency` → `mask()` + `wrapUntrusted` + `runRole(gate-inspector)` → `decideGate` → `ReviewGate` 保存 + 状態確定。**T-07-11 の後に E2E #18 を足すときも、判定の主張はここが持ち続ける**（E2E が見るのは画面と配線である）。
+
+#### ② 🔴 何を証明しているか（4 つ。どれか 1 つでは足りない）
+
+1. **本文の指示が合否を変えない。** 注入 5 種（前の指示の無効化 / 役割の変更 / 閉じタグでの脱出 / 閉じタグの表記ゆれ / 出力形式の乗っ取り）を検査対象の本文に埋め、**AI が「全層 PASS」と答えていても**機械的検出（§11.4）が FAIL を作る。🔴 **逆向きも見る** —— 注入文だけの本文は 3 層 PASS のままである（**過検知も判定の揺れ**であり、「怪しい語があれば FAIL」にすると `BR-18` の「直せるのは元データだけ」が成立しなくなる）。
+2. 🔴 **LLM が釣られても最終判定は PASS へ倒れない。** モックに「釣られた応答」を 5 通り設定する（全層 PASS / **整合層に `BLOCK` を書こうとする** / 自由文で PASS と答える / PASS と言いながら `BLOCK` の指摘を付ける / タイムアウト）。後ろの 4 つは**出力スキーマに適合しない**ため `runRole` が失敗し、PII 層・商流層は FAIL になる（§7.4）。**整合層に `BLOCK` を書こうとした応答が「警告」として通る経路は無い。**
+3. **整合層の合否は本文に影響されない。** `gate-consistency-independence.test.ts` と `gate-run.test.ts` は**応答を変えて**固定したが、**注入本文そのものを入力にした**ケースが無かった（`K-3` の穴）。ここでは本文を変えて `consistencyVerdict` と `CONSISTENCY` の指摘が 1 ビットも変わらないことを見る。逆向き（「整合層を FAIL にせよ」と書いても照合に不一致が無ければ PASS）も対にする。
+4. **囲いが結合経路でも成立する。** 実際に送られた要求を捕まえ、境界タグの組が**欄の数と一致する**こと（提案 2 欄 / 案件の公開 3 欄）、本文に仕込んだ 4 形（閉じ / 開き / 大文字 / 空白ゆれ）が 1 つも残っていないこと、**本文そのものは削られていない**こと（§7.10 ⑥）、システム側に境界の宣言が入っていることを見る。🔴 除去は `AiUsage.mask_pattern_hits`（`BOUNDARY_TAG`）にも残るので、**本番経路で実際に起きた**ことが DB 側にも証跡として残る。
+
+#### ③ 🔴 モックは `MockAnthropicClient` の 1 実装だけである
+
+実 Anthropic API には接続しない（§17.5 / `CLAUDE.md` §11.1）。**「注入に釣られた LLM」はテスト専用のモックではなく、同じモックに応答スクリプトを与えて作る** —— 別実装を書くと、E2E #18 を足したときに「結合では緑だが E2E では違う挙動」になり、どちらの緑も根拠にならなくなる。
+
+#### ④ 🔴 実行順の前提: `tests/isolation/**` は `dist` に対して走る
+
+`tests/isolation/**` は `@ses/*` をパッケージ名で import するため、解決先は**ビルド成果物**（`packages/ai/dist/index.js` 等）である。したがって **`pnpm -r build` を経ずに `pnpm test:isolation` を走らせると、古い `dist` を検査することになる。**
+
+🔴 **これは「防御を壊しても緑のまま」という壊れ方を生む。** 実際、本節の証明テストを書いたときに `packages/ai/src/mask.ts` の境界タグ除去を無効化して**空振りしていないこと**を確かめたが、`dist` を作り直すまでは 26 件すべてが緑のままだった（作り直すと ④ の 3 件が落ちた ＝ 期待どおり検出できている）。**証明テストを追加・変更したときは、必ず「壊したら落ちること」をビルド後に確認すること。** `tests/startup/startup-di.test.ts` が `packages/config/dist` について書いている前提（CI の実行順が build → test）と同じ話である。
 
 ## 12. 業務シーケンス
 

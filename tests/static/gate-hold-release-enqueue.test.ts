@@ -10,12 +10,16 @@
 // （`send.proposal` を積めば、承認済みの提案が 10 分ごとに自動再送される = `BR-21` / `BR-22` 違反）。
 // 実行時テストは「今その分岐を通る入力」でしか確かめられないので、**構造として**塞ぐ。
 //
-// 併せて次の 2 つも固定する（どちらも実行時には気づきにくい形で壊れる）:
+// 併せて次の 3 つも固定する（いずれも実行時には気づきにくい形で壊れる）:
 //   ② 🔴 保留行を**先に `DONE` にしない**（docs/05 §11.9 ⑧-7）。完了 CAS が多重化防止の
 //      最後の防波堤であり、ここで先に確定させると #39 の手動再実行と競合したときに
 //      「結果が 2 行・遷移が 2 回」が成立する。
 //   ③ 🔴 案件の**公開要求に触らない**（docs/05 §11.11 ⑪-1）。復帰後の実行が公開先を復元できる
 //      前提そのものであり、ここで消費すると「上限で保留された公開だけが誰にも公開されない」。
+//   ④ 🔴 **失敗した `gate.run` の記録を消さない**（docs/05 §11.12 ⑦-2 の 🔴 / §9.10 ①）。
+//      1 行 `removeFailedJob` を足すだけで**自動リトライそのもの**になり、失敗が §16.5 の
+//      失敗ジョブ数から消えて「壊れているのに誰も気づかない」状態になる。自動経路は
+//      「積めなかった」ことを数えて返すだけであり、復帰の入口は利用者の #39 だけである。
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -36,9 +40,16 @@ const OWN_JOB_NAME = 'gate.hold-release';
 const ALLOWED_ENQUEUE_TARGET = 'gate.run';
 
 /**
- * 🔴 `packages/db` の書き込み関数のうち、**このジョブが呼んではならないもの**。
- *    列挙で足りるのは、ゲートの状態を動かせる関数がこの 5 つしか無いからである
- *    （`packages/db` の外から `review_gates` / `project_visibilities` を書く経路は存在しない）。
+ * 🔴 **このジョブが呼んではならない関数**。
+ *
+ * 前半 5 つは `packages/db` の書き込み関数である。列挙で足りるのは、ゲートの状態を動かせる関数が
+ * この 5 つしか無いからである（`packages/db` の外から `review_gates` / `project_visibilities` を
+ * 書く経路は存在しない）。
+ *
+ * 🔴 最後の `removeFailedJob` は**キューの失敗記録の削除**（`GateRunQueue` のメソッド）である。
+ *    出所は違うが、禁じる理由は同じ「1 行で自動リトライになる」であり、しかもこちらは
+ *    **§16.5 の失敗ジョブ数から失敗を消す**ぶん気づきにくい（docs/05 §11.12 ⑦-2 の 🔴）。
+ *    消してよいのは利用者の明示操作（#39 / #28）だけである。
  */
 const FORBIDDEN_CALLEES = [
   'completeReviewGate',
@@ -46,6 +57,7 @@ const FORBIDDEN_CALLEES = [
   'settleProjectPublish',
   'withdrawProjectPublishRequest',
   'reserveAiCost',
+  'removeFailedJob',
 ] as const;
 
 const source = ts.createSourceFile(
@@ -145,7 +157,7 @@ describe('🔴 gate.hold-release が積める先は gate.run だけ（docs/05 §
   });
 });
 
-describe('🔴 保留行と公開要求に触らない（docs/05 §11.9 ⑧-7 / §11.11 ⑪-1）', () => {
+describe('🔴 保留行・公開要求・失敗記録に触らない（docs/05 §11.9 ⑧-7 / §11.11 ⑪-1 / §11.12 ⑦-2）', () => {
   const callees = calleeNames();
 
   it('対照: 読み取りの 2 関数は呼んでいる（検査が空振りしていない）', () => {
