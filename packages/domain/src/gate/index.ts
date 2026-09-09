@@ -17,8 +17,10 @@ export { GATE_HASH_ALGORITHM_VERSION, gateHashSource, GateHashInputError } from 
 export type {
   GateHashAttachment,
   GateHashInput,
+  GateHashPartner,
   GateHashSkill,
   GateHashSnapshot,
+  ProjectPublishGateHashInput,
   ProposalGateHashInput,
 } from './hash.js';
 export { hasInspectableText } from './input.js';

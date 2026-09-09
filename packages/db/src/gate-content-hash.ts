@@ -25,6 +25,7 @@ import {
   type GateHashInput,
   type GateHashSkill,
   type GateHashSnapshot,
+  type ProjectPublishGateHashInput,
   type ProposalGateHashInput,
 } from '@ses/domain';
 import { withTenant } from './with-tenant.js';
@@ -169,5 +170,95 @@ export async function computeProposalContentHash(
   proposalId: string,
 ): Promise<string | null> {
   const input = await readProposalGateHashInput(db, proposalId);
+  return input === null ? null : gateContentHash(input);
+}
+
+// ===========================================================================
+// 案件の公開（`PROJECT_PUBLISH`）。T-07-09（docs/05 §11.11）
+// ===========================================================================
+
+export type ProjectPublishContentHashReader = Pick<
+  TenantDbArg,
+  'project' | 'projectRequirement' | 'projectVisibility' | 'partnerCompany'
+>;
+
+/**
+ * 🔴 要件のフリーテキスト（公開先が読む欄。docs/05 §11.11 ⑧）の**唯一の読み取り順序**。
+ *
+ * 🔴 並びを `kind` → `id` で固定する。DB の返す順に任せると、同じ内容が実行のたびに
+ *    別のハッシュ・別の欄内オフセットになる（`gateHashSource` の 🔴 と同じ理由）。
+ * 🔴 `gate-target.ts` の欄の組み立てと**同じ順序**でなければならない —— ずれると
+ *    「ハッシュを取った内容」と「検査した内容」が別物になる。
+ */
+export async function readProjectRequirementTexts(
+  db: Pick<TenantDbArg, 'projectRequirement'>,
+  projectId: string,
+): Promise<readonly string[]> {
+  const rows = await db.projectRequirement.findMany({
+    where: { projectId },
+    select: { freeText: true },
+    orderBy: [{ kind: 'asc' }, { id: 'asc' }],
+  });
+  return rows
+    .map((row) => row.freeText)
+    .filter((text): text is string => typeof text === 'string' && text.trim().length > 0);
+}
+
+/**
+ * 🔴 案件の公開の内容のハッシュの材料を読む（#28 と `gate.run` が**同じこの関数**を通る）。
+ *
+ * 🔴 **材料は本文だけではない**（`ProjectPublishGateHashInput` の 🔴）。公開先の集合と
+ *    取引先の社名まで含めるのは、`(target_type, target_id, content_hash)` が同じなら
+ *    ゲートを**再実行しない**（`P-A-09`）ためである —— 「同じ本文だが公開先が違う」を
+ *    同じハッシュにすると、**検査していない相手への公開がキャッシュで成立する**。
+ *
+ * @param requestedPartnerCompanyIds これから公開する相手（`ProjectPublishRequest` が運ぶ値）。
+ * 🔴 母集団はアプリが決めない —— `projects` は C4、`project_visibilities` / `partner_companies` は
+ *    C2 / C5 であり、ホスト文脈だけがここへ来る。**見えなければ `null`**（＝ 404。§4.8）。
+ */
+export async function readProjectPublishGateHashInput(
+  db: ProjectPublishContentHashReader,
+  projectId: string,
+  requestedPartnerCompanyIds: readonly string[],
+): Promise<ProjectPublishGateHashInput | null> {
+  const project = await db.project.findUnique({
+    where: { id: projectId },
+    select: { name: true, publicSummary: true, endClientName: true, internalUnitPrice: true },
+  });
+  if (project === null) return null;
+
+  // 🔴 `revoked_at IS NULL` が「現在の公開先」の定義である（C4 の述語と鏡写し）。
+  const published = await db.projectVisibility.findMany({
+    where: { projectId, revokedAt: null },
+    select: { partnerCompanyId: true },
+  });
+  const partners = await db.partnerCompany.findMany({ select: { id: true, name: true } });
+
+  return {
+    targetType: 'PROJECT_PUBLISH',
+    // 🔴 案件名と要件のフリーテキストも検査対象の欄である（docs/05 §11.11 ⑧）。
+    name: project.name,
+    requirementTexts: await readProjectRequirementTexts(db, projectId),
+    publicSummary: project.publicSummary,
+    endClientName: project.endClientName,
+    internalUnitPrice: decimal(project.internalUnitPrice),
+    // 🔴 「すでに公開済み ∪ これから公開する」の和。重複は畳む（同じ相手を 2 回数えない）。
+    audiencePartnerCompanyIds: [
+      ...new Set([...published.map((row) => row.partnerCompanyId), ...requestedPartnerCompanyIds]),
+    ],
+    partnerCompanies: partners.map((partner) => ({
+      partnerCompanyId: partner.id,
+      name: partner.name,
+    })),
+  };
+}
+
+/** 🔴 案件の公開の内容のハッシュ。対象が見えなければ `null`（存在しないのと同じ）。 */
+export async function computeProjectPublishContentHash(
+  db: ProjectPublishContentHashReader,
+  projectId: string,
+  requestedPartnerCompanyIds: readonly string[],
+): Promise<string | null> {
+  const input = await readProjectPublishGateHashInput(db, projectId, requestedPartnerCompanyIds);
   return input === null ? null : gateContentHash(input);
 }

@@ -94,6 +94,13 @@ const visibilityRoute = await import(
 // 🔴 T-06-07: 記録が **`S-041` の閲覧経路**（#10。T-03-05 で実装済み）から読めることまで見る。
 //    「記録されているのに検索で出てこない」を作らないため（`categories.ts` の規律）。
 const auditLogsRoute = await import('../../apps/web/app/api/(main)/audit-logs/route');
+// 🔴 T-07-09: `#28` はゲート（`gate.run`）を積むようになった。ここでは **Redis を立てずに**
+//    「何が積まれたか」だけを記録するキューを起動時 DI に登録する（本番の実装は BullMQ。
+//    `lib/db/bootstrap.ts`）。**登録しない選択肢は無い** —— 未登録なら `#28` は例外になる
+//    （黙って保留にしない。`lib/jobs/gate-run-queue.ts`）。
+const { configureGateRunJobQueue, resetGateRunJobQueue } = await import(
+  '../../apps/web/lib/jobs/gate-run-queue'
+);
 
 const TENANT_1 = ISOLATION_SEED_IDS.tenants[0];
 const TENANT_2 = ISOLATION_SEED_IDS.tenants[1];
@@ -124,6 +131,15 @@ const PARTNER_USER_2: TenantIdentity = {
 
 /** 🔴 テストが作った行だけを片付けるための目印。 */
 const MARKER = 'T0606-';
+
+/** `#28` が積んだ `gate.run` の payload（T-07-09）。 */
+type EnqueuedGateJob = {
+  readonly tenantId: string;
+  readonly targetType: string;
+  readonly targetId: string;
+  readonly contentHash: string;
+};
+const enqueuedGateJobs: EnqueuedGateJob[] = [];
 
 /** seed が作った公開範囲の行（テストが足した行だけを消すための基準）。 */
 const SEED_VISIBILITY_IDS = [TENANT_1.visibilityId, TENANT_2.visibilityId];
@@ -362,6 +378,12 @@ beforeAll(async () => {
 
   admin = createUnextendedClient(database.superuserUrl);
   configureTenantDb({ datasourceUrl: database.tenantUrl });
+  configureGateRunJobQueue({
+    enqueue: async (job) => {
+      enqueuedGateJobs.push(job);
+    },
+    removeFailedJob: async () => 'NOT_FOUND',
+  });
 
   await enrollTwoFactor(TENANT_1.hostUserId, TENANT_1.tenantId);
   // 🔴 `OWNER` / `ADMIN` は 2 要素認証が必須（`CLAUDE.md` §3.5）。T-06-07 は 2 人目の実施者と
@@ -370,6 +392,7 @@ beforeAll(async () => {
 }, SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
+  resetGateRunJobQueue();
   await disconnectTenantDb();
   await admin?.$disconnect();
   await database?.stop();
@@ -377,6 +400,7 @@ afterAll(async () => {
 
 beforeEach(() => {
   requireTenantCtxMock.mockReset();
+  enqueuedGateJobs.length = 0;
 });
 
 afterEach(async () => {
@@ -389,6 +413,9 @@ afterEach(async () => {
   // 🔴 公開範囲を seed の 1 行（パートナー 1 社目）だけに戻す。
   await admin.projectVisibility.deleteMany({ where: { id: { notIn: SEED_VISIBILITY_IDS } } });
   await admin.projectVisibility.updateMany({ data: { revokedAt: null } });
+  // 🔴 T-07-09: ゲート待ちの公開要求は、ワーカーが確定させるまで残る（本テストはワーカーを
+  //    走らせないので必ず残る）。片付けないと次のテストの差分計算に混ざる。
+  await admin.projectPublishRequest.deleteMany({});
   await admin.project.deleteMany({ where: { name: { startsWith: MARKER } } });
   await admin.auditLog.deleteMany({ where: { action: { in: PROJECT_AUDIT_ACTIONS } } });
 });
@@ -421,7 +448,7 @@ describe('🔴 F-014 AC-2: 既定は誰にも公開されない（「全公開�
   });
 });
 
-describe('🔴 T-06-06: ゲート接続点のスタブが公開を保留する', () => {
+describe('🔴 T-06-06 → T-07-09: 公開の要求はゲートに預けられ、その場では成立しない', () => {
   it('公開先を追加しても `PENDING_GATE` を返し、行が 1 件も増えない', async () => {
     const host = await ctxOf(HOST_1, 'SALES');
     const id = await createdIdOf(await postProject(host, { name: `${MARKER}保留` }));
@@ -434,6 +461,48 @@ describe('🔴 T-06-06: ゲート接続点のスタブが公開を保留する',
     // 🔴 `review_gates` には確定した行しか存在できないので、ここでは ID を返せない。
     expect(body.reviewGateId).toBeNull();
     expect(await visibilityRows(id)).toHaveLength(0);
+  });
+
+  it('🔴 T-07-09: 「これから公開する相手」が公開要求として残り、`gate.run` が 1 本積まれる', async () => {
+    const host = await ctxOf(HOST_1, 'SALES');
+    const id = await createdIdOf(await postProject(host, { name: `${MARKER}要求` }));
+
+    await putVisibility(host, id, [PARTNER_1_1.partnerCompanyId]);
+
+    const requests = await admin.projectPublishRequest.findMany({ where: { projectId: id } });
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.partnerCompanyIds).toEqual([PARTNER_1_1.partnerCompanyId]);
+    // 🔴 実施者は操作した本人（`ProjectVisibility.published_by` になる値）。
+    expect(requests[0]?.requestedBy).toBe(TENANT_1.hostUserId);
+
+    // 🔴 payload の `contentHash` は公開要求に残した値と**同じ 1 つ**である
+    //    （`jobId` の材料であり、ジョブ側が突き合わせる鍵でもある）。
+    expect(enqueuedGateJobs).toEqual([
+      {
+        tenantId: TENANT_1.tenantId,
+        targetType: 'PROJECT_PUBLISH',
+        targetId: id,
+        contentHash: requests[0]?.contentHash,
+      },
+    ]);
+  });
+
+  it('🔴 T-07-09: 同じ案件への再要求は行を積み上げず、1 行を差し替える', async () => {
+    const host = await ctxOf(HOST_1, 'SALES');
+    const id = await createdIdOf(await postProject(host, { name: `${MARKER}差し替え` }));
+
+    await putVisibility(host, id, [PARTNER_1_1.partnerCompanyId]);
+    await putVisibility(host, id, [PARTNER_1_1.partnerCompanyId, PARTNER_1_2.partnerCompanyId]);
+
+    const requests = await admin.projectPublishRequest.findMany({ where: { projectId: id } });
+    expect(requests).toHaveLength(1);
+    expect([...(requests[0]?.partnerCompanyIds ?? [])].sort()).toEqual(
+      [PARTNER_1_1.partnerCompanyId, PARTNER_1_2.partnerCompanyId].sort(),
+    );
+    // 🔴 公開先が変われば内容も変わる（＝ 別の `jobId`。古い検査結果を使い回さない）。
+    expect(enqueuedGateJobs).toHaveLength(2);
+    expect(enqueuedGateJobs[0]?.contentHash).not.toBe(enqueuedGateJobs[1]?.contentHash);
+    expect(enqueuedGateJobs[1]?.contentHash).toBe(requests[0]?.contentHash);
   });
 
   it('🔴 保留された公開先には、案件が依然として現れない（`F-014 AC-1`）', async () => {
@@ -453,6 +522,13 @@ describe('🔴 T-06-06: ゲート接続点のスタブが公開を保留する',
 
     expect(response.status).toBe(200);
     expect(((await response.json()) as VisibilityBody).verdict).toBe('NO_PUBLISH_REQUESTED');
+    // 🔴 T-07-09: 境界を**狭める**操作にゲートは要らない（ジョブも公開要求も生まれない）。
+    expect(enqueuedGateJobs).toEqual([]);
+    expect(
+      await admin.projectPublishRequest.findMany({
+        where: { projectId: TENANT_1.publishedProjectId },
+      }),
+    ).toHaveLength(0);
   });
 });
 

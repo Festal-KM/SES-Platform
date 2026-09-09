@@ -212,7 +212,7 @@ ses-platform/
 | **列挙** | 🔴 **Prisma DSL では `String` で宣言する（Prisma の `enum` キーワードは使わない）。** enum 宣言はクエリエンジンがバインドパラメータへ `::"EnumName"` キャストを付与し、DB 側が `TEXT` だと実行時 `42704`（`type "..." does not exist`）で全書き込みが失敗する（2026-09-03 実測。`packages/db/prisma/schema.prisma` 冒頭コメント参照）。**許容値はフィールド直上の `///` コメントで明記**し、**DB 側は `TEXT + CHECK` をマイグレーションで手書き**する（列挙値の追加でテーブルロックを起こさないため、という当初の動機自体は変わらない）。**TS 側は単一出所の定数配列（`as const` 配列 + そこから導出した型）から型を導出し、CHECK の値集合との一致を静的テスト（`tests/static/`）で検証する**（`docs/05` §17.2）。 |
 | **削除** | 🔴 **業務データは論理削除しない**（`deletedAt` を持たせると RLS ポリシーと `WHERE` の両方に条件が増え、漏れの温床になる）。`PURGED` と保持期間削除は**物理削除 + `AuditLog` に件数**（§9.7） |
 
-### 3.2 テーブル一覧（全 56 表）
+### 3.2 テーブル一覧（全 57 表）
 
 **ドメイン概念（`CLAUDE.md` §4.1 の 32 概念 + §10.3 の 5 概念）はすべて実体を持つ。**
 
@@ -220,9 +220,9 @@ ses-platform/
 |---|---|
 | **§4.1（32）** | `Tenant` `User` `Membership` `PartnerCompany` `Engineer` `Skill` `SkillAlias` `EngineerSkill` `SkillSheet` `SkillSheetExtraction` `Project` `ProjectRequirement` `ProjectVisibility` `MatchCandidate` `EngineerShare` `ProposalRequest` `Proposal` `EngineerSnapshot` `ProposalEvent` `ReviewGate` `ChatThread` `ThreadParticipant` `Message` `Contract` `ContractDocument` `Order` `Assignment` `ExtensionReview` `Task` `Notification` `AiUsage` `AuditLog` |
 | **§10.3（5）** | `PlatformUser` `Plan` `Subscription` `UsageCounter` `ImpersonationSession` |
-| **実装テーブル（19）** | `Invitation` `TwoFactorCredential` `TenantSendingDomain` `TenantEsignConnection` `TenantRoleApprovalMode` `TenantRoleModel` `TenantMatchWeight` `SendAttempt` `EmailDispatch` `EmailEvent` `FileScanResult` `WebhookDelivery` `TenantMonthlyCost` `BillingMeterSubmission` `Announcement`（機能フラグを含む）`SchedulerRun` `DataExportRequest` `TenantPurgeRun` `ContractTemplate` |
+| **実装テーブル（20）** | `Invitation` `TwoFactorCredential` `TenantSendingDomain` `TenantEsignConnection` `TenantRoleApprovalMode` `TenantRoleModel` `TenantMatchWeight` `SendAttempt` `EmailDispatch` `EmailEvent` `FileScanResult` `WebhookDelivery` `TenantMonthlyCost` `BillingMeterSubmission` `Announcement`（機能フラグを含む）`SchedulerRun` `DataExportRequest` `TenantPurgeRun` `ContractTemplate` **`ProjectPublishRequest`**（T-07-09） |
 
-🔴 **実装テーブルは新しいドメイン概念ではない。** それぞれ `docs/02` 章 6 が既存概念の**属性**として定義したものを、正規化・一意制約・監査の要請から独立した行に分解したものである。対応は次のとおりで、**この 19 表以外を勝手に足さない**。**経路 5 の射影ビュー 4 本（§4.9）はテーブルではなく、上記 4 表の列を絞った `security_invoker` ビューである。**
+🔴 **実装テーブルは新しいドメイン概念ではない。** それぞれ `docs/02` 章 6 が既存概念の**属性**として定義したものを、正規化・一意制約・監査の要請から独立した行に分解したものである。対応は次のとおりで、**この 20 表以外を勝手に足さない**。**経路 5 の射影ビュー 4 本（§4.9）はテーブルではなく、上記 4 表の列を絞った `security_invoker` ビューである。**
 
 | 実装テーブル | 分解元（`docs/02` 章 6） | 分解した理由 |
 |---|---|---|
@@ -241,6 +241,7 @@ ses-platform/
 | `DataExportRequest` | — | `F-064 AC-5` / `F-052`（生成ジョブの状態） |
 | `TenantPurgeRun` | — | `F-064 AC-1`〜`AC-3` / `F-062 AC-7`（削除完了の確認の唯一の根拠） |
 | `ContractTemplate` | `ContractDocument.テンプレートと差し込み項目のマッピング`（`docs/02` `F-048` の入力「テンプレート、差し込み項目のマッピング」） | 🔴 **`F-048 AC-1`（同一のテンプレートと契約情報から常に同一のドラフト）を成立させるには、テンプレート原本とマッピングを「版として固定した行」に持たせるしかない**。`Contract` / `ContractDocument` の列にすると、テンプレートを差し替えた瞬間に過去のドラフトを再現できなくなる。`S-027` の管理単位でもある |
+| **`ProjectPublishRequest`**（T-07-09） | `ProjectVisibility.ゲート待ちの公開要求`（`docs/02` `F-014` 処理②） | 🔴 **`project_visibilities.review_gate_id` は NOT NULL + FK であり、ゲート PASS より前に「これから公開する相手」を置ける列が存在しない**。置かないと商流層が公開範囲を知らず、**新規公開先の社名が公開文に出ていても他社名として検出されない**（`F-014 AC-3` が素通りする）。🔴 `gate.run` の payload に載せる案は採れない —— `gate.hold-release`（AI 上限からの自動復帰）は保留行だけを材料に再 enqueue するため、payload だと**保留された公開要求だけが公開先を復元できない**。詳細は §11.11 ① |
 
 ### 3.3 テナント・利用者・境界
 
@@ -397,6 +398,14 @@ model TwoFactorCredential {
 | `assignments` | `counterparty_partner_company_id` | `engineers(engineer_id).owner_partner_company_id` |
 | `contract_documents` | `counterparty_partner_company_id` | `contracts(contract_id)` |
 | `orders` | `counterparty_partner_company_id` | `CASE(contract_id → contracts / ELSE → assignments)` |
+
+**D. 🔴 配列で持つため FK を張れない（1 列。T-07-09 で追加）** — A（複合 FK）にも B（継承の子）にも入らない**新しい区分**である。
+
+| 表 | 列 | 型 | なぜ A / B に入らないか | 代償措置（**FK の代わりに何が守るか**） |
+|---|---|---|---|---|
+| `project_publish_requests` | `partner_company_ids` | `uuid[]`（`NOT NULL`） | **PostgreSQL は配列要素に FK を張れない**（要素ごとの参照整合性を宣言する構文が無い）。1 対多の子表に分解すれば A に入れられるが、この行は**ゲートが通るまでの一時的な要求**であり、確定（`settleProjectPublish`）と同時に消える。子表にすると「消え方」が 2 表に分かれ、CAS（§11.11 ③）が 2 段になる | ①**入口での実在確認** —— `#28` の `assertPartnerCompaniesExist`（見えない ID は **400**。母集団は `partner_companies` の RLS が決めるので、他テナントの ID も同じ 400）②🔴 **確定時の複合 FK** —— この配列から実際に行になるのは `project_visibilities`（A-5）であり、**そこで `(tenant_id, partner_company_id) → partner_companies(tenant_id, id)` の複合 FK が必ず効く**。すなわち**他テナントの ID が紛れ込んでも公開範囲の行にはならず、確定が落ちる**（構造的に閉じている）③表自体が C2 HOST_ONLY であり、書けるのはホスト文脈だけである |
+
+🔴 **この区分を増やさない。** パートナーを指す列を配列で持ってよいのは「①行が一時的で ②実際に永続化される先に複合 FK がある」ときだけである。どちらかを欠く配列列は A（複合 FK を張れる子表）に分解すること。§4.7 #14 ② の走査は**複数形・配列の列名も拾う**ようにしてあり、この 1 列だけを理由付きの明示的な例外として登録している（列名を複数形にすれば検査を回避できる、という抜け道を残さないため）。
 
 **C. 対象外（パートナーを指す列を持たない）** — `email_dispatches` は `recipient_class`（`'PARTNER_MEMBER'` を含む）を持つが、これは**宛先の分類であって参照ではない**ため FK 化の対象ではない（`partner_company_id` 列を足さない）。`two_factor_credentials` / `notifications` / `audit_logs` / `ai_usage` / `usage_counters` ほかも同様に該当列を持たない。射程外の 4 表（`skills` / `platform_users` / `plans` / `subscriptions`）も同様。**経路 5 の射影ビュー 4 本（§4.9）はビューであり FK を持てない**（`relkind = 'v'`。§4.7 の走査は基底表 `relkind = 'r'` に限る）。
 
@@ -717,6 +726,18 @@ model ProjectVisibility {                                        // 🔴 越境�
   @@unique([tenantId, projectId, partnerCompanyId])
   @@index([tenantId, partnerCompanyId, revokedAt])               // RLS ポリシーの EXISTS が使う
   @@map("project_visibilities")
+}
+// 🔴 T-07-09: ゲート PASS 待ちの公開要求（§11.11 ①）。RLS は C2 HOST_ONLY（オーナー列を持たない）
+model ProjectPublishRequest {
+  id                String   @id @default(uuid(7)) @db.Uuid
+  tenantId          String   @db.Uuid
+  projectId         String   @db.Uuid
+  partnerCompanyIds String[] @db.Uuid                            // 🔴 これから公開する相手だけ（公開済みは含まない）
+  contentHash       String                                       // ReviewGate.contentHash と同じ値。消費は (project_id, content_hash) の CAS
+  requestedAt       DateTime @db.Timestamptz(3)
+  requestedBy       String   @db.Uuid                            // 🔴 ProjectVisibility.published_by になる（実施者）
+  @@unique([tenantId, projectId])                                // 🔴 案件ごとに 1 行（差し替えは UPDATE。積み上げない）
+  @@map("project_publish_requests")
 }
 model EngineerShare {                                            // 🔴 越境経路 4 の唯一の根拠。既定オフ
   id                String   @id @default(uuid(7)) @db.Uuid
@@ -1606,7 +1627,7 @@ CREATE FUNCTION app_is_host() RETURNS boolean LANGUAGE sql STABLE AS
 CREATE FUNCTION app_actor_user_id() RETURNS uuid LANGUAGE sql STABLE AS
   $$ SELECT NULLIF(current_setting('app.actor_user_id', true), '')::uuid $$;
 ```
-**ポリシークラス**（**全 56 表が操作ごとにこの 10 種のいずれかに割り当て済みで、漏れが無い**。読みと書きでクラスが分かれる表は両方を明記した。新規テーブルはどれかを選ばなければ作れない — §4.7 のテストが「app_tenant に権限がありながら `app_tenant_id()` を参照しないポリシー」と「ポリシーが 1 つも無い表」を検出する）
+**ポリシークラス**（**全 57 表が操作ごとにこの 10 種のいずれかに割り当て済みで、漏れが無い**。読みと書きでクラスが分かれる表は両方を明記した。新規テーブルはどれかを選ばなければ作れない — §4.7 のテストが「app_tenant に権限がありながら `app_tenant_id()` を参照しないポリシー」と「ポリシーが 1 つも無い表」を検出する）
 
 式中の `<T>` = **テナントキー列**（既定 `tenant_id`）、`<O>` = **オーナー列**、`<C>` = **当事者列**（`counterparty_partner_company_id`）、`<A>` = **主体列**、`<P>` = その表の `project_id`、`<TH>` = その表の `thread_id`。**表ごとの実体は「適用テーブル」欄の括弧内がすべてであり、置換すれば実際に書く `USING` 式になる。**
 
@@ -1614,7 +1635,7 @@ CREATE FUNCTION app_actor_user_id() RETURNS uuid LANGUAGE sql STABLE AS
 |---|---|---|
 | **C0 SYSTEM_ONLY** | `app_tenant_id() IS NULL` | 🔴 **テナントキーを持てない表**。`app_tenant` は `withSystemScope()`（§4.4.2）からのみ到達でき、テナント文脈では 0 件になる: `scheduler_runs`、`webhook_deliveries`（テナント確定前に受信する）、`email_events`（宛先解決前に届く）、`impersonation_sessions`（`app_tenant` に権限を与えない。`app_platform*` のみ） |
 | **C1 TENANT_ALL** | `<T> = app_tenant_id()` | `tenants`（🔴 `<T>` = `id`。`app_tenant` は `SELECT` のみ）、`skill_aliases`（🔴 `SELECT` は `app_tenant_id() IS NOT NULL AND (tenant_id = app_tenant_id() OR tenant_id IS NULL)` — 先頭に `IS NOT NULL` を前置するのは `announcements` と同じ理由で、これが無いとテナント文脈を持たない接続（`withSystemScope` 等）からグローバル行が読めてしまうため。書込は `tenant_id = app_tenant_id()`。`F-010 AC-2`）、`announcements`（🔴 `<T> = app_tenant_id()` を `app_tenant_id() IS NOT NULL AND (cardinality(target_tenant_ids) = 0 OR app_tenant_id() = ANY(target_tenant_ids))` に読み替える。先頭の `IS NOT NULL` により `withSystemScope` からも 0 件。`SELECT` のみ）、`audit_logs`（🔴 **`INSERT` のみ C1**。パートナーの操作も記録されるため。`SELECT` は C2、`UPDATE`/`DELETE` は `REVOKE`） |
-| **C2 HOST_ONLY** | `<T> = app_tenant_id() AND app_is_host()` | `projects`（書込）、`project_requirements`（書込）、`project_visibilities`（書込）、`partner_companies`（書込）、`match_candidates`、`assignments`（🔴 **書込 + ホストの `SELECT`。パートナーの `SELECT` は C9**）、`extension_reviews`（🔴 **`SELECT` も C2 のみ。パートナー読み取りのポリシーを一切書かない**。`BR-67` / `docs/03` §4.3.2-2）、`contracts` / `contract_documents` / `orders`（同・書込 + ホスト `SELECT`。パートナー `SELECT` は C9）、`contract_templates`、`ai_usage`、`audit_logs`（`SELECT`）、`usage_counters`、`send_attempts`（🔴 送信の起動はホストのみ。多相のオーナー継承を作らない）、`email_dispatches`、`file_scan_results`、`tenant_sending_domains`、`tenant_esign_connections`、`tenant_role_approval_modes`、`tenant_role_models`、`tenant_match_weights`、`tenant_monthly_costs`、`billing_meter_submissions`、`data_export_requests`、`tenant_purge_runs` |
+| **C2 HOST_ONLY** | `<T> = app_tenant_id() AND app_is_host()` | `projects`（書込）、`project_requirements`（書込）、`project_visibilities`（書込）、**`project_publish_requests`**（T-07-09。🔴 オーナー列を持たない —— 持てば「パートナーが公開範囲を要求できる」意味になり、越境経路 1 の向きが壊れる）、`partner_companies`（書込）、`match_candidates`、`assignments`（🔴 **書込 + ホストの `SELECT`。パートナーの `SELECT` は C9**）、`extension_reviews`（🔴 **`SELECT` も C2 のみ。パートナー読み取りのポリシーを一切書かない**。`BR-67` / `docs/03` §4.3.2-2）、`contracts` / `contract_documents` / `orders`（同・書込 + ホスト `SELECT`。パートナー `SELECT` は C9）、`contract_templates`、`ai_usage`、`audit_logs`（`SELECT`）、`usage_counters`、`send_attempts`（🔴 送信の起動はホストのみ。多相のオーナー継承を作らない）、`email_dispatches`、`file_scan_results`、`tenant_sending_domains`、`tenant_esign_connections`、`tenant_role_approval_modes`、`tenant_role_models`、`tenant_match_weights`、`tenant_monthly_costs`、`billing_meter_submissions`、`data_export_requests`、`tenant_purge_runs` |
 | **C3 OWNER_SCOPED** | `<T> = app_tenant_id() AND <O> IS NOT DISTINCT FROM app_partner_id()` | `engineers`(`owner_partner_company_id`)、`engineer_skills`(同・継承)、`skill_sheets`(同・継承)、`skill_sheet_extractions`(同・継承)、`engineer_shares`(`partner_company_id`) |
 | **C4 VISIBILITY**（**経路 1**） | `<T> = app_tenant_id() AND ( app_is_host() OR EXISTS (SELECT 1 FROM project_visibilities v WHERE v.tenant_id = <T> AND v.project_id = <P> AND v.partner_company_id = app_partner_id() AND v.revoked_at IS NULL) )` | `projects`(`SELECT`。`<P>` = `projects.id`)、`project_requirements`(`SELECT`。`<P>` = `project_requirements.project_id`)。🔴 **実データでの実証は `tests/isolation/project-population-c4.test.ts`**（T-06-08。C9 に対する `tests/isolation/route5-counterparty.test.ts` と同じ位置づけ）: ①アプリの応答（`#25` / `#27`）に他社の痕跡が無い ②その母集団が「自社宛の**生きている** `ProjectVisibility` の行」と完全に一致する ③一致を作っているのが**アプリの `where` ではなく RLS** である（Prisma 拡張を外した素のクライアントで同じ結果になる）——の 3 段。**ブラウザ経由の同じ主張は `tests/e2e/isolation.spec.ts` の④**（T-06-09 / §17.3 #2） |
 | **C5 PARTY**（**経路 2 / 4**） | `<T> = app_tenant_id() AND ( app_is_host() OR <O> = app_partner_id() )` | `proposals`(`owner_partner_company_id`)、`engineer_snapshots`(同・継承)、`proposal_events`(同・継承)、`review_gates`(同・継承)、`proposal_requests`(`partner_company_id`)、`tasks`(`owner_partner_company_id`)、`memberships`(`partner_company_id`)、`invitations`(`partner_company_id`)、`project_visibilities`(`SELECT`。`partner_company_id`。🔴 **パートナーが自社宛の行を読めることが C4 の `EXISTS` の前提**)、`thread_participants`(`partner_company_id`。🔴 **自表を参照しない**＝ RLS の再帰を避ける。パートナーは自社の参加行のみ)、`partner_companies`(`SELECT`。🔴 `<O>` = `id`。**パートナー文脈では自社 1 行のみ**。`F-004 AC-1`) |
@@ -1623,7 +1644,7 @@ CREATE FUNCTION app_actor_user_id() RETURNS uuid LANGUAGE sql STABLE AS
 | **C8 DIRECTORY** | `<T> = app_tenant_id() AND ( app_is_host() OR <O> IS NULL OR <O> = app_partner_id() )` | `users`(`SELECT`。`owner_partner_company_id`)。🔴 **ホスト所属の行だけが全員に見える**（チャットの送信者名・`ProposalEvent` の実行者名に要る）。**他パートナーの利用者は 1 行も見えない**。パートナー向けシリアライザは `email` を返さない。🔴 **書込（`INSERT` / `UPDATE`）は C3 式**（自分の所属としてしか書けない）。**書き手は §4.4.2 の行由来コンテキスト 3 関数だけ**であり、所属は招待行 / 本人行から取る |
 | **C9 COUNTERPARTY_READ**（**経路 5**。`CLAUDE.md` §3.1-5 / `BR-65`〜`BR-69`。Issue #8） | 🔴 **`SELECT` のみ**: `<T> = app_tenant_id() AND NOT app_is_host() AND <C> = app_partner_id()`。🔴 **`INSERT` / `UPDATE` / `DELETE` のパートナー向けポリシーは書かない**（C2 の書込ポリシーは `app_is_host()` で偽になり 0 件更新。`BR-68`） | `assignments`(`counterparty_partner_company_id`・継承)、`contracts`(同・根)、`contract_documents`(同・継承。🔴 **`AND signed_at IS NOT NULL` を AND する** = 署名済み最終版のみ。ドラフト版は行として存在しない。`F-066 AC-2` / `F-047 AC-8`)、`orders`(同・継承)。🔴 **行が読めても列は読めてはならない** — パートナー文脈で 4 表に到達できるのは **§4.9 の射影ビューだけ**（列は DB のビュー定義で絞る）。基底表のデリゲートは `TenantDb` の型に無く、Prisma 拡張がパートナー文脈の操作を throw する（§4.3-6。RLS が行を通しても止まる）。`EXISTS` を使わず列の等値比較だけで判定するため経路 1〜4 より速い（`docs/03` §4.3.2）。**`COUNT` はこのポリシー越しの自社分のみ**になる |
 
-**射程外の 4 表**: `skills` / `platform_users` / `plans` / `subscriptions`（`CLAUDE.md` §3.1）。**これで 52 + 4 = 56 表すべてが片付いている。**
+**射程外の 4 表**: `skills` / `platform_users` / `plans` / `subscriptions`（`CLAUDE.md` §3.1）。**これで 53 + 4 = 57 表すべてが片付いている。**
 
 🔴 **C2 の唯一の例外: `usage_counters` の `metric = 'STORAGE_BYTES'` 行**（T-05-04。migration 20260907000000）。**行の値でポリシーを絞った限定的な緩和**であり、`SELECT` / `INSERT` / `UPDATE` を `tenant_id = app_tenant_id() AND metric = 'STORAGE_BYTES'` で許す（`DELETE` は開かない）。理由: `F-011` の関連ロールには `PARTNER_ADMIN` / `PARTNER_SALES` が含まれ（自社エンジニア分のスキルシート）、§14.2 は「上限に達していたら署名付き URL を発行しない」ことを**発行前の必須条件**としている。C2 のままだとパートナー文脈で ①上限を判定できない（＝上限が効かないアップロード経路が残る）②計上できない（＝取引先が置いたバイト数が原価に載らない）の両方が起き、`CLAUDE.md` §3.4 / §10.6 に反する。**開くのは「自テナントの総保管バイト数」だけ**であり、他社の名前・件数・業務データを含まない（`CLAUDE.md` §3.1 の 🔴 に抵触しない。パートナーは上限到達をどのみち `#70` で知る）。`AI_COST_USD` / `EMAIL_COUNT` / `SEAT_COUNT` / `AI_UNIT_*` は C2 のままである（`tests/isolation/storage-metering.test.ts` が「パートナー文脈で見える metric は `STORAGE_BYTES` だけ」を固定する）。
 
@@ -2497,7 +2518,7 @@ requireEsignConnection(ctx);                           // 🔴 §8.4。未接続
   - **追加はゲートを通るまで行にしない**（`F-014 AC-3`）。したがって 1 回の要求で解除だけが成立することがあり、その事実は `verdict` と `S-013` の文言が明示する。
 - 🔴 **`verdict` は合否ではない。** ゲートは非同期（§12.1 のシーケンス / §11.1「入口は `gate.run` ジョブ 1 本」）なので、`PUT` の応答時点に PII 層・商流層の判定は存在しない。返すのは「要求をどう扱ったか」（`PENDING_GATE` ＝ ゲートに預けた ＝ **まだ公開されていない** / `NO_PUBLISH_REQUESTED` ＝ 追加が無くゲートを起動していない）である。**`PASS` / `PUBLISHED` の枝を型に持たない。**
 - 🔴 **`reviewGateId` は `PUT` 時点で常に `null` である。** `review_gates` は CHECK により `execution='DONE'` の**確定した行**しか持てず（§3.6）、「実行中のゲート」を指す ID がそもそも採番されない（§11.7 の `GateResultView.execution='RUNNING'` ＝「まだ行が無い」と同じ表現）。`project_visibilities.review_gate_id` が **NOT NULL + FK** であることと合わせて、**ゲート結果の行が無ければ公開範囲の行は物理的に作れない**。
-- 🔴 **SP-06 のゲート接続点は「保留」だけを行うスタブである**（`apps/web/lib/projects/publish-gate.ts`。`docs/sprints/SP-06` T-06-06「本スプリントでは呼び出しの接続点まで」）。**`ProjectPublishGateOutcome` は `held: true` の 1 形しかなく、「未実装だから素通しする」実装はコンパイルできない**（`CLAUDE.md` §11.1 の「未設定ならモックにフォールバック」と同型の壊れ方 —— ゲートを 1 度も通していない案件が取引先に見え、しかも画面は「公開しました」と表示する —— を型で塞ぐ）。**SP-07（T-07-09）が差し替える**ときも、①差し替えは port の実装 1 本で行い ②`PUT` は `gate.run` を積むだけで**同期的に公開が成立する枝を作らない** ③`contentHash` は `packages/domain` の `gateContentHash`（§11.5。SP-07 で新設）を唯一の出所とする（先に別実装を置かない）。
+- 🔴 ~~**SP-06 のゲート接続点は「保留」だけを行うスタブである**~~ → ✅ **T-07-09 で本体に差し替えた**（`apps/web/lib/projects/publish-gate.ts` の `createProjectPublishGate`。**確定形は §11.11 を正とする**）。SP-06 が置いた 4 つの制約はすべて守られている: ①差し替えは port の実装 1 本 ②`PUT` は公開要求を置いて `gate.run` を積むだけで、**`ProjectPublishGateOutcome` は今も `held: true` の 1 形**（同期的に公開が成立する枝を型として持たない）③`contentHash` は `gateContentHash`（`packages/db`。§11.10 ②）の 1 実装 ④**enqueue はコミットの後**（`enqueue` を関数として返すことで順序を型で強制する。§11.11 ①）。
 - 🔴 **`publicSummary` を受け取らない**（`docs/05` §6.4 #28 の当初の request からの差分）。理由は 2 つ: ①`gate.run` の payload は `{ tenantId, targetType, targetId, contentHash }`（§9.3）であり、**検査する内容はワーカーが DB から読む** —— 要求に本文を載せると内容の出所が 2 つになる ②`projects.public_summary` を書く経路が `#26` と 2 本になり、**公開範囲の変更（`project.visibility_change`）の下に内容の編集が隠れる**（監査の意味が壊れる）。外部公開用の記載を直す画面は `S-012` である（`docs/04` §S-012 セクション 6。同節に ⚠️ を追記済み）。
 - 🔴 **監査は業務トランザクションの内側で書く**（`writeAuditLog`。`#24` / `#84` と同じ形）。`audit` オプションを使わない理由は 2 つ: ①`F-014 AC-5` が要求する「**変更前の公開先**」は行を読むまで分からない ②`audit` はハンドラの前に別トランザクションで書くため、**起きなかった変更**（404 / 400）まで残る。`action` は §16.1 の **`project.visibility_change`**（`project.update` に畳まない。畳むと `S-041` の `VISIBILITY_CHANGE` で 0 件になる）。`summary` は `{ before, after, requested, pending, revoked, verdict }` で、**いずれも ID の昇順の連結・列挙値だけ**である（🔴 取引先の**社名を載せない**。§16.2 / `F-058`）。
 - 🔴 **ホスト専用である。** 担保は 4 枚: ①`requireRole(PROJECT_EDITOR_ROLES)`（403）②`updateProjectVisibility` / `listProjectVisibilityChoices` の `requireHost`（`HostOnlyContextError` → **404**）③`project_visibilities` の RLS（C2。書込は `app_is_host()`）④画面（`S-013`）がパートナーロールをホームへ戻す。**公開先の一覧（他社の社名）が出てよいのはホストだけである**（`CLAUDE.md` §3.1 / `F-014 AC-4`）。
@@ -2514,7 +2535,7 @@ requireEsignConnection(ctx);                           // 🔴 §8.4。未接続
 - 🔴 **変更が起きなかった要求（404 / 400 / 403）は 1 行も残さない。** `withApiRoute` の `audit` オプションを使っていればハンドラの前に 3 行残る。上の「監査は業務トランザクションの内側で書く」の**効果**であり、テストで固定した。
 - ⚠️ **`S-041` / `#10` は `summary` を返さない**（応答は `docs/04` §S-041 の 5 列に対応する項目のみ）。`AC-5` が要求するのは「監査ログに**残る**」ことであり記録側で満たしているが、**変更前後の公開先を画面から読む手段は現時点で無い**（`membership.role_change` の `beforeRole` / `afterRole` と同じ扱い）。露出させるかは**全 action の `summary` に及ぶ**判断（＝ `docs/04` §S-041 の列の改訂）であり、本タスクでは据え置いた（[Issue #40](https://github.com/Festal-KM/SES-Platform/issues/40) で追認中。既定 = 据え置き）。結合テストは「返さないこと」を**意図した境界として**固定している。
 - 🔴 **解除しても `Proposal` は残る**（`F-014` 処理④）。担保は「行を消さない（`revoked_at` を入れるだけ）」ことに加えて、**`proposals` の RLS が C5 PARTY であり C4（案件の公開範囲）に依存しない**ことである —— 公開をやめた後も、**作成した会社は自社の提案を読み続けられる**（案件そのものは C4 で 1 行も見えなくなる）。この非対称を結合テストで固定した。
-- 🔴 **解除した相手を再び選んでも行は復活しない。** 差分は「生きている行」の集合に対して取るので、再公開は `added` に入り**ゲートを通り直す**（`F-014 AC-3`）。🔴 **SP-07 がゲート通過後に行を作るときは、`@@unique(tenant_id, project_id, partner_company_id)` があるため INSERT ではなく「既存行の `revoked_at` を戻す UPDATE」で行う**（`published_at` / `published_by` / `review_gate_id` も新しい公開のもので上書きする）。
+- 🔴 **解除した相手を再び選んでも行は復活しない。** 差分は「生きている行」の集合に対して取るので、再公開は `added` に入り**ゲートを通り直す**（`F-014 AC-3`）。🔴 ~~**SP-07 がゲート通過後に行を作るときは**~~ → ✅ **T-07-09 で実装した**（`settleProjectPublish`。`ON CONFLICT … DO UPDATE` で `revoked_at` を戻し、`published_at` / `published_by` / `review_gate_id` を新しい公開のもので上書きする。§11.11 ④）。⚠️ **同じ内容の再公開はゲート結果のキャッシュを引く**（`#28` はそれを理由に断らない。理由は §11.11 ③）。
 - ⚠️ **`project_visibilities` に「誰が解除したか」の列を足していない**（`published_by` の対になる `revoked_by` を持たない）。解除の実施者は `AuditLog`（`project.visibility_change` の `actor_id`）にあり、`S-013` は**生きている公開先しか表示しない**ため画面にも要らない。列を足すのは §3.5 のスキーマ改訂であり、必要になった時点で行う。
 
 🔴 **§4.8「見えない ＝ 存在しない」を SP-06 の全ルート（#15 / #17 / #25〜#28）へ適用した結果（T-06-09。`F-004 AC-4`）**:
@@ -3639,7 +3660,7 @@ export function systemTenantCtx(tenantId: string, job: JobIdentity): HostTenantC
 | `ai.match-explain` | `{ tenantId, projectId, refs[] }` | 🔴 **上位 N 件（既定 10）を 1 リクエストにまとめる**（`docs/03` 申し送り 9） | `attempts: 1` | p95 20 秒 | `MatchCandidate.rationale` が非 null なら再生成しない |
 | `ai.proposal-draft` | `{ tenantId, proposalId }` | `runRole(proposalDrafter)` → `Proposal.draftBody` | `attempts: 1` | p95 30 秒 | `DRAFT` 以外は no-op |
 | `ai.renewal-advise` | `{ tenantId, extensionReviewId }` | `runRole(renewalAdvisor)` → `ExtensionReview.summary` | `attempts: 1` | p95 30 秒 | `summary` が非 null なら no-op |
-| `gate.run` | `{ tenantId, targetType, targetId, contentHash }` | §11 のパイプライン。🔴 **`reserveAiCost` が `AiCostLimitExceededError` なら `ReviewGate` を `execution='HELD_AI_COST_LIMIT'` で upsert し正常終了**（§7.6。対象は `GATE_RUNNING` のまま。`GATE_FAILED` にしない） | `attempts: 1` | 🔴 **p95 30 秒**（`docs/02` 章 7.1） | 🔴 **`jobId = gateRunJobId({ targetType, targetId, contentHash })`**（⚠️ **区切りは `.`**。`'gate.run.{targetType}.{targetId}.{contentHash}'`。当初のスケッチは `:` だったが、**BullMQ はカスタム `jobId` に `:` を含められない**〔実測。§11.10 ③〕）で enqueue（BullMQ が待機中・実行中の同 ID を重複排除）。開始時に `ReviewGate(targetType, targetId, contentHash, execution='DONE')` があれば再実行しない（同じ内容なら同じ結果。`F-020 AC-3`）。HELD 行があれば**同じ行を CAS で DONE に完了**させる（`UPDATE review_gates SET execution='DONE', … WHERE id=$held AND execution='HELD_AI_COST_LIMIT'`。0 件なら結果を破棄。`P-A-09`）。🔴 **HELD 部分 UNIQUE + `jobId` + 完了 CAS の 3 段**で、#39 の手動再実行と `gate.hold-release` が同時に走っても結果は 1 行・遷移は 1 回（`F-027 AC-5`） |
+| `gate.run` | `{ tenantId, targetType, targetId, contentHash }` | §11 のパイプライン。🔴 **`reserveAiCost` が `AiCostLimitExceededError` なら `ReviewGate` を `execution='HELD_AI_COST_LIMIT'` で upsert し正常終了**（§7.6。対象は `GATE_RUNNING` のまま。`GATE_FAILED` にしない）。🔴 **対象の確定**（T-07-09）: `PROPOSAL` は状態遷移（§11.9 ⑥）、`PROJECT_PUBLISH` は `settleProjectPublish`（PASS で公開範囲の行、FAIL で 1 行も作らない。§11.11 ④）。**確定済みの結果を引いたとき（`ALREADY_DONE`）も `PROJECT_PUBLISH` の確定は行う**（§11.11 ③） | `attempts: 1` | 🔴 **p95 30 秒**（`docs/02` 章 7.1） | 🔴 **`jobId = gateRunJobId({ targetType, targetId, contentHash })`**（⚠️ **区切りは `.`**。`'gate.run.{targetType}.{targetId}.{contentHash}'`。当初のスケッチは `:` だったが、**BullMQ はカスタム `jobId` に `:` を含められない**〔実測。§11.10 ③〕）で enqueue（BullMQ が待機中・実行中の同 ID を重複排除）。開始時に `ReviewGate(targetType, targetId, contentHash, execution='DONE')` があれば再実行しない（同じ内容なら同じ結果。`F-020 AC-3`）。HELD 行があれば**同じ行を CAS で DONE に完了**させる（`UPDATE review_gates SET execution='DONE', … WHERE id=$held AND execution='HELD_AI_COST_LIMIT'`。0 件なら結果を破棄。`P-A-09`）。🔴 **HELD 部分 UNIQUE + `jobId` + 完了 CAS の 3 段**で、#39 の手動再実行と `gate.hold-release` が同時に走っても結果は 1 行・遷移は 1 回（`F-027 AC-5`） |
 | `gate.hold-release` | 毎 10 分（スケジュール） | 🔴 **AI 上限で保留したゲートの自動再試行**（送信系ではないので許される。`F-027 AC-5`）。`review_gates(execution='HELD_AI_COST_LIMIT')` を走査し、そのテナントの日次カウンタに見積り分の余地があれば（`decideQuota` が `ALLOW`）`gate.run` を**同じ payload・同じ `jobId` で再 enqueue**。余地が無ければ何もしない | `attempts: 3` | p95 10 秒 | `gate.run` と同じ 3 段（HELD 部分 UNIQUE / `jobId` / 完了 CAS）。#39 の手動再実行と重なっても 2 回目は重複排除か 0 件更新で no-op |
 
 🔴 **AI ジョブの `attempts: 1`**: LLM の再試行は `runRole` の内部で最大 2 回まで行い、**ジョブ単位での再試行は行わない**。ジョブが再実行されるとマスキング・プロンプト構築からやり直しになり、`AiUsage` が二重に積まれる。🔴 **`gate.run` の重複排除の役割分担**: BullMQ の `jobId` 重複排除は**待機中・実行中**にのみ効かせる（completed は §9.1 の `removeOnComplete: true` で即座に消え、再 enqueue を阻まない）。**確定後の抑止は DB 側** — 開始時の `execution='DONE'` 行チェック（同じ内容なら再実行しない）と HELD 完了 CAS（0 件なら結果を破棄。`P-A-09`）が担う。
@@ -3957,7 +3978,7 @@ type ExternalSendSpec<S> = {
 
 🔴 **入口は `gate.run` ジョブ 1 本**（§9.3）。共有状態へ進める全ての経路がこのジョブの結果を参照する。**ゲートを経ずに共有状態へ進む API を作らない**（§6.8）。
 
-⚠️ **Phase 1 で実際に実行できるのは 3 種のうち `PROPOSAL` と `PROJECT_PUBLISH` である**（T-07-06。`SKILL_SHEET_SHARE` の入口は T-07-09）。🔴 **未配線の対象種別は「対応していないので PASS」にせず例外にする**（`UnsupportedGateTargetError`。§11.9 ⑧-6）。
+⚠️ **Phase 1 で実際に実行できるのは 3 種のうち `PROPOSAL` と `PROJECT_PUBLISH` である**（T-07-06 / T-07-09）。🔴 **`SKILL_SHEET_SHARE` は Phase 1 では PASS しない** —— 未配線だからではなく、**検査対象の本文が Phase 1 に存在しない**からである（原本は読めず、抽出は Phase 2 の `F-032`。**決着は §11.11 ⑤**）。`F-020 AC-1` は共有の側（`issueDownloadUrl` の前提条件。§14.2 / §11.11 ⑥）で成立させている。🔴 **未配線・検査不能の対象種別を「対応していないので PASS」にせず例外にする**（`UnsupportedGateTargetError`）。
 
 ### 11.2 層の実行順と並列可否
 
@@ -4184,7 +4205,7 @@ apps/worker/src/jobs/gate-run.ts      ジョブ本体（3 層の実行順・枝�
 #### ② 🔴 `GateInput` は対象種別で判別する合併にした（§11.3 のスケッチとの差分）
 
 - スケッチの形（`snapshot?` / `requirements?` / `text: { subject?, body?, publicSummary? }` を任意項目で並べる）は、次の 3 つを**型として許してしまう**: ①提案なのに `ConsistencySubject` を渡し忘れる（＝ 必須要件の照合が黙って行われないのに PASS）②案件の公開に `snapshot` を渡す ③案件の公開の指摘に `field='snapshot'` が付く（承認画面が存在しない欄をハイライトする）。
-- 確定形: `GateInput = ProposalGateInput | ProjectPublishGateInput | SkillSheetShareGateInput`。**欄（`GateFindingField`）も種別ごとに絞る**（提案 = `subject` / `body`、案件の公開 = `public_summary`、スキルシート共有 = `attachment`）。`consistency` は提案で `subject` **必須**、他は `subject?: undefined`（**値を書くとコンパイルエラー**）。
+- 確定形: `GateInput = ProposalGateInput | ProjectPublishGateInput | SkillSheetShareGateInput`。**欄（`GateFindingField`）も種別ごとに絞る**（提案 = `subject` / `body`、案件の公開 = **`project_name` / `public_summary` / `requirement`**〔⚠️ **T-07-09 で 3 欄に広げた**。理由は §11.11 ⑧〕、スキルシート共有 = `attachment`）。`consistency` は提案で `subject` **必須**、他は `subject?: undefined`（**値を書くとコンパイルエラー**）。
 - 🔴 **提案の検査対象の本文に `EngineerSnapshot` を入れない。** スナップショットは経路 2 で**ホストが読む**ための凍結コピーであり、氏名と所属会社名を持っているのが正常である（`CLAUDE.md` §3.1 経路 2）。本文に入れると既知値が必ず一致し、**すべての提案が直しようのない PII FAIL になる**（`BR-18` の解消手段が存在しなくなる）。外部へ出るのは件名・本文であり、そこに氏名が残っていれば FAIL になる（`F-020 AC-5`）。スナップショットは**整合層の照合対象**としてのみ使う。
 
 #### ③ 🔴 機械的検出を商流層にも置いた（§11.4 の `mechanicalPii` に `mechanicalCommerce` を追加）
@@ -4233,8 +4254,8 @@ apps/worker/src/jobs/gate-run.ts      ジョブ本体（3 層の実行順・枝�
 2. `gate.run` の enqueue は `packages/connectors` の `GateRunJob` / `gateRunJobId(job)` / `GATE_RUN_JOB` を使う（両側で組み立てを書かない）。キューは `attempts: 1` / `removeOnComplete: true`（§9.1。`tests/static/queue-attempts.test.ts` が固定）。
 3. **BullMQ の `Queue` / `Worker` の実体化は未了である**（`bullmq` が依存に入っていない。`tests/static/queue-attempts.test.ts` の許可リストは空のまま）。`@anthropic-ai/sdk`（§7.9 ⑥）と同じ扱いで、依存追加は人間の承認事項である。
 4. `#40` は `readReviewGateResult`（`packages/db`）→ `toGateResultView`（domain）で組み立てる。🔴 **`held` は `execution='HELD_AI_COST_LIMIT'` のときだけ渡す**（`resetAt` は暦の計算なので `usagePeriodResetAt`（`packages/db`）から取る。domain では作れない。§7.12 ⑥）。
-5. **T-07-09 へ**: `PROJECT_PUBLISH` の `audience.partnerCompanyIds` には**現時点で公開済みの相手**しか入っていない。`#28`（公開範囲の設定）が「これから公開する相手」をゲートまで運ぶ手段は SP-06 では作られなかった（`ProjectVisibility` の行はゲート PASS 後にしか作れない = `review_gate_id` NOT NULL）。**新規公開先を含めるには、その一覧を運ぶ経路（`gate.run` の payload か中間テーブル）が要る。** 運ばないと「新規公開先の名前が公開文に出ていても他社名として検出されない」。
-6. **T-07-09 へ**: `SKILL_SHEET_SHARE` の `loadGateInput` は `UnsupportedGateTargetError` を投げる（＝ PASS にならない）。Phase 1 には抽出テキストが無い（`sheet-parser` は Phase 2）ため、**何を検査対象の本文にするか**を決めるところから T-07-09 の範囲である。
+5. ~~**T-07-09 へ**: `PROJECT_PUBLISH` の `audience.partnerCompanyIds` には**現時点で公開済みの相手**しか入っていない~~ — ✅ **解消（2026-09-09、T-07-09。§11.11 ①）。中間テーブル `ProjectPublishRequest` が「これから公開する相手」を運ぶ**（`gate.run` の payload に載せる案は採らなかった。理由は §11.11 ①）。
+6. ~~**T-07-09 へ**: `SKILL_SHEET_SHARE` の `loadGateInput` は `UnsupportedGateTargetError` を投げる~~ — ✅ **決着（2026-09-09、T-07-09。§11.11 ⑤⑥）。Phase 1 には検査対象の本文が存在しないため、`SKILL_SHEET_SHARE` は Phase 1 では PASS しない**（配線漏れではなく、決めたうえでの fail-closed）。`F-020 AC-1` は**共有の側**（`issueDownloadUrl` の前提条件）で成立させた。
 7. **T-07-10 へ**: `gate.hold-release` は `findPendingReviewGate` で保留行を引き、**同じ payload・同じ `jobId`** で `gate.run` を再 enqueue する。完了 CAS（⑤-1）が多重化の最後の防波堤であり、**`gate.hold-release` 側に「先に DONE にする」処理を書かない**。
 
 #### ⑨ 検証（T-07-06 で緑にしたもの）
@@ -4333,6 +4354,82 @@ tests/isolation/support/redis.ts          Testcontainers の Redis
 4. **SP-09 へ**: 提案の作成（#36）は `EngineerSnapshot` を同時に凍結する。**凍結が無い提案は `gate.run` が `GateFactsUnavailableError` で落ちる**（§11.9 ⑦）。#39 はそれを事前に弾かない（ハッシュは `snapshot=null` として決定的に計算できる）ので、**#36 の側で不変条件を守ること**。
 5. 🔴 **未解決（Issue #41 / §11.9 ⑦）**: パートナー所属エンジニアの提案はゲートを通せない（`loadGateInput` が `ENGINEER_LEDGER_UNREADABLE` で落ちる）。#39 / #40 はパートナー文脈でも動くが、**中核 E2E（パートナーが提案 → ホストが承認 → 送信）は決着待ち**である。
 6. **`@anthropic-ai/sdk` のアダプタ（§7.9 ⑥）は未実装のまま**である（依存は追加済み）。`packages/ai/src/client.ts` の 1 関数 + `maxRetries: 0` のテスト固定が残っている。
+
+### 11.11 🔴 §11.1（案件の公開・スキルシートの外部共有の接続）の実装の決着（T-07-09。2026-09-09）
+
+**本節は T-07-10（HELD の自動復帰）/ SP-09（承認・送信）/ SP-15（`F-037`）/ Phase 2 の `sheet-parser`・チャット添付の一次資料である。** T-07-09 で確定した形を、上のスケッチとの差分として記録する（`CLAUDE.md` §8.7。§7.9〜§7.13 / §11.8〜§11.10 と同じ作法）。**以降のタスクは本節を正とする。**
+
+#### ① 🔴 「これから公開する相手」は中間テーブルで運ぶ（§11.9 ⑧-5 の解消）
+
+- **問題**: 商流層は「**その公開範囲で**出してはならない語」を見る（`F-014 AC-3`）。公開先が分からなければ「公開先に含まれない取引先の社名」も決まらないので、**新規公開先の社名が公開文に書かれていても他社名として検出されない**。ところが `project_visibilities.review_gate_id` は NOT NULL + FK であり、**ゲート PASS より前に公開先を置ける列がそこには無い**。
+- 🔴 **`gate.run` の payload に載せる案は採らなかった。** `gate.hold-release`（AI 上限からの自動復帰。T-07-10）は `review_gates` の**保留行だけ**を材料に「同じ payload・同じ `jobId`」で再 enqueue する（§11.9 ⑧-7）。保留行は `(target_type, target_id, content_hash)` しか持たないため、payload に持たせると**上限で保留された公開要求だけが、復帰後に公開先を復元できない**。復元できないものを「公開先が空」で続行させれば、それは検査していない相手への公開になる。
+- **確定形**: `project_publish_requests`（§3.2 / §3.5。C2 HOST_ONLY。オーナー列を持たない）。案件ごとに **1 行**（`@@unique(tenant_id, project_id)`）で、差し替えは UPDATE である（積み上げない）。`requested_by` はそのまま `ProjectVisibility.published_by` になる —— **公開したのはワーカーではなく、公開範囲を決めた利用者である**（`F-014 AC-5` の「実施者」）。
+- **経路**: `#28` が①内容のハッシュを作り②公開要求を置き③**コミットの後に** `gate.run` を積む（`removeFailedJob` → `enqueue` の順。§9.10 ②）。`ProjectPublishGateOutcome` が `enqueue` を**関数として返す**のは、この順序を型で強制するためである（未コミットの公開要求をワーカーが先に読むと `TARGET_NOT_FOUND` で終わり、公開が永久に成立しない）。
+- 🔴 **`GateInput.audience` は「すでに公開済み ∪ これから公開する」の和**である。公開要求が無い / ハッシュが一致しない場合、`loadGateInput` は **`NOT_FOUND`** を返す（要求が差し替えられた ＝ この実行が公開すべき相手はもう無い）。**「公開済みの相手だけ」で検査を続けない** —— 結果だけ残って誰にも公開されない `ReviewGate` が増える。
+- 🔴 **新しい公開先が 1 件も無い要求（`NO_PUBLISH_REQUESTED`）は、ゲート待ちの公開要求を取り下げる**（`withdrawProjectPublishRequest`）。取り下げないと「A に公開」→（ゲート実行前に）「やっぱり誰にも公開しない」と操作しても、**走り出していたジョブが古い要求を消費して A に公開してしまう**。公開要求は常に**最後の要求**を表す。
+
+#### ② 🔴 `PROJECT_PUBLISH` の内容のハッシュは「本文」だけではない
+
+- 材料は **公開文（`publicSummary`）/ エンド企業名 / 内部単価 / 公開先の集合 / テナントの取引先すべて（ID と社名）** である（`ProjectPublishGateHashInput`。§11.10 ② と同じ 1 実装 `gateContentHash` を通る）。
+- 🔴 **理由**: `(target_type, target_id, content_hash)` が同じならゲートを**再実行しない**（`P-A-09`）。「同じ本文だが公開先が違う」を同じハッシュにすると、**検査していない相手への公開がキャッシュで成立する**。取引先が増える / 社名が変わると「出してはならない語」の集合が変わるため、社名も材料に入れる。
+- ⚠️ 積んでから実行するまでの間に取引先が増減すると、ジョブは**その時点の事実**で検査し、結果は enqueue 時のハッシュの下に保存される（提案と同じ TOCTOU であり、許容する）。
+
+#### ③ 🔴 `#28` は「確定済みのゲート結果がある」ことを理由に断らない（`#39` との差分）
+
+- 提案の `#39` は `DONE` 行があれば **422** にする（`GATE_RUNNING` のまま留まる行き止まりを防ぐため。§11.10 ⑤）。**案件の公開では同じことをしてはならない** —— 案件に「留まる状態」は無く、断ると**再公開ができなくなる**。「A に公開 → 解除 → もう一度 A に公開」は公開文も公開先も 1 文字も変わらないのでハッシュが一致し、422 なら**直す元データが無いのに永久に断られる**（`BR-18` の空回り）。
+- したがってワーカーは、確定済みの結果を見つけたとき（`ALREADY_DONE`）も**その結果で公開を確定させる**。キャッシュが引けるのは「公開文・商流情報・公開先・取引先の社名がすべて同じ」ときだけなので（②）、判定は今も妥当である。
+- **確定は `(project_id, content_hash)` の CAS**（`settleProjectPublish`）。二重実行の 2 回目は `NOT_PENDING` になり、行を 1 つも動かさない。
+
+#### ④ 公開範囲の行を**作る**のは `packages/db` の 1 関数だけである
+
+- `settleProjectPublish`（`packages/db/src/project-publish.ts`）。`apps/web`（`#28`）が `project_visibilities` に対して行うのは**解除（`revoked_at`）だけ**になった。`apps/web` と `apps/worker` は相互に import できない（`CLAUDE.md` §2.1）ので、共有点は `packages/db` しか無い。
+- 🔴 **INSERT ではなく upsert である**（`ON CONFLICT (tenant_id, project_id, partner_company_id) DO UPDATE`）。解除された行は消えていない（`revoked_at` を入れただけ。§6.4 の T-06-07 の決着）ので、再公開は `revoked_at` を NULL に戻す UPDATE になる。素の INSERT だと一意制約で落ち、**一度解除した相手には二度と公開できない**。`published_at` / `published_by` / `review_gate_id` は**新しい公開のもので上書きする**（「いつ誰に公開していたか」の履歴は `AuditLog` の連鎖が持つ）。
+- **監査は `#28` と同じ action（`project.visibility_change`）で 2 行になる**: ①要求（`actorKind='USER'` / `verdict='PENDING_GATE'` / `pending=…`）②確定（`actorKind='SYSTEM'` / `operation='GATE_RESULT'` / `verdict='PUBLISHED' | 'BLOCKED'` / 3 層の判定）。🔴 **ワーカー側だけ独自 action にしない** —— `S-041` の「公開範囲の変更」で検索したときに、**実際に公開が成立した行だけが出てこない**（§16.1 の規律）。
+
+#### ⑤ 🔴 `SKILL_SHEET_SHARE`: Phase 1 には検査対象の本文が存在しない（§11.9 ⑧-6 の決着）
+
+- **決定**: **Phase 1 の `SKILL_SHEET_SHARE` は PASS しない。** `loadGateInput` は `UnsupportedGateTargetError` のままである（メッセージだけを「未配線」から「検査対象の本文が無い」に改めた）。
+- **根拠**: 原本（xlsx / docx / pdf）の中身は Phase 1 では読めず（構造化抽出 `sheet-parser` は Phase 2 の `F-032`）、原本そのものを LLM に渡すことは `BR-11` と `packages/ai` の型（`image` / `document` ブロックを受け取れない。T-07-02）で**不可能**である。
+- 🔴 **版のメモ（`SkillSheet.note`）だけを検査して PASS にする案は採らなかった。** 原本を 1 バイトも見ていないのに「ゲートを通した」ことになり、`F-020 AC-1` を**静かに**破る（`CLAUDE.md` §11.1 の「成功したように見えて実際には起きていない」と同型）。ファイル名も材料にならない（原本のファイル名は保存していない。§14.1 の決着）。
+- **Phase 2 の入口**: `SkillSheetExtraction` の抽出テキストを `field='attachment'` の本文にし、`knownPii` は所有エンジニアの台帳から作る（パートナー所有の版は §11.9 ⑦ / [Issue #41](https://github.com/Festal-KM/SES-Platform/issues/41) の決着が前提）。
+
+#### ⑥ 🔴 代わりに `F-020 AC-1` は「共有の側」で成立させた（§14.2 の前提条件③）
+
+- `issueDownloadUrl`（署名付き URL を発行できる唯一の関数。§14.2）に **5 つ目の前提条件**を足した: **所有会社の境界の外へ渡すなら、`ReviewGate` の 3 層 PASS が要る**（無ければ 409 `FILE_SHARE_GATE_REQUIRED`）。`CLEAN` **かつ**ゲート PASS の AND である —— ウイルス検査は「安全なファイルか」しか見ておらず、「その相手に出してよい内容か」は 1 つも見ていない。
+- **分類は呼び出し側が「見えている行」から機械的に導く**（`classifyFileShare`。`skill_sheets.owner_partner_company_id` と `ctx.partnerCompanyId` の一致 / 不一致だけで決まる）。呼び出し側が渡すのは「**これは境界の外へ出るのか**」という事実だけであり、「ゲートを確かめたか」ではない（判定を 2 箇所に写さない。`CLEAN` 判定と同じ規律）。`DownloadSubject.share` は**必須**である —— 省略可能にすると、新しい DL 経路が「書かなかった ＝ 社内扱い」で静かにゲートを迂回する。
+- ⚠️ **Phase 1 でこの分岐に到達する版は 1 件も無い**（実測）。`skill_sheets` は C3 OWNER_SCOPED であり、越境経路 2 の例外（`Proposal` 作成後にホストが読む。`F-012 AC-4` / `BR-59`）はまだ RLS に無いので、**見えている版は必ず自社所有**である。それでも先に置くのは、**SP-09 が経路 2 の例外を開いた瞬間に、開けた側が何も書き足さなくても前提条件が効く**ようにするためである（「開けるときにゲートも確かめてね」という申し送りにすると必ずどこかで落ちる）。⑤と合わせると、**Phase 1 においてスキルシートの原本が所有会社の境界を越える経路は 1 つも存在しない。**
+
+#### ⑧ 🔴 検査する欄は「パートナーが実際に読む欄」の全部である（T-07-09 レビューでの是正）
+
+- **当初 `sections` は `public_summary` だけだった。これは誤りである。** パートナーが読むのは `PARTNER_PROJECT_DETAIL_SELECT`（`apps/web/lib/projects/service.ts`）が返す列すべてであり、そのうち**自由入力の欄は 3 つ**ある: **案件名（`projects.name`）/ 公開文（`public_summary`）/ 要件のフリーテキスト（`project_requirements.free_text`）**。残りの列（状態・人数・開始日・単価レンジ・都道府県・リモート可否）は列挙値と数値であり、語が潜り込む余地が無い。
+- 確定形: `GateFindingField` に **`project_name` / `requirement`** を足し、`ProjectPublishGateInput` の欄を 3 つにした。**`apps/web/lib/projects/publish-preview.ts` の `PUBLISHED_FIELDS`（`name` / `publicSummary` / `requirement`）と 1 対 1 である** —— 画面の警告とゲートの合否が別の母集団を見ていたら、利用者は「プレビューでは何も出ていないのに FAIL する」ことになる。**この 1 対 1 はユニットテストで固定する**（片方に欄を足したらもう片方も足さざるを得ない）。
+- 🔴 **要件のうち検査するのは `free_text` だけである。** スキル指定の要件が公開先に見せるのは**辞書の名前**（`Skill.name`）であり、グローバル辞書はテナントから編集できない（`BR-02` / `F-010 AC-2`）。テナントが任意の語を書き込めるのはフリーテキスト欄だけなので、商流情報が潜り込む経路もそこだけである。
+- 🔴 **要件のフリーテキストは 1 欄に綴じる**（`kind` → `id` の昇順で改行連結）。1 件ごとに `field='requirement'` の欄を並べると、`prepareGateExamination` の欄別オフセット表（`Map<GateFindingField, …>`）が衝突し、AI の指摘をどの要件に紐づけるか決まらない。並び順を固定するのは、同じ内容が実行のたびに別のハッシュ・別のオフセットにならないようにするためである。
+- 🔴 **内容のハッシュ（②）にも案件名と要件のフリーテキストを足した。** 足さないと、「案件名にエンド企業名を書く → 公開が FAIL → 案件名だけ直さずに再要求」でハッシュが一致し、**FAIL のキャッシュが引かれて永久に公開できない**（逆に、清潔だった内容の PASS を持ったまま案件名に商流情報を書き足すと、**検査していない内容で公開が成立する**）。材料が増えたので `GATE_HASH_ALGORITHM_VERSION` を **`v2`** に上げた（`hash.ts` 冒頭の 🔴 の規約どおり。既存の承認待ちは再検証になるが、Phase 1 の実データはまだ無い）。
+- 🔴 **`hasInspectableText` を実際に使う。** `loadGateInput` は「非空の欄が 1 つも無い入力を返さない」契約であり（`packages/ai` の `EmptyGateContentError` の 🔴 がそう書いている）、**契約を守る側が誰も呼んでいなかった**。`packages/db` で `GateFactsUnavailableError('NO_INSPECTABLE_TEXT')` に倒す（AI 層へ着く前、＝ コストを予約する前に落とす）。⚠️ 案件名は `NOT NULL` かつ空文字を許さないので、案件の公開でここに到達することは実際には無い —— **到達しないことを保証しているのが「案件名も検査対象である」ことそのもの**である。
+- **プロンプトの版は上げない**（`gate-inspector.v1` のまま）。欄のラベル表（`fieldLabels`）は**入力に現れた欄の分だけ**利用者メッセージに描かれ、システム指示は欄を列挙しない。したがって**既存の入力に対して生成される文字列は 1 バイトも変わらない**（`BR-13` の再現性は保たれる）。`PromptGateField` は `packages/domain` の写しなので、欄を足すと `fieldLabels` の `Record` がコンパイルエラーになる ＝ **検査基準の更新を強制する仕掛けは働いている**。
+
+#### ⑨ 🔴 公開先どうしの社名も「出してはならない語」である（`F-014 AC-4` / `BR-07`）
+
+- **当初は `otherCompanyNames` から公開先の集合を丸ごと除外していた。これは誤りである。** 2 社以上へ**同じ公開文**を出す以上、公開文に書かれた「A 社」は B 社にも届く —— それは `CLAUDE.md` §3.1 の 🔴（パートナー同士が相互に参照できる経路を 1 つも作らない）そのものである。
+- 確定形: **自社名を許すのは公開先がちょうど 1 社のときだけ**（`audienceIds.length === 1 && audienceIds[0] === partner.id` を除外する）。提案側（`loadProposalGateInput`）が「提案元の 1 社だけ」を除いているのと同じ形である。
+- 🔴 **これを AI に判断させない。** `gate-inspector` に渡るのは `audienceKind`（`PARTNER` / `EXTERNAL_CLIENT`）だけで、**共有先が具体的にどの会社かは渡らない**（渡せば社名そのものを LLM に送ることになる）。したがって AI には「宛先本人の社名」と「他社名」を区別する材料が無い。区別できるのは `forbiddenTerms` を組み立てる側だけである（§11.9 ③ の「機械的検出を商流層にも置いた」理由と同根）。
+
+#### ⑩ 🔴 取り下げと確定の競合窓を閉じた（順序の是正）
+
+- **問題**: `#28` が①公開範囲を読む →②差分 →③公開要求を置く / 取り下げる、の順だと、①と③の間にワーカーが `settleProjectPublish` を commit しうる。すると「誰にも公開しない」という要求が**公開を 1 件も見ないまま**通り、直後にワーカーの公開が残る。
+- 確定形: **`#28` は最初に公開要求を消費（削除）してから `project_visibilities` を読む。** 追加がある枝では、そのあと `deps.gate` が新しい要求を置き直すので不変条件は保たれる（要求は常に「最後の要求」を表す）。
+- **これで両方の順序が正しくなる**（`READ COMMITTED` のまま。`Serializable` を持ち出す必要は無い）:
+  - `#28` が先に消費 → ワーカーの CAS（`DELETE … WHERE id AND content_hash`）が 0 件 → **公開しない**
+  - ワーカーが先に消費 → `#28` の削除がその行ロックで待たされ、解放後に読む `project_visibilities` には**公開済みの行が見えている** → 要求が空なら同じトランザクションで `revoked` として解除される
+- 🔴 **「取り下げは追加が無いときだけ」という条件分岐を残さない。** 常に消費してから置き直す 1 本の流れにする —— 条件付きにすると、上の競合窓が「追加がある要求」でだけ再び開く。
+
+#### ⑪ ⚠️ T-07-10 / SP-09 / Phase 2 への申し送り
+
+1. **T-07-10 へ**: `gate.hold-release` が保留行から再 enqueue する際、`PROJECT_PUBLISH` の公開要求は**そのまま残っている**（消費するのは確定時だけ）。したがって復帰後の実行は公開先を正しく復元でき、追加の処理は要らない。🔴 **`gate.hold-release` 側で公開要求を触らない。**
+2. **SP-09 へ**: 承認 CAS（§11.5 手順 3）と本節⑥の前提条件は**同じ 3 条件**（`execution='DONE'` かつ 3 層 PASS）を見る。読み出しは `findPassedReviewGate`（`packages/db`）に 1 実装がある。
+3. **SP-09 へ**: 経路 2 の例外（ホストがパートナー所有のスキルシートを `Proposal` 作成後に読む）を RLS に開くときは、**⑥の分類が自動的に `EXTERNAL` を返す**。⑤のとおり Phase 1 の `SKILL_SHEET_SHARE` は PASS しないので、**開いた瞬間にホストがその版を落とせなくなる**（409）。開くタスクは Phase 2 の抽出テキスト（⑤）とセットで計画すること。
+4. 🔴 **未解決（本タスクの範囲外）**: 公開が成立した後に `publicSummary` を編集しても（`#26`）、公開範囲は変わらず**再検査も走らない**。`F-014 AC-3` の射程は「公開する瞬間」であり、公開後の編集は現状どのゲートも通らない。**`#26` が `publicSummary` を変えたときに公開を解除する / 再検査を起こすべきか**は仕様判断であり、`docs/02` `F-014` の処理②の解釈を人間に確認する必要がある（Issue 起票の候補）。
 
 ## 12. 業務シーケンス
 
@@ -4764,7 +4861,7 @@ s3://{S3_BUCKET}/
 | 用途 | メソッド | 有効期限 | 🔴 発行の前提条件 |
 |---|---|---|---|
 | **アップロード** | `PUT`（`presignPut`） | `S3_PRESIGNED_URL_TTL_SECONDS`（既定 300） | ①`requireExecutable` ②`VIEWER` でない ③**ストレージ上限に達していない**（`docs/03` §4.5。発行してから失敗させない）④`Content-Length` を `UPLOAD_MAX_BYTES`（既定 20 MB）以下に制限したうえで、🔴 **申告サイズちょうどを署名に焼き込む**（T-05-04。SigV4 のクエリ署名は範囲を表現できないため「上限」では署名できない。`signableHeaders` に `content-length` / `content-type` を入れて `SignedHeaders` に載せる） |
-| **ダウンロード（スキルシート）** | `GET`（`presignGet`） | 300 秒 | 🔴 ①`scanStatus === 'CLEAN'`（`BR-26` / `F-011 AC-1`）②`VIEWER` でない（`BR-31`）③**`AuditLog` の書き込みが成功している**（`F-012 AC-2`。記録なしの閲覧が成立しない）④代理閲覧中でない（`F-060 AC-3`） |
+| **ダウンロード（スキルシート）** | `GET`（`presignGet`） | 300 秒 | 🔴 ①`scanStatus === 'CLEAN'`（`BR-26` / `F-011 AC-1`）②`VIEWER` でない（`BR-31`）③**`AuditLog` の書き込みが成功している**（`F-012 AC-2`。記録なしの閲覧が成立しない）④代理閲覧中でない（`F-060 AC-3`）🔴 ⑤**所有会社の境界の外へ渡すなら `ReviewGate` の 3 層 PASS がある**（T-07-09。`F-020 AC-1` / `BR-15`。§11.11 ⑥。①との **AND** である —— ウイルス検査は「安全なファイルか」しか見ておらず「その相手に出してよい内容か」は見ていない） |
 | **ダウンロード（契約書・添付）** | 同上 | 300 秒 | 同上 |
 | **返却データ（`F-064` / `F-052`）** | 同上 | 3600 秒 | 🔴 運営者は 403（`F-064 AC-7`） |
 
@@ -4910,7 +5007,7 @@ export class InvalidStateTransitionError extends AppError {
 | 🔴 `skill_alias.update` | `#24`（`F-010 AC-3`「別名の採用・却下が監査ログに残る」）。**採用・却下に独自 action（`skill_alias.decide`）を作らず `*.update` に畳む** —— `S-041` の操作種別フィルタ（`CREATE_UPDATE_DELETE` = 接尾辞一致）から漏れ、**記録されているのに検索で出てこない**（`partner_company.suspend` を作らなかったのと同じ理由）。区別は `summary.decision`（`ACCEPT` / `REJECT`）。🔴 **`withApiRoute` の `audit` ではなく `decideSkillAlias` の業務トランザクション内**（`writeAuditLog`）で書く（`membership.role_change` と同じ形）: ①`audit` はハンドラの前に別トランザクションで書くため、**起きなかった採否**（403 / 404 / 409 / 400）まで記録に残る ②`summary` に載せる由来（`origin`）は行を読むまで分からない。🔴 `summary` に**別名の表記そのものを載せない**（利用者の自由入力であり PII が紛れうる。§16.2） | `USER` |
 | `proposal.submit` / `proposal.resend` | 送信ジョブの ⑥（§10.2） | `SYSTEM`（`summary.requestedBy` に人間を記録） |
 | `proposal.approve` / `proposal.reject` | `#41` / `#42`。自動承認は `SYSTEM` + `summary.reason='ALL_LAYERS_PASS'` | `USER` / `SYSTEM` |
-| `membership.role_change` / `membership.revoke` / `project.visibility_change` | `#14` 周辺 / `#28` | `USER` |
+| `membership.role_change` / `membership.revoke` / `project.visibility_change` | `#14` 周辺 / `#28` | `USER`。🔴 **`project.visibility_change` だけは `SYSTEM` の行も立つ**（T-07-09。ゲート結果による公開の確定。`summary.operation='GATE_RESULT'`）—— 1 回の公開は「要求（`USER`）→ 確定（`SYSTEM`）」の 2 行で 1 つの物語になる。**ワーカー側だけ独自 action にしない**（`S-041` の `VISIBILITY_CHANGE` で検索したときに、実際に公開が成立した行だけが出てこなくなる。§11.11 ④） |
 | `impersonation.start` / `impersonation.end` | `withImpersonation`（§5.6） | `PLATFORM_USER` |
 | 🔴 `assignment.view` / `contract.view` / `contract_document.download`（経路 5。`F-065 AC-5` / `F-066 AC-6`） | `#80` / `#81` / `#82`（`withApiRoute` の `audit`。DL は `issueDownloadUrl`）。ホストのプレビューも同じ action で記録し `summary.preview=true` | `USER` |
 | `esign.connect` / `esign.disconnect` / `sending_domain.state_change` | `#73` / `#73b` / `domain.verify` / `domain.recheck`（`F-001` 処理⑥。資格情報は記録しない） | `USER` / `SYSTEM` |

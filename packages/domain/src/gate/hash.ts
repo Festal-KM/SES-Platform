@@ -28,8 +28,15 @@
 
 import type { GateTargetType } from './types.js';
 
-/** 🔴 正規化の版。材料・書式を変えたら必ず上げる（本ファイル冒頭の 🔴）。 */
-export const GATE_HASH_ALGORITHM_VERSION = 'v1';
+/**
+ * 🔴 正規化の版。材料・書式を変えたら必ず上げる（本ファイル冒頭の 🔴）。
+ *
+ * - `v1` … T-07-08（提案）/ T-07-09 の初版（案件の公開）
+ * - `v2` … T-07-09 の是正。**案件の公開の材料に案件名と要件のフリーテキストを足した**
+ *   （docs/05 §11.11 ⑧）。提案側の材料は変えていないが、版は 1 つしか無いので提案のハッシュも
+ *   変わる ＝ 既存の承認待ちは再検証になる（`hash.ts` 冒頭の 🔴 が予告している挙動である）。
+ */
+export const GATE_HASH_ALGORITHM_VERSION = 'v2';
 
 /** 凍結された主張のスキル 1 件（`EngineerSnapshot.skills` の 1 要素）。 */
 export type GateHashSkill = {
@@ -91,14 +98,54 @@ export type ProposalGateHashInput = {
   readonly snapshot: GateHashSnapshot | null;
 };
 
+/** 取引先 1 社（`PROJECT_PUBLISH` の材料）。🔴 社名まで材料にする理由は下記 🔴。 */
+export type GateHashPartner = {
+  readonly partnerCompanyId: string;
+  readonly name: string;
+};
+
 /**
- * 🔴 ゲート対象の内容（Phase 1 の対象種別のうち提案）。
+ * 案件の公開（`PROJECT_PUBLISH`）の材料。T-07-09。
  *
- * ⚠️ `PROJECT_PUBLISH`（T-07-09）/ `SKILL_SHEET_SHARE` / `CHAT_ATTACHMENT` / `CONTRACT_DOCUMENT` は
- *    ここに**まだ無い**。足すときは `targetType` で判別する合併にし、`gateHashSource` の
- *    `switch` を網羅させること（足し忘れがコンパイルエラーになる）。
+ * 🔴 **「検査対象になる全ての値」は本文（`publicSummary`）だけではない**（§11.5）。案件の公開の
+ *    合否は「その公開範囲で出してはならない語」との照合で決まる（`F-014 AC-3`）ので、
+ *    **公開先の集合と、公開先に含まれない取引先の社名も内容の一部である**。
+ *    - 公開先を 1 社増やす → その社は「他社」ではなくなる（同じ本文でも合否が変わりうる）
+ *    - 取引先が 1 社増える / 社名が変わる → 「出してはならない語」の集合が変わる
+ *    材料に入れないと、**古い PASS がキャッシュとして使い回され、新しい他社名の露出を見逃す**。
+ * 🔴 `audiencePartnerCompanyIds` は「すでに公開済み ∪ これから公開する」の**和**である
+ *    （`ProjectPublishRequest` が後者を運ぶ。docs/05 §11.11）。
  */
-export type GateHashInput = ProposalGateHashInput;
+export type ProjectPublishGateHashInput = {
+  readonly targetType: 'PROJECT_PUBLISH';
+  /**
+   * 🔴 案件名も検査対象の欄である（docs/05 §11.11 ⑧）。材料に入れないと
+   *    「案件名にエンド企業名を書いて FAIL → 案件名を直さずに再要求」でハッシュが一致し、
+   *    **FAIL のキャッシュが引かれて永久に公開できない**。逆に、清潔な内容で PASS を得た後に
+   *    案件名へ商流情報を書き足すと、**検査していない内容で公開が成立する**。
+   */
+  readonly name: string;
+  readonly publicSummary: string | null;
+  /** 要件のフリーテキスト（🔴 公開先が読む欄。並びは組み立てる側が固定する）。 */
+  readonly requirementTexts: readonly string[];
+  /** 🔴 内部限定（公開表示に出れば商流層 FAIL）。 */
+  readonly endClientName: string | null;
+  /** 十進の文字列（例: `800000.00`）。🔴 内部限定。 */
+  readonly internalUnitPrice: string | null;
+  readonly audiencePartnerCompanyIds: readonly string[];
+  /** テナントの取引先すべて（公開先かどうかを問わない）。 */
+  readonly partnerCompanies: readonly GateHashPartner[];
+};
+
+/**
+ * 🔴 ゲート対象の内容（Phase 1 の対象種別のうち提案と案件の公開）。
+ *
+ * ⚠️ `SKILL_SHEET_SHARE` / `CHAT_ATTACHMENT` / `CONTRACT_DOCUMENT` はここに**まだ無い**。
+ *    `SKILL_SHEET_SHARE` は **Phase 1 に検査対象の本文が存在しない**ため、ハッシュの材料も
+ *    決められない（docs/05 §11.11 ⑤）。足すときは `targetType` で判別する合併にし、
+ *    `gateHashSource` の `switch` を網羅させること（足し忘れがコンパイルエラーになる）。
+ */
+export type GateHashInput = ProposalGateHashInput | ProjectPublishGateHashInput;
 
 /** 🔴 材料が壊れている（読み出す側で握り潰さない。docs/05 §11.9 ②）。 */
 export class GateHashInputError extends RangeError {
@@ -188,6 +235,39 @@ function snapshotLines(snapshot: GateHashSnapshot | null): readonly string[] {
 export function gateHashSource(input: GateHashInput): string {
   const targetType: GateTargetType = input.targetType;
   switch (input.targetType) {
+    case 'PROJECT_PUBLISH': {
+      // 🔴 並びをコードポイント順に固定する（`sortedSkills` と同じ理由。DB の返す順に依存させない）。
+      const audience = [...input.audiencePartnerCompanyIds].sort();
+      const partners = [...input.partnerCompanies].sort((a, b) =>
+        a.partnerCompanyId !== b.partnerCompanyId
+          ? a.partnerCompanyId < b.partnerCompanyId
+            ? -1
+            : 1
+          : a.name < b.name
+            ? -1
+            : a.name > b.name
+              ? 1
+              : 0,
+      );
+      return [
+        `gate-content/${GATE_HASH_ALGORITHM_VERSION}`,
+        field('targetType', targetType),
+        field('name', input.name),
+        field('publicSummary', input.publicSummary),
+        field('requirementCount', String(input.requirementTexts.length)),
+        // 🔴 並べ替えない（要件の並びには意味があり、組み立てる側が `kind` → `id` で固定している）。
+        ...input.requirementTexts.map((text, index) => field(`requirement[${index}]`, text)),
+        field('endClientName', input.endClientName),
+        field('internalUnitPrice', input.internalUnitPrice),
+        field('audienceCount', String(audience.length)),
+        ...audience.map((id, index) => field(`audience[${index}]`, id)),
+        field('partnerCount', String(partners.length)),
+        ...partners.flatMap((partner, index) => [
+          field(`partner[${index}].id`, partner.partnerCompanyId),
+          field(`partner[${index}].name`, partner.name),
+        ]),
+      ].join('\n');
+    }
     case 'PROPOSAL':
       return [
         `gate-content/${GATE_HASH_ALGORITHM_VERSION}`,
@@ -203,8 +283,9 @@ export function gateHashSource(input: GateHashInput): string {
       ].join('\n');
     default: {
       // 🔴 対象種別を足したらここでコンパイルエラーになる（材料を決めずに通せない）。
-      const exhaustive: never = input.targetType;
-      throw new GateHashInputError(`未知の対象種別です（${String(exhaustive)}）`);
+      const exhaustive: never = input;
+      void exhaustive;
+      throw new GateHashInputError(`未知の対象種別です（${targetType}）`);
     }
   }
 }

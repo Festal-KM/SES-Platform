@@ -10,7 +10,7 @@ import type { PromptKit, RolePrompt } from './kit.js';
 /**
  * 検査対象の欄（`GateFinding.field`。docs/05 §3.6）。
  *
- * 🔴 `packages/domain` の `GATE_FINDING_FIELDS` と同じ 6 値である。**依存できないので写しである**
+ * 🔴 `packages/domain` の `GATE_FINDING_FIELDS` と同じ 8 値である。**依存できないので写しである**
  *    （このパッケージは何にも依存しない。`kit.ts` 冒頭）。ずれたら
  *    `packages/ai/src/roles/gate-inspector.ts` の代入がコンパイルエラーになる ——
  *    欄が増えたときにプロンプト（＝ 検査基準）の更新を強制するための意図的な作りである。
@@ -20,7 +20,10 @@ export type PromptGateField =
   | 'body'
   | 'snapshot'
   | 'attachment'
+  // 🔴 T-07-09: 案件の公開でパートナーが読む自由入力の欄（docs/05 §11.11 ⑧）。
+  | 'project_name'
   | 'public_summary'
+  | 'requirement'
   | 'contract_document';
 
 /**

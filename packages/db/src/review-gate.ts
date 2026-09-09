@@ -93,6 +93,15 @@ export type ReviewGateSaveOutcome =
 type IdRow = { readonly id: string };
 
 /**
+ * すでに開いているテナントトランザクションのクライアントのうち、ゲート結果の読み取りに要るもの。
+ * 🔴 `TenantDb` そのものを export しない（docs/05 §4.3 実装の規約 3。`AuditLogWriter` と同じ手法）。
+ */
+export type ReviewGateReader = Pick<
+  Parameters<Parameters<typeof runInTenantTransaction<void>>[1]>[0],
+  'reviewGate'
+>;
+
+/**
  * `GateFinding[]` を JSONB へ渡せる形にする。
  *
  * 🔴 型を経由するだけで、値の加工はしない（`excerpt` を切り詰める等は作る側の責務であり、
@@ -170,6 +179,37 @@ export async function findCachedReviewGate(
       };
     },
   );
+}
+
+/**
+ * 🔴 その対象について「**外部へ共有してよい**」と言えるゲート結果があるか（`F-020 AC-1`）。T-07-09。
+ *
+ * 条件は承認 CAS（§11.5 手順 3）と**同じ 3 つ**である: `execution='DONE'` かつ 3 層すべて `PASS`。
+ * 🔴 `execution='DONE'` を落とすと、AI 上限で保留中の行（判定は NULL）が「PASS ではない」ではなく
+ *    「未判定」として素通りしうる。保留は共有の許可ではない（`F-027 AC-5`）。
+ * 🔴 `aiFailed` は条件に入れない —— AI が失敗した実行はそもそも PII / 商流が FAIL であり
+ *    （§11.4）、3 層 PASS の条件に到達しない。
+ *
+ * 🔴 引数の `db` は**すでに開いているトランザクションのクライアント**である（`writeAuditLog` と
+ *    同じ受け方）。共有の可否は「共有物を読んだのと同じトランザクション」で判定しなければ、
+ *    判定と発行の間に結果が変わりうる。
+ */
+export async function findPassedReviewGate(
+  db: ReviewGateReader,
+  target: Pick<ReviewGateKey, 'targetType' | 'targetId'>,
+): Promise<{ readonly id: string } | null> {
+  return db.reviewGate.findFirst({
+    where: {
+      targetType: target.targetType,
+      targetId: target.targetId,
+      execution: 'DONE',
+      piiVerdict: 'PASS',
+      commerceVerdict: 'PASS',
+      consistencyVerdict: 'PASS',
+    },
+    orderBy: { executedAt: 'desc' },
+    select: { id: true },
+  });
 }
 
 /** 保留中の行を読む（対象ごとに 1 行。部分 UNIQUE）。 */

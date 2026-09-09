@@ -410,6 +410,28 @@ export class FileNotCleanError extends ConflictError {
 }
 
 /**
+ * 🔴 品質ゲートを通していないものを、所有会社の境界の外へ渡そうとした（409）。T-07-09。
+ *
+ * 🔴 **`FILE_NOT_CLEAN` と畳まない。** 止めている理由も、利用者が次に取る行動も違う ——
+ *    あちらは「ウイルス検査に合格していない」（＝ 上げ直す）、こちらは
+ *    「**その相手に出してよい内容かを検査していない**」（＝ 検査を実行する / 内容を直す）である。
+ * 🔴 **「無視して渡す」経路は存在しない**（`F-020 AC-2` / `BR-18`）。この例外を回避する
+ *    パラメータも設定も作らない。
+ * ⚠️ Phase 1 のスキルシートは、この状態から抜ける手段が無い（`SKILL_SHEET_SHARE` のゲートは
+ *    検査対象の本文が無いため PASS しない。docs/05 §11.11 ⑤）。**それは仕様である** ——
+ *    Phase 1 に「スキルシートの原本を境界の外へ渡す」経路は 1 つも無い。
+ */
+export class FileShareGateRequiredError extends ConflictError {
+  override readonly code = 'FILE_SHARE_GATE_REQUIRED';
+  override readonly userMessageKey: MessageKey = 'error.file.shareGateRequired';
+
+  constructor() {
+    super('このファイルは品質ゲートを通していないため、社外へ共有できません。');
+    this.name = 'FileShareGateRequiredError';
+  }
+}
+
+/**
  * 🔴 提案に凍結添付された版を削除しようとした（409）。T-05-06（Iteration 2）。
  *
  * 🔴 **これは「順序の事故」を防ぐための事前チェックである。** 版の削除は

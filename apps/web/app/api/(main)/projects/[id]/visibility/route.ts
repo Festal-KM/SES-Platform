@@ -15,7 +15,9 @@
 import { requireExecutable, requireNotViewer, requireRole } from '../../../../../../lib/api/guards';
 import { withApiRoute } from '../../../../../../lib/api/withApiRoute';
 import { readRequestMeta } from '../../../../../../lib/auth/session';
+import { requireGateRunJobQueue } from '../../../../../../lib/jobs/gate-run-queue';
 import { PROJECT_EDITOR_ROLES } from '../../../../../../lib/projects/policy';
+import { createProjectPublishGate } from '../../../../../../lib/projects/publish-gate';
 import { updateProjectVisibility } from '../../../../../../lib/projects/visibility';
 import {
   projectParamsSchema,
@@ -40,11 +42,18 @@ export const PUT = withApiRoute(
   },
   async ({ ctx, params, body }) => {
     const meta = await readRequestMeta();
+    const now = new Date();
     return Response.json(
-      await updateProjectVisibility(ctx, params.id, body, {
-        ipAddress: meta.ipAddress,
-        now: new Date(),
-      }),
+      await updateProjectVisibility(
+        ctx,
+        params.id,
+        body,
+        { ipAddress: meta.ipAddress, now },
+        // 🔴 T-07-09: 実装の選択は起動時 DI の 1 箇所（`lib/db/bootstrap.ts`）で終わっている。
+        //    未登録なら `requireGateRunJobQueue()` が例外を投げ、**公開要求ごと失敗する** ——
+        //    黙って保留にすると「公開したのに永久に届かない」状態になる（`CLAUDE.md` §11.1）。
+        { gate: createProjectPublishGate({ queue: requireGateRunJobQueue(), now }) },
+      ),
     );
   },
 );

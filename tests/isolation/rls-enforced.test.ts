@@ -98,7 +98,9 @@ describe('#1 全業務テーブルで RLS が有効かつ FORCE されている�
 describe('#2 全表にポリシーが 1 つ以上ある（docs/05 §4.7 #2）', () => {
   it('ポリシーが 1 つも無い業務テーブルが 0 件である', async () => {
     const tables = await businessTables();
-    expect(tables).toHaveLength(52); // 空振り防止（docs/05 §3.2 の 56 表 − 射程外 4 表）
+    // 空振り防止（docs/05 §3.2 の 57 表 − 射程外 4 表）。
+    // 🔴 T-07-09 で `project_publish_requests` を 1 表足した（docs/05 §11.11 ①）。
+    expect(tables).toHaveLength(53);
 
     const policies = await readPolicies(db);
     const withPolicy = new Set(policies.map((policy) => policy.table));
@@ -569,6 +571,19 @@ type PartnerFkRow = {
 /** 継承の子（B 群）の宣言。docs/05 §4.4.1 の COMMENT 表記。 */
 const CHILD_DECLARATION_PREFIXES = ['owner-column: child of', 'counterparty-column: child of'];
 
+/**
+ * 🔴 **配列のため FK を張れない列（docs/05 §3.3.1 の D 群）。理由付きの明示的な例外である。**
+ *
+ * PostgreSQL は配列要素に FK を張れない。この 1 列を許すのは次の 2 つが成り立つからである:
+ *   ① 行が**一時的**である（ゲートが通るまでの公開要求であり、確定と同時に消える）
+ *   ② 実際に永続化される先（`project_visibilities`）に**複合 FK がある** ——
+ *      他テナントの ID が紛れ込んでも公開範囲の行にはならず、確定が落ちる
+ * 加えて入口（`#28` の `assertPartnerCompaniesExist`）が見えない ID を 400 で断る。
+ *
+ * 🔴 **ここを増やさない。** ①②のどちらかを欠く配列列は、複合 FK を張れる子表に分解すること。
+ */
+const ARRAY_COLUMN_EXCEPTIONS = new Set(['project_publish_requests.partner_company_ids']);
+
 async function readPartnerCompanyForeignKeys(): Promise<PartnerFkRow[]> {
   // 🔴 conparentid = 0: パーティション子へ複製された FK の写しを重複計上しない
   //    （現時点で該当は無いが、将来パーティション表がパートナー列を持ったときに効く）。
@@ -624,7 +639,7 @@ describe('#14 partner_companies を指す FK は全て複合 FK である（docs
     ).toEqual([]);
   });
 
-  it('② パートナー列は「複合 FK の 1 列」か「継承の子の宣言」のどちらかを必ず持つ', async () => {
+  it('② パートナー列は「複合 FK の 1 列」か「継承の子の宣言」か「明示的な例外」のいずれかを必ず持つ', async () => {
     // 🔴 relkind で絞る: 経路 5 の射影ビュー（relkind = 'v'）にも
     //    counterparty_partner_company_id 列があり、ビューは FK を持てない（#9 / #11 と同じ理由）。
     const columns = await db.$queryRaw<
@@ -638,9 +653,12 @@ describe('#14 partner_companies を指す FK は全て複合 FK である（docs
       WHERE n.nspname = 'public'
         AND c.relkind IN ('r', 'p')
         AND NOT c.relispartition
-        AND a.attname LIKE '%partner\\_company\\_id'
+        -- 🔴 T-07-09: 末尾一致から部分一致に広げた。末尾一致のままだと、列名を複数形にする
+        --    （partner_company_ids）だけで「複合 FK か継承の子かを決めずに表を足せる」——
+        --    Issue #33 の一般則が命名で回避できてしまう（本テストが防ごうとしている壊し方そのもの）。
+        AND a.attname LIKE '%partner\\_company\\_id%'
       ORDER BY 1, 2`;
-    expect(columns.length).toBeGreaterThanOrEqual(23); // 空振り防止（A 群 13 + B 群 10）
+    expect(columns.length).toBeGreaterThanOrEqual(24); // 空振り防止（A 群 13 + B 群 10 + D 群 1）
 
     const fkColumns = new Set(
       (await readPartnerCompanyForeignKeys()).map((row) => `${row.table_name}.${row.fk_columns[1]}`),
@@ -652,12 +670,34 @@ describe('#14 partner_companies を指す FK は全て複合 FK である（docs
         (column) =>
           !CHILD_DECLARATION_PREFIXES.some((prefix) => (column.description ?? '').startsWith(prefix)),
       )
+      .filter((column) => !ARRAY_COLUMN_EXCEPTIONS.has(`${column.table_name}.${column.column_name}`))
       .map((column) => `${column.table_name}.${column.column_name} (COMMENT: ${column.description ?? 'なし'})`);
 
     expect(
       offenders,
-      '複合 FK も継承の子の宣言も持たないパートナー列があります（docs/05 §3.3.1 の A / B のどちらかに決めてください）',
+      '複合 FK も継承の子の宣言も持たないパートナー列があります（docs/05 §3.3.1 の A / B / D のどれかに決めてください）',
     ).toEqual([]);
+  });
+
+  it('🔴 ② 例外に登録した列が実在し、かつ「配列だから FK を張れない」ものだけである', async () => {
+    // 🔴 例外リストが**空振り**（列名を書き間違えたまま通る）していないこと、および
+    //    スカラー列をこっそり例外に入れられないことを固定する。配列でない列は
+    //    複合 FK を張れるのだから、例外に入れてよい理由が無い（docs/05 §3.3.1 D）。
+    const rows = await db.$queryRaw<Array<{ qualified: string; is_array: boolean }>>`
+      SELECT c.relname || '.' || a.attname AS qualified, (a.attndims > 0 OR t.typcategory = 'A') AS is_array
+      FROM pg_class c
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      JOIN pg_attribute a ON a.attrelid = c.oid AND NOT a.attisdropped AND a.attnum > 0
+      JOIN pg_type t ON t.oid = a.atttypid
+      WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p') AND NOT c.relispartition
+        AND a.attname LIKE '%partner\\_company\\_id%'`;
+    const byName = new Map(rows.map((row) => [row.qualified, row.is_array]));
+
+    expect(ARRAY_COLUMN_EXCEPTIONS.size).toBeGreaterThan(0); // 空振り防止（対照）
+    for (const qualified of ARRAY_COLUMN_EXCEPTIONS) {
+      expect(byName.has(qualified), `${qualified}: 例外に登録されているが列が実在しない`).toBe(true);
+      expect(byName.get(qualified), `${qualified}: 配列でない列を例外にしている`).toBe(true);
+    }
   });
 
   it('③ partner_companies に UNIQUE(tenant_id, id) がある（① の参照先。消えると ① が張れない）', async () => {

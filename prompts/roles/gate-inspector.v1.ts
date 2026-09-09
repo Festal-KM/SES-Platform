@@ -36,7 +36,13 @@ function fieldLabels<M extends string>(kit: PromptKit<M>): Record<PromptGateFiel
     body: kit.t`body（本文）`,
     snapshot: kit.t`snapshot（提案時点のエンジニア情報）`,
     attachment: kit.t`attachment（添付から抽出した本文）`,
+    // 🔴 T-07-09: 案件の公開でパートナーが読む 3 欄（docs/05 §11.11 ⑧）。
+    //    ⚠️ 版は上げていない —— ラベルは**入力に現れた欄の分だけ**利用者メッセージに描かれ、
+    //    システム指示は欄を列挙しない。したがって既存の入力に対する文字列は 1 バイトも変わらず、
+    //    v1 で記録された生成物の再現性（`BR-13`）は保たれる。
+    project_name: kit.t`project_name（案件名）`,
     public_summary: kit.t`public_summary（案件の公開文）`,
+    requirement: kit.t`requirement（案件の要件のうち、フリーテキストで書かれたもの）`,
     contract_document: kit.t`contract_document（契約書から抽出した本文）`,
   };
 }

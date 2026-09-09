@@ -391,6 +391,7 @@ export type {
 export {
   completeReviewGate,
   findCachedReviewGate,
+  findPassedReviewGate,
   findPendingReviewGate,
   gateHoldTimestamps,
   holdReviewGate,
@@ -399,17 +400,42 @@ export {
 export type { GateHoldTimestamps } from './review-gate.js';
 // 🔴 T-07-08: ゲート対象の内容のハッシュ（docs/05 §11.5）の唯一の出所。
 //    #37（内容の更新）・#39（レビュー依頼）・承認 CAS（#41）が**同じ 1 実装**を通る。
+//    🔴 T-07-09: 案件の公開（`PROJECT_PUBLISH`）も同じ 1 実装を通る（#28 とジョブが同じ値を作る）。
 export {
+  computeProjectPublishContentHash,
   computeProposalContentHash,
   gateContentHash,
+  readProjectPublishGateHashInput,
+  readProjectRequirementTexts,
   readProposalGateHashInput,
 } from './gate-content-hash.js';
-export type { ProposalContentHashReader } from './gate-content-hash.js';
+export type {
+  ProjectPublishContentHashReader,
+  ProposalContentHashReader,
+} from './gate-content-hash.js';
+// 🔴 T-07-09: 案件の公開のゲート待ち → 確定（docs/05 §11.11 / `F-014` / `F-020 AC-1`）。
+//    🔴 `project_visibilities` の行を**作る**唯一の場所である（`apps/web` は解除しかしない）。
+export {
+  PROJECT_PUBLISH_SETTLE_OPERATION,
+  PROJECT_VISIBILITY_AUDIT_ACTION,
+  readProjectPublishRequest,
+  settleProjectPublish,
+  upsertProjectPublishRequest,
+  withdrawProjectPublishRequest,
+} from './project-publish.js';
+export type {
+  PendingProjectPublish,
+  ProjectPublishRequestInput,
+  ProjectPublishRequestWriter,
+  ProjectPublishSettleInput,
+  ProjectPublishSettlement,
+} from './project-publish.js';
 export type {
   CompletedReviewGate,
   PendingReviewGate,
   ReviewGateHoldInput,
   ReviewGateKey,
+  ReviewGateReader,
   ReviewGateResultInput,
   ReviewGateSaveOutcome,
 } from './review-gate.js';

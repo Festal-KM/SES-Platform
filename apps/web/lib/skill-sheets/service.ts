@@ -74,6 +74,7 @@ import {
 // 🔴 T-05-07: 署名付き DL URL を発行できる唯一の経路（docs/05 §14.2 / §16.1）。
 //    ここで `presignGet` を直接呼ばない —— 呼ぶと「監査の後に署名する」順序が 2 実装になる。
 import {
+  classifyFileShare,
   issueDownloadUrl,
   type DownloadTicket,
   type IssueDownloadUrlDeps,
@@ -840,6 +841,14 @@ export type SkillSheetDownloadDeps = {
 };
 
 /**
+ * `ReviewGate.targetType`（docs/05 §3.6 の 5 種のうちスキルシートの外部共有）。T-07-09。
+ * 🔴 値の出所は `@ses/domain` の `GATE_TARGET_TYPES` である（文字列を書き写さない）。
+ * 🔴 `review_gates` のオーナー列の継承 CASE（docs/05 §4.4.1）が
+ *    `SKILL_SHEET_SHARE → skill_sheets` と定めているため、`targetId` は**版の ID** である。
+ */
+const SKILL_SHEET_SHARE_GATE_TARGET_TYPE = 'SKILL_SHEET_SHARE' as const;
+
+/**
  * `GET /api/skill-sheets/{id}/download-url`（docs/05 §6.4 #20）。T-05-07。
  *
  * 🔴 発行の前提条件（`CLEAN` / 監査の先行）を**この関数が判定しない**。判定は
@@ -852,6 +861,11 @@ export type SkillSheetDownloadDeps = {
  *    壊れていて名前を作れない場合は名前を付けない（S3 のキー名で落ちる）—— **名前が作れない
  *    ことを理由にダウンロードを止めない**（利用者から見れば、開けるはずのファイルが
  *    開けなくなるだけである）。
+ *
+ * 🔴 T-07-09: **共有の分類（`classifyFileShare`）を添える**（docs/05 §11.11 ⑥）。ここが渡すのは
+ *    「この版の所有会社」と「要求者の会社」という**事実だけ**であり、ゲートを確かめる責務は
+ *    `issueDownloadUrl` にある（判定を 2 箇所に写さない）。所有会社の境界を越える発行は
+ *    `ReviewGate(SKILL_SHEET_SHARE, skillSheetId)` の 3 層 PASS を要する（`F-020 AC-1`）。
  */
 export async function issueSkillSheetDownloadUrl(
   ctx: AuthenticatedTenantCtx,
@@ -874,6 +888,8 @@ export async function issueSkillSheetDownloadUrl(
           version: true,
           scanStatus: true,
           objectKey: true,
+          // 🔴 T-07-09: 共有の分類に使う（この版を持ち込んだ会社。継承トリガが親の値で埋める）。
+          ownerPartnerCompanyId: true,
         },
       });
       // 🔴 見えない版は `null`（→ 404）。`where` にテナント・パートナーを足さない（RLS が決める）。
@@ -882,6 +898,13 @@ export async function issueSkillSheetDownloadUrl(
       return {
         objectKey: row.objectKey,
         scanStatus: row.scanStatus as ScanStatus,
+        share: classifyFileShare({
+          ownerPartnerCompanyId: row.ownerPartnerCompanyId,
+          // 🔴 要求者の境界は**認証コンテキスト**から取る（リクエスト入力から受け取らない）。
+          requesterPartnerCompanyId: ctx.partnerCompanyId,
+          gateTargetType: SKILL_SHEET_SHARE_GATE_TARGET_TYPE,
+          gateTargetId: row.id,
+        }),
         ...(downloadFileName === null ? {} : { downloadFileName }),
         audit: {
           action: SKILL_SHEET_AUDIT_ACTIONS.download,

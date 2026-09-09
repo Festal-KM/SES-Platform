@@ -239,6 +239,7 @@ const TENANT_KEY_MOVING_RELATION_OVERRIDES: Readonly<Record<string, readonly str
     'projects',
     'projectRequirements',
     'projectVisibilities',
+    'projectPublishRequests', // T-07-09（docs/05 §11.11）
     'matchCandidates',
     'engineerShares',
     'proposalRequests',

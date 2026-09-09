@@ -6,9 +6,11 @@
 //   ② 同じ内容なら常に同じ連結になる（＝ 同じ `jobId` になり、ゲートが多重化しない。§9.3）
 import { describe, expect, it } from 'vitest';
 import {
+  GATE_HASH_ALGORITHM_VERSION,
   gateHashSource,
   GateHashInputError,
   type GateHashSnapshot,
+  type ProjectPublishGateHashInput,
   type ProposalGateHashInput,
 } from './hash.js';
 
@@ -137,6 +139,108 @@ describe('gateHashSource（§11.5 の正規化）', () => {
   });
 
   it('版の識別子が連結の先頭にある（書式を変えたら版を上げるための目印）', () => {
-    expect(gateHashSource(PROPOSAL).startsWith('gate-content/v1\n')).toBe(true);
+    expect(gateHashSource(PROPOSAL).startsWith(`gate-content/${GATE_HASH_ALGORITHM_VERSION}\n`)).toBe(true);
+  });
+});
+
+// ===========================================================================
+// 🔴 案件の公開（`PROJECT_PUBLISH`）。T-07-09（docs/05 §11.11 ①）
+// ===========================================================================
+//
+// 🔴 ここで固定するのは「**内容は公開文だけではない**」という 1 点である。案件の公開の合否は
+//    「その公開範囲で出してはならない語」との照合で決まる（`F-014 AC-3`）ので、公開先の集合と
+//    取引先の社名が変われば、同じ公開文でも合否が変わりうる。材料に入っていないと、
+//    `(target_type, target_id, content_hash)` のキャッシュ（`P-A-09`）が
+//    **検査していない相手への公開を成立させる。**
+describe('gateHashSource（PROJECT_PUBLISH）', () => {
+  const PUBLISH: ProjectPublishGateHashInput = {
+    targetType: 'PROJECT_PUBLISH',
+    name: '基幹システム刷新',
+    requirementTexts: ['金融系の経験', 'チームリード経験があれば尚可'],
+    publicSummary: '大手金融の基幹刷新。React / TypeScript。',
+    endClientName: '株式会社エンド',
+    internalUnitPrice: '900000.00',
+    audiencePartnerCompanyIds: ['partner-b', 'partner-a'],
+    partnerCompanies: [
+      { partnerCompanyId: 'partner-b', name: 'ビー商事' },
+      { partnerCompanyId: 'partner-a', name: 'エー株式会社' },
+      { partnerCompanyId: 'partner-c', name: 'シー技研' },
+    ],
+  };
+
+  it('同じ内容なら常に同じ連結になる（並び順に依存しない）', () => {
+    expect(
+      gateHashSource({
+        ...PUBLISH,
+        audiencePartnerCompanyIds: ['partner-a', 'partner-b'],
+        partnerCompanies: [...PUBLISH.partnerCompanies].reverse(),
+      }),
+    ).toBe(gateHashSource(PUBLISH));
+  });
+
+  it('🔴 公開先を 1 社増やすと別の連結になる（同じ公開文でも再検査が要る）', () => {
+    expect(
+      gateHashSource({
+        ...PUBLISH,
+        audiencePartnerCompanyIds: [...PUBLISH.audiencePartnerCompanyIds, 'partner-c'],
+      }),
+    ).not.toBe(gateHashSource(PUBLISH));
+  });
+
+  it('🔴 取引先が増える / 社名が変わると別の連結になる（「他社名」の集合が変わる）', () => {
+    expect(
+      gateHashSource({
+        ...PUBLISH,
+        partnerCompanies: [
+          ...PUBLISH.partnerCompanies,
+          { partnerCompanyId: 'partner-d', name: 'ディー社' },
+        ],
+      }),
+    ).not.toBe(gateHashSource(PUBLISH));
+
+    expect(
+      gateHashSource({
+        ...PUBLISH,
+        partnerCompanies: PUBLISH.partnerCompanies.map((partner) =>
+          partner.partnerCompanyId === 'partner-c' ? { ...partner, name: 'シー技研株式会社' } : partner,
+        ),
+      }),
+    ).not.toBe(gateHashSource(PUBLISH));
+  });
+
+  it.each([
+    ['公開文', { publicSummary: '大手金融の基幹刷新。React / TypeScript' }],
+    ['エンド企業名', { endClientName: '株式会社エンド２' }],
+    ['内部単価', { internalUnitPrice: '900001.00' }],
+    // 🔴 T-07-09 の是正（docs/05 §11.11 ⑧）: 案件名と要件のフリーテキストも公開先が読む欄であり、
+    //    材料に入っていないと「案件名だけ直して再要求」が FAIL のキャッシュを引く（またはその逆）。
+    ['案件名', { name: '基幹システム刷新（第 2 期）' }],
+    ['要件のフリーテキスト', { requirementTexts: ['金融系の経験', 'PM 経験があれば尚可'] }],
+    ['要件の件数', { requirementTexts: ['金融系の経験'] }],
+  ])('%s が変わると別の連結になる', (_label, patch) => {
+    expect(gateHashSource({ ...PUBLISH, ...patch })).not.toBe(gateHashSource(PUBLISH));
+  });
+
+  it('🔴 要件のフリーテキストは並べ替えない（順序が変われば別の連結になる）', () => {
+    expect(
+      gateHashSource({ ...PUBLISH, requirementTexts: [...PUBLISH.requirementTexts].reverse() }),
+    ).not.toBe(gateHashSource(PUBLISH));
+  });
+
+  it('🔴 要件を連結しただけの入力と区別する（区切りの混入で衝突しない）', () => {
+    expect(gateHashSource({ ...PUBLISH, requirementTexts: ['A', 'B'] })).not.toBe(
+      gateHashSource({ ...PUBLISH, requirementTexts: ['A\nB'] }),
+    );
+  });
+
+  it('🔴 null と空文字を区別する（公開文が無い案件と、空の公開文は別物）', () => {
+    expect(gateHashSource({ ...PUBLISH, publicSummary: null })).not.toBe(
+      gateHashSource({ ...PUBLISH, publicSummary: '' }),
+    );
+  });
+
+  it('🔴 対象種別が違えば別の連結になる（材料がたまたま似ても衝突しない）', () => {
+    expect(gateHashSource(PUBLISH)).not.toBe(gateHashSource(PROPOSAL));
+    expect(gateHashSource(PUBLISH).startsWith(`gate-content/${GATE_HASH_ALGORITHM_VERSION}\n`)).toBe(true);
   });
 });

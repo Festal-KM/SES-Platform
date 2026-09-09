@@ -14,7 +14,9 @@
 //    公開範囲外のパートナーに案件が現れないこと（`F-014 AC-1`）は、この行を根拠にした
 //    RLS（C4 VISIBILITY。`revoked_at IS NULL`）が画面・検索・件数・通知のすべてで担保する。
 // ③ **公開はゲートを通ってからでなければ成立しない**（`F-014 AC-3` / `F-020`）。
-//    本タスクでは接続点まで（`publish-gate.ts`）。**追加は 1 件も行にならない。**
+//    🔴 T-07-09: 接続点にゲート本体をつないだ。**この経路は今も追加を 1 件も行にしない** ——
+//    行を作るのは全層 PASS を確認したワーカーだけである（`@ses/db` の `settleProjectPublish`）。
+//    本モジュールが `project_visibilities` に対して行うのは**解除（`revoked_at`）だけ**である。
 // ④ **公開範囲の変更を監査ログに残す**（`F-014 AC-5` / `BR-27` / docs/05 §16.1
 //    `project.visibility_change`）。🔴 実施者・変更前後を残すため、記録は
 //    **業務トランザクションの内側**（`writeAuditLog`）で書く（`membership.role_change` と同じ形。
@@ -32,6 +34,7 @@
 //    立てずに同じ経路を実行できるようにするため（`projects/service.ts` と同じ方針）。
 import {
   requireHost,
+  withdrawProjectPublishRequest,
   withTenant,
   writeAuditLog,
   type AuditSummary,
@@ -39,10 +42,7 @@ import {
 } from '@ses/db';
 import { NotFoundError, ValidationError } from '../api/errors';
 import { toJstIsoDay } from '../format/datetime';
-import {
-  heldProjectPublishGate,
-  type ProjectPublishGate,
-} from './publish-gate';
+import type { ProjectPublishGate, ProjectPublishGateOutcome } from './publish-gate';
 
 /**
  * docs/05 §16.1 の `project.visibility_change`（`#28`）。
@@ -249,14 +249,22 @@ async function assertPartnerCompaniesExist(
  * 手順（🔴 順序に意味がある）:
  *   1. 案件が見えること（見えなければ 404。境界外と不存在を区別しない）
  *   2. 指定された取引先が実在すること（400）
+ *   0'. 🔴 **ゲート待ちの公開要求を消費する**（3 より前。理由は本文中の 🔴 / docs/05 §11.11 ⑩）
  *   3. 現在の公開先を読み、差分を取る（`diffProjectVisibility`）
  *   4. 🔴 **解除は即時に適用する**（境界を狭める操作にゲートは要らない。`F-014` 処理④）。
  *      🔴 **行を消さない**（`revoked_at` を入れるだけ）。**作成済みの提案は残る**ため、
  *      「誰にいつ公開していたか」は後から遡れなければならない。
  *   5. 🔴 **追加はゲートに預けるだけ**（`publish-gate.ts`）。**ここで行を作らない。**
+ *      🔴 手順 0 で消費した公開要求を、追加があるときだけ新しい内容で置き直す
+ *      （＝ 要求は常に「最後の要求」を表す）。
  *   6. 監査ログを 1 行（`projectVisibilityAuditSummary`。変更前 / 要求 / 変更後 / 保留中 / 解除）
  *      🔴 **書くのは 1〜5 をすべて通り抜けた要求だけである。** 404 / 400 でここに到達しない
  *      ＝ **起きなかった変更**は記録に残らない（`withApiRoute` の `audit` を使わない理由）。
+ *   7. 🔴 **コミットの後に `gate.run` を積む**（T-07-09。docs/05 §11.10 ⑤ と同じ規律）。
+ *      未コミットの公開要求をワーカーが先に読むと、要求が見えないまま終わり
+ *      （`TARGET_NOT_FOUND`）、**公開が永久に成立しない**。積むのに失敗した場合、
+ *      公開要求は「ゲート待ち」のまま残る ＝ **公開は成立していない**（安全側）。
+ *      利用者が同じ操作をもう一度行えば復帰する（同じ内容なら同じ `jobId` に畳まれる）。
  *
  * 🔴 **解除と追加が同じ要求に混ざったとき、解除だけが成立する。** 中途半端に見えるが、
  *    「広げる操作だけがゲートを待つ」という規則の当然の帰結であり、安全側である
@@ -273,15 +281,28 @@ export async function updateProjectVisibility(
   projectId: string,
   input: ProjectVisibilityInput,
   meta: ProjectVisibilityMeta,
-  deps: { readonly gate: ProjectPublishGate } = { gate: heldProjectPublishGate },
+  // 🔴 既定値を持たない。「実装が入るまで保留するスタブ」を既定にすると、配線を忘れた経路が
+  //    **静かに公開されないまま成功を返す**（`CLAUDE.md` §11.1 の壊れ方）。
+  deps: { readonly gate: ProjectPublishGate },
 ): Promise<ProjectVisibilityUpdateView> {
   requireHost(ctx);
   // 🔴 重複を畳んでから扱う（同じ相手を 2 回選んでも 1 回の公開である）。
   const requested = [...new Set(input.partnerCompanyIds)].sort();
 
-  return withTenant(ctx, async (db) => {
+  const { view, enqueue } = await withTenant(ctx, async (db) => {
     await requireVisibleProject(db, projectId);
     await assertPartnerCompaniesExist(db, requested);
+
+    // 🔴 **最初にゲート待ちの公開要求を消費する**（T-07-09。docs/05 §11.11 ⑩）。
+    //    公開範囲を読む**前**に消すことが、ワーカーの確定（`settleProjectPublish`）との
+    //    競合窓を閉じる:
+    //      - こちらが先 … ワーカーの CAS が 0 件になり、**公開は成立しない**
+    //      - ワーカーが先 … こちらの削除がその行ロックで待たされ、解放後に読む公開範囲には
+    //        **公開済みの行が見えている**（要求が空なら同じ要求の中で `revoked` になる）
+    //    🔴 条件を付けない（「追加が無いときだけ取り下げる」にすると、競合窓が
+    //    「追加がある要求」でだけ再び開く）。追加がある枝では、このあと `deps.gate` が
+    //    新しい要求を置き直すので不変条件は保たれる ＝ 要求は常に「最後の要求」を表す。
+    await withdrawProjectPublishRequest(db, projectId);
 
     const currentRows = await db.projectVisibility.findMany({
       where: { projectId, revokedAt: null },
@@ -302,10 +323,9 @@ export async function updateProjectVisibility(
     }
 
     // 🔴 追加は 1 件も行にならない（ゲート通過後にワーカーが作る。`publish-gate.ts`）。
-    const gate =
-      added.length === 0
-        ? null
-        : await deps.gate(ctx, { projectId, partnerCompanyIds: added });
+    //    追加があるときだけ、上で消費した公開要求を**新しい内容で置き直す**。
+    const gate: ProjectPublishGateOutcome | null =
+      added.length === 0 ? null : await deps.gate(db, ctx, { projectId, partnerCompanyIds: added });
     // 🔴 `verdict` はゲートを呼んだかどうかから導く（`added.length` を 2 度読まない ——
     //    2 度読むと、ゲートを呼ぶ条件と応答の意味が別々に動きうる）。
     const verdict: ProjectVisibilityVerdict =
@@ -325,6 +345,13 @@ export async function updateProjectVisibility(
       deviceKind: ctx.deviceKind,
     });
 
-    return { reviewGateId: gate === null ? null : gate.reviewGateId, verdict };
+    return {
+      view: { reviewGateId: gate === null ? null : gate.reviewGateId, verdict },
+      // 🔴 手順 7。トランザクションを**抜けてから**積む（このクロージャはここでは呼ばない）。
+      enqueue: gate?.enqueue ?? null,
+    };
   });
+
+  if (enqueue !== null) await enqueue();
+  return view;
 }

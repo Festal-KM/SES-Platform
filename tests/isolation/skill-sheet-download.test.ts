@@ -22,6 +22,9 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import {
   configureTenantDb,
   disconnectTenantDb,
+  loadGateInput,
+  systemTenantCtx,
+  UnsupportedGateTargetError,
   type AuthenticatedTenantCtx,
   type DeviceKind,
   type TenantIdentity,
@@ -51,6 +54,9 @@ const {
   issueSkillSheetUploadUrl,
   readSkillSheetPreview,
 } = await import('../../apps/web/lib/skill-sheets/service');
+// 🔴 T-07-09: 発行の単一チョークポイント（`issueDownloadUrl`）を直接呼ぶ
+//    （#20 と**同じ 1 本の関数**。テスト用の別経路を作らない）。
+const { issueDownloadUrl } = await import('../../apps/web/lib/storage/download');
 const downloadRoute = await import(
   '../../apps/web/app/api/(main)/skill-sheets/[id]/download-url/route'
 );
@@ -584,5 +590,185 @@ describe('🔴 ダウンロード名に PII を載せない（docs/05 §14.1 の
     expect(serialized).not.toContain('スキルシート.xlsx');
     // 対照: 版のメモ（`F-011` の入力）は保存される。列があること自体は検査できている。
     expect(row?.note).toBe(NOTE);
+  });
+});
+
+// ===========================================================================
+// 🔴 T-07-09: 外部共有には品質ゲートの PASS が要る（`F-020 AC-1` / `BR-15`）
+// ===========================================================================
+//
+// 🔴 **`CLEAN` とゲートは別の条件である。** ウイルス検査は「安全なファイルか」しか見ておらず、
+//    「**その相手に出してよい内容か**」（氏名・単価・エンド企業名・他社名）は 1 つも見ていない。
+//
+// ⚠️ **Phase 1 に、この分岐へ到達する画面経路は無い**（実測。下の最後のテストが証拠である）:
+//    `skill_sheets` は C3 OWNER_SCOPED であり、越境経路 2 の例外（`Proposal` 作成後にホストが
+//    読む。`F-012 AC-4` / `BR-59`）はまだ RLS に無いので、**見えている版は必ず自社所有**である。
+//    したがってここでは `issueDownloadUrl`（発行の単一チョークポイント）を直接呼び、
+//    「境界の外へ出す」と宣言した対象がどう扱われるかを固定する。**SP-09 が経路 2 の例外を
+//    開いた瞬間に、開けた側が何も書き足さなくてもこの前提条件が効く。**
+describe('🔴 T-07-09: 所有会社の境界の外へ渡す発行は、ゲート PASS が無ければ拒否される', () => {
+  /** `DownloadSubject`（`issueDownloadUrl` の契約から導く。値集合を書き写さない）。 */
+  type DownloadSubject = NonNullable<Awaited<ReturnType<Parameters<typeof issueDownloadUrl>[1]>>>;
+
+  /** `share` だけを差し替えて `issueDownloadUrl` を直接呼ぶ（#20 と同じ 1 本の関数）。 */
+  async function issueExternally(
+    ctx: AuthenticatedTenantCtx,
+    version: { readonly id: string; readonly objectKey: string },
+  ) {
+    return issueDownloadUrl(
+      ctx,
+      async (db) => {
+        const row = await db.skillSheet.findFirst({
+          where: { id: version.id },
+          select: { id: true, engineerId: true, version: true, scanStatus: true, objectKey: true },
+        });
+        if (row === null) return null;
+        return {
+          objectKey: row.objectKey,
+          scanStatus: row.scanStatus as DownloadSubject['scanStatus'],
+          // 🔴 「この発行は境界の外へ出る」という**事実だけ**を渡す（ゲートを確かめる責務は
+          //    `issueDownloadUrl` にある）。
+          share: {
+            kind: 'EXTERNAL' as const,
+            gateTargetType: 'SKILL_SHEET_SHARE' as const,
+            gateTargetId: row.id,
+          },
+          audit: {
+            action: DOWNLOAD_ACTION,
+            targetType: 'SkillSheet',
+            targetId: row.id,
+            summary: { engineerId: row.engineerId, version: row.version, scanStatus: row.scanStatus },
+          },
+        };
+      },
+      { objectStore: store, ipAddress: META.ipAddress },
+    );
+  }
+
+  /** 3 層の判定を持つ `ReviewGate` を 1 行置く（前提づくり。特権接続）。 */
+  async function putGate(
+    skillSheetId: string,
+    verdicts: { pii: string; commerce: string; consistency: string },
+  ): Promise<void> {
+    await admin.reviewGate.create({
+      data: {
+        tenantId: TENANT_1.tenantId,
+        targetType: 'SKILL_SHEET_SHARE',
+        targetId: skillSheetId,
+        contentHash: 'test-content-hash',
+        execution: 'DONE',
+        piiVerdict: verdicts.pii,
+        commerceVerdict: verdicts.commerce,
+        consistencyVerdict: verdicts.consistency,
+        findings: [],
+        aiWarnings: [],
+        executedAt: NOW,
+      },
+    });
+  }
+
+  afterEach(async () => {
+    await admin.reviewGate.deleteMany({ where: { targetType: 'SKILL_SHEET_SHARE' } });
+  });
+
+  it('🔴 ゲート結果が無ければ 409 で拒否し、署名も記録も残さない', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+    const version = await cleanVersion(ctx, TENANT_1.hostEngineerId);
+    const before = store.callCount();
+
+    await expect(issueExternally(ctx, version)).rejects.toMatchObject({
+      code: 'FILE_SHARE_GATE_REQUIRED',
+      httpStatus: 409,
+    });
+
+    // 🔴 発行しなかった操作を「ダウンロードした」として残さない（`CLEAN` の判定と同じ規律）。
+    expect(store.callCount()).toBe(before);
+    expect(await auditRows(DOWNLOAD_ACTION)).toHaveLength(0);
+  });
+
+  it.each([
+    ['商流層 FAIL', { pii: 'PASS', commerce: 'FAIL', consistency: 'PASS' }],
+    ['PII 層 FAIL', { pii: 'FAIL', commerce: 'PASS', consistency: 'PASS' }],
+    ['整合層 FAIL', { pii: 'PASS', commerce: 'PASS', consistency: 'FAIL' }],
+  ])('🔴 %s のゲート結果では発行されない（1 層でも FAIL なら共有できない）', async (_label, verdicts) => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+    const version = await cleanVersion(ctx, TENANT_1.hostEngineerId);
+    await putGate(version.id, verdicts);
+
+    await expect(issueExternally(ctx, version)).rejects.toMatchObject({
+      code: 'FILE_SHARE_GATE_REQUIRED',
+    });
+    expect(await auditRows(DOWNLOAD_ACTION)).toHaveLength(0);
+  });
+
+  it('🔴 AI 上限で保留中（判定が未確定）でも発行されない（保留は共有の許可ではない）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+    const version = await cleanVersion(ctx, TENANT_1.hostEngineerId);
+    await admin.reviewGate.create({
+      data: {
+        tenantId: TENANT_1.tenantId,
+        targetType: 'SKILL_SHEET_SHARE',
+        targetId: version.id,
+        contentHash: 'test-content-hash',
+        execution: 'HELD_AI_COST_LIMIT',
+        heldSince: NOW,
+        consistencyVerdict: 'PASS',
+        findings: [],
+        aiWarnings: [],
+      },
+    });
+
+    await expect(issueExternally(ctx, version)).rejects.toMatchObject({
+      code: 'FILE_SHARE_GATE_REQUIRED',
+    });
+  });
+
+  it('対照: 3 層 PASS のゲート結果があれば発行され、記録も残る（空振りしていないこと）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+    const version = await cleanVersion(ctx, TENANT_1.hostEngineerId);
+    await putGate(version.id, { pii: 'PASS', commerce: 'PASS', consistency: 'PASS' });
+
+    const ticket = await issueExternally(ctx, version);
+
+    expect(ticket.url).toContain('mock-object-store:');
+    expect(await auditRows(DOWNLOAD_ACTION)).toHaveLength(1);
+  });
+
+  it('🔴 `CLEAN` でなければ、ゲートが PASS していても発行されない（条件は AND である）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+    const version = await uploadVersion(ctx, TENANT_1.hostEngineerId);
+    await setScanStatus(version.id, 'INFECTED');
+    await putGate(version.id, { pii: 'PASS', commerce: 'PASS', consistency: 'PASS' });
+
+    await expect(issueExternally(ctx, version)).rejects.toMatchObject({ code: 'FILE_NOT_CLEAN' });
+  });
+
+  it('🔴 Phase 1 には `SKILL_SHEET_SHARE` のゲートを PASS させる手段が無い（docs/05 §11.11 ⑤）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+    const version = await cleanVersion(ctx, TENANT_1.hostEngineerId);
+
+    // 🔴 検査対象の本文が存在しない（原本は読めず、抽出テキストは Phase 2 の `F-032`）。
+    //    したがってゲートは **`ReviewGate` を 1 行も書かずに落ちる**（PASS にも FAIL にもしない）。
+    await expect(
+      loadGateInput(systemTenantCtx(TENANT_1.tenantId, { queue: 'gate.run', jobId: 'test' }), {
+        targetType: 'SKILL_SHEET_SHARE',
+        targetId: version.id,
+        contentHash: 'test-content-hash',
+      }),
+    ).rejects.toThrow(UnsupportedGateTargetError);
+    expect(
+      await admin.reviewGate.findMany({ where: { targetType: 'SKILL_SHEET_SHARE' } }),
+    ).toHaveLength(0);
+  });
+
+  it('🔴 対照: 自社所有の版の取り回し（境界の中）は従来どおり発行される', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+    const version = await cleanVersion(ctx, TENANT_1.hostEngineerId);
+
+    // #20 の経路（`classifyFileShare` が `OWNER_SCOPE` を返す）。ゲートは要求されない。
+    const ticket = await issueSkillSheetDownloadUrl(ctx, version.id, downloadDeps(), {
+      ipAddress: META.ipAddress,
+    });
+    expect(ticket.url).toContain('mock-object-store:');
   });
 });

@@ -48,9 +48,11 @@ import {
   findCachedReviewGate,
   holdReviewGate,
   loadGateInput,
+  settleProjectPublish,
   systemTenantCtx,
   withTenant,
   writeAuditLog,
+  type ProjectPublishSettlement,
   type SystemTenantCtx,
 } from '@ses/db';
 import {
@@ -62,6 +64,7 @@ import {
   type GateDecision,
   type GateInput,
   type GateTargetType,
+  type GateVerdict,
 } from '@ses/domain';
 import { createAiCostGuard } from '../ai/cost-guard.js';
 import { createAiUsageRecorder } from '../ai/usage-recorder.js';
@@ -96,8 +99,15 @@ export type GateRunOutcome =
       readonly aiFailed: boolean;
       /** 対象の状態を実際に動かしたか（`GATE_RUNNING` からの CAS が 1 件だったか）。 */
       readonly transitioned: boolean;
+      /** 🔴 案件の公開の確定（T-07-09）。対象が `PROJECT_PUBLISH` 以外なら `null`。 */
+      readonly publish: ProjectPublishSettlement | null;
     }
-  | { readonly kind: 'ALREADY_DONE'; readonly reviewGateId: string }
+  | {
+      readonly kind: 'ALREADY_DONE';
+      readonly reviewGateId: string;
+      /** 🔴 確定済みの結果でも**公開の確定は行う**（下記 `settlePublish` の 🔴）。 */
+      readonly publish: ProjectPublishSettlement | null;
+    }
   | { readonly kind: 'HELD_AI_COST_LIMIT'; readonly reviewGateId: string }
   | { readonly kind: 'RACED' }
   | { readonly kind: 'TARGET_NOT_FOUND' };
@@ -201,6 +211,43 @@ async function settleProposalState(
 }
 
 /**
+ * 🔴 案件の公開を確定させる（T-07-09。`F-014` 処理② / `F-020 AC-1`）。
+ *
+ * 🔴 **公開範囲の行を作るのはここだけ**である（`apps/web` の `#28` は解除しかしない）。
+ *    実体は `packages/db` の `settleProjectPublish`（`apps/web` と `apps/worker` は相互に
+ *    import できないため、共有点は `packages/db` しか無い）。
+ * 🔴 **確定済み（キャッシュ）の結果でも呼ぶ。** `#28` は「同じ内容の確定結果がある」ことを
+ *    理由に依頼を断らない（提案の `#39` と違う。理由は `publish-gate.ts` の 🔴）。
+ *    したがって「A に公開 → 解除 → もう一度 A に公開」はキャッシュを引き当てるが、
+ *    ここで確定させなければ**公開要求だけが残って永久に公開されない**。
+ *    確定は `(project_id, content_hash)` の CAS なので、二重に実行しても行は 1 度しか動かない。
+ */
+async function settlePublish(
+  ctx: SystemTenantCtx,
+  input: {
+    readonly targetType: GateTargetType;
+    readonly targetId: string;
+    readonly contentHash: string;
+    readonly reviewGateId: string;
+    readonly piiVerdict: GateVerdict;
+    readonly commerceVerdict: GateVerdict;
+    readonly consistencyVerdict: GateVerdict;
+    readonly now: Date;
+  },
+): Promise<ProjectPublishSettlement | null> {
+  if (input.targetType !== 'PROJECT_PUBLISH') return null;
+  return settleProjectPublish(ctx, {
+    projectId: input.targetId,
+    contentHash: input.contentHash,
+    reviewGateId: input.reviewGateId,
+    piiVerdict: input.piiVerdict,
+    commerceVerdict: input.commerceVerdict,
+    consistencyVerdict: input.consistencyVerdict,
+    now: input.now,
+  });
+}
+
+/**
  * 🔴 ゲートを 1 回実行する。
  *
  * @throws GateFactsUnavailableError / UnsupportedGateTargetError / EmptyGateContentError
@@ -220,7 +267,18 @@ export function createGateRunHandler(deps: GateRunDeps): GateRunHandler {
     // ① 🔴 同じ内容の確定結果があれば再実行しない（`P-A-09` / `F-020 AC-3`）。
     //    🔴 `aiFailed = true` の行はキャッシュにならない（`findCachedReviewGate` の 🔴）。
     const cached = await findCachedReviewGate(ctx, key);
-    if (cached !== null) return { kind: 'ALREADY_DONE', reviewGateId: cached.id };
+    if (cached !== null) {
+      // 🔴 検査はしないが、**その結果での確定はする**（`settlePublish` の 🔴）。
+      const publish = await settlePublish(ctx, {
+        ...key,
+        reviewGateId: cached.id,
+        piiVerdict: cached.piiVerdict,
+        commerceVerdict: cached.commerceVerdict,
+        consistencyVerdict: cached.consistencyVerdict,
+        now: deps.now(),
+      });
+      return { kind: 'ALREADY_DONE', reviewGateId: cached.id, publish };
+    }
 
     // ② 対象を読み、検査する内容を組み立てる（docs/05 §11.2 の BUILD）。
     const lookup = await loadGateInput(ctx, key);
@@ -315,8 +373,7 @@ export function createGateRunHandler(deps: GateRunDeps): GateRunHandler {
     if (saved.kind === 'RACED') return { kind: 'RACED' };
 
     // ⑧ 対象の状態を確定させる。
-    //    🔴 提案だけがここで遷移する。案件の公開（`ProjectVisibility` の作成）は T-07-09、
-    //    スキルシートの共有 URL 発行も T-07-09 の範囲である（ゲートは結果を残すだけ）。
+    //    🔴 状態機械を動かすのは提案だけである（`CLAUDE.md` §4.2 の 5 つに案件の公開は無い）。
     const transitioned =
       parsed.targetType === 'PROPOSAL'
         ? await settleProposalState(ctx, {
@@ -326,12 +383,23 @@ export function createGateRunHandler(deps: GateRunDeps): GateRunHandler {
           })
         : false;
 
+    // ⑨ 🔴 T-07-09: 案件の公開を確定させる（PASS なら公開範囲の行、FAIL なら 1 行も作らない）。
+    const publish = await settlePublish(ctx, {
+      ...key,
+      reviewGateId: saved.id,
+      piiVerdict: decision.piiVerdict,
+      commerceVerdict: decision.commerceVerdict,
+      consistencyVerdict: decision.consistencyVerdict,
+      now: executedAt,
+    });
+
     return {
       kind: 'COMPLETED',
       reviewGateId: saved.id,
       overall: decision.overall,
       aiFailed: decision.aiFailed,
       transitioned,
+      publish,
     };
   };
 }

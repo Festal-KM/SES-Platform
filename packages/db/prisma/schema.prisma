@@ -119,6 +119,7 @@ model Tenant {
   projects                Project[]
   projectRequirements     ProjectRequirement[]
   projectVisibilities     ProjectVisibility[]
+  projectPublishRequests  ProjectPublishRequest[] // T-07-09（docs/05 §11.11）
   matchCandidates         MatchCandidate[]
   engineerShares          EngineerShare[]
   // 🔴 T-02-03（docs/05 §3.6）で追加した 5 表の逆リレーション。同じ理由で
@@ -594,6 +595,7 @@ model Project {
   tenant           Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   requirements     ProjectRequirement[]
   visibilities     ProjectVisibility[]
+  publishRequests  ProjectPublishRequest[] // T-07-09（docs/05 §11.11）
   matchCandidates  MatchCandidate[]
   proposalRequests ProposalRequest[] // T-02-03
   proposals        Proposal[] // T-02-03
@@ -649,6 +651,37 @@ model ProjectVisibility {
   @@unique([tenantId, projectId, partnerCompanyId])
   @@index([tenantId, partnerCompanyId, revokedAt]) // RLS ポリシーの EXISTS が使う（T-02-06）
   @@map("project_visibilities")
+}
+
+/// 🔴 T-07-09: 「**これから公開する相手**」をゲートまで運ぶ中間テーブル（docs/05 §11.11）。
+///
+/// project_visibilities は review_gate_id NOT NULL であり、**ゲート PASS より前には 1 行も作れない**。
+/// したがって「誰に公開しようとしているか」を保持する場所が別に要る。ここに無いと、
+/// ゲートは「すでに公開済みの相手」しか公開範囲として知らず、**新規公開先の社名が公開文に
+/// 出ていても他社名として検出されない**（F-014 AC-3 が素通りする）。
+///
+/// 🔴 payload に載せずテーブルにするのは、`gate.hold-release`（AI 上限からの自動復帰）が
+///    review_gates の保留行だけを材料に**同じ payload で再 enqueue する**ためである。
+///    payload に持たせると、保留から復帰した実行が公開先を復元できない。
+model ProjectPublishRequest {
+  id        String @id @default(uuid(7)) @db.Uuid
+  tenantId  String @map("tenant_id") @db.Uuid
+  projectId String @map("project_id") @db.Uuid
+  /// 🔴 これから公開する相手だけ（すでに公開中の相手は含まない）。GateInput.audience の材料
+  partnerCompanyIds String[] @map("partner_company_ids") @db.Uuid
+  /// 🔴 ReviewGate.contentHash と同じ値（gate.run の payload / jobId の材料）。
+  /// 消費は (project_id, content_hash) の CAS であり、要求が差し替わったら古い実行は何もしない
+  contentHash String   @map("content_hash")
+  requestedAt DateTime @map("requested_at") @db.Timestamptz(3)
+  /// 🔴 ProjectVisibility.published_by になる（公開したのはワーカーではなく要求した利用者である）
+  requestedBy String   @map("requested_by") @db.Uuid
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  /// 🔴 案件ごとに保留中の要求は 1 つ（差し替えは UPDATE。積み上がらない）
+  @@unique([tenantId, projectId])
+  @@map("project_publish_requests")
 }
 
 /// 🔴 越境経路 4 の唯一の根拠。既定オフ（行の非存在で表現する。F-016 AC-1）。

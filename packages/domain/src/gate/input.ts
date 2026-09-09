@@ -109,8 +109,18 @@ export type ProposalGateInput = GateInputBase<'subject' | 'body' | 'snapshot'> &
   readonly consistency: ProposalConsistencyInput;
 };
 
-/** 案件の公開（越境経路 1）。欄は公開用の記載だけ（`Project.publicSummary`）。 */
-export type ProjectPublishGateInput = GateInputBase<'public_summary'> & {
+/**
+ * 案件の公開（越境経路 1）。
+ *
+ * 🔴 **欄は「公開先が実際に読む自由入力の欄」の全部である**（T-07-09。docs/05 §11.11 ⑧）:
+ *    案件名 / 公開用の記載 / 要件のフリーテキスト。当初は `public_summary` だけだったが、
+ *    それでは**案件名にエンド企業名を書けば商流層を素通りする**（`F-014 AC-3` が成立しない）。
+ *    残りの公開列（状態・人数・開始日・単価レンジ・都道府県・リモート可否）は列挙値と数値であり、
+ *    語が潜り込む余地が無いので欄にしない。
+ */
+export type ProjectPublishGateInput = GateInputBase<
+  'project_name' | 'public_summary' | 'requirement'
+> & {
   readonly targetType: 'PROJECT_PUBLISH';
   readonly consistency: SubjectlessConsistencyInput;
 };
@@ -134,7 +144,15 @@ export type GateInput = ProposalGateInput | ProjectPublishGateInput | SkillSheet
 /** `GateInput` が扱える対象種別（`PHASE1_GATE_TARGET_TYPES` と一致することを型で固定する）。 */
 export type GateInputTargetType = GateInput['targetType'];
 
-/** 🔴 `sections` に非空の欄が 1 つも無い入力を、検査したことにしない（`F-020 AC-1`）。 */
+/**
+ * 🔴 `sections` に非空の欄が 1 つも無い入力を、検査したことにしない（`F-020 AC-1`）。
+ *
+ * 🔴 **呼ぶのは入力を組み立てる側（`packages/db` の `loadGateInput`）である**（T-07-09。
+ *    docs/05 §11.11 ⑧）。「非空を保証するのは組み立てる側」という契約は
+ *    `packages/ai` の `EmptyGateContentError` が前提にしているものであり、**契約を守る側が
+ *    誰も呼んでいない状態にしない**（あちらは呼び出し側の不具合を検出する最後の砦であって、
+ *    一次の判定ではない）。ここで落とすと、AI のコストを予約する前に止まる。
+ */
 export function hasInspectableText(input: GateInput): boolean {
   return input.sections.some((section) => section.text.trim().length > 0);
 }

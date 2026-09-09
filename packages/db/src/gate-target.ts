@@ -20,14 +20,17 @@
 //    カナ・ローマ字の列を足したら、**必ずここにも足すこと**（足し忘れがそのまま漏れになる）。
 
 import { Prisma } from '@prisma/client';
-import type {
-  EngineerSkillFacts,
-  GateInput,
-  GateTargetType,
-  ProjectRequirementFacts,
-  SnapshotSkillFacts,
+import {
+  hasInspectableText,
+  type EngineerSkillFacts,
+  type GateInput,
+  type GateTargetType,
+  type ProjectRequirementFacts,
+  type SnapshotSkillFacts,
 } from '@ses/domain';
 import type { SystemTenantCtx } from './context.js';
+import { readProjectRequirementTexts } from './gate-content-hash.js';
+import { readProjectPublishRequest } from './project-publish.js';
 import { runInTenantTransaction } from './with-tenant.js';
 
 /**
@@ -58,7 +61,10 @@ export class GateFactsUnavailableError extends Error {
 }
 
 /**
- * 🔴 まだ配線されていない対象種別（Phase 2 / Phase 3、および T-07-09 の範囲）。
+ * 🔴 ゲートを実行できない対象種別。理由は 2 つあり、**どちらも PASS にしない**。
+ *
+ *   ① まだ配線されていない（`CHAT_ATTACHMENT` は Phase 2、`CONTRACT_DOCUMENT` は Phase 3）
+ *   ② 🔴 **Phase 1 に検査対象の本文が存在しない**（`SKILL_SHEET_SHARE`。docs/05 §11.11 ⑤）
  *
  * **「対応していないので PASS」を作らない**（`CLAUDE.md` §11.1 の「未設定ならモック」と同型の事故）。
  */
@@ -149,9 +155,17 @@ export async function loadGateInput(
     case 'PROJECT_PUBLISH':
       return loadProjectPublishGateInput(ctx, key.targetId, key.contentHash);
     case 'SKILL_SHEET_SHARE':
+      // 🔴 T-07-09 の決着（docs/05 §11.11 ⑤）: **Phase 1 には検査対象の本文が存在しない。**
+      //    原本（xlsx / docx / pdf）の中身は読めず（構造化抽出 `sheet-parser` は Phase 2 の
+      //    `F-032`）、原本そのものを LLM に渡すことは `BR-11` と `packages/ai` の型
+      //    （`image` / `document` ブロックを受け取れない。T-07-02）で不可能である。
+      //    版のメモ（`SkillSheet.note`）だけを検査して PASS にすると、**原本を 1 バイトも
+      //    見ていないのに「ゲートを通した」ことになり**、`F-020 AC-1` を静かに破る。
+      //    したがって **Phase 1 では PASS にしない**（配線漏れではなく、決めたうえでの fail-closed）。
       throw new UnsupportedGateTargetError(
         key.targetType,
-        'スキルシートの外部共有の入口（F-011 の共有 URL 発行）は T-07-09 の範囲である。',
+        'Phase 1 には検査できる本文が無い（原本は読めず、抽出テキストは Phase 2 の F-032 である）。' +
+          '共有の側で「外部共有にはゲート PASS が要る」を課しているため、スキルシートの外部共有は Phase 1 では成立しない。',
       );
     case 'CHAT_ATTACHMENT':
       throw new UnsupportedGateTargetError(key.targetType, 'チャット添付は Phase 2（F-038）である。');
@@ -300,14 +314,39 @@ async function loadProposalGateInput(
 /**
  * 案件の公開（越境経路 1）。
  *
- * 🔴 検査するのは `Project.publicSummary` だけである（`F-014` 処理②。公開時に外へ出るのはこれだけ）。
+ * 🔴 **検査するのは「公開先が実際に読む自由入力の欄」の全部である**（T-07-09。docs/05 §11.11 ⑧）:
+ *    案件名（`Project.name`）/ 公開用の記載（`publicSummary`）/ 要件のフリーテキスト
+ *    （`ProjectRequirement.freeText`）。母集団は `apps/web/lib/projects/service.ts` の
+ *    `PARTNER_PROJECT_DETAIL_SELECT` であり、そのうち語が潜り込めるのはこの 3 つだけである
+ *    （状態・人数・開始日・単価レンジ・都道府県・リモート可否は列挙値と数値）。
+ *    🔴 要件のうち検査するのは `free_text` だけである —— スキル指定の要件が公開先に見せるのは
+ *    **辞書の名前**（`Skill.name`）であり、グローバル辞書はテナントから編集できない
+ *    （`BR-02` / `F-010 AC-2`）。任意の語を書き込めるのはフリーテキスト欄だけである。
+ *    ⚠️ **`publicSummary` だけを見ていた実装は誤りだった** —— 案件名にエンド企業名を書けば
+ *    商流層を素通りし、`F-014 AC-3` が成立しない。
+ *    🔴 欄は `apps/web/lib/projects/publish-preview.ts` の `PUBLISHED_FIELDS` と 1 対 1 である
+ *    （画面の警告とゲートの合否が別の母集団を見ていると、
+ *    「プレビューでは何も出ないのに FAIL する」という直しようのない状態になる）。
  * 🔴 `endClientName` / `internalUnitPrice` は**内部限定**であり、公開表示に出れば商流層 FAIL
- *    （`F-014 AC-3`）。他社名は「公開先に含まれない取引先の名前」である。
+ *    （`F-014 AC-3`）。
  *
- * ⚠️ **T-07-09 への申し送り**: `audience.partnerCompanyIds` には**現時点で公開済みの相手**を入れている。
- *    `#28`（公開範囲の設定）が「これから公開する相手」を持ち回る手段は SP-06 では作られなかった
- *    （`ProjectVisibility` の行はゲート PASS 後にしか作れない = `review_gate_id` NOT NULL）。
- *    新規公開先を含めるには、その一覧をゲートまで運ぶ経路が要る（docs/05 §11.9 に記録）。
+ * 🔴 **他社名は「その公開範囲で出してはならない社名」であって「公開先以外の社名」ではない**
+ *    （docs/05 §11.11 ⑨ / `F-014 AC-4` / `BR-07`）。2 社以上へ**同じ公開文**を出す以上、
+ *    公開文に書かれた A 社の名前は B 社にも届く —— それは `CLAUDE.md` §3.1 の 🔴
+ *    （パートナー同士が相互に参照できる経路を 1 つも作らない）そのものである。
+ *    したがって**自社名を許すのは公開先がちょうど 1 社のときだけ**にする。
+ *
+ * 🔴 **`audience.partnerCompanyIds` は「すでに公開済み ∪ これから公開する」の和である**
+ *    （T-07-09。docs/05 §11.11 ①。§11.9 ⑧-5 の申し送りの解消）。後者は
+ *    `ProjectPublishRequest`（中間テーブル）が運ぶ —— `project_visibilities` は
+ *    `review_gate_id` NOT NULL なのでゲート PASS 前には 1 行も作れず、公開先を置く場所が
+ *    そこには無いためである。運ばないと、**新規公開先の社名が公開文に書かれていても
+ *    「他社名」として検出されない**（`F-014 AC-3` が素通りする）。
+ *
+ * 🔴 **公開要求が無い / 内容のハッシュが一致しない場合は `NOT_FOUND` を返す**（PASS にしない）。
+ *    要求が差し替えられたか、既に確定している ＝ **この実行が公開すべき相手はもう無い**。
+ *    ここで「公開済みの相手だけ」で検査を続けると、結果は残るのに誰にも公開されない
+ *    行き場のない `ReviewGate` が増える。
  */
 async function loadProjectPublishGateInput(
   ctx: SystemTenantCtx,
@@ -319,42 +358,71 @@ async function loadProjectPublishGateInput(
     async (tx): Promise<GateTargetLookup> => {
       const project = await tx.project.findUnique({
         where: { id: targetId },
-        select: { id: true, publicSummary: true, endClientName: true, internalUnitPrice: true },
+        select: {
+          id: true,
+          name: true,
+          publicSummary: true,
+          endClientName: true,
+          internalUnitPrice: true,
+        },
       });
       if (project === null) return { kind: 'NOT_FOUND' };
+
+      // 🔴 同じトランザクションで読む（検査した公開先と、確定する公開先をずらさない）。
+      const pending = await readProjectPublishRequest(tx, project.id);
+      if (pending === null || pending.contentHash !== contentHash) return { kind: 'NOT_FOUND' };
 
       const visibilities = await tx.projectVisibility.findMany({
         where: { projectId: project.id, revokedAt: null },
         select: { partnerCompanyId: true },
       });
-      const audienceIds = visibilities.map((row) => row.partnerCompanyId);
+      const audienceIds = [
+        ...new Set([
+          ...visibilities.map((row) => row.partnerCompanyId),
+          ...pending.partnerCompanyIds,
+        ]),
+      ];
       const partners = await tx.partnerCompany.findMany({ select: { id: true, name: true } });
+      // 🔴 要件のフリーテキストは**ハッシュを取る側と同じ 1 実装・同じ順序**で読む
+      //    （ずれると「ハッシュを取った内容」と「検査した内容」が別物になる）。
+      const requirementTexts = await readProjectRequirementTexts(tx, project.id);
 
-      return {
-        kind: 'FOUND',
-        input: {
-          targetType: 'PROJECT_PUBLISH',
-          targetId: project.id,
-          contentHash,
-          audience: { kind: 'PARTNER', partnerCompanyIds: audienceIds },
-          sections: [{ field: 'public_summary', text: project.publicSummary ?? '' }],
-          forbiddenTerms: {
-            unitPrices: unitPriceTerm(project.internalUnitPrice),
-            endClientNames: nonEmpty([project.endClientName]),
-            // 🔴 公開先に**含まれない**取引先の名前は出してはならない（`CLAUDE.md` §3.1 の 🔴。
-            //    「A に B の存在を知らせない」）。
-            otherCompanyNames: nonEmpty(
-              partners
-                .filter((partner) => !audienceIds.includes(partner.id))
-                .map((partner) => partner.name),
-            ),
-          },
-          // 🔴 案件はエンジニアについて何も主張しないので、台帳の PII を照合対象にしない。
-          knownPii: { fullNames: [], birthDates: [], emails: [], phones: [], affiliations: [] },
-          // 🔴 照合する「主張」が無い ＝ 整合層は PASS（docs/05 §11.8 ②）。
-          consistency: {},
+      // 🔴 公開先がちょうど 1 社のときだけ、その 1 社の名前を「他社名」から外す（上の 🔴）。
+      //    2 社以上なら**どの社名も他社名である** —— 同じ公開文が全社に届くためである。
+      const soleAudienceId = audienceIds.length === 1 ? audienceIds[0] : null;
+
+      const input: GateInput = {
+        targetType: 'PROJECT_PUBLISH',
+        targetId: project.id,
+        contentHash,
+        audience: { kind: 'PARTNER', partnerCompanyIds: audienceIds },
+        sections: [
+          { field: 'project_name', text: project.name },
+          { field: 'public_summary', text: project.publicSummary ?? '' },
+          // 🔴 1 欄に綴じる（1 件ごとに欄を並べると、欄別のオフセット表が衝突する。§11.11 ⑧）。
+          { field: 'requirement', text: requirementTexts.join('\n') },
+        ],
+        forbiddenTerms: {
+          unitPrices: unitPriceTerm(project.internalUnitPrice),
+          endClientNames: nonEmpty([project.endClientName]),
+          otherCompanyNames: nonEmpty(
+            partners
+              .filter((partner) => partner.id !== soleAudienceId)
+              .map((partner) => partner.name),
+          ),
         },
+        // 🔴 案件はエンジニアについて何も主張しないので、台帳の PII を照合対象にしない。
+        knownPii: { fullNames: [], birthDates: [], emails: [], phones: [], affiliations: [] },
+        // 🔴 照合する「主張」が無い ＝ 整合層は PASS（docs/05 §11.8 ②）。
+        consistency: {},
       };
+      // 🔴 非空の欄が 1 つも無い入力を返さない（`packages/ai` の `EmptyGateContentError` が
+      //    前提にしている契約を、契約を守る側で満たす。docs/05 §11.11 ⑧）。
+      //    ⚠️ 案件名は `NOT NULL` かつ空文字を許さないので、実際にここへ来ることは無い。
+      if (!hasInspectableText(input)) {
+        throw new GateFactsUnavailableError('PROJECT_PUBLISH', targetId, 'NO_INSPECTABLE_TEXT');
+      }
+      return { kind: 'FOUND', input };
     },
   );
 }

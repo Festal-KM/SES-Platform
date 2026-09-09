@@ -298,7 +298,8 @@ describe('gate.run（docs/05 §11）', () => {
 
       const outcome = await handler(PAYLOAD, JOB_ID);
 
-      expect(outcome).toEqual({ kind: 'ALREADY_DONE', reviewGateId: 'cached-id' });
+      // 🔴 T-07-09: `publish` は「案件の公開の確定」であり、提案では常に `null` である。
+      expect(outcome).toEqual({ kind: 'ALREADY_DONE', reviewGateId: 'cached-id', publish: null });
       expect(loadGateInput).not.toHaveBeenCalled();
       expect(completeReviewGate).not.toHaveBeenCalled();
       expect(db.reserveAiCost).not.toHaveBeenCalled();

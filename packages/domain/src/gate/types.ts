@@ -100,7 +100,14 @@ export const GATE_FINDING_FIELDS = [
   'body',
   'snapshot',
   'attachment',
+  // 🔴 T-07-09: 案件の公開で**パートナーが実際に読む自由入力の欄**は 3 つある（docs/05 §11.11 ⑧）。
+  //    `PARTNER_PROJECT_DETAIL_SELECT`（`apps/web/lib/projects/service.ts`）が返す列のうち、
+  //    語が潜り込めるのは案件名・公開文・要件のフリーテキストだけである（残りは列挙値と数値）。
+  //    🔴 `apps/web/lib/projects/publish-preview.ts` の `PUBLISHED_FIELDS` と 1 対 1 であること ——
+  //    画面の警告とゲートの合否が別の母集団を見ていると、「プレビューでは何も出ないのに FAIL」になる。
+  'project_name',
   'public_summary',
+  'requirement',
   'contract_document',
 ] as const;
 

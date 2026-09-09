@@ -34,6 +34,7 @@ import {
   PROPOSAL_A_P1,
   TENANT_A,
   TENANT_B,
+  USER_A_HOST,
 } from './support/fixtures.js';
 import { startIsolationDatabase, type IsolationDatabase } from './support/postgres.js';
 
@@ -72,14 +73,45 @@ function jobIdFor(targetType: string, targetId: string, contentHash: string): st
   return `gate.run:${targetType}:${targetId}:${contentHash}`;
 }
 
-function runGate(options: {
+async function runGate(options: {
   readonly targetType: 'PROPOSAL' | 'PROJECT_PUBLISH';
   readonly targetId: string;
   readonly contentHash: string;
   readonly script: MockStep;
   readonly dailyLimitUsd?: string;
   readonly tenantId?: string;
+  /**
+   * 🔴 T-07-09: 案件の公開は「これから公開する相手」を `ProjectPublishRequest` で運ぶ
+   *    （docs/05 §11.11 ①）。行が無い / 内容のハッシュが一致しない場合、ジョブは
+   *    **何も検査せずに `TARGET_NOT_FOUND` で終わる**（PASS にしない）。
+   * 🔴 既定を**空**にしているのは、この describe が見ているのが**層の判定**だからである ——
+   *    空にすると `audience` が「すでに公開済みの相手」だけに固定され、
+   *    T-06-06 以前と同じ母集団で層の判定を確かめられる。
+   *    **公開の確定（PASS で行が増える / FAIL で 1 行も増えない）は
+   *    `tests/isolation/project-publish-gate.test.ts` が実データの経路で見る。**
+   */
+  readonly publishTo?: readonly string[];
 }): Promise<GateRunOutcome> {
+  if (options.targetType === 'PROJECT_PUBLISH') {
+    await admin.projectPublishRequest.upsert({
+      where: {
+        tenantId_projectId: { tenantId: options.tenantId ?? TENANT_A, projectId: options.targetId },
+      },
+      create: {
+        id: randomUUID(),
+        tenantId: options.tenantId ?? TENANT_A,
+        projectId: options.targetId,
+        partnerCompanyIds: [...(options.publishTo ?? [])],
+        contentHash: options.contentHash,
+        requestedAt: NOW,
+        requestedBy: USER_A_HOST,
+      },
+      update: {
+        partnerCompanyIds: [...(options.publishTo ?? [])],
+        contentHash: options.contentHash,
+      },
+    });
+  }
   const handler = createGateRunHandler({
     now: () => NOW,
     aiClient: createAiClient('mock', { mock: { script: options.script } }),
@@ -166,6 +198,9 @@ async function resetGateFixtures(): Promise<void> {
     where: { id: PROJECT_A_PUBLISHED },
     data: { publicSummary: '公開用の概要' },
   });
+  // 🔴 T-07-09: 公開要求は「消費されなかったぶん」が残りうる（FAIL / HELD / 差し替え）。
+  //    残すと次のテストの `loadGateInput` が古いハッシュを見て `TARGET_NOT_FOUND` になる。
+  await admin.projectPublishRequest.deleteMany({ where: { tenantId: TENANT_A } });
 }
 
 beforeEach(resetGateFixtures);

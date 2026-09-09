@@ -157,6 +157,7 @@ describe('🔴 逆リレーション（他モデルのテナントキー列を�
       'projects',
       'projectRequirements',
       'projectVisibilities',
+      'projectPublishRequests', // T-07-09（docs/05 §11.11）
       'matchCandidates',
       'engineerShares',
       'proposalRequests',

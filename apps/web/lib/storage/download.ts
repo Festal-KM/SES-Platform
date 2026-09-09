@@ -23,6 +23,13 @@
 //      判定は 1 箇所（本関数）にあり、呼び出し側に「CLEAN を確かめてから呼ぶ」責務を渡さない
 //      —— 渡すと、新しい DL 経路が増えるたびに条件式が写され、どれかが緩む。
 //
+//   ③ 🔴 **所有会社の境界の外へ渡すなら、品質ゲートが PASS していなければ発行しない**
+//      （`F-020 AC-1` / `BR-15`。T-07-09）。`CLEAN` **かつ**ゲート PASS の両方が要る ——
+//      ウイルス検査は「安全なファイルか」を見るだけで、「**その相手に出してよい内容か**」
+//      （氏名・単価・エンド企業名・他社名）は 1 つも見ていない。
+//      🔴 判定を②と同じ 1 箇所に置くのは同じ理由である。呼び出し側が渡すのは
+//      **「これは境界の外へ出るのか」という事実だけ**であり、「ゲートを確かめたか」ではない。
+//
 // 🔴 `VIEWER` の拒否（`F-012 AC-3` / `BR-31`）は**ルートの `requireNotViewer`** が持つ。
 //    ここに置かないのは、ガードの宣言を `tests/static/execute-guard.test.ts` と
 //    `withApiRoute` の構築時検査が走査できる形（＝ ルート定義）に保つためである。
@@ -32,14 +39,15 @@
 //    代理閲覧中を表す値が無い）。**動かせない分岐を先回りで書かない**（`piiPurgedAt` と同じ規律）。
 //    🔴 実装が入るときの追加箇所は**本関数の 1 箇所**である（発行経路がここしかないため）。
 import {
+  findPassedReviewGate,
   withTenant,
   writeAuditLog,
   type AuditSummary,
   type AuthenticatedTenantCtx,
 } from '@ses/db';
 import type { ObjectStore } from '@ses/connectors';
-import { isShareableScanStatus, type ScanStatus } from '@ses/domain';
-import { FileNotCleanError, NotFoundError } from '../api/errors';
+import { isShareableScanStatus, type GateTargetType, type ScanStatus } from '@ses/domain';
+import { FileNotCleanError, FileShareGateRequiredError, NotFoundError } from '../api/errors';
 
 /**
  * 🔴 ダウンロード用の署名の有効期限（秒）。docs/05 §14.2 の表で **300 秒**に固定されている。
@@ -53,6 +61,52 @@ export const DOWNLOAD_URL_TTL_SECONDS = 300;
 type TenantDbArg = Parameters<Parameters<typeof withTenant<void>>[1]>[0];
 
 /**
+ * 🔴 その発行が「所有会社の境界の外へ渡すこと」なのか（T-07-09。`F-020 AC-1`）。
+ *
+ * - `OWNER_SCOPE` … ファイルを持ち込んだ会社の中での取り回し。ゲートの対象ではない。
+ * - 🔴 `EXTERNAL` … 境界の外へ渡る。**品質ゲート（`ReviewGate`）の 3 層 PASS が要る。**
+ *
+ * 🔴 **分類は「誰が要求したか」ではなく「行の所有者と要求者の境界が違うか」で決まる**
+ *    （`classifyFileShare`）。ロールや画面で決めると、新しい導線が増えるたびに判定が写される。
+ */
+export type DownloadShareScope =
+  | { readonly kind: 'OWNER_SCOPE' }
+  | {
+      readonly kind: 'EXTERNAL';
+      /** ゲート結果の所在（`ReviewGate.targetType` / `targetId`）。 */
+      readonly gateTargetType: GateTargetType;
+      readonly gateTargetId: string;
+    };
+
+/**
+ * 🔴 共有の分類（**純粋関数**。ユニットテストが規則を固定する）。
+ *
+ * `null` はホスト（自社）を表す（`AuthenticatedTenantCtx.partnerCompanyId` と
+ * `owner_partner_company_id` の両方でその意味である。docs/05 §4.4 C3）。
+ * 一致していれば「持ち込んだ会社の中」、違えば境界の外である。
+ *
+ * ⚠️ **Phase 1 で `EXTERNAL` になる版は 1 件も無い**（実測）。`skill_sheets` は C3 OWNER_SCOPED で
+ *    あり、越境経路 2 の例外（`Proposal` 作成後にホストが読む。`F-012 AC-4` / `BR-59`）はまだ
+ *    RLS に無いため、**見えている版は必ず自社所有である**。それでもここで分類するのは、
+ *    例外を開く側（SP-09）が前提条件を書き足さなくても**自動的にゲートが要求されるようにする**
+ *    ためである —— 開く側に「ゲートも確かめてね」と申し送る形にすると、必ずどこかで落ちる。
+ */
+export function classifyFileShare(input: {
+  readonly ownerPartnerCompanyId: string | null;
+  readonly requesterPartnerCompanyId: string | null;
+  readonly gateTargetType: GateTargetType;
+  readonly gateTargetId: string;
+}): DownloadShareScope {
+  return input.ownerPartnerCompanyId === input.requesterPartnerCompanyId
+    ? { kind: 'OWNER_SCOPE' }
+    : {
+        kind: 'EXTERNAL',
+        gateTargetType: input.gateTargetType,
+        gateTargetId: input.gateTargetId,
+      };
+}
+
+/**
  * ダウンロードの対象。**呼び出し側がトランザクションの内側で組み立てる**
  * （＝ 見えている行からしか作れない。RLS が母集団を決める）。
  */
@@ -60,6 +114,11 @@ export type DownloadSubject = {
   readonly objectKey: string;
   /** 🔴 `CLEAN` 以外なら本関数が発行を拒否する（`BR-26`）。 */
   readonly scanStatus: ScanStatus;
+  /**
+   * 🔴 **必須である**（T-07-09）。省略可能にすると、新しい DL 経路が
+   *    「書かなかった ＝ 社内扱い」で静かにゲートを迂回する（`F-020 AC-1`）。
+   */
+  readonly share: DownloadShareScope;
   /**
    * 🔴 ダウンロード名。**原本のファイル名を渡さない**（docs/05 §14.1 の決着。T-05-07）。
    *    値は `@ses/domain` の `buildSkillSheetDownloadFileName`（版番号だけで組み立てる）が作る。
@@ -118,6 +177,17 @@ export async function issueDownloadUrl(
     //    発行されなかった操作を `skill_sheet.download` として残すと、
     //    `S-041` の「誰が経歴をダウンロードしたか」に、実際には渡っていない行が混ざる。
     if (!isShareableScanStatus(found.scanStatus)) throw new FileNotCleanError();
+    // ③ 🔴 境界の外へ渡すなら、品質ゲートの 3 層 PASS が要る（`F-020 AC-1` / `BR-15`）。
+    //    **記録より前**に弾く（②と同じ理由。発行されなかった操作を「ダウンロードした」として残さない）。
+    //    🔴 「ゲートが無いなら通す」にしない —— 検査していないものを外へ出さないことが
+    //    このゲートの存在理由であり、未実行と PASS を同じ扱いにすると `BR-15` が空回りする。
+    if (found.share.kind === 'EXTERNAL') {
+      const passed = await findPassedReviewGate(db, {
+        targetType: found.share.gateTargetType,
+        targetId: found.share.gateTargetId,
+      });
+      if (passed === null) throw new FileShareGateRequiredError();
+    }
 
     await writeAuditLog(db, {
       action: found.audit.action,

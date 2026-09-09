@@ -324,6 +324,7 @@ describe('🔴 update 系 data のテナントキー検査（行の移動を止�
         'projects',
         'projectRequirements',
         'projectVisibilities',
+        'projectPublishRequests', // T-07-09（docs/05 §11.11）
         'matchCandidates',
         'engineerShares',
         'proposalRequests',
