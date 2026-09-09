@@ -165,6 +165,11 @@ describe('スケジュール宣言（docs/05 §9.8 / §9.1）', () => {
         callCount: () => 0,
       },
       stallAlertMinutes: 10,
+      // 🔴 T-07-10: `gate.hold-release`（毎 10 分）の deps。埋め忘れるとコンパイルエラーになる
+      //    （＝ 起動配線が「AI 上限で保留したゲートを誰も戻さない」状態で立ち上がれない）。
+      models: { resolve: async () => 'claude-sonnet-5' },
+      aiDailyCostLimitUsd: '5.000000',
+      enqueueGateRun: async () => 'ENQUEUED',
     };
   }
 });

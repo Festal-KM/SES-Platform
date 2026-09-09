@@ -222,6 +222,7 @@ beforeAll(async () => {
   configureGateRunJobQueue({
     enqueue: async (job) => {
       enqueued.push(job);
+      return 'ENQUEUED';
     },
     removeFailedJob: async () => 'NOT_FOUND',
   });

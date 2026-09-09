@@ -36,7 +36,10 @@ import {
   gateRunJobId,
   queueDefinition,
   shouldRemoveGateRunJob,
+  steppedBackoffDelayMs,
   GATE_RUN_JOB,
+  type BackoffOptions,
+  type GateRunEnqueueOutcome,
   type GateRunFailedJobRemoval,
   type GateRunJob,
   type GateRunJobKey,
@@ -51,11 +54,14 @@ export type BullMqConnection = {
 };
 
 /**
- * 🔴 まだ BullMQ へ写像できない既定ジョブオプションが定義に現れた。
+ * 🔴 BullMQ へ写像できない既定ジョブオプションが定義に現れた。
  *
  * **握り潰して近似しない。** 例えば `stepped` バックオフ（`email.dispatch` の 5s / 30s。§9.1）を
- * BullMQ の組み込み戦略に落とすと、設計値と実際の待ち時間が黙ってずれる。ワーカー側の
- * `settings.backoffStrategy` を配線するタスクが、この例外を消す形で対応すること。
+ * BullMQ の組み込み戦略に落とすと、設計値と実際の待ち時間が黙ってずれる。
+ *
+ * ✅ **T-07-10 で `stepped` は写像済み**（カスタム戦略 + `settings.backoffStrategy`）。
+ *    この例外が残っているのは、**次に種別が増えたときに黙って近似されないようにする**ためであり、
+ *    現在の `QUEUE_DEFINITIONS` からは到達しない（到達したら定義側の追加が写像されていない）。
  */
 export class UnsupportedQueueOptionError extends Error {
   constructor(name: string, detail: string) {
@@ -68,23 +74,74 @@ export class UnsupportedQueueOptionError extends Error {
 }
 
 /**
+ * 🔴 `stepped` バックオフ（§9.1 / §9.4 の 5s / 30s）の**カスタム戦略の名前**。
+ *
+ * BullMQ は `backoff.type` が組み込み（`fixed` / `exponential`）以外のとき、
+ * Worker の `settings.backoffStrategy` を `type` 付きで呼ぶ。**遅延の値はここに書かない** ——
+ * 表（`delaysMs`）を持つのは `QUEUE_DEFINITIONS` だけであり、計算するのは
+ * `steppedBackoffDelayMs`（純粋関数）だけである（§9.1 の 🔴「ワーカー側で待ち時間を計算し直さない」）。
+ */
+const STEPPED_BACKOFF_STRATEGY = 'stepped';
+
+/**
+ * キュー定義のバックオフを BullMQ の形に写す。
+ *
+ * 🔴 **値を作らない / 近似しない。** `fixed` / `exponential` は組み込みなのでそのまま渡し、
+ *    `stepped` は**カスタム戦略の名前だけ**を渡す（実際の待ち時間は Worker 側の
+ *    `backoffStrategy` が同じ定義から計算する。T-07-10 で配線した）。
+ */
+function toBullMqBackoff(name: string, backoff: BackoffOptions) {
+  switch (backoff.type) {
+    case 'fixed':
+    case 'exponential':
+      return { type: backoff.type, delay: backoff.delay };
+    case 'stepped':
+      // 🔴 `delay` を渡さない（BullMQ はカスタム戦略に `delay` を使わない）。表は定義側にある。
+      return { type: STEPPED_BACKOFF_STRATEGY };
+    default: {
+      // 🔴 バックオフの種別が増えたらここでコンパイルエラーになる（黙って近似しない）。
+      const exhaustive: never = backoff;
+      throw new UnsupportedQueueOptionError(name, `未知のバックオフ種別: ${JSON.stringify(exhaustive)}`);
+    }
+  }
+}
+
+/**
  * `QUEUE_DEFINITIONS` の既定ジョブオプションを BullMQ の形に写す。
  *
  * 🔴 **値を作らない。** 渡ってきた `attempts` / `removeOnComplete` をそのまま置くだけである。
- * 🔴 `stepped` バックオフはカスタム戦略（`settings.backoffStrategy`）の配線とセットでなければ
- *    正しく動かないため、写像せずに例外にする（上記）。
+ *
+ * @internal ユニットテスト（`bullmq.test.ts`）が写像そのものを検査するために export する。
+ *           業務経路が呼ぶことは無い（`createQueue` の内側だけで使う）。
  */
-function toBullMqJobOptions(name: string, options: InternalQueueOptions) {
-  if (options.backoff !== undefined && options.backoff.type === 'stepped') {
-    throw new UnsupportedQueueOptionError(
-      name,
-      'stepped バックオフはワーカーの settings.backoffStrategy の配線を要する',
-    );
-  }
+export function toBullMqJobOptions(name: string, options: InternalQueueOptions) {
   return {
     attempts: options.attempts,
-    ...(options.backoff === undefined ? {} : { backoff: options.backoff }),
+    ...(options.backoff === undefined ? {} : { backoff: toBullMqBackoff(name, options.backoff) }),
     ...(options.removeOnComplete === undefined ? {} : { removeOnComplete: options.removeOnComplete }),
+  };
+}
+
+/**
+ * 🔴 Worker に渡すバックオフ戦略（§9.1「`backoffStrategy` に渡す関数はこの純粋関数だけ」）。
+ *
+ * 定義が `stepped` を持たないキューでも登録してよい —— BullMQ は
+ * `backoff.type` がカスタム名のときしか呼ばないため、そのキューでは呼ばれない。
+ * 🔴 万一呼ばれたら**握り潰さずに落とす**（0 を返すと即時再試行になり、設計値と実際の待ち時間が
+ *    静かにずれる。§9.1 の「近似しない」）。
+ *
+ * @internal ユニットテストが「表どおりの待ち時間になる」ことを検査するために export する。
+ */
+export function bullMqBackoffStrategy(name: QueueName): (attemptsMade: number, type?: string) => number {
+  const backoff: BackoffOptions | undefined = queueDefinition(name).defaultJobOptions.backoff;
+  return (attemptsMade: number, type?: string): number => {
+    if (backoff === undefined || backoff.type !== 'stepped') {
+      throw new UnsupportedQueueOptionError(
+        name,
+        `カスタムのバックオフ戦略 '${String(type)}' を要求されましたが、キュー定義に stepped の表がありません`,
+      );
+    }
+    return steppedBackoffDelayMs(attemptsMade, backoff.delaysMs);
   };
 }
 
@@ -141,9 +198,15 @@ export function createBullMqGateRunQueue(connection: BullMqConnection): BullMqGa
   };
 
   return {
-    async enqueue(job: GateRunJob): Promise<void> {
+    async enqueue(job: GateRunJob): Promise<GateRunEnqueueOutcome> {
       // 🔴 per-job オプションは `jobId` だけ（`attempts` / `backoff` を渡さない。§17.2 #6）。
-      await resolve().add(GATE_RUN_JOB, job, { jobId: gateRunJobId(job) });
+      const added = await resolve().add(GATE_RUN_JOB, job, { jobId: gateRunJobId(job) });
+      // 🔴 **BullMQ は同じ `jobId` が `failed` に残っている間、`add` を静かに無視して
+      //    既存のジョブをそのまま返す**（例外を投げない。`removeOnFail` を付けていないため
+      //    起こりうる。§9.1 / §9.10 ②）。戻り値を見ないと「積んだつもりで積まれていない」に
+      //    なるため、**状態を 1 度だけ確かめて呼び出し側へ返す**。
+      //    ⚠️ ここで失敗記録を消さない —— 消してよいのは §9.10 ② の運用操作（#39 / #28）だけである。
+      return (await added.getState()) === 'failed' ? 'BLOCKED_BY_FAILED_JOB' : 'ENQUEUED';
     },
     async removeFailedJob(key: GateRunJobKey): Promise<GateRunFailedJobRemoval> {
       const job = await resolve().getJob(gateRunJobId(key));
@@ -169,29 +232,38 @@ export function createBullMqGateRunQueue(connection: BullMqConnection): BullMqGa
   };
 }
 
-export type BullMqGateRunWorker = {
+export type BullMqWorker = {
   close(): Promise<void>;
 };
 
+/** 後方互換の別名（T-07-08 で `gate.run` 専用として導入した型）。 */
+export type BullMqGateRunWorker = BullMqWorker;
+
 /**
- * 🔴 `gate.run` の実行側（`apps/worker` の起動配線と、結合テストが使う）。
+ * 🔴 定義どおりの `Worker` を 1 本作る（`apps/worker` の起動配線と、結合テストが使う）。
  *
- * 🔴 **再試行は既定ジョブオプション（`attempts: 1`）が決める。** ここで `attempts` を
- *    上書きしない（LLM の再試行は `runRole` の内部で完結する。§9.3）。
- * 🔴 ハンドラは payload を検証してから使う（`parseGateRunPayload`）。ここでは型を主張しない
+ * 🔴 **再試行は既定ジョブオプション（`QUEUE_DEFINITIONS`）が決める。** ここで `attempts` を
+ *    上書きしない（`gate.run` の `attempts: 1` は LLM の再試行が `runRole` の内部で
+ *    完結するからである。§9.3）。
+ * 🔴 **待ち時間の計算をここに書かない。** `settings.backoffStrategy` に渡すのは
+ *    `bullMqBackoffStrategy(queueName)`（中身は純粋関数 `steppedBackoffDelayMs`）だけであり、
+ *    遅延の表は `QUEUE_DEFINITIONS` にしか無い（§9.1）。
+ * 🔴 ハンドラは payload を検証してから使う（`parseGateRunPayload` など）。ここでは型を主張しない
  *    —— Redis から来た値は常に `unknown` である。
  */
-export function createBullMqGateRunWorker(options: {
+export function createBullMqWorker(options: {
+  readonly queueName: QueueName;
   readonly connection: BullMqConnection;
   readonly handler: (payload: unknown, jobId: string) => Promise<unknown>;
   readonly concurrency?: number;
-}): BullMqGateRunWorker {
+}): BullMqWorker {
   const client = createClient(options.connection);
   const worker = new Worker(
-    GATE_RUN_JOB,
+    queueDefinition(options.queueName).name,
     async (job: Job) => options.handler(job.data, job.id ?? ''),
     {
       connection: client,
+      settings: { backoffStrategy: bullMqBackoffStrategy(options.queueName) },
       ...(options.concurrency === undefined ? {} : { concurrency: options.concurrency }),
     },
   );
@@ -201,4 +273,13 @@ export function createBullMqGateRunWorker(options: {
       await client.quit();
     },
   };
+}
+
+/** 🔴 `gate.run` の実行側（T-07-08 からの呼び出し口をそのまま残す）。 */
+export function createBullMqGateRunWorker(options: {
+  readonly connection: BullMqConnection;
+  readonly handler: (payload: unknown, jobId: string) => Promise<unknown>;
+  readonly concurrency?: number;
+}): BullMqGateRunWorker {
+  return createBullMqWorker({ queueName: GATE_RUN_JOB, ...options });
 }

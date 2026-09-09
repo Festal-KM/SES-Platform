@@ -56,6 +56,18 @@ export type PendingReviewGate = {
   readonly consistencyVerdict: GateVerdict;
 };
 
+/**
+ * 走査（`gate.hold-release`）が受け取る保留行。
+ *
+ * 🔴 対象を指定せずに引くので、`PendingReviewGate` に**どの対象か**を足した形である ——
+ *    再 enqueue の payload（`{ tenantId, targetType, targetId, contentHash }`）を
+ *    **この行だけから**組み立てられることが要点である（§11.9 ⑧-7「同じ payload・同じ `jobId`」）。
+ */
+export type PendingReviewGateRow = PendingReviewGate & {
+  readonly targetType: GateTargetType;
+  readonly targetId: string;
+};
+
 export type ReviewGateResultInput = ReviewGateKey & {
   readonly piiVerdict: GateVerdict;
   readonly commerceVerdict: GateVerdict;
@@ -236,6 +248,55 @@ export async function findPendingReviewGate(
         heldSince: row.heldSince,
         consistencyVerdict: row.consistencyVerdict as GateVerdict,
       };
+    },
+  );
+}
+
+/**
+ * 🔴 保留中の行を古い順に列挙する（`gate.hold-release` の走査。docs/05 §9.3 / `F-027 AC-5`）。T-07-10。
+ *
+ * 🔴 **`findPendingReviewGate` と同じ母集団（`execution <> 'DONE'`）を、対象を指定せずに引く。**
+ *    保留は対象ごとに 1 行しか作れない（部分 UNIQUE）ので、行数 = 保留中の対象数である。
+ * 🔴 **`held_since` の昇順**（`send.hold-release` と同じ配り方）。上限の余地は限られており、
+ *    毎回同じ順序でないと**新しい保留に押されて古い保留が永久に再開されない**（飢餓）。
+ *    同時刻の並びが実行のたびに変わらないよう `id` を第 2 キーにする（`id` は uuidv7 = 時刻順）。
+ * 🔴 **ここで行を書き換えない。** 復帰は `gate.run` の完了 CAS が確定させる（多重化防止の 3 段目。
+ *    §11.9 ⑧-7「`gate.hold-release` 側に『先に DONE にする』処理を書かない」）。
+ */
+export async function listPendingReviewGates(
+  ctx: SystemTenantCtx,
+  options: { readonly limit: number },
+): Promise<readonly PendingReviewGateRow[]> {
+  return runInTenantTransaction(
+    { tenantId: ctx.tenantId, partnerCompanyId: null, actorUserId: ctx.userId },
+    async (tx) => {
+      const rows = await tx.reviewGate.findMany({
+        where: { execution: { not: 'DONE' } },
+        orderBy: [{ heldSince: 'asc' }, { id: 'asc' }],
+        take: options.limit,
+        select: {
+          id: true,
+          targetType: true,
+          targetId: true,
+          contentHash: true,
+          heldSince: true,
+          consistencyVerdict: true,
+        },
+      });
+      return rows.flatMap((row) =>
+        row.heldSince === null
+          ? []
+          : [
+              {
+                id: row.id,
+                targetType: row.targetType as GateTargetType,
+                targetId: row.targetId,
+                contentHash: row.contentHash,
+                heldSince: row.heldSince,
+                consistencyVerdict: row.consistencyVerdict as GateVerdict,
+              },
+            ],
+      );
     },
   );
 }

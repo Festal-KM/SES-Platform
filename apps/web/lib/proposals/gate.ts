@@ -172,11 +172,18 @@ export async function requestProposalGate(
   // ② 🔴 **トランザクションの外**で、失敗した同 `jobId` を消す（§9.10 ②）。
   //    `waiting` / `active` は消さない（走っているものを止めない。判定は
   //    `shouldRemoveGateRunJob`（`@ses/connectors`）の 1 箇所にある）。
-  //    🔴 HELD の再開では消さない —— 上限で保留したジョブは**正常終了**しており
-  //    （`removeOnComplete: true` で記録も残らない）、消す対象がそもそも無い。
-  //    🔴 `DRAFT` からの依頼でも消す: 内容を戻した結果、前回と同じ `jobId` の失敗記録が
-  //    残っていることがあり、残っていると `add` が静かに捨てられる（§9.1）。
-  const removal = pending === null ? await deps.queue.removeFailedJob(key) : 'NOT_FOUND';
+  //
+  //    🔴 **経路によらず必ず消す**（T-07-10 で是正した）。当初は「HELD の再開では消す対象が
+  //    そもそも無い」として飛ばしていたが、それは **`gate.hold-release` が保留行を自動で
+  //    積み直すようになった時点で成立しない** —— 自動で積み直された実行が失敗すれば
+  //    （`loadGateInput` 系の例外 / 単価未登録 / DB・Redis の一時障害）、保留行が残ったまま
+  //    同じ `jobId` の `failed` 記録が残る。その状態では `add` が**静かに捨てられる**ため
+  //    （§9.1）、自動でも手動でも復帰できない行き止まりになる（`F-027 AC-5` が禁じている
+  //    「`GATE_RUNNING` のまま戻らない」状態そのもの）。
+  //    🔴 **失敗記録を消してよいのはこの利用者操作だけである**（§9.10 ①。`gate.hold-release` は
+  //    消さない —— 自動で消すと §16.5 の失敗ジョブ数から見えなくなり、壊れていることに
+  //    誰も気づけなくなる）。
+  const removal = await deps.queue.removeFailedJob(key);
 
   // ③ 🔴 同じ内容の確定結果があれば **enqueue せず 422**（`P-A-09` / docs/05 §6.5 #39）。
   //    ワーカーの開始時チェックと同じ判定を、先に API で行う。
@@ -247,7 +254,16 @@ export async function requestProposalGate(
   //    結果の確定 CAS〔`WHERE state='GATE_RUNNING'`〕が 0 件になり、対象が取り残される）。
   //    🔴 payload と `jobId` の組み立ては `@ses/connectors` の 1 実装だけを使う。
   const job: GateRunJob = { tenantId: ctx.tenantId, ...key };
-  await deps.queue.enqueue(job);
+  // 🔴 **積めたことを確かめる。** ②で `failed` を消した直後なので、ここで弾かれるのは
+  //    その隙間に別の実行が失敗記録を作った場合だけである。**握り潰さない** ——
+  //    202 と `jobId` を返しながら誰も実行しない応答は、`CLAUDE.md` §11.1 の
+  //    「成功したように見えて実際には起きていない」そのものである。もう一度 #39 を呼べば
+  //    ②が失敗記録を消して復帰する（利用者に見えるところで壊す）。
+  if ((await deps.queue.enqueue(job)) === 'BLOCKED_BY_FAILED_JOB') {
+    throw new InternalError(
+      `gate.run を積めませんでした（同じ jobId の失敗記録が残っています。proposalId=${target.id}）。`,
+    );
+  }
 
   // ⑤ 🔴 再実行では `Proposal` は `GATE_RUNNING` のまま（状態を足さない・遷移も起こさない）。
   return { jobId: gateRunJobId(job) };

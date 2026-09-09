@@ -33,6 +33,12 @@ import {
   USAGE_SEAT_SNAPSHOT_SCHEDULE,
   type UsageSeatSnapshotDeps,
 } from './usage-seat-snapshot.js';
+import {
+  createGateHoldReleaseHandler,
+  GATE_HOLD_RELEASE_JOB,
+  GATE_HOLD_RELEASE_SCHEDULE,
+  type GateHoldReleaseDeps,
+} from './gate-hold-release.js';
 
 export {
   createUsageSeatSnapshotHandler,
@@ -177,6 +183,22 @@ export {
   parseGateRunPayload,
 } from './gate-run.js';
 export type { GateRunDeps, GateRunHandler, GateRunOutcome, GateRunPayload } from './gate-run.js';
+// 🔴 T-07-10: AI の日次コスト上限で保留したゲートの**自動復帰**（docs/05 §9.3 / `F-027 AC-5`）。
+//    毎 10 分のスケジュールジョブであり、下の `SCHEDULED_JOBS` に載る。
+//    🔴 積める先は `gate.run` だけである（`tests/static/gate-hold-release-enqueue.test.ts`）。
+export {
+  createGateHoldReleaseHandler,
+  GATE_HOLD_RELEASE_JOB,
+  GATE_HOLD_RELEASE_SCHEDULE,
+  GATE_HOLD_SCAN_LIMIT,
+  parseGateHoldReleasePayload,
+} from './gate-hold-release.js';
+export type {
+  GateHoldReleaseDeps,
+  GateHoldReleaseHandler,
+  GateHoldReleaseOutcome,
+  GateHoldReleasePayload,
+} from './gate-hold-release.js';
 
 /**
  * ジョブの合成に要る値（起動時に 1 度だけ解決する。`CLAUDE.md` §11.1 / docs/05 §13.1）。
@@ -188,7 +210,11 @@ export type { GateRunDeps, GateRunHandler, GateRunOutcome, GateRunPayload } from
 export type ScheduledJobDeps = UsageSeatSnapshotDeps &
   DomainVerifyDeps &
   SendHoldReleaseDeps &
-  ScanPollDeps;
+  ScanPollDeps &
+  // 🔴 T-07-10: `gate.hold-release` が要るのは「モデル解決」「日次上限」「`gate.run` の enqueue 先」。
+  //    交差型なので、配線がこの 3 つを渡し忘れたらコンパイルエラーになる（渡し忘れたまま
+  //    「スケジュールされているのに 1 件も復帰しない」状態を作らない）。
+  GateHoldReleaseDeps;
 
 /**
  * スケジュール実行するジョブの宣言。
@@ -242,5 +268,14 @@ export const SCHEDULED_JOBS: readonly ScheduledJobDeclaration[] = [
     cron: SCAN_POLL_SCHEDULE.cron,
     timeZone: SCAN_POLL_SCHEDULE.timeZone,
     createHandler: (deps) => createScanPollHandler(deps),
+  },
+  // 🔴 T-07-10: AI の日次コスト上限で保留したゲートの自動復帰（`F-027 AC-5`）。**これが無いと
+  //    上限に当たった対象は `GATE_RUNNING` のまま**で、利用者が気づいて手動で再依頼するまで
+  //    承認も修正もできない（`docs/02` `F-027 AC-5` は自動復帰を要件として書いている）。
+  {
+    name: GATE_HOLD_RELEASE_JOB,
+    cron: GATE_HOLD_RELEASE_SCHEDULE.cron,
+    timeZone: GATE_HOLD_RELEASE_SCHEDULE.timeZone,
+    createHandler: (deps) => createGateHoldReleaseHandler(deps),
   },
 ];

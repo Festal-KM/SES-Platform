@@ -67,6 +67,9 @@ export {
   type MaskOffsetMap,
   type PreparedGateExamination,
 } from './gate/examine.js';
+// 🔴 T-07-10: `gate.hold-release` が上限の余地を判定するための下限見積り（docs/05 §9.3）。
+//    **金額を持たない**（トークン数だけ）。金額へ写すのは `packages/db` である（§17.2 #24-②）。
+export { gateInspectorReservationFloor, type AiReservationFloor } from './gate/reservation.js';
 export { catalogRoleModelResolver, type ModelCatalog, type RoleModelQuery, type RoleModelResolver } from './models.js';
 // 🔴 プロンプト管理（docs/05 §7.7 / T-07-05）。**文面ではなく「版で引く手段」だけを出す。**
 //    `PROMPT_KIT`（プロンプトの組み立て道具）は出さない —— 出すと、ロール定義を経ない

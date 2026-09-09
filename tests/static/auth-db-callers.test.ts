@@ -148,6 +148,10 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
     //    ジョブ文脈を組み立て、`ReviewGate` の保存・提案の状態確定・`AuditLog` を同じ文脈で行う。
     //    🔴 **`apps/web` 側には 1 つも無い**（ゲートの実行単位はジョブである。`CLAUDE.md` §12.3）。
     'apps/worker/src/jobs/gate-run.ts',
+    // 🔴 T-07-10: AI 上限で保留したゲートの自動復帰（docs/05 §9.3 / `F-027 AC-5`）。
+    //    payload の `tenantId` からジョブ文脈を組み立て、**その文脈の RLS が走査の母集団を決める**
+    //    （他テナントの保留行を 1 件も読まない）。ここも `apps/web` 側には無い。
+    'apps/worker/src/jobs/gate-hold-release.ts',
   ],
   // 🔴 T-03-10: `usage_counters` を書く唯一の経路（docs/05 §7.6 / §9.8）。
   //    ここを増やすと「計測を迂回した書き込み」が生まれ、原価と請求根拠が説明できなくなる。
@@ -161,8 +165,15 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
   //         手順 3 の中だけで起きる。`tests/static/ai-single-path.test.ts` と対になる）
   reserveAiCost: ['apps/worker/src/ai/cost-guard.ts'],
   settleAiCost: ['apps/worker/src/ai/cost-guard.ts'],
-  // 🔴 停止判定の読み取り側。`gate.hold-release`（T-07-10）と残量表示（SP-10）が入るまでは 0 件。
+  // 🔴 停止判定の読み取り側。**T-07-10 の後も `apps/**` では 0 件のままである** ——
+  //    `gate.hold-release` は `probeAiCostHeadroom`（`packages/db`）を通して読む。
+  //    金額（USD）を `apps/**` に持ち出さないことが `F-027 AC-6` の担保であり、
+  //    ここが 0 件であることそのものがその証拠である。残量表示（SP-10）も同じ扱いにすること。
   readAiDailyCost: [],
+  // 🔴 T-07-10: 上限の余地の判定（**書き込まない**空撃ち。docs/05 §7.6 / §9.3）。
+  //    呼んでよいのは保留の自動復帰だけである —— ここを増やすと「予約せずに余地だけ見て
+  //    LLM を呼ぶ」経路（判定と確保の間に窓が開く実装）が書けるようになる。
+  probeAiCostHeadroom: ['apps/worker/src/jobs/gate-hold-release.ts'],
   // 🔴 T-05-04: ストレージ計測（docs/05 §8.7 / §14.2 / docs/03 §4.5）。
   //    `UsageCounter(STORAGE_BYTES)` を読む・動かす経路をファイル単位で固定する ——
   //    増えると「上限を見ずに署名を出す」経路や「CAS を経ずに足し引きする」経路が生まれ、

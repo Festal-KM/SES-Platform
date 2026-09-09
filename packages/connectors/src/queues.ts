@@ -121,6 +121,12 @@ export const INTERNAL_JOB_NAMES = [
   //    最大 2 回まで行うため**（docs/05 §7.4）。ジョブ単位で再試行すると、マスキングと
   //    プロンプト構築からやり直しになり `AiUsage` が二重に積まれる（原価が実態と合わなくなる）。
   'gate.run',
+  // 🔴 T-07-10（docs/05 §9.3 / `F-027 AC-5`）。AI の日次コスト上限で保留したゲートの自動復帰。
+  //    **自分では LLM も外部 API も呼ばない**（保留行を読んで `gate.run` を再 enqueue するだけ）ので
+  //    `attempts: 3` を許せる。🔴 **`gate.run` の `attempts: 1` を迂回する経路ではない** ——
+  //    再 enqueue された `gate.run` は上限判定を最初から通り、余地が無ければまた保留になる
+  //    （`send.hold-release` が §10.2 の事前判定を最初から通らせるのと同じ規律）。
+  'gate.hold-release',
 ] as const;
 
 export type InternalJobName = (typeof INTERNAL_JOB_NAMES)[number];
@@ -222,6 +228,13 @@ export const QUEUE_DEFINITIONS = {
   //    - 🔴 `removeOnFail` は付けない。failed の記録は §16.5 の失敗ジョブ数の根拠であり、
   //      失敗した `gate.run` の再実行（§9.10）は「その failed 記録を消す」ことを手順に含む。
   'gate.run': internalQueue('gate.run', { attempts: 1, removeOnComplete: true }),
+  // 🔴 T-07-10（docs/05 §9.3 / §9.10「可」）。保留したゲートの自動復帰（毎 10 分）。
+  //    - `attempts: 3` … 冪等である（走査は「保留行がある」という未処理条件で決まり、
+  //      再 enqueue は `gate.run` の `jobId` 重複排除と完了 CAS が 1 回に収束させる）。
+  //    - 🔴 `removeOnComplete` を付けない。このキューの `jobId` は冪等キーではなく
+  //      スケジュールの slot（`{jobName}:{slot}`。§9.1）であり、`gate.run` のように
+  //      「同じ ID で積み直す」運用をしないため、completed が残っても捨てられる `add` が無い。
+  'gate.hold-release': internalQueue('gate.hold-release', { attempts: 3 }),
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -290,6 +303,23 @@ export type GateRunJobKey = Pick<GateRunJob, 'targetType' | 'targetId' | 'conten
 export type GateRunFailedJobRemoval = 'REMOVED' | 'NOT_FAILED' | 'NOT_FOUND';
 
 /**
+ * 🔴 enqueue の帰結（T-07-10）。**「積んだつもりで積まれていない」を呼び出し側に返すためにある。**
+ *
+ * - `ENQUEUED` … 待機中・実行中のジョブがある（新しく積んだか、同 `jobId` が既に走っている）
+ * - 🔴 `BLOCKED_BY_FAILED_JOB` … **同じ `jobId` の `failed` 記録が残っており、`add` が
+ *   静かに無視された**（BullMQ の仕様。`removeOnFail` を付けていないため起こりうる。§9.1）
+ *
+ * 🔴 **`void` にしてはならない。** `add` は例外を投げないので、戻り値が無いと呼び出し側は
+ *    「積めなかった」ことを知る手段が 1 つも無くなる —— `gate.hold-release` が
+ *    「復帰させた」と報告しながら実際には何も起きない（`CLAUDE.md` §11.1）状態が
+ *    10 分ごとに繰り返される。
+ * 🔴 復帰の手順は `removeFailedJob`（§9.10 ②）であり、**それを呼ぶのは #39 / #28 の
+ *    利用者操作だけ**である（失敗記録を自動で消すと §16.5 の失敗ジョブ数から消え、
+ *    壊れていることに誰も気づけなくなる。§9.10 ①）。
+ */
+export type GateRunEnqueueOutcome = 'ENQUEUED' | 'BLOCKED_BY_FAILED_JOB';
+
+/**
  * 🔴 `gate.run` の enqueue 側の契約（`apps/web` の #39 と `apps/worker` の
  *    `gate.hold-release` が使う。docs/05 §9.3 / §9.10）。
  *
@@ -300,7 +330,8 @@ export type GateRunFailedJobRemoval = 'REMOVED' | 'NOT_FAILED' | 'NOT_FOUND';
  *    だけが決める。§9.1 / §17.2 #6）。
  */
 export type GateRunJobQueue = {
-  enqueue(job: GateRunJob): Promise<void>;
+  /** 🔴 積めたかどうかを返す（`BLOCKED_BY_FAILED_JOB` の 🔴 を参照）。 */
+  enqueue(job: GateRunJob): Promise<GateRunEnqueueOutcome>;
   /**
    * 🔴 §9.10 ②「**状態が `failed` のときだけ** `Job.remove()`」。
    *    `removeOnFail` を付けていない（§9.1）ため、失敗の記録が残ったままだと

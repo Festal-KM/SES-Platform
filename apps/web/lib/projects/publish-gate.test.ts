@@ -84,6 +84,7 @@ function fakeQueue(): { queue: GateRunJobQueue; calls: string[]; jobs: GateRunJo
       enqueue: vi.fn(async (job: GateRunJob) => {
         calls.push('enqueue');
         jobs.push(job);
+        return 'ENQUEUED' as const;
       }),
       removeFailedJob: vi.fn(async () => {
         calls.push('removeFailedJob');

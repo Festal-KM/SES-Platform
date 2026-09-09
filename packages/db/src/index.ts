@@ -377,8 +377,9 @@ export type { AiUnitCountValues, AiUsageMaskHit, AiUsageRecordValues } from './a
 // 🔴 T-07-04: AI の 1 日コスト上限のガード（docs/05 §7.6 / §7.12 / docs/03 §4.5 / `F-027`）。
 //    `packages/ai` の `AiCostGuard`（ポート）の実装本体であり、アダプタは
 //    `apps/worker/src/ai/cost-guard.ts` が持つ。🔴 **予約に失敗したら LLM を呼ばない**。
-export { readAiDailyCost, reserveAiCost, settleAiCost } from './ai-cost-guard.js';
+export { probeAiCostHeadroom, readAiDailyCost, reserveAiCost, settleAiCost } from './ai-cost-guard.js';
 export type {
+  AiCostHeadroom,
   AiCostReservationOutcome,
   AiCostReserveInput,
   AiCostSettleInput,
@@ -395,6 +396,8 @@ export {
   findPendingReviewGate,
   gateHoldTimestamps,
   holdReviewGate,
+  // 🔴 T-07-10: `gate.hold-release` の走査（docs/05 §9.3）。読み取りのみで、行を書き換えない。
+  listPendingReviewGates,
   readReviewGateResult,
 } from './review-gate.js';
 export type { GateHoldTimestamps } from './review-gate.js';
@@ -433,6 +436,7 @@ export type {
 export type {
   CompletedReviewGate,
   PendingReviewGate,
+  PendingReviewGateRow,
   ReviewGateHoldInput,
   ReviewGateKey,
   ReviewGateReader,

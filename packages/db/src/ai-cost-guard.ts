@@ -276,6 +276,63 @@ export async function reserveAiCost(
 }
 
 /**
+ * 上限に「あと何回ぶんの余地があるか」（`gate.hold-release` の再判定。docs/05 §9.3 / `F-027 AC-5`）。
+ *
+ * 🔴 **件数で答える**（`send.hold-release` の `headroom` と同じ形）。金額（USD）を返さない ——
+ *    復帰の配分に要るのは「何件戻してよいか」であり、金額は運営平面（`A-004`）の指標である
+ *    （`F-027 AC-6`）。
+ */
+export type AiCostHeadroom =
+  | { readonly kind: 'ALLOW'; readonly capacity: number }
+  | { readonly kind: 'BLOCK' };
+
+/**
+ * 🔴 予約と**同じ判定式**で、1 回ぶんの見積りが通るかを調べる（**書き込まない**）。T-07-10。
+ *
+ * `gate.hold-release`（毎 10 分）が「上限に余地があるか」を確かめるために使う。
+ *
+ * 🔴 **予約しない。** ここで予約すると、再 enqueue した `gate.run` が自分の予約に阻まれる
+ *    （枠を二重に取る）。実際の確保は `reserveAiCost` が呼び出しの直前に行う。
+ * 🔴 **見積りも判定式も `reserveAiCost` と同じ 1 実装**（`estimateAiCostUsd` / `decideAiDailyCost`）を
+ *    通す。別式にすると「復帰させたのに毎回また保留になる」「余地があるのに戻さない」が起きる。
+ * 🔴 **時刻で判定しない。** 日次の枠は暦（JST）でリセットされるが、判定は常に
+ *    「そのときのカウンタ」を読む（`send.hold-release` と同じ規律）。
+ *
+ * @returns `ALLOW` の `capacity` は「この見積りが何回ぶん入るか」（1 以上）。
+ */
+export async function probeAiCostHeadroom(
+  ctx: HostTenantCtx,
+  input: AiCostReserveInput,
+): Promise<AiCostHeadroom> {
+  const estimateUsd = estimateAiCostUsd({
+    modelId: input.modelId,
+    tokens: {
+      inputTokens: input.estimatedInputTokens,
+      outputTokens: input.maxOutputTokens,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+    },
+  });
+  const estimateMicros = parseUsdMicros(estimateUsd);
+  if (estimateMicros <= 0n) {
+    // 🔴 0 円の見積りは「何回でも入る」を意味してしまう（上限が実質無効になる）。握り潰さない。
+    throw new RangeError(
+      `AI 呼び出しの見積りが 0 です（modelId=${input.modelId}）。上限の余地を判定できません（docs/05 §7.6）。`,
+    );
+  }
+
+  const current = await readAiDailyCost(ctx, input.now);
+  const decision = decideAiDailyCost({
+    limitUsd: input.limitUsd,
+    usedUsd: current.usedUsd,
+    reservedUsd: current.reservedUsd,
+    requestedUsd: estimateUsd,
+  });
+  if (decision.kind === 'BLOCK') return { kind: 'BLOCK' };
+  return { kind: 'ALLOW', capacity: Number(parseUsdMicros(decision.headroomUsd) / estimateMicros) };
+}
+
+/**
  * 🔴 呼び出しの**後**に、予約を実コストへ補正する（docs/05 §7.6 手順 7）。
  *
  * 1 文で「予約分を戻す」と「実コストを積む」を同時に行う。分けると、片方だけ成功した状態

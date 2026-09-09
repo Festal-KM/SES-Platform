@@ -34,6 +34,7 @@
 | T-07-08 | 🔴 **API #39 / #40 と失敗した `gate.run` の再実行** | 🔴 `docs/05` §9.10 の 5 手順をすべて満たす（[Issue #16](https://github.com/Festal-KM/SES-Platform/issues/16)） | `F-020` / R-09 | L |
 | T-07-09 | 案件公開とスキルシート外部共有のゲート接続 | 🔴 **`F-014 AC-3`（ゲート FAIL なら公開しない）を検証する**（SP-06 からの申し送り） | `F-014 AC-3` / `F-020 AC-1` | M |
 | T-07-10 | `gate.hold-release` と HELD の結合 / E2E | 上限到達で `GATE_RUNNING` のまま HELD。**`GATE_FAILED` にならない** | `F-027 AC-5` | M |
+| T-07-11 | 🔴 **ワーカーの起動配線とスケジュール基盤** | `gate.run` の Worker が待ち受け、宣言済みの 5 本が実際に走る（🔴 **着手条件は下記 `## Open Questions` の 2 件**） | `F-027 AC-5` / `F-043 AC-4` / `docs/05` §9.1 | L |
 
 ## 4. タスク詳細
 
@@ -138,15 +139,27 @@
 
 ### T-07-10 `gate.hold-release` と HELD の結合 / E2E（M）
 
-- **実装**: ジョブ `gate.hold-release`（毎 10 分。`attempts: 3`）。`docs/05` §9.3 / `F-027 AC-5`。
+- **実装**: ジョブ `gate.hold-release`（毎 10 分。`attempts: 3`）。`docs/05` §9.3 / `F-027 AC-5`。**実装済み（2026-09-09）。確定形は `docs/05` §11.12 を正とする**（上限の再判定を「予約と同じ判定式の**空撃ち**」（`probeAiCostHeadroom`）にしたこと、見積りを `gate-inspector` 1 回ぶんの**下限**にしたこと〔向きの理由〕、復帰を `capacity`（件数）で `held_since` の古い順に配ること、`stepped` バックオフの写像〔T-07-08 の申し送り②の解消〕、E2E は SP-09 と同時に行う判断〔⑦〕、`apps/worker/src/main.ts` の配線を**あえて足さなかった**理由〔⑧〕）。
 - 🔴 **AI の日次コスト上限による停止中にレビュー依頼を行っても、ゲートは実行されず未実行のまま保持され、対象は `GATE_RUNNING` に留まる。`GATE_FAILED` にはならない。**
 - 🔴 **理由**: `GATE_FAILED` は「元データの欠陥」を意味する状態である（`CLAUDE.md` §4.2「失敗と保留を混同しない」）。混ぜるとゲート FAIL 率（`F-059`）が汚れ、**直すべき元データが無いのに「修正して再実行」を促す誤った導線**になる。
 - **整合層の機械的照合は動作し、その結果は保持して上限解除後の再実行に用いる。**
 - 🔴 **上限解除後の再実行はゲートジョブが自動で行う**（ゲートは外部送信系ではないため自動再試行が許される。**§10 の自動リトライ禁止の対象は外部送信ジョブに限る**）。利用者が手動で再実行することもでき、**自動・手動のいずれの経路でも同一対象へのゲート実行が多重化しない**。
 - 🔴 **多重化防止は 3 段**（`docs/05` §9.3）: HELD 部分 UNIQUE / `jobId` 重複排除 / 完了 CAS。
 - 🔴 **新しい状態を作らない**（`ReviewGate.execution` は実行の属性であり状態機械ではない。`P-A-16`）。
-- **静的テスト**: `gate.hold-release` が **`gate.run` 以外を enqueue しない**（`docs/05` §17.2 #19。送信系の再 enqueue に転用されていない）。
-- **完了の判定**: E2E #23 の前半（上限到達中にレビュー依頼 → HELD → 承認・送信が 409 / 422 → 上限解除 → 自動で DONE）。
+- **静的テスト**: `gate.hold-release` が **`gate.run` 以外を enqueue しない**（`docs/05` §17.2 #19。送信系の再 enqueue に転用されていない）。✅ `tests/static/gate-hold-release-enqueue.test.ts`（積む先の型が `GateRunJob` であること / 保留行と公開要求を書き換えないことも同時に固定）。
+- **完了の判定**: E2E #23 の前半（上限到達中にレビュー依頼 → HELD → 承認・送信が 409 / 422 → 上限解除 → 自動で DONE）。✅ `tests/isolation/gate-hold-release.test.ts`（**実 DB + 実 Redis + 実 BullMQ ワーカー + 実 Route Handler**）。⚠️ **ブラウザ経路（Playwright）の #23 は SP-09 と同時に行う** —— 承認・送信 API も提案の画面も存在せず、E2E ハーネスに Redis とワーカーが無いため（`docs/05` §11.12 ⑦）。「承認・送信が通らないこと」は、承認 CAS と送信の事前判定が見るのと**同じ 1 実装**（`findPassedReviewGate`）が保留中に `null` を返すことで表明している。
+
+### T-07-11 🔴 ワーカーの起動配線とスケジュール基盤（L）
+
+- **なぜ独立したタスクなのか**: T-07-10 までで `gate.run` / `gate.hold-release` の**ハンドラ**は実装済みだが、**`apps/worker/src/main.ts` には配線が 1 本も無い**。宣言済みのスケジュールジョブ 5 本（`usage.seat-snapshot` / `domain.recheck` / `send.hold-release` / `scan.poll` / `gate.hold-release`）と `gate.run` の Worker が**すべて無主**であり、この状態では Phase 1 の中核 E2E（案件公開 → 提案 → ゲート → 承認 → 送信）に到達できない。**1 本だけ先に配線すると、スケジュールの仕組みが 2 つに割れる**ため、まとめて 1 タスクにする。
+- **実装**:
+  1. `apps/worker/src/main.ts` に **`gate.run` の Worker** を配線する（`createBullMqWorker({ queueName: 'gate.run', … })`。🔴 **`QUEUE_CONSTRUCTION_ALLOWLIST` に 2 件目を足さない**）。deps（`aiClient` / `models` / `aiDailyCostLimitUsd`）は `bootstrapWorker()` が返した `RuntimeConfig` から組み立て、`process.env` を読み直さない（`docs/05` §13.1）。
+  2. **`runScheduled(jobName, handler)`**（`apps/worker/src/scheduler.ts`）と `SchedulerRun` への `INSERT`（`withSystemScope`。`docs/05` §9.1 / §4.4.2）を実装し、**宣言済み 5 本すべて**を同じラッパで登録する。
+  3. **テナントのファンアウト**（payload に `tenantId` を必ず載せる。`docs/05` §9.1）。🔴 **母集団の決め方は設計判断である**（下記 `## Open Questions` の申し送り 1）。
+  4. 🔴 **起動経路テストとの整合**: `tests/startup/startup-di.test.ts` は現在「`node apps/worker/src/main.ts` が **exit 0 で終了する**」ことを表明している。ワーカーが常駐するとこの表明は成り立たないため、**「設定を検証して終了する」経路**（例: `--verify-config`）を用意するか、テストを「起動ログを確認して停止させる」形に変えるかを決め、**`docs/05` §13.1 に記録する**。どちらでも `bootstrapWorker()` を必ず通ることは変えない。
+- 🔴 **着手条件（2 件。いずれも人間の判断。`## Open Questions` の `Q-07-1` / `Q-07-2`）** —— **今つないでも、どの環境でも動かない**（`production` / `staging` / `sandbox` は SDK アダプタ未実装で起動に失敗し、`development` / `demo` はモックの既定応答が無く全ゲートが失敗ジョブになる。`docs/05` §11.12 ⑧）。
+- **受け入れ基準**: ①`development` でワーカーが起動し `gate.run` の Worker が待ち受ける ②`gate.hold-release` が 10 分ごとに全テナントぶん実行される ③🔴 **二重起動しても `SchedulerRun.runKey` の `UNIQUE` によりハンドラは 1 回**（`docs/05` §9.1）④起動経路テスト（`tests/startup/**`）が緑 ⑤🔴 `QUEUE_CONSTRUCTION_ALLOWLIST` が 1 件のまま。
+- **参照**: `docs/05` §9.1 / §9.2 / §11.10 ⑩-1 / **§11.12 ⑧**（見送りの判断とその理由）。
 
 ## 5. テスト計画
 
@@ -168,3 +181,18 @@
 6. 🔴 **ゲート FAIL を上書きする API・設定・導線が存在しない。**
 7. 🔴 **`docs/05` §9.10 の再実行 5 手順が実装され、結合テストで green**（Issue #16）。運営者向けの retry 操作が存在しない。
 8. AI 上限到達で `GATE_RUNNING` のまま HELD になり、`GATE_FAILED` にならない。解除後に自動再実行される。
+9. 🔴 **ワーカーの起動配線（T-07-11）が済み、宣言済みのジョブが実際に走る。** ⚠️ **`Q-07-1` / `Q-07-2` の決着が着手条件**であり、未決のまま SP-07 を閉じる場合は **T-07-11 だけを次スプリントへ持ち越す**こと（1〜8 は T-07-10 までで満たされる）。**持ち越す場合も、無主にはしない**（本項が持ち主である）。
+
+## Open Questions
+
+🔴 **オーケストレーターへ**: 下記 2 件は **T-07-11 の着手条件**であり、`CLAUDE.md` §8.6 に従って Issue 化して人間の判断を仰ぐこと（ラベル `decision-needed` / assignee `Festal-KM`）。**回答を待たずに既定値で進む**（既定値は各項に書いた）。
+
+| # | 決めてほしいこと | なぜ今か | 選択肢 / 既定値 | 参照 |
+|---|---|---|---|---|
+| **Q-07-1** | **`@anthropic-ai/sdk` のアダプタを実装してよいか、と Anthropic API キーの取得**（E-3） | これが無いと `production` / `staging` / `sandbox` では **AI クライアントの生成が起動時に失敗する**ため、T-07-11 の配線を入れた瞬間にワーカーが起動しなくなる | ⚠️ **依存（`@anthropic-ai/sdk`）は追加済みである。** 残っているのは ①`packages/ai/src/client.ts` の **`createAnthropicMessagesApi` 1 関数の実装**（現在は `AiClientNotAvailableError` を投げる）②`maxRetries: 0` をテストで固定すること（SDK 内部の再試行が `AiUsage` の行数とずれるため）③**E-3 の API キー取得**（ユーザー作業）。**既定**: T-07-11 は `development`（`mock`）だけで受け入れ基準を満たし、実接続の確認は E-3 の完了後に行う | `docs/05` §7.9 ⑥ / §11.10 ⑩-6 / `docs/dev-plan.md` §5 E-3 |
+| **Q-07-2** | **`development` / `demo` で `MockAnthropicClient` が返す既定応答をどうするか** | 応答が未設定だと `MockAnthropicNotConfiguredError` になり、**その環境のゲートは全件が失敗ジョブになる**。逆に「常に PASS」を既定にすると、**ゲートが実質的に無効な環境を 1 つ作る**ことになる（`demo` は営業が実演する環境である） | ①**常に PASS**（デモは通るが、ゲートの価値を実演できない）②**未設定のまま失敗させる**（現状。デモでゲートに到達すると必ず落ちる）③**`demo` は PASS / `development` は未設定**（環境で分ける。`docs/05` §13.2 に追記が要る）。**既定**: ③ を推奨。**この判断は §13.2 のモック設計に属し、実装者が黙って決めてよいものではない** | `docs/05` §13.2 / §11.12 ⑧ |
+
+**申し送り（T-07-11 の実装で決めること。Issue にはしない）**
+
+1. 🔴 **ファンアウトの母集団から `SUSPENDED` / `CLOSING` / `PURGED` のテナントを外すか。** `systemTenantCtx` は `lifecycleState: 'ACTIVE'` 固定で、ジョブ本体は実行系ガード（`requireExecutable`）の対象外である（`packages/db/src/context.ts`）。したがって**判断を置ける場所はファンアウト側しか無い**。現状のまま全テナントへ配ると、**停止中のテナントの保留ゲートが自動復帰して AI 原価を消費する**（`CLAUDE.md` §4.2「`SUSPENDED` は実行系ができない」の趣旨と食い違う）。
+2. 🔴 **`gate.run` が `TARGET_NOT_FOUND` を返した保留行の掃除。** 対象が消えても保留行は残るため、`gate.hold-release` の走査対象に残り続け、毎回 1 枠を消費する（LLM は呼ばれないので原価は増えない）。**提案・案件の削除 API を実装するタスク**が、保留行の削除を併せて決めること（現時点では削除 API が無いので到達しない）。

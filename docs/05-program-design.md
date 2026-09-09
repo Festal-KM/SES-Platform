@@ -3661,7 +3661,7 @@ export function systemTenantCtx(tenantId: string, job: JobIdentity): HostTenantC
 | `ai.proposal-draft` | `{ tenantId, proposalId }` | `runRole(proposalDrafter)` → `Proposal.draftBody` | `attempts: 1` | p95 30 秒 | `DRAFT` 以外は no-op |
 | `ai.renewal-advise` | `{ tenantId, extensionReviewId }` | `runRole(renewalAdvisor)` → `ExtensionReview.summary` | `attempts: 1` | p95 30 秒 | `summary` が非 null なら no-op |
 | `gate.run` | `{ tenantId, targetType, targetId, contentHash }` | §11 のパイプライン。🔴 **`reserveAiCost` が `AiCostLimitExceededError` なら `ReviewGate` を `execution='HELD_AI_COST_LIMIT'` で upsert し正常終了**（§7.6。対象は `GATE_RUNNING` のまま。`GATE_FAILED` にしない）。🔴 **対象の確定**（T-07-09）: `PROPOSAL` は状態遷移（§11.9 ⑥）、`PROJECT_PUBLISH` は `settleProjectPublish`（PASS で公開範囲の行、FAIL で 1 行も作らない。§11.11 ④）。**確定済みの結果を引いたとき（`ALREADY_DONE`）も `PROJECT_PUBLISH` の確定は行う**（§11.11 ③） | `attempts: 1` | 🔴 **p95 30 秒**（`docs/02` 章 7.1） | 🔴 **`jobId = gateRunJobId({ targetType, targetId, contentHash })`**（⚠️ **区切りは `.`**。`'gate.run.{targetType}.{targetId}.{contentHash}'`。当初のスケッチは `:` だったが、**BullMQ はカスタム `jobId` に `:` を含められない**〔実測。§11.10 ③〕）で enqueue（BullMQ が待機中・実行中の同 ID を重複排除）。開始時に `ReviewGate(targetType, targetId, contentHash, execution='DONE')` があれば再実行しない（同じ内容なら同じ結果。`F-020 AC-3`）。HELD 行があれば**同じ行を CAS で DONE に完了**させる（`UPDATE review_gates SET execution='DONE', … WHERE id=$held AND execution='HELD_AI_COST_LIMIT'`。0 件なら結果を破棄。`P-A-09`）。🔴 **HELD 部分 UNIQUE + `jobId` + 完了 CAS の 3 段**で、#39 の手動再実行と `gate.hold-release` が同時に走っても結果は 1 行・遷移は 1 回（`F-027 AC-5`） |
-| `gate.hold-release` | 毎 10 分（スケジュール） | 🔴 **AI 上限で保留したゲートの自動再試行**（送信系ではないので許される。`F-027 AC-5`）。`review_gates(execution='HELD_AI_COST_LIMIT')` を走査し、そのテナントの日次カウンタに見積り分の余地があれば（`decideQuota` が `ALLOW`）`gate.run` を**同じ payload・同じ `jobId` で再 enqueue**。余地が無ければ何もしない | `attempts: 3` | p95 10 秒 | `gate.run` と同じ 3 段（HELD 部分 UNIQUE / `jobId` / 完了 CAS）。#39 の手動再実行と重なっても 2 回目は重複排除か 0 件更新で no-op |
+| `gate.hold-release` | 毎 10 分（スケジュール） | 🔴 **AI 上限で保留したゲートの自動再試行**（送信系ではないので許される。`F-027 AC-5`）。`review_gates(execution='HELD_AI_COST_LIMIT')` を走査し、そのテナントの日次カウンタに見積り分の余地があれば（`decideQuota` が `ALLOW`）`gate.run` を**同じ payload・同じ `jobId` で再 enqueue**。余地が無ければ何もしない。**実装の決着は §11.12**（判定は `probeAiCostHeadroom` = 予約と同じ判定式の**空撃ち**、見積りは `gate-inspector` 1 回ぶんの**下限**、配分は `capacity` 件だけ `held_since` の古い順） | `attempts: 3` | p95 10 秒 | `gate.run` と同じ 3 段（HELD 部分 UNIQUE / `jobId` / 完了 CAS）。#39 の手動再実行と重なっても 2 回目は重複排除か 0 件更新で no-op |
 
 🔴 **AI ジョブの `attempts: 1`**: LLM の再試行は `runRole` の内部で最大 2 回まで行い、**ジョブ単位での再試行は行わない**。ジョブが再実行されるとマスキング・プロンプト構築からやり直しになり、`AiUsage` が二重に積まれる。🔴 **`gate.run` の重複排除の役割分担**: BullMQ の `jobId` 重複排除は**待機中・実行中**にのみ効かせる（completed は §9.1 の `removeOnComplete: true` で即座に消え、再 enqueue を阻まない）。**確定後の抑止は DB 側** — 開始時の `execution='DONE'` 行チェック（同じ内容なら再実行しない）と HELD 完了 CAS（0 件なら結果を破棄。`P-A-09`）が担う。
 
@@ -4305,7 +4305,7 @@ tests/isolation/support/redis.ts          Testcontainers の Redis
 - §9.1 は当初「実体化は起動時に `apps/worker` が行う」としていたが、**`gate.run` の enqueue 側は `apps/web` にもある**（#39 と §9.10 ② の failed 削除）。`apps/worker` に置くと `apps/web` → `apps/worker` の依存になり、`CLAUDE.md` §2.1（`apps/*` → `packages/*` の一方向）を破る。
 - したがって `@ses/connectors/bullmq` **サブパス**（`@ses/connectors/aws` と同じ理由 —— バレルを import しただけで BullMQ / ioredis が引きずり込まれないようにする）に置き、`tests/static/queue-attempts.test.ts` の `QUEUE_CONSTRUCTION_ALLOWLIST` に**この 1 件だけ**を登録した。🔴 **2 件目を足さない**（`gate.hold-release` / 送信系の配線は、このファイルに関数を足す形で実装する）。
 - 🔴 **`ioredis` を直接 import してクライアントを我々が作る**（`connection: { url }` を渡さない）。`bullmq@6` は `ioredis` を optional peer にしており、接続設定だけを渡すと内部で `require('ioredis')` を試みる。`apps/worker` は素の ESM で動くため `require` が無く、**本番だけ「起動はするが最初の enqueue で落ちる」**という壊れ方になる。⚠️ **依存を 1 つ足した**（`packages/connectors` の `ioredis`。`bullmq` の Redis バックエンドを使う以上必須である）。
-- 🔴 `stepped` バックオフ（`email.dispatch` の 5s / 30s。§9.1）は**まだ写像していない**（`UnsupportedQueueOptionError` で落とす）。組み込み戦略で近似すると設計値と実際の待ち時間が黙ってずれるため、ワーカーの `settings.backoffStrategy` を配線するタスクがこの例外を消す形で対応する。
+- ~~🔴 `stepped` バックオフ（`email.dispatch` の 5s / 30s。§9.1）は**まだ写像していない**（`UnsupportedQueueOptionError` で落とす）。~~ → ✅ **解消（2026-09-09、T-07-10。§11.12 ⑤）**: ジョブオプションには**カスタム戦略の名前だけ**を載せ、待ち時間は Worker の `settings.backoffStrategy`（中身は `steppedBackoffDelayMs`）が定義の表から計算する。`UnsupportedQueueOptionError` は**次に種別が増えたときの門**として残っている。
 - 🔴 **`Queue` は最初の呼び出しまで作らない**（起動時 DI は「登録」だけで Redis へ接続しにいかない）。`apps/web` の `bootstrap.ts` は**環境で分岐せず常に BullMQ を登録する** —— メール系の保留キュー（`connectors.email === 'mock'` のときだけ登録）と違い、ゲートに「積んだだけで誰も実行しないキュー」という選択肢は無い（対象が `GATE_RUNNING` のまま残る＝ `CLAUDE.md` §11.1 の壊れ方）。
 
 #### ⑤ #39 は 3 つの経路を 1 本の入口に畳んだ（§9.10 ①）
@@ -4318,7 +4318,7 @@ tests/isolation/support/redis.ts          Testcontainers の Redis
 | それ以外 | — | **422**（`InvalidStateTransitionError`）。判定は `CLAUDE.md` §4.2 の遷移表 1 つに委ね、状態を列挙しない |
 
 - 🔴 **`DONE` 行チェックは `DRAFT` からの依頼にも掛ける**（#39 の「`DONE` 行があるときは 422」をそのまま実装）。**これは最適化ではなく行き止まりの防止である** —— 確定済みの内容で `GATE_RUNNING` にすると、ジョブはキャッシュを見て何もせず（`ALREADY_DONE`）、対象は**永久に `GATE_RUNNING` のまま**残る。解消手段は元データの修正だけである（`BR-18`）。`aiFailed = true` の行はキャッシュではない（§11.9 ⑤）ので、LLM が落ちた提案は同じ内容のまま再実行できる。
-- 🔴 **失敗ジョブの削除は `DRAFT` の経路でも行う。** 内容を元に戻した結果、前回と同じ `jobId` の失敗記録が残っていることがあり、残っていると `add` が静かに捨てられる（§9.1）。削除するのは `failed` だけである（`shouldRemoveGateRunJob`。`waiting` / `active` は消さない）。
+- 🔴 **失敗ジョブの削除は `DRAFT` の経路でも行う。** 内容を元に戻した結果、前回と同じ `jobId` の失敗記録が残っていることがあり、残っていると `add` が静かに捨てられる（§9.1）。削除するのは `failed` だけである（`shouldRemoveGateRunJob`。`waiting` / `active` は消さない）。🔴 **T-07-10 で「HELD の再開でも消す」に是正した**（当初は保留行があるときだけ飛ばしていた）。理由は §11.12 ⑦-2 —— 自動復帰の実行が失敗すると、保留行と失敗記録が同時に残り、**自動でも手動でも復帰できない行き止まり**になる。
 - 🔴 **enqueue は commit の後**（未コミットの `GATE_RUNNING` をワーカーが先に読むと、結果の確定 CAS〔`WHERE state='GATE_RUNNING'`〕が 0 件になり対象が取り残される）。enqueue に失敗した場合は対象が `GATE_RUNNING` で残るが、**それはこの手順が扱える状態（`JOB_FAILED`）そのもの**であり、利用者は #39 をもう一度呼べば復帰できる。
 
 #### ⑥ 認可と監査
@@ -4348,8 +4348,8 @@ tests/isolation/support/redis.ts          Testcontainers の Redis
 
 #### ⑩ ⚠️ T-07-09 / T-07-10 / SP-09 への申し送り
 
-1. **T-07-10 へ**: `createBullMqGateRunWorker`（`@ses/connectors/bullmq`）は実装済みだが、**`apps/worker/src/main.ts` の配線はまだ無い**。`gate.hold-release` の実装と合わせて、①`gate.run` の Worker ②`gate.hold-release` のスケジュール登録 を同じファイルで行うこと（`QUEUE_CONSTRUCTION_ALLOWLIST` に 2 件目を足さない）。
-2. **T-07-10 へ**: `gate.hold-release` は `findPendingReviewGate` → **同じ payload・同じ `jobId`** で再 enqueue する。#39 の HELD 経路と完全に同じ材料になるため、両方が同時に走ってもキューに乗るのは 1 本である。
+1. ~~**T-07-10 へ**: `createBullMqGateRunWorker`（`@ses/connectors/bullmq`）は実装済みだが、**`apps/worker/src/main.ts` の配線はまだ無い**。~~ → ⚠️ **T-07-10 では足さなかった（理由は §11.12 ⑧）。持ち主は `SP-07` の `T-07-11`。** 今つないでも `real` は SDK アダプタ未実装で起動に失敗し、`mock` は既定応答が無く全ゲートが失敗ジョブになる。スケジュール登録は `runScheduled` + `SchedulerRun` + テナントのファンアウトという**宣言済み 5 本に共通の未実装基盤**を要する。🔴 **`QUEUE_CONSTRUCTION_ALLOWLIST` は 1 件のままである**（`createBullMqWorker` がキュー名を引数に取る形に一般化した。§11.12 ⑤）。
+2. ✅ **解消（T-07-10。§11.12）**: `gate.hold-release` は `listPendingReviewGates`（`findPendingReviewGate` と**同じ母集団**を対象を指定せずに引く関数）で保留行を読み、**同じ payload・同じ `jobId`** で再 enqueue する。#39 の HELD 経路と完全に同じ材料になるため、両方が同時に走ってもキューに乗るのは 1 本である（結合テストで実証済み）。
 3. **SP-09 へ**: 承認 CAS（§11.5 手順 3）は `proposals.content_hash` と `review_gates.content_hash` の一致を条件にする。**その列を書くのは #39 である**（`DRAFT → GATE_RUNNING` の CAS と同じ 1 文）。#37（`PATCH`）を実装するときは、**同じ `computeProposalContentHash` を使って**列を更新すること（別実装を書くと承認が永久に通らない）。
 4. **SP-09 へ**: 提案の作成（#36）は `EngineerSnapshot` を同時に凍結する。**凍結が無い提案は `gate.run` が `GateFactsUnavailableError` で落ちる**（§11.9 ⑦）。#39 はそれを事前に弾かない（ハッシュは `snapshot=null` として決定的に計算できる）ので、**#36 の側で不変条件を守ること**。
 5. 🔴 **未解決（Issue #41 / §11.9 ⑦）**: パートナー所属エンジニアの提案はゲートを通せない（`loadGateInput` が `ENGINEER_LEDGER_UNREADABLE` で落ちる）。#39 / #40 はパートナー文脈でも動くが、**中核 E2E（パートナーが提案 → ホストが承認 → 送信）は決着待ち**である。
@@ -4426,10 +4426,111 @@ tests/isolation/support/redis.ts          Testcontainers の Redis
 
 #### ⑪ ⚠️ T-07-10 / SP-09 / Phase 2 への申し送り
 
-1. **T-07-10 へ**: `gate.hold-release` が保留行から再 enqueue する際、`PROJECT_PUBLISH` の公開要求は**そのまま残っている**（消費するのは確定時だけ）。したがって復帰後の実行は公開先を正しく復元でき、追加の処理は要らない。🔴 **`gate.hold-release` 側で公開要求を触らない。**
+1. ✅ **解消（T-07-10）**: `gate.hold-release` が保留行から再 enqueue する際、`PROJECT_PUBLISH` の公開要求は**そのまま残っている**（消費するのは確定時だけ）。したがって復帰後の実行は公開先を正しく復元でき、追加の処理は要らない。🔴 **`gate.hold-release` 側で公開要求を触らない** —— この不在は `tests/static/gate-hold-release-enqueue.test.ts` が識別子の走査で固定した。
 2. **SP-09 へ**: 承認 CAS（§11.5 手順 3）と本節⑥の前提条件は**同じ 3 条件**（`execution='DONE'` かつ 3 層 PASS）を見る。読み出しは `findPassedReviewGate`（`packages/db`）に 1 実装がある。
 3. **SP-09 へ**: 経路 2 の例外（ホストがパートナー所有のスキルシートを `Proposal` 作成後に読む）を RLS に開くときは、**⑥の分類が自動的に `EXTERNAL` を返す**。⑤のとおり Phase 1 の `SKILL_SHEET_SHARE` は PASS しないので、**開いた瞬間にホストがその版を落とせなくなる**（409）。開くタスクは Phase 2 の抽出テキスト（⑤）とセットで計画すること。
 4. 🔴 **未解決（本タスクの範囲外）**: 公開が成立した後に `publicSummary` を編集しても（`#26`）、公開範囲は変わらず**再検査も走らない**。`F-014 AC-3` の射程は「公開する瞬間」であり、公開後の編集は現状どのゲートも通らない。**`#26` が `publicSummary` を変えたときに公開を解除する / 再検査を起こすべきか**は仕様判断であり、`docs/02` `F-014` の処理②の解釈を人間に確認する必要がある（Issue 起票の候補）。
+
+### 11.12 🔴 §9.3（`gate.hold-release`）と HELD の自動復帰の実装の決着（T-07-10。2026-09-09）
+
+**本節は SP-09（承認・送信）/ SP-10（残量表示）/ ワーカーの起動配線の一次資料である。** T-07-10 で確定した形を、上のスケッチとの差分として記録する（`CLAUDE.md` §8.7。§7.9〜§7.13 / §11.8〜§11.11 と同じ作法）。**以降のタスクは本節を正とする。**
+
+#### ① 置き場所
+
+```
+packages/ai/src/gate/reservation.ts        gateInspectorReservationFloor（🔴 1 回ぶんの「下限」。金額を持たない）
+packages/db/src/ai-cost-guard.ts           probeAiCostHeadroom（🔴 予約と同じ判定式の**空撃ち**。書かない）
+packages/db/src/review-gate.ts             listPendingReviewGates（保留行を held_since の古い順に）
+packages/connectors/src/queues.ts          gate.hold-release のキュー定義（attempts: 3）/ 🔴 GateRunEnqueueOutcome（⑦-2）
+packages/connectors/src/bullmq.ts          🔴 stepped バックオフの写像 + createBullMqWorker（§11.10 ④ の申し送りの解消）
+apps/web/lib/proposals/gate.ts             🔴 #39 は経路によらず removeFailedJob を通す（⑦-2）
+apps/web/lib/projects/publish-gate.ts      🔴 #28 も積めなければ落とす（⑦-2）
+apps/worker/src/jobs/gate-hold-release.ts  ジョブ本体（再判定 → 古い順に capacity 件だけ再 enqueue）
+tests/static/gate-hold-release-enqueue.test.ts  §17.2 #19（gate.run 以外を積まない / 保留行を書き換えない）
+tests/isolation/gate-hold-release.test.ts  🔴 E2E #23 前半（実 DB + 実 Redis + 実ワーカー）
+```
+
+#### ② 🔴 上限の再判定は「予約と同じ判定式の空撃ち」にした（`probeAiCostHeadroom`）
+
+- §9.3 は「そのテナントの日次カウンタに見積り分の余地があれば（`decideQuota` が `ALLOW`）」と書いている。実装は **`reserveAiCost` とまったく同じ材料**（`estimateAiCostUsd` の見積り / `readAiDailyCost` の実績と予約残高 / `decideAiDailyCost` の判定式）を通し、**書き込みだけを行わない**関数にした。別式にすると「復帰させたのに毎回また保留になる」「余地があるのに戻さない」がどちらも起こりうる。
+- 🔴 **ここで予約しない。** 予約すると、再 enqueue した `gate.run` が**自分の予約に阻まれて**また保留になる（枠を二重に取る）。確保は呼び出し直前の `reserveAiCost` だけが行う。
+- 🔴 **金額（USD）を `apps/**` に出さない。** 戻り値は `{ kind: 'ALLOW', capacity }` の**件数**である（`F-027 AC-6`）。`tests/static/auth-db-callers.test.ts` の `readAiDailyCost` の許可リストが **`apps/**` で 0 件のまま**であることが、その担保になっている。
+
+#### ③ 🔴 見積りは「`gate-inspector` 1 回ぶんの**下限**」である（平均でも最大でもない）
+
+- 保留行が持つのは `(target_type, target_id, content_hash)` だけであり、**再実行したときの入力の長さは分からない**（対象を読み直すのは検査の半分をここで走らせることになる）。したがって「どんな呼び出しでも少なくともこれだけは要る」量 —— ①出力は**常に上限まで予約される**（`spec.maxOutputTokens`）②入力はプロンプトの地の文が必ず載る —— の合計を使う。
+- 🔴 **向きが重要である。** 下限だと「入るはずが実際は入らなかった」ことは起こりうるが、そのとき `gate.run` は**同じ行を同じ `heldSince` のまま保留に戻すだけ**で害が無い。逆に多めに見積もると、**上限より大きい見積りで永久に復帰しない**保留を作りうる（直す元データが無いのに止まり続ける ＝ `BR-18` と同型の行き止まり）。
+- プロンプトの版が上がれば地の文の長さも変わるが、**ロール定義から組み立てるので自動的に追随する**（数値を書き写さない）。
+
+#### ④ 復帰は `capacity`（件数）で配る
+
+- `send.hold-release` の `headroom` と同じ形にした。全件を積み直すと、戻した先で全件が再保留され **10 分ごとに往復するだけ**になる。
+- 走査は **`held_since` の昇順**（`id` を第 2 キーにして決定的にする）。毎回同じ順序でないと、新しい保留に押されて**古い保留が永久に再開されない**（飢餓）。
+
+#### ⑤ 🔴 `stepped` バックオフを写像した（§11.10 ④ の申し送り②の解消）
+
+- 確定形は「**カスタム戦略の名前だけ**をジョブオプションに載せ（`backoff: { type: 'stepped' }`）、待ち時間は Worker の `settings.backoffStrategy` が `steppedBackoffDelayMs`（純粋関数）で計算する」。遅延の表（`delaysMs`）は **`QUEUE_DEFINITIONS` にしか無い**（§9.1 の「ワーカー側で待ち時間を計算し直さない」）。
+- `UnsupportedQueueOptionError` は**残した**。現在の定義からは到達しないが、**次にバックオフの種別が増えたときに黙って近似されない**ための門である（`toBullMqBackoff` の `never` 網羅と対になる）。
+- Worker の生成は `createBullMqWorker({ queueName, … })` に一般化した（`createBullMqGateRunWorker` はその薄い包み）。🔴 **`QUEUE_CONSTRUCTION_ALLOWLIST` は 1 件のまま**である（§11.10 ④）。
+
+#### ⑥ 🔴 3 段の多重化防止を実データで実証した（E2E #23 前半）
+
+`tests/isolation/gate-hold-release.test.ts` は、**自動（`gate.hold-release` × 2）と手動（`#39`）を、ワーカーを止めたまま重ねて起動**したうえでワーカーを動かし、次を表明する: **`AiUsage` 1 行 / `ReviewGate` 1 行 / `ProposalEvent`（`STATE`）2 行**（`#39` の `DRAFT → GATE_RUNNING` と結果の 1 回）。3 段（`jobId` 重複排除 → HELD 部分 UNIQUE → 完了 CAS）のどれが外れてもこの表明が壊れる。
+
+🔴 **上限は「テスト用の小さな値」で作っていない。** 本番と同じ経路（`reserveAiCost`）でその日の枠を予約して埋め、解除は**日付を翌日に進めるだけ**である（枠のリセットは `usagePeriodKey('DAY', now)` の暦そのもの）。**テスト用に上限を差し替える口を製品側に作っていない。**
+
+#### ⑦ ⚠️ E2E（Playwright）は SP-09 と同時に行う
+
+E2E #23 の前半を**ブラウザ経路で**書くには、次の 3 つが揃っている必要がある。いずれも T-07-10 の範囲外である。
+
+| 要る物 | 現状 |
+|---|---|
+| 承認・送信の API（「409 / 422 になる」の対象） | **存在しない**（`#41` / `submit` は SP-09） |
+| 提案の画面（`S-020` / `S-021`） | **存在しない**（SP-09） |
+| E2E ハーネスの Redis とワーカー | **無い**（`tests/e2e/harness` は PostgreSQL と MinIO だけ。ゲートは「ジョブが実行される」ことが前提） |
+
+したがって #23 前半は**実 DB + 実 Redis + 実 BullMQ ワーカー + 実 Route Handler**の結合テストで成立させた（⑥）。🔴 **承認・送信が通らないこと**は、承認 CAS と送信の事前判定が見るのと**同じ 1 実装**（`findPassedReviewGate`）が保留中に `null` を返すことで表明している（§11.11 ⑪-2）。**SP-09 はハーネスに Redis + `gate.run` ワーカーを足し、承認・送信の 409 / 422 と `S-038` の残量表示まで含めて #23 を通すこと。**
+
+#### ⑦-2 🔴 失敗した `gate.run` の記録と保留の関係（T-07-10 レビューでの是正）
+
+**事象**（実 Redis で再現。`tests/isolation/gate-hold-release.test.ts` が回帰として固定した）: `gate.run` は `removeOnFail` を付けない（§9.1。failed は §16.5 の失敗ジョブ数の根拠）ため、**同じ `jobId` の `failed` 記録が残っている間、`add` は静かに無視される**。`gate.hold-release` が保留行を自動で積み直すようになった以上、その**再実行が失敗する**ことは普通に起こる（`loadGateInput` 系の例外 / 単価未登録 / DB・Redis の一時障害）。当初の実装はここで 2 つの穴を作っていた。
+
+| 穴 | 是正 |
+|---|---|
+| `enqueue` が `void` を返すため、**何も積まないまま `requeued` を加算**して「復帰させた」と報告していた（10 分ごとに繰り返す。`CLAUDE.md` §11.1） | 🔴 **ポートの戻り値を `GateRunEnqueueOutcome`（`ENQUEUED` / `BLOCKED_BY_FAILED_JOB`）にした。** `gate.hold-release` は積めた数だけを `requeued` に数え、積めなかった数を **`blockedByFailedJob`** として別に返す（枠も消費しない）。#39 / #28 は**積めなければ落とす**（202 を返しながら誰も実行しない応答を作らない） |
+| 逃げ道であるはずの #39 が、**保留行があるときは失敗記録を消していなかった**（「上限で保留したジョブは正常終了しており消す対象が無い」という前提が、自動再実行の導入で崩れていた） | 🔴 **経路によらず必ず `removeFailedJob` を通す。** `shouldRemoveGateRunJob` により消えるのは `failed` だけなので、`waiting` / `active` を止める心配は無い（§9.10 ②） |
+
+🔴 **`gate.hold-release` は失敗記録を消さない**（採らなかった案）。消せば自動リトライそのものになり、①§9.10 ①「BullMQ の retry に相当する運営者操作を作らない」の趣旨に反する ②§16.5 の失敗ジョブ数から消え、**壊れているのに誰も気づかない**（失敗が続けば 10 分ごとに再実行され続ける）。したがって**自動経路は「積めなかった」ことを数えて報告するだけ**にし、復帰の入口は §9.10 ① のとおり**利用者の #39 だけ**に保った。
+
+#### ⑧ 🔴 未了: `apps/worker/src/main.ts` の配線（§11.10 ⑩-1）と、その理由
+
+**`gate.run` の Worker と `gate.hold-release` のスケジュール登録は、まだ `main.ts` に無い。** 本タスクで**あえて足さなかった**。**持ち主は `docs/sprints/SP-07-ai-layer-gate.md` の `T-07-11`**（着手条件の 2 件は同ファイルの `## Open Questions` `Q-07-1` / `Q-07-2`）。理由は 3 つあり、いずれも T-07-10 の中で決めてよい事柄ではない。
+
+1. 🔴 **今つないでも、どの環境でも動かない。** `production` / `staging` / `sandbox` は `connectors.ai='real'` であり、SDK アダプタ（`createAnthropicMessagesApi`。§7.9 ⑥ / §11.10 ⑩-6）が未実装なので**起動時に落ちる**。`development` / `demo` は `mock` だが、`MockAnthropicClient` は応答が未設定だと `MockAnthropicNotConfiguredError` を投げる（＝ 全ゲートが失敗ジョブになる）。**「配線したのに動かない」は `CLAUDE.md` §11.1 の壊れ方そのもの**であり、先に足すべきではない。
+2. 🔴 **`development` / `demo` でモックが返す既定応答は、決めてよい人が決める事柄である。** 「常に PASS を返すモックゲート」は**デモでは便利だが、ゲートが実質的に無効な環境を 1 つ作る**ことを意味する（§13.2 のモック設計に相当する判断）。
+3. 🔴 **スケジュール登録には `runScheduled` + `SchedulerRun` + テナントのファンアウトが要る**（§9.1）。これは `gate.hold-release` だけの話ではなく、**既に宣言済みの 5 本すべてに共通する未実装の基盤**である（`usage.seat-snapshot` / `domain.recheck` / `send.hold-release` / `scan.poll` / `gate.hold-release`）。1 本だけ別の仕組みで登録すると、**スケジュールの実装が 2 つに割れる**。加えてファンアウトの母集団（全テナントの列挙）をワーカーがどの経路で読むかは、`CLAUDE.md` §4.4.2 / §10.5 に関わる設計判断である。
+
+**T-07-10 が用意したもの**（配線タスクが書き足す量を最小にするため）:
+
+- `SCHEDULED_JOBS` に宣言済み（毎 10 分 / `Asia/Tokyo`）。`ScheduledJobDeps` は交差型なので、**配線が `models` / `aiDailyCostLimitUsd` / `enqueueGateRun` を渡し忘れたらコンパイルエラーになる**。
+- `createBullMqWorker({ queueName, … })` はキュー名を引数に取る（`gate.run` も `gate.hold-release` も同じ 1 実装で作れる。⑤）。
+- ハンドラの実体は結合テストが**そのまま**呼んでおり、配線に残るのは「起動時に deps を組み立てて渡す」ことだけである。
+
+#### ⑨ 検証（T-07-10 で緑にしたもの）
+
+| 層 | 何を固定したか |
+|---|---|
+| ユニット（connectors） | `stepped` の写像（`delay` を作らない）/ `backoffStrategy` が定義の表どおり（5s / 30s）/ 表を持たないキューでは落ちる |
+| ユニット（worker） | `BLOCK` なら**走査もしない** / `capacity` 件だけ古い順に配る / 保留行と同じ材料で積む / モデル解決は `gate.run` と同じ / payload の検証 |
+| 結合（実 DB + 実 Redis + 実ワーカー） | 🔴 E2E #23 前半（上限到達 → HELD → `GATE_FAILED` にならない → `findPassedReviewGate` が `null` → 翌日 → 自動で `DONE`）/ 🔴 自動 + 手動を重ねても実行 1 回・行 1 件・遷移 1 回 / 🔴 **⑦-2 の回帰**（保留中の再実行が失敗 → 自動は `blockedByFailedJob: 1` で積まない → #39 が失敗記録を消して復帰 → `DONE`）/ 他テナントの保留を 1 件も走査しない |
+| 静的 | 🔴 §17.2 #19（`gate.run` 以外を積まない / 積む先の型が `GateRunJob` / 保留行と公開要求を書き換えない）/ `systemTenantCtx` の呼び出し元にジョブ 1 本を追加 / `probeAiCostHeadroom` の呼び出し元を 1 本に固定 |
+
+#### ⑩ ⚠️ SP-09 / SP-10 / 配線タスクへの申し送り
+
+1. **`T-07-11`（`docs/sprints/SP-07-ai-layer-gate.md`）へ**: ⑧の 3 つの前提（SDK アダプタ / モックの既定応答 / スケジュール基盤）を先に片付けること。**`gate.run` の Worker だけ先に足すのは有効**（`gate.hold-release` は積み先が `gate.run` なので、Worker が無ければ復帰しても実行されない）。🔴 **ファンアウトの母集団から `SUSPENDED` / `CLOSING` / `PURGED` を外すか**を同タスクで決めること（`systemTenantCtx` は `lifecycleState: 'ACTIVE'` 固定であり、判断を置ける場所がファンアウト側しか無い。現状のままだと停止中テナントの保留ゲートが自動復帰して AI 原価を消費する）。
+1b. ⚠️ **提案・案件の削除を実装するタスクへ**: `gate.run` が `TARGET_NOT_FOUND` を返した保留行は残り続け、`gate.hold-release` の走査で毎回 1 枠を消費する（LLM は呼ばれないので原価は増えない）。削除の実装は**保留行の掃除を併せて**決めること（現時点では削除 API が無いため到達しない）。
+2. **SP-09 へ**: 承認・送信の事前判定は `findPassedReviewGate` を使うこと（保留行は `execution='DONE'` を満たさないので、**保留が「まだ検査していない」ではなく「PASS ではない」として扱われる**）。
+3. **SP-10 へ**: 残量表示（`S-038`）も金額を `apps/**` に持ち出さないこと（②の 🔴）。件数（`AI_UNIT_*`）と `resetAt` だけを返す。
 
 ## 12. 業務シーケンス
 
@@ -5118,7 +5219,7 @@ export const logger = pino({
 | 16 | `contract-resend-human-only.test.ts` | 🔴 **`Contract` の `SEND_FAILED → DRAFT` を呼ぶコードが `apps/web/app/api/(main)/contracts/[id]/resend/route.ts` 以外に無い**（AST 走査）。`Proposal` の `SUBMIT_FAILED → APPROVED`（§10.6）と**対**にする。ジョブ・スケジューラ・Webhook ハンドラから呼ばれていたら FAIL（`F-049 AC-3`） |
 | 17 | `counterparty-readonly.test.ts` | 🔴 **経路 5 の書込経路が存在しない**（`BR-68` / `F-065 AC-4` / `F-066 AC-5`）: ①`apps/web/app/api/(main)/partner/**` の `route.ts` が `GET` 以外を export しない ②`withPartnerScope` の呼び出し元が `partner/**` と `S-029` / `S-025` のプレビュー用ハンドラに限られる ③`PartnerScopeDb` 以外の型で `partner*V` モデルを参照するコードが無い ④`apps/web/app/api/(main)/partner/**` から `extensionReview` デリゲート・`ExtensionReview` 型の識別子が現れない（`BR-67`） |
 | 18 | `tenant-usage-no-money.test.ts` | 🔴 **主平面（`apps/web/app/api/(main)/**`）の応答型に `/[Uu]sd|[Cc]ost|[Pp]rice/` を含むプロパティ名が無い**。例外は `overageEstimateJpy`（請求見込み。`BR-24`）と、業務データそのものの `unitPrice` / `offeredUnitPrice` / `amount`（契約・提案の項目でありクォータではない）。加えて `UsageView` に `gateInspector` / `gate` キーが無い（`F-027 AC-6` / `AC-7`） |
-| 19 | `docusign-scope.test.ts` / `queue-attempts` の追補 | 🔴 `buildAuthorizeUrl()` の出力に `scope=signature%20extended` が含まれる（`docs/03` §3.1.2a-3。忘れると 30 日で接続が切れる）。`gate.hold-release` が **`gate.run` 以外を enqueue しない**（送信系の再 enqueue に転用されていない。**T-07-10**）。✅ 🔴 **`gate.run` キューの `defaultJobOptions.removeOnComplete` が `true`**（§9.1。無いと HELD 後の同 `jobId` 再 enqueue が捨てられる）—— **T-07-06 で `tests/static/queue-attempts.test.ts` に実装済み**（`attempts: 1` と「`removeOnFail` を付けない」も同時に固定した。**ソースの記述**を見る = 型では任意項目なので抜けても落ちないため）。🔴 **hold-release の追補（§8.3-Q）**: ①`email.dispatch` / `account.mail` のハンドラで `decideProviderQuota` の `HOLD` と `ProviderQuotaExceededError` の catch が `status='HELD_PROVIDER_QUOTA'` への更新で終わり、**再 throw・`status='FAILED'` 更新・`failureReason` 書込のいずれにも到達しない**（AST）②`send.hold-release` が走査する `EmailDispatch.status` の集合が `{'HELD_DOMAIN_UNVERIFIED','HELD_PROVIDER_QUOTA'}` と一致する（スナップショット。CHECK の 7 値から `HELD_` 接頭辞を持つものを導出して比較 = 列挙式にしない）③`packages/domain/src/quota/provider.ts` が `Date.now` / `process.env` を参照しない（§17.2 #14 と同じ検査を個別に固定） |
+| 19 | `docusign-scope.test.ts` / `queue-attempts` の追補 | 🔴 `buildAuthorizeUrl()` の出力に `scope=signature%20extended` が含まれる（`docs/03` §3.1.2a-3。忘れると 30 日で接続が切れる）。✅ `gate.hold-release` が **`gate.run` 以外を enqueue しない**（送信系の再 enqueue に転用されていない。**T-07-10 で `tests/static/gate-hold-release-enqueue.test.ts` に実装済み**。検査は 5 つ —— ①ソースに現れるキュー名が自分自身だけ ②enqueue の口が 1 つでその型が `GateRunJob` ③呼んでいる enqueue 系が `enqueueGateRun` だけ ④`@ses/connectors` から取り込む名前が `gate.run` の契約だけ ⑤🔴 **保留行を先に `DONE` にせず、公開要求にも触らない**（`completeReviewGate` / `holdReviewGate` / `settleProjectPublish` / `withdrawProjectPublishRequest` / `reserveAiCost` の識別子が 1 つも現れない））。✅ 🔴 **`gate.run` キューの `defaultJobOptions.removeOnComplete` が `true`**（§9.1。無いと HELD 後の同 `jobId` 再 enqueue が捨てられる）—— **T-07-06 で `tests/static/queue-attempts.test.ts` に実装済み**（`attempts: 1` と「`removeOnFail` を付けない」も同時に固定した。**ソースの記述**を見る = 型では任意項目なので抜けても落ちないため）。🔴 **hold-release の追補（§8.3-Q）**: ①`email.dispatch` / `account.mail` のハンドラで `decideProviderQuota` の `HOLD` と `ProviderQuotaExceededError` の catch が `status='HELD_PROVIDER_QUOTA'` への更新で終わり、**再 throw・`status='FAILED'` 更新・`failureReason` 書込のいずれにも到達しない**（AST）②`send.hold-release` が走査する `EmailDispatch.status` の集合が `{'HELD_DOMAIN_UNVERIFIED','HELD_PROVIDER_QUOTA'}` と一致する（スナップショット。CHECK の 7 値から `HELD_` 接頭辞を持つものを導出して比較 = 列挙式にしない）③`packages/domain/src/quota/provider.ts` が `Date.now` / `process.env` を参照しない（§17.2 #14 と同じ検査を個別に固定） |
 | 20 | `counterparty-base-table-host-only.test.ts` | 🔴 **経路 5 の基底表がパートナー到達可能な経路から読めない**（§4.3-6）: ①`apps/web/**` における `withHostTenant` / `requireHost` の呼び出し元が `apps/web/app/api/(main)/{assignments,extension-reviews,contracts,contract-templates,orders,kpi}/**` に限られ、`/api/partner/**` と全ロール到達ルート（#8 / #9 / #17 / #46 等）に現れない（AST）。🔴 **`apps/worker/**` は呼び出し元の限定対象外**（§4.3-6 ③。ctx が常に `systemTenantCtx` = `HostTenantCtx`）。その前提として **`apps/worker/**` に `resolveTenantCtx` の呼び出しが無い**ことを同テストで検査する（ワーカーがパートナー文脈を持てないことの根拠）②`expectTypeOf<TenantDb>()` が `assignment` / `contract` / `contractDocument` / `order` / `extensionReview` を持たない（型テスト。`PartnerScopeDb` も同様）③Prisma 拡張に 5 モデルの「`app.partner_company_id <> ''` なら throw」フックが登録されている（DMMF 走査。#2 と同じ向き = 列挙ではなく全部から引く） |
 | 21 | `schema-enum-drift.test.ts` | 🔴 §3.1「列挙」規約（Prisma DSL は `String`・DB 側は手書き TEXT + CHECK）が生む「CHECK の値集合と TS 側の単一出所を人手で揃える」ドリフトを機械的に検知する。`packages/db/prisma/migrations/**/migration.sql` の CHECK 制約をテキストとして読み、TS 側の単一出所（`TENANT_LIFECYCLE_STATES` / `TENANT_ROLES` / `APP_ENV_KINDS` / `TWO_FACTOR_SUBJECT_TYPES` / `TENANT_SENDING_DOMAIN_STATES`）と値集合を突合する。同名 `CONSTRAINT` が migration.sql 群に 2 件以上見つかったら（DROP + 再定義など）読み取り側で例外にする（silent に古い定義と突合される穴を loud failure にする） |
 | 22 | `search-sql-single-path.test.ts` | 🔴 **検索の実装が `packages/db/src/search/**` 以外に現れない**（T-06-05 / TBD-8 / `docs/03` §3.7.3 の代替に進むとき書き換わるのがこの 1 ディレクトリだけであることの担保）。TypeScript の AST を走査し、**①`contains` プロパティ ②`mode: 'insensitive'` ③生 SQL の検索式**（`ILIKE` / `to_tsvector` / `*_tsquery` / `similarity()` / trigram 演算子）を数える。🔴 **コメントは対象外**（AST のノードだけを見る。本書と各ソースの説明文が引っかからないようにするため）。加えて ④`schema.prisma` の `previewFeatures` に `fullTextSearchPostgres` が**無い**こと（Prisma の `search` フィルタはプロパティ名が一般的すぎて AST で誤検知なく数えられないため、**そもそも型として存在しない**ことを別角度で固定する）。🔴 **射程外を明示する**: 一覧の単純な `SELECT`（`select` する列 / `count` / ページング / 応答型の組み立て）と、`startsWith` / `endsWith`（前方・後方の完全一致。識別子の分類に使う）。🔴 **例外は 1 ファイルだけ**（`tests/isolation/search-indexes.test.ts`。索引の利用を `EXPLAIN` で確かめるには加速対象の SQL 自体を書く必要がある）。テストは例外リストの長さも固定する |

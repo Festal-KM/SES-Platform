@@ -156,7 +156,14 @@ export function createProjectPublishGate(deps: ProjectPublishGateDeps): ProjectP
         //    捨てられ、公開要求がゲート待ちのまま止まる。消すのは `failed` だけである
         //    （判定は `shouldRemoveGateRunJob` の 1 箇所にある）。
         await deps.queue.removeFailedJob(job);
-        await deps.queue.enqueue(job);
+        // 🔴 **積めたことを確かめる**（T-07-10）。直前に消しているので、ここで弾かれるのは
+        //    その隙間に失敗記録が作られた場合だけである。握り潰すと「公開を要求したのに
+        //    ゲートが一度も走らない」公開要求が残る（`CLAUDE.md` §11.1）。
+        if ((await deps.queue.enqueue(job)) === 'BLOCKED_BY_FAILED_JOB') {
+          throw new InternalError(
+            `gate.run を積めませんでした（同じ jobId の失敗記録が残っています。projectId=${request.projectId}）。`,
+          );
+        }
       },
     };
   };
