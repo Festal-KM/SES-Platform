@@ -29,6 +29,8 @@ const messages: AdminSignInFormMessages = {
   twoFactorRequiredNotice: t('admin.twoFactor.required.notice'),
   twoFactorTitle: t('auth.twoFactor.title'),
   twoFactorSetupLead: t('auth.twoFactor.setup.lead'),
+  twoFactorQrLabel: t('auth.twoFactor.setup.qrLabel'),
+  twoFactorQrAlt: t('auth.twoFactor.setup.qrAlt'),
   twoFactorUriLabel: t('auth.twoFactor.setup.uriLabel'),
   twoFactorRecoveryHeading: t('auth.twoFactor.setup.recoveryHeading'),
   twoFactorRecoveryNote: t('auth.twoFactor.setup.recoveryNote'),

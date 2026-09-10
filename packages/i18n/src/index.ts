@@ -37,8 +37,13 @@ const ja = {
   'auth.twoFactor.title': '2 要素認証',
   // 🔴 「OWNER / ADMIN は必須、それ以外は任意」という制度をそのまま伝える（docs/04 §S-001）。
   'auth.twoFactor.setup.lead':
-    '認証アプリで次のセットアップ用アドレスを登録し、表示された 6 桁のコードを入力してください。',
-  'auth.twoFactor.setup.uriLabel': 'セットアップ用アドレス（認証アプリに登録）',
+    '認証アプリで次の QR コードを読み取り、表示された 6 桁のコードを入力してください。',
+  // 🔴 QR を読めない環境（カメラのない端末・撮影が禁止された客先・同一端末での設定）でも
+  //    設定を完了できることを、QR の隣で明示する（docs/04 §S-001 改訂 7）。
+  'auth.twoFactor.setup.qrLabel': 'QR コード（認証アプリのカメラで読み取り）',
+  // 🔴 画像の代替テキスト。シークレットそのものを読み上げさせない（何の QR かだけを述べる）。
+  'auth.twoFactor.setup.qrAlt': '2 要素認証の設定用 QR コード',
+  'auth.twoFactor.setup.uriLabel': '手入力用のセットアップ用アドレス（QR コードを読み取れないとき）',
   'auth.twoFactor.setup.recoveryHeading': 'リカバリコード',
   // 🔴 「この画面を離れると二度と表示されない」ことを、控える前に伝える。
   'auth.twoFactor.setup.recoveryNote':

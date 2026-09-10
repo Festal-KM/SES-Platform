@@ -10,6 +10,7 @@
 // 🔴 2 要素認証は**必須**（`F-055 AC-3`）。1 段階目の成功後は必ず 2 段階目に入る。
 // 🔴 文言は props で受け取る（`packages/i18n` が唯一の出所。ここにベタ書きしない）。
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { OtpauthQr } from '../../_components/otpauth-qr';
 
 export type AdminSignInFormMessages = {
   readonly emailLabel: string;
@@ -21,6 +22,8 @@ export type AdminSignInFormMessages = {
   readonly twoFactorRequiredNotice: string;
   readonly twoFactorTitle: string;
   readonly twoFactorSetupLead: string;
+  readonly twoFactorQrLabel: string;
+  readonly twoFactorQrAlt: string;
   readonly twoFactorUriLabel: string;
   readonly twoFactorRecoveryHeading: string;
   readonly twoFactorRecoveryNote: string;
@@ -155,6 +158,15 @@ export function AdminSignInForm({
         ) : (
           <>
             <p>{messages.twoFactorSetupLead}</p>
+            {/* 🔴 主平面と同じ 1 実装を使う（運営者側だけ規律を緩めない。docs/04 §A-001 改訂 7）。
+                  QR は利用者の端末の中だけで組み立て、外部の QR 生成サービスに渡さない。 */}
+            <OtpauthQr
+              otpauthUrl={enrollment.otpauthUrl}
+              caption={messages.twoFactorQrLabel}
+              alt={messages.twoFactorQrAlt}
+              testId="admin-signin-otpauth-qr"
+            />
+            {/* 🔴 手入力用の表示を消さない（QR を読めない環境での唯一の経路 / E2E の読み取り元）。 */}
             <p className="ses-field">
               <span>{messages.twoFactorUriLabel}</span>
               {/* 🔴 シークレットを含む。画面に出すだけで、どこにも保存・送信しない。 */}

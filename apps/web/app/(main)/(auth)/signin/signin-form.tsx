@@ -13,6 +13,7 @@
 //    **モバイルで機能を省略しない**（コード入力は数字キーボードを呼ぶ）。
 //    設定ウィザード（`OWNER` / `ADMIN` が未設定の場合）もここに含める。
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { OtpauthQr } from '../../../_components/otpauth-qr';
 
 export type SignInFormMessages = {
   readonly emailLabel: string;
@@ -24,6 +25,8 @@ export type SignInFormMessages = {
   readonly passwordResetLink: string;
   readonly twoFactorTitle: string;
   readonly twoFactorSetupLead: string;
+  readonly twoFactorQrLabel: string;
+  readonly twoFactorQrAlt: string;
   readonly twoFactorUriLabel: string;
   readonly twoFactorRecoveryHeading: string;
   readonly twoFactorRecoveryNote: string;
@@ -170,6 +173,16 @@ export function SignInForm({
         ) : (
           <>
             <p>{messages.twoFactorSetupLead}</p>
+            {/* 🔴 QR は利用者の端末の中だけで組み立てる（外部の QR 生成サービスに
+                  `otpauth://` URL を渡さない。docs/05 §6.3 #3 / CLAUDE.md §3.5）。 */}
+            <OtpauthQr
+              otpauthUrl={enrollment.otpauthUrl}
+              caption={messages.twoFactorQrLabel}
+              alt={messages.twoFactorQrAlt}
+              testId="signin-otpauth-qr"
+            />
+            {/* 🔴 手入力用の表示を消さない。QR を読めない環境での唯一の経路であり、
+                  E2E（tests/e2e/support/sessions.ts）がシークレットを読む値でもある。 */}
             <p className="ses-field">
               <span>{messages.twoFactorUriLabel}</span>
               {/* 🔴 シークレットを含む。画面に出すだけで、どこにも保存・送信しない。 */}

@@ -2250,7 +2250,7 @@ requireEsignConnection(ctx);                           // 🔴 §8.4。未接続
 |---|---|---|---|---|---|
 | 1 | `POST /api/auth/signin` | `F-003` / `S-001` | `{ email, password }` | `{ next: '2fa' \| 'home' }` | 未認証。🔴 `withAuthLookup(email)`（§4.4.2）で該当 1 行のみ可視 |
 | 2 | `POST /api/auth/2fa/verify` | `F-003` | `{ code }` | `{ ok: true }` | 一次認証済み |
-| 3 | `POST /api/auth/2fa/setup` | `F-003` | `{ }` → `{ otpauthUrl, recoveryCodes }` | | 一次認証済み |
+| 3 | `POST /api/auth/2fa/setup` | `F-003` | `{ }` → `{ otpauthUrl, recoveryCodes }` | | 一次認証済み。🔴 **QR 画像・QR 用のフィールドを応答に足さない**（下記） |
 | 4 | `POST /api/auth/signout` | `F-003` | — | `204` | 認証済み |
 | 5 | `POST /api/auth/password-reset` | `F-003` | `{ email }` | `204`（**存在有無を返さない**） | 未認証。🔴 `withPasswordResetIssue(email, { tokenHash, expiresAt })`（§4.4.2。トークン生成は Route Handler 側の責務）→ **該当者がいて、かつ宛先分類（§8.2）が分類 1 / 2 に確定した場合にだけ** `account.mail` を enqueue（§9.4。分類は同関数の戻り値であり、呼び出し側は組み立てない）。🔴 いずれの分岐でも応答は `204` であり**存在有無を返さない** |
 | 5b | `POST /api/auth/password-reset/confirm` | `F-003` | `{ token, password }` | `204` | 未認証（トークン）。🔴 `withPasswordResetConfirm`（§4.4.2）。トークン列の CAS で 1 回限り、期限超過は 400 |
@@ -2259,6 +2259,14 @@ requireEsignConnection(ctx);                           // 🔴 §8.4。未接続
 | 8 | `GET /api/me` | `F-006` | — | `{ user, role, partnerCompanyId, capabilities, tenantState, env }` | 認証済み |
 | 9 | `GET /api/home` | `F-006` / `S-003` `S-004` | `?scope=mine` | `{ blocks: HomeBlock[], changedSince }` | 認証済み。🔴 ロールで**型が違う**（`HostHomeView` / `PartnerHomeView`） |
 | 10 | `GET /api/audit-logs` | `F-005` / `S-041` | `?from=&to=&action=&actorId=`（**期間必須**） | `{ items, nextCursor }` | `OWNER` / `ADMIN` |
+
+🔴 **#3 の `otpauthUrl` を QR コードにする場所（2026-09-10。`docs/04` 改訂 7 = 2FA 登録ウィザードの QR 表示）**:
+
+- 🔴 **`otpauthUrl` は TOTP のシークレットそのものを含む。外部の QR 生成 API・CDN・画像サービスに渡してはならない**（`CLAUDE.md` §3.5 / §7）。外部サービスに渡す実装は、シークレットを第三者へ送信したことと同義である。`<img src="https://…/qr?data=otpauth://…">` の形は**採らない**。
+- **生成はクライアント側**（`apps/web/lib/auth/qr-code.ts` の純粋関数 → `apps/web/app/_components/otpauth-qr.tsx` がインライン `<svg>` として描画）。サーバ側で SVG を作って応答に足す案も採れたが、**クライアント生成を選んだ**。理由: ①**#3 の応答（`{ otpauthUrl, recoveryCodes }`）を変えずに済む** —— 「この 1 回だけ返る」秘匿値の面が増えない ②QR は表示上の見せ方であって API の契約ではない ③サーバ生成の SVG 文字列を差し込むには `dangerouslySetInnerHTML` が要る。クライアント生成なら `path` の `d`（数字とコマンド文字のみ）を React の属性値として渡せる ④主平面（#3）と管理平面（API-A1 の `2fa/setup`）で**同じ 1 実装を共有できる**。
+- **`packages/ai` / `packages/connectors` を経由しない**（外部 I/O が 1 つも無い純粋関数であり、コネクタ層の対象ではない）。**この規律は `apps/web/lib/auth/qr-code.test.ts` の構造テスト**（`qr-code.ts` と `otpauth-qr.tsx` に `fetch(` / `new Image` / `src=` / `http(s)://` が現れないこと）**が固定する**。
+- **手入力用のテキスト表示（`otpauthUrl` の生表示）を消さない。** QR を読めない環境のための唯一の経路であり、`tests/e2e/support/sessions.ts` が 2 要素認証を通過するために読む値でもある（消すと E2E の全シナリオが到達不能になる）。`data-testid` は `signin-otpauth-uri` / `admin-signin-otpauth-uri` のまま**変えない**。
+- **API-A1（`POST /api/admin/auth/2fa/setup`。§6.9）も同一**。応答は変えず、`A-001` の画面が同じコンポーネントを使う。
 
 🔴 **#9 の応答に `changedSince` を含める**（`docs/04` 申し送り 6）。60 秒ポーリングで**変更のあった行だけを判別**できるよう、各行に `rowVersion`（`updatedAt` のエポックミリ秒）を持たせ、クライアントは差分のみ再描画する。
 
@@ -2669,7 +2677,7 @@ type SubmitAccepted = { attemptSeq: number; jobId: string; state: 'SUBMITTING' }
 
 | # 🔴 **API 行の識別子は `API-A{n}`**（画面 ID `A-{nnn}` と別体系。混同しない） | Method / Path | 機能 / 画面 | Phase | 認可 |
 |---|---|---|---|---|
-| API-A1 | `POST /api/admin/auth/signin` / `POST /api/admin/auth/2fa/setup` / `POST /api/admin/auth/2fa/verify` / `POST /api/admin/auth/signout` | `F-055` / `A-001` | 0 | `signin` は未認証。🔴 **`2fa/setup` は一次認証済み（パスワードは通ったが第 2 要素は未提示）で呼べる**——`requirePlatformCtx`（2FA 充足を要求する§4.3同型のゲート）を課さない。課すと `F-055 AC-3`（全 `PlatformUser` に 2FA 必須）の下で、2FA 未設定の運営者は `resolvePlatformCtx` が `TwoFactorRequiredError` を投げて ctx を生成せず、**2FA を設定する操作そのものに到達できず永久ロックアウトになる**。有効な `PlatformUser` であることだけを確かめ、DB 側は RLS（`platform_users_auth_self_select` / `two_factor_credentials_platform_auth_insert` 等。§4.4.2）が本人の `PLATFORM_USER` 行だけに閉じる。`2fa/verify` も一次認証済み。`signout` は未認証でも 204 を返す（セッションの有無を漏らさない。§4.8 と同型） |
+| API-A1 | `POST /api/admin/auth/signin` / `POST /api/admin/auth/2fa/setup` / `POST /api/admin/auth/2fa/verify` / `POST /api/admin/auth/signout` | `F-055` / `A-001` | 0 | `signin` は未認証。🔴 **`2fa/setup` は一次認証済み（パスワードは通ったが第 2 要素は未提示）で呼べる**——`requirePlatformCtx`（2FA 充足を要求する§4.3同型のゲート）を課さない。課すと `F-055 AC-3`（全 `PlatformUser` に 2FA 必須）の下で、2FA 未設定の運営者は `resolvePlatformCtx` が `TwoFactorRequiredError` を投げて ctx を生成せず、**2FA を設定する操作そのものに到達できず永久ロックアウトになる**。有効な `PlatformUser` であることだけを確かめ、DB 側は RLS（`platform_users_auth_self_select` / `two_factor_credentials_platform_auth_insert` 等。§4.4.2）が本人の `PLATFORM_USER` 行だけに閉じる。`2fa/verify` も一次認証済み。`signout` は未認証でも 204 を返す（セッションの有無を漏らさない。§4.8 と同型）。🔴 **`2fa/setup` の応答に QR 用のフィールドを足さない** —— `otpauthUrl` の QR 化は `A-001` の画面側（クライアント）で行い、主平面と同じ 1 実装を共有する（§6.3 #3 の 🔴） |
 | API-A2 | `GET /api/admin/tenants` | `F-056` / `A-002` | 0→1 | `PO`/`PP`（閲覧） |
 | API-A3 | `GET /api/admin/tenants/{id}` | `F-056` / `A-003` | 0→1 | 同上。🔴 **`PURGED` はライフサイクル状態のみ返し、削除件数を含めない**（`docs/04` 申し送り 15） |
 | API-A4 | 🔴 `POST /api/admin/tenants` | `F-001` / `A-014` | **0** | 🔴 **`PLATFORM_OWNER` のみ**。`PP` はルート自体が 403。body `{ name, environment, lifecycleState, planId, provisioningRequestId, sendingDomain?: string }`。🔴 **`sendingDomain` は `tenant_sending_domains` に `state='REGISTERED'` で `INSERT` するだけ**（§5.2。DNS・検証は `OWNER` が `S-036` で行う。`A-014` 5b）。未入力でも開設でき、その場合は `A-005` 項目 11 に即日現れる。**T-03-10 の実装補正**: ①`lifecycleState` は開設できる 2 状態（`SANDBOX` / `ACTIVE`）に限り、`environment` との組み合わせは `packages/domain` の `isValidTenantCreation`（`docs/02` 章 5.4）が判定して違反は **422** ②**テナント ID はアプリ側で採番する**（`withPlatformWrite` が `SET LOCAL app.target_tenant_id` をトランザクション先頭で発行し、`tenant_sending_domains` の `WITH CHECK` がその一致を要求するため。UUID v7）③`provisioningRequestId` の重複は **409**（`app_platform_write` は `tenants` の `(id, lifecycle_state)` しか `SELECT` できず既存行を読み返せないため、同じ応答を返す形の冪等にはできない。**重複テナントを作らないことだけを保証する**）④`planId` は Phase 0 では `AuditLog` にのみ記録する（`Subscription` の作成は `plans` / `subscriptions` の GRANT が入る `A-010`（Phase 3）。`F-001 AC-3` の「プランが監査ログに記録される」はこれで満たす） |

@@ -114,6 +114,20 @@ body {
   margin-bottom: 1rem;
 }
 
+/* S-001 / A-001 の 2 要素認証 登録ウィザードの QR コード（docs/04 改訂 7）。
+ * 🔴 狭い画面でカラムからはみ出さず（width: 100%）、広い画面で読み取れない大きさまで
+ *    縮まないようにする（max-width で 1 モジュールあたりの画素数を確保する）。
+ *    CLAUDE.md §13.3「Tier 3 の画面をモバイルで非表示にしない / 劣化はさせても遮断はしない」。
+ * 🔴 背景は必ず白のままにする（QR は明暗の比で読む。地の色を透かすと読めなくなる）。 */
+.ses-otpauth-qr {
+  display: block;
+  width: 100%;
+  max-width: 17rem;
+  height: auto;
+  margin: 0.5rem 0 1rem;
+  background: #ffffff;
+}
+
 /* S-001 の 2 要素認証（T-03-02）。長いセットアップ用アドレスとリカバリコードを、
  * 狭い画面でも折り返して読める形で出す（CLAUDE.md §13.3「判断材料を隠さない」）。 */
 .ses-otpauth-uri {
