@@ -346,6 +346,13 @@ export type {
   WebhookDeliveryPayload,
   WebhookDeliveryRecord,
 } from './webhook-delivery.js';
+// 🔴 T-07-11: スケジュール実行の記録（docs/05 §9.1 / §4.4.2）。`scheduler_runs` は C0 であり、
+//    書いてよいのは `runScheduled()`（`apps/worker/src/scheduler.ts`）だけである。
+export { claimSchedulerRun, finishSchedulerRun } from './scheduler-run.js';
+export type { SchedulerRunClaim } from './scheduler-run.js';
+// 🔴 T-07-11: テナントファンアウトの母集団（docs/05 §9.1）。テナント文脈を持たずに
+//    `tenants` を読む唯一の経路であり、返すのはテナント ID だけである。
+export { listSchedulerFanoutTenants } from './scheduler-fanout.js';
 // 🔴 T-03-10: UsageCounter の計測フック（CLAUDE.md §10.6 / F-026 / docs/05 §7.6 / §9.8）。
 //    `usage_counters` を書いてよい唯一の経路（生 SQL の ON CONFLICT はここに閉じる）。
 export {

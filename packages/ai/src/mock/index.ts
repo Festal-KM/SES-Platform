@@ -9,3 +9,7 @@ export {
   type MockAnthropicClientOptions,
   type MockAnthropicStep,
 } from './anthropic.js';
+// 🔴 T-07-11: `demo` の既定応答（Issue #44 の回答 ①）。**データだけ**を出す ——
+//    「どの環境でこれを使うか」の判断は起動時の配線（`apps/worker/src/runtime.ts` の
+//    `resolveMockAiOptions`）1 箇所にあり、`packages/ai` は `APP_ENV` を知らない。
+export { DEMO_GATE_INSPECTOR_PASS_STEP, DEMO_MOCK_ANTHROPIC_SCRIPT } from './demo-script.js';

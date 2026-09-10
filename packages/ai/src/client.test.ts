@@ -4,15 +4,19 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
+  ANTHROPIC_SDK_MAX_RETRIES,
   AnthropicApiClient,
+  buildAnthropicClientOptions,
   createAnthropicMessagesApi,
   ENFORCED_SPEND_LIMIT_ERROR_CODE,
   normalizeAnthropicError,
+  toAnthropicMessagesCreateParams,
+  toAnthropicMessagesResult,
   type AiClientRequest,
   type AnthropicMessagesApi,
   type AnthropicMessagesRequest,
 } from './client.js';
-import { AiClientError, AiClientNotAvailableError } from './errors.js';
+import { AiClientError } from './errors.js';
 import type { MaskedText } from './mask.js';
 
 const asMasked = (text: string): MaskedText => text as MaskedText;
@@ -123,17 +127,97 @@ describe('AnthropicApiClient（SDK 非依存の呼び出しロジック）', () 
   });
 });
 
-describe('🔴 SDK の実体化は未登録（モックへフォールバックしない。CLAUDE.md §11.1）', () => {
-  it('createAnthropicMessagesApi は AiClientNotAvailableError を投げる', () => {
-    expect(() => createAnthropicMessagesApi({ apiKey: 'sk-ant-dummy' })).toThrow(AiClientNotAvailableError);
+describe('🔴 SDK アダプタの写像（T-07-11。実 API には接続しない）', () => {
+  it('🔴 maxRetries は 0 である（SDK 内部の再試行を残すと AiUsage の行数と実呼び出し数がずれる）', () => {
+    expect(buildAnthropicClientOptions({ apiKey: 'sk-ant-dummy' }).maxRetries).toBe(0);
+    expect(ANTHROPIC_SDK_MAX_RETRIES).toBe(0);
   });
 
-  it('例外メッセージに API キーを含めない（CLAUDE.md §3.4）', () => {
-    try {
-      createAnthropicMessagesApi({ apiKey: 'sk-ant-secret-value' });
-      expect.unreachable('throw されるはず');
-    } catch (error) {
-      expect((error as Error).message).not.toContain('sk-ant-secret-value');
-    }
+  it('baseUrl を渡したときだけ baseURL が載る（未指定なら SDK の既定に任せる）', () => {
+    expect(buildAnthropicClientOptions({ apiKey: 'k' })).toEqual({ apiKey: 'k', maxRetries: 0 });
+    expect(buildAnthropicClientOptions({ apiKey: 'k', baseUrl: 'https://example.test' })).toEqual({
+      apiKey: 'k',
+      maxRetries: 0,
+      baseURL: 'https://example.test',
+    });
+  });
+
+  it('🔴 タイムアウトはクライアント既定に置かない（要求ごとに runRole が決める）', () => {
+    expect(buildAnthropicClientOptions({ apiKey: 'k' })).not.toHaveProperty('timeout');
+  });
+
+  it('要求は text ブロックだけに写る（image / document を作る経路が無い）', () => {
+    const schema = z.object({ ok: z.boolean() });
+    const params = toAnthropicMessagesCreateParams({
+      model: 'model-x',
+      system: 'sys',
+      userTexts: ['a', 'b'],
+      outputSchema: schema,
+      maxOutputTokens: 256,
+      timeoutMs: 1_000,
+    });
+    expect(params.model).toBe('model-x');
+    expect(params.max_tokens).toBe(256);
+    expect(params.system).toBe('sys');
+    expect(params.messages).toEqual([
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'a' },
+          { type: 'text', text: 'b' },
+        ],
+      },
+    ]);
+    // 🔴 出力定義は zodOutputFormat を通った 1 経路だけ（生の output_config を組み立てない）。
+    expect(params.output_config.format).toBeDefined();
+  });
+
+  it('応答の写像: parsed_output / model / usage の 4 値（キャッシュを入力に混ぜない）', () => {
+    expect(
+      toAnthropicMessagesResult(
+        {
+          parsed_output: { ok: true },
+          model: 'model-actual',
+          usage: {
+            input_tokens: 11,
+            output_tokens: 7,
+            cache_read_input_tokens: 3,
+            cache_creation_input_tokens: 5,
+          },
+        },
+        'model-requested',
+      ),
+    ).toEqual({
+      output: { ok: true },
+      modelId: 'model-actual',
+      tokens: { inputTokens: 11, outputTokens: 7, cacheReadTokens: 3, cacheWriteTokens: 5 },
+    });
+  });
+
+  it('parsed_output が null なら undefined に畳む（AnthropicApiClient が null を返す枝に合流する）', () => {
+    const result = toAnthropicMessagesResult(
+      { parsed_output: null, model: 'm', usage: { input_tokens: 1, output_tokens: 1 } },
+      'model-requested',
+    );
+    expect(result.output).toBeUndefined();
+    expect(result.tokens).toEqual({
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+    });
+  });
+
+  it('model / usage が欠けた応答でも要求モデル ID と 0 トークンに落ちる（例外にしない）', () => {
+    expect(toAnthropicMessagesResult({}, 'model-requested')).toEqual({
+      output: undefined,
+      modelId: 'model-requested',
+      tokens: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+    });
+  });
+
+  it('🔴 createAnthropicMessagesApi はネットワークに出ない（生成しただけでは 1 回も呼ばない）', () => {
+    // 生成は SDK クライアントを作るだけであり、実 API への接続は `parse` の呼び出しまで起きない。
+    expect(createAnthropicMessagesApi({ apiKey: 'sk-ant-dummy' })).toHaveProperty('parse');
   });
 });

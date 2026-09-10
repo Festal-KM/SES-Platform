@@ -30,6 +30,15 @@ const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.mts', '.cts']);
 const WEB_ENTRY = 'apps/web/instrumentation.ts';
 /** 🔴 ワーカーの起動エントリ（docs/05 §13.1「`apps/worker` は `src/main.ts`」）。 */
 const WORKER_ENTRY = 'apps/worker/src/main.ts';
+/**
+ * 🔴 ワーカーの起動時 DI の実体（T-07-11 で `main.ts` から切り出した。docs/05 §13.1）。
+ *
+ * 切り出した理由: `main.ts` は **import しただけでワーカーが常駐する**エントリになったため、
+ * 「初期化を 2 回試してキャッシュを確かめる」起動経路テストの harness から呼べなくなった。
+ * 🔴 **呼び出し連鎖は変わっていない** —— `main.ts` → `bootstrap.ts` → `initializeRuntimeConfig`
+ *    であり、下の it がその 2 段をどちらも固定する。
+ */
+const WORKER_BOOTSTRAP = 'apps/worker/src/bootstrap.ts';
 /** 🔴 判定の単一実装（`APP_ENV` 分岐と production のモック検出を持つ唯一の場所）。 */
 const CONFIG_STARTUP = 'packages/config/src/startup.ts';
 
@@ -119,6 +128,7 @@ describe('🔴 起動時 DI が起動エントリから呼ばれている（T-03
     // （呼ばれなくても画面は動いてしまうため、ここで場所ごと固定する）。
     expect(() => read(WEB_ENTRY)).not.toThrow();
     expect(() => read(WORKER_ENTRY)).not.toThrow();
+    expect(() => read(WORKER_BOOTSTRAP)).not.toThrow();
     expect(() => read(CONFIG_STARTUP)).not.toThrow();
   });
 
@@ -134,10 +144,18 @@ describe('🔴 起動時 DI が起動エントリから呼ばれている（T-03
     expect(hasExportedRegister).toBe(true);
   });
 
-  it.each([WEB_ENTRY, WORKER_ENTRY])('%s が initializeRuntimeConfig を呼ぶ', (entry) => {
+  it.each([WEB_ENTRY, WORKER_BOOTSTRAP])('%s が initializeRuntimeConfig を呼ぶ', (entry) => {
     const source = read(entry);
     expect(importsModule(source, entry, '@ses/config')).toBe(true);
     expect(callsFunction(source, entry, 'initializeRuntimeConfig')).toBe(true);
+  });
+
+  // 🔴 T-07-11: 連鎖の 1 段目（エントリ → bootstrap）。ここが切れると
+  //    「起動しても環境変数を検証していない」状態になり、`CLAUDE.md` §11.1 の穴が再発する。
+  it(`${WORKER_ENTRY} が bootstrapWorker() を呼ぶ（起動時 DI への連鎖の 1 段目）`, () => {
+    const source = read(WORKER_ENTRY);
+    expect(importsModule(source, WORKER_ENTRY, './bootstrap.js')).toBe(true);
+    expect(callsFunction(source, WORKER_ENTRY, 'bootstrapWorker')).toBe(true);
   });
 
   it.each(['loadAppEnv', 'resolveConnectorSelection'])(
@@ -213,7 +231,7 @@ describe('🔴 起動時 DI の入口が 1 つである（web と worker で別�
     expect(callers).toEqual(
       [
         WEB_ENTRY,
-        WORKER_ENTRY,
+        WORKER_BOOTSTRAP,
         // 🔴 instrumentation を経由しない実行経路（結合テストが `apps/web/lib/**` を直接呼ぶ場合）
         //    でも同じ 1 箇所を通って初期化されるようにするための唯一の例外。
         //    キャッシュ済みなら再検証も再ログも起きない（`initializeRuntimeConfig` の契約）。

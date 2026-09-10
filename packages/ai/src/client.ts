@@ -16,23 +16,29 @@
 //    `aws-sdk-api.ts`（SDK アダプタ）と同じ 3 分割である。
 //
 // ============================================================================
-// ⚠️ **SDK の実体化（`createAnthropicMessagesApi`）は未実装**である（docs/05 §7.9 ⑥）
+// ✅ **SDK の実体化（`createAnthropicMessagesApi`）は T-07-11 で完了した**（docs/05 §7.9 ⑥）
 // ============================================================================
-// 🔴 `@anthropic-ai/sdk` の**依存は追加済み**（T-07-08。`packages/ai/package.json`）。未了なのは
-//    このファイルのアダプタ本体と `docs/dev-plan.md` §5 E-3（API キー取得）である。
-//    **モックへフォールバックしない**ため、`real` が選ばれたら `AiClientNotAvailableError` で
-//    起動を止める（CLAUDE.md §11.1）。持ち主は T-07-11（docs/05 §11.12 ⑧-1）。
-// 🔴 実体化する後続タスクは、**この関数の中身だけ**を埋めれば実接続に切り替わる
-//    （`AnthropicApiClient` 以降のロジックとそのテストは書き換えずに済む）。
-// 🔴 そのとき `import Anthropic from '@anthropic-ai/sdk'` は**このファイルの静的 import** になる。
-//    `@ses/ai` のバレル（`index.ts`）は本ファイルを値 import するため、`apps/web` の
+// 🔴 **モックへフォールバックしない**（CLAUDE.md §11.1）。`real` が選ばれた環境では
+//    `ANTHROPIC_API_KEY` が `packages/config` の起動時検証で必須であり、無ければ起動が失敗する。
+// 🔴 SDK に触れるのは**このファイルだけ**であり、触れ方も 3 つの純粋関数に割ってある
+//    （`buildAnthropicClientOptions` / `toAnthropicMessagesCreateParams` /
+//    `toAnthropicMessagesResult`）。**実 API に接続せずに全ての写像を検証できる**ようにするためで、
+//    残る `createAnthropicMessagesApi` の本体は「純粋関数の出力を SDK に渡して戻り値を写す」
+//    数行だけである（`packages/connectors/src/email/ses/aws-sdk-api.ts` と同じ整理）。
+// 🔴 **`maxRetries: 0` は絶対**（`buildAnthropicClientOptions` が返し、`client.test.ts` が固定する）。
+//    SDK 内部の自動再試行が残ると、`runRole` が数える試行回数（= `AiUsage` の行数）と実際の
+//    呼び出し回数がずれ、原価が過少計上になる（AWS SDK に `maxAttempts: 1` を強制しているのと
+//    同じ理由。docs/05 §17.2 #10b）。
+// ⚠️ `@ses/ai` のバレル（`index.ts`）は本ファイルを値 import するため、`apps/web` の
 //    サーババンドルにも SDK が載る。それが問題になった時点で、SDK の実体化だけを
 //    `@ses/ai/anthropic` サブパスへ分離する（`@ses/connectors/aws` と同じ整理。docs/05 §17.2 #10b）。
-// 🔴 `Q-T-5`（ZDR の適用）は設計に影響しない。適用時は本ファイルのクライアント生成に
+// 🔴 `Q-T-5`（ZDR の適用）は設計に影響しない。適用時は `buildAnthropicClientOptions` に
 //    ヘッダを 1 つ足すだけである（マスキングは ZDR の有無にかかわらず必須。SP-07 T-07-01）。
 
+import { Anthropic } from '@anthropic-ai/sdk';
+import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import type { z } from 'zod';
-import { AiClientError, AiClientNotAvailableError } from './errors.js';
+import { AiClientError } from './errors.js';
 import type { ContentBlock, MaskedText } from './mask.js';
 
 /**
@@ -259,28 +265,120 @@ export type AnthropicSdkOptions = {
 };
 
 /**
- * 🔴 **`@anthropic-ai/sdk` を実体化する唯一の関数**（= 将来の唯一の SDK import 地点）。
+ * 🔴 **SDK の自動再試行は必ず 0 回**（docs/05 §7.9 ⑥ / §17.2 #10b）。
  *
- * ⚠️ 現時点では未実装であり `AiClientNotAvailableError` を投げる（本ファイル冒頭の ⚠️ 参照）。
- *    **モックへ倒さない。** ここへ書くのは、およそ次の 4 行である（依存は追加済み）:
+ * 再試行は `runRole` の内部（手順 7）が数え、1 試行につき `AiUsage` を 1 行書く。SDK が
+ * 裏で再送すると **実際の呼び出し回数のほうが多くなる** ——「記録を経由しない AI 呼び出しを
+ * 作らない」（`BR-09` / `BR-10`）が、コードを 1 行も足さずに破れる形である。
+ */
+export const ANTHROPIC_SDK_MAX_RETRIES = 0;
+
+/** `new Anthropic(...)` に渡す値（🔴 純粋関数。テストが `maxRetries: 0` をここで固定する）。 */
+export type AnthropicClientOptions = {
+  readonly apiKey: string;
+  readonly maxRetries: typeof ANTHROPIC_SDK_MAX_RETRIES;
+  readonly baseURL?: string;
+};
+
+/**
+ * SDK クライアントの生成引数を組み立てる（🔴 副作用なし。値を作るだけ）。
  *
- *    ```ts
- *    const client = new Anthropic({ apiKey: options.apiKey, maxRetries: 0, ... });
- *    const response = await client.messages.parse({
- *      model, max_tokens, system, messages: [{ role: 'user', content: [...] }],
- *      output_config: { format: zodOutputFormat(request.outputSchema) },
- *    }, { timeout: request.timeoutMs });
- *    ```
- * 🔴 `maxRetries: 0` を必ず指定すること。SDK 内部の自動再試行が残ると、`runRole` が数える
- *    試行回数（= `AiUsage` の行数）と実際の呼び出し回数がずれ、原価が過少計上になる
- *    （`packages/connectors` の AWS SDK に `maxAttempts: 1` を強制しているのと同じ理由）。
+ * 🔴 `timeout` をここに置かない —— タイムアウトは**要求ごと**に `runRole` が決める
+ *    （ロールごとに違う。`RoleSpec.timeoutMs`）。クライアント既定に置くと、要求側の指定と
+ *    どちらが効いているのか読めなくなる。
+ */
+export function buildAnthropicClientOptions(options: AnthropicSdkOptions): AnthropicClientOptions {
+  return {
+    apiKey: options.apiKey,
+    maxRetries: ANTHROPIC_SDK_MAX_RETRIES,
+    ...(options.baseUrl === undefined ? {} : { baseURL: options.baseUrl }),
+  };
+}
+
+/**
+ * `messages.parse` に渡す本体（🔴 純粋関数）。
+ *
+ * 🔴 `output_config.format` に `zodOutputFormat(schema)` を掛けるのは**ここだけ**である
+ *    （docs/03 §3.3.3 の 🔴「生の `output_config` を組み立てる経路を作らない」）。
+ * 🔴 コンテンツブロックは `text` しか作れない（`AnthropicMessagesRequest.userTexts` が
+ *    `string[]` であり、`image` / `document` を渡す形が型として存在しない。docs/05 §7.10）。
+ */
+export function toAnthropicMessagesCreateParams(request: AnthropicMessagesRequest): {
+  readonly model: string;
+  readonly max_tokens: number;
+  readonly system: string;
+  readonly messages: readonly { readonly role: 'user'; readonly content: readonly { readonly type: 'text'; readonly text: string }[] }[];
+  readonly output_config: { readonly format: unknown };
+} {
+  return {
+    model: request.model,
+    max_tokens: request.maxOutputTokens,
+    system: request.system,
+    messages: [
+      {
+        role: 'user',
+        content: request.userTexts.map((text) => ({ type: 'text' as const, text })),
+      },
+    ],
+    output_config: { format: zodOutputFormat(request.outputSchema) },
+  };
+}
+
+/** SDK の `Usage` から我々の 4 値へ（🔴 キャッシュ読出・書込を入力トークンに混ぜない）。 */
+type AnthropicUsageShape = {
+  readonly input_tokens: number;
+  readonly output_tokens: number;
+  readonly cache_read_input_tokens?: number | null;
+  readonly cache_creation_input_tokens?: number | null;
+};
+
+/** `messages.parse` の戻り値から我々の形へ（🔴 純粋関数。検証はしない）。 */
+export function toAnthropicMessagesResult(
+  message: {
+    readonly parsed_output?: unknown;
+    readonly model?: string;
+    readonly usage?: AnthropicUsageShape;
+  },
+  requestedModelId: string,
+): AnthropicMessagesResult {
+  const usage = message.usage;
+  return {
+    // 🔴 `null`（構造化出力が無い）は `undefined` に畳む。`AnthropicApiClient` が
+    //    「出力が無い」を 1 つの枝で扱い、`runRole` の `safeParse` に判定させるためである。
+    output: message.parsed_output ?? undefined,
+    modelId: message.model ?? requestedModelId,
+    tokens: {
+      inputTokens: usage?.input_tokens ?? 0,
+      outputTokens: usage?.output_tokens ?? 0,
+      cacheReadTokens: usage?.cache_read_input_tokens ?? 0,
+      cacheWriteTokens: usage?.cache_creation_input_tokens ?? 0,
+    },
+  };
+}
+
+/**
+ * 🔴 **`@anthropic-ai/sdk` を実体化する唯一の関数**（= 唯一の SDK 呼び出し地点）。
+ *
+ * 🔴 ここに置いてよいのは「純粋関数の出力を SDK に渡し、戻り値を純粋関数で写す」ことだけである。
+ *    再試行・上限判定・利用量記録・マスキングをここに書かない（`runRole` の手順に集約する。
+ *    docs/05 §7.3 / §7.4）。
+ * 🔴 例外はここで正規化しない —— `AnthropicApiClient.createStructuredMessage` が
+ *    `normalizeAnthropicError` に通す（分類は 1 箇所。同関数の 🔴）。
  */
 export function createAnthropicMessagesApi(options: AnthropicSdkOptions): AnthropicMessagesApi {
-  // 🔴 まだ SDK を実体化しない。引数の形は実装時にそのまま使うため残す（握り潰しではない）。
-  void options;
-  throw new AiClientNotAvailableError(
-    'real',
-    'SDK アダプタが未実装です（docs/05 §7.9 ⑥。持ち主は T-07-11）。' +
-      '`@anthropic-ai/sdk` の依存は追加済みであり、残るのは本関数の実装と E-3（API キー取得）です。',
-  );
+  const client = new Anthropic(buildAnthropicClientOptions(options));
+  return {
+    async parse(request: AnthropicMessagesRequest): Promise<AnthropicMessagesResult> {
+      const message = await client.messages.parse(
+        // 🔴 `zodOutputFormat` の戻り値は SDK の内部型（`AutoParseableOutputFormat`）であり、
+        //    我々の純粋関数はそれを `unknown` として運ぶ（型を写し取ると SDK の型が
+        //    `client.ts` の外へ漏れる）。SDK 境界のここでだけ形を合わせる。
+        toAnthropicMessagesCreateParams(request) as unknown as Parameters<
+          typeof client.messages.parse
+        >[0],
+        { timeout: request.timeoutMs },
+      );
+      return toAnthropicMessagesResult(message, request.model);
+    },
+  };
 }

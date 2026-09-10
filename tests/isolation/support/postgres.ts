@@ -39,7 +39,7 @@ const DATABASE_NAME = 'ses_isolation';
 /** 二重防御の検証で使う 2 表（docs/05 §4.7）。 */
 export const BUSINESS_TABLES = ['tenants', 'engineers'] as const;
 
-/** docs/05 §4.2 の 6 ロール。 */
+/** docs/05 §4.2 のロール一覧。 */
 export const ROLE_NAMES = [
   'app_migrator',
   'app_tenant',
@@ -52,6 +52,9 @@ export const ROLE_NAMES = [
   // 🔴 T-05-05: ウイルススキャン結果の適用と滞留照会の SECURITY DEFINER 関数専用
   //    （docs/05 §4.2 / §8.5 / §9.6。migration 20260908000000）。
   'app_scan_probe',
+  // 🔴 T-07-11: スケジュールジョブのテナントファンアウトの母集団を引く SECURITY DEFINER 関数専用
+  //    （docs/05 §4.2 / §9.1。migration 20260915000000）。
+  'app_scheduler_probe',
 ] as const;
 
 export type IsolationDatabase = {

@@ -112,7 +112,10 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
   //    暗号化・復号もそこ 1 ファイルに集約された（主平面・管理平面のどちらも core を通る）。
   EncryptedString: ['apps/web/lib/auth/two-factor-core.ts'],
   // 🔴 鍵の注入は起動時の 1 箇所だけ（CLAUDE.md §11.1 / docs/05 §13.1）。
-  configureTokenEncryption: ['apps/web/lib/db/bootstrap.ts'],
+  //    🔴 T-07-11: **アプリごとに 1 箇所**である（web は `lib/db/bootstrap.ts`、worker は
+  //    `src/runtime.ts`）。ワーカーは別プロセスであり、web の起動処理を通らない ——
+  //    渡さないと `packages/db` が `process.env` を読む実装に戻すしかなくなる（`CLAUDE.md` §3.5）。
+  configureTokenEncryption: ['apps/web/lib/db/bootstrap.ts', 'apps/worker/src/runtime.ts'],
   // 🔴 T-03-10: ジョブ文脈（docs/05 §9.2）。**`apps/web` から呼べてはならない** ——
   //    呼べると、HTTP 経路がリクエスト入力の `tenantId` で任意のテナントの文脈を作れる
   //    （`CLAUDE.md` §3.1 / `BR-03`）。許可先は `apps/worker` のジョブ実装だけである。
@@ -153,6 +156,16 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
     //    （他テナントの保留行を 1 件も読まない）。ここも `apps/web` 側には無い。
     'apps/worker/src/jobs/gate-hold-release.ts',
   ],
+  // 🔴 T-07-11: `scheduler_runs`（C0 SYSTEM_ONLY）を書く唯一の経路（docs/05 §4.4.2 / §9.1）。
+  //    **`runScheduled()` だけ**であり、個々のジョブハンドラは `SchedulerRun` に触れない ——
+  //    触れると「記録せずに走るジョブ」が書け、`A-005`（§16.5）の滞留検知が母集団を失う。
+  claimSchedulerRun: ['apps/worker/src/scheduler.ts'],
+  finishSchedulerRun: ['apps/worker/src/scheduler.ts'],
+  // 🔴 T-07-11: テナント文脈を持たずに `tenants` を読む唯一の経路（docs/05 §9.1 /
+  //    migration 20260915000000）。**ファンアウトの配線 1 箇所**に限る —— ここが増えると
+  //    「全テナントを列挙する」コードがジョブ本体側にも書けるようになり、
+  //    母集団の条件（`SANDBOX` / `ACTIVE`）が SQL 関数の外へ漏れる。
+  listSchedulerFanoutTenants: ['apps/worker/src/runtime.ts'],
   // 🔴 T-03-10: `usage_counters` を書く唯一の経路（docs/05 §7.6 / §9.8）。
   //    ここを増やすと「計測を迂回した書き込み」が生まれ、原価と請求根拠が説明できなくなる。
   snapshotSeatCount: ['apps/worker/src/jobs/usage-seat-snapshot.ts'],

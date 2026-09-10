@@ -32,6 +32,7 @@ import { Queue, Worker, type Job } from 'bullmq';
 //    **CJS モジュールの名前空間**に解決され、型として使えない）。実行時も Node の CJS 相互運用が
 //    `Redis` を名前付き export として解決する（`packages/connectors` で実測）。
 import { Redis } from 'ioredis';
+import { RedisProviderSendCounter, type ProviderSendCounter } from './email/ses/counter.js';
 import {
   gateRunJobId,
   queueDefinition,
@@ -282,4 +283,145 @@ export function createBullMqGateRunWorker(options: {
   readonly concurrency?: number;
 }): BullMqGateRunWorker {
   return createBullMqWorker({ queueName: GATE_RUN_JOB, ...options });
+}
+
+// ============================================================================
+// 🔴 T-07-11: スケジュール登録（Repeatable Job）と、内部ジョブの汎用 enqueue
+// ============================================================================
+
+/**
+ * 内部ジョブを積む口（`gate.run` 以外の内部キュー用）。
+ *
+ * 🔴 **`attempts` / `backoff` を引数に取らない**（`GateRunJobQueue` と同じ理由。既定ジョブ
+ *    オプションを決めるのは `QUEUE_DEFINITIONS` だけである。docs/05 §9.1 / §17.2 #6）。
+ * 🔴 `gate.run` はこの口を使わない —— あちらは `jobId` を冪等キーに使い、`add` が静かに
+ *    無視されたことを戻り値で返す必要がある（`GateRunEnqueueOutcome`）。**汎用の口に
+ *    その意味を混ぜない**（混ぜると呼び出し側が戻り値を見なくなる）。
+ */
+export type BullMqJobEnqueuer<T> = {
+  enqueue(payload: T): Promise<void>;
+  close(): Promise<void>;
+};
+
+/**
+ * 🔴 内部ジョブの enqueue 口を 1 本作る（`email.dispatch` / `account.mail` など）。
+ *
+ * 🔴 `Queue` は最初の enqueue まで作らない（`createBullMqGateRunQueue` と同じ。登録しただけで
+ *    Redis へ接続しにいかない）。
+ */
+export function createBullMqJobEnqueuer<T>(options: {
+  readonly queueName: QueueName;
+  readonly connection: BullMqConnection;
+}): BullMqJobEnqueuer<T> {
+  let queue: Queue | null = null;
+  let client: Redis | null = null;
+  const resolve = (): Queue => {
+    client ??= createClient(options.connection);
+    queue ??= createQueue(options.queueName, client);
+    return queue;
+  };
+  return {
+    async enqueue(payload: T): Promise<void> {
+      // 🔴 per-job オプションを渡さない（§17.2 #6 が `.add()` の第 3 引数に
+      //    `attempts` / `backoff` が現れないことを走査で固定している）。
+      await resolve().add(options.queueName, payload);
+    },
+    async close(): Promise<void> {
+      if (queue !== null) await queue.close();
+      if (client !== null) await client.quit();
+      queue = null;
+      client = null;
+    },
+  };
+}
+
+/**
+ * スケジュール登録（BullMQ の Job Scheduler = Repeatable Job）。
+ *
+ * 🔴 **cron とタイムゾーンの出所はジョブ宣言（`SCHEDULED_JOBS`）だけ**であり、この関数は
+ *    受け取った値をそのまま BullMQ に渡す（`Asia/Tokyo` を書き写さない。docs/05 §9.1）。
+ * 🔴 **payload（テナント）を template に持たせない。** スケジューラが作るのは「そのキューの
+ *    1 tick」であり、テナントのファンアウトは `apps/worker` 側が tick の中で行う
+ *    （docs/05 §9.1 の決着。テナントを template に焼くと、増えたテナントが永久に走らない）。
+ * 🔴 **`upsert` である**（同じ `schedulerId` で何度呼んでも 1 本に収束する）。ワーカーを
+ *    複数プロセスで起動しても Repeatable Job は増えない。
+ */
+export type BullMqSchedule = {
+  close(): Promise<void>;
+};
+
+export function createBullMqSchedule(options: {
+  readonly queueName: QueueName;
+  readonly connection: BullMqConnection;
+  readonly cron: string;
+  readonly timeZone: string;
+}): BullMqSchedule & { readonly ready: Promise<void> } {
+  const client = createClient(options.connection);
+  const queue = createQueue(options.queueName, client);
+  // 🔴 `schedulerId` はキュー名そのものにする（1 キュー = 1 スケジュール）。BullMQ が作る
+  //    ジョブの `jobId` は `repeat:{schedulerId}:{発火予定ミリ秒}` であり、
+  //    `apps/worker/src/scheduler.ts` はそこから slot を取り出して `SchedulerRun.runKey` にする。
+  const ready = queue
+    .upsertJobScheduler(
+      options.queueName,
+      { pattern: options.cron, tz: options.timeZone },
+      { name: options.queueName },
+    )
+    .then(() => undefined);
+  return {
+    ready,
+    async close(): Promise<void> {
+      await queue.close();
+      await client.quit();
+    },
+  };
+}
+
+/**
+ * 🔴 登録済みの Job Scheduler を読む（**運用調査と結合テストのため**）。
+ *
+ * 🔴 業務経路はこれを呼ばない（`BullMqGateRunQueue.jobState` と同じ位置づけ）。
+ *    「スケジュールを登録したのに Redis に無い」は起動ログだけでは絶対に気づけない形の壊れ方
+ *    （`CLAUDE.md` §11.1）であり、それを外から確かめる手段がここである。
+ */
+export async function listBullMqJobSchedulers(options: {
+  readonly queueName: QueueName;
+  readonly connection: BullMqConnection;
+}): Promise<readonly { readonly key: string; readonly pattern: string | null; readonly tz: string | null }[]> {
+  const client = createClient(options.connection);
+  const queue = createQueue(options.queueName, client);
+  try {
+    const schedulers = await queue.getJobSchedulers();
+    return schedulers.map((scheduler) => ({
+      key: String(scheduler.key ?? ''),
+      pattern: scheduler.pattern ?? null,
+      tz: scheduler.tz ?? null,
+    }));
+  } finally {
+    await queue.close();
+    await client.quit();
+  }
+}
+
+/**
+ * 🔴 プロセス横断の 24h 送信カウンタ（`RedisProviderSendCounter`）の実体化。
+ *
+ * 🔴 ここに置く理由: **Redis クライアントを作ってよいのはこのファイルだけ**である
+ *    （`packages/connectors` は `ioredis` に依存するが、接続の生成は起動時 DI の 1 箇所に
+ *    閉じる。`counter.ts` の `ProviderCounterRedis` は「ioredis と構造的に一致する最小集合」
+ *    として宣言されており、その実体を与えるのがここである）。
+ * 🔴 `InMemoryProviderSendCounter` へフォールバックしない —— プロセスを跨いで数えられない
+ *    カウンタは「枠が空いていると誤認して二重に送る」側へ倒れる（`CLAUDE.md` §11.1）。
+ */
+export function createRedisProviderSendCounter(connection: BullMqConnection): {
+  readonly counter: ProviderSendCounter;
+  close(): Promise<void>;
+} {
+  const client = createClient(connection);
+  return {
+    counter: new RedisProviderSendCounter(client),
+    async close(): Promise<void> {
+      await client.quit();
+    },
+  };
 }

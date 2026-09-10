@@ -131,9 +131,12 @@ ses-platform/
         auth/                             # Auth.js 2 系統のラッパ（外へ型を漏らさない）
         api/                              # withApiRoute（Zod 検証 + エラー変換 + 監査）
     worker/
-      src/queues/*.ts                     # ワーカーの登録のみ。処理は handlers へ
-      src/handlers/{webhook,match,send,ai,gate,schedule,...}/*.ts  # ジョブ本体。packages/* を束ねる（ESLint 許可パスの単位）
-      src/scheduler.ts                    # runScheduled()。Repeatable Jobs の登録と SchedulerRun 書き込みの唯一の場所（§9.1）
+      src/main.ts                         # 起動エントリ（node dist/main.js）。--verify-config で検証のみ（§13.1.1 ②）
+      src/bootstrap.ts                    # bootstrapWorker()。起動時 DI の呼び出し（§13.1.1 ①）
+      src/runtime.ts                      # DB/コネクタ/キュー/Worker/スケジュールの組み立てとテナントのファンアウト（§13.1.1）
+      src/jobs/*.ts                       # ジョブ本体と SCHEDULED_JOBS の宣言。packages/* を束ねる（ESLint 許可パスの単位）
+      src/ai/*.ts                         # AiUsage 記録器 / AI コスト上限ガードのアダプタ（§7.11 ④ / §7.12 ①）
+      src/scheduler.ts                    # runScheduled()。slot の取り出しと SchedulerRun 書き込みの唯一の場所（§9.1.1）
   packages/
     domain/          # 純粋関数のみ。I/O 禁止
       state/         # proposal.ts / assignment.ts / proposalRequest.ts / tenant.ts / contract.ts
@@ -1543,6 +1546,7 @@ model BillingMeterSubmission {                                     // docs/03 §
 | `app_share_probe` | 🔴 **なし**（`NOLOGIN`） | `engineer_shares` の `SELECT (tenant_id, engineer_id, revoked_at)` のみ。**他表に一切の権限を持たない** | （接続しない） | `app_engineer_is_shared()` の `SECURITY DEFINER` 所有者としてのみ（§4.5） |
 | `app_assignment_owner_probe` | 🔴 **なし**（`NOLOGIN`） | `engineers` の `SELECT (tenant_id, id, owner_partner_company_id)` のみ。**他表に一切の権限を持たない** | （接続しない） | `inherit_assignment_counterparty()` の `SECURITY DEFINER` 所有者としてのみ（§4.4.1。T-02-08） |
 | `app_scan_probe` | 🔴 **なし**（`NOLOGIN`） | `skill_sheets` の `SELECT (id, tenant_id, object_key, scan_status, uploaded_at, is_latest, **owner_partner_company_id**)` + `UPDATE (scan_status, scan_updated_at, is_latest)`、および `engineers` の `SELECT (tenant_id, id, owner_partner_company_id)`（🔴 オーナー列の継承トリガが `skill_sheets` の `UPDATE` で親を読むため。§4.4.1 と同じ 3 列）。**他表に一切の権限を持たない**（合計 13 行。`tests/isolation/rls-enforced.test.ts` が固定） | （接続しない） | `app_apply_scan_status()` / `app_list_stalled_scan_targets()` / **`app_scan_quarantine_target()`** の `SECURITY DEFINER` 所有者としてのみ（§8.5。T-05-05 / T-05-08） |
+| `app_scheduler_probe` | 🔴 **なし**（`NOLOGIN`） | `tenants` の `SELECT (id, lifecycle_state)` **のみ**。**他表に一切の権限を持たない**（2 行。`tests/isolation/scheduler-fanout.test.ts` が固定） | （接続しない） | `app_list_scheduler_tenants()` の `SECURITY DEFINER` 所有者としてのみ（§9.1.1 ③。T-07-11。migration 20260915000000） |
 
 🔴 **テーブル所有者は `app_migrator` であり、`FORCE ROW LEVEL SECURITY` を全業務テーブルに付ける。** これが無いと所有者が RLS を素通りする。**`app_migrator` の接続文字列を `apps/web` / `apps/worker` の実行時環境に渡さない**（`packages/config` の Zod スキーマで、`development` を含む全環境の実行時 `APP_ENV` では `MIGRATION_DATABASE_URL` が**未設定であること**を検証する。T-01-05 でロールが実在するようになったため `development` 例外〔本節および §13.4 規則 3・4〕を解除した）。ロールの定義は `packages/db/prisma/sql/000_roles.sql` を唯一の真実とし、ローカル docker-compose（`docker/postgres/initdb/000-roles.sh`）と Testcontainers（`tests/isolation/support/postgres.ts`）の両方がこのファイルを実行する。
 
@@ -1698,11 +1702,12 @@ CREATE TRIGGER ins_owner BEFORE INSERT OR UPDATE ON engineer_skills   -- 親: en
 
 | 経路 | 見えるもの / 書けるもの | 実装 |
 |---|---|---|
-| `withSystemScope()` | **C0 の 4 表だけ**（他表のポリシーは `<T> = NULL` となり 0 件） | `app.tenant_id` を設定しない `app_tenant` 接続。ESLint で呼び出し元を **`apps/web/app/api/webhooks/**` / `apps/worker/src/handlers/webhook/*.ts` / `apps/worker/src/scheduler.ts`（`runScheduled()`。§9.1）の 3 箇所**に限定。🔴 **`SchedulerRun` を書くのは `runScheduled()` だけ**であり、個々のジョブハンドラは `SchedulerRun` に触れない（許可リストを `apps/worker/**` に広げない） |
+| `withSystemScope()` | **C0 の 4 表だけ**（他表のポリシーは `<T> = NULL` となり 0 件） | `app.tenant_id` を設定しない `app_tenant` 接続。🔴 **実装の決着（T-07-11）**: `withSystemScope` を呼ぶのは `packages/db` の中だけ（`webhook-delivery.ts` と **`scheduler-run.ts`**）であり、`apps/**` からは `packages/db` が公開する関数を呼ぶ。**`scheduler_runs` を書ける関数は `claimSchedulerRun` / `finishSchedulerRun` の 2 本だけ**で、その呼び出し元を **`apps/worker/src/scheduler.ts`（`runScheduled()`。§9.1）の 1 ファイル**に固定する（`tests/static/auth-db-callers.test.ts`）。🔴 **`SchedulerRun` を書くのは `runScheduled()` だけ**であり、個々のジョブハンドラは `SchedulerRun` に触れない（許可リストを `apps/worker/**` に広げない） |
 | `withAuthLookup(email)` | `users` の**該当 1 行だけ**（読み） | `SET LOCAL app.auth_email`。`users` の追加 SELECT ポリシー `app_tenant_id() IS NULL AND lower(email) = current_setting('app.auth_email', true)`。パスワード検証後はテナントが確定するので、2FA 検証以降は `withTenant` |
 | `withInvitationToken(hash)` | `invitations` の**該当 1 行だけ**（読み）+ `tenants.name` / `partner_companies.name`（読み） | `SET LOCAL app.invitation_token_hash`。同様の追加ポリシー。🔴 **第 2 段**として招待行由来のテナント文脈（`tenant_id` / `partner_company_id`）へ切り替え、`tenants.name` を C1、`partner_companies.name` を C5 の通常ポリシー下で**この 2 列だけ**追加で読む（`#6` の表示要件。`docs/04` §S-002）。`#6`（未認証経路）専用 |
 | 🔴 **行由来コンテキストの 3 関数** `withInvitationAccept(hash, { displayName, passwordHash })` / `withPasswordResetIssue(email, { tokenHash, expiresAt })` / `withPasswordResetConfirm(hash, passwordHash)` | 受諾: `users` + `memberships` の **`INSERT` 各 1 行** と `invitations.accepted_at` の CAS。発行: `users.password_reset_token_hash / _expires_at` の `UPDATE` 1 行。確定: `users.password_hash` の `UPDATE` 1 行 + トークン列の消去（CAS） | **同一トランザクション内で 2 段に `SET LOCAL` する**: ①資格情報を `SET LOCAL`（`app.invitation_token_hash` / `app.auth_email` / `app.password_reset_token_hash`）し、同形の追加 SELECT ポリシーで該当 1 行だけ読む ②**その行の `tenant_id` と `partner_company_id`（招待行）/ `owner_partner_company_id`（本人行）を `SET LOCAL app.tenant_id` / `app.partner_company_id` に入れ直し**、C3 / C5 の通常ポリシーの下で書く。🔴 **分離キーはリクエスト入力ではなく DB の行から来る**（`CLAUDE.md` §3.1）。戻り値はプレーンな ID と分類のみ（`{ userId }` / 🔴 **`{ tenantId, userId, recipientClass } \| null`**）で、行オブジェクトを外へ出さない。`#7` / `#5` / `#5b` 専用。🔴 **`withPasswordResetIssue` はトークンのハッシュと期限を引数で受け取る**（トークンの生成を `packages/db` に持ち込まない: 乱数と有効期間の方針が DB 層に散るため。分離キーではないので上記の原則には抵触しない）。🔴 **`withPasswordResetIssue` は同じトランザクションで宛先分類も導いて返す**（T-04-02。§8.2「呼び出し側に自己申告させない」）: 第 2 段のスコープ下で `memberships` の本人 1 行（C5）を読み `classifyRecipient` に渡す。**分類が `account.mail` の対象（分類 1 / 2）にならない場合は `UPDATE` も監査ログも行わず `null` を返す** —— 送れない宛先に再設定トークンだけを残さないためであり、`null` は「該当なし」と同じ経路なので**存在有無の非開示（§4.8 / `#5`）は変わらない** |
 | `app_engineer_is_shared(engineer_id, tenant_id)` | `engineer_shares` の**存在の真偽のみ**（行は 1 つも返らない） | `SECURITY DEFINER`。所有者 `app_share_probe`（§4.2）。§4.5 の追加ポリシーからのみ使う |
+| 🔴 **`app_list_scheduler_tenants()`（T-07-11）** | `tenants` の **`id` の集合だけ**（`setof uuid`。名前も環境も返らない）。母集団は `SANDBOX` / `ACTIVE` に限る | `SECURITY DEFINER`。所有者 `app_scheduler_probe`（§4.2。`tenants(id, lifecycle_state)` の 2 列だけを列レベル `GRANT`）。🔴 **本体で `app_tenant_id() IS NOT NULL` を拒否**し（＝ HTTP リクエスト経路からは呼べない）、加えて **`app.scheduler_scope='on'` を要求**する（どちらが欠けても 0 件ではなく例外。fail-closed）。この GUC を立てるのは `packages/db/src/scheduler-fanout.ts` の 1 関数だけであり、呼び出し元は `apps/worker/src/runtime.ts`（ファンアウトの配線）1 箇所に固定する（`tests/static/auth-db-callers.test.ts`）。**なぜ要るか**: スケジュールジョブは「payload に `tenantId` を必ず含める」（§9.1）が、その手前の**テナントの列挙だけはテナント文脈を持てない**。`withSystemScope` は C0 の 4 表しか触れず、`withPlatformRead` は運営者の操作であり `AuditLog` を伴う（10 分ごとのジョブが運営者の監査ログを埋める） |
 | 🔴 **`packages/db/src/platform-auth.ts`（管理平面版の行由来コンテキスト。T-03-07）** | `platform_users` の該当 1 行 / 本人の `two_factor_credentials`（`PLATFORM_USER` 行）/ 本人の `audit_logs`（読み: 2FA 失敗履歴、書き: ログイン・ログアウト・2FA 登録・確定の記録） | 2 段の `SET LOCAL`（`set_config(..., true)` によるトランザクション封じ込め。§4.3 と同型）: ①`app.platform_auth_email`（メール完全一致で `platform_users` を 1 行だけ可視化。主平面の `users_auth_lookup_select` と**同形**に両辺 `lower()` で畳む）②`app.platform_auth_subject_id`（読み出した行 / セッション Cookie 由来の主体 ID で本人の 3 表だけを可視化）。🔴 **同経路は `app.platform_user_id` を空で上書き**し、§5.2 の provisioning ポリシー（`tenants` / `invitations` / `tenant_sending_domains`）が認証トランザクション中に 1 つも真にならないことを保証する |
 
 🔴 **管理平面版（`platform-auth.ts`）が汎用の抜け道でない理由**（`row-context.ts` の直上の 5 点と同じ形で担保する）: ①触れる表は `platform_users` / `two_factor_credentials` / `audit_logs` の 3 表、列も本ファイル固定の列だけで、引数に表名・列名・`tenant_id` が無い ②`SET LOCAL` する主体はメール照合で得た行かセッション Cookie であり、呼び出し側がリクエスト入力から渡せない（`CLAUDE.md` §3.1）③`AuthenticatedPlatformCtx` を生成しない（生成器は `resolvePlatformCtx` のまま。§4.3 の `AuthenticatedTenantCtx` と対）④呼び出し元は `tests/static/auth-db-callers.test.ts` の静的走査が `apps/web/lib/auth/**` の特定ファイルに固定する ⑤戻り値は認証に必要な最小限の列だけで、行オブジェクトをそのまま外へ出さない。🔴 **`platform_users` は射程外の 4 表（`CLAUDE.md` §3.1 / §4.1 の表）であり続ける** — 本経路のために RLS（`ENABLE ROW LEVEL SECURITY` + `FORCE`）を付けたのは分離の射程を広げるためではなく**運営者どうしの資格情報の読み出しを塞ぐため**であり、射程外＝「`tenant_id` を持たない」の意味であって「RLS を付けてはならない」ではない。
@@ -3004,12 +3009,13 @@ export type KnownPiiValues = {          // 🔴 DB の台帳の値。これが�
 - 理由: ロールを実行する側（`packages/ai`）と CHECK を持つ側（`packages/db`）は相互に依存できない（`CLAUDE.md` §2.1）。共有点は domain しか無い（`RecipientClass`（T-04-02）/ `ScanStatus`（T-05-05）と同じ整理であり、T-02-01 が `schema-value-sets.ts` に残した「`packages/ai` の実装時に解消すること」という申し送りの解消でもある）。
 - 突合は従来どおり `tests/static/schema-enum-drift.test.ts` が `@ses/db` の名前で migration.sql と行う（**検査の入口は変えていない**）。
 
-#### ⑥ SDK の実体化は未了（§7.2 の「SDK の直接 import 禁止」の現状）
+#### ⑥ ~~SDK の実体化は未了~~ → ✅ **完了（T-07-11。2026-09-10）**（§7.2 の「SDK の直接 import 禁止」の現状）
 
-- ~~🔴 **`@anthropic-ai/sdk` はまだ依存に入っていない**（新規外部依存の追加は承認事項）~~ — **依存は追加済み（2026-09-09、T-07-08）。** `packages/ai/package.json` に `@anthropic-ai/sdk ^0.124.0` が入っており、インストールも済んでいる。🔴 **それでも `createAnthropicMessagesApi()` は今も `AiClientNotAvailableError` を throw する** —— 未了なのは**アダプタの実装**（と `docs/dev-plan.md` §5 E-3 の API キー取得）であり、⑥ の結論（**SDK の実体化は未了**）は変わらない。変わったのは理由が「依存が無い」から「アダプタが空である」になったことだけである（持ち主は `T-07-11`。§11.12 ⑧-1）。
+- ~~🔴 **`@anthropic-ai/sdk` はまだ依存に入っていない**（新規外部依存の追加は承認事項）~~ — **依存は追加済み（2026-09-09、T-07-08）。**
+- ~~🔴 **それでも `createAnthropicMessagesApi()` は今も `AiClientNotAvailableError` を throw する**~~ → ✅ **T-07-11（2026-09-10）で実体化した。** 🔴 **SDK に触れる部分を 3 つの純粋関数に割った**（`buildAnthropicClientOptions` / `toAnthropicMessagesCreateParams` / `toAnthropicMessagesResult`）—— **実 API に接続せずに全ての写像を検証できる**ようにするためであり、`createAnthropicMessagesApi` の本体は「純粋関数の出力を SDK に渡し、戻り値を純粋関数で写す」数行だけである（`packages/connectors/src/email/ses/aws-sdk-api.ts` と同じ整理）。**`maxRetries: 0` は `buildAnthropicClientOptions` が返し、`packages/ai/src/client.test.ts` が固定する**（下記）。🔴 **`timeout` はクライアント既定に置かない** —— タイムアウトは要求ごとに `runRole` が決める（`RoleSpec.timeoutMs`）。⚠️ **残るのは `docs/dev-plan.md` §5 E-3（API キーの取得。ユーザー作業）だけ**であり、キーが無い環境では `packages/config` が起動時に落とす（`ai: 'real'` の枝で `ANTHROPIC_API_KEY` が必須）。
 - 🔴 **モックへフォールバックしない**（`CLAUDE.md` §11.1）。`ai: 'real'` の環境は起動時に落ちる。`development` / `demo` は `mock` のため影響しない。
 - 🔴 **実体化で埋めるのは `createAnthropicMessagesApi` の中身だけである。** SDK 非依存の部分（要求の組み立て・応答の取り出し・例外の正規化）は `AnthropicApiClient` として実装済みであり、**SDK の呼び出し規約は `AnthropicMessagesApi` の 1 面に閉じている**（`packages/connectors` の `SesApi` ↔ `SesEmailSender` ↔ `aws-sdk-api.ts` と同じ 3 分割）。
-- 🔴 **そのとき SDK の自動再試行を必ず切る（`maxRetries: 0`）。** 残すと `runRole` が数える試行回数（＝ `AiUsage` の行数）と実際の呼び出し回数がずれ、原価が過少計上になる（`packages/connectors` の AWS SDK に `maxAttempts: 1` を強制しているのと同じ理由。§17.2 #10b）。
+- 🔴 **SDK の自動再試行は切ってある（`maxRetries: 0`）。** 残すと `runRole` が数える試行回数（＝ `AiUsage` の行数）と実際の呼び出し回数がずれ、原価が過少計上になる（`packages/connectors` の AWS SDK に `maxAttempts: 1` を強制しているのと同じ理由。§17.2 #10b）。**この値はテストで固定してある**（`client.test.ts` の「🔴 maxRetries は 0 である」）。
 - ⚠️ SDK を静的 import すると `@ses/ai` のバレル経由で `apps/web` のサーババンドルにも載る。問題になった時点で **SDK の実体化だけを `@ses/ai/anthropic` サブパスへ分離する**（`@ses/connectors/aws` と同じ整理）。
 
 #### ⑦ 「呼び出し経路」も静的テストで固定した（§17.2 #10 の拡張）
@@ -3650,6 +3656,36 @@ export function steppedBackoffDelayMs(attemptsMade: number, delaysMs: readonly [
 🔴 **`stepped` を足した理由（T-04-03）**: §9.4 が定める `email.dispatch` のバックオフ **5s / 30s** は、BullMQ の**組み込み戦略では表現できない**（`fixed` は毎回同じ、`exponential` は `delay: 5000` なら 5s の次が 10s になる）。**組み込み戦略で近似して設計値と食い違わせない**ため、遅延の表を `QUEUE_DEFINITIONS` に**データとして持ち**（`EMAIL_DISPATCH_BACKOFF_DELAYS_MS = [5_000, 30_000]`）、BullMQ の**カスタム戦略**（`Worker` の `settings.backoffStrategy`）として `steppedBackoffDelayMs` を渡す。🔴 **`backoffStrategy` に渡す関数はこの純粋関数だけであり、ワーカー側で待ち時間を計算し直さない**（計算が 2 箇所に散ると、設定の表と実際の待ち時間がずれる）。**この配線も §9.1「キュー定義の場所」の規律に含まれる** —— 遅延の値は `packages/connectors/src/queues.ts` にしか現れない。
 
 🔴 **`.add()` の per-job オプションによる上書きを禁じる**（T-04-03。§17.2 #6 に追加）: `QUEUE_DEFINITIONS` の `attempts` は BullMQ の **`defaultJobOptions`** であり、`queue.add(name, payload, { attempts: 3 })` の per-job オプションが**それより優先される**。したがってキュー定義を 1 箇所に閉じただけでは「enqueue 側で自動リトライを復活させる」経路が残る（送信系でこれが起きれば二重送信そのものである）。`tests/static/queue-attempts.test.ts` が `.add()` / `.addBulk()` の引数に `attempts` / `backoff` を持つオブジェクトリテラルが**リポジトリ全体に 1 件も無い**ことを走査で固定する。per-job で待ち時間を変えたい理由が生じたら、例外を足すのではなく **`QUEUE_DEFINITIONS` に別のキューを足す**（設定が 1 箇所に残る形にする）。
+
+#### 9.1.1 🔴 `runScheduled` とテナントファンアウトの決着（T-07-11。2026-09-10）
+
+**本節は上の「多重起動」「payload」の行の実装を確定させたものである**（`CLAUDE.md` §8.7）。実装は `apps/worker/src/scheduler.ts`（ラッパ）と `apps/worker/src/runtime.ts`（ファンアウト）に割った —— ①〜③が「いつ 1 回走るか」、ファンアウトが「誰に配るか」であり、混ぜると母集団の条件が多重実行防止のコードに埋もれて読めなくなる。
+
+**① 🔴 slot の出所は BullMQ の `jobId` である（現在時刻ではない）**
+
+BullMQ の Job Scheduler が作るジョブの ID は **`repeat:{schedulerId}:{発火予定ミリ秒}`** である（`bullmq@6` が Lua で組み立てる。実測）。`runScheduled` はここからミリ秒を取り出し、`run_key = '{jobName}:{JST の ISO 8601}'` を作る。
+
+- 🔴 **現在時刻で代用しない。** 同じ tick を複数のプロセス / 再試行が処理しうるため、現在時刻だと `run_key` がずれて **UNIQUE が効かずハンドラが 2 回走る**（この仕組みが唯一防ごうとしているもの）。
+- 🔴 **想定外の形の `jobId` は例外にする**（`InvalidSchedulerJobIdError`）。推測して現在時刻に落ちる枝を作らない。
+- JST 化は `Intl` を使わず固定オフセット（+09:00）で行う。`Asia/Tokyo` は夏時間を持たず、同じ入力から常に同じ文字列になる必要がある。
+
+**② 🔴 実行権は `INSERT ... ON CONFLICT DO NOTHING` で取り、失敗した slot だけ CAS で取り直せる**
+
+`claimSchedulerRun`（`packages/db/src/scheduler-run.ts`）は `RUNNING` で INSERT できたときだけ実行権を返す。既存行があるときは **`status='FAILED'` のときだけ** `RUNNING` へ CAS して取り直す。
+
+- 🔴 **取り直しを認める理由**: スケジュールジョブの多くは `attempts: 3` である。取り直せないと **2 回目以降の試行が「何もせず正常終了」になり、BullMQ の失敗記録が消える** —— §16.5 の失敗ジョブ数から落ち、壊れているのに誰も気づかない（`CLAUDE.md` §11.1）。全ジョブが冪等である以上（本節の「冪等性」）、同じ slot をやり直すほうが「その slot を丸ごと落とす」より安全側である。
+- 🔴 `RUNNING`（走っている）と `OK`（完了した）は取り直さない。**二重起動でハンドラが 1 回**になるのはこの枝である。
+- 🔴 例外は `FAILED` を**記録してから**再 throw する。順序を逆にすると行が `RUNNING` のまま残り、再試行が取り直せなくなる。`detail` には**例外の名前だけ**を載せる（メッセージには対象の値が混ざりうる。§16.2）。
+
+**③ 🔴 ファンアウトの母集団は `SANDBOX` / `ACTIVE` に限る**（SP-07 の申し送り 1 への回答）
+
+`app_list_scheduler_tenants()`（migration 20260915000000）が `setof uuid` を返し、`packages/db/src/scheduler-fanout.ts` の `listSchedulerFanoutTenants()` だけがそれを呼ぶ。**条件は SQL 関数の中にしか無い**（アプリ側に `where` を書かない。2 箇所に分かれると片方だけが古くなる）。
+
+- 🔴 **`SUSPENDED` / `CLOSING` / `PURGED` を外す。** `CLAUDE.md` §4.2 は `SUSPENDED` で「実行系は一切できない」と定めており、保留ゲートの自動復帰（`gate.hold-release` → `gate.run`）は LLM を呼んで AI 原価を消費する。停止中のテナントでそれを走らせるのは §3.4 のコスト上限の趣旨に反する。`CLOSING` は新規作成不可（エクスポートのみ）、`PURGED` は終端である。
+- 🔴 **`SANDBOX` は含める。** 試用中のテナントは実データで本番同等に動く環境であり（`CLAUDE.md` §11 / §4.2）、外すと「試用中だけ満了アラートもゲート復帰も来ない」という、試用の目的そのものを損なう差分が生まれる。
+- 🔴 **1 テナントの失敗で他のテナントを止めない。** 直列に回し（並列にすると LLM のレート制御とコスト予約がテナントをまたいで揺れる）、失敗は数えて `SchedulerRun.detail` に残し、**1 件でも失敗したら最後に throw する**（BullMQ の失敗ジョブとして `A-005` に出す）。例外（`SchedulerFanOutError`）が持つのは件数だけである。
+- 🔴 テナント文脈を持たずに `tenants` を読む経路が新たに 1 本増えた。**§4.4.2 の一覧に登録済み**であり、それ以外の用途に流用しない。
+
 ### 9.2 システムコンテキスト（ジョブが `withTenant` を使う方法）
 
 ```ts
@@ -4510,9 +4546,9 @@ E2E #23 の前半を**ブラウザ経路で**書くには、次の 3 つが揃�
 
 🔴 **`gate.hold-release` は失敗記録を消さない**（採らなかった案）。消せば自動リトライそのものになり、①§9.10 ①「BullMQ の retry に相当する運営者操作を作らない」の趣旨に反する ②§16.5 の失敗ジョブ数から消え、**壊れているのに誰も気づかない**（失敗が続けば 10 分ごとに再実行され続ける）。したがって**自動経路は「積めなかった」ことを数えて報告するだけ**にし、復帰の入口は §9.10 ① のとおり**利用者の #39 だけ**に保った。
 
-#### ⑧ 🔴 未了: `apps/worker/src/main.ts` の配線（§11.10 ⑩-1）と、その理由
+#### ⑧ ~~🔴 未了: `apps/worker/src/main.ts` の配線~~ → ✅ **完了（T-07-11。2026-09-10。決着は §13.1.1）**（§11.10 ⑩-1）と、見送った理由
 
-**`gate.run` の Worker と `gate.hold-release` のスケジュール登録は、まだ `main.ts` に無い。** 本タスクで**あえて足さなかった**。**持ち主は `docs/sprints/SP-07-ai-layer-gate.md` の `T-07-11`**（着手条件の 2 件は同ファイルの `## Open Questions` `Q-07-1` / `Q-07-2`）。理由は 3 つあり、いずれも T-07-10 の中で決めてよい事柄ではない。
+~~**`gate.run` の Worker と `gate.hold-release` のスケジュール登録は、まだ `main.ts` に無い。**~~ → ✅ **T-07-11 で配線した（2026-09-10）。実装の決着は §13.1.1 を正とする。** 下の 3 つの前提はすべて解消済みである（① SDK アダプタ = §7.9 ⑥ / ② モックの既定応答 = Issue #44 の回答 ①、§13.2 / ③ スケジュール基盤 = §9.1.1）。**以下は T-07-10 の時点で見送った理由の記録であり、判断の経緯として残す。**
 
 1. 🔴 **今つないでも、どの環境でも動かない。** `production` / `staging` / `sandbox` は `connectors.ai='real'` であり、SDK アダプタ（`createAnthropicMessagesApi`。§7.9 ⑥ / §11.10 ⑩-6）が未実装なので**起動時に落ちる**。`development` / `demo` は `mock` だが、`MockAnthropicClient` は応答が未設定だと `MockAnthropicNotConfiguredError` を投げる（＝ 全ゲートが失敗ジョブになる）。**「配線したのに動かない」は `CLAUDE.md` §11.1 の壊れ方そのもの**であり、先に足すべきではない。
 2. 🔴 **`development` / `demo` でモックが返す既定応答は、決めてよい人が決める事柄である。** 「常に PASS を返すモックゲート」は**デモでは便利だが、ゲートが実質的に無効な環境を 1 つ作る**ことを意味する（§13.2 のモック設計に相当する判断）。
@@ -4838,7 +4874,7 @@ export function createConnectors(selection: ConnectorSelection): Connectors {
 
 | 規約 | 実装 |
 |---|---|
-| **起動時 1 回** | `apps/web` は `instrumentation.ts`、`apps/worker` は `src/main.ts` で 1 回だけ呼び、DI コンテナに入れる。🔴 **リクエストごとに呼ばない** |
+| **起動時 1 回** | `apps/web` は `instrumentation.ts`、`apps/worker` は `src/main.ts`（実体は `src/bootstrap.ts` の `bootstrapWorker()`。§13.1.1 ①）で 1 回だけ呼び、DI コンテナに入れる。🔴 **リクエストごとに呼ばない** |
 | **リクエストごとの `if` を作らない** | 🔴 **モック実装のモジュールを `packages/connectors/src/index.ts` 以外から import することを ESLint で禁止**（分岐の存在を静的に検出できる。`docs/03` §4.18.2） |
 | **`production` でモックなら起動失敗** | 🔴 `resolveConnectorSelection` 内の `assertNoMockInProduction` が、選択結果に `'mock'` が 1 件でも含まれれば `throw`。加えて `packages/config` の `z.discriminatedUnion('APP_ENV', [...])` が `production` のとき実装の必須環境変数を `required` にする（NFR-ENV-3） |
 | **テナント別プロバイダの例外** | 電子署名は `TenantEsignConnection.provider` で選ぶ。🔴 **DI コンテナには「全プロバイダの実装のマップ」を入れ、テナント設定でキーを引く**（`docs/03` §9.1）。リクエストごとの `if` にしない |
@@ -4858,6 +4894,74 @@ export function createConnectors(selection: ConnectorSelection): Connectors {
 - **`objectStore: 'real'` は AWS SDK のアダプタ（`@ses/connectors/aws` の `createS3Api`）を要求する**（T-05-04 で実装済み。`packages/connectors/src/storage/aws-sdk-s3.ts`）。渡されなければ**モックへフォールバックせず** `ConnectorImplementationNotAvailableError` で失敗する —— 「未設定ならモック」は**アップロードできたように見えてファイルがどこにも無い**という最悪の壊れ方を生む（§11.1）。
 - 🔴 **`apps/web` で `@ses/connectors/aws` を import してよいのは `lib/db/bootstrap.ts` だけである**（同ファイルが web の起動時 DI の実体）。**`instrumentation.ts` には置かない** —— Next.js はそこを **Edge ランタイム向けにもコンパイルする**ため、Node 組み込みに依存する AWS SDK を持ち込むとビルドが落ちる。Edge で動く `proxy.ts` は `bootstrap.ts` を import しない。
 - 🔴 **S3 の資格情報（`S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY`）は `storageRuntime()` の戻り値に載せない**。`objectStore()` の内側だけが読む（`CLAUDE.md` §3.5）。SES のアダプタと違って資格情報を引数に取るのは、**MinIO に IAM ロールが無い**ためであり、「`staging` / `production` で設定されていたら起動を止める」判定は `packages/config` の 1 箇所が持つ（docs/03 §6.5）。
+
+#### 13.1.1 🔴 `apps/worker` の起動配線の決着（T-07-11。2026-09-10）
+
+**本節は SP-07 `T-07-11` の実装の一次資料である**（`CLAUDE.md` §8.7。§7.9〜§7.13 / §11.8〜§11.13 と同じ作法）。上のスケッチとの差分を記録する。**以降のタスクは本節を正とする。**
+
+**① 置き場所（3 ファイルに割った）**
+
+```
+apps/worker/src/bootstrap.ts   bootstrapWorker()（= initializeRuntimeConfig の呼び出し。T-03-12 から移動）
+apps/worker/src/main.ts        起動エントリ。argv の解釈 → startWorkerRuntime → SIGTERM/SIGINT
+apps/worker/src/runtime.ts     configureTenantDb / コネクタ / キュー / Worker / スケジュールの組み立て
+apps/worker/src/scheduler.ts   runScheduled()（slot の取り出し + SchedulerRun の CAS。§9.1）
+```
+
+🔴 **`bootstrapWorker()` を `main.ts` から切り出した理由**: `main.ts` は **import しただけでワーカーが常駐する**エントリになった。起動経路テストの harness（`tests/startup/harness/run-entry.ts`）は「初期化を 2 回試してキャッシュが効くこと」を確かめたいだけであり、そのために Redis へ繋ぐワーカーを立てるわけにはいかない。**呼び出し連鎖は変わっていない**（`main.ts` → `bootstrap.ts` → `initializeRuntimeConfig`）ことを `tests/static/startup-di-callers.test.ts` が 2 段とも固定する。
+
+**② 🔴 `--verify-config`: 設定を検証して終了する経路（起動経路テストとの整合）**
+
+`tests/startup/startup-di.test.ts` は「ワーカーの起動エントリが exit 0 で終了する」を表明していたが、常駐するようになって成り立たなくなった。🔴 **採ったのは「検証だけして終了する引数を用意する」ほうである**（テスト側で起動ログを見てプロセスを殺す形にはしない）。理由は 3 つ:
+
+1. **本番の運用に要る。** デプロイ前に「この環境変数一式で起動できるか」を、Redis にもキューにも触れずに確かめられる（コンテナの healthcheck / CI の設定検証）。
+2. テストが「ログを見て SIGTERM」になると**検証がタイミングに依存する**（早すぎれば偽陰性、遅ければ Redis へ繋いで環境依存になる）。
+3. 🔴 **`bootstrapWorker()` を必ず通ることは変えていない。** 引数の解釈は bootstrap の**後ろ**にあり、設定が不正なら `--verify-config` を付けても exit 1 になる（同テストの異常系 3 件が worker 側でもこの引数付きで走っている）。
+
+🔴 **あわせて起動経路テストの実行対象を `apps/worker/src/main.ts` から `apps/worker/dist/main.js` に変えた。** Node の型除去は `./foo.js` → `./foo.ts` の読み替えをしないため、相対 import を持つようになったソースは直接実行できない（実測 `ERR_MODULE_NOT_FOUND`）。**コンテナが実行するものと同一のファイル**を検証する点ではむしろ忠実になっている。
+
+**③ 🔴 配線の範囲（本タスクで待ち受けるのは 6 キュー）**
+
+| キュー | 本タスクで配線したか | 持ち主 |
+|---|---|---|
+| `gate.run` | ✅ Worker | T-07-11 |
+| `usage.seat-snapshot` / `domain.recheck` / `send.hold-release` / `scan.poll` / `gate.hold-release` | ✅ Worker + Repeatable Job | T-07-11 |
+| `email.dispatch` / `account.mail` / `webhook.process` / `scan.apply-result` / `domain.provision` / `domain.verify` | ❌ **Worker は無い**（enqueue 側だけ配線済み） | ⚠️ **各キューを実装したタスクの後続**。積まれたジョブは Redis に残り続ける（失われないが、消費されるのは配線後） |
+
+⚠️ **`usage.seat-snapshot` は `QUEUE_DEFINITIONS` に無かった**（T-03-10 が宣言とハンドラだけを置き、キュー定義は SP-07 の配線待ちだった）。T-07-11 で `internalQueue('usage.seat-snapshot', { attempts: 3 })` を追加した。
+
+**④ 🔴 コネクタは区分単位で遅延生成する（`development` で起動できることが受け入れ基準①）**
+
+`development` の `malwareScanner` は **ClamAV（未登録）** である（§13.1 の表 / §8.5.1 の ⚠️）。`createConnectors`（5 区分を一度に作る）を起動時に呼ぶと**ワーカーそのものが起動しない**。したがって:
+
+- `packages/connectors` に**区分単位の入口**を 2 つ足した（`createEmailSender` / `createMalwareScanner`。T-05-04 の `createObjectStore` と同じ整理で、`createConnectors` も内部でこれらを呼ぶ = 実装は 1 つ）。
+- `runtime.ts` の `ScheduledJobDeps` は、外部資源を持つ 4 つ（`emailSender` / `identityApi` / `malwareScanner` / `providerSentCounter`）を**getter で遅延**させる。未登録の区分に触れるジョブ（`scan.poll`）だけが実行時に失敗し、**起動と `gate.run` は成立する**。
+- 🔴 **モックへフォールバックしない**（`CLAUDE.md` §11.1）。落ちるのが正しい。
+- 🔴 `email` がモックの環境では **SES の identity API を作らない**（`domain.recheck` は例外で止まる）。作ると非本番から AWS の実 API（`GetEmailIdentity`）へ出ていく経路ができる —— 読み取りであっても §11.1 の「非本番から実 API」に当たる。
+
+**⑤ 🔴 DB クライアントと暗号鍵は `startWorkerRuntime` が configure する**
+
+`configureTenantDb` / `configureTokenEncryption` は `apps/web` では `lib/db/bootstrap.ts` が呼ぶが、ワーカーは**別プロセス**であり web の起動処理を通らない。**アプリごとに 1 箇所**である（`tests/static/auth-db-callers.test.ts` の許可先も 2 件になった）。🔴 **管理平面のプール（`PLATFORM_*`）は組み立てない** —— ワーカーは運営者の操作を行わない（`CLAUDE.md` §10.5。持たせると分離バイパスの経路がジョブ側にも開く）。🔴 `runtime.close()` は **DB クライアントを切らない**（Prisma クライアントはプロセスに 1 つであり、実行時ランタイムの所有物ではない）。
+
+**⑥ 🔴 `send.*` の保留復帰（`releaseSendHolds`）は未実装の seam のままである**
+
+`SendHoldReleaseDeps.releaseSendHolds` は SP-09 T-09-06 の範囲であり、T-07-11 は `sendHoldReleaseNotImplemented`（常に 0）を渡した。🔴 **「0 件」は今は事実である** —— `Proposal` / `Contract` の `sendHoldReasonKey` を**書くコードがリポジトリに 1 つも無い**。🔴 **SP-09 が保留を書いた瞬間にその 0 は嘘になる**ため、`tests/static/send-hold-seam.test.ts` が「書く実装が 0 件」を固定し、**書かれた瞬間に落ちる**。落ちたら実装で置き換え、同テストを削除すること（期待値を書き換えて緑にしない）。
+
+**⑦ 検証（T-07-11 で緑にしたもの）**
+
+| 層 | 何を固定したか |
+|---|---|
+| ユニット（worker） | slot の取り出し（**現在時刻を使わない** / 壊れた `jobId` は例外）/ 1 slot 1 回 / 失敗は記録してから再 throw / 記録に例外メッセージを載せない / `resolveMockAiOptions` の環境別（`demo` のみ PASS）/ ファンアウトの payload と「1 社の失敗で止めない」 |
+| ユニット（ai） | 🔴 **`maxRetries: 0`**（`buildAnthropicClientOptions`）/ 要求と応答の写像（text ブロックのみ / usage の 4 値 / `parsed_output: null` の畳み方） |
+| 結合（実 DB） | `tests/isolation/scheduler-fanout.test.ts` —— 母集団が `SANDBOX` / `ACTIVE` だけ / 停止中に配らない / 限定経路の fail-closed（テナント文脈から呼べない・GUC 無しで呼べない・列レベル GRANT は 2 列）/ 🔴 **二重起動でハンドラ 1 回**（`runKey` の UNIQUE）/ 失敗 slot は取り直せる・成功 slot は取り直せない |
+| 結合（実 DB + 実 Redis） | `tests/isolation/worker-runtime.test.ts` —— 🔴 **`startWorkerRuntime` をそのまま呼び**、enqueue した `gate.run` が**実際に消費される**こと / 宣言済み 5 本が Repeatable Job として cron・TZ どおりに 1 本ずつ登録されること / `gate.run` にはスケジュールが付かないこと / 二重起動でもスケジュールは 1 本 |
+| 静的 | `QUEUE_CONSTRUCTION_ALLOWLIST` が 1 件のまま / 起動時 DI の呼び出し連鎖 2 段 / `scheduler_runs` と `listSchedulerFanoutTenants` の呼び出し元固定 / `sendHoldReasonKey` を書く実装が 0 件 |
+
+**⑧ ⚠️ 後続タスクへの申し送り**
+
+1. **SP-09 T-09-06 へ**: 上記 ⑥。`sendHoldReleaseNotImplemented` を実装で置き換え、`tests/static/send-hold-seam.test.ts` を削除する。
+2. **イベント起動キューの配線を行うタスクへ**: 上記 ③ の表の下段。`runtime.ts` に `createBullMqWorker({ queueName, ... })` を足すだけであり、キューの実体化は `packages/connectors/src/bullmq.ts` の 1 ファイルのままである（🔴 `QUEUE_CONSTRUCTION_ALLOWLIST` に 2 件目を足さない）。
+3. **SP-14（`TenantRoleModel`）へ**: `runtime.ts` の `models` は `catalogRoleModelResolver`（既定のみ）である。テナント別の上書きを読む解決器に差し替えるのは**この 1 行**であり、`gate.run` / `gate.hold-release` の両方が同じインスタンスを受け取る（見積りと実行でモデルがずれない）。
 - **`sandbox` の `billing` が `real`** なのは、`sandbox` テナントは `Tenant.lifecycleState='SANDBOX'` のままで Stripe の `Subscription` を持たず、課金フロー自体が発生しないため（§4.2 `Tenant` の規則）。「送信系（メール/電子署名）のみモック、それ以外は本番同等」の原則どおり。
 
 ### 13.2 モック実装の設計
@@ -4884,6 +4988,7 @@ export class MockEmailSender implements EmailSender {
 | 🔴 **E2E が使うモックと同一実装** | **`packages/connectors/src/mock/**` を E2E も本番コードも同じものを使う。** テスト専用のモックを `tests/` に別途書かない（二重メンテを避け「デモで動く = E2E が通る」を担保する） |
 | **可観測性** | `demo` / `sandbox` では送信内容を `EmailDispatch(status='MOCKED')` に記録し、`A-005` から「疑似送信の件数」を確認できるようにする。🔴 **この記録を書くのはジョブハンドラ側**（`packages/connectors` は `@ses/db` に依存できない。§2.2）。モックが持つのは `callCount()` / `callsOf()` と、任意の `sink`（MailHog 等）だけである |
 | 🔴 **PII を保持しない** | モックが保持する記録の宛先は伏せ字にする（`***@example.co.jp`）。件数と宛先分類が分かれば §17.4 の検証には足りる（CLAUDE.md §3.5 / §8.6 の denylist に `email` / `recipientEmail` がある） |
+| 🔴 **`MockAnthropicClient` の既定応答**（Issue #44 / T-07-11） | 🔴 **`demo` は常時 PASS / `development` は未設定のまま**（[Issue #44](https://github.com/Festal-KM/SES-Platform/issues/44) の回答 ①。2026-09-10）。`demo` は営業が実演する環境であり、ゲートに到達したジョブが必ず失敗するのを避ける（合成データしか入らないので漏洩は起きない）。🔴 **`development` に既定応答を足さない** —— 「ゲートが実質的に無効な環境」を最小限に留めるのがこの決定の趣旨であり、`development` でゲートを試す人は `createAiClient('mock', { script: [...] })` に応答を明示する。応答の**データ**は `packages/ai`（`DEMO_MOCK_ANTHROPIC_SCRIPT`。`gate-inspector` の全層 PASS）にあり、**どの環境でそれを使うか**の判断は起動時の配線 1 箇所（`apps/worker/src/runtime.ts` の `resolveMockAiOptions`）にある（`packages/ai` は `APP_ENV` を知らない）。`sandbox` 以上は `ai: 'real'` なのでこの既定は使われない |
 | 🔴 **`MockObjectStore` の署名 URL は到達しないスキーム**（`mock-object-store://`） | `demo` では「署名を出した ＝ そのキーに置かれた」とみなす（`head()` が値を返す）。したがって**ブラウザからの転送先が存在しない**。画面（`S-008`）は **URL の形（`http(s)` か）だけ**を見て転送の要否を決める（`apps/web/lib/skill-sheets/upload-client.ts` の `requiresDirectTransfer`。T-05-06）。🔴 これは `APP_ENV` の分岐ではない —— `production` / `staging` / `sandbox` / `development`（MinIO）はいずれも `http(s)` の URL を返すため、**実装側の分岐は 1 つも増えない**（`CLAUDE.md` §11.1） |
 
 ### 13.3 本番以外の環境が安全に degrade する設計（二重防御）
@@ -5269,6 +5374,8 @@ export const logger = pino({
 | 23 | `masked-text-single-path.test.ts` | 🔴 **`MaskedText` へのキャスト（`as MaskedText` / `<MaskedText>`）を持つ非テストソースが `packages/ai/src/mask.ts` の 1 本だけ**（T-07-02。§7.10 ①）。走査は `apps` / `packages` / `prompts` / `scripts`。理由: 「PII 未マスキングでの LLM 送信 0 件」（`CLAUDE.md` §7 / `BR-11` / `F-032 AC-1`）を守っているのは型そのものではなく「**型を握り潰す記述がどこにも無い**」という構造であり、`as MaskedText` を 1 行書けば担保は静かに全部消える。あわせて `packages/ai` のバレルが `unsafeAsMasked` 相当の無条件変換を公開していないことも見る |
 | 24 | `ai-usage-cost-single-path.test.ts` | 🔴 **AI の金額と件数の置き場所を固定する**（T-07-03。§7.11 ① / ②）: ①単価表 `AI_MODEL_PRICING` を**宣言**する非テストソースが `packages/domain/src/ai/pricing.ts` の 1 つだけ（`ROLE_UNIT` も同様に `units.ts` の 1 つだけ）②🔴 **`packages/ai/**` に `AI_MODEL_PRICING` / `estimateAiCostUsd` / `resolveAiModelPrice` の識別子が 1 つも現れない**（`AiUsageRecordInput` に金額が無い状態は型では守れない。domain は `packages/ai` からも import できるため）③`estimateAiCostUsd` を呼ぶのは `packages/db/src/**` だけ（記録と、呼び出し前の予約）④🔴 **`units.ts` が `pricing.ts` を import しない**（「件数を金額から割り戻さない」＝ `F-026 AC-6` の機械的な根拠）⑤`resolveAiUnitCount` を呼ぶ非テストソースが `packages/db/src/ai-usage.ts` の 1 本（件数の加算経路が 1 つであることの担保。`P-A-18`） |
 | 25 | `prompt-registry-single-path.test.ts` | 🔴 **製品プロンプトの読み込み口と依存を固定する**（T-07-05。§7.7 / §7.13 ⑦）: ①`@ses/prompts`（= `prompts/roles/**`）を import する非テストソースが **`packages/ai/src/prompts.ts` の 1 本だけ**（ESLint は「`packages/ai` 以外は不可」までしか言えず、パッケージ内部で読み込みが散ると `runRole` を経ないプロンプト組み立てが成立する）②🔴 **`prompts/roles/**` が外部 import と親ディレクトリへの相対 import を 1 つも持たない**（プロンプトはデータであって実行主体ではない。`CLAUDE.md` §12.3。ここから DB・LLM・I/O に到達できないことの担保であり、`packages/ai` との依存循環を作らないことの担保でもある）③**版リテラル・ファイル名・登録表の 3 つが一致する**（`{role}.v{n}.ts` ↔ `version: '{role}.v{n}'` ↔ `prompts/roles/index.ts`。ずれると生成物に残った版から文面を再現できない = `BR-13` が壊れる） |
+| 26 | `send-hold-seam.test.ts` | 🔴 **`send.*` の保留を書く実装が 0 件であること**（T-07-11。§13.1.1 ⑥）。`Proposal` / `Contract` の `sendHoldReasonKey` / `sendHoldSince` を**オブジェクトリテラルのプロパティとして書く**箇所を AST で数える。理由: `send.hold-release` の `releaseSendHolds` は SP-09 T-09-06 の範囲であり、T-07-11 は「常に 0 を返す」seam を渡した。**保留を書く経路が無い今は 0 が事実だが、SP-09 が書いた瞬間に嘘になる**（`CLAUDE.md` §11.1）。落ちたら実装で置き換え、**本テストごと削除する**（期待値を書き換えて緑にしない） |
+| 27 | `startup-di-callers.test.ts` の追補 | 🔴 **ワーカーの起動時 DI の呼び出し連鎖が 2 段とも繋がっていること**（T-07-11。§13.1.1 ①）: ①`apps/worker/src/main.ts` が `./bootstrap.js` を import して `bootstrapWorker()` を呼ぶ ②`apps/worker/src/bootstrap.ts` が `initializeRuntimeConfig` を呼ぶ。**切り出しで連鎖が切れると「起動しても環境変数を検証していない」状態になる**（T-03-12 が塞いだ穴の再発） |
 
 ### 17.3 E2E の主要シナリオ
 

@@ -116,6 +116,12 @@ export const INTERNAL_JOB_NAMES = [
   //    `WebhookDelivery.processedAt` の CAS、そして状態遷移の単調性（domain）が担う。
   'scan.apply-result',
   'scan.poll',
+  // 🔴 T-07-11（docs/05 §9.8）。席数の日次スナップショット。**外部 API を 1 つも呼ばない**
+  //    （`Membership` を数えて `UsageCounter(DAY,'SEAT_COUNT')` に書くだけ）ので `attempts: 3`。
+  //    冪等性は `UsageCounter` の `UNIQUE` + `ON CONFLICT`（確定値の上書き）が担う。
+  //    ⚠️ T-03-10 の時点でジョブ宣言（`SCHEDULED_JOBS`）とハンドラだけが存在し、
+  //    **キュー定義がこの表に無かった**（配線が SP-07 だったため）。T-07-11 で足す。
+  'usage.seat-snapshot',
   // 🔴 T-07-06（docs/05 §9.3）。品質ゲートの実行。**外部への送信ではない**が
   //    `attempts: 1` である —— 理由は送信系とは別で、**LLM の再試行は `runRole` の内部で
   //    最大 2 回まで行うため**（docs/05 §7.4）。ジョブ単位で再試行すると、マスキングと
@@ -218,6 +224,9 @@ export const QUEUE_DEFINITIONS = {
     backoff: { type: 'exponential', delay: 5_000 },
   }),
   'scan.poll': internalQueue('scan.poll', { attempts: 3 }),
+  // 🔴 T-07-11（docs/05 §9.8）。席数の日次スナップショット（毎日 01:00 JST）。
+  //    `scan.poll` と同じ性質（読み取り + 冪等な upsert）なのでバックオフを持たない。
+  'usage.seat-snapshot': internalQueue('usage.seat-snapshot', { attempts: 3 }),
   // 🔴 T-07-06（docs/05 §9.1 / §9.3）。品質ゲートの実行。
   //    - `attempts: 1` … LLM の再試行は `runRole` の内部で完結する（上記 `INTERNAL_JOB_NAMES` の 🔴）。
   //    - 🔴 `removeOnComplete: true` … **`jobId` を冪等キーに使うキューだから必須**である。
@@ -359,4 +368,17 @@ export type QueueName = keyof typeof QUEUE_DEFINITIONS;
 /** 定義済みのキューを名前で引く（未定義の名前は型で弾かれる）。 */
 export function queueDefinition<N extends QueueName>(name: N): (typeof QUEUE_DEFINITIONS)[N] {
   return QUEUE_DEFINITIONS[name];
+}
+
+/**
+ * 🔴 実行時の名前がキュー定義に存在するか（T-07-11）。
+ *
+ * 🔴 **なぜ要るか**: ジョブの**宣言**（`apps/worker` の `SCHEDULED_JOBS`）は文字列の `name` を持ち、
+ *    この表とは別に管理されている。実際に `usage.seat-snapshot` は **T-03-10 で宣言だけが置かれ、
+ *    キュー定義がこの表に無いまま SP-07 まで残った**（配線が無かったので誰も気づかなかった）。
+ *    起動配線はこの述語を通し、**定義の無い名前で `Queue` を作ろうとしたら起動時に落とす**
+ *    （`undefined` のまま BullMQ に渡すと、意味の分からない TypeError になる）。
+ */
+export function isQueueName(value: string): value is QueueName {
+  return Object.hasOwn(QUEUE_DEFINITIONS, value);
 }

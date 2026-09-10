@@ -86,6 +86,21 @@ SELECT 'CREATE ROLE app_scan_probe NOLOGIN NOBYPASSRLS'
 WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_scan_probe')
 \gexec
 
+-- app_scheduler_probe: NOLOGIN。tenants の 2 列（id / lifecycle_state）の SELECT のみ
+-- （T-07-11。docs/05 §4.2 / §9.1。app_scan_probe と同じパターン）。
+-- 🔴 なぜ要るか: スケジュールジョブは「payload に tenantId を必ず含める」（docs/05 §9.1）が、
+-- **その手前の「テナントの列挙」だけはテナント文脈を持てない**（どのテナントかを決める処理で
+-- あるため）。withSystemScope は C0 の 4 表しか触れず tenants を含まない。withPlatformRead は
+-- 運営者の操作であり AuditLog を伴う（10 分ごとのジョブが運営者の監査ログを埋めてしまう）。
+-- 🔴 緩めるのは「テナント ID の集合」だけである。名前・環境・契約状態そのものは返らない
+-- （app_list_scheduler_tenants は setof uuid を返す）。呼び出しには app.scheduler_scope='on' と
+-- app_tenant_id() IS NULL の両方が要る（fail-closed）。
+-- パスワード不要。GRANT・ポリシー・関数は
+-- packages/db/prisma/migrations/20260915000000_scheduler_tenant_fanout/migration.sql。
+SELECT 'CREATE ROLE app_scheduler_probe NOLOGIN NOBYPASSRLS'
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_scheduler_probe')
+\gexec
+
 -- 🔴 `ALTER FUNCTION ... OWNER TO app_assignment_owner_probe`（migration 20260903070000）は
 -- app_migrator が app_assignment_owner_probe に対して SET ROLE できることを要求する
 -- （PostgreSQL の所有者変更の仕様。実行者は新旧いずれの所有者ロールにもなれる必要がある）。
@@ -94,6 +109,8 @@ WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_scan_probe')
 GRANT app_assignment_owner_probe TO app_migrator;
 -- 同上（T-05-05。migration 20260908000000 の ALTER FUNCTION ... OWNER TO app_scan_probe）。
 GRANT app_scan_probe TO app_migrator;
+-- 同上（T-07-11。migration 20260915000000 の ALTER FUNCTION ... OWNER TO app_scheduler_probe）。
+GRANT app_scheduler_probe TO app_migrator;
 
 -- public スキーマの所有者を app_migrator にする（PostgreSQL 15 以降は既定で PUBLIC に
 -- CREATE 権限が無いため、これが無いとマイグレーションがテーブルを作れない。docs/05 §4.2）。

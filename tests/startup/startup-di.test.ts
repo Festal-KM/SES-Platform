@@ -33,8 +33,16 @@ const repoRoot = path.resolve(here, '..', '..');
 
 /** 🔴 起動エントリを読み込んで、起動時に呼ばれるのと同じ関数を呼ぶだけの実行体。 */
 const RUNNER = path.join(here, 'harness', 'run-entry.ts');
-/** 🔴 ワーカーの起動エントリ**そのもの**（コンテナが実行する `node dist/main.js` と同じ内容）。 */
-const WORKER_ENTRY = path.join(repoRoot, 'apps', 'worker', 'src', 'main.ts');
+/**
+ * 🔴 ワーカーの起動エントリ**そのもの**（コンテナが実行する `node dist/main.js` と同一のファイル）。
+ *
+ * 🔴 T-07-11 で **`src/main.ts` から `dist/main.js` に変えた**。理由は Node の型除去の仕様である:
+ *    `main.ts` は相対 import（`./runtime.js`）を持つようになったが、Node は `./foo.js` →
+ *    `./foo.ts` の読み替えをしないため、**ソースを直接実行すると `ERR_MODULE_NOT_FOUND` になる**
+ *    （実測）。`@ses/config` を dist 経由で解決しているのと同じ理由であり、
+ *    **コンテナが実行するものと同一のファイルを検証する**という点ではむしろ忠実になっている。
+ */
+const WORKER_ENTRY = path.join(repoRoot, 'apps', 'worker', 'dist', 'main.js');
 
 /**
  * 🔴 子プロセスは `@ses/config` を **ビルド済みの `dist`** 経由で解決する
@@ -43,6 +51,8 @@ const WORKER_ENTRY = path.join(repoRoot, 'apps', 'worker', 'src', 'main.ts');
  *    CI は `pnpm run build` を test の前に実行している（.github/workflows/ci.yml）。
  */
 const CONFIG_DIST = path.join(repoRoot, 'packages', 'config', 'dist', 'index.js');
+/** 🔴 T-07-11: worker の起動エントリも dist を実行する（上の `WORKER_ENTRY` の 🔴）。 */
+const WORKER_DIST = WORKER_ENTRY;
 
 type RunResult = {
   readonly status: number | null;
@@ -106,12 +116,34 @@ function startupLinesOf(result: RunResult): string[] {
 
 /**
  * 🔴 web / worker の 2 経路に同じ検証をかける（片方だけ守られている状態を作らない）。
- *    worker は起動エントリ（`main.ts`）を直接実行する。web は Next.js が呼ぶ `register()` を
- *    harness 経由で呼ぶ（`register()` は export された関数であり、単体では何も起動しないため）。
+ *    worker は起動エントリ（`dist/main.js`）をそのまま実行する。web は Next.js が呼ぶ
+ *    `register()` を harness 経由で呼ぶ（`register()` は export された関数であり、
+ *    単体では何も起動しないため）。
  */
+/**
+ * 🔴 T-07-11: worker は `--verify-config` で起動する（docs/05 §13.1）。
+ *
+ * T-07-11 で `main.ts` が **常駐する**ようになったため、引数無しで実行すると Redis へ繋いで
+ * 待ち受け続ける（= 子プロセスが終了せず、この検証が成立しない）。`--verify-config` は
+ * **`bootstrapWorker()` を通ったうえで**配線の手前で終了する経路であり、
+ * 🔴 **検証のスキップではない**（不正な env なら `--verify-config` を付けても exit 1 になる。
+ * 下の 3 つの異常系がそれを実証している）。
+ */
+const WORKER_VERIFY_ARGS = ['--verify-config'];
+
+/**
+ * 🔴 子プロセスの起動には Vitest の既定（5 秒）では足りない（T-07-11）。
+ *
+ * `apps/worker/dist/main.js` は AWS SDK / BullMQ / ioredis / Prisma Client を**静的に**読む
+ * （それが「SDK に触るのは 1 ファイル」「キューの実体化は 1 ファイル」の裏返しである）。
+ * Node の起動 + それらの読み込みだけで数秒かかり、既定のままだと**実装ではなく実行環境の速度で
+ * 断続的に落ちる**。`spawnSync` 側の上限（120 秒）と揃えず、テスト側は 60 秒に取る。
+ */
+const ENTRY_TIMEOUT_MS = 60_000;
+
 const ENTRIES: readonly (readonly [label: string, script: string, args: string[]])[] = [
   ['apps/web（instrumentation.ts の register）', RUNNER, ['web']],
-  ['apps/worker（src/main.ts）', WORKER_ENTRY, []],
+  ['apps/worker（src/main.ts --verify-config）', WORKER_ENTRY, WORKER_VERIFY_ARGS],
 ];
 
 /** 多重初期化の確認用（1 プロセス内で 2 回初期化を試みる）。 */
@@ -125,6 +157,13 @@ describe('🔴 起動時 DI の呼び出し側（T-03-12。CLAUDE.md §11.1 / do
     expect(
       existsSync(CONFIG_DIST),
       `${CONFIG_DIST} がありません。先に \`pnpm run build\` を実行してください。`,
+    ).toBe(true);
+  });
+
+  it('前提: apps/worker がビルド済みである（T-07-11。dist を実行する）', () => {
+    expect(
+      existsSync(WORKER_DIST),
+      `${WORKER_DIST} がありません。先に \`pnpm run build\` を実行してください。`,
     ).toBe(true);
   });
 
@@ -142,7 +181,7 @@ describe('🔴 起動時 DI の呼び出し側（T-03-12。CLAUDE.md §11.1 / do
       expect(lines[0]).toContain('email=mock');
       expect(lines[0]).toContain('esign=mock');
       expect(lines[0]).toContain('objectStore=real');
-    });
+    }, ENTRY_TIMEOUT_MS);
 
     it('🔴 起動ログにシークレットの値が現れない（CLAUDE.md §3.5 / docs/05 §13.4 規則 6）', () => {
       const env = buildValidEnv('development');
@@ -164,7 +203,7 @@ describe('🔴 起動時 DI の呼び出し側（T-03-12。CLAUDE.md §11.1 / do
         expect(value, `${variable} がフィクスチャに無い（対照が空振りしている）`).toBeTruthy();
         expect(output, `${variable} の値が起動ログに現れている`).not.toContain(value);
       }
-    });
+    }, ENTRY_TIMEOUT_MS);
 
     it('🔴 production でモック実装が選択される env なら起動に失敗する（NFR-ENV-3）', () => {
       // production の枝はスキーマ上 mock を選べない（docs/05 §13.4 規則 1）。
@@ -182,7 +221,7 @@ describe('🔴 起動時 DI の呼び出し側（T-03-12。CLAUDE.md §11.1 / do
       expect(result.status).not.toBe(0);
       expect(startupLinesOf(result)).toEqual([]);
       expect(result.stderr).toContain('MALWARE_SCANNER');
-    });
+    }, ENTRY_TIMEOUT_MS);
 
     it('🔴 非本番に本番の API キーが設定されていたら起動に失敗する（NFR-ENV-4）', () => {
       const result = run(
@@ -196,7 +235,7 @@ describe('🔴 起動時 DI の呼び出し側（T-03-12。CLAUDE.md §11.1 / do
       expect(result.stderr).toContain('STRIPE_SECRET_KEY');
       // 🔴 変数名と理由だけを出す。値（キーそのもの）は出さない。
       expect(result.stderr).not.toContain('sk_live_not_a_real_key_for_tests');
-    });
+    }, ENTRY_TIMEOUT_MS);
 
     it('🔴 非本番に本番の AWS アカウント ID が設定されていたら起動に失敗する（NFR-ENV-4）', () => {
       const productionAccountId = buildValidEnv('production').AWS_ACCOUNT_ID;
@@ -209,7 +248,7 @@ describe('🔴 起動時 DI の呼び出し側（T-03-12。CLAUDE.md §11.1 / do
       expect(result.status).not.toBe(0);
       expect(startupLinesOf(result)).toEqual([]);
       expect(result.stderr).toContain('AWS_ACCOUNT_ID');
-    });
+    }, ENTRY_TIMEOUT_MS);
   });
 
   describe.each(REPEAT_RUNS)(
@@ -226,9 +265,23 @@ describe('🔴 起動時 DI の呼び出し側（T-03-12。CLAUDE.md §11.1 / do
         expect(startupLinesOf(result)).toHaveLength(1);
         expect(result.stdout).toContain('[harness] cached-app-env=development');
         expect(result.stdout).not.toContain('UNEXPECTED_SECOND_LOG');
-      });
+      }, ENTRY_TIMEOUT_MS);
     },
   );
+
+  // 🔴 T-07-11: `--verify-config` が「検証して終了する」ことを、出力の 1 行で確かめる。
+  //    上の 3 つの異常系（`describe.each` の worker 側）が「この引数を付けても検証は
+  //    スキップされない」ことを示しており、本 it は正常系で**配線に入らずに終わる**ことを示す。
+  it('🔴 worker の --verify-config は設定を検証して終了する（Redis にもキューにも触れない）', () => {
+    const result = run(WORKER_ENTRY, buildValidEnv('development'), WORKER_VERIFY_ARGS);
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    // 起動ログ（1 行）+ 検証のみで終了した旨。**キューの一覧は出ない**（配線していない）。
+    expect(startupLinesOf(result)).toHaveLength(1);
+    expect(result.stdout).toContain('設定の検証のみを行い、ワーカーは起動しませんでした。');
+    expect(result.stdout).not.toContain('queues:');
+  }, ENTRY_TIMEOUT_MS);
 
   it('Edge ランタイムでは検証しない（Node ランタイムの register が起動時に必ず走るため迂回にならない）', () => {
     // 🔴 意図的な仕様（`apps/web/instrumentation.ts` の JSDoc）。Edge の `process.env` は
@@ -243,5 +296,5 @@ describe('🔴 起動時 DI の呼び出し側（T-03-12。CLAUDE.md §11.1 / do
 
     expect(result.status).toBe(0);
     expect(startupLinesOf(result)).toEqual([]);
-  });
+  }, ENTRY_TIMEOUT_MS);
 });

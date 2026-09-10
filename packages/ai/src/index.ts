@@ -134,6 +134,9 @@ export {
 } from './usage.js';
 // モックの**設定の型**だけは出す（起動時の配線が応答を与えるため）。クラスそのものは出さない。
 export type { MockAnthropicClientOptions, MockAnthropicStep } from './mock/index.js';
+// 🔴 T-07-11: `demo` の既定応答（Issue #44 の回答 ①。docs/05 §13.2）。**データだけ**を出す。
+//    どの環境でこれを使うかを決めるのは起動時の配線であり、`packages/ai` は `APP_ENV` を知らない。
+export { DEMO_GATE_INSPECTOR_PASS_STEP, DEMO_MOCK_ANTHROPIC_SCRIPT } from './mock/index.js';
 
 /**
  * 起動時 DI（docs/05 §13.1）が選ぶ実装種別。

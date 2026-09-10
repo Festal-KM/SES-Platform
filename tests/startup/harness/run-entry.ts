@@ -11,7 +11,9 @@
 //
 // 引数: `<target> [mode]`
 //   target: `web`（`apps/web/instrumentation.ts` の `register()`）
-//         / `worker`（`apps/worker/src/main.ts`。import 時点で起動する）
+//         / `worker`（`apps/worker/dist/bootstrap.js` の `bootstrapWorker()`。
+//           🔴 T-07-11 で `main.ts` から切り替えた —— `main.ts` は import しただけで
+//           ワーカーが常駐するエントリになったため）
 //   mode:   `boot`（既定。1 回だけ起動する）
 //         / `repeat`（2 回目の初期化を試み、キャッシュが効いていることを確認する）
 import process from 'node:process';
@@ -21,7 +23,7 @@ type WebInstrumentation = {
   readonly register: () => void | Promise<void>;
 };
 
-/** `apps/worker/src/main.ts` の公開形。 */
+/** `apps/worker/src/bootstrap.ts` の公開形。 */
 type WorkerMain = {
   readonly bootstrapWorker: () => { readonly env: { readonly APP_ENV: string } };
 };
@@ -53,9 +55,13 @@ if (target === 'web') {
   await instrumentation.register();
   if (mode === 'repeat') await instrumentation.register();
 } else if (target === 'worker') {
-  // `main.ts` は末尾で `bootstrapWorker()` を呼ぶ（= `node dist/main.js` と同じ挙動）。
-  const main = await load<WorkerMain>('../../../apps/worker/src/main.ts');
-  if (mode === 'repeat') main.bootstrapWorker();
+  // 🔴 T-07-11: **`main.ts` を import しない。** あちらは import しただけでワーカーが起動する
+  //    （Redis に繋いで常駐する）エントリになった。ここで確かめたいのは「起動時 DI が
+  //    プロセスにつき 1 回」だけなので、`main.ts` が呼ぶのと**同じ関数**を持つ
+  //    `bootstrap.ts`（ビルド済み）を読む。実装の複製ではない（同一の関数である）。
+  const bootstrap = await load<WorkerMain>('../../../apps/worker/dist/bootstrap.js');
+  bootstrap.bootstrapWorker();
+  if (mode === 'repeat') bootstrap.bootstrapWorker();
 } else {
   process.stderr.write(`[harness] unknown target: ${target}\n`);
   process.exit(2);

@@ -239,7 +239,7 @@ function createS3ObjectStore(
  *    （docs/03 §3.4.3-6）。**未登録のまま throw する**ことで、`development` の起動配線
  *    （SP-07）が「スキャンしていないのに CLEAN になる」状態を作れないようにしている。
  */
-function createMalwareScanner(
+function createGuardDutyMalwareScanner(
   kind: ConnectorImplementationKind,
   scan: MalwareScannerRuntimeOptions | undefined,
 ): MalwareScanner {
@@ -273,6 +273,55 @@ export function createObjectStore(
 }
 
 /**
+ * 🔴 メール送信**だけ**を組み立てる（T-07-11。`createObjectStore` と同じ「区分単位の入口」）。
+ *
+ * 🔴 なぜ要るか: `apps/worker` は `development` で起動しなければならないが、その環境の
+ *    `malwareScanner` は **ClamAV（未登録）** であり、`createConnectors`（5 区分を一度に作る）を
+ *    呼ぶと**ワーカーの起動そのものが落ちる**（docs/05 §8.5.1 の ⚠️）。区分単位で作れば、
+ *    未登録の区分に触れるジョブだけが失敗する（起動は成功し、`gate.run` は待ち受ける）。
+ * 🔴 実装は 1 つである（`createConnectors` も本関数を呼ぶ）。「web と worker で別の実装が
+ *    選ばれる」ことは起こらない。`APP_ENV` は見ない（`kind` は起動時の解決結果である）。
+ */
+export function createEmailSender(
+  kind: ConnectorImplementationKind,
+  runtime: ConnectorRuntimeOptions = {},
+): EmailSender {
+  return pickByKind<EmailSender>('email', kind, {
+    mock: () => new MockEmailSender(),
+    // 🔴 `staging` / `production`。共通ドメイン / 独自ドメインの判定は `EmailSendInput.fromDomain`
+    //    が持ち、ここに環境分岐は無い。
+    real: () => createSesEmailSender('real', runtime.ses),
+    // 🔴 `sandbox`。分類 1 / 分類外だけが SES へ、分類 2 / 3 / 4 は
+    //    `development` / `demo` / E2E と**同一のモック実装**へ流れる（docs/05 §13.2 / §17.5）。
+    sandboxRecipientScoped: () =>
+      new SandboxRecipientScopedEmailSender({
+        real: createSesEmailSender('sandboxRecipientScoped', runtime.ses),
+        mock: new MockEmailSender(),
+      }),
+  });
+}
+
+/**
+ * 🔴 ウイルススキャン**だけ**を組み立てる（T-07-11。`createEmailSender` と同じ理由）。
+ *
+ * 🔴 `development` の ClamAV は未登録であり、**ここで初めて**
+ *    `ConnectorImplementationNotAvailableError` になる（モックへ倒さない。`CLAUDE.md` §11.1）。
+ *    起動時ではなく `scan.poll` の実行時に落ちるのが正しい —— スキャンのモックへ勝手に落ちると
+ *    「検査していないファイルが `CLEAN` になる」という、より重い壊れ方になる。
+ */
+export function createMalwareScanner(
+  kind: ConnectorImplementationKind,
+  runtime: ConnectorRuntimeOptions = {},
+): MalwareScanner {
+  return pickByKind<MalwareScanner>('malwareScanner', kind, {
+    mock: () => new MockMalwareScanner(),
+    // 🔴 `sandbox` / `staging` / `production` = GuardDuty（docs/03 §3.4）。
+    //    `development` の ClamAV は未登録であり、選ばれたら例外になる。
+    real: () => createGuardDutyMalwareScanner('real', runtime.scan),
+  });
+}
+
+/**
  * 起動時に 1 回だけ呼ぶ（`apps/web` は `instrumentation.ts`、`apps/worker` は `src/main.ts`）。
  * 🔴 リクエストごとに呼ばない。
  *
@@ -287,27 +336,11 @@ export function createConnectors(
   runtime: ConnectorRuntimeOptions = {},
 ): Connectors {
   return {
-    email: pickByKind<EmailSender>('email', selection.email, {
-      mock: () => new MockEmailSender(),
-      // 🔴 `staging` / `production`。共通ドメイン / 独自ドメインの判定は `EmailSendInput.fromDomain`
-      //    が持ち、ここに環境分岐は無い。
-      real: () => createSesEmailSender('real', runtime.ses),
-      // 🔴 `sandbox`。分類 1 / 分類外だけが SES へ、分類 2 / 3 / 4 は
-      //    `development` / `demo` / E2E と**同一のモック実装**へ流れる（docs/05 §13.2 / §17.5）。
-      sandboxRecipientScoped: () =>
-        new SandboxRecipientScopedEmailSender({
-          real: createSesEmailSender('sandboxRecipientScoped', runtime.ses),
-          mock: new MockEmailSender(),
-        }),
-    }),
-    // 🔴 区分単位の入口（`createObjectStore`）と**同じ実装**を通る（2 経路に書き分けない）。
+    // 🔴 区分単位の入口（`createEmailSender` / `createObjectStore` / `createMalwareScanner`）と
+    //    **同じ実装**を通る（2 経路に書き分けない）。
+    email: createEmailSender(selection.email, runtime),
     objectStore: createObjectStore(selection.objectStore, runtime),
-    malwareScanner: pickByKind<MalwareScanner>('malwareScanner', selection.malwareScanner, {
-      mock: () => new MockMalwareScanner(),
-      // 🔴 `sandbox` / `staging` / `production` = GuardDuty（docs/03 §3.4）。
-      //    `development` の ClamAV は未登録であり、選ばれたら起動を止める（上の ⚠️）。
-      real: () => createMalwareScanner('real', runtime.scan),
-    }),
+    malwareScanner: createMalwareScanner(selection.malwareScanner, runtime),
     esign: createEsignProviderMap(selection.esign),
     billing: pickByKind<BillingProvider>('billing', selection.billing, {
       mock: () => new MockBillingProvider(),
