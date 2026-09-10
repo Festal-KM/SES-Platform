@@ -1753,25 +1753,87 @@ export function withSharedCandidateScope<T>(
 ### 4.6 匿名候補の参照子と応答の型
 
 ```ts
-// packages/domain/src/anonymize/reference.ts（純粋関数。HMAC 鍵は引数）
+// packages/domain/src/anonymize/reference.ts（純粋関数。HMAC 鍵は引数）— 🔴 T-08-04 の責務
 export function candidateRef(secret: Uint8Array, projectId: string, engineerId: string): string;
 //  = base64url( HMAC-SHA256(secret, projectId + '\0' + engineerId).slice(0, 16) )   // 区切りは NUL（U+0000）。UUID に含まれ得ない
 
 // 🔴 匿名候補の応答型。engineerId を持たない（型として持てない）
+// 🔴 値は「区分コード + 数値」であり、表示文字列を 1 つも持たない（下記 4.6.2）
 export type AnonymousCandidateView = {
-  candidateRef: string;                    // 案件スコープ。案件が違えば別の値（BR-55）
-  skills: { name: string }[];              // 辞書の正規化済み名称。最大 8 件（U-06）
-  yearsBand: '1年未満' | '1〜3年' | '3〜5年' | '5〜10年' | '10年以上';
-  priceBand: string;                       // '60〜70万円' | '100万円以上'
-  availabilityBand: '即日' | '当月中' | '翌月' | '翌々月' | '3か月以降';
-  prefecture: string;                      // 都道府県のみ
-  remoteMode: 'FULL_REMOTE' | 'PARTIAL_REMOTE' | 'ONSITE_ONLY';
-  updatedOn: string;                       // 🔴 日単位に丸めた更新日（docs/03 §4.13.2-2）
-  score?: number;                          // Phase 2 のみ
-  rationale?: string;                      // Phase 2 のみ。丸め後の値しか含まない
+  candidateRef: string;                                 // 案件スコープ。案件が違えば別の値（BR-55）。🔴 付与は T-08-04
+  skills: { name: string }[];                           // 辞書の正規化済み名称。最大 8 件（U-06）
+  yearsBand: AnonymizedYearsBand | null;                // 'LT_1Y' | 'Y1_3' | 'Y3_5' | 'Y5_10' | 'GTE_10Y'
+  priceBand: AnonymizedPriceBand | null;                // 構造体。下記 4.6.2 の「なぜ string にしないか」
+  availabilityBand: AnonymizedAvailabilityBand | null;  // 'IMMEDIATE' | 'THIS_MONTH' | 'NEXT_MONTH' | 'MONTH_AFTER_NEXT' | 'THREE_MONTHS_OR_LATER'
+  prefecture: PrefectureCode | null;                    // '01'〜'47'（JIS X 0401）の厳密ユニオン。市区町村・沿線・駅名を含まない
+  remoteMode: AnonymizedRemoteMode | null;              // 'FULL_REMOTE' | 'PARTIAL_REMOTE' | 'ONSITE_ONLY'
+  updatedOn: string;                                    // 🔴 JST 暦日に丸めた更新日（docs/03 §4.13.2-2）。下記 4.6.3
+  score?: number;                                       // Phase 2 のみ
+  rationale?: string;                                   // Phase 2 のみ。丸め後の値しか含まない
 };
+
+// packages/domain/src/anonymize/rounding.ts（T-08-01 で実装済み）
+export type AnonymizedPriceBand =
+  | { readonly kind: 'RANGE'; readonly fromManYen: number; readonly toManYen: number }   // fromManYen 以上 toManYen 未満
+  | { readonly kind: 'OPEN';  readonly fromManYen: number };                             // 打ち止め（fromManYen 以上）
 ```
 🔴 **`AnonymousCandidateView` に詳細エンドポイントを作らない**（`docs/04` 申し送り 2 / §11-2）。一覧と提案依頼の発行以外に、この型を返す API を作らない。**`candidateRef` を受け取る API は `POST /api/proposal-requests` の 1 本だけ**であり、そこで `projectId` と組にして `MatchCandidate` から逆引きする。
+
+#### 4.6.1 丸めの関数（T-08-01 で実装済み。`packages/domain/src/anonymize/rounding.ts`）
+
+```ts
+export function anonymizeEngineer(
+  input: AnonymizeEngineerInput,      // 台帳の生値。🔴 実名 / 生年月日 / 連絡先 / 所属会社名 / 社内 ID /
+                                      //    営業メモ / スキルシートの**フィールドがそもそも無い**（F-017 AC-1）
+  context: AnonymizeContext,          // { referenceDate: string }  — 🔴 基準日を注入する
+  config: AnonymizeRoundingConfig,    // { maxSkills, yearsBandBoundaries, priceBucketYen, priceCapYen } — 🔴 粒度を注入する
+): RoundedAnonymousAttributes;        // = AnonymousCandidateView から candidateRef / score / rationale を除いた 7 フィールド
+
+export type AnonymizeEngineerInput = {
+  skills: { skillId: string; sortKey: number; name: string; yearsOfExperience: number }[];  // 台帳の**全**スキル（上位 8 件の選別は関数が行う）
+  unitPriceMinYen: number | null;  unitPriceMaxYen: number | null;   // 円。片側だけの登録は 1 点として扱う
+  availableFrom: string | null;                                      // 'YYYY-MM-DD'（@db.Date。toIsoDay で作る）
+  prefecture: PrefectureCode | null;
+  city: string | null;                                               // 🔴 受け取るが 1 文字も出力しない（落とすのが丸めの責務）
+  remoteMode: AnonymizedRemoteMode | null;
+  updatedOnJst: string;                                              // 🔴 'YYYY-MM-DD' のみ。時刻付きは RangeError（4.6.3）
+};
+```
+
+🔴 **粒度（`config`）を第 3 引数で注入する理由**: `packages/domain` は `@ses/config` を import **できない**（`CLAUDE.md` §2.1。`eslint.config.mjs` の `PACKAGE_ZONES` が `packages/domain` ゾーンに `forbidAllSes: true` を立て、`tests/static/no-restricted-imports.test.ts` と `tests/static/domain-purity.test.ts` が二重に固定している）。**ゾーンを緩めて domain から config を読む形にはせず、値を外から渡す形にした**（`SEAT_SNAPSHOT_COUNTS_PARTNER_SEATS` と同じ整理）。値の唯一の出所は `packages/config/src/anonymize.ts` の `ANONYMIZE_ROUNDING` である。これで生じる**三重宣言**（config の値 ↔ domain の型 ↔ `docs/02` A-04 の粒度表）は **`tests/static/anonymize-rounding-mirror.test.ts` が機械的に突合する**（`connector-selection-mirror.test.ts` と同じ扱い）。
+
+🔴 **基準日（`context.referenceDate`）を注入する理由**: `packages/domain` に**現在時刻の取得を持ち込まない**（`CLAUDE.md` §2.1）。稼働可能時期は「今日」からの相対区分（`IMMEDIATE` 〜 `THREE_MONTHS_OR_LATER`）なので、関数内で `new Date()` を読むと決定性が壊れ、**同じデータの同じ人が呼ぶたびに違う区分で表示され、テストでも監査でも再現できなくなる**。呼び出し側は `toJstIsoDay(new Date())` で作る（4.6.3）。
+
+🔴 **不正な入力は `RangeError` で落とし、黙って既定値に落とさない**（粒度設定の不正 / 時刻付きの日付 / 負値・非有限値）。握り潰すと、**意図より細かい粒度がそのまま外へ出る**（`CLAUDE.md` §7 の「匿名候補の身元露出 0 件」に直結する）。
+
+T-08-01 で確定した細部（`programmer` はこれを実装済みの事実として扱う）:
+
+- **スキル上位 8 件のタイブレークは `経験年数 desc → sortKey asc → skillId asc` の全順序**である。安定ソートの実装依存性に頼らない（入力の並び ＝ DB の返す順が変わっただけで表示スキルが入れ替わるため）。`sortKey` は §3.4 の `Skill.sortKey`（コメント「匿名候補のスキル並び（同順の決定的タイブレーク）」）と同一のもの。
+- 🔴 **`skillId` / `sortKey` は並びの決定にのみ使い、出力に載せない**（`BR-55` / `F-017 AC-2`。案件をまたいだ同一人物の追跡を防ぐ）。
+- **経験年数の集約は「登録スキルの経験年数の最大値」**（T-06-04 で決着した `F-009` の `yearsMin` と同じ定義。§6.4「#15 の実装の決着（T-06-04）」）。**別の集約を使うと検索の当たり方と表示がずれる。**
+- **単価帯が打ち止め（100 万円）を跨ぐとき**（例 95〜120 万円）は上端を偽らず `OPEN`（`90 万円以上`）にする。`90〜100 万円` に丸め込むと**上限を偽ることになり**、商談の前提を誤らせる。
+- **`city`（市区町村）は受け取って落とす**。落とすのが丸めの責務そのものであり、落ちることをユニットテストで証明できる形にするため（§4.5 の `SharedCandidateDb` は二重防御の**もう 1 枚**であって代わりではない）。
+- **`candidateRef` は `RoundedAnonymousAttributes` に含まれない。** HMAC 鍵と `projectId` を要し、**T-08-04（`anonymize/reference.ts`）の責務**である。丸めと参照子を 1 つの関数にしない。
+- 🔴 **k-匿名性の件数閾値はここに入れない**（`docs/02` A-04 / `docs/03` §4.13.2-4）。母集団が小さい立ち上げ期にほとんどの候補が消え、経路 4 が使えない機能になる。一意率は運営平面の監視指標として出す（SP-11）。加えて件数の集計は I/O であり純粋関数の責務ではない。
+
+#### 4.6.2 🔴 区分コードで返し、表示文字列を返さない（`CLAUDE.md` §3.5）
+
+**API 応答に日本語の表示文字列を載せない。** 本リポジトリで確立済みの規律であり（`remoteMode` は `'FULL_REMOTE'`、勤務地は都道府県コード `'13'` で返している）、`AnonymousCandidateView` だけ例外にしない。
+
+- **表示名は `packages/i18n` が持つ**（`1 年未満` / `1〜3 年` / `60〜70 万円` / `東京都` …）。
+- **区分 → 文言キーの写像は `apps/web/lib/**/labels.ts` の `Record<区分, MessageKey>` が持つ。** この形なら**割り当て漏れをコンパイラが強制する**（区分を 1 つ足したら写像も足さないとビルドが通らない）。`packages/domain/src/ledger/prefectures.ts` が冒頭で明文化し、`PREFECTURE_MESSAGE_KEYS`（`apps/web/lib/engineers/labels.ts`）で実装済みの規律であり、T-08-01 はこれに従った。
+- **突き合わせを `packages/i18n` 側に置かない**（`@ses/i18n` に `@ses/domain` への依存を足さないため。`prefectures.ts` と同じ理由）。
+- ⚠️ **改訂前の本節は `yearsBand` / `availabilityBand` だけを日本語リテラルにしており、`remoteMode` / `prefecture`（コード）と型の中で矛盾していた。** T-08-01 のコードレビューで**本書の側が誤りと判定**され、実装（区分コード）が正である。
+
+🔴 **`priceBand` を `string` ではなく構造体にした理由**: `'60〜70万円'` のような**整形済み文字列を返すと、i18n 側で「N〜M 万円」「N 万円以上」を組み立て直せない**（言語・単位の切り替えも、`RANGE` と `OPEN` の出し分けも、文字列のパースに落ちる）。`{ kind, fromManYen, toManYen? }` は**判別可能な合併**なので、`labels.ts` が `kind` で分岐して i18n のテンプレートに数値を差し込むだけで済む。単位が**万円**であることも型で示している（台帳の生の金額 `650000` を応答に載せない）。
+
+#### 4.6.3 🔴 `updatedOn` の粒度は入口の検査で担保する
+
+`anonymizeEngineer` の入力 `updatedOnJst` は **「日単位に丸め済みの文字列」しか受け付けない**。`/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/` の**完全一致**で検査し、時刻付きの値（`2026-09-08T00:15:00.000Z`）は **`RangeError`** で弾く。
+
+- 🔴 **なぜ関数の中で丸めないか**: `packages/domain` からは `apps/web/lib/format/datetime.ts` の `toJstIsoDay` を import できない（依存方向。`CLAUDE.md` §2.1）。**JST 暦日の実装を 3 本目として複製すると、そのうち 1 本が静かにずれる。** 実装を増やす代わりに、**粒度を入口の検査で担保した**。
+- 🔴 **例外メッセージに受け取った値を載せない。** `updatedOn` は個人属性であり、時刻付きの値を弾いたときに**その人の更新時刻がログ・エラー追跡に残ってはならない**（§16.2 の redact と同じ理由）。既存 domain の慣行は「受け取った値: ${value}」を付けるが、**ここは意図的に外している**。
+- 🔴 **`T-08-04` / `T-08-05` への申し送り**: `AnonymousCandidateView.updatedOn` の生成は**必ず `toJstIsoDay` を通す**こと（`apps/web/lib/engineers/list.ts:215` と同じ形）。**形式さえ合っていれば別の関数（例 `toISOString().slice(0, 10)` の UTC 切り出し）でも入口検査は通ってしまい、JST / UTC の 1 日ずれが静かに入る。** 入口検査は「時刻が混ざっていないこと」しか見ておらず、**基準の正しさは呼び出し側の責任**である（§6.4）。
 ### 4.7 🔴 分離機構が「有効であること自体」の機械検証
 
 **RLS が無効化されてもアプリは正常に動く。** したがって機能テストでは気づけない。次を**結合テストとして Phase 0 に置く**（`tests/isolation/`）。**テーブル名を列挙せず、カタログを走査する。**
@@ -2343,6 +2405,8 @@ requireEsignConnection(ctx);                           // 🔴 §8.4。未接続
 - 🔴 **母集団は `engineers` の RLS（C3 OWNER_SCOPED）だけが決める。** `listEngineers` にも Route Handler にも `tenantId` / `partnerCompanyId` / `ownerPartnerCompanyId` の条件を 1 つも書かない（`F-004 AC-3` / `F-009 AC-3`。`tests/isolation/engineers.test.ts` が、他社の行が**実在する**状態で `items` と `total` の両方を検証する）。
 - 🔴 **`AuditLog` を書かない**（`audit` オプションも使わない）。`BR-27` / `F-008 AC-4` の記録対象は「エンジニア**詳細**の閲覧」であり、`docs/04` §S-005「操作と結果」も記録を**行クリック（→ `S-006`）**に置いている（§16.1 の `engineer.view` のフック箇所も `#17`）。一覧の描画ごとに 50 行を記録すると ①`S-041` の「誰の経歴を、誰が、いつ見たか」が台帳を開いた記録で埋まって読めなくなり ②1 回の検索で 50 行の書き込みが増えて `F-009 AC-4`（p95 1 秒）を満たせない。⚠️ **`recordEngineerView` の「氏名を出す読み取りには記録を伴わせる」規律との線引きを、同関数の JSDoc に明記した**（記録が要るのは**経歴・連絡先に到達する読み取り**であり、台帳の一覧は `BR-27` の「詳細」ではない）。**この線引きを変えるなら人間の判断事項**である（`CLAUDE.md` §8.6）。
 - 🔴 **`updatedOn`（更新日）の日単位の丸めは JST 基準である**（`apps/web/lib/format/datetime.ts` の `toJstIsoDay`。T-05-09 Iteration 2）。`toISOString().slice(0, 10)`（UTC 切り出し）では **JST の 0:00〜8:59 に更新した行が前日の日付で出る**（利用者からは「今朝更新したのに昨日と出る」）。タイムスタンプの表示を明示的に JST に固定するのは `formatDateTimeJst` で確立済みの規約であり、それに合わせた。**SP-08 の `AnonymousCandidateView.updatedOn`（§4.6）も同じ関数を使い、粒度と基準を揃える**（基準がずれると、同じエンジニアが自社台帳と匿名候補で違う更新日を持つ）。⚠️ **`@db.Date` の列（`available_from` 等）には使わない** —— Prisma が UTC 深夜として読み出す値であり、TZ 変換を掛けると日付が 1 日ずれる（変換は `lib/engineers/service.ts` の `toIsoDay` が持つ）。**date-only 列とタイムスタンプでは「丸め」の意味が別物である。**
+  - 🔴 **丸め関数側の入口の挙動（T-08-01 で確定。§4.6.3）**: `anonymizeEngineer`（`packages/domain`）は `updatedOnJst` に**「日単位に丸め済みの文字列」しか受け付けず**、時刻付きの値は `RangeError` で弾く（`/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/` の完全一致）。**`packages/domain` からは `toJstIsoDay` を import できないため（依存方向。`CLAUDE.md` §2.1）、JST 暦日の実装を 3 本目として複製せず、粒度を入口の検査で担保した。** 例外メッセージには**受け取った値を載せない** —— `updatedOn` は個人属性であり、時刻付きを弾いたときにその人の更新時刻がログに残ってはならない（domain の既存の慣行「受け取った値: ${value}」を意図的に外している）。
+  - 🔴 **`T-08-04` / `T-08-05` への申し送り**: `AnonymousCandidateView.updatedOn` の生成は**必ず `toJstIsoDay` を通す**こと（`apps/web/lib/engineers/list.ts:215` と同じ形）。**入口検査は「時刻が混ざっていないこと」しか見ていない** —— 形式さえ合っていれば `toISOString().slice(0, 10)`（UTC 切り出し）でも通ってしまい、**JST / UTC の 1 日ずれが静かに入る**。基準の正しさは呼び出し側の責任である。
 - ⚠️ **並び順は `updated_at` の降順 → `id` の降順**にした（🔴 **丸めは表示のみ**であり、並びは生値で決まる）。`docs/04` §S-005 は「更新日（**日単位に丸める**）→ 決定的な内部順」と書いているが、**丸めるのは表示（`updatedOn`）だけにした**。理由は 2 つ: ①`date_trunc('day', updated_at)` で並べるには式インデックスと raw SQL が要り、「検索 SQL を `packages/db/src/search/**` の 1 箇所に閉じる」（SP-06 T-06-05 / TBD-8）と衝突する。加えて Prisma の `cursor` は一意な列しか取れず、日単位の複合カーソルを表現できない ②丸めの目的（`U-06` / `docs/03` §4.13.2-2）は**匿名候補の再識別防止**であり、実名で出す自社台帳の並びには当てはまらない。日をまたぐ順序は `docs/04` の指定と一致し、同日内が更新時刻でさらに細分されるだけである（決定性は保たれる。`F-009 AC-1`）。**並び順の最終形は T-06-04 が決める。**
 - ⚠️ **`docs/04` §S-005 の結果テーブルにある「経験年数」（1 人あたりの集約値）を出していない。** §3.4 に集約列が無く、集約の定義（最大値か / 代表スキルか / 実務年数か）も決まっていない —— **`S-006` が同じ理由で出していないもの**（下記「#17 の実装の決着」）と**同一の欠落**であり、定義は `F-009` の `yearsMin` の評価（T-06-04）と同時に決める。画面には「後続のリリースで列に加わる」と明示した。代わりに**更新日（`updatedOn`）を列に足した** —— 並び順の説明（`docs/04` §S-005）が更新日を根拠にしている以上、その値が画面に無いと説明を確かめられない（`docs/04` §S-005 に追記済み。`CLAUDE.md` §8.7）。✅ **集約の定義は T-06-04 で決着した**（下記）。**列としての表示はまだ入れていない**（同）。
 - **「主要スキル（上位 3）」の選び方は決定的である**: 経験年数の降順、同順は `skillId` の昇順。🔴 **`docs/02` `F-017` 処理②が匿名候補のスキル並びに定めている規則と同じもの**を使う（2 つの規則を持つと、同じエンジニアが自社台帳と匿名候補で違うスキルを代表として出す）。超過は `+N`。
@@ -5483,7 +5547,7 @@ export const logger = pino({
 | # | 論点 | 本書での扱い（差し替え可能にした箇所） | 決着しないと何が止まるか | 参照 |
 |---|---|---|---|---|
 | ~~**TBD-1**~~ | ~~電子署名を BYO 接続にしてよいか~~ — 🔴 **決着済み（2026-09-01、Issue #11 / #7）。BYO 方式・第一コネクタ DocuSign・双方署名は 1 エンベロープ複数署名者** | §8.4 / §6.10 / §12.3 を DocuSign 前提に改訂。`costEsignUsd` は常に 0（§5.9）。**残る論点は第二コネクタの時期のみ → TBD-17** | — | `docs/03` §3.1.2 / §3.1.2a / §3.1.10 / `Q-T-1` |
-| **TBD-2** | 🔴 **匿名候補の丸め粒度**（`Q-T-2` / `Q-17` / Issue #5。**Phase 1 のリリース条件**） | 丸めは `packages/domain/src/anonymize/rounding.ts` の**純粋関数 1 つに閉じる**（§4.6）。粒度の定数は `packages/config/src/anonymize.ts` に外出しし、**関数の外から差し替えられる** | 🔴 **Phase 1 の `F-016` / `F-017` の実装**。丸め方が決まらないまま匿名共有を有効化しない | `docs/03` §4.13.1 / `docs/04` `U-06` |
+| ~~**TBD-2**~~ | ~~🔴 **匿名候補の丸め粒度**（`Q-T-2` / `Q-17` / Issue #5。**Phase 1 のリリース条件**）~~ — 🔴 **決着済み（2026-09-10、[Issue #5](https://github.com/Festal-KM/SES-Platform/issues/5) の回答）。`docs/03` §4.13.1（= `docs/02` A-04 = `docs/04` `U-06`）の粒度は暫定値ではなく確定値である**（スキル上位 8 件 / 経験年数 5 段階・境界 `[1, 3, 5, 10]` / 単価 10 万円刻み・100 万円打ち止め / 稼働可能時期は月単位 5 段階 / 勤務地は都道府県コードのみ）。**k-匿名性の件数閾値は入れない** —— 母集団が小さい立ち上げ期にほとんどの候補が消え、経路 4 が使えない機能になるため。一意率は SP-11 の運営平面の監視指標として出す | 🔴 **実装まで完了（T-08-01）**: 丸めは `packages/domain/src/anonymize/rounding.ts` の**純粋関数 `anonymizeEngineer` 1 つ**に閉じ（§4.6.1）、粒度の**値**は `packages/config/src/anonymize.ts` の `ANONYMIZE_ROUNDING` を唯一の出所として**第 3 引数で注入する**（`packages/domain` は `@ses/config` を import できないため。ゾーンは緩めていない）。基準日も `context` で注入する（domain に現在時刻を持ち込まない）。三重宣言は `tests/static/anonymize-rounding-mirror.test.ts` が機械的に突合する。**粒度の変更は `docs/03` §4.13.1 の改訂と再承認から始める**（`CLAUDE.md` §8.6 / §8.7） | — | `docs/03` §4.13.1 / `docs/04` `U-06` / **§4.6.1〜§4.6.3** |
 | ~~**TBD-3**~~ | ~~取引先へ届く送信は独自ドメイン検証を前提条件とするか~~ — 🔴 **決着済み（2026-09-01、Issue #13）。前提条件とする。対象は `F-007` / `F-022` / `F-041` / `F-047`（メール）。`F-049` は接続が前提。`sandbox` は例外** | §8.3 / §10.2 ①-d / #14 / #60 / API-A4 に確定形で反映 | — | `docs/03` §3.2.7 / NFR-ENV-10 / `BR-71` |
 | **TBD-4** | **プラン別 AI クォータの初期値と為替**（`Q-T-3` / `Q-15` / `A-14`） | `Plan.aiCostCapUsd` / `aiDailyCostLimitUsd` を**設定値**として持ち、コードに埋め込まない。為替は `FX_JPY_PER_USD`（§5.9） | `F-057` / `F-062` / `A-011` の運用開始。**設計は値に依存していない** | `docs/03` §7.5-4 |
 | **TBD-5** | **マッチング重みの初期値と、開始日の遅れ・勤務地不一致の扱い**（`Q-5` / Issue #3） | スコア関数は**重みを引数で受け取る純粋関数**。既定値は `packages/domain` の定数（§2.2 / `docs/03` §4.20.3）。🔴 **「減点 + 明示フィルタ」を既定とする**（`docs/02` A-03）が、**足切りに切り替えても関数の外側だけで済む** | Phase 2 の `F-029` / `F-030` | `docs/02` A-03 |
@@ -5502,7 +5566,7 @@ export const logger = pino({
 | **TBD-18** | **取引先が `S-044` から延長確認に直接回答できるようにするか**（`docs/02` `## Open Questions` 末尾。Phase 2 の設計時に別 Issue） | 🔴 **作らない**。経路 5 は読み取り専用（`BR-68`）であり、意思表示は経路 3（チャット）。回答機能を作る場合は経路 5 に書き込みが生じ `CLAUDE.md` §3.1 の改訂から始まる | Phase 2 の `S-044` の導線（現状は「この稼働について相談する」→ `S-031`） | `docs/02` A-23 / `BR-68` |
 | **TBD-19** | **席単価と、取引先の席を課金対象に含めるか**（`Q-20` / `Q-T-3`①。事業判断） | `Plan.monthlySeatPriceJpy` は設定値。**取引先の席を含めるかで `usage.seat-snapshot`（§9.8）の分母（`Membership` の有効行数にパートナーロールを含めるか）が変わる**ため、集計関数に `countPartnerSeats: boolean` を引数で持たせ決め打ちしない | `F-062` の Stripe `Price` 設計（Phase 3）。Phase 1 のうちに再提起（`docs/03` `pm` 申し送り 14） | `docs/01` `Q-20` / `docs/03` `Q-T-3` |
 
-🔴 **`CLAUDE.md` §4.2 の改訂が必要になった項目は 0 件である。** 保留（§10.4）・遅延保留（§10.5）・AI 上限によるゲート未実行（§7.6）は**属性 / `ReviewGate.execution`（状態機械ではない実行属性）で表現し、5 つの状態機械に状態を 1 つも追加していない**（`P-A-02` / `P-A-16`）。**§3.3（契約書）と §3.1（経路 5）の改訂は 2026-09-01 に人間が行い、本書はそれに追随した。** 未回答の Issue（#1 プロダクト名 / #3 重み / #5 丸め粒度 / `Q-20` 席単価）は TBD-2 / TBD-5 / TBD-19 に確認中のまま残す。
+🔴 **`CLAUDE.md` §4.2 の改訂が必要になった項目は 0 件である。** 保留（§10.4）・遅延保留（§10.5）・AI 上限によるゲート未実行（§7.6）は**属性 / `ReviewGate.execution`（状態機械ではない実行属性）で表現し、5 つの状態機械に状態を 1 つも追加していない**（`P-A-02` / `P-A-16`）。**§3.3（契約書）と §3.1（経路 5）の改訂は 2026-09-01 に人間が行い、本書はそれに追随した。** 未回答の Issue（#1 プロダクト名 / #3 重み / `Q-20` 席単価）は TBD-5 / TBD-19 に確認中のまま残す。🔴 **[Issue #5](https://github.com/Festal-KM/SES-Platform/issues/5)（匿名候補の丸め粒度。Phase 1 のリリース条件）は 2026-09-10 に回答を得て決着し、TBD-2 を閉じた**（§4.6.1 / `docs/03` §4.13.1 を確定値として扱う）。
 
 ## 付録 A. `docs/03` の `program-design` 宛申し送り 30 項目のマッピング
 
@@ -5585,7 +5649,7 @@ export const logger = pino({
 | F-014 | §3.5(`ProjectVisibility`) / §4.4(C4) / §6.4(#28) | F-036 | §3.10(`TenantRoleModel`) / §6.7(#67) | F-058 | §5.5(シリアライザ) / §6.9(API-A7) |
 | F-015 | §6.4(#25) / §4.4(C4) | F-037 | §11.3 / §4.8 / §6.5(#46) | F-059 | **§16.5** / §6.9(API-A8) / §8.3-Q / §9.4(AC-7) |
 | F-016 | §3.5(`EngineerShare`) / §6.4(#29) / §12.2 | F-038 | §3.7 / §4.4(C6) / §8.9 / §6.5(#50-52) | F-060 | **§5.6** / §6.9(API-A9,A10) / §17.3(#14) |
-| F-017 | **§4.5 / §4.6** / §6.5(#30) / TBD-2 | F-039 | §3.8(`Notification`) / §8.2 / §9.4 | F-061 | §3.10(`Announcement`) / §6.9(API-A11) |
+| F-017 | **§4.5 / §4.6（4.6.1〜4.6.3）** / §6.5(#30) / ~~TBD-2~~ | F-039 | §3.8(`Notification`) / §8.2 / §9.4 | F-061 | §3.10(`Announcement`) / §6.9(API-A11) |
 | F-018 | §3.6(`ProposalRequest`) / §6.5(#31-#35) / §10.7 | F-040 | §3.8(`Task`) / §6.7(#75) | F-062 | **§6.9(API-A12,A13,A14)** / §5.4 |
 | F-019 | §3.6(`EngineerSnapshot`) / §6.5(#36) | F-041 | §6.5(#49) / §10.2 | F-063 | **§5.9** / §3.10(`TenantMonthlyCost`) / §16.4 |
 | F-020 | **§11 全体** / §9.3(`gate.run`) | F-042 | §3.7(`Assignment`) / §6.6(#53-#56) | F-064 | §9.7(`tenant.closing-notify` / `tenant.purge-scan` の配送確認 = AC-10 / `tenant.purge`) / §3.9(`TenantPurgeRun`) / §6.9(API-A12) / §17.3(#17,#24) |
