@@ -8,10 +8,27 @@
 //    提案本文・チャット本文への導線を持たない。
 // 🔴 閲覧そのものが `AuditLog` に記録される（`listPlatformTenants` が `withPlatformRead` 経由。
 //    `F-056 AC-4`）。
+//
+// 🔴 T-21-05: 表とバッジを `@ses/ui`（`Table` / `Badge`）へ移した。**表示する列の集合も
+//    値も 1 つも変えていない**（`BR-40` / `CLAUDE.md` §10.5。運営者に要るのは件数・状態・
+//    エラーであって内容ではない）。
+// 🔴 横スクロールは `Table` が内蔵する器（`relative w-full overflow-x-auto`）の**内側**に
+//    閉じる。T3 だがモバイルで遮断しない（`CLAUDE.md` §13.3。列を `hidden` にしない ——
+//    間引くと運営者が異常を検知できる列を失う）。
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { listPlatformTenants } from '@ses/db/platform';
 import { t } from '@ses/i18n';
+import {
+  Badge,
+  SECONDARY_LINK_STACKED_CLASSES,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@ses/ui';
 import {
   readPlatformRequestMeta,
   resolvePlatformCtxOutcome,
@@ -73,9 +90,7 @@ export default async function AdminTenantsPage({
               🔴 バッジの射程は「テナントの**業務データ**に対して閲覧のみ」である
               （docs/04 §4 の 4「read-only の明示」）。開設（`A-014`）は契約領域の操作であり、
               このバッジと共存する。 */}
-          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-            {t('admin.readOnly.badge')}
-          </span>
+          <Badge>{t('admin.readOnly.badge')}</Badge>
         </div>
       </div>
 
@@ -83,61 +98,55 @@ export default async function AdminTenantsPage({
         <p className="text-sm text-slate-600">{t('admin.tenants.empty')}</p>
       ) : (
         <>
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 text-left text-slate-500">
-                  <th className="px-3 py-2 font-medium">{t('admin.tenants.column.name')}</th>
-                  <th className="px-3 py-2 font-medium">
-                    {t('admin.tenants.column.lifecycleState')}
-                  </th>
-                  <th className="px-3 py-2 font-medium">{t('admin.tenants.column.environment')}</th>
-                  <th className="px-3 py-2 font-medium">{t('admin.tenants.column.seats')}</th>
-                  <th className="px-3 py-2 font-medium">{t('admin.tenants.column.partners')}</th>
-                  <th className="px-3 py-2 font-medium">{t('admin.tenants.column.engineers')}</th>
-                  <th className="px-3 py-2 font-medium">{t('admin.tenants.column.projects')}</th>
-                  <th className="px-3 py-2 font-medium">
-                    {t('admin.tenants.column.lastActivity')}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {page.items.map((item) => {
-                  const environmentKey = tenantEnvironmentMessageKey(item.environment);
-                  return (
-                    <tr key={item.id} className="border-b border-slate-100">
-                      <td className="px-3 py-2">
-                        <Link
-                          className="font-medium text-slate-900 underline-offset-2 hover:underline"
-                          href={`/admin/tenants/${item.id}`}
-                        >
-                          {item.name}
-                        </Link>
-                      </td>
-                      <td className="px-3 py-2">
-                        {t(TENANT_LIFECYCLE_STATE_MESSAGE_KEYS[item.lifecycleState])}
-                      </td>
-                      <td className="px-3 py-2">
-                        {environmentKey === null ? item.environment : t(environmentKey)}
-                      </td>
-                      <td className="px-3 py-2">{item.seatCount}</td>
-                      <td className="px-3 py-2">{item.partnerCompanyCount}</td>
-                      <td className="px-3 py-2">{item.engineerCount}</td>
-                      <td className="px-3 py-2">{item.projectCount}</td>
-                      <td className="px-3 py-2">
-                        {item.lastActivityAt === null
-                          ? t('admin.tenants.lastActivity.none')
-                          : item.lastActivityAt}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t('admin.tenants.column.name')}</TableHead>
+                <TableHead>{t('admin.tenants.column.lifecycleState')}</TableHead>
+                <TableHead>{t('admin.tenants.column.environment')}</TableHead>
+                <TableHead>{t('admin.tenants.column.seats')}</TableHead>
+                <TableHead>{t('admin.tenants.column.partners')}</TableHead>
+                <TableHead>{t('admin.tenants.column.engineers')}</TableHead>
+                <TableHead>{t('admin.tenants.column.projects')}</TableHead>
+                <TableHead>{t('admin.tenants.column.lastActivity')}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {page.items.map((item) => {
+                const environmentKey = tenantEnvironmentMessageKey(item.environment);
+                return (
+                  <TableRow key={item.id}>
+                    <TableCell>
+                      <Link
+                        className="font-medium text-slate-900 underline-offset-2 hover:underline"
+                        href={`/admin/tenants/${item.id}`}
+                      >
+                        {item.name}
+                      </Link>
+                    </TableCell>
+                    <TableCell>
+                      {t(TENANT_LIFECYCLE_STATE_MESSAGE_KEYS[item.lifecycleState])}
+                    </TableCell>
+                    <TableCell>
+                      {environmentKey === null ? item.environment : t(environmentKey)}
+                    </TableCell>
+                    <TableCell>{item.seatCount}</TableCell>
+                    <TableCell>{item.partnerCompanyCount}</TableCell>
+                    <TableCell>{item.engineerCount}</TableCell>
+                    <TableCell>{item.projectCount}</TableCell>
+                    <TableCell>
+                      {item.lastActivityAt === null
+                        ? t('admin.tenants.lastActivity.none')
+                        : item.lastActivityAt}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
           {page.nextCursor === null ? null : (
             <Link
-              className="mt-4 inline-block text-sm text-slate-600 underline-offset-2 hover:underline"
+              className={SECONDARY_LINK_STACKED_CLASSES}
               href={`/admin/tenants?cursor=${encodeURIComponent(page.nextCursor)}`}
             >
               {t('admin.tenants.loadMore')}

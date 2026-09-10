@@ -67,6 +67,8 @@ export { Input } from './components/input.js';
 export type { InputProps } from './components/input.js';
 export { Label } from './components/label.js';
 export type { LabelProps } from './components/label.js';
+export { Radio } from './components/radio.js';
+export type { RadioProps } from './components/radio.js';
 export { Select } from './components/select.js';
 export type { SelectProps } from './components/select.js';
 export {

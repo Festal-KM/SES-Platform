@@ -8,10 +8,14 @@
 //    エンジニア・案件・提案などの業務データを運営者が作る導線を持たない。
 // 🔴 「直近の開設」は**開設して終わりにしない**ための一覧である（`F-001 AC-4`）。招待が
 //    受諾されたか・送信ドメインが検証されたかまでを追う。**招待先のメールアドレスは出さない。**
+//
+// 🔴 T-21-05: 「直近の開設」の表を `@ses/ui` の `Table` へ移した。**列の集合は 1 つも
+//    変えていない**（招待先のメールアドレスは移行後も出さない。`BR-40`）。
 import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
 import { listRecentProvisionings } from '@ses/db/platform';
 import { t } from '@ses/i18n';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@ses/ui';
 import {
   readPlatformRequestMeta,
   resolvePlatformCtxOutcome,
@@ -106,64 +110,50 @@ export default async function AdminTenantProvisioningPage() {
         {recent.length === 0 ? (
           <p className="text-sm text-slate-600">{t('admin.provisioning.recent.empty')}</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 text-left text-slate-500">
-                  <th className="px-3 py-2 font-medium">
-                    {t('admin.provisioning.recent.column.createdAt')}
-                  </th>
-                  <th className="px-3 py-2 font-medium">
-                    {t('admin.provisioning.recent.column.name')}
-                  </th>
-                  <th className="px-3 py-2 font-medium">
-                    {t('admin.provisioning.recent.column.environment')}
-                  </th>
-                  <th className="px-3 py-2 font-medium">
-                    {t('admin.provisioning.recent.column.lifecycleState')}
-                  </th>
-                  <th className="px-3 py-2 font-medium">
-                    {t('admin.provisioning.recent.column.invitation')}
-                  </th>
-                  <th className="px-3 py-2 font-medium">
-                    {t('admin.provisioning.recent.column.sendingDomain')}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {recent.map((item) => {
-                  const environmentKey = tenantEnvironmentMessageKey(item.environment);
-                  return (
-                    <tr key={item.id} className="border-b border-slate-100">
-                      <td className="px-3 py-2">{item.createdAt}</td>
-                      <td className="px-3 py-2">
-                        <Link
-                          className="font-medium text-slate-900 underline-offset-2 hover:underline"
-                          href={`/admin/tenants/${item.id}`}
-                        >
-                          {item.name}
-                        </Link>
-                      </td>
-                      <td className="px-3 py-2">
-                        {environmentKey === null ? item.environment : t(environmentKey)}
-                      </td>
-                      <td className="px-3 py-2">
-                        {t(TENANT_LIFECYCLE_STATE_MESSAGE_KEYS[item.lifecycleState])}
-                      </td>
-                      <td className="px-3 py-2">
-                        {t(PROVISIONING_INVITATION_MESSAGE_KEYS[item.invitationState])}
-                      </td>
-                      <td className="px-3 py-2">
-                        {item.sendingDomainState === null
-                          ? t('admin.provisioning.sendingDomain.none')
-                          : t(SENDING_DOMAIN_STATE_MESSAGE_KEYS[item.sendingDomainState])}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t('admin.provisioning.recent.column.createdAt')}</TableHead>
+                <TableHead>{t('admin.provisioning.recent.column.name')}</TableHead>
+                <TableHead>{t('admin.provisioning.recent.column.environment')}</TableHead>
+                <TableHead>{t('admin.provisioning.recent.column.lifecycleState')}</TableHead>
+                <TableHead>{t('admin.provisioning.recent.column.invitation')}</TableHead>
+                <TableHead>{t('admin.provisioning.recent.column.sendingDomain')}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {recent.map((item) => {
+                const environmentKey = tenantEnvironmentMessageKey(item.environment);
+                return (
+                  <TableRow key={item.id}>
+                    <TableCell>{item.createdAt}</TableCell>
+                    <TableCell>
+                      <Link
+                        className="font-medium text-slate-900 underline-offset-2 hover:underline"
+                        href={`/admin/tenants/${item.id}`}
+                      >
+                        {item.name}
+                      </Link>
+                    </TableCell>
+                    <TableCell>
+                      {environmentKey === null ? item.environment : t(environmentKey)}
+                    </TableCell>
+                    <TableCell>
+                      {t(TENANT_LIFECYCLE_STATE_MESSAGE_KEYS[item.lifecycleState])}
+                    </TableCell>
+                    <TableCell>
+                      {t(PROVISIONING_INVITATION_MESSAGE_KEYS[item.invitationState])}
+                    </TableCell>
+                    <TableCell>
+                      {item.sendingDomainState === null
+                        ? t('admin.provisioning.sendingDomain.none')
+                        : t(SENDING_DOMAIN_STATE_MESSAGE_KEYS[item.sendingDomainState])}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
         )}
       </section>
     </main>

@@ -6,9 +6,14 @@
 // 🔴 `PURGED` はライフサイクル状態のみを表示し、削除件数を出さない（docs/04 program-design
 //    申し送り 15 / `F-062 AC-7`）。削除完了の確認は `A-010`（Phase 3）の 1 本のみ。
 // 🔴 書き込み操作なし。画面タイトル右に「閲覧のみ」を常時表示する（`BR-37`）。
+//
+// 🔴 T-21-05: 「閲覧のみ」バッジを `@ses/ui` の `Badge` へ移した。**定義リストの項目の集合は
+//    1 つも変えていない**（`BR-40`。件数・状態・日時だけであり、エンジニアの氏名・連絡先・
+//    スキルシート本文・チャット本文・トークン平文はここに 1 つも無い）。
 import { notFound, redirect } from 'next/navigation';
 import { getPlatformTenantDetail } from '@ses/db/platform';
 import { t } from '@ses/i18n';
+import { Badge } from '@ses/ui';
 import {
   readPlatformRequestMeta,
   resolvePlatformCtxOutcome,
@@ -49,11 +54,7 @@ export default async function AdminTenantDetailPage({
   const detail = await getPlatformTenantDetail(outcome.ctx, id, { ipAddress: meta.ipAddress });
   if (detail === null) notFound();
 
-  const readOnlyBadge = (
-    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-      {t('admin.readOnly.badge')}
-    </span>
-  );
+  const readOnlyBadge = <Badge>{t('admin.readOnly.badge')}</Badge>;
 
   if (detail.lifecycleState === 'PURGED') {
     return (

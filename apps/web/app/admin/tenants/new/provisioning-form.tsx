@@ -11,7 +11,14 @@
 // 🔴 `provisioningRequestId` は**この画面で 1 度だけ採番し、再送時も同じ値を送る**
 //    （docs/05 §10.7 の冪等キー）。押し直しで 2 つ目のテナントが生まれない。
 // 🔴 文言は props（`packages/i18n` が唯一の出所）。ここにベタ書きしない。
+//
+// 🔴 T-21-05: 手書き CSS（`.ses-field` / `.ses-error`）と無指定の要素を `@ses/ui` と
+//    Tailwind へ移した。**入力の `name` / `type` / `required` / `checked` / 要素の並び・
+//    フェーズの分岐・冪等キーの扱いは 1 つも変えていない**（`docs/sprints/SP-21` §5 冒頭）。
+// 🔴 **確認ステップの 4 項目と既定値の一覧は、移行後もモバイルで折りたたまない**
+//    （`docs/04` §A-014 操作表 / `CLAUDE.md` §13.3）。畳めるようにする実装を入れない。
 import { useMemo, useState, type FormEvent } from 'react';
+import { Button, Field, FieldError, Input, Radio } from '@ses/ui';
 
 export type ProvisioningFormMessages = {
   readonly environmentSection: string;
@@ -48,6 +55,23 @@ export type ProvisioningFormMessages = {
   readonly success: string;
   readonly retryInvitation: string;
 };
+
+/**
+ * 節の見出し。旧実装は無指定の `<h2>` であり、Tailwind の preflight 下では本文と同じ
+ * 大きさで並んでいた（節の切れ目が読めない）。**1 つの定数にして 6 節で共有する** ——
+ * 節ごとに書き下すと「片方だけ直る」状態がその場で生まれる（T-21-02 の受け入れ基準 ①）。
+ */
+const SECTION_HEADING_CLASSES = 'mt-6 mb-2 text-base font-bold text-slate-900';
+
+/** 節に添える補足文（読み取り専用の注記・ヒント）。 */
+const SECTION_NOTE_CLASSES = 'mb-4 text-sm text-slate-600';
+
+/**
+ * 🔴 開設**前**に読ませる既定値の一覧（`docs/04` §A-014 セクション 6）。
+ *    Tailwind の preflight が `ul` の `list-style` と `padding` を落とすため、
+ *    箇条書きに見せるには `list-disc` と `pl-5` を明示する必要がある。
+ */
+const DEFAULTS_LIST_CLASSES = 'mb-4 list-disc pl-5 text-sm text-slate-700';
 
 /** 契約の初期状態（`TENANT_CREATION_STATES` と 1 対 1。docs/02 章 5.4）。 */
 type LifecycleChoice = 'SANDBOX' | 'ACTIVE';
@@ -181,27 +205,29 @@ export function ProvisioningForm({
     }
   }
 
-  const errorBlock =
-    error === null ? null : (
-      <p className="ses-error" role="alert">
-        {error}
-      </p>
-    );
+  const errorBlock = error === null ? null : <FieldError className="mb-4">{error}</FieldError>;
 
   if (phase === 'created') {
     return (
       <section>
         {errorBlock}
-        {notice === null ? null : <p role="status">{notice}</p>}
-        <p>
-          <a href={createdTenantId === null ? '/admin/tenants' : `/admin/tenants/${createdTenantId}`}>
+        {notice === null ? null : (
+          <p role="status" className="mb-4 text-sm text-emerald-700">
+            {notice}
+          </p>
+        )}
+        <p className="mb-4 text-sm">
+          <a
+            className="font-medium text-slate-900 underline-offset-2 hover:underline"
+            href={createdTenantId === null ? '/admin/tenants' : `/admin/tenants/${createdTenantId}`}
+          >
             {draft.name}
           </a>
         </p>
         {error === null ? null : (
-          <button type="button" onClick={() => void onRetryInvitation()} disabled={busy}>
+          <Button type="button" onClick={() => void onRetryInvitation()} disabled={busy}>
             {messages.retryInvitation}
-          </button>
+          </Button>
         )}
       </section>
     );
@@ -210,37 +236,47 @@ export function ProvisioningForm({
   if (phase === 'confirm' || phase === 'submitting') {
     return (
       <form onSubmit={onSubmit} noValidate>
-        <h2>{messages.confirmSection}</h2>
-        <p>{messages.confirmLead}</p>
+        <h2 className="mb-2 text-base font-bold text-slate-900">{messages.confirmSection}</h2>
+        <p className={SECTION_NOTE_CLASSES}>{messages.confirmLead}</p>
         {errorBlock}
-        {/* 🔴 再掲する 4 項目（docs/04 §A-014 操作表）。モバイルでも折りたたまない。 */}
-        <dl>
-          <dt>{messages.nameLabel}</dt>
-          <dd>{draft.name}</dd>
-          <dt>{messages.environmentSection}</dt>
-          <dd>{environment}</dd>
-          <dt>{messages.lifecycleSection}</dt>
-          <dd>
+        {/* 🔴 再掲する 4 項目（docs/04 §A-014 操作表）。モバイルでも折りたたまない。
+              2 列グリッドはラベル列が内容幅なので、狭い画面でも値が潰れない。長い
+              メールアドレスは `wrap-anywhere` で折り返して**全部見せる**（切り詰めない）。 */}
+        <dl className="mb-6 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 border-y border-slate-200 py-3 text-sm">
+          <dt className="text-slate-500">{messages.nameLabel}</dt>
+          <dd className="wrap-anywhere text-slate-900">{draft.name}</dd>
+          <dt className="text-slate-500">{messages.environmentSection}</dt>
+          <dd className="text-slate-900">{environment}</dd>
+          <dt className="text-slate-500">{messages.lifecycleSection}</dt>
+          <dd className="text-slate-900">
             {draft.lifecycleState === 'SANDBOX'
               ? messages.lifecycleSandbox
               : messages.lifecycleActive}
           </dd>
-          <dt>{messages.ownerEmailLabel}</dt>
-          <dd>{draft.ownerEmail}</dd>
+          <dt className="text-slate-500">{messages.ownerEmailLabel}</dt>
+          <dd className="wrap-anywhere text-slate-900">{draft.ownerEmail}</dd>
         </dl>
         {/* 🔴 既定値の明示は確認ステップでも消さない（docs/04 §A-014 セクション 6）。 */}
-        <h3>{messages.defaultsSection}</h3>
-        <ul>
+        <h3 className="mb-1 text-sm font-bold text-slate-900">{messages.defaultsSection}</h3>
+        <ul className={DEFAULTS_LIST_CLASSES}>
           {messages.defaults.map((line) => (
             <li key={line}>{line}</li>
           ))}
         </ul>
-        <button type="submit" disabled={busy}>
-          {busy ? messages.submitting : messages.submit}
-        </button>
-        <button type="button" onClick={() => setPhase('input')} disabled={busy}>
-          {messages.confirmBack}
-        </button>
+        {/* 見た目のためのラッパ。ボタンの並び（開設 → 戻る）は変えていない。 */}
+        <div className="flex flex-wrap items-center gap-3">
+          <Button type="submit" disabled={busy}>
+            {busy ? messages.submitting : messages.submit}
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => setPhase('input')}
+            disabled={busy}
+          >
+            {messages.confirmBack}
+          </Button>
+        </div>
       </form>
     );
   }
@@ -253,34 +289,43 @@ export function ProvisioningForm({
       }}
       noValidate
     >
-      <h2>{messages.environmentSection}</h2>
+      <h2 className="mb-2 text-base font-bold text-slate-900">{messages.environmentSection}</h2>
       {/* 🔴 選ばせずに表示する（docs/04 §A-014 セクション 1）。 */}
-      <p>
+      <p className="mb-1 text-sm font-medium text-slate-900">
         <output>{appEnv}</output>
       </p>
-      <p>{messages.environmentReadOnlyNote}</p>
+      <p className={SECTION_NOTE_CLASSES}>{messages.environmentReadOnlyNote}</p>
 
-      <h2>{messages.companySection}</h2>
-      <label className="ses-field">
-        <span>{messages.nameLabel}</span>
-        <input
+      <h2 className={SECTION_HEADING_CLASSES}>{messages.companySection}</h2>
+      <Field className="mb-4" label={messages.nameLabel}>
+        <Input
           name="name"
           type="text"
           required
           value={draft.name}
           onChange={(event) => update('name', event.target.value)}
         />
-      </label>
-      {duplicateName ? <p role="alert">{messages.duplicateNameWarning}</p> : null}
-      <p className="ses-field">
-        <span>{messages.currencyLabel}</span>
-        <output>{messages.currencyValue}</output>
-      </p>
+      </Field>
+      {/* 🔴 同名テナントは**警告であって禁止ではない**（開設は止めない。docs/04 §A-014）。
+            `FieldError` の赤にすると「直さないと進めない」と読めるため琥珀で出す
+            （既存画面の警告帯と同じ語。`S-011` / `S-013` / `S-035` / `S-036`）。 */}
+      {duplicateName ? (
+        <p
+          role="alert"
+          className="mb-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+        >
+          {messages.duplicateNameWarning}
+        </p>
+      ) : null}
+      <Field as="p" className="mb-4" label={messages.currencyLabel}>
+        <output className="text-sm text-slate-900">{messages.currencyValue}</output>
+      </Field>
 
-      <h2>{messages.lifecycleSection}</h2>
-      <label className="ses-field">
-        <input
-          type="radio"
+      <h2 className={SECTION_HEADING_CLASSES}>{messages.lifecycleSection}</h2>
+      {/* 🔴 ラジオはラベル文字が**後ろ**に来る。`Field` の `label` prop は文字を先に描くため
+            使わない（SP-21 の「要素の並びを変えない」）。見た目は `Radio` が持つ。 */}
+      <label className="mb-2 flex w-fit items-center gap-2 text-sm font-medium text-slate-900 select-none">
+        <Radio
           name="lifecycleState"
           value="SANDBOX"
           checked={draft.lifecycleState === 'SANDBOX'}
@@ -288,10 +333,11 @@ export function ProvisioningForm({
         />
         <span>{messages.lifecycleSandbox}</span>
       </label>
-      {draft.lifecycleState === 'SANDBOX' ? <p>{messages.lifecycleSandboxNote}</p> : null}
-      <label className="ses-field">
-        <input
-          type="radio"
+      {draft.lifecycleState === 'SANDBOX' ? (
+        <p className={SECTION_NOTE_CLASSES}>{messages.lifecycleSandboxNote}</p>
+      ) : null}
+      <label className="mb-2 flex w-fit items-center gap-2 text-sm font-medium text-slate-900 select-none">
+        <Radio
           name="lifecycleState"
           value="ACTIVE"
           checked={draft.lifecycleState === 'ACTIVE'}
@@ -300,23 +346,21 @@ export function ProvisioningForm({
         <span>{messages.lifecycleActive}</span>
       </label>
 
-      <h2>{messages.planSection}</h2>
-      <label className="ses-field">
-        <span>{messages.planLabel}</span>
-        <input
+      <h2 className={SECTION_HEADING_CLASSES}>{messages.planSection}</h2>
+      <Field className="mb-1" label={messages.planLabel}>
+        <Input
           name="planId"
           type="text"
           required
           value={draft.planId}
           onChange={(event) => update('planId', event.target.value)}
         />
-      </label>
-      <p>{messages.planHint}</p>
+      </Field>
+      <p className={SECTION_NOTE_CLASSES}>{messages.planHint}</p>
 
-      <h2>{messages.ownerSection}</h2>
-      <label className="ses-field">
-        <span>{messages.ownerEmailLabel}</span>
-        <input
+      <h2 className={SECTION_HEADING_CLASSES}>{messages.ownerSection}</h2>
+      <Field className="mb-1" label={messages.ownerEmailLabel}>
+        <Input
           name="ownerEmail"
           type="email"
           inputMode="email"
@@ -324,30 +368,29 @@ export function ProvisioningForm({
           value={draft.ownerEmail}
           onChange={(event) => update('ownerEmail', event.target.value)}
         />
-      </label>
-      <p>{messages.ownerSingleNote}</p>
+      </Field>
+      <p className={SECTION_NOTE_CLASSES}>{messages.ownerSingleNote}</p>
 
-      <h2>{messages.sendingDomainSection}</h2>
-      <label className="ses-field">
-        <span>{messages.sendingDomainLabel}</span>
-        <input
+      <h2 className={SECTION_HEADING_CLASSES}>{messages.sendingDomainSection}</h2>
+      <Field className="mb-1" label={messages.sendingDomainLabel}>
+        <Input
           name="sendingDomain"
           type="text"
           value={draft.sendingDomain}
           onChange={(event) => update('sendingDomain', event.target.value)}
         />
-      </label>
-      <p>{messages.sendingDomainNote}</p>
+      </Field>
+      <p className={SECTION_NOTE_CLASSES}>{messages.sendingDomainNote}</p>
 
       {/* 🔴 開設**前**に既定値を運営者に読ませる（docs/04 §A-014 セクション 6 の「なぜこの構成か」）。 */}
-      <h2>{messages.defaultsSection}</h2>
-      <ul>
+      <h2 className={SECTION_HEADING_CLASSES}>{messages.defaultsSection}</h2>
+      <ul className={DEFAULTS_LIST_CLASSES}>
         {messages.defaults.map((line) => (
           <li key={line}>{line}</li>
         ))}
       </ul>
 
-      <button type="submit">{messages.confirmReview}</button>
+      <Button type="submit">{messages.confirmReview}</Button>
     </form>
   );
 }

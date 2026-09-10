@@ -60,8 +60,11 @@ export default async function AdminSignInPage({
   const { step } = await searchParams;
   return (
     <AuthShell wordmark={t('product.name')}>
-      <h1>{t('admin.signin.title')}</h1>
-      <p>{t('admin.signin.lead')}</p>
+      {/* 🔴 T-21-05: 見出しとリード文の見え方を `S-001` に揃えた（`docs/04` §A-001）。
+          平面帯（`app/admin/layout.tsx`）はこの `AuthShell` の**上**に常時在る —— ここに
+          最上部を占める要素を足さない。 */}
+      <h1 className="mb-2 text-xl font-bold text-slate-900">{t('admin.signin.title')}</h1>
+      <p className="mb-4 text-sm text-slate-700">{t('admin.signin.lead')}</p>
       <AdminSignInForm messages={messages} initialStage={initialStageOf(step)} />
     </AuthShell>
   );

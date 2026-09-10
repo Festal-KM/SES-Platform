@@ -36,19 +36,22 @@
 import type { ComponentProps } from 'react';
 import { cn } from '../lib/cn.js';
 
+/**
+ * ネイティブの切り替え入力（`<input type="checkbox">` / `<input type="radio">`）の見た目。
+ *
+ * 🔴 **定数にして `./radio.tsx` と共有する**（SP-21 T-21-05）。同じ画面に checkbox と radio が
+ *    並んだときに**片方だけ色やフォーカスリングが違う**状態を作らないためであり、
+ *    「同じ見た目のローカル実装を 2 つ作らない」（T-21-02 ①）そのものである。
+ *    ⚠️ 上の表の判断（`accent-color` / リングの形 / `opacity-60`）は radio にもそのまま効く。
+ */
+export const TOGGLE_CONTROL_CLASSES = [
+  'peer size-4 shrink-0 accent-slate-900 outline-none transition-shadow',
+  'focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2',
+  'disabled:cursor-not-allowed disabled:opacity-60',
+].join(' ');
+
 export type CheckboxProps = Omit<ComponentProps<'input'>, 'type'>;
 
 export function Checkbox({ className, ...props }: CheckboxProps) {
-  return (
-    <input
-      type="checkbox"
-      className={cn(
-        'peer size-4 shrink-0 accent-slate-900 outline-none transition-shadow',
-        'focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2',
-        'disabled:cursor-not-allowed disabled:opacity-60',
-        className,
-      )}
-      {...props}
-    />
-  );
+  return <input type="checkbox" className={cn(TOGGLE_CONTROL_CLASSES, className)} {...props} />;
 }
