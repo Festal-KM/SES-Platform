@@ -1,6 +1,9 @@
 # SP-13 matching-score — マッチングスコア・重み・根拠文
 
-> **Phase**: 2 / **前提**: SP-12（Phase 1 完了） / **後続**: SP-15
+> **Phase**: 2 / **前提**: SP-12（Phase 1 完了 = 🔴 **第 1 回リリース済み**。[Issue #46](https://github.com/Festal-KM/SES-Platform/issues/46)） / **後続**: SP-15
+> 🔴 **本スプリントは第 1 回リリースの後の最初のスプリントである。** **実機能を触った顧客から出る修正要求がここに入りうる**（それがリリースを 3 回に分けた目的である。`docs/dev-plan.md` §2.2）。**Phase 1 完了時の再計画で本ファイルを詳細化するときに、修正要求の受け皿をどのタスクに置くかを決めること。**
+> 🔴 **本スプリントの先頭へ置くタスクが 3 件ある**（2026-09-10 に持ち主を確定させた）: ①**2FA への SMS 追加 = `T-13-10`**（[Issue #45](https://github.com/Festal-KM/SES-Platform/issues/45)。**機能追加は人間が決定済み**。既定 = プロバイダは Amazon SNS / **管理権限ロールは TOTP 必須のまま**。🔴 **上流の改訂が先** —— `docs/02` `F-003` → `docs/03`（プロバイダ）→ `docs/04` `S-002` 近傍 → `docs/05` §16.1 → 実装。`CLAUDE.md` §8.7。リードタイムのある準備は Phase 1 の `T-11-10` が済ませる。§7 に受け入れ基準）②**`staging` 環境の構築 = `T-13-09`**（`PM-Q-3`。🔴 **`production` は第 1 回リリースで先に立つため、通常と逆の順序になる**）③🔴 **`sandbox` 環境の構築 = `T-13-11` と、持ち越しの `T-10-08`**（[Issue #20](https://github.com/Festal-KM/SES-Platform/issues/20) の回答「Production と demo だけでよい」により **Phase 1 から移ってきた**。**削除ではなく移動である** —— 仕様は [#6](https://github.com/Festal-KM/SES-Platform/issues/6) / [#9](https://github.com/Festal-KM/SES-Platform/issues/9) / [#10](https://github.com/Festal-KM/SES-Platform/issues/10) で決着済みで、捨てると再議論になる）。
+> ⚠️ **本スプリントは 9 + 2 + 持ち越し 1 = 12 タスクで上限に達する**（`PM-A-01`）。**これ以上は足さない。** 再計画で溢れる場合は、**`T-10-08`（`sandbox` テナントの期限管理）を SP-16 へ回す**（`docs/sprints/SP-16-assignment-loop.md` §3 に受け皿を置いてある）。
 > ⚠️ **本ファイルは主要タスクの見出しまでの粗い計画である。** タスク単位の受け入れ基準は **Phase 1 完了時の再計画**で書く（`docs/dev-plan.md` §3.4 / `PM-A-08`）。理由: Phase 1 の実測（AI 原価・検索性能）と [Issue #3](https://github.com/Festal-KM/SES-Platform/issues/3) の回答がタスク分割を変えるため。
 > **一次資料**: `CLAUDE.md` §5（Phase 2 の成功条件）/ §9-9 / §12.2 / §12.3 / `docs/02` `F-029`〜`F-031` / `F-017`（Phase 2 差分）/ `docs/03` §7.3 / `docs/04` `S-016` `S-040` / `docs/05` §7.1 / §9.3
 > 🔴 **ワイヤーフレーム（着手条件）**: 画面を伴うタスク（`S-016` / `S-040`）は、**対象画面の `docs/wireframes/{S-xxx|A-xxx}-*/` に画像が存在すること**を着手条件とする（`docs/dev-plan.md` §5 E-15 / §6.4 R-11）。**全 88 枚が生成済みである**（2026-09-03。[Issue #17](https://github.com/Festal-KM/SES-Platform/issues/17) = A の決着後に残り 82 枚を生成し、`docs/04` 改訂 5 の `S-046` 分 3 枚を追加した）。**本スプリントの着手条件は満たされている。** 画面の新設・改訂で不足が生じた場合のみ `node scripts/generate-wireframes.mjs --screen <ID>` で当該 1 枚だけを生成する（🔴 **`--force` での全画面再生成は課金が発生するため行わない**）。
@@ -28,6 +31,9 @@
 | T-13-07 | `MatchCandidate` の生成ジョブと性能 | M | マッチング候補の初回提示が **p95 3 秒以内**（`CLAUDE.md` §7） |
 | T-13-08 | `S-016` のスコア表示と Phase 1 との切替 | M | Phase 1（決定的順序）と Phase 2（スコア順）の**見え方の差**を混同しない（`CLAUDE.md` §5 の対比表） |
 | T-13-09 | 🔴 **`staging` 環境の構築**（`PM-Q-3` の既定値の実行タスク） | M | `CLAUDE.md` §11 の 5 環境のうち **Phase 1 で立てていない `staging` を本スプリントで立てる**（`docs/dev-plan.md` の `PM-Q-3` / [Issue #20](https://github.com/Festal-KM/SES-Platform/issues/20)）。外部 API は**各サービスの sandbox エンドポイント**。🔴 **`production` の API キーが `staging` に設定されていたら起動失敗**（T-01-03 の検証を `staging` でも通す） |
+| 🔴 **T-13-10** | 🔴 **2 要素認証への SMS の追加**（[Issue #45](https://github.com/Festal-KM/SES-Platform/issues/45)。**機能追加は人間が決定済み**）。**実行順は本スプリントの先頭** | L | 🔴 **上流の改訂が先**（`docs/02` `F-003` → `docs/04` `S-002` 近傍 → `docs/05` §16.1）。🔴 **ロールごとに許可する 2FA 手段を `packages/config` の設定値にする**（後から 1 行で変えられるように）。**管理権限ロールは TOTP 必須のまま。** 電話番号の**保持期間と監査**の扱いを設計に含める。§7 に受け入れ基準 |
+| 🔴 **T-13-11** | 🔴 **`sandbox` 環境の構築**（[Issue #20](https://github.com/Festal-KM/SES-Platform/issues/20) = 「Production と demo だけでよい」により **Phase 1 から Phase 2 へ移った**） | M | `CLAUDE.md` §11 の `sandbox`（見込み客が**自分の実データ**で試す）。🔴 **送信系（メール / 電子署名）のみモック、それ以外は本番同等。** 🔴 **宛先分類による切り分け**（[Issue #9](https://github.com/Festal-KM/SES-Platform/issues/9) / [#10](https://github.com/Festal-KM/SES-Platform/issues/10)）は **SP-04 で実装済み**であり、ここで作り直さない。**`T-13-09`（`staging`）と同型の工程なので同じスプリントに置く** |
+| （T-10-08） | 🔴 **`sandbox` テナントの期限管理と移行（`F-054`）** —— **SP-10 からの持ち越し**（同上） | L | 🔴 **実装は残っている**（削除していない。[Issue #6](https://github.com/Festal-KM/SES-Platform/issues/6) / [#9](https://github.com/Festal-KM/SES-Platform/issues/9) / [#10](https://github.com/Festal-KM/SES-Platform/issues/10) で仕様は決着済み）。**`T-13-11` の後に実施する。タスク ID は `T-10-08` のまま変えない**（`CLAUDE.md` §8.8）。詳細は `docs/sprints/SP-10-usage-env-sandbox.md` §4 T-10-08 |
 
 ## 4. 事前確認（着手前）
 
@@ -58,3 +64,21 @@
 4. 🔴 **根拠文の自動生成が上位 10 候補に限られ、1 リクエストに集約されている**（原価の最大の調整弁）。
 5. マッチング候補の初回提示が p95 3 秒以内。
 6. 🔴 **`staging` が立ち上がり、外部 API が各サービスの sandbox エンドポイントに向いている**（T-13-09。`PM-Q-3` / [Issue #20](https://github.com/Festal-KM/SES-Platform/issues/20)）。**`production` の API キーが設定されていたら起動に失敗する**ことを `staging` でも確認している。
+7. 🔴 **`sandbox` が立ち上がり、`F-054`（期限管理と本契約への移行）が成立している**（`T-13-11` + 持ち越しの `T-10-08`）。🔴 **見込み客が自分の実データで試す導線が、第 1 回リリース時点の欠落（`docs/dev-plan.md` §2.2 `RL-11`）から回復していること。** 🔴 **業務上の外部送信（提案・面談調整・契約書・電子署名依頼）が `sandbox` から 1 通も外部へ出ないこと**を検証する（`CLAUDE.md` §11.1。SP-04 の宛先分類をそのまま使う）。
+8. 🔴 **2 要素認証で SMS が選べる**（`T-13-10`。[Issue #45](https://github.com/Festal-KM/SES-Platform/issues/45)）。**管理権限ロール（運営者 / `OWNER` / `ADMIN`）は TOTP 必須のままである。** §7 の受け入れ基準がすべて満たされている。
+
+## 7. T-13-10 2 要素認証への SMS の追加（[Issue #45](https://github.com/Festal-KM/SES-Platform/issues/45)。2026-09-10 に人間が決定）
+
+🔴 **機能追加そのものは決定済みである**（「SMS を追加して」）。**既定**: プロバイダは **Amazon SNS**、**管理権限ロール（運営者 / `OWNER` / `ADMIN`）は TOTP 必須のまま**（SMS は他ロールの選択肢として足す）。
+
+🔴 **第 1 回リリース（SP-12）のブロッカーではない** —— 管理権限が TOTP 必須である限り `CLAUDE.md` §3.5 の 2FA 要件は満たされている。**だから Phase 2 の先頭に置いた。** リードタイムのある準備（SNS のアカウントと送信上限）は **Phase 1 のうちに `T-11-10` が済ませてある。**
+
+| # | 受け入れ基準 | 補足 |
+|---|---|---|
+| ① | 🔴 **上流が先に改訂されていること**（`CLAUDE.md` §8.7）: **`docs/02` `F-003`（2FA の手段と AC）→ `docs/03`（プロバイダの確定値。`tech-selection`）→ `docs/04` `S-002` 近傍（手段の選択・電話番号の登録・再送）→ `docs/05` §16.1（`TwoFactorCredential` と検証）→ migration → 実装** | **`docs/03` の裏取り（単価・送信上限・到達率）は `T-11-10` が依頼済み。** ⚠️ **未裏取りのまま実装に入らない** |
+| ② | 🔴 **ロールごとに許可する 2FA 手段が `packages/config` の設定値になっていること。** ハードコードしない（**後から 1 行で変更できる**ことが要件） | 🔴 **既定は「管理権限ロール = TOTP のみ / それ以外 = TOTP または SMS」。** 🔴 **設定で管理権限ロールを SMS だけにできてしまう形にしない**（SMS は SIM スワップに弱く、`CLAUDE.md` §3.5 が必須と定める保護が実質的に下がる）。**設定値の型で「管理権限ロールから TOTP を外せない」ことを表現する** |
+| ③ | 🔴 **電話番号は個人情報である。** ①暗号化して保存する（`TwoFactorCredential` と同じ規律）②**保持期間の対象に含める**（`CLAUDE.md` §3.5 / `F-046`。SP-16 の `T-16-06` の削除射程に足す）③**ログ・エラー・監査ログ・LLM プロンプトに平文で出さない**（`AuditLog` には下 4 桁のみ、あるいは識別子のみ） | 🔴 **「認証の都合で増えた個人情報」を保持期間の外に置かない。** 削除の射程から漏れた列は永久に残る |
+| ④ | 🔴 **監査に残すもの**: 手段の登録・変更・削除、SMS の送信要求（宛先は伏せる）、検証の成功 / 失敗。🔴 **既存の失敗スロットル（15 分 / 5 回。[Issue #29](https://github.com/Festal-KM/SES-Platform/issues/29) の暫定 B）を SMS にも同じ強さで適用する** | **手段が増えたぶんだけ総当たりの入口が増える。** 片方だけ緩いと、緩い方が使われる |
+| ⑤ | 🔴 **送信は SP-04 の単一経路を通す**（`packages/connectors`。**SMS も同じ規律**）: ①`development` / `demo` はモック ②🔴 **`production` でモック実装が選ばれたら起動失敗**（`CLAUDE.md` §11.1）③レート制限とコスト上限をアプリ層でガードする（`CLAUDE.md` §3.4。**429 に頼らない**）④**利用量を計測する**（`UsageCounter` / `AiUsage` と同じ考え方で、**後から遡れないため最初から**） | 🔴 **SMS は 1 通ごとに課金される変動費である**（`docs/dev-plan.md` §6.2）。**計測しないまま出すと、原価が読めないテナントができる** |
+| ⑥ | 🔴 **実プロバイダへの疎通確認は `production` が立った後に行う**（第 1 回リリース済みの前提。`docs/dev-plan.md` §5 E-16 / E-17） | **環境が無い状態で「送れた」を確認したことにしない** |
+| ⑦ | **既存の TOTP 経路が 1 つも壊れていないこと** —— `tests/isolation/two-factor.test.ts` と E2E 35 本（**全本がサインインで 2FA を通る**）が green | 🔴 **ここが落ちると全 E2E が落ちる。** 手段の追加を「分岐の追加」で済ませ、既定経路を書き換えない |

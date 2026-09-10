@@ -7,7 +7,7 @@
 >
 > | # | 条件 | なぜ本スプリントの前提なのか | 未解消のまま着手する場合 |
 > |---|---|---|---|
-> | **①** | 🔴 **[Issue #41](https://github.com/Festal-KM/SES-Platform/issues/41)（パートナー所属エンジニアの提案がゲートで fail-closed）の決着と実装** | `gate.run` はジョブのホスト文脈で走るため `engineers` / `engineer_skills`（**C3**）を読めず、**パートナーが作成した提案はゲートを通せずに落ちる**（`ReviewGate` が 1 行も書かれない。`docs/05` §11.9 ⑦ / `docs/sprints/SP-07-ai-layer-gate.md` §4 T-07-06）。🔴 **本スプリントの目的 1「パートナーが提案 → ホストが承認 → 送信」＝ `CLAUDE.md` §5 の Phase 1 成功条件 1 そのものであり、この状態では `T-09-11` シナリオ 1 が緑にならない。** 既定は **`app_scan_probe` と同型**（専用 DB ロール + `SECURITY DEFINER` + 列レベル `GRANT`。T-05-05 の前例）。🔴 **「ワーカーがパートナー所有行に触れるときの汎用の入口」を作らないこと**が要点（`docs/dev-plan.md` §6.3）。順序は **`docs/05` → migration → 実装**（`CLAUDE.md` §8.7） | 🔴 **`T-09-01`（提案の作成）の着手前に解消する。** 未解消のまま `T-09-11` まで進むと、**中核 E2E が「実装が悪い」のか「経路が塞がっている」のか切り分けられない**まま 5 回の `/iterate` を消費する |
+> | **①** | ✅ **決着（2026-09-10。人間の回答「1 で」= `app_scan_probe` と同型の `SECURITY DEFINER` 経路。既定どおり）。実装タスクは `T-09-13`（本ファイル §3 / §4。実行順は先頭）。** 🔴 **ブロッカーとしては解消したが、実装は済んでいない** —— `T-09-13` を `T-09-01` より前に実施する。〔以下は決着前の記述〕 🔴 **[Issue #41](https://github.com/Festal-KM/SES-Platform/issues/41)（パートナー所属エンジニアの提案がゲートで fail-closed）の決着と実装** | `gate.run` はジョブのホスト文脈で走るため `engineers` / `engineer_skills`（**C3**）を読めず、**パートナーが作成した提案はゲートを通せずに落ちる**（`ReviewGate` が 1 行も書かれない。`docs/05` §11.9 ⑦ / `docs/sprints/SP-07-ai-layer-gate.md` §4 T-07-06）。🔴 **本スプリントの目的 1「パートナーが提案 → ホストが承認 → 送信」＝ `CLAUDE.md` §5 の Phase 1 成功条件 1 そのものであり、この状態では `T-09-11` シナリオ 1 が緑にならない。** 既定は **`app_scan_probe` と同型**（専用 DB ロール + `SECURITY DEFINER` + 列レベル `GRANT`。T-05-05 の前例）。🔴 **「ワーカーがパートナー所有行に触れるときの汎用の入口」を作らないこと**が要点（`docs/dev-plan.md` §6.3）。順序は **`docs/05` → migration → 実装**（`CLAUDE.md` §8.7） | 🔴 **`T-09-01`（提案の作成）の着手前に解消する。** 未解消のまま `T-09-11` まで進むと、**中核 E2E が「実装が悪い」のか「経路が塞がっている」のか切り分けられない**まま 5 回の `/iterate` を消費する |
 > | **②** | 🔴 **`T-07-11`（ワーカーの起動配線とスケジュール基盤）の完了** | **`gate.run` の Worker が `apps/worker/src/main.ts` に配線されておらず、宣言済みのスケジュールジョブ 5 本もすべて無主である**（`docs/05` §11.12 ⑧ / `docs/sprints/SP-07-ai-layer-gate.md` §4 T-07-11）。🔴 **この状態ではブラウザ経路の E2E #3 / #4 / #23 が成立しない** —— テストから `gate.run` を走らせる経路自体が無いため、SP-07 の検証はすべて結合層（`tests/isolation/*`）に置かれている。**着手条件は `Q-07-1` / `Q-07-2`（= [Issue #19](https://github.com/Festal-KM/SES-Platform/issues/19) の追記分 / [#44](https://github.com/Festal-KM/SES-Platform/issues/44)）であり、いずれも既定値が置いてあるため回答を待って止めない** | 🔴 **実施は SP-08 と並走、遅くとも本スプリントの先頭タスク。本スプリントより後ろに置いてはならない**（`docs/dev-plan.md` §3.2 / §4.1 / §8 の 2026-09-09 の行）。**タスク ID は `T-07-11` のまま変えない**（`CLAUDE.md` §8.8） |
 >
 > 🔴 **ワイヤーフレーム（着手条件）**: 画面を伴うタスク（`S-019`〜`S-024`）は、**対象画面の `docs/wireframes/{S-xxx|A-xxx}-*/` に画像が存在すること**を着手条件とする（`docs/dev-plan.md` §5 E-15 / §6.4 R-11）。**全 88 枚が生成済みである**（2026-09-03。[Issue #17](https://github.com/Festal-KM/SES-Platform/issues/17) = A の決着後に残り 82 枚を生成し、`docs/04` 改訂 5 の `S-046` 分 3 枚を追加した）。**本スプリントの着手条件は満たされている。** 画面の新設・改訂で不足が生じた場合のみ `node scripts/generate-wireframes.mjs --screen <ID>` で当該 1 枚だけを生成する（🔴 **`--force` での全画面再生成は課金が発生するため行わない**）。
@@ -34,6 +34,8 @@
 | ID | 概要 | 受け入れ基準（要旨） | 対応 | 工数 |
 |---|---|---|---|---|
 | （T-07-11） | 🔴 **ワーカーの起動配線とスケジュール基盤**（SP-07 からの持ち越し。**SP-08 と並走済みなら本表から外れる**） | `gate.run` の Worker が待ち受け、宣言済みの 5 本が実際に走る | `docs/05` §9.1 / §11.12 ⑧ | L |
+| 🔴 **T-09-12** | 🔴 **`EngineerCareer` 子テーブルの新設と `EngineerSnapshot.careers` の凍結対象化**（[Issue #35](https://github.com/Festal-KM/SES-Platform/issues/35) = **回答 A**。2026-09-10）。**番号は 12 だが実行順は先頭** | 経歴が構造化して保存でき、**提案作成時に `EngineerSnapshot.careers` へ凍結される**（空配列にならない） | [#35](https://github.com/Festal-KM/SES-Platform/issues/35) / `F-008` / `F-019 AC-2` | M |
+| 🔴 **T-09-13** | 🔴 **ゲート実行文脈からパートナー台帳を読む経路**（[Issue #41](https://github.com/Festal-KM/SES-Platform/issues/41) = **回答 1**。2026-09-10）。**番号は 13 だが実行順は 2 番目** | パートナー所属エンジニアの提案が `gate.run` で fail-closed にならず、**3 層の判定が実データで下る** | [#41](https://github.com/Festal-KM/SES-Platform/issues/41) / `F-020` / `docs/05` §11.9 ⑦ | M |
 | T-09-01 | 提案の作成と情報凍結（`F-019`）と `S-020` | ホストが読めるのは `EngineerSnapshot` のみ。台帳更新で既存提案が変わらない | `F-019 AC-1`〜`AC-4` | L |
 | T-09-02 | 提案の状態機械と 422（`F-024`） | §4.2 に無い遷移は 422。状態は変化せずエラーが記録される | `F-024 AC-1` / `BR-33` | M |
 | T-09-03 | 提案の承認・却下（`F-021`）と `S-021` | 🔴 **判断材料を表示しないまま承認する導線が存在しない**（モバイルでも同じ） | `F-021 AC-1`〜`AC-6` | L |
@@ -48,6 +50,36 @@
 
 ## 4. タスク詳細
 
+🔴 **`T-09-12` / `T-09-13` は番号こそ末尾だが、実行順は `T-09-01` より前である**（`CLAUDE.md` §8.8 に従い既存 ID を振り直さない。`docs/dev-plan.md` `PM-A-09`「SP 番号 / タスク番号は採番順であって実行順ではない」）。**どちらも「後から入れると遡れない / 中核 E2E が原理的に緑にならない」性質のものである。**
+
+### T-09-12 🔴 `EngineerCareer` の新設と `EngineerSnapshot.careers` の凍結（M・**実行順は先頭**）
+
+- **背景**: [Issue #35](https://github.com/Festal-KM/SES-Platform/issues/35) に人間の回答が届いた（2026-09-10）—— **選択肢 A（`EngineerCareer` 子テーブルを新設する）**。**既定として置いていた C（Phase 1 は構造化保存を行わず、`EngineerSnapshot.careers` を空配列で凍結する）から変更された。**
+- 🔴 **なぜ `T-09-01` より前でなければならないか**: **凍結は遡れない。** `EngineerSnapshot` は提案作成の時点のエンジニア情報を固定するものであり（`F-019 AC-2`）、**表を後から足しても、それ以前に作られたスナップショットに経歴は入らない**。`T-09-01` を先に実装すると、**そこで作られた提案だけ経歴の無いスナップショットになる**（`docs/dev-plan.md` §9 の Issue #35 の行）。
+- 🔴 **順序は上流から**（`CLAUDE.md` §8.7。**スプリントファイルとコードだけを直さない**）: **`docs/02` `F-008`（経歴の入力と保存）→ `docs/04` §S-006 / §S-007（経歴の表示・入力欄）→ `docs/05` §3.4（`EngineerCareer` の表定義）+ §4.4 のポリシークラス割り当て + `EngineerSnapshot` の凍結内容 → migration → 実装**。**`program-design` が `docs/05` を直すまで実装に入らない。**
+- **実装で守ること**:
+  - 🔴 **所有パートナーの継承と freeze トリガの対象に含める**（SP-02 の T-02-08 と同型）。**親（`engineers`）の `partner_company_id` を継承し、行から直接は変えられない。** 単一列 FK ではなく **複合 FK（`(tenant_id, engineer_id)`）**とする（[Issue #33](https://github.com/Festal-KM/SES-Platform/issues/33) の決着に従う）。
+  - 🔴 **ポリシークラスは親の `Engineer` と同じ（C3）**。**新表を作ったのにクラス割り当てを忘れると、`docs/05` §4.7 のカタログ走査が落ちる**（＝落ちることで気づける。除外リストに足して通さない）。
+  - 🔴 **`EngineerSnapshot.careers` に凍結する**。以後の台帳更新が既存提案の内容を変えないこと（`F-019 AC-2`）。
+  - 🔴 **匿名共有（経路 4）の開示項目を増やさない**（`CLAUDE.md` §3.1 経路 4 / §8.6）。**経歴は匿名 5 項目に含まれない。** `packages/domain/src/anonymize/**` の出力に経歴が 1 文字も現れないことをテストで固定する（**個人が特定できる情報の代表例である**）。
+  - 🔴 **LLM へ渡す経路を作らない**（Phase 1 では `sheet-parser` が無い）。経歴は人が入力する。
+  - **保持期間削除（`F-046`。SP-16）の対象に含める** —— 削除の射程から漏れると、個人情報が消えない列が残る。`docs/05` の該当節に追記する。
+- **完了の判定**: ①`docs/02` → `docs/04` → `docs/05` が先に更新されている ②migration が入り、カタログ走査（`docs/05` §4.7）と二重防御のテストが green ③経歴を持つエンジニアで提案を作ると `EngineerSnapshot.careers` に凍結され、**その後に台帳の経歴を書き換えても提案の内容が変わらない**結合テストが green ④**匿名候補の出力に経歴が現れない**テストが green。
+
+### T-09-13 🔴 ゲート実行文脈からパートナー台帳を読む経路（M・**実行順は 2 番目**）
+
+- **背景**: [Issue #41](https://github.com/Festal-KM/SES-Platform/issues/41) に人間の回答が届いた（2026-09-10）—— **選択肢 1（`app_scan_probe` と同型の「専用 DB ロール + `SECURITY DEFINER` + 列レベル `GRANT`」で解く）。既定と同じ。**
+- **何が壊れているか**: `gate.run` はジョブのホスト文脈で走るため `engineers` / `engineer_skills`（**C3**）を読めず、**パートナーが作成した提案は `ReviewGate` を 1 行も書かずに落ちる**（fail-closed。`docs/05` §11.9 ⑦ / `docs/sprints/SP-07-ai-layer-gate.md` §4 T-07-06）。
+- 🔴 **なぜ `T-09-01` より前でなければならないか**: **「パートナーが提案 → ホストが承認 → 送信」は `CLAUDE.md` §5 の Phase 1 成功条件 1 そのもの**であり、この状態では `T-09-11` のシナリオ 1 が**原理的に**緑にならない。**先に `T-09-01` を作ってからゲートの穴に気づくと、`EngineerSnapshot` に何を凍結するか（＝ゲートに何を渡すか）まで作り直しになる。**
+- 🔴 **順序は上流から**（`CLAUDE.md` §8.7）: **`docs/05`（§4.4.2 の行由来コンテキスト / §11.9 ⑦ / §8.5.1 と同型の節）→ migration → 実装。**
+- **実装で守ること**:
+  - 🔴 **専用ロール 1 つ + `SECURITY DEFINER` 関数 + 列レベル `GRANT`**。**読む列は照合に要るものだけに絞る**（氏名・連絡先・スキルシート本文を読めるようにしない）。**書き込みを与えない。**
+  - 🔴 **テナント境界は関数本体の `app_tenant_id()` が課し、`NULL` は fail-closed で拒否する**（T-05-05 の `app_scan_probe` の前例）。
+  - 🔴 **「ワーカーがパートナー所有行に触れるときの汎用の入口」を作らない**（`docs/dev-plan.md` §6.3。**分離のバイパスが汎用のエスケープハッチになるのが最大の失敗である**）。呼び出し元を静的テストで 1 箇所に固定する（`tests/static/auth-db-callers.test.ts` の `ALLOWED_CALLERS` と同型）。
+  - 🔴 **新しいロールを `tests/isolation/roles.test.ts` のロール走査（SP-02 の #5 / #10）の対象に入れる。** **除外リストを広げて通さない。**
+  - ⚠️ **[Issue #27](https://github.com/Festal-KM/SES-Platform/issues/27) ②の残射程と同じ論点である。** `SkillSheetExtraction` の生成（SP-14）は**書く列も表も違う**ため、本タスクの関数を流用しない。
+- **完了の判定**: ①`docs/05` が先に更新されている ②migration が入り、ロール走査と二重防御が green ③**パートナー所属エンジニアの提案で `gate.run` が 3 層すべての判定を下し、`ReviewGate` が 1 行書かれる**結合テストが green（実 DB + RLS）④**その経路でホストの台帳・他社のエンジニアが 1 件も読めない**ことのテストが green ⑤`tests/isolation/gate-injection.test.ts`（K-3 の証明）が引き続き green。
+
 ### T-09-01 提案の作成と情報凍結（L）
 
 - **実装**: `POST /api/proposals`（#36。🔴 **SP-08 の `createProposalDraft()` プリミティブを再利用する。2 実装にしない**）/ `PATCH /api/proposals/{id}`（#37。🔴 **`DRAFT` のみ。他状態は 422**）。画面は `S-020`（Tier 2）。
@@ -57,7 +89,8 @@
 - 🔴 **パートナーは、同一案件に対する他社の提案の存在・件数・単価・エンジニア名を、一覧・件数・並び順・通知のいずれからも知り得ない**（`F-019 AC-4` / `BR-07`）。`PartnerProposalView` / `HostProposalView` を型として分ける（`docs/05` §4.8）。
 - 作成・更新を `ProposalEvent` と `AuditLog` に記録する。
 - **本文は Phase 1 では手入力**（`proposal-drafter` は Phase 2 の `F-034`）。
-- 🔴 **着手条件①（[Issue #41](https://github.com/Festal-KM/SES-Platform/issues/41)）を本タスクの前に解消する。** パートナーが作成した提案は、現状 `gate.run` がホスト文脈で `engineers` / `engineer_skills`（C3）を読めず **fail-closed で落ちる**（`docs/sprints/SP-07-ai-layer-gate.md` §4 T-07-06 / `docs/05` §11.9 ⑦）。🔴 **本タスクは「パートナーが提案を作る」経路そのものであり、ここを実装してからゲートの穴に気づくと、`EngineerSnapshot` の凍結内容（何をゲートに渡すか）まで作り直しになる。** 既定は `app_scan_probe` と同型（専用ロール + `SECURITY DEFINER` + 列レベル `GRANT`）。順序は **`docs/05` → migration → 実装**（`CLAUDE.md` §8.7）。
+- 🔴 **本タスクの前に `T-09-12`（経歴の凍結。[Issue #35](https://github.com/Festal-KM/SES-Platform/issues/35) = A）と `T-09-13`（ゲート実行文脈。[Issue #41](https://github.com/Festal-KM/SES-Platform/issues/41) = 1）を済ませる**（2026-09-10 に人間が決定。本ファイル §4 の該当節）。**どちらも本タスクを先に作ると作り直しになる。**
+- 🔴 **着手条件①（[Issue #41](https://github.com/Festal-KM/SES-Platform/issues/41)。実装は `T-09-13`）を本タスクの前に解消する。** パートナーが作成した提案は、現状 `gate.run` がホスト文脈で `engineers` / `engineer_skills`（C3）を読めず **fail-closed で落ちる**（`docs/sprints/SP-07-ai-layer-gate.md` §4 T-07-06 / `docs/05` §11.9 ⑦）。🔴 **本タスクは「パートナーが提案を作る」経路そのものであり、ここを実装してからゲートの穴に気づくと、`EngineerSnapshot` の凍結内容（何をゲートに渡すか）まで作り直しになる。** 既定は `app_scan_probe` と同型（専用ロール + `SECURITY DEFINER` + 列レベル `GRANT`）。順序は **`docs/05` → migration → 実装**（`CLAUDE.md` §8.7）。
 - **完了の判定**: `F-019 AC-1`〜`AC-4` の結合テスト + 型テスト。🔴 **加えて、パートナーが作成した提案がゲートを通ること**（着手条件①の解消の確認。**通らないままだと `T-09-11` シナリオ 1 が緑にならない**）。
 
 ### T-09-02 提案の状態機械と 422（M）
