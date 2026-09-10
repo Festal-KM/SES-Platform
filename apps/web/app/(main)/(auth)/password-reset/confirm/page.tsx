@@ -13,6 +13,7 @@
 import type { Metadata } from 'next';
 import { t } from '@ses/i18n';
 import { PASSWORD_MIN_LENGTH } from '@ses/config';
+import { AuthShell } from '../../../../_components/auth-shell';
 import { ConfirmForm, type ConfirmFormMessages } from './confirm-form';
 
 export const runtime = 'nodejs';
@@ -47,13 +48,10 @@ export default async function PasswordResetConfirmPage({
 }) {
   const { token } = await searchParams;
   return (
-    <main className="ses-auth-layout">
-      <div className="ses-auth-card">
-        <p className="ses-wordmark">{t('product.name')}</p>
-        <h1>{t('passwordReset.title')}</h1>
-        {/* 🔴 トークンはフォームの内部でしか使わない（画面にも監査ログにも出さない）。 */}
-        <ConfirmForm token={token ?? ''} minLength={PASSWORD_MIN_LENGTH} messages={messages} />
-      </div>
-    </main>
+    <AuthShell wordmark={t('product.name')}>
+      <h1>{t('passwordReset.title')}</h1>
+      {/* 🔴 トークンはフォームの内部でしか使わない（画面にも監査ログにも出さない）。 */}
+      <ConfirmForm token={token ?? ''} minLength={PASSWORD_MIN_LENGTH} messages={messages} />
+    </AuthShell>
   );
 }

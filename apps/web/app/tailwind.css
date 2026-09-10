@@ -1,10 +1,11 @@
 /* apps/web/app/tailwind.css
  * Tailwind CSS v4（CLAUDE.md §2 / docs/03 §5.2）。T-03-06 が最初の本格 UI として導入した。
  *
- * 🔴 既存の `globals.css`（S-001 / S-002 / S-041 が使う手書き CSS）はそのまま残す
- *    （全面移行は別タスク。docs/sprints/SP-21 T-21-04〜T-21-07）。本ファイルは
- *    `app/layout.tsx` で `globals.css` より先に読み込み、カスケードの後勝ちで
- *    既存ページの見た目を変えない（同じセレクタが競合した場合は `globals.css` を優先させる）。
+ * 🔴 T-21-03 で**基底（色変数 / 行間 / フォント）をこのファイルへ移した**（末尾のブロック）。
+ *    これにより `globals.css` に残るのは `.ses-*` のコンポーネントクラスだけになり、
+ *    それらは Tailwind のユーティリティと**セレクタ名が競合しない**。
+ *    ＝ **`app/layout.tsx` の読み込み順（Tailwind → `globals.css`）にもう依存していない。**
+ *    残りの `.ses-*` の移行は T-21-04 / T-21-05、撤去の判定は T-21-07 が行う。
  * 🔴 ブレークポイントは Tailwind の既定のまま独自定義しない（CLAUDE.md §13.3）。
  *    **`@theme` で `--breakpoint-*` を宣言しない。** 機械検査は
  *    `tests/static/tailwind-breakpoints.test.ts`（レビューの目視に頼らない）。
@@ -49,3 +50,55 @@
  *    「コンテンツ検出」ブロックが検査する。
  */
 @source '../../../packages/ui/src';
+
+/* ============================================================================
+ * 🔴 基底のタイポグラフィと色変数（旧 `globals.css` の先頭ブロック）— T-21-03
+ * ============================================================================
+ * ここへ移した理由は 1 つである。**`layout.tsx` の「Tailwind → `globals.css` の後勝ち」
+ * という暫定（SP-21 §3.1-2）は、実体としてこのブロックのためだけに存在していた。**
+ *
+ *   - `.ses-*` は Tailwind のユーティリティと**セレクタ名が 1 つも競合しない**。
+ *     つまり読み込み順を入れ替えても `.ses-*` の見え方は変わらない。
+ *   - 実際に順序が効いていたのは preflight の `html { line-height: 1.5; font-family: … }`
+ *     対 `globals.css` の `html, body { line-height: 1.6; font-family: … }` である
+ *     （どちらも詳細度 0,0,1 で、**後に読まれた方が勝つ**）。
+ *   - したがって、この 2 つを Tailwind 側（`@theme` と `@layer base`）へ移せば、
+ *     **順序に依存する箇所が 0 になる。** T-21-07 は `globals.css` を消すだけで済み、
+ *     消した瞬間に本文の行間とフォントが変わる、という壊れ方が起こらない。
+ *
+ * 🔴 **値は 1 つも変えていない**（移設のみ。T-21-03 は見た目を変えないタスクである）。
+ *    行間 1.6 / フォントスタック / 文字色 `#111827` は移設前と同一である。
+ */
+
+/* フォントスタックは `--default-font-family` 経由で preflight の `html` に効く
+ * （`tailwindcss/theme.css`: `--default-font-family: --theme(--font-sans, initial)`）。
+ * 🔴 `@layer base` に `font-family` を直書きせず `@theme` に置く —— 直書きすると
+ *    `font-sans` ユーティリティだけが Tailwind の既定スタックのまま取り残され、
+ *    「本文と `font-sans` を当てた要素でフォントが違う」状態を作る。
+ * 🔴 日本語フォント（`Hiragino Sans` / `Noto Sans JP`）を落とさない —— 落とすと
+ *    ブラウザ既定のゴシックに落ち、字面が変わって行送りと折り返し位置がずれる。 */
+@theme {
+  --font-sans: system-ui, -apple-system, 'Segoe UI', 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+}
+
+@layer base {
+  /* 🔴 `--ses-*` は `globals.css` に残っている `.ses-*` コンポーネントクラスがまだ参照している。
+   *    **T-21-07 で `.ses-*` を撤去するときに、この 4 変数も一緒に消える。**
+   *    新しいコードからは参照しない（色は Tailwind のパレットを使う）。 */
+  :root {
+    color-scheme: light;
+    --ses-fg: #111827;
+    --ses-muted: #6b7280;
+    --ses-border: #d1d5db;
+    --ses-danger: #b91c1c;
+  }
+
+  /* preflight の `html { line-height: 1.5 }` を上書きする（同じ `base` レイヤの後方に置く）。
+   * 🔴 `box-sizing: border-box` と `margin` / `padding` の 0 化は preflight が
+   *    `*, ::after, ::before, ::backdrop, ::file-selector-button` に対して行っており、
+   *    `globals.css` の `* { box-sizing: border-box }` は完全に重複していた（移設せず削除）。 */
+  html {
+    line-height: 1.6;
+    color: var(--ses-fg);
+  }
+}

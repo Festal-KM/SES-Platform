@@ -41,8 +41,10 @@ export default async function OrganizationSettingsPage() {
     resolveSendingDomainFact(await readSendingDomainSettings(outcome.ctx, sendingDomainRuntime())),
   );
 
+  // T-21-03: 旧 `.ses-page` を Tailwind へ。余白は他の業務画面と同じ器に揃えた
+  //          （同じ「単一カラムの業務画面」が 2 種類の余白を持つと、次の画面が倣う先を選べない）。
   return (
-    <main className="ses-page">
+    <main className="mx-auto max-w-5xl px-4 py-8">
       <SendingDomainGuardBanner
         visible={showSendingDomainBanner}
         messages={{

@@ -6,6 +6,7 @@
 //    API 側は変更しない（docs/05 §6.3 #5 の仕様のまま）。
 import type { Metadata } from 'next';
 import { t } from '@ses/i18n';
+import { AuthShell } from '../../../_components/auth-shell';
 import { RequestForm, type RequestFormMessages } from './request-form';
 
 export const metadata: Metadata = {
@@ -27,12 +28,9 @@ const messages: RequestFormMessages = {
 
 export default function PasswordResetPage() {
   return (
-    <main className="ses-auth-layout">
-      <div className="ses-auth-card">
-        <p className="ses-wordmark">{t('product.name')}</p>
-        <h1>{t('passwordReset.title')}</h1>
-        <RequestForm messages={messages} />
-      </div>
-    </main>
+    <AuthShell wordmark={t('product.name')}>
+      <h1>{t('passwordReset.title')}</h1>
+      <RequestForm messages={messages} />
+    </AuthShell>
   );
 }

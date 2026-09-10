@@ -1,61 +1,23 @@
 /* apps/web/app/globals.css
- * 🔴 最小のベーススタイル。Tailwind CSS + shadcn/ui の導入（CLAUDE.md §2 / docs/04）は
- *    T-03-01 のスコープ外である（依存追加は Next.js / Auth.js / パスワードハッシュに限る）。
- *    導入時はこのファイルを Tailwind のエントリに置き換える。
- * 🔴 ブレークポイントを独自定義しない（CLAUDE.md §13.3）。ここでは単一カラムのみを扱う。
+ * 🔴 **撤去の途中にあるファイルである**（SP-21）。ここに新しいクラスを足さない ——
+ *    足した瞬間に T-21-07 の「`.ses-*` が 0 件」が遠のく。新しい見た目は Tailwind の
+ *    ユーティリティか `@ses/ui`（`packages/ui`）で作る（CLAUDE.md §2 / §2.1）。
+ *
+ * 状況（2026-09-10 / T-21-03 時点）:
+ *   - **基底（`:root` の色変数 / `html` の行間・フォント・文字色 / `box-sizing`）は
+ *     `tailwind.css` へ移した。** 理由はそちらの末尾ブロックに書いた ——
+ *     `layout.tsx` の「Tailwind → `globals.css` の後勝ち」という暫定は、実体として
+ *     この基底のためだけに存在していたためである。
+ *   - **共通レイアウト（`.ses-auth-layout` / `.ses-auth-card` / `.ses-wordmark` /
+ *     `.ses-page`）と管理平面の平面帯（`.ses-plane-band`）は T-21-03 で移行済み**
+ *     （`app/_components/auth-shell.tsx` と各 `layout.tsx` の Tailwind ユーティリティ）。
+ *   - **ここに残っているのはフォーム・表・骨格などの画面内クラスだけ**であり、
+ *     いずれも Tailwind のユーティリティと**セレクタ名が競合しない**。
+ *     ＝ `layout.tsx` の読み込み順にはもう依存していない。
+ *   - 残りの移行は T-21-04（主平面 16 画面）/ T-21-05（管理平面 3 画面）、
+ *     ファイルごとの撤去の判定は T-21-07 が行う。
+ * 🔴 ブレークポイントを独自定義しない（CLAUDE.md §13.3）。
  */
-
-:root {
-  color-scheme: light;
-  --ses-fg: #111827;
-  --ses-muted: #6b7280;
-  --ses-border: #d1d5db;
-  --ses-danger: #b91c1c;
-}
-
-* {
-  box-sizing: border-box;
-}
-
-html,
-body {
-  margin: 0;
-  padding: 0;
-  color: var(--ses-fg);
-  font-family: system-ui, -apple-system, 'Segoe UI', 'Hiragino Sans', 'Noto Sans JP', sans-serif;
-  line-height: 1.6;
-}
-
-.ses-auth-layout {
-  min-height: 100dvh;
-  display: flex;
-  justify-content: center;
-  padding: 1.5rem 1rem;
-}
-
-/* A-001 セクション 1「平面帯」（docs/04 §A-001）。運営者コンソールであることを常時示す。
-   🔴 主平面と見分けがつかない状態を作らない（代理閲覧・停止操作の誤爆を防ぐ前提になる）。 */
-.ses-plane-band {
-  background: #1e293b;
-  color: #f8fafc;
-  font-size: 0.8125rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  padding: 0.5rem 1rem;
-  text-align: center;
-}
-
-/* S-001 は T1（モバイル完結）。単一カラムで、機能の省略をしない（docs/04 §S-001）。 */
-.ses-auth-card {
-  width: 100%;
-  max-width: 24rem;
-}
-
-.ses-wordmark {
-  font-size: 1.125rem;
-  font-weight: 700;
-  margin-bottom: 2rem;
-}
 
 .ses-field {
   display: block;
@@ -183,13 +145,6 @@ body {
   margin: 0 0 0.75rem;
   border-radius: 0.25rem;
   background: var(--ses-border);
-}
-
-/* S-041 監査ログ（T-03-05）。目次のある業務画面の共通レイアウト（単一カラム、幅を制限）。 */
-.ses-page {
-  max-width: 64rem;
-  margin: 0 auto;
-  padding: 1.5rem 1rem;
 }
 
 .ses-filter-form {

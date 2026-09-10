@@ -15,6 +15,7 @@
 //    API 経路を 1 本に保つ（docs/05 §6.1 / P-A-04）。
 import type { Metadata } from 'next';
 import { t } from '@ses/i18n';
+import { AuthShell } from '../../../../_components/auth-shell';
 import { InviteForm, type InviteFormMessages } from './invite-form';
 
 export const runtime = 'nodejs';
@@ -64,13 +65,10 @@ export default async function InviteAcceptPage({
 }) {
   const { token } = await params;
   return (
-    <main className="ses-auth-layout">
-      <div className="ses-auth-card">
-        <p className="ses-wordmark">{t('product.name')}</p>
-        <h1>{t('invite.title')}</h1>
-        {/* 🔴 トークンはフォームの内部でしか使わない（画面にも監査ログにも出さない）。 */}
-        <InviteForm token={token} messages={messages} />
-      </div>
-    </main>
+    <AuthShell wordmark={t('product.name')}>
+      <h1>{t('invite.title')}</h1>
+      {/* 🔴 トークンはフォームの内部でしか使わない（画面にも監査ログにも出さない）。 */}
+      <InviteForm token={token} messages={messages} />
+    </AuthShell>
   );
 }

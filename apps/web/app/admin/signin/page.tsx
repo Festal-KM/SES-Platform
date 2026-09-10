@@ -9,6 +9,7 @@
 // 🔴 未認証画面である（`requirePlatformCtx` を呼ばない）。権限差分なし。
 import type { Metadata } from 'next';
 import { t } from '@ses/i18n';
+import { AuthShell } from '../../_components/auth-shell';
 import {
   AdminSignInForm,
   type AdminSignInFormMessages,
@@ -58,13 +59,10 @@ export default async function AdminSignInPage({
 }) {
   const { step } = await searchParams;
   return (
-    <main className="ses-auth-layout">
-      <div className="ses-auth-card">
-        <p className="ses-wordmark">{t('product.name')}</p>
-        <h1>{t('admin.signin.title')}</h1>
-        <p>{t('admin.signin.lead')}</p>
-        <AdminSignInForm messages={messages} initialStage={initialStageOf(step)} />
-      </div>
-    </main>
+    <AuthShell wordmark={t('product.name')}>
+      <h1>{t('admin.signin.title')}</h1>
+      <p>{t('admin.signin.lead')}</p>
+      <AdminSignInForm messages={messages} initialStage={initialStageOf(step)} />
+    </AuthShell>
   );
 }

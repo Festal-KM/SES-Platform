@@ -8,6 +8,7 @@
 // 🔴 5 は本タスクのスコープ外。**省略ではなく、担当タスクで同じ画面に足す。**
 import type { Metadata } from 'next';
 import { t } from '@ses/i18n';
+import { AuthShell } from '../../../_components/auth-shell';
 import { SignInForm, type SignInFormMessages, type SignInStage } from './signin-form';
 
 export const metadata: Metadata = {
@@ -54,12 +55,9 @@ export default async function SignInPage({
 }) {
   const { step } = await searchParams;
   return (
-    <main className="ses-auth-layout">
-      <div className="ses-auth-card">
-        <p className="ses-wordmark">{t('product.name')}</p>
-        <h1>{t('auth.signin.title')}</h1>
-        <SignInForm messages={messages} initialStage={initialStageOf(step)} />
-      </div>
-    </main>
+    <AuthShell wordmark={t('product.name')}>
+      <h1>{t('auth.signin.title')}</h1>
+      <SignInForm messages={messages} initialStage={initialStageOf(step)} />
+    </AuthShell>
   );
 }
