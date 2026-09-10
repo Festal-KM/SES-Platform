@@ -33,6 +33,10 @@ export * from './ai/index.js';
 //    （`packages/ai`）・整合層の照合（T-07-07）・保存と整形（`packages/db` / `apps/web`）が
 //    同じ 1 つの構造を見るため domain に置く。
 export * from './gate/index.js';
+// 🔴 T-08-01: 匿名共有（CLAUDE.md §3.1 経路 4）の丸め（docs/05 §4.6 / docs/03 §4.13）。
+//    Phase 1 の検索（`F-009`）と Phase 2 のスコア表示（`F-029`）が同じ 1 実装を使う必要があり、
+//    「同じ入力に同じ出力」を証明できる場所は domain しか無い。
+export * from './anonymize/index.js';
 // 🔴 T-05-05: スキャン状態の値集合と遷移規則（docs/05 §3.4 / §8.5 / §9.6）。
 //    正規化する側（`packages/connectors`）と CHECK を持つ側（`packages/db`）は相互に
 //    依存できない（`CLAUDE.md` §2.1）ため、値集合の単一出所を domain に置く。

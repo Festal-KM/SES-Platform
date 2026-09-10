@@ -39,6 +39,9 @@ export {
   type RuntimeConfig,
   type StartupLogger,
 } from './startup.js';
+// 🔴 T-08-01: 匿名共有の丸めの粒度（docs/05 TBD-2 / docs/03 §4.13.1）。**値の唯一の出所**であり、
+//    丸めの手続きは @ses/domain の anonymizeEngineer が持つ（関数は粒度を引数で受け取る）。
+export { ANONYMIZE_ROUNDING } from './anonymize.js';
 // 🔴 期限・長さの方針値（docs/05 §2.1 の limits.ts）。環境変数ではないので schema.ts に置かない。
 export {
   DISPLAY_NAME_MAX_LENGTH,
