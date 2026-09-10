@@ -29,7 +29,7 @@ const messages: RequestFormMessages = {
 export default function PasswordResetPage() {
   return (
     <AuthShell wordmark={t('product.name')}>
-      <h1>{t('passwordReset.title')}</h1>
+      <h1 className="mb-4 text-xl font-bold text-slate-900">{t('passwordReset.title')}</h1>
       <RequestForm messages={messages} />
     </AuthShell>
   );

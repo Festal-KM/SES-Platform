@@ -26,7 +26,7 @@ export default function EngineerLedgerLoading() {
       </p>
       <div data-testid="engineer-list-skeleton">
         {Array.from({ length: SKELETON_ROWS }, (_, index) => (
-          <div key={index} className="ses-skeleton-line" />
+          <div key={index} className="mb-3 h-4 rounded-sm bg-slate-200" />
         ))}
       </div>
     </main>

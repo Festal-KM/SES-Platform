@@ -17,7 +17,18 @@
 // 🔴 Tier 3（デスクトップ主体）だが**モバイルで遮断しない**（`CLAUDE.md` §13.3）。
 //    表は横スクロールで劣化させ、非表示にはしない。
 import { useState, type FormEvent } from 'react';
-import { Button } from '@ses/ui';
+import {
+  Button,
+  Field,
+  Input,
+  Select,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@ses/ui';
 import { formatDateTimeJst } from '../../../lib/format/datetime';
 import type {
   SkillAliasListView,
@@ -210,39 +221,36 @@ export function SkillDictionaryScreen({
             {messages.candidatesEmpty}
           </p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-sm" data-testid="skill-candidates-table">
-              <thead>
-                <tr className="border-b border-slate-200 text-left text-slate-500">
-                  <th className="px-3 py-2 font-medium">{messages.candidatesColumnAlias}</th>
-                  <th className="px-3 py-2 font-medium">{messages.candidatesColumnOrigin}</th>
-                  <th className="px-3 py-2 font-medium">{messages.candidatesColumnProposedAt}</th>
+          <div>
+            <Table data-testid="skill-candidates-table">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{messages.candidatesColumnAlias}</TableHead>
+                  <TableHead>{messages.candidatesColumnOrigin}</TableHead>
+                  <TableHead>{messages.candidatesColumnProposedAt}</TableHead>
                   {canDecide ? (
                     <>
-                      <th className="px-3 py-2 font-medium">{messages.candidatesColumnTarget}</th>
-                      <th className="px-3 py-2 font-medium">{messages.candidatesColumnActions}</th>
+                      <TableHead>{messages.candidatesColumnTarget}</TableHead>
+                      <TableHead>{messages.candidatesColumnActions}</TableHead>
                     </>
                   ) : null}
-                </tr>
-              </thead>
-              <tbody>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {candidates.map((candidate) => (
-                  <tr
+                  <TableRow
                     key={candidate.id}
-                    className="border-b border-slate-100"
                     data-testid={`skill-candidate-row-${candidate.id}`}
                     data-scope={candidate.scope}
                   >
-                    <td className="px-3 py-2">{candidate.alias}</td>
+                    <TableCell whitespace="normal">{candidate.alias}</TableCell>
                     {/* 🔴 docs/04 §9: 生成物か手入力かを常時 1 行で示す。 */}
-                    <td className="px-3 py-2 whitespace-nowrap">
-                      {messages.originLabels[candidate.origin]}
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap">
+                    <TableCell>{messages.originLabels[candidate.origin]}</TableCell>
+                    <TableCell>
                       {candidate.proposedAt === null
                         ? messages.valueNone
                         : formatDateTimeJst(candidate.proposedAt)}
-                    </td>
+                    </TableCell>
                     {canDecide ? (
                       // 🔴 **グローバル別名には採否の導線を出さない**（`F-010 AC-2`）。
                       //    `#24` は 403 を返し、RLS と Prisma 拡張も 0 件更新にするが、
@@ -252,10 +260,10 @@ export function SkillDictionaryScreen({
                       //    「全社共通（編集不可）」に置き換える（列が消えると行がずれる）。
                       isDecidable(candidate) ? (
                         <>
-                          <td className="px-3 py-2">
+                          <TableCell>
                             <label className="block">
                               <span className="sr-only">{messages.candidatesColumnTarget}</span>
-                              <select
+                              <Select
                                 value={targets[candidate.id] ?? ''}
                                 disabled={decisionPhase === 'submitting'}
                                 onChange={(event) =>
@@ -264,7 +272,6 @@ export function SkillDictionaryScreen({
                                     [candidate.id]: event.target.value,
                                   }))
                                 }
-                                className="rounded-md border border-slate-300 px-2 py-1 text-sm"
                                 data-testid={`skill-candidate-target-${candidate.id}`}
                               >
                                 <option value="">{messages.candidatesTargetPlaceholder}</option>
@@ -273,10 +280,10 @@ export function SkillDictionaryScreen({
                                     {skill.name}
                                   </option>
                                 ))}
-                              </select>
+                              </Select>
                             </label>
-                          </td>
-                          <td className="px-3 py-2">
+                          </TableCell>
+                          <TableCell>
                             <div className="flex flex-wrap gap-2">
                               <Button
                                 type="button"
@@ -302,24 +309,24 @@ export function SkillDictionaryScreen({
                                 {messages.candidatesReject}
                               </Button>
                             </div>
-                          </td>
+                          </TableCell>
                         </>
                       ) : (
                         <>
-                          <td className="px-3 py-2">{messages.valueNone}</td>
-                          <td
-                            className="px-3 py-2 whitespace-nowrap text-slate-500"
+                          <TableCell>{messages.valueNone}</TableCell>
+                          <TableCell
+                            className="text-slate-500"
                             data-testid={`skill-candidate-read-only-${candidate.id}`}
                           >
                             {messages.scopeLabels[candidate.scope]}
-                          </td>
+                          </TableCell>
                         </>
                       )
                     ) : null}
-                  </tr>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
             {canDecide ? (
               <p className="mt-2 text-sm text-slate-500" data-testid="skill-candidates-accept-hint">
                 {messages.candidatesAcceptHint}
@@ -351,40 +358,35 @@ export function SkillDictionaryScreen({
             {messages.aliasesEmpty}
           </p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-sm" data-testid="skill-aliases-table">
-              <thead>
-                <tr className="border-b border-slate-200 text-left text-slate-500">
-                  <th className="px-3 py-2 font-medium">{messages.aliasesColumnAlias}</th>
-                  <th className="px-3 py-2 font-medium">{messages.aliasesColumnTarget}</th>
-                  <th className="px-3 py-2 font-medium">{messages.aliasesColumnScope}</th>
-                  <th className="px-3 py-2 font-medium">{messages.aliasesColumnDecidedAt}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {accepted.map((alias) => (
-                  <tr
-                    key={alias.id}
-                    className="border-b border-slate-100"
-                    data-testid={`skill-alias-row-${alias.id}`}
-                    data-scope={alias.scope}
-                  >
-                    <td className="px-3 py-2">{alias.alias}</td>
-                    <td className="px-3 py-2">{alias.skillName ?? messages.valueNone}</td>
-                    {/* 🔴 `GLOBAL` は「この組織から編集できない」ことの表示である（`F-010 AC-2`）。 */}
-                    <td className="px-3 py-2 whitespace-nowrap">
-                      {messages.scopeLabels[alias.scope]}
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap">
-                      {alias.decidedAt === null
-                        ? messages.valueNone
-                        : formatDateTimeJst(alias.decidedAt)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <Table data-testid="skill-aliases-table">
+            <TableHeader>
+              <TableRow>
+                <TableHead>{messages.aliasesColumnAlias}</TableHead>
+                <TableHead>{messages.aliasesColumnTarget}</TableHead>
+                <TableHead>{messages.aliasesColumnScope}</TableHead>
+                <TableHead>{messages.aliasesColumnDecidedAt}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {accepted.map((alias) => (
+                <TableRow
+                  key={alias.id}
+                  data-testid={`skill-alias-row-${alias.id}`}
+                  data-scope={alias.scope}
+                >
+                  <TableCell whitespace="normal">{alias.alias}</TableCell>
+                  <TableCell whitespace="normal">{alias.skillName ?? messages.valueNone}</TableCell>
+                  {/* 🔴 `GLOBAL` は「この組織から編集できない」ことの表示である（`F-010 AC-2`）。 */}
+                  <TableCell>{messages.scopeLabels[alias.scope]}</TableCell>
+                  <TableCell>
+                    {alias.decidedAt === null
+                      ? messages.valueNone
+                      : formatDateTimeJst(alias.decidedAt)}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         )}
       </section>
 
@@ -395,18 +397,16 @@ export function SkillDictionaryScreen({
           {messages.dictionaryReadOnlyNote}
         </p>
         <form onSubmit={onSearch} noValidate className="mb-3" data-testid="skill-dictionary-search-form">
-          <label className="mb-2 block text-sm">
-            <span className="mb-1 block text-slate-700">{messages.dictionarySearchLabel}</span>
-            <input
+          <Field className="mb-2 max-w-sm" label={messages.dictionarySearchLabel}>
+            <Input
               type="search"
               name="q"
               value={query}
               disabled={searchPhase === 'submitting'}
               onChange={(event) => setQuery(event.target.value)}
-              className="w-full max-w-sm rounded-md border border-slate-300 px-3 py-2 text-sm"
               data-testid="skill-dictionary-search-input"
             />
-          </label>
+          </Field>
           <Button
             type="submit"
             variant="secondary"
@@ -432,28 +432,22 @@ export function SkillDictionaryScreen({
             {messages.dictionaryEmpty}
           </p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-sm" data-testid="skill-dictionary-table">
-              <thead>
-                <tr className="border-b border-slate-200 text-left text-slate-500">
-                  <th className="px-3 py-2 font-medium">{messages.dictionaryColumnName}</th>
-                  <th className="px-3 py-2 font-medium">{messages.dictionaryColumnCategory}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {skills.map((skill) => (
-                  <tr
-                    key={skill.id}
-                    className="border-b border-slate-100"
-                    data-testid={`skill-dictionary-row-${skill.id}`}
-                  >
-                    <td className="px-3 py-2">{skill.name}</td>
-                    <td className="px-3 py-2">{skill.category}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <Table data-testid="skill-dictionary-table">
+            <TableHeader>
+              <TableRow>
+                <TableHead>{messages.dictionaryColumnName}</TableHead>
+                <TableHead>{messages.dictionaryColumnCategory}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {skills.map((skill) => (
+                <TableRow key={skill.id} data-testid={`skill-dictionary-row-${skill.id}`}>
+                  <TableCell whitespace="normal">{skill.name}</TableCell>
+                  <TableCell whitespace="normal">{skill.category}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         )}
       </section>
     </div>

@@ -21,7 +21,17 @@
 // 🔴 Tier 3（デスクトップ主体）だが**モバイルで遮断しない**（`CLAUDE.md` §13.3）。
 //    表は横スクロールで劣化させ、非表示にはしない。
 import { useRef, useState, type ChangeEvent, type FormEvent } from 'react';
-import { Button } from '@ses/ui';
+import {
+  Button,
+  Field,
+  Input,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@ses/ui';
 import type { ScanStatus } from '@ses/domain';
 import { formatDateTimeJst } from '../../../../../lib/format/datetime';
 import {
@@ -313,31 +323,30 @@ export function SkillSheetScreen({
 
         {canManage ? (
           <form onSubmit={onUpload} noValidate data-testid="skill-sheet-upload-form">
-            <label className="mb-2 block text-sm">
-              <span className="mb-1 block text-slate-700">{messages.uploadFileLabel}</span>
-              <input
+            <Field className="mb-2 max-w-md" label={messages.uploadFileLabel}>
+              {/* 🔴 `Input` の `file:*` 語（`file:inline-flex` / `file:h-7` ほか）は
+                  `packages/ui` が upstream から**落とさずに**取り込んでいる。
+                  ここが本リポジトリで唯一の `type="file"` である。 */}
+              <Input
                 ref={fileInputRef}
                 type="file"
                 name="file"
                 onChange={onSelectFile}
                 disabled={uploadPhase === 'submitting'}
-                className="block w-full max-w-md text-sm"
                 data-testid="skill-sheet-upload-file"
               />
-            </label>
-            <label className="mb-3 block text-sm">
-              <span className="mb-1 block text-slate-700">{messages.uploadNoteLabel}</span>
-              <input
+            </Field>
+            <Field className="mb-3 max-w-md" label={messages.uploadNoteLabel}>
+              <Input
                 type="text"
                 name="note"
                 value={note}
                 maxLength={500}
                 onChange={(event) => setNote(event.target.value)}
                 disabled={uploadPhase === 'submitting'}
-                className="w-full max-w-md rounded-md border border-slate-300 px-3 py-2 text-sm"
                 data-testid="skill-sheet-upload-note"
               />
-            </label>
+            </Field>
             <Button
               type="submit"
               size="sm"
@@ -380,235 +389,230 @@ export function SkillSheetScreen({
             {messages.versionsEmpty}
           </p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-sm" data-testid="skill-sheet-versions-table">
-              <thead>
-                <tr className="border-b border-slate-200 text-left text-slate-500">
-                  <th className="px-3 py-2 font-medium">{messages.columnVersion}</th>
-                  <th className="px-3 py-2 font-medium">{messages.columnUploadedAt}</th>
-                  <th className="px-3 py-2 font-medium">{messages.columnUploadedBy}</th>
-                  <th className="px-3 py-2 font-medium">{messages.columnScanStatus}</th>
-                  <th className="px-3 py-2 font-medium">{messages.columnExtraction}</th>
-                  <th className="px-3 py-2 font-medium">{messages.columnLatest}</th>
-                  <th className="px-3 py-2 font-medium">{messages.columnActions}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {versions.map((version) => {
-                  // 🔴 3 つの判定はすべて `policy.ts`（= API と同じ関数）から来る。
-                  const shareable = isSkillSheetShareable(version.scanStatus);
-                  const settled = isScanSettled(version.scanStatus);
-                  const canSetLatest =
-                    canManage && !version.isLatest && canBecomeLatestSkillSheet(version.scanStatus);
-                  const busy = actionPhase === 'submitting' && pendingId === version.id;
-                  return (
-                    <tr
-                      key={version.id}
-                      className="border-b border-slate-100 align-top"
-                      data-testid={`skill-sheet-row-${version.id}`}
-                      data-scan-status={version.scanStatus}
-                    >
-                      <td className="px-3 py-2 whitespace-nowrap">
-                        {messages.versionPrefix}
-                        {version.version}
-                        {version.note === null ? null : (
-                          <span
-                            className="mt-1 block text-xs text-slate-500"
-                            data-testid={`skill-sheet-note-${version.id}`}
-                          >
-                            {messages.noteLabel}: {version.note}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap">
-                        {formatDateTimeJst(version.uploadedAt)}
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap">
-                        {version.uploadedByName ?? messages.uploaderUnknown}
-                      </td>
-                      <td
-                        className="px-3 py-2 whitespace-nowrap"
-                        data-testid={`skill-sheet-scan-status-${version.id}`}
-                      >
-                        {messages.scanStatusLabels[version.scanStatus]}
-                      </td>
-                      {/* 抽出（`F-032`。SP-14）は未実装。形式で読み取れないことだけ先に示す。 */}
-                      <td
-                        className="px-3 py-2 whitespace-nowrap"
-                        data-testid={`skill-sheet-extraction-${version.id}`}
-                      >
-                        {supportsAutoExtraction(version.contentType)
-                          ? messages.extractionNotRun
-                          : messages.extractionUnsupported}
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap">
-                        {version.isLatest ? (
-                          <span data-testid={`skill-sheet-latest-${version.id}`}>
-                            {messages.latestBadge}
-                          </span>
-                        ) : (
-                          messages.notLatest
-                        )}
-                      </td>
-                      <td className="px-3 py-2">
-                        {/* 🔴 T-05-07: 閲覧（#21）の導線は**ロールも状態も問わず**出す。
-                            `VIEWER` も閲覧はできる（`F-012 AC-3`）し、隔離された版でも
-                            「いつ・どの版が・なぜ渡せないのか」を確かめられなければ、
-                            利用者は次の行動（上げ直す / 削除する）を選べない。
-                            🔴 応答は `{ meta }` だけであり本文は来ない（原本に触れるのは #20 のみ）。 */}
-                        <div className="mb-2 flex flex-wrap gap-2">
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            size="sm"
-                            disabled={previewPhase === 'submitting'}
-                            onClick={() => void onPreview(version.id)}
-                            data-testid={`skill-sheet-preview-${version.id}`}
-                          >
-                            {previewPhase === 'submitting' && previewId === version.id
-                              ? messages.previewSubmitting
-                              : previewId === version.id && preview !== null
-                                ? messages.previewClose
-                                : messages.preview}
-                          </Button>
-                        </div>
-                        {/* 🔴 共有の導線は `CLEAN` の行にしか存在しない（`F-011 AC-1`）。
-                            `CLEAN` でない行には**理由だけ**を出し、要素そのものを描かない。 */}
-                        {shareable ? (
-                          <div className="flex flex-col gap-2">
-                            <div className="flex flex-wrap gap-2">
-                              {/* 🔴 ダウンロードは `CLEAN` かつ `VIEWER` でないときだけ描く
-                                  （`F-011 AC-1` / `F-012 AC-3`）。無効化したボタンを置かない。 */}
-                              {canDownload ? (
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  disabled={downloadPhase === 'submitting'}
-                                  onClick={() => void onDownload(version.id)}
-                                  data-testid={`skill-sheet-download-${version.id}`}
-                                >
-                                  {downloadPhase === 'submitting' && downloadId === version.id
-                                    ? messages.downloadSubmitting
-                                    : messages.download}
-                                </Button>
-                              ) : null}
-                              {canSetLatest ? (
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  disabled={actionPhase === 'submitting'}
-                                  onClick={() => void onSetLatest(version.id)}
-                                  data-testid={`skill-sheet-set-latest-${version.id}`}
-                                >
-                                  {busy ? messages.setLatestSubmitting : messages.setLatest}
-                                </Button>
-                              ) : null}
-                              {canManage ? (
-                                <Button
-                                  type="button"
-                                  variant="secondary"
-                                  size="sm"
-                                  disabled={actionPhase === 'submitting'}
-                                  onClick={() => void onDelete(version.id)}
-                                  data-testid={`skill-sheet-delete-${version.id}`}
-                                >
-                                  {busy ? messages.deleteSubmitting : messages.deleteAction}
-                                </Button>
-                              ) : null}
-                            </div>
-                            {/* 🔴 `VIEWER` にはダウンロードの導線が無い（`F-012 AC-3`）。
-                                消すだけにせず、**誰に頼めばよいか**を書く（行き止まりにしない）。 */}
-                            {canDownload ? null : (
-                              <p
-                                className="text-xs text-slate-500"
-                                data-testid={`skill-sheet-download-read-only-${version.id}`}
+          <Table data-testid="skill-sheet-versions-table">
+            <TableHeader>
+              <TableRow>
+                <TableHead>{messages.columnVersion}</TableHead>
+                <TableHead>{messages.columnUploadedAt}</TableHead>
+                <TableHead>{messages.columnUploadedBy}</TableHead>
+                <TableHead>{messages.columnScanStatus}</TableHead>
+                <TableHead>{messages.columnExtraction}</TableHead>
+                <TableHead>{messages.columnLatest}</TableHead>
+                <TableHead>{messages.columnActions}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {versions.map((version) => {
+                // 🔴 3 つの判定はすべて `policy.ts`（= API と同じ関数）から来る。
+                const shareable = isSkillSheetShareable(version.scanStatus);
+                const settled = isScanSettled(version.scanStatus);
+                const canSetLatest =
+                  canManage && !version.isLatest && canBecomeLatestSkillSheet(version.scanStatus);
+                const busy = actionPhase === 'submitting' && pendingId === version.id;
+                // 🔴 `align="top"` を落とさない（旧 `<tr className="align-top">`）。
+                //    操作列は「開く / DL / 最新にする / 削除」＋保留理由＋プレビューで数行になり、
+                //    中央揃えだと**行を横に読めなくなる**（版の突き合わせが崩れる）。
+                // ⚠️ `vertical-align` は UA の `td { vertical-align: inherit }` によって
+                //    行から伝播する（**継承しないから効かない、は誤り**。実測は
+                //    `packages/ui/src/components/table.tsx` の表）。`className` ではなく
+                //    prop で渡すのは `cn()` が競合を解決しないためである。
+                return (
+                  <TableRow
+                    align="top"
+                    key={version.id}
+                    data-testid={`skill-sheet-row-${version.id}`}
+                    data-scan-status={version.scanStatus}
+                  >
+                    <TableCell>
+                      {messages.versionPrefix}
+                      {version.version}
+                      {version.note === null ? null : (
+                        <span
+                          className="mt-1 block text-xs text-slate-500"
+                          data-testid={`skill-sheet-note-${version.id}`}
+                        >
+                          {messages.noteLabel}: {version.note}
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell>{formatDateTimeJst(version.uploadedAt)}</TableCell>
+                    <TableCell>{version.uploadedByName ?? messages.uploaderUnknown}</TableCell>
+                    <TableCell data-testid={`skill-sheet-scan-status-${version.id}`}>
+                      {messages.scanStatusLabels[version.scanStatus]}
+                    </TableCell>
+                    {/* 抽出（`F-032`。SP-14）は未実装。形式で読み取れないことだけ先に示す。 */}
+                    <TableCell data-testid={`skill-sheet-extraction-${version.id}`}>
+                      {supportsAutoExtraction(version.contentType)
+                        ? messages.extractionNotRun
+                        : messages.extractionUnsupported}
+                    </TableCell>
+                    <TableCell>
+                      {version.isLatest ? (
+                        <span data-testid={`skill-sheet-latest-${version.id}`}>
+                          {messages.latestBadge}
+                        </span>
+                      ) : (
+                        messages.notLatest
+                      )}
+                    </TableCell>
+                    <TableCell whitespace="normal">
+                      {/* 🔴 T-05-07: 閲覧（#21）の導線は**ロールも状態も問わず**出す。
+                          `VIEWER` も閲覧はできる（`F-012 AC-3`）し、隔離された版でも
+                          「いつ・どの版が・なぜ渡せないのか」を確かめられなければ、
+                          利用者は次の行動（上げ直す / 削除する）を選べない。
+                          🔴 応答は `{ meta }` だけであり本文は来ない（原本に触れるのは #20 のみ）。 */}
+                      <div className="mb-2 flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          disabled={previewPhase === 'submitting'}
+                          onClick={() => void onPreview(version.id)}
+                          data-testid={`skill-sheet-preview-${version.id}`}
+                        >
+                          {previewPhase === 'submitting' && previewId === version.id
+                            ? messages.previewSubmitting
+                            : previewId === version.id && preview !== null
+                              ? messages.previewClose
+                              : messages.preview}
+                        </Button>
+                      </div>
+                      {/* 🔴 共有の導線は `CLEAN` の行にしか存在しない（`F-011 AC-1`）。
+                          `CLEAN` でない行には**理由だけ**を出し、要素そのものを描かない。 */}
+                      {shareable ? (
+                        <div className="flex flex-col gap-2">
+                          <div className="flex flex-wrap gap-2">
+                            {/* 🔴 ダウンロードは `CLEAN` かつ `VIEWER` でないときだけ描く
+                                （`F-011 AC-1` / `F-012 AC-3`）。無効化したボタンを置かない。 */}
+                            {canDownload ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                disabled={downloadPhase === 'submitting'}
+                                onClick={() => void onDownload(version.id)}
+                                data-testid={`skill-sheet-download-${version.id}`}
                               >
-                                {messages.downloadReadOnlyNote}
-                              </p>
-                            )}
-                            {/* 提案添付（SP-09）・チャット添付（SP-13）の置き場所。
-                                🔴 **`CLEAN` の行にだけ**出す。 */}
-                            <p
-                              className="text-xs text-slate-500"
-                              data-testid={`skill-sheet-share-${version.id}`}
-                            >
-                              {messages.shareComingSoon}
-                            </p>
-                          </div>
-                        ) : (
-                          <div className="flex flex-col gap-2">
-                            <p
-                              className="text-xs text-slate-500"
-                              data-testid={`skill-sheet-blocked-${version.id}`}
-                            >
-                              {messages.blockedReasons[version.scanStatus]}
-                            </p>
-                            {/* 🔴 検査中の版は削除もできない（後から届く結果が
-                                `SCAN_TARGET_NOT_FOUND` になり `A-005` の雑音になる）。 */}
-                            {canManage && settled ? (
-                              <div className="flex flex-wrap gap-2">
-                                <Button
-                                  type="button"
-                                  variant="secondary"
-                                  size="sm"
-                                  disabled={actionPhase === 'submitting'}
-                                  onClick={() => void onDelete(version.id)}
-                                  data-testid={`skill-sheet-delete-${version.id}`}
-                                >
-                                  {busy ? messages.deleteSubmitting : messages.deleteAction}
-                                </Button>
-                              </div>
+                                {downloadPhase === 'submitting' && downloadId === version.id
+                                  ? messages.downloadSubmitting
+                                  : messages.download}
+                              </Button>
+                            ) : null}
+                            {canSetLatest ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                disabled={actionPhase === 'submitting'}
+                                onClick={() => void onSetLatest(version.id)}
+                                data-testid={`skill-sheet-set-latest-${version.id}`}
+                              >
+                                {busy ? messages.setLatestSubmitting : messages.setLatest}
+                              </Button>
+                            ) : null}
+                            {canManage ? (
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                size="sm"
+                                disabled={actionPhase === 'submitting'}
+                                onClick={() => void onDelete(version.id)}
+                                data-testid={`skill-sheet-delete-${version.id}`}
+                              >
+                                {busy ? messages.deleteSubmitting : messages.deleteAction}
+                              </Button>
                             ) : null}
                           </div>
-                        )}
+                          {/* 🔴 `VIEWER` にはダウンロードの導線が無い（`F-012 AC-3`）。
+                              消すだけにせず、**誰に頼めばよいか**を書く（行き止まりにしない）。 */}
+                          {canDownload ? null : (
+                            <p
+                              className="text-xs text-slate-500"
+                              data-testid={`skill-sheet-download-read-only-${version.id}`}
+                            >
+                              {messages.downloadReadOnlyNote}
+                            </p>
+                          )}
+                          {/* 提案添付（SP-09）・チャット添付（SP-13）の置き場所。
+                              🔴 **`CLEAN` の行にだけ**出す。 */}
+                          <p
+                            className="text-xs text-slate-500"
+                            data-testid={`skill-sheet-share-${version.id}`}
+                          >
+                            {messages.shareComingSoon}
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col gap-2">
+                          <p
+                            className="text-xs text-slate-500"
+                            data-testid={`skill-sheet-blocked-${version.id}`}
+                          >
+                            {messages.blockedReasons[version.scanStatus]}
+                          </p>
+                          {/* 🔴 検査中の版は削除もできない（後から届く結果が
+                              `SCAN_TARGET_NOT_FOUND` になり `A-005` の雑音になる）。 */}
+                          {canManage && settled ? (
+                            <div className="flex flex-wrap gap-2">
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                size="sm"
+                                disabled={actionPhase === 'submitting'}
+                                onClick={() => void onDelete(version.id)}
+                                data-testid={`skill-sheet-delete-${version.id}`}
+                              >
+                                {busy ? messages.deleteSubmitting : messages.deleteAction}
+                              </Button>
+                            </div>
+                          ) : null}
+                        </div>
+                      )}
 
-                        {/* 🔴 開いた版の情報（#21 の `{ meta }`）。**本文は無い**ことを明示する。 */}
-                        {previewId === version.id && preview !== null ? (
-                          <dl
-                            className="mt-2 rounded-md border border-slate-200 bg-slate-50 p-2 text-xs text-slate-700"
-                            data-testid={`skill-sheet-preview-panel-${version.id}`}
-                          >
-                            <dt className="font-semibold">{messages.previewTitle}</dt>
-                            <dd className="mb-1">
-                              {messages.versionPrefix}
-                              {preview.version} / {messages.scanStatusLabels[preview.scanStatus]}
-                            </dd>
-                            <dt>{messages.previewContentType}</dt>
-                            <dd className="mb-1">{preview.contentType}</dd>
-                            <dt>{messages.previewByteSize}</dt>
-                            <dd className="mb-1">
-                              {preview.byteSize} {messages.previewByteSizeUnit}
-                            </dd>
-                            <dd data-testid={`skill-sheet-preview-body-notice-${version.id}`}>
-                              {messages.previewBodyNotice}
-                            </dd>
-                          </dl>
-                        ) : null}
-                        {previewId === version.id && previewPhase === 'error' ? (
-                          <p
-                            role="alert"
-                            className="mt-2 text-xs text-red-700"
-                            data-testid={`skill-sheet-preview-error-${version.id}`}
-                          >
-                            {messages.previewError}
-                          </p>
-                        ) : null}
-                        {downloadId === version.id && downloadPhase === 'error' ? (
-                          <p
-                            role="alert"
-                            className="mt-2 text-xs text-red-700"
-                            data-testid={`skill-sheet-download-error-${version.id}`}
-                          >
-                            {messages.downloadError}
-                          </p>
-                        ) : null}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                      {/* 🔴 開いた版の情報（#21 の `{ meta }`）。**本文は無い**ことを明示する。 */}
+                      {previewId === version.id && preview !== null ? (
+                        <dl
+                          className="mt-2 rounded-md border border-slate-200 bg-slate-50 p-2 text-xs text-slate-700"
+                          data-testid={`skill-sheet-preview-panel-${version.id}`}
+                        >
+                          <dt className="font-semibold">{messages.previewTitle}</dt>
+                          <dd className="mb-1">
+                            {messages.versionPrefix}
+                            {preview.version} / {messages.scanStatusLabels[preview.scanStatus]}
+                          </dd>
+                          <dt>{messages.previewContentType}</dt>
+                          <dd className="mb-1">{preview.contentType}</dd>
+                          <dt>{messages.previewByteSize}</dt>
+                          <dd className="mb-1">
+                            {preview.byteSize} {messages.previewByteSizeUnit}
+                          </dd>
+                          <dd data-testid={`skill-sheet-preview-body-notice-${version.id}`}>
+                            {messages.previewBodyNotice}
+                          </dd>
+                        </dl>
+                      ) : null}
+                      {previewId === version.id && previewPhase === 'error' ? (
+                        <p
+                          role="alert"
+                          className="mt-2 text-xs text-red-700"
+                          data-testid={`skill-sheet-preview-error-${version.id}`}
+                        >
+                          {messages.previewError}
+                        </p>
+                      ) : null}
+                      {downloadId === version.id && downloadPhase === 'error' ? (
+                        <p
+                          role="alert"
+                          className="mt-2 text-xs text-red-700"
+                          data-testid={`skill-sheet-download-error-${version.id}`}
+                        >
+                          {messages.downloadError}
+                        </p>
+                      ) : null}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
         )}
         {actionPhase === 'error' ? (
           <p role="alert" className="mt-2 text-sm text-red-700" data-testid="skill-sheet-action-error">

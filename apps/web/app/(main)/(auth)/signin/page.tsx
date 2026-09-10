@@ -56,7 +56,7 @@ export default async function SignInPage({
   const { step } = await searchParams;
   return (
     <AuthShell wordmark={t('product.name')}>
-      <h1>{t('auth.signin.title')}</h1>
+      <h1 className="mb-4 text-xl font-bold text-slate-900">{t('auth.signin.title')}</h1>
       <SignInForm messages={messages} initialStage={initialStageOf(step)} />
     </AuthShell>
   );

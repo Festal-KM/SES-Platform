@@ -38,10 +38,28 @@ import { CONTROL_BASE_CLASSES, CONTROL_FIELD_SIZE_CLASSES } from '../lib/control
 
 export type SelectProps = ComponentProps<'select'>;
 
-export function Select({ className, ...props }: SelectProps) {
+/**
+ * 単一選択のプルダウン、または複数選択のリストボックス。
+ *
+ * 🔴 **`multiple` / `size > 1` のときは高さ（`h-10`）を当てない。** `S-005` のスキル条件は
+ *    `<select multiple size={5}>` であり、40px に固定すると **5 行が 1 行分の箱に押し込まれて
+ *    選べなくなる**（`CLAUDE.md` §13.3「劣化はさせても遮断はしない」に反する）。
+ * 🔴 判定を**呼び出し側の `className` に委ねない** —— `h-10` は基底にあるため `className` では
+ *    勝てない（`cn()` は `tailwind-merge` ではない。`../lib/cn.ts` の規律 2）。
+ *    「高さを持つか」は `multiple` / `size` から一意に決まるので、ここで決める。
+ */
+export function Select({ className, multiple, size, ...props }: SelectProps) {
+  const isListBox = multiple === true || (typeof size === 'number' && size > 1);
   return (
     <select
-      className={cn(CONTROL_BASE_CLASSES, CONTROL_FIELD_SIZE_CLASSES, className)}
+      multiple={multiple}
+      size={size}
+      className={cn(
+        CONTROL_BASE_CLASSES,
+        // リストボックスは行数（`size`）が高さを決める。上下の余白だけ揃える。
+        isListBox ? 'py-1' : CONTROL_FIELD_SIZE_CLASSES,
+        className,
+      )}
       {...props}
     />
   );

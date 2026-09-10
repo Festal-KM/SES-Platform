@@ -15,6 +15,7 @@
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import type { Metadata } from 'next';
+import { SECONDARY_LINK_STACKED_CLASSES } from '@ses/ui';
 import { REQUIREMENT_KINDS } from '@ses/db';
 import { t } from '@ses/i18n';
 import { NotFoundError, ProjectNotSharedError } from '../../../../lib/api/errors';
@@ -48,7 +49,7 @@ function NotSharedNotice() {
       </p>
       {/* 🔴 T-06-03: 戻り先は `S-010`（案件一覧）である（`PROJECT_FORM_CANCEL_HREF` と共有）。
           公開が解除された取引先も、御社に公開されている**他の**案件へは戻れる。 */}
-      <Link className="ses-secondary-link" href={PROJECT_FORM_CANCEL_HREF}>
+      <Link className={SECONDARY_LINK_STACKED_CLASSES} href={PROJECT_FORM_CANCEL_HREF}>
         {t('projects.breadcrumb.list')}
       </Link>
     </main>

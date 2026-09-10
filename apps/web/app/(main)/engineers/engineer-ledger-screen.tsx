@@ -33,6 +33,26 @@
 //    「文言が無い状態の描画」を試せなくなる。**検索条件つきのリンク（ページング・条件の解除）は
 //    props で受け取る** —— 組み立てはテストできる場所（`engineerListHref`）に置く。
 import Link from 'next/link';
+import {
+  Badge,
+  Button,
+  Checkbox,
+  Field,
+  Input,
+  SECONDARY_LINK_CLASSES,
+  SECONDARY_LINK_STACKED_CLASSES,
+  Select,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@ses/ui';
+import {
+  FILTER_ACTIONS_CLASSES,
+  FILTER_FORM_CLASSES,
+} from '../_shared/filter-form-classes';
 import type {
   EngineerActiveFilterView,
   EngineerListRowView,
@@ -157,27 +177,25 @@ export function EngineerLedgerScreen({
       {/* 🔴 検索条件（docs/04 §S-005 セクション 1）。`method="get"` なので、実行した検索が
           そのまま URL になり、共有・再読込・戻るのいずれでも同じ結果に戻る。 */}
       <form
-        className="ses-filter-form"
+        className={FILTER_FORM_CLASSES}
         method="get"
         action="/engineers"
         data-testid="engineer-list-filters"
       >
         <fieldset className="contents">
           <legend className="sr-only">{messages.searchLegend}</legend>
-          <label className="ses-field">
-            <span>{messages.searchQ}</span>
-            <input
+          <Field label={messages.searchQ}>
+            <Input
               type="search"
               name="q"
               defaultValue={filters.q}
               data-testid="engineer-list-filter-q"
             />
-          </label>
-          <label className="ses-field">
-            <span>{messages.searchSkills}</span>
+          </Field>
+          <Field label={messages.searchSkills}>
             {/* 🔴 辞書からの選択のみ（自由入力は別名候補の起票であり `S-007` の責務。
                 `F-010 AC-1`「採用されるまで検索の正規化に使われない」）。 */}
-            <select
+            <Select
               name="skills"
               multiple
               size={5}
@@ -189,12 +207,13 @@ export function EngineerLedgerScreen({
                   {option.label}
                 </option>
               ))}
-            </select>
+            </Select>
+            {/* 🔴 `FieldDescription`（`<p>`）にしない —— `<label>` の中に `<p>` を入れると
+                説明文が入力欄のアクセシブル名に畳み込まれる（`@ses/ui` の `field.tsx` 冒頭）。 */}
             <span className="text-xs text-slate-500">{messages.searchSkillsHint}</span>
-          </label>
-          <label className="ses-field">
-            <span>{messages.searchSkillMode}</span>
-            <select
+          </Field>
+          <Field label={messages.searchSkillMode}>
+            <Select
               name="skillMode"
               defaultValue={filters.skillMode}
               data-testid="engineer-list-filter-skill-mode"
@@ -204,11 +223,10 @@ export function EngineerLedgerScreen({
                   {option.label}
                 </option>
               ))}
-            </select>
-          </label>
-          <label className="ses-field">
-            <span>{messages.searchYearsMin}</span>
-            <input
+            </Select>
+          </Field>
+          <Field label={messages.searchYearsMin}>
+            <Input
               type="number"
               name="yearsMin"
               min={0}
@@ -216,10 +234,9 @@ export function EngineerLedgerScreen({
               defaultValue={filters.yearsMin}
               data-testid="engineer-list-filter-years-min"
             />
-          </label>
-          <label className="ses-field">
-            <span>{messages.searchPriceMin}</span>
-            <input
+          </Field>
+          <Field label={messages.searchPriceMin}>
+            <Input
               type="number"
               name="priceMin"
               min={0}
@@ -227,10 +244,9 @@ export function EngineerLedgerScreen({
               defaultValue={filters.priceMin}
               data-testid="engineer-list-filter-price-min"
             />
-          </label>
-          <label className="ses-field">
-            <span>{messages.searchPriceMax}</span>
-            <input
+          </Field>
+          <Field label={messages.searchPriceMax}>
+            <Input
               type="number"
               name="priceMax"
               min={0}
@@ -238,19 +254,17 @@ export function EngineerLedgerScreen({
               defaultValue={filters.priceMax}
               data-testid="engineer-list-filter-price-max"
             />
-          </label>
-          <label className="ses-field">
-            <span>{messages.searchAvailableBy}</span>
-            <input
+          </Field>
+          <Field label={messages.searchAvailableBy}>
+            <Input
               type="date"
               name="availableBy"
               defaultValue={filters.availableBy}
               data-testid="engineer-list-filter-available-by"
             />
-          </label>
-          <label className="ses-field">
-            <span>{messages.searchPrefecture}</span>
-            <select
+          </Field>
+          <Field label={messages.searchPrefecture}>
+            <Select
               name="prefecture"
               defaultValue={filters.prefecture}
               data-testid="engineer-list-filter-prefecture"
@@ -260,11 +274,10 @@ export function EngineerLedgerScreen({
                   {option.label}
                 </option>
               ))}
-            </select>
-          </label>
-          <label className="ses-field">
-            <span>{messages.searchRemote}</span>
-            <select
+            </Select>
+          </Field>
+          <Field label={messages.searchRemote}>
+            <Select
               name="remote"
               defaultValue={filters.remote}
               data-testid="engineer-list-filter-remote"
@@ -274,11 +287,10 @@ export function EngineerLedgerScreen({
                   {option.label}
                 </option>
               ))}
-            </select>
-          </label>
-          <label className="ses-field">
-            <span>{messages.searchAvailability}</span>
-            <select
+            </Select>
+          </Field>
+          <Field label={messages.searchAvailability}>
+            <Select
               name="availability"
               defaultValue={filters.availability}
               data-testid="engineer-list-filter-availability"
@@ -288,14 +300,13 @@ export function EngineerLedgerScreen({
                   {option.label}
                 </option>
               ))}
-            </select>
-          </label>
+            </Select>
+          </Field>
           {/* 🔴 絞り込みチェックボックス 2 種（docs/04 §S-005 セクション 2）。**既定オフ**であり、
               オフのときに何が起きるかを直下に書く（`F-009 AC-5` / `docs/02` A-03）。 */}
-          <div className="ses-field">
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
+          <Field as="div">
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox
                 name="onlyInTime"
                 value="1"
                 defaultChecked={filters.onlyInTime}
@@ -303,9 +314,8 @@ export function EngineerLedgerScreen({
               />
               <span>{messages.searchOnlyInTime}</span>
             </label>
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox
                 name="onlyCommutable"
                 value="1"
                 defaultChecked={filters.onlyCommutable}
@@ -316,15 +326,21 @@ export function EngineerLedgerScreen({
             <span className="text-xs text-slate-500" data-testid="engineer-list-checkbox-note">
               {messages.searchCheckboxNote}
             </span>
+          </Field>
+          <div className={FILTER_ACTIONS_CLASSES}>
+            <Button type="submit" data-testid="engineer-list-search">
+              {messages.searchSubmit}
+            </Button>
+            {activeFilters.length === 0 ? null : (
+              <Link
+                className={SECONDARY_LINK_CLASSES}
+                href="/engineers"
+                data-testid="engineer-list-clear"
+              >
+                {messages.searchClear}
+              </Link>
+            )}
           </div>
-          <button type="submit" className="ses-submit" data-testid="engineer-list-search">
-            {messages.searchSubmit}
-          </button>
-          {activeFilters.length === 0 ? null : (
-            <Link className="ses-secondary-link" href="/engineers" data-testid="engineer-list-clear">
-              {messages.searchClear}
-            </Link>
-          )}
         </fieldset>
       </form>
 
@@ -353,7 +369,11 @@ export function EngineerLedgerScreen({
 
       <div className="mb-4">
         {canRegister ? (
-          <Link className="ses-secondary-link" href="/engineers/new" data-testid="engineer-list-register">
+          <Link
+            className={SECONDARY_LINK_STACKED_CLASSES}
+            href="/engineers/new"
+            data-testid="engineer-list-register"
+          >
             {messages.register}
           </Link>
         ) : (
@@ -385,7 +405,7 @@ export function EngineerLedgerScreen({
                 {activeFilters.map((filter) => (
                   <li key={filter.key}>
                     <Link
-                      className="ses-secondary-link"
+                      className={SECONDARY_LINK_CLASSES}
                       href={filter.href}
                       data-testid={`engineer-list-remove-filter-${filter.key}`}
                     >
@@ -398,112 +418,96 @@ export function EngineerLedgerScreen({
           )}
         </div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-sm" data-testid="engineer-list-table">
-            <thead>
-              <tr className="border-b border-slate-200 text-left text-slate-500">
-                <th className="px-3 py-2 font-medium">{messages.columnName}</th>
+        <Table data-testid="engineer-list-table">
+          <TableHeader>
+            <TableRow>
+              <TableHead>{messages.columnName}</TableHead>
+              {showOwnershipColumn ? (
+                <TableHead className={DESKTOP_ONLY}>{messages.columnOwnership}</TableHead>
+              ) : null}
+              <TableHead>{messages.columnSkills}</TableHead>
+              <TableHead className={TABLET_UP}>{messages.columnUnitPrice}</TableHead>
+              <TableHead>{messages.columnAvailableFrom}</TableHead>
+              <TableHead className={DESKTOP_ONLY}>{messages.columnLocation}</TableHead>
+              <TableHead className={TABLET_UP}>{messages.columnAvailability}</TableHead>
+              <TableHead className={DESKTOP_ONLY}>{messages.columnUpdatedOn}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((row) => (
+              <TableRow key={row.id} data-testid={`engineer-list-row-${row.id}`}>
+                <TableCell whitespace="normal">
+                  {/* 🔴 行から詳細へ（docs/04 §S-005「行クリックで `S-006`」）。
+                      **閲覧の監査記録は遷移先が書く**（`readEngineerDetail`。`BR-27`）。 */}
+                  <Link
+                    className="font-medium text-slate-900 underline"
+                    href={`/engineers/${row.id}`}
+                    data-testid={`engineer-list-link-${row.id}`}
+                  >
+                    {row.displayName}
+                  </Link>
+                </TableCell>
                 {showOwnershipColumn ? (
-                  <th className={`px-3 py-2 font-medium ${DESKTOP_ONLY}`}>
-                    {messages.columnOwnership}
-                  </th>
+                  <TableCell className={DESKTOP_ONLY}>{row.ownership}</TableCell>
                 ) : null}
-                <th className="px-3 py-2 font-medium">{messages.columnSkills}</th>
-                <th className={`px-3 py-2 font-medium ${TABLET_UP}`}>{messages.columnUnitPrice}</th>
-                <th className="px-3 py-2 font-medium">{messages.columnAvailableFrom}</th>
-                <th className={`px-3 py-2 font-medium ${DESKTOP_ONLY}`}>
-                  {messages.columnLocation}
-                </th>
-                <th className={`px-3 py-2 font-medium ${TABLET_UP}`}>
-                  {messages.columnAvailability}
-                </th>
-                <th className={`px-3 py-2 font-medium ${DESKTOP_ONLY}`}>
-                  {messages.columnUpdatedOn}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr
-                  key={row.id}
-                  className="border-b border-slate-100"
-                  data-testid={`engineer-list-row-${row.id}`}
-                >
-                  <td className="px-3 py-2">
-                    {/* 🔴 行から詳細へ（docs/04 §S-005「行クリックで `S-006`」）。
-                        **閲覧の監査記録は遷移先が書く**（`readEngineerDetail`。`BR-27`）。 */}
-                    <Link
-                      className="font-medium text-slate-900 underline"
-                      href={`/engineers/${row.id}`}
-                      data-testid={`engineer-list-link-${row.id}`}
-                    >
-                      {row.displayName}
-                    </Link>
-                  </td>
-                  {showOwnershipColumn ? (
-                    <td className={`px-3 py-2 whitespace-nowrap ${DESKTOP_ONLY}`}>
-                      {row.ownership}
-                    </td>
-                  ) : null}
-                  <td className="px-3 py-2">
-                    {row.skills.length === 0 ? (
-                      messages.valueNone
-                    ) : (
-                      <span className="flex flex-wrap gap-1">
-                        {row.skills.map((skill) => (
-                          <span key={skill} className="border border-slate-300 px-1.5 py-0.5 text-xs">
-                            {skill}
-                          </span>
-                        ))}
-                        {/* 🔴 超過は `+N`（docs/04 §S-005）。0 件のときは描かない。 */}
-                        {row.moreSkills === null ? null : (
-                          <span
-                            className="px-1.5 py-0.5 text-xs text-slate-500"
-                            data-testid={`engineer-list-more-skills-${row.id}`}
-                          >
-                            {row.moreSkills}
-                          </span>
-                        )}
-                      </span>
-                    )}
-                  </td>
-                  <td className={`px-3 py-2 whitespace-nowrap ${TABLET_UP}`}>{row.unitPrice}</td>
-                  <td className="px-3 py-2 whitespace-nowrap">{row.availableFrom}</td>
-                  <td className={`px-3 py-2 whitespace-nowrap ${DESKTOP_ONLY}`}>{row.location}</td>
-                  <td className={`px-3 py-2 whitespace-nowrap ${TABLET_UP}`}>{row.availability}</td>
-                  <td className={`px-3 py-2 whitespace-nowrap ${DESKTOP_ONLY}`}>{row.updatedOn}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+                <TableCell whitespace="normal">
+                  {row.skills.length === 0 ? (
+                    messages.valueNone
+                  ) : (
+                    <span className="flex flex-wrap gap-1">
+                      {row.skills.map((skill) => (
+                        <Badge key={skill} variant="outline">
+                          {skill}
+                        </Badge>
+                      ))}
+                      {/* 🔴 超過は `+N`（docs/04 §S-005）。0 件のときは描かない。 */}
+                      {row.moreSkills === null ? null : (
+                        <span
+                          className="px-1.5 py-0.5 text-xs text-slate-500"
+                          data-testid={`engineer-list-more-skills-${row.id}`}
+                        >
+                          {row.moreSkills}
+                        </span>
+                      )}
+                    </span>
+                  )}
+                </TableCell>
+                <TableCell className={TABLET_UP}>{row.unitPrice}</TableCell>
+                <TableCell>{row.availableFrom}</TableCell>
+                <TableCell className={DESKTOP_ONLY}>{row.location}</TableCell>
+                <TableCell className={TABLET_UP}>{row.availability}</TableCell>
+                <TableCell className={DESKTOP_ONLY}>{row.updatedOn}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+    )}
 
-      {/* 🔴 カーソルページング（docs/05 §6.1）。**「全 N ページ中 M ページ目」を出さない** ——
-          ページ番号は境界外の行を含む全体件数を前提にした概念であり、§4.8 の「順位」に当たる。
-          🔴 リンクは**検索条件を保った URL** である（`engineerListHref`）。 */}
-      {nextPageHref === null && firstPageHref === null ? null : (
-        <nav className="mt-4 flex flex-wrap gap-4" data-testid="engineer-list-paging">
-          {firstPageHref === null ? null : (
-            <Link
-              className="ses-secondary-link"
-              href={firstPageHref}
-              data-testid="engineer-list-first"
-            >
-              {messages.firstPage}
-            </Link>
-          )}
-          {nextPageHref === null ? null : (
-            <Link
-              className="ses-secondary-link"
-              href={nextPageHref}
-              data-testid="engineer-list-next"
-            >
-              {messages.nextPage}
-            </Link>
-          )}
-        </nav>
-      )}
-    </div>
-  );
+    {/* 🔴 カーソルページング（docs/05 §6.1）。**「全 N ページ中 M ページ目」を出さない** ——
+        ページ番号は境界外の行を含む全体件数を前提にした概念であり、§4.8 の「順位」に当たる。
+        🔴 リンクは**検索条件を保った URL** である（`engineerListHref`）。 */}
+    {nextPageHref === null && firstPageHref === null ? null : (
+      <nav className="mt-4 flex flex-wrap gap-4" data-testid="engineer-list-paging">
+        {firstPageHref === null ? null : (
+          <Link
+            className={SECONDARY_LINK_CLASSES}
+            href={firstPageHref}
+            data-testid="engineer-list-first"
+          >
+            {messages.firstPage}
+          </Link>
+        )}
+        {nextPageHref === null ? null : (
+          <Link
+            className={SECONDARY_LINK_CLASSES}
+            href={nextPageHref}
+            data-testid="engineer-list-next"
+          >
+            {messages.nextPage}
+          </Link>
+        )}
+      </nav>
+    )}
+  </div>
+);
 }

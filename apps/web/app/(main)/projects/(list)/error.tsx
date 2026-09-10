@@ -10,6 +10,7 @@
 //    セグメントを再描画する。ここでホームへ戻したり URL を捨てたりしない —— 利用者が
 //    組み立てた条件が失われる（`S-005` の error と同じ規律）。
 // 🔴 **失敗の理由を画面に出さない**（docs/05 §15.2）。`error.message` には内部の情報が入りうる。
+import { Button } from '@ses/ui';
 import { t } from '@ses/i18n';
 
 export default function ProjectListError({ reset }: { readonly reset: () => void }) {
@@ -20,14 +21,9 @@ export default function ProjectListError({ reset }: { readonly reset: () => void
         {t('projects.list.error.title')}
       </p>
       <p className="mb-4 text-sm text-slate-700">{t('projects.list.error.lead')}</p>
-      <button
-        type="button"
-        className="ses-submit w-auto px-4"
-        onClick={() => reset()}
-        data-testid="project-list-retry"
-      >
+      <Button type="button" onClick={() => reset()} data-testid="project-list-retry">
         {t('projects.list.error.retry')}
-      </button>
+      </Button>
     </main>
   );
 }

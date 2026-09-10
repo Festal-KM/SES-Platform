@@ -8,7 +8,14 @@
 // 🔴 期限切れ / 使用済みは専用文言 + 組織名のみ（担当者名を出さない）。使用済みはサインイン導線。
 // 🔴 受諾処理中はボタンを無効化する（二重送信防止）。入力途中の離脱は確認する。
 // 🔴 文言は props で受け取る（`packages/i18n` が唯一の出所。ここにベタ書きしない）。
+//
+// 🔴 T-21-04: 手書き CSS を `@ses/ui` と Tailwind へ移した（`signin-form.tsx` と同じ規律）。
+//    ⚠️ `S-002` は T-21-04 の 16 画面の列挙には無いが、**認証系 5 画面の 1 つであり、
+//    `.ses-field` / `.ses-submit` / `.ses-error` / `.ses-summary` / `.ses-notice` /
+//    `.ses-skeleton-line` を共有している**。ここだけ残すと `globals.css` を撤去できず
+//    T-21-07 に進めない（SP-21 §5 T-21-04 の「半分だけ Tailwind の状態で止めない」）。
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { Button, Field, FieldError, Input, SECONDARY_LINK_STACKED_CLASSES } from '@ses/ui';
 import { formatDateTimeJst } from '../../../../../lib/format/datetime';
 
 export type InviteRoleName =
@@ -63,6 +70,17 @@ type LoadState =
 
 const HOME_PATH = '/';
 const SIGNIN_PATH = '/signin';
+
+/**
+ * 招待の内容（読み取り専用の定義リスト）と注意書きの見た目。旧 `globals.css` の
+ * `.ses-summary` / `.ses-notice` の移設先である（T-21-04）。
+ * 🔴 この 2 つは**この画面にしか無い**ため `packages/ui` へは出さない
+ *    （使い手が 1 つのものを共有プリミティブにすると、次の画面が形を合わせに来る）。
+ */
+const SUMMARY_CLASSES = 'mb-6 text-sm';
+const SUMMARY_TERM_CLASSES = 'mt-3 text-slate-500';
+const SUMMARY_VALUE_CLASSES = 'mt-0.5 wrap-anywhere';
+const NOTICE_CLASSES = 'mb-4 rounded-md border border-slate-300 px-3 py-2 text-sm';
 
 export function InviteForm({
   token,
@@ -141,10 +159,10 @@ export function InviteForm({
   if (load.kind === 'loading') {
     // 🔴 招待内容の骨格（docs/04 §S-002 のローディング）。
     return (
-      <div className="ses-skeleton" aria-busy="true" aria-live="polite">
-        <p className="ses-skeleton-line" />
-        <p className="ses-skeleton-line" />
-        <p className="ses-skeleton-line" />
+      <div aria-busy="true" aria-live="polite">
+        <p className="mb-3 h-4 rounded-sm bg-slate-200" />
+        <p className="mb-3 h-4 rounded-sm bg-slate-200" />
+        <p className="mb-3 h-4 rounded-sm bg-slate-200" />
       </div>
     );
   }
@@ -152,12 +170,10 @@ export function InviteForm({
   if (load.kind === 'unavailable') {
     return (
       <>
-        <p className="ses-error" role="alert">
-          {messages.notFound}
-        </p>
-        <button className="ses-submit" type="button" onClick={() => void fetchInvitation()}>
+        <FieldError className="mb-4">{messages.notFound}</FieldError>
+        <Button className="w-full" type="button" onClick={() => void fetchInvitation()}>
           {messages.submit}
-        </button>
+        </Button>
       </>
     );
   }
@@ -168,14 +184,14 @@ export function InviteForm({
     // 🔴 出すのは組織名だけ（担当者名・ロール・メールアドレスを出さない）。
     return (
       <>
-        <p className="ses-error" role="alert">
+        <FieldError className="mb-4">
           {view.status === 'EXPIRED' ? messages.expired : messages.accepted}
-        </p>
-        <dl className="ses-summary">
-          <dt>{messages.tenantNameLabel}</dt>
-          <dd>{view.tenantName}</dd>
+        </FieldError>
+        <dl className={SUMMARY_CLASSES}>
+          <dt className={SUMMARY_TERM_CLASSES}>{messages.tenantNameLabel}</dt>
+          <dd className={SUMMARY_VALUE_CLASSES}>{view.tenantName}</dd>
         </dl>
-        <a className="ses-secondary-link" href={SIGNIN_PATH}>
+        <a className={SECONDARY_LINK_STACKED_CLASSES} href={SIGNIN_PATH}>
           {messages.signInLink}
         </a>
       </>
@@ -184,36 +200,31 @@ export function InviteForm({
 
   return (
     <form onSubmit={onSubmit} noValidate>
-      <h2>{messages.invitationHeading}</h2>
-      <dl className="ses-summary">
-        <dt>{messages.tenantNameLabel}</dt>
-        <dd>{view.tenantName}</dd>
+      <h2 className="mb-3 text-base font-bold text-slate-900">{messages.invitationHeading}</h2>
+      <dl className={SUMMARY_CLASSES}>
+        <dt className={SUMMARY_TERM_CLASSES}>{messages.tenantNameLabel}</dt>
+        <dd className={SUMMARY_VALUE_CLASSES}>{view.tenantName}</dd>
         {view.partnerCompanyName === null ? null : (
           <>
-            <dt>{messages.partnerCompanyLabel}</dt>
-            <dd>{view.partnerCompanyName}</dd>
+            <dt className={SUMMARY_TERM_CLASSES}>{messages.partnerCompanyLabel}</dt>
+            <dd className={SUMMARY_VALUE_CLASSES}>{view.partnerCompanyName}</dd>
           </>
         )}
-        <dt>{messages.roleLabel}</dt>
-        <dd>{messages.roleNames[view.role]}</dd>
-        <dt>{messages.emailLabel}</dt>
-        <dd>{view.email}</dd>
-        <dt>{messages.expiresAtLabel}</dt>
-        <dd>{formatDateTimeJst(view.expiresAt)}</dd>
+        <dt className={SUMMARY_TERM_CLASSES}>{messages.roleLabel}</dt>
+        <dd className={SUMMARY_VALUE_CLASSES}>{messages.roleNames[view.role]}</dd>
+        <dt className={SUMMARY_TERM_CLASSES}>{messages.emailLabel}</dt>
+        <dd className={SUMMARY_VALUE_CLASSES}>{view.email}</dd>
+        <dt className={SUMMARY_TERM_CLASSES}>{messages.expiresAtLabel}</dt>
+        <dd className={SUMMARY_VALUE_CLASSES}>{formatDateTimeJst(view.expiresAt)}</dd>
       </dl>
 
       {/* 🔴 VIEWER は「できないこと」を受諾前に示す（BR-31）。 */}
-      {view.role === 'VIEWER' ? <p className="ses-notice">{messages.viewerNotice}</p> : null}
+      {view.role === 'VIEWER' ? <p className={NOTICE_CLASSES}>{messages.viewerNotice}</p> : null}
 
-      <h2>{messages.accountHeading}</h2>
-      {error === null ? null : (
-        <p className="ses-error" role="alert">
-          {error}
-        </p>
-      )}
-      <label className="ses-field">
-        <span>{messages.displayNameLabel}</span>
-        <input
+      <h2 className="mb-3 text-base font-bold text-slate-900">{messages.accountHeading}</h2>
+      {error === null ? null : <FieldError className="mb-4">{error}</FieldError>}
+      <Field className="mb-4" label={messages.displayNameLabel}>
+        <Input
           name="displayName"
           type="text"
           autoComplete="name"
@@ -221,10 +232,9 @@ export function InviteForm({
           disabled={submitting}
           onChange={() => setDirty(true)}
         />
-      </label>
-      <label className="ses-field">
-        <span>{messages.passwordLabel}</span>
-        <input
+      </Field>
+      <Field className="mb-4" label={messages.passwordLabel}>
+        <Input
           name="password"
           type="password"
           autoComplete="new-password"
@@ -232,14 +242,16 @@ export function InviteForm({
           disabled={submitting}
           onChange={() => setDirty(true)}
         />
-        <small>{messages.passwordHint}</small>
-      </label>
+        {/* 🔴 `<small>` のまま（`<label>` の中に `<p>` を入れない。`FieldDescription` を使うと
+            説明文が入力欄のアクセシブル名に畳み込まれる）。 */}
+        <small className="text-sm text-slate-500">{messages.passwordHint}</small>
+      </Field>
 
       {/* 🔴 「受諾すると失効する」ことを、押す前に伝える。 */}
-      <p className="ses-notice">{messages.onceOnlyNotice}</p>
-      <button className="ses-submit" type="submit" disabled={submitting}>
+      <p className={NOTICE_CLASSES}>{messages.onceOnlyNotice}</p>
+      <Button className="w-full" type="submit" disabled={submitting}>
         {submitting ? messages.submitting : messages.submit}
-      </button>
+      </Button>
     </form>
   );
 }

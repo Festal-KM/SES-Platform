@@ -14,7 +14,18 @@
 // 🔴 Tier 3（デスクトップ主体）だが**モバイルで遮断しない**（`CLAUDE.md` §13.3）。
 //    一覧は横スクロールで劣化させ、非表示にはしない。
 import { useState, type FormEvent } from 'react';
-import { Button } from '@ses/ui';
+import {
+  Button,
+  Field,
+  Input,
+  Select,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@ses/ui';
 import type { TenantRole } from '@ses/db';
 import { formatDateTimeJst } from '../../../../lib/format/datetime';
 import type { InvitationIssueView } from '../../../../lib/invitations/invite-link';
@@ -192,91 +203,87 @@ export function MembersPanel({
         </p>
       ) : (
         // 🔴 Tier 3 の一覧は横スクロールで劣化させる（モバイルで隠さない。`CLAUDE.md` §13.3）。
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-sm" data-testid="members-table">
-            <thead>
-              <tr className="border-b border-slate-200 text-left text-slate-500">
-                <th className="px-3 py-2 font-medium">{messages.columnName}</th>
-                <th className="px-3 py-2 font-medium">{messages.columnEmail}</th>
-                <th className="px-3 py-2 font-medium">{messages.columnRole}</th>
-                <th className="px-3 py-2 font-medium">{messages.columnStatus}</th>
-                <th className="px-3 py-2 font-medium">{messages.columnLastLogin}</th>
-                {canManage ? <th className="px-3 py-2 font-medium">{messages.columnActions}</th> : null}
-              </tr>
-            </thead>
-            <tbody>
-              {members.map((member) => {
-                const self = member.userId === currentUserId;
-                return (
-                  <tr
-                    key={member.id}
-                    className="border-b border-slate-100"
-                    data-testid={`member-row-${member.id}`}
-                    data-role={member.role}
-                    data-status={member.status}
-                  >
-                    <td className="px-3 py-2">{member.displayName}</td>
-                    <td className="px-3 py-2">{member.email}</td>
-                    <td className="px-3 py-2 whitespace-nowrap">{messages.roleLabels[member.role]}</td>
-                    <td className="px-3 py-2 whitespace-nowrap">
-                      {messages.statusLabels[member.status]}
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap">
-                      {member.lastLoginAt === null
-                        ? messages.valueNone
-                        : formatDateTimeJst(member.lastLoginAt)}
-                    </td>
-                    {canManage ? (
-                      <td className="px-3 py-2">
-                        {self ? (
-                          // 🔴 自分自身には操作を出さない（サーバも 422 で拒否する）。
-                          <span className="text-xs text-slate-500" data-testid={`member-self-${member.id}`}>
-                            {messages.self}
-                          </span>
-                        ) : member.status === 'REVOKED' ? (
-                          <span className="text-xs text-slate-500">{messages.valueNone}</span>
-                        ) : (
-                          <div className="flex flex-wrap items-center gap-2">
-                            <label className="text-xs text-slate-600">
-                              <span className="sr-only">{messages.roleChangeLabel}</span>
-                              <select
-                                value={member.role}
-                                onChange={(event) =>
-                                  setPending({
-                                    kind: 'ROLE',
-                                    member,
-                                    nextRole: event.target.value as TenantRole,
-                                  })
-                                }
-                                className="rounded-md border border-slate-300 px-2 py-1 text-xs"
-                                data-testid={`member-role-select-${member.id}`}
-                              >
-                                {assignableRoles.map((role) => (
-                                  <option key={role} value={role}>
-                                    {messages.roleLabels[role]}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              size="sm"
-                              onClick={() => setPending({ kind: 'REVOKE', member })}
-                              data-testid={`member-revoke-start-${member.id}`}
+        //    横スクロールの器は `Table` が自前で持つ（`overflow-x-auto` の `<div>`）ため、
+        //    ここに器を重ねない —— 二重にすると溢れがどちらで受けられるか分からなくなる。
+        <Table data-testid="members-table">
+          <TableHeader>
+            <TableRow>
+              <TableHead>{messages.columnName}</TableHead>
+              <TableHead>{messages.columnEmail}</TableHead>
+              <TableHead>{messages.columnRole}</TableHead>
+              <TableHead>{messages.columnStatus}</TableHead>
+              <TableHead>{messages.columnLastLogin}</TableHead>
+              {canManage ? <TableHead>{messages.columnActions}</TableHead> : null}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {members.map((member) => {
+              const self = member.userId === currentUserId;
+              return (
+                <TableRow
+                  key={member.id}
+                  data-testid={`member-row-${member.id}`}
+                  data-role={member.role}
+                  data-status={member.status}
+                >
+                  <TableCell whitespace="normal">{member.displayName}</TableCell>
+                  <TableCell whitespace="normal">{member.email}</TableCell>
+                  <TableCell>{messages.roleLabels[member.role]}</TableCell>
+                  <TableCell>{messages.statusLabels[member.status]}</TableCell>
+                  <TableCell>
+                    {member.lastLoginAt === null
+                      ? messages.valueNone
+                      : formatDateTimeJst(member.lastLoginAt)}
+                  </TableCell>
+                  {canManage ? (
+                    <TableCell>
+                      {self ? (
+                        // 🔴 自分自身には操作を出さない（サーバも 422 で拒否する）。
+                        <span className="text-xs text-slate-500" data-testid={`member-self-${member.id}`}>
+                          {messages.self}
+                        </span>
+                      ) : member.status === 'REVOKED' ? (
+                        <span className="text-xs text-slate-500">{messages.valueNone}</span>
+                      ) : (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <label className="text-xs text-slate-600">
+                            <span className="sr-only">{messages.roleChangeLabel}</span>
+                            <Select
+                              value={member.role}
+                              onChange={(event) =>
+                                setPending({
+                                  kind: 'ROLE',
+                                  member,
+                                  nextRole: event.target.value as TenantRole,
+                                })
+                              }
+                              data-testid={`member-role-select-${member.id}`}
                             >
-                              {messages.revokeSubmit}
-                            </Button>
-                          </div>
-                        )}
-                      </td>
-                    ) : null}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                              {assignableRoles.map((role) => (
+                                <option key={role} value={role}>
+                                  {messages.roleLabels[role]}
+                                </option>
+                              ))}
+                            </Select>
+                          </label>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => setPending({ kind: 'REVOKE', member })}
+                            data-testid={`member-revoke-start-${member.id}`}
+                          >
+                            {messages.revokeSubmit}
+                          </Button>
+                        </div>
+                      )}
+                    </TableCell>
+                  ) : null}
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
       )}
 
       {/* 🔴 確認ステップ（`docs/04` §S-035「操作と結果」）。変更前後と影響を必ず出す。 */}
@@ -365,27 +372,23 @@ export function MembersPanel({
             </p>
           ) : null}
           <form onSubmit={onInvite} noValidate data-testid="members-invite-form">
-            <label className="mb-2 block text-sm">
-              <span className="mb-1 block text-slate-700">{messages.inviteEmailLabel}</span>
-              <input
+            <Field className="mb-2 max-w-sm" label={messages.inviteEmailLabel}>
+              <Input
                 type="email"
                 name="email"
                 required
                 value={inviteEmail}
                 disabled={invitePhase === 'submitting'}
                 onChange={(event) => setInviteEmail(event.target.value)}
-                className="w-full max-w-sm rounded-md border border-slate-300 px-3 py-2 text-sm"
                 data-testid="members-invite-email"
               />
-            </label>
-            <label className="mb-2 block text-sm">
-              <span className="mb-1 block text-slate-700">{messages.inviteRoleLabel}</span>
-              <select
+            </Field>
+            <Field className="mb-2 max-w-sm" label={messages.inviteRoleLabel}>
+              <Select
                 name="role"
                 value={inviteRole}
                 disabled={invitePhase === 'submitting'}
                 onChange={(event) => setInviteRole(event.target.value as TenantRole)}
-                className="rounded-md border border-slate-300 px-3 py-2 text-sm"
                 data-testid="members-invite-role"
               >
                 {assignableRoles.map((role) => (
@@ -393,8 +396,8 @@ export function MembersPanel({
                     {messages.roleLabels[role]}
                   </option>
                 ))}
-              </select>
-            </label>
+              </Select>
+            </Field>
             {invitePhase === 'error' ? (
               <p role="alert" className="mb-2 text-sm text-red-700" data-testid="members-invite-error">
                 {messages.inviteError}

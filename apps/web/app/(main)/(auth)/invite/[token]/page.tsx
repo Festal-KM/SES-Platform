@@ -66,7 +66,7 @@ export default async function InviteAcceptPage({
   const { token } = await params;
   return (
     <AuthShell wordmark={t('product.name')}>
-      <h1>{t('invite.title')}</h1>
+      <h1 className="mb-4 text-xl font-bold text-slate-900">{t('invite.title')}</h1>
       {/* 🔴 トークンはフォームの内部でしか使わない（画面にも監査ログにも出さない）。 */}
       <InviteForm token={token} messages={messages} />
     </AuthShell>

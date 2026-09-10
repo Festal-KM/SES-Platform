@@ -17,6 +17,17 @@ import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import type { Metadata } from 'next';
+import {
+  Badge,
+  SECONDARY_LINK_CLASSES,
+  SECONDARY_LINK_STACKED_CLASSES,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@ses/ui';
 import { t } from '@ses/i18n';
 import { NotFoundError } from '../../../../lib/api/errors';
 import { readRequestMeta, resolveTenantCtxOutcome } from '../../../../lib/auth/session';
@@ -103,12 +114,9 @@ export default async function EngineerDetailPage({
         <h1 className="text-xl font-bold text-slate-900" data-testid="engineer-detail-name">
           {view.displayName}
         </h1>
-        <span
-          className="border border-slate-300 px-2 py-0.5 text-xs text-slate-700"
-          data-testid="engineer-detail-ownership"
-        >
+        <Badge variant="outline" data-testid="engineer-detail-ownership">
           {ownership}
-        </span>
+        </Badge>
       </div>
 
       {/* 🔴 折りたたみの外（`CLAUDE.md` §13.3）。移動中の判断に要る 3 値。 */}
@@ -129,7 +137,7 @@ export default async function EngineerDetailPage({
       <div className="mb-4 flex flex-wrap items-center gap-4">
         {canEdit ? (
           <Link
-            className="ses-secondary-link"
+            className={SECONDARY_LINK_CLASSES}
             href={`/engineers/${view.id}/edit`}
             data-testid="engineer-detail-edit-link"
           >
@@ -166,26 +174,24 @@ export default async function EngineerDetailPage({
                 {t('engineers.skills.empty')}
               </p>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse text-sm" data-testid="engineer-detail-skill-table">
-                  <thead>
-                    <tr className="border-b border-slate-200 text-left">
-                      <th className="p-2">{t('engineers.skills.column.skill')}</th>
-                      <th className="p-2">{t('engineers.skills.column.years')}</th>
-                      <th className="p-2">{t('engineers.skills.column.level')}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {skillRows.map((row) => (
-                      <tr key={row.skillId} className="border-b border-slate-100">
-                        <td className="p-2">{row.name}</td>
-                        <td className="p-2">{row.years}</td>
-                        <td className="p-2">{row.level}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <Table data-testid="engineer-detail-skill-table">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t('engineers.skills.column.skill')}</TableHead>
+                    <TableHead>{t('engineers.skills.column.years')}</TableHead>
+                    <TableHead>{t('engineers.skills.column.level')}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {skillRows.map((row) => (
+                    <TableRow key={row.skillId}>
+                      <TableCell whitespace="normal">{row.name}</TableCell>
+                      <TableCell>{row.years}</TableCell>
+                      <TableCell>{row.level}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             )}
           </DetailSection>
         </div>
@@ -201,7 +207,7 @@ export default async function EngineerDetailPage({
               {t('engineers.detail.skillSheets.lead')}
             </p>
             <Link
-              className="ses-secondary-link"
+              className={SECONDARY_LINK_STACKED_CLASSES}
               href={`/engineers/${view.id}/skill-sheets`}
               data-testid="engineer-detail-skill-sheets-link"
             >

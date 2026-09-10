@@ -14,6 +14,7 @@
 import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
 import type { Metadata } from 'next';
+import { SECONDARY_LINK_STACKED_CLASSES } from '@ses/ui';
 import { t } from '@ses/i18n';
 import { NotFoundError } from '../../../../../lib/api/errors';
 import { readRequestMeta, resolveTenantCtxOutcome } from '../../../../../lib/auth/session';
@@ -62,7 +63,7 @@ export default async function SkillSheetsPage({
         {view.engineer.displayName}
       </p>
       <p className="mb-6">
-        <Link className="ses-secondary-link" href={`/engineers/${view.engineer.id}`}>
+        <Link className={SECONDARY_LINK_STACKED_CLASSES} href={`/engineers/${view.engineer.id}`}>
           {t('skillSheets.backToEngineer')}
         </Link>
       </p>

@@ -8,6 +8,7 @@
 // ⚠️ docs/04 §S-006 の「保持期間を過ぎて削除されました」（`F-046 AC-2`）は**別の状態**であり、
 //    保持期間の削除ジョブと同じ SP-16（T-16-06）で足す。ジョブが無い Phase 1 では到達しない
 //    状態のために、ここに文言だけを置かない。
+import { SECONDARY_LINK_STACKED_CLASSES } from '@ses/ui';
 import { t } from '@ses/i18n';
 import { ENGINEER_FORM_CANCEL_HREF } from '../_form/form-props';
 
@@ -19,7 +20,7 @@ export default function EngineerDetailNotFound() {
         {t('engineers.notFound')}
       </p>
       {/* 🔴 T-05-09: 戻り先を `S-005`（一覧）にした（`ENGINEER_FORM_CANCEL_HREF` と共有）。 */}
-      <a className="ses-secondary-link" href={ENGINEER_FORM_CANCEL_HREF}>
+      <a className={SECONDARY_LINK_STACKED_CLASSES} href={ENGINEER_FORM_CANCEL_HREF}>
         {t('engineers.breadcrumb.list')}
       </a>
     </main>

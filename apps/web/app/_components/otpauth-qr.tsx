@@ -12,7 +12,23 @@
 //
 // 🔴 インライン `<svg>` として描く（`dangerouslySetInnerHTML` を使わない）。`path` の `d` は
 //    数字とコマンド文字だけからなる文字列であり、React が属性値としてエスケープする。
+//
+// ============================================================================
+// 🔴 寸法（旧 `globals.css` の `.ses-otpauth-qr`）— SP-21 T-21-04 で Tailwind へ移した
+// ============================================================================
+// **`viewBox` だけでは幅が決まらない。** 寸法指定を落とすと、SVG は親いっぱいに伸びるか
+// 潰れて**読み取れなくなる**（T-21-04 の受け入れ基準 ⑤-③）。移設は 1 対 1 で行った:
+//
+// | 旧宣言（`.ses-otpauth-qr`） | Tailwind | 理由 |
+// |---|---|---|
+// | `display: block` | `block` | `<svg>` の既定は inline。行末に隙間が出る |
+// | `width: 100%` | `w-full` | 狭い画面でカラムからはみ出さない |
+// | `max-width: 17rem` | `max-w-68`（`0.25rem × 68 = 17rem`） | 広い画面で 1 モジュールあたりの画素数を確保する（読み取り精度） |
+// | `height: auto` | `h-auto` | 縦横比を `viewBox` に従わせる（潰さない） |
+// | `background: #ffffff` | `bg-white` | 🔴 QR は明暗の比で読む。地の色を透かさない |
+// | `margin: 0.5rem 0 1rem` | `Field` の `gap-1.5` + `mb-4` | 上の 0.5rem は見出しとの間隔であり、`Field` の gap がその役目を持つ |
 import { useMemo } from 'react';
+import { Field } from '@ses/ui';
 import { encodeQrCode, qrCodeSvgPath } from '../../lib/auth/qr-code';
 
 /** クワイエットゾーン（ISO/IEC 18004 が要求する周囲 4 モジュールの余白）。 */
@@ -44,10 +60,9 @@ export function OtpauthQr({ otpauthUrl, caption, alt, testId }: OtpauthQrProps) 
   if (drawing === null) return null;
 
   return (
-    <p className="ses-field">
-      <span>{caption}</span>
+    <Field as="p" className="mb-4" label={caption}>
       <svg
-        className="ses-otpauth-qr"
+        className="block h-auto w-full max-w-68 bg-white"
         viewBox={`0 0 ${drawing.extent} ${drawing.extent}`}
         role="img"
         aria-label={alt}
@@ -60,6 +75,6 @@ export function OtpauthQr({ otpauthUrl, caption, alt, testId }: OtpauthQrProps) 
           <path d={drawing.path} fill="#000000" />
         </g>
       </svg>
-    </p>
+    </Field>
   );
 }

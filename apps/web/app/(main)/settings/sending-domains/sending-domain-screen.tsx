@@ -14,7 +14,17 @@
 //    無い（docs/05 §6.3 #71）。登録済みのときに再びフォームを出すと、別ドメインとして
 //    2 行目を作ってしまい「どちらが有効か」を利用者が誤認する経路になる。
 import { useEffect, useState, type FormEvent } from 'react';
-import { Button } from '@ses/ui';
+import {
+  Button,
+  Field,
+  Input,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@ses/ui';
 import type { SendingDomainDnsRecord } from '@ses/connectors';
 import type { TenantSendingDomainState } from '@ses/db';
 import { SendingDomainStatusFact, type SendingDomainStatusFactMessages } from '../../_shared/sending-domain-status';
@@ -285,9 +295,8 @@ export function SendingDomainScreen({
           <h2 className="mb-2 text-sm font-semibold text-slate-700">{messages.sectionRegister}</h2>
           {canRegister ? (
             <form onSubmit={onRegister} noValidate data-testid="sending-domain-register-form">
-              <label className="mb-2 block text-sm">
-                <span className="mb-1 block text-slate-700">{messages.registerDomainLabel}</span>
-                <input
+              <Field className="mb-2 max-w-sm" label={messages.registerDomainLabel}>
+                <Input
                   type="text"
                   name="domain"
                   required
@@ -295,10 +304,9 @@ export function SendingDomainScreen({
                   value={domainInput}
                   disabled={registerPhase === 'submitting'}
                   onChange={(event) => setDomainInput(event.target.value)}
-                  className="w-full max-w-sm rounded-md border border-slate-300 px-3 py-2 text-sm"
                   data-testid="sending-domain-register-input"
                 />
-              </label>
+              </Field>
               {registerPhase === 'error' ? (
                 <p role="alert" className="mb-2 text-sm text-red-700" data-testid="sending-domain-register-error">
                   {messages.registerError}
@@ -325,64 +333,69 @@ export function SendingDomainScreen({
             </p>
           ) : (
             <>
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse text-sm" data-testid="sending-domain-records-table">
-                  <thead>
-                    <tr className="border-b border-slate-200 text-left text-slate-500">
-                      <th className="px-3 py-2 font-medium">{messages.recordsColumnType}</th>
-                      <th className="px-3 py-2 font-medium">{messages.recordsColumnName}</th>
-                      <th className="px-3 py-2 font-medium">{messages.recordsColumnValue}</th>
-                      <th className="px-3 py-2 font-medium">{messages.recordsColumnCopy}</th>
-                      <th className="px-3 py-2 font-medium">{messages.recordsColumnResult}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {allRecords.map((record, index) => {
-                      const key = recordKey(record, index);
-                      const status = copyStatus[key];
-                      return (
-                        <tr key={key} className="border-b border-slate-100 align-top">
-                          <td className="px-3 py-2 whitespace-nowrap">
-                            {record.type}
-                            <span className="ml-1 text-xs text-slate-400">
-                              （{messages.recordPurposeLabels[record.purposeKey]}）
-                            </span>
-                          </td>
-                          <td className="px-3 py-2 font-mono text-xs break-all">{record.name}</td>
-                          <td className="px-3 py-2 font-mono text-xs break-all">{record.value}</td>
-                          <td className="px-3 py-2">
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              size="sm"
-                              onClick={() => void onCopy(key, record.value)}
-                              data-testid={`sending-domain-record-copy-${index}`}
+              <Table data-testid="sending-domain-records-table">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{messages.recordsColumnType}</TableHead>
+                    <TableHead>{messages.recordsColumnName}</TableHead>
+                    <TableHead>{messages.recordsColumnValue}</TableHead>
+                    <TableHead>{messages.recordsColumnCopy}</TableHead>
+                    <TableHead>{messages.recordsColumnResult}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {allRecords.map((record, index) => {
+                    const key = recordKey(record, index);
+                    const status = copyStatus[key];
+                    // 🔴 `align="top"` を落とさない（旧 `<tr className="align-top">`）。
+                    //    DKIM の値は `break-all` で複数行に折り返るため、中央揃えだと
+                    //    種別・ホスト名・値の対応が横に読めず、DNS への転記を誤る。
+                    return (
+                      <TableRow align="top" key={key}>
+                        <TableCell>
+                          {record.type}
+                          <span className="ml-1 text-xs text-slate-400">
+                            （{messages.recordPurposeLabels[record.purposeKey]}）
+                          </span>
+                        </TableCell>
+                        <TableCell whitespace="normal" className="font-mono text-xs break-all">
+                          {record.name}
+                        </TableCell>
+                        <TableCell whitespace="normal" className="font-mono text-xs break-all">
+                          {record.value}
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => void onCopy(key, record.value)}
+                            data-testid={`sending-domain-record-copy-${index}`}
+                          >
+                            {messages.recordsCopy}
+                          </Button>
+                          {status === undefined ? null : (
+                            <span
+                              role="status"
+                              className={
+                                status === 'ok' ? 'ml-2 text-xs text-emerald-700' : 'ml-2 text-xs text-red-700'
+                              }
+                              data-testid={`sending-domain-record-copy-feedback-${index}`}
                             >
-                              {messages.recordsCopy}
-                            </Button>
-                            {status === undefined ? null : (
-                              <span
-                                role="status"
-                                className={
-                                  status === 'ok' ? 'ml-2 text-xs text-emerald-700' : 'ml-2 text-xs text-red-700'
-                                }
-                                data-testid={`sending-domain-record-copy-feedback-${index}`}
-                              >
-                                {status === 'ok' ? messages.recordsCopied : messages.recordsCopyFailed}
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-3 py-2 whitespace-nowrap">
-                            {domain.state === 'VERIFIED'
-                              ? messages.recordsResultConfirmed
-                              : messages.recordsResultUnconfirmed}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                              {status === 'ok' ? messages.recordsCopied : messages.recordsCopyFailed}
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {domain.state === 'VERIFIED'
+                            ? messages.recordsResultConfirmed
+                            : messages.recordsResultUnconfirmed}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
               {/* 🔴 DKIM は `domain.provision` 完了後に現れる（MAIL FROM の MX/TXT はドメイン名から
                   即時に決まるため先に出る）。REGISTERED のまま留まる利用者への補足。 */}
               {domain.dkimRecords.length === 0 ? (

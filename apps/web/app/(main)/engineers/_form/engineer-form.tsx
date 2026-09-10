@@ -19,7 +19,22 @@
 //    1 カラムで積み、狭い画面では表を横スクロールで劣化させる。
 import { useEffect, useState, type FormEvent } from 'react';
 import Link from 'next/link';
-import { Button } from '@ses/ui';
+import {
+  Badge,
+  Button,
+  Field,
+  Input,
+  SECONDARY_LINK_CLASSES,
+  SECONDARY_LINK_STACKED_CLASSES,
+  Select,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Textarea,
+} from '@ses/ui';
 
 /** `S-009`（スキル辞書・別名・新語候補）。起票した候補の採否はこの画面で行う。 */
 const SKILL_DICTIONARY_HREF = '/skills';
@@ -337,9 +352,8 @@ export function EngineerForm({
       {/* --- 1. 基本 ------------------------------------------------------- */}
       <section data-testid="engineer-section-basic">
         <h2 className="mb-3 text-base font-bold text-slate-900">{messages.sectionBasic}</h2>
-        <label className="ses-field">
-          <span>{messages.displayNameLabel}</span>
-          <input
+        <Field className="mb-4" label={messages.displayNameLabel}>
+          <Input
             name="displayName"
             type="text"
             required
@@ -348,12 +362,11 @@ export function EngineerForm({
             disabled={phase === 'submitting'}
             data-testid="engineer-display-name"
           />
-        </label>
+        </Field>
         {/* 🔴 F-008 AC-2: 所属区分は読み取り専用。input / select を置かない。 */}
-        <p className="ses-field">
-          <span>{messages.ownershipLabel}</span>
+        <Field as="p" className="mb-4" label={messages.ownershipLabel}>
           <output data-testid="engineer-ownership">{messages.ownershipValue}</output>
-        </p>
+        </Field>
         <p className="text-sm text-slate-500" data-testid="engineer-ownership-note">
           {messages.ownershipReadOnlyNote}
         </p>
@@ -363,19 +376,17 @@ export function EngineerForm({
       <section data-testid="engineer-section-skills">
         <h2 className="mb-3 text-base font-bold text-slate-900">{messages.sectionSkills}</h2>
         <div className="mb-3 flex flex-wrap items-end gap-2">
-          <label className="ses-field">
-            <span>{messages.skillSearchLabel}</span>
-            <input
+          <Field width="auto" label={messages.skillSearchLabel}>
+            <Input
               type="search"
               value={skillFilter}
               onChange={(event) => setSkillFilter(event.target.value)}
               disabled={phase === 'submitting'}
               data-testid="engineer-skill-filter"
             />
-          </label>
-          <label className="ses-field">
-            <span>{messages.skillColumnSkill}</span>
-            <select
+          </Field>
+          <Field width="auto" label={messages.skillColumnSkill}>
+            <Select
               value={skillDraftId}
               onChange={(event) => setSkillDraftId(event.target.value)}
               disabled={phase === 'submitting'}
@@ -387,11 +398,10 @@ export function EngineerForm({
                   {entry.name}
                 </option>
               ))}
-            </select>
-          </label>
-          <label className="ses-field">
-            <span>{messages.skillColumnYears}</span>
-            <input
+            </Select>
+          </Field>
+          <Field width="auto" label={messages.skillColumnYears}>
+            <Input
               type="number"
               inputMode="decimal"
               min={0}
@@ -401,7 +411,7 @@ export function EngineerForm({
               disabled={phase === 'submitting'}
               data-testid="engineer-skill-years"
             />
-          </label>
+          </Field>
           <Button
             type="button"
             onClick={addSkill}
@@ -422,71 +432,68 @@ export function EngineerForm({
             {messages.skillEmpty}
           </p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-sm" data-testid="engineer-skill-table">
-              <thead>
-                <tr className="border-b border-slate-200 text-left">
-                  <th className="p-2">{messages.skillColumnSkill}</th>
-                  <th className="p-2">{messages.skillColumnYears}</th>
-                  <th className="p-2">{messages.skillColumnLevel}</th>
-                  <th className="p-2">{messages.skillColumnActions}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {values.skills.map((skill) => (
-                  <tr
-                    key={skill.skillId}
-                    className="border-b border-slate-100"
-                    data-testid={`engineer-skill-row-${skill.skillId}`}
-                  >
-                    <td className="p-2">{skill.name}</td>
-                    <td className="p-2">
-                      <input
-                        type="number"
-                        inputMode="decimal"
-                        min={0}
-                        step={0.5}
-                        value={skill.yearsOfExperience}
-                        onChange={(event) =>
-                          updateSkill(skill.skillId, { yearsOfExperience: event.target.value })
-                        }
-                        disabled={phase === 'submitting'}
-                        data-testid={`engineer-skill-years-${skill.skillId}`}
-                      />
-                    </td>
-                    <td className="p-2">
-                      <select
-                        value={skill.level}
-                        onChange={(event) =>
-                          updateSkill(skill.skillId, { level: event.target.value })
-                        }
-                        disabled={phase === 'submitting'}
-                        data-testid={`engineer-skill-level-${skill.skillId}`}
-                      >
-                        <option value="">{messages.skillLevelUnset}</option>
-                        {levelOptions.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="p-2">
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        onClick={() => removeSkill(skill.skillId)}
-                        disabled={phase === 'submitting'}
-                        data-testid={`engineer-skill-remove-${skill.skillId}`}
-                      >
-                        {messages.skillRemove}
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <Table data-testid="engineer-skill-table">
+            <TableHeader>
+              <TableRow>
+                <TableHead>{messages.skillColumnSkill}</TableHead>
+                <TableHead>{messages.skillColumnYears}</TableHead>
+                <TableHead>{messages.skillColumnLevel}</TableHead>
+                <TableHead>{messages.skillColumnActions}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {values.skills.map((skill) => (
+                <TableRow
+                  key={skill.skillId}
+                  data-testid={`engineer-skill-row-${skill.skillId}`}
+                >
+                  <TableCell whitespace="normal">{skill.name}</TableCell>
+                  <TableCell>
+                    <Input
+                      type="number"
+                      inputMode="decimal"
+                      min={0}
+                      step={0.5}
+                      value={skill.yearsOfExperience}
+                      onChange={(event) =>
+                        updateSkill(skill.skillId, { yearsOfExperience: event.target.value })
+                      }
+                      disabled={phase === 'submitting'}
+                      data-testid={`engineer-skill-years-${skill.skillId}`}
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <Select
+                      value={skill.level}
+                      onChange={(event) =>
+                        updateSkill(skill.skillId, { level: event.target.value })
+                      }
+                      disabled={phase === 'submitting'}
+                      data-testid={`engineer-skill-level-${skill.skillId}`}
+                    >
+                      <option value="">{messages.skillLevelUnset}</option>
+                      {levelOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </Select>
+                  </TableCell>
+                  <TableCell>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => removeSkill(skill.skillId)}
+                      disabled={phase === 'submitting'}
+                      data-testid={`engineer-skill-remove-${skill.skillId}`}
+                    >
+                      {messages.skillRemove}
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         )}
 
         {/* 🔴 F-010 AC-1: 辞書に無い表記は起票のみ。採用されるまで検索に使われないと明示する。 */}
@@ -495,16 +502,15 @@ export function EngineerForm({
             {messages.newAliasNote}
           </p>
           <div className="flex flex-wrap items-end gap-2">
-            <label className="ses-field">
-              <span>{messages.newAliasLabel}</span>
-              <input
+            <Field width="auto" label={messages.newAliasLabel}>
+              <Input
                 type="text"
                 value={aliasDraft}
                 onChange={(event) => setAliasDraft(event.target.value)}
                 disabled={phase === 'submitting'}
                 data-testid="engineer-new-alias-input"
               />
-            </label>
+            </Field>
             <Button
               type="button"
               onClick={addAlias}
@@ -522,7 +528,7 @@ export function EngineerForm({
             <ul className="mt-2 flex flex-wrap gap-2" data-testid="engineer-new-alias-list">
               {values.newSkillLabels.map((label) => (
                 <li key={label} className="flex items-center gap-1 text-sm">
-                  <span>{label}</span>
+                  <Badge variant="outline">{label}</Badge>
                   <Button
                     type="button"
                     variant="secondary"
@@ -539,7 +545,7 @@ export function EngineerForm({
               全ロールが到達してよい画面であり、採否の可否は `S-009` 側が判断する。 */}
           <p className="mt-2 text-sm">
             <Link
-              className="ses-secondary-link"
+              className={SECONDARY_LINK_STACKED_CLASSES}
               href={SKILL_DICTIONARY_HREF}
               data-testid="engineer-new-alias-dictionary-link"
             >
@@ -561,9 +567,8 @@ export function EngineerForm({
       {/* --- 4. 稼働 ------------------------------------------------------- */}
       <section data-testid="engineer-section-availability">
         <h2 className="mb-3 text-base font-bold text-slate-900">{messages.sectionAvailability}</h2>
-        <label className="ses-field">
-          <span>{messages.availabilityLabel}</span>
-          <select
+        <Field className="mb-4" label={messages.availabilityLabel}>
+          <Select
             name="availability"
             value={values.availability}
             onChange={(event) => update({ availability: event.target.value })}
@@ -575,11 +580,10 @@ export function EngineerForm({
                 {option.label}
               </option>
             ))}
-          </select>
-        </label>
-        <label className="ses-field">
-          <span>{messages.availableFromLabel}</span>
-          <input
+          </Select>
+        </Field>
+        <Field className="mb-4" label={messages.availableFromLabel}>
+          <Input
             name="availableFrom"
             type="date"
             value={values.availableFrom}
@@ -587,7 +591,7 @@ export function EngineerForm({
             disabled={phase === 'submitting'}
             data-testid="engineer-available-from"
           />
-        </label>
+        </Field>
       </section>
 
       {/* --- 5. 条件 ------------------------------------------------------- */}
@@ -597,9 +601,8 @@ export function EngineerForm({
           <legend className="text-sm text-slate-700">
             {messages.unitPriceLabel}（{messages.unitPriceUnit}）
           </legend>
-          <label className="ses-field">
-            <span>{messages.unitPriceMin}</span>
-            <input
+          <Field className="mb-4" label={messages.unitPriceMin}>
+            <Input
               name="unitPriceMin"
               type="number"
               inputMode="numeric"
@@ -609,10 +612,9 @@ export function EngineerForm({
               disabled={phase === 'submitting'}
               data-testid="engineer-unit-price-min"
             />
-          </label>
-          <label className="ses-field">
-            <span>{messages.unitPriceMax}</span>
-            <input
+          </Field>
+          <Field className="mb-4" label={messages.unitPriceMax}>
+            <Input
               name="unitPriceMax"
               type="number"
               inputMode="numeric"
@@ -622,11 +624,10 @@ export function EngineerForm({
               disabled={phase === 'submitting'}
               data-testid="engineer-unit-price-max"
             />
-          </label>
+          </Field>
         </fieldset>
-        <label className="ses-field">
-          <span>{messages.prefectureLabel}</span>
-          <select
+        <Field className="mb-4" label={messages.prefectureLabel}>
+          <Select
             name="prefecture"
             value={values.prefecture}
             onChange={(event) => update({ prefecture: event.target.value })}
@@ -639,11 +640,10 @@ export function EngineerForm({
                 {option.label}
               </option>
             ))}
-          </select>
-        </label>
-        <label className="ses-field">
-          <span>{messages.remoteModeLabel}</span>
-          <select
+          </Select>
+        </Field>
+        <Field className="mb-4" label={messages.remoteModeLabel}>
+          <Select
             name="remoteMode"
             value={values.remoteMode}
             onChange={(event) => update({ remoteMode: event.target.value })}
@@ -656,11 +656,13 @@ export function EngineerForm({
                 {option.label}
               </option>
             ))}
-          </select>
-        </label>
-        <label className="ses-field">
-          <span>{messages.preferenceNoteLabel}</span>
-          <textarea
+          </Select>
+        </Field>
+        <Field className="mb-4" label={messages.preferenceNoteLabel}>
+          {/* ⚠️ `Textarea` は `field-sizing-content` を持つため、`rows` は**初期値ではなく
+              下限の目安**として働き、入力量に応じて伸びる（`min-h-20` が下限）。
+              意図した挙動であり、`rows` を落とすと未対応ブラウザでの高さが失われる。 */}
+          <Textarea
             name="preferenceNote"
             rows={3}
             value={values.preferenceNote}
@@ -668,15 +670,14 @@ export function EngineerForm({
             disabled={phase === 'submitting'}
             data-testid="engineer-preference-note"
           />
-        </label>
+        </Field>
       </section>
 
       {/* --- 6. 連絡先 ----------------------------------------------------- */}
       <section data-testid="engineer-section-contact">
         <h2 className="mb-3 text-base font-bold text-slate-900">{messages.sectionContact}</h2>
-        <label className="ses-field">
-          <span>{messages.contactEmailLabel}</span>
-          <input
+        <Field className="mb-4" label={messages.contactEmailLabel}>
+          <Input
             name="contactEmail"
             type="email"
             value={values.contactEmail}
@@ -684,10 +685,9 @@ export function EngineerForm({
             disabled={phase === 'submitting'}
             data-testid="engineer-contact-email"
           />
-        </label>
-        <label className="ses-field">
-          <span>{messages.contactPhoneLabel}</span>
-          <input
+        </Field>
+        <Field className="mb-4" label={messages.contactPhoneLabel}>
+          <Input
             name="contactPhone"
             type="tel"
             value={values.contactPhone}
@@ -695,7 +695,7 @@ export function EngineerForm({
             disabled={phase === 'submitting'}
             data-testid="engineer-contact-phone"
           />
-        </label>
+        </Field>
         <p className="text-sm text-slate-500" data-testid="engineer-contact-note">
           {messages.contactMinimumNote}
         </p>
@@ -705,7 +705,7 @@ export function EngineerForm({
         <Button type="submit" disabled={phase === 'submitting'} data-testid="engineer-submit">
           {phase === 'submitting' ? messages.saving : messages.save}
         </Button>
-        <a className="ses-secondary-link" href={cancelHref} data-testid="engineer-cancel">
+        <a className={SECONDARY_LINK_CLASSES} href={cancelHref} data-testid="engineer-cancel">
           {messages.cancel}
         </a>
       </div>

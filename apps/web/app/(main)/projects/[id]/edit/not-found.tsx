@@ -6,6 +6,7 @@
 //    したがって文言も 1 種類しか持たない。
 // 🔴 戻り先は `PROJECT_FORM_CANCEL_HREF` と共有する（キャンセルと 404 でずれないように）。
 //    T-06-03 で `S-010`（案件一覧）になった（docs/04 §10.1 `S-012`「対象が削除済み → 一覧へ」）。
+import { SECONDARY_LINK_STACKED_CLASSES } from '@ses/ui';
 import { t } from '@ses/i18n';
 import { PROJECT_FORM_CANCEL_HREF } from '../../_form/form-props';
 
@@ -16,7 +17,7 @@ export default function EditProjectNotFound() {
       <p className="mb-4 text-sm text-slate-700" data-testid="project-not-found">
         {t('projects.notFound')}
       </p>
-      <a className="ses-secondary-link" href={PROJECT_FORM_CANCEL_HREF}>
+      <a className={SECONDARY_LINK_STACKED_CLASSES} href={PROJECT_FORM_CANCEL_HREF}>
         {t('projects.breadcrumb.list')}
       </a>
     </main>

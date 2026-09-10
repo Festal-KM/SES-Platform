@@ -14,7 +14,11 @@
 //    トークンで③を開く」の実体は、フォームを表示したうえで実際に送信して #5b から
 //    拒否されたときであり、ページを開いた瞬間には判定できない（トークンが URL に無い
 //    到達だけは、送信を待たずにここで弾く）。
+//
+// 🔴 T-21-04: 手書き CSS を `@ses/ui` と Tailwind へ移した（`signin-form.tsx` と同じ規律 ——
+//    testid・`name`・`aria-*`・要素の並びは 1 つも変えていない）。
 import { useRef, useState, type FormEvent } from 'react';
+import { Button, Field, FieldError, Input, SECONDARY_LINK_STACKED_CLASSES } from '@ses/ui';
 import { createSubmitGuard } from '../../../../../lib/forms/submit-guard';
 
 export type ConfirmFormMessages = {
@@ -129,10 +133,10 @@ export function ConfirmForm({
   if (stage === 'invalid') {
     return (
       <div data-testid="password-reset-confirm-invalid">
-        <p className="ses-error" role="alert" data-testid="password-reset-confirm-invalid-message">
+        <FieldError className="mb-4" data-testid="password-reset-confirm-invalid-message">
           {messages.invalidLink}
-        </p>
-        <a className="ses-secondary-link" href={REQUEST_PATH}>
+        </FieldError>
+        <a className={SECONDARY_LINK_STACKED_CLASSES} href={REQUEST_PATH}>
           {messages.invalidLinkRetry}
         </a>
       </div>
@@ -142,10 +146,10 @@ export function ConfirmForm({
   if (stage === 'success') {
     return (
       <div data-testid="password-reset-confirm-success">
-        <p role="status" data-testid="password-reset-confirm-success-message">
+        <p className="text-sm text-emerald-700" role="status" data-testid="password-reset-confirm-success-message">
           {messages.success}
         </p>
-        <a className="ses-secondary-link" href={SIGNIN_PATH}>
+        <a className={SECONDARY_LINK_STACKED_CLASSES} href={SIGNIN_PATH}>
           {messages.signInLink}
         </a>
       </div>
@@ -154,15 +158,14 @@ export function ConfirmForm({
 
   return (
     <form onSubmit={onSubmit} noValidate data-testid="password-reset-confirm-form">
-      <h2>{messages.eyebrow}</h2>
+      <h2 className="mb-3 text-base font-bold text-slate-900">{messages.eyebrow}</h2>
       {error === null ? null : (
-        <p className="ses-error" role="alert" data-testid="password-reset-confirm-error">
+        <FieldError className="mb-4" data-testid="password-reset-confirm-error">
           {error}
-        </p>
+        </FieldError>
       )}
-      <label className="ses-field">
-        <span>{messages.newPasswordLabel}</span>
-        <input
+      <Field className="mb-4" label={messages.newPasswordLabel}>
+        <Input
           name="password"
           type="password"
           autoComplete="new-password"
@@ -171,10 +174,9 @@ export function ConfirmForm({
           disabled={submitting}
           data-testid="password-reset-new-password"
         />
-      </label>
-      <label className="ses-field">
-        <span>{messages.newPasswordConfirmLabel}</span>
-        <input
+      </Field>
+      <Field className="mb-4" label={messages.newPasswordConfirmLabel}>
+        <Input
           name="passwordConfirm"
           type="password"
           autoComplete="new-password"
@@ -183,16 +185,19 @@ export function ConfirmForm({
           disabled={submitting}
           data-testid="password-reset-new-password-confirm"
         />
-        <small>{messages.passwordHint}</small>
-      </label>
-      <button
-        className="ses-submit"
+        {/* 🔴 `<small>` を `FieldDescription`（`<p>`）に置き換えない —— `<label>` の中に
+            `<p>` が入るのは内容モデル違反であり、説明文が**入力欄のアクセシブル名に
+            畳み込まれる**（`packages/ui/src/components/field.tsx` 冒頭の 🔴）。 */}
+        <small className="text-sm text-slate-500">{messages.passwordHint}</small>
+      </Field>
+      <Button
+        className="w-full"
         type="submit"
         disabled={submitting}
         data-testid="password-reset-confirm-submit"
       >
         {submitting ? messages.submitting : messages.submit}
-      </button>
+      </Button>
     </form>
   );
 }

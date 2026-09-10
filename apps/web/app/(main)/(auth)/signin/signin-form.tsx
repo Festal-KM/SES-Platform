@@ -12,7 +12,12 @@
 // 🔴 T-03-02: 2 段階目（2 要素認証）を同じ画面に足した（docs/04 §S-001 セクション 3）。
 //    **モバイルで機能を省略しない**（コード入力は数字キーボードを呼ぶ）。
 //    設定ウィザード（`OWNER` / `ADMIN` が未設定の場合）もここに含める。
+//
+// 🔴 T-21-04: 手書き CSS（`.ses-field` / `.ses-submit` / `.ses-error` / `.ses-secondary-link`）を
+//    `@ses/ui` と Tailwind へ移した。**testid・`name`・`aria-*`・要素の並びは 1 つも変えていない**
+//    （`Field` は現況と同じ `<label><span>…</span><input /></label>` の形を描く）。
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { Button, Field, FieldError, Input, SECONDARY_LINK_STACKED_CLASSES } from '@ses/ui';
 import { OtpauthQr } from '../../../_components/otpauth-qr';
 
 export type SignInFormMessages = {
@@ -158,21 +163,21 @@ export function SignInForm({
 
   const errorBlock =
     error === null ? null : (
-      <p className="ses-error" role="alert" data-testid="signin-error">
+      <FieldError className="mb-4" data-testid="signin-error">
         {error}
-      </p>
+      </FieldError>
     );
 
   if (stage === 'twoFactor') {
     return (
       <form onSubmit={onSubmitCode} noValidate data-testid="signin-2fa-form">
-        <h2>{messages.twoFactorTitle}</h2>
+        <h2 className="mb-3 text-base font-bold text-slate-900">{messages.twoFactorTitle}</h2>
         {errorBlock}
         {enrollment === null ? (
-          <p>{messages.twoFactorVerifyLead}</p>
+          <p className="mb-4 text-sm text-slate-700">{messages.twoFactorVerifyLead}</p>
         ) : (
           <>
-            <p>{messages.twoFactorSetupLead}</p>
+            <p className="mb-4 text-sm text-slate-700">{messages.twoFactorSetupLead}</p>
             {/* 🔴 QR は利用者の端末の中だけで組み立てる（外部の QR 生成サービスに
                   `otpauth://` URL を渡さない。docs/05 §6.3 #3 / CLAUDE.md §3.5）。 */}
             <OtpauthQr
@@ -183,16 +188,23 @@ export function SignInForm({
             />
             {/* 🔴 手入力用の表示を消さない。QR を読めない環境での唯一の経路であり、
                   E2E（tests/e2e/support/sessions.ts）がシークレットを読む値でもある。 */}
-            <p className="ses-field">
-              <span>{messages.twoFactorUriLabel}</span>
-              {/* 🔴 シークレットを含む。画面に出すだけで、どこにも保存・送信しない。 */}
-              <code className="ses-otpauth-uri" data-testid="signin-otpauth-uri">
+            <Field as="p" className="mb-4" label={messages.twoFactorUriLabel}>
+              {/* 🔴 シークレットを含む。画面に出すだけで、どこにも保存・送信しない。
+                  🔴 長いアドレスを**折り返して全部見せる**（`.ses-otpauth-uri` の
+                     `overflow-wrap: anywhere` = `wrap-anywhere`）。QR を読めない環境での
+                     唯一の経路であり、切り詰めると設定を完了できない。 */}
+              <code
+                className="block rounded-md border border-slate-300 p-2 text-xs wrap-anywhere"
+                data-testid="signin-otpauth-uri"
+              >
                 {enrollment.otpauthUrl}
               </code>
-            </p>
-            <h3>{messages.twoFactorRecoveryHeading}</h3>
-            <p>{messages.twoFactorRecoveryNote}</p>
-            <ul className="ses-recovery-codes">
+            </Field>
+            <h3 className="mb-1 text-sm font-bold text-slate-900">
+              {messages.twoFactorRecoveryHeading}
+            </h3>
+            <p className="mb-2 text-sm text-slate-700">{messages.twoFactorRecoveryNote}</p>
+            <ul className="mb-4 pl-5 text-sm">
               {enrollment.recoveryCodes.map((code) => (
                 <li key={code}>
                   <code>{code}</code>
@@ -201,9 +213,8 @@ export function SignInForm({
             </ul>
           </>
         )}
-        <label className="ses-field">
-          <span>{messages.twoFactorCodeLabel}</span>
-          <input
+        <Field className="mb-4" label={messages.twoFactorCodeLabel}>
+          <Input
             name="code"
             type="text"
             /* 🔴 モバイルで数字キーボードを呼ぶ（docs/04 §S-001 デバイス別）。
@@ -214,15 +225,15 @@ export function SignInForm({
             disabled={state === 'submitting'}
             data-testid="signin-2fa-code"
           />
-        </label>
-        <button
-          className="ses-submit"
+        </Field>
+        <Button
+          className="w-full"
           type="submit"
           disabled={state === 'submitting'}
           data-testid="signin-2fa-submit"
         >
           {state === 'submitting' ? messages.twoFactorSubmitting : messages.twoFactorSubmit}
-        </button>
+        </Button>
       </form>
     );
   }
@@ -230,9 +241,8 @@ export function SignInForm({
   return (
     <form onSubmit={onSubmitCredentials} noValidate data-testid="signin-form">
       {errorBlock}
-      <label className="ses-field">
-        <span>{messages.emailLabel}</span>
-        <input
+      <Field className="mb-4" label={messages.emailLabel}>
+        <Input
           name="email"
           type="email"
           autoComplete="username"
@@ -241,10 +251,9 @@ export function SignInForm({
           disabled={state === 'submitting'}
           data-testid="signin-email"
         />
-      </label>
-      <label className="ses-field">
-        <span>{messages.passwordLabel}</span>
-        <input
+      </Field>
+      <Field className="mb-4" label={messages.passwordLabel}>
+        <Input
           name="password"
           type="password"
           autoComplete="current-password"
@@ -252,17 +261,17 @@ export function SignInForm({
           disabled={state === 'submitting'}
           data-testid="signin-password"
         />
-      </label>
-      <button
-        className="ses-submit"
+      </Field>
+      <Button
+        className="w-full"
         type="submit"
         disabled={state === 'submitting'}
         data-testid="signin-submit"
       >
         {state === 'submitting' ? messages.submitting : messages.submit}
-      </button>
+      </Button>
       {/* パスワード再設定（#5 / S-002 系）は T-03-03 が実装する。導線だけ先に置く。 */}
-      <a className="ses-secondary-link" href="/password-reset">
+      <a className={SECONDARY_LINK_STACKED_CLASSES} href="/password-reset">
         {messages.passwordResetLink}
       </a>
     </form>

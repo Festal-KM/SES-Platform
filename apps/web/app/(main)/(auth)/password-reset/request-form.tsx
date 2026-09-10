@@ -17,7 +17,13 @@
 //    （#5 は 400 VALIDATION を返しメールは送られない ＝ `CLAUDE.md` §11.1 が名指しする
 //    「成功したように見えて実際には送信されていない」壊れ方そのもの）。
 //    判定は入力構文のみに基づきサーバ応答を読まないため、①②の非開示仕様は破らない。
+//
+// 🔴 T-21-04: 手書き CSS を `@ses/ui` と Tailwind へ移した（`signin-form.tsx` と同じ規律 ——
+//    testid・`name`・`aria-*`・要素の並びは 1 つも変えていない）。
 import { useRef, useState, type FormEvent } from 'react';
+// ⚠️ `.ses-notice` を `@ses/ui` の `Alert` に置き換えていない —— `Alert` は `<div role="alert">`
+//    を描くため、現況の `<p>`（role 無し）から**要素と `aria` が変わる**（T-21-04 の受け入れ基準 ①）。
+import { Button, Field, FieldError, Input, SECONDARY_LINK_STACKED_CLASSES } from '@ses/ui';
 import { createSubmitGuard } from '../../../../lib/forms/submit-guard';
 import { classifyRequestOutcome, isPlausibleEmail } from '../../../../lib/password-reset/outcome';
 
@@ -87,12 +93,15 @@ export function RequestForm({ messages }: { messages: RequestFormMessages }) {
   if (stage === 'complete') {
     return (
       <div data-testid="password-reset-complete">
-        <h2>{messages.completeEyebrow}</h2>
-        <p className="ses-notice" data-testid="password-reset-complete-message">
+        <h2 className="mb-3 text-base font-bold text-slate-900">{messages.completeEyebrow}</h2>
+        <p
+          className="mb-4 rounded-md border border-slate-300 px-3 py-2 text-sm"
+          data-testid="password-reset-complete-message"
+        >
           {messages.completeMessage}
         </p>
-        <p>{messages.completeNote}</p>
-        <a className="ses-secondary-link" href={SIGNIN_PATH}>
+        <p className="text-sm text-slate-700">{messages.completeNote}</p>
+        <a className={SECONDARY_LINK_STACKED_CLASSES} href={SIGNIN_PATH}>
           {messages.backToSignIn}
         </a>
       </div>
@@ -101,15 +110,14 @@ export function RequestForm({ messages }: { messages: RequestFormMessages }) {
 
   return (
     <form onSubmit={onSubmit} noValidate data-testid="password-reset-request-form">
-      <h2>{messages.eyebrow}</h2>
+      <h2 className="mb-3 text-base font-bold text-slate-900">{messages.eyebrow}</h2>
       {error === null ? null : (
-        <p className="ses-error" role="alert" data-testid="password-reset-request-error">
+        <FieldError className="mb-4" data-testid="password-reset-request-error">
           {error}
-        </p>
+        </FieldError>
       )}
-      <label className="ses-field">
-        <span>{messages.emailLabel}</span>
-        <input
+      <Field className="mb-4" label={messages.emailLabel}>
+        <Input
           name="email"
           type="email"
           autoComplete="username"
@@ -118,16 +126,16 @@ export function RequestForm({ messages }: { messages: RequestFormMessages }) {
           disabled={submitting}
           data-testid="password-reset-email"
         />
-      </label>
-      <button
-        className="ses-submit"
+      </Field>
+      <Button
+        className="w-full"
         type="submit"
         disabled={submitting}
         data-testid="password-reset-request-submit"
       >
         {submitting ? messages.submitting : messages.submit}
-      </button>
-      <a className="ses-secondary-link" href={SIGNIN_PATH}>
+      </Button>
+      <a className={SECONDARY_LINK_STACKED_CLASSES} href={SIGNIN_PATH}>
         {messages.backToSignIn}
       </a>
     </form>

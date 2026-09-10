@@ -11,7 +11,7 @@
 //    サーバ／クライアントいずれの親からも同じ形で渡せるようにするため）。
 // 🔴 「検証済み」以外を隠さない —— 未検証・未設定も同じ場所に事実として示す（`BR-46`）。
 import type { TenantSendingDomainState } from '@ses/db';
-import { cn } from '@ses/ui';
+import { Badge, type BadgeVariant } from '@ses/ui';
 import type { SendingDomainFact } from '../../../lib/settings/sending-domain-fact';
 
 export type SendingDomainStatusFactMessages = {
@@ -21,11 +21,17 @@ export type SendingDomainStatusFactMessages = {
   readonly stateLabels: Readonly<Record<TenantSendingDomainState, string>>;
 };
 
-const STATE_BADGE_CLASSES: Readonly<Record<TenantSendingDomainState, string>> = {
-  VERIFIED: 'bg-emerald-100 text-emerald-800',
-  PENDING: 'bg-amber-100 text-amber-800',
-  REGISTERED: 'bg-slate-100 text-slate-700',
-  FAILED: 'bg-red-100 text-red-800',
+/**
+ * 🔴 T-21-04: 色の実値をここに持たず `@ses/ui` の `Badge` のバリアントへ寄せた。
+ *    `packages/ui/src/components/badge.tsx` は**この対応表の色をそのまま取り込んで**作られており
+ *    （T-21-02 の照合表に明記）、両方に色を持たせると片方だけ直る状態が生まれる。
+ *    バリアント名と色の対応は 1 対 1 で、見え方は移行前と同じである。
+ */
+const STATE_BADGE_VARIANTS: Readonly<Record<TenantSendingDomainState, BadgeVariant>> = {
+  VERIFIED: 'success',
+  PENDING: 'warning',
+  REGISTERED: 'neutral',
+  FAILED: 'danger',
 };
 
 export function SendingDomainStatusFact({
@@ -69,14 +75,7 @@ export function SendingDomainStatusFact({
       <span>
         {messages.domainLabel}: {fact.domain}
       </span>
-      <span
-        className={cn(
-          'inline-flex rounded-full px-2 py-0.5 text-xs font-semibold',
-          STATE_BADGE_CLASSES[fact.state],
-        )}
-      >
-        {messages.stateLabels[fact.state]}
-      </span>
+      <Badge variant={STATE_BADGE_VARIANTS[fact.state]}>{messages.stateLabels[fact.state]}</Badge>
     </p>
   );
 }

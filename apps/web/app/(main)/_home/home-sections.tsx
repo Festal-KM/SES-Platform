@@ -7,7 +7,14 @@
 // 🔴 `S-003` / `S-004` は T1（モバイル完結）。単一カラムで、機能の省略をしない（docs/04）。
 //    Tailwind の既定ブレークポイントのみを使う（独自定義しない。CLAUDE.md §13.3）。
 import Link from 'next/link';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@ses/ui';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  SECONDARY_LINK_CLASSES,
+} from '@ses/ui';
 import { t } from '@ses/i18n';
 import { formatDateTimeJst } from '../../../lib/format/datetime';
 import type { HomeBlock, ScanQuarantineHomeBlock } from '../../../lib/home/types';
@@ -44,7 +51,7 @@ export function HostHomeSections({
         <div className="flex flex-wrap gap-4">
           {canRegisterProject ? (
             <Link
-              className="ses-secondary-link"
+              className={SECONDARY_LINK_CLASSES}
               href="/projects/new"
               data-testid="home-host-register-project"
             >
@@ -53,7 +60,7 @@ export function HostHomeSections({
           ) : null}
           {canRegisterEngineer ? (
             <Link
-              className="ses-secondary-link"
+              className={SECONDARY_LINK_CLASSES}
               href="/engineers/new"
               data-testid="home-host-register-engineer"
             >
@@ -81,7 +88,7 @@ export function HostHomeSections({
  */
 function EngineerLedgerLink({ testId }: { readonly testId: string }) {
   return (
-    <Link className="ses-secondary-link" href="/engineers" data-testid={testId}>
+    <Link className={SECONDARY_LINK_CLASSES} href="/engineers" data-testid={testId}>
       {t('engineers.list.open')}
     </Link>
   );
@@ -96,7 +103,7 @@ function EngineerLedgerLink({ testId }: { readonly testId: string }) {
  */
 function ProjectListLink({ testId }: { readonly testId: string }) {
   return (
-    <Link className="ses-secondary-link" href="/projects" data-testid={testId}>
+    <Link className={SECONDARY_LINK_CLASSES} href="/projects" data-testid={testId}>
       {t('projects.list.open')}
     </Link>
   );
@@ -162,7 +169,7 @@ export function ScanQuarantineSection({ blocks }: { readonly blocks: readonly Ho
               )}
               {/* 🔴 行き止まりにしない —— 次の行動（上げ直す / 削除する）は `S-008` にある。 */}
               <Link
-                className="ses-secondary-link"
+                className={SECONDARY_LINK_CLASSES}
                 href={`/engineers/${item.engineerId}/skill-sheets`}
                 data-testid={`home-scan-quarantine-link-${item.skillSheetId}`}
               >

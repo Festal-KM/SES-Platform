@@ -25,6 +25,16 @@ import Link from 'next/link';
 //    持ち込むと `*.render.test.tsx` が Prisma クライアントを読み込むことになる）。
 import type { RequirementKind } from '@ses/db';
 import {
+  cn,
+  SECONDARY_LINK_CLASSES,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@ses/ui';
+import {
   projectCommerceRows,
   projectConditionRows,
   projectHeadlineRows,
@@ -129,22 +139,22 @@ function RequirementTable({
           {messages.requirementEmpties[kind]}
         </p>
       ) : (
-        <table className="w-full border-collapse text-sm">
-          <thead>
-            <tr className="border-b border-slate-200 text-left">
-              <th className="p-2">{messages.requirementColumnRequirement}</th>
-              <th className="p-2">{messages.requirementColumnYears}</th>
-            </tr>
-          </thead>
-          <tbody>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>{messages.requirementColumnRequirement}</TableHead>
+              <TableHead>{messages.requirementColumnYears}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {rows.map((row) => (
-              <tr key={row.key} className="border-b border-slate-100">
-                <td className="p-2">{row.requirement}</td>
-                <td className="p-2">{row.years}</td>
-              </tr>
+              <TableRow key={row.key}>
+                <TableCell whitespace="normal">{row.requirement}</TableCell>
+                <TableCell>{row.years}</TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       )}
     </div>
   );
@@ -219,7 +229,7 @@ export function ProjectDetailScreen({
       <div className="mb-4 flex flex-wrap items-center gap-4">
         {canEdit ? (
           <Link
-            className="ses-secondary-link"
+            className={SECONDARY_LINK_CLASSES}
             href={`/projects/${view.id}/edit`}
             data-testid="project-detail-edit-link"
           >
@@ -289,22 +299,22 @@ export function ProjectDetailScreen({
                     {messages.visibilityEmpty}
                   </p>
                 ) : (
-                  <table className="w-full border-collapse text-sm" data-testid="project-detail-visibility-table">
-                    <thead>
-                      <tr className="border-b border-slate-200 text-left">
-                        <th className="p-2">{messages.visibilityColumnPartner}</th>
-                        <th className="p-2">{messages.visibilityColumnPublishedOn}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
+                  <Table data-testid="project-detail-visibility-table">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>{messages.visibilityColumnPartner}</TableHead>
+                        <TableHead>{messages.visibilityColumnPublishedOn}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
                       {projectVisibilityRows(view.visibilities).map((row) => (
-                        <tr key={row.key} className="border-b border-slate-100">
-                          <td className="p-2">{row.partnerCompanyName}</td>
-                          <td className="p-2">{row.publishedOn}</td>
-                        </tr>
+                        <TableRow key={row.key}>
+                          <TableCell whitespace="normal">{row.partnerCompanyName}</TableCell>
+                          <TableCell>{row.publishedOn}</TableCell>
+                        </TableRow>
                       ))}
-                    </tbody>
-                  </table>
+                    </TableBody>
+                  </Table>
                 )}
                 <p className="mt-3 text-xs text-slate-500" data-testid="project-detail-visibility-proposal-count">
                   {messages.visibilityProposalCountComingSoon}
@@ -314,7 +324,7 @@ export function ProjectDetailScreen({
                     公開範囲を変更できない（`BR-31`）。取引先はこのセクション自体に到達しない。 */}
                 {canEdit ? (
                   <Link
-                    className="ses-secondary-link mt-1 inline-block"
+                    className={cn(SECONDARY_LINK_CLASSES, 'mt-1')}
                     href={`/projects/${view.id}/visibility`}
                     data-testid="project-detail-visibility-settings"
                   >

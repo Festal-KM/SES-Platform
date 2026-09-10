@@ -52,7 +52,7 @@ export default async function OrganizationSettingsPage() {
           linkLabel: t('settings.sendingDomain.guardBanner.linkLabel'),
         }}
       />
-      <h1>{t('orgSettings.title')}</h1>
+      <h1 className="mb-6 text-xl font-bold text-slate-900">{t('orgSettings.title')}</h1>
       <OrganizationForm
         initial={settings}
         messages={{

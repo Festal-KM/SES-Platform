@@ -9,6 +9,7 @@
 //    docs/04 §10.1 `S-011`）。
 // 🔴 T-06-03: 戻り先を `S-010`（案件一覧）にした（`PROJECT_FORM_CANCEL_HREF` と共有。
 //    T-06-02 の時点では `S-010` が未実装だったため暫定でホームを指していた）。
+import { SECONDARY_LINK_STACKED_CLASSES } from '@ses/ui';
 import { t } from '@ses/i18n';
 import { PROJECT_FORM_CANCEL_HREF } from '../_form/form-props';
 
@@ -19,7 +20,7 @@ export default function ProjectDetailNotFound() {
       <p className="mb-4 text-sm text-slate-700" data-testid="project-not-found">
         {t('projects.notFound')}
       </p>
-      <a className="ses-secondary-link" href={PROJECT_FORM_CANCEL_HREF}>
+      <a className={SECONDARY_LINK_STACKED_CLASSES} href={PROJECT_FORM_CANCEL_HREF}>
         {t('projects.breadcrumb.list')}
       </a>
     </main>

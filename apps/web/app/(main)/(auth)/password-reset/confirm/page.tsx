@@ -49,7 +49,7 @@ export default async function PasswordResetConfirmPage({
   const { token } = await searchParams;
   return (
     <AuthShell wordmark={t('product.name')}>
-      <h1>{t('passwordReset.title')}</h1>
+      <h1 className="mb-4 text-xl font-bold text-slate-900">{t('passwordReset.title')}</h1>
       {/* 🔴 トークンはフォームの内部でしか使わない（画面にも監査ログにも出さない）。 */}
       <ConfirmForm token={token ?? ''} minLength={PASSWORD_MIN_LENGTH} messages={messages} />
     </AuthShell>

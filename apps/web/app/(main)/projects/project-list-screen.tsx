@@ -31,6 +31,24 @@
 //    **検索条件つきのリンク（ページング）は props で受け取る** —— 組み立てはテストできる
 //    場所（`projectListHref`）に置く。
 import Link from 'next/link';
+import {
+  Button,
+  Field,
+  Input,
+  SECONDARY_LINK_CLASSES,
+  SECONDARY_LINK_STACKED_CLASSES,
+  Select,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@ses/ui';
+import {
+  FILTER_ACTIONS_CLASSES,
+  FILTER_FORM_CLASSES,
+} from '../_shared/filter-form-classes';
 import type { ProjectListRowView } from '../../../lib/projects/list-rows';
 
 /** 検索条件の選択肢 1 件（`value` は API の query に載る値そのもの）。 */
@@ -116,35 +134,36 @@ export function ProjectListScreen({
     <div data-testid="project-list-screen">
       {/* 🔴 検索条件（docs/04 §S-010 セクション 1）。`method="get"` なので、実行した検索が
           そのまま URL になり、共有・再読込・戻るのいずれでも同じ結果に戻る。 */}
-      <form className="ses-filter-form" method="get" action="/projects" data-testid="project-list-filters">
+      <form
+        className={FILTER_FORM_CLASSES}
+        method="get"
+        action="/projects"
+        data-testid="project-list-filters"
+      >
         <fieldset className="contents">
           <legend className="sr-only">{messages.searchLegend}</legend>
-          <label className="ses-field">
-            <span>{messages.searchQ}</span>
-            <input type="search" name="q" defaultValue={filters.q} data-testid="project-list-filter-q" />
-          </label>
-          <label className="ses-field">
-            <span>{messages.searchStatus}</span>
-            <select name="status" defaultValue={filters.status} data-testid="project-list-filter-status">
+          <Field label={messages.searchQ}>
+            <Input type="search" name="q" defaultValue={filters.q} data-testid="project-list-filter-q" />
+          </Field>
+          <Field label={messages.searchStatus}>
+            <Select name="status" defaultValue={filters.status} data-testid="project-list-filter-status">
               {statusOptions.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>
               ))}
-            </select>
-          </label>
-          <label className="ses-field">
-            <span>{messages.searchStartFrom}</span>
-            <input
+            </Select>
+          </Field>
+          <Field label={messages.searchStartFrom}>
+            <Input
               type="date"
               name="startFrom"
               defaultValue={filters.startFrom}
               data-testid="project-list-filter-start-from"
             />
-          </label>
-          <label className="ses-field">
-            <span>{messages.searchPrefecture}</span>
-            <select
+          </Field>
+          <Field label={messages.searchPrefecture}>
+            <Select
               name="prefecture"
               defaultValue={filters.prefecture}
               data-testid="project-list-filter-prefecture"
@@ -154,16 +173,18 @@ export function ProjectListScreen({
                   {option.label}
                 </option>
               ))}
-            </select>
-          </label>
-          <button type="submit" className="ses-submit" data-testid="project-list-search">
-            {messages.searchSubmit}
-          </button>
-          {showClearFilters ? (
-            <Link className="ses-secondary-link" href="/projects" data-testid="project-list-clear">
-              {messages.searchClear}
-            </Link>
-          ) : null}
+            </Select>
+          </Field>
+          <div className={FILTER_ACTIONS_CLASSES}>
+            <Button type="submit" data-testid="project-list-search">
+              {messages.searchSubmit}
+            </Button>
+            {showClearFilters ? (
+              <Link className={SECONDARY_LINK_CLASSES} href="/projects" data-testid="project-list-clear">
+                {messages.searchClear}
+              </Link>
+            ) : null}
+          </div>
         </fieldset>
       </form>
 
@@ -188,7 +209,11 @@ export function ProjectListScreen({
 
       <div className="mb-4">
         {canRegister ? (
-          <Link className="ses-secondary-link" href="/projects/new" data-testid="project-list-register">
+          <Link
+            className={SECONDARY_LINK_STACKED_CLASSES}
+            href="/projects/new"
+            data-testid="project-list-register"
+          >
             {messages.register}
           </Link>
         ) : (
@@ -209,77 +234,65 @@ export function ProjectListScreen({
           <p className="m-0">{messages.emptyLead}</p>
         </div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-sm" data-testid="project-list-table">
-            <thead>
-              <tr className="border-b border-slate-200 text-left text-slate-500">
-                <th className="px-3 py-2 font-medium">{messages.columnName}</th>
-                <th className="px-3 py-2 font-medium">{messages.columnStatus}</th>
-                <th className={`px-3 py-2 font-medium ${DESKTOP_ONLY}`}>
-                  {messages.columnMustRequirements}
-                </th>
-                <th className="px-3 py-2 font-medium">{messages.columnUnitPrice}</th>
-                <th className="px-3 py-2 font-medium">{messages.columnStartDate}</th>
-                <th className={`px-3 py-2 font-medium ${TABLET_UP}`}>{messages.columnLocation}</th>
-                <th className={`px-3 py-2 font-medium ${DESKTOP_ONLY}`}>
-                  {messages.columnHeadcount}
-                </th>
-                <th className={`px-3 py-2 font-medium ${TABLET_UP}`}>{messages.columnUpdatedOn}</th>
+        <Table data-testid="project-list-table">
+          <TableHeader>
+            <TableRow>
+              <TableHead>{messages.columnName}</TableHead>
+              <TableHead>{messages.columnStatus}</TableHead>
+              <TableHead className={DESKTOP_ONLY}>{messages.columnMustRequirements}</TableHead>
+              <TableHead>{messages.columnUnitPrice}</TableHead>
+              <TableHead>{messages.columnStartDate}</TableHead>
+              <TableHead className={TABLET_UP}>{messages.columnLocation}</TableHead>
+              <TableHead className={DESKTOP_ONLY}>{messages.columnHeadcount}</TableHead>
+              <TableHead className={TABLET_UP}>{messages.columnUpdatedOn}</TableHead>
+              {showVisibilityColumn ? (
+                <TableHead className={DESKTOP_ONLY}>{messages.columnVisibility}</TableHead>
+              ) : null}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((row) => (
+              <TableRow key={row.id} data-testid={`project-list-row-${row.id}`}>
+                <TableCell whitespace="normal">
+                  {/* 🔴 行から詳細へ（docs/04 §S-010「行クリックで `S-011`」）。
+                      **閲覧の監査記録は遷移先が書く**（`readProjectDetail`。`BR-27`）。 */}
+                  <Link
+                    className="font-medium text-slate-900 underline"
+                    href={`/projects/${row.id}`}
+                    data-testid={`project-list-link-${row.id}`}
+                  >
+                    {row.name}
+                  </Link>
+                </TableCell>
+                <TableCell>{row.status}</TableCell>
+                <TableCell whitespace="normal" className={DESKTOP_ONLY}>
+                  {row.mustRequirements}
+                  {row.moreMustRequirements === null ? null : (
+                    <span
+                      className="ml-1 text-xs text-slate-500"
+                      data-testid={`project-list-more-requirements-${row.id}`}
+                    >
+                      {row.moreMustRequirements}
+                    </span>
+                  )}
+                </TableCell>
+                <TableCell>{row.unitPrice}</TableCell>
+                <TableCell>{row.startDate}</TableCell>
+                <TableCell className={TABLET_UP}>{row.location}</TableCell>
+                <TableCell className={DESKTOP_ONLY}>{row.headcount}</TableCell>
+                <TableCell className={TABLET_UP}>{row.updatedOn}</TableCell>
                 {showVisibilityColumn ? (
-                  <th className={`px-3 py-2 font-medium ${DESKTOP_ONLY}`}>
-                    {messages.columnVisibility}
-                  </th>
+                  <TableCell
+                    className={DESKTOP_ONLY}
+                    data-testid={`project-list-visibility-${row.id}`}
+                  >
+                    {row.visibility}
+                  </TableCell>
                 ) : null}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr
-                  key={row.id}
-                  className="border-b border-slate-100"
-                  data-testid={`project-list-row-${row.id}`}
-                >
-                  <td className="px-3 py-2">
-                    {/* 🔴 行から詳細へ（docs/04 §S-010「行クリックで `S-011`」）。
-                        **閲覧の監査記録は遷移先が書く**（`readProjectDetail`。`BR-27`）。 */}
-                    <Link
-                      className="font-medium text-slate-900 underline"
-                      href={`/projects/${row.id}`}
-                      data-testid={`project-list-link-${row.id}`}
-                    >
-                      {row.name}
-                    </Link>
-                  </td>
-                  <td className="px-3 py-2 whitespace-nowrap">{row.status}</td>
-                  <td className={`px-3 py-2 ${DESKTOP_ONLY}`}>
-                    {row.mustRequirements}
-                    {row.moreMustRequirements === null ? null : (
-                      <span
-                        className="ml-1 text-xs text-slate-500"
-                        data-testid={`project-list-more-requirements-${row.id}`}
-                      >
-                        {row.moreMustRequirements}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 whitespace-nowrap">{row.unitPrice}</td>
-                  <td className="px-3 py-2 whitespace-nowrap">{row.startDate}</td>
-                  <td className={`px-3 py-2 whitespace-nowrap ${TABLET_UP}`}>{row.location}</td>
-                  <td className={`px-3 py-2 whitespace-nowrap ${DESKTOP_ONLY}`}>{row.headcount}</td>
-                  <td className={`px-3 py-2 whitespace-nowrap ${TABLET_UP}`}>{row.updatedOn}</td>
-                  {showVisibilityColumn ? (
-                    <td
-                      className={`px-3 py-2 whitespace-nowrap ${DESKTOP_ONLY}`}
-                      data-testid={`project-list-visibility-${row.id}`}
-                    >
-                      {row.visibility}
-                    </td>
-                  ) : null}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       )}
 
       {/* 🔴 カーソルページング（docs/05 §6.1）。**「全 N ページ中 M ページ目」を出さない** ——
@@ -288,12 +301,12 @@ export function ProjectListScreen({
       {nextPageHref === null && firstPageHref === null ? null : (
         <nav className="mt-4 flex flex-wrap gap-4" data-testid="project-list-paging">
           {firstPageHref === null ? null : (
-            <Link className="ses-secondary-link" href={firstPageHref} data-testid="project-list-first">
+            <Link className={SECONDARY_LINK_CLASSES} href={firstPageHref} data-testid="project-list-first">
               {messages.firstPage}
             </Link>
           )}
           {nextPageHref === null ? null : (
-            <Link className="ses-secondary-link" href={nextPageHref} data-testid="project-list-next">
+            <Link className={SECONDARY_LINK_CLASSES} href={nextPageHref} data-testid="project-list-next">
               {messages.nextPage}
             </Link>
           )}

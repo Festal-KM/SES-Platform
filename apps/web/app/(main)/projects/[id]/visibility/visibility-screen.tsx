@@ -23,7 +23,19 @@
 // 🔴 文言は props（`packages/i18n`）から受け取る。ここにベタ書きしない（`CLAUDE.md` §3.5）。
 import { useEffect, useState, type FormEvent } from 'react';
 import Link from 'next/link';
-import { Button } from '@ses/ui';
+import {
+  Badge,
+  Button,
+  Checkbox,
+  SECONDARY_LINK_CLASSES,
+  SECONDARY_LINK_STACKED_CLASSES,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@ses/ui';
 // 🔴 **型だけ**を import する（`lib/projects/visibility.ts` は `@ses/db` に依存する
 //    サーバ専用モジュールである。`tests/static/client-db-boundary.test.ts`）。
 import type { ProjectVisibilityChoice } from '../../../../../lib/projects/visibility';
@@ -282,22 +294,22 @@ export function ProjectVisibilityScreen({
             {messages.currentEmpty}
           </p>
         ) : (
-          <table className="w-full border-collapse text-sm" data-testid="project-visibility-current-table">
-            <thead>
-              <tr className="border-b border-slate-200 text-left">
-                <th className="p-2">{messages.currentColumnPartner}</th>
-                <th className="p-2">{messages.currentColumnPublishedOn}</th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table data-testid="project-visibility-current-table">
+            <TableHeader>
+              <TableRow>
+                <TableHead>{messages.currentColumnPartner}</TableHead>
+                <TableHead>{messages.currentColumnPublishedOn}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {publishedIds.map((id) => (
-                <tr key={id} className="border-b border-slate-100">
-                  <td className="p-2">{nameOf.get(id) ?? id}</td>
-                  <td className="p-2">{publishedOnOf.get(id) ?? ''}</td>
-                </tr>
+                <TableRow key={id}>
+                  <TableCell whitespace="normal">{nameOf.get(id) ?? id}</TableCell>
+                  <TableCell>{publishedOnOf.get(id) ?? ''}</TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         )}
       </section>
 
@@ -310,7 +322,7 @@ export function ProjectVisibilityScreen({
             <div data-testid="project-visibility-select-empty">
               <p className="text-sm font-bold text-slate-900">{messages.selectEmptyTitle}</p>
               <p className="mb-2 text-sm text-slate-600">{messages.selectEmptyLead}</p>
-              <Link className="ses-secondary-link" href={partnerCompaniesHref}>
+              <Link className={SECONDARY_LINK_STACKED_CLASSES} href={partnerCompaniesHref}>
                 {messages.selectEmptyLink}
               </Link>
             </div>
@@ -325,22 +337,20 @@ export function ProjectVisibilityScreen({
                 {choices.map((choice) => (
                   <li key={choice.partnerCompanyId} className="border-b border-slate-100 py-2">
                     <label className="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={selectedSet.has(choice.partnerCompanyId)}
                         onChange={() => toggle(choice.partnerCompanyId)}
                         data-testid={`project-visibility-choice-${choice.partnerCompanyId}`}
                       />
                       <span className="text-slate-900">{choice.name}</span>
+                      {/* 🔴 表示項目の集合を増やさない（T-21-04 の受け入れ基準 ⑦）。
+                          出しているのは「自社が公開済みか」「その取引先が停止中か」の 2 つだけで、
+                          他社の公開状況・提案の有無には 1 つも触れていない（`CLAUDE.md` §3.1）。 */}
                       {choice.publishedOn === null ? null : (
-                        <span className="text-xs text-emerald-700">
-                          {messages.selectPublishedBadge}
-                        </span>
+                        <Badge variant="success">{messages.selectPublishedBadge}</Badge>
                       )}
                       {choice.suspended ? (
-                        <span className="text-xs text-amber-700">
-                          {messages.selectSuspendedBadge}
-                        </span>
+                        <Badge variant="warning">{messages.selectSuspendedBadge}</Badge>
                       ) : null}
                     </label>
                   </li>
@@ -395,22 +405,22 @@ export function ProjectVisibilityScreen({
                 {block.rows.length === 0 ? (
                   <p className="text-sm text-slate-600">{block.empty}</p>
                 ) : (
-                  <table className="w-full border-collapse text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-200 text-left">
-                        <th className="p-2">{preview.requirementColumnRequirement}</th>
-                        <th className="p-2">{preview.requirementColumnYears}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>{preview.requirementColumnRequirement}</TableHead>
+                        <TableHead>{preview.requirementColumnYears}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
                       {block.rows.map((row) => (
-                        <tr key={row.key} className="border-b border-slate-100">
-                          <td className="p-2">{row.requirement}</td>
-                          <td className="p-2">{row.years}</td>
-                        </tr>
+                        <TableRow key={row.key}>
+                          <TableCell whitespace="normal">{row.requirement}</TableCell>
+                          <TableCell>{row.years}</TableCell>
+                        </TableRow>
                       ))}
-                    </tbody>
-                  </table>
+                    </TableBody>
+                  </Table>
                 )}
               </div>
             ))}
@@ -466,7 +476,7 @@ export function ProjectVisibilityScreen({
                 </Button>
                 <button
                   type="button"
-                  className="ses-secondary-link"
+                  className={SECONDARY_LINK_CLASSES}
                   onClick={() => setPhase('idle')}
                   data-testid="project-visibility-revoke-cancel"
                 >
@@ -485,10 +495,18 @@ export function ProjectVisibilityScreen({
                   {phase === 'submitting' ? messages.submitting : messages.submit}
                 </Button>
               ) : null}
-              <Link className="ses-secondary-link" href={editHref} data-testid="project-visibility-edit-link">
+              <Link
+                className={SECONDARY_LINK_CLASSES}
+                href={editHref}
+                data-testid="project-visibility-edit-link"
+              >
                 {messages.editProject}
               </Link>
-              <Link className="ses-secondary-link" href={detailHref} data-testid="project-visibility-detail-link">
+              <Link
+                className={SECONDARY_LINK_CLASSES}
+                href={detailHref}
+                data-testid="project-visibility-detail-link"
+              >
                 {messages.backToDetail}
               </Link>
             </div>

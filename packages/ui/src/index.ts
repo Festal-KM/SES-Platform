@@ -53,12 +53,15 @@ export {
   CardHeader,
   CardTitle,
 } from './components/card.js';
+export { Checkbox } from './components/checkbox.js';
+export type { CheckboxProps } from './components/checkbox.js';
 export { Field, FieldDescription, FieldError, FieldLabel } from './components/field.js';
 export type {
   FieldElement,
   FieldErrorElement,
   FieldErrorProps,
   FieldProps,
+  FieldWidth,
 } from './components/field.js';
 export { Input } from './components/input.js';
 export type { InputProps } from './components/input.js';
@@ -77,11 +80,17 @@ export {
   TableRow,
 } from './components/table.js';
 export type {
+  TableCellAlign,
   TableCellProps,
   TableCellWhitespace,
   TableHeadProps,
   TableProps,
+  TableRowProps,
 } from './components/table.js';
 export { Textarea } from './components/textarea.js';
 export type { TextareaProps } from './components/textarea.js';
 export { cn } from './lib/cn.js';
+export {
+  SECONDARY_LINK_CLASSES,
+  SECONDARY_LINK_STACKED_CLASSES,
+} from './lib/link-classes.js';

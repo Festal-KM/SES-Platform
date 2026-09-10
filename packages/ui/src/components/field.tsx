@@ -35,7 +35,19 @@
 //    つまり**間隔は置かれる文脈が決める**。基底に入れると `cn()` では打ち消せない
 //    （`../lib/cn.ts` の規律 1）。呼び出し側が `mb-4` を渡すか、親が `gap-*` を持つこと。
 //
+// 🔴 **幅は `width` prop で選ぶ（`className` で上書きしない）。** T-21-04 で判明した実害:
+//    `.ses-field` は `display:block` であり、**flex コンテナ（`.ses-filter-form` /
+//    `S-007` のスキル追加行）の中では内容幅に縮んで横に並んでいた**。upstream どおりの
+//    `w-full` を基底に固定すると、その並びが**1 行 1 項目**に化ける。`className="w-auto"` で
+//    直したように見えても、`cn()` は `tailwind-merge` ではないため **`class` 属性の並び順は
+//    勝敗を決めない**（勝つのは生成 CSS の順）。したがって競合する語は prop にする
+//    （`../lib/cn.ts` の規律 2 / `Badge` の `variant` / `TableCell` の `whitespace` と同じ）。
+//
 // ⚠️ `as="p"` で使うときは `description` / `error` を渡さない（`<p>` の入れ子になる）。
+// 🔴 **`as="label"`（既定）でも `description` / `error` を使わない。** `<label>` の中に `<p>` が
+//    入るのは内容モデル違反であり、**説明文とエラー文が入力欄のアクセシブル名に畳み込まれる**。
+//    本リポジトリの `role="alert"` はすべてフォーム単位・セクション単位で `<label>` の外にある
+//    （SP-21 の「`aria-*` / 要素の並びを変えない」）。`FieldError` を `Field` の外に置くこと。
 import type { LabelHTMLAttributes, ComponentProps, ReactNode } from 'react';
 import { cn } from '../lib/cn.js';
 import { LABEL_CLASSES } from './label.js';
@@ -43,8 +55,21 @@ import { LABEL_CLASSES } from './label.js';
 /** `Field` が描く要素。現況（`.ses-field`）にある 3 つだけを許す。 */
 export type FieldElement = 'label' | 'div' | 'p';
 
+/**
+ * field の幅。🔴 `className` では基底に勝てないため prop にする（ファイル冒頭の 🔴）。
+ * - `full` … 縦積みのフォーム（`S-007` / `S-012` / `S-035` ほか）。既定。
+ * - `auto` … 横に並べる帯（`.ses-filter-form` 相当 / 追加行）。内容幅に縮む。
+ */
+export type FieldWidth = 'full' | 'auto';
+
+const WIDTH_CLASSES: Readonly<Record<FieldWidth, string>> = {
+  full: 'w-full',
+  auto: 'w-auto',
+};
+
 export type FieldProps = Omit<LabelHTMLAttributes<HTMLLabelElement>, 'children'> & {
   readonly as?: FieldElement;
+  readonly width?: FieldWidth;
   /** ラベル文字。🔴 文字列は呼び出し側が `packages/i18n` から渡す（CLAUDE.md §3.5）。 */
   readonly label?: ReactNode;
   readonly description?: ReactNode;
@@ -55,6 +80,7 @@ export type FieldProps = Omit<LabelHTMLAttributes<HTMLLabelElement>, 'children'>
 
 export function Field({
   as = 'label',
+  width = 'full',
   className,
   label,
   description,
@@ -67,7 +93,7 @@ export function Field({
   // JSX の属性型を 1 つに固定するためのキャストであり、値は変換していない。
   const Element = as as 'label';
   return (
-    <Element className={cn('flex w-full flex-col gap-1.5', className)} {...props}>
+    <Element className={cn('flex flex-col gap-1.5', WIDTH_CLASSES[width], className)} {...props}>
       {label === undefined ? null : <FieldLabel className={labelClassName}>{label}</FieldLabel>}
       {children}
       {description === undefined ? null : <FieldDescription>{description}</FieldDescription>}

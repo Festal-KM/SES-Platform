@@ -25,7 +25,20 @@
 //    区分の切り替えは「その要件をどちらのブロックに置くか」であり、行数が数件の画面では
 //    入れ直しで足りる。**この差分は docs/05 §6.4「#26 の実装の決着（T-06-01）」に記録した。**
 import { useEffect, useState, type FormEvent } from 'react';
-import { Button } from '@ses/ui';
+import {
+  Button,
+  Field,
+  Input,
+  SECONDARY_LINK_CLASSES,
+  Select,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Textarea,
+} from '@ses/ui';
 // 🔴 差し込み記号と組み立ては `'use client'` を持たない共有モジュールに置く
 //    （このファイルの export をサーバ側から値 import すると client reference に置換されて壊れる。
 //     `lib/projects/created-href.ts` 冒頭の実測メモ）。**`@ses/db` に依存しないモジュールである**
@@ -369,9 +382,8 @@ export function ProjectForm({
       {/* --- 1. 基本 ------------------------------------------------------- */}
       <section data-testid="project-section-basic">
         <h2 className="mb-3 text-base font-bold text-slate-900">{messages.sectionBasic}</h2>
-        <label className="ses-field">
-          <span>{messages.nameLabel}</span>
-          <input
+        <Field className="mb-4" label={messages.nameLabel}>
+          <Input
             name="name"
             type="text"
             required
@@ -380,12 +392,16 @@ export function ProjectForm({
             disabled={phase === 'submitting'}
             data-testid="project-name"
           />
-        </label>
-        <label className="ses-field">
-          <span>
-            {messages.headcountLabel}（{messages.headcountUnit}）
-          </span>
-          <input
+        </Field>
+        <Field
+          className="mb-4"
+          label={
+            <>
+              {messages.headcountLabel}（{messages.headcountUnit}）
+            </>
+          }
+        >
+          <Input
             name="headcount"
             type="number"
             inputMode="numeric"
@@ -395,10 +411,9 @@ export function ProjectForm({
             disabled={phase === 'submitting'}
             data-testid="project-headcount"
           />
-        </label>
-        <label className="ses-field">
-          <span>{messages.startDateLabel}</span>
-          <input
+        </Field>
+        <Field className="mb-4" label={messages.startDateLabel}>
+          <Input
             name="startDate"
             type="date"
             value={values.startDate}
@@ -406,10 +421,9 @@ export function ProjectForm({
             disabled={phase === 'submitting'}
             data-testid="project-start-date"
           />
-        </label>
-        <label className="ses-field">
-          <span>{messages.statusLabel}</span>
-          <select
+        </Field>
+        <Field className="mb-4" label={messages.statusLabel}>
+          <Select
             name="status"
             value={values.status}
             onChange={(event) => update({ status: event.target.value })}
@@ -421,8 +435,8 @@ export function ProjectForm({
                 {option.label}
               </option>
             ))}
-          </select>
-        </label>
+          </Select>
+        </Field>
         <p className="text-sm text-slate-500" data-testid="project-status-note">
           {messages.statusNote}
         </p>
@@ -447,9 +461,8 @@ export function ProjectForm({
             </p>
 
             <div className="mb-3 flex flex-wrap items-end gap-2">
-              <label className="ses-field">
-                <span>{messages.requirementSkillSearch}</span>
-                <input
+              <Field width="auto" label={messages.requirementSkillSearch}>
+                <Input
                   type="search"
                   value={skillFilters[kind] ?? ''}
                   onChange={(event) =>
@@ -458,10 +471,9 @@ export function ProjectForm({
                   disabled={phase === 'submitting'}
                   data-testid={`project-requirement-skill-filter-${kind}`}
                 />
-              </label>
-              <label className="ses-field">
-                <span>{messages.requirementSkillLabel}</span>
-                <select
+              </Field>
+              <Field width="auto" label={messages.requirementSkillLabel}>
+                <Select
                   value={draft.skillId}
                   onChange={(event) => setDraft(kind, { skillId: event.target.value })}
                   disabled={phase === 'submitting'}
@@ -473,11 +485,10 @@ export function ProjectForm({
                       {entry.name}
                     </option>
                   ))}
-                </select>
-              </label>
-              <label className="ses-field">
-                <span>{messages.requirementYearsLabel}</span>
-                <input
+                </Select>
+              </Field>
+              <Field width="auto" label={messages.requirementYearsLabel}>
+                <Input
                   type="number"
                   inputMode="decimal"
                   min={0}
@@ -487,17 +498,16 @@ export function ProjectForm({
                   disabled={phase === 'submitting'}
                   data-testid={`project-requirement-years-${kind}`}
                 />
-              </label>
-              <label className="ses-field">
-                <span>{messages.requirementFreeTextLabel}</span>
-                <input
+              </Field>
+              <Field width="auto" label={messages.requirementFreeTextLabel}>
+                <Input
                   type="text"
                   value={draft.freeText}
                   onChange={(event) => setDraft(kind, { freeText: event.target.value })}
                   disabled={phase === 'submitting'}
                   data-testid={`project-requirement-free-text-${kind}`}
                 />
-              </label>
+              </Field>
               <Button
                 type="button"
                 onClick={() => addRequirement(kind)}
@@ -531,53 +541,47 @@ export function ProjectForm({
                 {messages.requirementEmpties[kind]}
               </p>
             ) : (
-              <div className="overflow-x-auto">
-                <table
-                  className="w-full border-collapse text-sm"
-                  data-testid={`project-requirements-table-${kind}`}
-                >
-                  <thead>
-                    <tr className="border-b border-slate-200 text-left">
-                      <th className="p-2">{messages.requirementColumnRequirement}</th>
-                      <th className="p-2">{messages.requirementColumnYears}</th>
-                      <th className="p-2">{messages.requirementColumnActions}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((row) => (
-                      <tr
-                        key={row.key}
-                        className="border-b border-slate-100"
-                        data-testid={`project-requirement-row-${kind}-${row.key}`}
-                        data-kind={row.kind}
-                      >
-                        <td className="p-2">
-                          {row.skillName === '' ? row.freeText : row.skillName}
-                          {row.skillName !== '' && row.freeText !== '' ? (
-                            <span className="ml-2 text-slate-600">{row.freeText}</span>
-                          ) : null}
-                        </td>
-                        <td className="p-2">
-                          {row.requiredYears === ''
-                            ? '—'
-                            : `${row.requiredYears}${messages.requirementYearsUnit}`}
-                        </td>
-                        <td className="p-2">
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            onClick={() => removeRequirement(row.key)}
-                            disabled={phase === 'submitting'}
-                            data-testid={`project-requirement-remove-${row.key}`}
-                          >
-                            {messages.requirementRemove}
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <Table data-testid={`project-requirements-table-${kind}`}>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{messages.requirementColumnRequirement}</TableHead>
+                    <TableHead>{messages.requirementColumnYears}</TableHead>
+                    <TableHead>{messages.requirementColumnActions}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {rows.map((row) => (
+                    <TableRow
+                      key={row.key}
+                      data-testid={`project-requirement-row-${kind}-${row.key}`}
+                      data-kind={row.kind}
+                    >
+                      <TableCell whitespace="normal">
+                        {row.skillName === '' ? row.freeText : row.skillName}
+                        {row.skillName !== '' && row.freeText !== '' ? (
+                          <span className="ml-2 text-slate-600">{row.freeText}</span>
+                        ) : null}
+                      </TableCell>
+                      <TableCell>
+                        {row.requiredYears === ''
+                          ? '—'
+                          : `${row.requiredYears}${messages.requirementYearsUnit}`}
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={() => removeRequirement(row.key)}
+                          disabled={phase === 'submitting'}
+                          data-testid={`project-requirement-remove-${row.key}`}
+                        >
+                          {messages.requirementRemove}
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             )}
           </section>
         );
@@ -590,9 +594,8 @@ export function ProjectForm({
           <legend className="text-sm text-slate-700">
             {messages.unitPriceLabel}（{messages.unitPriceUnit}）
           </legend>
-          <label className="ses-field">
-            <span>{messages.unitPriceMin}</span>
-            <input
+          <Field className="mb-4" label={messages.unitPriceMin}>
+            <Input
               name="unitPriceMin"
               type="number"
               inputMode="numeric"
@@ -602,10 +605,9 @@ export function ProjectForm({
               disabled={phase === 'submitting'}
               data-testid="project-unit-price-min"
             />
-          </label>
-          <label className="ses-field">
-            <span>{messages.unitPriceMax}</span>
-            <input
+          </Field>
+          <Field className="mb-4" label={messages.unitPriceMax}>
+            <Input
               name="unitPriceMax"
               type="number"
               inputMode="numeric"
@@ -615,11 +617,10 @@ export function ProjectForm({
               disabled={phase === 'submitting'}
               data-testid="project-unit-price-max"
             />
-          </label>
+          </Field>
         </fieldset>
-        <label className="ses-field">
-          <span>{messages.prefectureLabel}</span>
-          <select
+        <Field className="mb-4" label={messages.prefectureLabel}>
+          <Select
             name="prefecture"
             value={values.prefecture}
             onChange={(event) => update({ prefecture: event.target.value })}
@@ -632,11 +633,10 @@ export function ProjectForm({
                 {option.label}
               </option>
             ))}
-          </select>
-        </label>
-        <label className="ses-field">
-          <span>{messages.remoteModeLabel}</span>
-          <select
+          </Select>
+        </Field>
+        <Field className="mb-4" label={messages.remoteModeLabel}>
+          <Select
             name="remoteMode"
             value={values.remoteMode}
             onChange={(event) => update({ remoteMode: event.target.value })}
@@ -649,8 +649,8 @@ export function ProjectForm({
                 {option.label}
               </option>
             ))}
-          </select>
-        </label>
+          </Select>
+        </Field>
       </section>
 
       {/* --- 5. 商流情報（内部用）------------------------------------------- */}
@@ -663,9 +663,8 @@ export function ProjectForm({
         <p className="mb-3 text-sm text-slate-800" data-testid="project-commerce-notice">
           {messages.commerceNotice}
         </p>
-        <label className="ses-field">
-          <span>{messages.endClientNameLabel}</span>
-          <input
+        <Field className="mb-4" label={messages.endClientNameLabel}>
+          <Input
             name="endClientName"
             type="text"
             value={values.endClientName}
@@ -673,12 +672,16 @@ export function ProjectForm({
             disabled={phase === 'submitting'}
             data-testid="project-end-client-name"
           />
-        </label>
-        <label className="ses-field">
-          <span>
-            {messages.internalUnitPriceLabel}（{messages.unitPriceUnit}）
-          </span>
-          <input
+        </Field>
+        <Field
+          className="mb-4"
+          label={
+            <>
+              {messages.internalUnitPriceLabel}（{messages.unitPriceUnit}）
+            </>
+          }
+        >
+          <Input
             name="internalUnitPrice"
             type="number"
             inputMode="numeric"
@@ -688,7 +691,7 @@ export function ProjectForm({
             disabled={phase === 'submitting'}
             data-testid="project-internal-unit-price"
           />
-        </label>
+        </Field>
       </section>
 
       {/* --- 6. 外部公開用の記載 -------------------------------------------- */}
@@ -700,9 +703,10 @@ export function ProjectForm({
         <p className="mb-2 text-sm text-slate-600" data-testid="project-public-summary-note">
           {messages.publicSummaryNote}
         </p>
-        <label className="ses-field">
-          <span>{messages.publicSummaryLabel}</span>
-          <textarea
+        <Field className="mb-4" label={messages.publicSummaryLabel}>
+          {/* ⚠️ `Textarea` は `field-sizing-content` を持つため、`rows` は**初期値ではなく
+              下限の目安**として働き、入力量に応じて伸びる（`min-h-20` が下限）。 */}
+          <Textarea
             name="publicSummary"
             rows={5}
             value={values.publicSummary}
@@ -710,7 +714,7 @@ export function ProjectForm({
             disabled={phase === 'submitting'}
             data-testid="project-public-summary"
           />
-        </label>
+        </Field>
       </section>
 
       {/* 🔴 docs/04 §S-012「保存だけでは公開されない」（`F-014 AC-2`）。 */}
@@ -727,11 +731,15 @@ export function ProjectForm({
         </Button>
         {/* ✅ T-06-06: `S-013` への secondary（編集時のみ。新規は ID が無いので出さない）。 */}
         {visibilityHref === null ? null : (
-          <a className="ses-secondary-link" href={visibilityHref} data-testid="project-visibility-link">
+          <a
+            className={SECONDARY_LINK_CLASSES}
+            href={visibilityHref}
+            data-testid="project-visibility-link"
+          >
             {messages.visibilitySettings}
           </a>
         )}
-        <a className="ses-secondary-link" href={cancelHref} data-testid="project-cancel">
+        <a className={SECONDARY_LINK_CLASSES} href={cancelHref} data-testid="project-cancel">
           {messages.cancel}
         </a>
       </div>

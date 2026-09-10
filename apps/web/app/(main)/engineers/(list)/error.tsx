@@ -12,6 +12,7 @@
 //    URL を捨てたりしない —— 利用者が組み立てた条件が失われる。
 // 🔴 **失敗の理由を画面に出さない**（docs/05 §15.2）。`error.message` には内部の情報が入りうる。
 //    相関 ID（`x-request-id`）は API 応答のヘッダにあり、画面側は持たない。
+import { Button } from '@ses/ui';
 import { t } from '@ses/i18n';
 
 export default function EngineerLedgerError({ reset }: { readonly reset: () => void }) {
@@ -22,14 +23,9 @@ export default function EngineerLedgerError({ reset }: { readonly reset: () => v
         {t('engineers.list.error.title')}
       </p>
       <p className="mb-4 text-sm text-slate-700">{t('engineers.list.error.lead')}</p>
-      <button
-        type="button"
-        className="ses-submit w-auto px-4"
-        onClick={() => reset()}
-        data-testid="engineer-list-retry"
-      >
+      <Button type="button" onClick={() => reset()} data-testid="engineer-list-retry">
         {t('engineers.list.error.retry')}
-      </button>
+      </Button>
     </main>
   );
 }

@@ -22,7 +22,17 @@
 //      再表示 API を作らない（docs/04 §S-046 の「この画面を離れると再表示できません」と同じ規律）
 import { useState, type FormEvent } from 'react';
 import Link from 'next/link';
-import { Button } from '@ses/ui';
+import {
+  Button,
+  Field,
+  Input,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@ses/ui';
 import type { TenantRole } from '@ses/db';
 import { formatDateTimeJst } from '../../../../lib/format/datetime';
 import type { InvitationIssueView } from '../../../../lib/invitations/invite-link';
@@ -326,57 +336,51 @@ export function PartnerCompaniesScreen({
           </p>
         ) : (
           // 🔴 Tier 3 の一覧は横スクロールで劣化させる（モバイルで隠さない。`CLAUDE.md` §13.3）。
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-sm" data-testid="partner-companies-table">
-              <thead>
-                <tr className="border-b border-slate-200 text-left text-slate-500">
-                  <th className="px-3 py-2 font-medium">{messages.columnName}</th>
-                  <th className="px-3 py-2 font-medium">{messages.columnStatus}</th>
-                  <th className="px-3 py-2 font-medium">{messages.columnAccountCount}</th>
-                  <th className="px-3 py-2 font-medium">{messages.columnOpenProjectCount}</th>
-                  <th className="px-3 py-2 font-medium">{messages.columnProposalCount}</th>
-                  <th className="px-3 py-2 font-medium">{messages.columnLastActivity}</th>
-                  <th className="px-3 py-2 font-medium" />
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((item) => (
-                  <tr
-                    key={item.id}
-                    className={
-                      item.id === selectedId
-                        ? 'border-b border-slate-100 bg-slate-50'
-                        : 'border-b border-slate-100'
-                    }
-                    data-testid={`partner-company-row-${item.id}`}
-                    data-status={item.status}
-                  >
-                    <td className="px-3 py-2">{item.name}</td>
-                    <td className="px-3 py-2 whitespace-nowrap">{messages.statusLabels[item.status]}</td>
-                    <td className="px-3 py-2 tabular-nums">{item.accountCount}</td>
-                    <td className="px-3 py-2 tabular-nums">{item.openProjectCount}</td>
-                    <td className="px-3 py-2 tabular-nums">{item.proposalCount}</td>
-                    <td className="px-3 py-2 whitespace-nowrap">
-                      {item.lastActivityAt === null
-                        ? messages.valueNone
-                        : formatDateTimeJst(item.lastActivityAt)}
-                    </td>
-                    <td className="px-3 py-2">
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => select(item.id)}
-                        data-testid={`partner-company-select-${item.id}`}
-                      >
-                        {messages.select}
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <Table data-testid="partner-companies-table">
+            <TableHeader>
+              <TableRow>
+                <TableHead>{messages.columnName}</TableHead>
+                <TableHead>{messages.columnStatus}</TableHead>
+                <TableHead>{messages.columnAccountCount}</TableHead>
+                <TableHead>{messages.columnOpenProjectCount}</TableHead>
+                <TableHead>{messages.columnProposalCount}</TableHead>
+                <TableHead>{messages.columnLastActivity}</TableHead>
+                <TableHead />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {items.map((item) => (
+                <TableRow
+                  key={item.id}
+                  className={item.id === selectedId ? 'bg-slate-50' : undefined}
+                  data-testid={`partner-company-row-${item.id}`}
+                  data-status={item.status}
+                >
+                  <TableCell whitespace="normal">{item.name}</TableCell>
+                  <TableCell>{messages.statusLabels[item.status]}</TableCell>
+                  <TableCell className="tabular-nums">{item.accountCount}</TableCell>
+                  <TableCell className="tabular-nums">{item.openProjectCount}</TableCell>
+                  <TableCell className="tabular-nums">{item.proposalCount}</TableCell>
+                  <TableCell>
+                    {item.lastActivityAt === null
+                      ? messages.valueNone
+                      : formatDateTimeJst(item.lastActivityAt)}
+                  </TableCell>
+                  <TableCell>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => select(item.id)}
+                      data-testid={`partner-company-select-${item.id}`}
+                    >
+                      {messages.select}
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         )}
       </section>
 
@@ -384,43 +388,37 @@ export function PartnerCompaniesScreen({
         <section className="mb-8" data-testid="partner-companies-register-section">
           <h2 className="mb-2 text-sm font-semibold text-slate-700">{messages.sectionRegister}</h2>
           <form onSubmit={onRegister} noValidate data-testid="partner-company-register-form">
-            <label className="mb-2 block text-sm">
-              <span className="mb-1 block text-slate-700">{messages.registerNameLabel}</span>
-              <input
+            <Field className="mb-2 max-w-sm" label={messages.registerNameLabel}>
+              <Input
                 type="text"
                 name="name"
                 required
                 value={name}
                 disabled={registerPhase === 'submitting'}
                 onChange={(event) => setName(event.target.value)}
-                className="w-full max-w-sm rounded-md border border-slate-300 px-3 py-2 text-sm"
                 data-testid="partner-company-register-name"
               />
-            </label>
-            <label className="mb-2 block text-sm">
-              <span className="mb-1 block text-slate-700">{messages.registerContactNameLabel}</span>
-              <input
+            </Field>
+            <Field className="mb-2 max-w-sm" label={messages.registerContactNameLabel}>
+              <Input
                 type="text"
                 name="contactName"
                 value={contactName}
                 disabled={registerPhase === 'submitting'}
                 onChange={(event) => setContactName(event.target.value)}
-                className="w-full max-w-sm rounded-md border border-slate-300 px-3 py-2 text-sm"
                 data-testid="partner-company-register-contact-name"
               />
-            </label>
-            <label className="mb-2 block text-sm">
-              <span className="mb-1 block text-slate-700">{messages.registerContactEmailLabel}</span>
-              <input
+            </Field>
+            <Field className="mb-2 max-w-sm" label={messages.registerContactEmailLabel}>
+              <Input
                 type="email"
                 name="contactEmail"
                 value={contactEmail}
                 disabled={registerPhase === 'submitting'}
                 onChange={(event) => setContactEmail(event.target.value)}
-                className="w-full max-w-sm rounded-md border border-slate-300 px-3 py-2 text-sm"
                 data-testid="partner-company-register-contact-email"
               />
-            </label>
+            </Field>
             {registerPhase === 'error' ? (
               <p role="alert" className="mb-2 text-sm text-red-700" data-testid="partner-company-register-error">
                 {messages.registerError}
@@ -534,24 +532,21 @@ export function PartnerCompaniesScreen({
                           {messages.inviteLinkPreNotice}
                         </p>
                       ) : null}
-                      <label className="mb-2 block text-sm">
-                        <span className="mb-1 block text-slate-700">{messages.inviteEmailLabel}</span>
-                        <input
+                      <Field className="mb-2 max-w-sm" label={messages.inviteEmailLabel}>
+                        <Input
                           type="email"
                           name="email"
                           required
                           value={inviteEmail}
                           disabled={invitePhase === 'submitting'}
                           onChange={(event) => setInviteEmail(event.target.value)}
-                          className="w-full max-w-sm rounded-md border border-slate-300 px-3 py-2 text-sm"
                           data-testid="partner-company-invite-email"
                         />
-                      </label>
+                      </Field>
                       {/* 🔴 ロールは読み取り専用（この画面から招けるのは PARTNER_ADMIN だけ）。 */}
-                      <p className="mb-2 text-sm">
-                        <span className="mb-1 block text-slate-700">{messages.inviteRoleLabel}</span>
+                      <Field as="p" className="mb-2" label={messages.inviteRoleLabel}>
                         <output data-testid="partner-company-invite-role">{messages.inviteRoleValue}</output>
-                      </p>
+                      </Field>
                       {invitePhase === 'error' ? (
                         <p role="alert" className="mb-2 text-sm text-red-700" data-testid="partner-company-invite-error">
                           {messages.inviteError}
@@ -582,18 +577,16 @@ export function PartnerCompaniesScreen({
 
                 <section data-testid="partner-company-suspension-section">
                   <h3 className="mb-2 text-sm font-semibold text-slate-700">{messages.sectionSuspension}</h3>
-                  <label className="mb-2 block text-sm">
-                    <span className="mb-1 block text-slate-700">{messages.suspensionReasonLabel}</span>
-                    <input
+                  <Field className="mb-2 max-w-sm" label={messages.suspensionReasonLabel}>
+                    <Input
                       type="text"
                       name="reason"
                       value={reason}
                       disabled={suspensionPhase === 'submitting'}
                       onChange={(event) => setReason(event.target.value)}
-                      className="w-full max-w-sm rounded-md border border-slate-300 px-3 py-2 text-sm"
                       data-testid="partner-company-suspension-reason"
                     />
-                  </label>
+                  </Field>
                   {suspensionPhase === 'error' ? (
                     <p role="alert" className="mb-2 text-sm text-red-700" data-testid="partner-company-suspension-error">
                       {messages.suspensionError}

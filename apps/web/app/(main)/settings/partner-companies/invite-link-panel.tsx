@@ -52,6 +52,13 @@ export function SandboxInviteLinkPanel({
     >
       <p className="mb-1 font-medium">{messages.inviteLinkHeading}</p>
       <p className="mb-2">{messages.inviteLinkNotice}</p>
+      {/* 🔴 T-21-04: ここは `Field` / `Input` に置き換えていない。
+          この panel は sky 系の配色を持つ独自の器であり、`@ses/ui` の基底
+          （`border-slate-300` / `bg-transparent` / `text-base md:text-sm` /
+          ラベルの `text-sm`）を `className` で上書きすることになる。**`cn()` は
+          `tailwind-merge` ではなく、`class` 属性の並び順は勝敗を決めない**ため、
+          その上書きは「効いたように見えて効かない」（`packages/ui/src/lib/cn.ts` の規律 2）。
+          見た目を共有していない要素を無理に共有プリミティブへ寄せない。 */}
       <label className="mb-2 block">
         <span className="mb-1 block text-xs text-sky-800">{messages.inviteLinkLabel}</span>
         {/* 🔴 読み取り専用の入力に出す（長い URL をモバイルでも選択・コピーできる）。 */}

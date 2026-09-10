@@ -10,7 +10,14 @@
 //    警告文 + チェックボックスによる同意が無いと有効にできない。
 // 🔴 `autoApproveEnabled`（提案の承認・テナント単位）と `S-039` の AI ロール別承認モードを
 //    同じブロックに置かない（`F-035 AC-6`）。違いの 1 行説明を添える。
+//
+// 🔴 T-21-04: 手書き CSS を `@ses/ui` と Tailwind へ移した。
+//    ⚠️ **チェックボックスの 2 箇所には `Field` の `label` prop を使っていない** ——
+//    現況の DOM は「チェックボックス → 説明文」の順であり、`Field label=…` は
+//    ラベル文字を先に描く。順序が変わると読み上げの順も変わる（SP-21 の
+//    「要素の並びを変えない」）。ここは `<label>` を素のまま残し、見た目だけを移した。
 import { useState, type FormEvent } from 'react';
+import { Button, Checkbox, Field, FieldError, Input } from '@ses/ui';
 
 export type OrganizationSettings = {
   readonly name: string;
@@ -101,17 +108,16 @@ export function OrganizationForm({
 
   return (
     <form onSubmit={onSubmit} noValidate>
-      <h2>{messages.organizationSection}</h2>
-      {error === null ? null : (
-        <p className="ses-error" role="alert">
-          {error}
+      <h2 className="mb-3 text-base font-bold text-slate-900">{messages.organizationSection}</h2>
+      {error === null ? null : <FieldError className="mb-4">{error}</FieldError>}
+      {saved ? (
+        <p className="mb-4 text-sm text-emerald-700" role="status">
+          {messages.saved}
         </p>
-      )}
-      {saved ? <p role="status">{messages.saved}</p> : null}
+      ) : null}
 
-      <label className="ses-field">
-        <span>{messages.nameLabel}</span>
-        <input
+      <Field className="mb-4" label={messages.nameLabel}>
+        <Input
           name="name"
           type="text"
           required
@@ -119,30 +125,25 @@ export function OrganizationForm({
           onChange={(event) => setName(event.target.value)}
           disabled={saving}
         />
-      </label>
+      </Field>
 
       {/* 🔴 タイムゾーン・通貨・環境・契約の状態は読み取り専用（入力欄を作らない）。 */}
-      <p className="ses-field">
-        <span>{messages.timezoneLabel}</span>
+      <Field as="p" className="mb-4" label={messages.timezoneLabel}>
         <output>{settings.timezone}</output>
-      </p>
-      <p className="ses-field">
-        <span>{messages.currencyLabel}</span>
+      </Field>
+      <Field as="p" className="mb-4" label={messages.currencyLabel}>
         <output>{messages.currencyValue}</output>
-      </p>
-      <p className="ses-field">
-        <span>{messages.environmentLabel}</span>
+      </Field>
+      <Field as="p" className="mb-4" label={messages.environmentLabel}>
         <output>{settings.environment}</output>
-      </p>
-      <p className="ses-field">
-        <span>{messages.lifecycleLabel}</span>
+      </Field>
+      <Field as="p" className="mb-4" label={messages.lifecycleLabel}>
         <output>{messages.lifecycleStateName}</output>
-      </p>
-      <p>{messages.lifecycleReadOnlyNote}</p>
+      </Field>
+      <p className="mb-4 text-sm text-slate-500">{messages.lifecycleReadOnlyNote}</p>
 
-      <label className="ses-field">
-        <span>{messages.piiRetentionYearsLabel}</span>
-        <input
+      <Field className="mb-4" label={messages.piiRetentionYearsLabel}>
+        <Input
           name="piiRetentionYears"
           type="number"
           inputMode="numeric"
@@ -150,13 +151,12 @@ export function OrganizationForm({
           onChange={(event) => setPiiRetentionYears(event.target.value)}
           disabled={saving}
         />
-      </label>
+      </Field>
 
-      <h2>{messages.approvalSection}</h2>
-      <p>{messages.autoApproveScopeNote}</p>
-      <label className="ses-field">
-        <input
-          type="checkbox"
+      <h2 className="mb-3 text-base font-bold text-slate-900">{messages.approvalSection}</h2>
+      <p className="mb-2 text-sm text-slate-600">{messages.autoApproveScopeNote}</p>
+      <label className="mb-4 flex items-center gap-2 text-sm">
+        <Checkbox
           name="autoApproveEnabled"
           checked={autoApprove}
           onChange={(event) => setAutoApprove(event.target.checked)}
@@ -167,10 +167,14 @@ export function OrganizationForm({
       {turningOn ? (
         <>
           {/* 🔴 危険な操作の確認（docs/04 §S-035）。1 層でも不合格なら人間に差し戻される旨を明記。 */}
-          <p role="alert">{messages.autoApproveWarning}</p>
-          <label className="ses-field">
-            <input
-              type="checkbox"
+          <p
+            className="mb-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+            role="alert"
+          >
+            {messages.autoApproveWarning}
+          </p>
+          <label className="mb-4 flex items-center gap-2 text-sm">
+            <Checkbox
               name="acknowledged"
               checked={acknowledged}
               onChange={(event) => setAcknowledged(event.target.checked)}
@@ -181,12 +185,12 @@ export function OrganizationForm({
         </>
       ) : null}
 
-      <button className="ses-submit" type="submit" disabled={saving || blocked}>
+      <Button className="w-full" type="submit" disabled={saving || blocked}>
         {saving ? messages.saving : messages.save}
-      </button>
+      </Button>
 
       {/* 🔴 Phase 0 の範囲を隠さない（メンバー一覧・招待は後続。docs/04 §S-035 は Phase 0→P1）。 */}
-      <p>{messages.membersComingSoon}</p>
+      <p className="mt-4 text-sm text-slate-500">{messages.membersComingSoon}</p>
     </form>
   );
 }

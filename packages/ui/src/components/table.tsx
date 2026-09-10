@@ -46,6 +46,46 @@ const WHITESPACE_CLASSES: Readonly<Record<TableCellWhitespace, string>> = {
   normal: 'whitespace-normal',
 };
 
+/**
+ * セルの縦位置。
+ *
+ * ============================================================================
+ * 🔴 `align-middle` を基底に焼き込まない（T-21-04 の回帰調査で実測）
+ * ============================================================================
+ * **`vertical-align` はプロパティとしては継承しないが、行から伝播する。** HTML 標準の
+ * UA スタイルシートが `td, th { vertical-align: inherit }` と
+ * `thead, tbody, tfoot, table > tr { vertical-align: middle }` を持つためである。
+ *
+ * Chromium（Playwright）+ **本番ビルドの出力 CSS**で測った実測値:
+ *
+ * | `<tr>` | `<td>` | computed | 5 行のセルと並べたときのテキスト上端 |
+ * |---|---|---|---|
+ * | 指定なし | 指定なし | `middle` | 行の中央（48px） |
+ * | `align-top` | **指定なし** | **`top`** | 行の上端（9px） |
+ * | `align-top` | `align-middle` | `middle` | 行の中央（49px） |
+ * | 指定なし | `align-middle` | `middle` | 行の中央（49px） |
+ * | 指定なし | `align-top` | `top` | 行の上端（9px） |
+ *
+ * ここから 2 つが決まる:
+ *   1. 🔴 **`TableCell` が基底で `align-middle` を出すと、行側の指定が届かなくなる**（3 行目）。
+ *      `S-008`（版一覧）/ `S-036`（DNS レコード）のように**行内でセルの高さが大きく違う表**は
+ *      上揃えでないと横に読めない。`className="align-top"` で上書きするのは
+ *      **生成 CSS の順に依存した上書き**であり `../lib/cn.ts` の規律 2 が禁じている。
+ *   2. 🔴 **既定は「何も出さない」でよい**（1 行目。UA が `middle` にする）。
+ *      基底から語を消しても既定の見え方は変わらず、行側の指定が初めて効くようになる。
+ *
+ * したがって既定は `inherit`（＝クラスを出さない）とし、上書きは prop で受ける。
+ */
+export type TableCellAlign = 'inherit' | 'top' | 'middle' | 'bottom';
+
+/** 🔴 `inherit` は**クラスを出さない**（UA の既定 `middle`、または `<tr>` の指定に従う）。 */
+const ALIGN_CLASSES: Readonly<Record<TableCellAlign, string>> = {
+  inherit: '',
+  top: 'align-top',
+  middle: 'align-middle',
+  bottom: 'align-bottom',
+};
+
 /** チェックボックスを含むセルの詰め方（upstream と同じ）。 */
 const CHECKBOX_CELL_CLASSES =
   '[&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]';
@@ -87,11 +127,24 @@ export function TableFooter({ className, ...props }: ComponentProps<'tfoot'>) {
   );
 }
 
-export function TableRow({ className, ...props }: ComponentProps<'tr'>) {
+// 🔴 `align` は `<td>` / `<th>` の**非推奨の HTML 属性**でもあり、React の型は
+//    `"left" | "center" | "right" | "justify" | "char"` を宣言している。素で交差させると
+//    `never` になるため `Omit` で外す（属性としては出さない。値は class に変換して使う）。
+export type TableRowProps = Omit<ComponentProps<'tr'>, 'align'> & {
+  /**
+   * この行のセルの縦位置（`TableCellAlign` の表を読むこと）。
+   * 🔴 **セル側が `align` を明示していないときにだけ効く**（明示されたセルはそちらが勝つ）。
+   *    行内でセルの高さが大きく違う表（`S-008` / `S-036`）はここで `top` にする。
+   */
+  readonly align?: TableCellAlign;
+};
+
+export function TableRow({ className, align = 'inherit', ...props }: TableRowProps) {
   return (
     <tr
       className={cn(
         'border-b border-slate-200 transition-colors hover:bg-slate-50 data-[state=selected]:bg-slate-100',
+        ALIGN_CLASSES[align],
         className,
       )}
       {...props}
@@ -99,16 +152,24 @@ export function TableRow({ className, ...props }: ComponentProps<'tr'>) {
   );
 }
 
-export type TableHeadProps = ComponentProps<'th'> & {
+export type TableHeadProps = Omit<ComponentProps<'th'>, 'align'> & {
   readonly whitespace?: TableCellWhitespace;
+  /** 既定は `inherit`（`<tr>` の指定 → 無ければ UA の `middle`）。`TableCellAlign` の表を読むこと。 */
+  readonly align?: TableCellAlign;
 };
 
-export function TableHead({ className, whitespace = 'nowrap', ...props }: TableHeadProps) {
+export function TableHead({
+  className,
+  whitespace = 'nowrap',
+  align = 'inherit',
+  ...props
+}: TableHeadProps) {
   return (
     <th
       className={cn(
-        'h-10 px-3 text-left align-middle font-medium text-slate-500',
+        'h-10 px-3 text-left font-medium text-slate-500',
         WHITESPACE_CLASSES[whitespace],
+        ALIGN_CLASSES[align],
         CHECKBOX_CELL_CLASSES,
         className,
       )}
@@ -117,16 +178,24 @@ export function TableHead({ className, whitespace = 'nowrap', ...props }: TableH
   );
 }
 
-export type TableCellProps = ComponentProps<'td'> & {
+export type TableCellProps = Omit<ComponentProps<'td'>, 'align'> & {
   readonly whitespace?: TableCellWhitespace;
+  /** 既定は `inherit`（`<tr>` の指定 → 無ければ UA の `middle`）。`TableCellAlign` の表を読むこと。 */
+  readonly align?: TableCellAlign;
 };
 
-export function TableCell({ className, whitespace = 'nowrap', ...props }: TableCellProps) {
+export function TableCell({
+  className,
+  whitespace = 'nowrap',
+  align = 'inherit',
+  ...props
+}: TableCellProps) {
   return (
     <td
       className={cn(
-        'px-3 py-2 align-middle',
+        'px-3 py-2',
         WHITESPACE_CLASSES[whitespace],
+        ALIGN_CLASSES[align],
         CHECKBOX_CELL_CLASSES,
         className,
       )}
