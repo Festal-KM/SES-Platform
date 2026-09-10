@@ -5,6 +5,7 @@
 > **矛盾する場合は `CLAUDE.md` が正。** 本書は上流のハードルール・ビジネスルール・受け入れ基準を弱める記述を含まない。
 > **本書に無いものを実装しない。** 判断に迷う箇所が残っていたら `## TBD` を見ること。そこにも無ければ `pm` に上げる。
 > 改訂（2026-09-07）: [Issue #33](https://github.com/Festal-KM/SES-Platform/issues/33) **既定 C** を反映し、**§3.3.1「パートナー FK 列の複合 FK 化」を新設**した（§3.1 に規約 1 行 / §4.7 にカタログ走査テスト 1 本 / §6.4 #14 に条件②の理由の書き換え / §17.1 の本数を 13 → 14 に追随）。🔴 **SP-06 着手前に migration で入れる。** 実装・migration の実ファイルは次の `programmer` タスクの範囲であり、本改訂は `docs/05` のみを変更している。
+> 🔴 **改訂（2026-09-10。[Issue #35](https://github.com/Festal-KM/SES-Platform/issues/35) = 人間の回答「A」）**: **`EngineerCareer`（経験内容と従事期間）を子テーブルとして新設**した。既定として置いていた C（Phase 1 では構造化保存を行わない）から変更されたものであり、**`docs/02`（`F-008 AC-5`〜`AC-8` / `F-019 AC-5` / A-24）→ `docs/04`（§S-006 / §S-007 / §S-023 / 申し送り 17）→ 本書**の順に上流から更新している（`CLAUDE.md` §8.7）。実装は **`T-09-12`（SP-09 の先頭タスク。Phase 1 = 第 1 回リリースに含む）**であり、**凍結は遡れない**ため提案フロー（`F-019`）より前に置く。変更箇所は §3.2（表の数 57 → **58**）/ §3.4（`EngineerCareer` の定義）/ §3.6（`EngineerSnapshot.careers` の行単位凍結）/ §4.4（C3 への割り当て）/ §4.4.1（継承の子表 7 → **8**）/ §4.5 / §4.6（匿名候補の型に**持たせない**）/ §5.5（運営者への非開示列）/ §6.4（#16 / #16b / #17）/ §6.5（#36 / #46）/ §7.1（`sheet-parser` の反映先 / `match-explainer` の入力）/ §9.6 / §9.7（保持期間。**暫定。[Issue #48](https://github.com/Festal-KM/SES-Platform/issues/48) で確認中**）/ §16.1 / §17 / `P-A-20` / `TBD-20`。**本改訂は `docs/05` のみを変更している**（migration と実装は `T-09-12` の範囲）。
 
 **構成**: 1 アーキテクチャ概観 / 2 リポジトリ構成 / 3 DB スキーマ / 4 データ分離設計 / 5 管理平面の設計 / 6 API 仕様 / 7 AI 層の設計 / 8 外部連携層の設計 / 9 ジョブ仕様 / 10 冪等性・不可逆事故の防止設計 / 11 品質ゲートのパイプライン設計 / 12 業務シーケンス / 13 環境分離の設計 / 14 ファイルストレージ規約 / 15 エラー処理方針 / 16 オブザーバビリティ / 17 テスト戦略 / 付録（`## Assumptions` / `## TBD` / 申し送りマッピング / 機能カバレッジ）
 
@@ -105,6 +106,8 @@ flowchart TB
 | §3.3 内容変更後に再検証なしで承認できない | **DB 制約**（`Proposal.content_hash` と `ReviewGate.content_hash` の一致を CHECK ではなく承認 CAS の条件に入れる） | §11.5 | §11.5 |
 | §12.4 `gate-inspector` に設定を持てない | **型**（`Exclude<AiRole,'gate-inspector'>`）+ **DB 制約**（`CHECK (role <> 'gate-inspector')`）+ **Zod**（`z.enum`） | §7.5 | §7.5 |
 | §3.1 分離機構が有効であること自体 | **機械検証**（`pg_class` / `pg_policy` を走査する結合テスト。テーブル名を列挙しない） | `tests/isolation/rls-enforced.test.ts` | §4.7 |
+| 🔴 §3.1 経路 4 の開示項目を増やさない（**経歴を匿名候補に出さない**。`F-008 AC-7`） | **型**（`AnonymousCandidateView` / `AnonymizeEngineerInput` / `match-explainer` の入力に経歴のフィールドが**無い**）+ **DB 権限**（`engineer_careers` に共有スコープの追加ポリシーを書かない＝ホストからは 0 件）+ **機械検証**（§4.7 #15 / §17.2 #28） | `packages/domain/src/anonymize/*` / `packages/db/src/index.ts` | §4.5 / §4.6 / §17.2 |
+| 🔴 提案の内容が後から変わらない（**経歴の行単位の凍結**。`F-008 AC-6` / `F-019 AC-5`） | **DB スキーマ**（`EngineerSnapshot.careers` が値の複製で、台帳行への FK を持たない）+ **型**（凍結行に `id` が無く、現在値へ辿れない）+ **E2E**（§17.3 #25） | `packages/db` / `apps/web/lib/proposals/snapshot.ts` | §3.6 / §6.5 |
 
 ## 2. リポジトリ構成
 
@@ -215,7 +218,7 @@ ses-platform/
 | **列挙** | 🔴 **Prisma DSL では `String` で宣言する（Prisma の `enum` キーワードは使わない）。** enum 宣言はクエリエンジンがバインドパラメータへ `::"EnumName"` キャストを付与し、DB 側が `TEXT` だと実行時 `42704`（`type "..." does not exist`）で全書き込みが失敗する（2026-09-03 実測。`packages/db/prisma/schema.prisma` 冒頭コメント参照）。**許容値はフィールド直上の `///` コメントで明記**し、**DB 側は `TEXT + CHECK` をマイグレーションで手書き**する（列挙値の追加でテーブルロックを起こさないため、という当初の動機自体は変わらない）。**TS 側は単一出所の定数配列（`as const` 配列 + そこから導出した型）から型を導出し、CHECK の値集合との一致を静的テスト（`tests/static/`）で検証する**（`docs/05` §17.2）。 |
 | **削除** | 🔴 **業務データは論理削除しない**（`deletedAt` を持たせると RLS ポリシーと `WHERE` の両方に条件が増え、漏れの温床になる）。`PURGED` と保持期間削除は**物理削除 + `AuditLog` に件数**（§9.7） |
 
-### 3.2 テーブル一覧（全 57 表）
+### 3.2 テーブル一覧（全 58 表）
 
 **ドメイン概念（`CLAUDE.md` §4.1 の 32 概念 + §10.3 の 5 概念）はすべて実体を持つ。**
 
@@ -223,9 +226,9 @@ ses-platform/
 |---|---|
 | **§4.1（32）** | `Tenant` `User` `Membership` `PartnerCompany` `Engineer` `Skill` `SkillAlias` `EngineerSkill` `SkillSheet` `SkillSheetExtraction` `Project` `ProjectRequirement` `ProjectVisibility` `MatchCandidate` `EngineerShare` `ProposalRequest` `Proposal` `EngineerSnapshot` `ProposalEvent` `ReviewGate` `ChatThread` `ThreadParticipant` `Message` `Contract` `ContractDocument` `Order` `Assignment` `ExtensionReview` `Task` `Notification` `AiUsage` `AuditLog` |
 | **§10.3（5）** | `PlatformUser` `Plan` `Subscription` `UsageCounter` `ImpersonationSession` |
-| **実装テーブル（20）** | `Invitation` `TwoFactorCredential` `TenantSendingDomain` `TenantEsignConnection` `TenantRoleApprovalMode` `TenantRoleModel` `TenantMatchWeight` `SendAttempt` `EmailDispatch` `EmailEvent` `FileScanResult` `WebhookDelivery` `TenantMonthlyCost` `BillingMeterSubmission` `Announcement`（機能フラグを含む）`SchedulerRun` `DataExportRequest` `TenantPurgeRun` `ContractTemplate` **`ProjectPublishRequest`**（T-07-09） |
+| **実装テーブル（21）** | `Invitation` `TwoFactorCredential` `TenantSendingDomain` `TenantEsignConnection` `TenantRoleApprovalMode` `TenantRoleModel` `TenantMatchWeight` `SendAttempt` `EmailDispatch` `EmailEvent` `FileScanResult` `WebhookDelivery` `TenantMonthlyCost` `BillingMeterSubmission` `Announcement`（機能フラグを含む）`SchedulerRun` `DataExportRequest` `TenantPurgeRun` `ContractTemplate` **`ProjectPublishRequest`**（T-07-09）**`EngineerCareer`**（T-09-12。Issue #35 = A） |
 
-🔴 **実装テーブルは新しいドメイン概念ではない。** それぞれ `docs/02` 章 6 が既存概念の**属性**として定義したものを、正規化・一意制約・監査の要請から独立した行に分解したものである。対応は次のとおりで、**この 20 表以外を勝手に足さない**。**経路 5 の射影ビュー 4 本（§4.9）はテーブルではなく、上記 4 表の列を絞った `security_invoker` ビューである。**
+🔴 **実装テーブルは新しいドメイン概念ではない。** それぞれ `docs/02` 章 6 が既存概念の**属性**として定義したものを、正規化・一意制約・監査の要請から独立した行に分解したものである。対応は次のとおりで、**この 21 表以外を勝手に足さない**。**経路 5 の射影ビュー 4 本（§4.9）はテーブルではなく、上記 4 表の列を絞った `security_invoker` ビューである。**
 
 | 実装テーブル | 分解元（`docs/02` 章 6） | 分解した理由 |
 |---|---|---|
@@ -244,6 +247,7 @@ ses-platform/
 | `DataExportRequest` | — | `F-064 AC-5` / `F-052`（生成ジョブの状態） |
 | `TenantPurgeRun` | — | `F-064 AC-1`〜`AC-3` / `F-062 AC-7`（削除完了の確認の唯一の根拠） |
 | `ContractTemplate` | `ContractDocument.テンプレートと差し込み項目のマッピング`（`docs/02` `F-048` の入力「テンプレート、差し込み項目のマッピング」） | 🔴 **`F-048 AC-1`（同一のテンプレートと契約情報から常に同一のドラフト）を成立させるには、テンプレート原本とマッピングを「版として固定した行」に持たせるしかない**。`Contract` / `ContractDocument` の列にすると、テンプレートを差し替えた瞬間に過去のドラフトを再現できなくなる。`S-027` の管理単位でもある |
+| 🔴 **`EngineerCareer`**（T-09-12） | `Engineer.経験内容と従事期間`（`docs/02` `F-008` の入力。`BR-52` の収集範囲） | 🔴 **[Issue #35](https://github.com/Festal-KM/SES-Platform/issues/35) の回答 A（2026-09-10）。`Engineer.careers Json`（1 属性）としては持てない。** 理由は 3 つで、いずれも「1 塊の Json では成立しない」ことが根拠である: ①**行単位の凍結**（`F-008 AC-6` / `F-019 AC-5`）—— 1 塊で凍結すると、後から分解した結果が凍結時点の値と一致することを証明できない ②**項目参照**（`F-029` のマッチングスコアが期間・使用技術を**項目として**読む）③**項目単位の非開示**（`F-017 AC-1` の「経歴の並びが 1 項目も出ていない」は、列が独立していて初めて型と `GRANT` で示せる。Json 列は「中身を見ないと分からない」ため、§5.5 の列単位 `GRANT` も §4.6 の型による排除も効かない）。**ドメイン概念は増えていない**（`CLAUDE.md` §4.1 の 32 概念のうち `Engineer` の属性の分解である） |
 | **`ProjectPublishRequest`**（T-07-09） | `ProjectVisibility.ゲート待ちの公開要求`（`docs/02` `F-014` 処理②） | 🔴 **`project_visibilities.review_gate_id` は NOT NULL + FK であり、ゲート PASS より前に「これから公開する相手」を置ける列が存在しない**。置かないと商流層が公開範囲を知らず、**新規公開先の社名が公開文に出ていても他社名として検出されない**（`F-014 AC-3` が素通りする）。🔴 `gate.run` の payload に載せる案は採れない —— `gate.hold-release`（AI 上限からの自動復帰）は保留行だけを材料に再 enqueue するため、payload だと**保留された公開要求だけが公開先を復元できない**。詳細は §11.11 ① |
 
 ### 3.3 テナント・利用者・境界
@@ -617,7 +621,42 @@ model EngineerSkill {
   @@index([tenantId, skillId, yearsOfExperience])          // 複合検索（F-009）
   @@map("engineer_skills")
 }
-model SkillSheet {
+// 🔴 EngineerCareer（T-09-12。Issue #35 = A。2026-09-10）— 経験内容と従事期間の「1 行」
+//    CareerSource: 'MANUAL'|'EXTRACTED'（手入力 / sheet-parser の抽出を採用。CHECK）
+model EngineerCareer {
+  id                     String   @id @default(uuid(7)) @db.Uuid
+  tenantId               String   @db.Uuid
+  ownerPartnerCompanyId  String?  @db.Uuid                 // 🔴 engineers から継承（§4.4.1）。C3
+  engineerId             String   @db.Uuid
+  periodFrom             String   @db.VarChar(7)           // 🔴 'YYYY-MM'。下記「なぜ Date にしないか」
+  periodTo               String?  @db.VarChar(7)           // 🔴 null = 継続中（空文字にしない。§10.3 の null 規約）
+  role                   String                             // 役割（例: PL / SE / PG）。自由入力
+  description            String                             // 業務内容。自由入力
+  technologies           String                             // 使用技術。自由入力（Skill 辞書に正規化しない。下記）
+  source                 String   @default("MANUAL")        // CareerSource（上記参照。CHECK）
+  skillSheetExtractionId String?  @db.Uuid                  // 🔴 source='EXTRACTED' のときの出所（F-032 の記録へ辿る）
+  createdAt              DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt              DateTime @updatedAt @db.Timestamptz(3)
+  @@index([tenantId, engineerId, periodFrom(sort: Desc), createdAt, id])  // 🔴 表示順をそのまま供給する（下記）
+  @@map("engineer_careers")
+}
+// 🔴 DB 制約:
+//   CHECK ( period_from ~ '^[0-9]{4}-(0[1-9]|1[0-2])$' )
+//   CHECK ( period_to IS NULL OR period_to ~ '^[0-9]{4}-(0[1-9]|1[0-2])$' )
+//   CHECK ( period_to IS NULL OR period_to >= period_from )      … 逆転した期間を DB で拒む
+//   CHECK ( (source = 'EXTRACTED') OR skill_sheet_extraction_id IS NULL )
+//     … 🔴 手入力の行に抽出の出所を付けられない（source と出所がずれた行を作らせない）
+//   FK: (tenant_id, engineer_id) → engineers(tenant_id, id) ON DELETE CASCADE
+//     … 🔴 複合 FK（§3.3.1 の規約と同じ向き。別テナントのエンジニアを指す行を DB が拒む）。
+//        🔴 これを張るには engineers に UNIQUE(tenant_id, id) が要る（無ければ同じ migration で足す。
+//        §3.3.1-③ が partner_companies に要求しているのと同型。PK は id 単独のまま変えない）。
+//        🔴 VarChar(7) にしたのは CHAR の空白詰め（bpchar）の比較セマンティクスを持ち込まないため。
+//     … ON DELETE CASCADE: エンジニアを消せば経歴も消える。🔴 ただし業務データは論理削除しない（§3.1「削除」）
+//        ので、実際に CASCADE が働くのは PURGED と保持期間削除だけである（§9.7）。
+//        🔴 EngineerSnapshot は engineers を参照しないので、台帳を消しても凍結は残る（凍結の意味）。
+//   FK: skill_sheet_extraction_id → skill_sheet_extractions(id) ON DELETE SET NULL
+//     … 抽出の記録が消えても台帳の行は残る（出所が失われるだけ。台帳の値は台帳が持つ）
+// 🔴 COMMENT: owner_partner_company_id に 'owner-column: child of engineers(engineer_id)'（§4.4.1 / §4.7 の走査が要求する）
   id            String   @id @default(uuid(7)) @db.Uuid
   tenantId      String   @db.Uuid
   ownerPartnerCompanyId String? @db.Uuid                 // 🔴 engineers から継承（§4.4.1）。C3
@@ -678,6 +717,19 @@ model SkillSheetExtraction {
   @@map("skill_sheet_extractions")
 }
 ```
+
+#### 3.4.1 🔴 `EngineerCareer` の設計上の決定（T-09-12。Issue #35 = A）
+
+| 決定 | 内容と理由 |
+|---|---|
+| **期間は `YYYY-MM` の文字列（`VarChar(7)`）で持つ。`@db.Date` にしない** | スキルシートの経歴は**月精度**でしか書かれておらず、`Date` にすると「日」を捏造することになる（`2023-04-01` と保存され、画面が `2023-04` に戻すたびに丸めの実装が増える）。`VarChar(7)` + 正規表現の `CHECK` なら**辞書順 = 時系列順**であり、`ORDER BY period_from DESC` がそのまま期間降順になる（`docs/04` 申し送り 17-①）。⚠️ **`packages/domain` に「`YYYY-MM` の妥当性」を判定する純粋関数（`parseYearMonth`）を 1 本だけ置き、API 境界の Zod と共有する**（実装を 2 本にしない。§4.6.3 の `updatedOnJst` と同じ規律） |
+| 🔴 **終了年月の `null` は「継続中」であり、空文字にしない** | `docs/04` 申し送り 17-① が要求する。空文字を許すと「未入力」と「継続中」が同じ値になり、**画面が『継続中』と表示すべきか判断できない**（`CHECK` は `period_to IS NULL OR ~ '^\d{4}-...'` であり、空文字は弾かれる） |
+| **使用技術（`technologies`）を `Skill` 辞書に正規化しない** | 正規化の対象は `EngineerSkill`（`F-010` / `F-033`）であり、経歴の使用技術は**その現場で何を使ったか**の記述である。辞書に寄せると「辞書に無い語が消える」ことになり、`docs/01` §1.1-2（見えていない候補が増える）の再発になる。🔴 **したがって検索（`F-009`）とマッチングスコア（`F-029`）の入力にはしない**（`docs/02` `F-009` の入力に経歴は無い）。**Phase 2 で参照するのは期間と使用技術の「項目としての存在」まで**であり、順位付けに使うなら `docs/02` の改訂から始める |
+| 🔴 **表示順はサーバ側で確定させる: `period_from DESC` → `created_at ASC` → `id ASC`** | `F-008 AC-5`（同一データに対して実行のたびに同じ順序）。**`period_to` を並びに使わない** —— 継続中（`null`）の扱いで DB の `NULLS FIRST/LAST` に依存し、実装ごとにずれるため。**同期間は登録順**＝ `created_at` 昇順、同時刻の衝突は `id`（UUIDv7 = 時系列）で全順序にする。🔴 **画面はソートし直さない**（配列順 = 表示順。`docs/04` 申し送り 17-①）。索引 `(tenant_id, engineer_id, period_from DESC, created_at, id)` がこの順序をそのまま供給する |
+| 🔴 **0 行を正常な状態として扱う** | `F-008 AC-5`「経験内容が 0 行のエンジニアも登録できる」。API は `careers: []` を返し、**`null` / 未定義を返さない**（`docs/04` 申し送り 17-②。画面が「未取得」と区別できる）。🔴 **`Proposal` の作成を 0 行で拒まない**（§6.5 #36） |
+| **行の識別子（`id`）は API 境界に出す** | 行単位の追加・更新・削除と、**行ごとの監査ログ**（§16.1）が成立するために要る。🔴 **`id` は台帳の行の識別子であり、`EngineerSnapshot` の凍結行はこれを参照しない**（§3.6） |
+| 🔴 **`preference_note` と同じく PII / 商流が混ざりうる自由入力である** | 業務内容にはエンド企業名・現場名が書かれる。したがって ①**運営者に `GRANT` しない**（§5.5）②**外部共有の経路に乗るときは必ずゲートを通る**（`EngineerSnapshot` 経由で `Proposal` のゲート対象に入る。§11.1）③**匿名候補には型として存在させない**（§4.6） |
+
 ### 3.5 案件・公開範囲・マッチング・匿名共有
 
 ```prisma
@@ -864,7 +916,7 @@ model EngineerSnapshot {                                        // 🔴 越境�
   displayName       String
   affiliationLabel  String?
   skills            Json                                        // [{ skillId, name, years, level }]
-  careers           Json
+  careers           Json                                        // 🔴 EngineerCareer の「行単位の複製」。下記 FrozenCareer[]
   unitPriceMin      Decimal? @db.Decimal(12, 2)
   unitPriceMax      Decimal? @db.Decimal(12, 2)
   availableFrom     DateTime? @db.Date
@@ -874,6 +926,16 @@ model EngineerSnapshot {                                        // 🔴 越境�
   frozenAt          DateTime @db.Timestamptz(3)
   @@map("engineer_snapshots")
 }
+// 🔴 careers の構造は固定する（T-09-12。`F-008 AC-6` / `F-019 AC-5` / `docs/04` 申し送り 17-④）
+//   type FrozenCareer = { periodFrom: string; periodTo: string | null;
+//                         role: string; description: string; technologies: string };
+//   type FrozenCareers = FrozenCareer[];   // 🔴 配列順が凍結時点の表示順（§3.4.1 の全順序で並べてから複製する）
+// 🔴 台帳行への参照（engineer_career_id / FK）を 1 つも持たない。参照にすると台帳側の編集・削除が
+//    そのまま提案の内容を変え（または行を消し）、凍結が成立しない。**値を複製する**のが凍結である。
+// 🔴 id も持たない。凍結行に台帳の行 ID を残すと「台帳の現在値へ辿る導線」が API に生まれ、
+//    S-023 が凍結側だけを描くという契約（§6.5 #46）が実装のうっかりで破れる。
+// 🔴 0 行のときは [] を保存する（NULL にしない）。0 行は正常な状態であり（F-008 AC-5）、
+//    「凍結し忘れ」と「経歴が無い」を DB の値で区別できる必要がある。
 model ProposalEvent {
   id           String   @id @default(uuid(7)) @db.Uuid
   tenantId     String   @db.Uuid
@@ -1631,7 +1693,7 @@ CREATE FUNCTION app_is_host() RETURNS boolean LANGUAGE sql STABLE AS
 CREATE FUNCTION app_actor_user_id() RETURNS uuid LANGUAGE sql STABLE AS
   $$ SELECT NULLIF(current_setting('app.actor_user_id', true), '')::uuid $$;
 ```
-**ポリシークラス**（**全 57 表が操作ごとにこの 10 種のいずれかに割り当て済みで、漏れが無い**。読みと書きでクラスが分かれる表は両方を明記した。新規テーブルはどれかを選ばなければ作れない — §4.7 のテストが「app_tenant に権限がありながら `app_tenant_id()` を参照しないポリシー」と「ポリシーが 1 つも無い表」を検出する）
+**ポリシークラス**（**全 58 表が操作ごとにこの 10 種のいずれかに割り当て済みで、漏れが無い**。読みと書きでクラスが分かれる表は両方を明記した。新規テーブルはどれかを選ばなければ作れない — §4.7 のテストが「app_tenant に権限がありながら `app_tenant_id()` を参照しないポリシー」と「ポリシーが 1 つも無い表」を検出する）
 
 式中の `<T>` = **テナントキー列**（既定 `tenant_id`）、`<O>` = **オーナー列**、`<C>` = **当事者列**（`counterparty_partner_company_id`）、`<A>` = **主体列**、`<P>` = その表の `project_id`、`<TH>` = その表の `thread_id`。**表ごとの実体は「適用テーブル」欄の括弧内がすべてであり、置換すれば実際に書く `USING` 式になる。**
 
@@ -1640,7 +1702,7 @@ CREATE FUNCTION app_actor_user_id() RETURNS uuid LANGUAGE sql STABLE AS
 | **C0 SYSTEM_ONLY** | `app_tenant_id() IS NULL` | 🔴 **テナントキーを持てない表**。`app_tenant` は `withSystemScope()`（§4.4.2）からのみ到達でき、テナント文脈では 0 件になる: `scheduler_runs`、`webhook_deliveries`（テナント確定前に受信する）、`email_events`（宛先解決前に届く）、`impersonation_sessions`（`app_tenant` に権限を与えない。`app_platform*` のみ） |
 | **C1 TENANT_ALL** | `<T> = app_tenant_id()` | `tenants`（🔴 `<T>` = `id`。`app_tenant` は `SELECT` のみ）、`skill_aliases`（🔴 `SELECT` は `app_tenant_id() IS NOT NULL AND (tenant_id = app_tenant_id() OR tenant_id IS NULL)` — 先頭に `IS NOT NULL` を前置するのは `announcements` と同じ理由で、これが無いとテナント文脈を持たない接続（`withSystemScope` 等）からグローバル行が読めてしまうため。書込は `tenant_id = app_tenant_id()`。`F-010 AC-2`）、`announcements`（🔴 `<T> = app_tenant_id()` を `app_tenant_id() IS NOT NULL AND (cardinality(target_tenant_ids) = 0 OR app_tenant_id() = ANY(target_tenant_ids))` に読み替える。先頭の `IS NOT NULL` により `withSystemScope` からも 0 件。`SELECT` のみ）、`audit_logs`（🔴 **`INSERT` のみ C1**。パートナーの操作も記録されるため。`SELECT` は C2、`UPDATE`/`DELETE` は `REVOKE`） |
 | **C2 HOST_ONLY** | `<T> = app_tenant_id() AND app_is_host()` | `projects`（書込）、`project_requirements`（書込）、`project_visibilities`（書込）、**`project_publish_requests`**（T-07-09。🔴 オーナー列を持たない —— 持てば「パートナーが公開範囲を要求できる」意味になり、越境経路 1 の向きが壊れる）、`partner_companies`（書込）、`match_candidates`、`assignments`（🔴 **書込 + ホストの `SELECT`。パートナーの `SELECT` は C9**）、`extension_reviews`（🔴 **`SELECT` も C2 のみ。パートナー読み取りのポリシーを一切書かない**。`BR-67` / `docs/03` §4.3.2-2）、`contracts` / `contract_documents` / `orders`（同・書込 + ホスト `SELECT`。パートナー `SELECT` は C9）、`contract_templates`、`ai_usage`、`audit_logs`（`SELECT`）、`usage_counters`、`send_attempts`（🔴 送信の起動はホストのみ。多相のオーナー継承を作らない）、`email_dispatches`、`file_scan_results`、`tenant_sending_domains`、`tenant_esign_connections`、`tenant_role_approval_modes`、`tenant_role_models`、`tenant_match_weights`、`tenant_monthly_costs`、`billing_meter_submissions`、`data_export_requests`、`tenant_purge_runs` |
-| **C3 OWNER_SCOPED** | `<T> = app_tenant_id() AND <O> IS NOT DISTINCT FROM app_partner_id()` | `engineers`(`owner_partner_company_id`)、`engineer_skills`(同・継承)、`skill_sheets`(同・継承)、`skill_sheet_extractions`(同・継承)、`engineer_shares`(`partner_company_id`) |
+| **C3 OWNER_SCOPED** | `<T> = app_tenant_id() AND <O> IS NOT DISTINCT FROM app_partner_id()` | `engineers`(`owner_partner_company_id`)、`engineer_skills`(同・継承)、🔴 **`engineer_careers`(同・継承。T-09-12)**、`skill_sheets`(同・継承)、`skill_sheet_extractions`(同・継承)、`engineer_shares`(`partner_company_id`) |
 | **C4 VISIBILITY**（**経路 1**） | `<T> = app_tenant_id() AND ( app_is_host() OR EXISTS (SELECT 1 FROM project_visibilities v WHERE v.tenant_id = <T> AND v.project_id = <P> AND v.partner_company_id = app_partner_id() AND v.revoked_at IS NULL) )` | `projects`(`SELECT`。`<P>` = `projects.id`)、`project_requirements`(`SELECT`。`<P>` = `project_requirements.project_id`)。🔴 **実データでの実証は `tests/isolation/project-population-c4.test.ts`**（T-06-08。C9 に対する `tests/isolation/route5-counterparty.test.ts` と同じ位置づけ）: ①アプリの応答（`#25` / `#27`）に他社の痕跡が無い ②その母集団が「自社宛の**生きている** `ProjectVisibility` の行」と完全に一致する ③一致を作っているのが**アプリの `where` ではなく RLS** である（Prisma 拡張を外した素のクライアントで同じ結果になる）——の 3 段。**ブラウザ経由の同じ主張は `tests/e2e/isolation.spec.ts` の④**（T-06-09 / §17.3 #2） |
 | **C5 PARTY**（**経路 2 / 4**） | `<T> = app_tenant_id() AND ( app_is_host() OR <O> = app_partner_id() )` | `proposals`(`owner_partner_company_id`)、`engineer_snapshots`(同・継承)、`proposal_events`(同・継承)、`review_gates`(同・継承)、`proposal_requests`(`partner_company_id`)、`tasks`(`owner_partner_company_id`)、`memberships`(`partner_company_id`)、`invitations`(`partner_company_id`)、`project_visibilities`(`SELECT`。`partner_company_id`。🔴 **パートナーが自社宛の行を読めることが C4 の `EXISTS` の前提**)、`thread_participants`(`partner_company_id`。🔴 **自表を参照しない**＝ RLS の再帰を避ける。パートナーは自社の参加行のみ)、`partner_companies`(`SELECT`。🔴 `<O>` = `id`。**パートナー文脈では自社 1 行のみ**。`F-004 AC-1`) |
 | **C6 THREAD**（**経路 3**） | `<T> = app_tenant_id() AND ( app_is_host() OR ( <O> = app_partner_id() AND EXISTS (SELECT 1 FROM thread_participants p WHERE p.tenant_id = <T> AND p.thread_id = <TH> AND p.partner_company_id = app_partner_id() AND p.left_at IS NULL) ) )` | `chat_threads`(`partner_company_id`。`<TH>` = `chat_threads.id`)、`messages`(`owner_partner_company_id`・継承。`<TH>` = `messages.thread_id`) |
@@ -1648,7 +1710,9 @@ CREATE FUNCTION app_actor_user_id() RETURNS uuid LANGUAGE sql STABLE AS
 | **C8 DIRECTORY** | `<T> = app_tenant_id() AND ( app_is_host() OR <O> IS NULL OR <O> = app_partner_id() )` | `users`(`SELECT`。`owner_partner_company_id`)。🔴 **ホスト所属の行だけが全員に見える**（チャットの送信者名・`ProposalEvent` の実行者名に要る）。**他パートナーの利用者は 1 行も見えない**。パートナー向けシリアライザは `email` を返さない。🔴 **書込（`INSERT` / `UPDATE`）は C3 式**（自分の所属としてしか書けない）。**書き手は §4.4.2 の行由来コンテキスト 3 関数だけ**であり、所属は招待行 / 本人行から取る |
 | **C9 COUNTERPARTY_READ**（**経路 5**。`CLAUDE.md` §3.1-5 / `BR-65`〜`BR-69`。Issue #8） | 🔴 **`SELECT` のみ**: `<T> = app_tenant_id() AND NOT app_is_host() AND <C> = app_partner_id()`。🔴 **`INSERT` / `UPDATE` / `DELETE` のパートナー向けポリシーは書かない**（C2 の書込ポリシーは `app_is_host()` で偽になり 0 件更新。`BR-68`） | `assignments`(`counterparty_partner_company_id`・継承)、`contracts`(同・根)、`contract_documents`(同・継承。🔴 **`AND signed_at IS NOT NULL` を AND する** = 署名済み最終版のみ。ドラフト版は行として存在しない。`F-066 AC-2` / `F-047 AC-8`)、`orders`(同・継承)。🔴 **行が読めても列は読めてはならない** — パートナー文脈で 4 表に到達できるのは **§4.9 の射影ビューだけ**（列は DB のビュー定義で絞る）。基底表のデリゲートは `TenantDb` の型に無く、Prisma 拡張がパートナー文脈の操作を throw する（§4.3-6。RLS が行を通しても止まる）。`EXISTS` を使わず列の等値比較だけで判定するため経路 1〜4 より速い（`docs/03` §4.3.2）。**`COUNT` はこのポリシー越しの自社分のみ**になる |
 
-**射程外の 4 表**: `skills` / `platform_users` / `plans` / `subscriptions`（`CLAUDE.md` §3.1）。**これで 53 + 4 = 57 表すべてが片付いている。**
+**射程外の 4 表**: `skills` / `platform_users` / `plans` / `subscriptions`（`CLAUDE.md` §3.1）。**これで 54 + 4 = 58 表すべてが片付いている。**
+
+🔴 **`engineer_careers` は射程外の例外に足さない**（T-09-12。`CLAUDE.md` §3.1「射程外にできるのはここだけであり、新たな例外を作ってはならない」）。**経験内容は業務データそのもの**であり、`engineers` と**同一のクラス（C3 OWNER_SCOPED）**に置く。したがって ①RLS（`app_tenant` に対するポリシー）と ②Prisma クライアント拡張（テナントキーの `AND` 注入と `data` の検査）の**二重防御が自動的に効く**（§4.1）。**割り当てを新設せず既存クラスに載せた**ことが重要である —— 新しいクラスを作れば「そのクラスにだけ抜けがある」経路が生まれ、§4.7 のカタログ走査（テーブル名を列挙しない）が担保している「新規テーブルは既定で検査対象に入る」性質が薄れる。
 
 🔴 **C2 の唯一の例外: `usage_counters` の `metric = 'STORAGE_BYTES'` 行**（T-05-04。migration 20260907000000）。**行の値でポリシーを絞った限定的な緩和**であり、`SELECT` / `INSERT` / `UPDATE` を `tenant_id = app_tenant_id() AND metric = 'STORAGE_BYTES'` で許す（`DELETE` は開かない）。理由: `F-011` の関連ロールには `PARTNER_ADMIN` / `PARTNER_SALES` が含まれ（自社エンジニア分のスキルシート）、§14.2 は「上限に達していたら署名付き URL を発行しない」ことを**発行前の必須条件**としている。C2 のままだとパートナー文脈で ①上限を判定できない（＝上限が効かないアップロード経路が残る）②計上できない（＝取引先が置いたバイト数が原価に載らない）の両方が起き、`CLAUDE.md` §3.4 / §10.6 に反する。**開くのは「自テナントの総保管バイト数」だけ**であり、他社の名前・件数・業務データを含まない（`CLAUDE.md` §3.1 の 🔴 に抵触しない。パートナーは上限到達をどのみち `#70` で知る）。`AI_COST_USD` / `EMAIL_COUNT` / `SEAT_COUNT` / `AI_UNIT_*` は C2 のままである（`tests/isolation/storage-metering.test.ts` が「パートナー文脈で見える metric は `STORAGE_BYTES` だけ」を固定する）。
 
@@ -1667,7 +1731,8 @@ CREATE FUNCTION app_actor_user_id() RETURNS uuid LANGUAGE sql STABLE AS
 ```sql
 CREATE TRIGGER ins_owner BEFORE INSERT OR UPDATE ON engineer_skills   -- 親: engineers.engineer_id
   FOR EACH ROW EXECUTE FUNCTION inherit_owner_partner_company('engineers', 'engineer_id');
--- 子表（7）: engineer_skills / skill_sheets ← engineers、skill_sheet_extractions ← skill_sheets、
+-- 子表（8）: engineer_skills / skill_sheets / 🔴 engineer_careers（T-09-12）← engineers、
+--       skill_sheet_extractions ← skill_sheets、
 --       engineer_snapshots / proposal_events ← proposals、messages ← chat_threads(partner_company_id)、review_gates ← CASE（下記）
 -- 🔴 NEW.owner_partner_company_id を親の値で必ず上書きする（呼び出し側の指定値を採用しない）。
 -- 🔴 親が見つからない（RLS で見えない）なら RAISE EXCEPTION。
@@ -1694,7 +1759,7 @@ CREATE TRIGGER ins_owner BEFORE INSERT OR UPDATE ON engineer_skills   -- 親: en
 - 🔴 **`app_share_probe` との相違点**: `app_engineer_is_shared()` は**通常の SQL 関数**であり `GRANT EXECUTE ... TO app_tenant` を経て `app_tenant` セッションから直接呼び出せる（呼び出し元の限定は ESLint。§4.5）。本件は**トリガ関数そのもの**（`RETURNS trigger`）を `SECURITY DEFINER` にした。トリガ関数は通常の関数呼び出し（`SELECT fn(...)`）の戻り値型として使えないため、`app_tenant` セッションがこれを直接呼び出して他パートナーの `engineers.owner_partner_company_id` を探索する経路が**型レベルで存在しない**（パートナー間相互参照は `CLAUDE.md` §3.1 の 🔴 に直結するため、ESLint ではなく DB レベルで到達不能にした。加えて `REVOKE ALL ON FUNCTION ... FROM PUBLIC` で `GRANT EXECUTE` を誰にも与えない防御を重ねる）。
 - テナント境界チェックは関数本体の `WHERE tenant_id = NEW.tenant_id`（呼び出し元の行そのものの値。`assignments` 自身の RLS で既に境界確定済み）が担う。
 - `ALTER FUNCTION ... OWNER TO` の実行に要る `CREATE ON SCHEMA public` は**実行時にだけ**付与し、直後に `REVOKE` する（境界バイパスロールに恒久的な作成権を持たせない）。
-- 他の 9 relationship（`engineer_skills` ← `engineers` 等）はすべて「host が無条件で親を見られる」クラス（C2 / C5 / C6）か「書き手が常に親の所有者と同一パートナーである」自己完結ケース（C3 の子表）であり、この特別扱いは不要である。
+- 他の 10 relationship（`engineer_skills` ← `engineers`、🔴 **`engineer_careers` ← `engineers`**〔T-09-12〕等）はすべて「host が無条件で親を見られる」クラス（C2 / C5 / C6）か「書き手が常に親の所有者と同一パートナーである」自己完結ケース（C3 の子表）であり、この特別扱いは不要である。**`engineer_careers` は後者**（経歴を書けるのは、そのエンジニアを所有する側だけ）。
 
 `app_assignment_owner_probe` の権限は §4.7 テスト #5 / #10 が検証する（`tests/isolation/roles.test.ts`）。実証テストは `tests/isolation/owner-counterparty-inheritance.test.ts` の ④。
 
@@ -1748,6 +1813,7 @@ export function withSharedCandidateScope<T>(
   ```
 - 🔴 **この関数が §3.1 経路 4 の DB 側の唯一の実装であり、`engineer_shares` の行をホストに見せる追加ポリシーを作らない**（§4.4.2 の一覧に登録済み）。真偽を得るには `engineer_id` を知っている必要があり、ホストがパートナーの `engineer_id` を得る経路は本ポリシー越しの `engineers` 行だけである。`programmer` は **C3 を緩めてはならない**（`BR-06`）。
 - 🔴 **`SharedCandidateDb` の型は、5 項目に対応する列だけを `select` できる形に絞る**（`displayName` / `contactEmail` / `affiliationLabel` / `city` / `birthDate` を含む型を返せない。`engineerShare` モデル自体を持たない）。**型と RLS の二重**で `BR-54` を守る。
+- 🔴 **`SharedCandidateDb` に `engineerCareer` デリゲートを持たせない**（T-09-12。`F-008 AC-7` / `BR-55`）。**`engineer_careers` にこの経路の追加 SELECT ポリシー（`shared_candidate_read` 相当）を書かない** —— 匿名候補の生成に経歴は 1 項目も要らないため、**そもそも読めなくてよい**。`engineers` / `engineer_skills` に張った追加ポリシーを「ついでに揃える」形で経歴へ広げてはならない（広げた瞬間に、ホストが取引先の経歴を読む経路が DB に生まれる。§3.1 経路 4 の 🔴「匿名表示の項目を増やさない」に直結する）。**担保**: §4.7 のテスト **#15**（`app.shared_scope` / `app_engineer_is_shared()` を参照するポリシーを持つ表の集合を `engineers` / `engineer_skills` の 2 表に固定する。**表名を書き足さない限り増えない**形にする）。
 - 🔴 **`withSharedCandidateScope` は `MatchCandidate` の生成・更新以外から呼べない**。ESLint の `no-restricted-imports` で、`apps/web/app/api/**` からの import を禁止し、**呼び出し元を `apps/worker/src/handlers/match/*.ts` と `packages/db` 内に限定する**。
 - **解除の即時反映**（`F-016 AC-2`）: `EngineerShare.revoked_at` が入った瞬間にポリシーが外れる。**候補一覧の応答は `MatchCandidate` をそのまま返さず、必ず `withSharedCandidateScope` で「まだ共有中か」を再確認してからフィルタする**（キャッシュを置かない）。
 ### 4.6 匿名候補の参照子と応答の型
@@ -1778,6 +1844,16 @@ export type AnonymizedPriceBand =
   | { readonly kind: 'OPEN';  readonly fromManYen: number };                             // 打ち止め（fromManYen 以上）
 ```
 🔴 **`AnonymousCandidateView` に詳細エンドポイントを作らない**（`docs/04` 申し送り 2 / §11-2）。一覧と提案依頼の発行以外に、この型を返す API を作らない。**`candidateRef` を受け取る API は `POST /api/proposal-requests` の 1 本だけ**であり、そこで `projectId` と組にして `MatchCandidate` から逆引きする。
+
+🔴 **`AnonymousCandidateView` は経歴（`EngineerCareer`）のフィールドを型として持たない**（T-09-12。`F-008 AC-7` / `F-017 AC-1` / `BR-55` / `docs/04` 申し送り 17-③）。**フィルタで落とすのではなく、存在させない**（§4.8 / 申し送り 2 / 9 と同じ規律）。具体的に**作ってはならないフィールド**:
+
+| 作らない | 理由 |
+|---|---|
+| `careers` / `careerRows` / `experiences`（行そのもの） | 開示 5 項目に経歴は含まれない。**細かい経歴の並びは、案件をまたいで同一人物を突き合わせるための代表的な情報である**（`CLAUDE.md` §3.1 経路 4 の 🔴）。`candidateRef` を案件スコープにした意味が消える |
+| 🔴 `careerCount` / `hasCareers` / `careerSummary` / `latestRole` / `industries[]` | **件数・要約・真偽値も返さない**（`docs/04` 申し送り 17-③ が明示）。「経歴 12 行 / 直近 PL / 金融」は、母集団が小さいと**それだけで個人が特定できる**。加えて開示項目を 5 から 6 に増やすことにあたり、**人間の承認事項**（`CLAUDE.md` §8.6） |
+| `rationale` に経歴由来の語 | `match-explainer` の**入力に経歴を渡さない**ことで構造的に断つ（§7.1）。「根拠文だけは自由文だから」で例外を作らない |
+
+**担保は 3 枚**: ①**型**（上記フィールドが `AnonymousCandidateView` / `RoundedAnonymousAttributes` に無い）②**入力の型**（`AnonymizeEngineerInput` に経歴のフィールドが無い。§4.6.1。`city` のように「受け取って落とす」形にすらしない —— **落とす責務すら持たせない**のは、経歴が丸めて出せる項目ではなく**出してはならない項目**だからである）③**DB**（§4.5 の `SharedCandidateDb` が `engineerCareer` を持たず、`engineer_careers` にホスト向けの追加ポリシーが無い）。
 
 #### 4.6.1 丸めの関数（T-08-01 で実装済み。`packages/domain/src/anonymize/rounding.ts`）
 
@@ -1896,6 +1972,14 @@ test('partner_companies を参照する FK は 1 本残らず複合 FK であり
         `ADD CONSTRAINT ... UNIQUE` でも Prisma の `CREATE UNIQUE INDEX` でも成立させるため。
      🔴 conppeqop 等ではなく confmatchtype も見る: 'MATCH FULL'（'f'）なら FAIL（§3.3.1-4。
         ホスト所有行〔パートナー列 NULL〕が 1 行も作れなくなるため、既定の MATCH SIMPLE のみを許す） */);
+// 🔴 #15（T-09-12 / Issue #35。2026-09-10 追加）。**#14 と同じ理由で末尾に置く**（番号は安定した識別子）。
+test('共有スコープ（経路 4）の追加 SELECT ポリシーを持つ表が engineers / engineer_skills の 2 表だけである（§4.5 / §4.6）',
+  /* 🔴 列挙ではなく走査 + スナップショット: pg_policy を全件走査し、pg_get_expr(polqual) に
+     'app_engineer_is_shared' または 'shared_scope' を含むポリシーの (relname, polname) 集合を作る。
+     期待値は {engineers, engineer_skills} の 2 表ちょうど。engineer_careers（T-09-12）はもちろん、
+     将来の子表がここに現れた時点で FAIL する ——「経路 4 の開示項目を増やすこと」は人間の承認事項
+     （CLAUDE.md §8.6 / §3.1 経路 4 の 🔴）であり、ポリシーを 1 本足すだけで実現できてはならない。
+     あわせて app_share_probe の GRANT 対象表が engineer_shares の 1 表だけであることも見る（#10 と対）。 */);
 ```
 🔴 **除外リストは「4 表 + `_prisma_migrations`」だけ**であり、**新規テーブルは既定で検査対象に入る**。列挙式（対象テーブルを並べる）にすると新規テーブルを取りこぼすため、**必ず「全部から 4 つを引く」向きで書く**。🔴 **除外リストを広げて通すのは、このテストが防ごうとしている壊し方そのものである。** 新規テーブルが落ちたら §4.4 のクラスを 1 つ選んでポリシーを書く。
 
@@ -1913,6 +1997,7 @@ test('partner_companies を参照する FK は 1 本残らず複合 FK であり
 | 8 | 🔴 パートナー文脈で**他社が当事者**の `Assignment` / `Contract` / `ContractDocument` / `Order` を、一覧・`COUNT`・ID 直指定・ビュー越しのいずれで取る | **0 件 / 404**（C9。**件数も推測不可**。`F-065 AC-3` / `F-066 AC-4`）。同一案件に他社の稼働があっても `total` が変わらない |
 | 9 | 🔴 パートナー文脈で自社が当事者の行を**基底表**（`assignments` 等）から `SELECT *` する / 射影ビューの応答を JSON 化する | 基底表: **RLS は通るが ①`TenantDb` / `PartnerScopeDb` の型に 5 デリゲートが無い（コンパイルエラー）②素の Prisma 拡張越しに呼ぶと `PartnerBaseTableAccessError` で throw**（§4.3-6。0 行ではなく例外 = 書き忘れが必ず露見する）。ビュー: 応答のキー集合に `unit_price`（ホスト販売）/ `internal_unit_price` / `end_client_name` / `summary` / `facts` / `note` が **1 つも無い**（`F-065 AC-2` / `F-066 AC-3`） |
 | 10 | パートナー文脈で経路 5 の 4 表に `INSERT` / `UPDATE` / `DELETE` を発行する（素のクライアント） | **0 件更新**（C9 に書込ポリシーが無い。`BR-68`）。API 経由は §6.6 の `requireRole` で **403**（`F-065 AC-4` / `F-066 AC-5`） |
+| 11 | 🔴 **`engineer_careers`**（T-09-12）を ①ホスト文脈で他パートナー所有のエンジニアの分 ②パートナー文脈で他社の分 ③**ホスト文脈で `app.shared_scope='on'` を立てたうえで**（＝ 経路 4 の生成中と同じ条件）取る | **すべて 0 件**（C3。③でも 0 件であることが `F-008 AC-7` の DB 側の証明である。§4.5）。あわせて **`withSharedCandidateScope` の中から `engineerCareer` に触ろうとするコードがコンパイルできない**ことを型テストで固定する |
 ### 4.8 「見えない ＝ 存在しない」の API 契約（`docs/04` 申し送り 1 / `F-004 AC-4`）
 
 | 事象 | 返し方 |
@@ -2112,6 +2197,7 @@ GRANT SELECT (id, tenant_id, owner_partner_company_id, availability, available_f
 |---|---|
 | `engineers` | `display_name` `birth_date` `contact_email` `contact_phone` `affiliation_label` `city` `preference_note` |
 | `engineer_snapshots` | `display_name` `affiliation_label` `skills` `careers` |
+| 🔴 **`engineer_careers`**（T-09-12） | `role` `description` `technologies`（**業務内容にはエンド企業名・現場名・商流が書かれる**。運営者に必要なのは「件数・状態・エラー」であって「内容」ではない。`CLAUDE.md` §10.5）。**`GRANT` するのは `id` / `tenant_id` / `owner_partner_company_id` / `engineer_id` / `period_from` / `period_to` / `source` / `skill_sheet_extraction_id` / `created_at` / `updated_at` のみ** —— これで `A-005` / `A-011` に必要な件数・抽出由来の割合は数えられ、**中身は 1 文字も読めない** |
 | `skill_sheets` | `object_key` `note`（🔴 **版のメモは利用者の自由入力**であり、氏名・案件名・単価が書かれうる。T-05-06） |
 | `skill_sheet_extractions` | `payload` |
 | `messages` | `body` `attachment_key` |
@@ -2368,8 +2454,9 @@ requireEsignConnection(ctx);                           // 🔴 §8.4。未接続
 - 🔴 このキーを受け取るルートには次の 2 つが**必ず**要る（片方でも欠けたらガードを緩めたのと同じになる）: ①実行者のスコープは引き続き `ctx` だけから決まること（`PARTNER_ADMIN` の指定値は採用せず、常に自社になる。`F-002 AC-4`）②指定された ID を **`withTenant` の内側で母集団（RLS）に照合してから使う**こと。見えなければ **404**（§4.8）。
 - 🔴 **条件②は §3.3.1 の複合 FK 化（Issue #33 既定 C）後も外さない。** 複合 FK は「別テナントの取引先 ID」を DB で拒否するが、**それは `23503` = 500 であって 404 ではない**（500 と 404 が区別できると、他テナントに実在する ID かどうかを応答コードで探れてしまう）。かつ **FK が見るのはテナント境界だけ**であり、「実行者に見えてよい取引先か」（C5 の母集団）はそれより狭い判定である。**アプリ層照合 = 一次防御（正しい応答）/ 複合 FK = 最終防衛線（書き漏れの受け止め）** の役割分担であり、片方で他方を代替しない（詳細は §3.3.1）。
 | 15 | `GET /api/engineers` | `F-009` / `S-005` | `?skills=&skillMode=&yearsMin=&priceMin=&priceMax=&availableBy=&prefecture=&remote=&availability=&q=&onlyInTime=&onlyCommutable=&cursor=&limit=`（✅ **T-06-04 で検索条件を実装した**。🔴 **`ownership` は置かない / `skillMode` を足した** —— 理由は下記「#15 の実装の決着（T-06-04）」） | `{ items: (OwnEngineerView\|AnonymousCandidateView)[], total, nextCursor }`（🔴 `nextCursor` は T-05-09 で追加。下記） | 全ロール（母集団は所属で決まる）。**認可は `guards: []`**（読み取り専用。`VIEWER` も `CLOSING` も可） |
-| 16 | `POST /api/engineers` / `PATCH /api/engineers/{id}` | `F-008` / `S-007` | `EngineerInput`（🔴 `ownerPartnerCompanyId` を**含まない**） | `{ id }` | `OWNER`/`ADMIN`/`SALES`/`PA`/`PS` |
-| 17 | `GET /api/engineers/{id}` | `F-008` / `S-006` | — | `OwnEngineerDetailView` | 境界内のみ。**監査記録あり**（`BR-27`） |
+| 16 | `POST /api/engineers` / `PATCH /api/engineers/{id}` | `F-008` / `S-007` | `EngineerInput`（🔴 `ownerPartnerCompanyId` を**含まない**。🔴 **T-09-12 で `careers[]` を追加**。下記「#16 の経験内容の決着」） | `{ id }`（🔴 **T-09-12 で `{ id, careers: CareerRowView[] }`**。保存後の**確定した並び**をそのまま返す） | `OWNER`/`ADMIN`/`SALES`/`PA`/`PS` |
+| 16b | 🔴 `POST /api/engineers/{id}/careers/apply-extraction` | `F-008 AC-8` / `F-032 AC-3` / `S-008` / **Phase 2** | `{ skillSheetExtractionId, mode: 'APPEND' \| 'REPLACE', rows: number[], confirmedRemovalIds?: string[] }` | `{ applied: CareerRowView[] }` / 🔴 409 `CAREER_REPLACE_CONFIRMATION_REQUIRED` + `{ removals: CareerRowView[] }` | `OWNER`/`ADMIN`/`SALES`/`PA`/`PS`（#16 と同じ）。🔴 **抽出結果の反映はこの 1 本だけ**（下記） |
+| 17 | `GET /api/engineers/{id}` | `F-008` / `S-006` | — | `OwnEngineerDetailView`（🔴 **T-09-12 で `careers: CareerRowView[]` を追加**。0 行は `[]`） | 境界内のみ。**監査記録あり**（`BR-27`） |
 | 18 | `POST /api/engineers/{id}/skill-sheets/upload-url` | `F-011` / `S-008` | `{ fileName, contentType, byteSize }` | `{ objectKey, uploadUrl, expiresIn, requiredHeaders }`（🔴 `requiredHeaders` は T-05-04 で追加。下記） | 🔴 **ストレージ上限超過なら発行しない**（`docs/03` §4.5） |
 | 19 | `POST /api/engineers/{id}/skill-sheets` | `F-011` / `S-008` | `{ objectKey, note? }` | `{ id, version, scanStatus }`（🔴 新規確定は必ず `'SCANNING'`。**再確定では現在の状態が返る**。下記 T-05-06） | 同上 |
 | 19b | `POST /api/skill-sheets/{id}/latest` | `F-011` 処理③ / `AC-4` / `S-008` | — | `204` | 同上。🔴 **`CLEAN` の版だけが最新版になれる**（非 `CLEAN` は 409 `SKILL_SHEET_NOT_CLEAN`）。すでに最新版なら冪等に `204`（記録も残さない） |
@@ -2436,7 +2523,7 @@ requireEsignConnection(ctx);                           // 🔴 §8.4。未接続
   - 🔴 **`priceMin` / `priceMax` の大小関係を検証しない。** 片方だけの指定が正当な検索であり、2 つは独立した述語として意味を持つ。加えて項目をまたぐ検証をトップレベルの `.refine()` に置くと `withApiRoute` の `assertBoundarySchema` が `.shape` を読めなくなる（#16 と同じ制約）。
   - 🔴 **`#25`（案件検索）にも同じ定義で足す**（T-06-03 が「2 か所で別々に決めない」として先送りしたもの）。案件側の `unit_price_min` / `unit_price_max` は**外部公開用のレンジ**であり、`internal_unit_price` は検索対象にしない（`F-013 AC-2`）。
 - ✅ 🔴 **経験年数（1 人あたりの集約値）の定義を決着させた**（`S-005` の結果テーブルと `S-006` の基本情報が「定義が未確定」を理由に保留していたもの。上記「#15 の実装の決着（T-05-09）」/ 下記「#17 の実装の決着」）: **登録されたスキルの経験年数の最大値**（`MAX(engineer_skills.years_of_experience)`）である。
-  - **合計にしない** —— 並行して使ったスキルが二重に数えられ、1 年のスキルを 10 個持つ人が「10 年」になる。**平均にしない** —— 新しく覚えたスキルを足すほど下がり、**台帳を充実させるほど不利になる**（更新の動機を削ぐ ＝ `docs/01` §1.1-1 の再発）。**実務年数にしない** —— §3.4 に生年月日以外の起点が無く、`Engineer` の職歴（`careers`）は Phase 1 に保存先が無い（#16 の申し送り）。最大値は「その人が最も長く従事した技術の年数」であり、`F-029` の経験年数の加点（要求年数超で満点）とも整合する。
+  - **合計にしない** —— 並行して使ったスキルが二重に数えられ、1 年のスキルを 10 個持つ人が「10 年」になる。**平均にしない** —— 新しく覚えたスキルを足すほど下がり、**台帳を充実させるほど不利になる**（更新の動機を削ぐ ＝ `docs/01` §1.1-1 の再発）。**実務年数にしない** —— §3.4 に生年月日以外の起点が無いため（⚠️ **2026-09-10 の訂正**: 当初ここには「`Engineer` の職歴（`careers`）は Phase 1 に保存先が無い」とも書いていたが、[Issue #35](https://github.com/Festal-KM/SES-Platform/issues/35) = A により **`EngineerCareer` が Phase 1 に実在する**。🔴 **それでも実務年数には切り替えない** —— 経歴の期間は**並行した現場が重なりうる**ため単純な合算ができず、重複を除いた実期間の算出は「経歴が網羅的に入力されている」ことを前提にするが、`F-008 AC-5` は**0 行を正常**と定めている。**0 行の人が『経験 0 年』として検索から消えるのは `docs/01` §1.1-2 の再発**である。集約の定義を変えるなら `docs/02` `F-009` の改訂から始める）。最大値は「その人が最も長く従事した技術の年数」であり、`F-029` の経験年数の加点（要求年数超で満点）とも整合する。
   - 🔴 **`yearsMin` はスキル条件と同じ 1 本の述語で評価する**（「Java 5 年以上」を探した人に「COBOL 20 年 / Java 1 年」を返さない）。3 通りの見え方は同じ規則の帰結である: `skills` + `AND` = 指定した**各スキル**をその年数以上 / `skills` + `OR` = 指定したスキルの**いずれか**をその年数以上 / **`skills` 未指定 = いずれかのスキルをその年数以上 ＝ 上の集約（最大値）の下限**。
   - ⚠️ **列としての表示は本タスクでは足していない。** `docs/04` §S-005 の結果テーブルは現在 8 列（経験年数は T-05-09 で更新日と入れ替え済み）であり、列を戻すとブレークポイントごとの列構成の再設計を伴う。代わりに画面に**集約の意味**を 1 行で明示した（`engineers.list.experienceComingSoon`）。`S-006` も同様である（判断材料はスキル別の経験年数として出ている）。
 - 🔴 **フリーワードは `display_name` と `preference_note` の 2 列だけを見る。** 連絡先・生年月日・現所属会社名を検索対象にしない —— どれも画面が出さない PII であり（#17 の決着）、**一致・不一致から値を推測できる経路**を作らないためである。
@@ -2448,18 +2535,18 @@ requireEsignConnection(ctx);                           // 🔴 §8.4。未接続
 🔴 **#16 の実装の決着（T-05-01）**:
 
 - **`EngineerInput` の項目はこれがすべてである**（`BR-52` / `F-008 AC-1`。`apps/web/lib/engineers/schemas.ts` が単一の出所）:
-  `displayName` / `availability` / `availableFrom` / `unitPriceMin` / `unitPriceMax` / `prefecture` / `remoteMode` / `preferenceNote` / `contactEmail` / `contactPhone` / `skills[]`（`{ skillId, yearsOfExperience, level }`）/ `newSkillLabels[]`。
+  `displayName` / `availability` / `availableFrom` / `unitPriceMin` / `unitPriceMax` / `prefecture` / `remoteMode` / `preferenceNote` / `contactEmail` / `contactPhone` / `skills[]`（`{ skillId, yearsOfExperience, level }`）/ `newSkillLabels[]` / ✅ 🔴 **`careers[]`（T-09-12 で追加。`CareerRowInput[]`。下記「#16 / #16b / #17 の経験内容の決着」）**。
   🔴 **`birthDate` / `affiliationLabel` / `city` は §3.4 に列があるが入力に含めない** —— `docs/04` §S-007 のセクション 1 / 5 / 6 に欄が無く、「集めていない情報は漏れない」（`BR-52`）を守るため、**列があることを理由に入力欄を作らない**（`affiliationLabel` は `F-032` の抽出が、`city` は将来の要否判断が埋める列である）。
 - **所有パートナーが入力から来ないことの担保は 4 枚**（`F-008 AC-2`）: ①スキーマにキーが無い ②`withApiRoute` の構築時検査（`assertNoIsolationKeys`）③Zod の既定（strip）でハンドラに届かない ④RLS の C3 の `WITH CHECK` と `engineers_freeze_owner` トリガ。🔴 **`.strict()` にして 400 で弾く形は採らない** —— 未知キーの有無で応答が変わると「このキーには意味がある」ことを外から探れる。必要なのは値が DB に届かないことであり、strip がそれを構造的に満たす。
 - **項目をまたぐ検証（単価レンジの大小・スキルの重複）は Zod ではなくサービス層に置く。** `.refine()` をトップレベルに使うと `withApiRoute` の `assertBoundarySchema` が `.shape` を読めなくなること、および **PATCH は既存値と合成しないと判定できない**ことの 2 つが理由である。
 - **`skills` は「置き換え」である**（差分適用ではない）。`S-007` はスキル表を丸ごと編集する画面であり、差分にすると「画面から消した行が消えない」ずれが出る。`newSkillLabels` は `SkillAlias(status='PROPOSED', skill_id=NULL, origin='HUMAN')` を起票するだけで、**`skills` 表には 1 行も足さない**（`F-010 AC-1` / `AC-2`）。既存の別名（グローバル行を含む）と同じ表記は起票しない。
-- ⚠️ **`docs/04` §S-007 のセクション 3「経験内容と従事期間」に対応する保存先が §3.4 に無い**（`Engineer` にも子表にも列が無く、`careers` は `SkillSheetExtraction.payload` と `EngineerSnapshot.careers`〔いずれも Json〕にしか現れない）。T-05-01 は**列を勝手に足さず**、画面では「後続のリリースで登録できるようになる」と明示するにとどめた（隠さない）。**台帳側の保存先（`Engineer.careers Json` を足すか、`EngineerCareer` を新設するか）は人間の判断事項**であり、`F-008` の入力一覧と `EngineerSnapshot.careers` の生成元の両方に波及する。Phase 1 の `Proposal` は careers が常に空の `EngineerSnapshot` を作ることになるため、**SP-09 の着手前に決める**必要がある。
+- ✅ 🔴 **`docs/04` §S-007 のセクション 3「経験内容と従事期間」の保存先は決着した（2026-09-10。[Issue #35](https://github.com/Festal-KM/SES-Platform/issues/35) = 人間の回答「A」）: `EngineerCareer` 子テーブルを新設する**（§3.4 / §3.4.1）。**`Engineer.careers Json` を足す案は採らない**（理由は §3.2 の分解表）。T-05-01 が置いた「保存先が無いので入力欄を描かず、後続のリリースで登録できるようになると明示する」暫定表示（`engineers.careers.comingSoon`）は**役目を終えたので廃止する** —— **入力できるのに『できない』と書いてある画面**を残さない（`docs/04` §S-007 セクション 3）。実装は **`T-09-12`（SP-09 の先頭。Phase 1）**であり、詳細は下記「#16 / #17 の経験内容（`EngineerCareer`）の決着（T-09-12）」がすべてである。
 - **`S-007` の編集フォームの読み取りは `engineer.view` を `AuditLog` に記録する**（`BR-27` / `F-008 AC-4`）。氏名・連絡先という PII を画面に出す以上、詳細（`#17`。T-05-02）と同じ扱いにする。記録は**業務トランザクションの内側**（`writeAuditLog`）で書き、失敗したら内容を返さない。`summary` は `{ via: 'EDIT_FORM' }` だけで、**氏名を載せない**。
 - **`engineer.create` の `AuditLog` は `targetId` を持てない**（採番前）。`summary` に載せるのは `{ skillCount, newSkillLabelCount }` だけで、🔴 **`displayName` を載せない**（`partner_company.create` が企業名を載せられるのは、企業名が PII ではないためである。エンジニアの氏名は運営者にも見せない値である。`CLAUDE.md` §10.5）。
 
 🔴 **#17 の実装の決着（T-05-02）**:
 
-- **`OwnEngineerDetailView` の項目**（`apps/web/lib/engineers/service.ts` が単一の出所）: `id` / `displayName` / `ownership`（`HOST` \| `PARTNER`）/ `availability` / `availableFrom` / `unitPriceMin` / `unitPriceMax` / `prefecture` / `remoteMode` / `preferenceNote` / `skills[]`（`{ skillId, name, yearsOfExperience, level }`）。
+- **`OwnEngineerDetailView` の項目**（`apps/web/lib/engineers/service.ts` が単一の出所）: `id` / `displayName` / `ownership`（`HOST` \| `PARTNER`）/ `availability` / `availableFrom` / `unitPriceMin` / `unitPriceMax` / `prefecture` / `remoteMode` / `preferenceNote` / `skills[]`（`{ skillId, name, yearsOfExperience, level }`）/ ✅ 🔴 **`careers: CareerRowView[]`（T-09-12 で追加。`S-006` セクション 8。0 行は `[]`）**。
   🔴 **連絡先（`contactEmail` / `contactPhone`）を含めない。** `docs/04` §S-006 のセクション 2 に連絡先の行が無く、提案の可否の判断にも要らない。**画面が出さない PII を API が返す状態を作らない**（返せば、詳細を開くだけで連絡先が経路に載る）。連絡先に到達できるのは編集の読み取り（`EngineerEditView`。`S-007`）だけである。
 - 🔴 **閲覧の `AuditLog` は `withApiRoute` の `audit` オプションではなく、`readEngineerDetail` の業務トランザクション内（`writeAuditLog`）で書く**（`BR-27` / `F-008 AC-4`）。`docs/sprints/SP-05` T-05-02 は当初「`audit` オプションで書く」と書いていたが、実装時に次の 2 点で退けた:
   1. 🔴 **`S-006`（サーバコンポーネント）は Route Handler を通らない**（既存画面と同じく自己 fetch しない）。ルート側に置くと**画面経路だけ記録が漏れる** —— §16.1 が `skill_sheet.download` を `issueDownloadUrl` の中で書くと定めているのと同じ理由（**記録の経路を 1 本にする**）である。
@@ -2468,8 +2555,49 @@ requireEsignConnection(ctx);                           // 🔴 §8.4。未接続
 - **`action` は `engineer.view` の 1 種**（`engineer.detail_view` のような別 action を作らない。`S-041` の操作種別フィルタから漏れる）。経路の区別は `summary.via`（`'DETAIL'` \| `'EDIT_FORM'` \| 🔴 **`'SKILL_SHEETS'`**（`S-008`。T-05-06 で追加。版一覧も氏名を出すため））だけに置き、**氏名を載せない**。🔴 **`recordEngineerView` は 1 実装であり、氏名を出す新しい読み取りを足すときは `via` を足す**（使い回すと、どの画面から PII に到達したかが追えなくなる）。🔴 **詳細を開いてから編集を開くと 2 件残るが、これは重複ではなく別々の閲覧である**（片方を抑止すると、どちらの経路で PII に到達したかが追えなくなる）。
 - **認可は `guards: []`**（全ロール）。読み取り専用なので `requireExecutable` / `requireNotViewer` を掛けない —— `VIEWER` は閲覧のみ可（`F-012 AC-3` / `BR-31`）、`CLOSING` でも閲覧できる（`F-004 AC-8`）。**母集団は `engineers` の RLS（C3）が決める**ため、境界外の ID は 404 であり、ホスト所属の利用者は他パートナー所有のエンジニアの実名・所属会社名に到達できない（`F-008 AC-3`）。
 - ⚠️ **`docs/04` §S-006 の基本情報にある「経験年数」（1 件の集約値）を出していない。** §3.4 に集約列が無く、集約の定義（最大値か / 代表スキルか / 実務年数か）も決まっていないためである。**スキル別の経験年数はスキル表に出しているので判断材料は隠れていない。** 集約値の定義は `F-009` の `yearsMin` の評価（SP-06 T-06-04）と**同時に決める**。✅ **決着（T-06-04）: 「登録されたスキルの経験年数の最大値」**（理由と `yearsMin` での使われ方は上記「#15 の実装の決着（T-06-04）」）。**表示（`S-006` の基本情報への 1 行の追加）は未実施**であり、`S-005` の列と**同じタイミングで足す**（片方だけ出すと、一覧と詳細で同じ値の有無が食い違う）。
-- ⚠️ **`S-006` のセクション 3〜7 は本タスクの範囲外**（3 スキルシートの版 = T-05-06 / T-05-07、4 提案履歴・5 凍結差分 = SP-09、6 稼働履歴 = SP-16、7 匿名共有 = SP-08）。画面では**セクションを消さずに「後続のリリースで利用できる」と明示する**（`engineers.careers.comingSoon` と同じ規律）。✅ **セクション 3 は T-05-06 で `S-008` への導線に置き換えた**（`docs/04` §S-006 関連画面「→ `S-008`」）。🔴 **版の一覧を `S-006` に再掲しない** —— 出すと「どちらが正か」が分かれ、スキャン状態の見せ方が 2 実装になる（`F-011 AC-2` の担保が割れる）。`piiPurgedAt` の 404 文言（「保持期間を過ぎて削除されました」。`F-046 AC-2`）は削除ジョブと同じ SP-16（T-16-06）で足す —— 到達できない状態のために先回りの分岐を書かない。
+- ⚠️ **`S-006` のセクション 3〜7 は本タスクの範囲外**（3 スキルシートの版 = T-05-06 / T-05-07、4 提案履歴・5 凍結差分 = SP-09、6 稼働履歴 = SP-16、7 匿名共有 = SP-08）。画面では**セクションを消さずに「後続のリリースで利用できる」と明示する**（🔴 **これは「保存先も表示元も無いセクションを隠さずに予告する」という規律を指す**。以前ここで例示していた i18n トークン `engineers.careers.comingSoon` は **T-09-12 で廃止**する —— `EngineerCareer` が実在し登録できるようになるため。**規律は残り、例示だけが変わる**。🔴 **`S-006` セクション 8「経験内容と従事期間」は T-09-12 で実データを表示する**）。✅ **セクション 3 は T-05-06 で `S-008` への導線に置き換えた**（`docs/04` §S-006 関連画面「→ `S-008`」）。🔴 **版の一覧を `S-006` に再掲しない** —— 出すと「どちらが正か」が分かれ、スキャン状態の見せ方が 2 実装になる（`F-011 AC-2` の担保が割れる）。`piiPurgedAt` の 404 文言（「保持期間を過ぎて削除されました」。`F-046 AC-2`）は削除ジョブと同じ SP-16（T-16-06）で足す —— 到達できない状態のために先回りの分岐を書かない。
 - **登録後の遷移を `S-007`（編集）から `S-006`（詳細）に変えた**（`docs/04` §S-007 関連画面「→ `S-006`」）。T-05-01 が編集へ戻していたのは `S-006` が未実装だったための暫定である。編集のキャンセルも詳細へ戻す。
+
+🔴 **#16 / #16b / #17 の経験内容（`EngineerCareer`）の決着（T-09-12。Issue #35 = A。`F-008 AC-5`〜`AC-8` / `docs/04` 申し送り 17）**:
+
+**型**（`apps/web/lib/engineers/schemas.ts` / `.../careers.ts` を単一の出所とする）:
+
+```ts
+// 入力: EngineerInput に careers[] を足す。🔴 skills と同じ「置き換え」である
+export type CareerRowInput = {
+  id?: string;                 // 🔴 既存行は必ず付ける（無いと「編集」と「削除 + 追加」が区別できず、監査が嘘になる）
+  periodFrom: string;          // 'YYYY-MM'（z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/)）
+  periodTo: string | null;     // 🔴 null = 継続中。空文字は 400（§3.4.1）
+  role: string;                // 1..100 文字
+  description: string;         // 1..2000 文字
+  technologies: string;        // 0..500 文字
+};
+// 出力: 台帳の現在値。🔴 配列順 = 表示順（サーバ側で確定済み。画面はソートし直さない）
+export type CareerRowView = CareerRowInput & {
+  id: string;
+  source: 'MANUAL' | 'EXTRACTED';
+  skillSheetExtractionId: string | null;
+};
+```
+
+- 🔴 **`careers[]` は `EngineerInput` の一部であり、専用の CRUD エンドポイントを作らない。** `S-007` は 1 画面 1 保存であり、行だけ別 API にすると「エンジニアは保存されたが経歴だけ失敗した」中途半端な状態が生まれる。**`skills` と同じ「置き換え」**（差分適用ではない）で、送られた集合が保存後のすべてである（#16 の `skills` の判断と同型）。**未指定（キー自体が無い）の `PATCH` は経歴を変更しない**（`undefined` と `[]` を区別する。`[]` は「全行を削除する」である）。
+- 🔴 **並び順はサーバ側で確定させ、応答の配列順をそのまま表示順にする**（`docs/04` 申し送り 17-①）。順序は **`periodFrom` 降順 → `createdAt` 昇順 → `id` 昇順**（§3.4.1）。**入力の配列順は保存にも表示にも使わない** —— 使うと「画面で並べ替えたのに、次に開くと戻る」か「表示順を持つ列（`sortOrder`）が要る」かのどちらかになり、前者は不具合、後者は `F-008 AC-5` の「同一データに対して同じ順序」を人手の並びに委ねることになる。**期間が表示順を決めるのは業務上の自然な規則**であり、それをデータの外に持たない。
+- 🔴 **0 行は正常であり、`careers: []` を返す**（`docs/04` 申し送り 17-②）。**`null` / キーの省略で「無い」を表現しない**（画面が「未取得」と区別できなくなる）。**0 行を理由に登録・更新・`Proposal` 作成を拒まない**（§6.5 #36）。
+- 🔴 **行の追加・更新・削除を、それぞれ独立した `AuditLog` として記録する**（`docs/04` 申し送り 17-⑤ / `F-008 AC-5`）。**`engineer.update` 1 件にまとめない。**
+  - **保存の粒度（1 リクエスト）と監査の粒度（1 行 1 件）は一致させない。** 1 回の保存で 3 行追加・1 行削除なら **4 件**が残る（`engineer.update` は経歴以外の項目が変わったときにのみ別途 1 件）。まとめると「どの行がいつ消えたか」が追えず、`CLAUDE.md` §3.5 の「誰の経歴を、誰が、いつ見たか」に対応する**書き手側の説明責任**が果たせない。
+  - `action` は **`engineer_career.create` / `engineer_career.update` / `engineer_career.delete`** の 3 種（§16.1）。🔴 **独自 action（`engineer_career.save` 等）を作らない** —— `S-041` の操作種別フィルタ（`CREATE_UPDATE_DELETE` = 接尾辞一致）から漏れる（`skill_alias.update` / `partner_company.update` と同じ理由）。
+  - 🔴 **`summary` に業務内容・使用技術・役割の本文を載せない**（自由入力であり PII と商流が混ざる。§16.2 / §5.5）。載せるのは `{ careerId, periodFrom, periodTo, changedFields: string[], source }` まで。**変更前後の本文を残さない**（監査ログが第 2 の経歴台帳になり、`PURGED` / 保持期間削除の射程外に内容が残る）。
+  - 🔴 **業務トランザクションの内側（`writeAuditLog`）で書く**。`withApiRoute` の `audit` オプションは**ハンドラの前に別トランザクションで**書くため、**起きなかった変更**（422 / 409 / 巻き戻し）まで残る（`membership.role_change` / `skill_alias.update` と同じ形）。
+  - 🔴 **差分の算出は `packages/domain` の純粋関数 `diffCareerRows(before, after)`** に置く（`{ created[], updated[], deleted[] }` を返す）。**`updated` は「値が実際に変わった行」だけ**（同じ値の再送信で監査が増えない）。I/O を持たないのでユニットテストで固定できる。
+- 🔴 **行の所有はアプリが判定しない。** `id` 付きの行が他人のエンジニアの行だった場合、**`(tenant_id, engineer_id)` を条件に含めた `UPDATE` / `DELETE` が 0 件になる**（RLS の C3 + 複合 FK。§3.4）。0 件は **404**（§4.8）であり、**「他人の行だった」ことを応答で区別しない**。
+- 🔴 **`S-007` の編集フォームの読み取り（`EngineerEditView`）にも `careers[]` を含める**。氏名・連絡先と同じく `engineer.view`（`summary.via='EDIT_FORM'`）を記録する（既存の規律。#17 の決着）。**経歴の閲覧に別 action を作らない** —— `BR-27` の記録対象は「エンジニア詳細とスキルシートの閲覧」であり、経歴はその一部である。
+- **`#16b`（Phase 2 の抽出結果の反映。`F-008 AC-8` / `F-032 AC-3` / `docs/04` 申し送り 17-⑥）**:
+  - 🔴 **反映先は `EngineerCareer` であり、抽出専用の保存先を作らない。** `SkillSheetExtraction.payload` は**抽出の記録**であって台帳の値ではない（§7.1）。**同じ経歴を手入力用と抽出用の 2 か所へ入れる導線を作らない**（`F-008 AC-8`）。
+  - 🔴 **エンドポイントは 1 本で、`mode: 'APPEND' | 'REPLACE'` を引数に取る。** `append` / `replace` を別ルートに分けない（片方だけガードが漏れる）。🔴 **「常に上書き」のテナント設定値を作らない**（設定にすると、人が採否を選ぶ機会そのものが消え、`F-008 AC-8` の「黙って上書きされない」が設定 1 つで無効化される。§12.4 の承認モードと**混同しない** —— あれは AI 成果物の承認であって、台帳の破壊的更新の可否ではない）。
+  - 🔴 **`REPLACE` は「消える行」を事前に返す。** 実装は **確認トークンではなく現在値の照合**にする: `confirmedRemovalIds` が未指定 / 現在の削除対象と不一致なら、**何も書かずに 409 `CAREER_REPLACE_CONFIRMATION_REQUIRED` + `removals: CareerRowView[]`** を返す。画面（`S-008`）はこれを確認ステップで列挙し、同じ ID 集合を付けて再送する。**単なる `dryRun` フラグにしない理由**: 確認から実行までの間に別の利用者が行を足すと、**確認画面に無かった行が黙って消える**。ID 集合の照合は CAS であり、その窓を塞ぐ。
+  - **`APPEND` は既存行を 1 行も変更しない**（追加のみ）。**`rows: number[]`** は抽出結果（`payload.careers[]`）の**採用する要素の添字**であり、採用しなかった行は台帳に現れない（`F-032 AC-3` の「採否を人が選ぶ」）。
+  - 反映で作る行は **`source='EXTRACTED'` + `skillSheetExtractionId`** を持つ（出所が辿れる。`CLAUDE.md` §12.3「各成果物に、生成したロール・使用プロンプト版・モデルを記録する」の台帳側の受け）。🔴 **反映後に人が編集した行も `source` を `MANUAL` に書き換えない** —— 出所は「どこから来たか」であって「誰が最後に触ったか」ではない（後者は `AuditLog` が持つ）。
+  - **監査は #16 と同じ 3 種**（`engineer_career.create` / `.update` / `.delete`）で、`summary.mode` に `APPEND` / `REPLACE`、`summary.skillSheetExtractionId` を載せる。🔴 **反映は 1 トランザクション**であり、途中まで反映された状態を残さない。
 
 🔴 **#18 の実装の決着（T-05-04）**:
 
@@ -2519,7 +2647,7 @@ requireEsignConnection(ctx);                           // 🔴 §8.4。未接続
   - 🔴 **起票者（`proposed_by`）・決定者（`decided_by`）を返さない。** `skill_aliases` は C1（テナント全体が読む）であり、パートナー所属の利用者も他社が起票した候補を読む。そこに人物を添えると**他社に誰が居るかを知る経路**になる（`CLAUDE.md` §3.1 の 🔴）。表記そのものは分類のためのマスタであり他社の業務情報を含まないが、人物は含む。⚠️ `docs/04` §S-009 の別名テーブルは「作成者」列を挙げているが、上記の理由で出していない（出すなら「ホスト所属の決定者に限る」等の規則が要り、それは越境設計の変更 = 人間の承認事項になる）。
   - 🔴 **`proposedAt` は `id`（`@default(uuid(7))`）の採番時刻から読み替える。** §3.4 の `SkillAlias` に作成時刻の列が無いためであり、§16.5 が `email_dispatches` の滞留判定で「`updated_at`（無ければ `id` の uuidv7 時刻）」としているのと同じ扱いである（**列を勝手に足さない**）。実装は `@ses/db` の `uuidV7TimeOf`（v7 でない値は `null`）。
   - 並びは `alias` 昇順（同順は `id`）。**採否で並びが変わらない**ようにする（決めた瞬間に行が飛ぶと、続けて次を決めるときに取り違える）。
-  - ⚠️ **`docs/04` §S-009 の新語候補テーブルにある「出現件数」列を出していない。** その表記が何件のエンジニアで使われているかを引ける列が §3.4 に無い（`SkillAlias` は `Engineer` と関連を持たず、`EngineerSkill.original_label` は `F-033` の正規化が Phase 2 に埋める列である）。**列を勝手に足さず**、画面には「後続のリリースで表示できるようになる」と明示した（`engineers.careers.comingSoon` と同じ規律）。
+  - ⚠️ **`docs/04` §S-009 の新語候補テーブルにある「出現件数」列を出していない。** その表記が何件のエンジニアで使われているかを引ける列が §3.4 に無い（`SkillAlias` は `Engineer` と関連を持たず、`EngineerSkill.original_label` は `F-033` の正規化が Phase 2 に埋める列である）。**列を勝手に足さず**、画面には「後続のリリースで表示できるようになる」と明示した（🔴 **この `comingSoon` 系の予告は残す**。廃止するのは `engineers.careers.comingSoon` **だけ**であり、それは `EngineerCareer` の新設で前提が消えたからである。`S-009` の「出現件数」は**依然として引ける列が無い**ので、予告のまま据え置く。T-09-12）。
 - 🔴 **#24 の認可は `OWNER` / `ADMIN` / `SALES` である**（本節の表 / `docs/02` `F-010 AC-1` / `docs/04` §S-009 権限差分）。判定の出所は `apps/web/lib/skills/policy.ts` の `SKILL_ALIAS_DECIDER_ROLES` 1 か所で、ルートの `requireRole` と画面の `canDecide` が同じ定数を見る。
   - ⚠️ **`OWNER` は 2026-09-06（T-06-01）に追加した。暫定である**（[Issue #36](https://github.com/Festal-KM/SES-Platform/issues/36) の既定 A。`docs/dev-plan.md` §9）。〔経緯〕T-05-03 の時点では `F-010 AC-1` と本節の認可がどちらも `ADMIN` / `SALES` と書いており、**`docs/02` 章 4.2 の権限マトリクスが `F-010` の `OW` を `●`** としているのと食い違っていた。T-05-03 は**権限を広げない側**で実装したが、その結果 **`OWNER` しか居ないテナント（`F-001` 直後）では新語候補を採否できない**という運用上の穴が残った。Issue #36 の回答が SP-05 の完了確認までに得られなかったため、T-06-01 で既定 A（マトリクス側に寄せる）へ倒した。
   - 🔴 **更新の順序は `docs/02` `F-010 AC-1`（+ 章 4.2 の補足）→ `docs/04` §S-009 → 本節 → 実装とテスト**（`CLAUDE.md` §8.7）。`tests/isolation/skill-dictionary.test.ts` が固定していた「`OWNER` は採否できない」は**削除せず、正のケースへ更新した**（消すと「`OWNER` が採否できること」を誰も守らなくなる）。**4 箇所すべてに「暫定。Issue #36 で確認中」を付してある** —— 回答が来たら同時に戻す。
@@ -2641,7 +2769,7 @@ requireEsignConnection(ctx);                           // 🔴 §8.4。未接続
 | 33 | `POST /api/proposal-requests/{id}/accept` | `F-018` / `S-018` | — | `{ proposalId }` | `PA`/`PS`。🔴 **`ACCEPTED` 遷移と `Proposal` 生成を同一トランザクション**（`docs/02` 申し送り 12） |
 | 34 | `POST /api/proposal-requests/{id}/decline` | `F-018` | `{ reason }` | `204` | `PA`/`PS`。理由は社内限定 |
 | 35 | `POST /api/proposal-requests/{id}/withdraw` | `F-018` | — | `204` | ホスト |
-| 36 | `POST /api/proposals` | `F-019` / `S-020` | `{ projectId, engineerId?, proposalRequestId?, recipient..., offered..., subject?, body? }` | `{ id }` | 作成者の境界内 |
+| 36 | `POST /api/proposals` | `F-019` / `S-020` | `{ projectId, engineerId?, proposalRequestId?, recipient..., offered..., subject?, body? }` | `{ id, snapshot: { frozenAt, careerCount } }`（🔴 **T-09-12 で `careerCount` を追加**。`S-020` が「経験内容 4 行を凍結」と出すため） | 作成者の境界内。🔴 **経験内容 0 行を理由に 422 にしない**（下記） |
 | 37 | `PATCH /api/proposals/{id}` | `F-019` | 部分更新 | `{ id, contentHash }` | 🔴 `DRAFT` のみ。他状態は 422 |
 | 38 | `POST /api/proposals/{id}/draft` | `F-034` / Phase 2 | — | `{ jobId }` | 同上 |
 | 39 | `POST /api/proposals/{id}/gate` | `F-020` / `F-027` / `S-020` | — | `{ jobId }`（非同期。**202**） | ⚠️ **実装済み（T-07-08）。確定形は §11.10 を正とする**（`jobId` の区切り / 3 経路の畳み方 / 認可 / 監査）。`DRAFT` → 🔴 `GATE_RUNNING` へ CAS して `gate.run` を enqueue。🔴 **`GATE_RUNNING` かつ `review_gates.execution='HELD_AI_COST_LIMIT'` の行があるときも許可 = 手動再実行**（`F-027 AC-5`。作成者 / `SALES` / `ADMIN`）: 状態は変えず、`gate.run` を**同じ payload・同じ `jobId`** で enqueue する。§9.3 の 3 段（HELD 部分 UNIQUE / `jobId` 重複排除 / 完了 CAS）で `gate.hold-release` と多重化しない。🔴 **HELD 行の無い `GATE_RUNNING`（= `gate.run` の failed 滞留。§16.5 の `JOB_FAILED`）も同じ主体に許可 = 失敗ジョブの再依頼**（Issue #16）: 状態は変えず、§9.10 の手順（`failed` の同 `jobId` を `Job.remove()` → `DONE` 行が無いことを確認 → 同じ payload・同じ `jobId` で再 enqueue）を実行する。**運営者向けの retry 操作は作らない**。`DONE` 行があるときと他状態は 422 |
@@ -2651,7 +2779,8 @@ requireEsignConnection(ctx);                           // 🔴 §8.4。未接続
 | 43 | `POST /api/proposals/{id}/submit` | `F-022` / `S-021` | `{ }` | `{ attemptSeq, jobId }` | 🔴 `requireExecutable` + `requireVerifiedSendingDomain` |
 | 44 | `POST /api/proposals/{id}/resend` | `F-023` / `S-022` | `{ acknowledged: true }` | `{ attemptSeq, jobId }` | 🔴 `acknowledged` が `true` でなければ 400（`F-023 AC-2`） |
 | 45 | `GET /api/proposals` | `F-024` / `S-019` | `?state[]=&projectId=&q=&cursor=` | `{ items: HostProposalView[] \| PartnerProposalView[], total, byState }` | 🔴 `byState` は境界適用後 |
-| 46 | `GET /api/proposals/{id}` | `F-024` / `S-023` | — | `HostProposalDetailView` \| `PartnerProposalDetailView` | 🔴 `PartnerProposalDetailView` に `duplicateFindings` が**存在しない**（`F-037 AC-1`） |
+| 46 | `GET /api/proposals/{id}` | `F-024` / `S-023` | — | `HostProposalDetailView` \| `PartnerProposalDetailView`（🔴 **`snapshot.careers: FrozenCareer[]` は凍結側だけ**。T-09-12） | 🔴 `PartnerProposalDetailView` に `duplicateFindings` が**存在しない**（`F-037 AC-1`）。🔴 **凍結された経歴を台帳の現在値と同じ応答に混ぜない**（下記） |
+| 46b | 🔴 `GET /api/proposals/{id}/snapshot-diff` | `F-019 AC-2` / `S-006` セクション 5 / **SP-09** | — | `{ frozenAt, fields: {key, frozen, current}[], careers: { frozen: FrozenCareer[], current: CareerRowView[] } }` | 作成者の境界内。🔴 **差分は「左右に並置」であり、1 つのリストに混在させない**（下記） |
 | 47 | `POST /api/proposals/{id}/events` | `F-025` / `S-023` | `{ kind:'NOTE', note, attachmentKey? }` | `{ id }` | 境界内 |
 | 48 | `POST /api/proposals/{id}/transition` | `F-024`/`F-025` | `{ to: ProposalState, note? }` | `{ state }` | 🔴 §4.2 に無い遷移は **422 `InvalidStateTransitionError`** |
 | 49 | `POST /api/proposals/{id}/interview-invite` | `F-041` / `S-024` / Phase 2 | `{ candidateSlots[], templateKey }` | `{ attemptSeq, jobId }` | §10 と同じ規律 |
@@ -2666,6 +2795,16 @@ type SubmitAccepted = { attemptSeq: number; jobId: string; state: 'SUBMITTING' }
 // 🔴 「送信を受け付けました」で 202 を返し、確定は GET /api/proposals/{id} のポーリング or SSE で取る。
 //    202 を返した時点で SendAttempt は RESERVED であり、二重に受け付けない。
 ```
+
+🔴 **#36 / #46 / #46b の経験内容の凍結（T-09-12。Issue #35 = A。`F-008 AC-6` / `F-019 AC-5` / `docs/04` 申し送り 17-③④）**:
+
+- 🔴 **凍結は行単位の複製である。台帳行への参照にしない**（§3.6）。`POST /api/proposals` は **`Proposal` の作成と `EngineerSnapshot` の作成を同一トランザクション**で行い、その中で `engineer_careers` を §3.4.1 の全順序（`periodFrom` 降順 → `createdAt` 昇順 → `id` 昇順）で読み、**`FrozenCareer[]` に値ごと写す**。**台帳の行 ID を持ち込まない**（持ち込むと「現在値へ辿る導線」が生まれ、`S-023` の契約が実装のうっかりで破れる）。
+- 🔴 **`S-023` は凍結側だけを返す API で描く**（`#46`）。`HostProposalDetailView.snapshot.careers` の組み立てで **`engineers` / `engineer_careers` を 1 度も読まない**。台帳の現在値と同じ応答に混ぜると、「どの行が提案先に届いた内容か」が読めなくなる —— **商流上、届いた内容が唯一の事実である**（`docs/04` §S-023）。
+- 🔴 **現在値との比較は別エンドポイント（`#46b`）に分け、左右に並置する形の応答にする。** 1 つの配列にマージして「変更あり」フラグを立てる形にしない（マージした瞬間、どちらが凍結側かがフラグ 1 つの解釈に依存する）。`fields[]` / `careers` とも **`frozen` と `current` を別のキーで返す**。
+- 🔴 **経験内容 0 行を理由に `POST /api/proposals` を 422 にしない**（`F-008 AC-5` / `docs/04` 申し送り 17-②）。0 行は正常な状態であり、**スキルシートのみで運用している既存データを壊さない**。画面（`S-020`）が作成前に「経験内容が 0 行です」と注意を出すだけで、**作成をブロックしない**。応答の `snapshot.careerCount` は `0` を返す（`null` にしない）。
+  - ⚠️ **ただし「凍結は遡れない」**（`F-008 AC-6` の実装時期の根拠）。0 行で作られた提案は**後から埋まらない**。だから `T-09-12` を **SP-09 の先頭**に置く（`docs/dev-plan.md` §9）。**この順序を崩して `F-019` を先に動かすと、その期間に作られた `EngineerSnapshot` は永久に経歴を持たない。**
+- 🔴 **凍結行はゲートの検査対象である**（§11.1 / §11.3）。`ReviewGate` の `field: 'snapshot'` に `careers` の各行の `role` / `description` / `technologies` を連結して渡し、**PII 層（現所属会社名・氏名の残存）と商流層（エンド企業名・単価）を検査する**。🔴 **業務内容にはエンド企業名が書かれるのが常態**であり、検査から外すと `F-014 AC-3` / `BR-15` が経歴の側から素通りする。指摘の `offsetStart` / `offsetEnd` は**連結後の文字列**に対するオフセットで、`GateFinding.field='snapshot'` に載せる（`docs/04` の承認画面が該当箇所を示せる）。
+- 🔴 **`EngineerSnapshot.careers` は `app_platform` に `GRANT` しない**（§5.5。既存の行に含まれる）。運営者は件数すら数えない（`careers` 列ごと読めない）。
 ### 6.6 主平面 API — ⑤⑥（Phase 2〜3）
 
 | # | Method / Path | 機能 / 画面 | request | response | 認可 |
@@ -2740,6 +2879,9 @@ type SubmitAccepted = { attemptSeq: number; jobId: string; state: 'SUBMITTING' }
 | `GET /api/proposals/{id}/duplicates`（パートナー向け） | 🔴 `BR-08`。型ごと存在しない |
 | `/api/partner/**` の書込ハンドラ / `GET /api/partner/assignments/{id}`（詳細） / `GET /api/partner/extension-reviews/**` | 🔴 `BR-68` / `BR-67` / `docs/04` §11-9。**経路 5 は一覧 + 右パネルで完結し、詳細エンドポイント（項目を足す置き場所）を作らない。`ExtensionReview` に到達する API はパートナー向けに存在しない** |
 | `GET /api/usage` に金額フィールドを足すこと / `gate-inspector` の残量 | 🔴 `F-027 AC-6` / `AC-7` / `BR-24`。金額は `A-004` / `A-011` の管理平面 API に閉じる |
+| 🔴 `POST/PATCH/DELETE /api/engineers/{id}/careers/{careerId}`（経歴の行単位 CRUD） | 🔴 T-09-12。経歴は `EngineerInput` の一部として**まとめて保存**する（`S-007` は 1 画面 1 保存）。行だけ別 API にすると「エンジニアは保存されたが経歴だけ失敗した」状態が生まれる。**行単位なのは監査の粒度であって API の粒度ではない**（§6.4） |
+| 🔴 匿名候補に経歴を返す API / `hasCareers` / `careerCount` を返すフィールド | 🔴 `F-008 AC-7` / `BR-55`。**型として存在させない**（§4.6）。開示項目を 5 から増やすことは**人間の承認事項**（`CLAUDE.md` §8.6） |
+| 🔴 「抽出結果を常に上書きする」テナント設定 | 🔴 `F-008 AC-8`。設定にすると、人が採否を選ぶ機会そのものが消える（§6.4 #16b） |
 | 🔴 `POST /api/members/{id}/restore`（無効化の取り消し）/ `PATCH /api/members/{id}` の所属変更 | 🔴 T-04-09。前者は「無効化した相手のパスワードが生き返る」経路であり、復帰は #14 の招待の再発行に限る。後者は「他社のアカウントを自社に移す」ことと同義で、第二境界（`CLAUDE.md` §3.1）をその場で破る |
 
 ### 6.9 管理平面 API（`/api/admin/**`）
@@ -2818,12 +2960,22 @@ export type RoleSpec<I, O> = {
 
 | ロール | ステージ | 入力スキーマ | 出力スキーマ | 既定モデル | 呼び出し単位 |
 |---|---|---|---|---|---|
-| `sheet-parser` | ① | `{ text: MaskedText, fileKind: 'xlsx'\|'docx'\|'pdf' }` | `{ careers: {periodFrom,periodTo,role,description}[], skills: {label, years}[], unextracted: string[] }` | `DEFAULT`（Sonnet 5） | ファイル 1 版 = 1 回 |
+| `sheet-parser` | ① | `{ text: MaskedText, fileKind: 'xlsx'\|'docx'\|'pdf' }` | 🔴 `{ careers: {periodFrom,periodTo,role,description,technologies}[], skills: {label, years}[], unextracted: string[] }`（**T-09-12 で `technologies` を追加し、`EngineerCareer` と同一の 5 項目に揃えた**。下記） | `DEFAULT`（Sonnet 5） | ファイル 1 版 = 1 回 |
 | `skill-normalizer` | ① | `{ unknownLabels: string[], dictionaryCandidates: {skillId,name}[] }` | `{ results: { label, candidates: {skillId, confidence}[], isNew: boolean }[] }` | `CHEAP`（Haiku 4.5） | **未知語のみ**。既知語は LLM を呼ばない |
-| `match-explainer` | ② | `{ project: MaskedProjectFacts, candidates: {ref, score, breakdown, skills, yearsBand}[] }` | `{ rationales: { ref, matched: string[], missing: string[], comment: string }[] }` | `CHEAP` | 🔴 **既定 10 候補を 1 リクエストにまとめる**（`docs/03` 申し送り 9） |
+| `match-explainer` | ② | `{ project: MaskedProjectFacts, candidates: {ref, score, breakdown, skills, yearsBand}[] }`（🔴 **経歴のフィールドを持たない**。下記） | `{ rationales: { ref, matched: string[], missing: string[], comment: string }[] }` | `CHEAP` | 🔴 **既定 10 候補を 1 リクエストにまとめる**（`docs/03` 申し送り 9） |
 | `gate-inspector` | ③ | `{ content: MaskedText, audienceKind, knownPiiTokens: string[] }` | `{ pii: {verdict, findings[]}, commerce: {verdict, findings[]}, consistencyWarnings: [] }` | `DEFAULT` | 対象 1 件 = 1 回 |
 | `proposal-drafter` | ③ | `{ projectPublic: MaskedText, candidate: MaskedText, intent: string }` | `{ subject, body, engineerIntro, unusedNotes: string[] }` | `DEFAULT` | 提案 1 件 = 1 回 |
 | `renewal-advisor` | ⑥ | `{ facts: RenewalFacts }`（**単価の数値・エンド企業名を含まない型**） | `{ points: string[], evidences: string[], cautions: string[] }` | `DEFAULT` | 起票 1 件 = 1 回 |
+
+🔴 **経験内容（`EngineerCareer`）と AI 層の関係（T-09-12。Issue #35 = A）**:
+
+| ロール | 経歴の扱い |
+|---|---|
+| `sheet-parser` | 🔴 **出力の `careers[]` の反映先は `EngineerCareer` に確定した**（`F-008 AC-8` / `F-032 AC-3`）。反映は §6.4 `#16b` の 1 本のみで、**採否を人が選んでから**書く。🔴 **`SkillSheetExtraction.payload` を台帳の値として扱わない** —— これは**抽出の記録**であり、画面・検索・スコア・凍結のいずれもここを読まない（読むと「採用していない抽出結果が業務に効く」ことになり、`F-032 AC-4`〔失敗時に台帳の既存値を変更しない〕が崩れる）。出力スキーマは `EngineerCareer` と**同一の 5 項目**にし、**変換の実装を挟まない**（変換を挟むと `F-008 AC-8` の「二重入力を作らない」が形だけになる）。**入力は依然として `MaskedText` のみ**（`CLAUDE.md` §3.2 / §12.3） |
+| `match-explainer` | 🔴 **入力に経歴を渡さない**（`docs/04` 申し送り 17-③）。`candidates[]` の型に経歴のフィールドを**持たせない**（渡さないのではなく、渡せない）。理由は 2 つ: ①根拠文は**匿名候補にも付く**（`MatchCandidate.rationale`）ため、経歴が入力にあると**そのまま匿名候補の開示項目になる**（`F-008 AC-7` / `BR-55` 違反）②スコアは `packages/domain` の決定的関数が算出済みであり（`CLAUDE.md` §12.3 の 🔴）、根拠文の材料は**スコアの内訳（`breakdown`）**で足りる。**自社エンジニアの候補だけ経歴を渡す分岐を作らない** —— 分岐は書き忘れる（`CLAUDE.md` §3 の「実行時ガードだけに頼る設計は弱い」）。**担保**: §17.2 #28 |
+| `proposal-drafter` | 経歴を渡してよい（提案先へ出す文面の材料であり、開示の相手は `Proposal` の提案先である）。🔴 **ただし入力は `MaskedText`** であり、氏名・生年月日・連絡先・顔写真・現所属会社名は `packages/ai` の入口で落ちる（`CLAUDE.md` §3.2）。🔴 **単価とエンド企業名を渡さない**（同）—— 業務内容に書かれたエンド企業名は**マスキングの対象**であり、`packages/ai/src/mask.ts` の denylist（テナントの `Project.endClientName` 由来の語）で落とす。生成物は `Proposal` として**必ずゲートを通る**（§11.1） |
+| `gate-inspector` | 凍結された経歴（`EngineerSnapshot.careers`）を **`field='snapshot'` の検査対象として受け取る**（§6.5 の凍結の節）。PII 層・商流層の指摘のみを行い、**整合層の合否は機械照合が決める**（`CLAUDE.md` §12.3 の 🔴） |
+| `skill-normalizer` / `renewal-advisor` | 経歴を渡さない。前者の対象は `EngineerSkill` の未知語のみ、後者の入力は `RenewalFacts`（稼働の事実）である |
 
 ### 7.2 公開インタフェース（唯一の呼び出し経路）
 
@@ -3824,7 +3976,7 @@ export type OperationalMailDispatch = {                  // T-04-02 で HostOrPl
 | `scan.apply-result` | `{ deliveryId }` | 受信済みの `WebhookDelivery` を読み、`FileScanResult` に INSERT → `SkillSheet.scanStatus` を適用（`applyFileScanResult`）。🔴 **`CLEAN` へ戻す遷移を禁止**（重篤度の単調増加。§8.5.1）。🔴 テナントは**オブジェクトキーの `t/{tenantId}`** から導く（受信時にも同じ関数で検査済み。§8.5.1）。対象が見つからなければ `processedAt` を立てず `failureReason='SCAN_TARGET_NOT_FOUND'` で記録し `A-005` に出す（**成功に畳まない**）。⚠️ `Message.attachmentScanStatus` の更新は**チャット添付が実装される SP-13** で同じ関数に分岐を足す（現時点では対象が `skill_sheets` だけなので `NOT_FOUND` になる）。✅ **T-05-08: 適用の直後、`processedAt` の CAS より前に `notifyScanQuarantine` を通す**（下記） | `attempts: 3` | p95 3 秒 | ①`WebhookDelivery.processedAt` の CAS ②`UNIQUE(objectKey, versionId)` ③状態遷移の単調性（3 段の重ね掛け）④周知は `EmailDispatch.dedupeKey` の `UNIQUE` |
 | `scan.poll` | 毎 5 分（payload `{ tenantId }`。テナント単位のファンアウトは SP-07） | `SCANNING` が `SCAN_STALL_ALERT_MINUTES`（既定 10）を超えたものを `getResult` で照会し、判定が付いていれば **`scan.apply-result` と同じ経路**（`applyFileScanResult`）で適用する（2 実装にしない = 単調性も `FileScanResult` の記録も共有される）。🔴 判定が付いていなければ**何もしない**（`SCANNING` のまま次回も対象になり、`A-005` の「`SCANNING` 滞留」に出続ける。**推測で `CLEAN` にも `FAILED` にもしない**）。母集団は `app_list_stalled_scan_targets`（§8.5.1。所有者を問わずテナント内を見る）。✅ **T-05-08: 判定が付いて適用できたら `scan.apply-result` と同じ `notifyScanQuarantine` を通す**（🔴 **周知が Webhook 経路だけに実装されていると、Webhook を取りこぼした版の隔離は誰にも届かない**） | `attempts: 3` | — | 読み取り + 冪等更新 + `EmailDispatch.dedupeKey` |
 | `contract.render-pdf` | `{ tenantId, contractId, version }` | `mergeContract()`（§3.7。純粋関数）→ docx 差し込み → 🔴 **ワーカー側の LibreOffice headless** で PDF 化（`docs/03` 申し送り 22。Vercel では動かない）→ `mergeResult` 保存 → 🔴 **`gate.run{CONTRACT_DOCUMENT}` を enqueue**（§11.1） | `attempts: 2` | p95 60 秒 | `ContractDocument(contractId, version)` の `UNIQUE`。差し込みは決定的なので再実行しても同一（`F-048 AC-1`） |
-| `export.generate` | `{ tenantId, exportRequestId }` | CSV 一式を生成し S3 へ。🔴 **二重境界を適用して生成する**（`F-064 AC-6`） | `attempts: 2` | p95 5 分 | `DataExportRequest.status` の CAS |
+| `export.generate` | `{ tenantId, exportRequestId }` | CSV 一式を生成し S3 へ。🔴 **二重境界を適用して生成する**（`F-064 AC-6`）。🔴 **T-09-12**: 自社台帳のエンジニア CSV には `EngineerCareer` を**別ファイル（`engineer_careers.csv`。1 行 = 1 経歴、`engineer_id` で結合）**として含める（**1 セルに詰め込まない** —— 詰め込むと列の意味が失われ、返却データから元の行構造を復元できない）。🔴 **匿名候補側の CSV には経歴の列を 1 つも作らない**（`F-008 AC-7` / `docs/04` 申し送り 17-③。件数・要約・「経歴あり」も出さない）。**生成は §4.5 / §4.6 と同じ型を通す**（エクスポートだけ別の読み出しを書かない） | `attempts: 2` | p95 5 分 | `DataExportRequest.status` の CAS |
 
 #### 9.6.1 スキャン失敗・隔離の周知（`F-011` 処理④。T-05-08）
 
@@ -3854,10 +4006,10 @@ export type OperationalMailDispatch = {                  // T-04-02 で HostOrPl
 |---|---|---|---|---|
 | `retention.scan` | 毎日 02:00 JST | 🔴 **`Engineer.retentionExpiresAt <= today` かつ `piiPurgedAt IS NULL`** を抽出 → `retention.delete` を enqueue（`F-046`） | `attempts: 3` | 未処理条件 |
 | `retention.notify` | 毎日 02:05 JST | 削除の 14 日前予告をテナント管理者へ（`F-046 AC-3`） | `attempts: 3` | `EmailDispatch.dedupeKey` |
-| `retention.delete` | イベント | 🔴 **①S3 の `DeleteObject` → ②DB の列を NULL 化し `piiPurgedAt` を立てる の順**。①が失敗したら②に進まない（`docs/03` §4.12） | `attempts: 3` | ②が終わるまで再実行対象に残る |
+| `retention.delete` | イベント | 🔴 **①S3 の `DeleteObject` → ②DB の列を NULL 化し `piiPurgedAt` を立てる の順**。①が失敗したら②に進まない（`docs/03` §4.12）。🔴 **T-09-12: ②で `engineer_careers` の行を物理削除する**（列の NULL 化ではなく行削除。`role` / `description` / `technologies` が NOT NULL であり、空文字の行を残しても意味が無い）。**⚠️ 暫定。[Issue #48](https://github.com/Festal-KM/SES-Platform/issues/48) で確認中**（下記） | `attempts: 3` | ②が終わるまで再実行対象に残る |
 | `tenant.closing-notify` | 毎日 02:08 JST | 🔴 **削除予告（`F-064 AC-10`）。`CLOSING → PURGED` の予告で、`retention.notify`（`F-046`）/ `tenant.sandbox-notify`（`F-054 AC-9`）とは別物。** 対象 = `lifecycleState='CLOSING'` のテナントの `OWNER` / `ADMIN`（`SANDBOX` 由来なら見込み客 = `OWNER`）。2 段: `phase='ENTERED'`（`closingEnteredAt <= today`。削除予定日を明記）/ `phase='D7'`（`closingEnteredAt + 23日 <= today`）。各段は「期限を過ぎ、かつ未処理」で起票し、`EmailDispatch(templateKey='TENANT_CLOSING_NOTICE', dedupeKey='TENANT_CLOSING_NOTICE:{tenantId}:{phase}:{yyyymmdd}:{recipientHash}')` を作成して `email.dispatch` を enqueue（分類 1 = 🔴 **`sandbox` でも実送信**。環境枠到達時は `HELD_PROVIDER_QUOTA` で保留され `send.hold-release` が配送する。§8.3-Q）。「未処理」= 当該 `(tenantId, phase)` に `status IN ('QUEUED','HELD_PROVIDER_QUOTA','SENT','MOCKED')` の行が無いこと。`FAILED`（宛先全員バウンス等）なら翌日に再起票（`dedupeKey` に日付を含むため `UNIQUE` に当たらない）し、`A-005` 項目 15 に `cause='NOTICE_UNDELIVERED'` で出す | `attempts: 3` | 未処理条件 + `EmailDispatch.dedupeKey` |
 | `tenant.purge-scan` | 毎日 02:10 JST | 🔴 **`lifecycleState='CLOSING'` かつ `closingEnteredAt + 30日 <= today`**、🔴 **かつ予告が配送済み（`F-064 AC-10`）** = `email_dispatches(tenantId, templateKey='TENANT_CLOSING_NOTICE')` に `status IN ('SENT','MOCKED')` の行が 1 件以上あり、**`status IN ('QUEUED','HELD_PROVIDER_QUOTA')` の行が 0 件** → `tenant.purge` を enqueue（`F-064 AC-1`）。🔴 **`MOCKED` を配送済みとみなすのは、送信系が全てモックの `development` / `demo` に限る。`sandbox` の `TENANT_CLOSING_NOTICE` は分類 1（`CLAUDE.md` §11.1 / `F-054 AC-9`）であり実送信されるため `MOCKED` にならない**（§13.2 の「疑似送信の記録」を配送済みの根拠にしない）。🔴 **予告が `HELD_PROVIDER_QUOTA` / `QUEUED` の間は enqueue せず次回に持ち越す**（上限到達を理由に予告を省いて削除に進む経路を作らない。`docs/02` 章 7.7-④）。予告が無い / 未配送のテナントは満了後も残るため `A-005` 項目 15 に `cause='NOTICE_PENDING'` で出す（件数・状態のみ。§16.5） | `attempts: 3` | 未処理条件 |
-| `tenant.purge` | イベント | 🔴 **開始時に `tenant.purge-scan` と同じ配送確認を再評価し（二重）、満たさなければ何もせず正常終了** → `TenantPurgeRun` を `RUNNING` で作成 → **エンジニアの連絡先 / スキルシート原本 / チャット本文を削除** → `lifecycleState='PURGED'` → `TenantPurgeRun` を `COMPLETED` + `counts`（`F-064 AC-2`） | `attempts: 3` | `TenantPurgeRun` の状態と各対象の `purgedAt` |
+| `tenant.purge` | イベント | 🔴 **開始時に `tenant.purge-scan` と同じ配送確認を再評価し（二重）、満たさなければ何もせず正常終了** → `TenantPurgeRun` を `RUNNING` で作成 → **エンジニアの連絡先 / スキルシート原本 / チャット本文を削除**（🔴 **対象は `PURGE_SPEC` が唯一の出所**。T-09-12 で `engineer_careers` の行削除を含む。**暫定。Issue #48**） → `lifecycleState='PURGED'` → `TenantPurgeRun` を `COMPLETED` + `counts`（`F-064 AC-2`） | `attempts: 3` | `TenantPurgeRun` の状態と各対象の `purgedAt` |
 | `tenant.sandbox-expiry` | 毎日 02:15 JST | `SANDBOX` かつ `sandboxExpiresAt <= today` → `CLOSING`（`F-054 AC-4`） | `attempts: 3` | 状態 CAS |
 | `tenant.sandbox-notify` | 毎日 02:20 JST | 期限の 7 日前 / 1 日前に見込み客へ予告（🔴 **分類 1 = `sandbox` でも実送信**。`F-054 AC-9`） | `attempts: 3` | `EmailDispatch.dedupeKey` |
 
@@ -3865,11 +4017,23 @@ export type OperationalMailDispatch = {                  // T-04-02 で HostOrPl
 
 ```ts
 export const PURGE_SPEC = {
-  delete: [ { table: 'engineers', columns: ['contact_email', 'contact_phone', 'birth_date', 'preference_note'] }, { table: 'skill_sheets', objects: 's3', columns: ['object_key'] } /* contract_documents / contract_templates も同様 */, { table: 'skill_sheet_extractions', columns: ['payload'] }, { table: 'messages', columns: ['body', 'attachment_key'] } ],
+  delete: [ { table: 'engineers', columns: ['contact_email', 'contact_phone', 'birth_date', 'preference_note'] }, { table: 'skill_sheets', objects: 's3', columns: ['object_key'] } /* contract_documents / contract_templates も同様 */, { table: 'skill_sheet_extractions', columns: ['payload'] }, { table: 'messages', columns: ['body', 'attachment_key'] },
+    // 🔴 T-09-12（暫定。Issue #48 で確認中）。列の NULL 化ではなく「行の削除」であることを rows で示す
+    { table: 'engineer_careers', rows: 'ALL', provisional: 'ISSUE-48' } ],
   retain: [ { table: 'audit_logs', reason: '法令上の保持義務がある範囲', policy: 'RETAIN_ALL' }, { table: 'ai_usage', reason: '請求根拠', policy: 'RETAIN_ALL' }, { table: 'usage_counters', reason: '請求根拠', policy: 'RETAIN_ALL' } ],
 } as const;
 // 🔴 暗黙の全件削除・全件保持にしない。§17.2 のテストが「業務テーブルの全部が delete か retain のどちらかに現れる」ことをカタログ走査で検証する。
+// 🔴 rows: 'ALL' を持てるのは「保持期間の対象そのものが行である」表だけ。既定は列の NULL 化であり、
+//    行削除にすると FK の連鎖で他の業務データが消えうるため、新しい表に安易に付けない。
 ```
+
+⚠️ 🔴 **`engineer_careers` を削除対象に含めるのは暫定であり、確定事項として扱わない**（T-09-12。`CLAUDE.md` §8.6）:
+
+- **`docs/02` 章 6.8 / A-24 が置いた既定**（保持期間は `SkillSheet` 原本に準じる = 稼働終了・提案終了から 3 年）に従っている。
+- 🔴 **しかし `CLAUDE.md` §3.5 / `BR-29` の削除対象の列挙は「連絡先とスキルシート原本」であり、経歴は入っていない。** 列挙への追加は**上流（`CLAUDE.md`）の改訂**にあたり、**人間の承認事項**である。
+- ✅ **[Issue #48](https://github.com/Festal-KM/SES-Platform/issues/48) で確認中**（既定 = A「削除対象に含める」）。**回答を待たずに既定で進める**が、`PURGE_SPEC` の当該要素に **`provisional: 'ISSUE-48'`** を付け、**回答が来たときに 1 箇所だけ直せば済む**形にする。
+- **もし回答が B（含めない）になった場合の差分**: `PURGE_SPEC.delete` から 1 要素を外し、`retain` に `{ table: 'engineer_careers', reason: '...' }` を足すだけである（`retention.delete` / `tenant.purge` のハンドラは `PURGE_SPEC` を読むだけなので**コードは変わらない**）。**設計を値に依存させていない**。
+- 🔴 **`tenant.purge`（`PURGED`）でも同じ扱い**（`docs/02` 章 6.8 の 2 行目）。**2 箇所に別々の判断を書かない** —— どちらも `PURGE_SPEC` を唯一の出所とする。
 ### 9.8 計測・集計・課金
 
 | ジョブ名 | スケジュール | 実行内容 | 再試行 | 冪等性 |
@@ -4135,6 +4299,8 @@ export type ConsistencyInput = Pick<GateInput,
 // 🔴 この型に AI の出力（string / warnings）が入らないことが担保そのもの。
 ```
 🔴 **`decideConsistency` の確定形は §11.8（T-07-07）を正とする。** 上のスケッチとの差分（`ConsistencyInput` を `Pick<GateInput, …>` にせず 3 項目を束ねたこと、`duplicateFindings` を「空配列しか渡せない継ぎ目」にしたこと）は §11.8 ② / ⑤ に記録した。
+
+🔴 **`EngineerSnapshotFacts` は凍結された経歴を含む**（T-09-12。Issue #35 = A）: `careers: FrozenCareer[]`（§3.6）。**PII 層と商流層の検査対象**であり、`gate-inspector` へ渡す `content` には各行の `role` / `description` / `technologies` を**行の区切りが分かる形で連結**して載せる（`GateFinding.field='snapshot'` のオフセットはこの連結後の文字列に対する位置）。🔴 **経歴を検査から外さない** —— 業務内容にはエンド企業名・現場名・現所属会社名が書かれるのが常態であり、外すと**商流層と PII 層が経歴の側から素通りする**（`BR-15` / `F-020 AC-1`）。🔴 **整合層（`decideConsistency`）は経歴を合否の材料にしない**（Phase 1 の照合 ①〜③ に経歴は入らない）—— 自由文どうしの意味的な突合になり、**機械的な照合ではなくなる**（`CLAUDE.md` §3.3 / §12.3 の 🔴「整合層の合否判定を `gate-inspector` に委ねない」）。**経歴とスキルシート本文の齟齬は AI の警告（`aiWarnings`）として併記するにとどめる。**
 **整合層が照合するもの**（`docs/02` 章 8.5）
 
 | # | 照合 | Phase |
@@ -4176,8 +4342,12 @@ export function decideGate(input: {
 // packages/domain/src/gate/hash.ts（純粋関数）
 export function gateContentHash(input: GateHashInput): string;   // SHA-256 の hex
 // GateHashInput = 検査対象になる全ての値の正規化された連結:
-//   subject / body / publicSummary / snapshot（氏名・スキル・単価・期間）/ 添付の objectKey + versionId
-//   / recipientCompanyName / recipientEmail / offeredUnitPrice / offeredStartDate
+//   subject / body / publicSummary / snapshot（氏名・スキル・単価・期間・🔴 careers の全行の 5 項目。T-09-12）
+//   / 添付の objectKey + versionId / recipientCompanyName / recipientEmail / offeredUnitPrice / offeredStartDate
+// 🔴 careers を含める理由: 「ハッシュは検査した内容のすべてを覆う」が本節の不変条件である。
+//    凍結行は作成後に変わらないので実務上ハッシュは動かないが、**覆っていない値を検査対象にしない**
+//    （§11.3 が careers を検査するのに §11.5 が覆わない状態を作ると、後から凍結の再生成を許した
+//     瞬間に「内容が変わったのに承認が生き残る」経路が開く）。
 ```
 | 手順 | 実装 |
 |---|---|
@@ -4704,7 +4874,7 @@ sequenceDiagram
 
   PS->>WEB: GET /api/projects → 🔴 C4 のポリシーで自社に公開された案件のみ（他社の公開先は見えない）
   PS->>WEB: POST /api/proposals（F-019 / S-020）
-  WEB->>DB: Proposal(DRAFT) + EngineerSnapshot を凍結
+  WEB->>DB: Proposal(DRAFT) + EngineerSnapshot を凍結<br/>（🔴 engineer_careers を §3.4.1 の順で読み、careers[] へ「行単位で値を複製」。<br/>　0 行なら [] を保存し 422 にしない。以後 台帳を編集しても この提案は変わらない）
   PS->>WEB: POST /api/proposals/{id}/gate
   WEB->>DB: CAS: DRAFT → GATE_RUNNING
   WEB->>Q: enqueue gate.run{PROPOSAL, contentHash}
@@ -4749,6 +4919,7 @@ sequenceDiagram
   WEB->>DBH: 自社スコープのクエリ（自社エンジニア）
   WEB->>SS: 共有スコープのクエリ（EngineerShare のある行のみ）
   SS->>DOM: anonymize(engineer) → 丸め 5 項目（U-06）
+  Note over SS,DOM: 🔴 SharedCandidateDb に engineerCareer デリゲートが無く、<br/>engineer_careers に共有スコープのポリシーも無い（§4.5）。<br/>AnonymizeEngineerInput / AnonymousCandidateView にも経歴のフィールドが無い（§4.6）<br/>＝ 経歴は「落とす」のではなく「そもそも入って来ない」（F-008 AC-7）
   DOM-->>WEB: AnonymousCandidateView（candidateRef = HMAC(secret, projectId‖engineerId)）
   WEB-->>HS: 自社候補と匿名候補を決定的順序でマージ（engineerId は載せない）
 
@@ -4757,8 +4928,8 @@ sequenceDiagram
   Note over WEB: 🔴 この時点でも実名・所属会社名・スキルシートは開示されない
 
   PA->>WEB: POST /api/proposal-requests/{id}/accept（S-018）
-  WEB->>DBP: 同一トランザクションで<br/>REQUESTED→ACCEPTED の CAS + Proposal(DRAFT) + EngineerSnapshot
-  Note over DBP: 🔴 ここで初めて実名・所属会社名・スキルシートがホストに開示される（経路 2 に合流）
+  WEB->>DBP: 同一トランザクションで<br/>REQUESTED→ACCEPTED の CAS + Proposal(DRAFT) + EngineerSnapshot（careers を行単位で凍結）
+  Note over DBP: 🔴 ここで初めて実名・所属会社名・スキルシート・**経験内容**がホストに開示される（経路 2 に合流）<br/>経歴への到達経路は EngineerSnapshot.careers **だけ**であり、台帳（engineer_careers）は C3 のまま見えない
   WEB-->>PA: { proposalId }
 
   Note over PA,WEB: 辞退なら POST /{id}/decline { reason } → DECLINED + declineReason<br/>🔴 HostProposalRequestView に該当フィールドが存在しない
@@ -5140,6 +5311,7 @@ packages/db/seed/
 | 🔴 **合成データの担保** | 企業名は「株式会社サンプルアルファ」等の明示的な架空名、氏名は架空名リスト、スキルシートはテンプレート生成。**実データ由来のファイルをリポジトリに置かない**（`F-053 AC-1`） |
 | 🔴 **実行できる環境の制限** | `APP_ENV ∈ {demo, development}` のときのみ。`packages/config` の検証と `API-A16`（画面は `A-012`）のミドルウェアの**二重**で拒否（`F-053 AC-6`）。`sandbox` には合成データを投入しない（`F-053 AC-4`） |
 | 🔴 **グローバルなマスタ**（T-05-01 で追加） | 🔴 **`skills`（スキル辞書）は `tenant_id` を持たない射程外 4 表**であり、`reset()`（`tenant_id` で絞る削除）の射程外である。したがって固定 ID の `createMany` だと 2 回目の実行で一意制約に当たる —— **`upsert` で冪等に投入する**（`platform_users` と同じ扱い）。実体は `packages/db/seed/presets/global-skills.ts` で、プリセットに依らず同じ表を指す。🔴 **これは「マスタ」であって合成データではない**（実在の技術名を並べるのが正しく、個人・企業の情報を 1 つも含まないので `F-053 AC-1` に抵触しない）。🔴 **辞書を増やす経路はこのファイルだけ**である（`app_tenant` には `GRANT SELECT` しか無い。§4.2 / `F-010 AC-2`）。`sortKey` は配列の並びをそのまま採番するので、**行を途中に挿し込まず末尾に足す**（挿し込むと既存の匿名候補の表示順が理由なく変わる。§3.4） |
+| 🔴 **経験内容（`EngineerCareer`）**（T-09-12 で追加） | 🔴 **`demo` / `isolation` の両方で、経歴を持つエンジニアと持たない（0 行の）エンジニアを混在させる** —— 0 行は正常な状態（`F-008 AC-5`）であり、**両方が seed に無いと「0 行のときだけ落ちる」不具合が E2E をすり抜ける**。`isolation` には 🔴 **「取引先所属で、共有可（`EngineerShare`）かつ経歴を 4 行持つエンジニア」を必ず 1 名**置く（§17.3 #5 / §17.2 #28 の母集団。**この 1 名が居ないと「経歴が匿名候補に出ない」ことを実データで確かめられない**）。**`demo` には、提案を作成したあとに台帳側の経歴を編集した組**（凍結と現在値がずれている `Proposal`）を 1 件置く（§17.3 #25 / `S-023` の差分ビューの母集団）。業務内容は**架空の案件名・架空のエンド企業名**で書く（`F-053 AC-1`。🔴 **実在企業名を入れない** —— `demo` は営業が客先で見せる画面である。`CLAUDE.md` §11.1） |
 | 🔴 **サインインできる母集団**（T-03-11 で追加） | `isolation` は **E2E が実際にサインインして**越境 0 件を確かめるための母集団でもある（§17.3 #1）。したがって ①全利用者に**照合可能な Argon2id ハッシュ**（合成パスワード。`ISOLATION_SEED_PASSWORD`）を持たせる ②各テナントに **`OWNER` を 1 名**置く（`GET /api/audit-logs` は `OWNER` / `ADMIN` のみ。既存の `SALES` は付け替えない）③**`PlatformUser` を 2 名**（`PLATFORM_OWNER` / `PLATFORM_SUPPORT`）置く（§17.3 #15 の検証に要る）。🔴 **2 要素認証の資格情報はシードに置かない** —— 平文のシークレットをリポジトリに置かずに済み、E2E は `#3 setup` が本人の画面に返す `otpauth://` URL から RFC 6238 で計算する（テスト専用のログイン迂回を作らない）。🔴 `platform_users` と `PLATFORM_USER` の `two_factor_credentials` は `tenant_id` を持たず `reset()`（`tenant_id` で絞る削除）の射程外なので、**`upsert` と明示的な削除**で冪等性を保つ |
 
 ## 14. ファイルストレージ規約
@@ -5239,7 +5411,12 @@ AppError（抽象。code / httpStatus / userMessageKey / logLevel を持つ）
 │   ├── PartnerCompanySuspendedError    409  'error.partnerCompany.suspended'  🔴 T-04-07。所属取引先の停止（F-007 AC-2）。§6.2 のとおり `requireExecutable` が投げる。**テナントの停止と畳まない**（止まる単位も解除の主体も違う）。#14 は停止中の取引先への招待もこれで拒否する
 │   ├── EsignNotConnectedError          409  'error.esign.notConnected'
 │   ├── GateStaleError                  409  'error.gate.stale'
-│   └── AlreadySettledError             409  'error.alreadySettled'      （再送競合）
+│   ├── AlreadySettledError             409  'error.alreadySettled'      （再送競合）
+│   └── CareerReplaceConfirmationRequiredError 409 'error.career.replaceConfirmationRequired'
+│        🔴 T-09-12。§6.4 #16b の `mode='REPLACE'` で `confirmedRemovalIds` が未指定 / 現在の削除対象と不一致。
+│        `details` に `removals: CareerRowView[]`（**消える行**）を返す。🔴 **何も書かずに返す**（部分適用しない）。
+│        `retryable: true`（同じ ID 集合を付けて再送すれば通る）。**確認から実行までの間に他者が行を足した場合も
+│        これで止まる** = 確認画面に無かった行が黙って消えることが起こらない（CAS）
 ├── UnprocessableError                  422
 │   ├── InvalidStateTransitionError     422  'error.state.invalidTransition'  🔴 §4.2 の全 5 機械
 │   └── SendingDomainNotVerifiedError   422  'error.sendingDomain.unverified'  🔴 docs/04 申し送り 8。対象は APPROVED / DRAFT のまま据え置き、理由 + DNS レコードを返す
@@ -5317,6 +5494,7 @@ export class InvalidStateTransitionError extends AppError {
 | `*.create` / `*.update` / `*.delete` | `withApiRoute` の `audit` オプション（各ハンドラで `action` を宣言） | `USER` / `SYSTEM` |
 | 🔴 `skill_sheet.create` / `skill_sheet.update` / `skill_sheet.delete` | `#19` / `#19b` / `#19c`（`F-011 AC-4`「アップロード・版の切替・削除が監査ログに残る」）。**`skill_sheet.upload` のような独自 action を作らず `*.create` / `*.update` / `*.delete` に畳む**（`S-041` の操作種別フィルタから漏れるため。`partner_company.suspend` と同じ理由）。版の切替は `summary.operation='SET_LATEST'` で区別する。🔴 **3 つとも業務トランザクション内（`writeAuditLog`）で書く** —— `audit` オプションはハンドラの前に別トランザクションで書くため、**起きなかった操作**（404 / 409 / 冪等な no-op）まで残る。🔴 `summary` に**版のメモ・ファイル名・氏名・オブジェクトキーを載せない**（§16.2 / §5.5） | `USER` |
 | 🔴 `partner_company.create` / `partner_company.update` | `#12` / `#13`（`F-007 AC-3`「登録・招待・停止・再開が監査ログに残る」）。**停止・再開も `*.update` に揃え、`summary.operation`（`SUSPEND` / `RESUME`）で区別する** —— `partner_company.suspend` のような独自 action を作ると `S-041` の操作種別フィルタ（`CREATE_UPDATE_DELETE` = 接尾辞一致）から漏れ、**記録されているのに検索で出てこない**状態になる。招待は既存の `invitation.create` に `summary.targetPartnerCompanyId` を載せる | `USER` |
+| 🔴 **`engineer_career.create` / `engineer_career.update` / `engineer_career.delete`**（T-09-12。`F-008 AC-5` / `docs/04` 申し送り 17-⑤） | `#16`（`S-007` の保存）/ `#16b`（Phase 2 の抽出反映）。🔴 **行ごとに 1 件**であり、**エンジニア 1 件の更新（`engineer.update`）にまとめない** —— 1 回の保存で複数行が変わるため、まとめると「どの行がいつ消えたか」が追えない（`CLAUDE.md` §3.5 の説明責任は、経歴の**閲覧**だけでなく**改変**にも及ぶ）。🔴 **独自 action（`engineer_career.save` / `.apply`）を作らない**（`S-041` の操作種別フィルタ = 接尾辞一致から漏れる。`skill_alias.update` と同じ理由。`#16b` の区別は `summary.mode`（`APPEND` / `REPLACE`）に置く）。🔴 **業務トランザクションの内側（`writeAuditLog`）で書く**（`audit` オプションだと起きなかった変更まで残る）。🔴 `summary` は **`{ careerId, periodFrom, periodTo, changedFields, source, mode?, skillSheetExtractionId? }` だけ** —— **業務内容・使用技術・役割の本文を載せない**（自由入力であり PII と商流が混ざる。載せると監査ログが第 2 の経歴台帳になり、`PURGED` と保持期間削除の射程外に内容が残る。§16.2 / §5.5 / §9.7）。差分は `diffCareerRows`（`packages/domain`）が返す `created` / `updated` / `deleted` をそのまま 1 件ずつ書く | `USER` |
 | 🔴 `skill_alias.update` | `#24`（`F-010 AC-3`「別名の採用・却下が監査ログに残る」）。**採用・却下に独自 action（`skill_alias.decide`）を作らず `*.update` に畳む** —— `S-041` の操作種別フィルタ（`CREATE_UPDATE_DELETE` = 接尾辞一致）から漏れ、**記録されているのに検索で出てこない**（`partner_company.suspend` を作らなかったのと同じ理由）。区別は `summary.decision`（`ACCEPT` / `REJECT`）。🔴 **`withApiRoute` の `audit` ではなく `decideSkillAlias` の業務トランザクション内**（`writeAuditLog`）で書く（`membership.role_change` と同じ形）: ①`audit` はハンドラの前に別トランザクションで書くため、**起きなかった採否**（403 / 404 / 409 / 400）まで記録に残る ②`summary` に載せる由来（`origin`）は行を読むまで分からない。🔴 `summary` に**別名の表記そのものを載せない**（利用者の自由入力であり PII が紛れうる。§16.2） | `USER` |
 | `proposal.submit` / `proposal.resend` | 送信ジョブの ⑥（§10.2） | `SYSTEM`（`summary.requestedBy` に人間を記録） |
 | `proposal.approve` / `proposal.reject` | `#41` / `#42`。自動承認は `SYSTEM` + `summary.reason='ALL_LAYERS_PASS'` | `USER` / `SYSTEM` |
@@ -5402,7 +5580,7 @@ export const logger = pino({
 | 層 | ツール | 検証するもの |
 |---|---|---|
 | **ユニット** | Vitest | `packages/domain` の純粋関数（🔴 **決定性**: スコア `F-029 AC-1` / 丸め `F-017 AC-3` / 整合層 `F-020 AC-3` / 期日計算 / 宛先分類 / 状態遷移の可否）、`packages/ai` のマスキング、`packages/connectors` の正規化 |
-| **結合（DB あり）** | Vitest + Testcontainers（PostgreSQL） | 🔴 **分離の検証**（§4.7 のカタログ走査テスト **14 本**〔うち 1 本は §3.3.1 のパートナー複合 FK。Issue #33〕 + 二重防御テスト 10 件。経路 5 の C9 / ビュー / 書込不可を含む）、RLS ポリシー、CAS と `UNIQUE` による冪等性、パーティション、列レベル `GRANT`。**索引と実行計画**（`search-indexes.test.ts`。T-06-05。①拡張がマイグレーション経由で実在する ②複合索引の先頭列が `tenant_id` ③決定的順序を索引がそのまま供給する〔ソートが計画に現れない〕④🔴 **RLS 下で trigram の GIN を使えないこと**の根拠 = `textlike` / `texticlike` の `proleakproof` と実行計画。**索引を作らない判断の根拠を常設で固定する**） |
+| **結合（DB あり）** | Vitest + Testcontainers（PostgreSQL） | 🔴 **分離の検証**（§4.7 のカタログ走査テスト **15 本**〔うち 1 本は §3.3.1 のパートナー複合 FK（Issue #33）、1 本は経路 4 の共有スコープポリシーの固定（T-09-12 / Issue #35）〕 + 二重防御テスト **11 件**。経路 5 の C9 / ビュー / 書込不可と、**`engineer_careers` が経路 4 の共有スコープからも見えないこと**を含む）、RLS ポリシー、CAS と `UNIQUE` による冪等性、パーティション、列レベル `GRANT`。**索引と実行計画**（`search-indexes.test.ts`。T-06-05。①拡張がマイグレーション経由で実在する ②複合索引の先頭列が `tenant_id` ③決定的順序を索引がそのまま供給する〔ソートが計画に現れない〕④🔴 **RLS 下で trigram の GIN を使えないこと**の根拠 = `textlike` / `texticlike` の `proleakproof` と実行計画。**索引を作らない判断の根拠を常設で固定する**） |
 | **結合（キューあり）** | Vitest + ローカル Redis | ジョブの冪等性、`attempts: 1` の実効性、保留 → 自動復帰 |
 | **E2E** | Playwright | `UC-01`〜`UC-25` の主要フロー、環境分離の 3 分類、モバイルビューポートでの承認、代理閲覧の操作不可 |
 
@@ -5440,6 +5618,8 @@ export const logger = pino({
 | 25 | `prompt-registry-single-path.test.ts` | 🔴 **製品プロンプトの読み込み口と依存を固定する**（T-07-05。§7.7 / §7.13 ⑦）: ①`@ses/prompts`（= `prompts/roles/**`）を import する非テストソースが **`packages/ai/src/prompts.ts` の 1 本だけ**（ESLint は「`packages/ai` 以外は不可」までしか言えず、パッケージ内部で読み込みが散ると `runRole` を経ないプロンプト組み立てが成立する）②🔴 **`prompts/roles/**` が外部 import と親ディレクトリへの相対 import を 1 つも持たない**（プロンプトはデータであって実行主体ではない。`CLAUDE.md` §12.3。ここから DB・LLM・I/O に到達できないことの担保であり、`packages/ai` との依存循環を作らないことの担保でもある）③**版リテラル・ファイル名・登録表の 3 つが一致する**（`{role}.v{n}.ts` ↔ `version: '{role}.v{n}'` ↔ `prompts/roles/index.ts`。ずれると生成物に残った版から文面を再現できない = `BR-13` が壊れる） |
 | 26 | `send-hold-seam.test.ts` | 🔴 **`send.*` の保留を書く実装が 0 件であること**（T-07-11。§13.1.1 ⑥）。`Proposal` / `Contract` の `sendHoldReasonKey` / `sendHoldSince` を**オブジェクトリテラルのプロパティとして書く**箇所を AST で数える。理由: `send.hold-release` の `releaseSendHolds` は SP-09 T-09-06 の範囲であり、T-07-11 は「常に 0 を返す」seam を渡した。**保留を書く経路が無い今は 0 が事実だが、SP-09 が書いた瞬間に嘘になる**（`CLAUDE.md` §11.1）。落ちたら実装で置き換え、**本テストごと削除する**（期待値を書き換えて緑にしない） |
 | 27 | `startup-di-callers.test.ts` の追補 | 🔴 **ワーカーの起動時 DI の呼び出し連鎖が 2 段とも繋がっていること**（T-07-11。§13.1.1 ①）: ①`apps/worker/src/main.ts` が `./bootstrap.js` を import して `bootstrapWorker()` を呼ぶ ②`apps/worker/src/bootstrap.ts` が `initializeRuntimeConfig` を呼ぶ。**切り出しで連鎖が切れると「起動しても環境変数を検証していない」状態になる**（T-03-12 が塞いだ穴の再発） |
+| 28 | 🔴 `career-not-anonymous.test.ts`（T-09-12。Issue #35 = A） | 🔴 **経験内容が匿名候補の経路に「型として」現れない**（`F-008 AC-7` / `F-017 AC-1` / `BR-55` / `docs/04` 申し送り 17-③）。**フィルタの有無ではなく型と参照を検査するのが要点**である（フィルタは書き忘れるが、型に無いものは書けない）。5 本立て: ①`expectTypeOf<AnonymousCandidateView>()` / `<RoundedAnonymousAttributes>()` / `<AnonymizeEngineerInput>()` が `careers` / `careerCount` / `hasCareers` / `careerSummary` / `latestRole` を**キーとして持たない**（型テスト）②`match-explainer` の `RoleSpec` の入力型（`candidates[]` の要素）が同様に持たない ③`SharedCandidateDb` 型に `engineerCareer` デリゲートが無い（型テスト。#20 ② と同じ向き）④`apps/web/lib/**` と `apps/worker/**` で `engineerCareer` デリゲートを参照するファイルの集合が **台帳の読み書き（`lib/engineers/**`）と凍結（`lib/proposals/snapshot.ts`）に限られる**（AST。匿名候補・エクスポート・`match.build` から参照されていたら FAIL）⑤`export.generate` の匿名候補側の CSV ヘッダ定義に経歴由来の列名が無い（スナップショット） |
+| 29 | 🔴 `career-audit-per-row.test.ts`（T-09-12） | 🔴 **経歴の変更の監査が「行ごと」に残る**（`F-008 AC-5` / `docs/04` 申し送り 17-⑤）。①`diffCareerRows` が純粋関数であること（`packages/domain`。#14 と同じ検査）②`engineer_career.*` の `AuditLog` を書く経路が `lib/engineers/careers.ts` の 1 本だけ（AST）③`summary` に載せるキーの集合をスナップショットで固定し、**`role` / `description` / `technologies` が含まれないこと**（#11 の redact スナップショットと同じ発想）。**結合テスト側**（`tests/isolation/engineer-careers.test.ts`）で「1 回の保存で 3 行追加 + 1 行削除 → `AuditLog` が 4 件」を実データで固定する |
 
 ### 17.3 E2E の主要シナリオ
 
@@ -5449,7 +5629,7 @@ export const logger = pino({
 | 2 | パートナーの全画面・API・集計・通知・エクスポートに他社由来の値が 0 件。**件数バッジ・並び順の変化・示唆も 0 件** | `F-004 AC-3` / `AC-4` |
 | 3 | 案件公開 → パートナーが提案 → ゲート → ホスト承認 → 送信 → 結果記録 | `CLAUDE.md` §5 Phase 1 |
 | 4 | 🔴 **ゲート FAIL の提案が送信できない**（「了解のうえ送信」の導線も API も無い）。🔴 **契約書も同じ**（`CONTRACT_DOCUMENT` のゲートが FAIL / 未実行 / ハッシュ不一致なら `send.contract` が発火しない。§10.2 ①-c） | `F-020 AC-2` / `F-047` 処理⑥ / `F-048 AC-3` |
-| 5 | 🔴 匿名候補が 5 項目でのみ現れ、`Proposal` 作成まで実名・所属会社名・スキルシートに到達できない | `F-017 AC-6`（0 件） |
+| 5 | 🔴 匿名候補が 5 項目でのみ現れ、`Proposal` 作成まで実名・所属会社名・スキルシートに到達できない。🔴 **経験内容を 4 行持つ取引先エンジニアを共有可にしても、ホストの `S-005` / `S-016` の応答 JSON・画面・エクスポート・根拠文に経歴の値が 1 つも現れず、件数・「経歴あり」の示唆も出ない**（T-09-12 / `F-008 AC-7`） | `F-017 AC-6`（0 件） |
 | 6 | 🔴 同一候補が複数案件に現れても `candidateRef` が異なり、突合できない | `F-017 AC-2` / `BR-55` |
 | 7 | 送信を 2 回起動しても外部呼び出しが 1 回（同一 `idempotency_key`） | `F-022 AC-1` |
 | 8 | 🔴 **応答不明 → `SUBMIT_FAILED` → 自動再送されない → 人手再送で 1 回だけ送信** | `F-022 AC-3` / `F-023` / `UC-20` |
@@ -5469,6 +5649,8 @@ export const logger = pino({
 | 22 | 🔴 **未接続テナントの ⑤ 契約**: 電子署名を接続せずに 契約作成 → ゲート → `via='EMAIL'` で送付 → 締結を記録 → `Assignment` 生成 が完了する。接続済みテナントでは `via='ESIGN'` で DocuSign（モック）の envelope が 1 通、署名者 2 名、HOST 署名後も `UNDER_REVIEW` のまま `signers` だけ更新、全員署名で `EXECUTED` | `F-049 AC-8` / `AC-9` / `docs/03` §3.1.10 |
 | 23 | 🔴 **AI 上限とゲート**: 1 日上限到達中にレビュー依頼 → `GATE_RUNNING` のまま `ReviewGate` は HELD、承認・送信 API が 409 / 422、`A-005` に `AI_COST_LIMIT` 理由で滞留が出て失敗件数・FAIL 率が増えない → 上限解除 → `gate.hold-release` が再実行し DONE になる。`S-038` の応答に USD が無く 4 単位の件数だけがある。取引先招待をドメイン未検証で発行 → `HELD_DOMAIN_UNVERIFIED` → 検証後に自動送達。🔴 **送信基盤クォータ（§8.3-Q）**: `MAIL_PROVIDER_DAILY_QUOTA=1` で分類 1 のメールを 2 通起動 → 2 通目が `HELD_PROVIDER_QUOTA`（**`FAILED` にならず**、失敗ジョブ数・`SUBMIT_FAILED`・ゲート FAIL 率が増えず、`A-005` 項目 13 に `heldCount=1` / `consumptionRate=1.0` / `reachedAt` が出る）→ `now` を 24h 進めて `send.hold-release` を実行 → 再送されて `SENT`、モックの `callCount()` が合計 2（招待の場合はトークンが再発行され旧リンクが無効）。🔴 **`send.*` の経路**（`production` 相当の分類 2 = 実 `EmailSender` をモックした構成）: `MAIL_PROVIDER_DAILY_QUOTA=1` で承認済み提案を 2 件送信 → 2 件目が `sendHoldReasonKey='PROVIDER_QUOTA'`（**`RATE_LIMIT` ではない**）で `APPROVED` のまま（`SUBMITTING` / `SUBMIT_FAILED` にならず、`S-022` の文言に `S-038` 導線が無く、`A-005` 項目 14 に `PROVIDER_QUOTA=1` / `RATE_LIMIT=0`）→ `now` を 24h 進めて `send.hold-release` → `SUBMITTED`、`callCount()` 合計 2、`SendAttempt` は提案ごとに 1 行 | `F-027 AC-5`〜`AC-7` / `F-059 AC-5`〜`AC-7` / `F-007 AC-5` / `F-022 AC-1` |
 | 24 | 🔴 **削除予告と環境枠**（`F-064 AC-10`）: `sandbox` 相当で `MAIL_PROVIDER_DAILY_QUOTA=1` により `TENANT_CLOSING_NOTICE` が `HELD_PROVIDER_QUOTA` のまま `closingEnteredAt + 30日` を過ぎても `tenant.purge-scan` が `tenant.purge` を enqueue せず（`TenantPurgeRun` 0 件。連絡先・スキルシート原本・チャット本文が残る。`A-005` 項目 15 に `kind='PURGE_NOTICE_PENDING'` / `cause='NOTICE_PENDING'` / `overdueDays >= 0`。削除ジョブの失敗 `PURGE_JOB_FAILED` は 0 件）→ `now` を 24h 進めて `send.hold-release` → 予告が `SENT` → 翌 `tenant.purge-scan` で初めて `PURGED`。`tenant.purge` を直接 enqueue しても配送未確認なら no-op | `F-064 AC-10` / `docs/02` 章 7.7-④ / `F-059 AC-7` |
+
+| 25 | 🔴 **経験内容の行単位の凍結**（T-09-12。Issue #35 = A）: 経歴 4 行のエンジニアで `Proposal` を作成 → `S-023` に **4 行**が出る → 台帳（`S-007`）で **1 行を編集・1 行を削除・1 行を追加**して保存 → `S-023` の**行数と各行の 4 項目が 1 つも変わらない**（`S-006` の現在値は変わっている）。🔴 **差分ビューでは凍結側と現在値が左右に並置され、同一のリストに混在しない。** 🔴 **経歴 0 行のエンジニアでも `Proposal` を作成でき**（422 にならない）、`S-020` に注意が出て、作成後の凍結は `[]` のまま**後から埋まらない**。1 回の保存で `engineer_career.*` の `AuditLog` が**変更行数と同じ件数**残る | `F-008 AC-5` / `AC-6` / `F-019 AC-2` / `AC-5` / `docs/04` §S-023 |
 
 ### 17.4 環境分離の検証（`docs/02` 章 7.6 NFR-ENV-1 の 3 分類）
 
@@ -5538,6 +5720,7 @@ export const logger = pino({
 | **P-A-18** | 🔴 **利用者向け件数の加算を `runRole` の内部（手順 6b）に閉じ、`ROLE_UNIT` の写像表で 1 件を定義する**（§7.3 / §7.6） | §7.3 / §7.6 / **§7.11** / §9.8 | 🔴 **本書が置いた実装位置。** `docs/03` §7.6.1 の「何を 1 件と数えるか」（`sheet-parser` 1 回 / 根拠文は候補数 / 再試行は加算しない）を、呼び出し側に書かせず単一経路で満たすため。**`AiUsage` の行数から数え直すジョブは作らない**（`docs/03` 申し送り 30）。**実装済み（T-07-03。§7.11 ①②）**: 写像表は `packages/domain/src/ai/units.ts`、加算は `packages/db/src/ai-usage.ts` の `countAiUnit` 1 本（§17.2 #24 が固定） |
 | **P-A-14** | 🔴 **経路 4 の存在判定を `SECURITY DEFINER` 関数 `app_engineer_is_shared()` + 専用ロール `app_share_probe` に閉じる**（§4.5） | §4.2 / §4.5 / §4.7 | 🔴 **本書が置いた決定。** 代替案「`engineer_shares` にホスト向けの追加 SELECT ポリシー」は行（`partner_company_id` / `shared_by`）がホストに見え `BR-06` に抵触するため退けた。**越境経路は増えていない**（経路 4 の DB 側実装を確定させただけ） |
 | **P-A-15** | 🔴 **未認証の受諾・パスワード再設定は「行由来コンテキスト」の 3 関数で書く**（§4.4.2） | §4.4 C8 / §6.3 | 🔴 **本書が置いた決定。** `systemTenantCtx` を `apps/web` に開放する案は HTTP 経路が認証を迂回できるため退けた。分離キーは常にトークン照合で得た DB 行から取る |
+| **P-A-20** | 🔴 **経験内容を `EngineerCareer`（行モデル）で持ち、`Engineer.careers Json` にしない**（§3.2 / §3.4 / §3.4.1。T-09-12） | §3.2 / §3.4 / §4.4 C3 / §5.5 / §6.4 / §6.5 / §7.1 / §9.6 / §9.7 / §16.1 / §17 | 🔴 **人間の決定（2026-09-10、[Issue #35](https://github.com/Festal-KM/SES-Platform/issues/35) = 回答「A」）を反映したものであり、本書が置いた前提ではない。** 本書が置いたのは**その実現方法**である: ①期間を `Char(7)` の `YYYY-MM` で持つ（`@db.Date` にしない。§3.4.1）②表示順を `period_from DESC → created_at → id` の全順序でサーバ側に確定させる ③`EngineerSnapshot.careers` を**値の複製**にし台帳行への参照を持たせない ④監査を**行ごと**に残す ⑤匿名候補の型に**存在させない**。🔴 **ドメイン概念は増えていない**（`CLAUDE.md` §4.1 の `Engineer` の属性の分解。§3.2 の対応表）。🔴 **分離の射程外の例外も増えていない**（C3 に載せた。`CLAUDE.md` §3.1） |
 | **P-A-19** | 🔴 **`assignments ← engineers(engineer_id)` の当事者列継承だけ、`app_share_probe` と同型の専用ロール `app_assignment_owner_probe` + `SECURITY DEFINER` トリガ関数で実装する**（§4.2 / §4.4.1） | §4.2 / §4.4.1 / §4.7 | 🔴 **本書が置いた決定（T-02-08。programmer 実装 → code-reviewer 確認を経て確定）。** `engineers` は C3 のためホスト文脈から他パートナー所有の行が見えないが、`assignments` は C2（ホストがパートナー所属エンジニアを稼働させるのが通常業務）であるため、素の `SECURITY INVOKER` では正当なホスト操作が「親が見えない」で `RAISE` してしまう（`tests/isolation/route5-counterparty.test.ts` で実測）。トリガ関数（`RETURNS trigger`）を `SECURITY DEFINER` にする点が `app_engineer_is_shared()`（通常の SQL 関数。§4.5）と異なり、`app_tenant` セッションから直接呼び出す経路が型レベルで存在しない。**越境経路は増えていない**（`engineers` の 3 列以外は依然として見えない。パートナー間相互参照〔`CLAUDE.md` §3.1〕には抵触しない） |
 
 ## TBD
@@ -5564,9 +5747,10 @@ export const logger = pino({
 | ~~**TBD-16**~~ | ~~`CLAUDE.md` §3.3 の改訂（ゲート対象に契約書）~~ — 🔴 **決着済み（2026-09-01、Issue #15）。契約書は対象、発注書は対象外。`CLAUDE.md` §3.3 改訂済み** | `ReviewGate.targetType='CONTRACT_DOCUMENT'` / `ContractDocument.reviewGateId` / §10.2 ①-c / §11.1 を確定事項として保持 | — | `CLAUDE.md` §3.3 / `BR-15` / `F-047` 処理⑥ |
 | **TBD-17** | **第二コネクタ（クラウドサイン）を実装するか・いつか**（`Q-T-9`。DocuSign 未契約のテナントは `F-049` が使えず `via='EMAIL'` になる） | `EsignProvider.connect` の `CLIENT_ID` 枝・`webhookPathSecretEncrypted`・`/api/webhooks/esign/cloudsign/**` を**差し替え余地として型・スキーマに残し、実装しない**（§8.1 / §8.4 / §8.5）。規約確認 `U-3` が先 | Phase 3 の初期スコープには影響しない（DocuSign 1 実装） | `docs/03` §3.1.2b / `Q-T-9` / `U-3` |
 | **TBD-18** | **取引先が `S-044` から延長確認に直接回答できるようにするか**（`docs/02` `## Open Questions` 末尾。Phase 2 の設計時に別 Issue） | 🔴 **作らない**。経路 5 は読み取り専用（`BR-68`）であり、意思表示は経路 3（チャット）。回答機能を作る場合は経路 5 に書き込みが生じ `CLAUDE.md` §3.1 の改訂から始まる | Phase 2 の `S-044` の導線（現状は「この稼働について相談する」→ `S-031`） | `docs/02` A-23 / `BR-68` |
+| **TBD-20** | 🔴 **`EngineerCareer`（経験内容）を保持期間の削除対象に含めるか**（T-09-12。`docs/02` 章 6.8 / A-24 が「含める」を既定として置いたが、🔴 **`CLAUDE.md` §3.5 / `BR-29` の削除対象の列挙〔連絡先・スキルシート原本〕には経歴が入っていない**。列挙への追加は上流の改訂であり**人間の承認事項**。`CLAUDE.md` §8.6） | 🔴 **暫定。[Issue #48](https://github.com/Festal-KM/SES-Platform/issues/48) で確認中**（既定 = A「削除対象に含める」）。**確定事項として扱わない。** 本書は `PURGE_SPEC.delete` に `{ table: 'engineer_careers', rows: 'ALL', provisional: 'ISSUE-48' }` として置き（§9.7）、**回答で変わるのは設定値 1 要素だけ**にした（`retention.delete` / `tenant.purge` のハンドラは `PURGE_SPEC` を読むだけなのでコードは変わらない）。B（含めない）なら `retain` へ移すだけである | **止まらない。** `T-09-12` は既定で実装でき、削除ジョブの実装（**SP-16 T-16-06**）までに決着すればよい。🔴 **ただし SP-16 の着手前には決着が要る** —— 一度削除してしまった経歴は戻らない（不可逆） | `docs/02` A-24 / 章 6.8 / `BR-29` / `CLAUDE.md` §3.5 / **§9.7** |
 | **TBD-19** | **席単価と、取引先の席を課金対象に含めるか**（`Q-20` / `Q-T-3`①。事業判断） | `Plan.monthlySeatPriceJpy` は設定値。**取引先の席を含めるかで `usage.seat-snapshot`（§9.8）の分母（`Membership` の有効行数にパートナーロールを含めるか）が変わる**ため、集計関数に `countPartnerSeats: boolean` を引数で持たせ決め打ちしない | `F-062` の Stripe `Price` 設計（Phase 3）。Phase 1 のうちに再提起（`docs/03` `pm` 申し送り 14） | `docs/01` `Q-20` / `docs/03` `Q-T-3` |
 
-🔴 **`CLAUDE.md` §4.2 の改訂が必要になった項目は 0 件である。** 保留（§10.4）・遅延保留（§10.5）・AI 上限によるゲート未実行（§7.6）は**属性 / `ReviewGate.execution`（状態機械ではない実行属性）で表現し、5 つの状態機械に状態を 1 つも追加していない**（`P-A-02` / `P-A-16`）。**§3.3（契約書）と §3.1（経路 5）の改訂は 2026-09-01 に人間が行い、本書はそれに追随した。** 未回答の Issue（#1 プロダクト名 / #3 重み / `Q-20` 席単価）は TBD-5 / TBD-19 に確認中のまま残す。🔴 **[Issue #5](https://github.com/Festal-KM/SES-Platform/issues/5)（匿名候補の丸め粒度。Phase 1 のリリース条件）は 2026-09-10 に回答を得て決着し、TBD-2 を閉じた**（§4.6.1 / `docs/03` §4.13.1 を確定値として扱う）。
+🔴 **`CLAUDE.md` §4.2 の改訂が必要になった項目は 0 件である。** 保留（§10.4）・遅延保留（§10.5）・AI 上限によるゲート未実行（§7.6）は**属性 / `ReviewGate.execution`（状態機械ではない実行属性）で表現し、5 つの状態機械に状態を 1 つも追加していない**（`P-A-02` / `P-A-16`）。**§3.3（契約書）と §3.1（経路 5）の改訂は 2026-09-01 に人間が行い、本書はそれに追随した。** 未回答の Issue（#1 プロダクト名 / #3 重み / `Q-20` 席単価）は TBD-5 / TBD-19 に確認中のまま残す。🔴 **[Issue #5](https://github.com/Festal-KM/SES-Platform/issues/5)（匿名候補の丸め粒度。Phase 1 のリリース条件）は 2026-09-10 に回答を得て決着し、TBD-2 を閉じた**（§4.6.1 / `docs/03` §4.13.1 を確定値として扱う）。🔴 **[Issue #35](https://github.com/Festal-KM/SES-Platform/issues/35)（経験内容の保存先）も 2026-09-10 に回答「A」を得て決着した** —— `EngineerCareer` を新設し（`P-A-20`）、**`TBD` には残していない**（決着済みの論点に「暫定 / 確認中」を残さない）。**その副作用として生じた新しい判断事項**（保持期間の削除対象への追加が `CLAUDE.md` §3.5 / `BR-29` の列挙と食い違う件）は **[Issue #48](https://github.com/Festal-KM/SES-Platform/issues/48) として別に起票され、TBD-20 に確認中として残している**（`CLAUDE.md` §8.6「決定の副作用で新たな判断が生じたら、その場で新しい Issue を立て、元の Issue から参照する」）。
 
 ## 付録 A. `docs/03` の `program-design` 宛申し送り 30 項目のマッピング
 
@@ -5605,7 +5789,7 @@ export const logger = pino({
 | 29 | 越境経路 5 は当事者列 + RLS。行だけでなく列も絞る。`ExtensionReview` にパートナー読み取りのポリシーを書かない。書込ポリシーも書かない。当事者列はテーブル作成時から | **§4.4 C9** / **§4.9** / §3.7 / §4.4.1 / §4.7 #8〜#10 / §17.2 #17 |
 | 30 | `UsageCounter` は金額と件数の両方。`Plan` も 2 種の上限。1 件の定義は §7.6.1。再試行は件数に加算せず金額に計上。`AiUsage` の行数から数え直さない。`gate-inspector` は記録するがクォータ外、1 日上限には含めゲートも停止。スキップして PASS にしない。Stripe は 4 単位の件数 | **§7.6** / §3.8（`UsageCounter`）/ §3.10（`Plan`）/ §5.8 / §5.10 / §9.3 / §9.8 / §17.2 #18 |
 
-## 付録 B. `docs/04` の `program-design` 宛申し送り 16 項目（改訂 3 の連番 1〜16）と `docs/02` 申し送り 13〜14 のマッピング
+## 付録 B. `docs/04` の `program-design` 宛申し送り 17 項目（改訂 3 の連番 1〜16 + 改訂 8 の 17）と `docs/02` 申し送り 13〜14 のマッピング
 
 **全項目を反映した。欠けている項目は無い。** `docs/02` の `program-design` 宛申し送り 1〜12 は初版で反映済み（§4 / §7〜§11）。2026-09-01 追加分: **13**（経路 5 の当事者を行レベル分離と同じ層で表現。①当事者列 = `engineer_id` の所有パートナー / 相手方パートナー → §3.7 / §4.4.1 ②当事者判定は認証コンテキストのみ → §4.9 ③同じアクセサ・RLS 述語 → §4.4 C9 ④取得時の射影 → §4.9 のビュー ⑤書込ハンドラを実装しない → §6.6 / §17.2 #17）/ **14**（取引先へ届く送信の前提条件を単一経路で判定。①ジョブが検証状態を確認 → §10.2 ①-d ②フォールバックしない → §8.3 ③`SUBMIT_FAILED` ではなく設定未了 → §10.4 `DOMAIN_UNVERIFIED` ④`TenantEsignConnection` 前提・未接続では `SENDING` を起動しない → §8.4）。**`A-005` 項目 13 / `F-059 AC-7`**（送信基盤クォータ。環境全体・対象テナント欄なし・失敗に加算しない・再送導線なし）→ §8.3-Q / §9.4 / §16.5 / API-A8。**`docs/04` 申し送り 14 / 15**（項目 14 = 送信保留の理由別内訳。`PROVIDER_QUOTA` は `tenant_id` なし・`RATE_LIMIT` はテナント別で `A-004` へ / 項目 15 = 削除予告の未配送。`NOTICE_PENDING` / `NOTICE_UNDELIVERED` の区別・削除ジョブ失敗と別行）→ §8.3-Q / §9.4 / §9.7 / §16.5 / API-A8 / §17.3 #24。**16**（クォータ取得不能を「不明」で表現）→ API-A8 `providerReading.available=false` / §16.5 項目 13。
 
@@ -5626,6 +5810,8 @@ export const logger = pino({
 | 13 | `A-014`（開設）と `A-010`（契約管理）の API を分ける。フェーズの異なる 3 つを 1 エンドポイントに束ねない | **§6.9**（API-A4 / A5 = Phase 0、API-A12 = Phase 1、API-A13 / A14 = Phase 3） |
 | 14 | テナント開設は、テナント作成と初期 `OWNER` 招待を分離して冪等にする | **§6.9**（API-A4 / A5）/ **§10.7** |
 | 15 | 🔴 **削除完了の確認を返す API は `A-010` 用の 1 本に限る**。`A-013` / `S-042` / `A-003` に作らない。`A-003` の `PURGED` に件数を含めない。`A-005` は削除ジョブの失敗を別フィールドで返す | **§6.9**（API-A12 とその直後の禁止事項）/ §16.5 / §17.2（テスト #15） |
+| 16 | クォータ取得不能を「不明」で表現する（0 件と表示させない） | API-A8 `providerReading.available=false` / §16.5 項目 13 |
+| 🔴 **17**（改訂 8。2026-09-10。Issue #35 = A） | 🔴 **経験内容（`EngineerCareer`）を画面が必要とする形で返す。** ①並び順をサーバ側で確定（期間降順 → 同期間は登録順。配列順 = 表示順。終了年月は `null` = 継続中）②0 行を `[]` で返し「未取得」と区別。0 行で `Proposal` を 422 にしない ③**匿名候補の応答スキーマに経歴を型として持たせない**（件数・要約・`hasCareers` も返さない。`match-explainer` の入力にも渡さない。`F-052` のエクスポートにも列を作らない）④**`EngineerSnapshot` は行単位で複製**し、`S-023` は凍結側だけを返す ⑤**行の追加・更新・削除をそれぞれ監査**（保存の粒度と監査の粒度を一致させない）⑥Phase 2 の反映は `追加` / `置換` を取る **1 本**の API。`置換` は消える行を事前に返す。「常に上書き」の設定値を作らない ⑦保持期間の削除対象に含める（**暫定。Issue #48**） | ① **§3.4.1** / §6.4「#16 / #16b / #17 の経験内容の決着」 ② 同・§6.5 の凍結の節 ③ **§4.5** / **§4.6** / §7.1 / §9.6（`export.generate`）/ §17.2 #28 ④ **§3.6** / §6.5（#46 / #46b） ⑤ **§16.1** / §17.2 #29 ⑥ §6.4（#16b） ⑦ **§9.7** / **TBD-20** |
 
 ## 付録 C. `F-001`〜`F-066` の実装設計カバレッジ
 
@@ -5640,18 +5826,18 @@ export const logger = pino({
 | F-005 | §3.8(`AuditLog`) / **§16.1** / §6.3(#10) | F-027 | **§5.8** / §7.6 / §8.7 / §6.7(#69,#70) | F-049 | **§8.4** / §10.2 / §12.3 |
 | F-006 | §6.3(#9) / §4.8 | F-028 | **§13.5** / §6.3(#8 の `env`) | F-050 | §3.7(`Order`) / §6.6(#62) |
 | F-007 | §3.3 / §6.4(#11-#14) / §8.2 | F-029 | §2.2(純粋関数) / §3.5(`MatchCandidate`) / TBD-5 | F-051 | §6.6(#63) / §4.8 |
-| F-008 | §3.4(`Engineer`) / §6.4(#16,#17) | F-030 | §3.10(`TenantMatchWeight`) / §6.7(#68) | F-052 | §3.9(`DataExportRequest`) / §9.6 / §6.7(#77) |
+| F-008 | §3.4(`Engineer`,🔴 `EngineerCareer`) / **§3.4.1** / §4.4(C3) / §6.4(#16,#16b,#17) / §16.1 / §17.2(#28,#29) | F-030 | §3.10(`TenantMatchWeight`) / §6.7(#68) | F-052 | §3.9(`DataExportRequest`) / §9.6 / §6.7(#77) |
 | F-009 | §4.5 / §4.6 / §6.4(#15) / TBD-8 | F-031 | §7.1 / §9.3 / §4.6(`rationale`) | F-053 | **§13.6** / §6.9(API-A16) |
-| F-010 | §3.4(`Skill`,`SkillAlias`) / §6.4(#23,#24) | F-032 | §7.1 / §9.3 / §7.8 | F-054 | §5.4 / §9.7 / §6.9(API-A17) / §6.7(#79) |
+| F-010 | §3.4(`Skill`,`SkillAlias`) / §6.4(#23,#24) | F-032 | §7.1(🔴 反映先 = `EngineerCareer`) / §9.3 / §7.8 / §6.4(#16b) | F-054 | §5.4 / §9.7 / §6.9(API-A17) / §6.7(#79) |
 | F-011 | §3.4(`SkillSheet`) / §8.5 / §14.2 / **§6.4(#18,#19,#19b,#19c)** | F-033 | §7.1 / §9.3 / §3.4(`EngineerSkill.originalLabel`) | F-055 | **§5.1** / §3.10(`PlatformUser`) |
 | F-012 | §14.2 / §16.1 / §6.4(#20,#21) | F-034 | §7.1 / §9.3 / §6.5(#38) | F-056 | §5.7 / §6.9(API-A2,A3) |
 | F-013 | §3.5(`Project`) / §6.4(#26) | F-035 | **§7.5** / §3.10 / §6.7(#66) | F-057 | §5.8 / §6.9(API-A6) |
 | F-014 | §3.5(`ProjectVisibility`) / §4.4(C4) / §6.4(#28) | F-036 | §3.10(`TenantRoleModel`) / §6.7(#67) | F-058 | §5.5(シリアライザ) / §6.9(API-A7) |
 | F-015 | §6.4(#25) / §4.4(C4) | F-037 | §11.3 / §4.8 / §6.5(#46) | F-059 | **§16.5** / §6.9(API-A8) / §8.3-Q / §9.4(AC-7) |
 | F-016 | §3.5(`EngineerShare`) / §6.4(#29) / §12.2 | F-038 | §3.7 / §4.4(C6) / §8.9 / §6.5(#50-52) | F-060 | **§5.6** / §6.9(API-A9,A10) / §17.3(#14) |
-| F-017 | **§4.5 / §4.6（4.6.1〜4.6.3）** / §6.5(#30) / ~~TBD-2~~ | F-039 | §3.8(`Notification`) / §8.2 / §9.4 | F-061 | §3.10(`Announcement`) / §6.9(API-A11) |
+| F-017 | **§4.5 / §4.6（4.6.1〜4.6.3。🔴 経歴を型として持たない）** / §6.5(#30) / §17.2(#28) / ~~TBD-2~~ | F-039 | §3.8(`Notification`) / §8.2 / §9.4 | F-061 | §3.10(`Announcement`) / §6.9(API-A11) |
 | F-018 | §3.6(`ProposalRequest`) / §6.5(#31-#35) / §10.7 | F-040 | §3.8(`Task`) / §6.7(#75) | F-062 | **§6.9(API-A12,A13,A14)** / §5.4 |
-| F-019 | §3.6(`EngineerSnapshot`) / §6.5(#36) | F-041 | §6.5(#49) / §10.2 | F-063 | **§5.9** / §3.10(`TenantMonthlyCost`) / §16.4 |
+| F-019 | §3.6(`EngineerSnapshot` の🔴 行単位凍結) / §6.5(#36,#46,#46b) / §17.3(#25) | F-041 | §6.5(#49) / §10.2 | F-063 | **§5.9** / §3.10(`TenantMonthlyCost`) / §16.4 |
 | F-020 | **§11 全体** / §9.3(`gate.run`) | F-042 | §3.7(`Assignment`) / §6.6(#53-#56) | F-064 | §9.7(`tenant.closing-notify` / `tenant.purge-scan` の配送確認 = AC-10 / `tenant.purge`) / §3.9(`TenantPurgeRun`) / §6.9(API-A12) / §17.3(#17,#24) |
 | F-021 | §11.5 / §11.6 / §6.5(#41,#42) | F-043 | **§9.5** / §12.4 / §16.5 | **F-066** | **§4.4(C9) / §4.9** / §3.7(`Contract`/`ContractDocument`/`Order` の当事者列・`signers`) / §6.6(#81,#82) / §14.2 / §17.3(#21) |
 | F-022 | **§10.2** / §9.4 / §6.5(#43) / §8.3 | F-044 | §7.1 / §9.3 / §6.6(#55) / §4.9（取引先に出ない） | **F-065** | **§4.4(C9) / §4.9** / §3.7(`Assignment.counterpartyPartnerCompanyId`) / §6.6(#80) / §4.7(#8-#10) / §17.2(#17) / §17.3(#21) |
