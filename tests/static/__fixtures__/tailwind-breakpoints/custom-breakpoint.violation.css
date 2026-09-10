@@ -1,0 +1,8 @@
+/* tests/static/__fixtures__/tailwind-breakpoints/custom-breakpoint.violation.css
+ * 🔴 検出されなければならない形: Tailwind v4 の `@theme` によるブレークポイントの上書き。
+ *    既定を消す（`initial`）のも、独自の名前を足すのも、どちらも「独自定義」である。 */
+@theme {
+  --breakpoint-sm: 30rem;
+  --breakpoint-3xl: 120rem;
+  --breakpoint-*: initial;
+}

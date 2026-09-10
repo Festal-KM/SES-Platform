@@ -34,6 +34,18 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       type={type}
       className={cn(
         'inline-flex items-center justify-center rounded-md font-medium transition-colors',
+        // 🔴 `whitespace-nowrap shrink-0` は shadcn/ui の Button の基底クラスにあるものであり、
+        //    見た目の好みではなく**当たり判定の前提**である（T-21-01 の回帰調査で実測）。
+        //    これを落とすと、狭い flex コンテナ（例: `S-008` の操作列。表のセルの中）で
+        //    ①`min-width: auto` ＝ min-content が **「CJK 1 文字 + 左右パディング」= 38px** まで
+        //    縮み ②ラベルが 1 文字ずつ折り返して 63〜64px 分の高さになる。
+        //    `h-8` / `h-10` が高さを 32 / 40px に固定しているため、**ラベルがボタンの箱から
+        //    はみ出し、隣のボタンと重なって見える**（実測: 幅 38px / 箱 32px / 内容 64px）。
+        //    その状態でモバイルの `S-008` を叩くと「この版を開く」を押したつもりで
+        //    「ダウンロード」が発火した（`audit-k7.mobile` が実際に落ちた）。
+        // 🔴 **押せない・読めないボタンは「劣化」ではなく「遮断」である**（CLAUDE.md §13.3）。
+        //    幅が伸びたぶんは、置き場所（`S-008` は `overflow-x-auto`）が横スクロールで受ける。
+        'shrink-0 whitespace-nowrap',
         'disabled:pointer-events-none disabled:opacity-60',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2',
         VARIANT_CLASSES[variant],

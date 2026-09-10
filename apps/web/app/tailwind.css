@@ -2,9 +2,50 @@
  * Tailwind CSS v4（CLAUDE.md §2 / docs/03 §5.2）。T-03-06 が最初の本格 UI として導入した。
  *
  * 🔴 既存の `globals.css`（S-001 / S-002 / S-041 が使う手書き CSS）はそのまま残す
- *    （全面移行は別タスク。docs/sprints/SP-03 T-03-06 追加スコープ）。本ファイルは
+ *    （全面移行は別タスク。docs/sprints/SP-21 T-21-04〜T-21-07）。本ファイルは
  *    `app/layout.tsx` で `globals.css` より先に読み込み、カスケードの後勝ちで
  *    既存ページの見た目を変えない（同じセレクタが競合した場合は `globals.css` を優先させる）。
  * 🔴 ブレークポイントは Tailwind の既定のまま独自定義しない（CLAUDE.md §13.3）。
+ *    **`@theme` で `--breakpoint-*` を宣言しない。** 機械検査は
+ *    `tests/static/tailwind-breakpoints.test.ts`（レビューの目視に頼らない）。
  */
 @import 'tailwindcss';
+
+/* ============================================================================
+ * 🔴 `@ses/ui`（packages/ui）をコンテンツ検出の対象に**明示的に**加える（T-21-01）
+ * ============================================================================
+ * Tailwind v4 の自動コンテンツ検出は、
+ *   ①走査の起点が `process.cwd()`（`next build` の実行ディレクトリ＝ `apps/web`）であり、
+ *   ②`.gitignore` に載るパス（`node_modules/` / `dist/`）を除外する。
+ * このため `packages/ui/src` は **どちらの経路でも拾われない** ——
+ * `apps/web` の外にあり、pnpm のシンボリックリンク（`node_modules/@ses/ui`）越しの実体も
+ * `dist/`（生成物）である。
+ *
+ * 🔴 **結果として `@ses/ui` だけが使うクラスは本番ビルドの CSS から消えていた。**
+ *    T-21-01 の着手時点の実測（`pnpm --filter @ses/web build` の出力 CSS）:
+ *      `hover:bg-slate-700` / `focus-visible:ring-slate-400` / `disabled:opacity-60` /
+ *      `bg-transparent` / `h-8` … いずれも **0 件**。
+ *    `bg-slate-900` だけは含まれていたが、それは `apps/web` 側
+ *    （`settings/sending-domains/sending-domain-screen.tsx`）が同じクラスを使っているからで
+ *    あり、`@ses/ui` が拾われていた証拠ではない。**「1 クラスだけ見て安心しない。」**
+ *
+ * ⚠️ 実測したのは**本番ビルドの出力 CSS のみ**である。`next dev` も同じ PostCSS プラグインを
+ *    同じ作業ディレクトリで動かすため同様に消えていたはずだが、そちらは測っていない。
+ *    いずれにせよ **`next dev` の見た目を「消えていないこと」の根拠にしてはならない。**
+ *
+ * ⚠️ **この修正は見た目を変える。** `@ses/ui` の `Button` / `Card` が、これまで生成 CSS に
+ *    無かったぶん（`h-8` / `h-10` / `rounded-lg` / `shadow-sm` / `transition-colors` /
+ *    `hover:bg-slate-700` / `focus-visible:ring-*` / `disabled:opacity-60` / `bg-transparent`）
+ *    を、ようやく設計どおりに描くようになる。**削除された規則は 0 件で、追加のみである。**
+ *    `.ses-submit` の生ボタン（`S-001` / `A-001` / `S-041` / `S-046` ほか）は `@ses/ui` を
+ *    使っていないため影響を受けない。T-21-07 のスクリーンショット比較の際はこの差分を織り込むこと。
+ *
+ * `@source` は自動検出を**置き換えず追加する**（`source(none)` を書いた場合のみ置き換わる）。
+ * パスは本ファイルからの相対で解決される（`apps/web/app` → リポジトリルート → `packages/ui/src`）。
+ * 🔴 **`dist` ではなく `src` を指す。** `dist` は `.gitignore` 対象であり Tailwind が無視する。
+ *    走査対象はクラス名の文字列があれば足りるので、ソースを見れば十分である。
+ * 🔴 **この 1 行を消すと、`@ses/ui` を使う画面のスタイルが無言で消える**（テストは落ちず、
+ *    見た目だけが壊れる）。消えていないことは `tests/static/tailwind-breakpoints.test.ts` の
+ *    「コンテンツ検出」ブロックが検査する。
+ */
+@source '../../../packages/ui/src';
