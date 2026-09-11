@@ -36,6 +36,7 @@ import {
   engineerDetailSkillRows,
   engineerHeadlineRows,
 } from '../../../../lib/engineers/detail';
+import { isEngineerShareRole } from '../../../../lib/engineer-shares/policy';
 import { engineerOwnershipLabel } from '../../../../lib/engineers/labels';
 import { readEngineerDetail } from '../../../../lib/engineers/service';
 
@@ -98,6 +99,9 @@ export default async function EngineerDetailPage({
   //    導線を描かない。⚠️ これは UI の配慮であって拒否の本体ではない（本体は #16 のガードと
   //    `S-007` のリダイレクト）。
   const canEdit = outcome.ctx.role !== 'VIEWER';
+  // 🔴 T-08-02: `S-015`（匿名共有の設定）へ到達できるか。`canEdit` と**同じ値にならない**
+  //    ため共有しない（共有の設定はパートナーロールに限られる。`lib/engineer-shares/policy.ts`）。
+  const canManageShares = isEngineerShareRole(outcome.ctx.role);
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-8">
@@ -142,6 +146,22 @@ export default async function EngineerDetailPage({
             data-testid="engineer-detail-edit-link"
           >
             {t('engineers.detail.edit')}
+          </Link>
+        ) : null}
+        {/* 🔴 T-08-02: `S-015`（匿名共有の設定）への導線（docs/04 §S-006 関連画面「→ `S-015`」）。
+            「この人の稼働が決まった」と分かるのは詳細を開いたときであり、そこから 1 手で
+            共有を止められないと、ホストに無効な候補が出続ける（`F-016 AC-2` の実運用面）。
+            🔴 到達できるロール（`PARTNER_ADMIN` / `PARTNER_SALES`）にだけ描く ——
+            ホストと `VIEWER` には `S-015` が存在しない（`F-016` 関連ロール）。
+            ⚠️ **この画面から共有を切り替えない。** 切り替えは `S-015` の
+            開示プレビュー付きの確認ステップを必ず通す（`docs/04` §S-015「操作と結果」）。 */}
+        {canManageShares ? (
+          <Link
+            className={SECONDARY_LINK_CLASSES}
+            href="/engineer-shares"
+            data-testid="engineer-detail-share-link"
+          >
+            {t('engineerShares.open')}
           </Link>
         ) : null}
         <p className="text-sm text-slate-500" data-testid="engineer-detail-view-recorded">

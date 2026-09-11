@@ -1477,6 +1477,96 @@ const ja = {
   'projects.visibilitySettings.leaveConfirm':
     '公開先の選択が保存されていません。このページを離れますか？',
 
+  // --- 匿名候補の丸め後の表示（docs/04 U-06 / `docs/02` A-04 / `F-017 AC-3`。T-08-02）---
+  // 🔴 **`S-015`（取引先の開示プレビュー）と `S-016`（ホストの候補一覧）が同じ語を使う。**
+  //    `docs/04` §5-2 が「プレビューはホストの候補一覧と同じ体裁」と定めているため、
+  //    画面別にキーを分けない（分けると「プレビューでは違う語に見える」ずれが生まれる）。
+  // 🔴 区分 → キーの写像は `apps/web/lib/anonymize/labels.ts` が持つ
+  //    （`Record<区分, MessageKey>`。区分が増えたらコンパイラが割り当てを強制する）。
+  // 🔴 **具体値（`7 年` / `65 万円` / `渋谷区` / `2026-09-16`）に相当する語を 1 つも置かない。**
+  //    ここに「◯年◯か月」「◯円」のような細かい単位を足すことは、丸めの粒度を変えることと
+  //    同義であり、`docs/03` §4.13.1 の改訂と再承認を要する（`CLAUDE.md` §8.6）。
+  'anonymousCandidate.yearsBand.LT_1Y': '1 年未満',
+  'anonymousCandidate.yearsBand.Y1_3': '1〜3 年',
+  'anonymousCandidate.yearsBand.Y3_5': '3〜5 年',
+  'anonymousCandidate.yearsBand.Y5_10': '5〜10 年',
+  'anonymousCandidate.yearsBand.GTE_10Y': '10 年以上',
+  'anonymousCandidate.availabilityBand.IMMEDIATE': '即日',
+  'anonymousCandidate.availabilityBand.THIS_MONTH': '当月中',
+  'anonymousCandidate.availabilityBand.NEXT_MONTH': '翌月',
+  'anonymousCandidate.availabilityBand.MONTH_AFTER_NEXT': '翌々月',
+  'anonymousCandidate.availabilityBand.THREE_MONTHS_OR_LATER': '3 か月以降',
+  // 🔴 単位は**万円**である（円ではない）。10 万円刻みの区分そのものを表す語であり、
+  //    台帳の単価（`engineers.unitPrice.unit` = 円）とキーを共有しない。
+  'anonymousCandidate.priceBand.unit': '万円',
+  'anonymousCandidate.priceBand.orMore': '万円以上',
+  'anonymousCandidate.remoteMode.FULL_REMOTE': 'フルリモート可',
+  'anonymousCandidate.remoteMode.PARTIAL_REMOTE': '一部リモート可',
+  'anonymousCandidate.remoteMode.ONSITE_ONLY': '常駐のみ',
+  'anonymousCandidate.valueNone': '—',
+  // 開示プレビューの項目名（`docs/04` §S-015 セクション 4 / §5-2 の例示と同じ並び）。
+  'anonymousCandidate.field.skills': 'スキル',
+  'anonymousCandidate.field.years': '経験年数',
+  'anonymousCandidate.field.price': '単価レンジ',
+  'anonymousCandidate.field.availability': '稼働可能時期',
+  'anonymousCandidate.field.location': '勤務地・リモート可否',
+  'anonymousCandidate.field.updatedOn': '更新日',
+
+  // --- S-015 匿名共有の設定（取引先）（docs/04 §S-015 / `F-016` / docs/05 §6.4 #29。T-08-02）---
+  // 🔴 **煽らない。** 「共有すると案件が見つかりやすくなります」に相当する語を 1 つも置かない
+  //    （`docs/04` §S-015 空状態。共有は既定オフで、主導権は最後まで取引先にある）。
+  // 🔴 **「一括で共有可にする」に相当する語を置かない**（`F-016 AC-1` / `BR-53`）。
+  //    文言が無ければ画面にも作れない（`CLAUDE.md` §3.5 が文言を 1 箇所に集める副次的な効能）。
+  'engineerShares.title': '匿名共有の設定',
+  'engineerShares.open': '匿名共有の設定を開く',
+  // 🔴 パンくずの語は画面群ごとに持つ（`engineers.breadcrumb.*` / `projects.breadcrumb.*` と
+  //    同じ規律。キーを共有すると、片方だけ言い換えたくなったときに両方が動く）。
+  'engineerShares.breadcrumb.home': 'ホーム',
+  'engineerShares.breadcrumb.current': '匿名共有の設定',
+  // 🔴 `docs/04` §S-015 セクション 1「説明ブロック（常設）」の本文そのもの。
+  //    非開示の列挙に**経験内容**が入っているのは 2026-09-10 の Issue #35 = A による
+  //    （`F-008 AC-7` / `BR-55`）。列挙を削らないこと —— 取引先は自分で確かめる術を失う。
+  'engineerShares.lead':
+    '共有可にすると、ホストの候補一覧に匿名で表示されます。実名・貴社名・スキルシート・経験内容（従事期間・役割・業務内容・使用技術）は、貴社が提案を作成するまで開示されません。いつでも解除でき、解除した時点で表示されなくなります。',
+  'engineerShares.section.shared': '共有中の人材',
+  'engineerShares.section.notShared': '共有していない自社の人材',
+  'engineerShares.section.preview': '開示プレビュー',
+  'engineerShares.column.name': '氏名（貴社内の表示）',
+  'engineerShares.column.sharedOn': '共有開始日',
+  'engineerShares.column.proposalRequestCount': '受け取った提案依頼',
+  'engineerShares.column.availability': '稼働可能時期',
+  'engineerShares.column.action': '操作',
+  'engineerShares.countUnit': '件',
+  // 🔴 空状態（`docs/04` §S-015）。**「共有しないと機会が来ない」と書かない。**
+  'engineerShares.shared.empty': '共有している人材はいません。',
+  'engineerShares.notShared.empty': '共有していない人材はいません。',
+  'engineerShares.ledger.empty': '人材がまだ登録されていません。',
+  'engineerShares.ledger.register': '人材を登録する',
+  'engineerShares.preview.select': '人材を選ぶと、ホストに表示される内容をここで確認できます。',
+  // 🔴 `docs/04` §5-2:「丸める前の値を並置して見せない」。何が出ないかを本文で明示する。
+  'engineerShares.preview.note':
+    'ホストに表示されるのは次の 5 項目だけです。値はいずれも丸めた後のものです。',
+  'engineerShares.preview.careersNote': '経歴は開示されません。',
+  // 共有可にする確認ステップ（`docs/04` §S-015「操作と結果」）。
+  'engineerShares.share': '共有可にする',
+  'engineerShares.share.confirmTitle': 'この内容がホストに表示されます',
+  'engineerShares.share.confirmSubmit': '共有可にする',
+  'engineerShares.share.confirmCancel': 'やめる',
+  'engineerShares.share.submitting': '設定しています…',
+  // 解除（確認は 1 段。`docs/04` §S-015「解除は安全側の操作」）。
+  'engineerShares.revoke': '共有を解除する',
+  'engineerShares.revoke.confirmTitle': '共有を解除しますか',
+  'engineerShares.revoke.confirmLead':
+    '解除した時点で、ホストの候補一覧に表示されなくなります。あとから共有可に戻せます。',
+  'engineerShares.revoke.confirmSubmit': '解除する',
+  'engineerShares.revoke.confirmCancel': 'やめる',
+  'engineerShares.revoke.submitting': '解除しています…',
+  'engineerShares.error.save': '設定を変更できませんでした。',
+  // 🔴 「反映まで数分かかります」に相当する語を置かない（`docs/04` §S-015 非同期処理の表現）。
+  //    キャッシュを持たない設計であり、解除は即時に反映される。
+  'engineerShares.error.retryNote': '設定は変わっていません。もう一度お試しください。',
+  'engineerShares.deniedTitle': '共有の設定を変更できません。',
+
   // --- 都道府県（JIS X 0401。コードの出所は `@ses/domain` の `PREFECTURE_CODES`）---
   // 🔴 コードと文言キーの対応は `apps/web/lib/format/prefectures.ts` の `PREFECTURE_MESSAGE_KEYS`
   //    （`Record<PrefectureCode, MessageKey>`）が持つ（T-06-01 で `lib/engineers/labels.ts` から

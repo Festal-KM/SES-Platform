@@ -183,7 +183,20 @@ export function ScanQuarantineSection({ blocks }: { readonly blocks: readonly Ho
   );
 }
 
-export function PartnerHomeSections({ noticeText }: { readonly noticeText: string }) {
+export function PartnerHomeSections({
+  noticeText,
+  canManageShares,
+}: {
+  readonly noticeText: string;
+  /**
+   * 🔴 `S-015`（匿名共有の設定）へ到達できるか（`PARTNER_ADMIN` / `PARTNER_SALES` のみ。
+   *    `docs/04` §S-015 権限差分 / docs/05 §6.4 #29）。
+   * 🔴 `canRegisterEngineer`（`role !== 'VIEWER'`）と**同じ値にならない**ため、
+   *    フラグを共有しない —— 共有の設定はパートナーロールに限られ、人材の登録は
+   *    ホストの 3 ロールも含む（`HostHomeSections` の 🔴 と同じ理由）。
+   */
+  readonly canManageShares: boolean;
+}) {
   return (
     <div className="flex flex-col gap-4">
       <Card>
@@ -199,6 +212,24 @@ export function PartnerHomeSections({ noticeText }: { readonly noticeText: strin
                 次の行き先。取引先は 1 日 4〜5 時間の主利用者であり、案件一覧への導線を
                 ホストの「ついで」にしない（`CLAUDE.md` §1.2）。 */}
             <ProjectListLink testId="home-partner-project-list" />
+            {/* 🔴 T-08-02: `S-015`（匿名共有の設定）への導線（docs/04 §S-015 関連画面
+                「← `S-004`」）。**取引先のホームにしか置かない** —— ホスト側ロールには
+                この画面が存在しない（`F-016` 関連ロール）。`HostHomeSections` に同じ導線を
+                足さないこと。
+                🔴 `PARTNER_ADMIN` / `PARTNER_SALES` 以外（パートナー所属の `VIEWER`）には
+                **描かない**。到達できない画面へのリンクを出すと、押した利用者はホームへ
+                黙って戻されるだけで何が起きたのか分からない（`canRegisterEngineer` と同じ判断）。
+                ⚠️ これは UI の配慮であって境界の担保ではない。拒否の本体は `#29` の
+                `requireRole` と `assertPartnerContext`、そして RLS の C3 である。 */}
+            {canManageShares ? (
+              <Link
+                className={SECONDARY_LINK_CLASSES}
+                href="/engineer-shares"
+                data-testid="home-partner-engineer-shares"
+              >
+                {t('engineerShares.open')}
+              </Link>
+            ) : null}
           </div>
         </CardContent>
       </Card>

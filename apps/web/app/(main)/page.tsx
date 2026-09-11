@@ -20,6 +20,7 @@ import { redirect } from 'next/navigation';
 import { t } from '@ses/i18n';
 import { resolveTenantCtxOutcome } from '../../lib/auth/session';
 import { sendingDomainRuntime } from '../../lib/db/bootstrap';
+import { isEngineerShareRole } from '../../lib/engineer-shares/policy';
 import { readHomeBlocks } from '../../lib/home/blocks';
 import { getHomeView } from '../../lib/home/service';
 import { isProjectEditorRole } from '../../lib/projects/policy';
@@ -81,7 +82,13 @@ export default async function HomePage() {
           canRegisterProject={isProjectEditorRole(outcome.ctx.role)}
         />
       ) : (
-        <PartnerHomeSections noticeText={t(view.visibilityNotice.messageKey)} />
+        // 🔴 T-08-02: `S-015`（匿名共有の設定）の導線は `PARTNER_ADMIN` / `PARTNER_SALES`
+        //    だけに出す（`docs/04` §S-015 権限差分 / docs/05 §6.4 #29 のロール一覧と同じ）。
+        //    `role !== 'VIEWER'` で代用しない —— 共有の設定はパートナーロールに限られる。
+        <PartnerHomeSections
+          noticeText={t(view.visibilityNotice.messageKey)}
+          canManageShares={isEngineerShareRole(outcome.ctx.role)}
+        />
       )}
     </main>
   );

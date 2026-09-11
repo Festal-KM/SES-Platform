@@ -134,7 +134,10 @@ describe('🔴 S-003 の初回空は S-012 / S-007 への導線 2 本（docs/04 
 describe('🔴 S-004（取引先ホーム）からも S-005 / S-010 へ行ける（docs/04 §3.3）', () => {
   it('人材台帳と案件一覧の導線が 2 本とも出る', () => {
     const html = renderToStaticMarkup(
-      createElement(PartnerHomeSections, { noticeText: '見える範囲の説明（合成）' }),
+      createElement(PartnerHomeSections, {
+        noticeText: '見える範囲の説明（合成）',
+        canManageShares: true,
+      }),
     );
 
     expect(html).toContain('data-testid="home-partner-engineer-ledger"');
@@ -142,5 +145,42 @@ describe('🔴 S-004（取引先ホーム）からも S-005 / S-010 へ行ける
     expect(html).toContain('href="/projects"');
     // 🔴 取引先のホームに「案件を登録」は無い（`docs/04` §S-012 権限差分）。
     expect(html).not.toContain('href="/projects/new"');
+  });
+});
+
+// 🔴 T-08-02: `S-004` → `S-015`（匿名共有の設定）の導線（docs/04 §S-015 関連画面「← `S-004`」）。
+describe('🔴 S-015（匿名共有の設定）の導線は取引先のホームにだけ、かつ設定できるロールにだけ出る', () => {
+  it('PARTNER_ADMIN / PARTNER_SALES には出る', () => {
+    const html = renderToStaticMarkup(
+      createElement(PartnerHomeSections, {
+        noticeText: '見える範囲の説明（合成）',
+        canManageShares: true,
+      }),
+    );
+
+    expect(html).toContain('data-testid="home-partner-engineer-shares"');
+    expect(html).toContain('href="/engineer-shares"');
+  });
+
+  it('🔴 パートナー所属の VIEWER には出ない（押してもホームへ戻されるだけの導線を作らない）', () => {
+    const html = renderToStaticMarkup(
+      createElement(PartnerHomeSections, {
+        noticeText: '見える範囲の説明（合成）',
+        canManageShares: false,
+      }),
+    );
+
+    expect(html).not.toContain('data-testid="home-partner-engineer-shares"');
+    expect(html).not.toContain('href="/engineer-shares"');
+    // 空振り防止（他の導線は出ている）。
+    expect(html).toContain('data-testid="home-partner-engineer-ledger"');
+  });
+
+  it('🔴 ホストのホームには 1 本も出ない（ホスト側ロールにこの画面は存在しない。`F-016` 関連ロール）', () => {
+    const html = renderToStaticMarkup(
+      createElement(HostHomeSections, { canRegisterEngineer: true, canRegisterProject: true }),
+    );
+
+    expect(html).not.toContain('href="/engineer-shares"');
   });
 });
