@@ -257,6 +257,22 @@ export {
   withSystemScope,
   withTenant,
 } from './with-tenant.js';
+// 🔴 T-08-03: 共有スコープ読み取り（越境経路 4 の DB 側実装。docs/05 §4.5 / P-A-14）。
+//    🔴 **「越境して読む」関数を他に作らない。** `app.shared_scope = 'on'` を立てられるのは
+//    `withSharedCandidateScope` だけであり、`apps/**` からの named import は
+//    `eslint.config.mjs` が禁じ、参照元は `tests/static/auth-db-callers.test.ts` が固定する。
+export {
+  SharedCandidateProjectNotFoundError,
+  withSharedCandidateScope,
+} from './shared-candidate.js';
+export type {
+  AnonymousCandidateRow,
+  SharedCandidateDb,
+  SharedCandidateDecimal,
+  SharedCandidateQuery,
+  SharedCandidateSkill,
+  SharedCandidateSource,
+} from './shared-candidate.js';
 export type {
   TenantTransactionIsolationLevel,
   TenantTransactionOptions,

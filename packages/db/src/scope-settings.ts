@@ -27,6 +27,34 @@ export function tenantScopeSettingsSql(scope: TenantScopeSettings): Prisma.Sql {
 }
 
 /**
+ * 🔴 T-08-03: 共有スコープ（越境経路 4。docs/05 §4.5）で読むためのトランザクション設定。
+ *
+ * 🔴 **`app.shared_scope` に `'on'` を入れるのは本リポジトリでここ 1 箇所だけである。**
+ *    他のすべての経路（`tenantScopeSettingsSql` / `systemScopeSettingsSql` /
+ *    `rowCredentialScopeSql` / `rowDerivedTenantScopeSql` / `platformAuthScopeSql` /
+ *    `platformScopeSql`、および `scheduler-fanout.ts` の `schedulerScopeSettingsSql`）は
+ *    毎回 `'off'` で上書きする。
+ *    したがって「同じ物理接続に前のトランザクションの `'on'` が残る」ことは起こらない
+ *    （docs/05 §4.7 二重防御テスト #6）。
+ *
+ * 🔴 呼び出し元は `packages/db/src/shared-candidate.ts` の `withSharedCandidateScope` だけである。
+ *    `$executeRaw` の呼び出しは `packages/db` 外では ESLint が禁じており（`CLAUDE.md` §3.1）、
+ *    この関数も `index.ts` から export しない ＝ アプリコードからは GUC を立てられない。
+ *
+ * 🔴 `tenantScopeSettingsSql` に「`sharedScope` 引数」を足す形にしなかった理由:
+ *    既定の経路（`withTenant` / `withHostTenant` / `loadTenantMembership` / `withPartnerScope`）が
+ *    全部この 1 関数を通っており、引数を足すと**呼び出し側の 1 つが `'on'` を渡せるようになる**。
+ *    関数そのものを分け、`'on'` を書いたリテラルがこのファイルの 1 箇所にしか現れない形にする。
+ */
+export function sharedCandidateScopeSettingsSql(scope: TenantScopeSettings): Prisma.Sql {
+  return Prisma.sql`SELECT
+    set_config('app.tenant_id', ${scope.tenantId}, true),
+    set_config('app.partner_company_id', ${scope.partnerCompanyId ?? ''}, true),
+    set_config('app.actor_user_id', ${scope.actorUserId}, true),
+    set_config('app.shared_scope', 'on', true)`;
+}
+
+/**
  * `withSystemScope()`（docs/05 §4.4.2）が発行する設定。
  *
  * 🔴 `app.tenant_id` を**空文字**で明示的に上書きする。`app_tenant_id()` が NULL になり、

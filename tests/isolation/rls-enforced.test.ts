@@ -1,7 +1,10 @@
 // tests/isolation/rls-enforced.test.ts
 // T-02-09（docs/sprints/SP-02-schema-isolation.md）: 🔴 分離機構が「有効であること自体」の
-// 機械検証（docs/05 §4.7 / §17.2 #1 / #2 / #4 / #5）。**docs/05 §4.7 のカタログ走査 14 本を
-// そのままテストに落とす、唯一の場所**（監査上「14 本が 1 箇所で読める」ことを優先する）。
+// 機械検証（docs/05 §4.7 / §17.2 #1 / #2 / #4 / #5）。**docs/05 §4.7 のカタログ走査 15 本を
+// そのままテストに落とす、唯一の場所**（監査上「15 本が 1 箇所で読める」ことを優先する）。
+//
+// 🔴 T-08-03（SP-08）で #15（共有スコープの追加ポリシーが 2 表だけであること。docs/05 §4.5）を
+//    足した。#14 と同じ理由で**末尾に置く**（番号は安定した識別子であり、並び順ではない）。
 //
 // 🔴 Issue #33（docs/05 §3.3.1 / §17.1「14 本」）で #14（パートナー FK の複合 FK 化）を足した。
 //    docs/05 §4.7 の本文では #10 と #11 の間に書かれているが、**実装では末尾の #14 とする**:
@@ -344,13 +347,17 @@ describe('#10 probe 3 ロールの最小権限（docs/05 §4.7 #10 / §4.4.1 / �
     expect(rows).toEqual([]);
   });
 
-  // 🔴 docs/05 §4.7 #10 は「app_share_probe の権限は engineer_shares の 3 列の SELECT だけ」と
-  //    書くが、その GRANT は SP-08 で追加される（packages/db/prisma/sql/000_roles.sql:56-57
-  //    「GRANT は engineer_shares が生まれる SP-08 で追加する」。roles.test.ts の対応するブロック
-  //    と同じ前提）。表自体は SP-02（migration 20260903010000_engineer_project_visibility_share）
-  //    で作成済みであり、無いのは app_share_probe への GRANT のみである。SP-08 で GRANT を追加する
-  //    際、この期待値を 3 列ちょうどの形（app_assignment_owner_probe と対称の非空配列）へ更新すること。
-  it('app_share_probe は現時点で列単位の GRANT を 0 件持つ（GRANT は SP-08 で付与される）', async () => {
+  /**
+   * 🔴 T-08-03（SP-08）: docs/05 §4.7 #10 が定める「`app_share_probe` の権限は
+   *    `engineer_shares` の 3 列の SELECT だけ」を実測する（migration 20260916000000）。
+   *
+   * 🔴 ここに列が増えることは、**共有元（`partner_company_id` / `shared_by`）が
+   *    `app_engineer_is_shared()` の中から読める**ことを意味する。関数が返すのは真偽値だけでも、
+   *    読める列が増えれば「共有元でフィルタする述語」を書けるようになり、ホストが
+   *    「どの取引先が共有しているか」を二分探索できる（`BR-06` / `CLAUDE.md` §3.1 経路 4）。
+   *    **期待値を固定して、増えたら必ず落ちるようにする。**
+   */
+  it('🔴 app_share_probe の権限は engineer_shares の 3 列（tenant_id/engineer_id/revoked_at）の SELECT だけ', async () => {
     const rows = await migrator.$queryRaw<
       Array<{ table_name: string; column_name: string; privilege_type: string }>
     >`
@@ -358,7 +365,28 @@ describe('#10 probe 3 ロールの最小権限（docs/05 §4.7 #10 / §4.4.1 / �
       FROM information_schema.role_column_grants
       WHERE grantee = 'app_share_probe'
       ORDER BY table_name, column_name`;
-    expect(rows).toEqual([]);
+    expect(rows).toEqual([
+      { table_name: 'engineer_shares', column_name: 'engineer_id', privilege_type: 'SELECT' },
+      { table_name: 'engineer_shares', column_name: 'revoked_at', privilege_type: 'SELECT' },
+      { table_name: 'engineer_shares', column_name: 'tenant_id', privilege_type: 'SELECT' },
+    ]);
+  });
+
+  it('🔴 app_share_probe に engineer_shares 以外のテーブルの GRANT が 1 つも無い', async () => {
+    const rows = await migrator.$queryRaw<Array<{ table_name: string }>>`
+      SELECT DISTINCT table_name FROM information_schema.role_column_grants
+      WHERE grantee = 'app_share_probe'
+      ORDER BY table_name`;
+    expect(rows).toEqual([{ table_name: 'engineer_shares' }]);
+  });
+
+  it('🔴 app_share_probe は NOLOGIN であり、スキーマの CREATE 権限を持たない', async () => {
+    const rows = await migrator.$queryRaw<Array<{ rolcanlogin: boolean; can_create: boolean }>>`
+      SELECT rolcanlogin, has_schema_privilege('app_share_probe', 'public', 'CREATE') AS can_create
+        FROM pg_roles WHERE rolname = 'app_share_probe'`;
+    expect(rows[0]?.rolcanlogin).toBe(false);
+    // 🔴 ALTER FUNCTION ... OWNER TO のために一時的に付与し、直後に REVOKE している。
+    expect(rows[0]?.can_create).toBe(false);
   });
 
   it('app_assignment_owner_probe の権限は engineers の 3 列（tenant_id/id/owner_partner_company_id）の SELECT だけ', async () => {
@@ -731,5 +759,92 @@ describe('#14 partner_companies を指す FK は全て複合 FK である（docs
         AND c.relkind = 'v'
         AND a.attname LIKE '%partner\\_company\\_id'`;
     expect(rows.map((row) => row.relname).sort()).toEqual([...VIEW_NAMES].sort());
+  });
+});
+
+// 🔴 #15（T-08-03 / SP-08。docs/05 §4.7 #15）。**#14 と同じ理由で末尾に置く**
+//    （番号は「並び順」ではなく安定した識別子である）。
+/**
+ * 🔴 共有スコープ（`CLAUDE.md` §3.1 経路 4）の追加 SELECT ポリシーを持つ表を
+ *    `engineers` / `engineer_skills` の **2 表ちょうど**に固定する（docs/05 §4.5 / §4.6）。
+ *
+ * 🔴 なぜ列挙ではなく走査か: 「経路 4 の開示項目を増やすこと」は**人間の承認事項**
+ *    （`CLAUDE.md` §8.6 / §3.1 経路 4 の 🔴）であり、**ポリシーを 1 本足すだけで実現できては
+ *    ならない**。表名を列挙した許可リストにすると「足すときに一緒に足す」で通ってしまうため、
+ *    カタログ全体を走査して集合が一致することだけを見る。
+ *    `engineer_careers`（T-09-12）はもちろん、将来の子表がここに現れた時点で FAIL する。
+ */
+const SHARED_SCOPE_POLICIES = [
+  { table: 'engineer_skills', policy: 'engineer_skills_shared_candidate_read' },
+  { table: 'engineers', policy: 'engineers_shared_candidate_read' },
+];
+
+describe('#15 共有スコープ（経路 4）の追加ポリシーが 2 表だけである（docs/05 §4.7 #15 / §4.5）', () => {
+  it('🔴 app_engineer_is_shared / shared_scope を参照するポリシーは engineers / engineer_skills の 2 本だけ', async () => {
+    const policies = await readPolicies(db);
+    expect(policies.length).toBeGreaterThan(0); // 空振り防止（対照）
+
+    const matching = policies
+      .filter((policy) => {
+        const expression = `${policy.using ?? ''} ${policy.withCheck ?? ''}`;
+        return expression.includes('app_engineer_is_shared') || expression.includes('shared_scope');
+      })
+      .map((policy) => ({ table: policy.table, policy: policy.policy }))
+      .sort((left, right) =>
+        left.table === right.table
+          ? left.policy.localeCompare(right.policy)
+          : left.table.localeCompare(right.table),
+      );
+    expect(matching).toEqual(SHARED_SCOPE_POLICIES);
+  });
+
+  it('🔴 2 本とも SELECT 専用であり、書き込み（INSERT/UPDATE/DELETE）を開いていない', async () => {
+    const policies = (await readPolicies(db)).filter((policy) =>
+      SHARED_SCOPE_POLICIES.some(
+        (expected) => expected.table === policy.table && expected.policy === policy.policy,
+      ),
+    );
+    expect(policies).toHaveLength(SHARED_SCOPE_POLICIES.length); // 空振り防止（対照）
+    for (const policy of policies) {
+      expect(policy.command, `${policy.policy}: SELECT 以外に開いている`).toBe('SELECT');
+      expect(policy.withCheck, `${policy.policy}: WITH CHECK を持っている`).toBeNull();
+      // 🔴 テナント境界は共有スコープでも外さない（#3 と同じ述語を持つ）。
+      expect(policy.using ?? '').toContain('app_tenant_id()');
+    }
+  });
+
+  it('🔴 app_share_probe の GRANT 対象表が engineer_shares の 1 表だけである（#10 と対）', async () => {
+    const rows = await migrator.$queryRaw<Array<{ table_name: string }>>`
+      SELECT DISTINCT table_name FROM information_schema.role_column_grants
+      WHERE grantee = 'app_share_probe'`;
+    expect(rows).toEqual([{ table_name: 'engineer_shares' }]);
+  });
+
+  it('🔴 app_engineer_is_shared() の EXECUTE を持つのは app_tenant だけである（PUBLIC に無い）', async () => {
+    const rows = await migrator.$queryRaw<
+      Array<{ role: string; can_execute: boolean }>
+    >`
+      SELECT role, has_function_privilege(role, 'app_engineer_is_shared(uuid, uuid)', 'EXECUTE') AS can_execute
+        FROM (VALUES ('app_tenant'), ('app_platform'), ('app_platform_write'), ('public')) AS r(role)`;
+    const byRole = new Map(rows.map((row) => [row.role, row.can_execute]));
+    expect(byRole.get('app_tenant')).toBe(true);
+    expect(byRole.get('app_platform')).toBe(false);
+    expect(byRole.get('app_platform_write')).toBe(false);
+    expect(byRole.get('public')).toBe(false);
+  });
+
+  it('🔴 app_engineer_is_shared() は SECURITY DEFINER であり、所有者が app_share_probe である', async () => {
+    const rows = await migrator.$queryRaw<
+      Array<{ prosecdef: boolean; owner: string; proconfig: string[] | null }>
+    >`
+      SELECT p.prosecdef, pg_get_userbyid(p.proowner) AS owner, p.proconfig
+        FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+       WHERE n.nspname = 'public' AND p.proname = 'app_engineer_is_shared'`;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.prosecdef, 'SECURITY DEFINER ではない').toBe(true);
+    expect(rows[0]?.owner).toBe('app_share_probe');
+    // 🔴 search_path を固定していないと、SECURITY DEFINER が呼び出し側の search_path で
+    //    別スキーマの engineer_shares を読みうる（PostgreSQL の定番の落とし穴）。
+    expect(rows[0]?.proconfig ?? []).toContain('search_path=public');
   });
 });

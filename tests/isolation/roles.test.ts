@@ -327,6 +327,48 @@ describe('app_share_probe は engineer_shares 以外に一切の権限を持た�
       expect(select, `${table}: app_share_probe に SELECT 権限がある`).toBe(false);
     }
   });
+
+  /**
+   * 🔴 T-08-03（SP-08）: GRANT を付与した（migration 20260916000000）。
+   *    `app_assignment_owner_probe` と**対称の形**で、3 列ちょうどであることを固定する。
+   *    🔴 `migrator` 接続で読む理由は下の `app_assignment_owner_probe` のブロックと同じ
+   *    （`role_column_grants` は grantor / grantee のいずれかが現在の接続ロールの行しか返さない）。
+   */
+  it('role_column_grants は engineer_shares の 3 列（tenant_id/engineer_id/revoked_at）の SELECT だけ', async () => {
+    const rows = await migrator.$queryRaw<
+      Array<{ table_name: string; column_name: string; privilege_type: string }>
+    >`
+      SELECT table_name, column_name, privilege_type
+      FROM information_schema.role_column_grants
+      WHERE grantee = 'app_share_probe'
+      ORDER BY table_name, column_name`;
+    expect(rows).toEqual([
+      { table_name: 'engineer_shares', column_name: 'engineer_id', privilege_type: 'SELECT' },
+      { table_name: 'engineer_shares', column_name: 'revoked_at', privilege_type: 'SELECT' },
+      { table_name: 'engineer_shares', column_name: 'tenant_id', privilege_type: 'SELECT' },
+    ]);
+  });
+
+  it('🔴 共有元の 2 列（partner_company_id / shared_by）は SELECT できない（BR-06）', async () => {
+    for (const column of ['partner_company_id', 'shared_by', 'id', 'shared_at']) {
+      const has = await hasColumnPrivilege(
+        unextended,
+        'app_share_probe',
+        'engineer_shares',
+        column,
+        'SELECT',
+      );
+      expect(has, `engineer_shares.${column}: app_share_probe に SELECT 権限がある`).toBe(false);
+    }
+  });
+
+  it('テーブル単位の GRANT を 1 つも持たない（列単位の GRANT だけ）', async () => {
+    const rows = await migrator.$queryRaw<Array<{ table_name: string; privilege_type: string }>>`
+      SELECT table_name, privilege_type
+      FROM information_schema.role_table_grants
+      WHERE grantee = 'app_share_probe'`;
+    expect(rows).toEqual([]);
+  });
 });
 
 /**

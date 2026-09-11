@@ -7,6 +7,8 @@
 > 改訂（2026-09-07）: [Issue #33](https://github.com/Festal-KM/SES-Platform/issues/33) **既定 C** を反映し、**§3.3.1「パートナー FK 列の複合 FK 化」を新設**した（§3.1 に規約 1 行 / §4.7 にカタログ走査テスト 1 本 / §6.4 #14 に条件②の理由の書き換え / §17.1 の本数を 13 → 14 に追随）。🔴 **SP-06 着手前に migration で入れる。** 実装・migration の実ファイルは次の `programmer` タスクの範囲であり、本改訂は `docs/05` のみを変更している。
 > 🔴 **改訂（2026-09-10。[Issue #35](https://github.com/Festal-KM/SES-Platform/issues/35) = 人間の回答「A」）**: **`EngineerCareer`（経験内容と従事期間）を子テーブルとして新設**した。既定として置いていた C（Phase 1 では構造化保存を行わない）から変更されたものであり、**`docs/02`（`F-008 AC-5`〜`AC-8` / `F-019 AC-5` / A-24）→ `docs/04`（§S-006 / §S-007 / §S-023 / 申し送り 17）→ 本書**の順に上流から更新している（`CLAUDE.md` §8.7）。実装は **`T-09-12`（SP-09 の先頭タスク。Phase 1 = 第 1 回リリースに含む）**であり、**凍結は遡れない**ため提案フロー（`F-019`）より前に置く。変更箇所は §3.2（表の数 57 → **58**）/ §3.4（`EngineerCareer` の定義）/ §3.6（`EngineerSnapshot.careers` の行単位凍結）/ §4.4（C3 への割り当て）/ §4.4.1（継承の子表 7 → **8**）/ §4.5 / §4.6（匿名候補の型に**持たせない**）/ §5.5（運営者への非開示列）/ §6.4（#16 / #16b / #17）/ §6.5（#36 / #46）/ §7.1（`sheet-parser` の反映先 / `match-explainer` の入力）/ §9.6 / §9.7（保持期間。**暫定。[Issue #48](https://github.com/Festal-KM/SES-Platform/issues/48) で確認中**）/ §16.1 / §17 / `P-A-20` / `TBD-20`。**本改訂は `docs/05` のみを変更している**（migration と実装は `T-09-12` の範囲）。
 
+> 🔴 **改訂 9（2026-09-11。T-08-03 のコードレビューで実 DB の漏洩が再現されたことによる）**: **§4.5 の `SharedCandidateDb` の契約を確定させた。** 変更は 3 点であり、いずれも**実装と不可分**である（`CLAUDE.md` §8.7 に従い本書を先に改訂した）。①🔴 **`SharedCandidateDb` に素の Prisma デリゲートを 1 つも置かない**（置くと `select` / `include` 経由で、このスコープが意図的に開けた `engineers` の行が**全列**再び開く。実際に共有エンジニアの実名と共有元パートナー会社名が取得できた ＝ `BR-06` / `CLAUDE.md` §7 の「匿名候補の身元露出 0 件」違反）。公開するのは用途ごとの専用メソッドだけとし、**回帰は実 DB テストで見る**（RLS は列を絞れず、Prisma 拡張はネストしたリレーションで走らず、型テストはリレーション経由を捕まえられない） ②ESLint の射程を「区画を列挙して禁止」から **「全ゾーン禁止 + `tests/isolation/**` のみ許可」**へ反転 ③入口の fail-closed（`SharedCandidateProjectNotFoundError` → 404 / `HostOnlyContextError`）を明記。**変更箇所は §4.5 のみである。**
+
 **構成**: 1 アーキテクチャ概観 / 2 リポジトリ構成 / 3 DB スキーマ / 4 データ分離設計 / 5 管理平面の設計 / 6 API 仕様 / 7 AI 層の設計 / 8 外部連携層の設計 / 9 ジョブ仕様 / 10 冪等性・不可逆事故の防止設計 / 11 品質ゲートのパイプライン設計 / 12 業務シーケンス / 13 環境分離の設計 / 14 ファイルストレージ規約 / 15 エラー処理方針 / 16 オブザーバビリティ / 17 テスト戦略 / 付録（`## Assumptions` / `## TBD` / 申し送りマッピング / 機能カバレッジ）
 
 ## 1. アーキテクチャ概観
@@ -1813,8 +1815,33 @@ export function withSharedCandidateScope<T>(
   ```
 - 🔴 **この関数が §3.1 経路 4 の DB 側の唯一の実装であり、`engineer_shares` の行をホストに見せる追加ポリシーを作らない**（§4.4.2 の一覧に登録済み）。真偽を得るには `engineer_id` を知っている必要があり、ホストがパートナーの `engineer_id` を得る経路は本ポリシー越しの `engineers` 行だけである。`programmer` は **C3 を緩めてはならない**（`BR-06`）。
 - 🔴 **`SharedCandidateDb` の型は、5 項目に対応する列だけを `select` できる形に絞る**（`displayName` / `contactEmail` / `affiliationLabel` / `city` / `birthDate` を含む型を返せない。`engineerShare` モデル自体を持たない）。**型と RLS の二重**で `BR-54` を守る。
+
+  🔴 **その具体形（T-08-03 で確定。改訂 9。2026-09-11）**: **`SharedCandidateDb` に素の Prisma デリゲートを 1 つも置かない。** 公開するのは**用途ごとの専用メソッドだけ**である。
+
+  ```ts
+  // packages/db/src/shared-candidate.ts — 🔴 fn が受け取るのはこれだけ
+  export type SharedCandidateDb = {
+    readonly projectId: string;                              // 入口で実在を確認済みの案件
+    // 匿名 5 項目の素データ（+ 並びに使う updatedAt）。返す型は SharedCandidateSource に固定
+    readonly listSharedEngineers: (query?: SharedCandidateQuery) => Promise<readonly SharedCandidateSource[]>;
+    // 🔴 MatchCandidate（C2）の生成・更新。引数も戻り値もスカラーだけで、select / include を受け取らない
+    readonly replaceAnonymousCandidates: (rows: readonly { engineerId: string; computedAt: Date }[]) => Promise<number>;
+    readonly listAnonymousCandidateEngineerIds: () => Promise<readonly string[]>;
+    readonly countAnonymousCandidates: () => Promise<number>;
+  };
+  ```
+
+  🔴 **なぜ「素の Prisma デリゲートを置かない」が規則なのか**（T-08-03 のコードレビューで**実 DB の漏洩として再現された**。`P-A-14` と同じ事故である）: このスコープは `engineers` / `engineer_skills` の**行**を意図的に開ける。素のデリゲートを 1 つでも渡すと、`select` / `include` の引数型がそのまま残るため、**リレーション経由でその行が再び開く**。実際に `matchCandidate.findMany({ select: { engineer: { select: { displayName: true, ownerPartnerCompanyId: true, ownerPartnerCompany: { select: { name: true } } } } } })` で、**共有エンジニアの実名と共有元パートナー会社の ID・社名が取得できた**（`BR-06` 違反。`CLAUDE.md` §7 の「匿名候補の身元露出 0 件」「パートナー間の相互参照 0 件」に直撃する）。**3 つの既存防御はいずれもこれを止められない**:
+  - **RLS は列を制限できない**（行を通した時点で全列が読める）
+  - **Prisma 拡張（第 2 防御）の `$allOperations` フックは、ネストしたリレーション読み取りでは走らない**（§4.1 の「既知の射程外」）
+  - **型テスト（`@ts-expect-error db.engineer`）は構造上リレーション経由を捕まえられない**（`db.engineer` は確かに無い）
+
+  🔴 **したがって担保はメソッドの形そのものに置く。** 引数と戻り値を**スカラーと固定形の DTO だけ**にし、`select` / `include` を受け取る型を `SharedCandidateDb` の表面に 1 つも出さない。**回帰は §4.7 の実 DB テスト**（`tests/isolation/shared-candidate-scope.test.ts`）が持ち、`SharedCandidateDb` の**全メンバー**について「`display_name` / `owner_partner_company_id` / `contact_email` / `city` / パートナー会社名が 1 文字も返らない」ことを実測する（型テストでは素通りするため）。
 - 🔴 **`SharedCandidateDb` に `engineerCareer` デリゲートを持たせない**（T-09-12。`F-008 AC-7` / `BR-55`）。**`engineer_careers` にこの経路の追加 SELECT ポリシー（`shared_candidate_read` 相当）を書かない** —— 匿名候補の生成に経歴は 1 項目も要らないため、**そもそも読めなくてよい**。`engineers` / `engineer_skills` に張った追加ポリシーを「ついでに揃える」形で経歴へ広げてはならない（広げた瞬間に、ホストが取引先の経歴を読む経路が DB に生まれる。§3.1 経路 4 の 🔴「匿名表示の項目を増やさない」に直結する）。**担保**: §4.7 のテスト **#15**（`app.shared_scope` / `app_engineer_is_shared()` を参照するポリシーを持つ表の集合を `engineers` / `engineer_skills` の 2 表に固定する。**表名を書き足さない限り増えない**形にする）。
-- 🔴 **`withSharedCandidateScope` は `MatchCandidate` の生成・更新以外から呼べない**。ESLint の `no-restricted-imports` で、`apps/web/app/api/**` からの import を禁止し、**呼び出し元を `apps/worker/src/handlers/match/*.ts` と `packages/db` 内に限定する**。
+- 🔴 **`withSharedCandidateScope` は `MatchCandidate` の生成・更新以外から呼べない**。**ESLint の `no-restricted-imports` が、`@ses/db` からの `withSharedCandidateScope` の named import を全ゾーンで禁止し、許可するのは `tests/isolation/**` だけである**（T-08-03 で確定。改訂 9。2026-09-11）。`packages/db` の内部は相対 import なので掛からない。
+  - 🔴 **改訂前の文言（「`apps/web/app/api/**` からの import を禁止し、呼び出し元を `apps/worker/src/handlers/match/*.ts` と `packages/db` 内に限定する」）を置き換えた。** 区画を列挙する形は「列挙に無い区画（`apps/web/lib/**` 等）が既定で許可される」ことを意味し、`CLAUDE.md` §3.1「汎用のエスケープハッチを作らない」に反する。**既定禁止・例外を明示**へ反転させた。
+  - 🔴 **呼び出し元が実在するようになったら（T-08-04 / T-08-05、Phase 2 の `match.build`）、そのファイル集合に専用ゾーンを足して許可する。** CATCH_ALL を緩めない。あわせて `tests/static/auth-db-callers.test.ts` の許可リスト（現在は **`withSharedCandidateScope: []` と `SharedCandidateProjectNotFoundError: []` の空配列**）に追記する ＝ **呼び出し元が増えた瞬間にテストが落ち、レビューを強制する**。
+- 🔴 **入口の fail-closed（T-08-03 で確定。改訂 9）**: `projectId` の案件がテナント内に見つからない場合、**0 件を返さず `SharedCandidateProjectNotFoundError` を投げる**。API 境界は §4.8 に従い **404** に写像する（403 と区別しない）。理由: 匿名候補は「案件に対して」出すものであり、案件が特定できないまま `app.shared_scope = 'on'` のトランザクションを開くと、**何のために開いたのかが監査から読めない**。ホスト文脈の検証（`requireHost`。パートナー文脈は `HostOnlyContextError`）も同じ入口で行う。
 - **解除の即時反映**（`F-016 AC-2`）: `EngineerShare.revoked_at` が入った瞬間にポリシーが外れる。**候補一覧の応答は `MatchCandidate` をそのまま返さず、必ず `withSharedCandidateScope` で「まだ共有中か」を再確認してからフィルタする**（キャッシュを置かない）。
 ### 4.6 匿名候補の参照子と応答の型
 

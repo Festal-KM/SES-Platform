@@ -54,7 +54,8 @@ WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_platform_write')
 \gexec
 
 -- app_share_probe: NOLOGIN。engineer_shares の 3 列 SELECT のみ（SP-08 の経路 4。docs/05 §4.5）。
--- パスワード不要。GRANT は engineer_shares が生まれる SP-08 で追加する。
+-- パスワード不要。GRANT・ポリシー・関数（app_engineer_is_shared）は T-08-03 で追加した
+-- （packages/db/prisma/migrations/20260916000000_shared_candidate_scope/migration.sql）。
 SELECT 'CREATE ROLE app_share_probe NOLOGIN NOBYPASSRLS'
 WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_share_probe')
 \gexec
@@ -107,6 +108,8 @@ WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_scheduler_probe')
 -- app_migrator はこのロールにログインしない（NOLOGIN のまま）が、所有権の付け替えだけができるよう
 -- メンバーシップを与える。
 GRANT app_assignment_owner_probe TO app_migrator;
+-- 同上（T-08-03。migration 20260916000000 の ALTER FUNCTION ... OWNER TO app_share_probe）。
+GRANT app_share_probe TO app_migrator;
 -- 同上（T-05-05。migration 20260908000000 の ALTER FUNCTION ... OWNER TO app_scan_probe）。
 GRANT app_scan_probe TO app_migrator;
 -- 同上（T-07-11。migration 20260915000000 の ALTER FUNCTION ... OWNER TO app_scheduler_probe）。

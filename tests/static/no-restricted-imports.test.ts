@@ -357,3 +357,49 @@ describe('@ses/db/platform（分離バイパス）の import 元の限定（CLAU
     expect(hasRule(raw.messages, 'no-restricted-imports')).toBe(true);
   });
 });
+
+/**
+ * 🔴 T-08-03（docs/05 §4.5 / §17.2 #3 / `P-A-14`）:
+ *    **匿名共有（`CLAUDE.md` §3.1 経路 4）の限定経路を import できる場所を固定する。**
+ *
+ * `withSharedCandidateScope` は `app.shared_scope = 'on'` を立てられる唯一の関数であり、
+ * これを呼べる場所が増えることは「パートナー境界を越えて読む場所が増える」ことと同義である。
+ * `@ses/db` の index は（`withPlatform*` と違い）これを re-export **する**ので、
+ * 制限は named import（`importNames`）で行う。
+ */
+describe('withSharedCandidateScope（経路 4 の限定経路）の import 元の限定（docs/05 §4.5）', () => {
+  const FORBIDDEN_PATHS = [
+    'apps/web/app/api/(main)/engineers/route.ts',
+    'apps/web/app/api/(main)/projects/[id]/candidates/route.ts',
+    'apps/web/app/(main)/engineers/page.tsx',
+    'apps/web/lib/engineers/service.ts',
+    'apps/worker/src/jobs/match-build.ts',
+    'apps/web/app/admin/tenants/page.tsx',
+    'apps/web/app/api/admin/tenants/route.ts',
+    'scripts/whatever.ts',
+  ];
+
+  it.each(FORBIDDEN_PATHS)('🔴 %s からの import を検出する', async (spoofedPath) => {
+    const result = await lintAs(
+      readFixture('db-shared-candidate-scope.violation.ts'),
+      spoofedPath,
+    );
+    expect(hasRule(result.messages, 'no-restricted-imports')).toBe(true);
+  });
+
+  it('対照: tests/isolation/** からの import は許可される（違反 0 件）', async () => {
+    const result = await lintAs(
+      readFixture('db-shared-candidate-scope-isolation.ok.ts'),
+      'tests/isolation/shared-candidate-scope.test.ts',
+    );
+    expect(result.errorCount).toBe(0);
+  });
+
+  it.each(FORBIDDEN_PATHS)(
+    '🔴 対照: %s でも @ses/db の通常の入口（withTenant）は許可されたままである',
+    async (spoofedPath) => {
+      const result = await lintAs(readFixture('db-with-tenant.ok.ts'), spoofedPath);
+      expect(result.errorCount).toBe(0);
+    },
+  );
+});

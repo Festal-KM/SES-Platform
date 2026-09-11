@@ -58,6 +58,19 @@ const SES_DB_MODULE = '@ses/db';
 const SES_DB_PRISMA_CLIENT_MESSAGE =
   '@ses/db から PrismaClient を import することはできません（CLAUDE.md §3.1 / docs/05 §4.3）。' +
   'withTenant / withHostTenant 経由でアクセスしてください。';
+// T-08-03（docs/05 §4.5 / `CLAUDE.md` §3.1 経路 4 / `P-A-14`）:
+// 🔴 `withSharedCandidateScope` は**テナント内のパートナー境界（第二境界）を越えて読む唯一の関数**
+//    である（`app.shared_scope = 'on'` を立てられるのもこれだけ）。`@ses/db` の index は
+//    `withPlatform*` と違い re-export **する**（ジョブとサービス層が使うため）ので、
+//    到達の制限は named import の禁止で行う。
+//    🔴 現時点の許可先は `tests/isolation/**`（分離機構そのものを検証する区画。`@ses/db/testing` と
+//    同じ扱い）だけである。`packages/db` の内部は相対 import なのでこの禁止に掛からない。
+//    ⚠️ 呼び出し元が実在するようになったら（SP-08 の T-08-04 / T-08-05、SP-13 の `match.build`）、
+//    **そのファイル集合に専用ゾーンを足して許可する**。CATCH_ALL を緩めないこと。
+const SES_DB_SHARED_CANDIDATE_SCOPE_MESSAGE =
+  'withSharedCandidateScope は匿名候補（CLAUDE.md §3.1 経路 4）の生成だけに許された限定経路です。' +
+  'import できるのは packages/db の内部（相対 import）と tests/isolation/** だけです' +
+  '（docs/05 §4.5 / P-A-14）。候補一覧の応答は、この関数を通した再確認の結果だけを返してください。';
 const SES_DB_TESTING_SUBPATH = '@ses/db/testing';
 const SES_DB_TESTING_MESSAGE =
   '@ses/db/testing は tests/isolation/** からのみ import できます（分離機構そのものを検証する専用の' +
@@ -211,6 +224,7 @@ function buildPatterns({
   allowPrismaClient = false,
   allowDbTestingSubpath = false,
   allowDbPlatformSubpath = false,
+  allowSharedCandidateScope = false,
   allowConnectorMocks = false,
   forbidRelativeConnectorMocks = false,
   allowPrompts = false,
@@ -289,6 +303,14 @@ function buildPatterns({
       importNames: ['PrismaClient'],
       message: SES_DB_PRISMA_CLIENT_MESSAGE,
     });
+    // 🔴 T-08-03: 経路 4 の限定経路（docs/05 §4.5）。PrismaClient と同じ機構（importNames）で塞ぐ。
+    if (!allowSharedCandidateScope) {
+      patterns.push({
+        group: [SES_DB_MODULE],
+        importNames: ['withSharedCandidateScope'],
+        message: SES_DB_SHARED_CANDIDATE_SCOPE_MESSAGE,
+      });
+    }
   }
   return patterns;
 }
@@ -369,12 +391,17 @@ function buildDynamicImportSelectors(options) {
   ];
 }
 
-// 🔴 buildRestrictedNames() に @ses/db（PrismaClient の named import 防御）を含めない理由:
+// 🔴 buildRestrictedNames() に @ses/db（PrismaClient / withSharedCandidateScope の
+//    named import 防御）を含めない理由:
 //    動的 import (`import('@ses/db')`) はモジュール全体を取得するだけで、取り出す束縛名
 //    （`PrismaClient` かどうか）は import 式そのものからは分からない。名前レベルの制限は
 //    静的 import（no-restricted-imports の importNames）でのみ意味を持つ。
 //    @ses/db 自体の動的 import は他の目的（withTenant 等）で正当に行われうるため、
 //    ここで @ses/db を丸ごと禁止リストに加えることはしない（意図的な残余）。
+//    🔴 T-08-03: `withSharedCandidateScope` も同じ残余を持つ。**この lint は 4 枚のうちの 1 枚**
+//    であり（もう 3 枚は GUC の単一出所・SECURITY DEFINER の DB 権限・`SharedCandidateDb` の型。
+//    packages/db/src/shared-candidate.ts 冒頭）、`tests/static/auth-db-callers.test.ts` が
+//    `apps/**` のソースを識別子で走査して参照元を固定する（動的 import でも識別子は現れる）。
 
 /**
  * T-01-06: `$queryRaw` / `$queryRawUnsafe` / `$executeRaw` / `$executeRawUnsafe` の呼び出しを
@@ -524,6 +551,7 @@ function zoneConfigBlock(zone) {
     allowPrismaClient: zone.allowPrismaClient ?? false,
     allowDbTestingSubpath: zone.allowDbTestingSubpath ?? false,
     allowDbPlatformSubpath: zone.allowDbPlatformSubpath ?? false,
+    allowSharedCandidateScope: zone.allowSharedCandidateScope ?? false,
     allowConnectorMocks: zone.allowConnectorMocks ?? false,
     forbidRelativeConnectorMocks: zone.forbidRelativeConnectorMocks ?? false,
     allowPrompts: zone.allowPrompts ?? false,
@@ -600,6 +628,9 @@ const TESTS_ISOLATION_OPTIONS = {
   //    「監査を先に書く」「対象テナントに閉じる」「read-only である」ことを実証するのは
   //    この区画である（@ses/db/testing を許可するのと同じ理由。汎用の抜け道にはしない）。
   allowDbPlatformSubpath: true,
+  // 🔴 T-08-03: 経路 4（匿名共有）の限定経路が「ホストに行を見せず真偽だけを返す」ことを
+  //    実データで実証するのもこの区画である（docs/05 §4.5 / §4.7 二重防御 #6 / #7）。
+  allowSharedCandidateScope: true,
 };
 const TESTS_ISOLATION_ZONE = {
   files: ['tests/isolation/**/*.{ts,tsx,mts,cts,js,mjs,cjs}'],
