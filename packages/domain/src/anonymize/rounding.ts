@@ -199,7 +199,9 @@ export type AnonymizeContext = {
  *    人間の承認事項）。`rounding.test.ts` の「キーの網羅テスト」が、増えた瞬間に落ちる。
  *
  * ⚠️ `candidateRef`（案件スコープの参照子）はここに含まない —— HMAC 鍵と `projectId` を要し、
- *    T-08-04（`anonymize/reference.ts`）の責務である。**丸めと参照子を 1 つの関数にしない。**
+ *    T-08-04（`apps/web/lib/anonymize/reference.ts`。`docs/05` §4.6 改訂 10。`packages/domain` は
+ *    `node:crypto` を import できないため domain には置けない）の責務である。
+ *    **丸めと参照子を 1 つの関数にしない。**
  */
 export type RoundedAnonymousAttributes = {
   /** 辞書の正規化済み名称。**最大 `maxSkills` 件**（経験年数の降順）。 */

@@ -33,6 +33,7 @@ import {
   configureTenantDb,
   configureTokenEncryption,
 } from '@ses/db';
+import { createCandidateReference, type CandidateReference } from '../anonymize/reference';
 import { configureAccountMailQueue, PendingAccountMailQueue } from '../jobs/account-mail';
 import { configureDomainJobQueue, PendingDomainJobQueue } from '../jobs/domain-jobs';
 import { configureGateRunJobQueue } from '../jobs/gate-run-queue';
@@ -96,6 +97,14 @@ let cachedObjectStore: ObjectStore | null = null;
  *    —— 鍵の到達経路を `objectStore()` の内側 1 か所に閉じる（`CLAUDE.md` §3.5）。
  */
 let cachedS3ClientEnv: Parameters<typeof createS3Api>[0] | null = null;
+/**
+ * 🔴 T-08-04: 匿名候補の案件スコープ参照子（`ANON_REFERENCE_HMAC_SECRET`。docs/05 §4.6）。
+ *
+ * 🔴 **保持するのは鍵ではなく「鍵を閉じ込めた関数」である。** 鍵そのものを返すアクセサを
+ *    作らない（S3 の資格情報を `storageRuntime()` に載せず `objectStore()` の内側に閉じたのと
+ *    同じ規律。`CLAUDE.md` §3.5「ログ・エラー・監査ログに絶対に出さない」）。
+ */
+let cachedCandidateReference: CandidateReference | null = null;
 
 /**
  * DB クライアントを 1 度だけ初期化する。
@@ -220,6 +229,13 @@ export function ensureDbConfigured(): void {
           },
         }),
   };
+  // 🔴 T-08-04: 匿名候補の参照子（docs/05 §4.6 / `F-017 AC-2` / `BR-55`）。
+  //    値の出所は `packages/config` の Zod スキーマ（`base64AtLeastBytes(32)`）だけであり、
+  //    `apps/web` のどのルートも `process.env` を読まない（`CLAUDE.md` §3.5）。
+  //    🔴 **未設定でのフォールバックを持たない** —— 鍵が無ければ `initializeRuntimeConfig` が
+  //    起動時に落ちる。「既定の鍵で続行」は、参照子が全環境で同じ = 案件スコープの意味が
+  //    消えた状態を本番へ持ち込む（`CLAUDE.md` §11.1 と同じ壊れ方）。
+  cachedCandidateReference = createCandidateReference(env.ANON_REFERENCE_HMAC_SECRET);
   initialized = true;
 }
 
@@ -277,6 +293,20 @@ export function objectStore(): ObjectStore {
     });
   }
   return cachedObjectStore;
+}
+
+/**
+ * 🔴 T-08-04: 匿名候補の案件スコープ参照子を作る関数（docs/05 §4.6）。
+ *
+ * 🔴 **返すのは関数だけであり、鍵は返らない。** 呼び出し側（候補一覧 = T-08-05 /
+ *    提案依頼の逆引き = T-08-06）が扱えるのは `(projectId, engineerId) => string` だけである。
+ */
+export function candidateReference(): CandidateReference {
+  ensureDbConfigured();
+  if (cachedCandidateReference === null) {
+    throw new Error('匿名候補の参照子が解決されていません（bootstrap の不変条件違反）。');
+  }
+  return cachedCandidateReference;
 }
 
 /**

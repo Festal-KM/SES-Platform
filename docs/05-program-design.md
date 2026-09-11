@@ -9,6 +9,8 @@
 
 > 🔴 **改訂 9（2026-09-11。T-08-03 のコードレビューで実 DB の漏洩が再現されたことによる）**: **§4.5 の `SharedCandidateDb` の契約を確定させた。** 変更は 3 点であり、いずれも**実装と不可分**である（`CLAUDE.md` §8.7 に従い本書を先に改訂した）。①🔴 **`SharedCandidateDb` に素の Prisma デリゲートを 1 つも置かない**（置くと `select` / `include` 経由で、このスコープが意図的に開けた `engineers` の行が**全列**再び開く。実際に共有エンジニアの実名と共有元パートナー会社名が取得できた ＝ `BR-06` / `CLAUDE.md` §7 の「匿名候補の身元露出 0 件」違反）。公開するのは用途ごとの専用メソッドだけとし、**回帰は実 DB テストで見る**（RLS は列を絞れず、Prisma 拡張はネストしたリレーションで走らず、型テストはリレーション経由を捕まえられない） ②ESLint の射程を「区画を列挙して禁止」から **「全ゾーン禁止 + `tests/isolation/**` のみ許可」**へ反転 ③入口の fail-closed（`SharedCandidateProjectNotFoundError` → 404 / `HostOnlyContextError`）を明記。**変更箇所は §4.5 のみである。**
 
+> 🔴 **改訂 10（2026-09-11。T-08-04）**: **§4.6 の参照子 `candidateRef` と `AnonymousCandidateView` の置き場所を `packages/domain` から `apps/web/lib/anonymize/**` に変えた。** 改訂前の記述は**実装不能**である（`packages/domain` は `node:crypto` を import できない。`CLAUDE.md` §2.1 / `eslint.config.mjs` の `forbidNodeIo` / `tests/static/domain-purity.test.ts`）。**実装と不可分**のため `CLAUDE.md` §8.7 に従い本書を先に改訂した。あわせて ①退けた代替案（自前 SHA-256 / `hmac` の注入 / 構成とハッシュの分割）を記録 ②`score` / `rationale` を **Phase 1 では型に持たせない**（`F-017 AC-7`）ことを明記 ③並び順の規則（`updatedOn` 降順 → `candidateRef` 昇順。`docs/03` §4.13.2-2）を明記 ④🔴 **`F-017 AC-2` で「防ぐもの」と「Phase 1 の残存リスク」の線引き表**を新設。**変更箇所は §4.6 のみである。**
+
 **構成**: 1 アーキテクチャ概観 / 2 リポジトリ構成 / 3 DB スキーマ / 4 データ分離設計 / 5 管理平面の設計 / 6 API 仕様 / 7 AI 層の設計 / 8 外部連携層の設計 / 9 ジョブ仕様 / 10 冪等性・不可逆事故の防止設計 / 11 品質ゲートのパイプライン設計 / 12 業務シーケンス / 13 環境分離の設計 / 14 ファイルストレージ規約 / 15 エラー処理方針 / 16 オブザーバビリティ / 17 テスト戦略 / 付録（`## Assumptions` / `## TBD` / 申し送りマッピング / 機能カバレッジ）
 
 ## 1. アーキテクチャ概観
@@ -108,7 +110,7 @@ flowchart TB
 | §3.3 内容変更後に再検証なしで承認できない | **DB 制約**（`Proposal.content_hash` と `ReviewGate.content_hash` の一致を CHECK ではなく承認 CAS の条件に入れる） | §11.5 | §11.5 |
 | §12.4 `gate-inspector` に設定を持てない | **型**（`Exclude<AiRole,'gate-inspector'>`）+ **DB 制約**（`CHECK (role <> 'gate-inspector')`）+ **Zod**（`z.enum`） | §7.5 | §7.5 |
 | §3.1 分離機構が有効であること自体 | **機械検証**（`pg_class` / `pg_policy` を走査する結合テスト。テーブル名を列挙しない） | `tests/isolation/rls-enforced.test.ts` | §4.7 |
-| 🔴 §3.1 経路 4 の開示項目を増やさない（**経歴を匿名候補に出さない**。`F-008 AC-7`） | **型**（`AnonymousCandidateView` / `AnonymizeEngineerInput` / `match-explainer` の入力に経歴のフィールドが**無い**）+ **DB 権限**（`engineer_careers` に共有スコープの追加ポリシーを書かない＝ホストからは 0 件）+ **機械検証**（§4.7 #15 / §17.2 #28） | `packages/domain/src/anonymize/*` / `packages/db/src/index.ts` | §4.5 / §4.6 / §17.2 |
+| 🔴 §3.1 経路 4 の開示項目を増やさない（**経歴を匿名候補に出さない**。`F-008 AC-7`） | **型**（`AnonymousCandidateView` / `AnonymizeEngineerInput` / `match-explainer` の入力に経歴のフィールドが**無い**）+ **DB 権限**（`engineer_careers` に共有スコープの追加ポリシーを書かない＝ホストからは 0 件）+ **機械検証**（§4.7 #15 / §17.2 #28） | `packages/domain/src/anonymize/*` / **`apps/web/lib/anonymize/*`**（応答型と参照子。改訂 10）/ `packages/db/src/index.ts` | §4.5 / §4.6 / §17.2 |
 | 🔴 提案の内容が後から変わらない（**経歴の行単位の凍結**。`F-008 AC-6` / `F-019 AC-5`） | **DB スキーマ**（`EngineerSnapshot.careers` が値の複製で、台帳行への FK を持たない）+ **型**（凍結行に `id` が無く、現在値へ辿れない）+ **E2E**（§17.3 #25） | `packages/db` / `apps/web/lib/proposals/snapshot.ts` | §3.6 / §6.5 |
 
 ## 2. リポジトリ構成
@@ -1846,14 +1848,17 @@ export function withSharedCandidateScope<T>(
 ### 4.6 匿名候補の参照子と応答の型
 
 ```ts
-// packages/domain/src/anonymize/reference.ts（純粋関数。HMAC 鍵は引数）— 🔴 T-08-04 の責務
-export function candidateRef(secret: Uint8Array, projectId: string, engineerId: string): string;
-//  = base64url( HMAC-SHA256(secret, projectId + '\0' + engineerId).slice(0, 16) )   // 区切りは NUL（U+0000）。UUID に含まれ得ない
+// apps/web/lib/anonymize/reference.ts（T-08-04 で実装済み。🔴 置き場所は改訂 10 を参照）
+export type CandidateReference = (projectId: string, engineerId: string) => string;
+export function createCandidateReference(secretBase64: string): CandidateReference;
+//  戻り値 = base64url( HMAC-SHA256(secret, projectId + '\0' + engineerId).slice(0, 16) )
+//  区切りは NUL（U+0000）。UUID に含まれ得ない（両 ID は UUID であることを入口で検査する）
 
+// apps/web/lib/anonymize/candidate-view.ts（T-08-04 で実装済み）
 // 🔴 匿名候補の応答型。engineerId を持たない（型として持てない）
 // 🔴 値は「区分コード + 数値」であり、表示文字列を 1 つも持たない（下記 4.6.2）
 export type AnonymousCandidateView = {
-  candidateRef: string;                                 // 案件スコープ。案件が違えば別の値（BR-55）。🔴 付与は T-08-04
+  candidateRef: string;                                 // 案件スコープ。案件が違えば別の値（BR-55）
   skills: { name: string }[];                           // 辞書の正規化済み名称。最大 8 件（U-06）
   yearsBand: AnonymizedYearsBand | null;                // 'LT_1Y' | 'Y1_3' | 'Y3_5' | 'Y5_10' | 'GTE_10Y'
   priceBand: AnonymizedPriceBand | null;                // 構造体。下記 4.6.2 の「なぜ string にしないか」
@@ -1861,8 +1866,8 @@ export type AnonymousCandidateView = {
   prefecture: PrefectureCode | null;                    // '01'〜'47'（JIS X 0401）の厳密ユニオン。市区町村・沿線・駅名を含まない
   remoteMode: AnonymizedRemoteMode | null;              // 'FULL_REMOTE' | 'PARTIAL_REMOTE' | 'ONSITE_ONLY'
   updatedOn: string;                                    // 🔴 JST 暦日に丸めた更新日（docs/03 §4.13.2-2）。下記 4.6.3
-  score?: number;                                       // Phase 2 のみ
-  rationale?: string;                                   // Phase 2 のみ。丸め後の値しか含まない
+  // 🔴 score / rationale は **Phase 2 で足す**（F-029 / F-031）。Phase 1 では
+  //    型にも存在させない（F-017 AC-7「スコア・順位・重みの表示が存在しない」）
 };
 
 // packages/domain/src/anonymize/rounding.ts（T-08-01 で実装済み）
@@ -1870,6 +1875,19 @@ export type AnonymizedPriceBand =
   | { readonly kind: 'RANGE'; readonly fromManYen: number; readonly toManYen: number }   // fromManYen 以上 toManYen 未満
   | { readonly kind: 'OPEN';  readonly fromManYen: number };                             // 打ち止め（fromManYen 以上）
 ```
+
+🔴 **改訂 10（2026-09-11。T-08-04）: 参照子と応答型の置き場所を `packages/domain` から `apps/web/lib/anonymize/**` に変えた。** 本書の改訂前の記述（`packages/domain/src/anonymize/reference.ts`）は**実装不能**である —— `packages/domain` は `node:crypto` を import できない（`CLAUDE.md` §2.1。`eslint.config.mjs` の `packages/domain` ゾーンの `forbidNodeIo` と `tests/static/domain-purity.test.ts` の `NODE_IO_MODULE_NAMES` が `crypto` を含み、**二重に**塞いでいる）。検討して退けた代替:
+
+| 案 | 退けた理由 |
+|---|---|
+| SHA-256 / HMAC を `packages/domain` に自前実装する | **暗号プリミティブの再実装**である。検証の負担に見合わず、誤りが「参照子が推測できる」形で現れる |
+| `hmac` 関数を引数で注入し、構成（NUL 連結・16 バイト切り出し）だけ domain に残す | **呼び出し側が HMAC 以外を渡せる形**になり、「参照子が HMAC である」という保証そのものが型の外に出る。`config` / `referenceDate` の注入（値の注入）とは性質が違う |
+| 構成だけ domain、HMAC だけアプリ側 | 1 つの不変条件（= 参照子の作り方）が 2 ファイルに割れる。片方だけ直す事故を招く |
+
+**`apps/worker` が参照子を必要とするのは Phase 2 以降**（`match.build` は `MatchCandidate` を書くだけで、`AnonymousCandidateView` を作るのは読み出し側の API である）。⚠️ **必要になった時点で `apps/worker` に複製せず、モジュールごと共有パッケージへ移すこと**（`CLAUDE.md` §2.1「業務ロジックを重複実装しない」）。**丸め（`anonymizeEngineer`）と表示名の写像（`labels.ts`）が既にそれぞれ 1 実装であることと同じ規律である。**
+
+🔴 **並び順も参照子から決める**（`docs/03` §4.13.2-2）: 匿名候補の並びは **`updatedOn`（JST 暦日）の降順 → 同日内は `candidateRef` の昇順**である。`compareAnonymousCandidateViews`（`candidate-view.ts`）が唯一の実装であり、`buildAnonymousCandidateViews` はこの順で返す。**`engineer_id` や `updated_at` の生値によるタイブレークを応答の並びに残さない** —— 残すと、**同じ候補集合が複数の案件に出たときに相対順序が一致し、参照子を案件ごとに変えた意味が消える**（`F-017 AC-2`）。`candidateRef` は案件ごとに異なるため、同日内の順序も案件ごとに変わる。
+
 🔴 **`AnonymousCandidateView` に詳細エンドポイントを作らない**（`docs/04` 申し送り 2 / §11-2）。一覧と提案依頼の発行以外に、この型を返す API を作らない。**`candidateRef` を受け取る API は `POST /api/proposal-requests` の 1 本だけ**であり、そこで `projectId` と組にして `MatchCandidate` から逆引きする。
 
 🔴 **`AnonymousCandidateView` は経歴（`EngineerCareer`）のフィールドを型として持たない**（T-09-12。`F-008 AC-7` / `F-017 AC-1` / `BR-55` / `docs/04` 申し送り 17-③）。**フィルタで落とすのではなく、存在させない**（§4.8 / 申し送り 2 / 9 と同じ規律）。具体的に**作ってはならないフィールド**:
@@ -1881,6 +1899,22 @@ export type AnonymizedPriceBand =
 | `rationale` に経歴由来の語 | `match-explainer` の**入力に経歴を渡さない**ことで構造的に断つ（§7.1）。「根拠文だけは自由文だから」で例外を作らない |
 
 **担保は 3 枚**: ①**型**（上記フィールドが `AnonymousCandidateView` / `RoundedAnonymousAttributes` に無い）②**入力の型**（`AnonymizeEngineerInput` に経歴のフィールドが無い。§4.6.1。`city` のように「受け取って落とす」形にすらしない —— **落とす責務すら持たせない**のは、経歴が丸めて出せる項目ではなく**出してはならない項目**だからである）③**DB**（§4.5 の `SharedCandidateDb` が `engineerCareer` を持たず、`engineer_careers` にホスト向けの追加ポリシーが無い）。
+
+##### 🔴 `F-017 AC-2` で防ぐもの / Phase 1 の残存リスク（T-08-04 で明示）
+
+`F-017 AC-2` は「識別子」だけでなく**「値の組」**を対象にしている。**どこまでを本タスクが防ぎ、どこからを Phase 1 の残存リスクとして受け入れるのかを、ここで線引きする**（`docs/03` §4.13.1 / §4.13.2）。
+
+| # | 突合の経路 | 本タスクの扱い | 担保 |
+|---|---|---|---|
+| 1 | **内部 ID**（`engineer_id` / `Skill.id` / `MatchCandidate.id` / `owner_partner_company_id`） | 🔴 **防ぐ**。応答の型に無く、実応答にも 1 文字も現れない | 型 + 実 DB の深さ走査（`tests/isolation/anonymous-candidate-view.test.ts`） |
+| 2 | **案件をまたいで安定なハッシュ** | 🔴 **防ぐ**。参照子は `project_id` を鍵付き入力に含む（`docs/03` §4.13.2-1） | 同一エンジニア × 2 案件で参照子が異なることの実測 |
+| 3 | **並び順から復元できる連番・順位** | 🔴 **防ぐ**。`index` / `rank` / `score` のフィールドを作らない。並びも `candidateRef` でタイブレークする（上記）ため、案件が違えば同日内の順序が変わる | 型 + 並びの決定性テスト + 2 案件での順序不一致の実測 |
+| 4 | **丸めていない更新日時** | 🔴 **防ぐ**。`updatedOn` は JST 暦日（`toJstIsoDay`）。`updated_at` の生値・ISO 文字列・epoch は応答に無い（§4.6.3） | 型 + 実応答に生タイムスタンプが現れないことの実測 |
+| 5 | **スキルの並び順に残る辞書 ID / `sortKey`** | 🔴 **防ぐ**。並びの決定にのみ使い、出力は `name` だけ（§4.6.1） | 型（`skills: { name }[]`）+ 実測 |
+| 6 | **丸め後 5 項目の組み合わせそのもの**（属性の指紋） | ⚠️ **Phase 1 の残存リスクとして受け入れる。** 丸めの粒度（`docs/03` §4.13.1）で低減するところまでが Phase 1 の合意であり、🔴 **k-匿名性の件数閾値は入れない**（2026-09-10 に人間が決定。[Issue #5](https://github.com/Festal-KM/SES-Platform/issues/5)。母集団が小さい立ち上げ期にほとんどの候補が消え、経路 4 が機能しなくなる） | 監視で見る（**一意率**を運営平面の指標として出す。`docs/03` §4.13.2-4 / SP-11 `F-059`） |
+| 7 | **候補の出現・消滅のタイミング**（共有の開始・停止、更新日の変化） | ⚠️ **残存リスク。** 解除の即時反映（`F-016 AC-2`）と両立しないため、Phase 1 では受け入れる | 同上（監視） |
+
+🔴 **6 と 7 を「防いだことにしない」。** 実装・テストで「防げている」と書けるのは 1〜5 だけである。6 の扱いを変える（＝ 閾値を入れる / 粒度を変える）には `docs/03` §4.13.1 の改訂と再承認が要る（`CLAUDE.md` §8.6 / §8.7）。
 
 #### 4.6.1 丸めの関数（T-08-01 で実装済み。`packages/domain/src/anonymize/rounding.ts`）
 
@@ -1916,7 +1950,7 @@ T-08-01 で確定した細部（`programmer` はこれを実装済みの事実�
 - **経験年数の集約は「登録スキルの経験年数の最大値」**（T-06-04 で決着した `F-009` の `yearsMin` と同じ定義。§6.4「#15 の実装の決着（T-06-04）」）。**別の集約を使うと検索の当たり方と表示がずれる。**
 - **単価帯が打ち止め（100 万円）を跨ぐとき**（例 95〜120 万円）は上端を偽らず `OPEN`（`90 万円以上`）にする。`90〜100 万円` に丸め込むと**上限を偽ることになり**、商談の前提を誤らせる。
 - **`city`（市区町村）は受け取って落とす**。落とすのが丸めの責務そのものであり、落ちることをユニットテストで証明できる形にするため（§4.5 の `SharedCandidateDb` は二重防御の**もう 1 枚**であって代わりではない）。
-- **`candidateRef` は `RoundedAnonymousAttributes` に含まれない。** HMAC 鍵と `projectId` を要し、**T-08-04（`anonymize/reference.ts`）の責務**である。丸めと参照子を 1 つの関数にしない。
+- **`candidateRef` は `RoundedAnonymousAttributes` に含まれない。** HMAC 鍵と `projectId` を要し、**T-08-04（`apps/web/lib/anonymize/reference.ts`。改訂 10）の責務**である。丸めと参照子を 1 つの関数にしない。
 - 🔴 **k-匿名性の件数閾値はここに入れない**（`docs/02` A-04 / `docs/03` §4.13.2-4）。母集団が小さい立ち上げ期にほとんどの候補が消え、経路 4 が使えない機能になる。一意率は運営平面の監視指標として出す（SP-11）。加えて件数の集計は I/O であり純粋関数の責務ではない。
 
 #### 4.6.2 🔴 区分コードで返し、表示文字列を返さない（`CLAUDE.md` §3.5）
@@ -5647,6 +5681,7 @@ export const logger = pino({
 | 27 | `startup-di-callers.test.ts` の追補 | 🔴 **ワーカーの起動時 DI の呼び出し連鎖が 2 段とも繋がっていること**（T-07-11。§13.1.1 ①）: ①`apps/worker/src/main.ts` が `./bootstrap.js` を import して `bootstrapWorker()` を呼ぶ ②`apps/worker/src/bootstrap.ts` が `initializeRuntimeConfig` を呼ぶ。**切り出しで連鎖が切れると「起動しても環境変数を検証していない」状態になる**（T-03-12 が塞いだ穴の再発） |
 | 28 | 🔴 `career-not-anonymous.test.ts`（T-09-12。Issue #35 = A） | 🔴 **経験内容が匿名候補の経路に「型として」現れない**（`F-008 AC-7` / `F-017 AC-1` / `BR-55` / `docs/04` 申し送り 17-③）。**フィルタの有無ではなく型と参照を検査するのが要点**である（フィルタは書き忘れるが、型に無いものは書けない）。5 本立て: ①`expectTypeOf<AnonymousCandidateView>()` / `<RoundedAnonymousAttributes>()` / `<AnonymizeEngineerInput>()` が `careers` / `careerCount` / `hasCareers` / `careerSummary` / `latestRole` を**キーとして持たない**（型テスト）②`match-explainer` の `RoleSpec` の入力型（`candidates[]` の要素）が同様に持たない ③`SharedCandidateDb` 型に `engineerCareer` デリゲートが無い（型テスト。#20 ② と同じ向き）④`apps/web/lib/**` と `apps/worker/**` で `engineerCareer` デリゲートを参照するファイルの集合が **台帳の読み書き（`lib/engineers/**`）と凍結（`lib/proposals/snapshot.ts`）に限られる**（AST。匿名候補・エクスポート・`match.build` から参照されていたら FAIL）⑤`export.generate` の匿名候補側の CSV ヘッダ定義に経歴由来の列名が無い（スナップショット） |
 | 29 | 🔴 `career-audit-per-row.test.ts`（T-09-12） | 🔴 **経歴の変更の監査が「行ごと」に残る**（`F-008 AC-5` / `docs/04` 申し送り 17-⑤）。①`diffCareerRows` が純粋関数であること（`packages/domain`。#14 と同じ検査）②`engineer_career.*` の `AuditLog` を書く経路が `lib/engineers/careers.ts` の 1 本だけ（AST）③`summary` に載せるキーの集合をスナップショットで固定し、**`role` / `description` / `technologies` が含まれないこと**（#11 の redact スナップショットと同じ発想）。**結合テスト側**（`tests/isolation/engineer-careers.test.ts`）で「1 回の保存で 3 行追加 + 1 行削除 → `AuditLog` が 4 件」を実データで固定する |
+| 30 | 🔴 `forbidden-api-routes.test.ts`（T-08-04） | 🔴 **§6.8「作らないもの」のうち、ルートの存在そのもので判定できるものを機械的に固定する。** 第一の対象は **`GET /api/candidates/{candidateRef}`**（`docs/04` 申し送り 2 / §11-2。**詳細エンドポイントは 5 項目を超える経路になる**）。`apps/web/app/api/**` のディレクトリ構造を走査し、禁止パターンに一致する URL セグメントを持つ `route.ts` が**存在しないこと**を検査する。🔴 **列挙した禁止パターンが実在の構造に対して空振りしないこと**（＝ 合成パスに対して確かに一致すること）を対照テストで示す。**§6.8 に行が増えたらここにも足す**（ルートの有無で判定できるものに限る） |
 
 ### 17.3 E2E の主要シナリオ
 
