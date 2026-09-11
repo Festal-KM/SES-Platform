@@ -193,3 +193,97 @@
 | 11 | 🔴 **表示項目の集合が増えていない**（特に管理平面。`BR-40`） | `admin-tenants-read-only` / `platform-plane-boundary` + T-21-05 の④ |
 | 12 | **CI が green** | run 番号（[Issue #25](https://github.com/Festal-KM/SES-Platform/issues/25) の運用 C。**「CI があるから守られている」と読み替えない**） |
 | 13 | **申し送り**: 完了を `docs/dev-plan.md` §8 に記録し、**`T-12-11` の受け入れ基準 ⑦から参照できる** | `docs/dev-plan.md` §8 の行 |
+
+---
+
+## 8. 完了記録（2026-09-11。`MODE: REVIEW` / `TARGET: SP-21` で確認）
+
+### 8.1 タスクの完了（7 / 7）
+
+| タスク | 完了日 | コミット | CI run | 主な成果 |
+|---|---|---|---|---|
+| T-21-01 | 2026-09-10 | `5ab225a` | `34440590156` | Tailwind の設定確定と移行の安全網。**`@source '../../../packages/ui/src'`**（本番ビルドでの消失の解消）/ `Button` の基底復旧 / `tests/static/testid-inventory.test.ts`（**415 エントリ = 完全一致 + 静的接頭辞**）/ `tests/static/tailwind-breakpoints.test.ts` |
+| T-21-02 | 2026-09-10 | `ae5825c` | `34443666743` | `@ses/ui` の拡充 8 種（`Input` / `Label` / `Select` / `Textarea` / `Table` / `Badge` / `Alert` / `Field`）+ `cn()` の規約確定（**競合解決をしないため、競合する上書きは prop にする**） |
+| T-21-03 | 2026-09-10 | `1820c9e`（CI success。**run 番号は未記録**） | — | 共通レイアウトと管理平面の帯を Tailwind へ。**基底タイポグラフィ（色 / 行間 / フォント）を `tailwind.css` の `@theme` と `@layer base` へ移設**（読み込み順の暫定を解消可能にした） |
+| T-21-04 | 2026-09-10 | `7864b36` | `34457036133` | 主平面 16 画面 + `S-002` の移行（**37 ファイル**）。`Checkbox` / `link-classes` を新設 |
+| T-21-05 | 2026-09-10 | `baa1191` | `34460761427` | 管理平面 3 画面の移行 + `Radio` 新設。🔴 **`.ses-*` の className が 0 件になった** |
+| T-21-06 | 2026-09-11 | `dc985d3` | （**run 番号は未記録**） | モバイル Tier の再検証（**モバイル E2E 12 本 green** / `S-046` のモバイル 375px スクリーンショット 5 状態） |
+| T-21-07 | 2026-09-11 | `75d1634` | 🔴 **`34553246355`（E2E 35 passed）** | `globals.css` の撤去。**スタイルシートが `apps/web/app/tailwind.css` の 1 本だけになった** |
+
+⚠️ **T-21-03 / T-21-06 の CI run 番号が記録されていない**（コミットの CI は success）。**次スプリント以降は 7 タスクすべてで run 番号を残す**（`docs/dev-plan.md` §6.4 R-05 の運用 C は run 単位の確認を求めている。番号が無いと「いつ何が緑だったか」を後から復元できない）。**最終状態の担保は `34553246355` であり、本スプリントの完了判定はこれで足りる。**
+
+### 8.2 §7 の完了判定 13 項目の検証結果（全 OK）
+
+| # | 条件 | 判定 | 証跡（確認した実体） |
+|---|---|---|---|
+| 1 | ブレークポイントが既定のまま | OK | `tests/static/tailwind-breakpoints.test.ts`（`--breakpoint-*` 宣言 / 任意値バリアント / 既定外接頭辞 / 手書き `@media` の 4 検査 + fixtures による誤検知の対照） |
+| 2 | `@ses/ui` のクラスが本番ビルドで消えない | OK | `apps/web/app/tailwind.css:53` の `@source` + 同ファイル冒頭に**着手時の実測**（`hover:bg-slate-700` ほか 0 件 → 追加後 1 件）。静的検査は同テストの「コンテンツ検出」ブロック |
+| 3 | `data-testid` の削除・改名 0 件 | OK | `tests/static/testid-inventory.test.ts`（`FROZEN_EXACT` + `FROZEN_PREFIXES` + `UNRESOLVED_ALLOWLIST`。**削除・改名で落ち、追加は通す**）。移行前後で集合一致 |
+| 4 | 20 画面が移行済みで render 13 / isolation / E2E 35 が green | OK | `*.render.test.tsx` **13 本**実在 / `tests/isolation/**` **53 files**（51 から減っていない）/ E2E **35**（desktop 23 = `isolation` 19 + `audit-k7` 3 + `projects` 1、mobile 12 = `audit-k7.mobile` 2 + `home.mobile` 2 + `projects.mobile` 5 + `settings.mobile` 3）。🔴 **ビルドを挟んだ実行である**（`.github/workflows/ci.yml` が `build` → `lint` → `typecheck` → `test:unit` → `test:isolation` → `typecheck:e2e` → `test:e2e` を 1 ジョブ直列で回す。`pnpm run test:isolation` 単体はビルドしないため、この順序が `docs/05` §11.13 ④ の要求を満たしている）。**run `34553246355` green** |
+| 5 | 共有コンポーネントが `packages/ui` にあり依存方向が崩れていない | OK | `packages/ui/src/index.ts`（12 コンポーネント + `cn` + `link-classes`）/ `eslint.config.mjs` の `PACKAGE_ZONES` に `packages/ui` ゾーン / `packages/ui/src/**` に `apps/` `@ses/db` `@ses/ai` `@ses/connectors` の import 0 件 |
+| 6 | RSC の境界が壊れていない | OK | `tests/static/client-db-boundary.test.ts` / `tests/static/route-boundaries.test.ts` が在り CI green。`packages/ui` に `'use client'` ディレクティブ 0 件（**サーバのまま描ける設計を維持**） |
+| 7 | Tier 割り当てが崩れていない | OK | モバイル E2E 12 本 green + `tests/e2e/screenshots/S-046-mobile375-*.png` **5 状態**（request / validation-error / confirm / complete / invalid-link）。`docs/04` の Tier は 1 件も変更していない |
+| 8 | 2FA の QR が潰れていない | OK | `apps/web/app/_components/otpauth-qr.tsx`（インライン `<svg>` / `shapeRendering="crispEdges"` / 旧 `.ses-otpauth-qr` の 4 宣言を `block w-full max-w-68 h-auto` + `bg-white` へ 1 対 1 で移設 / 符号化不能時は何も描かない）+ `otpauth-qr.render.test.tsx` + `S-001` のスクリーンショット |
+| 9 | 文言が `packages/i18n` から供給されたまま | OK | `t(` のファイル単位の減少 **0 件**（合計 **883 → 883**）。補助確認として、`apps/web/app/**/*.tsx` の JSX 直下に日本語テキストが現れない（唯一の一致は render テストの期待値文字列） |
+| 10 | `.ses-` の撤去と `layout.tsx` のコメント整合 | OK | `apps/web/**/*.tsx` の `className` に `.ses-` **0 件**（一致するのは移設の経緯を書いたコメントと `skill-aliases-*` の testid のみ）/ `apps/web/app/globals.css` は**存在しない** / `apps/web/app/*.css` は `tailwind.css` の 1 本 / `layout.tsx:5-13` が「暫定は解消済みであり経過状態はもう無い」と実態どおりに書かれている |
+| 11 | 表示項目の集合が増えていない | OK | `tests/static/admin-tenants-read-only.test.ts` / `tests/static/platform-plane-boundary.test.ts` が在り CI green |
+| 12 | CI が green | OK | run **`34553246355`**（E2E 35 passed）。🔴 **[Issue #25](https://github.com/Festal-KM/SES-Platform/issues/25) の運用 C の確認記録として残す** —— 機械的強制は未達であり「CI があるから守られている」と読み替えない（`docs/dev-plan.md` §6.4 R-05） |
+| 13 | 申し送りが `docs/dev-plan.md` §8 にあり `T-12-11` ⑦ から参照できる | OK | `docs/dev-plan.md` §8 の 2026-09-11 の行 / `docs/sprints/SP-12-phase1-hardening.md` T-12-11 ⑦ からの参照 |
+
+🔴 **静的テストは 26 本 + 本スプリントの 2 本 = 28 本以上という条件に対し、実体は 30 本である**（SP-07 の T-07-10 までで 2 本増えている）。**減っていない。**
+
+### 8.3 🔴 移行のついでに直った実バグ 3 件（**移行前から壊れていたもの**）
+
+🔴 **本スプリントは「挙動を変えない」整形作業だったが、整形の過程で、移行前から壊れていた 3 件が見つかり直った。** **いずれもテストが落ちない壊れ方であり、見た目だけが壊れていた。**
+
+| # | 何が壊れていたか | 見つけたタスク | 原因 | なぜテストで捕まらなかったか |
+|---|---|---|---|---|
+| 1 | 🔴 **`@ses/ui` のスタイルが本番ビルドでだけ丸ごと消えていた** | T-21-01 | Tailwind v4 の自動コンテンツ検出は起点が `process.cwd()`（= `apps/web`）で `node_modules/` と `dist/` を除外するため、**pnpm のシンボリックリンク越しの `packages/ui` が走査対象外**だった。**10 画面のボタンからホバー・フォーカス・無効状態の見た目が消えていた。** `@source` の明示で解決 | DOM も testid も文言も正しい。**消えるのは CSS だけ**であり、`next dev` でも同じ作業ディレクトリで起きるため「ローカルで見えている」が根拠にならない |
+| 2 | 🔴 **`Button` が upstream から `whitespace-nowrap` / `shrink-0` を落として取り込まれていた** | T-21-01 | shadcn/ui の取り込み時に 2 語が欠落。**38px 幅・98px 高のボタン（ラベルが 1 文字ずつ 6 行）** になっていた | 🔴 **最初から壊れていたのに、縦に伸びた当たり判定が Playwright のクリック位置ずれを吸収して E2E が通っていた。** 🔴 **壊れた見た目が、テストを通す方向に働いていた**（§8.5 の検出器の動機そのもの） |
+| 3 | 🔴 **`A-014` のラジオが帯いっぱいに伸びていた** | T-21-05 | `globals.css` の `width:auto` の例外が `input[type='checkbox']` **だけ**を対象にしていた。レビュアーが実測で再現（**移行前 736px × 13px / 移行後 16px × 16px**）。**2 つ目の選択肢の当たり判定が 1 つ目の選択肢のテキストの真下**に来ていた | ラジオは存在し、値も送信できるため、DOM ベースの検査では正しく見える |
+
+### 8.4 レビューで差し戻した実バグ 2 件（T-21-04。いずれも修正済み）
+
+🔴 **どちらも「打ち消せない値を基底クラスに焼き込む」という同じ形である。** `cn()` は競合するクラス名を解決しないため（`packages/ui/src/lib/cn.ts` の規律）、**基底に入れた語は呼び出し側の `className` では上書きできない。**
+
+1. **`<tr className="align-top">` の削除** —— 「`vertical-align` は継承されないので死んだ語」と判断して消したが、**UA スタイルシートの `td, th { vertical-align: inherit }` により行から伝播しており、実際に効いていた**。`S-008`（版一覧）と `S-036`（DNS レコード表）で「行を横に読む」作業が崩れていた。→ **`TableRow` / `TableCell` / `TableHead` に `align` prop を追加し、基底から `align-middle` を除去**（`packages/ui/src/components/table.tsx` に実測の 4 通りの表を残した）。
+2. **`SECONDARY_LINK_CLASSES` への `mt-4` の焼き込み** —— `flex items-center` の行で**隣のボタンに対して中心が 8px 下にずれ**、`<nav className="mt-4">` の中では**上余白が 32px に二重化**していた。→ **`SECONDARY_LINK_CLASSES` / `SECONDARY_LINK_STACKED_CLASSES` の 2 定数に分割し、呼び出し 38 箇所を文脈で振り分けた。**
+
+### 8.5 🔴 検査式についての発見（T-21-06）— **常設化は次スプリントへ申し送る**
+
+T-21-01 のレビューが申し送った検査式
+
+```js
+el.scrollWidth <= el.clientWidth + 1 && el.scrollHeight <= el.clientHeight + 1
+```
+
+は、🔴 **§8.3-2（38px 幅・98px 高のボタン）の実害を検出できない。** この式が捉えるのは「枠から溢れて切れている」状態だが、**ラベルは 1 文字ずつ折り返って枠の中に収まっていた**（箱が縦に伸びた）ため `scrollWidth == clientWidth` になる。🔴 **和文は文字単位で改行できるので、この壊れ方では溢れが発生しない。**
+
+代わりに **折り返しそのものを測る判定**で 199 要素を走査し、**4 判定すべて 0 件**だった。
+
+| 判定 | 内容 |
+|---|---|
+| `wrapped-short-label` | 行ボックス数 3 以上かつラベル 24 文字以内 |
+| `one-char-per-line` | 行数 2 以上かつ 1 行 2 文字以下 |
+
+⚠️ **常設化は本スプリントでは見送った** —— §6 の「新設してよいのは安全網 2 本だけ」に抵触し、かつ**初回計測で偽陽性 4 件**が出ており、未調整のまま 12 spec に配線すると既存テストが落ちうるため。🔴 **持ち主を `T-08-11` として起票した**（`docs/sprints/SP-08-anonymous-share.md`）。**無主にしない。**
+
+### 8.6 🔴 `docs/04` §S-005 との既存の食い違い 1 件（**SP-21 由来ではない。`T-05-09` からの差分**）
+
+`docs/04:564` §S-005「デバイス別」はモバイルを「**1 行 = 氏名 + 稼働可能時期 + 主要スキル 2 件の 3 行構成**」と書いているが、実装は同じ 3 項目を **3 列のテーブル**で出し、スキルは上位 3 件 + `+N` である（`apps/web/app/(main)/engineers/engineer-ledger-screen.tsx:4-14` に「一覧はカードで並べない」の理由が記録済み。**根拠は `docs/04` §11-2 であり、`docs/04` の内部で食い違っている**）。
+
+**項目は一致しており Tier（T2）も変わらないため、本スプリントの受け入れ基準には抵触しない。** 🔴 **ただし文書と実装が食い違ったままである。** 🔴 **持ち主を `T-08-10` として起票した**（`CLAUDE.md` §8.7 により**上流（`docs/04`）の改訂が先**。**`T-08-05` が同じ `S-005` に匿名候補を混在させるため、それより前に決着させる**）。
+
+### 8.7 ⚠️ 検証環境について（正直に残す）
+
+🔴 **`T-21-07` の検証で、`pnpm test:isolation` と Playwright E2E は「ローカルで完走できていない」。** 空きメモリ 13.84GB 中 0.68GB（無関係な Docker コンテナ 19 本が稼働していたための環境要因）。**「ローカルで回した」とは書かない。**
+
+🔴 **担保は CI である** —— `.github/workflows/ci.yml` が `build → lint → typecheck → test:unit → test:isolation → typecheck:e2e → test:e2e` を **1 ジョブ直列**で回し、**run `34553246355` が green**（E2E 35 passed）。**§7 #4 / #5 が要求する「ビルドを挟んだ実行」はこの run が満たす**（`pnpm run test:isolation` 自体はビルドしないため、build ステップの先行が要件である）。⚠️ **これは [Issue #25](https://github.com/Festal-KM/SES-Platform/issues/25) の運用 C そのものであり、「CI があるから守られている」と読み替えない。**
+
+### 8.8 申し送り（次スプリント / リリース判定へ）
+
+1. 🔴 **`T-08-10`**（`docs/04` §S-005 の食い違い解消）: **`T-08-05` より前**に実施する。
+2. 🔴 **`T-08-11`**（ラベル折り返し検出器の常設化）: `tests/e2e/support/assertions.ts` に `expectNoBrokenLabels(source, page)` を足し、**既存 12 spec から呼ぶ**（テスト本数は増えない）。🔴 **申し送りの `scrollWidth`/`scrollHeight` の式だけを移植してはならない**（§8.5。**その式は §8.3-2 を検出できない**）。
+3. **`T-10-05`**（非本番バナー）: `apps/web/app/layout.tsx:36` の `ENVIRONMENT_BANNER_SLOT` を `<EnvironmentBanner />` に置き換えるだけでよい。**スロットは空けたまま渡してある。**
+4. 🔴 **2 本目の CSS を足さない / `packages/ui` に文言を持たせない / 基底に打ち消せない値を焼き込まない**（§8.4）。以後の画面タスクはこの 3 つを前提にする。
+5. **第 1 回リリース**: 本スプリントの完了は `T-12-11` の受け入れ基準 ⑦ と SP-12 §6 の完了判定 13 の証跡である。
