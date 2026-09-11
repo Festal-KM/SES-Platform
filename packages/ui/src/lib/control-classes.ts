@@ -1,9 +1,9 @@
 // packages/ui/src/lib/control-classes.ts
 // 入力系プリミティブ（`Input` / `Select` / `Textarea`）が共有する基底クラス。
 //
-// 🔴 3 つに別々の文字列を持たせない。`globals.css` の `.ses-field select` に
+// 🔴 3 つに別々の文字列を持たせない。旧 `globals.css` の `.ses-field select` に
 //    「入力欄と同じ見え方に揃える（同じ帯に並ぶ条件で、効く条件と効かない条件が見た目で
-//    分かれないようにする）」と書かれているとおり、**3 者がずれること自体が不具合**である。
+//    分かれないようにする）」と書かれていたとおり、**3 者がずれること自体が不具合**である。
 //
 // ============================================================================
 // 🔴 upstream（shadcn/ui `new-york-v4`）との 1 語ずつの突き合わせ
@@ -27,10 +27,10 @@
 // | upstream の語 | ここ | 判断と理由 |
 // |---|---|---|
 // | `w-full` | 同じ | そのまま |
-// | 🔴 `min-w-0` | 同じ | **落とさない。** `<input>` は既定 `size=20` 由来の min-content 幅を持ち、`min-width:auto` の flex アイテムとして置くとコンテナを押し広げる。`.ses-filter-form`（`display:flex`）に並ぶため実害が出る。T-21-01 の `shrink-0` と**同じ種類の語**（見た目の好みではなく溢れの前提） |
-// | `rounded-md` `px-3` `bg-transparent` `shadow-xs` `transition-[color,box-shadow]` `outline-none` | 同じ | そのまま。`bg-transparent` は現行 `.ses-field input`（背景指定なし）と同じ見え方 |
+// | 🔴 `min-w-0` | 同じ | **落とさない。** `<input>` は既定 `size=20` 由来の min-content 幅を持ち、`min-width:auto` の flex アイテムとして置くとコンテナを押し広げる。旧 `.ses-filter-form`（`display:flex`）に並ぶため実害が出る。T-21-01 の `shrink-0` と**同じ種類の語**（見た目の好みではなく溢れの前提） |
+// | `rounded-md` `px-3` `bg-transparent` `shadow-xs` `transition-[color,box-shadow]` `outline-none` | 同じ | そのまま。`bg-transparent` は旧 `.ses-field input`（背景指定なし）と同じ見え方 |
 // | `border` `border-input` | `border` `border-slate-300` | 🔴 **`border-input` は本リポジトリでは何も生成しない。** `apps/web/app/tailwind.css` に `@theme` が無く、Tailwind v4 の既定 theme にも `--color-input` は無い（実測: `theme.css` に `--color-input` / `--color-ring` / `--color-primary` / `--color-muted` / `--color-destructive` / `--color-card` のいずれも 0 件）。**そのまま写すと枠線色が付かない**（v4 の border 既定色は `currentColor`）。既存画面の `border-slate-300`（8 箇所）に合わせる |
-// | 🔴 `text-base` + `md:text-sm` | 同じ | **落とさない。** iOS Safari は 16px 未満の入力欄にフォーカスすると自動ズームする。`.ses-field input { font-size: 1rem }` が担っていたのはこれであり、`text-sm` 一本にすると T1 画面（`S-001` / `S-046`）でズームが起きる（`CLAUDE.md` §13.2「モバイルで操作まで完結」）。`md:` は Tailwind の既定接頭辞（§13.3） |
+// | 🔴 `text-base` + `md:text-sm` | 同じ | **落とさない。** iOS Safari は 16px 未満の入力欄にフォーカスすると自動ズームする。旧 `.ses-field input { font-size: 1rem }` が担っていたのはこれであり、`text-sm` 一本にすると T1 画面（`S-001` / `S-046`）でズームが起きる（`CLAUDE.md` §13.2「モバイルで操作まで完結」）。`md:` は Tailwind の既定接頭辞（§13.3） |
 // | `placeholder:text-muted-foreground` | `placeholder:text-slate-400` | テーマ変数が無いため実色に置換 |
 // | `disabled:pointer-events-none` `disabled:cursor-not-allowed` | 同じ | そのまま |
 // | `disabled:opacity-50` | `disabled:opacity-60` | 既存 `Button`（`disabled:opacity-60`）に合わせる。**同じ画面で 2 種類の無効表現を出さない**ため。数値のみの差 |
@@ -38,7 +38,7 @@
 // | `aria-invalid:border-destructive` | `aria-invalid:border-red-500` | 同上。フックは残す（`aria-invalid` を立てれば効く） |
 // | `aria-invalid:ring-destructive/20` | 取り込まない | 上の 1 語で赤枠は出る。`/20` の不透明度合成はテーマ変数前提であり、実色に置き換えると**リングと枠で 2 系統の赤**が生まれる |
 // | `selection:bg-primary` `selection:text-primary-foreground` | 取り込まない | テーマ変数前提。選択色は OS / ブラウザ既定のままにする |
-// | `dark:bg-input/30` `dark:aria-invalid:ring-destructive/40` | 取り込まない | 🔴 **ダークモードを持たない。** `globals.css` が `color-scheme: light` を宣言しており、`dark:` は 1 つも効かない（死んだ語を増やさない） |
+// | `dark:bg-input/30` `dark:aria-invalid:ring-destructive/40` | 取り込まない | 🔴 **ダークモードを持たない。** `tailwind.css` が `color-scheme: light` を宣言しており、`dark:` は 1 つも効かない（死んだ語を増やさない） |
 // | `data-slot="input"` | 取り込まない | upstream の `*:data-[slot=…]` セレクタを 1 つも使っていない。使う語を入れるときに属性ごと足す |
 // | `h-9` `py-1` `file:*` | ここには置かない | 高さと file 入力は要素ごとに違う（`input.tsx` / `select.tsx` / `textarea.tsx` 側で足す） |
 
@@ -62,7 +62,7 @@ export const CONTROL_BASE_CLASSES = [
  * 1 行の入力（`Input` / `Select`）の寸法。
  *
  * 🔴 upstream は `h-9`（36px）だが、本リポジトリの `Button` は `h-10`（40px）である。
- *    `.ses-filter-form` は入力欄と検索ボタンを 1 本の帯に `align-items: flex-end` で
+ *    旧 `.ses-filter-form` は入力欄と検索ボタンを 1 本の帯に `align-items: flex-end` で
  *    並べるため、**高さが 4px ずれると帯の底が揃わない。** 高さは `Button` に合わせる。
  */
 export const CONTROL_FIELD_SIZE_CLASSES = 'h-10 py-1';

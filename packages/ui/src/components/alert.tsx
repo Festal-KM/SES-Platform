@@ -1,9 +1,9 @@
 // packages/ui/src/components/alert.tsx
 // shadcn/ui の `Alert` を取り込み（docs/03 §2「UI」/ CLAUDE.md §2.1）。SP-21 T-21-02。
-// 枠で囲む告知（`globals.css` の `.ses-notice` と、既存画面の
+// 枠で囲む告知（旧 `globals.css` の `.ses-notice` と、既存画面の
 // `rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700`（8 箇所）の置き場）。
 //
-// ⚠️ **入力欄の脇に出す 1 行のエラー**（`.ses-error` と `<p role="alert" className="text-sm
+// ⚠️ **入力欄の脇に出す 1 行のエラー**（旧 `.ses-error` と `<p role="alert" className="text-sm
 //    text-red-700">`。合わせて 25 箇所以上）は `Alert` ではなく `FieldError`
 //    （`./field.tsx`）である。upstream も同じ 2 本立てであり、混ぜない
 //    （**枠付きの箱をフォームの全項目に出すと、本当の警告が埋もれる**）。
@@ -21,7 +21,7 @@
 // |---|---|---|
 // | `relative w-full rounded-lg border px-4 py-3 text-sm` | 同じ（`border` の色はバリアントが持つ） | v4 の border 既定色は `currentColor`。色を書かないと文字色の枠が出る（`./table.tsx` の表に同じ） |
 // | `role="alert"` を `{...props}` の**前**に置く | 同じ | 呼び出し側が `role` を上書きできる並び。既存画面は `<p role="alert">` を自分で書いており、**その挙動を変えないため**に上書きできる形を保つ |
-// | 🔴 `grid` `grid-cols-[0_1fr]` `items-start` `gap-y-0.5` `col-start-2` | **取り込まない** | これはアイコン列を作るための格子であり、アイコンが無いとき 1 列目は幅 0 になる。`col-start-2` を持つ `AlertTitle` / `AlertDescription` 以外の子（＝**素のテキスト**）は**幅 0 の 1 列目に落ちて潰れる**。本リポジトリの `.ses-notice` は素のテキストしか渡しておらず、そのまま写すと壊れる。アイコンを入れる日に格子ごと取り込むこと |
+// | 🔴 `grid` `grid-cols-[0_1fr]` `items-start` `gap-y-0.5` `col-start-2` | **取り込まない** | これはアイコン列を作るための格子であり、アイコンが無いとき 1 列目は幅 0 になる。`col-start-2` を持つ `AlertTitle` / `AlertDescription` 以外の子（＝**素のテキスト**）は**幅 0 の 1 列目に落ちて潰れる**。本リポジトリの旧 `.ses-notice` は素のテキストしか渡しておらず、そのまま写すと壊れる。アイコンを入れる日に格子ごと取り込むこと |
 // | `has-[>svg]:*` `[&>svg]:*` | 取り込まない | アイコン（`lucide-react`）を持たない |
 // | 🔴 `line-clamp-1`（`AlertTitle`） | **取り込まない** | 1 行を超える見出しを黙って切り落とす。`CLAUDE.md` §13.3「狭い画面を理由に判断材料を隠さない」に反する（和文の見出しは容易に 1 行を超える） |
 // | `min-h-4 font-medium tracking-tight`（`AlertTitle`） | 同じ + `mb-0.5` | 格子の `gap-y-0.5` を落としたぶんの間隔を見出し側に持たせる |

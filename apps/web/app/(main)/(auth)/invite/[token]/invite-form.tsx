@@ -10,10 +10,11 @@
 // 🔴 文言は props で受け取る（`packages/i18n` が唯一の出所。ここにベタ書きしない）。
 //
 // 🔴 T-21-04: 手書き CSS を `@ses/ui` と Tailwind へ移した（`signin-form.tsx` と同じ規律）。
-//    ⚠️ `S-002` は T-21-04 の 16 画面の列挙には無いが、**認証系 5 画面の 1 つであり、
-//    `.ses-field` / `.ses-submit` / `.ses-error` / `.ses-summary` / `.ses-notice` /
-//    `.ses-skeleton-line` を共有している**。ここだけ残すと `globals.css` を撤去できず
-//    T-21-07 に進めない（SP-21 §5 T-21-04 の「半分だけ Tailwind の状態で止めない」）。
+//    ⚠️ `S-002` は T-21-04 の 16 画面の列挙には無かったが、**認証系 5 画面の 1 つであり、
+//    旧 `.ses-field` / `.ses-submit` / `.ses-error` / `.ses-summary` / `.ses-notice` /
+//    `.ses-skeleton-line` を共有していた**。ここだけ残すと `globals.css` を撤去できず
+//    T-21-07 に進めなかった（SP-21 §5 T-21-04 の「半分だけ Tailwind の状態で止めない」）。
+//    T-21-07 で `globals.css` は削除済みであり、手書き CSS への依存はもう無い。
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Button, Field, FieldError, Input, SECONDARY_LINK_STACKED_CLASSES } from '@ses/ui';
 import { formatDateTimeJst } from '../../../../../lib/format/datetime';

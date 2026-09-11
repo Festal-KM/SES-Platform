@@ -22,7 +22,7 @@
 //    同じ理由で `border` は色付きの語（`border-slate-200` 等）と必ず対にする
 //    （v4 の border 既定色は `currentColor`）。
 //
-// 🔴 **3. `dark:` を取り込まない。** `globals.css` が `color-scheme: light` を宣言しており、
+// 🔴 **3. `dark:` を取り込まない。** `tailwind.css` が `color-scheme: light` を宣言しており、
 //    ダークモードを持たない。効かない語を増やさない。
 //
 // 🔴 **4. `'use client'` を付けない。** ここにある 10 個はいずれも状態・イベントハンドラ・

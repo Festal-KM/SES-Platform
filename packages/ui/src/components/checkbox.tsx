@@ -29,7 +29,7 @@
 // | `aria-invalid:*` | 取り込まない | 理由は `../lib/control-classes.ts` の表に同じ（テーマ変数前提） |
 // | `data-slot="checkbox"` | 取り込まない | 同上 |
 //
-// 🔴 **`w-full` を持たせない。** `globals.css` の T-06-04 が
+// 🔴 **`w-full` を持たせない。** 旧 `globals.css` の T-06-04 が
 //    `.ses-field input[type='checkbox'] { width: auto }` を例外として明示的に入れていた
 //    （「伸びると押下領域が帯全体になり誤操作を招く」）。その事故を戻さない。
 // 🔴 **`Input` を流用しない**（`./input.tsx` 冒頭の 🔴 と対）。

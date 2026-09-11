@@ -37,7 +37,7 @@
 // |---|---|---|
 // | `display: inline-block` | `inline-block` | 両方の定数（見た目そのもの） |
 // | `font-size: 0.875rem` | `text-sm` | 同上 |
-// | `color: var(--ses-muted)`（`#6b7280`） | `text-slate-500`（`#64748b`） | 同上。`--ses-muted` は T-21-07 で消える変数であり、パレットを slate（`Button` / `Input` と同系統）に統一する |
+// | `color: var(--ses-muted)`（`#6b7280`） | `text-slate-500`（`#64748b`） | 同上。`--ses-muted` は T-21-07 で撤去済みの変数であり、パレットを slate（`Button` / `Input` と同系統）に統一した |
 // | 🔴 `margin-top: 1rem` | `mt-4` | **`SECONDARY_LINK_STACKED_CLASSES` だけ**が持つ |
 
 /**

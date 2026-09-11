@@ -2,18 +2,19 @@
 // 主平面（`/`）と管理平面（`/admin`）に共通する唯一のレイアウト。
 // 🔴 文言は `packages/i18n` から引く（CLAUDE.md §3.5 / BR-32）。画面にベタ書きしない。
 //
-// 🔴 読み込み順（T-21-03 で意味が変わった）:
-//    `tailwind.css` → `globals.css` の順は残しているが、**もう「後勝ちで手書き CSS を
-//    優先させる」ための順序ではない。** 基底（色変数 / 行間 / フォント）は `tailwind.css`
-//    へ移し、`globals.css` に残るのは `.ses-*` のコンポーネントクラスだけになった。
-//    `.ses-*` は Tailwind のユーティリティと**セレクタ名が 1 つも競合しない**ため、
-//    順序を入れ替えても見え方は変わらない。**この 2 行は T-21-07 が `globals.css` ごと
-//    消すまでの経過状態である**（詳細は `tailwind.css` 冒頭と `globals.css` 冒頭）。
+// 🔴 スタイルシートは `tailwind.css` **1 本だけ**である（T-21-07。SP-21 の終点）。
+//    T-03-06 から続いていた「`tailwind.css` → `globals.css` の順で読み、**後勝ちで手書き
+//    CSS を優先させる**」という暫定（SP-21 §3.1-2）は**解消済みであり、経過状態はもう無い**。
+//    経緯: 基底（色 / 行間 / フォント）を T-21-03 で `tailwind.css` の `@theme` /
+//    `@layer base` へ移し、画面のクラスを T-21-04 / T-21-05 で Tailwind ユーティリティと
+//    `@ses/ui` へ移した結果、`globals.css` は参照 0 件になり T-21-07 で削除した。
+// 🔴 **2 本目の CSS を足さない。** 足した瞬間に「どちらが後勝ちか」を読み手が追う状態が戻る
+//    （それがこのスプリントで 5 タスクかけて外したものである）。新しい見た目は Tailwind の
+//    ユーティリティか `@ses/ui`（`packages/ui`）で作る（CLAUDE.md §2 / §2.1）。
 import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
 import { DEFAULT_LOCALE, t } from '@ses/i18n';
 import './tailwind.css';
-import './globals.css';
 
 export const metadata: Metadata = {
   title: t('product.name'),

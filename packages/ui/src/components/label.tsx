@@ -13,7 +13,7 @@
 // | `"use client"` | **付けない** | 🔴 Radix を使わないためフックもイベントも無い。付けると、これを描いていた**サーバコンポーネントの画面が丸ごとクライアントバンドルへ移る**（SP-21 T-21-02 の受け入れ基準 ③） |
 // | `flex items-center gap-2` `text-sm` `font-medium` `select-none` | 同じ | そのまま |
 // | `leading-none` | `leading-snug` | `leading-none`（行高 1.0）は和文だと行が詰まりすぎる。upstream 自身も `field.tsx` の `FieldTitle` では `leading-snug` を使っており、**本リポジトリのラベルはすべて field の中にある**ためそちらに揃える |
-// | `w-fit`（upstream の `FieldTitle` 側にある語） | 足す | 🔴 `<label htmlFor>` が幅いっぱいだと**文字の無い余白まで押下領域になる**（`globals.css` の T-06-04 のチェックボックス例外と同じ事故） |
+// | `w-fit`（upstream の `FieldTitle` 側にある語） | 足す | 🔴 `<label htmlFor>` が幅いっぱいだと**文字の無い余白まで押下領域になる**（旧 `globals.css` の T-06-04 のチェックボックス例外と同じ事故） |
 // | `peer-disabled:cursor-not-allowed` | 同じ | そのまま |
 // | `peer-disabled:opacity-50` | `peer-disabled:opacity-60` | 既存 `Button` / `CONTROL_BASE_CLASSES` の `opacity-60` に合わせる |
 // | `group-data-[disabled=true]:*` | 取り込まない | upstream の `Field` が立てる `data-disabled` の体系に属する語。その体系（`FieldSet` / `FieldGroup` / `data-disabled` の伝播）を取り込んでいないため、常に効かない死んだ語になる |

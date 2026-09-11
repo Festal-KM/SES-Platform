@@ -1,11 +1,12 @@
 /* apps/web/app/tailwind.css
  * Tailwind CSS v4（CLAUDE.md §2 / docs/03 §5.2）。T-03-06 が最初の本格 UI として導入した。
  *
- * 🔴 T-21-03 で**基底（色変数 / 行間 / フォント）をこのファイルへ移した**（末尾のブロック）。
- *    これにより `globals.css` に残るのは `.ses-*` のコンポーネントクラスだけになり、
- *    それらは Tailwind のユーティリティと**セレクタ名が競合しない**。
- *    ＝ **`app/layout.tsx` の読み込み順（Tailwind → `globals.css`）にもう依存していない。**
- *    残りの `.ses-*` の移行は T-21-04 / T-21-05、撤去の判定は T-21-07 が行う。
+ * 🔴 **これが `apps/web` の唯一のスタイルシートである**（T-21-07 で `globals.css` を削除した）。
+ *    経緯: T-21-03 が基底（色変数 / 行間 / フォント）をここへ移し、T-21-04 / T-21-05 が
+ *    `.ses-*` のコンポーネントクラスを Tailwind ユーティリティと `@ses/ui` へ移した結果、
+ *    `globals.css` は参照 0 件になった。**`app/layout.tsx` の読み込み順の暫定は解消済みである。**
+ * 🔴 **2 本目の CSS を足さない / ここにコンポーネント単位のクラスを書かない。**
+ *    新しい見た目は Tailwind のユーティリティか `@ses/ui`（`packages/ui`）で作る。
  * 🔴 ブレークポイントは Tailwind の既定のまま独自定義しない（CLAUDE.md §13.3）。
  *    **`@theme` で `--breakpoint-*` を宣言しない。** 機械検査は
  *    `tests/static/tailwind-breakpoints.test.ts`（レビューの目視に頼らない）。
@@ -38,8 +39,8 @@
  *    無かったぶん（`h-8` / `h-10` / `rounded-lg` / `shadow-sm` / `transition-colors` /
  *    `hover:bg-slate-700` / `focus-visible:ring-*` / `disabled:opacity-60` / `bg-transparent`）
  *    を、ようやく設計どおりに描くようになる。**削除された規則は 0 件で、追加のみである。**
- *    `.ses-submit` の生ボタン（`S-001` / `A-001` / `S-041` / `S-046` ほか）は `@ses/ui` を
- *    使っていないため影響を受けない。T-21-07 のスクリーンショット比較の際はこの差分を織り込むこと。
+ *    （T-21-01 の時点で `@ses/ui` を使っていなかった旧 `.ses-submit` の生ボタンは影響を受けず、
+ *    T-21-04 / T-21-05 で `Button` へ移行した。T-21-07 のスクリーンショットはその後の状態である。）
  *
  * `@source` は自動検出を**置き換えず追加する**（`source(none)` を書いた場合のみ置き換わる）。
  * パスは本ファイルからの相対で解決される（`apps/web/app` → リポジトリルート → `packages/ui/src`）。
@@ -63,8 +64,8 @@
  *     対 `globals.css` の `html, body { line-height: 1.6; font-family: … }` である
  *     （どちらも詳細度 0,0,1 で、**後に読まれた方が勝つ**）。
  *   - したがって、この 2 つを Tailwind 側（`@theme` と `@layer base`）へ移せば、
- *     **順序に依存する箇所が 0 になる。** T-21-07 は `globals.css` を消すだけで済み、
- *     消した瞬間に本文の行間とフォントが変わる、という壊れ方が起こらない。
+ *     **順序に依存する箇所が 0 になる。** 実際 T-21-07 は `globals.css` を消すだけで済み、
+ *     消した瞬間に本文の行間とフォントが変わる、という壊れ方は起こらなかった。
  *
  * 🔴 **値は 1 つも変えていない**（移設のみ。T-21-03 は見た目を変えないタスクである）。
  *    行間 1.6 / フォントスタック / 文字色 `#111827` は移設前と同一である。
@@ -82,23 +83,24 @@
 }
 
 @layer base {
-  /* 🔴 `--ses-*` は `globals.css` に残っている `.ses-*` コンポーネントクラスがまだ参照している。
-   *    **T-21-07 で `.ses-*` を撤去するときに、この 4 変数も一緒に消える。**
-   *    新しいコードからは参照しない（色は Tailwind のパレットを使う）。 */
+  /* 🔴 `--ses-fg` / `--ses-muted` / `--ses-border` / `--ses-danger` は **T-21-07 で撤去した**
+   *    （T-21-03 の予告どおり）。参照者は `globals.css` の `.ses-*` だけであり、そのファイルごと
+   *    消えたためである。**色の新しい変数を足さない** —— 色は Tailwind のパレット（slate 系。
+   *    `@ses/ui` の `Button` / `Input` と同系統）を使う。変数を足すと、パレットと変数の
+   *    2 系統が並び、「どちらが正か」を画面ごとに判断することになる。 */
   :root {
     color-scheme: light;
-    --ses-fg: #111827;
-    --ses-muted: #6b7280;
-    --ses-border: #d1d5db;
-    --ses-danger: #b91c1c;
   }
 
   /* preflight の `html { line-height: 1.5 }` を上書きする（同じ `base` レイヤの後方に置く）。
    * 🔴 `box-sizing: border-box` と `margin` / `padding` の 0 化は preflight が
    *    `*, ::after, ::before, ::backdrop, ::file-selector-button` に対して行っており、
-   *    `globals.css` の `* { box-sizing: border-box }` は完全に重複していた（移設せず削除）。 */
+   *    旧 `globals.css` の `* { box-sizing: border-box }` は完全に重複していた（移設せず削除）。
+   * 🔴 文字色は旧 `--ses-fg` の値をそのまま書く。**`text-gray-900` 相当に読み替えない** ——
+   *    v4 の既定パレットは oklch であり `#111827` と厳密には一致しない。T-21-07 は撤去の
+   *    タスクであって配色を変えるタスクではない（SP-21 §5「挙動を変えない」）。 */
   html {
     line-height: 1.6;
-    color: var(--ses-fg);
+    color: #111827;
   }
 }

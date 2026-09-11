@@ -14,19 +14,19 @@
 //   2. 🔴 **ネイティブ `<select>` はモバイルで OS のピッカーを開く。** `CLAUDE.md` §13.2 の
 //      Tier 1（モバイルで操作まで完結）とは相性がよく、ポップオーバー実装に置き換えると
 //      **キーボード操作・IME・スクリーンリーダーの挙動を自前で背負う**ことになる。
-//   3. 現況（`globals.css` の `.ses-field select`）が既にネイティブ `<select>` であり、
+//   3. 移行前（旧 `globals.css` の `.ses-field select`）が既にネイティブ `<select>` であり、
 //      SP-21 は**挙動を変えない**スプリントである（`docs/sprints/SP-21` §5 冒頭）。
 //
 // したがって基底クラスは upstream の `SelectTrigger` ではなく **`Input` と同一のもの**
-// （`../lib/control-classes.ts`）を使う。`globals.css` が `.ses-field select` に
-// 「入力欄と同じ見え方に揃える」と書いているのと同じ意図である。
+// （`../lib/control-classes.ts`）を使う。旧 `globals.css` が `.ses-field select` に
+// 「入力欄と同じ見え方に揃える」と書いていたのと同じ意図である。
 //
 // ⚠️ 将来 upstream のポップオーバー版が要るようになった場合は、**この `Select` を作り替えず**
 //    別名で足すこと（ネイティブの利点を失う画面と失わない画面が混在するため）。
 //
 // | upstream `SelectTrigger` の語 | ここ | 判断と理由 |
 // |---|---|---|
-// | `w-fit` | `w-full`（`CONTROL_BASE_CLASSES`） | 現況（`.ses-field select { width: 100% }`）に合わせる。幅は呼び出し側が `max-w-*` で絞る |
+// | `w-fit` | `w-full`（`CONTROL_BASE_CLASSES`） | 移行前（`.ses-field select { width: 100% }`）に合わせる。幅は呼び出し側が `max-w-*` で絞る |
 // | `flex items-center justify-between gap-2` `whitespace-nowrap` | 取り込まない | ネイティブ `<select>` の内部レイアウトは UA が描く。flex にしても効かない |
 // | `[&_svg]:*` `data-[placeholder]:*` `*:data-[slot=select-value]:*` | 取り込まない | アイコンと Radix の内部スロットが前提。ネイティブでは対応物が無い |
 // | `appearance-none` | **付けない** | 付けると UA の▼が消え、代わりのアイコン（`lucide-react`）が要る。**選択肢であることが見えなくなるほうが害が大きい** |

@@ -1,6 +1,6 @@
 // packages/ui/src/components/field.tsx
 // 「ラベル + 入力 + 説明 + エラー」の組（SP-21 T-21-02 の受け入れ基準 ①）。
-// `globals.css` の `.ses-field`（78 箇所）と、既存画面の
+// 旧 `globals.css` の `.ses-field`（78 箇所）と、既存画面の
 // `<label className="mb-2 block text-sm"><span className="mb-1 block text-slate-700">…</span>`
 // の置き場である。
 //
@@ -15,14 +15,14 @@
 //
 // | upstream の語 | ここ | 判断と理由 |
 // |---|---|---|
-// | `Field` = `<div role="group">` | `<label>`（既定） / `<div>` / `<p>` を `as` で選ぶ | 🔴 本リポジトリの 20 画面は**ラベルが入力を包む**形（`<label className="ses-field">`）であり、`htmlFor` を使っている箇所は 0 件である。`role="group"` の `<div>` に変えると **`id` を発番して `htmlFor` で結び直す**ことになり、SP-21 の「`id` / `aria-*` を変えない」に反する。`<p>` / `<div>` は現況にある形（`.ses-field` は `<p>` 2 箇所・`<div>` 1 箇所でも使われている） |
+// | `Field` = `<div role="group">` | `<label>`（既定） / `<div>` / `<p>` を `as` で選ぶ | 🔴 本リポジトリの 20 画面は**ラベルが入力を包む**形（移行前は `<label className="ses-field">`）であり、`htmlFor` を使っている箇所は 0 件である。`role="group"` の `<div>` に変えると **`id` を発番して `htmlFor` で結び直す**ことになり、SP-21 の「`id` / `aria-*` を変えない」に反する。`<p>` / `<div>` は移行前にあった形（旧 `.ses-field` は `<p>` 2 箇所・`<div>` 1 箇所でも使われていた） |
 // | `flex w-full` + vertical の `flex-col` | 同じ | そのまま |
-// | `gap-3` | `gap-1.5` | 12px はラベルと入力の間隔として広い。現況（`.ses-field > span { margin-bottom: 0.25rem }`）に近い 6px にする |
-// | 🔴 `[&>*]:w-full`（vertical バリアント） | **取り込まない** | `globals.css` の T-06-04 が `.ses-field input[type='checkbox'] { width: auto }` を**例外として明示的に入れている**（「伸びると押下領域が帯全体になり誤操作を招く」）。器が子を一律に伸ばすと、この事故がそのまま戻る。**幅は `Input` / `Select` / `Textarea` 側の `w-full` が持つ** |
+// | `gap-3` | `gap-1.5` | 12px はラベルと入力の間隔として広い。移行前（`.ses-field > span { margin-bottom: 0.25rem }`）に近い 6px にする |
+// | 🔴 `[&>*]:w-full`（vertical バリアント） | **取り込まない** | 旧 `globals.css` の T-06-04 が `.ses-field input[type='checkbox'] { width: auto }` を**例外として明示的に入れていた**（「伸びると押下領域が帯全体になり誤操作を招く」）。器が子を一律に伸ばすと、この事故がそのまま戻る。**幅は `Input` / `Select` / `Textarea` 側の `w-full` が持つ** |
 // | `[&>.sr-only]:w-auto` | 取り込まない | 上の語の打ち消しであり、上を取らないなら不要 |
 // | `data-[invalid=true]:text-destructive` `group/field` `group-data-[disabled=true]/field:*` | 取り込まない | `data-invalid` / `data-disabled` を立てる仕組み（upstream の `FieldSet` と react-hook-form 連携）を取り込んでいないため、常に効かない |
 // | `orientation`（horizontal / responsive） | 取り込まない | 横並びのフィールドが 20 画面に無い。コンテナクエリ前提の語も持ち込まない |
-// | `FieldLabel` = `Label`（`<label>`） | `<span>` | 🔴 `Field` 自身が `<label>` であるため、**`<label>` の入れ子になる**（不正な HTML であり、クリックの転送先が曖昧になる）。現況の `.ses-field > span` と同じ形にする。見た目は `Label` と**同じクラス定数を共有**する（`./label.tsx` の `LABEL_CLASSES`） |
+// | `FieldLabel` = `Label`（`<label>`） | `<span>` | 🔴 `Field` 自身が `<label>` であるため、**`<label>` の入れ子になる**（不正な HTML であり、クリックの転送先が曖昧になる）。移行前の `.ses-field > span` と同じ形にする。見た目は `Label` と**同じクラス定数を共有**する（`./label.tsx` の `LABEL_CLASSES`） |
 // | `FieldError` の `errors` prop（`useMemo` で配列を畳む） | 取り込まない | 🔴 `useMemo` はクライアント専用フックであり、これを持つと **`'use client'` が必要になる**（T-21-02 の受け入れ基準 ③「状態・イベントハンドラを持たないものはサーバコンポーネントのままにする」）。本リポジトリのエラーは `{error ? <p …>{error}</p> : null}` の 1 本であり、配列を畳む必要が無い |
 // | `FieldError` の `role="alert"` / 中身が空なら `null` を返す | 同じ | 現況の `<p role="alert" …>` と条件描画を保つ |
 // | `FieldError` の `text-destructive` | `text-red-700` | テーマ変数が無いため実色に置換。既存画面の `text-sm text-red-700`（25 箇所以上）に合わせる |
@@ -30,13 +30,13 @@
 // | `FieldDescription` の `last:mt-0 nth-last-2:-mt-1 [[data-variant=legend]+&]:-mt-1.5` `group-has-[[data-orientation=horizontal]]/field:text-balance` | 取り込まない | `FieldLegend` / `FieldGroup` / horizontal の体系に属する語 |
 // | `data-slot="field-*"` | 取り込まない | 理由は `../lib/control-classes.ts` の表に同じ |
 //
-// 🔴 **`Field` は下マージンを持たない。** `.ses-field` は `margin-bottom: 1rem` を持つ一方で
-//    `.ses-filter-form .ses-field { margin-bottom: 0 }` という打ち消しが実在する ——
+// 🔴 **`Field` は下マージンを持たない。** 旧 `.ses-field` は `margin-bottom: 1rem` を持つ一方で
+//    `.ses-filter-form .ses-field { margin-bottom: 0 }` という打ち消しが実在した ——
 //    つまり**間隔は置かれる文脈が決める**。基底に入れると `cn()` では打ち消せない
 //    （`../lib/cn.ts` の規律 1）。呼び出し側が `mb-4` を渡すか、親が `gap-*` を持つこと。
 //
 // 🔴 **幅は `width` prop で選ぶ（`className` で上書きしない）。** T-21-04 で判明した実害:
-//    `.ses-field` は `display:block` であり、**flex コンテナ（`.ses-filter-form` /
+//    旧 `.ses-field` は `display:block` であり、**flex コンテナ（`.ses-filter-form` /
 //    `S-007` のスキル追加行）の中では内容幅に縮んで横に並んでいた**。upstream どおりの
 //    `w-full` を基底に固定すると、その並びが**1 行 1 項目**に化ける。`className="w-auto"` で
 //    直したように見えても、`cn()` は `tailwind-merge` ではないため **`class` 属性の並び順は
@@ -52,13 +52,13 @@ import type { LabelHTMLAttributes, ComponentProps, ReactNode } from 'react';
 import { cn } from '../lib/cn.js';
 import { LABEL_CLASSES } from './label.js';
 
-/** `Field` が描く要素。現況（`.ses-field`）にある 3 つだけを許す。 */
+/** `Field` が描く要素。移行前（旧 `.ses-field`）にあった 3 つだけを許す。 */
 export type FieldElement = 'label' | 'div' | 'p';
 
 /**
  * field の幅。🔴 `className` では基底に勝てないため prop にする（ファイル冒頭の 🔴）。
  * - `full` … 縦積みのフォーム（`S-007` / `S-012` / `S-035` ほか）。既定。
- * - `auto` … 横に並べる帯（`.ses-filter-form` 相当 / 追加行）。内容幅に縮む。
+ * - `auto` … 横に並べる帯（旧 `.ses-filter-form` 相当 / 追加行）。内容幅に縮む。
  */
 export type FieldWidth = 'full' | 'auto';
 
@@ -132,7 +132,7 @@ export type FieldErrorProps = Omit<ComponentProps<'p'>, 'children'> & {
 };
 
 /**
- * 入力欄の脇に出す 1 行のエラー（`.ses-error` と `<p role="alert" className="text-sm
+ * 入力欄の脇に出す 1 行のエラー（旧 `.ses-error` と `<p role="alert" className="text-sm
  * text-red-700">` の置き場）。
  * 🔴 中身が空のときは**何も描かない**（upstream と同じ。現況の条件描画を保つ）。
  */

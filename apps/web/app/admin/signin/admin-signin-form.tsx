@@ -177,9 +177,8 @@ export function AdminSignInForm({
             {/* 🔴 手入力用の表示を消さない（QR を読めない環境での唯一の経路 / E2E の読み取り元）。 */}
             <Field as="p" className="mb-4" label={messages.twoFactorUriLabel}>
               {/* 🔴 シークレットを含む。画面に出すだけで、どこにも保存・送信しない。
-                  🔴 長いアドレスを**折り返して全部見せる**（旧 `.ses-otpauth-uri` の
-                     `overflow-wrap: anywhere` = `wrap-anywhere`）。切り詰めると、QR を
-                     読めない端末の運営者が 2FA の登録を完了できない。 */}
+                  🔴 長いアドレスを**折り返して全部見せる**（`wrap-anywhere`）。切り詰めると、
+                     QR を読めない端末の運営者が 2FA の登録を完了できない。 */}
               <code
                 className="block rounded-md border border-slate-300 p-2 text-xs wrap-anywhere"
                 data-testid="admin-signin-otpauth-uri"

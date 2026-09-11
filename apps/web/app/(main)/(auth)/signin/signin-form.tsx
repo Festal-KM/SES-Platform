@@ -190,9 +190,8 @@ export function SignInForm({
                   E2E（tests/e2e/support/sessions.ts）がシークレットを読む値でもある。 */}
             <Field as="p" className="mb-4" label={messages.twoFactorUriLabel}>
               {/* 🔴 シークレットを含む。画面に出すだけで、どこにも保存・送信しない。
-                  🔴 長いアドレスを**折り返して全部見せる**（`.ses-otpauth-uri` の
-                     `overflow-wrap: anywhere` = `wrap-anywhere`）。QR を読めない環境での
-                     唯一の経路であり、切り詰めると設定を完了できない。 */}
+                  🔴 長いアドレスを**折り返して全部見せる**（`wrap-anywhere`）。QR を読めない
+                     環境での唯一の経路であり、切り詰めると設定を完了できない。 */}
               <code
                 className="block rounded-md border border-slate-300 p-2 text-xs wrap-anywhere"
                 data-testid="signin-otpauth-uri"
