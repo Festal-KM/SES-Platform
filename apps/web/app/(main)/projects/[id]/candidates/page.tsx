@@ -42,6 +42,7 @@ import {
 import { proposalRequestExpiryBounds } from '../../../../../lib/proposal-requests/expiry';
 import { PROPOSAL_REQUESTS_PATH } from '../../../../../lib/proposal-requests/list-rows';
 import { isProposalRequestIssuerRole } from '../../../../../lib/proposal-requests/policy';
+import { isProposalEditorRole } from '../../../../../lib/proposals/policy';
 import { listSkills } from '../../../../../lib/skills/service';
 import {
   engineerAvailabilityFilterOptions,
@@ -145,6 +146,15 @@ export default async function ProjectCandidatesPage({
       : denialKey === null
         ? null
         : t(denialKey);
+  // 🔴 提案の作成（`S-020`）の導線（T-09-01。`docs/04` §S-016「自社候補で『提案を作成』」）: `#36` と同じ定数
+  //    （`PROPOSAL_EDITOR_ROLES`）× テナントが実行可のときだけ描く。ホスト・取引先の両方（自社候補から作る）。
+  //    `VIEWER` と停止中には導線を描かず理由だけ出す。拒否の本体は `#36` の 3 本のガードである。
+  const editorRole = isProposalEditorRole(ctx.role);
+  const proposalUnavailable = !editorRole
+    ? t('candidates.detail.createProposal.viewer')
+    : denialKey === null
+      ? null
+      : t(denialKey);
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
@@ -196,6 +206,7 @@ export default async function ProjectCandidatesPage({
           listHref: PROPOSAL_REQUESTS_PATH,
           showListLink: isHost,
         }}
+        proposal={{ canCreate: editorRole && denialKey === null, unavailableMessage: proposalUnavailable }}
         messages={candidateScreenMessages({
           partnerCompanyId: ctx.partnerCompanyId,
           total: view.total,

@@ -19,7 +19,8 @@
 //      フォームに切り替わる（**モーダルにしない** —— 5 項目を見ながら書く。`docs/04` §S-016「操作と結果」）。
 //      導線はホストの発行ロール × テナントが実行可のときだけ描く（`VIEWER` / `SUSPENDED` / `CLOSING` には
 //      無い。`docs/04` §S-016 権限差分）。⚠️ これは UI の配慮であり、拒否の本体は `#31` の 3 本のガードである。
-//      **提案作成の導線は後続**（SP-09）。押しても動かない導線を先に描かず、注記だけを出す。
+//      ✅ T-09-01: 自社候補の右パネルに「提案を作成」（`S-020` へ）を置いた（`proposalCreateHref`）。導線は
+//      `PROPOSAL_EDITOR_ROLES`（#36 と同じ定数）× テナントが実行可のときだけ描く。
 //
 // 🔴 **T2（モバイル閲覧可）**（docs/04 §S-016 デバイス別 / `CLAUDE.md` §13.3）。列は間引くが遮断しない。
 //    ブレークポイントは Tailwind の既定のみ:
@@ -63,6 +64,7 @@ import type { EngineerFilterOption, EngineerListFilterValues } from '../../../en
 import type { ProjectDetailRow, ProjectRequirementRow } from '../../../../../lib/projects/detail';
 import { expiresAtIsoFromJstDate } from '../../../../../lib/proposal-requests/expiry';
 import { PROPOSAL_REQUEST_MESSAGE_MAX_LENGTH } from '../../../../../lib/proposal-requests/limits';
+import { proposalCreateHref } from '../../../../../lib/proposals/hrefs';
 
 export type CandidateScreenMessages = {
   readonly lead: string;
@@ -115,7 +117,8 @@ export type CandidateScreenMessages = {
   readonly emptyCheckboxNotice: string | null;
   readonly detailSelect: string;
   readonly detailOpenEngineer: string;
-  readonly detailProposalComingSoon: string;
+  /** ✅ T-09-01: 自社候補の「提案を作成」（`S-020` へ）。 */
+  readonly detailCreateProposal: string;
   readonly detailAnonymousNote: string;
   /** 提案依頼フォーム（`docs/04` §S-016「匿名候補で『提案依頼を送る』」/ #31）。 */
   readonly requestOpen: string;
@@ -174,6 +177,8 @@ export type CandidateScreenProps = {
   readonly firstPageHref: string | null;
   /** 提案依頼の導線（T-08-06）。 */
   readonly request: CandidateRequestProps;
+  /** 提案の作成（`S-020`）への導線（T-09-01）。 */
+  readonly proposal: CandidateProposalProps;
   readonly messages: CandidateScreenMessages;
 };
 
@@ -477,11 +482,13 @@ function DetailPanel({
   row,
   projectId,
   request,
+  proposal,
   messages,
 }: {
   readonly row: CandidateRowView | null;
   readonly projectId: string;
   readonly request: CandidateRequestProps;
+  readonly proposal: CandidateProposalProps;
   readonly messages: CandidateScreenMessages;
 }) {
   if (row === null) {
@@ -492,32 +499,72 @@ function DetailPanel({
     );
   }
   if (row.kind === 'OWN') {
-    return (
-      <div data-testid="candidate-detail-own">
-        <p className="mb-2 text-base font-semibold text-slate-900" data-testid="candidate-detail-name">
-          {row.displayName}
-        </p>
-        <dl className="mb-3 text-sm">
-          <DetailRow label={messages.fieldSkills} value={row.skills.length === 0 ? messages.valueNone : [...row.skills, ...(row.moreSkills === null ? [] : [row.moreSkills])].join(' / ')} field="skills" />
-          <DetailRow label={messages.fieldYears} value={row.years} field="years" />
-          <DetailRow label={messages.fieldPrice} value={row.unitPrice} field="price" />
-          <DetailRow label={messages.fieldAvailability} value={row.availableFrom} field="availability" />
-          <DetailRow label={messages.fieldAvailabilityStatus} value={row.availabilityStatus} field="availability-status" />
-          <DetailRow label={messages.fieldLocation} value={row.location} field="location" />
-          <DetailRow label={messages.fieldUpdatedOn} value={row.updatedOn} field="updated-on" />
-        </dl>
-        {/* 🔴 実名を出す読み取り（`S-006`）への導線。閲覧の監査記録は遷移先が書く（`BR-27`）。 */}
-        <Link className={SECONDARY_LINK_STACKED_CLASSES} href={`/engineers/${row.id}`} data-testid="candidate-detail-open-engineer">
-          {messages.detailOpenEngineer}
-        </Link>
-        <p className="mt-2 mb-0 text-xs text-slate-500" data-testid="candidate-detail-proposal-coming-soon">
-          {messages.detailProposalComingSoon}
-        </p>
-      </div>
-    );
+    return <OwnDetail row={row} projectId={projectId} proposal={proposal} messages={messages} />;
   }
   // 🔴 `key={row.key}` で候補ごとにフォームの状態を組み直す（別の候補の下書きが残らない）。
   return <AnonymousDetail key={row.key} row={row} projectId={projectId} request={request} messages={messages} />;
+}
+
+/**
+ * 提案の作成（`S-020`）への導線の props（T-09-01。`docs/04` §S-016「自社候補で『提案を作成』」/ `F-004 AC-7`）。
+ * 🔴 `canCreate` の出所は ctx のロール（`PROPOSAL_EDITOR_ROLES`。#36 と同じ定数）× テナントの実行可否であり、
+ *    画面は判定を持たない。`false` のときは導線を描かず、`unavailableMessage` があればそれだけ出す。
+ */
+export type CandidateProposalProps = {
+  readonly canCreate: boolean;
+  readonly unavailableMessage: string | null;
+};
+
+/**
+ * 自社候補の右パネル（主要情報 + `S-006` への導線 + 🔴 `S-020` への導線）。
+ * ✅ T-09-01: 「提案の作成は後続のリリース」の注記を実物の導線に置き換えた。作成すると**その時点の情報が凍結**される
+ *    （`F-019 AC-2`）。凍結の予告は遷移先（`S-020`）が出す。
+ */
+export function OwnDetail({
+  row,
+  projectId,
+  proposal,
+  messages,
+}: {
+  readonly row: Extract<CandidateRowView, { readonly kind: 'OWN' }>;
+  readonly projectId: string;
+  readonly proposal: CandidateProposalProps;
+  readonly messages: CandidateScreenMessages;
+}) {
+  return (
+    <div data-testid="candidate-detail-own">
+      <p className="mb-2 text-base font-semibold text-slate-900" data-testid="candidate-detail-name">
+        {row.displayName}
+      </p>
+      <dl className="mb-3 text-sm">
+        <DetailRow label={messages.fieldSkills} value={row.skills.length === 0 ? messages.valueNone : [...row.skills, ...(row.moreSkills === null ? [] : [row.moreSkills])].join(' / ')} field="skills" />
+        <DetailRow label={messages.fieldYears} value={row.years} field="years" />
+        <DetailRow label={messages.fieldPrice} value={row.unitPrice} field="price" />
+        <DetailRow label={messages.fieldAvailability} value={row.availableFrom} field="availability" />
+        <DetailRow label={messages.fieldAvailabilityStatus} value={row.availabilityStatus} field="availability-status" />
+        <DetailRow label={messages.fieldLocation} value={row.location} field="location" />
+        <DetailRow label={messages.fieldUpdatedOn} value={row.updatedOn} field="updated-on" />
+      </dl>
+      {/* 🔴 実名を出す読み取り（`S-006`）への導線。閲覧の監査記録は遷移先が書く（`BR-27`）。 */}
+      <Link className={SECONDARY_LINK_STACKED_CLASSES} href={`/engineers/${row.id}`} data-testid="candidate-detail-open-engineer">
+        {messages.detailOpenEngineer}
+      </Link>
+      {proposal.canCreate ? (
+        // 🔴 primary の見え方は `@ses/ui` の `Button`（primary / default）と同じ語を使う（別の見た目を作らない）。
+        <Link
+          className="mt-3 inline-flex h-10 shrink-0 items-center justify-center whitespace-nowrap rounded-md bg-slate-900 px-4 text-sm font-medium text-white transition-colors hover:bg-slate-700"
+          href={proposalCreateHref(projectId, row.id)}
+          data-testid="candidate-detail-create-proposal"
+        >
+          {messages.detailCreateProposal}
+        </Link>
+      ) : proposal.unavailableMessage === null ? null : (
+        <p className="mt-2 mb-0 text-xs text-slate-500" data-testid="candidate-detail-create-proposal-unavailable">
+          {proposal.unavailableMessage}
+        </p>
+      )}
+    </div>
+  );
 }
 
 export function CandidateScreen({
@@ -541,6 +588,7 @@ export function CandidateScreen({
   nextPageHref,
   firstPageHref,
   request,
+  proposal,
   messages,
 }: CandidateScreenProps) {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
@@ -823,7 +871,7 @@ export function CandidateScreen({
             {messages.sectionDetail}
           </h2>
           <div className="px-4 py-4">
-            <DetailPanel row={selected} projectId={projectId} request={request} messages={messages} />
+            <DetailPanel row={selected} projectId={projectId} request={request} proposal={proposal} messages={messages} />
           </div>
         </aside>
       </div>

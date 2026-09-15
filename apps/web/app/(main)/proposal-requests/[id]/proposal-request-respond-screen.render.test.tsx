@@ -55,7 +55,8 @@ const messages: ProposalRequestRespondScreenMessages = {
   acceptSubmitting: '提案の下書きを作成しています…',
   acceptDone: '応諾しました。',
   acceptDoneProposalId: '提案の下書き ID',
-  acceptDoneNext: '提案の編集画面は後続のリリースで提供されます。',
+  acceptDoneNext: '提案先はまだ設定されていません。編集画面で整えてからレビューに出せます。',
+  openProposal: '提案の編集画面を開く',
   decline: '辞退する',
   declineReasonLabel: '辞退の理由（社内向けの記録。任意）',
   declineReasonNote: 'この理由はホストには開示されません。',
@@ -195,12 +196,15 @@ describe('🔴 状態別（F-018 AC-5: 終端は別々の文言で、操作は�
     expect(noReason).toContain('（理由は記録されていません）');
   });
 
-  it('応諾済みは下書きの ID を示す', () => {
+  it('応諾済みは下書きの ID を示し、S-020（編集画面）への導線を出す（✅ T-09-01）', () => {
     const html = render({
       rows: { ...rows, state: 'ACCEPTED', canAccept: false, canDecline: false, closedNotice: 'x', proposalId: '01930000-0000-7000-8000-000000000301' },
     });
     expect(html).toContain('data-testid="proposal-request-respond-accepted-before"');
     expect(html).toContain('01930000-0000-7000-8000-000000000301');
+    expect(html).toContain('data-testid="proposal-request-respond-open-proposal"');
+    expect(html).toContain('href="/proposals/01930000-0000-7000-8000-000000000301/edit"');
+    expect(html).not.toContain('後続のリリース');
   });
 });
 

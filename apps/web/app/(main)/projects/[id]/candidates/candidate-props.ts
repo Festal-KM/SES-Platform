@@ -76,7 +76,7 @@ export function candidateScreenMessages(params: {
       filtered && checkboxOn ? t('engineers.list.filtered.checkboxNotice') : null,
     detailSelect: t('candidates.detail.select'),
     detailOpenEngineer: t('candidates.detail.openEngineer'),
-    detailProposalComingSoon: t('candidates.detail.proposalComingSoon'),
+    detailCreateProposal: t('candidates.detail.createProposal'),
     detailAnonymousNote: t('candidates.detail.anonymousNote'),
     // 提案依頼フォーム（T-08-06。`F-018` / #31）。🔴 単価に関する語は無い（`F-017 AC-4`）。
     requestOpen: t('candidates.request.open'),

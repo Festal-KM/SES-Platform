@@ -116,12 +116,14 @@
 - 🔴 **`autoApproveEnabled`（テナント単位）とロール別承認モード（テナント × ロール）を同じ画面ブロックに置かない**（`F-035 AC-6` / `docs/03` `ui-design` 申し送り 11）。
 - **静的テスト**: `approval-mode-isolation.test.ts`（`docs/05` §17.2 #8。`proposals/**` に `TenantRoleApprovalMode` / `decideRoleHandoff` が現れない）。
 - **完了の判定**: `F-021 AC-1`〜`AC-6` の結合テスト + **モバイルビューポートの E2E**（`docs/05` §17.3 #13）。
+- ⚠️ **T-09-01 からの申し送り（2026-09-16）**: `S-021` が #40 の `contentHash`（ホスト文脈の再計算値）と `review_gates.content_hash` を突き合わせて「内容が変わった」を描くと、**取引先作成の提案では変更していないのに「変更あり」になる**（添付のハッシュ材料が所属で食い違う。詳細は T-09-04 の申し送り）。判断材料の表示に使う前に T-09-04 側の修正方向を先に決めること。
 
 ### T-09-04 承認後の内容変更で承認が無効になる（M）
 
 - **実装**: `docs/05` §11.5。`Proposal.contentHash` と `ReviewGate.contentHash` の一致を**承認 CAS の条件**に入れる（`CHECK` ではなく）。
 - 🔴 **承認後に本文を変更すると承認が無効になり、再検証なしで送信できない**（E2E #10）。
 - **完了の判定**: E2E #10 が green。結合テスト（ハッシュ不一致で送信 CAS が 0 件更新）。
+- 🔴 **T-09-01 からの申し送り（2026-09-16。レビューが実 DB で再現）: `contentHash` が読む側の所属で食い違う。** `computeProposalContentHash`（`packages/db/src/gate-content-hash.ts`）は添付の材料を `engineer_snapshots.skillSheet` **リレーション**（`id` / `objectKey` / `version`）から取るが、`skill_sheets` は C3（所有者だけ）なので、**ホスト文脈で取引先作成の提案を読むとリレーションが `null` になり、同一提案でホストのハッシュ ≠ 取引先のハッシュ**になる。**本タスク（T-09-01）では壊れていない**根拠: ①`proposals.content_hash` を書くのは #39 だけで、依頼者（取引先）の文脈のハッシュが列に入る ②`gate.run` は payload のハッシュを信頼して `review_gates.content_hash` に写す（再計算しない）ので、承認 CAS が突き合わせる 2 列は一致する ③ずれの向きは「変更あり」の偽陽性であり、検査していない内容が承認される方向（バイパス）にはならない。**影響先**: 本タスク（T-09-04）の「承認後の内容変更で承認が無効になる」判定（#40 / `S-021` がホスト文脈で再計算したハッシュと `review_gates.content_hash` を比べると、変更していないのに「変更あり」になる）と、#39 のキャッシュ判定（`findCachedReviewGate` を**ホスト**が呼ぶと同じ内容でも別ハッシュとして再実行される。取引先が呼ぶ限りは一致する）。**修正方向**: 添付の材料をリレーションではなく凍結列 `engineer_snapshots.skill_sheet_id`（C5。ホストも読める）にする（`objectKey` / `version` を材料から外す。版の差し替えは #37 が `skill_sheet_id` を書き換えるのでハッシュは変わる）か、`readProposalGateHashInput` を所属によらず同じ材料が読める経路（`app_gate_probe` と同型）で読む。**どちらも `docs/05` §11.5 の材料の定義（`gateHashSource` の入力）を先に直す**（`CLAUDE.md` §8.7）。
 
 ### T-09-05 `SendAttempt` と冪等性キーの規約（M）
 

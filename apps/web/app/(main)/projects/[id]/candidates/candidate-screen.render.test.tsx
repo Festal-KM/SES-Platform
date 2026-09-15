@@ -6,7 +6,9 @@
 //    ②取引先視点で種別列そのものが消える（`docs/04` §S-016 権限差分 / `F-017 AC-5`）
 //    ③スコア・順位・重みに相当する入力欄・列が無い（`F-017 AC-7` / `F-009 AC-2` / `F-030 AC-4`）
 //    ④匿名候補の件数を別に描かない（総件数の 1 行だけ）
-//    ⑤右パネルは初期状態で「行を選ぶと…」だけであり、提案依頼・提案作成のボタンが無い（提案作成は SP-09 送り）
+//    ⑤右パネルは初期状態で「行を選ぶと…」だけであり、提案依頼・提案作成のボタンが無い
+//    ⑦✅ T-09-01: 自社候補の右パネル（`OwnDetail`）の「提案を作成」は `S-020`（`/proposals/new?projectId=&engineerId=`）を
+//      指し、`canCreate=false`（`VIEWER` / 停止中）なら導線そのものが無い。共有候補の枝にはこの導線が**存在しない**
 //    ⑥🔴 T-08-06: 共有候補の右パネル（`AnonymousDetail`）の提案依頼フォームに**単価に関する入力欄が無い**
 //      （`F-017 AC-4` / `BR-58`）。入力はメッセージと期限の 2 つだけ。`canRequest=false` なら導線そのものが無い
 //      （`docs/04` §S-016 権限差分）。5 項目以外の値（実名・所属・社内 ID）はどの枝でも描かれない。
@@ -17,9 +19,12 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { CandidateRowView } from '../../../../../lib/candidates/list-rows';
 import type { EngineerListFilterValues } from '../../../engineers/engineer-ledger-screen';
+import { proposalCreateHref } from '../../../../../lib/proposals/hrefs';
 import {
   AnonymousDetail,
   CandidateScreen,
+  OwnDetail,
+  type CandidateProposalProps,
   type CandidateRequestProps,
   type CandidateScreenMessages,
   type CandidateScreenProps,
@@ -108,7 +113,7 @@ const messages: CandidateScreenMessages = {
   emptyCheckboxNotice: null,
   detailSelect: '行を選ぶと、ここに候補の詳細を表示します。',
   detailOpenEngineer: '人材の詳細を開く',
-  detailProposalComingSoon: '提案の作成は後続のリリース。',
+  detailCreateProposal: '提案を作成',
   detailAnonymousNote: '共有候補は丸めた 5 項目のみが開示されています。',
   requestOpen: '提案依頼を送る',
   requestTitle: '提案依頼',
@@ -162,6 +167,8 @@ const request: CandidateRequestProps = {
   showListLink: true,
 };
 
+const proposal: CandidateProposalProps = { canCreate: true, unavailableMessage: null };
+
 function render(overrides: Partial<CandidateScreenProps> = {}): string {
   const props: CandidateScreenProps = {
     projectId: PROJECT,
@@ -190,10 +197,23 @@ function render(overrides: Partial<CandidateScreenProps> = {}): string {
     nextPageHref: null,
     firstPageHref: null,
     request,
+    proposal,
     messages,
     ...overrides,
   };
   return renderToStaticMarkup(createElement(CandidateScreen, props));
+}
+
+/** 自社候補の右パネル（行の選択後にしか現れないため、直接描く）。T-09-01。 */
+function renderOwnDetail(overrides: Partial<CandidateProposalProps> = {}): string {
+  return renderToStaticMarkup(
+    createElement(OwnDetail, {
+      row: ownRow as Extract<CandidateRowView, { readonly kind: 'OWN' }>,
+      projectId: PROJECT,
+      proposal: { ...proposal, ...overrides },
+      messages,
+    }),
+  );
 }
 
 /** 共有候補の右パネル（行の選択後にしか現れないため、直接描く）。 */
@@ -331,6 +351,27 @@ describe('右パネル・空状態・導線', () => {
     expect(html).toContain('data-testid="candidate-list-first"');
     // 🔴 「全 N ページ中 M ページ目」を描かない（docs/05 §4.8）。
     expect(html).not.toMatch(/ページ目/);
+  });
+
+  it('✅ T-09-01: 自社候補の右パネルの「提案を作成」は S-020（案件とエンジニアを指定）を指す', () => {
+    const html = renderOwnDetail();
+    expect(html).toContain('data-testid="candidate-detail-create-proposal"');
+    expect(html).toContain(`href="/proposals/new?projectId=${PROJECT}&amp;engineerId=${ENGINEER}"`);
+    expect(proposalCreateHref(PROJECT, ENGINEER)).toBe(`/proposals/new?projectId=${PROJECT}&engineerId=${ENGINEER}`);
+    // 🔴 実名を出す `S-006` への導線は従来どおり残る。
+    expect(html).toContain('data-testid="candidate-detail-open-engineer"');
+    expect(html).not.toContain('後続のリリース');
+  });
+
+  it('✅ T-09-01: canCreate=false（VIEWER / 停止中）なら「提案を作成」の導線そのものが無く、理由だけ出る', () => {
+    const viewer = renderOwnDetail({ canCreate: false, unavailableMessage: '提案の作成は営業担当・管理者が行います。' });
+    expect(viewer).not.toContain('candidate-detail-create-proposal"');
+    expect(viewer).toContain('data-testid="candidate-detail-create-proposal-unavailable"');
+    expect(viewer).toContain('提案の作成は営業担当・管理者が行います。');
+    const silent = renderOwnDetail({ canCreate: false, unavailableMessage: null });
+    expect(silent).not.toContain('candidate-detail-create-proposal');
+    // 🔴 共有候補の枝には「提案を作成」が**存在しない**（提案を作るのは共有元だけ。`F-017 AC-6`）。
+    expect(renderAnonymousDetail()).not.toContain('candidate-detail-create-proposal');
   });
 
   it('案件の要件サマリが折りたたまれずに描かれ、案件詳細への導線がある', () => {

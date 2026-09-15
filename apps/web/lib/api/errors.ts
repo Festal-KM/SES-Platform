@@ -392,6 +392,23 @@ export class SkillSheetNotCleanError extends ConflictError {
 }
 
 /**
+ * 🔴 `CLEAN` でない版を提案に添付しようとした（409。`F-019 AC-3` / `F-011 AC-1`）。T-09-01。
+ *
+ * 🔴 `SkillSheetNotCleanError`（＝ 最新版にできない）と**畳まない**。止めている操作が違う
+ *    （`FileNotCleanError` を分けたのと同じ理由）。画面（`S-020`）には `CLEAN` の版しか選択肢に無いので、
+ *    この型が返るのは API を直接呼んだ場合か、画面を開いたままスキャン結果が動いた場合である。
+ */
+export class SkillSheetNotAttachableError extends ConflictError {
+  override readonly code = 'SKILL_SHEET_NOT_ATTACHABLE';
+  override readonly userMessageKey: MessageKey = 'error.skillSheet.notAttachable';
+
+  constructor() {
+    super('この版は検査に合格していないため、提案に添付できません。');
+    this.name = 'SkillSheetNotAttachableError';
+  }
+}
+
+/**
  * 🔴 ウイルス検査に合格していないファイルのダウンロードを要求した（409）。T-05-07。
  *
  * 🔴 `SkillSheetNotCleanError`（＝ 最新版にできない）と**畳まない**。止めている操作が違い、
@@ -490,6 +507,21 @@ export class ProposalGateForbiddenError extends ForbiddenError {
   constructor() {
     super();
     this.name = 'ProposalGateForbiddenError';
+  }
+}
+
+/**
+ * 🔴 提案の編集（#37）を行えない立場（403）。T-09-01。判定は `canEditProposal`（#39 と同じ
+ *    「作成者 / ホストの `OWNER`・`ADMIN`・`SALES`」）。`ProposalGateForbiddenError` と同じ理由で
+ *    `ForbiddenError` と別コードにし、404 にはしない（見えない提案は先に 404 になる）。
+ */
+export class ProposalEditForbiddenError extends ForbiddenError {
+  override readonly code = 'PROPOSAL_EDIT_FORBIDDEN';
+  override readonly userMessageKey: MessageKey = 'error.proposal.editForbidden';
+
+  constructor() {
+    super();
+    this.name = 'ProposalEditForbiddenError';
   }
 }
 
@@ -749,6 +781,44 @@ export class ProposalRequestProjectNotSharedError extends UnprocessableError {
   constructor() {
     super('この案件は御社に公開されていないため、応諾できません。');
     this.name = 'ProposalRequestProjectNotSharedError';
+  }
+}
+
+/**
+ * 🔴 `DRAFT` 以外の提案を編集しようとした（422。docs/05 §6.5 #37「`DRAFT` のみ。他状態は 422」）。T-09-01。
+ *
+ * 🔴 `InvalidStateTransitionError` ではない —— #37 は状態を動かす要求ではなく、**動かせない状態での編集**
+ *    である（遷移表の外の話）。混ぜると「遷移の拒否」の監査（`state.invalid_transition`）に編集の拒否が紛れる。
+ * 🔴 解消手段は状態の側にある（承認待ちなら却下で `DRAFT` に戻る。`S-021`）。編集を通す抜け道を作らない ——
+ *    `GATE_RUNNING` 以降の内容を書き換えられると、検査した内容と送る内容が食い違う（§11.5）。
+ */
+export class ProposalNotEditableError extends UnprocessableError {
+  override readonly code = 'PROPOSAL_NOT_EDITABLE';
+  override readonly userMessageKey: MessageKey = 'error.proposal.notEditable';
+
+  constructor(
+    /** 🔴 応答ボディには載せない（内部ログ用）。 */
+    readonly state: string,
+  ) {
+    super(`下書きではない提案は編集できません（state=${state}）。`);
+    this.name = 'ProposalNotEditableError';
+  }
+}
+
+/**
+ * 🔴 提案先が空の `DRAFT` にレビュー依頼（#39）が来た（422。docs/05 §6.5「T-09-01 の決着」/ SP-08 の申し送り②）。
+ *
+ * 「その公開範囲で出してはならない相手に出ていないか」（`CLAUDE.md` §3.3 商流層）の「相手」が無い提案に
+ * 商流層のゲートは掛けられない。**`GATE_RUNNING` へ遷移させずに止める**（判定は CAS の前）。
+ * 解消手段は #37 で提案先を設定することだけであり、空のまま進める導線を作らない。
+ */
+export class ProposalRecipientMissingError extends UnprocessableError {
+  override readonly code = 'PROPOSAL_RECIPIENT_MISSING';
+  override readonly userMessageKey: MessageKey = 'error.proposal.recipientMissing';
+
+  constructor() {
+    super('提案先が未設定のため、レビューに出せません。');
+    this.name = 'ProposalRecipientMissingError';
   }
 }
 

@@ -1115,6 +1115,34 @@ test.describe('🔴 経路 4（匿名共有と提案依頼）— CLAUDE.md §5 P
       await expect(partner.page.getByTestId('proposal-request-respond-accepted-proposal-id')).toHaveText(proposalId);
       await expectNoBrokenLabels('S-018 応諾済み', partner.page);
 
+      // ✅ T-09-01: 応諾後の導線で `S-020`（編集）へ進む。🔴 経路 4 由来の下書きは**提案先が未設定の状態で開き**、
+      //    「提案先が未設定です」を明示し、「レビューに出す」が押せない（`docs/04` §S-020 改訂 10。サーバは #39 で 422）。
+      await partner.page.getByTestId('proposal-request-respond-open-proposal').click();
+      await partner.page.waitForURL(`**/proposals/${proposalId}/edit`, { waitUntil: 'domcontentloaded' });
+      await expect(partner.page.getByTestId('proposal-editor')).toHaveAttribute('data-proposal-state', 'DRAFT');
+      await expect(partner.page.getByTestId('proposal-editor-recipient-missing')).toBeVisible();
+      await expect(partner.page.getByTestId('proposal-editor-origin-notice')).toBeVisible();
+      await expect(partner.page.getByTestId('proposal-editor-request-gate')).toBeDisabled();
+      await expect(partner.page.getByTestId('proposal-editor-request-gate-blocked')).toBeVisible();
+      await expect(partner.page.getByTestId('proposal-editor-recipient-company-name')).toHaveValue('');
+      // 凍結情報（氏名は凍結側）と、添付の選択肢（自社の CLEAN 版）が描かれる。
+      await expect(partner.page.getByTestId('proposal-editor-freeze-notice')).toBeVisible();
+      await expect(partner.page.getByTestId('proposal-editor-section-target')).toContainText(y.displayName);
+      await expectNoBrokenLabels('S-020 提案の編集（経路 4 由来・提案先未設定）', partner.page);
+      // 🔴 提案先を設定して保存すると「レビューに出す」が押せるようになる（#37 → 保存済みの値で判定）。
+      await partner.page.getByTestId('proposal-editor-recipient-company-name').fill('T0809 架空エンド株式会社');
+      await partner.page.getByTestId('proposal-editor-recipient-email').fill('t0809-recipient@example.test');
+      await partner.page.getByTestId('proposal-editor-save').click();
+      await expect(partner.page.getByTestId('proposal-editor-saved')).toBeVisible();
+      await expect(partner.page.getByTestId('proposal-editor-request-gate')).toBeEnabled();
+      await expect(partner.page.getByTestId('proposal-editor-recipient-missing')).toHaveCount(0);
+      await expectNoBrokenLabels('S-020 提案の編集（提案先設定後）', partner.page);
+      // 🔴 ホストも同じ下書きに到達でき、エンジニアの情報は凍結側（`S-020` は台帳の現在値を描かない）。
+      await pageHtml(host, `/proposals/${proposalId}/edit`);
+      await expect(host.page.getByTestId('proposal-editor')).toHaveAttribute('data-proposal-state', 'DRAFT');
+      await expect(host.page.getByTestId('proposal-editor-section-target')).toContainText(y.displayName);
+      await expectNoBrokenLabels('S-020 提案の編集（ホスト）', host.page);
+
       // 🔴 ホスト: `S-017` / #32 で `ACCEPTED` を見る。依頼の応答の形は変わらない（依頼先・氏名は依頼側には出ない）。
       const after = await hostRequests(host);
       expect(hostRequestState(after.body, yReq)).toBe('ACCEPTED');

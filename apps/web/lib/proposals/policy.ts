@@ -64,3 +64,36 @@ export function canRequestProposalGate(
     (HOST_GATE_REQUEST_ROLES as readonly TenantRole[]).includes(actor.role)
   );
 }
+
+// ============================================================================
+// T-09-01: 提案の作成（#36）と編集（#37）
+// ============================================================================
+
+/**
+ * 🔴 `#36` / `#37` の `requireRole`（docs/05 §6.5「T-09-01 の決着」）。**VIEWER を含まない**
+ *    （`F-019` 関連ロール: `SALES` / `ADMIN` / `PARTNER_ADMIN` / `PARTNER_SALES`、`VIEWER` は閲覧のみ。
+ *    `OWNER` は組織の全権。`CLAUDE.md` §10.1）。#39 の入口と同じ集合である —— 提案を作れる立場と
+ *    レビューに出せる立場を別々に持つ理由が無い。
+ */
+export const PROPOSAL_EDITOR_ROLES = PROPOSAL_GATE_REQUEST_ROLES;
+
+/** 画面（`S-016` / `S-020`）が導線を描くか決めるための判定。拒否の本体は API の `requireRole`。 */
+export function isProposalEditorRole(role: TenantRole): boolean {
+  return (PROPOSAL_EDITOR_ROLES as readonly TenantRole[]).includes(role);
+}
+
+export type ProposalEditActor = GateRequestActor;
+export type ProposalEditSubject = GateRequestSubject;
+
+/**
+ * 🔴 提案を編集できるか（#37。`docs/04` §S-020 権限差分「取引先は自社が作成した提案のみ編集できる」）。
+ *
+ * **#39 の `canRequestProposalGate` と同じ判定**である（作成者 / ホストの `OWNER`・`ADMIN`・`SALES`）:
+ * 経路 4 由来の `DRAFT` は提案先が空であり、それを埋める（#37）主体とレビューに出す（#39）主体を
+ * 分けると、「埋められるのに出せない / 出せるのに埋められない」立場が生まれる。
+ * 🔴 パートナー所属の非作成者は編集できない（同じ取引先の別の担当者にも開かない。#39 と同じ線）。
+ *    広げたくなったら `docs/05` §6.5 / §9.10 を先に直す（`CLAUDE.md` §8.7）。
+ */
+export function canEditProposal(actor: ProposalEditActor, subject: ProposalEditSubject): boolean {
+  return canRequestProposalGate(actor, subject);
+}

@@ -40,6 +40,7 @@ export function proposalRequestRespondScreenMessages(): ProposalRequestRespondSc
     acceptDone: t('proposalRequests.respond.accept.done'),
     acceptDoneProposalId: t('proposalRequests.respond.accept.doneProposalId'),
     acceptDoneNext: t('proposalRequests.respond.accept.doneNext'),
+    openProposal: t('proposalRequests.respond.openProposal'),
     decline: t('proposalRequests.respond.decline'),
     declineReasonLabel: t('proposalRequests.respond.decline.reasonLabel'),
     declineReasonNote: t('proposalRequests.respond.decline.reasonNote'),

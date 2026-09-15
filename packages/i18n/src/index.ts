@@ -407,6 +407,10 @@ const ja = {
   // 🔴 `F-011` 処理③ / `BR-26`。**「無視して切り替える」余地を文言でも作らない。**
   'error.skillSheet.notClean':
     'この版はウイルス検査に合格していないため、最新版にできません。検査に合格した版を選ぶか、ファイルを上げ直してください。',
+  // 🔴 T-09-01: 提案への添付（`F-019 AC-3` / `F-011 AC-1`）。**「最新版にできない」（上）と畳まない** ——
+  //    止めている操作が違う。「無視して添付」の余地を文言でも作らない。
+  'error.skillSheet.notAttachable':
+    'この版はウイルス検査に合格していないため、提案に添付できません。検査に合格した版を選ぶか、ファイルを上げ直してください。',
   // 🔴 T-05-06: 提案に凍結添付された版（`EngineerSnapshot`）は削除できない。
   //    「消せない」ではなく「なぜ残るのか」を書く（提案時点の記録であること）。
   'error.skillSheet.referenced':
@@ -440,6 +444,14 @@ const ja = {
   //    辞退は可能であることを文言でも伝える（`BR-57`）。
   'error.proposalRequest.projectNotShared':
     'この案件は御社に公開されていないため、応諾できません。辞退は可能です。',
+  // 🔴 T-09-01: 提案の作成・編集（`F-019` / docs/05 §6.5 #36 / #37 / #39「T-09-01 の決着」）。
+  //    **提案先の無い提案に商流層のゲートは掛けられない**（SP-08 の申し送り②）。「空のまま進める」余地を文言でも作らない。
+  'error.proposal.notEditable':
+    'この提案は下書きではないため、内容を編集できません。編集できるのは下書きの間だけです。',
+  'error.proposal.recipientMissing':
+    '提案先が未設定です。ゲート実行の前に、提案先の会社名と担当者のメールアドレスを設定してください。',
+  'error.proposal.editForbidden':
+    'この提案の編集は、提案の作成者と自社の営業担当・管理者のみが行えます。',
   'error.internal': '処理に失敗しました。時間をおいて再度お試しください。',
 
   // --- 品質ゲート（F-020 / F-027 AC-5。docs/05 §11.7 の GateResultView）---
@@ -1605,8 +1617,9 @@ const ja = {
   'candidates.filtered.empty.lead': '効いている条件を 1 つずつ外して、対象を広げられます。',
   'candidates.detail.select': '行を選ぶと、ここに候補の詳細を表示します。',
   'candidates.detail.openEngineer': '人材の詳細を開く',
-  // 🔴 未実装を隠さない（`engineers.detail.proposals.comingSoon` と同じ規律）。押しても動かない導線を先に描かない。
-  'candidates.detail.proposalComingSoon': '提案の作成は後続のリリースで行えます。',
+  // ✅ T-09-01: 自社候補から `S-020`（提案の作成）へ。提案先を決めて作成し、その時点の情報を凍結する。
+  'candidates.detail.createProposal': '提案を作成',
+  'candidates.detail.createProposal.viewer': '提案の作成は営業担当・管理者が行います。',
   'candidates.detail.anonymousNote':
     '共有候補は丸めた 5 項目のみが開示されています。実名・所属会社名・スキルシート・経歴は、提案が作成されるまで開示されません。',
   'candidates.detail.field.availabilityStatus': '稼働状況',
@@ -1742,9 +1755,11 @@ const ja = {
   'proposalRequests.respond.accept.confirmCancel': 'やめる',
   'proposalRequests.respond.accept.submitting': '提案の下書きを作成しています…',
   'proposalRequests.respond.accept.done': '応諾しました。提案の下書きを作成しました。',
-  // ⚠️ `S-020`（提案の作成・編集）は SP-09 で入る。それまでは下書きの ID だけを示す。
+  // ✅ T-09-01: `S-020`（提案の作成・編集）が入った。下書きの ID を示したうえで編集画面へ送る。
   'proposalRequests.respond.accept.doneProposalId': '提案の下書き ID',
-  'proposalRequests.respond.accept.doneNext': '提案の編集画面は後続のリリースで提供されます。作成された下書きは提案の一覧から確認できるようになります。',
+  'proposalRequests.respond.accept.doneNext':
+    '提案先はまだ設定されていません。編集画面で提案先・条件・本文を整えると、レビューに出せます。',
+  'proposalRequests.respond.openProposal': '提案の編集画面を開く',
   'proposalRequests.respond.decline': '辞退する',
   'proposalRequests.respond.decline.reasonLabel': '辞退の理由（社内向けの記録。任意）',
   // 🔴 `F-018 AC-1`: 非開示を入力欄の直下に明記する。
@@ -1765,6 +1780,142 @@ const ja = {
   'proposalRequests.respond.error.projectNotShared': 'この案件は御社に公開されていないため、応諾できません。',
   'proposalRequests.respond.error.generic': '処理できませんでした。依頼の状態は変わっていません。',
   'proposalRequests.respond.viewerNotice': '応諾・辞退は営業担当・管理者が行います。',
+
+  // --- S-020 提案の作成・編集（docs/04 §S-020 改訂 10 / `F-019` `F-020` `F-011` / docs/05 §6.5 #36 / #37 / #39 / #40。T-09-01）---
+  // 🔴 **提案先が未設定の欄を無言で空にしない**（`docs/04` §S-020 改訂 10）。理由と次の行動まで書く。
+  // 🔴 **ゲート FAIL を「無視して送信」する語を 1 つも置かない**（`BR-18` / `F-020 AC-2`）。直せるのは元データだけである。
+  // 🔴 本文の由来は Phase 1 では `手入力` の 1 値（`proposal-drafter` は Phase 2 の `F-034`）。
+  'proposals.editor.title.new': '提案の作成',
+  'proposals.editor.title.edit': '提案の編集',
+  'proposals.editor.breadcrumb.home': 'ホーム',
+  'proposals.editor.breadcrumb.new': '提案の作成',
+  'proposals.editor.breadcrumb.edit': '提案の編集',
+  'proposals.editor.notFound': '指定された提案は見つかりません。',
+  'proposals.editor.newTargetMissing': '提案を作成する案件とエンジニアが指定されていません。候補検索から「提案を作成」を選んでください。',
+  'proposals.editor.section.target': '対象',
+  'proposals.editor.section.terms': '提案条件',
+  'proposals.editor.section.content': '本文',
+  'proposals.editor.section.attachment': '添付（スキルシートの版）',
+  'proposals.editor.section.gate': 'ゲート結果',
+  'proposals.editor.section.sendingDomain': '送信元ドメインの状態',
+  'proposals.editor.field.project': '案件',
+  'proposals.editor.field.engineer': 'エンジニア',
+  'proposals.editor.field.affiliation': '所属',
+  'proposals.editor.field.owner': '作成した会社',
+  'proposals.editor.owner.host': '自社',
+  'proposals.editor.field.recipientCompanyName': '提案先の会社名',
+  'proposals.editor.field.recipientEmail': '提案先の担当者メールアドレス',
+  'proposals.editor.field.offeredUnitPrice': '提示単価（月額・円）',
+  'proposals.editor.field.offeredStartDate': '開始日',
+  'proposals.editor.field.workStyle': '稼働形態',
+  'proposals.editor.field.subject': '件名',
+  'proposals.editor.field.body': '本文',
+  'proposals.editor.field.skills': 'スキル（凍結）',
+  'proposals.editor.field.unitPriceRange': '単価レンジ（凍結）',
+  'proposals.editor.field.availableFrom': '稼働可能時期（凍結）',
+  'proposals.editor.field.careerCount': '経験内容（凍結）',
+  'proposals.editor.field.state': '状態',
+  'proposals.editor.required': '必須',
+  'proposals.editor.project.notShared': '（案件名は公開されていません）',
+  'proposals.editor.valueNone': '—',
+  'proposals.editor.careerCount.unit': ' 行',
+  // 凍結の予告（新規）と凍結情報の表示（編集）。`docs/04` §S-020「凍結情報の表示」/ `F-019 AC-2`。
+  'proposals.editor.freeze.previewLead':
+    '作成すると、このエンジニアの現在の情報（氏名・所属・スキル・単価レンジ・稼働可能時期・経験内容・最新の検査済みスキルシート）がこの提案に凍結されます。以後の台帳の更新はこの提案に反映されません。',
+  'proposals.editor.freeze.careersPrefix': '経験内容 ',
+  'proposals.editor.freeze.careersSuffix': ' 行を凍結します。',
+  'proposals.editor.freeze.careersZero':
+    '経験内容が 0 行です。凍結は遡れないため、経験内容を提案に含めるにはエンジニアの編集画面で登録してから作成してください（0 行のままでも作成できます）。',
+  'proposals.editor.freeze.noticePrefix': 'この提案には ',
+  'proposals.editor.freeze.noticeSuffix': ' 時点の情報が使われます。以後の台帳の更新はこの提案に反映されません。',
+  'proposals.editor.freeze.frozenCareersPrefix': '経験内容 ',
+  'proposals.editor.freeze.frozenCareersSuffix': ' 行を凍結済み',
+  'proposals.editor.openEngineer': 'エンジニアの編集画面を開く',
+  // 🔴 `docs/04` §S-020 改訂 10: 経路 4 由来の `DRAFT` は提案先が未設定の状態で開く。
+  'proposals.editor.recipient.missing': '提案先が未設定です。ゲート実行の前に設定してください。',
+  'proposals.editor.recipient.originRequest':
+    'この提案は提案依頼の応諾で作成されました。依頼の時点では提案先が決まっていないため、ここで設定します。',
+  'proposals.editor.recipient.note': '提案先は下書きの間だけ設定・変更できます。',
+  'proposals.editor.body.origin.manual': '手入力',
+  'proposals.editor.body.originLabel': '本文の由来',
+  'proposals.editor.body.mobileNote': 'モバイルでも編集できますが、本文の編集はタブレット以上の画面を推奨します。',
+  // 添付（`F-011 AC-1` / `F-019 AC-3`）。**CLEAN の版だけが選択肢に現れる**。
+  'proposals.editor.attachment.none': '添付しない',
+  'proposals.editor.attachment.versionPrefix': '版 ',
+  'proposals.editor.attachment.cleanOnly': '検査済み（CLEAN）の版だけが選択肢に現れます。検査中・隔離の版は添付できません。',
+  'proposals.editor.attachment.empty': '共有できるスキルシートがありません（検査中または未登録）。',
+  'proposals.editor.attachment.openSheets': 'スキルシートの取込を開く',
+  'proposals.editor.attachment.frozenUnknown': '凍結時点の版が添付されています（貴社の台帳ではないため版の詳細は表示されません）。',
+  'proposals.editor.attachment.frozenNone': '添付はありません。',
+  // 操作。
+  'proposals.editor.create': '提案を作成する',
+  'proposals.editor.creating': '提案を作成しています…',
+  'proposals.editor.save': '下書きを保存',
+  'proposals.editor.saving': '保存しています…',
+  'proposals.editor.saved': '下書きを保存しました。',
+  'proposals.editor.requestGate': 'レビューに出す',
+  'proposals.editor.requestingGate': 'レビューを依頼しています…',
+  'proposals.editor.gateRequested': 'レビューを依頼しました。検査の結果は下に表示されます。',
+  'proposals.editor.cancel': '候補検索に戻る',
+  'proposals.editor.backToRequests': '提案依頼の一覧に戻る',
+  'proposals.editor.unsavedNote': '保存していない変更があります。レビューに出す前に保存してください。',
+  'proposals.editor.readOnly.prefix': 'この提案は「',
+  'proposals.editor.readOnly.suffix': '」のため、内容を編集できません。編集できるのは下書きの間だけです。',
+  'proposals.editor.viewerNotice': '提案の編集・レビュー依頼は営業担当・管理者が行います。',
+  'proposals.editor.deniedTitle': '提案の操作を行えません。',
+  'proposals.editor.error.validation': '入力内容をご確認ください。',
+  'proposals.editor.error.notEditable': 'この提案は下書きではないため保存できません。再読込して現在の状態をご確認ください。',
+  'proposals.editor.error.generic': '処理できませんでした。提案の内容は変わっていません。',
+  'proposals.editor.error.notClean': '選択した版は検査済み（CLEAN）ではないため添付できません。',
+  'proposals.editor.error.gateAlreadyCompleted': 'この内容の検査はすでに完了しています。内容を修正すると、あらためて検査できます。',
+  // ゲート結果（docs/05 §11.7 `GateResultView`。`docs/04` §S-020「不合格と警告を視覚的に別物にする」）。
+  'proposals.editor.gate.notRequested': 'まだレビューに出していません。',
+  'proposals.editor.gate.running': '検査中',
+  'proposals.editor.gate.held': 'AI が上限到達で停止しているため検査を実行できません。上限がリセットされると自動的に再開します。整合層の機械照合の結果は確定して残ります。',
+  'proposals.editor.gate.heldResetAtPrefix': '再開予定: ',
+  'proposals.editor.gate.layer.pii': 'PII 層',
+  'proposals.editor.gate.layer.commerce': '商流層',
+  'proposals.editor.gate.layer.consistency': '整合層',
+  'proposals.editor.gate.verdict.PASS': '合格',
+  'proposals.editor.gate.verdict.FAIL': '不合格',
+  'proposals.editor.gate.verdict.RUNNING': '検査中',
+  'proposals.editor.gate.aiFailed': '検査を完了できなかったため送信できません。時間をおいてレビューを再依頼してください。',
+  'proposals.editor.gate.findingsTitle': '指摘（不合格の原因。元データの修正が必要です）',
+  'proposals.editor.gate.warningsTitle': '警告（合否には影響しません）',
+  'proposals.editor.gate.warningLabel': '警告',
+  'proposals.editor.gate.findingsEmpty': '指摘はありません。',
+  'proposals.editor.gate.field.subject': '件名',
+  'proposals.editor.gate.field.body': '本文',
+  'proposals.editor.gate.field.snapshot': '凍結情報（経験内容）',
+  'proposals.editor.gate.field.attachment': '添付',
+  'proposals.editor.gate.field.public_summary': '公開用の記載',
+  'proposals.editor.gate.field.project_name': '案件名',
+  'proposals.editor.gate.field.requirement': '要件',
+  'proposals.editor.gate.field.contract_document': '契約書',
+  'proposals.editor.gate.failedLead': '1 層でも不合格の提案は承認・送信へ進めません。該当箇所を修正してから、あらためてレビューに出してください。',
+  'proposals.editor.gate.passedLead': '全層が合格しました。承認者の確認を待っています。',
+  // 送信元ドメイン（`U-04`）。
+  'proposals.editor.sendingDomain.verifiedPrefix': '送信元: ',
+  'proposals.editor.sendingDomain.verifiedSuffix': '（検証済み）',
+  'proposals.editor.sendingDomain.unverified': '送信元ドメインが未設定です。取引先へ送信するには送信ドメインの検証が必要です。',
+  'proposals.editor.sendingDomain.open': '送信ドメインの設定を開く',
+  'proposals.editor.sendingDomain.partnerNote': '送信元ドメインはホストが設定します。',
+  'proposals.editor.sendingDomain.notRequired': 'この環境では送信元ドメインの検証は不要です（共通ドメインで送信されます）。',
+  // 状態の語（`docs/04` §S-019 の 14 語。`packages/i18n` に集約する。T-09-09 の一覧も同じキーを使う）。
+  'proposals.state.DRAFT': '下書き',
+  'proposals.state.GATE_RUNNING': '検査中',
+  'proposals.state.GATE_FAILED': '差し戻し（検査で不合格）',
+  'proposals.state.APPROVAL_PENDING': '承認待ち',
+  'proposals.state.APPROVED': '承認済み',
+  'proposals.state.SUBMITTING': '送信中',
+  'proposals.state.SUBMITTED': '送信済み',
+  'proposals.state.SUBMIT_FAILED': '送信失敗',
+  'proposals.state.INTERVIEW_SCHEDULED': '面談日程調整中',
+  'proposals.state.INTERVIEWED': '面談実施済み',
+  'proposals.state.RESULT_PENDING': '結果待ち',
+  'proposals.state.WON': '決定',
+  'proposals.state.LOST': '見送り',
+  'proposals.state.WITHDRAWN': '辞退',
 
   // --- S-015 匿名共有の設定（取引先）（docs/04 §S-015 / `F-016` / docs/05 §6.4 #29。T-08-02）---
   // 🔴 **煽らない。** 「共有すると案件が見つかりやすくなります」に相当する語を 1 つも置かない

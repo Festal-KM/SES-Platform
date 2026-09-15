@@ -47,8 +47,15 @@ import {
   type GateHeldView,
   type GateResultView,
 } from '@ses/domain';
-import { GateAlreadyCompletedError, InternalError, ProposalGateForbiddenError, requireFound } from '../api/errors';
+import {
+  GateAlreadyCompletedError,
+  InternalError,
+  ProposalGateForbiddenError,
+  ProposalRecipientMissingError,
+  requireFound,
+} from '../api/errors';
 import { canRequestProposalGate } from './policy';
+import { hasProposalRecipient } from './recipient';
 
 /** ゲートの対象種別（`ReviewGate.targetType`）。値の出所は `@ses/domain` の `GATE_TARGET_TYPES`。 */
 const PROPOSAL_GATE_TARGET_TYPE = 'PROPOSAL' as const;
@@ -99,6 +106,9 @@ type ProposalGateTarget = {
   readonly state: string;
   readonly createdBy: string;
   readonly contentHash: string;
+  /** 🔴 提案先（T-09-01）。空のままの `DRAFT` はレビューに出せない（`hasProposalRecipient`）。 */
+  readonly recipientCompanyName: string;
+  readonly recipientEmail: string;
 };
 
 /** 対象と、その**現在の内容**のハッシュ（§11.5）。見えなければ `null`（＝ 404）。 */
@@ -109,14 +119,21 @@ async function loadTarget(
   return withTenant(ctx, async (db) => {
     const proposal = await db.proposal.findUnique({
       where: { id: proposalId },
-      select: { id: true, state: true, createdBy: true },
+      select: { id: true, state: true, createdBy: true, recipientCompanyName: true, recipientEmail: true },
     });
     if (proposal === null) return null;
     // 🔴 ハッシュは同じトランザクションの中で、同じ内容から作る（読み直しの間に
     //    内容が変わると、検査した内容と `Proposal.contentHash` がずれる）。
     const contentHash = await computeProposalContentHash(db, proposalId);
     if (contentHash === null) return null;
-    return { id: proposal.id, state: proposal.state, createdBy: proposal.createdBy, contentHash };
+    return {
+      id: proposal.id,
+      state: proposal.state,
+      createdBy: proposal.createdBy,
+      contentHash,
+      recipientCompanyName: proposal.recipientCompanyName,
+      recipientEmail: proposal.recipientEmail,
+    };
   });
 }
 
@@ -152,6 +169,15 @@ export async function requestProposalGate(
     // 🔴 `GATE_FAILED` / `APPROVAL_PENDING` / `APPROVED` … からは依頼できない（422）。
     //    判定は `CLAUDE.md` §4.2 の遷移表 1 つに委ねる（ここに状態を列挙しない）。
     throw new InvalidStateTransitionError(proposalMachine.entity, state, 'GATE_RUNNING');
+  }
+  // 🔴 T-09-01（docs/05 §6.5「T-09-01 の決着」/ SP-08 の申し送り②）: **提案先が空の `DRAFT` は 422**
+  //    （`PROPOSAL_RECIPIENT_MISSING`）。「その公開範囲で出してはならない相手に出ていないか」の
+  //    「相手」が無い提案に商流層は掛けられない。**事前判定は CAS の前**に置き、`GATE_RUNNING` へ
+  //    遷移させない（`CLAUDE.md` §3.4）。経路 4 の応諾（#33）が作る `DRAFT` は提案先が空文字であり、
+  //    #37 で埋めてからでなければここを通れない。再実行（`GATE_RUNNING` のまま）には掛けない ——
+  //    `DRAFT` を離れた時点で提案先はあった。
+  if (!isRerun && !hasProposalRecipient(target)) {
+    throw new ProposalRecipientMissingError();
   }
 
   // 🔴 保留（HELD）が残っているなら、その行の内容で再開する（`gate.hold-release` が

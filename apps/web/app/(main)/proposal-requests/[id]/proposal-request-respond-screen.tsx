@@ -15,7 +15,8 @@
 //      辞退はできる。自動公開はしない（経路 1 のゲート対象）。
 //   ⑤ 状態が `REQUESTED` でなければ操作を描かず、専用の文言を出す（`docs/04` §10.1 `S-018`）。
 //      応諾・辞退の 422（競合）は「既に返答待ちではない」と伝え、再読込を促す。
-//   ⑥ ⚠️ 応諾後の遷移先 `S-020` は SP-09。それまでは下書きの ID を示して `S-017` へ戻す。
+//   ⑥ ✅ T-09-01: 応諾後は下書きの ID を示したうえで `S-020`（`/proposals/{id}/edit`）への導線を出す。**提案先は
+//      まだ空**であり（docs/05 §6.5「T-08-07 の決着」）、`S-020` で埋めてからレビューに出す。
 //
 // 🔴 `'use client'` は確認ステップ・辞退フォーム・毎分の残り時間のためだけである。**`@ses/db` に依存する
 //    モジュールから値を import しない**（`tests/static/client-db-boundary.test.ts`）。文言は props で受け取る。
@@ -24,12 +25,13 @@
 //    再訪時の表示はサーバの状態（`readPartnerProposalRequestDetail`）だけが正である。
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import Link from 'next/link';
-import { Badge, Button, Field, SECONDARY_LINK_CLASSES, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Textarea, type BadgeVariant } from '@ses/ui';
+import { Badge, Button, Field, SECONDARY_LINK_CLASSES, SECONDARY_LINK_STACKED_CLASSES, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Textarea, type BadgeVariant } from '@ses/ui';
 import type { ProposalRequestState } from '@ses/domain';
 import type { ProposalRequestDetailRows } from '../../../../lib/proposal-requests/detail-rows';
 import type { ProjectRequirementRow } from '../../../../lib/projects/detail';
 import { PROPOSAL_REQUEST_DECLINE_REASON_MAX_LENGTH } from '../../../../lib/proposal-requests/limits';
 import { formatRemaining, type RemainingLabels } from '../../../../lib/proposal-requests/remaining';
+import { proposalEditHref } from '../../../../lib/proposals/hrefs';
 
 export type ProposalRequestRespondScreenMessages = {
   readonly backToList: string;
@@ -62,6 +64,8 @@ export type ProposalRequestRespondScreenMessages = {
   readonly acceptDone: string;
   readonly acceptDoneProposalId: string;
   readonly acceptDoneNext: string;
+  /** ✅ T-09-01: `S-020` への導線。 */
+  readonly openProposal: string;
   readonly decline: string;
   readonly declineReasonLabel: string;
   readonly declineReasonNote: string;
@@ -345,9 +349,14 @@ export function ProposalRequestRespondScreen({ rows, canRespond, denialMessage, 
                 {messages.acceptDoneProposalId}: <span data-testid="proposal-request-respond-accepted-proposal-id">{phase.proposalId}</span>
               </p>
               <p className="mb-2">{messages.acceptDoneNext}</p>
-              <Link className={SECONDARY_LINK_CLASSES} href={rows.listHref} data-testid="proposal-request-respond-back-to-list">
-                {messages.backToList}
-              </Link>
+              <div className="flex flex-wrap items-center gap-4">
+                <Link className={SECONDARY_LINK_CLASSES} href={proposalEditHref(phase.proposalId)} data-testid="proposal-request-respond-open-proposal">
+                  {messages.openProposal}
+                </Link>
+                <Link className={SECONDARY_LINK_CLASSES} href={rows.listHref} data-testid="proposal-request-respond-back-to-list">
+                  {messages.backToList}
+                </Link>
+              </div>
             </div>
           ) : phase.kind === 'DECLINED' ? (
             <div role="status" className="border border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-900" data-testid="proposal-request-respond-declined">
@@ -370,6 +379,11 @@ export function ProposalRequestRespondScreen({ rows, canRespond, denialMessage, 
               <p className="m-0 text-sm text-slate-900" data-testid="proposal-request-respond-accepted-proposal-id">
                 {rows.proposalId ?? messages.valueNone}
               </p>
+              {rows.proposalId === null ? null : (
+                <Link className={SECONDARY_LINK_STACKED_CLASSES} href={proposalEditHref(rows.proposalId)} data-testid="proposal-request-respond-open-proposal">
+                  {messages.openProposal}
+                </Link>
+              )}
             </div>
           ) : rows.state !== 'REQUESTED' ? (
             // 期限切れ / 取り下げ: 操作なし（専用文言は上部の `closedNotice`）。

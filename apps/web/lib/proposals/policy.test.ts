@@ -3,8 +3,11 @@
 import { describe, expect, it } from 'vitest';
 import type { TenantRole } from '@ses/db';
 import {
+  canEditProposal,
   canRequestProposalGate,
   HOST_GATE_REQUEST_ROLES,
+  isProposalEditorRole,
+  PROPOSAL_EDITOR_ROLES,
   PROPOSAL_GATE_REQUEST_ROLES,
   type GateRequestActor,
 } from './policy';
@@ -69,5 +72,42 @@ describe('canRequestProposalGate（docs/05 §9.10 ①）', () => {
     for (const role of HOST_GATE_REQUEST_ROLES) {
       expect((PROPOSAL_GATE_REQUEST_ROLES as readonly TenantRole[]).includes(role)).toBe(true);
     }
+  });
+});
+
+describe('✅ T-09-01 canEditProposal（#37）は #39 の canRequestProposalGate と同じ判定である', () => {
+  const subjects = [{ createdBy: CREATOR }, { createdBy: OTHER }];
+  const actors: readonly GateRequestActor[] = [
+    actor('OWNER'),
+    actor('ADMIN'),
+    actor('SALES'),
+    actor('VIEWER'),
+    actor('SALES', { partnerCompanyId: PARTNER }),
+    actor('PARTNER_ADMIN', { userId: CREATOR, partnerCompanyId: PARTNER }),
+    actor('PARTNER_SALES', { userId: CREATOR, partnerCompanyId: PARTNER }),
+    actor('PARTNER_ADMIN', { partnerCompanyId: PARTNER }),
+    actor('PARTNER_SALES', { partnerCompanyId: PARTNER }),
+    actor('VIEWER', { userId: CREATOR, partnerCompanyId: PARTNER }),
+  ];
+
+  it('全組み合わせで一致する（埋められるのに出せない / 出せるのに埋められない立場を作らない）', () => {
+    for (const a of actors) {
+      for (const subject of subjects) {
+        expect(canEditProposal(a, subject)).toBe(canRequestProposalGate(a, subject));
+      }
+    }
+  });
+
+  it('🔴 パートナー所属の非作成者は編集できない（同じ取引先の別の担当者にも開かない）', () => {
+    expect(canEditProposal(actor('PARTNER_SALES', { partnerCompanyId: PARTNER }), { createdBy: CREATOR })).toBe(false);
+    expect(canEditProposal(actor('PARTNER_ADMIN', { partnerCompanyId: PARTNER }), { createdBy: CREATOR })).toBe(false);
+  });
+
+  it('PROPOSAL_EDITOR_ROLES は #39 の許可ロールと同じ集合で、VIEWER を含まない', () => {
+    expect([...PROPOSAL_EDITOR_ROLES]).toEqual([...PROPOSAL_GATE_REQUEST_ROLES]);
+    expect((PROPOSAL_EDITOR_ROLES as readonly TenantRole[]).includes('VIEWER')).toBe(false);
+    expect(isProposalEditorRole('VIEWER')).toBe(false);
+    expect(isProposalEditorRole('PARTNER_SALES')).toBe(true);
+    expect(isProposalEditorRole('OWNER')).toBe(true);
   });
 });
