@@ -436,7 +436,12 @@ export function EngineerLedgerScreen({
           <TableBody>
             {rows.map((row) => (
               <TableRow key={row.id} data-testid={`engineer-list-row-${row.id}`}>
-                <TableCell whitespace="normal">
+                <TableCell whitespace="normal" className="min-w-40">
+                  {/* 🔴 名称列は 10rem 未満に潰さない（T-08-11 の折り返し検出器が CI で捕捉。
+                      run 34924436520）。モバイルでは名称以外の列が `nowrap` で内容幅を取るため、
+                      フォント幅が広い環境（CI の Linux）では名称列だけが 62px まで潰れ、
+                      18 文字の名称が 3 行に折れて読めなくなった。下限幅を与えると表は器の
+                      `overflow-x-auto` の内側でスクロールし、`documentElement` は溢れない。 */}
                   {/* 🔴 行から詳細へ（docs/04 §S-005「行クリックで `S-006`」）。
                       **閲覧の監査記録は遷移先が書く**（`readEngineerDetail`。`BR-27`）。 */}
                   <Link
