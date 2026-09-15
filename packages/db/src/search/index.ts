@@ -29,8 +29,15 @@ export {
   engineerPriceConditions,
   engineerSearchPlan,
   engineerSkillConditions,
+  engineerSoftCriteria,
   ordersByFit,
 } from './engineers.js';
+// 🔴 T-08-05: 匿名候補への検索条件は丸め後の区分に対して評価する（docs/05 §4.6 線引き表 #8）。
+export { anonymousCandidateSearchPlan } from './anonymous-candidates.js';
+export type {
+  AnonymousCandidateSearchDeps,
+  AnonymousCandidateSearchPlan,
+} from './anonymous-candidates.js';
 export type {
   EngineerSearchCriteria,
   EngineerSearchPlan,

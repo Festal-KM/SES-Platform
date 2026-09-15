@@ -21,3 +21,12 @@ export {
   type AnonymizeSkillInput,
   type RoundedAnonymousAttributes,
 } from './rounding.js';
+// 🔴 T-08-05: 匿名候補への検索条件は**丸めた後の区分**に対して評価する（`docs/05` §4.6 線引き表 #8）。
+export {
+  anonymousMayCommute,
+  anonymousSkillsInclude,
+  availabilityBandMayBeBy,
+  priceBandMayOverlap,
+  yearsBandMayReach,
+  type AnonymousSkillMode,
+} from './criteria.js';

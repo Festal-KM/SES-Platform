@@ -492,6 +492,7 @@ export { toDateOnly } from './date-only.js';
 //    フリーワードの述語・検索条件の評価・決定的な `ORDER BY` はここにしか無い
 //    （`tests/static/search-sql-single-path.test.ts` が全ソースを AST で走査して固定する）。
 export {
+  anonymousCandidateSearchPlan,
   assertStatusPriority,
   ENGINEER_LIST_ORDER_BY,
   ENGINEER_SKILL_MODE_DEFAULT,
@@ -499,6 +500,7 @@ export {
   engineerPriceConditions,
   engineerSearchPlan,
   engineerSkillConditions,
+  engineerSoftCriteria,
   freeWordFilter,
   freeWordOr,
   ordersByFit,
@@ -507,6 +509,8 @@ export {
   projectSearchWhere,
 } from './search/index.js';
 export type {
+  AnonymousCandidateSearchDeps,
+  AnonymousCandidateSearchPlan,
   EngineerSearchCriteria,
   EngineerSearchPlan,
   EngineerSkillMode,

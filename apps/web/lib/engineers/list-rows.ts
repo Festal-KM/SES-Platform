@@ -219,10 +219,16 @@ function without(
 export function activeEngineerFilters(
   query: EngineerListQuery,
   skillNames: ReadonlyMap<string, string>,
+  /**
+   * 🔴 T-08-05: 「その条件だけを外した URL」の組み立て先。既定は `S-005`（`engineerListHref`）で、
+   *    `S-016`（`lib/candidates/list-rows.ts`）は案件の URL を組む関数を渡す。**条件の列挙は 1 本のまま**
+   *    である（画面ごとに列挙を書き写すと、条件を足したときに片方だけ解除できなくなる）。
+   */
+  toHref: (next: EngineerListQuery) => string = (next) => engineerListHref(next, null),
 ): readonly EngineerActiveFilterView[] {
   const filters: EngineerActiveFilterView[] = [];
   const push = (key: string, label: string, next: EngineerListQuery): void => {
-    filters.push({ key, label, href: engineerListHref(next, null) });
+    filters.push({ key, label, href: toHref(next) });
   };
 
   for (const skillId of query.skills ?? []) {

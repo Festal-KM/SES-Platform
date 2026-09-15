@@ -112,8 +112,12 @@ export type EngineerListView = {
   readonly nextCursor: string | null;
 };
 
-/** 一覧が読む列（`docs/04` §S-005 の結果テーブルに出るものだけ）。 */
-const ENGINEER_LIST_SELECT = {
+/**
+ * 一覧が読む列（`docs/04` §S-005 の結果テーブルに出るものだけ）。
+ * 🔴 T-08-05: `S-016` の自社候補（`lib/candidates/list.ts` の `readOwnCandidateViews`）も**同じ列・同じ
+ *    変換**（`toOwnEngineerView`）を通す。2 本にすると自社エンジニアの見え方が画面ごとにずれる。
+ */
+export const ENGINEER_LIST_SELECT = {
   id: true,
   ownerPartnerCompanyId: true,
   displayName: true,
@@ -126,7 +130,7 @@ const ENGINEER_LIST_SELECT = {
   updatedAt: true,
 } as const;
 
-type EngineerListRow = {
+export type EngineerListRow = {
   readonly id: string;
   readonly ownerPartnerCompanyId: string | null;
   readonly displayName: string;
@@ -139,13 +143,16 @@ type EngineerListRow = {
   readonly updatedAt: Date;
 };
 
-type SkillRow = EngineerSkillCandidate & {
+export type SkillRow = EngineerSkillCandidate & {
   readonly engineerId: string;
   readonly name: string;
 };
 
 /** `withTenant` が `fn` に渡すクライアントのうち、本モジュールが使うデリゲートだけ。 */
-type EngineerListDb = Parameters<Parameters<typeof withTenant<void>>[1]>[0];
+export type EngineerListDb = Parameters<Parameters<typeof withTenant<void>>[1]>[0];
+
+/** `readPrimarySkills` の 1 人分（`shown` は経験年数の降順。先頭が最大値である）。 */
+export type PrimarySkillsEntry = { readonly shown: readonly SkillRow[]; readonly more: number };
 
 /**
  * 1 ページ分のエンジニアのスキルを 1 往復で読む（エンジニアごとに引くと N+1 になり、
@@ -154,11 +161,11 @@ type EngineerListDb = Parameters<Parameters<typeof withTenant<void>>[1]>[0];
  * 🔴 ここにも `where` の境界条件を書かない（親と同じ RLS が `engineer_skills` にも効く。
  *    C3 OWNER_SCOPED + 継承トリガ。docs/05 §4.4.1）。
  */
-async function readPrimarySkills(
-  db: EngineerListDb,
+export async function readPrimarySkills(
+  db: Pick<EngineerListDb, 'engineerSkill'>,
   engineerIds: readonly string[],
-): Promise<ReadonlyMap<string, { shown: readonly SkillRow[]; more: number }>> {
-  const result = new Map<string, { shown: readonly SkillRow[]; more: number }>();
+): Promise<ReadonlyMap<string, PrimarySkillsEntry>> {
+  const result = new Map<string, PrimarySkillsEntry>();
   if (engineerIds.length === 0) return result;
 
   const rows = await db.engineerSkill.findMany({
@@ -190,9 +197,9 @@ async function readPrimarySkills(
   return result;
 }
 
-function toOwnEngineerView(
+export function toOwnEngineerView(
   row: EngineerListRow,
-  skills: { shown: readonly SkillRow[]; more: number } | undefined,
+  skills: PrimarySkillsEntry | undefined,
 ): OwnEngineerView {
   return {
     id: row.id,

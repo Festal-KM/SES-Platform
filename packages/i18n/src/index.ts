@@ -1331,7 +1331,8 @@ const ja = {
   'projects.detail.proposals.emptyHost': 'まだ提案はありません。',
   'projects.detail.proposals.emptyPartner': '御社からの提案はまだありません。',
   'projects.detail.proposals.comingSoon': '提案の一覧は後続のリリースで表示されます。',
-  'projects.detail.candidates.comingSoon': '候補の検索は後続のリリースで行えます。',
+  // ✅ T-08-05: `S-016` へ接続した（それまでは `projects.detail.candidates.comingSoon` の注記だった）。
+  'projects.detail.candidates.open': '候補を探す',
 
   // --- S-010 案件一覧・検索（docs/04 §S-010 / `F-015` / docs/05 §6.4 #25。T-06-03）---
   // 🔴 `F-015 AC-1` / `docs/04` §3.2 項目 2: **母集団が違うことを画面上で明示する。**
@@ -1511,6 +1512,63 @@ const ja = {
   'anonymousCandidate.field.availability': '稼働可能時期',
   'anonymousCandidate.field.location': '勤務地・リモート可否',
   'anonymousCandidate.field.updatedOn': '更新日',
+
+  // --- S-016 候補検索とマッチング候補（案件起点）（docs/04 §S-016 / `F-009` / `F-017` / docs/05 §6.5 #30。T-08-05）---
+  // 🔴 T2（モバイル閲覧可）。列は間引くが**遮断しない**（`CLAUDE.md` §13.3）。
+  // 🔴 `F-017 AC-7` / `F-009 AC-2` / `F-030 AC-4`: **スコア・順位・重み・一致度に相当する語を 1 つも置かない。**
+  // 🔴 **共有候補の件数を別に出す語を置かない**（`docs/04` §S-016 空状態「共有候補 0 件」と出さない）。
+  // 🔴 **煽らない。** 空状態は事実だけを述べる（`S-015` と同じ規律）。
+  'candidates.title': '候補検索',
+  'candidates.breadcrumb.current': '候補を探す',
+  // 🔴 何が混在し、何が開示されていないかを一覧の上で 1 行で示す（`docs/04` §S-016 目的 / `F-017 AC-6`）。
+  'candidates.lead.host':
+    'この一覧には、自社台帳の人材と、取引先が共有可にした人材（共有候補）が同じ基準で並びます。共有候補は丸めた 5 項目のみで表示され、提案が作成されるまで実名・所属会社名・スキルシート・経歴は開示されません。',
+  // 🔴 `F-006 AC-2` と同じ規律（見える範囲を常時示す）。取引先には共有候補が存在しないことを匂わせる語も置かない。
+  'candidates.lead.partner': 'この一覧には、御社が登録した人材のみが表示されます。',
+  'candidates.section.project': '対象案件の要件',
+  'candidates.section.detail': '選択した候補',
+  'candidates.project.open': '案件詳細を開く',
+  // 🔴 `docs/04` §3.2 項目 2「一覧の母集団を 1 行で明示」。ホストは**混在した総件数だけ**を出す。
+  'candidates.population.host': '候補',
+  'candidates.population.hostScope': '（自社台帳と共有候補）',
+  'candidates.population.partner': '御社が登録した人材',
+  'candidates.population.unit': '件',
+  // 🔴 並び順の説明（`docs/04` §S-016 Phase 1「画面上部に並び順の説明を 1 行置く」）。`S-005` と同じ 2 通り。
+  'candidates.orderNote': '更新日の新しい順に表示しています。',
+  'candidates.orderNote.fit':
+    '指定した条件（稼働可能時期・勤務地）に合う候補を先に、そのうえで更新日の新しい順に表示しています。',
+  // 🔴 共有候補への条件の効き方（`docs/05` §4.6 線引き表 #8）。フィルタ帯の直下に 1 行。
+  'candidates.anonymousFilterNote':
+    '共有候補には、開示されている 5 項目（スキル・経験年数・単価レンジ・稼働可能時期・勤務地・リモート可否）に関する条件だけが、表示と同じ丸めた区分に対して適用されます。フリーワードと稼働状況は共有候補には適用されません。',
+  // 🔴 「条件をクリア」ではない —— 本画面の既定は空ではなく案件の要件である（`docs/04` §S-016 実装の補足）。
+  'candidates.search.reset': '案件の要件に戻す',
+  'candidates.column.kind': '種別',
+  'candidates.column.name': '表示名',
+  'candidates.column.skills': 'スキル',
+  'candidates.column.years': '経験年数',
+  'candidates.column.unitPrice': '単価レンジ',
+  'candidates.column.availability': '稼働可能時期',
+  'candidates.column.location': '勤務地・リモート',
+  'candidates.column.updatedOn': '更新日',
+  'candidates.kind.own': '自社',
+  // 🔴 匿名候補の表示名は**この一語だけ**（`docs/04` §S-016「氏名・所属会社名・社内 ID を持たない」）。
+  'candidates.kind.anonymous': '共有候補',
+  // 🔴 `docs/04` §S-016 空状態: 初回空（台帳が空）→ `S-007` / `S-008` への導線。絞込 0 件 → 条件の解除導線。
+  'candidates.empty.title': '候補になる人材が登録されていません。',
+  'candidates.empty.lead': '人材を登録すると、この一覧から探せるようになります。',
+  'candidates.empty.register': '人材を登録',
+  'candidates.filtered.empty.title': '条件に一致する候補はいません。',
+  'candidates.filtered.empty.lead': '効いている条件を 1 つずつ外して、対象を広げられます。',
+  'candidates.detail.select': '行を選ぶと、ここに候補の詳細を表示します。',
+  'candidates.detail.openEngineer': '人材の詳細を開く',
+  // 🔴 未実装を隠さない（`engineers.careers.comingSoon` と同じ規律）。押しても動かない導線を先に描かない。
+  'candidates.detail.proposalComingSoon': '提案の作成は後続のリリースで行えます。',
+  'candidates.detail.requestComingSoon': '提案依頼の送信は後続のリリースで行えます。',
+  'candidates.detail.anonymousNote':
+    '共有候補は丸めた 5 項目のみが開示されています。実名・所属会社名・スキルシート・経歴は、提案が作成されるまで開示されません。',
+  'candidates.detail.field.availabilityStatus': '稼働状況',
+  'candidates.nextPage': '次のページ',
+  'candidates.firstPage': '最初のページに戻る',
 
   // --- S-015 匿名共有の設定（取引先）（docs/04 §S-015 / `F-016` / docs/05 §6.4 #29。T-08-02）---
   // 🔴 **煽らない。** 「共有すると案件が見つかりやすくなります」に相当する語を 1 つも置かない

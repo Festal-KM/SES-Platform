@@ -63,13 +63,14 @@ const SES_DB_PRISMA_CLIENT_MESSAGE =
 //    である（`app.shared_scope = 'on'` を立てられるのもこれだけ）。`@ses/db` の index は
 //    `withPlatform*` と違い re-export **する**（ジョブとサービス層が使うため）ので、
 //    到達の制限は named import の禁止で行う。
-//    🔴 現時点の許可先は `tests/isolation/**`（分離機構そのものを検証する区画。`@ses/db/testing` と
-//    同じ扱い）だけである。`packages/db` の内部は相対 import なのでこの禁止に掛からない。
-//    ⚠️ 呼び出し元が実在するようになったら（SP-08 の T-08-04 / T-08-05、SP-13 の `match.build`）、
-//    **そのファイル集合に専用ゾーンを足して許可する**。CATCH_ALL を緩めないこと。
+//    🔴 許可先は `tests/isolation/**`（分離機構そのものを検証する区画。`@ses/db/testing` と同じ扱い）と、
+//    ✅ T-08-05 で実在した唯一の呼び出し元 `SHARED_CANDIDATE_CALLER_FILES`（候補一覧の 1 ファイル）だけ
+//    である。`packages/db` の内部は相対 import なのでこの禁止に掛からない。
+//    ⚠️ 呼び出し元を増やすとき（SP-13 の `match.build`）は **そのファイルを `SHARED_CANDIDATE_CALLER_FILES`
+//    に足す**（または専用ゾーンを新設する）。CATCH_ALL を緩めないこと。
 const SES_DB_SHARED_CANDIDATE_SCOPE_MESSAGE =
   'withSharedCandidateScope は匿名候補（CLAUDE.md §3.1 経路 4）の生成だけに許された限定経路です。' +
-  'import できるのは packages/db の内部（相対 import）と tests/isolation/** だけです' +
+  'import できるのは packages/db の内部（相対 import）と tests/isolation/**、候補一覧の 1 ファイル（SHARED_CANDIDATE_CALLER_FILES）だけです' +
   '（docs/05 §4.5 / P-A-14）。候補一覧の応答は、この関数を通した再確認の結果だけを返してください。';
 const SES_DB_TESTING_SUBPATH = '@ses/db/testing';
 const SES_DB_TESTING_MESSAGE =
@@ -598,11 +599,20 @@ const ADMIN_PLANE_FILES = [
 //    避けるため、ファイル集合を重ねない。冒頭コメント）。
 const PROMPTS_ZONE_FILES = ['prompts/**/*.{ts,tsx,mts,cts}'];
 
+// 🔴 T-08-05: `withSharedCandidateScope`（経路 4 の限定経路。docs/05 §4.5）の**唯一の呼び出し元**。
+//    候補一覧（`#30` / `#15?projectId=`）の 1 ファイルだけに専用ゾーンを与え、CATCH_ALL から ignore する
+//    （flat config の「後勝ち・丸ごと置換」を避けるため、ファイル集合を重ねない。冒頭コメント）。
+//    🔴 **ディレクトリではなくファイル 1 本**である —— `apps/web/lib/candidates/**` と広げると、隣に置いた
+//    別のモジュールが黙って同じ許可を得る。呼び出し元を増やすときはここと
+//    `tests/static/auth-db-callers.test.ts` の許可リストを**同時に**足す（レビューを強制するための二重）。
+const SHARED_CANDIDATE_CALLER_FILES = ['apps/web/lib/candidates/list.ts'];
+
 const CATCH_ALL_IGNORES = [
   ...PACKAGE_DIR_IGNORES_FOR_CATCH_ALL,
   'tests/isolation/**',
   ...ADMIN_PLANE_FILES,
   ...PROMPTS_ZONE_FILES,
+  ...SHARED_CANDIDATE_CALLER_FILES,
 ];
 const CATCH_ALL_OPTIONS = { allowSdk: false };
 const CATCH_ALL_ZONE = {
@@ -654,6 +664,22 @@ const ADMIN_PLANE_ZONE = {
     'no-restricted-syntax': [
       'error',
       ...buildDynamicImportSelectors(ADMIN_PLANE_OPTIONS),
+      ...buildRawSqlCallSelectors(false),
+    ],
+  },
+};
+
+// 🔴 T-08-05: 匿名候補の生成・再確認を行う唯一のファイルのゾーン。CATCH_ALL_ZONE と同じ強度
+//    （SDK 単一経路・生 @prisma/client 禁止・生 SQL 禁止）を維持しつつ、`withSharedCandidateScope` の
+//    named import だけを許可する（docs/05 §4.5「呼び出し元が実在するようになったら専用ゾーンを足す」）。
+const SHARED_CANDIDATE_CALLER_OPTIONS = { allowSdk: false, allowSharedCandidateScope: true };
+const SHARED_CANDIDATE_CALLER_ZONE = {
+  files: SHARED_CANDIDATE_CALLER_FILES,
+  rules: {
+    'no-restricted-imports': ['error', { patterns: buildPatterns(SHARED_CANDIDATE_CALLER_OPTIONS) }],
+    'no-restricted-syntax': [
+      'error',
+      ...buildDynamicImportSelectors(SHARED_CANDIDATE_CALLER_OPTIONS),
       ...buildRawSqlCallSelectors(false),
     ],
   },
@@ -732,6 +758,7 @@ export default tseslint.config(
 
   TESTS_ISOLATION_ZONE,
   ADMIN_PLANE_ZONE,
+  SHARED_CANDIDATE_CALLER_ZONE,
   PROMPTS_ZONE,
   CATCH_ALL_ZONE,
 );
@@ -747,4 +774,5 @@ export {
   ADMIN_PLANE_FILES,
   PROMPTS_PACKAGE,
   PROMPTS_ZONE_FILES,
+  SHARED_CANDIDATE_CALLER_FILES,
 };

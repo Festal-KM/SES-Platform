@@ -21,10 +21,20 @@ import {
 } from './labels';
 import type {
   HostProjectDetailView,
-  ProjectDetailView,
+  ProjectDetailShared,
   ProjectRequirementView,
   ProjectVisibilityView,
 } from './service';
+
+/**
+ * 見出し・条件の行が要る列（`ProjectDetailShared` の部分集合）。
+ * 🔴 T-08-05: `S-016` の要件サマリ（`#30` の `project` = `ProjectDetailShared`）も同じ関数で描く。
+ *    `ProjectDetailView`（`audience` 付き）はこの型を満たすので既存の呼び出しは変わらない。
+ */
+type ProjectSummaryLike = Pick<
+  ProjectDetailShared,
+  'status' | 'headcount' | 'startDate' | 'unitPriceMin' | 'unitPriceMax' | 'prefecture' | 'remoteMode'
+>;
 
 /** 定義リストの 1 行（`docs/04` §11「1 件の属性の羅列は定義リスト」）。 */
 export type ProjectDetailRow = {
@@ -76,7 +86,7 @@ export function formatProjectUnitPriceRange(min: number | null, max: number | nu
  *    移動中に「いつから何人必要な案件か」を見ずに判断させない）。
  * 🔴 ホストと取引先で**同じ**（`docs/04` §S-011 のセクション 1 は両者共通）。
  */
-export function projectHeadlineRows(view: ProjectDetailView): readonly ProjectDetailRow[] {
+export function projectHeadlineRows(view: ProjectSummaryLike): readonly ProjectDetailRow[] {
   return [
     {
       key: 'status',
@@ -101,7 +111,7 @@ export function projectHeadlineRows(view: ProjectDetailView): readonly ProjectDe
  * 🔴 取引先にも**そのまま**出す。ここに出るのは単価レンジ（**外部公開用**）・勤務地・リモート可否で
  *    あり、内部限定の 2 列（エンド企業名・自社単価）は `ProjectDetailShared` に存在しない。
  */
-export function projectConditionRows(view: ProjectDetailView): readonly ProjectDetailRow[] {
+export function projectConditionRows(view: ProjectSummaryLike): readonly ProjectDetailRow[] {
   return [
     {
       key: 'unitPrice',

@@ -73,6 +73,14 @@ export const PROJECT_VIEW_VIA = {
    *    ここだけ記録しないと「誰が案件の中身を見たか」に穴があく（`BR-27` / `F-013 AC-3`）。
    */
   visibility: 'VISIBILITY',
+  /**
+   * 🔴 `S-016` 候補一覧 / `GET /api/projects/{id}/candidates`（#30。T-08-05）。
+   *    `docs/03` §4.13.2-5「ホストによる匿名候補一覧の閲覧を `AuditLog` に記録する」の実装であり、
+   *    同時に案件の要件サマリ（セクション 1）を読む記録でもある。**独自 action を作らない**
+   *    （`S-041` の `PROJECT_VIEW` から漏れる）。🔴 `summary` は `via` だけ ——
+   *    匿名候補の件数・`engineer_id`・参照子を載せない（運営者が横断検索する。`CLAUDE.md` §10.5）。
+   */
+  candidates: 'CANDIDATES',
 } as const;
 
 export type ProjectViewVia = (typeof PROJECT_VIEW_VIA)[keyof typeof PROJECT_VIEW_VIA];
@@ -130,7 +138,7 @@ export type ProjectEditView = {
 //    `visibilities` / `visibleToCount` に相当するフィールドも**型として**持たない。
 
 /** ホスト・取引先の双方に出す項目（`docs/04` §S-011 のセクション 1〜3）。 */
-type ProjectDetailShared = {
+export type ProjectDetailShared = {
   readonly id: string;
   readonly name: string;
   readonly status: ProjectStatus;
@@ -401,7 +409,7 @@ export async function updateProject(
  *    「必須が先」を保つためではなく、**取得の順序を 1 つに決める**ためである。
  */
 async function readProjectRequirements(
-  db: ProjectDb,
+  db: Pick<ProjectDb, 'projectRequirement'>,
   projectId: string,
 ): Promise<readonly ProjectRequirementView[]> {
   const rows = await db.projectRequirement.findMany({
@@ -435,8 +443,8 @@ async function readProjectRequirements(
  *    で書くため、**404（境界外・不存在）でも「閲覧した」記録が残る** の 2 点による。
  * 🔴 `summary` に**案件名・エンド企業名・単価を載せない**（docs/05 §16.2）。残すのは経路だけである。
  */
-async function recordProjectView(
-  db: ProjectDb,
+export async function recordProjectView(
+  db: Pick<ProjectDb, 'auditLog'>,
   ctx: AuthenticatedTenantCtx,
   projectId: string,
   via: ProjectViewVia,
@@ -640,7 +648,7 @@ async function readProjectVisibilities(
  * **すでに見えなかったものの断り方**（文言）だけである。
  */
 async function projectWasSharedWithPartner(
-  db: ProjectDb,
+  db: Pick<ProjectDb, 'projectVisibility'>,
   projectId: string,
   partnerCompanyId: string,
 ): Promise<boolean> {
@@ -711,6 +719,44 @@ export async function readProjectDetail(
 
     return { ...toSharedDetail(row, requirements), audience: 'PARTNER' };
   });
+}
+
+/**
+ * `S-016` / `#30`（T-08-05）が候補一覧と**同じトランザクション**で読む案件の共通部分
+ * （`docs/04` §S-016 セクション 1 の要件サマリと、検索条件の初期値の出所）。
+ *
+ * 🔴 **ホスト・取引先とも `PARTNER_PROJECT_DETAIL_SELECT`（商流情報の 2 列を持たない）で読む。**
+ *    候補一覧に商流情報は要らず、`ProjectDetailShared` は取引先にも出してよい列だけで
+ *    できている（`F-013 AC-2`）。ホスト向けに列を足したくなっても、ここではなく `#27` で読む。
+ * 🔴 **監査は書かない。** 呼び出し側（`listProjectCandidates`）が同じトランザクションの中で
+ *    `recordProjectView(…, PROJECT_VIEW_VIA.candidates, …)` を 1 行書く（読んだのに記録しない
+ *    経路にならないよう、呼び出し元は `tests/static/auth-db-callers.test.ts` が 1 ファイルに固定する）。
+ * 🔴 母集団は `projects` の RLS（C4）だけが決める。見えなければ `null`（呼び出し側が 404 に畳む。
+ *    取引先の「公開解除」の断り方は `projectNotFoundError`）。
+ */
+export async function readProjectCandidateContext(
+  db: Pick<ProjectDb, 'project' | 'projectRequirement'>,
+  id: string,
+): Promise<ProjectDetailShared | null> {
+  const row = await db.project.findFirst({ where: { id }, select: PARTNER_PROJECT_DETAIL_SELECT });
+  if (row === null) return null;
+  return toSharedDetail(row, await readProjectRequirements(db, row.id));
+}
+
+/**
+ * 案件が読めなかったときに投げる例外を決める（`readProjectDetail` の断り方と同じ 1 本）。
+ * 取引先で、かつ自社宛の `ProjectVisibility` の行がある（＝ 公開が解除された）ときだけ
+ * `ProjectNotSharedError`、それ以外は素の `NotFoundError`（docs/05 §4.8）。
+ */
+export async function projectNotFoundError(
+  db: Pick<ProjectDb, 'projectVisibility'>,
+  ctx: AuthenticatedTenantCtx,
+  id: string,
+): Promise<NotFoundError> {
+  if (ctx.partnerCompanyId !== null && (await projectWasSharedWithPartner(db, id, ctx.partnerCompanyId))) {
+    return new ProjectNotSharedError();
+  }
+  return new NotFoundError();
 }
 
 /**

@@ -10,14 +10,16 @@
 // 🔴 **`ownerPartnerCompanyId` は body に無い**（`F-008 AC-2`）。スキーマに存在しないため
 //    `withApiRoute` の構築時検査（`assertNoIsolationKeys`）も、Zod の strip も、
 //    RLS の C3 も、すべて同じ結論（＝ 登録者の所属だけが所有者を決める）に収束する。
+import { ValidationError } from '../../../../lib/api/errors';
 import { requireExecutable, requireNotViewer, requireRole } from '../../../../lib/api/guards';
 import { withApiRoute } from '../../../../lib/api/withApiRoute';
+import { readRequestMeta } from '../../../../lib/auth/session';
+import { listProjectCandidates } from '../../../../lib/candidates/list';
+import { engineerListApiQuerySchema, isUuidCursor } from '../../../../lib/candidates/schemas';
+import { candidateReference } from '../../../../lib/db/bootstrap';
 import { listEngineers } from '../../../../lib/engineers/list';
 import { createEngineer, ENGINEER_AUDIT_ACTIONS } from '../../../../lib/engineers/service';
-import {
-  createEngineerBodySchema,
-  engineerListQuerySchema,
-} from '../../../../lib/engineers/schemas';
+import { createEngineerBodySchema } from '../../../../lib/engineers/schemas';
 
 // 🔴 Node ランタイム固定（Prisma は Edge で動かない）。
 export const runtime = 'nodejs';
@@ -37,12 +39,39 @@ export const dynamic = 'force-dynamic';
  * 🔴 **`audit` オプションを使わない。** `BR-27` / `F-008 AC-4` の記録対象は「エンジニア**詳細**の
  *    閲覧」であり、一覧の記録は `docs/04` §S-005 のとおり**行クリック（→ `S-006`）**が持つ
  *    （docs/05 §16.1 / `lib/engineers/list.ts` 冒頭に理由を書いた）。
- * 🔴 **不正なカーソルは 400** である（`engineerListQuerySchema` が UUID を要求する）。
- *    Prisma の `cursor: { id }` に届かせない（`lib/api/pagination.ts` の注記）。
+ * 🔴 **不正なカーソルは 400** である。案件なしは行の UUID（Prisma の `cursor: { id }` に届かせない。
+ *    `lib/api/pagination.ts` の注記）、案件ありは並びのキー（docs/05 §4.6）であり、**組み合わせが
+ *    合わないカーソルも 400** にする（黙って先頭ページに戻さない）。
+ *
+ * ⚠️ **暫定。[Issue #50](https://github.com/Festal-KM/SES-Platform/issues/50) で確認中（T-08-05。既定 A）**:
+ *    匿名候補（`AnonymousCandidateView`）が混ざるのは **`?projectId=` が渡されたときだけ**であり、
+ *    `S-005` は渡さない（参照子が案件スコープで、案件が無いと定義できない。docs/05 §6.4
+ *    「#15 の実装の決着（T-08-05）」）。案件ありは `#30` と**同じ関数**（`listProjectCandidates`）を通り、
+ *    応答の形（`{ items, total, nextCursor }`）は案件なしと同じ（`project` / `phase` は載せない）。
+ *    パートナーが `projectId` を渡しても匿名候補は 1 件も含まれない（`F-017 AC-5`）。
  */
 export const GET = withApiRoute(
-  { label: 'GET /api/engineers', guards: [], query: engineerListQuerySchema },
-  async ({ ctx, query }) => Response.json(await listEngineers(ctx, query)),
+  { label: 'GET /api/engineers', guards: [], query: engineerListApiQuerySchema },
+  async ({ ctx, query }) => {
+    const { projectId, ...rest } = query;
+    if (projectId === undefined) {
+      if (rest.cursor !== undefined && !isUuidCursor(rest.cursor)) {
+        throw new ValidationError(['cursor']);
+      }
+      return Response.json(await listEngineers(ctx, rest));
+    }
+    if (rest.cursor !== undefined && isUuidCursor(rest.cursor)) {
+      throw new ValidationError(['cursor']);
+    }
+    const meta = await readRequestMeta();
+    const view = await listProjectCandidates(ctx, projectId, { kind: 'CRITERIA', query: rest }, {
+      candidateRef: candidateReference(),
+      now: () => new Date(),
+      meta: { ipAddress: meta.ipAddress },
+    });
+    // 🔴 `#15` の契約は `{ items, total, nextCursor }`。案件の共通部分は `#30` だけが返す。
+    return Response.json({ items: view.items, total: view.total, nextCursor: view.nextCursor });
+  },
 );
 
 export const POST = withApiRoute(

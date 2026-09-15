@@ -57,7 +57,7 @@ export function projectDetailScreenMessages(
       ? t('projects.detail.proposals.emptyHost')
       : t('projects.detail.proposals.emptyPartner'),
     proposalsComingSoon: t('projects.detail.proposals.comingSoon'),
-    candidatesComingSoon: t('projects.detail.candidates.comingSoon'),
+    candidates: t('projects.detail.candidates.open'),
     edit: t('projects.detail.edit'),
     viewRecorded: t('projects.detail.viewRecorded'),
   };

@@ -122,7 +122,13 @@ export type SharedCandidateQuery = {
    *    その時点で共有が切れている（`revoked_at` が入った瞬間にポリシーが外れる）。
    */
   readonly engineerIds?: readonly string[];
-  /** 取得上限。省略時は無制限（呼び出し側がページングを持つまでの間の安全弁）。 */
+  /**
+   * 取得上限。省略時は無制限。
+   * 🔴 **候補一覧（`#30` / `#15?projectId=`。T-08-05）はこれを渡さない。** ここで打ち切ると
+   *    「ページに載る集合」が `updated_at DESC, id DESC`（= `engineer_id` タイブレーク）で決まり、
+   *    案件をまたいで一致する（docs/05 §4.6 線引き表 #9）。一覧は全件を読んでから
+   *    アプリ層で並べ直し、並びのキーでカーソルを切る。
+   */
   readonly take?: number;
 };
 
@@ -313,6 +319,16 @@ async function replaceAnonymousCandidates(
       isAnonymous: true,
       computedAt: row.computedAt,
     })),
+    // 🔴 T-08-05: 同一案件への並行 GET（候補一覧の読み取りが Phase 1 の唯一の生成経路）に耐える。
+    //    READ COMMITTED では、先行トランザクションの削除待ちから復帰した側の `deleteMany` が
+    //    0 行を消し（先行の INSERT は文のスナップショットに無い）、続く INSERT が
+    //    `@@unique([tenantId, projectId, engineerId])` に当たって 500 になる。
+    //    `ON CONFLICT DO NOTHING` なら先行の行がそのまま残る。⚠️ 2 つの読み取りの間に共有の解除が挟まれば
+    //    1 回分古い集合が残り得るが、候補一覧の応答は `listSharedEngineers` の `rows` から組み（この表を
+    //    読み返さない）、`candidateRef` の逆引き側（#31。T-08-06）は共有中かを共有スコープで再確認する
+    //    （docs/05 §4.5「`MatchCandidate` をそのまま返さず、必ず再確認してからフィルタする」）。
+    //    戻り値「作成した行数」の意味は変えない（飛ばした行は数えない）。
+    skipDuplicates: true,
   });
   return created.count;
 }

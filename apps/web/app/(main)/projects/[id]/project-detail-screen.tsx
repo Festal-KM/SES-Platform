@@ -69,7 +69,8 @@ export type ProjectDetailScreenMessages = {
   readonly partnerPublished: string;
   readonly proposalsEmpty: string;
   readonly proposalsComingSoon: string;
-  readonly candidatesComingSoon: string;
+  /** ✅ T-08-05: `S-016`（候補検索）への導線（それまでは「後続のリリース」の注記だった）。 */
+  readonly candidates: string;
   readonly edit: string;
   readonly viewRecorded: string;
 };
@@ -275,11 +276,16 @@ export function ProjectDetailScreen({
             <p className="text-xs text-slate-500" data-testid="project-detail-proposals-coming-soon">
               {messages.proposalsComingSoon}
             </p>
-            {/* ⚠️ `docs/04` §S-011「候補を探す」（→ `S-016`）は SP-08 / T-06-04。
-                存在しない画面へのリンクを置かない（`S-012` で `S-013` を保留したのと同じ判断）。 */}
-            <p className="mt-2 text-xs text-slate-500" data-testid="project-detail-candidates-coming-soon">
-              {messages.candidatesComingSoon}
-            </p>
+            {/* ✅ T-08-05: `docs/04` §S-011「候補を探す」（primary、ホスト・取引先とも）→ `S-016`。
+                🔴 ロールで隠さない —— 取引先の `S-016` は自社台帳のみ、`VIEWER` も閲覧できる
+                （拒否・絞り込みの本体は `#30` の RLS と `listProjectCandidates`）。 */}
+            <Link
+              className={cn(SECONDARY_LINK_CLASSES, 'mt-2')}
+              href={`/projects/${view.id}/candidates`}
+              data-testid="project-detail-candidates"
+            >
+              {messages.candidates}
+            </Link>
           </Section>
 
           {/* 🔴 ここから下はホストの枝にしか存在しない。取引先の枝には

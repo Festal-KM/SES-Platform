@@ -259,6 +259,27 @@ export function engineerPriceConditions(
 }
 
 /**
+ * 🔴 **有効なソフト条件の値**（＝ 指定されていて、かつ対応するチェックボックスがオフのもの）。
+ *
+ * 「どの条件がソフトとして効くか」の判定は**ここ 1 か所**である。自社側（`softConditions` →
+ * SQL の述語）と匿名候補側（`anonymous-candidates.ts` → 丸め後の区分に対する判定。T-08-05）の
+ * 両方がこの関数を通る —— 2 本にすると、自社は分割したのに匿名候補は分割していない
+ * （またはその逆）が静かに起きる（T-06-04 のレビュー申し送り 2 と同じ懸念）。
+ * 🔴 `hasAny` が `ordersByFit` / `engineerSearchPlan(criteria).buckets.length > 1` と一致する。
+ */
+export function engineerSoftCriteria(criteria: EngineerSearchCriteria): {
+  readonly availableBy: string | undefined;
+  readonly prefecture: PrefectureCode | undefined;
+  readonly hasAny: boolean;
+} {
+  const availableBy =
+    criteria.availableBy !== undefined && !criteria.onlyInTime ? criteria.availableBy : undefined;
+  const prefecture =
+    criteria.prefecture !== undefined && !criteria.onlyCommutable ? criteria.prefecture : undefined;
+  return { availableBy, prefecture, hasAny: availableBy !== undefined || prefecture !== undefined };
+}
+
+/**
  * 🔴 有効なソフト条件（＝ **指定されていて、かつ対応するチェックボックスがオフ**のもの）。
  *
  * チェックボックスがオンのものは `where`（母集団）側へ移るので、ここには現れない
@@ -267,13 +288,10 @@ export function engineerPriceConditions(
 function softConditions(
   criteria: EngineerSearchCriteria,
 ): SoftCondition<EngineerWhereFragment>[] {
+  const soft = engineerSoftCriteria(criteria);
   const conditions: SoftCondition<EngineerWhereFragment>[] = [];
-  if (criteria.availableBy !== undefined && !criteria.onlyInTime) {
-    conditions.push(inTimeCondition(criteria.availableBy));
-  }
-  if (criteria.prefecture !== undefined && !criteria.onlyCommutable) {
-    conditions.push(commutableCondition(criteria.prefecture));
-  }
+  if (soft.availableBy !== undefined) conditions.push(inTimeCondition(soft.availableBy));
+  if (soft.prefecture !== undefined) conditions.push(commutableCondition(soft.prefecture));
   return conditions;
 }
 

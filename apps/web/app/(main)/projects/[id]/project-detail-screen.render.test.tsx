@@ -90,7 +90,7 @@ const messages: ProjectDetailScreenMessages = {
   partnerPublished: 'この案件は御社に公開されています。',
   proposalsEmpty: 'まだ提案はありません。',
   proposalsComingSoon: '提案の一覧は後続のリリース。',
-  candidatesComingSoon: '候補の検索は後続のリリース。',
+  candidates: '候補を探す',
   edit: '編集',
   viewRecorded: 'この案件の閲覧は監査ログに記録されます。',
 };

@@ -199,7 +199,12 @@ export type { EngineerSkillMode } from '@ses/db';
  *    UUID でない値を Prisma の `cursor: { id }` に渡すと 500 になるため（`pagination.ts` の注記）。
  * 🔴 分離キーを持たない（`AssertNoIsolationKeys`）。母集団は RLS の C3 が決める。
  */
-export const engineerListQuerySchema = idCursorPageQuerySchema.extend({
+/**
+ * 🔴 検索条件の項目（`F-009` の入力）。**`S-005`（#15）と `S-016`（#30。T-08-05）で 1 つの定義を共有する**
+ *    —— 同じ名前の条件が画面ごとに別の制約・別の意味を持つ状態を作らない。ページング
+ *    （`cursor` / `limit`）は含めない（`S-005` は行 ID、`S-016` は並びのキーで形が違う）。
+ */
+export const engineerSearchCriteriaFields = {
   /** スキル（グローバル辞書の ID。複数可）。 */
   skills: optionalListFilter(z.array(z.uuid()).min(1).max(SKILL_FILTER_MAX)),
   /** 🔴 既定は `AND`（上記）。`skills` が 1 件以下のときは結果に影響しない。 */
@@ -228,7 +233,9 @@ export const engineerListQuerySchema = idCursorPageQuerySchema.extend({
   onlyInTime: checkboxFilter(),
   /** 🔴 既定オフ（`F-009 AC-5`）。「通勤可能な人だけ」。 */
   onlyCommutable: checkboxFilter(),
-});
+} as const;
+
+export const engineerListQuerySchema = idCursorPageQuerySchema.extend(engineerSearchCriteriaFields);
 
 export type EngineerListQuery = z.infer<typeof engineerListQuerySchema>;
 

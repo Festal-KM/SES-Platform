@@ -168,15 +168,16 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
   listSchedulerFanoutTenants: ['apps/worker/src/runtime.ts'],
   // 🔴 T-08-03: 匿名共有（`CLAUDE.md` §3.1 経路 4）で**パートナー境界を越えて読む唯一の関数**
   //    （docs/05 §4.5 / `P-A-14`）。`app.shared_scope = 'on'` を立てられるのもこれだけである。
-  //    🔴 **現時点で `apps/**` の呼び出し元は 0 件である**（生成は T-08-04 / T-08-05、
-  //    Phase 2 の `match.build` が持つ）。ここを空のままにしておくことで、
-  //    **呼び出し元が増えた瞬間にこのテストが落ち、許可リストへの追記＝レビューを強制する。**
-  //    ⚠️ 足すときは「そのファイルが `MatchCandidate` の生成・再確認をしているか」を必ず見る
-  //    （docs/05 §4.5「`MatchCandidate` の生成・更新以外から呼べない」）。
-  withSharedCandidateScope: [],
-  // 🔴 T-08-03: 案件が見つからないときの写像（404）。上と同じ理由で 0 件を固定する
-  //    —— この型を握る場所が増えることは、共有スコープを開く場所が増えたことと同義である。
-  SharedCandidateProjectNotFoundError: [],
+  //    ✅ T-08-05: 唯一の呼び出し元は候補一覧（`#30` / `#15?projectId=`）の 1 ファイルである。
+  //    `listSharedEngineers()` の直後に**同じトランザクションで** `replaceAnonymousCandidates` を呼び、
+  //    `MatchCandidate` を案件全体で置き換えている（docs/05 §4.5「`MatchCandidate` の生成・更新以外から
+  //    呼べない」の条件を満たす。Phase 1 に `match.build` は無く、この読み取りが唯一の生成経路）。
+  //    ⚠️ 足すときは「そのファイルが `MatchCandidate` の生成・再確認をしているか」を必ず見る。
+  //    同時に `eslint.config.mjs` の `SHARED_CANDIDATE_CALLER_FILES` にも足す（二重で固定）。
+  withSharedCandidateScope: ['apps/web/lib/candidates/list.ts'],
+  // 🔴 T-08-03: 案件が見つからないときの写像（404）。この型を握る場所が増えることは、
+  //    共有スコープを開く場所が増えたことと同義である —— 上と同じ 1 ファイルに固定する。
+  SharedCandidateProjectNotFoundError: ['apps/web/lib/candidates/list.ts'],
   // 🔴 T-03-10: `usage_counters` を書く唯一の経路（docs/05 §7.6 / §9.8）。
   //    ここを増やすと「計測を迂回した書き込み」が生まれ、原価と請求根拠が説明できなくなる。
   snapshotSeatCount: ['apps/worker/src/jobs/usage-seat-snapshot.ts'],
