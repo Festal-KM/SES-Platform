@@ -187,9 +187,23 @@ function collect(value: unknown, depth = 0, acc: Collected = { keys: [], values:
   return acc;
 }
 
+/**
+ * 🔴 T-09-12: 応諾前のホストに見えてはならない経歴の値（`F-008 AC-7`）。`beforeAll` で `ENGINEER_A_PARTNER` に
+ *    2 行を実在させ、応諾で `EngineerSnapshot.careers` に行単位で凍結されること（完了判定 ⑤）を見る。
+ */
+const P1_CAREER_DESCRIPTIONS = ['T0807-career-1', 'T0807-career-2'] as const;
+
 function expectNoHostLeak(body: unknown, label: string): void {
   const collected = collect(body);
-  for (const forbidden of [P1_DISPLAY_NAME, P1_COMPANY_NAME, ENGINEER_A_PARTNER, PARTNER_A1, USER_A_PARTNER, DECLINE_REASON]) {
+  for (const forbidden of [
+    P1_DISPLAY_NAME,
+    P1_COMPANY_NAME,
+    ENGINEER_A_PARTNER,
+    PARTNER_A1,
+    USER_A_PARTNER,
+    DECLINE_REASON,
+    ...P1_CAREER_DESCRIPTIONS,
+  ]) {
     expect(collected.values.some((v) => v.includes(forbidden)), `${label}: ${forbidden} が応答に含まれている`).toBe(false);
   }
   for (const key of ['declineReason', 'engineerId', 'engineer', 'partnerCompanyId', 'respondedBy', 'proposalId']) {
@@ -240,6 +254,32 @@ beforeAll(async () => {
     { ...base, partnerCompanyId: PARTNER_A2, userId: USER_A_PARTNER2, role: 'PARTNER_SALES' },
     { deviceKind: 'api' },
   );
+
+  // 🔴 T-09-12: 共有中のエンジニアに経歴 2 行を実在させる（fixtures は経歴を持たない）。
+  //    `owner_partner_company_id` は渡さない（継承トリガが親の値で上書きする）。
+  await admin.engineerCareer.deleteMany({ where: { engineerId: ENGINEER_A_PARTNER } });
+  await admin.engineerCareer.createMany({
+    data: [
+      {
+        tenantId: TENANT_A,
+        engineerId: ENGINEER_A_PARTNER,
+        periodFrom: '2024-04',
+        periodTo: null,
+        role: 'PL',
+        description: P1_CAREER_DESCRIPTIONS[0],
+        technologies: 'Go',
+      },
+      {
+        tenantId: TENANT_A,
+        engineerId: ENGINEER_A_PARTNER,
+        periodFrom: '2021-01',
+        periodTo: '2024-03',
+        role: 'SE',
+        description: P1_CAREER_DESCRIPTIONS[1],
+        technologies: 'Java',
+      },
+    ],
+  });
 }, SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
@@ -311,8 +351,14 @@ describe('🔴 #33 応諾: ACCEPTED と Proposal(DRAFT) が同一トランザク
     const snapshot = await admin.engineerSnapshot.findUniqueOrThrow({ where: { proposalId: proposal.id } });
     expect(snapshot.displayName).toBe(P1_DISPLAY_NAME);
     expect(snapshot.ownerPartnerCompanyId).toBe(PARTNER_A1); // 継承トリガ
-    // 🔴 `careers` は `[]`（`null` にしない。T-09-12 で行複製を足す）。
-    expect(snapshot.careers).toEqual([]);
+    // 🔴 T-09-12: 応諾（経路 4）でも `createProposalDraft` の 1 実装が経歴を行単位で凍結する（完了判定 ⑤）。
+    //    並びは台帳の表示順（period_from DESC）。凍結行は 5 項目だけで台帳の行 ID を持たない。
+    const careers = snapshot.careers as Array<Record<string, unknown>>;
+    expect(careers.map((r) => r['periodFrom'])).toEqual(['2024-04', '2021-01']);
+    expect(careers.map((r) => r['description'])).toEqual([...P1_CAREER_DESCRIPTIONS]);
+    for (const r of careers) {
+      expect(Object.keys(r).sort()).toEqual(['description', 'periodFrom', 'periodTo', 'role', 'technologies']);
+    }
     expect(Array.isArray(snapshot.skills)).toBe(true);
     expect(snapshot.frozenAt.getTime()).toBe(request.respondedAt!.getTime());
 

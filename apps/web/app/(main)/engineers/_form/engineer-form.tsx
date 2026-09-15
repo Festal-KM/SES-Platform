@@ -17,11 +17,22 @@
 //
 // 🔴 Tier 3（デスクトップ主体）だが**モバイルで遮断しない**（`CLAUDE.md` §13.3）。
 //    1 カラムで積み、狭い画面では表を横スクロールで劣化させる。
+//
+// 🔴 T-09-12: セクション 3「経験内容と従事期間」は**実際に登録できる行エディタ**である（docs/04 §S-007
+//    セクション 3 / `F-008 AC-5`。Issue #35 = A）。T-05-01 の暫定表示（`careersComingSoon`）は廃止した。
+//    - 1 行 = 期間（開始年月・終了年月。終了は「継続中」）/ 役割 / 業務内容 / 使用技術。行の追加・編集・削除。
+//    - 🔴 **0 行での保存を妨げない**（警告色・保存抑止・必須マークを作らない。0 行は正常な状態）。
+//    - 🔴 **役割は選択式にしない**（現場ごとに呼び方が違い、辞書化すると入力されなくなる）。
+//    - 🔴 編集中は追加順のまま動かさず、**並び替えは保存時にサーバが行う**（応答の配列順に揃える）。
+//    - 削除は保存前に限り取り消せる（保存後の復元は持たない —— 監査ログの「削除」が確定した事実か
+//      一時的なものか読めなくなる）。
+//    - 🔴 `id` は既存行にだけ付けて送る（無いと「編集」と「削除 + 追加」が区別できず監査が嘘になる）。
 import { useEffect, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import {
   Badge,
   Button,
+  Checkbox,
   Field,
   Input,
   SECONDARY_LINK_CLASSES,
@@ -35,6 +46,15 @@ import {
   TableRow,
   Textarea,
 } from '@ses/ui';
+import { YEAR_MONTH_PATTERN } from '@ses/domain';
+// 🔴 経歴 1 行の画面表現。`form-props.ts`（サーバ）と共有するため `'use client'` の外に置く。
+import {
+  toEngineerFormCareer,
+  type EngineerFormCareer,
+  type StoredCareerRowLike,
+} from './career-values';
+
+export type { EngineerFormCareer } from './career-values';
 
 /** `S-009`（スキル辞書・別名・新語候補）。起票した候補の採否はこの画面で行う。 */
 const SKILL_DICTIONARY_HREF = '/skills';
@@ -77,6 +97,8 @@ export type EngineerFormValues = {
   readonly contactPhone: string;
   readonly skills: readonly EngineerFormSkill[];
   readonly newSkillLabels: readonly string[];
+  /** 🔴 編集中は追加順のまま。並び替えは保存時にサーバが行う（`docs/04` §S-007「操作と結果」）。 */
+  readonly careers: readonly EngineerFormCareer[];
 };
 
 export type EngineerFormMessages = {
@@ -110,7 +132,25 @@ export type EngineerFormMessages = {
   /** 🔴 T-05-03: `S-009` への導線（起票した候補の採否はそちらで行う）。 */
   readonly newAliasDictionaryLink: string;
 
-  readonly careersComingSoon: string;
+  readonly careerOrderNote: string;
+  readonly careerColumnPeriod: string;
+  readonly careerColumnRole: string;
+  readonly careerColumnDescription: string;
+  readonly careerColumnTechnologies: string;
+  readonly careerColumnActions: string;
+  readonly careerPeriodFromLabel: string;
+  readonly careerPeriodToLabel: string;
+  readonly careerOngoingToggle: string;
+  readonly careerAdd: string;
+  readonly careerRemove: string;
+  readonly careerRestore: string;
+  readonly careerRemovedNote: string;
+  readonly careerEmpty: string;
+  readonly careerErrorPeriodFrom: string;
+  readonly careerErrorPeriodTo: string;
+  readonly careerErrorPeriodOrder: string;
+  readonly careerErrorRole: string;
+  readonly careerErrorDescription: string;
 
   readonly availabilityLabel: string;
   readonly availableFromLabel: string;
@@ -153,6 +193,43 @@ export type EngineerFormProps = {
 
 type Phase = 'idle' | 'submitting' | 'error' | 'saved';
 
+/** 経歴 1 行の項目直下に出す検証エラー（`docs/04` §S-007「バリデーションエラーは項目直下」）。 */
+type CareerRowErrors = {
+  readonly periodFrom?: string;
+  readonly periodTo?: string;
+  readonly role?: string;
+  readonly description?: string;
+};
+
+/**
+ * 🔴 送信前の検証（API の Zod / `service.ts` と同じ規則。ここは「項目直下に出す」ための写し）。
+ *    開始年月が未入力 / 形式違い、終了年月だけが不正、開始が終了より後、役割・業務内容が空。
+ *    🔴 0 行は検証の対象が無い = 何も出ない（0 行の保存を妨げない）。
+ */
+function validateCareers(
+  careers: readonly EngineerFormCareer[],
+  messages: EngineerFormMessages,
+): Readonly<Record<string, CareerRowErrors>> {
+  const errors: Record<string, CareerRowErrors> = {};
+  for (const row of careers) {
+    if (row.removed) continue;
+    const rowErrors: { -readonly [K in keyof CareerRowErrors]: CareerRowErrors[K] } = {};
+    const from = row.periodFrom.trim();
+    const to = row.periodTo.trim();
+    if (!YEAR_MONTH_PATTERN.test(from)) rowErrors.periodFrom = messages.careerErrorPeriodFrom;
+    if (!row.ongoing) {
+      if (!YEAR_MONTH_PATTERN.test(to)) rowErrors.periodTo = messages.careerErrorPeriodTo;
+      else if (rowErrors.periodFrom === undefined && to < from) {
+        rowErrors.periodTo = messages.careerErrorPeriodOrder;
+      }
+    }
+    if (row.role.trim() === '') rowErrors.role = messages.careerErrorRole;
+    if (row.description.trim() === '') rowErrors.description = messages.careerErrorDescription;
+    if (Object.keys(rowErrors).length > 0) errors[row.key] = rowErrors;
+  }
+  return errors;
+}
+
 function emptyToNull(value: string): string | null {
   const trimmed = value.trim();
   return trimmed === '' ? null : trimmed;
@@ -187,6 +264,18 @@ function toRequestBody(values: EngineerFormValues) {
       level: skill.level === '' ? null : Number(skill.level),
     })),
     newSkillLabels: [...values.newSkillLabels],
+    // 🔴 削除印の行は送らない（＝ 置き換え保存で消える）。継続中は `periodTo: null`（空文字にしない）。
+    //    `id` は既存行にだけ付ける。
+    careers: values.careers
+      .filter((career) => !career.removed)
+      .map((career) => ({
+        ...(career.id === null ? {} : { id: career.id }),
+        periodFrom: career.periodFrom.trim(),
+        periodTo: career.ongoing ? null : career.periodTo.trim(),
+        role: career.role.trim(),
+        description: career.description.trim(),
+        technologies: career.technologies.trim(),
+      })),
   };
 }
 
@@ -210,6 +299,9 @@ export function EngineerForm({
   const [skillDraftYears, setSkillDraftYears] = useState('');
   const [skillDuplicate, setSkillDuplicate] = useState(false);
   const [aliasDraft, setAliasDraft] = useState('');
+  const [careerErrors, setCareerErrors] = useState<Readonly<Record<string, CareerRowErrors>>>({});
+  // 追加した行の React key（`Math.random` を使わず連番。行の同一性は保存後に `id` へ置き換わる）。
+  const [careerSequence, setCareerSequence] = useState(0);
 
   // 🔴 `docs/04` §10.1 `S-007`「未保存の状態で離脱しようとすると確認」。
   //    ブラウザの標準ダイアログを使う（自前のモーダルでは戻る・タブを閉じるを捕まえられない）。
@@ -287,9 +379,61 @@ export function EngineerForm({
     update({ newSkillLabels: values.newSkillLabels.filter((entry) => entry !== label) });
   }
 
+  /** 🔴 末尾に空行を足し、その場で編集できる（追加順のまま動かさない。`docs/04` §S-007）。 */
+  function addCareer(): void {
+    const next = careerSequence + 1;
+    setCareerSequence(next);
+    update({
+      careers: [
+        ...values.careers,
+        {
+          key: `new-${next}`,
+          id: null,
+          periodFrom: '',
+          periodTo: '',
+          ongoing: false,
+          role: '',
+          description: '',
+          technologies: '',
+          removed: false,
+        },
+      ],
+    });
+  }
+
+  function updateCareer(key: string, patch: Partial<EngineerFormCareer>): void {
+    update({
+      careers: values.careers.map((career) =>
+        career.key === key ? { ...career, ...patch } : career,
+      ),
+    });
+  }
+
+  /**
+   * 削除。既存行は「削除印」を付けて保存前に限り取り消せる形にし、追加したばかりの行はその場で消す
+   * （まだ台帳に無いので取り消す対象が無い）。🔴 行の追加・削除も未保存の変更として数える（`dirty`）。
+   */
+  function removeCareer(key: string): void {
+    const target = values.careers.find((career) => career.key === key);
+    if (target === undefined) return;
+    if (target.id === null) {
+      update({ careers: values.careers.filter((career) => career.key !== key) });
+      return;
+    }
+    updateCareer(key, { removed: true });
+  }
+
+  function restoreCareer(key: string): void {
+    updateCareer(key, { removed: false });
+  }
+
   async function onSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     if (phase === 'submitting') return;
+    // 🔴 経歴の項目直下の検証。落ちたら送らない（値は保持する）。0 行なら何も出ない。
+    const nextCareerErrors = validateCareers(values.careers, messages);
+    setCareerErrors(nextCareerErrors);
+    if (Object.keys(nextCareerErrors).length > 0) return;
     setPhase('submitting');
 
     try {
@@ -306,7 +450,10 @@ export function EngineerForm({
         setPhase('error');
         return;
       }
-      const created = (await response.json()) as { readonly id: string };
+      const created = (await response.json()) as {
+        readonly id: string;
+        readonly careers: readonly StoredCareerRowLike[];
+      };
       // 🔴 離脱確認を先に解除してから遷移する（保存できているのに確認を出さない）。
       setDirty(false);
       if (mode === 'CREATE') {
@@ -316,6 +463,9 @@ export function EngineerForm({
         window.location.assign(`/engineers/${created.id}`);
         return;
       }
+      // 🔴 保存後は**サーバが確定した並び**（期間の降順、同期間は登録順）に揃える。削除印の行は消え、
+      //    追加した行は台帳の `id` を持つ既存行になる（応答の配列順 = 表示順。画面は並べ替えない）。
+      setValues((current) => ({ ...current, careers: created.careers.map(toEngineerFormCareer) }));
       setPhase('saved');
     } catch {
       setPhase('error');
@@ -555,13 +705,177 @@ export function EngineerForm({
         </div>
       </section>
 
-      {/* --- 3. 経験内容と従事期間 ----------------------------------------- */}
-      {/* 🔴 台帳側の保存先が docs/05 §3.4 に無い（申し送り）。実装していないことを隠さない。 */}
+      {/* --- 3. 経験内容と従事期間（T-09-12。docs/04 §S-007 セクション 3）------------------ */}
+      {/* 🔴 4 列 + 操作列のテーブルをその場で編集する（カードで囲まない / モーダルを介さない）。
+          🔴 0 行で開き、空行を初期表示しない（空行があると「埋めるべきもの」に見え、0 行が正常であることと矛盾する）。
+          🔴 「未入力です」の警告・注意色・保存の抑止を作らない。 */}
       <section data-testid="engineer-section-careers">
         <h2 className="mb-3 text-base font-bold text-slate-900">{messages.sectionCareers}</h2>
-        <p className="text-sm text-slate-600" data-testid="engineer-careers-coming-soon">
-          {messages.careersComingSoon}
+        <p className="mb-3 text-sm text-slate-600" data-testid="engineer-career-order-note">
+          {messages.careerOrderNote}
         </p>
+        {values.careers.length === 0 ? (
+          <p className="mb-3 text-sm text-slate-600" data-testid="engineer-career-empty">
+            {messages.careerEmpty}
+          </p>
+        ) : (
+          <Table data-testid="engineer-career-table">
+            <TableHeader>
+              <TableRow>
+                <TableHead>{messages.careerColumnPeriod}</TableHead>
+                <TableHead>{messages.careerColumnRole}</TableHead>
+                <TableHead>{messages.careerColumnDescription}</TableHead>
+                <TableHead>{messages.careerColumnTechnologies}</TableHead>
+                <TableHead>{messages.careerColumnActions}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {values.careers.map((career) => {
+                const rowErrors = careerErrors[career.key] ?? {};
+                const locked = phase === 'submitting' || career.removed;
+                return (
+                  <TableRow
+                    key={career.key}
+                    align="top"
+                    data-testid={`engineer-career-row-${career.key}`}
+                    data-removed={career.removed ? 'true' : undefined}
+                    className={career.removed ? 'opacity-60' : undefined}
+                  >
+                    <TableCell>
+                      <div className="flex min-w-48 flex-col gap-2">
+                        <Field as="div" label={messages.careerPeriodFromLabel}>
+                          <Input
+                            type="text"
+                            inputMode="numeric"
+                            placeholder="YYYY-MM"
+                            maxLength={7}
+                            value={career.periodFrom}
+                            onChange={(event) => updateCareer(career.key, { periodFrom: event.target.value })}
+                            disabled={locked}
+                            aria-invalid={rowErrors.periodFrom === undefined ? undefined : true}
+                            data-testid={`engineer-career-period-from-${career.key}`}
+                          />
+                        </Field>
+                        {rowErrors.periodFrom === undefined ? null : (
+                          <p role="alert" className="text-sm text-red-700" data-testid={`engineer-career-error-period-from-${career.key}`}>
+                            {rowErrors.periodFrom}
+                          </p>
+                        )}
+                        <Field as="div" label={messages.careerPeriodToLabel}>
+                          <Input
+                            type="text"
+                            inputMode="numeric"
+                            placeholder="YYYY-MM"
+                            maxLength={7}
+                            value={career.ongoing ? '' : career.periodTo}
+                            onChange={(event) => updateCareer(career.key, { periodTo: event.target.value })}
+                            disabled={locked || career.ongoing}
+                            aria-invalid={rowErrors.periodTo === undefined ? undefined : true}
+                            data-testid={`engineer-career-period-to-${career.key}`}
+                          />
+                        </Field>
+                        <label className="flex items-center gap-2 text-sm text-slate-700">
+                          <Checkbox
+                            checked={career.ongoing}
+                            onChange={(event) => updateCareer(career.key, { ongoing: event.target.checked })}
+                            disabled={locked}
+                            data-testid={`engineer-career-ongoing-${career.key}`}
+                          />
+                          {messages.careerOngoingToggle}
+                        </label>
+                        {rowErrors.periodTo === undefined ? null : (
+                          <p role="alert" className="text-sm text-red-700" data-testid={`engineer-career-error-period-to-${career.key}`}>
+                            {rowErrors.periodTo}
+                          </p>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      {/* 🔴 役割は自由入力（選択式にしない）。 */}
+                      <Input
+                        type="text"
+                        className="min-w-32"
+                        value={career.role}
+                        onChange={(event) => updateCareer(career.key, { role: event.target.value })}
+                        disabled={locked}
+                        aria-invalid={rowErrors.role === undefined ? undefined : true}
+                        data-testid={`engineer-career-role-${career.key}`}
+                      />
+                      {rowErrors.role === undefined ? null : (
+                        <p role="alert" className="mt-1 text-sm text-red-700" data-testid={`engineer-career-error-role-${career.key}`}>
+                          {rowErrors.role}
+                        </p>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Textarea
+                        rows={3}
+                        className="min-w-64"
+                        value={career.description}
+                        onChange={(event) => updateCareer(career.key, { description: event.target.value })}
+                        disabled={locked}
+                        aria-invalid={rowErrors.description === undefined ? undefined : true}
+                        data-testid={`engineer-career-description-${career.key}`}
+                      />
+                      {rowErrors.description === undefined ? null : (
+                        <p role="alert" className="mt-1 text-sm text-red-700" data-testid={`engineer-career-error-description-${career.key}`}>
+                          {rowErrors.description}
+                        </p>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {/* 🔴 使用技術は自由入力（Skill 辞書に正規化しない。docs/05 §3.4.1）。 */}
+                      <Input
+                        type="text"
+                        className="min-w-40"
+                        value={career.technologies}
+                        onChange={(event) => updateCareer(career.key, { technologies: event.target.value })}
+                        disabled={locked}
+                        data-testid={`engineer-career-technologies-${career.key}`}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      {career.removed ? (
+                        <div className="flex flex-col gap-1">
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            onClick={() => restoreCareer(career.key)}
+                            disabled={phase === 'submitting'}
+                            data-testid={`engineer-career-restore-${career.key}`}
+                          >
+                            {messages.careerRestore}
+                          </Button>
+                          <span className="text-xs text-slate-500">{messages.careerRemovedNote}</span>
+                        </div>
+                      ) : (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={() => removeCareer(career.key)}
+                          disabled={phase === 'submitting'}
+                          data-testid={`engineer-career-remove-${career.key}`}
+                        >
+                          {messages.careerRemove}
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        )}
+        <div className="mt-3">
+          <Button
+            type="button"
+            onClick={addCareer}
+            disabled={phase === 'submitting'}
+            data-testid="engineer-career-add"
+          >
+            {messages.careerAdd}
+          </Button>
+        </div>
       </section>
 
       {/* --- 4. 稼働 ------------------------------------------------------- */}

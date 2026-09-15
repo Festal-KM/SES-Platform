@@ -441,14 +441,14 @@ describe('④ app_platform への SELECT は §5.5 の非開示列を除外し�
     expect(checkedColumns).toBeGreaterThan(0); // 空振り防止（対照）
   });
 
-  it('🔴 許可リストは 52 表すべてを覆う（走査の母集団と 1 対 1。表の追加を取りこぼさない）', async () => {
+  it('🔴 許可リストは 53 表すべてを覆う（走査の母集団と 1 対 1。表の追加を取りこぼさない。T-09-12 で engineer_careers を足した）', async () => {
     const tables = (await readPublicTables(unextended)).filter((t) => !OUT_OF_SCOPE_TABLES.includes(t));
     // 🔴 partitioned table の子パーティションは readPublicTables に含まれうるため、
     //    「許可リストに無い表」ではなく「母集団に無い許可リスト項目」を見る向きで検査する。
     const population = new Set(tables);
     const stale = Object.keys(PLATFORM_READ_COLUMN_ALLOWLIST).filter((t) => !population.has(t));
     expect(stale, '許可リストに、実在しない表が残っている').toEqual([]);
-    expect(Object.keys(PLATFORM_READ_COLUMN_ALLOWLIST)).toHaveLength(52);
+    expect(Object.keys(PLATFORM_READ_COLUMN_ALLOWLIST)).toHaveLength(53);
   });
 
   it('🔴 テーブル単位の GRANT SELECT を持つ表が 1 つも無い（§5.5「列を列挙して GRANT する」）', async () => {

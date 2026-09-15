@@ -318,6 +318,7 @@ describe('🔴 update 系 data のテナントキー検査（行の移動を止�
         'sendingDomains',
         'skillAliases',
         'engineerSkills',
+        'engineerCareers', // T-09-12（docs/05 §3.4 / Issue #35 = A）
         'skillSheets',
         'skillSheetExtractions',
         'fileScanResults',
@@ -358,7 +359,9 @@ describe('🔴 update 系 data のテナントキー検査（行の移動を止�
         'tenantMatchWeights',
       ]);
       // 子側は順方向の宣言（tenantRelationOf）が担当する。二重に持たない。
-      expect(tenantKeyMovingRelationsOf('Engineer')).toEqual([]);
+      // 🔴 T-09-12: ただし `Engineer` は `engineer_careers` の複合 FK `(tenant_id, engineer_id)` の
+      //    親になったため、`Engineer.engineerCareers` だけは逆リレーション（経路 ⑥）として宣言する。
+      expect(tenantKeyMovingRelationsOf('Engineer')).toEqual(['engineerCareers']);
       expect(tenantKeyMovingRelationsOf('User')).toEqual([]);
       // 🔴 T-02-05: Subscription は射程外モデルのため Tenant.subscription はここに現れない
       //    （tenant-relation.test.ts が DMMF 側の対照を取る）。

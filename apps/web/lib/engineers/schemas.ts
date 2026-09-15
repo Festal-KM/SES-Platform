@@ -33,7 +33,7 @@ import {
   ENGINEER_SKILL_MODES,
   REMOTE_MODES,
 } from '@ses/db';
-import { PREFECTURE_CODES } from '@ses/domain';
+import { PREFECTURE_CODES, YEAR_MONTH_PATTERN } from '@ses/domain';
 import { assertNoIsolationKeys, type AssertNoIsolationKeys } from '../api/isolation-keys';
 import { idCursorPageQuerySchema } from '../api/pagination';
 import { checkboxFilter, optionalFilter, optionalListFilter } from '../api/query-filters';
@@ -71,6 +71,37 @@ export const engineerSkillInputSchema = z.object({
 
 export type EngineerSkillInput = z.infer<typeof engineerSkillInputSchema>;
 
+/** 経験内容の 1 行の上限（docs/05 §6.4「#16 / #16b / #17 の経験内容の決着」の `CareerRowInput`）。 */
+const CAREER_ROLE_MAX_LENGTH = 100;
+const CAREER_DESCRIPTION_MAX_LENGTH = 2000;
+const CAREER_TECHNOLOGIES_MAX_LENGTH = 500;
+/** 1 人あたりの経歴の行数上限（1 リクエストの大きさを境界で抑える）。 */
+const CAREERS_MAX = 100;
+
+/**
+ * 経験内容と従事期間の 1 行（`EngineerCareer`。docs/05 §6.4 `CareerRowInput` / `F-008 AC-5`）。T-09-12。
+ *
+ * 🔴 `periodFrom` / `periodTo` は `YYYY-MM`。正規表現は `@ses/domain` の `YEAR_MONTH_PATTERN` が唯一の
+ *    出所であり、DB の CHECK と同じ式である（docs/05 §3.4.1「実装を 2 本にしない」）。
+ * 🔴 `periodTo` の `null` = 継続中。**空文字は 400**（「未入力」と「継続中」を同じ値にしない）。
+ * 🔴 `id` は既存行にだけ付く。無いと「編集」と「削除 + 追加」が区別できず監査が嘘になる。
+ * 🔴 `periodTo >= periodFrom` の検証は `service.ts`（項目をまたぐ検証はトップレベル `.refine()` に
+ *    置けない —— `withApiRoute` の `assertBoundarySchema` が `.shape` を読むため。単価レンジと同じ判断）。
+ *    DB の CHECK も同じ条件を持つ（二重防御）。
+ * 🔴 `source` / `skillSheetExtractionId` は**入力に無い**。手入力の行は常に `MANUAL` であり、
+ *    抽出由来の行は Phase 2 の `#16b`（`apply-extraction`）だけが作る。
+ */
+export const careerRowInputSchema = z.object({
+  id: z.uuid().optional(),
+  periodFrom: z.string().regex(YEAR_MONTH_PATTERN),
+  periodTo: z.string().regex(YEAR_MONTH_PATTERN).nullable(),
+  role: z.string().trim().min(1).max(CAREER_ROLE_MAX_LENGTH),
+  description: z.string().trim().min(1).max(CAREER_DESCRIPTION_MAX_LENGTH),
+  technologies: z.string().trim().max(CAREER_TECHNOLOGIES_MAX_LENGTH),
+});
+
+export type CareerRowInput = z.infer<typeof careerRowInputSchema>;
+
 /**
  * 🔴 項目の定義は 1 か所にまとめ、POST（既定値あり）と PATCH（すべて任意）で**同じ制約**を使う。
  *    2 つのスキーマに同じ制約を書き写すと、片方だけが緩む。
@@ -106,6 +137,12 @@ const engineerFields = {
   newSkillLabels: z
     .array(z.string().trim().min(1).max(NEW_SKILL_LABEL_MAX_LENGTH))
     .max(NEW_SKILL_LABELS_MAX),
+  /**
+   * 🔴 T-09-12: 経験内容と従事期間（`EngineerCareer`）。`skills` と同じ「置き換え」であり、送られた集合が
+   *    保存後のすべてである（docs/05 §6.4 #16）。**入力の配列順は保存にも表示にも使わない**
+   *    （表示順は `period_from DESC → created_at ASC → id ASC` をサーバ側で確定する）。
+   */
+  careers: z.array(careerRowInputSchema).max(CAREERS_MAX),
 } as const;
 
 /** `POST /api/engineers`（#16）の body。🔴 `ownerPartnerCompanyId` を持たない。 */
@@ -123,6 +160,8 @@ export const createEngineerBodySchema = z.object({
   contactPhone: engineerFields.contactPhone.default(null),
   skills: engineerFields.skills.default([]),
   newSkillLabels: engineerFields.newSkillLabels.default([]),
+  // 🔴 0 行は正常（`F-008 AC-5`）。既定は `[]` であり、経歴が無いことを理由に登録を拒まない。
+  careers: engineerFields.careers.default([]),
 });
 
 export type CreateEngineerBody = z.infer<typeof createEngineerBodySchema>;
@@ -150,6 +189,11 @@ export const updateEngineerBodySchema = z.object({
   /** 🔴 指定されたら**その集合で置き換える**（差分ではない。`service.ts` の注記を参照）。 */
   skills: engineerFields.skills.optional(),
   newSkillLabels: engineerFields.newSkillLabels.optional(),
+  /**
+   * 🔴 T-09-12: **未指定（キー自体が無い）は経歴を変更しない。`[]` は「全行を削除する」である**
+   *    （`undefined` と `[]` を区別する。docs/05 §6.4 #16）。
+   */
+  careers: engineerFields.careers.optional(),
 });
 
 export type UpdateEngineerBody = z.infer<typeof updateEngineerBodySchema>;

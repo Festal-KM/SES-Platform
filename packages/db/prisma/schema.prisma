@@ -113,6 +113,7 @@ model Tenant {
   //    と対で宣言する（宣言漏れは「テナントキー列を書き換えうる逆リレーション」の検知漏れになる）。
   skillAliases            SkillAlias[]
   engineerSkills          EngineerSkill[]
+  engineerCareers         EngineerCareer[] // T-09-12
   skillSheets             SkillSheet[]
   skillSheetExtractions   SkillSheetExtraction[]
   fileScanResults         FileScanResult[]
@@ -391,6 +392,10 @@ model Engineer {
   ownerPartnerCompany PartnerCompany?   @relation(fields: [tenantId, ownerPartnerCompanyId], references: [tenantId, id], onDelete: Restrict)
   engineerSkills      EngineerSkill[]
   skillSheets         SkillSheet[]
+  // 🔴 T-09-12: 経験内容と従事期間（複合 FK `(tenant_id, engineer_id)` の逆リレーション。
+  //    ネスト write が `engineer_careers.tenant_id` を書けるため TENANT_KEY_MOVING_RELATION_OVERRIDES
+  //    に宣言する。`Tenant.engineers` と同型）。
+  engineerCareers     EngineerCareer[]
   matchCandidates     MatchCandidate[]
   engineerShares      EngineerShare[]
   proposalRequests    ProposalRequest[] // T-02-03
@@ -398,6 +403,10 @@ model Engineer {
   contracts           Contract[] // T-02-04
   assignments         Assignment[] // T-02-04
 
+  // 🔴 T-09-12 / Issue #33 / docs/05 §3.4: `engineer_careers` の複合 FK
+  //    `(tenant_id, engineer_id) REFERENCES engineers(tenant_id, id)` の参照先。複合 FK の参照先には
+  //    一意制約が要る。`id` 単独の @id は残す（既存の FK・クエリを壊さない。`PartnerCompany` と同型）。
+  @@unique([tenantId, id])
   @@index([tenantId, ownerPartnerCompanyId, availability, availableFrom])
   @@index([tenantId, retentionExpiresAt, piiPurgedAt]) // 保持期間ジョブ（§9.7）
   // 🔴 T-06-05: Phase 1 の決定的順序（§4.6 / `F-009 AC-1`）。`ENGINEER_LIST_ORDER_BY` と
@@ -558,9 +567,56 @@ model SkillSheetExtraction {
   // 🔴 T-02-05: ai_usage 表が実在するようになったため前方参照を解決する（docs/05 §3.4 の
   //    「AiUsage への FK」コメントに従う）。
   aiUsage    AiUsage    @relation(fields: [aiUsageId], references: [id], onDelete: Restrict)
+  // 🔴 T-09-12: 抽出結果を採用して作られた経歴の行（`source='EXTRACTED'` の出所。Phase 2 の #16b）。
+  //    単一列 FK（`skill_sheet_extraction_id` → `id`。ON DELETE SET NULL）でテナントキーを書けない。
+  engineerCareers EngineerCareer[]
 
   @@index([tenantId, skillSheetId, createdAt])
   @@map("skill_sheet_extractions")
+}
+
+// 🔴 T-09-12（Issue #35 = A。2026-09-10。docs/05 §3.4 / §3.4.1）: 経験内容と従事期間の「1 行」。
+//    CareerSource: 'MANUAL'|'EXTRACTED'（手入力 / sheet-parser の抽出を採用。CHECK。
+//    単一の出所は packages/db/src/schema-value-sets.ts の ENGINEER_CAREER_SOURCES）。
+// 🔴 期間は `YYYY-MM` の VarChar(7)。`@db.Date` にしない（月精度の経歴に「日」を捏造しない。
+//    辞書順 = 時系列順なので `period_from DESC` がそのまま期間降順になる）。
+// 🔴 `period_to IS NULL` = 継続中。空文字は CHECK（正規表現）で弾かれる。
+// 🔴 DB 制約（migration 20260917000000 で手書き）:
+//   CHECK ( period_from ~ '^[0-9]{4}-(0[1-9]|1[0-2])$' )
+//   CHECK ( period_to IS NULL OR period_to ~ '^[0-9]{4}-(0[1-9]|1[0-2])$' )
+//   CHECK ( period_to IS NULL OR period_to >= period_from )
+//   CHECK ( source = 'EXTRACTED' OR skill_sheet_extraction_id IS NULL )
+//   FK  (tenant_id, engineer_id) → engineers(tenant_id, id) ON DELETE CASCADE（複合 FK。Issue #33）
+// 🔴 RLS は親と同じ C3 OWNER_SCOPED。`owner_partner_company_id` は engineers から継承（§4.4.1）。
+//    経路 4（共有スコープ）の追加 SELECT ポリシーを**書かない**（`F-008 AC-7`。§4.7 #15 が固定する）。
+model EngineerCareer {
+  id                     String    @id @default(uuid(7)) @db.Uuid
+  tenantId               String    @map("tenant_id") @db.Uuid
+  /// engineers から継承（§4.4.1）。owner-column: child of engineers(engineer_id)
+  ownerPartnerCompanyId  String?   @map("owner_partner_company_id") @db.Uuid
+  engineerId             String    @map("engineer_id") @db.Uuid
+  /// 🔴 'YYYY-MM'
+  periodFrom             String    @map("period_from") @db.VarChar(7)
+  /// 🔴 null = 継続中（空文字にしない）
+  periodTo               String?   @map("period_to") @db.VarChar(7)
+  role                   String // 役割（例: PL / SE / PG）。自由入力。🔴 運営者に GRANT しない
+  description            String // 業務内容。自由入力。🔴 運営者に GRANT しない
+  technologies           String // 使用技術。自由入力（Skill 辞書に正規化しない）。🔴 運営者に GRANT しない
+  /// CareerSource（上記参照。CHECK）
+  source                 String    @default("MANUAL")
+  /// 🔴 source='EXTRACTED' のときの出所（F-032 の記録へ辿る）。手入力の行には付けられない（CHECK）
+  skillSheetExtractionId String?   @map("skill_sheet_extraction_id") @db.Uuid
+  createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt              DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant               Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  // 🔴 複合 FK（Issue #33 の決着に従う。単一列 FK にしない）。別テナントのエンジニアを指す行を DB が拒む。
+  engineer             Engineer              @relation(fields: [tenantId, engineerId], references: [tenantId, id], onDelete: Cascade)
+  skillSheetExtraction SkillSheetExtraction? @relation(fields: [skillSheetExtractionId], references: [id], onDelete: SetNull)
+
+  // 🔴 表示順（period_from DESC → created_at ASC → id ASC。docs/05 §3.4.1）をそのまま供給する索引。
+  @@index([tenantId, engineerId, periodFrom(sort: Desc), createdAt, id])
+  @@map("engineer_careers")
 }
 
 // ============================================================================

@@ -88,7 +88,9 @@ export const POST = withApiRoute(
     // 🔴 `targetId` は採番前なので `null`（`partner_company.create` と同じ扱い）。
     // 🔴 **`displayName` を `summary` に載せない。** エンジニアの氏名は PII であり、
     //    運営者にも見せない値である（`CLAUDE.md` §10.5 / `AuditSummary` の規約）。
-    //    残すのは「何件のスキルを付けたか」「新語候補を何件起票したか」だけにする。
+    //    残すのは「何件のスキルを付けたか」「新語候補を何件起票したか」「経歴を何行付けたか」だけにする。
+    // 🔴 T-09-12: 経歴の**行ごと**の記録（`engineer_career.create`）は `replaceEngineerCareers` が
+    //    業務トランザクションの内側で書く（docs/05 §16.1）。ここは件数だけ。
     audit: {
       action: ENGINEER_AUDIT_ACTIONS.create,
       resolve: ({ body }) => ({
@@ -97,9 +99,15 @@ export const POST = withApiRoute(
         summary: {
           skillCount: body.skills.length,
           newSkillLabelCount: body.newSkillLabels.length,
+          careerCount: body.careers.length,
         },
       }),
     },
   },
-  async ({ ctx, body }) => Response.json(await createEngineer(ctx, body), { status: 201 }),
+  async ({ ctx, body }) => {
+    const meta = await readRequestMeta();
+    return Response.json(await createEngineer(ctx, body, { ipAddress: meta.ipAddress }), {
+      status: 201,
+    });
+  },
 );

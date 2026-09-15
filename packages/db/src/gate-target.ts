@@ -21,8 +21,10 @@
 
 import { Prisma } from '@prisma/client';
 import {
+  frozenCareersToInspectionText,
   hasInspectableText,
   type EngineerSkillFacts,
+  type FrozenCareer,
   type GateInput,
   type GateTargetType,
   type ProjectRequirementFacts,
@@ -139,6 +141,40 @@ function toSnapshotSkills(value: unknown, targetId: string): SnapshotSkillFacts[
   });
 }
 
+type FrozenCareerRow = {
+  readonly periodFrom?: unknown;
+  readonly periodTo?: unknown;
+  readonly role?: unknown;
+  readonly description?: unknown;
+  readonly technologies?: unknown;
+};
+
+/**
+ * `EngineerSnapshot.careers`（JSON）を凍結行に写す（T-09-12。docs/05 §6.5「凍結行はゲートの検査対象である」）。
+ *
+ * 🔴 `toSnapshotSkills` と同じ規律で、形が壊れていたら握り潰さない。凍結行は提案先に届く内容そのもの
+ *    であり、読めないまま PASS にすると PII 層・商流層が経歴の側から素通りする（`BR-15` / `F-020 AC-1`）。
+ * 🔴 `null` は許さない（0 行は `[]` で保存する規約。§3.6）。
+ */
+function toFrozenCareers(value: unknown, targetId: string): FrozenCareer[] {
+  if (!Array.isArray(value)) {
+    throw new GateFactsUnavailableError('PROPOSAL', targetId, 'SNAPSHOT_CAREERS_NOT_ARRAY');
+  }
+  return value.map((row: FrozenCareerRow) => {
+    const { periodFrom, periodTo, role, description, technologies } = row;
+    if (
+      typeof periodFrom !== 'string' ||
+      !(periodTo === null || typeof periodTo === 'string') ||
+      typeof role !== 'string' ||
+      typeof description !== 'string' ||
+      typeof technologies !== 'string'
+    ) {
+      throw new GateFactsUnavailableError('PROPOSAL', targetId, 'SNAPSHOT_CAREER_SHAPE');
+    }
+    return { periodFrom, periodTo, role, description, technologies };
+  });
+}
+
 /**
  * 🔴 対象を読み、`GateInput` を組み立てる（`gate.run` の最初の手順。docs/05 §11.2 の BUILD）。
  *
@@ -182,11 +218,17 @@ export async function loadGateInput(
 /**
  * 提案（越境経路 2 / 提案先はテナント外の企業）。
  *
- * 🔴 **検査する本文は件名と本文だけ**である。`EngineerSnapshot` は**整合層の照合対象**として使い、
- *    PII 層・商流層の本文には入れない —— スナップショットは経路 2 で**ホストが読む**ための
- *    凍結コピーであり、氏名と所属会社名を持っているのが正常である（`CLAUDE.md` §3.1 経路 2）。
- *    本文に入れると既知値が必ず一致し、**すべての提案が直しようのない PII FAIL になる**。
- *    外部へ出るのは件名・本文であり、そこに氏名が残っていれば FAIL になる（`F-020 AC-5`）。
+ * 🔴 **検査する本文は件名・本文と、凍結された経歴（`field='snapshot'`）である。**
+ *    `EngineerSnapshot` の**氏名・所属会社名・スキル・単価**は PII 層・商流層の本文には入れない ——
+ *    スナップショットは経路 2 で**ホストが読む**ための凍結コピーであり、氏名と所属会社名を持っているのが
+ *    正常である（`CLAUDE.md` §3.1 経路 2）。本文に入れると既知値が必ず一致し、**すべての提案が直しようの
+ *    ない PII FAIL になる**。外部へ出るのは件名・本文であり、そこに氏名が残っていれば FAIL になる（`F-020 AC-5`）。
+ * 🔴 **凍結された経歴（`careers`）だけは本文に載せる**（T-09-12。docs/05 §6.5「凍結行はゲートの検査対象
+ *    である」/ §11.3）。業務内容にはエンド企業名・現場名・現所属会社名が書かれるのが常態であり、外すと
+ *    商流層と PII 層が経歴の側から素通りする（`BR-15` / `F-014 AC-3`）。載せるのは自由入力の 3 項目
+ *    （`role` / `description` / `technologies`）を行の区切りが分かる形で連結した 1 本の文字列で、指摘の
+ *    `offsetStart` / `offsetEnd` はこの連結後の位置を指す（`GateFinding.field='snapshot'`）。
+ *    整合層（`decideConsistency`）は経歴を合否の材料にしない（`CLAUDE.md` §12.3 の 🔴）。
  */
 async function loadProposalGateInput(
   ctx: SystemTenantCtx,
@@ -211,7 +253,7 @@ async function loadProposalGateInput(
 
       const snapshot = await tx.engineerSnapshot.findUnique({
         where: { proposalId: proposal.id },
-        select: { displayName: true, affiliationLabel: true, skills: true },
+        select: { displayName: true, affiliationLabel: true, skills: true, careers: true },
       });
       if (snapshot === null) {
         // 🔴 提案時点の凍結コピーが無ければ、整合層が照合する「主張」が存在しない。
@@ -273,6 +315,11 @@ async function loadProposalGateInput(
           sections: [
             { field: 'subject', text: proposal.subject ?? '' },
             { field: 'body', text: proposal.body ?? '' },
+            // 🔴 T-09-12: 凍結された経歴（0 行なら空文字 = 検査対象から外れる。`hasInspectableText`）。
+            {
+              field: 'snapshot',
+              text: frozenCareersToInspectionText(toFrozenCareers(snapshot.careers, targetId)),
+            },
           ],
           forbiddenTerms: {
             // 🔴 提示単価（`offeredUnitPrice`）は出してよい。禁じるのは案件の**内部単価**である。

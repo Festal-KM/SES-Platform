@@ -33,6 +33,7 @@ import { NotFoundError } from '../../../../lib/api/errors';
 import { readRequestMeta, resolveTenantCtxOutcome } from '../../../../lib/auth/session';
 import {
   engineerBasicRows,
+  engineerDetailCareerRows,
   engineerDetailSkillRows,
   engineerHeadlineRows,
 } from '../../../../lib/engineers/detail';
@@ -95,6 +96,8 @@ export default async function EngineerDetailPage({
   const headline = engineerHeadlineRows(view);
   const basicRows = engineerBasicRows(view, ownership);
   const skillRows = engineerDetailSkillRows(view.skills);
+  // 🔴 T-09-12: 応答の配列順 = 表示順（サーバ側で確定済み。ここでソートしない。docs/04 §S-006 セクション 8）。
+  const careerRows = engineerDetailCareerRows(view.careers);
   // 🔴 `VIEWER` は `S-007` に到達できない（docs/04 §S-007 権限差分）。押しても戻されるだけの
   //    導線を描かない。⚠️ これは UI の配慮であって拒否の本体ではない（本体は #16 のガードと
   //    `S-007` のリダイレクト）。
@@ -212,6 +215,66 @@ export default async function EngineerDetailPage({
                   ))}
                 </TableBody>
               </Table>
+            )}
+          </DetailSection>
+
+          {/* --- 8. 経験内容と従事期間（T-09-12。docs/04 §S-006 セクション 8。配置は基本情報〔定義リスト +
+              スキル表 = docs/04 のセクション 2〕の直下、版一覧の上）---
+              🔴 列ヘッダに並び替えを付けない（S-023 の凍結側と並べたときに行の入れ替わりと内容の変化を
+              取り違えないため）。編集導線は S-007 への遷移 1 本（インライン編集を持たない）。
+              🔴 0 行は正常な状態（F-008 AC-5）。警告色・注意アイコンを使わない。
+              🔴 モバイルでも全行に到達できる（行数で打ち切らない。CLAUDE.md §13.3）。 */}
+          <DetailSection id="careers" title={t('engineers.detail.section.careers')}>
+            {careerRows.length === 0 ? (
+              <div data-testid="engineer-detail-career-empty">
+                <p className="text-sm text-slate-600">{t('engineers.careers.empty')}</p>
+                {canEdit ? (
+                  <p className="mt-2 text-sm">
+                    <Link
+                      className={SECONDARY_LINK_STACKED_CLASSES}
+                      href={`/engineers/${view.id}/edit`}
+                      data-testid="engineer-detail-career-edit-link"
+                    >
+                      {t('engineers.careers.empty.editLink')}
+                    </Link>
+                  </p>
+                ) : null}
+              </div>
+            ) : (
+              <>
+                <p className="mb-2 text-xs text-slate-500" data-testid="engineer-detail-career-order-note">
+                  {t('engineers.careers.detailOrderNote')}
+                </p>
+                <Table data-testid="engineer-detail-career-table">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{t('engineers.careers.column.period')}</TableHead>
+                      <TableHead>{t('engineers.careers.column.role')}</TableHead>
+                      <TableHead>{t('engineers.careers.column.description')}</TableHead>
+                      <TableHead>{t('engineers.careers.column.technologies')}</TableHead>
+                      <TableHead>{t('engineers.careers.column.source')}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {careerRows.map((row) => (
+                      <TableRow
+                        key={row.id}
+                        align="top"
+                        data-testid={`engineer-detail-career-row-${row.id}`}
+                      >
+                        <TableCell>{row.period}</TableCell>
+                        <TableCell whitespace="normal">{row.role}</TableCell>
+                        {/* 業務内容は折り返して全文（詳細なので先頭 1 行に畳まない。改行も保つ）。 */}
+                        <TableCell whitespace="normal" className="whitespace-pre-wrap">
+                          {row.description}
+                        </TableCell>
+                        <TableCell whitespace="normal">{row.technologies}</TableCell>
+                        <TableCell>{row.source}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </>
             )}
           </DetailSection>
         </div>

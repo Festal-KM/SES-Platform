@@ -10,8 +10,10 @@ import { describe, expect, it } from 'vitest';
 import { t } from '@ses/i18n';
 import {
   engineerBasicRows,
+  engineerDetailCareerRows,
   engineerDetailSkillRows,
   engineerHeadlineRows,
+  formatCareerPeriod,
   formatUnitPriceRange,
   formatYears,
 } from './detail';
@@ -32,6 +34,7 @@ function view(overrides: Partial<EngineerDetailView> = {}): EngineerDetailView {
     remoteMode: 'PARTIAL_REMOTE',
     preferenceNote: '長期案件を希望',
     skills: [],
+    careers: [],
     ...overrides,
   };
 }
@@ -144,5 +147,48 @@ describe('engineerDetailSkillRows', () => {
 
   it('スキルが無ければ空配列（呼び出し側が空状態を出す）', () => {
     expect(engineerDetailSkillRows([])).toEqual([]);
+  });
+});
+
+// 🔴 T-09-12: 経歴表（docs/04 §S-006 セクション 8）。並びは応答の配列順そのもの（ソートし直さない）。
+describe('engineerDetailCareerRows / formatCareerPeriod', () => {
+  it('🔴 終了年月が null の行は「継続中」（`—` ではない。未入力と語を分ける）', () => {
+    expect(formatCareerPeriod('2024-04', null)).toBe(`2024-04〜${t('engineers.careers.ongoing')}`);
+    expect(formatCareerPeriod('2021-01', '2024-03')).toBe('2021-01〜2024-03');
+  });
+
+  it('🔴 応答の配列順をそのまま保つ（並び替えない）', () => {
+    const rows = engineerDetailCareerRows([
+      {
+        id: 'c-old',
+        periodFrom: '2019-01',
+        periodTo: '2019-12',
+        role: 'PG',
+        description: 'x',
+        technologies: 'Java',
+        source: 'MANUAL',
+        skillSheetExtractionId: null,
+      },
+      {
+        id: 'c-new',
+        periodFrom: '2024-04',
+        periodTo: null,
+        role: 'PL',
+        description: 'y',
+        technologies: '',
+        source: 'EXTRACTED',
+        skillSheetExtractionId: 'ext-1',
+      },
+    ]);
+    expect(rows.map((row) => row.id)).toEqual(['c-old', 'c-new']);
+    expect(rows[0]?.source).toBe(t('engineers.careers.source.MANUAL'));
+    expect(rows[1]?.source).toBe(t('engineers.careers.source.EXTRACTED'));
+    // 使用技術が空の行は `—`（空欄にしない）。
+    expect(rows[1]?.technologies).toBe(NONE);
+    expect(rows[1]?.period).toBe(`2024-04〜${t('engineers.careers.ongoing')}`);
+  });
+
+  it('0 行は空配列（呼び出し側が「登録されていません」を出す。警告色にしない）', () => {
+    expect(engineerDetailCareerRows([])).toEqual([]);
   });
 });

@@ -112,6 +112,7 @@ describe('🔴 F-008 AC-1 / BR-52: 営業判断に不要な項目を入力欄と
       [
         'availability',
         'availableFrom',
+        'careers', // T-09-12（`F-008 AC-5`。`BR-52` の収集範囲に含まれる項目）
         'contactEmail',
         'contactPhone',
         'displayName',
@@ -142,6 +143,8 @@ describe('createEngineerBodySchema（#16 POST）', () => {
       contactPhone: null,
       skills: [],
       newSkillLabels: [],
+      // 🔴 T-09-12: 0 行は正常（`F-008 AC-5`）。経歴が無いことを理由に登録を拒まない。
+      careers: [],
     });
   });
 
@@ -349,5 +352,79 @@ describe('engineerListQuerySchema（#15 の検索条件）', () => {
 
   it('🔴 `cursor` は UUID（Prisma の `cursor: { id }` に届かせない）', () => {
     expect(engineerListQuerySchema.safeParse({ cursor: 'not-a-uuid' }).success).toBe(false);
+  });
+});
+
+// 🔴 T-09-12: 経験内容と従事期間（`CareerRowInput`。docs/05 §6.4 / `F-008 AC-5`）。
+describe('careers[]（T-09-12）', () => {
+  const row = {
+    periodFrom: '2024-04',
+    periodTo: null,
+    role: 'PL',
+    description: '架空の基幹刷新',
+    technologies: 'TypeScript',
+  };
+
+  it('1 行 = 期間 / 役割 / 業務内容 / 使用技術。終了年月 null = 継続中', () => {
+    const parsed = createEngineerBodySchema.parse({ displayName: 'a', careers: [row] });
+    expect(parsed.careers).toEqual([row]);
+  });
+
+  it('🔴 期間は YYYY-MM だけを受け付ける（日付・空文字・月 13 は 400）', () => {
+    for (const periodFrom of ['2024-04-01', '', '2024-13', '2024/04', '24-04']) {
+      expect(
+        createEngineerBodySchema.safeParse({ displayName: 'a', careers: [{ ...row, periodFrom }] }).success,
+        `periodFrom=${JSON.stringify(periodFrom)}`,
+      ).toBe(false);
+    }
+    // 🔴 終了年月の空文字は「継続中」ではない（null で表す。docs/05 §3.4.1）。
+    expect(
+      createEngineerBodySchema.safeParse({ displayName: 'a', careers: [{ ...row, periodTo: '' }] }).success,
+    ).toBe(false);
+    expect(
+      createEngineerBodySchema.safeParse({ displayName: 'a', careers: [{ ...row, periodTo: '2024-12' }] })
+        .success,
+    ).toBe(true);
+  });
+
+  it('役割・業務内容は必須、使用技術は空でよい', () => {
+    expect(
+      createEngineerBodySchema.safeParse({ displayName: 'a', careers: [{ ...row, role: '  ' }] }).success,
+    ).toBe(false);
+    expect(
+      createEngineerBodySchema.safeParse({ displayName: 'a', careers: [{ ...row, description: '' }] })
+        .success,
+    ).toBe(false);
+    expect(
+      createEngineerBodySchema.safeParse({ displayName: 'a', careers: [{ ...row, technologies: '' }] })
+        .success,
+    ).toBe(true);
+  });
+
+  it('id は既存行の UUID だけ（形式違いは 400）', () => {
+    expect(
+      createEngineerBodySchema.safeParse({ displayName: 'a', careers: [{ ...row, id: 'not-uuid' }] }).success,
+    ).toBe(false);
+    expect(
+      createEngineerBodySchema.safeParse({
+        displayName: 'a',
+        careers: [{ ...row, id: '01930000-0000-7000-8000-0000000000c1' }],
+      }).success,
+    ).toBe(true);
+  });
+
+  it('🔴 source / skillSheetExtractionId / ownerPartnerCompanyId を送っても届かない（strip）', () => {
+    const parsed = createEngineerBodySchema.parse({
+      displayName: 'a',
+      careers: [{ ...row, source: 'EXTRACTED', skillSheetExtractionId: 'x', ownerPartnerCompanyId: 'y' }],
+    });
+    expect(Object.keys(parsed.careers[0] ?? {}).sort()).toEqual(
+      ['description', 'periodFrom', 'periodTo', 'role', 'technologies'].sort(),
+    );
+  });
+
+  it('🔴 PATCH: 未指定は「変更しない」、[] は「全行削除」（両者を区別する）', () => {
+    expect(updateEngineerBodySchema.parse({}).careers).toBeUndefined();
+    expect(updateEngineerBodySchema.parse({ careers: [] }).careers).toEqual([]);
   });
 });

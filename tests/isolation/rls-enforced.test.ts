@@ -101,9 +101,10 @@ describe('#1 全業務テーブルで RLS が有効かつ FORCE されている�
 describe('#2 全表にポリシーが 1 つ以上ある（docs/05 §4.7 #2）', () => {
   it('ポリシーが 1 つも無い業務テーブルが 0 件である', async () => {
     const tables = await businessTables();
-    // 空振り防止（docs/05 §3.2 の 57 表 − 射程外 4 表）。
+    // 空振り防止（docs/05 §3.2 の 58 表 − 射程外 4 表）。
     // 🔴 T-07-09 で `project_publish_requests` を 1 表足した（docs/05 §11.11 ①）。
-    expect(tables).toHaveLength(53);
+    // 🔴 T-09-12 で `engineer_careers` を 1 表足した（docs/05 §3.4 / Issue #35 = A）。
+    expect(tables).toHaveLength(54);
 
     const policies = await readPolicies(db);
     const withPolicy = new Set(policies.map((policy) => policy.table));

@@ -29,6 +29,8 @@ import { NotFoundError, ValidationError } from '../api/errors';
 //    「エンジニアのサービスから案件のサービスが import する」形にすると、機能モジュール間に
 //    意味の無い依存が生まれるため（re-export も置かない —— 入口が 2 つあると片方だけが残る）。
 import { decimalToNumber, toDateOnly, toDateOnlyString } from '../format/db-values';
+// 🔴 T-09-12: 経歴の読み書き。同じトランザクションの内側で呼ぶ（別 API にしない。`careers.ts` の注記）。
+import { readEngineerCareers, replaceEngineerCareers, type CareerRowView } from './careers';
 import type { CreateEngineerBody, EngineerSkillInput, UpdateEngineerBody } from './schemas';
 
 /**
@@ -103,6 +105,11 @@ export type EngineerBaseView = {
   readonly remoteMode: RemoteMode | null;
   readonly preferenceNote: string | null;
   readonly skills: readonly EngineerSkillView[];
+  /**
+   * 🔴 T-09-12: 経験内容と従事期間（docs/05 §6.4 #17 `careers: CareerRowView[]`）。**配列順 = 表示順**
+   *    （サーバ側で確定済み。画面はソートし直さない）。0 行は `[]`（`null` にしない）。
+   */
+  readonly careers: readonly CareerRowView[];
 };
 
 /**
@@ -124,6 +131,15 @@ export type EngineerEditView = EngineerBaseView & {
 /** 監査ログに残す実行環境（`withApiRoute` の `audit` と同じ値。画面経路は自前で渡す）。 */
 export type EngineerViewMeta = {
   readonly ipAddress: string | null;
+};
+
+/**
+ * `#16` の応答（docs/05 §6.4 #16 `{ id, careers: CareerRowView[] }`。T-09-12）。
+ * 🔴 保存後の**確定した並び**をそのまま返す（画面が保存直後に並び替え後の表示へ揃えられるように）。
+ */
+export type EngineerSaveResult = {
+  readonly id: string;
+  readonly careers: readonly CareerRowView[];
 };
 
 /**
@@ -241,7 +257,8 @@ async function proposeSkillAliases(
 export async function createEngineer(
   ctx: AuthenticatedTenantCtx,
   input: CreateEngineerBody,
-): Promise<{ readonly id: string }> {
+  meta: EngineerViewMeta,
+): Promise<EngineerSaveResult> {
   assertUnitPriceRange(input.unitPriceMin, input.unitPriceMax);
   const skills = normalizeSkills(input.skills);
 
@@ -274,8 +291,11 @@ export async function createEngineer(
       await db.engineerSkill.createMany({ data: skillRows(ctx, created.id, skills) });
     }
     await proposeSkillAliases(db, ctx, input.newSkillLabels);
+    // 🔴 T-09-12: 経歴は同じトランザクションで書き、行ごとの `engineer_career.create` を残す。
+    //    0 行なら何も書かず `[]` を返す（0 行は正常。`F-008 AC-5`）。
+    const careers = await replaceEngineerCareers(db, ctx, created.id, input.careers, meta);
 
-    return { id: created.id };
+    return { id: created.id, careers };
   });
 }
 
@@ -293,7 +313,8 @@ export async function updateEngineer(
   ctx: AuthenticatedTenantCtx,
   id: string,
   patch: UpdateEngineerBody,
-): Promise<{ readonly id: string }> {
+  meta: EngineerViewMeta,
+): Promise<EngineerSaveResult> {
   const skills = patch.skills === undefined ? undefined : normalizeSkills(patch.skills);
 
   return withTenant(ctx, async (db) => {
@@ -340,8 +361,14 @@ export async function updateEngineer(
       }
     }
     await proposeSkillAliases(db, ctx, patch.newSkillLabels ?? []);
+    // 🔴 T-09-12: `careers` が未指定なら経歴を**変更しない**（`undefined` と `[]` を区別する。
+    //    `[]` は全行の削除）。指定があれば置き換え、行ごとの監査を同じトランザクションで書く。
+    const careers =
+      patch.careers === undefined
+        ? await readEngineerCareers(db, id)
+        : await replaceEngineerCareers(db, ctx, id, patch.careers, meta);
 
-    return { id };
+    return { id, careers };
   });
 }
 
@@ -383,6 +410,7 @@ type EngineerBaseRow = {
 function toEngineerBaseView(
   row: EngineerBaseRow,
   skills: readonly EngineerSkillView[],
+  careers: readonly CareerRowView[],
 ): EngineerBaseView {
   return {
     id: row.id,
@@ -396,6 +424,7 @@ function toEngineerBaseView(
     remoteMode: row.remoteMode as RemoteMode | null,
     preferenceNote: row.preferenceNote,
     skills,
+    careers,
   };
 }
 
@@ -492,7 +521,12 @@ export async function readEngineerDetail(
 
     await recordEngineerView(db, ctx, row.id, ENGINEER_VIEW_VIA.detail, meta);
 
-    return toEngineerBaseView(row, await readEngineerSkills(db, row.id));
+    // 🔴 T-09-12: 経歴の閲覧に別 action を作らない —— `BR-27` の「エンジニア詳細の閲覧」の一部である。
+    return toEngineerBaseView(
+      row,
+      await readEngineerSkills(db, row.id),
+      await readEngineerCareers(db, row.id),
+    );
   });
 }
 
@@ -518,7 +552,11 @@ export async function readEngineerForEdit(
     await recordEngineerView(db, ctx, row.id, ENGINEER_VIEW_VIA.editForm, meta);
 
     return {
-      ...toEngineerBaseView(row, await readEngineerSkills(db, row.id)),
+      ...toEngineerBaseView(
+        row,
+        await readEngineerSkills(db, row.id),
+        await readEngineerCareers(db, row.id),
+      ),
       contactEmail: row.contactEmail,
       contactPhone: row.contactPhone,
     };

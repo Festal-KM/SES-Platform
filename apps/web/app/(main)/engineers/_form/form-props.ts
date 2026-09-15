@@ -19,6 +19,7 @@ import {
 // 🔴 T-06-01: 都道府県の写像は機能に属さない共通語彙として `lib/format/prefectures.ts` にある。
 import { PREFECTURE_MESSAGE_KEYS } from '../../../../lib/format/prefectures';
 import type { EngineerEditView } from '../../../../lib/engineers/service';
+import { toEngineerFormCareer } from './career-values';
 import type {
   EngineerFormMessages,
   EngineerFormValues,
@@ -67,6 +68,8 @@ export const EMPTY_ENGINEER_FORM_VALUES: EngineerFormValues = {
   contactPhone: '',
   skills: [],
   newSkillLabels: [],
+  // 🔴 T-09-12: 新規は 0 行で開き、空行を初期表示しない（docs/04 §S-007「空 / ローディング / エラー」）。
+  careers: [],
 };
 
 /** 編集の初期値（`null` は空文字にする。フォームは文字列だけを扱う）。 */
@@ -91,6 +94,8 @@ export function toEngineerFormValues(view: EngineerEditView): EngineerFormValues
     // 🔴 起票済みの新語候補はここに載せない（採否は `S-009` の仕事であり、
     //    編集画面で再送すると同じ表記を何度も起票しようとすることになる）。
     newSkillLabels: [],
+    // 🔴 T-09-12: 台帳の現在値を**応答の配列順のまま**（サーバ側で確定済み）。既存行は `id` を持つ。
+    careers: view.careers.map(toEngineerFormCareer),
   };
 }
 
@@ -131,7 +136,25 @@ export function engineerFormMessages(ownershipValue: string): EngineerFormMessag
     newAliasEmpty: t('engineers.skills.newAlias.empty'),
     newAliasDictionaryLink: t('engineers.skills.newAlias.dictionaryLink'),
 
-    careersComingSoon: t('engineers.careers.comingSoon'),
+    careerOrderNote: t('engineers.careers.orderNote'),
+    careerColumnPeriod: t('engineers.careers.column.period'),
+    careerColumnRole: t('engineers.careers.column.role'),
+    careerColumnDescription: t('engineers.careers.column.description'),
+    careerColumnTechnologies: t('engineers.careers.column.technologies'),
+    careerColumnActions: t('engineers.careers.column.actions'),
+    careerPeriodFromLabel: t('engineers.careers.periodFrom.label'),
+    careerPeriodToLabel: t('engineers.careers.periodTo.label'),
+    careerOngoingToggle: t('engineers.careers.ongoing.toggle'),
+    careerAdd: t('engineers.careers.add'),
+    careerRemove: t('engineers.careers.remove'),
+    careerRestore: t('engineers.careers.restore'),
+    careerRemovedNote: t('engineers.careers.removedNote'),
+    careerEmpty: t('engineers.careers.empty'),
+    careerErrorPeriodFrom: t('engineers.careers.error.periodFrom'),
+    careerErrorPeriodTo: t('engineers.careers.error.periodTo'),
+    careerErrorPeriodOrder: t('engineers.careers.error.periodOrder'),
+    careerErrorRole: t('engineers.careers.error.role'),
+    careerErrorDescription: t('engineers.careers.error.description'),
 
     availabilityLabel: t('engineers.availability.label'),
     availableFromLabel: t('engineers.availableFrom.label'),

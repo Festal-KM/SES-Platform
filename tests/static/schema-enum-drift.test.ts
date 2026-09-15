@@ -41,6 +41,7 @@ import {
   EMAIL_EVENT_TYPES,
   EMAIL_RECIPIENT_CLASSES,
   ENGINEER_AVAILABILITIES,
+  ENGINEER_CAREER_SOURCES,
   ENGINEER_SKILL_SOURCES,
   ESIGN_SIGNING_ORDERS,
   EXTENSION_REVIEW_DECISIONS,
@@ -265,6 +266,12 @@ describe('CHECK 制約と TS 単一出所の drift 検査（docs/05 §3.1「列�
     it('engineer_skills_source_check ⇔ packages/db ENGINEER_SKILL_SOURCES', () => {
       const values = extractCheckInValues(migrationSql, 'engineer_skills_source_check');
       expectSameValueSet(values, ENGINEER_SKILL_SOURCES);
+    });
+
+    // 🔴 T-09-12（docs/05 §3.4 `EngineerCareer.source`。migration 20260917000000）。
+    it('engineer_careers_source_check ⇔ packages/db ENGINEER_CAREER_SOURCES', () => {
+      const values = extractCheckInValues(migrationSql, 'engineer_careers_source_check');
+      expectSameValueSet(values, ENGINEER_CAREER_SOURCES);
     });
 
     it('skill_sheets_scan_status_check ⇔ packages/db SCAN_STATUSES', () => {

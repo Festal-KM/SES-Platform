@@ -78,6 +78,15 @@ const PARTNER_AFFILIATION = '匿名ビュー検証株式会社';
 const PARTNER_CITY = '渋谷区';
 const PARTNER_PREFERENCE_NOTE = '週 3 リモート希望（営業メモ）';
 const PARTNER_COMPANY_NAME = 'Partner A1';
+/**
+ * 🔴 T-09-12: 経験内容（`engineer_careers`）。**細かい経歴の並びは同一人物を案件をまたいで追跡させる代表例**
+ *    （`F-008 AC-7` / `BR-55`）。4 行を実在させ、役割・業務内容・使用技術・期間のいずれも応答に出ないことを見る。
+ */
+const PARTNER_CAREER_ROLE = '匿名ビュー検証PL';
+const PARTNER_CAREER_DESCRIPTION = '匿名ビュー検証の架空基幹刷新（業務内容）';
+const PARTNER_CAREER_TECHNOLOGIES = 'AnonViewTech/Elixir';
+const PARTNER_CAREER_PERIOD_FROM = '2019-07';
+const PARTNER_CAREER_PERIOD_TO = '2021-11';
 
 let database: IsolationDatabase;
 /** 🔴 前提づくりと事実確認だけに使う特権接続。検証のクエリには使わない。 */
@@ -166,6 +175,24 @@ beforeAll(async () => {
   await admin.partnerCompany.update({
     where: { id: PARTNER_A1 },
     data: { name: PARTNER_COMPANY_NAME },
+  });
+  // 🔴 T-09-12: 共有中のエンジニアに経歴 4 行を実在させる（fixtures は経歴を持たないためここで足す）。
+  await admin.engineerCareer.deleteMany({ where: { engineerId: ENGINEER_A_PARTNER } });
+  await admin.engineerCareer.createMany({
+    data: [
+      {
+        tenantId: TENANT_A,
+        engineerId: ENGINEER_A_PARTNER,
+        periodFrom: PARTNER_CAREER_PERIOD_FROM,
+        periodTo: PARTNER_CAREER_PERIOD_TO,
+        role: PARTNER_CAREER_ROLE,
+        description: PARTNER_CAREER_DESCRIPTION,
+        technologies: PARTNER_CAREER_TECHNOLOGIES,
+      },
+      { tenantId: TENANT_A, engineerId: ENGINEER_A_PARTNER, periodFrom: '2022-01', periodTo: '2023-06', role: `${PARTNER_CAREER_ROLE}-2`, description: `${PARTNER_CAREER_DESCRIPTION}-2`, technologies: `${PARTNER_CAREER_TECHNOLOGIES}-2` },
+      { tenantId: TENANT_A, engineerId: ENGINEER_A_PARTNER, periodFrom: '2023-07', periodTo: '2024-12', role: `${PARTNER_CAREER_ROLE}-3`, description: `${PARTNER_CAREER_DESCRIPTION}-3`, technologies: `${PARTNER_CAREER_TECHNOLOGIES}-3` },
+      { tenantId: TENANT_A, engineerId: ENGINEER_A_PARTNER, periodFrom: '2025-01', periodTo: null, role: `${PARTNER_CAREER_ROLE}-4`, description: `${PARTNER_CAREER_DESCRIPTION}-4`, technologies: `${PARTNER_CAREER_TECHNOLOGIES}-4` },
+    ],
   });
 }, SETUP_TIMEOUT_MS);
 
@@ -265,6 +292,12 @@ const FORBIDDEN_VALUES: readonly { readonly label: string; readonly value: strin
   { label: 'engineers.available_from（具体的な稼働開始日）', value: '2026-10-01' },
   { label: 'engineers.updated_at（丸めていない更新日時）', value: UPDATED_AT.toISOString() },
   { label: 'engineers.updated_at（epoch）', value: String(UPDATED_AT.getTime()) },
+  // 🔴 T-09-12: 経歴の 5 項目（`F-008 AC-7`。件数・「経歴あり」の示唆も出ない —— キー側で見る）。
+  { label: 'engineer_careers.role（役割）', value: PARTNER_CAREER_ROLE },
+  { label: 'engineer_careers.description（業務内容）', value: PARTNER_CAREER_DESCRIPTION },
+  { label: 'engineer_careers.technologies（使用技術）', value: PARTNER_CAREER_TECHNOLOGIES },
+  { label: 'engineer_careers.period_from（従事期間）', value: PARTNER_CAREER_PERIOD_FROM },
+  { label: 'engineer_careers.period_to（従事期間）', value: PARTNER_CAREER_PERIOD_TO },
 ];
 
 /** 🔴 応答のどの深さにも現れてはならないキー名。 */
@@ -290,6 +323,13 @@ const FORBIDDEN_KEYS: readonly string[] = [
   'careers',
   'careerCount',
   'hasCareers',
+  'careerSummary',
+  'latestRole',
+  'periodFrom',
+  'periodTo',
+  'role',
+  'description',
+  'technologies',
   'skillSheet',
   'skillSheetId',
   'score',
@@ -343,6 +383,10 @@ describe('🔴 F-017 AC-1: 応答に開示 5 項目以外が 1 つも現れな�
       select: { name: true },
     });
     expect(partner.name).toBe(PARTNER_COMPANY_NAME);
+    // 🔴 T-09-12: 経歴 4 行が実在する（走査が空振りしていない）。
+    const careers = await admin.engineerCareer.findMany({ where: { engineerId: ENGINEER_A_PARTNER } });
+    expect(careers).toHaveLength(4);
+    expect(careers.map((row) => row.role)).toContain(PARTNER_CAREER_ROLE);
   });
 
   it('🔴 対照: 出してよい値は確かに出ている（走査が「空の応答」を見ていない）', async () => {

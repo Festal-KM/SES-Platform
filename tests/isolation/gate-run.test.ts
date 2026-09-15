@@ -129,11 +129,26 @@ async function runGate(options: {
   );
 }
 
+/** `EngineerSnapshot.careers` の 1 行（docs/05 §3.6 `FrozenCareer`。🔴 行 ID を持たない）。 */
+type FrozenCareerRow = {
+  readonly periodFrom: string;
+  readonly periodTo: string | null;
+  readonly role: string;
+  readonly description: string;
+  readonly technologies: string;
+};
+
 /** 提案をゲート実行中の状態に整える（本文・凍結コピー・台帳の PII）。 */
 async function prepareProposal(input: {
   readonly proposalId: string;
   readonly body: string;
   readonly snapshotSkills: readonly { skillId: string; name: string; years: number; level: number | null }[];
+  /**
+   * 🔴 T-09-12: 凍結された経歴（`field='snapshot'` の検査対象。docs/05 §6.5）。既定は 0 行。
+   *    `create` と `update` の**両方**に書く —— `update` に無いと前のテストの行が残留して
+   *    「経歴 0 行のはず」のテストが前のテストの経歴を検査してしまう。
+   */
+  readonly careers?: readonly FrozenCareerRow[];
 }): Promise<void> {
   await admin.engineer.update({
     where: { id: ENGINEER_A_HOST },
@@ -152,10 +167,10 @@ async function prepareProposal(input: {
       displayName: ENGINEER_NAME,
       affiliationLabel: null,
       skills: [...input.snapshotSkills],
-      careers: [],
+      careers: [...(input.careers ?? [])],
       frozenAt: NOW,
     },
-    update: { skills: [...input.snapshotSkills] },
+    update: { skills: [...input.snapshotSkills], careers: [...(input.careers ?? [])] },
   });
 }
 
@@ -283,6 +298,45 @@ describe('🔴 F-020 AC-5: PII 層で氏名が残っていると FAIL になり�
     expect(usage).toHaveLength(1);
     expect(usage[0]).toMatchObject({ role: 'gate-inspector', purpose: 'gate', succeeded: true });
   });
+
+  it('🔴 T-09-12: 本文が清潔でも、凍結された経歴（field=snapshot）に台帳の氏名が残っていれば PII 層 FAIL', async () => {
+    // 🔴 docs/05 §6.5「凍結行はゲートの検査対象である」—— 業務内容には現所属会社名・氏名が書かれるのが
+    //    常態であり、経歴を検査から外すと PII 層が経歴の側から素通りする（`BR-15` / `F-020 AC-1`）。
+    await prepareProposal({
+      proposalId: PROPOSAL_A_HOST,
+      body: '清潔な本文です。',
+      snapshotSkills: [],
+      careers: [
+        {
+          periodFrom: '2020-01',
+          periodTo: null,
+          role: 'PL',
+          description: `${ENGINEER_NAME}が担当した案件`,
+          technologies: '',
+        },
+      ],
+    });
+
+    const outcome = await runGate({
+      targetType: 'PROPOSAL',
+      targetId: PROPOSAL_A_HOST,
+      contentHash: 'hash-career-pii-fail',
+      script: [{ kind: 'output', output: CLEAN_OUTPUT }],
+    });
+
+    expect(outcome).toMatchObject({ kind: 'COMPLETED', overall: 'FAIL', aiFailed: false });
+    const gate = await readGate(PROPOSAL_A_HOST);
+    expect(gate?.piiVerdict).toBe('FAIL');
+    const findings = gate?.findings as { layer: string; kind: string; field: string }[];
+    // 🔴 指摘の欄は `snapshot`（連結後の経歴の文字列に対する位置）。本文（`body`）ではない。
+    expect(findings.some((finding) => finding.field === 'snapshot')).toBe(true);
+    expect(findings).toContainEqual(
+      expect.objectContaining({ layer: 'PII', kind: 'FULL_NAME', field: 'snapshot' }),
+    );
+    expect(findings.some((finding) => finding.field === 'body')).toBe(false);
+    expect(JSON.stringify(findings)).not.toContain(ENGINEER_NAME);
+    expect(await proposalState(PROPOSAL_A_HOST)).toBe('GATE_FAILED');
+  });
 });
 
 describe('🔴 F-020 AC-6: 商流層でエンド企業名が公開範囲外に出ると FAIL になる（F-014 AC-3）', () => {
@@ -329,6 +383,43 @@ describe('🔴 F-020 AC-6: 商流層でエンド企業名が公開範囲外に�
     const gate = await readGate(PROJECT_A_PUBLISHED);
     expect(gate?.commerceVerdict).toBe('FAIL');
     expect((gate?.findings as { kind: string }[])[0]?.kind).toBe('UNIT_PRICE');
+  });
+
+  it('🔴 T-09-12: 凍結された経歴（field=snapshot）にエンド企業名が書かれていれば商流層 FAIL（F-014 AC-3 が経歴側から素通りしない）', async () => {
+    // `PROPOSAL_A_HOST` の案件は `PROJECT_A_PUBLISHED`（`end_client_name = END_CLIENT`。fixtures）。
+    await prepareProposal({
+      proposalId: PROPOSAL_A_HOST,
+      body: '清潔な本文です。',
+      snapshotSkills: [],
+      careers: [
+        {
+          periodFrom: '2022-04',
+          periodTo: '2024-03',
+          role: 'SE',
+          description: `${END_CLIENT} 向け基幹刷新`,
+          technologies: 'Java',
+        },
+      ],
+    });
+
+    const outcome = await runGate({
+      targetType: 'PROPOSAL',
+      targetId: PROPOSAL_A_HOST,
+      contentHash: 'hash-career-commerce-fail',
+      script: [{ kind: 'output', output: CLEAN_OUTPUT }],
+    });
+
+    expect(outcome).toMatchObject({ kind: 'COMPLETED', overall: 'FAIL', aiFailed: false });
+    const gate = await readGate(PROPOSAL_A_HOST);
+    expect(gate?.commerceVerdict).toBe('FAIL');
+    expect(gate?.piiVerdict).toBe('PASS');
+    const findings = gate?.findings as { layer: string; kind: string; field: string }[];
+    expect(findings).toContainEqual(
+      expect.objectContaining({ layer: 'COMMERCE', kind: 'END_CLIENT', field: 'snapshot' }),
+    );
+    // 🔴 抜粋にエンド企業名そのものを残さない。
+    expect(JSON.stringify(findings)).not.toContain(END_CLIENT);
+    expect(await proposalState(PROPOSAL_A_HOST)).toBe('GATE_FAILED');
   });
 
   it('🔴 公開先に含まれない取引先の名前が出ていれば FAIL（パートナー間の相互参照 0 件）', async () => {
@@ -742,6 +833,27 @@ describe('🔴 検査できない対象を PASS に倒さない（F-020 AC-1）'
     // 🔴 ゲート結果が無い ＝ 承認 CAS も送信の事前判定も満たさない（共有状態へ進めない）。
     expect(await admin.reviewGate.count({ where: { targetId: PROPOSAL_A_P1 } })).toBe(0);
     expect(await proposalState(PROPOSAL_A_P1)).toBe('GATE_RUNNING');
+  });
+
+  it('🔴 T-09-12: 凍結された経歴の形が壊れている（careers が配列でない）提案は PASS にせず落ちる', async () => {
+    // 🔴 0 行は `[]` で保存する規約（docs/05 §3.6）。`null` は「凍結し忘れ」であり、読めないまま
+    //    PASS にすると PII 層・商流層が経歴の側から素通りする（`toFrozenCareers` の fail-closed）。
+    await prepareProposal({ proposalId: PROPOSAL_A_HOST, body: '本文です。', snapshotSkills: [] });
+    // 🔴 生 SQL で JSON の null を書く（`@prisma/client` の `Prisma.JsonNull` は packages/db の外から
+    //    import できない。ESLint の生 PrismaClient 迂回禁止）。列は NOT NULL だが JSON 値の null は入る。
+    await admin.$executeRaw`UPDATE engineer_snapshots SET careers = 'null'::jsonb WHERE proposal_id = ${PROPOSAL_A_HOST}::uuid`;
+
+    await expect(
+      runGate({
+        targetType: 'PROPOSAL',
+        targetId: PROPOSAL_A_HOST,
+        contentHash: 'hash-careers-null',
+        script: [{ kind: 'output', output: CLEAN_OUTPUT }],
+      }),
+    ).rejects.toThrowError(/SNAPSHOT_CAREERS_NOT_ARRAY/);
+
+    expect(await admin.reviewGate.count({ where: { targetId: PROPOSAL_A_HOST } })).toBe(0);
+    expect(await proposalState(PROPOSAL_A_HOST)).toBe('GATE_RUNNING');
   });
 
   it('まだ配線されていない対象種別は PASS にせず落ちる（チャット添付 / 契約書 / スキルシート共有）', async () => {

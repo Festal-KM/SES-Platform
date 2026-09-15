@@ -89,7 +89,7 @@ export type PlatformAction = (typeof PLATFORM_ACTIONS)[number];
 // ---------------------------------------------------------------------------
 
 /**
- * 🔴 `app_platform` に列レベル `GRANT SELECT` がある 52 表（migration 20260904010000 §2）と
+ * 🔴 `app_platform` に列レベル `GRANT SELECT` がある 53 表（migration 20260904010000 §2 + 20260917000000）と
  *    1 対 1 の一覧。ここに無いモデルは `PlatformReadDb` の型に現れない。
  *
  * 射程外の 4 表（`skills` / `platform_users` / `plans` / `subscriptions`。`CLAUDE.md` §3.1）は
@@ -106,6 +106,7 @@ export const PLATFORM_READABLE_MODELS = [
   'engineer',
   'skillAlias',
   'engineerSkill',
+  'engineerCareer', // T-09-12（docs/05 §5.5。role / description / technologies は GRANT しない）
   'skillSheet',
   'fileScanResult',
   'skillSheetExtraction',

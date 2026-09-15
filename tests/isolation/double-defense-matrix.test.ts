@@ -972,6 +972,66 @@ describe('#10 経路 5 の 4 表への書き込みは 0 件更新（C9 に書込
 });
 
 // ---------------------------------------------------------------------------
+// #11 engineer_careers（T-09-12）: ホスト / 他社 / 共有スコープのいずれからも 0 件（C3 / F-008 AC-7）
+// ---------------------------------------------------------------------------
+
+/**
+ * 🔴 docs/05 §4.7 二重防御 #11。深く掘るテスト（制約・API・凍結・監査）は
+ *    `tests/isolation/engineer-careers.test.ts` にあり、ここは表と 1 対 1 の最小形を置く。
+ *    母集団は seed:isolation（ホスト 2 行 / 1 社目 4 行 / 2 社目 0 行）。
+ */
+describe('#11 engineer_careers は ①ホスト文脈で他社の分 ②他社文脈 ③共有スコープ on のいずれでも 0 件', () => {
+  it('前提: 取引先 1 社目のエンジニアは共有可で、経歴を 4 行持つ（母集団の空振り防止）', async () => {
+    const share = await runUnextended(unextended, SCOPE_PARTNER_1, (tx) =>
+      tx.engineerShare.findUnique({ where: { id: PARTNER_1.engineerShareId }, select: { revokedAt: true } }),
+    );
+    expect(share?.revokedAt).toBeNull();
+    const own = await runUnextended(unextended, SCOPE_PARTNER_1, (tx) => tx.engineerCareer.count());
+    expect(own).toBe(4);
+  });
+
+  it('① ホスト文脈: 自社所有の 2 行だけ（取引先の行は ID 直指定でも件数でも 0）', async () => {
+    const result = await withTenant(ctxHost1, async (db) => ({
+      total: await db.engineerCareer.count(),
+      foreign: await db.engineerCareer.count({ where: { engineerId: PARTNER_1.engineerId } }),
+      direct: await db.engineerCareer.findUnique({ where: { id: PARTNER_1.engineerCareerIds[0]! } }),
+    }));
+    expect(result.total).toBe(2);
+    expect(result.foreign).toBe(0);
+    expect(result.direct).toBeNull();
+  });
+
+  it('② パートナー文脈: 他社の行は 0 件（2 社目からは 1 社目の 4 行が見えない。対称）', async () => {
+    const seenBy2 = await withTenant(ctxPartner2, async (db) => ({
+      total: await db.engineerCareer.count(),
+      direct: await db.engineerCareer.findUnique({ where: { id: PARTNER_1.engineerCareerIds[0]! } }),
+    }));
+    expect(seenBy2.total).toBe(0);
+    expect(seenBy2.direct).toBeNull();
+    const seenBy1 = await withTenant(ctxPartner1, (db) =>
+      db.engineerCareer.count({ where: { engineerId: TENANT_1.hostEngineerId } }),
+    );
+    expect(seenBy1).toBe(0);
+  });
+
+  it('🔴 ③ ホスト文脈で app.shared_scope=on（経路 4 の生成中と同じ条件）でも取引先の経歴は 0 件', async () => {
+    const result = await runUnextended(unextended, SCOPE_HOST_1, async (tx) => {
+      await tx.$executeRawUnsafe(`SELECT set_config('app.shared_scope', 'on', true)`);
+      return {
+        settings: await readScopeSettings(tx),
+        sharedEngineerVisible: await tx.engineer.count({ where: { id: PARTNER_1.engineerId } }),
+        careers: await tx.engineerCareer.count({ where: { engineerId: PARTNER_1.engineerId } }),
+        total: await tx.engineerCareer.count(),
+      };
+    });
+    expect(result.settings.sharedScope).toBe('on'); // 空振り防止
+    expect(result.sharedEngineerVisible).toBe(1); // 対照: 共有スコープ自体は効いている（engineers は見える）
+    expect(result.careers).toBe(0);
+    expect(result.total).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // seed:isolation の冪等性（docs/05 §13.6 / F-053 AC-2）
 // ---------------------------------------------------------------------------
 

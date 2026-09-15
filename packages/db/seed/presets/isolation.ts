@@ -62,6 +62,7 @@ const ENTITY = {
   EXTENSION_REVIEW: 0x14,
   TASK: 0x15,
   NOTIFICATION: 0x16,
+  CAREER: 0x17, // T-09-12（経験内容と従事期間）
 } as const;
 
 function id(tenantIndex: number, entityCode: number, seq: number): string {
@@ -78,6 +79,13 @@ export type IsolationPartnerIds = {
   readonly userId: string;
   readonly membershipId: string;
   readonly engineerId: string;
+  /**
+   * 🔴 T-09-12: 自社エンジニアの経歴（`engineer_careers`）。**1 社目は 4 行、2 社目は 0 行**
+   *    （docs/05 §13.6「経歴を持つエンジニアと持たない（0 行の）エンジニアを混在させる」）。
+   *    1 社目のエンジニアは共有可（`engineerShareId`）でもあり、「経歴が匿名候補に出ない」ことを
+   *    実データで確かめる母集団になる（§17.2 #28 / §17.3 #5）。
+   */
+  readonly engineerCareerIds: readonly string[];
   /** 🔴 越境経路 4（匿名共有）の唯一の根拠。既定オフに対する明示的な opt-in。 */
   readonly engineerShareId: string;
   /** ホスト側の匿名候補（C2。パートナーからは 1 件も見えない）。 */
@@ -120,6 +128,8 @@ export type IsolationTenantIds = {
   readonly hostOwnerUserId: string;
   readonly hostOwnerMembershipId: string;
   readonly hostEngineerId: string;
+  /** 🔴 T-09-12: ホスト所属エンジニアの経歴（2 行。1 行は継続中）。 */
+  readonly hostEngineerCareerIds: readonly string[];
   /** パートナー 1 社目にだけ公開した案件（越境経路 1 の正負）。 */
   readonly publishedProjectId: string;
   /** どのパートナーにも公開していない案件。 */
@@ -152,6 +162,10 @@ function buildPartnerIds(tenantIndex: number, partnerIndex: number): IsolationPa
     userId: id(tenantIndex, ENTITY.USER, seq(1)),
     membershipId: id(tenantIndex, ENTITY.MEMBERSHIP, seq(1)),
     engineerId: id(tenantIndex, ENTITY.ENGINEER, seq(1)),
+    engineerCareerIds:
+      partnerIndex === 1
+        ? [1, 2, 3, 4].map((n) => id(tenantIndex, ENTITY.CAREER, seq(n)))
+        : [],
     engineerShareId: id(tenantIndex, ENTITY.SHARE, seq(1)),
     matchCandidateId: id(tenantIndex, ENTITY.MATCH, seq(1)),
     wonProposalId: id(tenantIndex, ENTITY.PROPOSAL, seq(1)),
@@ -183,6 +197,7 @@ function buildTenantIds(tenantIndex: number): IsolationTenantIds {
     hostOwnerUserId: id(tenantIndex, ENTITY.USER, 2),
     hostOwnerMembershipId: id(tenantIndex, ENTITY.MEMBERSHIP, 2),
     hostEngineerId: id(tenantIndex, ENTITY.ENGINEER, 1),
+    hostEngineerCareerIds: [1, 2].map((n) => id(tenantIndex, ENTITY.CAREER, n)),
     publishedProjectId: id(tenantIndex, ENTITY.PROJECT, 1),
     privateProjectId: id(tenantIndex, ENTITY.PROJECT, 2),
     publishedRequirementId: id(tenantIndex, ENTITY.REQUIREMENT, 1),
@@ -286,6 +301,12 @@ export const ISOLATION_FORBIDDEN_MARKERS = {
   proposalBody: 'seed-forbidden-proposal-body',
   /** messages.body（他社のチャット本文）。 */
   messageBody: 'seed-forbidden-message-body',
+  /**
+   * 🔴 T-09-12: engineer_careers.description（業務内容。自由入力で PII・商流が混ざる）。
+   *    匿名候補の応答・他テナント / 他パートナーの画面・運営者の応答のいずれにも現れてはならない
+   *    （`F-008 AC-7` / `BR-55` / `CLAUDE.md` §10.5）。
+   */
+  careerDescription: 'seed-forbidden-career-description',
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -617,6 +638,71 @@ async function seedTenant(ctx: SeedContext, tenantIndex: number): Promise<void> 
         prefecture: rng.pick(PREFECTURES),
         remoteMode: 'PARTIAL_REMOTE',
       })),
+    ],
+  });
+
+  // --- 経験内容と従事期間（T-09-12。docs/05 §13.6）------------------------------
+  // 🔴 ホスト所属 2 行（1 行は継続中）/ パートナー 1 社目 4 行 / パートナー 2 社目 0 行を混在させる。
+  //    0 行は正常な状態であり（`F-008 AC-5`）、両方が無いと「0 行のときだけ落ちる」不具合が E2E を
+  //    すり抜ける。業務内容は架空の案件名 + 禁止マーカーで書く（実在企業名を入れない。`F-053 AC-1`）。
+  //    `owner_partner_company_id` は渡さない（継承トリガが親の値で上書きする。superuser でも同じ）。
+  const careerRow = (
+    careerId: string,
+    engineerId: string,
+    marker: string,
+    values: { periodFrom: string; periodTo: string | null; role: string; technologies: string },
+  ) => ({
+    id: careerId,
+    tenantId: ids.tenantId,
+    engineerId,
+    periodFrom: values.periodFrom,
+    periodTo: values.periodTo,
+    role: values.role,
+    description: `${ISOLATION_FORBIDDEN_MARKERS.careerDescription}-${marker}-t${tenantIndex} 架空の受発注システム刷新（合成データ）`,
+    technologies: values.technologies,
+    source: 'MANUAL' as const,
+  });
+  const hostCareerIds = ids.hostEngineerCareerIds;
+  const partner1CareerIds = partner1.engineerCareerIds;
+  await db.engineerCareer.createMany({
+    data: [
+      careerRow(hostCareerIds[0]!, ids.hostEngineerId, 'host', {
+        periodFrom: '2024-04',
+        periodTo: null,
+        role: 'PL',
+        technologies: 'TypeScript / PostgreSQL',
+      }),
+      careerRow(hostCareerIds[1]!, ids.hostEngineerId, 'host', {
+        periodFrom: '2021-01',
+        periodTo: '2024-03',
+        role: 'SE',
+        technologies: 'Java / Spring',
+      }),
+      careerRow(partner1CareerIds[0]!, partner1.engineerId, 'p1', {
+        periodFrom: '2025-01',
+        periodTo: null,
+        role: 'PG',
+        technologies: 'Go',
+      }),
+      careerRow(partner1CareerIds[1]!, partner1.engineerId, 'p1', {
+        periodFrom: '2023-06',
+        periodTo: '2024-12',
+        role: 'SE',
+        technologies: 'TypeScript / React',
+      }),
+      // 🔴 同じ開始年月の 2 行（並びの 2 番目のキー = 登録順 = created_at ASC を確かめる母集団）。
+      careerRow(partner1CareerIds[2]!, partner1.engineerId, 'p1', {
+        periodFrom: '2022-01',
+        periodTo: '2023-05',
+        role: 'PG',
+        technologies: 'Java',
+      }),
+      careerRow(partner1CareerIds[3]!, partner1.engineerId, 'p1', {
+        periodFrom: '2022-01',
+        periodTo: '2022-06',
+        role: 'テスター',
+        technologies: 'JUnit',
+      }),
     ],
   });
 

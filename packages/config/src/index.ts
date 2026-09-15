@@ -42,6 +42,16 @@ export {
 // 🔴 T-08-01: 匿名共有の丸めの粒度（docs/05 TBD-2 / docs/03 §4.13.1）。**値の唯一の出所**であり、
 //    丸めの手続きは @ses/domain の anonymizeEngineer が持つ（関数は粒度を引数で受け取る）。
 export { ANONYMIZE_ROUNDING } from './anonymize.js';
+// 🔴 T-09-12: 保持期間削除 / PURGED の削除対象と残す対象（docs/05 §9.7）。**値の唯一の出所**であり、
+//    削除ジョブ（SP-16）はこれを読むだけである。`engineer_careers` の要素は暫定（Issue #48）。
+export {
+  PURGE_SPEC,
+  type PurgeColumnsSpec,
+  type PurgeDeleteSpec,
+  type PurgeRetainSpec,
+  type PurgeRowsSpec,
+  type PurgeSpec,
+} from './retention.js';
 // 🔴 期限・長さの方針値（docs/05 §2.1 の limits.ts）。環境変数ではないので schema.ts に置かない。
 export {
   DISPLAY_NAME_MAX_LENGTH,

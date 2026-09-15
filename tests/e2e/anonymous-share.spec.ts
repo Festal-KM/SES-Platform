@@ -101,6 +101,12 @@ type SyntheticEngineer = {
   /** 辞書 ID。応答には `skills[].name` しか出てはならない（案件をまたいだ突合の材料）。 */
   readonly skillIds: readonly string[];
   readonly skillSheet: { readonly id: string; readonly objectKey: string; readonly fileName: string } | null;
+  /**
+   * 🔴 T-09-12: 経験内容（`engineer_careers`）4 行の役割 / 業務内容 / 使用技術に埋めた目印。
+   *    **細かい経歴の並びは同一人物を案件をまたいで追跡させる代表例**であり（`F-008 AC-7` / `BR-55`）、
+   *    ホストの `S-005` / `S-016` の応答 JSON・画面・監査ログのいずれにも 1 文字も現れてはならない。
+   */
+  readonly careerMarkers: readonly string[];
 };
 
 /** 直列で引き継ぐ状態。 */
@@ -269,6 +275,11 @@ function forbiddenMarkers(engineers: readonly SyntheticEngineer[]): readonly Mar
       { label: `${tag} engineers.preference_note（営業メモ）`, value: engineer.preferenceNote },
       { label: `${tag} engineers.id（社内 ID）`, value: engineer.id },
       { label: `${tag} engineers.available_from（具体的な稼働開始日）`, value: engineer.availableFrom },
+      // 🔴 T-09-12: 経歴の 3 項目（`F-008 AC-7`。期間は他の候補と偶然一致しうるため目印で見る）。
+      ...engineer.careerMarkers.map((value, index) => ({
+        label: `${tag} engineer_careers（経歴の${['役割', '業務内容', '使用技術'][index] ?? '項目'}）`,
+        value,
+      })),
     );
     if (engineer.skillSheet !== null) {
       markers.push(
@@ -422,10 +433,22 @@ async function registerEngineer(
       { skillId: skillIds[0], yearsOfExperience: 7, level: 4 },
       { skillId: skillIds[1], yearsOfExperience: 3, level: null },
     ],
+    // 🔴 T-09-12: 経歴 4 行（1 行は継続中）。役割・業務内容・使用技術のすべてに目印を埋める。
+    careers: [
+      { periodFrom: '2025-01', periodTo: null, role: `T0912役割-${suffix}-PL`, description: `T0912業務内容-${suffix}-架空の基幹刷新`, technologies: `T0912技術-${suffix}-Go` },
+      { periodFrom: '2023-04', periodTo: '2024-12', role: `T0912役割-${suffix}-SE`, description: `T0912業務内容-${suffix}-架空の受発注`, technologies: `T0912技術-${suffix}-TypeScript` },
+      { periodFrom: '2021-01', periodTo: '2023-03', role: `T0912役割-${suffix}-PG`, description: `T0912業務内容-${suffix}-架空の会計`, technologies: `T0912技術-${suffix}-Java` },
+      { periodFrom: '2019-04', periodTo: '2020-12', role: `T0912役割-${suffix}-テスター`, description: `T0912業務内容-${suffix}-架空の物流`, technologies: `T0912技術-${suffix}-JUnit` },
+    ],
   };
   const created = await apiRequest(partner.page, '/api/engineers', { method: 'POST', body: input });
   expect(created.status, `POST /api/engineers（${label}）が失敗しました: ${created.text}`).toBe(201);
-  const { id } = parseJson(created) as { readonly id: string };
+  const { id, careers } = parseJson(created) as {
+    readonly id: string;
+    readonly careers: readonly { readonly periodFrom: string }[];
+  };
+  // 🔴 #16 の応答は保存後の確定した並び（期間の降順）で 4 行返る（`F-008 AC-5`。サーバ側で確定）。
+  expect(careers.map((row) => row.periodFrom)).toEqual(['2025-01', '2023-04', '2021-01', '2019-04']);
   return {
     label,
     id,
@@ -437,6 +460,7 @@ async function registerEngineer(
     availableFrom: input.availableFrom,
     skillIds,
     skillSheet: null,
+    careerMarkers: [`T0912役割-${suffix}`, `T0912業務内容-${suffix}`, `T0912技術-${suffix}`],
   };
 }
 

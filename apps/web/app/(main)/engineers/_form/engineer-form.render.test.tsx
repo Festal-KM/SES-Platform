@@ -60,7 +60,25 @@ const messages: EngineerFormMessages = {
   newAliasEmpty: '起票する表記はありません。',
   newAliasDictionaryLink: 'スキル辞書・新語候補の採否を開く',
 
-  careersComingSoon: '経験内容と従事期間は、後続のリリースで登録できるようになります。',
+  careerOrderNote: '編集中の行は追加した順のまま表示します。保存すると期間の新しい順に並び替えて保存されます。',
+  careerColumnPeriod: '期間',
+  careerColumnRole: '役割',
+  careerColumnDescription: '業務内容',
+  careerColumnTechnologies: '使用技術',
+  careerColumnActions: '操作',
+  careerPeriodFromLabel: '開始年月',
+  careerPeriodToLabel: '終了年月',
+  careerOngoingToggle: '継続中（終了年月なし）',
+  careerAdd: '行を追加',
+  careerRemove: '削除',
+  careerRestore: '元に戻す',
+  careerRemovedNote: '保存すると削除されます。',
+  careerEmpty: '経験内容が登録されていません。',
+  careerErrorPeriodFrom: '開始年月を入力してください（YYYY-MM）。',
+  careerErrorPeriodTo: '終了年月は YYYY-MM で入力するか、「継続中」を選んでください。',
+  careerErrorPeriodOrder: '開始年月は終了年月より前（または同じ月）にしてください。',
+  careerErrorRole: '役割を入力してください。',
+  careerErrorDescription: '業務内容を入力してください。',
 
   availabilityLabel: '稼働状況',
   availableFromLabel: '稼働可能時期',
@@ -99,6 +117,7 @@ const EMPTY_VALUES: EngineerFormValues = {
   contactPhone: '',
   skills: [],
   newSkillLabels: [],
+  careers: [],
 };
 
 function render(overrides: Partial<EngineerFormProps> = {}): string {
@@ -200,10 +219,128 @@ describe('docs/04 §S-007 の 6 セクションが揃っている', () => {
     expect(render()).toContain(`data-testid="${testId}"`);
   });
 
-  it('実装していないセクション（経験内容と従事期間）は隠さず、その旨を出す', () => {
+});
+
+// 🔴 T-09-12: セクション 3 は実際に登録できる行エディタである（docs/04 §S-007 セクション 3 / `F-008 AC-5`）。
+describe('🔴 F-008 AC-5: 経験内容と従事期間の行エディタ', () => {
+  it('✅ T-05-01 の暫定表示（comingSoon）は出ない。「行を追加」の導線と並びの説明が出る', () => {
     const html = render();
-    expect(html).toContain('data-testid="engineer-careers-coming-soon"');
-    expect(html).toContain(messages.careersComingSoon);
+    expect(html).not.toContain('engineer-careers-coming-soon');
+    expect(html).not.toContain('後続のリリース');
+    expect(html).toContain('data-testid="engineer-career-add"');
+    expect(html).toContain('data-testid="engineer-career-order-note"');
+    expect(html).toContain(messages.careerOrderNote);
+  });
+
+  it('🔴 新規は 0 行で開き、空行を初期表示しない。0 行の文言に警告色・必須マークが無い', () => {
+    const html = render();
+    expect(html).toContain('data-testid="engineer-career-empty"');
+    expect(html).not.toContain('data-testid="engineer-career-table"');
+    const section = html.slice(html.indexOf('engineer-section-careers'), html.indexOf('engineer-section-availability'));
+    expect(section).not.toMatch(/text-(red|amber)-\d+/);
+    expect(section).not.toMatch(/role="alert"/);
+    expect(section).not.toContain('必須');
+    expect(section).not.toContain('required');
+  });
+
+  it('編集は台帳の行を応答の配列順のまま出し、継続中の行は終了年月が空で「継続中」が選ばれている', () => {
+    const html = render({
+      mode: 'EDIT',
+      engineerId: '01930000-0000-7000-8000-0000000000f1',
+      initial: {
+        ...EMPTY_VALUES,
+        displayName: '架空 太郎',
+        careers: [
+          {
+            key: 'c1',
+            id: 'c1',
+            periodFrom: '2024-04',
+            periodTo: '',
+            ongoing: true,
+            role: 'PL',
+            description: '架空の基幹刷新',
+            technologies: 'TypeScript',
+            removed: false,
+          },
+          {
+            key: 'c2',
+            id: 'c2',
+            periodFrom: '2021-01',
+            periodTo: '2024-03',
+            ongoing: false,
+            role: 'SE',
+            description: '架空の受発注',
+            technologies: 'Java',
+            removed: false,
+          },
+        ],
+      },
+    });
+    expect(html).toContain('data-testid="engineer-career-table"');
+    const first = html.indexOf('data-testid="engineer-career-row-c1"');
+    const second = html.indexOf('data-testid="engineer-career-row-c2"');
+    expect(first).toBeGreaterThan(-1);
+    expect(second).toBeGreaterThan(first); // 配列順のまま（ソートし直さない）
+    expect(html).toContain('data-testid="engineer-career-ongoing-c1"');
+    const ongoingInput = /<input[^>]*data-testid="engineer-career-ongoing-c1"[^>]*>/.exec(html)?.[0] ?? '';
+    expect(ongoingInput).toContain('checked=""');
+    const periodToInput = /<input[^>]*data-testid="engineer-career-period-to-c1"[^>]*>/.exec(html)?.[0] ?? '';
+    expect(periodToInput).toContain('disabled=""');
+    expect(periodToInput).toContain('value=""');
+    expect(html).toContain('data-testid="engineer-career-remove-c1"');
+    expect(html).toContain('data-testid="engineer-career-remove-c2"');
+  });
+
+  it('🔴 役割は自由入力（select ではない）で、使用技術も自由入力である', () => {
+    const html = render({
+      mode: 'EDIT',
+      engineerId: '01930000-0000-7000-8000-0000000000f1',
+      initial: {
+        ...EMPTY_VALUES,
+        careers: [
+          {
+            key: 'c1',
+            id: 'c1',
+            periodFrom: '2024-04',
+            periodTo: '',
+            ongoing: true,
+            role: 'PL',
+            description: 'x',
+            technologies: 'TypeScript',
+            removed: false,
+          },
+        ],
+      },
+    });
+    expect(html).toMatch(/<input[^>]*data-testid="engineer-career-role-c1"/);
+    expect(html).not.toMatch(/<select[^>]*data-testid="engineer-career-role-c1"/);
+    expect(html).toMatch(/<input[^>]*data-testid="engineer-career-technologies-c1"/);
+  });
+
+  it('削除印の行は「元に戻す」と「保存すると削除されます」を出す（保存前に限り取り消せる）', () => {
+    const html = render({
+      mode: 'EDIT',
+      engineerId: '01930000-0000-7000-8000-0000000000f1',
+      initial: {
+        ...EMPTY_VALUES,
+        careers: [
+          {
+            key: 'c1',
+            id: 'c1',
+            periodFrom: '2024-04',
+            periodTo: '',
+            ongoing: true,
+            role: 'PL',
+            description: 'x',
+            technologies: '',
+            removed: true,
+          },
+        ],
+      },
+    });
+    expect(html).toContain('data-testid="engineer-career-restore-c1"');
+    expect(html).toContain(messages.careerRemovedNote);
+    expect(html).not.toContain('data-testid="engineer-career-remove-c1"');
   });
 });
 

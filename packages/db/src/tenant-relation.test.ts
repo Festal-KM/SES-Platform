@@ -151,6 +151,7 @@ describe('🔴 逆リレーション（他モデルのテナントキー列を�
       'sendingDomains',
       'skillAliases',
       'engineerSkills',
+      'engineerCareers', // T-09-12（docs/05 §3.4 / Issue #35 = A）
       'skillSheets',
       'skillSheetExtractions',
       'fileScanResults',
@@ -228,8 +229,23 @@ describe('🔴 逆リレーション（他モデルのテナントキー列を�
   it('Engineer.tenant は逆リレーションではない（順方向の宣言が担当する二重計上を避ける）', () => {
     const engineer = MODELS.find((model) => model.name === 'Engineer');
     expect(engineer).toBeDefined();
-    expect(inverseTenantKeyRelations(engineer as DmmfModel)).toEqual([]);
-    expect(tenantKeyMovingRelationsOf('Engineer')).toEqual([]);
+    // 🔴 T-09-12: `engineer_careers` の複合 FK `(tenant_id, engineer_id)` により、
+    //    `Engineer.engineerCareers` が `engineer_careers.tenant_id` を書ける逆リレーションになった
+    //    （docs/05 §3.4）。`Engineer.tenant`（順方向）はここに現れない。
+    expect(inverseTenantKeyRelations(engineer as DmmfModel)).toEqual(['engineerCareers']);
+    expect(tenantKeyMovingRelationsOf('Engineer')).toEqual(['engineerCareers']);
+  });
+
+  it('🔴 T-09-12: EngineerCareer の裏付けリレーションは tenant と engineer（複合 FK）の 2 本である', () => {
+    const career = MODELS.find((model) => model.name === 'EngineerCareer');
+    const backing = (career?.fields ?? [])
+      .filter((field) => field.kind === 'object')
+      .filter((field) => (field.relationFromFields ?? []).includes('tenantId'))
+      .map((field) => field.name);
+    // 🔴 ここが `['tenant']` に戻ったら、engineers への FK が単一列へ差し戻されている
+    //    （別テナントのエンジニアを指す行を DB が拒めなくなる。Issue #33 の決着に反する）。
+    expect(backing).toEqual(['tenant', 'engineer']);
+    expect(tenantKeyBackingRelationsOf('EngineerCareer')).toEqual(['tenant', 'engineer']);
   });
 
   it('🔴 射程外 4 モデルには宣言を置かない（置いても注入自体が行われず効かない）', () => {

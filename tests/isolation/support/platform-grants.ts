@@ -140,6 +140,20 @@ export const PLATFORM_READ_COLUMN_ALLOWLIST: Record<string, readonly string[]> =
     'normalized_prompt_version',
     'normalized_model_id',
   ],
+  // 🔴 T-09-12（docs/05 §5.5。migration 20260917000000）: 業務内容にはエンド企業名・現場名・商流が書かれる。
+  //    `role` / `description` / `technologies` を GRANT しない。件数・期間・出所だけを読める。
+  engineer_careers: [
+    'id',
+    'tenant_id',
+    'owner_partner_company_id',
+    'engineer_id',
+    'period_from',
+    'period_to',
+    'source',
+    'skill_sheet_extraction_id',
+    'created_at',
+    'updated_at',
+  ],
   skill_sheets: [
     'id',
     'tenant_id',
@@ -697,6 +711,8 @@ export const PLATFORM_READ_COLUMN_DENYLIST: Record<string, readonly string[]> = 
   //    （`CLAUDE.md` §10.5「運営者に必要なのは件数・状態・エラーであって内容ではない」）。
   //    migration 20260909000000 は GRANT を足していない（fail-closed）。ここは名指しの側から固定する。
   skill_sheets: ['object_key', 'note'],
+  // 🔴 T-09-12: 自由入力の 3 列（docs/05 §5.5）。
+  engineer_careers: ['role', 'description', 'technologies'],
   skill_sheet_extractions: ['payload'],
   projects: ['end_client_name', 'internal_unit_price', 'unit_price_min', 'unit_price_max'],
   engineer_snapshots: [

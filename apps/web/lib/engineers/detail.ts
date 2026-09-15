@@ -13,9 +13,11 @@ import { t, type MessageKey } from '@ses/i18n';
 //    画面ごとに違う**ので、ここで `packages/i18n` から引いて渡す。
 import { formatUnitPriceRange as formatRange } from '../format/number';
 import { PREFECTURE_MESSAGE_KEYS } from '../format/prefectures';
+import type { CareerRowView } from './careers';
 import type { EngineerDetailView, EngineerSkillView } from './service';
 import {
   ENGINEER_AVAILABILITY_MESSAGE_KEYS,
+  ENGINEER_CAREER_SOURCE_MESSAGE_KEYS,
   ENGINEER_SKILL_LEVEL_MESSAGE_KEYS,
   REMOTE_MODE_MESSAGE_KEYS,
 } from './labels';
@@ -39,6 +41,44 @@ export type EngineerDetailSkillRow = {
 /** 未設定（`docs/04` §S-006 の定義リストは空欄にせず `—` を置く）。 */
 function none(): string {
   return t('engineers.detail.valueNone');
+}
+
+/** 経歴表の 1 行（`docs/04` §S-006 セクション 8。4 列 + 入力元）。 */
+export type EngineerDetailCareerRow = {
+  /** `data-testid` と React の `key`。 */
+  readonly id: string;
+  /** `2024-04〜継続中` / `2021-01〜2024-03`。 */
+  readonly period: string;
+  readonly role: string;
+  readonly description: string;
+  readonly technologies: string;
+  readonly source: string;
+};
+
+/**
+ * 従事期間の表示。🔴 終了年月が `null` の行は `—` ではなく「継続中」（`docs/04` §10.3 の `null` 規約。
+ *    未設定の `—` と語を分けるのは、「未入力」と「継続中」を画面で取り違えないため）。
+ */
+export function formatCareerPeriod(periodFrom: string, periodTo: string | null): string {
+  return `${periodFrom}〜${periodTo ?? t('engineers.careers.ongoing')}`;
+}
+
+/**
+ * 🔴 **並びは応答の配列順そのもの**（サーバ側で `period_from DESC → created_at ASC → id ASC` に確定済み。
+ *    `F-008 AC-5`）。ここでソートし直さない —— `S-023` の凍結側と並べたときに「行が入れ替わったのか、
+ *    内容が変わったのか」が判別できなくなる（`docs/04` §S-006 セクション 8「列ヘッダに並び替えを付けない」）。
+ */
+export function engineerDetailCareerRows(
+  careers: readonly CareerRowView[],
+): readonly EngineerDetailCareerRow[] {
+  return careers.map((row) => ({
+    id: row.id,
+    period: formatCareerPeriod(row.periodFrom, row.periodTo),
+    role: row.role,
+    description: row.description,
+    technologies: row.technologies === '' ? none() : row.technologies,
+    source: t(ENGINEER_CAREER_SOURCE_MESSAGE_KEYS[row.source]),
+  }));
 }
 
 /**

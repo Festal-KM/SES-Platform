@@ -133,6 +133,7 @@ export {
   EMAIL_EVENT_TYPES,
   EMAIL_RECIPIENT_CLASSES,
   ENGINEER_AVAILABILITIES,
+  ENGINEER_CAREER_SOURCES,
   ENGINEER_SKILL_SOURCES,
   ESIGN_SIGNING_ORDERS,
   EXTENSION_REVIEW_DECISIONS,
@@ -185,6 +186,7 @@ export type {
   EmailEventType,
   EmailRecipientClass,
   EngineerAvailability,
+  EngineerCareerSource,
   EngineerSkillSource,
   EsignSigningOrder,
   ExtensionReviewDecision,
@@ -286,6 +288,7 @@ export type {
 //    凍結を迂回した `proposals` の INSERT は `packages/db` の外からは書けない。
 export {
   createProposalDraft,
+  ENGINEER_CAREER_ORDER_BY,
   PROPOSAL_AUDIT_ACTION_CREATE,
   ProposalDraftEngineerNotFoundError,
 } from './proposal-draft.js';

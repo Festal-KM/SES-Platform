@@ -61,6 +61,15 @@ export const ENGINEER_SKILL_SOURCES = ['MANUAL', 'EXTRACTED'] as const;
 
 export type EngineerSkillSource = (typeof ENGINEER_SKILL_SOURCES)[number];
 
+/**
+ * docs/05 §3.4 `EngineerCareer.source`（TEXT + CHECK。T-09-12）。手入力 / `sheet-parser` の抽出を採用。
+ * 🔴 `ENGINEER_SKILL_SOURCES` と同じ値だが**別の列挙**として持つ（列ごとに CHECK があり、
+ *    片方だけ値が増える変更〔例: 経歴にだけ `IMPORTED`〕を型で区別できるようにする）。
+ */
+export const ENGINEER_CAREER_SOURCES = ['MANUAL', 'EXTRACTED'] as const;
+
+export type EngineerCareerSource = (typeof ENGINEER_CAREER_SOURCES)[number];
+
 /** docs/05 §3.4 `SkillSheetExtraction.status`（TEXT + CHECK）。 */
 export const SKILL_SHEET_EXTRACTION_STATUSES = [
   'PENDING_REVIEW',

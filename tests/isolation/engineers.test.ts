@@ -684,7 +684,8 @@ describe('🔴 F-008 処理④: 作成・更新が AuditLog に残る（PII を�
     expect(rows).toHaveLength(1);
     expect(rows[0]?.actorId).toBe(TENANT_1.hostUserId);
     expect(rows[0]?.targetType).toBe('Engineer');
-    expect(rows[0]?.summary).toEqual({ skillCount: 1, newSkillLabelCount: 1 });
+    // 🔴 T-09-12: `careerCount`（経歴の行数）を足した。行ごとの記録は `engineer_career.*` が持つ。
+    expect(rows[0]?.summary).toEqual({ skillCount: 1, newSkillLabelCount: 1, careerCount: 0 });
     expect(JSON.stringify(rows[0]?.summary)).not.toContain('監査');
   });
 
@@ -702,6 +703,8 @@ describe('🔴 F-008 処理④: 作成・更新が AuditLog に残る（PII を�
       fields: 'availability',
       skillCount: null,
       newSkillLabelCount: 0,
+      // 🔴 T-09-12: 未指定（変更しない）は `null`（`[]` の「全行削除」と区別する）。
+      careerCount: null,
     });
   });
 });

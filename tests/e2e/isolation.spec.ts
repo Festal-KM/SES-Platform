@@ -62,7 +62,7 @@ import { expect, test, type Browser } from '@playwright/test';
 import { ISOLATION_SEED_PASSWORD, isolationSeedEmails } from '@ses/db/seed';
 import { t } from '../../packages/i18n/src/index';
 import { apiRequest, auditLogPeriodQuery, parseJson, type ApiResponse } from './support/api';
-import { expectNoHiddenCountHints, expectNoMarkers } from './support/assertions';
+import { expectNoBrokenLabels, expectNoHiddenCountHints, expectNoMarkers } from './support/assertions';
 import {
   foreignPartnerMarkers,
   foreignTenantMarkers,
@@ -274,6 +274,23 @@ test.describe('② テナント A の OWNER で URL 直打ち（他テナント�
       const own = await pageContent(session, `/engineers/${tenantIds(1).hostEngineerId}`);
       expect(own).toContain(t('engineers.detail.title'));
       expect(own).toContain(t('engineers.ownership.host'));
+      // 🔴 T-09-12: `S-006` セクション 8（経験内容と従事期間）に seed の 2 行が実データで出る
+      //    （基本情報の直下、期間の降順、列ヘッダに並び替えなし）。0 行の警告色を使っていないことは
+      //    render 側（`engineer-form.render.test.tsx`）と docs/04 の規律に委ね、ここでは実データの到達と
+      //    ラベルの折り返し・欠けが無いこと（`expectNoBrokenLabels`）を見る。
+      await expect(session.page.getByTestId('engineer-detail-career-table')).toBeVisible();
+      await expect(session.page.getByTestId('engineer-detail-career-table').locator('tbody tr')).toHaveCount(2);
+      expect(own).toContain(t('engineers.careers.ongoing')); // 継続中の行が 1 行ある
+      expect(own).not.toContain('engineer-careers-coming-soon');
+      await expectNoBrokenLabels('S-006 エンジニア詳細（経験内容あり）', session.page);
+
+      // 🔴 T-09-12: `S-007`（編集）の行エディタ。初期値として同じ 2 行が入り、comingSoon の注記は無い。
+      const edit = await pageContent(session, `/engineers/${tenantIds(1).hostEngineerId}/edit`);
+      expect(edit).toContain('data-testid="engineer-career-table"');
+      expect(edit).not.toContain('engineer-careers-coming-soon');
+      await expect(session.page.getByTestId('engineer-career-add')).toBeVisible();
+      await expect(session.page.getByTestId('engineer-career-table').locator('tbody tr')).toHaveCount(2);
+      await expectNoBrokenLabels('S-007 エンジニアの編集（経験内容の行エディタ）', session.page);
 
       // 🔴 境界外: 他テナントのホスト所有エンジニア（第一境界）。
       const foreignTenant = await pageContent(session, `/engineers/${tenantIds(2).hostEngineerId}`);

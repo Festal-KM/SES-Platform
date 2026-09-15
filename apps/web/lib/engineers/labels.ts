@@ -5,7 +5,7 @@
 // 🔴 テンプレートリテラルでキーを組み立てない（`lib/tenants/labels.ts` と同じ規律）。
 //    `Record<値集合, MessageKey>` にすることで、**値が増えたら文言の割り当てをコンパイラが強制する**
 //    （割り当て漏れが「コードがそのまま画面に出る」形で表に出るのを防ぐ）。
-import type { EngineerAvailability, RemoteMode } from '@ses/db';
+import type { EngineerAvailability, EngineerCareerSource, RemoteMode } from '@ses/db';
 import { t, type MessageKey } from '@ses/i18n';
 
 /**
@@ -48,6 +48,16 @@ export const ENGINEER_SKILL_LEVEL_MESSAGE_KEYS: Readonly<
   3: 'engineers.skills.level.3',
   4: 'engineers.skills.level.4',
   5: 'engineers.skills.level.5',
+};
+
+/**
+ * 🔴 T-09-12: 経歴の入力元（`EngineerCareer.source`。docs/04 §S-006 セクション 8「行ごとに入力元のラベル」）。
+ *    `EXTRACTED` は Phase 2 の `#16b` が作る行であり、Phase 1 では `MANUAL` しか現れないが、
+ *    値集合の網羅はコンパイラに強制させる（`Record<EngineerCareerSource, MessageKey>`）。
+ */
+export const ENGINEER_CAREER_SOURCE_MESSAGE_KEYS: Readonly<Record<EngineerCareerSource, MessageKey>> = {
+  MANUAL: 'engineers.careers.source.MANUAL',
+  EXTRACTED: 'engineers.careers.source.EXTRACTED',
 };
 
 // 🔴 T-06-01: 都道府県（JIS X 0401）の写像は `lib/format/prefectures.ts` へ移した。

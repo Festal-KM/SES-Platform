@@ -76,9 +76,15 @@ export const PATCH = withApiRoute(
           fields: changedFieldsOf(body),
           skillCount: body.skills === undefined ? null : body.skills.length,
           newSkillLabelCount: body.newSkillLabels === undefined ? 0 : body.newSkillLabels.length,
+          // 🔴 T-09-12: 未指定（変更しない）は `null`、指定は行数。行ごとの記録は
+          //    `engineer_career.*`（`replaceEngineerCareers`。業務トランザクションの内側）が持つ。
+          careerCount: body.careers === undefined ? null : body.careers.length,
         },
       }),
     },
   },
-  async ({ ctx, params, body }) => Response.json(await updateEngineer(ctx, params.id, body)),
+  async ({ ctx, params, body }) => {
+    const meta = await readRequestMeta();
+    return Response.json(await updateEngineer(ctx, params.id, body, { ipAddress: meta.ipAddress }));
+  },
 );

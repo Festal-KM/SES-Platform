@@ -191,6 +191,17 @@ const PARTNER_COMPOSITE_FK_RELATION_OVERRIDES: Readonly<Record<string, readonly 
 };
 
 /**
+ * 🔴 T-09-12 / docs/05 §3.4: パートナー以外の親を**複合 FK**で指すリレーション。
+ *
+ * `EngineerCareer.engineer` は `fields: [tenantId, engineerId]` であり、ネスト write
+ * （`connect` / `create`）が `engineer_careers.tenant_id` を書ける。`PARTNER_COMPOSITE_FK_RELATION_OVERRIDES`
+ * と同じ理由で順方向の裏付けリレーションとして宣言する（`tenant-relation.test.ts` が DMMF と突合する）。
+ */
+const PARENT_COMPOSITE_FK_RELATION_OVERRIDES: Readonly<Record<string, readonly string[]>> = {
+  EngineerCareer: ['engineer'],
+};
+
+/**
  * 🔴 逆リレーション（親 → 子）の宣言。
  *
  * `Engineer.tenant`（子 → 親）を塞いでも、**同じ `engineers.tenant_id` 列は
@@ -233,6 +244,7 @@ const TENANT_KEY_MOVING_RELATION_OVERRIDES: Readonly<Record<string, readonly str
     'sendingDomains',
     'skillAliases',
     'engineerSkills',
+    'engineerCareers', // T-09-12（docs/05 §3.4 / Issue #35 = A）
     'skillSheets',
     'skillSheetExtractions',
     'fileScanResults',
@@ -300,6 +312,12 @@ const TENANT_KEY_MOVING_RELATION_OVERRIDES: Readonly<Record<string, readonly str
     'contracts',
     'tasks',
   ],
+  /**
+   * 🔴 T-09-12 / docs/05 §3.4: `engineer_careers` は `(tenant_id, engineer_id)` の複合 FK で
+   *    `engineers` を指す。`engineer.update({ data: { engineerCareers: { connect: … } } })` が
+   *    `engineer_careers.tenant_id` を書けるため、`Tenant.engineers` と同じ扱いで一律拒否する。
+   */
+  Engineer: ['engineerCareers'],
 };
 
 const EXCLUDED = new Set<string>(TENANT_SCOPE_EXCLUDED_MODELS);
@@ -514,8 +532,11 @@ export function tenantRelationOf(model: string): string | null {
 export function tenantKeyBackingRelationsOf(model: string): readonly string[] {
   if (EXCLUDED.has(model)) return [];
   const primary = tenantRelationOf(model);
-  const partner = PARTNER_COMPOSITE_FK_RELATION_OVERRIDES[model] ?? [];
-  return primary === null ? partner : [primary, ...partner];
+  const composite = [
+    ...(PARTNER_COMPOSITE_FK_RELATION_OVERRIDES[model] ?? []),
+    ...(PARENT_COMPOSITE_FK_RELATION_OVERRIDES[model] ?? []),
+  ];
+  return primary === null ? composite : [primary, ...composite];
 }
 
 /**

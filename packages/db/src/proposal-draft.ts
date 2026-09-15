@@ -19,14 +19,14 @@
 // ============================================================================
 // 台帳行への参照（FK）を持たず、**その時点の値を写す**。以後の台帳更新は提案の内容を変えない（`F-019 AC-2`）。
 //
-// ⚠️ **T-09-12 への申し送り（`EngineerCareer`。[Issue #35](https://github.com/Festal-KM/SES-Platform/issues/35) = A）**:
-//    `engineer_careers` 表は本タスクの時点で**存在しない**。したがって `careers` は **`[]` を保存する**
-//    （`null` にしない。0 行は正常な状態であり、「凍結し忘れ」と区別できる必要がある。§3.6 / `F-008 AC-5`）。
-//    表が入ったら、下の `freezeCareers()` の中身を「§3.4.1 の全順序（`periodFrom` 降順 → `createdAt` 昇順 →
-//    `id` 昇順）で `engineer_careers` を読み、`FrozenCareer[]`（`periodFrom` / `periodTo` / `role` /
-//    `description` / `technologies`。**行 ID を持たない**）に値ごと写す」に置き換える。**本関数の署名・呼び出し側・
-//    保存先の列は変わらない。** 0 行を理由に失敗させない（#36 の 🔴「経験内容 0 行を理由に 422 にしない」）。
+// ✅ **T-09-12（`EngineerCareer`。[Issue #35](https://github.com/Festal-KM/SES-Platform/issues/35) = A）で行複製に置き換えた**:
+//    `freezeCareers()` は `engineer_careers` を §3.4.1 の全順序（`periodFrom` 降順 → `createdAt` 昇順 →
+//    `id` 昇順 = `ENGINEER_CAREER_ORDER_BY`）で読み、`FrozenCareer[]`（5 項目。**行 ID を持たない**）に値ごと写す。
+//    0 行は `[]` を保存する（`null` にしない。0 行は正常な状態であり、「凍結し忘れ」と区別できる必要がある。
+//    §3.6 / `F-008 AC-5`）。0 行を理由に失敗させない（#36 の 🔴「経験内容 0 行を理由に 422 にしない」）。
+//    🔴 母集団は `engineer_careers` の RLS（C3。親と同じ）が決める —— `where` は `engineerId` だけである。
 import { Prisma } from '@prisma/client';
+import { toFrozenCareer, type FrozenCareer as DomainFrozenCareer } from '@ses/domain';
 import { writeAuditLog } from './audit.js';
 import type { AuthenticatedTenantCtx } from './context.js';
 import type { withTenant } from './with-tenant.js';
@@ -35,7 +35,14 @@ import type { withTenant } from './with-tenant.js';
 type TenantDbArg = Parameters<Parameters<typeof withTenant<void>>[1]>[0];
 export type ProposalDraftWriter = Pick<
   TenantDbArg,
-  'engineer' | 'engineerSkill' | 'skillSheet' | 'proposal' | 'engineerSnapshot' | 'proposalEvent' | 'auditLog'
+  | 'engineer'
+  | 'engineerSkill'
+  | 'engineerCareer'
+  | 'skillSheet'
+  | 'proposal'
+  | 'engineerSnapshot'
+  | 'proposalEvent'
+  | 'auditLog'
 >;
 
 /**
@@ -96,7 +103,7 @@ export type ProposalDraftResult = {
   readonly id: string;
   readonly snapshot: {
     readonly frozenAt: Date;
-    /** 凍結した経歴の行数。⚠️ `EngineerCareer` が入るまでは常に `0`（T-09-12）。 */
+    /** 凍結した経歴の行数（0 行は `0`。`null` にしない。docs/05 §6.5 #36）。 */
     readonly careerCount: number;
   };
 };
@@ -125,23 +132,37 @@ type FrozenSkill = {
 
 /**
  * `EngineerSnapshot.careers` の 1 行（docs/05 §3.6 `FrozenCareer`。🔴 台帳の行 ID を持たない）。
- * ⚠️ T-09-12 まで生成されない（`freezeCareers` は常に `[]`）。型はここに置いて、後続が保存先の形を
- *    読み違えないようにする。
+ * 出所は `@ses/domain`（`packages/domain/src/ledger/careers.ts`）。ゲート（`gate-target.ts`）と画面が
+ * 同じ形を読むため、ここでは別名として re-export する。
  */
-export type FrozenCareer = {
-  readonly periodFrom: string;
-  readonly periodTo: string | null;
-  readonly role: string;
-  readonly description: string;
-  readonly technologies: string;
-};
+export type FrozenCareer = DomainFrozenCareer;
 
 /**
- * 🔴 T-09-12 で `engineer_careers` を読んで値ごと写す処理に置き換える（ファイル冒頭の申し送り）。
- *    現時点では表が無いため `[]`（0 行）を返す。**`null` を返さない。**
+ * 🔴 台帳の表示順そのもの（docs/05 §3.4.1）。`period_from DESC → created_at ASC → id ASC` の全順序で、
+ *    索引 `(tenant_id, engineer_id, period_from DESC, created_at, id)` がそのまま供給する。
+ *    #17（`apps/web/lib/engineers/careers.ts`）と凍結が**同じ並び**を使う（配列順 = 表示順）ためここに置く。
+ *    `period_to` を並びに使わない（継続中 = NULL の扱いが実装ごとにずれる）。
  */
-function freezeCareers(): readonly FrozenCareer[] {
-  return [];
+export const ENGINEER_CAREER_ORDER_BY = [
+  { periodFrom: 'desc' },
+  { createdAt: 'asc' },
+  { id: 'asc' },
+] as const satisfies readonly Prisma.EngineerCareerOrderByWithRelationInput[];
+
+/**
+ * 🔴 凍結は行単位の値の複製である（docs/05 §3.6 / §6.5「#36 / #46 / #46b の経験内容の凍結」）。
+ *    台帳の行 ID を持ち込まない。0 行は `[]`（`null` を返さない）。
+ */
+async function freezeCareers(
+  db: Pick<ProposalDraftWriter, 'engineerCareer'>,
+  engineerId: string,
+): Promise<readonly FrozenCareer[]> {
+  const rows = await db.engineerCareer.findMany({
+    where: { engineerId },
+    select: { periodFrom: true, periodTo: true, role: true, description: true, technologies: true },
+    orderBy: [...ENGINEER_CAREER_ORDER_BY],
+  });
+  return rows.map(toFrozenCareer);
 }
 
 function toPrismaJson(value: readonly FrozenSkill[] | readonly FrozenCareer[]): Prisma.InputJsonValue {
@@ -156,7 +177,7 @@ function toPrismaJson(value: readonly FrozenSkill[] | readonly FrozenCareer[]): 
  *   ② 登録スキル（辞書名 + 経験年数 + レベル。`skillId` 昇順の決定的順序）と、最新の `CLEAN` な版を読む
  *      （`is_latest = true` は CHECK により `scan_status = 'CLEAN'` に限られる。`F-019 AC-3`）
  *   ③ `proposals` に `DRAFT` で INSERT（`ownerPartnerCompanyId` は **ctx**。リクエスト入力ではない）
- *   ④ `engineer_snapshots` に値を写す（`careers` は `[]`。T-09-12 で行複製を足す）
+ *   ④ `engineer_snapshots` に値を写す（`careers` は `engineer_careers` の行単位の複製。0 行は `[]`）
  *   ⑤ `proposal_events` に `STATE`（`null → DRAFT`）を 1 行
  *   ⑥ `AuditLog(proposal.create)`。🔴 `summary` は `{ projectId, proposalRequestId }` だけ ——
  *      `engineer_id` / 実名 / 依頼先を載せない（運営者が横断検索する。`CLAUDE.md` §10.5）
@@ -200,7 +221,7 @@ export async function createProposalDraft(
     where: { engineerId: engineer.id, isLatest: true, scanStatus: 'CLEAN' },
     select: { id: true },
   });
-  const careers = freezeCareers();
+  const careers = await freezeCareers(db, engineer.id);
 
   // ③ Proposal（DRAFT）。
   const terms = input.terms ?? {};
@@ -226,7 +247,8 @@ export async function createProposalDraft(
     select: { id: true },
   });
 
-  // ④ 凍結（値の複製。`ownerPartnerCompanyId` は継承トリガが親の値で上書きする）。
+  // ④ 凍結（値の複製。`ownerPartnerCompanyId` は継承トリガが親の値で上書きする。`careers` は
+  //    台帳の行 ID を持たない 5 項目の配列で、配列順 = 凍結時点の表示順）。
   await db.engineerSnapshot.create({
     data: {
       tenantId: ctx.tenantId,

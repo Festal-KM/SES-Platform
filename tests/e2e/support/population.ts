@@ -57,6 +57,9 @@ function bodyMarkers(index: TenantIndex): string[] {
     `${ISOLATION_FORBIDDEN_MARKERS.proposalBody}-p2-${suffix}`,
     `${ISOLATION_FORBIDDEN_MARKERS.messageBody}-p1-${suffix}`,
     `${ISOLATION_FORBIDDEN_MARKERS.messageBody}-p2-${suffix}`,
+    // 🔴 T-09-12: 経験内容の業務内容（他テナントのホスト / 取引先の経歴）。
+    `${ISOLATION_FORBIDDEN_MARKERS.careerDescription}-host-${suffix}`,
+    `${ISOLATION_FORBIDDEN_MARKERS.careerDescription}-p1-${suffix}`,
   ];
 }
 
@@ -101,6 +104,8 @@ export function foreignPartnerMarkers(
     partner === 1 ? emails.partner1 : emails.partner2,
     `${ISOLATION_FORBIDDEN_MARKERS.proposalBody}-p${partner}-t${index}`,
     `${ISOLATION_FORBIDDEN_MARKERS.messageBody}-p${partner}-t${index}`,
+    // 🔴 T-09-12: 他パートナーの経歴（`F-008 AC-7`。1 社目は 4 行持つ。2 社目は 0 行なので値は実在しない）。
+    `${ISOLATION_FORBIDDEN_MARKERS.careerDescription}-p${partner}-t${index}`,
   ];
 }
 

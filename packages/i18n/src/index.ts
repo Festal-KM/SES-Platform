@@ -851,10 +851,42 @@ const ja = {
   //    （起票して終わりにせず、採否の画面へ辿れるようにする）。
   'engineers.skills.newAlias.dictionaryLink': 'スキル辞書・新語候補の採否を開く',
 
-  // 🔴 `docs/05` §3.4 に台帳側の保存先が無い項目（`docs/05` への追記提案が要る）。
-  //    画面から隠さず、いまは登録できないことを書く（`orgSettings.members.comingSoon` と同じ規律）。
-  'engineers.careers.comingSoon':
-    '経験内容と従事期間は、スキルシートの取込（後続のリリース）で登録できるようになります。現時点では台帳に保存できません。',
+  // --- 経験内容と従事期間（`EngineerCareer`。T-09-12。docs/04 §S-006 セクション 8 / §S-007 セクション 3 /
+  //     `F-008 AC-5`。Issue #35 = A）---
+  // ✅ T-05-01 の暫定表示 `engineers.careers.comingSoon`（「後続のリリースで登録できるようになる」）は
+  //    **廃止した**。保存先（`engineer_careers`）が実在し登録できるようになったため、注記だけを残すと
+  //    「入力できるのに、できないと書いてある」画面になる（docs/05 §6.4「#16 の実装の決着」）。
+  // 🔴 0 行は正常な状態（`F-008 AC-5`）。**警告色・注意アイコン・必須マーク・保存の抑止を作らない。**
+  'engineers.careers.column.period': '期間',
+  'engineers.careers.column.role': '役割',
+  'engineers.careers.column.description': '業務内容',
+  'engineers.careers.column.technologies': '使用技術',
+  'engineers.careers.column.source': '入力元',
+  'engineers.careers.column.actions': '操作',
+  'engineers.careers.periodFrom.label': '開始年月',
+  'engineers.careers.periodTo.label': '終了年月',
+  // 🔴 終了年月が無い行は `—` ではなく「継続中」（docs/04 §10.3 の `null` 規約 —— 語を分ける）。
+  'engineers.careers.ongoing': '継続中',
+  'engineers.careers.ongoing.toggle': '継続中（終了年月なし）',
+  'engineers.careers.source.MANUAL': '手入力',
+  'engineers.careers.source.EXTRACTED': 'AI 抽出を採用',
+  'engineers.careers.add': '行を追加',
+  'engineers.careers.remove': '削除',
+  'engineers.careers.restore': '元に戻す',
+  'engineers.careers.removedNote': '保存すると削除されます。',
+  // 🔴 `S-006`: 0 行の文言（警告色にしない）。編集導線は `S-007` への遷移 1 本。
+  'engineers.careers.empty': '経験内容が登録されていません。',
+  'engineers.careers.empty.editLink': '人材の編集で登録する',
+  // 🔴 `S-007`: 並びの説明（編集中は追加順のまま動かさず、保存時に期間の降順へ揃える。docs/04 §S-007）。
+  'engineers.careers.orderNote':
+    '編集中の行は追加した順のまま表示します。保存すると、期間の新しい順（同じ期間は登録順）に並び替えて保存されます。',
+  // 🔴 `S-006`: 並び順の説明（列ヘッダに並び替えを付けない理由と対）。
+  'engineers.careers.detailOrderNote': '期間の新しい順（同じ期間は登録順）に表示しています。',
+  'engineers.careers.error.periodFrom': '開始年月を入力してください（YYYY-MM）。',
+  'engineers.careers.error.periodTo': '終了年月は YYYY-MM で入力するか、「継続中」を選んでください。',
+  'engineers.careers.error.periodOrder': '開始年月は終了年月より前（または同じ月）にしてください。',
+  'engineers.careers.error.role': '役割を入力してください。',
+  'engineers.careers.error.description': '業務内容を入力してください。',
 
   'engineers.availability.label': '稼働状況',
   'engineers.availability.WORKING': '稼働中',
@@ -898,6 +930,8 @@ const ja = {
   'engineers.detail.title': '人材の詳細',
   'engineers.detail.section.basic': '基本情報',
   'engineers.detail.section.skills': 'スキル',
+  // 🔴 T-09-12: セクション 8（docs/04 §S-006。配置は基本情報の直下）。
+  'engineers.detail.section.careers': '経験内容と従事期間',
   'engineers.detail.section.skillSheets': 'スキルシートの版',
   'engineers.detail.section.proposals': '提案履歴',
   'engineers.detail.edit': 'この人材を編集',
@@ -911,8 +945,8 @@ const ja = {
   'engineers.detail.viewRecorded': 'この画面の閲覧は監査ログに記録されます。',
   // 🔴 `BR-52` / `F-008 AC-1`: 集めていない情報を明示する（ワイヤーフレーム §S-006 の注記）。
   'engineers.detail.collectionScope': '本籍・家族構成・健康情報・信条にあたる項目は保持していません。',
-  // 🔴 未実装のセクションを黙って消さない（`engineers.careers.comingSoon` と同じ規律）。
-  //    提案履歴と凍結差分は SP-09 が作る。
+  // 🔴 未実装のセクションを黙って消さない（「保存先も表示元も無いセクションを隠さずに予告する」規律。
+  //    ✅ T-09-12 で `engineers.careers.comingSoon` は廃止したが、規律は残る）。提案履歴と凍結差分は SP-09 が作る。
   //    ⚠️ `engineers.detail.skillSheets.comingSoon` は T-05-06 で `S-008` が実装され、
   //       導線（`engineers.detail.skillSheets.link`）に置き換わったため削除した。
   'engineers.detail.proposals.comingSoon':
@@ -946,7 +980,7 @@ const ja = {
   //    一覧に出るとき）だけ、こちらを出す（`F-009 AC-5`）。並びの説明が実態とずれないようにする。
   'engineers.list.orderNote.fit':
     '指定した条件（稼働可能時期・勤務地）に合う人材を先に、そのうえで更新日の新しい順に表示しています。',
-  // 🔴 未実装を隠さない（`engineers.careers.comingSoon` と同じ規律）。何ができないのかを書く。
+  // 🔴 未実装を隠さない（`engineers.detail.proposals.comingSoon` と同じ規律）。何ができないのかを書く。
   //    ✅ T-06-04 で検索条件と 2 つの絞り込みが入ったため、残りだけを書く。
   'engineers.list.searchComingSoon':
     '列の表示切替（希望条件・登録日・担当）は、後続のリリースで追加されます。所属区分は、この一覧に出る人材が常に自社の人材のみであるため、検索条件として置いていません。',
@@ -1167,7 +1201,7 @@ const ja = {
   'skillDictionary.candidates.readOnlyNote':
     '採否の操作はこの画面では行えません。新語候補の採用・却下は、自社（発注元）の管理者または営業担当が行います。',
   // 🔴 `docs/04` §S-009 の「出現件数」列に対応する保存先が docs/05 §3.4 に無い（本文の注記参照）。
-  //    列を勝手に足さず、いまは出せないことを画面に書く（`engineers.careers.comingSoon` と同じ規律）。
+  //    列を勝手に足さず、いまは出せないことを画面に書く（`engineers.detail.proposals.comingSoon` と同じ規律）。
   'skillDictionary.candidates.occurrenceComingSoon':
     '同じ表記が何件のエンジニアで使われているかの集計は、スキルシートの取込（後続のリリース）と合わせて表示できるようになります。',
 
@@ -1571,7 +1605,7 @@ const ja = {
   'candidates.filtered.empty.lead': '効いている条件を 1 つずつ外して、対象を広げられます。',
   'candidates.detail.select': '行を選ぶと、ここに候補の詳細を表示します。',
   'candidates.detail.openEngineer': '人材の詳細を開く',
-  // 🔴 未実装を隠さない（`engineers.careers.comingSoon` と同じ規律）。押しても動かない導線を先に描かない。
+  // 🔴 未実装を隠さない（`engineers.detail.proposals.comingSoon` と同じ規律）。押しても動かない導線を先に描かない。
   'candidates.detail.proposalComingSoon': '提案の作成は後続のリリースで行えます。',
   'candidates.detail.anonymousNote':
     '共有候補は丸めた 5 項目のみが開示されています。実名・所属会社名・スキルシート・経歴は、提案が作成されるまで開示されません。',
