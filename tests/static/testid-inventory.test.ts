@@ -397,6 +397,9 @@ const FROZEN_EXACT: readonly string[] = [
   'engineer-submit',
   'engineer-unit-price-max',
   'engineer-unit-price-min',
+  // ✅ T-10-05: `F-028` 非本番環境バナー（`app/_components/environment-banner.tsx`。`app/layout.tsx` が全画面に描く）。
+  //    E2E（`isolation.spec.ts`）と render テスト（`layout.render.test.tsx` / `environment-banner.render.test.tsx`）が掴む。
+  'environment-banner',
   'home-host-engineer-ledger',
   'home-host-project-list',
   'home-host-proposal-requests',

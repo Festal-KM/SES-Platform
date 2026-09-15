@@ -55,6 +55,15 @@ export {
 } from './components/card.js';
 export { Checkbox } from './components/checkbox.js';
 export type { CheckboxProps } from './components/checkbox.js';
+// 🔴 T-10-05: `F-028` 非本番環境バナー。shadcn/ui の取り込みではなく本リポジトリ固有
+//    （docs/05 §13.5）。`APP_ENV` の分岐を持つ唯一の UI 部品であり、文言は持たない。
+export { EnvironmentBanner } from './components/environment-banner.js';
+export type {
+  EnvironmentBannerEnv,
+  EnvironmentBannerMessages,
+  EnvironmentBannerProps,
+  EnvironmentBannerVisibleEnv,
+} from './components/environment-banner.js';
 export { Field, FieldDescription, FieldError, FieldLabel } from './components/field.js';
 export type {
   FieldElement,

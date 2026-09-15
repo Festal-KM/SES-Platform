@@ -358,3 +358,57 @@ export function assertBrokenLabelReport(source: string, report: BrokenLabelRepor
     `${source}: ラベルが読めない・押せない形で描画されています（折り返し / 溢れ / 到達不能。走査 ${report.scanned} 要素）`,
   ).toEqual([]);
 }
+
+// ---------------------------------------------------------------------------
+// 🔴 非本番環境バナー（T-10-05 / `F-028 AC-1`）
+// ---------------------------------------------------------------------------
+
+/**
+ * 🔴 **`production` 以外の画面で環境バナーが視認でき、スクロールしても消えない**（`F-028 AC-1`）。
+ *
+ * E2E ハーネスは `APP_ENV=development` 固定なので、ここで確かめられるのは `development` の
+ * 帯だけである（`demo` / `sandbox` / `staging` の文言と `production` で出ないことは
+ * `apps/web/app/_components/environment-banner.render.test.tsx` /
+ * `apps/web/app/layout.render.test.tsx` が固定する）。**呼び出し元は主平面・管理平面の
+ * 両方、およびモバイル spec から呼ぶ**（片方だけ直る状態を作らない）。
+ *
+ * 手順:
+ *   1. バナーが見えており、`expectedText`（`t('env.development')`）を含む
+ *   2. ビューポートの高さを詰めてページを必ずスクロール可能にし、末尾までスクロールする
+ *      （画面の高さに依存して「スクロールできなかったから消えなかった」を green にしない。
+ *      `window.scrollY > 0` を対照として確かめる）
+ *   3. スクロール後もバナーがビューポートの最上部（`y = 0`）に在り、見えている
+ *   4. ビューポートは元の大きさに戻す（後続の検査を狭い画面で走らせない）
+ */
+export async function expectEnvironmentBannerPinned(
+  source: string,
+  page: Page,
+  expectedText: string,
+): Promise<void> {
+  const banner = page.getByTestId('environment-banner');
+  await expect(banner, `${source}: 環境バナーが表示されていません`).toBeVisible();
+  await expect(banner, `${source}: 環境バナーの文言が違います`).toContainText(expectedText);
+
+  const original = page.viewportSize();
+  const width = original?.width ?? 1280;
+  try {
+    await page.setViewportSize({ width, height: 200 });
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    const scrollY = await page.evaluate(() => window.scrollY);
+    expect(scrollY, `${source}: ページがスクロールできず、固定表示を検証できていません`).toBeGreaterThan(0);
+
+    await expect(banner, `${source}: スクロール後に環境バナーが見えなくなりました`).toBeVisible();
+    const box = await banner.boundingBox();
+    expect(box, `${source}: スクロール後に環境バナーの矩形が取れません`).not.toBeNull();
+    expect(
+      Math.round(box?.y ?? Number.NaN),
+      `${source}: スクロール後に環境バナーが最上部に固定されていません`,
+    ).toBe(0);
+    expect(
+      Math.round(box?.height ?? 0),
+      `${source}: 環境バナーの高さが 0 です（見えていない）`,
+    ).toBeGreaterThan(0);
+  } finally {
+    if (original !== null) await page.setViewportSize(original);
+  }
+}

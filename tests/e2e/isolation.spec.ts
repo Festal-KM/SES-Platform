@@ -62,7 +62,12 @@ import { expect, test, type Browser } from '@playwright/test';
 import { ISOLATION_SEED_PASSWORD, isolationSeedEmails } from '@ses/db/seed';
 import { t } from '../../packages/i18n/src/index';
 import { apiRequest, auditLogPeriodQuery, parseJson, type ApiResponse } from './support/api';
-import { expectNoBrokenLabels, expectNoHiddenCountHints, expectNoMarkers } from './support/assertions';
+import {
+  expectEnvironmentBannerPinned,
+  expectNoBrokenLabels,
+  expectNoHiddenCountHints,
+  expectNoMarkers,
+} from './support/assertions';
 import {
   foreignPartnerMarkers,
   foreignTenantMarkers,
@@ -258,6 +263,10 @@ test.describe('② テナント A の OWNER で URL 直打ち（他テナント�
 
       const auditLogs = await pageContent(session, '/audit-logs');
       expect(auditLogs).toContain(t('auditLogs.title'));
+
+      // 🔴 T-10-05（`F-028 AC-1`）: 主平面の全画面に非本番環境バナーが出て、スクロールしても消えない。
+      //    ハーネスは `development` 固定なのでその文言で見る（他環境と `production` は render テスト）。
+      await expectEnvironmentBannerPinned('S-004 監査ログ（主平面）', session.page, t('env.development'));
     } finally {
       await session.close();
     }
@@ -941,6 +950,9 @@ test.describe('⑤ 運営者の応答に、非開示のものが現れない（B
       const adminHome = await pageContent(session, '/admin');
       expect(adminHome).toContain(t('admin.home.title'));
       expectNoMarkers('A-001 運営者ホーム', adminHome, forbidden);
+      // 🔴 T-10-05（`F-028 AC-1`）: 管理平面にも同じバナーが出て、スクロールしても消えない
+      //    （主平面は②で確認。**両方の平面で見る** —— 片方のレイアウトだけに足された状態を通さない）。
+      await expectEnvironmentBannerPinned('A-001 運営者ホーム（管理平面）', session.page, t('env.development'));
 
       const list = await pageContent(session, '/admin/tenants');
       expect(list).toContain(t('admin.tenants.title'));
