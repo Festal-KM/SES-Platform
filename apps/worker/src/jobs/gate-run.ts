@@ -62,11 +62,13 @@ import {
   isGateTargetType,
   proposalMachine,
   shouldAutoApprove,
+  tenantMachine,
   type GateAiOutcome,
   type GateDecision,
   type GateInput,
   type GateTargetType,
   type GateVerdict,
+  type TenantLifecycleState,
 } from '@ses/domain';
 import { createAiCostGuard } from '../ai/cost-guard.js';
 import { createAiUsageRecorder } from '../ai/usage-recorder.js';
@@ -163,13 +165,17 @@ export function parseGateRunPayload(raw: unknown): GateRunPayload {
  *    そこへ上書きすると「編集したのに古い検査結果で承認待ちになる」（§11.5 が防いでいる事故）。
  * 🔴 自動承認（`shouldAutoApprove`。§11.6）は**ここでは行わない** —— 確定の CAS と同じトランザクションには
  *    置かず、commit の後に `autoApproveIfEnabled` が `approveProposal`（`packages/db` の唯一の実装。#41 と同じ）を
- *    呼ぶ（T-09-03）。ここで返すのは「動かしたか」と、同じトランザクションで読んだ `tenants.auto_approve_enabled`
- *    だけである。
+ *    呼ぶ（T-09-03）。ここで返すのは「動かしたか」と、同じトランザクションで読んだ `tenants.auto_approve_enabled` /
+ *    `tenants.lifecycle_state`（T-09-04。同じ `select`）だけである。
  */
 async function settleProposalState(
   ctx: SystemTenantCtx,
   input: { readonly proposalId: string; readonly decision: GateDecision; readonly now: Date },
-): Promise<{ readonly transitioned: boolean; readonly autoApproveEnabled: boolean }> {
+): Promise<{
+  readonly transitioned: boolean;
+  readonly autoApproveEnabled: boolean;
+  readonly lifecycleState: TenantLifecycleState;
+}> {
   // 🔴 遷移の妥当性は `packages/domain` の遷移表が決める（不正な組はここで例外になる）。
   //    `GATE_RUNNING` から行ける先は `GATE_FAILED` / `APPROVAL_PENDING` の 2 つだけであり、
   //    それ以外を書くとコンパイルエラーになる（docs/05 §10.3）。
@@ -185,9 +191,13 @@ async function settleProposalState(
     });
     // 🔴 `autoApproveEnabled` はテナント単位の設定（`S-035`。`F-035 AC-6`）。AI ロール別の承認モード
     //    （`TenantRoleApprovalMode`）は**読まない**（`F-035 AC-3`。静的テストが `proposals/**` を走査する）。
-    const tenant = await db.tenant.findFirst({ select: { autoApproveEnabled: true } });
+    // 🔴 T-09-04: `lifecycleState` を**同じ `select`** で読む（`SANDBOX` / `ACTIVE` 以外では自動承認しない。§11.6）。
+    //    読めない / 未知の値は `SUSPENDED` 相当に倒す（自動承認しない = 安全側。`false` に倒すのと同じ向き）。
+    const tenant = await db.tenant.findFirst({ select: { autoApproveEnabled: true, lifecycleState: true } });
     const autoApproveEnabled = tenant?.autoApproveEnabled ?? false;
-    if (updated.count !== 1) return { transitioned: false, autoApproveEnabled };
+    const rawLifecycleState: unknown = tenant?.lifecycleState;
+    const lifecycleState: TenantLifecycleState = tenantMachine.isState(rawLifecycleState) ? rawLifecycleState : 'SUSPENDED';
+    if (updated.count !== 1) return { transitioned: false, autoApproveEnabled, lifecycleState };
 
     await db.proposalEvent.create({
       data: {
@@ -221,7 +231,7 @@ async function settleProposalState(
         warningCount: input.decision.aiWarnings.length,
       },
     });
-    return { transitioned: true, autoApproveEnabled };
+    return { transitioned: true, autoApproveEnabled, lifecycleState };
   });
 }
 
@@ -241,11 +251,14 @@ async function autoApproveIfEnabled(
     readonly proposalId: string;
     readonly decision: GateDecision;
     readonly autoApproveEnabled: boolean;
+    /** 🔴 T-09-04: `SANDBOX` / `ACTIVE` 以外では自動承認しない（docs/05 §11.6）。 */
+    readonly lifecycleState: TenantLifecycleState;
     readonly now: Date;
   },
 ): Promise<'APPROVED' | 'GATE_STALE' | 'NOT_PENDING' | null> {
   const eligible = shouldAutoApprove({
     autoApproveEnabled: input.autoApproveEnabled,
+    lifecycleState: input.lifecycleState,
     pii: input.decision.piiVerdict,
     commerce: input.decision.commerceVerdict,
     consistency: input.decision.consistencyVerdict,
@@ -433,7 +446,7 @@ export function createGateRunHandler(deps: GateRunDeps): GateRunHandler {
             decision,
             now: executedAt,
           })
-        : { transitioned: false, autoApproveEnabled: false };
+        : { transitioned: false, autoApproveEnabled: false, lifecycleState: 'SUSPENDED' as const };
     const transitioned = settled.transitioned;
 
     // ⑧' 🔴 T-09-03: 自動承認（docs/05 §11.6）。**確定を動かしたときだけ**（他の実行に先を越されていれば、
@@ -444,6 +457,7 @@ export function createGateRunHandler(deps: GateRunDeps): GateRunHandler {
             proposalId: parsed.targetId,
             decision,
             autoApproveEnabled: settled.autoApproveEnabled,
+            lifecycleState: settled.lifecycleState,
             now: executedAt,
           })
         : null;

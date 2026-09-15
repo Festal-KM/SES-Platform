@@ -305,16 +305,25 @@ export type {
 //    条件に含む CAS は生 SQL であり、`packages/db` の外からゲート照合を迂回した承認を書けない。
 export {
   approveProposal,
+// 🔴 T-09-04: 送信前判定（`readProposalGateFreshness`。docs/05 §10.2 ①-c / ②-b）と送信 CAS（`castProposalToSubmitting`。
+//    §10.2 ③ / §11.5 手順 4）。承認 CAS と**同じ 1 つの SQL 述語**を使う。🔴 `castProposalToSubmitting` の引数は
+//    `SystemTenantCtx`（送信ジョブだけが `SUBMITTING` に入れる。`apps/web/**` からの参照は静的テストが止める）。
+//    `passedReviewGateExistsSql` 自体は export しない（`Prisma.Sql` を受ける入口は `packages/db` の内側にしか無い）。
   PROPOSAL_APPROVAL_NOTE_PREFIX,
   PROPOSAL_APPROVE_OPERATION,
+  castProposalToSubmitting,
   PROPOSAL_AUDIT_ACTION_APPROVE,
 } from './proposal-approval.js';
 export type {
+  readProposalGateFreshness,
   ApproveProposalInput,
   ProposalApprovalActor,
   ProposalApprovalOutcome,
+  CastProposalToSubmittingInput,
 } from './proposal-approval.js';
 // 🔴 T-08-07: 提案依頼の期限切れ（docs/05 §9.5 `proposal-request.expire`）。呼び出し元は
+  ProposalGateFreshness,
+  ProposalSubmittingCastOutcome,
 //    `apps/worker/src/jobs/proposal-request-expire.ts` のジョブ文脈だけである。
 export {
   expireProposalRequests,

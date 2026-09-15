@@ -82,3 +82,25 @@ export function isValidTenantCreation(input: {
 }): boolean {
   return (input.environment === 'sandbox') === (input.lifecycleState === 'SANDBOX');
 }
+
+/**
+ * 🔴 実行系（提案の送信・承認・契約書の送付）を許すテナントの状態（CLAUDE.md §4.2 `Tenant` の規則 /
+ *    docs/05 §6.2 `requireExecutable` / §10.2 ①-a / §11.6）。T-09-04。
+ *
+ * `SUSPENDED` はログインと閲覧はできるが実行系は一切できない。`CLOSING` は閲覧とエクスポートのみ。
+ * `PURGED` は終端。**人間の実行系ガード（`apps/web` の `requireExecutable`）とジョブ側の判定
+ * （`gate.run` の自動承認 / `send.proposal` の事前判定 ①-a）が同じ 2 値を見る**ための単一の出所。
+ *
+ * 🔴 `TENANT_CREATION_STATES` と値は同じだが**別の概念**であり、導出しない（開設できる状態と
+ *    実行できる状態は独立に変わりうる）。
+ */
+export const TENANT_EXECUTABLE_LIFECYCLE_STATES = ['SANDBOX', 'ACTIVE'] as const;
+
+export type TenantExecutableLifecycleState = (typeof TENANT_EXECUTABLE_LIFECYCLE_STATES)[number];
+
+/** 実行系を許す状態か（純粋関数）。 */
+export function isExecutableTenantLifecycleState(
+  state: TenantLifecycleState,
+): state is TenantExecutableLifecycleState {
+  return (TENANT_EXECUTABLE_LIFECYCLE_STATES as readonly TenantLifecycleState[]).includes(state);
+}

@@ -133,6 +133,7 @@
   5. **ワーカーの自動承認がテナントのライフサイクル状態を見ない**（`apps/worker/src/jobs/gate-run.ts` は `autoApproveEnabled` だけを読む）。同じ `select` に `lifecycleState` を足し、`SANDBOX` / `ACTIVE` 以外では自動承認を呼ばない。確認: `gate-run.test.ts` に `SUSPENDED` で `approveProposal` が呼ばれないケース。
   6. `docs/05` §6.5 に「#41 / #42 の実装の決着（T-09-03）」の節が無い。T-09-01 / T-09-02 と同じ作法で記録する（`approveProposal` を `packages/db` に置いた理由・3 段の拒否順序・`S-021` の primary が T-09-06 まで「承認する」であること・`tests/e2e/harness/db-admin.ts` のシーム）。
   7. E2E #10 の「再検証なしで送信できない」の部分は送信 API（#43）が T-09-06 のため、本タスクでは結合テスト（ハッシュ不一致で `APPROVED → SUBMITTING` の CAS が 0 件更新）で担保し、E2E の送信側アサーションは T-09-06 で足す。
+- ✅ **T-09-04 の決着（2026-09-16）**: 上記 1〜7 を実施。①`docs/05` §11.5 手順 2 を #37 の実装（`DRAFT` のみ）に合わせて改訂し、手順 3 / 4 を API を通らない経路への多層防御と位置づけた（⚠️ 暫定。[Issue #54](https://github.com/Festal-KM/SES-Platform/issues/54)）②`contentHash` 素材 `v4`（`EngineerSnapshot.careers`。凍結行の順序のまま綴じる。既存の `v3` 行は `GATE_STALE` → 再検証で復帰。マイグレーションしない根拠は §11.5）③送信前判定 `readProposalGateFreshness` / 送信 CAS `castProposalToSubmitting`（`SystemTenantCtx` 限定）を承認 CAS と同じ SQL 述語で `packages/db` に置いた（§6.5「承認の無効化と送信前判定の共有」）④`tests/isolation/proposal-approval-invalidation.test.ts`（12 件）⑤`gate.run` の自動承認が `lifecycleState` を見る（`shouldAutoApprove` の入力に追加。`SANDBOX` / `ACTIVE` のみ）⑥§6.5 に「#41 / #42 の実装の決着（T-09-03）」を記録 ⑦E2E #10 を `tests/e2e/home.mobile.spec.ts` の承認 test の続きに追加（送信側は T-09-06）。
 
 ### T-09-05 `SendAttempt` と冪等性キーの規約（M）
 
@@ -162,6 +163,14 @@
 - **応答**: `202` + `{ attemptSeq, jobId, state: 'SUBMITTING' }`。確定は `GET /api/proposals/{id}` のポーリングで取る。**保留された場合は `SUBMITTING` に入らないため、`state` は `APPROVED` のまま `sendHoldReasonKey` が付く。**
 - 送信を `AuditLog` と `ProposalEvent` に記録する。
 - **完了の判定**: `F-022 AC-1`〜`AC-7` の結合テスト。E2E #7（2 回起動で外部呼び出し 1 回）。🔴 **加えて `docs/05` §17.3 #23 の `send.*` 経路** — `MAIL_PROVIDER_DAILY_QUOTA=1` で承認済み提案を 2 件送信し、2 件目が `sendHoldReasonKey='PROVIDER_QUOTA'`（**`RATE_LIMIT` ではない**）で `APPROVED` のまま留まり、`S-022` の文言に `S-038` 導線が無く、`now` を 24h 進めて `send.hold-release` を実行すると `SUBMITTED` になり、モックの `callCount()` が合計 2、`SendAttempt` は提案ごとに 1 行であること。
+- 🔴 **T-09-04 からの申し送り（2026-09-16）**:
+  1. **§10.2 ①-c / ②-b の判定と ③ の CAS は `packages/db` に実装済み**（`docs/05` §6.5「承認の無効化と送信前判定の共有（T-09-04）」/ §11.5 手順 4）: `readProposalGateFreshness(ctx, proposalId)`（`{ state, storedHash, currentHash, reviewGateId, gateFresh }`）と `castProposalToSubmitting(ctx: SystemTenantCtx, { proposalId, now })`（`SUBMITTING` / `NOT_FOUND` / `NOT_APPROVED` / `GATE_STALE`）。**別実装を書かない**（承認 CAS と同じ SQL 述語 `passedReviewGateExistsSql` を使っている）。`GATE_STALE` は `sendHoldReasonKey='GATE_STALE'` の保留（§10.4 / §10.5。`SUBMIT_FAILED` にしない）、`NOT_APPROVED` は「多重実行 / 状態違い」として**外部 API を呼ばずに終了**。
+  2. `castProposalToSubmitting` は `ProposalEvent(STATE, APPROVED → SUBMITTING, actorUserId=null)` を同じトランザクションで書く。**`SendAttempt` の INSERT（④。T-09-05）と `AuditLog(proposal.submit)`（⑥）は書かない** —— 送信ジョブ側で足す。`SUBMITTING → SUBMITTED / SUBMIT_FAILED` の確定（⑥。所有者 `SEND_JOB`）は本タスクでは未実装。
+  3. 🔴 `tests/static/auth-db-callers.test.ts` の `castProposalToSubmitting` 許可リストは空。**`apps/worker/src/jobs/send-proposal.ts`（1 ファイル）を足す**。`apps/web/**` からは決して参照しない（独立した `it` が 0 件を固定している）。
+  4. `send.proposal` の事前判定 ①-a（テナント状態）は `packages/domain` の `isExecutableTenantLifecycleState`（`TENANT_EXECUTABLE_LIFECYCLE_STATES` = `SANDBOX` / `ACTIVE`。T-09-04 で `gate.run` の自動承認に使ったのと同じ 1 実装）を使う。 🔴 **渡す値は `tenants` から読んだ `lifecycle_state` であり `ctx.lifecycleState` ではない** —— `SystemTenantCtx.lifecycleState` は常に `'ACTIVE'` 固定（`packages/db/src/context.ts`）なので、ctx の値を渡すと停止中テナントでも送信できてしまう（`gate-run.ts` が同じ `select` で読んでいるのと同じ形にする）。結合テストに「`SUSPENDED` で `castProposalToSubmitting` が呼ばれない」を入れる（T-09-04 のレビュー申し送り、2026-09-16）。
+  5. E2E #10 の「再検証なしで送信できない」の**送信側アサーション**（承認後に `proposals.content_hash` をずらした提案に #43 を叩いても `SUBMITTING` に入らず `GATE_STALE` の保留になる）を `tests/e2e/home.mobile.spec.ts` の T-09-04 の続き、または送信の spec に足す。
+  6. `S-021` の primary を「承認する」から切り替える場合（`proposals.approval.action.approve`）、**押した瞬間に「送信済み」と見せない**（`docs/05` §6.5 T-09-03 の決着）。
+  7. ⚠️ `contentHash` 素材は `v4`（careers 入り）。**T-09-03 以前に E2E / 開発 DB に残った `v3` の行は承認・送信で `GATE_STALE` になる**（fail-closed。再検証で復帰。`docs/05` §11.5「版の切り替え」）。E2E のシードは毎回作り直すので影響しない。
 
 ### T-09-07 応答不明時の隔離と `SUBMIT_FAILED` の確定（M）
 

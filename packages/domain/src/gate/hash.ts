@@ -40,8 +40,13 @@ import type { GateTargetType } from './types.js';
  *   由来で、**同じ提案でも読む側の所属でハッシュが食い違った**（ホストが取引先作成の提案を読むと
  *   リレーションが null になる）。承認 CAS は承認者（ホスト）の文脈で再計算するため、旧材料のままでは
  *   取引先が作成した提案をホストが承認できない。
+ * - `v4` … T-09-04 の是正（docs/05 §11.5 / §11.10 ②）。🔴 **`EngineerSnapshot.careers`（全行の 5 項目）を材料に足した。**
+ *   §11.5 は当初から careers を列挙していたが実装に無く、`gate.run` が検査する内容（`gate-target.ts` は careers を
+ *   `field='snapshot'` に載せる）とハッシュが覆う内容が食い違っていた。既存の `v3` 行は承認 CAS / 送信 CAS で
+ *   `GATE_STALE`（fail-closed）になり、再検証で復帰する。**マイグレーションしない**（旧ハッシュを付け直すことは
+ *   検査していない内容に PASS を付けることと同義。docs/05 §11.5「版の切り替え」）。
  */
-export const GATE_HASH_ALGORITHM_VERSION = 'v3';
+export const GATE_HASH_ALGORITHM_VERSION = 'v4';
 
 /** 凍結された主張のスキル 1 件（`EngineerSnapshot.skills` の 1 要素）。 */
 export type GateHashSkill = {
@@ -50,6 +55,22 @@ export type GateHashSkill = {
   readonly label: string;
   readonly years: number;
   readonly level: number | null;
+};
+
+/**
+ * 凍結された経歴の 1 行（`EngineerSnapshot.careers` の 1 要素 = `FrozenCareer` の 5 項目。docs/05 §3.6）。T-09-04。
+ *
+ * 🔴 `ledger/careers.ts` の `FrozenCareer` と同じ 5 項目だが、**別名で受ける**（`GateHashSkill` と同じ整理。
+ *    材料の型は「ハッシュに入るもの」の宣言であり、台帳側の型が項目を増やしても材料が黙って広がらない）。
+ */
+export type GateHashCareer = {
+  /** `YYYY-MM`。 */
+  readonly periodFrom: string;
+  /** `YYYY-MM`。`null` = 継続中。 */
+  readonly periodTo: string | null;
+  readonly role: string;
+  readonly description: string;
+  readonly technologies: string;
 };
 
 /**
@@ -80,6 +101,12 @@ export type GateHashSnapshot = {
   /** `YYYY-MM-DD`。 */
   readonly availableFrom: string | null;
   readonly attachment: GateHashAttachment | null;
+  /**
+   * 🔴 凍結された経歴の全行（T-09-04。`v4`）。**凍結行の順序のまま**渡す（`packages/db` は JSON 配列の並びを
+   *    そのまま写す）。並びは `createProposalDraft` が DB の `ORDER BY`（`period_from DESC → created_at ASC → id ASC`。
+   *    docs/05 §3.4.1）で確定させた**内容の一部**であり、ここで並べ替えない（`snapshotLines` の 🔴）。
+   */
+  readonly careers: readonly GateHashCareer[];
 };
 
 /**
@@ -223,6 +250,17 @@ function snapshotLines(snapshot: GateHashSnapshot | null): readonly string[] {
     ]),
     field('snapshot.attachment', snapshot.attachment === null ? null : 'present'),
     field('snapshot.attachment.skillSheetId', snapshot.attachment?.skillSheetId ?? null),
+    // 🔴 careers は**並べ替えない**（T-09-04。`v4`）。スキルは「凍結 JSON の並びが保存経路に依存する」から吸収するが、
+    //    経歴の並びは `createProposalDraft` の 1 実装が DB の `ORDER BY` で固定して書いた**内容の一部**であり、
+    //    行を入れ替えれば提案先に届く経歴の見え方が変わる。並べ替えると「行を入れ替えたのに同じハッシュ」になる。
+    field('snapshot.careerCount', String(snapshot.careers.length)),
+    ...snapshot.careers.flatMap((career, index) => [
+      field(`snapshot.career[${index}].periodFrom`, career.periodFrom),
+      field(`snapshot.career[${index}].periodTo`, career.periodTo),
+      field(`snapshot.career[${index}].role`, career.role),
+      field(`snapshot.career[${index}].description`, career.description),
+      field(`snapshot.career[${index}].technologies`, career.technologies),
+    ]),
   ];
 }
 

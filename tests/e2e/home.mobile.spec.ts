@@ -9,6 +9,8 @@
 //    E2E ハーネスには Redis も worker も無い（docs/05 §11.12 ⑦。足すのは `T-09-11`）ため、「全層 PASS で承認待ち」の
 //    前提は `harness/db-admin.ts` のシーム（#39 と `gate.run` が書くのと同じ列）で作る。ゲート本体と承認 CAS の正しさは
 //    `tests/isolation/gate-run.test.ts` / `proposal-approval.test.ts` の射程である。
+//    ✅ **T-09-04 で E2E #10（承認後に内容を変更できない。docs/05 §17.3 #10）を同じ test の続きに足した**（承認直後の
+//    状態をそのまま使う。送信側のアサーションは T-09-06）。
 //
 // 🔴 「モバイルだから省略する」を作らない（`CLAUDE.md` §13.3）。サインイン（2 要素認証を含む）が
 //    モバイルで完結することを、デスクトップと同じ経路で確かめる。
@@ -36,7 +38,7 @@ test.afterAll(() => {
 });
 
 test.describe('モバイルビューポートのスモーク（S-003 / S-004 は T1）', () => {
-  test('ホストのホームがモバイルで描画され、横に溢れない。承認（S-021）がモバイルで完結する（E2E #13）', async ({
+  test('ホストのホームがモバイルで描画され、横に溢れない。承認（S-021）がモバイルで完結し、承認後は内容を変更できない（E2E #13 / #10）', async ({
     browser,
   }: {
     browser: Browser;
@@ -123,6 +125,52 @@ test.describe('モバイルビューポートのスモーク（S-003 / S-004 は
       await expect(session.page.getByTestId('proposal-approval-approve')).toHaveCount(0);
       await expectNoBrokenLabels('S-021 提案の承認（承認後）', session.page);
       // 🔴 承認は送信を伴わない（送信ジョブは T-09-06）。外部への発信は 0 件。
+      session.outbound.assertNone();
+
+      // ✅ T-09-04: 🔴 **E2E #10（承認後に内容を変更できない）**（docs/05 §11.5 手順 2〔改訂〕/ §17.3 #10 / `F-021`。
+      //    ⚠️ 暫定。Issue #54 で確認中 = `APPROVED → DRAFT` は追加しない）。
+      //    ①`S-020` を開くと読み取り専用で理由が表示され、入力欄と保存・レビュー依頼が使えない
+      //    ②#37 `PATCH` は 422 `PROPOSAL_NOT_EDITABLE` で、#40 が返す内容のハッシュが 1 バイトも変わらない
+      //    ③`S-021` は承認済みを示したまま（承認アクションは描画されない）
+      //    ⚠️ **「再検証なしで送信できない」の送信側アサーションは送信 API（#43）が T-09-06 のため、そこで足す。**
+      //       API を通らない経路（`proposals.content_hash` / 凍結の careers のずれ）で `APPROVED → SUBMITTING` の CAS が
+      //       0 件更新になることは `tests/isolation/proposal-approval-invalidation.test.ts` が実 DB で固定している。
+      const gateBefore = await apiRequest(session.page, `/api/proposals/${proposalId}/gate`);
+      expect(gateBefore.status, gateBefore.text).toBe(200);
+      const hashBefore = (parseJson(gateBefore) as { contentHash: string }).contentHash;
+      expect(hashBefore).toBe(contentHash);
+
+      await session.page.goto(`/proposals/${proposalId}/edit`, { waitUntil: 'domcontentloaded' });
+      const editor = session.page.getByTestId('proposal-editor');
+      await expect(editor).toHaveAttribute('data-proposal-state', 'APPROVED');
+      const readOnly = session.page.getByTestId('proposal-editor-read-only');
+      await expect(readOnly).toBeVisible();
+      await expect(readOnly).toContainText(t('proposals.editor.readOnly.prefix'));
+      await expect(readOnly).toContainText(t('proposals.editor.readOnly.suffix'));
+      await expect(session.page.getByTestId('proposal-editor-body')).toBeDisabled();
+      await expect(session.page.getByTestId('proposal-editor-save')).toBeDisabled();
+      await expect(session.page.getByTestId('proposal-editor-request-gate')).toHaveCount(0);
+      await expect(session.page.getByTestId('proposal-editor-open-approval')).toBeVisible();
+      await expectNoHorizontalOverflow('S-020 提案の編集（承認後・読み取り専用）', session.page);
+      await expectNoBrokenLabels('S-020 提案の編集（承認後・読み取り専用）', session.page);
+
+      const patched = await apiRequest(session.page, `/api/proposals/${proposalId}`, {
+        method: 'PATCH',
+        body: { body: `${body} 承認後の追記。`, offeredUnitPrice: 750000 },
+      });
+      expect(patched.status, patched.text).toBe(422);
+      expect((parseJson(patched) as { error: { code: string } }).error.code).toBe('PROPOSAL_NOT_EDITABLE');
+      const gateAfter = await apiRequest(session.page, `/api/proposals/${proposalId}/gate`);
+      expect(gateAfter.status, gateAfter.text).toBe(200);
+      expect((parseJson(gateAfter) as { contentHash: string }).contentHash).toBe(hashBefore);
+
+      await session.page.goto(`/proposals/${proposalId}/approve`, { waitUntil: 'domcontentloaded' });
+      await expect(session.page.getByTestId('proposal-approval')).toHaveAttribute('data-proposal-state', 'APPROVED');
+      await expect(session.page.getByTestId('proposal-approval-approver')).toBeVisible();
+      await expect(session.page.getByTestId('proposal-approval-approve')).toHaveCount(0);
+      await expect(session.page.getByTestId('proposal-approval-header-row-unit-price')).toContainText('700,000');
+      await expect(session.page.getByTestId('proposal-approval-preview-body')).toContainText(body);
+      await expect(session.page.getByTestId('proposal-approval-preview-body')).not.toContainText('承認後の追記');
       session.outbound.assertNone();
     } finally {
       await session.close();

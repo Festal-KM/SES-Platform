@@ -22,6 +22,7 @@ import {
   gateHashSource,
   GateHashInputError,
   type GateHashAttachment,
+  type GateHashCareer,
   type GateHashInput,
   type GateHashSkill,
   type GateHashSnapshot,
@@ -86,6 +87,40 @@ function toHashSkills(value: unknown): readonly GateHashSkill[] {
   });
 }
 
+type SnapshotCareerRow = {
+  readonly periodFrom?: unknown;
+  readonly periodTo?: unknown;
+  readonly role?: unknown;
+  readonly description?: unknown;
+  readonly technologies?: unknown;
+};
+
+/**
+ * `EngineerSnapshot.careers`（JSON）を材料に写す（T-09-04。`v4`。docs/05 §11.5）。
+ *
+ * 🔴 **並びは JSON 配列のまま**（`createProposalDraft` が DB の `ORDER BY` で確定させた順。並べ替えない）。
+ * 🔴 形が壊れていたら握り潰さない（`toHashSkills` / `gate-target.ts` の `toFrozenCareers` と同じ規律）。
+ *    `null`（配列でない）も許さない —— 0 行は `[]` で保存する規約（§3.6）であり、`null` は凍結が壊れている。
+ */
+function toHashCareers(value: unknown): readonly GateHashCareer[] {
+  if (!Array.isArray(value)) {
+    throw new GateHashInputError('EngineerSnapshot.careers が配列ではありません');
+  }
+  return value.map((row: SnapshotCareerRow) => {
+    const { periodFrom, periodTo, role, description, technologies } = row;
+    if (
+      typeof periodFrom !== 'string' ||
+      !(periodTo === null || typeof periodTo === 'string') ||
+      typeof role !== 'string' ||
+      typeof description !== 'string' ||
+      typeof technologies !== 'string'
+    ) {
+      throw new GateHashInputError('EngineerSnapshot.careers の要素の形が不正です');
+    }
+    return { periodFrom, periodTo, role, description, technologies };
+  });
+}
+
 /**
  * 🔴 添付の材料は**凍結列** `engineer_snapshots.skill_sheet_id` の値だけである（T-09-03。docs/05 §11.5 / §11.10 ②）。
  *    `skillSheet` **リレーション**（`skill_sheets` = C3）を辿ってはならない —— ホスト文脈で取引先作成の提案を読むと
@@ -131,6 +166,8 @@ export async function readProposalGateHashInput(
       availableFrom: true,
       // 🔴 列を読む（リレーションではない）。`toAttachment` の 🔴 参照。
       skillSheetId: true,
+      // 🔴 T-09-04（`v4`）: 凍結された経歴は検査対象（`gate-target.ts`）であり、ハッシュも覆う。
+      careers: true,
     },
   });
 
@@ -145,6 +182,7 @@ export async function readProposalGateHashInput(
           unitPriceMax: decimal(snapshot.unitPriceMax),
           availableFrom: dateOnly(snapshot.availableFrom),
           attachment: toAttachment(snapshot.skillSheetId),
+          careers: toHashCareers(snapshot.careers),
         };
 
   return {

@@ -166,6 +166,13 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
   finishSchedulerRun: ['apps/worker/src/scheduler.ts'],
   // 🔴 T-07-11: テナント文脈を持たずに `tenants` を読む唯一の経路（docs/05 §9.1 /
   //    migration 20260915000000）。**ファンアウトの配線 1 箇所**に限る —— ここが増えると
+  // 🔴 T-09-04: `APPROVED → SUBMITTING` の CAS（docs/05 §10.2 ③ / §11.5 手順 4）。**`SUBMITTING` に入れるのは
+  //    送信ジョブだけ**（所有者 `SEND_JOB`。`CLAUDE.md` §4.2「`SUBMITTING` は片道」）であり、`apps/web` の HTTP 経路が
+  //    これを呼べると「送信ジョブを経ずに送信中にする」実装が書ける（`SendAttempt` の INSERT と外部送信の 1 手順を
+  //    迂回する）。引数の型も `SystemTenantCtx`（`apps/web` が組み立てられない）で二重に固定する。
+  //    ⚠️ T-09-06 で `apps/worker/src/jobs/send-proposal.ts`（`send.proposal` の 1 ファイル）をここに足す。
+  //    **`apps/web/**` には決して足さない**（下の it が独立に固定する）。
+  castProposalToSubmitting: [],
   //    「全テナントを列挙する」コードがジョブ本体側にも書けるようになり、
   //    母集団の条件（`SANDBOX` / `ACTIVE`）が SQL 関数の外へ漏れる。
   listSchedulerFanoutTenants: ['apps/worker/src/runtime.ts'],
@@ -389,6 +396,15 @@ describe('認証コンテキストを組み立てられる場所を固定する�
       file.startsWith('apps/worker/'),
     );
     expect(workerFiles).toEqual([]);
+  });
+
+  it('🔴 apps/web/** に castProposalToSubmitting の参照が無い（T-09-04。SUBMITTING に入れるのは送信ジョブだけ。docs/05 §10.2 ③）', () => {
+    // 🔴 `ALLOWED_CALLERS` の許可リストとは独立に固定する —— T-09-06 が `apps/worker/**` を足しても、この it は
+    //    `apps/web/**` が 0 件であることを見続ける（許可リストの編集で緩められない）。
+    const webFiles = filesMentioning('castProposalToSubmitting').filter((file) =>
+      file.startsWith('apps/web/'),
+    );
+    expect(webFiles).toEqual([]);
   });
 
   it('🔴 apps/web/app/** （ルート・ページ）が resolveTenantCtx を直接呼ばない', () => {

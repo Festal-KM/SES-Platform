@@ -20,6 +20,7 @@ export type {
 export { GATE_HASH_ALGORITHM_VERSION, gateHashSource, GateHashInputError } from './hash.js';
 export type {
   GateHashAttachment,
+  GateHashCareer,
   GateHashInput,
   GateHashPartner,
   GateHashSkill,

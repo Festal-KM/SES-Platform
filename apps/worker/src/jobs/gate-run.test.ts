@@ -109,7 +109,7 @@ beforeEach(() => {
   proposalEventCreate.mockResolvedValue({});
   writeAuditLog.mockResolvedValue(undefined);
   // 🔴 既定は人間承認必須（`autoApproveEnabled = false`。CLAUDE.md §3.3）。
-  tenantFindFirst.mockResolvedValue({ autoApproveEnabled: false });
+  tenantFindFirst.mockResolvedValue({ autoApproveEnabled: false, lifecycleState: 'ACTIVE' });
   approveProposal.mockResolvedValue({ kind: 'APPROVED', reviewGateId: 'gate-id', contentHash: CONTENT_HASH });
   vi.mocked(db.reserveAiCost).mockResolvedValue({
     kind: 'RESERVED',
@@ -438,7 +438,7 @@ describe('🔴 自動承認（docs/05 §11.6）: autoApproveEnabled かつ全層
   });
 
   it('F-021 AC-3 / AC-5: 有効かつ全層 PASS なら、確定の後に approveProposal を SYSTEM で 1 回だけ呼ぶ（自前で APPROVED を書かない）', async () => {
-    tenantFindFirst.mockResolvedValue({ autoApproveEnabled: true });
+    tenantFindFirst.mockResolvedValue({ autoApproveEnabled: true, lifecycleState: 'ACTIVE' });
     const outcome = await createHandler({ script: [{ kind: 'output', output: PASS_OUTPUT }] })(PAYLOAD, JOB_ID);
     expect(outcome).toMatchObject({ kind: 'COMPLETED', transitioned: true, autoApproval: 'APPROVED' });
     expect(approveProposal).toHaveBeenCalledTimes(1);
@@ -457,7 +457,7 @@ describe('🔴 自動承認（docs/05 §11.6）: autoApproveEnabled かつ全層
   });
 
   it('🔴 F-021 AC-3: 有効でも 1 層 FAIL なら GATE_FAILED に留まり、approveProposal を呼ばない', async () => {
-    tenantFindFirst.mockResolvedValue({ autoApproveEnabled: true });
+    tenantFindFirst.mockResolvedValue({ autoApproveEnabled: true, lifecycleState: 'ACTIVE' });
     const outcome = await createHandler({ script: [{ kind: 'output', output: FAIL_OUTPUT }] })(PAYLOAD, JOB_ID);
     expect(outcome).toMatchObject({ kind: 'COMPLETED', overall: 'FAIL', transitioned: true, autoApproval: null });
     expect(proposalUpdateMany).toHaveBeenCalledWith({
@@ -468,7 +468,7 @@ describe('🔴 自動承認（docs/05 §11.6）: autoApproveEnabled かつ全層
   });
 
   it('🔴 有効でも AI が失敗（判定不能 = FAIL）なら自動承認しない', async () => {
-    tenantFindFirst.mockResolvedValue({ autoApproveEnabled: true });
+    tenantFindFirst.mockResolvedValue({ autoApproveEnabled: true, lifecycleState: 'ACTIVE' });
     // スキーマ違反は再試行の待ち時間（1s → 4s）を伴わない失敗（上の describe の注記）。枝の検証にはこれで足りる。
     const outcome = await createHandler({ script: [{ kind: 'output', output: { pii: 'broken' } }] })(PAYLOAD, JOB_ID);
     expect(outcome).toMatchObject({ kind: 'COMPLETED', overall: 'FAIL', aiFailed: true, autoApproval: null });
@@ -476,15 +476,45 @@ describe('🔴 自動承認（docs/05 §11.6）: autoApproveEnabled かつ全層
   });
 
   it('🔴 確定の CAS が 0 件（他の実行に先を越された / 編集で DRAFT に戻った）なら自動承認を試みない', async () => {
-    tenantFindFirst.mockResolvedValue({ autoApproveEnabled: true });
+    tenantFindFirst.mockResolvedValue({ autoApproveEnabled: true, lifecycleState: 'ACTIVE' });
     proposalUpdateMany.mockResolvedValue({ count: 0 });
     const outcome = await createHandler({ script: [{ kind: 'output', output: PASS_OUTPUT }] })(PAYLOAD, JOB_ID);
     expect(outcome).toMatchObject({ kind: 'COMPLETED', transitioned: false, autoApproval: null });
     expect(approveProposal).not.toHaveBeenCalled();
   });
 
+  it.each(['SUSPENDED', 'CLOSING', 'PURGED'] as const)(
+    '🔴 T-09-04: テナントが %s なら autoApproveEnabled かつ全層 PASS でも approveProposal を呼ばない（APPROVAL_PENDING に留まる = 人間承認に倒す）',
+    async (lifecycleState) => {
+      tenantFindFirst.mockResolvedValue({ autoApproveEnabled: true, lifecycleState });
+      const outcome = await createHandler({ script: [{ kind: 'output', output: PASS_OUTPUT }] })(PAYLOAD, JOB_ID);
+      expect(outcome).toMatchObject({ kind: 'COMPLETED', overall: 'PASS', transitioned: true, autoApproval: null });
+      expect(proposalUpdateMany).toHaveBeenCalledWith({
+        where: { id: PROPOSAL_ID, state: 'GATE_RUNNING' },
+        data: { state: 'APPROVAL_PENDING' },
+      });
+      expect(approveProposal).not.toHaveBeenCalled();
+    },
+  );
+
+  it('🔴 T-09-04: lifecycleState と autoApproveEnabled は tenants の同じ select で読む（片方だけ読む経路を作らない）', async () => {
+    tenantFindFirst.mockResolvedValue({ autoApproveEnabled: true, lifecycleState: 'SANDBOX' });
+    const outcome = await createHandler({ script: [{ kind: 'output', output: PASS_OUTPUT }] })(PAYLOAD, JOB_ID);
+    expect(outcome).toMatchObject({ kind: 'COMPLETED', autoApproval: 'APPROVED' });
+    expect(tenantFindFirst).toHaveBeenCalledTimes(1);
+    expect(tenantFindFirst).toHaveBeenCalledWith({ select: { autoApproveEnabled: true, lifecycleState: true } });
+  });
+
+  it('🔴 T-09-04: テナント行が読めない / 状態が未知なら自動承認しない（安全側）', async () => {
+    tenantFindFirst.mockResolvedValue({ autoApproveEnabled: true, lifecycleState: 'BOGUS' });
+    expect(await createHandler({ script: [{ kind: 'output', output: PASS_OUTPUT }] })(PAYLOAD, JOB_ID)).toMatchObject({ autoApproval: null });
+    tenantFindFirst.mockResolvedValue(null);
+    expect(await createHandler({ script: [{ kind: 'output', output: PASS_OUTPUT }] })(PAYLOAD, JOB_ID)).toMatchObject({ autoApproval: null });
+    expect(approveProposal).not.toHaveBeenCalled();
+  });
+
   it('approveProposal が GATE_STALE を返したら、その事実を帰結に写す（握り潰さず、APPROVED とも言わない）', async () => {
-    tenantFindFirst.mockResolvedValue({ autoApproveEnabled: true });
+    tenantFindFirst.mockResolvedValue({ autoApproveEnabled: true, lifecycleState: 'ACTIVE' });
     approveProposal.mockResolvedValue({ kind: 'GATE_STALE' });
     const outcome = await createHandler({ script: [{ kind: 'output', output: PASS_OUTPUT }] })(PAYLOAD, JOB_ID);
     expect(outcome).toMatchObject({ kind: 'COMPLETED', autoApproval: 'GATE_STALE' });

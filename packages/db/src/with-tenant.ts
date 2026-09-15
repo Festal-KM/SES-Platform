@@ -33,8 +33,9 @@ type ExtendedClient = ReturnType<typeof extendWithTenantScope>;
 /**
  * `$transaction` のコールバックが受け取るクライアント（`$transaction` 等は Prisma 側で除去済み）。
  *
- * @internal `packages/db` の内部（`runInTenantTransaction` の中で生 SQL を発行する 1 ファイル
- *   = `gate-engineer-facts.ts`。docs/05 §11.14 ⑥）からのみ参照する。**`index.ts` から export しない**
+ * @internal `packages/db` の内部（`runInTenantTransaction` の中で生 SQL を発行するファイル
+ *   = `gate-engineer-facts.ts`〔docs/05 §11.14 ⑥〕と `proposal-approval.ts`〔§11.5 手順 3 / 手順 4 の
+ *   述語を共有する読み取り。T-09-04〕）からのみ参照する。**`index.ts` から export しない**
  *   （`$queryRaw` を持つ型が `@ses/db` の外へ出ると、`TenantDb` が生 SQL の入口を型から除いた
  *   意味が無くなる。§4.3 実装の規約 3）。
  */

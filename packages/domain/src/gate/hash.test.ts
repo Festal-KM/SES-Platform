@@ -25,6 +25,11 @@ const SNAPSHOT: GateHashSnapshot = {
   unitPriceMax: '700000.00',
   availableFrom: '2026-10-01',
   attachment: { skillSheetId: 'sheet-1' },
+  // 🔴 T-09-04（`v4`）: 凍結行の順序のまま（`period_from DESC → created_at ASC → id ASC`）。
+  careers: [
+    { periodFrom: '2024-04', periodTo: null, role: 'リーダー', description: '基幹刷新', technologies: 'TypeScript, React' },
+    { periodFrom: '2021-01', periodTo: '2024-03', role: 'メンバー', description: 'EC 保守', technologies: 'Java' },
+  ],
 };
 
 const PROPOSAL: ProposalGateHashInput = {
@@ -97,6 +102,51 @@ describe('gateHashSource（§11.5 の正規化）', () => {
     expect(gateHashSource({ ...PROPOSAL, snapshot: without })).not.toBe(gateHashSource(PROPOSAL));
   });
 
+  // 🔴 T-09-04（`v4`）: 凍結された経歴は材料である（docs/05 §11.5「ハッシュは検査した内容のすべてを覆う」）。
+  it.each([
+    ['periodFrom', { periodFrom: '2024-05' }],
+    ['periodTo', { periodTo: '2026-03' }],
+    ['role', { role: 'サブリーダー' }],
+    ['description', { description: '基幹刷新（第 2 期）' }],
+    ['technologies', { technologies: 'TypeScript, React, Next.js' }],
+  ])('🔴 careers の 1 行の %s が変われば連結が変わる', (_label, patch) => {
+    const [first, ...rest] = SNAPSHOT.careers;
+    if (first === undefined) throw new Error('unreachable');
+    const changed: GateHashSnapshot = { ...SNAPSHOT, careers: [{ ...first, ...patch }, ...rest] };
+    expect(gateHashSource({ ...PROPOSAL, snapshot: changed })).not.toBe(gateHashSource(PROPOSAL));
+  });
+
+  it('🔴 careers の行を 1 行減らす / 増やすと連結が変わる（行数も材料である）', () => {
+    const fewer: GateHashSnapshot = { ...SNAPSHOT, careers: SNAPSHOT.careers.slice(0, 1) };
+    const more: GateHashSnapshot = {
+      ...SNAPSHOT,
+      careers: [...SNAPSHOT.careers, { periodFrom: '2019-04', periodTo: '2020-12', role: '新人', description: '研修', technologies: 'C' }],
+    };
+    expect(gateHashSource({ ...PROPOSAL, snapshot: fewer })).not.toBe(gateHashSource(PROPOSAL));
+    expect(gateHashSource({ ...PROPOSAL, snapshot: more })).not.toBe(gateHashSource(PROPOSAL));
+  });
+
+  it('🔴 careers の順序を入れ替えると連結が変わる（凍結行の順序は内容の一部。並べ替えて吸収しない）', () => {
+    const reordered: GateHashSnapshot = { ...SNAPSHOT, careers: [...SNAPSHOT.careers].reverse() };
+    expect(gateHashSource({ ...PROPOSAL, snapshot: reordered })).not.toBe(gateHashSource(PROPOSAL));
+  });
+
+  it('🔴 careers の periodTo の null（継続中）と空文字を区別する', () => {
+    const [first, ...rest] = SNAPSHOT.careers;
+    if (first === undefined) throw new Error('unreachable');
+    expect(first.periodTo).toBeNull();
+    const emptied: GateHashSnapshot = { ...SNAPSHOT, careers: [{ ...first, periodTo: '' }, ...rest] };
+    expect(gateHashSource({ ...PROPOSAL, snapshot: emptied })).not.toBe(gateHashSource(PROPOSAL));
+  });
+
+  it('🔴 経歴 0 行の凍結コピーと 1 行の凍結コピーを区別する（0 行は行数 0 として連結に現れる）', () => {
+    const none: GateHashSnapshot = { ...SNAPSHOT, careers: [] };
+    const lines = gateHashSource({ ...PROPOSAL, snapshot: none }).split('\n');
+    expect(lines).toContain('snapshot.careerCount=1:0');
+    expect(lines.some((line) => line.startsWith('snapshot.career['))).toBe(false);
+    expect(gateHashSource({ ...PROPOSAL, snapshot: none })).not.toBe(gateHashSource(PROPOSAL));
+  });
+
   it('🔴 凍結コピーが無い提案と、空の凍結コピーを持つ提案を区別する', () => {
     const empty: GateHashSnapshot = {
       displayName: '',
@@ -106,6 +156,7 @@ describe('gateHashSource（§11.5 の正規化）', () => {
       unitPriceMax: null,
       availableFrom: null,
       attachment: null,
+      careers: [],
     };
     expect(gateHashSource({ ...PROPOSAL, snapshot: null })).not.toBe(
       gateHashSource({ ...PROPOSAL, snapshot: empty }),
