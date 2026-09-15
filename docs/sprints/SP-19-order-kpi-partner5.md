@@ -22,7 +22,7 @@
 | ID | 主要タスク | 工数 | 要点 |
 |---|---|---|---|
 | T-19-01 | 発注・請求の記録（`F-050`）と `S-028` | M | 🔴 **`contractId` / `assignmentId` のいずれかが必須**（Zod の refine + DB の `CHECK`）。🔴 **発注書は品質ゲートの対象外**（`BR-15` / `F-020 AC-1`） |
-| T-19-02 | 🔴 **KPI の分母の定義（`F-051`）** | L | 🔴 **転換率の分母は `SUBMITTED` に到達した提案のみ。`GATE_FAILED` / `SUBMIT_FAILED` / `DECLINED` / `EXPIRED` / `WITHDRAWN_BY_HOST` を除外する**（`F-051 AC-1` / `AC-2` / `BR-23` / `BR-60`） |
+| T-19-02 | 🔴 **KPI の分母の定義（`F-051`）** | L | 🔴 **転換率の分母は `SUBMITTED` に到達した提案のみ。`GATE_FAILED` / `SUBMIT_FAILED` / `DECLINED` / `EXPIRED` / `WITHDRAWN_BY_HOST` を除外する**（`F-051 AC-1` / `AC-2` / `BR-23` / `BR-60`）。🔴 **状態の区別は `T-08-08`（2026-09-15）で確定済み**: 分母の値集合は `@ses/domain` の `CONVERSION_DENOMINATOR_PROPOSAL_STATES` / `isConversionDenominatorState()` / `PROPOSAL_INDICATOR_BY_STATE`（`packages/domain/src/state/indicators.ts`）から引き、**独自の配列を作らない**。`ProposalRequest` の状態は引数の型（`ProposalState`）が受け付けないので、`DECLINED` / `EXPIRED` / `WITHDRAWN_BY_HOST` は `proposals` の `WHERE state IN (...)` に混ざりようがない（`tests/static/proposal-request-outcome-separation.test.ts` が両状態を畳んだ配列・union を静的に禁止する） |
 | T-19-03 | 障害率とゲート不合格率の分離表示 | M | 🔴 **`SUBMIT_FAILED` 率とゲート不合格率を、成約率とは別のブロックに表示する**（`F-051 AC-3`）。**混ぜると成約率と障害率の両方の指標が汚れ、監視が誤検知する** |
 | T-19-04 | `S-034` 実績ダッシュボード | M | テナント別・案件別・担当者別・期間比較。🔴 **パートナーが参照できる集計は自社が作成した提案のみ**（`F-051 AC-4` / `BR-07`） |
 | T-19-05 | 🔴 **経路 5 の契約参照（`F-066`）と `S-045`** | L | SP-02 で作った射影ビュー 3 本（`partner_contracts_v` / `partner_contract_documents_v` / `partner_orders_v`）と API #81 / #82 を公開する |

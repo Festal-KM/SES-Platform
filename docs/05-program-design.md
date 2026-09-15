@@ -146,7 +146,7 @@ ses-platform/
       src/scheduler.ts                    # runScheduled()。slot の取り出しと SchedulerRun 書き込みの唯一の場所（§9.1.1）
   packages/
     domain/          # 純粋関数のみ。I/O 禁止
-      state/         # proposal.ts / assignment.ts / proposalRequest.ts / tenant.ts / contract.ts
+      state/         # proposal.ts / assignment.ts / proposalRequest.ts / tenant.ts / contract.ts / indicators.ts（状態 → 指標区分。F-051 の分母の唯一の定義）
       matching/      # score.ts（Phase 2）/ ordering.ts（Phase 1 の決定的順序）
       anonymize/     # rounding.ts（U-06 の丸め）/ reference.ts（HMAC 参照子の入力組み立て）
       gate/          # consistency.ts（整合層の機械的照合。LLM 出力を引数に取らない）
@@ -2963,7 +2963,7 @@ type SubmitAccepted = { attemptSeq: number; jobId: string; state: 'SUBMITTING' }
 | 60 | `POST /api/contracts/{id}/send` | `F-047` / `F-049` / `S-026` | 🔴 `{ documentVersion, via: 'ESIGN', signers: { role:'HOST'\|'COUNTERPARTY', name, email }[] } \| { documentVersion, via: 'EMAIL', to }`（判別可能な合併） | `{ attemptSeq, jobId }` | 🔴 `requireExecutable` + **`via='ESIGN'` なら `requireEsignConnection`、`via='EMAIL'` なら `requireVerifiedSendingDomain`**（`F-047 AC-7` / `F-049 AC-8`。未接続でも `EMAIL` で ⑤ が完了する = `F-049 AC-9`） |
 | 61 | `POST /api/contracts/{id}/resend` | `F-049 AC-3` | `{ acknowledged: true }` | `{ attemptSeq, jobId }` | 🔴 `SEND_FAILED` → `DRAFT` を経てからのみ |
 | 62 | `GET /api/orders` / `POST /api/orders` | `F-050` / `S-028` | GET: `?contractId=&assignmentId=&periodFrom=&periodTo=&paymentState=&cursor=` / POST: `{ contractId?, assignmentId?, amount, periodStart, periodEnd, issuedOn?, paymentState }` | GET: `{ items: OrderView[], total }` / POST: `{ id }` | ホストのみ（C2）。🔴 `contractId` / `assignmentId` の**いずれかが必須**（Zod の refine + DB の `CHECK`。`F-050 AC-1`） |
-| 63 | `GET /api/kpi/conversion` | `F-051` / `S-034` | `?from=&to=&projectId=` | `{ funnel, failureRate, gateFailRate }` | 🔴 **分母から `GATE_FAILED`/`SUBMIT_FAILED`/`DECLINED`/`EXPIRED`/`WITHDRAWN_BY_HOST` を除外**（`F-051 AC-2`） |
+| 63 | `GET /api/kpi/conversion` | `F-051` / `S-034` | `?from=&to=&projectId=` | `{ funnel, failureRate, gateFailRate }` | 🔴 **分母から `GATE_FAILED`/`SUBMIT_FAILED`/`DECLINED`/`EXPIRED`/`WITHDRAWN_BY_HOST` を除外**（`F-051 AC-2`）。分母の値集合と状態 → 指標区分は `packages/domain/src/state/indicators.ts`（`CONVERSION_DENOMINATOR_PROPOSAL_STATES` / `PROPOSAL_INDICATOR_BY_STATE`。T-08-08）が唯一の定義。`ProposalRequest` の状態は `ProposalState` と値を共有せず、引数の型で分母判定に渡せない |
 | 80 | 🔴 `GET /api/partner/assignments` | `F-065` / `S-044` / Phase 2 | `?filter=ACTIVE\|EXPIRING\|ENDED&cursor=`（ホストのプレビューのみ `&previewPartnerCompanyId=`） | `{ items: PartnerAssignmentView[], total, asOf }`（§4.9。既定並び = 満了日昇順） | `PA` / `PS` / パートナー所属 `VIEWER`（自社が当事者の分。C9）。`OW` / `AD` / `SA` はプレビュー（`withPartnerScope` がホストを検証）。**監査 `assignment.view`**。運営者は到達不可 |
 | 81 | 🔴 `GET /api/partner/contracts` | `F-066` / `S-045` / Phase 3 | `?kind=&state=&cursor=`（同上） | `{ items: PartnerContractView[], total }`（契約書は署名済み最終版のみ・発注を内包。§4.9） | 同上。**監査 `contract.view`** |
 | 82 | 🔴 `GET /api/partner/contract-documents/{id}/download-url` | `F-066 AC-2` / `S-045` | — | `{ url, expiresIn }` | 同上（`VIEWER` は 403）。**ビューに無い版（ドラフト・未署名）は 404**。`issueDownloadUrl`（§14.2）経由で **監査 `contract_document.download`** |

@@ -7,3 +7,5 @@ export * from './proposalRequest.js';
 export * from './assignment.js';
 export * from './contract.js';
 export * from './tenant.js';
+// 🔴 T-08-08: 状態 → 指標区分（docs/02 §5.1 / F-051 / F-018 AC-4 AC-5）。成約率の分母の唯一の定義。
+export * from './indicators.js';
