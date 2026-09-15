@@ -1,6 +1,6 @@
 -- packages/db/prisma/sql/000_roles.sql
 -- T-01-05（docs/sprints/SP-01-bootstrap.md）: docs/05 §4.2（DB ロールと接続）/ §5.2（分離バイパスの
--- 設計）の 5 ロールを作る唯一の定義（single source of truth）。
+-- 設計）のロール（LOGIN 4 + NOLOGIN の probe 5）を作る唯一の定義（single source of truth）。
 --
 -- 🔴 ローカル docker-compose（docker/postgres/initdb/000-roles.sh）と Testcontainers
 --    （tests/isolation/support/postgres.ts）の両方がこのファイルをそのまま実行する。
@@ -102,6 +102,22 @@ SELECT 'CREATE ROLE app_scheduler_probe NOLOGIN NOBYPASSRLS'
 WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_scheduler_probe')
 \gexec
 
+-- app_gate_probe: NOLOGIN。品質ゲート（PROPOSAL）の実行文脈から、対象エンジニア 1 人分の
+-- 「PII 層の既知値 5 列」と「整合層の裏付け 3 列」を読む SECURITY DEFINER 関数専用
+-- （T-09-13。docs/05 §11.14。Issue #41 = 選択肢 1。app_scan_probe と同じパターン）。
+-- 🔴 なぜ要るか: gate.run はジョブのホスト文脈（systemTenantCtx）で走るため engineers /
+-- engineer_skills（C3 OWNER_SCOPED）のパートナー所有行が 1 行も見えない。既知値が無いと
+-- マスキングも機械的 PII 検出も効かず、パートナー所属エンジニアの提案だけ PII 層が素通りする
+-- （docs/05 §11.14 ②）。鍵は engineer_id ではなく **proposal_id** であり、
+-- proposals.state = 'GATE_RUNNING' の間しか 1 人分を返さない。ID を 1 つも返さない。
+-- 🔴 列レベル GRANT は 16 列・SELECT のみ。owner_partner_company_id / 単価 / 営業メモ /
+-- skill_sheets / engineer_careers / engineer_shares には権限を与えない（所有者で絞る述語が書けない）。
+-- パスワード不要。GRANT・ポリシー・関数は
+-- packages/db/prisma/migrations/20260918000000_gate_engineer_facts/migration.sql。
+SELECT 'CREATE ROLE app_gate_probe NOLOGIN NOBYPASSRLS'
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_gate_probe')
+\gexec
+
 -- 🔴 `ALTER FUNCTION ... OWNER TO app_assignment_owner_probe`（migration 20260903070000）は
 -- app_migrator が app_assignment_owner_probe に対して SET ROLE できることを要求する
 -- （PostgreSQL の所有者変更の仕様。実行者は新旧いずれの所有者ロールにもなれる必要がある）。
@@ -114,6 +130,8 @@ GRANT app_share_probe TO app_migrator;
 GRANT app_scan_probe TO app_migrator;
 -- 同上（T-07-11。migration 20260915000000 の ALTER FUNCTION ... OWNER TO app_scheduler_probe）。
 GRANT app_scheduler_probe TO app_migrator;
+-- 同上（T-09-13。migration 20260918000000 の ALTER FUNCTION ... OWNER TO app_gate_probe）。
+GRANT app_gate_probe TO app_migrator;
 
 -- public スキーマの所有者を app_migrator にする（PostgreSQL 15 以降は既定で PUBLIC に
 -- CREATE 権限が無いため、これが無いとマイグレーションがテーブルを作れない。docs/05 §4.2）。

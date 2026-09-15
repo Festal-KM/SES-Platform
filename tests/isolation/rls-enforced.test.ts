@@ -175,7 +175,7 @@ describe('#4 孤児表の検出（docs/05 §4.7 #4）', () => {
 });
 
 describe('#5 全ロールが BYPASSRLS を持たない（docs/05 §4.7 #5 / §4.2）', () => {
-  it('4 ロール + probe 3 ロールのいずれも rolbypassrls = false', async () => {
+  it('LOGIN 4 ロール + probe 5 ロール（app_gate_probe を含む。T-09-13）のいずれも rolbypassrls = false', async () => {
     const roles = await readRoleBypassRls(db, [...ROLE_NAMES]);
     // 空振り防止（対照）。🔴 ROLE_NAMES が唯一の出所であり、ここに数値を書き写さない
     //    （T-05-05 で app_scan_probe を足したとき、この行だけが取り残された）。
@@ -340,11 +340,11 @@ describe('#9 オーナー列（owner_partner_company_id）の宣言とトリガ�
   });
 });
 
-describe('#10 probe 3 ロールの最小権限（docs/05 §4.7 #10 / §4.4.1 / §8.5）', () => {
+describe('#10 probe ロールの最小権限（docs/05 §4.7 #10 / §4.4.1 / §8.5 / §11.14 ③）', () => {
   it('probe ロールはいずれもテーブル単位の GRANT を持たない（列単位だけを持つ）', async () => {
     const rows = await migrator.$queryRaw<Array<{ grantee: string; table_name: string }>>`
       SELECT grantee, table_name FROM information_schema.role_table_grants
-      WHERE grantee IN ('app_share_probe', 'app_assignment_owner_probe', 'app_scan_probe')`;
+      WHERE grantee IN ('app_share_probe', 'app_assignment_owner_probe', 'app_scan_probe', 'app_scheduler_probe', 'app_gate_probe')`;
     expect(rows).toEqual([]);
   });
 
@@ -445,7 +445,80 @@ describe('#10 probe 3 ロールの最小権限（docs/05 §4.7 #10 / §4.4.1 / �
     // 🔴 ALTER FUNCTION ... OWNER TO のために一時的に付与し、直後に REVOKE している。
     expect(rows[0]?.can_create).toBe(false);
   });
+
+  /**
+   * 🔴 T-09-13: `app_gate_probe` の権限が **`proposals` 4 列 + `engineers` 7 列 + `engineer_skills` 5 列
+   *    = 16 行の SELECT だけ**であることを固定する（docs/05 §11.14 ③ / ⑧。migration 20260918000000）。
+   *
+   * 🔴 ここに列が増えることは「ゲート実行文脈からパートナー台帳の別の列が読める」ことを意味する。
+   *    `owner_partner_company_id` が混ざれば、関数本体に「所有者で絞って一覧する」述語が書けるようになり
+   *    §11.14 ⑤-1 の前提（鍵が `proposal_id` である以上 1 人分より広く返す形が存在しない）が崩れる。
+   *    より詳しい denylist の実測は `roles.test.ts` にある。ここは §4.7 の文言どおりの集合検査。
+   */
+  it('🔴 app_gate_probe の列単位 GRANT が 16 行ちょうど（SELECT のみ。増えたら必ず落ちる）', async () => {
+    expect(GATE_PROBE_EXPECTED_GRANTS).toHaveLength(16); // 対照（宣言そのものをレビュー可能にする）
+    const rows = await migrator.$queryRaw<
+      Array<{ table_name: string; column_name: string; privilege_type: string }>
+    >`
+      SELECT table_name, column_name, privilege_type
+      FROM information_schema.role_column_grants
+      WHERE grantee = 'app_gate_probe'
+      ORDER BY table_name, column_name, privilege_type`;
+    expect(rows).toEqual(GATE_PROBE_EXPECTED_GRANTS);
+    expect(rows.every((row) => row.privilege_type === 'SELECT')).toBe(true);
+  });
+
+  it('🔴 app_gate_probe に proposals / engineers / engineer_skills 以外のテーブルの GRANT が 1 つも無い', async () => {
+    const rows = await migrator.$queryRaw<Array<{ table_name: string }>>`
+      SELECT DISTINCT table_name FROM information_schema.role_column_grants
+      WHERE grantee = 'app_gate_probe'
+      ORDER BY table_name`;
+    expect(rows).toEqual([{ table_name: 'engineer_skills' }, { table_name: 'engineers' }, { table_name: 'proposals' }]);
+  });
+
+  it('🔴 app_gate_probe は engineers.owner_partner_company_id を SELECT できない（所有者で絞る述語が書けない。§11.14 ⑤-1）', async () => {
+    expect(await hasColumnPrivilege(db, 'app_gate_probe', 'engineers', 'owner_partner_company_id', 'SELECT')).toBe(false);
+    // 対照: 開示列は読める（列 GRANT そのものが効いている）。
+    expect(await hasColumnPrivilege(db, 'app_gate_probe', 'engineers', 'contact_email', 'SELECT')).toBe(true);
+  });
+
+  it('🔴 app_gate_probe は NOLOGIN であり、スキーマの CREATE 権限を持たない', async () => {
+    const rows = await migrator.$queryRaw<Array<{ rolcanlogin: boolean; can_create: boolean }>>`
+      SELECT rolcanlogin, has_schema_privilege('app_gate_probe', 'public', 'CREATE') AS can_create
+        FROM pg_roles WHERE rolname = 'app_gate_probe'`;
+    expect(rows[0]?.rolcanlogin).toBe(false);
+    // 🔴 ALTER FUNCTION ... OWNER TO のために一時的に付与し、直後に REVOKE している。
+    expect(rows[0]?.can_create).toBe(false);
+  });
 });
+
+/**
+ * 🔴 `app_gate_probe` に許した列（migration 20260918000000。docs/05 §11.14 ③）。
+ *
+ *  - `proposals`: 鍵の解決に要る 4 列（subject / body / 提案先 / 単価には届かない）
+ *  - `engineers`: PII 層の既知値 5 列 + 結合キー 2 列（🔴 `owner_partner_company_id` は無い）
+ *  - `engineer_skills`: 整合層の照合 3 列 + 結合キー 2 列
+ *
+ * 合計 16 行ちょうど・すべて SELECT。
+ */
+const GATE_PROBE_EXPECTED_GRANTS = [
+  { table_name: 'engineer_skills', column_name: 'engineer_id', privilege_type: 'SELECT' },
+  { table_name: 'engineer_skills', column_name: 'level', privilege_type: 'SELECT' },
+  { table_name: 'engineer_skills', column_name: 'skill_id', privilege_type: 'SELECT' },
+  { table_name: 'engineer_skills', column_name: 'tenant_id', privilege_type: 'SELECT' },
+  { table_name: 'engineer_skills', column_name: 'years_of_experience', privilege_type: 'SELECT' },
+  { table_name: 'engineers', column_name: 'affiliation_label', privilege_type: 'SELECT' },
+  { table_name: 'engineers', column_name: 'birth_date', privilege_type: 'SELECT' },
+  { table_name: 'engineers', column_name: 'contact_email', privilege_type: 'SELECT' },
+  { table_name: 'engineers', column_name: 'contact_phone', privilege_type: 'SELECT' },
+  { table_name: 'engineers', column_name: 'display_name', privilege_type: 'SELECT' },
+  { table_name: 'engineers', column_name: 'id', privilege_type: 'SELECT' },
+  { table_name: 'engineers', column_name: 'tenant_id', privilege_type: 'SELECT' },
+  { table_name: 'proposals', column_name: 'engineer_id', privilege_type: 'SELECT' },
+  { table_name: 'proposals', column_name: 'id', privilege_type: 'SELECT' },
+  { table_name: 'proposals', column_name: 'state', privilege_type: 'SELECT' },
+  { table_name: 'proposals', column_name: 'tenant_id', privilege_type: 'SELECT' },
+];
 
 /**
  * 🔴 `app_scan_probe` に許した列（migration 20260908000000）。
@@ -846,6 +919,170 @@ describe('#15 共有スコープ（経路 4）の追加ポリシーが 2 表だ�
     expect(rows[0]?.owner).toBe('app_share_probe');
     // 🔴 search_path を固定していないと、SECURITY DEFINER が呼び出し側の search_path で
     //    別スキーマの engineer_shares を読みうる（PostgreSQL の定番の落とし穴）。
-    expect(rows[0]?.proconfig ?? []).toContain('search_path=public');
+    // 🔴 `pg_temp` を**末尾に明示**する（T-09-13 レビューで是正。migration 20260918010000）。明示しないと
+    //    一時スキーマが最初に探され、呼び出し側の一時表 `engineer_shares` で非共有エンジニアを「共有中」に
+    //    化けさせられる（`tests/isolation/shared-candidate-scope.test.ts` ⑤ が実データで固定）。
+    expect(rows[0]?.proconfig ?? []).toContain('search_path=public, pg_temp');
+  });
+});
+
+// 🔴 #16（T-09-13 / Issue #41 = 1。docs/05 §4.7 #16 / §11.14）。**#14 / #15 と同じ理由で末尾に置く**
+//    （番号は「並び順」ではなく安定した識別子である）。
+/**
+ * 🔴 ゲート実行文脈の限定経路（`app_gate_probe`）が読める範囲を、**`proposals` / `engineers` /
+ *    `engineer_skills` の 3 表 × SELECT ちょうど**に固定する（docs/05 §11.14 ③）。
+ *
+ * 🔴 なぜ列挙ではなく走査か: 「ゲートが読める範囲を広げること」は本書（docs/05 §11.14 ②③）の改訂から
+ *    始めるものであり、**ポリシーを 1 本足すだけで実現できてはならない**。`pg_policy` を全件走査し、
+ *    `polroles` に `app_gate_probe` を含む (table, policy, command) の集合が期待値と一致することだけを見る。
+ *    ①表が 4 つ目に増えた（`skill_sheets` / `engineer_careers` / `engineer_shares` 等）
+ *    ②`command` に INSERT / UPDATE / DELETE が現れた ③`USING` に `app_tenant_id()` が無い —— のどれかで落ちる。
+ *    あわせて `pg_proc` を走査し、所有者が `app_gate_probe` の関数が 2 本ちょうどで、SECURITY DEFINER・
+ *    `search_path=public, pg_temp`・EXECUTE が `app_tenant` にだけ与えられていることを見る（#10 と対）。
+ *    🔴 `pg_temp` の末尾明示は T-09-13 レビューでの是正（docs/05 §11.14 ⑩）: 無いと一時スキーマが最初に探され、
+ *    呼び出し側の一時表 `proposals` で本体を隠して ⑤-1 / ⑤-2 を迂回できる（実 DB で再現。
+ *    `gate-engineer-facts.test.ts` #14 ④ が固定）。
+ */
+const GATE_PROBE_POLICIES = [
+  { table: 'engineer_skills', policy: 'engineer_skills_gate_probe_select', command: 'SELECT' },
+  { table: 'engineers', policy: 'engineers_gate_probe_select', command: 'SELECT' },
+  { table: 'proposals', policy: 'proposals_gate_probe_select', command: 'SELECT' },
+];
+const GATE_PROBE_FUNCTIONS = ['app_gate_proposal_engineer_pii', 'app_gate_proposal_engineer_skills'];
+
+describe('#16 ゲート実行文脈の限定経路（§11.14）: app_gate_probe 向けのポリシーが 3 表 × SELECT ちょうど（docs/05 §4.7 #16）', () => {
+  it('🔴 polroles に app_gate_probe を含むポリシーの (table, policy, command) 集合が 3 表 × SELECT ちょうど', async () => {
+    const policies = await readPolicies(db);
+    expect(policies.length).toBeGreaterThan(0); // 空振り防止（対照）
+
+    const matching = policies
+      .filter((policy) => policy.roles.includes('app_gate_probe'))
+      .map((policy) => ({ table: policy.table, policy: policy.policy, command: policy.command }))
+      .sort((left, right) =>
+        left.table === right.table ? left.policy.localeCompare(right.policy) : left.table.localeCompare(right.table),
+      );
+    expect(matching).toEqual(GATE_PROBE_POLICIES);
+  });
+
+  it('🔴 3 本とも USING が app_tenant_id() を参照し、WITH CHECK を持たない（テナント境界は課す。書き込みを開かない）', async () => {
+    const policies = (await readPolicies(db)).filter((policy) => policy.roles.includes('app_gate_probe'));
+    expect(policies).toHaveLength(GATE_PROBE_POLICIES.length); // 空振り防止（対照）
+    for (const policy of policies) {
+      expect(policy.command, `${policy.policy}: SELECT 以外に開いている`).toBe('SELECT');
+      expect(policy.withCheck, `${policy.policy}: WITH CHECK を持っている`).toBeNull();
+      expect(policy.using ?? '', `${policy.policy}: app_tenant_id() を参照しない`).toContain('app_tenant_id()');
+    }
+  });
+
+  it('🔴 所有者が app_gate_probe の関数は 2 本ちょうどで、SECURITY DEFINER かつ search_path=public, pg_temp', async () => {
+    const rows = await migrator.$queryRaw<
+      Array<{ proname: string; prosecdef: boolean; proconfig: string[] | null }>
+    >`
+      SELECT p.proname, p.prosecdef, p.proconfig
+        FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+       WHERE n.nspname = 'public' AND pg_get_userbyid(p.proowner) = 'app_gate_probe'
+       ORDER BY p.proname`;
+    expect(rows.map((row) => row.proname)).toEqual(GATE_PROBE_FUNCTIONS);
+    for (const row of rows) {
+      expect(row.prosecdef, `${row.proname}: SECURITY DEFINER ではない`).toBe(true);
+      // 🔴 search_path を固定していないと、SECURITY DEFINER が呼び出し側の search_path で
+      //    別スキーマの proposals / engineers を読みうる（PostgreSQL の定番の落とし穴）。
+      // 🔴 `pg_temp` を末尾に明示する。無いと一時スキーマが最初に探され、呼び出し側の一時表 `proposals` で
+      //    本体を隠せる（T-09-13 レビューで実 DB 再現。docs/05 §11.14 ⑩）。
+      expect(row.proconfig ?? [], `${row.proname}: search_path が public, pg_temp に固定されていない`).toContain(
+        'search_path=public, pg_temp',
+      );
+    }
+  });
+
+  it('🔴 2 関数の EXECUTE を持つのは app_tenant だけである（PUBLIC / app_platform / app_platform_write に無い）', async () => {
+    for (const fn of GATE_PROBE_FUNCTIONS) {
+      const signature = `${fn}(uuid)`;
+      const rows = await migrator.$queryRaw<Array<{ role: string; can_execute: boolean }>>`
+        SELECT role, has_function_privilege(role, ${signature}::text, 'EXECUTE') AS can_execute
+          FROM (VALUES ('app_tenant'), ('app_platform'), ('app_platform_write'), ('public')) AS r(role)`;
+      const byRole = new Map(rows.map((row) => [row.role, row.can_execute]));
+      expect(byRole.get('app_tenant'), `${fn}: app_tenant が EXECUTE できない`).toBe(true);
+      expect(byRole.get('app_platform'), `${fn}: app_platform が EXECUTE できる`).toBe(false);
+      expect(byRole.get('app_platform_write'), `${fn}: app_platform_write が EXECUTE できる`).toBe(false);
+      expect(byRole.get('public'), `${fn}: PUBLIC が EXECUTE できる`).toBe(false);
+    }
+  });
+
+  it('🔴 2 関数の引数は uuid 1 つだけで、戻り値に ID 列（*_id）が無い（鍵は proposal_id、固定形の DTO。§11.14 ⑤-1 / ⑤-3）', async () => {
+    const rows = await migrator.$queryRaw<Array<{ proname: string; args: string; result: string }>>`
+      SELECT p.proname,
+             pg_get_function_identity_arguments(p.oid) AS args,
+             pg_get_function_result(p.oid) AS result
+        FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+       WHERE n.nspname = 'public' AND pg_get_userbyid(p.proowner) = 'app_gate_probe'
+       ORDER BY p.proname`;
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      expect(row.args, `${row.proname}: 引数が proposal_id 1 つではない`).toBe('p_proposal_id uuid');
+      // 🔴 skill_id は Skill 辞書（グローバル）の ID であり個人を指さない。それ以外の *_id が戻り値に無い。
+      const idColumns = row.result.match(/\b\w*_id\b/g) ?? [];
+      expect(idColumns.filter((column) => column !== 'skill_id'), `${row.proname}: 戻り値に ID 列がある`).toEqual([]);
+      expect(row.result).not.toMatch(/owner_partner_company_id|engineer_id|proposal_id/);
+    }
+  });
+});
+
+// 🔴 #17（T-09-13 レビュー是正。2026-09-15 追加）。**#14〜#16 と同じ理由で末尾に置く**（番号は安定した識別子）。
+/**
+ * 🔴 `SECURITY DEFINER` 関数の `search_path` は**すべて** `public, pg_temp` である（migration 20260918010000）。
+ *
+ * 🔴 なぜ列挙ではなく走査か: `pg_temp` を明示しない `SET search_path = public` は、リレーション名の解決で
+ *    一時スキーマを最初に探す。呼び出し側が本体と同名の一時表を作り所有者ロールに SELECT を与えると、
+ *    関数本体の `WHERE` / ポリシーが課す条件を呼び出し側が用意した行で満たせる（T-09-13 で実 DB 再現。
+ *    `app_engineer_is_shared` は RLS ポリシーから呼ばれるため経路 4 の違反に直結する）。
+ *    **今後 SECURITY DEFINER 関数を 1 本足して `pg_temp` を忘れた時点で落ちる**形にする:
+ *    ① `prosecdef = true` の全関数 ② 所有者が `app_*_probe` の全関数 —— の和集合を `pg_proc` から取り、
+ *    `proconfig` が `search_path=public, pg_temp` を含むことを要求する。
+ */
+describe('#17 SECURITY DEFINER / probe 所有の全関数の search_path が public, pg_temp である（T-09-13 レビュー是正）', () => {
+  type FunctionRow = { proname: string; owner: string; prosecdef: boolean; proconfig: string[] | null };
+
+  async function readGuardedFunctions(): Promise<FunctionRow[]> {
+    return migrator.$queryRaw<FunctionRow[]>`
+      SELECT p.proname, pg_get_userbyid(p.proowner) AS owner, p.prosecdef, p.proconfig
+        FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+       WHERE n.nspname = 'public'
+         AND (p.prosecdef OR pg_get_userbyid(p.proowner) LIKE 'app_%_probe')
+       ORDER BY p.proname`;
+  }
+
+  it('対照: 母集団が空振りしていない（既知の 8 本以上）', async () => {
+    const rows = await readGuardedFunctions();
+    expect(rows.length).toBeGreaterThanOrEqual(8);
+    expect(rows.map((row) => row.proname)).toEqual(
+      expect.arrayContaining([
+        'app_engineer_is_shared',
+        'app_apply_scan_status',
+        'app_list_stalled_scan_targets',
+        'app_scan_quarantine_target',
+        'app_list_scheduler_tenants',
+        'app_gate_proposal_engineer_pii',
+        'app_gate_proposal_engineer_skills',
+        'inherit_assignment_counterparty',
+      ]),
+    );
+  });
+
+  it('🔴 全関数が SECURITY DEFINER であり、proconfig に search_path=public, pg_temp を含む', async () => {
+    const rows = await readGuardedFunctions();
+    for (const row of rows) {
+      expect(row.prosecdef, `${row.proname}（owner=${row.owner}）: probe 所有なのに SECURITY DEFINER ではない`).toBe(true);
+      const searchPath = (row.proconfig ?? []).find((entry) => entry.startsWith('search_path='));
+      expect(searchPath, `${row.proname}: search_path が public, pg_temp に固定されていない（pg_temp を忘れると一時表で本体を隠せる）`).toBe(
+        'search_path=public, pg_temp',
+      );
+    }
+  });
+
+  it('🔴 所有者が app_*_probe でない SECURITY DEFINER 関数が 1 本も無い（バイパスは専用ロール経由に限る。CLAUDE.md §10.5）', async () => {
+    const rows = await readGuardedFunctions();
+    const strangers = rows.filter((row) => !/^app_.+_probe$/.test(row.owner)).map((row) => `${row.proname}@${row.owner}`);
+    expect(strangers).toEqual([]);
   });
 });

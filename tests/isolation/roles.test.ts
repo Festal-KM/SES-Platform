@@ -138,6 +138,13 @@ describe('① 全ロールが BYPASSRLS を持たない（docs/05 §4.2）', () 
     expect(rows[0]?.rolcanlogin).toBe(false);
   });
 
+  // 🔴 T-09-13: 同形の NOLOGIN 検証（ゲート実行文脈の SECURITY DEFINER 2 関数の所有者。docs/05 §11.14 ⑧）。
+  it('app_gate_probe は NOLOGIN である（docs/05 §4.2「（接続しない）」）', async () => {
+    const rows = await unextended.$queryRaw<Array<{ rolcanlogin: boolean }>>`
+      SELECT rolcanlogin FROM pg_roles WHERE rolname = 'app_gate_probe'`;
+    expect(rows[0]?.rolcanlogin).toBe(false);
+  });
+
   it('対照: app_migrator / app_tenant / app_platform / app_platform_write は LOGIN できる', async () => {
     const rows = await unextended.$queryRaw<Array<{ rolname: string; rolcanlogin: boolean }>>`
       SELECT rolname, rolcanlogin FROM pg_roles
@@ -405,6 +412,140 @@ describe('app_assignment_owner_probe は engineers の 3 列（tenant_id/id/owne
       { table_name: 'engineers', column_name: 'owner_partner_company_id', privilege_type: 'SELECT' },
       { table_name: 'engineers', column_name: 'tenant_id', privilege_type: 'SELECT' },
     ]);
+  });
+});
+
+/**
+ * 🔴 T-09-13（docs/05 §11.14 ③ / ⑧「ロール走査」）: `app_gate_probe` の権限が
+ *    `proposals` 4 列 + `engineers` 7 列 + `engineer_skills` 5 列 = **16 行の SELECT だけ**であることを
+ *    `information_schema.role_column_grants` の走査で固定する（`migrator` 接続で読む理由は上の
+ *    `app_assignment_owner_probe` のブロックと同じ）。
+ *
+ * 🔴 ここに列が増えることは「ゲート実行文脈からパートナー台帳の別の列が読める」ことを意味する。
+ *    特に `engineers.owner_partner_company_id` が入ると「所有者で絞って一覧する」述語が関数本体に
+ *    書けるようになり、§11.14 ⑤-1（鍵が `proposal_id` である以上 1 人分より広く返す形が存在しない）
+ *    の前提が崩れる。**期待値を固定して、増えたら必ず落ちるようにする。**
+ */
+const GATE_PROBE_EXPECTED_GRANTS = [
+  { table_name: 'engineer_skills', column_name: 'engineer_id', privilege_type: 'SELECT' },
+  { table_name: 'engineer_skills', column_name: 'level', privilege_type: 'SELECT' },
+  { table_name: 'engineer_skills', column_name: 'skill_id', privilege_type: 'SELECT' },
+  { table_name: 'engineer_skills', column_name: 'tenant_id', privilege_type: 'SELECT' },
+  { table_name: 'engineer_skills', column_name: 'years_of_experience', privilege_type: 'SELECT' },
+  { table_name: 'engineers', column_name: 'affiliation_label', privilege_type: 'SELECT' },
+  { table_name: 'engineers', column_name: 'birth_date', privilege_type: 'SELECT' },
+  { table_name: 'engineers', column_name: 'contact_email', privilege_type: 'SELECT' },
+  { table_name: 'engineers', column_name: 'contact_phone', privilege_type: 'SELECT' },
+  { table_name: 'engineers', column_name: 'display_name', privilege_type: 'SELECT' },
+  { table_name: 'engineers', column_name: 'id', privilege_type: 'SELECT' },
+  { table_name: 'engineers', column_name: 'tenant_id', privilege_type: 'SELECT' },
+  { table_name: 'proposals', column_name: 'engineer_id', privilege_type: 'SELECT' },
+  { table_name: 'proposals', column_name: 'id', privilege_type: 'SELECT' },
+  { table_name: 'proposals', column_name: 'state', privilege_type: 'SELECT' },
+  { table_name: 'proposals', column_name: 'tenant_id', privilege_type: 'SELECT' },
+];
+
+/**
+ * 🔴 `app_gate_probe` に SELECT が**無い**ことを実測する denylist（docs/05 §11.14 ② / ⑧-⑥）。
+ *    「書き忘れても漏れない」側の担保 —— 列が無ければ関数本体にすら書けない。
+ *    表ごと権限が無いもの（`skill_sheets` / `engineer_careers` / `engineer_shares`）は全列を走査する。
+ */
+const GATE_PROBE_DENIED_COLUMNS: Readonly<Record<string, readonly string[]>> = {
+  engineers: [
+    'owner_partner_company_id',
+    'unit_price_min',
+    'unit_price_max',
+    'city',
+    'prefecture',
+    'remote_mode',
+    'availability',
+    'available_from',
+    'preference_note',
+    'retention_expires_at',
+    'pii_purged_at',
+  ],
+  engineer_skills: ['id', 'owner_partner_company_id', 'original_label', 'source', 'normalized_at'],
+  proposals: ['subject', 'body', 'recipient_company_name', 'recipient_email', 'offered_unit_price', 'owner_partner_company_id'],
+};
+const GATE_PROBE_DENIED_TABLES = ['skill_sheets', 'skill_sheet_extractions', 'engineer_careers', 'engineer_shares'];
+
+describe('app_gate_probe の権限は proposals 4 列 + engineers 7 列 + engineer_skills 5 列の SELECT だけ（docs/05 §4.2 / §11.14 ③）', () => {
+  it('role_table_grants にこのロール宛の行が無い（テーブル単位の GRANT を一切持たない。列単位の GRANT のみ）', async () => {
+    const rows = await migrator.$queryRaw<Array<{ table_name: string; privilege_type: string }>>`
+      SELECT table_name, privilege_type
+      FROM information_schema.role_table_grants
+      WHERE grantee = 'app_gate_probe'`;
+    expect(rows).toEqual([]);
+  });
+
+  it('🔴 role_column_grants は 16 行ちょうど（SELECT のみ。増えたら必ず落ちる）', async () => {
+    expect(GATE_PROBE_EXPECTED_GRANTS).toHaveLength(16); // 対照（宣言そのものをレビュー可能にする）
+    const rows = await migrator.$queryRaw<
+      Array<{ table_name: string; column_name: string; privilege_type: string }>
+    >`
+      SELECT table_name, column_name, privilege_type
+      FROM information_schema.role_column_grants
+      WHERE grantee = 'app_gate_probe'
+      ORDER BY table_name, column_name, privilege_type`;
+    expect(rows).toEqual(GATE_PROBE_EXPECTED_GRANTS);
+  });
+
+  it('🔴 INSERT / UPDATE の列権限が 3 表の全列で 0 件、DELETE のテーブル権限も 0 件（読むだけ。§11.14 ③）', async () => {
+    let checked = 0;
+    for (const table of ['proposals', 'engineers', 'engineer_skills']) {
+      expect(await hasTablePrivilege(unextended, 'app_gate_probe', table, 'DELETE')).toBe(false);
+      expect(await hasTablePrivilege(unextended, 'app_gate_probe', table, 'INSERT')).toBe(false);
+      expect(await hasTablePrivilege(unextended, 'app_gate_probe', table, 'UPDATE')).toBe(false);
+      for (const column of await readTableColumns(unextended, table)) {
+        checked += 1;
+        expect(
+          await hasColumnPrivilege(unextended, 'app_gate_probe', table, column, 'INSERT'),
+          `${table}.${column}: app_gate_probe に INSERT 権限がある`,
+        ).toBe(false);
+        expect(
+          await hasColumnPrivilege(unextended, 'app_gate_probe', table, column, 'UPDATE'),
+          `${table}.${column}: app_gate_probe に UPDATE 権限がある`,
+        ).toBe(false);
+      }
+    }
+    expect(checked).toBeGreaterThan(16); // 空振り防止（対照）
+  });
+
+  it('🔴 denylist: owner_partner_company_id / 単価 / 営業メモ / 提案本文 に SELECT が無い（所有者で絞る述語が書けない）', async () => {
+    let checked = 0;
+    for (const [table, columns] of Object.entries(GATE_PROBE_DENIED_COLUMNS)) {
+      const actualColumns = await readTableColumns(unextended, table);
+      for (const column of columns) {
+        checked += 1;
+        expect(actualColumns, `${table}.${column}: denylist の列が実在しない`).toContain(column);
+        expect(
+          await hasColumnPrivilege(unextended, 'app_gate_probe', table, column, 'SELECT'),
+          `${table}.${column}: app_gate_probe に SELECT 権限がある（docs/05 §11.14 ②）`,
+        ).toBe(false);
+      }
+    }
+    expect(checked).toBeGreaterThan(0); // 空振り防止（対照）
+  });
+
+  it('🔴 skill_sheets / skill_sheet_extractions / engineer_careers / engineer_shares には全列で SELECT が無い（表ごと権限を与えない）', async () => {
+    let checked = 0;
+    for (const table of GATE_PROBE_DENIED_TABLES) {
+      expect(await hasTablePrivilege(unextended, 'app_gate_probe', table, 'SELECT')).toBe(false);
+      const columns = await readTableColumns(unextended, table);
+      expect(columns.length, `${table}: 表が実在しない`).toBeGreaterThan(0);
+      for (const column of columns) {
+        checked += 1;
+        expect(
+          await hasColumnPrivilege(unextended, 'app_gate_probe', table, column, 'SELECT'),
+          `${table}.${column}: app_gate_probe に SELECT 権限がある（docs/05 §11.14 ②）`,
+        ).toBe(false);
+      }
+    }
+    expect(checked).toBeGreaterThan(0); // 空振り防止（対照）
+  });
+
+  it('対照: 開示列（engineers.contact_email）には SELECT がある（denylist の検査が空振りでない）', async () => {
+    expect(await hasColumnPrivilege(unextended, 'app_gate_probe', 'engineers', 'contact_email', 'SELECT')).toBe(true);
   });
 });
 

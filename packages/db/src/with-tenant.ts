@@ -30,8 +30,15 @@ function extendWithTenantScope(client: PrismaClient, scope: ScopeKeys) {
 
 type ExtendedClient = ReturnType<typeof extendWithTenantScope>;
 
-/** `$transaction` のコールバックが受け取るクライアント（`$transaction` 等は Prisma 側で除去済み）。 */
-type TenantTransactionClient = Parameters<Parameters<ExtendedClient['$transaction']>[0]>[0];
+/**
+ * `$transaction` のコールバックが受け取るクライアント（`$transaction` 等は Prisma 側で除去済み）。
+ *
+ * @internal `packages/db` の内部（`runInTenantTransaction` の中で生 SQL を発行する 1 ファイル
+ *   = `gate-engineer-facts.ts`。docs/05 §11.14 ⑥）からのみ参照する。**`index.ts` から export しない**
+ *   （`$queryRaw` を持つ型が `@ses/db` の外へ出ると、`TenantDb` が生 SQL の入口を型から除いた
+ *   意味が無くなる。§4.3 実装の規約 3）。
+ */
+export type TenantTransactionClient = Parameters<Parameters<ExtendedClient['$transaction']>[0]>[0];
 
 /**
  * 🔴 経路 5（当事者レコードの参照）の**基底表**のデリゲート（docs/05 §4.3-6 / §4.4 C9）。

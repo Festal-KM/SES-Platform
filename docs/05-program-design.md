@@ -1771,6 +1771,8 @@ CREATE TRIGGER ins_owner BEFORE INSERT OR UPDATE ON engineer_skills   -- 親: en
 
 `app_assignment_owner_probe` の権限は §4.7 テスト #5 / #10 が検証する（`tests/isolation/roles.test.ts`）。実証テストは `tests/isolation/owner-counterparty-inheritance.test.ts` の ④。
 
+- 🔴 **`inherit_assignment_counterparty()` の `search_path` は `public, pg_temp`**（2026-09-15 の T-09-13 レビューで横断適用。migration 20260918010000。§11.14 ⑪）。`pg_temp` を明示しない `SECURITY DEFINER` は一時スキーマを最初に探すため、呼び出し側の一時表で本体を隠せる。トリガ関数は直接呼べないため影響は限定的だが、規律を揃える（§4.7 #17 が固定）。
+
 #### 4.4.2 テナント文脈を持たない経路（🔴 これ以外を作らない）
 
 | 経路 | 見えるもの / 書けるもの | 実装 |
@@ -1811,7 +1813,7 @@ export function withSharedCandidateScope<T>(
   CREATE POLICY share_probe_read ON engineer_shares FOR SELECT TO app_share_probe
     USING ( tenant_id = app_tenant_id() AND revoked_at IS NULL );                     -- app_tenant_id() を参照（§4.7 テスト #3 を通る）
   CREATE FUNCTION app_engineer_is_shared(eng uuid, t uuid) RETURNS boolean
-    LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+    LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$   -- 🔴 pg_temp を末尾に明示（§11.14 ⑪。2026-09-15 の T-09-13 レビューで横断適用）
       SELECT current_setting('app.shared_scope', true) = 'on' AND app_is_host()
          AND EXISTS (SELECT 1 FROM engineer_shares s WHERE s.tenant_id = t AND s.engineer_id = eng AND s.revoked_at IS NULL) $$;
   ALTER FUNCTION app_engineer_is_shared OWNER TO app_share_probe;
@@ -1820,6 +1822,7 @@ export function withSharedCandidateScope<T>(
     USING ( tenant_id = app_tenant_id() AND app_engineer_is_shared(engineers.id, engineers.tenant_id) );
   -- engineer_skills も同形（engineers.id を engineer_skills.engineer_id に読み替える）
   ```
+- 🔴 **`app_engineer_is_shared()` の `search_path` は `public, pg_temp`**（2026-09-15 の T-09-13 レビューで横断適用。migration 20260918010000。§11.14 ⑪）。`pg_temp` を明示しないと一時スキーマが最初に探され、ホスト文脈の呼び出し側が一時表 `engineer_shares` に非共有エンジニアの行を仕込んで `app_share_probe` に SELECT を与えると、本関数が `true` に化けて **`app.shared_scope='on'` 下で非共有のパートナーエンジニアが匿名 5 項目に現れる**（経路 4 の違反。実 DB で再現）。回帰は `tests/isolation/shared-candidate-scope.test.ts` ⑤ と §4.7 #17 が固定する。
 - 🔴 **この関数が §3.1 経路 4 の DB 側の唯一の実装であり、`engineer_shares` の行をホストに見せる追加ポリシーを作らない**（§4.4.2 の一覧に登録済み）。真偽を得るには `engineer_id` を知っている必要があり、ホストがパートナーの `engineer_id` を得る経路は本ポリシー越しの `engineers` 行だけである。`programmer` は **C3 を緩めてはならない**（`BR-06`）。
 - 🔴 **`SharedCandidateDb` の型は、5 項目に対応する列だけを `select` できる形に絞る**（`displayName` / `contactEmail` / `affiliationLabel` / `city` / `birthDate` を含む型を返せない。`engineerShare` モデル自体を持たない）。**型と RLS の二重**で `BR-54` を守る。
 
@@ -2094,8 +2097,18 @@ test('ゲート実行文脈の限定経路（§11.14）: app_gate_probe 向け�
      ③polqual に 'app_tenant_id()' が無い —— のどれかで FAIL する。「ゲートが読める範囲を広げること」は
      本書の改訂（§11.14 ②③）から始めるものであり、ポリシーを 1 本足すだけで実現できてはならない。
      あわせて pg_proc を走査し、proowner = app_gate_probe の関数が app_gate_proposal_engineer_pii /
-     app_gate_proposal_engineer_skills の 2 本ちょうどで、prosecdef = true・proconfig に search_path=public を含み、
+     app_gate_proposal_engineer_skills の 2 本ちょうどで、prosecdef = true・🔴 proconfig に search_path=public, pg_temp を含み
+     （pg_temp の末尾明示は T-09-13 レビューでの是正〔§11.14 ⑪〕: 無いと一時スキーマが最初に探され、呼び出し側の一時表 proposals で
+     本体を隠して §11.14 ⑤-1 / ⑤-2 を迂回できる。実 DB で再現）、
      EXECUTE が app_tenant にだけ与えられている（PUBLIC / app_platform / app_platform_write に無い）ことを見る（#10 と対）。 */);
+// 🔴 #17（T-09-13 レビュー是正。2026-09-15 追加）。**#14〜#16 と同じ理由で末尾に置く**（番号は安定した識別子）。
+test('SECURITY DEFINER の全関数と、所有者が app_*_probe の全関数の proconfig が search_path=public, pg_temp を含む（§11.14 ⑪）',
+  /* 🔴 列挙ではなく走査: pg_proc を prosecdef = true OR proowner LIKE 'app_%_probe' で全件取り、proconfig の search_path が
+     'search_path=public, pg_temp' ちょうどであることを要求する。あわせて所有者が app_*_probe でない SECURITY DEFINER 関数が
+     1 本も無いことを見る（分離のバイパスは専用ロール経由に限る。CLAUDE.md §10.5）。
+     🔴 今後 SECURITY DEFINER 関数を 1 本足して pg_temp を忘れた時点で落ちる —— pg_temp を明示しない SET search_path = public は
+     リレーション名の解決で一時スキーマを最初に探すため、呼び出し側が本体と同名の一時表を作って所有者ロールに SELECT を与えると、
+     関数本体の WHERE / ポリシーが課す条件を呼び出し側の行で満たせる（migration 20260918010000 で既存 6 本へ横断適用）。 */);
 ```
 🔴 **除外リストは「4 表 + `_prisma_migrations`」だけ**であり、**新規テーブルは既定で検査対象に入る**。列挙式（対象テーブルを並べる）にすると新規テーブルを取りこぼすため、**必ず「全部から 4 つを引く」向きで書く**。🔴 **除外リストを広げて通すのは、このテストが防ごうとしている壊し方そのものである。** 新規テーブルが落ちたら §4.4 のクラスを 1 つ選んでポリシーを書く。
 
@@ -3913,6 +3926,7 @@ POST /api/webhooks/{provider}
 | 🔴 **未知の生ステータス** | `CLEAN` にも `FAILED` にも**推測で寄せない**。`GuardDutyEventParseError` として 200 + 未処理で記録し（`A-005`）、対象ファイルは `SCANNING` のまま残る（`scan.poll` の滞留検知にも現れる = 二重に見える） |
 | 🔴 **パートナー所有のファイルへ届かせる** | `skill_sheets` は **C3 OWNER_SCOPED** であり、ジョブのホスト文脈（`systemTenantCtx`。§9.2 は `partner_company_id` を常に `null` と定める）からはパートナー所属エンジニアの版が 1 行も見えない。しかしスキャンは所有者と無関係に起きるため、素のままだと **「パートナーが上げたファイルだけ永久に `SCANNING`」**になり `BR-26` / `F-011 AC-3` が成立しない。§4.4.1 の `assignments ← engineers` と**同型の解**（専用ロール `app_scan_probe` + `SECURITY DEFINER` + 最小列 `GRANT`）を採る: `app_apply_scan_status(objectKey, status, replaceable[], observedAt)` と `app_list_stalled_scan_targets(before, limit)` の 2 関数だけを置き、いずれも本体で **`app_tenant_id() IS NULL` を拒否**（fail-closed）し **`tenant_id = app_tenant_id()` に閉じる**。緩むのは「同一テナント内で、スキャンの 3 列だけ」であり、氏名・スキル・他テナントには 1 列も届かない。呼び出し元は `packages/db/src/file-scan.ts` の 2 関数だけ（`TenantDb` に `$queryRaw` が無いため `apps/**` から呼ぶ経路は存在せず、`tests/static/auth-db-callers.test.ts` が固定する）。🔴 **本機構は [Issue #27](https://github.com/Festal-KM/SES-Platform/issues/27) 後半（ワーカーからパートナー所有の `skill_sheets` へ書き込む文脈をどう与えるか）の既定解を、「スキャンの 3 列」に限って前倒しで実装したものである。** 同じ問いの残りの射程 —— `SkillSheetExtraction` の生成（`sheet-parser` / `skill-normalizer`。SP-14）と ~~`gate.run` の実行文脈（SP-09）~~ —— は **SP-07 の設計判断として残る**（それらは本機構の 3 列では足りず、書き込む列も表も違う）。本節の解を「ワーカーがパートナー所有行に触れるときの汎用の入口」として流用しないこと。✅ **`gate.run` の分は [Issue #41](https://github.com/Festal-KM/SES-Platform/issues/41) = 1 で決着し、§11.14 が `app_gate_probe`（別ロール・別関数・`SELECT` のみ）として確定させた（T-09-13）。残るのは SP-14 の分だけであり、そちらも `app_scan_probe` / `app_gate_probe` に列を足して通してはならない**（§11.14 ⑨） |
 | ✅ **隔離の周知先（所有側）を引く**（T-05-08。`F-011` 処理④） | 周知の宛先分類（1 = ホスト所属 / 2 = パートナー所属）は `skill_sheets.owner_partner_company_id` でしか決まらないが、同じ C3 の理由でホスト文脈から読めない。**取り違えると `sandbox` で取引先の担当者へ実メールが飛ぶ**（`CLAUDE.md` §11.1）か、逆にパートナーが上げたファイルの隔離が誰にも届かない。同じ解を採り、**既存の `app_scan_probe` に `owner_partner_company_id` の `SELECT` を 1 列だけ**足して `app_scan_quarantine_target(objectKey)`（`(skill_sheet_id, owner_partner_company_id, scan_status)` を返す）を置いた（migration 20260910000000）。🔴 **`engineer_id` / `version` / `note` / `uploaded_by` は足していない** —— 周知メールは「画面で確認してください」の 1 リンクだけであり、内容を 1 つも運ばないためである（§9.6.1）。呼び出し元は `packages/db/src/scan-notice.ts` の 1 関数だけ |
+| 🔴 **`search_path = public, pg_temp`**（2026-09-15 の T-09-13 レビューで横断適用） | `app_apply_scan_status` / `app_list_stalled_scan_targets` / `app_scan_quarantine_target` の 3 関数は当初 `SET search_path = public` だった。`pg_temp` を明示しない `SECURITY DEFINER` は一時スキーマを最初に探すため、呼び出し側の一時表 `skill_sheets` で本体を隠せる（適用先の差し替え / 滞留一覧の偽装）。migration 20260918010000 で `ALTER FUNCTION ... SET search_path = public, pg_temp` を適用した（§11.14 ⑪。§4.7 #17 が固定） |
 | 🔴 **`is_latest` の扱い** | `skill_sheets_latest_clean_check`（`is_latest = false OR scan_status = 'CLEAN'`）があるため、**最新版が `CLEAN` から非 `CLEAN` へ動くときはフラグを落とす**（残すと CHECK 違反で更新そのものが失敗する）。落とすのが正しい（`F-011 AC-1`）。🔴 逆に、スキャン結果の適用が `is_latest` を**立てる**ことは無い（🔴 **立てるのは #19b（版の切替）＝ 利用者の明示操作だけ**である。#19 が作る行は `SCANNING` なので立てられない。T-05-06 で #19b を新設した経緯は §6.4 の決着を参照） |
 | 🔴 **`skill_sheets(object_key)` の `UNIQUE`** | スキャン結果は「バケット + キー + 版」しか教えてくれない（`docs/03` §3.4.1）。同じキーの行が 2 つあると適用先が決まらないため、**曖昧さを DB で禁止する**（migration 20260908000000）。キーは `{uuid}` を含み発行のたびに新しい（§14.1）ので、実運用で衝突しない |
 | ⚠️ **`clamav`（`development`）は未実装** | `MALWARE_SCANNER=clamav` を選ぶと `createConnectors` が `ConnectorImplementationNotAvailableError` で**起動を止める**（モックへ倒さない。`CLAUDE.md` §11.1 —— スキャンのモックに勝手に落ちると「検査していないファイルが `CLEAN` になる」）。GuardDuty は S3 のイベント駆動だが ClamAV は自前でオブジェクトを取得して `clamd` に流す必要があり、`ObjectStore` に無い「本体の取得」と INSTREAM 実装が要る（`docs/03` §3.4.3-6）。**後続タスクで実装する**（`development` の起動配線は SP-07 のため、現時点で `createConnectors` を呼ぶ実行経路は無い） |
@@ -4062,6 +4076,7 @@ BullMQ の Job Scheduler が作るジョブの ID は **`repeat:{schedulerId}:{�
 - 🔴 **`SANDBOX` は含める。** 試用中のテナントは実データで本番同等に動く環境であり（`CLAUDE.md` §11 / §4.2）、外すと「試用中だけ満了アラートもゲート復帰も来ない」という、試用の目的そのものを損なう差分が生まれる。
 - 🔴 **1 テナントの失敗で他のテナントを止めない。** 直列に回し（並列にすると LLM のレート制御とコスト予約がテナントをまたいで揺れる）、失敗は数えて `SchedulerRun.detail` に残し、**1 件でも失敗したら最後に throw する**（BullMQ の失敗ジョブとして `A-005` に出す）。例外（`SchedulerFanOutError`）が持つのは件数だけである。
 - 🔴 テナント文脈を持たずに `tenants` を読む経路が新たに 1 本増えた。**§4.4.2 の一覧に登録済み**であり、それ以外の用途に流用しない。
+- 🔴 **`app_list_scheduler_tenants()` の `search_path` は `public, pg_temp`**（2026-09-15 の T-09-13 レビューで横断適用。migration 20260918010000。§11.14 ⑪）。`pg_temp` を明示しない `SECURITY DEFINER` は一時スキーマを最初に探すため、呼び出し側の一時表 `tenants` で母集団を差し替えられる。§4.7 #17 が固定する。
 
 ### 9.2 システムコンテキスト（ジョブが `withTenant` を使う方法）
 
@@ -5089,7 +5104,7 @@ GRANT CREATE ON SCHEMA public TO app_gate_probe;   -- ALTER FUNCTION ... OWNER T
 -- 4-a. PII 層の既知値（🔴 ちょうど 0 行または 1 行。ID を 1 つも返さない）
 CREATE FUNCTION app_gate_proposal_engineer_pii(p_proposal_id uuid)
   RETURNS TABLE (display_name text, birth_date date, contact_email text, contact_phone text, affiliation_label text)
-LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public AS $BODY$
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $BODY$   -- 🔴 pg_temp を末尾に明示（⑪）
 BEGIN
   -- 🔴 fail-closed その 1: テナント文脈が無い接続（withSystemScope / migration）から呼ばれても
   --    「全テナントの行が対象」にならない（app_apply_scan_status と同じ）。
@@ -5116,7 +5131,7 @@ ALTER FUNCTION app_gate_proposal_engineer_pii(uuid) OWNER TO app_gate_probe;
 -- 4-b. 整合層の裏付け（🔴 0 行以上。skill_id は Skill 辞書〔グローバル〕の ID であり個人を指さない）
 CREATE FUNCTION app_gate_proposal_engineer_skills(p_proposal_id uuid)
   RETURNS TABLE (skill_id uuid, years_of_experience numeric, level integer)
-LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public AS $BODY$
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $BODY$   -- 🔴 pg_temp を末尾に明示（⑪）
 BEGIN
   IF app_tenant_id() IS NULL THEN
     RAISE EXCEPTION 'app_gate_proposal_engineer_skills: テナント文脈がありません（app.tenant_id が未設定）';
@@ -5231,6 +5246,14 @@ export async function readGateEngineerFacts(
 4. テストは⑧の 5 行。🔴 **`OUT_OF_SCOPE_TABLES` / `BUSINESS_TABLE_EXCLUSIONS` / `PLATFORM_READ_COLUMN_ALLOWLIST` は 1 文字も変えない**（本経路は表を増やしていない）。
 5. `tests/isolation/gate-run.test.ts` の反転（⑧ #12）。K-3 の再実行（⑧）。
 6. 本書の更新箇所（§1.4 / §4.2 / §4.4.2 / §4.7 / §8.5.1 / §11.9 ⑦ / §11.10 ⑩-5 / §17.2 #31 / `P-A-21`）は**本節と同時に済ませてある**。実装で差分が出たら**本節に「実装の決着」を追記する**（§7.9〜§7.13 と同じ作法。本節を書き換えて履歴を消さない）。
+
+#### ⑪ 🔴 実装の決着（T-09-13 レビュー。2026-09-15）: `SET search_path = public, pg_temp`
+
+- **事象**: ④ の 2 関数を `SET search_path = public` で実装したところ、`code-reviewer` が **`app_tenant` ホスト文脈の生 SQL で第二境界（C3）が破れることを実 DB で再現した**。PostgreSQL は `search_path` に `pg_temp` が明示されていないとき、**リレーション名の解決で一時スキーマを最初に**探す（公式「Writing SECURITY DEFINER Functions Safely」が `SET search_path = ..., pg_temp` を要求する理由）。呼び出し側が `CREATE TEMP TABLE proposals(id, tenant_id, engineer_id, state)` を作り `GRANT SELECT ON pg_temp.proposals TO app_gate_probe` を与え、任意 uuid / 自テナント / **他社の `engineer_id`** / `'GATE_RUNNING'` を 1 行入れてから関数を呼ぶと、本体の `FROM proposals p` が一時表を読み、**⑤-1（鍵が `proposal_id`）と ⑤-2（`GATE_RUNNING` の間だけ）の両方が迂回される**（提案の無い別パートナーのエンジニアの PII 5 列が 1 行返った）。テナント境界（第一境界）は ③ の `engineers` のポリシーが守った（別テナントは 0 行）。前提条件は「`app_tenant` としての任意 SQL 実行」でアプリ経路からは到達しないが、本書の二重防御は「**片方が静かに無効化されてももう片方が止める**」ことを要件とし、`tests/isolation/**` 自体が生 `app_tenant` 接続を攻撃者モデルにしているため、**DB 単独で止まらないのは NG** である（`CLAUDE.md` §7「パートナー間の相互参照 0 件」/ §3.1 経路 2）。
+- **決着**: ④ の 2 関数を **`SET search_path = public, pg_temp`** に改めた（migration 20260918000000 の判断事項 4。`pg_proc.proconfig` = `['search_path=public, pg_temp']`）。`pg_temp` を末尾に明示すると本体の `public.proposals` が先に解決され、一時表は関数の中から見えない。実 DB で**攻撃は 0 行・正規経路は 1 行のまま**であることを確認した。
+- 🔴 **同じ穴が既存の `SECURITY DEFINER` 関数 6 本にもあった**ため、**migration 20260918010000_security_definer_search_path** で `ALTER FUNCTION ... SET search_path = public, pg_temp` を横断適用した: `app_engineer_is_shared`（§4.5。🔴 **RLS ポリシーから呼ばれる。一時表 `engineer_shares` で `true` に化けると、`app.shared_scope='on'` 下で非共有のパートナーエンジニアが匿名 5 項目に現れる ＝ 経路 4 の違反。実 DB で再現し、修正後に 0 件を確認**）/ `app_apply_scan_status` / `app_list_stalled_scan_targets` / `app_scan_quarantine_target`（§8.5.1）/ `app_list_scheduler_tenants`（§9.1.1）/ `inherit_assignment_counterparty`（§4.4.1。トリガ関数で直接呼べないため影響は限定的だが規律を揃える）。
+- **検証**: ①`tests/isolation/gate-engineer-facts.test.ts` #14 ④（一時表 `proposals` で PII 関数・スキル関数とも 0 行。**修正前に赤〔他社 PII 1 行 / スキル 2 行〕・修正後に緑**）②`tests/isolation/shared-candidate-scope.test.ts` ⑤（一時表 `engineer_shares` で `app_engineer_is_shared()` が `false` のまま・非共有エンジニアが `engineers` に現れない。**修正前に赤〔`true`〕・修正後に緑**）③`tests/isolation/rls-enforced.test.ts` **#17**（横断検査: `prosecdef = true` の全関数と所有者が `app_*_probe` の全関数の `proconfig` が `search_path=public, pg_temp` を含む。🔴 **今後 `SECURITY DEFINER` 関数を足して `pg_temp` を忘れた時点で自動で落ちる**）。#15 / #16 の期待値も `search_path=public, pg_temp` に改めた。
+- 🔴 **以降の規律**: 本書に `SECURITY DEFINER` 関数を書くときは**必ず `SET search_path = public, pg_temp`** とする（§4.5 / ④ の SQL 例もこの形に改めた）。
 
 ## 12. 業務シーケンス
 

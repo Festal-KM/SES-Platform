@@ -17,13 +17,24 @@
 // **表記が 1 つ欠けると LLM への送信とゲートの検査の両方が同時に漏れる。**
 // したがって台帳が持つ氏名の表記は**全部**渡す。
 // ⚠️ 現在の `engineers` は氏名の列が `display_name` の 1 本だけである（docs/05 §3.4）。
-//    カナ・ローマ字の列を足したら、**必ずここにも足すこと**（足し忘れがそのまま漏れになる）。
+//    カナ・ローマ字の列を足したら、**migration 20260918000000 の `GRANT` の列 / 2 関数の
+//    `RETURNS TABLE` / `gate-engineer-facts.ts` の写像の 3 箇所に必ず足すこと**
+//    （足し忘れがそのまま漏れになる。docs/05 §11.14 ⑥-4）。
+//
+// ============================================================================
+// 🔴 台帳（`engineers` / `engineer_skills`）は `readGateEngineerFacts` の 1 経路で読む（docs/05 §11.14）
+// ============================================================================
+// `gate.run` はジョブのホスト文脈で走るため、C3 OWNER_SCOPED の台帳はパートナー所有行が見えない。
+// **ホスト所属・パートナー所属で経路を分岐しない** —— 所有で経路が変わる実装は片方だけが古くなる。
+// 提案の台帳由来の事実（PII 層の既知値 5 列 + 整合層の裏付け 3 列）は、`app_gate_probe` の
+// SECURITY DEFINER 2 関数（鍵は `proposal_id`。`state='GATE_RUNNING'` の間だけ 1 人分）を
+// `packages/db/src/gate-engineer-facts.ts` 経由で読む。本ファイルに `tx.engineer.*` /
+// `tx.engineerSkill.*` のデリゲート参照を**復活させない**（`tests/static/gate-engineer-facts-single-path.test.ts`）。
 
 import { Prisma } from '@prisma/client';
 import {
   frozenCareersToInspectionText,
   hasInspectableText,
-  type EngineerSkillFacts,
   type FrozenCareer,
   type GateInput,
   type GateTargetType,
@@ -32,6 +43,7 @@ import {
 } from '@ses/domain';
 import type { SystemTenantCtx } from './context.js';
 import { readProjectRequirementTexts } from './gate-content-hash.js';
+import { readGateEngineerFacts } from './gate-engineer-facts.js';
 import { readProjectPublishRequest } from './project-publish.js';
 import { runInTenantTransaction } from './with-tenant.js';
 
@@ -41,12 +53,11 @@ import { runInTenantTransaction } from './with-tenant.js';
  * **PASS にも FAIL にも倒さない。** ゲートの結果を 1 行も書かないので、対象は共有状態へ進めない
  * （`ProjectVisibility` は `review_gate_id` NOT NULL、承認 CAS は `execution='DONE' AND 3 層 PASS`）。
  *
- * 🔴 **既知の未解決事項**: パートナー所属エンジニアの提案では、ジョブのホスト文脈
- *    （`systemTenantCtx`。docs/05 §9.2 は常にホスト相当）から `engineers` / `engineer_skills`
- *    （C3 OWNER_SCOPED）が **1 行も読めない**。これは `CLAUDE.md` §3.1 経路 2
- *    （「パートナーのエンジニア台帳全体をホストが読むことはできない」）の帰結であり、
- *    ゲートが自分で緩めてよい制約ではない（§4.4.2「これ以外を作らない」）。
- *    詳細と選択肢は docs/05 §11.9 に記録した。**解消されるまで、その提案はゲートを通せない。**
+ * 🔴 `reason='ENGINEER_FACTS_UNAVAILABLE'`（T-09-13。docs/05 §11.14 ⑥-3）: `readGateEngineerFacts` が
+ *    0 行を返した。到達するのは「`state` を読んだ直後に別トランザクションが状態を動かした
+ *    （Read Committed の窓）」か「エンジニア行が無い」場合だけである。
+ *    ⚠️ 旧 reason（パートナー所属の台帳が読めない。§11.9 ⑦）は §11.14 の限定経路で事象そのものが
+ *    消えたため**欠番**にした（文字列をコードに残さない。§11.14 ⑩-3）。
  */
 export class GateFactsUnavailableError extends Error {
   constructor(
@@ -80,7 +91,16 @@ export class UnsupportedGateTargetError extends Error {
   }
 }
 
-/** 対象が見つからない（削除済み / 別テナント）。🔴 存在の有無を呼び出し側へ返すだけ（§4.8）。 */
+/**
+ * 対象の読み出し結果。
+ *
+ * `NOT_FOUND` = **検査すべき対象が無い**（削除済み / 別テナント / 🔴 提案が `GATE_RUNNING` でない
+ * 〔T-09-13。docs/05 §11.14 ⑥-2〕/ 公開要求が無い）。🔴 存在の有無を呼び出し側へ返すだけ（§4.8）。
+ * `gate.run` が正当に走る 3 経路（#39 のレビュー依頼 / #39 の失敗ジョブ再依頼 / `gate.hold-release`）は
+ * すべて `GATE_RUNNING` の対象に対して発火する（§11.10 ⑤）ので、正常系の挙動は変わらない。
+ * 利用者が編集して `DRAFT` に戻した / 他の実行が先に確定させた対象は**入口で止まり**、
+ * 行き場のない `ReviewGate` を残さない。
+ */
 export type GateTargetLookup = { readonly kind: 'FOUND'; readonly input: GateInput } | { readonly kind: 'NOT_FOUND' };
 
 /** 🔴 `Decimal(12,2)` を「桁だけを見る照合器」（`mask()` の単価ルール）へ渡せる整数表記にする。 */
@@ -90,12 +110,6 @@ function unitPriceTerm(value: Prisma.Decimal | null): string[] {
   //    （`mask()` の単価ルールは非数字を取り除いて桁を並べるため）。SES の単価は円単位である。
   const text = value.toFixed(0);
   return text.length === 0 ? [] : [text];
-}
-
-function birthDateTerm(value: Date | null): string[] {
-  if (value === null) return [];
-  // `@db.Date` は UTC の 00:00 で入る。日付だけを `YYYY-MM-DD` にする。
-  return [value.toISOString().slice(0, 10)];
 }
 
 function nonEmpty(values: readonly (string | null | undefined)[]): string[] {
@@ -243,13 +257,17 @@ async function loadProposalGateInput(
         select: {
           id: true,
           projectId: true,
-          engineerId: true,
           ownerPartnerCompanyId: true,
+          state: true,
           subject: true,
           body: true,
         },
       });
       if (proposal === null) return { kind: 'NOT_FOUND' };
+      // 🔴 T-09-13（docs/05 §11.14 ⑥-2）: 実行中でない対象は入口で止める。`readGateEngineerFacts` も
+      //    `state='GATE_RUNNING'` を条件にするので、ここを外しても 1 行も読めないが、
+      //    「対象が無い」と「事実が読めない」を区別して返すためにここで見る。
+      if (proposal.state !== 'GATE_RUNNING') return { kind: 'NOT_FOUND' };
 
       const snapshot = await tx.engineerSnapshot.findUnique({
         where: { proposalId: proposal.id },
@@ -260,25 +278,14 @@ async function loadProposalGateInput(
         throw new GateFactsUnavailableError('PROPOSAL', targetId, 'SNAPSHOT_MISSING');
       }
 
-      const engineer = await tx.engineer.findUnique({
-        where: { id: proposal.engineerId },
-        select: {
-          displayName: true,
-          birthDate: true,
-          contactEmail: true,
-          contactPhone: true,
-          affiliationLabel: true,
-        },
-      });
-      if (engineer === null) {
-        // 🔴 パートナー所属エンジニア（C3）はホスト文脈から読めない。本ファイル冒頭の 🔴 を参照。
-        throw new GateFactsUnavailableError('PROPOSAL', targetId, 'ENGINEER_LEDGER_UNREADABLE');
+      // 🔴 台帳（PII 層の既知値 5 列 + 整合層の裏付け 3 列）は所有を問わずこの 1 経路で読む
+      //    （本ファイル冒頭の 🔴 / docs/05 §11.14 ⑥-1）。
+      const facts = await readGateEngineerFacts(tx, proposal.id);
+      if (facts === null) {
+        // 🔴 `state` を読んだ直後に状態が動いた（Read Committed の窓）か、エンジニア行が無い。
+        //    PASS に倒さず、`ReviewGate` を 1 行も書かずに落とす（F-020 AC-1）。
+        throw new GateFactsUnavailableError('PROPOSAL', targetId, 'ENGINEER_FACTS_UNAVAILABLE');
       }
-
-      const registered = await tx.engineerSkill.findMany({
-        where: { engineerId: proposal.engineerId },
-        select: { skillId: true, yearsOfExperience: true, level: true },
-      });
 
       const project = await tx.project.findUnique({
         where: { id: proposal.projectId },
@@ -293,11 +300,6 @@ async function loadProposalGateInput(
 
       const partners = await tx.partnerCompany.findMany({ select: { id: true, name: true } });
 
-      const registeredSkills: EngineerSkillFacts[] = registered.map((row) => ({
-        skillId: row.skillId,
-        years: Number(row.yearsOfExperience),
-        level: row.level,
-      }));
       const requirementFacts: ProjectRequirementFacts[] = requirements.map((row) => ({
         kind: row.kind === 'MUST' ? 'MUST' : 'NICE',
         skill: row.skill === null ? null : { id: row.skill.id, label: row.skill.name },
@@ -334,13 +336,13 @@ async function loadProposalGateInput(
             ),
           },
           knownPii: {
-            // 🔴 台帳と凍結コピーの**両方**の表記を渡す（片方だけだと改名後に漏れる）。
-            fullNames: nonEmpty([engineer.displayName, snapshot.displayName]),
-            birthDates: birthDateTerm(engineer.birthDate),
-            emails: nonEmpty([engineer.contactEmail]),
-            phones: nonEmpty([engineer.contactPhone]),
+            // 🔴 台帳（`facts.knownPii`）と凍結コピーの**両方**の表記を渡す（片方だけだと改名後に漏れる）。
+            fullNames: nonEmpty([...facts.knownPii.fullNames, snapshot.displayName]),
+            birthDates: facts.knownPii.birthDates,
+            emails: facts.knownPii.emails,
+            phones: facts.knownPii.phones,
             affiliations: nonEmpty([
-              engineer.affiliationLabel,
+              ...facts.knownPii.affiliations,
               snapshot.affiliationLabel,
               partners.find((partner) => partner.id === proposal.ownerPartnerCompanyId)?.name ?? null,
             ]),
@@ -349,7 +351,7 @@ async function loadProposalGateInput(
             subject: {
               snapshot: { skills: toSnapshotSkills(snapshot.skills, targetId) },
               requirements: requirementFacts,
-              registeredSkills,
+              registeredSkills: facts.registeredSkills,
             },
           },
         },

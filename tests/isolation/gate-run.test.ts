@@ -28,6 +28,9 @@ import { createUnextendedClient, type UnextendedClient } from '@ses/db/testing';
 import { createGateRunHandler, type GateRunOutcome } from '../../apps/worker/src/jobs/gate-run.js';
 import {
   ENGINEER_A_HOST,
+  ENGINEER_A_PARTNER,
+  ENGINEER_A_PARTNER2,
+  PARTNER_A1,
   PARTNER_A2,
   PROJECT_A_PUBLISHED,
   PROPOSAL_A_HOST,
@@ -53,6 +56,19 @@ const ENGINEER_NAME = '山田 太郎';
 /** 案件のエンド企業名（`projects.end_client_name`）。公開表示に出れば商流層 FAIL。 */
 const END_CLIENT = 'End Client A';
 const SKILL_ID = '01930000-0000-7000-8000-0000000009a1';
+/**
+ * 🔴 T-09-13（docs/05 §4.7 二重防御 #12）: パートナー所属エンジニア（`ENGINEER_A_PARTNER`。所有 = `PARTNER_A1`）の
+ *    **台帳の現在値**。ホスト文脈からは C3 で 1 行も読めない値であり、本文に残っていて FAIL になることが
+ *    「`app_gate_probe` 経由で既知値を読んでいる」ことの直接の証明になる。
+ */
+const PARTNER_ENGINEER_NAME = '佐藤 花子';
+const PARTNER_ENGINEER_EMAIL = 'hanako@partner-a1.example';
+const PARTNER_ENGINEER_PHONE = '090-1234-5678';
+/** 別パートナー（`PARTNER_A2`）のエンジニアの値。**1 文字も現れてはならない**（§4.7 #13 ①）。 */
+const OTHER_PARTNER_ENGINEER_NAME = '鈴木 次郎';
+const OTHER_PARTNER_ENGINEER_EMAIL = 'jiro@partner-a2.example';
+/** 台帳に登録する Skill 辞書の行（グローバル）。`engineer_skills` の FK 先。 */
+const SKILL_BACKED = '01930000-0000-7000-8000-0000000009c1';
 
 /** `gate-inspector` が「何も見つけなかった」ときの応答（スキーマ適合）。 */
 const CLEAN_OUTPUT = {
@@ -208,7 +224,9 @@ async function resetGateFixtures(): Promise<void> {
   await admin.aiUsage.deleteMany({});
   await admin.usageCounter.deleteMany({ where: { metric: { startsWith: 'AI_' } } });
   await admin.auditLog.deleteMany({ where: { targetId: PROPOSAL_A_HOST } });
-  await admin.engineerSkill.deleteMany({ where: { engineerId: ENGINEER_A_HOST } });
+  await admin.engineerSkill.deleteMany({
+    where: { engineerId: { in: [ENGINEER_A_HOST, ENGINEER_A_PARTNER, ENGINEER_A_PARTNER2] } },
+  });
   await admin.project.update({
     where: { id: PROJECT_A_PUBLISHED },
     data: { publicSummary: '公開用の概要' },
@@ -803,36 +821,213 @@ describe('🔴 整合層の合否は LLM の応答で変わらない（BR-61 / F
   );
 });
 
-describe('🔴 検査できない対象を PASS に倒さない（F-020 AC-1）', () => {
-  it('パートナー所属エンジニアの提案は台帳を読めず、ゲート結果を 1 行も書かずに落ちる', async () => {
+/**
+ * 🔴 T-09-13（docs/05 §11.14 ⑧ / §4.7 二重防御 #12）: **パートナー所属エンジニアの提案でも 3 層の判定が下る。**
+ *
+ * T-07-06 時点では「パートナー所属エンジニアの提案は台帳を読めず、ゲート結果を 1 行も書かずに落ちる」
+ * （fail-closed。§11.9 ⑦。旧 reason は欠番）だった。§11.14 の限定経路（`app_gate_probe` +
+ * SECURITY DEFINER 2 関数）で事象そのものが消えたため、**主張を反転させる**（期待値の書き換えではない）。
+ *
+ * 証明の 3 点:
+ *   ① 清潔な本文 + 台帳に裏付けのある凍結スキル → **3 層 PASS**・`ReviewGate` 1 行・`APPROVAL_PENDING`
+ *      （= `engineer_skills` の 3 列を読んでいる。読めていなければ整合層は FAIL になる）
+ *   ② 本文に**台帳の現在値**（`display_name` / `contact_email` / `contact_phone`）を残す → **PII 層 FAIL**
+ *      （`FULL_NAME` / `CONTACT`）。凍結コピーには連絡先が無いので、これは「連絡先の既知値を読んでいる」
+ *      ことの直接の証明（§11.14 ② の 1〜4）。別パートナーのエンジニアの値は本文に無いので指摘にならない
+ *   ③ 台帳に裏付けの無い凍結スキル → **整合層 FAIL**（`SKILL_SHEET_MISMATCH`）
+ */
+describe('🔴 T-09-13: パートナー所属エンジニアの提案でも 3 層の判定が下り、ReviewGate が 1 行書かれる（docs/05 §4.7 #12）', () => {
+  /** パートナー所属エンジニアの提案をゲート実行中に整える（台帳の PII と別パートナーの対照値を含む）。 */
+  async function preparePartnerProposal(input: {
+    readonly body: string;
+    readonly snapshotSkills: readonly { skillId: string; name: string; years: number; level: number | null }[];
+  }): Promise<void> {
+    await admin.skill.upsert({
+      where: { id: SKILL_BACKED },
+      create: { id: SKILL_BACKED, name: 'Kotlin(gate-run)', category: 'LANGUAGE', sortKey: 901 },
+      update: {},
+    });
+    await admin.engineer.update({
+      where: { id: ENGINEER_A_PARTNER },
+      data: {
+        displayName: PARTNER_ENGINEER_NAME,
+        contactEmail: PARTNER_ENGINEER_EMAIL,
+        contactPhone: PARTNER_ENGINEER_PHONE,
+        birthDate: new Date('1992-03-15T00:00:00.000Z'),
+      },
+    });
+    // 🔴 対照: 別パートナーのエンジニアにも値を入れる。本経路で読めてはならない値。
+    await admin.engineer.update({
+      where: { id: ENGINEER_A_PARTNER2 },
+      data: { displayName: OTHER_PARTNER_ENGINEER_NAME, contactEmail: OTHER_PARTNER_ENGINEER_EMAIL },
+    });
+    // 台帳の裏付け（パートナー所有。owner_partner_company_id はトリガが engineers から継承する）。
+    await admin.engineerSkill.create({
+      data: {
+        tenantId: TENANT_A,
+        engineerId: ENGINEER_A_PARTNER,
+        skillId: SKILL_BACKED,
+        yearsOfExperience: 6,
+        level: 4,
+        source: 'MANUAL',
+      },
+    });
     await admin.proposal.update({
       where: { id: PROPOSAL_A_P1 },
-      data: { state: 'GATE_RUNNING', subject: 'ご提案', body: '本文です。' },
+      data: { state: 'GATE_RUNNING', subject: 'ご提案', body: input.body },
     });
-    await admin.engineerSnapshot.create({
-      data: {
+    await admin.engineerSnapshot.upsert({
+      where: { proposalId: PROPOSAL_A_P1 },
+      create: {
         id: randomUUID(),
         tenantId: TENANT_A,
         proposalId: PROPOSAL_A_P1,
-        displayName: 'Partner Engineer',
-        skills: [],
+        displayName: PARTNER_ENGINEER_NAME,
+        affiliationLabel: null,
+        skills: [...input.snapshotSkills],
         careers: [],
         frozenAt: NOW,
       },
+      update: { skills: [...input.snapshotSkills], careers: [] },
     });
+  }
+
+  it('前提: 提案の所有はパートナー、エンジニアはパートナー所属で、ホスト文脈からは台帳が 1 行も読めない（空振り防止）', async () => {
+    await preparePartnerProposal({ body: '清潔な本文です。', snapshotSkills: [] });
+    const proposal = await admin.proposal.findUniqueOrThrow({
+      where: { id: PROPOSAL_A_P1 },
+      select: { ownerPartnerCompanyId: true, engineerId: true },
+    });
+    expect(proposal.ownerPartnerCompanyId).toBe(PARTNER_A1);
+    expect(proposal.engineerId).toBe(ENGINEER_A_PARTNER);
+    // 🔴 C3: ホスト文脈（withTenant）からは台帳が見えない。これが §11.9 ⑦ の事象の前提であり、
+    //    本経路が「C3 を緩めた」のではなく「限定経路を足した」ことの対照になる。
+    const visible = await withTenant(ctxA, (db) => db.engineer.count({ where: { id: ENGINEER_A_PARTNER } }));
+    expect(visible).toBe(0);
+  });
+
+  it('① 清潔な本文 + 台帳に裏付けのある凍結スキル → 3 層 PASS・ReviewGate 1 行・APPROVAL_PENDING', async () => {
+    await preparePartnerProposal({
+      body: 'ご提案します。Kotlin の経験が 6 年あります。',
+      snapshotSkills: [{ skillId: SKILL_BACKED, name: 'Kotlin(gate-run)', years: 6, level: 4 }],
+    });
+
+    const outcome = await runGate({
+      targetType: 'PROPOSAL',
+      targetId: PROPOSAL_A_P1,
+      contentHash: 'hash-partner-pass',
+      script: [{ kind: 'output', output: CLEAN_OUTPUT }],
+    });
+
+    expect(outcome).toMatchObject({ kind: 'COMPLETED', overall: 'PASS', aiFailed: false, transitioned: true });
+    expect(await admin.reviewGate.count({ where: { targetId: PROPOSAL_A_P1 } })).toBe(1);
+    const gate = await readGate(PROPOSAL_A_P1);
+    expect(gate).toMatchObject({
+      execution: 'DONE',
+      piiVerdict: 'PASS',
+      commerceVerdict: 'PASS',
+      consistencyVerdict: 'PASS',
+    });
+    expect(await proposalState(PROPOSAL_A_P1)).toBe('APPROVAL_PENDING');
+  });
+
+  it('🔴 ② 本文に台帳の現在値（氏名・メール・電話）が残っていれば PII 層 FAIL（FULL_NAME / CONTACT）—— 連絡先の既知値を読んでいる証明', async () => {
+    await preparePartnerProposal({
+      body: `${PARTNER_ENGINEER_NAME}をご提案します。連絡先: ${PARTNER_ENGINEER_EMAIL} / ${PARTNER_ENGINEER_PHONE}`,
+      snapshotSkills: [],
+    });
+
+    const outcome = await runGate({
+      targetType: 'PROPOSAL',
+      targetId: PROPOSAL_A_P1,
+      contentHash: 'hash-partner-pii-fail',
+      // 🔴 AI は「何も無い」と言う。機械的検出（既知値）だけで FAIL になることを示す。
+      script: [{ kind: 'output', output: CLEAN_OUTPUT }],
+    });
+
+    expect(outcome).toMatchObject({ kind: 'COMPLETED', overall: 'FAIL', aiFailed: false });
+    expect(await admin.reviewGate.count({ where: { targetId: PROPOSAL_A_P1 } })).toBe(1);
+    const gate = await readGate(PROPOSAL_A_P1);
+    expect(gate?.piiVerdict).toBe('FAIL');
+    expect(gate?.commerceVerdict).toBe('PASS');
+    expect(gate?.consistencyVerdict).toBe('PASS');
+
+    const findings = gate?.findings as { layer: string; kind: string; field: string; excerpt: string }[];
+    const kinds = findings.filter((finding) => finding.layer === 'PII').map((finding) => finding.kind);
+    expect(kinds).toContain('FULL_NAME');
+    // 🔴 メールと電話の 2 件。凍結コピーには連絡先が無いので、これは台帳（app_gate_probe 経由）から来た既知値である。
+    expect(kinds.filter((kind) => kind === 'CONTACT')).toHaveLength(2);
+    // 🔴 指摘に原文が無い（抜粋は伏せ字）。
+    const serialized = JSON.stringify(findings);
+    expect(serialized).not.toContain(PARTNER_ENGINEER_NAME);
+    expect(serialized).not.toContain(PARTNER_ENGINEER_EMAIL);
+    expect(serialized).not.toContain(PARTNER_ENGINEER_PHONE);
+    expect(await proposalState(PROPOSAL_A_P1)).toBe('GATE_FAILED');
+  });
+
+  it('🔴 ② の対照: 別パートナーのエンジニアの氏名は既知値に入っていない（本文に書いても機械的検出は指摘しない）', async () => {
+    // 🔴 §4.7 #13 ①の gate.run 側の写し: 読んでいるのが「その提案の対象 1 人分」であることを、
+    //    別パートナーの氏名が本文にあっても FULL_NAME にならないことで示す（氏名はパターン検出でも拾えない）。
+    await preparePartnerProposal({
+      body: `${OTHER_PARTNER_ENGINEER_NAME}という別会社の方の話です。`,
+      snapshotSkills: [],
+    });
+
+    const outcome = await runGate({
+      targetType: 'PROPOSAL',
+      targetId: PROPOSAL_A_P1,
+      contentHash: 'hash-partner-other-name',
+      script: [{ kind: 'output', output: CLEAN_OUTPUT }],
+    });
+
+    expect(outcome).toMatchObject({ kind: 'COMPLETED', overall: 'PASS', aiFailed: false });
+    const gate = await readGate(PROPOSAL_A_P1);
+    expect(gate?.piiVerdict).toBe('PASS');
+    expect(gate?.findings).toEqual([]);
+  });
+
+  it('③ 台帳に裏付けの無い凍結スキルは整合層 FAIL（SKILL_SHEET_MISMATCH）', async () => {
+    await preparePartnerProposal({
+      body: '清潔な本文です。',
+      snapshotSkills: [{ skillId: SKILL_ID, name: 'TypeScript', years: 5, level: null }],
+    });
+
+    const outcome = await runGate({
+      targetType: 'PROPOSAL',
+      targetId: PROPOSAL_A_P1,
+      contentHash: 'hash-partner-consistency-fail',
+      script: [{ kind: 'output', output: CLEAN_OUTPUT }],
+    });
+
+    expect(outcome).toMatchObject({ kind: 'COMPLETED', overall: 'FAIL', aiFailed: false });
+    expect(await admin.reviewGate.count({ where: { targetId: PROPOSAL_A_P1 } })).toBe(1);
+    const gate = await readGate(PROPOSAL_A_P1);
+    expect(gate?.piiVerdict).toBe('PASS');
+    expect(gate?.consistencyVerdict).toBe('FAIL');
+    const findings = gate?.findings as { layer: string; kind: string }[];
+    expect(findings).toContainEqual(expect.objectContaining({ layer: 'CONSISTENCY', kind: 'SKILL_SHEET_MISMATCH' }));
+    expect(await proposalState(PROPOSAL_A_P1)).toBe('GATE_FAILED');
+  });
+});
+
+describe('🔴 検査できない対象を PASS に倒さない（F-020 AC-1）', () => {
+  it('🔴 T-09-13: GATE_RUNNING でない提案（DRAFT）は検査せず TARGET_NOT_FOUND（ReviewGate は 0 行。docs/05 §11.14 ⑥-2）', async () => {
+    await prepareProposal({ proposalId: PROPOSAL_A_HOST, body: '本文です。', snapshotSkills: [] });
+    await admin.proposal.update({ where: { id: PROPOSAL_A_HOST }, data: { state: 'DRAFT' } });
 
     await expect(
       runGate({
         targetType: 'PROPOSAL',
-        targetId: PROPOSAL_A_P1,
-        contentHash: 'hash-partner-owned',
+        targetId: PROPOSAL_A_HOST,
+        contentHash: 'hash-not-running',
         script: [{ kind: 'output', output: CLEAN_OUTPUT }],
       }),
-    ).rejects.toThrowError(/ENGINEER_LEDGER_UNREADABLE/);
+    ).resolves.toEqual({ kind: 'TARGET_NOT_FOUND' });
 
-    // 🔴 ゲート結果が無い ＝ 承認 CAS も送信の事前判定も満たさない（共有状態へ進めない）。
-    expect(await admin.reviewGate.count({ where: { targetId: PROPOSAL_A_P1 } })).toBe(0);
-    expect(await proposalState(PROPOSAL_A_P1)).toBe('GATE_RUNNING');
+    expect(await admin.reviewGate.count({ where: { targetId: PROPOSAL_A_HOST } })).toBe(0);
+    expect(await proposalState(PROPOSAL_A_HOST)).toBe('DRAFT');
+    // 🔴 LLM も呼ばれていない（入口で止まっている）。
+    expect(await admin.aiUsage.count({ where: { tenantId: TENANT_A } })).toBe(0);
   });
 
   it('🔴 T-09-12: 凍結された経歴の形が壊れている（careers が配列でない）提案は PASS にせず落ちる', async () => {

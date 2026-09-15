@@ -89,7 +89,8 @@ export type GateRunPayload = {
  * - `ALREADY_DONE` … 🔴 同じ内容の確定結果が既にある（`P-A-09`。再実行しない）
  * - 🔴 `HELD_AI_COST_LIMIT` … AI の日次上限で**呼べなかった**。合否は未確定のまま保持した
  * - 🔴 `RACED` … 保留行を別の実行が先に確定させた。**結果を破棄した**（多重化防止の 3 段目）
- * - `TARGET_NOT_FOUND` … 対象が消えている（削除済み）。**PASS にはしない**
+ * - `TARGET_NOT_FOUND` … 検査すべき対象が無い（削除済み / 🔴 提案が `GATE_RUNNING` でない
+ *   〔T-09-13。docs/05 §11.14 ⑥-2〕/ 公開要求が無い）。**PASS にはしない**
  */
 export type GateRunOutcome =
   | {

@@ -341,6 +341,11 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
   //    —— lint はゾーン設定の書き換えで緩みうるが、この走査は「実際に書かれているか」を見る。
   withPlatformRead: [],
   withPlatformWrite: [],
+  // 🔴 T-09-13: ゲート実行文脈からパートナー台帳を 1 人分だけ読む限定経路（docs/05 §11.14 ⑤-5 / §17.2 #31）。
+  //    **`apps/**` から 1 箇所も呼ばない**（期待値が空配列）。呼び出し元は `packages/db/src/gate-target.ts` の
+  //    `loadProposalGateInput` だけであり、`@ses/db` のバレルにも載っていない
+  //    （`tests/static/gate-engineer-facts-single-path.test.ts` が `packages/**` 側を固定する）。
+  readGateEngineerFacts: [],
   withPlatformAuthLookup: ['apps/web/lib/auth/platform-credentials.ts'],
   loadPlatformUserFacts: ['apps/web/lib/auth/platform-context.ts'],
   resolvePlatformCtx: ['apps/web/lib/auth/platform-context.ts'],

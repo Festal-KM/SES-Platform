@@ -453,6 +453,61 @@ describe('🔴 ⑤ 入口の fail-closed（CLAUDE.md §3.1 / docs/05 §4.8）', 
     expect(rows[0]?.shared).toBe(false);
   });
 
+  /**
+   * 🔴 T-09-13 レビュー指摘の横断適用（`app_engineer_is_shared` にも同じ穴があった）: `SECURITY DEFINER` の
+   *    `SET search_path = public` に `pg_temp` が無いと、リレーション名の解決で一時スキーマが最初に探される。
+   *    ホスト文脈の呼び出し側が一時表 `engineer_shares` に**非共有**エンジニアの行を仕込み `app_share_probe` に
+   *    SELECT を与えると、`app.shared_scope='on'` 下で `app_engineer_is_shared()` が `true` に化け、
+   *    `engineers_shared_candidate_read` ポリシー（= `listSharedEngineers()` が通る述語そのもの）が
+   *    非共有のパートナーエンジニアを匿名候補に混ぜる（経路 4 の違反。`BR-56`）。
+   *    修正は `SET search_path = public, pg_temp`（migration 20260918010000）。
+   *
+   * 🔴 一時表はセッション（接続）に閉じるため、`withSharedCandidateScope` の接続プールへ外から仕込む経路は無い。
+   *    そこで**同じ述語を同じ GUC の下で**素の `app_tenant` 接続で通す（本 describe の他の it と同じ形）。
+   *    新しい接続で行う（プランの再利用で再現が揺れないように）。一時表は `ON COMMIT DROP`。
+   */
+  it('🔴 呼び出し側の一時表 engineer_shares で本体を隠しても、非共有エンジニアは共有スコープに現れない（search_path = public, pg_temp）', async () => {
+    const fresh = createUnextendedClient(database.tenantUrl);
+    try {
+      const result = await runUnextended(
+        fresh,
+        { tenantId: TENANT_A, partnerCompanyId: null, actorUserId: USER_A_HOST },
+        async (tx) => {
+          await tx.$executeRawUnsafe(`SELECT set_config('app.shared_scope', 'on', true)`);
+          await tx.$executeRawUnsafe(
+            'CREATE TEMP TABLE engineer_shares (tenant_id uuid, engineer_id uuid, revoked_at timestamptz) ON COMMIT DROP',
+          );
+          await tx.$executeRawUnsafe('GRANT SELECT ON pg_temp.engineer_shares TO app_share_probe');
+          await tx.$executeRawUnsafe(
+            `INSERT INTO pg_temp.engineer_shares VALUES ('${TENANT_A}'::uuid, '${ENGINEER_A_PARTNER2}'::uuid, NULL)`,
+          );
+          const planted = await tx.$queryRawUnsafe<Array<{ n: bigint }>>(
+            'SELECT count(*)::bigint AS n FROM pg_temp.engineer_shares',
+          );
+          const shared = await tx.$queryRawUnsafe<Array<{ shared: boolean }>>(
+            `SELECT app_engineer_is_shared('${ENGINEER_A_PARTNER2}'::uuid, '${TENANT_A}'::uuid) AS shared`,
+          );
+          // 🔴 `listSharedEngineers()` と同じ表・同じポリシー・同じ GUC。
+          const visible = await tx.engineer.findMany({
+            where: { id: { in: [ENGINEER_A_PARTNER, ENGINEER_A_PARTNER2] } },
+            select: { id: true },
+          });
+          return { planted: Number(planted[0]?.n ?? 0), shared: shared[0]?.shared, visible: visible.map((row) => row.id) };
+        },
+      );
+      expect(result.planted).toBe(1); // 仕込みが空振りしていない（対照）
+      expect(result.shared).toBe(false);
+      // 🔴 共有中の P1 は見え、非共有の P2 は一時表を仕込んでも見えない。
+      expect(result.visible).toEqual([ENGINEER_A_PARTNER]);
+    } finally {
+      await fresh.$disconnect();
+    }
+
+    // 対照: 本番経路（withSharedCandidateScope → listSharedEngineers）でも P2 は現れない。
+    const rows = await withSharedCandidateScope(hostA, PROJECT_A_PUBLISHED, (db) => db.listSharedEngineers());
+    expect(rows.map((row) => row.engineerId)).toEqual([ENGINEER_A_PARTNER]);
+  });
+
   it('存在しない案件では `SharedCandidateProjectNotFoundError`（0 件で畳まない）', async () => {
     await expect(
       withSharedCandidateScope(
