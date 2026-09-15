@@ -3008,6 +3008,23 @@ type SubmitAccepted = { attemptSeq: number; jobId: string; state: 'SUBMITTING' }
 - 🔴 **統一**: `state.invalid_transition` の記録と 422 への写像は `apps/web/lib/state/invalid-transition.ts` の `rethrowWithInvalidTransitionAudit` の 1 実装に寄せ、#48 / #39（従来は記録していなかった —— `F-024 AC-1`「エラーが記録される」を #39 でも満たす）/ 提案依頼の #33 / #34 / #35 が同じ関数を呼ぶ。遷移の判定は引き続き `proposalMachine.transition()`（状態をアプリ側に列挙しない）。
 - ⚠️ **T-09-03 / T-09-06 / T-09-08 への申し送り**: それぞれの経路は、自分が動かす組の所有者が `PROPOSAL_TRANSITION_OWNERS` で `APPROVE` / `REJECT` / `SEND_JOB` / `RESEND` であることをユニットテストで固定し、**#48 の `MANUAL` と重ならない**ことを保つ。T-09-10（`S-024`）は #48 の `MANUAL` の商談部分をそのまま呼ぶ（新しい遷移 API を作らない）。
 
+🔴 **#41 / #42 の実装の決着（T-09-03。2026-09-16。`F-021 AC-1`〜`AC-6` / `CLAUDE.md` §3.3 / §10.3 / §11.5 手順 3 / §11.6 / `S-021`。⚠️ 本節は T-09-04 で記録した）**:
+
+- 🔴 **承認の実体は `packages/db/src/proposal-approval.ts` の `approveProposal` の 1 実装である。** 呼び出し元は #41（人間。`apps/web/lib/proposals/approval.ts` の `approveProposalByUser`）と `gate.run` の自動承認（`apps/worker/src/jobs/gate-run.ts` の `autoApproveIfEnabled`。§11.6）の 2 つで、`apps/web` と `apps/worker` は相互に import できない（`CLAUDE.md` §2.1）ため共有点は `packages/db` しか無い（`createProposalDraft` と同じ判断）。承認 CAS（§11.5 手順 3 の 1 文）は**生 SQL**であり、`TenantDb` は `$queryRaw` を型から除いている（§4.3 実装の規約 3）ので、**ゲート結果の照合を迂回した承認を `packages/db` の外からは書けない**。🔴 **ゲート結果を引数に取らない**（受け取るのは提案 ID と承認者だけ。「どのゲート結果で承認するか」は関数が現在の内容から再計算したハッシュで `review_gates` を引いて決める。`docs/04` 申し送り 4）。#41 のルートに body スキーマは無く、`{ gate: PASS, force: true }` を送っても読まれない（結合テスト ③）。
+- 🔴 **断り方は 3 段で、#48 と同じ順序**（`assertOwnedTransition`。行を読んでから。母集団は `proposals` の RLS C5 で、見えなければ 404）: ①**§4.2 に無い組**（`DRAFT` / `GATE_RUNNING` / `GATE_FAILED` / `APPROVED` … → `APPROVED`）→ 422 `INVALID_STATE_TRANSITION` + `state.invalid_transition` を**別トランザクション**で記録（`rethrowWithInvalidTransitionAudit` の 1 実装）②**§4.2 にはあるが所有者が `APPROVE` / `REJECT` でない組**（`SUBMIT_FAILED → APPROVED` = `RESEND`〔#44 の `acknowledged: true` を #41 で迂回させない。§10.6〕/ `GATE_FAILED → DRAFT` = `MANUAL`）→ 422 `PROPOSAL_TRANSITION_RESERVED`（記録しない）③**立場**（`canApproveProposal` = ホストの `OWNER` / `ADMIN` / `SALES`。取引先は自社の提案を自分で承認できない。`VIEWER` は 403）→ 403 `PROPOSAL_APPROVAL_FORBIDDEN`。その後に `approveProposal` の帰結を写す: `APPROVED` → `{ state }` / `NOT_PENDING`（読んでから CAS までに動いた）→ 422（記録あり）/ **`GATE_STALE` → 409**（「内容が変更されたため再検証が必要です」。**「無視して承認」は無い**）/ `NOT_FOUND` → 404。認可は `requireRole(OWNER/ADMIN/SALES)` + `requireExecutable`（`SUSPENDED` は 409）+ `requireNotViewer`。
+- **記録**: `ProposalEvent(STATE, APPROVAL_PENDING → APPROVED, actorUserId = 承認者 | null〔system〕, note = 'REVIEW_GATE:<review_gate_id>')` + `AuditLog(proposal.approve, summary = { operation: 'APPROVE', reviewGateId, contentHash, approvedBySystem, reason?: 'ALL_LAYERS_PASS' })`。🔴 `summary` に本文・単価・提案先・氏名を載せない（§16.2）。自動承認は `approved_by = NULL` / `approved_by_system = true` / `actorKind='SYSTEM'`（`F-021 AC-5`）。**#42**（却下）は理由必須（400）で `APPROVAL_PENDING → DRAFT` の CAS + `ProposalEvent(note = 理由)` + `AuditLog(proposal.reject, summary = { operation: 'REJECT', fromState, toState })`（🔴 理由は監査に載せない）。`content_hash` と `approved_*` は触らない（次の #39 が書き直す。⚠️ `review_gates` の DONE / PASS 行は残るため、**内容を変えずに #39 を再依頼すると 422 `GATE_ALREADY_COMPLETED`**。§11.10 ⑤。T-09-09 の申し送り）。
+- **`S-021`**（`/proposals/{id}/approve`。🔴 **Tier 1**）: 判断ヘッダ（提案先・エンジニア・案件・単価・開始日・作成者・経過時間）/ ゲートの指摘（FAIL = 赤）と整合層の警告（琥珀の**別リスト**）/ 送信先別プレビュー / 添付 / 送信元ドメインの状態を **1 本の縦スクロール**に置き、折りたたみ・タブに入れない（`F-021 AC-4` / `BR-49`。モバイルでも同じ）。**アクションはプレビューの末尾に到達するまで無効**（`IntersectionObserver`。JS 無効なら常に無効）。`APPROVAL_PENDING` 以外では承認アクションを描画しない。一括承認に相当する操作を持たない（`BR-50`）。🔴 **primary は T-09-06（送信ジョブ）が入るまで「承認する」であり「承認して送信」ではない**（起きないこと〔送信〕を語に含めない。`packages/i18n` の `proposals.approval.action.approve`。T-09-06 で切り替える）。読み取り（`readProposalApproval`）はホスト = 判断材料 + `canApprove = true`、作成した取引先 = 内容とゲート結果は読めるが `canApprove = false`、他社・他テナント・不存在 = 404。
+- **E2E ハーネスのシーム**（`tests/e2e/harness/db-admin.ts` の `settleProposalGateAsPassedForE2e(proposalId, contentHash)`）: E2E ハーネスには Redis も worker も無い（§11.12 ⑦。足すのは T-09-11）ため、「全層 PASS で承認待ち」の前提は **#39 と `gate.run` が書くのと同じ列**（`DRAFT → GATE_RUNNING` + `content_hash` / `review_gates(DONE, 3 層 PASS, 同じ hash)` / `GATE_RUNNING → APPROVAL_PENDING`）を特権接続で書いて作る。🔴 `contentHash` は #40 が返す**現在の内容のハッシュ**を渡す（テストが値を作らない）。汎用のエスケープハッチにしない（目的を 1 つに絞った固定文の SQL。`deleteT0903SyntheticProposals` が後始末）。ゲート本体と承認 CAS の正しさは `tests/isolation/gate-run.test.ts` / `proposal-approval.test.ts` の射程である。
+
+🔴 **承認の無効化と送信前判定の共有（T-09-04。2026-09-16。§11.5 手順 2 / 手順 4 / §10.2 ①-c ②-b ③ / `F-021` / E2E #10）**:
+
+- 🔴 **`APPROVAL_PENDING` / `APPROVED` の内容は API からは変更できない**（#37 は `DRAFT` のみ。§11.5 手順 2 の改訂。⚠️ 暫定。[Issue #54](https://github.com/Festal-KM/SES-Platform/issues/54) で確認中）。`S-020` は `DRAFT` 以外を読み取り専用にし理由（`proposals.editor.readOnly.*`）を表示する。したがって「承認後に内容を変更すると承認が無効になる」は、**API を通らない経路（運用 SQL・凍結の再生成・将来のコードの不備）に対する多層防御**として承認 CAS と送信 CAS の**ハッシュ一致条件**が担う。
+- 🔴 **「ゲートが現在の内容に対して有効か」の判定は 1 つの SQL 述語である**（`packages/db/src/proposal-approval.ts` の `passedReviewGateExistsSql(contentHash)` = `EXISTS (SELECT 1 FROM review_gates g WHERE g.target_type='PROPOSAL' AND g.target_id = p.id AND g.content_hash = $current AND g.execution='DONE' AND 3 層 PASS)`。`p` は `proposals` の別名）。消費するのは 3 箇所: ①`approveProposal` の承認 CAS（§11.5 手順 3）②**`readProposalGateFreshness(ctx, proposalId)`**（§10.2 ①-c / ②-b の事前判定。`{ state, storedHash, currentHash, reviewGateId, gateFresh }`。`gateFresh` = `storedHash === currentHash` かつ述語が真〔三つ巴の一致〕。見えなければ `null`）③**`castProposalToSubmitting(ctx: SystemTenantCtx, { proposalId, now })`**（§10.2 ③ の CAS の実体。`UPDATE proposals p SET state='SUBMITTING' WHERE p.id=$1 AND p.state='APPROVED' AND p.content_hash=$current AND ${述語}`。1 件なら同じトランザクションで `ProposalEvent(STATE, APPROVED → SUBMITTING, actorUserId = null)` を書く。0 件は状態を読み直して **`NOT_APPROVED`（多重実行 / 状態違い）と `GATE_STALE`（内容が変わった）を区別**。`SendAttempt` の INSERT と `AuditLog(proposal.submit)` は含めない = T-09-05 / T-09-06 が ④⑥ で行う）。
+- 🔴 **`castProposalToSubmitting` の引数は `SystemTenantCtx`**（`apps/web` が組み立てられない型。`systemTenantCtx` は `apps/worker/**` にしか現れない）。`SUBMITTING` に入れるのは送信ジョブだけ（所有者 `SEND_JOB`）であり、**`apps/web/**` から `castProposalToSubmitting` を参照しないことを `tests/static/auth-db-callers.test.ts` が走査する**（T-09-06 で `apps/worker/src/jobs/send-proposal.ts` を許可リストに足す）。
+- **`contentHash` 素材 `v4`**: `EngineerSnapshot.careers` を材料に入れた（§11.5 のコード注記 / §11.10 ②）。既存の `v3` 行は承認・送信で `GATE_STALE` になり、再検証で復帰する（マイグレーションしない理由は §11.5「版の切り替え」）。
+- **自動承認とテナント状態**: `gate.run` は `lifecycleState` を `autoApproveEnabled` と同じ `select` で読み、`SANDBOX` / `ACTIVE` 以外では `approveProposal` を呼ばない（§11.6。判定は `shouldAutoApprove` の 1 実装）。
+- **検証**: `tests/isolation/proposal-approval-invalidation.test.ts`（実 DB: `proposals.content_hash` を管理接続でずらす → `gateFresh=false` / `castProposalToSubmitting` が `GATE_STALE` で `APPROVED` のまま / 凍結の careers を 1 行変えても同じ / ずらさなければ 1 件更新で `SUBMITTING` + `ProposalEvent` / 同時 2 回で 1 回だけ成功 / `APPROVED` への #37 が 422 で `content_hash` と状態が不変 / 承認 CAS と送信 CAS が同じ内容で同じ判定）+ `hash.test.ts`（careers の 1 行の差 / 行の入れ替えで連結が変わる）+ `gate-run.test.ts`（`SUSPENDED` で `approveProposal` を呼ばない）+ E2E #10（`home.mobile.spec.ts`。承認後の `S-020` が読み取り専用・#37 が 422・`S-021` が承認済み。**「再検証なしで送信できない」の送信側アサーションは #43 が T-09-06 のため、そこで足す**）。
+
 ### 6.6 主平面 API — ⑤⑥（Phase 2〜3）
 
 | # | Method / Path | 機能 / 画面 | request | response | 認可 |
@@ -3028,23 +3045,6 @@ type SubmitAccepted = { attemptSeq: number; jobId: string; state: 'SUBMITTING' }
 | 81 | 🔴 `GET /api/partner/contracts` | `F-066` / `S-045` / Phase 3 | `?kind=&state=&cursor=`（同上） | `{ items: PartnerContractView[], total }`（契約書は署名済み最終版のみ・発注を内包。§4.9） | 同上。**監査 `contract.view`** |
 | 82 | 🔴 `GET /api/partner/contract-documents/{id}/download-url` | `F-066 AC-2` / `S-045` | — | `{ url, expiresIn }` | 同上（`VIEWER` は 403）。**ビューに無い版（ドラフト・未署名）は 404**。`issueDownloadUrl`（§14.2）経由で **監査 `contract_document.download`** |
 | — | 🔴 **`/api/partner/**` に `POST` / `PATCH` / `DELETE` は存在しない**（`F-065 AC-4` / `F-066 AC-5` / `BR-68`。§17.2 #17 が AST で検査）。パートナーがホストの書込 API（#54 / #56〜#62）を呼ぶと `requireRole` で **403** | | | | |
-🔴 **#41 / #42 の実装の決着（T-09-03。2026-09-16。`F-021 AC-1`〜`AC-6` / `CLAUDE.md` §3.3 / §10.3 / §11.5 手順 3 / §11.6 / `S-021`。⚠️ 本節は T-09-04 で記録した）**:
-
-- 🔴 **承認の実体は `packages/db/src/proposal-approval.ts` の `approveProposal` の 1 実装である。** 呼び出し元は #41（人間。`apps/web/lib/proposals/approval.ts` の `approveProposalByUser`）と `gate.run` の自動承認（`apps/worker/src/jobs/gate-run.ts` の `autoApproveIfEnabled`。§11.6）の 2 つで、`apps/web` と `apps/worker` は相互に import できない（`CLAUDE.md` §2.1）ため共有点は `packages/db` しか無い（`createProposalDraft` と同じ判断）。承認 CAS（§11.5 手順 3 の 1 文）は**生 SQL**であり、`TenantDb` は `$queryRaw` を型から除いている（§4.3 実装の規約 3）ので、**ゲート結果の照合を迂回した承認を `packages/db` の外からは書けない**。🔴 **ゲート結果を引数に取らない**（受け取るのは提案 ID と承認者だけ。「どのゲート結果で承認するか」は関数が現在の内容から再計算したハッシュで `review_gates` を引いて決める。`docs/04` 申し送り 4）。#41 のルートに body スキーマは無く、`{ gate: PASS, force: true }` を送っても読まれない（結合テスト ③）。
-- 🔴 **断り方は 3 段で、#48 と同じ順序**（`assertOwnedTransition`。行を読んでから。母集団は `proposals` の RLS C5 で、見えなければ 404）: ①**§4.2 に無い組**（`DRAFT` / `GATE_RUNNING` / `GATE_FAILED` / `APPROVED` … → `APPROVED`）→ 422 `INVALID_STATE_TRANSITION` + `state.invalid_transition` を**別トランザクション**で記録（`rethrowWithInvalidTransitionAudit` の 1 実装）②**§4.2 にはあるが所有者が `APPROVE` / `REJECT` でない組**（`SUBMIT_FAILED → APPROVED` = `RESEND`〔#44 の `acknowledged: true` を #41 で迂回させない。§10.6〕/ `GATE_FAILED → DRAFT` = `MANUAL`）→ 422 `PROPOSAL_TRANSITION_RESERVED`（記録しない）③**立場**（`canApproveProposal` = ホストの `OWNER` / `ADMIN` / `SALES`。取引先は自社の提案を自分で承認できない。`VIEWER` は 403）→ 403 `PROPOSAL_APPROVAL_FORBIDDEN`。その後に `approveProposal` の帰結を写す: `APPROVED` → `{ state }` / `NOT_PENDING`（読んでから CAS までに動いた）→ 422（記録あり）/ **`GATE_STALE` → 409**（「内容が変更されたため再検証が必要です」。**「無視して承認」は無い**）/ `NOT_FOUND` → 404。認可は `requireRole(OWNER/ADMIN/SALES)` + `requireExecutable`（`SUSPENDED` は 409）+ `requireNotViewer`。
-- **記録**: `ProposalEvent(STATE, APPROVAL_PENDING → APPROVED, actorUserId = 承認者 | null〔system〕, note = 'REVIEW_GATE:<review_gate_id>')` + `AuditLog(proposal.approve, summary = { operation: 'APPROVE', reviewGateId, contentHash, approvedBySystem, reason?: 'ALL_LAYERS_PASS' })`。🔴 `summary` に本文・単価・提案先・氏名を載せない（§16.2）。自動承認は `approved_by = NULL` / `approved_by_system = true` / `actorKind='SYSTEM'`（`F-021 AC-5`）。**#42**（却下）は理由必須（400）で `APPROVAL_PENDING → DRAFT` の CAS + `ProposalEvent(note = 理由)` + `AuditLog(proposal.reject, summary = { operation: 'REJECT', fromState, toState })`（🔴 理由は監査に載せない）。`content_hash` と `approved_*` は触らない（次の #39 が書き直す。⚠️ `review_gates` の DONE / PASS 行は残るため、**内容を変えずに #39 を再依頼すると 422 `GATE_ALREADY_COMPLETED`**。§11.10 ⑤。T-09-09 の申し送り）。
-- **`S-021`**（`/proposals/{id}/approve`。🔴 **Tier 1**）: 判断ヘッダ（提案先・エンジニア・案件・単価・開始日・作成者・経過時間）/ ゲートの指摘（FAIL = 赤）と整合層の警告（琥珀の**別リスト**）/ 送信先別プレビュー / 添付 / 送信元ドメインの状態を **1 本の縦スクロール**に置き、折りたたみ・タブに入れない（`F-021 AC-4` / `BR-49`。モバイルでも同じ）。**アクションはプレビューの末尾に到達するまで無効**（`IntersectionObserver`。JS 無効なら常に無効）。`APPROVAL_PENDING` 以外では承認アクションを描画しない。一括承認に相当する操作を持たない（`BR-50`）。🔴 **primary は T-09-06（送信ジョブ）が入るまで「承認する」であり「承認して送信」ではない**（起きないこと〔送信〕を語に含めない。`packages/i18n` の `proposals.approval.action.approve`。T-09-06 で切り替える）。読み取り（`readProposalApproval`）はホスト = 判断材料 + `canApprove = true`、作成した取引先 = 内容とゲート結果は読めるが `canApprove = false`、他社・他テナント・不存在 = 404。
-- **E2E ハーネスのシーム**（`tests/e2e/harness/db-admin.ts` の `settleProposalGateAsPassedForE2e(proposalId, contentHash)`）: E2E ハーネスには Redis も worker も無い（§11.12 ⑦。足すのは T-09-11）ため、「全層 PASS で承認待ち」の前提は **#39 と `gate.run` が書くのと同じ列**（`DRAFT → GATE_RUNNING` + `content_hash` / `review_gates(DONE, 3 層 PASS, 同じ hash)` / `GATE_RUNNING → APPROVAL_PENDING`）を特権接続で書いて作る。🔴 `contentHash` は #40 が返す**現在の内容のハッシュ**を渡す（テストが値を作らない）。汎用のエスケープハッチにしない（目的を 1 つに絞った固定文の SQL。`deleteT0903SyntheticProposals` が後始末）。ゲート本体と承認 CAS の正しさは `tests/isolation/gate-run.test.ts` / `proposal-approval.test.ts` の射程である。
-
-🔴 **承認の無効化と送信前判定の共有（T-09-04。2026-09-16。§11.5 手順 2 / 手順 4 / §10.2 ①-c ②-b ③ / `F-021` / E2E #10）**:
-
-- 🔴 **`APPROVAL_PENDING` / `APPROVED` の内容は API からは変更できない**（#37 は `DRAFT` のみ。§11.5 手順 2 の改訂。⚠️ 暫定。[Issue #54](https://github.com/Festal-KM/SES-Platform/issues/54) で確認中）。`S-020` は `DRAFT` 以外を読み取り専用にし理由（`proposals.editor.readOnly.*`）を表示する。したがって「承認後に内容を変更すると承認が無効になる」は、**API を通らない経路（運用 SQL・凍結の再生成・将来のコードの不備）に対する多層防御**として承認 CAS と送信 CAS の**ハッシュ一致条件**が担う。
-- 🔴 **「ゲートが現在の内容に対して有効か」の判定は 1 つの SQL 述語である**（`packages/db/src/proposal-approval.ts` の `passedReviewGateExistsSql(contentHash)` = `EXISTS (SELECT 1 FROM review_gates g WHERE g.target_type='PROPOSAL' AND g.target_id = p.id AND g.content_hash = $current AND g.execution='DONE' AND 3 層 PASS)`。`p` は `proposals` の別名）。消費するのは 3 箇所: ①`approveProposal` の承認 CAS（§11.5 手順 3）②**`readProposalGateFreshness(ctx, proposalId)`**（§10.2 ①-c / ②-b の事前判定。`{ state, storedHash, currentHash, reviewGateId, gateFresh }`。`gateFresh` = `storedHash === currentHash` かつ述語が真〔三つ巴の一致〕。見えなければ `null`）③**`castProposalToSubmitting(ctx: SystemTenantCtx, { proposalId, now })`**（§10.2 ③ の CAS の実体。`UPDATE proposals p SET state='SUBMITTING' WHERE p.id=$1 AND p.state='APPROVED' AND p.content_hash=$current AND ${述語}`。1 件なら同じトランザクションで `ProposalEvent(STATE, APPROVED → SUBMITTING, actorUserId = null)` を書く。0 件は状態を読み直して **`NOT_APPROVED`（多重実行 / 状態違い）と `GATE_STALE`（内容が変わった）を区別**。`SendAttempt` の INSERT と `AuditLog(proposal.submit)` は含めない = T-09-05 / T-09-06 が ④⑥ で行う）。
-- 🔴 **`castProposalToSubmitting` の引数は `SystemTenantCtx`**（`apps/web` が組み立てられない型。`systemTenantCtx` は `apps/worker/**` にしか現れない）。`SUBMITTING` に入れるのは送信ジョブだけ（所有者 `SEND_JOB`）であり、**`apps/web/**` から `castProposalToSubmitting` を参照しないことを `tests/static/auth-db-callers.test.ts` が走査する**（T-09-06 で `apps/worker/src/jobs/send-proposal.ts` を許可リストに足す）。
-- **`contentHash` 素材 `v4`**: `EngineerSnapshot.careers` を材料に入れた（§11.5 のコード注記 / §11.10 ②）。既存の `v3` 行は承認・送信で `GATE_STALE` になり、再検証で復帰する（マイグレーションしない理由は §11.5「版の切り替え」）。
-- **自動承認とテナント状態**: `gate.run` は `lifecycleState` を `autoApproveEnabled` と同じ `select` で読み、`SANDBOX` / `ACTIVE` 以外では `approveProposal` を呼ばない（§11.6。判定は `shouldAutoApprove` の 1 実装）。
-- **検証**: `tests/isolation/proposal-approval-invalidation.test.ts`（実 DB: `proposals.content_hash` を管理接続でずらす → `gateFresh=false` / `castProposalToSubmitting` が `GATE_STALE` で `APPROVED` のまま / 凍結の careers を 1 行変えても同じ / ずらさなければ 1 件更新で `SUBMITTING` + `ProposalEvent` / 同時 2 回で 1 回だけ成功 / `APPROVED` への #37 が 422 で `content_hash` と状態が不変 / 承認 CAS と送信 CAS が同じ内容で同じ判定）+ `hash.test.ts`（careers の 1 行の差 / 行の入れ替えで連結が変わる）+ `gate-run.test.ts`（`SUSPENDED` で `approveProposal` を呼ばない）+ E2E #10（`home.mobile.spec.ts`。承認後の `S-020` が読み取り専用・#37 が 422・`S-021` が承認済み。**「再検証なしで送信できない」の送信側アサーションは #43 が T-09-06 のため、そこで足す**）。
-
 
 ### 6.7 主平面 API — 設定・運用（Phase 1〜2）
 
@@ -4353,6 +4353,9 @@ send.proposal(payload: { tenantId, proposalId, attemptSeq })
      UPDATE proposals SET state='SUBMITTING', updated_at=now()
        WHERE id=$1 AND tenant_id=$2 AND state='APPROVED';
      → 更新件数 0 なら即終了（多重実行の排除）。外部 API を呼ばない。
+     🔴 実装の決着（T-09-04）: 実体は packages/db の castProposalToSubmitting（SystemTenantCtx 限定）。
+        WHERE に content_hash=$current AND EXISTS(承認 CAS と同じ述語) を含み、①-c / ②-b と ③ が同じ判定を使う。
+        0 件は NOT_APPROVED（多重実行 / 状態違い）と GATE_STALE（内容が変わった）を区別して返す（§11.5 手順 4）。
 
   ④ SendAttempt を INSERT（status='RESERVED'）
      → 一意制約違反なら「既に送信済み or 送信中」として終了。外部 API を呼ばない。
@@ -4393,9 +4396,6 @@ type ExternalSendSpec<S> = {
 ```
 ### 10.3 承認を経ない実行遷移が不可能であることの担保
 
-     🔴 実装の決着（T-09-04）: 実体は packages/db の castProposalToSubmitting（SystemTenantCtx 限定）。
-        WHERE に content_hash=$current AND EXISTS(承認 CAS と同じ述語) を含み、①-c / ②-b と ③ が同じ判定を使う。
-        0 件は NOT_APPROVED（多重実行 / 状態違い）と GATE_STALE（内容が変わった）を区別して返す（§11.5 手順 4）。
 | 手段 | 実装 |
 |---|---|
 | **DB 制約** | 🔴 `CHECK ( state <> 'SUBMITTING' OR approved_at IS NOT NULL )`。**承認記録が無い行が `SUBMITTING` に入れない** |
@@ -4570,6 +4570,13 @@ export function gateContentHash(input: GateHashInput): string;   // SHA-256 の 
 //   subject / body / publicSummary / snapshot（氏名・スキル・単価・期間・🔴 careers の全行の 5 項目。T-09-12）
 //   / 添付 = 🔴 凍結列 engineer_snapshots.skill_sheet_id（T-09-03 で改訂。下記）/ recipientCompanyName / recipientEmail
 //   / offeredUnitPrice / offeredStartDate
+// 🔴 careers は T-09-04 で材料に入った（`GATE_HASH_ALGORITHM_VERSION` = `v4`。2026-09-16）。T-09-03 までの実装（`v3`）は
+//    本節の列挙に反して careers を `GateHashSnapshot` に持っておらず、`gate.run` が検査する内容（`gate-target.ts` は
+//    careers を `field='snapshot'` に載せる）とハッシュが覆う内容が食い違っていた（T-09-03 レビューの申し送り 2）。
+//    🔴 **行の並びは凍結行の順序のまま綴じる（並べ替えない）。** 凍結の順序は DB の `ORDER BY`（`period_from DESC →
+//    created_at ASC → id ASC`。§3.4.1）が確定させた**内容の一部**であり、同じ 5 項目の集合でも並びが違えば
+//    提案先に届く経歴の見え方が違う。スキルの並びを吸収する（凍結 JSON の並びが保存経路に依存する）のとは事情が逆で、
+//    careers は `createProposalDraft` の 1 実装が固定順で書く。並べ替えると「行を入れ替えたのに同じハッシュ」になる。
 // 🔴 添付の材料は「凍結列の skill_sheet_id」だけである（2026-09-16、T-09-03 で改訂。旧: objectKey + versionId）。
 //    理由: 旧材料は `engineer_snapshots.skillSheet` **リレーション**（`skill_sheets` = C3、所有者だけが読める）から
 //    取っていたため、**同じ提案でも読む側の所属でハッシュが食い違った**（ホスト文脈で取引先作成の提案を読むと
@@ -4591,32 +4598,30 @@ export function gateContentHash(input: GateHashInput): string;   // SHA-256 の 
 
 🔴 **AI 再生成か人手修正かを問わない。** `draftBody` を再生成して `body` に反映した場合も `contentHash` が変わるため、**同じ経路で承認が無効になる**。
 
+🔴 **版の切り替え（`v3` → `v4`。T-09-04）と既存行の扱い**: `review_gates.content_hash` / `proposals.content_hash` には `v3`（careers 抜き）で計算された行が残りうる（T-09-03 までに依頼・承認された提案）。版を上げた後、承認 CAS（手順 3）と送信の事前判定（手順 4）は**現在の内容を `v4` で再計算**して突き合わせるため、そうした行は**必ず `GATE_STALE`（fail-closed）**になる —— `APPROVAL_PENDING` なら #41 が 409、`APPROVED` なら `castProposalToSubmitting` が 0 件更新で `SUBMITTING` に入らない。**復帰は再検証（#39 の再依頼 = 内容を `v4` で検査し直す）だけ**であり、それ以外の復帰経路を作らない。🔴 **マイグレーションは行わない**（判断の根拠）: ①旧ハッシュを `v4` に書き換えることは「検査していない内容（careers）に PASS を付け直す」ことと同義であり、本節の不変条件（ハッシュは検査した内容のすべてを覆う）に反する ②壊れ方が fail-closed（承認・送信が**止まる**）であり、危険側（検査していない内容が送られる）ではない ③本番は未リリース（第 1 回リリースは SP-12 の後。`CLAUDE.md` §5）で、影響は開発・E2E の合成データに限られる。同じ判断を**次に版を上げるときも既定**とする（`hash.ts` 冒頭の 🔴）。
+
 ### 11.6 自動モードでの自動承認の分岐条件（`F-021 AC-3` / `AC-5`）
 
 ```ts
 // packages/domain/src/gate/autoApprove.ts（純粋関数）
 export function shouldAutoApprove(input: {
   autoApproveEnabled: boolean;
+  lifecycleState: TenantLifecycleState;   // 🔴 T-09-04 で追加（下記）
   pii: GateVerdict; commerce: GateVerdict; consistency: GateVerdict;
 }): boolean {
   return input.autoApproveEnabled
+      && isExecutableTenantLifecycleState(input.lifecycleState)   // SANDBOX / ACTIVE のみ
       && input.pii === 'PASS' && input.commerce === 'PASS' && input.consistency === 'PASS';
 }
 ```
 - 🔴 **`TenantRoleApprovalMode` を参照しない**（`F-035 AC-3`）。引数の型に入らない。
+- 🔴 **テナントの状態を見る（T-09-04。2026-09-16）**: `gate.run` は `tenants` から `autoApproveEnabled` と**同じ `select` で `lifecycleState`** を読み、`SANDBOX` / `ACTIVE` 以外（`SUSPENDED` / `CLOSING` / `PURGED`）では自動承認を呼ばない（提案は `APPROVAL_PENDING` に留まり、人間の #41 は `requireExecutable` が 409 で止める = 安全側）。人間の承認が `requireExecutable`（§6.2）で止まるのに、ジョブの自動承認だけが停止中のテナントで通るのは `CLAUDE.md` §4.2「`SUSPENDED` では実行系は一切できない」に反する。判定は `shouldAutoApprove` の 1 実装に置き（`apps/worker` に `if` を散らさない）、実行可の状態の集合は `packages/domain/src/state/tenant.ts` の `TENANT_EXECUTABLE_LIFECYCLE_STATES`（`apps/web` の `requireExecutable` が見る `LIFECYCLE_EXECUTION_DENIAL` で `null` になる 2 値と同じ）。
 - 自動承認したら `approvedBySystem = true`、`AuditLog(action='proposal.approve', actorKind='SYSTEM', summary={ reason:'ALL_LAYERS_PASS' })`（`F-021 AC-5`）。
 - 1 層でも FAIL なら `GATE_FAILED` に留まり、人間に差し戻る。
 
 ### 11.7 指摘の構造化フォーマットと画面への渡し方
 
 ⚠️ **`GateResultView` は T-07-06 で `packages/domain/src/gate/view.ts` に実装された。確定形は §11.9 ①・④ を正とする**（AI が返すオフセットは**マスキング済みの欄**の位置なので、保存前に原文の位置へ戻す）。
-// 🔴 careers は T-09-04 で材料に入った（`GATE_HASH_ALGORITHM_VERSION` = `v4`。2026-09-16）。T-09-03 までの実装（`v3`）は
-//    本節の列挙に反して careers を `GateHashSnapshot` に持っておらず、`gate.run` が検査する内容（`gate-target.ts` は
-//    careers を `field='snapshot'` に載せる）とハッシュが覆う内容が食い違っていた（T-09-03 レビューの申し送り 2）。
-//    🔴 **行の並びは凍結行の順序のまま綴じる（並べ替えない）。** 凍結の順序は DB の `ORDER BY`（`period_from DESC →
-//    created_at ASC → id ASC`。§3.4.1）が確定させた**内容の一部**であり、同じ 5 項目の集合でも並びが違えば
-//    提案先に届く経歴の見え方が違う。スキルの並びを吸収する（凍結 JSON の並びが保存経路に依存する）のとは事情が逆で、
-//    careers は `createProposalDraft` の 1 実装が固定順で書く。並べ替えると「行を入れ替えたのに同じハッシュ」になる。
 
 `GateFinding`（§3.6）を `ReviewGate.findings` に格納し、`GET /api/proposals/{id}/gate`（#40）が層ごとに返す。
 
@@ -4638,24 +4643,19 @@ type LayerView = { state: 'RUNNING' | 'PASS' | 'FAIL' | 'HELD'; findings: GateFi
 
 **整合層の機械的照合は T-07-06（パイプライン）/ T-07-09 / SP-09（承認画面）/ SP-15（`F-037`）の一次資料である。** T-07-07 で確定した形を、上のスケッチとの差分として記録する（`CLAUDE.md` §8.7。§7.9〜§7.13 と同じ作法）。**以降のタスクは本節を正とする。**
 
-🔴 **版の切り替え（`v3` → `v4`。T-09-04）と既存行の扱い**: `review_gates.content_hash` / `proposals.content_hash` には `v3`（careers 抜き）で計算された行が残りうる（T-09-03 までに依頼・承認された提案）。版を上げた後、承認 CAS（手順 3）と送信の事前判定（手順 4）は**現在の内容を `v4` で再計算**して突き合わせるため、そうした行は**必ず `GATE_STALE`（fail-closed）**になる —— `APPROVAL_PENDING` なら #41 が 409、`APPROVED` なら `castProposalToSubmitting` が 0 件更新で `SUBMITTING` に入らない。**復帰は再検証（#39 の再依頼 = 内容を `v4` で検査し直す）だけ**であり、それ以外の復帰経路を作らない。🔴 **マイグレーションは行わない**（判断の根拠）: ①旧ハッシュを `v4` に書き換えることは「検査していない内容（careers）に PASS を付け直す」ことと同義であり、本節の不変条件（ハッシュは検査した内容のすべてを覆う）に反する ②壊れ方が fail-closed（承認・送信が**止まる**）であり、危険側（検査していない内容が送られる）ではない ③本番は未リリース（第 1 回リリースは SP-12 の後。`CLAUDE.md` §5）で、影響は開発・E2E の合成データに限られる。同じ判断を**次に版を上げるときも既定**とする（`hash.ts` 冒頭の 🔴）。
-
 #### ① 置き場所
 
 ```
 packages/domain/src/gate/consistency.ts        decideConsistency と入力の型（🔴 import は ./types.js だけ）
 packages/domain/src/gate/consistency.test.ts   照合規則 / 決定性（同一入力 100 回）/ 境界値
 tests/static/gate-consistency-purity.test.ts   §17.2 #9（引数型の出所・語彙・引数の数・呼び出し式）
-  lifecycleState: TenantLifecycleState;   // 🔴 T-09-04 で追加（下記）
 packages/ai/src/gate-consistency-independence.test.ts
                                                🔴 モック応答 5 通りで整合層の結果が 1 ビットも変わらないこと
 ```
-      && isExecutableTenantLifecycleState(input.lifecycleState)   // SANDBOX / ACTIVE のみ
 
 #### ② 🔴 `ConsistencyInput` は `Pick<GateInput, …>` にしなかった（3 項目を束ねた）
 
 - 確定した形: **`{ subject?: ConsistencySubject; duplicateFindings?: readonly never[] }`**。
-- 🔴 **テナントの状態を見る（T-09-04。2026-09-16）**: `gate.run` は `tenants` から `autoApproveEnabled` と**同じ `select` で `lifecycleState`** を読み、`SANDBOX` / `ACTIVE` 以外（`SUSPENDED` / `CLOSING` / `PURGED`）では自動承認を呼ばない（提案は `APPROVAL_PENDING` に留まり、人間の #41 は `requireExecutable` が 409 で止める = 安全側）。人間の承認が `requireExecutable`（§6.2）で止まるのに、ジョブの自動承認だけが停止中のテナントで通るのは `CLAUDE.md` §4.2「`SUSPENDED` では実行系は一切できない」に反する。判定は `shouldAutoApprove` の 1 実装に置き（`apps/worker` に `if` を散らさない）、実行可の状態の集合は `packages/domain/src/state/tenant.ts` の `TENANT_EXECUTABLE_LIFECYCLE_STATES`（`apps/web` の `requireExecutable` が見る `LIFECYCLE_EXECUTION_DENIAL` で `null` になる 2 値と同じ）。
   `ConsistencySubject = { snapshot: EngineerSnapshotFacts; requirements: ProjectRequirementFacts[]; registeredSkills: EngineerSkillFacts[] }`。
 - 🔴 **理由**: スケッチの形（3 つが独立した任意項目）は、**`requirements` だけが渡って `snapshot` が渡らない**入力を型として許す。それは「必須要件の照合が黙って行われないのに PASS」という壊れ方であり、`F-020` の中核が空回りしていることが誰にも見えない。3 つは常に同時に決まるので束ねる。
 - 🔴 **依存の向きを逆にする**: `GateInput`（T-07-06）が `ConsistencyInput` を**内包**する（`GateInput.consistency: ConsistencyInput`）。`decideConsistency` が `GateInput` に依存すると、`text` / `forbiddenTerms` / `knownPii` を含む大きな型が引数型に現れ、§17.2 #9 の検査が実質的に成立しなくなる。
