@@ -32,11 +32,16 @@ import {
   projectCandidateListQuerySchema,
 } from '../../../../../lib/candidates/schemas';
 import { candidateReference } from '../../../../../lib/db/bootstrap';
+import { executionDenialMessageKey } from '../../../../../lib/api/guards';
+import { toJstIsoDay } from '../../../../../lib/format/datetime';
 import {
   projectConditionRows,
   projectHeadlineRows,
   projectRequirementRows,
 } from '../../../../../lib/projects/detail';
+import { proposalRequestExpiryBounds } from '../../../../../lib/proposal-requests/expiry';
+import { PROPOSAL_REQUESTS_PATH } from '../../../../../lib/proposal-requests/list-rows';
+import { isProposalRequestIssuerRole } from '../../../../../lib/proposal-requests/policy';
 import { listSkills } from '../../../../../lib/skills/service';
 import {
   engineerAvailabilityFilterOptions,
@@ -127,6 +132,20 @@ export default async function ProjectCandidatesPage({
   const skillNames = new Map(skills.items.map((skill) => [skill.id, skill.name]));
   const filtered = hasCandidateFilters(query);
 
+  // 🔴 提案依頼の導線（T-08-06。`docs/04` §S-016 権限差分 / `F-004 AC-7`）: ホストの発行ロール
+  //    （`#31` と同じ定数 `PROPOSAL_REQUEST_ISSUER_ROLES`）× テナントが実行可のときだけ描く。
+  //    取引先には共有候補の行が無いので、導線も理由の表示も出ない。
+  const isHost = ctx.partnerCompanyId === null;
+  const issuerRole = isHost && isProposalRequestIssuerRole(ctx.role);
+  const denialKey = executionDenialMessageKey(ctx.lifecycleState);
+  const requestUnavailable = !isHost
+    ? null
+    : !issuerRole
+      ? t('candidates.request.unavailable.viewer')
+      : denialKey === null
+        ? null
+        : t(denialKey);
+
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
       <p className="mb-1 text-sm text-slate-500">
@@ -170,6 +189,13 @@ export default async function ProjectCandidatesPage({
           view.nextCursor === null ? null : projectCandidatesHref(projectId, query, view.nextCursor)
         }
         firstPageHref={query.cursor === undefined ? null : projectCandidatesHref(projectId, query, null)}
+        request={{
+          canRequest: issuerRole && denialKey === null,
+          unavailableMessage: requestUnavailable,
+          expiry: proposalRequestExpiryBounds(new Date(), toJstIsoDay),
+          listHref: PROPOSAL_REQUESTS_PATH,
+          showListLink: isHost,
+        }}
         messages={candidateScreenMessages({
           partnerCompanyId: ctx.partnerCompanyId,
           total: view.total,

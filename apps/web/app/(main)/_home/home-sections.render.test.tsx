@@ -184,3 +184,29 @@ describe('🔴 S-015（匿名共有の設定）の導線は取引先のホーム
     expect(html).not.toContain('href="/engineer-shares"');
   });
 });
+
+// 🔴 T-08-06: `S-017`（提案依頼の一覧）の導線は `S-003` / `S-004` の**両方**に、ロールで隠さず出る
+//    （docs/04 §3.2 ナビ「③ 提案依頼（`S-017`）」/ §S-017 関連画面「← `S-004`」）。取引先にとっては
+//    届いた依頼に気づく唯一の入口である（Phase 1 の通知はアプリ内表示。`F-018` 処理②）。
+describe('🔴 S-017（提案依頼の一覧）の導線はホスト・取引先の両方のホームに出る', () => {
+  it('ホストのホームに出る（VIEWER 相当でも消えない —— 閲覧はできる）', () => {
+    for (const flags of [
+      { canRegisterEngineer: true, canRegisterProject: true },
+      { canRegisterEngineer: false, canRegisterProject: false },
+    ]) {
+      const html = renderToStaticMarkup(createElement(HostHomeSections, flags));
+      expect(html).toContain('data-testid="home-host-proposal-requests"');
+      expect(html).toContain('href="/proposal-requests"');
+    }
+  });
+
+  it('取引先のホームに出る（共有の設定ができないロールでも消えない）', () => {
+    for (const canManageShares of [true, false]) {
+      const html = renderToStaticMarkup(
+        createElement(PartnerHomeSections, { noticeText: '見える範囲の説明（合成）', canManageShares }),
+      );
+      expect(html).toContain('data-testid="home-partner-proposal-requests"');
+      expect(html).toContain('href="/proposal-requests"');
+    }
+  });
+});

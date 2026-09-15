@@ -1846,6 +1846,29 @@ export function withSharedCandidateScope<T>(
   - ✅ **T-08-05 で最初の呼び出し元が実在した**: `apps/web/lib/candidates/list.ts`（`listProjectCandidates`。#30 と `#15?projectId=`）の **1 ファイルだけ**に専用ゾーン（`eslint.config.mjs` の `SHARED_CANDIDATE_CALLER_ZONE`。CATCH_ALL と同じ強度 + `allowSharedCandidateScope`）を足し、`auth-db-callers.test.ts` の許可リストも同じ 1 ファイルにした。**このファイルは `listSharedEngineers` の直後に同じトランザクションで `replaceAnonymousCandidates` を呼ぶ**（＝ `MatchCandidate` の生成・再確認をしている。上の条件）。呼び出し元を 2 つ目にするときは同じ手順を踏む。
 - 🔴 **入口の fail-closed（T-08-03 で確定。改訂 9）**: `projectId` の案件がテナント内に見つからない場合、**0 件を返さず `SharedCandidateProjectNotFoundError` を投げる**。API 境界は §4.8 に従い **404** に写像する（403 と区別しない）。理由: 匿名候補は「案件に対して」出すものであり、案件が特定できないまま `app.shared_scope = 'on'` のトランザクションを開くと、**何のために開いたのかが監査から読めない**。ホスト文脈の検証（`requireHost`。パートナー文脈は `HostOnlyContextError`）も同じ入口で行う。
 - **解除の即時反映**（`F-016 AC-2`）: `EngineerShare.revoked_at` が入った瞬間にポリシーが外れる。**候補一覧の応答は `MatchCandidate` をそのまま返さず、必ず `withSharedCandidateScope` で「まだ共有中か」を再確認してからフィルタする**（キャッシュを置かない）。
+
+#### 🔴 §4.5 の実装の決着（T-08-06。2026-09-15。提案依頼の発行 = `candidateRef` の逆引き）
+
+**`POST /api/proposal-requests`（#31）は `withSharedCandidateScope` の 2 つ目の呼び出し元である**（`apps/web/lib/proposal-requests/service.ts` の 1 ファイル。`SHARED_CANDIDATE_CALLER_FILES` と `auth-db-callers.test.ts` の許可リストに同時に足した）。理由と形は次のとおりで、**越境経路は増えていない**（経路 4 の「提案依頼」の側を確定させただけ）。
+
+- 🔴 **依頼先（`proposal_requests.partner_company_id`）をホスト文脈では決められない。** 値の出所は `engineers.owner_partner_company_id` だが、その行は C3 でホストから読めず、`SharedCandidateSource` にも**意図的に無い**（`BR-06`）。したがって **INSERT は共有スコープの中で `packages/db` が行い、`ownerPartnerCompanyId` は `packages/db` の外へ 1 度も出ない**。`SharedCandidateDb` に 6 番目の専用メソッドを足した:
+
+  ```ts
+  // packages/db/src/shared-candidate.ts（T-08-06）
+  readonly issueProposalRequest: (input: {
+    engineerId: string; message: string; expiresAt: Date; ipAddress: string | null;
+  }) => Promise<{ kind: 'ISSUED'; id: string } | { kind: 'NOT_SHARED' }>;
+  //  ① engineers を `id = engineerId AND owner_partner_company_id IS NOT NULL` で読む
+  //     —— 共有ポリシー（app_engineer_is_shared）越しにしか出ない行であり、**これが「いま共有中か」の再確認**である
+  //     （C3 の自社行は `IS NOT NULL` で外れる）。無ければ NOT_SHARED（API は 404。§4.8）
+  //  ② proposal_requests に REQUESTED で INSERT（partner_company_id = 読んだ owner。issued_by = ctx.userId）
+  //  ③ AuditLog（proposal_request.create。summary は { projectId } だけ）を同じトランザクションで書く
+  //  🔴 @@unique([tenantId, projectId, engineerId]) に当たったら ProposalRequestDuplicateError（API は 409）
+  ```
+  引数も戻り値も**スカラーだけ**で、`select` / `include` を受け取らない（改訂 9 の規則のまま）。**実 DB テスト（`tests/isolation/shared-candidate-scope.test.ts`）の「全メンバー」走査に本メソッドを含め、キー集合は 6 個に固定した。**
+- 🔴 **逆引きは `MatchCandidate`（C2）から**（§4.6「`candidateRef` を受け取る API は #31 の 1 本だけ」）: `listAnonymousCandidateEngineerIds()` が返す ID を `candidateRef(projectId, id)` で総当たりし、一致した 1 件だけを①に渡す。母集団は「その案件でホストが直近に一覧を読んだときの匿名候補」であり、一覧を経ずに参照子だけ知っていても（他案件の参照子・改ざんした値）**一致する行が無く 404** になる。🔴 **`candidateRef` は capability ではない**（T-08-05 の申し送り）: 参照子が一致しても①の再確認を通らなければ発行されない。
+- 🔴 **`engineer_id` / `partner_company_id` を応答にも監査の `summary` にも載せない。** #31 の応答は `{ id }` だけ、監査は `{ projectId }` だけである（運営者が横断検索する。`CLAUDE.md` §10.5）。
+- **依頼メッセージの商流検証**（§3.6「商流情報を含めない（API で検証）」）は共有スコープを開く**前**に `withTenant` で行う（下記 §6.5「#31 / #32 / #35 の実装の決着」）。検証に落ちた要求は共有スコープを開かない。
 ### 4.6 匿名候補の参照子と応答の型
 
 ```ts
@@ -2882,7 +2905,18 @@ export type CareerRowView = CareerRowInput & {
 - 🔴 **`MatchCandidate` の置き換えは同一案件への並行 GET に耐える**: `replaceAnonymousCandidates` の `createMany` を `skipDuplicates: true` にした（`@@unique([tenantId, projectId, engineerId])`。READ COMMITTED で先行トランザクションの削除待ちから復帰した側の INSERT が一意制約に当たり 500 になる）。**戻り値「作成した行数」の意味は変えていない**（重複で飛ばした行は数えない）。
 - 🔴 **`requireExecutable` を掛けない**（読み取り）。`VIEWER` / `CLOSING` でも一覧は見える（`F-004 AC-6` / `AC-8`）。`MatchCandidate` の再生成は派生データの更新であり、業務上の新規作成ではない。
 - **ページ内の `AnonymousCandidateView` は `buildAnonymousCandidateViews` の出力をそのまま載せる**（フィールドを足す組み立てを #30 側に持たない）。自社候補の行 **`OwnCandidateView` = `OwnEngineerView & { yearsMax: number | null }`** は `listEngineers` と同じ `toOwnEngineerView` を通し（`readOwnCandidateViews`）、`yearsMax`（登録スキルの経験年数の最大。T-06-04 の集約の定義）だけを足す —— `docs/04` §S-016 の「経験年数」列を自社候補にも出すため。**`#15?projectId=` の `items` も同じ `OwnCandidateView`** である（案件なしの `#15` は従来の `OwnEngineerView` のまま）。
-- ⚠️ **提案依頼の導線（`S-016` 右パネルの「提案依頼を送る」）は T-08-06 が置く。** 本タスクの画面は右パネルに 5 項目と「後続のリリース」の注記だけを出す（押しても動かないボタンを先に描かない。`projectsComingSoon` と同じ規律）。
+- ~~⚠️ **提案依頼の導線（`S-016` 右パネルの「提案依頼を送る」）は T-08-06 が置く。**~~ ✅ **T-08-06 で置いた**（右パネルが依頼フォームに切り替わる。モーダルにしない。下記）。
+
+🔴 **#31 / #32 / #35 の実装の決着（T-08-06。2026-09-15。`F-018` / `F-017 AC-4` / `S-016` / `S-017`）**:
+
+- **#31 `POST /api/proposal-requests`** — body は `{ projectId, candidateRef, message, expiresAt }` の 4 項目だけ（`proposalRequestCreateBodySchema`）。🔴 **確定単価・見積・値引きに相当するフィールドが無い**（`F-017 AC-4` / `BR-58`。スキーマに無いので画面にも作れない）。認可は `requireRole(OWNER/ADMIN/SALES)` + `requireExecutable` + `requireNotViewer`。手順は 2 トランザクション:
+  1. `withTenant`: 案件を読む（見えなければ 404）→ **依頼メッセージの商流検証** → `expiresAt` の範囲検証（現在より後、かつ 30 日以内。外れたら 400 `VALIDATION`）
+  2. `withSharedCandidateScope`: 逆引き → 共有中の再確認 → INSERT → 監査（§4.5「T-08-06 の決着」）
+- 🔴 **依頼メッセージの商流検証は「自由記述 + 機械的照合」で決着した**（`docs/sprints/SP-08` T-08-06「ゲートの対象にするか定型文に限るか判断」）。定型文に限る案は、依頼文の存在意義（開始時期の希望・面談可能日など案件の共通部分に無い補足）を消すため退けた。照合は **`@ses/ai` の `mask()`** に、案件の既知値（`end_client_name` / `internal_unit_price` / `unit_price_min` / `unit_price_max`）を渡して行い、**`UNIT_PRICE` / `END_CLIENT` のヒットが 1 件でもあれば 422 `PROPOSAL_REQUEST_MESSAGE_COMMERCE`** とする（`checkProposalRequestMessage`。`apps/web/lib/proposal-requests/message-check.ts`）。🔴 **照合の実装を 2 本にしない** —— 単価表記（`65万円` / `¥650,000`）と法人格の表記ゆれを吸収する正規表現は `packages/ai/src/mask.ts` の 1 か所にしかなく、品質ゲート（§11.4）と同じ照合である。**これは `ReviewGate` ではない**（`ReviewGate` の対象は「テナント外へ共有されるもの」であり、依頼メッセージはテナント内のホスト → 取引先の連絡である。`CLAUDE.md` §3.3）。**PII の照合は掛けない**（対象エンジニアの PII をホストは知らず、ホスト自身の連絡先は商流情報ではない）。🔴 **`apps/web` が `@ses/ai` に依存するのはこの照合のためであり、LLM は呼ばない**（`mask()` は決定的な純粋関数。`AiUsage` の対象外）。`@anthropic-ai/sdk` は `next.config.ts` の `serverExternalPackages` に置き、バレル経由で Web のバンドルに取り込まない（§7.9 ⑥の懸念の先回り）。🔴 **依存が入った以上、「`apps/web` に LLM 呼び出しを置かない」（§1.2）は依存の有無では担保できない**ため、`tests/static/ai-single-path.test.ts` に **`apps/web/**`（非テスト）からの `@ses/ai` import を許可リスト（`mask` / `MASK_CATEGORIES` / `MASK_PLACEHOLDERS` と型）に固定する走査**を足した（§17.2 #10 の拡張。名前空間 import・動的 import・`require`・再 export は形そのものを違反とする）。ESLint ではなく走査で見るのは、`apps/worker` が同じ名前（`createRoleRunner` / `gateInspectorSpec`）を正当に import し CATCH_ALL_ZONE に同居するため（ゾーンを割らずに `apps/web` だけへ `importNames` の制限を掛けられない）。
+- **#32 `GET /api/proposal-requests`** — `?state=&cursor=&limit=`。🔴 **応答の型はホストと取引先で別**（`HostProposalRequestView` / `PartnerProposalRequestView`。同じファイルの別の型・別のシリアライザ）。`HostProposalRequestView = { id, project: { id, name } | null, state, message, expiresAt, createdAt, respondedAt }` であり（`project` が `null` になるのはホストでは同一トランザクション内の削除競合だけ。取引先側と形を揃えた）、🔴 **`declineReason` / `engineerId` / `partnerCompanyId` / `respondedBy` / `issuedBy` のフィールドが存在しない**（`F-018 AC-1`。型テストは `apps/web/lib/proposal-requests/views.types.test.ts`、実応答の深さ走査は `tests/isolation/proposal-requests.test.ts`）。**依頼先の社名も出さない** —— 開示は応諾で `Proposal` ができた時点（経路 2）である。`PartnerProposalRequestView` は自社の行だけ（C5）で、`engineer: { id, displayName } | null`（自社の台帳。実名でよい）と `project: { id, name } | null`（🔴 **自社に公開されていない案件は `null`**。`projects` の C4 が行を消すため、リレーション `select` ではなく別クエリで引く。`null` のとき画面は「案件名は公開されていません」と出す）を持つ。**`declineReason` は T-08-07 が辞退を実装するときに取引先側の型にだけ足す。** 並びは `created_at desc, id desc`、カーソルは行の UUID（`S-005` と同じ）。認可は `guards: []`（読み取り。`VIEWER` / `CLOSING` でも見える）。
+- **#35 `POST /api/proposal-requests/{id}/withdraw`** — `REQUESTED → WITHDRAWN_BY_HOST` を `proposalRequestMachine.transition()` で判定し、`updateMany({ where: { id, state: 'REQUESTED' } })` の **CAS**（0 件なら現在の状態を読み直して 422 `INVALID_STATE_TRANSITION`。§15.3）。**`responded_at` / `responded_by` に取り下げの時刻と実行者を書く** —— 列名は「応答」だが、意味は「`REQUESTED` を離れた時刻と主体」であり、`S-017` の「最終更新」列の出所になる（`EXPIRED` は `responded_by = NULL`。T-08-07 の期限切れジョブが同じ解釈で書く）。監査は `proposal_request.update` / `summary.operation = 'WITHDRAW'`（独自 action を作らない。`engineer_share.update` と同じ理由）。認可は #31 と同じ 3 本（`requireExecutable` を掛ける —— 取り下げは取引先に見える依頼を消す実行系である）。
+- **`S-016`** — 右パネルの共有候補に「提案依頼を送る」を置く（ホストの `OWNER` / `ADMIN` / `SALES` かつテナントが実行可のときだけ。`VIEWER` と `SUSPENDED` / `CLOSING` には導線そのものが無い。`docs/04` §S-016 権限差分）。押すと右パネルが**フォームに切り替わる**（モーダルにしない —— 5 項目を見ながら書く）。フォームの入力はメッセージと期限の 2 つだけであり、🔴 **単価に関する入力欄が無い**（`F-017 AC-4`）。成功したら `S-017` への導線を出す。
+- **`S-017`**（`/proposal-requests`。Tier 1） — 状態フィルタ 5 値 / テーブル（案件 / 候補 / 依頼日 / 期限までの残り / 状態 / 最終更新）/ ホストは行選択で詳細パネル + 「取り下げる」（確認 1 段）。🔴 **`DECLINED` / `EXPIRED` / `WITHDRAWN_BY_HOST` は別のバッジ**（`F-018 AC-5`）。**モバイルで取り下げまで完結する**（列は間引くが、状態・期限・案件名は隠さない。`CLAUDE.md` §13.3）。取引先の行は `S-018`（T-08-07）へ進む導線を持つ —— 本タスクでは `S-018` が無いため行は選択のみで、詳細パネルにメッセージと期限を出す。🔴 **ホストの一覧に依頼先の社名・`engineer_id`・辞退理由を出す欄が無い**（型に無い）。期限までの残りはクライアントで毎分再計算する（初回はサーバの時刻で描き、hydration 後に端末時刻へ切り替える）。⚠️ **応諾の反映（60 秒ポーリング）は `ACCEPTED` が実在する T-08-07 で入れる。**
 
 **送信系の応答の型**（`docs/04` 申し送り 5・8）
 

@@ -430,6 +430,12 @@ const ja = {
     'この提案のレビュー依頼は、提案の作成者と自社の営業担当・管理者のみが行えます。',
   'error.gate.alreadyCompleted':
     'この内容の検査はすでに完了しています。指摘を解消するには提案の内容を修正してください。修正すると、あらためて検査できます。',
+  // 🔴 T-08-06: 提案依頼（`F-018` / docs/05 §6.5 #31 / #35）。
+  //    **単価の交渉を匿名候補の段階でさせない**（`BR-58`）。「無視して送る」余地を文言でも作らない。
+  'error.proposalRequest.messageCommerce':
+    '依頼メッセージに単価またはエンド企業名と読める記述が含まれています。単価は提案の作成後に扱えます。該当の記述を除いてから送ってください。',
+  'error.proposalRequest.alreadyExists':
+    'この候補には既にこの案件の提案依頼があります。状況は提案依頼の一覧で確認できます。',
   'error.internal': '処理に失敗しました。時間をおいて再度お試しください。',
 
   // --- 品質ゲート（F-020 / F-027 AC-5。docs/05 §11.7 の GateResultView）---
@@ -1563,12 +1569,98 @@ const ja = {
   'candidates.detail.openEngineer': '人材の詳細を開く',
   // 🔴 未実装を隠さない（`engineers.careers.comingSoon` と同じ規律）。押しても動かない導線を先に描かない。
   'candidates.detail.proposalComingSoon': '提案の作成は後続のリリースで行えます。',
-  'candidates.detail.requestComingSoon': '提案依頼の送信は後続のリリースで行えます。',
   'candidates.detail.anonymousNote':
     '共有候補は丸めた 5 項目のみが開示されています。実名・所属会社名・スキルシート・経歴は、提案が作成されるまで開示されません。',
   'candidates.detail.field.availabilityStatus': '稼働状況',
   'candidates.nextPage': '次のページ',
   'candidates.firstPage': '最初のページに戻る',
+  // --- S-016 右パネルの提案依頼フォーム（docs/04 §S-016「匿名候補で『提案依頼を送る』」/ `F-018` / docs/05 §6.5 #31。T-08-06）---
+  // 🔴 **単価・見積・値引きに相当する入力欄の語を置かない**（`F-017 AC-4` / `BR-58`）。入力はメッセージと期限の 2 つだけ。
+  // 🔴 「依頼を送ると実名が分かる」に相当する語を置かない —— 開示は取引先の応諾で初めて起きる（`F-018 AC-3`）。
+  'candidates.request.open': '提案依頼を送る',
+  'candidates.request.title': '提案依頼',
+  'candidates.request.lead':
+    'この共有候補の所属先に、この案件への提案を依頼します。取引先が応諾すると提案（下書き）が作成され、その時点で実名・所属会社名・スキルシートが開示されます。取引先には断る自由があり、辞退の理由は開示されません。',
+  'candidates.request.message.label': '依頼メッセージ',
+  // 🔴 何を書いてはならないかを入力欄の直下で先に伝える（送ってから 422 で知るより前に）。
+  'candidates.request.message.hint':
+    '開始時期の希望や面談可能な時期などを書きます。単価・エンド企業名は書けません（含まれていると送信できません）。',
+  'candidates.request.expiresAt.label': '返答期限',
+  'candidates.request.expiresAt.hint': '期限を過ぎると依頼は自動的に期限切れになります（最長 30 日）。',
+  'candidates.request.submit': '依頼を送る',
+  'candidates.request.submitting': '送信しています…',
+  'candidates.request.cancel': 'やめる',
+  'candidates.request.sent': '提案依頼を送りました。返答は提案依頼の一覧で確認できます。',
+  'candidates.request.openList': '提案依頼の一覧を開く',
+  'candidates.request.error.notFound':
+    'この候補には依頼を送れませんでした。共有が解除されたか、一覧が古くなっています。候補一覧を再読込してください。',
+  'candidates.request.error.expiresAt': '返答期限は現在より後、かつ 30 日以内の日付にしてください。',
+  'candidates.request.error.generic': '提案依頼を送れませんでした。依頼は作成されていません。もう一度お試しください。',
+  // 🔴 `VIEWER` / 停止中のテナントには導線そのものが無い（`docs/04` §S-016 権限差分）。理由の表示だけを置く。
+  'candidates.request.unavailable.viewer': '提案依頼の送信は、営業担当・管理者のみが行えます。',
+
+  // --- S-017 提案依頼の一覧（docs/04 §S-017 / `F-018` / docs/05 §6.5 #32 / #35。T-08-06）---
+  // 🔴 T1（モバイル完結）。取り下げはモバイルで押せる。判断材料（案件名・状態・期限）を隠さない（`CLAUDE.md` §13.3）。
+  // 🔴 `DECLINED` / `EXPIRED` / `WITHDRAWN_BY_HOST` は別の語（`F-018 AC-5`。「失効」にまとめない）。
+  // 🔴 **辞退の理由に相当する語をホスト側に置かない**（`F-018 AC-1`）。
+  // 🔴 **煽らない。** 空状態は事実だけを述べる（`S-015` と同じ規律）。
+  'proposalRequests.title': '提案依頼',
+  'proposalRequests.open': '提案依頼の一覧を開く',
+  'proposalRequests.breadcrumb.home': 'ホーム',
+  'proposalRequests.breadcrumb.current': '提案依頼',
+  // 🔴 `docs/04` §3.2 項目 2「一覧の母集団を 1 行で明示」。
+  'proposalRequests.lead.host': 'この一覧には、自社が送った提案依頼が表示されます。取引先の社名は、応諾されて提案が作成された時点で開示されます。',
+  'proposalRequests.lead.partner': 'この一覧には、御社の人材に届いた提案依頼のみが表示されます。',
+  'proposalRequests.filter.legend': '状態で絞り込む',
+  'proposalRequests.filter.all': 'すべて',
+  'proposalRequests.filter.apply': '絞り込む',
+  'proposalRequests.state.REQUESTED': '返答待ち',
+  'proposalRequests.state.ACCEPTED': '応諾',
+  'proposalRequests.state.DECLINED': '辞退',
+  'proposalRequests.state.EXPIRED': '期限切れ',
+  'proposalRequests.state.WITHDRAWN_BY_HOST': '取り下げ',
+  'proposalRequests.column.project': '案件',
+  'proposalRequests.column.candidate': '候補',
+  'proposalRequests.column.createdAt': '依頼日',
+  'proposalRequests.column.remaining': '期限までの残り',
+  'proposalRequests.column.state': '状態',
+  'proposalRequests.column.updatedAt': '最終更新',
+  // 🔴 ホストの候補列は「共有候補（匿名）」の一語だけ（`docs/04` §S-017。応諾後の実名は `Proposal` 側で読む）。
+  'proposalRequests.candidate.anonymous': '共有候補（匿名）',
+  // 🔴 取引先で、自社に公開されていない案件（`projects` の C4 で行が消える）。存在は依頼自体が示しているので隠さない。
+  'proposalRequests.project.notShared': '（案件名は公開されていません）',
+  'proposalRequests.remaining.prefix': '残り ',
+  'proposalRequests.remaining.days': ' 日',
+  'proposalRequests.remaining.hours': ' 時間',
+  'proposalRequests.remaining.minutes': ' 分',
+  'proposalRequests.remaining.lessThanMinute': '1 分未満',
+  'proposalRequests.remaining.expired': '期限を過ぎました',
+  // 🔴 終端状態（応諾・辞退・取り下げ・期限切れ）では残り時間を出さない（意味が無い）。
+  'proposalRequests.remaining.none': '—',
+  'proposalRequests.empty.host': '提案依頼はまだありません。',
+  'proposalRequests.empty.hostLead': '案件の候補検索で共有候補を選ぶと、提案依頼を送れます。',
+  'proposalRequests.empty.openProjects': '案件一覧を開く',
+  'proposalRequests.empty.partner': '返答が必要な提案依頼はありません。',
+  'proposalRequests.filtered.empty': '条件に一致する依頼はありません。',
+  'proposalRequests.detail.select': '行を選ぶと、ここに依頼の内容を表示します。',
+  'proposalRequests.detail.title': '選択した依頼',
+  'proposalRequests.detail.message': '依頼メッセージ',
+  'proposalRequests.detail.expiresAt': '返答期限',
+  'proposalRequests.detail.createdAt': '依頼日時',
+  // 🔴 取引先の応諾・辞退は `S-018`（T-08-07）。無い間は行き止まりを明示する（押しても動かない導線を描かない）。
+  'proposalRequests.detail.partnerRespondComingSoon': '応諾・辞退の操作は後続のリリースで行えます。',
+  'proposalRequests.withdraw': '取り下げる',
+  'proposalRequests.withdraw.confirmTitle': 'この提案依頼を取り下げますか',
+  'proposalRequests.withdraw.confirmLead': '取り下げると、取引先はこの依頼に応諾できなくなります。同じ候補に同じ案件で再度依頼を送ることはできません。',
+  'proposalRequests.withdraw.confirmSubmit': '取り下げる',
+  'proposalRequests.withdraw.confirmCancel': 'やめる',
+  'proposalRequests.withdraw.submitting': '取り下げています…',
+  'proposalRequests.withdraw.error': '取り下げられませんでした。依頼の状態は変わっていません。',
+  // 🔴 422（`REQUESTED` 以外からの取り下げ）。状態が動いたことを伝え、画面の再読込を促す。
+  'proposalRequests.withdraw.error.state': 'この依頼は既に返答待ちではありません。一覧を再読込して現在の状態をご確認ください。',
+  'proposalRequests.deniedTitle': '提案依頼の操作を行えません。',
+  'proposalRequests.nextPage': '次のページ',
+  'proposalRequests.firstPage': '最初のページに戻る',
 
   // --- S-015 匿名共有の設定（取引先）（docs/04 §S-015 / `F-016` / docs/05 §6.4 #29。T-08-02）---
   // 🔴 **煽らない。** 「共有すると案件が見つかりやすくなります」に相当する語を 1 つも置かない

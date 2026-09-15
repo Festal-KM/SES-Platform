@@ -262,11 +262,15 @@ export {
 //    `withSharedCandidateScope` だけであり、`apps/**` からの named import は
 //    `eslint.config.mjs` が禁じ、参照元は `tests/static/auth-db-callers.test.ts` が固定する。
 export {
+  PROPOSAL_REQUEST_AUDIT_ACTION_CREATE,
+  ProposalRequestDuplicateError,
   SharedCandidateProjectNotFoundError,
   withSharedCandidateScope,
 } from './shared-candidate.js';
 export type {
   AnonymousCandidateRow,
+  IssueProposalRequestInput,
+  IssueProposalRequestResult,
   SharedCandidateDb,
   SharedCandidateDecimal,
   SharedCandidateQuery,

@@ -36,6 +36,8 @@
 //    実在しうる。🔴 **回答が C（停止中は自動的に無効化）になった場合の変更点は、migration
 //    20260916000000 の `app_engineer_is_shared()` の述語 1 箇所だけである** ——
 //    本ファイル・呼び出し側・型は変わらない。**判定をここ（アプリ層）へ持ち出さないこと。**
+import { Prisma } from '@prisma/client';
+import { writeAuditLog } from './audit.js';
 import { getBaseClient } from './client.js';
 import { requireHost, type AuthenticatedTenantCtx } from './context.js';
 import { tenantScopeExtension } from './extension.js';
@@ -141,6 +143,41 @@ export type AnonymousCandidateRow = {
 };
 
 /**
+ * `issueProposalRequest` の入力（T-08-06。docs/05 §4.5「T-08-06 の決着」/ §6.5 #31）。
+ * 🔴 スカラーだけ。**依頼先（`partnerCompanyId`）を受け取らない** —— 依頼先は共有スコープの中で
+ *    `engineers.owner_partner_company_id` から決まり、呼び出し側は知り得ない（`BR-06`）。
+ */
+export type IssueProposalRequestInput = {
+  /** `candidateRef` の逆引き（`listAnonymousCandidateEngineerIds`）で一致した 1 件。 */
+  readonly engineerId: string;
+  /** 🔴 商流検証（§6.5 #31）を通った後の本文だけを渡す。ここでは検証しない。 */
+  readonly message: string;
+  readonly expiresAt: Date;
+  /** 監査ログに残す実行環境（IP はリクエストから。端末種別は ctx から取る）。 */
+  readonly ipAddress: string | null;
+};
+
+/**
+ * `issueProposalRequest` の結果。
+ * 🔴 `NOT_SHARED` は「解除済み / 自社のエンジニア / 存在しない」を**区別しない**
+ *    （区別すると存在を教える。docs/05 §4.8。API は 404 に写像する）。
+ */
+export type IssueProposalRequestResult =
+  | { readonly kind: 'ISSUED'; readonly id: string }
+  | { readonly kind: 'NOT_SHARED' };
+
+/**
+ * 🔴 同一案件 × 同一候補への 2 件目の依頼（`@@unique([tenantId, projectId, engineerId])`。docs/05 §3.6）。
+ *    API 境界は **409** に写像する。🔴 `engineerId` / `projectId` を message に載せない。
+ */
+export class ProposalRequestDuplicateError extends Error {
+  constructor() {
+    super('この案件のこの候補には既に提案依頼があります（docs/05 §3.6 の一意制約）。');
+    this.name = 'ProposalRequestDuplicateError';
+  }
+}
+
+/**
  * 🔴 `fn` が受け取るクライアント（docs/05 §4.5）。
  *
  * 🔴 **素の Prisma デリゲートを 1 つも置かない。** これは「`engineers` のデリゲートを渡さない」
@@ -196,6 +233,28 @@ export type SharedCandidateDb = {
   readonly listAnonymousCandidateEngineerIds: () => Promise<readonly string[]>;
   /** この案件の匿名候補の件数。🔴 返すのは数値だけである。 */
   readonly countAnonymousCandidates: () => Promise<number>;
+  /**
+   * 🔴 T-08-06: この案件の匿名候補 1 件に提案依頼（`ProposalRequest`。`REQUESTED`）を発行する
+   *    （docs/05 §4.5「T-08-06 の決着」/ §6.5 #31 / `F-018` 処理①）。
+   *
+   * なぜ共有スコープの中に置くか: `proposal_requests.partner_company_id`（依頼先）の唯一の出所は
+   * `engineers.owner_partner_company_id` であり、その行は C3 でホストから読めず、
+   * `SharedCandidateSource` にも意図的に無い（`BR-06`）。**INSERT をここで行えば、依頼先の値は
+   * `packages/db` の外へ 1 度も出ない。**
+   *
+   * 手順（1 トランザクション）:
+   *   ① `engineers` を `id = engineerId AND owner_partner_company_id IS NOT NULL` で読む。
+   *      共有ポリシー（`app_engineer_is_shared()`）越しにしか出ない行であり、**これが「いま共有中か」の
+   *      再確認**である（自社の行は `IS NOT NULL` で外れる）。無ければ `NOT_SHARED`
+   *   ② `proposal_requests` に INSERT（`partner_company_id` = ①の owner。`issued_by` = ctx）
+   *   ③ `AuditLog`（`proposal_request.create`）を同じトランザクションで書く（書けなければ発行も成立しない）
+   *
+   * 🔴 引数も戻り値もスカラーだけ（`select` / `include` を受け取らない。上の 🔴）。
+   * @throws ProposalRequestDuplicateError 同一案件 × 同一候補に既に依頼がある（一意制約）。
+   */
+  readonly issueProposalRequest: (
+    input: IssueProposalRequestInput,
+  ) => Promise<IssueProposalRequestResult>;
 };
 
 /**
@@ -333,6 +392,81 @@ async function replaceAnonymousCandidates(
   return created.count;
 }
 
+/** Prisma の一意制約違反（`row-context.ts` / `platform/queries/provisioning.ts` と同じ判定）。 */
+const PRISMA_UNIQUE_VIOLATION = 'P2002';
+
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError && error.code === PRISMA_UNIQUE_VIOLATION
+  );
+}
+
+/**
+ * 提案依頼の発行（`SharedCandidateDb.issueProposalRequest` の実体。T-08-06）。
+ *
+ * 🔴 `select` は `id` / `ownerPartnerCompanyId` の 2 列だけ。**`ownerPartnerCompanyId` は
+ *    INSERT の値にだけ使い、戻り値・例外・ログのどこにも載せない。**
+ * 🔴 `proposalRequest.create` の `select` は `id` だけ。作った行の他の列（`partnerCompanyId` を含む）を
+ *    読み返さない。
+ */
+async function issueProposalRequest(
+  tx: ScopedTransactionClient,
+  ctx: AuthenticatedTenantCtx,
+  projectId: string,
+  input: IssueProposalRequestInput,
+): Promise<IssueProposalRequestResult> {
+  const engineer = await tx.engineer.findFirst({
+    where: { id: input.engineerId, ownerPartnerCompanyId: { not: null } },
+    select: { id: true, ownerPartnerCompanyId: true },
+  });
+  if (engineer === null || engineer.ownerPartnerCompanyId === null) return { kind: 'NOT_SHARED' };
+
+  let created: { readonly id: string };
+  try {
+    created = await tx.proposalRequest.create({
+      data: {
+        tenantId: ctx.tenantId,
+        projectId,
+        engineerId: engineer.id,
+        partnerCompanyId: engineer.ownerPartnerCompanyId,
+        state: 'REQUESTED',
+        message: input.message,
+        expiresAt: input.expiresAt,
+        issuedBy: ctx.userId,
+      },
+      select: { id: true },
+    });
+  } catch (error: unknown) {
+    // 🔴 一意制約違反はトランザクションを中断させる（以降のクエリは 25P02 で失敗する）ので、
+    //    ここで結果値に畳まず**例外として外へ出す**（`$transaction` が巻き戻す）。API は 409。
+    if (isUniqueViolation(error)) throw new ProposalRequestDuplicateError();
+    throw error;
+  }
+
+  // 🔴 監査は同じトランザクションで書く（書けなければ発行も成立しない。`F-005` / `F-012 AC-2`）。
+  //    `summary` は `projectId` だけ —— `engineer_id` / 依頼先 / 参照子 / 本文を載せない
+  //    （運営者が横断検索する。`CLAUDE.md` §10.5 / docs/05 §16.2）。
+  await writeAuditLog(tx, {
+    action: PROPOSAL_REQUEST_AUDIT_ACTION_CREATE,
+    actorKind: 'USER',
+    actorId: ctx.userId,
+    targetType: 'ProposalRequest',
+    targetId: created.id,
+    summary: { projectId },
+    ipAddress: input.ipAddress,
+    deviceKind: ctx.deviceKind,
+  });
+
+  return { kind: 'ISSUED', id: created.id };
+}
+
+/**
+ * docs/05 §16.1 の `*.create`（発行）。取り下げ（`proposal_request.update` / `operation='WITHDRAW'`）は
+ * `apps/web/lib/proposal-requests/service.ts` が `withTenant` の中で書く。
+ * 🔴 独自 action（`proposal_request.issue`）を作らない（`S-041` の操作種別フィルタは接尾辞一致）。
+ */
+export const PROPOSAL_REQUEST_AUDIT_ACTION_CREATE = 'proposal_request.create';
+
 /** この案件の匿名候補の `engineerId`（昇順）。🔴 返すのは ID の配列だけである。 */
 async function listAnonymousCandidateEngineerIds(
   tx: ScopedTransactionClient,
@@ -384,6 +518,7 @@ export async function withSharedCandidateScope<T>(
       listAnonymousCandidateEngineerIds: () => listAnonymousCandidateEngineerIds(tx, project.id),
       countAnonymousCandidates: () =>
         tx.matchCandidate.count({ where: { projectId: project.id, isAnonymous: true } }),
+      issueProposalRequest: (input) => issueProposalRequest(tx, ctx, project.id, input),
     });
   });
 }

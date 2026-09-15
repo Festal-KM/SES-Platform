@@ -70,7 +70,7 @@ const SES_DB_PRISMA_CLIENT_MESSAGE =
 //    に足す**（または専用ゾーンを新設する）。CATCH_ALL を緩めないこと。
 const SES_DB_SHARED_CANDIDATE_SCOPE_MESSAGE =
   'withSharedCandidateScope は匿名候補（CLAUDE.md §3.1 経路 4）の生成だけに許された限定経路です。' +
-  'import できるのは packages/db の内部（相対 import）と tests/isolation/**、候補一覧の 1 ファイル（SHARED_CANDIDATE_CALLER_FILES）だけです' +
+  'import できるのは packages/db の内部（相対 import）と tests/isolation/**、候補一覧と提案依頼の発行の 2 ファイル（SHARED_CANDIDATE_CALLER_FILES）だけです' +
   '（docs/05 §4.5 / P-A-14）。候補一覧の応答は、この関数を通した再確認の結果だけを返してください。';
 const SES_DB_TESTING_SUBPATH = '@ses/db/testing';
 const SES_DB_TESTING_MESSAGE =
@@ -605,7 +605,12 @@ const PROMPTS_ZONE_FILES = ['prompts/**/*.{ts,tsx,mts,cts}'];
 //    🔴 **ディレクトリではなくファイル 1 本**である —— `apps/web/lib/candidates/**` と広げると、隣に置いた
 //    別のモジュールが黙って同じ許可を得る。呼び出し元を増やすときはここと
 //    `tests/static/auth-db-callers.test.ts` の許可リストを**同時に**足す（レビューを強制するための二重）。
-const SHARED_CANDIDATE_CALLER_FILES = ['apps/web/lib/candidates/list.ts'];
+//    ✅ T-08-06: 2 つ目の呼び出し元 = 提案依頼の発行（`#31`。`candidateRef` の逆引きと共有中の再確認を
+//    共有スコープの中で行う。docs/05 §4.5「T-08-06 の決着」）。**ファイル 1 本**である点は変えない。
+const SHARED_CANDIDATE_CALLER_FILES = [
+  'apps/web/lib/candidates/list.ts',
+  'apps/web/lib/proposal-requests/service.ts',
+];
 
 const CATCH_ALL_IGNORES = [
   ...PACKAGE_DIR_IGNORES_FOR_CATCH_ALL,

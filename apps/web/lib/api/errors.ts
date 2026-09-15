@@ -16,6 +16,7 @@ import {
   AuditLogWriteError,
   HostOnlyContextError,
   PlatformRoleNotAllowedError,
+  ProposalRequestDuplicateError,
   TransactionSerializationError,
   TwoFactorRequiredError as DbTwoFactorRequiredError,
 } from '@ses/db';
@@ -693,6 +694,44 @@ export class GateAlreadyCompletedError extends UnprocessableError {
 }
 
 /**
+ * 🔴 依頼メッセージに商流情報（単価・エンド企業名）が含まれている（422）。T-08-06。
+ *
+ * docs/05 §3.6「`message` — 商流情報を含めない（API で検証）」/ `F-018` 入力 / `BR-58`
+ * 「匿名候補の段階で単価の交渉をさせない」。判定の本体は `lib/proposal-requests/message-check.ts`
+ * （`@ses/ai` の `mask()` による機械的照合。**この型は判定を持たない**）。
+ * 🔴 解消手段は**本文の修正だけ**である。「無視して送る」導線を作らない。
+ * 🔴 `params` に検出した**種別**だけを載せる（本文・一致した文字列は載せない。docs/05 §16.2）。
+ */
+export class ProposalRequestMessageCommerceError extends UnprocessableError {
+  override readonly code = 'PROPOSAL_REQUEST_MESSAGE_COMMERCE';
+  override readonly userMessageKey: MessageKey = 'error.proposalRequest.messageCommerce';
+  override readonly params: Readonly<Record<string, unknown>>;
+
+  constructor(categories: readonly string[]) {
+    super('依頼メッセージに単価またはエンド企業名が含まれています。');
+    this.name = 'ProposalRequestMessageCommerceError';
+    this.params = { categories: [...categories] };
+  }
+}
+
+/**
+ * 🔴 同一案件 × 同一候補に既に提案依頼がある（409）。T-08-06。
+ *
+ * docs/05 §3.6 の `@@unique([tenantId, projectId, engineerId])`。取り下げ・辞退・期限切れの後も
+ * 同じ組では 2 件目を作れない（**再依頼はスキーマの決定として不可**。変えたくなったら
+ * `docs/05` §3.6 の改訂が先）。`packages/db` の `ProposalRequestDuplicateError` を写像する。
+ */
+export class ProposalRequestAlreadyExistsError extends ConflictError {
+  override readonly code = 'PROPOSAL_REQUEST_ALREADY_EXISTS';
+  override readonly userMessageKey: MessageKey = 'error.proposalRequest.alreadyExists';
+
+  constructor() {
+    super('この候補には既に提案依頼があります。');
+    this.name = 'ProposalRequestAlreadyExistsError';
+  }
+}
+
+/**
  * 🔴 最後の有効な `OWNER` を降格・無効化しようとした（422）。T-04-09。
  *
  * `OWNER` が 1 人も居ないテナントは契約者・支払者が不在であり（`CLAUDE.md` §10.1）、
@@ -884,6 +923,8 @@ export function toAppError(error: unknown): AppError {
   //    packages/db の `HostOnlyContextError` のコメント）。403 にすると「その機能は存在するが
   //    あなたには使えない」ことが伝わり、ホスト側の業務の存在を示唆する。
   if (error instanceof HostOnlyContextError) return new NotFoundError();
+  // 🔴 T-08-06: 同一案件 × 同一候補への 2 件目の提案依頼 ＝ **409**（docs/05 §3.6 の一意制約）。
+  if (error instanceof ProposalRequestDuplicateError) return new ProposalRequestAlreadyExistsError();
   // 🔴 遷移表に無い状態遷移は **422**（サイレントに無視しない。docs/05 §15.3 / `BR-33`）。
   if (error instanceof DomainInvalidStateTransitionError) {
     return new InvalidStateTransitionError(error.entity, error.from, error.to);

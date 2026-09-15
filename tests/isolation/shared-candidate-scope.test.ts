@@ -165,6 +165,9 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await admin.matchCandidate.deleteMany({ where: { projectId: PROJECT_A_PRIVATE } });
+  // 🔴 T-08-06: `issueProposalRequest` が作った行（同一案件 × 同一候補は一意なので、残すと次のテストで 409 相当になる）。
+  await admin.proposalRequest.deleteMany({ where: { projectId: PROJECT_A_PRIVATE } });
+  await admin.auditLog.deleteMany({ where: { action: 'proposal_request.create' } });
 });
 
 // ---------------------------------------------------------------------------
@@ -594,6 +597,14 @@ async function callEverySharedCandidateMember(projectId: string): Promise<string
     );
     const engineerIds = await db.listAnonymousCandidateEngineerIds();
     const total = await db.countAnonymousCandidates();
+    // 🔴 T-08-06: 6 番目のメンバー。依頼先（`partner_company_id` = PARTNER_A1）を**書く**が、戻り値には
+    //    `id` しか無い（`FORBIDDEN_IN_RESPONSE` の PARTNER_A1 が返らないことを同じ走査で見る）。
+    const issued = await db.issueProposalRequest({
+      engineerId: ENGINEER_A_PARTNER,
+      message: '全メンバー走査（T-08-06）',
+      expiresAt: new Date('2026-09-30T14:59:59.000Z'),
+      ipAddress: '203.0.113.10',
+    });
     return JSON.stringify({
       projectId: db.projectId,
       shared,
@@ -601,6 +612,7 @@ async function callEverySharedCandidateMember(projectId: string): Promise<string
       created,
       engineerIds,
       total,
+      issued,
     });
   });
 }
@@ -614,6 +626,51 @@ describe('🔴 列の軸: SharedCandidateDb のどのメンバーからも PII /
     // 空振り防止（対照）: 出てよい値は確かに出ている。
     expect(serialized).toContain(ENGINEER_A_PARTNER);
     expect(serialized).toContain('"total":1');
+    expect(serialized).toContain('"kind":"ISSUED"');
+  });
+
+  it('🔴 T-08-06: `issueProposalRequest` は依頼先を共有スコープの中で書き、値を外へ出さない', async () => {
+    const serialized = await callEverySharedCandidateMember(PROJECT_A_PRIVATE);
+    const { issued } = JSON.parse(serialized) as { issued: { kind: string; id?: string } };
+    expect(issued.kind).toBe('ISSUED');
+    // DB の行には依頼先（PARTNER_A1）と engineer_id が入っている —— 戻り値には無い（上のテストで固定）。
+    const row = await admin.proposalRequest.findUniqueOrThrow({
+      where: { id: issued.id },
+      select: { partnerCompanyId: true, engineerId: true, state: true, issuedBy: true, projectId: true },
+    });
+    expect(row).toEqual({
+      partnerCompanyId: PARTNER_A1,
+      engineerId: ENGINEER_A_PARTNER,
+      state: 'REQUESTED',
+      issuedBy: USER_A_HOST,
+      projectId: PROJECT_A_PRIVATE,
+    });
+    // 監査は同じトランザクションで書かれ、summary は projectId だけ。
+    const audit = await admin.auditLog.findMany({ where: { action: 'proposal_request.create' } });
+    expect(audit).toHaveLength(1);
+    expect(audit[0]?.summary).toEqual({ projectId: PROJECT_A_PRIVATE });
+    expect(JSON.stringify(audit[0])).not.toContain(PARTNER_A1);
+    expect(JSON.stringify(audit[0])).not.toContain(ENGINEER_A_PARTNER);
+  });
+
+  it('🔴 T-08-06: 共有していないエンジニア（P2）・自社のエンジニア（Host）には NOT_SHARED（行も監査も作らない）', async () => {
+    const outcomes = await withSharedCandidateScope(hostA, PROJECT_A_PRIVATE, async (db) => [
+      await db.issueProposalRequest({
+        engineerId: ENGINEER_A_PARTNER2,
+        message: '共有していない',
+        expiresAt: new Date('2026-09-30T14:59:59.000Z'),
+        ipAddress: null,
+      }),
+      await db.issueProposalRequest({
+        engineerId: ENGINEER_A_HOST,
+        message: '自社',
+        expiresAt: new Date('2026-09-30T14:59:59.000Z'),
+        ipAddress: null,
+      }),
+    ]);
+    expect(outcomes).toEqual([{ kind: 'NOT_SHARED' }, { kind: 'NOT_SHARED' }]);
+    expect(await admin.proposalRequest.count({ where: { projectId: PROJECT_A_PRIVATE } })).toBe(0);
+    expect(await admin.auditLog.count({ where: { action: 'proposal_request.create' } })).toBe(0);
   });
 
   it('🔴 対照: 禁止リストの値は DB に実在する（照合が空振りしていない）', async () => {
@@ -632,14 +689,16 @@ describe('🔴 列の軸: SharedCandidateDb のどのメンバーからも PII /
     expect(partner.name).toBe('Partner A1');
   });
 
-  it('🔴 `SharedCandidateDb` のキーが 5 個ちょうどであり、素の Prisma デリゲートが 1 つも無い', async () => {
+  it('🔴 `SharedCandidateDb` のキーが 6 個ちょうどであり、素の Prisma デリゲートが 1 つも無い', async () => {
     const keys = await withSharedCandidateScope(hostA, PROJECT_A_PRIVATE, async (db) =>
       Object.keys(db).sort(),
     );
     // 🔴 ここにモデル名（`matchCandidate` / `engineer` / …）が現れた時点で、
     //    リレーション経由の再漏洩の窓が開いている。**キー集合ごと固定する。**
+    //    ✅ T-08-06: `issueProposalRequest`（提案依頼の発行。引数・戻り値はスカラーだけ）を足して 6 個。
     expect(keys).toEqual([
       'countAnonymousCandidates',
+      'issueProposalRequest',
       'listAnonymousCandidateEngineerIds',
       'listSharedEngineers',
       'projectId',

@@ -14,8 +14,12 @@
 //      並び順の説明を 1 行で常時出す。**重み設定への導線も置かない**（`F-030 AC-4`。`S-040` は Phase 2）。
 //   ③ 🔴 **匿名候補の件数を別に出さない**（`docs/04` §S-016 空状態）。母集団の明示は混在した総件数だけ。
 //   ④ 🔴 **匿名候補に単価の交渉・見積・確定単価の入力欄が無い**（`F-017 AC-4` / `BR-58`）。表示はレンジのみ。
-//   ⑤ **提案依頼・提案作成の導線は後続**（T-08-06 / SP-09）。押しても動かない導線を先に描かず、
-//      右パネルに「後続のリリース」の注記だけを出す（`engineers.careers.comingSoon` と同じ規律）。
+//      🔴 T-08-06 で置いた提案依頼フォームの入力も**メッセージと期限の 2 つだけ**であり、単価に関する欄が無い。
+//   ⑤ 🔴 **提案依頼の導線（T-08-06）**: 共有候補の右パネルに「提案依頼を送る」を置き、押すと右パネルが
+//      フォームに切り替わる（**モーダルにしない** —— 5 項目を見ながら書く。`docs/04` §S-016「操作と結果」）。
+//      導線はホストの発行ロール × テナントが実行可のときだけ描く（`VIEWER` / `SUSPENDED` / `CLOSING` には
+//      無い。`docs/04` §S-016 権限差分）。⚠️ これは UI の配慮であり、拒否の本体は `#31` の 3 本のガードである。
+//      **提案作成の導線は後続**（SP-09）。押しても動かない導線を先に描かず、注記だけを出す。
 //
 // 🔴 **T2（モバイル閲覧可）**（docs/04 §S-016 デバイス別 / `CLAUDE.md` §13.3）。列は間引くが遮断しない。
 //    ブレークポイントは Tailwind の既定のみ:
@@ -23,13 +27,16 @@
 //      - タブレット（sm 〜 lg） … + 表示名 / 経験年数
 //      - デスクトップ（lg 〜） … + 勤務地・リモート / 更新日。右パネルは lg 以上で右、それ未満は一覧の下
 //    🔴 5 項目はモバイルでも**右パネルで全部読める**（判断材料を隠さない）。
+//    🔴 **提案依頼の送信はモバイルでも可能**（`docs/04` §S-016 デバイス別「時間勝負のため」）。フォームは
+//       右パネル（モバイルでは一覧の下）にあり、省略しない。一括依頼は存在しない（1 候補ずつ）。
 //
-// 🔴 `'use client'` は右パネル（行の選択）のためだけである。**`@ses/db` に依存するモジュールから値を
-//    import しない**（`tests/static/client-db-boundary.test.ts`）。行の表示値は `lib/candidates/list-rows.ts`
-//    がサーバ側で組み立て、ここは型だけを読む。
+// 🔴 `'use client'` は右パネル（行の選択・依頼フォーム）のためだけである。**`@ses/db` に依存するモジュールから
+//    値を import しない**（`tests/static/client-db-boundary.test.ts`）。行の表示値は `lib/candidates/list-rows.ts`
+//    がサーバ側で組み立て、ここは型だけを読む。依頼フォームが値 import するのは `lib/proposal-requests/expiry.ts` /
+//    `limits.ts`（外部 import を持たない純粋モジュール）だけである。
 // 🔴 検索は同期の `<form method="get">`（`S-005` と同じ。実行した検索がそのまま URL になる）。
 // 🔴 文言は props（`packages/i18n`）から受け取る。ここにベタ書きしない（`CLAUDE.md` §3.5）。
-import { useState, type KeyboardEvent } from 'react';
+import { useState, type FormEvent, type KeyboardEvent } from 'react';
 import Link from 'next/link';
 import {
   Badge,
@@ -47,12 +54,15 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  Textarea,
 } from '@ses/ui';
 import { FILTER_ACTIONS_CLASSES, FILTER_FORM_CLASSES } from '../../../_shared/filter-form-classes';
 import type { CandidateRowView } from '../../../../../lib/candidates/list-rows';
 import type { EngineerActiveFilterView } from '../../../../../lib/engineers/list-rows';
 import type { EngineerFilterOption, EngineerListFilterValues } from '../../../engineers/engineer-ledger-screen';
 import type { ProjectDetailRow, ProjectRequirementRow } from '../../../../../lib/projects/detail';
+import { expiresAtIsoFromJstDate } from '../../../../../lib/proposal-requests/expiry';
+import { PROPOSAL_REQUEST_MESSAGE_MAX_LENGTH } from '../../../../../lib/proposal-requests/limits';
 
 export type CandidateScreenMessages = {
   readonly lead: string;
@@ -106,8 +116,25 @@ export type CandidateScreenMessages = {
   readonly detailSelect: string;
   readonly detailOpenEngineer: string;
   readonly detailProposalComingSoon: string;
-  readonly detailRequestComingSoon: string;
   readonly detailAnonymousNote: string;
+  /** 提案依頼フォーム（`docs/04` §S-016「匿名候補で『提案依頼を送る』」/ #31）。 */
+  readonly requestOpen: string;
+  readonly requestTitle: string;
+  readonly requestLead: string;
+  readonly requestMessageLabel: string;
+  readonly requestMessageHint: string;
+  readonly requestExpiresAtLabel: string;
+  readonly requestExpiresAtHint: string;
+  readonly requestSubmit: string;
+  readonly requestSubmitting: string;
+  readonly requestCancel: string;
+  readonly requestSent: string;
+  readonly requestOpenList: string;
+  readonly requestErrorNotFound: string;
+  readonly requestErrorExpiresAt: string;
+  readonly requestErrorCommerce: string;
+  readonly requestErrorAlreadyExists: string;
+  readonly requestErrorGeneric: string;
   readonly fieldSkills: string;
   readonly fieldYears: string;
   readonly fieldPrice: string;
@@ -145,7 +172,26 @@ export type CandidateScreenProps = {
   readonly registerHref: string;
   readonly nextPageHref: string | null;
   readonly firstPageHref: string | null;
+  /** 提案依頼の導線（T-08-06）。 */
+  readonly request: CandidateRequestProps;
   readonly messages: CandidateScreenMessages;
+};
+
+/**
+ * 提案依頼フォームの props（`docs/04` §S-016 権限差分 / `F-004 AC-7` / `F-017 AC-4`）。
+ * 🔴 `canRequest` の出所は ctx のロール（`PROPOSAL_REQUEST_ISSUER_ROLES`）× テナントの実行可否であり、
+ *    画面は判定を持たない。`false` のときは導線そのものを描かず、`unavailableMessage` があればそれだけ出す。
+ */
+export type CandidateRequestProps = {
+  readonly canRequest: boolean;
+  /** 導線が無い理由（`VIEWER` / 停止中）。取引先には出さない（`null`）。 */
+  readonly unavailableMessage: string | null;
+  /** 返答期限の初期値・下限・上限（JST 暦日 `YYYY-MM-DD`。`lib/proposal-requests/expiry.ts`）。 */
+  readonly expiry: { readonly defaultDay: string; readonly minDay: string; readonly maxDay: string };
+  /** `S-017` への導線。 */
+  readonly listHref: string;
+  /** 一覧の上に `S-017` への導線を出すか（ホストのみ。取引先は `S-004` から入る。`docs/04` §S-017 関連画面）。 */
+  readonly showListLink: boolean;
 };
 
 /** モバイルで間引く列（判断材料は右パネルで全部読める）。 */
@@ -249,12 +295,195 @@ function DetailRow({ label, value, field }: { readonly label: string; readonly v
   );
 }
 
+/** 依頼フォームの状態。🔴 **1 度に 1 候補**（一括依頼が存在しないことの表れでもある）。 */
+type RequestPhase =
+  | { readonly kind: 'IDLE' }
+  | { readonly kind: 'EDITING' }
+  | { readonly kind: 'SUBMITTING' }
+  | { readonly kind: 'SENT' };
+
+type AnonymousCandidateRow = Extract<CandidateRowView, { readonly kind: 'ANONYMOUS' }>;
+
+/**
+ * 共有候補の右パネル（`docs/04` §S-016 セクション 6 / 「匿名候補で『提案依頼を送る』」）。
+ * 🔴 5 項目 + 提案依頼の導線**だけ**（詳細画面を持たない。§11-2）。`row` の型に実名・所属会社名・
+ *    社内 ID・営業メモ・スキルシート・経歴・稼働状況のフィールドが**無い**ので、描く枝が書けない。
+ * 🔴 フォームの入力は**メッセージと期限の 2 つだけ**（`F-017 AC-4` / `BR-58`）。
+ * 🔴 送るのは `{ projectId, candidateRef, message, expiresAt }` の 4 項目（#31 の body。`engineer_id` を知らない）。
+ * 🔴 状態は行ごとに持つ（親が `key={row.key}` で組み直す）。別の候補を選ぶと下書きは捨てられる。
+ * export しているのは `*.render.test.tsx` が右パネル（行の選択後にしか現れない）を直接描くためである。
+ */
+export function AnonymousDetail({
+  row,
+  projectId,
+  request,
+  messages,
+}: {
+  readonly row: AnonymousCandidateRow;
+  readonly projectId: string;
+  readonly request: CandidateRequestProps;
+  readonly messages: CandidateScreenMessages;
+}) {
+  const [phase, setPhase] = useState<RequestPhase>({ kind: 'IDLE' });
+  const [message, setMessage] = useState('');
+  const [expiresDay, setExpiresDay] = useState(request.expiry.defaultDay);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    if (phase.kind === 'SUBMITTING' || !request.canRequest) return;
+    setError(null);
+    let expiresAt: string;
+    try {
+      expiresAt = expiresAtIsoFromJstDate(expiresDay);
+    } catch {
+      setError(messages.requestErrorExpiresAt);
+      return;
+    }
+    setPhase({ kind: 'SUBMITTING' });
+    try {
+      const response = await fetch('/api/proposal-requests', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ projectId, candidateRef: row.candidateRef, message, expiresAt }),
+      });
+      if (response.ok) {
+        setPhase({ kind: 'SENT' });
+        return;
+      }
+      // 🔴 応答コードで文言を選ぶ（本文の `messageKey` を UI で解釈しない。`provisioning-form.tsx` と同じ形）。
+      //    404 = 共有解除 / 一覧が古い、409 = 既に依頼済み、422 = 商流の記述、400 = 期限の範囲外。
+      const status = response.status;
+      setError(
+        status === 404
+          ? messages.requestErrorNotFound
+          : status === 409
+            ? messages.requestErrorAlreadyExists
+            : status === 422
+              ? messages.requestErrorCommerce
+              : status === 400
+                ? messages.requestErrorExpiresAt
+                : messages.requestErrorGeneric,
+      );
+      setPhase({ kind: 'EDITING' });
+    } catch {
+      setError(messages.requestErrorGeneric);
+      setPhase({ kind: 'EDITING' });
+    }
+  }
+
+  return (
+    <div data-testid="candidate-detail-anonymous">
+      <p className="mb-2 text-base font-semibold text-slate-900" data-testid="candidate-detail-kind">
+        {messages.kindAnonymous}
+      </p>
+      <dl className="mb-3 text-sm">
+        <DetailRow label={messages.fieldSkills} value={row.allSkills.length === 0 ? messages.valueNone : row.allSkills.join(' / ')} field="skills" />
+        <DetailRow label={messages.fieldYears} value={row.years} field="years" />
+        <DetailRow label={messages.fieldPrice} value={row.unitPrice} field="price" />
+        <DetailRow label={messages.fieldAvailability} value={row.availableFrom} field="availability" />
+        <DetailRow label={messages.fieldLocation} value={row.location} field="location" />
+        <DetailRow label={messages.fieldUpdatedOn} value={row.updatedOn} field="updated-on" />
+      </dl>
+      <p className="mb-2 text-xs text-slate-600" data-testid="candidate-detail-anonymous-note">
+        {messages.detailAnonymousNote}
+      </p>
+
+      {phase.kind === 'SENT' ? (
+        <div className="border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900" data-testid="candidate-request-sent">
+          <p role="status" className="mb-2 font-bold">
+            {messages.requestSent}
+          </p>
+          <Link className={SECONDARY_LINK_CLASSES} href={request.listHref} data-testid="candidate-request-open-list">
+            {messages.requestOpenList}
+          </Link>
+        </div>
+      ) : !request.canRequest ? (
+        request.unavailableMessage === null ? null : (
+          <p className="m-0 text-xs text-slate-500" data-testid="candidate-request-unavailable">
+            {request.unavailableMessage}
+          </p>
+        )
+      ) : phase.kind === 'IDLE' ? (
+        <Button type="button" onClick={() => setPhase({ kind: 'EDITING' })} data-testid="candidate-request-open">
+          {messages.requestOpen}
+        </Button>
+      ) : (
+        // 🔴 右パネルがフォームに切り替わる（モーダルにしない。5 項目を見ながら書く）。
+        <form className="border border-slate-200 bg-slate-50 p-3" onSubmit={submit} data-testid="candidate-request-form">
+          <p className="mb-1 text-sm font-bold text-slate-900">{messages.requestTitle}</p>
+          <p className="mb-3 text-xs text-slate-600" data-testid="candidate-request-lead">
+            {messages.requestLead}
+          </p>
+          <Field label={messages.requestMessageLabel} description={messages.requestMessageHint} className="mb-3">
+            <Textarea
+              name="message"
+              rows={4}
+              required
+              maxLength={PROPOSAL_REQUEST_MESSAGE_MAX_LENGTH}
+              value={message}
+              onChange={(event) => setMessage(event.target.value)}
+              disabled={phase.kind === 'SUBMITTING'}
+              data-testid="candidate-request-message"
+            />
+          </Field>
+          <Field label={messages.requestExpiresAtLabel} description={messages.requestExpiresAtHint} className="mb-3">
+            <Input
+              type="date"
+              name="expiresDay"
+              required
+              min={request.expiry.minDay}
+              max={request.expiry.maxDay}
+              value={expiresDay}
+              onChange={(event) => setExpiresDay(event.target.value)}
+              disabled={phase.kind === 'SUBMITTING'}
+              data-testid="candidate-request-expires-day"
+            />
+          </Field>
+          {error === null ? null : (
+            <p role="alert" className="mb-3 text-sm text-red-700" data-testid="candidate-request-error">
+              {error}
+            </p>
+          )}
+          <div className="flex flex-wrap items-center gap-4">
+            <Button type="submit" disabled={phase.kind === 'SUBMITTING'} data-testid="candidate-request-submit">
+              {phase.kind === 'SUBMITTING' ? messages.requestSubmitting : messages.requestSubmit}
+            </Button>
+            <button
+              type="button"
+              className={SECONDARY_LINK_CLASSES}
+              disabled={phase.kind === 'SUBMITTING'}
+              onClick={() => {
+                setError(null);
+                setPhase({ kind: 'IDLE' });
+              }}
+              data-testid="candidate-request-cancel"
+            >
+              {messages.requestCancel}
+            </button>
+          </div>
+        </form>
+      )}
+    </div>
+  );
+}
+
 /**
  * 右パネル（`docs/04` §S-016 セクション 6）。
- * 🔴 自社候補 = 主要情報 + `S-006` への導線。匿名候補 = **5 項目だけ**（詳細画面を持たない。§11-2）。
+ * 🔴 自社候補 = 主要情報 + `S-006` への導線。匿名候補 = **5 項目 + 提案依頼の導線だけ**（詳細画面を持たない。§11-2）。
  *    分岐は `row.kind` で、匿名候補の枝では `displayName` / `availabilityStatus` に**型として到達できない**。
  */
-function DetailPanel({ row, messages }: { readonly row: CandidateRowView | null; readonly messages: CandidateScreenMessages }) {
+function DetailPanel({
+  row,
+  projectId,
+  request,
+  messages,
+}: {
+  readonly row: CandidateRowView | null;
+  readonly projectId: string;
+  readonly request: CandidateRequestProps;
+  readonly messages: CandidateScreenMessages;
+}) {
   if (row === null) {
     return (
       <p className="m-0 text-sm text-slate-600" data-testid="candidate-detail-empty">
@@ -287,28 +516,8 @@ function DetailPanel({ row, messages }: { readonly row: CandidateRowView | null;
       </div>
     );
   }
-  return (
-    <div data-testid="candidate-detail-anonymous">
-      <p className="mb-2 text-base font-semibold text-slate-900" data-testid="candidate-detail-kind">
-        {messages.kindAnonymous}
-      </p>
-      <dl className="mb-3 text-sm">
-        <DetailRow label={messages.fieldSkills} value={row.allSkills.length === 0 ? messages.valueNone : row.allSkills.join(' / ')} field="skills" />
-        <DetailRow label={messages.fieldYears} value={row.years} field="years" />
-        <DetailRow label={messages.fieldPrice} value={row.unitPrice} field="price" />
-        <DetailRow label={messages.fieldAvailability} value={row.availableFrom} field="availability" />
-        <DetailRow label={messages.fieldLocation} value={row.location} field="location" />
-        <DetailRow label={messages.fieldUpdatedOn} value={row.updatedOn} field="updated-on" />
-      </dl>
-      <p className="mb-2 text-xs text-slate-600" data-testid="candidate-detail-anonymous-note">
-        {messages.detailAnonymousNote}
-      </p>
-      {/* ⚠️ 「提案依頼を送る」の導線は T-08-06 が置く（押しても動かないボタンを先に描かない）。 */}
-      <p className="m-0 text-xs text-slate-500" data-testid="candidate-detail-request-coming-soon">
-        {messages.detailRequestComingSoon}
-      </p>
-    </div>
-  );
+  // 🔴 `key={row.key}` で候補ごとにフォームの状態を組み直す（別の候補の下書きが残らない）。
+  return <AnonymousDetail key={row.key} row={row} projectId={projectId} request={request} messages={messages} />;
 }
 
 export function CandidateScreen({
@@ -331,6 +540,7 @@ export function CandidateScreen({
   registerHref,
   nextPageHref,
   firstPageHref,
+  request,
   messages,
 }: CandidateScreenProps) {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
@@ -497,6 +707,14 @@ export function CandidateScreen({
       <p className="mb-3 text-sm text-slate-600" data-testid="candidate-list-order-note">
         {messages.orderNote}
       </p>
+      {request.showListLink ? (
+        // 🔴 `S-016` → `S-017`（`docs/04` §S-017 関連画面「← `S-016`」）。ホストにだけ置く。
+        <p className="mb-3 text-sm">
+          <Link className={SECONDARY_LINK_CLASSES} href={request.listHref} data-testid="candidate-list-open-requests">
+            {messages.requestOpenList}
+          </Link>
+        </p>
+      ) : null}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
         {/* セクション 5: 候補テーブル */}
@@ -605,7 +823,7 @@ export function CandidateScreen({
             {messages.sectionDetail}
           </h2>
           <div className="px-4 py-4">
-            <DetailPanel row={selected} messages={messages} />
+            <DetailPanel row={selected} projectId={projectId} request={request} messages={messages} />
           </div>
         </aside>
       </div>

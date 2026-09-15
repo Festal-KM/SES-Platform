@@ -223,3 +223,144 @@ describe('🔴 LLM の呼び出し元が runRole の 1 箇所に閉じている�
     }
   });
 });
+
+// ============================================================================
+// 🔴 T-08-06: apps/web からの `@ses/ai` import を**マスキング系と型だけ**に固定する
+// ============================================================================
+//
+// T-08-06 で `apps/web` が `@ses/ai` に依存するようになった（依頼メッセージの商流照合に `mask()` を使う。
+// docs/05 §6.5「#31 の実装の決着」）。それ以前は**依存が無いこと自体**が「`apps/web` に LLM 呼び出しを
+// 置かない」（docs/05 §1.2）の担保だったため、依存が入った以上は**import 名で**塞ぐ必要がある
+// （`createAiClient` / `createRoleRunner` を `apps/web` で import できれば、`AiUsage` に残らない呼び出し経路が
+// 書ける。`CLAUDE.md` §3.2「記録しない呼び出し経路を作らない」）。
+//
+// 🔴 **許可リスト方式**（`auth-db-callers.test.ts` と同じ向き）: バレルに実行系の名前が増えても、
+//    許可リストに無い名前は既定で落ちる。禁止リスト（名前を列挙して塞ぐ）にすると、バレルへ名前を 1 つ足した
+//    瞬間に穴が開く。
+// 🔴 型だけの import（`import type` / `type` 修飾された named import）は実行時の依存にならないので許す。
+// 🔴 名前空間 import・default import・動的 import・`require`・再 export は、名前で判定できないか
+//    実行系に到達できるため、形そのものを違反とする。
+// 🔴 ESLint ではなくここで見る理由: `apps/worker` は同じ名前（`createRoleRunner` / `gateInspectorSpec`）を
+//    正当に import する。両者は CATCH_ALL_ZONE に同居しており、`apps/web` だけに `importNames` の制限を掛けるには
+//    ゾーンを割る必要がある（flat config の「後勝ち・丸ごと置換」を避けるため、ファイル集合を重ねられない）。
+//    ゾーンの分割は依存方向ルール全体の構造を動かすので、走査テストで固定する。
+
+/** `apps/web` が `@ses/ai` から**値として** import してよい名前（これ以外は既定で禁止）。 */
+const WEB_ALLOWED_AI_VALUE_IMPORTS: readonly string[] = ['mask', 'MASK_CATEGORIES', 'MASK_PLACEHOLDERS'];
+
+const AI_PACKAGE = '@ses/ai';
+
+function isAiModuleSpecifier(node: ts.Expression | undefined): boolean {
+  return (
+    node !== undefined &&
+    ts.isStringLiteralLike(node) &&
+    (node.text === AI_PACKAGE || node.text.startsWith(`${AI_PACKAGE}/`))
+  );
+}
+
+/**
+ * `@ses/ai` への import のうち、許可されない形・名前を返す（空配列 = 違反なし）。
+ * 戻り値は「どの形で何を持ち込もうとしたか」の説明であり、テストの失敗メッセージに使う。
+ */
+export function webAiImportViolations(sourceText: string, fileName: string): string[] {
+  const sourceFile = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.ES2023, true);
+  const violations: string[] = [];
+
+  function visit(node: ts.Node): void {
+    if (ts.isImportDeclaration(node) && isAiModuleSpecifier(node.moduleSpecifier)) {
+      const clause = node.importClause;
+      if (clause !== undefined && !clause.isTypeOnly) {
+        if (clause.name !== undefined) violations.push(`default import (${clause.name.text})`);
+        const bindings = clause.namedBindings;
+        if (bindings !== undefined && ts.isNamespaceImport(bindings)) {
+          violations.push(`namespace import (* as ${bindings.name.text})`);
+        }
+        if (bindings !== undefined && ts.isNamedImports(bindings)) {
+          for (const element of bindings.elements) {
+            if (element.isTypeOnly) continue;
+            const imported = (element.propertyName ?? element.name).text;
+            if (!WEB_ALLOWED_AI_VALUE_IMPORTS.includes(imported)) violations.push(`named import (${imported})`);
+          }
+        }
+      }
+    }
+    if (ts.isExportDeclaration(node) && isAiModuleSpecifier(node.moduleSpecifier) && !node.isTypeOnly) {
+      if (node.exportClause === undefined) violations.push('export * from');
+      else if (ts.isNamedExports(node.exportClause)) {
+        for (const element of node.exportClause.elements) {
+          if (element.isTypeOnly) continue;
+          const exported = (element.propertyName ?? element.name).text;
+          if (!WEB_ALLOWED_AI_VALUE_IMPORTS.includes(exported)) violations.push(`re-export (${exported})`);
+        }
+      } else violations.push('export * as ns from');
+    }
+    if (ts.isCallExpression(node)) {
+      const [argument] = node.arguments;
+      if (node.expression.kind === ts.SyntaxKind.ImportKeyword && isAiModuleSpecifier(argument)) {
+        violations.push('dynamic import()');
+      }
+      if (
+        ts.isIdentifier(node.expression) &&
+        node.expression.text === 'require' &&
+        isAiModuleSpecifier(argument)
+      ) {
+        violations.push('require()');
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(sourceFile);
+  return violations;
+}
+
+describe('🔴 T-08-06: apps/web からの @ses/ai import はマスキング系（mask / MASK_*）と型だけ（docs/05 §1.2 / §6.5）', () => {
+  it('fixture: apps/web からの createAiClient / createRoleRunner の import が検出される', () => {
+    expect(
+      webAiImportViolations(readFixture('web-ai-execution-import.violation.ts'), 'apps/web/lib/__violation__.ts'),
+    ).toEqual(['named import (createAiClient)', 'named import (createRoleRunner)']);
+  });
+
+  it('fixture: 名前空間 import / 動的 import / 再 export も検出される', () => {
+    expect(
+      webAiImportViolations(readFixture('web-ai-namespace-import.violation.ts'), 'apps/web/lib/__violation__.ts'),
+    ).toEqual(['namespace import (* as ai)']);
+    expect(
+      webAiImportViolations(readFixture('web-ai-dynamic-import.violation.ts'), 'apps/web/lib/__violation__.ts'),
+    ).toEqual(['dynamic import()']);
+    expect(
+      webAiImportViolations(readFixture('web-ai-reexport.violation.ts'), 'apps/web/lib/__violation__.ts'),
+    ).toEqual(['re-export (gateInspectorSpec)']);
+  });
+
+  it('対照 fixture: mask / MASK_* と型だけの import は違反なし', () => {
+    expect(
+      webAiImportViolations(readFixture('web-ai-mask-import.ok.ts'), 'apps/web/lib/__ok__.ts'),
+    ).toEqual([]);
+  });
+
+  const webSourceFiles = listSourceFiles(path.join(repoRoot, 'apps', 'web')).filter((file) => !isTestFile(file));
+  const webAiImporters = webSourceFiles
+    .filter((file) => /['"]@ses\/ai(\/[^'"]*)?['"]/.test(readFileSync(file, 'utf8')))
+    .map(toRepoRelative)
+    .sort();
+
+  it('対照: apps/web に @ses/ai を import する実ファイルがある（走査が空振りしていない）', () => {
+    // T-08-06 の依頼メッセージの商流照合。ここが 0 件になったら、この検査自体の前提（依存の存在）を見直す。
+    expect(webAiImporters).toContain('apps/web/lib/proposal-requests/message-check.ts');
+  });
+
+  it('🔴 apps/web の非テストソースに、許可リスト外の @ses/ai import が 1 つも無い', () => {
+    const offenders = webSourceFiles
+      .map((file) => ({
+        file: toRepoRelative(file),
+        violations: webAiImportViolations(readFileSync(file, 'utf8'), file),
+      }))
+      .filter((entry) => entry.violations.length > 0);
+    expect(
+      offenders,
+      'apps/web は @ses/ai から mask / MASK_CATEGORIES / MASK_PLACEHOLDERS と型だけを import できます' +
+        '（docs/05 §1.2「apps/web に LLM 呼び出しを置かない」/ CLAUDE.md §3.2）。' +
+        'LLM を呼ぶ処理は apps/worker のジョブに置いてください。',
+    ).toEqual([]);
+  });
+});

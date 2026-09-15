@@ -75,9 +75,28 @@ export function HostHomeSections({
               §S-010 関連画面「← `S-003`」）。`S-005` と同じくロールで隠さない —— 見えるものは
               `projects` の RLS（C4）が決める。 */}
           <ProjectListLink testId="home-host-project-list" />
+          {/* 🔴 T-08-06: `S-017`（提案依頼の一覧）への導線（docs/04 §3.2 ナビ「③ 提案依頼（`S-017`）」）。
+              ロールで隠さない（`VIEWER` も閲覧できる。取り下げの導線は `S-017` 側がロールで出し分ける）。 */}
+          <ProposalRequestListLink testId="home-host-proposal-requests" />
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * 🔴 `S-017`（提案依頼の一覧）への導線。`S-003` / `S-004` の**両方**に同じ形で置く
+ *    （docs/04 §3.2 のナビは両方に「提案依頼（`S-017`）」を持ち、§S-017 関連画面は `← S-004`）。
+ *    Phase 1 の取引先への通知手段は**アプリ内表示**であり（`F-018` 処理②）、取引先にとってはここが
+ *    届いた依頼に気づく唯一の入口である。
+ * 🔴 **文言は同じでも母集団は違う**（ホスト = 自社が送った依頼 / 取引先 = 自社の人材に届いた依頼）。
+ *    母集団の説明は `S-017` 側が 1 行で出す（`ProjectListLink` と同じ判断）。
+ */
+function ProposalRequestListLink({ testId }: { readonly testId: string }) {
+  return (
+    <Link className={SECONDARY_LINK_CLASSES} href="/proposal-requests" data-testid={testId}>
+      {t('proposalRequests.open')}
+    </Link>
   );
 }
 
@@ -212,6 +231,9 @@ export function PartnerHomeSections({
                 次の行き先。取引先は 1 日 4〜5 時間の主利用者であり、案件一覧への導線を
                 ホストの「ついで」にしない（`CLAUDE.md` §1.2）。 */}
             <ProjectListLink testId="home-partner-project-list" />
+            {/* 🔴 T-08-06: `S-017`（提案依頼の一覧）。取引先には**届いた依頼に気づく唯一の入口**
+                （Phase 1 の通知はアプリ内表示。`F-018` 処理②）。ロールで隠さない。 */}
+            <ProposalRequestListLink testId="home-partner-proposal-requests" />
             {/* 🔴 T-08-02: `S-015`（匿名共有の設定）への導線（docs/04 §S-015 関連画面
                 「← `S-004`」）。**取引先のホームにしか置かない** —— ホスト側ロールには
                 この画面が存在しない（`F-016` 関連ロール）。`HostHomeSections` に同じ導線を

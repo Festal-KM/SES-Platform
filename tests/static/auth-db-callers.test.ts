@@ -174,10 +174,19 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
   //    呼べない」の条件を満たす。Phase 1 に `match.build` は無く、この読み取りが唯一の生成経路）。
   //    ⚠️ 足すときは「そのファイルが `MatchCandidate` の生成・再確認をしているか」を必ず見る。
   //    同時に `eslint.config.mjs` の `SHARED_CANDIDATE_CALLER_FILES` にも足す（二重で固定）。
-  withSharedCandidateScope: ['apps/web/lib/candidates/list.ts'],
+  //    ✅ T-08-06: 2 つ目 = 提案依頼の発行（`#31`。docs/05 §4.5「T-08-06 の決着」）。`MatchCandidate` から
+  //    `candidateRef` を逆引きし（`listAnonymousCandidateEngineerIds`）、`issueProposalRequest` が共有ポリシー
+  //    越しに「いま共有中か」を再確認する ＝ 上の条件（生成・再確認）を満たす。
+  withSharedCandidateScope: [
+    'apps/web/lib/candidates/list.ts',
+    'apps/web/lib/proposal-requests/service.ts',
+  ],
   // 🔴 T-08-03: 案件が見つからないときの写像（404）。この型を握る場所が増えることは、
-  //    共有スコープを開く場所が増えたことと同義である —— 上と同じ 1 ファイルに固定する。
-  SharedCandidateProjectNotFoundError: ['apps/web/lib/candidates/list.ts'],
+  //    共有スコープを開く場所が増えたことと同義である —— 上と同じファイル集合に固定する。
+  SharedCandidateProjectNotFoundError: [
+    'apps/web/lib/candidates/list.ts',
+    'apps/web/lib/proposal-requests/service.ts',
+  ],
   // 🔴 T-03-10: `usage_counters` を書く唯一の経路（docs/05 §7.6 / §9.8）。
   //    ここを増やすと「計測を迂回した書き込み」が生まれ、原価と請求根拠が説明できなくなる。
   snapshotSeatCount: ['apps/worker/src/jobs/usage-seat-snapshot.ts'],

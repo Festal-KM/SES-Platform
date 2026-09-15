@@ -103,6 +103,72 @@ test.describe('モバイルビューポートのスモーク（S-010 / S-011 は
       await expectNoHorizontalOverflow('S-011 案件詳細', session.page);
       await expectNoBrokenLabels('S-011 案件詳細', session.page);
       session.outbound.assertNone();
+
+      // ------------------------------------------------------------------------------------------
+      // 🔴 T-08-06: `S-016`（候補検索。T2）→ 提案依頼の発行 → `S-017`（提案依頼の一覧。**T1**）→ 取り下げ。
+      //    `docs/04` §3.3 の遷移（`S-011` →「② 候補を探す」→ `S-016` →「匿名候補」→ `S-017`）をそのまま辿る。
+      //    **test を増やさず**（T-08-11 受け入れ基準 1 / 5）、新設 2 画面を `expectNoBrokenLabels` の射程に入れる。
+      //    🔴 `S-017` は Tier 1 であり、**モバイルで取り下げまで完結する**ことを実際に押して確かめる
+      //    （`CLAUDE.md` §13.3 / `docs/04` §S-017 デバイス別）。判断材料（案件名・状態・残り時間）は隠さない。
+      //    ⚠️ DB は毎回の実行で `seed:isolation` から作り直される（`global-setup.ts`）ので、ここで作った依頼が
+      //    次回の実行に残ることは無い。同じ実行内の他 spec は `proposal_requests` を見ない。
+      // ------------------------------------------------------------------------------------------
+      await session.page.goto(`/projects/${tenantIds(1).publishedProjectId}/candidates`, {
+        waitUntil: 'domcontentloaded',
+      });
+      await expect(session.page.getByTestId('candidate-screen')).toBeVisible();
+      // 🔴 共有候補の行が実際に描かれる（`seed:isolation` の 2 パートナーは共有可にしている）。
+      //    「空だから壊れていない」を緑にしない。
+      const anonymousRow = session.page
+        .locator('[data-testid^="candidate-list-row-"][data-candidate-kind="ANONYMOUS"]')
+        .first();
+      await expect(anonymousRow).toBeVisible();
+      await expectNoHorizontalOverflow('S-016 候補検索', session.page);
+      await expectNoBrokenLabels('S-016 候補検索', session.page);
+      expectNoHiddenCountHints('S-016 候補検索（モバイル）', await session.page.content());
+
+      // 行を選ぶ → 右パネル（モバイルでは一覧の下）に 5 項目と「提案依頼を送る」。
+      await anonymousRow.click();
+      await expect(session.page.getByTestId('candidate-detail-anonymous')).toBeVisible();
+      await session.page.getByTestId('candidate-request-open').click();
+      const requestForm = session.page.getByTestId('candidate-request-form');
+      await expect(requestForm).toBeVisible();
+      // 🔴 フォームに単価に関する入力欄が無い（`F-017 AC-4` / `BR-58`）。入力はメッセージと期限の 2 つだけ。
+      await expect(requestForm.locator('input[type="number"]')).toHaveCount(0);
+      await expect(requestForm.locator('textarea, input')).toHaveCount(2);
+      await expectNoBrokenLabels('S-016 提案依頼フォーム', session.page);
+      await session.page
+        .getByTestId('candidate-request-message')
+        .fill('11 月上旬の開始を希望しています。面談は来週中に設定可能です。');
+      await session.page.getByTestId('candidate-request-submit').click();
+      await expect(session.page.getByTestId('candidate-request-sent')).toBeVisible();
+
+      // `S-017`: 送った依頼が「返答待ち」で並び、モバイルでも取り下げまで押せる。
+      await session.page.getByTestId('candidate-request-open-list').click();
+      await expect(session.page.getByTestId('proposal-request-screen')).toBeVisible();
+      const requestedRow = session.page
+        .locator('[data-testid^="proposal-request-row-"][data-request-state="REQUESTED"]')
+        .first();
+      await expect(requestedRow).toBeVisible();
+      await expectNoHorizontalOverflow('S-017 提案依頼の一覧', session.page);
+      await expectNoBrokenLabels('S-017 提案依頼の一覧', session.page);
+      expectNoHiddenCountHints('S-017 提案依頼の一覧（モバイル）', await session.page.content());
+
+      await requestedRow.click();
+      await expect(session.page.getByTestId('proposal-request-detail')).toBeVisible();
+      await session.page.getByTestId('proposal-request-withdraw').click();
+      await expect(session.page.getByTestId('proposal-request-withdraw-confirm')).toBeVisible();
+      await expectNoBrokenLabels('S-017 取り下げの確認', session.page);
+      await session.page.getByTestId('proposal-request-withdraw-submit').click();
+      // 🔴 再読込後、同じ依頼が「取り下げ」の状態で並ぶ（サーバの状態だけが正。`WITHDRAWN_BY_HOST` は
+      //    `DECLINED` / `EXPIRED` と別のバッジである。`F-018 AC-5`）。
+      await expect(
+        session.page
+          .locator('[data-testid^="proposal-request-row-"][data-request-state="WITHDRAWN_BY_HOST"]')
+          .first(),
+      ).toBeVisible();
+      // ④ 外向き発信が 0 件（依頼の通知は Phase 1 ではアプリ内表示。メールは飛ばない）。
+      session.outbound.assertNone();
     } finally {
       await session.close();
     }
@@ -136,6 +202,17 @@ test.describe('モバイルビューポートのスモーク（S-010 / S-011 は
       await expectNoHorizontalOverflow('S-011 案件詳細（取引先）', session.page);
       await expectNoBrokenLabels('S-011 案件詳細（取引先）', session.page);
       expectNoHiddenCountHints('S-011 案件詳細（取引先・モバイル）', await session.page.content());
+      session.outbound.assertNone();
+
+      // 🔴 T-08-06: `S-017`（取引先視点。T1）。届いた依頼に気づく唯一の入口であり（Phase 1 の通知はアプリ内表示）、
+      //    モバイルで破綻しないこと・**取り下げの導線がホスト専用で取引先には無い**ことを見る（`F-018` 関連ロール）。
+      //    応諾・辞退（`S-018`）は T-08-07 であり、ここでは押しても動かない導線が無いことだけを確かめる。
+      await session.page.goto('/proposal-requests', { waitUntil: 'domcontentloaded' });
+      await expect(session.page.getByTestId('proposal-request-screen')).toBeVisible();
+      await expect(session.page.getByTestId('proposal-request-withdraw')).toHaveCount(0);
+      await expectNoHorizontalOverflow('S-017 提案依頼の一覧（取引先）', session.page);
+      await expectNoBrokenLabels('S-017 提案依頼の一覧（取引先）', session.page);
+      expectNoHiddenCountHints('S-017 提案依頼の一覧（取引先・モバイル）', await session.page.content());
       session.outbound.assertNone();
     } finally {
       await session.close();

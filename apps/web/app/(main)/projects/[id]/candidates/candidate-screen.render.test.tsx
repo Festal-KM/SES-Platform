@@ -6,7 +6,10 @@
 //    ②取引先視点で種別列そのものが消える（`docs/04` §S-016 権限差分 / `F-017 AC-5`）
 //    ③スコア・順位・重みに相当する入力欄・列が無い（`F-017 AC-7` / `F-009 AC-2` / `F-030 AC-4`）
 //    ④匿名候補の件数を別に描かない（総件数の 1 行だけ）
-//    ⑤右パネルは初期状態で「行を選ぶと…」だけであり、提案依頼・提案作成のボタンが無い（T-08-06 / SP-09 送り）
+//    ⑤右パネルは初期状態で「行を選ぶと…」だけであり、提案依頼・提案作成のボタンが無い（提案作成は SP-09 送り）
+//    ⑥🔴 T-08-06: 共有候補の右パネル（`AnonymousDetail`）の提案依頼フォームに**単価に関する入力欄が無い**
+//      （`F-017 AC-4` / `BR-58`）。入力はメッセージと期限の 2 つだけ。`canRequest=false` なら導線そのものが無い
+//      （`docs/04` §S-016 権限差分）。5 項目以外の値（実名・所属・社内 ID）はどの枝でも描かれない。
 //
 // 🔴 `react-dom/server` の `renderToStaticMarkup` を使う（新規依存を増やさない。他の render テストと同じ）。
 import { createElement } from 'react';
@@ -15,7 +18,9 @@ import { describe, expect, it } from 'vitest';
 import type { CandidateRowView } from '../../../../../lib/candidates/list-rows';
 import type { EngineerListFilterValues } from '../../../engineers/engineer-ledger-screen';
 import {
+  AnonymousDetail,
   CandidateScreen,
+  type CandidateRequestProps,
   type CandidateScreenMessages,
   type CandidateScreenProps,
 } from './candidate-screen';
@@ -104,8 +109,24 @@ const messages: CandidateScreenMessages = {
   detailSelect: '行を選ぶと、ここに候補の詳細を表示します。',
   detailOpenEngineer: '人材の詳細を開く',
   detailProposalComingSoon: '提案の作成は後続のリリース。',
-  detailRequestComingSoon: '提案依頼の送信は後続のリリース。',
   detailAnonymousNote: '共有候補は丸めた 5 項目のみが開示されています。',
+  requestOpen: '提案依頼を送る',
+  requestTitle: '提案依頼',
+  requestLead: '取引先が応諾すると提案（下書き）が作成されます。',
+  requestMessageLabel: '依頼メッセージ',
+  requestMessageHint: '単価・エンド企業名は書けません。',
+  requestExpiresAtLabel: '返答期限',
+  requestExpiresAtHint: '最長 30 日。',
+  requestSubmit: '依頼を送る',
+  requestSubmitting: '送信しています…',
+  requestCancel: 'やめる',
+  requestSent: '提案依頼を送りました。',
+  requestOpenList: '提案依頼の一覧を開く',
+  requestErrorNotFound: '共有が解除されたか、一覧が古くなっています。',
+  requestErrorExpiresAt: '返答期限は現在より後、かつ 30 日以内。',
+  requestErrorCommerce: '単価またはエンド企業名と読める記述が含まれています。',
+  requestErrorAlreadyExists: '既に提案依頼があります。',
+  requestErrorGeneric: '提案依頼を送れませんでした。',
   fieldSkills: 'スキル',
   fieldYears: '経験年数',
   fieldPrice: '単価レンジ',
@@ -131,6 +152,14 @@ const filters: EngineerListFilterValues = {
   availability: '',
   onlyInTime: false,
   onlyCommutable: false,
+};
+
+const request: CandidateRequestProps = {
+  canRequest: true,
+  unavailableMessage: null,
+  expiry: { defaultDay: '2026-09-22', minDay: '2026-09-15', maxDay: '2026-10-14' },
+  listHref: '/proposal-requests',
+  showListLink: true,
 };
 
 function render(overrides: Partial<CandidateScreenProps> = {}): string {
@@ -160,10 +189,23 @@ function render(overrides: Partial<CandidateScreenProps> = {}): string {
     registerHref: '/engineers/new',
     nextPageHref: null,
     firstPageHref: null,
+    request,
     messages,
     ...overrides,
   };
   return renderToStaticMarkup(createElement(CandidateScreen, props));
+}
+
+/** 共有候補の右パネル（行の選択後にしか現れないため、直接描く）。 */
+function renderAnonymousDetail(overrides: Partial<CandidateRequestProps> = {}): string {
+  return renderToStaticMarkup(
+    createElement(AnonymousDetail, {
+      row: anonymousRow as Extract<CandidateRowView, { readonly kind: 'ANONYMOUS' }>,
+      projectId: PROJECT,
+      request: { ...request, ...overrides },
+      messages,
+    }),
+  );
 }
 
 describe('🔴 F-017 AC-1: 匿名候補の行に実名・稼働状況が無く、表示名は「共有候補」の一語', () => {
@@ -298,5 +340,52 @@ describe('右パネル・空状態・導線', () => {
     expect(html).toContain('>Java<');
     expect(html).toContain(`href="/projects/${PROJECT}"`);
     expect(html).not.toContain('<details');
+  });
+});
+
+describe('🔴 T-08-06: 共有候補の右パネルと提案依頼の導線（F-018 / F-017 AC-4 / docs/04 §S-016 権限差分）', () => {
+  it('発行できるロールには「提案依頼を送る」が描かれ、実名・所属会社名・社内 ID・単価の入力欄は無い', () => {
+    const html = renderAnonymousDetail();
+    expect(html).toContain('data-testid="candidate-request-open"');
+    expect(html).toContain('>提案依頼を送る<');
+    // 5 項目（丸め後）は全部読める（判断材料を隠さない。CLAUDE.md §13.3）。
+    for (const value of ['TypeScript / Go / AWS / Docker / Terraform', '5〜10 年', '60〜70 万円', '翌月', '東京都・一部リモート可']) {
+      expect(html).toContain(value);
+    }
+    // 🔴 実名・稼働状況・人材詳細への導線が無い（型に無いので描けない）。
+    expect(html).not.toContain('架空 太郎');
+    expect(html).not.toContain('稼働中');
+    expect(html).not.toContain('/engineers/');
+    // 🔴 初期状態（IDLE）ではフォームも入力欄も無い。
+    expect(html).not.toContain('<form');
+    expect(html).not.toContain('<input');
+    expect(html).not.toContain('<textarea');
+  });
+
+  it('🔴 canRequest=false（VIEWER / 停止中）では導線そのものが無く、理由だけが描かれる', () => {
+    const html = renderAnonymousDetail({ canRequest: false, unavailableMessage: '営業担当・管理者のみ。' });
+    expect(html).not.toContain('candidate-request-open');
+    expect(html).not.toContain('提案依頼を送る');
+    expect(html).toContain('data-testid="candidate-request-unavailable"');
+    expect(html).toContain('営業担当・管理者のみ。');
+  });
+
+  it('🔴 取引先（unavailableMessage=null）には導線も理由も描かれない', () => {
+    const html = renderAnonymousDetail({ canRequest: false, unavailableMessage: null });
+    expect(html).not.toContain('candidate-request-open');
+    expect(html).not.toContain('candidate-request-unavailable');
+    expect(html).toContain('data-testid="candidate-detail-anonymous"');
+  });
+
+  it('S-017 への導線はホスト（showListLink）にだけ出る', () => {
+    expect(render()).toContain('data-testid="candidate-list-open-requests"');
+    expect(render({ request: { ...request, showListLink: false } })).not.toContain('candidate-list-open-requests');
+  });
+
+  it('文言に単価の交渉・見積・値引きに相当する語が無い（F-017 AC-4 / BR-58）', () => {
+    const html = renderAnonymousDetail();
+    for (const word of ['希望単価', '見積', '値引', '確定単価', 'name="unitPrice"', 'name="price"']) {
+      expect(html).not.toContain(word);
+    }
   });
 });

@@ -8,7 +8,10 @@ const nextConfig: NextConfig = {
   // 🔴 型エラー・ビルドエラーを握りつぶさない（既定値だが、後から緩められないよう明示する）。
   typescript: { ignoreBuildErrors: false },
   // 🔴 @node-rs/argon2 はネイティブアドオン。サーバ側で外部化してバンドルさせない。
-  serverExternalPackages: ['@node-rs/argon2', '@prisma/client'],
+  // 🔴 @anthropic-ai/sdk は `@ses/ai` のバレル経由で載る（T-08-06 が依頼メッセージの商流照合に
+  //    `mask()` を使うため）。Web は LLM を呼ばないので、SDK 本体をバンドルへ取り込まない
+  //    （docs/05 §7.9 ⑥ / §6.5「#31 / #32 / #35 の実装の決着」）。
+  serverExternalPackages: ['@node-rs/argon2', '@prisma/client', '@anthropic-ai/sdk'],
 };
 
 export default nextConfig;
