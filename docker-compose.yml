@@ -64,7 +64,7 @@ services:
 
   minio:
     # 🔴 :latest の浮動タグを避け、RELEASE 日時タグに固定する（code-reviewer 指摘 #4）。
-    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
     container_name: ses-minio
     restart: unless-stopped
     command: ['server', '/data', '--console-address', ':9001']
@@ -113,7 +113,7 @@ services:
   # ⚠️ このサービスは終了する（`restart: "no"`）。`docker compose up -d --wait` は
   #    「終了したコンテナ」を待てないため、起動は `docker compose up -d` を使うこと。
   minio-init:
-    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
     container_name: ses-minio-init
     depends_on:
       minio:

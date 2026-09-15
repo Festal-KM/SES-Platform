@@ -33,11 +33,16 @@ import { randomBytes } from 'node:crypto';
 import process from 'node:process';
 import { GenericContainer, Network, Wait, type StartedTestContainer } from 'testcontainers';
 
+// 🔴 レジストリは quay.io を使う（2026-09-15）。Docker Hub の `minio/minio` / `minio/mc` は
+//    同じタグでも `pull access denied` を返すようになり、CI の isolation / E2E が
+//    イメージ取得の段階で落ちた（run 34916918489）。quay.io には同一タグが公開されている。
+//    docker-compose.yml と揃えて 4 箇所を同時に切り替える（片方だけ変えると
+//    ローカルと CI で別のイメージを引くことになる）。
 // 🔴 docker-compose.yml と同じイメージタグに揃える（`:latest` の浮動タグを避ける。
 //    code-reviewer 指摘 #4 と同じ理由。ローカルに既に pull 済みのタグを再利用でき、
 //    E2E 専用に新しいイメージを取得させない）。
-const MINIO_IMAGE = 'minio/minio:RELEASE.2025-09-07T16-13-09Z';
-const MINIO_MC_IMAGE = 'minio/mc:RELEASE.2025-08-13T08-35-41Z';
+const MINIO_IMAGE = 'quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z';
+const MINIO_MC_IMAGE = 'quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z';
 const MINIO_PORT = 9000;
 const MINIO_NETWORK_ALIAS = 'minio';
 const STARTUP_TIMEOUT_MS = 120_000;
