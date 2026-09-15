@@ -6,6 +6,7 @@
 //    `force` / `skipLayers` / `reason` のような「呼び出し側が挙動を変える入力」を
 //    1 つでも受け取ると、そこがゲートを緩める入口になる。
 // 🔴 **query も持たない**（`?force=true` は Zod のスキーマが無い以上ハンドラに 1 バイトも届かない）。
+import { PROPOSAL_MANUAL_TRANSITION_TARGET_STATES } from '@ses/domain';
 import { z } from 'zod';
 import { assertNoIsolationKeys, type AssertNoIsolationKeys } from '../api/isolation-keys';
 
@@ -124,3 +125,30 @@ export type NewProposalQuery = z.infer<typeof newProposalQuerySchema>;
 export type NewProposalQueryIsolationGuard = AssertNoIsolationKeys<NewProposalQuery>;
 
 assertNoIsolationKeys(Object.keys(newProposalQuerySchema.shape), 'newProposalQuerySchema');
+
+// ============================================================================
+// T-09-02: #48 `POST /api/proposals/{id}/transition`（docs/05 §6.5「#48 の実装の決着」）
+// ============================================================================
+//
+// 🔴 **`to` は `ProposalState` 全体ではなく、手動遷移（所有者 `MANUAL`）の遷移先 7 値だけ**を取る
+//    （`PROPOSAL_MANUAL_TRANSITION_TARGET_STATES`。出所は `@ses/domain`）。`APPROVED` / `SUBMITTING` /
+//    `SUBMITTED` / `SUBMIT_FAILED` / `GATE_RUNNING` / `APPROVAL_PENDING` / `GATE_FAILED` は**入力面に存在しない**
+//    （400）—— #39 が body を持たないのと同じ「呼び出し側が挙動を変える入力を受け取らない」整理であり、
+//    承認・送信・ゲート結果を汎用 API で書ける置き場所を作らない（`CLAUDE.md` §3.3 / §3.4）。
+//    列挙を通り抜ける専有の組（`APPROVAL_PENDING → DRAFT`）は `transitionProposal` の第 2 層が 422 で止める。
+// 🔴 `note` は `ProposalEvent.note` に書く任意のメモ（`F-025` 入力）。監査の `summary` には載せない（自由入力）。
+// 🔴 分離キーを持たない（`assertNoIsolationKeys`）。
+
+/** メモ（`ProposalEvent.note`）。DB は TEXT。 */
+const TRANSITION_NOTE_MAX_LENGTH = 2_000;
+
+export const transitionProposalBodySchema = z.object({
+  to: z.enum(PROPOSAL_MANUAL_TRANSITION_TARGET_STATES),
+  note: z.string().trim().min(1).max(TRANSITION_NOTE_MAX_LENGTH).optional(),
+});
+
+export type TransitionProposalBody = z.infer<typeof transitionProposalBodySchema>;
+
+export type TransitionProposalBodyIsolationGuard = AssertNoIsolationKeys<TransitionProposalBody>;
+
+assertNoIsolationKeys(Object.keys(transitionProposalBodySchema.shape), 'transitionProposalBodySchema');

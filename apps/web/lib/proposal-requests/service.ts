@@ -37,7 +37,6 @@
 import {
   createProposalDraft,
   PROPOSAL_REQUEST_AUDIT_ACTION_UPDATE,
-  recordAuditLog,
   SharedCandidateProjectNotFoundError,
   withSharedCandidateScope,
   withTenant,
@@ -51,7 +50,6 @@ import {
 } from '@ses/domain';
 import {
   InternalError,
-  InvalidStateTransitionError,
   NotFoundError,
   ProposalRequestMessageCommerceError,
   ProposalRequestProjectNotSharedError,
@@ -65,6 +63,10 @@ import {
   readProjectCandidateContext,
   recordProjectView,
 } from '../projects/service';
+import {
+  INVALID_TRANSITION_AUDIT_ACTION,
+  rethrowWithInvalidTransitionAudit as rethrowWithInvalidTransitionAuditShared,
+} from '../state/invalid-transition';
 import { checkProposalRequestMessage } from './message-check';
 import {
   PROPOSAL_REQUEST_EXPIRY_MAX_DAYS,
@@ -94,7 +96,7 @@ import {
 export const PROPOSAL_REQUEST_AUDIT_ACTIONS = {
   update: PROPOSAL_REQUEST_AUDIT_ACTION_UPDATE,
   /** docs/05 §15.3「`AuditLog(action='state.invalid_transition')` に `{ entity, from, to }` を記録する」。 */
-  invalidTransition: 'state.invalid_transition',
+  invalidTransition: INVALID_TRANSITION_AUDIT_ACTION,
 } as const;
 
 export const PROPOSAL_REQUEST_OPERATIONS = {
@@ -438,6 +440,7 @@ export async function withdrawProposalRequest(
  * 🔴 遷移表に無い遷移を要求されたら `state.invalid_transition` を**別トランザクション**で記録してから、
  *    API の 422 型に写して投げ直す（docs/05 §15.3。業務トランザクションは巻き戻るので、その中には書けない）。
  *    それ以外の例外はそのまま投げ直す。**常に throw する**（戻り値は無い）。
+ * 🔴 T-09-02: 実体は `lib/state/invalid-transition.ts` の 1 実装（提案 #48 / #39 と同じ関数）。
  */
 async function rethrowWithInvalidTransitionAudit(
   ctx: AuthenticatedTenantCtx,
@@ -445,19 +448,11 @@ async function rethrowWithInvalidTransitionAudit(
   error: unknown,
   meta: ProposalRequestMeta,
 ): Promise<never> {
-  if (!(error instanceof DomainInvalidStateTransitionError)) throw error;
-  await recordAuditLog(ctx, {
-    action: PROPOSAL_REQUEST_AUDIT_ACTIONS.invalidTransition,
-    actorKind: 'USER',
-    actorId: ctx.userId,
-    targetType: 'ProposalRequest',
-    targetId: proposalRequestId,
-    summary: { entity: error.entity, from: error.from, to: error.to },
-    ipAddress: meta.ipAddress,
-    deviceKind: ctx.deviceKind,
-  });
-  // 🔴 API 境界の 422 への写像は `toAppError` が行う（判定を二重に持たない）。ここでは型だけ揃える。
-  throw new InvalidStateTransitionError(error.entity, error.from, error.to);
+  return rethrowWithInvalidTransitionAuditShared(
+    ctx,
+    { targetType: 'ProposalRequest', targetId: proposalRequestId, ipAddress: meta.ipAddress },
+    error,
+  );
 }
 
 /**

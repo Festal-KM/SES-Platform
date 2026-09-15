@@ -526,6 +526,26 @@ export class ProposalEditForbiddenError extends ForbiddenError {
 }
 
 /**
+ * 🔴 #48（状態遷移）をその立場では行えない（403）。T-09-02。判定は `canTransitionProposal`
+ *    （docs/05 §6.5「#48 の実装の決着」: ホストの `OWNER`・`ADMIN`・`SALES` は手動遷移のすべて、
+ *    取引先は自社提案の面談実施・辞退まで、`GATE_FAILED → DRAFT` は作成者）。
+ *    `ProposalGateForbiddenError` と同じ理由で 404 にはしない（見えない提案は先に 404 になる）。
+ */
+export class ProposalTransitionForbiddenError extends ForbiddenError {
+  override readonly code = 'PROPOSAL_TRANSITION_FORBIDDEN';
+  override readonly userMessageKey: MessageKey = 'error.proposal.transitionForbidden';
+
+  constructor(
+    /** 🔴 応答ボディには載せない（内部ログ用）。 */
+    readonly from: string,
+    readonly to: string,
+  ) {
+    super();
+    this.name = 'ProposalTransitionForbiddenError';
+  }
+}
+
+/**
  * 🔴 招待を受諾できない（docs/05 §6.3 #7。`acceptedAt` の CAS が 0 件）。
  *
  * 受諾済み / 取消済み / 期限切れ / トークン不一致 / 同時受諾に負けた、を**区別しない**。
@@ -819,6 +839,31 @@ export class ProposalRecipientMissingError extends UnprocessableError {
   constructor() {
     super('提案先が未設定のため、レビューに出せません。');
     this.name = 'ProposalRecipientMissingError';
+  }
+}
+
+/**
+ * 🔴 `CLAUDE.md` §4.2 には**ある**が、#48（汎用の遷移 API）の専有ではない遷移を #48 に要求した（422）。T-09-02。
+ *
+ * レビュー依頼（#39）/ ゲートジョブ / 承認（#41）/ 却下（#42）/ 送信ジョブ / 再送（#44）が専有する遷移は、
+ * それぞれの経路の事前判定（提案先の検証・ハッシュ一致の CAS・冪等キー・`acknowledged`）と一体であり、
+ * 汎用 API から起こすと全部を迂回できてしまう（docs/05 §6.5「#48 の実装の決着」②）。
+ * 🔴 `InvalidStateTransitionError` ではない —— 遷移そのものは遷移表に存在し、「不正な遷移」として
+ *    `state.invalid_transition` に数えると監視（`A-005` / `S-041`）が状態機械の健全性を誤読する。
+ * 🔴 403 でもない —— 立場の問題ではなく入口の問題であり、どのロールでも #48 からは実行できない。
+ */
+export class ProposalTransitionReservedError extends UnprocessableError {
+  override readonly code = 'PROPOSAL_TRANSITION_RESERVED';
+  override readonly userMessageKey: MessageKey = 'error.proposal.transitionReserved';
+
+  constructor(
+    /** 🔴 いずれも応答ボディには載せない（内部ログ用）。 */
+    readonly from: string,
+    readonly to: string,
+    readonly owner: string,
+  ) {
+    super(`Proposal: ${from} -> ${to} は ${owner} の専有であり、汎用の遷移 API からは実行できません。`);
+    this.name = 'ProposalTransitionReservedError';
   }
 }
 

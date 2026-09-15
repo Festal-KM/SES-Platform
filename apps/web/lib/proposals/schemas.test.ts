@@ -7,10 +7,12 @@
 //   ③ `proposalRequestId` / 分離キー / `state` / `contentHash` / `approvedBy` は受け取らない（strip）
 //   ④ 添付は `skillSheetId`（UUID | null）だけで受ける
 import { describe, expect, it } from 'vitest';
+import { PROPOSAL_MANUAL_TRANSITION_TARGET_STATES, PROPOSAL_STATES } from '@ses/domain';
 import { ISOLATION_KEYS } from '../api/isolation-keys';
 import {
   createProposalBodySchema,
   newProposalQuerySchema,
+  transitionProposalBodySchema,
   UPDATE_PROPOSAL_FIELDS,
   updateProposalBodySchema,
 } from './schemas';
@@ -133,5 +135,56 @@ describe('newProposalQuerySchema（S-020 新規の query）', () => {
     expect(newProposalQuerySchema.parse({ projectId: PROJECT, engineerId: ENGINEER })).toEqual({ projectId: PROJECT, engineerId: ENGINEER });
     expect(newProposalQuerySchema.safeParse({ projectId: PROJECT }).success).toBe(false);
     expect(newProposalQuerySchema.safeParse({ projectId: 'x', engineerId: ENGINEER }).success).toBe(false);
+  });
+});
+
+describe('transitionProposalBodySchema（#48。T-09-02。docs/05 §6.5「#48 の実装の決着」）', () => {
+  it('to は手動遷移の遷移先 7 値だけを受け、note は任意', () => {
+    expect(transitionProposalBodySchema.parse({ to: 'WON' })).toEqual({ to: 'WON' });
+    expect(transitionProposalBodySchema.parse({ to: 'WITHDRAWN', note: ' 先方都合により辞退 ' })).toEqual({
+      to: 'WITHDRAWN',
+      note: '先方都合により辞退',
+    });
+    for (const to of PROPOSAL_MANUAL_TRANSITION_TARGET_STATES) {
+      expect(transitionProposalBodySchema.safeParse({ to }).success, to).toBe(true);
+    }
+  });
+
+  it('🔴 承認・送信・ゲート側の状態は入力面に存在しない（400）: APPROVED / SUBMITTING / SUBMITTED / SUBMIT_FAILED / GATE_RUNNING / APPROVAL_PENDING / GATE_FAILED', () => {
+    const reserved = PROPOSAL_STATES.filter(
+      (state) => !(PROPOSAL_MANUAL_TRANSITION_TARGET_STATES as readonly string[]).includes(state),
+    );
+    expect(reserved).toEqual([
+      'GATE_RUNNING',
+      'GATE_FAILED',
+      'APPROVAL_PENDING',
+      'APPROVED',
+      'SUBMITTING',
+      'SUBMITTED',
+      'SUBMIT_FAILED',
+    ]);
+    for (const to of reserved) {
+      expect(transitionProposalBodySchema.safeParse({ to }).success, to).toBe(false);
+    }
+    expect(transitionProposalBodySchema.safeParse({ to: 'NOPE' }).success).toBe(false);
+    expect(transitionProposalBodySchema.safeParse({}).success).toBe(false);
+  });
+
+  it('note は空白だけなら 400、長すぎても 400', () => {
+    expect(transitionProposalBodySchema.safeParse({ to: 'LOST', note: '   ' }).success).toBe(false);
+    expect(transitionProposalBodySchema.safeParse({ to: 'LOST', note: 'x'.repeat(2_001) }).success).toBe(false);
+    expect(transitionProposalBodySchema.safeParse({ to: 'LOST', note: 'x'.repeat(2_000) }).success).toBe(true);
+  });
+
+  it('🔴 from / state / 分離キー / approvedBy / contentHash を受け取らない（strip）', () => {
+    const parsed = transitionProposalBodySchema.parse({
+      to: 'INTERVIEWED',
+      from: 'DRAFT',
+      state: 'APPROVED',
+      approvedBy: ENGINEER,
+      contentHash: 'x',
+      ...Object.fromEntries(ISOLATION_KEYS.map((key) => [key, PROJECT])),
+    });
+    expect(parsed).toEqual({ to: 'INTERVIEWED' });
   });
 });

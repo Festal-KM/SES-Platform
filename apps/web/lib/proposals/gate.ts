@@ -54,6 +54,7 @@ import {
   ProposalRecipientMissingError,
   requireFound,
 } from '../api/errors';
+import { rethrowWithInvalidTransitionAudit } from '../state/invalid-transition';
 import { canRequestProposalGate } from './policy';
 import { hasProposalRecipient } from './recipient';
 
@@ -152,6 +153,26 @@ export async function requestProposalGate(
   proposalId: string,
   deps: ProposalGateRequestDeps,
 ): Promise<ProposalGateRequestView> {
+  try {
+    return await requestProposalGateInner(ctx, proposalId, deps);
+  } catch (error: unknown) {
+    // 🔴 T-09-02: 遷移表に無い状態からの依頼（`GATE_FAILED` / `APPROVAL_PENDING` / … → `GATE_RUNNING`）と
+    //    CAS の 0 件は `state.invalid_transition` に記録して 422（`F-024 AC-1`「エラーが記録される」。
+    //    #48 / 提案依頼と同じ 1 実装）。それ以外の例外はそのまま。
+    //    `targetType` は状態機械の entity 名（`'Proposal'`。#48 / #36 / #37 と同じ語）。
+    return rethrowWithInvalidTransitionAudit(
+      ctx,
+      { targetType: 'Proposal', targetId: proposalId, ipAddress: deps.meta.ipAddress },
+      error,
+    );
+  }
+}
+
+async function requestProposalGateInner(
+  ctx: AuthenticatedTenantCtx,
+  proposalId: string,
+  deps: ProposalGateRequestDeps,
+): Promise<ProposalGateRequestView> {
   const target = requireFound(await loadTarget(ctx, proposalId));
 
   // ① 🔴 行を読んでから認可する（ロールだけでは「他人の提案のゲートを回す」を止められない）。
@@ -241,7 +262,9 @@ export async function requestProposalGate(
         data: { state: to, contentHash: target.contentHash },
       });
       if (updated.count !== 1) {
-        throw new InvalidStateTransitionError(proposalMachine.entity, 'DRAFT', 'GATE_RUNNING');
+        // 🔴 読んでから今までの間に他の遷移が確定した。現在の状態を読み直して 422 に載せる（§15.3。#48 と同じ形）。
+        const current = await db.proposal.findUnique({ where: { id: target.id }, select: { state: true } });
+        throw new InvalidStateTransitionError(proposalMachine.entity, current?.state ?? 'DRAFT', 'GATE_RUNNING');
       }
       await db.proposalEvent.create({
         data: {
