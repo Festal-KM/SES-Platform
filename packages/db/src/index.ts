@@ -325,6 +325,32 @@ export type {
   ProposalGateFreshness,
   ProposalSubmittingCastOutcome,
 } from './proposal-approval.js';
+// 🔴 T-09-05: `SendAttempt` を書く唯一の経路（docs/05 §10.1 / §10.2 ④⑥ / §10.6 / docs/03 §4.7）。
+//    `SendAttemptToken` を作れるのは `reserveSendAttempt`（`SystemTenantCtx` 限定）だけであり、
+//    `attempt_seq` の採番（`nextSendAttemptSeq`）は人間の文脈（`HumanTenantCtx`）でしか呼べない。
+//    呼び出し元の固定は `tests/static/auth-db-callers.test.ts`（`apps/web/**` に `reserveSendAttempt` /
+//    `settleSendAttempt` が 0 件、`apps/worker/**` に `nextSendAttemptSeq` が 0 件）。
+export {
+  INITIAL_SEND_ATTEMPT_SEQ,
+  listSendAttempts,
+  nextSendAttemptSeq,
+  readSendAttempt,
+  reserveSendAttempt,
+  SendAttemptConflictError,
+  SendAttemptOriginError,
+  settleSendAttempt,
+} from './send.js';
+export type {
+  HumanTenantCtx,
+  ReserveSendAttemptInput,
+  SendAttemptOrigin,
+  SendAttemptReservation,
+  SendAttemptSettlement,
+  SendAttemptSettlementOutcome,
+  SendAttemptView,
+  SendTarget,
+  SettleSendAttemptInput,
+} from './send.js';
 // 🔴 T-08-07: 提案依頼の期限切れ（docs/05 §9.5 `proposal-request.expire`）。呼び出し元は
 //    `apps/worker/src/jobs/proposal-request-expire.ts` のジョブ文脈だけである。
 export {

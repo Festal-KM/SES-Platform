@@ -84,6 +84,9 @@ import {
   TENANT_ENVIRONMENTS,
   TENANT_LIFECYCLE_STATES,
 } from '../../packages/domain/src/state/tenant.js';
+// 🔴 T-09-05: 送信エンティティ種別の唯一の宣言（docs/05 §10.1）。`packages/db` の
+//    `SEND_ATTEMPT_ENTITY_TYPES` はこれの re-export であり、ここでは domain の名前でも CHECK と突合する。
+import { SEND_ENTITY_TYPES } from '../../packages/domain/src/idempotency.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '..', '..');
@@ -548,6 +551,15 @@ describe('CHECK 制約と TS 単一出所の drift 検査（docs/05 §3.1「列�
     it('🔴 send_attempts_entity_type_check ⇔ packages/db SEND_ATTEMPT_ENTITY_TYPES（docs/03 §4.7。K-5 の防御線）', () => {
       const values = extractCheckInValues(migrationSql, 'send_attempts_entity_type_check');
       expectSameValueSet(values, SEND_ATTEMPT_ENTITY_TYPES);
+    });
+
+    it('🔴 send_attempts_entity_type_check ⇔ @ses/domain SEND_ENTITY_TYPES（T-09-05。idempotencyKey() の入力型の値集合。docs/05 §10.1）', () => {
+      // 🔴 `idempotencyKey()` はこの値集合から冪等キーを組み立て、その行が `send_attempts` の CHECK を通る必要がある。
+      //    ずれると予約の INSERT が CHECK で落ち、「予約できない = 送れない」（安全側）にはなるが、送信が全停止する。
+      const values = extractCheckInValues(migrationSql, 'send_attempts_entity_type_check');
+      expectSameValueSet(values, SEND_ENTITY_TYPES);
+      // 対照: packages/db 側（re-export。`@ses/domain` は dist 経由で解決されるため参照は別）は同じ値集合である。
+      expect([...SEND_ATTEMPT_ENTITY_TYPES]).toEqual([...SEND_ENTITY_TYPES]);
     });
 
     it('send_attempts_status_check ⇔ packages/db SEND_ATTEMPT_STATUSES', () => {

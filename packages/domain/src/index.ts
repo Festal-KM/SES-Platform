@@ -81,3 +81,17 @@ export * from './anonymize/index.js';
 //    正規化する側（`packages/connectors`）と CHECK を持つ側（`packages/db`）は相互に
 //    依存できない（`CLAUDE.md` §2.1）ため、値集合の単一出所を domain に置く。
 export * from './scan/index.js';
+// 🔴 T-09-05: 外部送信の冪等性キー（決定的）と予約トークン 3 種（docs/05 §10.1 / §10.2）。
+//    発行する側（`packages/db`）と必須引数に取る側（`packages/connectors`）の共有点は domain しか無い。
+//    `SendAttemptToken` のブランドは export しない（生成は `packages/db/src/send.ts` の 1 箇所）。
+export {
+  idempotencyKey,
+  InvalidIdempotencyKeyInputError,
+  isSendEntityType,
+  isValidAttemptSeq,
+  SEND_ENTITY_TYPES,
+  type DispatchToken,
+  type MeterSubmissionToken,
+  type SendAttemptToken,
+  type SendEntityType,
+} from './idempotency.js';

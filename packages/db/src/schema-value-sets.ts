@@ -270,10 +270,17 @@ export const ESIGN_SIGNING_ORDERS = ['HOST_FIRST', 'PARALLEL'] as const;
 
 export type EsignSigningOrder = (typeof ESIGN_SIGNING_ORDERS)[number];
 
-/** docs/05 §3.9 `SendAttempt.entityType`（TEXT + CHECK）。🔴 docs/03 §4.7。冪等性の中核。 */
-export const SEND_ATTEMPT_ENTITY_TYPES = ['PROPOSAL', 'INTERVIEW', 'CONTRACT'] as const;
-
-export type SendAttemptEntityType = (typeof SEND_ATTEMPT_ENTITY_TYPES)[number];
+/**
+ * docs/05 §3.9 `SendAttempt.entityType`（TEXT + CHECK）。🔴 docs/03 §4.7。冪等性の中核。
+ *
+ * 🔴 **宣言の唯一の出所は `packages/domain`**（T-09-05。`packages/domain/src/idempotency.ts` の
+ *    `SEND_ENTITY_TYPES`）。ここは re-export である —— `idempotencyKey()` を持つ側（domain）と
+ *    必須引数に取る側（`packages/connectors`）と CHECK を持つ側（本パッケージ）が同じ 1 つの値集合を
+ *    見る（`ScanStatus` / `RecipientClass` と同じ整理）。
+ *    `tests/static/schema-enum-drift.test.ts` は `@ses/db` の名前と domain の名前の両方で migration.sql と突合する。
+ */
+export { SEND_ENTITY_TYPES as SEND_ATTEMPT_ENTITY_TYPES } from '@ses/domain';
+export type { SendEntityType as SendAttemptEntityType } from '@ses/domain';
 
 /** docs/05 §3.9 `SendAttempt.status`（TEXT + CHECK）。 */
 export const SEND_ATTEMPT_STATUSES = ['RESERVED', 'SUCCEEDED', 'FAILED', 'UNKNOWN'] as const;

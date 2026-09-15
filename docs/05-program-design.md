@@ -4353,18 +4353,31 @@ export function idempotencyKey(entityType: SendEntityType, entityId: string, att
 🔴 **外部 API 側に冪等性が無い場合、CAS ＋ `UNIQUE` 制約が唯一の防御線である。** Amazon SES にもクラウドサインにも冪等性キーの受け口が確認できていない（`docs/03` §3.1.4 / `U-1`）。したがって**この 2 本の `UNIQUE` と §10.3 の CAS を経ずに外部送信できる経路を、コードとして作らせない**。
 
 ```ts
-// packages/db/src/send.ts
-declare const TokenBrand: unique symbol;
+// packages/domain/src/idempotency.ts（型の宣言。✅ T-09-05 で packages/db/src/send.ts から移設）
+declare const SendAttemptTokenBrand: unique symbol;             // 🔴 export しない（モジュール内シンボル）
 export type SendAttemptToken = {
   readonly idempotencyKey: string; readonly attemptSeq: number;
   readonly entityType: SendEntityType; readonly entityId: string;
-  readonly [TokenBrand]: true;                       // 🔴 外部から構築できない
+  readonly [SendAttemptTokenBrand]: true;            // 🔴 外部から構築できない
 };
-/** 🔴 CAS 成功 + SendAttempt INSERT 成功のときだけトークンを返す。他に生成経路が無い。 */
-export function reserveSendAttempt(db: TenantDb, input: ReserveInput): Promise<SendAttemptToken>;
+// packages/db/src/send.ts（生成。SystemTenantCtx 限定）
+/** 🔴 SendAttempt INSERT（status='RESERVED'）が 1 行返ったときだけトークンを返す。他に生成経路が無い。 */
+export function reserveSendAttempt(ctx: SystemTenantCtx, input: ReserveSendAttemptInput): Promise<SendAttemptReservation>;
 ```
-🔴 **トークン型の宣言場所（T-04-01 の申し送り）**: `SendAttemptToken` / `DispatchToken` / `MeterSubmissionToken` は **`packages/db` が生成し、`packages/connectors` が引数として受け取る**。両パッケージは相互に依存できない（`CLAUDE.md` §2.1）ため、**恒久的な宣言場所は両者が依存してよい `packages/domain`**（`§10.1` の `idempotencyKey` と同じ場所）である。T-04-01 の時点では `packages/connectors` に workspace 依存（`@ses/domain`）を足していないため、暫定的に `packages/connectors/src/types.ts` に置いている。**`reserveSendAttempt` を実装する時点（SP-09）で `packages/domain` へ移し、二重宣言を解消する。**
+🔴 **トークン型の宣言場所（T-04-01 の申し送り → ✅ T-09-05 で決着）**: `SendAttemptToken` / `DispatchToken` / `MeterSubmissionToken` は **`packages/db` が生成し、`packages/connectors` が引数として受け取る**。両パッケージは相互に依存できない（`CLAUDE.md` §2.1）ため、**恒久的な宣言場所は両者が依存してよい `packages/domain`**（`§10.1` の `idempotencyKey` と同じ場所）である。~~T-04-01 の時点では `packages/connectors` に workspace 依存（`@ses/domain`）を足していないため、暫定的に `packages/connectors/src/types.ts` に置いている。**`reserveSendAttempt` を実装する時点（SP-09）で `packages/domain` へ移し、二重宣言を解消する。**~~ → ✅ **T-09-05（2026-09-16）で `packages/domain/src/idempotency.ts` に一本化した。** `packages/connectors/src/types.ts` と `packages/db/src/schema-value-sets.ts`（`SEND_ATTEMPT_ENTITY_TYPES`）は re-export だけを持ち、再宣言していないことを `tests/static/connector-selection-mirror.test.ts` が固定する。
 `EmailSender.send` / `EsignProvider.createAndSend` が `SendAttemptToken` を**必須引数**に取るため、**予約を経ない外部送信はコンパイルできない**（`docs/03` 申し送り 3）。
+
+🔴 **T-09-05 の実装の決着（2026-09-16。`SendAttempt` と冪等性キーの規約。§10.2 ④⑥ / §10.6 / docs/03 §4.7 / `CLAUDE.md` §3.4）**:
+
+- 🔴 **`attempt_seq` の規律を関数の形で表した**（「人間の明示操作でのみ増える。ジョブの再起動では増えない」）。実体は `packages/db/src/send.ts` の 3 関数であり、`send_attempts` を書く経路は他に無い:
+  - **`nextSendAttemptSeq(ctx: HumanTenantCtx, { entityType, entityId })`** — 採番。**読むだけで行は作らない。** `MAX(attempt_seq) + 1`（連番なので上表の「既存行数 + 1」と同値。行が消されても衝突しない）。🔴 引数の型 `HumanTenantCtx` = `AuthenticatedTenantCtx & { job?: undefined }` であり、**`SystemTenantCtx`（`job` を持つ）は構造的に渡せない**（実行時にも `SYSTEM_ACTOR_ID` を弾く）。呼び出し元は `apps/web/**` の #43 / #44 / #60 / #61 に限り、`apps/worker/**` に 0 件であることを `tests/static/auth-db-callers.test.ts` が独立の `it` で固定する。
+  - **`reserveSendAttempt(ctx: SystemTenantCtx, { entityType, entityId, origin, now })`** — §10.2 ④。🔴 **ジョブは採番しない。** ジョブ payload が運んできた **`SendAttemptOrigin`**（`{ kind: 'INITIAL' }` = `attempt_seq` 1 固定・`requested_by` NULL / `{ kind: 'RESEND', attemptSeq ≥ 2, requestedBy }` = 人間の再送。`requestedBy` は型で必須）をそのまま `INSERT … status='RESERVED' ON CONFLICT DO NOTHING` する。1 行返ればトークン（`{ outcome: 'RESERVED', token }`。**唯一のブランド付与地点**）、0 行なら既存行を読んで **`{ outcome: 'ALREADY_RESERVED', existing }`**（例外にしない。呼び出し側は**外部 API を呼ばずに終了**する）。自テナントから見えない衝突だけ `SendAttemptConflictError`（実装バグ。`EmailDispatchConflictError` と同じ扱い）。「ジョブの中で数えて +1 する」形にしなかった理由: **確定済みの試行の後にジョブが再実行されただけで新しい行 = 新しいキー = もう 1 通**が生まれる。§10.6「ジョブの payload に `attemptSeq` が含まれており、ジョブ側で採番しない」のとおり、採番は人間の操作の時点（**#43 / #44 とも `nextSendAttemptSeq`**。通常 #43 は 1 = `INITIAL`。既に試行がある `APPROVED` に #43 が来るのは §10.5 の保留から人間が復帰させる経路であり、2 以上 = `RESEND` を載せる。🔴 #43 を 409 にしない —— レビュー指摘で訂正、2026-09-16）で確定し、ジョブは与えられた値しか書けない。
+  - **`settleSendAttempt(ctx: SystemTenantCtx, token, { status: 'SUCCEEDED' + externalId | 'FAILED' | 'UNKNOWN' + failureKind, failureDetail?, now })`** — §10.2 ⑥。`UPDATE … WHERE idempotency_key = $token AND status = 'RESERVED'` の CAS。1 件なら `SETTLED`、0 件なら `ALREADY_SETTLED`（確定は 1 回。上書きしない）、見えなければ `NOT_FOUND`。**`RESERVED` へ戻す関数は無い**（`UNKNOWN` は隔離。§10.6）。`failureDetail` は 500 文字で切る（外部応答の本文を丸ごと入れる実装を止める。トークン・宛先・氏名を載せない）。
+  - 読み取り: `readSendAttempt(ctx, { …, attemptSeq })` / `listSendAttempts(ctx, target)`（`S-022` と、送信ジョブの ② 遅延判定）。
+- 🔴 **③ CAS と ④ INSERT は別関数・別トランザクション**（③ は T-09-04 の `castProposalToSubmitting`）。トークンは「INSERT が 1 行返った」ことの証拠であり、「CAS を経た」ことは順序 ③ → ④ → ⑤ を持つ**送信ジョブの 1 入口（`runExternalSend`。T-09-06）**が担う。⚠️ T-09-06 への申し送り: **② の遅延判定に「payload の `attemptSeq` の行が既に存在する」（`readSendAttempt`）を含め、CAS の前に重複起動を止める**こと。含めないと、古い重複ジョブ（同じ `attemptSeq`）が ③ を通った直後に ④ で `ALREADY_RESERVED` になり、`SUBMITTING` のまま誰も確定しない行（§10.6「`SUBMITTING` のままプロセスが消えた」と同じ形の滞留）が残りうる。同じ試行の並行実行そのものは ③ の CAS が 1 つに絞る（負けた側は `NOT_APPROVED`）ので、④ の `ALREADY_RESERVED` は本来「稀な保険」である。
+- 🔴 **偽造の禁止は静的検査で担保する**（`tests/static/send-attempt-token-single-path.test.ts`）: `as SendAttemptToken` / `<SendAttemptToken>` を書いてよいのは `packages/db/src/send.ts` だけ、ブランドのシンボル名 `SendAttemptTokenBrand` に言及してよいのは宣言ファイルだけ（`MaskedText` の §7.10 と同じ規律）。`apps/**` / `packages/connectors/**` に 0 件であることは許可リストとは独立の `it` で固定する。型側は `packages/connectors/src/send-attempt-token.test.ts`（`token` を省略 / 構造だけ同じオブジェクト / `DispatchToken` の流用がいずれも `@ts-expect-error`）。
+- **`SendAttempt.requested_by` の意味**: 「再送を指示した人間」であり、初回（#43 の操作者）は NULL のまま（列コメントどおり）。初回の操作者は `AuditLog(proposal.submit)` の `summary.requestedBy`（§16.1）で辿る。
+- **検証**: `tests/isolation/send-attempt.test.ts`（実 DB: ①同一 `(entity_type, entity_id, attempt_seq)` の 2 回目が `UNIQUE` で落ち `reserveSendAttempt` は `ALREADY_RESERVED` ②`idempotency_key` の `UNIQUE` が独立に効く ③同時 2 回で 1 回だけトークン ④`settleSendAttempt` は `RESERVED` からのみ、2 回目は `ALREADY_SETTLED` ⑤他テナント文脈からは行が見えない ⑥再送で `attempt_seq` 2 / `idempotency_key` = `proposal:<id>:2` / `requested_by` に人間が入る）+ `packages/domain/src/idempotency.test.ts`（決定性）+ `packages/db/src/send.test.ts`（型と由来の検査）。
 
 ### 10.2 実行ジョブの実行順序（🔴 **この順序が設計の要**）
 

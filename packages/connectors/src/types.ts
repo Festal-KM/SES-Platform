@@ -13,12 +13,9 @@
 //    （db も connectors も domain には依存してよく、共有点は domain しか無いため）。
 //    ✅ T-04-02: `@ses/domain` への workspace 依存を追加し、**`RecipientClass` は
 //       `packages/domain/src/recipient/classify.ts` に一本化した**（本ファイルは re-export のみ）。
-//    ⚠️ 残りの申し送り（T-09-01）: 3 種の送信トークン型（`SendAttemptToken` / `DispatchToken` /
-//       `MeterSubmissionToken`）と `SEND_ENTITY_TYPES` は、`packages/db` が発行する値であり
-//       移設先の判断が SP-09（送信の予約）の設計に依存するため、本ファイルに残している。
-//       二重定義は `tests/static/connector-selection-mirror.test.ts` が突合する
-//       （`SEND_ENTITY_TYPES` ↔ `SEND_ATTEMPT_ENTITY_TYPES` /
-//       `SendAttemptToken` のプロパティ名 ↔ docs/05 §10.2）。
+//    ✅ T-09-05: 3 種の送信トークン型（`SendAttemptToken` / `DispatchToken` / `MeterSubmissionToken`）と
+//       `SEND_ENTITY_TYPES` も **`packages/domain/src/idempotency.ts` に一本化した**（本ファイルは re-export のみ）。
+//       `tests/static/connector-selection-mirror.test.ts` は「本ファイルが再宣言していないこと」を見る。
 
 /**
  * 起動時 DI（docs/05 §13.1）が選ぶ実装種別。
@@ -243,44 +240,17 @@ export type MeterEventInput = {
 // --- 送信の予約トークン（docs/05 §10.1 / §10.2）-----------------------------
 
 /**
- * `SendAttempt` の対象エンティティ（docs/05 §10.1 / §3.9）。
- *
- * 🔴 **`packages/db` の `SEND_ATTEMPT_ENTITY_TYPES` と、マイグレーションの CHECK 制約と、
- *    同じ値集合でなければならない**（`idempotencyKey()` がこの値から冪等キーを組み立て、
- *    その行が `send_attempts` の CHECK を通る必要がある）。
- *    ジョブ名は `send.interview-invite` だが、エンティティ種別は `'INTERVIEW'` である。混同しない。
- *    `tests/static/connector-selection-mirror.test.ts` が両者を突合する。
+ * 🔴 **宣言の唯一の出所は `packages/domain`**（`packages/domain/src/idempotency.ts`。T-09-05 で移設）。
+ *    ここは re-export であり、`@ses/connectors` の利用者が追加の import 無しに扱えるようにするためだけに置く。
+ *    `SEND_ENTITY_TYPES` は `send_attempts.entity_type` の CHECK と一致する（`tests/static/schema-enum-drift.test.ts`）。
+ *    `SendAttemptToken` を作れるのは `packages/db/src/send.ts` の `reserveSendAttempt` だけであり、
+ *    `EmailSender.send` / `EsignProvider.createAndSend` が必須引数に取るため、**予約を経ない外部送信は
+ *    コンパイルできない**（`tests/static/send-attempt-token-single-path.test.ts` が `as` による偽造を走査する）。
  */
-export const SEND_ENTITY_TYPES = ['PROPOSAL', 'INTERVIEW', 'CONTRACT'] as const;
+import type { DispatchToken } from '@ses/domain';
 
-export type SendEntityType = (typeof SEND_ENTITY_TYPES)[number];
-
-declare const SendAttemptTokenBrand: unique symbol;
-
-/**
- * 🔴 **外部から構築できない**（docs/05 §10.2）。CAS 成功 + `SendAttempt` の INSERT 成功のときだけ
- *    `packages/db` の `reserveSendAttempt` が返す。`EmailSender.send` / `EsignProvider.createAndSend`
- *    が必須引数に取るため、**予約を経ない外部送信はコンパイルできない**。
- */
-export type SendAttemptToken = {
-  readonly idempotencyKey: string;
-  readonly attemptSeq: number;
-  readonly entityType: SendEntityType;
-  readonly entityId: string;
-  readonly [SendAttemptTokenBrand]: true;
-};
-
-declare const DispatchTokenBrand: unique symbol;
-
-/**
- * 🔴 運用メール（`email.dispatch` / `account.mail`）用のトークン。`EmailDispatch` 行の作成に
- *    成功したときだけ `packages/db` が返す。`dedupeKey` の `UNIQUE` が「再試行しても 1 通」を担保する。
- */
-export type DispatchToken = {
-  readonly dispatchId: string;
-  readonly dedupeKey: string;
-  readonly [DispatchTokenBrand]: true;
-};
+export { SEND_ENTITY_TYPES, isSendEntityType } from '@ses/domain';
+export type { DispatchToken, MeterSubmissionToken, SendAttemptToken, SendEntityType } from '@ses/domain';
 
 /**
  * 🔴 `DispatchToken` を作れる**唯一の関数**（T-04-03）。
@@ -291,8 +261,9 @@ export type DispatchToken = {
  *    引数の型は構造的にしか縛れない。**呼び出し元の限定は
  *    `tests/static/auth-db-callers.test.ts` の許可リスト**が担う（`resolveRecipientClass` と同じ扱い）。
  *    予約を経ずにここを呼ぶコードが増えた瞬間に、その走査が落ちる。
- * ⚠️ 申し送り（T-09-01）: 送信トークン型を `packages/domain` へ移す際に、この関数も
- *    「予約の結果からしか作れない」形（`packages/db` 側のブランドを引数に取る）へ引き上げる。
+ * ⚠️ 申し送り（T-09-05 で型の宣言場所は `packages/domain` に揃えた。本関数の移設は対象外）:
+ *    「予約の結果からしか作れない」形（`packages/db` 側のブランドを引数に取る）への引き上げは、
+ *    `reserveEmailDispatch` の戻り値にブランドを付ける改訂と同時に行う。
  */
 export function dispatchTokenFor(reservation: {
   readonly dispatchId: string;
@@ -300,12 +271,3 @@ export function dispatchTokenFor(reservation: {
 }): DispatchToken {
   return { dispatchId: reservation.dispatchId, dedupeKey: reservation.dedupeKey } as DispatchToken;
 }
-
-declare const MeterSubmissionTokenBrand: unique symbol;
-
-/** 🔴 `BillingMeterSubmission` に INSERT できた実行だけが Stripe を呼ぶ（docs/05 §9.8）。 */
-export type MeterSubmissionToken = {
-  readonly submissionId: string;
-  readonly identifier: string;
-  readonly [MeterSubmissionTokenBrand]: true;
-};

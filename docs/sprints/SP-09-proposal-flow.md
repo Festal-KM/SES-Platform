@@ -143,6 +143,8 @@
 - 🔴 **`packages/connectors` の送信関数が `SendAttemptToken` を必須引数に取る**（CAS と INSERT を経ずに外部送信できない構造にする）。
 - **完了の判定**: 型テスト（`SendAttemptToken` なしで送信関数を呼べない）+ 結合テスト（同一 `attempt_seq` の 2 回目の INSERT が失敗する）。
 
+- ✅ **T-09-05 の決着（2026-09-16）**: トークン 3 型と `SEND_ENTITY_TYPES` を `packages/domain/src/idempotency.ts` に一本化（`packages/connectors` は re-export）。`packages/db/src/send.ts` に `reserveSendAttempt`（`SystemTenantCtx`。`INSERT … ON CONFLICT DO NOTHING RETURNING`。0 行は `ALREADY_RESERVED`）/ `settleSendAttempt`（`RESERVED` からの CAS）/ `nextSendAttemptSeq`（`HumanTenantCtx` のみ。**ジョブは採番しない**）。実 DB で 2 本の UNIQUE が独立に効く・同時 5 回で RESERVED 1 回・ジョブ再実行で seq が増えないことを固定（`tests/isolation/send-attempt.test.ts` 18 件）。`as SendAttemptToken` は `send.ts` の 1 箇所だけ（`tests/static/send-attempt-token-single-path.test.ts`）。code-reviewer 1 回: 申し送りの「#43 は 409」が `docs/05` §10.5 の復帰経路を塞ぐ指摘 → T-09-06 節で訂正済み。
+
 ### T-09-06 🔴 提案の送信（`F-022`）（L）
 
 - **実装**: `POST /api/proposals/{id}/submit`（#43）。ジョブ `send.proposal`（🔴 **`attempts: 1` 固定**）。`docs/05` §10.2 の実行順序をそのまま実装する。
@@ -171,6 +173,14 @@
   5. E2E #10 の「再検証なしで送信できない」の**送信側アサーション**（承認後に `proposals.content_hash` をずらした提案に #43 を叩いても `SUBMITTING` に入らず `GATE_STALE` の保留になる）を `tests/e2e/home.mobile.spec.ts` の T-09-04 の続き、または送信の spec に足す。
   6. `S-021` の primary を「承認する」から切り替える場合（`proposals.approval.action.approve`）、**押した瞬間に「送信済み」と見せない**（`docs/05` §6.5 T-09-03 の決着）。
   7. ⚠️ `contentHash` 素材は `v4`（careers 入り）。**T-09-03 以前に E2E / 開発 DB に残った `v3` の行は承認・送信で `GATE_STALE` になる**（fail-closed。再検証で復帰。`docs/05` §11.5「版の切り替え」）。E2E のシードは毎回作り直すので影響しない。
+- 🔴 **T-09-05 からの申し送り（2026-09-16。`docs/05` §10.1「T-09-05 の実装の決着」）**:
+  1. **④ は `reserveSendAttempt(ctx: SystemTenantCtx, { entityType: 'PROPOSAL', entityId, origin, now })`**（`packages/db/src/send.ts`）。**ジョブは `attempt_seq` を採番しない** —— payload の `attemptSeq` を `SendAttemptOrigin` に写す（`1` → `{ kind: 'INITIAL' }` / `≥ 2` → `{ kind: 'RESEND', attemptSeq, requestedBy }`）。🔴 したがって **`send.proposal` の payload に `requestedBy: string | null` を足す**（`docs/05` §9.4 の `{ tenantId, proposalId, attemptSeq }` への追加。#43 / #44〔T-09-08〕とも操作者の `User.id`。seq 1 = `INITIAL` では無視される）。`origin` の不整合（`RESEND` で `requestedBy` 無し等）は `SendAttemptOriginError`（実装バグ。保留にも失敗にもしない）。
+  2. **戻り値は `{ outcome: 'RESERVED', token } | { outcome: 'ALREADY_RESERVED', existing }`。** `ALREADY_RESERVED` は例外ではなく「同じ試行が既に送信中 / 確定済み」であり、**外部 API を呼ばずに終了する**（`docs/05` §10.2 ④）。`existing.status` が `RESERVED` なら別の実行が送信中、`SUCCEEDED` / `FAILED` / `UNKNOWN` なら確定済み。
+  3. 🔴 **② の遅延判定に `readSendAttempt(ctx, { entityType: 'PROPOSAL', entityId, attemptSeq: payload.attemptSeq })` を含め、行が既にあれば CAS の前に終了する。** 含めないと、古い重複ジョブが ③ `castProposalToSubmitting` を通った直後に ④ で `ALREADY_RESERVED` になり、`SUBMITTING` のまま誰も確定しない行が残る（`docs/05` §10.6 の滞留と同じ形）。
+  4. **⑤ は `deps.emailSender.send({ …, token })`**（`EmailSendInput.token` は `SendAttemptToken | DispatchToken` で必須。`email-send.ts` の `dispatchTokenFor` と同じ位置）。🔴 `as SendAttemptToken` を書かない（`tests/static/send-attempt-token-single-path.test.ts` が `apps/**` で 0 件を固定する）。
+  5. **⑥ は `settleSendAttempt(ctx, token, { status: 'SUCCEEDED', externalId, now })` / `{ status: 'FAILED' | 'UNKNOWN', failureKind, failureDetail?, now }`** を **`Proposal` の確定（`SUBMITTING → SUBMITTED / SUBMIT_FAILED`。T-09-07）と同じ手順の中**で呼ぶ。`ALREADY_SETTLED` は上書きしない。`failureDetail` にトークン・宛先・本文を載せない（500 文字で切られる）。
+  6. 🔴 `tests/static/auth-db-callers.test.ts` の許可リストは **`reserveSendAttempt` / `settleSendAttempt` に `apps/worker/src/jobs/send-proposal.ts` を足す**（`castProposalToSubmitting` と同じ 1 ファイル）。**`nextSendAttemptSeq` は `apps/web/**`（#43 の実装ファイル）に足し、`apps/worker/**` には決して足さない**（独立した `it` が 0 件を固定している）。🔴 **#43 も #44 も `nextSendAttemptSeq(ctx, { entityType: 'PROPOSAL', entityId })` を呼ぶ**（レビュー指摘で訂正、2026-09-16）。戻り値 1 なら `INITIAL`、2 以上なら `RESEND`（`requestedBy = ctx.userId`）を payload に載せる。既に試行がある `APPROVED` に #43 が来るのは「前回の失敗を #44 で了承済みで、seq N+1 のジョブが ④ に到達せず保留（`GATE_STALE` / ②-a の 30 分超過等）になった」場合であり、`docs/05` §10.5「保留は自動復帰しない。人間が `S-021` / `S-022` から再度『送信』を選ぶ」の復帰経路そのものである。**409 にしない**（409 にすると seq 1 FAILED → #44 → 保留 → #43 が 409 / #44 は `APPROVED` なので 422、で誰も送れなくなる）。同じ `attemptSeq` の重複 enqueue は BullMQ の `jobId` と ②（`readSendAttempt`）③④ が 1 回に収束させる。T-09-06 の結合テストに「`SUBMIT_FAILED` → #44 → seq 2 ジョブを `GATE_STALE` 保留 → #43 が 202 で `attemptSeq: 2` を返し `send_attempts` は増えない」を入れる。
+  7. §17.3 #23 の「`SendAttempt` は提案ごとに 1 行」は、`PROVIDER_QUOTA` の保留が **① で CAS の前に止まる**（④ に到達しない）ことで成立する。保留 → `send.hold-release` → 再 enqueue でも `attemptSeq` は同じ（`docs/05` §10.4）。
 
 ### T-09-07 応答不明時の隔離と `SUBMIT_FAILED` の確定（M）
 
@@ -181,6 +191,10 @@
 - **完了の判定**: E2E #8（応答不明 → `SUBMIT_FAILED` → 自動再送されない → 人手再送で 1 回だけ送信）。
 
 ### T-09-08 送信失敗の一覧と人手再送（M）
+
+  8. **`send.proposal` の `jobId` を `{proposalId}:{attemptSeq}` の冪等キーにする場合の注意**: `externalSendQueue` は `removeOnComplete` を持たないため（`packages/connectors/src/queues.ts`）、保留 → `send.hold-release` の「同じ `attemptSeq` で再 enqueue」（§10.4 / §12.6）が completed 記録に静かに捨てられる（`gate.run` が `removeOnComplete: true` にしたのと同型）。`queue-attempts.test.ts` がキューのオプションを固定しているので、**設計として先に決める**（`docs/05` §9.4 / §10.4 に決着を書く）。
+  9. `SendAttemptOriginError` は ④ の入口で投げられる。③ の後に投げると `SUBMITTING` のまま行が無い滞留になるため、**payload の `origin` 整合（seq ≥ 2 なら `requestedBy` 必須）は ① の Zod 検証で先に落とす**。
+  10. `nextSendAttemptSeq` は取引先文脈でも呼べてしまう（`send_attempts` は C2 HOST_ONLY なので常に 1 が返る = 黙って誤った採番。ジョブ側の ② で止まるため二重送信にはならない）。#43 / #44 は `requireRole(OWNER/ADMIN/SALES)` で取引先を先に弾くこと。`HostTenantCtx` への型の狭め込みは T-09-06 で同時に行ってよい。
 
 - **実装**: `POST /api/proposals/{id}/resend`（#44）。画面は `S-022`（Tier 2）。
 - 🔴 **再送を自動的に起動する仕組み・設定・ジョブが存在しない**（`F-023 AC-1` / `docs/05` §6.8）。

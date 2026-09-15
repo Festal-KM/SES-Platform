@@ -11,17 +11,16 @@
 //      re-export に置き換えた）、突合の基準を **domain** に移した。本テストは合わせて
 //      「connectors が独自の `RECIPIENT_CLASSES` を再び宣言していないこと」も見る
 //      （再宣言が入った瞬間に、値集合が 3 箇所に散る）。
-//   ③ `SEND_ENTITY_TYPES` ↔ `packages/db` の `SEND_ATTEMPT_ENTITY_TYPES`
+//   ③ `SEND_ENTITY_TYPES`（`packages/domain/src/idempotency.ts`）が**唯一の宣言**であること
 //      🔴 ずれると `idempotencyKey()` が `send_attempts` の CHECK を通らない冪等キーを生み、
 //      **二重送信の唯一の防御線（docs/05 §10.1 の 2 本の UNIQUE）が機能しない**。
-//   ④ 送信トークン型のプロパティ名 ↔ docs/05 §10.2 の宣言（`packages/db/src/send.ts`）
+//      ✅ T-09-05 で `packages/connectors` / `packages/db` の二重宣言を解消し（どちらも domain からの re-export）、
+//      ②と同じく「再宣言していないこと」の確認に置き換えた。CHECK との突合は `schema-enum-drift.test.ts`。
+//   ④ 送信トークン型 `SendAttemptToken` のプロパティ名 ↔ docs/05 §10.1 の宣言（`packages/domain/src/idempotency.ts`）
+//      ✅ T-09-05: 宣言は domain の 1 箇所。`packages/connectors` が再宣言していないことも見る。
 //
-// なぜ ①③④ を import で共有しないのか:
-//   `packages/connectors` は `packages/config` / `packages/db` に依存できない（CLAUDE.md §2.1）。
-//   ③④ は `packages/db` が発行する値の型であり、移設先の判断が SP-09（送信の予約）の設計に
-//   依存するため、当面は二重宣言を**機械的に突合**して守る。
-//   ⚠️ 申し送り（T-09-01）: 送信トークン型を `packages/domain` へ移すタイミングで、
-//      ③④ も②と同じく「宣言が 1 つであること」の確認に置き換える。
+// なぜ ① を import で共有しないのか:
+//   `packages/connectors` は `packages/config` に依存できない（CLAUDE.md §2.1）。
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -41,6 +40,8 @@ const domainRecipientFile = path.join(
   'classify.ts',
 );
 const dbValueSetsFile = path.join(repoRoot, 'packages', 'db', 'src', 'schema-value-sets.ts');
+// 🔴 T-09-05: 送信エンティティ種別とトークン型の唯一の宣言場所（docs/05 §10.1）。
+const domainIdempotencyFile = path.join(repoRoot, 'packages', 'domain', 'src', 'idempotency.ts');
 // 🔴 T-07-01: `packages/ai` も `packages/config` の実装種別を二重宣言する（`@ses/config` に
 //    依存しないため。`packages/connectors` と同じ理由）。ここで同じ突合の対象にする。
 const aiIndexFile = path.join(repoRoot, 'packages', 'ai', 'src', 'index.ts');
@@ -163,10 +164,13 @@ const connectors = parse(connectorsFile);
 const ai = parse(aiIndexFile);
 const domainRecipient = parse(domainRecipientFile);
 const dbValueSets = parse(dbValueSetsFile);
+const domainIdempotency = parse(domainIdempotencyFile);
 const sesEvents = parse(sesEventsFile);
+// 🔴 §10.1 には `packages/domain/src/idempotency.ts` を冒頭に持つ ts ブロックが 2 つある（`idempotencyKey` の宣言と
+//    トークン型の宣言）。トークン型のブロックはブランドの宣言行で特定する。
 const docsSendTokens = parseText(
-  tsCodeBlockContaining(readFileSync(programDesignFile, 'utf8'), 'packages/db/src/send.ts'),
-  'docs-05-send.ts',
+  tsCodeBlockContaining(readFileSync(programDesignFile, 'utf8'), 'declare const SendAttemptTokenBrand'),
+  'docs-05-idempotency.ts',
 );
 
 describe('🔴 コネクタ選択の二重宣言が一致していること（docs/05 §13.1）', () => {
@@ -210,7 +214,10 @@ describe('🔴 コネクタ選択の二重宣言が一致していること（do
 describe('🔴 packages/db の CHECK 値集合との二重宣言が一致していること（docs/05 §3.9）', () => {
   it('対照: packages/db 側から値を取り出せている（テストが空振りしていない）', () => {
     expect(arrayLiteralsOfConst(dbValueSets, 'EMAIL_RECIPIENT_CLASSES').length).toBeGreaterThan(0);
-    expect(arrayLiteralsOfConst(dbValueSets, 'SEND_ATTEMPT_ENTITY_TYPES').length).toBeGreaterThan(0);
+  });
+
+  it('対照: packages/domain 側から送信エンティティ種別を取り出せている（テストが空振りしていない）', () => {
+    expect(arrayLiteralsOfConst(domainIdempotency, 'SEND_ENTITY_TYPES').length).toBeGreaterThan(0);
   });
 
   it('対照: packages/domain 側から宛先分類を取り出せている（テストが空振りしていない）', () => {
@@ -230,12 +237,17 @@ describe('🔴 packages/db の CHECK 値集合との二重宣言が一致して�
     expect(readFileSync(connectorsFile, 'utf8')).toContain("from '@ses/domain'");
   });
 
-  it('🔴 送信エンティティ種別（SEND_ENTITY_TYPES ↔ SEND_ATTEMPT_ENTITY_TYPES）が一致する', () => {
+  it('🔴 送信エンティティ種別の宣言は packages/domain の SEND_ENTITY_TYPES の 1 つだけ（T-09-05 で一本化した）', () => {
     // ずれると idempotencyKey() が send_attempts の CHECK を通らない値を生み、
     // 二重送信の唯一の防御線（docs/05 §10.1 の 2 本の UNIQUE）が機能しない。
-    const fromConnectors = [...arrayLiteralsOfConst(connectors, 'SEND_ENTITY_TYPES')].sort();
-    const fromDb = [...arrayLiteralsOfConst(dbValueSets, 'SEND_ATTEMPT_ENTITY_TYPES')].sort();
-    expect(fromConnectors).toEqual(fromDb);
+    // 🔴 connectors / db のどちらかが再宣言すると値集合が 3 箇所に散り、「片方だけ古い」状態が起こりうる。
+    //    両方とも re-export（`from '@ses/domain'`）でなければならない。
+    expect(arrayLiteralsOfConst(connectors, 'SEND_ENTITY_TYPES')).toEqual([]);
+    expect(arrayLiteralsOfConst(dbValueSets, 'SEND_ATTEMPT_ENTITY_TYPES')).toEqual([]);
+    expect(readFileSync(connectorsFile, 'utf8')).toMatch(/export \{[^}]*SEND_ENTITY_TYPES[^}]*\} from '@ses\/domain'/);
+    expect(readFileSync(dbValueSetsFile, 'utf8')).toMatch(
+      /export \{ SEND_ENTITY_TYPES as SEND_ATTEMPT_ENTITY_TYPES \} from '@ses\/domain'/,
+    );
   });
 
   it('🔴 SES のイベント種別（SES_EVENT_TYPES ↔ EMAIL_EVENT_TYPES）が一致する（T-04-03）', () => {
@@ -249,25 +261,34 @@ describe('🔴 packages/db の CHECK 値集合との二重宣言が一致して�
 
   it('🔴 ジョブ名の接尾辞（send.interview-invite）とエンティティ種別（INTERVIEW）を混同していない', () => {
     // 名前が似ているため取り違えやすい。ここで明示的に固定する。
-    expect(arrayLiteralsOfConst(connectors, 'SEND_ENTITY_TYPES')).toContain('INTERVIEW');
-    expect(arrayLiteralsOfConst(connectors, 'SEND_ENTITY_TYPES')).not.toContain('INTERVIEW_INVITE');
+    expect(arrayLiteralsOfConst(domainIdempotency, 'SEND_ENTITY_TYPES')).toContain('INTERVIEW');
+    expect(arrayLiteralsOfConst(domainIdempotency, 'SEND_ENTITY_TYPES')).not.toContain('INTERVIEW_INVITE');
   });
 });
 
-describe('🔴 送信トークン型が docs/05 §10.2 の宣言と一致していること', () => {
+describe('🔴 送信トークン型が docs/05 §10.1 の宣言と一致していること（宣言は packages/domain の 1 箇所。T-09-05）', () => {
   it('対照: docs から SendAttemptToken の宣言を読めている', () => {
     expect(propertyNamesOfTypeAlias(docsSendTokens, 'SendAttemptToken').length).toBeGreaterThan(0);
   });
 
-  it('SendAttemptToken のプロパティ名が docs/05 §10.2（packages/db/src/send.ts）と一致する', () => {
+  it('SendAttemptToken のプロパティ名が docs/05 §10.1（packages/domain/src/idempotency.ts）と一致する', () => {
     // ブランド（computed property）は両側とも対象外。名前付きプロパティだけを突合する。
     const fromDocs = [...propertyNamesOfTypeAlias(docsSendTokens, 'SendAttemptToken')].sort();
-    const fromConnectors = [...propertyNamesOfTypeAlias(connectors, 'SendAttemptToken')].sort();
-    expect(fromConnectors).toEqual(fromDocs);
+    const fromDomain = [...propertyNamesOfTypeAlias(domainIdempotency, 'SendAttemptToken')].sort();
+    expect(fromDomain).toEqual(fromDocs);
   });
 
   it('SendAttemptToken の entityType が SendEntityType である（型名の取り違えを固定する）', () => {
-    const types = propertyTypeTextsOfTypeAlias(connectors, 'SendAttemptToken');
+    const types = propertyTypeTextsOfTypeAlias(domainIdempotency, 'SendAttemptToken');
     expect(types.entityType).toBe('SendEntityType');
+  });
+
+  it('🔴 packages/connectors が送信トークン型 3 種を再宣言していない（re-export のみ）', () => {
+    for (const typeName of ['SendAttemptToken', 'DispatchToken', 'MeterSubmissionToken']) {
+      expect(propertyNamesOfTypeAlias(connectors, typeName), typeName).toEqual([]);
+    }
+    expect(readFileSync(connectorsFile, 'utf8')).toMatch(
+      /export type \{[^}]*SendAttemptToken[^}]*\} from '@ses\/domain'/,
+    );
   });
 });

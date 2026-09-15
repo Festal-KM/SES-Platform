@@ -173,6 +173,17 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
   //    ⚠️ T-09-06 で `apps/worker/src/jobs/send-proposal.ts`（`send.proposal` の 1 ファイル）をここに足す。
   //    **`apps/web/**` には決して足さない**（下の it が独立に固定する）。
   castProposalToSubmitting: [],
+  // 🔴 T-09-05: `SendAttempt` の予約と確定（docs/05 §10.2 ④⑥ / §10.6）。**予約 = `SendAttemptToken` の唯一の生成経路**であり、
+  //    引数は `SystemTenantCtx`（`apps/web` が組み立てられない）。呼び出し元は送信ジョブの 1 入口（`runExternalSend`）に限る。
+  //    ⚠️ T-09-06 で `apps/worker/src/jobs/send-proposal.ts`（`send.proposal` の 1 ファイル）をここに足す。
+  //    **`apps/web/**` には決して足さない**（下の it が独立に固定する）。
+  reserveSendAttempt: [],
+  settleSendAttempt: [],
+  // 🔴 T-09-05: `attempt_seq` の採番（docs/05 §10.1 / §10.6「人間の明示操作でのみ増える」）。引数は `HumanTenantCtx`
+  //    （`SystemTenantCtx` を渡せない）であり、呼び出し元は **`apps/web/**`（#43 / #44 / #60 / #61）だけ**。
+  //    ⚠️ T-09-06 が `POST /api/proposals/{id}/submit` の実装ファイルを、T-09-08 が `resend` を足す。
+  //    **`apps/worker/**` には決して足さない**（下の it が独立に固定する。ジョブは採番しない）。
+  nextSendAttemptSeq: [],
   // 🔴 T-07-11: `scheduler_runs`（C0 SYSTEM_ONLY）を書く唯一の経路（docs/05 §4.4.2 / §9.1）。
   //    **`runScheduled()` だけ**であり、個々のジョブハンドラは `SchedulerRun` に触れない ——
   //    触れると「記録せずに走るジョブ」が書け、`A-005`（§16.5）の滞留検知が母集団を失う。
@@ -405,6 +416,21 @@ describe('認証コンテキストを組み立てられる場所を固定する�
       file.startsWith('apps/web/'),
     );
     expect(webFiles).toEqual([]);
+  });
+
+  it('🔴 apps/web/** に reserveSendAttempt / settleSendAttempt の参照が無い（T-09-05。SendAttempt を書くのは送信ジョブだけ。docs/05 §10.2 ④⑥）', () => {
+    // 🔴 `ALLOWED_CALLERS` とは独立に固定する —— T-09-06 が `apps/worker/**` を足しても、この it は `apps/web/**` が
+    //    0 件であることを見続ける（HTTP 経路が `SendAttemptToken` を手にする = 予約を経て外部送信できる、を作らない）。
+    for (const identifier of ['reserveSendAttempt', 'settleSendAttempt']) {
+      const webFiles = filesMentioning(identifier).filter((file) => file.startsWith('apps/web/'));
+      expect(webFiles, identifier).toEqual([]);
+    }
+  });
+
+  it('🔴 apps/worker/** に nextSendAttemptSeq の参照が無い（T-09-05。attempt_seq は人間の明示操作でのみ増える。docs/05 §10.6）', () => {
+    // 🔴 ジョブが採番できると「確定済みの試行の後にジョブが再実行されただけで新しいキー = もう 1 通」が生まれる。
+    const workerFiles = filesMentioning('nextSendAttemptSeq').filter((file) => file.startsWith('apps/worker/'));
+    expect(workerFiles).toEqual([]);
   });
 
   it('🔴 apps/worker/** に resolveTenantCtx の参照が無い（docs/05 §17.2 #20 ①）', () => {
