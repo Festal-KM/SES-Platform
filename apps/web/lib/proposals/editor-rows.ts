@@ -11,7 +11,7 @@ import type { ProposalState } from '@ses/domain';
 import { formatUnitPriceRange } from '../engineers/detail';
 import { formatDateTimeJst } from '../format/datetime';
 import { formatThousands } from '../format/number';
-import { PROPOSAL_EDIT_HREF_PATTERN, proposalCreateHref } from './hrefs';
+import { PROPOSAL_EDIT_HREF_PATTERN, proposalApproveHref, proposalCreateHref } from './hrefs';
 import type { AttachableSkillSheetView, ProposalCreationTargetView, ProposalEditorView } from './service';
 import type { ProposalView } from './views';
 
@@ -238,6 +238,8 @@ export type ProposalEditRows = {
   readonly cancelLabel: string;
   /** 🔴 立場として編集できるか（`canEditProposal`）。 */
   readonly canEdit: boolean;
+  /** 🔴 T-09-03: `S-021` への導線。`DRAFT` 以外のときだけ（レビューに出した後は承認画面で判断材料を見る）。 */
+  readonly approveHref: string | null;
 };
 
 function attachmentLabel(version: number, uploadedAt: string | null): string {
@@ -323,6 +325,7 @@ export function proposalEditRows(editor: ProposalEditorView): ProposalEditRows {
     cancelHref: view.project === null ? '/proposal-requests' : `/projects/${view.project.id}/candidates`,
     cancelLabel: view.project === null ? t('proposals.editor.backToRequests') : t('proposals.editor.cancel'),
     canEdit: editor.canEdit,
+    approveHref: view.state === 'DRAFT' ? null : proposalApproveHref(view.id),
   };
 }
 

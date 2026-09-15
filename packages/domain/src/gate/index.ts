@@ -5,6 +5,10 @@
 //    整合層の機械的照合（`decideConsistency`。🔴 引数型に AI 由来の型が現れないこと）は
 //    T-07-07 で `consistency.ts` に入った（docs/05 §11.8）。
 export { decideGate } from './decide.js';
+// 🔴 T-09-03: 自動承認の分岐（docs/05 §11.6）。`autoApproveEnabled` かつ全層 PASS のときだけ。
+//    `TenantRoleApprovalMode` を引数に持たない（`F-035 AC-3`）。
+export { AUTO_APPROVE_REASON, shouldAutoApprove } from './autoApprove.js';
+export type { AutoApproveInput } from './autoApprove.js';
 export type {
   GateAiOutcome,
   GateDecision,

@@ -137,6 +137,12 @@ export type ProposalEditorProps = {
   readonly sendingDomain: ProposalSendingDomainRows;
   readonly cancelHref: string;
   readonly cancelLabel: string;
+  /**
+   * 🔴 T-09-03: `S-021`（承認画面）への導線。`DRAFT` 以外のときだけ非 `null`（レビューに出した後は承認画面で
+   *    判断材料を見る。`docs/04` §S-020「レビュー依頼 → `S-021`」）。承認できるかは `S-021` 側が決める。
+   */
+  readonly approveHref: string | null;
+  readonly approveLabel: string;
   readonly messages: ProposalEditorMessages;
 };
 
@@ -302,7 +308,7 @@ function GateResult({ result, messages }: { readonly result: GateResultView; rea
 }
 
 export function ProposalEditor(props: ProposalEditorProps) {
-  const { mode, proposalId, create, target, freeze, attachment, initial, originNotice, readOnlyNotice, canEdit, denialMessage, sendingDomain, cancelHref, cancelLabel, messages } = props;
+  const { mode, proposalId, create, target, freeze, attachment, initial, originNotice, readOnlyNotice, canEdit, denialMessage, sendingDomain, cancelHref, cancelLabel, approveHref, approveLabel, messages } = props;
   const router = useRouter();
   const [values, setValues] = useState<ProposalFormValues>(initial);
   const [dirty, setDirty] = useState(false);
@@ -753,6 +759,11 @@ export function ProposalEditor(props: ProposalEditorProps) {
                 </Button>
               ) : null}
             </>
+          )}
+          {approveHref === null ? null : (
+            <Link className={SECONDARY_LINK_CLASSES} href={approveHref} data-testid="proposal-editor-open-approval">
+              {approveLabel}
+            </Link>
           )}
           <Link className={SECONDARY_LINK_CLASSES} href={cancelHref} data-testid="proposal-editor-cancel">
             {cancelLabel}

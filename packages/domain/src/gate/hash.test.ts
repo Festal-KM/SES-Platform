@@ -24,7 +24,7 @@ const SNAPSHOT: GateHashSnapshot = {
   unitPriceMin: '600000.00',
   unitPriceMax: '700000.00',
   availableFrom: '2026-10-01',
-  attachment: { skillSheetId: 'sheet-1', objectKey: 't/tenant/e/eng/v3.xlsx', version: 3 },
+  attachment: { skillSheetId: 'sheet-1' },
 };
 
 const PROPOSAL: ProposalGateHashInput = {
@@ -78,12 +78,18 @@ describe('gateHashSource（§11.5 の正規化）', () => {
     );
   });
 
-  it('🔴 添付の版が変われば連結が変わる（§11.5「添付の objectKey + versionId」）', () => {
-    const other: GateHashSnapshot = {
-      ...SNAPSHOT,
-      attachment: { skillSheetId: 'sheet-2', objectKey: 't/tenant/e/eng/v4.xlsx', version: 4 },
-    };
+  it('🔴 添付の版（凍結列 skill_sheet_id）が変われば連結が変わる（§11.5。T-09-03 で材料を ID だけにした）', () => {
+    const other: GateHashSnapshot = { ...SNAPSHOT, attachment: { skillSheetId: 'sheet-2' } };
     expect(gateHashSource({ ...PROPOSAL, snapshot: other })).not.toBe(gateHashSource(PROPOSAL));
+  });
+
+  it('🔴 添付の材料は skill_sheet_id だけである（objectKey / version を渡す入力面が型として無い）', () => {
+    // 🔴 T-09-03: リレーション由来の属性が材料に残っていると、読む側の所属でハッシュが食い違う（docs/05 §11.10 ②）。
+    //    連結の行として `snapshot.attachment.` で始まるのは有無と ID の 2 行だけであることを固定する。
+    const lines = gateHashSource(PROPOSAL)
+      .split('\n')
+      .filter((line) => line.startsWith('snapshot.attachment'));
+    expect(lines).toEqual(['snapshot.attachment=7:present', 'snapshot.attachment.skillSheetId=7:sheet-1']);
   });
 
   it('🔴 添付の有無が連結に現れる', () => {

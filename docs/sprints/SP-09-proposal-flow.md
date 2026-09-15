@@ -125,6 +125,15 @@
 - **完了の判定**: E2E #10 が green。結合テスト（ハッシュ不一致で送信 CAS が 0 件更新）。
 - 🔴 **T-09-01 からの申し送り（2026-09-16。レビューが実 DB で再現）: `contentHash` が読む側の所属で食い違う。** `computeProposalContentHash`（`packages/db/src/gate-content-hash.ts`）は添付の材料を `engineer_snapshots.skillSheet` **リレーション**（`id` / `objectKey` / `version`）から取るが、`skill_sheets` は C3（所有者だけ）なので、**ホスト文脈で取引先作成の提案を読むとリレーションが `null` になり、同一提案でホストのハッシュ ≠ 取引先のハッシュ**になる。**本タスク（T-09-01）では壊れていない**根拠: ①`proposals.content_hash` を書くのは #39 だけで、依頼者（取引先）の文脈のハッシュが列に入る ②`gate.run` は payload のハッシュを信頼して `review_gates.content_hash` に写す（再計算しない）ので、承認 CAS が突き合わせる 2 列は一致する ③ずれの向きは「変更あり」の偽陽性であり、検査していない内容が承認される方向（バイパス）にはならない。**影響先**: 本タスク（T-09-04）の「承認後の内容変更で承認が無効になる」判定（#40 / `S-021` がホスト文脈で再計算したハッシュと `review_gates.content_hash` を比べると、変更していないのに「変更あり」になる）と、#39 のキャッシュ判定（`findCachedReviewGate` を**ホスト**が呼ぶと同じ内容でも別ハッシュとして再実行される。取引先が呼ぶ限りは一致する）。**修正方向**: 添付の材料をリレーションではなく凍結列 `engineer_snapshots.skill_sheet_id`（C5。ホストも読める）にする（`objectKey` / `version` を材料から外す。版の差し替えは #37 が `skill_sheet_id` を書き換えるのでハッシュは変わる）か、`readProposalGateHashInput` を所属によらず同じ材料が読める経路（`app_gate_probe` と同型）で読む。**どちらも `docs/05` §11.5 の材料の定義（`gateHashSource` の入力）を先に直す**（`CLAUDE.md` §8.7）。
 
+- 🔴 **T-09-03 からの申し送り（2026-09-16。code-reviewer が実 DB で確認）**:
+  1. **承認 CAS（§11.5 手順 3）と `contentHash` 素材 v3（凍結列 `engineer_snapshots.skill_sheet_id`）は T-09-03 で実装済み。** 本タスクの残りは手順 2 / 手順 4 の側である。
+  2. 🔴 **`EngineerSnapshot.careers` が `contentHash` の材料に入っていない**（`docs/05` §11.5 は「careers の全行の 5 項目」を列挙するが `packages/domain/src/gate/hash.ts` `GateHashSnapshot` と `packages/db/src/gate-content-hash.ts` の `select` に無い。T-09-12 の取りこぼしで、ゲートは `gate-target.ts` で careers を検査している）。**本タスクで `v4` に上げて材料に入れる。** 確認: `hash.test.ts` に「careers の 1 行を変えると連結が変わる」。
+  3. 🔴 **`docs/05` §11.5 手順 2「`APPROVAL_PENDING` / `APPROVED` なら `DRAFT` に戻す」は `CLAUDE.md` §4.2 に無い遷移（`APPROVED → DRAFT`）を前提にしており、`#37`（`DRAFT` のみ編集可。T-09-01）とも食い違う。** [Issue #54](https://github.com/Festal-KM/SES-Platform/issues/54) で確認中（`decision-needed`）。**既定値は「追加しない」**: §11.5 手順 2 を `#37` の実装に合わせて改訂し、手順 3 / 4 のハッシュ一致条件は API を通らない経路に対する多層防御と位置づける。
+  4. 送信前判定（`docs/05` §10.2 ①-c / ②-b）が使う「ゲートが現在の内容に対して有効か」の判定を、承認 CAS と **1 実装**で共有する形で `packages/db` に置く（T-09-06 が消費する。ここで別実装を書くと承認と送信で判定が食い違う）。
+  5. **ワーカーの自動承認がテナントのライフサイクル状態を見ない**（`apps/worker/src/jobs/gate-run.ts` は `autoApproveEnabled` だけを読む）。同じ `select` に `lifecycleState` を足し、`SANDBOX` / `ACTIVE` 以外では自動承認を呼ばない。確認: `gate-run.test.ts` に `SUSPENDED` で `approveProposal` が呼ばれないケース。
+  6. `docs/05` §6.5 に「#41 / #42 の実装の決着（T-09-03）」の節が無い。T-09-01 / T-09-02 と同じ作法で記録する（`approveProposal` を `packages/db` に置いた理由・3 段の拒否順序・`S-021` の primary が T-09-06 まで「承認する」であること・`tests/e2e/harness/db-admin.ts` のシーム）。
+  7. E2E #10 の「再検証なしで送信できない」の部分は送信 API（#43）が T-09-06 のため、本タスクでは結合テスト（ハッシュ不一致で `APPROVED → SUBMITTING` の CAS が 0 件更新）で担保し、E2E の送信側アサーションは T-09-06 で足す。
+
 ### T-09-05 `SendAttempt` と冪等性キーの規約（M）
 
 - **実装**: `docs/05` §10.1 / `docs/03` `program-design` 申し送り 3 / `docs/02` `program-design` 申し送り 3。
@@ -180,6 +189,8 @@
 - 🔴 **`PartnerProposalDetailView` に `duplicateFindings` が存在しない**（`F-037 AC-1` / `BR-08`。**重複提案の検知は Phase 2 だが、型の分離は本タスクで行う** — 後から足すと漏れる）。
 - 🔴 **パートナーが参照できる提案履歴は自社が作成した提案に限られる**（`F-024 AC-3`）。
 - **完了の判定**: `F-024 AC-2` / `AC-3` の結合テスト + 型テスト。
+
+- **T-09-03 からの申し送り（2026-09-16）**: 却下（#42）は `DRAFT` に戻すが `review_gates` の DONE / PASS 行は残るため、**内容を変えずに #39 を再依頼すると 422 `GATE_ALREADY_COMPLETED`**（`docs/05` §11.10 ⑤。fail-closed）。誤って却下した場合は何かを編集する必要がある。`S-023` の履歴・`S-020` の導線の文言にこの事実を反映するか、本タスクで判断する。
 
 ### T-09-10 商談結果の記録（M）
 

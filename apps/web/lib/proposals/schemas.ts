@@ -152,3 +152,28 @@ export type TransitionProposalBody = z.infer<typeof transitionProposalBodySchema
 export type TransitionProposalBodyIsolationGuard = AssertNoIsolationKeys<TransitionProposalBody>;
 
 assertNoIsolationKeys(Object.keys(transitionProposalBodySchema.shape), 'transitionProposalBodySchema');
+
+// ============================================================================
+// T-09-03: #41 `POST /api/proposals/{id}/approve` / #42 `POST /api/proposals/{id}/reject`（docs/05 §6.5）
+// ============================================================================
+//
+// 🔴 **#41 は body を持たない**（docs/05 §6.5 #41 の request は `{ }`。「ゲート結果を引数に取らない」）。
+//    #39 と同じ整理であり、ルートは `body` スキーマを宣言しないため、`{ gate: { pii: 'PASS' } }` / `{ force: true }` /
+//    `{ reviewGateId }` のような入力は**ハンドラに 1 バイトも届かない**。承認の根拠になるゲート結果は
+//    `approveProposal`（`packages/db`）が現在の内容から自分で引く。**承認側がゲート結果を持ち込める構造にしない**
+//    （`docs/04` 申し送り 4 / `F-020 AC-2` / `CLAUDE.md` §3.3）。
+// 🔴 #42 は理由が必須（`F-021` 入力「承認 / 却下の指示と理由」/ docs/05 §6.5 #42 `{ reason }`）。理由は作成者への
+//    差し戻しの説明であり `ProposalEvent.note` に書く。監査の `summary` には載せない（自由入力。§16.2）。
+
+/** 却下の理由（`ProposalEvent.note`）。DB は TEXT。 */
+const REJECT_REASON_MAX_LENGTH = 2_000;
+
+export const rejectProposalBodySchema = z.object({
+  reason: z.string().trim().min(1).max(REJECT_REASON_MAX_LENGTH),
+});
+
+export type RejectProposalBody = z.infer<typeof rejectProposalBodySchema>;
+
+export type RejectProposalBodyIsolationGuard = AssertNoIsolationKeys<RejectProposalBody>;
+
+assertNoIsolationKeys(Object.keys(rejectProposalBodySchema.shape), 'rejectProposalBodySchema');

@@ -44,6 +44,7 @@ import {
 } from '@ses/ai';
 import { GATE_RUN_JOB } from '@ses/connectors';
 import {
+  approveProposal,
   completeReviewGate,
   findCachedReviewGate,
   holdReviewGate,
@@ -60,6 +61,7 @@ import {
   decideGate,
   isGateTargetType,
   proposalMachine,
+  shouldAutoApprove,
   type GateAiOutcome,
   type GateDecision,
   type GateInput,
@@ -100,6 +102,12 @@ export type GateRunOutcome =
       readonly aiFailed: boolean;
       /** 対象の状態を実際に動かしたか（`GATE_RUNNING` からの CAS が 1 件だったか）。 */
       readonly transitioned: boolean;
+      /**
+       * 🔴 T-09-03: 自動承認（docs/05 §11.6 / `F-021 AC-3` `AC-5`）。`autoApproveEnabled` かつ全層 PASS で
+       *    `APPROVAL_PENDING` に確定したときだけ `approveProposal`（`SYSTEM`）を呼び、その帰結を写す。
+       *    `null` = 自動承認の対象ではない（無効 / 1 層でも FAIL / 提案以外の対象 / 状態を動かしていない）。
+       */
+      readonly autoApproval: 'APPROVED' | 'GATE_STALE' | 'NOT_PENDING' | null;
       /** 🔴 案件の公開の確定（T-07-09）。対象が `PROJECT_PUBLISH` 以外なら `null`。 */
       readonly publish: ProjectPublishSettlement | null;
     }
@@ -153,13 +161,15 @@ export function parseGateRunPayload(raw: unknown): GateRunPayload {
  * 🔴 **CAS である**（`WHERE state='GATE_RUNNING'`）。0 件なら**何もしない** ——
  *    利用者が内容を編集して `DRAFT` に戻していたり、別の実行が先に確定させている。
  *    そこへ上書きすると「編集したのに古い検査結果で承認待ちになる」（§11.5 が防いでいる事故）。
- * 🔴 自動承認（`shouldAutoApprove`。§11.6）はここで行わない —— 承認は `F-021`（SP-09）の
- *    範囲であり、`Proposal.approvedBy` / `approvedAt` / `ProposalEvent` の記録と一体である。
+ * 🔴 自動承認（`shouldAutoApprove`。§11.6）は**ここでは行わない** —— 確定の CAS と同じトランザクションには
+ *    置かず、commit の後に `autoApproveIfEnabled` が `approveProposal`（`packages/db` の唯一の実装。#41 と同じ）を
+ *    呼ぶ（T-09-03）。ここで返すのは「動かしたか」と、同じトランザクションで読んだ `tenants.auto_approve_enabled`
+ *    だけである。
  */
 async function settleProposalState(
   ctx: SystemTenantCtx,
   input: { readonly proposalId: string; readonly decision: GateDecision; readonly now: Date },
-): Promise<boolean> {
+): Promise<{ readonly transitioned: boolean; readonly autoApproveEnabled: boolean }> {
   // 🔴 遷移の妥当性は `packages/domain` の遷移表が決める（不正な組はここで例外になる）。
   //    `GATE_RUNNING` から行ける先は `GATE_FAILED` / `APPROVAL_PENDING` の 2 つだけであり、
   //    それ以外を書くとコンパイルエラーになる（docs/05 §10.3）。
@@ -173,7 +183,11 @@ async function settleProposalState(
       where: { id: input.proposalId, state: 'GATE_RUNNING' },
       data: { state: to },
     });
-    if (updated.count !== 1) return false;
+    // 🔴 `autoApproveEnabled` はテナント単位の設定（`S-035`。`F-035 AC-6`）。AI ロール別の承認モード
+    //    （`TenantRoleApprovalMode`）は**読まない**（`F-035 AC-3`。静的テストが `proposals/**` を走査する）。
+    const tenant = await db.tenant.findFirst({ select: { autoApproveEnabled: true } });
+    const autoApproveEnabled = tenant?.autoApproveEnabled ?? false;
+    if (updated.count !== 1) return { transitioned: false, autoApproveEnabled };
 
     await db.proposalEvent.create({
       data: {
@@ -207,8 +221,45 @@ async function settleProposalState(
         warningCount: input.decision.aiWarnings.length,
       },
     });
-    return true;
+    return { transitioned: true, autoApproveEnabled };
   });
+}
+
+/**
+ * 🔴 T-09-03: 自動モードでの自動承認（docs/05 §11.6 / §10.3 / `F-021 AC-3` `AC-5` / `CLAUDE.md` §3.3）。
+ *
+ * 🔴 **`autoApproveEnabled` が有効かつ 3 層すべて PASS のときだけ**（`shouldAutoApprove`）。1 層でも FAIL なら
+ *    `settleProposalState` が `GATE_FAILED` に確定させており、ここには来ない（来ても `false`）。
+ * 🔴 承認の実体は `approveProposal`（`packages/db`。#41 と**同じ 1 実装**）。ハッシュ一致 + 3 層 PASS の EXISTS を
+ *    条件に含む CAS を通り、`approved_by = NULL` / `approved_by_system = true` / `AuditLog(SYSTEM, reason='ALL_LAYERS_PASS')`
+ *    を書く。**ジョブが自前で `state='APPROVED'` を書く経路は無い**（承認の入口を 2 つにしない）。
+ * 🔴 `AI ロール別承認モード`（`F-035`）はここに現れない（`F-035 AC-3`）。
+ */
+async function autoApproveIfEnabled(
+  ctx: SystemTenantCtx,
+  input: {
+    readonly proposalId: string;
+    readonly decision: GateDecision;
+    readonly autoApproveEnabled: boolean;
+    readonly now: Date;
+  },
+): Promise<'APPROVED' | 'GATE_STALE' | 'NOT_PENDING' | null> {
+  const eligible = shouldAutoApprove({
+    autoApproveEnabled: input.autoApproveEnabled,
+    pii: input.decision.piiVerdict,
+    commerce: input.decision.commerceVerdict,
+    consistency: input.decision.consistencyVerdict,
+  });
+  if (!eligible) return null;
+  const outcome = await approveProposal(ctx, {
+    proposalId: input.proposalId,
+    actor: { kind: 'SYSTEM' },
+    now: input.now,
+    ipAddress: null,
+  });
+  // `NOT_FOUND` は確定直後の行が消えている場合だけ（削除された）。承認できなかった事実として `NOT_PENDING` に畳まない。
+  if (outcome.kind === 'NOT_FOUND') return null;
+  return outcome.kind;
 }
 
 /**
@@ -375,14 +426,27 @@ export function createGateRunHandler(deps: GateRunDeps): GateRunHandler {
 
     // ⑧ 対象の状態を確定させる。
     //    🔴 状態機械を動かすのは提案だけである（`CLAUDE.md` §4.2 の 5 つに案件の公開は無い）。
-    const transitioned =
+    const settled =
       parsed.targetType === 'PROPOSAL'
         ? await settleProposalState(ctx, {
             proposalId: parsed.targetId,
             decision,
             now: executedAt,
           })
-        : false;
+        : { transitioned: false, autoApproveEnabled: false };
+    const transitioned = settled.transitioned;
+
+    // ⑧' 🔴 T-09-03: 自動承認（docs/05 §11.6）。**確定を動かしたときだけ**（他の実行に先を越されていれば、
+    //    その実行が同じ判断をしている）。`GATE_FAILED` に確定した場合は `shouldAutoApprove` が `false` を返す。
+    const autoApproval =
+      parsed.targetType === 'PROPOSAL' && transitioned
+        ? await autoApproveIfEnabled(ctx, {
+            proposalId: parsed.targetId,
+            decision,
+            autoApproveEnabled: settled.autoApproveEnabled,
+            now: executedAt,
+          })
+        : null;
 
     // ⑨ 🔴 T-07-09: 案件の公開を確定させる（PASS なら公開範囲の行、FAIL なら 1 行も作らない）。
     const publish = await settlePublish(ctx, {
@@ -400,6 +464,7 @@ export function createGateRunHandler(deps: GateRunDeps): GateRunHandler {
       overall: decision.overall,
       aiFailed: decision.aiFailed,
       transitioned,
+      autoApproval,
       publish,
     };
   };

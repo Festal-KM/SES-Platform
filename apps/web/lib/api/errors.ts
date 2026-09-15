@@ -211,6 +211,25 @@ export class ConflictError extends AppError {
 }
 
 /**
+ * 🔴 承認できる内容と現在の内容が一致しない（409。docs/05 §11.5 手順 3「0 件更新なら 409 `GateStaleError`」）。T-09-03。
+ *
+ * 承認 CAS は「`proposals.content_hash`（最後にレビュー依頼した内容）= `review_gates.content_hash`（検査した内容）
+ * = 現在の内容」の三つ巴の一致と 3 層 PASS を条件にする。満たさないのは、内容が変わった / まだ検査していない /
+ * 1 層でも FAIL / AI 上限で HELD のいずれかであり、**いずれも同じ結論 = 承認できない**。解消手段は再検証
+ * （元データの修正 → レビュー依頼）だけであり、「無視して承認」する導線は無い（`BR-15` / `BR-18`）。
+ * 🔴 `InvalidStateTransitionError`（422）ではない —— 状態は `APPROVAL_PENDING` のままで遷移自体は遷移表にある。
+ */
+export class GateStaleError extends ConflictError {
+  override readonly code = 'GATE_STALE';
+  override readonly userMessageKey: MessageKey = 'error.gate.stale';
+
+  constructor() {
+    super('内容が変更されたため再検証が必要です。');
+    this.name = 'GateStaleError';
+  }
+}
+
+/**
  * 🔴 テナントのライフサイクル状態が実行系を許さない（docs/05 §15.1 / §6.2 /
  *    `F-004 AC-7`〜`AC-9`）。409。
  *
@@ -542,6 +561,22 @@ export class ProposalTransitionForbiddenError extends ForbiddenError {
   ) {
     super();
     this.name = 'ProposalTransitionForbiddenError';
+  }
+}
+
+/**
+ * 🔴 提案の承認・却下（#41 / #42）をその立場では行えない（403）。T-09-03。判定は `canApproveProposal`
+ *    （docs/05 §6.5 #41「`OWNER` / `ADMIN` / `SALES`。`VIEWER`・代理閲覧は 403」+ `docs/04` §S-021 権限差分
+ *    「承認できるのは **ホスト**の 3 ロールのみ。取引先は自社が作成した提案の内容確認まで」）。
+ *    `ProposalGateForbiddenError` と同じ理由で 404 にはしない（見えない提案は先に 404 になる）。
+ */
+export class ProposalApprovalForbiddenError extends ForbiddenError {
+  override readonly code = 'PROPOSAL_APPROVAL_FORBIDDEN';
+  override readonly userMessageKey: MessageKey = 'error.proposal.approvalForbidden';
+
+  constructor() {
+    super();
+    this.name = 'ProposalApprovalForbiddenError';
   }
 }
 

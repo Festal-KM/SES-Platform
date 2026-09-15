@@ -2,25 +2,41 @@
 // モバイルビューポートのスモーク（`CLAUDE.md` §13.3 / docs/03 §4.17 /
 // docs/sprints/SP-03-auth-audit-admin0.md §5 テスト計画の E2E 行）。
 //
-// 🔴 本ファイルの目的は**基盤の確立**である。`CLAUDE.md` §13.3 が本番で要求している
-//    「モバイルでの承認フロー」（`F-021` / docs/05 §17.3 #13）は Phase 1 の実装が要るため、
-//    Phase 0 では `S-003` / `S-004` が T1（モバイル完結）として破綻しないことだけを見る。
-//    **Phase 1 で承認画面ができたら、このプロジェクト（`mobile-chromium`）にシナリオを足す。**
+// 🔴 本ファイルの起点は**基盤の確立**（Phase 0: `S-003` / `S-004` が T1 として破綻しない）だった。
+//    ✅ **T-09-03（SP-09）で承認画面 `S-021` ができ、`CLAUDE.md` §13.3 が要求する「モバイルでの承認フロー」
+//    （`F-021 AC-4` / `AC-6` / docs/05 §17.3 #13 / `.claude/agents/e2e-tester.md` シナリオ #14）をホストの test に足した**
+//    （test の本数は増やさない。`expectNoBrokenLabels` / `expectNoHiddenCountHints` を同じ画面で呼ぶ）。
+//    E2E ハーネスには Redis も worker も無い（docs/05 §11.12 ⑦。足すのは `T-09-11`）ため、「全層 PASS で承認待ち」の
+//    前提は `harness/db-admin.ts` のシーム（#39 と `gate.run` が書くのと同じ列）で作る。ゲート本体と承認 CAS の正しさは
+//    `tests/isolation/gate-run.test.ts` / `proposal-approval.test.ts` の射程である。
 //
 // 🔴 「モバイルだから省略する」を作らない（`CLAUDE.md` §13.3）。サインイン（2 要素認証を含む）が
 //    モバイルで完結することを、デスクトップと同じ経路で確かめる。
 import { expect, test, type Browser } from '@playwright/test';
 import { t } from '../../packages/i18n/src/index';
+import {
+  deleteT0903SyntheticProposals,
+  settleProposalGateAsPassedForE2e,
+  T0903_SYNTHETIC_PROPOSAL_PREFIX,
+} from './harness/db-admin';
+import { apiRequest, parseJson } from './support/api';
 // 🔴 T-06-09: 横溢れの判定は `support/assertions.ts` に集約した（同じ判定が spec ごとに
 //    散ると、1 箇所だけ閾値が緩められたことに気づけない）。
 // 🔴 T-08-11: ラベルの折り返し・溢れの判定（`expectNoBrokenLabels`）も同じ置き場所から呼ぶ
 //    （SP-21 §8.5。横溢れの式では「1 文字ずつ折り返して箱の中に収まる」壊れ方を捉えられない）。
-import { expectNoBrokenLabels, expectNoHorizontalOverflow } from './support/assertions';
-import { partnerIds } from './support/population';
+import { expectNoBrokenLabels, expectNoHiddenCountHints, expectNoHorizontalOverflow } from './support/assertions';
+import { partnerIds, tenantIds } from './support/population';
 import { hostOwner, openTenantSession, partnerSales } from './support/sessions';
 
+/** 🔴 T-09-03: この spec が作った合成提案（後始末で消す。`isolation.spec.ts` はホストの提案の母集団を seed で表明する）。 */
+const syntheticProposalIds: string[] = [];
+
+test.afterAll(() => {
+  deleteT0903SyntheticProposals(syntheticProposalIds);
+});
+
 test.describe('モバイルビューポートのスモーク（S-003 / S-004 は T1）', () => {
-  test('ホストのホームがモバイルで描画され、横に溢れない', async ({
+  test('ホストのホームがモバイルで描画され、横に溢れない。承認（S-021）がモバイルで完結する（E2E #13）', async ({
     browser,
   }: {
     browser: Browser;
@@ -33,6 +49,80 @@ test.describe('モバイルビューポートのスモーク（S-003 / S-004 は
       await expect(session.page.getByText(t('home.host.empty.title')).first()).toBeVisible();
       await expectNoHorizontalOverflow('S-003 ホストのホーム', session.page);
       await expectNoBrokenLabels('S-003 ホストのホーム', session.page);
+      session.outbound.assertNone();
+
+      // ✅ T-09-03: 🔴 **モバイルビューポートでの承認**（docs/05 §17.3 #13 / `F-021 AC-4` / `AC-6` / `CLAUDE.md` §13.3）。
+      //    前提: ホストが自社エンジニアで提案を作り（#36）、#40 が返す**現在の内容のハッシュ**で「全層 PASS → 承認待ち」を
+      //    シームで作る（ハーネスに Redis / worker が無いため。ファイル冒頭）。
+      const ids = tenantIds(1);
+      const subject = `${T0903_SYNTHETIC_PROPOSAL_PREFIX}${String(Date.now())}`;
+      const body = 'T0903 ご提案します。設計から運用まで一貫して担当できます。';
+      const created = await apiRequest(session.page, '/api/proposals', {
+        method: 'POST',
+        body: {
+          projectId: ids.publishedProjectId,
+          engineerId: ids.hostEngineerId,
+          recipientCompanyName: 'T0903 架空エンド株式会社',
+          recipientEmail: 't0903-recipient@example.test',
+          offeredUnitPrice: 700000,
+          offeredStartDate: '2026-11-01',
+          subject,
+          body,
+        },
+      });
+      expect(created.status, created.text).toBe(201);
+      const proposalId = (parseJson(created) as { id: string }).id;
+      syntheticProposalIds.push(proposalId);
+      const gate = await apiRequest(session.page, `/api/proposals/${proposalId}/gate`);
+      expect(gate.status, gate.text).toBe(200);
+      const { contentHash } = parseJson(gate) as { contentHash: string };
+      settleProposalGateAsPassedForE2e(proposalId, contentHash);
+
+      await session.page.goto(`/proposals/${proposalId}/approve`, { waitUntil: 'domcontentloaded' });
+      const screen = session.page.getByTestId('proposal-approval');
+      await expect(screen).toHaveAttribute('data-proposal-state', 'APPROVAL_PENDING');
+      await expect(screen).toHaveAttribute('data-can-approve', 'true');
+
+      // 🔴 `F-021 AC-4`: 判断材料（提案先・エンジニア・案件・単価・開始日・作成者・経過時間 / ゲートの指摘と警告 / プレビュー）が
+      //    **同一画面に、省略されずに**描かれる。折りたたみ・タブに入っていない。
+      for (const field of ['recipient', 'engineer', 'project', 'unit-price', 'start-date', 'created-by', 'elapsed']) {
+        await expect(session.page.getByTestId(`proposal-approval-header-row-${field}`)).toBeVisible();
+      }
+      await expect(session.page.getByTestId('proposal-approval-header-row-unit-price')).toContainText('700,000');
+      await expect(session.page.getByTestId('proposal-approval-header-row-recipient')).toContainText('T0903 架空エンド株式会社');
+      for (const layer of ['pii', 'commerce', 'consistency']) {
+        await expect(session.page.getByTestId(`proposal-approval-gate-layer-${layer}`)).toHaveAttribute('data-layer-state', 'PASS');
+      }
+      await expect(session.page.getByTestId('proposal-approval-gate-findings')).toBeVisible();
+      await expect(session.page.getByTestId('proposal-approval-gate-warnings')).toBeVisible();
+      await expect(session.page.getByTestId('proposal-approval-preview-body')).toContainText(body);
+      await expect(session.page.locator('details')).toHaveCount(0);
+      await expect(session.page.locator('[role="tab"]')).toHaveCount(0);
+      // 🔴 `F-021 AC-6` / `BR-50`: 一括承認・force / override に相当する操作が存在しない。
+      await expect(session.page.locator('[data-testid*="bulk"]')).toHaveCount(0);
+      await expect(session.page.locator('[data-testid*="force"], [data-testid*="override"], [data-testid*="skip"]')).toHaveCount(0);
+      expect(await session.page.content()).not.toMatch(/一括承認|一括送信|無視して/);
+      expectNoHiddenCountHints('S-021 提案の承認（モバイル）', await session.page.locator('body').innerText());
+      await expectNoHorizontalOverflow('S-021 提案の承認', session.page);
+      await expectNoBrokenLabels('S-021 提案の承認', session.page);
+
+      // 🔴 `docs/04` §S-021 デバイス別: プレビューの末尾までスクロールするまで承認・却下は有効にならない。
+      const approve = session.page.getByTestId('proposal-approval-approve');
+      await expect(approve).toBeDisabled();
+      await expect(session.page.getByTestId('proposal-approval-scroll-required')).toBeVisible();
+      await session.page.getByTestId('proposal-approval-preview-end').scrollIntoViewIfNeeded();
+      await expect(screen).toHaveAttribute('data-reached-end', 'true');
+      await expect(approve).toBeEnabled();
+      await expect(session.page.getByTestId('proposal-approval-reject')).toBeEnabled();
+
+      // 🔴 承認はモバイルで完結する（Tier 1）。body は送られない（#41 はゲート結果を引数に取らない）。
+      await approve.click();
+      await expect(session.page.getByTestId('proposal-approval-result')).toHaveAttribute('data-result', 'APPROVED');
+      await expect(screen).toHaveAttribute('data-proposal-state', 'APPROVED');
+      await expect(session.page.getByTestId('proposal-approval-approver')).toBeVisible();
+      await expect(session.page.getByTestId('proposal-approval-approve')).toHaveCount(0);
+      await expectNoBrokenLabels('S-021 提案の承認（承認後）', session.page);
+      // 🔴 承認は送信を伴わない（送信ジョブは T-09-06）。外部への発信は 0 件。
       session.outbound.assertNone();
     } finally {
       await session.close();

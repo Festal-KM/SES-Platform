@@ -95,6 +95,8 @@ export default async function NewProposalPage({
         denialMessage={denialKey === null ? null : t(denialKey)}
         sendingDomain={sendingDomain}
         cancelHref={rows.cancelHref}
+        approveHref={null}
+        approveLabel={t('proposals.editor.openApproval')}
         cancelLabel={t('proposals.editor.cancel')}
         messages={proposalEditorMessages()}
       />

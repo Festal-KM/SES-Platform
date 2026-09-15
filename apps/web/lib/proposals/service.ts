@@ -353,6 +353,87 @@ async function readProjectRef(db: Pick<TenantDb, 'project'>, projectId: string):
 }
 
 /**
+ * 🔴 `ProposalView` の外に置く、行の**承認記録**（docs/05 §3.6 `approvedBy` / `approvedBySystem` / `approvedAt`。
+ *    `F-021 AC-5`「承認者が `system` として記録される」）。`S-021` が承認者欄を描くために読む。view に混ぜないのは、
+ *    `ProposalView` が「凍結情報 + 内容」の型であり、承認の事実は `S-020` の応答に要らないため。
+ */
+export type ProposalApprovalRecordRow = {
+  readonly approvedBy: string | null;
+  readonly approvedBySystem: boolean;
+  readonly approvedAt: Date | null;
+};
+
+/** `readProposalViewInTx` の戻り値（view + 認可・承認記録に要る行の値）。🔴 `engineerId` / `createdBy` は view に渡さない。 */
+export type ProposalViewInTx = {
+  readonly view: ProposalView;
+  readonly createdBy: string;
+  readonly engineerId: string;
+  readonly approval: ProposalApprovalRecordRow;
+};
+
+/**
+ * 提案 1 件の view を**開いているトランザクションの中で**読む（`S-020` と `S-021` の共通部。T-09-03 で切り出した）。
+ * 🔴 エンジニアの情報は `engineer_snapshots` からだけ読む（`F-019 AC-1`）。母集団は `proposals` の RLS（C5）。
+ * 🔴 応答の型は所属で分岐する（`HostProposalView` / `PartnerProposalView`）。分岐の出所は `ctx.partnerCompanyId`。
+ * @returns 見えなければ `null`（呼び出し側は 404 に畳む。docs/05 §4.8）。
+ */
+export async function readProposalViewInTx(
+  ctx: AuthenticatedTenantCtx,
+  db: Pick<TenantDb, 'proposal' | 'engineerSnapshot' | 'project' | 'partnerCompany'>,
+  proposalId: string,
+): Promise<ProposalViewInTx | null> {
+  const row = await db.proposal.findUnique({
+    where: { id: proposalId },
+    select: {
+      ...PROPOSAL_VIEW_SELECT,
+      ownerPartnerCompanyId: true,
+      projectId: true,
+      engineerId: true,
+      createdBy: true,
+      approvedBy: true,
+      approvedBySystem: true,
+      approvedAt: true,
+    },
+  });
+  if (row === null) return null;
+  const snapshot = await db.engineerSnapshot.findUnique({ where: { proposalId: row.id }, select: SNAPSHOT_VIEW_SELECT });
+  if (snapshot === null) {
+    throw new InternalError(`engineer_snapshots が見つかりません（proposalId=${row.id}）。`);
+  }
+  const contentHash = await computeProposalContentHash(db, row.id);
+  if (contentHash === null) return null;
+
+  const project = await readProjectRef(db, row.projectId);
+  const viewRow: ProposalViewRow = {
+    id: row.id,
+    state: row.state,
+    proposalRequestId: row.proposalRequestId,
+    recipientCompanyName: row.recipientCompanyName,
+    recipientEmail: row.recipientEmail,
+    offeredUnitPrice: row.offeredUnitPrice,
+    offeredStartDate: row.offeredStartDate,
+    workStyle: row.workStyle,
+    subject: row.subject,
+    body: row.body,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+  const deps = { project, snapshot, contentHash };
+
+  const view: ProposalView =
+    ctx.partnerCompanyId === null
+      ? toHostProposalView(viewRow, deps, await readOwner(db, row.ownerPartnerCompanyId))
+      : toPartnerProposalView(viewRow, deps);
+
+  return {
+    view,
+    createdBy: row.createdBy,
+    engineerId: row.engineerId,
+    approval: { approvedBy: row.approvedBy, approvedBySystem: row.approvedBySystem, approvedAt: row.approvedAt },
+  };
+}
+
+/**
  * `S-020`（編集）が読む経路。🔴 エンジニアの情報は `engineer_snapshots` からだけ読む（`F-019 AC-1`）。
  *
  * 🔴 **境界外・不存在はどちらも 404**（docs/05 §4.8）。母集団は `proposals` の RLS（C5）。
@@ -360,53 +441,23 @@ async function readProjectRef(db: Pick<TenantDb, 'project'>, projectId: string):
  */
 export async function readProposalEditor(ctx: AuthenticatedTenantCtx, proposalId: string): Promise<ProposalEditorView> {
   return withTenant(ctx, async (db) => {
-    const row = await db.proposal.findUnique({
-      where: { id: proposalId },
-      select: { ...PROPOSAL_VIEW_SELECT, ownerPartnerCompanyId: true, projectId: true, engineerId: true, createdBy: true },
-    });
-    if (row === null) throw new NotFoundError();
-    const snapshot = await db.engineerSnapshot.findUnique({ where: { proposalId: row.id }, select: SNAPSHOT_VIEW_SELECT });
-    if (snapshot === null) {
-      throw new InternalError(`engineer_snapshots が見つかりません（proposalId=${row.id}）。`);
-    }
-    const contentHash = await computeProposalContentHash(db, row.id);
-    if (contentHash === null) throw new NotFoundError();
-
-    const project = await readProjectRef(db, row.projectId);
-    const viewRow: ProposalViewRow = {
-      id: row.id,
-      state: row.state,
-      proposalRequestId: row.proposalRequestId,
-      recipientCompanyName: row.recipientCompanyName,
-      recipientEmail: row.recipientEmail,
-      offeredUnitPrice: row.offeredUnitPrice,
-      offeredStartDate: row.offeredStartDate,
-      workStyle: row.workStyle,
-      subject: row.subject,
-      body: row.body,
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-    };
-    const deps = { project, snapshot, contentHash };
-
-    const view: ProposalView =
-      ctx.partnerCompanyId === null
-        ? toHostProposalView(viewRow, deps, await readOwner(db, row.ownerPartnerCompanyId))
-        : toPartnerProposalView(viewRow, deps);
+    const read = await readProposalViewInTx(ctx, db, proposalId);
+    if (read === null) throw new NotFoundError();
+    const { view, createdBy, engineerId } = read;
 
     // 🔴 添付の選択肢（台帳の現在値）。view とは別に返す。母集団は `skill_sheets` の C3。
     const sheets = await db.skillSheet.findMany({
-      where: { engineerId: row.engineerId, scanStatus: 'CLEAN' },
+      where: { engineerId, scanStatus: 'CLEAN' },
       select: { id: true, version: true, uploadedAt: true },
       orderBy: [{ version: 'desc' }],
     });
 
     // 🔴 存在の確認だけ（`select: { id }`）。値を view に混ぜない。
-    const owned = await db.engineer.findFirst({ where: { id: row.engineerId }, select: { id: true } });
+    const owned = await db.engineer.findFirst({ where: { id: engineerId }, select: { id: true } });
 
     return {
       view,
-      canEdit: canEditProposal(ctx, { createdBy: row.createdBy }),
+      canEdit: canEditProposal(ctx, { createdBy }),
       attachableSkillSheets: sheets.map((sheet) => ({
         id: sheet.id,
         version: sheet.version,

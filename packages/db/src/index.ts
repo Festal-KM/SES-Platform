@@ -300,6 +300,20 @@ export type {
   ProposalDraftTerms,
   ProposalDraftWriter,
 } from './proposal-draft.js';
+// 🔴 T-09-03: 提案の承認（`APPROVAL_PENDING → APPROVED`）の唯一の実装（docs/05 §6.5 #41 / §10.3 / §11.5 手順 3 /
+//    §11.6）。#41（人間）と `gate.run` の自動承認が**同じ 1 実装**を通る。ハッシュ一致 + 3 層 PASS の EXISTS を
+//    条件に含む CAS は生 SQL であり、`packages/db` の外からゲート照合を迂回した承認を書けない。
+export {
+  approveProposal,
+  PROPOSAL_APPROVAL_NOTE_PREFIX,
+  PROPOSAL_APPROVE_OPERATION,
+  PROPOSAL_AUDIT_ACTION_APPROVE,
+} from './proposal-approval.js';
+export type {
+  ApproveProposalInput,
+  ProposalApprovalActor,
+  ProposalApprovalOutcome,
+} from './proposal-approval.js';
 // 🔴 T-08-07: 提案依頼の期限切れ（docs/05 §9.5 `proposal-request.expire`）。呼び出し元は
 //    `apps/worker/src/jobs/proposal-request-expire.ts` のジョブ文脈だけである。
 export {

@@ -213,3 +213,79 @@ export function deleteT0809SyntheticEngineers(engineerIds: readonly string[]): v
       `DELETE FROM engineers WHERE id IN (${synthetic});`,
   );
 }
+
+// ---------------------------------------------------------------------------
+// 🔴 T-09-03（`S-021` のモバイル E2E。docs/05 §17.3 #13 / `tests/e2e/home.mobile.spec.ts`）専用のシーム 2 つ
+// ---------------------------------------------------------------------------
+// K-7 / T-08-09 のシームと同じ判断で置く: E2E ハーネスには Redis も worker も無く（docs/05 §11.12 ⑦。足すのは
+// `T-09-11` の仕事）、`#39`（レビュー依頼 = BullMQ への enqueue）も `gate.run`（モック AI で 3 層を判定）も
+// E2E から動かせない。ゲート本体の正しさは `tests/isolation/gate-run.test.ts`、承認 CAS と自動承認の正しさは
+// `tests/isolation/proposal-approval.test.ts` の射程であり、E2E #13 が証明したいのは
+// 🔴「モバイルビューポートで判断材料が省略されず、プレビューの末尾まで到達するまで承認できず、一括承認が既定でない」
+// である。したがって **「全層 PASS で承認待ちになった」という前提だけ**を、#39 と `gate.run` が書くのと同じ形で作る。
+//
+// 🔴 汎用のエスケープハッチにしない規律はそのまま —— 関数は目的ごとに 1 つ、SQL は固定文、埋め込む値は UUID と
+//    SHA-256 の hex（64 桁の `[0-9a-f]`）に限る。**PASS 以外の判定を書く入口は作らない**（FAIL / HELD の見え方は
+//    render テストの射程）。
+// 🔴 ハッシュはテストが計算しない（`gateContentHash` の 2 実装目を作らない）。`GET /api/proposals/{id}/gate`（#40）が
+//    「まだ確定した行が無い」ときに返す**現在の内容のハッシュ**をそのまま渡す（docs/05 §11.10 ⑦）。
+
+const CONTENT_HASH_PATTERN = /^[0-9a-f]{64}$/;
+
+/**
+ * 🔴 T-09-03 専用シーム: `DRAFT` の提案を「レビュー依頼 → 全層 PASS → 承認待ち」にする。
+ *
+ * 3 文で、#39（`requestProposalGate`）と `gate.run`（`completeReviewGate` + `settleProposalState`）が書くのと
+ * **同じ条件・同じ列**を辿る:
+ *   ① `DRAFT → GATE_RUNNING` の CAS + `content_hash`（#39 の 1 文。承認 CAS が突き合わせる列）
+ *   ② `review_gates` に `execution='DONE'` / 3 層 `PASS` の行（`content_hash` は①と同じ値）
+ *   ③ `GATE_RUNNING → APPROVAL_PENDING` の CAS（`gate.run` の確定）
+ * ⚠️ `ProposalEvent` と `AuditLog(proposal.update, GATE_REQUEST / GATE_RESULT)` はここでは書かない（E2E はそれを
+ *    表明しない。履歴・監査行は結合テストが固定する）。
+ * 🔴 `DRAFT` 以外の行には何もしない（①が 0 件なら②③も 0 件）。呼び出し側は結果を画面 / API で確かめること。
+ */
+export function settleProposalGateAsPassedForE2e(proposalId: string, contentHash: string): void {
+  if (!UUID_PATTERN.test(proposalId)) {
+    throw new Error(`proposalId が UUID の形をしていません: ${proposalId}`);
+  }
+  if (!CONTENT_HASH_PATTERN.test(contentHash)) {
+    throw new Error('contentHash が SHA-256 の hex（64 桁）ではありません。');
+  }
+  execSql(
+    `UPDATE proposals SET state = 'GATE_RUNNING', content_hash = '${contentHash}', updated_at = now() ` +
+      `WHERE id = '${proposalId}' AND state = 'DRAFT';\n` +
+      `INSERT INTO review_gates ` +
+      `(id, tenant_id, target_type, target_id, content_hash, execution, pii_verdict, commerce_verdict, consistency_verdict, ` +
+      `findings, ai_warnings, ai_failed, executed_at) ` +
+      `SELECT gen_random_uuid(), tenant_id, 'PROPOSAL', id, '${contentHash}', 'DONE', 'PASS', 'PASS', 'PASS', ` +
+      `'[]'::jsonb, '[]'::jsonb, false, now() FROM proposals WHERE id = '${proposalId}' AND state = 'GATE_RUNNING';\n` +
+      `UPDATE proposals SET state = 'APPROVAL_PENDING', updated_at = now() ` +
+      `WHERE id = '${proposalId}' AND state = 'GATE_RUNNING';`,
+  );
+}
+
+/** 🔴 T-09-03 の合成提案の件名の接頭辞。`home.mobile.spec.ts` と一致させる。 */
+export const T0903_SYNTHETIC_PROPOSAL_PREFIX = 'T0903合成-';
+
+/**
+ * 🔴 T-09-03 専用シーム（後始末）: `home.mobile.spec.ts` が API 経由で作った**合成提案**を行ごと消し、ホストの提案を
+ *    `seed:isolation` の状態に戻す（`deleteT0809SyntheticEngineers` と同じ判断。同じ実行の中では spec 間で DB を共有する）。
+ *
+ * 🔴 消してよい行を SQL 自身が限定する: `id` が指定された UUID **かつ** `subject` が合成の接頭辞（`T0903合成-`）で始まる行だけ。
+ *    `review_gates` は多相（FK 無し）なので先に消し、`proposals` の CASCADE で `engineer_snapshots` / `proposal_events` を消す。
+ *    `audit_logs` は FK を持たないため残る（記録は消さない）。
+ */
+export function deleteT0903SyntheticProposals(proposalIds: readonly string[]): void {
+  if (proposalIds.length === 0) return;
+  for (const id of proposalIds) {
+    if (!UUID_PATTERN.test(id)) throw new Error(`proposalId が UUID の形をしていません: ${id}`);
+  }
+  const idList = proposalIds.map((id) => `'${id}'`).join(', ');
+  const synthetic =
+    `SELECT id FROM proposals WHERE id IN (${idList}) ` +
+    `AND subject LIKE '${T0903_SYNTHETIC_PROPOSAL_PREFIX}%'`;
+  execSql(
+    `DELETE FROM review_gates WHERE target_type = 'PROPOSAL' AND target_id IN (${synthetic});\n` +
+      `DELETE FROM proposals WHERE id IN (${synthetic});`,
+  );
+}

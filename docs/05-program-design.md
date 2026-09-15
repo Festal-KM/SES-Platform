@@ -4548,7 +4548,15 @@ export function decideGate(input: {
 export function gateContentHash(input: GateHashInput): string;   // SHA-256 の hex
 // GateHashInput = 検査対象になる全ての値の正規化された連結:
 //   subject / body / publicSummary / snapshot（氏名・スキル・単価・期間・🔴 careers の全行の 5 項目。T-09-12）
-//   / 添付の objectKey + versionId / recipientCompanyName / recipientEmail / offeredUnitPrice / offeredStartDate
+//   / 添付 = 🔴 凍結列 engineer_snapshots.skill_sheet_id（T-09-03 で改訂。下記）/ recipientCompanyName / recipientEmail
+//   / offeredUnitPrice / offeredStartDate
+// 🔴 添付の材料は「凍結列の skill_sheet_id」だけである（2026-09-16、T-09-03 で改訂。旧: objectKey + versionId）。
+//    理由: 旧材料は `engineer_snapshots.skillSheet` **リレーション**（`skill_sheets` = C3、所有者だけが読める）から
+//    取っていたため、**同じ提案でも読む側の所属でハッシュが食い違った**（ホスト文脈で取引先作成の提案を読むと
+//    リレーションが null になる。T-09-01 のレビューが実 DB で再現）。承認 CAS（手順 3）は承認者（ホスト）の文脈で
+//    現在の内容を再計算して突き合わせるため、旧材料のままでは**取引先が作成した提案をホストが承認できない**。
+//    `skill_sheets` の行は版ごとに別の行であり ID が版を一意に特定する（`objectKey` / `version` は行の属性であって
+//    内容の追加情報にならない）。凍結列は C5（ホストも取引先も同じ値を読む）なので、材料が所属に依存しない。
 // 🔴 careers を含める理由: 「ハッシュは検査した内容のすべてを覆う」が本節の不変条件である。
 //    凍結行は作成後に変わらないので実務上ハッシュは動かないが、**覆っていない値を検査対象にしない**
 //    （§11.3 が careers を検査するのに §11.5 が覆わない状態を作ると、後から凍結の再生成を許した
@@ -4777,7 +4785,7 @@ tests/isolation/support/redis.ts          Testcontainers の Redis
 
 - **domain**: `gateHashSource(input): string` —— 「材料の並べ方」だけを持つ純粋関数。値は必ず `名前=長さ:値` の形で書き出すため、**値の中に区切り文字が現れても境界が動かない**（衝突を作らない）。スキルは `skillId` → ラベル → 年数 → レベルの順に整列してから綴じる（凍結 JSON の並びに依存させない。`localeCompare` は使わない）。先頭に版（`gate-content/v1`）を置き、**材料や書式を変えるときは版を上げる**（上げ忘れると「中身が違うのに同じハッシュ」が生まれ、§11.5 が静かに破れる）。
 - **`packages/db`**: `gateContentHash(input)`（SHA-256 の hex）と `readProposalGateHashInput(db, id)`（行から材料を読む）。🔴 **`Proposal.contentHash` 列を読み返さない** —— 列は「最後にレビュー依頼した内容」であり、承認 CAS はその列と `review_gates` を突き合わせる（§11.5 手順 3）。ここが列を読む実装だと「内容が変わったこと」を誰も検出できない。
-- 🔴 **§11.5 の「添付の `objectKey` + `versionId`」は `skillSheetId` + `objectKey` + `SkillSheet.version` で表す。** `skill_sheets` は S3 の版 ID を列として持たない（§3.4）ため。`objectKey` は版ごとに異なる（§14.1）ので 2 つで版を一意に特定できる。
+- ~~🔴 **§11.5 の「添付の `objectKey` + `versionId`」は `skillSheetId` + `objectKey` + `SkillSheet.version` で表す。** `skill_sheets` は S3 の版 ID を列として持たない（§3.4）ため。`objectKey` は版ごとに異なる（§14.1）ので 2 つで版を一意に特定できる。~~ → 🔴 **改訂（2026-09-16、T-09-03）: 添付の材料は凍結列 `engineer_snapshots.skill_sheet_id` だけ**（`objectKey` / `version` を材料から外し、`GATE_HASH_ALGORITHM_VERSION` を `v3` に上げた）。旧材料は `skillSheet` リレーション（C3）由来で**読む側の所属によりハッシュが食い違い**、承認 CAS（§11.5 手順 3。承認者 = ホストの文脈で再計算）が取引先作成の提案で常に 0 件更新になっていた（T-09-01 の申し送り）。版の差し替えは #37 が `skill_sheet_id` を書き換えるのでハッシュは引き続き変わる。理由の全文は §11.5 のコード注記。
 - 🔴 **凍結コピー（`EngineerSnapshot`）が壊れていたら握り潰さない**（`GateHashInputError`）。読み飛ばすと「スキルが 1 件消えたのにハッシュが同じ」＝ **再検証を経ずに承認できる**状態になる。
 
 #### ③ 🔴 `jobId` の区切りを `:` から `.` にした（§9.3 のスケッチとの差分）

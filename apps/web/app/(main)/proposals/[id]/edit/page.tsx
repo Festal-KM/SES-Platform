@@ -73,6 +73,8 @@ export default async function EditProposalPage({ params }: { readonly params: Pr
         denialMessage={denialKey === null ? null : t(denialKey)}
         sendingDomain={sendingDomain}
         cancelHref={rows.cancelHref}
+        approveHref={rows.approveHref}
+        approveLabel={t('proposals.editor.openApproval')}
         cancelLabel={rows.cancelLabel}
         messages={proposalEditorMessages()}
       />

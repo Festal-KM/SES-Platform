@@ -4,12 +4,15 @@ import { describe, expect, it } from 'vitest';
 import type { TenantRole } from '@ses/db';
 import type { ProposalState } from '@ses/domain';
 import {
+  canApproveProposal,
   canEditProposal,
   canRequestProposalGate,
   canTransitionProposal,
   HOST_GATE_REQUEST_ROLES,
+  isProposalApproverRole,
   isProposalEditorRole,
   PARTNER_RECORDABLE_PROPOSAL_TRANSITIONS,
+  PROPOSAL_APPROVAL_ROLES,
   PROPOSAL_EDITOR_ROLES,
   PROPOSAL_GATE_REQUEST_ROLES,
   PROPOSAL_TRANSITION_ROLES,
@@ -210,5 +213,36 @@ describe('canTransitionProposal（#48。docs/05 §6.5「#48 の実装の決着�
   it('🔴 ホスト文脈の PARTNER_* / 取引先文脈の SALES（食い違った ctx）は通らない', () => {
     expect(canTransitionProposal(actor('PARTNER_SALES'), { createdBy: OTHER }, pair('SUBMITTED', 'WITHDRAWN'))).toBe(false);
     expect(canTransitionProposal(actor('SALES', { partnerCompanyId: PARTNER }), { createdBy: OTHER }, pair('SUBMITTED', 'WITHDRAWN'))).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 🔴 T-09-03: 承認・却下（#41 / #42）の実行者（docs/05 §6.5 #41 / docs/04 §S-021 権限差分 / F-021 関連ロール）
+// ---------------------------------------------------------------------------
+describe('canApproveProposal（T-09-03）', () => {
+  it('🔴 requireRole の集合はホストの 3 ロールだけ（取引先と VIEWER を含まない。並びは TENANT_ROLES と同じ）', () => {
+    expect(PROPOSAL_APPROVAL_ROLES).toEqual(['OWNER', 'ADMIN', 'SALES']);
+    expect(PROPOSAL_APPROVAL_ROLES).toEqual(HOST_GATE_REQUEST_ROLES);
+  });
+
+  it.each(['OWNER', 'ADMIN', 'SALES'] as const)('ホストの %s は承認・却下できる', (role) => {
+    expect(canApproveProposal(actor(role))).toBe(true);
+    expect(isProposalApproverRole(role)).toBe(true);
+  });
+
+  it.each(['PARTNER_ADMIN', 'PARTNER_SALES', 'VIEWER'] as const)('🔴 %s は承認・却下できない（取引先は自社の提案を自分で承認できない）', (role) => {
+    expect(canApproveProposal(actor(role, { partnerCompanyId: PARTNER }))).toBe(false);
+    expect(canApproveProposal(actor(role))).toBe(false);
+    expect(isProposalApproverRole(role)).toBe(false);
+  });
+
+  it('🔴 取引先文脈の SALES（食い違った ctx）は通らない —— ロールと所属の二重', () => {
+    expect(canApproveProposal(actor('SALES', { partnerCompanyId: PARTNER }))).toBe(false);
+    expect(canApproveProposal(actor('OWNER', { partnerCompanyId: PARTNER }))).toBe(false);
+  });
+
+  it('🔴 判定材料は ctx だけ（作成者であることは根拠にならない —— 引数に行の値を取らない）', () => {
+    expect(canApproveProposal.length).toBe(1);
+    expect(canApproveProposal(actor('PARTNER_SALES', { userId: CREATOR, partnerCompanyId: PARTNER }))).toBe(false);
   });
 });

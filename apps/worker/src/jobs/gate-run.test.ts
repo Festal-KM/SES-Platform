@@ -16,6 +16,9 @@ const holdReviewGate = vi.fn();
 const writeAuditLog = vi.fn();
 const proposalUpdateMany = vi.fn();
 const proposalEventCreate = vi.fn();
+// 🔴 T-09-03: 自動承認（docs/05 §11.6）。`tenants.auto_approve_enabled` と `approveProposal`（packages/db の 1 実装）。
+const tenantFindFirst = vi.fn();
+const approveProposal = vi.fn();
 
 vi.mock('@ses/db', () => ({
   findCachedReviewGate,
@@ -23,6 +26,7 @@ vi.mock('@ses/db', () => ({
   completeReviewGate,
   holdReviewGate,
   writeAuditLog,
+  approveProposal,
   systemTenantCtx: (tenantId: string, job: { queue: string; jobId: string }) => ({
     tenantId,
     partnerCompanyId: null,
@@ -35,6 +39,7 @@ vi.mock('@ses/db', () => ({
     fn({
       proposal: { updateMany: proposalUpdateMany },
       proposalEvent: { create: proposalEventCreate },
+      tenant: { findFirst: tenantFindFirst },
     }),
   // 🔴 コストガードと記録器のアダプタ（`apps/worker/src/ai/**`）が import する実体。
   reserveAiCost: vi.fn(),
@@ -103,6 +108,9 @@ beforeEach(() => {
   proposalUpdateMany.mockResolvedValue({ count: 1 });
   proposalEventCreate.mockResolvedValue({});
   writeAuditLog.mockResolvedValue(undefined);
+  // 🔴 既定は人間承認必須（`autoApproveEnabled = false`。CLAUDE.md §3.3）。
+  tenantFindFirst.mockResolvedValue({ autoApproveEnabled: false });
+  approveProposal.mockResolvedValue({ kind: 'APPROVED', reviewGateId: 'gate-id', contentHash: CONTENT_HASH });
   vi.mocked(db.reserveAiCost).mockResolvedValue({
     kind: 'RESERVED',
     handle: 'v1:2026-09-08:40000',
@@ -405,5 +413,80 @@ describe('gate.run（docs/05 §11）', () => {
       limitUsd: '1.000000',
       remainingUsd: '0.000000',
     })).toBeInstanceOf(Error);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 🔴 T-09-03: 自動モードでの自動承認（docs/05 §11.6 / §10.3 / `F-021 AC-2` `AC-3` `AC-5`）
+// ---------------------------------------------------------------------------
+describe('🔴 自動承認（docs/05 §11.6）: autoApproveEnabled かつ全層 PASS のときだけ approveProposal(SYSTEM) を呼ぶ', () => {
+  const FAIL_OUTPUT = {
+    pii: {
+      verdict: 'FAIL',
+      findings: [
+        { kind: 'FULL_NAME', field: 'body', offsetStart: 0, offsetEnd: 4, excerpt: '氏名らしき記載', severity: 'BLOCK' },
+      ],
+    },
+    commerce: { verdict: 'PASS', findings: [] },
+    consistencyWarnings: [],
+  } as const;
+
+  it('F-021 AC-2: 既定（autoApproveEnabled=false）では全層 PASS でも承認を付与しない（APPROVAL_PENDING に留まる）', async () => {
+    const outcome = await createHandler({ script: [{ kind: 'output', output: PASS_OUTPUT }] })(PAYLOAD, JOB_ID);
+    expect(outcome).toMatchObject({ kind: 'COMPLETED', transitioned: true, autoApproval: null });
+    expect(approveProposal).not.toHaveBeenCalled();
+  });
+
+  it('F-021 AC-3 / AC-5: 有効かつ全層 PASS なら、確定の後に approveProposal を SYSTEM で 1 回だけ呼ぶ（自前で APPROVED を書かない）', async () => {
+    tenantFindFirst.mockResolvedValue({ autoApproveEnabled: true });
+    const outcome = await createHandler({ script: [{ kind: 'output', output: PASS_OUTPUT }] })(PAYLOAD, JOB_ID);
+    expect(outcome).toMatchObject({ kind: 'COMPLETED', transitioned: true, autoApproval: 'APPROVED' });
+    expect(approveProposal).toHaveBeenCalledTimes(1);
+    expect(approveProposal.mock.calls[0]?.[1]).toEqual({
+      proposalId: PROPOSAL_ID,
+      actor: { kind: 'SYSTEM' },
+      now: NOW,
+      ipAddress: null,
+    });
+    // 🔴 ジョブが `state='APPROVED'` を直接書く経路は無い（updateMany は GATE_RUNNING → APPROVAL_PENDING の 1 回だけ）。
+    expect(proposalUpdateMany).toHaveBeenCalledTimes(1);
+    expect(proposalUpdateMany.mock.calls[0]?.[0]).toEqual({
+      where: { id: PROPOSAL_ID, state: 'GATE_RUNNING' },
+      data: { state: 'APPROVAL_PENDING' },
+    });
+  });
+
+  it('🔴 F-021 AC-3: 有効でも 1 層 FAIL なら GATE_FAILED に留まり、approveProposal を呼ばない', async () => {
+    tenantFindFirst.mockResolvedValue({ autoApproveEnabled: true });
+    const outcome = await createHandler({ script: [{ kind: 'output', output: FAIL_OUTPUT }] })(PAYLOAD, JOB_ID);
+    expect(outcome).toMatchObject({ kind: 'COMPLETED', overall: 'FAIL', transitioned: true, autoApproval: null });
+    expect(proposalUpdateMany).toHaveBeenCalledWith({
+      where: { id: PROPOSAL_ID, state: 'GATE_RUNNING' },
+      data: { state: 'GATE_FAILED' },
+    });
+    expect(approveProposal).not.toHaveBeenCalled();
+  });
+
+  it('🔴 有効でも AI が失敗（判定不能 = FAIL）なら自動承認しない', async () => {
+    tenantFindFirst.mockResolvedValue({ autoApproveEnabled: true });
+    // スキーマ違反は再試行の待ち時間（1s → 4s）を伴わない失敗（上の describe の注記）。枝の検証にはこれで足りる。
+    const outcome = await createHandler({ script: [{ kind: 'output', output: { pii: 'broken' } }] })(PAYLOAD, JOB_ID);
+    expect(outcome).toMatchObject({ kind: 'COMPLETED', overall: 'FAIL', aiFailed: true, autoApproval: null });
+    expect(approveProposal).not.toHaveBeenCalled();
+  });
+
+  it('🔴 確定の CAS が 0 件（他の実行に先を越された / 編集で DRAFT に戻った）なら自動承認を試みない', async () => {
+    tenantFindFirst.mockResolvedValue({ autoApproveEnabled: true });
+    proposalUpdateMany.mockResolvedValue({ count: 0 });
+    const outcome = await createHandler({ script: [{ kind: 'output', output: PASS_OUTPUT }] })(PAYLOAD, JOB_ID);
+    expect(outcome).toMatchObject({ kind: 'COMPLETED', transitioned: false, autoApproval: null });
+    expect(approveProposal).not.toHaveBeenCalled();
+  });
+
+  it('approveProposal が GATE_STALE を返したら、その事実を帰結に写す（握り潰さず、APPROVED とも言わない）', async () => {
+    tenantFindFirst.mockResolvedValue({ autoApproveEnabled: true });
+    approveProposal.mockResolvedValue({ kind: 'GATE_STALE' });
+    const outcome = await createHandler({ script: [{ kind: 'output', output: PASS_OUTPUT }] })(PAYLOAD, JOB_ID);
+    expect(outcome).toMatchObject({ kind: 'COMPLETED', autoApproval: 'GATE_STALE' });
   });
 });

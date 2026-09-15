@@ -15,6 +15,7 @@ import {
   transitionProposalBodySchema,
   UPDATE_PROPOSAL_FIELDS,
   updateProposalBodySchema,
+  rejectProposalBodySchema,
 } from './schemas';
 
 const PROJECT = '01930000-0000-7000-8000-0000000000f1';
@@ -186,5 +187,30 @@ describe('transitionProposalBodySchema（#48。T-09-02。docs/05 §6.5「#48 の
       ...Object.fromEntries(ISOLATION_KEYS.map((key) => [key, PROJECT])),
     });
     expect(parsed).toEqual({ to: 'INTERVIEWED' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 🔴 T-09-03: #42 の body（理由必須）。#41 は body を持たない（スキーマ自体が存在しない）。
+// ---------------------------------------------------------------------------
+describe('rejectProposalBodySchema（#42。T-09-03）', () => {
+  it('理由は必須（空・空白だけ・欠落は 400）', () => {
+    expect(rejectProposalBodySchema.safeParse({}).success).toBe(false);
+    expect(rejectProposalBodySchema.safeParse({ reason: '' }).success).toBe(false);
+    expect(rejectProposalBodySchema.safeParse({ reason: '   ' }).success).toBe(false);
+    expect(rejectProposalBodySchema.safeParse({ reason: 'x'.repeat(2_001) }).success).toBe(false);
+    expect(rejectProposalBodySchema.parse({ reason: '  単価を見直してください  ' })).toEqual({ reason: '単価を見直してください' });
+  });
+
+  it('🔴 state / to / 分離キー / ゲート結果を受け取らない（strip）', () => {
+    const parsed = rejectProposalBodySchema.parse({
+      reason: 'r',
+      to: 'DRAFT',
+      state: 'APPROVED',
+      gate: { pii: 'PASS' },
+      force: true,
+      ...Object.fromEntries(ISOLATION_KEYS.map((key) => [key, PROJECT])),
+    });
+    expect(parsed).toEqual({ reason: 'r' });
   });
 });

@@ -25,3 +25,8 @@ export const PROPOSAL_EDIT_HREF_PATTERN = proposalEditHref('{id}');
 export function buildProposalEditHref(pattern: string, id: string): string {
   return pattern.replace('{id}', id);
 }
+
+/** `S-021`（承認）。T-09-03。`S-020`（`APPROVAL_PENDING` の読み取り専用表示）と `S-003` の要対応キュー（T-09-09）から遷移する。 */
+export function proposalApproveHref(proposalId: string): string {
+  return `/proposals/${proposalId}/approve`;
+}

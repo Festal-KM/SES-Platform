@@ -35,8 +35,13 @@ import type { GateTargetType } from './types.js';
  * - `v2` … T-07-09 の是正。**案件の公開の材料に案件名と要件のフリーテキストを足した**
  *   （docs/05 §11.11 ⑧）。提案側の材料は変えていないが、版は 1 つしか無いので提案のハッシュも
  *   変わる ＝ 既存の承認待ちは再検証になる（`hash.ts` 冒頭の 🔴 が予告している挙動である）。
+ * - `v3` … T-09-03 の是正（docs/05 §11.5 / §11.10 ②）。🔴 **添付の材料を凍結列 `skill_sheet_id` だけにした**
+ *   （`objectKey` / `version` を外した）。旧材料は `skillSheet` リレーション（C3 = 所有者だけが読める）
+ *   由来で、**同じ提案でも読む側の所属でハッシュが食い違った**（ホストが取引先作成の提案を読むと
+ *   リレーションが null になる）。承認 CAS は承認者（ホスト）の文脈で再計算するため、旧材料のままでは
+ *   取引先が作成した提案をホストが承認できない。
  */
-export const GATE_HASH_ALGORITHM_VERSION = 'v2';
+export const GATE_HASH_ALGORITHM_VERSION = 'v3';
 
 /** 凍結された主張のスキル 1 件（`EngineerSnapshot.skills` の 1 要素）。 */
 export type GateHashSkill = {
@@ -47,16 +52,16 @@ export type GateHashSkill = {
   readonly level: number | null;
 };
 
-/** 提案に添付された版（`EngineerSnapshot.skillSheetId` が指す `SkillSheet`）。 */
+/**
+ * 提案に添付された版（`EngineerSnapshot.skillSheetId`。🔴 **凍結列の値そのもの**）。
+ *
+ * 🔴 材料は `skillSheetId` だけである（T-09-03。docs/05 §11.5 / §11.10 ②）。`skill_sheets` の行は版ごとに
+ *    別の行であり ID が版を一意に特定する。`objectKey` / `version` は**その行の属性**であって内容の追加情報に
+ *    ならず、しかもリレーション（C3）を辿らないと読めない —— 辿ると読む側の所属でハッシュが食い違う。
+ *    **凍結列（C5）はホストも取引先も同じ値を読む**ので、材料が所属に依存しない。
+ */
 export type GateHashAttachment = {
   readonly skillSheetId: string;
-  readonly objectKey: string;
-  /**
-   * 🔴 §11.5 の「添付の `objectKey` + `versionId`」に対応する。`skill_sheets` は S3 の
-   *    版 ID を列として持たない（docs/05 §3.4）ため、**台帳の版番号**（`SkillSheet.version`）を
-   *    使う。`objectKey` は版ごとに異なる（§14.1）ので、2 つで版を一意に特定できる。
-   */
-  readonly version: number;
 };
 
 /**
@@ -218,11 +223,6 @@ function snapshotLines(snapshot: GateHashSnapshot | null): readonly string[] {
     ]),
     field('snapshot.attachment', snapshot.attachment === null ? null : 'present'),
     field('snapshot.attachment.skillSheetId', snapshot.attachment?.skillSheetId ?? null),
-    field('snapshot.attachment.objectKey', snapshot.attachment?.objectKey ?? null),
-    field(
-      'snapshot.attachment.version',
-      snapshot.attachment === null ? null : String(snapshot.attachment.version),
-    ),
   ];
 }
 

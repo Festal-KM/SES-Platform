@@ -154,6 +154,8 @@ function render(overrides: Partial<ProposalEditorProps> = {}): string {
     denialMessage: null,
     sendingDomain: { kind: 'VERIFIED', label: '送信元: @example.co.jp（検証済み）' },
     cancelHref: '/projects/x/candidates',
+    approveHref: null,
+    approveLabel: '承認画面を開く',
     cancelLabel: '候補検索に戻る',
     messages,
     ...overrides,

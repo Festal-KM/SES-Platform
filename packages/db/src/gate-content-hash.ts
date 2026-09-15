@@ -86,12 +86,14 @@ function toHashSkills(value: unknown): readonly GateHashSkill[] {
   });
 }
 
-type SkillSheetRow = { readonly id: string; readonly objectKey: string; readonly version: number };
-
-function toAttachment(sheet: SkillSheetRow | null): GateHashAttachment | null {
-  return sheet === null
-    ? null
-    : { skillSheetId: sheet.id, objectKey: sheet.objectKey, version: sheet.version };
+/**
+ * 🔴 添付の材料は**凍結列** `engineer_snapshots.skill_sheet_id` の値だけである（T-09-03。docs/05 §11.5 / §11.10 ②）。
+ *    `skillSheet` **リレーション**（`skill_sheets` = C3）を辿ってはならない —— ホスト文脈で取引先作成の提案を読むと
+ *    リレーションが `null` になり、**同じ提案でも読む側の所属でハッシュが食い違う**（承認 CAS が取引先作成の提案で
+ *    永久に 0 件更新になる）。凍結列は C5 で、ホストも取引先も同じ値を読む。
+ */
+function toAttachment(skillSheetId: string | null): GateHashAttachment | null {
+  return skillSheetId === null ? null : { skillSheetId };
 }
 
 /**
@@ -127,7 +129,8 @@ export async function readProposalGateHashInput(
       unitPriceMin: true,
       unitPriceMax: true,
       availableFrom: true,
-      skillSheet: { select: { id: true, objectKey: true, version: true } },
+      // 🔴 列を読む（リレーションではない）。`toAttachment` の 🔴 参照。
+      skillSheetId: true,
     },
   });
 
@@ -141,7 +144,7 @@ export async function readProposalGateHashInput(
           unitPriceMin: decimal(snapshot.unitPriceMin),
           unitPriceMax: decimal(snapshot.unitPriceMax),
           availableFrom: dateOnly(snapshot.availableFrom),
-          attachment: toAttachment(snapshot.skillSheet),
+          attachment: toAttachment(snapshot.skillSheetId),
         };
 
   return {

@@ -182,3 +182,37 @@ export function canTransitionProposal(
   }
   return (PARTNER_TRANSITION_ROLES as readonly TenantRole[]).includes(actor.role) && isPartnerRecordable(pair);
 }
+
+// ============================================================================
+// T-09-03: 承認・却下（#41 / #42）の実行者（docs/05 §6.5 #41 / #42 / `docs/04` §S-021 権限差分 /
+// docs/02 `F-021` 関連ロール / `CLAUDE.md` §3.3）
+// ============================================================================
+//
+// 🔴 **承認・却下できるのはホスト所属の `OWNER` / `ADMIN` / `SALES` だけ**である。提案先へ出すのはホストであり
+//    （越境経路 2 の受け手）、取引先（`PARTNER_ADMIN` / `PARTNER_SALES`）は「自社が作成した提案の内容とゲート結果を
+//    確認する」まで（`docs/02` `F-021` 関連ロール / `docs/04` §S-021「ホスト宛の最終承認・却下のアクションは表示されない」）。
+//    `VIEWER` は一切不可（`F-004 AC-6`）。代理閲覧中の運営者は `AuthenticatedTenantCtx` を持たず（Phase 2 の
+//    `F-060`。別経路）、この判定に到達しない。
+// 🔴 **ロールだけで決めない。** `requireRole`（ルート）はロールの集合しか見ない。ホストの 3 ロールは所属が
+//    `null` の会員にしか付かない（`memberships` の CHECK）が、判定はここでも `partnerCompanyId === null` を要求する
+//    （ロール表の変更で第二境界が緩まないよう二重にする）。
+// 🔴 判定材料は ctx だけである（提案の行の値で緩めない —— 「作成者だから承認できる」を作ると、取引先が自社の提案を
+//    自分で承認して送れる経路になる。`CLAUDE.md` §3.3「既定は人間承認必須」の「人間」はホストの承認者である）。
+
+/**
+ * 🔴 `#41` / `#42` の `requireRole`（docs/05 §6.5 #41「`OWNER`/`ADMIN`/`SALES`」）。**取引先と VIEWER を含まない。**
+ *    並び順は `TENANT_ROLES`（`@ses/db`）と同じ。
+ */
+export const PROPOSAL_APPROVAL_ROLES = HOST_GATE_REQUEST_ROLES;
+
+export type ProposalApprovalActor = Pick<GateRequestActor, 'role' | 'partnerCompanyId'>;
+
+/** 承認・却下（#41 / #42）を行えるか。🔴 判定材料は ctx だけ（リクエスト入力・行の値を引数に取らない）。 */
+export function canApproveProposal(actor: ProposalApprovalActor): boolean {
+  return actor.partnerCompanyId === null && (PROPOSAL_APPROVAL_ROLES as readonly TenantRole[]).includes(actor.role);
+}
+
+/** 画面（`S-020` / `S-021`）が承認の導線を描くか決めるための判定。拒否の本体は API の `requireRole` + `canApproveProposal`。 */
+export function isProposalApproverRole(role: TenantRole): boolean {
+  return (PROPOSAL_APPROVAL_ROLES as readonly TenantRole[]).includes(role);
+}
