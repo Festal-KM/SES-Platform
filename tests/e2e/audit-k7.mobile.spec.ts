@@ -21,6 +21,10 @@ import { expect, test, type Browser } from '@playwright/test';
 import { markSkillSheetClean } from './harness/db-admin';
 import { objectStorageOrigin } from './harness/object-storage';
 import { apiRequest, auditLogPeriodQuery, parseJson } from './support/api';
+// 🔴 T-08-11: `S-008` は T-21-01 の実害（38px 幅・98px 高のボタン。操作列の「この版を開く」/
+//    「ダウンロード」）が起きた画面そのものである。**壊れた見た目がクリック位置のずれを吸収して
+//    本 spec が緑のまま通っていた**（SP-21 §8.3-2）ため、押す前にラベルの器を検出器で見る。
+import { expectNoBrokenLabels } from './support/assertions';
 import { tenantIds } from './support/population';
 import { hostOwner, openTenantSession, type Session } from './support/sessions';
 
@@ -124,10 +128,13 @@ test.describe('K-7: ③ モバイルビューポートの閲覧・DL（deviceKin
       // 🔴 モバイルでも同じ testid で到達できる（`S-008` は Tier 3 だが遮断しない。
       //    `skill-sheet-screen.tsx` 冒頭「表は横スクロールで劣化させ、非表示にはしない」）。
       await expect(session.page.getByTestId('skill-sheet-screen')).toBeVisible();
+      // 🔴 押す**前**に見る（押せた・発火したことは、ボタンが正しく描かれている証明にならない）。
+      await expectNoBrokenLabels('S-008 スキルシート（版一覧）', session.page);
       await session.page.getByTestId(`skill-sheet-preview-${skillSheetId}`).click();
       await expect(
         session.page.getByTestId(`skill-sheet-preview-panel-${skillSheetId}`),
       ).toBeVisible();
+      await expectNoBrokenLabels('S-008 スキルシート（プレビュー展開）', session.page);
 
       const rows = await skillSheetAuditRows(session, 'skill_sheet.view', skillSheetId);
       expect(rows, 'モバイルの閲覧も 1 件だけ記録される（欠落 0 件 = BR-28）').toHaveLength(1);
@@ -159,6 +166,8 @@ test.describe('K-7: ③ モバイルビューポートの閲覧・DL（deviceKin
       });
       const downloadButton = session.page.getByTestId(`skill-sheet-download-${skillSheetId}`);
       await expect(downloadButton).toBeVisible();
+      // 🔴 T-21-01 で 1 文字ずつ 6 行に折れていたのはこのボタンの列である。押す前に検出器で見る。
+      await expectNoBrokenLabels('S-008 スキルシート（DL 前）', session.page);
 
       const [download] = await Promise.all([
         session.page.waitForEvent('download'),

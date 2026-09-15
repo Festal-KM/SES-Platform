@@ -42,7 +42,8 @@ import { expect, test, type Browser } from '@playwright/test';
 import { t } from '../../packages/i18n/src/index';
 // 🔴 T-06-09: 横溢れの判定は `support/assertions.ts` に集約した（`home.mobile.spec.ts` /
 //    `projects.mobile.spec.ts` と同じ 1 実装を通す）。
-import { expectNoHorizontalOverflow } from './support/assertions';
+// 🔴 T-08-11: ラベルの折り返し・溢れの判定（`expectNoBrokenLabels`）も同じ 1 実装を通す。
+import { expectNoBrokenLabels, expectNoHorizontalOverflow } from './support/assertions';
 import { tenantIds } from './support/population';
 import { hostOwner, openTenantSession } from './support/sessions';
 
@@ -71,6 +72,7 @@ test.describe('モバイルビューポートのスモーク（S-036 / S-014 は
 
       // ② 横スクロールが出ない（Tier 3 だが遮断しない。CLAUDE.md §13.3）。
       await expectNoHorizontalOverflow('S-036 送信ドメイン', session.page);
+      await expectNoBrokenLabels('S-036 送信ドメイン', session.page);
       // ④ 外向き発信が 0 件。
       session.outbound.assertNone();
     } finally {
@@ -102,6 +104,7 @@ test.describe('モバイルビューポートのスモーク（S-036 / S-014 は
 
       // ② 横スクロールが出ない（Tier 3 だが遮断しない。CLAUDE.md §13.3）。
       await expectNoHorizontalOverflow('S-014 取引先企業', session.page);
+      await expectNoBrokenLabels('S-014 取引先企業', session.page);
       // ④ 外向き発信が 0 件。
       session.outbound.assertNone();
     } finally {
@@ -137,6 +140,7 @@ test.describe('モバイルビューポートのスモーク（S-036 / S-014 は
 
       // ② 横スクロールが出ない（Tier 2。列を間引くが遮断しない。CLAUDE.md §13.3）。
       await expectNoHorizontalOverflow('S-005 エンジニア台帳一覧', session.page);
+      await expectNoBrokenLabels('S-005 エンジニア台帳一覧', session.page);
       // ④ 外向き発信が 0 件。
       session.outbound.assertNone();
     } finally {

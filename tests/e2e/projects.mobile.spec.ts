@@ -28,7 +28,12 @@
 //    `docs/05` §17.3 #13（モバイルでの承認）と同じ格の観点として改めて設計する）。
 import { expect, test, type Browser } from '@playwright/test';
 import { t } from '../../packages/i18n/src/index';
-import { expectNoHiddenCountHints, expectNoHorizontalOverflow } from './support/assertions';
+// 🔴 T-08-11: ラベルの折り返し・溢れの判定（`expectNoBrokenLabels`）も同じ 1 実装を通す。
+import {
+  expectNoBrokenLabels,
+  expectNoHiddenCountHints,
+  expectNoHorizontalOverflow,
+} from './support/assertions';
 import { partnerIds, tenantIds } from './support/population';
 import { hostOwner, openTenantSession, partnerSales } from './support/sessions';
 
@@ -60,6 +65,7 @@ test.describe('モバイルビューポートのスモーク（S-010 / S-011 は
 
       // ② 横スクロールが出ない（テーブルは `overflow-x-auto` の内側でスクロールする）。
       await expectNoHorizontalOverflow('S-010 案件一覧', session.page);
+      await expectNoBrokenLabels('S-010 案件一覧', session.page);
       // 🔴 モバイルでも「見えない件数」の示唆を出さない（§4.8。列を間引いた分を
       //    「他 N 件」で補うような実装に倒れていないこと）。
       expectNoHiddenCountHints('S-010 案件一覧（モバイル）', await session.page.content());
@@ -95,6 +101,7 @@ test.describe('モバイルビューポートのスモーク（S-010 / S-011 は
       await expect(session.page.getByTestId('project-detail-requirements-MUST')).toBeVisible();
 
       await expectNoHorizontalOverflow('S-011 案件詳細', session.page);
+      await expectNoBrokenLabels('S-011 案件詳細', session.page);
       session.outbound.assertNone();
     } finally {
       await session.close();
@@ -127,6 +134,7 @@ test.describe('モバイルビューポートのスモーク（S-010 / S-011 は
       await expect(session.page.getByTestId('project-detail-requirements-MUST')).toBeVisible();
 
       await expectNoHorizontalOverflow('S-011 案件詳細（取引先）', session.page);
+      await expectNoBrokenLabels('S-011 案件詳細（取引先）', session.page);
       expectNoHiddenCountHints('S-011 案件詳細（取引先・モバイル）', await session.page.content());
       session.outbound.assertNone();
     } finally {
@@ -158,6 +166,7 @@ test.describe('モバイルビューポートのスモーク（S-010 / S-011 は
       await expect(session.page.getByTestId('project-section-requirements-NICE')).toBeVisible();
 
       await expectNoHorizontalOverflow('S-012 案件の登録', session.page);
+      await expectNoBrokenLabels('S-012 案件の登録', session.page);
       session.outbound.assertNone();
     } finally {
       await session.close();
@@ -203,6 +212,7 @@ test.describe('モバイルビューポートのスモーク（S-010 / S-011 は
       await expect(session.page.getByTestId('project-visibility-gate')).toBeVisible();
 
       await expectNoHorizontalOverflow('S-013 公開範囲', session.page);
+      await expectNoBrokenLabels('S-013 公開範囲', session.page);
       // 🔴 送信はしない（公開範囲の変更は監査対象の実行系操作であり、スモークで動かさない）。
       session.outbound.assertNone();
     } finally {
