@@ -158,6 +158,13 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
     // 🔴 T-08-07: 提案依頼の期限切れ（docs/05 §9.5）。payload の `tenantId` からジョブ文脈を組み立て、
     //    **その文脈の RLS が母集団を決める**（他テナントの `REQUESTED` を 1 件も読まない）。`apps/web` 側には無い。
     'apps/worker/src/jobs/proposal-request-expire.ts',
+    // 🔴 T-10-02: 計測の 4 本（docs/05 §9.8）。いずれも payload の `tenantId`（ファンアウトが確定させた値）から
+    //    ジョブ文脈を組み立て、**その文脈の RLS が母集団を決める**（`ai_usage` / `usage_counters` /
+    //    `tenant_monthly_costs` / `usage_measurement_findings` はすべて C2）。`apps/web` 側には無い。
+    'apps/worker/src/jobs/usage-daily-rollup.ts',
+    'apps/worker/src/jobs/usage-gap-check.ts',
+    'apps/worker/src/jobs/usage-storage-reconcile.ts',
+    'apps/worker/src/jobs/cost-monthly-rollup.ts',
   ],
   // 🔴 T-09-04: `APPROVED → SUBMITTING` の CAS（docs/05 §10.2 ③ / §11.5 手順 4）。**`SUBMITTING` に入れるのは
   //    送信ジョブだけ**（所有者 `SEND_JOB`。`CLAUDE.md` §4.2「`SUBMITTING` は片道」）であり、`apps/web` の HTTP 経路が

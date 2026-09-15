@@ -95,6 +95,19 @@ export function buildSkillSheetObjectKey(input: SkillSheetObjectKeyInput): strin
 }
 
 /**
+ * 🔴 テナントのプレフィックス（`t/{tenantId}/`。docs/05 §14.1）。T-10-02。
+ *
+ * `usage.storage-reconcile` がオブジェクトストアの実測（検算）を取る範囲であり、
+ * `buildSkillSheetObjectKey` が作るキーの先頭と**同じ 1 つの規約**から出す
+ * （別々に文字列を組むと、走査の範囲と置き場所が静かにずれる）。
+ * 🔴 `tenantId` は認証コンテキスト / ジョブ payload の検証済みの値しか渡してはならない。
+ */
+export function buildTenantObjectPrefix(tenantId: string): string {
+  assertUuid('tenantId', tenantId);
+  return `${TENANT_PREFIX}/${tenantId}/`;
+}
+
+/**
  * 🔴 テナントプレフィックス配下のキーかどうか（docs/05 §14.1）。
  *
  * 署名を発行する実装（`packages/connectors` の `S3ObjectStore`）が、**署名する前に**必ず通す。

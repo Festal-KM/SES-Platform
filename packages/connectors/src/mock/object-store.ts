@@ -3,11 +3,13 @@
 
 import { randomUUID } from 'node:crypto';
 
+import { buildTenantObjectPrefix } from '@ses/domain';
 import {
   contentDispositionOf,
   type ObjectHead,
   type ObjectStore,
   type PresignGetOptions,
+  type TenantStorageMeasurement,
 } from '../interfaces.js';
 import type { PresignedUrl } from '../types.js';
 
@@ -93,6 +95,23 @@ export class MockObjectStore implements ObjectStore {
           //    固定すると、`demo` だけ版一覧の形式表示と抽出可否の判定が変わる。
           contentType: found.contentType,
         };
+  }
+
+  /**
+   * 🔴 T-10-02: 実装（`S3ObjectStore`）と同じく `buildTenantObjectPrefix` の範囲を合計する。
+   *    `presignPut` で「置かれたことにした」サイズ（`maxBytes`）がそのまま実測になる。
+   */
+  async measureTenantUsage(tenantId: string): Promise<TenantStorageMeasurement> {
+    this.calls += 1;
+    const prefix = buildTenantObjectPrefix(tenantId);
+    let byteSize = 0n;
+    let objectCount = 0;
+    for (const [key, object] of this.objects) {
+      if (!key.startsWith(prefix)) continue;
+      byteSize += BigInt(object.byteSize);
+      objectCount += 1;
+    }
+    return { byteSize, objectCount };
   }
 
   callCount(): number {

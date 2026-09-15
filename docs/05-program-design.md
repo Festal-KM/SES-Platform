@@ -225,7 +225,7 @@ ses-platform/
 | **列挙** | 🔴 **Prisma DSL では `String` で宣言する（Prisma の `enum` キーワードは使わない）。** enum 宣言はクエリエンジンがバインドパラメータへ `::"EnumName"` キャストを付与し、DB 側が `TEXT` だと実行時 `42704`（`type "..." does not exist`）で全書き込みが失敗する（2026-09-03 実測。`packages/db/prisma/schema.prisma` 冒頭コメント参照）。**許容値はフィールド直上の `///` コメントで明記**し、**DB 側は `TEXT + CHECK` をマイグレーションで手書き**する（列挙値の追加でテーブルロックを起こさないため、という当初の動機自体は変わらない）。**TS 側は単一出所の定数配列（`as const` 配列 + そこから導出した型）から型を導出し、CHECK の値集合との一致を静的テスト（`tests/static/`）で検証する**（`docs/05` §17.2）。 |
 | **削除** | 🔴 **業務データは論理削除しない**（`deletedAt` を持たせると RLS ポリシーと `WHERE` の両方に条件が増え、漏れの温床になる）。`PURGED` と保持期間削除は**物理削除 + `AuditLog` に件数**（§9.7） |
 
-### 3.2 テーブル一覧（全 58 表）
+### 3.2 テーブル一覧（全 59 表。T-10-02 で `UsageMeasurementFinding` を追加）
 
 **ドメイン概念（`CLAUDE.md` §4.1 の 32 概念 + §10.3 の 5 概念）はすべて実体を持つ。**
 
@@ -233,9 +233,9 @@ ses-platform/
 |---|---|
 | **§4.1（32）** | `Tenant` `User` `Membership` `PartnerCompany` `Engineer` `Skill` `SkillAlias` `EngineerSkill` `SkillSheet` `SkillSheetExtraction` `Project` `ProjectRequirement` `ProjectVisibility` `MatchCandidate` `EngineerShare` `ProposalRequest` `Proposal` `EngineerSnapshot` `ProposalEvent` `ReviewGate` `ChatThread` `ThreadParticipant` `Message` `Contract` `ContractDocument` `Order` `Assignment` `ExtensionReview` `Task` `Notification` `AiUsage` `AuditLog` |
 | **§10.3（5）** | `PlatformUser` `Plan` `Subscription` `UsageCounter` `ImpersonationSession` |
-| **実装テーブル（21）** | `Invitation` `TwoFactorCredential` `TenantSendingDomain` `TenantEsignConnection` `TenantRoleApprovalMode` `TenantRoleModel` `TenantMatchWeight` `SendAttempt` `EmailDispatch` `EmailEvent` `FileScanResult` `WebhookDelivery` `TenantMonthlyCost` `BillingMeterSubmission` `Announcement`（機能フラグを含む）`SchedulerRun` `DataExportRequest` `TenantPurgeRun` `ContractTemplate` **`ProjectPublishRequest`**（T-07-09）**`EngineerCareer`**（T-09-12。Issue #35 = A） |
+| **実装テーブル（22）** | `Invitation` `TwoFactorCredential` `TenantSendingDomain` `TenantEsignConnection` `TenantRoleApprovalMode` `TenantRoleModel` `TenantMatchWeight` `SendAttempt` `EmailDispatch` `EmailEvent` `FileScanResult` `WebhookDelivery` `TenantMonthlyCost` `BillingMeterSubmission` `Announcement`（機能フラグを含む）`SchedulerRun` `DataExportRequest` `TenantPurgeRun` `ContractTemplate` **`ProjectPublishRequest`**（T-07-09）**`EngineerCareer`**（T-09-12。Issue #35 = A）**`UsageMeasurementFinding`**（T-10-02） |
 
-🔴 **実装テーブルは新しいドメイン概念ではない。** それぞれ `docs/02` 章 6 が既存概念の**属性**として定義したものを、正規化・一意制約・監査の要請から独立した行に分解したものである。対応は次のとおりで、**この 21 表以外を勝手に足さない**。**経路 5 の射影ビュー 4 本（§4.9）はテーブルではなく、上記 4 表の列を絞った `security_invoker` ビューである。**
+🔴 **実装テーブルは新しいドメイン概念ではない。** それぞれ `docs/02` 章 6 が既存概念の**属性**として定義したものを、正規化・一意制約・監査の要請から独立した行に分解したものである。対応は次のとおりで、**この 22 表以外を勝手に足さない**。**経路 5 の射影ビュー 4 本（§4.9）はテーブルではなく、上記 4 表の列を絞った `security_invoker` ビューである。**
 
 | 実装テーブル | 分解元（`docs/02` 章 6） | 分解した理由 |
 |---|---|---|
@@ -256,6 +256,7 @@ ses-platform/
 | `ContractTemplate` | `ContractDocument.テンプレートと差し込み項目のマッピング`（`docs/02` `F-048` の入力「テンプレート、差し込み項目のマッピング」） | 🔴 **`F-048 AC-1`（同一のテンプレートと契約情報から常に同一のドラフト）を成立させるには、テンプレート原本とマッピングを「版として固定した行」に持たせるしかない**。`Contract` / `ContractDocument` の列にすると、テンプレートを差し替えた瞬間に過去のドラフトを再現できなくなる。`S-027` の管理単位でもある |
 | 🔴 **`EngineerCareer`**（T-09-12） | `Engineer.経験内容と従事期間`（`docs/02` `F-008` の入力。`BR-52` の収集範囲） | 🔴 **[Issue #35](https://github.com/Festal-KM/SES-Platform/issues/35) の回答 A（2026-09-10）。`Engineer.careers Json`（1 属性）としては持てない。** 理由は 3 つで、いずれも「1 塊の Json では成立しない」ことが根拠である: ①**行単位の凍結**（`F-008 AC-6` / `F-019 AC-5`）—— 1 塊で凍結すると、後から分解した結果が凍結時点の値と一致することを証明できない ②**項目参照**（`F-029` のマッチングスコアが期間・使用技術を**項目として**読む）③**項目単位の非開示**（`F-017 AC-1` の「経歴の並びが 1 項目も出ていない」は、列が独立していて初めて型と `GRANT` で示せる。Json 列は「中身を見ないと分からない」ため、§5.5 の列単位 `GRANT` も §4.6 の型による排除も効かない）。**ドメイン概念は増えていない**（`CLAUDE.md` §4.1 の 32 概念のうち `Engineer` の属性の分解である） |
 | **`ProjectPublishRequest`**（T-07-09） | `ProjectVisibility.ゲート待ちの公開要求`（`docs/02` `F-014` 処理②） | 🔴 **`project_visibilities.review_gate_id` は NOT NULL + FK であり、ゲート PASS より前に「これから公開する相手」を置ける列が存在しない**。置かないと商流層が公開範囲を知らず、**新規公開先の社名が公開文に出ていても他社名として検出されない**（`F-014 AC-3` が素通りする）。🔴 `gate.run` の payload に載せる案は採れない —— `gate.hold-release`（AI 上限からの自動復帰）は保留行だけを材料に再 enqueue するため、payload だと**保留された公開要求だけが公開先を復元できない**。詳細は §11.11 ① |
+| **`UsageMeasurementFinding`**（T-10-02） | `UsageCounter.欠測の検知結果`（`docs/02` `F-026` 処理③「日次・月次の連続性を検査し、欠測を `F-059` に通知する」の出力「欠測の検知結果」） | 🔴 **`A-005`（§16.5「計測欠測」）は「どのテナントの・どの日の・どの計測が欠けているか」を出す必要があり、`SchedulerRun.detail` の件数では運営者が対処できない**。行は種別・期間・数値・時刻だけ（本文・宛先・PII は列として存在しない）で、再検知は同じ行を更新し、解消は `resolved_at` で閉じる（消さない）。🔴 `usage_counters` を自動補正しない（`docs/03` §4.5）。詳細は §9.8.1 ③ |
 
 ### 3.3 テナント・利用者・境界
 
@@ -1273,6 +1274,25 @@ model UsageCounter {
   @@index([tenantId, metric, periodKey])
   @@map("usage_counters")
 }
+model UsageMeasurementFinding {                                    // 🔴 T-10-02（§9.8.1 ③）。A-005「計測欠測」「ストレージの乖離」の材料。C2 HOST_ONLY
+  id           String   @id @default(uuid(7)) @db.Uuid
+  tenantId     String   @db.Uuid
+  kind         String                                             // 'GAP_MISSING'|'GAP_MISMATCH'|'STORAGE_DIVERGENCE'（CHECK）
+  metric       String                                             // UsageCounter.metric と同じ値集合（CHECK）
+  periodKind   String                                             // 'DAY'|'MONTH'（CHECK）
+  periodKey    String
+  expected     Decimal? @db.Decimal(20, 6)                        // 正の値（AiUsage の合計 USD / 実測バイト数）。正を持たない検知は NULL
+  observed     Decimal? @db.Decimal(20, 6)                        // usage_counters.value。行が無い（欠測）なら NULL
+  detectedAt   DateTime @db.Timestamptz(3)
+  lastSeenAt   DateTime @db.Timestamptz(3)
+  resolvedAt   DateTime? @db.Timestamptz(3)                       // 🔴 次回の検査で見つからなければ立てる。行は消さない
+  @@unique([tenantId, kind, metric, periodKind, periodKey])        // 🔴 再検知は同じ行の UPDATE（積み上がらない）
+  @@index([resolvedAt, lastSeenAt])
+  @@map("usage_measurement_findings")
+}
+// 🔴 本表への書き込みは usage_counters を 1 バイトも動かさない（自動補正しない。docs/03 §4.5）。
+// 🔴 tenant_monthly_costs は確定後（finalized_at IS NOT NULL）の UPDATE をトリガで拒み（meter_diff_jpy / updated_at のみ例外）、
+//    app_tenant から DELETE を REVOKE する（migration 20260919000000。§9.8.1 ⑤）。
 model AuditLog {
   id            String   @id @default(uuid(7)) @db.Uuid
   tenantId      String?  @db.Uuid                                  // 運営者操作でも対象テナントを入れる
@@ -4262,10 +4282,30 @@ export const PURGE_SPEC = {
 |---|---|---|---|---|
 | `usage.seat-snapshot` | 毎日 01:00 JST | `Membership` の有効行数を `UsageCounter(DAY,'SEAT_COUNT')` に記録。**T-03-10 で実装**: ジョブ宣言とハンドラは `apps/worker/src/jobs/usage-seat-snapshot.ts`、DB 側の実体は `packages/db` の `snapshotSeatCount(ctx, { countPartnerSeats, observedAt })`（数え上げと書き込みを同一トランザクションで行う）。🔴 **キュー実体（BullMQ）と `runScheduled` / テナントのファンアウトは SP-07** であり、Phase 0 の射程は「宣言 + ハンドラ + payload の門番」まで | `attempts: 3` | `UNIQUE` + `ON CONFLICT`（🔴 **確定値の上書き**。同日 2 回でも 1 行・値も二重にならない） |
 | `usage.daily-rollup` | 毎日 01:10 JST | `AiUsage` の当日分を `UsageCounter(DAY,'AI_COST_USD')` へ突き合わせ、乖離を補正。🔴 **`AI_UNIT_*`（件数）は突き合わせ・再計算の対象外**（`AiUsage` の行数から数え直さない。§7.6。数え直すと再試行・`skill-normalizer`・`gate-inspector` が混入する） | `attempts: 3` | 冪等な上書き |
-| `usage.gap-check` | 毎日 01:20 JST | 🔴 **日次の連続性を検査し、欠測を `A-005` に出す**（`F-026 AC-4`） | `attempts: 3` | 読み取りのみ |
-| `usage.storage-reconcile` | 毎日 01:30 JST | S3 Inventory / Storage Lens と `UsageCounter(STORAGE_BYTES)` を突き合わせ、**乖離を `A-005` に出す**（🔴 **自動補正しない**。`docs/03` §4.5） | `attempts: 2` | 読み取りのみ |
+| `usage.gap-check` | 毎日 01:20 JST | 🔴 **日次の連続性を検査し、欠測を `A-005` に出す**（`F-026 AC-4`）。✅ T-10-02: 検知結果は `usage_measurement_findings`（§9.8.1 ③）に持つ | `attempts: 3` | 読み取りのみ（`usage_counters` を書かない。検知結果の upsert は UNIQUE で冪等） |
+| `usage.storage-reconcile` | 毎日 01:30 JST | S3 Inventory / Storage Lens と `UsageCounter(STORAGE_BYTES)` を突き合わせ、**乖離を `A-005` に出す**（🔴 **自動補正しない**。`docs/03` §4.5）。✅ T-10-02: 実測は `ObjectStore.measureTenantUsage`（プレフィックス走査。§9.8.1 ④） | `attempts: 2` | 読み取りのみ（同上） |
 | `cost.monthly-rollup` | 毎日 01:40 JST | `TenantMonthlyCost` を更新（§5.9）。🔴 **月末を過ぎた期間は `finalizedAt` を立てて以後書き換えない** | `attempts: 3` | `(tenantId, periodMonth)` の upsert |
 | `billing.meter-submit` | 毎月 1 日 02:00 JST | 前月分の**超過件数**を単位ごとに Stripe へ（1 テナント × 4 単位 = 最大 4 イベント。値 = `max(0, AI_UNIT_* − 件数クォータ)`。§5.10）。🔴 **`BillingMeterSubmission` に INSERT できた実行だけが Stripe を呼ぶ** | `attempts: 3`（**INSERT が防御線なので許す**） | 複合 PK の `UNIQUE`（`eventName` を含む） |
+
+#### 9.8.1 🔴 T-10-02 の実装の決着（メール・ストレージの計測と日次ジョブ。2026-09-16）
+
+**本節は上の表の 4 本（`usage.daily-rollup` / `usage.gap-check` / `usage.storage-reconcile` / `cost.monthly-rollup`）の実装を確定させたものである**（`CLAUDE.md` §8.7。T-09-01 / T-09-02 の決着節と同じ作法）。宣言と配線は `apps/worker/src/jobs/{usage-daily-rollup,usage-gap-check,usage-storage-reconcile,cost-monthly-rollup}.ts` + `SCHEDULED_JOBS`（§9.1.1 の `runScheduled` → `fanOutToTenants` を通る 10 本目までの 4 本）、本体は `packages/db/src/{usage-rollup,usage-gap-check,usage-storage-reconcile,tenant-monthly-cost,usage-findings}.ts`、判定と算出は `packages/domain/src/usage/{day-keys,gap-check,storage-reconcile,monthly-cost,pricing-ruleset}.ts`（純粋関数）。結合テストは `tests/isolation/usage-measurement.test.ts`（`F-026 AC-3`〜`AC-5`）。
+
+**① 🔴 `usage.daily-rollup` は「昨日」を突き合わせる（当日ではない）**。当日は呼び出しが進行中であり、予約（`reserved_value`）と `AiUsage` が一時的に食い違うのが正常である。1 日が終わった行だけを `AiUsage.estimated_cost_usd` の JST 暦日合計（`usagePeriodRange`。§9.1 の暦と同じ）で**確定値として上書き**し、`reserved_value` は残す（§7.12 の TTL 設計）。`AiUsage` もカウンタも無い日は行を作らない（使わなかった日を 0 で埋めると ② の判定と食い違う）。加えて **`EMAIL_COUNT` の MONTH 行を DAY 行から畳む**（§5.9 の原価（メール）と `S-038`「メール N 通 / 月」が読む行。通数を数え直すのではなく日次の確定値の合計）。🔴 **`AI_UNIT_*` はどの関数も読むだけで、数え直さない・書かない**（表の 🔴 のとおり。結合テストが「rollup の前後で件数カウンタが動かない」ことを固定）。
+
+**② 🔴 `usage.gap-check` の「欠測」の定義**（`packages/domain/src/usage/gap-check.ts` が唯一の出所）: 計測には「毎日必ず行があるもの」と「出来事があった日にだけ行があるもの」があり、混ぜると「AI を使わなかった日」が欠測に見えて欠測 0 件が成立しない。したがって **`SEAT_COUNT` は期待日すべてに行が要り（無ければ `GAP_MISSING`）、`AI_COST_USD` は `AiUsage` に行がある日だけを見る**（行が無ければ `GAP_MISSING`、合計が食い違えば `GAP_MISMATCH`）。`EMAIL_COUNT` は正が予約行そのものであり独立した突き合わせ先が無いため対象外、`STORAGE_BYTES` は ③ が検算する。窓は `[max(テナント作成日 + 1, 今日 − `USAGE_GAP_CHECK_LOOKBACK_DAYS`〔`packages/config`。既定 7〕), 昨日]`（ジョブ自身が数日止まっても復帰した日にまとめて拾う。`docs/03` §4.6「日付一致にしない」と同じ規律）。🔴 **作成日そのものは期待しない**（レビュー指摘で訂正。2026-09-16）: `usage.seat-snapshot` は 01:00 JST に「その時点で存在するテナント」へファンアウトするため、01:00 より後に開設されたテナントには作成日の `SEAT_COUNT` 行が原理的に無く（開設時にスナップショットを取る経路も無い）、作成日を窓に入れるとその行が 7 日後に窓から外れて**解消不能な `GAP_MISSING` として永久に残る**（`F-026 AC-4`「欠測 0 件」が全テナントで不成立になる）。`AI_COST_USD` は呼び出し時に `ai-cost-guard` が DAY 行を作るので、作成日を外しても取りこぼさない。
+
+**③ 🔴 検知結果は表 `usage_measurement_findings`（C2 HOST_ONLY。migration 20260919000000）に持つ** —— `A-005`（§16.5「計測欠測」）は「どのテナントの・どの日の・どの計測が欠けているか」を出す必要があり、`SchedulerRun.detail` の件数だけでは運営者が対処できない。列は種別・期間・数値・時刻だけで、本文・宛先・PII は列として存在しない（`BR-40`。`app_platform` に全列を GRANT。読み取りは `@ses/db/platform` の `listOpenUsageMeasurementFindings`〔`admin.monitoring.view`〕であり、画面は SP-11 T-11-04）。行は `(tenant, kind, metric, period_kind, period_key)` につき 1 つで、再検知は同じ行の `last_seen_at` を進め、**次回の検査で見つからなければ `resolved_at` を立てて閉じる（消さない）**。解消の判定は「同じ実行で `last_seen_at` が更新されなかったスコープ内の未解消行」であり、検査していない期間の行を誤って閉じない。🔴 **本表への書き込みは `usage_counters` を 1 バイトも動かさない**（自動補正しない。`docs/03` §4.5）。
+
+**④ 🔴 `usage.storage-reconcile` の実測は `ObjectStore.measureTenantUsage(tenantId)`**（`packages/connectors`。`t/{tenantId}/` = `buildTenantObjectPrefix` の配下を `ListObjectsV2` でページングして合計。`S3Api.listObjects` を AWS アダプタ `aws-sdk-s3.ts` に足し、モック `MockObjectStore` も同じ規約で合計する）。表の「S3 Inventory / Storage Lens」は将来の実装差し替えの余地として残し、**ポートの形（テナント単位の合計バイト数と個数）は変えない**。許容差は 0（閾値を置くと小さな乖離が積み上がる経路が検知されない。一時的な乖離〔進行中のアップロード〕は翌日の一致で自然に閉じる）。行は `(STORAGE_DIVERGENCE, STORAGE_BYTES, MONTH, 当月)` の 1 つ。`development` は MinIO（ローカルの `real`）、`demo` はモック、実 AWS に到達するのは `sandbox` 以上だけであり、**ジョブに環境分岐は無い**（`createObjectStore(connectors.objectStore, …)` を `runtime.ts` が遅延生成）。`attempts: 2`（表のとおり。読み取りの外部 I/O）。
+
+**⑤ 🔴 `cost.monthly-rollup` の確定は二重で守る**: アプリ側の `ON CONFLICT … DO UPDATE … WHERE finalized_at IS NULL`（確定行は 0 件更新 = `ALREADY_FINALIZED`。例外にせず冪等に成功）と、DB 側のトリガ `tenant_monthly_costs_guard_finalized`（確定行の変更を拒否。**`meter_diff_jpy` と `updated_at` だけは例外** —— メータリング差異は月次締めの後〔`billing.meter-submit` = 翌月 1 日〕に確定するため）。DELETE → 再 INSERT の書き換え経路は **`app_tenant` から DELETE を REVOKE** して塞ぐ（行トリガで DELETE を拒むと `tenants` からの `ON DELETE CASCADE` まで止めるため、権限で行う）。1 回の実行で扱う月は「当月（暫定）+ 先月（確定の機会）+ それより前で未確定の行」（`listMonthsToRollup`。ジョブが止まっていた月を取り返す）。確定時に `storage_bytes_at_month_end` を `UsageCounter(MONTH,'STORAGE_BYTES')` の「その月以前の最新行」で固定し、暫定行は現在値で計算する（§5.9）。
+
+**⑥ 🔴 契約条件（売上の材料）は seam で受ける（Phase 1 は `null` = 売上 0）**。`Subscription` は Phase 3（`A-010`）まで存在せず、`plans` / `subscriptions` は `app_tenant` から読めない（migration 20260904010000「`A-004` / `A-010` で許可リストと同時に足す」）。したがって Phase 1 の配線は `billingTermsNotRecorded`（常に `null`）であり、**原価だけが実測で埋まる**。`computeTenantMonthlyCost` は売上 0 のとき `grossMarginRate = null`（0% と偽らない）。**SP-20 が `packages/db/src/planAccess.ts`（§3.10 末尾）を置いた時点で `apps/worker/src/runtime.ts` の 1 箇所を差し替える**（seam の型 `BillingTermsReader` は `Plan.monthlySeatPriceJpy` / `overageUnitPricesJpy` / 件数クォータ〔`Subscription.unitQuotaOverride` 適用後〕/ `aiCostCapUsd` を運ぶ形で確定済み）。
+
+**⑦ 🔴 §8.8 の読み替え 2 点**: (a) 単価表の版 `PRICING_RULESET_VERSION = 'v1'` は `packages/config/src/pricing.ts` ではなく **`packages/domain/src/usage/pricing-ruleset.ts`** に置いた。理由は AI の単価表（§7.9 ④の読み替え）と同じで、算出（`monthly-cost.ts`）が domain にしか置けず、`packages/config` は `@ses/domain` に依存していない（型のためだけに依存を足さない）。**版が `TenantMonthlyCost.pricingRulesetVersion` に残ること**が本質であり、単価を変えるときは新しい版を足す（v1 を書き換えない。過去月は再計算しない）。値: メール Essentials `$0.16/1,000` + Tenants `$0.005/月 + $0.005/1,000`、ストレージ `$0.025/GiB・月`（`docs/03` §7.2.2「未確認・仮置き」）、電子署名 `$0`、為替 `150 円/USD`（`docs/03` §7.2.3 の換算。TBD-4「月次で確定させる」までの暫定）、基準ユニット `$12.82`。(b) メールの Tenants 課金の 3 値判定は、**環境による分岐を起動時の 1 回**（`resolveEmailTenantsBillingPolicy(APP_ENV)`。`production` → 割当を見る / それ以外 → 非該当）に閉じ、`production` では `tenant_sending_domains.ses_tenant_name` の有無で 確定（あり）/ 非該当（行が無い）/ 不明（行はあるが名前が無い = 登録途中）に分ける。**不明は高いほう（確定と同額）で見積もる**のは domain 側（`estimateEmailCostMicros`）。金額は整数演算（USD = micro、JPY = 銭）で端数は切り捨て。
+
+**⑧ 申し送り**: SP-11 T-11-04（`A-005`）は `listOpenUsageMeasurementFindings` の `countsByKind` / `items` を「計測欠測」「ストレージの乖離」の 2 行に写す（`GAP_MISSING` / `GAP_MISMATCH` を「欠測」に畳んでよいが、`STORAGE_DIVERGENCE` とは別行にする。乖離は障害ではなく検算の不一致である）。SP-20（`A-011`）は ⑥ の seam の差し替えと、`billing.meter-submit` 後の `meter_diff_jpy` の書き込み（⑤ の例外列）を行う。
 
 ### 9.9 監視・保守
 

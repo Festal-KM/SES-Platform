@@ -3,7 +3,7 @@
 //
 //   ① `development` でワーカーが起動し、`gate.run` の Worker が**実際に待ち受ける**
 //      （enqueue した仕事を消費して完了させるところまで見る。「Worker を作った」では足りない）
-//   ② 宣言済みの 6 本（T-08-07 で `proposal-request.expire` が加わった）が **Redis に Repeatable Job として登録される**（cron と TZ まで一致）
+//   ② 宣言済みの 10 本（T-08-07 で `proposal-request.expire`、T-10-02 で計測の 4 本が加わった）が **Redis に Repeatable Job として登録される**（cron と TZ まで一致）
 //      —— 「配線したのに登録されていない」は起動ログでは絶対に気づけない（`CLAUDE.md` §11.1）
 //
 // 🔴 `startWorkerRuntime` を**そのまま**呼ぶ（配線を書き写さない）。書き写すと、
@@ -64,12 +64,13 @@ afterAll(async () => {
 }, SETUP_TIMEOUT_MS);
 
 describe('🔴 受け入れ基準 ①: development でワーカーが起動し gate.run が待ち受ける', () => {
-  it('配線したキューの一覧に gate.run と宣言済み 6 本がすべて含まれる', () => {
+  it('配線したキューの一覧に gate.run と宣言済み 10 本がすべて含まれる', () => {
     expect(runtime.queues).toEqual([
       GATE_RUN_JOB,
       ...SCHEDULED_JOBS.map((declaration) => declaration.name),
     ]);
-    expect(runtime.queues).toHaveLength(7);
+    // 🔴 T-10-02 で計測の 4 本（usage.daily-rollup / usage.gap-check / usage.storage-reconcile / cost.monthly-rollup）が加わった。
+    expect(runtime.queues).toHaveLength(11);
   });
 
   it('🔴 enqueue した gate.run が実際に消費される（対象が無い提案は TARGET_NOT_FOUND で完了する）', async () => {

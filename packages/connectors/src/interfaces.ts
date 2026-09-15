@@ -133,11 +133,27 @@ export function contentDispositionOf(downloadFileName: string | undefined): stri
   return `attachment; filename="${downloadFileName}"`;
 }
 
+/**
+ * 🔴 T-10-02: テナントのプレフィックス配下の**実測**（docs/05 §9.8 `usage.storage-reconcile` / docs/03 §4.5）。
+ *
+ * これは**検算**であり正ではない（正は `UsageCounter(STORAGE_BYTES)`）。停止判定に使ってはならない —— 
+ * 走査はオブジェクト数に比例して遅く、進行中のアップロード（署名済み・未確定）を含みうる。
+ */
+export type TenantStorageMeasurement = {
+  readonly byteSize: bigint;
+  readonly objectCount: number;
+};
+
 export interface ObjectStore {
   presignPut(key: string, contentType: string, maxBytes: number): Promise<PresignedUrl>;
   presignGet(key: string, ttlSec: number, options?: PresignGetOptions): Promise<PresignedUrl>;
   delete(key: string): Promise<void>;
   head(key: string): Promise<ObjectHead | null>;
+  /**
+   * 🔴 T-10-02: `t/{tenantId}/` 配下の合計バイト数と個数（日次の検算専用。上の 🔴）。
+   *    `tenantId` はジョブ payload の検証済みの値だけを渡す（`CLAUDE.md` §3.1）。
+   */
+  measureTenantUsage(tenantId: string): Promise<TenantStorageMeasurement>;
   callCount(): number;
 }
 

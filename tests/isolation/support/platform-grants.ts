@@ -679,7 +679,23 @@ export const PLATFORM_READ_COLUMN_ALLOWLIST: Record<string, readonly string[]> =
     'value',
     'submitted_at',
     'stripe_identifier',
-  ],};
+  ],
+  // 🔴 T-10-02（docs/05 §9.8 / §16.5。migration 20260919000000）: `A-005` の「計測欠測」「ストレージの乖離」の
+  //    材料。全列が種別・期間・数値・時刻であり非開示列は無い（本文・宛先・PII は列として存在しない）。
+  usage_measurement_findings: [
+    'id',
+    'tenant_id',
+    'kind',
+    'metric',
+    'period_kind',
+    'period_key',
+    'expected',
+    'observed',
+    'detected_at',
+    'last_seen_at',
+    'resolved_at',
+  ],
+};
 
 /**
  * docs/05 §5.5 が名指しで「`app_platform` に GRANT しない」と定める列。

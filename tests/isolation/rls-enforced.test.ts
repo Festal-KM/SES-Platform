@@ -104,7 +104,8 @@ describe('#2 全表にポリシーが 1 つ以上ある（docs/05 §4.7 #2）', 
     // 空振り防止（docs/05 §3.2 の 58 表 − 射程外 4 表）。
     // 🔴 T-07-09 で `project_publish_requests` を 1 表足した（docs/05 §11.11 ①）。
     // 🔴 T-09-12 で `engineer_careers` を 1 表足した（docs/05 §3.4 / Issue #35 = A）。
-    expect(tables).toHaveLength(54);
+    // 🔴 T-10-02 で `usage_measurement_findings` を 1 表足した（docs/05 §9.8 / migration 20260919000000）。
+    expect(tables).toHaveLength(55);
 
     const policies = await readPolicies(db);
     const withPolicy = new Set(policies.map((policy) => policy.table));

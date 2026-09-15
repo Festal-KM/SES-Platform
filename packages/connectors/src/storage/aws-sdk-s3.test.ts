@@ -14,7 +14,7 @@
 //
 // 🔴 「SDK を import してよいのはこの 2 アダプタだけ」「SDK 内部のリトライを止めている」は
 //    リポジトリ全体を走査する `tests/static/aws-sdk-single-path.test.ts` が固定する。
-import { HeadObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { HeadObjectCommand, ListObjectsV2Command, S3Client } from '@aws-sdk/client-s3';
 import { describe, expect, it, vi } from 'vitest';
 import { createObjectStore } from '../index.js';
 import { S3ObjectStore } from './s3.js';
@@ -299,5 +299,42 @@ describe('🔴 ③ ④ headObject / deleteObject（`send` を差し替え、ネ�
     expect(commands[0]).toBeInstanceOf(HeadObjectCommand);
     expect((commands[0] as HeadObjectCommand).input).toEqual({ Bucket: BUCKET, Key: KEY });
     expect((commands[1] as HeadObjectCommand).input).toEqual({ Bucket: BUCKET, Key: KEY });
+  });
+});
+
+describe('🔴 T-10-02: listObjects（`send` を差し替え、ネットワークに出ない）', () => {
+  it('ListObjectsV2 を Prefix / ContinuationToken で組み立て、Key / Size と次ページのトークンを写す', async () => {
+    const client = localClient();
+    const send = vi.spyOn(client, 'send').mockResolvedValue({
+      Contents: [{ Key: KEY, Size: 512, ETag: '"x"' }],
+      IsTruncated: true,
+      NextContinuationToken: 'next-1',
+      $metadata: {},
+    } as never);
+
+    const page = await api({ client }).listObjects({
+      Bucket: BUCKET,
+      Prefix: `t/${TENANT}/`,
+      ContinuationToken: 'prev-0',
+    });
+
+    expect(page).toEqual({ Contents: [{ Key: KEY, Size: 512 }], NextContinuationToken: 'next-1' });
+    const command = send.mock.calls[0]?.[0] as ListObjectsV2Command;
+    expect(command).toBeInstanceOf(ListObjectsV2Command);
+    expect(command.input).toEqual({ Bucket: BUCKET, Prefix: `t/${TENANT}/`, ContinuationToken: 'prev-0' });
+  });
+
+  it('最終ページ（IsTruncated=false）では NextContinuationToken を返さない', async () => {
+    const client = localClient();
+    vi.spyOn(client, 'send').mockResolvedValue({ Contents: [], IsTruncated: false, $metadata: {} } as never);
+    expect(await api({ client }).listObjects({ Bucket: BUCKET, Prefix: `t/${TENANT}/` })).toEqual({ Contents: [] });
+  });
+
+  it('🔴 Size を欠く要素は例外にする（0 に埋めて検算を小さく見せない）', async () => {
+    const client = localClient();
+    vi.spyOn(client, 'send').mockResolvedValue({ Contents: [{ Key: KEY }], $metadata: {} } as never);
+    await expect(api({ client }).listObjects({ Bucket: BUCKET, Prefix: `t/${TENANT}/` })).rejects.toThrow(
+      /Key \/ Size/,
+    );
   });
 });

@@ -56,6 +56,20 @@ export type S3ObjectRequest = {
   readonly Key: string;
 };
 
+/** `ListObjectsV2` の 1 ページ分の要求（T-10-02。検算の走査）。 */
+export type S3ListObjectsRequest = {
+  readonly Bucket: string;
+  readonly Prefix: string;
+  readonly ContinuationToken?: string;
+};
+
+/** `ListObjectsV2` の応答のうち本プロダクトが読む部分。 */
+export type S3ListObjectsResponse = {
+  readonly Contents: readonly { readonly Key: string; readonly Size: number }[];
+  /** 続きがあれば次ページのトークン。無ければ `undefined`。 */
+  readonly NextContinuationToken?: string;
+};
+
 /** `HeadObject` の応答のうち本プロダクトが読む部分。 */
 export type S3HeadObjectResponse = {
   readonly ContentLength: number;
@@ -86,4 +100,9 @@ export interface S3Api {
   deleteObject(request: S3ObjectRequest): Promise<void>;
   /** 存在しなければ `null`（404 を例外にしない。確定前の照会で使うため）。 */
   headObject(request: S3ObjectRequest): Promise<S3HeadObjectResponse | null>;
+  /**
+   * 🔴 T-10-02: プレフィックス配下の 1 ページ（最大 1,000 件）。ページングは `S3ObjectStore` が回す。
+   *    **現行版のみ**（非現行版・削除マーカーは数えない。カウンタも現行版のバイト数しか持たない）。
+   */
+  listObjects(request: S3ListObjectsRequest): Promise<S3ListObjectsResponse>;
 }

@@ -166,6 +166,7 @@ export {
   TWO_FACTOR_SUBJECT_TYPES,
   USAGE_COUNTER_METRICS,
   USAGE_COUNTER_PERIOD_KINDS,
+  USAGE_MEASUREMENT_FINDING_KINDS,
   WEBHOOK_PROVIDERS,
 } from './schema-value-sets.js';
 export type {
@@ -219,6 +220,7 @@ export type {
   TwoFactorSubjectType,
   UsageCounterMetric,
   UsageCounterPeriodKind,
+  UsageMeasurementFindingKind,
   WebhookProvider,
 } from './schema-value-sets.js';
 export {
@@ -449,6 +451,24 @@ export {
   releaseSkillSheetStorage,
 } from './storage-usage.js';
 export type { SkillSheetStorageInput, StorageAccountingOutcome } from './storage-usage.js';
+// 🔴 T-10-02: 計測の突き合わせ・連続性の検査・検算・月次集計（docs/05 §9.8 / §5.9 / `F-026 AC-3`〜`AC-5`）。
+//    判定と算出は `@ses/domain` の純粋関数であり、ここは材料を揃えて結果を書く側である。
+//    🔴 `AI_UNIT_*`（件数）はどの関数も**読むだけ**で、数え直さない・書かない（docs/05 §9.8）。
+export { rollupAiCostDay, rollupEmailMonth } from './usage-rollup.js';
+export type { AiCostDayRollup, EmailMonthRollup } from './usage-rollup.js';
+export { checkUsageGaps } from './usage-gap-check.js';
+export type { UsageGapCheckInput, UsageGapCheckOutcome } from './usage-gap-check.js';
+export { reconcileTenantStorage } from './usage-storage-reconcile.js';
+export type { StorageReconcileOutcome } from './usage-storage-reconcile.js';
+export { listMonthsToRollup, readSesTenantAssignment, rollupTenantMonthlyCost } from './tenant-monthly-cost.js';
+export type { MonthlyCostRollupInput, MonthlyCostRollupOutcome, SesTenantAssignment } from './tenant-monthly-cost.js';
+export type {
+  UsageMeasurementFindingInput,
+  UsageMeasurementFindingScope,
+  UsageMeasurementFindingSync,
+} from './usage-findings.js';
+export { usagePeriodRange } from './usage-period.js';
+export type { UsagePeriodRange } from './usage-period.js';
 // 🔴 T-07-03: `AiUsage` の記録と利用者向け件数の加算（docs/05 §7.3 / §7.6 / §7.11 /
 //    `F-026 AC-1` `AC-2` `AC-6`）。`packages/ai` の `AiUsageRecorder`（ポート）の実装本体であり、
 //    アダプタは `apps/worker/src/ai/usage-recorder.ts` が持つ（`packages/db` は `@ses/ai` に

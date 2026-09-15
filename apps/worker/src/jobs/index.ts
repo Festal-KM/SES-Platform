@@ -45,6 +45,30 @@ import {
   PROPOSAL_REQUEST_EXPIRE_SCHEDULE,
   type ProposalRequestExpireDeps,
 } from './proposal-request-expire.js';
+import {
+  createUsageDailyRollupHandler,
+  USAGE_DAILY_ROLLUP_JOB,
+  USAGE_DAILY_ROLLUP_SCHEDULE,
+  type UsageDailyRollupDeps,
+} from './usage-daily-rollup.js';
+import {
+  createUsageGapCheckHandler,
+  USAGE_GAP_CHECK_JOB,
+  USAGE_GAP_CHECK_SCHEDULE,
+  type UsageGapCheckDeps,
+} from './usage-gap-check.js';
+import {
+  createUsageStorageReconcileHandler,
+  USAGE_STORAGE_RECONCILE_JOB,
+  USAGE_STORAGE_RECONCILE_SCHEDULE,
+  type UsageStorageReconcileDeps,
+} from './usage-storage-reconcile.js';
+import {
+  COST_MONTHLY_ROLLUP_JOB,
+  COST_MONTHLY_ROLLUP_SCHEDULE,
+  createCostMonthlyRollupHandler,
+  type CostMonthlyRollupDeps,
+} from './cost-monthly-rollup.js';
 
 export {
   createUsageSeatSnapshotHandler,
@@ -219,6 +243,62 @@ export type {
   ProposalRequestExpireOutcome,
   ProposalRequestExpirePayload,
 } from './proposal-request-expire.js';
+// 🔴 T-10-02: 計測の突き合わせ・連続性の検査・検算・月次集計（docs/05 §9.8 / `F-026 AC-3`〜`AC-5`）。
+//    4 本とも日次のスケジュールジョブで、下の `SCHEDULED_JOBS` に載る。**外部への書き込みを 1 つも行わない**
+//    （`usage.storage-reconcile` はオブジェクトストアを読むだけ）。🔴 `AI_UNIT_*`（件数）はどのジョブも
+//    数え直さない・書かない。
+export {
+  createUsageDailyRollupHandler,
+  parseUsageDailyRollupPayload,
+  USAGE_DAILY_ROLLUP_JOB,
+  USAGE_DAILY_ROLLUP_SCHEDULE,
+} from './usage-daily-rollup.js';
+export type {
+  UsageDailyRollupDeps,
+  UsageDailyRollupHandler,
+  UsageDailyRollupOutcome,
+  UsageDailyRollupPayload,
+} from './usage-daily-rollup.js';
+export {
+  createUsageGapCheckHandler,
+  parseUsageGapCheckPayload,
+  USAGE_GAP_CHECK_JOB,
+  USAGE_GAP_CHECK_SCHEDULE,
+} from './usage-gap-check.js';
+export type {
+  UsageGapCheckDeps,
+  UsageGapCheckHandler,
+  UsageGapCheckJobOutcome,
+  UsageGapCheckPayload,
+} from './usage-gap-check.js';
+export {
+  createUsageStorageReconcileHandler,
+  parseUsageStorageReconcilePayload,
+  USAGE_STORAGE_RECONCILE_JOB,
+  USAGE_STORAGE_RECONCILE_SCHEDULE,
+} from './usage-storage-reconcile.js';
+export type {
+  UsageStorageReconcileDeps,
+  UsageStorageReconcileHandler,
+  UsageStorageReconcileOutcome,
+  UsageStorageReconcilePayload,
+} from './usage-storage-reconcile.js';
+export {
+  billingTermsNotRecorded,
+  COST_MONTHLY_ROLLUP_JOB,
+  COST_MONTHLY_ROLLUP_SCHEDULE,
+  createCostMonthlyRollupHandler,
+  parseCostMonthlyRollupPayload,
+  resolveEmailTenantsBillingPolicy,
+} from './cost-monthly-rollup.js';
+export type {
+  BillingTermsReader,
+  CostMonthlyRollupDeps,
+  CostMonthlyRollupHandler,
+  CostMonthlyRollupOutcome,
+  CostMonthlyRollupPayload,
+  EmailTenantsBillingPolicy,
+} from './cost-monthly-rollup.js';
 
 /**
  * ジョブの合成に要る値（起動時に 1 度だけ解決する。`CLAUDE.md` §11.1 / docs/05 §13.1）。
@@ -236,7 +316,14 @@ export type ScheduledJobDeps = UsageSeatSnapshotDeps &
   //    「スケジュールされているのに 1 件も復帰しない」状態を作らない）。
   GateHoldReleaseDeps &
   // T-08-07: `proposal-request.expire` が要るのは `now` だけ（既に `UsageSeatSnapshotDeps` が持つ）。
-  ProposalRequestExpireDeps;
+  ProposalRequestExpireDeps &
+  // 🔴 T-10-02: 計測の 4 本。`usage.gap-check` は遡る日数、`usage.storage-reconcile` はオブジェクトストア、
+  //    `cost.monthly-rollup` は契約条件の seam・SES Tenants 課金の方針・単価表の版を要る。
+  //    交差型なので配線が渡し忘れたらコンパイルエラーになる。
+  UsageDailyRollupDeps &
+  UsageGapCheckDeps &
+  UsageStorageReconcileDeps &
+  CostMonthlyRollupDeps;
 
 /**
  * スケジュール実行するジョブの宣言。
@@ -308,5 +395,32 @@ export const SCHEDULED_JOBS: readonly ScheduledJobDeclaration[] = [
     cron: PROPOSAL_REQUEST_EXPIRE_SCHEDULE.cron,
     timeZone: PROPOSAL_REQUEST_EXPIRE_SCHEDULE.timeZone,
     createHandler: (deps) => createProposalRequestExpireHandler(deps),
+  },
+  // 🔴 T-10-02: 計測の 4 本（docs/05 §9.8。01:10 / 01:20 / 01:30 / 01:40 JST の順）。**これらが無いと**
+  //    `AI_COST_USD` の乖離は直らず、欠測は誰にも見えず（`F-026 AC-4`）、`TenantMonthlyCost` は 1 行も
+  //    埋まらない（`F-026 AC-5` / `CLAUDE.md` §10.2「月次を待たずに検知」）。
+  {
+    name: USAGE_DAILY_ROLLUP_JOB,
+    cron: USAGE_DAILY_ROLLUP_SCHEDULE.cron,
+    timeZone: USAGE_DAILY_ROLLUP_SCHEDULE.timeZone,
+    createHandler: (deps) => createUsageDailyRollupHandler(deps),
+  },
+  {
+    name: USAGE_GAP_CHECK_JOB,
+    cron: USAGE_GAP_CHECK_SCHEDULE.cron,
+    timeZone: USAGE_GAP_CHECK_SCHEDULE.timeZone,
+    createHandler: (deps) => createUsageGapCheckHandler(deps),
+  },
+  {
+    name: USAGE_STORAGE_RECONCILE_JOB,
+    cron: USAGE_STORAGE_RECONCILE_SCHEDULE.cron,
+    timeZone: USAGE_STORAGE_RECONCILE_SCHEDULE.timeZone,
+    createHandler: (deps) => createUsageStorageReconcileHandler(deps),
+  },
+  {
+    name: COST_MONTHLY_ROLLUP_JOB,
+    cron: COST_MONTHLY_ROLLUP_SCHEDULE.cron,
+    timeZone: COST_MONTHLY_ROLLUP_SCHEDULE.timeZone,
+    createHandler: (deps) => createCostMonthlyRollupHandler(deps),
   },
 ];

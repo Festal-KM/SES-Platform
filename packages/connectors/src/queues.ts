@@ -137,6 +137,15 @@ export const INTERNAL_JOB_NAMES = [
   //    **外部 API を呼ばない**（DB の CAS と監査だけ）ので `attempts: 3` を許せる。冪等性は
   //    母集団の未処理条件（`state='REQUESTED' AND expires_at <= now`）と CAS が担う。
   'proposal-request.expire',
+  // 🔴 T-10-02（docs/05 §9.8）。計測の突き合わせ・連続性の検査・検算・月次集計。**外部への書き込みを
+  //    1 つも行わない**（`usage.storage-reconcile` はオブジェクトストアを**読む**だけ）。
+  //    冪等性: `usage.daily-rollup` は確定値の上書き（SET）、`usage.gap-check` / `usage.storage-reconcile` は
+  //    検知結果の UNIQUE + upsert、`cost.monthly-rollup` は `(tenant_id, period_month)` の upsert
+  //    （確定行は `WHERE finalized_at IS NULL` で 0 件更新）。
+  'usage.daily-rollup',
+  'usage.gap-check',
+  'usage.storage-reconcile',
+  'cost.monthly-rollup',
 ] as const;
 
 export type InternalJobName = (typeof INTERNAL_JOB_NAMES)[number];
@@ -253,6 +262,13 @@ export const QUEUE_DEFINITIONS = {
   //    - `removeOnComplete` を付けない。`jobId` はスケジュールの slot（`{jobName}:{slot}`。§9.1）であり
   //      冪等キーではない（`gate.hold-release` と同じ理由）。
   'proposal-request.expire': internalQueue('proposal-request.expire', { attempts: 3 }),
+  // 🔴 T-10-02（docs/05 §9.8 の表のとおり）。`usage.storage-reconcile` だけ `attempts: 2`
+  //    （オブジェクトストアの走査は読み取りだが外部 I/O であり、表の値に従う）。
+  //    いずれも `jobId` はスケジュールの slot であり冪等キーではないため `removeOnComplete` を付けない。
+  'usage.daily-rollup': internalQueue('usage.daily-rollup', { attempts: 3 }),
+  'usage.gap-check': internalQueue('usage.gap-check', { attempts: 3 }),
+  'usage.storage-reconcile': internalQueue('usage.storage-reconcile', { attempts: 2 }),
+  'cost.monthly-rollup': internalQueue('cost.monthly-rollup', { attempts: 3 }),
 } as const;
 
 // ---------------------------------------------------------------------------

@@ -132,14 +132,28 @@ describe('🔴 宣言とキュー定義が食い違わない（T-07-11）', () =
     expect(missing).toEqual([]);
   });
 
-  it('スケジュール宣言は 6 本である（docs/05 §9.1 / SP-07 T-07-11 + T-08-07 の `proposal-request.expire`）', () => {
+  it('スケジュール宣言は 10 本である（docs/05 §9.1 / SP-07 T-07-11 + T-08-07 の `proposal-request.expire` + T-10-02 の計測 4 本）', () => {
     expect(SCHEDULED_JOBS.map((declaration) => declaration.name).sort()).toEqual([
+      'cost.monthly-rollup',
       'domain.recheck',
       'gate.hold-release',
       'proposal-request.expire',
       'scan.poll',
       'send.hold-release',
+      'usage.daily-rollup',
+      'usage.gap-check',
       'usage.seat-snapshot',
+      'usage.storage-reconcile',
     ]);
+  });
+
+  it('🔴 T-10-02: 計測の 4 本は docs/05 §9.8 の時刻順（01:10 / 01:20 / 01:30 / 01:40 JST）で、seat-snapshot（01:00）の後に走る', () => {
+    const cronOf = (name: string): string | undefined =>
+      SCHEDULED_JOBS.find((declaration) => declaration.name === name)?.cron;
+    expect(cronOf('usage.seat-snapshot')).toBe('0 1 * * *');
+    expect(cronOf('usage.daily-rollup')).toBe('10 1 * * *');
+    expect(cronOf('usage.gap-check')).toBe('20 1 * * *');
+    expect(cronOf('usage.storage-reconcile')).toBe('30 1 * * *');
+    expect(cronOf('cost.monthly-rollup')).toBe('40 1 * * *');
   });
 });

@@ -59,6 +59,12 @@ export type {
   ProvisionTenantResult,
   RecentProvisioningQuery,
 } from './queries/provisioning.js';
+// A-005（運用監視）の「計測欠測」「ストレージの乖離」の材料（T-10-02。画面は SP-11 T-11-04）。
+export { listOpenUsageMeasurementFindings } from './queries/usage-findings.js';
+export type {
+  OpenUsageMeasurementFinding,
+  OpenUsageMeasurementFindings,
+} from './queries/usage-findings.js';
 // 応答のシリアライザ（docs/05 §5.5 第 2 層）。ルートが型を再宣言せずに参照できるようにする。
 export {
   toPlatformTenantDetail,

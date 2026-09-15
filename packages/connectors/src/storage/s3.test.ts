@@ -21,6 +21,7 @@ function stubApi(overrides: Partial<S3Api> = {}): S3Api {
       VersionId: 'v1',
       ContentType: 'application/pdf',
     })),
+    listObjects: vi.fn(async () => ({ Contents: [] })),
     ...overrides,
   };
 }
@@ -184,5 +185,63 @@ describe('S3ObjectStore の残りの操作', () => {
     await target.head(KEY);
     await target.delete(KEY);
     expect(target.callCount()).toBe(4);
+  });
+});
+
+describe('🔴 T-10-02: measureTenantUsage（docs/05 §9.8 usage.storage-reconcile の検算）', () => {
+  const OTHER_TENANT = '01930000-0000-7000-8000-000000000002';
+
+  it('t/{tenantId}/ 配下を ListObjectsV2 で走査し、ページをまたいで合計する', async () => {
+    const listObjects = vi
+      .fn()
+      .mockResolvedValueOnce({
+        Contents: [
+          { Key: `t/${TENANT}/skill-sheets/a/1/x.xlsx`, Size: 1000 },
+          { Key: `t/${TENANT}/skill-sheets/a/2/y.xlsx`, Size: 24 },
+        ],
+        NextContinuationToken: 'page-2',
+      })
+      .mockResolvedValueOnce({
+        Contents: [{ Key: `t/${TENANT}/skill-sheets/b/1/z.pdf`, Size: 6 }],
+      });
+    const api = stubApi({ listObjects });
+
+    expect(await store(api).measureTenantUsage(TENANT)).toEqual({ byteSize: 1030n, objectCount: 3 });
+    expect(listObjects).toHaveBeenCalledTimes(2);
+    expect(listObjects).toHaveBeenNthCalledWith(1, { Bucket: 'ses-platform-test', Prefix: `t/${TENANT}/` });
+    expect(listObjects).toHaveBeenNthCalledWith(2, {
+      Bucket: 'ses-platform-test',
+      Prefix: `t/${TENANT}/`,
+      ContinuationToken: 'page-2',
+    });
+  });
+
+  it('🔴 プレフィックス外の要素は数えない（他テナントのバイト数が混ざらない）', async () => {
+    const api = stubApi({
+      listObjects: vi.fn(async () => ({
+        Contents: [
+          { Key: `t/${TENANT}/skill-sheets/a/1/x.xlsx`, Size: 10 },
+          { Key: `t/${OTHER_TENANT}/skill-sheets/a/1/x.xlsx`, Size: 999 },
+        ],
+      })),
+    });
+    expect(await store(api).measureTenantUsage(TENANT)).toEqual({ byteSize: 10n, objectCount: 1 });
+  });
+
+  it('🔴 tenantId が UUID でなければ走査しない（InvalidObjectKeyPartError）', async () => {
+    const api = stubApi();
+    await expect(store(api).measureTenantUsage('../../')).rejects.toThrow();
+    expect(api.listObjects).not.toHaveBeenCalled();
+  });
+
+  it('🔴 同じ ContinuationToken が返り続けたら打ち切る（無限ループにしない）', async () => {
+    const api = stubApi({
+      listObjects: vi.fn(async () => ({ Contents: [], NextContinuationToken: 'same' })),
+    });
+    await expect(store(api).measureTenantUsage(TENANT)).rejects.toThrow(/ContinuationToken/);
+  });
+
+  it('空のプレフィックスは 0 バイト・0 件', async () => {
+    expect(await store(stubApi()).measureTenantUsage(TENANT)).toEqual({ byteSize: 0n, objectCount: 0 });
   });
 });

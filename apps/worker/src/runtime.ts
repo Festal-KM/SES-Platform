@@ -42,22 +42,26 @@ import {
 import {
   INVITATION_TTL_MS,
   SEAT_SNAPSHOT_COUNTS_PARTNER_SEATS,
+  USAGE_GAP_CHECK_LOOKBACK_DAYS,
   type AppEnvKind,
   type RuntimeConfig,
 } from '@ses/config';
 import {
   createEmailSender,
   createMalwareScanner,
+  createObjectStore,
   isQueueName,
   type AccountMailJob,
   type EmailSender,
   type MalwareScanner,
+  type ObjectStore,
   type OperationalMailDispatch,
   type ProviderSendCounter,
   type QueueName,
   type SesIdentityApi,
 } from '@ses/connectors';
-import { createObjectTagApi, createSesApi } from '@ses/connectors/aws';
+import { createObjectTagApi, createS3Api, createSesApi } from '@ses/connectors/aws';
+import { PRICING_RULESET_V1 } from '@ses/domain';
 import {
   createBullMqGateRunQueue,
   createBullMqJobEnqueuer,
@@ -68,9 +72,11 @@ import {
 } from '@ses/connectors/bullmq';
 import { configureTenantDb, configureTokenEncryption, listSchedulerFanoutTenants } from '@ses/db';
 import {
+  billingTermsNotRecorded,
   createAccountMailReissue,
   createGateRunHandler,
   GATE_RUN_JOB,
+  resolveEmailTenantsBillingPolicy,
   SCHEDULED_JOBS,
   type ScheduledJobDeps,
   type SendHoldRelease,
@@ -182,6 +188,7 @@ export function startWorkerRuntime(config: RuntimeConfig): WorkerRuntime {
   let malwareScanner: MalwareScanner | null = null;
   let sentCounter: ProviderSendCounter | null = null;
   let identityApi: SesIdentityApi | null = null;
+  let objectStore: ObjectStore | null = null;
 
   const resolveSentCounter = (): ProviderSendCounter => {
     if (sentCounter === null) {
@@ -212,6 +219,20 @@ export function startWorkerRuntime(config: RuntimeConfig): WorkerRuntime {
       },
     });
     return malwareScanner;
+  };
+  // 🔴 T-10-02: `usage.storage-reconcile` の検算に使うオブジェクトストア。`apps/web/lib/db/bootstrap.ts` の
+  //    `objectStore()` と同じ組み立て（`development` = MinIO の `real` / `demo` = モック）。ここに環境分岐は無く、
+  //    実装種別は起動時に `resolveConnectorSelection` が決めた `connectors.objectStore` だけを見る。
+  const resolveObjectStore = (): ObjectStore => {
+    objectStore ??= createObjectStore(connectors.objectStore, {
+      s3: {
+        api: createS3Api(s3ApiOptionsOf(env)),
+        bucket: env.S3_BUCKET,
+        ...(env.S3_KMS_KEY_ID === undefined ? {} : { kmsKeyId: env.S3_KMS_KEY_ID }),
+        presignedUrlTtlSeconds: env.S3_PRESIGNED_URL_TTL_SECONDS,
+      },
+    });
+    return objectStore;
   };
   const resolveIdentityApi = (): SesIdentityApi => {
     // 🔴 `email` がモックの環境（`development` / `demo`）では **SES を作らない**。
@@ -264,6 +285,16 @@ export function startWorkerRuntime(config: RuntimeConfig): WorkerRuntime {
     models,
     aiDailyCostLimitUsd,
     enqueueGateRun: (job) => gateRunQueue.enqueue(job),
+    // 🔴 T-10-02: usage.gap-check / usage.storage-reconcile / cost.monthly-rollup（docs/05 §9.8）
+    gapCheckLookbackDays: USAGE_GAP_CHECK_LOOKBACK_DAYS,
+    get objectStore(): Pick<ObjectStore, 'measureTenantUsage'> {
+      return resolveObjectStore();
+    },
+    // 🔴 契約条件は Phase 3（`A-010` / `planAccess.ts`）まで記録されない = 売上 0（seam。`cost-monthly-rollup.ts`）。
+    billingTerms: billingTermsNotRecorded,
+    // 🔴 SES Tenants 課金の環境判定は**ここで 1 回**（docs/05 §8.8 / §13.1）。ジョブは `APP_ENV` を読まない。
+    emailTenantsBillingPolicy: resolveEmailTenantsBillingPolicy(env.APP_ENV),
+    pricingRuleset: PRICING_RULESET_V1,
   };
 
   // --------------------------------------------------------------------------

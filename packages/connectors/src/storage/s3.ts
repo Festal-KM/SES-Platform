@@ -9,12 +9,13 @@
 //    実接続なしでユニットテストできる状態を保つためであり、SDK の型がジョブ層・ドメイン層へ
 //    漏れないためでもある（`CLAUDE.md` §3.4）。
 
-import { isTenantScopedObjectKey } from '@ses/domain';
+import { buildTenantObjectPrefix, isTenantScopedObjectKey } from '@ses/domain';
 import {
   contentDispositionOf,
   type ObjectHead,
   type ObjectStore,
   type PresignGetOptions,
+  type TenantStorageMeasurement,
 } from '../interfaces.js';
 import type { PresignedUrl } from '../types.js';
 import type { S3Api } from './api.js';
@@ -135,6 +136,39 @@ export class S3ObjectStore implements ObjectStore {
           versionId: found.VersionId,
           contentType: found.ContentType,
         };
+  }
+
+  /**
+   * 🔴 T-10-02: テナントのプレフィックス配下を走査して合計する（日次の検算。docs/03 §4.5）。
+   *
+   * 走査範囲は `buildTenantObjectPrefix`（`@ses/domain`。キーを組み立てる側と同じ規約）が決める。
+   * ページは `NextContinuationToken` が無くなるまで回す（1 ページ 1,000 件。SDK 内部の再試行は無い）。
+   * 🔴 同じトークンが返り続けたら例外にする（無限ループで「検算中」のまま滞留させない）。
+   */
+  async measureTenantUsage(tenantId: string): Promise<TenantStorageMeasurement> {
+    const prefix = buildTenantObjectPrefix(tenantId);
+    let byteSize = 0n;
+    let objectCount = 0;
+    let continuationToken: string | undefined;
+    do {
+      this.calls += 1;
+      const page = await this.options.api.listObjects({
+        Bucket: this.options.bucket,
+        Prefix: prefix,
+        ...(continuationToken === undefined ? {} : { ContinuationToken: continuationToken }),
+      });
+      for (const item of page.Contents) {
+        // 🔴 プレフィックス外の要素が混ざっていたら数えない（S3 は返さないはずだが、実装の契約として固定する）。
+        if (!item.Key.startsWith(prefix)) continue;
+        byteSize += BigInt(item.Size);
+        objectCount += 1;
+      }
+      if (page.NextContinuationToken !== undefined && page.NextContinuationToken === continuationToken) {
+        throw new Error('S3 の ListObjectsV2 が同じ ContinuationToken を返し続けています（走査を打ち切ります）。');
+      }
+      continuationToken = page.NextContinuationToken;
+    } while (continuationToken !== undefined);
+    return { byteSize, objectCount };
   }
 
   callCount(): number {

@@ -357,6 +357,7 @@ describe('🔴 update 系 data のテナントキー検査（行の移動を止�
         'tenantRoleApprovalModes',
         'tenantRoleModels',
         'tenantMatchWeights',
+        'usageMeasurementFindings', // T-10-02（docs/05 §9.8 / migration 20260919000000）
       ]);
       // 子側は順方向の宣言（tenantRelationOf）が担当する。二重に持たない。
       // 🔴 T-09-12: ただし `Engineer` は `engineer_careers` の複合 FK `(tenant_id, engineer_id)` の

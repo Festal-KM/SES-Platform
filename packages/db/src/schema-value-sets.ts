@@ -253,6 +253,15 @@ export const USAGE_COUNTER_METRICS = [
 
 export type UsageCounterMetric = (typeof USAGE_COUNTER_METRICS)[number];
 
+/**
+ * T-10-02 `UsageMeasurementFinding.kind`（TEXT + CHECK。migration 20260919000000）。
+ * `GAP_MISSING` / `GAP_MISMATCH` は `usage.gap-check`、`STORAGE_DIVERGENCE` は `usage.storage-reconcile` が書く
+ * （docs/05 §9.8 / §16.5「計測欠測」）。`metric` / `periodKind` は `usage_counters` と同じ値集合を共有する。
+ */
+export const USAGE_MEASUREMENT_FINDING_KINDS = ['GAP_MISSING', 'GAP_MISMATCH', 'STORAGE_DIVERGENCE'] as const;
+
+export type UsageMeasurementFindingKind = (typeof USAGE_MEASUREMENT_FINDING_KINDS)[number];
+
 /** docs/05 §3.9 `TenantEsignConnection.provider`。`ContractDocument.externalProvider` と同じ値集合
  * を共有するため、`CONTRACT_DOCUMENT_EXTERNAL_PROVIDERS` をそのまま使う（新規定義しない）。 */
 

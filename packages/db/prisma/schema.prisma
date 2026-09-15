@@ -161,6 +161,8 @@ model Tenant {
   tenantRoleApprovalModes TenantRoleApprovalMode[]
   tenantRoleModels        TenantRoleModel[]
   tenantMatchWeights      TenantMatchWeight[]
+  // 🔴 T-10-02（docs/05 §9.8）: 計測の欠測・検算の乖離（`A-005` の材料）。
+  usageMeasurementFindings UsageMeasurementFinding[]
   // 🔴 Subscription は射程外モデル（tenantKeyOf('Subscription') === null）のため
   //    TENANT_KEY_MOVING_RELATION_OVERRIDES の宣言対象ではない（tenant-relation.test.ts が
   //    機械的に確認する）。tenantId 列を持つが RLS/scope-injection の対象外（§3.10 末尾）。
@@ -1884,6 +1886,36 @@ model TenantMonthlyCost {
   @@id([tenantId, periodMonth])
   @@index([periodMonth, grossMarginRate])
   @@map("tenant_monthly_costs")
+}
+
+/// T-10-02（docs/05 §9.8 / §16.5「計測欠測」/ `F-026 AC-4`）。`usage.gap-check` と
+/// `usage.storage-reconcile` が書く**検知結果**であり、`A-005` の材料（件数・日付・数値のみ。本文・PII 無し）。
+/// 🔴 カウンタ（`usage_counters`）を自動補正しない。行は (tenant, kind, metric, period) につき 1 つで、
+///    再検知は同じ行を更新し、次回の検査で見つからなければ `resolved_at` を立てる（消さない）。
+/// RLS のポリシークラスは C2 HOST_ONLY（docs/05 §4.4）。
+model UsageMeasurementFinding {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  /// UsageMeasurementFindingKind（TEXT + CHECK）: 'GAP_MISSING'|'GAP_MISMATCH'|'STORAGE_DIVERGENCE'
+  kind       String
+  /// UsageCounterMetric（TEXT + CHECK。`usage_counters.metric` と同じ値集合）
+  metric     String
+  /// UsageCounterPeriodKind（TEXT + CHECK）: 'DAY'|'MONTH'
+  periodKind String    @map("period_kind")
+  periodKey  String    @map("period_key")
+  /// 正の値（`AiUsage` の合計 USD / オブジェクトストアの実測バイト数）。正を持たない検知は NULL。
+  expected   Decimal?  @db.Decimal(20, 6)
+  /// カウンタの値。行が無い（欠測）なら NULL。
+  observed   Decimal?  @db.Decimal(20, 6)
+  detectedAt DateTime  @map("detected_at") @db.Timestamptz(3)
+  lastSeenAt DateTime  @map("last_seen_at") @db.Timestamptz(3)
+  resolvedAt DateTime? @map("resolved_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, kind, metric, periodKind, periodKey])
+  @@index([resolvedAt, lastSeenAt])
+  @@map("usage_measurement_findings")
 }
 
 /// docs/03 §3.8.3。RLS のポリシークラスは C2 HOST_ONLY（docs/05 §4.4）。

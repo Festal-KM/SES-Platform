@@ -25,6 +25,20 @@ describe('MockObjectStore', () => {
     expect(await store.head('k1')).toMatchObject({ byteSize: 4096 });
   });
 
+  it('🔴 T-10-02: measureTenantUsage は t/{tenantId}/ 配下だけを合計し、delete 後は減る（実装と同じ規約）', async () => {
+    const tenant = '01930000-0000-7000-8000-000000000001';
+    const other = '01930000-0000-7000-8000-000000000002';
+    const store = new MockObjectStore({ now });
+    await store.presignPut(`t/${tenant}/skill-sheets/e/1/a.xlsx`, 'application/pdf', 100);
+    await store.presignPut(`t/${tenant}/skill-sheets/e/2/b.xlsx`, 'application/pdf', 20);
+    await store.presignPut(`t/${other}/skill-sheets/e/1/c.xlsx`, 'application/pdf', 999);
+
+    expect(await store.measureTenantUsage(tenant)).toEqual({ byteSize: 120n, objectCount: 2 });
+    await store.delete(`t/${tenant}/skill-sheets/e/2/b.xlsx`);
+    expect(await store.measureTenantUsage(tenant)).toEqual({ byteSize: 100n, objectCount: 1 });
+    await expect(store.measureTenantUsage('not-a-uuid')).rejects.toThrow();
+  });
+
   it('presignPut 後は head() が版 ID を返し、delete 後は null に戻る', async () => {
     const store = new MockObjectStore({ now });
     expect(await store.head('k1')).toBeNull();

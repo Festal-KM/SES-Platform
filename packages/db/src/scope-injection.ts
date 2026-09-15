@@ -287,6 +287,7 @@ const TENANT_KEY_MOVING_RELATION_OVERRIDES: Readonly<Record<string, readonly str
     'tenantRoleApprovalModes',
     'tenantRoleModels',
     'tenantMatchWeights',
+    'usageMeasurementFindings', // T-10-02（docs/05 §9.8 / migration 20260919000000）
   ],
   /**
    * 🔴 Issue #33 / docs/05 §3.3.1: `PartnerCompany` 側の逆リレーション 13 本。

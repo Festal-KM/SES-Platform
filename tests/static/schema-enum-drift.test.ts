@@ -73,6 +73,7 @@ import {
   TWO_FACTOR_SUBJECT_TYPES,
   USAGE_COUNTER_METRICS,
   USAGE_COUNTER_PERIOD_KINDS,
+  USAGE_MEASUREMENT_FINDING_KINDS,
   WEBHOOK_PROVIDERS,
 } from '../../packages/db/src/schema-value-sets.js';
 import { ASSIGNMENT_STATES } from '../../packages/domain/src/state/assignment.js';
@@ -512,6 +513,23 @@ describe('CHECK 制約と TS 単一出所の drift 検査（docs/05 §3.1「列�
     it('usage_counters_metric_check ⇔ packages/db USAGE_COUNTER_METRICS', () => {
       const values = extractCheckInValues(migrationSql, 'usage_counters_metric_check');
       expectSameValueSet(values, USAGE_COUNTER_METRICS);
+    });
+
+    // 🔴 T-10-02（docs/05 §9.8 / migration 20260919000000）: 検知結果の表は `usage_counters` と同じ
+    //    metric / period_kind の値集合を共有する（片方だけに metric が増えると突合で落ちる）。
+    it('usage_measurement_findings_kind_check ⇔ packages/db USAGE_MEASUREMENT_FINDING_KINDS', () => {
+      const values = extractCheckInValues(migrationSql, 'usage_measurement_findings_kind_check');
+      expectSameValueSet(values, USAGE_MEASUREMENT_FINDING_KINDS);
+    });
+
+    it('usage_measurement_findings_metric_check ⇔ packages/db USAGE_COUNTER_METRICS（usage_counters と共有）', () => {
+      const values = extractCheckInValues(migrationSql, 'usage_measurement_findings_metric_check');
+      expectSameValueSet(values, USAGE_COUNTER_METRICS);
+    });
+
+    it('usage_measurement_findings_period_kind_check ⇔ packages/db USAGE_COUNTER_PERIOD_KINDS', () => {
+      const values = extractCheckInValues(migrationSql, 'usage_measurement_findings_period_kind_check');
+      expectSameValueSet(values, USAGE_COUNTER_PERIOD_KINDS);
     });
 
     it('tenant_esign_connections_provider_check ⇔ packages/db CONTRACT_DOCUMENT_EXTERNAL_PROVIDERS（ContractDocument と同じ値集合を共有。決定済み Issue #11）', () => {

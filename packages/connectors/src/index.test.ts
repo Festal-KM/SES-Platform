@@ -159,6 +159,7 @@ describe('🔴 objectStore の real（T-05-04。docs/05 §13.1 の表）', () =>
       presignGet: async () => 'https://s3.test/get',
       deleteObject: async () => undefined,
       headObject: async () => null,
+      listObjects: async () => ({ Contents: [] }),
     },
     bucket: 'ses-platform-test',
     presignedUrlTtlSeconds: 300,

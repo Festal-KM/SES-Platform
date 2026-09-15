@@ -190,6 +190,7 @@ describe('🔴 逆リレーション（他モデルのテナントキー列を�
       'tenantRoleApprovalModes',
       'tenantRoleModels',
       'tenantMatchWeights',
+      'usageMeasurementFindings', // T-10-02（docs/05 §9.8 / migration 20260919000000）
     ];
     expect(inverseTenantKeyRelations(tenant as DmmfModel)).toEqual(expected);
     expect(tenantKeyMovingRelationsOf('Tenant')).toEqual(expected);

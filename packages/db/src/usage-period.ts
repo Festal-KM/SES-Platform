@@ -13,7 +13,7 @@
 // 🔴 したがって「暦（キー）は domain / 境界の時刻はここ」という分け方にし、**両者が同じ暦を
 //    指していること**を `usage-period.test.ts` が突き合わせる（境界の 1 ms 前は同じキー、
 //    境界そのものは次のキー）。定義が 2 つに割れて静かにずれることは、この対照で防ぐ。
-import { usagePeriodKey, type UsagePeriodKind } from '@ses/domain';
+import { parseDayKey, parseMonthKey, usagePeriodKey, type UsagePeriodKind } from '@ses/domain';
 
 /**
  * 🔴 `Asia/Tokyo` の UTC オフセット（時）。**夏時間を持たない**ため固定値でよい
@@ -43,4 +43,25 @@ export function usagePeriodResetAt(kind: UsagePeriodKind, at: Date): Date {
   return kind === 'DAY'
     ? new Date(Date.UTC(year, month - 1, day + 1, -TOKYO_UTC_OFFSET_HOURS))
     : new Date(Date.UTC(year, month, 1, -TOKYO_UTC_OFFSET_HOURS));
+}
+
+/** 半開区間 `[startAt, endAt)`。SQL の `>= startAt AND < endAt` にそのまま渡す。 */
+export type UsagePeriodRange = { readonly startAt: Date; readonly endAt: Date };
+
+/**
+ * 🔴 期間キー（`YYYY-MM-DD` / `YYYY-MM`）→ その期間の時刻範囲（JST の暦。T-10-02）。
+ *
+ * `usage.daily-rollup` / `cost.monthly-rollup` が `ai_usage.started_at`（`timestamptz`）を
+ * **キーと同じ暦**で切るために使う。SQL 側で `AT TIME ZONE 'Asia/Tokyo'` を書かないのは、
+ * 暦の定義を domain の `usagePeriodKey` 1 つに保つためである（`usage-period.test.ts` が
+ * 「範囲の 1 ms 前は前のキー、範囲の先頭はそのキー」を突き合わせる）。
+ */
+export function usagePeriodRange(kind: UsagePeriodKind, periodKey: string): UsagePeriodRange {
+  const parts = kind === 'DAY' ? parseDayKey(periodKey) : { ...parseMonthKey(periodKey), day: 1 };
+  const startAt = new Date(Date.UTC(parts.year, parts.month - 1, parts.day, -TOKYO_UTC_OFFSET_HOURS));
+  const endAt =
+    kind === 'DAY'
+      ? new Date(Date.UTC(parts.year, parts.month - 1, parts.day + 1, -TOKYO_UTC_OFFSET_HOURS))
+      : new Date(Date.UTC(parts.year, parts.month, 1, -TOKYO_UTC_OFFSET_HOURS));
+  return { startAt, endAt };
 }

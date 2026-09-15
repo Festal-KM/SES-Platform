@@ -29,6 +29,7 @@ import {
   GetObjectCommand,
   GetObjectTaggingCommand,
   HeadObjectCommand,
+  ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
   type HeadObjectCommandOutput,
@@ -39,6 +40,8 @@ import type { ObjectTagApi, ObjectTagRequest, ObjectTagResponse } from '../scan/
 import type {
   S3Api,
   S3HeadObjectResponse,
+  S3ListObjectsRequest,
+  S3ListObjectsResponse,
   S3ObjectRequest,
   S3PresignGetRequest,
   S3PresignPutRequest,
@@ -216,6 +219,32 @@ export function createS3Api(options: S3ApiOptions): S3Api {
         if (isNotFound(error)) return null;
         throw error;
       }
+    },
+
+    /**
+     * 🔴 T-10-02: `ListObjectsV2` の 1 ページ。`Size` が欠けた要素は**例外**にする（0 に埋めると
+     *    検算が実体より小さくなり、乖離を見落とす側に倒れる）。
+     */
+    async listObjects(request: S3ListObjectsRequest): Promise<S3ListObjectsResponse> {
+      const output = await client.send(
+        new ListObjectsV2Command({
+          Bucket: request.Bucket,
+          Prefix: request.Prefix,
+          ...(request.ContinuationToken === undefined ? {} : { ContinuationToken: request.ContinuationToken }),
+        }),
+      );
+      const contents = (output.Contents ?? []).map((item) => {
+        if (typeof item.Key !== 'string' || typeof item.Size !== 'number') {
+          throw new Error('S3 の ListObjectsV2 が Key / Size を返さない要素を含みます（検算できません）。');
+        }
+        return { Key: item.Key, Size: item.Size };
+      });
+      return {
+        Contents: contents,
+        ...(output.IsTruncated === true && typeof output.NextContinuationToken === 'string'
+          ? { NextContinuationToken: output.NextContinuationToken }
+          : {}),
+      };
     },
   };
 }
