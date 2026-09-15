@@ -11,6 +11,8 @@
 
 > 🔴 **改訂 10（2026-09-11。T-08-04）**: **§4.6 の参照子 `candidateRef` と `AnonymousCandidateView` の置き場所を `packages/domain` から `apps/web/lib/anonymize/**` に変えた。** 改訂前の記述は**実装不能**である（`packages/domain` は `node:crypto` を import できない。`CLAUDE.md` §2.1 / `eslint.config.mjs` の `forbidNodeIo` / `tests/static/domain-purity.test.ts`）。**実装と不可分**のため `CLAUDE.md` §8.7 に従い本書を先に改訂した。あわせて ①退けた代替案（自前 SHA-256 / `hmac` の注入 / 構成とハッシュの分割）を記録 ②`score` / `rationale` を **Phase 1 では型に持たせない**（`F-017 AC-7`）ことを明記 ③並び順の規則（`updatedOn` 降順 → `candidateRef` 昇順。`docs/03` §4.13.2-2）を明記 ④🔴 **`F-017 AC-2` で「防ぐもの」と「Phase 1 の残存リスク」の線引き表**を新設。**変更箇所は §4.6 のみである。**
 
+> 🔴 **改訂 11（2026-09-15。[Issue #41](https://github.com/Festal-KM/SES-Platform/issues/41) = 人間の回答「1」〔2026-09-10〕。T-09-13 の実装前提）**: **§11.9 ⑦（パートナー所属エンジニアの提案はゲートを通せない）を決着させ、§11.14 を新設した。** `app_scan_probe` / `app_share_probe` / `app_scheduler_probe` と同型の**専用ロール `app_gate_probe` + `SECURITY DEFINER` 2 関数 + 列レベル `GRANT`（16 列・`SELECT` のみ）**。🔴 **読む列は 3 層から逆算して確定した**: 整合層の裏付け（`engineer_skills` 3 列）**に加えて PII 層の既知値 5 列（氏名・生年月日・メール・電話・現所属）が要る** —— `mask()` がパターンで伏せた値を `gate-inspector` は指摘せず、機械的検出は既知値しか見ないため、連絡先の既知値が無いとエンジニア本人のメールが本文に残ったまま PASS になる（§11.14 ②）。鍵は `engineer_id` ではなく **`proposal_id`**、**`state='GATE_RUNNING'` の間だけ 1 人分**を返し、ID を返さない。順序は **本書 → migration → 実装**（`CLAUDE.md` §8.7）。変更箇所は §1.4（対応表 1 行）/ §4.2（ロール 1 行）/ §4.4.2（経路 1 行）/ §4.7（#5 / #10 の文言・**#16** 新設・二重防御 **#12〜#14**）/ §8.5.1 / §11.9 ⑦・⑨ / §11.10 ⑩-5 / §11.11 ⑤ / **§11.14**（新設）/ §17.2 **#31** / `P-A-21` / `## TBD` 末尾。**本改訂は `docs/05` のみを変更している**（`000_roles.sql` / migration / `packages/db` / テストは T-09-13 の範囲。`docs/sprints/SP-09` T-09-13 の括弧書きの追随は `pm`）。
+
 **構成**: 1 アーキテクチャ概観 / 2 リポジトリ構成 / 3 DB スキーマ / 4 データ分離設計 / 5 管理平面の設計 / 6 API 仕様 / 7 AI 層の設計 / 8 外部連携層の設計 / 9 ジョブ仕様 / 10 冪等性・不可逆事故の防止設計 / 11 品質ゲートのパイプライン設計 / 12 業務シーケンス / 13 環境分離の設計 / 14 ファイルストレージ規約 / 15 エラー処理方針 / 16 オブザーバビリティ / 17 テスト戦略 / 付録（`## Assumptions` / `## TBD` / 申し送りマッピング / 機能カバレッジ）
 
 ## 1. アーキテクチャ概観
@@ -110,8 +112,9 @@ flowchart TB
 | §3.3 内容変更後に再検証なしで承認できない | **DB 制約**（`Proposal.content_hash` と `ReviewGate.content_hash` の一致を CHECK ではなく承認 CAS の条件に入れる） | §11.5 | §11.5 |
 | §12.4 `gate-inspector` に設定を持てない | **型**（`Exclude<AiRole,'gate-inspector'>`）+ **DB 制約**（`CHECK (role <> 'gate-inspector')`）+ **Zod**（`z.enum`） | §7.5 | §7.5 |
 | §3.1 分離機構が有効であること自体 | **機械検証**（`pg_class` / `pg_policy` を走査する結合テスト。テーブル名を列挙しない） | `tests/isolation/rls-enforced.test.ts` | §4.7 |
+| 🔴 §3.1 経路 2「パートナーの台帳全体をホストが読めない」を、ゲート実行（ジョブ = ホスト文脈）が破らない（[Issue #41](https://github.com/Festal-KM/SES-Platform/issues/41) = 1。T-09-13） | **DB 権限**（専用ロール `app_gate_probe` に `SELECT` 16 列のみ。`owner_partner_company_id` / 単価 / 営業メモ / `skill_sheets` / `engineer_careers` に権限が無い）+ **DB**（`SECURITY DEFINER` 2 関数の鍵が `proposal_id` で、`state='GATE_RUNNING'` の間しか 1 人分を返さない。ID を返さない）+ **型**（`TenantDb` に `$queryRaw` が無く `apps/**` から呼べない）+ **静的テスト**（呼び出し元 1 ファイル。§17.2 #31）+ **機械検証**（§4.7 #16 / 二重防御 #12〜#14） | `packages/db/src/gate-engineer-facts.ts` / migration | §11.14 |
 | 🔴 §3.1 経路 4 の開示項目を増やさない（**経歴を匿名候補に出さない**。`F-008 AC-7`） | **型**（`AnonymousCandidateView` / `AnonymizeEngineerInput` / `match-explainer` の入力に経歴のフィールドが**無い**）+ **DB 権限**（`engineer_careers` に共有スコープの追加ポリシーを書かない＝ホストからは 0 件）+ **機械検証**（§4.7 #15 / §17.2 #28） | `packages/domain/src/anonymize/*` / **`apps/web/lib/anonymize/*`**（応答型と参照子。改訂 10）/ `packages/db/src/index.ts` | §4.5 / §4.6 / §17.2 |
-| 🔴 提案の内容が後から変わらない（**経歴の行単位の凍結**。`F-008 AC-6` / `F-019 AC-5`） | **DB スキーマ**（`EngineerSnapshot.careers` が値の複製で、台帳行への FK を持たない）+ **型**（凍結行に `id` が無く、現在値へ辿れない）+ **E2E**（§17.3 #25） | `packages/db` / `apps/web/lib/proposals/snapshot.ts` | §3.6 / §6.5 |
+| 🔴 提案の内容が後から変わらない（**経歴の行単位の凍結**。`F-008 AC-6` / `F-019 AC-5`） | **DB スキーマ**（`EngineerSnapshot.careers` が値の複製で、台帳行への FK を持たない）+ **型**（凍結行に `id` が無く、現在値へ辿れない）+ **E2E**（§17.3 #25） | `packages/db`（凍結の唯一の実装は `packages/db/src/proposal-draft.ts` の `createProposalDraft` → `freezeCareers`。T-08-07 で確定） | §3.6 / §6.5 |
 
 ## 2. リポジトリ構成
 
@@ -1613,6 +1616,7 @@ model BillingMeterSubmission {                                     // docs/03 §
 | `app_assignment_owner_probe` | 🔴 **なし**（`NOLOGIN`） | `engineers` の `SELECT (tenant_id, id, owner_partner_company_id)` のみ。**他表に一切の権限を持たない** | （接続しない） | `inherit_assignment_counterparty()` の `SECURITY DEFINER` 所有者としてのみ（§4.4.1。T-02-08） |
 | `app_scan_probe` | 🔴 **なし**（`NOLOGIN`） | `skill_sheets` の `SELECT (id, tenant_id, object_key, scan_status, uploaded_at, is_latest, **owner_partner_company_id**)` + `UPDATE (scan_status, scan_updated_at, is_latest)`、および `engineers` の `SELECT (tenant_id, id, owner_partner_company_id)`（🔴 オーナー列の継承トリガが `skill_sheets` の `UPDATE` で親を読むため。§4.4.1 と同じ 3 列）。**他表に一切の権限を持たない**（合計 13 行。`tests/isolation/rls-enforced.test.ts` が固定） | （接続しない） | `app_apply_scan_status()` / `app_list_stalled_scan_targets()` / **`app_scan_quarantine_target()`** の `SECURITY DEFINER` 所有者としてのみ（§8.5。T-05-05 / T-05-08） |
 | `app_scheduler_probe` | 🔴 **なし**（`NOLOGIN`） | `tenants` の `SELECT (id, lifecycle_state)` **のみ**。**他表に一切の権限を持たない**（2 行。`tests/isolation/scheduler-fanout.test.ts` が固定） | （接続しない） | `app_list_scheduler_tenants()` の `SECURITY DEFINER` 所有者としてのみ（§9.1.1 ③。T-07-11。migration 20260915000000） |
+| 🔴 **`app_gate_probe`**（T-09-13。[Issue #41](https://github.com/Festal-KM/SES-Platform/issues/41) = 1） | 🔴 **なし**（`NOLOGIN`） | `proposals` の `SELECT (id, tenant_id, engineer_id, state)` / `engineers` の `SELECT (tenant_id, id, display_name, birth_date, contact_email, contact_phone, affiliation_label)` / `engineer_skills` の `SELECT (tenant_id, engineer_id, skill_id, years_of_experience, level)` **のみ**（合計 16 列。**`SELECT` だけ**。**他表に一切の権限を持たない**。🔴 `engineers.owner_partner_company_id` / 単価 / 営業メモ / `skill_sheets` / `engineer_careers` には届かない。`tests/isolation/roles.test.ts` が 16 行ちょうどを固定） | （接続しない） | `app_gate_proposal_engineer_pii()` / `app_gate_proposal_engineer_skills()` の `SECURITY DEFINER` 所有者としてのみ（**§11.14**。品質ゲート `PROPOSAL` が、パートナー所属エンジニアの「PII 層の既知値」と「整合層の裏付け」を**その提案の 1 人分だけ**読む） |
 
 🔴 **テーブル所有者は `app_migrator` であり、`FORCE ROW LEVEL SECURITY` を全業務テーブルに付ける。** これが無いと所有者が RLS を素通りする。**`app_migrator` の接続文字列を `apps/web` / `apps/worker` の実行時環境に渡さない**（`packages/config` の Zod スキーマで、`development` を含む全環境の実行時 `APP_ENV` では `MIGRATION_DATABASE_URL` が**未設定であること**を検証する。T-01-05 でロールが実在するようになったため `development` 例外〔本節および §13.4 規則 3・4〕を解除した）。ロールの定義は `packages/db/prisma/sql/000_roles.sql` を唯一の真実とし、ローカル docker-compose（`docker/postgres/initdb/000-roles.sh`）と Testcontainers（`tests/isolation/support/postgres.ts`）の両方がこのファイルを実行する。
 
@@ -1777,6 +1781,7 @@ CREATE TRIGGER ins_owner BEFORE INSERT OR UPDATE ON engineer_skills   -- 親: en
 | 🔴 **行由来コンテキストの 3 関数** `withInvitationAccept(hash, { displayName, passwordHash })` / `withPasswordResetIssue(email, { tokenHash, expiresAt })` / `withPasswordResetConfirm(hash, passwordHash)` | 受諾: `users` + `memberships` の **`INSERT` 各 1 行** と `invitations.accepted_at` の CAS。発行: `users.password_reset_token_hash / _expires_at` の `UPDATE` 1 行。確定: `users.password_hash` の `UPDATE` 1 行 + トークン列の消去（CAS） | **同一トランザクション内で 2 段に `SET LOCAL` する**: ①資格情報を `SET LOCAL`（`app.invitation_token_hash` / `app.auth_email` / `app.password_reset_token_hash`）し、同形の追加 SELECT ポリシーで該当 1 行だけ読む ②**その行の `tenant_id` と `partner_company_id`（招待行）/ `owner_partner_company_id`（本人行）を `SET LOCAL app.tenant_id` / `app.partner_company_id` に入れ直し**、C3 / C5 の通常ポリシーの下で書く。🔴 **分離キーはリクエスト入力ではなく DB の行から来る**（`CLAUDE.md` §3.1）。戻り値はプレーンな ID と分類のみ（`{ userId }` / 🔴 **`{ tenantId, userId, recipientClass } \| null`**）で、行オブジェクトを外へ出さない。`#7` / `#5` / `#5b` 専用。🔴 **`withPasswordResetIssue` はトークンのハッシュと期限を引数で受け取る**（トークンの生成を `packages/db` に持ち込まない: 乱数と有効期間の方針が DB 層に散るため。分離キーではないので上記の原則には抵触しない）。🔴 **`withPasswordResetIssue` は同じトランザクションで宛先分類も導いて返す**（T-04-02。§8.2「呼び出し側に自己申告させない」）: 第 2 段のスコープ下で `memberships` の本人 1 行（C5）を読み `classifyRecipient` に渡す。**分類が `account.mail` の対象（分類 1 / 2）にならない場合は `UPDATE` も監査ログも行わず `null` を返す** —— 送れない宛先に再設定トークンだけを残さないためであり、`null` は「該当なし」と同じ経路なので**存在有無の非開示（§4.8 / `#5`）は変わらない** |
 | `app_engineer_is_shared(engineer_id, tenant_id)` | `engineer_shares` の**存在の真偽のみ**（行は 1 つも返らない） | `SECURITY DEFINER`。所有者 `app_share_probe`（§4.2）。§4.5 の追加ポリシーからのみ使う |
 | 🔴 **`app_list_scheduler_tenants()`（T-07-11）** | `tenants` の **`id` の集合だけ**（`setof uuid`。名前も環境も返らない）。母集団は `SANDBOX` / `ACTIVE` に限る | `SECURITY DEFINER`。所有者 `app_scheduler_probe`（§4.2。`tenants(id, lifecycle_state)` の 2 列だけを列レベル `GRANT`）。🔴 **本体で `app_tenant_id() IS NOT NULL` を拒否**し（＝ HTTP リクエスト経路からは呼べない）、加えて **`app.scheduler_scope='on'` を要求**する（どちらが欠けても 0 件ではなく例外。fail-closed）。この GUC を立てるのは `packages/db/src/scheduler-fanout.ts` の 1 関数だけであり、呼び出し元は `apps/worker/src/runtime.ts`（ファンアウトの配線）1 箇所に固定する（`tests/static/auth-db-callers.test.ts`）。**なぜ要るか**: スケジュールジョブは「payload に `tenantId` を必ず含める」（§9.1）が、その手前の**テナントの列挙だけはテナント文脈を持てない**。`withSystemScope` は C0 の 4 表しか触れず、`withPlatformRead` は運営者の操作であり `AuditLog` を伴う（10 分ごとのジョブが運営者の監査ログを埋める） |
+| 🔴 **`app_gate_proposal_engineer_pii(proposal_id)` / `app_gate_proposal_engineer_skills(proposal_id)`（T-09-13。[Issue #41](https://github.com/Festal-KM/SES-Platform/issues/41) = 1）** | **`GATE_RUNNING` の提案 1 件**について、その対象エンジニアの **PII 層の既知値 5 列（0 or 1 行）** と **整合層の裏付け 3 列（0 行以上）**。🔴 **ID を 1 つも返さない**（`engineer_id` / `owner_partner_company_id` / 行 ID が戻り値に無い）。**これはテナント文脈を「持たない」経路ではなく、ホストのテナント文脈の中で C3（パートナースコープ）だけを 1 人分越える経路**であり、本表に載せるのは「§4.4.2 の一覧に無い越境を作らない」規律の対象だからである | `SECURITY DEFINER`。所有者 `app_gate_probe`（§4.2）。本体で **`app_tenant_id() IS NULL` と `NOT app_is_host()` を例外で拒否**（fail-closed）し、`WHERE p.tenant_id = app_tenant_id() AND p.id = $1 AND p.state = 'GATE_RUNNING'` で **その提案の 1 人分**に閉じる（鍵は `engineer_id` ではなく `proposal_id`。所有者で絞る述語は権限が無く書けない）。呼び出し元は `packages/db/src/gate-engineer-facts.ts` の 1 関数、その消費者は `gate-target.ts` の `loadProposalGateInput` だけ（§17.2 #31）。**ホスト所属・パートナー所属を問わず提案のゲートはこの 1 経路で台帳を読む**（所有で経路を分岐しない）。詳細は **§11.14** |
 | 🔴 **`packages/db/src/platform-auth.ts`（管理平面版の行由来コンテキスト。T-03-07）** | `platform_users` の該当 1 行 / 本人の `two_factor_credentials`（`PLATFORM_USER` 行）/ 本人の `audit_logs`（読み: 2FA 失敗履歴、書き: ログイン・ログアウト・2FA 登録・確定の記録） | 2 段の `SET LOCAL`（`set_config(..., true)` によるトランザクション封じ込め。§4.3 と同型）: ①`app.platform_auth_email`（メール完全一致で `platform_users` を 1 行だけ可視化。主平面の `users_auth_lookup_select` と**同形**に両辺 `lower()` で畳む）②`app.platform_auth_subject_id`（読み出した行 / セッション Cookie 由来の主体 ID で本人の 3 表だけを可視化）。🔴 **同経路は `app.platform_user_id` を空で上書き**し、§5.2 の provisioning ポリシー（`tenants` / `invitations` / `tenant_sending_domains`）が認証トランザクション中に 1 つも真にならないことを保証する |
 
 🔴 **管理平面版（`platform-auth.ts`）が汎用の抜け道でない理由**（`row-context.ts` の直上の 5 点と同じ形で担保する）: ①触れる表は `platform_users` / `two_factor_credentials` / `audit_logs` の 3 表、列も本ファイル固定の列だけで、引数に表名・列名・`tenant_id` が無い ②`SET LOCAL` する主体はメール照合で得た行かセッション Cookie であり、呼び出し側がリクエスト入力から渡せない（`CLAUDE.md` §3.1）③`AuthenticatedPlatformCtx` を生成しない（生成器は `resolvePlatformCtx` のまま。§4.3 の `AuthenticatedTenantCtx` と対）④呼び出し元は `tests/static/auth-db-callers.test.ts` の静的走査が `apps/web/lib/auth/**` の特定ファイルに固定する ⑤戻り値は認証に必要な最小限の列だけで、行オブジェクトをそのまま外へ出さない。🔴 **`platform_users` は射程外の 4 表（`CLAUDE.md` §3.1 / §4.1 の表）であり続ける** — 本経路のために RLS（`ENABLE ROW LEVEL SECURITY` + `FORCE`）を付けたのは分離の射程を広げるためではなく**運営者どうしの資格情報の読み出しを塞ぐため**であり、射程外＝「`tenant_id` を持たない」の意味であって「RLS を付けてはならない」ではない。
@@ -2036,7 +2041,7 @@ test('app_tenant に権限がある表は、適用される全ポリシーの式
   /* role_table_grants で対象表を取り、pg_get_expr(polqual|polwithcheck) に 'app_tenant_id()' が現れるか。
      C0 は app_tenant_id() IS NULL を含むので通り、「USING (true)」の類は必ず落ちる */);
 test('app_tenant に権限が無い表は、app_platform / app_platform_write のいずれかに権限がある', /* 孤児表の検出 */);
-test('app_tenant / app_platform / app_platform_write / app_share_probe / app_assignment_owner_probe / app_scan_probe は BYPASSRLS を持たない', /* pg_roles.rolbypassrls */);
+test('app_tenant / app_platform / app_platform_write / app_share_probe / app_assignment_owner_probe / app_scan_probe / app_scheduler_probe / 🔴 app_gate_probe（T-09-13）は BYPASSRLS を持たない', /* pg_roles.rolbypassrls。母集団は tests/isolation/support/postgres.ts の ROLE_NAMES（ロールを足したらここに足す。除外リストではない） */);
 test('app_platform は業務テーブルに INSERT/UPDATE/DELETE 権限を持たない', /* information_schema.role_table_grants */);
 test('§5.5 の非開示列が app_platform に GRANT されていない', /* column_privileges を走査 */);
 test('Prisma 拡張の対象モデル一覧が、除外 4 モデル以外のすべてを含む', /* Prisma DMMF を走査 */);
@@ -2045,7 +2050,7 @@ test('オーナー列は root / child の宣言を持ち、宣言に応じたト
      'owner-column: root'          → freeze_owner_partner_company の BEFORE UPDATE トリガがある
      'owner-column: child of P(fk)' → inherit_owner_partner_company(P, fk) の BEFORE INSERT OR UPDATE トリガがある
      根 4 表（users / engineers / proposals / tasks）と子 7 表を列挙せず、宣言と実体の一致だけを見る */);
-test('app_share_probe の権限は engineer_shares の 3 列の SELECT だけ、app_assignment_owner_probe の権限は engineers の 3 列の SELECT だけ、app_scan_probe の権限は skill_sheets の 9 行（SELECT 6 列 + UPDATE 3 列）+ engineers の 3 列の SELECT だけ（T-05-05。§8.5）', /* role_column_grants + role_table_grants を走査（migrator 接続で読む。§4.4.1）。🔴 app_share_probe への GRANT は engineer_shares 実装（SP-08）で付与する。000_roles.sql の予告どおり、それまでは 0 件が期待値 */);
+test('app_share_probe の権限は engineer_shares の 3 列の SELECT だけ、app_assignment_owner_probe の権限は engineers の 3 列の SELECT だけ、app_scan_probe の権限は skill_sheets の 9 行（SELECT 6 列 + UPDATE 3 列）+ engineers の 3 列の SELECT だけ（T-05-05。§8.5）、🔴 app_gate_probe の権限は proposals 4 列 + engineers 7 列 + engineer_skills 5 列 = 16 行の SELECT だけ（T-09-13。§11.14 ③。UPDATE / INSERT / DELETE は 0 行、role_table_grants は 0 行）', /* role_column_grants + role_table_grants を走査（migrator 接続で読む。§4.4.1）。🔴 app_share_probe への GRANT は engineer_shares 実装（SP-08）で付与する。000_roles.sql の予告どおり、それまでは 0 件が期待値 */);
 test('当事者列（counterparty_partner_company_id）も root / child の宣言と対応するトリガを持つ',
   /* オーナー列のテストと同じ述語。宣言の無い当事者列は FAIL。持つ表が 4 表以外に増えていたら FAIL（経路 5 の対象拡大は人間の承認事項） */);
 test('経路 5 の 4 表に、パートナー文脈で真になり得る INSERT/UPDATE/DELETE ポリシーが無く、extension_reviews にはパートナー文脈で真になる SELECT ポリシーも無い',
@@ -2081,6 +2086,16 @@ test('共有スコープ（経路 4）の追加 SELECT ポリシーを持つ表�
      将来の子表がここに現れた時点で FAIL する ——「経路 4 の開示項目を増やすこと」は人間の承認事項
      （CLAUDE.md §8.6 / §3.1 経路 4 の 🔴）であり、ポリシーを 1 本足すだけで実現できてはならない。
      あわせて app_share_probe の GRANT 対象表が engineer_shares の 1 表だけであることも見る（#10 と対）。 */);
+// 🔴 #16（T-09-13 / Issue #41 = 1。2026-09-15 追加）。**#14 / #15 と同じ理由で末尾に置く**（番号は安定した識別子）。
+test('ゲート実行文脈の限定経路（§11.14）: app_gate_probe 向けのポリシーを持つ表が proposals / engineers / engineer_skills の 3 表ちょうどで、すべて SELECT のみ、式が app_tenant_id() を参照する',
+  /* 🔴 列挙ではなく走査 + スナップショット: pg_policy を全件走査し、polroles に app_gate_probe を含む
+     (relname, polname, polcmd) の集合を作る。期待値は 3 表 × SELECT('r') ちょうど。
+     ①表が 4 つ目に増えた（skill_sheets / engineer_careers / engineer_shares 等）②polcmd に 'w' / 'a' / 'd' が現れた
+     ③polqual に 'app_tenant_id()' が無い —— のどれかで FAIL する。「ゲートが読める範囲を広げること」は
+     本書の改訂（§11.14 ②③）から始めるものであり、ポリシーを 1 本足すだけで実現できてはならない。
+     あわせて pg_proc を走査し、proowner = app_gate_probe の関数が app_gate_proposal_engineer_pii /
+     app_gate_proposal_engineer_skills の 2 本ちょうどで、prosecdef = true・proconfig に search_path=public を含み、
+     EXECUTE が app_tenant にだけ与えられている（PUBLIC / app_platform / app_platform_write に無い）ことを見る（#10 と対）。 */);
 ```
 🔴 **除外リストは「4 表 + `_prisma_migrations`」だけ**であり、**新規テーブルは既定で検査対象に入る**。列挙式（対象テーブルを並べる）にすると新規テーブルを取りこぼすため、**必ず「全部から 4 つを引く」向きで書く**。🔴 **除外リストを広げて通すのは、このテストが防ごうとしている壊し方そのものである。** 新規テーブルが落ちたら §4.4 のクラスを 1 つ選んでポリシーを書く。
 
@@ -2099,6 +2114,9 @@ test('共有スコープ（経路 4）の追加 SELECT ポリシーを持つ表�
 | 9 | 🔴 パートナー文脈で自社が当事者の行を**基底表**（`assignments` 等）から `SELECT *` する / 射影ビューの応答を JSON 化する | 基底表: **RLS は通るが ①`TenantDb` / `PartnerScopeDb` の型に 5 デリゲートが無い（コンパイルエラー）②素の Prisma 拡張越しに呼ぶと `PartnerBaseTableAccessError` で throw**（§4.3-6。0 行ではなく例外 = 書き忘れが必ず露見する）。ビュー: 応答のキー集合に `unit_price`（ホスト販売）/ `internal_unit_price` / `end_client_name` / `summary` / `facts` / `note` が **1 つも無い**（`F-065 AC-2` / `F-066 AC-3`） |
 | 10 | パートナー文脈で経路 5 の 4 表に `INSERT` / `UPDATE` / `DELETE` を発行する（素のクライアント） | **0 件更新**（C9 に書込ポリシーが無い。`BR-68`）。API 経由は §6.6 の `requireRole` で **403**（`F-065 AC-4` / `F-066 AC-5`） |
 | 11 | 🔴 **`engineer_careers`**（T-09-12）を ①ホスト文脈で他パートナー所有のエンジニアの分 ②パートナー文脈で他社の分 ③**ホスト文脈で `app.shared_scope='on'` を立てたうえで**（＝ 経路 4 の生成中と同じ条件）取る | **すべて 0 件**（C3。③でも 0 件であることが `F-008 AC-7` の DB 側の証明である。§4.5）。あわせて **`withSharedCandidateScope` の中から `engineerCareer` に触ろうとするコードがコンパイルできない**ことを型テストで固定する |
+| 12 | 🔴 **ゲート実行文脈の限定経路（§11.14。T-09-13）**: パートナー所属エンジニアの提案（`PROPOSAL_A_P1`）を `GATE_RUNNING` にして `gate.run` を実行する。本文に**対象エンジニアの台帳の現在値**（`display_name` / `contact_email`）を残した版と、凍結スキルに台帳の裏付けが無い主張を入れた版の 2 つ | **3 層すべての判定が下り `ReviewGate` が 1 行書かれる**（§11.9 ⑦ の fail-closed が消えている）。前者は **PII 層 FAIL（`FULL_NAME` / `CONTACT`）**、後者は**整合層 FAIL（`SKILL_SHEET_MISMATCH`）** —— それぞれ「PII の既知値 5 列」「`engineer_skills` の 3 列」を本経路が実際に読んでいることの直接の証明（§11.14 ② の 1〜4 を実データで固定する） |
+| 13 | 🔴 同経路で**ホストの台帳・他社のエンジニアが読めない**こと: ①`app_gate_proposal_engineer_pii(PROPOSAL_A_P1)` の結果に別パートナー（`PARTNER_A2`）のエンジニアの値が 1 文字も無い ②シード上の**全提案**を superuser で一時的に `GATE_RUNNING` にしたうえで、PII 関数の行数がちょうど 1 で、返る `display_name` がその提案の `engineer_id` の行と一致する（superuser で突合。0 行で空振りしない）③ホスト所有の提案を渡してもホストの台帳が**その 1 人分**しか返らない | **すべて成立**（鍵が `proposal_id` である以上、1 人分より広く返す形が**存在しない**。`owner_partner_company_id` に権限が無いので所有者で絞る述語も書けない。§11.14 ⑤-1） |
+| 14 | 🔴 同経路の fail-closed: ①**別テナント**の提案 ID を渡す ②`DRAFT` / `APPROVAL_PENDING` / `WON` の提案 ID を渡す ③テナント文脈の無い接続（`app.tenant_id` 未設定）と**パートナー文脈**（`app.partner_company_id <> ''`）から呼ぶ | 関数を直接呼ぶと ①②は **0 行**（`app_tenant_id()` と `state='GATE_RUNNING'` が課す。理由は区別できない）。`loadGateInput` 経由では ①は手前の `tx.proposal.findUnique`（C5）が `null`、②は入口の `state` 検査で、いずれも **`NOT_FOUND`**（§11.14 ⑥-2）。`state` を読んだ直後に状態が動いた窓だけが `GateFactsUnavailableError('ENGINEER_FACTS_UNAVAILABLE')` になる。**どの経路でも `ReviewGate` は 0 行**。③は **例外**（0 行にしない。§11.14 ④） |
 ### 4.8 「見えない ＝ 存在しない」の API 契約（`docs/04` 申し送り 1 / `F-004 AC-4`）
 
 | 事象 | 返し方 |
@@ -2694,7 +2712,7 @@ export type CareerRowView = CareerRowInput & {
 - 🔴 **行の追加・更新・削除を、それぞれ独立した `AuditLog` として記録する**（`docs/04` 申し送り 17-⑤ / `F-008 AC-5`）。**`engineer.update` 1 件にまとめない。**
   - **保存の粒度（1 リクエスト）と監査の粒度（1 行 1 件）は一致させない。** 1 回の保存で 3 行追加・1 行削除なら **4 件**が残る（`engineer.update` は経歴以外の項目が変わったときにのみ別途 1 件）。まとめると「どの行がいつ消えたか」が追えず、`CLAUDE.md` §3.5 の「誰の経歴を、誰が、いつ見たか」に対応する**書き手側の説明責任**が果たせない。
   - `action` は **`engineer_career.create` / `engineer_career.update` / `engineer_career.delete`** の 3 種（§16.1）。🔴 **独自 action（`engineer_career.save` 等）を作らない** —— `S-041` の操作種別フィルタ（`CREATE_UPDATE_DELETE` = 接尾辞一致）から漏れる（`skill_alias.update` / `partner_company.update` と同じ理由）。
-  - 🔴 **`summary` に業務内容・使用技術・役割の本文を載せない**（自由入力であり PII と商流が混ざる。§16.2 / §5.5）。載せるのは `{ careerId, periodFrom, periodTo, changedFields: string[], source }` まで。**変更前後の本文を残さない**（監査ログが第 2 の経歴台帳になり、`PURGED` / 保持期間削除の射程外に内容が残る）。
+  - 🔴 **`summary` に業務内容・使用技術・役割の本文を載せない**（自由入力であり PII と商流が混ざる。§16.2 / §5.5）。載せるのは `{ careerId, periodFrom, periodTo, changedFields: string, source }` まで（✅ T-09-12 の実装の決着: `changedFields` は**変わった項目名の `,` 区切り文字列**〔例 `'periodTo,technologies'`〕。`AuditSummary` の値型は `string | number | boolean | null` で配列を許さないため、当初の `string[]` 表記から改めた。載る情報は同じ = 項目名だけで本文は無い）。**変更前後の本文を残さない**（監査ログが第 2 の経歴台帳になり、`PURGED` / 保持期間削除の射程外に内容が残る）。
   - 🔴 **業務トランザクションの内側（`writeAuditLog`）で書く**。`withApiRoute` の `audit` オプションは**ハンドラの前に別トランザクションで**書くため、**起きなかった変更**（422 / 409 / 巻き戻し）まで残る（`membership.role_change` / `skill_alias.update` と同じ形）。
   - 🔴 **差分の算出は `packages/domain` の純粋関数 `diffCareerRows(before, after)`** に置く（`{ created[], updated[], deleted[] }` を返す）。**`updated` は「値が実際に変わった行」だけ**（同じ値の再送信で監査が増えない）。I/O を持たないのでユニットテストで固定できる。
 - 🔴 **行の所有はアプリが判定しない。** `id` 付きの行が他人のエンジニアの行だった場合、**`(tenant_id, engineer_id)` を条件に含めた `UPDATE` / `DELETE` が 0 件になる**（RLS の C3 + 複合 FK。§3.4）。0 件は **404**（§4.8）であり、**「他人の行だった」ことを応答で区別しない**。
@@ -3893,7 +3911,7 @@ POST /api/webhooks/{provider}
 | 🔴 **バケットとテナントの検査** | GuardDuty は保護バケット**全体**の結果を送る（`docs/03` §3.4.3-1）。受信側で ①バケットが `S3_BUCKET` と一致するか ②キーが `t/{tenantId}/` 配下か（`tenantIdFromObjectKey`）を確かめ、満たさないものは **200 + 未処理として記録**（`A-005`）。🔴 **401 にしない** —— 署名は正しく送信元は我々自身であり、設定の誤りであって攻撃ではない（再送させても直らない） |
 | 🔴 **`CLEAN` へ戻さないの実装** | 「特定の 1 組み合わせの禁止」にしない（`FAILED → CLEAN` 等の同じ性質の抜け道が残る）。全状態に**重篤度**の全順序 `SCANNING(0) < CLEAN(1) < UNSCANNABLE(2) < FAILED(3) < INFECTED(4)` を与え、**重篤度が上がる方向にしか遷移しない**とする（`packages/domain/src/scan/status.ts`）。これにより ①`CLEAN` へ戻る経路が 1 本も無い ②冪等 ③**到着順に依存しない**（最終状態は受け取った結果の最大重篤度）が同時に成り立つ。DB 側は「置き換えてよい現在値の一覧」を受け取る CAS であり、**重篤度の表を SQL に書き写さない** |
 | 🔴 **未知の生ステータス** | `CLEAN` にも `FAILED` にも**推測で寄せない**。`GuardDutyEventParseError` として 200 + 未処理で記録し（`A-005`）、対象ファイルは `SCANNING` のまま残る（`scan.poll` の滞留検知にも現れる = 二重に見える） |
-| 🔴 **パートナー所有のファイルへ届かせる** | `skill_sheets` は **C3 OWNER_SCOPED** であり、ジョブのホスト文脈（`systemTenantCtx`。§9.2 は `partner_company_id` を常に `null` と定める）からはパートナー所属エンジニアの版が 1 行も見えない。しかしスキャンは所有者と無関係に起きるため、素のままだと **「パートナーが上げたファイルだけ永久に `SCANNING`」**になり `BR-26` / `F-011 AC-3` が成立しない。§4.4.1 の `assignments ← engineers` と**同型の解**（専用ロール `app_scan_probe` + `SECURITY DEFINER` + 最小列 `GRANT`）を採る: `app_apply_scan_status(objectKey, status, replaceable[], observedAt)` と `app_list_stalled_scan_targets(before, limit)` の 2 関数だけを置き、いずれも本体で **`app_tenant_id() IS NULL` を拒否**（fail-closed）し **`tenant_id = app_tenant_id()` に閉じる**。緩むのは「同一テナント内で、スキャンの 3 列だけ」であり、氏名・スキル・他テナントには 1 列も届かない。呼び出し元は `packages/db/src/file-scan.ts` の 2 関数だけ（`TenantDb` に `$queryRaw` が無いため `apps/**` から呼ぶ経路は存在せず、`tests/static/auth-db-callers.test.ts` が固定する）。🔴 **本機構は [Issue #27](https://github.com/Festal-KM/SES-Platform/issues/27) 後半（ワーカーからパートナー所有の `skill_sheets` へ書き込む文脈をどう与えるか）の既定解を、「スキャンの 3 列」に限って前倒しで実装したものである。** 同じ問いの残りの射程 —— `SkillSheetExtraction` の生成（`sheet-parser` / `skill-normalizer`。SP-14）と `gate.run` の実行文脈（SP-09）—— は **SP-07 の設計判断として残る**（それらは本機構の 3 列では足りず、書き込む列も表も違う）。本節の解を「ワーカーがパートナー所有行に触れるときの汎用の入口」として流用しないこと |
+| 🔴 **パートナー所有のファイルへ届かせる** | `skill_sheets` は **C3 OWNER_SCOPED** であり、ジョブのホスト文脈（`systemTenantCtx`。§9.2 は `partner_company_id` を常に `null` と定める）からはパートナー所属エンジニアの版が 1 行も見えない。しかしスキャンは所有者と無関係に起きるため、素のままだと **「パートナーが上げたファイルだけ永久に `SCANNING`」**になり `BR-26` / `F-011 AC-3` が成立しない。§4.4.1 の `assignments ← engineers` と**同型の解**（専用ロール `app_scan_probe` + `SECURITY DEFINER` + 最小列 `GRANT`）を採る: `app_apply_scan_status(objectKey, status, replaceable[], observedAt)` と `app_list_stalled_scan_targets(before, limit)` の 2 関数だけを置き、いずれも本体で **`app_tenant_id() IS NULL` を拒否**（fail-closed）し **`tenant_id = app_tenant_id()` に閉じる**。緩むのは「同一テナント内で、スキャンの 3 列だけ」であり、氏名・スキル・他テナントには 1 列も届かない。呼び出し元は `packages/db/src/file-scan.ts` の 2 関数だけ（`TenantDb` に `$queryRaw` が無いため `apps/**` から呼ぶ経路は存在せず、`tests/static/auth-db-callers.test.ts` が固定する）。🔴 **本機構は [Issue #27](https://github.com/Festal-KM/SES-Platform/issues/27) 後半（ワーカーからパートナー所有の `skill_sheets` へ書き込む文脈をどう与えるか）の既定解を、「スキャンの 3 列」に限って前倒しで実装したものである。** 同じ問いの残りの射程 —— `SkillSheetExtraction` の生成（`sheet-parser` / `skill-normalizer`。SP-14）と ~~`gate.run` の実行文脈（SP-09）~~ —— は **SP-07 の設計判断として残る**（それらは本機構の 3 列では足りず、書き込む列も表も違う）。本節の解を「ワーカーがパートナー所有行に触れるときの汎用の入口」として流用しないこと。✅ **`gate.run` の分は [Issue #41](https://github.com/Festal-KM/SES-Platform/issues/41) = 1 で決着し、§11.14 が `app_gate_probe`（別ロール・別関数・`SELECT` のみ）として確定させた（T-09-13）。残るのは SP-14 の分だけであり、そちらも `app_scan_probe` / `app_gate_probe` に列を足して通してはならない**（§11.14 ⑨） |
 | ✅ **隔離の周知先（所有側）を引く**（T-05-08。`F-011` 処理④） | 周知の宛先分類（1 = ホスト所属 / 2 = パートナー所属）は `skill_sheets.owner_partner_company_id` でしか決まらないが、同じ C3 の理由でホスト文脈から読めない。**取り違えると `sandbox` で取引先の担当者へ実メールが飛ぶ**（`CLAUDE.md` §11.1）か、逆にパートナーが上げたファイルの隔離が誰にも届かない。同じ解を採り、**既存の `app_scan_probe` に `owner_partner_company_id` の `SELECT` を 1 列だけ**足して `app_scan_quarantine_target(objectKey)`（`(skill_sheet_id, owner_partner_company_id, scan_status)` を返す）を置いた（migration 20260910000000）。🔴 **`engineer_id` / `version` / `note` / `uploaded_by` は足していない** —— 周知メールは「画面で確認してください」の 1 リンクだけであり、内容を 1 つも運ばないためである（§9.6.1）。呼び出し元は `packages/db/src/scan-notice.ts` の 1 関数だけ |
 | 🔴 **`is_latest` の扱い** | `skill_sheets_latest_clean_check`（`is_latest = false OR scan_status = 'CLEAN'`）があるため、**最新版が `CLEAN` から非 `CLEAN` へ動くときはフラグを落とす**（残すと CHECK 違反で更新そのものが失敗する）。落とすのが正しい（`F-011 AC-1`）。🔴 逆に、スキャン結果の適用が `is_latest` を**立てる**ことは無い（🔴 **立てるのは #19b（版の切替）＝ 利用者の明示操作だけ**である。#19 が作る行は `SCANNING` なので立てられない。T-05-06 で #19b を新設した経緯は §6.4 の決着を参照） |
 | 🔴 **`skill_sheets(object_key)` の `UNIQUE`** | スキャン結果は「バケット + キー + 版」しか教えてくれない（`docs/03` §3.4.1）。同じキーの行が 2 つあると適用先が決まらないため、**曖昧さを DB で禁止する**（migration 20260908000000）。キーは `{uuid}` を含み発行のたびに新しい（§14.1）ので、実運用で衝突しない |
@@ -4659,7 +4677,9 @@ apps/worker/src/jobs/gate-run.ts      ジョブ本体（3 層の実行順・枝�
 - **案件の公開（`ProjectVisibility` の作成）とスキルシートの共有 URL 発行は T-07-09 の範囲**である。ゲートは結果を残すだけで、公開そのものは行わない。
 - **自動承認（`shouldAutoApprove`。§11.6）はここで呼ばない。** 承認は `F-021`（SP-09）の範囲であり、`Proposal.approvedBy` / `approvedAt` / `ProposalEvent` の記録と一体である。
 
-#### ⑦ 🔴 未解決: パートナー所属エンジニアの提案はゲートを通せない（人間の判断が要る）
+#### ⑦ ~~🔴 未解決: パートナー所属エンジニアの提案はゲートを通せない（人間の判断が要る）~~ → ✅ **決着（2026-09-10、[Issue #41](https://github.com/Festal-KM/SES-Platform/issues/41) = 選択肢 1。設計は §11.14。実装は T-09-13）**
+
+🔴 **以下は決着前の記録として残す**（消すと「なぜ選択肢 1 か」が失われる。`CLAUDE.md` §9 の作法）。**設計の正は §11.14 である** —— 特に「読む列」は下記 1 の「マスキングに要る値だけ」のとおり **PII 層の既知値 5 列 + 整合層の 3 列**であり、「整合層の列だけ」ではない（理由は §11.14 ②）。
 
 - **事象**: ジョブの文脈は常にホスト相当である（`systemTenantCtx`。§9.2）。`engineers` / `engineer_skills` は **C3 OWNER_SCOPED** なので、**パートナー所属エンジニアの台帳がジョブから 1 行も読めない**。したがって ①`knownPii`（氏名・生年月日・連絡先）を組み立てられず ②整合層の `registeredSkills`（台帳の裏付け）も空になる。
 - **現在の実装**: `loadGateInput` は `GateFactsUnavailableError('ENGINEER_LEDGER_UNREADABLE')` を投げ、**`ReviewGate` を 1 行も書かずに落ちる**。対象は共有状態へ進めない（承認 CAS も送信の事前判定も満たさない）。🔴 **`knownPii` を空にして続行しない** —— 空にすると「マスキングも機械的 PII 検出も効かないまま PASS」になり、`CLAUDE.md` §7 の「PII 未マスキングでの外部共有 0 件」を静かに破る。
@@ -4667,7 +4687,7 @@ apps/worker/src/jobs/gate-run.ts      ジョブ本体（3 層の実行順・枝�
   1. **`app_engineer_is_shared`（§4.5）と同型の `SECURITY DEFINER` 経路を足す** —— 「その提案の対象エンジニアに限り、マスキングに要る値だけを読む」関数。`app_apply_scan_status`（migration 20260908000000）の前例がある。**開示先はゲートの内部だけであり、指摘には伏せ字しか出ない**（③）。
   2. **`EngineerSnapshot` にマスキング用の値を凍結する** —— 提案作成時（パートナー文脈）に氏名の全表記・連絡先・生年月日と `registeredSkills` を凍結しておく。**ホストが読める列が増える**ため、経路 2 の開示範囲の再確認が要る。
   3. **ゲートをパートナー文脈で実行する** —— ジョブが `HostTenantCtx` 以外を持てるようにする。§9.2 の前提を変えるため影響が最も広い。
-- **暫定の既定**: 1 が最も射程が狭い（読む対象が「その提案のエンジニア 1 人」に限られ、戻り値がゲートの外へ出ない）。**T-07-08 / SP-09 が Phase 1 の中核 E2E（パートナーが提案 → ホストが承認 → 送信）を通す前に決着が要る。**
+- **暫定の既定**: 1 が最も射程が狭い（読む対象が「その提案のエンジニア 1 人」に限られ、戻り値がゲートの外へ出ない）。**T-07-08 / SP-09 が Phase 1 の中核 E2E（パートナーが提案 → ホストが承認 → 送信）を通す前に決着が要る。** → ✅ **人間が 1 を選んだ（2026-09-10）。§11.14 が確定形。**
 
 #### ⑧ ⚠️ T-07-08 / T-07-09 / T-07-10 への申し送り
 
@@ -4686,7 +4706,7 @@ apps/worker/src/jobs/gate-run.ts      ジョブ本体（3 層の実行順・枝�
 | ユニット（domain） | `decideGate` の 3 層合成 / AI 失敗は PII・商流を FAIL（PASS へ倒れない）/ 警告は合否に効かない / 機械的検出が AI の判定を上書きする / 層の取り違えを `RangeError` にする / 同一入力 50 回で同結果 / `GateResultView` の 3 値と HELD の判別 |
 | ユニット（ai） | マスキング済みの本文しか LLM へ渡らない / 既知値だけが機械的 FAIL になる（署名のメールは FAIL にしない）/ 他社名と エンド企業名の種別の区別 / 抜粋に原文が入らない / オフセットの往復 |
 | ユニット（worker） | 枝分け（PASS / FAIL / AI 失敗 3 種 / HELD / キャッシュ / `RACED` / 対象なし）/ `GATE_RUNNING` 以外は状態を上書きしない / `AuditLog` の形 |
-| 結合（`tests/isolation/gate-run.test.ts`） | 🔴 `F-020 AC-5` / `AC-6`（エンド企業名・内部単価・他社名）/ `AC-7` / AI 失敗で FAIL かつ**キャッシュしない** / `P-A-09` のキャッシュ / 🔴 **HELD でも整合層の結果が保存され、再実行が同じ行を CAS で確定させる**（行が増えない）/ 🔴 **モック応答 5 通りで `consistencyVerdict` と対象の状態が 1 ビットも変わらない**（§11.8 ⑦-3 の引き継ぎ）/ テナント境界 / パートナー所属の提案は結果を 1 行も書かずに落ちる（⑦） |
+| 結合（`tests/isolation/gate-run.test.ts`） | 🔴 `F-020 AC-5` / `AC-6`（エンド企業名・内部単価・他社名）/ `AC-7` / AI 失敗で FAIL かつ**キャッシュしない** / `P-A-09` のキャッシュ / 🔴 **HELD でも整合層の結果が保存され、再実行が同じ行を CAS で確定させる**（行が増えない）/ 🔴 **モック応答 5 通りで `consistencyVerdict` と対象の状態が 1 ビットも変わらない**（§11.8 ⑦-3 の引き継ぎ）/ テナント境界 / ~~パートナー所属の提案は結果を 1 行も書かずに落ちる（⑦）~~ → ⚠️ **T-09-13 で反転する**（パートナー所属の提案でも 3 層の判定が下り `ReviewGate` が 1 行書かれる。§11.14 ⑧ #12） |
 | 静的 | `gate.run` の `removeOnComplete: true` と `attempts: 1`（§17.2 #19 / #6）/ `systemTenantCtx` の呼び出し元にジョブ 1 本を追加 |
 
 ### 11.10 🔴 §6.5 #39 / #40 と §9.10（失敗した `gate.run` の再実行）の実装の決着（T-07-08。2026-09-09）
@@ -4773,7 +4793,7 @@ tests/isolation/support/redis.ts          Testcontainers の Redis
 2. ✅ **解消（T-07-10。§11.12）**: `gate.hold-release` は `listPendingReviewGates`（`findPendingReviewGate` と**同じ母集団**を対象を指定せずに引く関数）で保留行を読み、**同じ payload・同じ `jobId`** で再 enqueue する。#39 の HELD 経路と完全に同じ材料になるため、両方が同時に走ってもキューに乗るのは 1 本である（結合テストで実証済み）。
 3. **SP-09 へ**: 承認 CAS（§11.5 手順 3）は `proposals.content_hash` と `review_gates.content_hash` の一致を条件にする。**その列を書くのは #39 である**（`DRAFT → GATE_RUNNING` の CAS と同じ 1 文）。#37（`PATCH`）を実装するときは、**同じ `computeProposalContentHash` を使って**列を更新すること（別実装を書くと承認が永久に通らない）。
 4. **SP-09 へ**: 提案の作成（#36）は `EngineerSnapshot` を同時に凍結する。**凍結が無い提案は `gate.run` が `GateFactsUnavailableError` で落ちる**（§11.9 ⑦）。#39 はそれを事前に弾かない（ハッシュは `snapshot=null` として決定的に計算できる）ので、**#36 の側で不変条件を守ること**。
-5. 🔴 **未解決（Issue #41 / §11.9 ⑦）**: パートナー所属エンジニアの提案はゲートを通せない（`loadGateInput` が `ENGINEER_LEDGER_UNREADABLE` で落ちる）。#39 / #40 はパートナー文脈でも動くが、**中核 E2E（パートナーが提案 → ホストが承認 → 送信）は決着待ち**である。
+5. ~~🔴 **未解決（Issue #41 / §11.9 ⑦）**: パートナー所属エンジニアの提案はゲートを通せない（`loadGateInput` が `ENGINEER_LEDGER_UNREADABLE` で落ちる）。#39 / #40 はパートナー文脈でも動くが、**中核 E2E（パートナーが提案 → ホストが承認 → 送信）は決着待ち**である。~~ → ✅ **決着（2026-09-10、[Issue #41](https://github.com/Festal-KM/SES-Platform/issues/41) = 1）。設計は §11.14、実装は T-09-13（SP-09 の 2 番目）。** #39 / #40 側の変更は無い（`gate.run` が `GATE_RUNNING` の対象にしか発火しないことは §11.14 ⑤-2 の前提であり、§11.10 ⑤ の 3 経路はすべてそれを満たす）。
 6. **`@anthropic-ai/sdk` のアダプタ（§7.9 ⑥）は未実装のまま**である（依存は追加済み）。`packages/ai/src/client.ts` の 1 関数 + `maxRetries: 0` のテスト固定が残っている。
 
 ### 11.11 🔴 §11.1（案件の公開・スキルシートの外部共有の接続）の実装の決着（T-07-09。2026-09-09）
@@ -4812,7 +4832,7 @@ tests/isolation/support/redis.ts          Testcontainers の Redis
 - **決定**: **Phase 1 の `SKILL_SHEET_SHARE` は PASS しない。** `loadGateInput` は `UnsupportedGateTargetError` のままである（メッセージだけを「未配線」から「検査対象の本文が無い」に改めた）。
 - **根拠**: 原本（xlsx / docx / pdf）の中身は Phase 1 では読めず（構造化抽出 `sheet-parser` は Phase 2 の `F-032`）、原本そのものを LLM に渡すことは `BR-11` と `packages/ai` の型（`image` / `document` ブロックを受け取れない。T-07-02）で**不可能**である。
 - 🔴 **版のメモ（`SkillSheet.note`）だけを検査して PASS にする案は採らなかった。** 原本を 1 バイトも見ていないのに「ゲートを通した」ことになり、`F-020 AC-1` を**静かに**破る（`CLAUDE.md` §11.1 の「成功したように見えて実際には起きていない」と同型）。ファイル名も材料にならない（原本のファイル名は保存していない。§14.1 の決着）。
-- **Phase 2 の入口**: `SkillSheetExtraction` の抽出テキストを `field='attachment'` の本文にし、`knownPii` は所有エンジニアの台帳から作る（パートナー所有の版は §11.9 ⑦ / [Issue #41](https://github.com/Festal-KM/SES-Platform/issues/41) の決着が前提）。
+- **Phase 2 の入口**: `SkillSheetExtraction` の抽出テキストを `field='attachment'` の本文にし、`knownPii` は所有エンジニアの台帳から作る（パートナー所有の版は §11.9 ⑦ / [Issue #41](https://github.com/Festal-KM/SES-Platform/issues/41) の決着が前提 → ✅ **決着済み（§11.14）。ただし §11.14 の 2 関数は `PROPOSAL` 専用（鍵が `proposal_id`・実行中の判定が `proposals.state`）であり、`SKILL_SHEET_SHARE` には流用しない。同じロールに専用関数を足すかは Phase 2 の設計で決める（§11.14 ⑨）**）。
 
 #### ⑥ 🔴 代わりに `F-020 AC-1` は「共有の側」で成立させた（§14.2 の前提条件③）
 
@@ -4987,6 +5007,230 @@ E2E #23 の前半を**ブラウザ経路で**書くには、次の 3 つが揃�
 `tests/isolation/**` は `@ses/*` をパッケージ名で import するため、解決先は**ビルド成果物**（`packages/ai/dist/index.js` 等）である。したがって **`pnpm -r build` を経ずに `pnpm test:isolation` を走らせると、古い `dist` を検査することになる。**
 
 🔴 **これは「防御を壊しても緑のまま」という壊れ方を生む。** 実際、本節の証明テストを書いたときに `packages/ai/src/mask.ts` の境界タグ除去を無効化して**空振りしていないこと**を確かめたが、`dist` を作り直すまでは 26 件すべてが緑のままだった（作り直すと ④ の 3 件が落ちた ＝ 期待どおり検出できている）。**証明テストを追加・変更したときは、必ず「壊したら落ちること」をビルド後に確認すること。** `tests/startup/startup-di.test.ts` が `packages/config/dist` について書いている前提（CI の実行順が build → test）と同じ話である。
+
+### 11.14 🔴 §11.9 ⑦ の決着（[Issue #41](https://github.com/Festal-KM/SES-Platform/issues/41) = 選択肢 1。2026-09-10 に人間が回答。T-09-13 の実装前提）: ゲート実行文脈からパートナー台帳を読む限定経路 `app_gate_probe`
+
+**本節は T-09-13（`docs/sprints/SP-09-proposal-flow.md` §4）の一次資料である。** 順序は **本節 → migration → 実装**（`CLAUDE.md` §8.7）。§8.5.1（`app_scan_probe`）/ §4.5（`app_share_probe`）/ §9.1.1（`app_scheduler_probe`）/ §4.4.1（`app_assignment_owner_probe`）と**同じ型**で書く。**以降のタスクは本節を正とする。**
+
+#### ① 決定と、なぜ選択肢 1 か
+
+- **事象**（§11.9 ⑦）: `gate.run` はジョブの**ホスト文脈**（`systemTenantCtx`。§9.2）で走るため `engineers` / `engineer_skills`（**C3 OWNER_SCOPED**）を読めず、**パートナーが作成した提案は `ReviewGate` を 1 行も書かずに落ちる**（`GateFactsUnavailableError('ENGINEER_LEDGER_UNREADABLE')`。fail-closed）。「パートナーが提案 → ホストが承認 → 送信」は `CLAUDE.md` §5 の **Phase 1 成功条件 1 そのもの**であり、この穴を塞がないと `T-09-11` のシナリオ 1 は原理的に緑にならない。
+- **決定**: §11.9 ⑦ の 3 案のうち **選択肢 1**（**専用 DB ロール + `SECURITY DEFINER` + 列レベル `GRANT`**）。選択肢 2（`EngineerSnapshot` にマスキング用の値を凍結する）は**ホストが読める列が増える**（経路 2 の開示範囲の変更 ＝ `CLAUDE.md` §8.6 の承認事項に踏み込む）、選択肢 3（ジョブをパートナー文脈で走らせる）は §9.2 / §4.3-6 ③ / §17.2 #20 の「ワーカーはパートナー文脈を持てない」前提を崩し影響が最も広い。**選択肢 1 は読む範囲が「その提案の対象エンジニア 1 人分」に閉じ、戻り値がゲートの外へ出ない**（⑦）。
+- **同型の 4 例との対応**:
+
+| ロール | 節 | 読む列 | 鍵 | 「実行中」の条件 |
+|---|---|---|---|---|
+| `app_share_probe` | §4.5 | `engineer_shares(tenant_id, engineer_id, revoked_at)` → 真偽値だけ | `engineer_id` | `app.shared_scope='on'` |
+| `app_assignment_owner_probe` | §4.4.1 | `engineers(tenant_id, id, owner_partner_company_id)` | 行（トリガ） | トリガ関数のため直接呼べない |
+| `app_scan_probe` | §8.5.1 | `skill_sheets` のスキャン列 + `engineers` の 3 列 | `object_key` | `app_tenant_id() IS NOT NULL` |
+| `app_scheduler_probe` | §9.1.1 | `tenants(id, lifecycle_state)` → `setof uuid` | （列挙） | `app_tenant_id() IS NULL AND app.scheduler_scope='on'` |
+| 🔴 **`app_gate_probe`（本節）** | §11.14 | `proposals` 4 列 / `engineers` 7 列 / `engineer_skills` 5 列（③） | 🔴 **`proposal_id`**（`engineer_id` ではない） | 🔴 **`app_tenant_id() IS NOT NULL AND app_is_host()` かつ `proposals.state = 'GATE_RUNNING'`**（データ由来の条件。自己申告の GUC ではない。⑤） |
+
+#### ② 🔴 何を読む必要があるか —— 3 層から逆算する（「整合層の列だけ」では足りない）
+
+`loadProposalGateInput`（`packages/db/src/gate-target.ts`）が組み立てる `GateInput` のうち、台帳（`engineers` / `engineer_skills`）に由来する値は次の 2 群である。**それ以外（案件・要件・公開先・提案本文・凍結コピー）は C2 / C4 / C5 でホスト文脈から読める**ので、本経路の対象ではない。
+
+| 層 | 必要な値 | 出所 | 台帳を読む必要 |
+|---|---|---|---|
+| 整合層 ①必須要件 | 凍結スキル（`EngineerSnapshot.skills`）× `ProjectRequirement(kind='MUST')` | C5 / C2 | **不要** |
+| 整合層 ③登録スキルとの矛盾 | 🔴 **台帳の裏付け** `registeredSkills` = `engineer_skills(skill_id, years_of_experience, level)` | **C3** | 🔴 **要る** |
+| PII 層（既知値）`fullNames` | `EngineerSnapshot.displayName`（凍結表記）+ **`engineers.display_name`（現在表記）** | C5 + **C3** | 現在表記のみ |
+| PII 層（既知値）`affiliations` | `EngineerSnapshot.affiliationLabel` + 提案元パートナーの社名（`partner_companies`。C5）+ **`engineers.affiliation_label`** | C5 + **C3** | 現在表記のみ |
+| PII 層（既知値）`birthDates` / `emails` / `phones` | 🔴 **`engineers.birth_date` / `contact_email` / `contact_phone`。凍結コピーに無い**（経路 2 でホストに開示しない値であるため、凍結しないのが正しい） | **C3 のみ** | 🔴 **要る** |
+| 商流層 | `projects.end_client_name` / `internal_unit_price`、他社名（`partner_companies`） | C2 / C5 | **不要** |
+
+🔴 **「氏名は凍結済みだから、台帳を読む必要があるのは整合層の列だけのはず」という仮説は、`birth_date` / `contact_email` / `contact_phone` の 3 列で成り立たない。** T-09-13 の着手前に本書がこの点を確定させる理由は、**その 3 列を読まないと、パートナー所属エンジニアの提案で PII 層が決定的に素通りする**からである。機構は次のとおり（`packages/ai/src/gate/examine.ts` / `packages/ai/src/mask.ts` / `prompts/roles/gate-inspector.v1.ts` を読んで確定した）:
+
+1. `prepareGateExamination` は本文を `mask(text, known)` で伏せてから LLM に送る。`mask()` は**既知値（主）+ パターン検出（補助）**で伏せるので、`known.emails` が空でも `taro@partner.example` は**形状で `[メール]` に置き換わる**（`locateSensitive` の `includePatterns` 既定 = true）。
+2. `gate-inspector` はシステム指示で「**伏せ字そのものを指摘しないでください（既に取り除かれています）**」と命じられている。LLM は `[メール]` を見ても指摘しない。
+3. 機械的検出（`mechanicalPii`）は **`includePatterns: false`** で走る（自社担当者の署名のメールで毎回 FAIL にならないため。§11.9 ③）。**既知値に無い値は指摘にならない。**
+4. したがって **`knownPii.emails` が空なら、エンジニア本人のメールアドレスが本文に残ったまま PII 層 PASS になる**（電話番号も同じ。生年月日は §7.10 ③ のとおりパターン検出が文脈限定なので、素の `1990/05/12` は LLM にそのまま届き、指摘は LLM の裁量だけに依存する）。**これは §11.9 ⑦ が「`knownPii` を空にして続行しない」と書いた壊れ方そのもの**であり、`CLAUDE.md` §7「PII 未マスキングでの外部共有・LLM 送信 0 件」に直撃する。ホスト所属の提案では台帳が読めるので起きない —— **所属で PII 層の強さが変わる非対称を作らない**。
+
+🔴 **したがって本経路は「整合層の 3 列 + PII 層の既知値 5 列」を読む。** これは §11.9 ⑦ 選択肢 1 の原文（「その提案の対象エンジニアに限り、**マスキングに要る値だけ**を読む」）と一致し、**`loadProposalGateInput` が今日ホスト所属のエンジニアについて `tx.engineer.findUnique` / `tx.engineerSkill.findMany` で読んでいる列とちょうど同じ集合**である（それ以上を足していない）。`display_name` / `affiliation_label` は凍結コピーにもあるが、**台帳の現在表記も渡す既存の規律**（`gate-target.ts` 冒頭「既知値は欠けたら漏れる」/「台帳と凍結コピーの両方の表記を渡す〔片方だけだと改名後に漏れる〕」）をパートナー所属だけ落とさないために含める。**この 2 列は経路 2 で既にホストへ開示済みの値であり、開示範囲は 1 項目も増えない。** ⚠️ `docs/sprints/SP-09-proposal-flow.md` §4 T-09-13 の括弧書き「氏名・連絡先・スキルシート本文を読めるようにしない」は、**連絡先について本節の分析と食い違う**（上記 1〜4）。本書（上流）を正とし、`pm` が sprint 文書を追随させる（`CLAUDE.md` §8.7）。
+
+🔴 **読めるようにしないもの**（列レベル `GRANT` を与えない。**書き忘れても漏れない**側の担保）: `engineers` の `owner_partner_company_id`（🔴 これが無いことで「所有者で絞って一覧する」形の関数が**書けない**）/ `unit_price_min` / `unit_price_max`（単価。ゲートの照合対象ではない —— 商流層が禁じるのは**案件の内部単価**であり `projects` から取る。`gate-target.ts` 冒頭の 🔴）/ `city` / `prefecture` / `remote_mode` / `availability` / `available_from` / `preference_note`（営業メモ）/ `retention_expires_at` / `pii_purged_at` / `created_at` / `updated_at`。**`skill_sheets`（スキルシート本文・原本）/ `skill_sheet_extractions` / `engineer_careers`（経歴。凍結コピー `EngineerSnapshot.careers` が検査対象。§11.3）/ `engineer_shares` には表ごと権限を与えない。** `engineer_skills` の `original_label` / `normalized_*` / `source` も与えない（整合層は `skill_id` と数値しか照合しない。§11.8 ③）。
+
+#### ③ ロールと列レベル `GRANT`（合計 16 列。`role_table_grants` は 0 行）
+
+```sql
+-- packages/db/prisma/sql/000_roles.sql（ロールの定義はここが唯一の真実。§4.2）
+CREATE ROLE app_gate_probe NOLOGIN NOBYPASSRLS;     -- 000_roles.sql の \gexec 形に合わせる
+GRANT app_gate_probe TO app_migrator;               -- ALTER FUNCTION ... OWNER TO のため（既存 4 ロールと同じ）
+
+-- migration（例: 20260918000000_gate_engineer_facts。T-09-12 が別の migration を足していれば次の連番）
+GRANT USAGE ON SCHEMA public TO app_gate_probe;
+
+-- 🔴 鍵の解決に要る 4 列だけ。subject / body / 提案先 / 単価には届かない
+GRANT SELECT (id, tenant_id, engineer_id, state) ON proposals TO app_gate_probe;
+-- 🔴 PII 層の既知値 5 列 + 結合キー 2 列。owner_partner_company_id は**与えない**（②）
+GRANT SELECT (tenant_id, id, display_name, birth_date, contact_email, contact_phone, affiliation_label)
+  ON engineers TO app_gate_probe;
+-- 🔴 整合層の照合 3 列 + 結合キー 2 列
+GRANT SELECT (tenant_id, engineer_id, skill_id, years_of_experience, level)
+  ON engineer_skills TO app_gate_probe;
+
+-- 🔴 ポリシー。パートナー境界は課さないが**テナント境界は課す**（app_scan_probe と同形。§4.7 #3 を通る）
+CREATE POLICY proposals_gate_probe_select       ON proposals       FOR SELECT TO app_gate_probe USING (tenant_id = app_tenant_id());
+CREATE POLICY engineers_gate_probe_select       ON engineers       FOR SELECT TO app_gate_probe USING (tenant_id = app_tenant_id());
+CREATE POLICY engineer_skills_gate_probe_select ON engineer_skills FOR SELECT TO app_gate_probe USING (tenant_id = app_tenant_id());
+```
+
+- 🔴 **`INSERT` / `UPDATE` / `DELETE` を 1 列も与えない**（`GRANT SELECT` のみ。ゲートは読むだけであり、対象の状態を動かすのは `app_tenant` の CAS である。§11.9 ⑥）。
+- 🔴 **テーブル単位の `GRANT` を 1 つも持たない**（`role_table_grants` が 0 行。列を後から足しても自動的に開示されない）。
+- `proposals` は C5（ホストが全行を読める）なので、この 4 列を本ロールが読めることで**開示は 1 つも増えない**。読ませる理由は⑤（鍵を `proposal_id` にするため）。
+
+#### ④ `SECURITY DEFINER` 関数は 2 本。署名・戻り値・fail-closed 条件
+
+**1 本に畳まない**理由: PII の 1 行とスキルの N 行を `LEFT JOIN` で 1 つの `RETURNS TABLE` にすると、PII が行数ぶん複製されて返る／スキル 0 件のときに PII 行が `NULL` 列付きで 1 行になる、という**形の曖昧さ**が呼び出し側に写る。**戻り値の形が固定である**ことが⑤の要なので、用途ごとに分ける（`app_scan_probe` が 3 関数を持つのと同じ）。
+
+```sql
+GRANT CREATE ON SCHEMA public TO app_gate_probe;   -- ALTER FUNCTION ... OWNER TO の間だけ（20260908000000 と同じ。直後に REVOKE）
+
+-- 4-a. PII 層の既知値（🔴 ちょうど 0 行または 1 行。ID を 1 つも返さない）
+CREATE FUNCTION app_gate_proposal_engineer_pii(p_proposal_id uuid)
+  RETURNS TABLE (display_name text, birth_date date, contact_email text, contact_phone text, affiliation_label text)
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public AS $BODY$
+BEGIN
+  -- 🔴 fail-closed その 1: テナント文脈が無い接続（withSystemScope / migration）から呼ばれても
+  --    「全テナントの行が対象」にならない（app_apply_scan_status と同じ）。
+  IF app_tenant_id() IS NULL THEN
+    RAISE EXCEPTION 'app_gate_proposal_engineer_pii: テナント文脈がありません（app.tenant_id が未設定）';
+  END IF;
+  -- 🔴 fail-closed その 2: ホスト文脈（= ジョブの systemTenantCtx）以外からは呼べない。
+  --    パートナー文脈のセッションが GATE_RUNNING の提案 ID を推測して他社の値を引く経路を DB で塞ぐ。
+  IF NOT app_is_host() THEN
+    RAISE EXCEPTION 'app_gate_proposal_engineer_pii: ホスト文脈以外からは呼べません（docs/05 §11.14 ⑤）';
+  END IF;
+
+  RETURN QUERY
+    SELECT e.display_name, e.birth_date, e.contact_email, e.contact_phone, e.affiliation_label
+      FROM proposals p
+      JOIN engineers e ON e.tenant_id = p.tenant_id AND e.id = p.engineer_id
+     WHERE p.tenant_id = app_tenant_id()
+       AND p.id = p_proposal_id
+       AND p.state = 'GATE_RUNNING';       -- 🔴 ゲート実行中の提案に限る（⑤）
+END;
+$BODY$;
+ALTER FUNCTION app_gate_proposal_engineer_pii(uuid) OWNER TO app_gate_probe;
+
+-- 4-b. 整合層の裏付け（🔴 0 行以上。skill_id は Skill 辞書〔グローバル〕の ID であり個人を指さない）
+CREATE FUNCTION app_gate_proposal_engineer_skills(p_proposal_id uuid)
+  RETURNS TABLE (skill_id uuid, years_of_experience numeric, level integer)
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public AS $BODY$
+BEGIN
+  IF app_tenant_id() IS NULL THEN
+    RAISE EXCEPTION 'app_gate_proposal_engineer_skills: テナント文脈がありません（app.tenant_id が未設定）';
+  END IF;
+  IF NOT app_is_host() THEN
+    RAISE EXCEPTION 'app_gate_proposal_engineer_skills: ホスト文脈以外からは呼べません（docs/05 §11.14 ⑤）';
+  END IF;
+
+  RETURN QUERY
+    SELECT s.skill_id, s.years_of_experience, s.level
+      FROM proposals p
+      JOIN engineer_skills s ON s.tenant_id = p.tenant_id AND s.engineer_id = p.engineer_id
+     WHERE p.tenant_id = app_tenant_id()
+       AND p.id = p_proposal_id
+       AND p.state = 'GATE_RUNNING'
+     ORDER BY s.skill_id ASC;               -- 決定的な順序（整合層は skill_id で束ねるので順序に依存しないが、実測の比較を安定させる）
+END;
+$BODY$;
+ALTER FUNCTION app_gate_proposal_engineer_skills(uuid) OWNER TO app_gate_probe;
+
+REVOKE CREATE ON SCHEMA public FROM app_gate_probe;
+-- 🔴 既定の PUBLIC EXECUTE を剥がし app_tenant にだけ与える。app_platform / app_platform_write には与えない
+--    （運営者コンソールはゲートを実行しない。CLAUDE.md §10.5「スキルシートの原本と本文・氏名・連絡先は運営者にも見せない」）。
+REVOKE ALL ON FUNCTION app_gate_proposal_engineer_pii(uuid)    FROM PUBLIC;
+REVOKE ALL ON FUNCTION app_gate_proposal_engineer_skills(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app_gate_proposal_engineer_pii(uuid)    TO app_tenant;
+GRANT EXECUTE ON FUNCTION app_gate_proposal_engineer_skills(uuid) TO app_tenant;
+COMMENT ON FUNCTION app_gate_proposal_engineer_pii(uuid)    IS 'T-09-13: 品質ゲート（PROPOSAL）の PII 既知値（docs/05 §11.14）。呼び出し元は packages/db/src/gate-engineer-facts.ts のみ。';
+COMMENT ON FUNCTION app_gate_proposal_engineer_skills(uuid) IS 'T-09-13: 品質ゲート（PROPOSAL）の整合層の裏付け（docs/05 §11.14）。呼び出し元は packages/db/src/gate-engineer-facts.ts のみ。';
+```
+
+**戻り値の意味**（両関数）: 0 行 = 「そのテナントに、`GATE_RUNNING` の提案 `p_proposal_id` が無い」か「その提案のエンジニア行が無い」。**別テナントの ID・`DRAFT` / `APPROVED` / `WON` の提案・存在しない ID はすべて 0 行になり、理由は区別できない**（区別できる形にすると探索の手掛かりになる。§4.8 と同じ向き）。テナント文脈の欠落とパートナー文脈だけは**例外**にする（0 行と区別できないと「対象が無い」と読み違える。`app_list_scheduler_tenants` と同じ理由）。
+
+#### ⑤ 🔴 「汎用のエスケープハッチではない」ことの担保（6 点）
+
+| # | 担保 | 効かせ方 |
+|---|---|---|
+| 1 | 🔴 **鍵は `proposal_id` であり `engineer_id` ではない。** 台帳を「所有者で絞って一覧する」「ID を総当たりする」形の呼び出しが**存在しない** —— 返るのは常に**その提案の対象エンジニア 1 人分**である | **関数の署名**（引数 1 つ）+ **DB 権限**（`engineers.owner_partner_company_id` に `GRANT` が無いので、関数本体にすら所有者の述語を書けない） |
+| 2 | 🔴 **`proposals.state = 'GATE_RUNNING'` の間しか 1 行も返らない。** `#39`（作成者 / `SALES` / `ADMIN` の明示操作）が `DRAFT → GATE_RUNNING` を CAS で入れた対象に限る。承認後・送信後・`WON` の提案の ID を知っていても読めない。**「ゲートが走っている」は `#39` の認可を通った事実であり、GUC（`app.gate_scope='on'` のような自己申告）より強い条件**なので、GUC は置かない | **DB**（関数本体の `WHERE`） |
+| 3 | 🔴 **固定形の DTO しか返さない。** `engineer_id` / `owner_partner_company_id` / `proposal_id` / 行 ID を 1 つも返さないので、**リレーションを辿って再び開く形が存在しない**（T-08-03 で `SharedCandidateDb` に素の Prisma デリゲートを置いて実名が漏れた事故〔§4.5〕の再発を、形そのもので断つ） | **関数の `RETURNS TABLE`** + TS 側の DTO（⑥） |
+| 4 | 🔴 **ホスト文脈からしか呼べない**（`app_is_host()`）。加えて `TenantDb` / `HostTenantDb` には `$queryRaw` が無い（§4.3-3）ため、**`apps/**` から直接呼ぶ経路がそもそも無い** | **DB**（関数本体）+ **型** |
+| 5 | 🔴 **TS の呼び出し元は 1 ファイル**（`packages/db/src/gate-engineer-facts.ts`）、**その消費者は 1 ファイル**（`packages/db/src/gate-target.ts` の `loadProposalGateInput`）。`@ses/db` のバレル（`packages/db/src/index.ts`）から **export しない** | **静的テスト**（§17.2 #31。`auth-db-callers.test.ts` 側は `apps/**` に 0 件を固定） |
+| 6 | 🔴 **書けない**（`GRANT SELECT` のみ。③） | **DB 権限** |
+
+#### ⑥ TS 側（`packages/db`）—— 1 ファイルに閉じ、`loadProposalGateInput` を「1 経路」にする
+
+```ts
+// packages/db/src/gate-engineer-facts.ts — 🔴 app_gate_probe の 2 関数を呼ぶ唯一のファイル。@ses/db から export しない
+import type { EngineerSkillFacts, GateKnownPii } from '@ses/domain';   // GateKnownPii（packages/domain/src/gate/input.ts）。packages/ai の KnownPiiValues と同形だが packages/db は @ses/ai を import できない（§2.2）
+import type { TenantTransactionClient } from './with-tenant.js';
+
+export type GateEngineerFacts = {
+  /** 🔴 GateInput.knownPii へそのまま合流できる形。display_name は fullNames の 1 要素としてしか現れない */
+  readonly knownPii: GateKnownPii;                      // { fullNames, birthDates('YYYY-MM-DD'), emails, phones, affiliations }
+  readonly registeredSkills: readonly EngineerSkillFacts[];   // { skillId, years, level }
+};
+
+/**
+ * 🔴 `GATE_RUNNING` の提案 1 件について、対象エンジニアの「PII 層の既知値」と「整合層の裏付け」を引く。
+ *    null = 0 行（対象が無い / 実行中でない / 別テナント）。呼び出し側は fail-closed に写す（下記）。
+ *    引数に engineer_id / partner_company_id / 表名 / 列名は無い。
+ */
+export async function readGateEngineerFacts(
+  tx: TenantTransactionClient,          // loadProposalGateInput が開いている同一トランザクション
+  proposalId: string,
+): Promise<GateEngineerFacts | null>;
+//  実装: tx.$queryRaw(Prisma.sql`SELECT ... FROM app_gate_proposal_engineer_pii(${proposalId}::uuid)`) → 0 行なら null
+//        tx.$queryRaw(Prisma.sql`SELECT ... FROM app_gate_proposal_engineer_skills(${proposalId}::uuid)`)
+//        birth_date は `YYYY-MM-DD`、years_of_experience は Number()（gate-target.ts の birthDateTerm / registered の写像をここへ移す）
+//        🔴 空文字・空白だけの値は捨てる（nonEmpty と同じ）。🔴 値をログ・例外メッセージに載せない（§16.2）
+```
+
+`loadProposalGateInput`（`packages/db/src/gate-target.ts`）の変更点:
+
+1. 🔴 **`tx.engineer.findUnique(...)` と `tx.engineerSkill.findMany(...)` を削除し、`readGateEngineerFacts(tx, proposal.id)` の 1 呼び出しに置き換える。** ホスト所属・パートナー所属で**分岐しない**（「所有で経路が変わる」実装は、片方だけが古くなる）。`knownPii` の組み立ては従来どおり **台帳（`facts.knownPii`）と凍結コピー（`snapshot.displayName` / `affiliationLabel`）と提案元パートナー社名の和**である。
+2. 🔴 **`proposal.state !== 'GATE_RUNNING'` なら `{ kind: 'NOT_FOUND' }` を返す**（`select` に `state` を足す）。`GateTargetLookup.NOT_FOUND` の意味を「検査すべき対象が無い（削除済み / 別テナント / 🔴 `GATE_RUNNING` でない）」に広げる。利用者が編集して `DRAFT` に戻した／他の実行が先に確定させた対象は、従来 §11.9 ⑥ の CAS が 0 件で止めていた（結果の行だけは残っていた）。**本節以降は入口で止まり、行き場のない `ReviewGate` を残さない。** ⚠️ `gate.run` が正当に走る 3 経路（`#39` のレビュー依頼 / `#39` の失敗ジョブ再依頼 / `gate.hold-release`）は**すべて `GATE_RUNNING` の対象に対して発火する**（§11.10 ⑤）ので、正常系の挙動は変わらない。
+3. 🔴 **`readGateEngineerFacts` が `null` を返したら `GateFactsUnavailableError('ENGINEER_FACTS_UNAVAILABLE')`**（`ENGINEER_LEDGER_UNREADABLE` の reason は欠番にする。§11.9 ⑦ の事象は本節で消えるため）。到達するのは「2. で `state` を読んだ直後に別トランザクションが状態を動かした（Read Committed の窓。§4.3）」か「エンジニア行が無い」場合だけであり、**`ReviewGate` を 1 行も書かずに落とす**（`F-020 AC-1`）。
+4. ファイル冒頭の 🔴 コメント（「既知の未解決事項」）を本節への参照に置き換える。**「カナ・ローマ字の列を足したら必ずここにも足すこと」の注意は、`GRANT` の列と `RETURNS TABLE` と `readGateEngineerFacts` の 3 箇所に広がる**ので、コメントもそう改める。
+
+#### ⑦ 🔴 値がゲートの外へ出ないこと（PII の既知値を「読む」が「開示」ではない理由）
+
+| # | 経路 | 担保 |
+|---|---|---|
+| 1 | `ReviewGate.findings` / `aiWarnings` | 機械的検出の `excerpt` は**伏せ字そのもの**（§11.9 ③）。位置（`offsetStart` / `offsetEnd`）は原文の中の座標であり値ではない |
+| 2 | LLM への送信 | 既知値は**伏せる側**の材料であり、`MaskedText` にしか載らない（§7.10 ①）。読んだ値が LLM に届く経路は無い |
+| 3 | API 応答 | `GateInput` を返す API は存在しない（`#40` は `GateResultView` = 判定と指摘だけ。§11.7） |
+| 4 | ログ / エラー追跡 | `GateInput` / `GateEngineerFacts` を pino / Sentry に渡さない。`readGateEngineerFacts` は例外メッセージに値を載せない（§16.2 の redact と同じ規律。§4.6.3 の「受け取った値を載せない」と同型） |
+| 5 | `AuditLog` | `gate.run` が書く `summary` は `operation='GATE_RESULT'` と判定だけ（§11.9 ⑥） |
+| 6 | 運営者 | `app_platform` / `app_platform_write` に `EXECUTE` を与えない（④）。`engineers` の 5 列は §5.5 の非開示列のままである |
+
+#### ⑧ 検証（T-09-13 で緑にするもの。🔴 **除外リストを 1 つも広げない**）
+
+| 層 | 何を固定するか | 置き場所 |
+|---|---|---|
+| ロール走査 | ①`ROLE_NAMES`（`tests/isolation/support/postgres.ts`）に `app_gate_probe` を足し、§4.7 #5（BYPASSRLS 無し）の母集団に入れる ②`NOLOGIN` である（`app_scan_probe` と同形の `it`）③🔴 **`role_column_grants` が ③ の 16 行ちょうど**（`proposals` 4 / `engineers` 7 / `engineer_skills` 5。`migrator` 接続で読む —— `role_column_grants` は grantor / grantee が接続ロールの行しか返さない。§4.7 #10 の 🔴）④`role_table_grants` が 0 行 ⑤`INSERT` / `UPDATE` / `DELETE` の列権限が 0 件（`hasColumnPrivilege` の全列走査）⑥🔴 **`engineers.owner_partner_company_id` / `unit_price_min` / `preference_note` と `skill_sheets` / `engineer_careers` / `engineer_shares` の全列に `SELECT` が無い**（denylist の実測。`roles.test.ts` ④ と同型） | `tests/isolation/roles.test.ts` / `rls-enforced.test.ts`（§4.7 #5 / #10 / 🔴 **#16**） |
+| 二重防御（§4.7 の表に **#12〜#14** を足す） | **#12**: パートナー所属エンジニアの提案（`PROPOSAL_A_P1`。`GATE_RUNNING`）で `gate.run` が **3 層すべての判定を下し `ReviewGate` が 1 行書かれる**。🔴 加えて **本文に対象エンジニアの `contact_email` / `display_name`（台帳の現在値）を残した提案が PII 層 FAIL（`CONTACT` / `FULL_NAME`）になる** —— これが「連絡先の既知値を読んでいる」ことの直接の証明であり、②の 1〜4 を実データで固定する。凍結スキルに台帳の裏付けが無い主張を入れた提案は整合層 FAIL（`SKILL_SHEET_MISMATCH`）になる（= `engineer_skills` を読んでいる） / **#13**: ①`app_gate_proposal_engineer_pii(PROPOSAL_A_P1)` の結果が**その提案の対象エンジニアの値だけ**であり、別パートナー（`PARTNER_A2`）のエンジニアの `display_name` / `contact_email` が 1 文字も現れない ②シード上の**全提案**を superuser で一時的に `GATE_RUNNING` にしたうえで、PII 関数の行数がちょうど 1 で、返る `display_name` がその提案の `engineer_id` の行（superuser で読む）と一致する（= 鍵が `proposal_id` である以上、1 人分より広く返す形が存在しないことの実測。0 行で空振りしない）③ホスト所有の提案を渡してもホストの台帳が**その 1 人分**しか返らない（一覧にならない）/ **#14**: ①**別テナント**の提案 ID を関数に渡すと 0 行（`app_tenant_id()` が課す）②`DRAFT` / `APPROVAL_PENDING` / `WON` の提案 ID では 0 行（状態の条件）—— `loadGateInput` 経由では①②とも手前で `NOT_FOUND`（C5 の `null` / 入口の `state` 検査。⑥-2）になり、**どの経路でも `ReviewGate` は 0 行**。`state` を読んだ直後に状態が動いた窓（superuser で状態を書き換えて再現）だけが `GateFactsUnavailableError('ENGINEER_FACTS_UNAVAILABLE')` になる ③テナント文脈の無い接続（`app.tenant_id` 未設定）と**パートナー文脈**（`app.partner_company_id <> ''`）からの呼び出しは**例外**（0 行ではない） | 🔴 **新規 `tests/isolation/gate-engineer-facts.test.ts`**（#13 / #14）+ `tests/isolation/gate-run.test.ts`（#12。**既存の「パートナー所属エンジニアの提案は台帳を読めず、ゲート結果を 1 行も書かずに落ちる」を反転させる** —— 期待値を書き換えるのではなく、主張そのものが「3 層の判定が下る」に変わる） |
+| 静的 | 🔴 **§17.2 #31**（新規 `tests/static/gate-engineer-facts-single-path.test.ts`。`career-not-anonymous.test.ts` と同じく `apps/**` + `packages/**` の非テストソースを走査）: ①SQL 識別子 `app_gate_proposal_engineer_pii` / `app_gate_proposal_engineer_skills` がコードとして現れるファイルが **`packages/db/src/gate-engineer-facts.ts` の 1 本** ②`readGateEngineerFacts` を参照するファイルが **同ファイル + `packages/db/src/gate-target.ts` の 2 本** ③`packages/db/src/index.ts` が `readGateEngineerFacts` / `GateEngineerFacts` を export しない（`platform-plane-boundary.test.ts` のバレル検査と同型）④🔴 **`gate-target.ts` に `.engineer.` / `.engineerSkill.` / `.engineerCareer.` / `.skillSheet.` のデリゲート参照が無い**（台帳を C3 越しに読む経路が復活していない = 所有で結果が変わる経路が無い）。あわせて `auth-db-callers.test.ts` の `ALLOWED_CALLERS` に **`readGateEngineerFacts: []`** を足す（`apps/**` に 0 件を固定。`withPlatformRead: []` と同じ向き） | `tests/static/**` |
+| K-3 | 🔴 **`tests/isolation/gate-injection.test.ts` が引き続き緑**（完了条件）。K-3 はホスト所属（`ENGINEER_A_HOST`）を `GATE_RUNNING` で通しており、台帳の読み取りが本経路に置き換わっても**既知値の集合は同じ**（`display_name` / `contact_email` を `prepareProposal` が台帳に書き、本経路がそれを返す）。⚠️ `tests/isolation/**` は `dist` に対して走る（§11.13 ④）—— `pnpm -r build` の後に「壊したら落ちる」ことも確認する（`readGateEngineerFacts` の `contact_email` を落として #12 が赤になること） | `tests/isolation/gate-injection.test.ts` |
+| ユニット（worker） | `gate-run.ts` の枝分けは変わらない（`NOT_FOUND` の枝が「実行中でない」も受けるだけ）。`apps/worker/src/jobs/gate-run.test.ts` は `loadGateInput` をモックするため変更不要 | — |
+
+#### ⑨ 🔴 射程の外（流用しないもの）
+
+- 🔴 **`SkillSheetExtraction` の生成（`sheet-parser` / `skill-normalizer`。SP-14。[Issue #27](https://github.com/Festal-KM/SES-Platform/issues/27) ② の残射程）は本経路の対象ではない。** 同じ問い（ワーカーがパートナー所有行に触れる文脈）だが、**読む表（`skill_sheets` の本文の所在 / `skill_sheet_extractions`）も書く表（`skill_sheet_extractions` / `engineer_skills` / `skill_aliases` への INSERT）も違う**。本ロールは `SELECT` しか持たず（③）、`skill_sheets` に権限が無い（②）。**`app_gate_probe` に列や表を足して SP-14 を通そうとしないこと** —— 足した瞬間に「ゲートの読み取り」と「抽出の書き込み」が 1 つのロールに同居し、§10.5「汎用のエスケープハッチを作らない」に反する。SP-14 は §8.5.1 の 🔴 のとおり**別のロール・別の関数**で設計する。
+- 🔴 **Phase 2 の `SKILL_SHEET_SHARE`（§11.11 ⑤「Phase 2 の入口」）も本関数を使わない。** 対象の鍵が `skill_sheet_id`（提案ではない）であり、「実行中」の判定も `proposals.state` では表せない。**本関数の引数を広げず**、必要なら**同じロール `app_gate_probe` に `SKILL_SHEET_SHARE` 専用の関数を足すか**を Phase 2 の設計（`docs/05` の改訂）で決める。
+- 🔴 **`match.build`（Phase 2）/ `export.generate` / 運営平面から呼ばない。** 呼び出し元は⑤-5 のとおり 1 ファイルであり、§17.2 #31 が固定する。
+
+#### ⑩ ⚠️ T-09-13 の実装者への申し送り
+
+1. **migration は 1 本**（例 `20260918000000_gate_engineer_facts`）: `000_roles.sql` への `CREATE ROLE app_gate_probe NOLOGIN NOBYPASSRLS` + `GRANT app_gate_probe TO app_migrator`（\gexec 形。Testcontainers と docker-compose の両方が同じファイルを読む。§4.2）→ migration に ③ の `GRANT` / ポリシー / ④ の 2 関数 / `REVOKE` / `COMMENT`。**`GRANT CREATE ON SCHEMA public` は `ALTER FUNCTION ... OWNER TO` の間だけ**（20260908000000 と同じ）。
+2. `packages/db/src/gate-engineer-facts.ts` を新規作成（⑥）。**`@ses/db` のバレルに載せない。**
+3. `packages/db/src/gate-target.ts`: ⑥の 1〜4。`GateTargetLookup.NOT_FOUND` の JSDoc も更新。`ENGINEER_LEDGER_UNREADABLE` の文字列を**コード・テスト・コメントから消す**（reason は欠番）。
+4. テストは⑧の 5 行。🔴 **`OUT_OF_SCOPE_TABLES` / `BUSINESS_TABLE_EXCLUSIONS` / `PLATFORM_READ_COLUMN_ALLOWLIST` は 1 文字も変えない**（本経路は表を増やしていない）。
+5. `tests/isolation/gate-run.test.ts` の反転（⑧ #12）。K-3 の再実行（⑧）。
+6. 本書の更新箇所（§1.4 / §4.2 / §4.4.2 / §4.7 / §8.5.1 / §11.9 ⑦ / §11.10 ⑩-5 / §17.2 #31 / `P-A-21`）は**本節と同時に済ませてある**。実装で差分が出たら**本節に「実装の決着」を追記する**（§7.9〜§7.13 と同じ作法。本節を書き換えて履歴を消さない）。
 
 ## 12. 業務シーケンス
 
@@ -5761,9 +6005,10 @@ export const logger = pino({
 | 25 | `prompt-registry-single-path.test.ts` | 🔴 **製品プロンプトの読み込み口と依存を固定する**（T-07-05。§7.7 / §7.13 ⑦）: ①`@ses/prompts`（= `prompts/roles/**`）を import する非テストソースが **`packages/ai/src/prompts.ts` の 1 本だけ**（ESLint は「`packages/ai` 以外は不可」までしか言えず、パッケージ内部で読み込みが散ると `runRole` を経ないプロンプト組み立てが成立する）②🔴 **`prompts/roles/**` が外部 import と親ディレクトリへの相対 import を 1 つも持たない**（プロンプトはデータであって実行主体ではない。`CLAUDE.md` §12.3。ここから DB・LLM・I/O に到達できないことの担保であり、`packages/ai` との依存循環を作らないことの担保でもある）③**版リテラル・ファイル名・登録表の 3 つが一致する**（`{role}.v{n}.ts` ↔ `version: '{role}.v{n}'` ↔ `prompts/roles/index.ts`。ずれると生成物に残った版から文面を再現できない = `BR-13` が壊れる） |
 | 26 | `send-hold-seam.test.ts` | 🔴 **`send.*` の保留を書く実装が 0 件であること**（T-07-11。§13.1.1 ⑥）。`Proposal` / `Contract` の `sendHoldReasonKey` / `sendHoldSince` を**オブジェクトリテラルのプロパティとして書く**箇所を AST で数える。理由: `send.hold-release` の `releaseSendHolds` は SP-09 T-09-06 の範囲であり、T-07-11 は「常に 0 を返す」seam を渡した。**保留を書く経路が無い今は 0 が事実だが、SP-09 が書いた瞬間に嘘になる**（`CLAUDE.md` §11.1）。落ちたら実装で置き換え、**本テストごと削除する**（期待値を書き換えて緑にしない） |
 | 27 | `startup-di-callers.test.ts` の追補 | 🔴 **ワーカーの起動時 DI の呼び出し連鎖が 2 段とも繋がっていること**（T-07-11。§13.1.1 ①）: ①`apps/worker/src/main.ts` が `./bootstrap.js` を import して `bootstrapWorker()` を呼ぶ ②`apps/worker/src/bootstrap.ts` が `initializeRuntimeConfig` を呼ぶ。**切り出しで連鎖が切れると「起動しても環境変数を検証していない」状態になる**（T-03-12 が塞いだ穴の再発） |
-| 28 | 🔴 `career-not-anonymous.test.ts`（T-09-12。Issue #35 = A） | 🔴 **経験内容が匿名候補の経路に「型として」現れない**（`F-008 AC-7` / `F-017 AC-1` / `BR-55` / `docs/04` 申し送り 17-③）。**フィルタの有無ではなく型と参照を検査するのが要点**である（フィルタは書き忘れるが、型に無いものは書けない）。5 本立て: ①`expectTypeOf<AnonymousCandidateView>()` / `<RoundedAnonymousAttributes>()` / `<AnonymizeEngineerInput>()` が `careers` / `careerCount` / `hasCareers` / `careerSummary` / `latestRole` を**キーとして持たない**（型テスト）②`match-explainer` の `RoleSpec` の入力型（`candidates[]` の要素）が同様に持たない ③`SharedCandidateDb` 型に `engineerCareer` デリゲートが無い（型テスト。#20 ② と同じ向き）④`apps/web/lib/**` と `apps/worker/**` で `engineerCareer` デリゲートを参照するファイルの集合が **台帳の読み書き（`lib/engineers/**`）と凍結（`lib/proposals/snapshot.ts`）に限られる**（AST。匿名候補・エクスポート・`match.build` から参照されていたら FAIL）⑤`export.generate` の匿名候補側の CSV ヘッダ定義に経歴由来の列名が無い（スナップショット） |
+| 28 | 🔴 `career-not-anonymous.test.ts`（T-09-12。Issue #35 = A） | 🔴 **経験内容が匿名候補の経路に「型として」現れない**（`F-008 AC-7` / `F-017 AC-1` / `BR-55` / `docs/04` 申し送り 17-③）。**フィルタの有無ではなく型と参照を検査するのが要点**である（フィルタは書き忘れるが、型に無いものは書けない）。5 本立て: ①`expectTypeOf<AnonymousCandidateView>()` / `<RoundedAnonymousAttributes>()` / `<AnonymizeEngineerInput>()` が `careers` / `careerCount` / `hasCareers` / `careerSummary` / `latestRole` を**キーとして持たない**（型テスト）②`match-explainer` の `RoleSpec` の入力型（`candidates[]` の要素）が同様に持たない ③`SharedCandidateDb` 型に `engineerCareer` デリゲートが無い（型テスト。#20 ② と同じ向き）④`apps/**` と `packages/db/src/**` で `engineerCareer` デリゲートを参照するファイルの集合が **台帳の読み書き（`apps/web/lib/engineers/careers.ts`）と凍結（`packages/db/src/proposal-draft.ts`。T-08-07 で確定した `createProposalDraft` の 1 実装）と運営者の読取モデル列挙（`packages/db/src/platform.ts`）に限られる**（走査。匿名候補・共有スコープ・エクスポート・`match.build` から参照されていたら FAIL。✅ T-09-12 の実装の決着: 当初ここに書いていた `lib/proposals/snapshot.ts` は存在せず、凍結は `packages/db` にある）⑤`export.generate` の匿名候補側の CSV ヘッダ定義に経歴由来の列名が無い（スナップショット） |
 | 29 | 🔴 `career-audit-per-row.test.ts`（T-09-12） | 🔴 **経歴の変更の監査が「行ごと」に残る**（`F-008 AC-5` / `docs/04` 申し送り 17-⑤）。①`diffCareerRows` が純粋関数であること（`packages/domain`。#14 と同じ検査）②`engineer_career.*` の `AuditLog` を書く経路が `lib/engineers/careers.ts` の 1 本だけ（AST）③`summary` に載せるキーの集合をスナップショットで固定し、**`role` / `description` / `technologies` が含まれないこと**（#11 の redact スナップショットと同じ発想）。**結合テスト側**（`tests/isolation/engineer-careers.test.ts`）で「1 回の保存で 3 行追加 + 1 行削除 → `AuditLog` が 4 件」を実データで固定する |
 | 30 | 🔴 `forbidden-api-routes.test.ts`（T-08-04） | 🔴 **§6.8「作らないもの」のうち、ルートの存在そのもので判定できるものを機械的に固定する。** 第一の対象は **`GET /api/candidates/{candidateRef}`**（`docs/04` 申し送り 2 / §11-2。**詳細エンドポイントは 5 項目を超える経路になる**）。`apps/web/app/api/**` のディレクトリ構造を走査し、禁止パターンに一致する URL セグメントを持つ `route.ts` が**存在しないこと**を検査する。🔴 **列挙した禁止パターンが実在の構造に対して空振りしないこと**（＝ 合成パスに対して確かに一致すること）を対照テストで示す。**§6.8 に行が増えたらここにも足す**（ルートの有無で判定できるものに限る） |
+| 31 | 🔴 `gate-engineer-facts-single-path.test.ts`（T-09-13。[Issue #41](https://github.com/Festal-KM/SES-Platform/issues/41) = 1） | 🔴 **ゲート実行文脈の限定経路（§11.14）の呼び出し元を 1 ファイルに固定する。** `career-not-anonymous.test.ts`（#28）と同じく `apps/**` + `packages/**` の非テストソースを走査（コメントは除く）: ①SQL 識別子 `app_gate_proposal_engineer_pii` / `app_gate_proposal_engineer_skills` がコードとして現れるファイルが **`packages/db/src/gate-engineer-facts.ts` の 1 本** ②`readGateEngineerFacts` を参照するファイルが**同ファイル + `packages/db/src/gate-target.ts` の 2 本** ③`packages/db/src/index.ts` が `readGateEngineerFacts` / `GateEngineerFacts` を export しない（`platform-plane-boundary.test.ts` のバレル検査と同型。バレルに載った瞬間に `apps/**` から到達できる）④🔴 **`gate-target.ts` に `.engineer.` / `.engineerSkill.` / `.engineerCareer.` / `.skillSheet.` のデリゲート参照が無い**（台帳を C3 越しに読む経路が復活していない ＝ 所有で結果が変わる分岐が無い。`engineerSnapshot` は凍結コピーであり対象外）。あわせて `auth-db-callers.test.ts` の `ALLOWED_CALLERS` に **`readGateEngineerFacts: []`** を置く（`apps/**` に 0 件。`withPlatformRead: []` と同じ向き）。理由: 本経路は `CLAUDE.md` §3.1 経路 2 を「1 人分・ゲート実行中」に限って越える唯一の関数であり、**呼び出し元が 2 つ目になった時点で「汎用の入口」に変質する**（§10.5）。ESLint ではなく走査で見るのは、`packages/db` 内部の相対 import には `no-restricted-imports` が掛からないため |
 
 ### 17.3 E2E の主要シナリオ
 
@@ -5865,6 +6110,7 @@ export const logger = pino({
 | **P-A-14** | 🔴 **経路 4 の存在判定を `SECURITY DEFINER` 関数 `app_engineer_is_shared()` + 専用ロール `app_share_probe` に閉じる**（§4.5） | §4.2 / §4.5 / §4.7 | 🔴 **本書が置いた決定。** 代替案「`engineer_shares` にホスト向けの追加 SELECT ポリシー」は行（`partner_company_id` / `shared_by`）がホストに見え `BR-06` に抵触するため退けた。**越境経路は増えていない**（経路 4 の DB 側実装を確定させただけ） |
 | **P-A-15** | 🔴 **未認証の受諾・パスワード再設定は「行由来コンテキスト」の 3 関数で書く**（§4.4.2） | §4.4 C8 / §6.3 | 🔴 **本書が置いた決定。** `systemTenantCtx` を `apps/web` に開放する案は HTTP 経路が認証を迂回できるため退けた。分離キーは常にトークン照合で得た DB 行から取る |
 | **P-A-20** | 🔴 **経験内容を `EngineerCareer`（行モデル）で持ち、`Engineer.careers Json` にしない**（§3.2 / §3.4 / §3.4.1。T-09-12） | §3.2 / §3.4 / §4.4 C3 / §5.5 / §6.4 / §6.5 / §7.1 / §9.6 / §9.7 / §16.1 / §17 | 🔴 **人間の決定（2026-09-10、[Issue #35](https://github.com/Festal-KM/SES-Platform/issues/35) = 回答「A」）を反映したものであり、本書が置いた前提ではない。** 本書が置いたのは**その実現方法**である: ①期間を `Char(7)` の `YYYY-MM` で持つ（`@db.Date` にしない。§3.4.1）②表示順を `period_from DESC → created_at → id` の全順序でサーバ側に確定させる ③`EngineerSnapshot.careers` を**値の複製**にし台帳行への参照を持たせない ④監査を**行ごと**に残す ⑤匿名候補の型に**存在させない**。🔴 **ドメイン概念は増えていない**（`CLAUDE.md` §4.1 の `Engineer` の属性の分解。§3.2 の対応表）。🔴 **分離の射程外の例外も増えていない**（C3 に載せた。`CLAUDE.md` §3.1） |
+| **P-A-21** | 🔴 **品質ゲート（`PROPOSAL`）がパートナー所属エンジニアの台帳を読む経路を、専用ロール `app_gate_probe` + `SECURITY DEFINER` 2 関数 + 列レベル `GRANT`（16 列・`SELECT` のみ）に閉じる**（§11.14。T-09-13） | §1.4 / §4.2 / §4.4.2 / §4.7 #16・二重防御 #12〜#14 / §8.5.1 / §11.9 ⑦ / §11.14 / §17.2 #31 | 🔴 **選択肢の決定は人間（2026-09-10、[Issue #41](https://github.com/Festal-KM/SES-Platform/issues/41) = 回答「1」）であり、本書が置いた前提ではない。** 本書が置いたのは**その実現方法の 3 点**である: ①🔴 **読む列は「整合層の 3 列」だけでなく「PII 層の既知値 5 列（氏名・生年月日・メール・電話・現所属）」を含む** —— `mask()` がパターン検出で伏せた値を `gate-inspector` は指摘せず、機械的検出は既知値しか見ないため、連絡先の既知値が無いとエンジニア本人のメール・電話が本文に残ったまま PII 層 PASS になる（§11.14 ② の 1〜4。**`docs/sprints/SP-09` T-09-13 の「連絡先を読めるようにしない」は本書の側が正であり、`pm` が追随させる**）。氏名・現所属は経路 2 で既にホストへ開示済みの値であり開示範囲は増えない ②鍵を `engineer_id` ではなく **`proposal_id`** にし、**`state='GATE_RUNNING'` の間だけ 1 人分**を返す（所有者で絞る述語は権限が無く書けない。自己申告の GUC ではなくデータ由来の条件）③ホスト所属・パートナー所属の提案を**同じ 1 経路**で読む（所有で分岐しない）。🔴 **越境経路は増えていない**（経路 2 の「提案の対象エンジニア」について、ゲートの内部でだけ既知値を照合する。値は `ReviewGate` にも LLM にも API にも出ない。§11.14 ⑦）。🔴 **分離の射程外の例外も増えていない** |
 | **P-A-19** | 🔴 **`assignments ← engineers(engineer_id)` の当事者列継承だけ、`app_share_probe` と同型の専用ロール `app_assignment_owner_probe` + `SECURITY DEFINER` トリガ関数で実装する**（§4.2 / §4.4.1） | §4.2 / §4.4.1 / §4.7 | 🔴 **本書が置いた決定（T-02-08。programmer 実装 → code-reviewer 確認を経て確定）。** `engineers` は C3 のためホスト文脈から他パートナー所有の行が見えないが、`assignments` は C2（ホストがパートナー所属エンジニアを稼働させるのが通常業務）であるため、素の `SECURITY INVOKER` では正当なホスト操作が「親が見えない」で `RAISE` してしまう（`tests/isolation/route5-counterparty.test.ts` で実測）。トリガ関数（`RETURNS trigger`）を `SECURITY DEFINER` にする点が `app_engineer_is_shared()`（通常の SQL 関数。§4.5）と異なり、`app_tenant` セッションから直接呼び出す経路が型レベルで存在しない。**越境経路は増えていない**（`engineers` の 3 列以外は依然として見えない。パートナー間相互参照〔`CLAUDE.md` §3.1〕には抵触しない） |
 
 ## TBD
@@ -5894,7 +6140,7 @@ export const logger = pino({
 | **TBD-20** | 🔴 **`EngineerCareer`（経験内容）を保持期間の削除対象に含めるか**（T-09-12。`docs/02` 章 6.8 / A-24 が「含める」を既定として置いたが、🔴 **`CLAUDE.md` §3.5 / `BR-29` の削除対象の列挙〔連絡先・スキルシート原本〕には経歴が入っていない**。列挙への追加は上流の改訂であり**人間の承認事項**。`CLAUDE.md` §8.6） | 🔴 **暫定。[Issue #48](https://github.com/Festal-KM/SES-Platform/issues/48) で確認中**（既定 = A「削除対象に含める」）。**確定事項として扱わない。** 本書は `PURGE_SPEC.delete` に `{ table: 'engineer_careers', rows: 'ALL', provisional: 'ISSUE-48' }` として置き（§9.7）、**回答で変わるのは設定値 1 要素だけ**にした（`retention.delete` / `tenant.purge` のハンドラは `PURGE_SPEC` を読むだけなのでコードは変わらない）。B（含めない）なら `retain` へ移すだけである | **止まらない。** `T-09-12` は既定で実装でき、削除ジョブの実装（**SP-16 T-16-06**）までに決着すればよい。🔴 **ただし SP-16 の着手前には決着が要る** —— 一度削除してしまった経歴は戻らない（不可逆） | `docs/02` A-24 / 章 6.8 / `BR-29` / `CLAUDE.md` §3.5 / **§9.7** |
 | **TBD-19** | **席単価と、取引先の席を課金対象に含めるか**（`Q-20` / `Q-T-3`①。事業判断） | `Plan.monthlySeatPriceJpy` は設定値。**取引先の席を含めるかで `usage.seat-snapshot`（§9.8）の分母（`Membership` の有効行数にパートナーロールを含めるか）が変わる**ため、集計関数に `countPartnerSeats: boolean` を引数で持たせ決め打ちしない | `F-062` の Stripe `Price` 設計（Phase 3）。Phase 1 のうちに再提起（`docs/03` `pm` 申し送り 14） | `docs/01` `Q-20` / `docs/03` `Q-T-3` |
 
-🔴 **`CLAUDE.md` §4.2 の改訂が必要になった項目は 0 件である。** 保留（§10.4）・遅延保留（§10.5）・AI 上限によるゲート未実行（§7.6）は**属性 / `ReviewGate.execution`（状態機械ではない実行属性）で表現し、5 つの状態機械に状態を 1 つも追加していない**（`P-A-02` / `P-A-16`）。**§3.3（契約書）と §3.1（経路 5）の改訂は 2026-09-01 に人間が行い、本書はそれに追随した。** 未回答の Issue（#1 プロダクト名 / #3 重み / `Q-20` 席単価）は TBD-5 / TBD-19 に確認中のまま残す。🔴 **[Issue #5](https://github.com/Festal-KM/SES-Platform/issues/5)（匿名候補の丸め粒度。Phase 1 のリリース条件）は 2026-09-10 に回答を得て決着し、TBD-2 を閉じた**（§4.6.1 / `docs/03` §4.13.1 を確定値として扱う）。🔴 **[Issue #35](https://github.com/Festal-KM/SES-Platform/issues/35)（経験内容の保存先）も 2026-09-10 に回答「A」を得て決着した** —— `EngineerCareer` を新設し（`P-A-20`）、**`TBD` には残していない**（決着済みの論点に「暫定 / 確認中」を残さない）。**その副作用として生じた新しい判断事項**（保持期間の削除対象への追加が `CLAUDE.md` §3.5 / `BR-29` の列挙と食い違う件）は **[Issue #48](https://github.com/Festal-KM/SES-Platform/issues/48) として別に起票され、TBD-20 に確認中として残している**（`CLAUDE.md` §8.6「決定の副作用で新たな判断が生じたら、その場で新しい Issue を立て、元の Issue から参照する」）。
+🔴 **`CLAUDE.md` §4.2 の改訂が必要になった項目は 0 件である。** 保留（§10.4）・遅延保留（§10.5）・AI 上限によるゲート未実行（§7.6）は**属性 / `ReviewGate.execution`（状態機械ではない実行属性）で表現し、5 つの状態機械に状態を 1 つも追加していない**（`P-A-02` / `P-A-16`）。**§3.3（契約書）と §3.1（経路 5）の改訂は 2026-09-01 に人間が行い、本書はそれに追随した。** 未回答の Issue（#1 プロダクト名 / #3 重み / `Q-20` 席単価）は TBD-5 / TBD-19 に確認中のまま残す。🔴 **[Issue #5](https://github.com/Festal-KM/SES-Platform/issues/5)（匿名候補の丸め粒度。Phase 1 のリリース条件）は 2026-09-10 に回答を得て決着し、TBD-2 を閉じた**（§4.6.1 / `docs/03` §4.13.1 を確定値として扱う）。🔴 **[Issue #35](https://github.com/Festal-KM/SES-Platform/issues/35)（経験内容の保存先）も 2026-09-10 に回答「A」を得て決着した** —— `EngineerCareer` を新設し（`P-A-20`）、**`TBD` には残していない**（決着済みの論点に「暫定 / 確認中」を残さない）。**その副作用として生じた新しい判断事項**（保持期間の削除対象への追加が `CLAUDE.md` §3.5 / `BR-29` の列挙と食い違う件）は **[Issue #48](https://github.com/Festal-KM/SES-Platform/issues/48) として別に起票され、TBD-20 に確認中として残している**（`CLAUDE.md` §8.6「決定の副作用で新たな判断が生じたら、その場で新しい Issue を立て、元の Issue から参照する」）。🔴 **[Issue #41](https://github.com/Festal-KM/SES-Platform/issues/41)（ゲート実行文脈からパートナー台帳を読む経路。§11.9 ⑦）も 2026-09-10 に回答「1」を得て決着した** —— `app_gate_probe` として §11.14 に確定させ（`P-A-21`）、**`TBD` には残していない**。回答の実装は T-09-13（SP-09 の 2 番目）であり、**着手前に本書が先に更新されている**（`CLAUDE.md` §8.7）。⚠️ 決着の過程で `docs/sprints/SP-09` T-09-13 の括弧書き（「連絡先を読めるようにしない」）が本書 §11.14 ② の分析と食い違うことが分かった。**人間の判断事項ではない**（選択肢 1 の原文「マスキングに要る値だけを読む」の範囲内であり、開示範囲は増えない）ため Issue は起票せず、`pm` が sprint 文書を本書に追随させる。
 
 ## 付録 A. `docs/03` の `program-design` 宛申し送り 30 項目のマッピング
 
