@@ -28,6 +28,7 @@ import {
 import { isProposalRequestIssuerRole } from '../../../lib/proposal-requests/policy';
 import { proposalRequestListQuerySchema } from '../../../lib/proposal-requests/schemas';
 import { listProposalRequests } from '../../../lib/proposal-requests/service';
+import { PollingRefresher } from '../_shared/polling-refresher';
 import { ProposalRequestScreen } from './proposal-request-screen';
 import { proposalRequestScreenMessages } from './request-props';
 
@@ -38,6 +39,12 @@ export const metadata: Metadata = { title: t('proposalRequests.title') };
 
 /** `S-010`（案件一覧）。ホストの初回空の導線（`S-016` は案件起点なので、案件から入る）。 */
 const PROJECTS_HREF = '/projects';
+
+/**
+ * 🔴 T-08-07: ホストの一覧の再読込間隔（`docs/04` §S-017「ホスト側の一覧はポーリングで反映（60 秒）」）。
+ *    取引先には掛けない —— 取引先の行は自分の操作（`S-018`）でしか動かず、ホストの取り下げは開いたときに分かればよい。
+ */
+const HOST_POLL_INTERVAL_MS = 60_000;
 
 export default async function ProposalRequestsPage({
   searchParams,
@@ -67,6 +74,8 @@ export default async function ProposalRequestsPage({
         {t('proposalRequests.breadcrumb.home')} / {t('proposalRequests.breadcrumb.current')}
       </p>
       <h1 className="mb-4 text-xl font-bold text-slate-900">{t('proposalRequests.title')}</h1>
+      {/* 🔴 応諾の反映（`ACCEPTED`）はホストの一覧を 60 秒ごとに読み直して拾う（選択状態は保つ）。 */}
+      {view.audience === 'HOST' ? <PollingRefresher intervalMs={HOST_POLL_INTERVAL_MS} /> : null}
       <ProposalRequestScreen
         rows={rows}
         stateOptions={proposalRequestStateOptions()}

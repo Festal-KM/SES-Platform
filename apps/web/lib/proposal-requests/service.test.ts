@@ -11,7 +11,11 @@
 //      フィールドパスだけ（値を載せない）
 //   ③ 監査 action は `*.create` / `*.update` の接尾辞（`S-041` のフィルタから漏れない）
 import { describe, expect, it } from 'vitest';
-import { PROPOSAL_REQUEST_AUDIT_ACTION_CREATE } from '@ses/db';
+import {
+  PROPOSAL_REQUEST_AUDIT_ACTION_CREATE,
+  PROPOSAL_REQUEST_AUDIT_ACTION_UPDATE,
+  PROPOSAL_REQUEST_EXPIRE_OPERATION,
+} from '@ses/db';
 import {
   InvalidStateTransitionError,
   PROPOSAL_REQUEST_STATES,
@@ -99,11 +103,54 @@ describe('返答期限の検証（現在より後、かつ 30 日以内）', () 
   });
 });
 
+describe('🔴 T-08-07 F-018 状態遷移: 取引先の応諾（ACCEPTED）・辞退（DECLINED）は REQUESTED からだけ成立する', () => {
+  it.each(['ACCEPTED', 'DECLINED'] as const)('REQUESTED → %s は遷移表にある', (to) => {
+    expect(proposalRequestMachine.transition('REQUESTED', to)).toBe(to);
+    expect(proposalRequestMachine.canTransition('REQUESTED', to)).toBe(true);
+    // 🔴 どちらも終端（応諾の先は `Proposal` の機械に合流する。状態を足していない）。
+    expect(proposalRequestMachine.isTerminal(to)).toBe(true);
+  });
+
+  it.each(
+    PROPOSAL_REQUEST_STATES.filter((state): state is Exclude<ProposalRequestState, 'REQUESTED'> => state !== 'REQUESTED')
+      .flatMap((from) => (['ACCEPTED', 'DECLINED'] as const).map((to) => [from, to] as const)),
+  )('🔴 %s → %s は InvalidStateTransitionError（422。サイレントに無視しない。BR-33）', (from, to) => {
+    expect(proposalRequestMachine.canTransition(from, to)).toBe(false);
+    expect(() => proposalRequestMachine.transition(widen(from), to)).toThrow(InvalidStateTransitionError);
+    try {
+      proposalRequestMachine.transition(widen(from), to);
+    } catch (error) {
+      if (error instanceof InvalidStateTransitionError) {
+        expect(error.entity).toBe('ProposalRequest');
+        expect(error.from).toBe(from);
+        expect(error.to).toBe(to);
+        expect(error.httpStatus).toBe(422);
+      } else {
+        expect.fail('InvalidStateTransitionError ではない');
+      }
+    }
+  });
+
+  it('🔴 期限切れ（EXPIRED）も REQUESTED からだけ（ジョブが同じ transition() を通る。docs/05 §15.3「同じ仕組み」）', () => {
+    expect(proposalRequestMachine.transition('REQUESTED', 'EXPIRED')).toBe('EXPIRED');
+    for (const from of ['ACCEPTED', 'DECLINED', 'WITHDRAWN_BY_HOST', 'EXPIRED'] as const) {
+      expect(() => proposalRequestMachine.transition(widen(from), 'EXPIRED')).toThrow(InvalidStateTransitionError);
+    }
+  });
+});
+
 describe('監査 action（docs/05 §16.1。独自 action を作らない）', () => {
-  it('発行は *.create、取り下げは *.update + operation=WITHDRAW、遷移拒否は state.invalid_transition', () => {
+  it('発行は *.create、取り下げ / 応諾 / 辞退は *.update + operation、遷移拒否は state.invalid_transition', () => {
     expect(PROPOSAL_REQUEST_AUDIT_ACTION_CREATE).toBe('proposal_request.create');
     expect(PROPOSAL_REQUEST_AUDIT_ACTIONS.update).toBe('proposal_request.update');
+    // 🔴 ジョブ側（期限切れ）と同じ action を `@ses/db` の 1 か所から引いている。
+    expect(PROPOSAL_REQUEST_AUDIT_ACTIONS.update).toBe(PROPOSAL_REQUEST_AUDIT_ACTION_UPDATE);
     expect(PROPOSAL_REQUEST_AUDIT_ACTIONS.invalidTransition).toBe('state.invalid_transition');
     expect(PROPOSAL_REQUEST_OPERATIONS.withdraw).toBe('WITHDRAW');
+    expect(PROPOSAL_REQUEST_OPERATIONS.accept).toBe('ACCEPT');
+    expect(PROPOSAL_REQUEST_OPERATIONS.decline).toBe('DECLINE');
+    expect(PROPOSAL_REQUEST_EXPIRE_OPERATION).toBe('EXPIRE');
+    // 🔴 4 つの operation は別々（`S-041` で「取り下げ」「応諾」「辞退」「期限切れ」を区別できる。`F-018 AC-5`）。
+    expect(new Set([...Object.values(PROPOSAL_REQUEST_OPERATIONS), PROPOSAL_REQUEST_EXPIRE_OPERATION]).size).toBe(4);
   });
 });

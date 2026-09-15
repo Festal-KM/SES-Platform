@@ -281,6 +281,34 @@ export type {
   TenantTransactionIsolationLevel,
   TenantTransactionOptions,
 } from './with-tenant.js';
+// 🔴 T-08-07: `Proposal(DRAFT)` + `EngineerSnapshot`（凍結）を作る唯一の経路（docs/05 §3.6 / §6.5
+//    「T-08-07 の決着」/ `F-019`）。#33（応諾）と #36（SP-09）が**同じ 1 実装**を通る。
+//    凍結を迂回した `proposals` の INSERT は `packages/db` の外からは書けない。
+export {
+  createProposalDraft,
+  PROPOSAL_AUDIT_ACTION_CREATE,
+  ProposalDraftEngineerNotFoundError,
+} from './proposal-draft.js';
+export type {
+  FrozenCareer,
+  ProposalDraftInput,
+  ProposalDraftRecipient,
+  ProposalDraftResult,
+  ProposalDraftTerms,
+  ProposalDraftWriter,
+} from './proposal-draft.js';
+// 🔴 T-08-07: 提案依頼の期限切れ（docs/05 §9.5 `proposal-request.expire`）。呼び出し元は
+//    `apps/worker/src/jobs/proposal-request-expire.ts` のジョブ文脈だけである。
+export {
+  expireProposalRequests,
+  PROPOSAL_REQUEST_AUDIT_ACTION_UPDATE,
+  PROPOSAL_REQUEST_EXPIRE_DEFAULT_LIMIT,
+  PROPOSAL_REQUEST_EXPIRE_OPERATION,
+} from './proposal-request-expiry.js';
+export type {
+  ExpireProposalRequestsInput,
+  ExpireProposalRequestsOutcome,
+} from './proposal-request-expiry.js';
 // 🔴 T-04-02: メール送信の単一経路の宛先分類（docs/05 §8.2）。**呼び出し側に自己申告させない。**
 //    `platformRecipientClass`（分類外）はここから export しない（`@ses/db/platform` だけが出す）。
 export { isAccountMailRecipientClass, resolveRecipientClass } from './recipient.js';

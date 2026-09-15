@@ -57,6 +57,7 @@ describe('🔴 ホストの行: 候補列は「共有候補（匿名）」の一
         'message',
         'projectId',
         'projectName',
+        'respondHref',
         'state',
         'stateLabel',
         'updatedAt',
@@ -84,6 +85,9 @@ describe('取引先の行: 自社の台帳の表示名を出し、取り下げ�
     const [shared, notShared] = partnerProposalRequestRows([item, { ...item, project: null }]);
     expect(shared?.candidate).toBe('山田 太郎');
     expect(shared?.canWithdraw).toBe(false);
+    // 🔴 T-08-07: 取引先の行だけが `S-018` への導線を持つ（ホストの行は null。`S-018` に到達しない）。
+    expect(shared?.respondHref).toBe(`/proposal-requests/${item.id}`);
+    expect(hostProposalRequestRows([HOST_ITEM])[0]?.respondHref).toBeNull();
     expect(shared?.projectName).toBe('Project A');
     expect(notShared?.projectName).toBe('（案件名は公開されていません）');
     expect(notShared?.projectId).toBeNull();

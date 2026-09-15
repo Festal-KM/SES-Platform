@@ -436,6 +436,10 @@ const ja = {
     '依頼メッセージに単価またはエンド企業名と読める記述が含まれています。単価は提案の作成後に扱えます。該当の記述を除いてから送ってください。',
   'error.proposalRequest.alreadyExists':
     'この候補には既にこの案件の提案依頼があります。状況は提案依頼の一覧で確認できます。',
+  // 🔴 T-08-07: 自社に公開されていない案件への依頼は応諾できない（docs/05 §6.5「T-08-07 の決着」）。
+  //    辞退は可能であることを文言でも伝える（`BR-57`）。
+  'error.proposalRequest.projectNotShared':
+    'この案件は御社に公開されていないため、応諾できません。辞退は可能です。',
   'error.internal': '処理に失敗しました。時間をおいて再度お試しください。',
 
   // --- 品質ゲート（F-020 / F-027 AC-5。docs/05 §11.7 の GateResultView）---
@@ -1647,8 +1651,8 @@ const ja = {
   'proposalRequests.detail.message': '依頼メッセージ',
   'proposalRequests.detail.expiresAt': '返答期限',
   'proposalRequests.detail.createdAt': '依頼日時',
-  // 🔴 取引先の応諾・辞退は `S-018`（T-08-07）。無い間は行き止まりを明示する（押しても動かない導線を描かない）。
-  'proposalRequests.detail.partnerRespondComingSoon': '応諾・辞退の操作は後続のリリースで行えます。',
+  // 🔴 T-08-07: 取引先の行から `S-018`（応諾・辞退）へ進む導線。
+  'proposalRequests.detail.partnerRespond': 'この依頼に返答する',
   'proposalRequests.withdraw': '取り下げる',
   'proposalRequests.withdraw.confirmTitle': 'この提案依頼を取り下げますか',
   'proposalRequests.withdraw.confirmLead': '取り下げると、取引先はこの依頼に応諾できなくなります。同じ候補に同じ案件で再度依頼を送ることはできません。',
@@ -1661,6 +1665,72 @@ const ja = {
   'proposalRequests.deniedTitle': '提案依頼の操作を行えません。',
   'proposalRequests.nextPage': '次のページ',
   'proposalRequests.firstPage': '最初のページに戻る',
+
+  // --- S-018 提案依頼の詳細と応諾・辞退（取引先）（docs/04 §S-018 / `F-018` `F-019` / docs/05 §6.5 #33 / #34。T-08-07）---
+  // 🔴 T1（モバイル完結）。判断材料（案件の要件・単価レンジ・開始日・依頼メッセージ・返答期限・開示される項目）を隠さない
+  //    （`CLAUDE.md` §13.3 / `docs/04` §S-018 デバイス別）。
+  // 🔴 **辞退を躊躇させる語を置かない**（`BR-57`「断る自由」）。理由は任意で、非開示を入力欄の直下に明記する。
+  // 🔴 **開示が起きる瞬間を明示する**（`F-018 AC-3`）。応諾の確認ステップは開示される 3 項目を列挙する。
+  'proposalRequests.respond.title': '提案依頼の詳細',
+  'proposalRequests.respond.breadcrumb.list': '提案依頼',
+  'proposalRequests.respond.backToList': '提案依頼の一覧に戻る',
+  'proposalRequests.respond.notFound': '指定された提案依頼は見つかりません。',
+  'proposalRequests.respond.section.request': '依頼の内容',
+  'proposalRequests.respond.section.engineer': '対象の自社エンジニア',
+  'proposalRequests.respond.section.disclosure': '応諾するとどうなるか',
+  'proposalRequests.respond.section.actions': '返答',
+  'proposalRequests.respond.field.project': '案件',
+  'proposalRequests.respond.field.message': '依頼メッセージ',
+  'proposalRequests.respond.field.expiresAt': '返答期限',
+  'proposalRequests.respond.field.createdAt': '依頼日時',
+  'proposalRequests.respond.field.respondedAt': '返答日時',
+  'proposalRequests.respond.requirements.must': '必須要件',
+  'proposalRequests.respond.requirements.nice': '尚可要件',
+  'proposalRequests.respond.requirements.empty': '登録された要件はありません。',
+  'proposalRequests.respond.requirements.column.requirement': '要件',
+  'proposalRequests.respond.requirements.column.years': '経験年数',
+  'proposalRequests.respond.openProject': '案件詳細を開く',
+  'proposalRequests.respond.openEngineer': 'エンジニア詳細を開く',
+  'proposalRequests.respond.engineer.missing': '対象のエンジニアは台帳から削除されています。',
+  // 🔴 自社に公開されていない案件（`projects` の C4 で行が消える）。応諾できない事実と、辞退は可能である事実を並べる。
+  'proposalRequests.respond.project.notShared':
+    'この案件は御社に公開されていないため、応諾できません（辞退は可能です）。案件の内容はホストが公開した後に確認できます。',
+  // 🔴 `F-018 AC-3`: 開示が起きる瞬間を明示する。
+  'proposalRequests.respond.disclosure.lead':
+    '応諾すると、この人材の氏名・貴社名・スキルシートがホストに開示され、提案（下書き）が作成されます。応諾するまでは、ホストにはスキル・経験年数・単価レンジ・稼働可能時期・勤務地の 5 項目だけが匿名で見えています。',
+  'proposalRequests.respond.disclosure.item.name': '氏名',
+  'proposalRequests.respond.disclosure.item.company': '貴社名（所属会社名）',
+  'proposalRequests.respond.disclosure.item.skillSheet': 'スキルシート（最新の検査済みの版）',
+  'proposalRequests.respond.accept': '応諾する',
+  'proposalRequests.respond.accept.confirmTitle': '応諾して、次の項目をホストに開示しますか',
+  'proposalRequests.respond.accept.confirmLead': '応諾は取り消せません。提案の下書きが 1 件作成され、以後は提案の流れに合流します。',
+  'proposalRequests.respond.accept.confirmSubmit': '開示して応諾する',
+  'proposalRequests.respond.accept.confirmCancel': 'やめる',
+  'proposalRequests.respond.accept.submitting': '提案の下書きを作成しています…',
+  'proposalRequests.respond.accept.done': '応諾しました。提案の下書きを作成しました。',
+  // ⚠️ `S-020`（提案の作成・編集）は SP-09 で入る。それまでは下書きの ID だけを示す。
+  'proposalRequests.respond.accept.doneProposalId': '提案の下書き ID',
+  'proposalRequests.respond.accept.doneNext': '提案の編集画面は後続のリリースで提供されます。作成された下書きは提案の一覧から確認できるようになります。',
+  'proposalRequests.respond.decline': '辞退する',
+  'proposalRequests.respond.decline.reasonLabel': '辞退の理由（社内向けの記録。任意）',
+  // 🔴 `F-018 AC-1`: 非開示を入力欄の直下に明記する。
+  'proposalRequests.respond.decline.reasonNote': 'この理由はホストには開示されません。貴社内の記録としてだけ保存されます。',
+  'proposalRequests.respond.decline.submit': '辞退を確定する',
+  'proposalRequests.respond.decline.cancel': 'やめる',
+  'proposalRequests.respond.decline.submitting': '辞退を記録しています…',
+  'proposalRequests.respond.decline.done': '辞退しました。理由はホストには開示されません。',
+  'proposalRequests.respond.decline.recordedReason': '記録した理由（社内限定）',
+  'proposalRequests.respond.decline.recordedReasonNone': '（理由は記録されていません）',
+  // 状態別の専用文言（`docs/04` §10.1 `S-018`「期限切れ / 取り下げ済みの専用文言」）。
+  'proposalRequests.respond.closed.ACCEPTED': 'この提案依頼は応諾済みです。提案の下書きが作成されています。',
+  'proposalRequests.respond.closed.DECLINED': 'この提案依頼は辞退済みです。',
+  'proposalRequests.respond.closed.EXPIRED': 'この提案依頼は期限が切れました。応諾・辞退はできません。',
+  'proposalRequests.respond.closed.WITHDRAWN_BY_HOST': 'この提案依頼はホストにより取り下げられました。',
+  // 🔴 422（`REQUESTED` 以外からの応諾・辞退）。競合（同時に取り下げ・期限切れ）を伝え、再読込を促す。
+  'proposalRequests.respond.error.state': 'この依頼は既に返答待ちではありません。応諾・辞退は成立していません。再読込して現在の状態をご確認ください。',
+  'proposalRequests.respond.error.projectNotShared': 'この案件は御社に公開されていないため、応諾できません。',
+  'proposalRequests.respond.error.generic': '処理できませんでした。依頼の状態は変わっていません。',
+  'proposalRequests.respond.viewerNotice': '応諾・辞退は営業担当・管理者が行います。',
 
   // --- S-015 匿名共有の設定（取引先）（docs/04 §S-015 / `F-016` / docs/05 §6.4 #29。T-08-02）---
   // 🔴 **煽らない。** 「共有すると案件が見つかりやすくなります」に相当する語を 1 つも置かない

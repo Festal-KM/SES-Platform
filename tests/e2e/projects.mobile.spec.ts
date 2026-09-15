@@ -34,6 +34,7 @@ import {
   expectNoHiddenCountHints,
   expectNoHorizontalOverflow,
 } from './support/assertions';
+import { apiRequest, parseJson } from './support/api';
 import { partnerIds, tenantIds } from './support/population';
 import { hostOwner, openTenantSession, partnerSales } from './support/sessions';
 
@@ -112,8 +113,14 @@ test.describe('モバイルビューポートのスモーク（S-010 / S-011 は
       //    （`CLAUDE.md` §13.3 / `docs/04` §S-017 デバイス別）。判断材料（案件名・状態・残り時間）は隠さない。
       //    ⚠️ DB は毎回の実行で `seed:isolation` から作り直される（`global-setup.ts`）ので、ここで作った依頼が
       //    次回の実行に残ることは無い。同じ実行内の他 spec は `proposal_requests` を見ない。
+      //    🔴 T-08-07: ここでは**未公開案件**（`privateProjectId`）で依頼 → 取り下げを行う。`@@unique([tenantId, projectId,
+      //    engineerId])` により同じ候補への再依頼はできないため、**公開案件の枠は下の取引先テスト（`S-018` の応諾）に残す**。
+      //    `S-016` は共有候補を案件の公開範囲に関係なく出す（共有は案件スコープではない）ので、この流れは変わらない。
+      //    ⚠️ 素の URL は**案件の要件を検索条件の初期値**にする（`docs/04` §S-016 実装の補足）。未公開案件の要件
+      //    （`seed:isolation` は Go）は共有候補のスキルに当たらないため、検索条件を 1 つ置いて（`?limit=`）
+      //    「要件に戻す」前の全件表示にする（利用者が条件を外した状態と同じ経路）。
       // ------------------------------------------------------------------------------------------
-      await session.page.goto(`/projects/${tenantIds(1).publishedProjectId}/candidates`, {
+      await session.page.goto(`/projects/${tenantIds(1).privateProjectId}/candidates?limit=20`, {
         waitUntil: 'domcontentloaded',
       });
       await expect(session.page.getByTestId('candidate-screen')).toBeVisible();
@@ -206,13 +213,73 @@ test.describe('モバイルビューポートのスモーク（S-010 / S-011 は
 
       // 🔴 T-08-06: `S-017`（取引先視点。T1）。届いた依頼に気づく唯一の入口であり（Phase 1 の通知はアプリ内表示）、
       //    モバイルで破綻しないこと・**取り下げの導線がホスト専用で取引先には無い**ことを見る（`F-018` 関連ロール）。
-      //    応諾・辞退（`S-018`）は T-08-07 であり、ここでは押しても動かない導線が無いことだけを確かめる。
+      // 🔴 T-08-07: 続けて `S-018`（応諾・辞退。**T1**）を**モバイルで応諾まで完結**させる（`CLAUDE.md` §13.3 /
+      //    `docs/04` §S-018 デバイス別）。**test を増やさず**（T-08-11 受け入れ基準 1 / 5）、新設画面を
+      //    `expectNoBrokenLabels` の射程に入れる。依頼はホストのセッションが API（#30 → #31）で公開案件の全共有候補に
+      //    発行する —— どの参照子が取引先 1 の人材かはホストには分からない（設計どおり）ので、全員に出して
+      //    取引先 1 の一覧に「返答待ち」が 1 件だけ現れることを使う。
+      await issueRequestsToAllSharedCandidates(browser, tenantIds(1).publishedProjectId);
+
       await session.page.goto('/proposal-requests', { waitUntil: 'domcontentloaded' });
       await expect(session.page.getByTestId('proposal-request-screen')).toBeVisible();
       await expect(session.page.getByTestId('proposal-request-withdraw')).toHaveCount(0);
       await expectNoHorizontalOverflow('S-017 提案依頼の一覧（取引先）', session.page);
       await expectNoBrokenLabels('S-017 提案依頼の一覧（取引先）', session.page);
       expectNoHiddenCountHints('S-017 提案依頼の一覧（取引先・モバイル）', await session.page.content());
+      session.outbound.assertNone();
+
+      // `S-017` → 行を選ぶ → 「この依頼に返答する」→ `S-018`。
+      const requestedRow = session.page
+        .locator('[data-testid^="proposal-request-row-"][data-request-state="REQUESTED"]')
+        .first();
+      await expect(requestedRow).toBeVisible();
+      await requestedRow.click();
+      await expect(session.page.getByTestId('proposal-request-detail')).toBeVisible();
+      await session.page.getByTestId('proposal-request-detail-respond').click();
+      await expect(session.page.getByTestId('proposal-request-respond-screen')).toBeVisible();
+      await expect(session.page.getByTestId('proposal-request-respond-screen')).toHaveAttribute(
+        'data-request-state',
+        'REQUESTED',
+      );
+      // ③ 判断材料が可視（`CLAUDE.md` §13.3 / `docs/04` §S-018「モバイルでも省略しない」）:
+      //    案件名・必須要件・条件（単価レンジ / 開始日 / 勤務地）・依頼メッセージ・返答期限・開示される項目・対象エンジニア。
+      await expect(session.page.getByTestId('proposal-request-respond-project-name')).toBeVisible();
+      await expect(session.page.getByTestId('proposal-request-respond-project-headline')).toBeVisible();
+      await expect(session.page.getByTestId('proposal-request-respond-requirements-MUST')).toBeVisible();
+      await expect(session.page.getByTestId('proposal-request-respond-remaining')).toBeVisible();
+      await expect(session.page.getByTestId('proposal-request-respond-disclosure-items')).toBeVisible();
+      await expect(session.page.getByTestId('proposal-request-respond-engineer-name')).toBeVisible();
+      // 🔴 応諾と辞退の両方が同じ行にある（辞退を目立たなくしない。`BR-57`）。
+      await expect(session.page.getByTestId('proposal-request-respond-accept')).toBeVisible();
+      await expect(session.page.getByTestId('proposal-request-respond-decline')).toBeVisible();
+      await expectNoHorizontalOverflow('S-018 提案依頼の詳細（取引先）', session.page);
+      await expectNoBrokenLabels('S-018 提案依頼の詳細（取引先）', session.page);
+      expectNoHiddenCountHints('S-018 提案依頼の詳細（取引先・モバイル）', await session.page.content());
+
+      // 応諾: 確認 1 段（開示される 3 項目を列挙）→ 確定 → 下書き ID が示される。
+      await session.page.getByTestId('proposal-request-respond-accept').click();
+      const confirm = session.page.getByTestId('proposal-request-respond-accept-confirm');
+      await expect(confirm).toBeVisible();
+      await expect(confirm.getByTestId('proposal-request-respond-accept-confirm-items').locator('li')).toHaveCount(3);
+      await expectNoBrokenLabels('S-018 応諾の確認', session.page);
+      await session.page.getByTestId('proposal-request-respond-accept-submit').click();
+      await expect(session.page.getByTestId('proposal-request-respond-accepted')).toBeVisible();
+      await expect(session.page.getByTestId('proposal-request-respond-accepted-proposal-id')).toHaveText(
+        /^[0-9a-f-]{36}$/,
+      );
+      await expectNoBrokenLabels('S-018 応諾の完了', session.page);
+      // ④ 外向き発信が 0 件（応諾の通知は Phase 1 ではアプリ内表示。メールは飛ばない）。
+      session.outbound.assertNone();
+
+      // 🔴 再訪すると `ACCEPTED` の状態で描かれ、応諾・辞退の操作が無い（サーバの状態だけが正。`F-018 AC-5`）。
+      await session.page.reload({ waitUntil: 'domcontentloaded' });
+      await expect(session.page.getByTestId('proposal-request-respond-screen')).toHaveAttribute(
+        'data-request-state',
+        'ACCEPTED',
+      );
+      await expect(session.page.getByTestId('proposal-request-respond-accept')).toHaveCount(0);
+      await expect(session.page.getByTestId('proposal-request-respond-decline')).toHaveCount(0);
+      await expect(session.page.getByTestId('proposal-request-respond-closed')).toBeVisible();
       session.outbound.assertNone();
     } finally {
       await session.close();
@@ -297,3 +364,32 @@ test.describe('モバイルビューポートのスモーク（S-010 / S-011 は
     }
   });
 });
+
+/**
+ * 🔴 T-08-07: ホストのセッションから、公開案件の**全共有候補**に提案依頼を発行する（API 直叩き。#30 → #31）。
+ *
+ * どの参照子がどの取引先の人材かはホストには分からない（`candidateRef` は案件スコープの HMAC。docs/05 §4.6）
+ * ので、全員に出す。既に依頼がある候補は 409（`@@unique`）で、それは「出せなかった」ではなく「もうある」なので
+ * 通す。**`S-018` の取引先テストが「返答待ちが 1 件ある」状態を作るためだけの前処理**であり、画面の検証ではない。
+ */
+async function issueRequestsToAllSharedCandidates(browser: Browser, projectId: string): Promise<void> {
+  const host = await openTenantSession(browser, hostOwner(1));
+  try {
+    const list = parseJson(await apiRequest(host.page, `/api/projects/${projectId}/candidates`)) as {
+      readonly items: readonly { readonly candidateRef?: string }[];
+    };
+    const refs = list.items.flatMap((item) => (typeof item.candidateRef === 'string' ? [item.candidateRef] : []));
+    expect(refs.length).toBeGreaterThan(0);
+    const expiresAt = new Date(Date.now() + 7 * 86_400_000).toISOString();
+    for (const candidateRef of refs) {
+      const response = await apiRequest(host.page, '/api/proposal-requests', {
+        method: 'POST',
+        body: { projectId, candidateRef, message: '11 月上旬の開始を希望しています。', expiresAt },
+      });
+      expect([201, 409]).toContain(response.status);
+    }
+    host.outbound.assertNone();
+  } finally {
+    await host.close();
+  }
+}

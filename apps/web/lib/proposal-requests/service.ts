@@ -19,8 +19,14 @@
 //   ⑤ 🔴 **依頼メッセージに商流情報を含めない**（`F-018` 入力）。共有スコープを開く**前**に
 //      `checkProposalRequestMessage` で弾く（422）。落ちた要求は共有スコープを開かない。
 //   ⑥ 🔴 **`CLAUDE.md` §4.2 に無い遷移は 422**（`proposalRequestMachine.transition()` + CAS。サイレントに
-//      無視しない。`BR-33`）。本ファイルが動かす遷移は `REQUESTED → WITHDRAWN_BY_HOST` の 1 つだけであり、
-//      `ACCEPTED` / `DECLINED` / `EXPIRED` は T-08-07 が持つ。
+//      無視しない。`BR-33`）。本ファイルが動かす遷移は `REQUESTED → WITHDRAWN_BY_HOST`（#35）/
+//      `REQUESTED → ACCEPTED`（#33）/ `REQUESTED → DECLINED`（#34）の 3 つであり、`EXPIRED` は
+//      `packages/db` の `expireProposalRequests`（ジョブ文脈）が持つ。
+//   ⑦ 🔴 **応諾（`ACCEPTED`）と `Proposal(DRAFT)` の生成は同一トランザクション**（`docs/02` `program-design`
+//      申し送り 12 / `F-018 AC-3`）。片方だけ成立する状態を作らない。生成の実体は `packages/db` の
+//      `createProposalDraft`（#36 と同じ 1 実装。docs/05 §6.5「T-08-07 の決着」）。
+//   ⑧ 🔴 **辞退の理由はパートナー社内限定**（`BR-57`）。行の `decline_reason` に書き、監査の `summary` にも
+//      ホスト向けの型にも載せない。
 //
 // 🔴 **`withSharedCandidateScope` を import してよいのは本ファイルと `lib/candidates/list.ts` だけ**である
 //    （`eslint.config.mjs` の `SHARED_CANDIDATE_CALLER_FILES` / `tests/static/auth-db-callers.test.ts`。
@@ -29,6 +35,8 @@
 // 🔴 本モジュールは Next.js / Auth.js に依存しない（`@ses/db` / `@ses/domain` のみ）。結合テストが
 //    サーバを立てずに同じ経路を実行できるようにするため（`lib/engineer-shares/service.ts` と同じ方針）。
 import {
+  createProposalDraft,
+  PROPOSAL_REQUEST_AUDIT_ACTION_UPDATE,
   recordAuditLog,
   SharedCandidateProjectNotFoundError,
   withSharedCandidateScope,
@@ -39,26 +47,36 @@ import {
 import {
   InvalidStateTransitionError as DomainInvalidStateTransitionError,
   proposalRequestMachine,
+  type ProposalRequestState,
 } from '@ses/domain';
 import {
   InternalError,
   InvalidStateTransitionError,
   NotFoundError,
   ProposalRequestMessageCommerceError,
+  ProposalRequestProjectNotSharedError,
   ValidationError,
 } from '../api/errors';
 import { buildCursorPage, takeForCursorPage } from '../api/pagination';
 import type { CandidateReference } from '../anonymize/reference';
 import { decimalToNumber } from '../format/db-values';
+import {
+  PROJECT_VIEW_VIA,
+  readProjectCandidateContext,
+  recordProjectView,
+} from '../projects/service';
 import { checkProposalRequestMessage } from './message-check';
 import {
   PROPOSAL_REQUEST_EXPIRY_MAX_DAYS,
   type ProposalRequestCreateBody,
+  type ProposalRequestDeclineBody,
   type ProposalRequestListQuery,
 } from './schemas';
 import {
   toHostProposalRequestView,
+  toPartnerProposalRequestDetailView,
   toPartnerProposalRequestView,
+  type PartnerProposalRequestDetailView,
   type ProposalRequestEngineerRef,
   type ProposalRequestListView,
   type ProposalRequestProjectRef,
@@ -66,19 +84,23 @@ import {
 } from './views';
 
 /**
- * docs/05 §16.1 の `*.update`（取り下げ。`operation='WITHDRAW'`）。発行（`proposal_request.create`）は
- * `packages/db` の `PROPOSAL_REQUEST_AUDIT_ACTION_CREATE` が共有スコープの中で書く。
- * 🔴 独自 action（`proposal_request.withdraw`）を作らない（`S-041` の操作種別フィルタは接尾辞一致。
- *    `engineer_share.update` / `partner_company.update` と同じ理由）。
+ * docs/05 §16.1 の `*.update`（取り下げ / 応諾 / 辞退。区別は `summary.operation`）。発行
+ * （`proposal_request.create`）は `packages/db` の `PROPOSAL_REQUEST_AUDIT_ACTION_CREATE` が共有スコープの中で書き、
+ * 期限切れ（`operation='EXPIRE'`）は `packages/db` の `expireProposalRequests` がジョブ文脈で書く。
+ * 🔴 独自 action（`proposal_request.withdraw` / `.accept` / `.decline`）を作らない（`S-041` の操作種別フィルタは
+ *    接尾辞一致。`engineer_share.update` / `partner_company.update` と同じ理由）。
+ * 🔴 文字列は `@ses/db` の 1 か所から引く（ジョブ側と同じ action であることを型で固定する）。
  */
 export const PROPOSAL_REQUEST_AUDIT_ACTIONS = {
-  update: 'proposal_request.update',
+  update: PROPOSAL_REQUEST_AUDIT_ACTION_UPDATE,
   /** docs/05 §15.3「`AuditLog(action='state.invalid_transition')` に `{ entity, from, to }` を記録する」。 */
   invalidTransition: 'state.invalid_transition',
 } as const;
 
 export const PROPOSAL_REQUEST_OPERATIONS = {
   withdraw: 'WITHDRAW',
+  accept: 'ACCEPT',
+  decline: 'DECLINE',
 } as const;
 
 /** 監査ログに載せる補助情報（IP はリクエストから、端末種別は ctx から）。 */
@@ -114,6 +136,20 @@ const DAY_MS = 86_400_000;
  */
 function assertHostContext(ctx: AuthenticatedTenantCtx): void {
   if (ctx.partnerCompanyId !== null) throw new NotFoundError();
+}
+
+/**
+ * 🔴 **ホスト文脈からは応諾・辞退・`S-018` に到達させない**（T-08-07。`F-018` 関連ロール / `docs/04` §S-018
+ *    権限差分「ホスト側ロールはこの画面に到達しない」）。
+ *
+ * ルートの `requireRole(PROPOSAL_REQUEST_RESPONDER_ROLES)` が先に 403 を返すが、**ロールと所属は別の軸**である
+ * （`assertHostContext` と鏡写し）。🔴 **404** にする（403 と区別しない。docs/05 §4.8）。
+ * 🔴 ホストが応諾できると「匿名候補を自分で開示する」経路になる（`F-017 AC-6`）。開示の主体は共有元だけである。
+ */
+function assertPartnerContext(ctx: AuthenticatedTenantCtx): asserts ctx is AuthenticatedTenantCtx & {
+  readonly partnerCompanyId: string;
+} {
+  if (ctx.partnerCompanyId === null) throw new NotFoundError();
 }
 
 /**
@@ -394,20 +430,251 @@ export async function withdrawProposalRequest(
       });
     });
   } catch (error: unknown) {
-    if (error instanceof DomainInvalidStateTransitionError) {
-      await recordAuditLog(ctx, {
-        action: PROPOSAL_REQUEST_AUDIT_ACTIONS.invalidTransition,
+    return rethrowWithInvalidTransitionAudit(ctx, proposalRequestId, error, deps.meta);
+  }
+}
+
+/**
+ * 🔴 遷移表に無い遷移を要求されたら `state.invalid_transition` を**別トランザクション**で記録してから、
+ *    API の 422 型に写して投げ直す（docs/05 §15.3。業務トランザクションは巻き戻るので、その中には書けない）。
+ *    それ以外の例外はそのまま投げ直す。**常に throw する**（戻り値は無い）。
+ */
+async function rethrowWithInvalidTransitionAudit(
+  ctx: AuthenticatedTenantCtx,
+  proposalRequestId: string,
+  error: unknown,
+  meta: ProposalRequestMeta,
+): Promise<never> {
+  if (!(error instanceof DomainInvalidStateTransitionError)) throw error;
+  await recordAuditLog(ctx, {
+    action: PROPOSAL_REQUEST_AUDIT_ACTIONS.invalidTransition,
+    actorKind: 'USER',
+    actorId: ctx.userId,
+    targetType: 'ProposalRequest',
+    targetId: proposalRequestId,
+    summary: { entity: error.entity, from: error.from, to: error.to },
+    ipAddress: meta.ipAddress,
+    deviceKind: ctx.deviceKind,
+  });
+  // 🔴 API 境界の 422 への写像は `toAppError` が行う（判定を二重に持たない）。ここでは型だけ揃える。
+  throw new InvalidStateTransitionError(error.entity, error.from, error.to);
+}
+
+/**
+ * 取引先の応答（応諾 / 辞退）の共通部分: 自社宛の行を読み、遷移表で判定し、CAS で `REQUESTED` を離れる。
+ *
+ * 🔴 母集団は `proposal_requests` の RLS（C5。取引先は依頼先 = 自社の行だけ）。`where` に
+ *    `partnerCompanyId` を書かない。見えない ID は 404（docs/05 §4.8）。
+ * 🔴 CAS が 0 件なら現在の状態を読み直して `InvalidStateTransitionError`（§15.3「状態を変えない」）。
+ *    読んでから書くまでの間にホストが取り下げていれば、応諾は成立しない（`docs/04` §S-018「応諾の競合」）。
+ */
+type PartnerRespondDb = Pick<ProposalRequestDb, 'proposalRequest'>;
+
+async function readRequestedRowForPartner(
+  db: PartnerRespondDb,
+  proposalRequestId: string,
+): Promise<{ readonly id: string; readonly projectId: string; readonly engineerId: string; readonly state: ProposalRequestState }> {
+  const row = await db.proposalRequest.findFirst({
+    where: { id: proposalRequestId },
+    select: { id: true, projectId: true, engineerId: true, state: true },
+  });
+  if (row === null) throw new NotFoundError();
+  if (!proposalRequestMachine.isState(row.state)) {
+    // DB の CHECK が保証しているので到達しない。握り潰さず落とす（不変条件違反）。
+    throw new InternalError(`proposal_requests.state が未知の値です（${row.state}）。`);
+  }
+  return { id: row.id, projectId: row.projectId, engineerId: row.engineerId, state: row.state };
+}
+
+async function leaveRequestedByCas(
+  db: PartnerRespondDb,
+  ctx: AuthenticatedTenantCtx,
+  row: { readonly id: string; readonly state: ProposalRequestState },
+  to: 'ACCEPTED' | 'DECLINED',
+  data: { readonly respondedAt: Date; readonly declineReason: string | null },
+): Promise<void> {
+  // 🔴 遷移表の判定はここ 1 か所（`REQUESTED` 以外はここで `InvalidStateTransitionError`）。
+  const next = proposalRequestMachine.transition(row.state, to);
+  const updated = await db.proposalRequest.updateMany({
+    where: { id: row.id, state: 'REQUESTED' },
+    data: {
+      state: next,
+      respondedAt: data.respondedAt,
+      respondedBy: ctx.userId,
+      declineReason: data.declineReason,
+    },
+  });
+  if (updated.count !== 1) {
+    const current = await db.proposalRequest.findFirst({ where: { id: row.id }, select: { state: true } });
+    throw new DomainInvalidStateTransitionError(proposalRequestMachine.entity, current?.state ?? row.state, to);
+  }
+}
+
+/** 応諾・辞退の実行時刻と監査の補助情報。 */
+export type ProposalRequestRespondDeps = {
+  readonly now: () => Date;
+  readonly meta: ProposalRequestMeta;
+};
+
+/** `POST /api/proposal-requests/{id}/accept`（#33）の応答。 */
+export type ProposalRequestAcceptedView = {
+  readonly proposalId: string;
+};
+
+/**
+ * `POST /api/proposal-requests/{id}/accept`（#33。`F-018` 処理③ / `AC-3` / `CLAUDE.md` §4.2
+ * `REQUESTED ──パートナーが応諾──> ACCEPTED ──> Proposal を DRAFT で生成`）。T-08-07。
+ *
+ * 🔴 **1 トランザクション**（docs/05 §6.5「T-08-07 の決着」）:
+ *   ① 自社宛の行を読む（C5。見えなければ 404）
+ *   ② 遷移表の判定（`REQUESTED` 以外は 422）—— CAS の前に一度判定し、無駄な読み取りを避ける
+ *   ③ 案件の共通部分を読む（C4。**自社に公開されていなければ 422 `PROPOSAL_REQUEST_PROJECT_NOT_SHARED`**。
+ *      自動公開はしない。案件を読んだ記録 `project.view` / `via='PROPOSAL_REQUEST'` を同じトランザクションで書く）
+ *   ④ CAS で `ACCEPTED` へ（0 件なら 422。ホストの取り下げと競合した場合）
+ *   ⑤ `createProposalDraft`（`Proposal(DRAFT)` + `EngineerSnapshot` + `ProposalEvent` + `proposal.create`）
+ *      🔴 **ここで初めて実名・所属会社名・スキルシートがホストに開示される**（経路 2 に合流）
+ *   ⑥ `proposal_request.update` / `operation='ACCEPT'`（`summary` に `proposalId` を載せる。`engineer_id` は載せない）
+ * 🔴 ④〜⑥のどれが失敗しても全部が巻き戻る（`ACCEPTED` だけ / `Proposal` だけ、のどちらも DB に現れない）。
+ * 🔴 提案先は空文字で保存する（#33 は提案先を決められる主体を持たない。`S-020` / #37 が埋める。docs/05 §6.5）。
+ */
+export async function acceptProposalRequest(
+  ctx: AuthenticatedTenantCtx,
+  proposalRequestId: string,
+  deps: ProposalRequestRespondDeps,
+): Promise<ProposalRequestAcceptedView> {
+  assertPartnerContext(ctx);
+  const now = deps.now();
+
+  try {
+    return await withTenant(ctx, async (db) => {
+      const row = await readRequestedRowForPartner(db, proposalRequestId);
+      // ② 先に遷移表で判定する（終端の依頼で案件を読みに行かない）。
+      proposalRequestMachine.transition(row.state, 'ACCEPTED');
+
+      // ③ 🔴 案件が見えるか（C4）。`where` に公開範囲の条件を書かない。
+      const project = await readProjectCandidateContext(db, row.projectId);
+      if (project === null) throw new ProposalRequestProjectNotSharedError();
+      await recordProjectView(db, ctx, project.id, PROJECT_VIEW_VIA.proposalRequest, deps.meta);
+
+      // ④ CAS。
+      await leaveRequestedByCas(db, ctx, row, 'ACCEPTED', { respondedAt: now, declineReason: null });
+
+      // ⑤ 凍結と DRAFT（同じトランザクション）。
+      const draft = await createProposalDraft(db, ctx, {
+        projectId: row.projectId,
+        engineerId: row.engineerId,
+        proposalRequestId: row.id,
+        recipient: { companyName: '', email: '' },
+        frozenAt: now,
+        ipAddress: deps.meta.ipAddress,
+      });
+
+      // ⑥ 監査（同じトランザクション）。
+      await writeAuditLog(db, {
+        action: PROPOSAL_REQUEST_AUDIT_ACTIONS.update,
         actorKind: 'USER',
         actorId: ctx.userId,
         targetType: 'ProposalRequest',
-        targetId: proposalRequestId,
-        summary: { entity: error.entity, from: error.from, to: error.to },
+        targetId: row.id,
+        // 🔴 `engineer_id` / 依頼先 / 本文を載せない（`CLAUDE.md` §10.5 / docs/05 §16.2）。
+        summary: {
+          operation: PROPOSAL_REQUEST_OPERATIONS.accept,
+          fromState: 'REQUESTED',
+          toState: 'ACCEPTED',
+          proposalId: draft.id,
+        },
         ipAddress: deps.meta.ipAddress,
         deviceKind: ctx.deviceKind,
       });
-      // 🔴 API 境界の 422 への写像は `toAppError` が行う（判定を二重に持たない）。ここでは型だけ揃える。
-      throw new InvalidStateTransitionError(error.entity, error.from, error.to);
-    }
-    throw error;
+
+      return { proposalId: draft.id };
+    });
+  } catch (error: unknown) {
+    return rethrowWithInvalidTransitionAudit(ctx, proposalRequestId, error, deps.meta);
   }
+}
+
+/**
+ * `POST /api/proposal-requests/{id}/decline`（#34。`F-018` 処理④ / `AC-1` / `BR-57`）。T-08-07。
+ *
+ * 🔴 `REQUESTED → DECLINED` を遷移表 + CAS で確定し、`decline_reason` に理由（任意。空なら `NULL`）を書く。
+ * 🔴 理由は**パートナー社内限定**: 監査の `summary` に載せず、ホスト向けの型にも無い（`F-018 AC-1`）。
+ * 🔴 案件が公開されていなくても辞退はできる（辞退に案件の内容は要らない。`BR-57`「断る自由」）。
+ */
+export async function declineProposalRequest(
+  ctx: AuthenticatedTenantCtx,
+  proposalRequestId: string,
+  body: ProposalRequestDeclineBody,
+  deps: ProposalRequestRespondDeps,
+): Promise<void> {
+  assertPartnerContext(ctx);
+  const now = deps.now();
+  const reason = body.reason === undefined || body.reason === '' ? null : body.reason;
+
+  try {
+    await withTenant(ctx, async (db) => {
+      const row = await readRequestedRowForPartner(db, proposalRequestId);
+      await leaveRequestedByCas(db, ctx, row, 'DECLINED', { respondedAt: now, declineReason: reason });
+
+      await writeAuditLog(db, {
+        action: PROPOSAL_REQUEST_AUDIT_ACTIONS.update,
+        actorKind: 'USER',
+        actorId: ctx.userId,
+        targetType: 'ProposalRequest',
+        targetId: row.id,
+        // 🔴 理由を載せない（運営者が横断検索する。理由は行にだけ在る）。
+        summary: {
+          operation: PROPOSAL_REQUEST_OPERATIONS.decline,
+          fromState: 'REQUESTED',
+          toState: 'DECLINED',
+        },
+        ipAddress: deps.meta.ipAddress,
+        deviceKind: ctx.deviceKind,
+      });
+    });
+  } catch (error: unknown) {
+    return rethrowWithInvalidTransitionAudit(ctx, proposalRequestId, error, deps.meta);
+  }
+}
+
+/**
+ * `S-018` の読み取り（T-08-07）。取引先専用。
+ *
+ * 🔴 ホスト文脈は 404（`assertPartnerContext`）。母集団は `proposal_requests` の RLS（C5）。
+ * 🔴 案件の共通部分（`ProjectDetailShared`。商流情報を型として持たない）は `readProjectCandidateContext`
+ *    で読み、**読めたときだけ** `project.view` / `via='PROPOSAL_REQUEST'` を同じトランザクションで書く
+ *    （`BR-27`。見えなかった案件の「閲覧」は記録しない）。自社に公開されていなければ `project: null`。
+ * 🔴 `declineReason` はここでだけ返す（自社の記録。`F-018 AC-1`）。
+ * 🔴 `proposalId` は `Proposal.proposalRequestId` の逆引き（自社が作成した行なので C5 で読める）。
+ */
+export async function readPartnerProposalRequestDetail(
+  ctx: AuthenticatedTenantCtx,
+  proposalRequestId: string,
+  meta: ProposalRequestMeta,
+): Promise<PartnerProposalRequestDetailView> {
+  assertPartnerContext(ctx);
+  return withTenant(ctx, async (db) => {
+    const row = await db.proposalRequest.findFirst({
+      where: { id: proposalRequestId },
+      select: { ...PROPOSAL_REQUEST_ROW_SELECT, engineerId: true, declineReason: true },
+    });
+    if (row === null) throw new NotFoundError();
+
+    const project = await readProjectCandidateContext(db, row.projectId);
+    if (project !== null) {
+      await recordProjectView(db, ctx, project.id, PROJECT_VIEW_VIA.proposalRequest, meta);
+    }
+    const engineers = await readEngineerRefs(db, [row.engineerId]);
+    const proposal =
+      row.state === 'ACCEPTED'
+        ? await db.proposal.findFirst({ where: { proposalRequestId: row.id }, select: { id: true } })
+        : null;
+
+    return toPartnerProposalRequestDetailView(
+      row,
+      project,
+      engineers.get(row.engineerId) ?? null,
+      proposal?.id ?? null,
+    );
+  });
 }

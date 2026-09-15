@@ -132,10 +132,11 @@ describe('🔴 宣言とキュー定義が食い違わない（T-07-11）', () =
     expect(missing).toEqual([]);
   });
 
-  it('スケジュール宣言は 5 本である（docs/05 §9.1 / SP-07 T-07-11）', () => {
+  it('スケジュール宣言は 6 本である（docs/05 §9.1 / SP-07 T-07-11 + T-08-07 の `proposal-request.expire`）', () => {
     expect(SCHEDULED_JOBS.map((declaration) => declaration.name).sort()).toEqual([
       'domain.recheck',
       'gate.hold-release',
+      'proposal-request.expire',
       'scan.poll',
       'send.hold-release',
       'usage.seat-snapshot',

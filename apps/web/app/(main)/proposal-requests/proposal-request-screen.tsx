@@ -14,7 +14,11 @@
 //   ③ 🔴 **取り下げは確認 1 段で、`REQUESTED` の行にだけ導線がある**（`docs/04` §S-017「操作と結果」）。
 //      判定は `row.canWithdraw`（状態）× `canAct`（ロール）× `denialMessage === null`（テナント状態）の 3 つ。
 //      ⚠️ これは UI の配慮であり、拒否の本体は `#35` の 3 本のガードと `transition()` + CAS である。
-//   ④ 取引先の応諾・辞退は `S-018`（T-08-07）。無い間は行き止まりを明示し、押しても動かない導線を描かない。
+//   ④ 取引先の応諾・辞退は `S-018`（T-08-07。`/proposal-requests/{id}`）。取引先の行の詳細パネルに導線を置く
+//      （`row.respondHref`。ホストの行は `null` で描かれない）。応諾・辞退の可否は `S-018` 側が状態で決める。
+//   ⑤ 🔴 T-08-07: **ホストの一覧は 60 秒ごとに読み直す**（`docs/04` §S-017「ホスト側の一覧はポーリングで反映
+//      （60 秒）」）。実装は `page.tsx` が置く `PollingRefresher`（`router.refresh()`）であり、本コンポーネントは
+//      選択状態を保ったままサーバの行が差し替わる。
 //
 // 🔴 **T1（モバイル完結）**（docs/04 §S-017 デバイス別 / `CLAUDE.md` §13.3）。
 //    モバイル = 案件名 + 状態 + 残り時間の 3 列。**取り下げは詳細パネルにあり、モバイルでも押せる。**
@@ -69,8 +73,8 @@ export type ProposalRequestScreenMessages = {
   readonly detailCreatedAt: string;
   readonly detailUpdatedAt: string;
   readonly detailOpenProject: string;
-  /** 取引先にだけ出す行き止まりの明示（ホストは `null`）。 */
-  readonly partnerRespondComingSoon: string | null;
+  /** 🔴 T-08-07: 取引先の行から `S-018` へ進む導線の文言（行の `respondHref` が `null` でないときだけ描く）。 */
+  readonly partnerRespond: string;
   readonly withdraw: string;
   readonly withdrawConfirmTitle: string;
   readonly withdrawConfirmLead: string;
@@ -351,10 +355,17 @@ export function ProposalRequestScreen({
                   </Link>
                 )}
 
-                {messages.partnerRespondComingSoon === null ? null : (
-                  <p className="mt-3 mb-0 text-xs text-slate-500" data-testid="proposal-request-detail-respond-coming-soon">
-                    {messages.partnerRespondComingSoon}
-                  </p>
+                {/* 🔴 T-08-07: 取引先の行は `S-018`（応諾・辞退）へ進む。ホストの行は `respondHref` が null で描かれない。 */}
+                {selected.respondHref === null ? null : (
+                  <div className="mt-4">
+                    <Link
+                      className="inline-block text-sm font-semibold text-slate-900 underline"
+                      href={selected.respondHref}
+                      data-testid="proposal-request-detail-respond"
+                    >
+                      {messages.partnerRespond}
+                    </Link>
+                  </div>
                 )}
 
                 {/* 🔴 取り下げ（ホスト × REQUESTED × 実行可）。確認は 1 段。 */}

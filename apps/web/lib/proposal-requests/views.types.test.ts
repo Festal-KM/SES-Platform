@@ -9,8 +9,10 @@ import { describe, expect, it } from 'vitest';
 import {
   HOST_PROPOSAL_REQUEST_VIEW_KEYS,
   toHostProposalRequestView,
+  toPartnerProposalRequestDetailView,
   toPartnerProposalRequestView,
   type HostProposalRequestView,
+  type PartnerProposalRequestDetailView,
   type PartnerProposalRequestView,
   type ProposalRequestRow,
 } from './views';
@@ -94,12 +96,49 @@ describe('PartnerProposalRequestView（取引先向け。自社の行だけ）',
     });
     expect(view.project).toBeNull();
     expect(view.engineer).toEqual({ id: DB_ROW_WITH_SECRETS.engineerId, displayName: '山田 太郎' });
-    // 🔴 辞退理由は T-08-07 が取引先側の型にだけ足す。現時点ではどちらの型にも無い。
-    // @ts-expect-error T-08-07 で取引先側にだけ足す（本タスクの型には無い）
+    // 🔴 辞退理由は**一覧の型には無い**（T-08-07 で足したのは詳細型 `PartnerProposalRequestDetailView` だけ）。
+    // @ts-expect-error 一覧の型には declineReason が無い（詳細型にだけある）
     const declineReason: unknown = view.declineReason;
     expect(declineReason).toBeUndefined();
     expect(Object.keys(view).sort()).toEqual(
       ['createdAt', 'engineer', 'expiresAt', 'id', 'message', 'project', 'respondedAt', 'state'].sort(),
     );
+  });
+});
+
+describe('🔴 T-08-07 PartnerProposalRequestDetailView（S-018）: declineReason はここにだけ、ホスト向けには無い', () => {
+  const DETAIL_ROW = { ...DB_ROW_WITH_SECRETS };
+
+  it('取引先の詳細は declineReason / proposalId を持ち、依頼先・応答者・発行者は型として受け取れない', () => {
+    const view: PartnerProposalRequestDetailView = toPartnerProposalRequestDetailView(
+      DETAIL_ROW,
+      null,
+      { id: DETAIL_ROW.engineerId, displayName: '山田 太郎' },
+      null,
+    );
+    expect(view.declineReason).toBe('社内都合により辞退');
+    expect(view.proposalId).toBeNull();
+    expect(view.project).toBeNull();
+    // @ts-expect-error 依頼先（自社）の ID は応答に要らない
+    const partnerCompanyId: unknown = view.partnerCompanyId;
+    // @ts-expect-error 応答者の ID は応答に要らない
+    const respondedBy: unknown = view.respondedBy;
+    // @ts-expect-error 発行者の ID は応答に要らない
+    const issuedBy: unknown = view.issuedBy;
+    expect([partnerCompanyId, respondedBy, issuedBy]).toEqual([undefined, undefined, undefined]);
+    expect(Object.keys(view).sort()).toEqual(
+      ['createdAt', 'declineReason', 'engineer', 'expiresAt', 'id', 'message', 'project', 'proposalId', 'respondedAt', 'state'].sort(),
+    );
+  });
+
+  it('🔴 F-018 AC-1: ホスト向けの型に「詳細」は存在せず、HostProposalRequestView は declineReason を持てない（型）', () => {
+    const host: HostProposalRequestView = toHostProposalRequestView(DETAIL_ROW, null);
+    // @ts-expect-error F-018 AC-1: 辞退理由はホスト向けの型に存在しない
+    const declineReason: unknown = host.declineReason;
+    expect(declineReason).toBeUndefined();
+    // 🔴 実行時: 行に辞退理由があってもホスト向けの写像には 1 文字も写らない（前後比較は実 DB テストが持つ）。
+    expect(JSON.stringify(host)).not.toContain('社内都合');
+    expect(Object.keys(host)).not.toContain('declineReason');
+    expect(Object.keys(host)).not.toContain('proposalId');
   });
 });

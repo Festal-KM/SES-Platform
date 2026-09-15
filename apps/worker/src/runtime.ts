@@ -279,7 +279,8 @@ export function startWorkerRuntime(config: RuntimeConfig): WorkerRuntime {
   );
 
   // --------------------------------------------------------------------------
-  // 6. スケジュール 5 本（🔴 宣言（`SCHEDULED_JOBS`）を舐めるだけ。ここに名前を書き写さない）
+  // 6. スケジュール（🔴 宣言（`SCHEDULED_JOBS`）を舐めるだけ。ここに名前を書き写さない。本数は宣言が決める
+  //    —— T-07-11 で 5 本、T-08-07 で `proposal-request.expire` が加わり 6 本）
   // --------------------------------------------------------------------------
   const ready: Promise<void>[] = [];
   for (const declaration of SCHEDULED_JOBS) {

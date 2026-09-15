@@ -69,7 +69,17 @@ export type ProposalRequestRowView = {
   readonly message: string;
   /** 🔴 取り下げ導線を描くか（ホスト × `REQUESTED`）。テナント状態・ロールの判定は画面側の `denialMessage` / `canAct`。 */
   readonly canWithdraw: boolean;
+  /**
+   * 🔴 T-08-07: `S-018`（応諾・辞退）への導線。**取引先の行だけ**が持ち、ホストの行は `null`
+   *    （ホストは `S-018` に到達しない。`docs/04` §S-018 権限差分）。
+   */
+  readonly respondHref: string | null;
 };
+
+/** `S-018` の URL（`/proposal-requests/{id}`）。組み立てはここ 1 箇所。 */
+export function proposalRequestRespondHref(id: string): string {
+  return `${PROPOSAL_REQUESTS_PATH}/${id}`;
+}
 
 function stateLabel(state: ProposalRequestState): string {
   return t(PROPOSAL_REQUEST_STATE_MESSAGE_KEYS[state]);
@@ -92,6 +102,7 @@ export function hostProposalRequestRows(
     updatedAt: formatDateTimeJst(item.respondedAt ?? item.createdAt),
     message: item.message,
     canWithdraw: item.state === 'REQUESTED',
+    respondHref: null,
   }));
 }
 
@@ -114,6 +125,8 @@ export function partnerProposalRequestRows(
     message: item.message,
     // 🔴 取り下げはホストの操作（`F-018` 関連ロール）。取引先の行には導線が無い。
     canWithdraw: false,
+    // 🔴 取引先の行は `S-018` へ進める（状態を問わず開ける。応諾・辞退の可否は `S-018` 側が状態で決める）。
+    respondHref: proposalRequestRespondHref(item.id),
   }));
 }
 

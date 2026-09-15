@@ -5,7 +5,7 @@
 //   ①ホストの行の候補列は「共有候補（匿名）」の一語で、依頼先の社名・`engineer_id`・辞退理由が描かれない（`F-018 AC-1`）
 //   ②`DECLINED` / `EXPIRED` / `WITHDRAWN_BY_HOST` が別のバッジ文言で描かれる（`F-018 AC-5`）
 //   ③取り下げの導線は「ホスト × REQUESTED × 実行可」のときだけ。取引先・`VIEWER`・停止中には無い
-//   ④取引先には応諾・辞退の行き止まりが明示され、押しても動かない導線が無い（`S-018` は T-08-07）
+//   ④取引先の行には `S-018`（応諾・辞退）への導線があり、ホストの行には無い（T-08-07。押しても動かない応諾・辞退ボタンは描かない）
 //   ⑤残り時間はサーバ時刻（`nowMs`）で描かれる（hydration の不一致を作らない）
 //
 // 🔴 `react-dom/server` の `renderToStaticMarkup` を使う（他の render テストと同じ）。
@@ -38,6 +38,7 @@ function row(overrides: Partial<ProposalRequestRowView> & Pick<ProposalRequestRo
     updatedAt: '2026-09-15 10:00 JST',
     message: '11 月開始を希望します。',
     canWithdraw: overrides.state === 'REQUESTED',
+    respondHref: null,
     ...overrides,
   };
 }
@@ -70,7 +71,7 @@ const messages: ProposalRequestScreenMessages = {
   detailCreatedAt: '依頼日時',
   detailUpdatedAt: '最終更新',
   detailOpenProject: '案件詳細を開く',
-  partnerRespondComingSoon: null,
+  partnerRespond: 'この依頼に返答する',
   withdraw: '取り下げる',
   withdrawConfirmTitle: 'この提案依頼を取り下げますか',
   withdrawConfirmLead: '取り下げると、取引先はこの依頼に応諾できなくなります。',
@@ -156,17 +157,29 @@ describe('🔴 取り下げの導線と停止中の表示', () => {
 });
 
 describe('取引先視点と空状態', () => {
-  it('取引先の行は自社エンジニアの実名で、行き止まりの注記は選択後に出る（初期状態では無い）', () => {
+  it('取引先の行は自社エンジニアの実名で、S-018 への導線は選択後にだけ出る（初期状態では無い。ホストの行には無い）', () => {
     const html = render({
       canAct: false,
-      rows: [row({ id: REQUESTED_ID, state: 'REQUESTED', stateLabel: '返答待ち', candidate: '山田 太郎', canWithdraw: false })],
-      messages: { ...messages, partnerRespondComingSoon: '応諾・辞退の操作は後続のリリースで行えます。' },
+      rows: [
+        row({
+          id: REQUESTED_ID,
+          state: 'REQUESTED',
+          stateLabel: '返答待ち',
+          candidate: '山田 太郎',
+          canWithdraw: false,
+          respondHref: `/proposal-requests/${REQUESTED_ID}`,
+        }),
+      ],
     });
     expect(html).toContain('山田 太郎');
     expect(html).not.toContain('proposal-request-withdraw');
-    // 🔴 押しても動かない応諾・辞退ボタンが無い。
+    // 🔴 押しても動かない応諾・辞退ボタンが無い（応諾・辞退は `S-018` で行う。T-08-07）。
     expect(html).not.toContain('応諾する');
     expect(html).not.toContain('辞退する');
+    // 🔴 初期状態（未選択）では導線が描かれない（詳細パネルは「行を選ぶと…」）。
+    expect(html).not.toContain('proposal-request-detail-respond');
+    // 🔴 ホストの行（`respondHref: null`）には導線が無い（`S-018` に到達しない。`docs/04` §S-018 権限差分）。
+    expect(render()).not.toContain('proposal-request-detail-respond');
   });
 
   it('ホストの初回空は説明 + 案件一覧への導線、絞込 0 件は導線なし、取引先は事実だけ', () => {

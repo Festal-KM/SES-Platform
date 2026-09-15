@@ -12,11 +12,13 @@
 //     `partnerCompanyId`（依頼先。社名も ID も出さない —— 開示は応諾で `Proposal` ができた時点。経路 2）/
 //     `respondedBy`（取引先の担当者）/ `issuedBy`。
 //   - `PartnerProposalRequestView` に**無い**もの: 他社に関する一切（母集団は C5 が自社の行に閉じる）。
-//     `declineReason` は **T-08-07 が辞退を実装するときに取引先側の型にだけ足す**（自社の記録である）。
+//     🔴 `declineReason` は **取引先向けの詳細型（`PartnerProposalRequestDetailView`。`S-018`）にだけある**
+//     （T-08-07。自社の記録である）。一覧の型（`PartnerProposalRequestView`）とホスト向けの全型には無い。
 //
 // 🔴 本ファイルは I/O を持たない（`@ses/db` に依存しない）。型テスト（`views.types.test.ts`）と
 //    画面の行組み立て（`list-rows.ts`）が `@ses/db` を読み込まずに参照できるようにするため。
 import { proposalRequestMachine, type ProposalRequestState } from '@ses/domain';
+import type { ProjectDetailShared } from '../projects/service';
 
 /** 案件の参照（一覧の「案件」列）。🔴 `id` / `name` だけ（商流情報を持たない）。 */
 export type ProposalRequestProjectRef = {
@@ -70,6 +72,30 @@ export type PartnerProposalRequestView = {
   readonly expiresAt: string;
   readonly createdAt: string;
   readonly respondedAt: string | null;
+};
+
+/**
+ * 🔴 取引先が読む 1 件の**詳細**（`S-018`。T-08-07）。**ホスト向けに同じ形の型は存在しない**（ホストは
+ *    `S-018` に到達しない。`docs/04` §S-018 権限差分）。
+ *
+ * - `project` は案件の共通部分（`ProjectDetailShared`。商流情報を型として持たない）。🔴 **自社に公開されて
+ *   いない案件なら `null`**（`projects` の C4）。`null` のとき応諾はできない（API は 422。docs/05 §6.5
+ *   「T-08-07 の決着」）。
+ * - 🔴 `declineReason` は**この型にだけ**ある（自社の記録。`F-018 AC-1`）。一覧の型・ホスト向けの型には無い。
+ * - `proposalId` は応諾で作られた下書き（`Proposal.proposalRequestId` の逆引き）。`ACCEPTED` 以外は `null`。
+ */
+export type PartnerProposalRequestDetailView = {
+  readonly id: string;
+  readonly project: ProjectDetailShared | null;
+  readonly engineer: ProposalRequestEngineerRef | null;
+  readonly state: ProposalRequestState;
+  readonly message: string;
+  readonly expiresAt: string;
+  readonly createdAt: string;
+  readonly respondedAt: string | null;
+  /** 🔴 パートナー社内限定（`BR-57`）。辞退していなければ `null`。 */
+  readonly declineReason: string | null;
+  readonly proposalId: string | null;
 };
 
 /**
@@ -137,6 +163,35 @@ export function toHostProposalRequestView(
     expiresAt: row.expiresAt.toISOString(),
     createdAt: row.createdAt.toISOString(),
     respondedAt: row.respondedAt === null ? null : row.respondedAt.toISOString(),
+  };
+}
+
+/** `proposal_requests` の行のうち、取引先の詳細（`S-018`）が読む列（一覧の列 + `declineReason`）。 */
+export type PartnerProposalRequestDetailRow = ProposalRequestRow & {
+  readonly declineReason: string | null;
+};
+
+/**
+ * 取引先向けの詳細の写像（`S-018`。T-08-07）。🔴 列を選んで写す（`row` に `partnerCompanyId` / `respondedBy` /
+ * `issuedBy` があっても型として受け取れない）。
+ */
+export function toPartnerProposalRequestDetailView(
+  row: PartnerProposalRequestDetailRow,
+  project: ProjectDetailShared | null,
+  engineer: ProposalRequestEngineerRef | null,
+  proposalId: string | null,
+): PartnerProposalRequestDetailView {
+  return {
+    id: row.id,
+    project,
+    engineer,
+    state: requireState(row.state),
+    message: row.message,
+    expiresAt: row.expiresAt.toISOString(),
+    createdAt: row.createdAt.toISOString(),
+    respondedAt: row.respondedAt === null ? null : row.respondedAt.toISOString(),
+    declineReason: row.declineReason,
+    proposalId,
   };
 }
 

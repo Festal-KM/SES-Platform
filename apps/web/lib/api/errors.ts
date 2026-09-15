@@ -16,6 +16,7 @@ import {
   AuditLogWriteError,
   HostOnlyContextError,
   PlatformRoleNotAllowedError,
+  ProposalDraftEngineerNotFoundError,
   ProposalRequestDuplicateError,
   TransactionSerializationError,
   TwoFactorRequiredError as DbTwoFactorRequiredError,
@@ -732,6 +733,26 @@ export class ProposalRequestAlreadyExistsError extends ConflictError {
 }
 
 /**
+ * 🔴 自社に公開されていない案件への提案依頼は応諾できない（422）。T-08-07。
+ *
+ * docs/05 §6.5「#33 / #34 と `proposal-request.expire` の実装の決着」。案件が見えないまま応諾させるのは
+ * 判断材料を隠すことになり（`CLAUDE.md` §13.3）、応諾で作る `Proposal` の案件を作成者自身が読めない状態
+ * にもなる。**自動公開は行わない**（案件の公開は経路 1 であり `ReviewGate` の対象）。辞退は可能。
+ * 🔴 なぜ 404 ではなく 422 か: 取引先は依頼の存在も「案件が公開されていない」ことも #32 で既に知っている
+ *    （`project: null`）ため、新たに漏れる情報は無い（docs/05 §4.8 が禁ずる「知らないはずの存在の探索」に
+ *    当たらない）。判定は `projects` の RLS（C4）が `null` を返すことにのみ依拠する。
+ */
+export class ProposalRequestProjectNotSharedError extends UnprocessableError {
+  override readonly code = 'PROPOSAL_REQUEST_PROJECT_NOT_SHARED';
+  override readonly userMessageKey: MessageKey = 'error.proposalRequest.projectNotShared';
+
+  constructor() {
+    super('この案件は御社に公開されていないため、応諾できません。');
+    this.name = 'ProposalRequestProjectNotSharedError';
+  }
+}
+
+/**
  * 🔴 最後の有効な `OWNER` を降格・無効化しようとした（422）。T-04-09。
  *
  * `OWNER` が 1 人も居ないテナントは契約者・支払者が不在であり（`CLAUDE.md` §10.1）、
@@ -925,6 +946,8 @@ export function toAppError(error: unknown): AppError {
   if (error instanceof HostOnlyContextError) return new NotFoundError();
   // 🔴 T-08-06: 同一案件 × 同一候補への 2 件目の提案依頼 ＝ **409**（docs/05 §3.6 の一意制約）。
   if (error instanceof ProposalRequestDuplicateError) return new ProposalRequestAlreadyExistsError();
+  // 🔴 T-08-07: 凍結する台帳の行が見えない ＝ **404**（他社の行 / 削除済み / 不存在を区別しない。docs/05 §4.8）。
+  if (error instanceof ProposalDraftEngineerNotFoundError) return new NotFoundError();
   // 🔴 遷移表に無い状態遷移は **422**（サイレントに無視しない。docs/05 §15.3 / `BR-33`）。
   if (error instanceof DomainInvalidStateTransitionError) {
     return new InvalidStateTransitionError(error.entity, error.from, error.to);

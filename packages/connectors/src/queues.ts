@@ -133,6 +133,10 @@ export const INTERNAL_JOB_NAMES = [
   //    再 enqueue された `gate.run` は上限判定を最初から通り、余地が無ければまた保留になる
   //    （`send.hold-release` が §10.2 の事前判定を最初から通らせるのと同じ規律）。
   'gate.hold-release',
+  // 🔴 T-08-07（docs/05 §9.5）。提案依頼の期限切れ（`REQUESTED` → `EXPIRED`。毎日 03:20 JST）。
+  //    **外部 API を呼ばない**（DB の CAS と監査だけ）ので `attempts: 3` を許せる。冪等性は
+  //    母集団の未処理条件（`state='REQUESTED' AND expires_at <= now`）と CAS が担う。
+  'proposal-request.expire',
 ] as const;
 
 export type InternalJobName = (typeof INTERNAL_JOB_NAMES)[number];
@@ -244,6 +248,11 @@ export const QUEUE_DEFINITIONS = {
   //      スケジュールの slot（`{jobName}:{slot}`。§9.1）であり、`gate.run` のように
   //      「同じ ID で積み直す」運用をしないため、completed が残っても捨てられる `add` が無い。
   'gate.hold-release': internalQueue('gate.hold-release', { attempts: 3 }),
+  // 🔴 T-08-07（docs/05 §9.5「`proposal-request.expire` … `attempts: 3` / 状態 CAS」）。
+  //    - `attempts: 3` … 冪等である（未処理条件 + CAS。2 度目は 0 件）。外部 API を呼ばない。
+  //    - `removeOnComplete` を付けない。`jobId` はスケジュールの slot（`{jobName}:{slot}`。§9.1）であり
+  //      冪等キーではない（`gate.hold-release` と同じ理由）。
+  'proposal-request.expire': internalQueue('proposal-request.expire', { attempts: 3 }),
 } as const;
 
 // ---------------------------------------------------------------------------

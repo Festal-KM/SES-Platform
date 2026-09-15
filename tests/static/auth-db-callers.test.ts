@@ -155,6 +155,9 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
     //    payload の `tenantId` からジョブ文脈を組み立て、**その文脈の RLS が走査の母集団を決める**
     //    （他テナントの保留行を 1 件も読まない）。ここも `apps/web` 側には無い。
     'apps/worker/src/jobs/gate-hold-release.ts',
+    // 🔴 T-08-07: 提案依頼の期限切れ（docs/05 §9.5）。payload の `tenantId` からジョブ文脈を組み立て、
+    //    **その文脈の RLS が母集団を決める**（他テナントの `REQUESTED` を 1 件も読まない）。`apps/web` 側には無い。
+    'apps/worker/src/jobs/proposal-request-expire.ts',
   ],
   // 🔴 T-07-11: `scheduler_runs`（C0 SYSTEM_ONLY）を書く唯一の経路（docs/05 §4.4.2 / §9.1）。
   //    **`runScheduled()` だけ**であり、個々のジョブハンドラは `SchedulerRun` に触れない ——

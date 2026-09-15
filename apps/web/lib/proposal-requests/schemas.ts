@@ -19,9 +19,10 @@ import { CANDIDATE_REF_PATTERN } from '../anonymize/reference';
 // 🔴 入力上限の定数は `limits.ts`（import を持たない純粋モジュール）が持つ。`'use client'` の画面
 //    （`candidate-screen.tsx` の `maxLength`）がそちらだけを読み、本ファイルと**同じ値**を使うため
 //    （本ファイルは `node:crypto` を持つ `anonymize/reference.ts` に辿れるのでクライアントから読めない）。
-import { PROPOSAL_REQUEST_MESSAGE_MAX_LENGTH } from './limits';
+import { PROPOSAL_REQUEST_DECLINE_REASON_MAX_LENGTH, PROPOSAL_REQUEST_MESSAGE_MAX_LENGTH } from './limits';
 
 export {
+  PROPOSAL_REQUEST_DECLINE_REASON_MAX_LENGTH,
   PROPOSAL_REQUEST_EXPIRY_DEFAULT_DAYS,
   PROPOSAL_REQUEST_EXPIRY_MAX_DAYS,
   PROPOSAL_REQUEST_MESSAGE_MAX_LENGTH,
@@ -63,7 +64,26 @@ assertNoIsolationKeys(
   'proposalRequestListQuerySchema',
 );
 
-/** `POST /api/proposal-requests/{id}/withdraw`（#35）の path params。 */
+/**
+ * `POST /api/proposal-requests/{id}/decline`（#34）の body。T-08-07。
+ * 🔴 `reason` は**任意**（空文字も受け、`NULL` として保存する）。理由の入力を必須にすると
+ *    「断る自由」（`BR-57`）に摩擦が生まれる。🔴 理由はパートナー社内限定の記録であり、ホスト向けの
+ *    型には存在しない（`views.ts`）。
+ */
+export const proposalRequestDeclineBodySchema = z.object({
+  reason: z.string().trim().max(PROPOSAL_REQUEST_DECLINE_REASON_MAX_LENGTH).optional(),
+});
+
+export type ProposalRequestDeclineBody = z.infer<typeof proposalRequestDeclineBodySchema>;
+
+export type ProposalRequestDeclineBodyIsolationGuard = AssertNoIsolationKeys<ProposalRequestDeclineBody>;
+
+assertNoIsolationKeys(
+  Object.keys(proposalRequestDeclineBodySchema.shape),
+  'proposalRequestDeclineBodySchema',
+);
+
+/** `POST /api/proposal-requests/{id}/withdraw`（#35）/ `accept`（#33）/ `decline`（#34）の path params。 */
 export const proposalRequestParamsSchema = z.object({ id: z.uuid() });
 
 export type ProposalRequestParams = z.infer<typeof proposalRequestParamsSchema>;

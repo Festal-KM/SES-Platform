@@ -31,3 +31,21 @@ export const PROPOSAL_REQUEST_ISSUER_ROLES = [
 export function isProposalRequestIssuerRole(role: TenantRole): boolean {
   return (PROPOSAL_REQUEST_ISSUER_ROLES as readonly TenantRole[]).includes(role);
 }
+
+/**
+ * 🔴 T-08-07: 提案依頼に応諾・辞退できるロール（docs/05 §6.5 #33 / #34「`PA`/`PS`」/ `F-018` 関連ロール
+ *    「`PARTNER_ADMIN` / `PARTNER_SALES`（応諾・辞退）」/ `docs/04` §S-018 権限差分）。
+ *
+ * 🔴 **ホストロールを含まない。** 応諾は「自社の人材の実名を開示する」判断であり、その主体は共有元の取引先
+ *    だけである（`BR-57`）。ホストが応諾できると、匿名候補を自分で開示できる経路になる（`F-017 AC-6` 違反）。
+ *    担保は 2 枚: ①本定数を見る `requireRole`（403）②`assertPartnerContext`（所属の軸。ホスト文脈は 404）。
+ * 🔴 `VIEWER` を含まない（取引先所属の `VIEWER` は閲覧のみ。`docs/04` §S-018）。`requireNotViewer` と二重に落とす。
+ */
+export const PROPOSAL_REQUEST_RESPONDER_ROLES = [
+  'PARTNER_ADMIN',
+  'PARTNER_SALES',
+] as const satisfies readonly TenantRole[];
+
+export function isProposalRequestResponderRole(role: TenantRole): boolean {
+  return (PROPOSAL_REQUEST_RESPONDER_ROLES as readonly TenantRole[]).includes(role);
+}

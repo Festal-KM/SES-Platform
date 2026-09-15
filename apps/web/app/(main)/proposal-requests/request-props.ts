@@ -40,7 +40,7 @@ export function proposalRequestScreenMessages(params: {
     detailCreatedAt: t('proposalRequests.detail.createdAt'),
     detailUpdatedAt: t('proposalRequests.column.updatedAt'),
     detailOpenProject: t('candidates.project.open'),
-    partnerRespondComingSoon: isHost ? null : t('proposalRequests.detail.partnerRespondComingSoon'),
+    partnerRespond: t('proposalRequests.detail.partnerRespond'),
     withdraw: t('proposalRequests.withdraw'),
     withdrawConfirmTitle: t('proposalRequests.withdraw.confirmTitle'),
     withdrawConfirmLead: t('proposalRequests.withdraw.confirmLead'),

@@ -39,6 +39,12 @@ import {
   GATE_HOLD_RELEASE_SCHEDULE,
   type GateHoldReleaseDeps,
 } from './gate-hold-release.js';
+import {
+  createProposalRequestExpireHandler,
+  PROPOSAL_REQUEST_EXPIRE_JOB,
+  PROPOSAL_REQUEST_EXPIRE_SCHEDULE,
+  type ProposalRequestExpireDeps,
+} from './proposal-request-expire.js';
 
 export {
   createUsageSeatSnapshotHandler,
@@ -199,6 +205,20 @@ export type {
   GateHoldReleaseOutcome,
   GateHoldReleasePayload,
 } from './gate-hold-release.js';
+// 🔴 T-08-07: 提案依頼の期限切れ（docs/05 §9.5。毎日 03:20 JST）。**外部 API を呼ばない**（`attempts: 3`）。
+//    本体は `packages/db` の `expireProposalRequests`（遷移表 + CAS + 監査）。下の `SCHEDULED_JOBS` に載る。
+export {
+  createProposalRequestExpireHandler,
+  parseProposalRequestExpirePayload,
+  PROPOSAL_REQUEST_EXPIRE_JOB,
+  PROPOSAL_REQUEST_EXPIRE_SCHEDULE,
+} from './proposal-request-expire.js';
+export type {
+  ProposalRequestExpireDeps,
+  ProposalRequestExpireHandler,
+  ProposalRequestExpireOutcome,
+  ProposalRequestExpirePayload,
+} from './proposal-request-expire.js';
 
 /**
  * ジョブの合成に要る値（起動時に 1 度だけ解決する。`CLAUDE.md` §11.1 / docs/05 §13.1）。
@@ -214,7 +234,9 @@ export type ScheduledJobDeps = UsageSeatSnapshotDeps &
   // 🔴 T-07-10: `gate.hold-release` が要るのは「モデル解決」「日次上限」「`gate.run` の enqueue 先」。
   //    交差型なので、配線がこの 3 つを渡し忘れたらコンパイルエラーになる（渡し忘れたまま
   //    「スケジュールされているのに 1 件も復帰しない」状態を作らない）。
-  GateHoldReleaseDeps;
+  GateHoldReleaseDeps &
+  // T-08-07: `proposal-request.expire` が要るのは `now` だけ（既に `UsageSeatSnapshotDeps` が持つ）。
+  ProposalRequestExpireDeps;
 
 /**
  * スケジュール実行するジョブの宣言。
@@ -277,5 +299,14 @@ export const SCHEDULED_JOBS: readonly ScheduledJobDeclaration[] = [
     cron: GATE_HOLD_RELEASE_SCHEDULE.cron,
     timeZone: GATE_HOLD_RELEASE_SCHEDULE.timeZone,
     createHandler: (deps) => createGateHoldReleaseHandler(deps),
+  },
+  // 🔴 T-08-07: 提案依頼の期限切れ（docs/05 §9.5 / `F-018` 処理⑤）。**これが無いと `REQUESTED` は期限を過ぎても
+  //    残り続け**、取引先の一覧に「返答待ち」として出続ける（`EXPIRED` は `DECLINED` とも取り下げとも別の終端。
+  //    `F-018 AC-5`）。
+  {
+    name: PROPOSAL_REQUEST_EXPIRE_JOB,
+    cron: PROPOSAL_REQUEST_EXPIRE_SCHEDULE.cron,
+    timeZone: PROPOSAL_REQUEST_EXPIRE_SCHEDULE.timeZone,
+    createHandler: (deps) => createProposalRequestExpireHandler(deps),
   },
 ];

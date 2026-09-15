@@ -81,6 +81,12 @@ export const PROJECT_VIEW_VIA = {
    *    匿名候補の件数・`engineer_id`・参照子を載せない（運営者が横断検索する。`CLAUDE.md` §10.5）。
    */
   candidates: 'CANDIDATES',
+  /**
+   * 🔴 `S-018` 提案依頼の詳細（取引先。T-08-07）と `#33`（応諾）。取引先が依頼の案件の要件・条件を読む記録
+   *    （`readProjectCandidateContext` で共通部分だけを読む。商流情報は `select` に無い）。**独自 action を
+   *    作らない**（`S-041` の `PROJECT_VIEW` から漏れる）。自社に公開されていない案件は読めないので記録も無い。
+   */
+  proposalRequest: 'PROPOSAL_REQUEST',
 } as const;
 
 export type ProjectViewVia = (typeof PROJECT_VIEW_VIA)[keyof typeof PROJECT_VIEW_VIA];
@@ -728,9 +734,11 @@ export async function readProjectDetail(
  * 🔴 **ホスト・取引先とも `PARTNER_PROJECT_DETAIL_SELECT`（商流情報の 2 列を持たない）で読む。**
  *    候補一覧に商流情報は要らず、`ProjectDetailShared` は取引先にも出してよい列だけで
  *    できている（`F-013 AC-2`）。ホスト向けに列を足したくなっても、ここではなく `#27` で読む。
- * 🔴 **監査は書かない。** 呼び出し側（`listProjectCandidates`）が同じトランザクションの中で
- *    `recordProjectView(…, PROJECT_VIEW_VIA.candidates, …)` を 1 行書く（読んだのに記録しない
- *    経路にならないよう、呼び出し元は `tests/static/auth-db-callers.test.ts` が 1 ファイルに固定する）。
+ * 🔴 **監査は書かない。** 呼び出し側が同じトランザクションの中で `recordProjectView` を 1 行書く
+ *    （読んだのに記録しない経路を作らない）。呼び出し元は 2 つ: `listProjectCandidates`
+ *    （`via='CANDIDATES'`）と、T-08-07 の `S-018` / `#33`（`lib/proposal-requests/service.ts`。
+ *    `via='PROPOSAL_REQUEST'`）。静的テストによる呼び出し元の固定は無く、記録の有無は
+ *    `tests/isolation/project-candidates.test.ts` / `proposal-request-respond.test.ts` が実 DB で見る。
  * 🔴 母集団は `projects` の RLS（C4）だけが決める。見えなければ `null`（呼び出し側が 404 に畳む。
  *    取引先の「公開解除」の断り方は `projectNotFoundError`）。
  */

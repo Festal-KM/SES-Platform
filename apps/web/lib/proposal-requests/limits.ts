@@ -19,3 +19,9 @@ export const PROPOSAL_REQUEST_EXPIRY_MAX_DAYS = 30;
 
 /** 画面の期限の初期値（現在からの日数）。 */
 export const PROPOSAL_REQUEST_EXPIRY_DEFAULT_DAYS = 7;
+
+/**
+ * 辞退の理由（社内向けの記録）の上限（文字）。T-08-07。
+ * 🔴 任意入力である（空でも辞退できる。`BR-57`「断る自由」に摩擦を作らない）。
+ */
+export const PROPOSAL_REQUEST_DECLINE_REASON_MAX_LENGTH = 1000;
