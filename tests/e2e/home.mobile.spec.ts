@@ -17,6 +17,9 @@
 //    `APPROVED` のまま（`SUBMITTING` に入れるのはジョブ）」までであり、確定（`SUBMITTED` / 保留）と E2E #7 / #10 の
 //    送信側（`GATE_STALE`）は `tests/isolation/send-proposal.test.ts`（実 Redis + 実 Worker）が証明する。ブラウザ経路の
 //    E2E #7 / #9 / #10 送信側は `T-09-11` が worker を立てて足す。
+//    ✅ **T-09-08 で送信失敗 → `S-022` → 確認ステップを経た人手再送（#44）を同じ test の続きに足した**（docs/05 §6.5 #44 / §10.6 /
+//    `F-023`）。`SUBMIT_FAILED` の前提は `harness/db-admin.ts` の `settleProposalSendAsFailedForE2e`（送信ジョブの ⑥ と同じ列）で
+//    作る。E2E #8 の通し（応答不明 → `SUBMIT_FAILED` → 自動再送されない → 人手再送で 1 回）は `T-09-07` / `T-09-11`。
 //
 // 🔴 「モバイルだから省略する」を作らない（`CLAUDE.md` §13.3）。サインイン（2 要素認証を含む）が
 //    モバイルで完結することを、デスクトップと同じ経路で確かめる。
@@ -25,6 +28,7 @@ import { t } from '../../packages/i18n/src/index';
 import {
   deleteT0903SyntheticProposals,
   settleProposalGateAsPassedForE2e,
+  settleProposalSendAsFailedForE2e,
   T0903_SYNTHETIC_PROPOSAL_PREFIX,
 } from './harness/db-admin';
 import { apiRequest, parseJson } from './support/api';
@@ -224,15 +228,129 @@ test.describe('モバイルビューポートのスモーク（S-003 / S-004 は
       const submitBody = parseJson(again) as { outcome: string; attemptSeq: number; state: string; jobId: string | null; sendHoldReasonKey: string | null };
       expect(submitBody).toMatchObject({ outcome: 'ENQUEUED', attemptSeq: 1, state: 'APPROVED', sendHoldReasonKey: null });
       expect(submitBody.jobId).toBe(`send.proposal.${proposalId}.1`);
-      // 🔴 取引先（作成者ではないが、取引先ロールは #43 を呼べない）は 403。
+      // 🔴 取引先（作成者ではないが、取引先ロールは #43 を呼べない）は 403。#44 も同じ（T-09-08）。
       const partnerSession = await openTenantSession(browser, partnerSales(1, 1));
       try {
         const forbidden = await apiRequest(partnerSession.page, `/api/proposals/${proposalId}/submit`, { method: 'POST' });
         expect(forbidden.status, forbidden.text).toBe(403);
+        const forbiddenResend = await apiRequest(partnerSession.page, `/api/proposals/${proposalId}/resend`, {
+          method: 'POST',
+          body: { acknowledged: true, reason: 'T0903 取引先からの再送は通らない' },
+        });
+        expect(forbiddenResend.status, forbiddenResend.text).toBe(403);
+        // 🔴 `S-022` にも到達しない（ホームへ戻される。`docs/04` §S-022 権限差分）。
+        await partnerSession.page.goto('/proposals/send-failures', { waitUntil: 'domcontentloaded' });
+        await expect(partnerSession.page.getByTestId('send-failure-screen')).toHaveCount(0);
+        await expect(partnerSession.page.getByRole('heading', { name: t('home.title') })).toBeVisible();
       } finally {
         await partnerSession.close();
       }
       // 🔴 外部への発信は 0 件（#43 は積むだけ。ブラウザ経路の送信の確定は T-09-11 が worker を立てて確かめる）。
+      session.outbound.assertNone();
+
+      // ✅ T-09-08: 🔴 **送信失敗（`SUBMIT_FAILED`）→ `S-022` → 確認ステップを経た人手再送（#44）**（docs/05 §6.5 #44 / §10.6 /
+      //    `F-023 AC-1`〜`AC-3` / `docs/04` §S-022）。モバイルでも 1 件ずつの再送は可能（Tier 2。確認ステップは省略しない）。
+      //    前提: ハーネスに worker が無いため、「応答不明で `SUBMIT_FAILED` に確定した」状態はシーム（`settleProposalSendAsFailedForE2e`。
+      //    送信ジョブの ⑥ と同じ列）で作る。ジョブ本体は `tests/isolation/send-proposal.test.ts` / `proposal-resend.test.ts` の射程。
+      //    ここで確かめるのは:
+      //    ① `S-021` は `SUBMIT_FAILED` で「送信する」を出さず、再送ボタンも置かず、`S-022` への導線だけを描く
+      //    ② `S-022` に行が出て、**応答不明が「失敗」と別の語・別の印**で描かれる。一括再送・自動再送の語が無い
+      //    ③ 🔴 #44 は `acknowledged: false` なら 400 `RESEND_NOT_ACKNOWLEDGED`（`F-023 AC-2`）
+      //    ④ 🔴 「再送する」→ 確認ステップ（**届いている可能性があります** + 提案先・単価・最終試行の再掲）→ チェック + 理由が揃うまで
+      //       送れない → 202（`attemptSeq: 2` / `state: 'APPROVED'`）→ `S-021` へ戻る。「送信済み」と見せない。外部 0
+      //    ⑤ 再送後（`APPROVED`）にもう一度 #44 を叩くと 422（`SUBMIT_FAILED` からしか戻せない）
+      settleProposalSendAsFailedForE2e(proposalId);
+      await session.page.goto(`/proposals/${proposalId}/approve`, { waitUntil: 'domcontentloaded' });
+      const failedScreen = session.page.getByTestId('proposal-approval');
+      await expect(failedScreen).toHaveAttribute('data-proposal-state', 'SUBMIT_FAILED');
+      await expect(session.page.getByTestId('proposal-approval-notice')).toHaveAttribute('data-disposition', 'SUBMIT_FAILED');
+      await expect(session.page.getByTestId('proposal-approval-submit')).toHaveCount(0);
+      await expect(session.page.getByTestId('proposal-approval-approve')).toHaveCount(0);
+      await expect(session.page.locator('[data-testid*="resend"]')).toHaveCount(0);
+      const openSendFailures = session.page.getByTestId('proposal-approval-open-send-failures');
+      await expect(openSendFailures).toBeVisible();
+      await expect(openSendFailures).toHaveText(t('proposals.approval.action.openSendFailures'));
+      await openSendFailures.click();
+      await session.page.waitForURL('**/proposals/send-failures');
+
+      const sendFailureScreen = session.page.getByTestId('send-failure-screen');
+      await expect(sendFailureScreen).toBeVisible();
+      await expect(sendFailureScreen).toHaveAttribute('data-can-resend', 'true');
+      const failureRow = session.page.getByTestId(`send-failure-row-${proposalId}`);
+      await expect(failureRow).toBeVisible();
+      await expect(failureRow).toHaveAttribute('data-delivery-unknown', 'true');
+      await expect(failureRow).toHaveAttribute('data-failure-category', 'UNKNOWN');
+      await expect(session.page.getByTestId(`send-failure-kind-${proposalId}`)).toHaveText(t('sendFailures.failureKind.UNKNOWN'));
+      await expect(session.page.getByTestId(`send-failure-recipient-${proposalId}`)).toContainText('T0903 架空エンド株式会社');
+      // 🔴 一括再送・自動再送・force / override に相当する導線・語が無い（`F-023 AC-1` / `BR-50`）。
+      await expect(session.page.locator('[data-testid*="bulk"], [data-testid*="force"], [data-testid*="override"], [data-testid*="auto"]')).toHaveCount(0);
+      expect(await session.page.content()).not.toMatch(/一括再送|自動再送|自動で再送|無視して|再試行/);
+      expectNoHiddenCountHints('S-022 送信失敗一覧（モバイル）', await session.page.locator('body').innerText());
+      await expectNoHorizontalOverflow('S-022 送信失敗一覧', session.page);
+      await expectNoBrokenLabels('S-022 送信失敗一覧', session.page);
+
+      // ③ 確認を経ない #44 は 400（状態は動かない）。
+      const notAcknowledged = await apiRequest(session.page, `/api/proposals/${proposalId}/resend`, {
+        method: 'POST',
+        body: { acknowledged: false, reason: 'T0903 確認していない' },
+      });
+      expect(notAcknowledged.status, notAcknowledged.text).toBe(400);
+      expect((parseJson(notAcknowledged) as { error: { code: string } }).error.code).toBe('RESEND_NOT_ACKNOWLEDGED');
+
+      // ④ 行を選ぶ → 詳細（応答不明の注記）→「再送する」→ 確認ステップ。
+      await failureRow.click();
+      const detail = session.page.getByTestId('send-failure-detail');
+      await expect(detail).toBeVisible();
+      await expect(detail).toHaveAttribute('data-failure-category', 'UNKNOWN');
+      await expect(session.page.getByTestId('send-failure-detail-notes')).toContainText(t('sendFailures.note.unknown'));
+      await expect(session.page.getByTestId('send-failure-resend-confirm')).toHaveCount(0);
+      await session.page.getByTestId('send-failure-resend').click();
+      const confirm = session.page.getByTestId('send-failure-resend-confirm');
+      await expect(confirm).toBeVisible();
+      await expect(confirm).toContainText(t('sendFailures.resend.confirmTitle'));
+      await expect(confirm).toContainText('届いている可能性');
+      const recap = session.page.getByTestId('send-failure-resend-recap');
+      await expect(recap).toContainText('T0903 架空エンド株式会社');
+      await expect(recap).toContainText('700,000');
+      const resendSubmit = session.page.getByTestId('send-failure-resend-submit');
+      await expect(resendSubmit).toBeDisabled();
+      await session.page.getByTestId('send-failure-resend-acknowledge').check();
+      await expect(resendSubmit).toBeDisabled();
+      await session.page.getByTestId('send-failure-resend-reason').fill('T0903 先方に電話で未着を確認した');
+      await expect(resendSubmit).toBeEnabled();
+      await expectNoBrokenLabels('S-022 再送の確認ステップ', session.page);
+
+      // 🔴 202 の本文は `page.route` で受け止めて読む —— 画面は 202 の直後に `S-021` へ遷移するため、`waitForResponse` で
+      //    掴んだ応答の本文を後から読むと（遷移で解放されて）取得が返らない。`route.fetch()` は同一オリジンの API を
+      //    ブラウザの経路で実行するだけであり、外部発信の監視（`session.outbound`）の対象外である。
+      type ResendBody = { outcome: string; attemptSeq: number; state: string; jobId: string | null; sendHoldReasonKey: string | null };
+      const captured: { status: number; body: ResendBody | null } = { status: 0, body: null };
+      const resendApiUrl = `**/api/proposals/${proposalId}/resend`;
+      await session.page.route(resendApiUrl, async (route) => {
+        const response = await route.fetch();
+        captured.status = response.status();
+        captured.body = (await response.json()) as ResendBody;
+        await route.fulfill({ response });
+      });
+      await resendSubmit.click();
+      // 202 の後は S-021 へ。状態は APPROVED（SUBMITTING に入れるのはジョブ）。「送信済み」と見せない。
+      await session.page.waitForURL(`**/proposals/${proposalId}/approve`);
+      await session.page.unroute(resendApiUrl);
+      expect(captured.status).toBe(202);
+      expect(captured.body).toMatchObject({ outcome: 'ENQUEUED', attemptSeq: 2, state: 'APPROVED', sendHoldReasonKey: null });
+      expect(captured.body?.jobId).toBe(`send.proposal.${proposalId}.2`);
+      await expect(session.page.getByTestId('proposal-approval')).toHaveAttribute('data-proposal-state', 'APPROVED');
+      expect(await session.page.content()).not.toContain(t('proposals.approval.state.submitted.prefix'));
+      await expect(session.page.getByTestId('proposal-approval-open-send-failures')).toHaveCount(0);
+      session.outbound.assertNone();
+
+      // ⑤ APPROVED にもう一度 #44 → 422（SUBMIT_FAILED からしか戻せない）。
+      const notFailed = await apiRequest(session.page, `/api/proposals/${proposalId}/resend`, {
+        method: 'POST',
+        body: { acknowledged: true, reason: 'T0903 二度目' },
+      });
+      expect(notFailed.status, notFailed.text).toBe(422);
+      expect((parseJson(notFailed) as { error: { code: string } }).error.code).toBe('INVALID_STATE_TRANSITION');
       session.outbound.assertNone();
     } finally {
       await session.close();

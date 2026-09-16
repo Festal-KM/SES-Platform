@@ -542,6 +542,11 @@ const ja = {
   'error.proposal.submitForbidden': '提案の送信は、ホストの営業担当・管理者のみが行えます。',
   'error.proposal.sendJobBlocked':
     '送信ジョブを積めませんでした。同じ送信の失敗記録が残っています。運営者が原因を確認するまで、この提案は送信できません。',
+  // 🔴 T-09-08: 送信失敗からの人手再送（`F-023` / docs/05 §6.5 #44 / §10.6）。**「確認を省いて再送する」余地を文言でも作らない**
+  //    （`F-023 AC-2`）。再送できるのは「届いていないことを確認した」と明示した人間だけである。
+  'error.proposal.resendNotAcknowledged':
+    '再送には「先方に届いていないことを確認した」旨の確認が必要です。届いている可能性があるため、確認なしには再送できません。',
+  'error.proposal.resendForbidden': '提案の再送は、ホストの営業担当・管理者のみが行えます。',
   'error.internal': '処理に失敗しました。時間をおいて再度お試しください。',
 
   // --- 品質ゲート（F-020 / F-027 AC-5。docs/05 §11.7 の GateResultView）---
@@ -2165,6 +2170,8 @@ const ja = {
   'proposals.approval.state.submitted.suffix': '）。',
   'proposals.approval.state.submitFailed':
     '送信に失敗しました。届いている可能性があるため、自動では再送しません。再送は送信失敗の一覧から人間の操作で行います。',
+  // 🔴 T-09-08: `SUBMIT_FAILED` のときだけ描く `S-022` への導線（`docs/04` §S-021「送信失敗 → `S-022` への導線」）。
+  'proposals.approval.action.openSendFailures': '送信失敗の一覧へ',
   'proposals.approval.sendHold.title': '送信は保留中です。',
   'proposals.approval.sendHold.sincePrefix': '保留開始: ',
   'proposals.approval.sendHold.openSendingDomain': '送信元ドメインの設定を開く',
@@ -2186,6 +2193,79 @@ const ja = {
     '承認後に内容または前提が変わった、あるいは送信までに時間が経ちすぎたため、送信を見送りました。自動では再送しません。内容の確認後にあらためて送信してください。',
   'sendHold.AI_COST_LIMIT': 'AI 利用の 1 日の上限に達しているため保留中です。上限が回復すると自動で送信されます。',
   'sendHold.PROVIDER_QUOTA': '送信基盤の混雑により保留中。お客様側の設定では解消しません。自動で再送されます。',
+
+  // --- S-022 送信失敗一覧と再送（docs/04 §S-022 / `F-023` / docs/05 §6.5 #44 / §10.6。T-09-08）---
+  // 🔴 **自動再送に相当する語を 1 つも置かない**（`F-023 AC-1` / `BR-22`）。「再試行」「自動で再送」「一括再送」の文言が無ければ
+  //    画面にも作れない（`CLAUDE.md` §3.5 が文言を 1 箇所に集める副次的な効能）。
+  // 🔴 **「応答不明」を「失敗」と同じ語にしない**（`docs/04` §S-022 失敗理由の語）—— 再送の判断が変わる。
+  // 🔴 「空であることが正常」と分かる文言にする（`docs/04` §S-022 空状態）。
+  'sendFailures.title': '送信失敗一覧',
+  'sendFailures.breadcrumb.home': 'ホーム',
+  'sendFailures.breadcrumb.current': '送信失敗一覧',
+  'sendFailures.lead':
+    '送信に失敗した提案（送信失敗）だけを表示します。保留中の提案・検査で不合格の提案・見送りになった提案はここには含まれません。再送は自動では行われず、人間の操作でのみ行います。',
+  'sendFailures.summary.countPrefix': '未対応: ',
+  'sendFailures.summary.countSuffix': ' 件',
+  'sendFailures.summary.oldestPrefix': '最も古い失敗からの経過: ',
+  'sendFailures.column.recipient': '提案先',
+  'sendFailures.column.engineer': 'エンジニア',
+  'sendFailures.column.project': '案件',
+  'sendFailures.column.failureKind': '失敗理由',
+  'sendFailures.column.lastAttemptAt': '最終試行日時',
+  'sendFailures.column.elapsed': '経過時間',
+  'sendFailures.column.attemptCount': '試行回数',
+  'sendFailures.attemptCountSuffix': ' 回',
+  'sendFailures.valueNone': '（不明）',
+  'sendFailures.failureKind.UNKNOWN': '応答不明（到達したか確認できない）',
+  'sendFailures.failureKind.DOMAIN_UNVERIFIED': '送信元ドメインが未検証',
+  'sendFailures.failureKind.AUTH': '認証エラー',
+  'sendFailures.failureKind.RECIPIENT': '宛先アドレスが無効',
+  'sendFailures.failureKind.RATE': '送信上限に達した',
+  'sendFailures.failureKind.PROVIDER': '外部サービスの障害',
+  'sendFailures.failureKind.RESERVATION_CONFLICT': '試行の記録に競合（この実行では送信していません）',
+  'sendFailures.failureKind.OTHER': '送信に失敗した',
+  'sendFailures.failureKind.NONE': '失敗理由の記録がありません',
+  'sendFailures.note.unknown':
+    '応答不明は「失敗」とは別です。送信要求は外部に届いた可能性があります。再送の前に、先方に届いていないことを必ず確認してください。',
+  'sendFailures.note.reservationConflict':
+    '同じ試行の記録が別の実行に取られていました。試行の記録（成功していないか）を確認してから再送してください。',
+  'sendFailures.note.repeated': '繰り返し失敗しています。運営に問い合わせてください。',
+  'sendFailures.empty': '送信に失敗した提案はありません。',
+  'sendFailures.empty.lead': 'この一覧が空であることが正常な状態です。送信に失敗した提案が発生すると、ここに表示されます。',
+  'sendFailures.error.title': '送信失敗の一覧を取得できませんでした。',
+  'sendFailures.error.retry': 'もう一度試す',
+  'sendFailures.loading': '送信失敗の一覧を読み込んでいます…',
+  'sendFailures.detail.title': '選択した提案',
+  'sendFailures.detail.select': '行を選ぶと、ここに失敗の理由と再送の操作を表示します。',
+  'sendFailures.detail.failureKind': '失敗理由',
+  'sendFailures.detail.failureKindRaw': '種別コード',
+  'sendFailures.detail.lastAttemptAt': '最終試行日時',
+  'sendFailures.detail.attemptCount': '試行回数',
+  'sendFailures.detail.unitPrice': '提示単価',
+  'sendFailures.detail.openApproval': '提案の内容を確認する',
+  'sendFailures.detail.openSendingDomain': '送信元ドメインを設定する',
+  'sendFailures.resend': '再送する',
+  'sendFailures.resend.confirmTitle': 'この提案は先方に届いている可能性があります。',
+  'sendFailures.resend.confirmLead':
+    '届いていないことを確認してから再送してください。再送すると、承認済みの内容がそのまま提案先へもう一度送られます。',
+  'sendFailures.resend.acknowledge': '先方に届いていないことを確認しました',
+  'sendFailures.resend.reasonLabel': '再送の理由（提案の履歴に残ります）',
+  'sendFailures.resend.confirmSubmit': '確認のうえ再送する',
+  'sendFailures.resend.confirmCancel': 'やめる',
+  'sendFailures.resend.submitting': '再送を受け付けています…',
+  'sendFailures.resend.error.validation': '確認のチェックと再送の理由の両方が必要です。',
+  'sendFailures.resend.error.state': 'この提案は送信失敗の状態ではありません。再読込して現在の状態をご確認ください。',
+  'sendFailures.resend.error.forbidden': '再送を行う権限がありません。',
+  'sendFailures.resend.error.sendBlocked':
+    '送信ジョブを積めませんでした。同じ送信の失敗記録が残っています。運営者が確認するまで送信できません。',
+  'sendFailures.resend.error.generic': '再送を受け付けられませんでした。提案の状態は変わっていません。',
+  'sendFailures.viewerNotice': '再送はホストの営業担当・管理者が行います。',
+  'sendFailures.deniedTitle': '再送を行えません。',
+  'sendFailures.attempt.title': '試行ごとの記録',
+  'sendFailures.attempt.status.RESERVED': '予約済み（確定していません）',
+  'sendFailures.attempt.status.SUCCEEDED': '成功（相手に届いています）',
+  'sendFailures.attempt.status.FAILED': '失敗',
+  'sendFailures.attempt.status.UNKNOWN': '応答不明（届いた可能性があります）',
 
   // --- S-015 匿名共有の設定（取引先）（docs/04 §S-015 / `F-016` / docs/05 §6.4 #29。T-08-02）---
   // 🔴 **煽らない。** 「共有すると案件が見つかりやすくなります」に相当する語を 1 つも置かない

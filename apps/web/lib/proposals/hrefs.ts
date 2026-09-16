@@ -40,3 +40,9 @@ export const USAGE_SETTINGS_HREF = '/settings/usage';
 export function proposalApproveHref(proposalId: string): string {
   return `/proposals/${proposalId}/approve`;
 }
+
+/**
+ * 🔴 T-09-08: `S-022`（送信失敗一覧と再送）。`S-021` の `SUBMIT_FAILED` から遷移し、#44 の 202 後は `S-021` へ戻る。
+ *    静的セグメントなので `/proposals/[id]` より優先される（Next.js の規約）。
+ */
+export const PROPOSAL_SEND_FAILURES_PATH = '/proposals/send-failures';

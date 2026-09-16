@@ -234,3 +234,32 @@ export const PROPOSAL_SUBMIT_ROLES = PROPOSAL_APPROVAL_ROLES;
 export function canSubmitProposal(actor: ProposalApprovalActor): boolean {
   return actor.partnerCompanyId === null && (PROPOSAL_SUBMIT_ROLES as readonly TenantRole[]).includes(actor.role);
 }
+
+// ============================================================================
+// T-09-08: 送信失敗からの人手再送（#44）と `S-022` の実行者（docs/05 §6.5 #44 / §10.6 / docs/02 `F-023` 関連ロール /
+// `docs/04` §S-022 権限差分）
+// ============================================================================
+//
+// 🔴 **再送できるのはホスト所属の `OWNER` / `ADMIN` / `SALES` だけ**（`F-023` 関連ロール「`OWNER` / `ADMIN` / `SALES`、
+//    `VIEWER`（閲覧のみ）」）。送信（#43）と同じ集合 —— 送信を要求できる立場と再送を指示できる立場を別々に持つ理由が無い。
+//    取引先は `S-022` に到達しない（`docs/04` §S-022「取引先はこの画面に到達しない。送信はホストが行う」）。
+// 🔴 `S-022` の閲覧は上の 3 ロール + ホストの `VIEWER`（再送の導線は無い）。`VIEWER` はホスト所属専用（`CLAUDE.md` §10.1）。
+
+/** 🔴 `#44` の `requireRole`。送信（#43）と同じ集合。**取引先と VIEWER を含まない。** */
+export const PROPOSAL_RESEND_ROLES = PROPOSAL_SUBMIT_ROLES;
+
+/** 再送（#44）を行えるか。🔴 判定材料は ctx だけ（行の値で緩めない）。 */
+export function canResendProposal(actor: ProposalApprovalActor): boolean {
+  return canSubmitProposal(actor);
+}
+
+/**
+ * `S-022` に到達できるロール（`docs/04` §S-022「必要ロール OW/AD/SA/VI」）。並び順は `TENANT_ROLES` と同じ。
+ * 🔴 ホスト所属に限る（`canViewSendFailures`）。ロールだけで決めない。
+ */
+export const SEND_FAILURE_LIST_ROLES = ['OWNER', 'ADMIN', 'SALES', 'VIEWER'] as const satisfies readonly TenantRole[];
+
+/** `S-022` を開けるか（画面の到達判定。母集団は `proposals` の RLS が決める）。 */
+export function canViewSendFailures(actor: ProposalApprovalActor): boolean {
+  return actor.partnerCompanyId === null && (SEND_FAILURE_LIST_ROLES as readonly TenantRole[]).includes(actor.role);
+}

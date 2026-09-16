@@ -66,6 +66,8 @@ export function proposalApprovalScreenMessages(): ProposalApprovalScreenMessages
     scrollRequired: t('proposals.approval.action.scrollRequired'),
     openEditor: t('proposals.approval.action.openEditor'),
     backHome: t('proposals.approval.action.backHome'),
+    // 🔴 T-09-08: `SUBMIT_FAILED` のときだけ描く `S-022` への導線。
+    openSendFailures: t('proposals.approval.action.openSendFailures'),
     viewerNotice: t('proposals.approval.viewerNotice'),
     deniedTitle: t('proposals.approval.deniedTitle'),
     errorValidation: t('proposals.approval.error.validation'),

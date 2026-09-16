@@ -28,6 +28,13 @@
 //   2 以上を返したら `RESEND`（`requestedBy = ctx.userId`）を payload に載せる。**409 にしない。** 同じ `attemptSeq` の重複
 //   enqueue は BullMQ の `jobId` と、ジョブ側の ②-d（`readSendAttempt`）③④ が 1 回に収束させる。
 //
+// ============================================================================
+// 🔴 #44（再送。T-09-08）との共有
+// ============================================================================
+//   `SUBMIT_FAILED → APPROVED` の CAS は `lib/proposals/resend.ts` だけが持つ（所有者 `RESEND`。docs/05 §10.6）。
+//   CAS の後の「ドメイン判定 → 保留 / 監査 / enqueue」は #43 と同じ手順であり、`enqueueProposalSend` を共有する
+//   （`F-023` 処理③「`F-022` の手順を再度実行する」）。**`send.proposal` の payload を組む場所は本ファイルの 1 つ**である。
+//
 // 🔴 母集団はアプリが決めない —— `proposals` は RLS の C5。見えなければ 404。
 // 🔴 本モジュールは Next.js / Auth.js に依存しない（結合テストがサーバを立てずに同じ経路を実行できるようにする）。
 import { sendProposalJobId, type SendProposalJob, type SendProposalJobQueue } from '@ses/connectors';
@@ -141,8 +148,9 @@ function assertSubmittable(ctx: AuthenticatedTenantCtx, row: ProposalStateRow): 
 /**
  * 🔴 `HumanTenantCtx`（`job` を持たない）への狭め込み（T-09-05 申し送り 10）。`resolveTenantCtx` が返す
  *    `AuthenticatedTenantCtx` は `job` を持たないので、ここは型の表明だけである（ジョブ文脈は `apps/web` に存在しない）。
+ *    #44（`lib/proposals/resend.ts`）も同じ 1 実装で狭める。
  */
-function asHumanCtx(ctx: AuthenticatedTenantCtx): HumanTenantCtx {
+export function asHumanCtx(ctx: AuthenticatedTenantCtx): HumanTenantCtx {
   if ('job' in ctx && ctx.job !== undefined) {
     throw new InternalError('送信の要求はジョブ文脈からは行えません（attempt_seq の採番は人間の操作だけ）。');
   }
@@ -177,47 +185,7 @@ export async function requestProposalSubmission(
     // ③ 採番（読むだけ。保留の応答にも載せる —— `send.hold-release` が復帰させる試行番号と同じ値）。
     const attemptSeq = await nextSendAttemptSeq(human, { entityType: PROPOSAL_SEND_ENTITY_TYPE, entityId: row.id });
 
-    // ② 送信元ドメイン（🔴 共通ドメインへ倒さない。未検証は保留であって失敗ではない）。
-    const domain = await deps.resolveSendingDomain(ctx);
-    if (domain.kind === 'UNVERIFIED') {
-      const held = await holdProposalSend(ctx, { proposalId: row.id, reasonKey: 'DOMAIN_UNVERIFIED', now });
-      if (held.kind === 'NOT_FOUND') throw new NotFoundError();
-      if (held.kind === 'NOT_APPROVED') {
-        throw new DomainInvalidStateTransitionError(proposalMachine.entity, held.state, PROPOSAL_SUBMIT_TRANSITION.to);
-      }
-      await writeSubmitRequestAudit(ctx, row.id, deps.meta, {
-        operation: PROPOSAL_SUBMIT_OPERATIONS.REQUEST,
-        attemptSeq,
-        outcome: 'HELD',
-        holdReasonKey: 'DOMAIN_UNVERIFIED',
-      });
-      return {
-        outcome: 'HELD',
-        attemptSeq,
-        jobId: null,
-        state: 'APPROVED',
-        sendHoldReasonKey: 'DOMAIN_UNVERIFIED',
-        sendingDomain: domain.detail,
-      };
-    }
-
-    const job: SendProposalJob = {
-      tenantId: ctx.tenantId,
-      proposalId: row.id,
-      attemptSeq,
-      // 🔴 `1` = `INITIAL`（`requested_by` NULL）。`>= 2` = 人間の再送（#44 を経た後の再要求）。ジョブは値を写すだけ。
-      requestedBy: attemptSeq >= 2 ? ctx.userId : null,
-      enqueuedAt: now.toISOString(),
-    };
-    await writeSubmitRequestAudit(ctx, row.id, deps.meta, {
-      operation: PROPOSAL_SUBMIT_OPERATIONS.REQUEST,
-      attemptSeq,
-      outcome: 'ENQUEUED',
-      jobId: sendProposalJobId(job),
-    });
-    if ((await deps.queue.enqueue(job)) === 'BLOCKED_BY_FAILED_JOB') throw new SendJobBlockedError();
-
-    return { outcome: 'ENQUEUED', attemptSeq, jobId: sendProposalJobId(job), state: 'APPROVED', sendHoldReasonKey: null };
+    return await enqueueProposalSend(ctx, { proposalId: row.id, attemptSeq, now }, deps);
   } catch (error: unknown) {
     return rethrowWithInvalidTransitionAudit(
       ctx,
@@ -225,6 +193,75 @@ export async function requestProposalSubmission(
       error,
     );
   }
+}
+
+export type EnqueueProposalSendInput = {
+  /** 🔴 `APPROVED` であることを呼び出し側が確かめた行（#43 = 読んで 3 段 / #44 = `SUBMIT_FAILED → APPROVED` の CAS 直後）。 */
+  readonly proposalId: string;
+  /** 🔴 呼び出し側が `nextSendAttemptSeq`（人間の文脈）で採番した値。ここでは採番しない。 */
+  readonly attemptSeq: number;
+  readonly now: Date;
+};
+
+/**
+ * 🔴 #43 / #44 が共有する尾部（T-09-08 で切り出した。`send.proposal` の payload を組む場所を 1 つに保つ）:
+ *   ② 送信元ドメイン（`resolveSendingDomain`）。`UNVERIFIED` → `holdProposalSend('DOMAIN_UNVERIFIED')` + 監査 → `HELD`
+ *   ④ `AuditLog(proposal.submit, USER, operation = SUBMIT_REQUEST)`（🔴 enqueue の前。積めなかったときも「要求した」事実は残る）
+ *   ⑤ enqueue（`BLOCKED_BY_FAILED_JOB` は 409 `SEND_JOB_BLOCKED`。202 を返しながら誰も送らない応答を作らない）
+ *
+ * 🔴 状態は動かさない（`APPROVED` の行に保留の属性を立てるだけ）。`holdProposalSend` が `NOT_APPROVED` を返したら
+ *    （読んでから CAS までに動いた）`InvalidStateTransitionError` —— 呼び出し側の `rethrowWithInvalidTransitionAudit` が記録する。
+ * 🔴 `requestedBy` は `attemptSeq >= 2`（人間の再送）でだけ載せる（`1` = `INITIAL`。ジョブは値を写すだけ）。#44 は常に
+ *    `>= 2` になる（`SUBMIT_FAILED` は少なくとも 1 つの試行を経ている）が、ここで前提にはしない。
+ */
+export async function enqueueProposalSend(
+  ctx: AuthenticatedTenantCtx,
+  input: EnqueueProposalSendInput,
+  deps: Pick<ProposalSubmitDeps, 'meta' | 'queue' | 'resolveSendingDomain'>,
+): Promise<ProposalSubmitView> {
+  const { proposalId, attemptSeq, now } = input;
+
+  // ② 送信元ドメイン（🔴 共通ドメインへ倒さない。未検証は保留であって失敗ではない）。
+  const domain = await deps.resolveSendingDomain(ctx);
+  if (domain.kind === 'UNVERIFIED') {
+    const held = await holdProposalSend(ctx, { proposalId, reasonKey: 'DOMAIN_UNVERIFIED', now });
+    if (held.kind === 'NOT_FOUND') throw new NotFoundError();
+    if (held.kind === 'NOT_APPROVED') {
+      throw new DomainInvalidStateTransitionError(proposalMachine.entity, held.state, PROPOSAL_SUBMIT_TRANSITION.to);
+    }
+    await writeSubmitRequestAudit(ctx, proposalId, deps.meta, {
+      operation: PROPOSAL_SUBMIT_OPERATIONS.REQUEST,
+      attemptSeq,
+      outcome: 'HELD',
+      holdReasonKey: 'DOMAIN_UNVERIFIED',
+    });
+    return {
+      outcome: 'HELD',
+      attemptSeq,
+      jobId: null,
+      state: 'APPROVED',
+      sendHoldReasonKey: 'DOMAIN_UNVERIFIED',
+      sendingDomain: domain.detail,
+    };
+  }
+
+  const job: SendProposalJob = {
+    tenantId: ctx.tenantId,
+    proposalId,
+    attemptSeq,
+    // 🔴 `1` = `INITIAL`（`requested_by` NULL）。`>= 2` = 人間の再送（#44、または #44 を経た後の #43 の再要求）。ジョブは値を写すだけ。
+    requestedBy: attemptSeq >= 2 ? ctx.userId : null,
+    enqueuedAt: now.toISOString(),
+  };
+  await writeSubmitRequestAudit(ctx, proposalId, deps.meta, {
+    operation: PROPOSAL_SUBMIT_OPERATIONS.REQUEST,
+    attemptSeq,
+    outcome: 'ENQUEUED',
+    jobId: sendProposalJobId(job),
+  });
+  if ((await deps.queue.enqueue(job)) === 'BLOCKED_BY_FAILED_JOB') throw new SendJobBlockedError();
+
+  return { outcome: 'ENQUEUED', attemptSeq, jobId: sendProposalJobId(job), state: 'APPROVED', sendHoldReasonKey: null };
 }
 
 /** 🔴 `summary` に本文・宛先・単価を載せない（docs/05 §16.2）。載せるのは操作・試行番号・結果だけ。 */

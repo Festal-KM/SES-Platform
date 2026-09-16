@@ -286,6 +286,39 @@ export function deleteT0903SyntheticProposals(proposalIds: readonly string[]): v
     `AND subject LIKE '${T0903_SYNTHETIC_PROPOSAL_PREFIX}%'`;
   execSql(
     `DELETE FROM review_gates WHERE target_type = 'PROPOSAL' AND target_id IN (${synthetic});\n` +
+      // ✅ T-09-08: `send_attempts` も多相（FK 無し）。`settleProposalSendAsFailedForE2e` が作った試行を一緒に消す。
+      `DELETE FROM send_attempts WHERE entity_type = 'PROPOSAL' AND entity_id IN (${synthetic});\n` +
       `DELETE FROM proposals WHERE id IN (${synthetic});`,
+  );
+}
+
+/**
+ * 🔴 T-09-08 専用シーム: `APPROVED` の提案に対して「送信ジョブが応答不明で確定した」状態を作る
+ *    （`SendAttempt(attempt_seq = 1, status = 'UNKNOWN')` + `proposals.state = 'SUBMIT_FAILED'` + `last_failure_reason`）。
+ *
+ * E2E ハーネスには worker が無い（Issue #47 の既定値。`T-09-11` が立てる）ため、#43 が積んだ `send.proposal` は消費されず、
+ * `SUBMIT_FAILED` にはブラウザ経路では到達できない。送信ジョブの ③〜⑥（CAS / 予約 / 外部呼び出し / 確定）の正しさは
+ * `tests/isolation/send-proposal.test.ts` / `proposal-resend.test.ts` の射程であり、E2E が証明したいのは
+ * 🔴「`S-021` から `S-022` へ辿れ、確認ステップ（届いている可能性）を経てだけ #44 が 202 になる」ことである。
+ * したがって**送信失敗という前提だけ**を、`settleProposalSubmission`（`packages/db/src/proposal-send.ts`）と**同じ列**
+ * （`send_attempts` の 1 行 + `proposals` の `state` / `last_failure_reason`、保留列は NULL）で作る。
+ *
+ * 🔴 `APPROVED` 以外の行には何もしない（②が 0 件なら①の試行も入らない —— 順序は「提案の CAS → 試行」ではなく、試行を
+ *    `SELECT … FROM proposals WHERE state = 'APPROVED'` から派生させ、CAS は同じ条件で行う）。
+ * ⚠️ `ProposalEvent(SUBMITTING → SUBMIT_FAILED)` と `AuditLog(proposal.submit, SUBMIT_SETTLE)` はここでは書かない（E2E は
+ *    それを表明しない）。`SUBMITTING` を経由しない（CHECK `state <> 'SUBMITTING' OR approved_at IS NOT NULL` には触れない）。
+ */
+export function settleProposalSendAsFailedForE2e(proposalId: string): void {
+  if (!UUID_PATTERN.test(proposalId)) {
+    throw new Error(`proposalId が UUID の形をしていません: ${proposalId}`);
+  }
+  execSql(
+    `INSERT INTO send_attempts ` +
+      `(id, tenant_id, entity_type, entity_id, attempt_seq, idempotency_key, status, external_id, failure_kind, failure_detail, started_at, settled_at, requested_by) ` +
+      `SELECT gen_random_uuid(), tenant_id, 'PROPOSAL', id, 1, 'proposal:' || id::text || ':1', 'UNKNOWN', NULL, 'UNKNOWN:TimeoutError', ` +
+      `'e2e: no response', now(), now(), NULL FROM proposals WHERE id = '${proposalId}' AND state = 'APPROVED';\n` +
+      `UPDATE proposals SET state = 'SUBMIT_FAILED', last_failure_reason = 'UNKNOWN:TimeoutError', ` +
+      `send_hold_reason_key = NULL, send_hold_since = NULL, updated_at = now() ` +
+      `WHERE id = '${proposalId}' AND state = 'APPROVED';`,
   );
 }

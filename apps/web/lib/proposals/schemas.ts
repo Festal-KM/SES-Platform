@@ -177,3 +177,29 @@ export type RejectProposalBody = z.infer<typeof rejectProposalBodySchema>;
 export type RejectProposalBodyIsolationGuard = AssertNoIsolationKeys<RejectProposalBody>;
 
 assertNoIsolationKeys(Object.keys(rejectProposalBodySchema.shape), 'rejectProposalBodySchema');
+
+// ============================================================================
+// T-09-08: #44 `POST /api/proposals/{id}/resend`（docs/05 §6.5 #44 / §10.6 / `F-023 AC-2`）
+// ============================================================================
+//
+// 🔴 **`acknowledged` は `boolean` として受け、`true` でなければサービス側が 400 `RESEND_NOT_ACKNOWLEDGED` で落とす**
+//    （`z.literal(true)` にすると `false` が `VALIDATION` に畳まれ、画面が「確認のチェックが要る」と伝えられない）。
+//    欠落は Zod の 400（`VALIDATION`）。どちらも 400 であり、状態には触れない。
+// 🔴 `reason` は必須（`F-023` 処理④「再送の指示者・日時・理由を監査ログに記録する」）。`ProposalEvent.note` には
+//    `RESEND:<reason>` として全文を、監査の `summary` には PII を含みうる自由入力を避けて**文字数だけ**を載せる
+//    （`reasonLength`。`lib/proposals/resend.ts`）。
+// 🔴 宛先・本文・添付・`force` の類は受け取らない（送るものは行の値だけ。#43 と同じ）。分離キーも持たない。
+
+/** 再送の理由（`ProposalEvent.note`）。DB は TEXT。 */
+const RESEND_REASON_MAX_LENGTH = 2_000;
+
+export const resendProposalBodySchema = z.object({
+  acknowledged: z.boolean(),
+  reason: z.string().trim().min(1).max(RESEND_REASON_MAX_LENGTH),
+});
+
+export type ResendProposalBody = z.infer<typeof resendProposalBodySchema>;
+
+export type ResendProposalBodyIsolationGuard = AssertNoIsolationKeys<ResendProposalBody>;
+
+assertNoIsolationKeys(Object.keys(resendProposalBodySchema.shape), 'resendProposalBodySchema');

@@ -18,6 +18,7 @@ import { resolveTenantCtxOutcome } from '../../../../../lib/auth/session';
 import { readProposalApproval } from '../../../../../lib/proposals/approval';
 import { proposalApprovalRows } from '../../../../../lib/proposals/approval-rows';
 import { proposalSendingDomainRows } from '../../../../../lib/proposals/editor-rows';
+import { PROPOSAL_SEND_FAILURES_PATH } from '../../../../../lib/proposals/hrefs';
 import { proposalParamsSchema } from '../../../../../lib/proposals/schemas';
 import { proposalSendingDomainFact } from '../../sending-domain';
 import { PROPOSAL_APPROVAL_AUDIT_PATH, PROPOSAL_APPROVAL_HOME_PATH, proposalApprovalScreenMessages } from './approval-props';
@@ -71,6 +72,8 @@ export default async function ProposalApprovalPage({ params }: { readonly params
         sendingDomain={sendingDomain}
         auditHref={auditHref}
         homeHref={PROPOSAL_APPROVAL_HOME_PATH}
+        // 🔴 T-09-08: `S-022` はホストだけが到達する（取引先には導線を出さない）。描くかは画面が状態で決める。
+        sendFailuresHref={ctx.partnerCompanyId === null ? PROPOSAL_SEND_FAILURES_PATH : null}
         messages={proposalApprovalScreenMessages()}
       />
     </main>

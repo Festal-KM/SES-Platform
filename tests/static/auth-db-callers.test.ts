@@ -208,7 +208,9 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
   //    （`SystemTenantCtx` を渡せない）であり、呼び出し元は **`apps/web/**`（#43 / #44 / #60 / #61）だけ**。
   //    ⚠️ T-09-06 が `POST /api/proposals/{id}/submit` の実装ファイルを、T-09-08 が `resend` を足す。
   //    **`apps/worker/**` には決して足さない**（下の it が独立に固定する。ジョブは採番しない）。
-  nextSendAttemptSeq: ['apps/web/lib/proposals/submit.ts'], // ✅ T-09-06（#43）。T-09-08 が `resend` を足す
+  //    ✅ T-09-08: #44（`lib/proposals/resend.ts`）を足した。ドメイン判定 → 保留 / 監査 / enqueue の尾部は `submit.ts` の
+  //    `enqueueProposalSend` を共有するため、`holdProposalSend` の許可先は増えていない。
+  nextSendAttemptSeq: ['apps/web/lib/proposals/resend.ts', 'apps/web/lib/proposals/submit.ts'], // ✅ T-09-06（#43）/ T-09-08（#44）
   // 🔴 T-07-11: `scheduler_runs`（C0 SYSTEM_ONLY）を書く唯一の経路（docs/05 §4.4.2 / §9.1）。
   //    **`runScheduled()` だけ**であり、個々のジョブハンドラは `SchedulerRun` に触れない ——
   //    触れると「記録せずに走るジョブ」が書け、`A-005`（§16.5）の滞留検知が母集団を失う。

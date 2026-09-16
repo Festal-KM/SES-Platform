@@ -71,6 +71,7 @@ const messages: ProposalApprovalScreenMessages = {
   scrollRequired: '承認・却下は、プレビューの末尾まで確認すると選べるようになります。',
   openEditor: '提案の内容を開く',
   backHome: 'ホームに戻る',
+  openSendFailures: '送信失敗の一覧へ',
   viewerNotice: '承認・却下はホストの営業担当・管理者が行います。',
   deniedTitle: '承認・却下を行えません。',
   submit: '送信する',
@@ -150,6 +151,7 @@ function render(overrides: Partial<ProposalApprovalScreenProps> = {}, rowsOverri
       sendingDomain: { kind: 'VERIFIED', label: '送信元: @example.co.jp（検証済み）' },
       auditHref: '/audit-logs',
       homeHref: '/',
+      sendFailuresHref: '/proposals/send-failures',
       messages,
       ...overrides,
     }),
@@ -434,6 +436,25 @@ describe('S-021 ⑨（T-09-06）: 承認後の primary は「送信する」で�
       expect(html).toContain(notice);
       expect(html).not.toContain('data-testid="proposal-approval-submit"');
       expect(html).not.toContain('data-testid="proposal-approval-approve"');
+      // 🔴 T-09-08: `S-022` への導線は SUBMIT_FAILED のときだけ（送信中・送信済みには出さない）。再送ボタンは S-021 に無い。
+      expect(html.includes('data-testid="proposal-approval-open-send-failures"')).toBe(kind === 'SUBMIT_FAILED');
+      expect(html).not.toContain('data-testid="proposal-approval-resend"');
     }
+  });
+
+  it('🔴 T-09-08: SUBMIT_FAILED でも取引先（sendFailuresHref = null）には S-022 への導線が出ない', () => {
+    const html = render(
+      { sendFailuresHref: null },
+      { state: 'SUBMIT_FAILED', stateLabel: '送信失敗', disposition: { kind: 'SUBMIT_FAILED', notice: '送信に失敗しました。' } },
+    );
+    expect(html).toContain('data-disposition="SUBMIT_FAILED"');
+    expect(html).not.toContain('data-testid="proposal-approval-open-send-failures"');
+  });
+
+  it('🔴 T-09-08: ホストの SUBMIT_FAILED には S-022 への導線が描かれ、href は /proposals/send-failures', () => {
+    const html = render({}, { state: 'SUBMIT_FAILED', stateLabel: '送信失敗', disposition: { kind: 'SUBMIT_FAILED', notice: '送信に失敗しました。' } });
+    expect(html).toContain('data-testid="proposal-approval-open-send-failures"');
+    expect(html).toContain('href="/proposals/send-failures"');
+    expect(html).toContain('送信失敗の一覧へ');
   });
 });

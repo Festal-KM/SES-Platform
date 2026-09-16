@@ -100,6 +100,25 @@ export class AuditLogPeriodTooLongError extends AppError {
 }
 
 /**
+ * 🔴 再送（#44）の body に `acknowledged: true` が無い（**400**）。T-09-08。`F-023 AC-2` / docs/05 §10.6「`POST /resend` は
+ *    `{ acknowledged: true }` を必須にする。『届いている可能性がある』旨の確認を経ないと呼べない」。
+ *
+ * 🔴 `ValidationError` と別コードにする理由: 書式は正しく（`boolean`）、**確認の有無だけ**が問題である。画面はこの
+ *    コードで「確認のチェックが要る」と伝える。`false` を受け取った時点で状態には触れていない（行を読む前に落とす）。
+ */
+export class ResendNotAcknowledgedError extends AppError {
+  readonly code = 'RESEND_NOT_ACKNOWLEDGED';
+  readonly httpStatus = 400;
+  readonly userMessageKey: MessageKey = 'error.proposal.resendNotAcknowledged';
+  override readonly details: readonly string[] = ['body.acknowledged'];
+
+  constructor() {
+    super('再送には acknowledged: true が必要です（F-023 AC-2）。');
+    this.name = 'ResendNotAcknowledgedError';
+  }
+}
+
+/**
  * 401。🔴 サインインの失敗理由（存在しない / パスワード不一致 / 無効化）を**区別しない**
  * （docs/04 §S-001「メールアドレスが存在しないとパスワードが違うを区別しない」）。
  */
@@ -614,6 +633,21 @@ export class ProposalSubmitForbiddenError extends ForbiddenError {
   constructor() {
     super();
     this.name = 'ProposalSubmitForbiddenError';
+  }
+}
+
+/**
+ * 🔴 提案の再送（#44）をその立場では行えない（403）。T-09-08。判定は `canResendProposal`
+ *    （docs/02 `F-023` 関連ロール「`OWNER` / `ADMIN` / `SALES`、`VIEWER`（閲覧のみ）」。取引先は `S-022` に到達しない）。
+ *    `ProposalSubmitForbiddenError` と同じ理由で 404 にはしない。
+ */
+export class ProposalResendForbiddenError extends ForbiddenError {
+  override readonly code = 'PROPOSAL_RESEND_FORBIDDEN';
+  override readonly userMessageKey: MessageKey = 'error.proposal.resendForbidden';
+
+  constructor() {
+    super();
+    this.name = 'ProposalResendForbiddenError';
   }
 }
 

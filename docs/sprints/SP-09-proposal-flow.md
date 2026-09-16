@@ -44,7 +44,7 @@
 | T-09-05 | `SendAttempt` と冪等性キーの規約 | 🔴 **決定的な文字列**（乱数 UUID にしない）。2 本の `UNIQUE` | `docs/03` `program-design` 申し送り 3 / K-5 | M |
 | T-09-06 | 🔴 **提案の送信（`F-022`）** | 🔴 **2 回起動しても外部呼び出しは 1 回。自動リトライが存在しない** | `F-022 AC-1`〜`AC-7` / K-5 | L |
 | T-09-07 | 応答不明時の隔離と `SUBMIT_FAILED` の確定 | 🔴 **`SUBMITTING` は片道。自動で `APPROVED` に戻る経路が無い** | `F-022 AC-2` / `docs/05` §10.6 | M |
-| T-09-08 | 送信失敗の一覧と人手再送（`F-023`）と `S-022` | 🔴 **自動再送の仕組み・設定・ジョブが存在しない**。確認を必ず挟む | `F-023 AC-1`〜`AC-3` | M |
+| T-09-08 | 送信失敗の一覧と人手再送（`F-023`）と `S-022` ✅ **2026-09-16 完了** | 🔴 **自動再送の仕組み・設定・ジョブが存在しない**。確認を必ず挟む | `F-023 AC-1`〜`AC-3` | M |
 | T-09-09 | 提案一覧・詳細・履歴（`F-024`）と `S-019` / `S-023` | 4 つの「うまくいかなかった」が独立にフィルタできる | `F-024 AC-2` `AC-3` | M |
 | T-09-10 | 商談結果の記録（`F-025`）と `S-024` | 結果はシステムが自動確定しない。人間の操作のみ | `F-025 AC-1`〜`AC-3` | M |
 | T-09-11 | 🔴 **Phase 1 成功条件 1・2 の E2E** | 1 サイクル完遂 + ゲート FAIL が送信できない | `CLAUDE.md` §5 | L |
@@ -214,6 +214,11 @@
 - 再送の指示者・日時・理由を `AuditLog` に記録する（`F-023 AC-3`）。
 - **静的テスト**: `Proposal` の `SUBMIT_FAILED → APPROVED` を呼ぶコードが `resend/route.ts` 以外に無いことを AST で検査する（`docs/05` §10.6。Phase 3 の `contract-resend-human-only.test.ts` と**対**にする）。
 - **完了の判定**: `F-023 AC-1`〜`AC-3` の結合テスト + 静的テスト。
+- ✅ **決着（2026-09-16。T-09-08）**: `docs/05` §6.5「#44 と `S-022` の実装の決着（T-09-08）」のとおり。#44 は `{ acknowledged: true, reason }`（`false` は 400 `RESEND_NOT_ACKNOWLEDGED`、欠落は 400 `VALIDATION`）→ `nextSendAttemptSeq` → 1 tx（3 段 → `SUBMIT_FAILED → APPROVED` の CAS → `ProposalEvent(actorUserId = 人間, note = 'RESEND:<理由>')` → `AuditLog(proposal.resend, { attemptSeq, previousFailureKind, reasonLength〔自由入力の文字数。本文は載せない〕})`）→ #43 と共有の尾部 `enqueueProposalSend`（`submit.ts` から切り出し。ドメイン未検証は 202 + `DOMAIN_UNVERIFIED` の保留）→ 202（#43 と同じ形）。`SUBMIT_FAILED → APPROVED` を起こすコードは `lib/proposals/resend.ts` の 1 実装で、`tests/static/proposal-resend-human-only.test.ts` が 5 パターンの AST 検査 + `apps/worker/**` / `packages/**` 0 件 + ジョブ名に `resend` / `retry` 無しを固定。`S-022`（`/proposals/send-failures`。Tier 2）は `listProposalSendFailures`（`SUBMIT_FAILED` 専用。保留中の `APPROVED` は出ない。試行は `externalId` を含む）+ `send-failure-rows.ts`（`failureKind` → `docs/04` の 6 語 + 競合。**応答不明は失敗と別の語・別の色**。3 回超で運営への案内。詳細パネルと確認ステップに試行ごとの記録を描く `SendFailureAttemptList`）+ 確認ステップ（届いている可能性 + 再掲 + 試行ごとの記録 + チェック + 理由）→ 202 後は `S-021` へ。一括再送は置かない。結合 `tests/isolation/proposal-resend.test.ts`（同時 2 回の #44 を含む 11 件）/ render 7 件 / ユニット 2 本 / E2E は `home.mobile.spec.ts` の続き（シーム `settleProposalSendAsFailedForE2e`）。
+- 🔴 **T-09-08 からの申し送り（2026-09-16）**:
+  1. **T-09-07 へ**: E2E #8 の通し（応答不明 → `SUBMIT_FAILED` → 自動再送されない → 人手再送で 1 回）の**人手再送側は `S-022` / #44 が揃った**。残るのは「応答不明を再現するモックのモード」と worker（T-09-11）。`harness/db-admin.ts` の `settleProposalSendAsFailedForE2e`（送信ジョブの ⑥ と同じ列で `UNKNOWN` + `SUBMIT_FAILED` を作る）は worker が入ったら実経路に置き換えてよい。`A-005` の「未対応の `SUBMIT_FAILED`」は `proposals(state='SUBMIT_FAILED')` を数えればよく、`S-022` と同じ母集団である（保留を混ぜない）。
+  2. **T-09-09 へ**: ①`apps/web/lib/proposals/send-failures.ts` の `listProposalSendFailures` は `S-022` が要る最小の一覧（`where: { state: 'SUBMIT_FAILED' }` + `send_attempts` の結合）。#45（`GET /api/proposals?state=...`）を作るときに**統合する**（`S-022` の行が要るのは提案先 / 凍結側のエンジニア名 / 案件名 / `lastFailureReason` / `failedAt` / 試行の要約）。②`S-019` の一覧では `SUBMIT_FAILED` を保留（`APPROVED` + `sendHoldReasonKey`）と**別の表示**にし、`SUBMIT_FAILED` の行から `S-022` へ導線を置く（`docs/04` §S-019「送信失敗の行から `S-022` へ」）。③`S-023` の履歴は `ProposalEvent.note` の `RESEND:<理由>` を「再送（理由）」として描く（`SEND_FAILURE:<failureKind>` の対）。④`S-003` の要対応キュー（送信失敗）は `PROPOSAL_SEND_FAILURES_PATH`（`lib/proposals/hrefs.ts`）へ。⑤一括再送（デスクトップのみ。`docs/04` §S-022）は本タスクでは置いていない —— 置くなら「確認は 1 件ずつの内容を列挙」を満たす設計が先。
+  3. **レビュー申し送り（任意）**: `S-022` の失敗理由の畳み込み（`classifySendFailureKind`）は SES の例外名に依存する（`packages/connectors/src/email/ses/errors.ts` の `PERMANENT_CODES` / `THROTTLED_CODES` と同じ語）。コネクタ側で名前を足したら `send-failure-rows.ts` にも反映する（両者を 1 実装にする案は `packages/connectors` → `apps/web` の依存方向のまま可能だが、画面の語の判断を connector に置かない方を採った）。
 
 ### T-09-09 提案一覧・詳細・履歴（M）
 

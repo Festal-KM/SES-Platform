@@ -89,6 +89,8 @@ export type ProposalApprovalScreenMessages = {
   readonly scrollRequired: string;
   readonly openEditor: string;
   readonly backHome: string;
+  /** 🔴 T-09-08: `SUBMIT_FAILED` のときだけ描く `S-022` への導線の文言。 */
+  readonly openSendFailures: string;
   readonly viewerNotice: string;
   readonly deniedTitle: string;
   readonly errorValidation: string;
@@ -107,6 +109,11 @@ export type ProposalApprovalScreenProps = {
   /** 監査ログ（`S-041`）への導線。`OWNER` / `ADMIN` 以外は `null`。 */
   readonly auditHref: string | null;
   readonly homeHref: string;
+  /**
+   * 🔴 T-09-08: `S-022`（送信失敗一覧）への導線。ホストだけ（取引先は `S-022` に到達しない）。
+   *    描くのは `disposition.kind === 'SUBMIT_FAILED'` のときだけ（`docs/04` §S-021「送信失敗 → `S-022` への導線」）。
+   */
+  readonly sendFailuresHref: string | null;
   readonly messages: ProposalApprovalScreenMessages;
 };
 
@@ -238,7 +245,7 @@ function FindingList({
 }
 
 export function ProposalApprovalScreen(props: ProposalApprovalScreenProps) {
-  const { proposalId, rows, denialMessage, sendingDomain, auditHref, homeHref, messages } = props;
+  const { proposalId, rows, denialMessage, sendingDomain, auditHref, homeHref, sendFailuresHref, messages } = props;
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>({ kind: 'IDLE' });
   const [error, setError] = useState<string | null>(null);
@@ -629,6 +636,12 @@ export function ProposalApprovalScreen(props: ProposalApprovalScreenProps) {
               <p role="status" className="m-0 text-sm text-slate-700" data-testid="proposal-approval-notice" data-disposition={rows.disposition.kind}>
                 {rows.disposition.notice}
               </p>
+            ) : null}
+            {/* 🔴 T-09-08: 送信失敗 → `S-022` への導線（再送は `S-022` の確認ステップを経てだけ行う。ここに「再送」ボタンは置かない）。 */}
+            {rows.disposition.kind === 'SUBMIT_FAILED' && sendFailuresHref !== null ? (
+              <Link className={`${SECONDARY_LINK_CLASSES} mt-2 inline-block`} href={sendFailuresHref} data-testid="proposal-approval-open-send-failures">
+                {messages.openSendFailures}
+              </Link>
             ) : null}
             {phase.kind === 'APPROVED' ? (
               <p role="status" className="m-0 text-sm text-emerald-800" data-testid="proposal-approval-result" data-result="APPROVED">
