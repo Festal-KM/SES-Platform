@@ -107,3 +107,14 @@ export type {
   UnverifiedSendingDomainsMeta,
   UnverifiedSendingDomainStatus,
 } from './queries/sending-domains.js';
+// `A-005`（運用監視）の項目 17「組織全体の月間 Anthropic 支出 / tier 上限」と `A-004` のロール別内訳の材料
+// （`F-057` / `F-059`。docs/03 §8.2。T-11-08。画面は T-11-02 / T-11-04）。
+// 🔴 環境全体の値であり `tenantId` を持たない。金額（USD）は運営者向けにのみ返す（主平面には露出しない）。
+//    判定は `@ses/domain` の `decideLimitLevel`（テナント別上限と同じ 1 実装）。
+export { readProviderMonthlySpend, summarizeProviderSpend } from './queries/provider-spend.js';
+export type {
+  ProviderMonthlySpend,
+  ProviderMonthlySpendMeta,
+  ProviderSpendGroup,
+  ProviderSpendSummaryInput,
+} from './queries/provider-spend.js';
