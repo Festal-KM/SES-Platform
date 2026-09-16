@@ -95,3 +95,20 @@ export const USAGE_GAP_CHECK_LOOKBACK_DAYS = 7;
  *    長大な入力をそのまま `where` に持ち込まないための境界。
  */
 export const PAGE_CURSOR_MAX_LENGTH = 256;
+
+/**
+ * 🔴 監査ログ横断検索（API-A7 / `A-006` / `F-058`）で 1 回に指定できる期間の上限（日）。T-11-03。
+ *
+ * `audit_logs` は 100 テナントで年間約 1 億行になる（docs/03 §8.3-3）。`from` / `to` は必須だが、
+ * 必須にしただけでは「1 年分」を指定できてしまうため、期間そのものにも上限を置く。
+ * 超えた要求は **400** で拒み、画面は「期間を短縮」を促す（`docs/04` §A-006 のエラー欄）。
+ * 🔴 `audit_logs` の月次パーティション（docs/03 §8.3-1）を最大 2 つまたぐ幅として 31 日を暫定値にした。
+ *    運用で狭める判断はこの 1 行だけで済む（呼び出し側はこの値を引数で受け取る）。
+ */
+export const AUDIT_LOG_SEARCH_MAX_PERIOD_DAYS = 31;
+
+/**
+ * 管理平面の監視系一覧（`A-005` / `A-006`）の 1 ページの既定行数（docs/04 §5-6「管理平面の監視系は 100 行」）。
+ * 🔴 `PAGE_SIZE_MAX`（200）を超えない。
+ */
+export const ADMIN_MONITORING_PAGE_SIZE = 100;

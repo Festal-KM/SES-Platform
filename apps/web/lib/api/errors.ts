@@ -78,6 +78,28 @@ export class ValidationError extends AppError {
 }
 
 /**
+ * 🔴 監査ログ横断検索（API-A7 / `A-006` / `F-058`）の期間が `AUDIT_LOG_SEARCH_MAX_PERIOD_DAYS` を
+ *    超えた（**400**）。T-11-03。
+ *
+ * 🔴 `ValidationError` と別コードにする理由: 入力の書式は正しく、**期間の幅だけ**が問題である。
+ *    画面は「期間を短くして再実行」という次の行動へ導く（`docs/04` §A-006 のエラー欄）。
+ * 🔴 `params.maxDays` は秘匿ではない（`packages/config` の固定の方針値。テナントの利用状況を含まない）。
+ */
+export class AuditLogPeriodTooLongError extends AppError {
+  readonly code = 'AUDIT_LOG_PERIOD_TOO_LONG';
+  readonly httpStatus = 400;
+  readonly userMessageKey: MessageKey = 'error.admin.auditLogs.periodTooLong';
+  override readonly details: readonly string[] = ['query.from', 'query.to'];
+  override readonly params: Readonly<Record<string, unknown>>;
+
+  constructor(maxDays: number) {
+    super(`検索期間が上限（${maxDays} 日）を超えています。`);
+    this.name = 'AuditLogPeriodTooLongError';
+    this.params = { maxDays };
+  }
+}
+
+/**
  * 401。🔴 サインインの失敗理由（存在しない / パスワード不一致 / 無効化）を**区別しない**
  * （docs/04 §S-001「メールアドレスが存在しないとパスワードが違うを区別しない」）。
  */

@@ -67,6 +67,9 @@
 - 🔴 **チャット本文・提案本文・スキルシート本文が検索結果にもエクスポートにも含まれない**（`F-058 AC-3`）。
 - 横断検索の実行（誰が・いつ・どの条件で）を `AuditLog` に記録（`F-058 AC-4`）。
 - **完了の判定**: `F-058 AC-1`〜`AC-4` の結合テスト（マスキング済み応答のスナップショット）。
+- ✅ **決着（2026-09-16 実装）**: 期間上限 **31 日**（`AUDIT_LOG_SEARCH_MAX_PERIOD_DAYS`。超過は 400 + `AUDIT_LOG_PERIOD_TOO_LONG`）/ フィルタは `targetTenantId`（`tenantId` ではない。T-04-07 の (c)）/ `summary` は `@ses/domain` の `maskAuditSummary()` で**内容キーはキーごと落とし、身元・商流キーと非トークン形状の値は `[masked]`**（部分伏せ無し。`actorDisplayName` 無し）/ 到達導線は `tests/static/admin-no-content-reach.test.ts` で静的固定（`/api/admin/audit-logs/{}` も禁止）/ 検索の記録は既存の `admin.audit_log.search` に条件のみ / CSV エクスポートは作らない。詳細は `docs/05` §6.9「API-A7 の実装の決着」。
+
+- **T-11-03 の申し送り（2026-09-16。code-reviewer）**: ①`docs/04` §A-006 のフィルタとの差分（`actorType` のみ / `targetType` 未実装 / `deviceKind` 追加）は `docs/04` に注記済み。`ui-design` 改訂で確定させる ②`tests/static/admin-no-content-reach.test.ts` は `db.user.findMany()` 形しか見ず、別名経由（`const u = db.user; u.findMany()`）は検出しない（`PlatformReadDb` に `$queryRaw` が無いため raw 経路は型で止まる）。T-11-07 で識別子の別名まで追うか判断 ③`reason` を内容キーとして落とすため `auth.login_failed` の `PASSWORD_MISMATCH` / `USER_DISABLED` の区別が `A-006` から消える。必要なら列挙値だけ残す形状判定へ ④`withPlatformWrite` の `before` / `after`（`JSON.stringify` 文字列）は 64 文字超で `[masked]` に畳まれ、`admin.tenant.create` の内容が `A-006` から読めない。安全側だが障害調査の材料としては T-11-07 で扱う。
 
 ### T-11-04 運用監視（Phase 1 の項目）と `A-005`（L）
 

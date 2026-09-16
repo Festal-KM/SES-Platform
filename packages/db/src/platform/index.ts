@@ -85,3 +85,12 @@ export type {
   PlatformProvisioningItemView,
   ProvisioningInvitationState,
 } from '../serializers/platform/provisioning.js';
+// `A-006`（監査ログ横断検索。API-A7 / `F-058`。T-11-03）。
+// 🔴 応答は `toPlatformAuditLog` でマスク済み・固定形。`summary` の生 JSON は型として外に出ない。
+export { searchPlatformAuditLogs } from './queries/audit-logs.js';
+export type {
+  PlatformAuditLogSearchPage,
+  PlatformAuditLogSearchQuery,
+} from './queries/audit-logs.js';
+export { toPlatformAuditLog } from '../serializers/platform/audit-logs.js';
+export type { PlatformAuditLogView } from '../serializers/platform/audit-logs.js';

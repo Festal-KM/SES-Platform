@@ -42,9 +42,19 @@ export default async function AdminHomePage() {
         <dd className="text-2xl font-bold text-slate-900">{summary.tenantCount}</dd>
       </dl>
       {/* 🔴 A-002（テナント一覧。T-03-09）への導線。件数・状態・日時以外は出さない。 */}
-      <p className="mb-6 text-sm">
+      <p className="mb-2 text-sm">
         <Link className="text-slate-700 underline-offset-2 hover:underline" href="/admin/tenants">
           {t('admin.tenants.title')}
+        </Link>
+      </p>
+      {/* A-006（監査ログ横断検索。T-11-03）への導線。開いただけでは検索を実行しない（期間を入れて検索する）。 */}
+      <p className="mb-6 text-sm">
+        <Link
+          className="text-slate-700 underline-offset-2 hover:underline"
+          href="/admin/audit-logs"
+          data-testid="admin-home-audit-logs-link"
+        >
+          {t('admin.auditLogs.title')}
         </Link>
       </p>
       <p className="text-sm text-slate-700">{t('admin.home.placeholder')}</p>

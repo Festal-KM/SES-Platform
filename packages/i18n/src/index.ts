@@ -226,6 +226,60 @@ const ja = {
   'admin.provisioning.sendingDomain.VERIFIED': '検証済み',
   'admin.provisioning.sendingDomain.FAILED': '検証に失敗',
 
+  // --- A-006 監査ログ横断検索（docs/04 §A-006 / F-058 / BR-40 / BR-42。T-11-03）---
+  // 🔴 運営者に見せるのは件数・状態・エラーであって内容ではない（CLAUDE.md §10.5）。
+  //    氏名・本文に相当する列の文言はここに存在しない（`主体` は種別と ID）。
+  'admin.auditLogs.title': '監査ログ横断検索',
+  'admin.auditLogs.lead':
+    '記録をテナント横断で読む唯一の画面です。個人名・メールアドレス・電話番号はマスキングされ、本文には到達できません。',
+  'admin.auditLogs.section.filters': '検索条件',
+  'admin.auditLogs.section.results': '結果',
+  'admin.auditLogs.section.record': '検索の実行記録',
+  'admin.auditLogs.filter.from.label': '期間（開始）',
+  'admin.auditLogs.filter.to.label': '期間（終了）',
+  'admin.auditLogs.filter.tenantId.label': 'テナント ID（任意）',
+  'admin.auditLogs.filter.action.label': '操作種別（任意。例: skill_sheet.download）',
+  'admin.auditLogs.filter.actorType.label': '主体の種別',
+  'admin.auditLogs.filter.actorType.all': 'すべて',
+  'admin.auditLogs.filter.deviceKind.label': 'デバイス種別',
+  'admin.auditLogs.filter.deviceKind.all': 'すべて',
+  // 🔴 期間は必須。既定で直近 7 日を埋めて開き、空では送れない（docs/03 申し送り 9）。
+  'admin.auditLogs.filter.periodNote':
+    '期間は必須です（全期間の検索はできません）。1 回に検索できる期間には上限があります。',
+  'admin.auditLogs.search': '検索',
+  'admin.auditLogs.searching': '検索しています…',
+  // 🔴 3 秒を超えたときの表示（docs/04 §A-006 非同期処理の表現）。期間の短縮を促す。
+  'admin.auditLogs.searchingSlow': '検索しています。時間がかかる場合は期間を短くしてください。',
+  'admin.auditLogs.loadMore': 'さらに読み込む',
+  'admin.auditLogs.loadingMore': '読み込んでいます…',
+  'admin.auditLogs.error.periodRequired': '期間を指定してください（全期間の検索はできません）。',
+  'admin.auditLogs.error.periodInverted': '期間の開始は終了より前にしてください。',
+  'admin.auditLogs.error.periodTooLong': '期間が長すぎます。期間を短くして再実行してください。',
+  'admin.auditLogs.error.searchFailed': '検索を実行できませんでした。期間を短くして再実行してください。',
+  'admin.auditLogs.empty.beforeSearch': '条件を確認して検索を実行してください。',
+  'admin.auditLogs.empty.noMatch': '条件に一致する記録はありません。',
+  'admin.auditLogs.column.date': '日時',
+  'admin.auditLogs.column.tenant': 'テナント',
+  'admin.auditLogs.column.actor': '主体（マスキング済み）',
+  'admin.auditLogs.column.action': '操作',
+  'admin.auditLogs.column.targetType': '対象種別',
+  'admin.auditLogs.column.summary': '記録（マスキング済み）',
+  'admin.auditLogs.column.meta': 'IP・デバイス',
+  'admin.auditLogs.actor.USER': '利用者',
+  'admin.auditLogs.actor.PLATFORM_USER': '運営者',
+  'admin.auditLogs.actor.SYSTEM': 'システム',
+  'admin.auditLogs.tenant.crossTenant': '（横断）',
+  'admin.auditLogs.tenant.unresolved': '（不明）',
+  'admin.auditLogs.tenant.openDetail': 'テナント詳細',
+  'admin.auditLogs.record.note':
+    'この検索の実行（誰が・いつ・どの条件で）は監査ログに記録されます。結果の内容は記録されません。',
+  // 🔴 内容への到達導線が無いことを明示する（`F-058 AC-2`）。
+  'admin.auditLogs.noReachNote':
+    '記録の対象（エンジニア・スキルシート・提案・チャット）の内容へは、この画面からもコンソールの他の画面からも到達できません。',
+  // A-003 セクション 6 の導線（docs/04 §A-003）。
+  'admin.tenantDetail.section.auditLogs': '監査ログ',
+  'admin.tenantDetail.auditLogs.link': 'このテナントの監査ログを横断検索で開く',
+
   // --- S-035 組織設定（docs/04 §S-035 / F-001 / F-021。T-03-10）---
   'orgSettings.title': '組織設定',
   'orgSettings.section.organization': '組織情報',
@@ -405,6 +459,9 @@ const ja = {
     'この開設要求はすでに処理済みです。テナント一覧で結果をご確認ください。',
   'error.admin.provisioning.invalidCombination':
     '環境と契約の初期状態の組み合わせが正しくありません。試用はサンドボックス、本契約は契約中で開設してください。',
+  // 🔴 T-11-03: 監査ログ横断検索（API-A7）の期間上限超過（400）。次の行動 = 期間を短縮。
+  'error.admin.auditLogs.periodTooLong':
+    '検索期間が上限を超えています。期間を短くして再実行してください。',
   // 🔴 T-05-04: docs/05 §15.1 の 429 段（`QuotaExceededError`）。**上限の種類ごとに文言を分ける**
   //    —— 解消のしかたが違う（AI の日次は翌日、ストレージは削除するか上限を上げるまで）。
   'error.quota.exceeded': 'ご利用量が上限に達したため、この操作は実行できません。',

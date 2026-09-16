@@ -95,3 +95,7 @@ export {
   type SendAttemptToken,
   type SendEntityType,
 } from './idempotency.js';
+// 🔴 T-11-03: 監査ログ `summary` の運営者向けマスキング（docs/05 §5.5 第 2 層 / `F-058 AC-1` / `AC-3`）。
+//    `packages/ai` の `mask()` は LLM 入力専用（単一経路。`tests/static/ai-single-path.test.ts`）であり
+//    管理平面の表示に流用しない。決定的で I/O を持たないため domain に置く。
+export * from './audit/index.js';

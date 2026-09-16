@@ -23,6 +23,8 @@ const repoRoot = path.resolve(here, '..', '..');
  */
 const READ_ONLY_ROUTE_FILES = [
   'apps/web/app/api/admin/tenants/[id]/route.ts',
+  // ✅ T-11-03: API-A7（監査ログ横断検索。`F-058` / `A-006`）。閲覧のみ。書き込みは監査記録だけ。
+  'apps/web/app/api/admin/audit-logs/route.ts',
 ] as const;
 
 /**

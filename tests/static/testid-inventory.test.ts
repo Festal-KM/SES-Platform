@@ -203,6 +203,29 @@ const UNRESOLVED_ALLOWLIST: readonly string[] = [
  *    （`docs/sprints/SP-21` §3.1-8）。**消さない・並べ替えない・改名しない。**
  */
 const FROZEN_EXACT: readonly string[] = [
+  // ✅ T-11-03: `A-006` 監査ログ横断検索（`admin-audit-logs-*`）と、`A-003` / ホームからの導線。
+  //    🔴 `targetId`（エンジニア等）を引く導線の testid は存在しない（`F-058 AC-2`）。
+  'admin-audit-logs-action',
+  'admin-audit-logs-actor-type',
+  'admin-audit-logs-device-kind',
+  'admin-audit-logs-empty',
+  'admin-audit-logs-empty-before-search',
+  'admin-audit-logs-error',
+  'admin-audit-logs-filters',
+  'admin-audit-logs-from',
+  'admin-audit-logs-lead',
+  'admin-audit-logs-load-more',
+  'admin-audit-logs-no-reach-note',
+  'admin-audit-logs-period-error',
+  'admin-audit-logs-record',
+  'admin-audit-logs-results',
+  'admin-audit-logs-search',
+  'admin-audit-logs-searching',
+  'admin-audit-logs-searching-text',
+  'admin-audit-logs-table',
+  'admin-audit-logs-target-tenant-id',
+  'admin-audit-logs-to',
+  'admin-home-audit-logs-link',
   'admin-signin-2fa-code',
   'admin-signin-2fa-form',
   'admin-signin-2fa-submit',
@@ -213,6 +236,8 @@ const FROZEN_EXACT: readonly string[] = [
   'admin-signin-otpauth-uri',
   'admin-signin-password',
   'admin-signin-submit',
+  // ✅ T-11-03: `A-003` セクション 6（監査ログへの導線）。
+  'admin-tenant-detail-audit-logs-link',
   // ✅ T-08-05: `S-016` 候補検索（`candidate-screen.tsx` / `page.tsx`）。実装から機械抽出した 45 個。
   'candidate-detail-anonymous',
   'candidate-detail-anonymous-note',
@@ -825,6 +850,10 @@ const FROZEN_EXACT: readonly string[] = [
  *    `engineer-list-row-<uuid>` のように末尾が変わるため、接頭辞だけを固定する。
  */
 const FROZEN_PREFIXES: readonly string[] = [
+  // ✅ T-11-03: `A-006` の動的 testid（行 / `A-003` への導線 / マスク済みの記録。行 ID で変わる）。
+  'admin-audit-logs-row-',
+  'admin-audit-logs-summary-',
+  'admin-audit-logs-tenant-link-',
   // ✅ T-08-05: `S-016` の動的 testid（行 / 種別 / 表示名 / `+N` / 条件の解除 / 要件サマリの項目）。
   'candidate-list-kind-',
   'candidate-list-more-skills-',

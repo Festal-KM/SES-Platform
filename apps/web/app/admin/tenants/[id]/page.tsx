@@ -11,6 +11,7 @@
 //    1 つも変えていない**（`BR-40`。件数・状態・日時だけであり、エンジニアの氏名・連絡先・
 //    スキルシート本文・チャット本文・トークン平文はここに 1 つも無い）。
 import { notFound, redirect } from 'next/navigation';
+import Link from 'next/link';
 import { getPlatformTenantDetail } from '@ses/db/platform';
 import { t } from '@ses/i18n';
 import { Badge } from '@ses/ui';
@@ -33,6 +34,28 @@ function DefinitionRow({ label, value }: { readonly label: string; readonly valu
       <dt className="text-slate-500">{label}</dt>
       <dd className="text-slate-900">{value}</dd>
     </div>
+  );
+}
+
+/**
+ * セクション 6「監査ログへの導線」（docs/04 §A-003 / `A-006`。T-11-03）。
+ * 🔴 `A-006` は `?targetTenantId=` を初期値に入れるだけで、開いただけでは検索（横断検索の監査行）を実行しない。
+ * 🔴 `PURGED` でも出す（監査ログは法令上の保持義務がある範囲で残る。`CLAUDE.md` §4.2 `Tenant` の規則）。
+ */
+function AuditLogsSection({ tenantId }: { readonly tenantId: string }) {
+  return (
+    <section className="mt-6">
+      <h2 className="mb-2 text-sm font-semibold text-slate-700">
+        {t('admin.tenantDetail.section.auditLogs')}
+      </h2>
+      <Link
+        className="text-sm text-slate-700 underline-offset-2 hover:underline"
+        href={`/admin/audit-logs?targetTenantId=${encodeURIComponent(tenantId)}`}
+        data-testid="admin-tenant-detail-audit-logs-link"
+      >
+        {t('admin.tenantDetail.auditLogs.link')}
+      </Link>
+    </section>
   );
 }
 
@@ -77,6 +100,7 @@ export default async function AdminTenantDetailPage({
             value={detail.lifecycleChangedAt}
           />
         </dl>
+        <AuditLogsSection tenantId={detail.id} />
       </main>
     );
   }
@@ -172,6 +196,8 @@ export default async function AdminTenantDetailPage({
           />
         </dl>
       </section>
+
+      <AuditLogsSection tenantId={detail.id} />
     </main>
   );
 }
