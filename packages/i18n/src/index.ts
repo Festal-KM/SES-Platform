@@ -760,6 +760,9 @@ const ja = {
   'error.proposal.resendNotAcknowledged':
     '再送には「先方に届いていないことを確認した」旨の確認が必要です。届いている可能性があるため、確認なしには再送できません。',
   'error.proposal.resendForbidden': '提案の再送は、ホストの営業担当・管理者のみが行えます。',
+  // 🔴 T-09-09: 履歴へのメモ（`F-024` / docs/05 §6.5 #47）。メモは状態を動かさない。残せるのは編集できる立場と同じ集合。
+  'error.proposal.noteForbidden':
+    'この提案へのメモは、提案の作成者と自社の営業担当・管理者のみが残せます。',
   'error.internal': '処理に失敗しました。時間をおいて再度お試しください。',
 
   // --- 品質ゲート（F-020 / F-027 AC-5。docs/05 §11.7 の GateResultView）---
@@ -2479,6 +2482,151 @@ const ja = {
   'sendFailures.attempt.status.SUCCEEDED': '成功（相手に届いています）',
   'sendFailures.attempt.status.FAILED': '失敗',
   'sendFailures.attempt.status.UNKNOWN': '応答不明（届いた可能性があります）',
+
+  // --- S-019 提案一覧（docs/04 §S-019 / `F-024 AC-2` `AC-3` / docs/05 §6.5 #45。T-09-09）---
+  // 🔴 T2（モバイル閲覧可）。**4 つの「うまくいかなかった」は別の語・別の区分**（`GATE_FAILED` = 差し戻し（検査で不合格）/
+  //    `SUBMIT_FAILED` = 送信失敗 / `LOST` = 見送り / 提案依頼の `DECLINED` = 依頼を辞退。`BR-23` / `BR-60`）。いずれか 2 つを
+  //    1 つの語にまとめた文言（「失敗」「失効」）は存在しない。状態の語そのものは `proposals.state.*`（S-020 と共通）。
+  // 🔴 提案依頼の 5 状態は**別のブロック**の語（`proposals.list.requestState.*`）。`DECLINED` を `Proposal` の `WITHDRAWN`（辞退）と
+  //    同じ語にしない（`docs/04` §S-019「区分名も別の語にする」）。
+  // 🔴 保留（`APPROVED` + 保留理由）は `SUBMIT_FAILED` と別の語（docs/05 §10.4「失敗率の指標に混入させない」）。
+  // 🔴 一括承認・一括送信・自動再送に相当する語を持たない（`BR-50`。一括承認は本タスクでは置かない）。
+  'proposals.list.title': '提案一覧',
+  'proposals.list.open': '提案の一覧を開く',
+  'proposals.list.breadcrumb.home': 'ホーム',
+  'proposals.list.breadcrumb.current': '提案一覧',
+  // 🔴 `docs/04` §3.2 項目 2「一覧の母集団を 1 行で明示」。件数は境界適用後（自社スコープ内。`F-004 AC-4`）。
+  'proposals.list.lead.host': 'この一覧には、自社と取引先が作成したすべての提案が表示されます。',
+  'proposals.list.lead.partner': 'この一覧には、御社が作成した提案のみが表示されます。',
+  'proposals.list.total.prefix': '該当 ',
+  'proposals.list.total.suffix': ' 件',
+  'proposals.list.filter.legend': '絞り込み',
+  'proposals.list.filter.states': '提案の状態（複数選択可）',
+  'proposals.list.filter.q': '提案先・案件名で検索',
+  'proposals.list.filter.apply': '絞り込む',
+  'proposals.list.filter.clear': '条件を解除する',
+  'proposals.list.filter.countPrefix': '（',
+  'proposals.list.filter.countSuffix': '）',
+  // 🔴 提案依頼（`ProposalRequest`）の件数は提案と別のブロック。導線は `S-017`（提案依頼の一覧）へ。
+  'proposals.list.requests.title': '提案依頼（提案とは別の区分）',
+  'proposals.list.requests.lead': '提案依頼は、応諾されて提案が作成されるまで提案ではありません。内訳は提案依頼の一覧で確認できます。',
+  'proposals.list.requests.open': '提案依頼の一覧を開く',
+  'proposals.list.requestState.REQUESTED': '返答待ち',
+  'proposals.list.requestState.ACCEPTED': '応諾',
+  'proposals.list.requestState.DECLINED': '依頼を辞退',
+  'proposals.list.requestState.WITHDRAWN_BY_HOST': '取り下げ',
+  'proposals.list.requestState.EXPIRED': '期限切れ',
+  'proposals.list.column.recipient': '提案先',
+  'proposals.list.column.engineer': 'エンジニア',
+  'proposals.list.column.project': '案件',
+  'proposals.list.column.state': '状態',
+  'proposals.list.column.unitPrice': '単価',
+  'proposals.list.column.createdBy': '作成者',
+  'proposals.list.column.updatedAt': '最終更新',
+  'proposals.list.column.elapsed': '経過時間',
+  'proposals.list.owner.host': '自社',
+  'proposals.list.recipient.unset': '提案先が未設定',
+  'proposals.list.project.notShared': '（案件名は公開されていません）',
+  'proposals.list.engineer.unknown': '（凍結情報なし）',
+  'proposals.list.createdBy.unknown': '（不明）',
+  'proposals.list.valueNone': '—',
+  // 🔴 保留の注記。`SUBMIT_FAILED`（送信失敗）とは別の語・別の印。
+  'proposals.list.hold.badge': '送信を保留中',
+  // 🔴 `検査中` / `送信中` の行の進行中の表現。`送信中` は片道であり自動で `承認済み` に戻らない（`F-022 AC-2`）。
+  'proposals.list.inProgress': '進行中',
+  'proposals.list.stuckSubmitting': '送信中のまま 30 分以上経過しています。運営側でも検知されています。',
+  // 🔴 `SUBMIT_FAILED` が 1 件以上あるときだけ描く `S-022` への導線。
+  'proposals.list.openSendFailures': '送信失敗の一覧へ',
+  'proposals.list.empty': 'まだ提案がありません。',
+  'proposals.list.empty.lead': '案件の候補検索から提案を作成できます。',
+  'proposals.list.empty.openProjects': '案件一覧を開く',
+  'proposals.list.filtered.empty': '条件に一致する提案はありません。',
+  'proposals.list.nextPage': '次のページ',
+  'proposals.list.firstPage': '最初のページに戻る',
+  'proposals.list.error.title': '提案の一覧を取得できませんでした。',
+  'proposals.list.error.retry': 'もう一度試す',
+  'proposals.list.loading': '提案の一覧を読み込んでいます…',
+
+  // --- S-023 提案の詳細と履歴（docs/04 §S-023 / `F-024` `F-025` / docs/05 §6.5 #46 / #47。T-09-09）---
+  // 🔴 T2（モバイル閲覧可）。状態と単価は折りたたみの外（`docs/04` §S-023 デバイス別）。
+  // 🔴 履歴は `ProposalEvent` の `kind` と `note` の接頭辞ごとに描き分ける（遷移 / 承認 / 再送 / 送信失敗 / 下書きの更新 / メモ）。
+  //    自動承認は「システム（全層 PASS のため）」（`F-021 AC-5`）。
+  // 🔴 「最新の情報に更新する」に相当する語を持たない（凍結内容は台帳の現在値で上書きしない。`F-019 AC-5`）。
+  // 🔴 取引先には承認者・送信試行・作成会社の語を出さない（型に無いので描く枝が書けない）。
+  'proposals.detail.title': '提案の詳細と履歴',
+  'proposals.detail.breadcrumb.home': 'ホーム',
+  'proposals.detail.breadcrumb.list': '提案一覧',
+  'proposals.detail.breadcrumb.current': '詳細',
+  'proposals.detail.notFound': 'この提案は見つかりません。URL をご確認ください。',
+  'proposals.detail.partnerNotice': 'この画面には、御社が作成した提案の内容と履歴が表示されます。',
+  'proposals.detail.section.header': '概要',
+  'proposals.detail.section.hold': '送信の保留',
+  'proposals.detail.section.timeline': '履歴',
+  'proposals.detail.section.frozen': '凍結内容',
+  'proposals.detail.section.gate': 'ゲート結果',
+  'proposals.detail.section.actions': '次の操作',
+  'proposals.detail.section.note': 'メモを追加',
+  'proposals.detail.field.state': '状態',
+  'proposals.detail.field.approver': '承認者',
+  'proposals.detail.field.submittedAt': '送信日時',
+  'proposals.detail.field.sendAttempts': '送信試行',
+  'proposals.detail.field.lastFailure': '最終失敗理由',
+  'proposals.detail.sendAttempts.none': '送信試行はありません。',
+  'proposals.detail.sendAttempts.countSuffix': ' 回',
+  'proposals.detail.sendAttempts.lastPrefix': '最終: ',
+  'proposals.detail.attemptStatus.RESERVED': '予約済み',
+  'proposals.detail.attemptStatus.SUCCEEDED': '成功',
+  'proposals.detail.attemptStatus.FAILED': '失敗',
+  'proposals.detail.attemptStatus.UNKNOWN': '応答不明',
+  'proposals.detail.timeline.actor.system': 'システム',
+  'proposals.detail.timeline.actor.systemAutoApprove': 'システム（全層 PASS のため）',
+  'proposals.detail.timeline.actor.unknownUser': '（不明な利用者）',
+  'proposals.detail.timeline.kind.created': '提案を作成',
+  'proposals.detail.timeline.kind.transition': '状態の変更',
+  'proposals.detail.timeline.kind.approval': '承認',
+  'proposals.detail.timeline.kind.reject': '却下（下書きに差し戻し）',
+  'proposals.detail.timeline.kind.resend': '再送',
+  'proposals.detail.timeline.kind.sendFailure': '送信失敗',
+  'proposals.detail.timeline.kind.draftUpdated': '下書きを更新',
+  'proposals.detail.timeline.kind.note': 'メモ',
+  'proposals.detail.timeline.kind.other': '記録',
+  'proposals.detail.timeline.transition.arrow': ' → ',
+  'proposals.detail.timeline.approval.gatePrefix': '検査 #',
+  'proposals.detail.timeline.resend.reasonPrefix': '理由: ',
+  'proposals.detail.timeline.sendFailure.kindPrefix': '種別: ',
+  'proposals.detail.timeline.draftUpdated.fieldsPrefix': '変更した項目: ',
+  'proposals.detail.timeline.attachmentPrefix': '添付の版: ',
+  'proposals.detail.frozen.careers.middle': ' 時点の経験内容 — ',
+  'proposals.detail.frozen.careers.suffix': ' 行',
+  'proposals.detail.frozen.careers.empty': '凍結された経験内容はありません（0 行）。',
+  'proposals.detail.frozen.subject': '件名',
+  'proposals.detail.frozen.body': '本文',
+  'proposals.detail.frozen.empty': '（未入力）',
+  'proposals.detail.frozen.attachment': '添付',
+  'proposals.detail.frozen.attachment.present': 'スキルシートの版を添付',
+  'proposals.detail.frozen.attachment.none': '添付なし',
+  // 🔴 状態に応じた導線。**「ゲートの FAIL を無視して送信」に相当する語は無い**（`BR-18`）。
+  'proposals.detail.action.openEditor': '下書きを編集する',
+  // 🔴 T-09-03 の申し送り: 却下（#42）で `DRAFT` に戻った提案は、内容を変えずに再依頼すると 422 `GATE_ALREADY_COMPLETED` になる
+  //    （`review_gates` の DONE / PASS 行が残るため。docs/05 §11.10 ⑤）。事実をそのまま伝える。
+  'proposals.detail.action.rejectedLead': 'この提案は却下されて下書きに戻っています。内容を変更してからレビューに出してください。',
+  'proposals.detail.action.gateFailedLead': '検査で不合格のため差し戻されています。元データを修正してから、あらためてレビューに出してください。',
+  'proposals.detail.action.openApproval': '承認画面を開く',
+  'proposals.detail.action.openSubmit': '送信する（承認画面）',
+  'proposals.detail.action.openSendFailures': '送信失敗の一覧へ',
+  'proposals.detail.action.openInterview': '商談の記録（面談・結果）',
+  'proposals.detail.action.none': 'この状態で行える操作はありません。',
+  'proposals.detail.note.label': 'メモ（提案の履歴に残ります）',
+  'proposals.detail.note.lead': 'メモは状態を変えません。誰が・いつ・何をしたかの記録として履歴に残ります。',
+  'proposals.detail.note.submit': 'メモを追加する',
+  'proposals.detail.note.submitting': '追加しています…',
+  'proposals.detail.note.added': 'メモを追加しました。',
+  'proposals.detail.note.viewerNotice': '閲覧専用のロールではメモを追加できません。',
+  'proposals.detail.note.forbiddenNotice': 'この提案にメモを残せるのは、作成者とホストの営業担当・管理者です。',
+  'proposals.detail.note.error.validation': 'メモを入力してください（2,000 文字以内）。',
+  'proposals.detail.note.error.forbidden': 'この提案にメモを残す権限がありません。',
+  'proposals.detail.note.error.generic': 'メモを追加できませんでした。提案の状態は変わっていません。',
+  'proposals.detail.deniedTitle': 'メモの追加を行えません。',
 
   // --- S-015 匿名共有の設定（取引先）（docs/04 §S-015 / `F-016` / docs/05 §6.4 #29。T-08-02）---
   // 🔴 **煽らない。** 「共有すると案件が見つかりやすくなります」に相当する語を 1 つも置かない

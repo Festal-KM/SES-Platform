@@ -6,13 +6,27 @@
 // `row` に `engineerId` / `createdBy` / `approvedBy` が**あっても**写像の出力には現れない（列を選んで写す。spread しない）。
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
+  HOST_PROPOSAL_DETAIL_VIEW_KEYS,
+  HOST_PROPOSAL_LIST_ITEM_KEYS,
   HOST_PROPOSAL_VIEW_KEYS,
+  PARTNER_PROPOSAL_DETAIL_VIEW_KEYS,
+  PARTNER_PROPOSAL_LIST_ITEM_KEYS,
   PARTNER_PROPOSAL_VIEW_KEYS,
   ProposalSnapshotShapeError,
+  toHostProposalDetailView,
+  toHostProposalListItem,
   toHostProposalView,
+  toPartnerProposalDetailView,
+  toPartnerProposalListItem,
   toPartnerProposalView,
+  type HostProposalDetailView,
+  type HostProposalListItem,
   type HostProposalView,
+  type PartnerProposalDetailView,
+  type PartnerProposalListItem,
   type PartnerProposalView,
+  type ProposalEventView,
+  type ProposalListRow,
   type ProposalSnapshotRow,
   type ProposalViewRow,
 } from './views';
@@ -164,5 +178,115 @@ describe('共通部の写像', () => {
     expect(() => toHostProposalView(ROW, { ...DEPS, snapshot: { ...SNAPSHOT, skills: 'x' } }, { kind: 'HOST' })).toThrow(ProposalSnapshotShapeError);
     expect(() => toHostProposalView(ROW, { ...DEPS, snapshot: { ...SNAPSHOT, careers: null } }, { kind: 'HOST' })).toThrow(ProposalSnapshotShapeError);
     expect(() => toHostProposalView({ ...ROW, state: 'BOGUS' }, DEPS, { kind: 'HOST' })).toThrow(RangeError);
+  });
+});
+
+// ============================================================================
+// T-09-09: 詳細（#46）と一覧（#45）の型の分離（docs/05 §6.5「#45 / #46 / #47 の実装の決着」/ `F-037 AC-1` / `F-024 AC-3`）
+// ============================================================================
+
+const EVENT: ProposalEventView = {
+  id: '01930000-0000-7000-8000-000000000e01',
+  occurredAt: '2026-09-15T01:00:00.000Z',
+  actor: { kind: 'USER', displayName: '担当 太郎' },
+  kind: 'STATE',
+  fromState: null,
+  toState: 'DRAFT',
+  entry: { kind: 'TRANSITION', note: null },
+  attachmentKey: null,
+};
+
+const DETAIL_SHARED = {
+  careers: [{ periodFrom: '2024-04', periodTo: null, role: 'PL', description: 'x', technologies: 'Go' }],
+  events: [EVENT],
+  createdByName: '担当 太郎',
+  submittedAt: null,
+};
+
+describe('🔴 F-037 AC-1 / §4.8: PartnerProposalDetailView に duplicateFindings / owner / sendHold / approval / sendAttempts が存在しない（型）', () => {
+  it('取引先向けの詳細は基底の view + events / createdByName / submittedAt / snapshot.careers だけ', () => {
+    const view: PartnerProposalDetailView = toPartnerProposalDetailView(toPartnerProposalView(ROW, DEPS), DETAIL_SHARED);
+    expectTypeOf(view).not.toHaveProperty('duplicateFindings');
+    expectTypeOf(view).not.toHaveProperty('owner');
+    expectTypeOf(view).not.toHaveProperty('sendHold');
+    expectTypeOf(view).not.toHaveProperty('approval');
+    expectTypeOf(view).not.toHaveProperty('sendAttempts');
+    expectTypeOf(view).not.toHaveProperty('lastFailureReason');
+    expectTypeOf(view).not.toHaveProperty('engineerId');
+    // @ts-expect-error F-037 AC-1: 重複提案の指摘はパートナー向けの詳細に存在しない（検知は Phase 2 だが型は今分ける）
+    const duplicateFindings: unknown = view.duplicateFindings;
+    // @ts-expect-error 承認者（承認記録）はパートナー向けの詳細に存在しない
+    const approval: unknown = view.approval;
+    // @ts-expect-error 送信試行（C2 HOST_ONLY）はパートナー向けの詳細に存在しない
+    const sendAttempts: unknown = view.sendAttempts;
+    expect([duplicateFindings, approval, sendAttempts]).toEqual([undefined, undefined, undefined]);
+    expect(Object.keys(view).sort()).toEqual([...PARTNER_PROPOSAL_DETAIL_VIEW_KEYS].sort());
+    // 🔴 凍結された経歴は行単位でそのまま（台帳の行 ID を持たない）。
+    expect(view.snapshot.careers).toEqual([{ periodFrom: '2024-04', periodTo: null, role: 'PL', description: 'x', technologies: 'Go' }]);
+    expectTypeOf(view.snapshot.careers[0]!).not.toHaveProperty('id');
+    expect(view.snapshot.careerCount).toBe(1);
+  });
+
+  it('ホスト向けの詳細は approval / sendAttempts / lastFailureReason / owner / sendHold を持ち、キー集合は HOST_PROPOSAL_DETAIL_VIEW_KEYS ちょうど', () => {
+    const view: HostProposalDetailView = toHostProposalDetailView(toHostProposalView(ROW, DEPS, { kind: 'HOST' }), {
+      ...DETAIL_SHARED,
+      approval: { kind: 'SYSTEM', approvedAt: '2026-09-15T02:00:00.000Z' },
+      sendAttempts: [
+        { attemptSeq: 1, status: 'FAILED', failureKind: 'PERMANENT:MessageRejected', startedAt: '2026-09-15T03:00:00.000Z', settledAt: '2026-09-15T03:00:01.000Z', externalId: null },
+      ],
+      lastFailureReason: 'PERMANENT:MessageRejected',
+    });
+    expect(Object.keys(view).sort()).toEqual([...HOST_PROPOSAL_DETAIL_VIEW_KEYS].sort());
+    expectTypeOf(view).not.toHaveProperty('duplicateFindings');
+    expectTypeOf(view).not.toHaveProperty('engineerId');
+    expect(view.approval).toEqual({ kind: 'SYSTEM', approvedAt: '2026-09-15T02:00:00.000Z' });
+    expect(view.sendAttempts).toHaveLength(1);
+  });
+
+  it('凍結の careers の形が壊れていたら握り潰さない', () => {
+    expect(() => toPartnerProposalDetailView(toPartnerProposalView(ROW, DEPS), { ...DETAIL_SHARED, careers: null })).toThrow(ProposalSnapshotShapeError);
+    expect(() => toPartnerProposalDetailView(toPartnerProposalView(ROW, DEPS), { ...DETAIL_SHARED, careers: [{ periodFrom: 1 }] })).toThrow(ProposalSnapshotShapeError);
+  });
+});
+
+const LIST_ROW: ProposalListRow = {
+  id: ROW.id,
+  state: 'APPROVED',
+  proposalRequestId: null,
+  sendHoldReasonKey: 'DOMAIN_UNVERIFIED',
+  sendHoldSince: new Date('2026-09-16T00:00:00.000Z'),
+  recipientCompanyName: '架空エンド株式会社',
+  recipientEmail: 'to@example.test',
+  offeredUnitPrice: { toString: () => '650000.00' },
+  lastFailureReason: 'UNKNOWN:TimeoutError',
+  createdAt: new Date('2026-09-15T01:00:00.000Z'),
+  updatedAt: new Date('2026-09-15T02:00:00.000Z'),
+};
+
+const LIST_DEPS = { project: { id: '01930000-0000-7000-8000-0000000000f1', name: 'Project' }, engineerDisplayName: '山田 太郎', createdByName: '担当 太郎' };
+
+describe('🔴 F-024 AC-3 / §4.8: 一覧の行も所属で型が違う（取引先の行に owner / sendHold / 送信試行 / 失敗理由が無い）', () => {
+  it('取引先の行のキー集合は PARTNER_PROPOSAL_LIST_ITEM_KEYS ちょうど。保留列・失敗理由が行にあっても写らない', () => {
+    const item: PartnerProposalListItem = toPartnerProposalListItem({ ...LIST_ROW, ownerPartnerCompanyId: 'x', createdBy: 'y' } as ProposalListRow, LIST_DEPS);
+    expectTypeOf(item).not.toHaveProperty('owner');
+    expectTypeOf(item).not.toHaveProperty('sendHold');
+    expectTypeOf(item).not.toHaveProperty('sendAttempts');
+    expectTypeOf(item).not.toHaveProperty('lastFailureReason');
+    expectTypeOf(item).not.toHaveProperty('duplicateFindings');
+    expect(Object.keys(item).sort()).toEqual([...PARTNER_PROPOSAL_LIST_ITEM_KEYS].sort());
+    expect(JSON.stringify(item)).not.toContain('DOMAIN_UNVERIFIED');
+    expect(JSON.stringify(item)).not.toContain('UNKNOWN:TimeoutError');
+    expect(item.engineerDisplayName).toBe('山田 太郎');
+    expect(item.offeredUnitPrice).toBe(650000);
+  });
+
+  it('ホストの行は owner / sendHold / lastFailureReason / sendAttempts を持ち、キー集合は HOST_PROPOSAL_LIST_ITEM_KEYS ちょうど', () => {
+    const item: HostProposalListItem = toHostProposalListItem(LIST_ROW, LIST_DEPS, { owner: { kind: 'PARTNER', partnerCompanyName: 'Partner A1' }, sendAttempts: [] });
+    expect(Object.keys(item).sort()).toEqual([...HOST_PROPOSAL_LIST_ITEM_KEYS].sort());
+    expect(item.sendHold).toEqual({ reasonKey: 'DOMAIN_UNVERIFIED', since: '2026-09-16T00:00:00.000Z' });
+    expect(item.owner).toEqual({ kind: 'PARTNER', partnerCompanyName: 'Partner A1' });
+    expect(item.lastFailureReason).toBe('UNKNOWN:TimeoutError');
+    expectTypeOf(item).not.toHaveProperty('duplicateFindings');
+    expectTypeOf(item).not.toHaveProperty('engineerId');
   });
 });

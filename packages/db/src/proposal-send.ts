@@ -50,6 +50,13 @@ export const PROPOSAL_SUBMIT_OPERATIONS = {
 /** 送信対象の `SendAttempt.entity_type`。 */
 export const PROPOSAL_SEND_ENTITY_TYPE = 'PROPOSAL' as const;
 
+/**
+ * 🔴 送信ジョブの ⑥ が `SUBMITTING → SUBMIT_FAILED` の `ProposalEvent.note` に残す印（`SEND_FAILURE:<failureKind>`）。
+ *    `S-023` の履歴（T-09-09）はこの接頭辞で「送信失敗（種別）」を描き、#44 の `RESEND:<理由>` と対にする。
+ *    接頭辞の出所はこの定数だけである（読み手が文字列を書き写さない）。
+ */
+export const PROPOSAL_SEND_FAILURE_NOTE_PREFIX = 'SEND_FAILURE:' as const;
+
 // 🔴 遷移（`CLAUDE.md` §4.2 の遷移表 1 つが決める。存在しない組はここでコンパイル / 実行時に落ちる）。
 const SETTLE_FROM = 'SUBMITTING' as const;
 const SETTLE_SUCCESS_TO = proposalMachine.transition(SETTLE_FROM, 'SUBMITTED');
@@ -350,7 +357,7 @@ export async function failProposalSubmissionWithoutAttempt(
           fromState: SETTLE_FROM,
           toState: SETTLE_FAILURE_TO,
           actorUserId: null,
-          note: `SEND_FAILURE:${PROPOSAL_SEND_RESERVATION_CONFLICT}`,
+          note: `${PROPOSAL_SEND_FAILURE_NOTE_PREFIX}${PROPOSAL_SEND_RESERVATION_CONFLICT}`,
           occurredAt: input.now,
         },
         select: { id: true },
@@ -461,7 +468,7 @@ export async function settleProposalSubmission(
           toState: to,
           // 🔴 `null` = system（送信ジョブ）。
           actorUserId: null,
-          note: succeeded ? null : `SEND_FAILURE:${String(failureKind)}`,
+          note: succeeded ? null : `${PROPOSAL_SEND_FAILURE_NOTE_PREFIX}${String(failureKind)}`,
           occurredAt: input.now,
         },
         select: { id: true },

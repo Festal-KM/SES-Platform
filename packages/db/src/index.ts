@@ -294,6 +294,8 @@ export {
   createProposalDraft,
   ENGINEER_CAREER_ORDER_BY,
   PROPOSAL_AUDIT_ACTION_CREATE,
+  // 🔴 T-09-09: `AuditLog.targetType`（提案）の 1 定数（表記の揺れの是正は SP-12 に申し送り）。
+  PROPOSAL_AUDIT_TARGET_TYPE,
   ProposalDraftEngineerNotFoundError,
 } from './proposal-draft.js';
 export type {
@@ -364,6 +366,8 @@ export {
   listHeldProposalSends,
   PROPOSAL_AUDIT_ACTION_SUBMIT,
   PROPOSAL_SEND_ENTITY_TYPE,
+  // 🔴 T-09-09: `S-023` の履歴が「送信失敗（種別）」を描く接頭辞（書き手と同じ 1 定数）。
+  PROPOSAL_SEND_FAILURE_NOTE_PREFIX,
   PROPOSAL_SEND_RESERVATION_CONFLICT,
   PROPOSAL_SUBMIT_OPERATIONS,
   readProposalForSend,

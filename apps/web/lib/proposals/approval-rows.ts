@@ -322,8 +322,9 @@ function disposition(state: ProposalState, approver: string | null, submittedAt:
 /**
  * 🔴 判断ヘッダ（docs/04 §S-021 セクション 1）。**提案先 / エンジニア / 案件 / 単価 / 開始日 / 作成者 / 経過時間**を
  *    必ず含む（`F-021 AC-4`）。**折りたたまない・モバイルでも常に見える**のは画面側の責務。
+ * 🔴 T-09-09: `S-023`（提案詳細）の概要も同じ関数で組む（判断ヘッダと同じ材料。`Pick` で要る 2 つだけを受ける）。
  */
-export function approvalHeaderRows(view: ProposalApprovalView, now: Date): readonly ApprovalHeaderRow[] {
+export function approvalHeaderRows(view: Pick<ProposalApprovalView, 'view' | 'createdByName'>, now: Date): readonly ApprovalHeaderRow[] {
   const { view: proposal } = view;
   const snapshot = proposal.snapshot;
   const affiliation =

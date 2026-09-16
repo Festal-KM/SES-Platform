@@ -263,3 +263,23 @@ export const SEND_FAILURE_LIST_ROLES = ['OWNER', 'ADMIN', 'SALES', 'VIEWER'] as 
 export function canViewSendFailures(actor: ProposalApprovalActor): boolean {
   return actor.partnerCompanyId === null && (SEND_FAILURE_LIST_ROLES as readonly TenantRole[]).includes(actor.role);
 }
+
+// ============================================================================
+// T-09-09: 履歴へのメモ（#47）の実行者（docs/05 §6.5「#45 / #46 / #47 の実装の決着」/ `docs/04` §S-023 権限差分
+// 「`VIEWER` は記録操作の導線が無い」）
+// ============================================================================
+//
+// 🔴 **メモを残せるのは、その提案を編集できる立場と同じ集合**（作成者 / ホストの `OWNER`・`ADMIN`・`SALES`。`canEditProposal`）。
+//    分ける理由が無い —— 提案に対して「いつ・誰が・何をしたか」を書く主体は、その提案を動かせる主体である。
+//    パートナー所属の非作成者は残せない（#37 / #39 / #48 の `GATE_FAILED → DRAFT` と同じ線。広げるなら `docs/05` §6.5 を先に直す）。
+// 🔴 `VIEWER` は一切不可（ルートの `requireRole` + `requireNotViewer` が先に落とす。ここでも `false`）。
+// 🔴 **メモは状態を動かさない**（`fromState = toState = 現在の状態`）。立場の判定はロールだけでは足りず、行を読んでから行う。
+
+/** 🔴 `#47` の `requireRole`。#36 / #37 / #48 と同じ集合（`VIEWER` を含まない）。 */
+export const PROPOSAL_NOTE_ROLES = PROPOSAL_EDITOR_ROLES;
+
+/** メモ（#47）を残せるか。🔴 判定材料は ctx と「読んだ行」だけ。 */
+export function canAddProposalNote(actor: ProposalEditActor, subject: ProposalEditSubject): boolean {
+  if (actor.role === 'VIEWER') return false;
+  return canEditProposal(actor, subject);
+}

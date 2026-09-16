@@ -1,5 +1,6 @@
 // apps/web/app/api/(main)/proposals/[id]/route.ts
 // docs/05 §6.5 #37 `PATCH /api/proposals/{id}`（`F-019` / `S-020`。「T-09-01 の決着」）。T-09-01。
+// ✅ T-09-09: #46 `GET /api/proposals/{id}`（`F-024` / `F-037 AC-1` / `S-023`。「#45 / #46 / #47 の実装の決着」）を同じファイルに足した。
 //
 // 🔴 **`DRAFT` のみ。他状態は 422 `PROPOSAL_NOT_EDITABLE`**（docs/05 §6.5 #37）。判定と CAS は `updateProposalDraft`。
 //    `GATE_RUNNING` 以降の内容を書き換える経路を作らない（検査した内容と送る内容が食い違う。§11.5）。
@@ -9,11 +10,16 @@
 //    境界外の ID は 404（docs/05 §4.8）。**行を読んでから** `canEditProposal`（作成者 / ホストの営業・管理者）。
 // 🔴 認可は #36 と同じ 3 本（`VIEWER` は 403。`SUSPENDED` / `CLOSING` では編集できない）。
 // 🔴 `withApiRoute` の `audit` を使わない（記録は業務トランザクション内。403 / 404 / 409 / 422 では残さない）。
-// ⚠️ `GET /api/proposals/{id}`（#46。`S-023`）は T-09-09 が同じファイルに足す。`S-020` はサーバコンポーネントから
-//    `readProposalEditor` を直接読む（自己 fetch しない。`S-018` と同じ）。
+//
+// 🔴 **#46 は `guards: []`（読み取り）**。応答は `HostProposalDetailView` | `PartnerProposalDetailView` そのもの（docs/05 §6.5 #46）。
+//    取引先向けの型に `owner` / `sendHold` / `approval`（承認者）/ `sendAttempts`（送信試行）/ **`duplicateFindings`** は存在しない
+//    （`F-037 AC-1`。`views.types.test.ts` が固定）。`snapshot.careers` は**凍結側だけ**（台帳の現在値は #46b。SP-09 の範囲外）。
+//    `S-021` の送信中ポーリングはこの応答（`state` / `sendHold`）を読む（`router.refresh()` の代替。T-09-06 の申し送り 3）。
+//    🔴 `AuditLog` を書かない —— 提案詳細の閲覧は `BR-27` の閲覧記録の対象（エンジニア詳細・スキルシート・案件詳細）ではない。
 import { requireExecutable, requireNotViewer, requireRole } from '../../../../../lib/api/guards';
 import { withApiRoute } from '../../../../../lib/api/withApiRoute';
 import { readRequestMeta } from '../../../../../lib/auth/session';
+import { readProposalDetail } from '../../../../../lib/proposals/detail';
 import { PROPOSAL_EDITOR_ROLES } from '../../../../../lib/proposals/policy';
 import { proposalParamsSchema, updateProposalBodySchema } from '../../../../../lib/proposals/schemas';
 import { updateProposalDraft } from '../../../../../lib/proposals/service';
@@ -36,5 +42,18 @@ export const PATCH = withApiRoute(
         meta: { ipAddress: meta.ipAddress },
       }),
     );
+  },
+);
+
+export const GET = withApiRoute(
+  {
+    label: 'GET /api/proposals/{id}',
+    guards: [],
+    params: proposalParamsSchema,
+  },
+  async ({ ctx, params }) => {
+    const screen = await readProposalDetail(ctx, params.id, { now: new Date() });
+    // 🔴 応答は詳細 view そのもの（`gate` / `canAddNote` は `S-023` のサーバコンポーネントだけが使う画面の材料。API 契約に含めない）。
+    return Response.json(screen.detail);
   },
 );

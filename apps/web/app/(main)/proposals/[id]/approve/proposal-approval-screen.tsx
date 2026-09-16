@@ -22,7 +22,7 @@
 //   ⑦ 承認・却下の成功後は手元で状態を書き換えず、結果の枠を出して `router.refresh()` する（サーバの状態が正）。
 //   ⑧ 🔴 T-09-06: 承認後の primary は「送信する」（#43。docs/05 §6.5 #43 / §10.2 / §10.4 / §10.5）。**押した瞬間に「送信済み」と
 //      見せない** —— 202 は「受け付けた」であり、`SUBMITTING` に入れるのも `SUBMITTED` / `SUBMIT_FAILED` に確定するのも送信ジョブ
-//      である。受け付け後は「送信中」を出し、サーバコンポーネントを読み直して（`router.refresh()` のポーリング）確定・保留を反映する。
+//      である。受け付け後は「送信中」を出し、#46（`GET /api/proposals/{id}`。T-09-09）で状態を監視して変化があればサーバコンポーネントを読み直し、確定・保留を反映する。
 //      送信の保留（`sendHoldReasonKey`）は理由ごとの文言と設定導線で描き、🔴 `PROVIDER_QUOTA` には `S-038` への導線を出さない。
 //      `GATE_STALE` だけは自動復帰しないので「送信する」を再び選べる（§10.5）。Tier 1 のまま（モバイルで完結する）。
 //
@@ -144,8 +144,51 @@ const LAYER_BADGE_VARIANTS = {
 
 /** #40 のポーリング間隔（`S-020` と同じ 5 秒）。 */
 const GATE_POLL_MS = 5_000;
-/** 🔴 T-09-06: 送信の確定を待つ間の読み直し間隔（`router.refresh()`。送信は数秒で確定する）。 */
+/** 🔴 T-09-06: 送信の確定を待つ間の読み直し間隔（#46 の `GET`。送信は数秒で確定する）。 */
 const SEND_POLL_MS = 3_000;
+
+/** #46 の応答のうちポーリングが読む 2 つ（`HostProposalDetailView` / `PartnerProposalDetailView` の共通部 + ホストの `sendHold`）。 */
+type ProposalDetailPollBody = {
+  readonly state?: ProposalState;
+  readonly sendHold?: { readonly reasonKey?: string } | null;
+};
+
+/**
+ * 🔴 T-09-09: #46（`GET /api/proposals/{id}`）を `SEND_POLL_MS` ごとに読み、`state` か保留理由が `expected` と食い違ったら
+ *    `onChanged`（= `router.refresh()`）を 1 回呼んで止まる。読めない間（ネットワーク / 5xx）は次の周期で読み直す。
+ *    戻り値は停止関数（`useEffect` のクリーンアップに渡す）。
+ */
+function pollProposalUntilChanged(
+  proposalId: string,
+  expected: { readonly state: ProposalState; readonly holdReasonKey: string | null },
+  onChanged: () => void,
+): () => void {
+  let cancelled = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  async function poll(): Promise<void> {
+    try {
+      const response = await fetch(`/api/proposals/${proposalId}`, { cache: 'no-store' });
+      if (cancelled) return;
+      if (response.ok) {
+        const body = (await response.json()) as ProposalDetailPollBody;
+        if (cancelled) return;
+        const holdReasonKey = body.sendHold?.reasonKey ?? null;
+        if (body.state !== expected.state || holdReasonKey !== expected.holdReasonKey) {
+          onChanged();
+          return;
+        }
+      }
+    } catch {
+      // 次の周期で読み直す。
+    }
+    if (!cancelled) timer = setTimeout(() => void poll(), SEND_POLL_MS);
+  }
+  timer = setTimeout(() => void poll(), SEND_POLL_MS);
+  return () => {
+    cancelled = true;
+    if (timer !== null) clearTimeout(timer);
+  };
+}
 
 type Phase =
   | { readonly kind: 'IDLE' }
@@ -278,8 +321,10 @@ export function ProposalApprovalScreen(props: ProposalApprovalScreenProps) {
     return () => observer.disconnect();
   }, [actionable, sendActionable]);
 
-  // 🔴 ⑧: 送信の確定を待つ。受け付け直後（`SUBMIT_REQUESTED`）と `SUBMITTING` の間は 3 秒ごとにサーバを読み直す。
-  //    確定（`SUBMITTED` / `SUBMIT_FAILED`）や保留（`sendHold`）は props に現れるので、それで受け付けの枠を閉じる。
+  // 🔴 ⑧: 送信の確定を待つ。受け付け直後（`SUBMIT_REQUESTED`）と `SUBMITTING` の間は 3 秒ごとに #46（`GET /api/proposals/{id}`。
+  //    T-09-09）を読み、`state` か保留（`sendHold`）が props と食い違ったときだけサーバコンポーネントを読み直す
+  //    （T-09-06 の申し送り 3: `router.refresh()` の定期実行から #46 の `GET` に置き換えた —— RSC の全再描画を 3 秒ごとに
+  //    行わない）。確定（`SUBMITTED` / `SUBMIT_FAILED`）や保留は props に現れるので、それで受け付けの枠を閉じる。
   const holdReasonKey = rows.sendHold?.reasonKey ?? null;
   useEffect(() => {
     if (phase.kind !== 'SUBMIT_REQUESTED') return undefined;
@@ -287,14 +332,12 @@ export function ProposalApprovalScreen(props: ProposalApprovalScreenProps) {
       setPhase({ kind: 'IDLE' });
       return undefined;
     }
-    const timer = setInterval(() => router.refresh(), SEND_POLL_MS);
-    return () => clearInterval(timer);
-  }, [phase.kind, rows.disposition.kind, holdReasonKey, router]);
+    return pollProposalUntilChanged(proposalId, { state: rows.state, holdReasonKey }, () => router.refresh());
+  }, [phase.kind, rows.disposition.kind, rows.state, holdReasonKey, proposalId, router]);
   useEffect(() => {
     if (rows.disposition.kind !== 'SUBMITTING') return undefined;
-    const timer = setInterval(() => router.refresh(), SEND_POLL_MS);
-    return () => clearInterval(timer);
-  }, [rows.disposition.kind, router]);
+    return pollProposalUntilChanged(proposalId, { state: rows.state, holdReasonKey }, () => router.refresh());
+  }, [rows.disposition.kind, rows.state, holdReasonKey, proposalId, router]);
 
   // 🔴 ゲート結果（#40）: 検査中の間だけ 5 秒ごとに読み、確定したらサーバコンポーネントを読み直す。
   useEffect(() => {

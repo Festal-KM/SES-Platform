@@ -23,7 +23,13 @@
 // 🔴 本ファイルは I/O を持たない（`@ses/db` に依存しない）。型テスト（`views.types.test.ts`）と画面が
 //    `@ses/db` を読み込まずに参照できるようにするため（`proposal-requests/views.ts` と同じ規律）。
 //    `Decimal` は `toString()` だけを要求する構造的な型で受ける（`lib/format/db-values.ts` と同じ理由）。
-import { isSendHoldReasonKey, proposalMachine, type ProposalState, type SendHoldReasonKey } from '@ses/domain';
+import {
+  isSendHoldReasonKey,
+  proposalMachine,
+  type ProposalRequestState,
+  type ProposalState,
+  type SendHoldReasonKey,
+} from '@ses/domain';
 import { hasProposalRecipient } from './recipient';
 
 /**
@@ -337,4 +343,347 @@ function toSendHold(row: Pick<ProposalViewRow, 'sendHoldReasonKey' | 'sendHoldSi
 /** 取引先向けの写像（自社の行だけが渡ってくる。母集団は C5）。 */
 export function toPartnerProposalView(row: ProposalViewRow, deps: ProposalViewDeps): PartnerProposalView {
   return { audience: 'PARTNER', ...toShared(row, deps) };
+}
+
+// ============================================================================
+// T-09-09: 一覧（#45）・詳細（#46）・履歴の応答型（docs/05 §6.5「#45 / #46 / #47 の実装の決着」/ `F-024` / `F-037 AC-1` /
+// `S-019` / `S-023`）
+// ============================================================================
+//
+// 🔴 一覧の行は `HostProposalView` の**部分集合ではなく別の型**である（`HostProposalListItem` / `PartnerProposalListItem`）。
+//    `S-019` の 8 列（提案先 / エンジニア / 案件 / 状態 / 単価 / 作成者 / 最終更新 / 経過時間）に本文・凍結のスキル・
+//    `contentHash` は要らず、50 行ぶんの `computeProposalContentHash` を毎回計算しない。**列を選んで写す**規律は同じ。
+// 🔴 詳細は `HostProposalView` / `PartnerProposalView` を**拡張**する（`HostProposalDetailView` / `PartnerProposalDetailView`）。
+//    - 🔴 `PartnerProposalDetailView` に**無い**もの: `owner` / `sendHold` / `approval`（承認記録・承認者）/ `sendAttempts`（送信試行）/
+//      `lastFailureReason` / **`duplicateFindings`**（`F-037 AC-1`。検知自体は Phase 2 だが**型の分離は今**行う —— 後から足すと漏れる）。
+//    - `snapshot.careers`（`FrozenCareer[]`）は**凍結側だけ**（docs/05 §6.5「#36 / #46 / #46b の経験内容の凍結」）。台帳の現在値は
+//      #46b（`snapshot-diff`。別エンドポイント）であり、ここに混ぜない。
+// 🔴 履歴（`ProposalEventView`）は `ProposalEvent` の `note` を**書き手の接頭辞で分類済み**の形で返す（`entry`）。分類は
+//    `lib/proposals/events.ts` の 1 実装（接頭辞は書き手の定数を import する。文字列を書き写さない）。取引先向けには
+//    送信試行の詳細（`RESEND` の理由 / `SEND_FAILURE` の種別）を**伏せる**（ホスト側の送信基盤の事情。§4.8）。
+
+/** 凍結された経歴 1 行（`FrozenCareer`。🔴 台帳の行 ID を持たない。docs/05 §3.6）。 */
+export type FrozenCareerView = {
+  /** `YYYY-MM` */
+  readonly periodFrom: string;
+  /** `YYYY-MM` または `null`（継続中）。 */
+  readonly periodTo: string | null;
+  readonly role: string;
+  readonly description: string;
+  readonly technologies: string;
+};
+
+/** 詳細（#46）の凍結情報 = 基底の凍結情報 + 凍結された経歴の行。 */
+export type ProposalDetailSnapshotView = ProposalSnapshotView & {
+  readonly careers: readonly FrozenCareerView[];
+};
+
+/**
+ * 送信試行 1 件の要約（`SendAttempt`。C2 HOST_ONLY）。`S-022` の行と `S-023` の「送信試行」が使う。
+ * 🔴 ホスト向けの型だけが持つ（取引先の文脈では `send_attempts` は 0 行になるが、型として持たせない）。
+ */
+export type ProposalSendAttemptView = {
+  readonly attemptSeq: number;
+  /** `RESERVED` / `SUCCEEDED` / `FAILED` / `UNKNOWN`（`SEND_ATTEMPT_STATUSES`）。 */
+  readonly status: string;
+  readonly failureKind: string | null;
+  /** ISO 8601（UTC）。 */
+  readonly startedAt: string;
+  /** ISO 8601（UTC）。未確定なら `null`。 */
+  readonly settledAt: string | null;
+  /** 送信基盤側の ID（`SUCCEEDED` のときだけ持つ。PII を含まない）。 */
+  readonly externalId: string | null;
+};
+
+/**
+ * 承認記録（docs/05 §3.6 `approvedBy` / `approvedBySystem` / `approvedAt`。`F-021 AC-5`「承認者が `system` として記録される」）。
+ * T-09-03 は `approval.ts` に置いていたが、#46 の型（I/O を持たない本ファイル）が参照するためここへ移した（`approval.ts` は re-export）。
+ * - `NONE` … まだ承認されていない
+ * - `USER` … 人間が承認した。`approverName` はホストの利用者名（C8 DIRECTORY）。読めなければ `null`
+ * - `SYSTEM` … 全層 PASS のため自動承認された（`approved_by_system = true`）
+ */
+export type ProposalApprovalRecordView =
+  | { readonly kind: 'NONE' }
+  | { readonly kind: 'USER'; readonly approverName: string | null; readonly approvedAt: string }
+  | { readonly kind: 'SYSTEM'; readonly approvedAt: string };
+
+/** 履歴の主体（`ProposalEvent.actorUserId`。`null` = システム）。表示名は `users`（C8 DIRECTORY）から。 */
+export type ProposalEventActorView =
+  | { readonly kind: 'USER'; readonly displayName: string | null }
+  | { readonly kind: 'SYSTEM' };
+
+/**
+ * 🔴 `ProposalEvent.note` の分類（`S-023` の履歴が `kind` ごとに描き分ける 6 種 + その他）。
+ * - `TRANSITION` … 状態遷移（`STATE`）。`note` は人間の自由入力（却下の理由 / #48 のメモ）か `null`
+ * - `APPROVAL` … 承認（`STATE` + `REVIEW_GATE:<id>`）。「検査 #…」
+ * - `RESEND` … 人手再送（`STATE` + `RESEND:<理由>`）。「再送（理由）」。🔴 取引先には理由を出さない（`null`）
+ * - `SEND_FAILURE` … 送信失敗の確定（`STATE` + `SEND_FAILURE:<failureKind>`）。「送信失敗（種別）」。🔴 取引先には種別を出さない
+ * - `DRAFT_UPDATED` … 下書きの更新（`NOTE` + `DRAFT_UPDATED:<keys>`）。「下書きを更新（項目名）」
+ * - `NOTE` … 人手のメモ（#47。`NOTE` に接頭辞なし）
+ * - `OTHER` … `ATTACHMENT` や未知の形（握り潰さず、そのまま描く）
+ */
+export type ProposalEventEntryView =
+  | { readonly kind: 'TRANSITION'; readonly note: string | null }
+  | { readonly kind: 'APPROVAL'; readonly reviewGateId: string }
+  | { readonly kind: 'RESEND'; readonly reason: string | null }
+  | { readonly kind: 'SEND_FAILURE'; readonly failureKind: string | null }
+  | { readonly kind: 'DRAFT_UPDATED'; readonly fields: readonly string[] }
+  | { readonly kind: 'NOTE'; readonly note: string }
+  | { readonly kind: 'OTHER'; readonly note: string | null };
+
+export type ProposalEventView = {
+  readonly id: string;
+  /** ISO 8601（UTC）。 */
+  readonly occurredAt: string;
+  readonly actor: ProposalEventActorView;
+  /** `STATE` / `NOTE` / `ATTACHMENT`（DB の CHECK）。 */
+  readonly kind: string;
+  readonly fromState: ProposalState | null;
+  readonly toState: ProposalState | null;
+  readonly entry: ProposalEventEntryView;
+  /** 添付（`skill_sheets.id`）。無ければ `null`。 */
+  readonly attachmentKey: string | null;
+};
+
+type ProposalDetailShared = {
+  readonly snapshot: ProposalDetailSnapshotView;
+  /** 🔴 古い順（`occurredAt` 昇順 → `id` 昇順）。作成時に必ず 1 件書かれるので空にならない。 */
+  readonly events: readonly ProposalEventView[];
+  /** 作成者の表示名（C8 DIRECTORY）。読めなければ `null`。 */
+  readonly createdByName: string | null;
+  /** 送信の確定時刻（`SUBMITTED` 以降）。ISO 8601 / `null`。 */
+  readonly submittedAt: string | null;
+};
+
+/** ホストが読む詳細（#46）。 */
+export type HostProposalDetailView = HostProposalView &
+  ProposalDetailShared & {
+    readonly approval: ProposalApprovalRecordView;
+    /** 送信試行（`attempt_seq` 昇順）。C2 HOST_ONLY。 */
+    readonly sendAttempts: readonly ProposalSendAttemptView[];
+    /** `proposals.last_failure_reason`（確定時の `failureKind`。`SUBMIT_FAILED` の間だけ意味を持つ）。 */
+    readonly lastFailureReason: string | null;
+  };
+
+/** 🔴 取引先が読む詳細（#46）。`owner` / `sendHold` / `approval` / `sendAttempts` / `duplicateFindings` を型として持たない。 */
+export type PartnerProposalDetailView = PartnerProposalView & ProposalDetailShared;
+
+export type ProposalDetailView = HostProposalDetailView | PartnerProposalDetailView;
+
+export const HOST_PROPOSAL_DETAIL_VIEW_KEYS = [
+  ...HOST_PROPOSAL_VIEW_KEYS,
+  'events',
+  'createdByName',
+  'submittedAt',
+  'approval',
+  'sendAttempts',
+  'lastFailureReason',
+] as const satisfies readonly (keyof HostProposalDetailView)[];
+
+/** 🔴 `PartnerProposalDetailView` のキー集合。`owner` / `sendHold` / `approval` / `sendAttempts` / `lastFailureReason` が**無い**。 */
+export const PARTNER_PROPOSAL_DETAIL_VIEW_KEYS = [
+  ...PARTNER_PROPOSAL_VIEW_KEYS,
+  'events',
+  'createdByName',
+  'submittedAt',
+] as const satisfies readonly (keyof PartnerProposalDetailView)[];
+
+function toFrozenCareers(value: unknown): readonly FrozenCareerView[] {
+  if (!Array.isArray(value)) throw new ProposalSnapshotShapeError('careers が配列ではない');
+  return value.map((entry: unknown) => {
+    if (typeof entry !== 'object' || entry === null) {
+      throw new ProposalSnapshotShapeError('careers の要素がオブジェクトではない');
+    }
+    const row = entry as { periodFrom?: unknown; periodTo?: unknown; role?: unknown; description?: unknown; technologies?: unknown };
+    if (
+      typeof row.periodFrom !== 'string' ||
+      !(row.periodTo === null || typeof row.periodTo === 'string') ||
+      typeof row.role !== 'string' ||
+      typeof row.description !== 'string' ||
+      typeof row.technologies !== 'string'
+    ) {
+      throw new ProposalSnapshotShapeError('careers の要素の形が不正');
+    }
+    return { periodFrom: row.periodFrom, periodTo: row.periodTo, role: row.role, description: row.description, technologies: row.technologies };
+  });
+}
+
+/** 詳細の写像に要る、基底の view の外から来る値。 */
+export type ProposalDetailDeps = {
+  /** 凍結コピーの `careers`（JSON）。行単位で写す。 */
+  readonly careers: unknown;
+  readonly events: readonly ProposalEventView[];
+  readonly createdByName: string | null;
+  readonly submittedAt: Date | null;
+};
+
+export type HostProposalDetailDeps = ProposalDetailDeps & {
+  readonly approval: ProposalApprovalRecordView;
+  readonly sendAttempts: readonly ProposalSendAttemptView[];
+  readonly lastFailureReason: string | null;
+};
+
+/** ホスト向けの詳細の写像（基底の view + 詳細だけが持つ値）。 */
+export function toHostProposalDetailView(view: HostProposalView, deps: HostProposalDetailDeps): HostProposalDetailView {
+  return {
+    ...view,
+    snapshot: { ...view.snapshot, careers: toFrozenCareers(deps.careers) },
+    events: deps.events,
+    createdByName: deps.createdByName,
+    submittedAt: deps.submittedAt?.toISOString() ?? null,
+    approval: deps.approval,
+    sendAttempts: deps.sendAttempts,
+    lastFailureReason: deps.lastFailureReason,
+  };
+}
+
+/** 🔴 取引先向けの詳細の写像。承認記録・送信試行・保留・作成会社は**引数の型にすら無い**。 */
+export function toPartnerProposalDetailView(view: PartnerProposalView, deps: ProposalDetailDeps): PartnerProposalDetailView {
+  return {
+    ...view,
+    snapshot: { ...view.snapshot, careers: toFrozenCareers(deps.careers) },
+    events: deps.events,
+    createdByName: deps.createdByName,
+    submittedAt: deps.submittedAt?.toISOString() ?? null,
+  };
+}
+
+// ----------------------------------------------------------------------------
+// 一覧（#45）
+// ----------------------------------------------------------------------------
+
+type ProposalListItemShared = {
+  readonly id: string;
+  readonly state: ProposalState;
+  readonly origin: ProposalOrigin;
+  readonly project: ProposalProjectRef | null;
+  readonly recipient: ProposalRecipientView | null;
+  /** 🔴 凍結側（`EngineerSnapshot.displayName`）。台帳の現在値ではない。凍結が無ければ `null`。 */
+  readonly engineerDisplayName: string | null;
+  readonly offeredUnitPrice: number | null;
+  /** 作成者の表示名（C8 DIRECTORY）。読めなければ `null`。 */
+  readonly createdByName: string | null;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+};
+
+/** ホストが読む一覧の 1 行。 */
+export type HostProposalListItem = ProposalListItemShared & {
+  readonly audience: 'HOST';
+  readonly owner: HostProposalOwnerView;
+  /** 🔴 保留（`APPROVED` + `sendHoldReasonKey`）。`SUBMIT_FAILED` とは**別の表示**にする材料（docs/05 §10.4）。 */
+  readonly sendHold: ProposalSendHoldView | null;
+  readonly lastFailureReason: string | null;
+  /** 送信試行（`attempt_seq` 昇順）。`S-022` の行が使う。 */
+  readonly sendAttempts: readonly ProposalSendAttemptView[];
+};
+
+/** 🔴 取引先が読む一覧の 1 行（自社が作成した行だけ。母集団は C5）。`owner` / `sendHold` / 送信試行を持たない。 */
+export type PartnerProposalListItem = ProposalListItemShared & {
+  readonly audience: 'PARTNER';
+};
+
+export type ProposalListItem = HostProposalListItem | PartnerProposalListItem;
+
+export const HOST_PROPOSAL_LIST_ITEM_KEYS = [
+  'audience',
+  'owner',
+  'sendHold',
+  'lastFailureReason',
+  'sendAttempts',
+  'id',
+  'state',
+  'origin',
+  'project',
+  'recipient',
+  'engineerDisplayName',
+  'offeredUnitPrice',
+  'createdByName',
+  'createdAt',
+  'updatedAt',
+] as const satisfies readonly (keyof HostProposalListItem)[];
+
+export const PARTNER_PROPOSAL_LIST_ITEM_KEYS = [
+  'audience',
+  'id',
+  'state',
+  'origin',
+  'project',
+  'recipient',
+  'engineerDisplayName',
+  'offeredUnitPrice',
+  'createdByName',
+  'createdAt',
+  'updatedAt',
+] as const satisfies readonly (keyof PartnerProposalListItem)[];
+
+/**
+ * 🔴 `byState`（`Proposal` の 14 状態）。**すべてのキーを必ず持つ**（0 件も `0`）—— `GATE_FAILED` / `SUBMIT_FAILED` / `LOST` /
+ *    `WITHDRAWN` が**別のキー**であることを型が固定する（`F-024 AC-2`）。母集団は境界適用後（docs/05 §4.8）。
+ */
+export type ProposalCountByState = Readonly<Record<ProposalState, number>>;
+
+/**
+ * 🔴 `ProposalRequest` の 5 状態の件数。**`byState` と別のブロック**（`DECLINED` は提案依頼の状態であり `Proposal` の状態ではない。
+ *    `docs/04` §S-019「14 状態 + 提案依頼の 5 状態」/ `F-024` 処理③）。値を 1 つの `Record` に混ぜない。
+ */
+export type ProposalRequestCountByState = Readonly<Record<ProposalRequestState, number>>;
+
+/** 一覧の行が読む `proposals` の列（`ProposalViewRow` の部分 + 一覧だけが要る列）。 */
+export type ProposalListRow = {
+  readonly id: string;
+  readonly state: string;
+  readonly proposalRequestId: string | null;
+  readonly sendHoldReasonKey: string | null;
+  readonly sendHoldSince: Date | null;
+  readonly recipientCompanyName: string;
+  readonly recipientEmail: string;
+  readonly offeredUnitPrice: DecimalLike | null;
+  readonly lastFailureReason: string | null;
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+};
+
+export type ProposalListItemDeps = {
+  readonly project: ProposalProjectRef | null;
+  readonly engineerDisplayName: string | null;
+  readonly createdByName: string | null;
+};
+
+function toListShared(row: ProposalListRow, deps: ProposalListItemDeps): ProposalListItemShared {
+  return {
+    id: row.id,
+    state: requireState(row.state),
+    origin: row.proposalRequestId === null ? 'OWN' : 'PROPOSAL_REQUEST',
+    project: deps.project,
+    recipient: hasProposalRecipient({ recipientCompanyName: row.recipientCompanyName, recipientEmail: row.recipientEmail })
+      ? { companyName: row.recipientCompanyName, email: row.recipientEmail }
+      : null,
+    engineerDisplayName: deps.engineerDisplayName,
+    offeredUnitPrice: decimalToNumber(row.offeredUnitPrice),
+    createdByName: deps.createdByName,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+/** ホスト向けの一覧行の写像。 */
+export function toHostProposalListItem(
+  row: ProposalListRow,
+  deps: ProposalListItemDeps,
+  host: { readonly owner: HostProposalOwnerView; readonly sendAttempts: readonly ProposalSendAttemptView[] },
+): HostProposalListItem {
+  return {
+    audience: 'HOST',
+    owner: host.owner,
+    sendHold: toSendHold(row),
+    lastFailureReason: row.lastFailureReason,
+    sendAttempts: host.sendAttempts,
+    ...toListShared(row, deps),
+  };
+}
+
+/** 取引先向けの一覧行の写像（保留列・失敗理由が行にあっても写らない）。 */
+export function toPartnerProposalListItem(row: ProposalListRow, deps: ProposalListItemDeps): PartnerProposalListItem {
+  return { audience: 'PARTNER', ...toListShared(row, deps) };
 }

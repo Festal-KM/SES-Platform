@@ -6,9 +6,11 @@
 //    `force` / `skipLayers` / `reason` のような「呼び出し側が挙動を変える入力」を
 //    1 つでも受け取ると、そこがゲートを緩める入口になる。
 // 🔴 **query も持たない**（`?force=true` は Zod のスキーマが無い以上ハンドラに 1 バイトも届かない）。
-import { PROPOSAL_MANUAL_TRANSITION_TARGET_STATES } from '@ses/domain';
+import { PROPOSAL_MANUAL_TRANSITION_TARGET_STATES, PROPOSAL_STATES } from '@ses/domain';
 import { z } from 'zod';
 import { assertNoIsolationKeys, type AssertNoIsolationKeys } from '../api/isolation-keys';
+import { idCursorPageQuerySchema } from '../api/pagination';
+import { optionalFilter, optionalListFilter } from '../api/query-filters';
 
 /**
  * `#39` / `#40` の path params。
@@ -203,3 +205,54 @@ export type ResendProposalBody = z.infer<typeof resendProposalBodySchema>;
 export type ResendProposalBodyIsolationGuard = AssertNoIsolationKeys<ResendProposalBody>;
 
 assertNoIsolationKeys(Object.keys(resendProposalBodySchema.shape), 'resendProposalBodySchema');
+
+// ============================================================================
+// T-09-09: #45 `GET /api/proposals` / #47 `POST /api/proposals/{id}/events`（docs/05 §6.5「#45 / #46 / #47 の実装の決着」）
+// ============================================================================
+//
+// 🔴 #45 のフィルタは**業務上の絞り込み**（状態 / 案件 / エンジニア / 提案先・案件名の部分一致）であり、実行者のスコープではない。
+//    母集団は `proposals` の RLS（C5）が決める（`where` に `tenantId` / `ownerPartnerCompanyId` を書かない。`assertNoIsolationKeys`）。
+// 🔴 `state` は `ProposalState` の 14 値だけを受ける（`optionalListFilter`。`?state=A&state=B` を配列に均す）。`ProposalRequest` の
+//    5 状態（`DECLINED` 等）はここでは**受けない**（別エンティティ。`F-024` 処理③「別の区分として提示する」/ `docs/04` §S-019）。
+//    値集合の出所は `@ses/domain` の `PROPOSAL_STATES`（4 つの「うまくいかなかった」を 1 値に畳んだ選択肢を持たない）。
+// 🔴 `q` は提案先の社名と案件名の**部分一致**だけ（本文・件名・エンジニア名は検索しない —— 本文は外部共有物、氏名は PII であり、
+//    一致・不一致から値を推測できる。`freeWordOr` の注記と同じ理由）。
+// 🔴 `cursor` は行の ID（`idCursorPageQuerySchema`。UUID でなければ 400）。
+
+/** `q` の上限（提案先の社名 = 200 文字が最長の対象列）。 */
+const PROPOSAL_LIST_Q_MAX_LENGTH = 200;
+
+export const proposalListQuerySchema = idCursorPageQuerySchema.extend({
+  state: optionalListFilter(z.array(z.enum(PROPOSAL_STATES)).min(1)),
+  projectId: optionalFilter(z.uuid()),
+  engineerId: optionalFilter(z.uuid()),
+  q: optionalFilter(z.string().trim().min(1).max(PROPOSAL_LIST_Q_MAX_LENGTH)),
+});
+
+export type ProposalListQuery = z.infer<typeof proposalListQuerySchema>;
+
+export type ProposalListQueryIsolationGuard = AssertNoIsolationKeys<ProposalListQuery>;
+
+assertNoIsolationKeys(Object.keys(proposalListQuerySchema.shape), 'proposalListQuerySchema');
+
+/**
+ * `POST /api/proposals/{id}/events`（#47）の body。🔴 **`kind` は `'NOTE'` の 1 値**（人間のメモ）。`STATE` / `ATTACHMENT` を
+ * ここから書ける置き場所を作らない（状態を動かすのは #39 / #41 / #42 / #43 / #44 / #48 とジョブ。#47 は状態を動かさない）。
+ * 🔴 `note` は必須（空のメモは記録しない）。DB は TEXT。上限は #48 の `note` と同じ。
+ * 🔴 `attachmentKey`（上表 #47 の `attachmentKey?`）は Phase 1 では受け取らない —— 添付の版は `S-020`（#37）で差し替え、
+ *    メモに版を紐付ける用途（面談メモの添付）は Phase 4（`CLAUDE.md` §5）。受けても照合先（`CLEAN` の版か）が定まらない。
+ */
+const PROPOSAL_NOTE_MAX_LENGTH = 2_000;
+
+export const createProposalEventBodySchema = z.object({
+  kind: z.literal('NOTE'),
+  note: z.string().trim().min(1).max(PROPOSAL_NOTE_MAX_LENGTH),
+});
+
+export type CreateProposalEventBody = z.infer<typeof createProposalEventBodySchema>;
+
+export type CreateProposalEventBodyIsolationGuard = AssertNoIsolationKeys<CreateProposalEventBody>;
+
+assertNoIsolationKeys(Object.keys(createProposalEventBodySchema.shape), 'createProposalEventBodySchema');
+
+export { PROPOSAL_NOTE_MAX_LENGTH };

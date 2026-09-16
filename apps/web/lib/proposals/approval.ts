@@ -48,8 +48,8 @@ import { rethrowWithInvalidTransitionAudit } from '../state/invalid-transition';
 import { readProposalGateResult } from './gate';
 import { canApproveProposal, canSubmitProposal } from './policy';
 import type { RejectProposalBody } from './schemas';
-import { readProposalViewInTx, type ProposalActionMeta } from './service';
-import type { ProposalView } from './views';
+import { readProposalViewInTx, type ProposalActionMeta, type ProposalApprovalRecordRow } from './service';
+import type { ProposalApprovalRecordView, ProposalView } from './views';
 
 /** docs/05 §16.1 の `proposal.reject`（#42）。 */
 export const PROPOSAL_AUDIT_ACTION_REJECT = 'proposal.reject';
@@ -254,14 +254,24 @@ export async function rejectProposal(
 
 /**
  * 承認者欄（`docs/04` §S-021「自動承認された提案の見え方」/ `F-021 AC-5`）。
- * - `NONE` … まだ承認されていない（`APPROVAL_PENDING` / `DRAFT` / `GATE_FAILED` …）
- * - `USER` … 人間が承認した。`approverName` はホストの利用者名（C8 DIRECTORY。取引先からも読める）。読めなければ `null`
- * - `SYSTEM` … 全層 PASS のため自動承認された（`approved_by_system = true`）
+ * 🔴 T-09-09: 型の定義は `views.ts` に移した（#46 の `HostProposalDetailView` が持つ。I/O を持たないファイルに置く）。
+ *    ここは re-export（`approval-rows.ts` の import 元を変えない）。
  */
-export type ProposalApprovalRecordView =
-  | { readonly kind: 'NONE' }
-  | { readonly kind: 'USER'; readonly approverName: string | null; readonly approvedAt: string }
-  | { readonly kind: 'SYSTEM'; readonly approvedAt: string };
+export type { ProposalApprovalRecordView } from './views';
+
+/**
+ * 承認記録の列から承認者欄を組む（`readProposalApproval` と #46 の `readProposalDetail` が同じ 1 実装を使う）。
+ * `approverName` は呼び出し側が `users`（C8 DIRECTORY）から読んで渡す（`approvedBy` が `null` なら読まない）。
+ */
+export function toProposalApprovalRecordView(
+  approval: ProposalApprovalRecordRow,
+  approverName: string | null,
+): ProposalApprovalRecordView {
+  const approvedAt = approval.approvedAt;
+  if (approvedAt === null) return { kind: 'NONE' };
+  if (approval.approvedBySystem) return { kind: 'SYSTEM', approvedAt: approvedAt.toISOString() };
+  return { kind: 'USER', approverName, approvedAt: approvedAt.toISOString() };
+}
 
 export type ProposalApprovalView = {
   /** 🔴 判断材料の凍結側（`S-020` と同じ `HostProposalView` / `PartnerProposalView`）。台帳の現在値を混ぜない。 */
@@ -304,18 +314,10 @@ export async function readProposalApproval(
 
   const gate = await readProposalGateResult(ctx, proposalId, meta);
 
-  const approvedAt = read.approval.approvedAt;
-  const approval: ProposalApprovalRecordView =
-    approvedAt === null
-      ? { kind: 'NONE' }
-      : read.approval.approvedBySystem
-        ? { kind: 'SYSTEM', approvedAt: approvedAt.toISOString() }
-        : { kind: 'USER', approverName: read.approverName, approvedAt: approvedAt.toISOString() };
-
   return {
     view: read.view,
     gate,
-    approval,
+    approval: toProposalApprovalRecordView(read.approval, read.approverName),
     createdByName: read.createdByName,
     canApprove: canApproveProposal(ctx),
     canSubmit: canSubmitProposal(ctx),

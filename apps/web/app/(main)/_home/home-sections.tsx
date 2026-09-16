@@ -78,9 +78,29 @@ export function HostHomeSections({
           {/* 🔴 T-08-06: `S-017`（提案依頼の一覧）への導線（docs/04 §3.2 ナビ「③ 提案依頼（`S-017`）」）。
               ロールで隠さない（`VIEWER` も閲覧できる。取り下げの導線は `S-017` 側がロールで出し分ける）。 */}
           <ProposalRequestListLink testId="home-host-proposal-requests" />
+          {/* 🔴 T-09-09: `S-019`（提案一覧）への導線（docs/04 §3.2 ナビ「③ 提案（`S-019`）」/ §S-019 関連画面）。
+              ロールで隠さない（`VIEWER` も閲覧できる。見えるものは `proposals` の RLS（C5）が決める）。
+              ⚠️ `S-003` の要対応キュー（承認待ち / 送信失敗 → `S-022`）は本タスクの範囲外（SP-10）。導線の URL は
+              `lib/proposals/hrefs.ts` の `PROPOSAL_SEND_FAILURES_PATH` を使うこと（T-09-08 の申し送り）。 */}
+          <ProposalListLink testId="home-host-proposals" />
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * 🔴 `S-019`（提案一覧）への導線。`S-003` / `S-004` の**両方**に同じ形で置く（`docs/04` §S-019 権限差分「取引先は自社が作成した
+ *    提案のみ」= 母集団が違うだけで入口は同じ。取引先は 1 日 4〜5 時間の主利用者であり、自社の提案の現在地を追う入口を
+ *    ホームの「ついで」にしない。`CLAUDE.md` §1.2）。
+ * 🔴 **文言は同じでも母集団は違う**（ホスト = 自社と取引先の全提案 / 取引先 = 御社が作成した提案）。母集団の説明は `S-019` 側が
+ *    1 行で出す（`ProjectListLink` と同じ判断）。
+ */
+function ProposalListLink({ testId }: { readonly testId: string }) {
+  return (
+    <Link className={SECONDARY_LINK_CLASSES} href="/proposals" data-testid={testId}>
+      {t('proposals.list.open')}
+    </Link>
   );
 }
 
@@ -234,6 +254,9 @@ export function PartnerHomeSections({
             {/* 🔴 T-08-06: `S-017`（提案依頼の一覧）。取引先には**届いた依頼に気づく唯一の入口**
                 （Phase 1 の通知はアプリ内表示。`F-018` 処理②）。ロールで隠さない。 */}
             <ProposalRequestListLink testId="home-partner-proposal-requests" />
+            {/* 🔴 T-09-09: `S-019`（提案一覧）。取引先には**自社が作成した提案の現在地**（承認待ち / 送信済み / 商談中）を追う入口。
+                ロールで隠さない（`VIEWER` も閲覧できる。母集団は `proposals` の RLS（C5）が決める）。 */}
+            <ProposalListLink testId="home-partner-proposals" />
             {/* 🔴 T-08-02: `S-015`（匿名共有の設定）への導線（docs/04 §S-015 関連画面
                 「← `S-004`」）。**取引先のホームにしか置かない** —— ホスト側ロールには
                 この画面が存在しない（`F-016` 関連ロール）。`HostHomeSections` に同じ導線を

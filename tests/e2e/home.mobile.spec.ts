@@ -260,6 +260,86 @@ test.describe('モバイルビューポートのスモーク（S-003 / S-004 は
       //       送れない → 202（`attemptSeq: 2` / `state: 'APPROVED'`）→ `S-021` へ戻る。「送信済み」と見せない。外部 0
       //    ⑤ 再送後（`APPROVED`）にもう一度 #44 を叩くと 422（`SUBMIT_FAILED` からしか戻せない）
       settleProposalSendAsFailedForE2e(proposalId);
+
+      // ✅ T-09-09: 🔴 **`S-019`（提案一覧）→ `S-023`（詳細と履歴）→ メモ追加（#47）→ `S-022` への導線**（docs/05 §6.5 #45 / #46 / #47 /
+      //    `F-024 AC-2` / `docs/04` §S-019 / §S-023）。Tier 2 だがモバイルで破綻しないことも同じ画面で見る。
+      //    ① `S-019`: 4 つの「うまくいかなかった」が**別のチップ**（`GATE_FAILED` / `SUBMIT_FAILED` / `LOST` の 3 チップ + 提案依頼の
+      //       `DECLINED` は**別ブロック**）。`SUBMIT_FAILED` の行は `data-failure-kind="SUBMIT_FAILED"` で、`S-022` への導線が出る
+      //    ② 行 → `S-023`。状態は `SUBMIT_FAILED`、履歴に作成・承認・送信失敗が別の kind で描かれ、`S-022` への導線がある
+      //    ③ メモを追加（#47）→ 201 → 履歴に `NOTE` の行が現れ、🔴 **状態は `SUBMIT_FAILED` のまま**（メモは状態を動かさない）
+      //    ④ `S-023` の導線から `S-022` へ（以降は T-09-08 の流れ = `S-021` から入り直す）
+      await session.page.goto('/proposals', { waitUntil: 'domcontentloaded' });
+      const listScreen = session.page.getByTestId('proposal-list-screen');
+      await expect(listScreen).toHaveAttribute('data-audience', 'HOST');
+      for (const state of ['GATE_FAILED', 'SUBMIT_FAILED', 'LOST', 'WITHDRAWN']) {
+        await expect(session.page.getByTestId(`proposal-list-state-chip-${state}`)).toBeVisible();
+      }
+      await expect(session.page.getByTestId('proposal-list-state-chip-SUBMIT_FAILED')).toHaveAttribute('data-failure-kind', 'SUBMIT_FAILED');
+      await expect(session.page.getByTestId('proposal-list-state-chip-LOST')).toHaveAttribute('data-failure-kind', 'LOST');
+      await expect(session.page.getByTestId('proposal-list-state-chip-GATE_FAILED')).toHaveAttribute('data-failure-kind', 'GATE_FAILED');
+      // 提案依頼の `DECLINED` は提案のチップに無く、別ブロックにだけある。
+      await expect(session.page.getByTestId('proposal-list-state-chip-DECLINED')).toHaveCount(0);
+      await expect(session.page.getByTestId('proposal-list-request-chip-DECLINED')).toBeVisible();
+      await expect(session.page.getByTestId('proposal-list-request-chip-DECLINED')).toHaveText(new RegExp(t('proposals.list.requestState.DECLINED')));
+      const listRow = session.page.getByTestId(`proposal-list-row-${proposalId}`);
+      await expect(listRow).toBeVisible();
+      await expect(listRow).toHaveAttribute('data-state', 'SUBMIT_FAILED');
+      await expect(listRow).toHaveAttribute('data-failure-kind', 'SUBMIT_FAILED');
+      await expect(listRow).toHaveAttribute('data-send-hold', '');
+      await expect(session.page.getByTestId('proposal-list-open-send-failures')).toHaveAttribute('href', '/proposals/send-failures');
+      // 🔴 一括承認・一括送信・自動再送の語・testid が無い（`BR-50`）。
+      await expect(session.page.locator('[data-testid*="bulk"], [data-testid*="force"], [data-testid*="override"]')).toHaveCount(0);
+      expect(await session.page.content()).not.toMatch(/一括承認|一括送信|自動再送|無視して/);
+      expectNoHiddenCountHints('S-019 提案一覧（モバイル）', await session.page.locator('body').innerText());
+      await expectNoHorizontalOverflow('S-019 提案一覧', session.page);
+      await expectNoBrokenLabels('S-019 提案一覧', session.page);
+
+      // ② 行 → S-023。
+      await session.page.getByTestId(`proposal-list-link-${proposalId}`).click();
+      await session.page.waitForURL(`**/proposals/${proposalId}`);
+      const detailScreen = session.page.getByTestId('proposal-detail');
+      await expect(detailScreen).toHaveAttribute('data-proposal-state', 'SUBMIT_FAILED');
+      await expect(detailScreen).toHaveAttribute('data-failure-kind', 'SUBMIT_FAILED');
+      await expect(detailScreen).toHaveAttribute('data-can-add-note', 'true');
+      await expect(session.page.getByTestId('proposal-detail-fixed-recipient')).toContainText('T0903 架空エンド株式会社');
+      await expect(session.page.getByTestId('proposal-detail-fixed-unit-price')).toContainText('700,000');
+      await expect(session.page.getByTestId('proposal-detail-timeline').locator('[data-event-kind="CREATED"]')).toHaveCount(1);
+      await expect(session.page.getByTestId('proposal-detail-timeline').locator('[data-event-kind="APPROVAL"]')).toHaveCount(1);
+      await expect(session.page.getByTestId('proposal-detail-timeline').locator('[data-event-kind="NOTE"]')).toHaveCount(0);
+      await expect(session.page.getByTestId('proposal-detail-send-attempts')).toBeVisible();
+      await expect(session.page.getByTestId('proposal-detail-action-link-SEND_FAILURES')).toHaveAttribute('href', '/proposals/send-failures');
+      await expect(session.page.locator('[data-testid*="resend"]')).toHaveCount(0);
+      expect(await session.page.content()).not.toMatch(/無視して|最新の情報に更新/);
+      expectNoHiddenCountHints('S-023 提案の詳細（モバイル）', await session.page.locator('body').innerText());
+      await expectNoHorizontalOverflow('S-023 提案の詳細と履歴', session.page);
+      await expectNoBrokenLabels('S-023 提案の詳細と履歴', session.page);
+
+      // ③ メモを追加（#47）。状態は動かない。
+      const noteText = 'T0903 先方に電話で未着を確認する予定';
+      const noteResponse = session.page.waitForResponse(
+        (response) => response.url().endsWith(`/api/proposals/${proposalId}/events`) && response.request().method() === 'POST',
+      );
+      await session.page.getByTestId('proposal-detail-note-input').fill(noteText);
+      await session.page.getByTestId('proposal-detail-note-submit').click();
+      expect((await noteResponse).status()).toBe(201);
+      await expect(session.page.getByTestId('proposal-detail-note-added')).toBeVisible();
+      const noteRow = session.page.getByTestId('proposal-detail-timeline').locator('[data-event-kind="NOTE"]');
+      await expect(noteRow).toHaveCount(1);
+      await expect(noteRow).toContainText(noteText);
+      await expect(detailScreen).toHaveAttribute('data-proposal-state', 'SUBMIT_FAILED');
+      // 🔴 #46（API 直叩き）でも状態は SUBMIT_FAILED のまま、履歴に NOTE が 1 件。
+      const detailApi = await apiRequest(session.page, `/api/proposals/${proposalId}`);
+      expect(detailApi.status, detailApi.text).toBe(200);
+      const detailBody = parseJson(detailApi) as { state: string; events: { entry: { kind: string } }[] };
+      expect(detailBody.state).toBe('SUBMIT_FAILED');
+      expect(detailBody.events.filter((event) => event.entry.kind === 'NOTE')).toHaveLength(1);
+      session.outbound.assertNone();
+
+      // ④ S-023 → S-022。
+      await session.page.getByTestId('proposal-detail-action-link-SEND_FAILURES').click();
+      await session.page.waitForURL('**/proposals/send-failures');
+      await expect(session.page.getByTestId(`send-failure-row-${proposalId}`)).toBeVisible();
+
       await session.page.goto(`/proposals/${proposalId}/approve`, { waitUntil: 'domcontentloaded' });
       const failedScreen = session.page.getByTestId('proposal-approval');
       await expect(failedScreen).toHaveAttribute('data-proposal-state', 'SUBMIT_FAILED');

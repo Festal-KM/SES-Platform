@@ -10,7 +10,7 @@ export function proposalCreateHref(projectId: string, engineerId: string): strin
   return `/proposals/new?${params.toString()}`;
 }
 
-/** `S-020`（編集）。`S-023`（提案詳細。T-09-09）は `/proposals/{id}` に置く予定なので、編集は `/edit` を付ける。 */
+/** `S-020`（編集）。`S-023`（提案詳細。T-09-09）が `/proposals/{id}` にあるので、編集は `/edit` を付ける。 */
 export function proposalEditHref(proposalId: string): string {
   return `/proposals/${proposalId}/edit`;
 }
@@ -36,7 +36,7 @@ export function buildProposalEditHref(pattern: string, id: string): string {
 export const SENDING_DOMAIN_SETTINGS_HREF = '/settings/sending-domains';
 export const USAGE_SETTINGS_HREF = '/settings/usage';
 
-/** `S-021`（承認）。T-09-03。`S-020`（`APPROVAL_PENDING` の読み取り専用表示）と `S-003` の要対応キュー（T-09-09）から遷移する。 */
+/** `S-021`（承認）。T-09-03。`S-020`（`APPROVAL_PENDING` の読み取り専用表示）/ `S-023`（T-09-09）/ `S-003` の要対応キュー（SP-10）から遷移する。 */
 export function proposalApproveHref(proposalId: string): string {
   return `/proposals/${proposalId}/approve`;
 }
@@ -46,3 +46,44 @@ export function proposalApproveHref(proposalId: string): string {
  *    静的セグメントなので `/proposals/[id]` より優先される（Next.js の規約）。
  */
 export const PROPOSAL_SEND_FAILURES_PATH = '/proposals/send-failures';
+
+/**
+ * 🔴 T-09-09: `S-019`（提案一覧。`/proposals`）と `S-023`（提案詳細と履歴。`/proposals/{id}`）。
+ *    `S-023` は `S-020`（`/edit`）/ `S-021`（`/approve`）/ `S-022`（`/send-failures`）と同じ `[id]` セグメントの直下に置く。
+ */
+export const PROPOSALS_PATH = '/proposals';
+
+export function proposalDetailHref(proposalId: string): string {
+  return `${PROPOSALS_PATH}/${proposalId}`;
+}
+
+/**
+ * 🔴 `S-024`（面談日程の調整と結果記録。T-09-10）。**リンクだけ先に用意する**（画面は T-09-10 が置く）。
+ *    `S-023` の「商談中」の導線がこの URL を指す。
+ */
+export function proposalInterviewHref(proposalId: string): string {
+  return `${PROPOSALS_PATH}/${proposalId}/interview`;
+}
+
+/**
+ * `S-019` の URL（状態フィルタ / 案件 / エンジニア / フリーワード / カーソル）。🔴 分離キーは URL に載らない（`proposalListQuerySchema`）。
+ * `state` は `?state=A&state=B` の繰り返し（`optionalListFilter` が配列に均す）。
+ */
+export function proposalsHref(
+  query: {
+    readonly state?: readonly string[] | undefined;
+    readonly projectId?: string | undefined;
+    readonly engineerId?: string | undefined;
+    readonly q?: string | undefined;
+  },
+  cursor: string | null,
+): string {
+  const params = new URLSearchParams();
+  for (const state of query.state ?? []) params.append('state', state);
+  if (query.projectId !== undefined) params.set('projectId', query.projectId);
+  if (query.engineerId !== undefined) params.set('engineerId', query.engineerId);
+  if (query.q !== undefined && query.q !== '') params.set('q', query.q);
+  if (cursor !== null) params.set('cursor', cursor);
+  const search = params.toString();
+  return search === '' ? PROPOSALS_PATH : `${PROPOSALS_PATH}?${search}`;
+}

@@ -7,7 +7,7 @@
 //   ③ `proposalRequestId` / 分離キー / `state` / `contentHash` / `approvedBy` は受け取らない（strip）
 //   ④ 添付は `skillSheetId`（UUID | null）だけで受ける
 import { describe, expect, it } from 'vitest';
-import { PROPOSAL_MANUAL_TRANSITION_TARGET_STATES, PROPOSAL_STATES } from '@ses/domain';
+import { PROPOSAL_MANUAL_TRANSITION_TARGET_STATES, PROPOSAL_REQUEST_STATES, PROPOSAL_STATES } from '@ses/domain';
 import { ISOLATION_KEYS } from '../api/isolation-keys';
 import {
   createProposalBodySchema,
@@ -16,6 +16,9 @@ import {
   UPDATE_PROPOSAL_FIELDS,
   updateProposalBodySchema,
   rejectProposalBodySchema,
+  createProposalEventBodySchema,
+  PROPOSAL_NOTE_MAX_LENGTH,
+  proposalListQuerySchema,
 } from './schemas';
 
 const PROJECT = '01930000-0000-7000-8000-0000000000f1';
@@ -212,5 +215,65 @@ describe('rejectProposalBodySchema（#42。T-09-03）', () => {
       ...Object.fromEntries(ISOLATION_KEYS.map((key) => [key, PROJECT])),
     });
     expect(parsed).toEqual({ reason: 'r' });
+  });
+});
+
+describe('proposalListQuerySchema（#45。T-09-09。docs/05 §6.5「#45 / #46 / #47 の実装の決着」）', () => {
+  it('state は 14 値だけを受け、1 個（文字列）でも 2 個以上（配列）でも配列に均す。空は指定なし', () => {
+    for (const state of PROPOSAL_STATES) {
+      expect(proposalListQuerySchema.parse({ state }).state).toEqual([state]);
+    }
+    expect(proposalListQuerySchema.parse({ state: ['GATE_FAILED', 'SUBMIT_FAILED'] }).state).toEqual(['GATE_FAILED', 'SUBMIT_FAILED']);
+    expect(proposalListQuerySchema.parse({ state: '' }).state).toBeUndefined();
+    expect(proposalListQuerySchema.parse({}).state).toBeUndefined();
+  });
+
+  it('🔴 ProposalRequest の 5 状態（DECLINED 等）は state に入らない（別エンティティ。400）。「失敗」のような畳んだ値も無い', () => {
+    for (const state of PROPOSAL_REQUEST_STATES) {
+      expect(proposalListQuerySchema.safeParse({ state }).success).toBe(false);
+    }
+    expect(proposalListQuerySchema.safeParse({ state: 'FAILED' }).success).toBe(false);
+    expect(proposalListQuerySchema.safeParse({ state: ['LOST', 'DECLINED'] }).success).toBe(false);
+  });
+
+  it('projectId / engineerId は UUID、q は 1〜200 文字（空は指定なし）、cursor は UUID、limit は 1〜200（既定 50）', () => {
+    const parsed = proposalListQuerySchema.parse({ projectId: PROJECT, engineerId: ENGINEER, q: '  架空  ', cursor: SHEET, limit: '20' });
+    expect(parsed).toMatchObject({ projectId: PROJECT, engineerId: ENGINEER, q: '架空', cursor: SHEET, limit: 20 });
+    expect(proposalListQuerySchema.parse({ q: '   ' }).q).toBeUndefined();
+    expect(proposalListQuerySchema.parse({}).limit).toBe(50);
+    expect(proposalListQuerySchema.safeParse({ projectId: 'not-a-uuid' }).success).toBe(false);
+    expect(proposalListQuerySchema.safeParse({ cursor: 'not-a-uuid' }).success).toBe(false);
+    expect(proposalListQuerySchema.safeParse({ limit: '201' }).success).toBe(false);
+    expect(proposalListQuerySchema.safeParse({ q: 'x'.repeat(201) }).success).toBe(false);
+  });
+
+  it('🔴 分離キーを持たない（strip）', () => {
+    const parsed = proposalListQuerySchema.parse(Object.fromEntries(ISOLATION_KEYS.map((key) => [key, PROJECT])));
+    for (const key of ISOLATION_KEYS) expect(parsed).not.toHaveProperty(key);
+  });
+});
+
+describe('createProposalEventBodySchema（#47。T-09-09）', () => {
+  it('kind は NOTE の 1 値、note は必須（trim 後 1〜2,000 文字）', () => {
+    expect(createProposalEventBodySchema.parse({ kind: 'NOTE', note: '  先方に電話済み  ' })).toEqual({ kind: 'NOTE', note: '先方に電話済み' });
+    expect(createProposalEventBodySchema.safeParse({ kind: 'NOTE', note: '' }).success).toBe(false);
+    expect(createProposalEventBodySchema.safeParse({ kind: 'NOTE', note: '   ' }).success).toBe(false);
+    expect(createProposalEventBodySchema.safeParse({ kind: 'NOTE' }).success).toBe(false);
+    expect(createProposalEventBodySchema.safeParse({ kind: 'NOTE', note: 'x'.repeat(PROPOSAL_NOTE_MAX_LENGTH + 1) }).success).toBe(false);
+    expect(createProposalEventBodySchema.safeParse({ kind: 'NOTE', note: 'x'.repeat(PROPOSAL_NOTE_MAX_LENGTH) }).success).toBe(true);
+  });
+
+  it('🔴 STATE / ATTACHMENT を書ける入力面が無い（400）。fromState / toState / attachmentKey / 分離キーは strip', () => {
+    expect(createProposalEventBodySchema.safeParse({ kind: 'STATE', note: 'x' }).success).toBe(false);
+    expect(createProposalEventBodySchema.safeParse({ kind: 'ATTACHMENT', note: 'x' }).success).toBe(false);
+    const parsed = createProposalEventBodySchema.parse({
+      kind: 'NOTE',
+      note: 'x',
+      fromState: 'DRAFT',
+      toState: 'APPROVED',
+      attachmentKey: SHEET,
+      ...Object.fromEntries(ISOLATION_KEYS.map((key) => [key, PROJECT])),
+    });
+    expect(parsed).toEqual({ kind: 'NOTE', note: 'x' });
   });
 });

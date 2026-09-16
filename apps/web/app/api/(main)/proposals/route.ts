@@ -1,5 +1,6 @@
 // apps/web/app/api/(main)/proposals/route.ts
 // docs/05 §6.5 #36 `POST /api/proposals`（`F-019` / `S-020`。「T-09-01 の決着」）。T-09-01。
+// ✅ T-09-09: #45 `GET /api/proposals`（`F-024` / `S-019`。「#45 / #46 / #47 の実装の決着」）を同じファイルに足した。
 //
 // 🔴 **作成の実体は `createProposal` → `createProposalDraft`（`@ses/db`）の 1 実装**である。#33（応諾）と同じ
 //    関数が凍結（`EngineerSnapshot`）・`ProposalEvent`・`proposal.create` を書く。ここに凍結を書かない。
@@ -10,11 +11,17 @@
 //    `projects` の C4）が決め、見えなければ 404（docs/05 §4.8）。
 // 🔴 `withApiRoute` の `audit` を使わない（記録は `createProposalDraft` の業務トランザクション内。404 では残さない）。
 // 🔴 応答は **201 `{ id, snapshot: { frozenAt, careerCount } }`**（docs/05 §6.5 #36）。凍結した値そのものは返さない。
+//
+// 🔴 **#45 は `guards: []`（読み取り）**。`VIEWER` / `CLOSING` でも一覧は見える（`F-004 AC-6` / `AC-8`）。応答の型は所属で分岐する
+//    （`HostProposalListItem[]` / `PartnerProposalListItem[]`。取引先向けに `owner` / `sendHold` / 送信試行は存在しない）。母集団は
+//    `proposals` の RLS（C5）が「取引先 = 自社が作成した行」に閉じ、🔴 **`byState` / `requestsByState` / `total` も同じ接続で数える**
+//    （境界適用後。docs/05 §4.8）。`DECLINED` は `ProposalRequest` の状態であり `requestsByState` の側にだけ現れる（`F-024 AC-2`）。
 import { requireExecutable, requireNotViewer, requireRole } from '../../../../lib/api/guards';
 import { withApiRoute } from '../../../../lib/api/withApiRoute';
 import { readRequestMeta } from '../../../../lib/auth/session';
+import { listProposals } from '../../../../lib/proposals/list';
 import { PROPOSAL_EDITOR_ROLES } from '../../../../lib/proposals/policy';
-import { createProposalBodySchema } from '../../../../lib/proposals/schemas';
+import { createProposalBodySchema, proposalListQuerySchema } from '../../../../lib/proposals/schemas';
 import { createProposal } from '../../../../lib/proposals/service';
 
 export const runtime = 'nodejs';
@@ -36,5 +43,24 @@ export const POST = withApiRoute(
       { id: result.id, snapshot: { frozenAt: result.snapshot.frozenAt.toISOString(), careerCount: result.snapshot.careerCount } },
       { status: 201 },
     );
+  },
+);
+
+export const GET = withApiRoute(
+  {
+    label: 'GET /api/proposals',
+    guards: [],
+    query: proposalListQuerySchema,
+  },
+  async ({ ctx, query }) => {
+    const view = await listProposals(ctx, query);
+    // 🔴 契約は `{ items, total, byState, requestsByState, nextCursor }`（docs/05 §6.5 #45）。`audience` は載せない（呼び出し側は所属を知っている）。
+    return Response.json({
+      items: view.items,
+      total: view.total,
+      byState: view.byState,
+      requestsByState: view.requestsByState,
+      nextCursor: view.nextCursor,
+    });
   },
 );

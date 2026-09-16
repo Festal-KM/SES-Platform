@@ -652,6 +652,21 @@ export class ProposalResendForbiddenError extends ForbiddenError {
 }
 
 /**
+ * 🔴 履歴へのメモ（#47）をその立場では残せない（403）。T-09-09。判定は `canAddProposalNote`
+ *    （作成者 / ホストの `OWNER`・`ADMIN`・`SALES`。#37 の `canEditProposal` と同じ集合。`VIEWER` は不可）。
+ *    `ProposalEditForbiddenError` と同じ理由で 404 にはしない（見えない提案は先に 404 になる）。
+ */
+export class ProposalNoteForbiddenError extends ForbiddenError {
+  override readonly code = 'PROPOSAL_NOTE_FORBIDDEN';
+  override readonly userMessageKey: MessageKey = 'error.proposal.noteForbidden';
+
+  constructor() {
+    super();
+    this.name = 'ProposalNoteForbiddenError';
+  }
+}
+
+/**
  * 🔴 `send.proposal` を積めなかった —— 同じ `jobId`（提案 × 試行）の **`failed` 記録**が残っており、BullMQ が `add` を
  *    静かに無視した（docs/05 §9.4 / §10.4 の T-09-06 の決着。`removeOnFail` を付けていないため起こりうる）。409。
  *

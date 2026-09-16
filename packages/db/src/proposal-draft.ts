@@ -51,6 +51,15 @@ export type ProposalDraftWriter = Pick<
  */
 export const PROPOSAL_AUDIT_ACTION_CREATE = 'proposal.create';
 
+/**
+ * 🔴 `AuditLog.targetType`（提案）。T-09-09 で定数にした —— 表記が `'Proposal'`（#36 / #37 / #41 / #42 / #43 / #44 / #48）と
+ *    `'PROPOSAL'`（`gate.run` の `GATE_RESULT`）で揺れており、#45 / #46 / #47 の**読み書きはこの 1 定数**を使う。
+ *    書き込み側の統一と既存行の移行は SP-12（Phase 1 hardening）に申し送った（既存データがあるため本タスクでは変えない）。
+ *    `review_gates.target_type` / `send_attempts.entity_type` の `'PROPOSAL'`（`GateTargetType` / `PROPOSAL_SEND_ENTITY_TYPE`）は
+ *    別の列であり、この定数とは独立である。
+ */
+export const PROPOSAL_AUDIT_TARGET_TYPE = 'Proposal' as const;
+
 /** `ProposalEvent.kind`（`'STATE'|'NOTE'|'ATTACHMENT'`。schema.prisma の CHECK）。 */
 const PROPOSAL_EVENT_KIND_STATE = 'STATE';
 
@@ -287,7 +296,7 @@ export async function createProposalDraft(
     action: PROPOSAL_AUDIT_ACTION_CREATE,
     actorKind: 'USER',
     actorId: ctx.userId,
-    targetType: 'Proposal',
+    targetType: PROPOSAL_AUDIT_TARGET_TYPE,
     targetId: proposal.id,
     summary: { projectId: input.projectId, proposalRequestId: input.proposalRequestId },
     ipAddress: input.ipAddress,
