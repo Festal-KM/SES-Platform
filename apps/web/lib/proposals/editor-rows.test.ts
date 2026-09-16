@@ -37,7 +37,7 @@ const base = {
 };
 
 const partnerView: PartnerProposalView = { audience: 'PARTNER', ...base };
-const hostView: HostProposalView = { audience: 'HOST', owner: { kind: 'PARTNER', partnerCompanyName: 'Partner A1' }, ...base };
+const hostView: HostProposalView = { audience: 'HOST', owner: { kind: 'PARTNER', partnerCompanyName: 'Partner A1' }, sendHold: null, ...base };
 
 function editor(view: PartnerProposalView | HostProposalView, overrides: Partial<ProposalEditorView> = {}): ProposalEditorView {
   return {

@@ -60,6 +60,7 @@ import {
   SCHEDULER_RUN_STATUSES,
   SEND_ATTEMPT_ENTITY_TYPES,
   SEND_ATTEMPT_STATUSES,
+  SEND_HOLD_REASON_KEYS as DB_SEND_HOLD_REASON_KEYS,
   SKILL_ALIAS_ORIGINS,
   SKILL_ALIAS_STATUSES,
   SKILL_SHEET_EXTRACTION_STATUSES,
@@ -89,6 +90,8 @@ import {
 // 🔴 T-09-05: 送信エンティティ種別の唯一の宣言（docs/05 §10.1）。`packages/db` の
 //    `SEND_ATTEMPT_ENTITY_TYPES` はこれの re-export であり、ここでは domain の名前でも CHECK と突合する。
 import { SEND_ENTITY_TYPES } from '../../packages/domain/src/idempotency.js';
+// 🔴 T-09-06: 保留の理由（7 値）の唯一の宣言（docs/05 §10.4）。
+import { SEND_HOLD_REASON_KEYS } from '../../packages/domain/src/send/hold.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '..', '..');
@@ -592,6 +595,21 @@ describe('CHECK 制約と TS 単一出所の drift 検査（docs/05 §3.1「列�
     it('send_attempts_status_check ⇔ packages/db SEND_ATTEMPT_STATUSES', () => {
       const values = extractCheckInValues(migrationSql, 'send_attempts_status_check');
       expectSameValueSet(values, SEND_ATTEMPT_STATUSES);
+    });
+
+    // 🔴 T-09-06（docs/05 §10.4 / migration 20260923000000）: 保留の理由（7 値）。`Proposal` / `Contract` の
+    //    2 列が同じ値集合を持ち、単一の出所は `@ses/domain` の `SEND_HOLD_REASON_KEYS`（`packages/db` は re-export）。
+    it('🔴 proposals_send_hold_reason_key_check ⇔ @ses/domain SEND_HOLD_REASON_KEYS（7 値。RATE_LIMIT と PROVIDER_QUOTA は別の値）', () => {
+      const values = extractCheckInValues(migrationSql, 'proposals_send_hold_reason_key_check');
+      expectSameValueSet(values, SEND_HOLD_REASON_KEYS);
+      expect(values).toContain('RATE_LIMIT');
+      expect(values).toContain('PROVIDER_QUOTA');
+      expect([...DB_SEND_HOLD_REASON_KEYS]).toEqual([...SEND_HOLD_REASON_KEYS]);
+    });
+
+    it('contracts_send_hold_reason_key_check ⇔ @ses/domain SEND_HOLD_REASON_KEYS（同じ 7 値）', () => {
+      const values = extractCheckInValues(migrationSql, 'contracts_send_hold_reason_key_check');
+      expectSameValueSet(values, SEND_HOLD_REASON_KEYS);
     });
 
     it('email_dispatches_recipient_class_check ⇔ packages/db EMAIL_RECIPIENT_CLASSES', () => {

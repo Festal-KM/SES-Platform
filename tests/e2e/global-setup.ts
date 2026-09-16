@@ -13,6 +13,7 @@ import { runSeed } from '@ses/db/seed';
 import { writeAdminDatabaseUrlEnv } from './harness/db-admin.js';
 import { startE2eObjectStorage, writeObjectStorageOriginEnv } from './harness/object-storage.js';
 import { startE2eDatabase } from './harness/postgres.js';
+import { startE2eRedis } from './harness/redis.js';
 import { setHarness } from './harness/state.js';
 import { resetTotpStore } from './harness/totp-store.js';
 import { startWebServer } from './harness/web-server.js';
@@ -38,6 +39,11 @@ export default async function globalSetup(): Promise<void> {
   writeObjectStorageOriginEnv(objectStorage.endpoint);
   log(`   ${objectStorage.endpoint}（bucket=${objectStorage.bucket}）`);
 
+  // 🔴 T-09-06: `send.proposal` の enqueue 先（#43 が BullMQ に積む）。worker は立てない（`harness/redis.ts` 冒頭）。
+  log('① Redis を起動します（T-09-06。send.proposal の enqueue 先。worker は無い）');
+  const redis = await startE2eRedis();
+  log(`   ${redis.url}`);
+
   log('④ seed:isolation（2 テナント × 2 パートナー）を投入します');
   const seeded = await runSeed({
     // 🔴 `development` 以外では `assertSeedableAppEnv` が投入前に拒否する（`F-053 AC-6`）。
@@ -49,8 +55,8 @@ export default async function globalSetup(): Promise<void> {
   log(`   テナント: ${seeded.tenantIds.join(', ')}`);
 
   log('⑤ APP_ENV=development でアプリを起動し、⑥ 外向きネットワークの遮断を確認します');
-  const webServer = await startWebServer(database, objectStorage);
+  const webServer = await startWebServer(database, objectStorage, redis);
   log(`   ${webServer.baseUrl} で待ち受け中（ログ: ${webServer.logPath}）`);
 
-  setHarness({ database, objectStorage, webServer });
+  setHarness({ database, objectStorage, redis, webServer });
 }

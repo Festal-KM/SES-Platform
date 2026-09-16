@@ -7,6 +7,8 @@
 //   ③ 🔴 `Proposal` / `Contract` の `PROVIDER_QUOTA` 保留と**同じ枠を分け合う**（§8.3-Q ⑥）
 //   ④ 招待・再設定は**トークン再発行**でしか復帰できない（平文トークンが残っていない）
 //   ⑤ `HELD_DOMAIN_UNVERIFIED` はドメインが検証済みになるまで触らない
+//   ⑥ ✅ T-09-06: `Proposal` の保留（`sendHoldReasonKey`）を同じ実行で復帰させ、`PROVIDER_QUOTA` はメールと
+//      **同じ枠を古い順に**分け合う。`GATE_STALE` は走査に現れない（`listHeldProposalSends` の契約）
 //
 // 🔴 このジョブは外部 API を呼ばない（deps に `send` の口が無い）。
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -14,11 +16,24 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const listHeldEmailDispatches = vi.fn();
 const requeueHeldEmailDispatch = vi.fn();
 const resolveVerifiedSendingDomain = vi.fn();
+// T-09-06: `Proposal` 側（`send-proposal-holds.ts` が呼ぶ `@ses/db`）。
+const listHeldProposalSends = vi.fn();
+const clearProposalSendHold = vi.fn();
+const holdProposalSend = vi.fn();
+const resolveProposalSendResumeOrigin = vi.fn();
+const readEmailDailyCount = vi.fn();
+const withTenant = vi.fn();
 
 vi.mock('@ses/db', () => ({
   listHeldEmailDispatches,
   requeueHeldEmailDispatch,
   resolveVerifiedSendingDomain,
+  listHeldProposalSends,
+  clearProposalSendHold,
+  holdProposalSend,
+  resolveProposalSendResumeOrigin,
+  readEmailDailyCount,
+  withTenant,
   systemTenantCtx: (tenantId: string, job: { queue: string; jobId: string }) => ({
     tenantId,
     partnerCompanyId: null,
@@ -33,6 +48,7 @@ vi.mock('@ses/db', () => ({
 const { InMemoryProviderSendCounter } = await import('@ses/connectors');
 const { createSendHoldReleaseHandler, parseSendHoldReleasePayload, SEND_HOLD_RELEASE_SCHEDULE } =
   await import('./send-hold-release.js');
+const { isProposalHoldResolved } = await import('./send-proposal-holds.js');
 const { InvalidJobPayloadError } = await import('./payload.js');
 
 const TENANT_ID = '01930000-0000-7000-8000-0000000000a1';
@@ -56,16 +72,20 @@ function makeHandler(overrides: Record<string, unknown> = {}) {
     async (job: { dispatchId: string; tenantId: string | null; recipientClass: string }) => void job,
   );
   const reissueAccountMail = vi.fn(async () => 'REISSUED' as const);
-  const releaseSendHolds = vi.fn(async () => 0);
+  const enqueueSendProposal = vi.fn(async (job: { proposalId: string; attemptSeq: number }) => {
+    void job;
+    return 'ENQUEUED' as const;
+  });
   const providerSentCounter = new InMemoryProviderSendCounter();
   const deps = {
     emailSender: { getQuota: vi.fn(async () => ({ max24h: 200, sentLast24h: 0, observedAt: NOW })) },
     providerDailyQuota: 200,
     providerQuotaWarnRatio: 0.8,
     providerSentCounter,
+    emailDailyLimit: 500,
     enqueueEmailDispatch,
     reissueAccountMail,
-    releaseSendHolds,
+    enqueueSendProposal,
     now: () => NOW,
     ...overrides,
   };
@@ -74,8 +94,18 @@ function makeHandler(overrides: Record<string, unknown> = {}) {
     handler: createSendHoldReleaseHandler(deps as never),
     enqueueEmailDispatch: deps.enqueueEmailDispatch,
     reissueAccountMail: deps.reissueAccountMail,
-    releaseSendHolds: deps.releaseSendHolds,
+    enqueueSendProposal: deps.enqueueSendProposal,
     providerSentCounter: deps.providerSentCounter,
+  };
+}
+
+/** 保留中の提案 1 件（`listHeldProposalSends` の戻り値の形）。 */
+function heldProposal(overrides: Record<string, unknown> = {}) {
+  return {
+    proposalId: '01930000-0000-7000-8000-000000000a01',
+    reasonKey: 'PROVIDER_QUOTA',
+    since: NOW,
+    ...overrides,
   };
 }
 
@@ -83,9 +113,24 @@ beforeEach(() => {
   listHeldEmailDispatches.mockReset();
   requeueHeldEmailDispatch.mockReset();
   resolveVerifiedSendingDomain.mockReset();
+  listHeldProposalSends.mockReset();
+  clearProposalSendHold.mockReset();
+  holdProposalSend.mockReset();
+  resolveProposalSendResumeOrigin.mockReset();
+  readEmailDailyCount.mockReset();
+  withTenant.mockReset();
   requeueHeldEmailDispatch.mockResolvedValue(true);
   resolveVerifiedSendingDomain.mockResolvedValue(null);
   listHeldEmailDispatches.mockResolvedValue([]);
+  listHeldProposalSends.mockResolvedValue([]);
+  clearProposalSendHold.mockResolvedValue(true);
+  holdProposalSend.mockResolvedValue({ kind: 'HELD', since: NOW });
+  resolveProposalSendResumeOrigin.mockResolvedValue({ attemptSeq: 1, origin: { kind: 'INITIAL' } });
+  readEmailDailyCount.mockResolvedValue(0);
+  // `readTenantExecutable` が `tenants` を読む経路。既定は実行可（ACTIVE）。
+  withTenant.mockImplementation(async (_ctx: unknown, fn: (db: unknown) => Promise<unknown>) =>
+    fn({ tenant: { findFirst: async () => ({ lifecycleState: 'ACTIVE' }) } }),
+  );
 });
 
 describe('宣言（docs/05 §9.4）', () => {
@@ -171,36 +216,174 @@ describe('🔴 ② headroom 件だけ、古い順に復帰させる', () => {
   });
 });
 
-describe('🔴 ③ send.*（Proposal / Contract）と同じ枠を分け合う（§8.3-Q ⑥）', () => {
-  it('send.* が使った分だけメール側の取り分が減る', async () => {
+describe('🔴 ③ send.*（Proposal）と同じ枠を分け合う（§8.3-Q ⑥。T-09-06）', () => {
+  it('🔴 提案とメールを 1 本に混ぜて古い順に headroom 件だけ配る（提案が古ければ提案が先）', async () => {
     const providerSentCounter = new InMemoryProviderSendCounter();
-    for (let i = 0; i < 3; i += 1) await providerSentCounter.record(NOW);
-    listHeldEmailDispatches.mockResolvedValue([held({ dispatchId: 'd-1' }), held({ dispatchId: 'd-2' })]);
-    const { handler, enqueueEmailDispatch, releaseSendHolds } = makeHandler({
+    for (let i = 0; i < 3; i += 1) await providerSentCounter.record(NOW); // 上限 5 → headroom 2
+    listHeldEmailDispatches.mockResolvedValue([
+      held({ dispatchId: 'd-1', heldAt: new Date(NOW.getTime() - 2000) }),
+      held({ dispatchId: 'd-2', heldAt: new Date(NOW.getTime() - 500) }),
+    ]);
+    listHeldProposalSends.mockResolvedValue([heldProposal({ since: new Date(NOW.getTime() - 3000) })]);
+    const { handler, enqueueEmailDispatch, enqueueSendProposal } = makeHandler({
       providerDailyQuota: 5,
       providerSentCounter,
-      releaseSendHolds: vi.fn(async () => 1),
     });
 
     const outcome = await handler({ tenantId: TENANT_ID }, 'j-1');
 
-    expect(releaseSendHolds).toHaveBeenCalledWith({ headroom: 2 });
+    expect(outcome.headroom).toBe(2);
+    // 提案（-3000ms）→ d-1（-2000ms）の順で 2 件。d-2 は次回。
     expect(outcome.sendHoldsReleased).toBe(1);
     expect(outcome.quotaReleased).toBe(1);
-    expect(enqueueEmailDispatch).toHaveBeenCalledTimes(1);
+    expect(enqueueSendProposal).toHaveBeenCalledTimes(1);
+    expect(enqueueEmailDispatch.mock.calls.map((call) => call[0].dispatchId)).toEqual(['d-1']);
+    // 🔴 復帰は保留列を NULL に戻す CAS を経て、同じ attemptSeq（人間が採番した値）で再 enqueue する。
+    expect(clearProposalSendHold).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: TENANT_ID }),
+      expect.objectContaining({ proposalId: heldProposal().proposalId, reasonKey: 'PROVIDER_QUOTA' }),
+    );
+    expect(enqueueSendProposal.mock.calls[0]?.[0]).toMatchObject({
+      tenantId: TENANT_ID,
+      proposalId: heldProposal().proposalId,
+      attemptSeq: 1,
+      requestedBy: null,
+      enqueuedAt: NOW.toISOString(),
+    });
   });
 
-  it('枠が 0 なら send.* 側にも配らない', async () => {
+  it('メールが古ければメールが先に枠を取り、提案は次回に持ち越す', async () => {
+    const providerSentCounter = new InMemoryProviderSendCounter();
+    for (let i = 0; i < 4; i += 1) await providerSentCounter.record(NOW); // 上限 5 → headroom 1
+    listHeldEmailDispatches.mockResolvedValue([held({ dispatchId: 'd-1', heldAt: new Date(NOW.getTime() - 5000) })]);
+    listHeldProposalSends.mockResolvedValue([heldProposal({ since: new Date(NOW.getTime() - 1000) })]);
+    const { handler, enqueueSendProposal } = makeHandler({ providerDailyQuota: 5, providerSentCounter });
+
+    const outcome = await handler({ tenantId: TENANT_ID }, 'j-1');
+
+    expect(outcome.quotaReleased).toBe(1);
+    expect(outcome.sendHoldsReleased).toBe(0);
+    expect(enqueueSendProposal).not.toHaveBeenCalled();
+    expect(clearProposalSendHold).not.toHaveBeenCalled();
+  });
+
+  it('枠が 0 なら PROVIDER_QUOTA の提案には触らない（保留のまま次回へ）', async () => {
     const providerSentCounter = new InMemoryProviderSendCounter();
     await providerSentCounter.record(NOW);
-    const { handler, releaseSendHolds } = makeHandler({
-      providerDailyQuota: 1,
-      providerSentCounter,
+    listHeldProposalSends.mockResolvedValue([heldProposal()]);
+    const { handler, enqueueSendProposal } = makeHandler({ providerDailyQuota: 1, providerSentCounter });
+
+    const outcome = await handler({ tenantId: TENANT_ID }, 'j-1');
+
+    expect(outcome.headroom).toBe(0);
+    expect(outcome.sendHoldsReleased).toBe(0);
+    expect(enqueueSendProposal).not.toHaveBeenCalled();
+    expect(clearProposalSendHold).not.toHaveBeenCalled();
+  });
+
+  it('🔴 RESEND（attemptSeq >= 2）の復帰は人間の requestedBy を payload に載せる（ジョブは採番しない）', async () => {
+    resolveProposalSendResumeOrigin.mockResolvedValue({
+      attemptSeq: 2,
+      origin: { kind: 'RESEND', attemptSeq: 2, requestedBy: '01930000-0000-7000-8000-0000000000u1' },
     });
+    listHeldProposalSends.mockResolvedValue([heldProposal()]);
+    const { handler, enqueueSendProposal } = makeHandler();
 
     await handler({ tenantId: TENANT_ID }, 'j-1');
 
-    expect(releaseSendHolds).not.toHaveBeenCalled();
+    expect(enqueueSendProposal.mock.calls[0]?.[0]).toMatchObject({
+      attemptSeq: 2,
+      requestedBy: '01930000-0000-7000-8000-0000000000u1',
+    });
+  });
+
+  it('🔴 enqueue が failed 記録に阻まれたら保留を元に戻し、復帰件数に数えない', async () => {
+    listHeldProposalSends.mockResolvedValue([heldProposal()]);
+    const { handler } = makeHandler({ enqueueSendProposal: vi.fn(async () => 'BLOCKED_BY_FAILED_JOB' as const) });
+
+    const outcome = await handler({ tenantId: TENANT_ID }, 'j-1');
+
+    expect(outcome.sendHoldsReleased).toBe(0);
+    expect(outcome.sendHoldsBlocked).toBe(1);
+    expect(holdProposalSend).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ proposalId: heldProposal().proposalId, reasonKey: 'PROVIDER_QUOTA' }),
+    );
+  });
+
+  it('CAS が 0 件（他の実行が処理済み）なら再 enqueue しない', async () => {
+    clearProposalSendHold.mockResolvedValue(false);
+    listHeldProposalSends.mockResolvedValue([heldProposal()]);
+    const { handler, enqueueSendProposal } = makeHandler();
+
+    const outcome = await handler({ tenantId: TENANT_ID }, 'j-1');
+
+    expect(outcome.sendHoldsReleased).toBe(0);
+    expect(enqueueSendProposal).not.toHaveBeenCalled();
+  });
+});
+
+describe('🔴 ⑥ 提案の PROVIDER_QUOTA 以外の保留（T-09-06。docs/05 §9.4 / §10.4）', () => {
+  it('DOMAIN_UNVERIFIED はドメインが検証済みになったときだけ復帰し、枠を消費しない', async () => {
+    const providerSentCounter = new InMemoryProviderSendCounter();
+    await providerSentCounter.record(NOW); // 枠は 0
+    listHeldProposalSends.mockResolvedValue([heldProposal({ reasonKey: 'DOMAIN_UNVERIFIED' })]);
+    const unverified = makeHandler({ providerDailyQuota: 1, providerSentCounter });
+    expect((await unverified.handler({ tenantId: TENANT_ID }, 'j-1')).sendHoldsReleased).toBe(0);
+    expect(unverified.enqueueSendProposal).not.toHaveBeenCalled();
+
+    resolveVerifiedSendingDomain.mockResolvedValue({ domain: 'example.co.jp', mailFromDomain: 'mail.example.co.jp', verifiedAt: NOW } as never);
+    const verified = makeHandler({ providerDailyQuota: 1, providerSentCounter });
+    const outcome = await verified.handler({ tenantId: TENANT_ID }, 'j-2');
+    expect(outcome.headroom).toBe(0);
+    expect(outcome.sendHoldsReleased).toBe(1);
+    expect(verified.enqueueSendProposal).toHaveBeenCalledTimes(1);
+  });
+
+  it('RATE_LIMIT はテナントの日次上限に余地が戻ったときだけ復帰する', async () => {
+    listHeldProposalSends.mockResolvedValue([heldProposal({ reasonKey: 'RATE_LIMIT' })]);
+    readEmailDailyCount.mockResolvedValue(500);
+    const full = makeHandler({ emailDailyLimit: 500 });
+    expect((await full.handler({ tenantId: TENANT_ID }, 'j-1')).sendHoldsReleased).toBe(0);
+
+    readEmailDailyCount.mockResolvedValue(0);
+    const room = makeHandler({ emailDailyLimit: 500 });
+    expect((await room.handler({ tenantId: TENANT_ID }, 'j-2')).sendHoldsReleased).toBe(1);
+  });
+
+  it('TENANT_SUSPENDED はテナントが実行可（SANDBOX / ACTIVE）に戻ったときだけ復帰する', async () => {
+    listHeldProposalSends.mockResolvedValue([heldProposal({ reasonKey: 'TENANT_SUSPENDED' })]);
+    withTenant.mockImplementation(async (_ctx: unknown, fn: (db: unknown) => Promise<unknown>) =>
+      fn({ tenant: { findFirst: async () => ({ lifecycleState: 'SUSPENDED' }) } }),
+    );
+    const suspended = makeHandler();
+    expect((await suspended.handler({ tenantId: TENANT_ID }, 'j-1')).sendHoldsReleased).toBe(0);
+
+    withTenant.mockImplementation(async (_ctx: unknown, fn: (db: unknown) => Promise<unknown>) =>
+      fn({ tenant: { findFirst: async () => ({ lifecycleState: 'SANDBOX' }) } }),
+    );
+    const active = makeHandler();
+    expect((await active.handler({ tenantId: TENANT_ID }, 'j-2')).sendHoldsReleased).toBe(1);
+  });
+
+  it('🔴 契約書だけの理由（ESIGN_DISCONNECTED / AI_COST_LIMIT）が提案に立っていても黙って復帰させない', async () => {
+    listHeldProposalSends.mockResolvedValue([
+      heldProposal({ reasonKey: 'ESIGN_DISCONNECTED' }),
+      heldProposal({ proposalId: '01930000-0000-7000-8000-000000000a02', reasonKey: 'AI_COST_LIMIT' }),
+    ]);
+    const { handler, enqueueSendProposal } = makeHandler();
+
+    const outcome = await handler({ tenantId: TENANT_ID }, 'j-1');
+
+    expect(outcome.proposalsScanned).toBe(2);
+    expect(outcome.sendHoldsReleased).toBe(0);
+    expect(enqueueSendProposal).not.toHaveBeenCalled();
+  });
+
+  it('🔴 GATE_STALE は解消判定が常に偽（自動復帰しない。docs/05 §10.5）', () => {
+    expect(
+      isProposalHoldResolved('GATE_STALE', { domainVerified: true, tenantExecutable: true, dailyQuotaHasRoom: true }),
+    ).toBe(false);
   });
 });
 

@@ -7,7 +7,7 @@ import process from 'node:process';
 import { takeHarness } from './harness/state.js';
 
 export default async function globalTeardown(): Promise<void> {
-  const { database, objectStorage, webServer } = takeHarness();
+  const { database, objectStorage, redis, webServer } = takeHarness();
   const failures: string[] = [];
 
   try {
@@ -26,6 +26,11 @@ export default async function globalTeardown(): Promise<void> {
     await objectStorage?.stop();
   } catch (error) {
     failures.push(`MinIO の停止に失敗: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  try {
+    await redis?.stop();
+  } catch (error) {
+    failures.push(`Redis の停止に失敗: ${error instanceof Error ? error.message : String(error)}`);
   }
 
   if (failures.length > 0) process.stderr.write(`${failures.join('\n')}\n`);

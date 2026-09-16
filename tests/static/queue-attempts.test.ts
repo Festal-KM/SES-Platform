@@ -52,6 +52,8 @@ const MAX_INTERNAL_ATTEMPTS = 3;
 type ViolationRule =
   | 'EXTERNAL_SEND_ATTEMPTS_NOT_ONE'
   | 'EXTERNAL_SEND_HAS_BACKOFF'
+  /** 🔴 T-09-06: 送信系キューは `jobId` を冪等キーに使うため `removeOnComplete: true` が必須（docs/05 §10.4）。 */
+  | 'EXTERNAL_SEND_REMOVE_ON_COMPLETE_NOT_TRUE'
   | 'SEND_PREFIXED_QUEUE_NOT_EXTERNAL'
   | 'QUEUE_NAME_MISMATCH'
   | 'INTERNAL_ATTEMPTS_TOO_MANY'
@@ -143,6 +145,12 @@ export function analyzeQueueSource(text: string, fileName: string): QueueSourceA
           const value = numericLiteralValue(attempts.initializer);
           if (value === null) report('ATTEMPTS_NOT_LITERAL', attempts);
           else if (value !== 1) report('EXTERNAL_SEND_ATTEMPTS_NOT_ONE', attempts);
+          // 🔴 T-09-06: 同じオブジェクトに `removeOnComplete: true`（リテラル）が無ければ違反。BullMQ は同じ `jobId` が
+          //    completed に残る間 `add` を無視するため、保留 → `send.hold-release` の再 enqueue が静かに捨てられる。
+          const removeOnComplete = propertyOf(inner, 'removeOnComplete');
+          if (removeOnComplete === null || removeOnComplete.initializer.kind !== ts.SyntaxKind.TrueKeyword) {
+            report('EXTERNAL_SEND_REMOVE_ON_COMPLETE_NOT_TRUE', removeOnComplete ?? attempts);
+          }
         }
         const backoff = propertyOf(inner, 'backoff');
         if (backoff !== null) report('EXTERNAL_SEND_HAS_BACKOFF', backoff);
@@ -470,6 +478,14 @@ describe('違反 fixture（検出器そのものが働いていること）', ()
   it('externalSendQueue が attempts: 2 を返すと検出する', () => {
     const { violations } = analyzeQueueSource(readFixture('attempts-two.violation.ts'), 'attempts-two.violation.ts');
     expect(violations.some((v) => v.rule === 'EXTERNAL_SEND_ATTEMPTS_NOT_ONE')).toBe(true);
+  });
+
+  it('🔴 externalSendQueue が removeOnComplete: true を持たないと検出する（T-09-06。保留の再 enqueue が捨てられる）', () => {
+    const { violations } = analyzeQueueSource(
+      readFixture('remove-on-complete-missing.violation.ts'),
+      'remove-on-complete-missing.violation.ts',
+    );
+    expect(violations.some((v) => v.rule === 'EXTERNAL_SEND_REMOVE_ON_COMPLETE_NOT_TRUE')).toBe(true);
   });
 
   it('externalSendQueue が backoff を設定すると検出する', () => {

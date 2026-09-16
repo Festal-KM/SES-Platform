@@ -153,6 +153,7 @@ export {
   SCHEDULER_RUN_STATUSES,
   SEND_ATTEMPT_ENTITY_TYPES,
   SEND_ATTEMPT_STATUSES,
+  SEND_HOLD_REASON_KEYS,
   SKILL_ALIAS_ORIGINS,
   SKILL_ALIAS_STATUSES,
   SKILL_SHEET_EXTRACTION_STATUSES,
@@ -207,6 +208,7 @@ export type {
   SchedulerRunStatus,
   SendAttemptEntityType,
   SendAttemptStatus,
+  SendHoldReasonKey,
   SkillAliasOrigin,
   SkillAliasStatus,
   SkillSheetExtractionStatus,
@@ -351,6 +353,32 @@ export type {
   SendTarget,
   SettleSendAttemptInput,
 } from './send.js';
+// 🔴 T-09-06: `send.proposal`（docs/05 §10.2）が `proposals` を読む・保留する・確定する経路（§10.4 / §9.4 / §10.2 ⑥）。
+//    保留は状態ではなく属性（`sendHoldReasonKey` / `sendHoldSince`）。`settleProposalSubmission` は `SendAttempt` の確定と
+//    `SUBMITTING → SUBMITTED / SUBMIT_FAILED` を**1 トランザクション**で行う。呼び出し元は `apps/worker/src/jobs/send-proposal.ts` /
+//    `send-hold-release.ts` と、#43（`holdProposalSend` の `DOMAIN_UNVERIFIED`）に限る（`tests/static/auth-db-callers.test.ts`）。
+export {
+  clearProposalSendHold,
+  failProposalSubmissionWithoutAttempt,
+  holdProposalSend,
+  listHeldProposalSends,
+  PROPOSAL_AUDIT_ACTION_SUBMIT,
+  PROPOSAL_SEND_ENTITY_TYPE,
+  PROPOSAL_SEND_RESERVATION_CONFLICT,
+  PROPOSAL_SUBMIT_OPERATIONS,
+  readProposalForSend,
+  resolveProposalSendResumeOrigin,
+  settleProposalSubmission,
+} from './proposal-send.js';
+export type {
+  HeldProposalSendRow,
+  HoldProposalSendInput,
+  HoldProposalSendOutcome,
+  ProposalForSend,
+  ProposalSendAttachmentRef,
+  SettleProposalSubmissionInput,
+  SettleProposalSubmissionOutcome,
+} from './proposal-send.js';
 // 🔴 T-08-07: 提案依頼の期限切れ（docs/05 §9.5 `proposal-request.expire`）。呼び出し元は
 //    `apps/worker/src/jobs/proposal-request-expire.ts` のジョブ文脈だけである。
 export {

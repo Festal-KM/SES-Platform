@@ -20,6 +20,11 @@
 //   ⑤ 🔴 **一括承認に相当する操作を持たない**（本画面は 1 件の承認。一括は `S-019` の範囲で、モバイルでは既定の操作にしない。`BR-50`）。
 //   ⑥ 承認は body を送らない（#41 はゲート結果を引数に取らない）。却下は理由必須（#42）。
 //   ⑦ 承認・却下の成功後は手元で状態を書き換えず、結果の枠を出して `router.refresh()` する（サーバの状態が正）。
+//   ⑧ 🔴 T-09-06: 承認後の primary は「送信する」（#43。docs/05 §6.5 #43 / §10.2 / §10.4 / §10.5）。**押した瞬間に「送信済み」と
+//      見せない** —— 202 は「受け付けた」であり、`SUBMITTING` に入れるのも `SUBMITTED` / `SUBMIT_FAILED` に確定するのも送信ジョブ
+//      である。受け付け後は「送信中」を出し、サーバコンポーネントを読み直して（`router.refresh()` のポーリング）確定・保留を反映する。
+//      送信の保留（`sendHoldReasonKey`）は理由ごとの文言と設定導線で描き、🔴 `PROVIDER_QUOTA` には `S-038` への導線を出さない。
+//      `GATE_STALE` だけは自動復帰しないので「送信する」を再び選べる（§10.5）。Tier 1 のまま（モバイルで完結する）。
 //
 // 🔴 `'use client'` は末尾の観測・承認/却下フォーム・#40 のポーリングのためだけである。**`@ses/db` に依存する
 //    モジュールから値を import しない**（`tests/static/client-db-boundary.test.ts`）。文言と表示値は props で受け取る。
@@ -68,6 +73,13 @@ export type ProposalApprovalScreenMessages = {
   readonly approve: string;
   readonly approving: string;
   readonly approved: string;
+  readonly submit: string;
+  readonly submitting: string;
+  readonly submitRequested: string;
+  readonly submitLead: string;
+  readonly submitScrollRequired: string;
+  readonly errorSubmitState: string;
+  readonly errorSendBlocked: string;
   readonly reject: string;
   readonly rejectReasonLabel: string;
   readonly rejectSubmit: string;
@@ -125,13 +137,17 @@ const LAYER_BADGE_VARIANTS = {
 
 /** #40 のポーリング間隔（`S-020` と同じ 5 秒）。 */
 const GATE_POLL_MS = 5_000;
+/** 🔴 T-09-06: 送信の確定を待つ間の読み直し間隔（`router.refresh()`。送信は数秒で確定する）。 */
+const SEND_POLL_MS = 3_000;
 
 type Phase =
   | { readonly kind: 'IDLE' }
   | { readonly kind: 'REJECT_FORM' }
-  | { readonly kind: 'SUBMITTING'; readonly action: 'APPROVE' | 'REJECT' }
+  | { readonly kind: 'SUBMITTING'; readonly action: 'APPROVE' | 'REJECT' | 'SUBMIT' }
   | { readonly kind: 'APPROVED' }
-  | { readonly kind: 'REJECTED' };
+  | { readonly kind: 'REJECTED' }
+  /** 🔴 #43 が 202 を返した。**送信済みではない**（確定は送信ジョブ）。読み直しで状態が動くまでこの枠を出す。 */
+  | { readonly kind: 'SUBMIT_REQUESTED' };
 
 type ErrorBody = { readonly error?: { readonly code?: string } };
 
@@ -237,9 +253,15 @@ export function ProposalApprovalScreen(props: ProposalApprovalScreenProps) {
   const settled = phase.kind === 'APPROVED' || phase.kind === 'REJECTED';
   const actionable = pending && canExecute && !settled;
   const buttonsEnabled = actionable && reachedEnd && !submitting;
+  // 🔴 ⑧: 送信を要求できるのは「承認済み × 送信の立場 × テナントが実行可 × 保留が無いか自動復帰しない保留（GATE_STALE）」。
+  //    自動復帰する保留（ドメイン未検証 / 上限 / 環境の枠 / 停止）中は `send.hold-release` に任せ、ボタンを出さない。
+  const holdBlocksSubmit = rows.sendHold !== null && rows.sendHold.autoRelease;
+  const sendActionable =
+    rows.disposition.kind === 'APPROVED' && rows.canSubmit && denialMessage === null && !holdBlocksSubmit && phase.kind !== 'SUBMIT_REQUESTED';
+  const sendButtonEnabled = sendActionable && reachedEnd && !submitting;
 
   useEffect(() => {
-    if (!actionable) return undefined;
+    if (!actionable && !sendActionable) return undefined;
     const target = endRef.current;
     if (target === null || typeof IntersectionObserver === 'undefined') return undefined;
     const observer = new IntersectionObserver((entries) => {
@@ -247,7 +269,25 @@ export function ProposalApprovalScreen(props: ProposalApprovalScreenProps) {
     });
     observer.observe(target);
     return () => observer.disconnect();
-  }, [actionable]);
+  }, [actionable, sendActionable]);
+
+  // 🔴 ⑧: 送信の確定を待つ。受け付け直後（`SUBMIT_REQUESTED`）と `SUBMITTING` の間は 3 秒ごとにサーバを読み直す。
+  //    確定（`SUBMITTED` / `SUBMIT_FAILED`）や保留（`sendHold`）は props に現れるので、それで受け付けの枠を閉じる。
+  const holdReasonKey = rows.sendHold?.reasonKey ?? null;
+  useEffect(() => {
+    if (phase.kind !== 'SUBMIT_REQUESTED') return undefined;
+    if (rows.disposition.kind !== 'APPROVED' || holdReasonKey !== null) {
+      setPhase({ kind: 'IDLE' });
+      return undefined;
+    }
+    const timer = setInterval(() => router.refresh(), SEND_POLL_MS);
+    return () => clearInterval(timer);
+  }, [phase.kind, rows.disposition.kind, holdReasonKey, router]);
+  useEffect(() => {
+    if (rows.disposition.kind !== 'SUBMITTING') return undefined;
+    const timer = setInterval(() => router.refresh(), SEND_POLL_MS);
+    return () => clearInterval(timer);
+  }, [rows.disposition.kind, router]);
 
   // 🔴 ゲート結果（#40）: 検査中の間だけ 5 秒ごとに読み、確定したらサーバコンポーネントを読み直す。
   useEffect(() => {
@@ -278,6 +318,7 @@ export function ProposalApprovalScreen(props: ProposalApprovalScreenProps) {
 
   function errorFor(status: number, code: string | undefined): string {
     if (code === 'GATE_STALE') return messages.errorStale;
+    if (code === 'SEND_JOB_BLOCKED') return messages.errorSendBlocked;
     if (code === 'INVALID_STATE_TRANSITION' || code === 'PROPOSAL_TRANSITION_RESERVED') return messages.errorState;
     if (status === 403) return messages.errorForbidden;
     if (status === 400) return messages.errorValidation;
@@ -302,6 +343,28 @@ export function ProposalApprovalScreen(props: ProposalApprovalScreenProps) {
         return;
       }
       setPhase({ kind: 'APPROVED' });
+      router.refresh();
+    } catch {
+      setError(messages.errorGeneric);
+      setPhase({ kind: 'IDLE' });
+    }
+  }
+
+  async function submit(): Promise<void> {
+    if (!sendButtonEnabled) return;
+    setError(null);
+    setPhase({ kind: 'SUBMITTING', action: 'SUBMIT' });
+    try {
+      // 🔴 body を送らない（#43 は宛先・本文・添付を引数に取らない。送るものは行の値だけ）。
+      const response = await fetch(`/api/proposals/${proposalId}/submit`, { method: 'POST' });
+      if (!response.ok) {
+        const code = await readErrorCode(response);
+        setError(code === 'INVALID_STATE_TRANSITION' ? messages.errorSubmitState : errorFor(response.status, code));
+        setPhase({ kind: 'IDLE' });
+        return;
+      }
+      // 🔴 202 = 受け付け。送信済みと見せない。確定・保留はサーバを読み直して反映する。
+      setPhase({ kind: 'SUBMIT_REQUESTED' });
       router.refresh();
     } catch {
       setError(messages.errorGeneric);
@@ -345,6 +408,8 @@ export function ProposalApprovalScreen(props: ProposalApprovalScreenProps) {
       data-testid="proposal-approval"
       data-proposal-state={rows.state}
       data-can-approve={rows.canApprove ? 'true' : 'false'}
+      data-can-submit={rows.canSubmit ? 'true' : 'false'}
+      data-send-hold={rows.sendHold?.reasonKey ?? ''}
       data-reached-end={reachedEnd ? 'true' : 'false'}
     >
       {/* 左（モバイルでは上）: 判断ヘッダ + ゲート結果 */}
@@ -574,6 +639,45 @@ export function ProposalApprovalScreen(props: ProposalApprovalScreenProps) {
               <p role="status" className="m-0 text-sm text-slate-800" data-testid="proposal-approval-result" data-result="REJECTED">
                 {messages.rejected}
               </p>
+            ) : null}
+            {/* 🔴 ⑧: 送信の保留（理由 × 開始時刻 × 設定導線）。PROVIDER_QUOTA には S-038 の導線を出さない。 */}
+            {rows.sendHold === null ? null : (
+              <div
+                role="status"
+                className="mt-2 mb-3 border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+                data-testid="proposal-approval-send-hold"
+                data-reason-key={rows.sendHold.reasonKey}
+                data-auto-release={rows.sendHold.autoRelease ? 'true' : 'false'}
+              >
+                <p className="m-0 font-bold">{rows.sendHold.title}</p>
+                <p className="mt-1 mb-0">{rows.sendHold.message}</p>
+                <p className="mt-1 mb-0 text-xs">{rows.sendHold.since}</p>
+                {rows.sendHold.settingsLink === null ? null : (
+                  <Link className={`${SECONDARY_LINK_CLASSES} mt-2 inline-block`} href={rows.sendHold.settingsLink.href} data-testid="proposal-approval-send-hold-link">
+                    {rows.sendHold.settingsLink.label}
+                  </Link>
+                )}
+              </div>
+            )}
+            {phase.kind === 'SUBMIT_REQUESTED' ? (
+              <p role="status" className="m-0 text-sm text-slate-800" data-testid="proposal-approval-result" data-result="SUBMIT_REQUESTED">
+                {messages.submitRequested}
+              </p>
+            ) : null}
+            {sendActionable ? (
+              <div data-testid="proposal-approval-submit-block">
+                <p className="mt-2 mb-2 text-xs text-slate-600" data-testid="proposal-approval-submit-lead">
+                  {messages.submitLead}
+                </p>
+                <Button type="button" disabled={!sendButtonEnabled} onClick={() => void submit()} data-testid="proposal-approval-submit">
+                  {phase.kind === 'SUBMITTING' && phase.action === 'SUBMIT' ? messages.submitting : messages.submit}
+                </Button>
+                {!reachedEnd ? (
+                  <p role="status" className="mt-2 mb-0 text-sm text-amber-900" data-testid="proposal-approval-submit-scroll-required">
+                    {messages.submitScrollRequired}
+                  </p>
+                ) : null}
+              </div>
             ) : null}
             {actionable && phase.kind !== 'REJECT_FORM' ? (
               <div className="flex flex-wrap items-center gap-3">

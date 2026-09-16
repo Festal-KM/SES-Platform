@@ -11,6 +11,10 @@ import { describe, expect, it } from 'vitest';
 import {
   EMAIL_DISPATCH_BACKOFF_DELAYS_MS,
   EXTERNAL_SEND_JOB_NAMES,
+  deferJob,
+  isJobDeferral,
+  SEND_PROPOSAL_JOB,
+  sendProposalJobId,
   GATE_RUN_JOB,
   INTERNAL_JOB_NAMES,
   QUEUE_DEFINITIONS,
@@ -25,33 +29,43 @@ import {
 } from './queues.js';
 
 describe('🔴 送信系キューの attempts が型で 1 に固定されている（docs/05 §9.1 / CLAUDE.md §3.4）', () => {
-  it('attempts: 1 は許される', () => {
-    const options: ExternalSendQueueOptions = { attempts: 1 };
+  it('attempts: 1 は許される（🔴 T-09-06: removeOnComplete: true は必須）', () => {
+    const options: ExternalSendQueueOptions = { attempts: 1, removeOnComplete: true };
     expect(options.attempts).toBe(1);
+  });
+
+  it('🔴 removeOnComplete を省略できない / false にできない（保留 → 再 enqueue が completed 記録に捨てられる。docs/05 §10.4）', () => {
+    // @ts-expect-error removeOnComplete は必須（jobId を冪等キーに使う送信系キューの前提）
+    const omitted: ExternalSendQueueOptions = { attempts: 1 };
+    expect(omitted.attempts).toBe(1);
+    // @ts-expect-error false は許されない（リテラル true）
+    const disabled: ExternalSendQueueOptions = { attempts: 1, removeOnComplete: false };
+    expect(disabled.attempts).toBe(1);
   });
 
   it('🔴 attempts: 2 はコンパイルエラーになる', () => {
     // @ts-expect-error 送信系キューに attempts: 2 は設定できない（BR-21 / BR-22 の二重送信）
-    const options: ExternalSendQueueOptions = { attempts: 2 };
+    const options: ExternalSendQueueOptions = { attempts: 2, removeOnComplete: true };
     // 実行時の値としては 2 のままである（型だけが禁じている、ということを明示する）。
     expect(options.attempts as number).toBe(2);
   });
 
   it('🔴 attempts: 3 もコンパイルエラーになる（内部ジョブの上限を流用できない）', () => {
     // @ts-expect-error 送信系キューに attempts: 3 は設定できない
-    const options: ExternalSendQueueOptions = { attempts: 3 };
+    const options: ExternalSendQueueOptions = { attempts: 3, removeOnComplete: true };
     expect(options.attempts as number).toBe(3);
   });
 
   it('🔴 attempts: 0（無限リトライ相当の書き間違い）もコンパイルエラーになる', () => {
     // @ts-expect-error 送信系キューの attempts はリテラル 1 のみ
-    const options: ExternalSendQueueOptions = { attempts: 0 };
+    const options: ExternalSendQueueOptions = { attempts: 0, removeOnComplete: true };
     expect(options.attempts as number).toBe(0);
   });
 
   it('🔴 backoff（自動リトライの設定）を持てない', () => {
     const options: ExternalSendQueueOptions = {
       attempts: 1,
+      removeOnComplete: true,
       // @ts-expect-error 再試行しないのだからバックオフの設定自体が存在してはならない
       backoff: { type: 'fixed', delay: 1000 },
     };
@@ -80,16 +94,19 @@ describe('🔴 送信系キューの attempts が型で 1 に固定されてい�
 });
 
 describe('キュー定義の実際の値（docs/05 §9.4 / §9.10）', () => {
-  it.each([...EXTERNAL_SEND_JOB_NAMES])('%s は attempts: 1 かつ backoff なし', (name) => {
+  it.each([...EXTERNAL_SEND_JOB_NAMES])('%s は attempts: 1 かつ backoff なし、removeOnComplete: true', (name) => {
     const definition = QUEUE_DEFINITIONS[name];
     expect(definition.name).toBe(name);
     expect(definition.defaultJobOptions.attempts).toBe(1);
     expect(definition.defaultJobOptions.backoff).toBeUndefined();
+    // 🔴 T-09-06: jobId を冪等キーに使うため必須（docs/05 §10.4 の決着）。removeOnFail は付けない。
+    expect(definition.defaultJobOptions.removeOnComplete).toBe(true);
+    expect(definition.defaultJobOptions).not.toHaveProperty('removeOnFail');
   });
 
-  it('externalSendQueue は引数のジョブ名にかかわらず attempts: 1 を返す', () => {
+  it('externalSendQueue は引数のジョブ名にかかわらず attempts: 1 / removeOnComplete: true を返す', () => {
     for (const name of EXTERNAL_SEND_JOB_NAMES) {
-      expect(externalSendQueue(name).defaultJobOptions).toEqual({ attempts: 1 });
+      expect(externalSendQueue(name).defaultJobOptions).toEqual({ attempts: 1, removeOnComplete: true });
     }
   });
 
@@ -211,5 +228,36 @@ describe('steppedBackoffDelayMs（BullMQ の backoffStrategy）', () => {
   it('0 以下の attemptsMade でも先頭の値に丸める', () => {
     expect(steppedBackoffDelayMs(0, EMAIL_DISPATCH_BACKOFF_DELAYS_MS)).toBe(5_000);
     expect(steppedBackoffDelayMs(-1, EMAIL_DISPATCH_BACKOFF_DELAYS_MS)).toBe(5_000);
+  });
+});
+
+describe('🔴 send.proposal の契約（T-09-06。docs/05 §9.4 / §10.4 / §10.5）', () => {
+  it('jobId は send.proposal.{proposalId}.{attemptSeq} で、`:` を含まない（BullMQ の制約）', () => {
+    expect(sendProposalJobId({ proposalId: '01930000-0000-7000-8000-000000000111', attemptSeq: 1 })).toBe(
+      'send.proposal.01930000-0000-7000-8000-000000000111.1',
+    );
+    expect(sendProposalJobId({ proposalId: 'p1', attemptSeq: 2 })).not.toContain(':');
+    expect(SEND_PROPOSAL_JOB).toBe('send.proposal');
+  });
+
+  it('🔴 同じ提案でも attemptSeq が違えば別の jobId（人間の再送は新しいジョブ / 同じ試行の再 enqueue は同じジョブ）', () => {
+    expect(sendProposalJobId({ proposalId: 'p1', attemptSeq: 1 })).not.toBe(sendProposalJobId({ proposalId: 'p1', attemptSeq: 2 }));
+    expect(sendProposalJobId({ proposalId: 'p1', attemptSeq: 1 })).toBe(sendProposalJobId({ proposalId: 'p1', attemptSeq: 1 }));
+  });
+
+  it('deferJob は待機の印を返し、0 以下 / 非整数は例外（busy loop を作らない）', () => {
+    const deferral = deferJob(30_000);
+    expect(isJobDeferral(deferral)).toBe(true);
+    expect(deferral.retryAfterMs).toBe(30_000);
+    expect(() => deferJob(0)).toThrow(RangeError);
+    expect(() => deferJob(-1)).toThrow(RangeError);
+    expect(() => deferJob(1.5)).toThrow(RangeError);
+  });
+
+  it('isJobDeferral は形で判定する（他のジョブ結果を待機と誤認しない）', () => {
+    expect(isJobDeferral({ kind: 'SENT' })).toBe(false);
+    expect(isJobDeferral(undefined)).toBe(false);
+    expect(isJobDeferral(null)).toBe(false);
+    expect(isJobDeferral({ kind: 'DEFER_JOB' })).toBe(false);
   });
 });

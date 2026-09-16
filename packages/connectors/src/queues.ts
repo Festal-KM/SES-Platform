@@ -56,8 +56,14 @@ export function steppedBackoffDelayMs(
  *    `attempts: 2` を書くとコンパイルエラーになる（`packages/connectors/src/queues.test.ts` の型テスト）。
  * 🔴 `backoff` は「あってはならない」ことを `undefined` 型で表す（再試行しないのだから
  *    バックオフの設定自体が意味を持たない。設定できると「再試行する気がある」ように読める）。
+ * 🔴 T-09-06: **`removeOnComplete` はリテラル `true` で必須**（docs/05 §9.4 / §10.4 の決着）。
+ *    送信系キューは `jobId = '{queue}.{entityId}.{attemptSeq}'` を冪等キーに使う。BullMQ は同じ `jobId` が
+ *    completed セットに残っている間 `add` を無視するため、保留（`sendHoldReasonKey`）で**正常終了**した記録が
+ *    残ると `send.hold-release` の「同じ `attemptSeq` で再 enqueue」（§10.4）が**静かに捨てられる**
+ *    （`gate.run` が `removeOnComplete: true` を要るのと同型。§9.1）。任意項目にすると抜けても落ちないので、
+ *    型で要求する。`removeOnFail` は付けない（failed は §16.5 の失敗ジョブ数の根拠）。
  */
-export type ExternalSendQueueOptions = { attempts: 1; backoff?: undefined };
+export type ExternalSendQueueOptions = { attempts: 1; backoff?: undefined; removeOnComplete: true };
 
 /**
  * 内部ジョブ（状態遷移・集計・保留の復帰・Webhook 処理など）の既定ジョブオプション。
@@ -177,7 +183,8 @@ export type QueueDefinition<N extends string, O> = {
 export function externalSendQueue<N extends ExternalSendJobName>(
   name: N,
 ): QueueDefinition<N, ExternalSendQueueOptions> {
-  return { name, defaultJobOptions: { attempts: 1 } satisfies ExternalSendQueueOptions };
+  // 🔴 `removeOnComplete: true` の理由は `ExternalSendQueueOptions` の注記（保留 → 再 enqueue が捨てられない）。
+  return { name, defaultJobOptions: { attempts: 1, removeOnComplete: true } satisfies ExternalSendQueueOptions };
 }
 
 /** 内部ジョブのキュー。`attempts` は 1〜3 のみ（型で制限）。 */
@@ -393,6 +400,107 @@ export type GateRunJobQueue = {
  */
 export function shouldRemoveGateRunJob(state: string | null): boolean {
   return state === 'failed';
+}
+
+// ---------------------------------------------------------------------------
+// send.proposal の契約（docs/05 §9.4 / §10.2 / §10.4。T-09-06）
+// ---------------------------------------------------------------------------
+
+/** `send.proposal` のキュー名（`QUEUE_DEFINITIONS` のキーと同じ。文字列を書き写さない）。 */
+export const SEND_PROPOSAL_JOB = 'send.proposal' satisfies ExternalSendJobName;
+
+/**
+ * `send.proposal` の payload（docs/05 §9.4。T-09-05 の申し送りで `requestedBy` を、T-09-06 で `enqueuedAt` を足した）。
+ *
+ * 🔴 **enqueue 側（`apps/web` の #43 / #44 と `apps/worker` の `send.hold-release`）と実行側の契約**を 1 箇所に置く
+ *    （`GateRunJob` と同じ整理）。
+ * 🔴 `attemptSeq` は**人間の操作の時点で採番済み**の値である（`nextSendAttemptSeq`。docs/05 §10.1 / §10.6）。
+ *    ジョブはこの値を `SendAttempt` に**書く**だけで、自分で数えない。
+ * 🔴 `requestedBy` は `attemptSeq >= 2`（人間の再送 = `RESEND`）で必須。`1`（`INITIAL`）では無視される。
+ *    整合はジョブの入口（payload の検証）で落とす（`SendAttemptOriginError` を ③ の後に出さない。T-09-05 申し送り 9）。
+ * 🔴 `enqueuedAt` は ②-a の遅延判定（`SEND_STALE_THRESHOLD_MINUTES`）の起点。ISO 8601（UTC）。
+ */
+export type SendProposalJob = {
+  readonly tenantId: string;
+  readonly proposalId: string;
+  readonly attemptSeq: number;
+  readonly requestedBy: string | null;
+  readonly enqueuedAt: string;
+};
+
+/** `jobId` を決める材料（提案 1 件 × 試行 1 回）。 */
+export type SendProposalJobKey = Pick<SendProposalJob, 'proposalId' | 'attemptSeq'>;
+
+/**
+ * 🔴 区切り文字は `.`（`gateRunJobId` と同じ理由 —— BullMQ はカスタム `jobId` に `:` を含められない）。
+ *    `idempotency_key`（`proposal:{id}:{seq}`。`packages/domain`）とは**別の文字列**である。あちらは DB の
+ *    `UNIQUE`、こちらは BullMQ の重複排除であり、役割が違う（この ID をパースする実装を書かない）。
+ */
+const SEND_PROPOSAL_JOB_ID_SEPARATOR = '.';
+
+/**
+ * 🔴 `send.proposal` の `jobId`（docs/05 §9.4 / §10.4 の決着）。**同じ提案・同じ試行のジョブを多重化させない。**
+ *
+ * BullMQ は同じ `jobId` の待機中・実行中（delayed を含む）ジョブを重複排除する。#43 の二重押下と
+ * `send.hold-release` の再 enqueue が重なっても**キューに乗るのは 1 本**である。🔴 **これは補助であり、
+ * 二重送信を止める防御線は DB 側**（§10.2 ②-d の `readSendAttempt` / ③ の CAS / ④ の `UNIQUE`）にある。
+ * completed は `removeOnComplete: true`（`externalSendQueue`）で即座に消え、保留後の再 enqueue を阻まない。
+ */
+export function sendProposalJobId(key: SendProposalJobKey): string {
+  return [SEND_PROPOSAL_JOB, key.proposalId, String(key.attemptSeq)].join(SEND_PROPOSAL_JOB_ID_SEPARATOR);
+}
+
+/**
+ * 🔴 enqueue の帰結（`GateRunEnqueueOutcome` と同じ理由で `void` にしない）。
+ *
+ * - `ENQUEUED` … 待機中・遅延中・実行中のジョブがある（新しく積んだか、同 `jobId` が既に居る）
+ * - 🔴 `BLOCKED_BY_FAILED_JOB` … 同じ `jobId` の `failed` 記録が残っており `add` が静かに無視された
+ *   （`removeOnFail` を付けていないため起こりうる）。#43 は 500 相当で利用者に見せ、`send.hold-release` は
+ *   「復帰させた」と数えない。**失敗記録を自動で消さない**（§16.5 の失敗ジョブ数から消えると、壊れていることに
+ *   誰も気づけなくなる）
+ */
+export type SendJobEnqueueOutcome = 'ENQUEUED' | 'BLOCKED_BY_FAILED_JOB';
+
+/**
+ * 🔴 `send.proposal` の enqueue 側の契約（`apps/web` の #43 / #44 と `apps/worker` の `send.hold-release` が使う）。
+ *
+ * 🔴 **`jobId` を引数に取らない**（実装が `sendProposalJobId(job)` で組み立てる）。
+ * 🔴 **`attempts` / `backoff` / `delay` を引数に取らない**（既定ジョブオプションは `QUEUE_DEFINITIONS` だけが決める。
+ *    §9.1 / §17.2 #6。分次レートの待機〔`DEFER`〕は enqueue 側ではなく実行側が `deferJob` で行う）。
+ */
+export type SendProposalJobQueue = {
+  enqueue(job: SendProposalJob): Promise<SendJobEnqueueOutcome>;
+};
+
+/**
+ * 🔴 ジョブの**待機**（docs/05 §10.5「分次レート（`DEFER`）は遅延ではなく待機であり、`sendHoldReasonKey` を
+ *    立てずに同じ `attemptSeq` のまま `retryAfterSec` 後に再スケジュールする」）を実行側が表す印。
+ *
+ * ハンドラがこの値を**返す**と、BullMQ の配線（`bullmq.ts`）が**同じジョブ**を `retryAfterMs` 後の delayed に移す
+ * （`Job.moveToDelayed`）。新しいジョブを `add` しない —— 同じ `jobId` が `active` の間は `add` が無視されるため、
+ * 「再スケジュールしたつもりで捨てられた」を作らない。**`attempts` を消費しない**（再試行ではない）。
+ * 🔴 `bullmq` に依存しないこの定義から `instanceof` ではなく形で判定する（`isJobDeferral`）。
+ */
+export type JobDeferral = {
+  readonly kind: 'DEFER_JOB';
+  readonly retryAfterMs: number;
+};
+
+export function deferJob(retryAfterMs: number): JobDeferral {
+  if (!Number.isInteger(retryAfterMs) || retryAfterMs <= 0) {
+    // 🔴 0 / 負数は「即時に同じ判定へ戻る」busy loop になる。黙って通さない。
+    throw new RangeError(`retryAfterMs は 1 以上の整数である必要があります（${String(retryAfterMs)}）。`);
+  }
+  return { kind: 'DEFER_JOB', retryAfterMs };
+}
+
+export function isJobDeferral(value: unknown): value is JobDeferral {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    (value as { kind?: unknown }).kind === 'DEFER_JOB' &&
+    typeof (value as { retryAfterMs?: unknown }).retryAfterMs === 'number'
+  );
 }
 
 export type QueueName = keyof typeof QUEUE_DEFINITIONS;

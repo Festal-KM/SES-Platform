@@ -537,6 +537,11 @@ const ja = {
     '提案の承認・却下は、ホストの営業担当・管理者のみが行えます。',
   'error.gate.stale':
     '内容が変更されたため再検証が必要です。承認できるのは、いまの内容で検査を通った提案だけです。あらためてレビューに出してください。',
+  // 🔴 T-09-06: 提案の送信（`F-022` / docs/05 §6.5 #43 / §10.2）。**「保留を無視して送る」「失敗記録を消して送る」余地を
+  //    文言でも作らない**（`BR-21` / `BR-22`）。送れるのは事前判定を通った承認済みの提案だけである。
+  'error.proposal.submitForbidden': '提案の送信は、ホストの営業担当・管理者のみが行えます。',
+  'error.proposal.sendJobBlocked':
+    '送信ジョブを積めませんでした。同じ送信の失敗記録が残っています。運営者が原因を確認するまで、この提案は送信できません。',
   'error.internal': '処理に失敗しました。時間をおいて再度お試しください。',
 
   // --- 品質ゲート（F-020 / F-027 AC-5。docs/05 §11.7 の GateResultView）---
@@ -2146,6 +2151,41 @@ const ja = {
   'proposals.approval.error.state': 'この提案は承認待ちではありません。承認・却下は成立していません。再読込して現在の状態をご確認ください。',
   'proposals.approval.error.forbidden': 'この操作を行う権限がありません。',
   'proposals.approval.error.generic': '処理できませんでした。提案の状態は変わっていません。',
+  // 🔴 T-09-06: 送信（`F-022` / docs/05 §6.5 #43 / §10.2 / §10.4 / §10.5）。承認後の primary を「承認する」から切り替える。
+  //    🔴 **押した瞬間に「送信済み」と見せない**（docs/05 §6.5 T-09-03 の決着）—— 202 は「受け付けた」であり、確定は
+  //    送信ジョブが行う。文言は「受け付けた」「送信中」「送信済み」を区別する。
+  //    🔴 「保留を無視して送る」「失敗したので再送する」の余地を文言でも作らない（`BR-21` / `BR-22`）。
+  'proposals.approval.action.submit': '送信する',
+  'proposals.approval.action.submitting': '送信を受け付けています…',
+  'proposals.approval.action.submitRequested': '送信を受け付けました。送信中です。完了するとこの画面に反映されます。',
+  'proposals.approval.action.submitLead': '承認済みの内容をそのまま提案先へ送信します。送信は 1 回だけ行われ、取り消せません。',
+  'proposals.approval.action.submitScrollRequired': '送信は、プレビューの末尾まで確認すると選べるようになります。',
+  'proposals.approval.state.submitting': 'この提案は送信中です。完了するとこの画面に反映されます。',
+  'proposals.approval.state.submitted.prefix': 'この提案は送信済みです（',
+  'proposals.approval.state.submitted.suffix': '）。',
+  'proposals.approval.state.submitFailed':
+    '送信に失敗しました。届いている可能性があるため、自動では再送しません。再送は送信失敗の一覧から人間の操作で行います。',
+  'proposals.approval.sendHold.title': '送信は保留中です。',
+  'proposals.approval.sendHold.sincePrefix': '保留開始: ',
+  'proposals.approval.sendHold.openSendingDomain': '送信元ドメインの設定を開く',
+  'proposals.approval.sendHold.openUsage': '利用量と上限を確認する',
+  'proposals.approval.error.submitState': 'この提案は承認済みではないため送信できません。再読込して現在の状態をご確認ください。',
+  'proposals.approval.error.sendBlocked':
+    '送信ジョブを積めませんでした。同じ送信の失敗記録が残っています。運営者が確認するまで送信できません。',
+
+  // --- 送信の保留（docs/05 §10.4 の `sendHold.{reasonKey}`。7 値 = `SEND_HOLD_REASON_KEYS`。T-09-06）---
+  // 🔴 「壊れている」ではなく「保留中」として理由と次の一手を示す（`docs/04` `S-036` / `S-037` の規律）。
+  // 🔴 `RATE_LIMIT`（テナントの利用量 = `S-038` へ導線あり）と `PROVIDER_QUOTA`（送信基盤 = 環境全体の制約。**お客様側の設定では
+  //    解消しない**ため `S-038` への導線を出さない。`F-059 AC-7`）を混同しない。
+  // 🔴 `GATE_STALE` だけは自動復帰しない（§10.5）。「あらためて送信してください」と人間の操作を求める。
+  'sendHold.RATE_LIMIT': '本日のメール送信数が上限に達しているため保留中です。上限が回復すると自動で送信されます。',
+  'sendHold.DOMAIN_UNVERIFIED': '送信元ドメインが未検証のため保留中です。検証が完了すると自動で送信されます。',
+  'sendHold.ESIGN_DISCONNECTED': '電子署名が未接続のため保留中です。接続が完了すると自動で送信されます。',
+  'sendHold.TENANT_SUSPENDED': '組織が停止中のため保留中です。停止が解除されると自動で送信されます。',
+  'sendHold.GATE_STALE':
+    '承認後に内容または前提が変わった、あるいは送信までに時間が経ちすぎたため、送信を見送りました。自動では再送しません。内容の確認後にあらためて送信してください。',
+  'sendHold.AI_COST_LIMIT': 'AI 利用の 1 日の上限に達しているため保留中です。上限が回復すると自動で送信されます。',
+  'sendHold.PROVIDER_QUOTA': '送信基盤の混雑により保留中。お客様側の設定では解消しません。自動で再送されます。',
 
   // --- S-015 匿名共有の設定（取引先）（docs/04 §S-015 / `F-016` / docs/05 §6.4 #29。T-08-02）---
   // 🔴 **煽らない。** 「共有すると案件が見つかりやすくなります」に相当する語を 1 つも置かない

@@ -3,7 +3,7 @@ export const EXTERNAL_SEND_JOB_NAMES = ['send.proposal', 'send.contract'] as con
 export const INTERNAL_JOB_NAMES = ['send.hold-release'] as const;
 
 export function externalSendQueue(name: string) {
-  return { name, defaultJobOptions: { attempts: 1 } };
+  return { name, defaultJobOptions: { attempts: 1, removeOnComplete: true } };
 }
 
 export function internalQueue(name: string, defaultJobOptions: { attempts: number }) {

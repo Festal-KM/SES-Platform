@@ -46,7 +46,7 @@ import {
 } from '../api/errors';
 import { rethrowWithInvalidTransitionAudit } from '../state/invalid-transition';
 import { readProposalGateResult } from './gate';
-import { canApproveProposal } from './policy';
+import { canApproveProposal, canSubmitProposal } from './policy';
 import type { RejectProposalBody } from './schemas';
 import { readProposalViewInTx, type ProposalActionMeta } from './service';
 import type { ProposalView } from './views';
@@ -273,6 +273,10 @@ export type ProposalApprovalView = {
   readonly createdByName: string | null;
   /** 🔴 立場として承認・却下ができるか（`canApproveProposal`）。状態・テナントの実行可否は別に見る。 */
   readonly canApprove: boolean;
+  /** 🔴 T-09-06: 立場として送信を要求できるか（`canSubmitProposal`。#43 と同じ判定）。 */
+  readonly canSubmit: boolean;
+  /** T-09-06: 送信の確定時刻（ISO 8601）。`SUBMITTED` 以降のみ。 */
+  readonly submittedAt: string | null;
 };
 
 /**
@@ -314,5 +318,7 @@ export async function readProposalApproval(
     approval,
     createdByName: read.createdByName,
     canApprove: canApproveProposal(ctx),
+    canSubmit: canSubmitProposal(ctx),
+    submittedAt: read.submittedAt?.toISOString() ?? null,
   };
 }

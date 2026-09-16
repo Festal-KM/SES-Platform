@@ -11,6 +11,12 @@
 //    `tests/isolation/gate-run.test.ts` / `proposal-approval.test.ts` の射程である。
 //    ✅ **T-09-04 で E2E #10（承認後に内容を変更できない。docs/05 §17.3 #10）を同じ test の続きに足した**（承認直後の
 //    状態をそのまま使う。送信側のアサーションは T-09-06）。
+//    ✅ **T-09-06 で承認後の primary「送信する」（#43）を同じ test の続きに足した**（docs/05 §6.5 #43 / §10.2）。ハーネスに
+//    Redis は足した（`harness/redis.ts`。#43 が `send.proposal` を積む先）が **worker はまだ無い**（Issue #47 の既定値 =
+//    `T-09-11` で設計）。したがってここで確かめるのは「202 = 受け付け」「押した瞬間に送信済みと見せない」「状態は
+//    `APPROVED` のまま（`SUBMITTING` に入れるのはジョブ）」までであり、確定（`SUBMITTED` / 保留）と E2E #7 / #10 の
+//    送信側（`GATE_STALE`）は `tests/isolation/send-proposal.test.ts`（実 Redis + 実 Worker）が証明する。ブラウザ経路の
+//    E2E #7 / #9 / #10 送信側は `T-09-11` が worker を立てて足す。
 //
 // 🔴 「モバイルだから省略する」を作らない（`CLAUDE.md` §13.3）。サインイン（2 要素認証を含む）が
 //    モバイルで完結することを、デスクトップと同じ経路で確かめる。
@@ -171,6 +177,62 @@ test.describe('モバイルビューポートのスモーク（S-003 / S-004 は
       await expect(session.page.getByTestId('proposal-approval-header-row-unit-price')).toContainText('700,000');
       await expect(session.page.getByTestId('proposal-approval-preview-body')).toContainText(body);
       await expect(session.page.getByTestId('proposal-approval-preview-body')).not.toContainText('承認後の追記');
+      session.outbound.assertNone();
+
+      // ✅ T-09-06: 🔴 **承認後の primary は「送信する」（#43）**（docs/05 §6.5 #43 / §10.2 / T-09-03 の決着「押した瞬間に送信済みと
+      //    見せない」）。モバイルで完結する（Tier 1）。
+      //    ①「承認する」は無く「送信する」が描かれ、プレビューの末尾まで確認するまで押せない
+      //    ②押すと 202（受け付け）。画面は「送信を受け付けました。送信中です」を出し、**「送信済み」の語を出さない**
+      //    ③状態は `APPROVED` のまま（`SUBMITTING` に入れるのは送信ジョブ。ハーネスに worker は無いので確定しない）
+      //    ④外部への発信は 0 件（#43 は enqueue するだけ。送信そのものはジョブであり、E2E の環境ではモック）
+      const approvalScreen = session.page.getByTestId('proposal-approval');
+      await expect(approvalScreen).toHaveAttribute('data-can-submit', 'true');
+      await expect(approvalScreen).toHaveAttribute('data-send-hold', '');
+      const submitButton = session.page.getByTestId('proposal-approval-submit');
+      await expect(submitButton).toBeVisible();
+      await expect(submitButton).toHaveText(t('proposals.approval.action.submit'));
+      await expect(submitButton).toBeDisabled();
+      await expect(session.page.getByTestId('proposal-approval-submit-scroll-required')).toBeVisible();
+      await expect(session.page.getByTestId('proposal-approval-submit-lead')).toContainText(t('proposals.approval.action.submitLead'));
+      expect(await session.page.content()).not.toMatch(/一括送信|無視して送信|再送/);
+      await session.page.getByTestId('proposal-approval-preview-end').scrollIntoViewIfNeeded();
+      await expect(approvalScreen).toHaveAttribute('data-reached-end', 'true');
+      await expect(submitButton).toBeEnabled();
+      await expectNoBrokenLabels('S-021 提案の承認（送信可）', session.page);
+
+      const submitResponse = session.page.waitForResponse(
+        (response) => response.url().endsWith(`/api/proposals/${proposalId}/submit`) && response.request().method() === 'POST',
+      );
+      await submitButton.click();
+      const submitted = await submitResponse;
+      // 🔴 202 = 受け付け（200 にすると「送った」と読める）。本文の契約は下の API 直叩きで確かめる。
+      expect(submitted.status()).toBe(202);
+      const result = session.page.getByTestId('proposal-approval-result');
+      await expect(result).toHaveAttribute('data-result', 'SUBMIT_REQUESTED');
+      await expect(result).toContainText(t('proposals.approval.action.submitRequested'));
+      // 🔴 「送信済み」と見せない。「送信する」も二重に押せない。
+      expect(await session.page.content()).not.toContain(t('proposals.approval.state.submitted.prefix'));
+      await expect(session.page.getByTestId('proposal-approval-submit')).toHaveCount(0);
+      await expect(approvalScreen).toHaveAttribute('data-proposal-state', 'APPROVED');
+      await expectNoHorizontalOverflow('S-021 提案の承認（送信受け付け後）', session.page);
+      await expectNoBrokenLabels('S-021 提案の承認（送信受け付け後）', session.page);
+
+      // 🔴 2 回目の #43（二重押下 / 別タブ）は同じ attemptSeq・同じ jobId で 202 になり、BullMQ が 1 本に畳む（F-022 AC-1 の入口側。
+      //    ジョブ側の「外部 1 回」は結合テスト）。
+      const again = await apiRequest(session.page, `/api/proposals/${proposalId}/submit`, { method: 'POST' });
+      expect(again.status, again.text).toBe(202);
+      const submitBody = parseJson(again) as { outcome: string; attemptSeq: number; state: string; jobId: string | null; sendHoldReasonKey: string | null };
+      expect(submitBody).toMatchObject({ outcome: 'ENQUEUED', attemptSeq: 1, state: 'APPROVED', sendHoldReasonKey: null });
+      expect(submitBody.jobId).toBe(`send.proposal.${proposalId}.1`);
+      // 🔴 取引先（作成者ではないが、取引先ロールは #43 を呼べない）は 403。
+      const partnerSession = await openTenantSession(browser, partnerSales(1, 1));
+      try {
+        const forbidden = await apiRequest(partnerSession.page, `/api/proposals/${proposalId}/submit`, { method: 'POST' });
+        expect(forbidden.status, forbidden.text).toBe(403);
+      } finally {
+        await partnerSession.close();
+      }
+      // 🔴 外部への発信は 0 件（#43 は積むだけ。ブラウザ経路の送信の確定は T-09-11 が worker を立てて確かめる）。
       session.outbound.assertNone();
     } finally {
       await session.close();

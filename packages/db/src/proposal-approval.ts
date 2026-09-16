@@ -363,9 +363,14 @@ export async function castProposalToSubmitting(
       const contentHash = await computeProposalContentHash(tx, input.proposalId);
       if (contentHash === null) return { kind: 'NOT_FOUND' };
 
+      // 🔴 T-09-06: 保留列（`sendHoldReasonKey` / `sendHoldSince`。§10.4）は同じ 1 文で NULL に揃える。保留は
+      //    「まだ 1 通も送っていない `APPROVED`」の属性であり、`SUBMITTING` に入った行に残すと A-005 の「送信保留」に
+      //    送信中の行が混ざる（人間が `GATE_STALE` の保留から再送を選んだ場合に起きる）。
       const updated = await tx.$queryRaw<IdRow[]>(Prisma.sql`
         UPDATE proposals p
            SET state = ${SUBMITTING_TO},
+               send_hold_reason_key = NULL,
+               send_hold_since = NULL,
                updated_at = ${input.now}::timestamptz
          WHERE p.id = ${input.proposalId}::uuid
            AND p.state = ${SUBMITTING_FROM}

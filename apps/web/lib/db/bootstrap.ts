@@ -26,7 +26,7 @@ import { createS3Api } from '@ses/connectors/aws';
 // 🔴 T-07-08: BullMQ に触れる唯一のファイル（`packages/connectors/src/bullmq.ts`）への入口。
 //    `@ses/connectors/aws` と同じく**サブパス**にしてあるのは、バレル（`@ses/connectors`）を
 //    import しただけで BullMQ / ioredis が引きずり込まれないようにするためである。
-import { createBullMqGateRunQueue } from '@ses/connectors/bullmq';
+import { createBullMqGateRunQueue, createBullMqSendProposalQueue } from '@ses/connectors/bullmq';
 import type { AiUnitMetric } from '@ses/domain';
 import {
   configurePlatformReadDb,
@@ -38,6 +38,7 @@ import { createCandidateReference, type CandidateReference } from '../anonymize/
 import { configureAccountMailQueue, PendingAccountMailQueue } from '../jobs/account-mail';
 import { configureDomainJobQueue, PendingDomainJobQueue } from '../jobs/domain-jobs';
 import { configureGateRunJobQueue } from '../jobs/gate-run-queue';
+import { configureSendProposalJobQueue } from '../jobs/send-proposal-queue';
 import { resolveInviteUrlRuntime, type InviteUrlRuntime } from '../invitations/invite-link';
 import {
   configureScanApplyResultQueue,
@@ -188,6 +189,10 @@ export function ensureDbConfigured(): void {
   //    （対象が `GATE_RUNNING` のまま残る）という壊れ方そのものである（`CLAUDE.md` §11.1）。
   //    🔴 `Queue` の実体化は最初の enqueue まで遅延する（登録しただけで Redis へ繋ぎにいかない）。
   configureGateRunJobQueue(createBullMqGateRunQueue({ url: env.REDIS_URL }));
+  // 🔴 T-09-06: `send.proposal` の enqueue 先（docs/05 §9.4 / §10.2）。`gate.run` と同じ判断で**環境で分岐しない** ——
+  //    積んだだけで誰も送らないキューは「送信を受け付けたのに永久に送られない」（`APPROVED` のまま）という壊れ方であり、
+  //    `CLAUDE.md` §11.1 そのものである。`Queue` の実体化は最初の enqueue まで遅延する。
+  configureSendProposalJobQueue(createBullMqSendProposalQueue({ url: env.REDIS_URL }));
   cachedSesEventTopicArn = env.SES_EVENT_TOPIC_ARN;
   // 🔴 T-05-05: HMAC の鍵。旧鍵が設定されている間は**新旧どちらの署名も受理する**
   //    （無停止のローテーション。docs/05 §8.5）。分岐はここ 1 箇所である。

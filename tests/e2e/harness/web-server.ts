@@ -23,6 +23,7 @@ import { E2E_BASE_URL, E2E_HOST, E2E_PORT } from './endpoint.js';
 import type { E2eObjectStorage } from './object-storage.js';
 import { ARTIFACT_DIR, NETWORK_GUARD, NEXT_CLI, WEB_APP_DIR } from './paths.js';
 import type { E2eDatabase } from './postgres.js';
+import type { E2eRedis } from './redis.js';
 
 const READY_TIMEOUT_MS = 180_000;
 const SHUTDOWN_TIMEOUT_MS = 15_000;
@@ -45,11 +46,14 @@ export type WebServer = {
 function buildEnv(
   database: E2eDatabase,
   objectStorage: E2eObjectStorage,
+  redis: E2eRedis,
   guardMarker: string,
 ): EnvRecord {
   const base = buildValidEnv('development', {
     APP_URL: E2E_BASE_URL,
     DATABASE_URL: database.tenantUrl,
+    // 🔴 T-09-06: #43 が `send.proposal` を積む先（E2E 専用の使い捨て Redis。ホストの 6379 を使わない）。
+    REDIS_URL: redis.url,
     PLATFORM_DATABASE_URL: database.platformUrl,
     PLATFORM_WRITE_DATABASE_URL: database.platformWriteUrl,
     // 🔴 `next start` は本番モードのビルドを配信する。`APP_ENV` は `development` のまま
@@ -133,6 +137,7 @@ async function isServing(baseUrl: string): Promise<boolean> {
 export async function startWebServer(
   database: E2eDatabase,
   objectStorage: E2eObjectStorage,
+  redis: E2eRedis,
 ): Promise<WebServer> {
   buildWebApp();
 
@@ -145,7 +150,7 @@ export async function startWebServer(
     process.execPath,
     [NEXT_CLI, 'start', '--hostname', E2E_HOST, '--port', String(E2E_PORT)],
     // `stdio` は既定の `'pipe'`（明示すると `spawn` のオーバーロードが一意に決まらない）。
-    { cwd: WEB_APP_DIR, env: buildEnv(database, objectStorage, guardMarker) },
+    { cwd: WEB_APP_DIR, env: buildEnv(database, objectStorage, redis, guardMarker) },
   );
 
   let output = '';

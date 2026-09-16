@@ -1,5 +1,5 @@
 // apps/worker/src/jobs/send-hold-release.ts
-// `send.hold-release`（毎 10 分。docs/05 §9.4 / §10.4 / §8.3 / §8.3-Q）。T-04-04。
+// `send.hold-release`（毎 10 分。docs/05 §9.4 / §10.4 / §8.3 / §8.3-Q）。T-04-04。✅ T-09-06 で `Proposal` 側を統合。
 //
 // ============================================================================
 // 🔴 このジョブは外部 API を 1 つも呼ばない
@@ -14,35 +14,47 @@
 // ============================================================================
 // ① **時刻で判定しない。** SES の枠はローリング 24 時間であり、固定時刻にリセットされない
 //    （`docs/03` §3.2.4）。実行のたびに `decideProviderQuota` を**再評価**する。
-// ② **`ALLOW` の `headroom` 件だけ**、`heldAt` の**古い順**に復帰させる。全件戻すと、
+// ② **`ALLOW` の `headroom` 件だけ**、古い順に復帰させる。全件戻すと、
 //    戻した先で全件が再保留され、10 分ごとに往復するだけになる。
-// ③ 🔴 **`Proposal` / `Contract` の `sendHoldReasonKey='PROVIDER_QUOTA'` と同じ枠を分け合う**
-//    （§8.3-Q ⑥）。本タスクの時点では `send.*` 側が未実装のため `releaseSendHolds` を
-//    **必須の seam** として受け取る（既定値を置かない = 実装が入るまで「配ったつもりで
-//    配れていない」状態を作らない）。SP-09 T-09-06 がここに実装を挿す。
+// ③ 🔴 **`Proposal` の `sendHoldReasonKey='PROVIDER_QUOTA'` と `EmailDispatch(HELD_PROVIDER_QUOTA)` は同じ枠を分け合う**
+//    （§8.3-Q ⑥）。✅ T-09-06: `sendHoldSince` と `heldAt` を**1 本に混ぜて全体で古い順**に配る（`send-proposal-holds.ts`）。
+//    `Contract`（Phase 3）は同じ列を持ち、同じ混ぜ方で加わる。
 // ④ 招待・パスワード再設定は**平文トークンが残っていない**（payload と共に消えた）。
 //    したがって復帰は**トークンの再発行**でしか行えない（§8.3 の手順を `HELD_DOMAIN_UNVERIFIED` と
-//    共用する。CAS の `WHERE status` だけが違う）。実装は T-04-05 が `reissueAccountMail` に挿す。
-// ⑤ 🔴 **再 enqueue されたジョブは §8.3-Q の判定を最初から通る**（`held_at` を NULL に戻す）。
+//    共用する。CAS の `WHERE status` だけが違う）。実装は T-04-05 の `reissueAccountMail`。
+// ⑤ 🔴 **再 enqueue されたジョブは §8.3-Q / §10.2 の判定を最初から通る**（`held_at` / 保留列を NULL に戻す）。
 //    保留を経たものだけが判定を免れる経路を作らない。
+// ⑥ 🔴 `Proposal` の `GATE_STALE` は対象外（§10.5。`listHeldProposalSends` が返さない）。人間が `S-021` / `S-022` から選ぶ。
 import type { OperationalMailDispatch, EmailSender, ProviderSendCounter } from '@ses/connectors';
 import { isOperationalMailRecipientClass } from '@ses/connectors';
 import {
   listHeldEmailDispatches,
+  listHeldProposalSends,
+  readEmailDailyCount,
   requeueHeldEmailDispatch,
   resolveVerifiedSendingDomain,
   systemTenantCtx,
+  withTenant,
   type HeldEmailDispatchRow,
+  type HeldProposalSendRow,
   type SystemTenantCtx,
 } from '@ses/db';
 import {
   decideProviderQuota,
+  isExecutableTenantLifecycleState,
   isProviderQuotaWarning,
   providerQuotaUsage,
+  tenantMachine,
   type ProviderQuotaObservation,
 } from '@ses/domain';
 import { isAccountMailTemplateKey } from './account-mail.js';
 import { InvalidJobPayloadError, requireUuid } from './payload.js';
+import {
+  isProposalHoldResolved,
+  releaseProposalSendHold,
+  type ProposalHoldFacts,
+  type ProposalHoldReleaseDeps,
+} from './send-proposal-holds.js';
 
 export const SEND_HOLD_RELEASE_JOB = 'send.hold-release';
 
@@ -50,7 +62,7 @@ export const SEND_HOLD_RELEASE_JOB = 'send.hold-release';
 export const SEND_HOLD_RELEASE_SCHEDULE = { cron: '*/10 * * * *', timeZone: 'Asia/Tokyo' } as const;
 
 /**
- * 1 回の実行で走査する保留行の上限。
+ * 1 回の実行で走査する保留行の上限（メール / 提案それぞれ）。
  * 🔴 復帰件数の上限ではない（それは `headroom`）。**1 回のジョブが DB を舐め続けないため**の
  *    ページサイズであり、残りは 10 分後の実行が古い順に拾う。
  */
@@ -83,21 +95,7 @@ export type AccountMailReissue = (
   dispatch: HeldEmailDispatchRow,
 ) => Promise<'REISSUED' | 'EXPIRED' | 'SKIPPED'>;
 
-/**
- * 🔴 `Proposal` / `Contract` 側の `sendHoldReasonKey='PROVIDER_QUOTA'` 保留を復帰させる seam
- *    （§8.3-Q ⑥ / SP-04 完了判定 8-③）。
- *
- * @param headroom この実行で使える枠（`decideProviderQuota` の `ALLOW` のときのみ 1 以上）
- * @returns 実際に使った件数（残りをメール側が使う）
- *
- * 🔴 SP-09 T-09-06 は **`decideProviderQuota` を再利用する**こと（2 実装にしない）。
- *    その際、`sendHoldSince` と `heldAt` を突き合わせて**全体で古い順**に配ること
- *    （現状はメールより先に `send.*` へ配る = 送信系を優先する。取引先へ届く提案・契約書の
- *    ほうが業務上の期限に近いため、暫定の優先順としてはこちらが安全側である）。
- */
-export type SendHoldRelease = (input: { readonly headroom: number }) => Promise<number>;
-
-export type SendHoldReleaseDeps = {
+export type SendHoldReleaseDeps = ProposalHoldReleaseDeps & {
   /** 🔴 `getQuota()` のためだけに受け取る。**`send` を呼ばない**（このジョブは外部へ送らない）。 */
   readonly emailSender: Pick<EmailSender, 'getQuota'>;
   readonly providerDailyQuota: number;
@@ -105,25 +103,31 @@ export type SendHoldReleaseDeps = {
   readonly providerQuotaWarnRatio: number;
   /** 🔴 `SesEmailSender` に渡したものと同一のインスタンス（`email-send.ts` と同じ規律）。 */
   readonly providerSentCounter: ProviderSendCounter;
+  /**
+   * 🔴 T-09-06: テナントの日次上限（`EMAIL_DAILY_LIMIT_PER_TENANT`）。`RATE_LIMIT` の保留が解消したか
+   *    （暦日が変わった / 上限が上がった）の判定に使う。**送信ジョブの ①-e と同じキーから渡す**。
+   */
+  readonly emailDailyLimit: number;
   /** 保留中の運用メールを `email.dispatch` へ戻す。 */
   readonly enqueueEmailDispatch: (job: OperationalMailDispatch) => Promise<void>;
   /** 🔴 T-04-05 が実装する（既定値を置かない）。 */
   readonly reissueAccountMail: AccountMailReissue;
-  /** 🔴 SP-09 T-09-06 が実装する（既定値を置かない）。 */
-  readonly releaseSendHolds: SendHoldRelease;
-  readonly now: () => Date;
   readonly scanLimit?: number;
 };
 
 export type SendHoldReleaseOutcome = {
-  /** 走査した保留行の数。 */
+  /** 走査した保留行の数（メール）。 */
   readonly scanned: number;
   /** `HELD_DOMAIN_UNVERIFIED` から復帰させた数（ドメインが検証済みになったもの）。 */
   readonly domainReleased: number;
   /** `HELD_PROVIDER_QUOTA` から復帰させた数（メール）。 */
   readonly quotaReleased: number;
-  /** `send.*`（`Proposal` / `Contract`）側が使った枠。 */
+  /** 🔴 T-09-06: 走査した保留中の提案の数（`GATE_STALE` を含まない）。 */
+  readonly proposalsScanned: number;
+  /** 🔴 T-09-06: 復帰させた提案の数（理由を問わず。再 enqueue が成立したもの）。 */
   readonly sendHoldsReleased: number;
+  /** 🔴 T-09-06: 同じ `jobId` の `failed` 記録に阻まれた提案の数（保留は元に戻した。運用が失敗記録を消すまで繰り返す）。 */
+  readonly sendHoldsBlocked: number;
   /** この実行で使えた枠（`HOLD` なら 0）。`A-005` 項目 13 の根拠。 */
   readonly headroom: number;
   /** 🔴 上限への**接近**（到達とは別物。送信は止まっていない）。 */
@@ -141,6 +145,18 @@ async function readProviderQuota(
   }
 }
 
+/** 🔴 テナント状態は `tenants` から読む（`ctx.lifecycleState` は常に `'ACTIVE'` 固定。読めなければ fail-closed）。 */
+async function readTenantExecutable(ctx: SystemTenantCtx): Promise<boolean> {
+  const tenant = await withTenant(ctx, (db) => db.tenant.findFirst({ select: { lifecycleState: true } }));
+  const raw: unknown = tenant?.lifecycleState;
+  return tenantMachine.isState(raw) && isExecutableTenantLifecycleState(raw);
+}
+
+/** 枠（`headroom`）を分け合う候補。🔴 提案とメールを 1 本に混ぜて `at` の古い順に並べる。 */
+type QuotaCandidate =
+  | { readonly kind: 'PROPOSAL'; readonly at: Date; readonly row: HeldProposalSendRow }
+  | { readonly kind: 'EMAIL'; readonly at: Date; readonly row: HeldEmailDispatchRow };
+
 export type SendHoldReleaseHandler = (payload: unknown, jobId: string) => Promise<SendHoldReleaseOutcome>;
 
 export function createSendHoldReleaseHandler(deps: SendHoldReleaseDeps): SendHoldReleaseHandler {
@@ -148,6 +164,7 @@ export function createSendHoldReleaseHandler(deps: SendHoldReleaseDeps): SendHol
     const job = parseSendHoldReleasePayload(payload);
     const ctx = systemTenantCtx(job.tenantId, { queue: SEND_HOLD_RELEASE_JOB, jobId });
     const now = deps.now();
+    const limit = deps.scanLimit ?? HOLD_SCAN_LIMIT;
 
     // ① 枠の再評価（🔴 時刻ではなく `decideProviderQuota` で判定する）。
     const quotaInput = {
@@ -160,20 +177,36 @@ export function createSendHoldReleaseHandler(deps: SendHoldReleaseDeps): SendHol
     const usage = providerQuotaUsage(quotaInput);
     const headroom = decision.kind === 'ALLOW' ? decision.headroom : 0;
 
-    // ② 🔴 `send.*` と同じ枠を分け合う（§8.3-Q ⑥）。使われた分だけメール側の取り分が減る。
-    const sendHoldsReleased = headroom === 0 ? 0 : await deps.releaseSendHolds({ headroom });
-    let remaining = Math.max(0, headroom - sendHoldsReleased);
+    const rows = await listHeldEmailDispatches(ctx, { limit });
+    const proposals = await listHeldProposalSends(ctx, { limit });
 
-    const rows = await listHeldEmailDispatches(ctx, { limit: deps.scanLimit ?? HOLD_SCAN_LIMIT });
-
-    // 🔴 ドメイン検証の状態は 1 回だけ読む（行ごとに読むと、走査中に変わって
-    //    「同じ実行の中で判断が割れる」ことが起きる）。
+    // 🔴 判定材料は 1 回だけ読む（行ごとに読むと、走査中に変わって「同じ実行の中で判断が割れる」ことが起きる）。
     const domainVerified = (await resolveVerifiedSendingDomain(ctx)) !== null;
+    const facts: ProposalHoldFacts = {
+      domainVerified,
+      tenantExecutable: proposals.length === 0 ? true : await readTenantExecutable(ctx),
+      dailyQuotaHasRoom: proposals.length === 0 ? true : (await readEmailDailyCount(ctx, now)) < deps.emailDailyLimit,
+    };
 
     let domainReleased = 0;
     let quotaReleased = 0;
+    let sendHoldsReleased = 0;
+    let sendHoldsBlocked = 0;
+    const quotaCandidates: QuotaCandidate[] = [];
 
-    // ③ `heldAt` の古い順（`listHeldEmailDispatches` が保証する）。
+    // ② 提案の保留（`PROVIDER_QUOTA` 以外）。解消していれば同じ `attemptSeq` で再 enqueue。
+    for (const row of proposals) {
+      if (row.reasonKey === 'PROVIDER_QUOTA') {
+        quotaCandidates.push({ kind: 'PROPOSAL', at: row.since, row });
+        continue;
+      }
+      if (!isProposalHoldResolved(row.reasonKey, facts)) continue;
+      const result = await releaseProposalSendHold(ctx, deps, row);
+      if (result === 'RELEASED') sendHoldsReleased += 1;
+      if (result === 'BLOCKED') sendHoldsBlocked += 1;
+    }
+
+    // ③ メールの保留。`HELD_DOMAIN_UNVERIFIED` はドメイン、`HELD_PROVIDER_QUOTA` は枠の配分へ。
     for (const row of rows) {
       if (row.status === 'HELD_DOMAIN_UNVERIFIED') {
         // 🔴 解消していなければ触らない（保留のまま次回へ）。
@@ -181,9 +214,24 @@ export function createSendHoldReleaseHandler(deps: SendHoldReleaseDeps): SendHol
         if (await releaseOne(deps, ctx, row)) domainReleased += 1;
         continue;
       }
-      // `HELD_PROVIDER_QUOTA`。🔴 枠の分だけ。残りは次回に持ち越す。
-      if (remaining <= 0) continue;
-      if (await releaseOne(deps, ctx, row)) {
+      // `heldAt` は保留行では常に入っている（`holdEmailDispatch` が同時に書く）。無ければ最も古い扱い（0）にして先に配る。
+      quotaCandidates.push({ kind: 'EMAIL', at: row.heldAt ?? new Date(0), row });
+    }
+
+    // ④ 🔴 送信基盤の枠は提案とメールで**同じ枠**（§8.3-Q ⑥）。全体で古い順に `headroom` 件だけ。残りは次回。
+    quotaCandidates.sort((a, b) => a.at.getTime() - b.at.getTime());
+    let remaining = headroom;
+    for (const candidate of quotaCandidates) {
+      if (remaining <= 0) break;
+      if (candidate.kind === 'PROPOSAL') {
+        const result = await releaseProposalSendHold(ctx, deps, candidate.row);
+        if (result === 'BLOCKED') sendHoldsBlocked += 1;
+        if (result !== 'RELEASED') continue;
+        sendHoldsReleased += 1;
+        remaining -= 1;
+        continue;
+      }
+      if (await releaseOne(deps, ctx, candidate.row)) {
         quotaReleased += 1;
         remaining -= 1;
       }
@@ -193,7 +241,9 @@ export function createSendHoldReleaseHandler(deps: SendHoldReleaseDeps): SendHol
       scanned: rows.length,
       domainReleased,
       quotaReleased,
+      proposalsScanned: proposals.length,
       sendHoldsReleased,
+      sendHoldsBlocked,
       headroom,
       warning: isProviderQuotaWarning(usage, deps.providerQuotaWarnRatio),
     };

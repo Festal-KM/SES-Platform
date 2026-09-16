@@ -158,12 +158,27 @@ export {
 } from './send-hold-release.js';
 export type {
   AccountMailReissue,
-  SendHoldRelease,
   SendHoldReleaseDeps,
   SendHoldReleaseHandler,
   SendHoldReleaseOutcome,
   SendHoldReleasePayload,
 } from './send-hold-release.js';
+// 🔴 T-09-06: 提案の送信（docs/05 §10.2 の実行順序そのもの。`F-022`）。**イベント起動**であり `SCHEDULED_JOBS` には
+//    載らない。enqueue は #43 / #44（`apps/web`）と `send.hold-release`（同じ `attemptSeq` の再 enqueue）が行う。
+//    🔴 `attempts: 1`（`packages/connectors/src/queues.ts`）。外部呼び出しの後に再試行しない（`BR-22`）。
+export {
+  createSendProposalHandler,
+  parseSendProposalPayload,
+  PROPOSAL_SEND_TRANSITIONS,
+  PROPOSAL_SUBMISSION_TEMPLATE_KEY,
+  resolveProposalSendingDomainFromDb,
+  SEND_PROPOSAL_JOB,
+  sendAttemptOriginOf,
+} from './send-proposal.js';
+export type { SendProposalDeps, SendProposalHandler, SendProposalOutcome, SendProposalPayload } from './send-proposal.js';
+// 🔴 T-09-06: `send.hold-release` の `Proposal` 側（保留の解消判定と 1 件の復帰手順）。外部 API を呼ばない。
+export { isProposalHoldResolved, releaseProposalSendHold } from './send-proposal-holds.js';
+export type { ProposalHoldFacts, ProposalHoldReleaseDeps, ProposalHoldReleaseResult } from './send-proposal-holds.js';
 // 🔴 T-04-05: `reissueAccountMail` seam の実体（docs/05 §8.3 の復帰手順）。
 //    SP-07 の配線は `createAccountMailReissue(...)` の戻り値を `SendHoldReleaseDeps` に渡す
 //    （既定値を置かない = 渡し忘れたらコンパイルエラーになる）。

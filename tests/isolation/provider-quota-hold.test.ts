@@ -152,8 +152,10 @@ function holdReleaseDeps(overrides: Record<string, unknown> = {}) {
     reissueAccountMail: async () => {
       throw new Error('本テストは account.mail 由来の保留を作らない');
     },
-    // `send.*`（`Proposal` / `Contract`）は SP-09。枠を使わない。
-    releaseSendHolds: async () => 0,
+    // `send.*`（`Proposal`）側の復帰は `tests/isolation/send-proposal.test.ts`（T-09-06）が見る。本テストの
+    //    テナントには保留中の提案が無いので枠を使わない。
+    enqueueSendProposal: async () => 'ENQUEUED',
+    emailDailyLimit: 500,
     now: () => clock,
     ...overrides,
   };

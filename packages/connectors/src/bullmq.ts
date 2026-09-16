@@ -22,7 +22,7 @@
 //     （ここで既定値を書かない。`.add()` の per-job オプションにも渡さない。§9.1 / §17.2 #6）。
 //   - 「`failed` のときだけ消す」という**規則**は `shouldRemoveGateRunJob`（`queues.ts`）にある。
 //     ここはその判定を呼ぶだけで、状態名を書き写さない。
-import { Queue, Worker, type Job } from 'bullmq';
+import { DelayedError, Queue, Worker, type Job } from 'bullmq';
 // 🔴 **Redis クライアントは我々が作って渡す**（`connection: { url }` を渡さない）。
 //    BullMQ v6 は `ioredis` を optional peer にしており、接続設定だけを渡すと内部で
 //    `require('ioredis')` を試みる。`apps/worker` は素の ESM で動くため `require` が無く、
@@ -35,10 +35,13 @@ import { Redis } from 'ioredis';
 import { RedisProviderSendCounter, type ProviderSendCounter } from './email/ses/counter.js';
 import {
   gateRunJobId,
+  isJobDeferral,
   queueDefinition,
+  sendProposalJobId,
   shouldRemoveGateRunJob,
   steppedBackoffDelayMs,
   GATE_RUN_JOB,
+  SEND_PROPOSAL_JOB,
   type BackoffOptions,
   type GateRunEnqueueOutcome,
   type GateRunFailedJobRemoval,
@@ -47,6 +50,10 @@ import {
   type GateRunJobQueue,
   type InternalQueueOptions,
   type QueueName,
+  type SendJobEnqueueOutcome,
+  type SendProposalJob,
+  type SendProposalJobKey,
+  type SendProposalJobQueue,
 } from './queues.js';
 
 /** 接続先（`packages/config` の `REDIS_URL`。**このファイルは `process.env` を読まない**）。 */
@@ -233,6 +240,53 @@ export function createBullMqGateRunQueue(connection: BullMqConnection): BullMqGa
   };
 }
 
+/**
+ * BullMQ で実装した `send.proposal` のキュー（docs/05 §9.4 / §10.4。T-09-06）。
+ *
+ * 🔴 `jobState` / `close` は**ポート（`SendProposalJobQueue`）に無い**。業務経路が使ってよいのは `enqueue` だけであり、
+ *    状態の照会は結合テストと運用調査のためにある（`BullMqGateRunQueue` と同じ整理）。
+ */
+export type BullMqSendProposalQueue = SendProposalJobQueue & {
+  jobState(key: SendProposalJobKey): Promise<string | null>;
+  close(): Promise<void>;
+};
+
+/**
+ * 🔴 `send.proposal` の enqueue 先（`apps/web` の #43 / #44 と `apps/worker` の `send.hold-release` が使う）。
+ *
+ * 🔴 `Queue` は最初の呼び出しまで作らない（`createBullMqGateRunQueue` と同じ）。
+ * 🔴 per-job オプションは `jobId` だけ（`attempts` / `backoff` / `delay` を渡さない。§17.2 #6）。既定ジョブオプション
+ *    （`attempts: 1` / `removeOnComplete: true`）は `QUEUE_DEFINITIONS` の `externalSendQueue` から来る。
+ */
+export function createBullMqSendProposalQueue(connection: BullMqConnection): BullMqSendProposalQueue {
+  let queue: Queue | null = null;
+  let client: Redis | null = null;
+  const resolve = (): Queue => {
+    client ??= createClient(connection);
+    queue ??= createQueue(SEND_PROPOSAL_JOB, client);
+    return queue;
+  };
+
+  return {
+    async enqueue(job: SendProposalJob): Promise<SendJobEnqueueOutcome> {
+      const added = await resolve().add(SEND_PROPOSAL_JOB, job, { jobId: sendProposalJobId(job) });
+      // 🔴 同じ `jobId` が `failed` に残っている間、BullMQ は `add` を静かに無視する（`removeOnFail` を付けていない）。
+      //    「積んだつもりで積まれていない」を呼び出し側へ返す（`createBullMqGateRunQueue` と同じ）。
+      return (await added.getState()) === 'failed' ? 'BLOCKED_BY_FAILED_JOB' : 'ENQUEUED';
+    },
+    async jobState(key: SendProposalJobKey): Promise<string | null> {
+      const job = await resolve().getJob(sendProposalJobId(key));
+      return job === undefined ? null : job.getState();
+    },
+    async close(): Promise<void> {
+      if (queue !== null) await queue.close();
+      if (client !== null) await client.quit();
+      queue = null;
+      client = null;
+    },
+  };
+}
+
 export type BullMqWorker = {
   close(): Promise<void>;
 };
@@ -251,6 +305,11 @@ export type BullMqGateRunWorker = BullMqWorker;
  *    遅延の表は `QUEUE_DEFINITIONS` にしか無い（§9.1）。
  * 🔴 ハンドラは payload を検証してから使う（`parseGateRunPayload` など）。ここでは型を主張しない
  *    —— Redis から来た値は常に `unknown` である。
+ * 🔴 T-09-06: ハンドラが `JobDeferral`（`deferJob`。docs/05 §10.5 の分次レートの**待機**）を返したら、
+ *    **同じジョブ**を `retryAfterMs` 後の delayed に移す（`Job.moveToDelayed` + `DelayedError`。BullMQ の公式手順）。
+ *    新しいジョブを `add` しない —— 同じ `jobId` が `active` の間は `add` が無視されるうえ、`attempts` を消費する
+ *    再試行でもない。待機は `payload`（`attemptSeq` / `enqueuedAt`）を変えないので、遅延判定（②-a）は
+ *    最初の enqueue 時刻から数え続ける。
  */
 export function createBullMqWorker(options: {
   readonly queueName: QueueName;
@@ -261,7 +320,14 @@ export function createBullMqWorker(options: {
   const client = createClient(options.connection);
   const worker = new Worker(
     queueDefinition(options.queueName).name,
-    async (job: Job) => options.handler(job.data, job.id ?? ''),
+    async (job: Job, token?: string) => {
+      const result = await options.handler(job.data, job.id ?? '');
+      if (isJobDeferral(result)) {
+        await job.moveToDelayed(Date.now() + result.retryAfterMs, token);
+        throw new DelayedError();
+      }
+      return result;
+    },
     {
       connection: client,
       settings: { backoffStrategy: bullMqBackoffStrategy(options.queueName) },

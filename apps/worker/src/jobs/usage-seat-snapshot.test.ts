@@ -156,7 +156,9 @@ describe('スケジュール宣言（docs/05 §9.8 / §9.1）', () => {
       providerSentCounter: { record: async () => undefined, countLast24h: async () => 0 },
       enqueueEmailDispatch: async () => undefined,
       reissueAccountMail: async () => 'SKIPPED',
-      releaseSendHolds: async () => 0,
+      // 🔴 T-09-06: `send.hold-release` の `Proposal` 側（同じ `attemptSeq` の再 enqueue 口と日次上限）。
+      enqueueSendProposal: async () => 'ENQUEUED',
+      emailDailyLimit: 500,
       // 🔴 T-05-05: `scan.poll`（毎 5 分）の deps。ここを埋め忘れるとコンパイルエラーになる
       //    （＝ 起動配線が「スキャンの滞留を誰も見ていない」状態で立ち上がれない）。
       malwareScanner: {

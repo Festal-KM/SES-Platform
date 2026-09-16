@@ -109,6 +109,12 @@ const commonShape = {
   SES_EVENT_TOPIC_ARN: z.string().regex(/^arn:aws:sns:[a-z0-9-]+:\d{12}:[A-Za-z0-9_-]+$/),
   EMAIL_DAILY_LIMIT_PER_TENANT: z.coerce.number().int().positive().default(500),
   EMAIL_MINUTE_LIMIT_PER_TENANT: z.coerce.number().int().positive().default(30),
+  /**
+   * 🔴 T-09-06: 送信ジョブの遅延保留の閾値（分。docs/05 §10.2 ②-a / §10.5。既定 30）。
+   *    enqueue からこの分数を超えて実行された `send.*` は**送らずに見送り**、`sendHoldReasonKey='GATE_STALE'` で
+   *    人間が再度「送信」を選ぶまで待つ。時間が経ったものを黙って送るほうが危険である。ハードコードしない。
+   */
+  SEND_STALE_THRESHOLD_MINUTES: z.coerce.number().int().positive().default(30),
   SES_GLOBAL_RATE_PER_SECOND: z.coerce.number().int().positive(),
   // development 専用（MailHog）。他環境では未設定のまま
   SMTP_HOST: z.string().optional(),

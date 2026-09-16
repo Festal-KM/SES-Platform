@@ -13,7 +13,7 @@ const listSchedulerFanoutTenants = vi.fn();
 
 vi.mock('@ses/db', () => ({ listSchedulerFanoutTenants }));
 
-const { fanOutToTenants, resolveMockAiOptions, sendHoldReleaseNotImplemented, SchedulerFanOutError } =
+const { fanOutToTenants, resolveMockAiOptions, SchedulerFanOutError } =
   await import('./runtime.js');
 const { SCHEDULED_JOBS } = await import('./jobs/index.js');
 const { isQueueName } = await import('@ses/connectors');
@@ -113,12 +113,6 @@ describe('🔴 テナントのファンアウト（docs/05 §9.1）', () => {
       failed: 0,
     });
     expect(handler).not.toHaveBeenCalled();
-  });
-});
-
-describe('🔴 send.* の保留復帰は未実装（SP-09 T-09-06）', () => {
-  it('0 件を返す（保留を書く経路がまだ存在しないため事実である）', async () => {
-    expect(await sendHoldReleaseNotImplemented({ headroom: 10 })).toBe(0);
   });
 });
 

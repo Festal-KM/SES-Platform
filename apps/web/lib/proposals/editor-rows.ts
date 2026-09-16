@@ -11,7 +11,7 @@ import type { ProposalState } from '@ses/domain';
 import { formatUnitPriceRange } from '../engineers/detail';
 import { formatDateTimeJst } from '../format/datetime';
 import { formatThousands } from '../format/number';
-import { PROPOSAL_EDIT_HREF_PATTERN, proposalApproveHref, proposalCreateHref } from './hrefs';
+import { PROPOSAL_EDIT_HREF_PATTERN, proposalApproveHref, proposalCreateHref, SENDING_DOMAIN_SETTINGS_HREF } from './hrefs';
 import type { AttachableSkillSheetView, ProposalCreationTargetView, ProposalEditorView } from './service';
 import type { ProposalView } from './views';
 
@@ -114,9 +114,6 @@ export type ProposalSendingDomainRows =
   | { readonly kind: 'NOT_REQUIRED'; readonly note: string }
   | { readonly kind: 'UNVERIFIED'; readonly notice: string; readonly href: string; readonly linkLabel: string }
   | { readonly kind: 'VERIFIED'; readonly label: string };
-
-/** `S-036`。 */
-const SENDING_DOMAIN_SETTINGS_HREF = '/settings/sending-domains';
 
 export type ProposalSendingDomainFactInput =
   | { readonly kind: 'PARTNER' }

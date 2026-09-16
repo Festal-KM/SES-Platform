@@ -26,6 +26,16 @@ export function buildProposalEditHref(pattern: string, id: string): string {
   return pattern.replace('{id}', id);
 }
 
+/**
+ * 🔴 T-09-06: 送信の保留の設定導線（docs/05 §10.4「利用者への提示」）。
+ * - `S-036`（送信元ドメイン）… `DOMAIN_UNVERIFIED`
+ * - `S-038`（利用量と上限）… `RATE_LIMIT`（テナントの利用量）。🔴 **`PROVIDER_QUOTA` にはこの導線を出さない**
+ *   （環境全体の制約であり、残量が潤沢な `S-038` に誘導しても打つ手が無い。`F-059 AC-7`）。
+ * ⚠️ `S-038` の画面は T-10-04 が置く。URL はここ 1 箇所で決める。
+ */
+export const SENDING_DOMAIN_SETTINGS_HREF = '/settings/sending-domains';
+export const USAGE_SETTINGS_HREF = '/settings/usage';
+
 /** `S-021`（承認）。T-09-03。`S-020`（`APPROVAL_PENDING` の読み取り専用表示）と `S-003` の要対応キュー（T-09-09）から遷移する。 */
 export function proposalApproveHref(proposalId: string): string {
   return `/proposals/${proposalId}/approve`;

@@ -236,15 +236,25 @@ export async function nextSendAttemptSeq(ctx: HumanTenantCtx, target: SendTarget
   }
   return runInTenantTransaction(
     { tenantId: ctx.tenantId, partnerCompanyId: ctx.partnerCompanyId, actorUserId: ctx.userId },
-    async (tx) => {
-      const rows = await tx.$queryRaw<Array<{ readonly next_seq: number }>>(Prisma.sql`
-        SELECT (COALESCE(MAX(attempt_seq), 0) + 1)::int AS next_seq
-          FROM send_attempts
-         WHERE entity_type = ${target.entityType}
-           AND entity_id = ${target.entityId}::uuid`);
-      return rows[0]?.next_seq ?? INITIAL_SEND_ATTEMPT_SEQ;
-    },
+    (tx) => nextSendAttemptSeqInTx(tx, target),
   );
+}
+
+/**
+ * 🔴 採番の **1 実装**（`MAX(attempt_seq) + 1`）。`nextSendAttemptSeq`（人間の操作）と、T-09-06 の
+ *    `resolveProposalSendResumeOrigin`（`proposal-send.ts`。保留からの自動復帰が「人間が採番した同じ値」を復元する）
+ *    が共有する。🔴 復帰は**採番ではない** —— 保留は ④（`reserveSendAttempt`）に到達していないため行が無く、
+ *    人間が #43 / #44 で採番した値 = `MAX + 1` のままである（docs/05 §10.4「同じ `attemptSeq` で再 enqueue」）。
+ *    式を 2 箇所に書くと片方だけがずれ、復帰したジョブが別の試行として INSERT される（= もう 1 通）。
+ * @internal `packages/db` の内側からのみ使う（index.ts から export しない）。
+ */
+export async function nextSendAttemptSeqInTx(tx: TenantTransactionClient, target: SendTarget): Promise<number> {
+  const rows = await tx.$queryRaw<Array<{ readonly next_seq: number }>>(Prisma.sql`
+    SELECT (COALESCE(MAX(attempt_seq), 0) + 1)::int AS next_seq
+      FROM send_attempts
+     WHERE entity_type = ${target.entityType}
+       AND entity_id = ${target.entityId}::uuid`);
+  return rows[0]?.next_seq ?? INITIAL_SEND_ATTEMPT_SEQ;
 }
 
 // ============================================================================
@@ -316,6 +326,23 @@ export async function settleSendAttempt(
   token: SendAttemptToken,
   input: SettleSendAttemptInput,
 ): Promise<SendAttemptSettlementOutcome> {
+  return runInTenantTransaction(
+    { tenantId: ctx.tenantId, partnerCompanyId: ctx.partnerCompanyId, actorUserId: ctx.userId },
+    (tx) => settleSendAttemptInTx(tx, token, input),
+  );
+}
+
+/**
+ * 🔴 確定の **1 実装**（`RESERVED` からの CAS）。`settleSendAttempt` と、T-09-06 の `settleProposalSubmission`
+ *    （`proposal-send.ts`。`SendAttempt` の確定と `Proposal` の `SUBMITTING → SUBMITTED / SUBMIT_FAILED` を
+ *    **同じトランザクション**で行う。docs/05 §10.2 ⑥「確定は 1 tx」）が共有する。
+ * @internal `packages/db` の内側からのみ使う（index.ts から export しない）。
+ */
+export async function settleSendAttemptInTx(
+  tx: TenantTransactionClient,
+  token: SendAttemptToken,
+  input: SettleSendAttemptInput,
+): Promise<SendAttemptSettlementOutcome> {
   const externalId = input.status === 'SUCCEEDED' ? input.externalId : null;
   const failureKind = input.status === 'SUCCEEDED' ? null : input.failureKind;
   const failureDetail =
@@ -323,26 +350,21 @@ export async function settleSendAttempt(
       ? null
       : input.failureDetail.slice(0, FAILURE_DETAIL_MAX_LENGTH);
 
-  return runInTenantTransaction(
-    { tenantId: ctx.tenantId, partnerCompanyId: ctx.partnerCompanyId, actorUserId: ctx.userId },
-    async (tx): Promise<SendAttemptSettlementOutcome> => {
-      const updated = await tx.$queryRaw<IdRow[]>(Prisma.sql`
-        UPDATE send_attempts
-           SET status = ${input.status},
-               external_id = ${externalId},
-               failure_kind = ${failureKind},
-               failure_detail = ${failureDetail},
-               settled_at = ${input.now}::timestamptz
-         WHERE idempotency_key = ${token.idempotencyKey}
-           AND status = 'RESERVED'
-        RETURNING id::text AS id`);
-      if (updated[0] !== undefined) return { outcome: 'SETTLED' };
+  const updated = await tx.$queryRaw<IdRow[]>(Prisma.sql`
+    UPDATE send_attempts
+       SET status = ${input.status},
+           external_id = ${externalId},
+           failure_kind = ${failureKind},
+           failure_detail = ${failureDetail},
+           settled_at = ${input.now}::timestamptz
+     WHERE idempotency_key = ${token.idempotencyKey}
+       AND status = 'RESERVED'
+    RETURNING id::text AS id`);
+  if (updated[0] !== undefined) return { outcome: 'SETTLED' };
 
-      const current = await findByKeyOrTriple(tx, token, token.attemptSeq, token.idempotencyKey);
-      if (current === null) return { outcome: 'NOT_FOUND' };
-      return { outcome: 'ALREADY_SETTLED', status: current.status };
-    },
-  );
+  const current = await findByKeyOrTriple(tx, token, token.attemptSeq, token.idempotencyKey);
+  if (current === null) return { outcome: 'NOT_FOUND' };
+  return { outcome: 'ALREADY_SETTLED', status: current.status };
 }
 
 // ============================================================================

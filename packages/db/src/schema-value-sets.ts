@@ -287,6 +287,15 @@ export const SEND_ATTEMPT_STATUSES = ['RESERVED', 'SUCCEEDED', 'FAILED', 'UNKNOW
 
 export type SendAttemptStatus = (typeof SEND_ATTEMPT_STATUSES)[number];
 
+/**
+ * docs/05 §10.4 `Proposal.sendHoldReasonKey` / `Contract.sendHoldReasonKey`（TEXT + CHECK。7 値。T-09-06 の
+ * migration 20260923000000）。保留は状態ではなく属性（`CLAUDE.md` §4.2 に状態を足さない）。
+ * 🔴 **宣言の唯一の出所は `packages/domain`**（`packages/domain/src/send/hold.ts`）。判定する側（`apps/worker` /
+ *    `apps/web`）と CHECK を持つ側（本パッケージ）が同じ 1 つの値集合を見る。ここは re-export である。
+ */
+export { SEND_HOLD_REASON_KEYS } from '@ses/domain';
+export type { SendHoldReasonKey } from '@ses/domain';
+
 /** docs/05 §3.9 `EmailDispatch.recipientClass`（TEXT + CHECK）。 */
 export const EMAIL_RECIPIENT_CLASSES = [
   'HOST_MEMBER',

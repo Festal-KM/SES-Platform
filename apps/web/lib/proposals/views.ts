@@ -23,8 +23,19 @@
 // 🔴 本ファイルは I/O を持たない（`@ses/db` に依存しない）。型テスト（`views.types.test.ts`）と画面が
 //    `@ses/db` を読み込まずに参照できるようにするため（`proposal-requests/views.ts` と同じ規律）。
 //    `Decimal` は `toString()` だけを要求する構造的な型で受ける（`lib/format/db-values.ts` と同じ理由）。
-import { proposalMachine, type ProposalState } from '@ses/domain';
+import { isSendHoldReasonKey, proposalMachine, type ProposalState, type SendHoldReasonKey } from '@ses/domain';
 import { hasProposalRecipient } from './recipient';
+
+/**
+ * 🔴 T-09-06: 送信の保留（docs/05 §10.4。状態ではなく属性）。`APPROVED` のまま `sendHoldReasonKey` が立っている間だけ非 `null`。
+ *    **ホストが読む view にだけ持たせる** —— 理由（ドメイン未検証 / テナントの上限 / 環境の枠 / 停止 / 遅延）はすべて
+ *    ホスト側の事情であり、取引先に見せる意味が無い（§4.8「見えない ＝ 存在しない」の型の分離）。
+ */
+export type ProposalSendHoldView = {
+  readonly reasonKey: SendHoldReasonKey;
+  /** ISO 8601（UTC）。 */
+  readonly since: string;
+};
 
 /** 案件の参照。🔴 `id` / `name` だけ（商流情報を持たない）。取引先で公開が解除された案件は `null`。 */
 export type ProposalProjectRef = {
@@ -116,6 +127,8 @@ export type HostProposalOwnerView =
 export type HostProposalView = ProposalViewShared & {
   readonly audience: 'HOST';
   readonly owner: HostProposalOwnerView;
+  /** 🔴 T-09-06: 送信の保留。`null` = 保留していない。 */
+  readonly sendHold: ProposalSendHoldView | null;
 };
 
 /** 取引先が読む 1 件（自社が作成した行だけ。母集団は C5）。🔴 `owner` / 他社に関する一切を持たない。 */
@@ -129,6 +142,7 @@ export type ProposalView = HostProposalView | PartnerProposalView;
 export const HOST_PROPOSAL_VIEW_KEYS = [
   'audience',
   'owner',
+  'sendHold',
   'id',
   'state',
   'origin',
@@ -171,6 +185,9 @@ export type ProposalViewRow = {
   readonly id: string;
   readonly state: string;
   readonly proposalRequestId: string | null;
+  /** T-09-06: 保留列（docs/05 §10.4）。🔴 ホスト向けの写像だけが読む。 */
+  readonly sendHoldReasonKey: string | null;
+  readonly sendHoldSince: Date | null;
   readonly recipientCompanyName: string;
   readonly recipientEmail: string;
   readonly offeredUnitPrice: DecimalLike | null;
@@ -305,7 +322,16 @@ export function toHostProposalView(
   deps: ProposalViewDeps,
   owner: HostProposalOwnerView,
 ): HostProposalView {
-  return { audience: 'HOST', owner, ...toShared(row, deps) };
+  return { audience: 'HOST', owner, sendHold: toSendHold(row), ...toShared(row, deps) };
+}
+
+/** 🔴 保留列の写像（ホストだけ）。理由と時刻は CHECK（`proposals_send_hold_pair_check`）で同時に立つ。片方だけなら不変条件違反。 */
+function toSendHold(row: Pick<ProposalViewRow, 'sendHoldReasonKey' | 'sendHoldSince'>): ProposalSendHoldView | null {
+  if (row.sendHoldReasonKey === null && row.sendHoldSince === null) return null;
+  if (row.sendHoldReasonKey === null || row.sendHoldSince === null || !isSendHoldReasonKey(row.sendHoldReasonKey)) {
+    throw new RangeError('proposals.send_hold_reason_key / send_hold_since の組が不正です（docs/05 §10.4）。');
+  }
+  return { reasonKey: row.sendHoldReasonKey, since: row.sendHoldSince.toISOString() };
 }
 
 /** 取引先向けの写像（自社の行だけが渡ってくる。母集団は C5）。 */

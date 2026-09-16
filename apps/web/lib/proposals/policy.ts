@@ -216,3 +216,21 @@ export function canApproveProposal(actor: ProposalApprovalActor): boolean {
 export function isProposalApproverRole(role: TenantRole): boolean {
   return (PROPOSAL_APPROVAL_ROLES as readonly TenantRole[]).includes(role);
 }
+
+// ============================================================================
+// T-09-06: 送信の要求（#43）の実行者（docs/05 §6.5 #43 / docs/02 `F-022` 関連ロール / `CLAUDE.md` §3.3）
+// ============================================================================
+//
+// 🔴 **送信を要求できるのはホスト所属の `OWNER` / `ADMIN` / `SALES` だけ**である（`F-022` 関連ロール「`OWNER` / `ADMIN` /
+//    `SALES`（送信の実行）、`VIEWER`（不可）」）。提案先へ出すのはホストであり、取引先は自社の提案を自分で送れない
+//    （承認と同じ線。`canApproveProposal`）。T-09-05 の申し送り 10: `nextSendAttemptSeq` は取引先文脈でも呼べてしまう
+//    （C2 で常に 1 が返る = 黙って誤った採番）ため、**`requireRole` で取引先を先に弾く**。
+// 🔴 判定材料は ctx だけ（行の値で緩めない）。ロール表の変更で第二境界が緩まないよう `partnerCompanyId === null` を要求する。
+
+/** 🔴 `#43` の `requireRole`。承認（#41 / #42）と同じ集合 —— 承認できる立場と送信を要求できる立場を別々に持つ理由が無い。 */
+export const PROPOSAL_SUBMIT_ROLES = PROPOSAL_APPROVAL_ROLES;
+
+/** 送信の要求（#43）を行えるか。🔴 判定材料は ctx だけ。 */
+export function canSubmitProposal(actor: ProposalApprovalActor): boolean {
+  return actor.partnerCompanyId === null && (PROPOSAL_SUBMIT_ROLES as readonly TenantRole[]).includes(actor.role);
+}

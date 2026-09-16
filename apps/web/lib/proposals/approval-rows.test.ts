@@ -11,7 +11,8 @@
 //   ④ プレビューのハイライトは欄内オフセットから組まれ、`null` オフセットは除外される。`BLOCK` と `WARN` を区別する
 //   ⑤ 承認者欄: 人間は表示名 + 日時、システムは「システム（全層 PASS のため自動承認）」+ 日時
 import { describe, expect, it } from 'vitest';
-import type { GateFinding, GateResultView } from '@ses/domain';
+import type { GateFinding, GateResultView, SendHoldReasonKey } from '@ses/domain';
+import { t } from '@ses/i18n';
 import type { ProposalApprovalView } from './approval';
 import { APPROVAL_HEADER_REQUIRED_FIELDS, formatElapsed, proposalApprovalRows } from './approval-rows';
 import type { HostProposalView, PartnerProposalView } from './views';
@@ -22,6 +23,7 @@ const PROPOSAL_ID = '01930000-0000-7000-8000-000000000301';
 const HOST_VIEW: HostProposalView = {
   audience: 'HOST',
   owner: { kind: 'PARTNER', partnerCompanyName: 'Partner A1' },
+  sendHold: null,
   id: PROPOSAL_ID,
   state: 'APPROVAL_PENDING',
   origin: 'OWN',
@@ -86,9 +88,70 @@ function view(overrides: Partial<ProposalApprovalView> = {}): ProposalApprovalVi
     approval: { kind: 'NONE' },
     createdByName: 'Partner A1',
     canApprove: true,
+    canSubmit: true,
+    submittedAt: null,
     ...overrides,
   };
 }
+
+describe('🔴 T-09-06: 送信の保留と送信後の状態（docs/05 §10.4 / §10.5 / F-059 AC-7）', () => {
+  const since = '2026-09-16T00:00:00.000Z';
+  function heldView(reasonKey: SendHoldReasonKey) {
+    return view({ view: { ...HOST_VIEW, state: 'APPROVED', sendHold: { reasonKey, since } }, approval: { kind: 'USER', approverName: '山田', approvedAt: since } });
+  }
+
+  it('PROVIDER_QUOTA: 文言は「送信基盤の混雑により保留中…」で、S-038 への導線が無く、自動復帰する', () => {
+    const rows = proposalApprovalRows(heldView('PROVIDER_QUOTA'), NOW);
+    expect(rows.sendHold).not.toBeNull();
+    expect(rows.sendHold?.message).toBe(t('sendHold.PROVIDER_QUOTA'));
+    expect(rows.sendHold?.message).toContain('お客様側の設定では解消しません');
+    expect(rows.sendHold?.settingsLink).toBeNull();
+    expect(rows.sendHold?.autoRelease).toBe(true);
+    expect(JSON.stringify(rows.sendHold)).not.toContain('/settings/usage');
+  });
+
+  it('RATE_LIMIT: テナントの上限なので S-038 への導線がある（PROVIDER_QUOTA と別の文言）', () => {
+    const rows = proposalApprovalRows(heldView('RATE_LIMIT'), NOW);
+    expect(rows.sendHold?.message).toBe(t('sendHold.RATE_LIMIT'));
+    expect(rows.sendHold?.message).not.toBe(t('sendHold.PROVIDER_QUOTA'));
+    expect(rows.sendHold?.settingsLink).toEqual({ href: '/settings/usage', label: t('proposals.approval.sendHold.openUsage') });
+    expect(rows.sendHold?.autoRelease).toBe(true);
+  });
+
+  it('DOMAIN_UNVERIFIED: S-036 への導線がある', () => {
+    const rows = proposalApprovalRows(heldView('DOMAIN_UNVERIFIED'), NOW);
+    expect(rows.sendHold?.settingsLink?.href).toBe('/settings/sending-domains');
+  });
+
+  it('🔴 GATE_STALE: 自動復帰しない旨（あらためて送信）で、設定導線は無い', () => {
+    const rows = proposalApprovalRows(heldView('GATE_STALE'), NOW);
+    expect(rows.sendHold?.autoRelease).toBe(false);
+    expect(rows.sendHold?.message).toBe(t('sendHold.GATE_STALE'));
+    expect(rows.sendHold?.message).toContain('あらためて送信');
+    expect(rows.sendHold?.settingsLink).toBeNull();
+  });
+
+  it('7 値すべてに文言があり、互いに異なる', () => {
+    const keys = ['RATE_LIMIT', 'DOMAIN_UNVERIFIED', 'ESIGN_DISCONNECTED', 'TENANT_SUSPENDED', 'GATE_STALE', 'AI_COST_LIMIT', 'PROVIDER_QUOTA'] as const;
+    const messages = keys.map((key) => proposalApprovalRows(heldView(key), NOW).sendHold?.message);
+    expect(new Set(messages).size).toBe(7);
+    for (const message of messages) expect(message ?? '').not.toBe('');
+  });
+
+  it('SUBMITTING / SUBMITTED / SUBMIT_FAILED は別々の形で描かれる（失敗と送信中・送信済みを混ぜない）', () => {
+    const submitting = proposalApprovalRows(view({ view: { ...HOST_VIEW, state: 'SUBMITTING' } }), NOW);
+    const submitted = proposalApprovalRows(view({ view: { ...HOST_VIEW, state: 'SUBMITTED' }, submittedAt: since }), NOW);
+    const failed = proposalApprovalRows(view({ view: { ...HOST_VIEW, state: 'SUBMIT_FAILED' } }), NOW);
+    expect(submitting.disposition.kind).toBe('SUBMITTING');
+    expect(submitted.disposition.kind).toBe('SUBMITTED');
+    expect(failed.disposition.kind).toBe('SUBMIT_FAILED');
+    expect(submitted.disposition.kind === 'SUBMITTED' && submitted.disposition.notice).toContain(t('proposals.approval.state.submitted.prefix'));
+    expect(failed.disposition.kind === 'SUBMIT_FAILED' && failed.disposition.notice).toContain('自動では再送しません');
+    // 保留が無いので sendHold は null。canSubmit は立場の値をそのまま写す。
+    expect(submitted.sendHold).toBeNull();
+    expect(submitted.canSubmit).toBe(true);
+  });
+});
 
 describe('proposalApprovalRows: 判断ヘッダ（F-021 AC-4）', () => {
   it('🔴 提案先・エンジニア・案件・単価・開始日・作成者・経過時間が必ず含まれる', () => {
@@ -217,9 +280,10 @@ describe('proposalApprovalRows: 状態ごとの形（docs/04 §S-021「APPROVAL_
     ['GATE_FAILED', 'GATE_FAILED'],
     ['APPROVAL_PENDING', 'PENDING'],
     ['APPROVED', 'APPROVED'],
-    ['SUBMITTING', 'OTHER'],
-    ['SUBMITTED', 'OTHER'],
-    ['SUBMIT_FAILED', 'OTHER'],
+    // 🔴 T-09-06: 送信中 / 送信済み / 送信失敗は別々の形（OTHER に畳まない）。
+    ['SUBMITTING', 'SUBMITTING'],
+    ['SUBMITTED', 'SUBMITTED'],
+    ['SUBMIT_FAILED', 'SUBMIT_FAILED'],
     ['WON', 'OTHER'],
   ] as const)('%s → %s', (state, kind) => {
     const rows = proposalApprovalRows(view({ view: { ...HOST_VIEW, state } }), NOW);

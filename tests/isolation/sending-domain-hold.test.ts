@@ -158,7 +158,8 @@ async function runHoldRelease() {
       invitationTtlMs: INVITATION_TTL_MS,
       now: () => NOW,
     }),
-    releaseSendHolds: async () => 0,
+    enqueueSendProposal: async () => 'ENQUEUED',
+    emailDailyLimit: 500,
     now: () => NOW,
   } as never);
   return handler({ tenantId: TENANT_A }, 'job-hold-release');

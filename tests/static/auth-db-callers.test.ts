@@ -170,6 +170,9 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
     //    AI の停止判定（`probeAiDailyCostLevel`）は `packages/db` の中で予約と同じ式を通り、金額は
     //    `apps/**` に出ない（`readAiDailyCost` / `probeAiCostHeadroom` の許可先は増えていない）。
     'apps/worker/src/jobs/usage-limit-check.ts',
+    // 🔴 T-09-06: 提案の送信（docs/05 §10.2）。payload の `tenantId` からジョブ文脈を組み立て、①②③④⑥のすべてを
+    //    その文脈で行う。**`apps/web` 側には 1 つも無い**（#43 は enqueue するだけ）。
+    'apps/worker/src/jobs/send-proposal.ts',
   ],
   // 🔴 T-09-04: `APPROVED → SUBMITTING` の CAS（docs/05 §10.2 ③ / §11.5 手順 4）。**`SUBMITTING` に入れるのは
   //    送信ジョブだけ**（所有者 `SEND_JOB`。`CLAUDE.md` §4.2「`SUBMITTING` は片道」）であり、`apps/web` の HTTP 経路が
@@ -177,18 +180,35 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
   //    迂回する）。引数の型も `SystemTenantCtx`（`apps/web` が組み立てられない）で二重に固定する。
   //    ⚠️ T-09-06 で `apps/worker/src/jobs/send-proposal.ts`（`send.proposal` の 1 ファイル）をここに足す。
   //    **`apps/web/**` には決して足さない**（下の it が独立に固定する）。
-  castProposalToSubmitting: [],
+  castProposalToSubmitting: ['apps/worker/src/jobs/send-proposal.ts'], // ✅ T-09-06
   // 🔴 T-09-05: `SendAttempt` の予約と確定（docs/05 §10.2 ④⑥ / §10.6）。**予約 = `SendAttemptToken` の唯一の生成経路**であり、
   //    引数は `SystemTenantCtx`（`apps/web` が組み立てられない）。呼び出し元は送信ジョブの 1 入口（`runExternalSend`）に限る。
   //    ⚠️ T-09-06 で `apps/worker/src/jobs/send-proposal.ts`（`send.proposal` の 1 ファイル）をここに足す。
   //    **`apps/web/**` には決して足さない**（下の it が独立に固定する）。
-  reserveSendAttempt: [],
+  reserveSendAttempt: ['apps/worker/src/jobs/send-proposal.ts'], // ✅ T-09-06
+  // 🔴 `settleSendAttempt` は `apps/**` からは呼ばない —— ⑥ の確定は `settleProposalSubmission`（`packages/db`）が
+  //    `SendAttempt` と `Proposal` を**同じトランザクション**で確定させる（docs/05 §10.2 ⑥ / T-09-06 の決着）。
   settleSendAttempt: [],
+  // 🔴 T-09-06: `send.proposal` が `proposals` を読む・保留する・確定する経路（`packages/db/src/proposal-send.ts`）。
+  //    保留を書けるのは送信ジョブ（①②）と、`send.hold-release` の再保留（enqueue が failed 記録に阻まれたとき）と、
+  //    #43 のドメイン未検証（`F-022 AC-7`）だけ。**`SUBMITTING` の確定（`settleProposalSubmission` /
+  //    `failProposalSubmissionWithoutAttempt`）は送信ジョブの 1 ファイルだけ**である（所有者 `SEND_JOB`）。
+  readProposalForSend: ['apps/worker/src/jobs/send-proposal.ts'],
+  settleProposalSubmission: ['apps/worker/src/jobs/send-proposal.ts'],
+  failProposalSubmissionWithoutAttempt: ['apps/worker/src/jobs/send-proposal.ts'],
+  holdProposalSend: [
+    'apps/web/lib/proposals/submit.ts',
+    'apps/worker/src/jobs/send-proposal-holds.ts',
+    'apps/worker/src/jobs/send-proposal.ts',
+  ],
+  clearProposalSendHold: ['apps/worker/src/jobs/send-proposal-holds.ts'],
+  resolveProposalSendResumeOrigin: ['apps/worker/src/jobs/send-proposal-holds.ts'],
+  listHeldProposalSends: ['apps/worker/src/jobs/send-hold-release.ts'],
   // 🔴 T-09-05: `attempt_seq` の採番（docs/05 §10.1 / §10.6「人間の明示操作でのみ増える」）。引数は `HumanTenantCtx`
   //    （`SystemTenantCtx` を渡せない）であり、呼び出し元は **`apps/web/**`（#43 / #44 / #60 / #61）だけ**。
   //    ⚠️ T-09-06 が `POST /api/proposals/{id}/submit` の実装ファイルを、T-09-08 が `resend` を足す。
   //    **`apps/worker/**` には決して足さない**（下の it が独立に固定する。ジョブは採番しない）。
-  nextSendAttemptSeq: [],
+  nextSendAttemptSeq: ['apps/web/lib/proposals/submit.ts'], // ✅ T-09-06（#43）。T-09-08 が `resend` を足す
   // 🔴 T-07-11: `scheduler_runs`（C0 SYSTEM_ONLY）を書く唯一の経路（docs/05 §4.4.2 / §9.1）。
   //    **`runScheduled()` だけ**であり、個々のジョブハンドラは `SchedulerRun` に触れない ——
   //    触れると「記録せずに走るジョブ」が書け、`A-005`（§16.5）の滞留検知が母集団を失う。
@@ -283,8 +303,13 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
   readEmailDispatch: ['apps/worker/src/jobs/email-dispatch.ts'],
   // 🔴 送信の 1 手順（判定 → 予約 → 送信 → CAS）は `email-send.ts` の 1 箇所だけが持つ。
   //    `email.dispatch` と `account.mail` で順序を書き分けると、片方だけ保留や上限が緩む。
-  readEmailDailyCount: ['apps/worker/src/jobs/email-send.ts'],
-  reserveEmailDailyQuota: ['apps/worker/src/jobs/email-send.ts'],
+  // ✅ T-09-06: `send.proposal` の ①-e（判定）と CAS 直前の原子的な予約、`send.hold-release` の `RATE_LIMIT` の解消判定。
+  readEmailDailyCount: [
+    'apps/worker/src/jobs/email-send.ts',
+    'apps/worker/src/jobs/send-hold-release.ts',
+    'apps/worker/src/jobs/send-proposal.ts',
+  ],
+  reserveEmailDailyQuota: ['apps/worker/src/jobs/email-send.ts', 'apps/worker/src/jobs/send-proposal.ts'],
   holdEmailDispatch: ['apps/worker/src/jobs/email-send.ts'],
   suppressEmailDispatch: ['apps/worker/src/jobs/email-send.ts'],
   failEmailDispatch: ['apps/worker/src/jobs/email-send.ts'],
@@ -302,6 +327,8 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
   resolveVerifiedSendingDomain: [
     'apps/worker/src/jobs/email-send.ts',
     'apps/worker/src/jobs/send-hold-release.ts',
+    // ✅ T-09-06: `send.proposal` の ①-d（未検証なら `DOMAIN_UNVERIFIED` の保留。共通ドメインへ倒さない）。
+    'apps/worker/src/jobs/send-proposal.ts',
   ],
   // 🔴 `Invitation.tokenHash` を書き換えられる唯一の場所（docs/05 §8.3 の復帰手順）。
   //    ここが増えると「保留を経ずにトークンだけ差し替える」経路が生まれ、
@@ -356,7 +383,8 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
   //    「分類を導く場所」を数えられる状態に保つためである。ここが散ると、どこかで
   //    `resolveRecipientClass` を通さずに分類を組み立てる実装（= 自己申告）が紛れ込む。
   //    T-04-03 以降で送信経路が増えたら、その 1 ファイルをここに追記する。
-  resolveRecipientClass: ['apps/web/lib/invitations/service.ts'],
+  //    ✅ T-09-06: `send.proposal` の ⑤（提案先 = テナント外の宛先。`subject = null` / `fallback = 'CLIENT'`）。
+  resolveRecipientClass: ['apps/web/lib/invitations/service.ts', 'apps/worker/src/jobs/send-proposal.ts'],
   // 🔴 分類外（運営者宛）を名乗れる場所は `apps/**` に 1 つも無い（`@ses/db/platform` にしか
   //    export されておらず、テナント側のコードからは import 経路そのものが無い）。
   platformRecipientClass: [],

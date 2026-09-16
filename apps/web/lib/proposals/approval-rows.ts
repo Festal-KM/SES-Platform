@@ -6,14 +6,23 @@
 //    「不合格の指摘と警告が別のリストに分かれる」「状態ごとに承認の可否が決まる」を固定できる場所が要る。**I/O を持たない。**
 // 🔴 文言は `packages/i18n` が唯一の出所（`CLAUDE.md` §3.5）。本ファイルは日本語の語を書かない。
 // 🔴 **判断材料は凍結側（`ProposalView.snapshot`）と `ReviewGate` の結果からだけ組む**（台帳の現在値を混ぜない）。
-import { t } from '@ses/i18n';
-import type { GateFinding, GateLayerState, GateResultView, ProposalState } from '@ses/domain';
+import { t, type MessageKey } from '@ses/i18n';
+import {
+  isAutoReleasableSendHoldReason,
+  isTenantResolvableSendHoldReason,
+  type GateFinding,
+  type GateLayerState,
+  type GateResultView,
+  type ProposalState,
+  type SendHoldReasonKey,
+} from '@ses/domain';
 import { formatUnitPriceRange } from '../engineers/detail';
 import { formatDateTimeJst } from '../format/datetime';
 import { formatThousands } from '../format/number';
 import type { ProposalApprovalRecordView, ProposalApprovalView } from './approval';
 import { proposalStateLabel } from './editor-rows';
-import { proposalEditHref } from './hrefs';
+import { proposalEditHref, SENDING_DOMAIN_SETTINGS_HREF, USAGE_SETTINGS_HREF } from './hrefs';
+import type { ProposalSendHoldView } from './views';
 
 /** 判断ヘッダの 1 行（定義リスト）。`field` は `data-field` に載せる機械名。 */
 export type ApprovalHeaderRow = {
@@ -64,14 +73,36 @@ export type ApprovalGateRows = {
   readonly lead: string | null;
 };
 
-/** 状態ごとの画面の形（docs/04 §S-021「承認ゲートを迂回できない設計」①: `APPROVAL_PENDING` 以外では承認アクションを描画しない）。 */
+/**
+ * 状態ごとの画面の形（docs/04 §S-021「承認ゲートを迂回できない設計」①: `APPROVAL_PENDING` 以外では承認アクションを描画しない）。
+ * 🔴 T-09-06: `APPROVED` は「送信する」（#43）の対象。`SUBMITTING` / `SUBMITTED` / `SUBMIT_FAILED` は**別々の形**で描く
+ *    （送信中 / 送信済み / 送信失敗を混ぜない。`CLAUDE.md` §4.2「失敗と保留を混同しない」）。
+ */
 export type ApprovalDisposition =
   | { readonly kind: 'PENDING' }
   | { readonly kind: 'APPROVED'; readonly notice: string }
+  | { readonly kind: 'SUBMITTING'; readonly notice: string }
+  | { readonly kind: 'SUBMITTED'; readonly notice: string }
+  | { readonly kind: 'SUBMIT_FAILED'; readonly notice: string }
   | { readonly kind: 'GATE_FAILED'; readonly notice: string }
   | { readonly kind: 'GATE_RUNNING'; readonly notice: string }
   | { readonly kind: 'DRAFT'; readonly notice: string }
   | { readonly kind: 'OTHER'; readonly notice: string };
+
+/**
+ * 🔴 T-09-06: 送信の保留の表示（docs/05 §10.4「利用者への提示」）。
+ * - `message` … `sendHold.{reasonKey}`（`packages/i18n`）
+ * - `autoRelease` … `send.hold-release` が復帰させる理由か（`GATE_STALE` だけ `false` = 人間が「送信する」を選ぶ）
+ * - `settingsLink` … テナント側で解消できる理由だけに設定導線を出す。🔴 **`PROVIDER_QUOTA` は `null`**（`S-038` に誘導しない）
+ */
+export type ApprovalSendHoldRows = {
+  readonly reasonKey: SendHoldReasonKey;
+  readonly title: string;
+  readonly message: string;
+  readonly since: string;
+  readonly autoRelease: boolean;
+  readonly settingsLink: { readonly href: string; readonly label: string } | null;
+};
 
 export type ProposalApprovalRows = {
   readonly id: string;
@@ -86,6 +117,10 @@ export type ProposalApprovalRows = {
   readonly disposition: ApprovalDisposition;
   /** 🔴 立場として承認・却下ができるか（`canApproveProposal`）。 */
   readonly canApprove: boolean;
+  /** 🔴 T-09-06: 立場として送信を要求できるか（`canSubmitProposal`。#43 と同じ判定）。 */
+  readonly canSubmit: boolean;
+  /** 🔴 T-09-06: 送信の保留（ホストの view にだけある。取引先・保留なしは `null`）。 */
+  readonly sendHold: ApprovalSendHoldRows | null;
   /** 取引先（◐）向けの注記。ホストなら `null`。 */
   readonly audienceNotice: string | null;
   readonly editorHref: string;
@@ -212,7 +247,47 @@ function approverLabel(approval: ProposalApprovalRecordView): string | null {
   }
 }
 
-function disposition(state: ProposalState, approver: string | null): ApprovalDisposition {
+/** `sendHold.{reasonKey}` の文言キー（7 値。`Record` で漏れをコンパイラに強制させる）。 */
+const SEND_HOLD_MESSAGE_KEYS = {
+  RATE_LIMIT: 'sendHold.RATE_LIMIT',
+  DOMAIN_UNVERIFIED: 'sendHold.DOMAIN_UNVERIFIED',
+  ESIGN_DISCONNECTED: 'sendHold.ESIGN_DISCONNECTED',
+  TENANT_SUSPENDED: 'sendHold.TENANT_SUSPENDED',
+  GATE_STALE: 'sendHold.GATE_STALE',
+  AI_COST_LIMIT: 'sendHold.AI_COST_LIMIT',
+  PROVIDER_QUOTA: 'sendHold.PROVIDER_QUOTA',
+} as const satisfies Record<SendHoldReasonKey, MessageKey>;
+
+/**
+ * 🔴 設定導線（docs/05 §10.4）。テナント側で解消できる理由だけ。`PROVIDER_QUOTA` / `TENANT_SUSPENDED` / `GATE_STALE` /
+ *    `AI_COST_LIMIT` は `null`（`S-038` に誘導しても打つ手が無い、または導線が別）。
+ */
+function sendHoldSettingsLink(reasonKey: SendHoldReasonKey): ApprovalSendHoldRows['settingsLink'] {
+  if (!isTenantResolvableSendHoldReason(reasonKey)) return null;
+  switch (reasonKey) {
+    case 'DOMAIN_UNVERIFIED':
+      return { href: SENDING_DOMAIN_SETTINGS_HREF, label: t('proposals.approval.sendHold.openSendingDomain') };
+    case 'RATE_LIMIT':
+      return { href: USAGE_SETTINGS_HREF, label: t('proposals.approval.sendHold.openUsage') };
+    default:
+      // `ESIGN_DISCONNECTED`（契約書。Phase 3）の導線は SP-17 が置く。提案には立たない。
+      return null;
+  }
+}
+
+export function approvalSendHoldRows(hold: ProposalSendHoldView | null): ApprovalSendHoldRows | null {
+  if (hold === null) return null;
+  return {
+    reasonKey: hold.reasonKey,
+    title: t('proposals.approval.sendHold.title'),
+    message: t(SEND_HOLD_MESSAGE_KEYS[hold.reasonKey]),
+    since: `${t('proposals.approval.sendHold.sincePrefix')}${formatDateTimeJst(hold.since)}`,
+    autoRelease: isAutoReleasableSendHoldReason(hold.reasonKey),
+    settingsLink: sendHoldSettingsLink(hold.reasonKey),
+  };
+}
+
+function disposition(state: ProposalState, approver: string | null, submittedAt: string | null): ApprovalDisposition {
   switch (state) {
     case 'APPROVAL_PENDING':
       return { kind: 'PENDING' };
@@ -221,6 +296,15 @@ function disposition(state: ProposalState, approver: string | null): ApprovalDis
         kind: 'APPROVED',
         notice: `${t('proposals.approval.state.approved.prefix')}${approver ?? none()}${t('proposals.approval.state.approved.suffix')}`,
       };
+    case 'SUBMITTING':
+      return { kind: 'SUBMITTING', notice: t('proposals.approval.state.submitting') };
+    case 'SUBMITTED':
+      return {
+        kind: 'SUBMITTED',
+        notice: `${t('proposals.approval.state.submitted.prefix')}${submittedAt ?? none()}${t('proposals.approval.state.submitted.suffix')}`,
+      };
+    case 'SUBMIT_FAILED':
+      return { kind: 'SUBMIT_FAILED', notice: t('proposals.approval.state.submitFailed') };
     case 'GATE_FAILED':
       return { kind: 'GATE_FAILED', notice: t('proposals.approval.state.gateFailed') };
     case 'GATE_RUNNING':
@@ -326,8 +410,10 @@ export function proposalApprovalRows(view: ProposalApprovalView, now: Date): Pro
     },
     attachmentNotice: proposal.attachment.skillSheetId === null ? t('proposals.approval.attachment.none') : t('proposals.approval.attachment.present'),
     approver,
-    disposition: disposition(proposal.state, approver),
+    disposition: disposition(proposal.state, approver, view.submittedAt === null ? null : formatDateTimeJst(view.submittedAt)),
     canApprove: view.canApprove,
+    canSubmit: view.canSubmit,
+    sendHold: proposal.audience === 'HOST' ? approvalSendHoldRows(proposal.sendHold) : null,
     audienceNotice: proposal.audience === 'PARTNER' ? t('proposals.approval.partnerNotice') : null,
     editorHref: proposalEditHref(proposal.id),
   };

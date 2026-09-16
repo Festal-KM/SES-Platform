@@ -95,6 +95,18 @@ export {
   type SendAttemptToken,
   type SendEntityType,
 } from './idempotency.js';
+// 🔴 T-09-06: 外部送信の保留（docs/05 §10.4 / §10.5）。値集合（7 値）は CHECK を持つ側（`packages/db`）と
+//    判定する側（`apps/worker` / `apps/web`）が同じ 1 つを見る。`GATE_STALE` だけが自動復帰の対象外。
+export {
+  AUTO_RELEASABLE_SEND_HOLD_REASON_KEYS,
+  isAutoReleasableSendHoldReason,
+  isSendHoldReasonKey,
+  isSendStale,
+  isTenantResolvableSendHoldReason,
+  SEND_HOLD_REASON_KEYS,
+  type SendHoldReasonKey,
+  type SendStalenessInput,
+} from './send/hold.js';
 // 🔴 T-11-03: 監査ログ `summary` の運営者向けマスキング（docs/05 §5.5 第 2 層 / `F-058 AC-1` / `AC-3`）。
 //    `packages/ai` の `mask()` は LLM 入力専用（単一経路。`tests/static/ai-single-path.test.ts`）であり
 //    管理平面の表示に流用しない。決定的で I/O を持たないため domain に置く。

@@ -603,6 +603,39 @@ export class ProposalApprovalForbiddenError extends ForbiddenError {
 }
 
 /**
+ * 🔴 提案の送信の要求（#43）をその立場では行えない（403）。T-09-06。判定は `canSubmitProposal`
+ *    （docs/02 `F-022` 関連ロール「`OWNER` / `ADMIN` / `SALES`（送信の実行）、`VIEWER`（不可）」。取引先は自社の提案を
+ *    自分で送れない）。`ProposalApprovalForbiddenError` と同じ理由で 404 にはしない。
+ */
+export class ProposalSubmitForbiddenError extends ForbiddenError {
+  override readonly code = 'PROPOSAL_SUBMIT_FORBIDDEN';
+  override readonly userMessageKey: MessageKey = 'error.proposal.submitForbidden';
+
+  constructor() {
+    super();
+    this.name = 'ProposalSubmitForbiddenError';
+  }
+}
+
+/**
+ * 🔴 `send.proposal` を積めなかった —— 同じ `jobId`（提案 × 試行）の **`failed` 記録**が残っており、BullMQ が `add` を
+ *    静かに無視した（docs/05 §9.4 / §10.4 の T-09-06 の決着。`removeOnFail` を付けていないため起こりうる）。409。
+ *
+ * 🔴 202 を返しながら誰も送らない応答は「成功したように見えて実際には起きていない」（`CLAUDE.md` §11.1）そのものなので、
+ *    利用者に見えるところで止める。失敗記録は §16.5 の失敗ジョブ数の根拠であり、ここで自動で消さない（運用が `A-005` から
+ *    原因を確かめて消す）。
+ */
+export class SendJobBlockedError extends ConflictError {
+  override readonly code = 'SEND_JOB_BLOCKED';
+  override readonly userMessageKey: MessageKey = 'error.proposal.sendJobBlocked';
+
+  constructor() {
+    super('送信ジョブを積めませんでした（同じ試行の失敗記録が残っています）。');
+    this.name = 'SendJobBlockedError';
+  }
+}
+
+/**
  * 🔴 招待を受諾できない（docs/05 §6.3 #7。`acceptedAt` の CAS が 0 件）。
  *
  * 受諾済み / 取消済み / 期限切れ / トークン不一致 / 同時受諾に負けた、を**区別しない**。

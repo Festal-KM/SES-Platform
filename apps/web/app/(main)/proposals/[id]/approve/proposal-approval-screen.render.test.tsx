@@ -73,6 +73,13 @@ const messages: ProposalApprovalScreenMessages = {
   backHome: 'ホームに戻る',
   viewerNotice: '承認・却下はホストの営業担当・管理者が行います。',
   deniedTitle: '承認・却下を行えません。',
+  submit: '送信する',
+  submitting: '送信を受け付けています…',
+  submitRequested: '送信を受け付けました。送信中です。',
+  submitLead: '承認済みの内容をそのまま提案先へ送信します。',
+  submitScrollRequired: '送信は、プレビューの末尾まで確認すると選べるようになります。',
+  errorSubmitState: 'この提案は承認済みではないため送信できません。',
+  errorSendBlocked: '送信ジョブを積めませんでした。',
   errorValidation: '却下の理由を入力してください。',
   errorStale: '内容が変更されたため再検証が必要です。',
   errorState: 'この提案は承認待ちではありません。',
@@ -120,8 +127,18 @@ const baseRows: ProposalApprovalRows = {
   approver: null,
   disposition: { kind: 'PENDING' },
   canApprove: true,
+  canSubmit: true,
+  sendHold: null,
   audienceNotice: null,
   editorHref: `/proposals/${PROPOSAL_ID}/edit`,
+};
+
+/** T-09-06: 承認済み（送信の対象）。 */
+const approvedRows: Partial<ProposalApprovalRows> = {
+  state: 'APPROVED',
+  stateLabel: '承認済み',
+  approver: '山田 太郎 / 2026-09-16 09:00 JST',
+  disposition: { kind: 'APPROVED', notice: 'この提案はすでに承認されました（山田 太郎）。' },
 };
 
 function render(overrides: Partial<ProposalApprovalScreenProps> = {}, rowsOverrides: Partial<ProposalApprovalRows> = {}): string {
@@ -320,5 +337,103 @@ describe('S-021 ⑧: 承認者欄（F-021 AC-5）', () => {
     const html = render({ auditHref: null }, { state: 'APPROVED', approver: 'Host A / 2026-09-16 10:00 JST', disposition: { kind: 'APPROVED', notice: 'x' } });
     expect(html).toContain('data-testid="proposal-approval-approver"');
     expect(html).not.toContain('data-testid="proposal-approval-audit-link"');
+  });
+});
+
+describe('S-021 ⑨（T-09-06）: 承認後の primary は「送信する」で、押した瞬間に送信済みと見せない', () => {
+  it('APPROVED × ホスト: 「送信する」が描かれ（観測前は disabled）、承認・却下は描かれない', () => {
+    const html = render({}, approvedRows);
+    expect(html).toContain('data-testid="proposal-approval-submit"');
+    expect(html).toContain('送信する');
+    expect(html).toContain('data-testid="proposal-approval-submit-scroll-required"');
+    expect(html).not.toContain('data-testid="proposal-approval-approve"');
+    expect(html).not.toContain('data-testid="proposal-approval-reject"');
+    // 🔴 送信済み・送信中の語は描画直後に出ない。
+    expect(html).not.toContain('送信を受け付けました');
+    expect(html).not.toContain('送信済み');
+    const button = /<button[^>]*data-testid="proposal-approval-submit"[^>]*>/.exec(html)?.[0] ?? '';
+    expect(button).toContain('disabled');
+  });
+
+  it('取引先 / VIEWER（canSubmit=false）と停止中（denialMessage）では「送信する」が無い', () => {
+    expect(render({}, { ...approvedRows, canApprove: false, canSubmit: false, audienceNotice: 'ホスト側が行います。' })).not.toContain(
+      'data-testid="proposal-approval-submit"',
+    );
+    expect(render({ denialMessage: '停止中です。' }, approvedRows)).not.toContain('data-testid="proposal-approval-submit"');
+  });
+
+  it('🔴 自動復帰する保留（PROVIDER_QUOTA）: 理由と開始時刻が描かれ、S-038 の導線も「送信する」も無い', () => {
+    const html = render(
+      {},
+      {
+        ...approvedRows,
+        sendHold: {
+          reasonKey: 'PROVIDER_QUOTA',
+          title: '送信は保留中です。',
+          message: '送信基盤の混雑により保留中。お客様側の設定では解消しません。自動で再送されます。',
+          since: '保留開始: 2026-09-16 09:00 JST',
+          autoRelease: true,
+          settingsLink: null,
+        },
+      },
+    );
+    expect(html).toContain('data-testid="proposal-approval-send-hold"');
+    expect(html).toContain('data-reason-key="PROVIDER_QUOTA"');
+    expect(html).toContain('お客様側の設定では解消しません');
+    expect(html).not.toContain('data-testid="proposal-approval-send-hold-link"');
+    expect(html).not.toContain('/settings/usage');
+    expect(html).not.toContain('data-testid="proposal-approval-submit"');
+  });
+
+  it('RATE_LIMIT の保留: S-038 への導線がある（PROVIDER_QUOTA との違い）', () => {
+    const html = render(
+      {},
+      {
+        ...approvedRows,
+        sendHold: {
+          reasonKey: 'RATE_LIMIT',
+          title: '送信は保留中です。',
+          message: '本日のメール送信数が上限に達しているため保留中です。',
+          since: '保留開始: 2026-09-16 09:00 JST',
+          autoRelease: true,
+          settingsLink: { href: '/settings/usage', label: '利用量と上限を確認する' },
+        },
+      },
+    );
+    expect(html).toContain('data-testid="proposal-approval-send-hold-link"');
+    expect(html).toContain('href="/settings/usage"');
+  });
+
+  it('🔴 GATE_STALE の保留: 自動復帰しないので「送信する」を再び選べる', () => {
+    const html = render(
+      {},
+      {
+        ...approvedRows,
+        sendHold: {
+          reasonKey: 'GATE_STALE',
+          title: '送信は保留中です。',
+          message: '送信を見送りました。内容の確認後にあらためて送信してください。',
+          since: '保留開始: 2026-09-16 09:00 JST',
+          autoRelease: false,
+          settingsLink: null,
+        },
+      },
+    );
+    expect(html).toContain('data-auto-release="false"');
+    expect(html).toContain('data-testid="proposal-approval-submit"');
+  });
+
+  it('SUBMITTING / SUBMITTED / SUBMIT_FAILED: 「送信する」も承認も無く、それぞれの案内だけ', () => {
+    for (const [kind, state, notice] of [
+      ['SUBMITTING', 'SUBMITTING', 'この提案は送信中です。'],
+      ['SUBMITTED', 'SUBMITTED', 'この提案は送信済みです（2026-09-16 09:01 JST）。'],
+      ['SUBMIT_FAILED', 'SUBMIT_FAILED', '送信に失敗しました。自動では再送しません。'],
+    ] as const) {
+      const html = render({}, { state, stateLabel: state, disposition: { kind, notice } });
+      expect(html).toContain(`data-disposition="${kind}"`);
+      expect(html).toContain(notice);
+      expect(html).not.toContain('data-testid="proposal-approval-submit"');
+      expect(html).not.toContain('data-testid="proposal-approval-approve"');
+    }
   });
 });

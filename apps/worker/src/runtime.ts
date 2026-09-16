@@ -23,7 +23,7 @@
 // 🔴 **モックへフォールバックしない**（`CLAUDE.md` §11.1）。落ちるのが正しい。
 //
 // ============================================================================
-// 🔴 本タスクで配線するのは「`gate.run` の Worker」と「スケジュール 5 本」だけである
+// 🔴 配線するのは「`gate.run` の Worker」「`send.proposal` の Worker（T-09-06）」と「スケジュール」である
 // ============================================================================
 // イベント起動のキュー（`email.dispatch` / `account.mail` / `webhook.process` /
 // `scan.apply-result` / `domain.provision` / `domain.verify`）の Worker は**まだ無い**。
@@ -50,10 +50,12 @@ import {
   createEmailSender,
   createMalwareScanner,
   createObjectStore,
+  InMemoryMinuteWindowCounter,
   isQueueName,
   type AccountMailJob,
   type EmailSender,
   type MalwareScanner,
+  type MinuteWindowCounter,
   type ObjectStore,
   type OperationalMailDispatch,
   type ProviderSendCounter,
@@ -66,6 +68,7 @@ import {
   createBullMqGateRunQueue,
   createBullMqJobEnqueuer,
   createBullMqSchedule,
+  createBullMqSendProposalQueue,
   createBullMqWorker,
   createRedisProviderSendCounter,
   type BullMqConnection,
@@ -75,11 +78,13 @@ import {
   billingTermsNotRecorded,
   createAccountMailReissue,
   createGateRunHandler,
+  createSendProposalHandler,
   GATE_RUN_JOB,
   resolveEmailTenantsBillingPolicy,
+  resolveProposalSendingDomainFromDb,
   SCHEDULED_JOBS,
+  SEND_PROPOSAL_JOB,
   type ScheduledJobDeps,
-  type SendHoldRelease,
 } from './jobs/index.js';
 import { runScheduled, type SchedulerRunDetail } from './scheduler.js';
 
@@ -109,18 +114,6 @@ export type WorkerRuntime = {
 export function resolveMockAiOptions(appEnv: AppEnvKind): MockAnthropicClientOptions {
   return appEnv === 'demo' ? { script: DEMO_MOCK_ANTHROPIC_SCRIPT } : {};
 }
-
-/**
- * 🔴 `send.*`（`Proposal` / `Contract`）の保留を復帰させる seam の**未実装版**（SP-09 T-09-06）。
- *
- * 🔴 「0 件復帰させた」は**現時点では事実**である —— `sendHoldReasonKey` を**書くコードが
- *    リポジトリに 1 つも無い**（`tests/static/send-hold-seam.test.ts` が 0 件であることを固定し、
- *    SP-09 が書いた瞬間に落ちる）。したがってこれは「配ったつもりで配れていない」ではなく
- *    「配る対象がまだ存在しない」である。
- * 🔴 SP-09 T-09-06 がここに実装を挿すまで、この関数を消さないこと（消すと `send.hold-release` の
- *    deps が欠けてコンパイルが通らなくなる = 気づける形が壊れる）。
- */
-export const sendHoldReleaseNotImplemented: SendHoldRelease = () => Promise.resolve(0);
 
 /**
  * 🔴 ワーカーを起動する（プロセスにつき 1 回。`main.ts` からのみ呼ぶ）。
@@ -180,6 +173,9 @@ export function startWorkerRuntime(config: RuntimeConfig): WorkerRuntime {
   const accountMailQueue = track(
     createBullMqJobEnqueuer<AccountMailJob>({ queueName: 'account.mail', connection }),
   );
+  // 🔴 T-09-06: `send.proposal` の enqueue 口（`send.hold-release` が同じ `attemptSeq` で再 enqueue する。docs/05 §9.4）。
+  //    `jobId` は実装が組み立てる（`sendProposalJobId`）。`attempts` を渡す口は無い。
+  const sendProposalQueue = track(createBullMqSendProposalQueue(connection));
 
   // --------------------------------------------------------------------------
   // 3. 外部連携（🔴 遅延。未登録の区分に触れたジョブだけが失敗する）
@@ -275,7 +271,10 @@ export function startWorkerRuntime(config: RuntimeConfig): WorkerRuntime {
       invitationTtlMs: INVITATION_TTL_MS,
       now,
     }),
-    releaseSendHolds: sendHoldReleaseNotImplemented,
+    // 🔴 T-09-06: `Proposal` の保留の復帰（docs/05 §9.4 / §10.4）。`RATE_LIMIT` の解消判定は送信ジョブの ①-e と
+    //    **同じキー**（`EMAIL_DAILY_LIMIT_PER_TENANT`）から読む。
+    enqueueSendProposal: (job) => sendProposalQueue.enqueue(job),
+    emailDailyLimit: env.EMAIL_DAILY_LIMIT_PER_TENANT,
     // scan.poll
     get malwareScanner(): MalwareScanner {
       return resolveMalwareScanner();
@@ -323,6 +322,38 @@ export function startWorkerRuntime(config: RuntimeConfig): WorkerRuntime {
   );
 
   // --------------------------------------------------------------------------
+  // 5b. `send.proposal` の Worker（T-09-06。イベント起動。docs/05 §10.2 / §9.4）
+  // --------------------------------------------------------------------------
+  // 🔴 `attempts: 1`（`QUEUE_DEFINITIONS`）。外部呼び出しの後に再試行しない（`BR-22`）。分次レートの待機（`DEFER`）は
+  //    ハンドラが `deferJob` を返し、`createBullMqWorker` が同じジョブを delayed に移す（新しいジョブを積まない）。
+  // 🔴 分次ウィンドウはプロセス内（`InMemoryMinuteWindowCounter`）。ワーカーは現時点で単一プロセスであり、
+  //    複数プロセスにするときは Redis 版に差し替える（差し替えはこの 1 箇所。docs/05 §8.7 / T-09-06 の申し送り）。
+  const minuteWindow: MinuteWindowCounter = new InMemoryMinuteWindowCounter();
+  const sendProposalHandler = createSendProposalHandler({
+    get emailSender(): EmailSender {
+      return resolveEmailSender();
+    },
+    emailImplementationKind: connectors.email,
+    minuteWindow,
+    dailyLimit: env.EMAIL_DAILY_LIMIT_PER_TENANT,
+    minuteLimit: env.EMAIL_MINUTE_LIMIT_PER_TENANT,
+    providerDailyQuota: env.MAIL_PROVIDER_DAILY_QUOTA,
+    get providerSentCounter(): ProviderSendCounter {
+      return resolveSentCounter();
+    },
+    resolveSendingDomain: resolveProposalSendingDomainFromDb,
+    staleThresholdMinutes: env.SEND_STALE_THRESHOLD_MINUTES,
+    now,
+  });
+  track(
+    createBullMqWorker({
+      queueName: SEND_PROPOSAL_JOB,
+      connection,
+      handler: (payload, jobId) => sendProposalHandler(payload, jobId),
+    }),
+  );
+
+  // --------------------------------------------------------------------------
   // 6. スケジュール（🔴 宣言（`SCHEDULED_JOBS`）を舐めるだけ。ここに名前を書き写さない。本数は宣言が決める
   //    —— T-07-11 で 5 本、T-08-07 で `proposal-request.expire`、T-10-02 で計測 4 本、T-10-03 で `usage.limit-check` が加わり 11 本）
   // --------------------------------------------------------------------------
@@ -358,7 +389,7 @@ export function startWorkerRuntime(config: RuntimeConfig): WorkerRuntime {
 
   return {
     ready: Promise.all(ready).then(() => undefined),
-    queues: [GATE_RUN_JOB, ...SCHEDULED_JOBS.map((declaration) => declaration.name)],
+    queues: [GATE_RUN_JOB, SEND_PROPOSAL_JOB, ...SCHEDULED_JOBS.map((declaration) => declaration.name)],
     async close(): Promise<void> {
       // 🔴 逆順に閉じる（Worker → スケジュール → キュー）。閉じ損ねを黙って飲まない。
       // 🔴 **DB クライアントはここで切らない** —— Prisma クライアントはプロセスに 1 つであり

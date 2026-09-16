@@ -320,6 +320,9 @@ const PROPOSAL_VIEW_SELECT = {
   id: true,
   state: true,
   proposalRequestId: true,
+  // T-09-06: 保留列（docs/05 §10.4）。ホスト向けの写像だけが読む。
+  sendHoldReasonKey: true,
+  sendHoldSince: true,
   recipientCompanyName: true,
   recipientEmail: true,
   offeredUnitPrice: true,
@@ -369,6 +372,8 @@ export type ProposalViewInTx = {
   readonly createdBy: string;
   readonly engineerId: string;
   readonly approval: ProposalApprovalRecordRow;
+  /** T-09-06: 送信の確定時刻（`SUBMITTED` 以降）。`S-021` が「送信済み（日時）」を描く。 */
+  readonly submittedAt: Date | null;
 };
 
 /**
@@ -393,6 +398,7 @@ export async function readProposalViewInTx(
       approvedBy: true,
       approvedBySystem: true,
       approvedAt: true,
+      submittedAt: true,
     },
   });
   if (row === null) return null;
@@ -408,6 +414,8 @@ export async function readProposalViewInTx(
     id: row.id,
     state: row.state,
     proposalRequestId: row.proposalRequestId,
+    sendHoldReasonKey: row.sendHoldReasonKey,
+    sendHoldSince: row.sendHoldSince,
     recipientCompanyName: row.recipientCompanyName,
     recipientEmail: row.recipientEmail,
     offeredUnitPrice: row.offeredUnitPrice,
@@ -430,6 +438,7 @@ export async function readProposalViewInTx(
     createdBy: row.createdBy,
     engineerId: row.engineerId,
     approval: { approvedBy: row.approvedBy, approvedBySystem: row.approvedBySystem, approvedAt: row.approvedAt },
+    submittedAt: row.submittedAt,
   };
 }
 

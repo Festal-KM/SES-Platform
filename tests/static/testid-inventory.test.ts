@@ -645,9 +645,17 @@ const FROZEN_EXACT: readonly string[] = [
   'proposal-approval-reject-submit',
   'proposal-approval-result',
   'proposal-approval-scroll-required',
+  // ✅ T-09-06: `S-021` の送信（#43）と送信の保留（docs/05 §10.4）。6 個（昇順に差し込む）。🔴 「無視して送信」「一括送信」
+  //    「再送」に相当する testid は存在しない（`BR-21` / `BR-22`。再送は `S-022` = T-09-08）。
+  'proposal-approval-send-hold',
+  'proposal-approval-send-hold-link',
   'proposal-approval-sending-domain',
   'proposal-approval-sending-domain-open',
   'proposal-approval-state',
+  'proposal-approval-submit',
+  'proposal-approval-submit-block',
+  'proposal-approval-submit-lead',
+  'proposal-approval-submit-scroll-required',
   'proposal-approval-viewer',
   // ✅ T-09-01: `S-020` 提案の作成・編集（`proposal-editor.tsx` / `new/page.tsx` / `[id]/edit/not-found.tsx`）。実装から機械抽出した 47 個。
   'proposal-editor',

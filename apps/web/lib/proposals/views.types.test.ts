@@ -21,6 +21,8 @@ const ROW: ProposalViewRow = {
   id: '01930000-0000-7000-8000-000000000301',
   state: 'DRAFT',
   proposalRequestId: null,
+  sendHoldReasonKey: null,
+  sendHoldSince: null,
   recipientCompanyName: '架空エンド株式会社',
   recipientEmail: 'to@example.test',
   offeredUnitPrice: { toString: () => '650000.00' },
@@ -69,6 +71,8 @@ describe('🔴 F-019 AC-4 / §4.8: PartnerProposalView に他社・上流・重�
     expectTypeOf(view).not.toHaveProperty('internalUnitPrice');
     expectTypeOf(view).not.toHaveProperty('engineerId');
     expectTypeOf(view).not.toHaveProperty('createdBy');
+    // 🔴 T-09-06: 送信の保留（ホスト側の事情）は取引先向けの型に存在しない（docs/05 §10.4 / §4.8）。
+    expectTypeOf(view).not.toHaveProperty('sendHold');
     expectTypeOf(view.project).not.toHaveProperty('endClientName');
     // @ts-expect-error F-019 AC-4: 作成した会社はパートナー向けの型に存在しない
     const owner: unknown = view.owner;
@@ -108,6 +112,18 @@ describe('🔴 F-019 AC-1: HostProposalView のエンジニア情報は snapshot
     expect(Object.keys(view).sort()).toEqual([...HOST_PROPOSAL_VIEW_KEYS].sort());
     expect(JSON.stringify(view)).not.toContain(DB_ROW_WITH_SECRETS.engineerId);
     expect(JSON.stringify(view)).not.toContain(DB_ROW_WITH_SECRETS.createdBy);
+  });
+
+  it('🔴 T-09-06: 送信の保留はホスト向けの型だけが持ち、理由と時刻を写す（片方だけの行は不変条件違反）', () => {
+    const since = new Date('2026-09-16T00:00:00.000Z');
+    const held = toHostProposalView({ ...ROW, state: 'APPROVED', sendHoldReasonKey: 'PROVIDER_QUOTA', sendHoldSince: since }, DEPS, { kind: 'HOST' });
+    expect(held.sendHold).toEqual({ reasonKey: 'PROVIDER_QUOTA', since: since.toISOString() });
+    expect(toHostProposalView(ROW, DEPS, { kind: 'HOST' }).sendHold).toBeNull();
+    expect(() => toHostProposalView({ ...ROW, sendHoldReasonKey: 'RATE_LIMIT', sendHoldSince: null }, DEPS, { kind: 'HOST' })).toThrow(RangeError);
+    expect(() => toHostProposalView({ ...ROW, sendHoldReasonKey: 'NOT_A_REASON', sendHoldSince: since }, DEPS, { kind: 'HOST' })).toThrow(RangeError);
+    // 取引先向けの写像は保留列を読まない（値があっても出力に現れない）。
+    const partner = toPartnerProposalView({ ...ROW, sendHoldReasonKey: 'PROVIDER_QUOTA', sendHoldSince: since }, DEPS);
+    expect(JSON.stringify(partner)).not.toContain('PROVIDER_QUOTA');
   });
 });
 
