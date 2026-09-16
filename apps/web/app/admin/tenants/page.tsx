@@ -2,8 +2,9 @@
 // `A-002` テナント一覧（docs/04 §A-002 / API-A2 / `F-056`）。T-03-09。
 //
 // 🔴 書き込み操作なし。画面タイトル右に「閲覧のみ」を常時表示する（docs/04 §A-002 / `BR-37`）。
-// 🔴 異常度順の並び替えは Phase 1（SP-11。`docs/dev-plan.md` `PM-A-04`）。ここでは
-//    決定的な `createdAt` 降順のみ。
+// 🔴 T-11-01: 既定の並びは**異常度の高い順**（`F-056 AC-2`）。`?sort=health|name|createdAt` で切り替える。
+//    並び・スコアは API-A2 と同じ `listPlatformTenants`（閾値は `tenantHealthRuntime()`）で得るため、
+//    画面と API で順序がずれない。描画は `AdminTenantsList`（純粋。`*.render.test.tsx` が固定）。
 // 🔴 表示するのは件数・状態・日時のみ（`F-056 AC-1` / `BR-40`）。エンジニア名・案件名・
 //    提案本文・チャット本文への導線を持たない。
 // 🔴 閲覧そのものが `AuditLog` に記録される（`listPlatformTenants` が `withPlatformRead` 経由。
@@ -11,35 +12,20 @@
 //
 // 🔴 T-21-05: 表とバッジを `@ses/ui`（`Table` / `Badge`）へ移した。**表示する列の集合も
 //    値も 1 つも変えていない**（`BR-40` / `CLAUDE.md` §10.5。運営者に要るのは件数・状態・
-//    エラーであって内容ではない）。
-// 🔴 横スクロールは `Table` が内蔵する器（`relative w-full overflow-x-auto`）の**内側**に
-//    閉じる。T3 だがモバイルで遮断しない（`CLAUDE.md` §13.3。列を `hidden` にしない ——
-//    間引くと運営者が異常を検知できる列を失う）。
+//    エラーであって内容ではない）。T-11-01 で足したのは「利用中の席」と「異常の種別」の列だけである。
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { listPlatformTenants } from '@ses/db/platform';
 import { t } from '@ses/i18n';
-import {
-  Badge,
-  SECONDARY_LINK_STACKED_CLASSES,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@ses/ui';
+import { Badge } from '@ses/ui';
 import {
   readPlatformRequestMeta,
   resolvePlatformCtxOutcome,
 } from '../../../lib/auth/platform-session';
-import { isTenantIdLike } from '../../../lib/admin-tenants/schemas';
-import {
-  TENANT_LIFECYCLE_STATE_MESSAGE_KEYS,
-  tenantEnvironmentMessageKey,
-} from './_lib/labels';
-// 🔴 `_lib/labels` は上 2 つを `apps/web/lib/tenants/labels` から re-export している
-//    （主平面の `S-035` と共有するため。管理平面のファイルを主平面から import させない）。
+import { isTenantIdLike, parseTenantListSort } from '../../../lib/admin-tenants/schemas';
+import { tenantHealthRuntime } from '../../../lib/db/bootstrap';
+import { adminTenantsMessages } from './_lib/messages';
+import { AdminTenantsList } from './admin-tenants-list';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -49,22 +35,23 @@ const PAGE_LIMIT = 50;
 export default async function AdminTenantsPage({
   searchParams,
 }: {
-  readonly searchParams: Promise<{ readonly cursor?: string }>;
+  readonly searchParams: Promise<{ readonly cursor?: string; readonly sort?: string }>;
 }) {
   const outcome = await resolvePlatformCtxOutcome();
   if (outcome.status === 'UNAUTHENTICATED') redirect('/admin/signin');
   if (outcome.status === 'TWO_FACTOR_REQUIRED') redirect('/admin/signin?step=2fa');
 
-  const { cursor } = await searchParams;
-  // 🔴 カーソルはテナント ID（uuid(7)）そのもの。改竄・破損した値をそのまま Prisma の
-  //    カーソルへ渡すと `uuid` 型キャストの Postgres エラーで 500 になるため、不正な形状は
-  //    DB に触れず「カーソル無し（先頭ページ）」として扱う（画面を壊さない。500 にしない）。
+  const { cursor, sort: rawSort } = await searchParams;
+  // 🔴 カーソルはテナント ID（uuid(7)）そのもの。不正な形状は DB に触れず「カーソル無し（先頭ページ）」
+  //    として扱う（画面を壊さない。500 にしない）。`sort` の不正な値も既定（異常度順）に倒す。
   const safeCursor = cursor !== undefined && isTenantIdLike(cursor) ? cursor : undefined;
+  const sort = parseTenantListSort(rawSort);
+  const thresholds = tenantHealthRuntime();
   const meta = await readPlatformRequestMeta();
   const page = await listPlatformTenants(
     outcome.ctx,
-    { cursor: safeCursor, limit: PAGE_LIMIT },
-    { ipAddress: meta.ipAddress },
+    { cursor: safeCursor, limit: PAGE_LIMIT, sort },
+    { ipAddress: meta.ipAddress, healthThresholds: thresholds },
   );
 
   // 🔴 T-03-10: 開設（`A-014`）の導線は **`PLATFORM_OWNER` にのみ表示する**
@@ -81,7 +68,7 @@ export default async function AdminTenantsPage({
   ) : null;
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-8">
+    <main className="mx-auto max-w-6xl px-4 py-8">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-xl font-bold text-slate-900">{t('admin.tenants.title')}</h1>
         <div className="flex items-center gap-3">
@@ -94,66 +81,13 @@ export default async function AdminTenantsPage({
         </div>
       </div>
 
-      {page.items.length === 0 ? (
-        <p className="text-sm text-slate-600">{t('admin.tenants.empty')}</p>
-      ) : (
-        <>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t('admin.tenants.column.name')}</TableHead>
-                <TableHead>{t('admin.tenants.column.lifecycleState')}</TableHead>
-                <TableHead>{t('admin.tenants.column.environment')}</TableHead>
-                <TableHead>{t('admin.tenants.column.seats')}</TableHead>
-                <TableHead>{t('admin.tenants.column.partners')}</TableHead>
-                <TableHead>{t('admin.tenants.column.engineers')}</TableHead>
-                <TableHead>{t('admin.tenants.column.projects')}</TableHead>
-                <TableHead>{t('admin.tenants.column.lastActivity')}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {page.items.map((item) => {
-                const environmentKey = tenantEnvironmentMessageKey(item.environment);
-                return (
-                  <TableRow key={item.id}>
-                    <TableCell>
-                      <Link
-                        className="font-medium text-slate-900 underline-offset-2 hover:underline"
-                        href={`/admin/tenants/${item.id}`}
-                      >
-                        {item.name}
-                      </Link>
-                    </TableCell>
-                    <TableCell>
-                      {t(TENANT_LIFECYCLE_STATE_MESSAGE_KEYS[item.lifecycleState])}
-                    </TableCell>
-                    <TableCell>
-                      {environmentKey === null ? item.environment : t(environmentKey)}
-                    </TableCell>
-                    <TableCell>{item.seatCount}</TableCell>
-                    <TableCell>{item.partnerCompanyCount}</TableCell>
-                    <TableCell>{item.engineerCount}</TableCell>
-                    <TableCell>{item.projectCount}</TableCell>
-                    <TableCell>
-                      {item.lastActivityAt === null
-                        ? t('admin.tenants.lastActivity.none')
-                        : item.lastActivityAt}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-          {page.nextCursor === null ? null : (
-            <Link
-              className={SECONDARY_LINK_STACKED_CLASSES}
-              href={`/admin/tenants?cursor=${encodeURIComponent(page.nextCursor)}`}
-            >
-              {t('admin.tenants.loadMore')}
-            </Link>
-          )}
-        </>
-      )}
+      <AdminTenantsList
+        page={page}
+        sort={sort}
+        isFirstPage={safeCursor === undefined}
+        thresholds={thresholds}
+        messages={adminTenantsMessages()}
+      />
     </main>
   );
 }

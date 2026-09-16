@@ -10,6 +10,7 @@ import {
   parseAdminTenantListQuery,
   parseCreateTenantBody,
   parseOwnerInvitationBody,
+  parseTenantListSort,
 } from './schemas';
 import { ISOLATION_KEYS } from '../api/isolation-keys';
 
@@ -34,9 +35,26 @@ describe('parseAdminTenantListQuery（API-A2 の境界検証）', () => {
     expect(result.ok).toBe(true);
   });
 
-  it('UUID 形式の cursor は通る', () => {
+  it('UUID 形式の cursor は通る（sort は既定 health を補完する。F-056 AC-2）', () => {
     const result = parseAdminTenantListQuery({ cursor: VALID_TENANT_ID });
-    expect(result).toEqual({ ok: true, value: { cursor: VALID_TENANT_ID, limit: 50 } });
+    expect(result).toEqual({ ok: true, value: { cursor: VALID_TENANT_ID, limit: 50, sort: 'health' } });
+  });
+
+  it.each(['health', 'name', 'createdAt'] as const)('🔴 T-11-01: sort=%s を受け付ける', (sort) => {
+    const result = parseAdminTenantListQuery({ sort });
+    expect(result).toEqual({ ok: true, value: { limit: 50, sort } });
+  });
+
+  it('🔴 T-11-01: 未知の sort は 400 相当（黙って既定に丸めない）', () => {
+    const result = parseAdminTenantListQuery({ sort: 'score' });
+    expect(result).toEqual({ ok: false, issues: ['sort'] });
+  });
+
+  it('🔴 T-11-01: 画面の門番 parseTenantListSort は不正な値を既定 health に倒す（画面は 400 を返せない）', () => {
+    expect(parseTenantListSort(undefined)).toBe('health');
+    expect(parseTenantListSort('name')).toBe('name');
+    expect(parseTenantListSort('createdAt')).toBe('createdAt');
+    expect(parseTenantListSort('bogus')).toBe('health');
   });
 
   it('🔴 UUID 形式でない cursor は 400 相当（issues に cursor を含む）で拒否する（500 にしない）', () => {

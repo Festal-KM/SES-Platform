@@ -11,6 +11,7 @@
 // 🔴 `PlatformTenant*Row` はクエリ関数（`packages/db/src/platform/queries/tenants.ts`）が
 //    組み立てる中間表現であり、Prisma の行をそのまま渡さない（列が増えても呼び出し側が
 //    明示的に足さない限りここには現れない）。
+import type { TenantHealth, TenantHealthSignal } from '@ses/domain';
 import type { TenantLifecycleState } from '../../context.js';
 
 export type PlatformTenantCounts = {
@@ -20,7 +21,8 @@ export type PlatformTenantCounts = {
   readonly projectCount: number;
 };
 
-export type PlatformTenantListRow = {
+/** 一覧・詳細に共通する行（T-03-09 の `PlatformTenantListRow` と同じ形）。 */
+export type PlatformTenantBaseRow = {
   readonly id: string;
   readonly name: string;
   readonly environment: string;
@@ -29,6 +31,23 @@ export type PlatformTenantListRow = {
   readonly createdAt: Date;
   readonly lastActivityAt: Date | null;
 } & PlatformTenantCounts;
+
+/**
+ * 一覧の行（T-11-01 で `activeMemberCount` と `health` が加わった）。
+ * 🔴 `health` はクエリ側が `@ses/domain` の `scoreTenantHealth` で算出して渡す（ここで計算しない。
+ *    シリアライザは「見せてよい列」を写すだけである）。
+ */
+export type PlatformTenantListRow = PlatformTenantBaseRow & {
+  /** 有効な席のうち、停滞閾値内にログインした利用者の数（`seatCount` 以下）。 */
+  readonly activeMemberCount: number;
+  readonly health: TenantHealth;
+};
+
+/** 🔴 API-A2 の応答に載る健全性。スコア（数値）とシグナル名（列挙値）だけ。理由の自由文・内容は持たない。 */
+export type PlatformTenantHealthView = {
+  readonly score: number;
+  readonly signals: readonly TenantHealthSignal[];
+};
 
 /** `GET /api/admin/tenants`（API-A2）の一覧項目。 */
 export type PlatformTenantListItemView = {
@@ -41,9 +60,13 @@ export type PlatformTenantListItemView = {
   /** 🔴 最終アクティビティ（`users.last_login_at` の最大値）。記録が無ければ `null`。 */
   readonly lastActivityAt: string | null;
   readonly seatCount: number;
+  /** 🔴 T-11-01: 使われている席（停滞閾値内にログインした利用者の数）。`seatCount` 以下。 */
+  readonly activeMemberCount: number;
   readonly partnerCompanyCount: number;
   readonly engineerCount: number;
   readonly projectCount: number;
+  /** 🔴 T-11-01: 異常度（docs/05 §6.9 API-A2）。`CLOSING` / `PURGED` は `{ score: 0, signals: [] }`。 */
+  readonly health: PlatformTenantHealthView;
 };
 
 /** 🔴 応答に出してよいフィールドの明示列挙。Prisma の行を Object.assign で素通しさせない。 */
@@ -57,13 +80,16 @@ export function toPlatformTenantListItem(row: PlatformTenantListRow): PlatformTe
     createdAt: row.createdAt.toISOString(),
     lastActivityAt: row.lastActivityAt === null ? null : row.lastActivityAt.toISOString(),
     seatCount: row.seatCount,
+    activeMemberCount: row.activeMemberCount,
     partnerCompanyCount: row.partnerCompanyCount,
     engineerCount: row.engineerCount,
     projectCount: row.projectCount,
+    // 🔴 `signals` は新しい配列に写す（domain の値をそのまま参照で返さない。列挙値以外を持ち込めない形にする）。
+    health: { score: row.health.score, signals: [...row.health.signals] },
   };
 }
 
-export type PlatformTenantDetailRow = PlatformTenantListRow & {
+export type PlatformTenantDetailRow = PlatformTenantBaseRow & {
   readonly sandboxExpiresAt: Date | null;
   readonly closingEnteredAt: Date | null;
   readonly proposalCount: number;

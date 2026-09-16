@@ -238,6 +238,19 @@ const FROZEN_EXACT: readonly string[] = [
   'admin-signin-submit',
   // ✅ T-11-03: `A-003` セクション 6（監査ログへの導線）。
   'admin-tenant-detail-audit-logs-link',
+  // ✅ T-11-01: `A-002` テナント一覧（健全性・異常順）。`admin-tenants-list.tsx`。行・席・シグナルの testid は
+  //    テンプレートリテラル（接頭辞は下の FROZEN_PREFIXES）。
+  'admin-tenants-all-clear',
+  'admin-tenants-empty',
+  'admin-tenants-health-lead',
+  'admin-tenants-health-none',
+  'admin-tenants-health-not-scored',
+  'admin-tenants-health-signals',
+  'admin-tenants-load-more',
+  'admin-tenants-observed-at',
+  'admin-tenants-sort',
+  'admin-tenants-table',
+  'admin-tenants-thresholds',
   // ✅ T-08-05: `S-016` 候補検索（`candidate-screen.tsx` / `page.tsx`）。実装から機械抽出した 45 個。
   'candidate-detail-anonymous',
   'candidate-detail-anonymous-note',
@@ -896,6 +909,11 @@ const FROZEN_PREFIXES: readonly string[] = [
   'admin-audit-logs-row-',
   'admin-audit-logs-summary-',
   'admin-audit-logs-tenant-link-',
+  // ✅ T-11-01: `A-002` の動的 testid（シグナルのバッジ / 行 / 席 / 並び替えの候補。列挙値・テナント ID で変わる）。
+  'admin-tenants-health-signal-',
+  'admin-tenants-row-',
+  'admin-tenants-seats-',
+  'admin-tenants-sort-',
   // ✅ T-08-05: `S-016` の動的 testid（行 / 種別 / 表示名 / `+N` / 条件の解除 / 要件サマリの項目）。
   'candidate-list-kind-',
   'candidate-list-more-skills-',

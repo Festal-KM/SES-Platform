@@ -13,10 +13,13 @@
 //    エンジニア・案件・提案・チャット・契約の表には DB 権限としても到達できない。
 // 🔴 閲覧そのものが `AuditLog` に記録される（`listPlatformTenants` が `withPlatformRead` 経由で
 //    ハンドラ本体の前に書く。`F-056 AC-4` / `BR-41`）。
-// 🔴 異常度順の並び替えは Phase 1（SP-11）。ここでは決定的な `createdAt` 降順のみ。
-// 🔴 `cursor` はテナント ID（uuid(7)）そのもの。不正な形の値を Prisma のカーソル句へ渡すと
-//    `uuid` 型キャストの Postgres エラーで未捕捉のまま 500 になるため、`parseAdminTenantListQuery`
-//    （`apps/web/lib/admin-tenants/schemas.ts`）で UUID 形状を検証してから渡す（400 に畳む）。
+// 🔴 T-11-01: 既定の並びは異常度（`health`）の高い順（`F-056 AC-2`。docs/05 §6.9 API-A2「T-11-01 の実装の決着」）。
+//    `?sort=health|name|createdAt`。閾値は `tenantHealthRuntime()`（`packages/config` 起点）から渡し、
+//    ルートで `process.env` を読まない。応答の各行に `health: { score, signals }` が載る（件数・状態・日時・
+//    シグナル名のみ。利用者名・メール・業務データは無い）。
+// 🔴 `cursor` はテナント ID（uuid(7)）そのもの。不正な形の値は `parseAdminTenantListQuery`
+//    （`apps/web/lib/admin-tenants/schemas.ts`）で UUID 形状を検証して 400 に畳む（並びがメモリで確定する
+//    現在の実装では DB エラーにはならないが、境界の契約として維持する）。
 import {
   listPlatformTenants,
   provisionTenant,
@@ -39,7 +42,7 @@ import {
   requirePlatformCtx,
   requirePlatformOwnerCtx,
 } from '../../../../lib/auth/platform-session';
-import { sandboxTrialDays } from '../../../../lib/db/bootstrap';
+import { sandboxTrialDays, tenantHealthRuntime } from '../../../../lib/db/bootstrap';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -54,7 +57,10 @@ export async function GET(request: Request): Promise<Response> {
     if (!parsed.ok) return errorResponse(new ValidationError(parsed.issues));
 
     const meta = await readPlatformRequestMeta();
-    const page = await listPlatformTenants(ctx, parsed.value, { ipAddress: meta.ipAddress });
+    const page = await listPlatformTenants(ctx, parsed.value, {
+      ipAddress: meta.ipAddress,
+      healthThresholds: tenantHealthRuntime(),
+    });
     return Response.json(page, { headers: { 'cache-control': 'no-store' } });
   } catch (error) {
     return errorResponse(error);

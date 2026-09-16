@@ -111,3 +111,7 @@ export {
 //    `packages/ai` の `mask()` は LLM 入力専用（単一経路。`tests/static/ai-single-path.test.ts`）であり
 //    管理平面の表示に流用しない。決定的で I/O を持たないため domain に置く。
 export * from './audit/index.js';
+// 🔴 T-11-01: テナント健全性の異常度スコアと `A-002` の並び順（docs/05 §5.7 / §6.9 API-A2 / `F-056 AC-2`）。
+//    入力は件数・状態・日時だけ（内容を取らない）。`now` と閾値は引数で受け、重みだけを定数として持つ
+//    （運用の並び順であり事業判断ではない）。材料を揃えるのは `packages/db/src/platform`、閾値の出所は `packages/config`。
+export * from './health/index.js';

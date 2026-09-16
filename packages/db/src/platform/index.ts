@@ -37,8 +37,11 @@ export { platformRecipientClass } from '../recipient.js';
 export { readAdminHomeSummary } from './queries/admin-home.js';
 export type { AdminHomeSummary, PlatformRequestMeta } from './queries/admin-home.js';
 // A-002 / A-003（テナント一覧・詳細。T-03-09）。
+// 🔴 T-11-01: 一覧は異常度（`health`）の高い順が既定（`F-056 AC-2`）。閾値（`PlatformTenantListMeta.healthThresholds`）は
+//    呼び出し側が `packages/config` から渡す（既定値へのフォールバック無し）。スコアの算出は `@ses/domain`。
 export { getPlatformTenantDetail, listPlatformTenants } from './queries/tenants.js';
 export type {
+  PlatformTenantListMeta,
   PlatformTenantListPage,
   PlatformTenantListQuery,
   PlatformRequestMeta as PlatformTenantRequestMeta,
@@ -75,6 +78,7 @@ export {
 } from '../serializers/platform/tenants.js';
 export type {
   PlatformTenantDetailView,
+  PlatformTenantHealthView,
   PlatformTenantListItemView,
 } from '../serializers/platform/tenants.js';
 export {

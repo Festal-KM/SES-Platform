@@ -16,7 +16,13 @@ import {
   SENDING_DOMAIN_MAX_LENGTH,
   TENANT_NAME_MAX_LENGTH,
 } from '@ses/config';
-import { TENANT_CREATION_STATES, TENANT_ENVIRONMENTS } from '@ses/domain';
+import {
+  DEFAULT_TENANT_LIST_SORT,
+  TENANT_CREATION_STATES,
+  TENANT_ENVIRONMENTS,
+  TENANT_LIST_SORT_KEYS,
+  type TenantListSortKey,
+} from '@ses/domain';
 import { cursorPageQuerySchema, type CursorPageQuery } from '../api/pagination';
 import { assertNoIsolationKeys } from '../api/isolation-keys';
 
@@ -27,9 +33,25 @@ export function isTenantIdLike(value: string): boolean {
   return uuidSchema.safeParse(value).success;
 }
 
+/**
+ * 🔴 T-11-01: `sort`（API-A2）。値集合は `@ses/domain` の `TENANT_LIST_SORT_KEYS`（クエリ側と同じ 1 つ）。
+ *    既定は `health`（異常度の高い順。`F-056 AC-2`）。未知の値は 400（黙って既定に丸めない）。
+ */
+const adminTenantListQuerySchema = cursorPageQuerySchema.extend({
+  sort: z.enum(TENANT_LIST_SORT_KEYS).default(DEFAULT_TENANT_LIST_SORT),
+});
+
+export type AdminTenantListQuery = CursorPageQuery & { readonly sort: TenantListSortKey };
+
 export type AdminTenantListQueryResult =
-  | { readonly ok: true; readonly value: CursorPageQuery }
+  | { readonly ok: true; readonly value: AdminTenantListQuery }
   | { readonly ok: false; readonly issues: readonly string[] };
+
+/** 画面（`A-002`）が `?sort=` を読むときの門番。不正な値は既定に倒す（画面は 400 を返せない）。 */
+export function parseTenantListSort(value: string | undefined): TenantListSortKey {
+  const parsed = z.enum(TENANT_LIST_SORT_KEYS).safeParse(value);
+  return parsed.success ? parsed.data : DEFAULT_TENANT_LIST_SORT;
+}
 
 /**
  * `GET /api/admin/tenants` の query を検証する（`apps/web/app/api/admin/tenants/route.ts` が
@@ -37,10 +59,10 @@ export type AdminTenantListQueryResult =
  *
  * 🔴 `cursorPageQuerySchema` の一般形状検証（非空・長さ上限）の**後**に、`cursor` がテナント ID の
  *    形（UUID）かどうかを追加で確認する。ここを通らない `cursor` は 400 になり、
- *    `listPlatformTenants`（＝ Prisma のカーソル句）へは一度も渡らない。
+ *    `listPlatformTenants` へは一度も渡らない。
  */
 export function parseAdminTenantListQuery(raw: unknown): AdminTenantListQueryResult {
-  const parsed = cursorPageQuerySchema.safeParse(raw);
+  const parsed = adminTenantListQuerySchema.safeParse(raw);
   if (!parsed.success) {
     return { ok: false, issues: parsed.error.issues.map((issue) => issue.path.join('.')) };
   }
@@ -109,6 +131,7 @@ export type OwnerInvitationBody = z.infer<typeof ownerInvitationBodySchema>;
 //    分離キーの検査を**明示的に**呼ぶ（docs/05 §6.1 の規律を管理平面でも守る）。
 assertNoIsolationKeys(Object.keys(createTenantBodySchema.shape), 'createTenantBodySchema');
 assertNoIsolationKeys(Object.keys(ownerInvitationBodySchema.shape), 'ownerInvitationBodySchema');
+assertNoIsolationKeys(Object.keys(adminTenantListQuerySchema.shape), 'adminTenantListQuerySchema');
 
 export type ParsedBody<T> =
   | { readonly ok: true; readonly value: T }

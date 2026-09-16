@@ -8,11 +8,12 @@ import { describe, expect, it } from 'vitest';
 import {
   toPlatformTenantDetail,
   toPlatformTenantListItem,
+  type PlatformTenantBaseRow,
   type PlatformTenantDetailRow,
   type PlatformTenantListRow,
 } from './tenants.js';
 
-const LIST_ROW: PlatformTenantListRow = {
+const BASE_ROW: PlatformTenantBaseRow = {
   id: '01930000-0000-7000-8000-000000000a01',
   name: 'Tenant A',
   environment: 'production',
@@ -26,8 +27,15 @@ const LIST_ROW: PlatformTenantListRow = {
   projectCount: 2,
 };
 
+// 🔴 T-11-01: 一覧の行は使われている席の数と異常度を持つ（詳細の行は持たない）。
+const LIST_ROW: PlatformTenantListRow = {
+  ...BASE_ROW,
+  activeMemberCount: 2,
+  health: { score: 20, signals: ['INACTIVE'] },
+};
+
 const DETAIL_ROW: PlatformTenantDetailRow = {
-  ...LIST_ROW,
+  ...BASE_ROW,
   sandboxExpiresAt: null,
   closingEnteredAt: null,
   proposalCount: 4,
@@ -40,9 +48,11 @@ describe('toPlatformTenantListItem（A-002 / F-056 AC-1）', () => {
 
     expect(Object.keys(view).sort()).toEqual(
       [
+        'activeMemberCount',
         'createdAt',
         'engineerCount',
         'environment',
+        'health',
         'id',
         'lastActivityAt',
         'lifecycleChangedAt',
@@ -55,6 +65,14 @@ describe('toPlatformTenantListItem（A-002 / F-056 AC-1）', () => {
     );
     expect(view.lifecycleChangedAt).toBe('2026-09-01T00:00:00.000Z');
     expect(view.lastActivityAt).toBe('2026-09-03T00:00:00.000Z');
+  });
+
+  it('🔴 T-11-01: health はスコアとシグナル名だけ（キー集合を固定し、配列は写しを返す）', () => {
+    const view = toPlatformTenantListItem(LIST_ROW);
+    expect(Object.keys(view.health).sort()).toEqual(['score', 'signals']);
+    expect(view.health).toEqual({ score: 20, signals: ['INACTIVE'] });
+    expect(view.health.signals).not.toBe(LIST_ROW.health.signals);
+    expect(view.activeMemberCount).toBe(2);
   });
 
   it('lastActivityAt が無ければ null を返す（ログイン記録が無いテナント）', () => {

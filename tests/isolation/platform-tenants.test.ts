@@ -18,6 +18,8 @@ import { configurePlatformReadDb, configurePlatformWriteDb, resolvePlatformCtx }
 import type { AuthenticatedPlatformCtx } from '@ses/db';
 import { getPlatformTenantDetail, listPlatformTenants, withPlatformRead } from '@ses/db/platform';
 import { createUnextendedClient, type UnextendedClient } from '@ses/db/testing';
+// 🔴 `@ses/domain` をパッケージ名で import しない（ルートの package.json は依存に持たない。他の isolation テストと同じ）。
+import { DEFAULT_TENANT_HEALTH_THRESHOLDS } from '../../packages/domain/src/health/tenant-health.js';
 import { TENANT_A, TENANT_B } from './support/fixtures.js';
 import { startIsolationDatabase, type IsolationDatabase } from './support/postgres.js';
 
@@ -26,6 +28,8 @@ const SETUP_TIMEOUT_MS = 600_000;
 const PLATFORM_USER_ID = '01930000-0000-7000-8000-0000000000bb';
 const TENANT_PURGED = '01930000-0000-7000-8000-0000000000c9';
 const TENANT_NONEXISTENT = '01930000-0000-7000-8000-000000000fff';
+// 🔴 T-11-01: 閾値は必須引数（既定へのフォールバック無し）。異常度の並びそのものは admin-tenant-health.test.ts が実証する。
+const LIST_META = { healthThresholds: DEFAULT_TENANT_HEALTH_THRESHOLDS } as const;
 
 let database: IsolationDatabase;
 let superuser: UnextendedClient;
@@ -56,14 +60,17 @@ afterAll(async () => {
 
 describe('listPlatformTenants（API-A2 / F-056 AC-1 / AC-4）', () => {
   it('🔴 件数・状態・日時のみを返す（境界外フィールドが無い）', async () => {
-    const page = await listPlatformTenants(ctx, { limit: 200 });
+    const page = await listPlatformTenants(ctx, { limit: 200 }, LIST_META);
     const tenantA = page.items.find((item) => item.id === TENANT_A);
     expect(tenantA).toBeDefined();
     expect(Object.keys(tenantA as object).sort()).toEqual(
       [
+        // 🔴 T-11-01: 使われている席（activeMemberCount）と異常度（health）が加わった。いずれも件数・列挙値。
+        'activeMemberCount',
         'createdAt',
         'engineerCount',
         'environment',
+        'health',
         'id',
         'lastActivityAt',
         'lifecycleChangedAt',
@@ -77,7 +84,7 @@ describe('listPlatformTenants（API-A2 / F-056 AC-1 / AC-4）', () => {
   });
 
   it('🔴 既知の氏名・本文・エンド企業名が応答の JSON に一切現れない（BR-40）', async () => {
-    const page = await listPlatformTenants(ctx, { limit: 200 });
+    const page = await listPlatformTenants(ctx, { limit: 200 }, LIST_META);
     const serialized = JSON.stringify(page.items);
     expect(serialized).not.toContain('Engineer A-Host');
     expect(serialized).not.toContain('Engineer A-Partner');
@@ -86,7 +93,7 @@ describe('listPlatformTenants（API-A2 / F-056 AC-1 / AC-4）', () => {
   });
 
   it('テナントごとの件数が母集団と一致する', async () => {
-    const page = await listPlatformTenants(ctx, { limit: 200 });
+    const page = await listPlatformTenants(ctx, { limit: 200 }, LIST_META);
     const tenantA = page.items.find((item) => item.id === TENANT_A);
     const tenantB = page.items.find((item) => item.id === TENANT_B);
     expect(tenantA).toMatchObject({
@@ -104,20 +111,21 @@ describe('listPlatformTenants（API-A2 / F-056 AC-1 / AC-4）', () => {
   });
 
   it('カーソルページングが機能する（limit=1 で 2 ページ目に別のテナントが現れる）', async () => {
-    const first = await listPlatformTenants(ctx, { limit: 1 });
+    const first = await listPlatformTenants(ctx, { limit: 1 }, LIST_META);
     expect(first.items).toHaveLength(1);
     expect(first.nextCursor).not.toBeNull();
 
-    const second = await listPlatformTenants(ctx, {
-      limit: 1,
-      cursor: first.nextCursor as string,
-    });
+    const second = await listPlatformTenants(
+      ctx,
+      { limit: 1, cursor: first.nextCursor as string },
+      LIST_META,
+    );
     expect(second.items).toHaveLength(1);
     expect(second.items[0]?.id).not.toBe(first.items[0]?.id);
   });
 
   it('🔴 F-056 AC-4: 一覧の閲覧が横断操作（tenant_id = NULL）として AuditLog に記録される', async () => {
-    await listPlatformTenants(ctx, { limit: 200 });
+    await listPlatformTenants(ctx, { limit: 200 }, LIST_META);
     const rows = await superuser.$queryRaw<
       Array<{ tenant_id: string | null; actor_kind: string; actor_id: string }>
     >`SELECT tenant_id, actor_kind, actor_id FROM audit_logs WHERE action = 'admin.tenant.list'`;

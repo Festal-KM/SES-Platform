@@ -10,7 +10,9 @@
 //    参照が生まれると主平面から分離バイパスへ 1 ホップで届く）。
 import type { TenantSendingDomainState } from '@ses/db';
 import type { ProvisioningInvitationState } from '@ses/db/platform';
+import type { TenantHealthSignal, TenantListSortKey } from '@ses/domain';
 import type { MessageKey } from '@ses/i18n';
+import type { BadgeVariant } from '@ses/ui';
 
 export {
   TENANT_LIFECYCLE_STATE_MESSAGE_KEYS,
@@ -39,4 +41,38 @@ export const SENDING_DOMAIN_STATE_MESSAGE_KEYS: Readonly<
   PENDING: 'admin.provisioning.sendingDomain.PENDING',
   VERIFIED: 'admin.provisioning.sendingDomain.VERIFIED',
   FAILED: 'admin.provisioning.sendingDomain.FAILED',
+};
+
+// ---------------------------------------------------------------------------
+// T-11-01: `A-002` の健全性（異常度）と並び順（docs/04 §A-002 / docs/05 §6.9 API-A2 / `F-056 AC-2`）。
+// ---------------------------------------------------------------------------
+
+/**
+ * 🔴 異常のシグナル → 文言キー。`Record<…>` なので `TENANT_HEALTH_SIGNALS` が増えたらコンパイルが落ちる
+ *    （表示漏れが「そのシグナルだけ空欄」にならない）。文言に理由の自由文・閾値の数字を含めない。
+ */
+export const TENANT_HEALTH_SIGNAL_MESSAGE_KEYS: Readonly<Record<TenantHealthSignal, MessageKey>> = {
+  TRIAL_EXPIRED: 'admin.tenants.health.signal.TRIAL_EXPIRED',
+  INACTIVE: 'admin.tenants.health.signal.INACTIVE',
+  SEATS_UNUSED: 'admin.tenants.health.signal.SEATS_UNUSED',
+  NO_PARTNERS: 'admin.tenants.health.signal.NO_PARTNERS',
+  TRIAL_EXPIRING: 'admin.tenants.health.signal.TRIAL_EXPIRING',
+};
+
+/**
+ * 🔴 色分け（docs/04 §5-8「`A-002` で最も強調するのは異常の種別」）: 期限切れ・停滞 = `danger`（使われていない /
+ *    失われかける）、席の未利用・パートナー 0・期限接近 = `warning`（定着していない / まだ期限内）。
+ */
+export const TENANT_HEALTH_SIGNAL_BADGE_VARIANTS: Readonly<Record<TenantHealthSignal, BadgeVariant>> = {
+  TRIAL_EXPIRED: 'danger',
+  INACTIVE: 'danger',
+  SEATS_UNUSED: 'warning',
+  NO_PARTNERS: 'warning',
+  TRIAL_EXPIRING: 'warning',
+};
+
+export const TENANT_LIST_SORT_MESSAGE_KEYS: Readonly<Record<TenantListSortKey, MessageKey>> = {
+  health: 'admin.tenants.sort.health',
+  name: 'admin.tenants.sort.name',
+  createdAt: 'admin.tenants.sort.createdAt',
 };

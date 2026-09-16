@@ -217,6 +217,19 @@ const commonShape = {
    *    十分長く取る（再試行の途中を疑いに数えない）。🔴 **短くしすぎると、正常な再試行待ちが「送ったのに書けなかった」に見える。**
    */
   MAIL_DISPATCH_STUCK_ALERT_MINUTES: z.coerce.number().int().positive().default(15),
+  /**
+   * 🔴 T-11-01: `A-002` テナント健全性（異常度スコア。docs/05 §6.9 API-A2 / `F-056 AC-2`）の閾値 4 つ。
+   *    重み（並びの優先順）は `packages/domain` の定数で、ここは**いつから異常と数えるか**だけを持つ。
+   *    - `TENANT_HEALTH_INACTIVE_DAYS` … 最終アクティビティ（利用者の最終ログイン）の停滞と判断する日数。
+   *      席の利用判定（この日数以内にログインした利用者を「使っている席」と数える）の窓にも使う（既定 14）
+   *    - `TENANT_HEALTH_NO_PARTNERS_GRACE_DAYS` … パートナー数 0 を異常と数え始めるまでの開設からの日数（既定 7）
+   *    - `TENANT_HEALTH_SEAT_UTILIZATION_MIN_PERCENT` … 席の利用率がこれ未満で「席が使われていない」（既定 30。docs/04 §A-002）
+   *    - `TENANT_HEALTH_TRIAL_EXPIRING_DAYS` … トライアル期限の接近と判断する残日数（既定 7。docs/04 §A-002）
+   */
+  TENANT_HEALTH_INACTIVE_DAYS: z.coerce.number().int().positive().default(14),
+  TENANT_HEALTH_NO_PARTNERS_GRACE_DAYS: z.coerce.number().int().positive().default(7),
+  TENANT_HEALTH_SEAT_UTILIZATION_MIN_PERCENT: z.coerce.number().int().min(1).max(100).default(30),
+  TENANT_HEALTH_TRIAL_EXPIRING_DAYS: z.coerce.number().int().positive().default(7),
 
   // docs/05 §13.4: 送信基盤全体の 24h 枠（宛先分類に依存しないグローバル上限）
   MAIL_PROVIDER_QUOTA_WARN_RATIO: z.coerce.number().min(0).max(1).default(0.8),

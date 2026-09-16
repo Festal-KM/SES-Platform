@@ -48,7 +48,7 @@ import {
   createRedisProviderSendCounter,
   type BullMqFailedJobsReader,
 } from '@ses/connectors/bullmq';
-import type { AiUnitMetric } from '@ses/domain';
+import type { AiUnitMetric, TenantHealthThresholds } from '@ses/domain';
 import {
   configurePlatformReadDb,
   configurePlatformWriteDb,
@@ -148,6 +148,11 @@ let cachedUsageLimitsRuntime: UsageLimitsRuntime | null = null;
 let cachedMonitoringThresholds: MonitoringThresholds | null = null;
 /** 🔴 T-11-08 / T-11-04: 項目 17（環境全体の当月 AI 支出 / tier 上限）。`readProviderMonthlySpend` に渡す値。 */
 let cachedProviderSpendRuntime: ProviderSpendRuntime | null = null;
+/**
+ * 🔴 T-11-01: `A-002` テナント健全性（異常度スコア）の閾値 4 つ（`TENANT_HEALTH_*`。docs/05 §6.9 API-A2）。
+ *    `listPlatformTenants` に**必ず**渡す（`packages/db` は既定値へフォールバックしない）。重みは `packages/domain` の定数。
+ */
+let cachedTenantHealthThresholds: TenantHealthThresholds | null = null;
 /**
  * 🔴 T-11-04: 項目 13（送信基盤の 24h 枠）の**設定値**。`MAIL_PROVIDER_DAILY_QUOTA` / `MAIL_PROVIDER_QUOTA_WARN_RATIO`
  *    （`packages/config`。ワーカーの `send.hold-release` と同じキー）。
@@ -334,6 +339,13 @@ export function ensureDbConfigured(): void {
     capUsd: env.ANTHROPIC_MONTHLY_SPEND_CAP_USD,
     warnPercent: env.QUOTA_WARNING_THRESHOLD_PERCENT,
   };
+  // 🔴 T-11-01: `A-002` の異常度の閾値。出所は `packages/config` だけ（ルート・画面は `process.env` を読まない）。
+  cachedTenantHealthThresholds = {
+    inactiveDays: env.TENANT_HEALTH_INACTIVE_DAYS,
+    noPartnersGraceDays: env.TENANT_HEALTH_NO_PARTNERS_GRACE_DAYS,
+    seatUtilizationMinPercent: env.TENANT_HEALTH_SEAT_UTILIZATION_MIN_PERCENT,
+    trialExpiringDays: env.TENANT_HEALTH_TRIAL_EXPIRING_DAYS,
+  };
   cachedMailProviderQuotaEnv = {
     envLimit: env.MAIL_PROVIDER_DAILY_QUOTA,
     warnRatio: env.MAIL_PROVIDER_QUOTA_WARN_RATIO,
@@ -414,6 +426,18 @@ export function monitoringThresholdsRuntime(): MonitoringThresholds {
     throw new Error('運用監視の閾値が解決されていません（bootstrap の不変条件違反）。');
   }
   return cachedMonitoringThresholds;
+}
+
+/**
+ * 🔴 T-11-01: `A-002` / API-A2 が `listPlatformTenants` に渡す健全性の閾値（`TENANT_HEALTH_*`）。
+ *    ルートと画面（`page.tsx`）の両方がここから受け取り、同じ値で並べる。
+ */
+export function tenantHealthRuntime(): TenantHealthThresholds {
+  ensureDbConfigured();
+  if (cachedTenantHealthThresholds === null) {
+    throw new Error('テナント健全性の閾値が解決されていません（bootstrap の不変条件違反）。');
+  }
+  return cachedTenantHealthThresholds;
 }
 
 /**
