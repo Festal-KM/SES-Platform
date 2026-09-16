@@ -98,6 +98,8 @@ export const PLATFORM_READ_COLUMN_ALLOWLIST: Record<string, readonly string[]> =
     'verified_at',
     'last_checked_at',
     'last_failure_reason',
+    // 🔴 T-11-06（migration 20260922000000）: 失効した時刻。`A-005` 項目 11 が「失効」と「未完了」を区別する根拠。
+    'revoked_at',
     'registered_by_platform_user_id',
     'created_at',
   ],

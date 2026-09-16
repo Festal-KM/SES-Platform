@@ -94,3 +94,16 @@ export type {
 } from './queries/audit-logs.js';
 export { toPlatformAuditLog } from '../serializers/platform/audit-logs.js';
 export type { PlatformAuditLogView } from '../serializers/platform/audit-logs.js';
+// `A-005`（運用監視）の項目 11「送信ドメインが未検証・失効のテナント」の材料（`F-059 AC-5`。T-11-06。画面は T-11-04）。
+// 🔴 応答は状態・日時・件数のみの固定 DTO。DNS レコードの値・失敗理由・業務データはフィールドとして存在しない。
+export {
+  listUnverifiedSendingDomains,
+  UNVERIFIED_SENDING_DOMAIN_STATUSES,
+} from './queries/sending-domains.js';
+export type {
+  UnverifiedSendingDomainItem,
+  UnverifiedSendingDomainLifecycleState,
+  UnverifiedSendingDomains,
+  UnverifiedSendingDomainsMeta,
+  UnverifiedSendingDomainStatus,
+} from './queries/sending-domains.js';

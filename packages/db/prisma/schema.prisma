@@ -334,6 +334,9 @@ model TenantSendingDomain {
   verifiedAt                 DateTime? @map("verified_at") @db.Timestamptz(3) // 🔴 NULL の間、取引先へ届く送信は実行されない
   lastCheckedAt              DateTime? @map("last_checked_at") @db.Timestamptz(3)
   lastFailureReason          String?   @map("last_failure_reason")
+  // 🔴 T-11-06: `domain.recheck` が VERIFIED → FAILED に降格させた（失効した）時刻。一度も検証されていない
+  //    FAILED と区別する唯一の列（A-005 項目 11 の「失効」）。再検証で NULL に戻る。
+  revokedAt                  DateTime? @map("revoked_at") @db.Timestamptz(3)
   registeredByPlatformUserId String?   @map("registered_by_platform_user_id") @db.Uuid // A-014 で運営者が登録した場合
   createdAt                  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
 
@@ -345,6 +348,7 @@ model TenantSendingDomain {
 }
 
 // 🔴 DB 制約: CHECK ( (state = 'VERIFIED') = (verified_at IS NOT NULL) )。
+//   CHECK ( revoked_at IS NULL OR verified_at IS NULL )（T-11-06。検証済みの行に失効時刻が残らない）。
 //   部分 UNIQUE: ON tenant_sending_domains(tenant_id) WHERE state = 'VERIFIED'（送信元は 1 テナント 1 ドメイン）。
 
 // ============================================================================

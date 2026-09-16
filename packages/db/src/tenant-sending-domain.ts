@@ -18,6 +18,7 @@
 // 🔴 DB 側の CHECK が `(state = 'VERIFIED') = (verified_at IS NOT NULL)` を強制しており、
 //    さらに部分 UNIQUE `(tenant_id) WHERE state = 'VERIFIED'` が「1 テナント 1 検証済みドメイン」を
 //    強制する（migration 20260903000000）。本ファイルの関数はその制約と矛盾しない更新しか行わない。
+//    T-11-06 で `revoked_at IS NULL OR verified_at IS NULL`（migration 20260922000000）が加わった。
 
 import { Prisma } from '@prisma/client';
 import type { AuthenticatedTenantCtx, HostTenantCtx } from './context.js';
@@ -39,6 +40,11 @@ export type SendingDomainRow = {
   readonly lastCheckedAt: Date | null;
   /** 🔴 文言ではなく**コード**（`SendingDomainFailureReason`）。画面が i18n キーへ写像する。 */
   readonly lastFailureReason: string | null;
+  /**
+   * 🔴 `domain.recheck` が検証済みから降格させた（失効した）時刻。一度も検証されていない `FAILED` は `null`。
+   *    再検証で `null` に戻る（T-11-06。`A-005` 項目 11 の「失効」を「未完了」と区別する唯一の根拠）。
+   */
+  readonly revokedAt: Date | null;
   /** `A-005` 項目 11「検証開始からの経過日数」の起点。 */
   readonly createdAt: Date;
 };
@@ -54,6 +60,7 @@ type DomainDbRow = {
   readonly verified_at: Date | null;
   readonly last_checked_at: Date | null;
   readonly last_failure_reason: string | null;
+  readonly revoked_at: Date | null;
   readonly created_at: Date;
 };
 
@@ -80,13 +87,14 @@ function toRow(row: DomainDbRow): SendingDomainRow {
     verifiedAt: row.verified_at,
     lastCheckedAt: row.last_checked_at,
     lastFailureReason: row.last_failure_reason,
+    revokedAt: row.revoked_at,
     createdAt: row.created_at,
   };
 }
 
 const SELECT_COLUMNS = Prisma.sql`
   id::text AS id, domain, state, ses_identity_arn, ses_tenant_name, dkim_tokens,
-  mail_from_domain, verified_at, last_checked_at, last_failure_reason, created_at`;
+  mail_from_domain, verified_at, last_checked_at, last_failure_reason, revoked_at, created_at`;
 
 function scopeOf(ctx: AuthenticatedTenantCtx) {
   return { tenantId: ctx.tenantId, partnerCompanyId: null, actorUserId: ctx.userId };
@@ -224,7 +232,8 @@ export async function markSendingDomainVerified(
              dkim_tokens = ${JSON.stringify([...input.dkimTokens])}::jsonb,
              mail_from_domain = ${input.mailFromDomain},
              last_checked_at = ${input.verifiedAt}::timestamptz,
-             last_failure_reason = NULL
+             last_failure_reason = NULL,
+             revoked_at = NULL
        WHERE id = ${input.id}::uuid
       RETURNING id::text AS id`);
     return updated.length === 1;
@@ -238,6 +247,9 @@ export async function markSendingDomainVerified(
  *    片方だけ落として「検証済みなのに送信元が無い」状態を作れない。
  * 🔴 失効は**障害ではない**（DNS レコードが消された = 設定の問題）。`A-005` 項目 11 と
  *    テナント管理者への通知に出す（通知は分類 1 なので共通ドメインで送れる）。
+ * 🔴 `revoked_at` は **`VERIFIED` からの降格のときだけ**立てる（T-11-06）。`PENDING` / `FAILED` からの
+ *    不成立（一度も検証されていない）では既存値を保つ —— `A-005` 項目 11 が「失効」と「未完了」を
+ *    区別する唯一の根拠であり、判定は行の現在の `state` だけで決まる（アプリの入力を見ない）。
  */
 export async function expireSendingDomain(
   ctx: HostTenantCtx,
@@ -249,7 +261,8 @@ export async function expireSendingDomain(
          SET state = 'FAILED',
              verified_at = NULL,
              last_checked_at = ${input.checkedAt}::timestamptz,
-             last_failure_reason = ${input.failureReason}
+             last_failure_reason = ${input.failureReason},
+             revoked_at = CASE WHEN state = 'VERIFIED' THEN ${input.checkedAt}::timestamptz ELSE revoked_at END
        WHERE id = ${input.id}::uuid
       RETURNING id::text AS id`);
     return updated.length === 1;
