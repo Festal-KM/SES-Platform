@@ -26,6 +26,15 @@ export {
   type ProviderQuotaCache,
   type ProviderQuotaCacheRedis,
 } from './quota-cache.js';
+// 🔴 T-11-04: 送信基盤の枠への**接近**を最初に観測した時刻の目印（docs/05 §16.5 項目 13 ③）。表示専用。
+export {
+  InMemoryProviderQuotaNearingMarker,
+  PROVIDER_NEARING_SINCE_KEY,
+  PROVIDER_NEARING_SINCE_TTL_MS,
+  RedisProviderQuotaNearingMarker,
+  type ProviderNearingRedis,
+  type ProviderQuotaNearingMarker,
+} from './nearing-marker.js';
 export {
   EXTERNAL_SEND_FAILURE_KINDS,
   ExternalSendError,

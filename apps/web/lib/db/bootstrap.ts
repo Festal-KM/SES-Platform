@@ -15,18 +15,39 @@
 // 🔴 リクエストごとに `APP_ENV` を分岐しない。差し替えの判断は `resolveConnectorSelection`
 //    （`initializeRuntimeConfig` の内部）で既に終わっており、ここは結果を読むだけである。
 import process from 'node:process';
-import { initializeRuntimeConfig, type AppEnvKind } from '@ses/config';
-import { createObjectStore, type ConnectorImplementationKind, type ObjectStore } from '@ses/connectors';
+import {
+  GATE_FAIL_RATE_BASELINE_DAYS,
+  GATE_FAIL_RATE_WINDOW_HOURS,
+  initializeRuntimeConfig,
+  SCHEDULER_HEARTBEAT_STALE_HOURS,
+  type AppEnvKind,
+} from '@ses/config';
+import {
+  createEmailSender,
+  createObjectStore,
+  type ConnectorImplementationKind,
+  type EmailSender,
+  type ObjectStore,
+  type ProviderQuotaNearingMarker,
+  type ProviderSendCounter,
+} from '@ses/connectors';
 // 🔴 T-05-04: AWS SDK に到達する唯一の公開経路（`@ses/connectors/aws`）。**このファイルが
 //    `apps/web` の起動時 DI の実体**であり、ここ以外から import しない（`packages/connectors/src/aws.ts`）。
 //    🔴 `instrumentation.ts` に置かない —— あちらは Next.js が **Edge ランタイム向けにも
 //    コンパイルする**ため、Node 組み込みモジュールに依存する AWS SDK を持ち込むとビルドが落ちる
 //    （同ファイル冒頭の注記と同じ理由）。Edge で動く `proxy.ts` は本ファイルを import しない。
-import { createS3Api } from '@ses/connectors/aws';
+import { createS3Api, createSesApi } from '@ses/connectors/aws';
 // 🔴 T-07-08: BullMQ に触れる唯一のファイル（`packages/connectors/src/bullmq.ts`）への入口。
 //    `@ses/connectors/aws` と同じく**サブパス**にしてあるのは、バレル（`@ses/connectors`）を
 //    import しただけで BullMQ / ioredis が引きずり込まれないようにするためである。
-import { createBullMqGateRunQueue, createBullMqSendProposalQueue } from '@ses/connectors/bullmq';
+import {
+  createBullMqFailedJobsReader,
+  createBullMqGateRunQueue,
+  createBullMqSendProposalQueue,
+  createRedisProviderQuotaNearingMarker,
+  createRedisProviderSendCounter,
+  type BullMqFailedJobsReader,
+} from '@ses/connectors/bullmq';
 import type { AiUnitMetric } from '@ses/domain';
 import {
   configurePlatformReadDb,
@@ -34,6 +55,11 @@ import {
   configureTenantDb,
   configureTokenEncryption,
 } from '@ses/db';
+import type {
+  MonitoringRuntime,
+  MonitoringThresholds,
+  ProviderSpendRuntime,
+} from '../admin-monitoring/runtime';
 import { createCandidateReference, type CandidateReference } from '../anonymize/reference';
 import { configureAccountMailQueue, PendingAccountMailQueue } from '../jobs/account-mail';
 import { configureDomainJobQueue, PendingDomainJobQueue } from '../jobs/domain-jobs';
@@ -115,6 +141,36 @@ let cachedCandidateReference: CandidateReference | null = null;
  *    🔴 金額（`AI_DAILY_COST_LIMIT_USD_DEFAULT`）は**ここに載せない**（主平面は金額を読まない。`F-027 AC-6`）。
  */
 let cachedUsageLimitsRuntime: UsageLimitsRuntime | null = null;
+/**
+ * 🔴 T-11-04: `A-005` 運用監視（API-A8）の閾値・上限（docs/05 §16.5 / §6.9 API-A8）。出所は `packages/config` だけ。
+ *    🔴 `GATE_STALL_ALERT_MINUTES` は `listGateStalls`（`packages/db`）に**同じキー**から渡す。
+ */
+let cachedMonitoringThresholds: MonitoringThresholds | null = null;
+/** 🔴 T-11-08 / T-11-04: 項目 17（環境全体の当月 AI 支出 / tier 上限）。`readProviderMonthlySpend` に渡す値。 */
+let cachedProviderSpendRuntime: ProviderSpendRuntime | null = null;
+/**
+ * 🔴 T-11-04: 項目 13（送信基盤の 24h 枠）の**設定値**。`MAIL_PROVIDER_DAILY_QUOTA` / `MAIL_PROVIDER_QUOTA_WARN_RATIO`
+ *    （`packages/config`。ワーカーの `send.hold-release` と同じキー）。
+ */
+let cachedMailProviderQuotaEnv: { readonly envLimit: number; readonly warnRatio: number } | null = null;
+/**
+ * 🔴 T-11-04: 項目 13 の `getQuota()` に使う `EmailSender`。**送信には使わない**（`apps/web` は運用メールを
+ *    `account.mail` に積むだけで自分では送らない）。実装種別は起動時の `connectors.email` が決め、ここに分岐は無い。
+ *    `development` / `demo` = モック（SES に出ない） / `sandbox` 以上 = SES の `GetAccount`（読み取り）。遅延生成。
+ */
+let cachedQuotaEmailSender: EmailSender | null = null;
+let cachedSesEnv: {
+  readonly region: string;
+  readonly accountId: string;
+  readonly defaultFromAddress: string;
+  readonly configurationSet: string;
+} | null = null;
+/** 🔴 起動時に選ばれたメール送信の実装種別（`getQuota()` の `EmailSender` を遅延生成するときに渡す）。 */
+let cachedEmailConnectorKind: ConnectorImplementationKind | null = null;
+let cachedRedisUrl: string | null = null;
+let cachedProviderSentCounter: ProviderSendCounter | null = null;
+let cachedNearingMarker: ProviderQuotaNearingMarker | null = null;
+let cachedFailedJobsReader: BullMqFailedJobsReader | null = null;
 
 /**
  * DB クライアントを 1 度だけ初期化する。
@@ -263,7 +319,135 @@ export function ensureDbConfigured(): void {
     emailMinuteLimit: env.EMAIL_MINUTE_LIMIT_PER_TENANT,
     storageLimitBytes: BigInt(env.STORAGE_LIMIT_BYTES_PER_TENANT),
   };
+  // 🔴 T-11-04: `A-005` の閾値・上限（`packages/config` が唯一の出所。ルートで `process.env` を読まない）。
+  cachedMonitoringThresholds = {
+    submittingStallMinutes: env.SUBMITTING_STALL_ALERT_MINUTES,
+    gateStallMinutes: env.GATE_STALL_ALERT_MINUTES,
+    mailDispatchStuckMinutes: env.MAIL_DISPATCH_STUCK_ALERT_MINUTES,
+    scanStallMinutes: env.SCAN_STALL_ALERT_MINUTES,
+    purgeGraceDays: env.TENANT_PURGE_GRACE_DAYS,
+    schedulerStaleHours: SCHEDULER_HEARTBEAT_STALE_HOURS,
+    gateFailRateWindowHours: GATE_FAIL_RATE_WINDOW_HOURS,
+    gateFailRateBaselineDays: GATE_FAIL_RATE_BASELINE_DAYS,
+  };
+  cachedProviderSpendRuntime = {
+    capUsd: env.ANTHROPIC_MONTHLY_SPEND_CAP_USD,
+    warnPercent: env.QUOTA_WARNING_THRESHOLD_PERCENT,
+  };
+  cachedMailProviderQuotaEnv = {
+    envLimit: env.MAIL_PROVIDER_DAILY_QUOTA,
+    warnRatio: env.MAIL_PROVIDER_QUOTA_WARN_RATIO,
+  };
+  cachedSesEnv = {
+    region: env.AWS_REGION,
+    accountId: env.AWS_ACCOUNT_ID,
+    defaultFromAddress: env.SES_DEFAULT_FROM_ADDRESS,
+    configurationSet: env.SES_CONFIGURATION_SET,
+  };
+  cachedEmailConnectorKind = connectors.email;
+  cachedRedisUrl = env.REDIS_URL;
   initialized = true;
+}
+
+function redisConnection(): { readonly url: string } {
+  ensureDbConfigured();
+  if (cachedRedisUrl === null) {
+    throw new Error('REDIS_URL が解決されていません（bootstrap の不変条件違反）。');
+  }
+  return { url: cachedRedisUrl };
+}
+
+/**
+ * 🔴 T-11-04: プロセス横断の 24h 送信カウンタ（Redis ZSET `mail:provider:sent24h`。docs/05 §8.3-Q ③）。
+ *    `apps/web` は**読むだけ**（加算は `SesEmailSender.send` の内側 = ワーカー）。プロセス内カウンタへ倒さない
+ *    （ワーカーが数えた値を web が見られない = 常に 0 に見える）。
+ */
+function providerSentCounter(): ProviderSendCounter {
+  cachedProviderSentCounter ??= createRedisProviderSendCounter(redisConnection()).counter;
+  return cachedProviderSentCounter;
+}
+
+function nearingMarker(): ProviderQuotaNearingMarker {
+  cachedNearingMarker ??= createRedisProviderQuotaNearingMarker(redisConnection()).marker;
+  return cachedNearingMarker;
+}
+
+/**
+ * 🔴 `getQuota()` だけに使う `EmailSender`（項目 13）。`createEmailSender` は `apps/worker/src/runtime.ts` と**同じファクトリ**であり、
+ *    web と worker で別の実装が選ばれることは無い。`APP_ENV` を見ない（`cachedEmailConnectorKind` は起動時の解決結果）。
+ */
+function quotaEmailSender(): EmailSender {
+  ensureDbConfigured();
+  if (cachedQuotaEmailSender === null) {
+    if (cachedSesEnv === null || cachedEmailConnectorKind === null) {
+      throw new Error('SES の接続設定が解決されていません（bootstrap の不変条件違反）。');
+    }
+    cachedQuotaEmailSender = createEmailSender(cachedEmailConnectorKind, {
+      ses: {
+        api: createSesApi({ region: cachedSesEnv.region, accountId: cachedSesEnv.accountId }),
+        defaultFromAddress: cachedSesEnv.defaultFromAddress,
+        configurationSet: cachedSesEnv.configurationSet,
+        sentCounter: providerSentCounter(),
+      },
+    });
+  }
+  return cachedQuotaEmailSender;
+}
+
+/** 🔴 T-11-05 の申し送り ①: `listGateStalls` の閾値（`GATE_STALL_ALERT_MINUTES`）。 */
+export function gateStallRuntime(): { readonly stallThresholdMinutes: number } {
+  return { stallThresholdMinutes: monitoringThresholdsRuntime().gateStallMinutes };
+}
+
+/** 🔴 T-11-08 の申し送り ②: `readProviderMonthlySpend` の上限と閾値。 */
+export function providerSpendRuntime(): ProviderSpendRuntime {
+  ensureDbConfigured();
+  if (cachedProviderSpendRuntime === null) {
+    throw new Error('AI 支出の上限が解決されていません（bootstrap の不変条件違反）。');
+  }
+  return cachedProviderSpendRuntime;
+}
+
+export function monitoringThresholdsRuntime(): MonitoringThresholds {
+  ensureDbConfigured();
+  if (cachedMonitoringThresholds === null) {
+    throw new Error('運用監視の閾値が解決されていません（bootstrap の不変条件違反）。');
+  }
+  return cachedMonitoringThresholds;
+}
+
+/**
+ * 🔴 T-11-04: API-A8（`A-005`）が読む口をまとめて返す。ルートはこれ 1 つを受け取り、`process.env` にも Redis にも
+ *    `@ses/connectors/bullmq` にも直接触れない（`tests/static/admin-no-gate-retry.test.ts` ①）。
+ *
+ * - `failedJobs` … BullMQ の failed セットを**読むだけ**（`createBullMqFailedJobsReader`。`Job` を外に出さない）
+ * - `mailProvider` … `getQuota()`（取得失敗は throw のまま渡し、組み立て側が `available: false` に落とす）/
+ *   手元の 24h カウンタ / 接近の目印
+ * 🔴 どの口も最初の呼び出しまで Redis / SES へ繋ぎにいかない（起動時 DI はリクエストを処理しない経路でも走る）。
+ */
+export function monitoringRuntime(): MonitoringRuntime {
+  const thresholds = monitoringThresholdsRuntime();
+  if (cachedMailProviderQuotaEnv === null) {
+    throw new Error('送信基盤の枠の設定が解決されていません（bootstrap の不変条件違反）。');
+  }
+  const mailEnv = cachedMailProviderQuotaEnv;
+  return {
+    thresholds,
+    providerSpend: providerSpendRuntime(),
+    mailProvider: {
+      envLimit: mailEnv.envLimit,
+      warnRatio: mailEnv.warnRatio,
+      readQuota: () => quotaEmailSender().getQuota(),
+      readLocalSent24h: (now) => providerSentCounter().countLast24h(now),
+      observeNearing: (nearing, now) => nearingMarker().observe(nearing, now),
+    },
+    failedJobs: {
+      list: () => {
+        cachedFailedJobsReader ??= createBullMqFailedJobsReader(redisConnection());
+        return cachedFailedJobsReader.list();
+      },
+    },
+  };
 }
 
 /**

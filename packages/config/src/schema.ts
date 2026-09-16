@@ -203,6 +203,20 @@ const commonShape = {
    *    この閾値を掛けない（どちらも事実として即時に載せる）。ハードコードしない。
    */
   GATE_STALL_ALERT_MINUTES: z.coerce.number().int().positive().default(30),
+  /**
+   * 🔴 T-11-04: `SUBMITTING` のまま滞留した提案を `A-005` 項目 2 に載せるまでの分数
+   *    （docs/05 §16.5「`SUBMITTING` 滞留」/ `F-059 AC-1` / `docs/04` §S-021「送信中のまま 30 分経過しています」。既定 30）。
+   *    `SUBMITTING` は片道であり（`CLAUDE.md` §4.2）、`send.proposal` は外部呼び出しを 1 回して数秒で確定する。
+   *    30 分を超えて確定していないのは、確定の書き込みに失敗した（ジョブが throw した）か、ワーカーが止まった疑いである。
+   *    ハードコードしない。
+   */
+  SUBMITTING_STALL_ALERT_MINUTES: z.coerce.number().int().positive().default(30),
+  /**
+   * 🔴 T-11-04: `email_dispatches(status='QUEUED')` の滞留を「送信済み未記録の疑い」（`A-005` 項目 16。docs/05 §16.5）と
+   *    判断するまでの分数（既定 15）。`email.dispatch` の `attempts: 3` × バックオフ 5s / 30s が尽きるまでの時間より
+   *    十分長く取る（再試行の途中を疑いに数えない）。🔴 **短くしすぎると、正常な再試行待ちが「送ったのに書けなかった」に見える。**
+   */
+  MAIL_DISPATCH_STUCK_ALERT_MINUTES: z.coerce.number().int().positive().default(15),
 
   // docs/05 §13.4: 送信基盤全体の 24h 枠（宛先分類に依存しないグローバル上限）
   MAIL_PROVIDER_QUOTA_WARN_RATIO: z.coerce.number().min(0).max(1).default(0.8),

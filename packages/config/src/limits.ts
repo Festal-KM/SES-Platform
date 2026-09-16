@@ -112,3 +112,17 @@ export const AUDIT_LOG_SEARCH_MAX_PERIOD_DAYS = 31;
  * 🔴 `PAGE_SIZE_MAX`（200）を超えない。
  */
 export const ADMIN_MONITORING_PAGE_SIZE = 100;
+
+/**
+ * 🔴 `A-005` 運用監視（T-11-04）の**環境によって変わらない方針値**。
+ *
+ * - `SCHEDULER_HEARTBEAT_STALE_HOURS` … `SchedulerRun` の最終実行がこの時間以上前なら「スケジューラ停止」
+ *   （docs/05 §9.9 / `docs/03` §4.6 / `BR-34`。「24 時間更新なし」は設計値であり環境で変えない）。
+ * - `GATE_FAIL_RATE_WINDOW_HOURS` … ゲート FAIL 率（項目 5）の「直近」の幅（docs/05 §16.5「日次比率」）。
+ * - `GATE_FAIL_RATE_BASELINE_DAYS` … 「前週比」の比較対象。直近の窓の**前**のこの日数を基準にする
+ *   （`docs/04` §A-005 項目 5「直近の率 / 前週比。急変を異常として検知」）。
+ * 🔴 閾値（分単位で運用が調整するもの）は `schema.ts`（環境変数）に置く。ここは方針値だけ。
+ */
+export const SCHEDULER_HEARTBEAT_STALE_HOURS = 24;
+export const GATE_FAIL_RATE_WINDOW_HOURS = 24;
+export const GATE_FAIL_RATE_BASELINE_DAYS = 7;

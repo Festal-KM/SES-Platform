@@ -19,6 +19,7 @@ import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { readAdminHomeSummary } from '@ses/db/platform';
 import { t } from '@ses/i18n';
+import { ADMIN_MONITORING_HREF } from '../../lib/admin-monitoring/hrefs';
 import { readPlatformRequestMeta, resolvePlatformCtxOutcome } from '../../lib/auth/platform-session';
 
 export const runtime = 'nodejs';
@@ -48,13 +49,23 @@ export default async function AdminHomePage() {
         </Link>
       </p>
       {/* A-006（監査ログ横断検索。T-11-03）への導線。開いただけでは検索を実行しない（期間を入れて検索する）。 */}
-      <p className="mb-6 text-sm">
+      <p className="mb-2 text-sm">
         <Link
           className="text-slate-700 underline-offset-2 hover:underline"
           href="/admin/audit-logs"
           data-testid="admin-home-audit-logs-link"
         >
           {t('admin.auditLogs.title')}
+        </Link>
+      </p>
+      {/* A-005（運用監視。T-11-04）への導線。件数・状態・エラー種別・日時だけを出す画面（F-059 AC-3）。 */}
+      <p className="mb-6 text-sm">
+        <Link
+          className="text-slate-700 underline-offset-2 hover:underline"
+          href={ADMIN_MONITORING_HREF}
+          data-testid="admin-home-monitoring-link"
+        >
+          {t('admin.home.monitoring.link')}
         </Link>
       </p>
       <p className="text-sm text-slate-700">{t('admin.home.placeholder')}</p>

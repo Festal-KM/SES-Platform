@@ -33,6 +33,7 @@ import { DelayedError, Queue, Worker, type Job } from 'bullmq';
 //    `Redis` を名前付き export として解決する（`packages/connectors` で実測）。
 import { Redis } from 'ioredis';
 import { RedisProviderSendCounter, type ProviderSendCounter } from './email/ses/counter.js';
+import { RedisProviderQuotaNearingMarker, type ProviderQuotaNearingMarker } from './email/ses/nearing-marker.js';
 import {
   gateRunJobId,
   isJobDeferral,
@@ -41,6 +42,7 @@ import {
   shouldRemoveGateRunJob,
   steppedBackoffDelayMs,
   GATE_RUN_JOB,
+  QUEUE_DEFINITIONS,
   SEND_PROPOSAL_JOB,
   type BackoffOptions,
   type GateRunEnqueueOutcome,
@@ -467,6 +469,149 @@ export async function listBullMqJobSchedulers(options: {
     await queue.close();
     await client.quit();
   }
+}
+
+// ============================================================================
+// 🔴 T-11-04: failed セットの**読み取り専用**の照会（`A-005` 項目 3 / 項目 12。docs/05 §16.5）
+// ============================================================================
+
+/** `gate.run` の failed セットにあるジョブ 1 件の写し（payload の 3 つの ID と失敗時刻だけ）。 */
+export type FailedGateRunJobRecord = {
+  readonly tenantId: string;
+  readonly targetType: string;
+  readonly targetId: string;
+  /** 失敗が確定した時刻（`Job.finishedOn`。無ければ `Job.timestamp` = enqueue 時刻）。 */
+  readonly failedAt: Date;
+};
+
+export type FailedJobsByQueue = {
+  readonly queueName: QueueName;
+  readonly count: number;
+  /** 最も新しい失敗の時刻。0 件なら `null`。 */
+  readonly lastFailedAt: Date | null;
+};
+
+export type FailedJobsSnapshot = {
+  /** 🔴 定義済みの**全キュー**（0 件も含む。「照合した」事実を画面が成立として示せるように）。 */
+  readonly byQueue: readonly FailedJobsByQueue[];
+  readonly total: number;
+  /** `gate.run` の failed の写し（`listGateStalls` の `failedJobs` に渡す材料）。 */
+  readonly gateRun: readonly FailedGateRunJobRecord[];
+  /** `gateRun` が上限で切られたか（`byQueue` の件数と食い違う場合の目印）。 */
+  readonly gateRunTruncated: boolean;
+};
+
+/**
+ * 🔴 failed セットを読むだけの口。`Job` / `Queue` を外に出さず、`retry()` / `remove()` / `add()` に到達できる形を持たない
+ *    （docs/05 §9.10 ① / Issue #16 / `tests/static/admin-no-gate-retry.test.ts`。運営者の retry 操作は作らない）。
+ */
+export type BullMqFailedJobsReader = {
+  list(): Promise<FailedJobsSnapshot>;
+  close(): Promise<void>;
+};
+
+/** `gate.run` の写しを 1 回に読む上限（`listGateStalls` の `rows` の上限と同じ 500）。 */
+const FAILED_GATE_RUN_READ_LIMIT = 500;
+
+function isGateRunJobData(value: unknown): value is Pick<GateRunJob, 'tenantId' | 'targetType' | 'targetId'> {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as Partial<GateRunJob>;
+  return (
+    typeof candidate.tenantId === 'string' &&
+    typeof candidate.targetType === 'string' &&
+    typeof candidate.targetId === 'string'
+  );
+}
+
+function failedAtOf(job: Job): Date {
+  return new Date(job.finishedOn ?? job.timestamp);
+}
+
+/**
+ * 🔴 全キューの failed セットを**読むだけ**（`A-005` 項目 3「失敗ジョブ数」/ 項目 12 の `JOB_FAILED` の検知元）。
+ *
+ * - 件数は `getFailedCount()`、最終失敗時刻は `getFailed(0, 0)`（failed セットは失敗時刻の降順）の先頭から取る
+ * - `gate.run` だけは payload の 3 つの ID を写す（`listGateStalls` が対象ごとに区別するため）。
+ *   🔴 **他のキューの payload は読まない** —— `account.mail` の payload には平文トークンが載る（docs/05 §9.4）。
+ *   件数と時刻以外を管理平面へ運ばない（`BR-40` / `CLAUDE.md` §3.4「トークンをログ・エラーに出さない」）
+ * - 🔴 `gate.run` の payload が期待の形でない行は**黙って捨てず落とす**（Redis の中身が壊れている）
+ * - `Queue` は最初の呼び出しまで作らない（`createBullMqGateRunQueue` と同じ。起動時 DI が Redis へ繋ぎにいかない）
+ * - 読み取りに失敗したら throw する（呼び出し側が「失敗記録を照合できていません」に落とす。0 件で埋めない）
+ */
+export function createBullMqFailedJobsReader(connection: BullMqConnection): BullMqFailedJobsReader {
+  let client: Redis | null = null;
+  const queues = new Map<QueueName, Queue>();
+  const resolve = (name: QueueName): Queue => {
+    client ??= createClient(connection);
+    let queue = queues.get(name);
+    if (queue === undefined) {
+      queue = createQueue(name, client);
+      queues.set(name, queue);
+    }
+    return queue;
+  };
+  const names = Object.keys(QUEUE_DEFINITIONS) as QueueName[];
+
+  return {
+    async list(): Promise<FailedJobsSnapshot> {
+      const byQueue: FailedJobsByQueue[] = [];
+      let gateRun: FailedGateRunJobRecord[] = [];
+      let gateRunTruncated = false;
+      for (const name of names) {
+        const queue = resolve(name);
+        const count = await queue.getFailedCount();
+        const latest = count > 0 ? await queue.getFailed(0, 0) : [];
+        const lastFailedAt = latest[0] === undefined ? null : failedAtOf(latest[0]);
+        byQueue.push({ queueName: name, count, lastFailedAt });
+        if (name === GATE_RUN_JOB && count > 0) {
+          const jobs = await queue.getFailed(0, FAILED_GATE_RUN_READ_LIMIT - 1);
+          gateRunTruncated = count > jobs.length;
+          gateRun = jobs.map((job) => {
+            if (!isGateRunJobData(job.data)) {
+              throw new Error(
+                `${GATE_RUN_JOB} の failed ジョブ ${String(job.id)} の payload が GateRunJob の形ではありません（Redis の中身を確認してください）。`,
+              );
+            }
+            return {
+              tenantId: job.data.tenantId,
+              targetType: job.data.targetType,
+              targetId: job.data.targetId,
+              failedAt: failedAtOf(job),
+            };
+          });
+        }
+      }
+      return {
+        byQueue,
+        total: byQueue.reduce((sum, entry) => sum + entry.count, 0),
+        gateRun,
+        gateRunTruncated,
+      };
+    },
+    async close(): Promise<void> {
+      for (const queue of queues.values()) await queue.close();
+      queues.clear();
+      if (client !== null) await client.quit();
+      client = null;
+    },
+  };
+}
+
+/**
+ * 🔴 T-11-04: 接近の目印（`mail:provider:nearingSince`。docs/05 §16.5 項目 13 ③）の実体化。
+ *    Redis クライアントを作ってよいのはこのファイルだけ（`createRedisProviderSendCounter` と同じ理由）。
+ */
+export function createRedisProviderQuotaNearingMarker(connection: BullMqConnection): {
+  readonly marker: ProviderQuotaNearingMarker;
+  close(): Promise<void>;
+} {
+  const client = createClient(connection);
+  return {
+    marker: new RedisProviderQuotaNearingMarker(client),
+    async close(): Promise<void> {
+      await client.quit();
+    },
+  };
 }
 
 /**

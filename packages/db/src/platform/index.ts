@@ -133,3 +133,50 @@ export type {
   GateStallsMeta,
   HeldReviewGateRow,
 } from './queries/gate-stalls.js';
+// `A-005`（運用監視。API-A8）の本タスク（T-11-04）で新設した材料: 項目 1 / 2 / 4 / 5 / 7 / 13（DB 側）/ 14 / 15 / 16 と
+// スケジューラの生存監視。🔴 項目ごとに `withPlatformRead` を 1 回（1 項目の失敗が他を巻き込まない）。
+//    内容を持つ表には `groupBy` / `count` / `aggregate` だけで触れ、応答は件数・状態・時刻・ID のみ（`BR-40`）。
+//    保留（`send_hold_reason_key` / `HELD_*`）はどの障害指標にも足さない（`F-059 AC-7`）。
+export {
+  classifyPurgeNotice,
+  readGateFailRates,
+  readMailDispatchStuck,
+  readMailProviderHeld,
+  readPurgeJobFailures,
+  readPurgeNoticePending,
+  readScanFailures,
+  readSchedulerHeartbeat,
+  readSendHolds,
+  readSubmittingStalls,
+  readUnattendedSubmitFailures,
+  summarizeGateFailRates,
+  summarizePurgeJobFailures,
+  summarizeSendHolds,
+  TENANT_CLOSING_NOTICE_TEMPLATE_KEY,
+} from './queries/monitoring.js';
+export type {
+  GateFailRateGroup,
+  GateFailRateRow,
+  GateFailRates,
+  GateFailRateWindow,
+  MailDispatchStuck,
+  MailProviderHeld,
+  MonitoringRequestMeta,
+  PurgeJobFailureRow,
+  PurgeJobFailures,
+  PurgeNoticeCause,
+  PurgeNoticePending,
+  PurgeNoticePendingRow,
+  PurgeRunGroup,
+  ScanFailureRow,
+  ScanFailures,
+  SchedulerHeartbeat,
+  SendHoldByReason,
+  SendHoldGroup,
+  SendHolds,
+  SendHoldTenantRow,
+  SubmittingStallRow,
+  SubmittingStalls,
+  TenantCountRow,
+  UnattendedSubmitFailures,
+} from './queries/monitoring.js';

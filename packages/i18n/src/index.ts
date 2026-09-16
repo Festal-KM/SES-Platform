@@ -280,6 +280,191 @@ const ja = {
   'admin.tenantDetail.section.auditLogs': '監査ログ',
   'admin.tenantDetail.auditLogs.link': 'このテナントの監査ログを横断検索で開く',
 
+  // --- A-005 運用監視（docs/04 §A-005 / API-A8 / F-059 / BR-40。T-11-04）---
+  // 🔴 運営者に見せるのは件数・状態・エラー種別・日時だけ（CLAUDE.md §10.5）。本文・氏名に相当する文言はここに無い。
+  // 🔴 保留（項目 12 の保留 / 13 / 14 / 15 / 16）は障害ではない（CLAUDE.md §4.2「失敗と保留を混同しない」）。
+  //    再送・retry・再実行の操作文言は**存在しない**（運営者コンソールは read-only。BR-37）。
+  'admin.monitoring.title': '運用監視',
+  'admin.monitoring.lead':
+    '失敗・滞留・異常を種別ごとに一覧します。表示されるのは件数・状態・エラー種別・日時だけで、提案本文・エンジニア氏名・スキルシート内容・チャット本文には到達できません。',
+  'admin.monitoring.loading': '監視項目を読み込んでいます…',
+  'admin.monitoring.loadFailed': '監視項目を取得できませんでした。再取得してください。',
+  'admin.monitoring.reload': '再取得',
+  'admin.monitoring.reloading': '再取得しています…',
+  'admin.monitoring.observedAt': '最終更新',
+  'admin.monitoring.allClear': '異常は検知されていません。各項目の本日の照合結果は 0 件です。',
+  'admin.monitoring.item.unavailable': '取得できませんでした',
+  'admin.monitoring.item.unavailable.DB_READ_FAILED': 'データベースの読み取りに失敗しました。',
+  'admin.monitoring.item.unavailable.QUEUE_READ_FAILED': 'ジョブキュー（Redis）の失敗記録を読めませんでした。',
+  'admin.monitoring.item.unavailable.PROVIDER_READ_FAILED': '送信基盤のカウンタ（Redis）を読めませんでした。',
+  'admin.monitoring.severity.failure': '障害',
+  'admin.monitoring.severity.hold': '保留・注意',
+  'admin.monitoring.severity.ok': '正常',
+  'admin.monitoring.unit.count': '件',
+  'admin.monitoring.unit.minutes': '分',
+  'admin.monitoring.unit.hours': '時間',
+  'admin.monitoring.unit.days': '日',
+  'admin.monitoring.unit.messages': '通',
+  'admin.monitoring.unit.tenants': 'テナント',
+  'admin.monitoring.more': '他',
+  'admin.monitoring.threshold': '閾値',
+  'admin.monitoring.checkedToday': '本日の照合',
+  'admin.monitoring.envScope': '−（環境全体）',
+  'admin.monitoring.tenantDetail': 'テナント詳細',
+  'admin.monitoring.tenantQuota': 'クォータ',
+  'admin.monitoring.column.tenant': 'テナント',
+  'admin.monitoring.column.count': '件数',
+  'admin.monitoring.column.oldest': '最も古い時刻',
+  'admin.monitoring.column.longest': '最長の滞留',
+  'admin.monitoring.column.status': '状態',
+  'admin.monitoring.column.reason': '理由',
+  'admin.monitoring.column.queue': 'ジョブ種別',
+  'admin.monitoring.column.lastFailedAt': '最終失敗日時',
+  'admin.monitoring.column.kind': '種別',
+  'admin.monitoring.column.metric': '計測',
+  'admin.monitoring.column.period': '期間',
+  'admin.monitoring.column.cause': '原因',
+  'admin.monitoring.column.overdueDays': '期限超過日数',
+  'admin.monitoring.column.target': '対象',
+  'admin.monitoring.column.since': '起点',
+  'admin.monitoring.column.recent': '直近の率',
+  'admin.monitoring.column.baseline': '基準の率',
+  'admin.monitoring.column.domain': 'ドメイン',
+  'admin.monitoring.column.lifecycle': '契約状態',
+  'admin.monitoring.column.daysSinceStarted': '検証開始からの経過日数',
+  'admin.monitoring.column.lastCheckedAt': '最終確認',
+  'admin.monitoring.column.revoked': '失効',
+  'admin.monitoring.column.expectedRecords': '提示中の DNS レコード数',
+  'admin.monitoring.column.proposals': '提案',
+  'admin.monitoring.column.contracts': '契約書',
+  'admin.monitoring.column.link': '導線',
+  // 項目 1
+  'admin.monitoring.item.SUBMIT_FAILED_UNATTENDED.title': '1. 未対応の送信失敗（SUBMIT_FAILED）',
+  'admin.monitoring.item.SUBMIT_FAILED_UNATTENDED.empty': '未対応の送信失敗 0 件',
+  'admin.monitoring.item.SUBMIT_FAILED_UNATTENDED.note':
+    'LOST（見送り）/ GATE_FAILED（ゲート不合格）/ DECLINED（提案依頼の辞退）は含みません。再送はテナント利用者の明示操作で行われます。',
+  // 項目 2
+  'admin.monitoring.item.SUBMITTING_STALL.title': '2. 送信中（SUBMITTING）の滞留',
+  'admin.monitoring.item.SUBMITTING_STALL.empty': '滞留 0 件',
+  'admin.monitoring.item.SUBMITTING_STALL.note':
+    '送信中は片道の状態です。閾値を超えて確定していない提案は、確定の書き込みに失敗したかワーカーが止まっている疑いがあります。',
+  // 項目 3
+  'admin.monitoring.item.FAILED_JOBS.title': '3. 失敗ジョブ',
+  'admin.monitoring.item.FAILED_JOBS.empty': '失敗ジョブ 0 件（全キューを照合）',
+  'admin.monitoring.item.FAILED_JOBS.note':
+    'ジョブキューの失敗記録の件数です。AI の上限による保留はここに含まれません。運営者の再実行操作はありません（送信系はテナント利用者の再送、ゲートはテナント利用者のレビュー依頼の再実行で解消します）。',
+  // 項目 4
+  'admin.monitoring.item.SCAN_FAILED.title': '4. ウイルススキャン失敗',
+  'admin.monitoring.item.SCAN_FAILED.empty': 'スキャン失敗 0 件',
+  'admin.monitoring.item.SCAN_FAILED.scanning': '検査中（SCANNING）のまま閾値超過',
+  'admin.monitoring.item.SCAN_FAILED.status.INFECTED': '感染を検出',
+  'admin.monitoring.item.SCAN_FAILED.status.UNSCANNABLE': '検査不能',
+  'admin.monitoring.item.SCAN_FAILED.status.FAILED': '検査失敗',
+  // 項目 5
+  'admin.monitoring.item.GATE_FAIL_RATE.title': '5. ゲート FAIL 率',
+  'admin.monitoring.item.GATE_FAIL_RATE.recent': '直近',
+  'admin.monitoring.item.GATE_FAIL_RATE.baseline': 'その前',
+  'admin.monitoring.item.GATE_FAIL_RATE.noRuns': '—（実行なし）',
+  'admin.monitoring.item.GATE_FAIL_RATE.spike': '急変',
+  'admin.monitoring.item.GATE_FAIL_RATE.note':
+    '確定した実行（DONE）のうち、いずれかの層が FAIL だった割合です。AI の日次コスト上限による保留は分母にも分子にも含みません。',
+  // 項目 6
+  'admin.monitoring.item.USAGE_MEASUREMENT.title': '6. 計測欠測・ストレージの乖離',
+  'admin.monitoring.item.USAGE_MEASUREMENT.empty': '計測欠測 0 件 / ストレージの乖離 0 件',
+  'admin.monitoring.item.USAGE_MEASUREMENT.kind.GAP_MISSING': '欠測',
+  'admin.monitoring.item.USAGE_MEASUREMENT.kind.GAP_MISMATCH': '不一致',
+  'admin.monitoring.item.USAGE_MEASUREMENT.kind.STORAGE_DIVERGENCE': 'ストレージの乖離',
+  'admin.monitoring.item.USAGE_MEASUREMENT.note':
+    '計測は後から遡れないため最優先で対処します。デモ環境のストレージの乖離は検算対象外です（web と worker が別のモックを持つため常に乖離します）。ワーカー停止中の日の不一致は自動では直りません。',
+  // 項目 7
+  'admin.monitoring.item.PURGE_JOB_FAILED.title': '7. 削除ジョブの失敗',
+  'admin.monitoring.item.PURGE_JOB_FAILED.empty': '削除ジョブの失敗 0 件',
+  'admin.monitoring.item.PURGE_JOB_FAILED.cause.TENANT_PURGED': '解約に伴う削除',
+  'admin.monitoring.item.PURGE_JOB_FAILED.cause.RETENTION': '保持期間の削除',
+  'admin.monitoring.item.PURGE_JOB_FAILED.note': 'この画面が示すのは失敗だけです。削除完了の確認はテナント詳細の削除状況（A-010）で行います。',
+  // 項目 11
+  'admin.monitoring.item.SENDING_DOMAIN_UNVERIFIED.title': '11. 送信ドメインが未検証・失効のテナント',
+  'admin.monitoring.item.SENDING_DOMAIN_UNVERIFIED.empty': '未検証・失効 0 件',
+  'admin.monitoring.item.SENDING_DOMAIN_UNVERIFIED.status.NOT_REGISTERED': '未登録',
+  'admin.monitoring.item.SENDING_DOMAIN_UNVERIFIED.status.REGISTERED': '登録のみ',
+  'admin.monitoring.item.SENDING_DOMAIN_UNVERIFIED.status.PENDING': 'DNS 反映待ち',
+  'admin.monitoring.item.SENDING_DOMAIN_UNVERIFIED.status.FAILED': '検証不成立',
+  'admin.monitoring.item.SENDING_DOMAIN_UNVERIFIED.status.REVOKED': '失効',
+  'admin.monitoring.item.SENDING_DOMAIN_UNVERIFIED.lifecycle.SANDBOX': '試用中',
+  'admin.monitoring.item.SENDING_DOMAIN_UNVERIFIED.lifecycle.ACTIVE': '契約中',
+  'admin.monitoring.item.SENDING_DOMAIN_UNVERIFIED.reconfiguring': '失効後、再設定中',
+  'admin.monitoring.item.SENDING_DOMAIN_UNVERIFIED.revokedDaysAgo': '失効',
+  'admin.monitoring.item.SENDING_DOMAIN_UNVERIFIED.daysAgo': '日前',
+  'admin.monitoring.item.SENDING_DOMAIN_UNVERIFIED.note':
+    'このテナントは取引先へ 1 通も送れません。試用中のテナントでは本契約移行の条件です。再検証・再設定はテナントの OWNER が送信ドメイン設定から行います（運営者の操作はありません）。',
+  // 項目 12
+  'admin.monitoring.item.GATE_STALL.title': '12. 品質ゲート（GATE_RUNNING）の滞留',
+  'admin.monitoring.item.GATE_STALL.empty': '滞留 0 件',
+  'admin.monitoring.item.GATE_STALL.reason.AI_COST_LIMIT_HELD': 'AI の日次コスト上限による停止（保留）',
+  'admin.monitoring.item.GATE_STALL.reason.JOB_FAILED': 'ジョブ失敗',
+  'admin.monitoring.item.GATE_STALL.reason.RUNNING_OVERDUE': '応答不明',
+  'admin.monitoring.item.GATE_STALL.failedJobsUnavailable':
+    '失敗記録を照合できていません（ジョブキューを読めませんでした）。閾値超過分は理由を判定できません:',
+  'admin.monitoring.item.GATE_STALL.note':
+    'テナント利用者に「レビュー依頼」の再実行を促してください。保留は上限の解除で自動的に再開します（障害ではありません）。',
+  'admin.monitoring.item.GATE_STALL.overdueNote': '応答不明: ワーカー / Redis の稼働を確認してください。',
+  // 項目 13
+  'admin.monitoring.item.MAIL_PROVIDER_QUOTA.title': '13. メール送信基盤の上限到達・接近（環境全体）',
+  'admin.monitoring.item.MAIL_PROVIDER_QUOTA.sentToday': '本日の送信',
+  'admin.monitoring.item.MAIL_PROVIDER_QUOTA.limit': '上限',
+  'admin.monitoring.item.MAIL_PROVIDER_QUOTA.held': '保留',
+  'admin.monitoring.item.MAIL_PROVIDER_QUOTA.unavailable': '上限を確認できていません（送信基盤のクォータを取得できませんでした）。',
+  'admin.monitoring.item.MAIL_PROVIDER_QUOTA.localCounter': '手元のカウンタ',
+  'admin.monitoring.item.MAIL_PROVIDER_QUOTA.lastObservedAt': '最後に確認できた時刻',
+  'admin.monitoring.item.MAIL_PROVIDER_QUOTA.never': '（未確認）',
+  'admin.monitoring.item.MAIL_PROVIDER_QUOTA.reachedAt': '到達',
+  'admin.monitoring.item.MAIL_PROVIDER_QUOTA.nearingSince': '接近',
+  'admin.monitoring.item.MAIL_PROVIDER_QUOTA.note':
+    'テナント単位の日次上限とは別の、環境全体の送信枠です。到達すると全テナントで利用者宛のメール（招待・期限予告・削除予告）が保留されます。保留分は枠の回復後に自動で送られます（再送の操作はありません）。取引先へ届く送信の保留は項目 14 に現れます。',
+  // 項目 14
+  'admin.monitoring.item.SEND_HOLD.title': '14. 送信保留（理由別内訳）',
+  'admin.monitoring.item.SEND_HOLD.empty': '保留中の送信はありません',
+  'admin.monitoring.item.SEND_HOLD.reason.RATE_LIMIT': 'テナントの日次上限',
+  'admin.monitoring.item.SEND_HOLD.reason.DOMAIN_UNVERIFIED': '送信ドメイン未検証',
+  'admin.monitoring.item.SEND_HOLD.reason.ESIGN_DISCONNECTED': '電子署名の未接続',
+  'admin.monitoring.item.SEND_HOLD.reason.TENANT_SUSPENDED': 'テナントの停止',
+  'admin.monitoring.item.SEND_HOLD.reason.GATE_STALE': '承認後の内容変更・遅延',
+  'admin.monitoring.item.SEND_HOLD.reason.AI_COST_LIMIT': 'AI の日次コスト上限',
+  'admin.monitoring.item.SEND_HOLD.reason.PROVIDER_QUOTA': '送信基盤の環境クォータ（項目 13 と同じ原因）',
+  'admin.monitoring.item.SEND_HOLD.note':
+    '保留は失敗ではありません（外部への送信を 1 回も試みていません）。解消後に自動で配送されます（再送の操作はありません）。',
+  // 項目 15
+  'admin.monitoring.item.PURGE_NOTICE_PENDING.title': '15. 削除予告の未配送',
+  'admin.monitoring.item.PURGE_NOTICE_PENDING.empty': '削除待ちのテナントはありません',
+  'admin.monitoring.item.PURGE_NOTICE_PENDING.cause.NOTICE_PENDING': '予告が保留中',
+  'admin.monitoring.item.PURGE_NOTICE_PENDING.cause.NOTICE_UNDELIVERED': '予告が不達',
+  'admin.monitoring.item.PURGE_NOTICE_PENDING.note':
+    '削除は予告が配送されるまで実行されません。これは異常ではなく「削除が進んでいない理由」です。項目 7（削除ジョブの失敗）とは別に扱います。',
+  // 項目 16
+  'admin.monitoring.item.MAIL_DISPATCH_STUCK.title': '16. 運用メールの QUEUED 滞留（送信済み未記録の疑い）',
+  'admin.monitoring.item.MAIL_DISPATCH_STUCK.empty': '滞留 0 件',
+  'admin.monitoring.item.MAIL_DISPATCH_STUCK.lowerBound': '（件数は下限）',
+  'admin.monitoring.item.MAIL_DISPATCH_STUCK.note':
+    '外部へ 1 通出たかもしれないのに、その事実を DB に書けなかった疑いです。再送すると二重送信になるため、再送の操作はありません。判断材料は配信通知（バウンス / 配信）です。',
+  // 項目 17
+  'admin.monitoring.item.PROVIDER_SPEND.title': '17. AI 支出（環境全体）/ tier 上限',
+  'admin.monitoring.item.PROVIDER_SPEND.thisMonth': '当月',
+  'admin.monitoring.item.PROVIDER_SPEND.cap': '上限',
+  'admin.monitoring.item.PROVIDER_SPEND.exceeded': '上限超過',
+  'admin.monitoring.item.PROVIDER_SPEND.level.BELOW': '上限未満',
+  'admin.monitoring.item.PROVIDER_SPEND.level.NEARING': '接近',
+  'admin.monitoring.item.PROVIDER_SPEND.level.REACHED': '到達 — 全テナントの AI 機能が同時に停止します',
+  'admin.monitoring.item.PROVIDER_SPEND.note':
+    '推定値であり、請求額とは一致しません（JST の暦月で集計）。単一テナントの上限到達（A-004）とは別の、環境全体の上限です。対処は tier 昇格の申請です（画面に操作はありません）。',
+  // スケジューラ
+  'admin.monitoring.item.SCHEDULER_HEARTBEAT.title': 'スケジューラの生存',
+  'admin.monitoring.item.SCHEDULER_HEARTBEAT.lastRunAt': '最終実行',
+  'admin.monitoring.item.SCHEDULER_HEARTBEAT.running': '稼働中',
+  'admin.monitoring.item.SCHEDULER_HEARTBEAT.stalled': 'スケジューラ停止の疑い — 最終実行が閾値以上前です',
+  'admin.monitoring.item.SCHEDULER_HEARTBEAT.never': '実行の記録がありません',
+  // 管理ホームの導線
+  'admin.home.monitoring.link': '運用監視',
+
   // --- S-035 組織設定（docs/04 §S-035 / F-001 / F-021。T-03-10）---
   'orgSettings.title': '組織設定',
   'orgSettings.section.organization': '組織情報',
