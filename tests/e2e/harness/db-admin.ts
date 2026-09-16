@@ -322,3 +322,32 @@ export function settleProposalSendAsFailedForE2e(proposalId: string): void {
       `WHERE id = '${proposalId}' AND state = 'APPROVED';`,
   );
 }
+
+/**
+ * 🔴 T-09-10 専用シーム: `APPROVED` の提案に対して「送信ジョブが成功で確定した」状態を作る
+ *    （`SendAttempt(attempt_seq = 1, status = 'SUCCEEDED', external_id)` + `proposals.state = 'SUBMITTED'` + `submitted_at`）。
+ *
+ * `settleProposalSendAsFailedForE2e` の成功側。E2E ハーネスには worker が無いため `SUBMITTED` にブラウザ経路では到達できず、
+ * `S-024`（商談結果の記録。`F-025`）の前提「送信済みの提案」を作れない。送信ジョブの正しさは `tests/isolation/send-proposal.test.ts` の
+ * 射程であり、E2E が証明したいのは 🔴「`S-024` からモバイルで `SUBMITTED → … → WON` を人の操作で完遂できる」ことである。
+ * したがって**送信済みという前提だけ**を、`settleProposalSubmission`（`packages/db/src/proposal-send.ts`）の成功側と**同じ列**
+ * （`send_attempts` の 1 行 + `proposals` の `state` / `submitted_at`、`last_failure_reason` と保留列は NULL）で作る。
+ *
+ * 🔴 `APPROVED` 以外の行には何もしない（失敗側と同じ順序 = 試行を `SELECT … WHERE state = 'APPROVED'` から派生させ、CAS も同じ条件）。
+ * ⚠️ `ProposalEvent(SUBMITTING → SUBMITTED)` と `AuditLog(proposal.submit, SUBMIT_SETTLE)` はここでは書かない。`SUBMITTING` を経由しない。
+ * 🔴 商談の記録（`SUBMITTED` 以降）は本シームで作らない —— それは `S-024` → #48 の人間の操作そのものであり、E2E が動かす対象である。
+ */
+export function settleProposalSendAsSucceededForE2e(proposalId: string): void {
+  if (!UUID_PATTERN.test(proposalId)) {
+    throw new Error(`proposalId が UUID の形をしていません: ${proposalId}`);
+  }
+  execSql(
+    `INSERT INTO send_attempts ` +
+      `(id, tenant_id, entity_type, entity_id, attempt_seq, idempotency_key, status, external_id, failure_kind, failure_detail, started_at, settled_at, requested_by) ` +
+      `SELECT gen_random_uuid(), tenant_id, 'PROPOSAL', id, 1, 'proposal:' || id::text || ':1', 'SUCCEEDED', 'e2e-message-' || id::text, NULL, ` +
+      `NULL, now(), now(), NULL FROM proposals WHERE id = '${proposalId}' AND state = 'APPROVED';\n` +
+      `UPDATE proposals SET state = 'SUBMITTED', submitted_at = now(), last_failure_reason = NULL, ` +
+      `send_hold_reason_key = NULL, send_hold_since = NULL, updated_at = now() ` +
+      `WHERE id = '${proposalId}' AND state = 'APPROVED';`,
+  );
+}

@@ -2628,6 +2628,84 @@ const ja = {
   'proposals.detail.note.error.generic': 'メモを追加できませんでした。提案の状態は変わっていません。',
   'proposals.detail.deniedTitle': 'メモの追加を行えません。',
 
+  // --- S-024 商談結果の記録（docs/04 §S-024 / `F-025` / docs/05 §6.5 #48。T-09-10）---
+  // 🔴 T1（モバイル完結）。面談日程の確定・面談実施・結果待ち・結果の確定（決定 / 見送り）・辞退を、
+  //    人間の操作で #48 に記録する。🔴 **結果はシステムが自動で確定しない**（`F-025 AC-1`）—— 「期限で自動的に」
+  //    「未返答のため自動で見送り」に相当する語を 1 つも置かない。
+  // 🔴 「見送り」（`LOST`）は「送信失敗」「検査で不合格」「依頼を辞退」と別の語（`F-025 AC-3` / `BR-23`）。
+  //    状態の語そのものは `proposals.state.*`。
+  // 🔴 `note` の組み立てに使う語（`note.*`）は #48 の `note` にそのまま入り、`S-023` の履歴に自由記述として描かれる
+  //    （接頭辞ではない。`events.ts` の分類の印〔`REVIEW_GATE:` 等〕と衝突しない日本語の語にする）。
+  'proposals.interview.title': '商談結果の記録',
+  'proposals.interview.breadcrumb.home': 'ホーム',
+  'proposals.interview.breadcrumb.list': '提案一覧',
+  'proposals.interview.breadcrumb.detail': '提案の詳細',
+  'proposals.interview.breadcrumb.current': '商談結果の記録',
+  'proposals.interview.notFound': 'この提案は見つかりません。URL をご確認ください。',
+  'proposals.interview.lead':
+    '面談の日程・実施・結果は、電話や対面で決まった事実を人が記録します。システムが結果を自動で確定することはありません。',
+  'proposals.interview.partnerNotice': '御社が作成した提案について、面談実施と辞退を記録できます。面談日程の確定と結果の確定はホストが行います。',
+  'proposals.interview.section.summary': '対象の提案',
+  'proposals.interview.section.recent': '直近の履歴',
+  'proposals.interview.section.operations': '次に記録できる操作',
+  'proposals.interview.field.state': '現在の状態',
+  'proposals.interview.recent.empty': '履歴はまだありません。',
+  'proposals.interview.recent.openDetail': '履歴をすべて見る（提案の詳細）',
+  'proposals.interview.backToDetail': '提案の詳細へ戻る',
+  // 操作（ボタンの語）。状態ごとに出るのは遷移表と立場で決まる（`interview-rows.ts`）。
+  'proposals.interview.operation.SCHEDULE': '面談日程を確定する',
+  'proposals.interview.operation.INTERVIEWED': '面談実施を記録する',
+  'proposals.interview.operation.RESULT_PENDING': '結果待ちにする',
+  'proposals.interview.operation.WON': '決定を記録する',
+  'proposals.interview.operation.LOST': '見送りを記録する',
+  'proposals.interview.operation.WITHDRAWN': '辞退を記録する',
+  // 入力欄。
+  'proposals.interview.input.scheduledAt': '面談日時',
+  'proposals.interview.input.interviewedOn': '面談実施日',
+  'proposals.interview.input.memo': '要点（任意）',
+  'proposals.interview.input.reason': '理由の要点（任意）',
+  'proposals.interview.input.memoHint': 'ここに書いた内容だけが履歴に残ります。単価・本文・氏名は自動では含まれません。',
+  'proposals.interview.notePreview': '履歴に残る記録',
+  'proposals.interview.notePreview.none': '（記録の本文なし。状態の変更だけが履歴に残ります）',
+  // 🔴 `note` の組み立て（画面が組む自由記述。接頭辞ではない）。
+  'proposals.interview.note.scheduled': '面談日程: ',
+  'proposals.interview.note.interviewed': '面談実施: ',
+  'proposals.interview.note.won': '結果: 決定',
+  'proposals.interview.note.lost': '結果: 見送り',
+  'proposals.interview.note.withdrawn': '辞退',
+  'proposals.interview.note.separator': ' / ',
+  'proposals.interview.note.reasonOpen': '（',
+  'proposals.interview.note.reasonClose': '）',
+  'proposals.interview.submit': '記録する',
+  'proposals.interview.submitting': '記録しています…',
+  'proposals.interview.cancel': 'やめる',
+  // 🔴 終端（決定 / 見送り / 辞退）は戻れないので確認ステップを置く。
+  'proposals.interview.confirm.title': 'この記録は取り消せません',
+  'proposals.interview.confirm.lead.WON': '決定として確定します。確定後にこの提案の状態を変えることはできません。',
+  'proposals.interview.confirm.lead.LOST': '見送りとして確定します。確定後にこの提案の状態を変えることはできません。',
+  'proposals.interview.confirm.lead.WITHDRAWN': '辞退として記録します。記録後にこの提案の状態を変えることはできません。',
+  'proposals.interview.confirm.submit': '確定する',
+  'proposals.interview.confirm.cancel': '戻る',
+  'proposals.interview.recorded': '記録しました。',
+  'proposals.interview.recorded.statePrefix': '現在の状態: ',
+  // 終端・記録できない状態の注記。
+  'proposals.interview.closed.WON': 'この提案は「決定」として記録されています。',
+  // 🔴 `F-025 AC-2`: `WON` は稼働（`Assignment`）を登録できる状態になる。Phase 1 は記録のみで、接続は Phase 2（`F-042`）。
+  'proposals.interview.closed.WON.assignmentNote': '稼働の登録（契約満了日と延長確認の管理）は Phase 2 で接続されます。ここでは結果の記録までを行います。',
+  'proposals.interview.closed.LOST': 'この提案は「見送り」として記録されています。',
+  'proposals.interview.closed.WITHDRAWN': 'この提案は「辞退」として記録されています。',
+  'proposals.interview.notRecordable': 'この提案はまだ送信されていないため、商談の記録はできません。送信後にこの画面から記録できます。',
+  'proposals.interview.operations.none': 'いまの立場で記録できる操作はありません。',
+  'proposals.interview.viewerNotice': '閲覧専用のロールでは商談結果を記録できません。',
+  'proposals.interview.deniedTitle': '商談結果の記録を行えません。',
+  // エラー（応答コード / HTTP 状態で選ぶ）。
+  'proposals.interview.error.validation': '入力内容をご確認ください。',
+  'proposals.interview.error.state.prefix': 'この操作はいまの状態では実行できません（現在: ',
+  'proposals.interview.error.state.suffix': '）。実行できる操作を読み直しました。',
+  'proposals.interview.error.forbidden': 'この操作を行う権限がありません。',
+  'proposals.interview.error.conflict': 'いまは記録を行えません。提案の状態は変わっていません。',
+  'proposals.interview.error.generic': '記録できませんでした。提案の状態は変わっていません。',
+
   // --- S-015 匿名共有の設定（取引先）（docs/04 §S-015 / `F-016` / docs/05 §6.4 #29。T-08-02）---
   // 🔴 **煽らない。** 「共有すると案件が見つかりやすくなります」に相当する語を 1 つも置かない
   //    （`docs/04` §S-015 空状態。共有は既定オフで、主導権は最後まで取引先にある）。

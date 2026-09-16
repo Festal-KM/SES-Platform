@@ -23,12 +23,13 @@
 //
 // 🔴 「モバイルだから省略する」を作らない（`CLAUDE.md` §13.3）。サインイン（2 要素認証を含む）が
 //    モバイルで完結することを、デスクトップと同じ経路で確かめる。
-import { expect, test, type Browser } from '@playwright/test';
+import { devices, expect, test, type Browser } from '@playwright/test';
 import { t } from '../../packages/i18n/src/index';
 import {
   deleteT0903SyntheticProposals,
   settleProposalGateAsPassedForE2e,
   settleProposalSendAsFailedForE2e,
+  settleProposalSendAsSucceededForE2e,
   T0903_SYNTHETIC_PROPOSAL_PREFIX,
 } from './harness/db-admin';
 import { apiRequest, parseJson } from './support/api';
@@ -469,6 +470,263 @@ test.describe('モバイルビューポートのスモーク（S-003 / S-004 は
       await expectNoHorizontalOverflow('S-015 匿名共有の設定', session.page);
       await expectNoBrokenLabels('S-015 匿名共有の設定', session.page);
       // 🔴 共有の開始・停止は監査対象の実行系操作（`F-016 AC-4`）。スモークで動かさない。
+      session.outbound.assertNone();
+    } finally {
+      await session.close();
+    }
+  });
+});
+
+// ✅ T-09-10: 🔴 **`S-024` 商談結果の記録がモバイルで完結する**（docs/04 §S-024〔Tier 1〕/ `F-025 AC-1`〜`AC-3` / docs/05 §6.5 #48 /
+//    `CLAUDE.md` §13.1「面談日程の確定は移動中に発生する」/ §13.3）。
+//    ビューポートは docs/05 §17.6 の `devices['iPhone 15']`（幅 393。`e2e-tester.md` シナリオ #14 と同じモバイル幅）。ブラウザは
+//    本ファイルの他の test と同じ Chromium のまま（`__Host-` Cookie の理由。`playwright.config.ts` 冒頭）。
+//    前提: ハーネスに worker が無いため、「送信済み（`SUBMITTED`）」はシーム `settleProposalSendAsSucceededForE2e`（送信ジョブの ⑥ の
+//    成功側と同じ列）で作る。🔴 **商談の記録そのもの（`SUBMITTED` 以降）はシームで作らず、画面から人の操作で進める。**
+test.describe('S-024 商談結果の記録（iPhone 15 / T1）', () => {
+  // 🔴 `defaultBrowserType`（worker スコープ）は describe の `test.use` に置けない。コンテキストの寸法・UA・タッチだけを iPhone 15 にする
+  //    （ブラウザは project の Chromium のまま）。
+  test.use({
+    viewport: devices['iPhone 15'].viewport,
+    userAgent: devices['iPhone 15'].userAgent,
+    deviceScaleFactor: devices['iPhone 15'].deviceScaleFactor,
+    isMobile: devices['iPhone 15'].isMobile,
+    hasTouch: devices['iPhone 15'].hasTouch,
+  });
+
+  test('ホストが S-024 で SUBMITTED → INTERVIEW_SCHEDULED → INTERVIEWED → RESULT_PENDING → WON を完遂する。取引先には日程の確定・結果の確定が無い', async ({
+    browser,
+  }: {
+    browser: Browser;
+  }) => {
+    const session = await openTenantSession(browser, hostOwner(1));
+    try {
+      // 🔴 iPhone 15 のビューポート（幅 393）で走っている（`test.use` がコンテキストに効いていることの対照）。
+      expect(session.page.viewportSize()?.width).toBe(devices['iPhone 15'].viewport.width);
+
+      // 前提: 提案を作り（#36）、全層 PASS（シーム）→ 承認（#41。API 直叩き）→ 送信済み（シーム）。
+      const ids = tenantIds(1);
+      const subject = `${T0903_SYNTHETIC_PROPOSAL_PREFIX}T0910-${String(Date.now())}`;
+      const created = await apiRequest(session.page, '/api/proposals', {
+        method: 'POST',
+        body: {
+          projectId: ids.publishedProjectId,
+          engineerId: ids.hostEngineerId,
+          recipientCompanyName: 'T0910 架空エンド株式会社',
+          recipientEmail: 't0910-recipient@example.test',
+          offeredUnitPrice: 720000,
+          offeredStartDate: '2026-11-01',
+          subject,
+          body: 'T0910 ご提案します。',
+        },
+      });
+      expect(created.status, created.text).toBe(201);
+      const proposalId = (parseJson(created) as { id: string }).id;
+      syntheticProposalIds.push(proposalId);
+      const gate = await apiRequest(session.page, `/api/proposals/${proposalId}/gate`);
+      expect(gate.status, gate.text).toBe(200);
+      settleProposalGateAsPassedForE2e(proposalId, (parseJson(gate) as { contentHash: string }).contentHash);
+      const approved = await apiRequest(session.page, `/api/proposals/${proposalId}/approve`, { method: 'POST' });
+      expect(approved.status, approved.text).toBe(200);
+      settleProposalSendAsSucceededForE2e(proposalId);
+
+      // 🔴 S-023 の商談中の導線が S-024 を指す（T-09-09 の申し送り 1）。
+      await session.page.goto(`/proposals/${proposalId}`, { waitUntil: 'domcontentloaded' });
+      await expect(session.page.getByTestId('proposal-detail')).toHaveAttribute('data-proposal-state', 'SUBMITTED');
+      await session.page.getByTestId('proposal-detail-action-link-INTERVIEW').click();
+      await session.page.waitForURL(`**/proposals/${proposalId}/interview`);
+
+      const screen = session.page.getByTestId('proposal-interview');
+      await expect(screen).toHaveAttribute('data-proposal-state', 'SUBMITTED');
+      await expect(screen).toHaveAttribute('data-audience', 'HOST');
+      await expect(screen).toHaveAttribute('data-can-record', 'true');
+      // 🔴 判断材料（提案先 / エンジニア / 案件 / 単価 / 開始日 / 状態 / 直近の履歴）が同じ画面に、折りたたみ・タブ無しで出る。
+      for (const field of ['recipient', 'engineer', 'project', 'unit-price', 'start-date', 'state']) {
+        await expect(session.page.getByTestId(`proposal-interview-header-row-${field}`)).toBeVisible();
+      }
+      await expect(session.page.getByTestId('proposal-interview-header-row-recipient')).toContainText('T0910 架空エンド株式会社');
+      await expect(session.page.getByTestId('proposal-interview-header-row-unit-price')).toContainText('720,000');
+      await expect(session.page.getByTestId('proposal-interview-lead')).toContainText(t('proposals.interview.lead'));
+      await expect(session.page.locator('details')).toHaveCount(0);
+      await expect(session.page.locator('[role="tab"]')).toHaveCount(0);
+      // 🔴 SUBMITTED では「面談日程を確定する」と「辞退を記録する」だけ。結果の確定・面談実施は出ない。
+      await expect(session.page.getByTestId('proposal-interview-operation-SCHEDULE')).toBeVisible();
+      await expect(session.page.getByTestId('proposal-interview-operation-WITHDRAWN')).toBeVisible();
+      for (const kind of ['INTERVIEWED', 'RESULT_PENDING', 'WON', 'LOST']) {
+        await expect(session.page.getByTestId(`proposal-interview-operation-${kind}`)).toHaveCount(0);
+      }
+      // 🔴 自動確定・一括に相当する導線・語が無い（`F-025 AC-1` / `BR-50`）。
+      await expect(session.page.locator('[data-testid*="auto"], [data-testid*="bulk"], [data-testid*="expire"], [data-testid*="force"]')).toHaveCount(0);
+      expect(await session.page.content()).not.toMatch(/自動的に|一括|期限で見送り/);
+      expectNoHiddenCountHints('S-024 商談結果の記録（iPhone 15）', await session.page.locator('body').innerText());
+      await expectNoHorizontalOverflow('S-024 商談結果の記録', session.page);
+      await expectNoBrokenLabels('S-024 商談結果の記録', session.page);
+
+      async function waitTransition(to: string): Promise<void> {
+        const response = await session.page.waitForResponse(
+          (candidate) => candidate.url().endsWith(`/api/proposals/${proposalId}/transition`) && candidate.request().method() === 'POST',
+        );
+        expect(response.status(), `→ ${to}`).toBe(200);
+        await expect(session.page.getByTestId('proposal-interview-result')).toHaveAttribute('data-result', to);
+        await expect(screen).toHaveAttribute('data-proposal-state', to);
+      }
+
+      // ① 面談日程の確定（日時が入るまで押せない。note は「面談日程: 2026-10-01 14:00」）。
+      await session.page.getByTestId('proposal-interview-operation-SCHEDULE').click();
+      const form = session.page.getByTestId('proposal-interview-form');
+      await expect(form).toHaveAttribute('data-operation', 'SCHEDULE');
+      await expect(session.page.getByTestId('proposal-interview-submit')).toBeDisabled();
+      await session.page.getByTestId('proposal-interview-scheduled-at').fill('2026-10-01T14:00');
+      await expect(session.page.getByTestId('proposal-interview-note-preview')).toHaveText('面談日程: 2026-10-01 14:00');
+      await expect(session.page.getByTestId('proposal-interview-submit')).toBeEnabled();
+      await expectNoBrokenLabels('S-024 面談日程の入力', session.page);
+      const scheduled = waitTransition('INTERVIEW_SCHEDULED');
+      await session.page.getByTestId('proposal-interview-submit').click();
+      await scheduled;
+      await expect(session.page.getByTestId('proposal-interview-operation-INTERVIEWED')).toBeVisible();
+      await expect(session.page.getByTestId('proposal-interview-operation-SCHEDULE')).toHaveCount(0);
+      // 直近の履歴に、いま記録した内容がそのまま出る。
+      await expect(session.page.getByTestId('proposal-interview-recent')).toContainText('面談日程: 2026-10-01 14:00');
+
+      // ② 面談実施（実施日 + 要点）。
+      await session.page.getByTestId('proposal-interview-operation-INTERVIEWED').click();
+      await expect(session.page.getByTestId('proposal-interview-form')).toHaveAttribute('data-operation', 'INTERVIEWED');
+      await session.page.getByTestId('proposal-interview-interviewed-on').fill('2026-10-01');
+      await session.page.getByTestId('proposal-interview-memo').fill('T0910 技術面は好評');
+      await expect(session.page.getByTestId('proposal-interview-note-preview')).toHaveText('面談実施: 2026-10-01 / T0910 技術面は好評');
+      const interviewed = waitTransition('INTERVIEWED');
+      await session.page.getByTestId('proposal-interview-submit').click();
+      await interviewed;
+
+      // ③ 結果待ち（入力なし）。
+      await session.page.getByTestId('proposal-interview-operation-RESULT_PENDING').click();
+      await expect(session.page.getByTestId('proposal-interview-note-preview')).toHaveText(t('proposals.interview.notePreview.none'));
+      const pending = waitTransition('RESULT_PENDING');
+      await session.page.getByTestId('proposal-interview-submit').click();
+      await pending;
+      for (const kind of ['WON', 'LOST', 'WITHDRAWN']) {
+        await expect(session.page.getByTestId(`proposal-interview-operation-${kind}`)).toHaveAttribute('data-terminal', 'true');
+      }
+      await expectNoHorizontalOverflow('S-024 結果待ち', session.page);
+      await expectNoBrokenLabels('S-024 結果待ち', session.page);
+
+      // ④ 決定（終端）: 🔴 確認ステップを経る。確認には提案先・単価と、履歴に残る文字列そのものが再掲される。
+      await session.page.getByTestId('proposal-interview-operation-WON').click();
+      await session.page.getByTestId('proposal-interview-memo').fill('T0910 11 月開始で合意');
+      await session.page.getByTestId('proposal-interview-submit').click();
+      const confirm = session.page.getByTestId('proposal-interview-confirm');
+      await expect(confirm).toHaveAttribute('data-operation', 'WON');
+      await expect(confirm).toContainText(t('proposals.interview.confirm.title'));
+      await expect(session.page.getByTestId('proposal-interview-confirm-recap')).toContainText('T0910 架空エンド株式会社');
+      await expect(session.page.getByTestId('proposal-interview-confirm-recap')).toContainText('720,000');
+      await expect(session.page.getByTestId('proposal-interview-confirm-note')).toHaveText('結果: 決定（T0910 11 月開始で合意）');
+      await expect(screen).toHaveAttribute('data-proposal-state', 'RESULT_PENDING');
+      await expectNoBrokenLabels('S-024 決定の確認ステップ', session.page);
+      const won = waitTransition('WON');
+      await session.page.getByTestId('proposal-interview-confirm-submit').click();
+      await won;
+      // 🔴 WON は終端。操作は 0 個で、稼働の登録は Phase 2（`F-042`）の注記だけ（`Assignment` は作らない）。
+      await expect(session.page.getByTestId('proposal-interview-closed')).toHaveAttribute('data-closed-state', 'WON');
+      await expect(session.page.getByTestId('proposal-interview-won-note')).toBeVisible();
+      await expect(session.page.locator('[data-testid^="proposal-interview-operation-"]')).toHaveCount(0);
+      await expectNoHorizontalOverflow('S-024 決定後', session.page);
+      await expectNoBrokenLabels('S-024 決定後', session.page);
+      // 🔴 外部への発信は 0 件（面談調整の連絡 `F-041` は Phase 2。商談の記録はメールを送らない）。
+      session.outbound.assertNone();
+
+      // API 直叩き: 終端からの遷移は 422。#46 の履歴に 4 本の TRANSITION が S-024 の note 付きで残り、状態は WON。
+      const afterWon = await apiRequest(session.page, `/api/proposals/${proposalId}/transition`, { method: 'POST', body: { to: 'LOST' } });
+      expect(afterWon.status, afterWon.text).toBe(422);
+      expect((parseJson(afterWon) as { error: { code: string } }).error.code).toBe('INVALID_STATE_TRANSITION');
+      const detailApi = await apiRequest(session.page, `/api/proposals/${proposalId}`);
+      expect(detailApi.status, detailApi.text).toBe(200);
+      const detailBody = parseJson(detailApi) as {
+        state: string;
+        events: { fromState: string | null; toState: string | null; entry: { kind: string; note?: string | null } }[];
+      };
+      expect(detailBody.state).toBe('WON');
+      const recorded = detailBody.events.filter(
+        (event) => event.fromState !== null && ['INTERVIEW_SCHEDULED', 'INTERVIEWED', 'RESULT_PENDING', 'WON'].includes(event.toState ?? ''),
+      );
+      expect(recorded.map((event) => [event.toState, event.entry.kind, event.entry.note ?? null])).toEqual([
+        ['INTERVIEW_SCHEDULED', 'TRANSITION', '面談日程: 2026-10-01 14:00'],
+        ['INTERVIEWED', 'TRANSITION', '面談実施: 2026-10-01 / T0910 技術面は好評'],
+        ['RESULT_PENDING', 'TRANSITION', null],
+        ['WON', 'TRANSITION', '結果: 決定（T0910 11 月開始で合意）'],
+      ]);
+      // S-023 の履歴でも TRANSITION の連なりとして描かれる（T-09-11 への掴み手）。
+      await session.page.goto(`/proposals/${proposalId}`, { waitUntil: 'domcontentloaded' });
+      await expect(session.page.getByTestId('proposal-detail')).toHaveAttribute('data-proposal-state', 'WON');
+      await expect(session.page.getByTestId('proposal-detail-timeline').locator('[data-event-kind="TRANSITION"]')).toHaveCount(4);
+      await expect(session.page.getByTestId('proposal-detail-actions-empty')).toBeVisible();
+
+      // 🔴 取引先: ホストの提案の S-024 には到達しない（404。存在も教えない）。自社の提案では日程の確定・結果の確定のボタンが無い。
+      const partnerSession = await openTenantSession(browser, partnerSales(1, 1));
+      try {
+        await partnerSession.page.goto(`/proposals/${proposalId}/interview`, { waitUntil: 'domcontentloaded' });
+        await expect(partnerSession.page.getByTestId('proposal-interview-not-found')).toBeVisible();
+        await expect(partnerSession.page.getByTestId('proposal-interview')).toHaveCount(0);
+        expect(await partnerSession.page.content()).not.toContain('T0910 架空エンド株式会社');
+        const forbidden = await apiRequest(partnerSession.page, `/api/proposals/${proposalId}/transition`, { method: 'POST', body: { to: 'WITHDRAWN' } });
+        expect(forbidden.status, forbidden.text).toBe(404);
+
+        // 自社の提案（取引先が作成 → ホストが承認 → 送信済み）。
+        const partnerCreated = await apiRequest(partnerSession.page, '/api/proposals', {
+          method: 'POST',
+          body: {
+            projectId: ids.publishedProjectId,
+            engineerId: partnerIds(1, 1).engineerId,
+            recipientCompanyName: 'T0910 架空エンド株式会社',
+            recipientEmail: 't0910-recipient@example.test',
+            offeredUnitPrice: 680000,
+            offeredStartDate: '2026-11-01',
+            subject: `${T0903_SYNTHETIC_PROPOSAL_PREFIX}T0910-partner-${String(Date.now())}`,
+            body: 'T0910 取引先からのご提案です。',
+          },
+        });
+        expect(partnerCreated.status, partnerCreated.text).toBe(201);
+        const partnerProposalId = (parseJson(partnerCreated) as { id: string }).id;
+        syntheticProposalIds.push(partnerProposalId);
+        const partnerGate = await apiRequest(partnerSession.page, `/api/proposals/${partnerProposalId}/gate`);
+        expect(partnerGate.status, partnerGate.text).toBe(200);
+        settleProposalGateAsPassedForE2e(partnerProposalId, (parseJson(partnerGate) as { contentHash: string }).contentHash);
+        const hostApproved = await apiRequest(session.page, `/api/proposals/${partnerProposalId}/approve`, { method: 'POST' });
+        expect(hostApproved.status, hostApproved.text).toBe(200);
+        settleProposalSendAsSucceededForE2e(partnerProposalId);
+
+        await partnerSession.page.goto(`/proposals/${partnerProposalId}/interview`, { waitUntil: 'domcontentloaded' });
+        const partnerScreen = partnerSession.page.getByTestId('proposal-interview');
+        await expect(partnerScreen).toHaveAttribute('data-proposal-state', 'SUBMITTED');
+        await expect(partnerScreen).toHaveAttribute('data-audience', 'PARTNER');
+        await expect(partnerSession.page.getByTestId('proposal-interview-partner-notice')).toBeVisible();
+        await expect(partnerSession.page.getByTestId('proposal-interview-operation-WITHDRAWN')).toBeVisible();
+        await expect(partnerSession.page.getByTestId('proposal-interview-operation-SCHEDULE')).toHaveCount(0);
+        await expectNoHorizontalOverflow('S-024 商談結果の記録（取引先）', partnerSession.page);
+        await expectNoBrokenLabels('S-024 商談結果の記録（取引先）', partnerSession.page);
+        // 🔴 API 直叩きでも面談日程の確定は 403（導線を隠しているだけではない）。
+        const partnerSchedule = await apiRequest(partnerSession.page, `/api/proposals/${partnerProposalId}/transition`, {
+          method: 'POST',
+          body: { to: 'INTERVIEW_SCHEDULED', note: '面談日程: 2026-10-02 10:00' },
+        });
+        expect(partnerSchedule.status, partnerSchedule.text).toBe(403);
+        expect((parseJson(partnerSchedule) as { error: { code: string } }).error.code).toBe('PROPOSAL_TRANSITION_FORBIDDEN');
+        // ホストが日程を確定すると、取引先の S-024 は面談実施 + 辞退になり、決定 / 見送りは出ない。
+        const hostSchedule = await apiRequest(session.page, `/api/proposals/${partnerProposalId}/transition`, {
+          method: 'POST',
+          body: { to: 'INTERVIEW_SCHEDULED', note: '面談日程: 2026-10-02 10:00' },
+        });
+        expect(hostSchedule.status, hostSchedule.text).toBe(200);
+        await partnerSession.page.reload({ waitUntil: 'domcontentloaded' });
+        await expect(partnerScreen).toHaveAttribute('data-proposal-state', 'INTERVIEW_SCHEDULED');
+        await expect(partnerSession.page.getByTestId('proposal-interview-operation-INTERVIEWED')).toBeVisible();
+        await expect(partnerSession.page.getByTestId('proposal-interview-operation-WITHDRAWN')).toBeVisible();
+        for (const kind of ['SCHEDULE', 'WON', 'LOST']) {
+          await expect(partnerSession.page.getByTestId(`proposal-interview-operation-${kind}`)).toHaveCount(0);
+        }
+        partnerSession.outbound.assertNone();
+      } finally {
+        await partnerSession.close();
+      }
       session.outbound.assertNone();
     } finally {
       await session.close();
