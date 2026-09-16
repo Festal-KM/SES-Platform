@@ -146,6 +146,11 @@ export const INTERNAL_JOB_NAMES = [
   'usage.gap-check',
   'usage.storage-reconcile',
   'cost.monthly-rollup',
+  // 🔴 T-10-03（docs/02 F-027 / docs/05 §5.8）。上限に対する水準の評価・記録・通知（毎 10 分）。
+  //    **LLM も外部 API も呼ばない**（カウンタを読んで `usage_limit_states` と `AuditLog` を書き、
+  //    運用メールを `email.dispatch` に積むだけ）ので `attempts: 3` を許せる。冪等性は
+  //    `(tenant_id, metric)` の upsert と、`EmailDispatch.dedupeKey`（暦日を含む）の `UNIQUE` が担う。
+  'usage.limit-check',
 ] as const;
 
 export type InternalJobName = (typeof INTERNAL_JOB_NAMES)[number];
@@ -269,6 +274,8 @@ export const QUEUE_DEFINITIONS = {
   'usage.gap-check': internalQueue('usage.gap-check', { attempts: 3 }),
   'usage.storage-reconcile': internalQueue('usage.storage-reconcile', { attempts: 2 }),
   'cost.monthly-rollup': internalQueue('cost.monthly-rollup', { attempts: 3 }),
+  // 🔴 T-10-03（docs/02 F-027）。水準の評価・記録・通知（毎 10 分）。読み取り + 冪等な upsert + `dedupeKey`。
+  'usage.limit-check': internalQueue('usage.limit-check', { attempts: 3 }),
 } as const;
 
 // ---------------------------------------------------------------------------

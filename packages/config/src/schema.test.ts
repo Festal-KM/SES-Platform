@@ -34,6 +34,23 @@ describe('🔴 メール送信の上限（CLAUDE.md §3.4 / docs/05 §8.7 / F-02
   });
 });
 
+describe('🔴 AI の月次件数クォータの既定値（T-10-03 / docs/03 §7.6.2 / F-027 AC-6）', () => {
+  it('🔴 既定値は docs/03 §7.6.2 の Standard（180 / 6,200 / 180 / 20 件）。gate-inspector のキーは存在しない', () => {
+    const env = loadAppEnv(buildValidEnv('development'));
+    expect(env.AI_UNIT_QUOTA_SHEET_PARSE_DEFAULT).toBe(180);
+    expect(env.AI_UNIT_QUOTA_MATCH_RATIONALE_DEFAULT).toBe(6200);
+    expect(env.AI_UNIT_QUOTA_PROPOSAL_DRAFT_DEFAULT).toBe(180);
+    expect(env.AI_UNIT_QUOTA_RENEWAL_SUMMARY_DEFAULT).toBe(20);
+    expect(Object.keys(env).filter((key) => /GATE_INSPECTOR/i.test(key))).toEqual([]);
+  });
+
+  it('環境変数で上書きできる（プラン別の値が入るまでの既定値）。0 は拒否する', () => {
+    const env = loadAppEnv(buildValidEnv('development', { AI_UNIT_QUOTA_SHEET_PARSE_DEFAULT: '70' }));
+    expect(env.AI_UNIT_QUOTA_SHEET_PARSE_DEFAULT).toBe(70);
+    expect(() => loadAppEnv(buildValidEnv('development', { AI_UNIT_QUOTA_RENEWAL_SUMMARY_DEFAULT: '0' }))).toThrow();
+  });
+});
+
 describe('🔴 SES のイベント通知トピック（T-04-03 / docs/05 §8.5）', () => {
   it('🔴 必須である（未設定を許すと「検証しない」fail-open になる）', () => {
     const input = buildValidEnv('development');

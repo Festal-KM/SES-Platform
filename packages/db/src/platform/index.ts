@@ -65,6 +65,9 @@ export type {
   OpenUsageMeasurementFinding,
   OpenUsageMeasurementFindings,
 } from './queries/usage-findings.js';
+// `F-057` / `A-004`（運用者の利用量監視）の「上限接近・到達」の材料（T-10-03。画面は SP-11 / SP-20）。
+export { listUsageLimitAlerts } from './queries/usage-limits.js';
+export type { UsageLimitAlert, UsageLimitAlerts } from './queries/usage-limits.js';
 // 応答のシリアライザ（docs/05 §5.5 第 2 層）。ルートが型を再宣言せずに参照できるようにする。
 export {
   toPlatformTenantDetail,

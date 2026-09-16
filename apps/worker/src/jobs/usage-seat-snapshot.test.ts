@@ -186,6 +186,19 @@ describe('スケジュール宣言（docs/05 §9.8 / §9.1）', () => {
         fxJpyPerUsd: '150',
         aiBaselineCostUsd: '12.82',
       },
+      // 🔴 T-10-03: `usage.limit-check`（毎 10 分）の deps。埋め忘れるとコンパイルエラーになる
+      //    （＝ 起動配線が「上限到達を誰も記録せず、80% の通知が 1 通も出ない」状態で立ち上がれない）。
+      usageLimits: {
+        warnPercent: 80,
+        aiUnitQuotas: {
+          AI_UNIT_SHEET_PARSE: 180,
+          AI_UNIT_MATCH_RATIONALE: 6_200,
+          AI_UNIT_PROPOSAL_DRAFT: 180,
+          AI_UNIT_RENEWAL_SUMMARY: 20,
+        },
+        emailDailyLimit: 500,
+        storageLimitBytes: 50n * 1024n * 1024n * 1024n,
+      },
     };
   }
 });

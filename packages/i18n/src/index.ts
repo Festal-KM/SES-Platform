@@ -489,6 +489,21 @@ const ja = {
   'gate.held.aiCostLimit':
     'AI の利用量が本日の上限に達したため、品質検査をまだ実行できていません。上限がリセットされると自動的に再開します。',
 
+  // --- F-027 上限到達時の停止と理由（docs/02 F-027 AC-1 / BR-24 / docs/04 §S-038 セクション 1。T-10-03）---
+  // 🔴 `UsageView.aiDailyStop.reasonKey` / `GET /api/usage/blocked-notice` の `reasonKey` が指すキー。
+  //    **全ロール**（パートナー所属を含む）が受け取るため、残量・上限値・リセット時刻・金額を文言に書かない
+  //    （`F-027 AC-1`「パートナーには停止の事実と理由のみ」/ `AC-6`）。「失敗」と書かない（保留であって欠陥ではない）。
+  'quota.aiDaily':
+    'AI の 1 日の利用上限に達したため、AI を使う機能を停止しています。上限がリセットされると自動的に再開します。',
+  // 🔴 同期的に AI 機能を起動する API が停止中に返す文言（`error.quota.exceeded` の AI 版。次の行動 = 待つ）。
+  'error.quota.aiDaily':
+    'AI の 1 日の利用上限に達しているため、この操作はいま実行できません。上限がリセットされると再開します。',
+  // 🔴 停止している機能の列挙（`aiDailyStop.stoppedFeatures`）。Phase 1 の AI 機能は品質ゲートだけである。
+  //    `gate-inspector` は残量表示には出さないが、**止まった理由としては出す**（docs/03 `ui-design` 申し送り 6）。
+  'usage.stoppedFeature.reviewGate': '品質ゲート（提案・案件公開・スキルシート共有の検査）',
+  'usage.stoppedFeature.reviewGate.consequence':
+    '品質ゲートが実行できないため、提案・案件の公開・スキルシートの外部共有を送れません。',
+
   // --- S-041 監査ログ（自テナント。docs/04 §S-041 / F-005 / F-012。T-03-05）---
   'auditLogs.title': '監査ログ',
   'auditLogs.filter.from.label': '期間（開始）',

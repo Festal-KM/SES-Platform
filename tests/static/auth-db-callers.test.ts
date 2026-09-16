@@ -165,6 +165,11 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
     'apps/worker/src/jobs/usage-gap-check.ts',
     'apps/worker/src/jobs/usage-storage-reconcile.ts',
     'apps/worker/src/jobs/cost-monthly-rollup.ts',
+    // 🔴 T-10-03: 上限に対する水準の評価・記録・通知（docs/02 `F-027`）。payload の `tenantId` からジョブ文脈を
+    //    組み立て、**その文脈の RLS が母集団を決める**（`usage_counters` / `usage_limit_states` / `email_dispatches`）。
+    //    AI の停止判定（`probeAiDailyCostLevel`）は `packages/db` の中で予約と同じ式を通り、金額は
+    //    `apps/**` に出ない（`readAiDailyCost` / `probeAiCostHeadroom` の許可先は増えていない）。
+    'apps/worker/src/jobs/usage-limit-check.ts',
   ],
   // 🔴 T-09-04: `APPROVED → SUBMITTING` の CAS（docs/05 §10.2 ③ / §11.5 手順 4）。**`SUBMITTING` に入れるのは
   //    送信ジョブだけ**（所有者 `SEND_JOB`。`CLAUDE.md` §4.2「`SUBMITTING` は片道」）であり、`apps/web` の HTTP 経路が
@@ -268,9 +273,12 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
   //    分散し、「再試行しても 1 通」の根拠（`UNIQUE`）を迂回する INSERT が書けてしまう。
   // 🔴 T-05-08: 隔離の周知（`F-011` 処理④）も `EmailDispatch` を作る。**2 ファイル目**であり、
   //    ここを増やすたびに「`dedupeKey` の組み立てが分散していないか」を見直すこと。
+  // 🔴 T-10-03: 上限接近・到達の通知（`F-027` 処理④）も `EmailDispatch` を作る。**3 ファイル目**。
+  //    `dedupeKey` は `emailDispatchDedupeKey`（1 実装）で組み立て、`targetId` に暦日を含める（1 日 1 回）。
   reserveEmailDispatch: [
     'apps/worker/src/jobs/account-mail.ts',
     'apps/worker/src/jobs/scan-quarantine-notice.ts',
+    'apps/worker/src/jobs/usage-limit-notice.ts',
   ],
   readEmailDispatch: ['apps/worker/src/jobs/email-dispatch.ts'],
   // 🔴 送信の 1 手順（判定 → 予約 → 送信 → CAS）は `email-send.ts` の 1 箇所だけが持つ。

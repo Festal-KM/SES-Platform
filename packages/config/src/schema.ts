@@ -80,6 +80,19 @@ const commonShape = {
   ANTHROPIC_MODEL_CHEAP: z.string().min(1).default('claude-haiku-4-5-20251001'),
   ANTHROPIC_MONTHLY_SPEND_CAP_USD: z.coerce.number().positive(),
   AI_DAILY_COST_LIMIT_USD_DEFAULT: z.coerce.number().positive(),
+  /**
+   * 🔴 T-10-03: 利用者に見せる AI の**月次件数クォータ**（4 単位）の既定値（docs/03 §7.6.2 /
+   *    docs/02 章 7.5 / `F-027`）。`EMAIL_DAILY_LIMIT_PER_TENANT` と同じ扱い —— **プラン別の値
+   *    （`Plan.unitQuota*` + `Subscription.unitQuotaOverride`）が主平面から読めるようになる
+   *    （SP-20 `planAccess.ts`。docs/05 §7.12 ⑧）までの既定値**であり、判定関数（`decideAiUnitQuota`）は
+   *    `quota` を引数で受け取るため、上書きが入っても呼び出し側は変わらない。
+   * 🔴 値は docs/03 §7.6.2 の **Standard**（暫定。実測原価が出た時点で再計算する）。
+   *    `gate-inspector` の件数クォータは**存在しない**（`F-027 AC-7`。キーを作らない）。
+   */
+  AI_UNIT_QUOTA_SHEET_PARSE_DEFAULT: z.coerce.number().int().positive().default(180),
+  AI_UNIT_QUOTA_MATCH_RATIONALE_DEFAULT: z.coerce.number().int().positive().default(6200),
+  AI_UNIT_QUOTA_PROPOSAL_DRAFT_DEFAULT: z.coerce.number().int().positive().default(180),
+  AI_UNIT_QUOTA_RENEWAL_SUMMARY_DEFAULT: z.coerce.number().int().positive().default(20),
 
   // §6.4 メール（Amazon SES）
   AWS_REGION: z.string().min(1).default('ap-northeast-1'),

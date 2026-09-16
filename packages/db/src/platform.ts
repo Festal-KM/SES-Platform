@@ -150,6 +150,7 @@ export const PLATFORM_READABLE_MODELS = [
   'tenantMonthlyCost',
   'billingMeterSubmission',
   'usageMeasurementFinding', // T-10-02（docs/05 §9.8 / §16.5。`A-005` の材料。全列が件数・状態・数値）
+  'usageLimitState', // T-10-03（docs/02 F-027 / docs/05 §5.8。`F-057` / `A-004` の材料。全列が水準・期間・時刻）
 ] as const satisfies readonly (keyof PlatformTransactionClient)[];
 
 export type PlatformReadableModel = (typeof PLATFORM_READABLE_MODELS)[number];

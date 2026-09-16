@@ -76,6 +76,8 @@ import {
   USAGE_MEASUREMENT_FINDING_KINDS,
   WEBHOOK_PROVIDERS,
 } from '../../packages/db/src/schema-value-sets.js';
+import { USAGE_LIMIT_LEVELS } from '../../packages/domain/src/quota/limit-level.js';
+import { USAGE_LIMIT_METRICS } from '../../packages/domain/src/quota/limits.js';
 import { ASSIGNMENT_STATES } from '../../packages/domain/src/state/assignment.js';
 import { CONTRACT_STATES } from '../../packages/domain/src/state/contract.js';
 import { PROPOSAL_STATES } from '../../packages/domain/src/state/proposal.js';
@@ -532,6 +534,31 @@ describe('CHECK 制約と TS 単一出所の drift 検査（docs/05 §3.1「列�
 
     it('usage_measurement_findings_period_kind_check ⇔ packages/db USAGE_COUNTER_PERIOD_KINDS', () => {
       const values = extractCheckInValues(migrationSql, 'usage_measurement_findings_period_kind_check');
+      expectSameValueSet(values, USAGE_COUNTER_PERIOD_KINDS);
+    });
+
+    // 🔴 T-10-03（docs/02 F-027 / docs/05 §5.8 / migration 20260920000000）: 上限に対する水準の表。
+    //    metric は `usage_counters` の**部分集合**（席数・電子署名は上限の判定対象ではない）であり、
+    //    単一出所は `@ses/domain` の `USAGE_LIMIT_METRICS` / `USAGE_LIMIT_LEVELS`（判定の純粋関数と同じ場所）。
+    it('usage_limit_states_metric_check ⇔ @ses/domain USAGE_LIMIT_METRICS（usage_counters_metric_check の部分集合）', () => {
+      const values = extractCheckInValues(migrationSql, 'usage_limit_states_metric_check');
+      expectSameValueSet(values, USAGE_LIMIT_METRICS);
+      const counterMetrics: readonly string[] = USAGE_COUNTER_METRICS;
+      expect(values.filter((value) => !counterMetrics.includes(value))).toEqual([]);
+      // 🔴 上限を持たない 2 つは対象外である（増えたら「上限を持つのか」を人間に問い返す）。
+      expect(counterMetrics.filter((value) => !values.includes(value)).sort()).toEqual(['ESIGN_REQUESTS', 'SEAT_COUNT']);
+    });
+
+    it('usage_limit_states_level_check / notified_level_check ⇔ @ses/domain USAGE_LIMIT_LEVELS', () => {
+      expectSameValueSet(extractCheckInValues(migrationSql, 'usage_limit_states_level_check'), USAGE_LIMIT_LEVELS);
+      expectSameValueSet(
+        extractCheckInValues(migrationSql, 'usage_limit_states_notified_level_check'),
+        USAGE_LIMIT_LEVELS,
+      );
+    });
+
+    it('usage_limit_states_period_kind_check ⇔ packages/db USAGE_COUNTER_PERIOD_KINDS', () => {
+      const values = extractCheckInValues(migrationSql, 'usage_limit_states_period_kind_check');
       expectSameValueSet(values, USAGE_COUNTER_PERIOD_KINDS);
     });
 

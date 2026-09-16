@@ -625,3 +625,27 @@ export type {
   SearchPlan,
   SoftCondition,
 } from './search/index.js';
+// 🔴 T-10-03: 上限到達の判定材料と `usage_limit_states`（docs/02 F-027 / docs/05 §5.8 / migration 20260920000000）。
+//    金額（USD）はこのモジュールの中に閉じる（`readAiDailyCost` / `probeAiCostHeadroom` は `apps/**` から呼ばない）。
+//    書き手はジョブ（`syncUsageLimitStates` は `SystemTenantCtx`）だけ、主平面は読むだけ（#69 / #70）。
+export {
+  listUsageLimitStates,
+  probeAiDailyCostLevel,
+  readAiStopNotice,
+  readTenantUsageSnapshot,
+  syncUsageLimitStates,
+  USAGE_LIMIT_AUDIT_ACTIONS,
+  usageLimitPeriodKind,
+} from './usage-limits.js';
+export type {
+  AiDailyCostLevelProbe,
+  AiStopNotice,
+  TenantUsageSnapshot,
+  UsageLimitNotice,
+  UsageLimitStateRow,
+  UsageLimitSyncInput,
+  UsageLimitSyncOutcome,
+} from './usage-limits.js';
+// 🔴 T-10-03: テナント管理者（分類 1）宛の運用メールの宛先。上限接近・到達の通知（`F-027` 処理④）が使う。
+export { readTenantAdminRecipients } from './tenant-admin-recipients.js';
+export type { TenantAdminRecipient } from './tenant-admin-recipients.js';

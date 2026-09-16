@@ -695,6 +695,20 @@ export const PLATFORM_READ_COLUMN_ALLOWLIST: Record<string, readonly string[]> =
     'last_seen_at',
     'resolved_at',
   ],
+  // 🔴 T-10-03（docs/02 F-027 / docs/05 §5.8。migration 20260920000000）: 上限に対するいまの水準
+  //    （`F-057` / `A-004` の接近・到達の材料）。全列が水準・期間・時刻であり、金額の列も非開示列も無い。
+  usage_limit_states: [
+    'id',
+    'tenant_id',
+    'metric',
+    'level',
+    'level_since',
+    'period_kind',
+    'period_key',
+    'notified_level',
+    'notified_on',
+    'evaluated_at',
+  ],
 };
 
 /**

@@ -105,7 +105,8 @@ describe('#2 全表にポリシーが 1 つ以上ある（docs/05 §4.7 #2）', 
     // 🔴 T-07-09 で `project_publish_requests` を 1 表足した（docs/05 §11.11 ①）。
     // 🔴 T-09-12 で `engineer_careers` を 1 表足した（docs/05 §3.4 / Issue #35 = A）。
     // 🔴 T-10-02 で `usage_measurement_findings` を 1 表足した（docs/05 §9.8 / migration 20260919000000）。
-    expect(tables).toHaveLength(55);
+    // 🔴 T-10-03 で `usage_limit_states` を 1 表足した（docs/02 F-027 / docs/05 §5.8 / migration 20260920000000）。
+    expect(tables).toHaveLength(56);
 
     const policies = await readPolicies(db);
     const withPolicy = new Set(policies.map((policy) => policy.table));

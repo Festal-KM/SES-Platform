@@ -70,6 +70,8 @@
 - 上限到達・停止・解除を `AuditLog` に記録する。
 - **完了の判定**: `F-027 AC-1`〜`AC-4` の結合テスト（3 種の挙動差を含む）。
 
+- ✅ **T-10-03 の決着（2026-09-16）**: 3 種の区別は `packages/domain/src/quota/limits.ts` の 1 実装（`STOP_AI` / `METERED` / `STOP_EMAIL_DAILY` / `STOP_UPLOAD`）。停止の定義は `gate.hold-release` と同じ probe（金額は `packages/db/src/usage-limits.ts` の中に閉じる）。`usage_limit_states`（RLS: パートナーは `AI_COST_USD` × `REACHED` の行のみ）。#69 `GET /api/usage`（ホストのみ・件数のみ）/ #70 `blocked-notice`（2 キー）。`usage.limit-check` 毎 10 分、監査は状態が変わったときだけ、メールは `dedupeKey` に暦日。**AI コスト上限の 80% はテナントへ通知しない**（[Issue #56](https://github.com/Festal-KM/SES-Platform/issues/56)、`assumption`。`docs/02` F-027 AC-4 に例外を追記）。code-reviewer 1 回 APPROVED（時計差フレークの修正 1 件を同時に反映）。
+
 ### T-10-04 `S-038` 利用量と上限（件数のみ）（M）
 
 - **実装**: `GET /api/usage`（#69）。画面は `S-038`（Tier 2）。

@@ -295,6 +295,19 @@ export function startWorkerRuntime(config: RuntimeConfig): WorkerRuntime {
     // 🔴 SES Tenants 課金の環境判定は**ここで 1 回**（docs/05 §8.8 / §13.1）。ジョブは `APP_ENV` を読まない。
     emailTenantsBillingPolicy: resolveEmailTenantsBillingPolicy(env.APP_ENV),
     pricingRuleset: PRICING_RULESET_V1,
+    // 🔴 T-10-03: usage.limit-check（docs/02 F-027）。上限値の出所は `packages/config` だけ（プラン別の上書きが
+    //    入るまでの既定値。docs/05 §7.12 ⑧）。`GET /api/usage`（#69）が同じ値を `usageLimitsRuntime()` から読む。
+    usageLimits: {
+      warnPercent: env.QUOTA_WARNING_THRESHOLD_PERCENT,
+      aiUnitQuotas: {
+        AI_UNIT_SHEET_PARSE: env.AI_UNIT_QUOTA_SHEET_PARSE_DEFAULT,
+        AI_UNIT_MATCH_RATIONALE: env.AI_UNIT_QUOTA_MATCH_RATIONALE_DEFAULT,
+        AI_UNIT_PROPOSAL_DRAFT: env.AI_UNIT_QUOTA_PROPOSAL_DRAFT_DEFAULT,
+        AI_UNIT_RENEWAL_SUMMARY: env.AI_UNIT_QUOTA_RENEWAL_SUMMARY_DEFAULT,
+      },
+      emailDailyLimit: env.EMAIL_DAILY_LIMIT_PER_TENANT,
+      storageLimitBytes: BigInt(env.STORAGE_LIMIT_BYTES_PER_TENANT),
+    },
   };
 
   // --------------------------------------------------------------------------
@@ -311,7 +324,7 @@ export function startWorkerRuntime(config: RuntimeConfig): WorkerRuntime {
 
   // --------------------------------------------------------------------------
   // 6. スケジュール（🔴 宣言（`SCHEDULED_JOBS`）を舐めるだけ。ここに名前を書き写さない。本数は宣言が決める
-  //    —— T-07-11 で 5 本、T-08-07 で `proposal-request.expire` が加わり 6 本）
+  //    —— T-07-11 で 5 本、T-08-07 で `proposal-request.expire`、T-10-02 で計測 4 本、T-10-03 で `usage.limit-check` が加わり 11 本）
   // --------------------------------------------------------------------------
   const ready: Promise<void>[] = [];
   for (const declaration of SCHEDULED_JOBS) {

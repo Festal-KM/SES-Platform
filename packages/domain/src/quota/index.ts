@@ -33,3 +33,36 @@ export {
   type StorageQuotaDecision,
   type StorageQuotaInput,
 } from './storage.js';
+// 🔴 T-10-03: 上限到達の判定と 3 種の区別（docs/02 `F-027` / 章 7.5 / docs/03 §7.6.3-4）。
+//    - `decideAiUnitQuota` … 月次の件数クォータ。**`BLOCK` を持たない**（超過は従量へ移行）
+//    - `decideLimitLevel` / `decideLimitTransition` … 接近（80%）・到達・解除の水準と遷移
+//    - `assessUsageLimits` … 3 種をまとめて評価する唯一の形（表示・通知・監査の共通の出所）
+export {
+  decideAiUnitQuota,
+  type AiUnitQuotaDecision,
+  type AiUnitQuotaInput,
+} from './ai-unit.js';
+export {
+  decideLimitLevel,
+  decideLimitTransition,
+  USAGE_LIMIT_LEVELS,
+  type LimitLevelInput,
+  type LimitLevelTransition,
+  type UsageLimitLevel,
+} from './limit-level.js';
+export {
+  assessAiDailyCostLimit,
+  assessAiUnitLimit,
+  assessEmailDailyLimit,
+  assessStorageLimit,
+  assessUsageLimits,
+  shouldNotifyTenant,
+  TENANT_NOTICE_LEVELS,
+  USAGE_LIMIT_EFFECT,
+  USAGE_LIMIT_METRICS,
+  type UsageLimitAssessment,
+  type UsageLimitAssessmentInput,
+  type UsageLimitEffect,
+  type UsageLimitMetric,
+  type UsageLimitState,
+} from './limits.js';

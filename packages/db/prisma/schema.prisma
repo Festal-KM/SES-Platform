@@ -163,6 +163,8 @@ model Tenant {
   tenantMatchWeights      TenantMatchWeight[]
   // 🔴 T-10-02（docs/05 §9.8）: 計測の欠測・検算の乖離（`A-005` の材料）。
   usageMeasurementFindings UsageMeasurementFinding[]
+  // 🔴 T-10-03（docs/02 F-027 / docs/05 §5.8）: 上限に対するいまの水準（停止 / 従量 / アップロード停止の区別）。
+  usageLimitStates         UsageLimitState[]
   // 🔴 Subscription は射程外モデル（tenantKeyOf('Subscription') === null）のため
   //    TENANT_KEY_MOVING_RELATION_OVERRIDES の宣言対象ではない（tenant-relation.test.ts が
   //    機械的に確認する）。tenantId 列を持つが RLS/scope-injection の対象外（§3.10 末尾）。
@@ -1916,6 +1918,32 @@ model UsageMeasurementFinding {
   @@unique([tenantId, kind, metric, periodKind, periodKey])
   @@index([resolvedAt, lastSeenAt])
   @@map("usage_measurement_findings")
+}
+
+/// T-10-03（docs/02 F-027 / docs/05 §5.8 / migration 20260920000000）。テナント × 計測に 1 行の「いまの水準」。
+/// 🔴 金額の列は無い。RLS: ホストは全行 SELECT、パートナーは `metric='AI_COST_USD' AND level='REACHED'` の行のみ
+/// （停止の事実だけ。F-027 AC-1）。書込は C2 HOST_ONLY（ジョブ）。DELETE は開かない。
+model UsageLimitState {
+  id            String    @id @default(uuid(7)) @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  /// UsageLimitMetric（TEXT + CHECK）: `usage_counters.metric` の部分集合 7 値（席数・電子署名を除く）
+  metric        String
+  /// UsageLimitLevel（TEXT + CHECK）: 'BELOW'|'NEARING'|'REACHED'
+  level         String
+  levelSince    DateTime  @map("level_since") @db.Timestamptz(3)
+  /// UsageCounterPeriodKind（TEXT + CHECK）: 'DAY'|'MONTH'
+  periodKind    String    @map("period_kind")
+  periodKey     String    @map("period_key")
+  /// 🔴 その日その水準で通知・記録済み（1 日 1 回）。未通知なら NULL（両列は同時に NULL / 非 NULL）
+  notifiedLevel String?   @map("notified_level")
+  notifiedOn    String?   @map("notified_on")
+  evaluatedAt   DateTime  @map("evaluated_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, metric])
+  @@index([level, levelSince])
+  @@map("usage_limit_states")
 }
 
 /// docs/03 §3.8.3。RLS のポリシークラスは C2 HOST_ONLY（docs/05 §4.4）。

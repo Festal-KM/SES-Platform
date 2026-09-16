@@ -64,13 +64,14 @@ afterAll(async () => {
 }, SETUP_TIMEOUT_MS);
 
 describe('🔴 受け入れ基準 ①: development でワーカーが起動し gate.run が待ち受ける', () => {
-  it('配線したキューの一覧に gate.run と宣言済み 10 本がすべて含まれる', () => {
+  it('配線したキューの一覧に gate.run と宣言済み 11 本がすべて含まれる', () => {
     expect(runtime.queues).toEqual([
       GATE_RUN_JOB,
       ...SCHEDULED_JOBS.map((declaration) => declaration.name),
     ]);
     // 🔴 T-10-02 で計測の 4 本（usage.daily-rollup / usage.gap-check / usage.storage-reconcile / cost.monthly-rollup）が加わった。
-    expect(runtime.queues).toHaveLength(11);
+    // 🔴 T-10-03 で `usage.limit-check`（上限到達の判定・記録・通知）が加わった。
+    expect(runtime.queues).toHaveLength(12);
   });
 
   it('🔴 enqueue した gate.run が実際に消費される（対象が無い提案は TARGET_NOT_FOUND で完了する）', async () => {

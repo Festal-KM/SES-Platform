@@ -184,9 +184,9 @@ describe('監査行の組み立て（docs/05 §5.3 / §16.1 / §16.2）', () => 
 });
 
 describe('列挙の網羅（docs/05 §5.2 / §5.5）', () => {
-  it('🔴 読み取り可能なモデルは 54 件ちょうど（migration 20260904010000 §2 + 20260917000000〔engineer_careers。T-09-12〕+ 20260919000000〔usage_measurement_findings。T-10-02〕の GRANT と 1 対 1）', () => {
-    expect(PLATFORM_READABLE_MODELS).toHaveLength(54);
-    expect(new Set(PLATFORM_READABLE_MODELS).size).toBe(54);
+  it('🔴 読み取り可能なモデルは 55 件ちょうど（migration 20260904010000 §2 + 20260917000000〔engineer_careers。T-09-12〕+ 20260919000000〔usage_measurement_findings。T-10-02〕+ 20260920000000〔usage_limit_states。T-10-03〕の GRANT と 1 対 1）', () => {
+    expect(PLATFORM_READABLE_MODELS).toHaveLength(55);
+    expect(new Set(PLATFORM_READABLE_MODELS).size).toBe(55);
   });
 
   it('🔴 射程外の 4 表（skills / platform_users / plans / subscriptions）を含まない（CLAUDE.md §3.1）', () => {

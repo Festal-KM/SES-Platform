@@ -18,6 +18,7 @@
 // ファイル名・版のメモは 1 つも載せない。「何がどうなったか」は、閲覧者自身の権限で
 // 読める画面（`S-003` / `S-004` の隔離ブロック → `S-008`）が示す。
 import { SKILL_SHEET_QUARANTINE_TEMPLATE_KEY } from './scan-quarantine-notice.js';
+import { USAGE_LIMIT_NOTICE_TEMPLATE_KEY } from './usage-limit-notice.js';
 
 /** 🔴 差し込み値の定義が無いテンプレートで送信しようとした（実装漏れ）。握り潰さない。 */
 export class UnknownOperationalMailTemplateError extends Error {
@@ -49,6 +50,15 @@ const TEMPLATE_PARAMS: Readonly<Record<string, ParamsBuilder>> = {
   //    隔離ブロックが出す。メール側でエンジニアや版を指すと、宛先が本当に見てよい版かどうかを
   //    メールの組み立て時に判断することになり、判定が 2 実装になる。
   [SKILL_SHEET_QUARANTINE_TEMPLATE_KEY]: (deps) => ({ link: new URL('/', deps.appUrl).toString() }),
+  // 🔴 T-10-03（`F-027` 処理④ / `AC-4` / `AC-6`）。上限接近・到達の通知。**差し込みはリンク 1 つだけ** ——
+  //    どの上限が・どこまで・いつリセットされるかは `S-038`（`/settings/usage`。閲覧者の権限で読める）が示す。
+  //    金額・残量・上限値を本文に載せない（テナント側の通知に金額表示を 1 つも作らない。`BR-24`）。
+  [USAGE_LIMIT_NOTICE_TEMPLATE_KEY.NEARING]: (deps) => ({
+    link: new URL('/settings/usage', deps.appUrl).toString(),
+  }),
+  [USAGE_LIMIT_NOTICE_TEMPLATE_KEY.REACHED]: (deps) => ({
+    link: new URL('/settings/usage', deps.appUrl).toString(),
+  }),
 };
 
 /**

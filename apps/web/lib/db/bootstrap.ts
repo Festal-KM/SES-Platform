@@ -27,6 +27,7 @@ import { createS3Api } from '@ses/connectors/aws';
 //    `@ses/connectors/aws` と同じく**サブパス**にしてあるのは、バレル（`@ses/connectors`）を
 //    import しただけで BullMQ / ioredis が引きずり込まれないようにするためである。
 import { createBullMqGateRunQueue } from '@ses/connectors/bullmq';
+import type { AiUnitMetric } from '@ses/domain';
 import {
   configurePlatformReadDb,
   configurePlatformWriteDb,
@@ -105,6 +106,14 @@ let cachedS3ClientEnv: Parameters<typeof createS3Api>[0] | null = null;
  *    同じ規律。`CLAUDE.md` §3.5「ログ・エラー・監査ログに絶対に出さない」）。
  */
 let cachedCandidateReference: CandidateReference | null = null;
+/**
+ * 🔴 T-10-03: 利用量の上限（`S-038` #69 が残量を組み立てるために読む値。docs/02 `F-027` / docs/05 §5.8）。
+ *    出所は `packages/config` だけ（プラン別の上書きが入るまでの既定値。docs/05 §7.12 ⑧）。
+ *    🔴 `usage.limit-check`（`apps/worker/src/runtime.ts`）が**同じキー**から同じ値を渡す ——
+ *    判定（ワーカー）と表示（主平面）で上限値がずれると「停止中なのに残量がある」表示になる。
+ *    🔴 金額（`AI_DAILY_COST_LIMIT_USD_DEFAULT`）は**ここに載せない**（主平面は金額を読まない。`F-027 AC-6`）。
+ */
+let cachedUsageLimitsRuntime: UsageLimitsRuntime | null = null;
 
 /**
  * DB クライアントを 1 度だけ初期化する。
@@ -236,6 +245,19 @@ export function ensureDbConfigured(): void {
   //    起動時に落ちる。「既定の鍵で続行」は、参照子が全環境で同じ = 案件スコープの意味が
   //    消えた状態を本番へ持ち込む（`CLAUDE.md` §11.1 と同じ壊れ方）。
   cachedCandidateReference = createCandidateReference(env.ANON_REFERENCE_HMAC_SECRET);
+  // 🔴 T-10-03: 上限値（金額を含まない）。ワーカーの `usageLimits` と同じキーから読む。
+  cachedUsageLimitsRuntime = {
+    warnPercent: env.QUOTA_WARNING_THRESHOLD_PERCENT,
+    aiUnitQuotas: {
+      AI_UNIT_SHEET_PARSE: env.AI_UNIT_QUOTA_SHEET_PARSE_DEFAULT,
+      AI_UNIT_MATCH_RATIONALE: env.AI_UNIT_QUOTA_MATCH_RATIONALE_DEFAULT,
+      AI_UNIT_PROPOSAL_DRAFT: env.AI_UNIT_QUOTA_PROPOSAL_DRAFT_DEFAULT,
+      AI_UNIT_RENEWAL_SUMMARY: env.AI_UNIT_QUOTA_RENEWAL_SUMMARY_DEFAULT,
+    },
+    emailDailyLimit: env.EMAIL_DAILY_LIMIT_PER_TENANT,
+    emailMinuteLimit: env.EMAIL_MINUTE_LIMIT_PER_TENANT,
+    storageLimitBytes: BigInt(env.STORAGE_LIMIT_BYTES_PER_TENANT),
+  };
   initialized = true;
 }
 
@@ -400,6 +422,26 @@ export function sandboxTrialDays(): number {
     throw new Error('SANDBOX_TRIAL_DAYS が解決されていません（bootstrap の不変条件違反）。');
   }
   return cachedSandboxTrialDays;
+}
+
+/**
+ * 🔴 T-10-03: 利用量の上限（件数・通数・バイト数。金額を含まない）。`S-038` #69 が読む。
+ *    `usage.limit-check`（ワーカー）と同じ `packages/config` のキーが出所であり、判定と表示で値がずれない。
+ */
+export type UsageLimitsRuntime = {
+  readonly warnPercent: number;
+  readonly aiUnitQuotas: Readonly<Record<AiUnitMetric, number>>;
+  readonly emailDailyLimit: number;
+  readonly emailMinuteLimit: number;
+  readonly storageLimitBytes: bigint;
+};
+
+export function usageLimitsRuntime(): UsageLimitsRuntime {
+  ensureDbConfigured();
+  if (cachedUsageLimitsRuntime === null) {
+    throw new Error('利用量の上限が解決されていません（bootstrap の不変条件違反）。');
+  }
+  return cachedUsageLimitsRuntime;
 }
 
 /**

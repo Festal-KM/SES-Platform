@@ -69,6 +69,12 @@ import {
   createCostMonthlyRollupHandler,
   type CostMonthlyRollupDeps,
 } from './cost-monthly-rollup.js';
+import {
+  createUsageLimitCheckHandler,
+  USAGE_LIMIT_CHECK_JOB,
+  USAGE_LIMIT_CHECK_SCHEDULE,
+  type UsageLimitCheckDeps,
+} from './usage-limit-check.js';
 
 export {
   createUsageSeatSnapshotHandler,
@@ -299,6 +305,28 @@ export type {
   CostMonthlyRollupPayload,
   EmailTenantsBillingPolicy,
 } from './cost-monthly-rollup.js';
+// 🔴 T-10-03: 上限到達の判定・記録・通知（docs/02 `F-027` 処理①〜⑤ / docs/05 §5.8）。毎 10 分のスケジュール
+//    ジョブで、下の `SCHEDULED_JOBS` に載る。**LLM も外部 API も呼ばない**（`attempts: 3`）。通知は既存の
+//    `email.dispatch` 経路（`notifyUsageLimit`）だけを使い、新しい送信経路を作らない。
+export {
+  createUsageLimitCheckHandler,
+  parseUsageLimitCheckPayload,
+  USAGE_LIMIT_CHECK_JOB,
+  USAGE_LIMIT_CHECK_SCHEDULE,
+} from './usage-limit-check.js';
+export type {
+  TenantUsageLimits,
+  UsageLimitCheckDeps,
+  UsageLimitCheckHandler,
+  UsageLimitCheckOutcome,
+  UsageLimitCheckPayload,
+} from './usage-limit-check.js';
+export {
+  notifyUsageLimit,
+  USAGE_LIMIT_NOTICE_TEMPLATE_KEY,
+  usageLimitNoticeTargetId,
+} from './usage-limit-notice.js';
+export type { UsageLimitNoticeDeps, UsageLimitNoticeInput } from './usage-limit-notice.js';
 
 /**
  * ジョブの合成に要る値（起動時に 1 度だけ解決する。`CLAUDE.md` §11.1 / docs/05 §13.1）。
@@ -323,7 +351,10 @@ export type ScheduledJobDeps = UsageSeatSnapshotDeps &
   UsageDailyRollupDeps &
   UsageGapCheckDeps &
   UsageStorageReconcileDeps &
-  CostMonthlyRollupDeps;
+  CostMonthlyRollupDeps &
+  // 🔴 T-10-03: `usage.limit-check` が要るのは「モデル解決」「日次上限」（`gate.hold-release` と共有）に加えて
+  //    「件数 4 単位 / メール / ストレージの上限値と 80% の閾値」「`email.dispatch` の enqueue 先」。
+  UsageLimitCheckDeps;
 
 /**
  * スケジュール実行するジョブの宣言。
@@ -422,5 +453,14 @@ export const SCHEDULED_JOBS: readonly ScheduledJobDeclaration[] = [
     cron: COST_MONTHLY_ROLLUP_SCHEDULE.cron,
     timeZone: COST_MONTHLY_ROLLUP_SCHEDULE.timeZone,
     createHandler: (deps) => createCostMonthlyRollupHandler(deps),
+  },
+  // 🔴 T-10-03: 上限に対する水準の評価・記録・通知（docs/02 `F-027`。毎 10 分）。**これが無いと**
+  //    到達（停止）が `S-038` / `#70` に現れず、80% の通知も監査ログの到達・解除も 1 件も出ない
+  //    （`F-027 AC-1` / `AC-4` / 処理⑤）。
+  {
+    name: USAGE_LIMIT_CHECK_JOB,
+    cron: USAGE_LIMIT_CHECK_SCHEDULE.cron,
+    timeZone: USAGE_LIMIT_CHECK_SCHEDULE.timeZone,
+    createHandler: (deps) => createUsageLimitCheckHandler(deps),
   },
 ];
