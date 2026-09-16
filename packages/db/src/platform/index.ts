@@ -118,3 +118,18 @@ export type {
   ProviderSpendGroup,
   ProviderSpendSummaryInput,
 } from './queries/provider-spend.js';
+// `A-005`（運用監視）の項目 12「`GATE_RUNNING` の滞留」の材料（`F-059 AC-6` / `F-027 AC-5`。T-11-05。画面は T-11-04）。
+// 🔴 理由は 3 区分（`AI_COST_LIMIT_HELD` = 保留 / `JOB_FAILED` / `RUNNING_OVERDUE` = 障害）で、保留は失敗に加算しない。
+//    応答はテナント ID・対象の種別と ID・理由・時刻・分数のみ。本文・件名・提案先・氏名・`findings` はフィールドとして存在しない。
+//    `JOB_FAILED` の検知元は BullMQ の `gate.run` failed セット（呼び出し側が読み取り専用の照会で取り `failedJobs` で渡す）。
+export { classifyGateStalls, GATE_STALL_REASONS, listGateStalls } from './queries/gate-stalls.js';
+export type {
+  FailedGateRunJob,
+  GateRunningProposal,
+  GateStallCandidates,
+  GateStallReason,
+  GateStallRow,
+  GateStalls,
+  GateStallsMeta,
+  HeldReviewGateRow,
+} from './queries/gate-stalls.js';

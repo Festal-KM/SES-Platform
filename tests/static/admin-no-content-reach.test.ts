@@ -76,6 +76,27 @@ const ROW_READ_METHODS: ReadonlySet<string> = new Set([
   'findUniqueOrThrow',
 ]);
 
+/**
+ * 🔴 例外（T-11-05）: `A-005` 項目 12「`GATE_RUNNING` の滞留」は**対象ごと**に「保留か / 失敗か / 応答不明か」を
+ *    付ける必要があり（`F-059 AC-6`。保留行は対象単位・failed 記録は対象単位で、件数の引き算では区別が付かない）、
+ *    `gate-stalls.ts` 1 本に限って `proposal` / `reviewGate` の `findMany` を許す。
+ *    🔴 **ただし `select` を必須にし、キーを下の状態・時刻・ID の集合に限る**（`select` の無い呼び出し =
+ *    全列の読み取りは違反。`include:` は元から違反）。②の非開示列の検査もこのファイルに掛かる。
+ *    これは「行を読まない」を緩めたのではなく、「内容の列に到達しない」を**このファイルだけ列の単位で**固定した形である。
+ */
+const ROW_READ_EXCEPTIONS: ReadonlyMap<
+  string,
+  { readonly models: ReadonlySet<string>; readonly selectKeys: ReadonlySet<string> }
+> = new Map([
+  [
+    'packages/db/src/platform/queries/gate-stalls.ts',
+    {
+      models: new Set(['proposal', 'reviewGate']),
+      selectKeys: new Set(['id', 'tenantId', 'state', 'updatedAt', 'targetType', 'targetId', 'execution', 'heldSince']),
+    },
+  ],
+]);
+
 /** 🔴 `docs/05` §5.5「`app_platform` に GRANT しない列」の Prisma フィールド名（`select` のキーとして現れてはならない）。 */
 const FORBIDDEN_SELECT_KEYS: ReadonlySet<string> = new Set([
   'displayName',
@@ -217,9 +238,34 @@ function parse(absolute: string): ts.SourceFile {
   );
 }
 
+/**
+ * ①の例外ファイルで、`find*` の引数が「`select` を明示し、キーが許可リストの中で、値がリテラル `true`」であるか。
+ * 満たさなければ理由を返す（`null` = 適合）。
+ */
+function selectAllowlistViolation(call: ts.CallExpression, selectKeys: ReadonlySet<string>): string | null {
+  const argument = call.arguments[0];
+  if (argument === undefined || !ts.isObjectLiteralExpression(argument)) return 'select の無い呼び出し（全列を読む）';
+  const select = argument.properties.find(
+    (property): property is ts.PropertyAssignment =>
+      ts.isPropertyAssignment(property) && ts.isIdentifier(property.name) && property.name.text === 'select',
+  );
+  if (select === undefined || !ts.isObjectLiteralExpression(select.initializer)) {
+    return 'select の無い呼び出し（全列を読む）';
+  }
+  for (const property of select.initializer.properties) {
+    if (!ts.isPropertyAssignment(property) || !ts.isIdentifier(property.name)) return 'select のキーが識別子ではない';
+    if (!selectKeys.has(property.name.text)) return `select に許可リスト外の列 ${property.name.text} がある`;
+    if (property.initializer.kind !== ts.SyntaxKind.TrueKeyword) {
+      return `select の ${property.name.text} が true のリテラルではない（入れ子の select / 関連の読み取り）`;
+    }
+  }
+  return null;
+}
+
 /** ① `X.<model>.<find*>(...)` と `include:`。 */
 function scanDelegateReads(file: string, source: ts.SourceFile): Violation[] {
   const violations: Violation[] = [];
+  const exception = ROW_READ_EXCEPTIONS.get(file);
   const visit = (node: ts.Node): void => {
     if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
       const method = node.expression.name.text;
@@ -227,11 +273,13 @@ function scanDelegateReads(file: string, source: ts.SourceFile): Violation[] {
       if (ROW_READ_METHODS.has(method) && ts.isPropertyAccessExpression(receiver)) {
         const model = receiver.name.text;
         if (CONTENT_MODELS.has(model)) {
-          violations.push({
-            file,
-            line: lineOf(source, node),
-            detail: `${model}.${method}() — 内容を持つモデルの行を管理平面で読んでいる（件数・集計のみ許される）`,
-          });
+          const reason =
+            exception !== undefined && exception.models.has(model)
+              ? selectAllowlistViolation(node, exception.selectKeys)
+              : '内容を持つモデルの行を管理平面で読んでいる（件数・集計のみ許される）';
+          if (reason !== null) {
+            violations.push({ file, line: lineOf(source, node), detail: `${model}.${method}() — ${reason}` });
+          }
         }
       }
     }
@@ -351,6 +399,47 @@ describe('🔴 管理平面に内容へ到達する経路が無い（F-058 AC-2 
   it('① 内容を持つモデルの行を読む呼び出し（find*）と include: が 1 つも無い', () => {
     const violations = scannedFiles.flatMap((f) => scanDelegateReads(f.file, f.source));
     expect(violations, format(violations)).toEqual([]);
+  });
+
+  it('対照（T-11-05）: 例外の 1 本では proposal / reviewGate を select 付きで読んでおり、例外が空振りしていない', () => {
+    const query = scannedFiles.find((f) => f.file === 'packages/db/src/platform/queries/gate-stalls.ts');
+    expect(query).toBeDefined();
+    const text = query?.source.getFullText() ?? '';
+    expect(text).toContain('db.proposal.findMany(');
+    expect(text).toContain('db.reviewGate.findMany(');
+  });
+
+  it('🔴 対照（T-11-05）: 例外は列の単位でしか効かない —— select 無し / 許可リスト外の列 / 入れ子の select / 別ファイルは違反になる', () => {
+    const file = 'packages/db/src/platform/queries/gate-stalls.ts';
+    const scan = (code: string, at = file) =>
+      scanDelegateReads(at, ts.createSourceFile(at, code, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS));
+    expect(scan(`db.proposal.findMany({ where: { state: 'GATE_RUNNING' }, select: { tenantId: true, id: true, updatedAt: true } });`)).toEqual([]);
+    expect(scan(`db.proposal.findMany({ where: { state: 'GATE_RUNNING' } });`).map((v) => v.detail)).toEqual([
+      'proposal.findMany() — select の無い呼び出し（全列を読む）',
+    ]);
+    expect(scan(`db.proposal.findMany({ select: { id: true, subject: true } });`).map((v) => v.detail)).toEqual([
+      'proposal.findMany() — select に許可リスト外の列 subject がある',
+    ]);
+    expect(scan(`db.reviewGate.findMany({ select: { id: true, findings: true } });`).map((v) => v.detail)).toEqual([
+      'reviewGate.findMany() — select に許可リスト外の列 findings がある',
+    ]);
+    expect(
+      scan(`db.proposal.findMany({ select: { id: true, engineer: { select: { id: true } } } });`).map((v) => v.detail),
+    ).toEqual(['proposal.findMany() — select に許可リスト外の列 engineer がある']);
+    expect(scan(`db.proposal.findMany({ select: { id: true, tenant: true } });`).map((v) => v.detail)).toEqual([
+      'proposal.findMany() — select に許可リスト外の列 tenant がある',
+    ]);
+    // 例外に無いモデル（`engineer`）は同じファイルでも従来どおり違反。
+    expect(scan(`db.engineer.findMany({ select: { id: true } });`).map((v) => v.detail)).toEqual([
+      'engineer.findMany() — 内容を持つモデルの行を管理平面で読んでいる（件数・集計のみ許される）',
+    ]);
+    // 別ファイルでは select 付きでも違反。
+    expect(
+      scan(
+        `db.proposal.findMany({ select: { id: true } });`,
+        'packages/db/src/platform/queries/tenants.ts',
+      ).map((v) => v.detail),
+    ).toEqual(['proposal.findMany() — 内容を持つモデルの行を管理平面で読んでいる（件数・集計のみ許される）']);
   });
 
   it('対照: 件数・集計（groupBy / count）は使われている（① が緩すぎないことの確認）', () => {

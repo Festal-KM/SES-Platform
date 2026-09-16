@@ -195,6 +195,14 @@ const commonShape = {
   SANDBOX_TRIAL_DAYS: z.coerce.number().int().positive().default(30),
   TENANT_PURGE_GRACE_DAYS: z.coerce.number().int().positive().default(30),
   QUOTA_WARNING_THRESHOLD_PERCENT: z.coerce.number().int().min(1).max(99).default(80),
+  /**
+   * 🔴 T-11-05: `GATE_RUNNING` の滞留を「応答不明（`RUNNING_OVERDUE`）」と判断するまでの分数
+   *    （docs/05 §16.5 項目 12 / `F-059 AC-6`。既定 30）。`gate.run` は `attempts: 1` で LLM の内部再試行
+   *    （最大 2 回 × タイムアウト）を含めても数分で確定するため、30 分を超えて確定行も保留行も失敗記録も無いのは
+   *    ワーカー停止・Redis 喪失の疑いである。🔴 保留（`HELD_AI_COST_LIMIT`）と失敗（BullMQ failed）には
+   *    この閾値を掛けない（どちらも事実として即時に載せる）。ハードコードしない。
+   */
+  GATE_STALL_ALERT_MINUTES: z.coerce.number().int().positive().default(30),
 
   // docs/05 §13.4: 送信基盤全体の 24h 枠（宛先分類に依存しないグローバル上限）
   MAIL_PROVIDER_QUOTA_WARN_RATIO: z.coerce.number().min(0).max(1).default(0.8),
