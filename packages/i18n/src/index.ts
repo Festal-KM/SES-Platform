@@ -2371,6 +2371,12 @@ const ja = {
   'proposals.editor.requestGate': 'レビューに出す',
   'proposals.editor.requestingGate': 'レビューを依頼しています…',
   'proposals.editor.gateRequested': 'レビューを依頼しました。検査の結果は下に表示されます。',
+  // 🔴 T-09-11: 検査不合格（`GATE_FAILED`）から修正へ戻る唯一の導線（#48 `GATE_FAILED → DRAFT`。`docs/04` §S-020「修正 → 再実行のみ」）。
+  //    「無視して送信」に相当する語を含めない（`BR-18` / `F-020 AC-2`）。
+  'proposals.editor.reopenDraft': '修正する（下書きに戻す）',
+  'proposals.editor.reopeningDraft': '下書きに戻しています…',
+  'proposals.editor.reopenDraftLead':
+    '検査で不合格のため差し戻されています。下書きに戻して元データを修正し、あらためてレビューに出してください。不合格のまま承認・送信へ進む操作はありません。',
   'proposals.editor.cancel': '候補検索に戻る',
   'proposals.editor.backToRequests': '提案依頼の一覧に戻る',
   // 🔴 T-09-03: レビューに出した後の判断材料は `S-021` で見る（`docs/04` §S-020「レビュー依頼 → S-021」）。

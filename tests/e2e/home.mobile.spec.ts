@@ -6,33 +6,27 @@
 //    ✅ **T-09-03（SP-09）で承認画面 `S-021` ができ、`CLAUDE.md` §13.3 が要求する「モバイルでの承認フロー」
 //    （`F-021 AC-4` / `AC-6` / docs/05 §17.3 #13 / `.claude/agents/e2e-tester.md` シナリオ #14）をホストの test に足した**
 //    （test の本数は増やさない。`expectNoBrokenLabels` / `expectNoHiddenCountHints` を同じ画面で呼ぶ）。
-//    E2E ハーネスには Redis も worker も無い（docs/05 §11.12 ⑦。足すのは `T-09-11`）ため、「全層 PASS で承認待ち」の
-//    前提は `harness/db-admin.ts` のシーム（#39 と `gate.run` が書くのと同じ列）で作る。ゲート本体と承認 CAS の正しさは
-//    `tests/isolation/gate-run.test.ts` / `proposal-approval.test.ts` の射程である。
 //    ✅ **T-09-04 で E2E #10（承認後に内容を変更できない。docs/05 §17.3 #10）を同じ test の続きに足した**（承認直後の
-//    状態をそのまま使う。送信側のアサーションは T-09-06）。
-//    ✅ **T-09-06 で承認後の primary「送信する」（#43）を同じ test の続きに足した**（docs/05 §6.5 #43 / §10.2）。ハーネスに
-//    Redis は足した（`harness/redis.ts`。#43 が `send.proposal` を積む先）が **worker はまだ無い**（Issue #47 の既定値 =
-//    `T-09-11` で設計）。したがってここで確かめるのは「202 = 受け付け」「押した瞬間に送信済みと見せない」「状態は
-//    `APPROVED` のまま（`SUBMITTING` に入れるのはジョブ）」までであり、確定（`SUBMITTED` / 保留）と E2E #7 / #10 の
-//    送信側（`GATE_STALE`）は `tests/isolation/send-proposal.test.ts`（実 Redis + 実 Worker）が証明する。ブラウザ経路の
-//    E2E #7 / #9 / #10 送信側は `T-09-11` が worker を立てて足す。
+//    状態をそのまま使う）。
+//    ✅ **T-09-06 で承認後の primary「送信する」（#43）を同じ test の続きに足した**（docs/05 §6.5 #43 / §10.2）。
 //    ✅ **T-09-08 で送信失敗 → `S-022` → 確認ステップを経た人手再送（#44）を同じ test の続きに足した**（docs/05 §6.5 #44 / §10.6 /
-//    `F-023`）。`SUBMIT_FAILED` の前提は `harness/db-admin.ts` の `settleProposalSendAsFailedForE2e`（送信ジョブの ⑥ と同じ列）で
-//    作る。E2E #8 の通し（応答不明 → `SUBMIT_FAILED` → 自動再送されない → 人手再送で 1 回）は `T-09-07` / `T-09-11`。
+//    `F-023`）。
+//    ✅ **T-09-11 で E2E ハーネスに worker が入った**（`harness/worker.ts`。Issue #47 の既定値）。それまで `harness/db-admin.ts` の
+//    シーム（`settleProposalGateAsPassedForE2e` / `settleProposalSendAsFailedForE2e` / `settleProposalSendAsSucceededForE2e`）で
+//    **作っていた前提は、すべてブラウザ経路の本物に置き換えた**: ゲートは #39 → `gate.run`（モック AI + 機械的検出）、送信失敗は
+//    宛先ドメイン `E2E_UNKNOWN_ONCE_RECIPIENT_DOMAIN`（試行 1 が応答不明）→ `send.proposal` の ⑤⑥、送信済みは #43 → `send.proposal`。
+//    🔴 判断材料の判定（`S-021`）は `support/proposal-flow.ts` の `expectApprovalJudgmentMaterial` の 1 実装であり、
+//    `proposal-cycle.spec.ts` シナリオ 5（iPhone 15）と同じ関数を呼ぶ（同じ検証を 2 箇所に書かない）。冪等性（#7 / #8 / #9）と
+//    承認の無効化の送信側（#10）の**契約そのもの**は `proposal-cycle.spec.ts` が表明し、本ファイルは**モバイルでの通し**を見る。
 //
 // 🔴 「モバイルだから省略する」を作らない（`CLAUDE.md` §13.3）。サインイン（2 要素認証を含む）が
 //    モバイルで完結することを、デスクトップと同じ経路で確かめる。
-import { devices, expect, test, type Browser } from '@playwright/test';
+import { devices, expect, test, type Browser, type Page } from '@playwright/test';
 import { t } from '../../packages/i18n/src/index';
-import {
-  deleteT0903SyntheticProposals,
-  settleProposalGateAsPassedForE2e,
-  settleProposalSendAsFailedForE2e,
-  settleProposalSendAsSucceededForE2e,
-  T0903_SYNTHETIC_PROPOSAL_PREFIX,
-} from './harness/db-admin';
+import { deleteT0903SyntheticProposals, T0903_SYNTHETIC_PROPOSAL_PREFIX } from './harness/db-admin';
+import { E2E_UNKNOWN_ONCE_RECIPIENT_DOMAIN } from './harness/worker';
 import { apiRequest, parseJson } from './support/api';
+import { expectApprovalJudgmentMaterial, waitForProposalState } from './support/proposal-flow';
 // 🔴 T-06-09: 横溢れの判定は `support/assertions.ts` に集約した（同じ判定が spec ごとに
 //    散ると、1 箇所だけ閾値が緩められたことに気づけない）。
 // 🔴 T-08-11: ラベルの折り返し・溢れの判定（`expectNoBrokenLabels`）も同じ置き場所から呼ぶ
@@ -47,6 +41,23 @@ const syntheticProposalIds: string[] = [];
 test.afterAll(() => {
   deleteT0903SyntheticProposals(syntheticProposalIds);
 });
+
+/**
+ * ✅ T-09-11: 前提づくり「送信済み（`SUBMITTED`）」を worker の実経路で作る（API 直叩き + 確定待ち）。
+ *   作成者のセッションで #39（レビュー依頼）→ `gate.run` が全層 PASS → ホストのセッションで #41（承認）→ #43（送信）→
+ *   `send.proposal` が `SUBMITTED` に確定。🔴 状態を直接書かない（シームは削除済み）。
+ */
+async function sendViaWorker(creatorPage: Page, hostPage: Page, proposalId: string): Promise<void> {
+  const requestedGate = await apiRequest(creatorPage, `/api/proposals/${proposalId}/gate`, { method: 'POST' });
+  expect(requestedGate.status, requestedGate.text).toBe(202);
+  await waitForProposalState(creatorPage, proposalId, ['APPROVAL_PENDING', 'GATE_FAILED'], { label: `gate ${proposalId}` });
+  const approved = await apiRequest(hostPage, `/api/proposals/${proposalId}/approve`, { method: 'POST' });
+  expect(approved.status, approved.text).toBe(200);
+  const requestedSend = await apiRequest(hostPage, `/api/proposals/${proposalId}/submit`, { method: 'POST' });
+  expect(requestedSend.status, requestedSend.text).toBe(202);
+  const sent = await waitForProposalState(hostPage, proposalId, ['SUBMITTED', 'SUBMIT_FAILED'], { label: `send ${proposalId}` });
+  expect(sent.state).toBe('SUBMITTED');
+}
 
 test.describe('モバイルビューポートのスモーク（S-003 / S-004 は T1）', () => {
   test('ホストのホームがモバイルで描画され、横に溢れない。承認（S-021）がモバイルで完結し、承認後は内容を変更できない（E2E #13 / #10）', async ({
@@ -65,8 +76,9 @@ test.describe('モバイルビューポートのスモーク（S-003 / S-004 は
       session.outbound.assertNone();
 
       // ✅ T-09-03: 🔴 **モバイルビューポートでの承認**（docs/05 §17.3 #13 / `F-021 AC-4` / `AC-6` / `CLAUDE.md` §13.3）。
-      //    前提: ホストが自社エンジニアで提案を作り（#36）、#40 が返す**現在の内容のハッシュ**で「全層 PASS → 承認待ち」を
-      //    シームで作る（ハーネスに Redis / worker が無いため。ファイル冒頭）。
+      //    前提: ホストが自社エンジニアで提案を作り（#36）、#39 でレビューに出し、worker の `gate.run` が全層 PASS にする
+      //    （✅ T-09-11。シームは無い）。🔴 宛先は「試行 1 が応答不明になる」合成ドメイン —— 後段の T-09-08（`S-022` → 人手再送）の
+      //    前提「送信失敗」をブラウザ経路の本物で作るため（`harness/worker.ts`）。
       const ids = tenantIds(1);
       const subject = `${T0903_SYNTHETIC_PROPOSAL_PREFIX}${String(Date.now())}`;
       const body = 'T0903 ご提案します。設計から運用まで一貫して担当できます。';
@@ -76,7 +88,7 @@ test.describe('モバイルビューポートのスモーク（S-003 / S-004 は
           projectId: ids.publishedProjectId,
           engineerId: ids.hostEngineerId,
           recipientCompanyName: 'T0903 架空エンド株式会社',
-          recipientEmail: 't0903-recipient@example.test',
+          recipientEmail: `t0903-recipient@${E2E_UNKNOWN_ONCE_RECIPIENT_DOMAIN}`,
           offeredUnitPrice: 700000,
           offeredStartDate: '2026-11-01',
           subject,
@@ -86,35 +98,21 @@ test.describe('モバイルビューポートのスモーク（S-003 / S-004 は
       expect(created.status, created.text).toBe(201);
       const proposalId = (parseJson(created) as { id: string }).id;
       syntheticProposalIds.push(proposalId);
+      const requestedGate = await apiRequest(session.page, `/api/proposals/${proposalId}/gate`, { method: 'POST' });
+      expect(requestedGate.status, requestedGate.text).toBe(202);
+      await waitForProposalState(session.page, proposalId, ['APPROVAL_PENDING', 'GATE_FAILED'], { label: 'T-09-03 のゲート' });
       const gate = await apiRequest(session.page, `/api/proposals/${proposalId}/gate`);
       expect(gate.status, gate.text).toBe(200);
       const { contentHash } = parseJson(gate) as { contentHash: string };
-      settleProposalGateAsPassedForE2e(proposalId, contentHash);
 
       await session.page.goto(`/proposals/${proposalId}/approve`, { waitUntil: 'domcontentloaded' });
       const screen = session.page.getByTestId('proposal-approval');
       await expect(screen).toHaveAttribute('data-proposal-state', 'APPROVAL_PENDING');
       await expect(screen).toHaveAttribute('data-can-approve', 'true');
 
-      // 🔴 `F-021 AC-4`: 判断材料（提案先・エンジニア・案件・単価・開始日・作成者・経過時間 / ゲートの指摘と警告 / プレビュー）が
-      //    **同一画面に、省略されずに**描かれる。折りたたみ・タブに入っていない。
-      for (const field of ['recipient', 'engineer', 'project', 'unit-price', 'start-date', 'created-by', 'elapsed']) {
-        await expect(session.page.getByTestId(`proposal-approval-header-row-${field}`)).toBeVisible();
-      }
-      await expect(session.page.getByTestId('proposal-approval-header-row-unit-price')).toContainText('700,000');
-      await expect(session.page.getByTestId('proposal-approval-header-row-recipient')).toContainText('T0903 架空エンド株式会社');
-      for (const layer of ['pii', 'commerce', 'consistency']) {
-        await expect(session.page.getByTestId(`proposal-approval-gate-layer-${layer}`)).toHaveAttribute('data-layer-state', 'PASS');
-      }
-      await expect(session.page.getByTestId('proposal-approval-gate-findings')).toBeVisible();
-      await expect(session.page.getByTestId('proposal-approval-gate-warnings')).toBeVisible();
-      await expect(session.page.getByTestId('proposal-approval-preview-body')).toContainText(body);
-      await expect(session.page.locator('details')).toHaveCount(0);
-      await expect(session.page.locator('[role="tab"]')).toHaveCount(0);
-      // 🔴 `F-021 AC-6` / `BR-50`: 一括承認・force / override に相当する操作が存在しない。
-      await expect(session.page.locator('[data-testid*="bulk"]')).toHaveCount(0);
-      await expect(session.page.locator('[data-testid*="force"], [data-testid*="override"], [data-testid*="skip"]')).toHaveCount(0);
-      expect(await session.page.content()).not.toMatch(/一括承認|一括送信|無視して/);
+      // 🔴 `F-021 AC-4` / `AC-6`: 判断材料が**同一画面に、省略されずに**描かれ、一括承認・force / override が無い
+      //    （判定は `support/proposal-flow.ts` の 1 実装。iPhone 15 は `proposal-cycle.spec.ts` シナリオ 5 が同じ関数で見る）。
+      await expectApprovalJudgmentMaterial(session.page, { recipientCompanyName: 'T0903 架空エンド株式会社', unitPriceText: '700,000', body });
       expectNoHiddenCountHints('S-021 提案の承認（モバイル）', await session.page.locator('body').innerText());
       await expectNoHorizontalOverflow('S-021 提案の承認', session.page);
       await expectNoBrokenLabels('S-021 提案の承認', session.page);
@@ -188,7 +186,8 @@ test.describe('モバイルビューポートのスモーク（S-003 / S-004 は
       //    見せない」）。モバイルで完結する（Tier 1）。
       //    ①「承認する」は無く「送信する」が描かれ、プレビューの末尾まで確認するまで押せない
       //    ②押すと 202（受け付け）。画面は「送信を受け付けました。送信中です」を出し、**「送信済み」の語を出さない**
-      //    ③状態は `APPROVED` のまま（`SUBMITTING` に入れるのは送信ジョブ。ハーネスに worker は無いので確定しない）
+      //    ③✅ T-09-11: 確定は worker の送信ジョブが行う。この提案の宛先は「試行 1 が応答不明」の合成ドメインなので、
+      //       `SUBMITTING → SUBMIT_FAILED`（`SendAttempt(1) = UNKNOWN`）に確定する（T-09-08 の前提をブラウザ経路の本物で作る）
       //    ④外部への発信は 0 件（#43 は enqueue するだけ。送信そのものはジョブであり、E2E の環境ではモック）
       const approvalScreen = session.page.getByTestId('proposal-approval');
       await expect(approvalScreen).toHaveAttribute('data-can-submit', 'true');
@@ -218,17 +217,16 @@ test.describe('モバイルビューポートのスモーク（S-003 / S-004 は
       // 🔴 「送信済み」と見せない。「送信する」も二重に押せない。
       expect(await session.page.content()).not.toContain(t('proposals.approval.state.submitted.prefix'));
       await expect(session.page.getByTestId('proposal-approval-submit')).toHaveCount(0);
-      await expect(approvalScreen).toHaveAttribute('data-proposal-state', 'APPROVED');
       await expectNoHorizontalOverflow('S-021 提案の承認（送信受け付け後）', session.page);
       await expectNoBrokenLabels('S-021 提案の承認（送信受け付け後）', session.page);
 
-      // 🔴 2 回目の #43（二重押下 / 別タブ）は同じ attemptSeq・同じ jobId で 202 になり、BullMQ が 1 本に畳む（F-022 AC-1 の入口側。
-      //    ジョブ側の「外部 1 回」は結合テスト）。
-      const again = await apiRequest(session.page, `/api/proposals/${proposalId}/submit`, { method: 'POST' });
-      expect(again.status, again.text).toBe(202);
-      const submitBody = parseJson(again) as { outcome: string; attemptSeq: number; state: string; jobId: string | null; sendHoldReasonKey: string | null };
-      expect(submitBody).toMatchObject({ outcome: 'ENQUEUED', attemptSeq: 1, state: 'APPROVED', sendHoldReasonKey: null });
-      expect(submitBody.jobId).toBe(`send.proposal.${proposalId}.1`);
+      // ✅ T-09-11: worker が確定させる。宛先ドメインにより応答不明 → `SUBMIT_FAILED`（試行 1 = `UNKNOWN`）。冪等性（2 回起動で外部 1 回）の
+      //    契約は `proposal-cycle.spec.ts` シナリオ 3 が表明する（ここでは繰り返さない）。
+      const failed = await waitForProposalState(session.page, proposalId, ['SUBMIT_FAILED', 'SUBMITTED'], { label: 'T-09-06 の送信' });
+      expect(failed.state).toBe('SUBMIT_FAILED');
+      expect(failed.sendAttempts).toEqual([expect.objectContaining({ attemptSeq: 1, status: 'UNKNOWN' })]);
+      // `S-021` のポーリング（#46）が確定を拾う。
+      await expect(approvalScreen).toHaveAttribute('data-proposal-state', 'SUBMIT_FAILED', { timeout: 20_000 });
       // 🔴 取引先（作成者ではないが、取引先ロールは #43 を呼べない）は 403。#44 も同じ（T-09-08）。
       const partnerSession = await openTenantSession(browser, partnerSales(1, 1));
       try {
@@ -246,21 +244,19 @@ test.describe('モバイルビューポートのスモーク（S-003 / S-004 は
       } finally {
         await partnerSession.close();
       }
-      // 🔴 外部への発信は 0 件（#43 は積むだけ。ブラウザ経路の送信の確定は T-09-11 が worker を立てて確かめる）。
+      // 🔴 ブラウザからの外部への発信は 0 件（送信はモック。worker 側の遮断は `harness/worker.ts`）。
       session.outbound.assertNone();
 
       // ✅ T-09-08: 🔴 **送信失敗（`SUBMIT_FAILED`）→ `S-022` → 確認ステップを経た人手再送（#44）**（docs/05 §6.5 #44 / §10.6 /
       //    `F-023 AC-1`〜`AC-3` / `docs/04` §S-022）。モバイルでも 1 件ずつの再送は可能（Tier 2。確認ステップは省略しない）。
-      //    前提: ハーネスに worker が無いため、「応答不明で `SUBMIT_FAILED` に確定した」状態はシーム（`settleProposalSendAsFailedForE2e`。
-      //    送信ジョブの ⑥ と同じ列）で作る。ジョブ本体は `tests/isolation/send-proposal.test.ts` / `proposal-resend.test.ts` の射程。
+      //    前提の「応答不明で `SUBMIT_FAILED` に確定した」は上で worker が本物で作った（✅ T-09-11。シームは無い）。
       //    ここで確かめるのは:
       //    ① `S-021` は `SUBMIT_FAILED` で「送信する」を出さず、再送ボタンも置かず、`S-022` への導線だけを描く
       //    ② `S-022` に行が出て、**応答不明が「失敗」と別の語・別の印**で描かれる。一括再送・自動再送の語が無い
       //    ③ 🔴 #44 は `acknowledged: false` なら 400 `RESEND_NOT_ACKNOWLEDGED`（`F-023 AC-2`）
       //    ④ 🔴 「再送する」→ 確認ステップ（**届いている可能性があります** + 提案先・単価・最終試行の再掲）→ チェック + 理由が揃うまで
-      //       送れない → 202（`attemptSeq: 2` / `state: 'APPROVED'`）→ `S-021` へ戻る。「送信済み」と見せない。外部 0
-      //    ⑤ 再送後（`APPROVED`）にもう一度 #44 を叩くと 422（`SUBMIT_FAILED` からしか戻せない）
-      settleProposalSendAsFailedForE2e(proposalId);
+      //       送れない → 202（`attemptSeq: 2`）→ `S-021` へ戻る → worker が seq 2 を送って `SUBMITTED`（試行 `[UNKNOWN(1), SUCCEEDED(2)]`）
+      //    ⑤ 再送後にもう一度 #44 を叩くと 422（`SUBMIT_FAILED` からしか戻せない）
 
       // ✅ T-09-09: 🔴 **`S-019`（提案一覧）→ `S-023`（詳細と履歴）→ メモ追加（#47）→ `S-022` への導線**（docs/05 §6.5 #45 / #46 / #47 /
       //    `F-024 AC-2` / `docs/04` §S-019 / §S-023）。Tier 2 だがモバイルで破綻しないことも同じ画面で見る。
@@ -414,18 +410,27 @@ test.describe('モバイルビューポートのスモーク（S-003 / S-004 は
         await route.fulfill({ response });
       });
       await resendSubmit.click();
-      // 202 の後は S-021 へ。状態は APPROVED（SUBMITTING に入れるのはジョブ）。「送信済み」と見せない。
+      // 202 の後は S-021 へ。#44 は積むだけ（202 の本文は `APPROVED`）。押した瞬間に「送信済み」と見せない。
       await session.page.waitForURL(`**/proposals/${proposalId}/approve`);
       await session.page.unroute(resendApiUrl);
       expect(captured.status).toBe(202);
       expect(captured.body).toMatchObject({ outcome: 'ENQUEUED', attemptSeq: 2, state: 'APPROVED', sendHoldReasonKey: null });
       expect(captured.body?.jobId).toBe(`send.proposal.${proposalId}.2`);
-      await expect(session.page.getByTestId('proposal-approval')).toHaveAttribute('data-proposal-state', 'APPROVED');
-      expect(await session.page.content()).not.toContain(t('proposals.approval.state.submitted.prefix'));
       await expect(session.page.getByTestId('proposal-approval-open-send-failures')).toHaveCount(0);
+      // ✅ T-09-11: worker が seq 2 を送る（試行 2 は届く）。試行は `[UNKNOWN(1), SUCCEEDED(2)]` = 外部 2 回（自動の 3 回目は無い）。
+      const resent = await waitForProposalState(session.page, proposalId, ['SUBMITTED', 'SUBMIT_FAILED'], { label: 'T-09-08 の再送' });
+      expect(resent.state).toBe('SUBMITTED');
+      expect(resent.sendAttempts.map((attempt) => [attempt.attemptSeq, attempt.status])).toEqual([
+        [1, 'UNKNOWN'],
+        [2, 'SUCCEEDED'],
+      ]);
+      // #44 の 202 後の `S-021` は送信中のポーリングを持たない（`proposal-cycle.spec.ts` シナリオ 3 の注記）。読み直して確定を見る。
+      await session.page.reload({ waitUntil: 'domcontentloaded' });
+      await expect(session.page.getByTestId('proposal-approval')).toHaveAttribute('data-proposal-state', 'SUBMITTED');
+      await expectNoBrokenLabels('S-021 提案の承認（送信済み）', session.page);
       session.outbound.assertNone();
 
-      // ⑤ APPROVED にもう一度 #44 → 422（SUBMIT_FAILED からしか戻せない）。
+      // ⑤ SUBMITTED にもう一度 #44 → 422（SUBMIT_FAILED からしか戻せない）。
       const notFailed = await apiRequest(session.page, `/api/proposals/${proposalId}/resend`, {
         method: 'POST',
         body: { acknowledged: true, reason: 'T0903 二度目' },
@@ -481,8 +486,8 @@ test.describe('モバイルビューポートのスモーク（S-003 / S-004 は
 //    `CLAUDE.md` §13.1「面談日程の確定は移動中に発生する」/ §13.3）。
 //    ビューポートは docs/05 §17.6 の `devices['iPhone 15']`（幅 393。`e2e-tester.md` シナリオ #14 と同じモバイル幅）。ブラウザは
 //    本ファイルの他の test と同じ Chromium のまま（`__Host-` Cookie の理由。`playwright.config.ts` 冒頭）。
-//    前提: ハーネスに worker が無いため、「送信済み（`SUBMITTED`）」はシーム `settleProposalSendAsSucceededForE2e`（送信ジョブの ⑥ の
-//    成功側と同じ列）で作る。🔴 **商談の記録そのもの（`SUBMITTED` 以降）はシームで作らず、画面から人の操作で進める。**
+//    前提の「送信済み（`SUBMITTED`）」は ✅ T-09-11 で worker の実経路（#39 → `gate.run` → #41 → #43 → `send.proposal`）に置き換えた
+//    （`sendViaWorker`）。🔴 **商談の記録そのもの（`SUBMITTED` 以降）は画面から人の操作で進める。**
 test.describe('S-024 商談結果の記録（iPhone 15 / T1）', () => {
   // 🔴 `defaultBrowserType`（worker スコープ）は describe の `test.use` に置けない。コンテキストの寸法・UA・タッチだけを iPhone 15 にする
   //    （ブラウザは project の Chromium のまま）。
@@ -504,7 +509,7 @@ test.describe('S-024 商談結果の記録（iPhone 15 / T1）', () => {
       // 🔴 iPhone 15 のビューポート（幅 393）で走っている（`test.use` がコンテキストに効いていることの対照）。
       expect(session.page.viewportSize()?.width).toBe(devices['iPhone 15'].viewport.width);
 
-      // 前提: 提案を作り（#36）、全層 PASS（シーム）→ 承認（#41。API 直叩き）→ 送信済み（シーム）。
+      // 前提: 提案を作り（#36）、#39 → worker の `gate.run`（全層 PASS）→ 承認（#41。API 直叩き）→ #43 → worker の `send.proposal` → `SUBMITTED`。
       const ids = tenantIds(1);
       const subject = `${T0903_SYNTHETIC_PROPOSAL_PREFIX}T0910-${String(Date.now())}`;
       const created = await apiRequest(session.page, '/api/proposals', {
@@ -523,12 +528,7 @@ test.describe('S-024 商談結果の記録（iPhone 15 / T1）', () => {
       expect(created.status, created.text).toBe(201);
       const proposalId = (parseJson(created) as { id: string }).id;
       syntheticProposalIds.push(proposalId);
-      const gate = await apiRequest(session.page, `/api/proposals/${proposalId}/gate`);
-      expect(gate.status, gate.text).toBe(200);
-      settleProposalGateAsPassedForE2e(proposalId, (parseJson(gate) as { contentHash: string }).contentHash);
-      const approved = await apiRequest(session.page, `/api/proposals/${proposalId}/approve`, { method: 'POST' });
-      expect(approved.status, approved.text).toBe(200);
-      settleProposalSendAsSucceededForE2e(proposalId);
+      await sendViaWorker(session.page, session.page, proposalId);
 
       // 🔴 S-023 の商談中の導線が S-024 を指す（T-09-09 の申し送り 1）。
       await session.page.goto(`/proposals/${proposalId}`, { waitUntil: 'domcontentloaded' });
@@ -654,10 +654,13 @@ test.describe('S-024 商談結果の記録（iPhone 15 / T1）', () => {
         ['RESULT_PENDING', 'TRANSITION', null],
         ['WON', 'TRANSITION', '結果: 決定（T0910 11 月開始で合意）'],
       ]);
-      // S-023 の履歴でも TRANSITION の連なりとして描かれる（T-09-11 への掴み手）。
+      // S-023 の履歴でも TRANSITION の連なりとして描かれる。✅ T-09-11: 前提を worker の実経路で作るようになったため、商談の 4 本に
+      // 加えてゲート（`DRAFT → GATE_RUNNING → APPROVAL_PENDING`）と送信（`APPROVED → SUBMITTING → SUBMITTED`）の 4 本が履歴に残る（計 8 本。
+      // 承認は `APPROVAL` の kind で別に描かれる）。
       await session.page.goto(`/proposals/${proposalId}`, { waitUntil: 'domcontentloaded' });
       await expect(session.page.getByTestId('proposal-detail')).toHaveAttribute('data-proposal-state', 'WON');
-      await expect(session.page.getByTestId('proposal-detail-timeline').locator('[data-event-kind="TRANSITION"]')).toHaveCount(4);
+      await expect(session.page.getByTestId('proposal-detail-timeline').locator('[data-event-kind="TRANSITION"]')).toHaveCount(8);
+      await expect(session.page.getByTestId('proposal-detail-timeline').locator('[data-event-kind="APPROVAL"]')).toHaveCount(1);
       await expect(session.page.getByTestId('proposal-detail-actions-empty')).toBeVisible();
 
       // 🔴 取引先: ホストの提案の S-024 には到達しない（404。存在も教えない）。自社の提案では日程の確定・結果の確定のボタンが無い。
@@ -687,12 +690,8 @@ test.describe('S-024 商談結果の記録（iPhone 15 / T1）', () => {
         expect(partnerCreated.status, partnerCreated.text).toBe(201);
         const partnerProposalId = (parseJson(partnerCreated) as { id: string }).id;
         syntheticProposalIds.push(partnerProposalId);
-        const partnerGate = await apiRequest(partnerSession.page, `/api/proposals/${partnerProposalId}/gate`);
-        expect(partnerGate.status, partnerGate.text).toBe(200);
-        settleProposalGateAsPassedForE2e(partnerProposalId, (parseJson(partnerGate) as { contentHash: string }).contentHash);
-        const hostApproved = await apiRequest(session.page, `/api/proposals/${partnerProposalId}/approve`, { method: 'POST' });
-        expect(hostApproved.status, hostApproved.text).toBe(200);
-        settleProposalSendAsSucceededForE2e(partnerProposalId);
+        // 取引先がレビューに出し（#39）、ホストが承認（#41）・送信（#43）。確定は worker（✅ T-09-11）。
+        await sendViaWorker(partnerSession.page, session.page, partnerProposalId);
 
         await partnerSession.page.goto(`/proposals/${partnerProposalId}/interview`, { waitUntil: 'domcontentloaded' });
         const partnerScreen = partnerSession.page.getByTestId('proposal-interview');

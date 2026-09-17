@@ -6,10 +6,9 @@
 //    Redis が無いと #43 は接続待ちで応答せず、ブラウザ経路の E2E が「送信する」を押せない。
 //    `tests/isolation/support/redis.ts` と同じイメージ・同じ起動方法（ランダムポート / 永続化なし）。
 //
-// 🔴 **worker プロセスはまだ立てない**（Issue #47 の既定値: 設計は `T-09-11` の着手時）。したがって積まれた
-//    `send.proposal` は E2E の中では消費されず、提案は `APPROVED` のまま（送信済みになることも、保留になることもない）。
-//    E2E がここで確かめられるのは「受け付け = 202」と「押した瞬間に送信済みと見せない」まで（`home.mobile.spec.ts`）。
-//    確定（`SUBMITTED` / `SUBMIT_FAILED` / 保留）は `tests/isolation/send-proposal.test.ts` が実 Redis + 実 Worker で証明する。
+// ✅ T-09-11: **worker はハーネスのプロセス内で起動する**（`harness/worker.ts`。globalSetup ⑦。Issue #47 の既定値 = 選択肢 1）。
+//    積まれた `gate.run` / `send.proposal` は E2E の中で消費され、ゲートの確定・送信の確定（`SUBMITTED` / `SUBMIT_FAILED` / 保留）が
+//    ブラウザ経路で起きる（`proposal-cycle.spec.ts` / `home.mobile.spec.ts`）。
 import { GenericContainer, Wait, type StartedTestContainer } from 'testcontainers';
 
 const REDIS_IMAGE = 'redis:7-alpine';

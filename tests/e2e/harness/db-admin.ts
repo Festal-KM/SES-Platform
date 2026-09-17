@@ -14,9 +14,11 @@
 //    （特権接続で `scan_status` を直接 `CLEAN` にする）を踏襲し、前提条件だけを作る。
 //
 // 🔴 汎用のエスケープハッチにしない。ここで公開するのは「K-7 の前提を作るための 1 関数」と、
-//    T-08-09 の 3 関数（下段。worker 不在を補う期限到来の前提づくり / 凍結行の表明 / 合成データの後始末）
+//    T-08-09 の 3 関数（下段。worker 不在を補う期限到来の前提づくり / 凍結行の表明 / 合成データの後始末）、
+//    T-09-11 の「API を通らない経路の模擬」2 関数（送信元ドメインの検証 / 承認後の `content_hash` のずれ）と後始末
 //    だけであり、任意の SQL を実行できる経路を増やさない（`packages/db/src/testing/isolation.ts`
 //    冒頭コメントと同じ規律）。関数を足すときは目的を 1 つに絞り、SQL を固定文にすること。
+//    ✅ T-09-11 で worker がハーネスに入り（`harness/worker.ts`）、提案の**状態を直接書く**シームは削除した（下段の注記）。
 //
 // 🔴 生 SQL の発行は **Prisma CLI**（`prisma db execute --stdin`）経由で行う。`harness/postgres.ts`
 //    が `migrate deploy` に使っているのと同じ CLI 実体（`packages/db/node_modules/prisma/...`）を
@@ -214,140 +216,136 @@ export function deleteT0809SyntheticEngineers(engineerIds: readonly string[]): v
   );
 }
 
-// ---------------------------------------------------------------------------
-// 🔴 T-09-03（`S-021` のモバイル E2E。docs/05 §17.3 #13 / `tests/e2e/home.mobile.spec.ts`）専用のシーム 2 つ
-// ---------------------------------------------------------------------------
-// K-7 / T-08-09 のシームと同じ判断で置く: E2E ハーネスには Redis も worker も無く（docs/05 §11.12 ⑦。足すのは
-// `T-09-11` の仕事）、`#39`（レビュー依頼 = BullMQ への enqueue）も `gate.run`（モック AI で 3 層を判定）も
-// E2E から動かせない。ゲート本体の正しさは `tests/isolation/gate-run.test.ts`、承認 CAS と自動承認の正しさは
-// `tests/isolation/proposal-approval.test.ts` の射程であり、E2E #13 が証明したいのは
-// 🔴「モバイルビューポートで判断材料が省略されず、プレビューの末尾まで到達するまで承認できず、一括承認が既定でない」
-// である。したがって **「全層 PASS で承認待ちになった」という前提だけ**を、#39 と `gate.run` が書くのと同じ形で作る。
-//
-// 🔴 汎用のエスケープハッチにしない規律はそのまま —— 関数は目的ごとに 1 つ、SQL は固定文、埋め込む値は UUID と
-//    SHA-256 の hex（64 桁の `[0-9a-f]`）に限る。**PASS 以外の判定を書く入口は作らない**（FAIL / HELD の見え方は
-//    render テストの射程）。
-// 🔴 ハッシュはテストが計算しない（`gateContentHash` の 2 実装目を作らない）。`GET /api/proposals/{id}/gate`（#40）が
-//    「まだ確定した行が無い」ときに返す**現在の内容のハッシュ**をそのまま渡す（docs/05 §11.10 ⑦）。
 
-const CONTENT_HASH_PATTERN = /^[0-9a-f]{64}$/;
+// ---------------------------------------------------------------------------
+// 🔴 T-09-03 / T-09-11（提案フローの E2E。docs/05 §17.3 #3 / #4 / #7 / #8 / #9 / #10 / #13）専用のシーム
+// ---------------------------------------------------------------------------
+// ✅ T-09-11 で E2E ハーネスに worker が入った（`harness/worker.ts`。docs/05 §17.6 ⑦）。それまで T-09-03 / T-09-08 / T-09-10 が
+//    置いていた**状態を直接書くシーム**（`settleProposalGateAsPassedForE2e` / `settleProposalSendAsFailedForE2e` /
+//    `settleProposalSendAsSucceededForE2e`）は **削除した** —— ゲートの確定・送信の確定はブラウザ経路（#39 → `gate.run` /
+//    #43 → `send.proposal`）で本物を通す。残すと「E2E が本物を通していない」経路が残る。
+//
+// 🔴 ここに残る / 新設するのは **「API を通らない経路の模擬」と「合成データの後始末」だけ**である:
+//   - `registerVerifiedSendingDomainForE2e` … 送信元ドメインの検証（`domain.verify` は SES の identity API を要求し、
+//     `development` には無い。#72 が非本番で `NOT_REQUIRED` を返す点は Issue #57 未回答）。E2E #9 の「検証後に自動復帰」の
+//     **検証**をこれで起こす
+//   - `shiftProposalContentHashForE2e` … 承認後に `content_hash` をずらす（API からは変更できない = 多層防御の対象。E2E #10 の送信側）
+//   - `deleteT0903SyntheticProposals` / `deleteT0911SyntheticProposals` / `deleteT0911SyntheticProjects` … 後始末
+// 🔴 汎用のエスケープハッチにしない規律はそのまま —— 関数は目的ごとに 1 つ、SQL は固定文、埋め込む値は UUID と
+//    合成の識別子（ドメイン名・接頭辞）に限る。**提案の状態を書く入口は 1 つも作らない。**
+
+/** 送信元ドメイン（合成）。小文字英数字・ドット・ハイフンだけ（SQL リテラルへそのまま埋め込むため厳しく絞る）。 */
+const DOMAIN_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/;
 
 /**
- * 🔴 T-09-03 専用シーム: `DRAFT` の提案を「レビュー依頼 → 全層 PASS → 承認待ち」にする。
+ * 🔴 T-09-11 専用シーム: そのテナントの送信元ドメインを **`VERIFIED`** にする（無ければ行を作る）。
  *
- * 3 文で、#39（`requestProposalGate`）と `gate.run`（`completeReviewGate` + `settleProposalState`）が書くのと
- * **同じ条件・同じ列**を辿る:
- *   ① `DRAFT → GATE_RUNNING` の CAS + `content_hash`（#39 の 1 文。承認 CAS が突き合わせる列）
- *   ② `review_gates` に `execution='DONE'` / 3 層 `PASS` の行（`content_hash` は①と同じ値）
- *   ③ `GATE_RUNNING → APPROVAL_PENDING` の CAS（`gate.run` の確定）
- * ⚠️ `ProposalEvent` と `AuditLog(proposal.update, GATE_REQUEST / GATE_RESULT)` はここでは書かない（E2E はそれを
- *    表明しない。履歴・監査行は結合テストが固定する）。
- * 🔴 `DRAFT` 以外の行には何もしない（①が 0 件なら②③も 0 件）。呼び出し側は結果を画面 / API で確かめること。
+ * 送信ジョブの ①-d（`resolveVerifiedSendingDomain`: `state='VERIFIED' AND verified_at IS NOT NULL AND mail_from_domain IS NOT NULL`）
+ * が読むのと**同じ列**を書く。`mail_from_domain` は `domain.provision` と同じ規約（`mail.{domain}`。`mailFromDomainFor`）。
+ * `ON CONFLICT (tenant_id, domain)` で 2 回呼んでも 1 行（部分 UNIQUE「VERIFIED は 1 テナント 1 ドメイン」にも抵触しない）。
+ *
+ * 🔴 なぜ実経路（#71 → `domain.provision` → `domain.verify`）で作らないか: `domain.verify` は SES の identity API で DKIM の
+ *    検証状態を読む。`development` の email はモックであり identity API は無い（`runtime.ts` の `resolveIdentityApi` は throw する）。
+ *    非本番で検証を成立させる設計は [Issue #57](https://github.com/Festal-KM/SES-Platform/issues/57) 未回答のため、E2E は
+ *    「検証済みという事実」だけを作る（`CLAUDE.md` §11 の外部 API 不使用を守るための唯一の方法）。
  */
-export function settleProposalGateAsPassedForE2e(proposalId: string, contentHash: string): void {
-  if (!UUID_PATTERN.test(proposalId)) {
-    throw new Error(`proposalId が UUID の形をしていません: ${proposalId}`);
-  }
-  if (!CONTENT_HASH_PATTERN.test(contentHash)) {
-    throw new Error('contentHash が SHA-256 の hex（64 桁）ではありません。');
-  }
+export function registerVerifiedSendingDomainForE2e(tenantId: string, domain: string): void {
+  if (!UUID_PATTERN.test(tenantId)) throw new Error(`tenantId が UUID の形をしていません: ${tenantId}`);
+  if (!DOMAIN_PATTERN.test(domain)) throw new Error(`domain が合成ドメインの形（小文字英数字・ドット・ハイフン）ではありません: ${domain}`);
   execSql(
-    `UPDATE proposals SET state = 'GATE_RUNNING', content_hash = '${contentHash}', updated_at = now() ` +
-      `WHERE id = '${proposalId}' AND state = 'DRAFT';\n` +
-      `INSERT INTO review_gates ` +
-      `(id, tenant_id, target_type, target_id, content_hash, execution, pii_verdict, commerce_verdict, consistency_verdict, ` +
-      `findings, ai_warnings, ai_failed, executed_at) ` +
-      `SELECT gen_random_uuid(), tenant_id, 'PROPOSAL', id, '${contentHash}', 'DONE', 'PASS', 'PASS', 'PASS', ` +
-      `'[]'::jsonb, '[]'::jsonb, false, now() FROM proposals WHERE id = '${proposalId}' AND state = 'GATE_RUNNING';\n` +
-      `UPDATE proposals SET state = 'APPROVAL_PENDING', updated_at = now() ` +
-      `WHERE id = '${proposalId}' AND state = 'GATE_RUNNING';`,
+    `INSERT INTO tenant_sending_domains ` +
+      `(id, tenant_id, domain, state, mail_from_domain, verified_at, last_checked_at, created_at) ` +
+      `VALUES (gen_random_uuid(), '${tenantId}', '${domain}', 'VERIFIED', 'mail.${domain}', now(), now(), now()) ` +
+      `ON CONFLICT (tenant_id, domain) DO UPDATE SET state = 'VERIFIED', mail_from_domain = EXCLUDED.mail_from_domain, ` +
+      `verified_at = now(), last_checked_at = now(), revoked_at = NULL, last_failure_reason = NULL;`,
+  );
+}
+
+/**
+ * 🔴 T-09-11 専用シーム（E2E #10 の送信側）: **承認済み**の提案の `content_hash` を、現在の内容から再計算される値と
+ *    一致しない値にずらす。
+ *
+ * #37 は `DRAFT` 以外を 422 で止める（`S-020` は読み取り専用）ので、承認後の内容変更は **API を通らない経路**（運用 SQL・凍結の
+ * 再生成・将来のコードの不備）でしか起きない（docs/05 §11.5 手順 2〔改訂〕。Issue #54）。その経路への多層防御 —— 送信前判定
+ * `readProposalGateFreshness` が `storedHash !== currentHash` で `GATE_STALE` の保留にし、`castProposalToSubmitting` が
+ * `SUBMITTING` に入れないこと —— を E2E で確かめるための前提づくりである。
+ *
+ * 値は元のハッシュから決定的に導く（`sha256(content_hash || ':e2e-shift')`。64 桁 hex のまま。`review_gates.content_hash` は触らない）。
+ * 🔴 `APPROVED` 以外の行には何もしない。呼び出し側は結果を #43 / #46 / `S-021` で確かめること。
+ */
+export function shiftProposalContentHashForE2e(proposalId: string): void {
+  if (!UUID_PATTERN.test(proposalId)) throw new Error(`proposalId が UUID の形をしていません: ${proposalId}`);
+  execSql(
+    `UPDATE proposals SET content_hash = encode(sha256(convert_to(content_hash || ':e2e-shift', 'UTF8')), 'hex'), updated_at = now() ` +
+      `WHERE id = '${proposalId}' AND state = 'APPROVED' AND content_hash IS NOT NULL;`,
   );
 }
 
 /** 🔴 T-09-03 の合成提案の件名の接頭辞。`home.mobile.spec.ts` と一致させる。 */
 export const T0903_SYNTHETIC_PROPOSAL_PREFIX = 'T0903合成-';
+/** 🔴 T-09-11 の合成提案の件名の接頭辞。`proposal-cycle.spec.ts` と一致させる。 */
+export const T0911_SYNTHETIC_PROPOSAL_PREFIX = 'T0911合成-';
+/** 🔴 T-09-11 の合成案件の案件名の接頭辞。`proposal-cycle.spec.ts` と一致させる。 */
+export const T0911_SYNTHETIC_PROJECT_PREFIX = 'T0911合成案件-';
 
 /**
- * 🔴 T-09-03 専用シーム（後始末）: `home.mobile.spec.ts` が API 経由で作った**合成提案**を行ごと消し、ホストの提案を
- *    `seed:isolation` の状態に戻す（`deleteT0809SyntheticEngineers` と同じ判断。同じ実行の中では spec 間で DB を共有する）。
+ * 合成提案を行ごと消す（`deleteT0809SyntheticEngineers` と同じ判断。同じ実行の中では spec 間で DB を共有する）。
  *
- * 🔴 消してよい行を SQL 自身が限定する: `id` が指定された UUID **かつ** `subject` が合成の接頭辞（`T0903合成-`）で始まる行だけ。
- *    `review_gates` は多相（FK 無し）なので先に消し、`proposals` の CASCADE で `engineer_snapshots` / `proposal_events` を消す。
- *    `audit_logs` は FK を持たないため残る（記録は消さない）。
+ * 🔴 消してよい行を SQL 自身が限定する: `id` が指定された UUID **かつ** `subject` が許可された合成の接頭辞で始まる行だけ。
+ *    `review_gates` / `send_attempts` は多相（FK 無し）なので先に消し、`proposals` の CASCADE で `engineer_snapshots` /
+ *    `proposal_events` を消す。`audit_logs` は FK を持たないため残る（記録は消さない）。
  */
-export function deleteT0903SyntheticProposals(proposalIds: readonly string[]): void {
+function deleteSyntheticProposals(prefix: string, proposalIds: readonly string[]): void {
   if (proposalIds.length === 0) return;
   for (const id of proposalIds) {
     if (!UUID_PATTERN.test(id)) throw new Error(`proposalId が UUID の形をしていません: ${id}`);
   }
+  assertPlainSqlLiteral('prefix', prefix);
   const idList = proposalIds.map((id) => `'${id}'`).join(', ');
-  const synthetic =
-    `SELECT id FROM proposals WHERE id IN (${idList}) ` +
-    `AND subject LIKE '${T0903_SYNTHETIC_PROPOSAL_PREFIX}%'`;
+  const synthetic = `SELECT id FROM proposals WHERE id IN (${idList}) AND subject LIKE '${prefix}%'`;
   execSql(
     `DELETE FROM review_gates WHERE target_type = 'PROPOSAL' AND target_id IN (${synthetic});\n` +
-      // ✅ T-09-08: `send_attempts` も多相（FK 無し）。`settleProposalSendAsFailedForE2e` が作った試行を一緒に消す。
+      // ✅ T-09-11: `send_attempts` は worker（送信ジョブの ④）が作る。多相（FK 無し）なので一緒に消す。
       `DELETE FROM send_attempts WHERE entity_type = 'PROPOSAL' AND entity_id IN (${synthetic});\n` +
       `DELETE FROM proposals WHERE id IN (${synthetic});`,
   );
 }
 
-/**
- * 🔴 T-09-08 専用シーム: `APPROVED` の提案に対して「送信ジョブが応答不明で確定した」状態を作る
- *    （`SendAttempt(attempt_seq = 1, status = 'UNKNOWN')` + `proposals.state = 'SUBMIT_FAILED'` + `last_failure_reason`）。
- *
- * E2E ハーネスには worker が無い（Issue #47 の既定値。`T-09-11` が立てる）ため、#43 が積んだ `send.proposal` は消費されず、
- * `SUBMIT_FAILED` にはブラウザ経路では到達できない。送信ジョブの ③〜⑥（CAS / 予約 / 外部呼び出し / 確定）の正しさは
- * `tests/isolation/send-proposal.test.ts` / `proposal-resend.test.ts` の射程であり、E2E が証明したいのは
- * 🔴「`S-021` から `S-022` へ辿れ、確認ステップ（届いている可能性）を経てだけ #44 が 202 になる」ことである。
- * したがって**送信失敗という前提だけ**を、`settleProposalSubmission`（`packages/db/src/proposal-send.ts`）と**同じ列**
- * （`send_attempts` の 1 行 + `proposals` の `state` / `last_failure_reason`、保留列は NULL）で作る。
- *
- * 🔴 `APPROVED` 以外の行には何もしない（②が 0 件なら①の試行も入らない —— 順序は「提案の CAS → 試行」ではなく、試行を
- *    `SELECT … FROM proposals WHERE state = 'APPROVED'` から派生させ、CAS は同じ条件で行う）。
- * ⚠️ `ProposalEvent(SUBMITTING → SUBMIT_FAILED)` と `AuditLog(proposal.submit, SUBMIT_SETTLE)` はここでは書かない（E2E は
- *    それを表明しない）。`SUBMITTING` を経由しない（CHECK `state <> 'SUBMITTING' OR approved_at IS NOT NULL` には触れない）。
- */
-export function settleProposalSendAsFailedForE2e(proposalId: string): void {
-  if (!UUID_PATTERN.test(proposalId)) {
-    throw new Error(`proposalId が UUID の形をしていません: ${proposalId}`);
-  }
-  execSql(
-    `INSERT INTO send_attempts ` +
-      `(id, tenant_id, entity_type, entity_id, attempt_seq, idempotency_key, status, external_id, failure_kind, failure_detail, started_at, settled_at, requested_by) ` +
-      `SELECT gen_random_uuid(), tenant_id, 'PROPOSAL', id, 1, 'proposal:' || id::text || ':1', 'UNKNOWN', NULL, 'UNKNOWN:TimeoutError', ` +
-      `'e2e: no response', now(), now(), NULL FROM proposals WHERE id = '${proposalId}' AND state = 'APPROVED';\n` +
-      `UPDATE proposals SET state = 'SUBMIT_FAILED', last_failure_reason = 'UNKNOWN:TimeoutError', ` +
-      `send_hold_reason_key = NULL, send_hold_since = NULL, updated_at = now() ` +
-      `WHERE id = '${proposalId}' AND state = 'APPROVED';`,
-  );
+/** 🔴 T-09-03 専用（後始末）: `home.mobile.spec.ts` が API 経由で作った合成提案を消す。 */
+export function deleteT0903SyntheticProposals(proposalIds: readonly string[]): void {
+  deleteSyntheticProposals(T0903_SYNTHETIC_PROPOSAL_PREFIX, proposalIds);
+}
+
+/** 🔴 T-09-11 専用（後始末）: `proposal-cycle.spec.ts` が seed の案件に対して作った合成提案を消す。 */
+export function deleteT0911SyntheticProposals(proposalIds: readonly string[]): void {
+  deleteSyntheticProposals(T0911_SYNTHETIC_PROPOSAL_PREFIX, proposalIds);
 }
 
 /**
- * 🔴 T-09-10 専用シーム: `APPROVED` の提案に対して「送信ジョブが成功で確定した」状態を作る
- *    （`SendAttempt(attempt_seq = 1, status = 'SUCCEEDED', external_id)` + `proposals.state = 'SUBMITTED'` + `submitted_at`）。
+ * 🔴 T-09-11 専用（後始末）: `proposal-cycle.spec.ts` シナリオ 1 が画面から登録・公開した**合成案件**を、配下の提案ごと消す。
  *
- * `settleProposalSendAsFailedForE2e` の成功側。E2E ハーネスには worker が無いため `SUBMITTED` にブラウザ経路では到達できず、
- * `S-024`（商談結果の記録。`F-025`）の前提「送信済みの提案」を作れない。送信ジョブの正しさは `tests/isolation/send-proposal.test.ts` の
- * 射程であり、E2E が証明したいのは 🔴「`S-024` からモバイルで `SUBMITTED → … → WON` を人の操作で完遂できる」ことである。
- * したがって**送信済みという前提だけ**を、`settleProposalSubmission`（`packages/db/src/proposal-send.ts`）の成功側と**同じ列**
- * （`send_attempts` の 1 行 + `proposals` の `state` / `submitted_at`、`last_failure_reason` と保留列は NULL）で作る。
+ * なぜ要るか: 公開した案件は取引先の `GET /api/projects` の母集団に入る。`isolation.spec.ts` は「取引先に見える案件は seed の
+ * 1 件だけ」（`toEqual([publishedProjectId])` / `total === 1`）を表明しており、残すとそこが落ちる。増やした側が戻す。
  *
- * 🔴 `APPROVED` 以外の行には何もしない（失敗側と同じ順序 = 試行を `SELECT … WHERE state = 'APPROVED'` から派生させ、CAS も同じ条件）。
- * ⚠️ `ProposalEvent(SUBMITTING → SUBMITTED)` と `AuditLog(proposal.submit, SUBMIT_SETTLE)` はここでは書かない。`SUBMITTING` を経由しない。
- * 🔴 商談の記録（`SUBMITTED` 以降）は本シームで作らない —— それは `S-024` → #48 の人間の操作そのものであり、E2E が動かす対象である。
+ * 🔴 消してよい行を SQL 自身が限定する: `id` が指定された UUID **かつ** `name` が合成の接頭辞（`T0911合成案件-`）で始まる行だけ。
+ * 🔴 順序に意味がある: `project_visibilities.review_gate_id → review_gates` は `ON DELETE RESTRICT` なので、公開のゲート結果は
+ *    **案件（→ CASCADE で公開範囲）を消した後**に消す。提案側のゲート結果・試行は提案より先に消す（多相）。
  */
-export function settleProposalSendAsSucceededForE2e(proposalId: string): void {
-  if (!UUID_PATTERN.test(proposalId)) {
-    throw new Error(`proposalId が UUID の形をしていません: ${proposalId}`);
+export function deleteT0911SyntheticProjects(projectIds: readonly string[]): void {
+  if (projectIds.length === 0) return;
+  for (const id of projectIds) {
+    if (!UUID_PATTERN.test(id)) throw new Error(`projectId が UUID の形をしていません: ${id}`);
   }
+  const idList = projectIds.map((id) => `'${id}'`).join(', ');
+  const synthetic = `SELECT id FROM projects WHERE id IN (${idList}) AND name LIKE '${T0911_SYNTHETIC_PROJECT_PREFIX}%'`;
+  const proposals = `SELECT id FROM proposals WHERE project_id IN (${synthetic})`;
   execSql(
-    `INSERT INTO send_attempts ` +
-      `(id, tenant_id, entity_type, entity_id, attempt_seq, idempotency_key, status, external_id, failure_kind, failure_detail, started_at, settled_at, requested_by) ` +
-      `SELECT gen_random_uuid(), tenant_id, 'PROPOSAL', id, 1, 'proposal:' || id::text || ':1', 'SUCCEEDED', 'e2e-message-' || id::text, NULL, ` +
-      `NULL, now(), now(), NULL FROM proposals WHERE id = '${proposalId}' AND state = 'APPROVED';\n` +
-      `UPDATE proposals SET state = 'SUBMITTED', submitted_at = now(), last_failure_reason = NULL, ` +
-      `send_hold_reason_key = NULL, send_hold_since = NULL, updated_at = now() ` +
-      `WHERE id = '${proposalId}' AND state = 'APPROVED';`,
+    `DELETE FROM review_gates WHERE target_type = 'PROPOSAL' AND target_id IN (${proposals});\n` +
+      `DELETE FROM send_attempts WHERE entity_type = 'PROPOSAL' AND entity_id IN (${proposals});\n` +
+      `DELETE FROM proposals WHERE project_id IN (${synthetic});\n` +
+      `CREATE TEMP TABLE e2e_t0911_projects AS ${synthetic};\n` +
+      `DELETE FROM projects WHERE id IN (SELECT id FROM e2e_t0911_projects);\n` +
+      `DELETE FROM review_gates WHERE target_type = 'PROJECT_PUBLISH' AND target_id IN (SELECT id FROM e2e_t0911_projects);\n` +
+      `DROP TABLE e2e_t0911_projects;`,
   );
 }

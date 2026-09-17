@@ -84,6 +84,10 @@ export type ProposalEditorMessages = {
   readonly requestGate: string;
   readonly requestingGate: string;
   readonly gateRequested: string;
+  /** 🔴 T-09-11: `GATE_FAILED → DRAFT`（#48 MANUAL）。不合格から修正へ戻る唯一の導線。 */
+  readonly reopenDraft: string;
+  readonly reopeningDraft: string;
+  readonly reopenDraftLead: string;
   readonly unsavedNote: string;
   readonly viewerNotice: string;
   readonly deniedTitle: string;
@@ -176,7 +180,7 @@ const GATE_POLL_MS = 5_000;
 
 type Phase =
   | { readonly kind: 'IDLE' }
-  | { readonly kind: 'SUBMITTING'; readonly action: 'CREATE' | 'SAVE' | 'GATE' }
+  | { readonly kind: 'SUBMITTING'; readonly action: 'CREATE' | 'SAVE' | 'GATE' | 'REOPEN' }
   | { readonly kind: 'SAVED' }
   | { readonly kind: 'GATE_REQUESTED' };
 
@@ -447,6 +451,35 @@ export function ProposalEditor(props: ProposalEditorProps) {
       setLocalState('GATE_RUNNING');
       setGate(null);
       setPhase({ kind: 'GATE_REQUESTED' });
+      router.refresh();
+    } catch {
+      setError(messages.errorGeneric);
+      setPhase({ kind: 'IDLE' });
+    }
+  }
+
+  // 🔴 T-09-11: 不合格（`GATE_FAILED`）から修正へ戻る唯一の導線。#48 の `MANUAL` `GATE_FAILED → DRAFT`（提案作成者の操作。
+  //    docs/05 §6.5 #48）を呼ぶ。**ゲート結果は残る**（次の #39 が新しい内容で検査し直す）。「無視して送信」ではない ——
+  //    戻した先は `DRAFT` であり、承認・送信へは #39 → 全層 PASS を経ないと進めない。
+  const canReopen = mode === 'EDIT' && localState === 'GATE_FAILED' && canExecute;
+  async function reopenDraft(): Promise<void> {
+    if (submitting || !canReopen || proposalId === null) return;
+    setError(null);
+    setPhase({ kind: 'SUBMITTING', action: 'REOPEN' });
+    try {
+      const response = await fetch(`/api/proposals/${proposalId}/transition`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ to: 'DRAFT' }),
+      });
+      if (!response.ok) {
+        setError(errorFor(response.status, await readErrorCode(response)));
+        setPhase({ kind: 'IDLE' });
+        return;
+      }
+      setLocalState('DRAFT');
+      setGate(null);
+      setPhase({ kind: 'IDLE' });
       router.refresh();
     } catch {
       setError(messages.errorGeneric);
@@ -758,6 +791,12 @@ export function ProposalEditor(props: ProposalEditorProps) {
                   {phase.kind === 'SUBMITTING' && phase.action === 'GATE' ? messages.requestingGate : messages.requestGate}
                 </Button>
               ) : null}
+              {canReopen ? (
+                // 🔴 T-09-11: 不合格から修正へ戻る唯一の導線（`GATE_FAILED → DRAFT`）。「了解のうえ送信」は存在しない。
+                <Button type="button" disabled={submitting} onClick={() => void reopenDraft()} data-testid="proposal-editor-reopen-draft">
+                  {phase.kind === 'SUBMITTING' && phase.action === 'REOPEN' ? messages.reopeningDraft : messages.reopenDraft}
+                </Button>
+              ) : null}
             </>
           )}
           {approveHref === null ? null : (
@@ -769,6 +808,11 @@ export function ProposalEditor(props: ProposalEditorProps) {
             {cancelLabel}
           </Link>
         </div>
+        {canReopen ? (
+          <p role="status" className="m-0 text-sm text-amber-900" data-testid="proposal-editor-reopen-draft-lead">
+            {messages.reopenDraftLead}
+          </p>
+        ) : null}
         {/* 🔴 押せない理由を明示する（無言で disabled にしない）。 */}
         {mode === 'EDIT' && editable && gateBlockedReason !== null ? (
           <p role="status" className="m-0 text-sm text-amber-900" data-testid="proposal-editor-request-gate-blocked">

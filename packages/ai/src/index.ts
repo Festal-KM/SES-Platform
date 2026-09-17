@@ -7,7 +7,7 @@
 //    「この環境ならモック」というリクエストごとの分岐を書けないようにする。
 
 import { AnthropicApiClient, type AnthropicClient, type AnthropicMessagesApi } from './client.js';
-import { AiClientNotAvailableError } from './errors.js';
+import { AiClientNotAvailableError, MockAnthropicScriptNotApplicableError } from './errors.js';
 import { MockAnthropicClient, type MockAnthropicClientOptions } from './mock/index.js';
 
 // 🔴 **クライアントのポート（`AnthropicClient` / `AiClientRequest` / `AnthropicApiClient`）を
@@ -31,6 +31,7 @@ export {
   AiClientNotAvailableError,
   AiCostLimitExceededError,
   AiUsageNotRecordedError,
+  MockAnthropicScriptNotApplicableError,
   type AiClientErrorKind,
 } from './errors.js';
 // 🔴 マスキング（`BR-11` / `BR-12`）。`MaskedText` を作れるのは `mask`（実行時のデータ）と
@@ -177,6 +178,8 @@ export function createAiClient(
     case 'mock':
       return new MockAnthropicClient(options.mock ?? {});
     case 'real': {
+      // 🔴 T-09-11: モックの台本は `real` に適用できない。黙って無視せず起動を止める（`createEmailSender` と同型）。
+      if (options.mock !== undefined) throw new MockAnthropicScriptNotApplicableError(kind);
       if (options.messagesApi === undefined) {
         throw new AiClientNotAvailableError(
           'real',

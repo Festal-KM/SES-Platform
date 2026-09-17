@@ -189,6 +189,11 @@ export type MalwareScannerRuntimeOptions = {
  */
 export type MockEmailRuntimeOptions = {
   readonly script: readonly MockEmailStep[];
+  /**
+   * 🔴 T-09-11: 宛先ドメイン別・試行番号で引く台本（`MockEmailSenderOptions.scriptByRecipientDomain`）。
+   *    E2E ハーネスが「そのドメインへの 1 回目は応答不明、再送は届く」を spec の実行順に依存せずに配るための口。
+   */
+  readonly scriptByRecipientDomain?: Readonly<Record<string, readonly MockEmailStep[]>>;
 };
 
 export type ConnectorRuntimeOptions = {
@@ -305,7 +310,15 @@ export function createEmailSender(
   // 🔴 T-09-07: モックの台本はモック実装にしか渡せない。`real` に来たら**起動を止める**（黙って無視しない）。
   //    台本の有無で実装種別を選び直すこともしない（選択は `resolveConnectorSelection` の 1 箇所）。
   if (kind === 'real' && runtime.mockEmail !== undefined) throw new MockEmailScriptNotApplicableError(kind);
-  const mockOptions = runtime.mockEmail === undefined ? {} : { script: runtime.mockEmail.script };
+  const mockOptions =
+    runtime.mockEmail === undefined
+      ? {}
+      : {
+          script: runtime.mockEmail.script,
+          ...(runtime.mockEmail.scriptByRecipientDomain === undefined
+            ? {}
+            : { scriptByRecipientDomain: runtime.mockEmail.scriptByRecipientDomain }),
+        };
   return pickByKind<EmailSender>('email', kind, {
     mock: () => new MockEmailSender(mockOptions),
     // 🔴 `staging` / `production`。共通ドメイン / 独自ドメインの判定は `EmailSendInput.fromDomain`

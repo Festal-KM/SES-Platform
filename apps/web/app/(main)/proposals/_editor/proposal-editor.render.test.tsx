@@ -68,6 +68,9 @@ const messages: ProposalEditorMessages = {
   requestGate: 'レビューに出す',
   requestingGate: 'レビューを依頼しています…',
   gateRequested: 'レビューを依頼しました。',
+  reopenDraft: '修正する（下書きに戻す）',
+  reopeningDraft: '下書きに戻しています…',
+  reopenDraftLead: '検査で不合格のため差し戻されています。下書きに戻して元データを修正してください。',
   unsavedNote: '保存していない変更があります。',
   viewerNotice: '提案の編集・レビュー依頼は営業担当・管理者が行います。',
   deniedTitle: '提案の操作を行えません。',
@@ -219,6 +222,27 @@ describe('🔴 DRAFT 以外は読み取り専用', () => {
     expect(html).not.toContain('proposal-editor-request-gate"');
     // ゲート結果は読み込み中（ポーリングは useEffect。静的描画では走らない）。
     expect(html).toContain('data-testid="proposal-editor-gate-loading"');
+    // 🔴 T-09-11: 「下書きに戻す」は不合格（GATE_FAILED）のときだけ。検査中には無い。
+    expect(html).not.toContain('proposal-editor-reopen-draft"');
+  });
+
+  // ✅ T-09-11: 不合格から修正へ戻る唯一の導線（`GATE_FAILED → DRAFT`。#48 MANUAL。`docs/04` §S-020「修正 → 再実行のみ」）。
+  it('🔴 GATE_FAILED: 入力欄は disabled のまま「修正する（下書きに戻す）」と理由が描かれ、「レビューに出す」は無い', () => {
+    const html = render({ state: 'GATE_FAILED', stateLabel: '差し戻し', readOnlyNotice: 'この提案は「差し戻し」のため、内容を編集できません。' });
+    expect(html).toContain('data-proposal-state="GATE_FAILED"');
+    expect(isDisabled(html, 'proposal-editor-body')).toBe(true);
+    expect(html).not.toContain('proposal-editor-request-gate"');
+    expect(html).toContain('data-testid="proposal-editor-reopen-draft"');
+    expect(isDisabled(html, 'proposal-editor-reopen-draft')).toBe(false);
+    expect(html).toContain('data-testid="proposal-editor-reopen-draft-lead"');
+    expect(html).toContain(messages.reopenDraftLead);
+  });
+
+  it('GATE_FAILED でも VIEWER（canEdit=false）/ 停止中には「下書きに戻す」が無い（拒否の本体は #48 のガード）', () => {
+    expect(render({ state: 'GATE_FAILED', stateLabel: '差し戻し', readOnlyNotice: 'x', canEdit: false })).not.toContain('proposal-editor-reopen-draft"');
+    expect(render({ state: 'GATE_FAILED', stateLabel: '差し戻し', readOnlyNotice: 'x', denialMessage: '停止中' })).not.toContain(
+      'proposal-editor-reopen-draft"',
+    );
   });
 });
 

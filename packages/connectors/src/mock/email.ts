@@ -57,6 +57,21 @@ export type MockEmailSenderOptions = {
    *    ネットワーク断（`unreachable`）は**記録せずに**投げる = 届いていない。
    */
   readonly script?: readonly MockEmailStep[];
+  /**
+   * 🔴 T-09-11: **宛先ドメイン別**の台本。キーは宛先アドレスの `@` より後ろ（小文字）、値は `MockEmailStep[]`。
+   *
+   * `script` と違い**呼び出し順で消費しない**。引くのは `token.attemptSeq`（`SendAttemptToken`。1 始まり）で、
+   * `steps[attemptSeq - 1]`（尽きたら最後の 1 つ）を返す。`DispatchToken`（運用メール。試行番号を持たない）は
+   * 試行 1 として引く。該当するドメインが無ければ `script` の順序消費に戻る。
+   *
+   * 🔴 なぜ要るか: E2E ハーネスは **1 プロセスの worker を全 spec が共有する**（docs/05 §17.6）。呼び出し順で消費する
+   *    台本だと「何番目の送信が応答不明になるか」が spec の実行順・絞り込み（`--grep` / 単一ファイル実行）で変わり、
+   *    緑が根拠にならない。宛先ドメイン × 試行番号で引けば**無状態**であり、どの順序・どの部分集合で走らせても
+   *    「そのドメインへの 1 回目は応答不明、再送（seq 2）は届く」が成立する（E2E #8。docs/05 §17.3）。
+   * 🔴 モックが保持する記録（`calls`）は従来どおり伏せ字である。ここで見るのはドメインだけであり、平文の宛先を
+   *    保持しない（`redactEmailAddress` がドメインを残す判断と同じ範囲）。
+   */
+  readonly scriptByRecipientDomain?: Readonly<Record<string, readonly MockEmailStep[]>>;
 };
 
 /** `local-part` を伏せる。ドメインは残す（宛先分類の妥当性を目視できる程度に留める）。 */
@@ -66,13 +81,29 @@ export function redactEmailAddress(address: string): string {
   return `***${address.slice(at)}`;
 }
 
+/** 宛先アドレスのドメイン（小文字）。`@` が無ければ `null`。 */
+function recipientDomainOf(address: string): string | null {
+  const at = address.lastIndexOf('@');
+  if (at < 0) return null;
+  return address.slice(at + 1).toLowerCase();
+}
+
+/** `SendAttemptToken`（試行番号あり）か `DispatchToken`（無し）か。無ければ試行 1 として扱う。 */
+function attemptSeqOf(token: EmailSendInput['token']): number {
+  return 'attemptSeq' in token && typeof token.attemptSeq === 'number' ? token.attemptSeq : 1;
+}
+
 export class MockEmailSender implements EmailSender {
   private readonly calls: MockEmailCall[] = [];
   private readonly script: readonly MockEmailStep[];
+  private readonly scriptByRecipientDomain: ReadonlyMap<string, readonly MockEmailStep[]>;
   private cursor = 0;
 
   constructor(private readonly options: MockEmailSenderOptions = {}) {
     this.script = [...(options.script ?? [])];
+    this.scriptByRecipientDomain = new Map(
+      Object.entries(options.scriptByRecipientDomain ?? {}).map(([domain, steps]) => [domain.toLowerCase(), [...steps]]),
+    );
   }
 
   async send(input: EmailSendInput): Promise<{ externalId: string }> {
@@ -80,7 +111,7 @@ export class MockEmailSender implements EmailSender {
     //    落ちる（あるいは未検証のまま取引先へ届く）差分が生まれる。
     assertSendingDomainForRecipientClass(input);
 
-    const step = this.nextStep();
+    const step = this.stepFor(input);
 
     // 🔴 送る前に失敗した（接続拒否 / DNS 不達）。要求は外部に到達していないので**記録しない**
     //    （送っていないのに送ったことにしない。`callCount()` 不変）。受理されなかったことが確定している
@@ -118,6 +149,21 @@ export class MockEmailSender implements EmailSender {
     }
 
     return { externalId: `mock-${randomUUID()}` };
+  }
+
+  /**
+   * この 1 通の振る舞い。🔴 宛先ドメイン別の台本があれば**試行番号で引き**（順序消費しない。`scriptByRecipientDomain` の注記）、
+   * 無ければ `script` を呼び出し順に消費する。ドメイン別の台本で決まった送信は `script` のカーソルを進めない
+   * （2 つの台本を同時に使う構成で、片方の消費が他方の位置を狂わせないため）。
+   */
+  private stepFor(input: EmailSendInput): MockEmailStep {
+    const domain = recipientDomainOf(input.to);
+    const byDomain = domain === null ? undefined : this.scriptByRecipientDomain.get(domain);
+    if (byDomain !== undefined && byDomain.length > 0) {
+      const index = Math.min(attemptSeqOf(input.token) - 1, byDomain.length - 1);
+      return byDomain[Math.max(index, 0)] ?? { kind: 'deliver' };
+    }
+    return this.nextStep();
   }
 
   /** 台本の次の 1 手。尽きたら最後の 1 つを繰り返し、台本が無ければ常に `deliver`。 */

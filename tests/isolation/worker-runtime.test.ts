@@ -20,6 +20,7 @@ import { resolveConnectorSelection } from '../../packages/config/src/connector-s
 import { loadAppEnv } from '../../packages/config/src/load-env.js';
 import type { RuntimeConfig } from '../../packages/config/src/startup.js';
 import { buildValidEnv } from '../../packages/config/src/testing/fixtures.js';
+import { DEMO_MOCK_ANTHROPIC_SCRIPT, MockAnthropicScriptNotApplicableError } from '@ses/ai';
 import { GATE_RUN_JOB, MockEmailScriptNotApplicableError, SEND_PROPOSAL_JOB } from '@ses/connectors';
 import {
   createBullMqGateRunQueue,
@@ -169,11 +170,31 @@ describe('🔴 T-09-07: mockEmailScript は development（email: mock）で受�
     configureTenantDb({ datasourceUrl: database.tenantUrl });
   });
 
+  // ✅ T-09-11: AI の台本（`mockAnthropicScript`）と宛先ドメイン別のメール台本も同じ規律。
+  it('🔴 T-09-11: connectors.ai が real の設定に AI の台本を渡すと MockAnthropicScriptNotApplicableError（DB / Redis に触れる前に落ちる）', () => {
+    const env = loadAppEnv(buildValidEnv('development', { REDIS_URL: redis.url }));
+    const selection = resolveConnectorSelection(env);
+    expect(() =>
+      startWorkerRuntime({ env, connectors: { ...selection, ai: 'real' } }, { mockAnthropicScript: DEMO_MOCK_ANTHROPIC_SCRIPT }),
+    ).toThrow(MockAnthropicScriptNotApplicableError);
+    expect(() =>
+      startWorkerRuntime(
+        { env, connectors: { ...selection, email: 'real' } },
+        { mockEmailScriptByRecipientDomain: { 'unknown-once.example.test': [{ kind: 'unknown' }] } },
+      ),
+    ).toThrow(MockEmailScriptNotApplicableError);
+    configureTenantDb({ datasourceUrl: database.tenantUrl });
+  });
+
   it('development（mock）は台本を受け付けて起動する', async () => {
     const env = loadAppEnv(buildValidEnv('development', { REDIS_URL: redis.url }));
     const scripted = startWorkerRuntime(
       { env, connectors: resolveConnectorSelection(env) },
-      { mockEmailScript: [{ kind: 'unknown' }] },
+      {
+        mockEmailScript: [{ kind: 'unknown' }],
+        mockEmailScriptByRecipientDomain: { 'unknown-once.example.test': [{ kind: 'unknown' }, { kind: 'deliver' }] },
+        mockAnthropicScript: DEMO_MOCK_ANTHROPIC_SCRIPT,
+      },
     );
     configureTenantDb({ datasourceUrl: database.tenantUrl });
     await scripted.ready;

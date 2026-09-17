@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { AI_IMPLEMENTATION_KINDS, createAiClient } from './index.js';
-import { AiClientNotAvailableError } from './errors.js';
+import { AiClientNotAvailableError, MockAnthropicScriptNotApplicableError } from './errors.js';
 import type { AnthropicMessagesApi } from './client.js';
 import type { MaskedText } from './mask.js';
 
@@ -43,6 +43,15 @@ describe('createAiClient', () => {
 
   it('🔴 real で SDK アダプタが無いときはモックに倒さず throw する（起動を止める）', () => {
     expect(() => createAiClient('real')).toThrow(AiClientNotAvailableError);
+  });
+
+  it('🔴 T-09-11: real にモックの台本を渡すと MockAnthropicScriptNotApplicableError（SDK アダプタがあっても起動を止める）', () => {
+    const api: AnthropicMessagesApi = {
+      parse: () => Promise.resolve({ output: { ok: true }, modelId: 'model-actual', tokens: TOKENS }),
+    };
+    expect(() =>
+      createAiClient('real', { messagesApi: api, mock: { script: [{ kind: 'output', output: { ok: true } }] } }),
+    ).toThrow(MockAnthropicScriptNotApplicableError);
   });
 
   it('🔴 sandboxRecipientScoped は AI に存在しない（宛先分類はメール専用）', () => {

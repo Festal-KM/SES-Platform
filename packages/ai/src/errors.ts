@@ -57,6 +57,24 @@ export class AiClientNotAvailableError extends Error {
 }
 
 /**
+ * 🔴 T-09-11: モックの台本（`MockAnthropicClientOptions`）を `real` の実装種別に渡した（docs/05 §13.2 / §17.5）。
+ *
+ * `packages/connectors` の `MockEmailScriptNotApplicableError`（T-09-07）と同型。E2E ハーネスが
+ * `startWorkerRuntime(config, { mockAnthropicScript })` で台本を配るとき、`ai: 'real'`（`sandbox` 以上）の設定に
+ * 誤って渡されたら**起動時に**落とす —— 黙って無視すると「台本のつもりで実 API を呼ぶ」逆の事故になる
+ * （`CLAUDE.md` §11.1）。台本の有無で実装種別を選び直すことはしない（選択は `resolveConnectorSelection` の 1 箇所）。
+ */
+export class MockAnthropicScriptNotApplicableError extends Error {
+  constructor(readonly kind: string) {
+    super(
+      `AI クライアントの実装種別 '${kind}' にモックの台本（mock.script）は適用できません。` +
+        '台本はモック実装（mock）にだけ渡せます（docs/05 §13.2）。',
+    );
+    this.name = 'MockAnthropicScriptNotApplicableError';
+  }
+}
+
+/**
  * 🔴 テナント別の「1 日の AI コスト上限」に到達したため**呼び出さなかった**（docs/05 §7.6 / `F-027`）。
  *
  * 🔴 `AiClientError('SPEND_CAP')`（Anthropic 側の月間支出上限で**弾かれた**）と混同しない。

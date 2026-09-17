@@ -11,7 +11,9 @@
 //    ここが見るのは `connectors.*`（`real` / `mock` / `sandboxRecipientScoped`）だけである）。
 //    唯一の例外が `resolveMockAiOptions`（下記。**モックの応答内容**の決定であり、実装種別の
 //    選択ではない。`apps/web` の `resolveInviteUrlRuntime` と同じ位置づけ）。メールのモックの台本
-//    （`WorkerRuntimeOptions.mockEmailScript`。T-09-07）も同じ性質だが、`APP_ENV` を見ずに**呼び出し側（テスト）**が渡す。
+//    （`WorkerRuntimeOptions.mockEmailScript` / `mockEmailScriptByRecipientDomain`。T-09-07 / T-09-11）と AI のモックの台本
+//    （`mockAnthropicScript`。T-09-11。E2E ハーネスが `demo` 相当を明示的に配る）も同じ性質だが、`APP_ENV` を見ずに
+//    **呼び出し側（テスト）**が渡す。
 //
 // ============================================================================
 // 🔴 遅延生成にしている理由（`development` で起動できることが受け入れ基準①）
@@ -36,8 +38,10 @@ import {
   createAiClient,
   createAnthropicMessagesApi,
   DEMO_MOCK_ANTHROPIC_SCRIPT,
+  MockAnthropicScriptNotApplicableError,
   type AiClientRuntimeOptions,
   type MockAnthropicClientOptions,
+  type MockAnthropicStep,
   type RoleModelResolver,
 } from '@ses/ai';
 import {
@@ -126,24 +130,49 @@ export function resolveMockAiOptions(appEnv: AppEnvKind): MockAnthropicClientOpt
  *   🔴 `connectors.email === 'real'` の環境で渡すと**起動時に**落ちる（`createEmailSender` の
  *   `MockEmailScriptNotApplicableError`。ここでも先に検査し、遅延生成で最初の送信まで気づかない形にしない）。
  *   台本の有無で実装種別を選び直すことはない（選択は `resolveConnectorSelection` の 1 箇所）。
+ * - `mockEmailScriptByRecipientDomain` … 🔴 T-09-11: 宛先ドメイン別・試行番号で引く台本（`MockEmailRuntimeOptions` の
+ *   同名項目）。E2E ハーネスは 1 プロセスの worker を全 spec で共有するため、呼び出し順の台本では「何番目が応答不明か」が
+ *   実行順に依存する。`real` の検査は `mockEmailScript` と同じ（どちらか 1 つでも渡されていれば起動時に落とす）。
+ * - `mockAnthropicScript` … 🔴 T-09-11: `MockAnthropicClient` の台本（`@ses/ai` の `MockAnthropicStep[]`）。E2E ハーネスが
+ *   `demo` 相当の応答（`DEMO_MOCK_ANTHROPIC_SCRIPT`）を**明示的に**配るための口（Issue #47 の既定値 = 選択肢 1）。
+ *   🔴 `development` の既定応答は置かない（Issue #44 の決定。`resolveMockAiOptions` に `development` の枝を足すのではなく、
+ *   呼び出し側〔ハーネス〕が渡す）。🔴 `connectors.ai === 'real'` に渡すと**起動時に**落ちる（`@ses/ai` の
+ *   `MockAnthropicScriptNotApplicableError`。`createAiClient` も同じ検査を持つ）。
  */
 export type WorkerRuntimeOptions = {
   readonly mockEmailScript?: readonly MockEmailStep[];
+  readonly mockEmailScriptByRecipientDomain?: Readonly<Record<string, readonly MockEmailStep[]>>;
+  readonly mockAnthropicScript?: readonly MockAnthropicStep[];
 };
 
 /**
  * 🔴 ワーカーを起動する（プロセスにつき 1 回。`main.ts` からのみ呼ぶ）。
  *
  * @param config `bootstrapWorker()` が返した値。**ここで `process.env` を読み直さない。**
- * @param options テスト用の注入（T-09-07）。本番の起動経路（`main.ts`）は渡さない。
+ * @param options テスト用の注入（T-09-07 / T-09-11）。本番の起動経路（`main.ts`）は渡さない。
  */
 export function startWorkerRuntime(config: RuntimeConfig, options: WorkerRuntimeOptions = {}): WorkerRuntime {
   const { env, connectors } = config;
   // 🔴 T-09-07: モックの台本は `real` に適用できない。遅延生成（`resolveEmailSender`）に任せず起動時に落とす。
-  if (options.mockEmailScript !== undefined && connectors.email === 'real') {
+  const hasMockEmailOptions =
+    options.mockEmailScript !== undefined || options.mockEmailScriptByRecipientDomain !== undefined;
+  if (hasMockEmailOptions && connectors.email === 'real') {
     throw new MockEmailScriptNotApplicableError(connectors.email);
   }
-  const mockEmail = options.mockEmailScript === undefined ? {} : { mockEmail: { script: options.mockEmailScript } };
+  // 🔴 T-09-11: AI の台本も同じ規律（`ai: 'real'` = `sandbox` 以上に渡されたら起動を止める）。
+  if (options.mockAnthropicScript !== undefined && connectors.ai === 'real') {
+    throw new MockAnthropicScriptNotApplicableError(connectors.ai);
+  }
+  const mockEmail = hasMockEmailOptions
+    ? {
+        mockEmail: {
+          script: options.mockEmailScript ?? [],
+          ...(options.mockEmailScriptByRecipientDomain === undefined
+            ? {}
+            : { scriptByRecipientDomain: options.mockEmailScriptByRecipientDomain }),
+        },
+      }
+    : {};
 
   // --------------------------------------------------------------------------
   // 0. DB クライアントと暗号鍵（`apps/web/lib/db/bootstrap.ts` と同じ位置づけ）
@@ -176,7 +205,14 @@ export function startWorkerRuntime(config: RuntimeConfig, options: WorkerRuntime
           //    未設定なら**起動時に**落ちており、ここへは来ない（モックへ倒さない）。
           messagesApi: createAnthropicMessagesApiFrom(env.ANTHROPIC_API_KEY),
         }
-      : { mock: resolveMockAiOptions(env.APP_ENV) };
+      : {
+          // 🔴 T-09-11: 明示的に渡された台本（E2E ハーネス）が既定（`resolveMockAiOptions`）に優先する。`development` の
+          //    既定は空のまま（Issue #44）。
+          mock:
+            options.mockAnthropicScript === undefined
+              ? resolveMockAiOptions(env.APP_ENV)
+              : { script: options.mockAnthropicScript },
+        };
   const aiClient = createAiClient(connectors.ai, aiOptions);
   const models: RoleModelResolver = catalogRoleModelResolver({
     DEFAULT: env.ANTHROPIC_MODEL_DEFAULT,

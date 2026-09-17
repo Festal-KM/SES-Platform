@@ -796,6 +796,9 @@ const FROZEN_EXACT: readonly string[] = [
   'proposal-editor-recipient-company-name',
   'proposal-editor-recipient-email',
   'proposal-editor-recipient-missing',
+  // ✅ T-09-11: `GATE_FAILED → DRAFT`（修正へ戻る唯一の導線）。
+  'proposal-editor-reopen-draft',
+  'proposal-editor-reopen-draft-lead',
   'proposal-editor-request-gate',
   'proposal-editor-request-gate-blocked',
   'proposal-editor-save',

@@ -197,6 +197,47 @@ describe('MockEmailSender', () => {
     });
   });
 
+  // ✅ T-09-11: 宛先ドメイン別・試行番号で引く台本（E2E ハーネスが 1 プロセスの worker を全 spec で共有するため、
+  //    呼び出し順で消費する台本では「何番目が応答不明か」が実行順に依存する。docs/05 §13.2 / §17.5）。
+  describe('scriptByRecipientDomain（T-09-11。宛先ドメイン × 試行番号。無状態）', () => {
+    const attempt = (attemptSeq: number) => ({ attemptSeq, idempotencyKey: `proposal:p:${String(attemptSeq)}` }) as unknown as EmailSendInput['token'];
+    const toUnknownDomain = (attemptSeq: number, overrides: Partial<EmailSendInput> = {}) =>
+      input({ recipientClass: 'CLIENT', fromDomain: verifiedDomain, to: `someone@Unknown-Once.example.test`, token: attempt(attemptSeq), ...overrides });
+    const scripts = { 'unknown-once.example.test': [{ kind: 'unknown' as const }, { kind: 'deliver' as const }] };
+
+    it('🔴 そのドメインへの試行 1 は unknown、試行 2 以降は deliver。何度呼んでも・どの順序でも同じ（順序消費しない）', async () => {
+      const sender = new MockEmailSender({ scriptByRecipientDomain: scripts });
+      // 試行 2 を先に送っても届く（順序ではなく試行番号で引いている）。ドメインの大小文字は無視する。
+      await expect(sender.send(toUnknownDomain(2))).resolves.toMatchObject({ externalId: expect.stringMatching(/^mock-/) as string });
+      for (let i = 0; i < 2; i += 1) {
+        const error = await sender.send(toUnknownDomain(1)).catch((caught: unknown) => caught);
+        expect(error).toBeInstanceOf(ExternalSendError);
+        expect((error as ExternalSendError).kind).toBe('UNKNOWN');
+      }
+      await expect(sender.send(toUnknownDomain(3))).resolves.toMatchObject({ externalId: expect.stringMatching(/^mock-/) as string });
+      // unknown は「届いた可能性がある」ので記録に数える（順序消費の台本と同じ規律）。
+      expect(sender.callCount()).toBe(4);
+    });
+
+    it('該当しないドメインは script（順序消費）に戻り、ドメイン別の送信は script のカーソルを進めない', async () => {
+      const sender = new MockEmailSender({ script: [{ kind: 'unreachable' }, { kind: 'deliver' }], scriptByRecipientDomain: scripts });
+      // ドメイン別の台本で決まった送信（試行 2 = deliver）は script を消費しない。
+      await expect(sender.send(toUnknownDomain(2))).resolves.toMatchObject({ externalId: expect.stringMatching(/^mock-/) as string });
+      // script の 1 手目（unreachable）はまだ残っている。
+      const error = await sender.send(input()).catch((caught: unknown) => caught);
+      expect((error as ExternalSendError).kind).toBe('TRANSIENT');
+      await expect(sender.send(input())).resolves.toMatchObject({ externalId: expect.stringMatching(/^mock-/) as string });
+    });
+
+    it('DispatchToken（試行番号を持たない運用メール）は試行 1 として引く', async () => {
+      const sender = new MockEmailSender({ scriptByRecipientDomain: scripts });
+      const error = await sender
+        .send(input({ to: 'owner@unknown-once.example.test', token: dispatchToken }))
+        .catch((caught: unknown) => caught);
+      expect((error as ExternalSendError).kind).toBe('UNKNOWN');
+    });
+  });
+
   describe('getQuota（docs/05 §8.3-Q ③）', () => {
     it('🔴 既定では自身に枠が無い（実効上限は MAIL_PROVIDER_DAILY_QUOTA 側で決まる）', async () => {
       const sender = new MockEmailSender();

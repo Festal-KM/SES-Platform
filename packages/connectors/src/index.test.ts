@@ -237,4 +237,16 @@ describe('🔴 mockEmail（T-09-07。docs/05 §13.2 / §10.6）: 台本はモッ
     await expect(connectors.email.send(clientInput)).rejects.toMatchObject({ name: 'ExternalSendError', kind: 'PERMANENT' });
     expect(connectors.objectStore.callCount()).toBe(0);
   });
+
+  // ✅ T-09-11: 宛先ドメイン別の台本も同じ口から届く（E2E ハーネスの注入口）。`real` に渡せば同じく起動が止まる。
+  it('T-09-11: scriptByRecipientDomain はモック実装に届き、宛先ドメインが一致した送信だけに効く', async () => {
+    const email = createEmailSender('mock', {
+      mockEmail: { script: [], scriptByRecipientDomain: { 'unknown-once.example.test': [{ kind: 'unknown' }, { kind: 'deliver' }] } },
+    });
+    await expect(email.send({ ...clientInput, to: 'someone@unknown-once.example.test' })).rejects.toMatchObject({ kind: 'UNKNOWN' });
+    await expect(email.send(clientInput)).resolves.toMatchObject({ externalId: expect.stringMatching(/^mock-/) as string });
+    expect(() =>
+      createEmailSender('real', { ses, mockEmail: { script: [], scriptByRecipientDomain: { 'unknown-once.example.test': [{ kind: 'unknown' }] } } }),
+    ).toThrow(MockEmailScriptNotApplicableError);
+  });
 });

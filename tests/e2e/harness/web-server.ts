@@ -2,10 +2,9 @@
 // docs/05 §17.6 globalSetup の ⑤「`APP_ENV=development` でアプリを起動」⑥「外向きネットワークの
 // 遮断を確認」。
 //
-// 🔴 環境変数は `@ses/config/testing` の `buildValidEnv('development')` を土台にする。
-//    「妥当な env の組み立て方」を E2E 用に書き直さない（`packages/config/src/testing/fixtures.ts`
-//    冒頭の意図。docs/05 §13.2 と同じ発想）。上書きするのは**この実行でしか決まらない値**
-//    （DB の接続文字列と `APP_URL`）だけである。
+// 🔴 環境変数は `harness/app-env.ts` の `buildE2eAppEnv`（= `@ses/config/testing` の `buildValidEnv('development')` を土台に、
+//    この実行でしか決まらない値だけを上書きしたもの）を使う。✅ T-09-11 で worker（`harness/worker.ts`）と**同じ 1 組**を
+//    共有する形に切り出した（web が積んだジョブを worker が同じ Redis / DB / 上限値で拾うため）。
 // 🔴 `APP_ENV` を `development` 以外にしない。全コネクタがモックに解決される唯一の環境であり、
 //    E2E はここでしか回さない（`CLAUDE.md` §11 / docs/03 §4.17）。
 import { execFileSync, spawn } from 'node:child_process';
@@ -14,11 +13,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
-// 🔴 `@ses/config/testing` をパッケージ名で import しない: ルートの `package.json` は
-//    `@ses/config` を依存に持たず（テストが必要とするのはこの 1 関数だけ）、そのためだけに
-//    ワークスペースの依存関係を増やしたくない。**実装は同じファイル**であり、
-//    `tests/isolation/**` が `apps/web/lib/**` を相対 import しているのと同じ扱いである。
-import { buildValidEnv } from '../../../packages/config/src/testing/fixtures.js';
+import { buildE2eAppEnv } from './app-env.js';
 import { E2E_BASE_URL, E2E_HOST, E2E_PORT } from './endpoint.js';
 import type { E2eObjectStorage } from './object-storage.js';
 import { ARTIFACT_DIR, NETWORK_GUARD, NEXT_CLI, WEB_APP_DIR } from './paths.js';
@@ -49,28 +44,7 @@ function buildEnv(
   redis: E2eRedis,
   guardMarker: string,
 ): EnvRecord {
-  const base = buildValidEnv('development', {
-    APP_URL: E2E_BASE_URL,
-    DATABASE_URL: database.tenantUrl,
-    // 🔴 T-09-06: #43 が `send.proposal` を積む先（E2E 専用の使い捨て Redis。ホストの 6379 を使わない）。
-    REDIS_URL: redis.url,
-    PLATFORM_DATABASE_URL: database.platformUrl,
-    PLATFORM_WRITE_DATABASE_URL: database.platformWriteUrl,
-    // 🔴 `next start` は本番モードのビルドを配信する。`APP_ENV` は `development` のまま
-    //    （`NODE_ENV` と `APP_ENV` は別物であり、`packages/config` も両者を結び付けていない）。
-    NODE_ENV: 'production',
-    // 🔴 T-05-10（K-7）: `objectStore` は development で `real`（`connector-selection.ts`
-    //    `developmentSelection()`）であり、モックにフォールバックしない（`CLAUDE.md` §11.1）。
-    //    `docker-compose.yml` 既定の固定ポート（9000）ではなく、`harness/object-storage.ts` が
-    //    起動した E2E 専用の使い捨て MinIO インスタンスを指す（`docker compose up -d` の実行を
-    //    前提にしない。PostgreSQL と同じ方針）。
-    S3_ENDPOINT: objectStorage.endpoint,
-    S3_ACCESS_KEY_ID: objectStorage.accessKeyId,
-    S3_SECRET_ACCESS_KEY: objectStorage.secretAccessKey,
-    S3_BUCKET: objectStorage.bucket,
-    S3_REGION: objectStorage.region,
-    S3_FORCE_PATH_STYLE: 'true',
-  });
+  const base = buildE2eAppEnv(database, objectStorage, redis);
 
   return {
     // 🔴 `next start` は本番モードのビルドを配信する（`buildValidEnv` の上書きと同値）。
