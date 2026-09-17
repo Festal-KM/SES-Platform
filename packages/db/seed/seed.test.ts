@@ -37,6 +37,18 @@ describe('🔴 環境ガードは投入・削除の前にある（F-053 AC-6 / d
       ).rejects.toBeInstanceOf(SeedNotAllowedError);
     },
   );
+
+  // ✅ T-10-07: `F-053 AC-4` / `BR-63`（`sandbox` に合成データを投入しない。`demo` と `sandbox` を兼ねない）を `demo` プリセットで固定する。
+  //    上の `it.each` は `isolation` プリセットで環境ガードを見ており、ここでは**実演用の一式（`demo`）そのもの**が `sandbox` に
+  //    入り得ないことを、投入（`reset: true` / `false`）と削除の 3 経路で見る。接続文字列は到達不能な値であり、拒否は接続の前で起きる。
+  it.each(['sandbox', 'staging', 'production'])(
+    '🔴 F-053 AC-4: APP_ENV=%s では demo プリセットが投入・削除のどちらにも到達しない（seed:demo は sandbox に入らない）',
+    async (appEnv) => {
+      await expect(runSeed({ appEnv, databaseUrl: INVALID_URL, preset: 'demo', reset: true })).rejects.toBeInstanceOf(SeedNotAllowedError);
+      await expect(runSeed({ appEnv, databaseUrl: INVALID_URL, preset: 'demo', reset: false })).rejects.toBeInstanceOf(SeedNotAllowedError);
+      await expect(runSeedReset({ appEnv, databaseUrl: INVALID_URL, preset: 'demo' })).rejects.toBeInstanceOf(SeedNotAllowedError);
+    },
+  );
 });
 
 describe('CLI の引数（pnpm seed --preset=... [--reset]）', () => {

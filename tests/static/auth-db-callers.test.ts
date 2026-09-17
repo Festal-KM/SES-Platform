@@ -415,10 +415,14 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
   //    docs/05 §13.6「T-10-06 の実装の決着」）。呼び出し元をファイル単位で固定するのは、`withPlatformWrite` の
   //    7 ドメインの外にあるこの経路が増えると「特権接続をどこからでも開ける」実装が書けてしまうため。
   runSeed: ['apps/web/app/api/admin/demo/_lib/service.ts'],
-  runSeedReset: [], // T-10-07 が reset のサービス 1 ファイルを足す
+  // ✅ T-10-07: `reset`（`POST /api/admin/demo/reset`）の実体も**同じ 1 ファイル**に置く。対象は `demo` プリセットの `tenantIds` に
+  //    閉じた削除（`deleteTenantData`）であり、任意の `tenantId` を受ける API ではない。2 ファイル目を足すことは
+  //    「特権接続で消す経路が増える」ことと同義。
+  runSeedReset: ['apps/web/app/api/admin/demo/_lib/service.ts'],
   // 🔴 T-10-06: `runSeed` に渡す接続文字列（`SEED_DATABASE_URL`）の唯一の取り出し口。定義ファイル自身にも
-  //    識別子が現れるため、呼び出し元（ルート）と合わせて 2 ファイルになる。
+  //    識別子が現れるため、呼び出し元（ルート）と合わせて 3 ファイルになる（✅ T-10-07 で `reset` のルートを追加）。
   demoSeedRuntime: [
+    'apps/web/app/api/admin/demo/reset/route.ts',
     'apps/web/app/api/admin/demo/seed/route.ts',
     'apps/web/lib/db/bootstrap.ts',
   ],

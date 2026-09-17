@@ -61,6 +61,17 @@ describe('🔴 production では mock が 1 件も選択されない（NFR-ENV-3
     const selection = resolveConnectorSelection(env);
     expect(selection.email).toBe('sandboxRecipientScoped');
   });
+
+  // ✅ T-10-07: `F-053 AC-5` / `BR-45`。`demo` は宛先による区別（`sandbox` の `sandboxRecipientScoped`）を**適用せず**、送信系
+  //    （email / esign）を含む全区分が `mock` である。上のスナップショットと同じ事実だが、受け入れ基準の名前で 1 本固定する
+  //    （`demo` の行だけが `sandbox` 側へ寄せられた変更を、AC の名前で落とす）。
+  it('🔴 F-053 AC-5: demo は全送信系がモックであり、sandbox の宛先分類（sandboxRecipientScoped）を適用しない', () => {
+    const selection = resolveConnectorSelection(loadAppEnv(buildValidEnv('demo')));
+    expect(selection.email).toBe('mock');
+    expect(selection.esign).toBe('mock');
+    expect(Object.values(selection)).not.toContain('sandboxRecipientScoped');
+    expect(Object.values(selection)).not.toContain('real');
+  });
 });
 
 describe('assertNoMockInProduction — 実行時の二重防御', () => {

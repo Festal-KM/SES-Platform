@@ -12,6 +12,7 @@ import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { isSeedableAppEnv } from '@ses/config';
 import { t } from '@ses/i18n';
+import { demoResetTargetTenantNames } from '../../../lib/admin-demo/reset-targets';
 import { demoScenarioStartPoints } from '../../../lib/admin-demo/scenarios';
 import { resolvePlatformCtxOutcome } from '../../../lib/auth/platform-session';
 import { currentAppEnv } from '../../../lib/db/bootstrap';
@@ -25,6 +26,8 @@ export const metadata: Metadata = { title: t('admin.demo.title') };
 
 /** API-A16 の URL（docs/05 §6.9）。ページは任意の名前を export できないため非公開の定数にする。 */
 const DEMO_SEED_ENDPOINT = '/api/admin/demo/seed';
+/** ✅ T-10-07: API-A16 `reset` の URL。 */
+const DEMO_RESET_ENDPOINT = '/api/admin/demo/reset';
 
 export default async function AdminDemoPage() {
   const outcome = await resolvePlatformCtxOutcome();
@@ -38,6 +41,8 @@ export default async function AdminDemoPage() {
       appEnv={appEnv}
       available={isSeedableAppEnv(appEnv)}
       endpoint={DEMO_SEED_ENDPOINT}
+      resetEndpoint={DEMO_RESET_ENDPOINT}
+      resetTenantNames={demoResetTargetTenantNames()}
       scenarios={demoScenarioStartPoints(1)}
     />
   );

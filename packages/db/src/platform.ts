@@ -74,6 +74,9 @@ export const PLATFORM_ACTIONS = [
   // 🔴 投入の記録。書き込み先は**合成データ**（特権接続の `runSeed`。`withPlatformWrite` の 7 ドメインの外）であり、
   //    ここでは「誰が・いつ・何件投入したか」を運営者の操作として残す（`CLAUDE.md` §10.5「運営者の全操作を記録」）。
   'admin.demo.seed',
+  // 🔴 T-10-07: リセット（`demo` プリセットのテナントの全業務データ削除。`F-053 AC-2`）の記録。書き込み先は投入と同じく
+  //    **合成データ**（特権接続の `runSeedReset`）。要求（`REQUESTED`）と帰結（`COMPLETED`）の 2 行を残す。
+  'admin.demo.reset',
   // 書き込み（`CLAUDE.md` §10.5 が運営者に認めた 6 領域。§5.2 の `domain` と対応する）。
   'admin.tenant.create',
   'admin.tenant.owner_invitation',

@@ -26,7 +26,7 @@ import {
   withTenant,
   type AuthenticatedTenantCtx,
 } from '@ses/db';
-import { ISOLATION_FORBIDDEN_MARKERS, ISOLATION_SEED_IDS, runSeed } from '@ses/db/seed';
+import { ISOLATION_FORBIDDEN_MARKERS, ISOLATION_SEED_IDS, runSeed, SeedIncompleteError } from '@ses/db/seed';
 import {
   createUnextendedClient,
   hasTablePrivilege,
@@ -1056,19 +1056,51 @@ describe('🔴 seed:isolation は reset() → seed() で冪等に再生成でき
     expect(after).toEqual(before);
   }, SETUP_TIMEOUT_MS);
 
-  it('🔴 reset を挟まない再実行は一意制約で失敗する（黙って二重投入されない）', async () => {
-    await expect(
-      runSeed({
-        appEnv: 'development',
-        databaseUrl: database.superuserUrl,
-        preset: 'isolation',
-        reset: false,
-        now: NOW,
-      }),
-    ).rejects.toThrow();
-    // 失敗しても母集団は壊れていない（テナントは 2 件のまま）。
+  // ✅ T-10-06 で契約が変わった（docs/05 §13.6「冪等キー（API-A16）」）: `reset: false` は投入前に `readSeedPresence` を見て、
+  //    プリセットの全テナントが揃っていれば**何も書かず** `ALREADY_SEEDED` で解決する（一意制約に当たる前に止まる）。
+  //    「黙って二重投入されない」は変わらず、その表れ方が「reject」から「何も書かない解決」になった。✅ T-10-07 で期待を追随。
+  it('🔴 reset を挟まない再実行は ALREADY_SEEDED で何も書かない（黙って二重投入されない）', async () => {
+    const result = await runSeed({
+      appEnv: 'development',
+      databaseUrl: database.superuserUrl,
+      preset: 'isolation',
+      reset: false,
+      now: NOW,
+    });
+    expect(result.outcome).toBe('ALREADY_SEEDED');
+    // 何も書いていない: 行数は初回と同じ / `seededAt` は前回の T（`tenants.lifecycle_changed_at`）。
+    expect(result.counts).toEqual(seededCounts);
+    expect(result.seededAt).toEqual(NOW);
+    // 母集団は壊れていない（テナントは 2 件のまま）。
     const tenants = await runUnextended(unextended, SCOPE_HOST_1, (tx) => tx.tenant.count());
     expect(tenants).toBe(1); // 自テナントの 1 行だけが見える（C1）
+  }, SETUP_TIMEOUT_MS);
+
+  it('🔴 テナントが一部だけ存在する状態では SeedIncompleteError で reject し、何も書かない（黙って上書きも追記もしない）', async () => {
+    // 前提: テナント 2 の `tenants` 行だけを消す（前回の投入が途中で止まった相当。FK とトリガはこのトランザクションの中だけ外す）。
+    const superuser = createUnextendedClient(database.superuserUrl);
+    try {
+      await superuser.$transaction(async (tx) => {
+        await tx.$executeRaw`SET LOCAL session_replication_role = replica`;
+        await tx.$executeRaw`DELETE FROM tenants WHERE id = ${TENANT_2.tenantId}::uuid`;
+      });
+      const partnersBefore = await superuser.partnerCompany.count();
+      await expect(
+        runSeed({
+          appEnv: 'development',
+          databaseUrl: database.superuserUrl,
+          preset: 'isolation',
+          reset: false,
+          now: NOW,
+        }),
+      ).rejects.toBeInstanceOf(SeedIncompleteError);
+      // 何も書いていない（取引先の行数が変わらず、テナント 2 の行も復活していない）。
+      expect(await superuser.partnerCompany.count()).toBe(partnersBefore);
+      expect(await superuser.tenant.count({ where: { id: TENANT_2.tenantId } })).toBe(0);
+    } finally {
+      await superuser.$disconnect();
+    }
+    // 回復は reset → seed（次の it が `reset: true` で行う）。
   }, SETUP_TIMEOUT_MS);
 
   it('🔴 reset は対象テナントの業務データを消す（前の商談のデータが残らない）', async () => {

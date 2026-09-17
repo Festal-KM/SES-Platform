@@ -1,8 +1,8 @@
 // apps/web/app/admin/demo/admin-demo-screen.tsx
-// `A-012` デモ環境の合成データ管理 — 純粋な描画部品（docs/04 §A-012 / `F-053`）。T-10-06。
+// `A-012` デモ環境の合成データ管理 — 純粋な描画部品（docs/04 §A-012 / `F-053`）。T-10-06 / T-10-07（リセット節）。
 //
 // 🔴 `available`（`APP_ENV ∈ {demo, development}`）が偽なら**「この環境では利用できません」の 1 文だけ**を描く
-//    （docs/04 §A-012「非対象環境で URL を直打ち」。フォームもボタンも導線も無い。`F-053 AC-6`）。
+//    （docs/04 §A-012「非対象環境で URL を直打ち」。フォームもボタンも導線も無い。投入・リセットとも。`F-053 AC-6`）。
 //    判定は呼び出し側（`page.tsx`）が `packages/config` の `isSeedableAppEnv` で行い、ここは真偽を受けるだけ。
 // 🔴 「対象環境を選ぶ」ドロップダウンを置かない（環境は接続先で決まる。`A-014` セクション 1 と同じ考え方）。
 // 🔴 「本番からコピー」に相当する操作を 1 つも置かない（`BR-47`）。
@@ -36,8 +36,12 @@ export type AdminDemoScreenProps = {
   readonly appEnv: string;
   /** `APP_ENV ∈ {demo, development}`。偽なら画面の中身は存在しない。 */
   readonly available: boolean;
-  /** API-A16 の URL。 */
+  /** API-A16 の URL（`GET` / `POST …/seed`）。 */
   readonly endpoint: string;
+  /** ✅ T-10-07: API-A16 `reset` の URL（`POST …/reset`）。 */
+  readonly resetEndpoint: string;
+  /** ✅ T-10-07: リセットの対象 = `demo` プリセットのテナント名（確認入力の照合先。`lib/admin-demo/reset-targets.ts`）。 */
+  readonly resetTenantNames: readonly string[];
   /** 実演チェックリストの開始地点（`seed:demo` の ID から組み立てた値）。 */
   readonly scenarios: DemoScenarioStartPoints;
 };
@@ -46,7 +50,8 @@ const SECTION_HEADING_CLASSES = 'mt-8 mb-2 text-base font-bold text-slate-900';
 const STEP_LIST_CLASSES = 'mb-2 list-none space-y-1 pl-0 text-sm text-slate-700';
 const START_LINK_CLASSES = 'font-medium text-slate-900 underline-offset-2 hover:underline';
 
-export function AdminDemoScreen({ messages, appEnv, available, endpoint, scenarios }: AdminDemoScreenProps) {
+export function AdminDemoScreen({ messages, appEnv, available, endpoint, resetEndpoint, resetTenantNames, scenarios }: AdminDemoScreenProps) {
+  // 🔴 `available` が偽なら投入・リセットのどちらの導線も描かない（F-053 AC-6）。リセット節に新しい環境判定を足さず、この 1 分岐に乗せる。
   if (!available) {
     return (
       <main className="mx-auto max-w-3xl px-4 py-8">
@@ -75,7 +80,13 @@ export function AdminDemoScreen({ messages, appEnv, available, endpoint, scenari
         <p className="text-sm text-slate-600">{messages.environment.note}</p>
       </section>
 
-      <AdminDemoView messages={messages} endpoint={endpoint} appEnv={appEnv} />
+      <AdminDemoView
+        messages={messages}
+        endpoint={endpoint}
+        resetEndpoint={resetEndpoint}
+        appEnv={appEnv}
+        resetTenantNames={resetTenantNames}
+      />
 
       <section aria-labelledby="admin-demo-scenarios-heading" data-testid="admin-demo-scenarios">
         <h2 id="admin-demo-scenarios-heading" className={SECTION_HEADING_CLASSES}>

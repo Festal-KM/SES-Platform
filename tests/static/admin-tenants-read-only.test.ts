@@ -71,6 +71,7 @@ const WRITE_ROUTE_FILES: Readonly<
       + '書き込みであり、触れるのは `tenant_quota_overrides` の INSERT だけ（`withPlatformWrite(domain=QUOTA)`。docs/05 §5.2 の 4 表目）。'
       + '`PLATFORM_OWNER` のみ（`BR-44`）。引き下げは翌日以降 + 通知が必須で、RLS の WITH CHECK でも当日適用の引き下げ行を止める。',
   },
+  // 🔴 `supportAllowed: true` は `demo/**` の 2 ルート（seed / reset）だけ。どちらも対象が合成データに閉じる。
   'apps/web/app/api/admin/demo/seed/route.ts': {
     methods: ['GET', 'POST'],
     supportAllowed: true,
@@ -79,7 +80,19 @@ const WRITE_ROUTE_FILES: Readonly<
       + 'テナントの契約・業務データのどちらでもない（docs/02 章 4.4 の注記「`F-053` の `PO` / `PP` = ● は demo 環境の合成データに限る」）。'
       + '`APP_ENV ∈ {demo, development}` 以外は 403（`assertDemoSeedAvailable` = `packages/config` の `isSeedableAppEnv`）で、'
       + '`runSeed` の先頭（`assertSeedableAppEnv`）と `SEED_DATABASE_URL` の起動時検証が 2 枚目のガードになる（`F-053 AC-6`）。'
-      + '`PLATFORM_SUPPORT` も実行できる（docs/04 §A-012 権限差分）。`reset` は T-10-07 の別ルート。',
+      + '`PLATFORM_SUPPORT` も実行できる（docs/04 §A-012 権限差分）。`reset` は `demo/reset/route.ts` の別ルート（T-10-07）。',
+  },
+  'apps/web/app/api/admin/demo/reset/route.ts': {
+    methods: ['POST'],
+    supportAllowed: true,
+    reason:
+      'API-A16 `reset`（`seed:demo` のリセット = `demo` プリセットの 2 テナントの全業務データ削除。`F-053 AC-2` / `AC-6` / `A-012`。T-10-07）。'
+      + '消す先は **`demo` プリセットの合成データだけ**であり（`deleteTenantData(preset.tenantIds)`。body に `tenantId` は無い）、'
+      + 'テナントの契約・業務データのどちらでもない（docs/02 章 4.4 の注記「`F-053` の `PO` / `PP` = ● は demo 環境の合成データに限る」）。'
+      + '`APP_ENV ∈ {demo, development}` 以外は 403（`assertDemoSeedAvailable`）、`runSeedReset` の先頭（`assertSeedableAppEnv`）と '
+      + '`SEED_DATABASE_URL` の起動時検証が 2 枚目、確認入力の環境名（400 `DEMO_RESET_CONFIRMATION_MISMATCH`）が 3 枚目のガード。'
+      + '監査は `readDemoSeedStatus(action=admin.demo.reset)` を削除の前（REQUESTED）と後（COMPLETED）に通す。'
+      + '`PLATFORM_SUPPORT` も実行できる（docs/04 §A-012 権限差分。`seed` と同じ判断）。',
   },
 };
 

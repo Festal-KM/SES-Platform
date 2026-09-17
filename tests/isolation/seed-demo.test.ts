@@ -21,6 +21,16 @@
 //   ④ 🔴 API-A16 の冪等性: 投入済みの状態で `POST` しても二重投入せず `ALREADY_SEEDED`（件数が増えない）
 //   ⑤ 🔴 `F-053 AC-6`: `APP_ENV=production` 相当では `GET` / `POST` とも 403 で、`runSeed` に到達しない
 //   ⑥ `PLATFORM_SUPPORT` でも `GET` / `POST` が通る（docs/04 §A-012 権限差分）。閲覧・投入が `AuditLog` に残る
+//   ⑦ ✅ T-10-07（`POST /api/admin/demo/reset`。`F-053 AC-2` / `AC-6`。docs/05 §13.6「T-10-07 の実装の決着」）:
+//      - 🔴 `AC-6`: `production` / `sandbox` / `staging` 相当では **403** で、`AuditLog` は 0 行増え、`tenants` 行が消えない
+//        （`runSeedReset` に到達しない。`readSeedPresence` = `PRESENT` のまま）
+//      - 🔴 確認入力（環境名 + テナント名）の不一致は **400** で、何も消えず監査行も残らない（DB に触れる前で止まる）。`tenantId` を
+//        載せた body は 400 `VALIDATION`（射程を広げる入力の存在を型で否定する）
+//      - 🔴 `AC-2`: 商談で増えた行（`Proposal(DRAFT)` / `ProposalEvent` / `ChatThread` / `Message`）も seed の行も **0 件**になり、
+//        **同居する `isolation` プリセットのテナントの行数は 1 行も変わらない**（`deleteTenantData` が `preset.tenantIds` に閉じる）
+//      - 🔴 冪等: `reset` を 2 回 → 2 回目は `NOTHING_TO_RESET`（200。エラーにしない）
+//      - 🔴 `SeedIncompleteError`（409）からの回復: テナント 1 件だけ残した状態 → `reset` → `seed` で `SEEDED`（件数は初回と同じ）
+//      - `PLATFORM_SUPPORT` でも `reset` が通り、`REQUESTED` → `COMPLETED` の 2 行が `AuditLog(admin.demo.reset)` に残る
 //
 // 🔴 モックは `requireTenantCtx` / `requirePlatformCtx`（ctx の出所）/ `demoSeedRuntime`（起動時 DI の値）/ `MockAnthropicClient` /
 //    `gate.run` の enqueue 先（捕捉するだけのキュー）だけ。実 API に接続しない。
@@ -42,11 +52,15 @@ import {
 } from '@ses/db';
 import { createUnextendedClient, type UnextendedClient } from '@ses/db/testing';
 import {
+  countTenantRows,
   DEMO_SEED_DOMAINS,
   DEMO_SEED_IDS,
   DEMO_SEED_NAME_RULES,
   demoSeedCompanyNames,
+  ISOLATION_SEED_IDS,
+  readSeedPresence,
   runSeed,
+  getSeedPreset,
   type RunSeedResult,
 } from '@ses/db/seed';
 import { createGateRunHandler } from '../../apps/worker/src/jobs/gate-run.js';
@@ -85,6 +99,7 @@ const approveRoute = await import('../../apps/web/app/api/(main)/proposals/[id]/
 const transitionRoute = await import('../../apps/web/app/api/(main)/proposals/[id]/transition/route');
 const proposalRoute = await import('../../apps/web/app/api/(main)/proposals/[id]/route');
 const demoSeedRoute = await import('../../apps/web/app/api/admin/demo/seed/route');
+const demoResetRoute = await import('../../apps/web/app/api/admin/demo/reset/route');
 const { configureGateRunJobQueue, resetGateRunJobQueue } = await import('../../apps/web/lib/jobs/gate-run-queue');
 
 const ALPHA = DEMO_SEED_IDS.tenants[0];
@@ -210,6 +225,44 @@ async function adminGet(ctx: AuthenticatedPlatformCtx): Promise<Response> {
 async function adminPost(ctx: AuthenticatedPlatformCtx): Promise<Response> {
   requirePlatformCtxMock.mockResolvedValue(ctx);
   return demoSeedRoute.POST();
+}
+
+/** ✅ T-10-07: `POST /api/admin/demo/reset`（body は JSON。`unknown` を渡せるのは書式違反の再現のため）。 */
+async function adminReset(ctx: AuthenticatedPlatformCtx, body: unknown): Promise<Response> {
+  requirePlatformCtxMock.mockResolvedValue(ctx);
+  return demoResetRoute.POST(
+    new Request('https://app.test/api/admin/demo/reset', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+/** 正しい確認入力（環境名 = 起動時 DI の `APP_ENV` / テナント名 = `demo` プリセットの 1 テナント目の商号）。 */
+function resetConfirmation(over: Partial<{ confirmEnv: string; confirmTenantName: string }> = {}) {
+  return { confirmEnv: 'demo', confirmTenantName: demoSeedCompanyNames(1).host, ...over };
+}
+
+type AdminResetBody = {
+  readonly appEnv: string;
+  readonly available: true;
+  readonly configured: boolean;
+  readonly outcome: 'RESET' | 'NOTHING_TO_RESET';
+  readonly status: AdminBody['status'];
+};
+
+async function countResetAudits(): Promise<number> {
+  return admin.auditLog.count({ where: { action: 'admin.demo.reset' } });
+}
+
+/** `demo` プリセットの 2 テナントで絞った全業務テーブルの行数（`tenants` を含む）。 */
+async function demoRowCounts(): Promise<Record<string, number>> {
+  return countTenantRows(admin, DEMO_TENANT_IDS);
+}
+
+function totalRows(counts: Record<string, number>): number {
+  return Object.values(counts).reduce((sum, count) => sum + count, 0);
 }
 
 type AdminBody = {
@@ -655,4 +708,210 @@ describe('④⑤⑥ API-A16（GET / POST /api/admin/demo/seed）', () => {
     expect(body.status.seeded).toBe(true);
     expect(await admin.engineer.count({ where: { tenantId: { in: DEMO_TENANT_IDS } } })).toBe(38);
   }, 120_000);
+});
+
+// ---------------------------------------------------------------------------
+// ⑦ ✅ T-10-07: API-A16 `POST /api/admin/demo/reset`（F-053 AC-2 / AC-6。docs/05 §13.6「T-10-07 の実装の決着」）
+// ---------------------------------------------------------------------------
+// 🔴 前提: ⑥ の最後で投入済み（SEEDED）に戻っている。以下は順に実行される（vitest はファイル内の it を直列に走らせる）。
+
+describe('⑦ ✅ T-10-07: API-A16 reset（POST /api/admin/demo/reset）', () => {
+  const ISOLATION_TENANT_IDS = ISOLATION_SEED_IDS.tenants.map((tenant) => tenant.tenantId);
+  /** 商談で増えた行の ID（`AC-2` の検証対象）。 */
+  const ADDED_PROPOSAL_ID = '01930000-0000-7000-8000-00000010070a';
+  const ADDED_THREAD_ID = '01930000-0000-7000-8000-00000010070b';
+
+  it('🔴 F-053 AC-6: APP_ENV=production / sandbox / staging 相当では reset が 403 で、AuditLog は 0 行増え、tenants 行が消えない（runSeedReset に到達しない）', async () => {
+    const auditsBefore = await countResetAudits();
+    const rowsBefore = await demoRowCounts();
+    expect(rowsBefore.tenants).toBe(2);
+    for (const appEnv of ['production', 'sandbox', 'staging']) {
+      demoSeedRuntimeMock.mockReturnValue({ appEnv, databaseUrl: database.superuserUrl });
+      // 🔴 確認入力を「その環境の名前」で正しく揃えても通らない（環境ガードは確認入力より前にある）。
+      const response = await adminReset(ownerCtx, resetConfirmation({ confirmEnv: appEnv }));
+      expect(response.status, appEnv).toBe(403);
+      expect(((await response.json()) as { error: { code: string } }).error.code).toBe('DEMO_SEED_NOT_AVAILABLE');
+    }
+    expect(await countResetAudits()).toBe(auditsBefore);
+    // ⑥ の最後の投入は API 経由（T = 現在時刻）なので `seededAt` は固定値ではない。見るのは「揃っている（PRESENT）」こと。
+    expect((await readSeedPresence(admin, getSeedPreset('demo'))).kind).toBe('PRESENT');
+    expect(await demoRowCounts()).toEqual(rowsBefore);
+  });
+
+  it('🔴 確認入力の不一致は 400 DEMO_RESET_CONFIRMATION_MISMATCH で、何も消えず監査行も残らない（DB に触れる前で止まる）', async () => {
+    const auditsBefore = await countResetAudits();
+    const rowsBefore = await demoRowCounts();
+    const mismatches = [
+      resetConfirmation({ confirmEnv: 'production' }), // 別の環境名
+      resetConfirmation({ confirmEnv: 'development' }), // 対象環境の名前でも接続先（demo）と違えば止まる
+      resetConfirmation({ confirmEnv: 'DEMO' }), // 大文字小文字を寄せない
+      resetConfirmation({ confirmTenantName: '株式会社サンプル' }), // 部分一致
+      resetConfirmation({ confirmTenantName: demoSeedCompanyNames(1).partners[0] ?? '' }), // 取引先の商号（テナントではない）
+      resetConfirmation({ confirmTenantName: 'Tenant A' }), // isolation プリセットのテナント名
+    ];
+    for (const body of mismatches) {
+      const response = await adminReset(ownerCtx, body);
+      expect(response.status, JSON.stringify(body)).toBe(400);
+      expect(((await response.json()) as { error: { code: string } }).error.code).toBe('DEMO_RESET_CONFIRMATION_MISMATCH');
+    }
+    // 書式違反（空文字 / 欠落 / 🔴 `tenantId` を載せた = 射程を広げる入力）は 400 VALIDATION。
+    for (const body of [
+      { confirmEnv: '', confirmTenantName: demoSeedCompanyNames(1).host },
+      { confirmEnv: 'demo' },
+      { ...resetConfirmation(), tenantId: ISOLATION_TENANT_IDS[0] },
+      null,
+    ]) {
+      const response = await adminReset(ownerCtx, body);
+      expect(response.status, JSON.stringify(body)).toBe(400);
+      expect(((await response.json()) as { error: { code: string } }).error.code).toBe('VALIDATION');
+    }
+    expect(await countResetAudits()).toBe(auditsBefore);
+    expect(await demoRowCounts()).toEqual(rowsBefore);
+  });
+
+  it('投入経路（SEED_DATABASE_URL）が無ければ reset は 503 で、監査行も残らない', async () => {
+    const auditsBefore = await countResetAudits();
+    demoSeedRuntimeMock.mockReturnValue({ appEnv: 'development', databaseUrl: null });
+    const response = await adminReset(ownerCtx, resetConfirmation({ confirmEnv: 'development' }));
+    expect(response.status).toBe(503);
+    expect(((await response.json()) as { error: { code: string } }).error.code).toBe('DEMO_SEED_NOT_CONFIGURED');
+    expect(await countResetAudits()).toBe(auditsBefore);
+    expect((await demoRowCounts()).tenants).toBe(2);
+  });
+
+  it('🔴 F-053 AC-2: 商談で増えた提案・履歴・チャットも seed の行も 0 件になり、同居する isolation プリセットの行は 1 行も消えない（PLATFORM_SUPPORT で実行）', async () => {
+    // 前提 1: 「前の商談」で増えた行。seed の DRAFT を複製した提案 + その履歴 + 取引先とのスレッド + メッセージ。
+    const draft = await admin.proposal.findUniqueOrThrow({ where: { id: ALPHA.proposals.draft } });
+    await admin.proposal.create({ data: { ...draft, id: ADDED_PROPOSAL_ID } });
+    await admin.proposalEvent.create({
+      data: {
+        tenantId: ALPHA.tenantId,
+        ownerPartnerCompanyId: draft.ownerPartnerCompanyId,
+        proposalId: ADDED_PROPOSAL_ID,
+        kind: 'NOTE',
+        note: '商談メモ（合成）',
+      },
+    });
+    await admin.chatThread.create({
+      data: { id: ADDED_THREAD_ID, tenantId: ALPHA.tenantId, kind: 'COMPANY', partnerCompanyId: ALPHA_PARTNER_1.partnerCompanyId },
+    });
+    await admin.message.create({
+      data: {
+        tenantId: ALPHA.tenantId,
+        ownerPartnerCompanyId: ALPHA_PARTNER_1.partnerCompanyId,
+        threadId: ADDED_THREAD_ID,
+        senderUserId: ALPHA_PARTNER_1.salesUserId,
+        senderPartnerCompanyId: ALPHA_PARTNER_1.partnerCompanyId,
+        body: '商談中のやり取り（合成）',
+      },
+    });
+    expect(await admin.proposal.count({ where: { id: ADDED_PROPOSAL_ID } })).toBe(1);
+    expect(await admin.message.count({ where: { threadId: ADDED_THREAD_ID } })).toBe(1);
+
+    // 前提 2: 🔴 他のテナント（isolation プリセット）を同居させ、行数を控える。
+    await runSeed({ appEnv: 'demo', databaseUrl: database.superuserUrl, preset: 'isolation', reset: true, now: NOW });
+    const isolationBefore = await countTenantRows(admin, ISOLATION_TENANT_IDS);
+    expect(isolationBefore.tenants).toBe(2);
+    expect(totalRows(isolationBefore)).toBeGreaterThan(50);
+    const demoBefore = await demoRowCounts();
+    expect(totalRows(demoBefore)).toBeGreaterThan(100);
+
+    // 実行（PLATFORM_SUPPORT。docs/04 §A-012 権限差分）。
+    const auditsBefore = await countResetAudits();
+    demoSeedRuntimeMock.mockReturnValue({ appEnv: 'demo', databaseUrl: database.superuserUrl });
+    const response = await adminReset(supportCtx, resetConfirmation({ confirmTenantName: demoSeedCompanyNames(2).host }));
+    expect(response.status, await response.clone().text()).toBe(200);
+    const body = (await response.json()) as AdminResetBody;
+    expect(body.outcome).toBe('RESET');
+    expect(body.available).toBe(true);
+    expect(body.configured).toBe(true);
+    expect(body.status.seeded).toBe(false);
+
+    // 🔴 増えた行も seed の行も 0 件（テーブルを列挙せず、tenant_id を持つ全表の実測で見る）。
+    expect(await admin.proposal.count({ where: { id: ADDED_PROPOSAL_ID } })).toBe(0);
+    expect(await admin.proposalEvent.count({ where: { proposalId: ADDED_PROPOSAL_ID } })).toBe(0);
+    expect(await admin.chatThread.count({ where: { id: ADDED_THREAD_ID } })).toBe(0);
+    expect(await admin.message.count({ where: { threadId: ADDED_THREAD_ID } })).toBe(0);
+    const demoAfter = await demoRowCounts();
+    expect(totalRows(demoAfter)).toBe(0);
+    expect(demoAfter).toEqual({ tenants: 0 });
+    // 🔴 他テナント（isolation）の行数は 1 行も変わらない（`deleteTenantData` が `preset.tenantIds` に閉じる）。
+    expect(await countTenantRows(admin, ISOLATION_TENANT_IDS)).toEqual(isolationBefore);
+
+    // GET は seeded=false に戻る（readSeedPresence と同じ判定）。
+    const get = await adminGet(ownerCtx);
+    expect(((await get.json()) as AdminBody).status.seeded).toBe(false);
+
+    // 🔴 監査: REQUESTED（削除の前）→ COMPLETED（outcome=RESET）の 2 行が PLATFORM_SUPPORT の操作として残る。
+    expect(await countResetAudits()).toBe(auditsBefore + 2);
+    const audits = await admin.auditLog.findMany({
+      where: { action: 'admin.demo.reset', actorId: PLATFORM_SUPPORT_ID },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      select: { actorKind: true, summary: true },
+    });
+    expect(audits).toHaveLength(2);
+    for (const row of audits) expect(row.actorKind).toBe('PLATFORM_USER');
+    expect(audits[0]?.summary).toEqual(expect.objectContaining({ preset: 'demo', phase: 'REQUESTED' }));
+    expect(audits[1]?.summary).toEqual(expect.objectContaining({ preset: 'demo', phase: 'COMPLETED', outcome: 'RESET' }));
+    // 応答に氏名・本文・単価が無い。
+    const serialized = JSON.stringify(body);
+    for (const family of DEMO_SEED_NAME_RULES.familyNames) expect(serialized).not.toContain(`${family} `);
+    expect(serialized).not.toContain('商談');
+  }, 180_000);
+
+  it('🔴 冪等: reset を 2 回目に実行しても 200 NOTHING_TO_RESET で、エラーにならず他テナントも変わらない', async () => {
+    const isolationBefore = await countTenantRows(admin, ISOLATION_TENANT_IDS);
+    const auditsBefore = await countResetAudits();
+    const response = await adminReset(ownerCtx, resetConfirmation());
+    expect(response.status, await response.clone().text()).toBe(200);
+    const body = (await response.json()) as AdminResetBody;
+    expect(body.outcome).toBe('NOTHING_TO_RESET');
+    expect(body.status.seeded).toBe(false);
+    expect(await demoRowCounts()).toEqual({ tenants: 0 });
+    expect(await countTenantRows(admin, ISOLATION_TENANT_IDS)).toEqual(isolationBefore);
+    expect(await countResetAudits()).toBe(auditsBefore + 2);
+    const last = await admin.auditLog.findFirst({
+      where: { action: 'admin.demo.reset' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      select: { summary: true },
+    });
+    expect(last?.summary).toEqual(expect.objectContaining({ phase: 'COMPLETED', outcome: 'NOTHING_TO_RESET' }));
+  });
+
+  it('🔴 SeedIncompleteError（409）からの回復: テナント 1 件だけ残した状態 → seed は 409 → reset（孤児行も消える）→ seed で SEEDED（件数は初回と同じ）', async () => {
+    // 投入し直す（201 SEEDED）。
+    const seeded = await adminPost(ownerCtx);
+    expect(seeded.status, await seeded.clone().text()).toBe(201);
+    expect(totalRows(await demoRowCounts())).toBeGreaterThan(100);
+
+    // 「前回の投入が途中で止まった」相当を作る: beta の tenants 行だけを消す（子の行は残る = 孤児）。
+    // 🔴 FK とトリガをこのトランザクションの中だけ外す（`deleteTenantData` と同じ手法。テスト前提づくりの特権接続）。
+    await admin.$transaction(async (tx) => {
+      await tx.$executeRaw`SET LOCAL session_replication_role = replica`;
+      await tx.$executeRaw`DELETE FROM tenants WHERE id = ${BETA.tenantId}::uuid`;
+    });
+    expect(await readSeedPresence(admin, getSeedPreset('demo'))).toEqual({ kind: 'INCOMPLETE', presentTenantIds: [ALPHA.tenantId] });
+    expect(await admin.engineer.count({ where: { tenantId: BETA.tenantId } })).toBe(8);
+
+    // seed は 409（黙って上書きも追記もしない）。GET は seeded=false（揃っていない）。
+    const conflict = await adminPost(ownerCtx);
+    expect(conflict.status).toBe(409);
+    expect(((await conflict.json()) as { error: { code: string } }).error.code).toBe('DEMO_SEED_INCOMPLETE');
+    expect(((await (await adminGet(ownerCtx)).json()) as AdminBody).status.seeded).toBe(false);
+
+    // 回復手段はリセットだけ。テナント名は alpha / beta のどちらでも通る（対象は 2 テナントの組）。
+    const reset = await adminReset(ownerCtx, resetConfirmation({ confirmTenantName: demoSeedCompanyNames(2).host }));
+    expect(reset.status, await reset.clone().text()).toBe(200);
+    expect(((await reset.json()) as AdminResetBody).outcome).toBe('RESET');
+    // 🔴 孤児行（tenants 行の無い beta の子）も含めて 0 件。
+    expect(await demoRowCounts()).toEqual({ tenants: 0 });
+    expect(await admin.engineer.count({ where: { tenantId: BETA.tenantId } })).toBe(0);
+
+    // 投入 → SEEDED。決定的なので件数は初回（beforeAll の runSeed）と一致する。
+    const reseeded = await adminPost(ownerCtx);
+    expect(reseeded.status, await reseeded.clone().text()).toBe(201);
+    expect(((await reseeded.json()) as AdminBody).outcome).toBe('SEEDED');
+    expect(await demoRowCounts()).toEqual(firstRun.counts);
+    expect(((await (await adminGet(ownerCtx)).json()) as AdminBody).status.seeded).toBe(true);
+  }, 240_000);
 });

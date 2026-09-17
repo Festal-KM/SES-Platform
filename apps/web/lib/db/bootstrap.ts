@@ -730,7 +730,7 @@ export function platformAuthSecret(): string {
  *   `isSeedableAppEnv` が唯一の出所であり、ここでは環境名を写すだけ（`if (APP_ENV === 'demo')` を散らさない）。
  * - `databaseUrl` … `SEED_DATABASE_URL`。未設定は `null`（フォールバック無し）。
  * 🔴 ルート以外（主平面・ジョブ）から呼ばない。特権接続の文字列が主平面の経路に流れないよう、
- *    呼び出し元は `apps/web/app/api/admin/demo/seed/route.ts` の 1 ファイルに固定する
+ *    呼び出し元は API-A16 の 2 ルート（`apps/web/app/api/admin/demo/seed/route.ts` / ✅ T-10-07 `…/demo/reset/route.ts`）に固定する
  *    （`tests/static/auth-db-callers.test.ts` の `demoSeedRuntime` が機械的に固定する）。
  */
 export function demoSeedRuntime(): { readonly appEnv: AppEnvKind; readonly databaseUrl: string | null } {

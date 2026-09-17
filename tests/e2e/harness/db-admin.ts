@@ -15,7 +15,8 @@
 //
 // 🔴 汎用のエスケープハッチにしない。ここで公開するのは「K-7 の前提を作るための 1 関数」と、
 //    T-08-09 の 3 関数（下段。worker 不在を補う期限到来の前提づくり / 凍結行の表明 / 合成データの後始末）、
-//    T-09-11 の「API を通らない経路の模擬」2 関数（送信元ドメインの検証 / 承認後の `content_hash` のずれ）と後始末
+//    T-09-11 の「API を通らない経路の模擬」2 関数（送信元ドメインの検証 / 承認後の `content_hash` のずれ）と後始末、
+//    T-11-07 の「非開示の値の仕込みと後始末」2 関数（E2E #15。最下段）
 //    だけであり、任意の SQL を実行できる経路を増やさない（`packages/db/src/testing/isolation.ts`
 //    冒頭コメントと同じ規律）。関数を足すときは目的を 1 つに絞り、SQL を固定文にすること。
 //    ✅ T-09-11 で worker がハーネスに入り（`harness/worker.ts`）、提案の**状態を直接書く**シームは削除した（下段の注記）。
@@ -347,5 +348,219 @@ export function deleteT0911SyntheticProjects(projectIds: readonly string[]): voi
       `DELETE FROM projects WHERE id IN (SELECT id FROM e2e_t0911_projects);\n` +
       `DELETE FROM review_gates WHERE target_type = 'PROJECT_PUBLISH' AND target_id IN (SELECT id FROM e2e_t0911_projects);\n` +
       `DROP TABLE e2e_t0911_projects;`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 🔴 T-11-07（E2E #15。`tests/e2e/admin-non-disclosure.spec.ts`）専用のシーム 2 つ: 非開示の値の仕込みと後始末
+// ---------------------------------------------------------------------------
+// E2E #15 は「運営者に非開示のものが管理平面の**どの応答にも**現れない」（docs/05 §17.3 #15 / `BR-40`）を、
+// **値が実在する状態**で確かめる必要がある。`seed:isolation` は氏名・本文・単価・エンド企業名は持つが、
+// 生年月日・連絡先・スキルシートの `object_key` / `note`・`review_gates.findings` の抜粋・DKIM トークン・
+// `ai_usage` の生成由来・`email_dispatches.recipient_email`・提案依頼の本文・クォータ変更の理由・削除失敗の理由は
+// 持たない（`packages/db/seed/**` は T-10-07 が並走中で触れない）。無い値は「現れない」を証明できないので、
+// ここで 1 組だけ仕込み、**仕込んだ値そのものを禁止値として走査**する（`T1107_NON_DISCLOSURE_MARKERS`）。
+//
+// 🔴 汎用のエスケープハッチにしない規律はそのまま —— 関数は目的ごとに 1 つ、SQL は固定文、埋め込む値は UUID と
+//    ここで定義した合成のマーカー文字列（`assertPlainSqlLiteral` を通す）に限る。行 ID は固定の合成 UUID
+//    （`0193b107-…`）で、後始末は**その ID の行だけ**を消す。エンジニアの PII 列は `UPDATE` で仕込み、後始末で NULL に戻す
+//    （`seed:isolation` はこれらの列を入れていない）。
+// 🔴 仕込む行は `A-005` の各項目に**実際に載る**形にしてある（項目 1 = `SUBMIT_FAILED` の提案 / 4 = `FAILED` のスキルシート /
+//    5 = `pii_verdict='FAIL'` のゲート / 7 = `FAILED` の削除実行 / 11 = `PENDING` の送信ドメイン / 16 = 滞留した `QUEUED`）。
+//    0 件の項目は何も漏らさない —— 載っている状態で「件数・状態・時刻だけが出る」ことを見る。
+
+/** 🔴 仕込む値 = 禁止値（E2E が import する。`T1107` を含む値は seed と衝突しない）。 */
+export const T1107_NON_DISCLOSURE_MARKERS = {
+  /** engineers（ホスト所属 1 名の PII 列）。 */
+  engineerBirthDate: '1971-02-03',
+  engineerContactEmail: 't1107-engineer-contact@seed-isolation.test',
+  engineerContactPhone: '090-1107-1107',
+  engineerAffiliationLabel: 'T1107-affiliation-forbidden',
+  engineerCity: 'T1107-city-forbidden',
+  engineerPreferenceNote: 'T1107-preference-note-forbidden',
+  /** skill_sheets（`FAILED` の版）。 */
+  skillSheetObjectKey: 'tenants/t1107/skill-sheets/forbidden-object-key.pdf',
+  skillSheetNote: 'T1107-skill-sheet-note-forbidden',
+  /** review_gates（DONE / PII FAIL）の指摘の抜粋と AI 警告。 */
+  gateFindingExcerpt: 'T1107-gate-finding-excerpt-forbidden',
+  gateAiWarning: 'T1107-gate-ai-warning-forbidden',
+  /** tenant_sending_domains（テナント 2 の `PENDING`）。ドメイン名そのものは `A-005` 項目 11 が表示してよい（下の別定数）。 */
+  dkimToken: 't1107dkimtokenforbidden',
+  mailFromDomain: 'mail.t1107-mailfrom-forbidden.test',
+  sesIdentityArn: 'arn:aws:ses:ap-northeast-1:000000000000:identity/t1107-forbidden',
+  sendingDomainLastFailureReason: 'T1107-DKIM-FAILURE-forbidden',
+  /** ai_usage（proposal-drafter 1 行）。`purpose` は列挙値なので値の照合は無い（キーで見る）。 */
+  aiModelId: 'claude-t1107-forbidden-model',
+  aiPromptVersion: 't1107.v99-forbidden',
+  aiTargetId: '0193b107-0000-7000-8000-0000000000a1',
+  /** email_dispatches（滞留した `QUEUED`）。 */
+  dispatchRecipientEmail: 't1107-dispatch-recipient@seed-isolation.test',
+  /** proposals（`SUBMIT_FAILED`）。単価は数値なので JSON にだけ当てる。 */
+  proposalSubject: 'T1107-proposal-subject-forbidden',
+  proposalBody: 'T1107-proposal-body-forbidden',
+  proposalDraftBody: 'T1107-proposal-draft-body-forbidden',
+  proposalRecipientCompanyName: 'T1107-recipient-company-forbidden',
+  proposalRecipientEmail: 't1107-proposal-recipient@seed-isolation.test',
+  proposalOfferedUnitPrice: 1107107,
+  /** proposal_requests（`DECLINED`）。 */
+  proposalRequestMessage: 'T1107-proposal-request-message-forbidden',
+  proposalRequestDeclineReason: 'T1107-decline-reason-forbidden',
+  /** tenant_quota_overrides（引き上げ。通知は起きない）。 */
+  quotaOverrideReason: 'T1107-quota-override-reason-forbidden',
+  /** tenant_purge_runs（`FAILED`）。件数は数値なので JSON にだけ当てる。 */
+  purgeFailureReason: 'T1107-purge-failure-reason-forbidden',
+  purgeCounts: 1107424,
+  /** audit_logs の `summary`（身元キーは `[masked]`、内容キーはキーごと落ちることを見る）。 */
+  auditDisplayName: 'T1107-audit-display-name-forbidden',
+  auditEmail: 't1107-audit@seed-isolation.test',
+  auditBody: 'T1107-audit-body-forbidden',
+  auditNote: 'T1107-audit-note-forbidden',
+  auditReason: 'T1107-audit-reason-forbidden',
+  auditObjectKey: 'tenants/t1107/audit/forbidden-object-key.pdf',
+} as const;
+
+/**
+ * 仕込む送信ドメイン名。🔴 **禁止値ではない**（`domain` 列は GRANT され、`A-005` 項目 11 が「ドメイン」列として表示する。
+ * 非開示なのは同じ行の `dkim_tokens` の値 / `mail_from_domain` / `ses_identity_arn` / `last_failure_reason`）。
+ */
+export const T1107_FIXTURE_SENDING_DOMAIN = 't1107-nondisclosure.test';
+
+/** 仕込む行の固定 ID（seed の `seedUuid` とは別の名前空間）。後始末はこの ID の行だけを消す。 */
+export const T1107_FIXTURE_IDS = {
+  skillSheet: '0193b107-0000-7000-8000-000000000001',
+  reviewGate: '0193b107-0000-7000-8000-000000000002',
+  sendingDomain: '0193b107-0000-7000-8000-000000000003',
+  aiUsage: '0193b107-0000-7000-8000-000000000004',
+  proposal: '0193b107-0000-7000-8000-000000000006',
+  proposalRequest: '0193b107-0000-7000-8000-000000000007',
+  quotaOverride: '0193b107-0000-7000-8000-000000000008',
+  purgeRun: '0193b107-0000-7000-8000-000000000009',
+  auditLog: '0193b107-0000-7000-8000-00000000000a',
+} as const;
+
+export type T1107FixtureRefs = {
+  /** テナント 1（ホスト所属エンジニア・利用者・案件・提案を持つ）。 */
+  readonly tenantId: string;
+  readonly hostEngineerId: string;
+  readonly hostUserId: string;
+  readonly publishedProjectId: string;
+  readonly privateProjectId: string;
+  readonly hostProposalId: string;
+  /** 提案依頼の依頼先（取引先 2 社目。seed は依頼を持たないので UNIQUE と衝突しない）。 */
+  readonly requestPartnerCompanyId: string;
+  readonly requestPartnerEngineerId: string;
+  readonly requestPartnerUserId: string;
+  /** 送信ドメインを仕込むテナント（seed で未検証のテナント 2）。 */
+  readonly unverifiedTenantId: string;
+  /** クォータ上書きの操作者（運営者）。 */
+  readonly platformOwnerUserId: string;
+};
+
+/** `email_dispatches.id` は uuid(7) の時刻で滞留を判定する（`readMailDispatchStuck`）。2 時間前の時刻で組む。 */
+export function t1107StuckDispatchId(now: Date): string {
+  const ms = (now.getTime() - 2 * 60 * 60 * 1000).toString(16).padStart(12, '0');
+  return `${ms.slice(0, 8)}-${ms.slice(8, 12)}-7000-8000-000000001107`;
+}
+
+function assertUuids(refs: Record<string, string>): void {
+  for (const [label, value] of Object.entries(refs)) {
+    if (!UUID_PATTERN.test(value)) throw new Error(`${label} が UUID の形をしていません: ${value}`);
+  }
+}
+
+/**
+ * 🔴 T-11-07 専用シーム: 非開示の値を 1 組仕込む（冪等: 同じ ID の行は `ON CONFLICT DO NOTHING`、エンジニアの列は上書き）。
+ */
+export function plantNonDisclosureFixturesForE2e(refs: T1107FixtureRefs, dispatchId: string): void {
+  assertUuids({ ...refs, dispatchId });
+  const m = T1107_NON_DISCLOSURE_MARKERS;
+  for (const [label, value] of Object.entries(m)) {
+    if (typeof value === 'string') assertPlainSqlLiteral(label, value);
+  }
+  const ids = T1107_FIXTURE_IDS;
+  execSql(
+    `UPDATE engineers SET birth_date = '${m.engineerBirthDate}', contact_email = '${m.engineerContactEmail}', ` +
+      `contact_phone = '${m.engineerContactPhone}', affiliation_label = '${m.engineerAffiliationLabel}', ` +
+      `city = '${m.engineerCity}', preference_note = '${m.engineerPreferenceNote}' ` +
+      `WHERE id = '${refs.hostEngineerId}' AND tenant_id = '${refs.tenantId}';\n` +
+      `INSERT INTO skill_sheets (id, tenant_id, engineer_id, version, object_key, content_type, byte_size, scan_status, ` +
+      `scan_updated_at, is_latest, note, uploaded_by, uploaded_at) ` +
+      `VALUES ('${ids.skillSheet}', '${refs.tenantId}', '${refs.hostEngineerId}', 1107, '${m.skillSheetObjectKey}', ` +
+      `'application/pdf', 1024, 'FAILED', now(), false, '${m.skillSheetNote}', '${refs.hostUserId}', now() - interval '2 hours') ` +
+      `ON CONFLICT (id) DO NOTHING;\n` +
+      `INSERT INTO review_gates (id, tenant_id, target_type, target_id, content_hash, execution, pii_verdict, commerce_verdict, ` +
+      `consistency_verdict, findings, ai_warnings, role, executed_at) ` +
+      `VALUES ('${ids.reviewGate}', '${refs.tenantId}', 'PROPOSAL', '${refs.hostProposalId}', 't1107-gate-content-hash', 'DONE', ` +
+      `'FAIL', 'PASS', 'PASS', ` +
+      `'[{"layer":"PII","kind":"FULL_NAME","field":"body","offsetStart":0,"offsetEnd":10,"excerpt":"${m.gateFindingExcerpt}","severity":"BLOCK"}]'::jsonb, ` +
+      `'[{"layer":"CONSISTENCY","message":"${m.gateAiWarning}"}]'::jsonb, 'gate-inspector', now() - interval '30 minutes') ` +
+      `ON CONFLICT (id) DO NOTHING;\n` +
+      `INSERT INTO tenant_sending_domains (id, tenant_id, domain, state, ses_identity_arn, ses_tenant_name, dkim_tokens, ` +
+      `mail_from_domain, last_checked_at, last_failure_reason, created_at) ` +
+      `VALUES ('${ids.sendingDomain}', '${refs.unverifiedTenantId}', '${T1107_FIXTURE_SENDING_DOMAIN}', 'PENDING', '${m.sesIdentityArn}', ` +
+      `'t-${refs.unverifiedTenantId}', '["${m.dkimToken}"]'::jsonb, '${m.mailFromDomain}', now() - interval '1 day', ` +
+      `'${m.sendingDomainLastFailureReason}', now() - interval '3 days') ` +
+      `ON CONFLICT (id) DO NOTHING;\n` +
+      `INSERT INTO ai_usage (id, tenant_id, role, model_id, purpose, prompt_version, target_type, target_id, input_tokens, ` +
+      `output_tokens, estimated_cost_usd, attempt_no, succeeded, started_at, finished_at) ` +
+      `VALUES ('${ids.aiUsage}', '${refs.tenantId}', 'proposal-drafter', '${m.aiModelId}', 'proposal_draft', '${m.aiPromptVersion}', ` +
+      `'Proposal', '${m.aiTargetId}', 1000, 200, 0.011070, 1, true, now() - interval '1 hour', now() - interval '1 hour') ` +
+      `ON CONFLICT (id) DO NOTHING;\n` +
+      `INSERT INTO email_dispatches (id, tenant_id, recipient_class, recipient_email, template_key, dedupe_key, status) ` +
+      `VALUES ('${dispatchId}', '${refs.tenantId}', 'HOST_MEMBER', '${m.dispatchRecipientEmail}', 't1107.probe', 't1107.probe:${dispatchId}', 'QUEUED') ` +
+      `ON CONFLICT (id) DO NOTHING;\n` +
+      `INSERT INTO proposals (id, tenant_id, owner_partner_company_id, project_id, engineer_id, state, recipient_company_name, ` +
+      `recipient_email, offered_unit_price, subject, body, draft_body, content_hash, approved_at, last_failure_reason, created_by, ` +
+      `created_at, updated_at) ` +
+      `VALUES ('${ids.proposal}', '${refs.tenantId}', NULL, '${refs.publishedProjectId}', '${refs.hostEngineerId}', 'SUBMIT_FAILED', ` +
+      `'${m.proposalRecipientCompanyName}', '${m.proposalRecipientEmail}', ${m.proposalOfferedUnitPrice}, '${m.proposalSubject}', ` +
+      `'${m.proposalBody}', '${m.proposalDraftBody}', 't1107-proposal-content-hash', now() - interval '2 hours', 'UNKNOWN', ` +
+      `'${refs.hostUserId}', now() - interval '3 hours', now() - interval '1 hour') ` +
+      `ON CONFLICT (id) DO NOTHING;\n` +
+      `INSERT INTO proposal_requests (id, tenant_id, project_id, engineer_id, partner_company_id, state, message, expires_at, ` +
+      `decline_reason, issued_by, responded_by, responded_at) ` +
+      `VALUES ('${ids.proposalRequest}', '${refs.tenantId}', '${refs.privateProjectId}', '${refs.requestPartnerEngineerId}', ` +
+      `'${refs.requestPartnerCompanyId}', 'DECLINED', '${m.proposalRequestMessage}', now() + interval '7 days', ` +
+      `'${m.proposalRequestDeclineReason}', '${refs.hostUserId}', '${refs.requestPartnerUserId}', now()) ` +
+      `ON CONFLICT (id) DO NOTHING;\n` +
+      `INSERT INTO tenant_quota_overrides (id, tenant_id, metric, "limit", previous_limit, effective_from, set_by_platform_user_id, reason) ` +
+      `VALUES ('${ids.quotaOverride}', '${refs.tenantId}', 'AI_UNIT_SHEET_PARSE', 1107000, 200, current_date, ` +
+      `'${refs.platformOwnerUserId}', '${m.quotaOverrideReason}') ` +
+      `ON CONFLICT (id) DO NOTHING;\n` +
+      `INSERT INTO tenant_purge_runs (id, tenant_id, cause, status, started_at, completed_at, counts, failure_reason) ` +
+      `VALUES ('${ids.purgeRun}', '${refs.tenantId}', 'RETENTION', 'FAILED', now() - interval '1 day', NULL, ` +
+      `'{"engineerContacts": ${m.purgeCounts}}'::jsonb, '${m.purgeFailureReason}') ` +
+      `ON CONFLICT (id) DO NOTHING;\n` +
+      `INSERT INTO audit_logs (id, tenant_id, actor_kind, actor_id, action, target_type, target_id, summary, ip_address, device_kind, created_at) ` +
+      `VALUES ('${ids.auditLog}', '${refs.tenantId}', 'USER', '${refs.hostUserId}', 'engineer.view', 'Engineer', '${refs.hostEngineerId}', ` +
+      `'{"displayName":"${m.auditDisplayName}","email":"${m.auditEmail}","body":"${m.auditBody}","note":"${m.auditNote}",` +
+      `"reason":"${m.auditReason}","objectKey":"${m.auditObjectKey}","offeredUnitPrice":${m.proposalOfferedUnitPrice},"via":"DETAIL"}'::jsonb, ` +
+      `'127.0.0.1', 'desktop', now()) ` +
+      `ON CONFLICT DO NOTHING;`,
+  );
+}
+
+/**
+ * 🔴 T-11-07 専用シーム（後始末）: 仕込んだ行を ID で消し、エンジニアの PII 列を NULL に戻す。
+ *    `audit_logs` の合成行も消す（実操作の記録ではない。実操作の記録は他のシームと同じく消さない）。
+ */
+export function removeNonDisclosureFixturesForE2e(refs: T1107FixtureRefs, dispatchId: string): void {
+  assertUuids({ ...refs, dispatchId });
+  const ids = T1107_FIXTURE_IDS;
+  execSql(
+    `DELETE FROM audit_logs WHERE id = '${ids.auditLog}' AND action = 'engineer.view' AND tenant_id = '${refs.tenantId}';\n` +
+      `DELETE FROM tenant_purge_runs WHERE id = '${ids.purgeRun}';\n` +
+      `DELETE FROM tenant_quota_overrides WHERE id = '${ids.quotaOverride}';\n` +
+      `DELETE FROM proposal_requests WHERE id = '${ids.proposalRequest}';\n` +
+      `DELETE FROM review_gates WHERE target_type = 'PROPOSAL' AND target_id = '${ids.proposal}';\n` +
+      `DELETE FROM send_attempts WHERE entity_type = 'PROPOSAL' AND entity_id = '${ids.proposal}';\n` +
+      `DELETE FROM proposals WHERE id = '${ids.proposal}';\n` +
+      `DELETE FROM email_dispatches WHERE id = '${dispatchId}';\n` +
+      `DELETE FROM ai_usage WHERE id = '${ids.aiUsage}';\n` +
+      `DELETE FROM tenant_sending_domains WHERE id = '${ids.sendingDomain}';\n` +
+      `DELETE FROM review_gates WHERE id = '${ids.reviewGate}';\n` +
+      `DELETE FROM skill_sheets WHERE id = '${ids.skillSheet}';\n` +
+      `UPDATE engineers SET birth_date = NULL, contact_email = NULL, contact_phone = NULL, affiliation_label = NULL, ` +
+      `city = NULL, preference_note = NULL WHERE id = '${refs.hostEngineerId}' AND tenant_id = '${refs.tenantId}';`,
   );
 }

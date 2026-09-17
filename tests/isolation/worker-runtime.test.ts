@@ -205,3 +205,50 @@ describe('🔴 T-09-07: mockEmailScript は development（email: mock）で受�
     }
   });
 });
+
+// ✅ T-10-07: `F-053 AC-5` / `BR-45`（`demo` 環境からの送信操作で、実在のドメイン宛に 1 通も送出されない）の**起動配線側**の担保。
+//    送信そのものが SES へ 0 通であることは `tests/isolation/env-separation.test.ts`（`describe.each(['development','demo'])`）が
+//    全分類を流して固定している。ここでは **`APP_ENV=demo` の `startWorkerRuntime` がモック実装しか選べない**ことを、
+//    「モックにしか渡せない台本を渡して起動が通る」（`real` なら起動時に落ちる = 上の 2 it）という形で固定する。
+describe('🔴 T-10-07 / F-053 AC-5: APP_ENV=demo のワーカーは送信系がすべてモックであり、宛先分類（sandbox）を適用しない', () => {
+  it('🔴 起動時 DI の選択は全区分 mock で、sandboxRecipientScoped も real も 1 つも無い（判断は 1 箇所。CLAUDE.md §11.1）', () => {
+    const env = loadAppEnv(buildValidEnv('demo', { REDIS_URL: redis.url }));
+    const selection = resolveConnectorSelection(env);
+    expect(selection.email).toBe('mock');
+    expect(selection.esign).toBe('mock');
+    expect(Object.values(selection)).not.toContain('sandboxRecipientScoped');
+    expect(Object.values(selection)).not.toContain('real');
+  });
+
+  it('🔴 demo の startWorkerRuntime はメール・AI の台本（モックにしか渡せない）を受け付けて起動し、送信系のキューを待ち受ける', async () => {
+    const env = loadAppEnv(buildValidEnv('demo', { REDIS_URL: redis.url }));
+    // 🔴 `real` の email / ai に渡すと `MockEmailScriptNotApplicableError` / `MockAnthropicScriptNotApplicableError` で**起動時に**落ちる
+    //    台本を渡す。起動が通る = `demo` の選択は宛先分類の結果に関わらずモック実装である。
+    const scripted = startWorkerRuntime(
+      { env, connectors: resolveConnectorSelection(env) },
+      {
+        mockEmailScript: [{ kind: 'deliver' }],
+        mockEmailScriptByRecipientDomain: { 'kakuu-client.example': [{ kind: 'deliver' }] },
+        mockAnthropicScript: DEMO_MOCK_ANTHROPIC_SCRIPT,
+      },
+    );
+    configureTenantDb({ datasourceUrl: database.tenantUrl });
+    await scripted.ready;
+    try {
+      expect(scripted.queues).toContain(SEND_PROPOSAL_JOB);
+      expect(scripted.queues).toContain('send.settle-unknown');
+      expect(scripted.queues).toContain(GATE_RUN_JOB);
+    } finally {
+      await scripted.close();
+    }
+  });
+
+  it('対照: 同じ台本を email=real に差し替えた demo の設定へ渡すと起動が止まる（台本の受理が「モックである」の根拠になっている）', () => {
+    const env = loadAppEnv(buildValidEnv('demo', { REDIS_URL: redis.url }));
+    const selection = resolveConnectorSelection(env);
+    expect(() =>
+      startWorkerRuntime({ env, connectors: { ...selection, email: 'real' } }, { mockEmailScript: [{ kind: 'deliver' }] }),
+    ).toThrow(MockEmailScriptNotApplicableError);
+    configureTenantDb({ datasourceUrl: database.tenantUrl });
+  });
+});

@@ -8,7 +8,7 @@
 //    テナントの業務データへの書き込みではない。`BR-37` / `CLAUDE.md` §10.5 / docs/02 章 4.4 の注記）。
 // 🔴 書き込みの実体は `runSeed`（`@ses/db/seed`。特権接続）であり `withPlatformWrite` の 7 ドメインの外にある。運営者の操作としては
 //    `readDemoSeedStatus(action='admin.demo.seed')` が **同じ要求の中で** `AuditLog` に残す（`GET` は `admin.demo.view`）。
-// 🔴 `reset`（`POST /api/admin/demo/reset`）は **T-10-07**。本ファイルには無い（ルートを置かない = 404）。
+// ✅ T-10-07: `reset`（`POST /api/admin/demo/reset`）は `../reset/route.ts`（別ルート。削除と投入は別操作）。
 // 🔴 応答は件数・状態・日時と合成の商号だけ（`CLAUDE.md` §10.5）。エンジニアの氏名・提案の本文・単価は型として存在しない。
 import { errorResponse } from '../../../../../lib/api/errors';
 import { readPlatformRequestMeta, requirePlatformCtx } from '../../../../../lib/auth/platform-session';

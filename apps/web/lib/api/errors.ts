@@ -1275,6 +1275,29 @@ export class DemoSeedIncompleteError extends ConflictError {
   }
 }
 
+/**
+ * 🔴 T-10-07: リセット（API-A16 `POST /api/admin/demo/reset`）の確認入力が一致しない（**400**）。
+ *
+ * 確認ステップ = **環境名 + テナント名の入力**（docs/04 §A-012「操作と結果」/ docs/05 §13.6）。`confirmEnv` が接続先の
+ * `APP_ENV` と一致しない、または `confirmTenantName` が `demo` プリセットのテナント名のいずれとも一致しなければ、**何も消す前に**
+ * この例外で止める。🔴 環境名の一致は「間違った環境で叩いた」を止める **3 枚目の板**であり（1 枚目 `assertDemoSeedAvailable` /
+ * 2 枚目 `runSeedReset` 内の `assertSeedableAppEnv`）、他の 2 枚を省く理由にならない。
+ * 🔴 `ValidationError` と別コードにする理由: 書式は正しく（どちらも文字列）、**値の一致**だけが問題である。画面はこのコードで
+ *    「入力が対象と一致しない」と伝える。どちらが不一致かは応答で区別しない（不一致の方を教えると、当てずっぽうの入力が
+ *    半分ずつ通ってしまう）。
+ */
+export class DemoResetConfirmationMismatchError extends AppError {
+  readonly code = 'DEMO_RESET_CONFIRMATION_MISMATCH';
+  readonly httpStatus = 400;
+  readonly userMessageKey: MessageKey = 'error.admin.demo.resetConfirmationMismatch';
+  override readonly details: readonly string[] = ['body.confirmEnv', 'body.confirmTenantName'];
+
+  constructor() {
+    super('リセットの確認入力（環境名・テナント名）が対象と一致しません。');
+    this.name = 'DemoResetConfirmationMismatchError';
+  }
+}
+
 /** 未知の例外は内部エラーへ写像する（原因を応答に載せない。docs/05 §15.2）。 */
 export function toAppError(error: unknown): AppError {
   if (error instanceof AppError) return error;

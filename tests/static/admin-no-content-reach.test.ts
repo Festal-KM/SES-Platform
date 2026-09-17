@@ -20,6 +20,9 @@
 //      **監査ログの詳細エンドポイント**（`/api/admin/audit-logs/{}`）が存在しない。
 //   ④ 管理平面のファイルが主平面の DB 経路（`withTenant` ほか）・主平面のサービス（`apps/web/lib/engineers` ほか）を
 //      import しない。
+//   ⑤ 🔴 T-11-07（T-11-03 申し送り ②）: 内容を持つモデルのデリゲートを**別名に束縛しない**（`const u = db.user` /
+//      `const { user } = db`）。① は `db.user.findMany()` の形しか見ないため、別名経由の行の読み取りを取りこぼす。
+//      束縛そのものを禁じれば ① の検査が形に依存しなくなる（`PlatformReadDb` に `$queryRaw` は無いので raw 経路は型で止まる）。
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -38,11 +41,18 @@ const SCAN_DIRS = [
 
 /**
  * 🔴 内容（氏名・本文・経歴・商流）を持つモデル。行を読む呼び出しを管理平面に置かない。
- *    `user` を含める: `users.display_name` / `email` は `app_platform` に GRANT されている（`A-002` の最終ログインの
- *    母集団のため）が、**利用者の氏名を解決して出す経路**を管理平面に作らない（`docs/sprints/SP-11` §4-3）。
+ *    `user` を含める: `A-002` は最終ログインの母集団として `users` を `groupBy` するだけであり、**利用者の氏名を解決して
+ *    出す経路**を管理平面に作らない（`docs/sprints/SP-11` §4-3）。✅ T-11-07 で `users.display_name` / `email` の GRANT
+ *    自体も REVOKE した（migration 20260925000000。第 1 層でも読めない）。
+ *    `partnerCompany` / `invitation` を含める: 取引先担当者・招待先の氏名と連絡先（T-11-07 で REVOKE）。
+ *    管理平面に要るのは社数・招待の状態だけであり、どちらも `groupBy` / `count` / 状態列の `select` で足りる。
+ *    ⚠️ `provisioning.ts`（A-014 の直近の開設）は `invitation.findMany` を状態列だけの `select` で読むため、
+ *    `gate-stalls.ts` と同じ形の列単位の例外に載せる（下記 `ROW_READ_EXCEPTIONS`）。
  */
 const CONTENT_MODELS: ReadonlySet<string> = new Set([
   'user',
+  'partnerCompany',
+  'invitation',
   'engineer',
   'engineerSnapshot',
   'engineerCareer',
@@ -93,6 +103,15 @@ const ROW_READ_EXCEPTIONS: ReadonlyMap<
     {
       models: new Set(['proposal', 'reviewGate']),
       selectKeys: new Set(['id', 'tenantId', 'state', 'updatedAt', 'targetType', 'targetId', 'execution', 'heldSince']),
+    },
+  ],
+  // 🔴 T-11-07: `A-014`「直近の開設」は初期 `OWNER` 招待の**状態と期限**だけを行単位で読む（`email` / `token_hash` は
+  //    T-11-07 で GRANT も外した）。列を状態・時刻・テナント ID に固定する。
+  [
+    'packages/db/src/platform/queries/provisioning.ts',
+    {
+      models: new Set(['invitation']),
+      selectKeys: new Set(['tenantId', 'acceptedAt', 'revokedAt', 'expiresAt', 'createdAt']),
     },
   ],
 ]);
@@ -148,14 +167,34 @@ const FORBIDDEN_SELECT_KEYS: ReadonlySet<string> = new Set([
   'failureDetail',
   'mergeResult',
   'mapping',
+  // 🔴 T-11-07（migration 20260925000000 で REVOKE した列。docs/05 §5.5「T-11-07 の実装の決着」）:
+  //    利用者・取引先担当者・招待先の身元とトークンのハッシュ / 送信ドメインの識別情報・失敗理由 /
+  //    AI の生成由来。`email` は `users` / `invitations` / `partner_companies.contact_email` のいずれも select しない。
+  'email',
+  'contactName',
+  'contactEmail',
+  'tokenHash',
+  'passwordResetTokenHash',
+  'sesIdentityArn',
+  'mailFromDomain',
+  'lastFailureReason',
+  'modelId',
+  'promptVersion',
+  'purpose',
+  // `dkim_tokens` は GRANT を残した唯一の非開示値（本数を数えるためだけ）。select は下の例外 1 本に限る。
+  'dkimTokens',
 ]);
 
 /**
  * 🔴 例外: `audit_logs.summary` は `A-006` の材料であり、`select: { summary: true }` を**監査ログのクエリ 1 本**に限って許す。
  *    値は必ず `toPlatformAuditLog` → `maskAuditSummary` を通る（`packages/db/src/serializers/platform/audit-logs.ts`）。
+ * 🔴 T-11-07: `tenant_sending_domains.dkim_tokens` は `A-005` 項目 11 の「提示中の DNS レコードの本数」を数えるためだけに
+ *    `listUnverifiedSendingDomains`（`sending-domains.ts`）1 本が select する。値は DTO（`expectedRecords: number`）に無い
+ *    （`tests/static/admin-forbidden-keys.test.ts` が型で、E2E #15 が値で固定する）。
  */
 const SELECT_KEY_EXCEPTIONS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   ['packages/db/src/platform/queries/audit-logs.ts', new Set(['summary'])],
+  ['packages/db/src/platform/queries/sending-domains.ts', new Set(['dkimTokens'])],
 ]);
 
 /** ③ 管理平面に存在してはならない URL のセグメント（内容エンティティ）。 */
@@ -338,6 +377,64 @@ function scanSelectKeys(file: string, source: ts.SourceFile): Violation[] {
   return violations;
 }
 
+/**
+ * デリゲートを持つ側の識別子（`withPlatformRead(op, async (db) => …)` の `db` と、その同類）。
+ * 🔴 型解決を持たない AST 走査なので名前で判定する。DTO の行（`row.invitation` / `item.proposal`）はデリゲートではない。
+ *    管理平面の規約では読み取りクライアントは `db` で受ける（`packages/db/src/platform/queries/**` 全体）。
+ */
+const DELEGATE_HOLDER_PATTERN = /^(?:db|tx|prisma|client)$|(?:Db|Tx|Client|Prisma)$/;
+
+function isDelegateHolder(expression: ts.Expression): boolean {
+  return ts.isIdentifier(expression) && DELEGATE_HOLDER_PATTERN.test(expression.text);
+}
+
+/**
+ * ⑤ 内容モデルのデリゲートの別名への束縛（T-11-07。T-11-03 申し送り ②）:
+ *   `const u = db.user;` / `const { user } = db;` / `const { user: u } = db;` / 関数の引数の既定値・オブジェクトの値も同じ。
+ *   束縛を禁じることで ① が `X.<model>.<find*>()` の形だけを見てよくなる。
+ */
+function scanDelegateAliases(file: string, source: ts.SourceFile): Violation[] {
+  const violations: Violation[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isVariableDeclaration(node) || ts.isParameter(node) || ts.isPropertyAssignment(node)) {
+      const initializer = ts.isPropertyAssignment(node) ? node.initializer : node.initializer;
+      if (
+        initializer !== undefined &&
+        ts.isPropertyAccessExpression(initializer) &&
+        isDelegateHolder(initializer.expression) &&
+        CONTENT_MODELS.has(initializer.name.text)
+      ) {
+        violations.push({
+          file,
+          line: lineOf(source, node),
+          detail: `内容を持つモデルのデリゲート ${initializer.name.text} を別名に束縛している（① の走査を迂回する形）`,
+        });
+      }
+      if (
+        !ts.isPropertyAssignment(node) &&
+        ts.isObjectBindingPattern(node.name) &&
+        node.initializer !== undefined &&
+        isDelegateHolder(node.initializer)
+      ) {
+        for (const element of node.name.elements) {
+          const bound = element.propertyName ?? element.name;
+          const key = ts.isIdentifier(bound) ? bound.text : null;
+          if (key !== null && CONTENT_MODELS.has(key)) {
+            violations.push({
+              file,
+              line: lineOf(source, element),
+              detail: `内容を持つモデルのデリゲート ${key} を分割代入で束縛している（① の走査を迂回する形）`,
+            });
+          }
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return violations;
+}
+
 /** ④ import。 */
 function scanImports(file: string, source: ts.SourceFile): Violation[] {
   const violations: Violation[] = [];
@@ -394,6 +491,45 @@ describe('🔴 管理平面に内容へ到達する経路が無い（F-058 AC-2 
     expect(scannedFiles.length).toBeGreaterThanOrEqual(15);
     expect(scannedFiles.some((f) => f.file === 'packages/db/src/platform/queries/audit-logs.ts')).toBe(true);
     expect(scannedFiles.some((f) => f.file === 'apps/web/app/api/admin/audit-logs/route.ts')).toBe(true);
+  });
+
+  it('対照（T-11-07）: API-A6 / A8 / A16 のルートとクエリ、A-004 / A-005 / A-012 の画面が走査対象に入っている', () => {
+    const files = new Set(scannedFiles.map((f) => f.file));
+    for (const required of [
+      'apps/web/app/api/admin/usage/route.ts',
+      'apps/web/app/api/admin/monitoring/route.ts',
+      'apps/web/app/api/admin/demo/seed/route.ts',
+      'apps/web/app/api/admin/tenants/[id]/quota/route.ts',
+      'packages/db/src/platform/queries/usage.ts',
+      'packages/db/src/platform/queries/monitoring.ts',
+      'packages/db/src/platform/queries/gate-stalls.ts',
+      'packages/db/src/platform/queries/sending-domains.ts',
+      'packages/db/src/platform/queries/provider-spend.ts',
+      'packages/db/src/platform/queries/demo-seed.ts',
+      'packages/db/src/platform/queries/quota-overrides.ts',
+      'apps/web/app/admin/usage/page.tsx',
+      'apps/web/app/admin/monitoring/page.tsx',
+      'apps/web/app/admin/demo/page.tsx',
+    ]) {
+      expect(files.has(required), `${required} が走査対象に無い`).toBe(true);
+    }
+  });
+
+  it('✅ 対照（T-10-07）: API-A16 の seed / reset のルートとサービス・専用クエリが走査対象に入っている（reset の応答に内容が無いことは ①②④ が見る）', () => {
+    for (const file of [
+      'apps/web/app/api/admin/demo/seed/route.ts',
+      'apps/web/app/api/admin/demo/reset/route.ts',
+      'apps/web/app/api/admin/demo/_lib/service.ts',
+      'packages/db/src/platform/queries/demo-seed.ts',
+    ]) {
+      expect(scannedFiles.some((f) => f.file === file), file).toBe(true);
+    }
+    // 🔴 `reset` の応答（`status`）は `GET` と同じ専用クエリの結果であり、行を読むのは `tenant`（内容モデルではない）だけ。
+    const query = scannedFiles.find((f) => f.file === 'packages/db/src/platform/queries/demo-seed.ts');
+    const text = query?.source.getFullText() ?? '';
+    expect(text).toContain('db.tenant.findMany(');
+    expect(text).not.toContain('db.engineer.findMany(');
+    expect(text).not.toContain('db.proposal.findMany(');
   });
 
   it('① 内容を持つモデルの行を読む呼び出し（find*）と include: が 1 つも無い', () => {
@@ -465,6 +601,38 @@ describe('🔴 管理平面に内容へ到達する経路が無い（F-058 AC-2 
   it('④ 主平面の DB 経路・サービス・画面を管理平面から import していない', () => {
     const violations = scannedFiles.flatMap((f) => scanImports(f.file, f.source));
     expect(violations, format(violations)).toEqual([]);
+  });
+
+  it('⑤ 内容を持つモデルのデリゲートを別名に束縛していない（T-11-07。① の迂回経路が無い）', () => {
+    const violations = scannedFiles.flatMap((f) => scanDelegateAliases(f.file, f.source));
+    expect(violations, format(violations)).toEqual([]);
+  });
+
+  it('🔴 対照（T-11-07）: 別名への束縛は変数・分割代入・引数の既定値・オブジェクトの値のいずれの形でも検出される', () => {
+    const file = 'packages/db/src/platform/queries/synthetic.ts';
+    const scan = (code: string) =>
+      scanDelegateAliases(file, ts.createSourceFile(file, code, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)).map((v) => v.detail);
+    expect(scan(`const u = db.user; await u.findMany();`)).toEqual([
+      '内容を持つモデルのデリゲート user を別名に束縛している（① の走査を迂回する形）',
+    ]);
+    expect(scan(`const { engineer } = db;`)).toEqual([
+      '内容を持つモデルのデリゲート engineer を分割代入で束縛している（① の走査を迂回する形）',
+    ]);
+    expect(scan(`const { proposal: p } = db;`)).toEqual([
+      '内容を持つモデルのデリゲート proposal を分割代入で束縛している（① の走査を迂回する形）',
+    ]);
+    expect(scan(`function f(m = db.message) {}`)).toEqual([
+      '内容を持つモデルのデリゲート message を別名に束縛している（① の走査を迂回する形）',
+    ]);
+    expect(scan(`const delegates = { sheets: db.skillSheet };`)).toEqual([
+      '内容を持つモデルのデリゲート skillSheet を別名に束縛している（① の走査を迂回する形）',
+    ]);
+    // 内容を持たないモデル（tenant / usageCounter）と、デリゲートでない同名のプロパティ（row.invitation / item.proposal）は対象外。
+    expect(scan(`const t = db.tenant; const c = db.usageCounter; const i = row.invitation; const { proposal } = item;`)).toEqual([]);
+    // 受け手の名前は `db` のほか、読み取りクライアントを表す接尾辞（`readDb` / `platformClient`）も見る。
+    expect(scan(`const e = readDb.engineer; const { message } = platformClient;`)).toHaveLength(2);
+    // 直接の呼び出し（① の対象）は ⑤ では拾わない（二重に数えない）。
+    expect(scan(`await db.user.groupBy({ by: ['tenantId'] });`)).toEqual([]);
   });
 });
 

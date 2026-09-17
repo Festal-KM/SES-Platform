@@ -134,6 +134,34 @@ describe('🔴 email の 3 種別すべてが解決できる（T-04-03。docs/05
     expect(connectors.email.callCount()).toBe(1);
   });
 
+  // ✅ T-10-07: `F-053 AC-5` / `BR-45`。`demo`（全区分 `mock`）では、`sandbox` なら SES へ出る分類 1（`HOST_MEMBER`）であっても
+  //    モックが受け、SES の設定（`ses`）を渡していても 1 回も呼ばれない。「宛先による区別を適用せず全送信系がモック」を、
+  //    分類の値に**関係なく**モックになる形で固定する（分類関数の結果が何であってもモックに落ちる）。
+  it('🔴 F-053 AC-5: demo（email: mock）では sandbox なら SES へ出る分類 1 でも SES を 1 回も呼ばず、モック実装が受ける', async () => {
+    const sendEmail = vi.fn(async () => ({ MessageId: 'ses-1' }));
+    const connectors = createConnectors(allMock, { ses: { ...ses, api: { ...ses.api, sendEmail } } });
+    expect(connectors.email).toBeInstanceOf(MockEmailSender);
+    expect(connectors.email).not.toBeInstanceOf(SandboxRecipientScopedEmailSender);
+    for (const recipientClass of ['HOST_MEMBER', 'PARTNER_MEMBER', 'CLIENT', 'ENGINEER'] as const) {
+      await connectors.email.send({
+        recipientClass,
+        to: `${recipientClass.toLowerCase()}@example.co.jp`,
+        templateKey: 'ACCOUNT_INVITATION',
+        params: {},
+        tenantId: '01930000-0000-7000-8000-0000000000a1',
+        // 分類 2 / 3 / 4 は検証済みドメインが必須（`BR-51`。モックでも同じ判定）。分類 1 も同じ値で通る。
+        fromDomain: {
+          domain: 'example.co.jp',
+          mailFromDomain: 'mail.example.co.jp',
+          verifiedAt: new Date('2026-09-01T00:00:00.000Z'),
+        },
+        token: dispatchTokenFor({ dispatchId: `d-${recipientClass}`, dedupeKey: `k-${recipientClass}` }),
+      });
+    }
+    expect(sendEmail).not.toHaveBeenCalled();
+    expect(connectors.email.callCount()).toBe(4);
+  });
+
   it('🔴 sandbox の分類 1 は SES を呼ぶ（本人に届かないと sandbox に入れない）', async () => {
     const sendEmail = vi.fn(async () => ({ MessageId: 'ses-1' }));
     const connectors = createConnectors(selectionWith('email', 'sandboxRecipientScoped'), {

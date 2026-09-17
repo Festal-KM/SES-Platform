@@ -36,6 +36,29 @@ export function expectNoHiddenCountHints(source: string, haystack: string): void
   expect(hits, `${source} に「見えない件数」を示唆する表現が現れました`).toEqual([]);
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * 🔴 T-11-07（E2E #15）: `haystack` に `domainSuffix` で終わるドメイン（そのドメイン自身と、そのサブドメイン）の
+ *    メールアドレスが `allowed` 以外に 1 つも現れないこと。
+ *    「seed の全メールアドレス」を列挙して否定する代わりに、ドメイン単位で**知らない値も**捕まえる
+ *    （`partner_companies.contact_email` のように seed が export していない値を取りこぼさない）。
+ *    `domainSuffix` に TLD（`example`）を渡せば `seed:demo` の全メール（`*@demo-alpha.example`）に当たる。
+ */
+export function expectNoEmailsOfDomainExcept(
+  source: string,
+  haystack: string,
+  domainSuffix: string,
+  allowed: readonly string[],
+): void {
+  const pattern = new RegExp(`[A-Za-z0-9._%+-]+@(?:[A-Za-z0-9-]+\\.)*${escapeRegExp(domainSuffix)}(?![A-Za-z0-9.-])`, 'g');
+  const allowedSet = new Set(allowed.map((email) => email.toLowerCase()));
+  const found = [...new Set(haystack.match(pattern) ?? [])].filter((email) => !allowedSet.has(email.toLowerCase()));
+  expect(found, `${source} に ${domainSuffix} のメールアドレスが現れました`).toEqual([]);
+}
+
 /**
  * 🔴 狭い画面で**横スクロールが出ていない**こと（`CLAUDE.md` §13.3。破綻の代表的な症状）。
  *

@@ -8,6 +8,7 @@
 //    この関数は「投入の前後に状況を読む」ことと「その読み取り・投入を `AuditLog` に残す」ことだけを担う。
 //    `action` を引数で受けるのは、`POST`（投入）の直後に**同じトランザクションで** `admin.demo.seed` を残し、`GET` は
 //    `admin.demo.view` を残すためである（どちらも `withPlatformRead` = 監査の先行。§5.3）。
+//    ✅ T-10-07: `POST …/reset` の前後は `admin.demo.reset`（`runSeedReset` = 削除の前に `REQUESTED`、後に `COMPLETED`）。
 import type { AuthenticatedPlatformCtx } from '../../platform-context.js';
 import { withPlatformRead, type PlatformAction, type PlatformReadDb } from '../../platform.js';
 
@@ -50,17 +51,22 @@ export type DemoSeedStatusMeta = {
   readonly ipAddress?: string | null;
   readonly now?: Date;
   /**
-   * 記録する操作。`GET` は `admin.demo.view`、投入直後の読み返しは `admin.demo.seed`（投入を運営者の操作として残す）。
-   * 🔴 2 値に閉じる（他の action をこの関数から書けない）。
+   * 記録する操作。`GET` は `admin.demo.view`、投入の前後は `admin.demo.seed`、リセット（T-10-07）の前後は `admin.demo.reset`
+   * （投入・削除を運営者の操作として残す）。
+   * 🔴 3 値に閉じる（他の action をこの関数から書けない）。
    */
-  readonly action: Extract<PlatformAction, 'admin.demo.view' | 'admin.demo.seed'>;
+  readonly action: Extract<PlatformAction, 'admin.demo.view' | 'admin.demo.seed' | 'admin.demo.reset'>;
   /**
-   * `admin.demo.seed` のとき: `REQUESTED` = 投入の**前**（監査の先行。何も書いていない）/ `COMPLETED` = 投入の**後**。
+   * `admin.demo.seed` / `admin.demo.reset` のとき: `REQUESTED` = 実行の**前**（監査の先行。何も書いていない・消していない）/
+   * `COMPLETED` = 実行の**後**。
    * 🔴 前後の 2 行を同じ action で残し、`phase` で区別する（途中で失敗しても要求の記録が残る）。
    */
   readonly phase?: 'REQUESTED' | 'COMPLETED';
-  /** `phase='COMPLETED'` のとき、`runSeed` の帰結（`SEEDED` / `ALREADY_SEEDED`）を `summary` に載せる。 */
-  readonly outcome?: 'SEEDED' | 'ALREADY_SEEDED';
+  /**
+   * `phase='COMPLETED'` のとき、帰結を `summary` に載せる。投入は `SEEDED` / `ALREADY_SEEDED`、リセットは
+   * `RESET`（消した）/ `NOTHING_TO_RESET`（消す前から無かった。冪等）。
+   */
+  readonly outcome?: 'SEEDED' | 'ALREADY_SEEDED' | 'RESET' | 'NOTHING_TO_RESET';
 };
 
 const IN_PROGRESS_EXCLUDED_STATES = ['WON', 'LOST', 'WITHDRAWN', 'SUBMIT_FAILED'] as const;

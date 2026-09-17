@@ -32,8 +32,11 @@ export type E2eDatabase = {
   /** `app_platform_write`（管理平面の書き込み）。 */
   readonly platformWriteUrl: string;
   /**
-   * 🔴 PostgreSQL のスーパーユーザー。**合成データの投入（`seed:isolation`）にだけ使う**。
-   *    アプリには渡さない（渡すと分離を素通りする接続をアプリが持つことになる）。
+   * 🔴 PostgreSQL のスーパーユーザー。**合成データの投入・リセットにだけ使う**（`globalSetup` の `seed:isolation` /
+   *    `harness/db-admin.ts` の前提づくり）。
+   *    ✅ T-10-07: web（`harness/web-server.ts`）には **`SEED_DATABASE_URL` としてだけ**渡す —— `A-012` / API-A16 の E2E に要り、
+   *    `development` は docs/05 §13.4 規則 7 がこの変数を置ける環境である（アプリの経路は `demo` プリセットの `tenantIds` にしか
+   *    触れない）。🔴 worker には渡さない（`DATABASE_URL` 等の別名で渡すことも、他の目的で渡すこともしない）。
    */
   readonly seedUrl: string;
   readonly stop: () => Promise<void>;

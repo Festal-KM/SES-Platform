@@ -121,6 +121,12 @@ const ALLOWED_MUTATING_ADMIN_ROUTES: ReadonlyMap<string, readonly string[]> = ne
   //    **合成データ**だけで、ゲート・提案・再送には触れない（`tests/static/execute-guard.test.ts` の ADMIN_SEED_ROUTES と
   //    `admin-tenants-read-only.test.ts` が根拠と一緒に固定する）。`APP_ENV ∈ {demo, development}` 以外は 403（`F-053 AC-6`）。
   ['/api/admin/demo/seed', ['POST']],
+  // ✅ T-10-07: API-A16 `reset`（`seed:demo` のリセット。`F-053 AC-2` / `AC-6`。8 本 → 9 本の意識的な追加）。消す先は demo プリセットの
+  //    **合成データ**だけ（`deleteTenantData(preset.tenantIds)`。body に `tenantId` は無い）で、ゲート・提案・再送には触れない
+  //    （`execute-guard.test.ts` の ADMIN_SEED_ROUTES と `admin-tenants-read-only.test.ts` が根拠と一緒に固定する）。
+  //    `APP_ENV ∈ {demo, development}` 以外は 403（`F-053 AC-6`）。🔴 これは「テナントの業務データの削除」ではなく合成データの
+  //    初期化であり、`gate` / `retry` に相当する行を足す前例にはならない。
+  ['/api/admin/demo/reset', ['POST']],
 ]);
 
 const MUTATING_HTTP_METHODS: ReadonlySet<string> = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);

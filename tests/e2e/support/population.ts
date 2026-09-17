@@ -5,15 +5,19 @@
 // 🔴 値をテストにベタ書きしない。シードが唯一の出所であり、母集団が変わったら
 //    このファイル経由で自動的にテストへ伝わる（片方だけ古くなる状態を作らない）。
 import {
+  DEMO_SEED_NAME_RULES,
+  demoSeedEmails,
   ISOLATION_FORBIDDEN_MARKERS,
   ISOLATION_SEED_IDS,
   ISOLATION_SEED_PERSON_NAMES,
+  ISOLATION_SEED_PLATFORM_USERS,
   isolationSeedCompanyNames,
   isolationSeedEmails,
   isolationSeedProjectNames,
   type IsolationPartnerIds,
   type IsolationTenantIds,
 } from '@ses/db/seed';
+import { T1107_NON_DISCLOSURE_MARKERS } from '../harness/db-admin';
 
 export type TenantIndex = 1 | 2;
 
@@ -175,4 +179,71 @@ export function operatorForbiddenMarkers(): readonly string[] {
  */
 export function operatorForbiddenApiMarkers(): readonly string[] {
   return [...operatorForbiddenMarkers(), String(ISOLATION_FORBIDDEN_MARKERS.internalUnitPrice)];
+}
+
+// ---------------------------------------------------------------------------
+// 🔴 T-11-07（E2E #15 の全面展開。`tests/e2e/admin-non-disclosure.spec.ts`）
+// ---------------------------------------------------------------------------
+
+/** seed が利用者・取引先担当者・提案先に使うメールアドレスのドメイン（`isolationSeedEmails` から導く。ベタ書きしない）。 */
+export function isolationSeedEmailDomain(): string {
+  const [, domain] = isolationSeedEmails(1).hostOwner.split('@');
+  if (domain === undefined || domain === '') throw new Error('seed:isolation のメールアドレスからドメインを導けません。');
+  return domain;
+}
+
+/**
+ * 🔴 運営者の応答に現れてよい seed 由来のメールアドレスは**運営者自身**（`PlatformUser`）だけである。
+ *    テナントの利用者・取引先担当者・提案先（`users.email` / `partner_companies.contact_email` / `proposals.recipient_email` /
+ *    `email_dispatches.recipient_email`）は T-11-07 で `app_platform` の GRANT からも外した。
+ */
+export function platformUserEmails(): readonly string[] {
+  return [ISOLATION_SEED_PLATFORM_USERS.owner.email, ISOLATION_SEED_PLATFORM_USERS.support.email];
+}
+
+/**
+ * 🔴 運営者に見せてはならないもの（HTML / JSON 共通）の**全面版**: `operatorForbiddenMarkers()` に
+ *    ①seed の全利用者のメールアドレス（`users.email`）②T-11-07 が `harness/db-admin.ts` で仕込む非開示の値
+ *    （生年月日・連絡先・スキルシートの `object_key` / `note`・ゲートの指摘・DKIM トークン・AI の生成由来・宛先・
+ *    提案の件名 / 本文・依頼の本文 / 辞退理由・クォータ変更の理由・削除失敗の理由・監査 `summary` の身元と内容）を足す。
+ *    数値のマーカー（単価・件数）は含めない（HTML の偶然一致を避ける。`operatorNonDisclosureApiMarkers` へ）。
+ */
+export function operatorNonDisclosureMarkers(): readonly string[] {
+  const seedEmails = ([1, 2] as const).flatMap((index) => {
+    const emails = isolationSeedEmails(index);
+    return [emails.hostOwner, emails.hostSales, emails.partner1, emails.partner2];
+  });
+  const planted: string[] = [];
+  for (const value of Object.values(T1107_NON_DISCLOSURE_MARKERS) as ReadonlyArray<string | number>) {
+    if (typeof value === 'string') planted.push(value);
+  }
+  return [...operatorForbiddenMarkers(), ...seedEmails, ...planted];
+}
+
+/** JSON 応答にだけ当てる版（数値のマーカー = 販売単価・提案単価・削除件数を足す）。 */
+export function operatorNonDisclosureApiMarkers(): readonly string[] {
+  return [
+    ...operatorNonDisclosureMarkers(),
+    String(ISOLATION_FORBIDDEN_MARKERS.internalUnitPrice),
+    String(T1107_NON_DISCLOSURE_MARKERS.proposalOfferedUnitPrice),
+    String(T1107_NON_DISCLOSURE_MARKERS.purgeCounts),
+  ];
+}
+
+/**
+ * 🔴 `seed:demo` の氏名の形（`DEMO_SEED_NAME_RULES.familyNames` × 空白。「サンプル 太郎」）。T-10-06 の申し送り。
+ *    `isolation` の氏名（`架空 太郎` 等）も同じ姓を共有するため、姓 + 空白の形で両プリセットの人名を捕まえる。
+ *    商号（`株式会社サンプルアルファ` / `架空商事株式会社`）は姓の直後が空白ではないので当たらない。
+ */
+export function demoPersonNamePatterns(): readonly string[] {
+  return DEMO_SEED_NAME_RULES.familyNames.map((family) => `${family} `);
+}
+
+/**
+ * 🔴 `A-012` が**設計上**見せる `seed:demo` の実演アカウント（`docs/04` §A-012 実演チェックリスト / `apps/web/lib/admin-demo/scenarios.ts`）。
+ *    これ以外の `.example` メールアドレスは運営者の応答に現れてはならない。
+ */
+export function demoScenarioAccountEmails(): readonly string[] {
+  const emails = demoSeedEmails(1);
+  return [emails.hostSales[0], emails.partnerSales(1)];
 }

@@ -27,14 +27,20 @@ async function main(): Promise<number> {
     ? await runSeedReset({ appEnv, databaseUrl, preset: args.preset })
     : await runSeed({ appEnv, databaseUrl, preset: args.preset, reset: args.reset });
 
-  const summary = Object.entries(result.counts)
+  // 🔴 T-10-07: `--reset-only` は削除した行数（削除の直前の実測）を出す。削除後の実測（`counts`）は全て 0 で情報にならない。
+  const summary = Object.entries(result.deletedCounts ?? result.counts)
     .map(([table, count]) => `  ${table}: ${count}`)
     .join('\n');
   // 🔴 T-10-06: `--reset` 無しで投入済みのプリセットを指定すると何も書かず `ALREADY_SEEDED` になる（F-053 AC-2 / API-A16 と同じ判定）。
+  // 🔴 T-10-07: `--reset-only` でプリセットのテナント行が無ければ `NOTHING_TO_RESET`（エラーにしない。冪等）。
   const outcomeLine =
     result.outcome === 'ALREADY_SEEDED'
       ? `投入済みのため何も書きませんでした（前回 T = ${result.seededAt?.toISOString() ?? '-'}）。作り直すには --reset を付けてください。\n`
-      : '';
+      : result.outcome === 'NOTHING_TO_RESET'
+        ? '削除対象のテナントが存在しませんでした（何も消していません）。\n'
+        : result.outcome === 'RESET_ONLY'
+          ? '削除した行数:\n'
+          : '';
   process.stdout.write(
     `seed:${result.preset} ${args.resetOnly ? '(reset only)' : ''} 完了\n${outcomeLine}` +
       `テナント: ${result.tenantIds.join(', ')}\n${summary}\n`,

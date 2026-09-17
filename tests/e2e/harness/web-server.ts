@@ -59,6 +59,12 @@ function buildEnv(
     TEMP: process.env.TEMP,
     TMP: process.env.TMP,
     ...base,
+    // ✅ T-10-07: `A-012` / API-A16（合成データの投入・リセット）の E2E に要る特権接続。`development` は §13.4 規則 7 が
+    //    `SEED_DATABASE_URL` を置ける 2 環境の 1 つであり、アプリの経路（`demoSeedRuntime` → `runSeed` / `runSeedReset`）は
+    //    `demo` プリセットの `tenantIds` にしか触れない（`tests/isolation/seed-demo.test.ts` ⑦ が他テナント不変を固定）。
+    //    🔴 **web にだけ渡す。** worker（`harness/worker.ts` = `buildE2eAppEnv` をそのまま使う）には渡さない
+    //    （docs/05 §13.6「同期実行」②: ワーカーに特権接続を持たせない）。`buildE2eAppEnv` に足さないのはそのため。
+    SEED_DATABASE_URL: database.seedUrl,
     PORT: String(E2E_PORT),
     HOSTNAME: E2E_HOST,
     SES_E2E_GUARD_MARKER: guardMarker,

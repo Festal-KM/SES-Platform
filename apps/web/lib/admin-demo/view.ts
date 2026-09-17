@@ -26,11 +26,36 @@ export type DemoSeedStatusView =
 
 export type DemoSeedOutcome = 'SEEDED' | 'ALREADY_SEEDED';
 
-/** API-A16 の応答（`GET` / `POST` 共通）。 */
+/** API-A16 の応答（`GET` / `POST …/seed` 共通）。 */
 export type DemoSeedResponseView = {
   readonly appEnv: string;
   readonly available: true;
   readonly configured: boolean;
   readonly outcome: DemoSeedOutcome | null;
+  readonly status: DemoSeedStatusView;
+};
+
+/**
+ * 🔴 T-10-07: API-A16 `POST …/reset` の帰結。`RESET` = `demo` プリセットのテナントを消した / `NOTHING_TO_RESET` = 消す前から
+ *    無かった（**エラーにしない**。2 回目のリセットは正常終了 = 冪等）。
+ */
+export type DemoResetOutcome = 'RESET' | 'NOTHING_TO_RESET';
+
+/**
+ * 🔴 T-10-07: `POST …/reset` の request body（確認ステップ = 環境名 + テナント名の入力。docs/04 §A-012）。
+ *    🔴 `tenantId` は無い —— 対象は `demo` プリセットの `tenantIds` に閉じており、任意のテナントを指す入力を受け付けない
+ *    （`CLAUDE.md` §10.5。管理平面は read-only であり、合成データの外に射程を広げる入力を持たない）。
+ */
+export type DemoResetRequestView = {
+  readonly confirmEnv: string;
+  readonly confirmTenantName: string;
+};
+
+/** API-A16 `POST …/reset` の応答。`status` は `GET` と同じ形（直後は `seeded: false`）。 */
+export type DemoResetResponseView = {
+  readonly appEnv: string;
+  readonly available: true;
+  readonly configured: boolean;
+  readonly outcome: DemoResetOutcome;
   readonly status: DemoSeedStatusView;
 };

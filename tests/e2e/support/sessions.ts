@@ -134,11 +134,24 @@ export function partnerSales(index: TenantIndex, partner: 1 | 2): TenantPersona 
   };
 }
 
-export const platformOwner = {
+export type PlatformPersona = {
+  readonly label: string;
+  readonly email: string;
+  readonly password: string;
+};
+
+export const platformOwner: PlatformPersona = {
   label: '運営者（PLATFORM_OWNER）',
   email: ISOLATION_SEED_PLATFORM_USERS.owner.email,
   password: ISOLATION_SEED_PASSWORD,
-} as const;
+};
+
+/** 🔴 T-11-07: `PLATFORM_SUPPORT`（課金設定・テナント停止は不可。`CLAUDE.md` §10.1 / `F-057 AC-2`）。 */
+export const platformSupport: PlatformPersona = {
+  label: '運営者（PLATFORM_SUPPORT）',
+  email: ISOLATION_SEED_PLATFORM_USERS.support.email,
+  password: ISOLATION_SEED_PASSWORD,
+};
 
 /** `S-001` からサインインする（主平面）。 */
 export async function signInAsTenantUser(page: Page, persona: TenantPersona): Promise<void> {
@@ -163,17 +176,17 @@ export async function signInAsTenantUser(page: Page, persona: TenantPersona): Pr
   );
 }
 
-/** `A-001` からサインインする（管理平面。🔴 2 要素認証は必須）。 */
-export async function signInAsPlatformUser(page: Page): Promise<void> {
+/** `A-001` からサインインする（管理平面。🔴 2 要素認証は必須）。既定は `PLATFORM_OWNER`。 */
+export async function signInAsPlatformUser(page: Page, persona: PlatformPersona = platformOwner): Promise<void> {
   await page.goto('/admin/signin');
-  await page.getByTestId('admin-signin-email').fill(platformOwner.email);
-  await page.getByTestId('admin-signin-password').fill(platformOwner.password);
+  await page.getByTestId('admin-signin-email').fill(persona.email);
+  await page.getByTestId('admin-signin-password').fill(persona.password);
   await page.getByTestId('admin-signin-submit').click();
 
   await expect(page.getByTestId('admin-signin-2fa-form')).toBeVisible();
   await submitTwoFactor(
     page,
-    `platform:${platformOwner.email}`,
+    `platform:${persona.email}`,
     {
       otpauth: 'admin-signin-otpauth-uri',
       code: 'admin-signin-2fa-code',
@@ -208,10 +221,13 @@ export async function openTenantSession(
   return { context, page, outbound, close: () => context.close() };
 }
 
-export async function openPlatformSession(browser: Browser): Promise<Session> {
+export async function openPlatformSession(
+  browser: Browser,
+  persona: PlatformPersona = platformOwner,
+): Promise<Session> {
   const context = await browser.newContext();
   const outbound = await guardOutboundRequests(context);
   const page = await context.newPage();
-  await signInAsPlatformUser(page);
+  await signInAsPlatformUser(page, persona);
   return { context, page, outbound, close: () => context.close() };
 }

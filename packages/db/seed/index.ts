@@ -52,6 +52,10 @@ export {
   type DemoTenantIds,
 } from './presets/demo.js';
 export { createSeedRng, type SeedRng } from './rng.js';
+// 🔴 T-10-07: テナント ID で絞った行数の実測（読み取りだけ）。結合テストが「reset で消える / 他テナントは消えない」を
+//    テーブルを列挙せずに突き合わせるために公開する。`deleteTenantData`（削除の実体）は公開しない —— 環境ガード
+//    （`runSeedReset` の先頭）を通らずに消せる経路を作らない。
+export { countTenantRows } from '../src/seed-sql.js';
 
 export type RunSeedOptions = {
   /** 🔴 `packages/config` の `APP_ENV`。`demo` / `development` 以外は拒否する（F-053 AC-6）。 */
@@ -75,14 +79,21 @@ export type RunSeedResult = {
   readonly counts: Readonly<Record<string, number>>;
   /**
    * 🔴 T-10-06（API-A16 の冪等性）: `SEEDED` = 今回投入した / `ALREADY_SEEDED` = 既に投入済みだったので**何も書かなかった**
-   *    （`reset: false` のときだけ起こる）。`RESET_ONLY` = `runSeedReset` の結果。
+   *    （`reset: false` のときだけ起こる）。
+   * 🔴 T-10-07（API-A16 `reset` の冪等性）: `RESET_ONLY` = `runSeedReset` がプリセットのテナント行を消した /
+   *    `NOTHING_TO_RESET` = 消す前からプリセットのテナント行が 1 つも無かった（**エラーにしない**。2 回目のリセットは正常終了）。
    */
-  readonly outcome: 'SEEDED' | 'ALREADY_SEEDED' | 'RESET_ONLY';
+  readonly outcome: 'SEEDED' | 'ALREADY_SEEDED' | 'RESET_ONLY' | 'NOTHING_TO_RESET';
   /**
    * 「実行日 = T」。`SEEDED` なら今回の `now`、`ALREADY_SEEDED` なら**前回の T**（`tenants.lifecycle_changed_at` = プリセットが
-   * `now` を書く唯一の列）。`RESET_ONLY` は `null`。
+   * `now` を書く唯一の列）。`RESET_ONLY` / `NOTHING_TO_RESET` は `null`。
    */
   readonly seededAt: Date | null;
+  /**
+   * `runSeedReset` のとき: 削除の**直前**にプリセットのテナント ID で絞って数えた行数（= 消した行数）。
+   * `counts` は削除後の実測（すべて 0 のはず）であり、区別して持つ。投入の結果では `undefined`。
+   */
+  readonly deletedCounts?: Readonly<Record<string, number>>;
 };
 
 export function isSeedPresetName(value: string): value is SeedPresetName {
@@ -179,7 +190,16 @@ export async function runSeed(options: RunSeedOptions): Promise<RunSeedResult> {
   }
 }
 
-/** `reset` だけを行う（`F-053 AC-2` の「リセット」。投入は行わない）。 */
+/**
+ * `reset` だけを行う（`F-053 AC-2` の「リセット」。投入は行わない —— 削除と投入は別操作であり、実演者が「空の状態」を
+ * 見せたいこともある）。
+ *
+ * 🔴 ①環境ガード → ②接続 → ③削除前の有無と行数 → ④`reset()` の順を崩さない（F-053 AC-6）。
+ * 🔴 T-10-07: 冪等である。プリセットのテナント行が無ければ `NOTHING_TO_RESET`（エラーにしない）。
+ *    削除そのもの（`deleteTenantData`）は有無に関わらず流す —— 対象は「プリセットのテナント ID を持つ行」だけであり
+ *    0 行なら何も起きない。テナント行が無いのに子の行だけが残る形は作られない（`deleteTenantData` は 1 トランザクション）が、
+ *    「有無の判定を信じて削除を省く」より「毎回同じ削除を流す」方が終状態が 1 つに決まる。
+ */
 export async function runSeedReset(
   options: Omit<RunSeedOptions, 'reset' | 'now'>,
 ): Promise<RunSeedResult> {
@@ -187,9 +207,18 @@ export async function runSeedReset(
   const preset = getSeedPreset(options.preset);
   const db = new PrismaClient({ datasourceUrl: options.databaseUrl });
   try {
+    const presence = await readSeedPresence(db, preset);
+    const deletedCounts = await countTenantRows(db, preset.tenantIds);
     await resetPreset(db, preset);
     const counts = await countTenantRows(db, preset.tenantIds);
-    return { preset: preset.name, tenantIds: preset.tenantIds, counts, outcome: 'RESET_ONLY', seededAt: null };
+    return {
+      preset: preset.name,
+      tenantIds: preset.tenantIds,
+      counts,
+      outcome: presence.kind === 'ABSENT' ? 'NOTHING_TO_RESET' : 'RESET_ONLY',
+      seededAt: null,
+      deletedCounts,
+    };
   } finally {
     await db.$disconnect();
   }

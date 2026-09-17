@@ -4,7 +4,10 @@
 //
 // 🔴 単一出所（T-02-09 申し送り 3 / T-03-08）: `roles.test.ts`（T-01-05 / T-03-08 の完了判定）と
 //    `rls-enforced.test.ts`（docs/05 §4.7 #7）の両方がここを実測する。
-//    **§5.5 の表と migration 20260904010000 が唯一の真実**であり、ここはそれを写した固定リストである。
+//    **§5.5 の表と migration 20260904010000（+ 以降の列追加と、T-11-07 の REVOKE = migration 20260925000000）が
+//    唯一の真実**であり、ここはそれを写した固定リストである。
+// 🔴 T-11-07: 2 つのリストの**交差が空**であることと、両リストの列が `schema.prisma` に実在することは
+//    `tests/static/platform-grants-consistency.test.ts` が DB 無しで固定する（写し間違いを早く捕まえる）。
 //
 // 🔴 2 つのリストは向きが違う（どちらも要る）:
 //    - `PLATFORM_READ_COLUMN_ALLOWLIST` … 「この列**だけ**が SELECT できる」を表全体で言う。
@@ -35,13 +38,12 @@ export const PLATFORM_READ_COLUMN_ALLOWLIST: Record<string, readonly string[]> =
     'provisioning_request_id',
     'created_at',
   ],
+  // 🔴 T-11-07（migration 20260925000000）: `email` / `display_name` / `password_reset_token_hash` を REVOKE した。
+  //    `A-002` / `A-003` は `groupBy` / `_max` で席数と最終ログインを数えるだけ（利用者の身元を解決しない）。
   users: [
     'id',
     'tenant_id',
     'owner_partner_company_id',
-    'email',
-    'display_name',
-    'password_reset_token_hash',
     'password_reset_expires_at',
     'disabled_at',
     'last_login_at',
@@ -55,22 +57,20 @@ export const PLATFORM_READ_COLUMN_ALLOWLIST: Record<string, readonly string[]> =
     'joined_at',
     'revoked_at',
   ],
+  // 🔴 T-11-07: 取引先の担当者個人の `contact_name` / `contact_email` を REVOKE した（運営者に要るのは社数）。
   partner_companies: [
     'id',
     'tenant_id',
     'name',
-    'contact_name',
-    'contact_email',
     'suspended_at',
     'invited_at',
   ],
+  // 🔴 T-11-07: 招待先本人の `email` とトークンの `token_hash` を REVOKE した（A-014 は状態と期限だけを見る）。
   invitations: [
     'id',
     'tenant_id',
-    'email',
     'role',
     'partner_company_id',
-    'token_hash',
     'expires_at',
     'accepted_at',
     'accepted_user_id',
@@ -86,18 +86,18 @@ export const PLATFORM_READ_COLUMN_ALLOWLIST: Record<string, readonly string[]> =
     'tenant_id',
     'confirmed_at',
   ],
+  // 🔴 T-11-07: `ses_identity_arn` / `mail_from_domain` / `last_failure_reason` を REVOKE した（`A-005` 項目 11 は
+  //    状態・日時・本数だけ）。`dkim_tokens` は **本数を数えるためだけ**に残す（値は DTO に無い。公開 DNS に載る値で
+  //    秘匿値ではない。E2E #15 が値の不在を実測する）。
   tenant_sending_domains: [
     'id',
     'tenant_id',
     'domain',
     'state',
-    'ses_identity_arn',
     'ses_tenant_name',
     'dkim_tokens',
-    'mail_from_domain',
     'verified_at',
     'last_checked_at',
-    'last_failure_reason',
     // 🔴 T-11-06（migration 20260922000000）: 失効した時刻。`A-005` 項目 11 が「失効」と「未完了」を区別する根拠。
     'revoked_at',
     'registered_by_platform_user_id',
@@ -478,15 +478,12 @@ export const PLATFORM_READ_COLUMN_ALLOWLIST: Record<string, readonly string[]> =
     'suppressed_by_limit',
     'created_at',
   ],
+  // 🔴 T-11-07: 生成由来（`model_id` / `purpose` / `prompt_version` / `target_type` / `target_id`）を REVOKE した。
+  //    原価の分解は `role`（docs/05 §5.9）。読むのは tenant_id / role / estimated_cost_usd / started_at + 件数だけ。
   ai_usage: [
     'id',
     'tenant_id',
     'role',
-    'model_id',
-    'purpose',
-    'prompt_version',
-    'target_type',
-    'target_id',
     'input_tokens',
     'output_tokens',
     'cache_read_tokens',
@@ -590,6 +587,7 @@ export const PLATFORM_READ_COLUMN_ALLOWLIST: Record<string, readonly string[]> =
     'ready_at',
     'expires_at',
   ],
+  // 🔴 T-11-07: `failure_reason`（失敗の自由文）を REVOKE した。`counts` は API-A12（`A-010` 削除完了の確認）の応答に要るため残す。
   tenant_purge_runs: [
     'id',
     'tenant_id',
@@ -598,7 +596,6 @@ export const PLATFORM_READ_COLUMN_ALLOWLIST: Record<string, readonly string[]> =
     'started_at',
     'completed_at',
     'counts',
-    'failure_reason',
   ],
   scheduler_runs: [
     'id',
@@ -712,7 +709,8 @@ export const PLATFORM_READ_COLUMN_ALLOWLIST: Record<string, readonly string[]> =
     'evaluated_at',
   ],
   // 🔴 T-11-02（docs/02 F-057 / docs/05 §5.2 / §6.9 API-A6。migration 20260924000000）: テナント個別のクォータ上書き
-  //    （`A-004` の材料）。全列が計測・数値・日付・ID・運営者自身の記述であり、テナントの業務内容も PII も無い。
+  //    （`A-004` の材料）。全列が計測・数値・日付・ID であり、テナントの業務内容も PII も無い。
+  //    🔴 T-11-07: `reason`（運営者の自由記述。`A-004` の DTO に載せず監査には長さだけ）を REVOKE した。
   tenant_quota_overrides: [
     'id',
     'tenant_id',
@@ -721,7 +719,6 @@ export const PLATFORM_READ_COLUMN_ALLOWLIST: Record<string, readonly string[]> =
     'previous_limit',
     'effective_from',
     'set_by_platform_user_id',
-    'reason',
     'created_at',
   ],
 };
@@ -739,6 +736,14 @@ export const PLATFORM_READ_COLUMN_ALLOWLIST: Record<string, readonly string[]> =
  *      - 宛先・生ペイロード: `email_dispatches.recipient_email`、`email_events.payload`、
  *        `webhook_deliveries.payload`
  *      - オブジェクトキー: `file_scan_results.object_key`、`data_export_requests.object_key`
+ *
+ * 🔴 T-11-07 で次を追加した（migration 20260925000000 で REVOKE。docs/05 §5.5「T-11-07 の実装の決着」）:
+ *      - 身元（PII）とトークンのハッシュ: `users.email` / `display_name` / `password_reset_token_hash`、
+ *        `partner_companies.contact_name` / `contact_email`、`invitations.email` / `token_hash`
+ *      - 送信ドメインの識別情報・失敗理由: `tenant_sending_domains.ses_identity_arn` / `mail_from_domain` /
+ *        `last_failure_reason`（`dkim_tokens` は本数を数えるために GRANT を残す。第 2 層 + E2E #15 で担保）
+ *      - AI の生成由来: `ai_usage.model_id` / `purpose` / `prompt_version` / `target_type` / `target_id`
+ *      - 自由記述: `tenant_quota_overrides.reason`、`tenant_purge_runs.failure_reason`（`counts` は API-A12 に要るため残す）
  */
 export const PLATFORM_READ_COLUMN_DENYLIST: Record<string, readonly string[]> = {
   engineers: [
@@ -800,7 +805,13 @@ export const PLATFORM_READ_COLUMN_DENYLIST: Record<string, readonly string[]> = 
     'webhook_path_secret_encrypted',
   ],
   two_factor_credentials: ['secret_encrypted', 'recovery_code_hashes'],
-  users: ['password_hash'],
+  users: ['password_hash', 'email', 'display_name', 'password_reset_token_hash'],
+  partner_companies: ['contact_name', 'contact_email'],
+  invitations: ['email', 'token_hash'],
+  tenant_sending_domains: ['ses_identity_arn', 'mail_from_domain', 'last_failure_reason'],
+  ai_usage: ['model_id', 'purpose', 'prompt_version', 'target_type', 'target_id'],
+  tenant_quota_overrides: ['reason'],
+  tenant_purge_runs: ['failure_reason'],
 };
 
 /**

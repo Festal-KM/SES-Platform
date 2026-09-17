@@ -293,8 +293,27 @@ const ja = {
   'admin.demo.seed.retry': '再試行する',
   'admin.demo.seed.notConfigured':
     '投入経路（SEED_DATABASE_URL）が設定されていないため、この画面から投入できません。環境変数を設定して再起動してください。',
-  // 🔴 リセット（F-053 AC-2 / AC-6）は T-10-07。導線は置かず、予告だけ出す。
-  'admin.demo.reset.comingSoon': 'リセット（初期状態に戻す）は後続のリリースでこの画面から実行できるようになります。',
+  // ✅ T-10-07: リセット（F-053 AC-2 / AC-6）。確認ステップ = 環境名 + テナント名の入力（docs/04 §A-012「操作と結果」）。
+  //    🔴 「本番」「顧客」のデータに及ぶ表現を書かない —— 対象は demo プリセットの合成データだけである。
+  'admin.demo.section.reset': 'リセット',
+  'admin.demo.reset.lead':
+    '対象テナントの全業務データを削除して初期状態（未投入）に戻します。再投入は行いません。前の商談で作られた提案・チャットは残りません。',
+  'admin.demo.reset.targets': '削除の対象',
+  'admin.demo.reset.submit': 'リセットする（初期状態に戻す）',
+  'admin.demo.reset.confirm.title': '合成データをリセットします',
+  'admin.demo.reset.confirm.lead':
+    '対象テナントの全業務データを削除して初期状態に戻します。取り消せません。確認のため、環境名と対象テナント名を入力してください。',
+  'admin.demo.reset.confirm.environment': '環境',
+  'admin.demo.reset.confirm.envInput': '環境名を入力（上の環境と一致させる）',
+  'admin.demo.reset.confirm.tenantInput': '対象テナント名を入力（対象のいずれかと一致させる）',
+  'admin.demo.reset.confirm.mismatch': '環境名と対象テナント名の両方が一致するまで実行できません。',
+  'admin.demo.reset.confirm.submit': '削除して初期状態に戻す',
+  'admin.demo.reset.confirm.back': '戻る',
+  'admin.demo.reset.submitting': 'リセットしています',
+  'admin.demo.reset.done': 'リセットが完了しました。合成データは投入されていません。',
+  'admin.demo.reset.nothingToReset': '削除対象のテナントが存在しなかったため、何も消していません（既に初期状態です）。',
+  'admin.demo.reset.failed': 'リセットできませんでした。時間をおいて再試行してください。',
+  'admin.demo.reset.retry': '再試行する',
   'admin.demo.section.scenarios': '実演シナリオ',
   'admin.demo.scenarios.lead':
     '投入直後の状態から、次の 2 本を通しで実演できます（F-053 AC-3）。開始地点のリンクは主平面（別タブ）で開きます。',
@@ -855,6 +874,9 @@ const ja = {
     '合成データの投入経路（SEED_DATABASE_URL）が設定されていません。環境変数を設定して再起動してください。',
   'error.admin.demo.incomplete':
     '前回の投入が途中で止まっています。リセットしてから投入し直してください。',
+  // 🔴 T-10-07: リセットの確認入力（環境名 + テナント名）が対象と一致しない（400）。どちらが不一致かは教えない。
+  'error.admin.demo.resetConfirmationMismatch':
+    'リセットの確認入力（環境名・対象テナント名）が対象と一致しません。入力を確かめてください。',
   // 🔴 T-05-04: docs/05 §15.1 の 429 段（`QuotaExceededError`）。**上限の種類ごとに文言を分ける**
   //    —— 解消のしかたが違う（AI の日次は翌日、ストレージは削除するか上限を上げるまで）。
   'error.quota.exceeded': 'ご利用量が上限に達したため、この操作は実行できません。',

@@ -112,21 +112,55 @@ const PLATFORM_MODULE = '@ses/db/platform';
 const PLATFORM_WRITE_FUNCTIONS = ['provisionTenant', 'issueTenantOwnerInvitation', 'setTenantQuotaOverride'];
 
 /**
- * 🔴 T-10-06: **`withPlatformWrite` の 7 ドメインの外に書く唯一の管理平面ルート**（API-A16。`F-053` / docs/05 §13.6）。
+ * 🔴 T-10-06: **`withPlatformWrite` の 7 ドメインの外に書く唯一の管理平面ルート群**（API-A16。`F-053` / docs/05 §13.6）。
  *    書き込み先は `demo` プリセットの**合成データ**であり（テナントの契約・業務データのどちらでもない）、実体は `@ses/db/seed` の
- *    `runSeed`（特権接続）である。監査の先行は `readDemoSeedStatus(action='admin.demo.seed')`（`withPlatformRead` = 監査の先行）を
- *    **投入の前**（`REQUESTED`）と**後**（`COMPLETED` + 帰結）に通すことで成立させる。環境ガードは `assertDemoSeedAvailable`
- *    （`packages/config` の `isSeedableAppEnv`）と `runSeed` の先頭の 2 枚（`F-053 AC-6`）。
- *    🔴 ここに 2 本目を足すことは「運営者が合成データ以外を特権接続で書く」ことと同義であり、`CLAUDE.md` §10.5 の解釈を変える。
+ *    `runSeed`（投入）/ `runSeedReset`（✅ T-10-07。リセット）（特権接続）である。監査の先行は `readDemoSeedStatus(action=…)`
+ *    （`withPlatformRead` = 監査の先行）を**実行の前**（`REQUESTED`）と**後**（`COMPLETED` + 帰結）に通すことで成立させる。
+ *    環境ガードは `assertDemoSeedAvailable`（`packages/config` の `isSeedableAppEnv`）と `runSeed` / `runSeedReset` の先頭の 2 枚
+ *    （`F-053 AC-6`）。`reset` は加えて確認入力の環境名（400）を 3 枚目に持つ。
+ *    🔴 ここに `demo/**` 以外の行を足すことは「運営者が合成データ以外を特権接続で書く」ことと同義であり、`CLAUDE.md` §10.5 の解釈を変える。
+ *    🔴 サービスは 1 ファイル（`_lib/service.ts`）に固定する —— `runSeed` / `runSeedReset` の呼び出し元は
+ *    `tests/static/auth-db-callers.test.ts` がこの 1 ファイルで固定しており、ここでも同じ 1 ファイルを指す。
  */
-const ADMIN_SEED_ROUTES: Readonly<Record<string, { readonly service: string; readonly reason: string }>> = {
+const ADMIN_SEED_ROUTES: Readonly<
+  Record<
+    string,
+    {
+      readonly service: string;
+      /** ルートが呼ぶサービス関数（呼び出し式）。 */
+      readonly serviceCall: string;
+      /** サービスが `readDemoSeedStatus` に渡す action（監査の先行の根拠）。 */
+      readonly auditAction: string;
+      /** サービスが `@ses/db/seed` から呼ぶ実体。 */
+      readonly seedFunction: 'runSeed' | 'runSeedReset';
+      readonly reason: string;
+    }
+  >
+> = {
   'apps/web/app/api/admin/demo/seed/route.ts': {
     service: 'apps/web/app/api/admin/demo/_lib/service.ts',
+    serviceCall: 'runDemoSeedForAdmin(',
+    auditAction: "action: 'admin.demo.seed'",
+    seedFunction: 'runSeed',
     reason:
       'API-A16（seed:demo の投入）。書き込み先は demo プリセットの合成データだけで、runSeed（@ses/db/seed。特権接続）が実体。'
       + ' 監査の先行は readDemoSeedStatus(action=admin.demo.seed) を投入の前後に通して成立させる（docs/05 §13.6「T-10-06 の実装の決着」）。',
   },
+  'apps/web/app/api/admin/demo/reset/route.ts': {
+    service: 'apps/web/app/api/admin/demo/_lib/service.ts',
+    serviceCall: 'runDemoResetForAdmin(',
+    auditAction: "action: 'admin.demo.reset'",
+    seedFunction: 'runSeedReset',
+    reason:
+      'API-A16 reset（seed:demo のリセット = demo プリセットの 2 テナントの全業務データ削除。F-053 AC-2 / AC-6。T-10-07）。消す先は'
+      + ' demo プリセットの合成データだけで（deleteTenantData(preset.tenantIds)。body に tenantId は無い）、runSeedReset（@ses/db/seed。特権接続）が実体。'
+      + ' 監査の先行は readDemoSeedStatus(action=admin.demo.reset) を削除の前（REQUESTED）と後（COMPLETED）に通して成立させ、'
+      + ' 確認入力（環境名 + テナント名）の照合を何も消す前に行う（docs/05 §13.6「T-10-07 の実装の決着」）。',
+  },
 };
+
+/** `ADMIN_SEED_ROUTES` の全ルートが共有する 1 本のサービス。`@ses/db/seed` からの import はこの行の形に固定する。 */
+const ADMIN_SEED_SERVICE_IMPORT = "import { DEMO_SEED_IDS, runSeed, runSeedReset, SeedIncompleteError } from '@ses/db/seed';";
 
 type RouteAnalysis = {
   /** export されている HTTP メソッド名。 */
@@ -347,28 +381,55 @@ describe('🔴 管理平面の実行系ルートは監査先行の書き込み�
     expect(missing).toEqual([]);
   });
 
-  it('🔴 T-10-06: 合成データの投入ルートは環境ガード + 監査の先行（readDemoSeedStatus）+ runSeed の 3 点を持ち、withPlatformWrite の外で他の表に触れない', () => {
+  it('🔴 T-10-06 / T-10-07: 合成データの投入・リセットのルートは環境ガード + 監査の先行（readDemoSeedStatus）+ runSeed / runSeedReset の 3 点を持ち、withPlatformWrite の外で他の表に触れない', () => {
+    // 🔴 対照: seed と reset の 2 本が両方登録されている（片方だけ消えた状態を通さない）。
+    expect(Object.keys(ADMIN_SEED_ROUTES).sort()).toEqual([
+      'apps/web/app/api/admin/demo/reset/route.ts',
+      'apps/web/app/api/admin/demo/seed/route.ts',
+    ]);
     for (const [file, declaration] of Object.entries(ADMIN_SEED_ROUTES)) {
       expect(declaration.reason.length).toBeGreaterThan(20);
+      // 🔴 `demo/**` の外にこの規律で書き込むルートを置けない。
+      expect(file.startsWith('apps/web/app/api/admin/demo/')).toBe(true);
       const route = readFileSync(path.join(repoRoot, file), 'utf8');
       const service = readFileSync(path.join(repoRoot, declaration.service), 'utf8');
-      // 設計意図のコメントに `runSeedReset` 等の語が出るため、判定は **import 文**（コードとして持ち込んだもの）だけで行う。
+      // 設計意図のコメントに関数名が出るため、判定は **import 文**（コードとして持ち込んだもの）だけで行う。
       const serviceImports = service.split('\n').filter((line) => /^import\b/.test(line.trim()));
       // ルート: 認証済み運営者 → 環境ガード → サービス。
       expect(route).toContain('requirePlatformCtx');
       expect(route).toContain('assertDemoSeedAvailable(');
-      expect(route).toContain('runDemoSeedForAdmin(');
-      // サービス: 監査の先行（withPlatformRead 経由の専用クエリ）と、投入の実体は @ses/db/seed の runSeed だけ。
+      expect(route).toContain(declaration.serviceCall);
+      // サービス: 監査の先行（withPlatformRead 経由の専用クエリ）と、実体は @ses/db/seed の runSeed / runSeedReset だけ。
       expect(serviceImports).toContain("import { readDemoSeedStatus } from '@ses/db/platform';");
-      expect(serviceImports).toContain("import { DEMO_SEED_IDS, runSeed, SeedIncompleteError } from '@ses/db/seed';");
-      expect(service).toContain("action: 'admin.demo.seed'");
-      // 🔴 reset（T-10-07）と、生 Prisma / 主平面の DB 経路を import しない。
+      expect(serviceImports).toContain(ADMIN_SEED_SERVICE_IMPORT);
+      expect(ADMIN_SEED_SERVICE_IMPORT).toContain(declaration.seedFunction);
+      expect(service).toContain(declaration.auditAction);
+      // 🔴 生 Prisma / 主平面の DB 経路を import しない。
       for (const line of serviceImports) {
-        expect(line).not.toContain('runSeedReset');
         expect(line).not.toContain('@prisma/client');
         expect(line).not.toContain('withTenant');
       }
     }
+    // ✅ T-10-07: reset のサービスは、確認入力の照合（環境名 + テナント名）を削除の前に持ち、body に tenantId を受けない。
+    const service = readFileSync(path.join(repoRoot, 'apps/web/app/api/admin/demo/_lib/service.ts'), 'utf8');
+    expect(service).toContain('matchesDemoResetConfirmation(');
+    expect(service).toContain('DemoResetConfirmationMismatchError');
+    expect(service).toContain("preset: 'demo'");
+    // `reset` の body スキーマは 2 キー + strict。`tenantId` を受ける行が無い。
+    expect(service).toMatch(/confirmEnv: z\.string\(\)/);
+    expect(service).toMatch(/confirmTenantName: z\.string\(\)/);
+    expect(service).toContain('.strict()');
+    expect(service).not.toMatch(/tenantId:\s*z\./);
+    // 🔴 順序: 照合（400）→ 監査の先行（REQUESTED）→ runSeedReset → 監査（COMPLETED）。ソース上の出現順で固定する。
+    const resetBody = service.slice(service.indexOf('export async function runDemoResetForAdmin('));
+    const positions = [
+      resetBody.indexOf('matchesDemoResetConfirmation('),
+      resetBody.indexOf("phase: 'REQUESTED'"),
+      resetBody.indexOf('runSeedReset('),
+      resetBody.indexOf("phase: 'COMPLETED'"),
+    ];
+    for (const position of positions) expect(position).toBeGreaterThan(-1);
+    expect([...positions].sort((a, b) => a - b)).toEqual(positions);
   });
 
   it('🔴 管理平面の認証ルートは対象外である（ctx が生成される前の経路）', () => {
