@@ -429,7 +429,9 @@ describe('🔴 送信系キューの attempts が 1（docs/05 §17.2 #6 / §9.1 
   it('🔴 「send. 接頭辞を持つが外部送信ではない」ジョブのスナップショット（例外を野放しにしない）', () => {
     const exceptions = analysis.internalJobNames.filter((name) => name.startsWith('send.'));
     // ここに新しい名前が増えたら、それが本当に外部 API を呼ばないジョブかを人間が確かめる。
-    expect(exceptions).toEqual(['send.hold-release']);
+    // ✅ T-09-07: `send.settle-unknown` は `SUBMITTING` 滞留を `UNKNOWN` + `SUBMIT_FAILED` に確定するだけ（docs/05 §10.6）。
+    //    deps に `EmailSender` を持たず外部を呼ばない・`APPROVED` に戻さない・試行を作らない（`send-settle-unknown.test.ts`）。
+    expect(exceptions).toEqual(['send.hold-release', 'send.settle-unknown']);
   });
 
   it('🔴 BullMQ の import / Queue の実体化が許可リスト以外に無い（docs/05 §17.2 #6 ⑤ / §9.1）', () => {

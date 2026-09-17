@@ -4,6 +4,8 @@
 
 import { randomUUID } from 'node:crypto';
 
+import { MOCK_EMAIL_PROVIDER_CODES, type MockEmailStep } from '../email/mock-script.js';
+import { ExternalSendError } from '../email/ses/errors.js';
 import { assertSendingDomainForRecipientClass, type EmailSendInput, type EmailSender } from '../interfaces.js';
 import type { ProviderQuota, RecipientClass } from '../types.js';
 
@@ -48,6 +50,13 @@ export type MockEmailSenderOptions = {
   readonly max24h?: number;
   /** 時刻の注入（テストの決定性のため）。既定は `new Date()`。 */
   readonly now?: () => Date;
+  /**
+   * 🔴 T-09-07: 呼び出し順に消費される台本（`email/mock-script.ts`。`MockAnthropicClient` の `script` と同型）。
+   *    尽きたら**最後の 1 つを繰り返す**。空 / 省略は「常に `deliver`」（`development` / `demo` の常用の形）。
+   *    応答不明（`unknown`）は**記録してから**投げる = 外部には届いた可能性がある（`callCount()` に数える）。
+   *    ネットワーク断（`unreachable`）は**記録せずに**投げる = 届いていない。
+   */
+  readonly script?: readonly MockEmailStep[];
 };
 
 /** `local-part` を伏せる。ドメインは残す（宛先分類の妥当性を目視できる程度に留める）。 */
@@ -59,13 +68,27 @@ export function redactEmailAddress(address: string): string {
 
 export class MockEmailSender implements EmailSender {
   private readonly calls: MockEmailCall[] = [];
+  private readonly script: readonly MockEmailStep[];
+  private cursor = 0;
 
-  constructor(private readonly options: MockEmailSenderOptions = {}) {}
+  constructor(private readonly options: MockEmailSenderOptions = {}) {
+    this.script = [...(options.script ?? [])];
+  }
 
   async send(input: EmailSendInput): Promise<{ externalId: string }> {
     // 🔴 実装（SES）と同じ判定を通す。ここを緩めると `development` で通って `production` で
     //    落ちる（あるいは未検証のまま取引先へ届く）差分が生まれる。
     assertSendingDomainForRecipientClass(input);
+
+    const step = this.nextStep();
+
+    // 🔴 送る前に失敗した（接続拒否 / DNS 不達）。要求は外部に到達していないので**記録しない**
+    //    （送っていないのに送ったことにしない。`callCount()` 不変）。受理されなかったことが確定している
+    //    ので分類は `TRANSIENT`（docs/05 §15.4）。送信ジョブ側に再試行は無く `FAILED` に確定する。
+    if (step.kind === 'unreachable') {
+      const code = step.providerCode ?? MOCK_EMAIL_PROVIDER_CODES.unreachable;
+      throw new ExternalSendError('TRANSIENT', code, `モック: 送信基盤に到達できませんでした（${code}）。要求は送られていません。`);
+    }
 
     this.calls.push({
       at: this.now(),
@@ -75,9 +98,34 @@ export class MockEmailSender implements EmailSender {
       tenantId: input.tenantId,
     });
 
+    // 送信基盤が明示的に拒否した。要求は届いた（`callCount()` に数える）がメールは出ていない（sink に書かない）。
+    if (step.kind === 'reject') {
+      const code = step.providerCode ?? MOCK_EMAIL_PROVIDER_CODES.reject;
+      throw new ExternalSendError('PERMANENT', code, `モック: 送信基盤が送信を拒否しました（${code}）。`);
+    }
+
     await this.options.sink?.write(input);
 
+    // 🔴 受け付けた後に応答が返らなかった。**メールは出ている可能性がある**（記録済み・sink にも書いた）ので、
+    //    呼び出し側は「届いたかどうか分からない」として隔離する（`UNKNOWN`。docs/05 §10.6。再試行してはならない）。
+    if (step.kind === 'unknown') {
+      const code = step.providerCode ?? MOCK_EMAIL_PROVIDER_CODES.unknown;
+      throw new ExternalSendError(
+        'UNKNOWN',
+        code,
+        `モック: 送信要求が応答不明で終了しました（${code}）。届いた可能性があり、再試行してはなりません。`,
+      );
+    }
+
     return { externalId: `mock-${randomUUID()}` };
+  }
+
+  /** 台本の次の 1 手。尽きたら最後の 1 つを繰り返し、台本が無ければ常に `deliver`。 */
+  private nextStep(): MockEmailStep {
+    if (this.script.length === 0) return { kind: 'deliver' };
+    const index = Math.min(this.cursor, this.script.length - 1);
+    this.cursor += 1;
+    return this.script[index] ?? { kind: 'deliver' };
   }
 
   callCount(): number {

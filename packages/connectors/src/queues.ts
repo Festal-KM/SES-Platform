@@ -99,6 +99,11 @@ export type ExternalSendJobName = (typeof EXTERNAL_SEND_JOB_NAMES)[number];
  */
 export const INTERNAL_JOB_NAMES = [
   'send.hold-release',
+  // 🔴 T-09-07（docs/05 §10.6「T-09-07 の実装の決着」）。`SUBMITTING` のまま閾値を超えて確定していない提案を
+  //    `SendAttempt.UNKNOWN` + `SUBMIT_FAILED` に**確定させるだけ**のジョブ（毎 10 分）。**外部 API を呼ばず、
+  //    `APPROVED` にも戻さない**（片道を完結させる = 自動リトライではない）。だから `attempts: 3` を許せる。
+  //    冪等性は `WHERE state = 'SUBMITTING'` / `status = 'RESERVED'` の CAS が担う（2 度目は 0 件）。
+  'send.settle-unknown',
   // 🔴 T-04-03（docs/05 §9.4）。**`email.dispatch` だけが `attempts: 3` を許される送信**である。
   //    根拠は「宛先が**業務上の外部送信（分類 3 / 4）ではない**」ことであり、その限定は
   //    payload の型（`OperationalMailDispatch`）が担保する（T-05-08 で分類 2 を追加した。
@@ -215,6 +220,9 @@ export const QUEUE_DEFINITIONS = {
   'send.contract': externalSendQueue('send.contract'),
   // 保留の自動復帰（docs/05 §9.4）。外部 API を呼ばないので再試行してよい。
   'send.hold-release': internalQueue('send.hold-release', { attempts: 3 }),
+  // 🔴 T-09-07（docs/05 §10.6）。`SUBMITTING` 滞留の確定（`UNKNOWN` + `SUBMIT_FAILED`）。外部 API を呼ばず
+  //    `APPROVED` に戻さない。`jobId` はスケジュールの slot であり冪等キーではないため `removeOnComplete` を付けない。
+  'send.settle-unknown': internalQueue('send.settle-unknown', { attempts: 3 }),
   // 🔴 運用メール（docs/05 §9.4 / §9.10「可（限定）」）。`dedupeKey` の `UNIQUE` で冪等。
   'email.dispatch': internalQueue('email.dispatch', {
     attempts: 3,

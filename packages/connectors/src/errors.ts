@@ -42,6 +42,24 @@ export class SendingDomainRequiredError extends Error {
 }
 
 /**
+ * 🔴 T-09-07: モックの台本（`ConnectorRuntimeOptions.mockEmail`）が、モックを使わない実装種別（`real`）に渡された。
+ *
+ * 台本は `development` / `demo` / E2E（`mock`）と `sandbox`（`sandboxRecipientScoped` の分類 2 / 3 / 4 側）にだけ
+ * 意味がある。`real` に渡されたときに**黙って無視しない** —— 「応答不明を再現しているつもりで実送信していた」
+ * （E2E の台本が `staging` の設定に紛れ込んだ等）を、起動時に落として気づけるようにする（`CLAUDE.md` §11.1）。
+ * 🔴 逆方向（台本があるからモックを選ぶ）も存在しない。実装種別の選択は `resolveConnectorSelection` の 1 箇所である。
+ */
+export class MockEmailScriptNotApplicableError extends Error {
+  constructor(readonly kind: ConnectorImplementationKind) {
+    super(
+      `メール送信の実装種別 '${kind}' にモックの台本（mockEmail.script）は適用できません。` +
+        '台本はモック実装（mock / sandboxRecipientScoped のモック側）にだけ渡せます（docs/05 §13.2）。',
+    );
+    this.name = 'MockEmailScriptNotApplicableError';
+  }
+}
+
+/**
  * 🔴 送信基盤（アカウント）全体の 24 時間枠を、外部 API が同期的に拒否した（docs/05 §8.3-Q ⑤）。
  *
  * これは**障害ではなく保留**である。`email.dispatch` / `account.mail` のハンドラは

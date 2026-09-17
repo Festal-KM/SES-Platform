@@ -20,7 +20,8 @@ import {
   MockMalwareScanner,
   MockObjectStore,
 } from './mock/index.js';
-import { ConnectorImplementationNotAvailableError } from './errors.js';
+import { ConnectorImplementationNotAvailableError, MockEmailScriptNotApplicableError } from './errors.js';
+import type { MockEmailStep } from './email/mock-script.js';
 import { SandboxRecipientScopedEmailSender } from './email/sandbox-recipient-scoped.js';
 import {
   InMemoryProviderSendCounter,
@@ -48,6 +49,9 @@ export * from './email/delivery-mode.js';
 export * from './email/account-mail.js';
 // 🔴 T-04-04: `domain.provision` / `domain.verify` の payload とキューの契約（docs/05 §8.3 / §9.9）。
 export * from './email/domain-jobs.js';
+// 🔴 T-09-07: モックの `EmailSender` に応答不明 / ネットワーク断 / 明示的拒否を再現させる台本の**型と検証**
+//    （docs/05 §13.2 / §10.6）。モック実装そのものは出さない。台本を渡す口は `ConnectorRuntimeOptions.mockEmail`。
+export * from './email/mock-script.js';
 // 🔴 T-04-02: `sandbox` の宛先分類による差し替え（docs/05 §8.2）。**モック実装ではない**
 //    （分類 1 / 分類外は実送信側へ委譲する）ため、モックと違って re-export してよい。
 //    ✅ T-04-03 で `createConnectors` に登録した（`real` = SES 実装が揃ったため）。
@@ -176,10 +180,22 @@ export type MalwareScannerRuntimeOptions = {
   readonly bucket: string;
 };
 
+/**
+ * 🔴 T-09-07: モックの `EmailSender` の台本（`email/mock-script.ts`）。E2E ハーネス（T-09-11）と結合テストが
+ *    「応答不明 → `SUBMIT_FAILED` → 自動再送されない」を**同じモック実装**で再現するための口。
+ *
+ * 🔴 `email: 'real'`（`staging` / `production`）に渡すと `MockEmailScriptNotApplicableError` で起動が止まる。
+ *    黙って無視しない（「再現しているつもりで実送信」を作らない。`CLAUDE.md` §11.1）。
+ */
+export type MockEmailRuntimeOptions = {
+  readonly script: readonly MockEmailStep[];
+};
+
 export type ConnectorRuntimeOptions = {
   readonly ses?: SesRuntimeOptions;
   readonly s3?: S3RuntimeOptions;
   readonly scan?: MalwareScannerRuntimeOptions;
+  readonly mockEmail?: MockEmailRuntimeOptions;
 };
 
 /**
@@ -286,8 +302,12 @@ export function createEmailSender(
   kind: ConnectorImplementationKind,
   runtime: ConnectorRuntimeOptions = {},
 ): EmailSender {
+  // 🔴 T-09-07: モックの台本はモック実装にしか渡せない。`real` に来たら**起動を止める**（黙って無視しない）。
+  //    台本の有無で実装種別を選び直すこともしない（選択は `resolveConnectorSelection` の 1 箇所）。
+  if (kind === 'real' && runtime.mockEmail !== undefined) throw new MockEmailScriptNotApplicableError(kind);
+  const mockOptions = runtime.mockEmail === undefined ? {} : { script: runtime.mockEmail.script };
   return pickByKind<EmailSender>('email', kind, {
-    mock: () => new MockEmailSender(),
+    mock: () => new MockEmailSender(mockOptions),
     // 🔴 `staging` / `production`。共通ドメイン / 独自ドメインの判定は `EmailSendInput.fromDomain`
     //    が持ち、ここに環境分岐は無い。
     real: () => createSesEmailSender('real', runtime.ses),
@@ -296,7 +316,7 @@ export function createEmailSender(
     sandboxRecipientScoped: () =>
       new SandboxRecipientScopedEmailSender({
         real: createSesEmailSender('sandboxRecipientScoped', runtime.ses),
-        mock: new MockEmailSender(),
+        mock: new MockEmailSender(mockOptions),
       }),
   });
 }

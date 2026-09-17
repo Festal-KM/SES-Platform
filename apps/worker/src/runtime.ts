@@ -10,7 +10,8 @@
 // 🔴 `APP_ENV` で外部連携の実装を選び直さない（選択は `resolveConnectorSelection` が済ませており、
 //    ここが見るのは `connectors.*`（`real` / `mock` / `sandboxRecipientScoped`）だけである）。
 //    唯一の例外が `resolveMockAiOptions`（下記。**モックの応答内容**の決定であり、実装種別の
-//    選択ではない。`apps/web` の `resolveInviteUrlRuntime` と同じ位置づけ）。
+//    選択ではない。`apps/web` の `resolveInviteUrlRuntime` と同じ位置づけ）。メールのモックの台本
+//    （`WorkerRuntimeOptions.mockEmailScript`。T-09-07）も同じ性質だが、`APP_ENV` を見ずに**呼び出し側（テスト）**が渡す。
 //
 // ============================================================================
 // 🔴 遅延生成にしている理由（`development` で起動できることが受け入れ基準①）
@@ -52,10 +53,12 @@ import {
   createObjectStore,
   InMemoryMinuteWindowCounter,
   isQueueName,
+  MockEmailScriptNotApplicableError,
   type AccountMailJob,
   type EmailSender,
   type MalwareScanner,
   type MinuteWindowCounter,
+  type MockEmailStep,
   type ObjectStore,
   type OperationalMailDispatch,
   type ProviderSendCounter,
@@ -116,12 +119,31 @@ export function resolveMockAiOptions(appEnv: AppEnvKind): MockAnthropicClientOpt
 }
 
 /**
+ * 🔴 T-09-07: 起動時に渡せる**テスト用の注入**（E2E ハーネス = T-09-11 / 結合テスト）。`main.ts` は渡さない。
+ *
+ * - `mockEmailScript` … モックの `EmailSender` の台本（`@ses/connectors` の `MockEmailStep[]`。応答不明 / ネットワーク断 /
+ *   明示的拒否の再現）。`MockAnthropicClient` の `script`（`resolveMockAiOptions`）と同型の口である。
+ *   🔴 `connectors.email === 'real'` の環境で渡すと**起動時に**落ちる（`createEmailSender` の
+ *   `MockEmailScriptNotApplicableError`。ここでも先に検査し、遅延生成で最初の送信まで気づかない形にしない）。
+ *   台本の有無で実装種別を選び直すことはない（選択は `resolveConnectorSelection` の 1 箇所）。
+ */
+export type WorkerRuntimeOptions = {
+  readonly mockEmailScript?: readonly MockEmailStep[];
+};
+
+/**
  * 🔴 ワーカーを起動する（プロセスにつき 1 回。`main.ts` からのみ呼ぶ）。
  *
  * @param config `bootstrapWorker()` が返した値。**ここで `process.env` を読み直さない。**
+ * @param options テスト用の注入（T-09-07）。本番の起動経路（`main.ts`）は渡さない。
  */
-export function startWorkerRuntime(config: RuntimeConfig): WorkerRuntime {
+export function startWorkerRuntime(config: RuntimeConfig, options: WorkerRuntimeOptions = {}): WorkerRuntime {
   const { env, connectors } = config;
+  // 🔴 T-09-07: モックの台本は `real` に適用できない。遅延生成（`resolveEmailSender`）に任せず起動時に落とす。
+  if (options.mockEmailScript !== undefined && connectors.email === 'real') {
+    throw new MockEmailScriptNotApplicableError(connectors.email);
+  }
+  const mockEmail = options.mockEmailScript === undefined ? {} : { mockEmail: { script: options.mockEmailScript } };
 
   // --------------------------------------------------------------------------
   // 0. DB クライアントと暗号鍵（`apps/web/lib/db/bootstrap.ts` と同じ位置づけ）
@@ -203,6 +225,7 @@ export function startWorkerRuntime(config: RuntimeConfig): WorkerRuntime {
         configurationSet: env.SES_CONFIGURATION_SET,
         sentCounter: resolveSentCounter(),
       },
+      ...mockEmail,
     });
     return emailSender;
   };
@@ -307,6 +330,8 @@ export function startWorkerRuntime(config: RuntimeConfig): WorkerRuntime {
       emailDailyLimit: env.EMAIL_DAILY_LIMIT_PER_TENANT,
       storageLimitBytes: BigInt(env.STORAGE_LIMIT_BYTES_PER_TENANT),
     },
+    // 🔴 T-09-07: send.settle-unknown（docs/05 §10.6）。閾値は `A-005` 項目 2（`readSubmittingStalls`）と同じキー。
+    submittingStallMinutes: env.SUBMITTING_STALL_ALERT_MINUTES,
   };
 
   // --------------------------------------------------------------------------
@@ -355,7 +380,8 @@ export function startWorkerRuntime(config: RuntimeConfig): WorkerRuntime {
 
   // --------------------------------------------------------------------------
   // 6. スケジュール（🔴 宣言（`SCHEDULED_JOBS`）を舐めるだけ。ここに名前を書き写さない。本数は宣言が決める
-  //    —— T-07-11 で 5 本、T-08-07 で `proposal-request.expire`、T-10-02 で計測 4 本、T-10-03 で `usage.limit-check` が加わり 11 本）
+  //    —— T-07-11 で 5 本、T-08-07 で `proposal-request.expire`、T-10-02 で計測 4 本、T-10-03 で `usage.limit-check`、
+  //    T-09-07 で `send.settle-unknown` が加わり 12 本）
   // --------------------------------------------------------------------------
   const ready: Promise<void>[] = [];
   for (const declaration of SCHEDULED_JOBS) {

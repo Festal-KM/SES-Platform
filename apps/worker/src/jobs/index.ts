@@ -75,6 +75,12 @@ import {
   USAGE_LIMIT_CHECK_SCHEDULE,
   type UsageLimitCheckDeps,
 } from './usage-limit-check.js';
+import {
+  createSendSettleUnknownHandler,
+  SEND_SETTLE_UNKNOWN_JOB,
+  SEND_SETTLE_UNKNOWN_SCHEDULE,
+  type SendSettleUnknownDeps,
+} from './send-settle-unknown.js';
 
 export {
   createUsageSeatSnapshotHandler,
@@ -179,6 +185,20 @@ export type { SendProposalDeps, SendProposalHandler, SendProposalOutcome, SendPr
 // 🔴 T-09-06: `send.hold-release` の `Proposal` 側（保留の解消判定と 1 件の復帰手順）。外部 API を呼ばない。
 export { isProposalHoldResolved, releaseProposalSendHold } from './send-proposal-holds.js';
 export type { ProposalHoldFacts, ProposalHoldReleaseDeps, ProposalHoldReleaseResult } from './send-proposal-holds.js';
+// 🔴 T-09-07: `SUBMITTING` 滞留の確定（docs/05 §10.6「T-09-07 の実装の決着」。毎 10 分）。**外部 API を呼ばず、
+//    `APPROVED` に戻さず、試行を作らない** —— 片道を完結させるだけ（自動リトライではない）。下の `SCHEDULED_JOBS` に載る。
+export {
+  createSendSettleUnknownHandler,
+  parseSendSettleUnknownPayload,
+  SEND_SETTLE_UNKNOWN_JOB,
+  SEND_SETTLE_UNKNOWN_SCHEDULE,
+} from './send-settle-unknown.js';
+export type {
+  SendSettleUnknownDeps,
+  SendSettleUnknownHandler,
+  SendSettleUnknownOutcome,
+  SendSettleUnknownPayload,
+} from './send-settle-unknown.js';
 // 🔴 T-04-05: `reissueAccountMail` seam の実体（docs/05 §8.3 の復帰手順）。
 //    SP-07 の配線は `createAccountMailReissue(...)` の戻り値を `SendHoldReleaseDeps` に渡す
 //    （既定値を置かない = 渡し忘れたらコンパイルエラーになる）。
@@ -369,7 +389,10 @@ export type ScheduledJobDeps = UsageSeatSnapshotDeps &
   CostMonthlyRollupDeps &
   // 🔴 T-10-03: `usage.limit-check` が要るのは「モデル解決」「日次上限」（`gate.hold-release` と共有）に加えて
   //    「件数 4 単位 / メール / ストレージの上限値と 80% の閾値」「`email.dispatch` の enqueue 先」。
-  UsageLimitCheckDeps;
+  UsageLimitCheckDeps &
+  // 🔴 T-09-07: `send.settle-unknown` が要るのは `SUBMITTING_STALL_ALERT_MINUTES` だけ（`A-005` 項目 2 と同じ閾値）。
+  //    **`EmailSender` を要らない**ことが「外部を呼ばない」の型での表明である。
+  SendSettleUnknownDeps;
 
 /**
  * スケジュール実行するジョブの宣言。
@@ -477,5 +500,14 @@ export const SCHEDULED_JOBS: readonly ScheduledJobDeclaration[] = [
     cron: USAGE_LIMIT_CHECK_SCHEDULE.cron,
     timeZone: USAGE_LIMIT_CHECK_SCHEDULE.timeZone,
     createHandler: (deps) => createUsageLimitCheckHandler(deps),
+  },
+  // 🔴 T-09-07: `SUBMITTING` 滞留の確定（docs/05 §10.6。毎 10 分）。**これが無いと**⑤ の後にプロセスが消えた提案は
+  //    `SUBMITTING` のまま誰にも確定されず（`F-022 AC-2` 違反）、利用者の `S-022` には出ず、運営者は read-only で
+  //    手が出せない。外部を呼ばず `APPROVED` にも戻さない（自動リトライではない）。
+  {
+    name: SEND_SETTLE_UNKNOWN_JOB,
+    cron: SEND_SETTLE_UNKNOWN_SCHEDULE.cron,
+    timeZone: SEND_SETTLE_UNKNOWN_SCHEDULE.timeZone,
+    createHandler: (deps) => createSendSettleUnknownHandler(deps),
   },
 ];

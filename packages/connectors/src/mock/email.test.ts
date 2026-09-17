@@ -3,6 +3,8 @@
 // そのまま `development` / `demo` の振る舞いになる。
 import { describe, expect, it } from 'vitest';
 
+import { MOCK_EMAIL_PROVIDER_CODES } from '../email/mock-script.js';
+import { ExternalSendError } from '../email/ses/errors.js';
 import { SendingDomainRequiredError } from '../errors.js';
 import type { EmailSendInput } from '../interfaces.js';
 import type { DispatchToken, RecipientClass, VerifiedSendingDomain } from '../types.js';
@@ -102,6 +104,97 @@ describe('MockEmailSender', () => {
     const second = await sender.send(input());
     expect(first.externalId).not.toBe(second.externalId);
     expect(first.externalId.startsWith('mock-')).toBe(true);
+  });
+
+  // ✅ T-09-07: 応答不明 / ネットワーク断 / 明示的拒否の再現（docs/05 §13.2 / §10.6 / §15.4）。
+  describe('script（T-09-07。応答不明とネットワーク断を区別して再現する）', () => {
+    async function sendExpectingError(sender: MockEmailSender, overrides: Partial<EmailSendInput> = {}): Promise<unknown> {
+      try {
+        await sender.send(input(overrides));
+      } catch (error) {
+        return error;
+      }
+      throw new Error('送信が成功してしまった');
+    }
+
+    it('🔴 unknown: 受け付けた後に応答が返らない。記録と sink に**残る**（届いた可能性がある）うえで ExternalSendError(UNKNOWN) を投げる', async () => {
+      const written: EmailSendInput[] = [];
+      const sink: MockEmailSink = {
+        async write(value) {
+          written.push(value);
+        },
+      };
+      const sender = new MockEmailSender({ sink, script: [{ kind: 'unknown' }] });
+      const error = await sendExpectingError(sender, { recipientClass: 'CLIENT', fromDomain: verifiedDomain });
+      expect(error).toBeInstanceOf(ExternalSendError);
+      expect((error as ExternalSendError).kind).toBe('UNKNOWN');
+      expect((error as ExternalSendError).providerCode).toBe(MOCK_EMAIL_PROVIDER_CODES.unknown);
+      // 🔴 外部には届いた可能性がある = 呼び出しとして数える。sink にも 1 通（MailHog に「届いている」を再現する）。
+      expect(sender.callCount()).toBe(1);
+      expect(sender.callsOf('CLIENT')).toHaveLength(1);
+      expect(written).toHaveLength(1);
+      // 🔴 例外のメッセージに宛先を載せない。
+      expect((error as Error).message).not.toContain('sales@');
+    });
+
+    it('🔴 unreachable: 送る前に失敗。記録も sink も**残らない**（届いていない）。ExternalSendError(TRANSIENT) = 受理されなかったことが確定', async () => {
+      const written: EmailSendInput[] = [];
+      const sink: MockEmailSink = {
+        async write(value) {
+          written.push(value);
+        },
+      };
+      const sender = new MockEmailSender({ sink, script: [{ kind: 'unreachable' }] });
+      const error = await sendExpectingError(sender);
+      expect(error).toBeInstanceOf(ExternalSendError);
+      expect((error as ExternalSendError).kind).toBe('TRANSIENT');
+      expect((error as ExternalSendError).providerCode).toBe(MOCK_EMAIL_PROVIDER_CODES.unreachable);
+      expect(sender.callCount()).toBe(0);
+      expect(written).toHaveLength(0);
+    });
+
+    it('reject: 要求は届いた（callCount に数える）がメールは出ていない（sink に書かない）。ExternalSendError(PERMANENT)', async () => {
+      const written: EmailSendInput[] = [];
+      const sink: MockEmailSink = {
+        async write(value) {
+          written.push(value);
+        },
+      };
+      const sender = new MockEmailSender({ sink, script: [{ kind: 'reject', providerCode: 'AccountSuspendedException' }] });
+      const error = await sendExpectingError(sender);
+      expect((error as ExternalSendError).kind).toBe('PERMANENT');
+      expect((error as ExternalSendError).providerCode).toBe('AccountSuspendedException');
+      expect(sender.callCount()).toBe(1);
+      expect(written).toHaveLength(0);
+    });
+
+    it('台本は呼び出し順に消費され、尽きたら最後の 1 つを繰り返す（MockAnthropicClient と同じ規律）', async () => {
+      const sender = new MockEmailSender({ script: [{ kind: 'unreachable' }, { kind: 'deliver' }, { kind: 'unknown' }] });
+      await expect(sender.send(input())).rejects.toBeInstanceOf(ExternalSendError);
+      expect(sender.callCount()).toBe(0);
+      await expect(sender.send(input())).resolves.toMatchObject({ externalId: expect.stringMatching(/^mock-/) as string });
+      expect(sender.callCount()).toBe(1);
+      for (let i = 0; i < 3; i += 1) {
+        const error = await sendExpectingError(sender);
+        expect((error as ExternalSendError).kind).toBe('UNKNOWN');
+      }
+      expect(sender.callCount()).toBe(4);
+    });
+
+    it('台本が空 / 省略なら常に deliver（development / demo の常用の形。未設定を例外にしない）', async () => {
+      const empty = new MockEmailSender({ script: [] });
+      await expect(empty.send(input())).resolves.toMatchObject({ externalId: expect.stringMatching(/^mock-/) as string });
+      const omitted = new MockEmailSender();
+      await expect(omitted.send(input())).resolves.toMatchObject({ externalId: expect.stringMatching(/^mock-/) as string });
+    });
+
+    it('🔴 台本があっても送信元ドメインの判定（BR-51）は先に通る（分類 3 に fromDomain 無しは台本に関係なく throw、記録 0）', async () => {
+      const sender = new MockEmailSender({ script: [{ kind: 'unknown' }] });
+      await expect(sender.send(input({ recipientClass: 'CLIENT', fromDomain: null }))).rejects.toBeInstanceOf(
+        SendingDomainRequiredError,
+      );
+      expect(sender.callCount()).toBe(0);
+    });
   });
 
   describe('getQuota（docs/05 §8.3-Q ③）', () => {

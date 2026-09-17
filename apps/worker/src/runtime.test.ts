@@ -126,7 +126,7 @@ describe('🔴 宣言とキュー定義が食い違わない（T-07-11）', () =
     expect(missing).toEqual([]);
   });
 
-  it('スケジュール宣言は 11 本である（docs/05 §9.1 / SP-07 T-07-11 + T-08-07 の `proposal-request.expire` + T-10-02 の計測 4 本 + T-10-03 の `usage.limit-check`）', () => {
+  it('スケジュール宣言は 12 本である（docs/05 §9.1 / SP-07 T-07-11 + T-08-07 の `proposal-request.expire` + T-10-02 の計測 4 本 + T-10-03 の `usage.limit-check` + T-09-07 の `send.settle-unknown`）', () => {
     expect(SCHEDULED_JOBS.map((declaration) => declaration.name).sort()).toEqual([
       'cost.monthly-rollup',
       'domain.recheck',
@@ -134,6 +134,7 @@ describe('🔴 宣言とキュー定義が食い違わない（T-07-11）', () =
       'proposal-request.expire',
       'scan.poll',
       'send.hold-release',
+      'send.settle-unknown',
       'usage.daily-rollup',
       'usage.gap-check',
       'usage.limit-check',

@@ -10,6 +10,10 @@
 //   - `listHeldProposalSends` … `send.hold-release` の走査（🔴 `GATE_STALE` を含まない = 自動復帰の対象外。§10.5）
 //   - `resolveProposalSendResumeOrigin` … 復帰する試行の由来（`INITIAL` / `RESEND`）を**人間が採番した値のまま**復元する
 //   - `settleProposalSubmission` … ⑥ **`SendAttempt` の確定と `SUBMITTING → SUBMITTED / SUBMIT_FAILED` を 1 tx で**
+//   - `settleStalledProposalSubmissions` … 🔴 T-09-07。⑥ に到達できずに `SUBMITTING` のまま閾値を超えた行を
+//     `SendAttempt.UNKNOWN` + `SUBMIT_FAILED(UNKNOWN:SETTLE_TIMEOUT)`（予約があった = 届いた可能性）または
+//     `SUBMIT_FAILED(SETTLE_TIMEOUT:UNSENT)`（予約が無い = 外部を呼んでいない）に**確定させるだけ**（外部を呼ばない。
+//     `APPROVED` に戻さない。docs/05 §10.6「T-09-07 の実装の決着」）。`send.settle-unknown` だけが呼ぶ
 //
 // 🔴 ③ の CAS（`castProposalToSubmitting`）と ④ の予約（`reserveSendAttempt`）は既存の関数を呼ぶ。ここに書き直さない。
 // 🔴 分離キーは ctx からそのまま取る（`CLAUDE.md` §3.1）。母集団は RLS（`proposals` C5）が決める。ジョブ文脈は常にホスト相当。
@@ -30,6 +34,7 @@ import {
   nextSendAttemptSeqInTx,
   SendAttemptOriginError,
   settleSendAttemptInTx,
+  settleStalledSendAttemptsInTx,
   type SendAttemptOrigin,
   type SendAttemptSettlement,
   type SendAttemptSettlementOutcome,
@@ -497,4 +502,183 @@ export async function settleProposalSubmission(
       return { kind: 'SETTLED', state: to };
     },
   );
+}
+
+// ============================================================================
+// 🔴 T-09-07: `SUBMITTING` 滞留の確定（docs/05 §10.6「T-09-07 の実装の決着」。`send.settle-unknown`）
+// ============================================================================
+
+/**
+ * 滞留の確定に使う `failureKind`（`SendAttempt.failure_kind` / `proposals.last_failure_reason` / `summary.failureKind`）。
+ * 🔴 「外部を呼んだかどうか」で 2 値に分ける（`S-022` が「届いた可能性」を出すべきかがここで決まる）:
+ *
+ * - `UNKNOWN:SETTLE_TIMEOUT` … ④ の予約（`RESERVED`）があった = ⑤ に到達した可能性がある。`UNKNOWN:` 接頭辞は送信ジョブの
+ *   ⑥ が応答不明に付ける形（`UNKNOWN:<providerCode>`）と同じであり、`S-022` の畳み込み（`classifySendFailureKind`）が
+ *   **応答不明（届いた可能性があります）**として描く。予約の行にも同じ値を書く。
+ * - `SETTLE_TIMEOUT:UNSENT` … ④ の予約が無い = ③ の後・④ の前に落ちた。**⑤ には到達していない**（トークンは ④ の INSERT が
+ *   1 行返ったときだけ生まれる）ので「届いた可能性」を出さない（`S-022` は「送信に失敗した」= `OTHER`。`deliveryUnknown` は
+ *   既存の試行だけで決まる）。確実に送っていないものを「届いた可能性」と見せると、人間の確認作業を無駄に増やす。
+ *
+ * 後半の `SETTLE_TIMEOUT` が「⑤ の応答ではなく滞留の閾値で確定した」ことを示す（運営への問い合わせに使う語。PII を含まない）。
+ */
+export const PROPOSAL_SEND_SETTLE_TIMEOUT = 'UNKNOWN:SETTLE_TIMEOUT';
+export const PROPOSAL_SEND_SETTLE_TIMEOUT_UNSENT = 'SETTLE_TIMEOUT:UNSENT';
+
+/** 1 回の実行で読む上限の既定（残りは 10 分後の実行が拾う）。 */
+export const PROPOSAL_SEND_SETTLE_STALL_DEFAULT_LIMIT = 200;
+
+export type SettleStalledProposalSubmissionsInput = {
+  /** 🔴 `SUBMITTING_STALL_ALERT_MINUTES`（`A-005` 項目 2 と同じ閾値。`packages/config`）。 */
+  readonly stallThresholdMinutes: number;
+  /** 🔴 判定の基準時刻（呼び出し側が渡す）。 */
+  readonly now: Date;
+  readonly limit?: number;
+};
+
+export type SettledStalledProposalSubmission = {
+  readonly proposalId: string;
+  /**
+   * `UNKNOWN` に確定した予約の `attempt_seq`。**空なら ④ の予約が無い滞留**（③ の後・④ の前に落ちた = 外部は呼ばれて
+   * いない）であり、`last_failure_reason` は `SETTLE_TIMEOUT:UNSENT`、`S-022` の試行の記録にはその試行が現れない
+   * （`deliveryUnknown` は既存の試行だけで決まる）。
+   */
+  readonly settledAttemptSeqs: readonly number[];
+  /** 書いた `failureKind`（`UNKNOWN:SETTLE_TIMEOUT` / `SETTLE_TIMEOUT:UNSENT`）。 */
+  readonly failureKind: string;
+};
+
+/**
+ * 母集団を読んでから確定するまでの間に、送信ジョブの ⑥ が先に確定した（正常な競合）。
+ * トランザクションを巻き戻すために投げ、呼び出し側で握る（外に出さない）。
+ */
+class StalledSubmissionRacedError extends Error {
+  constructor(readonly proposalId: string) {
+    super(`proposal ${proposalId} は滞留の確定前に送信ジョブが確定した（競合。何もしない）。`);
+    this.name = 'StalledSubmissionRacedError';
+  }
+}
+
+export type SettleStalledProposalSubmissionsOutcome = {
+  /** 母集団として読んだ行数（`limit` で切った後）。 */
+  readonly scanned: number;
+  /** 🔴 実際に `SUBMIT_FAILED` へ確定した行（CAS が 0 件だったものは含まない）。 */
+  readonly settled: readonly SettledStalledProposalSubmission[];
+};
+
+/**
+ * 🔴 `SUBMITTING` のまま閾値を超えた提案を `SUBMIT_FAILED` に確定する（ジョブ文脈。1 テナント分）。
+ *
+ * これは送信ジョブの ⑥ が**プロセスの消失・DB 例外で到達できなかった**場合の代替であり（docs/05 §10.6 の「`SUBMITTING`
+ * のままプロセスが消えた」）、**外部 API は呼ばない・`APPROVED` に戻さない・新しい試行を作らない**。したがって自動リトライ
+ * ではない（`CLAUDE.md` §3.4 / §4.2「`SUBMITTING` は片道」= `F-022 AC-2`「必ず確定する」を満たす側の機構）。
+ *
+ * 1 行ごとに 1 トランザクション:
+ *   1. `RESERVED` の予約を `UNKNOWN(UNKNOWN:SETTLE_TIMEOUT)` に確定（`settleStalledSendAttemptsInTx`。0 件 = ④ の前に落ちた）
+ *   2. `proposals` を `SUBMITTING → SUBMIT_FAILED` に CAS（`updated_at <= cutoff` を再確認。保留列は NULL に揃える）。
+ *      `last_failure_reason` は予約があれば `UNKNOWN:SETTLE_TIMEOUT`（届いた可能性）、無ければ `SETTLE_TIMEOUT:UNSENT`（呼んでいない）
+ *   3. `ProposalEvent(STATE, SUBMITTING → SUBMIT_FAILED, system, note = SEND_FAILURE:<failureKind>)` +
+ *      `AuditLog(proposal.submit, SYSTEM, operation = SUBMIT_SETTLE, result = UNKNOWN | FAILED, externalCallMade = null〔不明〕| false)`
+ *
+ * 🔴 起点は `proposals.updated_at`（③ の CAS で `SUBMITTING` に入った時刻。`A-005` 項目 2 の `readSubmittingStalls` と同じ列・
+ *    同じ閾値）。`SUBMITTING` の行を更新する経路は ③ と ⑥ 以外に無い（保留は `WHERE state = 'APPROVED'`）。
+ * 🔴 2. が 0 件（読んでから今までに ⑥ が確定した）なら 1. も巻き戻る（同じ tx）。試行だけ `UNKNOWN` になった行は残らない。
+ */
+export async function settleStalledProposalSubmissions(
+  ctx: SystemTenantCtx,
+  input: SettleStalledProposalSubmissionsInput,
+): Promise<SettleStalledProposalSubmissionsOutcome> {
+  if (!Number.isInteger(input.stallThresholdMinutes) || input.stallThresholdMinutes <= 0) {
+    throw new RangeError(`stallThresholdMinutes は正の整数である必要があります（${String(input.stallThresholdMinutes)}）。`);
+  }
+  const limit = input.limit ?? PROPOSAL_SEND_SETTLE_STALL_DEFAULT_LIMIT;
+  const cutoff = new Date(input.now.getTime() - input.stallThresholdMinutes * 60_000);
+  const scope = { tenantId: ctx.tenantId, partnerCompanyId: ctx.partnerCompanyId, actorUserId: ctx.userId };
+
+  // 母集団（未処理条件）。`tenant_id` は書かない（RLS + Prisma 拡張が決める）。
+  const stalled = await runInTenantTransaction(scope, (tx) =>
+    tx.proposal.findMany({
+      where: { state: SETTLE_FROM, updatedAt: { lte: cutoff } },
+      select: { id: true },
+      orderBy: [{ updatedAt: 'asc' }, { id: 'asc' }],
+      take: limit,
+    }),
+  );
+
+  const settled: SettledStalledProposalSubmission[] = [];
+  for (const row of stalled) {
+    const result = await runInTenantTransaction(scope, async (tx): Promise<SettledStalledProposalSubmission | null> => {
+      // 1. 予約を `UNKNOWN` に（0 件 = ④ に到達していない滞留。外部は呼ばれていない）。
+      const settledAttemptSeqs = await settleStalledSendAttemptsInTx(
+        tx,
+        { entityType: PROPOSAL_SEND_ENTITY_TYPE, entityId: row.id },
+        { failureKind: PROPOSAL_SEND_SETTLE_TIMEOUT, failureDetail: 'settled by send.settle-unknown (stall threshold exceeded)', now: input.now },
+      );
+
+      // 🔴 予約があれば「呼んだかどうか分からない」、無ければ「呼んでいない」。`S-022` の語（届いた可能性 / 送信に失敗した）が分かれる。
+      const reached = settledAttemptSeqs.length > 0;
+      const failureKind = reached ? PROPOSAL_SEND_SETTLE_TIMEOUT : PROPOSAL_SEND_SETTLE_TIMEOUT_UNSENT;
+
+      // 2. 提案の確定（片道。`SUBMITTING` からのみ。読んでから ⑥ が確定していれば 0 件 = 何もしない）。
+      const updated = await tx.$queryRaw<IdRow[]>(Prisma.sql`
+        UPDATE proposals
+           SET state = ${SETTLE_FAILURE_TO},
+               last_failure_reason = ${failureKind},
+               send_hold_reason_key = NULL,
+               send_hold_since = NULL,
+               updated_at = ${input.now}::timestamptz
+         WHERE id = ${row.id}::uuid
+           AND state = ${SETTLE_FROM}
+           AND updated_at <= ${cutoff}::timestamptz
+        RETURNING id::text AS id`);
+      if (updated[0] === undefined) {
+        // 🔴 0 件なら 1. も巻き戻す（tx を失敗させる）。「試行だけ UNKNOWN」の行を残さない。
+        if (settledAttemptSeqs.length > 0) throw new StalledSubmissionRacedError(row.id);
+        return null;
+      }
+
+      // 3. 履歴と監査（同じトランザクション）。
+      await tx.proposalEvent.create({
+        data: {
+          tenantId: ctx.tenantId,
+          proposalId: row.id,
+          kind: 'STATE',
+          fromState: SETTLE_FROM,
+          toState: SETTLE_FAILURE_TO,
+          actorUserId: null,
+          note: `${PROPOSAL_SEND_FAILURE_NOTE_PREFIX}${failureKind}`,
+          occurredAt: input.now,
+        },
+        select: { id: true },
+      });
+      await writeAuditLog(tx, {
+        action: PROPOSAL_AUDIT_ACTION_SUBMIT,
+        actorKind: 'SYSTEM',
+        actorId: null,
+        targetType: 'Proposal',
+        targetId: row.id,
+        summary: {
+          operation: PROPOSAL_SUBMIT_OPERATIONS.SETTLE,
+          attemptSeq: settledAttemptSeqs.at(-1) ?? null,
+          // 🔴 予約があれば応答不明（`UNKNOWN`）、無ければ明示的失敗（`FAILED`。外部は呼んでいない）。`SUCCEEDED` は書けない。
+          result: reached ? 'UNKNOWN' : 'FAILED',
+          toState: SETTLE_FAILURE_TO,
+          failureKind,
+          // 🔴 予約があれば「呼んだかどうか分からない」（null）、無ければ「呼んでいない」（false）。true は書けない。
+          externalCallMade: reached ? null : false,
+          stallThresholdMinutes: input.stallThresholdMinutes,
+          jobQueue: ctx.job.queue,
+          jobId: ctx.job.jobId,
+        },
+        ipAddress: null,
+        deviceKind: ctx.deviceKind,
+      });
+      return { proposalId: row.id, settledAttemptSeqs, failureKind };
+    }).catch((error: unknown) => {
+      if (error instanceof StalledSubmissionRacedError) return null;
+      throw error;
+    });
+    if (result !== null) settled.push(result);
+  }
+
+  return { scanned: stalled.length, settled };
 }

@@ -369,10 +369,16 @@ export {
   // 🔴 T-09-09: `S-023` の履歴が「送信失敗（種別）」を描く接頭辞（書き手と同じ 1 定数）。
   PROPOSAL_SEND_FAILURE_NOTE_PREFIX,
   PROPOSAL_SEND_RESERVATION_CONFLICT,
+  // 🔴 T-09-07: `SUBMITTING` 滞留の確定（docs/05 §10.6「T-09-07 の実装の決着」）。呼び出し元は
+  //    `apps/worker/src/jobs/send-settle-unknown.ts` だけ（`tests/static/auth-db-callers.test.ts`）。
+  PROPOSAL_SEND_SETTLE_STALL_DEFAULT_LIMIT,
+  PROPOSAL_SEND_SETTLE_TIMEOUT,
+  PROPOSAL_SEND_SETTLE_TIMEOUT_UNSENT,
   PROPOSAL_SUBMIT_OPERATIONS,
   readProposalForSend,
   resolveProposalSendResumeOrigin,
   settleProposalSubmission,
+  settleStalledProposalSubmissions,
 } from './proposal-send.js';
 export type {
   HeldProposalSendRow,
@@ -380,8 +386,11 @@ export type {
   HoldProposalSendOutcome,
   ProposalForSend,
   ProposalSendAttachmentRef,
+  SettledStalledProposalSubmission,
   SettleProposalSubmissionInput,
   SettleProposalSubmissionOutcome,
+  SettleStalledProposalSubmissionsInput,
+  SettleStalledProposalSubmissionsOutcome,
 } from './proposal-send.js';
 // 🔴 T-08-07: 提案依頼の期限切れ（docs/05 §9.5 `proposal-request.expire`）。呼び出し元は
 //    `apps/worker/src/jobs/proposal-request-expire.ts` のジョブ文脈だけである。

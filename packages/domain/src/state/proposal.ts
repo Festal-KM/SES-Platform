@@ -85,7 +85,8 @@ export type ProposalTransitionKey = {
  * - `GATE_REQUEST` — #39（レビュー依頼）。提案先の検証と `contentHash` の書き込みと一体
  * - `GATE_JOB` — `gate.run`。人間がゲート結果を持ち込む経路を作らない（CLAUDE.md §3.3）
  * - `APPROVE` / `REJECT` — #41 / #42（T-09-03）。ハッシュ一致の CAS / 理由必須
- * - `SEND_JOB` — `send.proposal`（T-09-06 / T-09-07）。CAS と `SendAttempt`（§10.2）
+ * - `SEND_JOB` — `send.proposal`（T-09-06）と、その ⑥ を代行する `send.settle-unknown`（T-09-07。`SUBMITTING → SUBMIT_FAILED`
+ *   のみ。外部を呼ばず `APPROVED` に戻さない）。CAS と `SendAttempt`（§10.2 / §10.6）
  * - `RESEND` — #44（T-09-08）。`acknowledged: true` を要求（§10.6）。呼ぶコードは 1 か所
  * - `MANUAL` — #48。人間の明示操作（修正のための差し戻し・商談の進行・結果・辞退）
  */

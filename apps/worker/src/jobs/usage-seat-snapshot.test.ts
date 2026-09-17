@@ -201,6 +201,9 @@ describe('スケジュール宣言（docs/05 §9.8 / §9.1）', () => {
         emailDailyLimit: 500,
         storageLimitBytes: 50n * 1024n * 1024n * 1024n,
       },
+      // 🔴 T-09-07: `send.settle-unknown`（毎 10 分）の deps。埋め忘れるとコンパイルエラーになる
+      //    （＝ 起動配線が「`SUBMITTING` の滞留を誰も確定しない」状態で立ち上がれない）。
+      submittingStallMinutes: 30,
     };
   }
 });

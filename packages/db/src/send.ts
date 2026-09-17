@@ -28,6 +28,9 @@
 // 🔴 確定（`settleSendAttempt`）は `RESERVED` からの CAS（`WHERE status = 'RESERVED'`）である。0 件更新は
 //    「既に確定済み」であり、`ALREADY_SETTLED` として返す（`SUBMITTING` は片道。`CLAUDE.md` §4.2）。
 //    `RESERVED` へ戻す関数は存在しない。
+// 🔴 T-09-07: 予約したまま確定されなかった行（⑤ の後にプロセスが消えた）は `settleStalledSendAttemptsInTx` が
+//    **`UNKNOWN` にだけ**確定する（`SUCCEEDED` / `FAILED` には倒さない。到達は分からないので隔離。docs/05 §10.6）。
+//    呼ぶのは `proposal-send.ts` の `settleStalledProposalSubmissions`（`send.settle-unknown`）だけである。
 //
 // 🔴 分離キーは ctx から取る（`CLAUDE.md` §3.1）。`send_attempts` は C2 HOST_ONLY（docs/05 §4.4）であり、
 //    RLS が母集団を決める。ジョブ文脈（`SystemTenantCtx`）は常にホスト相当である。
@@ -365,6 +368,39 @@ export async function settleSendAttemptInTx(
   const current = await findByKeyOrTriple(tx, token, token.attemptSeq, token.idempotencyKey);
   if (current === null) return { outcome: 'NOT_FOUND' };
   return { outcome: 'ALREADY_SETTLED', status: current.status };
+}
+
+/**
+ * 🔴 T-09-07: **滞留した予約**（`RESERVED` のまま確定されなかった試行）を `UNKNOWN` に確定する（docs/05 §10.6
+ *    「T-09-07 の実装の決着」）。`send.settle-unknown` が `SUBMITTING` の滞留を `SUBMIT_FAILED` に確定するとき、
+ *    `settleStalledProposalSubmissions`（`proposal-send.ts`）が**同じトランザクションで**呼ぶ。
+ *
+ * トークンを持たないので `settleSendAttemptInTx` とは別の述語（`(entity_type, entity_id)` × `status = 'RESERVED'`）で
+ * CAS する。**`RESERVED` からのみ**であり、確定済みの行（`SUCCEEDED` / `FAILED` / `UNKNOWN`）は上書きしない。
+ * 🔴 `SUCCEEDED` / `FAILED` に倒す形は無い（到達したかどうかは分からない = 隔離。人間が `S-022` で確認する）。
+ * 🔴 `RESERVED` に戻す関数も、新しい行を作る関数もここには無い（外部を呼ぶ試行は `reserveSendAttempt` だけが作る）。
+ *
+ * @returns 確定した行の `attempt_seq`（昇順）。`RESERVED` が無ければ空（⑤ に到達する前に落ちた滞留 = 外部は呼ばれていない）。
+ * @internal `packages/db` の内側からのみ使う（index.ts から export しない）。
+ */
+export async function settleStalledSendAttemptsInTx(
+  tx: TenantTransactionClient,
+  target: SendTarget,
+  input: { readonly failureKind: string; readonly failureDetail?: string; readonly now: Date },
+): Promise<number[]> {
+  const failureDetail = input.failureDetail === undefined ? null : input.failureDetail.slice(0, FAILURE_DETAIL_MAX_LENGTH);
+  const rows = await tx.$queryRaw<{ readonly attempt_seq: number }[]>(Prisma.sql`
+    UPDATE send_attempts
+       SET status = 'UNKNOWN',
+           external_id = NULL,
+           failure_kind = ${input.failureKind},
+           failure_detail = ${failureDetail},
+           settled_at = ${input.now}::timestamptz
+     WHERE entity_type = ${target.entityType}
+       AND entity_id = ${target.entityId}::uuid
+       AND status = 'RESERVED'
+    RETURNING attempt_seq`);
+  return rows.map((row) => row.attempt_seq).sort((a, b) => a - b);
 }
 
 // ============================================================================

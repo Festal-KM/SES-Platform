@@ -3,8 +3,8 @@
 // 🔴 未登録の実装をモックで代替しないこと（CLAUDE.md §11.1）。
 import { describe, expect, it, vi } from 'vitest';
 
-import { createConnectors } from './index.js';
-import { ConnectorImplementationNotAvailableError } from './errors.js';
+import { createConnectors, createEmailSender } from './index.js';
+import { ConnectorImplementationNotAvailableError, MockEmailScriptNotApplicableError } from './errors.js';
 import { SandboxRecipientScopedEmailSender } from './email/sandbox-recipient-scoped.js';
 import { SesEmailSender } from './email/ses/index.js';
 import { MockEmailSender } from './mock/index.js';
@@ -180,5 +180,61 @@ describe('🔴 objectStore の real（T-05-04。docs/05 §13.1 の表）', () =>
     }
     expect(captured).toBeInstanceOf(ConnectorImplementationNotAvailableError);
     expect((captured as ConnectorImplementationNotAvailableError).category).toBe('objectStore');
+  });
+});
+
+// ✅ T-09-07: モックの台本（`ConnectorRuntimeOptions.mockEmail`）は起動時 DI の 1 箇所から渡し、`real` には渡せない。
+describe('🔴 mockEmail（T-09-07。docs/05 §13.2 / §10.6）: 台本はモック実装にだけ届き、real では起動が止まる', () => {
+  const ses = {
+    api: {
+      sendEmail: async () => ({ MessageId: 'ses-1' }),
+      getAccount: async () => ({ SendQuota: { Max24HourSend: 200, SentLast24Hours: 0 } }),
+    },
+    defaultFromAddress: 'no-reply@ses-platform.example',
+    configurationSet: 'ses-platform-test',
+  };
+  const clientInput = {
+    recipientClass: 'CLIENT' as const,
+    to: 't0907-recipient@example.test',
+    templateKey: 'PROPOSAL_SUBMISSION',
+    params: {},
+    tenantId: '01930000-0000-7000-8000-0000000000a1',
+    fromDomain: {
+      domain: 'example.co.jp',
+      mailFromDomain: 'mail.example.co.jp',
+      verifiedAt: new Date('2026-09-01T00:00:00.000Z'),
+    },
+    token: dispatchTokenFor({ dispatchId: 'd1', dedupeKey: 'k1' }),
+  };
+
+  it('mock（development / demo / E2E）: 台本どおり応答不明を再現し、callCount は 1（届いた可能性）', async () => {
+    const email = createEmailSender('mock', { mockEmail: { script: [{ kind: 'unknown' }] } });
+    await expect(email.send(clientInput)).rejects.toMatchObject({ name: 'ExternalSendError', kind: 'UNKNOWN' });
+    expect(email.callCount()).toBe(1);
+  });
+
+  it('sandboxRecipientScoped: 分類 3 はモック側なので台本が効き、SES は 1 回も呼ばれない', async () => {
+    const sendEmail = vi.fn(async () => ({ MessageId: 'ses-1' }));
+    const email = createEmailSender('sandboxRecipientScoped', {
+      ses: { ...ses, api: { ...ses.api, sendEmail } },
+      mockEmail: { script: [{ kind: 'unreachable' }] },
+    });
+    await expect(email.send(clientInput)).rejects.toMatchObject({ name: 'ExternalSendError', kind: 'TRANSIENT' });
+    expect(sendEmail).not.toHaveBeenCalled();
+    expect(email.callCount()).toBe(0);
+  });
+
+  it('🔴 real（staging / production）に台本を渡すと起動時に throw する（黙って無視しない = 「再現のつもりで実送信」を作らない）', () => {
+    expect(() => createEmailSender('real', { ses, mockEmail: { script: [{ kind: 'unknown' }] } })).toThrow(
+      MockEmailScriptNotApplicableError,
+    );
+    // 台本が無ければ従来どおり real が組み立てられる（台本の有無で実装種別は変わらない）。
+    expect(createEmailSender('real', { ses })).toBeInstanceOf(SesEmailSender);
+  });
+
+  it('createConnectors 経由でも同じ 1 実装を通る（台本は email 区分にだけ届く）', async () => {
+    const connectors = createConnectors(allMock, { mockEmail: { script: [{ kind: 'reject' }] } });
+    await expect(connectors.email.send(clientInput)).rejects.toMatchObject({ name: 'ExternalSendError', kind: 'PERMANENT' });
+    expect(connectors.objectStore.callCount()).toBe(0);
   });
 });

@@ -173,6 +173,9 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
     // 🔴 T-09-06: 提案の送信（docs/05 §10.2）。payload の `tenantId` からジョブ文脈を組み立て、①②③④⑥のすべてを
     //    その文脈で行う。**`apps/web` 側には 1 つも無い**（#43 は enqueue するだけ）。
     'apps/worker/src/jobs/send-proposal.ts',
+    // 🔴 T-09-07: `SUBMITTING` 滞留の確定（docs/05 §10.6。毎 10 分）。payload の `tenantId` からジョブ文脈を組み立て、
+    //    **その文脈の RLS が母集団を決める**（他テナントの `SUBMITTING` を 1 件も読まない）。外部を呼ばず `APPROVED` にも戻さない。
+    'apps/worker/src/jobs/send-settle-unknown.ts',
   ],
   // 🔴 T-09-04: `APPROVED → SUBMITTING` の CAS（docs/05 §10.2 ③ / §11.5 手順 4）。**`SUBMITTING` に入れるのは
   //    送信ジョブだけ**（所有者 `SEND_JOB`。`CLAUDE.md` §4.2「`SUBMITTING` は片道」）であり、`apps/web` の HTTP 経路が
@@ -196,6 +199,10 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
   readProposalForSend: ['apps/worker/src/jobs/send-proposal.ts'],
   settleProposalSubmission: ['apps/worker/src/jobs/send-proposal.ts'],
   failProposalSubmissionWithoutAttempt: ['apps/worker/src/jobs/send-proposal.ts'],
+  // 🔴 T-09-07: `SUBMITTING` 滞留の確定（docs/05 §10.6「T-09-07 の実装の決着」）。`SUBMITTING → SUBMIT_FAILED` の
+  //    所有者 `SEND_JOB` の一部であり、呼ぶのは `send.settle-unknown` の 1 ファイルだけ。**`apps/web/**` には決して足さない**
+  //    （HTTP 経路から「送信中を失敗にする」操作を作らない。運営者は read-only。`CLAUDE.md` §10.5）。
+  settleStalledProposalSubmissions: ['apps/worker/src/jobs/send-settle-unknown.ts'],
   holdProposalSend: [
     'apps/web/lib/proposals/submit.ts',
     'apps/worker/src/jobs/send-proposal-holds.ts',

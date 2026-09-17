@@ -20,7 +20,7 @@ import { resolveConnectorSelection } from '../../packages/config/src/connector-s
 import { loadAppEnv } from '../../packages/config/src/load-env.js';
 import type { RuntimeConfig } from '../../packages/config/src/startup.js';
 import { buildValidEnv } from '../../packages/config/src/testing/fixtures.js';
-import { GATE_RUN_JOB, SEND_PROPOSAL_JOB } from '@ses/connectors';
+import { GATE_RUN_JOB, MockEmailScriptNotApplicableError, SEND_PROPOSAL_JOB } from '@ses/connectors';
 import {
   createBullMqGateRunQueue,
   listBullMqJobSchedulers,
@@ -64,7 +64,7 @@ afterAll(async () => {
 }, SETUP_TIMEOUT_MS);
 
 describe('🔴 受け入れ基準 ①: development でワーカーが起動し gate.run が待ち受ける', () => {
-  it('配線したキューの一覧に gate.run / send.proposal と宣言済み 11 本がすべて含まれる', () => {
+  it('配線したキューの一覧に gate.run / send.proposal と宣言済み 12 本がすべて含まれる', () => {
     expect(runtime.queues).toEqual([
       GATE_RUN_JOB,
       SEND_PROPOSAL_JOB,
@@ -73,7 +73,8 @@ describe('🔴 受け入れ基準 ①: development でワーカーが起動し g
     // 🔴 T-10-02 で計測の 4 本（usage.daily-rollup / usage.gap-check / usage.storage-reconcile / cost.monthly-rollup）が加わった。
     // 🔴 T-10-03 で `usage.limit-check`（上限到達の判定・記録・通知）が加わった。
     // 🔴 T-09-06 で `send.proposal` の Worker（イベント起動。docs/05 §10.2）が加わった。
-    expect(runtime.queues).toHaveLength(13);
+    // 🔴 T-09-07 で `send.settle-unknown`（`SUBMITTING` 滞留の確定。毎 10 分。docs/05 §10.6）が加わった。
+    expect(runtime.queues).toHaveLength(14);
   });
 
   it('🔴 enqueue した gate.run が実際に消費される（対象が無い提案は TARGET_NOT_FOUND で完了する）', async () => {
@@ -140,6 +141,46 @@ describe('🔴 受け入れ基準 ②: 宣言済み 5 本が Repeatable Job と�
       expect(schedulers).toHaveLength(1);
     } finally {
       await second.close();
+    }
+  });
+});
+
+// ✅ T-09-07: モックの台本の注入口（`WorkerRuntimeOptions.mockEmailScript`。E2E ハーネス = T-09-11 が使う）。
+describe('🔴 T-09-07: mockEmailScript は development（email: mock）で受け付け、real では起動時に落ちる', () => {
+  it('send.settle-unknown が 10 分ごと・Asia/Tokyo で 1 本登録されている（docs/05 §10.6）', async () => {
+    const schedulers = await listBullMqJobSchedulers({
+      queueName: 'send.settle-unknown',
+      connection: { url: redis.url },
+    });
+    expect(schedulers).toHaveLength(1);
+    expect(schedulers[0]?.pattern).toBe('*/10 * * * *');
+    expect(schedulers[0]?.tz).toBe('Asia/Tokyo');
+  });
+
+  it('🔴 connectors.email が real の設定に台本を渡すと MockEmailScriptNotApplicableError（DB / Redis に触れる前に落ちる）', () => {
+    const env = loadAppEnv(buildValidEnv('development', { REDIS_URL: redis.url }));
+    const selection = resolveConnectorSelection(env);
+    // 🔴 実装種別だけを `real` に差し替える（`production` の env を組み立てると別の検証〔本番キー等〕に当たる。
+    //    ここで見たいのは「台本 × real」の 1 点）。
+    expect(() =>
+      startWorkerRuntime({ env, connectors: { ...selection, email: 'real' } }, { mockEmailScript: [{ kind: 'unknown' }] }),
+    ).toThrow(MockEmailScriptNotApplicableError);
+    // 🔴 落ちた後も既存のランタイムの DB 接続は差し替わっていない（`configureTenantDb` の前で止まる）。
+    configureTenantDb({ datasourceUrl: database.tenantUrl });
+  });
+
+  it('development（mock）は台本を受け付けて起動する', async () => {
+    const env = loadAppEnv(buildValidEnv('development', { REDIS_URL: redis.url }));
+    const scripted = startWorkerRuntime(
+      { env, connectors: resolveConnectorSelection(env) },
+      { mockEmailScript: [{ kind: 'unknown' }] },
+    );
+    configureTenantDb({ datasourceUrl: database.tenantUrl });
+    await scripted.ready;
+    try {
+      expect(scripted.queues).toContain('send.settle-unknown');
+    } finally {
+      await scripted.close();
     }
   });
 });
