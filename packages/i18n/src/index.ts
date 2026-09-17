@@ -4,10 +4,16 @@
 //    サーバは `messageKey` だけを返し、文言の組み立ては表示側が本カタログで行う。
 //
 // 🔴 プロダクト名は `product.name` の 1 トークンだけを出所にする（docs/04 U-01）。
-//    改称は本ファイルの 1 行の差し替えで済む。
+//    リテラルは `glossary.ts` の `PRODUCT_NAME` の 1 行だけにあり、名称を含む他の文言もそこから組み立てる。
+//    改称はその 1 行の差し替えで済む（T-10-01。`tests/static/product-name-single-key.test.ts`）。
+// 🔴 境界と責任に関わる語（提案 / 提案依頼 / 公開 / 共有 / 承認 / 送信 / 見送り / 辞退 …）と
+//    4 つの「うまくいかなかった」の表示語は `glossary.ts` を参照する（docs/02 §7.11 / T-10-01）。
 //
 // T-03-01（SP-03）で S-001（サインイン）と §15.1 のうち本タスクで到達しうるエラーの
 // キーを置いた。**後続タスクはキーを追加するだけで、この構造を変えない。**
+import { GLOSSARY, OUTCOME_LABELS, PRODUCT_NAME } from './glossary.js';
+
+export { GLOSSARY, OUTCOME_KINDS, OUTCOME_LABELS, PRODUCT_NAME, type OutcomeKind } from './glossary.js';
 
 /** 対応ロケール。当面は日本語のみ（追加時はカタログを 1 つ増やす）。 */
 export const LOCALES = ['ja'] as const;
@@ -18,7 +24,7 @@ export const DEFAULT_LOCALE: Locale = 'ja';
 
 const ja = {
   // --- プロダクト（docs/04 U-01。表示箇所はヘッダとサインイン系の画面に限る）---
-  'product.name': 'SES Platform',
+  'product.name': PRODUCT_NAME,
 
   // --- F-028 非本番環境のバナー（docs/04 §3.5 / docs/05 §13.5 / CLAUDE.md §11.1。T-10-05）---
   // 🔴 `production` のキーは存在しない（バナー自体を描かない。`F-028 AC-3`）。
@@ -79,7 +85,7 @@ const ja = {
   // 🔴 平面帯（セクション 1）。運営者コンソールであることを画面上部に常時示す。
   'admin.plane.band': '運営者コンソール',
   // 🔴 認証アプリに表示する発行者名。テナント利用者の登録と取り違えられないようにする。
-  'admin.console.issuer': 'SES Platform 運営者コンソール',
+  'admin.console.issuer': `${PRODUCT_NAME} 運営者コンソール`,
   'admin.signin.title': '運営者サインイン',
   'admin.signin.lead': '運営者アカウントでサインインしてください。',
   // 🔴 2 要素認証は全運営者に必須（F-055 AC-3 / BR-30）。設定を促す文言を出す。
@@ -450,8 +456,8 @@ const ja = {
   // 項目 1
   'admin.monitoring.item.SUBMIT_FAILED_UNATTENDED.title': '1. 未対応の送信失敗（SUBMIT_FAILED）',
   'admin.monitoring.item.SUBMIT_FAILED_UNATTENDED.empty': '未対応の送信失敗 0 件',
-  'admin.monitoring.item.SUBMIT_FAILED_UNATTENDED.note':
-    'LOST（見送り）/ GATE_FAILED（ゲート不合格）/ DECLINED（提案依頼の辞退）は含みません。再送はテナント利用者の明示操作で行われます。',
+  // 🔴 4 つの「うまくいかなかった」の語は `glossary.ts` の `OUTCOME_LABELS` と同じ（T-10-01。運営者向けでも別の語にしない）。
+  'admin.monitoring.item.SUBMIT_FAILED_UNATTENDED.note': `${OUTCOME_LABELS.LOST} = LOST / ${OUTCOME_LABELS.GATE_FAILED} = GATE_FAILED / ${OUTCOME_LABELS.DECLINED} = DECLINED は含みません。再送はテナント利用者の明示操作で行われます。`,
   // 項目 2
   'admin.monitoring.item.SUBMITTING_STALL.title': '2. 送信中（SUBMITTING）の滞留',
   'admin.monitoring.item.SUBMITTING_STALL.empty': '滞留 0 件',
@@ -2401,7 +2407,9 @@ const ja = {
   'proposalRequests.filter.apply': '絞り込む',
   'proposalRequests.state.REQUESTED': '返答待ち',
   'proposalRequests.state.ACCEPTED': '応諾',
-  'proposalRequests.state.DECLINED': '辞退',
+  // 🔴 T-10-01: `S-019` の `proposals.list.requestState.DECLINED` と同じ語（docs/04 §10.1 = 「依頼を辞退」）。
+  //    `S-017` だけ「辞退」にすると、`Proposal` の `WITHDRAWN`（辞退）と同じ語が画面をまたいで別の概念を指す。
+  'proposalRequests.state.DECLINED': OUTCOME_LABELS.DECLINED,
   'proposalRequests.state.EXPIRED': '期限切れ',
   'proposalRequests.state.WITHDRAWN_BY_HOST': '取り下げ',
   'proposalRequests.column.project': '案件',
@@ -2646,18 +2654,20 @@ const ja = {
   // 状態の語（`docs/04` §S-019 の 14 語。`packages/i18n` に集約する。T-09-09 の一覧も同じキーを使う）。
   'proposals.state.DRAFT': '下書き',
   'proposals.state.GATE_RUNNING': '検査中',
-  'proposals.state.GATE_FAILED': '差し戻し（検査で不合格）',
+  // 🔴 4 つの「うまくいかなかった」のうち `Proposal` の 3 語は `glossary.ts` の `OUTCOME_LABELS`（T-10-01）。
+  'proposals.state.GATE_FAILED': OUTCOME_LABELS.GATE_FAILED,
   'proposals.state.APPROVAL_PENDING': '承認待ち',
   'proposals.state.APPROVED': '承認済み',
   'proposals.state.SUBMITTING': '送信中',
   'proposals.state.SUBMITTED': '送信済み',
-  'proposals.state.SUBMIT_FAILED': '送信失敗',
+  'proposals.state.SUBMIT_FAILED': OUTCOME_LABELS.SUBMIT_FAILED,
   'proposals.state.INTERVIEW_SCHEDULED': '面談日程調整中',
   'proposals.state.INTERVIEWED': '面談実施済み',
   'proposals.state.RESULT_PENDING': '結果待ち',
   'proposals.state.WON': '決定',
-  'proposals.state.LOST': '見送り',
-  'proposals.state.WITHDRAWN': '辞退',
+  'proposals.state.LOST': OUTCOME_LABELS.LOST,
+  // `WITHDRAWN`（こちらから辞退）は 4 つの「うまくいかなかった」に入らない。`DECLINED`（依頼を辞退）と別の語。
+  'proposals.state.WITHDRAWN': GLOSSARY.decline,
 
   // --- S-021 提案の承認（docs/04 §S-021 / §6.1 / `F-021` `F-020` / docs/05 §6.5 #41 / #42 / §11.5。T-09-03）---
   // 🔴 **判断材料（ゲートの指摘・警告・提案先・単価・エンジニアの要点）を表示しないまま承認する導線を作らない**
@@ -2819,8 +2829,9 @@ const ja = {
   'sendHold.DOMAIN_UNVERIFIED': '送信元ドメインが未検証のため保留中です。検証が完了すると自動で送信されます。',
   'sendHold.ESIGN_DISCONNECTED': '電子署名が未接続のため保留中です。接続が完了すると自動で送信されます。',
   'sendHold.TENANT_SUSPENDED': '組織が停止中のため保留中です。停止が解除されると自動で送信されます。',
+  // 🔴 T-10-01: 「送信を見送りました」と書かない —— 「見送り」は `LOST`（先方に見送られた）の語であり、保留を同じ語で呼ばない（docs/02 §7.11）。
   'sendHold.GATE_STALE':
-    '承認後に内容または前提が変わった、あるいは送信までに時間が経ちすぎたため、送信を見送りました。自動では再送しません。内容の確認後にあらためて送信してください。',
+    '承認後に内容または前提が変わった、あるいは送信までに時間が経ちすぎたため、送信を保留しました。自動では再送しません。内容の確認後にあらためて送信してください。',
   'sendHold.AI_COST_LIMIT': 'AI 利用の 1 日の上限に達しているため保留中です。上限が回復すると自動で送信されます。',
   'sendHold.PROVIDER_QUOTA': '送信基盤の混雑により保留中。お客様側の設定では解消しません。自動で再送されます。',
 
@@ -2927,7 +2938,7 @@ const ja = {
   'proposals.list.requests.open': '提案依頼の一覧を開く',
   'proposals.list.requestState.REQUESTED': '返答待ち',
   'proposals.list.requestState.ACCEPTED': '応諾',
-  'proposals.list.requestState.DECLINED': '依頼を辞退',
+  'proposals.list.requestState.DECLINED': OUTCOME_LABELS.DECLINED,
   'proposals.list.requestState.WITHDRAWN_BY_HOST': '取り下げ',
   'proposals.list.requestState.EXPIRED': '期限切れ',
   'proposals.list.column.recipient': '提案先',
@@ -3000,7 +3011,7 @@ const ja = {
   'proposals.detail.timeline.kind.approval': '承認',
   'proposals.detail.timeline.kind.reject': '却下（下書きに差し戻し）',
   'proposals.detail.timeline.kind.resend': '再送',
-  'proposals.detail.timeline.kind.sendFailure': '送信失敗',
+  'proposals.detail.timeline.kind.sendFailure': OUTCOME_LABELS.SUBMIT_FAILED,
   'proposals.detail.timeline.kind.draftUpdated': '下書きを更新',
   'proposals.detail.timeline.kind.note': 'メモ',
   'proposals.detail.timeline.kind.other': '記録',
@@ -3085,8 +3096,8 @@ const ja = {
   'proposals.interview.note.scheduled': '面談日程: ',
   'proposals.interview.note.interviewed': '面談実施: ',
   'proposals.interview.note.won': '結果: 決定',
-  'proposals.interview.note.lost': '結果: 見送り',
-  'proposals.interview.note.withdrawn': '辞退',
+  'proposals.interview.note.lost': `結果: ${OUTCOME_LABELS.LOST}`,
+  'proposals.interview.note.withdrawn': GLOSSARY.decline,
   'proposals.interview.note.separator': ' / ',
   'proposals.interview.note.reasonOpen': '（',
   'proposals.interview.note.reasonClose': '）',

@@ -45,7 +45,7 @@ function row(overrides: Partial<ProposalRequestRowView> & Pick<ProposalRequestRo
 
 const rows: readonly ProposalRequestRowView[] = [
   row({ id: REQUESTED_ID, state: 'REQUESTED', stateLabel: '返答待ち' }),
-  row({ id: DECLINED_ID, state: 'DECLINED', stateLabel: '辞退' }),
+  row({ id: DECLINED_ID, state: 'DECLINED', stateLabel: '依頼を辞退' }),
   row({ id: EXPIRED_ID, state: 'EXPIRED', stateLabel: '期限切れ' }),
   row({ id: WITHDRAWN_ID, state: 'WITHDRAWN_BY_HOST', stateLabel: '取り下げ' }),
 ];
@@ -94,7 +94,7 @@ function render(overrides: Partial<ProposalRequestScreenProps> = {}): string {
       { value: '', label: 'すべて' },
       { value: 'REQUESTED', label: '返答待ち' },
       { value: 'ACCEPTED', label: '応諾' },
-      { value: 'DECLINED', label: '辞退' },
+      { value: 'DECLINED', label: '依頼を辞退' },
       { value: 'WITHDRAWN_BY_HOST', label: '取り下げ' },
       { value: 'EXPIRED', label: '期限切れ' },
     ],
@@ -119,7 +119,7 @@ describe('🔴 F-018 AC-1 / AC-5: ホストの一覧', () => {
       expect(html).toContain(`data-testid="proposal-request-row-${id}"`);
     }
     expect(html).toMatch(new RegExp(`data-testid="proposal-request-state-${REQUESTED_ID}"[^>]*>返答待ち<`));
-    expect(html).toMatch(new RegExp(`data-testid="proposal-request-state-${DECLINED_ID}"[^>]*>辞退<`));
+    expect(html).toMatch(new RegExp(`data-testid="proposal-request-state-${DECLINED_ID}"[^>]*>依頼を辞退<`));
     expect(html).toMatch(new RegExp(`data-testid="proposal-request-state-${EXPIRED_ID}"[^>]*>期限切れ<`));
     expect(html).toMatch(new RegExp(`data-testid="proposal-request-state-${WITHDRAWN_ID}"[^>]*>取り下げ<`));
     expect(html.match(/共有候補（匿名）/g)?.length).toBe(4);

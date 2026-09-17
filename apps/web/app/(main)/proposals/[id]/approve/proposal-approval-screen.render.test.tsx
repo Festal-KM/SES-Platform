@@ -414,7 +414,7 @@ describe('S-021 ⑨（T-09-06）: 承認後の primary は「送信する」で�
         sendHold: {
           reasonKey: 'GATE_STALE',
           title: '送信は保留中です。',
-          message: '送信を見送りました。内容の確認後にあらためて送信してください。',
+          message: '送信を保留しました。内容の確認後にあらためて送信してください。',
           since: '保留開始: 2026-09-16 09:00 JST',
           autoRelease: false,
           settingsLink: null,

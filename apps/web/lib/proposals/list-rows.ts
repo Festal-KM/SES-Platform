@@ -182,7 +182,8 @@ export type ProposalRequestStateChip = {
 
 /**
  * 🔴 提案依頼側の語は `proposals.list.requestState.*`（`DECLINED` = 「依頼を辞退」。`Proposal` の `WITHDRAWN` = 「辞退」と別の語）。
- *    `S-017` 自身の語（`proposalRequests.state.*`）とキーが違うのは、この画面で `Proposal` の 14 語と並ぶためである。
+ *    `S-017` 自身の語（`proposalRequests.state.*`）とはキーが別だが、値は `@ses/i18n` の `OUTCOME_LABELS.DECLINED` を両方が参照する
+ *    （T-10-01。画面ごとに別の語にならない）。キーを分けたままにするのは、この画面で `Proposal` の 14 語と並ぶ文脈を保つため。
  */
 const REQUEST_STATE_MESSAGE_KEYS = {
   REQUESTED: 'proposals.list.requestState.REQUESTED',
