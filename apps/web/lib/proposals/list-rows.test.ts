@@ -82,7 +82,7 @@ describe('🔴 F-024 AC-2: 4 つの「うまくいかなかった」は別のチ
     expect(new Set(labels).size).toBe(3);
   });
 
-  it('🔴 提案依頼の DECLINED は別ブロック（S-017 への導線）。語は「依頼を辞退」で、Proposal の WITHDRAWN（辞退）と別', () => {
+  it('🔴 提案依頼の DECLINED は別ブロック（S-017 への導線）。語は「依頼を辞退」で、Proposal の WITHDRAWN（辞退）と別。S-017 と同じ語（T-10-01）', () => {
     const chips = proposalRequestStateChips(requestCounts({ DECLINED: 2, REQUESTED: 1 }));
     expect(chips.map((chip) => chip.state)).toEqual([...PROPOSAL_REQUEST_STATES]);
     const declined = chips.find((chip) => chip.state === 'DECLINED');
@@ -92,11 +92,11 @@ describe('🔴 F-024 AC-2: 4 つの「うまくいかなかった」は別のチ
     expect(declined?.label).not.toBe(t('proposals.state.LOST'));
     expect(declined?.label).not.toBe(t('proposals.state.SUBMIT_FAILED'));
     expect(declined?.label).not.toBe(t('proposals.state.GATE_FAILED'));
-    // 提案依頼側の他 4 語は S-017 と同じ。DECLINED だけ S-019 では「依頼を」を添える（Proposal の語と並ぶため）。
+    // 🔴 T-10-01（docs/02 §7.11 / BR-32）: 同じ状態を画面ごとに違う語で呼ばない。DECLINED も S-017 / S-019 で同じ
+    //    「依頼を辞退」（`OUTCOME_LABELS.DECLINED`）。T-09-09 時点の「S-019 だけ『依頼を』を添える」は語の統一で解消した。
     for (const state of PROPOSAL_REQUEST_STATES) {
       const chip = chips.find((candidate) => candidate.state === state);
-      if (state === 'DECLINED') expect(chip?.label).not.toBe(proposalRequestStateLabelInRequestsScreen(state));
-      else expect(chip?.label).toBe(proposalRequestStateLabelInRequestsScreen(state));
+      expect(chip?.label).toBe(proposalRequestStateLabelInRequestsScreen(state));
     }
   });
 
