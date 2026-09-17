@@ -81,6 +81,14 @@ import {
   SEND_SETTLE_UNKNOWN_SCHEDULE,
   type SendSettleUnknownDeps,
 } from './send-settle-unknown.js';
+import {
+  createTenantClosingNotifyHandler,
+  TENANT_CLOSING_NOTIFY_JOB,
+  TENANT_CLOSING_NOTIFY_POPULATION,
+  TENANT_CLOSING_NOTIFY_SCHEDULE,
+  type TenantClosingNotifyDeps,
+} from './tenant-closing-notify.js';
+import type { SchedulerFanoutPopulation } from '@ses/db';
 
 export {
   createUsageSeatSnapshotHandler,
@@ -362,6 +370,26 @@ export {
   usageLimitNoticeTargetId,
 } from './usage-limit-notice.js';
 export type { UsageLimitNoticeDeps, UsageLimitNoticeInput } from './usage-limit-notice.js';
+// 🔴 T-10-12: 削除予告（docs/05 §9.7 `tenant.closing-notify` / docs/02 `F-064 AC-10`。毎日 02:08 JST）。**メールを 1 通も
+//    送らない**（`EmailDispatch` を予約して `email.dispatch` に積むだけ。分類 1 = `sandbox` でも実送信されるが、その振り分けは
+//    `email.dispatch` の単一経路が行い、ここに環境分岐は無い）。🔴 母集団は `CLOSING`（`ScheduledJobDeclaration.population`）。
+//    配送の**確認**（削除に進めるか）は `packages/db` の `readClosingNoticeDelivery`（T-10-09 の `tenant.purge-scan` /
+//    `tenant.purge` が呼ぶ）であり、このジョブの責務ではない。下の `SCHEDULED_JOBS` に載る。
+export {
+  createTenantClosingNotifyHandler,
+  notifyTenantClosing,
+  parseTenantClosingNotifyPayload,
+  TENANT_CLOSING_NOTIFY_JOB,
+  TENANT_CLOSING_NOTIFY_POPULATION,
+  TENANT_CLOSING_NOTIFY_SCHEDULE,
+} from './tenant-closing-notify.js';
+export type {
+  TenantClosingNoticePhaseOutcome,
+  TenantClosingNotifyDeps,
+  TenantClosingNotifyHandler,
+  TenantClosingNotifyOutcome,
+  TenantClosingNotifyPayload,
+} from './tenant-closing-notify.js';
 
 /**
  * ジョブの合成に要る値（起動時に 1 度だけ解決する。`CLAUDE.md` §11.1 / docs/05 §13.1）。
@@ -392,7 +420,10 @@ export type ScheduledJobDeps = UsageSeatSnapshotDeps &
   UsageLimitCheckDeps &
   // 🔴 T-09-07: `send.settle-unknown` が要るのは `SUBMITTING_STALL_ALERT_MINUTES` だけ（`A-005` 項目 2 と同じ閾値）。
   //    **`EmailSender` を要らない**ことが「外部を呼ばない」の型での表明である。
-  SendSettleUnknownDeps;
+  SendSettleUnknownDeps &
+  // 🔴 T-10-12: `tenant.closing-notify` が要るのは `TENANT_PURGE_GRACE_DAYS`（削除予定日の計算）と `email.dispatch` の
+  //    enqueue 先（`usage.limit-check` と共有）。**`EmailSender` を要らない**（送らない。積むだけ）。
+  TenantClosingNotifyDeps;
 
 /**
  * スケジュール実行するジョブの宣言。
@@ -411,6 +442,13 @@ export type ScheduledJobDeclaration = {
   readonly name: string;
   readonly cron: string;
   readonly timeZone: string;
+  /**
+   * 🔴 T-10-12: ファンアウトの母集団（migration 20260926000000。`@ses/db` の `SchedulerFanoutPopulation`）。
+   *    省略 = `LIVE`（`SANDBOX` / `ACTIVE`。従来どおり）。**`CLOSING` を明示できるのは解約手続き中のテナントだけを
+   *    対象にするジョブ**（`tenant.closing-notify` / T-10-09 の `tenant.purge-scan`）である。母集団の条件そのものは
+   *    SQL 関数の中にあり、ここは名前を選ぶだけ（`runtime.ts` の `fanOutToTenants` がそのまま渡す）。
+   */
+  readonly population?: SchedulerFanoutPopulation;
   readonly createHandler: (deps: ScheduledJobDeps) => (payload: unknown, jobId: string) => Promise<unknown>;
 };
 
@@ -509,5 +547,15 @@ export const SCHEDULED_JOBS: readonly ScheduledJobDeclaration[] = [
     cron: SEND_SETTLE_UNKNOWN_SCHEDULE.cron,
     timeZone: SEND_SETTLE_UNKNOWN_SCHEDULE.timeZone,
     createHandler: (deps) => createSendSettleUnknownHandler(deps),
+  },
+  // 🔴 T-10-12: 削除予告（docs/05 §9.7 / `F-064 AC-10`。毎日 02:08 JST）。**これが無いと**解約手続き中のテナントの管理者に
+  //    削除予定日が 1 通も届かず、`tenant.purge-scan`（T-10-09）は「予告が配送済み」を満たせないので削除も永久に進まない
+  //    （事故にはならないが、解約したテナントのデータが消せない）。🔴 母集団は `CLOSING`（既定の `LIVE` には含まれない）。
+  {
+    name: TENANT_CLOSING_NOTIFY_JOB,
+    cron: TENANT_CLOSING_NOTIFY_SCHEDULE.cron,
+    timeZone: TENANT_CLOSING_NOTIFY_SCHEDULE.timeZone,
+    population: TENANT_CLOSING_NOTIFY_POPULATION,
+    createHandler: (deps) => createTenantClosingNotifyHandler(deps),
   },
 ];

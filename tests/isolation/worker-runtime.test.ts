@@ -75,7 +75,8 @@ describe('🔴 受け入れ基準 ①: development でワーカーが起動し g
     // 🔴 T-10-03 で `usage.limit-check`（上限到達の判定・記録・通知）が加わった。
     // 🔴 T-09-06 で `send.proposal` の Worker（イベント起動。docs/05 §10.2）が加わった。
     // 🔴 T-09-07 で `send.settle-unknown`（`SUBMITTING` 滞留の確定。毎 10 分。docs/05 §10.6）が加わった。
-    expect(runtime.queues).toHaveLength(14);
+    // 🔴 T-10-12 で `tenant.closing-notify`（削除予告。毎日 02:08 JST。母集団 CLOSING。docs/05 §9.7）が加わった。
+    expect(runtime.queues).toHaveLength(15);
   });
 
   it('🔴 enqueue した gate.run が実際に消費される（対象が無い提案は TARGET_NOT_FOUND で完了する）', async () => {

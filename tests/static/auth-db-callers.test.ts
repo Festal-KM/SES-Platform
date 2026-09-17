@@ -176,6 +176,10 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
     // 🔴 T-09-07: `SUBMITTING` 滞留の確定（docs/05 §10.6。毎 10 分）。payload の `tenantId` からジョブ文脈を組み立て、
     //    **その文脈の RLS が母集団を決める**（他テナントの `SUBMITTING` を 1 件も読まない）。外部を呼ばず `APPROVED` にも戻さない。
     'apps/worker/src/jobs/send-settle-unknown.ts',
+    // 🔴 T-10-12: 削除予告（docs/05 §9.7。毎日 02:08 JST。母集団 `CLOSING`）。payload の `tenantId`（ファンアウトが確定させた値）
+    //    からジョブ文脈を組み立て、**その文脈の RLS が母集団を決める**（`tenants` の自社 1 行 / `email_dispatches` / `memberships`）。
+    //    メールを送らず `EmailDispatch` を予約して `email.dispatch` に積むだけ。`apps/web` 側には無い。
+    'apps/worker/src/jobs/tenant-closing-notify.ts',
   ],
   // 🔴 T-09-04: `APPROVED → SUBMITTING` の CAS（docs/05 §10.2 ③ / §11.5 手順 4）。**`SUBMITTING` に入れるのは
   //    送信ジョブだけ**（所有者 `SEND_JOB`。`CLAUDE.md` §4.2「`SUBMITTING` は片道」）であり、`apps/web` の HTTP 経路が
@@ -308,6 +312,8 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
     'apps/worker/src/jobs/account-mail.ts',
     'apps/worker/src/jobs/scan-quarantine-notice.ts',
     'apps/worker/src/jobs/usage-limit-notice.ts',
+    // 🔴 T-10-12: 削除予告（docs/05 §9.7）。`dedupeKey` に段と暦日を含めて予約し `email.dispatch` に積む（送らない）。
+    'apps/worker/src/jobs/tenant-closing-notify.ts',
   ],
   readEmailDispatch: ['apps/worker/src/jobs/email-dispatch.ts'],
   // 🔴 送信の 1 手順（判定 → 予約 → 送信 → CAS）は `email-send.ts` の 1 箇所だけが持つ。

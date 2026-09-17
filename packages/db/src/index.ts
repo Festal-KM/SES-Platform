@@ -704,3 +704,16 @@ export type {
 //    `#15` の 2 関数の組み合わせであり、フリーワードの照合は `search/free-word.ts` の 1 箇所のまま。
 export { engineerShareSearchWhere } from './search/index.js';
 export type { EngineerShareSearchCriteria } from './search/index.js';
+// 🔴 T-10-12: 削除予告（`tenant.closing-notify`。docs/05 §9.7 / `F-064 AC-10`）の材料と、🔴 **配送済み判定の 1 関数**
+//    （`readClosingNoticeDelivery`。T-10-09 の `tenant.purge-scan` / `tenant.purge` が両方これを呼ぶ）。
+//    `MOCKED` を配送済みとみなすかは引数の `appEnv`（起動時解決）から `packages/config` の `isAllMockEmailEnv` で決める。
+export {
+  readClosingNoticeDelivery,
+  readClosingNoticePhaseStatuses,
+  readTenantClosingSchedule,
+} from './tenant-closing-notice.js';
+export type { ClosingNoticeDeliveryInput, TenantClosingSchedule } from './tenant-closing-notice.js';
+// 🔴 T-10-12: ファンアウトの母集団（migration 20260926000000）。`LIVE`（既定）/ `CLOSING`。宣言側（`apps/worker/src/jobs/index.ts`）
+//    が型として参照する。`listSchedulerFanoutTenants` 自体の呼び出し元は `runtime.ts` 1 箇所のまま。
+export { SCHEDULER_FANOUT_POPULATIONS } from './scheduler-fanout.js';
+export type { SchedulerFanoutPopulation } from './scheduler-fanout.js';

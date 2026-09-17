@@ -22,7 +22,14 @@
 // 🔴 `packages/db` は `process.env` / `new Date()` を読まない。閾値と現在時刻は引数で受ける（他の材料と同じ規律）。
 // 🔴 保留（`send_hold_reason_key` / `HELD_*`）は**どの障害指標にも足さない**（`F-059 AC-7`）。項目 1 は `state='SUBMIT_FAILED'`
 //    だけ、項目 5 は `execution='DONE'` だけを数える。
-import { isSendHoldReasonKey, QUARANTINED_SCAN_STATUSES, SEND_HOLD_REASON_KEYS, type QuarantinedScanStatus, type SendHoldReasonKey } from '@ses/domain';
+import {
+  isSendHoldReasonKey,
+  QUARANTINED_SCAN_STATUSES,
+  SEND_HOLD_REASON_KEYS,
+  TENANT_CLOSING_NOTICE_TEMPLATE_KEY,
+  type QuarantinedScanStatus,
+  type SendHoldReasonKey,
+} from '@ses/domain';
 import type { AuthenticatedPlatformCtx } from '../../platform-context.js';
 import { withPlatformRead, type PlatformOp } from '../../platform.js';
 import type { EmailDispatchStatus, TenantPurgeCause } from '../../schema-value-sets.js';
@@ -35,8 +42,11 @@ const MILLISECONDS_PER_DAY = 86_400_000;
 /** 1 回の読み取りで返す行の上限（`listGateStalls` と同じ）。 */
 const ROWS_LIMIT = 500;
 
-/** 🔴 削除予告のテンプレート（docs/05 §9.7 `tenant.closing-notify`。T-10-12 が同じキーで書く）。 */
-export const TENANT_CLOSING_NOTICE_TEMPLATE_KEY = 'TENANT_CLOSING_NOTICE';
+/**
+ * 🔴 削除予告のテンプレート（docs/05 §9.7 `tenant.closing-notify`）。✅ T-10-12: 単一出所は `@ses/domain`
+ *    （`retention/closing-notice.ts`。起票する側と同じ値）。ここは `@ses/db/platform` の公開面を保つための re-export。
+ */
+export { TENANT_CLOSING_NOTICE_TEMPLATE_KEY };
 
 export type MonitoringRequestMeta = {
   readonly ipAddress?: string | null;

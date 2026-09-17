@@ -80,7 +80,12 @@ import {
   createRedisProviderSendCounter,
   type BullMqConnection,
 } from '@ses/connectors/bullmq';
-import { configureTenantDb, configureTokenEncryption, listSchedulerFanoutTenants } from '@ses/db';
+import {
+  configureTenantDb,
+  configureTokenEncryption,
+  listSchedulerFanoutTenants,
+  type SchedulerFanoutPopulation,
+} from '@ses/db';
 import {
   billingTermsNotRecorded,
   createAccountMailReissue,
@@ -368,6 +373,9 @@ export function startWorkerRuntime(config: RuntimeConfig, options: WorkerRuntime
     },
     // 🔴 T-09-07: send.settle-unknown（docs/05 §10.6）。閾値は `A-005` 項目 2（`readSubmittingStalls`）と同じキー。
     submittingStallMinutes: env.SUBMITTING_STALL_ALERT_MINUTES,
+    // 🔴 T-10-12: tenant.closing-notify（docs/05 §9.7）。削除予定日 = `closing_entered_at + TENANT_PURGE_GRACE_DAYS`。
+    //    `A-005` 項目 15（`readPurgeNoticePending` の `graceDays`）と同じキーから読む。
+    purgeGraceDays: env.TENANT_PURGE_GRACE_DAYS,
   };
 
   // --------------------------------------------------------------------------
@@ -417,7 +425,7 @@ export function startWorkerRuntime(config: RuntimeConfig, options: WorkerRuntime
   // --------------------------------------------------------------------------
   // 6. スケジュール（🔴 宣言（`SCHEDULED_JOBS`）を舐めるだけ。ここに名前を書き写さない。本数は宣言が決める
   //    —— T-07-11 で 5 本、T-08-07 で `proposal-request.expire`、T-10-02 で計測 4 本、T-10-03 で `usage.limit-check`、
-  //    T-09-07 で `send.settle-unknown` が加わり 12 本）
+  //    T-09-07 で `send.settle-unknown`、T-10-12 で `tenant.closing-notify` が加わり 13 本）
   // --------------------------------------------------------------------------
   const ready: Promise<void>[] = [];
   for (const declaration of SCHEDULED_JOBS) {
@@ -425,6 +433,8 @@ export function startWorkerRuntime(config: RuntimeConfig, options: WorkerRuntime
     //    片方だけに存在する名前は**起動時に落とす**（`requireQueueName` の 🔴）。
     const queueName = requireQueueName(declaration.name);
     const handler = declaration.createHandler(deps);
+    // 🔴 T-10-12: 母集団は宣言が選ぶ（省略 = `LIVE`）。ここで `if (name === ...)` を書かない。
+    const population = declaration.population;
     track(
       createBullMqWorker({
         queueName,
@@ -434,7 +444,7 @@ export function startWorkerRuntime(config: RuntimeConfig, options: WorkerRuntime
             jobName: declaration.name,
             jobId,
             now,
-            handler: () => fanOutToTenants(declaration.name, jobId, handler),
+            handler: () => fanOutToTenants(declaration.name, jobId, handler, population),
           }),
       }),
     );
@@ -483,9 +493,11 @@ function requireQueueName(name: string): QueueName {
 /**
  * 🔴 テナントのファンアウト（docs/05 §9.1「payload に `tenantId` を必ず含める」）。
  *
- * 🔴 **母集団を決めるのは DB 側**（`app_list_scheduler_tenants()`。`SANDBOX` / `ACTIVE` のみ）。
+ * 🔴 **母集団を決めるのは DB 側**（`app_list_scheduler_tenants(population)`。既定 `LIVE` = `SANDBOX` / `ACTIVE`）。
  *    ここで `where` を書き足さない —— 条件が 2 箇所に分かれると片方だけが古くなる。
- *    判断とその理由は migration 20260915000000 の判断事項 3 / docs/05 §9.1 にある。
+ *    判断とその理由は migration 20260915000000 の判断事項 3 / 20260926000000 / docs/05 §9.1 にある。
+ * 🔴 T-10-12: `population` は宣言（`ScheduledJobDeclaration.population`）から来る。`CLOSING` を渡すのは解約手続き中の
+ *    テナントだけを対象にするジョブ（`tenant.closing-notify`）であり、省略すれば従来どおり。
  * 🔴 **1 テナントの失敗で他のテナントを止めない。** 止めると、1 社の設定不備で全社の
  *    満了アラートやゲート復帰が落ちる。失敗は数えて `SchedulerRun.detail` に残し、
  *    **1 件でも失敗したら最後に throw する**（BullMQ の失敗ジョブとして `A-005` に出す）。
@@ -496,8 +508,9 @@ export async function fanOutToTenants(
   jobName: string,
   jobId: string,
   handler: (payload: unknown, jobId: string) => Promise<unknown>,
+  population: SchedulerFanoutPopulation = 'LIVE',
 ): Promise<SchedulerRunDetail> {
-  const tenantIds = await listSchedulerFanoutTenants();
+  const tenantIds = await listSchedulerFanoutTenants(population);
   let succeeded = 0;
   let failed = 0;
   let lastError: unknown = null;

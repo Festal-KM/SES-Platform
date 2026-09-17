@@ -16,6 +16,7 @@
     "@ses/config": "workspace:*",
     "@ses/connectors": "workspace:*",
     "@ses/db": "workspace:*",
-    "@ses/domain": "workspace:*"
+    "@ses/domain": "workspace:*",
+    "@ses/i18n": "workspace:*"
   }
 }

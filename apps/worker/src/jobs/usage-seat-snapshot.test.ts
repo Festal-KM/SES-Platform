@@ -204,6 +204,9 @@ describe('スケジュール宣言（docs/05 §9.8 / §9.1）', () => {
       // 🔴 T-09-07: `send.settle-unknown`（毎 10 分）の deps。埋め忘れるとコンパイルエラーになる
       //    （＝ 起動配線が「`SUBMITTING` の滞留を誰も確定しない」状態で立ち上がれない）。
       submittingStallMinutes: 30,
+      // 🔴 T-10-12: `tenant.closing-notify`（毎日 02:08 JST）の deps。埋め忘れるとコンパイルエラーになる
+      //    （＝ 起動配線が「解約中のテナントに削除予定日を誰も知らせない」状態で立ち上がれない）。
+      purgeGraceDays: 30,
     };
   }
 });

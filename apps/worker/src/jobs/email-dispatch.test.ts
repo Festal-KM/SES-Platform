@@ -140,10 +140,17 @@ describe('createEmailDispatchHandler', () => {
     const resolveTemplateParams = vi.fn(async () => ({ tenantName: '架空商事' }));
     const { handler, send } = makeHandler(resolveTemplateParams);
     await handler(VALID, 'j-1');
-    expect(resolveTemplateParams).toHaveBeenCalledWith({
-      templateKey: 'TENANT_CLOSING_NOTICE',
-      dispatchId: DISPATCH_ID,
-    });
+    // ✅ T-10-12: 行の `dedupeKey`（段の復元に使う）とテナント文脈も渡す。宛先・本文は渡さない。
+    expect(resolveTemplateParams).toHaveBeenCalledWith(
+      {
+        templateKey: 'TENANT_CLOSING_NOTICE',
+        dispatchId: DISPATCH_ID,
+        dedupeKey: 'TENANT_CLOSING_NOTICE:t:abcdef0123456789',
+      },
+      expect.objectContaining({ tenantId: TENANT_ID, partnerCompanyId: null, job: { queue: 'email.dispatch', jobId: 'j-1' } }),
+    );
+    const [ref] = resolveTemplateParams.mock.calls[0] as unknown as [Record<string, unknown>];
+    expect(Object.keys(ref).sort()).toEqual(['dedupeKey', 'dispatchId', 'templateKey']);
     expect(send.mock.calls[0]?.[0].params).toEqual({ tenantName: '架空商事' });
   });
 });

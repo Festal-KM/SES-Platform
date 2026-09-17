@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from 'vitest';
 import type { ConnectorSelection } from './connector-selection.js';
-import { assertNoMockInProduction, resolveConnectorSelection } from './connector-selection.js';
+import { assertNoMockInProduction, isAllMockEmailEnv, resolveConnectorSelection } from './connector-selection.js';
 import { ProductionMockConnectorError } from './errors.js';
 import { loadAppEnv } from './load-env.js';
 import { allAppEnvKinds, buildValidEnv } from './testing/fixtures.js';
@@ -71,6 +71,31 @@ describe('🔴 production では mock が 1 件も選択されない（NFR-ENV-3
     expect(selection.esign).toBe('mock');
     expect(Object.values(selection)).not.toContain('sandboxRecipientScoped');
     expect(Object.values(selection)).not.toContain('real');
+  });
+});
+
+// ✅ T-10-12: `EmailDispatch.status='MOCKED'` を「配送済み」とみなしてよい環境（docs/05 §9.7 `tenant.purge-scan`）。
+//    判定は上の選択表（`email` 区分）から導かれ、環境名の列挙をテスト側にも実装側にも持たない。
+describe('🔴 isAllMockEmailEnv — MOCKED を配送済みとみなせるのは email が mock の環境だけ（docs/05 §9.7）', () => {
+  it('development / demo は true（送信系が全てモック）', () => {
+    expect(isAllMockEmailEnv('development')).toBe(true);
+    expect(isAllMockEmailEnv('demo')).toBe(true);
+  });
+
+  it('🔴 sandbox は false（分類 1 は実送信されるため MOCKED は「届いていない」の記録）', () => {
+    expect(isAllMockEmailEnv('sandbox')).toBe(false);
+  });
+
+  it('staging / production は false', () => {
+    expect(isAllMockEmailEnv('staging')).toBe(false);
+    expect(isAllMockEmailEnv('production')).toBe(false);
+  });
+
+  it('判定は選択表の email 区分と一致する（表が変われば同時に変わる）', () => {
+    for (const kind of allAppEnvKinds()) {
+      const selection = resolveConnectorSelection(loadAppEnv(buildValidEnv(kind)));
+      expect(isAllMockEmailEnv(kind), `APP_ENV=${kind}`).toBe(selection.email === 'mock');
+    }
   });
 });
 

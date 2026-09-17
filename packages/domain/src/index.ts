@@ -123,3 +123,8 @@ export * from './audit/index.js';
 //    入力は件数・状態・日時だけ（内容を取らない）。`now` と閾値は引数で受け、重みだけを定数として持つ
 //    （運用の並び順であり事業判断ではない）。材料を揃えるのは `packages/db/src/platform`、閾値の出所は `packages/config`。
 export * from './health/index.js';
+// 🔴 T-10-12: 削除予告（`tenant.closing-notify`。docs/05 §9.7 / `F-064 AC-10`）の判定 —— 2 段の期日（JST 暦日）/
+//    未処理判定 / 🔴 配送済み判定（`tenant.purge-scan` / `tenant.purge` の enqueue・再評価条件）/ `dedupeKey` の規約。
+//    起票する側（`apps/worker`）と配送確認を読む側（`packages/db`）が同じ 1 実装を見る。`MOCKED` を配送済みとみなすかは
+//    引数で受ける（環境の判定は `packages/config` の `isAllMockEmailEnv`）。
+export * from './retention/index.js';

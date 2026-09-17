@@ -3273,6 +3273,21 @@ const ja = {
   'prefecture.45': '宮崎県',
   'prefecture.46': '鹿児島県',
   'prefecture.47': '沖縄県',
+
+  // --- F-064 AC-10 削除予告メール（docs/05 §9.7 `tenant.closing-notify`。T-10-12）---
+  // 🔴 本文に載せるのは**テナント名・削除予定日・返却画面の URL**だけ（`operational-mail-params.ts` が組み立てる）。
+  //    件数の内訳・エンジニア名・連絡先・単価を載せない（メールは監査もアクセス制御もできない場所。docs/05 §16.2）。
+  //    プレースホルダを持たず、値との連結は組み立て側が行う（`usage.remaining.prefix` 等と同じ作法）。
+  'email.tenantClosingNotice.subject': 'データ削除の予告 — 解約手続き中のテナントのデータは削除予定日に削除されます',
+  'email.tenantClosingNotice.greeting.suffix': ' ご担当者様',
+  'email.tenantClosingNotice.lead.ENTERED':
+    '解約手続きに入ったため、次の日付にこのテナントのデータ（エンジニアの連絡先・スキルシート原本・チャット本文）を削除します。削除後は復元できません。',
+  'email.tenantClosingNotice.lead.D7':
+    '削除予定日まで 7 日を切りました。次の日付にこのテナントのデータ（エンジニアの連絡先・スキルシート原本・チャット本文）を削除します。削除後は復元できません。',
+  'email.tenantClosingNotice.purgeDate.prefix': '削除予定日: ',
+  'email.tenantClosingNotice.purgeDate.suffix': '（日本時間）',
+  'email.tenantClosingNotice.export.lead': '削除までの間、データの返却（CSV）は次のページから行えます。',
+  'email.tenantClosingNotice.contact': 'ご不明な点は、本サービスの運営者までお問い合わせください。',
 } as const;
 
 /** 🔴 文言キーの単一の出所。存在しないキーはコンパイルエラーになる。 */

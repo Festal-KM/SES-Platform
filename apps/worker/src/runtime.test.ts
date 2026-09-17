@@ -114,6 +114,26 @@ describe('🔴 テナントのファンアウト（docs/05 §9.1）', () => {
     });
     expect(handler).not.toHaveBeenCalled();
   });
+
+  // ✅ T-10-12: 母集団は宣言から渡る（migration 20260926000000）。既定は LIVE、`tenant.closing-notify` だけ CLOSING。
+  it('🔴 T-10-12: 母集団を省略すれば LIVE、宣言が CLOSING を持てばそのまま DB 側の関数へ渡す', async () => {
+    listSchedulerFanoutTenants.mockResolvedValue([]);
+    const handler = vi.fn();
+
+    await fanOutToTenants('gate.hold-release', 'repeat:gate.hold-release:1', handler);
+    expect(listSchedulerFanoutTenants).toHaveBeenLastCalledWith('LIVE');
+
+    await fanOutToTenants('tenant.closing-notify', 'repeat:tenant.closing-notify:1', handler, 'CLOSING');
+    expect(listSchedulerFanoutTenants).toHaveBeenLastCalledWith('CLOSING');
+  });
+
+  it('🔴 T-10-12: SCHEDULED_JOBS のうち CLOSING を母集団にするのは tenant.closing-notify だけ', () => {
+    const closing = SCHEDULED_JOBS.filter((declaration) => declaration.population === 'CLOSING').map((d) => d.name);
+    expect(closing).toEqual(['tenant.closing-notify']);
+    for (const declaration of SCHEDULED_JOBS) {
+      expect(declaration.population ?? 'LIVE', declaration.name).toMatch(/^(LIVE|CLOSING)$/);
+    }
+  });
 });
 
 describe('🔴 宣言とキュー定義が食い違わない（T-07-11）', () => {
@@ -126,7 +146,7 @@ describe('🔴 宣言とキュー定義が食い違わない（T-07-11）', () =
     expect(missing).toEqual([]);
   });
 
-  it('スケジュール宣言は 12 本である（docs/05 §9.1 / SP-07 T-07-11 + T-08-07 の `proposal-request.expire` + T-10-02 の計測 4 本 + T-10-03 の `usage.limit-check` + T-09-07 の `send.settle-unknown`）', () => {
+  it('スケジュール宣言は 13 本である（docs/05 §9.1 / SP-07 T-07-11 + T-08-07 の `proposal-request.expire` + T-10-02 の計測 4 本 + T-10-03 の `usage.limit-check` + T-09-07 の `send.settle-unknown` + T-10-12 の `tenant.closing-notify`）', () => {
     expect(SCHEDULED_JOBS.map((declaration) => declaration.name).sort()).toEqual([
       'cost.monthly-rollup',
       'domain.recheck',
@@ -135,6 +155,7 @@ describe('🔴 宣言とキュー定義が食い違わない（T-07-11）', () =
       'scan.poll',
       'send.hold-release',
       'send.settle-unknown',
+      'tenant.closing-notify',
       'usage.daily-rollup',
       'usage.gap-check',
       'usage.limit-check',

@@ -199,6 +199,8 @@ function emailDispatchDeps(): EmailDispatchDeps {
     //    テスト専用の `() => ({})` を渡すと、テンプレート未登録の検出が空振りする。
     resolveTemplateParams: createOperationalMailParamsResolver({
       appUrl: 'https://sandbox.example.test',
+      // T-10-12: 削除予告の差し込みが要る猶予日数（`TENANT_PURGE_GRACE_DAYS` の既定）。本ファイルのテンプレートは使わない。
+      purgeGraceDays: 30,
     }),
   };
 }

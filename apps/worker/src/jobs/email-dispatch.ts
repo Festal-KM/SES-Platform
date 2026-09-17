@@ -20,7 +20,7 @@ import {
   type OperationalMailDispatch,
   type RecipientClass,
 } from '@ses/connectors';
-import { readEmailDispatch, systemTenantCtx } from '@ses/db';
+import { readEmailDispatch, systemTenantCtx, type SystemTenantCtx } from '@ses/db';
 import { performEmailSend, type EmailSendDeps, type EmailSendOutcome } from './email-send.js';
 import { InvalidJobPayloadError, requireUuid } from './payload.js';
 
@@ -85,9 +85,13 @@ export type EmailDispatchDeps = EmailSendDeps & {
    * 🔴 `EmailDispatch` は差し込み値の列を持たない（docs/05 §3.9）。運用メールのテンプレートを
    *    導入するタスク（`F-027` の上限接近通知 = SP-10、`F-064` の削除予告 = SP-10）が、
    *    テンプレートごとの解決をここに与える。**空を既定にしない**ため必須引数にしてある。
+   * ✅ T-10-12: 行の `dedupeKey` とテナント文脈（`ctx`）も渡す。削除予告（`TENANT_CLOSING_NOTICE`）が
+   *    削除予定日（`tenants.closing_entered_at + 猶予`）と段（`dedupeKey` の `targetId`）を本文に載せるため。
+   *    宛先・本文は渡さない（差し込み値の組み立てに宛先は要らない）。
    */
   readonly resolveTemplateParams: (
-    dispatch: { readonly templateKey: string; readonly dispatchId: string },
+    dispatch: { readonly templateKey: string; readonly dispatchId: string; readonly dedupeKey: string },
+    ctx: SystemTenantCtx,
   ) => Promise<Readonly<Record<string, unknown>>>;
 };
 
@@ -108,10 +112,14 @@ export function createEmailDispatchHandler(deps: EmailDispatchDeps): EmailDispat
     return performEmailSend(deps, {
       ctx,
       dispatch,
-      params: await deps.resolveTemplateParams({
-        templateKey: dispatch.templateKey,
-        dispatchId: dispatch.dispatchId,
-      }),
+      params: await deps.resolveTemplateParams(
+        {
+          templateKey: dispatch.templateKey,
+          dispatchId: dispatch.dispatchId,
+          dedupeKey: dispatch.dedupeKey,
+        },
+        ctx,
+      ),
     });
   };
 }

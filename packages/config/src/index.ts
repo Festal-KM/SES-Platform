@@ -21,6 +21,8 @@ export { EnvValidationError, ProductionMockConnectorError, type EnvValidationIss
 export {
   resolveConnectorSelection,
   assertNoMockInProduction,
+  // 🔴 T-10-12: `EmailDispatch.status='MOCKED'` を配送済みとみなせる環境か（docs/05 §9.7）。選択表と同じ出所。
+  isAllMockEmailEnv,
   type ConnectorCategory,
   type ConnectorImplementationKind,
   type ConnectorSelection,

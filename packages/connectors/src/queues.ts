@@ -162,6 +162,11 @@ export const INTERNAL_JOB_NAMES = [
   //    運用メールを `email.dispatch` に積むだけ）ので `attempts: 3` を許せる。冪等性は
   //    `(tenant_id, metric)` の upsert と、`EmailDispatch.dedupeKey`（暦日を含む）の `UNIQUE` が担う。
   'usage.limit-check',
+  // 🔴 T-10-12（docs/05 §9.7 / docs/02 F-064 AC-10）。削除予告（`CLOSING → PURGED` の 2 段。毎日 02:08 JST）。
+  //    **メールを 1 通も送らない**（`EmailDispatch` を予約して `email.dispatch` を積むだけ）ので `attempts: 3` を許せる。
+  //    冪等性は「期限を過ぎ、かつ未処理」の起票条件と `EmailDispatch.dedupeKey`（段 + 暦日を含む）の `UNIQUE` が担う。
+  //    🔴 母集団は `CLOSING` のテナント（`ScheduledJobDeclaration.population = 'CLOSING'`。migration 20260926000000）。
+  'tenant.closing-notify',
 ] as const;
 
 export type InternalJobName = (typeof INTERNAL_JOB_NAMES)[number];
@@ -291,6 +296,9 @@ export const QUEUE_DEFINITIONS = {
   'cost.monthly-rollup': internalQueue('cost.monthly-rollup', { attempts: 3 }),
   // 🔴 T-10-03（docs/02 F-027）。水準の評価・記録・通知（毎 10 分）。読み取り + 冪等な upsert + `dedupeKey`。
   'usage.limit-check': internalQueue('usage.limit-check', { attempts: 3 }),
+  // 🔴 T-10-12（docs/05 §9.7 の表のとおり `attempts: 3`）。削除予告の起票（毎日 02:08 JST）。読み取り + `dedupeKey` の
+  //    `UNIQUE`。`jobId` はスケジュールの slot であり冪等キーではないため `removeOnComplete` を付けない。
+  'tenant.closing-notify': internalQueue('tenant.closing-notify', { attempts: 3 }),
 } as const;
 
 // ---------------------------------------------------------------------------

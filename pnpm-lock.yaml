@@ -123,6 +123,9 @@ importers:
       '@ses/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@ses/i18n':
+        specifier: workspace:*
+        version: link:../../packages/i18n
 
   packages/ai:
     dependencies:

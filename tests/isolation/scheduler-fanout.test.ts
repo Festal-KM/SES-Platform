@@ -105,6 +105,65 @@ describe('🔴 ファンアウトの母集団（docs/05 §9.1 / migration 202609
   });
 });
 
+// ✅ T-10-12（migration 20260926000000）: 母集団を引数で選ぶ。`CLOSING` は解約手続き中のテナントだけを返す
+//    （docs/05 §9.7 `tenant.closing-notify` / `tenant.purge-scan` の配り先）。関数・ロール・GUC は 1 本のまま。
+describe('🔴 T-10-12: 母集団 CLOSING（migration 20260926000000 の判断事項 1 / 2）', () => {
+  it('CLOSING のテナントだけを返す（SANDBOX / ACTIVE / SUSPENDED / PURGED は 1 件も返さない）', async () => {
+    const tenantIds = await listSchedulerFanoutTenants('CLOSING');
+
+    expect(tenantIds).toEqual([TENANT_CLOSING]);
+  });
+
+  it('明示の LIVE は省略時と同じ母集団（SANDBOX / ACTIVE）', async () => {
+    expect([...(await listSchedulerFanoutTenants('LIVE'))].sort()).toEqual([...(await listSchedulerFanoutTenants())].sort());
+    expect(await listSchedulerFanoutTenants('LIVE')).not.toContain(TENANT_CLOSING);
+  });
+
+  it('🔴 解約 → 削除でそのまま母集団から外れる（状態を見るだけで、別の台帳を持たない）', async () => {
+    await insertTenant(TENANT_CLOSING, 'PURGED');
+    expect(await listSchedulerFanoutTenants('CLOSING')).not.toContain(TENANT_CLOSING);
+
+    await insertTenant(TENANT_CLOSING, 'CLOSING');
+    expect(await listSchedulerFanoutTenants('CLOSING')).toContain(TENANT_CLOSING);
+  });
+
+  it('🔴 未知の母集団は例外（0 件で誤魔化さない。状態の配列も受け付けない）', async () => {
+    await expect(
+      admin.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(`SELECT set_config('app.tenant_id', '', true), set_config('app.scheduler_scope', 'on', true)`);
+        return tx.$queryRawUnsafe(`SELECT app_list_scheduler_tenants('SUSPENDED')`);
+      }),
+    ).rejects.toThrow(/未知の母集団/u);
+  });
+
+  it('CLOSING でも fail-closed は同じ（scheduler_scope 無し / テナント文脈ありは例外）', async () => {
+    await expect(
+      admin.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(`SELECT set_config('app.tenant_id', '', true)`);
+        return tx.$queryRawUnsafe(`SELECT app_list_scheduler_tenants('CLOSING')`);
+      }),
+    ).rejects.toThrow();
+    await expect(
+      admin.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(
+          `SELECT set_config('app.tenant_id', $1, true), set_config('app.scheduler_scope', 'on', true)`,
+          TENANT_A,
+        );
+        return tx.$queryRawUnsafe(`SELECT app_list_scheduler_tenants('CLOSING')`);
+      }),
+    ).rejects.toThrow();
+  });
+
+  it('関数は 1 本だけ（引数無しの旧シグネチャが残っていない）', async () => {
+    const rows = await admin.$queryRawUnsafe<Array<{ args: string }>>(
+      `SELECT pg_get_function_identity_arguments(p.oid) AS args
+         FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = 'public' AND p.proname = 'app_list_scheduler_tenants'`,
+    );
+    expect(rows.map((row) => row.args)).toEqual(['p_population text']);
+  });
+});
+
 describe('🔴 限定経路そのものが fail-closed である（docs/05 §4.4.2）', () => {
   it('app.scheduler_scope が立っていなければ例外になる（0 件で誤魔化さない）', async () => {
     await expect(

@@ -10,7 +10,7 @@
 // 🔴 リクエストごとの `if (APP_ENV === ...)` 分岐にしない。`resolveConnectorSelection` は
 // 起動時に一度だけ呼び、結果を DI コンテナに保持する。
 
-import { assertNever } from './app-env.js';
+import { assertNever, type AppEnvKind } from './app-env.js';
 import { ProductionMockConnectorError } from './errors.js';
 import type { AppEnv } from './schema.js';
 
@@ -115,29 +115,43 @@ export function assertNoMockInProduction(env: Pick<AppEnv, 'APP_ENV'>, selection
   }
 }
 
-/** 🔴 唯一の分岐点。apps/web の instrumentation.ts / apps/worker の起動処理から 1 回だけ呼ぶ。 */
-export function resolveConnectorSelection(env: AppEnv): ConnectorSelection {
-  const kind = env.APP_ENV;
-  let selection: ConnectorSelection;
+/** `APP_ENV` → 選択表（上の 5 関数）。`resolveConnectorSelection` と `isAllMockEmailEnv` が同じ表を読む。 */
+function selectionFor(kind: AppEnvKind): ConnectorSelection {
   switch (kind) {
     case 'development':
-      selection = developmentSelection();
-      break;
+      return developmentSelection();
     case 'demo':
-      selection = demoSelection();
-      break;
+      return demoSelection();
     case 'sandbox':
-      selection = sandboxSelection();
-      break;
+      return sandboxSelection();
     case 'staging':
-      selection = stagingSelection();
-      break;
+      return stagingSelection();
     case 'production':
-      selection = productionSelection();
-      break;
+      return productionSelection();
     default:
       return assertNever(kind, 'resolveConnectorSelection');
   }
+}
+
+/** 🔴 唯一の分岐点。apps/web の instrumentation.ts / apps/worker の起動処理から 1 回だけ呼ぶ。 */
+export function resolveConnectorSelection(env: AppEnv): ConnectorSelection {
+  const selection = selectionFor(env.APP_ENV);
   assertNoMockInProduction(env, selection);
   return selection;
+}
+
+/**
+ * 🔴 T-10-12: その環境では**メールの全宛先分類がモック**で終わるか（docs/05 §9.7 / §13.2）。
+ *
+ * `EmailDispatch.status='MOCKED'`（疑似送信の記録）を「配送済み」とみなしてよいのは、送信系が全てモックの
+ * 環境（`email: 'mock'` = `development` / `demo`）だけである。`sandbox`（`sandboxRecipientScoped`）では分類 1 が
+ * 実送信されるため `MOCKED` は「届いていない」の記録であり、削除予告の配送確認（`tenant.purge-scan`）の
+ * 根拠にできない。
+ *
+ * 🔴 判定の出所は上の選択表そのもの（`selectionFor(...).email`）であり、環境名の列挙をここに書かない。
+ *    `packages/connectors` の `isMockedDelivery`（`delivery-mode.ts`）が実装種別 `mock` を「全分類モック」と
+ *    読むのと同じ根拠になる（表が変わればどちらも同時に変わる）。
+ */
+export function isAllMockEmailEnv(appEnv: AppEnvKind): boolean {
+  return selectionFor(appEnv).email === 'mock';
 }
