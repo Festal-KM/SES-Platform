@@ -89,7 +89,8 @@ export type PlatformAction = (typeof PLATFORM_ACTIONS)[number];
 // ---------------------------------------------------------------------------
 
 /**
- * 🔴 `app_platform` に列レベル `GRANT SELECT` がある 53 表（migration 20260904010000 §2 + 20260917000000）と
+ * 🔴 `app_platform` に列レベル `GRANT SELECT` がある 56 表（migration 20260904010000 §2 + 20260917000000 + 20260919000000 +
+ *    20260920000000 + 20260924000000）と
  *    1 対 1 の一覧。ここに無いモデルは `PlatformReadDb` の型に現れない。
  *
  * 射程外の 4 表（`skills` / `platform_users` / `plans` / `subscriptions`。`CLAUDE.md` §3.1）は
@@ -151,6 +152,7 @@ export const PLATFORM_READABLE_MODELS = [
   'billingMeterSubmission',
   'usageMeasurementFinding', // T-10-02（docs/05 §9.8 / §16.5。`A-005` の材料。全列が件数・状態・数値）
   'usageLimitState', // T-10-03（docs/02 F-027 / docs/05 §5.8。`F-057` / `A-004` の材料。全列が水準・期間・時刻）
+  'tenantQuotaOverride', // T-11-02（docs/02 F-057 / docs/05 §6.9 API-A6。`A-004` の材料。全列が計測・数値・日付・ID・運営者の記述）
 ] as const satisfies readonly (keyof PlatformTransactionClient)[];
 
 export type PlatformReadableModel = (typeof PLATFORM_READABLE_MODELS)[number];
@@ -208,7 +210,9 @@ export type PlatformWriteDomain = (typeof PLATFORM_WRITE_DOMAINS)[number];
  */
 export const PLATFORM_WRITE_DOMAIN_MODELS = {
   SUBSCRIPTION: ['plan', 'subscription'],
-  QUOTA: ['subscription', 'usageCounter'],
+  // 🔴 T-11-02: クォータの上書きは `tenant_quota_overrides` に INSERT だけで積む（docs/05 §5.2 の 4 表目。`subscription` /
+  //    `usageCounter` は SP-20 の `A-010` で GRANT と同時に配線する。それまで触れば DB が permission denied を返す）。
+  QUOTA: ['tenantQuotaOverride', 'subscription', 'usageCounter'],
   FEATURE_FLAG: ['announcement'],
   ANNOUNCEMENT: ['announcement'],
   TENANT_LIFECYCLE: ['tenant'],

@@ -71,6 +71,34 @@ export type {
 // `F-057` / `A-004`（運用者の利用量監視）の「上限接近・到達」の材料（T-10-03。画面は SP-11 / SP-20）。
 export { listUsageLimitAlerts } from './queries/usage-limits.js';
 export type { UsageLimitAlert, UsageLimitAlerts } from './queries/usage-limits.js';
+// `A-004` 利用量・クォータ管理（API-A6。`F-057` / `F-063 AC-5`。T-11-02）。
+// 🔴 `readPlatformUsage` は 1 回の `withPlatformRead`（`admin.usage.view`）で件数と金額の両方 + 消費率 + 2 つの倍率を返す。
+//    金額（USD）は運営者向けにのみ返す —— **この DTO を主平面（`GET /api/usage` 系）に写さない**（`F-027 AC-6`）。
+// 🔴 `setTenantQuotaOverride` は `PLATFORM_OWNER` のみ（`PlatformOwnerCtx`）。`tenant_quota_overrides` への INSERT だけ
+//    （`withPlatformWrite(domain='QUOTA')`）。引き下げは翌日以降 + 通知の確認が必須（`decideQuotaChange`。`F-057 AC-3`）。
+export { readPlatformUsage, summarizePlatformUsage } from './queries/usage.js';
+export type {
+  PlatformCountQuotaView,
+  PlatformQuotaSourceView,
+  PlatformTenantUsage,
+  PlatformUsageMeta,
+  PlatformUsageSnapshot,
+  PlatformUsageSummaryInput,
+  PlatformUsageTenantFact,
+  QuotaOverrideFact,
+  UsageCounterFact,
+  UsageLimitStateFact,
+} from './queries/usage.js';
+export {
+  QUOTA_OVERRIDE_REASON_MAX_LENGTH,
+  QuotaOverrideTenantNotFoundError,
+  setTenantQuotaOverride,
+} from './queries/quota-overrides.js';
+export type {
+  SetTenantQuotaOverrideInput,
+  SetTenantQuotaOverrideMeta,
+  SetTenantQuotaOverrideResult,
+} from './queries/quota-overrides.js';
 // 応答のシリアライザ（docs/05 §5.5 第 2 層）。ルートが型を再宣言せずに参照できるようにする。
 export {
   toPlatformTenantDetail,

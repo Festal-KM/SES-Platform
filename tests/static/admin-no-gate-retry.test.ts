@@ -24,7 +24,7 @@
 //      無く、`PLATFORM_ACTIONS` にゲート・再実行・ジョブ操作を名乗る action が無い（型で閉じている構造を走査で写す）
 //   ⑤ 管理平面の URL に `gate` / `retry` / `rerun` / `jobs` / `queues` のセグメントが無く、
 //      **書き込みメソッド（POST / PUT / PATCH / DELETE）を持つ管理平面 API は固定の一覧と一致する**
-//      （認証 4 本 + テナント開設 + 初期 `OWNER` 招待。増やすのは `CLAUDE.md` §10.5 の列挙に対応する意識的な変更）
+//      （認証 4 本 + テナント開設 + 初期 `OWNER` 招待 + クォータ上書き〔T-11-02〕。増やすのは `CLAUDE.md` §10.5 の列挙に対応する意識的な変更）
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -113,6 +113,10 @@ const ALLOWED_MUTATING_ADMIN_ROUTES: ReadonlyMap<string, readonly string[]> = ne
   ['/api/admin/auth/2fa/verify', ['POST']],
   ['/api/admin/tenants', ['POST']],
   ['/api/admin/tenants/{}/owner-invitation', ['POST']],
+  // 🔴 T-11-02: API-A6 のクォータ上書き（`CLAUDE.md` §10.5 の列挙「クォータ」に対応する意識的な追加。6 本 → 7 本）。
+  //    `tenant_quota_overrides` への INSERT のみ（`withPlatformWrite(domain='QUOTA')`）。`PLATFORM_OWNER` のみ（`requirePlatformOwnerCtx`）。
+  //    ゲート・提案・再送には触れない（`tests/static/admin-tenants-read-only.test.ts` が根拠と一緒に固定する）。
+  ['/api/admin/tenants/{}/quota', ['PUT']],
 ]);
 
 const MUTATING_HTTP_METHODS: ReadonlySet<string> = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);

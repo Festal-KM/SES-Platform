@@ -34,6 +34,7 @@
 | T-12-09 | 🔴 **本番 / `sandbox` の AWS アカウント分離**（E-2）+ **GuardDuty スキャン所要時間の実測**（E-13） | 🔴 本番と `sandbox` が**別 AWS アカウント**に分かれ、非本番の認証情報で本番リソースへ到達できない。**GuardDuty のスキャン所要時間が実測され記録されている** | `docs/03` §3.2.8 / E-2 / E-13 | M |
 | T-12-10 | 🔴 **公開後の公開欄の編集と再検査（[Issue #42](https://github.com/Festal-KM/SES-Platform/issues/42)）の決着** | 決定が記録され、推奨（再検査）を採る場合は実装とテストまで完了している | `F-014 AC-3` / `F-020` | S〜M |
 | 🔴 **T-12-11** | 🔴 **第 1 回リリースの準備**（[Issue #46](https://github.com/Festal-KM/SES-Platform/issues/46)。**リリースに何が要るかの洗い出し自体がこのタスクの一部である**） | 🔴 **§4 の受け入れ基準 ①〜⑨ をすべて満たす。** 本番環境・`production` の起動時検証・障害対応手順・**手動請求の算出根拠**・**契約書はメール添付という制約の明示**・SP-21 の完了 | `CLAUDE.md` §11 / §10.4 / `docs/dev-plan.md` §2.2 / §5 E-16 | L |
+| T-12-12 | 🔴 **メール / ストレージのクォータ上書きの執行点配線**（T-11-02 NG-1 の後続） | 執行点（`email-send.ts` / `send-hold-release.ts` / `issueSkillSheetUploadUrl`）が `tenant_quota_overrides` の上書き行を読み、上限の上げ下げが実際の送信・アップロードの挙動に反映される | `docs/05` §5.2 / §5.8.1 ⑧ | M |
 
 ## 4. タスク詳細
 
@@ -206,6 +207,20 @@
   9. **リリース判定を `MODE: REVIEW` / `TARGET: Phase 1` で行い、`## PHASE_COMPLETE` を得たことを記録すること。** 🔴 **別のリリース手順を作らない**（手順が 2 つあると片方だけ通してリリースする経路ができる。`docs/dev-plan.md` §7）。
 - 🔴 **本タスクはコードを伴わない項目が中心だが、スプリントのタスクとして扱う**（`T-01-09` / `T-12-09` と同じ扱い）。**実施日・確認結果・作成した文書のパスを `docs/dev-plan.md` §8 の意思決定ログに追記する。**
 - **完了の判定**: ①〜⑨ のすべてに証跡（記録・文書のパス・確認日）があること。🔴 **1 つでも欠けたらリリースしない。**
+
+### T-12-12 🔴 メール / ストレージのクォータ上書きの執行点配線（T-11-02 NG-1 の後続）（M）
+
+- **背景**: `T-11-02`（利用量・クォータ管理と `A-004`）の code-reviewer レビュー（NG-1。2026-09-16）で、`tenant_quota_overrides` の上書きが `EMAIL_COUNT` / `STORAGE_BYTES` を含む 6 計測で実装され、**表示（`A-004`）と `usage.limit-check` の判定にだけ効き、実際の執行点は既定値を読んでいた**ことが発覚した（「停止と表示されているのに送信される」「上限を上げたのに保留される」事故になる）。応急処置として `QUOTA_OVERRIDE_METRICS` を **AI の月次件数 4 単位のみ**に絞り、`EMAIL_COUNT` / `STORAGE_BYTES` を上書きの対象から外した（NG-1 の修正 (b)）。**本タスクは、その 2 計測を安全に再導入するための配線である。**
+- **実装**: 次の 3 か所を `resolveTenantQuotas`（`packages/db/src/quota-overrides.ts`）から読むように配線する。
+  1. `apps/worker/src/jobs/email-send.ts` の `decideEmailRate` / `reserveEmailDailyQuota` — テナントの日次メール上限を既定値ではなく `resolveTenantQuotas(...).emailDailyLimit` から取る。
+  2. `apps/worker/src/jobs/send-hold-release.ts` — `HELD_DOMAIN_UNVERIFIED` 等の復帰判定でメール上限を再評価する箇所を同様に配線する。
+  3. `apps/web/lib/skill-sheets/service.ts` の `issueSkillSheetUploadUrl`（`decideStorageUpload`）— ストレージ上限を `resolveTenantQuotas(...).storageLimitBytes` から取る。
+- 🔴 **設計判断点（着手前に決める）**:
+  - **パートナー文脈での読み取り**: `resolveTenantQuotas` は `HostTenantCtx` を要求するが、`issueSkillSheetUploadUrl` は `PARTNER_*` ロールからも呼ばれる（パートナーが自社のスキルシートをアップロードする）。`HostTenantCtx` 要求のままでは型が通らない。**`usage_counters_storage_select`（migration 20260907000000 §2。列の値でポリシーを絞る）と同じ判断**で、`tenant_quota_overrides` の SELECT ポリシーをパートナー文脈にも開くか、パートナー文脈では常に既定値に倒すかを決める。
+  - **列 GRANT の絞り込み**: パートナー文脈への読み取りを開く場合、`reason`（運営者の自由記述）と `set_by_platform_user_id`（運営者の識別子）は業務ロールに見せない列である。列レベル GRANT で `metric` / `limit` / `effective_from` / `created_at` に絞る。
+  - **メールの分次上限（`emailMinuteLimit`）は対象外のまま**（`packages/config` の値。今回の 2 計測に含めない。§5.8.1 ⑧ の既存の記述どおり）。
+- 完了後、`QUOTA_OVERRIDE_METRICS`（`packages/domain/src/quota/override.ts`）に `EMAIL_COUNT` / `STORAGE_BYTES` を戻し、migration の CHECK 制約・Zod スキーマ・`A-004` の UI（`admin.usage.quota.defaultFixed` の専用表示を通常表示に戻す）を合わせて更新する。
+- **完了の判定**: 上限を上げた翌日にテナントの日次メール送信数 / ストレージ上限が実際に変わることを結合テストで証明する（`tests/isolation/admin-usage-quota.test.ts` に統合するか新設）。パートナー文脈からの読み取りが他テナントの `reason` / 運営者 ID を返さないことをテストで証明する。
 
 ## 5. テスト計画
 

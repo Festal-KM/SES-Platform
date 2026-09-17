@@ -493,6 +493,111 @@ const ja = {
   // 管理ホームの導線
   'admin.home.monitoring.link': '運用監視',
 
+  // --- A-004 利用量・クォータ管理（docs/04 §A-004 / API-A6 / F-057 / F-063 AC-5 / BR-44。T-11-02）---
+  // 🔴 運営者向けは金額（USD）と件数の両方 + 消費率 + 倍率（CLAUDE.md §2 課金 / docs/03 §7.6.3-2）。テナント側の S-038 には金額が無い。
+  // 🔴 クォータの変更は PLATFORM_OWNER のみ。PLATFORM_SUPPORT にはフォームの文言が描かれない（F-057 AC-2）。
+  // 🔴 引き下げは適用日（翌日以降）と通知が必須（F-057 AC-3）。「即時に下げる」文言は存在しない。
+  'admin.usage.title': '利用量・クォータ管理',
+  'admin.usage.lead':
+    'テナント × 当月の消費量・残量・消化率を件数と金額（USD）の両方で示します。上限に張り付くテナントと、消化率が常に低いテナントを抽出できます。',
+  'admin.usage.moneyNote':
+    '金額（USD）は運営者向けの内部指標です。テナント側の画面（利用量と残量）には件数だけが表示され、金額は 1 つも現れません。',
+  'admin.usage.loading': '利用量を読み込んでいます…',
+  'admin.usage.loadFailed': '利用量を取得できませんでした。再取得してください。',
+  'admin.usage.reload': '再取得',
+  'admin.usage.reloading': '再取得しています…',
+  'admin.usage.observedAt': '集計時刻',
+  'admin.usage.period.day': '当日',
+  'admin.usage.period.month': '当月',
+  // 環境全体（テナント行とは別集計・別行。T-11-08 の申し送り ①）
+  'admin.usage.env.title': 'AI 支出（環境全体）/ tier 上限',
+  'admin.usage.env.note':
+    'テナント行とは別の集計です。環境全体の上限に到達すると全テナントの AI 機能が同時に止まります。単一テナントの上限到達（下の表）と混同しないでください。推定値であり、請求額とは一致しません（JST の暦月で集計）。対処は tier 昇格の申請です（この画面に操作はありません）。',
+  'admin.usage.env.spent': '当月支出',
+  'admin.usage.env.cap': 'tier 上限',
+  'admin.usage.env.rate': '消費率',
+  'admin.usage.env.over': '上限超過',
+  'admin.usage.env.tenants': '対象テナント数',
+  'admin.usage.env.byRole': 'ロール別内訳（USD）',
+  // 抽出（F-057 AC-1）
+  'admin.usage.filter.label': '抽出',
+  'admin.usage.filter.all': 'すべて',
+  'admin.usage.filter.low': '消化率が常に低い',
+  'admin.usage.filter.high': '上限に張り付いている',
+  'admin.usage.filter.note.low': 'すべての上限で消化率が閾値未満のテナント（プラン過大の兆候）。',
+  'admin.usage.filter.note.high': 'いずれかの上限で消化率が警告閾値以上のテナント（プラン過小 = 業務が止まる兆候）。',
+  'admin.usage.filter.threshold.low': '低消化の閾値',
+  'admin.usage.filter.threshold.high': '警告閾値',
+  'admin.usage.empty.filtered': '抽出条件に一致するテナントはありません。',
+  'admin.usage.empty.none': 'テナントがまだありません。',
+  // 表
+  'admin.usage.column.tenant': 'テナント',
+  'admin.usage.column.state': '契約状態',
+  'admin.usage.column.seats': '席',
+  'admin.usage.column.aiUnits': 'AI 件数（当月）',
+  'admin.usage.column.aiDaily': 'AI コスト（当日）',
+  'admin.usage.column.aiMonthly': 'AI 原価（当月）',
+  'admin.usage.column.email': 'メール（当日）',
+  'admin.usage.column.storage': 'ストレージ',
+  'admin.usage.column.band': '抽出',
+  'admin.usage.column.actions': '操作',
+  'admin.usage.metric.AI_UNIT_SHEET_PARSE': 'スキルシート解析',
+  'admin.usage.metric.AI_UNIT_MATCH_RATIONALE': '候補の根拠文',
+  'admin.usage.metric.AI_UNIT_PROPOSAL_DRAFT': '提案ドラフト',
+  'admin.usage.metric.AI_UNIT_RENEWAL_SUMMARY': '延長論点の整理',
+  'admin.usage.metric.EMAIL_COUNT': 'メール（1 日）',
+  'admin.usage.metric.STORAGE_BYTES': 'ストレージ',
+  'admin.usage.unit.count': '件',
+  'admin.usage.unit.messages': '通',
+  'admin.usage.unit.percent': '%',
+  'admin.usage.standardCost': '1 件あたり標準原価',
+  'admin.usage.level.BELOW': '正常',
+  'admin.usage.level.NEARING': '接近',
+  'admin.usage.level.REACHED': '到達',
+  'admin.usage.level.unknown': '未評価',
+  'admin.usage.band.LOW': '低消化',
+  'admin.usage.band.MID': '—',
+  'admin.usage.band.HIGH': '張り付き',
+  'admin.usage.quota.default': '既定',
+  // 🔴 メール / ストレージ専用（T-11-02 NG-1）。上限を上げても執行点が既定値しか読まないため上書きの対象にしない
+  //    （`QUOTA_OVERRIDE_METRICS` は AI 4 単位のみ。migration 20260924000000）。配線は SP-12 に申し送り。
+  'admin.usage.quota.defaultFixed': '既定値（Phase 1 では変更不可）',
+  'admin.usage.quota.override': '個別',
+  'admin.usage.quota.pending': '予定',
+  'admin.usage.quota.pendingLowering': '引き下げ予定',
+  'admin.usage.quota.effectiveFrom': '適用日',
+  'admin.usage.ratio.unitCost': '標準原価比',
+  'admin.usage.ratio.unitCost.note':
+    '実原価 ÷（件数 × 1 件あたり標準原価）。1.0 が表どおり。乖離が続けば 1 件あたり標準原価と件数クォータの改定を検討します。',
+  'admin.usage.ratio.baseline': '基準ユニット比',
+  'admin.usage.ratio.na': '—（件数 0）',
+  'admin.usage.byRole': 'ロール別',
+  'admin.usage.row.tenantDetail': 'テナント詳細',
+  'admin.usage.row.openQuota': 'クォータを変更',
+  // クォータ上書きフォーム（PLATFORM_OWNER のみ。F-057 AC-2 / AC-3）
+  'admin.usage.form.title': 'クォータの上書き',
+  'admin.usage.form.lead':
+    '対象テナントの上限を個別に上書きします。引き下げには翌日以降の適用日と、対象テナントの管理者への通知が必須です。即時に引き下げる操作はありません。引き上げは当日から適用できます。',
+  'admin.usage.form.selectTenant': '表の「クォータを変更」から対象テナントを選んでください。',
+  'admin.usage.form.tenant': '対象テナント',
+  'admin.usage.form.metric': '対象の上限',
+  'admin.usage.form.current': '現在の上限',
+  'admin.usage.form.limit': '新しい上限',
+  'admin.usage.form.limit.hint': '1 以上の整数。ストレージはバイト数。',
+  'admin.usage.form.effectiveFrom': '適用日（JST）',
+  'admin.usage.form.lowering': 'この変更は引き下げです。適用日は翌日以降にし、通知の確認にチェックを入れてください。',
+  'admin.usage.form.raising': 'この変更は引き上げです。当日から適用できます。',
+  'admin.usage.form.notify': '対象テナントの管理者（OWNER / ADMIN）に、適用日と新しい上限を知らせる通知メールが送られることを確認しました',
+  'admin.usage.form.reason': '変更理由（運営者の記録。テナントには表示されません）',
+  'admin.usage.form.submit': '上書きを保存',
+  'admin.usage.form.submitting': '保存しています…',
+  'admin.usage.form.success': '保存しました。適用日から新しい上限が効きます。引き下げの場合は対象テナントの管理者へ通知が送られます。',
+  'admin.usage.form.failed': '保存できませんでした。',
+  // 管理ホームと A-003 の導線
+  'admin.home.usage.link': '利用量・クォータ管理',
+  'admin.tenantDetail.section.usage': '利用量とクォータ',
+  'admin.tenantDetail.usage.link': 'このテナントの利用量とクォータを開く',
+
   // --- S-035 組織設定（docs/04 §S-035 / F-001 / F-021。T-03-10）---
   'orgSettings.title': '組織設定',
   'orgSettings.section.organization': '組織情報',
@@ -675,6 +780,13 @@ const ja = {
   // 🔴 T-11-03: 監査ログ横断検索（API-A7）の期間上限超過（400）。次の行動 = 期間を短縮。
   'error.admin.auditLogs.periodTooLong':
     '検索期間が上限を超えています。期間を短くして再実行してください。',
+  // 🔴 T-11-02: クォータ変更の規律違反（400。API-A6 / F-057 AC-3）。理由ごとに次の行動を示す。
+  'error.admin.quota.limitOutOfRange': '上限は 1 以上の整数で指定してください。',
+  'error.admin.quota.effectiveFromPast': '適用日は今日以降を指定してください。過去に遡って上限は変えられません。',
+  'error.admin.quota.loweringNotDeferred':
+    '引き下げは当日に適用できません。適用日を翌日以降にしてください（既存顧客の上限を予告なく引き下げない運用のためです）。',
+  'error.admin.quota.loweringNoticeRequired':
+    '引き下げには対象テナントの管理者への通知が必須です。通知の確認にチェックを入れてください。',
   // 🔴 T-05-04: docs/05 §15.1 の 429 段（`QuotaExceededError`）。**上限の種類ごとに文言を分ける**
   //    —— 解消のしかたが違う（AI の日次は翌日、ストレージは削除するか上限を上げるまで）。
   'error.quota.exceeded': 'ご利用量が上限に達したため、この操作は実行できません。',

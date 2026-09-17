@@ -226,6 +226,8 @@ const FROZEN_EXACT: readonly string[] = [
   'admin-audit-logs-target-tenant-id',
   'admin-audit-logs-to',
   'admin-home-audit-logs-link',
+  // ✅ T-11-02: 管理ホームの `A-004` への導線。
+  'admin-home-usage-link',
   'admin-signin-2fa-code',
   'admin-signin-2fa-form',
   'admin-signin-2fa-submit',
@@ -238,6 +240,8 @@ const FROZEN_EXACT: readonly string[] = [
   'admin-signin-submit',
   // ✅ T-11-03: `A-003` セクション 6（監査ログへの導線）。
   'admin-tenant-detail-audit-logs-link',
+  // ✅ T-11-02: `A-003` セクション 4（利用量とクォータへの導線）。
+  'admin-tenant-detail-usage-link',
   // ✅ T-11-01: `A-002` テナント一覧（健全性・異常順）。`admin-tenants-list.tsx`。行・席・シグナルの testid は
   //    テンプレートリテラル（接頭辞は下の FROZEN_PREFIXES）。
   'admin-tenants-all-clear',
@@ -251,6 +255,35 @@ const FROZEN_EXACT: readonly string[] = [
   'admin-tenants-sort',
   'admin-tenants-table',
   'admin-tenants-thresholds',
+  // ✅ T-11-02: `A-004` 利用量・クォータ管理（`admin-usage-view.tsx` / `admin-usage-table.tsx` / `quota-override-form.tsx`）。
+  //    行・単位・操作導線の testid はテンプレートリテラル（接頭辞は下の FROZEN_PREFIXES）。
+  //    🔴 「即時に引き下げる」に相当する testid は存在しない（`F-057 AC-3`）。フォームの testid は OWNER にだけ描かれる（`F-057 AC-2`）。
+  'admin-usage-empty',
+  'admin-usage-environment',
+  'admin-usage-environment-by-role',
+  'admin-usage-environment-rate',
+  'admin-usage-environment-spent',
+  'admin-usage-filter-note',
+  'admin-usage-filters',
+  'admin-usage-lead',
+  'admin-usage-load-failed',
+  'admin-usage-loading',
+  'admin-usage-money-note',
+  'admin-usage-observed-at',
+  'admin-usage-quota-form',
+  'admin-usage-quota-form-direction',
+  'admin-usage-quota-form-effective-from',
+  'admin-usage-quota-form-error',
+  'admin-usage-quota-form-limit',
+  'admin-usage-quota-form-metric',
+  'admin-usage-quota-form-notify',
+  'admin-usage-quota-form-reason',
+  'admin-usage-quota-form-saved',
+  'admin-usage-quota-form-select-tenant',
+  'admin-usage-quota-form-submit',
+  'admin-usage-quota-form-tenant',
+  'admin-usage-reload',
+  'admin-usage-table',
   // ✅ T-08-05: `S-016` 候補検索（`candidate-screen.tsx` / `page.tsx`）。実装から機械抽出した 45 個。
   'candidate-detail-anonymous',
   'candidate-detail-anonymous-note',
@@ -1022,6 +1055,14 @@ const FROZEN_PREFIXES: readonly string[] = [
   'admin-tenants-row-',
   'admin-tenants-seats-',
   'admin-tenants-sort-',
+  // ✅ T-11-02: `A-004` の動的 testid（行 / 4 単位 / 当日・当月 AI / 標準原価比 / 抽出ボタン / OWNER の操作導線。テナント ID・抽出値で変わる）。
+  'admin-usage-ai-daily-',
+  'admin-usage-ai-monthly-',
+  'admin-usage-ai-units-',
+  'admin-usage-filter-',
+  'admin-usage-quota-open-',
+  'admin-usage-row-',
+  'admin-usage-unit-cost-ratio-',
   // ✅ T-08-05: `S-016` の動的 testid（行 / 種別 / 表示名 / `+N` / 条件の解除 / 要件サマリの項目）。
   'candidate-list-kind-',
   'candidate-list-more-skills-',

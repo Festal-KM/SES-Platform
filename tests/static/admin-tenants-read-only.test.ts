@@ -25,6 +25,8 @@ const READ_ONLY_ROUTE_FILES = [
   'apps/web/app/api/admin/tenants/[id]/route.ts',
   // ✅ T-11-03: API-A7（監査ログ横断検索。`F-058` / `A-006`）。閲覧のみ。書き込みは監査記録だけ。
   'apps/web/app/api/admin/audit-logs/route.ts',
+  // ✅ T-11-02: API-A6 の読み取り（利用量・クォータ。`F-057` / `A-004`）。閲覧のみ。書き込みは `PUT /tenants/{id}/quota` に分ける。
+  'apps/web/app/api/admin/usage/route.ts',
 ] as const;
 
 /**
@@ -48,6 +50,13 @@ const WRITE_ROUTE_FILES: Readonly<Record<string, { readonly methods: readonly st
     reason:
       'API-A5（初期 `OWNER` 招待）。`invitations` の INSERT のみで、RLS の WITH CHECK が '
       + '`role=OWNER` / 発行者 = 自分に固定する（docs/05 §5.2）。API-A4 と分離している（§10.7）。',
+  },
+  'apps/web/app/api/admin/tenants/[id]/quota/route.ts': {
+    methods: ['PUT'],
+    reason:
+      'API-A6（クォータの上書き。`F-057 AC-2`〜`AC-4` / `A-004`）。`CLAUDE.md` §10.5 が最初から運営者に認める「クォータ」への '
+      + '書き込みであり、触れるのは `tenant_quota_overrides` の INSERT だけ（`withPlatformWrite(domain=QUOTA)`。docs/05 §5.2 の 4 表目）。'
+      + '`PLATFORM_OWNER` のみ（`BR-44`）。引き下げは翌日以降 + 通知が必須で、RLS の WITH CHECK でも当日適用の引き下げ行を止める。',
   },
 };
 

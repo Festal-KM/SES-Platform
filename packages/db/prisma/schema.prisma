@@ -165,6 +165,8 @@ model Tenant {
   usageMeasurementFindings UsageMeasurementFinding[]
   // 🔴 T-10-03（docs/02 F-027 / docs/05 §5.8）: 上限に対するいまの水準（停止 / 従量 / アップロード停止の区別）。
   usageLimitStates         UsageLimitState[]
+  // 🔴 T-11-02（docs/02 F-057 / docs/05 §6.9 API-A6）: テナント個別のクォータ上書き（運営者が INSERT だけで積む）。
+  tenantQuotaOverrides     TenantQuotaOverride[]
   // 🔴 Subscription は射程外モデル（tenantKeyOf('Subscription') === null）のため
   //    TENANT_KEY_MOVING_RELATION_OVERRIDES の宣言対象ではない（tenant-relation.test.ts が
   //    機械的に確認する）。tenantId 列を持つが RLS/scope-injection の対象外（§3.10 末尾）。
@@ -1948,6 +1950,34 @@ model UsageLimitState {
   @@unique([tenantId, metric])
   @@index([level, levelSince])
   @@map("usage_limit_states")
+}
+
+/// T-11-02（docs/02 F-057 / docs/05 §5.2 / §6.9 API-A6 / migration 20260924000000）。テナント個別のクォータ上書き。
+/// 🔴 運営者（PLATFORM_OWNER）が **INSERT だけ**で積む。UPDATE / DELETE は誰にも無い（履歴を残し、効く行は選択で決める =
+///    適用日 ≤ 今日 のうち適用日が最も遅い行、同日なら最後に作られた行。@ses/domain の resolveQuotaLimit）。
+/// 🔴 引き下げ（limit < previous_limit）は翌日以降しか積めない（app_platform_write の WITH CHECK。F-057 AC-3）。
+///    RLS: app_tenant はホスト文脈の SELECT のみ（usage.limit-check と GET /api/usage が読む）。金額（AI_COST_USD）の上書きは持たない。
+model TenantQuotaOverride {
+  id                    String   @id @default(uuid(7)) @db.Uuid
+  tenantId              String   @map("tenant_id") @db.Uuid
+  /// QuotaOverrideMetric（TEXT + CHECK）: AI_UNIT_METRICS と同じ 4 値。EMAIL_COUNT / STORAGE_BYTES は
+  /// 執行点の配線が無いため対象外（migration 20260924000000 の判断事項）
+  metric                String
+  /// 上限（件数 / 通数 / バイト数）。CHECK >= 1
+  limit                 BigInt
+  /// 積んだ時点で適用日に効いていたはずの上限（引き下げの判定と監査の from）。CHECK >= 1
+  previousLimit         BigInt   @map("previous_limit")
+  /// 適用日（Asia/Tokyo の暦日。@db.Date）
+  effectiveFrom         DateTime @map("effective_from") @db.Date
+  setByPlatformUserId   String   @map("set_by_platform_user_id") @db.Uuid
+  /// 変更理由（運営者の記述。監査ログには長さだけを載せる）。CHECK 1〜500 文字
+  reason                String
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, metric, effectiveFrom(sort: Desc), createdAt(sort: Desc)])
+  @@map("tenant_quota_overrides")
 }
 
 /// docs/03 §3.8.3。RLS のポリシークラスは C2 HOST_ONLY（docs/05 §4.4）。

@@ -19,6 +19,7 @@ import {
   readPlatformRequestMeta,
   resolvePlatformCtxOutcome,
 } from '../../../../lib/auth/platform-session';
+import { adminTenantQuotaHref } from '../../../../lib/admin-monitoring/hrefs';
 import { isTenantIdLike } from '../../../../lib/admin-tenants/schemas';
 import {
   TENANT_LIFECYCLE_STATE_MESSAGE_KEYS,
@@ -54,6 +55,25 @@ function AuditLogsSection({ tenantId }: { readonly tenantId: string }) {
         data-testid="admin-tenant-detail-audit-logs-link"
       >
         {t('admin.tenantDetail.auditLogs.link')}
+      </Link>
+    </section>
+  );
+}
+
+/**
+ * セクション 4「利用量とクォータ消化率」（docs/04 §A-003 → `A-004`。T-11-02）。
+ * 🔴 本画面からは遷移のみ（書き込みは `A-004` で行う。docs/04 §A-003「操作と結果」）。`A-004` は対象テナントの行を先頭に出す。
+ */
+function UsageSection({ tenantId }: { readonly tenantId: string }) {
+  return (
+    <section className="mt-6">
+      <h2 className="mb-2 text-sm font-semibold text-slate-700">{t('admin.tenantDetail.section.usage')}</h2>
+      <Link
+        className="text-sm text-slate-700 underline-offset-2 hover:underline"
+        href={adminTenantQuotaHref(tenantId)}
+        data-testid="admin-tenant-detail-usage-link"
+      >
+        {t('admin.tenantDetail.usage.link')}
       </Link>
     </section>
   );
@@ -197,6 +217,7 @@ export default async function AdminTenantDetailPage({
         </dl>
       </section>
 
+      <UsageSection tenantId={detail.id} />
       <AuditLogsSection tenantId={detail.id} />
     </main>
   );

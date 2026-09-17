@@ -681,3 +681,13 @@ export type {
 // 🔴 T-10-03: テナント管理者（分類 1）宛の運用メールの宛先。上限接近・到達の通知（`F-027` 処理④）が使う。
 export { readTenantAdminRecipients } from './tenant-admin-recipients.js';
 export type { TenantAdminRecipient } from './tenant-admin-recipients.js';
+// 🔴 T-11-02: テナント個別のクォータ上書き（`tenant_quota_overrides`。docs/02 F-057 / docs/05 §6.9 API-A6 /
+//    migration 20260924000000）の**読み取り**。書き手は `@ses/db/platform`（`app_platform_write` の INSERT）だけ。
+//    ワーカー（`usage.limit-check`）と主平面（`GET /api/usage`）が `resolveTenantQuotas` で**同じ上限値**を得る。
+export { listPendingQuotaLoweringNotices, resolveTenantQuotas } from './quota-overrides.js';
+export type {
+  PendingQuotaLoweringNotice,
+  QuotaSource,
+  ResolvedTenantQuotas,
+  TenantQuotaDefaults,
+} from './quota-overrides.js';

@@ -711,6 +711,19 @@ export const PLATFORM_READ_COLUMN_ALLOWLIST: Record<string, readonly string[]> =
     'notified_on',
     'evaluated_at',
   ],
+  // 🔴 T-11-02（docs/02 F-057 / docs/05 §5.2 / §6.9 API-A6。migration 20260924000000）: テナント個別のクォータ上書き
+  //    （`A-004` の材料）。全列が計測・数値・日付・ID・運営者自身の記述であり、テナントの業務内容も PII も無い。
+  tenant_quota_overrides: [
+    'id',
+    'tenant_id',
+    'metric',
+    'limit',
+    'previous_limit',
+    'effective_from',
+    'set_by_platform_user_id',
+    'reason',
+    'created_at',
+  ],
 };
 
 /**

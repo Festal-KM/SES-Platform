@@ -54,6 +54,7 @@ import {
   configurePlatformWriteDb,
   configureTenantDb,
   configureTokenEncryption,
+  type TenantQuotaDefaults,
 } from '@ses/db';
 import type {
   MonitoringRuntime,
@@ -148,6 +149,14 @@ let cachedUsageLimitsRuntime: UsageLimitsRuntime | null = null;
 let cachedMonitoringThresholds: MonitoringThresholds | null = null;
 /** 🔴 T-11-08 / T-11-04: 項目 17（環境全体の当月 AI 支出 / tier 上限）。`readProviderMonthlySpend` に渡す値。 */
 let cachedProviderSpendRuntime: ProviderSpendRuntime | null = null;
+/**
+ * 🔴 T-11-02: `A-004` 利用量・クォータ管理（API-A6）が `readPlatformUsage` / `setTenantQuotaOverride` に渡す値。
+ *    **金額（USD）を含む**（`AI_DAILY_COST_LIMIT_USD_DEFAULT` / `AI_MONTHLY_COST_CAP_USD_DEFAULT` / `ANTHROPIC_MONTHLY_SPEND_CAP_USD`）ため、
+ *    `usageLimitsRuntime()`（主平面。金額を載せない）とは**別のアクセサ**にする。読み手は `apps/web/app/api/admin/**` と
+ *    `apps/web/app/admin/**` だけである。既定値（件数 / 通数 / バイト数）は `usageLimitsRuntime()` と同じキーから読む
+ *    （ワーカーの判定・主平面の表示・運営者の一覧で上限値がずれない）。
+ */
+let cachedAdminUsageRuntime: AdminUsageRuntime | null = null;
 /**
  * 🔴 T-11-01: `A-002` テナント健全性（異常度スコア）の閾値 4 つ（`TENANT_HEALTH_*`。docs/05 §6.9 API-A2）。
  *    `listPlatformTenants` に**必ず**渡す（`packages/db` は既定値へフォールバックしない）。重みは `packages/domain` の定数。
@@ -338,6 +347,18 @@ export function ensureDbConfigured(): void {
   cachedProviderSpendRuntime = {
     capUsd: env.ANTHROPIC_MONTHLY_SPEND_CAP_USD,
     warnPercent: env.QUOTA_WARNING_THRESHOLD_PERCENT,
+  };
+  // 🔴 T-11-02: `A-004`（API-A6）の材料。金額を含むので主平面の `usageLimitsRuntime()` には載せない。
+  cachedAdminUsageRuntime = {
+    warnPercent: env.QUOTA_WARNING_THRESHOLD_PERCENT,
+    defaults: {
+      aiUnitQuotas: cachedUsageLimitsRuntime.aiUnitQuotas,
+      emailDailyLimit: cachedUsageLimitsRuntime.emailDailyLimit,
+      storageLimitBytes: cachedUsageLimitsRuntime.storageLimitBytes,
+    },
+    aiDailyCostLimitUsd: env.AI_DAILY_COST_LIMIT_USD_DEFAULT,
+    aiMonthlyCostCapUsd: env.AI_MONTHLY_COST_CAP_USD_DEFAULT,
+    providerCapUsd: env.ANTHROPIC_MONTHLY_SPEND_CAP_USD,
   };
   // 🔴 T-11-01: `A-002` の異常度の閾値。出所は `packages/config` だけ（ルート・画面は `process.env` を読まない）。
   cachedTenantHealthThresholds = {
@@ -655,6 +676,29 @@ export function usageLimitsRuntime(): UsageLimitsRuntime {
     throw new Error('利用量の上限が解決されていません（bootstrap の不変条件違反）。');
   }
   return cachedUsageLimitsRuntime;
+}
+
+/**
+ * 🔴 T-11-02: `A-004`（API-A6）が読む値。**金額（USD）を含む**ため管理平面（`apps/web/app/api/admin/**` /
+ *    `apps/web/app/admin/**`）だけが呼ぶ。`defaults` は `usageLimitsRuntime()` と同じ `packages/config` のキーから読む。
+ */
+export type AdminUsageRuntime = {
+  readonly warnPercent: number;
+  readonly defaults: TenantQuotaDefaults;
+  /** `AI_DAILY_COST_LIMIT_USD_DEFAULT`（テナントの 1 日の AI コスト上限。遮断器）。 */
+  readonly aiDailyCostLimitUsd: number;
+  /** `AI_MONTHLY_COST_CAP_USD_DEFAULT`（テナントの月間 AI 原価の上限。運営者の内部指標）。 */
+  readonly aiMonthlyCostCapUsd: number;
+  /** `ANTHROPIC_MONTHLY_SPEND_CAP_USD`（環境全体の tier 上限）。 */
+  readonly providerCapUsd: number;
+};
+
+export function adminUsageRuntime(): AdminUsageRuntime {
+  ensureDbConfigured();
+  if (cachedAdminUsageRuntime === null) {
+    throw new Error('利用量・クォータ管理の設定が解決されていません（bootstrap の不変条件違反）。');
+  }
+  return cachedAdminUsageRuntime;
 }
 
 /**

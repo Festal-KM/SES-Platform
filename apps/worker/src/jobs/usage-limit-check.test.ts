@@ -10,6 +10,9 @@
 //   ⑤ 🔴 上限値は deps（`packages/config` 由来）から渡り、ジョブの中に数値が無い
 //   ⑥ 🔴 戻り値に金額（USD）が無い
 //   ⑦ payload が不正なら DB に触れない / スケジュール宣言
+//   ⑧ 🔴 T-11-02: 上限は `resolveTenantQuotas`（既定値 + テナント個別の上書き）から受け、deps の既定値を直接は使わない
+//   ⑨ 🔴 T-11-02: クォータ引き下げの予告 —— 材料（`listPendingQuotaLoweringNotices`）があれば管理者全員ぶん
+//      `QUOTA_LOWERED` を積む（`dedupeKey` = 上書き行 ID）。無ければ宛先を引かない
 //
 // 🔴 LLM を 1 回も呼ばない（deps に AI クライアントの口が無い）。
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -19,6 +22,8 @@ const readTenantUsageSnapshot = vi.fn();
 const syncUsageLimitStates = vi.fn();
 const readTenantAdminRecipients = vi.fn();
 const reserveEmailDispatch = vi.fn();
+const resolveTenantQuotas = vi.fn();
+const listPendingQuotaLoweringNotices = vi.fn();
 
 vi.mock('@ses/db', () => ({
   probeAiDailyCostLevel,
@@ -26,6 +31,8 @@ vi.mock('@ses/db', () => ({
   syncUsageLimitStates,
   readTenantAdminRecipients,
   reserveEmailDispatch,
+  resolveTenantQuotas,
+  listPendingQuotaLoweringNotices,
   emailDispatchDedupeKey: (input: { templateKey: string; targetId: string; recipientEmail: string }) =>
     `${input.templateKey}:${input.targetId}:${input.recipientEmail}`,
   systemTenantCtx: (tenantId: string, job: { queue: string; jobId: string }) => ({
@@ -96,6 +103,17 @@ beforeEach(() => {
   syncUsageLimitStates.mockReset();
   readTenantAdminRecipients.mockReset();
   reserveEmailDispatch.mockReset();
+  resolveTenantQuotas.mockReset();
+  listPendingQuotaLoweringNotices.mockReset();
+  // 🔴 既定は「上書き無し」= deps の既定値がそのまま効く（実装は `packages/db` が担う。ここではその戻りを写す）。
+  resolveTenantQuotas.mockImplementation(async (_ctx: unknown, input: { defaults: Record<string, unknown> }) => ({
+    dayKey: '2026-09-16',
+    aiUnitQuotas: input.defaults.aiUnitQuotas,
+    emailDailyLimit: input.defaults.emailDailyLimit,
+    storageLimitBytes: input.defaults.storageLimitBytes,
+    sources: {},
+  }));
+  listPendingQuotaLoweringNotices.mockResolvedValue([]);
   probeAiDailyCostLevel.mockResolvedValue({
     stopped: false,
     consumedMicros: 1_000_000n,
@@ -176,7 +194,7 @@ describe('③④ 通知', () => {
     expect(readTenantAdminRecipients).not.toHaveBeenCalled();
     expect(reserveEmailDispatch).not.toHaveBeenCalled();
     expect(enqueued).toEqual([]);
-    expect(outcome).toEqual({ changed: 0, audited: 0, notices: 0, queued: 0, aiStopped: false });
+    expect(outcome).toEqual({ changed: 0, audited: 0, notices: 0, queued: 0, quotaNoticesQueued: 0, aiStopped: false });
   });
 
   it('契機があれば管理者全員ぶん積む（分類は packages/db の値のまま。dedupeKey に暦日）', async () => {
@@ -208,7 +226,7 @@ describe('③④ 通知', () => {
     expect(inputs.every((input) => input.recipientClass === 'HOST_MEMBER')).toBe(true);
     expect(enqueued).toHaveLength(4);
     expect(enqueued[0]).toEqual({ dispatchId: expect.any(String), tenantId: TENANT_ID, recipientClass: 'HOST_MEMBER' });
-    expect(outcome).toEqual({ changed: 2, audited: 2, notices: 2, queued: 4, aiStopped: false });
+    expect(outcome).toEqual({ changed: 2, audited: 2, notices: 2, queued: 4, quotaNoticesQueued: 0, aiStopped: false });
   });
 
   it('既に QUEUED でない行（送信済み等）は積み直さない', async () => {
@@ -254,6 +272,84 @@ describe('⑤⑥ 上限値の出所と金額の不在', () => {
     const { handler } = makeHandler();
     const outcome = await handler({ tenantId: TENANT_ID }, 'job-1');
     expect(Object.keys(outcome).join(',')).not.toMatch(/usd|cost|price/i);
+  });
+});
+
+describe('⑧ 上限はテナント個別の上書きを通る（T-11-02）', () => {
+  it('🔴 resolveTenantQuotas に deps の既定値と now を渡し、返った上限で評価する（既定値を直接は使わない）', async () => {
+    resolveTenantQuotas.mockResolvedValue({
+      dayKey: '2026-09-16',
+      aiUnitQuotas: { AI_UNIT_SHEET_PARSE: 10, AI_UNIT_MATCH_RATIONALE: 6_200, AI_UNIT_PROPOSAL_DRAFT: 180, AI_UNIT_RENEWAL_SUMMARY: 20 },
+      emailDailyLimit: 12,
+      storageLimitBytes: 2n * GB,
+      sources: {},
+    });
+    const { handler } = makeHandler();
+    await handler({ tenantId: TENANT_ID }, 'job-1');
+
+    expect(resolveTenantQuotas).toHaveBeenCalledTimes(1);
+    const [ctx, input] = resolveTenantQuotas.mock.calls[0] as [Record<string, unknown>, Record<string, unknown>];
+    expect(ctx.tenantId).toBe(TENANT_ID);
+    expect(input.now).toBe(NOW);
+    expect(input.defaults).toEqual({
+      aiUnitQuotas: { AI_UNIT_SHEET_PARSE: 180, AI_UNIT_MATCH_RATIONALE: 6_200, AI_UNIT_PROPOSAL_DRAFT: 180, AI_UNIT_RENEWAL_SUMMARY: 20 },
+      emailDailyLimit: 500,
+      storageLimitBytes: 50n * GB,
+    });
+    const [, sync] = syncUsageLimitStates.mock.calls[0] as [unknown, { assessment: Record<string, { level: string }> }];
+    // 上書き後の上限（10 件 / 12 通 / 2 GB）で評価されている（既定値なら BELOW のはず）。
+    expect(sync.assessment.AI_UNIT_SHEET_PARSE.level).toBe('REACHED');
+    expect(sync.assessment.EMAIL_COUNT.level).toBe('REACHED');
+    expect(sync.assessment.STORAGE_BYTES.level).toBe('REACHED');
+  });
+});
+
+describe('⑨ クォータ引き下げの予告（T-11-02。F-057 AC-3 の実行側）', () => {
+  const OVERRIDE_ID = '01930000-0000-7000-8000-00000000f001';
+
+  it('🔴 材料があれば管理者全員ぶん QUOTA_LOWERED を積む。dedupeKey は上書き行 ID（暦日ではない）', async () => {
+    listPendingQuotaLoweringNotices.mockResolvedValue([
+      { overrideId: OVERRIDE_ID, metric: 'AI_UNIT_SHEET_PARSE', effectiveFrom: '2026-09-17' },
+    ]);
+    readTenantAdminRecipients.mockResolvedValue([
+      { userId: 'u1', email: 'owner@example.com', recipientClass: 'HOST_MEMBER' },
+      { userId: 'u2', email: 'admin@example.com', recipientClass: 'HOST_MEMBER' },
+    ]);
+    const { handler, enqueued } = makeHandler();
+    const outcome = await handler({ tenantId: TENANT_ID }, 'job-1');
+
+    expect(listPendingQuotaLoweringNotices).toHaveBeenCalledTimes(1);
+    expect(readTenantAdminRecipients).toHaveBeenCalledTimes(1);
+    const inputs = reserveEmailDispatch.mock.calls.map(([, input]) => input as Record<string, unknown>);
+    expect(inputs.map((input) => input.templateKey)).toEqual(['QUOTA_LOWERED', 'QUOTA_LOWERED']);
+    expect(inputs[0]?.dedupeKey).toBe(`QUOTA_LOWERED:${OVERRIDE_ID}:owner@example.com`);
+    expect(inputs.every((input) => input.recipientClass === 'HOST_MEMBER')).toBe(true);
+    expect(enqueued).toHaveLength(2);
+    expect(outcome.quotaNoticesQueued).toBe(2);
+    expect(outcome.queued).toBe(0);
+  });
+
+  it('材料が無ければ宛先を引かない（⑤ の契機も無いとき memberships を読まない）', async () => {
+    const { handler } = makeHandler();
+    const outcome = await handler({ tenantId: TENANT_ID }, 'job-1');
+    expect(readTenantAdminRecipients).not.toHaveBeenCalled();
+    expect(outcome.quotaNoticesQueued).toBe(0);
+  });
+
+  it('⑤ と ⑨ の両方があっても宛先は 1 回しか引かない', async () => {
+    syncUsageLimitStates.mockResolvedValue({
+      changed: 1,
+      audited: 1,
+      toNotify: [{ metric: 'EMAIL_COUNT', level: 'NEARING', effect: 'STOP_EMAIL_DAILY', dayKey: '2026-09-16' }],
+    });
+    listPendingQuotaLoweringNotices.mockResolvedValue([
+      { overrideId: OVERRIDE_ID, metric: 'EMAIL_COUNT', effectiveFrom: '2026-09-17' },
+    ]);
+    readTenantAdminRecipients.mockResolvedValue([{ userId: 'u1', email: 'owner@example.com', recipientClass: 'HOST_MEMBER' }]);
+    const { handler } = makeHandler();
+    const outcome = await handler({ tenantId: TENANT_ID }, 'job-1');
+    expect(readTenantAdminRecipients).toHaveBeenCalledTimes(1);
+    expect(outcome).toEqual({ changed: 1, audited: 1, notices: 1, queued: 1, quotaNoticesQueued: 1, aiStopped: false });
   });
 });
 

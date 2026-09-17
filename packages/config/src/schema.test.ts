@@ -49,6 +49,12 @@ describe('🔴 AI の月次件数クォータの既定値（T-10-03 / docs/03 §
     expect(env.AI_UNIT_QUOTA_SHEET_PARSE_DEFAULT).toBe(70);
     expect(() => loadAppEnv(buildValidEnv('development', { AI_UNIT_QUOTA_RENEWAL_SUMMARY_DEFAULT: '0' }))).toThrow();
   });
+
+  it('🔴 T-11-02: 月間の AI 金額上限の既定値は docs/03 §7.6.2 の Standard（$40）。運営者の内部指標で、0 以下は拒否する', () => {
+    expect(loadAppEnv(buildValidEnv('development')).AI_MONTHLY_COST_CAP_USD_DEFAULT).toBe(40);
+    expect(loadAppEnv(buildValidEnv('development', { AI_MONTHLY_COST_CAP_USD_DEFAULT: '15' })).AI_MONTHLY_COST_CAP_USD_DEFAULT).toBe(15);
+    expect(() => loadAppEnv(buildValidEnv('development', { AI_MONTHLY_COST_CAP_USD_DEFAULT: '0' }))).toThrow();
+  });
 });
 
 describe('🔴 SES のイベント通知トピック（T-04-03 / docs/05 §8.5）', () => {

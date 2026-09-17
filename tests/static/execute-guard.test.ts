@@ -108,7 +108,8 @@ const PLATFORM_MODULE = '@ses/db/platform';
  *    その関数が本当に `withPlatformWrite` を通ることは
  *    `tests/static/platform-plane-boundary.test.ts` ④ が検査する。
  */
-const PLATFORM_WRITE_FUNCTIONS = ['provisionTenant', 'issueTenantOwnerInvitation'];
+// ✅ T-11-02: `setTenantQuotaOverride`（API-A6。`withPlatformWrite(domain='QUOTA')` で `tenant_quota_overrides` に INSERT だけ）。
+const PLATFORM_WRITE_FUNCTIONS = ['provisionTenant', 'issueTenantOwnerInvitation', 'setTenantQuotaOverride'];
 
 type RouteAnalysis = {
   /** export されている HTTP メソッド名。 */

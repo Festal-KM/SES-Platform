@@ -66,3 +66,28 @@ export {
   type UsageLimitMetric,
   type UsageLimitState,
 } from './limits.js';
+// 🔴 T-11-02: テナント個別のクォータ上書き（docs/02 `F-057` / docs/05 §6.9 API-A6）。
+//    - `resolveQuotaLimit` … 既定値と上書き行から「効いている上限」を解く（ワーカー・主平面・運営者で 1 実装）
+//    - `decideQuotaChange` … 🔴 引き下げは翌日以降 + 通知が必須（即時反映のみの操作は型として返らない）
+//    - `classifyConsumptionBand` … `A-004` の抽出（消化率が常に低い / 上限に張り付く）
+export {
+  classifyConsumptionBand,
+  CONSUMPTION_BANDS,
+  consumptionPercent,
+  decideQuotaChange,
+  isQuotaOverrideMetric,
+  QUOTA_CHANGE_REJECTIONS,
+  QUOTA_LOW_CONSUMPTION_PERCENT,
+  QUOTA_OVERRIDE_METRICS,
+  QuotaChangeRejectedError,
+  resolveQuotaLimit,
+  selectEffectiveQuotaOverride,
+  selectPendingQuotaOverride,
+  type ConsumptionBand,
+  type QuotaChangeDecision,
+  type QuotaChangeInput,
+  type QuotaChangeKind,
+  type QuotaChangeRejection,
+  type QuotaOverrideMetric,
+  type QuotaOverrideRow,
+} from './override.js';

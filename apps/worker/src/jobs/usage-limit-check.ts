@@ -8,10 +8,16 @@
 //      （`probeAiDailyCostLevel` = `probeAiCostHeadroom`。見積りは `gate.hold-release` と同じ
 //      `gate-inspector` 1 回ぶんの下限・同じモデル解決。**別の式にすると「復帰したのに停止中と表示」が起きる**）
 //   ② 件数 4 単位 / メール（日次）/ ストレージの現在値を読む（`readTenantUsageSnapshot`）
+//   ②' 🔴 T-11-02: 今日効いている上限を解く（`resolveTenantQuotas`。既定値 = `packages/config`、テナント個別の上書き =
+//      `tenant_quota_overrides` の適用日 ≤ 今日 の最新行。主平面の `GET /api/usage` と**同じ関数**で同じ値になる）
 //   ③ 3 種の区別で評価する（`assessUsageLimits`。`packages/domain` の純粋関数。**1 実装**）
 //   ④ `usage_limit_states` に反映し、**水準が変わったときだけ** `AuditLog`（到達 / 接近 / 解除）を書く
 //   ⑤ ④が返した契機（その日その水準で未通知のもの）だけ、テナント管理者へメールを積む
 //      （`notifyUsageLimit`。既存の `email.dispatch` 経路。`dedupeKey` に暦日）
+//   ⑥ 🔴 T-11-02: 運営者が積んだ**クォータの引き下げ**（`limit < previous_limit` で適用日が今日以降）をテナント管理者へ予告する
+//      （`notifyQuotaLowering`。同じ `email.dispatch` 経路。`dedupeKey` は上書き行 ID なので 10 分ごとに掃いても 1 通）。
+//      `F-057 AC-3`「引き下げには通知が必須」の**実行側**。管理平面は `EmailDispatch` を書けない（`app_platform_write` に
+//      `email_dispatches` の INSERT を広げない）ため、通知はここで行う。適用日は翌日以降に限られるので 24 時間以上前に届く
 //
 // 🔴 LLM を 1 回も呼ばない（deps に AI クライアントの口が無い）。外部への書き込みも無い（`attempts: 3`）。
 // 🔴 金額（USD）は ① の戻り値（`stopped` と micro-USD の `bigint`）以外に現れず、表示・通知・監査の
@@ -21,15 +27,17 @@
 import { gateInspectorReservationFloor, gateInspectorSpec, type RoleModelResolver } from '@ses/ai';
 import type { InternalJobName, OperationalMailDispatch } from '@ses/connectors';
 import {
+  listPendingQuotaLoweringNotices,
   probeAiDailyCostLevel,
   readTenantAdminRecipients,
   readTenantUsageSnapshot,
+  resolveTenantQuotas,
   syncUsageLimitStates,
   systemTenantCtx,
 } from '@ses/db';
 import { assessUsageLimits, type AiUnitMetric } from '@ses/domain';
 import { InvalidJobPayloadError, requireUuid } from './payload.js';
-import { notifyUsageLimit } from './usage-limit-notice.js';
+import { notifyQuotaLowering, notifyUsageLimit } from './usage-limit-notice.js';
 
 /** 🔴 キュー定義（`packages/connectors/src/queues.ts`）に無い名前はここに書けない。 */
 export const USAGE_LIMIT_CHECK_JOB = 'usage.limit-check' satisfies InternalJobName;
@@ -80,8 +88,10 @@ export type UsageLimitCheckOutcome = {
   readonly audited: number;
   /** 通知の契機の数（計測 × 水準）。 */
   readonly notices: number;
-  /** この実行で `email.dispatch` を積んだ通数。 */
+  /** この実行で `email.dispatch` を積んだ通数（上限の接近・到達）。 */
   readonly queued: number;
+  /** 🔴 T-11-02: この実行で積んだクォータ引き下げ予告の通数（`dedupeKey` = 上書き行 ID。2 回目以降は 0）。 */
+  readonly quotaNoticesQueued: number;
   /** 🔴 AI が停止中か（`A-005` の材料。金額は載せない）。 */
   readonly aiStopped: boolean;
 };
@@ -112,6 +122,16 @@ export function createUsageLimitCheckHandler(deps: UsageLimitCheckDeps): UsageLi
     // ② 現在値。
     const snapshot = await readTenantUsageSnapshot(ctx, now);
 
+    // ②' 🔴 今日効いている上限（既定値 + テナント個別の上書き。主平面と同じ 1 関数）。
+    const quotas = await resolveTenantQuotas(ctx, {
+      now,
+      defaults: {
+        aiUnitQuotas: deps.usageLimits.aiUnitQuotas,
+        emailDailyLimit: deps.usageLimits.emailDailyLimit,
+        storageLimitBytes: deps.usageLimits.storageLimitBytes,
+      },
+    });
+
     // ③ 3 種の区別（純粋関数）。
     const assessment = assessUsageLimits({
       warnPercent: deps.usageLimits.warnPercent,
@@ -121,13 +141,13 @@ export function createUsageLimitCheckHandler(deps: UsageLimitCheckDeps): UsageLi
         limitMicros: aiDaily.limitMicros,
       },
       aiUnits: {
-        AI_UNIT_SHEET_PARSE: { used: snapshot.aiUnits.AI_UNIT_SHEET_PARSE, quota: deps.usageLimits.aiUnitQuotas.AI_UNIT_SHEET_PARSE },
-        AI_UNIT_MATCH_RATIONALE: { used: snapshot.aiUnits.AI_UNIT_MATCH_RATIONALE, quota: deps.usageLimits.aiUnitQuotas.AI_UNIT_MATCH_RATIONALE },
-        AI_UNIT_PROPOSAL_DRAFT: { used: snapshot.aiUnits.AI_UNIT_PROPOSAL_DRAFT, quota: deps.usageLimits.aiUnitQuotas.AI_UNIT_PROPOSAL_DRAFT },
-        AI_UNIT_RENEWAL_SUMMARY: { used: snapshot.aiUnits.AI_UNIT_RENEWAL_SUMMARY, quota: deps.usageLimits.aiUnitQuotas.AI_UNIT_RENEWAL_SUMMARY },
+        AI_UNIT_SHEET_PARSE: { used: snapshot.aiUnits.AI_UNIT_SHEET_PARSE, quota: quotas.aiUnitQuotas.AI_UNIT_SHEET_PARSE },
+        AI_UNIT_MATCH_RATIONALE: { used: snapshot.aiUnits.AI_UNIT_MATCH_RATIONALE, quota: quotas.aiUnitQuotas.AI_UNIT_MATCH_RATIONALE },
+        AI_UNIT_PROPOSAL_DRAFT: { used: snapshot.aiUnits.AI_UNIT_PROPOSAL_DRAFT, quota: quotas.aiUnitQuotas.AI_UNIT_PROPOSAL_DRAFT },
+        AI_UNIT_RENEWAL_SUMMARY: { used: snapshot.aiUnits.AI_UNIT_RENEWAL_SUMMARY, quota: quotas.aiUnitQuotas.AI_UNIT_RENEWAL_SUMMARY },
       },
-      email: { usedToday: snapshot.emailToday, dailyLimit: deps.usageLimits.emailDailyLimit },
-      storage: { usedBytes: snapshot.storageBytes, limitBytes: deps.usageLimits.storageLimitBytes },
+      email: { usedToday: snapshot.emailToday, dailyLimit: quotas.emailDailyLimit },
+      storage: { usedBytes: snapshot.storageBytes, limitBytes: quotas.storageLimitBytes },
     });
 
     // ④ 表と監査ログ（水準が変わったときだけ）。
@@ -137,10 +157,14 @@ export function createUsageLimitCheckHandler(deps: UsageLimitCheckDeps): UsageLi
       periodKeys: { dayKey: snapshot.dayKey, monthKey: snapshot.monthKey },
     });
 
-    // ⑤ 通知（契機が無ければ宛先を引かない）。
+    // ⑤ 通知（契機が無ければ宛先を引かない）。⑥ の引き下げ予告と宛先を共有する（同じ管理者宛）。
+    // 🔴 ⑥ は ⑤ より先に「材料があるか」だけを見る（無ければ宛先を引かない = 0 行のテナントで memberships を読まない）。
+    const pendingLowerings = await listPendingQuotaLoweringNotices(ctx, now);
+    let cachedRecipients: Awaited<ReturnType<typeof readTenantAdminRecipients>> | null = null;
+    const recipientsOnce = async () => (cachedRecipients ??= await readTenantAdminRecipients(ctx));
     let queued = 0;
     if (sync.toNotify.length > 0) {
-      const recipients = await readTenantAdminRecipients(ctx);
+      const recipients = await recipientsOnce();
       for (const notice of sync.toNotify) {
         queued += await notifyUsageLimit(
           { enqueueEmailDispatch: deps.enqueueEmailDispatch },
@@ -150,11 +174,22 @@ export function createUsageLimitCheckHandler(deps: UsageLimitCheckDeps): UsageLi
       }
     }
 
+    // ⑥ 🔴 クォータ引き下げの予告（F-057 AC-3 の実行側。`dedupeKey` = 上書き行 ID で 1 通に収束する）。
+    let quotaNoticesQueued = 0;
+    if (pendingLowerings.length > 0) {
+      quotaNoticesQueued = await notifyQuotaLowering(
+        { enqueueEmailDispatch: deps.enqueueEmailDispatch },
+        ctx,
+        { notices: pendingLowerings, recipients: await recipientsOnce(), observedAt: now },
+      );
+    }
+
     return {
       changed: sync.changed,
       audited: sync.audited,
       notices: sync.toNotify.length,
       queued,
+      quotaNoticesQueued,
       aiStopped: aiDaily.stopped,
     };
   };

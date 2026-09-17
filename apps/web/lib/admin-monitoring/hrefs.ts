@@ -13,11 +13,14 @@ export function adminTenantDetailHref(tenantId: string): string {
   return `/admin/tenants/${tenantId}`;
 }
 
+/** `A-004` 利用量・クォータ管理（T-11-02）。管理ホームからの導線と再取得に使う。 */
+export const ADMIN_USAGE_HREF = '/admin/usage';
+
 /**
  * `A-004` 利用量・クォータ（`RATE_LIMIT` の保留と `AI_COST_LIMIT_HELD` の滞留から繋ぐ。docs/04 §A-005 項目 12 / 14）。
- * ⚠️ `A-004`（`/admin/usage`）は T-11-02 が置く。**実装されるまでは `A-003` に倒す**（404 にしない。docs/sprints/SP-11 T-11-04）。
- *    T-11-02 が入ったらこの 1 行を `/admin/usage?targetTenantId=…` に差し替える（呼び出し側は変わらない）。
+ * ✅ T-11-02: `A-004`（`/admin/usage`）が入ったので、対象テナントの行を先頭に出す `?targetTenantId=` で繋ぐ
+ *    （T-11-04 が `A-003` に倒していた 1 行の差し替え。呼び出し側は変わらない）。
  */
 export function adminTenantQuotaHref(tenantId: string): string {
-  return adminTenantDetailHref(tenantId);
+  return `${ADMIN_USAGE_HREF}?targetTenantId=${encodeURIComponent(tenantId)}`;
 }

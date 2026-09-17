@@ -19,7 +19,7 @@ import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { readAdminHomeSummary } from '@ses/db/platform';
 import { t } from '@ses/i18n';
-import { ADMIN_MONITORING_HREF } from '../../lib/admin-monitoring/hrefs';
+import { ADMIN_MONITORING_HREF, ADMIN_USAGE_HREF } from '../../lib/admin-monitoring/hrefs';
 import { readPlatformRequestMeta, resolvePlatformCtxOutcome } from '../../lib/auth/platform-session';
 
 export const runtime = 'nodejs';
@@ -56,6 +56,16 @@ export default async function AdminHomePage() {
           data-testid="admin-home-audit-logs-link"
         >
           {t('admin.auditLogs.title')}
+        </Link>
+      </p>
+      {/* A-004（利用量・クォータ管理。T-11-02）への導線。件数と金額（USD）の両方を出す運営者向けの画面（F-057）。 */}
+      <p className="mb-2 text-sm">
+        <Link
+          className="text-slate-700 underline-offset-2 hover:underline"
+          href={ADMIN_USAGE_HREF}
+          data-testid="admin-home-usage-link"
+        >
+          {t('admin.home.usage.link')}
         </Link>
       </p>
       {/* A-005（運用監視。T-11-04）への導線。件数・状態・エラー種別・日時だけを出す画面（F-059 AC-3）。 */}

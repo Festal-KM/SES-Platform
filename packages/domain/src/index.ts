@@ -51,6 +51,14 @@ export {
   type MonthlyCostBreakdown,
   type MonthlyCostInput,
 } from './usage/monthly-cost.js';
+// 🔴 T-11-02: 「件数 × 1 件あたり標準原価」に対する実原価の倍率（docs/02 `F-063 AC-5` / docs/03 §7.6.1）。
+//    運営者向け（API-A6）だけが読む。件数と金額を別々に計測した結果を突き合わせるだけで、どちらの値も変えない。
+export {
+  AI_UNIT_STANDARD_COST_USD_V1,
+  computeUnitCostRatio,
+  type UnitCostRatio,
+  type UnitCostRatioInput,
+} from './usage/unit-cost-ratio.js';
 // 🔴 宛先分類（docs/05 §8.2 / docs/02 章 7.6 NFR-ENV-1）。`packages/db`（分類する側）と
 //    `packages/connectors`（`EmailSender.send` の必須引数として受け取る側）の**両方**が
 //    同じ union を知る必要があり、両者の共有点は domain しか無い（T-04-02）。

@@ -79,6 +79,7 @@ import {
 } from '../../packages/db/src/schema-value-sets.js';
 import { USAGE_LIMIT_LEVELS } from '../../packages/domain/src/quota/limit-level.js';
 import { USAGE_LIMIT_METRICS } from '../../packages/domain/src/quota/limits.js';
+import { QUOTA_OVERRIDE_METRICS } from '../../packages/domain/src/quota/override.js';
 import { ASSIGNMENT_STATES } from '../../packages/domain/src/state/assignment.js';
 import { CONTRACT_STATES } from '../../packages/domain/src/state/contract.js';
 import { PROPOSAL_STATES } from '../../packages/domain/src/state/proposal.js';
@@ -563,6 +564,18 @@ describe('CHECK 制約と TS 単一出所の drift 検査（docs/05 §3.1「列�
     it('usage_limit_states_period_kind_check ⇔ packages/db USAGE_COUNTER_PERIOD_KINDS', () => {
       const values = extractCheckInValues(migrationSql, 'usage_limit_states_period_kind_check');
       expectSameValueSet(values, USAGE_COUNTER_PERIOD_KINDS);
+    });
+
+    // 🔴 T-11-02（docs/02 F-057 / docs/05 §6.9 API-A6 / migration 20260924000000）: テナント個別のクォータ上書き。
+    //    metric は `usage_limit_states` の**部分集合**（AI の月次件数 4 単位のみ。金額 `AI_COST_USD` は運営者の内部指標、
+    //    `EMAIL_COUNT` / `STORAGE_BYTES` は執行点の配線が無いため上書きの対象ではない。T-11-02 NG-1 で 6 → 4 に修正）。
+    //    単一出所は `@ses/domain` の `QUOTA_OVERRIDE_METRICS`（`AI_UNIT_METRICS` から引く。列挙し直さない）。
+    it('tenant_quota_overrides_metric_check ⇔ @ses/domain QUOTA_OVERRIDE_METRICS（usage_limit_states_metric_check から AI_COST_USD / EMAIL_COUNT / STORAGE_BYTES を除いた 4）', () => {
+      const values = extractCheckInValues(migrationSql, 'tenant_quota_overrides_metric_check');
+      expectSameValueSet(values, QUOTA_OVERRIDE_METRICS);
+      const limitMetrics: readonly string[] = USAGE_LIMIT_METRICS;
+      expect(values.filter((value) => !limitMetrics.includes(value))).toEqual([]);
+      expect(limitMetrics.filter((value) => !values.includes(value))).toEqual(['AI_COST_USD', 'EMAIL_COUNT', 'STORAGE_BYTES']);
     });
 
     it('tenant_esign_connections_provider_check ⇔ packages/db CONTRACT_DOCUMENT_EXTERNAL_PROVIDERS（ContractDocument と同じ値集合を共有。決定済み Issue #11）', () => {

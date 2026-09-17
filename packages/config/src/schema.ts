@@ -81,6 +81,15 @@ const commonShape = {
   ANTHROPIC_MONTHLY_SPEND_CAP_USD: z.coerce.number().positive(),
   AI_DAILY_COST_LIMIT_USD_DEFAULT: z.coerce.number().positive(),
   /**
+   * 🔴 T-11-02: テナントの**月間** AI 原価の上限（USD。運営者の内部指標。docs/03 §7.5-4 / §7.6.2「内部の金額上限」/
+   *    `CLAUDE.md` §2 課金「金額（USD）の原価上限は運営者側の内部指標」）。`A-004`（API-A6）の「金額上限に対する消費率」の分母。
+   * 🔴 テナント利用者には**出さない**（`F-027 AC-6`。主平面の `usageLimitsRuntime()` に載せない）。判定にも使わない ——
+   *    停止するのは日次コスト上限（上）だけで、月間の金額上限は監視の指標である（docs/03 §7.6.3-4）。
+   *    既定は docs/03 §7.6.2 の **Standard $40**（件数クォータの既定値 180 / 6,200 / 180 / 20 と同じ表の値）。
+   *    プラン別の値（`Plan.aiCostCapUsd` / `Subscription.quotaOverrideUsd`。SP-20）が読めるまでの既定値。
+   */
+  AI_MONTHLY_COST_CAP_USD_DEFAULT: z.coerce.number().positive().default(40),
+  /**
    * 🔴 T-10-03: 利用者に見せる AI の**月次件数クォータ**（4 単位）の既定値（docs/03 §7.6.2 /
    *    docs/02 章 7.5 / `F-027`）。`EMAIL_DAILY_LIMIT_PER_TENANT` と同じ扱い —— **プラン別の値
    *    （`Plan.unitQuota*` + `Subscription.unitQuotaOverride`）が主平面から読めるようになる

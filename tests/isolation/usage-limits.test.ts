@@ -304,7 +304,7 @@ describe('① 3 種の挙動差 + ⑤ 監査は状態が変わったときだけ
 
     // 🔴 同じ状態で再評価しても、監査ログも通知も増えない（状態が変わったときだけ）。
     const second = await run(TENANT_1.tenantId);
-    expect(second).toEqual({ changed: 0, audited: 0, notices: 0, queued: 0, aiStopped: true });
+    expect(second).toEqual({ changed: 0, audited: 0, notices: 0, queued: 0, quotaNoticesQueued: 0, aiStopped: true });
     expect(await audits(TENANT_1.tenantId)).toHaveLength(3);
     expect(await dispatches(TENANT_1.tenantId)).toHaveLength(3);
   });
@@ -445,7 +445,7 @@ describe('⑤ AC-4: 80% の通知は管理者宛・1 日 1 回', () => {
 
     // 同じ日・同じ水準 → 何も増えない。
     const second = await run(TENANT_1.tenantId);
-    expect(second).toEqual({ changed: 0, audited: 0, notices: 0, queued: 0, aiStopped: false });
+    expect(second).toEqual({ changed: 0, audited: 0, notices: 0, queued: 0, quotaNoticesQueued: 0, aiStopped: false });
     expect(await dispatches(TENANT_1.tenantId)).toHaveLength(1);
 
     // 🔴 接近 → 下回る → 同じ日にまた接近: 通知は増えない（1 日 1 回）。監査も増えない（接近は上がったときだけ）。

@@ -192,6 +192,7 @@ describe('🔴 逆リレーション（他モデルのテナントキー列を�
       'tenantMatchWeights',
       'usageMeasurementFindings', // T-10-02（docs/05 §9.8 / migration 20260919000000）
       'usageLimitStates', // T-10-03（docs/02 F-027 / docs/05 §5.8 / migration 20260920000000）
+      'tenantQuotaOverrides', // T-11-02（docs/02 F-057 / docs/05 §6.9 API-A6 / migration 20260924000000）
     ];
     expect(inverseTenantKeyRelations(tenant as DmmfModel)).toEqual(expected);
     expect(tenantKeyMovingRelationsOf('Tenant')).toEqual(expected);

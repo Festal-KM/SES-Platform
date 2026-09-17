@@ -73,6 +73,11 @@ const PLATFORM_WRITE_ALLOWLIST: Record<
   // 🔴 T-03-08（docs/05 §5.2 / API-A4 の `sendingDomain`）: 運営者は**登録だけを代行**する。
   //    DNS の設定・検証の実行・`verified_at` の書き込みはできない（`UPDATE` を GRANT しない）。
   tenant_sending_domains: { insert: true, delete: false, updateColumns: [] },
+  // 🔴 T-11-02（docs/05 §5.2 の 4 表目 / §6.9 API-A6 / CLAUDE.md §10.5「クォータ」）: 運営者はクォータの上書きを
+  //    **INSERT だけ**で積む。UPDATE / DELETE は誰にも無い（履歴を残し、効く行は選択で決める。migration 20260924000000）。
+  //    行の内容は RLS の `tenant_quota_overrides_platform_write_insert`（対象 = app.target_tenant_id / 操作者 = 自分 /
+  //    適用日 ≥ 今日 / 引き下げは明日以降）が固定する。
+  tenant_quota_overrides: { insert: true, delete: false, updateColumns: [] },
   // 🔴 T-03-07（運営者認証。`F-055` / migration 20260904000000）: 管理平面の認証経路は
   //    `app_platform_write` で動く（`app_platform` は SELECT のみで 2FA の登録・確定・
   //    リカバリコード消費・監査ログの記録ができない）。**業務テーブルへの書き込みを開いたのではない**:
@@ -582,14 +587,14 @@ describe('④ app_platform への SELECT は §5.5 の非開示列を除外し�
     expect(checkedColumns).toBeGreaterThan(0); // 空振り防止（対照）
   });
 
-  it('🔴 許可リストは 55 表すべてを覆う（走査の母集団と 1 対 1。表の追加を取りこぼさない。T-09-12 で engineer_careers、T-10-02 で usage_measurement_findings、T-10-03 で usage_limit_states を足した）', async () => {
+  it('🔴 許可リストは 56 表すべてを覆う（走査の母集団と 1 対 1。表の追加を取りこぼさない。T-09-12 で engineer_careers、T-10-02 で usage_measurement_findings、T-10-03 で usage_limit_states、T-11-02 で tenant_quota_overrides を足した）', async () => {
     const tables = (await readPublicTables(unextended)).filter((t) => !OUT_OF_SCOPE_TABLES.includes(t));
     // 🔴 partitioned table の子パーティションは readPublicTables に含まれうるため、
     //    「許可リストに無い表」ではなく「母集団に無い許可リスト項目」を見る向きで検査する。
     const population = new Set(tables);
     const stale = Object.keys(PLATFORM_READ_COLUMN_ALLOWLIST).filter((t) => !population.has(t));
     expect(stale, '許可リストに、実在しない表が残っている').toEqual([]);
-    expect(Object.keys(PLATFORM_READ_COLUMN_ALLOWLIST)).toHaveLength(55);
+    expect(Object.keys(PLATFORM_READ_COLUMN_ALLOWLIST)).toHaveLength(56);
   });
 
   it('🔴 テーブル単位の GRANT SELECT を持つ表が 1 つも無い（§5.5「列を列挙して GRANT する」）', async () => {

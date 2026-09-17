@@ -26,8 +26,11 @@ import type {
   TenantSendingDomainState,
   TwoFactorRequirementReason,
 } from '@ses/db';
-import { InvalidStateTransitionError as DomainInvalidStateTransitionError } from '@ses/domain';
-import type { StateMachineEntity } from '@ses/domain';
+import {
+  InvalidStateTransitionError as DomainInvalidStateTransitionError,
+  QuotaChangeRejectedError as DomainQuotaChangeRejectedError,
+} from '@ses/domain';
+import type { QuotaChangeRejection, StateMachineEntity } from '@ses/domain';
 import type { MessageKey } from '@ses/i18n';
 
 export type ErrorLogLevel = 'warn' | 'error';
@@ -117,6 +120,46 @@ export class ResendNotAcknowledgedError extends AppError {
     this.name = 'ResendNotAcknowledgedError';
   }
 }
+
+/**
+ * 🔴 クォータの変更を受け付けられない（**400**。API-A6 `PUT /api/admin/tenants/{id}/quota`。`F-057 AC-3`）。T-11-02。
+ *
+ * 判定の本体は `@ses/domain` の `decideQuotaChange`（**この型は判定を持たない**）。理由は列挙値 `params.reason` で返す:
+ * `LOWERING_NOT_DEFERRED`（引き下げを当日に適用しようとした = 即時反映のみの操作は存在しない）/
+ * `LOWERING_NOTICE_REQUIRED`（引き下げなのに通知の確認が無い）/ `EFFECTIVE_FROM_PAST` / `LIMIT_OUT_OF_RANGE`。
+ * 🔴 `ValidationError` と別コードにする理由: 書式は正しく、**規律**（引き下げの予告）に反しているだけである。画面は理由ごとに
+ *    次の行動（適用日を翌日以降にする / 通知にチェックを入れる）を示す。
+ */
+export class QuotaChangeRejectedError extends AppError {
+  readonly code = 'QUOTA_CHANGE_REJECTED';
+  readonly httpStatus = 400;
+  readonly userMessageKey: MessageKey;
+  override readonly details: readonly string[];
+  override readonly params: Readonly<Record<string, unknown>>;
+
+  constructor(readonly reason: QuotaChangeRejection) {
+    super(`クォータの変更を受け付けられません（${reason}）。`);
+    this.name = 'QuotaChangeRejectedError';
+    this.params = { reason };
+    this.userMessageKey = QUOTA_CHANGE_REJECTION_MESSAGE_KEYS[reason];
+    this.details = QUOTA_CHANGE_REJECTION_DETAILS[reason];
+  }
+}
+
+/** 理由 → 文言（`packages/i18n`）。`Record<QuotaChangeRejection, …>` なので理由が増えたら割り当て漏れがコンパイルで落ちる。 */
+const QUOTA_CHANGE_REJECTION_MESSAGE_KEYS: Readonly<Record<QuotaChangeRejection, MessageKey>> = {
+  LIMIT_OUT_OF_RANGE: 'error.admin.quota.limitOutOfRange',
+  EFFECTIVE_FROM_PAST: 'error.admin.quota.effectiveFromPast',
+  LOWERING_NOT_DEFERRED: 'error.admin.quota.loweringNotDeferred',
+  LOWERING_NOTICE_REQUIRED: 'error.admin.quota.loweringNoticeRequired',
+};
+
+const QUOTA_CHANGE_REJECTION_DETAILS: Readonly<Record<QuotaChangeRejection, readonly string[]>> = {
+  LIMIT_OUT_OF_RANGE: ['body.limit'],
+  EFFECTIVE_FROM_PAST: ['body.effectiveFrom'],
+  LOWERING_NOT_DEFERRED: ['body.effectiveFrom'],
+  LOWERING_NOTICE_REQUIRED: ['body.notifyTenantAdmins'],
+};
 
 /**
  * 401。🔴 サインインの失敗理由（存在しない / パスワード不一致 / 無効化）を**区別しない**
@@ -1206,6 +1249,8 @@ export function toAppError(error: unknown): AppError {
   if (error instanceof DomainInvalidStateTransitionError) {
     return new InvalidStateTransitionError(error.entity, error.from, error.to);
   }
+  // 🔴 T-11-02: クォータ変更の規律違反（引き下げの当日適用 / 通知の確認なし 等）は **400**（`F-057 AC-3`）。
+  if (error instanceof DomainQuotaChangeRejectedError) return new QuotaChangeRejectedError(error.reason);
   return new InternalError();
 }
 

@@ -18,7 +18,7 @@
 // ファイル名・版のメモは 1 つも載せない。「何がどうなったか」は、閲覧者自身の権限で
 // 読める画面（`S-003` / `S-004` の隔離ブロック → `S-008`）が示す。
 import { SKILL_SHEET_QUARANTINE_TEMPLATE_KEY } from './scan-quarantine-notice.js';
-import { USAGE_LIMIT_NOTICE_TEMPLATE_KEY } from './usage-limit-notice.js';
+import { QUOTA_LOWERED_TEMPLATE_KEY, USAGE_LIMIT_NOTICE_TEMPLATE_KEY } from './usage-limit-notice.js';
 
 /** 🔴 差し込み値の定義が無いテンプレートで送信しようとした（実装漏れ）。握り潰さない。 */
 export class UnknownOperationalMailTemplateError extends Error {
@@ -57,6 +57,11 @@ const TEMPLATE_PARAMS: Readonly<Record<string, ParamsBuilder>> = {
     link: new URL('/settings/usage', deps.appUrl).toString(),
   }),
   [USAGE_LIMIT_NOTICE_TEMPLATE_KEY.REACHED]: (deps) => ({
+    link: new URL('/settings/usage', deps.appUrl).toString(),
+  }),
+  // 🔴 T-11-02（`F-057 AC-3`）。運営者によるクォータ引き下げの予告。**差し込みはリンク 1 つだけ** ——
+  //    どの上限が・いつから・いくつになるかは `S-038` が示す。新旧の値を本文に載せない（`BR-24` と同じ規律）。
+  [QUOTA_LOWERED_TEMPLATE_KEY]: (deps) => ({
     link: new URL('/settings/usage', deps.appUrl).toString(),
   }),
 };

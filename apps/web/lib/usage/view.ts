@@ -15,7 +15,9 @@
 //    **止まった理由としてだけ**現れる（`stoppedFeatures` の `reviewGate`。docs/03 `ui-design` 申し送り 6）。
 //
 // 🔴 判定は `packages/domain` の 1 実装（`assessAiUnitLimit` / `assessEmailDailyLimit` / `assessStorageLimit` /
-//    `decideEmailRate`）。ワーカー（`usage.limit-check`）と同じ関数・同じ上限値（`usageLimitsRuntime()`）を通る。
+//    `decideEmailRate`）。ワーカー（`usage.limit-check`）と同じ関数・同じ上限値を通る —— 上限値は
+//    `resolveTenantQuotas`（`@ses/db`。T-11-02）が既定値（`usageLimitsRuntime()`）とテナント個別の上書き
+//    （`tenant_quota_overrides`。運営者の `A-004`）から解く。ワーカーも同じ関数を通るため、判定と表示で上限値がずれない。
 //    AI の停止だけは予約と同じ probe（ワーカー）が確定させた `usage_limit_states` を読む（`readAiStopNotice`）。
 //
 // 🔴 本モジュールは Next.js / Auth.js に依存しない（`@ses/db` / `@ses/domain` のみ）。結合テストが
@@ -24,6 +26,7 @@ import {
   readAiStopNotice,
   readTenantUsageSnapshot,
   requireHost,
+  resolveTenantQuotas,
   TENANT_ROLES,
   type AuthenticatedTenantCtx,
 } from '@ses/db';
@@ -137,8 +140,28 @@ void REASON_KEY_AI_DAILY;
  */
 export async function readUsageView(ctx: AuthenticatedTenantCtx, now: Date): Promise<UsageView> {
   requireHost(ctx);
-  const limits = usageLimitsRuntime();
-  const [snapshot, aiStop] = await Promise.all([readTenantUsageSnapshot(ctx, now), readAiStopNotice(ctx, now)]);
+  const runtime = usageLimitsRuntime();
+  const [snapshot, aiStop, quotas] = await Promise.all([
+    readTenantUsageSnapshot(ctx, now),
+    readAiStopNotice(ctx, now),
+    // 🔴 T-11-02: 既定値 + テナント個別の上書き（ワーカーと同じ 1 関数。既定値だけを読まない）。
+    resolveTenantQuotas(ctx, {
+      now,
+      defaults: {
+        aiUnitQuotas: runtime.aiUnitQuotas,
+        emailDailyLimit: runtime.emailDailyLimit,
+        storageLimitBytes: runtime.storageLimitBytes,
+      },
+    }),
+  ]);
+  // 🔴 表示に使う上限は解いた値。分次上限と閾値だけは起動時の値（上書きの対象ではない）。
+  const limits = {
+    warnPercent: runtime.warnPercent,
+    aiUnitQuotas: quotas.aiUnitQuotas,
+    emailDailyLimit: quotas.emailDailyLimit,
+    emailMinuteLimit: runtime.emailMinuteLimit,
+    storageLimitBytes: quotas.storageLimitBytes,
+  };
 
   const aiUnits = {} as Record<AiUnitKey, AiUnitUsageView>;
   for (const metric of AI_UNIT_METRICS) {
