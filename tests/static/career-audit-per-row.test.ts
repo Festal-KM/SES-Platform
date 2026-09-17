@@ -70,12 +70,21 @@ describe('① diffCareerRows は純粋関数である（packages/domain）', () 
 });
 
 describe('② engineer_career.* の監査を書く経路は 1 本だけ', () => {
-  it("'engineer_career.' を含むソースは apps/web/lib/engineers/careers.ts だけ", () => {
+  it("'engineer_career.' を含むソースは apps/web/lib/engineers/careers.ts と、読み取り側の許可リストだけ", () => {
     const offenders = sourceFiles
       .filter((file) => /engineer_career\./.test(stripComments(readFileSync(file, 'utf8'))))
       .map(toRepoRelative)
       .sort();
-    expect(offenders).toEqual(['apps/web/lib/engineers/careers.ts']);
+    expect(offenders).toEqual([
+      'apps/web/lib/engineers/careers.ts',
+      // ✅ T-11-09: `S-041` の行の詳細の許可リスト（docs/05 §6.4「#10 の改訂」）。`PARTNER_LEDGER_ACTION_PREFIXES` が
+      //    「主体がパートナーなら 1 キーも出さない action の接頭辞」として `engineer_career.` を**読む側**で持つ。
+      //    `AuditLog` を書く経路ではない（`writeAuditLog` を呼ばない。下の対照で固定）。
+      'packages/domain/src/audit/pick-detail.ts',
+    ]);
+    // 対照: 許可リスト側は監査ログを書かない（書く経路が 2 本になっていない）。
+    const pickDetail = stripComments(readFileSync(path.join(repoRoot, 'packages/domain/src/audit/pick-detail.ts'), 'utf8'));
+    expect(pickDetail).not.toMatch(/writeAuditLog|auditLog\.|@ses\/db/);
   });
 
   it('action は create / update / delete の 3 種で、独自 action を持たない（S-041 の接尾辞一致）', () => {

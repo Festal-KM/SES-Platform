@@ -10,6 +10,7 @@ import type { Metadata } from 'next';
 import { t } from '@ses/i18n';
 import { resolveTenantCtxOutcome } from '../../../lib/auth/session';
 import { AUDIT_LOG_CATEGORY_KEYS, type AuditLogCategoryKey } from '../../../lib/audit-logs/categories';
+import { auditLogDetailMessages } from '../../../lib/audit-logs/detail-labels';
 import { AuditLogsView, type AuditLogsViewMessages } from './audit-logs-view';
 
 export const runtime = 'nodejs';
@@ -46,8 +47,11 @@ const messages: AuditLogsViewMessages = {
   columnAction: t('auditLogs.column.action'),
   columnTarget: t('auditLogs.column.target'),
   columnMeta: t('auditLogs.column.meta'),
+  columnDetail: t('auditLogs.column.detail'),
   actorSystem: t('auditLogs.actor.system'),
   actorPlatform: t('auditLogs.actor.platform'),
+  // T-11-09: 行の詳細（docs/04 §S-041「行の詳細」）。ラベルの辞書であり、許可リストは `@ses/domain` 側。
+  detail: auditLogDetailMessages(),
 };
 
 export default async function AuditLogsPage() {

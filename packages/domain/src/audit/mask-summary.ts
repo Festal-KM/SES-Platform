@@ -58,7 +58,7 @@ const TOKEN_MAX_LENGTH = 64;
  *    列挙値の理由（`PASSWORD_MISMATCH` 等）まで落ちるが、それは `action`（`auth.login_failed`）で足りる。
  * 🔴 `title` を含める: 通知の件名は差し込み値（氏名）を含みうる（docs/05 §5.5 `notifications.title`）。
  */
-const CONTENT_WORDS: ReadonlySet<string> = new Set([
+export const CONTENT_WORDS: ReadonlySet<string> = new Set([
   'body',
   'subject',
   'note',
@@ -89,7 +89,7 @@ const CONTENT_WORDS: ReadonlySet<string> = new Set([
  * 🔴 `to` / `cc` / `bcc` は含めない —— 期間の `periodTo` / 遷移の `to` と衝突する。宛先の値は
  *    メールアドレスであり、③の値パターンで必ず伏せられる。
  */
-const IDENTITY_WORDS: ReadonlySet<string> = new Set([
+export const IDENTITY_WORDS: ReadonlySet<string> = new Set([
   'name',
   'names',
   'email',
@@ -120,7 +120,7 @@ const IDENTITY_WORDS: ReadonlySet<string> = new Set([
 const IDENTITY_KEY_EXCEPTIONS: ReadonlySet<string> = new Set(['ipaddress']);
 
 /** ② 商流キー（単価・金額。`CLAUDE.md` §10.5 / docs/05 §5.5 の非開示列と同じ基準）。 */
-const COMMERCE_WORDS: ReadonlySet<string> = new Set([
+export const COMMERCE_WORDS: ReadonlySet<string> = new Set([
   'price',
   'prices',
   'amount',

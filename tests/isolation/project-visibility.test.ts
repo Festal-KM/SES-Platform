@@ -69,6 +69,7 @@ import {
   isolationSeedProjectNames,
   runSeed,
 } from '@ses/db/seed';
+import { AUDIT_DETAIL_ALLOWLIST } from '../../packages/domain/src/audit/pick-detail.js';
 import { startIsolationDatabase, type IsolationDatabase } from './support/postgres.js';
 
 const SETUP_TIMEOUT_MS = 600_000;
@@ -176,6 +177,15 @@ type AuditLogItemBody = {
   readonly targetId: string | null;
   readonly deviceKind: string | null;
   readonly ipAddress: string | null;
+  /** T-11-09: 許可リスト適用 + 名前解決済みの詳細（docs/05 §6.4「#10 の改訂」）。 */
+  readonly detail: {
+    readonly entries: readonly {
+      readonly key: string;
+      readonly pair: { readonly id: string; readonly side: 'BEFORE' | 'AFTER' } | null;
+      readonly value: { readonly kind: string; readonly value?: unknown };
+    }[];
+  };
+  readonly detailSuppressedReason: string | null;
 };
 type AuditLogPageBody = { readonly items: readonly AuditLogItemBody[] };
 
@@ -767,20 +777,36 @@ describe('🔴 T-06-07: 記録が `S-041` の閲覧経路から読める（`GET 
     expect(page.items.map((item) => item.action)).not.toContain('project.visibility_change');
   });
 
-  it('🔴 応答は `docs/04` §S-041 の列だけで、`summary`（変更前後の公開先）を返さない', async () => {
-    // 🔴 **これは意図した境界である。** `F-014 AC-5` が要求するのは「監査ログに**残る**」ことで
-    //    あり（記録は上の describe が固定した）、`docs/04` §S-041 の結果テーブルは
-    //    「日時 / 主体 / 操作 / 対象 / IP・デバイス種別」の 5 列である。`summary` を無条件に
-    //    応答へ載せると、**全 action の `summary` が画面に出る**ことになり（`docs/05` §16.2 の
-    //    「PII を入れない」規律に頼り切った露出面になる）、`membership.role_change` など
-    //    他の記録の扱いとも食い違う。前後の公開先を画面に出す判断は `docs/04` の改訂事項である。
+  it('🔴 detail は許可リストのキーだけで、summary の生 JSON を返さない。before / after は取引先名に解決される', async () => {
+    // 🔴 T-11-09（Issue #40 = 選択肢 2。docs/05 §6.4「#10 の改訂」）: 境界を「`summary` を返さない」から
+    //    「**許可リスト外のキーを返さない**」に置き換えた。`F-014 AC-5` の「変更前後の公開先」は
+    //    `detail.entries` の `before` / `after` として**取引先名**（`NAME_LIST`）で読める。
+    //    生 JSON（`summary`）は依然として型にも応答にも無い。ID は名前に解決されるので応答に残らない。
     const admin1 = await ctxOf(HOST_1, 'ADMIN');
+    const companyNames = isolationSeedCompanyNames(1);
 
     await putVisibility(admin1, TENANT_1.publishedProjectId, []);
 
     const page = await getAuditLogs(admin1, 'VISIBILITY_CHANGE');
-    expect(page.items[0]).not.toHaveProperty('summary');
+    const item = page.items[0];
+    expect(item).not.toHaveProperty('summary');
+    expect(item?.detailSuppressedReason).toBeNull();
+
+    const allowed = new Set(Object.keys(AUDIT_DETAIL_ALLOWLIST['project.visibility_change'] ?? {}));
+    const keys = (item?.detail.entries ?? []).map((entry) => entry.key);
+    expect(keys.length).toBeGreaterThan(0);
+    expect(keys.every((key) => allowed.has(key))).toBe(true);
+
+    const before = item?.detail.entries.find((entry) => entry.key === 'before');
+    const after = item?.detail.entries.find((entry) => entry.key === 'after');
+    expect(before?.pair).toEqual({ id: 'visibility', side: 'BEFORE' });
+    expect(before?.value).toEqual({ kind: 'NAME_LIST', value: [companyNames.partners[0]] });
+    expect(after?.pair).toEqual({ id: 'visibility', side: 'AFTER' });
+    expect(after?.value).toEqual({ kind: 'NAME_LIST', value: [] });
+
+    // 🔴 ID は名前に解決されるので応答に現れない（不透明 ID の露出も無い）。
     expect(JSON.stringify(page.items)).not.toContain(PARTNER_1_1.partnerCompanyId);
+    expect(JSON.stringify(page.items)).not.toContain('reviewGateId');
   });
 });
 

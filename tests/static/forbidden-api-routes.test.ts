@@ -37,6 +37,12 @@ const FORBIDDEN_ROUTES: readonly { readonly url: string; readonly reason: string
       '🔴 docs/05 §6.8 / §4.6 / docs/04 申し送り 2: 匿名候補の詳細エンドポイントは ' +
       '開示 5 項目を超える経路になる（F-017 AC-1 / BR-54。開示項目の追加は人間の承認事項）',
   },
+  {
+    url: '/api/audit-logs/{}',
+    reason:
+      '🔴 docs/05 §6.4「#10 の改訂」/ §17.2 #32 ⑤（T-11-09）: S-041 の行の詳細は一覧の応答に同梱する。' +
+      '展開ごとの追加取得を作ると、監査ログの閲覧そのものが記録の対象になり行数が読めなくなる（docs/04 §S-041）',
+  },
 ];
 
 /** `app/api` 配下で `route.ts` を持つディレクトリの、URL としてのパスを列挙する。 */

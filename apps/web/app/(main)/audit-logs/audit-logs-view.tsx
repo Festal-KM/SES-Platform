@@ -13,6 +13,11 @@
 //    `@ses/ui` と Tailwind へ移した。**列の間引きの境界は変えていない** ——
 //    旧 `@media (max-width: 640px) { display: none }` と `hidden sm:table-cell` は
 //    どちらも Tailwind の既定 `sm`（640px）を境にする（`CLAUDE.md` §13.3。独自定義しない）。
+//
+// 🔴 T-11-09: 行を開くと直下に詳細（`AuditLogDetail`）をインラインで展開する（docs/04 §S-041「行の詳細」）。
+//    **詳細は一覧の応答（`detail` / `detailSuppressedReason`）に同梱されており、展開時の追加取得は無い**
+//    （展開ごとに監査ログの閲覧が記録される経路を作らない）。複数行を同時に開ける（「要求 → 確定」の 2 行を
+//    並べて読む）。検索し直すと全行が閉じ、「さらに読み込む」では開いた行を保つ。**既存 5 列は変えない。**
 import { useCallback, useState, type FormEvent } from 'react';
 import {
   Button,
@@ -33,6 +38,9 @@ import {
   FILTER_FORM_CLASSES,
 } from '../_shared/filter-form-classes';
 import { AUDIT_LOG_CATEGORY_KEYS, type AuditLogCategoryKey } from '../../../lib/audit-logs/categories';
+import type { AuditLogDetailMessages } from '../../../lib/audit-logs/detail-labels';
+import type { AuditLogListItem } from '../../../lib/audit-logs/view';
+import { AuditLogDetail } from './audit-log-detail';
 
 /**
  * 🔴 モバイルは「日時 + 主体 + 操作」の 3 要素に劣化する（`docs/04` §S-041）。
@@ -64,22 +72,14 @@ export type AuditLogsViewMessages = {
   readonly columnAction: string;
   readonly columnTarget: string;
   readonly columnMeta: string;
+  readonly columnDetail: string;
   readonly actorSystem: string;
   readonly actorPlatform: string;
+  readonly detail: AuditLogDetailMessages;
 };
 
-type AuditLogItem = {
-  readonly id: string;
-  readonly createdAt: string;
-  readonly actorKind: 'USER' | 'PLATFORM_USER' | 'SYSTEM';
-  readonly actorId: string | null;
-  readonly actorDisplayName: string | null;
-  readonly action: string;
-  readonly targetType: string | null;
-  readonly targetId: string | null;
-  readonly ipAddress: string | null;
-  readonly deviceKind: string | null;
-};
+/** 応答の 1 行（`GET /api/audit-logs` の `AuditLogListItem`）。 */
+type AuditLogItem = AuditLogListItem;
 
 type AuditLogPage = {
   readonly items: readonly AuditLogItem[];
@@ -119,6 +119,16 @@ export function AuditLogsView({ messages }: { messages: AuditLogsViewMessages })
   const [periodError, setPeriodError] = useState(false);
   const [phase, setPhase] = useState<Phase>('idle');
   const [results, setResults] = useState<AuditLogPage | null>(null);
+  const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(() => new Set());
+
+  function toggleExpanded(id: string): void {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   const runSearch = useCallback(
     async (cursor: string | null): Promise<void> => {
@@ -143,6 +153,7 @@ export function AuditLogsView({ messages }: { messages: AuditLogsViewMessages })
           return;
         }
         const body = (await response.json()) as AuditLogPage;
+        if (cursor === null) setExpandedIds(new Set());
         setResults((prev) => ({
           items: cursor === null || prev === null ? body.items : [...prev.items, ...body.items],
           nextCursor: body.nextCursor,
@@ -228,9 +239,12 @@ export function AuditLogsView({ messages }: { messages: AuditLogsViewMessages })
         <p className={EMPTY_CLASSES}>{messages.emptyNoMatch}</p>
       ) : (
         <div>
-          <Table>
+          <Table data-testid="audit-logs-table">
             <TableHeader>
               <TableRow>
+                <TableHead>
+                  <span className="sr-only">{messages.columnDetail}</span>
+                </TableHead>
                 <TableHead>{messages.columnDate}</TableHead>
                 <TableHead>{messages.columnActor}</TableHead>
                 <TableHead>{messages.columnAction}</TableHead>
@@ -239,17 +253,55 @@ export function AuditLogsView({ messages }: { messages: AuditLogsViewMessages })
               </TableRow>
             </TableHeader>
             <TableBody>
-              {results.items.map((item) => (
-                <TableRow key={item.id}>
-                  <TableCell>{formatDateTime(item.createdAt)}</TableCell>
-                  <TableCell>{actorLabel(item, messages)}</TableCell>
-                  <TableCell>{item.action}</TableCell>
-                  <TableCell className={TABLET_UP}>{item.targetType ?? '—'}</TableCell>
-                  <TableCell className={TABLET_UP}>
-                    {[item.deviceKind, item.ipAddress].filter(Boolean).join(' / ') || '—'}
-                  </TableCell>
-                </TableRow>
-              ))}
+              {results.items.map((item) => {
+                const expanded = expandedIds.has(item.id);
+                return [
+                  <TableRow
+                    key={item.id}
+                    data-testid={`audit-logs-row-${item.id}`}
+                    data-state={expanded ? 'selected' : undefined}
+                    className="cursor-pointer"
+                    onClick={() => toggleExpanded(item.id)}
+                  >
+                    <TableCell padding="compact">
+                      <button
+                        type="button"
+                        data-testid={`audit-logs-row-toggle-${item.id}`}
+                        aria-expanded={expanded}
+                        aria-controls={`audit-logs-detail-${item.id}`}
+                        aria-label={expanded ? messages.detail.toggleClose : messages.detail.toggleOpen}
+                        className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-slate-500 hover:bg-slate-100"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          toggleExpanded(item.id);
+                        }}
+                      >
+                        <span aria-hidden="true">{expanded ? '▾' : '▸'}</span>
+                      </button>
+                    </TableCell>
+                    <TableCell>{formatDateTime(item.createdAt)}</TableCell>
+                    <TableCell>{actorLabel(item, messages)}</TableCell>
+                    <TableCell>{item.action}</TableCell>
+                    <TableCell className={TABLET_UP}>{item.targetType ?? '—'}</TableCell>
+                    <TableCell className={TABLET_UP}>
+                      {[item.deviceKind, item.ipAddress].filter(Boolean).join(' / ') || '—'}
+                    </TableCell>
+                  </TableRow>,
+                  expanded ? (
+                    <TableRow key={`${item.id}-detail`} className="bg-slate-50 hover:bg-slate-50">
+                      <TableCell
+                        id={`audit-logs-detail-${item.id}`}
+                        data-testid={`audit-logs-row-detail-${item.id}`}
+                        colSpan={6}
+                        whitespace="normal"
+                        className="pl-8"
+                      >
+                        <AuditLogDetail item={item} messages={messages.detail} />
+                      </TableCell>
+                    </TableRow>
+                  ) : null,
+                ];
+              })}
             </TableBody>
           </Table>
           {results.nextCursor === null ? null : (

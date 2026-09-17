@@ -332,6 +332,12 @@ const FROZEN_EXACT: readonly string[] = [
   'admin-usage-quota-form-tenant',
   'admin-usage-reload',
   'admin-usage-table',
+  // ✅ T-11-09: `S-041` 行の詳細（`audit-log-detail.tsx` / `audit-logs-view.tsx`）。行・トグル・展開部の testid は FROZEN_PREFIXES。
+  'audit-logs-detail-deleted-partner',
+  'audit-logs-detail-empty',
+  'audit-logs-detail-list',
+  'audit-logs-detail-suppressed',
+  'audit-logs-table',
   // ✅ T-08-05: `S-016` 候補検索（`candidate-screen.tsx` / `page.tsx`）。実装から機械抽出した 45 個。
   'candidate-detail-anonymous',
   'candidate-detail-anonymous-note',
@@ -1175,6 +1181,11 @@ const FROZEN_PREFIXES: readonly string[] = [
   'admin-usage-quota-open-',
   'admin-usage-row-',
   'admin-usage-unit-cost-ratio-',
+  // ✅ T-11-09: `S-041` の動的 testid（行 / 展開トグル / 展開部 / 展開部の項目行）。
+  'audit-logs-detail-row-',
+  'audit-logs-row-',
+  'audit-logs-row-detail-',
+  'audit-logs-row-toggle-',
   // ✅ T-08-05: `S-016` の動的 testid（行 / 種別 / 表示名 / `+N` / 条件の解除 / 要件サマリの項目）。
   'candidate-list-kind-',
   // ✅ T-11-12: 自社候補の表示名セルの導線（`S-006`。`NameCell` の `linkTestId`）。
