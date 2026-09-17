@@ -17,10 +17,12 @@
 //    クエリを実行しない**（記録の無い閲覧が構造的に起こらない）。
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
+import { isSeedableAppEnv } from '@ses/config';
 import { readAdminHomeSummary } from '@ses/db/platform';
 import { t } from '@ses/i18n';
 import { ADMIN_MONITORING_HREF, ADMIN_USAGE_HREF } from '../../lib/admin-monitoring/hrefs';
 import { readPlatformRequestMeta, resolvePlatformCtxOutcome } from '../../lib/auth/platform-session';
+import { currentAppEnv } from '../../lib/db/bootstrap';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -32,6 +34,9 @@ export default async function AdminHomePage() {
 
   const meta = await readPlatformRequestMeta();
   const summary = await readAdminHomeSummary(outcome.ctx, { ipAddress: meta.ipAddress });
+  // 🔴 T-10-06: `A-012` の導線は `APP_ENV ∈ {demo, development}` のときだけ描く（`F-053 AC-6`「管理平面に導線が表示されず」）。
+  //    判定は `packages/config` の `isSeedableAppEnv`（API-A16 の 1 枚目のガードと同じ 1 関数）。
+  const demoSeedAvailable = isSeedableAppEnv(currentAppEnv());
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-8">
@@ -69,7 +74,7 @@ export default async function AdminHomePage() {
         </Link>
       </p>
       {/* A-005（運用監視。T-11-04）への導線。件数・状態・エラー種別・日時だけを出す画面（F-059 AC-3）。 */}
-      <p className="mb-6 text-sm">
+      <p className="mb-2 text-sm">
         <Link
           className="text-slate-700 underline-offset-2 hover:underline"
           href={ADMIN_MONITORING_HREF}
@@ -78,7 +83,19 @@ export default async function AdminHomePage() {
           {t('admin.home.monitoring.link')}
         </Link>
       </p>
-      <p className="text-sm text-slate-700">{t('admin.home.placeholder')}</p>
+      {/* A-012（デモ環境の合成データ管理。T-10-06）への導線。🔴 demo / development 以外では**導線そのものが存在しない**（F-053 AC-6）。 */}
+      {demoSeedAvailable ? (
+        <p className="mb-2 text-sm">
+          <Link
+            className="text-slate-700 underline-offset-2 hover:underline"
+            href="/admin/demo"
+            data-testid="admin-home-demo-link"
+          >
+            {t('admin.home.demo.link')}
+          </Link>
+        </p>
+      ) : null}
+      <p className="mt-4 text-sm text-slate-700">{t('admin.home.placeholder')}</p>
     </main>
   );
 }

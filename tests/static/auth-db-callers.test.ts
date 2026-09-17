@@ -411,6 +411,17 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
   //    —— lint はゾーン設定の書き換えで緩みうるが、この走査は「実際に書かれているか」を見る。
   withPlatformRead: [],
   withPlatformWrite: [],
+  // 🔴 T-10-06: 合成データ投入の特権接続（`@ses/db/seed`。任意 URL で生 `PrismaClient` を開き RLS を素通りする。
+  //    docs/05 §13.6「T-10-06 の実装の決着」）。呼び出し元をファイル単位で固定するのは、`withPlatformWrite` の
+  //    7 ドメインの外にあるこの経路が増えると「特権接続をどこからでも開ける」実装が書けてしまうため。
+  runSeed: ['apps/web/app/api/admin/demo/_lib/service.ts'],
+  runSeedReset: [], // T-10-07 が reset のサービス 1 ファイルを足す
+  // 🔴 T-10-06: `runSeed` に渡す接続文字列（`SEED_DATABASE_URL`）の唯一の取り出し口。定義ファイル自身にも
+  //    識別子が現れるため、呼び出し元（ルート）と合わせて 2 ファイルになる。
+  demoSeedRuntime: [
+    'apps/web/app/api/admin/demo/seed/route.ts',
+    'apps/web/lib/db/bootstrap.ts',
+  ],
   // 🔴 T-09-13: ゲート実行文脈からパートナー台帳を 1 人分だけ読む限定経路（docs/05 §11.14 ⑤-5 / §17.2 #31）。
   //    **`apps/**` から 1 箇所も呼ばない**（期待値が空配列）。呼び出し元は `packages/db/src/gate-target.ts` の
   //    `loadProposalGateInput` だけであり、`@ses/db` のバレルにも載っていない

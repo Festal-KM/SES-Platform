@@ -252,6 +252,46 @@ describe('development も他環境と同じ DB 接続の検証を受ける（T-0
   });
 });
 
+describe('🔴 T-10-06: SEED_DATABASE_URL（合成データ投入専用の特権接続）は demo / development にしか置けない（F-053 AC-6 / docs/05 §13.6）', () => {
+  const SEED_URL = 'postgresql://postgres:pw@db.internal:5432/ses_platform?sslmode=require';
+
+  it.each(['development', 'demo'] as const)('APP_ENV=%s では設定でき、値がそのまま読める', (kind) => {
+    const env = loadAppEnv(buildValidEnv(kind, { SEED_DATABASE_URL: SEED_URL }));
+    expect(env.SEED_DATABASE_URL).toBe(SEED_URL);
+  });
+
+  it.each(['sandbox', 'staging', 'production'] as const)('🔴 APP_ENV=%s に設定されていたら起動時検証が失敗する', (kind) => {
+    const input = buildValidEnv(kind, { SEED_DATABASE_URL: SEED_URL });
+    expect(() => loadAppEnv(input)).toThrow(EnvValidationError);
+    try {
+      loadAppEnv(input);
+    } catch (error) {
+      expect(error).toBeInstanceOf(EnvValidationError);
+      // 変数名は出す。値（接続文字列）は出さない（規則 5）。
+      expect(String((error as Error).message)).toContain('SEED_DATABASE_URL');
+      expect(String((error as Error).message)).not.toContain('db.internal');
+    }
+  });
+
+  it('未設定が既定（development / demo でも省略できる）', () => {
+    expect(loadAppEnv(buildValidEnv('development')).SEED_DATABASE_URL).toBeUndefined();
+    expect(loadAppEnv(buildValidEnv('demo')).SEED_DATABASE_URL).toBeUndefined();
+  });
+
+  it('🔴 アプリの 3 本の接続文字列と同じ値は使えない（特権接続は別ロール）', () => {
+    const base = buildValidEnv('development');
+    expect(() => loadAppEnv({ ...base, SEED_DATABASE_URL: base.DATABASE_URL })).toThrow(EnvValidationError);
+    expect(() => loadAppEnv({ ...base, SEED_DATABASE_URL: base.PLATFORM_DATABASE_URL })).toThrow(EnvValidationError);
+    expect(() => loadAppEnv({ ...base, SEED_DATABASE_URL: base.PLATFORM_WRITE_DATABASE_URL })).toThrow(EnvValidationError);
+  });
+
+  it('sslmode=require を含まない値は拒否する（他の接続文字列と同じ規律）', () => {
+    expect(() =>
+      loadAppEnv(buildValidEnv('demo', { SEED_DATABASE_URL: 'postgresql://postgres:pw@db.internal:5432/ses_platform' })),
+    ).toThrow(EnvValidationError);
+  });
+});
+
 describe('MALWARE_SCANNER=clamav のとき CLAMAV_HOST / CLAMAV_PORT が必須', () => {
   it('sandbox で clamav を選びつつ CLAMAV_HOST を省略すると失敗する', () => {
     const input = buildValidEnv('sandbox', { MALWARE_SCANNER: 'clamav', CLAMAV_HOST: undefined, CLAMAV_PORT: undefined });

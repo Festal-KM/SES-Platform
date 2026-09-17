@@ -4,6 +4,7 @@
 // 🔴 未実装のプリセットは「静かに何もしない」ではなく**明示的に失敗させる**。
 //    投入したつもりで空のままになるほうが、失敗するより発見が遅れて危ない。
 import type { SeedPreset, SeedPresetName } from '../types.js';
+import { demoPreset } from './demo.js';
 import { isolationPreset } from './isolation.js';
 
 export class SeedPresetNotImplementedError extends Error {
@@ -18,10 +19,8 @@ export class SeedPresetNotImplementedError extends Error {
 
 const PRESETS: Readonly<Record<SeedPresetName, () => SeedPreset>> = {
   isolation: () => isolationPreset,
-  // 営業デモ用の一式（時系列データ・ゲートで止まる資料・匿名共有の候補）は T-10-06。
-  demo: () => {
-    throw new SeedPresetNotImplementedError('demo', 'SP-10 の T-10-06');
-  },
+  // ✅ T-10-06: 営業デモ用の一式（時系列データ・ゲートで止まる資料・匿名共有の候補）。
+  demo: () => demoPreset,
   // 性能検証用（1 万 / 1 万 / 匿名共有 2,000。docs/03 §3.7.2）は性能スプリント。
   perf: () => {
     throw new SeedPresetNotImplementedError('perf', '性能検証のスプリント（docs/03 §3.7.2）');
@@ -32,7 +31,22 @@ export function getSeedPreset(name: SeedPresetName): SeedPreset {
   return PRESETS[name]();
 }
 
-export { isolationPreset };
+export { demoPreset, isolationPreset };
+// 🔴 T-10-06: `seed:demo` の ID・氏名規則・資格情報（テスト・`A-012` の実演チェックリストが参照する唯一の出所）。
+export {
+  DEMO_SEED_DOMAINS,
+  DEMO_SEED_IDS,
+  DEMO_SEED_NAME_RULES,
+  DEMO_SEED_PASSWORD,
+  demoSeedCompanyNames,
+  demoSeedEmails,
+  demoSeedProvisioningRequestId,
+  type DemoPartnerIds,
+  type DemoProjectIds,
+  type DemoProposalIds,
+  type DemoProposalRequestIds,
+  type DemoTenantIds,
+} from './demo.js';
 // 🔴 T-05-01: グローバルなスキル辞書（テナントに属さないマスタ）。プリセットに依らず同じ表を指す。
 export {
   GLOBAL_SKILL_IDS,

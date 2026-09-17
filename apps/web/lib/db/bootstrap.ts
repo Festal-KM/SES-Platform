@@ -92,6 +92,12 @@ let cachedPlatformAuthSecret: string | null = null;
  */
 let cachedSandboxTrialDays: number | null = null;
 /**
+ * 🔴 T-10-06: `A-012`（API-A16）が `runSeed` に渡す合成データ投入専用の特権接続（`SEED_DATABASE_URL`。docs/05 §13.6）。
+ *    `packages/config` が「`demo` / `development` 以外に設定されていたら起動失敗」を担保しており、ここは値を写すだけ。
+ *    未設定（`null`）は「投入経路が未設定」であり、**他の接続文字列にフォールバックしない**。
+ */
+let cachedSeedDatabaseUrl: string | null = null;
+/**
  * 🔴 T-04-03: `POST /api/webhooks/ses` が受け入れる SNS トピック（`SES_EVENT_TOPIC_ARN`）。
  *    署名検証は「Amazon が署名したこと」しか証明しないため、**受け入れるトピックを固定する**。
  */
@@ -204,6 +210,7 @@ export function ensureDbConfigured(): void {
   cachedAppEnv = env.APP_ENV;
   cachedPlatformAuthSecret = env.AUTH_PLATFORM_SECRET;
   cachedSandboxTrialDays = env.SANDBOX_TRIAL_DAYS;
+  cachedSeedDatabaseUrl = env.SEED_DATABASE_URL ?? null;
   configureTenantDb({ datasourceUrl: env.DATABASE_URL });
   // 🔴 T-03-07: 管理平面は**別の接続プール・別の DB ロール**（docs/03 §4.3.3 / docs/05 §4.2）。
   //    主平面の DATABASE_URL を流用しない（流用すると運営者の資格情報へ主平面のロールから
@@ -714,4 +721,19 @@ export function platformAuthSecret(): string {
     throw new Error('AUTH_PLATFORM_SECRET が解決されていません（bootstrap の不変条件違反）。');
   }
   return cachedPlatformAuthSecret;
+}
+
+/**
+ * 🔴 T-10-06: `A-012` / API-A16 が読む「合成データの投入経路」（docs/05 §13.6「T-10-06 の実装の決着」）。
+ *
+ * - `appEnv` … 導線と API の可否を決める材料。判定そのもの（`demo` / `development` のみ）は `packages/config` の
+ *   `isSeedableAppEnv` が唯一の出所であり、ここでは環境名を写すだけ（`if (APP_ENV === 'demo')` を散らさない）。
+ * - `databaseUrl` … `SEED_DATABASE_URL`。未設定は `null`（フォールバック無し）。
+ * 🔴 ルート以外（主平面・ジョブ）から呼ばない。特権接続の文字列が主平面の経路に流れないよう、
+ *    呼び出し元は `apps/web/app/api/admin/demo/seed/route.ts` の 1 ファイルに固定する
+ *    （`tests/static/auth-db-callers.test.ts` の `demoSeedRuntime` が機械的に固定する）。
+ */
+export function demoSeedRuntime(): { readonly appEnv: AppEnvKind; readonly databaseUrl: string | null } {
+  ensureDbConfigured();
+  return { appEnv: currentAppEnv(), databaseUrl: cachedSeedDatabaseUrl };
 }

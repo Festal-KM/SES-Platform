@@ -254,6 +254,68 @@ const ja = {
   'admin.provisioning.sendingDomain.VERIFIED': '検証済み',
   'admin.provisioning.sendingDomain.FAILED': '検証に失敗',
 
+  // --- A-012 デモ環境の合成データ管理（docs/04 §A-012 / API-A16 / F-053 / BR-45 / BR-47 / BR-63。T-10-06）---
+  // 🔴 `demo` / `development` にしか存在しない画面。運営者に見せるのは件数・状態・日時と合成の商号だけ（CLAUDE.md §10.5）。
+  //    「本番からコピー」に相当する語をこの節に置かない（BR-47。投入元は合成データセットのみ）。
+  'admin.demo.title': 'デモ環境の合成データ管理',
+  'admin.home.demo.link': 'デモ環境の合成データ管理',
+  'admin.demo.section.environment': '環境の確認',
+  'admin.demo.environment.label': 'APP_ENV',
+  'admin.demo.environment.note': '環境は接続先で決まります。この画面から切り替えることはできません。',
+  'admin.demo.section.status': '現在の投入状況',
+  'admin.demo.status.notSeeded': '合成データが投入されていません。',
+  'admin.demo.status.seededAt': '前回の投入（実行日 = T）',
+  'admin.demo.status.tenants': '対象テナント',
+  'admin.demo.status.column.tenant': 'テナント',
+  'admin.demo.status.column.partners': '取引先数',
+  'admin.demo.status.column.engineers': 'エンジニア数',
+  'admin.demo.status.column.projects': '案件数',
+  'admin.demo.status.column.proposalsInProgress': '進行中の提案',
+  'admin.demo.status.column.assignmentsExpiring': '満了が近い稼働',
+  'admin.demo.status.column.gateFailed': 'ゲートで止まる資料',
+  'admin.demo.status.column.shared': '匿名共有が有効な候補',
+  'admin.demo.status.syntheticNote': 'いずれも架空のデータです。実在の企業名・氏名は含まれません。',
+  'admin.demo.section.seed': '投入',
+  'admin.demo.seed.dataset': '投入するデータセット',
+  'admin.demo.seed.datasetName': '標準デモ一式（seed:demo）',
+  'admin.demo.seed.lead':
+    '2 テナント（取引先 5 社 / 1 社）、数十人規模の台帳、進行中の提案、満了が近い稼働、ゲートで止まる資料、匿名共有が有効な候補を、実行日を起点とした相対日で投入します。',
+  'admin.demo.seed.submit': '合成データを投入する',
+  'admin.demo.seed.confirm.title': '合成データを投入します',
+  'admin.demo.seed.confirm.lead': '対象は合成データのみです。顧客の業務データには一切及びません。',
+  'admin.demo.seed.confirm.environment': '環境',
+  'admin.demo.seed.confirm.submit': '投入する',
+  'admin.demo.seed.confirm.back': '戻る',
+  'admin.demo.seed.submitting': '投入しています（数分かかります）',
+  'admin.demo.seed.done': '投入が完了しました。投入状況が更新されます。',
+  'admin.demo.seed.alreadySeeded': '投入済みのため、何も書き込みませんでした。',
+  'admin.demo.seed.failed': '投入できませんでした。時間をおいて再試行してください。',
+  'admin.demo.seed.retry': '再試行する',
+  'admin.demo.seed.notConfigured':
+    '投入経路（SEED_DATABASE_URL）が設定されていないため、この画面から投入できません。環境変数を設定して再起動してください。',
+  // 🔴 リセット（F-053 AC-2 / AC-6）は T-10-07。導線は置かず、予告だけ出す。
+  'admin.demo.reset.comingSoon': 'リセット（初期状態に戻す）は後続のリリースでこの画面から実行できるようになります。',
+  'admin.demo.section.scenarios': '実演シナリオ',
+  'admin.demo.scenarios.lead':
+    '投入直後の状態から、次の 2 本を通しで実演できます（F-053 AC-3）。開始地点のリンクは主平面（別タブ）で開きます。',
+  'admin.demo.scenario.a.title': 'A. 案件の公開 → 取引先の提案 → ゲート FAIL → 修正 → 承認 → 送信 → 結果記録',
+  'admin.demo.scenario.a.step1': '① ホストの営業でサインインし、未公開の案件「モバイルアプリの新規開発（API 側）」を取引先に公開する',
+  'admin.demo.scenario.a.step2': '② 取引先の営業でサインインし、公開された案件に自社エンジニアで提案を作る（本文にエンジニアの氏名を書くと PII 層で不合格になる）',
+  'admin.demo.scenario.a.step3': '③ 不合格を確認し、本文から氏名を消して再度レビューに出す → 合格',
+  'admin.demo.scenario.a.step4': '④ ホストの営業で承認し、送信する（送信はモック。実在の宛先には届かない）',
+  'admin.demo.scenario.a.step5': '⑤ 面談日程と結果を記録する',
+  'admin.demo.scenario.b.title': 'B. 匿名候補の検索結果への混在 → 提案依頼',
+  'admin.demo.scenario.b.step1': '① ホストの営業で「データ分析基盤の構築」の候補一覧を開く。取引先が共有可にした候補が匿名 5 項目で混在している',
+  'admin.demo.scenario.b.step2': '② 匿名候補に提案依頼を送る。取引先の営業でサインインすると提案依頼の一覧に届いている',
+  'admin.demo.scenario.start': '開始地点',
+  'admin.demo.accounts.title': '実演用のサインイン情報（合成）',
+  'admin.demo.accounts.lead': 'いずれも架空の利用者です。パスワードは全員共通で、demo / development 以外の環境には存在しません。',
+  'admin.demo.accounts.hostSales': 'ホストの営業（SALES）',
+  'admin.demo.accounts.partnerSales': '取引先の営業（PARTNER_SALES）',
+  'admin.demo.accounts.password': 'パスワード',
+  // 🔴 非対象環境で URL を直打ちしたとき（docs/04 §A-012「この環境では利用できません」）。フォームも導線も描かない。
+  'admin.demo.unavailable': 'この環境では利用できません。',
+
   // --- A-006 監査ログ横断検索（docs/04 §A-006 / F-058 / BR-40 / BR-42。T-11-03）---
   // 🔴 運営者に見せるのは件数・状態・エラーであって内容ではない（CLAUDE.md §10.5）。
   //    氏名・本文に相当する列の文言はここに存在しない（`主体` は種別と ID）。
@@ -787,6 +849,12 @@ const ja = {
     '引き下げは当日に適用できません。適用日を翌日以降にしてください（既存顧客の上限を予告なく引き下げない運用のためです）。',
   'error.admin.quota.loweringNoticeRequired':
     '引き下げには対象テナントの管理者への通知が必須です。通知の確認にチェックを入れてください。',
+  // 🔴 T-10-06: `A-012` / API-A16（F-053 AC-6）。demo / development 以外では画面も API も存在しない。
+  'error.admin.demo.notAvailable': 'この環境では利用できません。',
+  'error.admin.demo.notConfigured':
+    '合成データの投入経路（SEED_DATABASE_URL）が設定されていません。環境変数を設定して再起動してください。',
+  'error.admin.demo.incomplete':
+    '前回の投入が途中で止まっています。リセットしてから投入し直してください。',
   // 🔴 T-05-04: docs/05 §15.1 の 429 段（`QuotaExceededError`）。**上限の種類ごとに文言を分ける**
   //    —— 解消のしかたが違う（AI の日次は翌日、ストレージは削除するか上限を上げるまで）。
   'error.quota.exceeded': 'ご利用量が上限に達したため、この操作は実行できません。',

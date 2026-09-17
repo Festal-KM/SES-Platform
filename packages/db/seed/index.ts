@@ -11,7 +11,7 @@ import { countTenantRows } from '../src/seed-sql.js';
 import { getSeedPreset } from './presets/index.js';
 import { resetPreset } from './reset.js';
 import { createSeedRng } from './rng.js';
-import { SEED_PRESET_NAMES, type SeedPresetName } from './types.js';
+import { SEED_PRESET_NAMES, type SeedPreset, type SeedPresetName } from './types.js';
 
 export { SEED_PRESET_NAMES, type SeedContext, type SeedPreset, type SeedPresetName } from './types.js';
 export { getSeedPreset, SeedPresetNotImplementedError } from './presets/index.js';
@@ -36,6 +36,21 @@ export {
   type IsolationPlatformUser,
   type IsolationTenantIds,
 } from './presets/isolation.js';
+// 🔴 T-10-06: `seed:demo`（合成データ一式。docs/05 §13.6 / F-053）。
+export {
+  DEMO_SEED_DOMAINS,
+  DEMO_SEED_IDS,
+  DEMO_SEED_NAME_RULES,
+  DEMO_SEED_PASSWORD,
+  demoSeedCompanyNames,
+  demoSeedEmails,
+  demoSeedProvisioningRequestId,
+  type DemoPartnerIds,
+  type DemoProjectIds,
+  type DemoProposalIds,
+  type DemoProposalRequestIds,
+  type DemoTenantIds,
+} from './presets/demo.js';
 export { createSeedRng, type SeedRng } from './rng.js';
 
 export type RunSeedOptions = {
@@ -58,6 +73,16 @@ export type RunSeedResult = {
   readonly tenantIds: readonly string[];
   /** テーブルごとの投入行数（テナント ID で絞った実測）。冪等性の検証に使う。 */
   readonly counts: Readonly<Record<string, number>>;
+  /**
+   * 🔴 T-10-06（API-A16 の冪等性）: `SEEDED` = 今回投入した / `ALREADY_SEEDED` = 既に投入済みだったので**何も書かなかった**
+   *    （`reset: false` のときだけ起こる）。`RESET_ONLY` = `runSeedReset` の結果。
+   */
+  readonly outcome: 'SEEDED' | 'ALREADY_SEEDED' | 'RESET_ONLY';
+  /**
+   * 「実行日 = T」。`SEEDED` なら今回の `now`、`ALREADY_SEEDED` なら**前回の T**（`tenants.lifecycle_changed_at` = プリセットが
+   * `now` を書く唯一の列）。`RESET_ONLY` は `null`。
+   */
+  readonly seededAt: Date | null;
 };
 
 export function isSeedPresetName(value: string): value is SeedPresetName {
@@ -65,10 +90,59 @@ export function isSeedPresetName(value: string): value is SeedPresetName {
 }
 
 /**
+ * 🔴 前回の投入が途中で止まっている（プリセットのテナントの一部だけが存在する）。
+ *    「投入済み」とも「未投入」とも判定できないので、**黙ってどちらかに倒さない**。回復手段は `reset` → `seed`。
+ */
+export class SeedIncompleteError extends Error {
+  constructor(
+    readonly preset: SeedPresetName,
+    readonly presentTenantIds: readonly string[],
+    readonly expectedTenantIds: readonly string[],
+  ) {
+    super(
+      `シードプリセット「${preset}」のテナントが ${presentTenantIds.length} / ${expectedTenantIds.length} 件だけ存在します` +
+        '（前回の投入が途中で止まった可能性）。--reset で削除してから投入し直してください（F-053 AC-2）。',
+    );
+    this.name = 'SeedIncompleteError';
+  }
+}
+
+export type SeedPresence =
+  | { readonly kind: 'ABSENT' }
+  | { readonly kind: 'PRESENT'; readonly seededAt: Date }
+  | { readonly kind: 'INCOMPLETE'; readonly presentTenantIds: readonly string[] };
+
+/**
+ * 🔴 プリセットが投入済みか（API-A16 の冪等キー。docs/05 §13.6「T-10-06 の実装の決着」）。
+ *
+ * 判定はプリセットの**テナント行の有無**で行う（`tenants.provisioning_request_id` が UNIQUE であり、テナントは
+ * プリセットが最初に作る行 = 二重投入すると必ず一意制約に当たる行）。「実行日 = T」は `lifecycle_changed_at`（プリセットが
+ * `now` を書く唯一の列）から読み返す。
+ * @internal `runSeed` と結合テストからのみ使う。
+ */
+export async function readSeedPresence(db: PrismaClient, preset: SeedPreset): Promise<SeedPresence> {
+  const rows = await db.tenant.findMany({
+    where: { id: { in: [...preset.tenantIds] } },
+    select: { id: true, lifecycleChangedAt: true },
+  });
+  if (rows.length === 0) return { kind: 'ABSENT' };
+  if (rows.length !== preset.tenantIds.length) {
+    return { kind: 'INCOMPLETE', presentTenantIds: rows.map((row) => row.id) };
+  }
+  const seededAt = rows.reduce(
+    (latest, row) => (row.lifecycleChangedAt > latest ? row.lifecycleChangedAt : latest),
+    rows[0]?.lifecycleChangedAt ?? new Date(0),
+  );
+  return { kind: 'PRESENT', seededAt };
+}
+
+/**
  * プリセットを投入する。`reset` が真なら削除してから投入する。
  *
  * 🔴 ①環境ガード → ②接続 → ③`reset()` → ④`seed()` の順を崩さない。
  *    削除は「実行前の判定」を通ったあとにしか起こらない（F-053 AC-6）。
+ * 🔴 T-10-06: `reset: false` で投入済みなら**何も書かず** `ALREADY_SEEDED` を返す（API-A16 の「投入済み（前回 T = …）」）。
+ *    一部だけ存在する場合は `SeedIncompleteError`（黙って上書きも追記もしない）。
  */
 export async function runSeed(options: RunSeedOptions): Promise<RunSeedResult> {
   // ① 🔴 ここを通らずに削除・投入へ到達する経路を作らない。
@@ -82,6 +156,15 @@ export async function runSeed(options: RunSeedOptions): Promise<RunSeedResult> {
     // ③ reset（対象テナントだけ）
     if (options.reset) {
       await resetPreset(db, preset);
+    } else {
+      const presence = await readSeedPresence(db, preset);
+      if (presence.kind === 'PRESENT') {
+        const counts = await countTenantRows(db, preset.tenantIds);
+        return { preset: preset.name, tenantIds: preset.tenantIds, counts, outcome: 'ALREADY_SEEDED', seededAt: presence.seededAt };
+      }
+      if (presence.kind === 'INCOMPLETE') {
+        throw new SeedIncompleteError(preset.name, presence.presentTenantIds, preset.tenantIds);
+      }
     }
     // ④ seed（固定シードの疑似乱数 + 実行日からの相対日）
     // 🔴 投入全体を 1 つのトランザクションで包まない。Prisma の対話型トランザクションには
@@ -90,7 +173,7 @@ export async function runSeed(options: RunSeedOptions): Promise<RunSeedResult> {
     //    同じ結果に収束する（F-053 AC-2）。
     await preset.seed({ db, rng: createSeedRng(preset.rngSeed), now });
     const counts = await countTenantRows(db, preset.tenantIds);
-    return { preset: preset.name, tenantIds: preset.tenantIds, counts };
+    return { preset: preset.name, tenantIds: preset.tenantIds, counts, outcome: 'SEEDED', seededAt: now };
   } finally {
     await db.$disconnect();
   }
@@ -106,7 +189,7 @@ export async function runSeedReset(
   try {
     await resetPreset(db, preset);
     const counts = await countTenantRows(db, preset.tenantIds);
-    return { preset: preset.name, tenantIds: preset.tenantIds, counts };
+    return { preset: preset.name, tenantIds: preset.tenantIds, counts, outcome: 'RESET_ONLY', seededAt: null };
   } finally {
     await db.$disconnect();
   }

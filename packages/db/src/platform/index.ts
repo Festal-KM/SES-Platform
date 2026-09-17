@@ -212,3 +212,12 @@ export type {
   TenantCountRow,
   UnattendedSubmitFailures,
 } from './queries/monitoring.js';
+// `A-012`（デモ環境の合成データ管理。API-A16 / `F-053`。T-10-06）。
+// 🔴 応答は件数・状態・日時と `demo` プリセットのテナント名だけ。投入そのもの（`runSeed`）はここに無い（`@ses/db/seed`）。
+export { readDemoSeedStatus } from './queries/demo-seed.js';
+export type {
+  DemoSeedStatus,
+  DemoSeedStatusMeta,
+  DemoSeedStatusQuery,
+  DemoSeedTenantStatus,
+} from './queries/demo-seed.js';

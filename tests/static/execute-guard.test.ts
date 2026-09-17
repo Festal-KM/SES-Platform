@@ -111,6 +111,23 @@ const PLATFORM_MODULE = '@ses/db/platform';
 // ✅ T-11-02: `setTenantQuotaOverride`（API-A6。`withPlatformWrite(domain='QUOTA')` で `tenant_quota_overrides` に INSERT だけ）。
 const PLATFORM_WRITE_FUNCTIONS = ['provisionTenant', 'issueTenantOwnerInvitation', 'setTenantQuotaOverride'];
 
+/**
+ * 🔴 T-10-06: **`withPlatformWrite` の 7 ドメインの外に書く唯一の管理平面ルート**（API-A16。`F-053` / docs/05 §13.6）。
+ *    書き込み先は `demo` プリセットの**合成データ**であり（テナントの契約・業務データのどちらでもない）、実体は `@ses/db/seed` の
+ *    `runSeed`（特権接続）である。監査の先行は `readDemoSeedStatus(action='admin.demo.seed')`（`withPlatformRead` = 監査の先行）を
+ *    **投入の前**（`REQUESTED`）と**後**（`COMPLETED` + 帰結）に通すことで成立させる。環境ガードは `assertDemoSeedAvailable`
+ *    （`packages/config` の `isSeedableAppEnv`）と `runSeed` の先頭の 2 枚（`F-053 AC-6`）。
+ *    🔴 ここに 2 本目を足すことは「運営者が合成データ以外を特権接続で書く」ことと同義であり、`CLAUDE.md` §10.5 の解釈を変える。
+ */
+const ADMIN_SEED_ROUTES: Readonly<Record<string, { readonly service: string; readonly reason: string }>> = {
+  'apps/web/app/api/admin/demo/seed/route.ts': {
+    service: 'apps/web/app/api/admin/demo/_lib/service.ts',
+    reason:
+      'API-A16（seed:demo の投入）。書き込み先は demo プリセットの合成データだけで、runSeed（@ses/db/seed。特権接続）が実体。'
+      + ' 監査の先行は readDemoSeedStatus(action=admin.demo.seed) を投入の前後に通して成立させる（docs/05 §13.6「T-10-06 の実装の決着」）。',
+  },
+};
+
 type RouteAnalysis = {
   /** export されている HTTP メソッド名。 */
   readonly exportedMethods: ReadonlySet<string>;
@@ -315,8 +332,9 @@ describe('🔴 管理平面の実行系ルートは監査先行の書き込み�
     expect(targets.map((route) => route.file)).not.toEqual([]);
   });
 
-  it('すべてが `@ses/db/platform` の書き込み関数を import して呼んでいる', () => {
+  it('すべてが `@ses/db/platform` の書き込み関数を import して呼んでいる（合成データの投入ルートだけは ADMIN_SEED_ROUTES の規律で見る）', () => {
     const missing = targets
+      .filter((route) => !(route.file in ADMIN_SEED_ROUTES))
       .filter((route) => {
         const imported = [...route.analysis.platformImportedNames];
         return !imported.some(
@@ -327,6 +345,30 @@ describe('🔴 管理平面の実行系ルートは監査先行の書き込み�
       })
       .map((route) => route.file);
     expect(missing).toEqual([]);
+  });
+
+  it('🔴 T-10-06: 合成データの投入ルートは環境ガード + 監査の先行（readDemoSeedStatus）+ runSeed の 3 点を持ち、withPlatformWrite の外で他の表に触れない', () => {
+    for (const [file, declaration] of Object.entries(ADMIN_SEED_ROUTES)) {
+      expect(declaration.reason.length).toBeGreaterThan(20);
+      const route = readFileSync(path.join(repoRoot, file), 'utf8');
+      const service = readFileSync(path.join(repoRoot, declaration.service), 'utf8');
+      // 設計意図のコメントに `runSeedReset` 等の語が出るため、判定は **import 文**（コードとして持ち込んだもの）だけで行う。
+      const serviceImports = service.split('\n').filter((line) => /^import\b/.test(line.trim()));
+      // ルート: 認証済み運営者 → 環境ガード → サービス。
+      expect(route).toContain('requirePlatformCtx');
+      expect(route).toContain('assertDemoSeedAvailable(');
+      expect(route).toContain('runDemoSeedForAdmin(');
+      // サービス: 監査の先行（withPlatformRead 経由の専用クエリ）と、投入の実体は @ses/db/seed の runSeed だけ。
+      expect(serviceImports).toContain("import { readDemoSeedStatus } from '@ses/db/platform';");
+      expect(serviceImports).toContain("import { DEMO_SEED_IDS, runSeed, SeedIncompleteError } from '@ses/db/seed';");
+      expect(service).toContain("action: 'admin.demo.seed'");
+      // 🔴 reset（T-10-07）と、生 Prisma / 主平面の DB 経路を import しない。
+      for (const line of serviceImports) {
+        expect(line).not.toContain('runSeedReset');
+        expect(line).not.toContain('@prisma/client');
+        expect(line).not.toContain('withTenant');
+      }
+    }
   });
 
   it('🔴 管理平面の認証ルートは対象外である（ctx が生成される前の経路）', () => {

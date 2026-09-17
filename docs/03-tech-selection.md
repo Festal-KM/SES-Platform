@@ -1270,6 +1270,7 @@ packages/connectors/src/index.ts           … createConnectors(selection) が�
 | `PLATFORM_DATABASE_URL` | 🔴 **管理平面の DB 接続（ロール `app_platform`）。§4.3.3** | 🔴 必須 | 同上。**`DATABASE_URL` と異なることを検証する（`development` を含む全環境）** |
 | `PLATFORM_WRITE_DATABASE_URL` | 🔴 **管理平面の書き込み専用 DB 接続（ロール `app_platform_write`）。`withPlatformWrite` が使う。`docs/05` §5.2「書き込みが許される 6 領域のみ」（`plans` / `subscriptions` / `announcements` / `usage_counters` の上書き列 / `impersonation_sessions` / `audit_logs` と、`tenants` / `invitations` / `tenant_sending_domains` への限定 `INSERT`）に閉じ、業務テーブルへの書き込み権限を一切持たない** | 🔴 必須 | 同上。🔴 **`DATABASE_URL` / `PLATFORM_DATABASE_URL` と合わせて 3 本が相互に異なることを検証する（`development` を含む全環境）+ `sslmode=require` を含むことを検証する** |
 | `MIGRATION_DATABASE_URL` | マイグレーション用（ロール `app_migrator`） | CI / デプロイ時のみ | 同上 |
+| `SEED_DATABASE_URL` | 🔴 **合成データ投入専用の特権接続（PostgreSQL のスーパーユーザー。`docs/05` §13.6 / §4.19）。CLI（`pnpm seed` / `pnpm seed:demo`）はコマンド直前に渡す。T-10-06 で、`demo` / `development` の web プロセスに置くと `A-012`（API-A16）から `seed:demo` を実行できるようにした** | 任意（`development` / `demo` のみ） | `z.string().url().optional()`。🔴 **`sandbox` / `staging` / `production` に設定されていたら起動失敗**（`MIGRATION_DATABASE_URL` と同じ形の禁止。`docs/05` §13.4 規則 7）。設定時は他の 3 本と別値で `sslmode=require` を含む。未設定なら `A-012` は「投入経路が未設定」・API-A16 は 503（フォールバック無し） |
 | `REDIS_URL` | BullMQ / キャッシュ / トークンバケット | 🔴 必須 | `z.string().url()` |
 
 ### 6.2 認証・暗号

@@ -22,6 +22,7 @@ import {
   hasSslModeRequire,
   isDocusignProductionBaseUrl,
 } from './primitives.js';
+import { isSeedableAppEnv, SEEDABLE_APP_ENVS } from './seed-guard.js';
 
 const ESIGN_PROVIDERS = ['docusign', 'cloudsign', 'gmosign', 'mock'] as const;
 const ESIGN_PROVIDERS_NO_MOCK = ['docusign', 'cloudsign'] as const;
@@ -64,6 +65,14 @@ const commonShape = {
    */
   PLATFORM_WRITE_DATABASE_URL: z.string().url(),
   MIGRATION_DATABASE_URL: z.string().url().optional(),
+  /**
+   * 🔴 T-10-06: 合成データ投入専用の特権接続（docs/05 §13.6「T-10-06 の実装の決着」/ API-A16）。
+   *    `demo` / `development` の web プロセスが `A-012` から `runSeed` を実行する唯一の経路であり、**それ以外の環境に
+   *    設定されていたら起動を失敗させる**（`crossFieldChecks`。`MIGRATION_DATABASE_URL` と同じ形の禁止）。
+   *    未設定なら `A-012` は「投入経路が未設定」を表示し API は 503 を返す（モックや他の接続にフォールバックしない）。
+   *    CLI（`pnpm seed`）は従来どおりこのスキーマを通らず、コマンド直前の環境変数として読む（`packages/db/seed/args.ts`）。
+   */
+  SEED_DATABASE_URL: z.string().url().optional(),
   REDIS_URL: z.string().url(),
 
   // §6.2 認証・暗号
@@ -369,6 +378,32 @@ function crossFieldChecks(data: EnvUnionData, ctx: IssueSink): void {
   // （docs/05 §4.2 / §13.4 規則 3・4。development 例外の解除）。
   if (data.MIGRATION_DATABASE_URL !== undefined) {
     addIssue(ctx, 'MIGRATION_DATABASE_URL', '実行時環境には設定できません（app_migrator 専用。マイグレーション実行時のみ一時的に指定する）');
+  }
+  // 🔴 T-10-06: 特権接続（合成データの投入）は `demo` / `development` の実行時環境にだけ置ける（F-053 AC-6 の 1 枚目）。
+  //    `production` / `sandbox` / `staging` に設定されていたら**起動を失敗させる**（アプリのプロセスが分離を素通りできる
+  //    接続文字列を、顧客データのある環境で持たない）。
+  if (data.SEED_DATABASE_URL !== undefined) {
+    if (!isSeedableAppEnv(data.APP_ENV)) {
+      addIssue(
+        ctx,
+        'SEED_DATABASE_URL',
+        `APP_ENV が ${SEEDABLE_APP_ENVS.join(' / ')} の実行時環境にしか設定できません（合成データ投入専用の特権接続。docs/05 §13.6）`,
+      );
+    }
+    if (
+      data.SEED_DATABASE_URL === data.DATABASE_URL ||
+      data.SEED_DATABASE_URL === data.PLATFORM_DATABASE_URL ||
+      data.SEED_DATABASE_URL === data.PLATFORM_WRITE_DATABASE_URL
+    ) {
+      addIssue(
+        ctx,
+        'SEED_DATABASE_URL',
+        'DATABASE_URL / PLATFORM_DATABASE_URL / PLATFORM_WRITE_DATABASE_URL と同じ値は使用できません（別ロールの特権接続）',
+      );
+    }
+    if (!hasSslModeRequire(data.SEED_DATABASE_URL)) {
+      addIssue(ctx, 'SEED_DATABASE_URL', 'sslmode=require を含める必要があります');
+    }
   }
   if (data.DATABASE_URL === data.PLATFORM_DATABASE_URL) {
     addIssue(ctx, 'PLATFORM_DATABASE_URL', 'DATABASE_URL と同じ値は使用できません');

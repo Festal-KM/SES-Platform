@@ -117,6 +117,10 @@ const ALLOWED_MUTATING_ADMIN_ROUTES: ReadonlyMap<string, readonly string[]> = ne
   //    `tenant_quota_overrides` への INSERT のみ（`withPlatformWrite(domain='QUOTA')`）。`PLATFORM_OWNER` のみ（`requirePlatformOwnerCtx`）。
   //    ゲート・提案・再送には触れない（`tests/static/admin-tenants-read-only.test.ts` が根拠と一緒に固定する）。
   ['/api/admin/tenants/{}/quota', ['PUT']],
+  // 🔴 T-10-06: API-A16（`seed:demo` の投入。`F-053` / `A-012`。7 本 → 8 本の意識的な追加）。書き込み先は demo プリセットの
+  //    **合成データ**だけで、ゲート・提案・再送には触れない（`tests/static/execute-guard.test.ts` の ADMIN_SEED_ROUTES と
+  //    `admin-tenants-read-only.test.ts` が根拠と一緒に固定する）。`APP_ENV ∈ {demo, development}` 以外は 403（`F-053 AC-6`）。
+  ['/api/admin/demo/seed', ['POST']],
 ]);
 
 const MUTATING_HTTP_METHODS: ReadonlySet<string> = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);

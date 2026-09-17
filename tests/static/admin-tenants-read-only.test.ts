@@ -37,7 +37,20 @@ const READ_ONLY_ROUTE_FILES = [
  * 解釈を広げることに等しい。業務データ（エンジニア・案件・提案・チャット・契約）を
  * 対象にする行をここに書くことは**できない**（DB 権限が無いため実装しても動かない）。
  */
-const WRITE_ROUTE_FILES: Readonly<Record<string, { readonly methods: readonly string[]; readonly reason: string }>> = {
+const WRITE_ROUTE_FILES: Readonly<
+  Record<
+    string,
+    {
+      readonly methods: readonly string[];
+      readonly reason: string;
+      /**
+       * 🔴 `PLATFORM_SUPPORT` にも実行を認めるか。**既定は `false`**（書き込みは `PLATFORM_OWNER` のみ。`BR-44`）。
+       *    `true` にできるのは、対象が**テナントの契約・業務データのどちらでもない**ルートだけであり、理由を `reason` に書く。
+       */
+      readonly supportAllowed?: true;
+    }
+  >
+> = {
   'apps/web/app/api/admin/tenants/route.ts': {
     methods: ['GET', 'POST'],
     reason:
@@ -57,6 +70,16 @@ const WRITE_ROUTE_FILES: Readonly<Record<string, { readonly methods: readonly st
       'API-A6（クォータの上書き。`F-057 AC-2`〜`AC-4` / `A-004`）。`CLAUDE.md` §10.5 が最初から運営者に認める「クォータ」への '
       + '書き込みであり、触れるのは `tenant_quota_overrides` の INSERT だけ（`withPlatformWrite(domain=QUOTA)`。docs/05 §5.2 の 4 表目）。'
       + '`PLATFORM_OWNER` のみ（`BR-44`）。引き下げは翌日以降 + 通知が必須で、RLS の WITH CHECK でも当日適用の引き下げ行を止める。',
+  },
+  'apps/web/app/api/admin/demo/seed/route.ts': {
+    methods: ['GET', 'POST'],
+    supportAllowed: true,
+    reason:
+      'API-A16（`seed:demo` の投入。`F-053` / `A-012`。T-10-06）。書き込み先は **`demo` プリセットの合成データだけ**であり、'
+      + 'テナントの契約・業務データのどちらでもない（docs/02 章 4.4 の注記「`F-053` の `PO` / `PP` = ● は demo 環境の合成データに限る」）。'
+      + '`APP_ENV ∈ {demo, development}` 以外は 403（`assertDemoSeedAvailable` = `packages/config` の `isSeedableAppEnv`）で、'
+      + '`runSeed` の先頭（`assertSeedableAppEnv`）と `SEED_DATABASE_URL` の起動時検証が 2 枚目のガードになる（`F-053 AC-6`）。'
+      + '`PLATFORM_SUPPORT` も実行できる（docs/04 §A-012 権限差分）。`reset` は T-10-07 の別ルート。',
   },
 };
 
@@ -116,9 +139,16 @@ describe('🔴 管理平面の書き込みルートは許可リストと一致�
    *    `PlatformRoleNotAllowedError` を投げる唯一の入口）であり、`requirePlatformCtx`（閲覧用）
    *    では `PLATFORM_SUPPORT` が通ってしまう。**取り違えをここで固定する。**
    */
-  it('🔴 書き込みルートは requirePlatformOwnerCtx を通る（requirePlatformCtx では足りない）', () => {
-    for (const file of Object.keys(WRITE_ROUTE_FILES)) {
+  it('🔴 書き込みルートは requirePlatformOwnerCtx を通る（requirePlatformCtx では足りない）。supportAllowed の例外は認証を必ず通す', () => {
+    for (const [file, declaration] of Object.entries(WRITE_ROUTE_FILES)) {
       const source = readFileSync(path.join(repoRoot, file), 'utf8');
+      if (declaration.supportAllowed === true) {
+        // 🔴 T-10-06: `PLATFORM_SUPPORT` にも認めるルートは `requirePlatformCtx`（認証済み運営者）を必ず通し、
+        //    環境ガード（`assertDemoSeedAvailable`）を持つ。対照: OWNER 限定の判定を書いていない。
+        expect(source, `${file} が requirePlatformCtx を参照していない`).toContain('requirePlatformCtx');
+        expect(source, `${file} が環境ガード（assertDemoSeedAvailable）を通っていない`).toContain('assertDemoSeedAvailable');
+        continue;
+      }
       expect(source, `${file} が requirePlatformOwnerCtx を参照していない`).toContain(
         'requirePlatformOwnerCtx',
       );

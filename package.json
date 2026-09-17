@@ -17,7 +17,8 @@
     "test:isolation": "vitest run -c vitest.isolation.config.ts",
     "test:e2e": "playwright test",
     "typecheck:e2e": "tsc -p tsconfig.e2e.json",
-    "seed": "pnpm --filter @ses/db run seed"
+    "seed": "pnpm --filter @ses/db run seed",
+    "seed:demo": "pnpm --filter @ses/db run seed --preset=demo"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",

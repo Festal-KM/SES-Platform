@@ -12,6 +12,7 @@ import { SeedNotAllowedError } from '@ses/config';
 import { SeedArgsError, parseSeedArgs, resolveSeedDatabaseUrl } from './args.js';
 import { runSeed, runSeedReset } from './index.js';
 import { SeedPresetNotImplementedError, getSeedPreset } from './presets/index.js';
+import { DEMO_SEED_IDS, DEMO_SEED_NAME_RULES, demoPreset, demoSeedCompanyNames } from './presets/demo.js';
 import { ISOLATION_SEED_IDS, isolationPreset } from './presets/isolation.js';
 import { createSeedRng } from './rng.js';
 import { addDays, advanceState, dateOnly, seedUuid } from './support.js';
@@ -78,8 +79,16 @@ describe('プリセットの登録簿', () => {
     expect(isolationPreset.tenantIds).toHaveLength(2);
   });
 
+  it('✅ T-10-06: demo は実装済み（2 テナント。取引先 5 社 / 1 社）', () => {
+    expect(getSeedPreset('demo')).toBe(demoPreset);
+    expect(demoPreset.tenantIds).toHaveLength(2);
+    expect(DEMO_SEED_IDS.tenants[0].partners).toHaveLength(5);
+    expect(DEMO_SEED_IDS.tenants[1].partners).toHaveLength(1);
+    // 🔴 isolation と ID 空間が重ならない（同じ DB に両方を投入できる）。
+    expect(demoPreset.tenantIds).not.toContain(isolationPreset.tenantIds[0]);
+  });
+
   it('🔴 未実装のプリセットは静かに何もせず終わらない', () => {
-    expect(() => getSeedPreset('demo')).toThrow(SeedPresetNotImplementedError);
     expect(() => getSeedPreset('perf')).toThrow(SeedPresetNotImplementedError);
   });
 });
@@ -111,6 +120,42 @@ describe('ID は決定的で衝突しない（F-053 AC-2 の前提）', () => {
     collect(ISOLATION_SEED_IDS);
     expect(ids.length).toBeGreaterThan(60);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('🔴 demo プリセットの ID がすべて相異なる（F-053 AC-2 の前提。isolation の ID とも重ならない）', () => {
+    const ids: string[] = [];
+    const collect = (value: unknown): void => {
+      if (typeof value === 'string') {
+        if (/^[0-9a-f-]{36}$/.test(value)) ids.push(value);
+        return;
+      }
+      if (Array.isArray(value)) {
+        for (const item of value) collect(item);
+        return;
+      }
+      if (value !== null && typeof value === 'object') {
+        for (const item of Object.values(value)) collect(item);
+      }
+    };
+    collect(DEMO_SEED_IDS);
+    collect(ISOLATION_SEED_IDS);
+    expect(ids.length).toBeGreaterThan(120);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('demo の会社名は架空であることが語から分かる接頭辞に従う（F-053 AC-1 / BR-47）', () => {
+    for (const tenantIndex of [1, 2]) {
+      const names = demoSeedCompanyNames(tenantIndex);
+      const prefixes = DEMO_SEED_NAME_RULES.companyPrefixes;
+      expect(prefixes.some((prefix) => names.host.startsWith(prefix))).toBe(true);
+      for (const partner of names.partners) {
+        expect(prefixes.some((prefix) => partner.startsWith(prefix))).toBe(true);
+      }
+    }
+    // 2 テナントの取引先の商号が重ならない（A-002 の一覧で見分けられる）。
+    const alpha = demoSeedCompanyNames(1).partners;
+    const beta = demoSeedCompanyNames(2).partners;
+    expect(alpha.some((name) => beta.includes(name))).toBe(false);
   });
 
   it('2 テナントの ID が 1 つも重ならない（テナント越境テストの前提）', () => {

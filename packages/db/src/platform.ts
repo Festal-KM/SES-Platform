@@ -69,6 +69,11 @@ export const PLATFORM_ACTIONS = [
   'admin.monitoring.view',
   'admin.audit_log.search',
   'admin.deletion_status.view',
+  // 🔴 T-10-06: `A-012`（デモ環境の合成データ管理。`F-053`）。`demo` / `development` にしか存在しない画面と API。
+  'admin.demo.view',
+  // 🔴 投入の記録。書き込み先は**合成データ**（特権接続の `runSeed`。`withPlatformWrite` の 7 ドメインの外）であり、
+  //    ここでは「誰が・いつ・何件投入したか」を運営者の操作として残す（`CLAUDE.md` §10.5「運営者の全操作を記録」）。
+  'admin.demo.seed',
   // 書き込み（`CLAUDE.md` §10.5 が運営者に認めた 6 領域。§5.2 の `domain` と対応する）。
   'admin.tenant.create',
   'admin.tenant.owner_invitation',

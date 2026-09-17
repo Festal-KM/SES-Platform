@@ -1224,6 +1224,57 @@ export class AuditWriteFailedError extends AppError {
   }
 }
 
+// ============================================================================
+// 🔴 T-10-06: `A-012` / API-A16（デモ環境の合成データ管理。`F-053 AC-6` / docs/05 §13.6）
+// ============================================================================
+
+/**
+ * 🔴 `APP_ENV` が `demo` / `development` 以外で API-A16 が呼ばれた（**403**。`F-053 AC-6`「API を直接呼んでも拒否される」）。
+ *
+ * 判定の出所は `packages/config` の `isSeedableAppEnv`（`runSeed` の先頭の `assertSeedableAppEnv` と同じ 1 関数）であり、
+ * ルートは**投入・削除に到達する前に**この例外で止める（ミドルウェア層）。`ForbiddenError` と別コードにするのは、
+ * 運営者本人が「この環境には存在しない操作」だと分かるようにするため（権限の問題ではない）。
+ */
+export class DemoSeedNotAvailableError extends ForbiddenError {
+  override readonly code = 'DEMO_SEED_NOT_AVAILABLE';
+  override readonly userMessageKey: MessageKey = 'error.admin.demo.notAvailable';
+
+  constructor() {
+    super();
+    this.name = 'DemoSeedNotAvailableError';
+  }
+}
+
+/**
+ * 🔴 `SEED_DATABASE_URL` が未設定で投入経路が無い（**503**）。`demo` / `development` に限って起こる
+ *    （他の環境では変数そのものを置けず、起動時に落ちる）。**他の接続文字列へフォールバックしない**（`CLAUDE.md` §11.1）。
+ */
+export class DemoSeedNotConfiguredError extends AppError {
+  readonly code = 'DEMO_SEED_NOT_CONFIGURED';
+  readonly httpStatus = 503;
+  readonly userMessageKey: MessageKey = 'error.admin.demo.notConfigured';
+  override readonly logLevel: ErrorLogLevel = 'error';
+
+  constructor() {
+    super('合成データの投入経路（SEED_DATABASE_URL）が設定されていません。');
+    this.name = 'DemoSeedNotConfiguredError';
+  }
+}
+
+/**
+ * 🔴 前回の投入が途中で止まっており、投入済みとも未投入とも判定できない（**409**）。
+ *    `@ses/db/seed` の `SeedIncompleteError` の写像。解消手段はリセット → 投入（T-10-07）だけであり、黙って上書きしない。
+ */
+export class DemoSeedIncompleteError extends ConflictError {
+  override readonly code = 'DEMO_SEED_INCOMPLETE';
+  override readonly userMessageKey: MessageKey = 'error.admin.demo.incomplete';
+
+  constructor() {
+    super('前回の投入が途中で止まっています。リセットしてから投入し直してください。');
+    this.name = 'DemoSeedIncompleteError';
+  }
+}
+
 /** 未知の例外は内部エラーへ写像する（原因を応答に載せない。docs/05 §15.2）。 */
 export function toAppError(error: unknown): AppError {
   if (error instanceof AppError) return error;
