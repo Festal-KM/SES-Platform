@@ -10,6 +10,8 @@
 //      一致する `note` だけを拾う。ここで組む語は日本語の自由記述であり、`TRANSITION` の `detail` としてそのまま描かれる
 //      （T-09-09 の申し送り 1「接頭辞は付けない」）。
 //   ③ 空欄は `undefined`（#48 の `note` は `min(1)` の任意項目。空文字を送らない）。
+//   ④ 🔴 **`note` に書く日時は `datetime-local` の壁時計（TZ を持たない記録）である。** `F-041`（面談調整の連絡。Phase 2 SP-15）で
+//      日時を構造化して送るときは、`note` を正規表現で読まず別の列 / 型で持つ（T-12-13 ③。docs/05 §6.5「`S-024` の実装の決着」）。
 //
 // 🔴 外部 import を持たない純粋モジュール（`'use client'` の画面が値 import できる。`tests/static/client-db-boundary.test.ts`）。
 //    文言は呼び出し側が `packages/i18n` から渡す（`CLAUDE.md` §3.5）。
