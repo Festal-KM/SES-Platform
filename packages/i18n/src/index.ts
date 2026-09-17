@@ -2993,7 +2993,7 @@ const ja = {
   'proposals.interview.error.conflict': 'いまは記録を行えません。提案の状態は変わっていません。',
   'proposals.interview.error.generic': '記録できませんでした。提案の状態は変わっていません。',
 
-  // --- S-015 匿名共有の設定（取引先）（docs/04 §S-015 / `F-016` / docs/05 §6.4 #29。T-08-02）---
+  // --- S-015 匿名共有の設定（取引先）（docs/04 §S-015 / `F-016` / docs/05 §6.4 #29。T-08-02 → T-11-11 で 1 表 + 検索 + ページング）---
   // 🔴 **煽らない。** 「共有すると案件が見つかりやすくなります」に相当する語を 1 つも置かない
   //    （`docs/04` §S-015 空状態。共有は既定オフで、主導権は最後まで取引先にある）。
   // 🔴 **「一括で共有可にする」に相当する語を置かない**（`F-016 AC-1` / `BR-53`）。
@@ -3009,10 +3009,12 @@ const ja = {
   //    （`F-008 AC-7` / `BR-55`）。列挙を削らないこと —— 取引先は自分で確かめる術を失う。
   'engineerShares.lead':
     '共有可にすると、ホストの候補一覧に匿名で表示されます。実名・貴社名・スキルシート・経験内容（従事期間・役割・業務内容・使用技術）は、貴社が提案を作成するまで開示されません。いつでも解除でき、解除した時点で表示されなくなります。',
-  'engineerShares.section.shared': '共有中の人材',
-  'engineerShares.section.notShared': '共有していない自社の人材',
+  // 🔴 T-11-11（`docs/04` 改訂 12 / `U-15`）: 「共有中の一覧」「共有していない一覧」の 2 表を 1 表 + 共有状態フィルタに改めた。
+  //    旧 `engineerShares.section.shared` / `.notShared` はその改訂で撤去し、一覧の見出しは `.section.list` の 1 つになった。
+  'engineerShares.section.list': '人材の一覧',
   'engineerShares.section.preview': '開示プレビュー',
   'engineerShares.column.name': '氏名（貴社内の表示）',
+  'engineerShares.column.state': '共有状態',
   'engineerShares.column.sharedOn': '共有開始日',
   'engineerShares.column.proposalRequestCount': '受け取った提案依頼',
   'engineerShares.column.availability': '稼働可能時期',
@@ -3020,7 +3022,12 @@ const ja = {
   'engineerShares.countUnit': '件',
   // 🔴 空状態（`docs/04` §S-015）。**「共有しないと機会が来ない」と書かない。**
   'engineerShares.shared.empty': '共有している人材はいません。',
-  'engineerShares.notShared.empty': '共有していない人材はいません。',
+  // 🔴 `docs/04` §S-015（2026-09-17）の 4 通りの空状態。`共有していない`・条件なし・0 件は事実のみを述べる。
+  'engineerShares.notShared.empty': '登録されている人材はすべて共有中です。',
+  'engineerShares.shared.empty.showNotShared': '共有していない人材を表示',
+  'engineerShares.filtered.empty': '条件に一致する人材はいません。',
+  'engineerShares.filtered.activeFilters': '効いている条件',
+  'engineerShares.filtered.removeSuffix': 'を外す',
   'engineerShares.ledger.empty': '人材がまだ登録されていません。',
   'engineerShares.ledger.register': '人材を登録する',
   'engineerShares.preview.select': '人材を選ぶと、ホストに表示される内容をここで確認できます。',
@@ -3047,6 +3054,32 @@ const ja = {
   //    キャッシュを持たない設計であり、解除は即時に反映される。
   'engineerShares.error.retryNote': '設定は変わっていません。もう一度お試しください。',
   'engineerShares.deniedTitle': '共有の設定を変更できません。',
+  // --- T-11-11: 検索条件（氏名 / 稼働可能時期 / 共有状態）とカーソルページング（`docs/04` §S-015 改訂 12）---
+  // 🔴 3 条件が最小で最大（スキル・単価・勤務地を足さない。探索は `S-005` の領分）。
+  // 🔴 総件数・残件数・「あと N 件」に相当する語を置かない（`docs/05` §4.8。`S-005` #15 と同じ契約）。
+  'engineerShares.search.legend': '検索条件',
+  'engineerShares.search.q': '氏名',
+  'engineerShares.search.availableBy': '稼働可能時期（この日までに稼働可能）',
+  'engineerShares.search.shared': '共有状態',
+  'engineerShares.search.submit': '検索',
+  'engineerShares.search.clear': '条件を解除',
+  'engineerShares.filter.shared': '共有中',
+  'engineerShares.filter.notShared': '共有していない',
+  'engineerShares.filter.all': 'すべて',
+  // 一覧の「共有状態」列。🔴 `共有中` フィルタ中に解除した行はその場に残し `解除しました` と示す（次の検索で消える）。
+  'engineerShares.state.shared': '共有中',
+  'engineerShares.state.notShared': '未共有',
+  'engineerShares.state.revokedNow': '解除しました',
+  'engineerShares.state.deleted': '削除済み',
+  // 「次の 50 件」（取得済みの行の下に追加。無限スクロールにしない）。
+  'engineerShares.loadMore': '次の 50 件',
+  'engineerShares.loadMore.loading': '取得しています…',
+  'engineerShares.loadMore.error': '続きを取得できませんでした。',
+  'engineerShares.loadMore.retry': '再試行',
+  // 🔴 `CURSOR_MODE_MISMATCH`（400。docs/05 §6.4「#29 の改訂」）。画面は条件を変えるたびにカーソルを捨てるので、
+  //    利用者が通常操作でここへ到達することはない（改竄・流用した URL への応答）。
+  'error.engineerShares.cursorModeMismatch':
+    '一覧の続きの位置が共有状態の条件と合いません。最初のページから表示し直してください。',
 
   // --- 都道府県（JIS X 0401。コードの出所は `@ses/domain` の `PREFECTURE_CODES`）---
   // 🔴 コードと文言キーの対応は `apps/web/lib/format/prefectures.ts` の `PREFECTURE_MESSAGE_KEYS`

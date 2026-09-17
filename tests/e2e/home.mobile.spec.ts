@@ -466,12 +466,20 @@ test.describe('モバイルビューポートのスモーク（S-003 / S-004 は
       //    解除ボタンが**押せる形**で存在することまで見る（「空だから壊れていない」を緑にしない）。
       // ⚠️ `S-016`〜`S-018`（`T-08-05` / `T-08-06` / `T-08-07` で新設予定）は、画面が出来た
       //    時点で該当 spec から `expectNoBrokenLabels` を呼ぶ。本ファイルには足さない。
+      //    ✅ T-11-11: `S-015` は 1 表 + 検索 3 条件 + 共有状態フィルタ（既定 `共有中` = `U-15`）になった。既定の URL で
+      //    出る表の testid は `engineer-share-shared-table`（母集団 = 共有中）のまま。🔴 **検索 3 条件はモバイルでも
+      //    省略されない**（`CLAUDE.md` §13.3 / `docs/04` §S-015 デバイス別）ので、入力欄 3 つの可視も併せて見る。
       await session.page.goto('/engineer-shares', { waitUntil: 'domcontentloaded' });
       await expect(session.page.getByTestId('engineer-share-screen')).toBeVisible();
+      await expect(session.page.getByTestId('engineer-share-filter-q')).toBeVisible();
+      await expect(session.page.getByTestId('engineer-share-filter-available-by')).toBeVisible();
+      await expect(session.page.getByTestId('engineer-share-filter-shared')).toBeVisible();
       await expect(session.page.getByTestId('engineer-share-shared-table')).toBeVisible();
       await expect(
         session.page.getByTestId(`engineer-share-revoke-${partnerIds(1, 1).engineerId}`),
       ).toBeVisible();
+      // 🔴 一括の入口（チェックボックス）が無い（`F-016 AC-1`）。
+      await expect(session.page.locator('[data-testid="engineer-share-screen"] input[type="checkbox"]')).toHaveCount(0);
       await expectNoHorizontalOverflow('S-015 匿名共有の設定', session.page);
       await expectNoBrokenLabels('S-015 匿名共有の設定', session.page);
       // 🔴 共有の開始・停止は監査対象の実行系操作（`F-016 AC-4`）。スモークで動かさない。

@@ -28,6 +28,8 @@ export {
   ENGINEER_SKILL_MODES,
   engineerPriceConditions,
   engineerSearchPlan,
+  // 🔴 T-11-11: `S-015` の検索（自社台帳に対する氏名 / 稼働可能時期の絞り込み。docs/05 §6.4「#29 の改訂」）。
+  engineerShareSearchWhere,
   engineerSkillConditions,
   engineerSoftCriteria,
   ordersByFit,
@@ -41,6 +43,7 @@ export type {
 export type {
   EngineerSearchCriteria,
   EngineerSearchPlan,
+  EngineerShareSearchCriteria,
   EngineerSkillMode,
   EngineerWhereFragment,
 } from './engineers.js';

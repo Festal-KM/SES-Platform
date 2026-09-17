@@ -1,5 +1,7 @@
 // tests/isolation/engineer-shares.test.ts
 // 🔴 SP-08 T-08-02 の完了判定を **DB + RLS 付きで**実証する（`F-016 AC-1`〜`AC-5`）。
+//    → 🔴 T-11-11（`S-015` の検索・ページング。docs/05 §6.4「#29 の改訂」）の結合テスト 6 件を**末尾に追加**した
+//      （既存の `it` は変えていない。`getShares` に任意の query 引数を足しただけ）。
 //
 //   AC-1 エンジニア新規登録直後の共有設定は必ずオフ。**一括で全件をオンにする既定操作が無い**
 //   AC-2 🔴 **共有停止の直後にホストが検索しても、その候補が結果に含まれない**
@@ -141,9 +143,9 @@ async function getEngineers(ctx: AuthenticatedTenantCtx, query = ''): Promise<Re
   return engineersRoute.GET(new Request(`https://app.test/api/engineers${query}`));
 }
 
-async function getShares(ctx: AuthenticatedTenantCtx): Promise<Response> {
+async function getShares(ctx: AuthenticatedTenantCtx, query = ''): Promise<Response> {
   requireTenantCtxMock.mockResolvedValue(ctx);
-  return engineerSharesRoute.GET(new Request('https://app.test/api/engineer-shares'));
+  return engineerSharesRoute.GET(new Request(`https://app.test/api/engineer-shares${query}`));
 }
 
 async function putShare(
@@ -170,7 +172,7 @@ type ShareItem = {
   readonly proposalRequestCount: number;
   readonly previewedFields: Record<string, unknown>;
 };
-type ShareListBody = { readonly items: readonly ShareItem[] };
+type ShareListBody = { readonly items: readonly ShareItem[]; readonly nextCursor: string | null };
 type ShareUpdateBody = {
   readonly engineerId: string;
   readonly shared: boolean;
@@ -591,5 +593,377 @@ describe('🔴 応答が 5 項目 + 更新日を超えない（`BR-54` / `F-017 
       fromManYen: 60,
       toManYen: 70,
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 🔴 T-11-11: 検索 3 条件 + カーソルページング（docs/05 §6.4「#29 の改訂」の「結合テストの追加点」①〜⑥）
+// ---------------------------------------------------------------------------
+//
+// 台帳 250 件のパートナー（`PARTNER_1_1`）で、**201 件目以降も検索とページングで到達でき、共有可 / 解除ができる**
+// （`T-11-11` 完了判定 ②）。母集団は RLS C3 の自社行であり、他社の行は `q` に一致しても 0 件（③）。
+// 応答は `{ items, nextCursor }` の 2 キーで総件数を返さない（②）。カーソルはキーセットで、境目の行が
+// 解除されても次ページが空にならない（④）。
+
+/** 台帳の基準時刻。`updated_at` は `NNN` 秒ずつ過去に置く（001 が最新 = `updated_at DESC` で 1 件目）。 */
+const LEDGER_BASE = new Date('2026-09-01T00:00:00.000Z');
+const LEDGER_PREFIX = `${MARKER}台帳 `;
+/** `q` に渡す語（末尾の空白は `trim` されるので、接頭辞の空白を除いた語で探す）。 */
+const LEDGER_TERM = encodeURIComponent(LEDGER_PREFIX.trim());
+
+function ledgerName(seq: number): string {
+  return `${LEDGER_PREFIX}${String(seq).padStart(3, '0')}`;
+}
+
+/**
+ * 🔴 台帳 N 件を `PARTNER_1_1` の所有として直接挿入する（`POST /api/engineers` を 250 回叩くのは前提づくりであり、
+ *    検証の対象ではない）。`updated_at` を明示して並びを決定的にする。`available_from` は 3 通り
+ *    （NULL / 2026-10-01 / 2026-12-01）を巡回させ、⑤の絞り込みを見られるようにする。
+ *
+ * @returns 作成した行の ID（`displayName` の昇順 = `台帳 001` から）。
+ */
+async function seedLedger(count: number): Promise<readonly string[]> {
+  const rows = Array.from({ length: count }, (_, index) => {
+    const seq = index + 1;
+    const availableFrom =
+      seq % 3 === 0
+        ? null
+        : seq % 3 === 1
+          ? new Date('2026-10-01T00:00:00.000Z')
+          : new Date('2026-12-01T00:00:00.000Z');
+    return {
+      tenantId: TENANT_1.tenantId,
+      ownerPartnerCompanyId: PARTNER_1_1.partnerCompanyId,
+      displayName: ledgerName(seq),
+      availability: 'STANDBY',
+      availableFrom,
+      prefecture: '13',
+      updatedAt: new Date(LEDGER_BASE.getTime() - seq * 1000),
+    };
+  });
+  await admin.engineer.createMany({ data: rows });
+  const created = await admin.engineer.findMany({
+    where: { displayName: { startsWith: LEDGER_PREFIX } },
+    select: { id: true },
+    orderBy: [{ displayName: 'asc' }],
+  });
+  return created.map((row) => row.id);
+}
+
+/** 共有中の行を直接立てる（前提づくり）。`shared_at` は `index + 1` 秒ずつ過去（先頭が最新）。 */
+async function seedShares(engineerIds: readonly string[]): Promise<void> {
+  await admin.engineerShare.createMany({
+    data: engineerIds.map((engineerId, index) => ({
+      tenantId: TENANT_1.tenantId,
+      engineerId,
+      partnerCompanyId: PARTNER_1_1.partnerCompanyId,
+      sharedAt: new Date(LEDGER_BASE.getTime() - (index + 1) * 1000),
+      revokedAt: null,
+      sharedBy: PARTNER_1_1.userId,
+    })),
+  });
+}
+
+/** `nextCursor` を辿って全件を集める（ページごとの応答も返す）。`baseQuery` は `?` から始まる。 */
+async function walkPages(
+  ctx: AuthenticatedTenantCtx,
+  baseQuery: string,
+  startCursor: string | null = null,
+): Promise<{ readonly pages: readonly ShareListBody[]; readonly items: readonly ShareItem[] }> {
+  const pages: ShareListBody[] = [];
+  let cursor: string | null = startCursor;
+  for (let guard = 0; guard < 50; guard += 1) {
+    const query = cursor === null ? baseQuery : `${baseQuery}&cursor=${encodeURIComponent(cursor)}`;
+    const body = await shareListOf(await getShares(ctx, query));
+    pages.push(body);
+    cursor = body.nextCursor;
+    if (cursor === null) break;
+  }
+  return { pages, items: pages.flatMap((page) => page.items) };
+}
+
+async function errorCodeOf(response: Response): Promise<string> {
+  return ((await response.json()) as { readonly error: { readonly code: string } }).error.code;
+}
+
+describe('🔴 T-11-11 ①: 台帳 250 件で 201 件目を氏名で見つけて共有 → 解除できる（F-016 AC-2 が台帳の規模で破れない）', () => {
+  it('`q` で 201 件目が 1 件だけ見つかり、共有すると `shared=true` の 1 ページ目に出、解除すると消える', async () => {
+    const ids = await seedLedger(250);
+    expect(ids).toHaveLength(250);
+    const ctx = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
+
+    // 検索なしの `すべて` は 50 件で切れ、201 件目は 1 ページ目に居ない（旧実装の上限 200 でも到達できなかった位置）。
+    const firstPage = await shareListOf(await getShares(ctx));
+    expect(firstPage.items).toHaveLength(50);
+    expect(firstPage.nextCursor).not.toBeNull();
+    expect(firstPage.items.map((row) => row.displayName)).not.toContain(ledgerName(201));
+
+    // 氏名で探す（部分一致。`台帳 201` は 1 件だけ）。
+    const found = await shareListOf(await getShares(ctx, `?q=${encodeURIComponent('台帳 201')}`));
+    expect(found.items.map((row) => row.displayName)).toEqual([ledgerName(201)]);
+    const target = found.items[0] as ShareItem;
+    expect(target.shared).toBe(false);
+
+    // 共有可にする → `shared=true` の 1 ページ目に出る（最近共有した人が先）。
+    expect((await putShare(ctx, target.engineerId, { shared: true })).status).toBe(200);
+    const shared = await shareListOf(await getShares(ctx, '?shared=true'));
+    expect(shared.items[0]?.engineerId).toBe(target.engineerId);
+    expect(shared.items[0]?.shared).toBe(true);
+    expect(shared.items[0]?.sharedOn).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+
+    // 解除する → `shared=true` から消え、`shared=false` に（氏名で）出る。
+    expect((await putShare(ctx, target.engineerId, { shared: false })).status).toBe(200);
+    const afterRevoke = await walkPages(ctx, '?shared=true&limit=200');
+    expect(afterRevoke.items.map((row) => row.engineerId)).not.toContain(target.engineerId);
+    const notShared = await shareListOf(
+      await getShares(ctx, `?shared=false&q=${encodeURIComponent('台帳 201')}`),
+    );
+    expect(notShared.items.map((row) => row.engineerId)).toEqual([target.engineerId]);
+    expect(notShared.items[0]?.shared).toBe(false);
+    expect(notShared.items[0]?.sharedOn).toBeNull();
+  });
+});
+
+describe('🔴 T-11-11 ②: `shared=false` の母集団 = 台帳 − 共有中。応答は 2 キーで総件数を返さない', () => {
+  it('`nextCursor` を辿った合計が「自社の台帳 − 共有中」と一致し、`Object.keys(body)` は `[items, nextCursor]`', async () => {
+    const ids = await seedLedger(250);
+    await seedShares(ids.slice(0, 7));
+    const ctx = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
+
+    const expected = await admin.engineer.count({
+      where: {
+        ownerPartnerCompanyId: PARTNER_1_1.partnerCompanyId,
+        engineerShares: { none: { revokedAt: null } },
+      },
+    });
+    const { pages, items } = await walkPages(ctx, '?shared=false&limit=100');
+
+    expect(items).toHaveLength(expected);
+    expect(items.every((row) => !row.shared && row.sharedOn === null)).toBe(true);
+    expect(new Set(items.map((row) => row.engineerId)).size).toBe(expected);
+    // 🔴 応答のトップレベルは 2 キーだけ（`total` / `remaining` / `ledgerEmpty` が無い）。
+    for (const page of pages) {
+      expect(Object.keys(page).sort()).toEqual(['items', 'nextCursor']);
+    }
+    expect(pages.length).toBe(Math.ceil(expected / 100));
+  });
+});
+
+describe('🔴 T-11-11 ③: 他社の行は `q` に一致しても 0 件（RLS C3。F-016 AC-5）', () => {
+  it('同じ氏名を A1 / A2 / ホストに作り、A1 の検索には A1 の行だけが出る', async () => {
+    const name = `${MARKER}同名 山田`;
+    await admin.engineer.createMany({
+      data: [
+        {
+          tenantId: TENANT_1.tenantId,
+          ownerPartnerCompanyId: PARTNER_1_1.partnerCompanyId,
+          displayName: name,
+          availability: 'STANDBY',
+        },
+        {
+          tenantId: TENANT_1.tenantId,
+          ownerPartnerCompanyId: PARTNER_1_2.partnerCompanyId,
+          displayName: name,
+          availability: 'STANDBY',
+        },
+        // ホスト所有の同名も混ぜる（パートナーからはホストの台帳も見えない）。
+        {
+          tenantId: TENANT_1.tenantId,
+          ownerPartnerCompanyId: null,
+          displayName: name,
+          availability: 'STANDBY',
+        },
+      ],
+    });
+    const own = await admin.engineer.findFirst({
+      where: { displayName: name, ownerPartnerCompanyId: PARTNER_1_1.partnerCompanyId },
+      select: { id: true },
+    });
+    const other = await admin.engineer.findFirst({
+      where: { displayName: name, ownerPartnerCompanyId: PARTNER_1_2.partnerCompanyId },
+      select: { id: true },
+    });
+    const term = encodeURIComponent('同名');
+
+    const asA1 = await shareListOf(await getShares(await ctxOf(PARTNER_USER_1, 'PARTNER_SALES'), `?q=${term}`));
+    expect(asA1.items.map((row) => row.engineerId)).toEqual([own?.id]);
+    expect(asA1.nextCursor).toBeNull();
+
+    // 対照: A2 からは A2 の行だけ（0 件が「行が無い」からではない）。
+    const asA2 = await shareListOf(await getShares(await ctxOf(PARTNER_USER_2, 'PARTNER_SALES'), `?q=${term}`));
+    expect(asA2.items.map((row) => row.engineerId)).toEqual([other?.id]);
+
+    // `shared=false` / `shared=true` でも同じ（駆動表が違っても母集団は同じ RLS）。
+    const a1Ctx = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
+    const asA1NotShared = await shareListOf(await getShares(a1Ctx, `?shared=false&q=${term}`));
+    expect(asA1NotShared.items.map((row) => row.engineerId)).toEqual([own?.id]);
+    expect((await putShare(a1Ctx, own?.id ?? '', { shared: true })).status).toBe(200);
+    const asA1Shared = await shareListOf(await getShares(a1Ctx, `?shared=true&q=${term}`));
+    expect(asA1Shared.items.map((row) => row.engineerId)).toEqual([own?.id]);
+    // A2 の共有中の一覧に A1 の共有は現れない。
+    const asA2Shared = await shareListOf(
+      await getShares(await ctxOf(PARTNER_USER_2, 'PARTNER_SALES'), `?shared=true&q=${term}`),
+    );
+    expect(asA2Shared.items).toHaveLength(0);
+  });
+});
+
+describe('🔴 T-11-11 ④: カーソル（キーセット。重複・欠落なし / 形・組み合わせの拒否 / 境目の行が消えても次ページが空にならない）', () => {
+  it('`limit=50` で全ページを辿って重複・欠落が無い（`shared=false` と `すべて`）', async () => {
+    const ids = await seedLedger(250);
+    await seedShares(ids.slice(10, 20));
+    const ctx = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
+
+    const all = await walkPages(ctx, '?limit=50');
+    const expectedAll = await admin.engineer.count({
+      where: { ownerPartnerCompanyId: PARTNER_1_1.partnerCompanyId },
+    });
+    expect(all.items).toHaveLength(expectedAll);
+    expect(new Set(all.items.map((row) => row.engineerId)).size).toBe(expectedAll);
+    expect(all.pages.length).toBeGreaterThanOrEqual(5);
+    for (const page of all.pages.slice(0, -1)) expect(page.items).toHaveLength(50);
+
+    // 共有中はシードの 1 件（`PARTNER_1_1.engineerId`）+ ここで立てた 10 件。
+    const expectedNotShared = await admin.engineer.count({
+      where: {
+        ownerPartnerCompanyId: PARTNER_1_1.partnerCompanyId,
+        engineerShares: { none: { revokedAt: null } },
+      },
+    });
+    expect(expectedNotShared).toBeLessThanOrEqual(expectedAll - 10);
+    const notShared = await walkPages(ctx, '?shared=false&limit=50');
+    expect(notShared.items).toHaveLength(expectedNotShared);
+    expect(new Set(notShared.items.map((row) => row.engineerId)).size).toBe(expectedNotShared);
+  });
+
+  it('形が違うカーソルは 400（UUID 単体 / 並びのキー / ごみ）', async () => {
+    const ctx = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
+    for (const cursor of [
+      '01930000-0000-7000-8000-0000000000a1',
+      '0:2026-09-08:AAAAAAAAAAAAAAAAAAAAAA',
+      'garbage',
+      "s:0001757000000000:' OR 1=1 --",
+    ]) {
+      const response = await getShares(ctx, `?shared=true&cursor=${encodeURIComponent(cursor)}`);
+      expect(response.status, cursor).toBe(400);
+    }
+  });
+
+  it('🔴 `mode` と `shared` の組み合わせが合わないカーソルは 400 `CURSOR_MODE_MISMATCH`（黙って先頭に戻さない）', async () => {
+    const ids = await seedLedger(120);
+    await seedShares(ids.slice(0, 60));
+    const ctx = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
+
+    const sharedPage = await shareListOf(await getShares(ctx, '?shared=true&limit=50'));
+    const sCursor = sharedPage.nextCursor as string;
+    expect(sCursor.startsWith('s:')).toBe(true);
+    const ledgerPage = await shareListOf(await getShares(ctx, '?shared=false&limit=50'));
+    const uCursor = ledgerPage.nextCursor as string;
+    expect(uCursor.startsWith('u:')).toBe(true);
+
+    // `shared=true` に `u:` / `shared=false`・省略 に `s:`。
+    const mismatches = [
+      `?shared=true&cursor=${encodeURIComponent(uCursor)}`,
+      `?shared=false&cursor=${encodeURIComponent(sCursor)}`,
+      `?cursor=${encodeURIComponent(sCursor)}`,
+    ];
+    for (const query of mismatches) {
+      const response = await getShares(ctx, query);
+      expect(response.status, query).toBe(400);
+      expect(await errorCodeOf(response), query).toBe('CURSOR_MODE_MISMATCH');
+    }
+    // 対照: 合う組み合わせは 200。
+    expect((await getShares(ctx, `?shared=true&cursor=${encodeURIComponent(sCursor)}`)).status).toBe(200);
+    expect((await getShares(ctx, `?shared=false&cursor=${encodeURIComponent(uCursor)}`)).status).toBe(200);
+  });
+
+  it('🔴 2 ページ目を読む前に境目の行（1 ページ目の最後）を解除しても、次ページが空にならず重複もしない', async () => {
+    const ids = await seedLedger(120);
+    await seedShares(ids.slice(0, 110));
+    const ctx = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
+
+    const first = await shareListOf(await getShares(ctx, '?shared=true&limit=50'));
+    expect(first.items).toHaveLength(50);
+    const boundary = first.items[49] as ShareItem;
+
+    // 境目の行を解除する（1 件ずつ解除する画面では通常動作）。
+    expect((await putShare(ctx, boundary.engineerId, { shared: false })).status).toBe(200);
+
+    const rest = await walkPages(ctx, '?shared=true&limit=50', first.nextCursor);
+    const second = rest.pages[0] as ShareListBody;
+    expect(second.items).toHaveLength(50);
+    const firstIds = new Set(first.items.map((row) => row.engineerId));
+    expect(second.items.some((row) => firstIds.has(row.engineerId))).toBe(false);
+    expect(rest.items.map((row) => row.engineerId)).not.toContain(boundary.engineerId);
+
+    // 1 ページ目（解除した境目の行を除く）+ 残りで、共有中の全件にちょうど到達する（欠落なし）。
+    const seen = new Set([...first.items, ...rest.items].map((row) => row.engineerId));
+    seen.delete(boundary.engineerId);
+    const expected = await admin.engineerShare.count({
+      where: { partnerCompanyId: PARTNER_1_1.partnerCompanyId, revokedAt: null },
+    });
+    expect(seen.size).toBe(expected);
+  });
+});
+
+describe('🔴 T-11-11 ⑤: `availableBy` は `available_from <= 日付` で絞り、NULL の行を落とす', () => {
+  it('2026-11-01 までに稼働可能 = `available_from` が 10/01 の行だけ（12/01 と NULL は落ちる）', async () => {
+    await seedLedger(30);
+    const ctx = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
+
+    const { items } = await walkPages(ctx, `?availableBy=2026-11-01&q=${LEDGER_TERM}&limit=100`);
+    const names = items.map((row) => row.displayName).sort();
+    const expected = Array.from({ length: 30 }, (_, i) => i + 1)
+      .filter((seq) => seq % 3 === 1)
+      .map(ledgerName)
+      .sort();
+    expect(names).toEqual(expected);
+
+    // 対照: 12/31 まで広げると 12/01 の行も入るが、NULL は依然として落ちる。
+    const wider = await walkPages(ctx, `?availableBy=2026-12-31&q=${LEDGER_TERM}&limit=100`);
+    expect(wider.items).toHaveLength(20);
+    expect(wider.items.map((row) => row.displayName)).not.toContain(ledgerName(3));
+  });
+});
+
+describe('🔴 T-11-11 ⑥: 並びはサーバで確定する（`shared=true` = 共有開始日時の降順 / それ以外 = 更新日時の降順 → id 降順）', () => {
+  it('`shared=true` は `shared_at` 降順で、共有し直した行が先頭に来る', async () => {
+    const ids = await seedLedger(10);
+    await seedShares(ids.slice(0, 5));
+    const ctx = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
+
+    const before = await shareListOf(await getShares(ctx, `?shared=true&q=${LEDGER_TERM}`));
+    // seedShares は index 0 が最新なので、台帳 001 → 005 の順。
+    expect(before.items.map((row) => row.displayName)).toEqual([1, 2, 3, 4, 5].map(ledgerName));
+
+    // 台帳 004 を解除 → 共有し直す（`shared_at` が更新される）→ 先頭に来る。
+    const target = before.items[3] as ShareItem;
+    expect((await putShare(ctx, target.engineerId, { shared: false })).status).toBe(200);
+    expect((await putShare(ctx, target.engineerId, { shared: true })).status).toBe(200);
+    const after = await shareListOf(await getShares(ctx, `?shared=true&q=${LEDGER_TERM}`));
+    expect(after.items.map((row) => row.displayName)).toEqual([4, 1, 2, 3, 5].map(ledgerName));
+  });
+
+  it('`shared=false` / `すべて` は `updated_at` 降順 → `id` 降順（`ENGINEER_LIST_ORDER_BY`）', async () => {
+    await seedLedger(10);
+    const ctx = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
+
+    const notShared = await shareListOf(await getShares(ctx, `?shared=false&q=${LEDGER_TERM}`));
+    expect(notShared.items.map((row) => row.displayName)).toEqual(
+      Array.from({ length: 10 }, (_, i) => ledgerName(i + 1)),
+    );
+
+    // 同じ `updated_at` の 2 行は `id` の降順で決まる。
+    const tiedRows = await admin.engineer.findMany({
+      where: { displayName: { in: [ledgerName(1), ledgerName(2)] } },
+      select: { id: true },
+      orderBy: [{ id: 'desc' }],
+    });
+    await admin.engineer.updateMany({
+      where: { displayName: { in: [ledgerName(1), ledgerName(2)] } },
+      data: { updatedAt: new Date('2026-09-02T00:00:00.000Z') },
+    });
+    const tied = await shareListOf(await getShares(ctx, `?q=${LEDGER_TERM}`));
+    expect(tied.items.slice(0, 2).map((row) => row.engineerId)).toEqual(tiedRows.map((row) => row.id));
   });
 });

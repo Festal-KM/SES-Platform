@@ -356,3 +356,52 @@ export function engineerSearchPlan(criteria: EngineerSearchCriteria): EngineerSe
     ],
   };
 }
+
+// ============================================================================
+// 🔴 `S-015` 匿名共有の設定の検索（`GET /api/engineer-shares`。docs/05 §6.4「#29 の改訂」。T-11-11）
+// ============================================================================
+// 取引先が**自社の台帳（`engineers` の RLS C3 = 自社行）**を、氏名と稼働可能時期で絞るための述語。
+// 匿名候補の検索（`anonymous-candidates.ts`。丸め後の区分に対して評価する）とは**無関係**であり、
+// 台帳の生の値に対して評価する（`docs/04` §S-015「自社台帳なので生値で検索してよい」）。
+//
+// 🔴 **新しい述語を書いていない。** `#15` の 2 関数（`freeWordOr` / `inTimeCondition`）の組み合わせだけで
+//    ある。フリーワードの照合の仕方は `free-word.ts` の 1 箇所に閉じたままであり、`apps/web` に
+//    `contains` / `mode: 'insensitive'` が現れない（`tests/static/search-sql-single-path.test.ts`）。
+// 🔴 ここにも境界の条件を 1 つも書かない（ファイル冒頭の規律。母集団は RLS が決める）。
+// 🔴 共有状態（`engineer_shares` の行の有無）は**検索条件ではなく母集団の切り分け**であり、
+//    本モジュールでは扱わない（`apps/web/lib/engineer-shares/service.ts` が駆動表を選ぶ）。
+
+/**
+ * `S-015` の検索条件（`docs/04` §S-015「検索条件フォーム」。**この 2 つが最小で最大**）。
+ * 🔴 スキル・単価・勤務地・`skillMode` を足さない（探索は `S-005` の領分。足すと `S-005` と二重の検索画面になる）。
+ * 🔴 共有状態・ページング・分離キーを持たない（上記）。
+ */
+export type EngineerShareSearchCriteria = {
+  /** 氏名の部分一致（`docs/04` §S-015「氏名（部分一致）」）。 */
+  readonly q?: string;
+  /** 稼働可能時期（`YYYY-MM-DD`）。「この日までに稼働できる」。🔴 本画面では**絞り込み**（ソフト条件ではない）。 */
+  readonly availableBy?: string;
+};
+
+/**
+ * 🔴 `S-015` のフリーワードは**氏名の 1 列だけ**を見る（`#15` の `ENGINEER_FREE_WORD_COLUMNS` にある
+ *    `preferenceNote` を見ない）。本画面の用途は「稼働が決まった人を名前で探して解除する」であり、
+ *    希望条件の本文に一致した行が混ざると「名前で探したのに別人が出た」になる。
+ */
+const ENGINEER_SHARE_FREE_WORD_COLUMNS = ['displayName'] as const;
+
+/**
+ * `S-015` の検索条件 → 述語。**唯一の入口**である。
+ *
+ * 🔴 `availableBy` は `inTimeCondition(...).match`（= `available_from <= 日付`）で**母集団を絞る**。
+ *    `available_from IS NULL` の行は落ちる —— `#15` で `onlyInTime` を立てたときと同じ判定である
+ *    （「間に合う」と断定できない行を「間に合う」に数えない）。本画面には「適合」の並びが無く、
+ *    空状態「条件に一致する人材はいません」が 0 件になりうることを前提にしている（`docs/04` §S-015 空状態）。
+ * 🔴 条件を 1 つも指定しなければ `{}`（= 母集団そのもの）。
+ */
+export function engineerShareSearchWhere(criteria: EngineerShareSearchCriteria): EngineerWhereFragment {
+  const and: EngineerWhereFragment[] = [];
+  if (criteria.availableBy !== undefined) and.push(inTimeCondition(criteria.availableBy).match);
+  if (criteria.q !== undefined) and.push(freeWordOr(criteria.q, ENGINEER_SHARE_FREE_WORD_COLUMNS));
+  return and.length === 0 ? {} : { AND: and };
+}

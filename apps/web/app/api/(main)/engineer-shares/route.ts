@@ -1,5 +1,7 @@
 // apps/web/app/api/(main)/engineer-shares/route.ts
-// `GET /api/engineer-shares`（docs/05 §6.4 #29。`F-016` / `S-015`）。T-08-02。
+// `GET /api/engineer-shares`（docs/05 §6.4 #29。`F-016` / `S-015`）。T-08-02 → 🔴 T-11-11 で
+// 検索 3 条件（`q` / `availableBy` / `shared`）+ カーソルページング（`cursor` / `limit`）を足した
+// （docs/05 §6.4「#29 の改訂」）。応答は `{ items, nextCursor }` の 2 キー（総件数・残件数を返さない）。
 //
 // 🔴 **`PARTNER_ADMIN` / `PARTNER_SALES` のみ。ホストは 403**（docs/05 §6.4 #29 の備考 /
 //    `docs/04` §S-015 権限差分「ホスト側ロールにはこの画面が存在しない」）。
@@ -21,6 +23,7 @@
 import { requireRole } from '../../../../lib/api/guards';
 import { withApiRoute } from '../../../../lib/api/withApiRoute';
 import { ENGINEER_SHARE_ROLES } from '../../../../lib/engineer-shares/policy';
+import { engineerShareListQuerySchema } from '../../../../lib/engineer-shares/schemas';
 import { listEngineerShares } from '../../../../lib/engineer-shares/service';
 import { toJstIsoDay } from '../../../../lib/format/datetime';
 
@@ -31,9 +34,13 @@ export const GET = withApiRoute(
   {
     label: 'GET /api/engineer-shares',
     guards: [requireRole(ENGINEER_SHARE_ROLES)],
+    // 🔴 形の違うカーソル・上限超過の `limit` は境界検証で 400（`pagination.ts` / `schemas.ts`）。
+    //    `mode` と `shared` の組み合わせは `listEngineerShares` の `decodeEngineerShareCursor` が 400 にする。
+    query: engineerShareListQuerySchema,
   },
   // 🔴 基準日は**呼び出し側**が作る（`packages/domain` に現在時刻を持ち込まない。
   //    docs/05 §4.6.1）。`toJstIsoDay` を通すのは `AnonymousCandidateView.updatedOn` と
   //    粒度・基準をそろえるためである（同 §4.6.3 の申し送り）。
-  async ({ ctx }) => Response.json(await listEngineerShares(ctx, toJstIsoDay(new Date()))),
+  async ({ ctx, query }) =>
+    Response.json(await listEngineerShares(ctx, query, toJstIsoDay(new Date()))),
 );

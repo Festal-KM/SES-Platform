@@ -18,9 +18,15 @@ import {
   ANONYMIZED_REMOTE_MODE_MESSAGE_KEYS,
   ANONYMIZED_YEARS_BAND_MESSAGE_KEYS,
   anonymizedAttributeRows,
+  anonymizedLabelCatalog,
   formatAnonymizedLocation,
   formatAnonymizedPriceBand,
 } from './labels';
+import {
+  ANONYMIZED_LABEL_MESSAGE_KEYS,
+  anonymizedAttributeRowsWith,
+  lookupFromCatalog,
+} from './labels-core';
 import { t } from '@ses/i18n';
 
 /** `F-017 AC-3` の例（経験年数 7 年 / 単価 65 万円 / 東京都渋谷区）を丸めた後の値。 */
@@ -145,5 +151,65 @@ describe('🔴 表示できる項目が 5 項目 + 更新日から増えてい�
       location: '—',
       updatedOn: '2026-09-08',
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-11-11: クライアントへ渡す文言の表（`S-015` の「次の 50 件」）とサーバの `t` が同じ結果になる
+// ---------------------------------------------------------------------------
+
+describe('🔴 `anonymizedLabelCatalog` + `lookupFromCatalog` はサーバの `t` と同じ結果になる（組み立てが 1 本）', () => {
+  const catalog = anonymizedLabelCatalog();
+  const lookup = lookupFromCatalog(catalog);
+
+  it('丸めた 5 項目の文言化が一致する（全区分を総当たり）', () => {
+    for (const yearsBand of ANONYMIZED_YEARS_BANDS) {
+      for (const availabilityBand of ANONYMIZED_AVAILABILITY_BANDS) {
+        for (const remoteMode of ANONYMIZED_REMOTE_MODES) {
+          const attributes: RoundedAnonymousAttributes = {
+            ...ROUNDED,
+            yearsBand,
+            availabilityBand,
+            remoteMode,
+            priceBand: { kind: 'OPEN', fromManYen: 100 },
+          };
+          expect(anonymizedAttributeRowsWith(attributes, lookup)).toEqual(
+            anonymizedAttributeRows(attributes),
+          );
+        }
+      }
+    }
+  });
+
+  it('未設定（null）も一致する', () => {
+    const attributes: RoundedAnonymousAttributes = {
+      ...ROUNDED,
+      skills: [],
+      yearsBand: null,
+      priceBand: null,
+      availabilityBand: null,
+      prefecture: null,
+      remoteMode: null,
+    };
+    expect(anonymizedAttributeRowsWith(attributes, lookup)).toEqual(anonymizedAttributeRows(attributes));
+  });
+
+  it('表のキー集合は `ANONYMIZED_LABEL_MESSAGE_KEYS` と一致し、値はすべて空でない文字列である', () => {
+    expect(Object.keys(catalog).sort()).toEqual([...new Set(ANONYMIZED_LABEL_MESSAGE_KEYS)].sort());
+    for (const value of Object.values(catalog)) {
+      expect(typeof value).toBe('string');
+      expect((value ?? '').length).toBeGreaterThan(0);
+    }
+  });
+
+  it('🔴 表に無いキーはキー名をそのまま返す（黙って空欄にしない）', () => {
+    expect(lookupFromCatalog({})('anonymousCandidate.valueNone')).toBe('anonymousCandidate.valueNone');
+  });
+
+  it('🔴 表は 5 項目 + 更新日の文言だけで、丸め前の値・氏名・経歴の語を持たない', () => {
+    const json = JSON.stringify(catalog);
+    expect(json).not.toContain('displayName');
+    expect(json).not.toContain('contact');
+    expect(json).not.toContain('engineerShares.');
   });
 });

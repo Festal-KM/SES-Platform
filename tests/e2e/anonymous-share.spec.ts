@@ -539,29 +539,45 @@ function exactlyOneNewRef(source: string, before: readonly string[], after: read
   return added[0] as string;
 }
 
-/** `S-015` で共有を開始する（プレビュー → 確認 → 確定 → 再読込）。 */
+/**
+ * `S-015` で共有を開始する（プレビュー → 確認 → 確定 → **当該行の描き直し**）。
+ * ✅ T-11-11: `S-015` は 1 表 + 共有状態フィルタ（既定 `共有中` = `U-15`）になった。共有していない人を探すので
+ *    `?shared=false`（共有していない）で開く。反映は `PUT` の応答で**当該行だけ**を描き直す（再読込しない）。
+ */
 async function shareViaScreen(partner: Session, engineerId: string): Promise<void> {
-  await partner.page.goto('/engineer-shares', { waitUntil: 'domcontentloaded' });
+  await partner.page.goto('/engineer-shares?shared=false', { waitUntil: 'domcontentloaded' });
   await expect(partner.page.getByTestId('engineer-share-screen')).toBeVisible();
+  await expect(partner.page.getByTestId('engineer-share-not-shared-table')).toBeVisible();
   await partner.page.getByTestId(`engineer-share-share-${engineerId}`).click();
   await expect(partner.page.getByTestId('engineer-share-share-confirm')).toBeVisible();
   // 🔴 確認ステップは**プレビュー（丸めた後の 5 項目）を見せたうえで**確定させる（`docs/04` §S-015）。
   await expect(partner.page.getByTestId(`engineer-share-preview-${engineerId}`)).toBeVisible();
   await partner.page.getByTestId('engineer-share-confirm-submit').click();
-  // 変更後は再読込され、サーバの状態だけが正（`engineer-share-screen.tsx`）。共有中の表に移る。
+  // 🔴 サーバ応答で当該行だけが描き直され、操作は `解除する` に変わる（行はその場に残る。`docs/04` §S-015 操作表）。
   await expect(partner.page.getByTestId(`engineer-share-revoke-${engineerId}`)).toBeVisible();
   await expect(partner.page.getByTestId(`engineer-share-share-${engineerId}`)).toHaveCount(0);
+  await expect(partner.page.getByTestId(`engineer-share-state-${engineerId}`)).toHaveText(
+    t('engineerShares.state.shared'),
+  );
 }
 
-/** `S-015` で共有を停止する。 */
+/**
+ * `S-015` で共有を停止する（既定フィルタ `共有中` の 1 表から）。
+ * ✅ T-11-11: 🔴 `共有中` フィルタ中に解除した行は、フィルタに合致しなくなっても**その場に残り** `解除しました` と
+ *    表示される（`docs/04` §S-015 操作表。行が即座に消えると「押せたのか分からない」になる）。
+ */
 async function revokeViaScreen(partner: Session, engineerId: string): Promise<void> {
   await partner.page.goto('/engineer-shares', { waitUntil: 'domcontentloaded' });
   await expect(partner.page.getByTestId('engineer-share-screen')).toBeVisible();
+  await expect(partner.page.getByTestId('engineer-share-shared-table')).toBeVisible();
   await partner.page.getByTestId(`engineer-share-revoke-${engineerId}`).click();
   await expect(partner.page.getByTestId('engineer-share-revoke-confirm')).toBeVisible();
   await partner.page.getByTestId('engineer-share-confirm-submit').click();
   await expect(partner.page.getByTestId(`engineer-share-share-${engineerId}`)).toBeVisible();
   await expect(partner.page.getByTestId(`engineer-share-revoke-${engineerId}`)).toHaveCount(0);
+  await expect(partner.page.getByTestId(`engineer-share-state-${engineerId}`)).toHaveText(
+    t('engineerShares.state.revokedNow'),
+  );
 }
 
 /** 共有を開始し、ホストの #30（公開案件 / 未公開案件）の差分で参照子を知る。 */
@@ -720,12 +736,30 @@ test.describe('🔴 経路 4（匿名共有と提案依頼）— CLAUDE.md §5 P
       expect(xShare?.sharedOn).toBeNull();
       expect(xShare?.displayName).toBe(x.displayName);
 
+      // ✅ T-11-11: 既定の URL は `共有中` フィルタ（`U-15`）。登録直後の X はそこには居ない（対照）。
       await partner.page.goto('/engineer-shares', { waitUntil: 'domcontentloaded' });
       await expect(partner.page.getByTestId('engineer-share-screen')).toBeVisible();
+      await expect(partner.page.getByTestId('engineer-share-shared-table')).toBeVisible();
+      await expect(partner.page.getByTestId(`engineer-share-row-${x.id}`)).toHaveCount(0);
+      // 🔴 検索 3 条件（氏名 / 稼働可能時期 / 共有状態）があり、一括の入口（チェックボックス）が無い。
+      await expect(partner.page.getByTestId('engineer-share-filter-q')).toBeVisible();
+      await expect(partner.page.getByTestId('engineer-share-filter-available-by')).toBeVisible();
+      await expect(partner.page.getByTestId('engineer-share-filter-shared')).toBeVisible();
+      await expect(
+        partner.page.locator('[data-testid="engineer-share-screen"] input[type="checkbox"]'),
+      ).toHaveCount(0);
+      // 氏名で探す → X の 1 行だけ（`q` は自社台帳に対する部分一致）。
+      await partner.page.goto(`/engineer-shares?shared=all&q=${encodeURIComponent(x.displayName)}`, {
+        waitUntil: 'domcontentloaded',
+      });
+      await expect(partner.page.getByTestId('engineer-share-table')).toBeVisible();
+      await expect(partner.page.locator('[data-testid^="engineer-share-row-"]')).toHaveCount(1);
+      await expect(partner.page.getByTestId(`engineer-share-share-${x.id}`)).toBeVisible();
+      // `共有していない` フィルタ: 共有していない全員が出て、共有ボタンは行ごとにしか無い（`F-016 AC-1`）。
+      await partner.page.goto('/engineer-shares?shared=false', { waitUntil: 'domcontentloaded' });
       await expect(partner.page.getByTestId('engineer-share-not-shared-table')).toBeVisible();
       await expect(partner.page.getByTestId(`engineer-share-share-${x.id}`)).toBeVisible();
       await expect(partner.page.getByTestId(`engineer-share-revoke-${x.id}`)).toHaveCount(0);
-      // 🔴 一括で全件をオンにする操作が存在しない（`F-016 AC-1`）: 共有ボタンは行ごとにしか無い。
       await expect(partner.page.locator('[data-testid^="engineer-share-share-"]')).toHaveCount(
         shares.items.filter((item) => !item.shared).length,
       );

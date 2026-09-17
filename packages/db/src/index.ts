@@ -700,3 +700,7 @@ export type {
   ResolvedTenantQuotas,
   TenantQuotaDefaults,
 } from './quota-overrides.js';
+// 🔴 T-11-11: `S-015` の検索述語（自社台帳〔RLS C3〕に対する 氏名 / 稼働可能時期 の絞り込み。docs/05 §6.4「#29 の改訂」）。
+//    `#15` の 2 関数の組み合わせであり、フリーワードの照合は `search/free-word.ts` の 1 箇所のまま。
+export { engineerShareSearchWhere } from './search/index.js';
+export type { EngineerShareSearchCriteria } from './search/index.js';

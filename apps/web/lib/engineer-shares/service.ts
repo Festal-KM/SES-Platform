@@ -1,5 +1,8 @@
 // apps/web/lib/engineer-shares/service.ts
-// 匿名共有の opt-in / 解除（docs/05 §6.4 #29。`F-016` / `S-015`）。T-08-02。
+// 匿名共有の opt-in / 解除（docs/05 §6.4 #29。`F-016` / `S-015`）。T-08-02 → 🔴 T-11-11 で一覧を
+// **検索 3 条件 + カーソルページング**に置き換えた（docs/05 §6.4「#29 の改訂」。T-08-02 の「上限 200 件・
+// 検索なし・ページングなし」は、台帳が 200 件を超える取引先で 201 件目以降を共有可にも解除にもできず
+// `F-016 AC-2` の実質的な違反だった）。
 //
 // ============================================================================
 // 🔴 ここは越境経路 4（`CLAUDE.md` §3.1）の**入口**である
@@ -40,6 +43,7 @@
 import { ANONYMIZE_ROUNDING } from '@ses/config';
 import {
   ENGINEER_LIST_ORDER_BY,
+  engineerShareSearchWhere,
   withTenant,
   writeAuditLog,
   type AuthenticatedTenantCtx,
@@ -52,8 +56,16 @@ import {
   type RoundedAnonymousAttributes,
 } from '@ses/domain';
 import { ForbiddenError, NotFoundError } from '../api/errors';
+import { buildCursorPage, takeForCursorPage, type CursorPage } from '../api/pagination';
 import { toJstIsoDay } from '../format/datetime';
 import { decimalToNumber, toDateOnlyString } from '../format/db-values';
+import {
+  decodeEngineerShareCursor,
+  encodeEngineerShareCursor,
+  engineerShareCursorMode,
+  type EngineerShareCursor,
+  type EngineerShareListQuery,
+} from './schemas';
 
 /**
  * docs/05 §16.1 の `*.create` / `*.update`（`F-016 AC-4`「共有の開始・停止が、実施者・対象・
@@ -110,10 +122,12 @@ export type EngineerShareCandidateView = {
   readonly previewedFields: RoundedAnonymousAttributes;
 };
 
-/** `GET /api/engineer-shares`（docs/05 §6.4 #29）の応答。 */
-export type EngineerShareListView = {
-  readonly items: readonly EngineerShareCandidateView[];
-};
+/**
+ * `GET /api/engineer-shares`（docs/05 §6.4 #29）の応答 = **`{ items, nextCursor }` の 2 キー**。
+ * 🔴 `total` / 残件数を持たない（`CursorPage` は `total` を持たない型。docs/05 §4.8 / `docs/04` 申し送り 18-①）。
+ *    `view.types.test.ts` が `CursorPage<EngineerShareCandidateView>` との同一性を固定する。
+ */
+export type EngineerShareListView = CursorPage<EngineerShareCandidateView>;
 
 /** `PUT /api/engineers/{id}/share`（同上）の応答。 */
 export type EngineerShareUpdateView = {
@@ -123,16 +137,6 @@ export type EngineerShareUpdateView = {
   readonly previewedFields: RoundedAnonymousAttributes;
 };
 
-/**
- * 1 画面に読み込む上限。
- *
- * 🔴 `S-015` に検索も絞り込みも置かない（`docs/04` §S-015 のセクションは 4 つで、いずれも
- *    検索ではない）ため、カーソルページングを持たせずに上限で切る。**上限を超えた分を
- *    「他に N 件あります」と示さない** —— 件数の示唆を残さない規律（docs/05 §4.8）に従う。
- *    ⚠️ 台帳の規模が上限に迫ったら、`S-005` と同じカーソルページングを足すこと
- *    （`docs/04` §S-015 に検索を足すかどうかは `ui-design` の判断であり、実装で決めない）。
- */
-export const ENGINEER_SHARE_LIST_LIMIT = 200;
 
 /** `withTenant` が `fn` に渡すクライアントのうち、本モジュールが使う部分。 */
 type EngineerShareDb = Parameters<Parameters<typeof withTenant<void>>[1]>[0];
@@ -282,29 +286,6 @@ function previewOf(
   );
 }
 
-/**
- * 🔴 2 本のクエリ（ページ + 共有中の拾い直し）を**決定的な 1 つの並び**にまとめる。
- *
- * 並びは `ENGINEER_LIST_ORDER_BY`（`updated_at DESC, id DESC`）と**同じ規則**である ——
- * DB 側とアプリ側で規則が違うと、同じデータでも「拾い直しが起きたときだけ並びが変わる」。
- * 🔴 `id` によるタイブレークを外さないこと（`updated_at` は同値になりうる。同値を
- *    配列の連結順に委ねると、`pinned` の有無で並びが変わり決定性が壊れる）。
- *
- * ⚠️ 純粋関数として切り出してあるのは、この規則をユニットテストで固定するためである
- *    （`service.order.test.ts`）。
- */
-export function orderedShareCandidates<T extends { readonly id: string; readonly updatedAt: Date }>(
-  rows: readonly T[],
-): readonly T[] {
-  const unique = new Map<string, T>();
-  for (const row of rows) if (!unique.has(row.id)) unique.set(row.id, row);
-  return [...unique.values()].sort((a, b) => {
-    const diff = b.updatedAt.getTime() - a.updatedAt.getTime();
-    if (diff !== 0) return diff;
-    return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
-  });
-}
-
 function toCandidateView(
   row: EngineerShareSourceRow,
   share: ShareStateRow | undefined,
@@ -323,57 +304,166 @@ function toCandidateView(
   };
 }
 
+/** `EngineerShareListQuery` のうち、母集団と並びを決める部分（`limit` を除く）。 */
+type EngineerShareListCriteria = Pick<EngineerShareListQuery, 'q' | 'availableBy' | 'shared' | 'cursor'>;
+
 /**
- * `GET /api/engineer-shares`（docs/05 §6.4 #29 / `S-015` のセクション 2・3・4）。
+ * `shared=true` の駆動表 `engineer_shares` のキーセット述語（`shared_at DESC, engineer_id DESC` の「その後ろ」）。
+ * 🔴 Prisma の `cursor: { id } + skip: 1` を使わない —— 境目の行が解除・削除されても次ページが空にならない
+ *    （T-05-09 の ID カーソルの弱点〔行が消えると 0 件〕を本画面に持ち込まない。1 件ずつ解除する画面では
+ *    **境目の行が消えるのが通常動作**である）。
+ */
+function sharedKeysetAfter(cursor: EngineerShareCursor) {
+  return {
+    OR: [
+      { sharedAt: { lt: cursor.at } },
+      { sharedAt: cursor.at, engineerId: { lt: cursor.engineerId } },
+    ],
+  };
+}
+
+/** `engineers` のキーセット述語（`updated_at DESC, id DESC` の「その後ろ」）。 */
+function updatedKeysetAfter(cursor: EngineerShareCursor) {
+  return {
+    OR: [{ updatedAt: { lt: cursor.at } }, { updatedAt: cursor.at, id: { lt: cursor.engineerId } }],
+  };
+}
+
+/**
+ * 共有中の行を駆動表にして 1 ページ分を並びのまま得る（`shared=true`）。
  *
- * 🔴 返すのは**自社の台帳だけ**である（`engineers` の RLS C3）。共有中かどうかは
- *    `engineer_shares` の行の有無と `revoked_at` から決まり、**他社の共有は 1 件も混ざらない**
- *    （`F-016 AC-5`）。
+ * 🔴 `engineers` 側からは to-many の列（`shared_at`）で `orderBy` できないため、`engineer_shares` を先に読む。
+ *    `@@unique([tenantId, engineerId])` により `engineer_id` で全順序になる。共有し直すと `shared_at` が
+ *    更新される（`setEngineerShare`）ので「最近共有した人が先」。
+ * 🔴 `where` に書くのは `revoked_at IS NULL`・検索条件・キーセットだけである。母集団は `engineer_shares` /
+ *    `engineers` の RLS（C3）が決め、リレーション条件は `EXISTS` 副問い合わせに落ちて RLS がそのまま効く。
+ */
+async function readSharedPage(
+  db: EngineerShareDb,
+  criteria: EngineerShareListCriteria,
+  limit: number,
+): Promise<CursorPage<ShareStateRow>> {
+  const cursor =
+    criteria.cursor === undefined
+      ? undefined
+      : decodeEngineerShareCursor(criteria.cursor, criteria.shared);
+  const rows = await db.engineerShare.findMany({
+    where: {
+      revokedAt: null,
+      engineer: engineerShareSearchWhere({ q: criteria.q, availableBy: criteria.availableBy }),
+      ...(cursor === undefined ? {} : sharedKeysetAfter(cursor)),
+    },
+    select: { engineerId: true, sharedAt: true, revokedAt: true },
+    orderBy: [{ sharedAt: 'desc' }, { engineerId: 'desc' }],
+    take: takeForCursorPage(limit),
+  });
+  return buildCursorPage(rows, limit, (row) =>
+    encodeEngineerShareCursor('s', { at: row.sharedAt, engineerId: row.engineerId }),
+  );
+}
+
+/**
+ * `engineers` を駆動表にして 1 ページ分を得る（`shared=false` と省略）。並びは `ENGINEER_LIST_ORDER_BY`
+ * （`updated_at DESC, id DESC`。`S-005` と同じ）。
+ * 🔴 `shared=false` は `engineerShares: { none: { revokedAt: null } }` を AND する —— 既定オフは「行の非存在」
+ *    （T-08-02 ①）のままであり、boolean 列を足さない。
+ * 🔴 **共有状態でグループ分けしない**（`すべて` で共有中を先に固めない。`docs/04` §S-015）。
+ */
+async function readLedgerPage(
+  db: EngineerShareDb,
+  criteria: EngineerShareListCriteria,
+  limit: number,
+): Promise<CursorPage<EngineerShareSourceRow>> {
+  const cursor =
+    criteria.cursor === undefined
+      ? undefined
+      : decodeEngineerShareCursor(criteria.cursor, criteria.shared);
+  const rows = await db.engineer.findMany({
+    where: {
+      AND: [
+        engineerShareSearchWhere({ q: criteria.q, availableBy: criteria.availableBy }),
+        ...(criteria.shared === 'false' ? [{ engineerShares: { none: { revokedAt: null } } }] : []),
+        ...(cursor === undefined ? [] : [updatedKeysetAfter(cursor)]),
+      ],
+    },
+    select: ENGINEER_SHARE_SOURCE_SELECT,
+    orderBy: [...ENGINEER_LIST_ORDER_BY],
+    take: takeForCursorPage(limit),
+  });
+  return buildCursorPage(rows, limit, (row) =>
+    encodeEngineerShareCursor('u', { at: row.updatedAt, engineerId: row.id }),
+  );
+}
+
+/**
+ * `GET /api/engineer-shares`（docs/05 §6.4「#29 の改訂」/ `S-015` のセクション 2〜5）。
+ *
+ * 🔴 返すのは**自社の台帳だけ**である（`engineers` / `engineer_shares` の RLS C3）。**検索はその自社行に対して
+ *    生値で評価する**（`engineerShareSearchWhere`。匿名候補の丸め後の区分に対する評価〔`anonymous-candidates.ts`〕
+ *    とは無関係で、`withSharedCandidateScope` も使わない）。他社の行は `q` に一致しても 1 件も返らない（`F-016 AC-5`）。
+ * 🔴 応答は `{ items, nextCursor }` の 2 キー。**総件数・残件数を返さない**（docs/05 §4.8）。
+ * 🔴 並びはサーバで確定する（画面はソートし直さない）: `shared=true` → `shared_at DESC, engineer_id DESC` /
+ *    それ以外 → `updated_at DESC, id DESC`。駆動表は前者が `engineer_shares`、後者が `engineers`。
  * 🔴 一覧と共有状態を**同じトランザクション**で読む。別々に読むと、解除の直後に
  *    「一覧には出ているが共有中の印が残っている」中間状態が見える。
+ * 🔴 `previewedFields` の契約（丸め後の 7 フィールド）は変えない。`readAnonymizeSkills` / `readProposalRequestCounts`
+ *    は**ページ分（≤ 200 件）だけ**を 1 往復ずつ（N+1 なし）。
  *
  * @param referenceDate 丸めの基準日（JST の `YYYY-MM-DD`）。🔴 `packages/domain` に
  *        現在時刻を持ち込まないための注入（docs/05 §4.6.1）。呼び出し側が `toJstIsoDay` で作る。
  */
 export async function listEngineerShares(
   ctx: AuthenticatedTenantCtx,
+  query: EngineerShareListQuery,
   referenceDate: string,
 ): Promise<EngineerShareListView> {
   assertPartnerContext(ctx);
+  const criteria: EngineerShareListCriteria = {
+    q: query.q,
+    availableBy: query.availableBy,
+    shared: query.shared,
+    cursor: query.cursor,
+  };
 
   return withTenant(ctx, async (db) => {
-    // 🔴 **共有中の行はすべて読む（`take` を付けない）。** 上限で切り落とすと、
-    //    その人は一覧に出ず **解除できなくなる** —— `F-016 AC-2`（停止は即時に反映される）は
-    //    「停止の操作ができる」ことを前提にしている。件数はパートナー自身の opt-in の数であり、
-    //    台帳の規模で頭打ちになる。
-    const activeShares = await db.engineerShare.findMany({
-      where: { revokedAt: null },
-      select: { engineerId: true, sharedAt: true, revokedAt: true },
-    });
-    const shareOf = new Map(activeShares.map((row) => [row.engineerId, row]));
+    let engineers: readonly EngineerShareSourceRow[];
+    let shareOf: ReadonlyMap<string, ShareStateRow>;
+    let nextCursor: string | null;
 
-    const page = await db.engineer.findMany({
-      select: ENGINEER_SHARE_SOURCE_SELECT,
-      // 🔴 決定的な順序（`ENGINEER_LIST_ORDER_BY`。`updated_at DESC, id DESC`）。
-      //    `S-005` と同じ並びにしておくと、台帳と本画面で人の並びが食い違わない。
-      orderBy: [...ENGINEER_LIST_ORDER_BY],
-      take: ENGINEER_SHARE_LIST_LIMIT,
-    });
-    // 🔴 上限の外に落ちた**共有中**のエンジニアを拾い直す（上記の理由）。
-    const seen = new Set(page.map((row) => row.id));
-    const pinnedIds = [...shareOf.keys()].filter((id) => !seen.has(id));
-    const pinned =
-      pinnedIds.length === 0
-        ? []
-        : await db.engineer.findMany({
-            where: { id: { in: pinnedIds } },
-            select: ENGINEER_SHARE_SOURCE_SELECT,
-            orderBy: [...ENGINEER_LIST_ORDER_BY],
-          });
+    if (engineerShareCursorMode(criteria.shared) === 's') {
+      const page = await readSharedPage(db, criteria, query.limit);
+      const ids = page.items.map((row) => row.engineerId);
+      const sources =
+        ids.length === 0
+          ? []
+          : await db.engineer.findMany({
+              where: { id: { in: ids } },
+              select: ENGINEER_SHARE_SOURCE_SELECT,
+            });
+      // 🔴 `engineer_shares` 側の順序を保って組み立てる（`IN` の結果順に依存しない）。
+      const sourceOf = new Map<string, EngineerShareSourceRow>(sources.map((row) => [row.id, row]));
+      engineers = ids.flatMap((id) => {
+        const row = sourceOf.get(id);
+        return row === undefined ? [] : [row];
+      });
+      shareOf = new Map(page.items.map((row) => [row.engineerId, row]));
+      nextCursor = page.nextCursor;
+    } else {
+      const page = await readLedgerPage(db, criteria, query.limit);
+      engineers = page.items;
+      nextCursor = page.nextCursor;
+      if (criteria.shared === 'false' || engineers.length === 0) {
+        shareOf = new Map();
+      } else {
+        const shares = await db.engineerShare.findMany({
+          where: { engineerId: { in: engineers.map((row) => row.id) }, revokedAt: null },
+          select: { engineerId: true, sharedAt: true, revokedAt: true },
+        });
+        shareOf = new Map(shares.map((row) => [row.engineerId, row]));
+      }
+    }
 
-    const engineers = orderedShareCandidates([...page, ...pinned]);
     const engineerIds = engineers.map((row) => row.id);
-
     const [skills, requestCounts] = await Promise.all([
       readAnonymizeSkills(db, engineerIds),
       readProposalRequestCounts(db, engineerIds),
@@ -389,7 +479,23 @@ export async function listEngineerShares(
           referenceDate,
         ),
       ),
+      nextCursor,
     };
+  });
+}
+
+/**
+ * 🔴 台帳が 1 件でもあるか（`S-015` の初回空〔台帳 0 件〕の判定。docs/05 §6.4「#29 の改訂」の「初回空の判定」）。
+ *
+ * 応答に `total` / `ledgerEmpty` を足さない（2 キーの契約）ため、`page.tsx` が API とは**別に**これを読み、
+ * `docs/04` §S-015 の空状態（台帳 0 件 / 条件なし 0 件 / 条件あり 0 件）を出し分ける。
+ * 🔴 自社の台帳の有無（RLS C3 の自社行）であり、境界の情報ではない。**API-only の利用者には存在しない値**である。
+ */
+export async function hasAnyEngineer(ctx: AuthenticatedTenantCtx): Promise<boolean> {
+  assertPartnerContext(ctx);
+  return withTenant(ctx, async (db) => {
+    const row = await db.engineer.findFirst({ select: { id: true } });
+    return row !== null;
   });
 }
 
