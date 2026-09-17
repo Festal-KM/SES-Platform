@@ -150,6 +150,13 @@ describe('① 全ロールが BYPASSRLS を持たない（docs/05 §4.2）', () 
     expect(rows[0]?.rolcanlogin).toBe(false);
   });
 
+  // 🔴 T-10-09: 同形の NOLOGIN 検証（`CLOSING → PURGED` の 1 遷移を行う SECURITY DEFINER 関数の所有者。docs/05 §9.7）。
+  it('app_purge_probe は NOLOGIN である（docs/05 §4.2「（接続しない）」）', async () => {
+    const rows = await unextended.$queryRaw<Array<{ rolcanlogin: boolean }>>`
+      SELECT rolcanlogin FROM pg_roles WHERE rolname = 'app_purge_probe'`;
+    expect(rows[0]?.rolcanlogin).toBe(false);
+  });
+
   it('対照: app_migrator / app_tenant / app_platform / app_platform_write は LOGIN できる', async () => {
     const rows = await unextended.$queryRaw<Array<{ rolname: string; rolcanlogin: boolean }>>`
       SELECT rolname, rolcanlogin FROM pg_roles
@@ -551,6 +558,45 @@ describe('app_gate_probe の権限は proposals 4 列 + engineers 7 列 + engine
 
   it('対照: 開示列（engineers.contact_email）には SELECT がある（denylist の検査が空振りでない）', async () => {
     expect(await hasColumnPrivilege(unextended, 'app_gate_probe', 'engineers', 'contact_email', 'SELECT')).toBe(true);
+  });
+});
+
+/**
+ * 🔴 T-10-09（docs/05 §9.7 / migration 20260927000000 判断事項 3）: `app_purge_probe` の権限は
+ *    `tenants` の 2 列 SELECT + 3 列 UPDATE と `tenant_purge_runs` の 3 列 SELECT だけ。テーブル単位の GRANT は無い。
+ *    🔴 ここに列が増えることは「ジョブ文脈から契約状態以外を書ける」ことを意味する。期待値を固定して、増えたら必ず落ちる。
+ */
+describe('app_purge_probe の権限は tenants の 2 列 SELECT + 3 列 UPDATE と tenant_purge_runs の 3 列 SELECT だけ（docs/05 §4.2 / §9.7）', () => {
+  it('列単位の GRANT が期待値と一致する（migrator 接続で読む。role_column_grants は現在のロールに関わる行しか返さない）', async () => {
+    const rows = await migrator.$queryRaw<Array<{ table_name: string; column_name: string; privilege_type: string }>>`
+      SELECT table_name, column_name, privilege_type
+      FROM information_schema.role_column_grants
+      WHERE grantee = 'app_purge_probe'
+      ORDER BY table_name, column_name, privilege_type`;
+    expect(rows).toEqual([
+      { table_name: 'tenant_purge_runs', column_name: 'cause', privilege_type: 'SELECT' },
+      { table_name: 'tenant_purge_runs', column_name: 'status', privilege_type: 'SELECT' },
+      { table_name: 'tenant_purge_runs', column_name: 'tenant_id', privilege_type: 'SELECT' },
+      { table_name: 'tenants', column_name: 'id', privilege_type: 'SELECT' },
+      { table_name: 'tenants', column_name: 'lifecycle_changed_at', privilege_type: 'UPDATE' },
+      { table_name: 'tenants', column_name: 'lifecycle_changed_by', privilege_type: 'UPDATE' },
+      { table_name: 'tenants', column_name: 'lifecycle_state', privilege_type: 'SELECT' },
+      { table_name: 'tenants', column_name: 'lifecycle_state', privilege_type: 'UPDATE' },
+    ]);
+  });
+
+  it('テーブル単位の GRANT が 1 つも無く、closing_entered_at / name / environment を書けない', async () => {
+    const tables = await migrator.$queryRaw<Array<{ table_name: string }>>`
+      SELECT table_name FROM information_schema.role_table_grants WHERE grantee = 'app_purge_probe'`;
+    expect(tables).toEqual([]);
+    for (const column of ['closing_entered_at', 'name', 'environment', 'sandbox_expires_at', 'suspend_reason']) {
+      expect(
+        await hasColumnPrivilege(unextended, 'app_purge_probe', 'tenants', column, 'UPDATE'),
+        `tenants.${column}: app_purge_probe に UPDATE 権限がある`,
+      ).toBe(false);
+    }
+    expect(await hasTablePrivilege(unextended, 'app_purge_probe', 'engineers', 'SELECT')).toBe(false);
+    expect(await hasTablePrivilege(unextended, 'app_purge_probe', 'skill_sheets', 'SELECT')).toBe(false);
   });
 });
 

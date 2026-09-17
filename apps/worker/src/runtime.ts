@@ -45,6 +45,7 @@ import {
   type RoleModelResolver,
 } from '@ses/ai';
 import {
+  DATA_EXPORT_AVAILABLE_DAYS,
   INVITATION_TTL_MS,
   SEAT_SNAPSHOT_COUNTS_PARTNER_SEATS,
   USAGE_GAP_CHECK_LOOKBACK_DAYS,
@@ -76,6 +77,7 @@ import {
   createBullMqJobEnqueuer,
   createBullMqSchedule,
   createBullMqSendProposalQueue,
+  createBullMqTenantPurgeQueue,
   createBullMqWorker,
   createRedisProviderSendCounter,
   type BullMqConnection,
@@ -89,13 +91,17 @@ import {
 import {
   billingTermsNotRecorded,
   createAccountMailReissue,
+  createExportGenerateHandler,
   createGateRunHandler,
   createSendProposalHandler,
+  createTenantPurgeHandler,
+  EXPORT_GENERATE_JOB,
   GATE_RUN_JOB,
   resolveEmailTenantsBillingPolicy,
   resolveProposalSendingDomainFromDb,
   SCHEDULED_JOBS,
   SEND_PROPOSAL_JOB,
+  TENANT_PURGE_JOB,
   type ScheduledJobDeps,
 } from './jobs/index.js';
 import { runScheduled, type SchedulerRunDetail } from './scheduler.js';
@@ -239,6 +245,9 @@ export function startWorkerRuntime(config: RuntimeConfig, options: WorkerRuntime
   // 🔴 T-09-06: `send.proposal` の enqueue 口（`send.hold-release` が同じ `attemptSeq` で再 enqueue する。docs/05 §9.4）。
   //    `jobId` は実装が組み立てる（`sendProposalJobId`）。`attempts` を渡す口は無い。
   const sendProposalQueue = track(createBullMqSendProposalQueue(connection));
+  // 🔴 T-10-09: `tenant.purge` の enqueue 口（`tenant.purge-scan` が積む。docs/05 §9.7）。`jobId` は実装が組み立てる
+  //    （`tenantPurgeJobId` = 1 テナント 1 本）。`attempts` を渡す口は無い。
+  const tenantPurgeQueue = track(createBullMqTenantPurgeQueue(connection));
 
   // --------------------------------------------------------------------------
   // 3. 外部連携（🔴 遅延。未登録の区分に触れたジョブだけが失敗する）
@@ -376,6 +385,10 @@ export function startWorkerRuntime(config: RuntimeConfig, options: WorkerRuntime
     // 🔴 T-10-12: tenant.closing-notify（docs/05 §9.7）。削除予定日 = `closing_entered_at + TENANT_PURGE_GRACE_DAYS`。
     //    `A-005` 項目 15（`readPurgeNoticePending` の `graceDays`）と同じキーから読む。
     purgeGraceDays: env.TENANT_PURGE_GRACE_DAYS,
+    // 🔴 T-10-09: tenant.purge-scan（docs/05 §9.7）。配送確認の `MOCKED` の扱いは**起動時に解決した `APP_ENV`** から
+    //    `readClosingNoticeDelivery` が決める（ジョブに真偽値を書かせない）。`tenant.purge` にも同じ値を渡す（下の 5c）。
+    appEnv: env.APP_ENV,
+    enqueueTenantPurge: (job) => tenantPurgeQueue.enqueue(job),
   };
 
   // --------------------------------------------------------------------------
@@ -423,9 +436,45 @@ export function startWorkerRuntime(config: RuntimeConfig, options: WorkerRuntime
   );
 
   // --------------------------------------------------------------------------
+  // 5c. `tenant.purge` / `export.generate` の Worker（T-10-09。イベント起動。docs/05 §9.7 / §9.6）
+  // --------------------------------------------------------------------------
+  // 🔴 `tenant.purge` は開始時に `tenant.purge-scan` と同じ `readClosingNoticeDelivery` を再評価し、偽なら何もせず正常終了する
+  //    （二重の確認。`F-064 AC-10`）。S3 の削除 → DB の消去 → `CLOSING → PURGED` の順。`appEnv` は 4. と同じ起動時の値。
+  // 🔴 `export.generate` は二重境界の内側（`withTenant` と同じ RLS）で読み、ZIP を `t/{tenantId}/exports/…` に置く。
+  //    どちらも外部へ**送信**しない（オブジェクトストアの delete / put だけ）。
+  const tenantPurgeHandler = createTenantPurgeHandler({
+    now,
+    appEnv: env.APP_ENV,
+    get objectStore(): Pick<ObjectStore, 'delete'> {
+      return resolveObjectStore();
+    },
+  });
+  track(
+    createBullMqWorker({
+      queueName: TENANT_PURGE_JOB,
+      connection,
+      handler: (payload, jobId) => tenantPurgeHandler(payload, jobId),
+    }),
+  );
+  const exportGenerateHandler = createExportGenerateHandler({
+    now,
+    get objectStore(): Pick<ObjectStore, 'put'> {
+      return resolveObjectStore();
+    },
+    exportAvailableDays: DATA_EXPORT_AVAILABLE_DAYS,
+  });
+  track(
+    createBullMqWorker({
+      queueName: EXPORT_GENERATE_JOB,
+      connection,
+      handler: (payload, jobId) => exportGenerateHandler(payload, jobId),
+    }),
+  );
+
+  // --------------------------------------------------------------------------
   // 6. スケジュール（🔴 宣言（`SCHEDULED_JOBS`）を舐めるだけ。ここに名前を書き写さない。本数は宣言が決める
   //    —— T-07-11 で 5 本、T-08-07 で `proposal-request.expire`、T-10-02 で計測 4 本、T-10-03 で `usage.limit-check`、
-  //    T-09-07 で `send.settle-unknown`、T-10-12 で `tenant.closing-notify` が加わり 13 本）
+  //    T-09-07 で `send.settle-unknown`、T-10-12 で `tenant.closing-notify`、T-10-09 で `tenant.purge-scan` が加わり 14 本）
   // --------------------------------------------------------------------------
   const ready: Promise<void>[] = [];
   for (const declaration of SCHEDULED_JOBS) {
@@ -461,7 +510,13 @@ export function startWorkerRuntime(config: RuntimeConfig, options: WorkerRuntime
 
   return {
     ready: Promise.all(ready).then(() => undefined),
-    queues: [GATE_RUN_JOB, SEND_PROPOSAL_JOB, ...SCHEDULED_JOBS.map((declaration) => declaration.name)],
+    queues: [
+      GATE_RUN_JOB,
+      SEND_PROPOSAL_JOB,
+      TENANT_PURGE_JOB,
+      EXPORT_GENERATE_JOB,
+      ...SCHEDULED_JOBS.map((declaration) => declaration.name),
+    ],
     async close(): Promise<void> {
       // 🔴 逆順に閉じる（Worker → スケジュール → キュー）。閉じ損ねを黙って飲まない。
       // 🔴 **DB クライアントはここで切らない** —— Prisma クライアントはプロセスに 1 つであり

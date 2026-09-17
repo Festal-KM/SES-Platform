@@ -15,6 +15,7 @@ function stubApi(overrides: Partial<S3Api> = {}): S3Api {
   return {
     presignPut: vi.fn(async (request: S3PresignPutRequest) => `https://s3.test/${request.Key}?put`),
     presignGet: vi.fn(async ({ Key }) => `https://s3.test/${Key}?get`),
+    putObject: vi.fn(async () => undefined),
     deleteObject: vi.fn(async () => undefined),
     headObject: vi.fn(async () => ({
       ContentLength: 1234,

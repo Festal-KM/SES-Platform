@@ -56,6 +56,16 @@ export type S3ObjectRequest = {
   readonly Key: string;
 };
 
+/** `PutObject`（サーバ側で生成した実体の配置。T-10-09）。`Body` はメモリ上のバイト列に限る（返却 ZIP は数 MB）。 */
+export type S3PutObjectRequest = {
+  readonly Bucket: string;
+  readonly Key: string;
+  readonly Body: Uint8Array;
+  readonly ContentType: string;
+  /** SSE-KMS の鍵（`S3_KMS_KEY_ID`）。未設定の環境（MinIO）では `undefined`。 */
+  readonly SSEKMSKeyId?: string;
+};
+
 /** `ListObjectsV2` の 1 ページ分の要求（T-10-02。検算の走査）。 */
 export type S3ListObjectsRequest = {
   readonly Bucket: string;
@@ -97,6 +107,8 @@ export interface S3Api {
   /** 🔴 署名の生成はローカル計算であり、ネットワークに出ない（発行しただけでは何も起きない）。 */
   presignPut(request: S3PresignPutRequest): Promise<string>;
   presignGet(request: S3PresignGetRequest): Promise<string>;
+  /** 🔴 T-10-09: ネットワークに出る（`PutObject`）。SDK 内部の再試行は止め、可否はジョブの `attempts` が決める。 */
+  putObject(request: S3PutObjectRequest): Promise<void>;
   deleteObject(request: S3ObjectRequest): Promise<void>;
   /** 存在しなければ `null`（404 を例外にしない。確定前の照会で使うため）。 */
   headObject(request: S3ObjectRequest): Promise<S3HeadObjectResponse | null>;

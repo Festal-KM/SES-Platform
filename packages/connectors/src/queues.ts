@@ -167,6 +167,17 @@ export const INTERNAL_JOB_NAMES = [
   //    冪等性は「期限を過ぎ、かつ未処理」の起票条件と `EmailDispatch.dedupeKey`（段 + 暦日を含む）の `UNIQUE` が担う。
   //    🔴 母集団は `CLOSING` のテナント（`ScheduledJobDeclaration.population = 'CLOSING'`。migration 20260926000000）。
   'tenant.closing-notify',
+  // 🔴 T-10-09（docs/05 §9.7 / docs/02 F-064 AC-1 / AC-10）。削除の走査（毎日 02:10 JST）と削除の実行（イベント）。
+  //    `tenant.purge-scan` は `tenants` の行と `readClosingNoticeDelivery` を読んで `tenant.purge` を積むだけ。
+  //    `tenant.purge` は S3 の `DeleteObject`（冪等）と DB の列の消去（`TenantPurgeRun` の CAS + `purged_at`）であり、
+  //    **外部への送信ではない**ので `attempts: 3` を許せる。二重の配送確認（開始時の再評価）で「予告なしの削除」を作らない。
+  //    🔴 母集団は `CLOSING`（`ScheduledJobDeclaration.population`）。
+  'tenant.purge-scan',
+  'tenant.purge',
+  // 🔴 T-10-09（docs/05 §9.6 `export.generate`。docs/02 F-064 AC-5 / AC-6）。返却データ（CSV 一式の ZIP）の生成。
+  //    S3 への `PutObject` は外部 I/O だが**送信ではない**（宛先が無い）。表の値のとおり `attempts: 2`。
+  //    冪等性は `DataExportRequest.status` の CAS（`QUEUED → RUNNING`。2 度目は 0 件）。
+  'export.generate',
 ] as const;
 
 export type InternalJobName = (typeof INTERNAL_JOB_NAMES)[number];
@@ -299,6 +310,18 @@ export const QUEUE_DEFINITIONS = {
   // 🔴 T-10-12（docs/05 §9.7 の表のとおり `attempts: 3`）。削除予告の起票（毎日 02:08 JST）。読み取り + `dedupeKey` の
   //    `UNIQUE`。`jobId` はスケジュールの slot であり冪等キーではないため `removeOnComplete` を付けない。
   'tenant.closing-notify': internalQueue('tenant.closing-notify', { attempts: 3 }),
+  // 🔴 T-10-09（docs/05 §9.7 の表のとおり `attempts: 3`）。削除の走査（毎日 02:10 JST）。`jobId` はスケジュールの slot であり
+  //    冪等キーではないため `removeOnComplete` を付けない。
+  'tenant.purge-scan': internalQueue('tenant.purge-scan', { attempts: 3 }),
+  // 🔴 T-10-09（docs/05 §9.7 の表のとおり `attempts: 3`）。削除の実行（イベント）。
+  //    - 🔴 `removeOnComplete: true` … **`jobId`（`tenant.purge.{tenantId}`）を重複排除に使うキューだから必須**。
+  //      配送未確認で no-op として**正常終了**した記録が残ると、翌日の `tenant.purge-scan` の再 enqueue が静かに捨てられ、
+  //      予告が配送されても削除が永久に進まない（`gate.run` と同じ壊れ方。§9.1）。
+  //    - `removeOnFail` は付けない（failed の記録は `A-005` の失敗ジョブ数の根拠。`TenantPurgeRun.status='FAILED'` とは別の観測）。
+  'tenant.purge': internalQueue('tenant.purge', { attempts: 3, removeOnComplete: true }),
+  // 🔴 T-10-09（docs/05 §9.6 の表のとおり `attempts: 2`）。返却データの生成（イベント）。`jobId` は `export.generate.{exportRequestId}`
+  //    であり、`removeOnComplete: true` は `tenant.purge` と同じ理由（再依頼は別の `DataExportRequest` = 別の `jobId` だが、規律を揃える）。
+  'export.generate': internalQueue('export.generate', { attempts: 2, removeOnComplete: true }),
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -518,6 +541,65 @@ export function isJobDeferral(value: unknown): value is JobDeferral {
     typeof (value as { retryAfterMs?: unknown }).retryAfterMs === 'number'
   );
 }
+
+// ---------------------------------------------------------------------------
+// tenant.purge / export.generate の契約（docs/05 §9.7 / §9.6。T-10-09）
+// ---------------------------------------------------------------------------
+
+/** `tenant.purge` のキュー名（`QUEUE_DEFINITIONS` のキーと同じ。文字列を書き写さない）。 */
+export const TENANT_PURGE_JOB = 'tenant.purge' satisfies InternalJobName;
+
+/**
+ * `tenant.purge` の payload（docs/05 §9.7）。
+ * 🔴 **enqueue 側（`tenant.purge-scan`）と実行側（`tenant.purge`）の契約**を 1 箇所に置く（`GateRunJob` と同じ整理）。
+ *    `tenantId` はファンアウトが確定させた値であり、リクエスト入力から来ない（`CLAUDE.md` §3.1）。
+ * 🔴 「配送確認済み」の事実を payload に載せない —— 実行側は**開始時にもう一度** `readClosingNoticeDelivery` を呼ぶ
+ *    （payload の真偽値を信じると、直接 enqueue した 1 件で予告なしの削除が成立する）。
+ */
+export type TenantPurgeJob = {
+  readonly tenantId: string;
+};
+
+/**
+ * 🔴 `tenant.purge` の `jobId`。**同じテナントの削除を多重化させない**（1 テナントに 1 本）。
+ *    区切りは `.`（`gateRunJobId` と同じ理由 —— BullMQ はカスタム `jobId` に `:` を含められない）。
+ *    確定後の抑止は DB 側（`TenantPurgeRun` の `RUNNING` / `COMPLETED` と `tenants.lifecycle_state` の CAS）にある。
+ */
+export function tenantPurgeJobId(job: TenantPurgeJob): string {
+  return [TENANT_PURGE_JOB, job.tenantId].join('.');
+}
+
+/** enqueue の帰結（`GateRunEnqueueOutcome` と同じ理由で `void` にしない）。 */
+export type TenantPurgeEnqueueOutcome = 'ENQUEUED' | 'BLOCKED_BY_FAILED_JOB';
+
+/** `tenant.purge` の enqueue 側の契約（`tenant.purge-scan` が使う）。`jobId` / `attempts` を引数に取らない。 */
+export type TenantPurgeJobQueue = {
+  enqueue(job: TenantPurgeJob): Promise<TenantPurgeEnqueueOutcome>;
+};
+
+/** `export.generate` のキュー名。 */
+export const EXPORT_GENERATE_JOB = 'export.generate' satisfies InternalJobName;
+
+/**
+ * `export.generate` の payload（docs/05 §9.6）。enqueue 側は `apps/web` の #77、実行側は `apps/worker`。
+ * 🔴 `tenantId` は認証コンテキスト（#77 の `ctx.tenantId`）から来る。`exportRequestId` は #77 が作った `DataExportRequest.id`。
+ */
+export type ExportGenerateJob = {
+  readonly tenantId: string;
+  readonly exportRequestId: string;
+};
+
+/** `export.generate` の `jobId`（依頼 1 件に 1 本）。 */
+export function exportGenerateJobId(job: ExportGenerateJob): string {
+  return [EXPORT_GENERATE_JOB, job.exportRequestId].join('.');
+}
+
+export type ExportGenerateEnqueueOutcome = 'ENQUEUED' | 'BLOCKED_BY_FAILED_JOB';
+
+/** `export.generate` の enqueue 側の契約（#77 が使う）。 */
+export type ExportGenerateJobQueue = {
+  enqueue(job: ExportGenerateJob): Promise<ExportGenerateEnqueueOutcome>;
+};
 
 export type QueueName = keyof typeof QUEUE_DEFINITIONS;
 

@@ -27,6 +27,8 @@ const READ_ONLY_ROUTE_FILES = [
   'apps/web/app/api/admin/audit-logs/route.ts',
   // ✅ T-11-02: API-A6 の読み取り（利用量・クォータ。`F-057` / `A-004`）。閲覧のみ。書き込みは `PUT /tenants/{id}/quota` に分ける。
   'apps/web/app/api/admin/usage/route.ts',
+  // ✅ T-10-10: API-A12（削除完了の確認。`F-062 AC-7` / `A-010` セクション 4）。閲覧のみ（`PO` / `PP`）。書き込みは監査記録だけ。
+  'apps/web/app/api/admin/tenants/[id]/deletion-status/route.ts',
 ] as const;
 
 /**

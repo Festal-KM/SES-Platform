@@ -14,6 +14,7 @@
 import type { SendingDomainDnsRecord } from '@ses/connectors';
 import {
   AuditLogWriteError,
+  DataExportNotAllowedError as DbDataExportNotAllowedError,
   HostOnlyContextError,
   PlatformRoleNotAllowedError,
   ProposalDraftEngineerNotFoundError,
@@ -1298,6 +1299,53 @@ export class DemoResetConfirmationMismatchError extends AppError {
   }
 }
 
+/**
+ * 🔴 T-10-09: `CLOSING` 以外のテナントで返却（#77）を依頼した（`F-064 AC-5` の前提。422）。
+ *    `TenantNotExecutableError`（409。実行系を止める側）と**逆向き**の判定なので別の型にする。
+ */
+export class DataExportNotAllowedError extends UnprocessableError {
+  override readonly code = 'DATA_EXPORT_NOT_ALLOWED';
+  override readonly userMessageKey: MessageKey = 'error.dataExport.notAllowed';
+
+  constructor() {
+    super('返却データの生成は解約手続き中（CLOSING）のテナントだけが依頼できます。');
+    this.name = 'DataExportNotAllowedError';
+  }
+}
+
+/** 🔴 T-10-09: 返却データがまだ `READY` でない（生成中 / 失敗 / 期限切れ後の再要求。#78。409）。 */
+export class DataExportNotReadyError extends ConflictError {
+  override readonly code = 'DATA_EXPORT_NOT_READY';
+  override readonly userMessageKey: MessageKey = 'error.dataExport.notReady';
+
+  constructor(readonly status: string) {
+    super(`返却データはまだダウンロードできません（status=${status}）。`);
+    this.name = 'DataExportNotReadyError';
+  }
+}
+
+/** 410。docs/05 §6.7 #78「`expiresAt` 超過は `EXPIRED` → 410」。 */
+export class GoneError extends AppError {
+  readonly code: string = 'GONE';
+  readonly httpStatus = 410;
+  readonly userMessageKey: MessageKey = 'error.dataExport.expired';
+
+  constructor(message = '対象は期限切れです。') {
+    super(message);
+    this.name = 'GoneError';
+  }
+}
+
+/** 🔴 T-10-09: 返却データの有効期限（`DATA_EXPORT_AVAILABLE_DAYS`）を過ぎた（#78。410）。再生成は #77 で新しい依頼を作る。 */
+export class DataExportExpiredError extends GoneError {
+  override readonly code = 'DATA_EXPORT_EXPIRED';
+
+  constructor() {
+    super('返却データの有効期限が切れています。再生成してください。');
+    this.name = 'DataExportExpiredError';
+  }
+}
+
 /** 未知の例外は内部エラーへ写像する（原因を応答に載せない。docs/05 §15.2）。 */
 export function toAppError(error: unknown): AppError {
   if (error instanceof AppError) return error;
@@ -1325,6 +1373,8 @@ export function toAppError(error: unknown): AppError {
   }
   // 🔴 T-11-02: クォータ変更の規律違反（引き下げの当日適用 / 通知の確認なし 等）は **400**（`F-057 AC-3`）。
   if (error instanceof DomainQuotaChangeRejectedError) return new QuotaChangeRejectedError(error.reason);
+  // 🔴 T-10-09: `CLOSING` 以外での返却依頼は **422**（`F-064 AC-5`）。
+  if (error instanceof DbDataExportNotAllowedError) return new DataExportNotAllowedError();
   return new InternalError();
 }
 

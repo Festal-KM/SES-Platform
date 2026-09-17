@@ -23,3 +23,6 @@ export type {
   DueClosingNoticePhasesInput,
   TenantClosingNoticePhase,
 } from './closing-notice.js';
+// 🔴 T-10-09: `CLOSING → PURGED` の期限判定（`tenant.purge-scan`）。予告と同じ `closingNoticeSchedule` の暦日で比較する。
+export { daysUntilPurge, isPurgeDue, purgeScheduledOn } from './purge-schedule.js';
+export type { PurgeScheduleInput } from './purge-schedule.js';

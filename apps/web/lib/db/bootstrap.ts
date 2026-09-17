@@ -41,6 +41,7 @@ import { createS3Api, createSesApi } from '@ses/connectors/aws';
 //    `@ses/connectors/aws` と同じく**サブパス**にしてあるのは、バレル（`@ses/connectors`）を
 //    import しただけで BullMQ / ioredis が引きずり込まれないようにするためである。
 import {
+  createBullMqExportGenerateQueue,
   createBullMqFailedJobsReader,
   createBullMqGateRunQueue,
   createBullMqSendProposalQueue,
@@ -66,6 +67,7 @@ import { configureAccountMailQueue, PendingAccountMailQueue } from '../jobs/acco
 import { configureDomainJobQueue, PendingDomainJobQueue } from '../jobs/domain-jobs';
 import { configureGateRunJobQueue } from '../jobs/gate-run-queue';
 import { configureSendProposalJobQueue } from '../jobs/send-proposal-queue';
+import { configureExportGenerateJobQueue } from '../jobs/export-generate-queue';
 import { resolveInviteUrlRuntime, type InviteUrlRuntime } from '../invitations/invite-link';
 import {
   configureScanApplyResultQueue,
@@ -91,6 +93,7 @@ let cachedPlatformAuthSecret: string | null = null;
  *    `CLAUDE.md` §9-12「有効期間は 30 日」）。`packages/config` の `SANDBOX_TRIAL_DAYS` が唯一の出所。
  */
 let cachedSandboxTrialDays: number | null = null;
+let cachedPurgeGraceDays: number | null = null;
 /**
  * 🔴 T-10-06: `A-012`（API-A16）が `runSeed` に渡す合成データ投入専用の特権接続（`SEED_DATABASE_URL`。docs/05 §13.6）。
  *    `packages/config` が「`demo` / `development` 以外に設定されていたら起動失敗」を担保しており、ここは値を写すだけ。
@@ -210,6 +213,7 @@ export function ensureDbConfigured(): void {
   cachedAppEnv = env.APP_ENV;
   cachedPlatformAuthSecret = env.AUTH_PLATFORM_SECRET;
   cachedSandboxTrialDays = env.SANDBOX_TRIAL_DAYS;
+  cachedPurgeGraceDays = env.TENANT_PURGE_GRACE_DAYS;
   cachedSeedDatabaseUrl = env.SEED_DATABASE_URL ?? null;
   configureTenantDb({ datasourceUrl: env.DATABASE_URL });
   // 🔴 T-03-07: 管理平面は**別の接続プール・別の DB ロール**（docs/03 §4.3.3 / docs/05 §4.2）。
@@ -270,6 +274,9 @@ export function ensureDbConfigured(): void {
   //    積んだだけで誰も送らないキューは「送信を受け付けたのに永久に送られない」（`APPROVED` のまま）という壊れ方であり、
   //    `CLAUDE.md` §11.1 そのものである。`Queue` の実体化は最初の enqueue まで遅延する。
   configureSendProposalJobQueue(createBullMqSendProposalQueue({ url: env.REDIS_URL }));
+  // 🔴 T-10-09: `export.generate` の enqueue 先（docs/05 §9.6 / #77）。`gate.run` / `send.proposal` と同じ判断で**環境で分岐しない**
+  //    （積んだだけで誰も生成しないキューは「返却を受け付けたのに永久に生成されない」壊れ方 = `CLAUDE.md` §11.1）。
+  configureExportGenerateJobQueue(createBullMqExportGenerateQueue({ url: env.REDIS_URL }));
   cachedSesEventTopicArn = env.SES_EVENT_TOPIC_ARN;
   // 🔴 T-05-05: HMAC の鍵。旧鍵が設定されている間は**新旧どちらの署名も受理する**
   //    （無停止のローテーション。docs/05 §8.5）。分岐はここ 1 箇所である。
@@ -663,6 +670,19 @@ export function sandboxTrialDays(): number {
     throw new Error('SANDBOX_TRIAL_DAYS が解決されていません（bootstrap の不変条件違反）。');
   }
   return cachedSandboxTrialDays;
+}
+
+/**
+ * 🔴 T-10-09: `S-042` が「あと N 日で削除」を計算するために読む（`TENANT_PURGE_GRACE_DAYS`。既定 30）。
+ *    予告メール（`tenant.closing-notify`）と `tenant.purge-scan` が同じキーから読む値であり、画面だけ別の日数を持たない。
+ *    運営者向けの `monitoringThresholdsRuntime()` から取らない（主平面の閉包に運営者向けアクセサを入れない。§17.2 #18）。
+ */
+export function purgeGraceDays(): number {
+  ensureDbConfigured();
+  if (cachedPurgeGraceDays === null) {
+    throw new Error('TENANT_PURGE_GRACE_DAYS が解決されていません（bootstrap の不変条件違反）。');
+  }
+  return cachedPurgeGraceDays;
 }
 
 /**

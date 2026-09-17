@@ -106,10 +106,12 @@ async function insertTenant(input: {
   readonly lifecycleState: 'SANDBOX' | 'ACTIVE' | 'SUSPENDED' | 'CLOSING';
   readonly createdAt: Date;
 }): Promise<void> {
+  // 🔴 T-10-09: `CHECK (lifecycle_state <> 'CLOSING' OR closing_entered_at IS NOT NULL)`（migration 20260927000000）。
+  const closingEnteredAt = input.lifecycleState === 'CLOSING' ? input.createdAt : null;
   await superuser.$executeRaw`
-    INSERT INTO tenants (id, name, environment, lifecycle_state, lifecycle_changed_at, provisioning_request_id, created_at)
+    INSERT INTO tenants (id, name, environment, lifecycle_state, lifecycle_changed_at, provisioning_request_id, created_at, closing_entered_at)
     VALUES (${input.id}::uuid, ${input.name}, ${input.environment}, ${input.lifecycleState}, ${input.createdAt},
-            ${`t-11-06-${input.id}`}, ${input.createdAt})`;
+            ${`t-11-06-${input.id}`}, ${input.createdAt}, ${closingEnteredAt})`;
 }
 
 async function insertDomain(input: {

@@ -53,6 +53,7 @@ function schedulerScopeSettingsSql(): Prisma.Sql {
     set_config('app.partner_company_id', '', true),
     set_config('app.actor_user_id', '', true),
     set_config('app.shared_scope', 'off', true),
+    set_config('app.purge_scope', 'off', true),
     set_config('app.scheduler_scope', 'on', true)`;
 }
 

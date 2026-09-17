@@ -127,9 +127,9 @@ describe('🔴 テナントのファンアウト（docs/05 §9.1）', () => {
     expect(listSchedulerFanoutTenants).toHaveBeenLastCalledWith('CLOSING');
   });
 
-  it('🔴 T-10-12: SCHEDULED_JOBS のうち CLOSING を母集団にするのは tenant.closing-notify だけ', () => {
+  it('🔴 T-10-12 / T-10-09: SCHEDULED_JOBS のうち CLOSING を母集団にするのは tenant.closing-notify と tenant.purge-scan だけ', () => {
     const closing = SCHEDULED_JOBS.filter((declaration) => declaration.population === 'CLOSING').map((d) => d.name);
-    expect(closing).toEqual(['tenant.closing-notify']);
+    expect(closing).toEqual(['tenant.closing-notify', 'tenant.purge-scan']);
     for (const declaration of SCHEDULED_JOBS) {
       expect(declaration.population ?? 'LIVE', declaration.name).toMatch(/^(LIVE|CLOSING)$/);
     }
@@ -146,7 +146,7 @@ describe('🔴 宣言とキュー定義が食い違わない（T-07-11）', () =
     expect(missing).toEqual([]);
   });
 
-  it('スケジュール宣言は 13 本である（docs/05 §9.1 / SP-07 T-07-11 + T-08-07 の `proposal-request.expire` + T-10-02 の計測 4 本 + T-10-03 の `usage.limit-check` + T-09-07 の `send.settle-unknown` + T-10-12 の `tenant.closing-notify`）', () => {
+  it('スケジュール宣言は 14 本である（docs/05 §9.1 / SP-07 T-07-11 + T-08-07 の `proposal-request.expire` + T-10-02 の計測 4 本 + T-10-03 の `usage.limit-check` + T-09-07 の `send.settle-unknown` + T-10-12 の `tenant.closing-notify` + T-10-09 の `tenant.purge-scan`）', () => {
     expect(SCHEDULED_JOBS.map((declaration) => declaration.name).sort()).toEqual([
       'cost.monthly-rollup',
       'domain.recheck',
@@ -156,6 +156,7 @@ describe('🔴 宣言とキュー定義が食い違わない（T-07-11）', () =
       'send.hold-release',
       'send.settle-unknown',
       'tenant.closing-notify',
+      'tenant.purge-scan',
       'usage.daily-rollup',
       'usage.gap-check',
       'usage.limit-check',

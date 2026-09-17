@@ -180,7 +180,25 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
     //    からジョブ文脈を組み立て、**その文脈の RLS が母集団を決める**（`tenants` の自社 1 行 / `email_dispatches` / `memberships`）。
     //    メールを送らず `EmailDispatch` を予約して `email.dispatch` に積むだけ。`apps/web` 側には無い。
     'apps/worker/src/jobs/tenant-closing-notify.ts',
+    // 🔴 T-10-09: 削除の走査 / 削除の実行 / 返却の生成（docs/05 §9.7 / §9.6）。いずれも payload の `tenantId`（ファンアウト /
+    //    `tenant.purge-scan` / #77 が確定させた値）からジョブ文脈を組み立てる。`tenant.purge` は開始時に `readClosingNoticeDelivery`
+    //    を再評価し（予告なしの削除を作らない）、`export.generate` は `withTenant` と同じ RLS で読む。`apps/web` 側には無い。
+    'apps/worker/src/jobs/tenant-purge-scan.ts',
+    'apps/worker/src/jobs/tenant-purge.ts',
+    'apps/worker/src/jobs/export-generate.ts',
   ],
+  // 🔴 T-10-09: 削除スコープ（`app.purge_scope = 'on'`）と `CLOSING → PURGED` の CAS を呼べるのは `packages/db` の 1 ファイル
+  //    （`tenant-purge.ts`。`withPurgeScope` は export しない）であり、`apps/**` からは `applyPurgeSpec` / `completeTenantPurge` /
+  //    `listPurgeObjectKeys` を **`apps/worker/src/jobs/tenant-purge.ts` だけ**が呼ぶ（HTTP 経路が削除を起動できない。
+  //    `PURGED` は `system` の自動遷移。docs/02 章 5.4 遷移 7）。
+  applyPurgeSpec: ['apps/worker/src/jobs/tenant-purge.ts'],
+  completeTenantPurge: ['apps/worker/src/jobs/tenant-purge.ts'],
+  listPurgeObjectKeys: ['apps/worker/src/jobs/tenant-purge.ts'],
+  startTenantPurgeRun: ['apps/worker/src/jobs/tenant-purge.ts'],
+  finishTenantPurgeRun: ['apps/worker/src/jobs/tenant-purge.ts'],
+  // 🔴 T-10-09 レビュー: `countPurgePending` も削除スコープを開く export（結合テストの「再実行は 0 件」の確認用）。`apps/**` からは
+  //    呼ばない —— 主平面が読むのは通常の RLS で数える `countVisiblePurgeTargets` だけ（取引先所有の行数をホストに見せない。`BR-06`）。
+  countPurgePending: [],
   // 🔴 T-09-04: `APPROVED → SUBMITTING` の CAS（docs/05 §10.2 ③ / §11.5 手順 4）。**`SUBMITTING` に入れるのは
   //    送信ジョブだけ**（所有者 `SEND_JOB`。`CLAUDE.md` §4.2「`SUBMITTING` は片道」）であり、`apps/web` の HTTP 経路が
   //    これを呼べると「送信ジョブを経ずに送信中にする」実装が書ける（`SendAttempt` の INSERT と外部送信の 1 手順を
@@ -299,6 +317,8 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
   issueDownloadUrl: [
     'apps/web/lib/skill-sheets/service.ts',
     'apps/web/lib/storage/download.ts',
+    // 🔴 T-10-09: 返却データ（#78）。**同じ関数**を通す（監査の commit 後にしか署名しない順序を返却だけ別に書かない）。
+    'apps/web/lib/data-exports/service.ts',
   ],
 
   // --- 🔴 T-04-03: 運用メールと Webhook 受信（docs/05 §8.5 / §9.4）--------------------------

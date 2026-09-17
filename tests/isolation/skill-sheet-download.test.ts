@@ -622,7 +622,8 @@ describe('🔴 T-07-09: 所有会社の境界の外へ渡す発行は、ゲー�
           where: { id: version.id },
           select: { id: true, engineerId: true, version: true, scanStatus: true, objectKey: true },
         });
-        if (row === null) return null;
+        // 🔴 T-10-09: 削除済み（`object_key IS NULL`）の版は見えない版と同じ扱い（#20 と同じ）。
+        if (row === null || row.objectKey === null) return null;
         return {
           objectKey: row.objectKey,
           scanStatus: row.scanStatus as DownloadSubject['scanStatus'],

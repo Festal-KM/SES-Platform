@@ -47,7 +47,7 @@ import { expectNoBrokenLabels, expectNoHorizontalOverflow } from './support/asse
 import { tenantIds } from './support/population';
 import { hostOwner, openTenantSession } from './support/sessions';
 
-test.describe('モバイルビューポートのスモーク（S-036 / S-014 は Tier 3、S-005 は Tier 2・遮断禁止）', () => {
+test.describe('モバイルビューポートのスモーク（S-036 / S-014 / S-042 は Tier 3、S-005 は Tier 2・遮断禁止）', () => {
   test('S-036 送信ドメインの設定と検証がモバイルで描画され、横に溢れない（T-04-06）', async ({
     browser,
   }: {
@@ -141,6 +141,41 @@ test.describe('モバイルビューポートのスモーク（S-036 / S-014 は
       // ② 横スクロールが出ない（Tier 2。列を間引くが遮断しない。CLAUDE.md §13.3）。
       await expectNoHorizontalOverflow('S-005 エンジニア台帳一覧', session.page);
       await expectNoBrokenLabels('S-005 エンジニア台帳一覧', session.page);
+      // ④ 外向き発信が 0 件。
+      session.outbound.assertNone();
+    } finally {
+      await session.close();
+    }
+  });
+
+  // 🔴 T-10-09: `S-042` データの返却と保持期間（docs/04 §S-042。Tier 3）の到達 1 ケース。E2E ハーネスのテナントは `ACTIVE`
+  //    なので、描画されるのは空状態（「削除予定のデータはありません」）と「返却データの生成は解約手続き中のテナントで実行できます」
+  //    であり、`CLOSING` の固定バナーと返却・削除の本体は結合テスト（`tests/isolation/tenant-purge.test.ts`）で固定する
+  //    （docs/05 §17.3 #17 / #24 の注記）。
+  test('S-042 データの返却と保持期間がモバイルで描画され、横に溢れない（T-10-09。Tier 3・遮断禁止）', async ({
+    browser,
+  }: {
+    browser: Browser;
+  }) => {
+    // 🔴 到達は `OWNER` / `ADMIN`（docs/04 §S-042「権限差分」）。
+    const session = await openTenantSession(browser, hostOwner(1));
+    try {
+      await session.page.goto('/settings/retention', { waitUntil: 'domcontentloaded' });
+
+      // ① 画面が描画される。
+      await expect(session.page.getByTestId('retention-page')).toBeVisible();
+      await expect(session.page.getByRole('heading', { name: t('retention.title') })).toBeVisible();
+
+      // ③ 主要素: `ACTIVE` では空状態と「解約手続き中でのみ生成できる」の注記。削除を実行する導線は無い。
+      await expect(session.page.getByTestId('retention-schedule-empty')).toBeVisible();
+      await expect(session.page.getByTestId('retention-export-not-closing')).toBeVisible();
+      await expect(session.page.getByTestId('retention-history-empty')).toBeVisible();
+      await expect(session.page.getByTestId('retention-banner-closing')).toHaveCount(0);
+      await expect(session.page.getByTestId('retention-export-generate')).toHaveCount(0);
+
+      // ② 横スクロールが出ない（Tier 3 だが遮断しない。CLAUDE.md §13.3）。
+      await expectNoHorizontalOverflow('S-042 データの返却と保持期間', session.page);
+      await expectNoBrokenLabels('S-042 データの返却と保持期間', session.page);
       // ④ 外向き発信が 0 件。
       session.outbound.assertNone();
     } finally {

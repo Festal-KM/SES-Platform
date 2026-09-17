@@ -147,6 +147,12 @@ export type TenantStorageMeasurement = {
 export interface ObjectStore {
   presignPut(key: string, contentType: string, maxBytes: number): Promise<PresignedUrl>;
   presignGet(key: string, ttlSec: number, options?: PresignGetOptions): Promise<PresignedUrl>;
+  /**
+   * 🔴 T-10-09: **サーバ側で生成した実体**を置く（返却データの ZIP。docs/05 §9.6 `export.generate` / §14.1）。
+   *    ブラウザからのアップロードは引き続き `presignPut` であり、この口は利用者の入力を運ばない。
+   *    `sandbox` 以上では SSE-KMS（`S3_KMS_KEY_ID`）を実装が付ける（`presignPut` と同じ鍵）。
+   */
+  put(key: string, body: Uint8Array, contentType: string): Promise<void>;
   delete(key: string): Promise<void>;
   head(key: string): Promise<ObjectHead | null>;
   /**

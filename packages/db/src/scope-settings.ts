@@ -23,7 +23,8 @@ export function tenantScopeSettingsSql(scope: TenantScopeSettings): Prisma.Sql {
     set_config('app.tenant_id', ${scope.tenantId}, true),
     set_config('app.partner_company_id', ${scope.partnerCompanyId ?? ''}, true),
     set_config('app.actor_user_id', ${scope.actorUserId}, true),
-    set_config('app.shared_scope', 'off', true)`;
+    set_config('app.shared_scope', 'off', true),
+    set_config('app.purge_scope', 'off', true)`;
 }
 
 /**
@@ -51,7 +52,8 @@ export function sharedCandidateScopeSettingsSql(scope: TenantScopeSettings): Pri
     set_config('app.tenant_id', ${scope.tenantId}, true),
     set_config('app.partner_company_id', ${scope.partnerCompanyId ?? ''}, true),
     set_config('app.actor_user_id', ${scope.actorUserId}, true),
-    set_config('app.shared_scope', 'on', true)`;
+    set_config('app.shared_scope', 'on', true),
+    set_config('app.purge_scope', 'off', true)`;
 }
 
 /**
@@ -68,6 +70,7 @@ export function systemScopeSettingsSql(): Prisma.Sql {
     set_config('app.partner_company_id', '', true),
     set_config('app.actor_user_id', '', true),
     set_config('app.shared_scope', 'off', true),
+    set_config('app.purge_scope', 'off', true),
     set_config('app.auth_email', '', true),
     set_config('app.invitation_token_hash', '', true),
     set_config('app.password_reset_token_hash', '', true)`;
@@ -96,6 +99,7 @@ export function rowCredentialScopeSql(credential: RowCredential): Prisma.Sql {
     set_config('app.partner_company_id', '', true),
     set_config('app.actor_user_id', '', true),
     set_config('app.shared_scope', 'off', true),
+    set_config('app.purge_scope', 'off', true),
     set_config('app.auth_email', ${authEmail}, true),
     set_config('app.invitation_token_hash', ${invitationTokenHash}, true),
     set_config('app.password_reset_token_hash', ${passwordResetTokenHash}, true)`;
@@ -137,6 +141,7 @@ export function platformAuthScopeSql(credential: PlatformAuthCredential): Prisma
     set_config('app.partner_company_id', '', true),
     set_config('app.actor_user_id', '', true),
     set_config('app.shared_scope', 'off', true),
+    set_config('app.purge_scope', 'off', true),
     set_config('app.platform_user_id', '', true),
     set_config('app.target_tenant_id', '', true),
     set_config('app.platform_auth_email', ${email}, true),
@@ -177,7 +182,8 @@ export function platformScopeSql(scope: PlatformScopeSettings): Prisma.Sql {
     set_config('app.tenant_id', '', true),
     set_config('app.partner_company_id', '', true),
     set_config('app.actor_user_id', '', true),
-    set_config('app.shared_scope', 'off', true)`;
+    set_config('app.shared_scope', 'off', true),
+    set_config('app.purge_scope', 'off', true)`;
 }
 
 /**
@@ -222,7 +228,33 @@ export function rowDerivedTenantScopeSql(scope: TenantScopeSettings): Prisma.Sql
     set_config('app.partner_company_id', ${scope.partnerCompanyId ?? ''}, true),
     set_config('app.actor_user_id', ${scope.actorUserId}, true),
     set_config('app.shared_scope', 'off', true),
+    set_config('app.purge_scope', 'off', true),
     set_config('app.auth_email', '', true),
     set_config('app.invitation_token_hash', '', true),
     set_config('app.password_reset_token_hash', '', true)`;
+}
+
+/**
+ * 🔴 T-10-09: 削除スコープ（`tenant.purge`。docs/05 §9.7）で書くためのトランザクション設定。
+ *
+ * 🔴 **`app.purge_scope` に `'on'` を入れるのは本リポジトリでここ 1 箇所だけである**（`sharedCandidateScopeSettingsSql` と同じ規律）。
+ *    他のすべての経路は毎回 `'off'` で上書きする。`'on'` のとき、`PURGE_SPEC.delete` の表に置いた追加ポリシー
+ *    （migration 20260927000000 ④。`{table}_purge_scope_select` / `_update` / `_delete`）が **テナント境界だけ**で行を開く ——
+ *    削除はパートナーが持ち込んだ行にも届かなければならない（届かなければ `PURGED` 後に取引先エンジニアの連絡先が残る）。
+ *    同時に `app_complete_tenant_purge()`（`CLOSING → PURGED` の CAS）もこの GUC を要求する。
+ *
+ * 🔴 呼び出し元は `packages/db/src/tenant-purge.ts` の `withPurgeScope` だけである（`index.ts` から export しない）。
+ *    ジョブ文脈（`systemTenantCtx` = ホスト・`partnerCompanyId: null`）でしか開かない。
+ *    **`'on'` を書く場所が本ファイルだけであること・`'off'` で上書きする経路が減っていないこと・呼び出し元が `tenant-purge.ts`
+ *    だけであること・`index.ts` から export されていないこと**は `tests/static/purge-scope-single-path.test.ts`
+ *    （`shared-scope-single-path.test.ts` と同型）が固定する。`tests/static/auth-db-callers.test.ts` は `apps/**` 側の
+ *    呼び出し元（`tenant-purge.ts` の 4 関数）を固定する。
+ */
+export function purgeScopeSettingsSql(scope: TenantScopeSettings): Prisma.Sql {
+  return Prisma.sql`SELECT
+    set_config('app.tenant_id', ${scope.tenantId}, true),
+    set_config('app.partner_company_id', ${scope.partnerCompanyId ?? ''}, true),
+    set_config('app.actor_user_id', ${scope.actorUserId}, true),
+    set_config('app.shared_scope', 'off', true),
+    set_config('app.purge_scope', 'on', true)`;
 }

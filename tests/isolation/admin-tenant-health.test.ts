@@ -100,11 +100,14 @@ async function insertTenant(input: {
   readonly createdAt: Date;
   readonly sandboxExpiresAt?: Date;
 }): Promise<void> {
+  // 🔴 T-10-09: `CHECK (lifecycle_state <> 'CLOSING' OR closing_entered_at IS NOT NULL)`（migration 20260927000000）。
+  //    `CLOSING` の行は入った時刻を持たなければならない（ここでは `createdAt` 相当）。
+  const closingEnteredAt = input.lifecycleState === 'CLOSING' ? input.createdAt : null;
   await superuser.$executeRaw`
     INSERT INTO tenants (id, name, environment, lifecycle_state, lifecycle_changed_at, sandbox_expires_at,
-                         provisioning_request_id, created_at)
+                         provisioning_request_id, created_at, closing_entered_at)
     VALUES (${input.id}::uuid, ${input.name}, ${input.environment}, ${input.lifecycleState}, ${input.createdAt},
-            ${input.sandboxExpiresAt ?? null}, ${`t-11-01-${input.id}`}, ${input.createdAt})`;
+            ${input.sandboxExpiresAt ?? null}, ${`t-11-01-${input.id}`}, ${input.createdAt}, ${closingEnteredAt})`;
 }
 
 /** ホスト所属の利用者 + 有効な所属を 1 組。`lastLoginAt` が `null` なら一度もログインしていない。 */

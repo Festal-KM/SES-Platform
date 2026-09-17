@@ -35,16 +35,26 @@ import { Redis } from 'ioredis';
 import { RedisProviderSendCounter, type ProviderSendCounter } from './email/ses/counter.js';
 import { RedisProviderQuotaNearingMarker, type ProviderQuotaNearingMarker } from './email/ses/nearing-marker.js';
 import {
+  exportGenerateJobId,
   gateRunJobId,
   isJobDeferral,
   queueDefinition,
   sendProposalJobId,
   shouldRemoveGateRunJob,
   steppedBackoffDelayMs,
+  tenantPurgeJobId,
+  EXPORT_GENERATE_JOB,
   GATE_RUN_JOB,
   QUEUE_DEFINITIONS,
   SEND_PROPOSAL_JOB,
+  TENANT_PURGE_JOB,
   type BackoffOptions,
+  type ExportGenerateEnqueueOutcome,
+  type ExportGenerateJob,
+  type ExportGenerateJobQueue,
+  type TenantPurgeEnqueueOutcome,
+  type TenantPurgeJob,
+  type TenantPurgeJobQueue,
   type GateRunEnqueueOutcome,
   type GateRunFailedJobRemoval,
   type GateRunJob,
@@ -279,6 +289,77 @@ export function createBullMqSendProposalQueue(connection: BullMqConnection): Bul
     async jobState(key: SendProposalJobKey): Promise<string | null> {
       const job = await resolve().getJob(sendProposalJobId(key));
       return job === undefined ? null : job.getState();
+    },
+    async close(): Promise<void> {
+      if (queue !== null) await queue.close();
+      if (client !== null) await client.quit();
+      queue = null;
+      client = null;
+    },
+  };
+}
+
+/**
+ * 🔴 T-10-09: `tenant.purge` の enqueue 先（docs/05 §9.7。`tenant.purge-scan` が積む）。
+ *    `jobId` は `tenantPurgeJobId`（1 テナント 1 本）。`removeOnComplete: true` は `QUEUE_DEFINITIONS` から来る。
+ *    `jobState` / `close` はポート（`TenantPurgeJobQueue`）に無い（結合テストと運用調査のため）。
+ */
+export type BullMqTenantPurgeQueue = TenantPurgeJobQueue & {
+  jobState(job: TenantPurgeJob): Promise<string | null>;
+  close(): Promise<void>;
+};
+
+export function createBullMqTenantPurgeQueue(connection: BullMqConnection): BullMqTenantPurgeQueue {
+  let queue: Queue | null = null;
+  let client: Redis | null = null;
+  const resolve = (): Queue => {
+    client ??= createClient(connection);
+    queue ??= createQueue(TENANT_PURGE_JOB, client);
+    return queue;
+  };
+  return {
+    async enqueue(job: TenantPurgeJob): Promise<TenantPurgeEnqueueOutcome> {
+      // 🔴 per-job オプションは `jobId` だけ（`attempts` / `backoff` を渡さない。§17.2 #6）。
+      const added = await resolve().add(TENANT_PURGE_JOB, job, { jobId: tenantPurgeJobId(job) });
+      // 🔴 同じ `jobId` が `failed` に残っている間、BullMQ は `add` を静かに無視する（`removeOnFail` を付けていない）。
+      //    走査側は「積めなかった」を数え、`A-005` の失敗ジョブ数がそれを見せる。失敗記録を自動で消さない。
+      return (await added.getState()) === 'failed' ? 'BLOCKED_BY_FAILED_JOB' : 'ENQUEUED';
+    },
+    async jobState(job: TenantPurgeJob): Promise<string | null> {
+      const found = await resolve().getJob(tenantPurgeJobId(job));
+      return found === undefined ? null : found.getState();
+    },
+    async close(): Promise<void> {
+      if (queue !== null) await queue.close();
+      if (client !== null) await client.quit();
+      queue = null;
+      client = null;
+    },
+  };
+}
+
+/** 🔴 T-10-09: `export.generate` の enqueue 先（docs/05 §9.6。`apps/web` の #77 が積む）。形は `tenant.purge` と同じ。 */
+export type BullMqExportGenerateQueue = ExportGenerateJobQueue & {
+  jobState(job: ExportGenerateJob): Promise<string | null>;
+  close(): Promise<void>;
+};
+
+export function createBullMqExportGenerateQueue(connection: BullMqConnection): BullMqExportGenerateQueue {
+  let queue: Queue | null = null;
+  let client: Redis | null = null;
+  const resolve = (): Queue => {
+    client ??= createClient(connection);
+    queue ??= createQueue(EXPORT_GENERATE_JOB, client);
+    return queue;
+  };
+  return {
+    async enqueue(job: ExportGenerateJob): Promise<ExportGenerateEnqueueOutcome> {
+      const added = await resolve().add(EXPORT_GENERATE_JOB, job, { jobId: exportGenerateJobId(job) });
+      return (await added.getState()) === 'failed' ? 'BLOCKED_BY_FAILED_JOB' : 'ENQUEUED';
+    },
+    async jobState(job: ExportGenerateJob): Promise<string | null> {
+      const found = await resolve().getJob(exportGenerateJobId(job));
+      return found === undefined ? null : found.getState();
     },
     async close(): Promise<void> {
       if (queue !== null) await queue.close();

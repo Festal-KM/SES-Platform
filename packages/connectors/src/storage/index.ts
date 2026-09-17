@@ -7,6 +7,7 @@ export type {
   S3ObjectRequest,
   S3PresignGetRequest,
   S3PresignPutRequest,
+  S3PutObjectRequest,
 } from './api.js';
 export {
   ObjectKeyOutOfTenantScopeError,

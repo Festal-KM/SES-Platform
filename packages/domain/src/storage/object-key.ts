@@ -16,6 +16,8 @@ const TENANT_PREFIX = 't';
 /** 用途セグメント（docs/05 §14.1 の 5 種のうち、Phase 1 で使うもの）。 */
 export const OBJECT_KIND_SEGMENTS = {
   skillSheet: 'skill-sheets',
+  /** 🔴 T-10-09: 返却データ（docs/05 §14.1 `t/{tenantId}/exports/{exportRequestId}/{uuid}.zip`）。 */
+  export: 'exports',
 } as const;
 
 /** UUID（v4 / v7 のいずれでも通る一般形）。`tenantId` / `engineerId` / `{uuid}` に使う。 */
@@ -92,6 +94,29 @@ export function buildSkillSheetObjectKey(input: SkillSheetObjectKeyInput): strin
     String(input.version),
     `${input.objectId}.${input.extension}`,
   ].join('/');
+}
+
+export type DataExportObjectKeyInput = {
+  readonly tenantId: string;
+  readonly exportRequestId: string;
+  /** 🔴 推測不能にするための UUID（呼び出し側が採番して渡す）。 */
+  readonly objectId: string;
+};
+
+/**
+ * 🔴 T-10-09: 返却データ（CSV 一式の ZIP）のオブジェクトキー（docs/05 §14.1）。
+ *
+ * ```
+ * t/{tenantId}/exports/{exportRequestId}/{uuid}.zip
+ * ```
+ * 拡張子は `zip` に固定（`export.generate` が作るのは 1 つの ZIP だけ）。`tenantId` は認証コンテキスト / ジョブ payload の
+ * 検証済みの値しか渡してはならない（`buildSkillSheetObjectKey` と同じ）。
+ */
+export function buildDataExportObjectKey(input: DataExportObjectKeyInput): string {
+  assertUuid('tenantId', input.tenantId);
+  assertUuid('exportRequestId', input.exportRequestId);
+  assertUuid('objectId', input.objectId);
+  return [TENANT_PREFIX, input.tenantId, OBJECT_KIND_SEGMENTS.export, input.exportRequestId, `${input.objectId}.zip`].join('/');
 }
 
 /**

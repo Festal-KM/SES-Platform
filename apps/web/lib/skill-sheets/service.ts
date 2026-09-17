@@ -728,6 +728,9 @@ export async function deleteSkillSheet(
     return { ...found, referencedBy };
   });
   if (row === null) throw new NotFoundError();
+  // 🔴 T-10-09: 原本が削除済み（`PURGED` / 保持期間削除で `object_key` が NULL）の版は「見えない版」と同じ扱い（404）。
+  //    `CLOSING` では新規作成も削除もできず、`PURGED` ではログインできないので、実際にここへ来るのは境界のケースだけ。
+  if (row.objectKey === null) throw new NotFoundError();
   if (row.referencedBy > 0) throw new SkillSheetReferencedError();
   if (!isScanSettled(row.scanStatus as ScanStatus)) throw new SkillSheetScanInProgressError();
 
@@ -894,6 +897,9 @@ export async function issueSkillSheetDownloadUrl(
       });
       // 🔴 見えない版は `null`（→ 404）。`where` にテナント・パートナーを足さない（RLS が決める）。
       if (row === null) return null;
+      // 🔴 T-10-09: 原本が削除済み（`object_key IS NULL` = `purged_at` が立っている）の版にも 404。**署名しに行かない**
+      //    （`F-064 AC-2`「削除後に到達できる経路が 1 つも無い」。記録も残さない = 渡っていない DL を「した」にしない）。
+      if (row.objectKey === null) return null;
       const downloadFileName = buildSkillSheetDownloadFileName(row.objectKey);
       return {
         objectKey: row.objectKey,

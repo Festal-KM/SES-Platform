@@ -56,6 +56,14 @@ const ALLOWED_DECLINE_REASON_FILES = [
   'apps/web/lib/proposal-requests/views.ts',
 ];
 
+/**
+ * 🔴 T-10-09: 辞退理由を**消去の対象列として名指しするだけ**のファイル（`PURGE_SPEC`。docs/05 §9.7 / `F-064 AC-3`）。
+ *    値を読まない・運ばない（表名と列名の文字列だけ）。読み手（ホストの通知・エクスポート・集計・運営者）に
+ *    辞退理由が流れる経路ではなく、逆に `PURGED` で消すための列挙である。ここに載るのは**列名を文字列で持つ設定**に限り、
+ *    `declineReason` をプロパティとして読む記述（`.declineReason` / `declineReason:`）が無いことを別途固定する。
+ */
+const ERASURE_ONLY_DECLINE_REASON_FILES = ['packages/config/src/retention.ts'];
+
 /** 辞退理由に関する文言キー（`packages/i18n`）。参照してよいのは `S-018` の props 組み立てだけ。 */
 const DECLINE_REASON_MESSAGE_KEY = /proposalRequests\.respond\.decline\.(?:reasonLabel|reasonNote|recordedReason|recordedReasonNone)\b/;
 const ALLOWED_DECLINE_REASON_MESSAGE_KEY_FILES = [
@@ -221,8 +229,19 @@ describe('🔴 F-018 AC-1: 辞退理由に触れるソースは取引先向け�
     expect(sourceFiles.some((file) => /\.test\.tsx?$/.test(file))).toBe(false);
   });
 
-  it('🔴 `declineReason` / `decline_reason` を参照する非テストソースは許可リストの 5 ファイルちょうどである', () => {
-    expect(filesMatching(DECLINE_REASON_IDENTIFIER)).toEqual([...ALLOWED_DECLINE_REASON_FILES].sort());
+  it('🔴 `declineReason` / `decline_reason` を参照する非テストソースは許可リストの 5 ファイル + 消去列挙の 1 ファイルちょうどである', () => {
+    expect(filesMatching(DECLINE_REASON_IDENTIFIER)).toEqual(
+      [...ALLOWED_DECLINE_REASON_FILES, ...ERASURE_ONLY_DECLINE_REASON_FILES].sort(),
+    );
+  });
+
+  it('🔴 消去列挙のファイル（PURGE_SPEC）は列名を文字列で持つだけで、辞退理由の値を読まない', () => {
+    for (const file of ERASURE_ONLY_DECLINE_REASON_FILES) {
+      const source = stripComments(readFileSync(path.join(repoRoot, file), 'utf8'));
+      expect(/'decline_reason'/.test(source), file).toBe(true);
+      expect(/\.declineReason\b|declineReason\s*:/.test(source), `${file}: 辞退理由の値を読んでいる`).toBe(false);
+      expect(file.startsWith('packages/config/')).toBe(true);
+    }
   });
 
   it('🔴 許可リストの全ファイルが取引先向けの経路（`lib/proposal-requests/**` / `S-018` の画面）にある', () => {

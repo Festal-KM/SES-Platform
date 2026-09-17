@@ -347,7 +347,7 @@ describe('#10 probe ロールの最小権限（docs/05 §4.7 #10 / §4.4.1 / §8
   it('probe ロールはいずれもテーブル単位の GRANT を持たない（列単位だけを持つ）', async () => {
     const rows = await migrator.$queryRaw<Array<{ grantee: string; table_name: string }>>`
       SELECT grantee, table_name FROM information_schema.role_table_grants
-      WHERE grantee IN ('app_share_probe', 'app_assignment_owner_probe', 'app_scan_probe', 'app_scheduler_probe', 'app_gate_probe')`;
+      WHERE grantee IN ('app_share_probe', 'app_assignment_owner_probe', 'app_scan_probe', 'app_scheduler_probe', 'app_gate_probe', 'app_purge_probe')`;
     expect(rows).toEqual([]);
   });
 

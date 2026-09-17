@@ -20,7 +20,7 @@ export const REPO_ROOT = path.resolve(here, '..', '..', '..');
 
 const DB_PACKAGE_DIR = path.join(REPO_ROOT, 'packages', 'db');
 const PRISMA_CLI = path.join(DB_PACKAGE_DIR, 'node_modules', 'prisma', 'build', 'index.js');
-// 🔴 ロール（LOGIN 4 + NOLOGIN の probe 5 = `ROLE_NAMES`）の定義は packages/db/prisma/sql/000_roles.sql が
+// 🔴 ロール（LOGIN 4 + NOLOGIN の probe 6 = `ROLE_NAMES`）の定義は packages/db/prisma/sql/000_roles.sql が
 //    唯一の真実（T-01-05。docs/05 §4.2。probe は T-02-08 / T-05-05 / T-07-11 / T-08-03 / T-09-13 で追加）。
 //    ローカル docker-compose（docker/postgres/initdb/000-roles.sh）と同じファイルを実行する。
 const ROLES_SQL_HOST_PATH = path.join(DB_PACKAGE_DIR, 'prisma', 'sql', '000_roles.sql');
@@ -58,6 +58,9 @@ export const ROLE_NAMES = [
   // 🔴 T-09-13: 品質ゲート（PROPOSAL）の実行文脈から、対象エンジニア 1 人分の既知値と整合層の裏付けを
   //    引く SECURITY DEFINER 2 関数専用（docs/05 §4.2 / §11.14。migration 20260918000000）。
   'app_gate_probe',
+  // 🔴 T-10-09: `CLOSING → PURGED` の 1 遷移だけを行う SECURITY DEFINER 関数（`app_complete_tenant_purge`）専用
+  //    （docs/05 §4.2 / §9.7。migration 20260927000000）。
+  'app_purge_probe',
 ] as const;
 
 export type IsolationDatabase = {

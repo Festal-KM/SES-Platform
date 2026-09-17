@@ -112,8 +112,20 @@ export function classifyFileShare(input: {
  */
 export type DownloadSubject = {
   readonly objectKey: string;
-  /** 🔴 `CLEAN` 以外なら本関数が発行を拒否する（`BR-26`）。 */
+  /**
+   * 🔴 `CLEAN` 以外なら本関数が発行を拒否する（`BR-26`）。
+   * 🔴 T-10-09: サーバ側で生成した実体（返却 ZIP。`export.generate` が DB の行から組んだ CSV 一式であり、利用者が
+   *    アップロードしたバイト列を 1 つも含まない）は**スキャンの対象になり得ない**ため、呼び出し側（#78）が `'CLEAN'` を
+   *    渡す。これは「検査した」の意味ではなく「検査の対象外（機械生成）」の意味である。アップロード由来の実体には
+   *    行の `scan_status` 以外を渡してはならない。
+   */
   readonly scanStatus: ScanStatus;
+  /**
+   * 🔴 T-10-09: 署名の有効期限（秒）。省略時は `DOWNLOAD_URL_TTL_SECONDS`（300。スキルシート / 契約書）。
+   *    返却データ（#78）だけが `DATA_EXPORT_DOWNLOAD_URL_TTL_SECONDS`（3600。docs/05 §14.2 の表）を渡す。
+   *    用途ごとに「URL が漏れたときに有効な時間」の許容が違うため、同じ設定値に畳まない。
+   */
+  readonly ttlSeconds?: number;
   /**
    * 🔴 **必須である**（T-07-09）。省略可能にすると、新しい DL 経路が
    *    「書かなかった ＝ 社内扱い」で静かにゲートを迂回する（`F-020 AC-1`）。
@@ -206,13 +218,14 @@ export async function issueDownloadUrl(
 
   // ④ 🔴 **ここから先は「記録が commit された後」である。** 上のトランザクションが例外で
   //    巻き戻った場合、この行には到達しない（＝ 記録の無い署名が存在しない）。
+  const ttlSeconds = subject.ttlSeconds ?? DOWNLOAD_URL_TTL_SECONDS;
   const presigned = await deps.objectStore.presignGet(
     subject.objectKey,
-    DOWNLOAD_URL_TTL_SECONDS,
+    ttlSeconds,
     subject.downloadFileName === undefined
       ? {}
       : { downloadFileName: subject.downloadFileName },
   );
 
-  return { url: presigned.url, expiresIn: DOWNLOAD_URL_TTL_SECONDS };
+  return { url: presigned.url, expiresIn: ttlSeconds };
 }

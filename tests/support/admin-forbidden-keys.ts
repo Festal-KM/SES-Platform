@@ -43,6 +43,8 @@ export const ADMIN_FORBIDDEN_IDENTITY_KEYS = [
   'recipientEmail',
   'recipientCompanyName',
   'objectKey',
+  // 🔴 T-10-09: 返却データの署名 URL（#78 の応答）。運営者はどの応答でも到達できない（`F-064 AC-7` / `BR-40`）。
+  'downloadUrl',
   'offeredUnitPrice',
 ] as const;
 
@@ -104,7 +106,8 @@ export function classifyAdminForbiddenKey(key: string): AdminForbiddenKeyGroup |
 }
 
 /** 管理平面の読み取り応答（E2E #15 の走査対象。`docs/05` §6.9）。 */
-export type AdminResponseId = 'API-A2' | 'API-A3' | 'API-A6' | 'API-A7' | 'API-A8' | 'API-A16';
+// ✅ T-10-10: API-A12（削除完了の確認。`A-010`）。例外は無い（`failureReason` は群 A として応答に現れてはならない）。
+export type AdminResponseId = 'API-A2' | 'API-A3' | 'API-A6' | 'API-A7' | 'API-A8' | 'API-A12' | 'API-A16';
 
 export type AdminForbiddenKeyException = {
   /** なぜこのキーがこの応答に在ってよいか（設計の決着への参照）。 */
@@ -156,6 +159,7 @@ export const ADMIN_FORBIDDEN_KEY_EXCEPTIONS: Readonly<
     },
   },
   'API-A16': {},
+  'API-A12': {},
 };
 
 /** 🔴 `A-006` の `summary`（マスク済み）の中でだけ許される伏せ字。`packages/domain` の `MASKED_VALUE` と同じ値。 */

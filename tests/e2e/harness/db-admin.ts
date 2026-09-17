@@ -564,3 +564,56 @@ export function removeNonDisclosureFixturesForE2e(refs: T1107FixtureRefs, dispat
       `city = NULL, preference_note = NULL WHERE id = '${refs.hostEngineerId}' AND tenant_id = '${refs.tenantId}';`,
   );
 }
+
+// ============================================================================
+// 🔴 T-10-10 専用シーム（E2E #16「削除完了の確認が `A-010` の 1 本からしか取れない」。docs/05 §17.3 #16 / `F-062 AC-7`）
+// ============================================================================
+// `PURGED` に到達したテナントと、その `TenantPurgeRun`（FAILED → 再試行で COMPLETED）を合成で仕込む。
+// 🔴 `tenant.purge` を実際に動かさない理由: `CLOSING` へ入れる主平面 / 管理平面の操作が Phase 1 に無く（`F-062` は Phase 3）、
+//    ブラウザから 30 日を進める手段も無い（E2E #17 が結合で代替した理由と同じ）。ここで作るのは**確認画面の前提**だけである。
+// 🔴 失敗理由（`failure_reason`）と件数は**運営者の応答に現れてはならない / 現れてよい**の対照として固定の値を持つ。
+//    `T1010_DELETION_STATUS_MARKERS.failureReason` は `A-010` / API-A12 / API-A3 / API-A8 のどこにも出ない。
+//    `completedCounts` は API-A12 と `A-010` に**だけ**出る（`A-003` / API-A3 / API-A8 に出ない）。
+
+export const T1010_DELETION_STATUS_TENANT_ID = '0193b110-0000-7000-8000-000000001010';
+
+export const T1010_DELETION_STATUS_MARKERS = {
+  /** 🔴 どの応答にも現れてはならない（`app_platform` から REVOKE 済みの列の値）。 */
+  failureReason: 'COLUMN_ERASE:T1010ForbiddenError',
+  /** API-A12 / `A-010` にだけ現れる件数（`A-003` / API-A3 / API-A8 には現れない）。 */
+  completedCounts: { engineers: 101042, skill_sheets: 7, messages: 3 } as const,
+} as const;
+
+const T1010_RUN_IDS = {
+  failed: '0193b110-0000-7000-8000-000000001011',
+  completed: '0193b110-0000-7000-8000-000000001012',
+} as const;
+
+/** 仕込み（`beforeAll`）。冪等（`ON CONFLICT DO NOTHING`）。 */
+export function plantDeletionStatusFixturesForE2e(): void {
+  const m = T1010_DELETION_STATUS_MARKERS;
+  const counts = JSON.stringify(m.completedCounts);
+  assertPlainSqlLiteral('failureReason', m.failureReason);
+  execSql(
+    `INSERT INTO tenants (id, name, environment, lifecycle_state, lifecycle_changed_at, closing_entered_at, provisioning_request_id, created_at) ` +
+      `VALUES ('${T1010_DELETION_STATUS_TENANT_ID}', 'T1010 Deletion Status Tenant', 'production', 'PURGED', now() - interval '1 day', ` +
+      `now() - interval '40 days', 't-10-10-e2e-deletion-status', now() - interval '200 days') ` +
+      `ON CONFLICT (id) DO NOTHING;\n` +
+      `INSERT INTO tenant_purge_runs (id, tenant_id, cause, status, started_at, completed_at, counts, failure_reason) ` +
+      `VALUES ('${T1010_RUN_IDS.failed}', '${T1010_DELETION_STATUS_TENANT_ID}', 'TENANT_PURGED', 'FAILED', now() - interval '2 days', NULL, ` +
+      `'{}'::jsonb, '${m.failureReason}') ` +
+      `ON CONFLICT (id) DO NOTHING;\n` +
+      `INSERT INTO tenant_purge_runs (id, tenant_id, cause, status, started_at, completed_at, counts, failure_reason) ` +
+      `VALUES ('${T1010_RUN_IDS.completed}', '${T1010_DELETION_STATUS_TENANT_ID}', 'TENANT_PURGED', 'COMPLETED', now() - interval '1 day', ` +
+      `now() - interval '1 day' + interval '5 minutes', '${counts}'::jsonb, NULL) ` +
+      `ON CONFLICT (id) DO NOTHING;`,
+  );
+}
+
+/** 後始末（`afterAll`）。仕込んだ行だけを ID で消す。合成テナントに紐づく監査行は `audit_logs.tenant_id` の CASCADE で一緒に消える（使い捨ての E2E DB なので可）。 */
+export function removeDeletionStatusFixturesForE2e(): void {
+  execSql(
+    `DELETE FROM tenant_purge_runs WHERE id IN ('${T1010_RUN_IDS.failed}', '${T1010_RUN_IDS.completed}');\n` +
+      `DELETE FROM tenants WHERE id = '${T1010_DELETION_STATUS_TENANT_ID}';`,
+  );
+}

@@ -207,6 +207,10 @@ describe('スケジュール宣言（docs/05 §9.8 / §9.1）', () => {
       // 🔴 T-10-12: `tenant.closing-notify`（毎日 02:08 JST）の deps。埋め忘れるとコンパイルエラーになる
       //    （＝ 起動配線が「解約中のテナントに削除予定日を誰も知らせない」状態で立ち上がれない）。
       purgeGraceDays: 30,
+      // 🔴 T-10-09: `tenant.purge-scan`（毎日 02:10 JST）の deps。埋め忘れるとコンパイルエラーになる
+      //    （＝ 起動配線が「解約から 30 日経っても誰も削除を積まない」状態で立ち上がれない）。
+      appEnv: 'development',
+      enqueueTenantPurge: async () => 'ENQUEUED',
     };
   }
 });

@@ -88,6 +88,13 @@ import {
   TENANT_CLOSING_NOTIFY_SCHEDULE,
   type TenantClosingNotifyDeps,
 } from './tenant-closing-notify.js';
+import {
+  createTenantPurgeScanHandler,
+  TENANT_PURGE_SCAN_JOB,
+  TENANT_PURGE_SCAN_POPULATION,
+  TENANT_PURGE_SCAN_SCHEDULE,
+  type TenantPurgeScanDeps,
+} from './tenant-purge-scan.js';
 import type { SchedulerFanoutPopulation } from '@ses/db';
 
 export {
@@ -391,6 +398,46 @@ export type {
   TenantClosingNotifyPayload,
 } from './tenant-closing-notify.js';
 
+// 🔴 T-10-09: 削除（docs/05 §9.7 `tenant.purge-scan` / `tenant.purge`。`F-064 AC-1`〜`AC-4` / `AC-10`）と返却（§9.6 `export.generate`。
+//    `F-064 AC-5` / `AC-6`）。`tenant.purge-scan` は日次（母集団 `CLOSING`）で下の `SCHEDULED_JOBS` に載る。`tenant.purge` /
+//    `export.generate` は**イベント起動**（enqueue は `tenant.purge-scan` / `apps/web` の #77）。🔴 両ジョブとも `readClosingNoticeDelivery`
+//    （`packages/db`）を呼び、**別の判定式を書かない**（保留中の削除はこの 1 関数が偽を返すことだけで防いでいる）。
+export {
+  createTenantPurgeScanHandler,
+  parseTenantPurgeScanPayload,
+  scanTenantPurge,
+  TENANT_PURGE_SCAN_JOB,
+  TENANT_PURGE_SCAN_POPULATION,
+  TENANT_PURGE_SCAN_SCHEDULE,
+} from './tenant-purge-scan.js';
+export type {
+  TenantPurgeScanDeps,
+  TenantPurgeScanHandler,
+  TenantPurgeScanOutcome,
+  TenantPurgeScanPayload,
+} from './tenant-purge-scan.js';
+export {
+  createTenantPurgeHandler,
+  parseTenantPurgePayload,
+  purgeTenant,
+  TENANT_PURGE_JOB,
+  TenantPurgeStageError,
+} from './tenant-purge.js';
+export type { TenantPurgeDeps, TenantPurgeHandler, TenantPurgeOutcome, TenantPurgePayload } from './tenant-purge.js';
+export {
+  createExportGenerateHandler,
+  EXPORT_ARCHIVE_CONTENT_TYPE,
+  EXPORT_GENERATE_JOB,
+  generateExport,
+  parseExportGeneratePayload,
+} from './export-generate.js';
+export type {
+  ExportGenerateDeps,
+  ExportGenerateHandler,
+  ExportGenerateOutcome,
+  ExportGeneratePayload,
+} from './export-generate.js';
+
 /**
  * ジョブの合成に要る値（起動時に 1 度だけ解決する。`CLAUDE.md` §11.1 / docs/05 §13.1）。
  *
@@ -423,7 +470,10 @@ export type ScheduledJobDeps = UsageSeatSnapshotDeps &
   SendSettleUnknownDeps &
   // 🔴 T-10-12: `tenant.closing-notify` が要るのは `TENANT_PURGE_GRACE_DAYS`（削除予定日の計算）と `email.dispatch` の
   //    enqueue 先（`usage.limit-check` と共有）。**`EmailSender` を要らない**（送らない。積むだけ）。
-  TenantClosingNotifyDeps;
+  TenantClosingNotifyDeps &
+  // 🔴 T-10-09: `tenant.purge-scan` が要るのは `TENANT_PURGE_GRACE_DAYS`（予告と共有）・起動時の `APP_ENV`（配送確認の
+  //    `MOCKED` の扱い）・`tenant.purge` の enqueue 先。**削除そのものは要らない**（積むだけ）。
+  TenantPurgeScanDeps;
 
 /**
  * スケジュール実行するジョブの宣言。
@@ -557,5 +607,15 @@ export const SCHEDULED_JOBS: readonly ScheduledJobDeclaration[] = [
     timeZone: TENANT_CLOSING_NOTIFY_SCHEDULE.timeZone,
     population: TENANT_CLOSING_NOTIFY_POPULATION,
     createHandler: (deps) => createTenantClosingNotifyHandler(deps),
+  },
+  // 🔴 T-10-09: 削除の走査（docs/05 §9.7 / `F-064 AC-1`。毎日 02:10 JST）。**これが無いと**解約から 30 日経っても `PURGED` に
+  //    遷移せず、預かった第三者の個人情報を削除手段のないまま保持し続ける（`F-064` を Phase 1 に置いた理由そのもの）。
+  //    🔴 積むのは配送確認（`readClosingNoticeDelivery`）が真のテナントだけ。母集団は `CLOSING`。
+  {
+    name: TENANT_PURGE_SCAN_JOB,
+    cron: TENANT_PURGE_SCAN_SCHEDULE.cron,
+    timeZone: TENANT_PURGE_SCAN_SCHEDULE.timeZone,
+    population: TENANT_PURGE_SCAN_POPULATION,
+    createHandler: (deps) => createTenantPurgeScanHandler(deps),
   },
 ];

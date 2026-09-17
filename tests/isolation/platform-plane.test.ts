@@ -308,7 +308,8 @@ describe('⑦ withPlatformWrite（docs/05 §5.2 / CLAUDE.md §10.5）', () => {
       async (db) =>
         db.tenant.updateMany({
           where: { id: NEW_TENANT_ID },
-          data: { lifecycleState: 'CLOSING', lifecycleChangedAt: new Date() },
+          // 🔴 T-10-09: `CHECK (lifecycle_state <> 'CLOSING' OR closing_entered_at IS NOT NULL)`（migration 20260927000000）。
+          data: { lifecycleState: 'CLOSING', lifecycleChangedAt: new Date(), closingEnteredAt: new Date() },
         }),
     );
     expect(updated.count).toBe(1);

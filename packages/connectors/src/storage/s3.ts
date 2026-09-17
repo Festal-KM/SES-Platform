@@ -119,6 +119,23 @@ export class S3ObjectStore implements ObjectStore {
     return { url, expiresAt: this.expiresAt(ttlSec), headers: {} };
   }
 
+  /**
+   * 🔴 T-10-09: サーバ側で生成した実体を置く（返却 ZIP。docs/05 §14.1 `t/{tenantId}/exports/…`）。
+   *    暗号化は `presignPut` と同じ鍵（`kmsKeyId`）で揃える —— 利用者のアップロードだけ KMS で、
+   *    返却データ（個人情報の塊）は平文、という差を作らない。
+   */
+  async put(key: string, body: Uint8Array, contentType: string): Promise<void> {
+    this.assertKey(key);
+    this.calls += 1;
+    await this.options.api.putObject({
+      Bucket: this.options.bucket,
+      Key: key,
+      Body: body,
+      ContentType: contentType,
+      ...(this.options.kmsKeyId === undefined ? {} : { SSEKMSKeyId: this.options.kmsKeyId }),
+    });
+  }
+
   async delete(key: string): Promise<void> {
     this.assertKey(key);
     this.calls += 1;

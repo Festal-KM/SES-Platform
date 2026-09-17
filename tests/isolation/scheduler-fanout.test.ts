@@ -40,10 +40,13 @@ let database: IsolationDatabase;
 let admin: UnextendedClient;
 
 async function insertTenant(id: string, lifecycleState: string): Promise<void> {
+  // 🔴 T-10-09: `CHECK (lifecycle_state <> 'CLOSING' OR closing_entered_at IS NOT NULL)`（migration 20260927000000）。
+  //    `CLOSING` の行は入った時刻を持つ（INSERT / ON CONFLICT の UPDATE の両方）。
   await admin.$executeRawUnsafe(
-    `INSERT INTO tenants (id, name, environment, lifecycle_state, lifecycle_changed_at, provisioning_request_id)
-       VALUES ($1::uuid, $2, 'production', $3, now(), $4)
-     ON CONFLICT (id) DO UPDATE SET lifecycle_state = EXCLUDED.lifecycle_state`,
+    `INSERT INTO tenants (id, name, environment, lifecycle_state, lifecycle_changed_at, provisioning_request_id, closing_entered_at)
+       VALUES ($1::uuid, $2, 'production', $3, now(), $4, CASE WHEN $3 = 'CLOSING' THEN now() END)
+     ON CONFLICT (id) DO UPDATE SET lifecycle_state = EXCLUDED.lifecycle_state,
+                                    closing_entered_at = COALESCE(tenants.closing_entered_at, EXCLUDED.closing_entered_at)`,
     id,
     `Tenant ${lifecycleState}`,
     lifecycleState,

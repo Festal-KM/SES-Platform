@@ -172,6 +172,9 @@
 - 🔴 **`sandbox` で `production` と同一の実装・同一の統制で動作する。「試用環境だから削除しない / 期限を延ばす」に相当する設定項目が存在しない**（`F-064 AC-9`）。
 - 削除の実行（対象種別と件数）と返却の実施を `AuditLog` に記録する（`F-064 AC-8`）。
 - **完了の判定**: `F-064 AC-1`〜`AC-10` の結合テスト + E2E #17（`CLOSING` → 30 日 → `PURGED` で到達経路が 0 件）+ 静的テスト。
+- ✅ **決着（2026-09-17。`docs/05` §9.7「T-10-09 の実装の決着」）**: ジョブ `apps/worker/src/jobs/tenant-purge-scan.ts`（毎日 02:10 JST。母集団 `CLOSING`。期限は予告と同じ JST 暦日 `isPurgeDue`）/ `tenant-purge.ts`（⓪配送確認の再評価〔`readClosingNoticeDelivery` の同一関数〕→ ①`TenantPurgeRun` CAS → ②S3 `DeleteObject` → ③`applyPurgeSpec` → ④`CLOSING → PURGED`〔`app_purge_probe` 所有の `app_complete_tenant_purge()`〕→ ⑤`COMPLETED` + `AuditLog(tenant.purge)`）/ `export-generate.ts`。`PURGE_SPEC` は全 58 表を delete 22 / retain 36 に振り分け（静的 `purge-spec-coverage.test.ts`）。取引先所有の行にも届くよう**削除スコープ**（`app.purge_scope`。migration 20260927000000）の追加ポリシーを delete の 22 表に置いた。#77 / #78 / `S-042`（`/settings/retention`）。結合 `tests/isolation/tenant-purge.test.ts` が `AC-1`〜`AC-10` の全部と E2E #17 / #24 の削除側を実証（E2E は `S-042` の到達 1 ケース）。
+- 🔴 **T-10-10 への申し送り**: `TenantPurgeRun` の読み方は `deletion-status` の 1 本だけ（`GET /api/admin/tenants/{id}/deletion-status`）。`cause='TENANT_PURGED'` の**最新行**を `status` / `completedAt` / `counts` で返す（`counts` = `Record<table, number>`。キーは `PURGE_SPEC.delete` の表名。`failure_reason` は `app_platform` に GRANT が無く読めない）。`RUNNING` が残った行（④成功 → ⑤失敗のとき）は「未完了」として扱う。`S-042` / `A-003` / `A-013` / `A-005` には完了の事実を出していない（`A-005` 項目 7 は `FAILED` だけ）。
+- 🔴 **オーケストレーターへ（Issue 起票が要る判断。既定で進めた）**: ① `PURGE_SPEC` で `PENDING_ISSUE` を付けて**既定〔削除〕**にした列 = `engineers.display_name`（氏名）/ `match_candidates.rationale` / `extension_reviews.facts` `summary` / `notifications.title` `body_params`（`CLAUDE.md` §3.5 / `BR-29` の列挙の外側。Issue #48 と同型） ② **`retain` に置いた**が確認が要るもの = `tenant_esign_connections`（暗号化済みトークンを `PURGED` で失効させるべきか）/ `two_factor_credentials` / `projects.end_client_name`（商流は個人情報ではないとして残置） ③ `retention.delete`（Phase 2）向けに `PURGE_SPEC` へエンジニア単位の絞り込み（`subject`）を足すか。
 
 ### T-10-10 削除完了の確認（API-A12）（M）
 
@@ -180,6 +183,7 @@
 - 🔴 **作らないもの**（`docs/05` §6.9）: `A-013` の応答に `deletionCounts` を含めない / `A-003` の応答に含めない / `S-042` の `GET /api/retention` に含めない / `A-005` は**削除ジョブの失敗**のみを返し**完了の事実は返さない**。
 - **静的テスト**: `deletion-status-single-route.test.ts`（`docs/05` §17.2 #15）— 応答型 `DeletionStatusView` を返すハンドラが他に無いことを AST で検査する。
 - **完了の判定**: E2E #16（削除完了の確認が `A-010` の 1 本からしか取れない）+ 静的テスト。
+- ✅ **決着（2026-09-17。`docs/05` §6.9「API-A12 の実装の決着」）**: `readDeletionStatus`（`packages/db/src/platform/queries/deletion-status.ts`。`withPlatformRead` + `admin.deletion_status.view`。`cause='TENANT_PURGED'` を新しい順、`select` に `failureReason` を含めない）→ API-A12 `GET /api/admin/tenants/{id}/deletion-status`（`GET` のみ。`PO` / `PP`。404）→ `A-010`（`/admin/tenants/{id}/contract`。**Phase 1 はセクション 4 だけ**。無し / `RUNNING`〔未完了〕/ `COMPLETED`〔日付 + 対象 N 件 + 種別ごとの件数〕/ `FAILED`〔`A-005` への導線〕）。`A-003` は `CLOSING` / `PURGED` のとき導線のみ（件数なし）。静的 `deletion-status-single-route.test.ts`（§17.2 #15）/ 結合 `tests/isolation/admin-deletion-status.test.ts`（13 件）/ E2E #16 `tests/e2e/admin-deletion-status.spec.ts`（2 件）。⚠️ `docs/04` §A-010 の「削除処理中（対象 N 件）」は `RUNNING` の時点で N を出せない（`counts` は完了時に確定）ため「削除処理中」に改める（✅ `docs/04` は `7533ea2` で反映済み）。
 
 ### T-10-11 🔴 Stripe 制限業種の該当判定（S・非コード）
 

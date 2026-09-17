@@ -14,7 +14,7 @@
 //
 // 🔴 「SDK を import してよいのはこの 2 アダプタだけ」「SDK 内部のリトライを止めている」は
 //    リポジトリ全体を走査する `tests/static/aws-sdk-single-path.test.ts` が固定する。
-import { HeadObjectCommand, ListObjectsV2Command, S3Client } from '@aws-sdk/client-s3';
+import { HeadObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { describe, expect, it, vi } from 'vitest';
 import { createObjectStore } from '../index.js';
 import { S3ObjectStore } from './s3.js';
@@ -299,6 +299,28 @@ describe('🔴 ③ ④ headObject / deleteObject（`send` を差し替え、ネ�
     expect(commands[0]).toBeInstanceOf(HeadObjectCommand);
     expect((commands[0] as HeadObjectCommand).input).toEqual({ Bucket: BUCKET, Key: KEY });
     expect((commands[1] as HeadObjectCommand).input).toEqual({ Bucket: BUCKET, Key: KEY });
+  });
+
+  it('🔴 T-10-09: putObject が Body / ContentType / ContentLength と SSE-KMS を PutObjectCommand に載せる', async () => {
+    const client = localClient();
+    const send = vi.spyOn(client, 'send').mockResolvedValue({ $metadata: {} } as never);
+    const body = new Uint8Array([1, 2, 3]);
+
+    await api({ client }).putObject({ Bucket: BUCKET, Key: KEY, Body: body, ContentType: 'application/zip', SSEKMSKeyId: 'kms-1' });
+    await api({ client }).putObject({ Bucket: BUCKET, Key: KEY, Body: body, ContentType: 'application/zip' });
+
+    const [withKms, withoutKms] = send.mock.calls.map(([command]) => command as PutObjectCommand);
+    expect(withKms).toBeInstanceOf(PutObjectCommand);
+    expect(withKms!.input).toEqual({
+      Bucket: BUCKET,
+      Key: KEY,
+      Body: body,
+      ContentType: 'application/zip',
+      ContentLength: 3,
+      ServerSideEncryption: 'aws:kms',
+      SSEKMSKeyId: 'kms-1',
+    });
+    expect(withoutKms!.input).toEqual({ Bucket: BUCKET, Key: KEY, Body: body, ContentType: 'application/zip', ContentLength: 3 });
   });
 });
 

@@ -89,6 +89,14 @@ export default async function OrganizationSettingsPage() {
           {t('usage.open')}
         </Link>
       </section>
+      {/* 🔴 T-10-09: docs/04 §S-042「関連画面: ← S-035」。返却と削除予定の画面（`/settings/retention`）への導線。
+          `OWNER` / `ADMIN` だけが本画面に到達しているので、導線側で追加のロール判定は要らない。 */}
+      <section className="mt-8" data-testid="org-settings-retention">
+        <h2 className="mb-2 text-base font-bold text-slate-900">{t('retention.summary.heading')}</h2>
+        <Link className={SECONDARY_LINK_CLASSES} href="/settings/retention" data-testid="org-settings-retention-link">
+          {t('retention.open')}
+        </Link>
+      </section>
     </main>
   );
 }

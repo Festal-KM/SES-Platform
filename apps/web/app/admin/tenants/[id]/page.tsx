@@ -4,7 +4,8 @@
 // 🔴 表示するのは件数・状態・日時のみ（`F-056 AC-1` / `BR-40`）。エンジニアの氏名・
 //    スキルシートの内容・案件の内容・提案の本文・チャット本文への導線を持たない。
 // 🔴 `PURGED` はライフサイクル状態のみを表示し、削除件数を出さない（docs/04 program-design
-//    申し送り 15 / `F-062 AC-7`）。削除完了の確認は `A-010`（Phase 3）の 1 本のみ。
+//    申し送り 15 / `F-062 AC-7`）。削除完了の確認は `A-010`（セクション 4 = Phase 1。T-10-10）の 1 本のみで、
+//    本画面は `CLOSING` / `PURGED` のときにそこへの導線だけを置く。
 // 🔴 書き込み操作なし。画面タイトル右に「閲覧のみ」を常時表示する（`BR-37`）。
 //
 // 🔴 T-21-05: 「閲覧のみ」バッジを `@ses/ui` の `Badge` へ移した。**定義リストの項目の集合は
@@ -19,7 +20,7 @@ import {
   readPlatformRequestMeta,
   resolvePlatformCtxOutcome,
 } from '../../../../lib/auth/platform-session';
-import { adminTenantQuotaHref } from '../../../../lib/admin-monitoring/hrefs';
+import { adminTenantContractHref, adminTenantQuotaHref } from '../../../../lib/admin-monitoring/hrefs';
 import { isTenantIdLike } from '../../../../lib/admin-tenants/schemas';
 import {
   TENANT_LIFECYCLE_STATE_MESSAGE_KEYS,
@@ -79,6 +80,28 @@ function UsageSection({ tenantId }: { readonly tenantId: string }) {
   );
 }
 
+/**
+ * `A-010` セクション 4「削除完了の確認」への導線（docs/04 §A-003「`PURGED` → ライフサイクル状態のみ + `A-010` へのリンク」。T-10-10）。
+ * 🔴 `CLOSING` / `PURGED` のときだけ出す。本画面（API-A3）には削除の完了 / 未完了と件数を**出さない**
+ *    （`F-062 AC-7` の「唯一の経路」を `A-010` に保つ。同じ確認を 2 経路で表現しない）。
+ */
+function DeletionStatusSection({ tenantId }: { readonly tenantId: string }) {
+  return (
+    <section className="mt-6">
+      <h2 className="mb-2 text-sm font-semibold text-slate-700">
+        {t('admin.tenantDetail.section.deletionStatus')}
+      </h2>
+      <Link
+        className="text-sm text-slate-700 underline-offset-2 hover:underline"
+        href={adminTenantContractHref(tenantId)}
+        data-testid="admin-tenant-detail-deletion-status-link"
+      >
+        {t('admin.tenantDetail.deletionStatus.link')}
+      </Link>
+    </section>
+  );
+}
+
 export default async function AdminTenantDetailPage({
   params,
 }: {
@@ -120,6 +143,7 @@ export default async function AdminTenantDetailPage({
             value={detail.lifecycleChangedAt}
           />
         </dl>
+        <DeletionStatusSection tenantId={detail.id} />
         <AuditLogsSection tenantId={detail.id} />
       </main>
     );
@@ -218,6 +242,7 @@ export default async function AdminTenantDetailPage({
       </section>
 
       <UsageSection tenantId={detail.id} />
+      {detail.lifecycleState === 'CLOSING' ? <DeletionStatusSection tenantId={detail.id} /> : null}
       <AuditLogsSection tenantId={detail.id} />
     </main>
   );

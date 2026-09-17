@@ -1,6 +1,6 @@
 -- packages/db/prisma/sql/000_roles.sql
 -- T-01-05（docs/sprints/SP-01-bootstrap.md）: docs/05 §4.2（DB ロールと接続）/ §5.2（分離バイパスの
--- 設計）のロール（LOGIN 4 + NOLOGIN の probe 5）を作る唯一の定義（single source of truth）。
+-- 設計）のロール（LOGIN 4 + NOLOGIN の probe 6）を作る唯一の定義（single source of truth）。
 --
 -- 🔴 ローカル docker-compose（docker/postgres/initdb/000-roles.sh）と Testcontainers
 --    （tests/isolation/support/postgres.ts）の両方がこのファイルをそのまま実行する。
@@ -117,6 +117,20 @@ WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_scheduler_probe')
 SELECT 'CREATE ROLE app_gate_probe NOLOGIN NOBYPASSRLS'
 WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_gate_probe')
 \gexec
+-- app_purge_probe: NOLOGIN。`CLOSING → PURGED` の 1 遷移だけを行う SECURITY DEFINER 関数
+-- `app_complete_tenant_purge()` の所有者（T-10-09。docs/05 §9.7 `tenant.purge`。app_scheduler_probe と同じパターン）。
+-- 🔴 なぜ要るか: `PURGED` への遷移は `system` の自動遷移（docs/02 章 5.4 遷移 7）であり、テナント側の
+-- ロール（`app_tenant` は `tenants.lifecycle_state` を書けない。20260905000000）でも運営者の操作
+-- （`withPlatformWrite` + `AuditLog`）でもない。ジョブのテナント文脈から、対象 = 自テナント・遷移元 =
+-- `CLOSING`・遷移先 = `PURGED` に固定した CAS を 1 本だけ与える。
+-- 🔴 権限は `tenants` の 2 列 SELECT + 3 列 UPDATE（`lifecycle_state` / `lifecycle_changed_at` /
+-- `lifecycle_changed_by`）と `tenant_purge_runs` の 3 列 SELECT だけ。呼び出しには `app.purge_scope='on'` と
+-- 実行中（`RUNNING`）の `TenantPurgeRun` が要る（fail-closed）。
+-- パスワード不要。GRANT・ポリシー・関数は
+-- packages/db/prisma/migrations/20260927000000_tenant_purge/migration.sql。
+SELECT 'CREATE ROLE app_purge_probe NOLOGIN NOBYPASSRLS'
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_purge_probe')
+\gexec
 
 -- 🔴 `ALTER FUNCTION ... OWNER TO app_assignment_owner_probe`（migration 20260903070000）は
 -- app_migrator が app_assignment_owner_probe に対して SET ROLE できることを要求する
@@ -132,6 +146,8 @@ GRANT app_scan_probe TO app_migrator;
 GRANT app_scheduler_probe TO app_migrator;
 -- 同上（T-09-13。migration 20260918000000 の ALTER FUNCTION ... OWNER TO app_gate_probe）。
 GRANT app_gate_probe TO app_migrator;
+-- 同上（T-10-09。migration 20260927000000 の ALTER FUNCTION ... OWNER TO app_purge_probe）。
+GRANT app_purge_probe TO app_migrator;
 
 -- public スキーマの所有者を app_migrator にする（PostgreSQL 15 以降は既定で PUBLIC に
 -- CREATE 権限が無いため、これが無いとマイグレーションがテーブルを作れない。docs/05 §4.2）。

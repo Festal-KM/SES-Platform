@@ -24,3 +24,12 @@ export const ADMIN_USAGE_HREF = '/admin/usage';
 export function adminTenantQuotaHref(tenantId: string): string {
   return `${ADMIN_USAGE_HREF}?targetTenantId=${encodeURIComponent(tenantId)}`;
 }
+
+/**
+ * ✅ T-10-10: `A-010` 契約管理（Phase 1 はセクション 4「削除完了の確認」だけ。docs/04 §A-010）。
+ * 🔴 導線の出所は `A-003`（`CLOSING` / `PURGED` のとき）だけ。`A-005` 項目 7（削除ジョブの失敗）からは繋がない ——
+ *    `A-005` は「失敗している異常」、`A-010` は「完了したか」を示す別の役割であり、同じ確認を 2 経路にしない（`F-062 AC-7`）。
+ */
+export function adminTenantContractHref(tenantId: string): string {
+  return `/admin/tenants/${tenantId}/contract`;
+}

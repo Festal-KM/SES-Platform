@@ -45,6 +45,7 @@ import type {
   S3ObjectRequest,
   S3PresignGetRequest,
   S3PresignPutRequest,
+  S3PutObjectRequest,
 } from './api.js';
 
 /**
@@ -203,6 +204,22 @@ export function createS3Api(options: S3ApiOptions): S3Api {
           : { ResponseContentDisposition: request.ResponseContentDisposition }),
       });
       return getSignedUrl(client, command, { expiresIn: request.ExpiresInSeconds });
+    },
+
+    /** 🔴 T-10-09: 返却 ZIP の配置（`export.generate`）。`presignPut` と同じ SSE-KMS の付け方。 */
+    async putObject(request: S3PutObjectRequest): Promise<void> {
+      await client.send(
+        new PutObjectCommand({
+          Bucket: request.Bucket,
+          Key: request.Key,
+          Body: request.Body,
+          ContentType: request.ContentType,
+          ContentLength: request.Body.byteLength,
+          ...(request.SSEKMSKeyId === undefined
+            ? {}
+            : { ServerSideEncryption: 'aws:kms' as const, SSEKMSKeyId: request.SSEKMSKeyId }),
+        }),
+      );
     },
 
     async deleteObject(request: S3ObjectRequest): Promise<void> {

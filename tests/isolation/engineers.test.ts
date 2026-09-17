@@ -101,9 +101,10 @@ async function setRole(identity: TenantIdentity, role: TenantRole): Promise<void
 
 /** テナントのライフサイクル状態（`F-004 AC-7`〜`AC-9`。閲覧と実行系の差を確かめるため）。 */
 async function setLifecycle(tenantId: string, lifecycleState: string): Promise<void> {
+  // 🔴 T-10-09: `CHECK (lifecycle_state <> 'CLOSING' OR closing_entered_at IS NOT NULL)`（migration 20260927000000）。
   await admin.tenant.update({
     where: { id: tenantId },
-    data: { lifecycleState, lifecycleChangedAt: NOW },
+    data: { lifecycleState, lifecycleChangedAt: NOW, closingEnteredAt: lifecycleState === 'CLOSING' ? NOW : null },
   });
 }
 

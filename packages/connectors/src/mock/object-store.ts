@@ -3,7 +3,7 @@
 
 import { randomUUID } from 'node:crypto';
 
-import { buildTenantObjectPrefix } from '@ses/domain';
+import { buildTenantObjectPrefix, isTenantScopedObjectKey } from '@ses/domain';
 import {
   contentDispositionOf,
   type ObjectHead,
@@ -11,12 +11,13 @@ import {
   type PresignGetOptions,
   type TenantStorageMeasurement,
 } from '../interfaces.js';
+import { ObjectKeyOutOfTenantScopeError } from '../storage/s3.js';
 import type { PresignedUrl } from '../types.js';
 
 /** 署名付き URL のスキーム。🔴 実在しないスキームにして、誤って外部へ渡っても到達しないようにする。 */
 const MOCK_URL_SCHEME = 'mock-object-store:';
 
-type MockObject = { byteSize: number; versionId: string; contentType: string };
+type MockObject = { byteSize: number; versionId: string; contentType: string; body?: Uint8Array };
 
 export type MockObjectStoreOptions = {
   readonly now?: () => Date;
@@ -24,9 +25,19 @@ export type MockObjectStoreOptions = {
 
 export class MockObjectStore implements ObjectStore {
   private readonly objects = new Map<string, MockObject>();
+  private readonly deleted: string[] = [];
   private calls = 0;
 
   constructor(private readonly options: MockObjectStoreOptions = {}) {}
+
+  /**
+   * 🔴 T-10-09 レビュー: キーの検査は**実装（`S3ObjectStore.assertKey`）と同じ**にする。モックだけが緩いと、
+   *    `t/{tenantId}/…` でないキー（UUID 等）を渡す呼び出しが `demo` / 結合テストでは通り、`production` で
+   *    `ObjectKeyOutOfTenantScopeError` になって初めて露見する（docs/05 §13.2「モックを実装より緩くしない」）。
+   */
+  private assertKey(key: string): void {
+    if (!isTenantScopedObjectKey(key)) throw new ObjectKeyOutOfTenantScopeError();
+  }
 
   /**
    * 🔴 モックは「署名 URL を発行した = そのキーにオブジェクトが置かれた」とみなす。
@@ -40,6 +51,7 @@ export class MockObjectStore implements ObjectStore {
    *    という、実装のバグと見分けのつかない状態になる。
    */
   async presignPut(key: string, contentType: string, maxBytes: number): Promise<PresignedUrl> {
+    this.assertKey(key);
     this.calls += 1;
     this.objects.set(key, { byteSize: maxBytes, versionId: randomUUID(), contentType });
     return {
@@ -64,6 +76,7 @@ export class MockObjectStore implements ObjectStore {
     ttlSec: number,
     options?: PresignGetOptions,
   ): Promise<PresignedUrl> {
+    this.assertKey(key);
     const disposition = contentDispositionOf(options?.downloadFileName);
     this.calls += 1;
     const query =
@@ -77,12 +90,41 @@ export class MockObjectStore implements ObjectStore {
     };
   }
 
+  /**
+   * 🔴 T-10-09: サーバ側で生成した実体（返却 ZIP）。実装（S3）と同じく**バイト数をそのまま**保管する
+   *    （`presignPut` の「置かれたことにする」と違い、ここは本当に置かれる）。テストは `head()` で
+   *    サイズと content-type を、`readBody()` で内容を確かめる。
+   */
+  async put(key: string, body: Uint8Array, contentType: string): Promise<void> {
+    this.assertKey(key);
+    this.calls += 1;
+    this.objects.set(key, { byteSize: body.byteLength, versionId: randomUUID(), contentType, body });
+  }
+
   async delete(key: string): Promise<void> {
+    this.assertKey(key);
     this.calls += 1;
     this.objects.delete(key);
+    this.deleted.push(key);
+  }
+
+  /** 検証用: `put` で置いた内容（`presignPut` で「置かれたことにした」キーは `null`）。 */
+  readBody(key: string): Uint8Array | null {
+    return this.objects.get(key)?.body ?? null;
+  }
+
+  /** 検証用: `delete` されたキーの列（削除ジョブが S3 の実体を**オブジェクト数と同じ回数**消したことを数える）。 */
+  deletedKeys(): readonly string[] {
+    return [...this.deleted];
+  }
+
+  /** 検証用: 現在保管されているキー。 */
+  keys(): readonly string[] {
+    return [...this.objects.keys()];
   }
 
   async head(key: string): Promise<ObjectHead | null> {
+    this.assertKey(key);
     this.calls += 1;
     const found = this.objects.get(key);
     return found === undefined

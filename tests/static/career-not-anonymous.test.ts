@@ -142,6 +142,10 @@ describe('④ engineerCareer デリゲートを参照するファイルは台帳
     'apps/web/lib/engineers/careers.ts',
     'packages/db/src/platform.ts',
     'packages/db/src/proposal-draft.ts',
+    // 🔴 T-10-09: 返却データ（docs/05 §9.6 `export.generate`。`F-064 AC-5`）。**自社台帳の読み出し**（`withTenant` と同じ RLS C3 =
+    //    ホスト文脈では自社所有の行だけ）であり、`engineer_careers.csv`（1 行 1 経歴）に写す。匿名候補の経路ではない
+    //    （返却に匿名候補のファイルは存在しない。`packages/domain/src/export/closing-return.ts`）。
+    'packages/db/src/data-export.ts',
   ];
 
   it('apps/** と packages/db/src/** の参照元が許可リストと一致する', () => {

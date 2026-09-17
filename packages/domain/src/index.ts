@@ -128,3 +128,6 @@ export * from './health/index.js';
 //    起票する側（`apps/worker`）と配送確認を読む側（`packages/db`）が同じ 1 実装を見る。`MOCKED` を配送済みとみなすかは
 //    引数で受ける（環境の判定は `packages/config` の `isAllMockEmailEnv`）。
 export * from './retention/index.js';
+// 🔴 T-10-09: 返却データ（`F-064 AC-5`。docs/05 §9.6 `export.generate` / §14.1）の CSV・ZIP エンコードとファイル契約。
+//    二重境界の判定は持たない（`packages/db` が RLS で読んだ行を CSV にするだけ）。匿名候補のファイルは存在しない。
+export * from './export/index.js';

@@ -230,6 +230,20 @@ const FROZEN_EXACT: readonly string[] = [
   'admin-audit-logs-table',
   'admin-audit-logs-target-tenant-id',
   'admin-audit-logs-to',
+  // ✅ T-10-10: `A-010` セクション 4「削除完了の確認」（`tenants/[id]/contract/deletion-status-screen.tsx`）。内訳・履歴の行は
+  //    FROZEN_PREFIXES。🔴 操作導線（停止 / 解約 / 再実行）・返却データへの導線に相当する testid は存在しない（`F-062 AC-7` / `BR-40`）。
+  'admin-deletion-status-back',
+  'admin-deletion-status-breakdown',
+  'admin-deletion-status-completed',
+  'admin-deletion-status-failed',
+  'admin-deletion-status-headline',
+  'admin-deletion-status-history',
+  'admin-deletion-status-lifecycle',
+  'admin-deletion-status-monitoring-link',
+  'admin-deletion-status-none',
+  'admin-deletion-status-running',
+  'admin-deletion-status-screen',
+  'admin-deletion-status-total',
   // ✅ T-10-06: `A-012` デモ環境の合成データ管理（`admin-demo-screen.tsx` / `admin-demo-view.tsx`）。行の testid は FROZEN_PREFIXES。
   'admin-demo-accounts',
   'admin-demo-app-env',
@@ -288,6 +302,8 @@ const FROZEN_EXACT: readonly string[] = [
   'admin-signin-submit',
   // ✅ T-11-03: `A-003` セクション 6（監査ログへの導線）。
   'admin-tenant-detail-audit-logs-link',
+  // ✅ T-10-10: `A-003` → `A-010` セクション 4（削除完了の確認への導線。`CLOSING` / `PURGED` のときだけ描かれる）。
+  'admin-tenant-detail-deletion-status-link',
   // ✅ T-11-02: `A-003` セクション 4（利用量とクォータへの導線）。
   'admin-tenant-detail-usage-link',
   // ✅ T-11-01: `A-002` テナント一覧（健全性・異常順）。`admin-tenants-list.tsx`。行・席・シグナルの testid は
@@ -1174,6 +1190,9 @@ const FROZEN_PREFIXES: readonly string[] = [
   'admin-audit-logs-row-',
   'admin-audit-logs-summary-',
   'admin-audit-logs-tenant-link-',
+  // ✅ T-10-10: `A-010` セクション 4 の動的 testid（対象種別ごとの件数の行 = 表名 / 実行履歴の行 = 状態）。
+  'admin-deletion-status-count-',
+  'admin-deletion-status-run-',
   // ✅ T-10-06: `A-012` の投入状況の行（テナント ID で変わる）。
   'admin-demo-status-tenant-',
   // ✅ T-11-01: `A-002` の動的 testid（シグナルのバッジ / 行 / 席 / 並び替えの候補。列挙値・テナント ID で変わる）。

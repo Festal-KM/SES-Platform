@@ -717,3 +717,55 @@ export type { ClosingNoticeDeliveryInput, TenantClosingSchedule } from './tenant
 //    が型として参照する。`listSchedulerFanoutTenants` 自体の呼び出し元は `runtime.ts` 1 箇所のまま。
 export { SCHEDULER_FANOUT_POPULATIONS } from './scheduler-fanout.js';
 export type { SchedulerFanoutPopulation } from './scheduler-fanout.js';
+// 🔴 T-10-09: 削除の実行（`tenant.purge`。docs/05 §9.7 / `F-064 AC-1`〜`AC-4`）。**何を消すか**は `@ses/config` の `PURGE_SPEC`、
+//    **どこまで届くか**は削除スコープ（`app.purge_scope`。`withPurgeScope` は export しない）。順序（S3 → DB → 状態遷移）と
+//    配送確認（`readClosingNoticeDelivery`）はワーカーの責務。書き手はジョブ（`SystemTenantCtx`）だけ、主平面は `countVisiblePurgeTargets`
+//    （通常の RLS で見える範囲の件数）を読むだけ。
+export {
+  applyPurgeSpec,
+  buildPurgeStatements,
+  completeTenantPurge,
+  countPurgePending,
+  countVisiblePurgeTargets,
+  finishTenantPurgeRun,
+  hasCompletedTenantPurge,
+  listPurgeObjectKeys,
+  startTenantPurgeRun,
+  TENANT_PURGE_AUDIT_ACTION,
+  TENANT_PURGE_CAUSE,
+  tenantPurgeFailureReason,
+} from './tenant-purge.js';
+export type {
+  PurgeObjectTarget,
+  PurgeStatements,
+  TenantPurgeCounts,
+  TenantPurgeFailureStage,
+  TenantPurgeRunFinish,
+  TenantPurgeRunStart,
+  TenantPurgeTransition,
+} from './tenant-purge.js';
+// 🔴 T-10-09: 返却（#77 / #78 / `export.generate`。`F-064 AC-5`〜`AC-8`）。読み出しは `withTenant` と同じ RLS（二重境界）。
+//    `resolveDataExportDownload` は `issueDownloadUrl` の `loadSubject` から呼ぶ（署名は `apps/web/lib/storage/download.ts` の 1 経路）。
+export {
+  claimDataExportRun,
+  CLOSING_RETURN_EXPORT_KIND,
+  CLOSING_RETURN_SCOPE,
+  createDataExportRequest,
+  DATA_EXPORT_AUDIT_ACTIONS,
+  dataExportDownloadSummary,
+  DataExportNotAllowedError,
+  listDataExportRequests,
+  readClosingReturnDataset,
+  readTenantRetentionState,
+  resolveDataExportDownload,
+  settleDataExport,
+} from './data-export.js';
+export type {
+  ClosingReturnScope,
+  CreateDataExportInput,
+  DataExportClaim,
+  DataExportDownloadTarget,
+  DataExportRequestView,
+  DataExportSettlement,
+  TenantRetentionState,
+} from './data-export.js';

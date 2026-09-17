@@ -221,3 +221,13 @@ export type {
   DemoSeedStatusQuery,
   DemoSeedTenantStatus,
 } from './queries/demo-seed.js';
+// 🔴 API-A12（`A-010` セクション 4「削除完了の確認」。`F-062 AC-7` / `F-064 AC-2`。T-10-10）。
+//    `TenantPurgeRun` を**行として**読む管理平面の唯一の経路（docs/05 §6.9「API-A12 以外に削除完了の確認を返す API を作らない」）。
+//    応答は状態・時刻・表ごとの削除件数だけで、`failureReason` は型にも select にも無い（GRANT が無い。§5.5）。
+export { DELETION_STATUS_CAUSES, normalizePurgeCounts, readDeletionStatus } from './queries/deletion-status.js';
+export type {
+  DeletionStatusCause,
+  DeletionStatusRunView,
+  DeletionStatusView,
+  PurgeCountsView,
+} from './queries/deletion-status.js';

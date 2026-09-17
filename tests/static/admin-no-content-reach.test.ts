@@ -532,6 +532,23 @@ describe('🔴 管理平面に内容へ到達する経路が無い（F-058 AC-2 
     expect(text).not.toContain('db.proposal.findMany(');
   });
 
+  it('✅ 対照（T-10-10）: API-A12 のルートと専用クエリ、A-010 の画面が走査対象に入っている（応答が状態・時刻・件数だけであることは ①②④ と deletion-status-single-route が見る）', () => {
+    for (const file of [
+      'apps/web/app/api/admin/tenants/[id]/deletion-status/route.ts',
+      'packages/db/src/platform/queries/deletion-status.ts',
+      'apps/web/app/admin/tenants/[id]/contract/page.tsx',
+      'apps/web/app/admin/tenants/[id]/contract/deletion-status-screen.tsx',
+    ]) {
+      expect(scannedFiles.some((f) => f.file === file), `${file} が走査対象に無い`).toBe(true);
+    }
+    // 🔴 行を読むのは `tenant`（状態）と `tenantPurgeRun`（件数・状態・時刻の表。内容モデルではない）だけ。
+    const query = scannedFiles.find((f) => f.file === 'packages/db/src/platform/queries/deletion-status.ts');
+    const text = query?.source.getFullText() ?? '';
+    expect(text).toContain('db.tenantPurgeRun.findMany(');
+    expect(text).not.toContain('db.engineer.');
+    expect(text).not.toContain('db.dataExportRequest.');
+  });
+
   it('① 内容を持つモデルの行を読む呼び出し（find*）と include: が 1 つも無い', () => {
     const violations = scannedFiles.flatMap((f) => scanDelegateReads(f.file, f.source));
     expect(violations, format(violations)).toEqual([]);

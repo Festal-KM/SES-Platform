@@ -64,6 +64,11 @@ const EXEMPT_ROUTES: Readonly<Record<string, string>> = {
     '第 2 要素の提示（#2）。同上、ctx が生成される前の経路である。',
   'apps/web/app/api/(main)/invitations/[token]/accept/route.ts':
     '未認証経路（#7）。所属は招待行から決まり、受諾時点では ctx が無い。',
+  'apps/web/app/api/(main)/data-exports/route.ts':
+    '🔴 返却データの生成（docs/05 §6.7 #77 / `F-064 AC-5`。T-10-09）。返却は `CLOSING`（実行系が止まる状態）でこそ ' +
+    '実行できなければならない（`F-004 AC-8`「実行できるのは閲覧と返却（エクスポート）のみ」）。`requireExecutable` を掛けると ' +
+    '解約手続き中のテナントがデータを取り戻せないまま `PURGED` に至る。逆向きの判定（`CLOSING` 以外は 422）は ' +
+    '`packages/db` の `createDataExportRequest` が DB の行で行う。運営者は主平面のセッションを持たないので到達できない。',
   'apps/web/app/api/webhooks/guardduty/route.ts':
     '🔴 Webhook 受信（docs/05 §6.10 / §8.5。T-05-05）。送信元は GuardDuty の結果を運ぶ ' +
     'EventBridge 経路であり、テナント利用者の操作ではない（Cookie もセッションも無く ctx を ' +

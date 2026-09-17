@@ -293,9 +293,9 @@ describe('⑥ payload / 宣言', () => {
     expect(declaration).toMatchObject({ cron: '8 2 * * *', timeZone: 'Asia/Tokyo', population: 'CLOSING' });
   });
 
-  it('他のスケジュールジョブは母集団を明示しない（既定 LIVE）', () => {
+  it('他のスケジュールジョブは母集団を明示しない（既定 LIVE。T-10-09 の tenant.purge-scan だけが同じ CLOSING を明示する）', () => {
     for (const declaration of SCHEDULED_JOBS) {
-      if (declaration.name === TENANT_CLOSING_NOTIFY_JOB) continue;
+      if (declaration.name === TENANT_CLOSING_NOTIFY_JOB || declaration.name === 'tenant.purge-scan') continue;
       expect(declaration.population, declaration.name).toBeUndefined();
     }
   });

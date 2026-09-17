@@ -185,6 +185,7 @@ describe('🔴 objectStore の real（T-05-04。docs/05 §13.1 の表）', () =>
     api: {
       presignPut: async () => 'https://s3.test/put',
       presignGet: async () => 'https://s3.test/get',
+      putObject: async () => undefined,
       deleteObject: async () => undefined,
       headObject: async () => null,
       listObjects: async () => ({ Contents: [] }),

@@ -47,9 +47,15 @@ export { ANONYMIZE_ROUNDING } from './anonymize.js';
 // 🔴 T-09-12: 保持期間削除 / PURGED の削除対象と残す対象（docs/05 §9.7）。**値の唯一の出所**であり、
 //    削除ジョブ（SP-16）はこれを読むだけである。`engineer_careers` の要素は暫定（Issue #48）。
 export {
+  isPurgeRowsSpec,
   PURGE_SPEC,
+  purgeColumnErasure,
+  purgeColumnName,
+  type PurgeColumn,
   type PurgeColumnsSpec,
   type PurgeDeleteSpec,
+  type PurgeErasure,
+  type PurgeProvisional,
   type PurgeRetainSpec,
   type PurgeRowsSpec,
   type PurgeSpec,
@@ -58,6 +64,8 @@ export {
 export {
   ADMIN_MONITORING_PAGE_SIZE,
   AUDIT_LOG_SEARCH_MAX_PERIOD_DAYS,
+  DATA_EXPORT_AVAILABLE_DAYS,
+  DATA_EXPORT_DOWNLOAD_URL_TTL_SECONDS,
   DISPLAY_NAME_MAX_LENGTH,
   EMAIL_MAX_LENGTH,
   GATE_FAIL_RATE_BASELINE_DAYS,

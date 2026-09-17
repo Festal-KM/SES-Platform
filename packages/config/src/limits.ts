@@ -126,3 +126,15 @@ export const ADMIN_MONITORING_PAGE_SIZE = 100;
 export const SCHEDULER_HEARTBEAT_STALE_HOURS = 24;
 export const GATE_FAIL_RATE_WINDOW_HOURS = 24;
 export const GATE_FAIL_RATE_BASELINE_DAYS = 7;
+
+/**
+ * 🔴 T-10-09: 返却データ（`DataExportRequest`。docs/05 §6.7 #77 / #78 / docs/04 §S-042）の**環境によって変わらない方針値**。
+ *
+ * - `DATA_EXPORT_AVAILABLE_DAYS` … 生成済みの ZIP をダウンロードできる期間（`READY` → `expiresAt`。超過は `EXPIRED` = 410）。
+ *   `CLOSING` の猶予（`TENANT_PURGE_GRACE_DAYS`。既定 30）より短く、`PURGED` では実体ごと消える（`PURGE_SPEC`）。
+ * - `DATA_EXPORT_DOWNLOAD_URL_TTL_SECONDS` … 署名付き URL の有効期限（docs/05 §14.2 の表「返却データ … 3600 秒」）。
+ *   スキルシートの DL（300 秒）と**別の値**であり、同じ設定値に畳まない（用途ごとに「URL が漏れたときに有効な時間」の許容が違う）。
+ * 🔴 「試用環境だから期限を延ばす」に相当する値は置かない（`F-064 AC-9`）。
+ */
+export const DATA_EXPORT_AVAILABLE_DAYS = 7;
+export const DATA_EXPORT_DOWNLOAD_URL_TTL_SECONDS = 3600;

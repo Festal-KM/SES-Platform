@@ -504,7 +504,7 @@ model SkillSheet {
   ownerPartnerCompanyId String?   @map("owner_partner_company_id") @db.Uuid
   engineerId            String    @map("engineer_id") @db.Uuid
   version               Int
-  objectKey             String    @map("object_key") // §14.1。🔴 運営者に GRANT しない
+  objectKey             String?   @map("object_key") // §14.1。🔴 運営者に GRANT しない。🔴 T-10-09: PURGED で NULL（purged_at と対。CHECK skill_sheets_object_key_purged_check）
   contentType           String    @map("content_type")
   byteSize              BigInt    @map("byte_size")
   /// ScanStatus（上記参照。CHECK）
@@ -1103,7 +1103,7 @@ model Message {
   threadId               String    @map("thread_id") @db.Uuid
   senderUserId           String    @map("sender_user_id") @db.Uuid
   senderPartnerCompanyId String?   @map("sender_partner_company_id") @db.Uuid
-  body                   String // 🔴 運営者に GRANT しない（§5.5）
+  body                   String? // 🔴 運営者に GRANT しない（§5.5）。🔴 T-10-09: PURGED で NULL（purged_at と対。CHECK messages_body_purged_check）
   attachmentKey          String?   @map("attachment_key") // 🔴 運営者に GRANT しない（§5.5）
   /// ScanStatus（§3.4 冒頭参照。CHECK。nullable）
   attachmentScanStatus   String?   @map("attachment_scan_status")
@@ -1183,7 +1183,7 @@ model ContractDocument {
   counterpartyPartnerCompanyId String?   @map("counterparty_partner_company_id") @db.Uuid
   contractId                   String    @map("contract_id") @db.Uuid
   version                      Int
-  objectKey                    String    @map("object_key") // 🔴 運営者に GRANT しない（§5.5）
+  objectKey                    String?   @map("object_key") // 🔴 運営者に GRANT しない（§5.5）。🔴 T-10-09: PURGED で NULL
   templateId                   String?   @map("template_id") @db.Uuid // 🔴 F-048 由来の版（手動アップロードは null）
   templateVersion              Int?      @map("template_version") // 🔴 生成時のテンプレート版を固定（F-048 AC-1）
   mergeResult                  Json?     @map("merge_result") // { filled: {...}, unfilled: string[] }（F-048 AC-2）
@@ -1223,7 +1223,7 @@ model ContractTemplate {
   /// ContractKind（上記参照。CHECK）
   kind         String
   version      Int // 🔴 上書きしない。差し替えは新しい版を起こす
-  objectKey    String    @map("object_key") // docx 原本（§14.1）。🔴 運営者に GRANT しない（§5.5）
+  objectKey    String?   @map("object_key") // docx 原本（§14.1）。🔴 運営者に GRANT しない（§5.5）。🔴 T-10-09: PURGED で NULL
   /// ScanStatus（§3.4 冒頭参照。CHECK）
   scanStatus   String    @default("SCANNING") @map("scan_status")
   placeholders String[] // 原本から機械抽出したプレースホルダ名
