@@ -65,6 +65,8 @@ type AuditLogItem = {
   readonly action: string;
   readonly targetId: string | null;
   readonly deviceKind: string | null;
+  /** `S-041` の詳細（許可リストを通った項目だけ。`engineer.view` は `via`）。 */
+  readonly detail: { readonly entries: readonly { readonly key: string; readonly value: { readonly kind: string; readonly value: unknown } }[] };
 };
 
 /** `seed:isolation` のテナント A ホスト `OWNER`（`GET /api/audit-logs` は `OWNER` / `ADMIN` のみ）。 */
@@ -285,6 +287,143 @@ test.describe('K-7: 4 経路すべてで AuditLog が 1 件ずつ増える（BR-
       expect(fetched.status, '発行された URL への到達に失敗しました').toBe(200);
       const content = await fetched.text();
       expect(content, 'アップロードした内容がそのまま取得できること').toContain('K7合成-shared-');
+
+      session.outbound.assertNone();
+    } finally {
+      await session.close();
+    }
+  });
+});
+
+// ============================================================================
+// ⑤ T-12-16: #46b 差分ビュー（docs/05 §17.3 #25 の差分ビュー部分 / `F-019 AC-2` / `docs/04` §S-006 セクション 4・5 / §5-6）
+// ============================================================================
+// 🔴 K-7 の spec に置く理由: #46b は**台帳の現在値を読み直す「エンジニア詳細の閲覧」**であり、`S-006` から開いたときに
+//    `engineer.view` が `DETAIL` と `SNAPSHOT_DIFF` の 2 行残ること（docs/05 §6.5「#46b の境界と記録の確定」）は、この spec が
+//    見ている「閲覧の記録が経路によらず漏れない」（`BR-27` / `BR-28`）の一部である。#25 の凍結側（`S-023` の行数と 4 項目が
+//    変わらない）は `tests/isolation/proposals-create-update.test.ts` / `proposal-snapshot-diff.test.ts` ② が結合で固定する。
+// 🔴 worker は要らない（#36 の作成と #16 の更新は同期。ゲートを掛けない `DRAFT` のまま差分を見る）。
+
+/** `engineer.view` の行（対象のエンジニア ID で絞る。`ENGINEER_SKILL_SHEET_ACCESS` = `engineer.view` を含むカテゴリ）。 */
+async function engineerViewRows(session: Session, engineerId: string): Promise<readonly AuditLogItem[]> {
+  const period = auditLogPeriodQuery();
+  const response = await apiRequest(
+    session.page,
+    `/api/audit-logs?${period}&action=ENGINEER_SKILL_SHEET_ACCESS&actorId=${HOST_OWNER_USER_ID}&limit=200`,
+  );
+  expect(response.status, 'GET /api/audit-logs が失敗しました').toBe(200);
+  const body = parseJson(response) as { items: readonly AuditLogItem[] };
+  return body.items.filter((item) => item.action === 'engineer.view' && item.targetId === engineerId);
+}
+
+test.describe('⑤ T-12-16: S-006 → セクション 4（提案履歴）→ 提案を選ぶ → セクション 5 に凍結側と現在値が並ぶ（engineer.view が SNAPSHOT_DIFF で残る）', () => {
+  test('🔴 台帳を提案後に変えると、凍結側は提案時点のまま・現在値だけ変わり、別々の表に並ぶ。「提案後に変更」は変えた項目だけ', async ({
+    browser,
+  }: {
+    browser: Browser;
+  }) => {
+    const session = await openTenantSession(browser, hostOwner(1));
+    try {
+      const ids = tenantIds(1);
+      const tag = randomUUID().slice(0, 8);
+      // 🔴 合成データ（`BR-47`）。凍結側と現在値を見分けられる語を業務内容に入れる。
+      const createdResponse = await apiRequest(session.page, '/api/engineers', {
+        method: 'POST',
+        body: {
+          displayName: `T1216合成-${tag}-凍結前`,
+          unitPriceMin: 650000,
+          unitPriceMax: 750000,
+          prefecture: '13',
+          remoteMode: 'PARTIAL_REMOTE',
+          careers: [
+            { periodFrom: '2024-04', periodTo: null, role: 'PL', description: `T1216 凍結前の基幹刷新 ${tag}`, technologies: 'Java' },
+            { periodFrom: '2021-01', periodTo: '2024-03', role: 'SE', description: `T1216 凍結前の受託 ${tag}`, technologies: 'Kotlin' },
+          ],
+        },
+      });
+      expect(createdResponse.status, createdResponse.text).toBe(201);
+      const { id: engineerId } = parseJson(createdResponse) as { id: string };
+
+      // セクション 4 が空の状態（「まだ提案されていません」。セクション 5 は無い。プレースホルダも無い）。
+      await session.page.goto(`/engineers/${engineerId}`, { waitUntil: 'domcontentloaded' });
+      await expect(session.page.getByTestId('engineer-detail-proposals-empty')).toBeVisible();
+      await expect(session.page.getByTestId('engineer-detail-snapshot-diff')).toHaveCount(0);
+      await expect(session.page.getByTestId('engineer-detail-proposals-coming-soon')).toHaveCount(0);
+
+      // #36 で提案を作る（凍結）。
+      const proposalResponse = await apiRequest(session.page, '/api/proposals', {
+        method: 'POST',
+        body: {
+          projectId: ids.publishedProjectId,
+          engineerId,
+          recipientCompanyName: 'T1216 架空エンド株式会社',
+          recipientEmail: 't1216-recipient@example.test',
+          offeredUnitPrice: 700000,
+          subject: `T1216 ${tag}`,
+          body: 'T1216 合成データです。',
+        },
+      });
+      expect(proposalResponse.status, proposalResponse.text).toBe(201);
+      const { id: proposalId } = parseJson(proposalResponse) as { id: string };
+
+      // 提案後に台帳を変える（#16。1 行編集・1 行削除・1 行追加 + 氏名・上限単価）。
+      const updateResponse = await apiRequest(session.page, `/api/engineers/${engineerId}`, {
+        method: 'PATCH',
+        body: {
+          displayName: `T1216合成-${tag}-凍結後`,
+          unitPriceMax: 800000,
+          careers: [
+            { periodFrom: '2024-04', periodTo: null, role: 'PL', description: `T1216 現在の基幹刷新（改） ${tag}`, technologies: 'Java' },
+            { periodFrom: '2019-01', periodTo: '2020-12', role: 'PG', description: `T1216 現在の保守 ${tag}`, technologies: 'PHP' },
+          ],
+        },
+      });
+      expect(updateResponse.status, updateResponse.text).toBe(200);
+
+      const before = (await engineerViewRows(session, engineerId)).length;
+
+      // S-006 → セクション 4 の行 → 「差分を見る」→ セクション 5。
+      await session.page.goto(`/engineers/${engineerId}`, { waitUntil: 'domcontentloaded' });
+      const row = session.page.getByTestId(`engineer-proposal-row-${proposalId}`);
+      await expect(row).toBeVisible();
+      await expect(row).toContainText('T1216 架空エンド株式会社');
+      await expect(session.page.getByTestId(`engineer-proposal-detail-link-${proposalId}`)).toHaveAttribute('href', `/proposals/${proposalId}`);
+      await expect(session.page.getByTestId('engineer-snapshot-diff-lead')).toBeVisible();
+      await session.page.getByTestId(`engineer-proposal-diff-link-${proposalId}`).click();
+      await expect(session.page.getByTestId('engineer-snapshot-diff')).toHaveAttribute('data-proposal-id', proposalId);
+      await expect(session.page.getByTestId(`engineer-proposal-row-${proposalId}`)).toHaveAttribute('data-selected', 'true');
+
+      // 🔴 項目: 凍結側は提案時点、現在値は変更後。変えた項目（氏名 / 上限）にだけ「提案後に変更」。
+      await expect(session.page.getByTestId('engineer-snapshot-diff-frozen-displayName')).toContainText(`T1216合成-${tag}-凍結前`);
+      await expect(session.page.getByTestId('engineer-snapshot-diff-current-displayName')).toContainText(`T1216合成-${tag}-凍結後`);
+      await expect(session.page.getByTestId('engineer-snapshot-diff-field-displayName')).toHaveAttribute('data-changed', 'true');
+      await expect(session.page.getByTestId('engineer-snapshot-diff-field-unitPriceMax')).toHaveAttribute('data-changed', 'true');
+      await expect(session.page.getByTestId('engineer-snapshot-diff-frozen-unitPriceMax')).toContainText('750,000');
+      await expect(session.page.getByTestId('engineer-snapshot-diff-current-unitPriceMax')).toContainText('800,000');
+      for (const key of ['skills', 'unitPriceMin', 'availableFrom', 'prefecture', 'remoteMode']) {
+        await expect(session.page.getByTestId(`engineer-snapshot-diff-field-${key}`)).toHaveAttribute('data-changed', 'false');
+      }
+
+      // 🔴 経歴: 凍結側の表と現在値の表が別で、互いの行が混ざらない（docs/05 §17.3 #25「同一のリストに混在しない」）。
+      const frozen = session.page.getByTestId('engineer-snapshot-diff-careers-frozen');
+      const current = session.page.getByTestId('engineer-snapshot-diff-careers-current');
+      await expect(frozen).toContainText('T1216 凍結前の基幹刷新');
+      await expect(frozen).toContainText('T1216 凍結前の受託');
+      await expect(frozen).not.toContainText('現在の');
+      await expect(current).toContainText('T1216 現在の基幹刷新（改）');
+      await expect(current).toContainText('T1216 現在の保守');
+      await expect(current).not.toContainText('凍結前の');
+      expect(await frozen.locator('tbody tr').count()).toBe(2);
+      expect(await current.locator('tbody tr').count()).toBe(2);
+      await expect(session.page.getByTestId('engineer-snapshot-diff-careers-note')).toHaveAttribute('data-changed', 'true');
+
+      // 🔴 記録: S-006 を開いた DETAIL + 差分の SNAPSHOT_DIFF（2 回の遷移で DETAIL 2 行 + SNAPSHOT_DIFF 1 行 = +3）。
+      const after = await engineerViewRows(session, engineerId);
+      expect(after.length - before).toBe(3);
+      const vias = after.map((item) => item.detail.entries.find((entry) => entry.key === 'via')?.value.value);
+      expect(vias.filter((via) => via === 'SNAPSHOT_DIFF')).toHaveLength(1);
+      expect(vias.filter((via) => via === 'DETAIL').length).toBeGreaterThanOrEqual(2);
+      expect(after.every((item) => item.deviceKind === 'desktop')).toBe(true);
 
       session.outbound.assertNone();
     } finally {

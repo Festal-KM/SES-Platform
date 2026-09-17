@@ -1260,6 +1260,8 @@ const ja = {
   'auditLogs.detail.enum.via.VISIBILITY': '公開範囲',
   'auditLogs.detail.enum.via.CANDIDATES': '候補一覧',
   'auditLogs.detail.enum.via.PROPOSAL_REQUEST': '提案依頼',
+  // T-12-16: #46b（`S-006` セクション 5。凍結情報との差分で台帳の現在値を読み直した閲覧）。
+  'auditLogs.detail.enum.via.SNAPSHOT_DIFF': '凍結情報との差分',
   'auditLogs.detail.enum.reason.ALL_LAYERS_PASS': 'ゲート全層 PASS（自動承認）',
   'auditLogs.detail.enum.rerunReason.HELD_AI_COST_LIMIT': 'AI 原価上限による保留の再開',
   'auditLogs.detail.enum.rerunReason.JOB_FAILED': 'ジョブ失敗の再依頼',
@@ -1761,15 +1763,54 @@ const ja = {
   // 🔴 `BR-52` / `F-008 AC-1`: 集めていない情報を明示する（ワイヤーフレーム §S-006 の注記）。
   'engineers.detail.collectionScope': '本籍・家族構成・健康情報・信条にあたる項目は保持していません。',
   // 🔴 未実装のセクションを黙って消さない（「保存先も表示元も無いセクションを隠さずに予告する」規律。
-  //    ✅ T-09-12 で `engineers.careers.comingSoon` は廃止したが、規律は残る）。提案履歴と凍結差分は SP-09 が作る。
+  //    ✅ T-09-12 で `engineers.careers.comingSoon`、✅ T-12-16 で `engineers.detail.proposals.comingSoon`（提案履歴と
+  //    凍結差分。セクション 4・5 が実装され役目を終えた）を廃止したが、規律は残る）。
   //    ⚠️ `engineers.detail.skillSheets.comingSoon` は T-05-06 で `S-008` が実装され、
   //       導線（`engineers.detail.skillSheets.link`）に置き換わったため削除した。
-  'engineers.detail.proposals.comingSoon':
-    'この人材の提案履歴と、提案時点の凍結情報との差分は、後続のリリースで表示されます。',
   // 🔴 T-05-06: `S-006` セクション 3 → `S-008` への導線（docs/04 §S-006 関連画面「→ `S-008`」）。
   'engineers.detail.skillSheets.link': 'スキルシートの取込と版管理を開く',
   'engineers.detail.skillSheets.lead':
     'スキルシートの版・ウイルス検査の状態・最新版の切替は、専用の画面で管理します。',
+  // --- S-006 セクション 4（提案履歴）・5（凍結情報との差分）（docs/04 §S-006 / §5-6 / `F-019 AC-2` / docs/05 §6.5 #46b。T-12-16）---
+  // 🔴 セクション 4 の行は `S-019` と同じ出所（`listProposals`）。列は 提案先 / 案件 / 状態 / 作成日 / `S-023` への導線。
+  'engineers.detail.section.snapshotDiff': '凍結情報との差分',
+  'engineers.proposals.empty': 'この人材はまだ提案されていません。',
+  'engineers.proposals.column.recipient': '提案先',
+  'engineers.proposals.column.project': '案件',
+  'engineers.proposals.column.state': '状態',
+  'engineers.proposals.column.createdAt': '作成日',
+  'engineers.proposals.column.actions': '操作',
+  'engineers.proposals.detailLink': '提案の詳細',
+  'engineers.proposals.diffLink': '差分を見る',
+  'engineers.proposals.diffSelected': '表示中',
+  // 🔴 セクション 5: 凍結側（`S-023` セクション 3 と同じ 4 列・同じ並び）と現在値（セクション 8 と同じ部品）を**左右に並置**し、
+  //    1 つのリストに混在させない（`F-019 AC-5`）。「提案後に変更」は画面側が `frozen` と `current` を比べて付ける（API は判定を返さない）。
+  'engineers.snapshotDiff.lead': '提案履歴の行で「差分を見る」を選ぶと、提案時点で凍結された情報と現在の台帳を並べて表示します。',
+  'engineers.snapshotDiff.title.prefix': '提案（',
+  'engineers.snapshotDiff.title.frozenSuffix': ' 凍結）↔ 現在',
+  'engineers.snapshotDiff.column.field': '項目',
+  'engineers.snapshotDiff.column.frozen': '提案時点（凍結）',
+  'engineers.snapshotDiff.column.current': '現在の台帳',
+  'engineers.snapshotDiff.changedNote': '提案後に変更',
+  'engineers.snapshotDiff.unchangedNote': '変更なし',
+  'engineers.snapshotDiff.field.displayName': '氏名',
+  'engineers.snapshotDiff.field.skills': 'スキル',
+  'engineers.snapshotDiff.field.unitPriceMin': '単価レンジ（下限）',
+  'engineers.snapshotDiff.field.unitPriceMax': '単価レンジ（上限）',
+  'engineers.snapshotDiff.field.availableFrom': '稼働可能時期',
+  'engineers.snapshotDiff.field.prefecture': '勤務地（都道府県）',
+  'engineers.snapshotDiff.field.remoteMode': 'リモート可否',
+  'engineers.snapshotDiff.skills.none': 'スキルなし',
+  'engineers.snapshotDiff.skills.levelPrefix': '（',
+  'engineers.snapshotDiff.skills.levelSuffix': '）',
+  'engineers.snapshotDiff.careers.frozenTitle': '提案時点の経験内容（凍結）',
+  'engineers.snapshotDiff.careers.currentTitle': '現在の経験内容',
+  'engineers.snapshotDiff.careers.frozenEmpty': '凍結された経験内容はありません（0 行）。',
+  'engineers.snapshotDiff.careers.currentEmpty': '現在の台帳に経験内容は登録されていません（0 行）。',
+  'engineers.snapshotDiff.careers.note':
+    '凍結側と現在の台帳は別々のリストです。行どうしの対応付けは行いません（凍結された行は台帳の行を参照しないため）。',
+  // 🔴 404 のときは理由（他社所有）を語らない（docs/05 §4.8）。
+  'engineers.snapshotDiff.unavailable': 'この提案の現在値は参照できません。',
 
   // --- S-005 エンジニア台帳・一覧（docs/04 §S-005 / `F-009` / docs/05 §6.4 #15。T-05-09）---
   // 🔴 T2（モバイル閲覧可）。列は間引くが**遮断しない**（`CLAUDE.md` §13.3）。
@@ -1795,7 +1836,7 @@ const ja = {
   //    一覧に出るとき）だけ、こちらを出す（`F-009 AC-5`）。並びの説明が実態とずれないようにする。
   'engineers.list.orderNote.fit':
     '指定した条件（稼働可能時期・勤務地）に合う人材を先に、そのうえで更新日の新しい順に表示しています。',
-  // 🔴 未実装を隠さない（`engineers.detail.proposals.comingSoon` と同じ規律）。何ができないのかを書く。
+  // 🔴 未実装を隠さない（「保存先も表示元も無いセクションを隠さずに予告する」規律。`S-006` の注記と同じ）。何ができないのかを書く。
   //    ✅ T-06-04 で検索条件と 2 つの絞り込みが入ったため、残りだけを書く。
   'engineers.list.searchComingSoon':
     '列の表示切替（希望条件・登録日・担当）は、後続のリリースで追加されます。所属区分は、この一覧に出る人材が常に自社の人材のみであるため、検索条件として置いていません。',
@@ -2016,7 +2057,7 @@ const ja = {
   'skillDictionary.candidates.readOnlyNote':
     '採否の操作はこの画面では行えません。新語候補の採用・却下は、自社（発注元）の管理者または営業担当が行います。',
   // 🔴 `docs/04` §S-009 の「出現件数」列に対応する保存先が docs/05 §3.4 に無い（本文の注記参照）。
-  //    列を勝手に足さず、いまは出せないことを画面に書く（`engineers.detail.proposals.comingSoon` と同じ規律）。
+  //    列を勝手に足さず、いまは出せないことを画面に書く（「保存先も表示元も無いセクションを隠さずに予告する」規律。`S-006` の注記と同じ）。
   'skillDictionary.candidates.occurrenceComingSoon':
     '同じ表記が何件のエンジニアで使われているかの集計は、スキルシートの取込（後続のリリース）と合わせて表示できるようになります。',
 

@@ -86,6 +86,7 @@ const ENUM_LABEL_KEYS = [
   'via.VISIBILITY',
   'via.CANDIDATES',
   'via.PROPOSAL_REQUEST',
+  'via.SNAPSHOT_DIFF',
   'reason.ALL_LAYERS_PASS',
   'rerunReason.HELD_AI_COST_LIMIT',
   'rerunReason.JOB_FAILED',

@@ -247,7 +247,12 @@ function dateOnly(value: Date | null): string | null {
   return value === null ? null : value.toISOString().slice(0, 10);
 }
 
-function toSnapshotSkills(value: unknown): readonly ProposalSnapshotSkillView[] {
+/**
+ * 凍結コピーの `skills`（JSON）を view の形に写す。
+ * ✅ T-12-16 で `export` にした: #46b（`snapshot-diff.ts`）の凍結側が**同じ直列化**を通る（docs/05 §6.5「#46b の境界と記録の確定」
+ *    「値の直列化は #46 の `snapshot` と同じ（2 つの直列化を作らない）」）。
+ */
+export function toSnapshotSkills(value: unknown): readonly ProposalSnapshotSkillView[] {
   if (!Array.isArray(value)) throw new ProposalSnapshotShapeError('skills が配列ではない');
   return value.map((entry: unknown) => {
     if (typeof entry !== 'object' || entry === null) {
@@ -488,7 +493,11 @@ export const PARTNER_PROPOSAL_DETAIL_VIEW_KEYS = [
   'submittedAt',
 ] as const satisfies readonly (keyof PartnerProposalDetailView)[];
 
-function toFrozenCareers(value: unknown): readonly FrozenCareerView[] {
+/**
+ * 凍結コピーの `careers`（JSON）を行単位の view に写す（🔴 台帳の行 ID は無い）。
+ * ✅ T-12-16 で `export` にした: #46b の `careers.frozen` が #46 の `snapshot.careers` と**同じ直列化**を通る。
+ */
+export function toFrozenCareers(value: unknown): readonly FrozenCareerView[] {
   if (!Array.isArray(value)) throw new ProposalSnapshotShapeError('careers が配列ではない');
   return value.map((entry: unknown) => {
     if (typeof entry !== 'object' || entry === null) {

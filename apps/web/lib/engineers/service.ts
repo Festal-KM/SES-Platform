@@ -72,6 +72,13 @@ export const ENGINEER_VIEW_VIA = {
    *    版の一覧はメタデータ（版・日時・スキャン状態）であって本文ではない。
    */
   skillSheets: 'SKILL_SHEETS',
+  /**
+   * 🔴 T-12-16: #46b `GET /api/proposals/{id}/snapshot-diff`（`S-006` セクション 5）。凍結情報と並べるために
+   *    **台帳の現在値（氏名・スキル・経歴）を読み直す**ので「エンジニア詳細の閲覧」である（docs/05 §6.5
+   *    「#46b の境界と記録の確定」）。`S-006` から開くと `DETAIL` と `SNAPSHOT_DIFF` の 2 行が残るが、
+   *    #46b は API として直接叩けるため画面側の記録では足りない。
+   */
+  snapshotDiff: 'SNAPSHOT_DIFF',
 } as const;
 
 export type EngineerViewVia = (typeof ENGINEER_VIEW_VIA)[keyof typeof ENGINEER_VIEW_VIA];
@@ -131,6 +138,15 @@ export type EngineerEditView = EngineerBaseView & {
 /** 監査ログに残す実行環境（`withApiRoute` の `audit` と同じ値。画面経路は自前で渡す）。 */
 export type EngineerViewMeta = {
   readonly ipAddress: string | null;
+};
+
+/**
+ * 🔴 T-12-16: `engineer.view` の `summary` に**経路の区別に加えて**残す参照（docs/05 §6.5「#46b の境界と記録の確定」）。
+ *    `proposalId` は #46b（`via='SNAPSHOT_DIFF'`）だけが渡す。🔴 氏名・単価・所属・差分の判定をここに足さない（§16.2）。
+ *    `AUDIT_DETAIL_ALLOWLIST` の `engineer.view` に `proposalId` は無いので `S-041` の詳細には出ない（記録には残る）。
+ */
+export type EngineerViewDetail = {
+  readonly proposalId?: string;
 };
 
 /**
@@ -428,7 +444,12 @@ function toEngineerBaseView(
   };
 }
 
-async function readEngineerSkills(
+/**
+ * 台帳のスキル（`engineer_skills`。`skillId` 昇順）。
+ * 🔴 T-12-16 で `export` にした。呼び出してよいのは本ファイルの 2 経路と #46b（`lib/proposals/snapshot-diff.ts`。
+ *    凍結の形に写して現在値として並べる）だけである。**記録（`recordEngineerView`）を伴わない読み取りに使わない。**
+ */
+export async function readEngineerSkills(
   db: EngineerDb,
   engineerId: string,
 ): Promise<readonly EngineerSkillView[]> {
@@ -456,7 +477,8 @@ async function readEngineerSkills(
  *
  * 🔴 T-05-06 で `export` にした。呼び出してよいのは「**1 人のエンジニアの経歴・連絡先に
  *    到達する読み取り**」だけであり、現時点では本ファイルの 2 経路と
- *    `lib/skill-sheets/service.ts` の `readSkillSheetVersions`（`S-008`）である。
+ *    `lib/skill-sheets/service.ts` の `readSkillSheetVersions`（`S-008`）、および
+ *    `lib/proposals/snapshot-diff.ts` の `readProposalSnapshotDiff`（#46b。T-12-16。`via='SNAPSHOT_DIFF'`）である。
  *    **記録を伴わないその種の読み取りを増やさない**ために、新しい呼び出し元を足すときは
  *    `EngineerViewVia` に経路を足すこと（`via` を使い回すと、どの画面から PII に到達したかが
  *    追えなくなる）。
@@ -483,6 +505,7 @@ export async function recordEngineerView(
   engineerId: string,
   via: EngineerViewVia,
   meta: EngineerViewMeta,
+  detail: EngineerViewDetail = {},
 ): Promise<void> {
   await writeAuditLog(db, {
     action: ENGINEER_AUDIT_ACTIONS.view,
@@ -490,8 +513,8 @@ export async function recordEngineerView(
     actorId: ctx.userId,
     targetType: 'Engineer',
     targetId: engineerId,
-    // 🔴 PII を載せない（`AuditSummary` の規約）。経路の区別だけを残す。
-    summary: { via },
+    // 🔴 PII を載せない（`AuditSummary` の規約）。経路の区別と、#46b では提案の参照だけを残す。
+    summary: { via, ...(detail.proposalId === undefined ? {} : { proposalId: detail.proposalId }) },
     ipAddress: meta.ipAddress,
     deviceKind: ctx.deviceKind,
   });

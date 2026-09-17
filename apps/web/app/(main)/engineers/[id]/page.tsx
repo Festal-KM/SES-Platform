@@ -13,10 +13,19 @@
 // 🔴 T2（モバイル閲覧可）。稼働状況・稼働可能時期・単価レンジは**折りたたみの外**に置く
 //    （`CLAUDE.md` §13.3 / docs/04 §S-006「移動中に見る値」）。セクションは `<details open>` で
 //    既定は開いた状態にする —— 折りたためるだけで、既定で隠す項目は 1 つも無い。
-import type { ReactNode } from 'react';
+//
+// ✅ T-12-16: セクション 4（提案履歴）・5（凍結情報との差分）を実装した（docs/04 §S-006 / §5-6 / `F-019 AC-2` /
+//    docs/05 §6.5 #46b「#46b の境界と記録の確定」）。
+//    - セクション 4 は `listProposals(ctx, { engineerId })`（#45 と同じ関数・同じ射影）。`AuditLog` は #45 と同じく書かない。
+//    - セクション 5 は `?diff=<proposalId>` で選んだ提案を `readProposalSnapshotDiff`（#46b と**同じ関数**）で読む。
+//      🔴 この読み取りは同一トランザクションで `engineer.view`（`via='SNAPSHOT_DIFF'`, `proposalId`）を記録し、記録できなければ
+//      返らない。`S-006` を開いた `DETAIL` と合わせて 2 行残るが、別々の閲覧である（docs/05 §6.5）。
+//    - 🔴 選べるのはセクション 4 の行にある提案だけ（`?diff=` が行に無ければ未選択として扱う。他の人材の提案をこの画面で
+//      描かない）。404（現在値を参照できない）は理由を語らない文言だけを出す（docs/05 §4.8）。
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import type { Metadata } from 'next';
+import { z } from 'zod';
 import {
   Badge,
   SECONDARY_LINK_CLASSES,
@@ -28,6 +37,7 @@ import {
   TableHeader,
   TableRow,
 } from '@ses/ui';
+import { PAGE_SIZE_MAX } from '@ses/config';
 import { t } from '@ses/i18n';
 import { NotFoundError } from '../../../../lib/api/errors';
 import { readRequestMeta, resolveTenantCtxOutcome } from '../../../../lib/auth/session';
@@ -39,7 +49,18 @@ import {
 } from '../../../../lib/engineers/detail';
 import { isEngineerShareRole } from '../../../../lib/engineer-shares/policy';
 import { engineerOwnershipLabel } from '../../../../lib/engineers/labels';
+import {
+  ENGINEER_DETAIL_DIFF_PARAM,
+  engineerProposalHistoryRows,
+  snapshotDiffRows,
+} from '../../../../lib/engineers/proposal-sections-rows';
 import { readEngineerDetail } from '../../../../lib/engineers/service';
+import { listProposals } from '../../../../lib/proposals/list';
+import { proposalListQuerySchema } from '../../../../lib/proposals/schemas';
+import { readProposalSnapshotDiff } from '../../../../lib/proposals/snapshot-diff';
+import { DetailSection } from './detail-section';
+import { EngineerProposalSections, type EngineerSnapshotDiffState } from './engineer-proposal-sections';
+import { engineerProposalSectionsMessages } from './proposal-sections-props';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -50,31 +71,15 @@ export const dynamic = 'force-dynamic';
  */
 export const metadata: Metadata = { title: t('engineers.detail.title') };
 
-function DetailSection({
-  id,
-  title,
-  children,
-}: {
-  readonly id: string;
-  readonly title: string;
-  readonly children: ReactNode;
-}) {
-  return (
-    <section className="border border-slate-200 bg-white" data-testid={`engineer-detail-${id}`}>
-      <details open>
-        <summary className="cursor-pointer px-4 py-3 text-base font-bold text-slate-900">
-          {title}
-        </summary>
-        <div className="border-t border-slate-200 px-4 py-4">{children}</div>
-      </details>
-    </section>
-  );
-}
+/** `?diff=<proposalId>`（セクション 4 の行 → セクション 5 の選択）。形が違えば未選択として扱う（探らせない）。 */
+const detailSearchParamsSchema = z.object({ [ENGINEER_DETAIL_DIFF_PARAM]: z.uuid().optional() });
 
 export default async function EngineerDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const outcome = await resolveTenantCtxOutcome();
   if (outcome.status === 'UNAUTHENTICATED') redirect('/signin');
@@ -90,6 +95,30 @@ export default async function EngineerDetailPage({
       throw error;
     },
   );
+
+  // --- 4. 提案履歴（T-12-16。#45 と同じ関数・同じ射影。母集団は `proposals` の RLS〔C5〕）---
+  const proposals = await listProposals(
+    outcome.ctx,
+    proposalListQuerySchema.parse({ engineerId: view.id, limit: PAGE_SIZE_MAX }),
+  );
+  const parsedSearch = detailSearchParamsSchema.safeParse(await searchParams);
+  const requestedDiffId = parsedSearch.success ? (parsedSearch.data[ENGINEER_DETAIL_DIFF_PARAM] ?? null) : null;
+  // 🔴 選択はセクション 4 の行に限る（行に無い ID は未選択）。
+  const selectedDiffId = requestedDiffId !== null && proposals.items.some((item) => item.id === requestedDiffId) ? requestedDiffId : null;
+  const history = engineerProposalHistoryRows(proposals.items, view.id, selectedDiffId);
+
+  // --- 5. 凍結情報との差分（T-12-16。#46b と同じ関数。`engineer.view`〔SNAPSHOT_DIFF〕は関数の中で記録される）---
+  const diff: EngineerSnapshotDiffState =
+    selectedDiffId === null
+      ? { kind: 'NONE' }
+      : await readProposalSnapshotDiff(outcome.ctx, selectedDiffId, { ipAddress: meta.ipAddress }).then(
+          (result): EngineerSnapshotDiffState => ({ kind: 'READY', rows: snapshotDiffRows(selectedDiffId, result) }),
+          (error: unknown): EngineerSnapshotDiffState => {
+            // 🔴 現在値を参照できない（404）は理由を語らず「参照できません」だけ（docs/05 §4.8）。それ以外は落とす。
+            if (error instanceof NotFoundError) return { kind: 'UNAVAILABLE' };
+            throw error;
+          },
+        );
 
   // 🔴 所属区分は**行の値ではなく ctx** から作る（`F-008 AC-2`。`detail.ts` の注記）。
   const ownership = engineerOwnershipLabel(outcome.ctx.partnerCompanyId);
@@ -280,8 +309,6 @@ export default async function EngineerDetailPage({
         </div>
 
         <div className="flex flex-col gap-4">
-          {/* 🔴 未実装のセクションを黙って消さない（docs/04 §S-006 セクション 3 / 4）。
-              提案履歴と凍結差分は SP-09。 */}
           {/* 🔴 T-05-06: 版の管理は `S-008`（docs/04 §S-006 関連画面「→ `S-008`」）。
               ⚠️ 版の一覧をこの画面に**再掲しない** —— 出すと「どちらが正か」が分かれ、
               スキャン状態の見え方が 2 実装になる（`F-011 AC-2` の担保が割れる）。 */}
@@ -298,11 +325,8 @@ export default async function EngineerDetailPage({
             </Link>
           </DetailSection>
 
-          <DetailSection id="proposals" title={t('engineers.detail.section.proposals')}>
-            <p className="text-sm text-slate-600" data-testid="engineer-detail-proposals-coming-soon">
-              {t('engineers.detail.proposals.comingSoon')}
-            </p>
-          </DetailSection>
+          {/* --- 4. 提案履歴 / 5. 凍結情報との差分（T-12-16。docs/04 §S-006 デスクトップ = 右列）--- */}
+          <EngineerProposalSections history={history} diff={diff} messages={engineerProposalSectionsMessages()} />
         </div>
       </div>
     </main>
