@@ -83,9 +83,26 @@ export function HostHomeSections({
               ⚠️ `S-003` の要対応キュー（承認待ち / 送信失敗 → `S-022`）は本タスクの範囲外（SP-10）。導線の URL は
               `lib/proposals/hrefs.ts` の `PROPOSAL_SEND_FAILURES_PATH` を使うこと（T-09-08 の申し送り）。 */}
           <ProposalListLink testId="home-host-proposals" />
+          {/* 🔴 T-10-04: `S-038`（利用量と上限）への導線（docs/04 §S-038 関連画面「← `S-003`（上限インジケータ）」）。
+              ホスト所属の 4 ロールすべてに出す（`VIEWER` も残量を閲覧できる。`F-027 AC-1`）。
+              🔴 `PartnerHomeSections` には**置かない** —— 残量・上限値はテナントの契約情報であり、パートナーには
+              「停止の事実と理由」をその操作の場所（`S-008` / `S-020` 等）で示す（docs/04 §S-038 権限差分）。 */}
+          <UsageLink testId="home-host-usage" />
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * 🔴 `S-038`（利用量と上限）への導線。**ホストのホームにしか置かない**（上の 🔴 参照）。
+ *    文言は件数の画面であることが読める `usage.open`（金額の語を含まない。`F-027 AC-6`）。
+ */
+function UsageLink({ testId }: { readonly testId: string }) {
+  return (
+    <Link className={SECONDARY_LINK_CLASSES} href="/settings/usage" data-testid={testId}>
+      {t('usage.open')}
+    </Link>
   );
 }
 

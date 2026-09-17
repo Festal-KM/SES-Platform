@@ -478,6 +478,8 @@ const FROZEN_EXACT: readonly string[] = [
   'home-host-proposals',
   'home-host-register-engineer',
   'home-host-register-project',
+  // ✅ T-10-04: `S-038`（利用量と上限）への導線（ホストのホームのみ。取引先のホームには置かない）。
+  'home-host-usage',
   'home-partner-engineer-ledger',
   'home-partner-engineer-shares',
   'home-partner-project-list',
@@ -505,6 +507,9 @@ const FROZEN_EXACT: readonly string[] = [
   'members-panel',
   'members-read-only-note',
   'members-table',
+  // ✅ T-10-04: `S-035` セクション 5「プランと利用量」の `S-038` への導線。
+  'org-settings-usage',
+  'org-settings-usage-link',
   'partner-companies-detail-section',
   'partner-companies-empty',
   'partner-companies-list-section',
@@ -1039,6 +1044,42 @@ const FROZEN_EXACT: readonly string[] = [
   'skill-sheet-versions-empty',
   'skill-sheet-versions-section',
   'skill-sheet-versions-table',
+  // ✅ T-10-04: `S-038` 利用量と上限（`usage-*`。ホスト向け `usage-screen` / 取引先向け `usage-partner-screen`）。
+  //    🔴 金額を掴む testid（`usage-billing-estimate`）は請求見込みのブロックにしか無い。残量のブロック
+  //    （`usage-remaining` 配下）に金額の testid は存在しない（`F-027 AC-6`）。`gate` を含む testid は
+  //    停止理由の `usage-stop-feature-`（接頭辞）だけであり、残量のメーターには無い（`AC-7`）。
+  'usage-ai-units',
+  'usage-as-of',
+  'usage-billing',
+  'usage-billing-estimate',
+  'usage-billing-unavailable',
+  'usage-breadcrumb-home',
+  'usage-email',
+  'usage-email-block-note',
+  'usage-email-defer-note',
+  'usage-email-level',
+  'usage-email-meter',
+  'usage-email-minute',
+  'usage-email-today',
+  'usage-partner-blocked',
+  'usage-partner-not-blocked',
+  'usage-partner-screen',
+  'usage-remaining',
+  'usage-screen',
+  'usage-seats',
+  'usage-seats-limit-by-plan',
+  'usage-seats-used',
+  'usage-stop-banner',
+  'usage-stop-features',
+  'usage-stop-reason',
+  'usage-stop-reset-at',
+  'usage-stop-since',
+  'usage-storage',
+  'usage-storage-level',
+  'usage-storage-meter',
+  'usage-storage-reached-note',
+  'usage-storage-remaining',
+  'usage-storage-used',
 ];
 
 /**
@@ -1210,6 +1251,13 @@ const FROZEN_PREFIXES: readonly string[] = [
   'skill-sheet-scan-status-',
   'skill-sheet-set-latest-',
   'skill-sheet-share-',
+  // ✅ T-10-04: `S-038` の動的 testid（AI 4 単位ごと / 止まった機能ごと）。
+  'usage-ai-unit-',
+  'usage-ai-unit-level-',
+  'usage-ai-unit-meter-',
+  'usage-ai-unit-overage-',
+  'usage-ai-unit-remaining-',
+  'usage-stop-feature-',
 ];
 
 describe('🔴 data-testid インベントリの凍結（SP-21 T-21-01 ③）', () => {

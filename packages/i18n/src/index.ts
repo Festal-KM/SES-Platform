@@ -899,6 +899,83 @@ const ja = {
   'usage.stoppedFeature.reviewGate.consequence':
     '品質ゲートが実行できないため、提案・案件の公開・スキルシートの外部共有を送れません。',
 
+  // --- S-038 利用量と上限（docs/04 §S-038 / F-026 / F-027 AC-6 AC-7 / BR-24 / Issue #12。T-10-04）---
+  // 🔴 残量・上限は件数 / 通数 / GB / 人だけで書く。金額（USD / ドル / $）の語を `usage.*` に置かない
+  //    （`tests/static/tenant-usage-no-money.test.ts` が `usage.*` / `quota.*` の値を走査する）。
+  // 🔴 「円」が現れてよいのは `usage.billing.*`（超過分の請求見込み。残量の提示ではない）だけである。
+  //    残量のブロックに金額を混ぜた瞬間に「残量 = 金額」の画面に戻る（docs/04 §S-038 セクション 6）。
+  // 🔴 `gate-inspector`（品質ゲート）の残量を示す文言は作らない（`F-027 AC-7`）。ゲートは上の
+  //    `usage.stoppedFeature.reviewGate`（止まった理由）としてだけ現れる。
+  'usage.title': '利用量と上限',
+  'usage.breadcrumb.home': 'ホーム',
+  'usage.breadcrumb.settings': '設定',
+  'usage.open': '利用量と上限を確認',
+  'usage.summary.heading': 'プランと利用量',
+  'usage.lead': 'いま使える件数と利用状況です。残量は件数で表示します。上限の変更は運営者が行います。',
+  'usage.asOf': '集計時刻',
+  'usage.freshnessNote':
+    '停止中の表示は最大 10 分遅れて反映されます。件数・通数・容量はこの画面を開いた時点の値です。',
+  'usage.readOnlyNote': '上限の変更はこの画面からはできません。プランの変更はお問い合わせください。',
+
+  // セクション 1: 停止中（あるときだけ最上部。AI の 1 日の上限は遮断器であり、メーターにしない）
+  'usage.stop.title': 'AI の 1 日の上限に達したため停止中',
+  'usage.stop.stoppedFeaturesLabel': '停止している機能',
+  'usage.stop.sinceLabel': '停止開始',
+  'usage.stop.resetAtLabel': '再開予定',
+  // 🔴 「修正して再実行」を促さない（直すべき元データが無い。`CLAUDE.md` §4.2「失敗と保留を混同しない」）。
+  'usage.stop.noFixNote': '上限がリセットされると自動的に再開します。元データの修正は不要です。',
+
+  // セクション 2: 残量（件数 / 通数 / GB / 人）
+  'usage.section.remaining': '残量',
+  'usage.section.aiUnits': 'AI の件数クォータ（当月）',
+  'usage.aiUnits.meteredNote':
+    '使い切っても停止しません。超過分は従量課金になります（下の「超過分の請求見込み」を参照）。',
+  'usage.aiUnit.sheetParse': 'スキルシート解析',
+  'usage.aiUnit.matchRationale': 'マッチング候補の根拠文',
+  'usage.aiUnit.proposalDraft': '提案ドラフト',
+  'usage.aiUnit.renewalSummary': '延長論点の整理',
+  'usage.remaining.prefix': 'あと',
+  'usage.unit.count': '件',
+  'usage.unit.messages': '通',
+  'usage.unit.gb': 'GB',
+  'usage.unit.seats': '人',
+  'usage.percentUsedLabel': '使用率',
+  'usage.level.nearing.prefix': '上限の',
+  'usage.level.nearing.suffix': '% 以上に達しています',
+  'usage.level.reached': '上限に達しました',
+  'usage.aiUnit.overage.prefix': '超過',
+  'usage.aiUnit.overage.suffix': '件は従量課金になります',
+
+  'usage.section.email': 'メール',
+  'usage.email.todayLabel': '本日の送信数',
+  'usage.email.minuteLabel': '直近 1 分の送信数',
+  // 🔴 分次 = 待機 / 日次 = 停止を別の文言で出す（`F-027 AC-2`。同じ表示にしない）。
+  'usage.email.deferNote': '1 分あたりの上限に達したため、送信を待機しています（順次再開します）。',
+  'usage.email.blockNote': '本日の上限に達したため、メールの送信は停止しています（翌日に再開します）。',
+
+  'usage.section.storage': 'ストレージ',
+  'usage.storage.usedLabel': '使用量',
+  'usage.storage.remainingLabel': '残り',
+  'usage.storage.stopNote': '上限に達するとファイルのアップロードができなくなります。',
+  'usage.storage.reachedNote':
+    '上限に達したため、ファイルのアップロードができません。不要な版を削除すると再開します。',
+
+  'usage.section.seats': '席数',
+  'usage.seats.usedLabel': '使用中',
+  'usage.seats.limitByPlan': '席数の上限はプランで管理しています。',
+
+  // セクション 3: 超過分の請求見込み（🔴 金額を出してよい唯一の場所。残量とは別ブロック）
+  'usage.billing.title': '超過分の請求見込み',
+  'usage.billing.note': '残量とは別の情報です。件数クォータを超えた分の、当月の請求見込みです。',
+  // 🔴 契約条件が読めないときは 0 円と偽らず「算出できない」と書く（docs/05 §5.8.1 ⑥）。
+  'usage.billing.unavailable': '算出できません（契約条件が未登録）',
+  'usage.billing.unit': '円',
+
+  // パートナー所属ロールが開いたとき（#70。停止の事実と理由だけ。残量・上限値・リセット時刻は出さない）
+  'usage.partner.title': 'AI 機能の利用状況',
+  'usage.partner.notBlocked': '現在、AI を使う機能の停止はありません。',
+  'usage.partner.scopeNote': '残量・上限値はこの画面には表示されません。',
+
   // --- S-041 監査ログ（自テナント。docs/04 §S-041 / F-005 / F-012。T-03-05）---
   'auditLogs.title': '監査ログ',
   'auditLogs.filter.from.label': '期間（開始）',

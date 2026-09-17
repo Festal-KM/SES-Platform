@@ -11,8 +11,10 @@
 // 🔴 T-04-06: 最上部の送信ドメイン未検証バナー（`docs/04` §S-036 1298 行）。本画面は
 //    すでに `OWNER` / `ADMIN` のみ到達するため、追加のロール判定は要らない
 //    （`_shared/sending-domain-guard-banner.tsx` 冒頭コメント参照）。
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
+import { SECONDARY_LINK_CLASSES } from '@ses/ui';
 import { t } from '@ses/i18n';
 import { resolveTenantCtxOutcome } from '../../../../lib/auth/session';
 import { sendingDomainRuntime } from '../../../../lib/db/bootstrap';
@@ -78,6 +80,15 @@ export default async function OrganizationSettingsPage() {
           membersComingSoon: t('orgSettings.members.comingSoon'),
         }}
       />
+      {/* 🔴 T-10-04: docs/04 §S-035 セクション 5「契約プランと利用量の要約（`S-038` への導線）」。
+          要約の数値（席数 / 消化率）は本タスクでは置かず、導線だけを出す —— 要約を別実装で描くと
+          `S-038` と数値がずれる経路になる（残量は `readUsageView` の 1 実装で読む）。 */}
+      <section className="mt-8" data-testid="org-settings-usage">
+        <h2 className="mb-2 text-base font-bold text-slate-900">{t('usage.summary.heading')}</h2>
+        <Link className={SECONDARY_LINK_CLASSES} href="/settings/usage" data-testid="org-settings-usage-link">
+          {t('usage.open')}
+        </Link>
+      </section>
     </main>
   );
 }
