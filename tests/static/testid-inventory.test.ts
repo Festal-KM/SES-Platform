@@ -77,8 +77,13 @@ const TESTID_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 /** 動的 testid の静的接頭辞（末尾は必ず `-`。`engineer-list-row-` など）。 */
 const TESTID_PREFIX_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*-$/;
 
-/** 拾う属性名。`testId` は `data-testid={testId}` へ流れるプロパティ（冒頭コメント (2)）。 */
-const ATTRIBUTE_NAMES = new Set(['data-testid', 'testId']);
+/**
+ * 拾う属性名。`testId` は `data-testid={testId}` へ流れるプロパティ（冒頭コメント (2)）。
+ * ✅ T-11-12: `linkTestId` は `@ses/ui` の `NameCell` が導線（`<a>`）の `data-testid` へ流す（`engineer-list-link-` /
+ *    `project-list-link-` / `candidate-list-link-`）。凍結済みの接頭辞を `packages/ui` へ移した形なので、リストから
+ *    消さずに走査対象（属性名）を足す（冒頭「凍結リストを直すとき」）。
+ */
+const ATTRIBUTE_NAMES = new Set(['data-testid', 'testId', 'linkTestId']);
 
 type Extraction = {
   /** 完全一致で凍結する値。 */
@@ -330,6 +335,8 @@ const FROZEN_EXACT: readonly string[] = [
   // ✅ T-08-05: `S-016` 候補検索（`candidate-screen.tsx` / `page.tsx`）。実装から機械抽出した 45 個。
   'candidate-detail-anonymous',
   'candidate-detail-anonymous-note',
+  // ✅ T-11-12: `lg`〜`xl` 未満で右パネルがドロワーになり、閉じる操作を明示的に置く。
+  'candidate-detail-close',
   // ✅ T-09-01: `S-016` 自社候補の右パネルの「提案を作成」（`S-020` への導線）と、導線が無い理由の注記。
   'candidate-detail-create-proposal',
   'candidate-detail-create-proposal-unavailable',
@@ -1154,10 +1161,14 @@ const FROZEN_PREFIXES: readonly string[] = [
   'admin-usage-unit-cost-ratio-',
   // ✅ T-08-05: `S-016` の動的 testid（行 / 種別 / 表示名 / `+N` / 条件の解除 / 要件サマリの項目）。
   'candidate-list-kind-',
+  // ✅ T-11-12: 自社候補の表示名セルの導線（`S-006`。`NameCell` の `linkTestId`）。
+  'candidate-list-link-',
   'candidate-list-more-skills-',
   'candidate-list-name-',
   'candidate-list-remove-filter-',
   'candidate-list-row-',
+  // ✅ T-11-12: 更新日セル（右パネルを開いた 1440 で読めることを E2E が掴む）。
+  'candidate-list-updated-on-',
   'candidate-project-',
   // ✅ T-09-12: `S-007` 行エディタ / `S-006` セクション 8 の動的 testid（行キー / 台帳の行 ID で変わる）。
   'engineer-career-description-',
@@ -1413,7 +1424,8 @@ describe('抽出器そのものの検査（fixtures。空振り・取りこぼ�
       'ternary-when-true',
       'via-test-id-prop',
     ]);
-    expect([...new Set(extraction.prefixes)].sort()).toEqual(['dynamic-row-', 'nested-cell-']);
+    // ✅ T-11-12: `linkTestId`（`NameCell` の導線）のテンプレートも接頭辞として拾う。
+    expect([...new Set(extraction.prefixes)].sort()).toEqual(['dynamic-row-', 'nested-cell-', 'via-link-test-id-']);
   });
 
   it('🔴 比較のオペランド（`=== ROLE`）を testid として拾わない', () => {
@@ -1422,8 +1434,9 @@ describe('抽出器そのものの検査（fixtures。空振り・取りこぼ�
 
   it('素の識別子は解決できないものとして報告する（穴として数える）', () => {
     // 呼び出し側の `<span data-testid={passthroughTestId} />` と、
-    // 受け取り側の `<span data-testid={testId} />`（`OtpauthQr` と同じ形）の 2 つ。
-    expect(extraction.unresolved).toEqual(['passthroughTestId', 'testId']);
+    // 受け取り側の `<span data-testid={testId} />`（`OtpauthQr` と同じ形）、`<a data-testid={linkTestId} />`
+    // （`NameCell` と同じ形。T-11-12）の 3 つ。
+    expect(extraction.unresolved).toEqual(['passthroughTestId', 'testId', 'linkTestId']);
   });
 
   it('`data-testid` に似た別属性（`data-testid-note`）を拾わない', () => {

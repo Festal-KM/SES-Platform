@@ -75,6 +75,7 @@ export function candidateScreenMessages(params: {
     emptyCheckboxNotice:
       filtered && checkboxOn ? t('engineers.list.filtered.checkboxNotice') : null,
     detailSelect: t('candidates.detail.select'),
+    detailClose: t('candidates.detail.close'),
     detailOpenEngineer: t('candidates.detail.openEngineer'),
     detailCreateProposal: t('candidates.detail.createProposal'),
     detailAnonymousNote: t('candidates.detail.anonymousNote'),

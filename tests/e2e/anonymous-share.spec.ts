@@ -824,6 +824,41 @@ test.describe('🔴 経路 4（匿名共有と提案依頼）— CLAUDE.md §5 P
       }
       await expectNoBrokenLabels('S-016 候補検索（右パネル）', host.page);
 
+      // 🔴 T-11-12: 右パネルを開いた 1440（`xl`）で、最終列「更新日」が横スクロール無しに読める（`docs/04` §S-016
+      //    「デスクトップの列幅配分」。`T-08-09` のスクリーンショットでは右パネルに押し出されて読めなかった列）。
+      //    ①更新日セルが見えており右端がビューポートの内側 ②表の器（`overflow-x-auto`）が横にスクロールしていない
+      //    （①だけでは器に隠れたセルも「ビューポート内」になりうる）③セルの中心に在る要素がセル自身（右パネルに
+      //    覆われていない）④右パネルが同時に見えている。判定の閾値は `expectNoHorizontalOverflow` と同じ 1px。
+      const originalViewport = host.page.viewportSize();
+      await host.page.setViewportSize({ width: 1440, height: 900 });
+      try {
+        const updatedOn = host.page.getByTestId(`candidate-list-updated-on-${xRef}`);
+        await expect(updatedOn).toBeVisible();
+        await updatedOn.scrollIntoViewIfNeeded();
+        const box = await updatedOn.boundingBox();
+        expect(box, '更新日セルの矩形が取れない').not.toBeNull();
+        expect(box?.x ?? -1, '更新日セルの左端').toBeGreaterThanOrEqual(0);
+        expect((box?.x ?? 0) + (box?.width ?? 0), '更新日セルの右端がビューポートの外').toBeLessThanOrEqual(1440);
+        const geometry = await updatedOn.evaluate((cell) => {
+          const container = cell.closest('div');
+          const rect = cell.getBoundingClientRect();
+          const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+          return {
+            containerOverflow: container === null ? null : container.scrollWidth - container.clientWidth,
+            containerRight: container === null ? null : container.getBoundingClientRect().right,
+            cellRight: rect.right,
+            hitIsCell: hit !== null && (hit === cell || cell.contains(hit)),
+          };
+        });
+        expect(geometry.containerOverflow, '候補テーブルの器が横にスクロールしている').toBeLessThanOrEqual(1);
+        expect(geometry.cellRight, '更新日セルが器の外に押し出されている').toBeLessThanOrEqual((geometry.containerRight ?? 0) + 1);
+        expect(geometry.hitIsCell, '更新日セルが右パネルに覆われている').toBe(true);
+        await expect(host.page.getByTestId('candidate-detail-anonymous')).toBeVisible();
+        await expectNoBrokenLabels('S-016 候補検索（1440・右パネルを開いた状態）', host.page);
+      } finally {
+        if (originalViewport !== null) await host.page.setViewportSize(originalViewport);
+      }
+
       host.outbound.assertNone();
     } finally {
       await host.close();

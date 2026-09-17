@@ -157,7 +157,11 @@ export default async function ProjectCandidatesPage({
       : t(denialKey);
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-8">
+    // 🔴 T-11-12: 器は 96rem（= Tailwind の `2xl` の幅。ブレークポイントの定義ではなく max-width）。一覧の他画面
+    //    （`max-w-6xl` = 72rem）より広いのは、`xl` 以上で **8 列（表の最小幅 61.5rem）+ 右パネル（15〜20rem）+ 間隔**を
+    //    横スクロール無しに並置するため（`docs/04` §S-016「デスクトップの列幅配分」/ `candidate-screen.tsx` 冒頭）。
+    //    72rem では 1440 でもパネルに 3rem しか残らない。
+    <main className="mx-auto max-w-[96rem] px-4 py-8">
       <p className="mb-1 text-sm text-slate-500">
         {t('projects.breadcrumb.home')} / {t('projects.breadcrumb.list')} /{' '}
         {t('candidates.breadcrumb.current')}

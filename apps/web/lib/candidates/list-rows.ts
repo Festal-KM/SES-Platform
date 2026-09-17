@@ -50,6 +50,11 @@ export type OwnCandidateRowView = {
   /** 一覧に出すスキル（上位 3 件）。超過は `moreSkills`。 */
   readonly skills: readonly string[];
   readonly moreSkills: string | null;
+  /**
+   * 登録スキルの総数（`skills.length + 超過件数`）。🔴 `S-016` のスキル列が 1 行に収まる件数まで減らしたとき、
+   * `+N` を「隠した件数」で描き直すために持つ（`docs/04` §S-016 列幅配分「幅が足りなければ件数を減らす」。T-11-12）。
+   */
+  readonly skillCount: number;
   /** 経験年数の集約値（最大。「7 年」）。未設定は `—`。 */
   readonly years: string;
   readonly unitPrice: string;
@@ -71,6 +76,8 @@ export type AnonymousCandidateRowView = {
   /** 一覧に出すスキル（上位 3 件）。超過は `moreSkills`。右パネルは `allSkills`（最大 8 件）を出す。 */
   readonly skills: readonly string[];
   readonly moreSkills: string | null;
+  /** 開示されたスキルの総数（= `allSkills.length`。上限 8。用途は `OwnCandidateRowView.skillCount` と同じ）。 */
+  readonly skillCount: number;
   readonly allSkills: readonly string[];
   /** 経験年数の区分（「5〜10 年」）。 */
   readonly years: string;
@@ -86,9 +93,14 @@ export type CandidateRowView = OwnCandidateRowView | AnonymousCandidateRowView;
 function splitSkills(names: readonly string[]): {
   readonly skills: readonly string[];
   readonly moreSkills: string | null;
+  readonly skillCount: number;
 } {
   const more = Math.max(names.length - PRIMARY_SKILL_LIMIT, 0);
-  return { skills: names.slice(0, PRIMARY_SKILL_LIMIT), moreSkills: more === 0 ? null : `+${more}` };
+  return {
+    skills: names.slice(0, PRIMARY_SKILL_LIMIT),
+    moreSkills: more === 0 ? null : `+${more}`,
+    skillCount: names.length,
+  };
 }
 
 export function ownCandidateRow(view: OwnCandidateView): OwnCandidateRowView {
@@ -99,6 +111,7 @@ export function ownCandidateRow(view: OwnCandidateView): OwnCandidateRowView {
     displayName: view.displayName,
     skills: view.primarySkills.map((skill) => skill.name),
     moreSkills: view.moreSkillCount === 0 ? null : `+${view.moreSkillCount}`,
+    skillCount: view.primarySkills.length + view.moreSkillCount,
     years:
       view.yearsMax === null
         ? none()

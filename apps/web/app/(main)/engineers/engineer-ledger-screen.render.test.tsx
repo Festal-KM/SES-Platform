@@ -341,3 +341,25 @@ describe('🔴 初回空（docs/04 §10.1 `S-005`）', () => {
     expect(render({ rows: [] })).toContain('engineer-list-population');
   });
 });
+
+describe('🔴 T-11-12: 氏名セルが docs/04 §10.3「長い名称」のブレークポイント別規約と一致する（`@ses/ui` の `NameCell`）', () => {
+  it('lg 未満 = 折り返し + 下限 10rem、lg 以上 = 切り詰め（器）+ title + 同じ行に S-006 への導線', () => {
+    const html = render({ rows: [row({ displayName: '架空 太郎' })] });
+    const cell = /<td class="([^"]*)">(<span class="[^"]*" title="架空 太郎">.*?<[/]span>)<[/]td>/.exec(html);
+    expect(cell).not.toBeNull();
+    const classes = (cell?.[1] ?? '').split(' ');
+    expect(classes).toContain('whitespace-normal');
+    expect(classes).toContain('min-w-40');
+    expect(classes).toContain('lg:max-w-64');
+    expect(classes).not.toContain('truncate');
+    expect(classes).not.toContain('whitespace-nowrap');
+    const inner = cell?.[2] ?? '';
+    // 切り詰めは `lg:` の語だけで、器（`<span>`）に掛かる。`title` に全文。
+    expect(inner).toContain('<span class="block lg:truncate" title="架空 太郎">');
+    const link = /<a ([^>]*)>架空 太郎<[/]a>/.exec(inner);
+    expect(link).not.toBeNull();
+    expect(link?.[1]).toContain(`href="/engineers/${ENGINEER_A}"`);
+    expect(link?.[1]).toContain(`data-testid="engineer-list-link-${ENGINEER_A}"`);
+    expect(link?.[1]).not.toContain('truncate');
+  });
+});

@@ -255,3 +255,24 @@ describe('ページング（検索条件を保つ）', () => {
     expect(render()).not.toContain('data-testid="project-list-paging"');
   });
 });
+
+describe('🔴 T-11-12: 案件名セルが docs/04 §10.3「長い名称」のブレークポイント別規約と一致する（`@ses/ui` の `NameCell`）', () => {
+  it('lg 未満 = 折り返し + 下限 10rem、lg 以上 = 切り詰め（器）+ title + 同じ行に S-011 への導線', () => {
+    const html = render({ rows: [row({ name: '金融系 Web API 改修' })] });
+    const cell = /<td class="([^"]*)">(<span class="[^"]*" title="金融系 Web API 改修">.*?<[/]span>)<[/]td>/.exec(html);
+    expect(cell).not.toBeNull();
+    const classes = (cell?.[1] ?? '').split(' ');
+    expect(classes).toContain('whitespace-normal');
+    expect(classes).toContain('min-w-40');
+    expect(classes).toContain('lg:max-w-64');
+    expect(classes).not.toContain('truncate');
+    expect(classes).not.toContain('whitespace-nowrap');
+    const inner = cell?.[2] ?? '';
+    expect(inner).toContain('<span class="block lg:truncate" title="金融系 Web API 改修">');
+    const link = /<a ([^>]*)>金融系 Web API 改修<[/]a>/.exec(inner);
+    expect(link).not.toBeNull();
+    expect(link?.[1]).toContain(`href="/projects/${PROJECT_A}"`);
+    expect(link?.[1]).toContain(`data-testid="project-list-link-${PROJECT_A}"`);
+    expect(link?.[1]).not.toContain('truncate');
+  });
+});

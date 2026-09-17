@@ -245,3 +245,19 @@ describe('共通', () => {
     expect(render(partnerView())).toContain('data-audience="PARTNER"');
   });
 });
+
+describe('🔴 T-11-12: 公開先テーブルの会社名セル（docs/04 §10.3「長い名称」。詳細画面が無いので切り詰めない）', () => {
+  it('下限 10rem を保ち、どのブレークポイントでも折り返す。リンクも切り詰めの語も無い', () => {
+    const html = render(hostView());
+    const cell = new RegExp(`<td class="([^"]*)"><span class="([^"]*)" title="${PARTNER_A_NAME}">${PARTNER_A_NAME}<[/]span><[/]td>`).exec(html);
+    expect(cell).not.toBeNull();
+    const classes = (cell?.[1] ?? '').split(' ');
+    expect(classes).toContain('whitespace-normal');
+    expect(classes).toContain('min-w-40');
+    expect(classes).not.toContain('lg:max-w-64');
+    expect(cell?.[2]).toBe('block');
+    expect(html).not.toContain('lg:truncate');
+    // 公開先の会社名からリンクで辿る先は無い（`S-013` への導線は表の下に別にある）。
+    expect(html).not.toMatch(new RegExp(`<a [^>]*>${PARTNER_A_NAME}<`));
+  });
+});

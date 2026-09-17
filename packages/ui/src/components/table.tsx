@@ -47,6 +47,23 @@ const WHITESPACE_CLASSES: Readonly<Record<TableCellWhitespace, string>> = {
 };
 
 /**
+ * セルの左右の詰め方。🔴 `className` では基底の `px-3` に勝てないため prop にする（`whitespace` と同じ規律）。
+ * `compact`（`px-2`）は、列数が多く 1 行の幅が決まっている表（`S-016` の 8 列 + 右パネル。T-11-12）のためにある。
+ * 既定は upstream からの置換値 `px-3` のまま（既存 20 画面の見た目を変えない）。
+ */
+export type TableCellPadding = 'normal' | 'compact';
+
+const HEAD_PADDING_CLASSES: Readonly<Record<TableCellPadding, string>> = {
+  normal: 'px-3',
+  compact: 'px-2',
+};
+
+const CELL_PADDING_CLASSES: Readonly<Record<TableCellPadding, string>> = {
+  normal: 'px-3 py-2',
+  compact: 'px-2 py-2',
+};
+
+/**
  * セルの縦位置。
  *
  * ============================================================================
@@ -156,18 +173,22 @@ export type TableHeadProps = Omit<ComponentProps<'th'>, 'align'> & {
   readonly whitespace?: TableCellWhitespace;
   /** 既定は `inherit`（`<tr>` の指定 → 無ければ UA の `middle`）。`TableCellAlign` の表を読むこと。 */
   readonly align?: TableCellAlign;
+  /** 既定は `normal`（`px-3`）。`TableCellPadding` を読むこと。 */
+  readonly padding?: TableCellPadding;
 };
 
 export function TableHead({
   className,
   whitespace = 'nowrap',
   align = 'inherit',
+  padding = 'normal',
   ...props
 }: TableHeadProps) {
   return (
     <th
       className={cn(
-        'h-10 px-3 text-left font-medium text-slate-500',
+        'h-10 text-left font-medium text-slate-500',
+        HEAD_PADDING_CLASSES[padding],
         WHITESPACE_CLASSES[whitespace],
         ALIGN_CLASSES[align],
         CHECKBOX_CELL_CLASSES,
@@ -182,18 +203,21 @@ export type TableCellProps = Omit<ComponentProps<'td'>, 'align'> & {
   readonly whitespace?: TableCellWhitespace;
   /** 既定は `inherit`（`<tr>` の指定 → 無ければ UA の `middle`）。`TableCellAlign` の表を読むこと。 */
   readonly align?: TableCellAlign;
+  /** 既定は `normal`（`px-3 py-2`）。`TableCellPadding` を読むこと。 */
+  readonly padding?: TableCellPadding;
 };
 
 export function TableCell({
   className,
   whitespace = 'nowrap',
   align = 'inherit',
+  padding = 'normal',
   ...props
 }: TableCellProps) {
   return (
     <td
       className={cn(
-        'px-3 py-2',
+        CELL_PADDING_CLASSES[padding],
         WHITESPACE_CLASSES[whitespace],
         ALIGN_CLASSES[align],
         CHECKBOX_CELL_CLASSES,

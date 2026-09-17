@@ -12,6 +12,10 @@
 //    ⑥🔴 T-08-06: 共有候補の右パネル（`AnonymousDetail`）の提案依頼フォームに**単価に関する入力欄が無い**
 //      （`F-017 AC-4` / `BR-58`）。入力はメッセージと期限の 2 つだけ。`canRequest=false` なら導線そのものが無い
 //      （`docs/04` §S-016 権限差分）。5 項目以外の値（実名・所属・社内 ID）はどの枝でも描かれない。
+//    ⑧🔴 T-11-12: 表示名セルが `docs/04` §10.3 の名称規約（`@ses/ui` の `NameCell`）と一致する —— 自社候補は
+//      `lg` 以上 = 切り詰め + `title` + 同じ行に `S-006` への導線、`lg` 未満 = 折り返し、下限幅 10rem。匿名候補は
+//      「共有候補」の一語でリンクを持たず、切り詰めの語も持たない。8 列は `lg` 以上で `table-fixed` + 固定幅
+//      （スキル列だけ幅を持たない）、更新日セルは `candidate-list-updated-on-{key}` で掴める。
 //
 // 🔴 `react-dom/server` の `renderToStaticMarkup` を使う（新規依存を増やさない。他の render テストと同じ）。
 import { createElement } from 'react';
@@ -42,6 +46,7 @@ const ownRow: CandidateRowView = {
   displayName: '架空 太郎',
   skills: ['Java', 'AWS', 'React'],
   moreSkills: '+2',
+  skillCount: 5,
   years: '7 年',
   unitPrice: '600,000〜750,000 円',
   availableFrom: '2026-11-01',
@@ -56,6 +61,7 @@ const anonymousRow: CandidateRowView = {
   candidateRef: REF,
   skills: ['TypeScript', 'Go', 'AWS'],
   moreSkills: '+2',
+  skillCount: 5,
   allSkills: ['TypeScript', 'Go', 'AWS', 'Docker', 'Terraform'],
   years: '5〜10 年',
   unitPrice: '60〜70 万円',
@@ -112,6 +118,7 @@ const messages: CandidateScreenMessages = {
   emptyRegister: '人材を登録',
   emptyCheckboxNotice: null,
   detailSelect: '行を選ぶと、ここに候補の詳細を表示します。',
+  detailClose: '閉じる',
   detailOpenEngineer: '人材の詳細を開く',
   detailCreateProposal: '提案を作成',
   detailAnonymousNote: '共有候補は丸めた 5 項目のみが開示されています。',
@@ -233,7 +240,8 @@ describe('🔴 F-017 AC-1: 匿名候補の行に実名・稼働状況が無く�
     const html = render();
     expect(html).toContain(`data-testid="candidate-list-row-${REF}"`);
     expect(html).toContain('data-candidate-kind="ANONYMOUS"');
-    expect(html).toMatch(new RegExp(`data-testid="candidate-list-name-${REF}"[^>]*>共有候補<`));
+    // T-11-12: 表示名セルの中身は `NameCell` の器（`<span title>`）を挟む。リンクは無い。
+    expect(html).toMatch(new RegExp(`data-testid="candidate-list-name-${REF}"[^>]*><span class="block" title="共有候補">共有候補</span></td>`));
     expect(html).toContain('5〜10 年');
     expect(html).toContain('60〜70 万円');
     expect(html).toContain('翌月');
@@ -244,8 +252,11 @@ describe('🔴 F-017 AC-1: 匿名候補の行に実名・稼働状況が無く�
 
   it('自社候補の行は実名で描かれ、匿名候補の行に実名が混ざらない', () => {
     const html = render();
-    expect(html).toMatch(new RegExp(`data-testid="candidate-list-name-${ENGINEER}"[^>]*>架空 太郎<`));
-    expect(html.match(/架空 太郎/g)?.length).toBe(1);
+    // T-11-12: 自社候補の表示名は `S-006` へのリンク（同じ行の導線）。実名の出現は本文 1 回 + `title` 1 回。
+    expect(html).toMatch(
+      new RegExp(`data-testid="candidate-list-name-${ENGINEER}"[^>]*><span class="block lg:truncate" title="架空 太郎"><a [^>]*href="/engineers/${ENGINEER}"[^>]*>架空 太郎</a></span>`),
+    );
+    expect(html.match(/架空 太郎/g)?.length).toBe(2);
   });
 
   it('🔴 匿名候補だけの一覧に、氏名・稼働状況・人材詳細への導線が 1 つも無い', () => {
@@ -427,6 +438,87 @@ describe('🔴 T-08-06: 共有候補の右パネルと提案依頼の導線（F-
     const html = renderAnonymousDetail();
     for (const word of ['希望単価', '見積', '値引', '確定単価', 'name="unitPrice"', 'name="price"']) {
       expect(html).not.toContain(word);
+    }
+  });
+});
+
+describe('🔴 T-11-12: 表示名セルの規約（docs/04 §10.3 / §S-016 列幅配分）と 8 列の固定幅', () => {
+  it('自社候補の表示名は lg 以上 = 切り詰め + title、lg 未満 = 折り返し、下限 10rem、同じ行に S-006 への導線', () => {
+    const html = render({ rows: [ownRow] });
+    const cell = new RegExp(`<td class="([^"]*)"[^>]*data-testid="candidate-list-name-${ENGINEER}"[^>]*>(.*?)</td>`).exec(html);
+    expect(cell).not.toBeNull();
+    const classes = (cell?.[1] ?? '').split(' ');
+    // lg 未満 = 折り返し（`whitespace-normal`）+ 下限幅 10rem。切り詰めは `lg:` の語だけ。
+    expect(classes).toContain('whitespace-normal');
+    expect(classes).toContain('min-w-40');
+    expect(classes).toContain('lg:max-w-64');
+    expect(classes).not.toContain('truncate');
+    expect(classes).not.toContain('whitespace-nowrap');
+    // lg 以上 = 1 行切り詰め（内側の器）+ title で全文 + 同じ行に `/engineers/{id}` へのリンク。
+    const inner = cell?.[2] ?? '';
+    expect(inner).toContain('<span class="block lg:truncate" title="架空 太郎">');
+    const link = /<a ([^>]*)>架空 太郎<[/]a>/.exec(inner);
+    expect(link).not.toBeNull();
+    expect(link?.[1]).toContain(`href="/engineers/${ENGINEER}"`);
+    expect(link?.[1]).toContain(`data-testid="candidate-list-link-${ENGINEER}"`);
+    // 🔴 切り詰めはリンクではなく器に掛ける（T-08-11 の検出器が `<a>` の `clipped-x` を見るため）。
+    expect(link?.[1]).not.toContain('truncate');
+  });
+
+  it('🔴 匿名候補の表示名は「共有候補」の一語で、リンクも切り詰めの語も無い', () => {
+    const html = render({ rows: [anonymousRow] });
+    const cell = new RegExp(`<td class="([^"]*)"[^>]*data-testid="candidate-list-name-${REF}"[^>]*>(.*?)</td>`).exec(html);
+    expect(cell).not.toBeNull();
+    expect(cell?.[1].split(' ')).toContain('min-w-40');
+    expect(cell?.[1]).not.toContain('truncate');
+    expect(cell?.[2]).toBe('<span class="block" title="共有候補">共有候補</span>');
+    expect(cell?.[2]).not.toContain('<a ');
+  });
+
+  it('lg 以上で table-fixed + 最小幅、固定 7 列は幅を持ち、スキル列だけ幅を持たない。更新日セルは testid で掴める', () => {
+    const html = render();
+    // 🔴 要件サマリの表（セクション 1）ではなく候補テーブル（`candidate-list-table`）を掴む。
+    const table = /<table class="([^"]*)" data-testid="candidate-list-table"/.exec(html);
+    expect(table).not.toBeNull();
+    const tableClasses = (table?.[1] ?? '').split(' ');
+    expect(tableClasses).toContain('lg:table-fixed');
+    expect(tableClasses).toContain('lg:min-w-[61.5rem]');
+    const heads = [...html.matchAll(/<th class="([^"]*)"[^>]*>([^<]*)<[/]th>/g)].map((m) => ({
+      classes: (m[1] ?? '').split(' '),
+      label: m[2] ?? '',
+    }));
+    const labels = ['種別', '表示名', 'スキル', '経験年数', '単価レンジ', '稼働可能時期', '勤務地・リモート', '更新日'];
+    const candidateHeads = heads.filter((h) => labels.includes(h.label));
+    expect(candidateHeads.map((h) => h.label)).toEqual(labels);
+    for (const head of candidateHeads) {
+      const hasWidth = head.classes.some((token) => token.startsWith('lg:w-'));
+      expect(hasWidth, `${head.label} の幅`).toBe(head.label !== 'スキル');
+      // 8 列すべて compact（`px-2`）。
+      expect(head.classes).toContain('px-2');
+    }
+    expect(html).toContain(`data-testid="candidate-list-updated-on-${ENGINEER}"`);
+    expect(html).toContain(`data-testid="candidate-list-updated-on-${REF}"`);
+  });
+
+  it('スキル列は lg 以上で 1 行固定（nowrap + overflow-hidden）、サーバ描画は上位 3 + +N（N = 総数 − 3）', () => {
+    const html = render({ rows: [ownRow] });
+    expect(html).toContain('class="flex flex-wrap items-center gap-1 lg:flex-nowrap lg:overflow-hidden"');
+    expect(html).toContain(`data-testid="candidate-list-more-skills-${ENGINEER}">+2<`);
+    // 上位 3 件が描かれ、3 件目はモバイルで隠れる（従来どおり）。
+    expect(html).toContain('>Java<');
+    expect(html).toContain('>AWS<');
+    expect(html).toContain('<span class="hidden sm:inline" data-skill-badge=""><span class="inline-flex');
+    expect(html).toContain('>React</span></span>');
+  });
+
+  it('右パネルの「閉じる」は行を選んでいない初期状態では描かれない（ドロワーは lg〜xl 未満で行を選んだときだけ）', () => {
+    const html = render();
+    expect(html).not.toContain('candidate-detail-close');
+    // 未選択のパネルは lg で隠れ xl で並置に戻る（`lg:hidden xl:block`）。lg 未満は一覧の下に在る。
+    const aside = /<aside class="([^"]*)"/.exec(html);
+    const asideClasses = (aside?.[1] ?? '').split(' ');
+    for (const token of ['lg:fixed', 'lg:hidden', 'xl:block', 'xl:static', 'lg:z-30']) {
+      expect(asideClasses, token).toContain(token);
     }
   });
 });

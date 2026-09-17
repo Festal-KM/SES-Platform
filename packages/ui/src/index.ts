@@ -76,6 +76,17 @@ export { Input } from './components/input.js';
 export type { InputProps } from './components/input.js';
 export { Label } from './components/label.js';
 export type { LabelProps } from './components/label.js';
+// 🔴 T-11-12: 一覧の名称セル（docs/04 §10.3「長い名称」のブレークポイント別規約）。shadcn/ui の取り込みではなく
+//    本リポジトリ固有。文言を持たず、`next/link` にも依存しない（`linkComponent` で受ける）。
+export {
+  NAME_CELL_LINK_CLASSES,
+  NAME_CELL_MAX_WIDTH_CLASS,
+  NAME_CELL_MIN_WIDTH_CLASS,
+  NAME_CELL_TEXT_CLASSES,
+  NAME_CELL_TEXT_WRAP_CLASSES,
+  NameCell,
+} from './components/name-cell.js';
+export type { NameCellLinkProps, NameCellProps } from './components/name-cell.js';
 export { Radio } from './components/radio.js';
 export type { RadioProps } from './components/radio.js';
 export { Select } from './components/select.js';
@@ -92,6 +103,7 @@ export {
 } from './components/table.js';
 export type {
   TableCellAlign,
+  TableCellPadding,
   TableCellProps,
   TableCellWhitespace,
   TableHeadProps,

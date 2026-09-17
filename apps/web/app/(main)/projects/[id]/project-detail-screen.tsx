@@ -26,6 +26,7 @@ import Link from 'next/link';
 import type { RequirementKind } from '@ses/db';
 import {
   cn,
+  NameCell,
   SECONDARY_LINK_CLASSES,
   Table,
   TableBody,
@@ -315,7 +316,10 @@ export function ProjectDetailScreen({
                     <TableBody>
                       {projectVisibilityRows(view.visibilities).map((row) => (
                         <TableRow key={row.key}>
-                          <TableCell whitespace="normal">{row.partnerCompanyName}</TableCell>
+                          {/* 🔴 会社名は `docs/04` §10.3「長い名称」の規約（T-11-12。`NameCell`）。この表の行には
+                              詳細画面が無い（`href={null}`）ため、どのブレークポイントでも切り詰めず折り返す ——
+                              切り詰めは「同じ行に全文への導線」との組でのみ許される（§11-14）。 */}
+                          <NameCell name={row.partnerCompanyName} href={null} />
                           <TableCell>{row.publishedOn}</TableCell>
                         </TableRow>
                       ))}

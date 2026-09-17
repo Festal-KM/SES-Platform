@@ -35,6 +35,7 @@ import {
   Button,
   Field,
   Input,
+  NameCell,
   SECONDARY_LINK_CLASSES,
   SECONDARY_LINK_STACKED_CLASSES,
   Select,
@@ -253,22 +254,17 @@ export function ProjectListScreen({
           <TableBody>
             {rows.map((row) => (
               <TableRow key={row.id} data-testid={`project-list-row-${row.id}`}>
-                <TableCell whitespace="normal" className="min-w-40">
-                  {/* 🔴 名称列は 10rem 未満に潰さない（T-08-11 の折り返し検出器が CI で捕捉。
-                      run 34924436520）。モバイルでは名称以外の列が `nowrap` で内容幅を取るため、
-                      フォント幅が広い環境（CI の Linux）では名称列だけが 62px まで潰れ、
-                      18 文字の名称が 3 行に折れて読めなくなった。下限幅を与えると表は器の
-                      `overflow-x-auto` の内側でスクロールし、`documentElement` は溢れない。 */}
-                  {/* 🔴 行から詳細へ（docs/04 §S-010「行クリックで `S-011`」）。
-                      **閲覧の監査記録は遷移先が書く**（`readProjectDetail`。`BR-27`）。 */}
-                  <Link
-                    className="font-medium text-slate-900 underline"
-                    href={`/projects/${row.id}`}
-                    data-testid={`project-list-link-${row.id}`}
-                  >
-                    {row.name}
-                  </Link>
-                </TableCell>
+                {/* 🔴 案件名セルは `docs/04` §10.3「長い名称」のブレークポイント別規約（T-11-12。`@ses/ui` の
+                    `NameCell` が 1 か所で実装する）: `lg` 以上 = 1 行切り詰め + `title` + 同じ行の導線（`S-011`）、
+                    `lg` 未満 = 折り返し（T-06-03 の「セル内で折り返って 2 行になる」はこちらに残る）。下限幅 10rem は
+                    維持（T-08-11 の折り返し検出器が CI で捕捉した「名称列だけが 62px に潰れる」の再発防止。run 34924436520）。
+                    **閲覧の監査記録は遷移先が書く**（`readProjectDetail`。`BR-27`）。 */}
+                <NameCell
+                  name={row.name}
+                  href={`/projects/${row.id}`}
+                  linkComponent={Link}
+                  linkTestId={`project-list-link-${row.id}`}
+                />
                 <TableCell>{row.status}</TableCell>
                 <TableCell whitespace="normal" className={DESKTOP_ONLY}>
                   {row.mustRequirements}

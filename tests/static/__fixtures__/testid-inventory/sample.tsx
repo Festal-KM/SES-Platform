@@ -37,6 +37,9 @@ export function Sample({
       {/* 拾う: `data-testid={testId}` へ流れるプロパティ */}
       <Child testId="via-test-id-prop" />
 
+      {/* 拾う: `NameCell` の `linkTestId`（導線の `<a>` の `data-testid` へ流れる。接頭辞として扱う） */}
+      <LinkChild linkTestId={`via-link-test-id-${row.id}`} />
+
       {/* 穴として報告する: 素の識別子は静的に解決できない */}
       <span data-testid={passthroughTestId} />
 
@@ -48,4 +51,8 @@ export function Sample({
 
 function Child({ testId }: { testId: string }) {
   return <span data-testid={testId} />;
+}
+
+function LinkChild({ linkTestId }: { linkTestId: string }) {
+  return <a data-testid={linkTestId} />;
 }

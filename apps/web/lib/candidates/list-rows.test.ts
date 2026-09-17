@@ -73,7 +73,7 @@ const BASE_QUERY: ProjectCandidateListQuery = {
 };
 
 describe('🔴 匿名候補の行に開示 5 項目以外のフィールドが無い（F-017 AC-1）', () => {
-  it('キー集合は kind / key / candidateRef / 表示 6 項目 + allSkills / moreSkills だけ', () => {
+  it('キー集合は kind / key / candidateRef / 表示 6 項目 + allSkills / moreSkills / skillCount だけ', () => {
     const row = anonymousCandidateRow(anonymous);
     expect(Object.keys(row).sort()).toEqual(
       [
@@ -82,6 +82,8 @@ describe('🔴 匿名候補の行に開示 5 項目以外のフィールドが�
         'candidateRef',
         'skills',
         'moreSkills',
+        // T-11-12: 開示済みのスキルの総数（= allSkills.length）。6 項目目ではなく 1 項目内の件数。
+        'skillCount',
         'allSkills',
         'years',
         'unitPrice',
@@ -104,6 +106,8 @@ describe('🔴 匿名候補の行に開示 5 項目以外のフィールドが�
     expect(row.skills).toEqual(['Skill0', 'Skill1', 'Skill2']);
     expect(row.moreSkills).toBe('+5');
     expect(row.allSkills).toHaveLength(8);
+    // 🔴 skillCount は allSkills と同じ値であり、上限 8（U-06）を超えない。
+    expect(row.skillCount).toBe(8);
     expect(JSON.stringify(row)).not.toMatch(/\d{4}-\d{2}-\d{2}T/);
   });
 
@@ -120,6 +124,8 @@ describe('自社候補の行', () => {
     expect(row.displayName).toBe('架空 太郎');
     expect(row.years).toBe('7 年');
     expect(row.moreSkills).toBe('+2');
+    // T-11-12: 総数 = 一覧に出す件数 + 超過件数。
+    expect(row.skillCount).toBe(4);
     expect(row.availabilityStatus).toBe('稼働中');
     expect(row.key).toBe(ENGINEER);
     expect(ownCandidateRow({ ...own, yearsMax: null }).years).toBe('—');
