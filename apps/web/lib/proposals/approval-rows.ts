@@ -18,6 +18,7 @@ import {
 } from '@ses/domain';
 import { formatUnitPriceRange } from '../engineers/detail';
 import { formatDateTimeJst } from '../format/datetime';
+import { formatElapsedWith, type ElapsedLabels } from '../format/elapsed';
 import { formatThousands } from '../format/number';
 import type { ProposalApprovalRecordView, ProposalApprovalView } from './approval';
 import { proposalStateLabel } from './editor-rows';
@@ -131,18 +132,26 @@ function none(): string {
 }
 
 /**
+ * 経過時間の語（`formatElapsedWith` の入力）。✅ T-12-15: `S-003` / `S-004` の要対応キュー（`'use client'`）が
+ * サーバ側で解決した同じ語を props で受け取るため、ここから 1 か所で引く。
+ */
+export function elapsedLabels(): ElapsedLabels {
+  return {
+    justNow: t('proposals.approval.elapsed.justNow'),
+    minutesSuffix: t('proposals.approval.elapsed.minutesSuffix'),
+    hoursSuffix: t('proposals.approval.elapsed.hoursSuffix'),
+    daysSuffix: t('proposals.approval.elapsed.daysSuffix'),
+    none: none(),
+  };
+}
+
+/**
  * 経過時間（作成からの時間。判断ヘッダ「経過時間」）。🔴 分・時間・日の 3 段。表示だけであり判定には使わない。
  * `now` は呼び出し側から渡す（`packages/domain` と同じ規律。テストが決定的になる）。
+ * ✅ T-12-15: 丸めの本体は `lib/format/elapsed.ts`（純粋関数）へ移し、ここは文言を解決して呼ぶだけの皮にした。
  */
 export function formatElapsed(fromIso: string, now: Date): string {
-  const from = new Date(fromIso).getTime();
-  if (Number.isNaN(from)) return none();
-  const minutes = Math.max(0, Math.floor((now.getTime() - from) / 60_000));
-  if (minutes < 1) return t('proposals.approval.elapsed.justNow');
-  if (minutes < 60) return `${formatThousands(minutes)}${t('proposals.approval.elapsed.minutesSuffix')}`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${formatThousands(hours)}${t('proposals.approval.elapsed.hoursSuffix')}`;
-  return `${formatThousands(Math.floor(hours / 24))}${t('proposals.approval.elapsed.daysSuffix')}`;
+  return formatElapsedWith(fromIso, now.getTime(), elapsedLabels());
 }
 
 function fieldLabel(field: GateFinding['field']): string {

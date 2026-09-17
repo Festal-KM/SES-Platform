@@ -10,6 +10,7 @@
 // 🔴 承認待ち・送信失敗・公開案件・提案依頼は Phase 1、満了間近は Phase 2 が
 //    `HomeBlock` にケースを追加する。**追加専用**（既存メンバーの意味を変えない）。
 //    T-05-08 で最初のケース（`SCAN_QUARANTINE`）が入った。
+//    ✅ T-12-15 で 2 つ目のケース（`ACTION_QUEUE`。要対応キューの Phase 1 分）が入った。
 import type { AppEnvKind } from '@ses/config';
 import type { TenantLifecycleState, TenantRole } from '@ses/db';
 import type { QuarantinedScanStatus } from '@ses/domain';
@@ -39,10 +40,65 @@ export type ScanQuarantineHomeBlock = {
 };
 
 /**
- * ホームのブロック。**追加専用**（既存メンバーの意味を変えない）。
- * Phase 1 / Phase 2 が要対応キュー・満了間近などのケースを足す。
+ * 🔴 要対応キューの種別（`docs/04` §S-003 セクション 1 の Phase 1 分 = 5 つ。T-12-15）。
+ *
+ * 4 つの「うまくいかなかった」（`GATE_FAILED` / `SUBMIT_FAILED` / `LOST` / `DECLINED`）のうち、キューに載るのは
+ * **`GATE_FAILED` と `SUBMIT_FAILED`（= `SEND_FAILED`）だけ**である（`LOST` / `DECLINED` は終端であり「対応が要るもの」ではない。
+ * `F-024 AC-2` / `BR-23` / `BR-60`）。`SEND_HELD`（送信保留）は `SEND_FAILED` と**別の種別**（docs/05 §10.4「失敗率の指標に混入させない」）。
+ * `面談日程が未確定` / `延長確認` は Phase 2 が足す（追加専用）。
  */
-export type HomeBlock = ScanQuarantineHomeBlock;
+export type ActionQueueKind =
+  | 'SEND_FAILED'
+  | 'APPROVAL_PENDING'
+  | 'GATE_FAILED'
+  | 'SEND_HELD'
+  | 'PROPOSAL_REQUEST_PENDING';
+
+/**
+ * 🔴 要対応キューの 1 行（docs/05 §6.3 #9「T-12-15 の実装の決着」）。
+ *
+ * - `subjectLabel`（対象）… 提案の行 = 案件名 + **凍結側**のエンジニア名（`engineer_snapshots.display_name`。`S-019` と同じ出所）。
+ *   🔴 ホストの `PROPOSAL_REQUEST_PENDING` の行 = 案件名 + 「共有候補（匿名）」の一語（`S-017` と同じ。経路 4 の段階であり、
+ *   エンジニア名・`engineerId`・所属会社名を**型としても値としても**持たない）。
+ * - `counterpartyLabel`（相手）… 提案先の社名。提案依頼の行は `null`（ホストには依頼先の社名を出さない。取引先には不要）。
+ * - `since` … 経過時間の起点（提案 = `proposals.updated_at` / 依頼 = `proposal_requests.created_at`）。ISO 8601。
+ * - `deadline` … 提案依頼の返答期限（`expiresAt`）。提案の行は `null`。
+ * - `rowVersion` … 60 秒ポーリングの差分判別（`since` のエポックミリ秒。docs/04 申し送り 6）。
+ * - `href` … 種別ごとの遷移先（`S-022` / `S-021` / `S-020` / `S-019` / `S-017` or `S-018`）。
+ */
+export type ActionQueueRow = {
+  readonly kind: ActionQueueKind;
+  readonly targetId: string;
+  readonly subjectLabel: string;
+  readonly counterpartyLabel: string | null;
+  readonly since: string;
+  readonly deadline: string | null;
+  readonly rowVersion: number;
+  readonly href: string;
+};
+
+/**
+ * 🔴 要対応キュー（`S-003` セクション 1 / `S-004` セクション 1・2）。T-12-15。
+ *
+ * - `targetIds` … **いまキューにある全行**の `targetId`（表示順）。`?changedSince=` を付けた差分応答でも全件を返す —— クライアントが
+ *   「消えた行」（承認された・応諾された等）を判別する唯一の材料。
+ * - `items` … `changedSince` 未指定なら全行、指定なら `rowVersion >= changedSince` の行だけ（変わっていない行は返さない）。
+ * 🔴 **種別ごとの件数を 1 つの合計に丸めるフィールドを持たない**（丸めると 4 つの「うまくいかなかった」の混同の表示になる）。
+ * 🔴 母集団は RLS（`proposals` = C5: 作成者 + ホスト / `proposal_requests` = C5: 依頼先 + ホスト）が決める。取引先に載るのは
+ *    `PROPOSAL_REQUEST_PENDING`（自社宛）と `GATE_FAILED`（自社提案）だけであり、他社の件数・存在・順位を示唆する値を持たない。
+ * 🔴 0 件でもブロックを省かない（`SCAN_QUARANTINE` と違い、キューは「空である」ことを画面が明示する。docs/04 §S-003「要対応 0 件」）。
+ */
+export type ActionQueueHomeBlock = {
+  readonly kind: 'ACTION_QUEUE';
+  readonly targetIds: readonly string[];
+  readonly items: readonly ActionQueueRow[];
+};
+
+/**
+ * ホームのブロック。**追加専用**（既存メンバーの意味を変えない）。
+ * Phase 2 が満了間近などのケースを足す。
+ */
+export type HomeBlock = ScanQuarantineHomeBlock | ActionQueueHomeBlock;
 
 export type HostHomeView = {
   readonly audience: 'HOST';

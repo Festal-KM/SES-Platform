@@ -488,6 +488,88 @@ test.describe('モバイルビューポートのスモーク（S-003 / S-004 は
       await session.close();
     }
   });
+
+  // ✅ T-12-15: 🔴 **`S-003` セクション 1（要対応キュー）がモバイルで折りたたまれず、行 = 種別バッジ + 対象 + 経過時間の 3 要素で描かれる**
+  //    （docs/04 §S-003 デバイス別「1 行 = 種別バッジ + 対象 + 経過時間。セクション 1〜4 を折りたたまない」/ `F-006` / docs/05 §6.3 #9）。
+  //    前提: ホストが自社エンジニアで提案を作り（#36）、#39 でレビューに出し、worker の `gate.run` が全層 PASS → `APPROVAL_PENDING`。
+  //    その提案が「承認待ち」の行としてホームに載り、行の導線が `S-021` を指す。`相手` / `期限` はモバイルでは描かれない（`hidden`）。
+  //    🔴 4 つの「うまくいかなかった」を 1 つの合計に丸めた表示（「N 件」）が無いことも同じ画面で見る（`F-024 AC-2`）。
+  test('ホストのホームの要対応キューがモバイルで折りたたまれず、行 = 種別バッジ + 対象 + 経過時間で描かれる（T-12-15）', async ({
+    browser,
+  }: {
+    browser: Browser;
+  }) => {
+    const session = await openTenantSession(browser, hostOwner(1));
+    try {
+      const ids = tenantIds(1);
+      const created = await apiRequest(session.page, '/api/proposals', {
+        method: 'POST',
+        body: {
+          projectId: ids.publishedProjectId,
+          engineerId: ids.hostEngineerId,
+          recipientCompanyName: 'T1215 架空エンド株式会社',
+          recipientEmail: 't1215-recipient@example.test',
+          offeredUnitPrice: 700000,
+          offeredStartDate: '2026-11-01',
+          subject: `${T0903_SYNTHETIC_PROPOSAL_PREFIX}T1215-${String(Date.now())}`,
+          body: 'T1215 ご提案します。',
+        },
+      });
+      expect(created.status, created.text).toBe(201);
+      const proposalId = (parseJson(created) as { id: string }).id;
+      syntheticProposalIds.push(proposalId);
+      const requestedGate = await apiRequest(session.page, `/api/proposals/${proposalId}/gate`, { method: 'POST' });
+      expect(requestedGate.status, requestedGate.text).toBe(202);
+      const settled = await waitForProposalState(session.page, proposalId, ['APPROVAL_PENDING', 'GATE_FAILED'], { label: 'T-12-15 のゲート' });
+      expect(settled.state).toBe('APPROVAL_PENDING');
+
+      // API（#9）: 既定 `scope=mine` で、作成者本人のホームに承認待ちの行が載る。
+      const home = await apiRequest(session.page, '/api/home');
+      expect(home.status, home.text).toBe(200);
+      const homeBody = parseJson(home) as {
+        blocks: readonly { kind: string; targetIds?: readonly string[]; items?: readonly { kind: string; targetId: string; href: string }[] }[];
+      };
+      const queue = homeBody.blocks.find((block) => block.kind === 'ACTION_QUEUE');
+      expect(queue, 'ACTION_QUEUE ブロックは 0 件でも必ず返る').toBeDefined();
+      const row = queue?.items?.find((item) => item.targetId === proposalId);
+      expect(row).toMatchObject({ kind: 'APPROVAL_PENDING', href: `/proposals/${proposalId}/approve` });
+
+      // 画面（`S-003`。Pixel 5 = モバイル）。
+      await session.page.goto('/', { waitUntil: 'domcontentloaded' });
+      const section = session.page.getByTestId('home-action-queue');
+      await expect(section).toBeVisible();
+      await expect(section).toHaveAttribute('data-scope', 'mine');
+      // 🔴 折りたたまない（`<details>` が無い）。空文言も出ていない。
+      await expect(section.locator('details')).toHaveCount(0);
+      await expect(session.page.getByTestId('home-action-queue-empty')).toHaveCount(0);
+      const queueRow = session.page.getByTestId(`home-action-queue-row-${proposalId}`);
+      await expect(queueRow).toBeVisible();
+      await expect(queueRow).toHaveAttribute('data-kind', 'APPROVAL_PENDING');
+      // 🔴 3 要素（種別バッジ / 対象 / 経過時間）が見える。
+      await expect(session.page.getByTestId(`home-action-queue-kind-${proposalId}`)).toBeVisible();
+      await expect(session.page.getByTestId(`home-action-queue-kind-${proposalId}`)).toHaveText(t('home.actionQueue.kind.APPROVAL_PENDING'));
+      const subject = session.page.getByTestId(`home-action-queue-subject-${proposalId}`);
+      await expect(subject).toBeVisible();
+      await expect(subject).toHaveAttribute('href', `/proposals/${proposalId}/approve`);
+      await expect(session.page.getByTestId(`home-action-queue-time-${proposalId}`)).toBeVisible();
+      // `相手` / `期限` は DOM にはあるがモバイルでは描かれない（`hidden sm:inline`）。
+      await expect(session.page.getByTestId(`home-action-queue-counterparty-${proposalId}`)).toBeHidden();
+      await expect(session.page.getByTestId(`home-action-queue-deadline-${proposalId}`)).toBeHidden();
+      // 🔴 種別ごとの件数を 1 つの合計に丸めた表示が無い。
+      expect(await section.innerText()).not.toMatch(/[0-9０-９]+\s*件/);
+      expectNoHiddenCountHints('S-003 要対応キュー（モバイル）', await session.page.locator('body').innerText());
+      await expectNoHorizontalOverflow('S-003 要対応キュー', session.page);
+      await expectNoBrokenLabels('S-003 要対応キュー', session.page);
+
+      // 行の導線 → `S-021`（承認はモバイルで完結する。承認そのものは上の test が見る）。
+      await subject.click();
+      await session.page.waitForURL(`**/proposals/${proposalId}/approve`);
+      await expect(session.page.getByTestId('proposal-approval')).toHaveAttribute('data-proposal-state', 'APPROVAL_PENDING');
+      session.outbound.assertNone();
+    } finally {
+      await session.close();
+    }
+  });
 });
 
 // ✅ T-09-10: 🔴 **`S-024` 商談結果の記録がモバイルで完結する**（docs/04 §S-024〔Tier 1〕/ `F-025 AC-1`〜`AC-3` / docs/05 §6.5 #48 /

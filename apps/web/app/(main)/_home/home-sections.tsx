@@ -80,8 +80,8 @@ export function HostHomeSections({
           <ProposalRequestListLink testId="home-host-proposal-requests" />
           {/* 🔴 T-09-09: `S-019`（提案一覧）への導線（docs/04 §3.2 ナビ「③ 提案（`S-019`）」/ §S-019 関連画面）。
               ロールで隠さない（`VIEWER` も閲覧できる。見えるものは `proposals` の RLS（C5）が決める）。
-              ⚠️ `S-003` の要対応キュー（承認待ち / 送信失敗 → `S-022`）は本タスクの範囲外（SP-10）。導線の URL は
-              `lib/proposals/hrefs.ts` の `PROPOSAL_SEND_FAILURES_PATH` を使うこと（T-09-08 の申し送り）。 */}
+              ✅ T-12-15: `S-003` の要対応キュー（承認待ち / 送信失敗 → `S-022` ほか）は `action-queue-section.tsx` に実装した
+              （導線の URL は `lib/proposals/hrefs.ts` の `PROPOSAL_SEND_FAILURES_PATH` 等。T-09-08 の申し送りを解消）。 */}
           <ProposalListLink testId="home-host-proposals" />
           {/* 🔴 T-10-04: `S-038`（利用量と上限）への導線（docs/04 §S-038 関連画面「← `S-003`（上限インジケータ）」）。
               ホスト所属の 4 ロールすべてに出す（`VIEWER` も残量を閲覧できる。`F-027 AC-1`）。

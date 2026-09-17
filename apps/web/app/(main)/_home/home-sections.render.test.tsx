@@ -10,7 +10,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import type { HomeBlock } from '../../../lib/home/types';
+import type { HomeBlock, ScanQuarantineHomeBlock } from '../../../lib/home/types';
 import {
   HostHomeSections,
   PartnerHomeSections,
@@ -20,7 +20,8 @@ import {
 const SHEET_ID = '01930000-0000-7000-8000-0000000000d1';
 const ENGINEER_ID = '01930000-0000-7000-8000-0000000000b1';
 
-function blockOf(items: HomeBlock['items']): HomeBlock {
+// ✅ T-12-15: `HomeBlock` が合併型（`SCAN_QUARANTINE` | `ACTION_QUEUE`）になったので、隔離ブロックの `items` を名指しする。
+function blockOf(items: ScanQuarantineHomeBlock['items']): HomeBlock {
   return { kind: 'SCAN_QUARANTINE', items };
 }
 

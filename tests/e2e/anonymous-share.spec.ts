@@ -220,6 +220,21 @@ const HOST_REQUEST_ALLOWED_KEYS: ReadonlySet<string> = new Set([
   'name',
 ]);
 
+/**
+ * ✅ T-12-15: ホストの `S-003` 要対応キューの 1 行に現れてよいキー（docs/05 §6.3 #9 `ActionQueueRow` の 8 キー）。
+ * 🔴 `engineerId` / 依頼先（社名・ID）/ 参照子 / 件数・順位に相当するキーは**型として存在しない**。
+ */
+const HOST_HOME_ACTION_ROW_ALLOWED_KEYS: ReadonlySet<string> = new Set([
+  'kind',
+  'targetId',
+  'subjectLabel',
+  'counterpartyLabel',
+  'since',
+  'deadline',
+  'rowVersion',
+  'href',
+]);
+
 // ---------------------------------------------------------------------------
 // 深さ走査（`tests/isolation/anonymous-candidate-view.test.ts` の `collect` と同じ手口）
 // ---------------------------------------------------------------------------
@@ -1065,6 +1080,30 @@ test.describe('🔴 経路 4（匿名共有と提案依頼）— CLAUDE.md §5 P
       expectNoForbidden('S-017 提案依頼の一覧（ホスト・依頼直後）', hostListHtml, forbiddenMarkers(engineers()));
       expectNoHiddenCountHints('S-017 提案依頼の一覧（ホスト）', hostListHtml);
       await expectNoBrokenLabels('S-017 提案依頼の一覧（ホスト）', host.page);
+
+      // ✅ T-12-15: 🔴 ホストの `S-003` 要対応キュー（#9 `GET /api/home`）にも依頼の行（`PROPOSAL_REQUEST_PENDING`）が載る。
+      //    行は 8 キーだけで、X / Y / Z の実名・連絡先・`engineerId`・依頼先の社名・参照子が 1 文字も無い（経路 4 の段階。
+      //    `Proposal` が作られるまで実名に到達できない = Phase 1 成功条件 3）。画面（`/`）も同じ走査を掛ける。
+      const hostHome = await apiRequest(host.page, '/api/home?scope=all');
+      expect(hostHome.status, hostHome.text).toBe(200);
+      const hostHomeBody = parseJson(hostHome) as {
+        blocks: readonly { kind: string; items?: readonly Record<string, unknown>[] }[];
+      };
+      const hostQueueRows = (hostHomeBody.blocks.find((block) => block.kind === 'ACTION_QUEUE')?.items ?? []).filter(
+        (row) => row['kind'] === 'PROPOSAL_REQUEST_PENDING',
+      );
+      expect(hostQueueRows.map((row) => row['targetId'])).toEqual(expect.arrayContaining([xReq, requireRequest('y'), zReq]));
+      for (const row of hostQueueRows) {
+        const keys = [...new Set(collect(row).keys)];
+        expect(keys.filter((key) => !HOST_HOME_ACTION_ROW_ALLOWED_KEYS.has(key)), '#9: 要対応キューの行に型に無いキーが現れました').toEqual([]);
+        expect(row['counterpartyLabel'], '#9: 依頼の行に依頼先が載りました').toBeNull();
+      }
+      expectNoForbidden('GET /api/home（ホスト。#9）', hostHome.text, forbiddenJsonMarkers(engineers()));
+      expectNoHiddenCountHints('GET /api/home（ホスト）', hostHome.text);
+      const hostHomeHtml = await pageHtml(host, '/?scope=all');
+      await expect(host.page.getByTestId(`home-action-queue-row-${xReq}`)).toBeVisible();
+      expectNoForbidden('S-003 ホーム（ホスト・依頼直後）', hostHomeHtml, forbiddenMarkers(engineers()));
+      expectNoHiddenCountHints('S-003 ホーム（ホスト）', hostHomeHtml);
 
       // --- A1 が X の依頼を辞退する（`S-017` → `S-018` → #34。理由を入力） ---------------------------
       await pageHtml(partner, '/proposal-requests');

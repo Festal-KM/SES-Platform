@@ -28,8 +28,9 @@ export function duplicateValueGroups(entries: Readonly<Record<string, string>>):
  *    足すときは、その画面がその状態そのものを指していることを確認してから列挙に加える。
  */
 const OUTCOME_LABEL_KEYS: Readonly<Record<keyof typeof OUTCOME_LABELS, readonly MessageKey[]>> = {
-  GATE_FAILED: ['proposals.state.GATE_FAILED'],
-  SUBMIT_FAILED: ['proposals.detail.timeline.kind.sendFailure', 'proposals.state.SUBMIT_FAILED'],
+  // ✅ T-12-15: `S-003` / `S-004` の要対応キューの種別は、その状態（`GATE_FAILED` / `SUBMIT_FAILED`）そのものを指す。
+  GATE_FAILED: ['home.actionQueue.kind.GATE_FAILED', 'proposals.state.GATE_FAILED'],
+  SUBMIT_FAILED: ['home.actionQueue.kind.SEND_FAILED', 'proposals.detail.timeline.kind.sendFailure', 'proposals.state.SUBMIT_FAILED'],
   LOST: ['proposals.state.LOST'],
   DECLINED: ['proposalRequests.state.DECLINED', 'proposals.list.requestState.DECLINED'],
 };

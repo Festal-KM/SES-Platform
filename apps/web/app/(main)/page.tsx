@@ -3,9 +3,12 @@
 //
 // 🔴 Phase 0 は**空のダッシュボード**(CLAUDE.md §5)。要対応キュー等のセクションは Phase 1 /
 //    Phase 2 が追加する（`apps/web/app/(main)/_home/home-sections.tsx`）。
-// 🔴 `getHomeView` は純粋関数（DB を読まない）。Phase 0 は静的な内容のため、`GET /api/home` を
-//    自己 fetch せずサーバコンポーネントから直接呼ぶ（Phase 1 が 60 秒ポーリングを足す時点で
-//    クライアント化する。docs/04 program-design 申し送り 6）。
+// 🔴 `getHomeView` は純粋関数（DB を読まない）。初回描画は `GET /api/home` を自己 fetch せず
+//    サーバコンポーネントから直接 `readHomeBlocks` を呼ぶ（API と**同じ関数**を通るので母集団・並び・型がずれない）。
+//    ✅ T-12-15: 要対応キュー（`ActionQueueSection`。`'use client'`）だけがクライアント化され、60 秒ごとに
+//    `GET /api/home?scope=&changedSince=` の**差分**で描き直す（docs/04 program-design 申し送り 6）。画面全体は再描画しない。
+// 🔴 T-12-15: `?scope=mine|all`（既定 `mine`。docs/04 §S-003「自分の担当のみ」トグル）は API と**同じスキーマ**
+//    （`homeQuerySchema`）で検証する。壊れた条件は素の URL へ戻す（`S-005` / `S-017` と同じ判断）。
 //
 // 🔴 T-03-02: 2 要素認証が未充足なら `S-001` の 2 段階目へ送る(docs/05 §6.2 の
 //    「画面遷移だけを担う」部分)。**遷移は UI の都合であり、境界の強制ではない** ——
@@ -22,10 +25,14 @@ import { resolveTenantCtxOutcome } from '../../lib/auth/session';
 import { sendingDomainRuntime } from '../../lib/db/bootstrap';
 import { isEngineerShareRole } from '../../lib/engineer-shares/policy';
 import { readHomeBlocks } from '../../lib/home/blocks';
+import { DEFAULT_HOME_SCOPE, homeQuerySchema, type HomeScope } from '../../lib/home/schemas';
 import { getHomeView } from '../../lib/home/service';
+import type { ActionQueueHomeBlock } from '../../lib/home/types';
 import { isProjectEditorRole } from '../../lib/projects/policy';
 import { isSendingDomainUnverified, resolveSendingDomainFact } from '../../lib/settings/sending-domain-fact';
 import { readSendingDomainSettings } from '../../lib/settings/sending-domains';
+import { actionQueueMessages } from './_home/action-queue-props';
+import { ActionQueueSection } from './_home/action-queue-section';
 import {
   HostHomeSections,
   PartnerHomeSections,
@@ -36,12 +43,36 @@ import { SendingDomainGuardBanner } from './_shared/sending-domain-guard-banner'
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export default async function HomePage() {
+/** 🔴 要対応キューの再読込間隔（docs/04 §S-003 非同期処理の表現「ポーリングは 60 秒間隔」）。 */
+const ACTION_QUEUE_POLL_INTERVAL_MS = 60_000;
+
+/** `S-003` / `S-004` の URL（`scope` だけ。既定値は URL に載せない）。 */
+function homeHref(scope: HomeScope): string {
+  return scope === DEFAULT_HOME_SCOPE ? '/' : `/?scope=${scope}`;
+}
+
+export default async function HomePage({
+  searchParams,
+}: {
+  readonly searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const outcome = await resolveTenantCtxOutcome();
   if (outcome.status === 'UNAUTHENTICATED') redirect('/signin');
   if (outcome.status === 'TWO_FACTOR_REQUIRED') redirect('/signin?step=2fa');
 
-  const view = getHomeView(outcome.ctx, await readHomeBlocks(outcome.ctx));
+  // 🔴 `changedSince` は初回描画では受けない（差分は `ActionQueueSection` が API に対して使う）。`scope` だけを読む。
+  const parsed = homeQuerySchema.pick({ scope: true }).safeParse(await searchParams);
+  if (!parsed.success) redirect('/');
+  const scope: HomeScope = parsed.data.scope ?? DEFAULT_HOME_SCOPE;
+
+  // 🔴 `changedSince` の基準は読み取りの**前**に取る（`getHomeView` の注記）。
+  const readAt = new Date();
+  const view = getHomeView(outcome.ctx, await readHomeBlocks(outcome.ctx, { scope }), readAt);
+  const actionQueue = view.blocks.find(
+    (block): block is ActionQueueHomeBlock => block.kind === 'ACTION_QUEUE',
+  );
+  // 🔴 `readHomeBlocks` は要対応キューを 0 件でも必ず返す。無ければ「読むのを忘れたホーム」であり、黙って空として描かない。
+  if (actionQueue === undefined) throw new Error('readHomeBlocks が ACTION_QUEUE を返しませんでした。');
 
   // 🔴 パートナー所属・`SALES` / `VIEWER` には判定材料すら取りに行かない（不要な DB 往復を
   //    増やさない。パートナー所属は RLS（C2 HOST_ONLY）でどのみち 0 件になる）。
@@ -67,6 +98,19 @@ export default async function HomePage() {
           `sandbox` でメールがモックになるパートナー（分類 2）にとっては、ここが
           唯一の気づく場所である。ホスト / パートナーで同じ位置・同じ見せ方にする。 */}
       <ScanQuarantineSection blocks={view.blocks} />
+      {/* 🔴 T-12-15: 要対応キュー（`S-003` セクション 1 / `S-004` セクション 1・2）。隔離の周知の**次**、案件・人材の導線の**前**に置く
+          （docs/04 §S-003: 隔離は「キューに載る前の段階」なので上、キューは「今日、自分が動かないと止まるもの」なので導線より上）。
+          ホストと取引先で同じ部品・同じ位置（取引先は 1 日 4〜5 時間の主利用者。`CLAUDE.md` §1.2）。中身の違い（種別・並び）はサーバが決めている。 */}
+      <ActionQueueSection
+        // 🔴 サーバが描き直したら（`scope` の切り替え / 再訪）クライアントの手元の行も捨てて作り直す（古い scope の行を残さない）。
+        key={`${scope}:${view.changedSince}`}
+        initial={actionQueue}
+        initialChangedSince={view.changedSince}
+        scope={scope}
+        scopeHrefs={{ mine: homeHref('mine'), all: homeHref('all') }}
+        messages={actionQueueMessages()}
+        pollIntervalMs={ACTION_QUEUE_POLL_INTERVAL_MS}
+      />
       {view.audience === 'HOST' ? (
         // 🔴 T-05-01: `VIEWER` には `S-007`（人材の登録）への導線を出さない
         //    （`docs/04` §S-007 権限差分「`VIEWER` は到達できない」）。判定材料は `role` だけで、

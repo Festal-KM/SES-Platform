@@ -47,7 +47,7 @@ import {
 } from './views';
 
 /** `withTenant` が `fn` に渡すクライアント。 */
-type TenantDb = Parameters<Parameters<typeof withTenant<void>>[1]>[0];
+export type TenantDb = Parameters<Parameters<typeof withTenant<void>>[1]>[0];
 
 type ProposalListShared = {
   /** 🔴 一覧と同じ `where` の `COUNT`（境界適用後）。 */
@@ -82,8 +82,13 @@ export type ProposalListOptions = {
   readonly order?: ProposalListOrder;
 };
 
-/** 🔴 `proposals` の `select`。`ProposalListRow` の型がこの集合を固定する（本文 / 凍結の中身 / `contentHash` を読まない）。 */
-const PROPOSAL_LIST_SELECT = {
+/**
+ * 🔴 `proposals` の `select`。`ProposalListRow` の型がこの集合を固定する（本文 / 凍結の中身 / `contentHash` を読まない）。
+ * ✅ T-12-15: `S-003` / `S-004` の要対応キュー（`lib/home/action-queue-read.ts`）が**同じ `select` と同じ写像**
+ *    （`projectProposalListItems`）を使う —— `S-019` の行と同じ出所にし、ホーム固有の射影を作らない（2 実装にすると
+ *    片方だけ境界を見ない経路になる。T-09-09 が `listProposalSendFailures` を統合したのと同じ理由）。
+ */
+export const PROPOSAL_LIST_SELECT = {
   id: true,
   state: true,
   proposalRequestId: true,
@@ -260,64 +265,85 @@ export async function listProposals(
     const byState = toCountByState(groups);
     const requestsByState = toRequestCountByState(requestGroups);
     const page = buildCursorPage(rows, query.limit, (row) => row.id);
+    const projected = await projectProposalListItems(ctx, db, page.items);
 
-    const [projects, userNames] = await Promise.all([
-      readProjectRefs(db, page.items.map((row) => row.projectId)),
-      readUserNames(db, page.items.map((row) => row.createdBy)),
-    ]);
-    const depsOf = (row: (typeof page.items)[number]): ProposalListItemDeps => ({
-      project: projects.get(row.projectId) ?? null,
-      engineerDisplayName: row.engineerSnapshot?.displayName ?? null,
-      createdByName: userNames.get(row.createdBy) ?? null,
-    });
-    const rowOf = (row: (typeof page.items)[number]): ProposalListRow => ({
-      id: row.id,
-      state: row.state,
-      proposalRequestId: row.proposalRequestId,
-      sendHoldReasonKey: row.sendHoldReasonKey,
-      sendHoldSince: row.sendHoldSince,
-      recipientCompanyName: row.recipientCompanyName,
-      recipientEmail: row.recipientEmail,
-      offeredUnitPrice: row.offeredUnitPrice,
-      lastFailureReason: row.lastFailureReason,
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-    });
-
-    if (ctx.partnerCompanyId !== null) {
-      return {
-        audience: 'PARTNER',
-        items: page.items.map((row) => toPartnerProposalListItem(rowOf(row), depsOf(row))),
-        total,
-        byState,
-        requestsByState,
-        nextCursor: page.nextCursor,
-      };
-    }
-
-    const [ownerNames, attempts] = await Promise.all([
-      readOwnerNames(db, page.items.map((row) => row.ownerPartnerCompanyId)),
-      readSendAttemptsByProposal(db, page.items.map((row) => row.id)),
-    ]);
-    const ownerOf = (ownerPartnerCompanyId: string | null): HostProposalOwnerView => {
-      if (ownerPartnerCompanyId === null) return { kind: 'HOST' };
-      const name = ownerNames.get(ownerPartnerCompanyId);
-      // FK（Restrict）が保証しているので到達しない。握り潰さず落とす。
-      if (name === undefined) throw new RangeError(`partner_companies が見つかりません（id=${ownerPartnerCompanyId}）。`);
-      return { kind: 'PARTNER', partnerCompanyName: name };
-    };
-    return {
-      audience: 'HOST',
-      items: page.items.map((row) =>
-        toHostProposalListItem(rowOf(row), depsOf(row), {
-          owner: ownerOf(row.ownerPartnerCompanyId),
-          sendAttempts: attempts.get(row.id) ?? [],
-        }),
-      ),
-      total,
-      byState,
-      requestsByState,
-      nextCursor: page.nextCursor,
-    };
+    return { ...projected, total, byState, requestsByState, nextCursor: page.nextCursor };
   });
+}
+
+/** `PROPOSAL_LIST_SELECT` で読んだ `proposals` の 1 行（Prisma の推論に依存しない構造的な型）。 */
+export type ProposalListSelectedRow = ProposalListRow & {
+  readonly projectId: string;
+  readonly ownerPartnerCompanyId: string | null;
+  readonly createdBy: string;
+  readonly engineerSnapshot: { readonly displayName: string } | null;
+};
+
+/** 所属で型が分かれる一覧の行（`listProposals` の `items` と同じ）。 */
+export type ProposalListItemsByAudience =
+  | { readonly audience: 'HOST'; readonly items: readonly HostProposalListItem[] }
+  | { readonly audience: 'PARTNER'; readonly items: readonly PartnerProposalListItem[] };
+
+/**
+ * 🔴 `PROPOSAL_LIST_SELECT` で読んだ行を `S-019` の行（`HostProposalListItem` / `PartnerProposalListItem`）に写す**唯一の実装**。
+ *    `listProposals`（#45 / `S-019` / `S-022`）と要対応キュー（`S-003` / `S-004`。T-12-15）が同じ関数を通る。
+ *
+ * - 参照の解決（案件名 / 作成者名 / ホストだけ: 作成会社名 + 送信試行）は**呼び出し側と同じトランザクション**（`db`）で行う。
+ * - 🔴 分岐の出所は `ctx.partnerCompanyId` だけ（リクエスト入力を見ない）。取引先の枝では `owner` / `sendHold` / 送信試行を**読まない**。
+ */
+export async function projectProposalListItems(
+  ctx: AuthenticatedTenantCtx,
+  db: Pick<TenantDb, 'project' | 'user' | 'partnerCompany' | 'sendAttempt'>,
+  rows: readonly ProposalListSelectedRow[],
+): Promise<ProposalListItemsByAudience> {
+  const [projects, userNames] = await Promise.all([
+    readProjectRefs(db, rows.map((row) => row.projectId)),
+    readUserNames(db, rows.map((row) => row.createdBy)),
+  ]);
+  const depsOf = (row: ProposalListSelectedRow): ProposalListItemDeps => ({
+    project: projects.get(row.projectId) ?? null,
+    engineerDisplayName: row.engineerSnapshot?.displayName ?? null,
+    createdByName: userNames.get(row.createdBy) ?? null,
+  });
+  const rowOf = (row: ProposalListSelectedRow): ProposalListRow => ({
+    id: row.id,
+    state: row.state,
+    proposalRequestId: row.proposalRequestId,
+    sendHoldReasonKey: row.sendHoldReasonKey,
+    sendHoldSince: row.sendHoldSince,
+    recipientCompanyName: row.recipientCompanyName,
+    recipientEmail: row.recipientEmail,
+    offeredUnitPrice: row.offeredUnitPrice,
+    lastFailureReason: row.lastFailureReason,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  });
+
+  if (ctx.partnerCompanyId !== null) {
+    return {
+      audience: 'PARTNER',
+      items: rows.map((row) => toPartnerProposalListItem(rowOf(row), depsOf(row))),
+    };
+  }
+
+  const [ownerNames, attempts] = await Promise.all([
+    readOwnerNames(db, rows.map((row) => row.ownerPartnerCompanyId)),
+    readSendAttemptsByProposal(db, rows.map((row) => row.id)),
+  ]);
+  const ownerOf = (ownerPartnerCompanyId: string | null): HostProposalOwnerView => {
+    if (ownerPartnerCompanyId === null) return { kind: 'HOST' };
+    const name = ownerNames.get(ownerPartnerCompanyId);
+    // FK（Restrict）が保証しているので到達しない。握り潰さず落とす。
+    if (name === undefined) throw new RangeError(`partner_companies が見つかりません（id=${ownerPartnerCompanyId}）。`);
+    return { kind: 'PARTNER', partnerCompanyName: name };
+  };
+  return {
+    audience: 'HOST',
+    items: rows.map((row) =>
+      toHostProposalListItem(rowOf(row), depsOf(row), {
+        owner: ownerOf(row.ownerPartnerCompanyId),
+        sendAttempts: attempts.get(row.id) ?? [],
+      }),
+    ),
+  };
 }

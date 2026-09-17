@@ -504,12 +504,22 @@ test.describe('④ パートナー A1 で、パートナー A2 のものが 1 �
 
       const home9 = parseJson(await apiRequest(session.page, '/api/home')) as {
         audience: string;
-        blocks: unknown[];
+        blocks: readonly { kind: string; items?: readonly Record<string, unknown>[]; targetIds?: readonly string[] }[];
         visibilityNotice?: { messageKey: string };
       };
       expect(home9.audience).toBe('PARTNER');
-      // Phase 0 は空のダッシュボード（`CLAUDE.md` §5）。件数を持つブロックが存在しない。
-      expect(home9.blocks).toEqual([]);
+      // ✅ T-12-15: ~~Phase 0 は空のダッシュボード~~ → 要対応キュー（`ACTION_QUEUE`）が 0 件でも必ず載る。
+      //    🔴 取引先に載る種別は自社宛の依頼（`PROPOSAL_REQUEST_PENDING`）と自社提案の `GATE_FAILED` だけ。
+      //    行は 8 キーだけで、他社の件数・存在・順位を示唆するキー（`total` / `rank` / `partnerCompanyName` 等）を持たない。
+      expect(home9.blocks.map((block) => block.kind)).toEqual(['ACTION_QUEUE']);
+      const queue = home9.blocks[0];
+      expect(Object.keys(queue).sort()).toEqual(['items', 'kind', 'targetIds']);
+      for (const row of queue.items ?? []) {
+        expect(['PROPOSAL_REQUEST_PENDING', 'GATE_FAILED']).toContain(row['kind']);
+        expect(Object.keys(row).sort()).toEqual(['counterpartyLabel', 'deadline', 'href', 'kind', 'rowVersion', 'since', 'subjectLabel', 'targetId']);
+      }
+      // 対照: `seed:isolation` はパートナー 1 に `GATE_FAILED` の自社提案を 1 件置く（`gateFailedProposalId`）。空振りで green にしない。
+      expect((queue.items ?? []).some((row) => row['kind'] === 'GATE_FAILED')).toBe(true);
       expect(home9.visibilityNotice?.messageKey).toBe('home.partner.visibilityNotice');
 
       session.outbound.assertNone();

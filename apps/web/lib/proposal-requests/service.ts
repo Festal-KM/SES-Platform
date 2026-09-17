@@ -263,7 +263,8 @@ const PROPOSAL_REQUEST_ROW_SELECT = {
   respondedAt: true,
 } as const;
 
-async function readProjectRefs(
+/** 🔴 T-12-15 指摘 5: `lib/home/action-queue-read.ts` の `readProjectNames` と同じ実装だったため、ここへ寄せて再利用する。 */
+export async function readProjectRefs(
   db: Pick<ProposalRequestDb, 'project'>,
   projectIds: readonly string[],
 ): Promise<ReadonlyMap<string, ProposalRequestProjectRef>> {
@@ -277,7 +278,8 @@ async function readProjectRefs(
   return new Map(rows.map((row) => [row.id, { id: row.id, name: row.name }]));
 }
 
-async function readEngineerRefs(
+/** 🔴 T-12-15 指摘 5: `lib/home/action-queue-read.ts` の `readEngineerNames` と同じ実装だったため、ここへ寄せて再利用する。 */
+export async function readEngineerRefs(
   db: Pick<ProposalRequestDb, 'engineer'>,
   engineerIds: readonly string[],
 ): Promise<ReadonlyMap<string, ProposalRequestEngineerRef>> {

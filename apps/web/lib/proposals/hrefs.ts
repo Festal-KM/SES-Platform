@@ -36,7 +36,7 @@ export function buildProposalEditHref(pattern: string, id: string): string {
 export const SENDING_DOMAIN_SETTINGS_HREF = '/settings/sending-domains';
 export const USAGE_SETTINGS_HREF = '/settings/usage';
 
-/** `S-021`（承認）。T-09-03。`S-020`（`APPROVAL_PENDING` の読み取り専用表示）/ `S-023`（T-09-09）/ `S-003` の要対応キュー（SP-10）から遷移する。 */
+/** `S-021`（承認）。T-09-03。`S-020`（`APPROVAL_PENDING` の読み取り専用表示）/ `S-023`（T-09-09）/ `S-003` の要対応キュー（✅ T-12-15。`lib/home/action-queue.ts`）から遷移する。 */
 export function proposalApproveHref(proposalId: string): string {
   return `/proposals/${proposalId}/approve`;
 }

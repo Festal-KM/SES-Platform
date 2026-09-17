@@ -2,15 +2,21 @@
 // `GET /api/home`（docs/05 §6.3 #9）の境界検証。T-03-06。
 //
 // 🔴 `scope=mine|all` は docs/04 §S-003「自分の担当のみ」トグル（既定オン）の受け口。
-//    Phase 0 は要対応キューが無い（`blocks` は常に空）ため判定には使わないが、
-//    Phase 1 が骨格を変えずに絞り込みを足せるよう、境界検証だけ先に用意する。
+//    ✅ T-12-15: 要対応キュー（`ACTION_QUEUE`）が使うようになった（`readActionQueueBlock`）。
+// 🔴 `changedSince`（ISO 8601）は 60 秒ポーリングの差分応答の受け口（docs/04 申し送り 6 / docs/05 §6.3 #9）。
+//    付けると `ACTION_QUEUE.items` は `rowVersion >= changedSince` の行だけになる（`targetIds` は常に全件）。
+//    値は前回応答の `changedSince` をそのまま返すだけであり、分離キーではない（`assertBoundarySchema` の対象外の形）。
 import { z } from 'zod';
 
 export const HOME_SCOPES = ['mine', 'all'] as const;
 export type HomeScope = (typeof HOME_SCOPES)[number];
 
+/** 🔴 既定は「自分の担当のみ」（docs/04 §S-003 操作表「既定はオン」）。 */
+export const DEFAULT_HOME_SCOPE: HomeScope = 'mine';
+
 export const homeQuerySchema = z.object({
   scope: z.enum(HOME_SCOPES).optional(),
+  changedSince: z.iso.datetime({ offset: true }).optional(),
 });
 
 export type HomeQuery = z.infer<typeof homeQuerySchema>;

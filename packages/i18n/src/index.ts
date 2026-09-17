@@ -1260,6 +1260,34 @@ const ja = {
   'home.scanQuarantine.lead':
     'ウイルス検査で問題が見つかったか、検査を完了できなかった版です。この版は共有・添付・ダウンロードのいずれもできません。内容を確認のうえ、別の版をアップロードし直してください。',
   'home.scanQuarantine.open': '対象のスキルシートを開く',
+  // --- S-003 セクション 1 / S-004 セクション 1・2 要対応キュー（Phase 1 分。docs/04 §S-003 / §S-004 / F-006。T-12-15）---
+  // 🔴 種別ラベルは**既存の状態ラベルと同じ語**（新しい語を作らない）。4 つの「うまくいかなかった」のうち載るのは
+  //    `GATE_FAILED` / `SUBMIT_FAILED` だけであり（`LOST` / `DECLINED` は終端）、`SEND_HELD`（送信保留）は `SUBMIT_FAILED`（送信失敗）と
+  //    **別の語**（`GLOSSARY.hold` / `proposals.list.hold.badge` の「保留」に倣う。docs/05 §10.4）。
+  'home.actionQueue.title': '要対応',
+  'home.actionQueue.lead': '今日、自分が動かないと止まるものです。放置時間が長く、取り返しのつかないものから並んでいます。',
+  // docs/04 §S-003「空 / ローディング / エラー」の「要対応 0 件」の文言をそのまま使う。
+  'home.actionQueue.empty': '対応が必要なものはありません',
+  'home.actionQueue.scope.legend': '表示範囲',
+  'home.actionQueue.scope.mine': '自分の担当のみ',
+  'home.actionQueue.scope.all': '組織全体',
+  'home.actionQueue.column.kind': '種別',
+  'home.actionQueue.column.subject': '対象',
+  'home.actionQueue.column.counterparty': '相手',
+  // 🔴 提案の行は経過時間（放置時間）、提案依頼の行は返答期限までの残り（docs/04 §S-004 セクション 1「返答期限までの残り」）。
+  'home.actionQueue.column.time': '経過時間 / 残り時間',
+  'home.actionQueue.column.deadline': '期限',
+  'home.actionQueue.kind.SEND_FAILED': OUTCOME_LABELS.SUBMIT_FAILED,
+  'home.actionQueue.kind.APPROVAL_PENDING': '承認待ち',
+  'home.actionQueue.kind.GATE_FAILED': OUTCOME_LABELS.GATE_FAILED,
+  'home.actionQueue.kind.SEND_HELD': `${GLOSSARY.submit}${GLOSSARY.hold}`,
+  'home.actionQueue.kind.PROPOSAL_REQUEST_PENDING': `${GLOSSARY.proposalRequest}の返答待ち`,
+  // 「対象」= 案件名 + エンジニア名（凍結側）/ 案件名 + 「共有候補（匿名）」の区切り。
+  'home.actionQueue.subject.separator': ' / ',
+  'home.actionQueue.valueNone': '—',
+  // 🔴 60 秒ポーリングで更新があった行の印（docs/04 §S-003 非同期処理の表現）。
+  'home.actionQueue.changed': '新着',
+  'home.actionQueue.pollError': '最新の状態を取得できませんでした。次の更新で自動的に再試行します。',
 
   // --- S-036 送信ドメインの設定と検証（docs/04 §S-036 / F-001 AC-4 / docs/03 §3.2.7。T-04-04）---
   // 🔴 **状態であってエラーではない**（docs/04 `program-design` 申し送り 8）。

@@ -6,6 +6,7 @@
 //    （`tests/static/auth-db-callers.test.ts` はテストファイルを走査対象から除外している）。
 import { describe, expect, it } from 'vitest';
 import { resolveTenantCtx, type AuthenticatedTenantCtx, type TenantRole } from '@ses/db';
+import { CHANGED_SINCE_SAFETY_MARGIN_MS } from './action-queue';
 import { getHomeView } from './service';
 import type { HomeBlock } from './types';
 
@@ -109,13 +110,13 @@ describe('getHomeView', () => {
     ]);
   });
 
-  it('changedSince は ISO 8601 の現在時刻に近い（60 秒ポーリングの基準時刻）', async () => {
+  it('🔴 T-12-15 指摘 4: changedSince は現在時刻から安全マージンを引いた値に近い（60 秒ポーリングの基準時刻）', async () => {
     const before = Date.now();
     const view = getHomeView(await ctxOf('OWNER', null), NO_BLOCKS);
     const after = Date.now();
 
     const parsed = Date.parse(view.changedSince);
-    expect(parsed).toBeGreaterThanOrEqual(before);
-    expect(parsed).toBeLessThanOrEqual(after);
+    expect(parsed).toBeGreaterThanOrEqual(before - CHANGED_SINCE_SAFETY_MARGIN_MS);
+    expect(parsed).toBeLessThanOrEqual(after - CHANGED_SINCE_SAFETY_MARGIN_MS);
   });
 });

@@ -543,6 +543,14 @@ const FROZEN_EXACT: readonly string[] = [
   // ✅ T-10-05: `F-028` 非本番環境バナー（`app/_components/environment-banner.tsx`。`app/layout.tsx` が全画面に描く）。
   //    E2E（`isolation.spec.ts`）と render テスト（`layout.render.test.tsx` / `environment-banner.render.test.tsx`）が掴む。
   'environment-banner',
+  // ✅ T-12-15: `S-003` / `S-004` の要対応キュー（`_home/action-queue-section.tsx`）。E2E（`home.mobile.spec.ts`）と render テストが掴む。
+  'home-action-queue',
+  'home-action-queue-empty',
+  'home-action-queue-list',
+  'home-action-queue-poll-error',
+  'home-action-queue-scope',
+  'home-action-queue-scope-all',
+  'home-action-queue-scope-mine',
   'home-host-engineer-ledger',
   'home-host-project-list',
   'home-host-proposal-requests',
@@ -1231,6 +1239,14 @@ const FROZEN_PREFIXES: readonly string[] = [
   'engineer-skill-remove-',
   'engineer-skill-row-',
   'engineer-skill-years-',
+  // ✅ T-12-15: 要対応キューの行（`{targetId}` ごと）。
+  'home-action-queue-changed-',
+  'home-action-queue-counterparty-',
+  'home-action-queue-deadline-',
+  'home-action-queue-kind-',
+  'home-action-queue-row-',
+  'home-action-queue-subject-',
+  'home-action-queue-time-',
   'home-scan-quarantine-item-',
   'home-scan-quarantine-link-',
   'member-revoke-start-',
