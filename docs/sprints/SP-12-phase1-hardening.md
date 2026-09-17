@@ -11,7 +11,9 @@
 
 🔴 **`CLAUDE.md` §5 の Phase 1 成功条件 3 つと、§2.1 のリリース条件 R-1 / R-2 を、証跡（テスト名 + 実行ログ）とともに満たす。** 実装がすべて終わっていても、この 5 つが揃わなければ Phase 1 は閉じない。
 
-⚠️ **例外が 1 つある: `T-12-10`（[Issue #42](https://github.com/Festal-KM/SES-Platform/issues/42) = 回答②）は実装を伴う** —— 公開後の公開欄の編集で再検査し、FAIL なら公開を解除する。**判断を人間に仰いだ結果、実装が確定したためである**（2026-09-10）。それ以外は新機能を実装しない。**負荷・E2E・環境分離・縮退・人間判断の 5 領域を仕上げる。** 🔴 **環境分離には、SP-01 から引き継いだ E-2（AWS アカウント分離。T-12-09。🔴 `sandbox` 用アカウントは Phase 2 へ）を含む** — 実装で塞げるのは送信経路であり、**本番キーの混入はアカウントが分かれていて初めて構成として塞がる**（`docs/dev-plan.md` §5 E-2）。
+⚠️ **例外が 1 つある: `T-12-10`（[Issue #42](https://github.com/Festal-KM/SES-Platform/issues/42) = 回答②）は実装を伴う** —— 公開後の公開欄の編集で再検査し、FAIL なら公開を解除する。**判断を人間に仰いだ結果、実装が確定したためである**（2026-09-10）。それ以外は新機能を実装しない。**負荷・E2E・環境分離・縮退・人間判断の 5 領域を仕上げる。**
+
+⚠️ **2026-09-17 の追記（SP-09 の完了確認。`docs/sprints/SP-09-proposal-flow.md` §8 / `docs/dev-plan.md` §8 の 2026-09-17 の行）**: **`T-12-13`〜`T-12-16` は「新機能」ではなく、Phase 1 で予定されていたのに持ち主が無かったもの**である —— ①SP-09 の T-09-09 ③ / T-09-10 ③ / T-09-11 ① が「SP-12 へ」と申し送った 11 項目（`T-12-13` に 6 / `T-12-14` に 4 / `T-12-15` に 1〔T-09-09 ③-④〕。加えて T-09-11 ② の E2E #23 前半を `T-12-14` ⑤ に）②`S-003` / `S-004` の要対応キュー（SP-03 T-03-06 が「Phase 1」と明記。`T-12-15`）③`docs/05` §6.5 #46b の差分ビューと `S-006` セクション 4・5（「SP-09」と書かれたまま SP-09 に持ち主が無かった。`T-12-16`）。🔴 **申し送りを置いたまま実行タスクが無い状態を作らない**（`docs/dev-plan.md` §8 の 2026-09-11 / 2026-09-15 の行と同型）。 🔴 **環境分離には、SP-01 から引き継いだ E-2（AWS アカウント分離。T-12-09。🔴 `sandbox` 用アカウントは Phase 2 へ）を含む** — 実装で塞げるのは送信経路であり、**本番キーの混入はアカウントが分かれていて初めて構成として塞がる**（`docs/dev-plan.md` §5 E-2）。
 
 ## 2. 対応機能 ID
 
@@ -35,6 +37,10 @@
 | T-12-10 | 🔴 **公開後の公開欄の編集と再検査（[Issue #42](https://github.com/Festal-KM/SES-Platform/issues/42)）の決着** | 決定が記録され、推奨（再検査）を採る場合は実装とテストまで完了している | `F-014 AC-3` / `F-020` | S〜M |
 | 🔴 **T-12-11** | 🔴 **第 1 回リリースの準備**（[Issue #46](https://github.com/Festal-KM/SES-Platform/issues/46)。**リリースに何が要るかの洗い出し自体がこのタスクの一部である**） | 🔴 **§4 の受け入れ基準 ①〜⑨ をすべて満たす。** 本番環境・`production` の起動時検証・障害対応手順・**手動請求の算出根拠**・**契約書はメール添付という制約の明示**・SP-21 の完了 | `CLAUDE.md` §11 / §10.4 / `docs/dev-plan.md` §2.2 / §5 E-16 | L |
 | T-12-12 | 🔴 **メール / ストレージのクォータ上書きの執行点配線**（T-11-02 NG-1 の後続） | 執行点（`email-send.ts` / `send-hold-release.ts` / `issueSkillSheetUploadUrl`）が `tenant_quota_overrides` の上書き行を読み、上限の上げ下げが実際の送信・アップロードの挙動に反映される | `docs/05` §5.2 / §5.8.1 ⑧ | M |
+| T-12-13 | 🔴 **SP-09 からの申し送りの回収 ①（上流改訂・人間判断を要しない整備）** | `audit_logs.target_type` が `PROPOSAL_AUDIT_TARGET_TYPE` に統一され既存行が移行済み / `docs/05` §6.5「5 本」→ 6 本 / `S-021` が再送の確定（`SUBMITTED` / `SUBMIT_FAILED`）を読み直し無しに拾う / `data-can-approve-now` / `S-024` の TZ と履歴 3 件の注記 | SP-09 T-09-09 ③-① / T-09-10 ③-①②③ / T-09-11 ①-①② | M |
+| T-12-14 | 🔴 **SP-09 からの申し送りの回収 ②（上流改訂・人間判断を要するもの）** | `S-019` 一括承認の判断が Issue に起票され既定で進む / `S-023` ゲート結果が実行ごとの履歴で描かれる（#40 の拡張）/ `S-023` 履歴の折りたたみ方針が `docs/04` にある / 取引先の履歴の承認者名が Issue に起票され既定で進む / E2E #23 前半の扱いが T-12-03 の表に固定 | SP-09 T-09-09 ③-②③⑤ / T-09-11 ①-③ / T-09-11 ② | M |
+| T-12-15 | 🔴 **`S-003` / `S-004` の要対応キュー（Phase 1 分）** | 送信失敗 / 承認待ち / ゲート差し戻し / 提案依頼の返答待ち / 送信保留 が `HomeBlock` に**追加専用**で載る。🔴 4 つの「うまくいかなかった」が混ざらず、`PROVIDER_QUOTA` の保留と `LOST` / `DECLINED` は載らず、取引先に他社由来の値が 0 件 | `F-006` / `docs/04` §S-003 §S-004 / SP-03 T-03-06 / SP-09 T-09-08 ②-④ / T-09-09 ③-④ | M |
+| T-12-16 | 🔴 **#46b `GET /api/proposals/{id}/snapshot-diff` と `S-006` セクション 4（提案履歴）・5（凍結情報との差分）** | 凍結側と現在値が**左右に並置**され 1 つのリストに混在しない。🔴 **現在値を C3 で読めない提案では 404**（経路 2 の範囲を超えない）。`engineer-detail-proposals-coming-soon` が消える。先に `docs/05` #46b の「SP-09」を「SP-12」に改訂 | `F-019 AC-2` / `docs/05` §6.5 #46b / §17.3 #25 / `docs/04` §S-006 | M |
 
 ## 4. タスク詳細
 
@@ -64,7 +70,7 @@
 
 ### T-12-03 E2E の総仕上げ（L）
 
-- **実装**: `docs/05` §17.3 の全 24 シナリオのうち、**Phase 1 に該当する 18 シナリオ**（= 24 − 除外 6 件）をすべて green にする。**下表の 18 行がこのタスクの証跡リストそのものであり、Phase 1 完了判定の入力になる。**
+- **実装**: `docs/05` §17.3 の全 ~~24~~ **25** シナリオのうち、**Phase 1 に該当する ~~18~~ 19 シナリオ**（= 25 − 除外 6 件）をすべて green にする。**下表の 19 行がこのタスクの証跡リストそのものであり、Phase 1 完了判定の入力になる。** ⚠️ **2026-09-17 に改訂**: `docs/05` §17.3 は SP-09 の `T-09-12` で **#25**（経験内容の行単位の凍結 + 差分ビュー。`F-008 AC-5` / `AC-6` / `F-019 AC-2` / `AC-5` = Phase 1）が追加され 25 行になっていたが、本表が 24 行のまま置かれていた。**件数の契約（下記 🔴）を守るために 19 行目として加える。差分ビュー部分の持ち主は `T-12-16`。**
   | # | シナリオ | 実装スプリント |
   |---|---|---|
   | 1 | 2 テナント × 2 パートナーで越境 0 件 | SP-03 |
@@ -85,8 +91,10 @@
   | 20 | 負荷（T-12-02） | SP-12 |
   | 23 | AI 上限とゲート / ドメイン未検証の招待の自動送達 / 🔴 **送信基盤クォータ（`HELD_PROVIDER_QUOTA` と `send.*` の `PROVIDER_QUOTA`）** | SP-07 / SP-04 / SP-09 |
   | 24 | 🔴 **削除予告と環境枠**（予告が `HELD_PROVIDER_QUOTA` の間は `PURGED` にならず、`send.hold-release` 後に初めて削除される） | SP-10（T-10-12） |
+  | 25 | 🔴 **経験内容の行単位の凍結**（台帳で 1 行編集・1 行削除・1 行追加しても `S-023` の行数と 4 項目が変わらない）**+ 差分ビューで凍結側と現在値が左右に並置され同一リストに混在しない**（2026-09-17 に追加） | SP-09（T-09-12。凍結）/ **SP-12（T-12-16。差分ビュー）** |
 - **Phase 2 / 3 のシナリオ 6 件**（#11 / #12 / #14 / #19 の一部 / #21 / #22）は本スプリントの対象外。**ただし #19（AI 全停止）は Phase 1 の範囲で T-12-05 が扱う。**
-- 🔴 **件数の内訳**: `docs/05` §17.3 の全 **24** シナリオ − 除外 **6** 件（#11 / #12 / #14 / #19 / #21 / #22）= **18 シナリオ**。上表の行数・本文の件数・§5 テスト計画の件数は**この 18 で一致していなければならない**（食い違うと完了確認モードが「どれが必須か」を機械的に判定できない）。**除外リストは #24 の追加後も変わらない**（#24 は Phase 1 の `F-064 AC-10`）。
+- ⚠️ **#23 前半（AI 上限と HELD → `S-038` の残量表示 → 承認・送信の 409 / 422）はブラウザ経路では未実装のまま結合層（`tests/isolation/gate-hold-release.test.ts`）にある**（SP-09 T-09-11 ② の申し送り。ハーネスの env は 1 組で他の全シナリオがゲート PASS を前提にするため、上限到達を E2E で再現するには spec 単位で `AI_DAILY_COST_LIMIT_USD_DEFAULT` を変えた worker か、上限値を直接置くシームが要る）。🔴 **どう満たすかは `T-12-14` ⑤ で決め、決めた形を本表の #23 行に書く**（読み替えを固定しないまま「E2E」と書き続けない —— `docs/dev-plan.md` §8 の読み替えの前例 5 回と同じ扱い）。
+- 🔴 **件数の内訳**: `docs/05` §17.3 の全 ~~**24**~~ **25** シナリオ − 除外 **6** 件（#11 / #12 / #14 / #19 / #21 / #22）= ~~**18**~~ **19 シナリオ**。上表の行数・本文の件数・§5 テスト計画の件数は**この 19 で一致していなければならない**（食い違うと完了確認モードが「どれが必須か」を機械的に判定できない）。**除外リストは #24 / #25 の追加後も変わらない**（#24 は Phase 1 の `F-064 AC-10`、#25 は Phase 1 の `F-008 AC-5` / `AC-6` / `F-019 AC-2` / `AC-5`）。
 - 🔴 **`globalSetup` と直列化の規律を守る**（`docs/05` §17.6）: 分離検証のシナリオ（#1 / #2 / #5 / #6 / #15 / #16）は **`workers: 1`**。テナントはテストごとに独立。時刻は `now` を引数で渡し**システム時刻を動かさない**。
 - **完了の判定**: 上表がすべて green。**実行ログを保存し、Phase 1 完了確認の証跡にする。**
 
@@ -222,14 +230,87 @@
 - 完了後、`QUOTA_OVERRIDE_METRICS`（`packages/domain/src/quota/override.ts`）に `EMAIL_COUNT` / `STORAGE_BYTES` を戻し、migration の CHECK 制約・Zod スキーマ・`A-004` の UI（`admin.usage.quota.defaultFixed` の専用表示を通常表示に戻す）を合わせて更新する。
 - **完了の判定**: 上限を上げた翌日にテナントの日次メール送信数 / ストレージ上限が実際に変わることを結合テストで証明する（`tests/isolation/admin-usage-quota.test.ts` に統合するか新設）。パートナー文脈からの読み取りが他テナントの `reason` / 運営者 ID を返さないことをテストで証明する。
 
+### T-12-13 🔴 SP-09 からの申し送りの回収 ①（上流改訂・人間判断を要しない整備）（M）
+
+- **背景**: SP-09 の完了確認（2026-09-17。`docs/sprints/SP-09-proposal-flow.md` §8 ①）で、T-09-09 ③ / T-09-10 ③ / T-09-11 ① の「SP-12（Phase 1 hardening）へ」の申し送りが本スプリントに転記されていなかった。本タスクは 11 項目のうち**上流（`docs/04` / `docs/05`）の改訂や人間判断を要しない 6 項目**を回収する。残る 5 項目は `T-12-14`。🔴 **原文は SP-09 から写したものであり、言い換えない**（出典の節を消さない。本表が「何を回収したか」の照合先になる）。
+- **原文と、何をどう直すか**:
+
+| # | 出典 | 原文（SP-09 より） | 何をどう直すか | 完了の判定 |
+|---|---|---|---|---|
+| ① | T-09-09 ③-① | 🔴 **`audit_logs.target_type` の表記の統一** —— `'Proposal'`（`apps/web/lib/proposals/{approval,gate,resend,service,submit,transition}.ts` のローカル定数 `PROPOSAL_TARGET_TYPE` と `packages/db/src/{proposal-approval,proposal-send}.ts`）と `'PROPOSAL'`（`apps/worker/src/jobs/gate-run.ts` の `GATE_RESULT` / `packages/db/seed/presets/isolation.ts` の一部）が混在している。書き込み側を `PROPOSAL_AUDIT_TARGET_TYPE`（`@ses/db`。T-09-09 で新設）に寄せ、既存行を `UPDATE audit_logs SET target_type = 'Proposal' WHERE target_type = 'PROPOSAL' AND action LIKE 'proposal.%'` で移行する（`S-041` に対象種別フィルタを足す前に）。 | 書き込み側 8 ファイルのローカル定数を削除し `@ses/db` の `PROPOSAL_AUDIT_TARGET_TYPE` を import する。`gate-run.ts` の**監査行**（`audit_logs`）と `seed/presets/isolation.ts` も同じ定数に寄せる。既存行の移行は **新規 migration**（原文の `UPDATE` 文をそのまま。`action` / `summary` / `actor` / 日時は触らない —— **表記の統一であり、監査ログの改変ではない**ことを migration のコメントに書く）。⚠️ **`review_gates.target_type` / `ai_usage.target_type` / `send_attempts.entity_type` の `'PROPOSAL'` は別の列・別の定数（`GateTargetType` / `PROPOSAL_SEND_ENTITY_TYPE`）であり対象外。混ぜない。** 静的テストを 1 本足す: **`audit_logs` の `targetType` に `'Proposal'` / `'PROPOSAL'` のリテラルを書く箇所が非テストソースに 0 件**（定数経由のみ）。 | 静的テスト green。migration 適用後の結合テストで `target_type = 'PROPOSAL' AND action LIKE 'proposal.%'` が **0 行**、かつ `tests/isolation/proposal-list-detail.test.ts` ほか既存の監査行の検証が `PROPOSAL_AUDIT_TARGET_TYPE` で `gate.run` 由来の行まで引けること。 |
+| ② | T-09-10 ③-① | `docs/05` §6.5「#48 の実装の決着」の「取引先は … 5 本」の記述を 6 本に訂正する（`pm` の文書整備。実装は 6 本で一致している）。 | `program-design` が `docs/05` §6.5「#48 の実装の決着」の該当文を **6 本（実施 / 結果待ち + 4 状態からの辞退）** に訂正する。**実装は変えない。** | `docs/05` §6.5 に「5 本」の記述が残っていない（Grep で 0 件）。 |
+| ③ | T-09-10 ③-② | `S-024` の日時入力は `datetime-local` の壁時計をそのまま `note` に書く（TZ を持たない記録）。面談調整の連絡（`F-041`。Phase 2 SP-15）で日時を構造化して送るときは、`ProposalEvent.note` の自由記述ではなく別の列 / 型で持つこと（`note` を正規表現で読まない）。 | 実装は変えない。**制約を 2 箇所に固定する**: `docs/05` §6.5「`S-024` の実装の決着（T-09-10）」に「`note` の日時は `datetime-local` の壁時計（TZ 無し）であり、`F-041` で日時を送るときは `note` を読まず別の列 / 型で持つ」を注記（`program-design`）+ `apps/web/lib/proposals/interview-note.ts` の冒頭コメントに同じ 1 行。🔴 **Phase 1 完了後の再計画で SP-15 の `F-041` タスクの着手条件として転記する**（本スプリントでは SP-15 を触らない。`docs/dev-plan.md` §8 の 2026-09-17 の行に持ち主を記した）。 | 注記が 2 箇所に存在する。 |
+| ④ | T-09-10 ③-③ | `S-024` の「直近の履歴 3 件」は #46 の `events` 全件を読んで末尾 3 件を切り出している（提案 1 件の履歴は多くて数十行なので現状は問題ないが、履歴が肥大したら #46 に `limit` を足す）。 | **見送り（条件付き）。** 実装は変えない。`docs/05` §6.5「#45 / #46 / #47 と `S-019` / `S-023` の実装の決着（T-09-09）」に **再評価条件「提案 1 件の `proposal_events` が 200 行を超える実例が出たら #46 に `limit` を足す」** を注記する（`program-design`）。 | 注記が存在する。 |
+| ⑤ | T-09-11 ①-① | #44（再送）の 202 後に遷移する `S-021` は `APPROVED` として描かれ、送信中のポーリング（#46）は「送信する」を押した直後（`SUBMIT_REQUESTED`）と `SUBMITTING` の間しか走らない。**再送の確定（`SUBMITTED`）を画面が拾わず、読み直すまで「送信する」が押せる状態に見える**（押しても同じ `attemptSeq` で 1 本に畳まれるので二重送信にはならないが、利用者には分からない）。`S-022` から遷移した直後もポーリングを走らせるか、遷移先を `S-023` にするかを決める（E2E は `reload()` で回避している。`proposal-cycle.spec.ts` シナリオ 3 #8 の注記）。 | **既定 = 遷移先は `S-021` のまま**（`docs/05` §6.5「#44 と `S-022` の実装の決着（T-09-08）」の「202 後は `S-021` へ」を変えない。**`docs/04` §S-022 は遷移先を定めておらず「状態バッジが `送信中` へ」とだけ書く**ため、上流改訂を伴わない側を採る）。`apps/web/app/(main)/proposals/[id]/approve/proposal-approval-screen.tsx` のポーリング条件を「`SUBMIT_REQUESTED` / `SUBMITTING` の間」から「**`APPROVED` で、かつ #46 の `sendAttempts` の末尾が未確定（`RESERVED`）または `sendHold` が非 null**」にも広げ、`SUBMITTED` / `SUBMIT_FAILED` への確定を #46 の差分で拾う。🔴 **確定後に「送信する」を描かない**（`SUBMITTED` = 完了の表示 / `SUBMIT_FAILED` = `S-022` への導線）。**押しても 1 本に畳まれる事実は変えないが、押せる表示そのものを出さない。** E2E `tests/e2e/proposal-cycle.spec.ts` シナリオ 3 #8 の `reload()` 回避を外し、ポーリングで `SUBMITTED` を拾う形に置き換える。 | render テスト（`APPROVED` + 未確定 `SendAttempt` でポーリングが走る / 確定後に `proposal-approval-submit` が無い）green。E2E #8 が `reload()` 無しで green。 |
+| ⑥ | T-09-11 ①-② | `S-021` の `data-can-approve` は立場の表明で状態を含まない（`GATE_FAILED` でも `true`）。属性名から状態の可否と誤読しうるので、`data-can-approve-now` を足すか render テストに注記する。 | `proposal-approval-screen.tsx` に **`data-can-approve-now`**（= 立場 × 状態 `APPROVAL_PENDING` × プレビュー末尾の確認済み。**この瞬間に #41 を呼べるか**）を足す。`data-can-approve` は立場の表明として**据え置く**（🔴 属性・testid の削除・改名 0 件 —— `tests/static/testid-inventory.test.ts` を壊さない）。render テストに両属性の意味の差を固定する。 | render テスト（`GATE_FAILED` で `data-can-approve="true"` かつ `data-can-approve-now="false"` / `APPROVAL_PENDING` + 末尾確認済みで両方 `true`）green。 |
+
+- 🔴 **守ること**: ①は `audit_logs`（監査ログ表）への migration を含むため**境界領域として `code-reviewer` 1 回**（`CLAUDE.md` §8.3）。⑤⑥は UI のみ。②③④は文書整備であり、`docs/05` の改訂は **`program-design`** が行う（`CLAUDE.md` §8.7。**スプリントファイルとコードだけを直さない**）。
+- **完了の判定**: 上表 ①〜⑥ の「完了の判定」列がすべて満たされている。🔴 **1 項目でも未消化なら、その項目を「見送り」と書かずに残す**（見送りは④の条件付き 1 件だけ）。
+
+### T-12-14 🔴 SP-09 からの申し送りの回収 ②（上流改訂・人間判断を要するもの）（M）
+
+- **背景**: `T-12-13` と同じ（SP-09 §8 ①）。本タスクは 11 項目のうち **`docs/04` / `docs/05` の改訂が先に要るもの、または人間判断（Issue）を要するもの 4 項目**（T-09-09 ③-②③⑤ / T-09-11 ①-③）と、**T-09-11 ②（SP-10 / SP-11 宛だが `T-12-03` の証跡リストに直結する E2E #23 前半）の 1 項目**を回収する（11 項目の残り 1 つ = T-09-09 ③-④〔`S-003` の要対応キュー〕は `T-12-15`）。🔴 **順序は上流から**（`CLAUDE.md` §8.7。**スプリントファイルとコードだけを直さない**）。🔴 **Issue の起票はオーケストレーターが行う**（`CLAUDE.md` §8.6。本タスクの `programmer` は `## BLOCKED` / 本表の「既定」で進め、回答を待って止まらない）。
+- **原文と、何をどう直すか**:
+
+| # | 出典 | 原文（SP-09 より） | 何をどう直すか（既定と選択肢） | 完了の判定 |
+|---|---|---|---|---|
+| ① | T-09-09 ③-② | **`S-019` の一括承認**（`docs/04` §S-019「一括操作（ホスト）」。デスクトップのみ）は置いていない —— `S-021` の「プレビューの末尾まで確認するまで承認できない」（`F-021 AC-4` / `BR-49`）と両立する設計（1 件ずつの判断材料の列挙）が先。 | 🔴 **人間判断（スコープ。`CLAUDE.md` §8.6）。Issue を起票する（`decision-needed`）。** 選択肢: **A = Phase 1 では置かず、`docs/04` §S-019 の「セクションごとのフェーズ」と「一括操作（ホスト）」を Phase 2 に改訂する**（`ui-design`）/ **B = Phase 1 で実装する**。ただし B は「1 件ずつの判断材料を列挙し、**各件のプレビュー末尾まで確認済みでなければ承認できない**」形でしか成立せず（`F-021 AC-4` / `BR-49` / `CLAUDE.md` §13.3「判断材料を見ずに承認できる導線を作らない」）、操作量は 1 件ずつの承認と同じになる。**既定 = A。** いずれでも `F-021 AC-6`（モバイルでは一括承認を既定にしない）は成立したまま。 | Issue が起票され、既定 A なら `docs/04` §S-019 が改訂されている。B なら実装 + `tests/e2e/proposal-cycle.spec.ts` シナリオ 5（モバイルで一括承認が既定でない）が引き続き green。 |
+| ② | T-09-09 ③-③ | `S-023` の「ゲート結果の履歴」（`docs/04` §S-023 セクション 4「実行ごとの層別結果」）は**現在の結果（#40）だけ**を描いている。実行ごとの履歴は `review_gates` を `target_id` で複数行読む API（#40 の拡張）が要る。 | **`program-design` が `docs/05` §6.5 #40 を拡張してから実装する。** 既定の形: `GET /api/proposals/{id}/gate-results`（新設。または #40 に `?history=1`）—— `review_gates` を `(tenant_id, target_type, target_id)` で複数行、`executed_at` 降順。各行 = `contentHash` / 層別 PASS・FAIL / 指摘 / 実行日時 / `HELD` の理由。**再実行で上書きせず履歴として残す**（`F-020 AC-7`。行は既に残っている —— 足りないのは読む API と描く場所）。`S-023` セクション 4 を「現在の結果」から「実行ごとの履歴」に。🔴 **境界は既存 #40 と同じ**（取引先は自社提案分のみ）。🔴 **整合層の機械照合の合否と AI の警告を履歴でも別の見出しで描く**（`docs/02` `ui-design` 申し送り 5。不合格と警告を混ぜない）。 | 結合テスト（同じ提案で内容を変えて 2 回実行 → 2 行が降順で返る / 他社の提案は 404）+ render（履歴が実行ごとに分かれ、警告が不合格と別の見出し）green。`docs/05` §6.5 が先に更新されている。 |
+| ③ | T-09-11 ①-③ | `S-023` の履歴は worker の実経路だとゲート・送信の `TRANSITION` 4 本が増える（商談 4 本と合わせて 8 本）。履歴が長くなったときの折りたたみ方針は `docs/04` §S-023 に無い。 | **`ui-design` が `docs/04` §S-023 に折りたたみ方針を追記してから実装する。** 既定案: **§10.3 の共通規約（直近 10 行 + 「すべて表示」）に合流し、`S-023` 固有の例外を作らない**。モバイルのアコーディオン（§S-023「デバイス別」）はそのまま。 | `docs/04` §S-023 に方針がある。render テスト（11 行以上で直近 10 行 + 「すべて表示」/ 10 行以下は全件）green。 |
+| ④ | T-09-09 ③-⑤ | 取引先の `S-023` 履歴に**ホストの承認者の表示名**が出る（`users` の C8 DIRECTORY はホスト所属の行を全員に見せる設計であり、`ProposalEvent` の実行者名のための意図された開示）。`approval`（承認記録）は型から外してあるが、履歴の主体名まで伏せるかは `docs/05` §4.4 C8 の判断事項として確認する。 | 🔴 **確認事項。Issue を起票する（`assumption`。[Issue #59](https://github.com/Festal-KM/SES-Platform/issues/59)〔`S-023` の閲覧記録〕と同じ性質 = 開示・記録の範囲の判断）。既定 = 現状維持**（C8 DIRECTORY の設計どおり。`approval`〔承認記録の構造〕は取引先の型に無いまま）。「伏せる」に決まった場合の変更点は `apps/web/lib/proposals/events.ts` の主体名の解決 1 箇所（取引先向け view で実行者名を `ホスト担当者` に丸める）であり、**C8 のポリシーは動かさない**。`program-design` が `docs/05` §4.4 C8 に「`ProposalEvent` の実行者名の開示は意図されたもの（暫定。Issue で確認中）」と注記する。 | Issue が起票され、`docs/05` §4.4 C8 に注記がある。 |
+| ⑤ | T-09-11 ②（SP-10 / SP-11 宛。T-12-03 の #23 に直結） | §17.3 #23 前半（AI 上限と HELD → `S-038` の残量表示 → 承認・送信の 409 / 422）はブラウザ経路では未実装のまま結合層にある。ハーネスの env は 1 組で他の全シナリオがゲート PASS を前提にするため、E2E で上限到達を再現するには **spec 単位で `AI_DAILY_COST_LIMIT_USD_DEFAULT` を変えた worker を起動する**か、運営者の `A-004` で上限を下げる経路（Phase 3）が要る。 | **`T-12-03` の証跡リスト（#23 行）で「どう満たすか」を決めて固定する。** 選択肢: **(a)** 専用 spec で上限を下げた worker を起動する（ハーネスの worker は 1 プロセス共有のため Playwright の `projects` / globalSetup の分岐が要る）/ **(b)** 上限到達の**判定**は結合層（`tests/isolation/gate-hold-release.test.ts`）の読み替えを T-12-03 の表に固定し、ブラウザ経路は **`S-038` の残量表示と承認・送信の 409 / 422 の表示**だけを E2E で確かめる（上限到達は `tests/e2e/harness/db-admin.ts` のシームで `usage_counters` を上限値に置く = 「API を通らない経路の模擬」の範囲）。**既定 = (b)**（🔴 **同じ検証を 2 箇所に書かない**。`docs/05` §17.4 の規律 / `docs/dev-plan.md` §8 の読み替えの前例 5 回）。 | `T-12-03` の表の #23 行に採った形（(a) or (b)）が明記され、対応する E2E と結合テストが green。 |
+
+- 🔴 **守ること**: ②は `review_gates` を読む API の追加であり**境界領域として `code-reviewer` 1 回**（取引先が他社提案の履歴に到達しないことを結合テストで固定）。①③④の上流改訂は `ui-design` / `program-design` が先に行い、**改訂前に画面を触らない**。⑤は E2E の割り当ての決定であり、決めた形を `T-12-03` に書く（**本タスクが決め、`T-12-03` が実行する**）。
+- **完了の判定**: 上表 ①〜⑤ の「完了の判定」列がすべて満たされている。**①④の Issue 番号を本節に追記する**（`docs/dev-plan.md` §9 と相互参照。どちらか一方にしか無い状態を作らない）。
+
+### T-12-15 🔴 `S-003` / `S-004` の要対応キュー（Phase 1 分）（M）
+
+- **背景**: `docs/sprints/SP-03-auth-audit-admin0.md` T-03-06 は「**承認待ち・送信失敗・公開案件・提案依頼は Phase 1**、`満了間近` は Phase 2 から表示される」と明記し、`apps/web/lib/home/types.ts` の冒頭コメントも同じだが、**`HomeBlock` は `SCAN_QUARANTINE`（T-05-08）のみ**である。SP-09 の T-09-08 ②-④ / T-09-09 ③-④ は「`S-003` の要対応キュー（承認待ち / 送信失敗 → `S-022`）は未実装（**SP-10 の範囲**）」と申し送ったが、**SP-10 に持ち主が無い**（SP-09 §8 ②）。`apps/web/lib/proposals/hrefs.ts` の `proposalApproveHref` の注記「`S-003` の要対応キュー（SP-10）」も同じ誤りである。
+- **実装**: `docs/04` §S-003 セクション 1 / §S-004 セクション 1・2 / `docs/05` §6.3 #9（`GET /api/home`。`changedSince` / `rowVersion`）。
+  - `HomeBlock`（`apps/web/lib/home/types.ts`）に **追加専用**で `ACTION_QUEUE` を足す（`ScanQuarantineHomeBlock` と同じ作法。**既存メンバーの意味を変えない**）。行 = `{ kind, targetId, subjectLabel（案件名 + 凍結側のエンジニア名）, counterpartyLabel（提案先）, since, deadline, rowVersion, href }`。`apps/web/lib/home/service.ts` / `blocks.ts` / `schemas.ts` に組み立てを足し、`S-003` / `S-004` の画面に描く。
+  - **Phase 1 の種別**（`docs/04` §S-003 の 6 種別のうち Phase 1 の 4 つ + 送信保留。並びは「放置時間 × 取り返しのつかなさ」）:
+
+| 種別（`kind`） | 母集団（RLS 適用後） | 遷移先 | 並び |
+|---|---|---|---|
+| `SEND_FAILED` 送信失敗 | `proposals.state = 'SUBMIT_FAILED'` | `S-022`（**`PROPOSAL_SEND_FAILURES_PATH`**。T-09-08 ②-④） | **最上位**（外部に到達したか不明） |
+| `APPROVAL_PENDING` 承認待ち | `state = 'APPROVAL_PENDING'` | `S-021`（`proposalApproveHref`） | 2 |
+| `GATE_FAILED` ゲート差し戻し | `state = 'GATE_FAILED'` | `S-020`（`proposalEditHref`） | 3 |
+| `SEND_HELD` 送信保留 | `state = 'APPROVED' AND send_hold_reason_key IN ('DOMAIN_UNVERIFIED', 'GATE_STALE')` | `S-019`（`proposalsHref({ state: ['APPROVED'] })`。保留の注記つき一覧） | 4 |
+| `PROPOSAL_REQUEST_PENDING` 提案依頼の返答待ち | `proposal_requests.state = 'REQUESTED'`（ホスト = 自社が出した依頼 / 取引先 = 自社宛の依頼） | ホスト `S-017` / 取引先 `S-018` | **期限**（`expiresAt`）昇順 |
+
+  - 🔴 **`SEND_HELD` は `docs/04` §S-003 の 6 種別に無い。先に `ui-design` が §S-003 の種別に `送信保留` を足す**（`送信失敗` と**別の語・別の区分・別の遷移先**。`docs/04` `ui-design` 申し送り 8 / §10.4「失敗率の指標に混入させない」/ SP-09 T-09-06 ③）。🔴 **`PROVIDER_QUOTA` の保留は載せない** —— 利用者に打つ手が無く自動復帰する（`F-059 AC-7` / `hrefs.ts` の `USAGE_SETTINGS_HREF` の注記と同じ理由）。`DOMAIN_UNVERIFIED`（`S-036` で検証する）と `GATE_STALE`（#39 で再実行する）は利用者の操作で解消するため載せる。
+  - 🔴 **4 つの「うまくいかなかった」を混同しない**（`GATE_FAILED` / `SUBMIT_FAILED` / `LOST` / `DECLINED`。`F-024 AC-2` / `BR-23` / `BR-60`）: キューに載るのは **`GATE_FAILED` と `SUBMIT_FAILED` だけ**（`LOST` / `DECLINED` は終端であり「対応が要るもの」ではない）。**`DECLINED` / `EXPIRED` / `WITHDRAWN_BY_HOST` の依頼を「返答待ち」の行に残さない**（`REQUESTED` のみ）。**種別ごとの件数を 1 つの合計に丸めない**（丸めると混同の表示になる）。
+  - 🔴 **境界**: 母集団は RLS（`proposals` = 作成者 + ホスト、`proposal_requests`）が決め、アプリの `if` で越境の判断を書かない。**取引先の `PartnerHomeView` に他社の件数・存在・順位を示唆するフィールドを足さない**（`apps/web/lib/home/types.test.ts` の型テストを更新して固定）。取引先の行は `docs/04` §S-004 の定義どおり **セクション 1 = 自社宛の `REQUESTED`（返答期限つき。→ `S-018`）/ セクション 2 = 自社提案の `GATE_FAILED`（→ `S-020`）のみ**。**取引先には `APPROVAL_PENDING` / `SEND_FAILED` / `SEND_HELD` を出さない**（承認・送信はホストの工程。取引先は `S-019` の自社提案の状態で足りる）。
+  - 🔴 **氏名の出所**: 提案の行（`SEND_FAILED` / `APPROVAL_PENDING` / `GATE_FAILED` / `SEND_HELD`）の「対象」に出すエンジニア名は **`engineer_snapshots.display_name`（凍結側）**であり、`engineers` を読まない（`S-019` の行と同じ出所。`S-003` セクション 0 が氏名を出さないのは**スキルシート文脈の `BR-27` の記録が 60 秒ポーリングで積まれる**ためであり、提案の行には当たらない）。🔴 **ホスト側の `PROPOSAL_REQUEST_PENDING` の行は経路 4 の段階であり、「対象」は案件名 + 匿名候補の参照子（`S-017` と同じ）とし、エンジニア名・`engineerId`・所属会社名を 1 つも載せない**（`ProposalRequest.engineerId` はホスト向け応答に載せない列。`docs/05` §4.6 / `CLAUDE.md` §3.1 経路 4。**`Proposal` が作られるまで実名に到達できない**ことが Phase 1 成功条件 3 そのもの）。`tests/e2e/anonymous-share.spec.ts` の許可キー集合の深さ走査に `GET /api/home` の応答を加える。
+  - 「自分の担当のみ」トグルは既定オン（`?scope=mine`。#9 に既にある）。`SALES` は「承認待ち」に自分が承認者でないものも表示する（`docs/04` §S-003 権限差分）。60 秒ポーリングは既存の `changedSince` / `rowVersion` の契約に乗せる（提案の行は `proposals.updated_at`、依頼の行は `proposal_requests.created_at` —— `ProposalRequest` に `updated_at` は無く、`REQUESTED` を離れた時点で行がキューから消えるため版は作成時刻で足りる）。**画面全体を再描画しない**。
+  - `hrefs.ts` の「（SP-10）」の注記を `T-12-15` に訂正する。
+- **Tier**: `S-003` / `S-004` は **T1（モバイル完結）**。モバイルは 1 行 = **種別バッジ + 対象 + 経過時間**の 3 要素、**セクション 1〜4 を折りたたまない**（`docs/04` §S-003「デバイス別」）。
+- **完了の判定**: ①`docs/04` §S-003 に `送信保留` が先に追記されている ②`F-006 AC-1`〜`AC-3` の結合テスト（ホスト 5 種別が並び順どおり / 取引先は 2 種別のみ / 他社の行・件数が 0 / `LOST` `DECLINED` `EXPIRED` が載らない / `PROVIDER_QUOTA` が載らない / `scope=mine` の絞り込み / 🔴 **ホストの `PROPOSAL_REQUEST_PENDING` 行を深さ走査して実名・`engineerId`・所属会社名が 0 件**）green ③型テスト（`PartnerHomeView` に件数示唆のフィールドが無い）green ④render（`S-003` / `S-004`。並び順・空文言「対応が必要なものはありません」）green ⑤E2E `tests/e2e/home.mobile.spec.ts` に「モバイルでセクション 1 が折りたたまれず、行 = 種別バッジ + 対象 + 経過時間」を 1 ケース。
+
+### T-12-16 🔴 #46b `GET /api/proposals/{id}/snapshot-diff` と `S-006` セクション 4・5（M）
+
+- **背景**: `docs/05` §6.5 #46b は「**SP-09**」と書くが SP-09 のどのタスクにも無く、`apps/web/app/(main)/engineers/[id]/page.tsx:283` のコメント「提案履歴と凍結差分は SP-09」と `engineer-detail-proposals-coming-soon` のプレースホルダが残っている（SP-09 §8 ③）。`docs/04` §S-006 セクション 4（提案履歴）・5（凍結情報との差分）と `docs/05` §17.3 #25 の差分ビュー部分が **Phase 1 の未実装**として残っている（`F-019 AC-2`）。
+- **手順**:
+  1. 🔴 **先に `program-design` が `docs/05` §6.5 #46b の「SP-09」を「SP-12（T-12-16）」に改訂する**（`CLAUDE.md` §8.7）。あわせて #46b の境界（下記 🔴 の 404 条件と `engineer.view` の記録）を確定形で書く。
+  2. **API #46b**: 応答 `{ frozenAt, fields: {key, frozen, current}[], careers: { frozen: FrozenCareer[], current: CareerRowView[] } }`（`docs/05` §6.5 #46b のとおり）。`fields` のキーは `EngineerSnapshot` の比較可能列（`displayName` / `skills` / `unitPriceMin` / `unitPriceMax` / `availableFrom` / `prefecture` / `remoteMode`）。🔴 **`frozen` と `current` を別のキーで返す。1 つの配列にマージして「変更あり」フラグを立てない**（`docs/05` §6.5「#36 / #46 / #46b の経験内容の凍結」）。`Proposal.offeredUnitPrice`（提案単価）は載せない（差分の対象は**台帳 vs 凍結**のみ）。
+  3. **`S-006` セクション 4（提案履歴）**: `listProposals(ctx, { engineerId })`（#45。T-09-09 で `engineerId` フィルタ追加済み）をサーバコンポーネント内で呼ぶ。列 = 提案先 / 案件 / 状態バッジ / 作成日 / `S-023` への導線（`proposalDetailHref`）。空 → 「この人材はまだ提案されていません」（`docs/04` §S-006）。
+  4. **`S-006` セクション 5（凍結情報との差分）**: 提案の選択 → #46b → **バージョン差分ビュー**（`docs/04` §5-6。「提案 P-…（凍結日時）↔ 現在」。変更された項目に「提案後に変更」の注記）。経歴は左右に並置（凍結側 = `S-023` セクション 3 と同じ 4 列・同じ並び / 現在値 = セクション 8 と同じ）。
+  5. プレースホルダ `engineer-detail-proposals-coming-soon` と `engineers.detail.proposals.comingSoon` の文言を除去する。🔴 **testid の削除は `tests/static/testid-inventory.test.ts` に当たる** —— **意図した削除として同じコミットでインベントリを更新し、理由（プレースホルダの実装置換）をコミットに書く**（SP-21 の規律は「黙って壊さない」であり、「永久に消せない」ではない）。
+- 🔴 **守ること**:
+  - **経路 2 の範囲を超えない。** #46b は `withTenant` の 1 トランザクションで `proposals` + `engineer_snapshots`（凍結側）と `engineers` + `engineer_careers`（現在値。**C3 OWNER_SCOPED**）を読み、🔴 **現在値の行が読めなければ 404**（`docs/05` §4.8「見えない ＝ 存在しない」）。**凍結側だけを返す形にしない** —— 返すと #46 と二重になり、「現在値が無い = 他社所有」の示唆になる。したがって**ホストが取引先所有エンジニアの提案（経路 2）で #46b を叩いても 404**、取引先は**自社提案 × 自社エンジニア**でのみ 200。`S-006` は実行者の文脈で C3 が返すエンジニアだけが開ける既存の境界を変えず、セクション 4 / 5 はその中で描く。
+  - 🔴 **`engineer.view` の記録**: `S-006` は既に閲覧を記録する（T-05-02）が、#46b は API として直接叩けるため、**同一トランザクションで `engineer.view`（`summary: { via: 'snapshot-diff', proposalId }`）を記録し、記録に失敗したら返さない**（`docs/05` §16.1 / §6.1 K-7 と同じ規律。**現在値の再読は「エンジニア詳細の閲覧」である**）。
+  - **`EngineerSnapshot.careers` は `app_platform` に `GRANT` されていない**（`docs/05` §6.5）。#46b は主平面の API であり、管理平面から呼べる経路を作らない。
+  - **セクション 4 の行は `S-019` の行と同じ出所・同じ射影（`HostProposalListItem` / `PartnerProposalListItem`。`listProposals`）を使い、`S-006` 固有の射影を作らない**（2 実装にすると片方だけ境界を見ない経路になる。T-09-09 が `listProposalSendFailures` を `listProposals` に統合したのと同じ理由）。
+- **完了の判定**: ①`docs/05` §6.5 #46b が「SP-12（T-12-16）」に改訂され、404 条件と記録の規律が書かれている ②`F-019 AC-2` の結合テスト（凍結後に台帳の 7 項目を変更 → `fields[]` の `frozen` ≠ `current` / 経歴を 1 行編集・1 行削除・1 行追加 → `careers.frozen` は不変で `careers.current` だけ変わる / **ホストが取引先所有エンジニアの提案で 404** / 取引先が他社提案で 404 / `engineer.view` の記録失敗で応答が返らない）green ③`S-006` の render（セクション 4 の空文言 / セクション 5 の左右並置。**1 つのリストに混在していない**）green ④`docs/05` §17.3 #25 の差分ビュー部分が E2E か結合で green（読み替えを `T-12-03` の表の #25 行に記す）⑤`engineer-detail-proposals-coming-soon` が DOM に無く、インベントリが意図した削除として更新されている。
+
 ## 5. テスト計画
 
 | 層 | 内容 |
 |---|---|
-| **ユニット** | 本スプリントでは新規追加しない（既存の維持）。 |
+| **ユニット** | ~~本スプリントでは新規追加しない（既存の維持）。~~ **改訂（2026-09-17）**: `T-12-13`〜`T-12-16` で render / 型 / 静的テストを足す（`audit_logs.targetType` のリテラル 0 件 / `data-can-approve-now` / `PartnerHomeView` の件数示唆フィールド無し / `S-006` セクション 4・5 の render）。**それ以外は既存の維持。** |
 | 🔴 **リリース判定** | **`T-12-11` の受け入れ基準 ①〜⑨ のチェック**（自動テストではなく記録の確認である。`MODE: REVIEW` / `TARGET: Phase 1` が機械的に走査できるよう、**証跡のパスを完了記録に列挙する**）。 |
-| **結合** | 環境分離の起動検証（`production` でモック → 起動失敗 / 非本番に本番キー → 起動失敗）。AI 全停止時のゲート挙動。 |
-| **E2E** | 🔴 **T-12-03 の 18 シナリオ + T-12-04 の 5 環境 + T-12-05。** 実行ログを保存する。 |
+| **結合** | 環境分離の起動検証（`production` でモック → 起動失敗 / 非本番に本番キー → 起動失敗）。AI 全停止時のゲート挙動。**`T-12-13` ①の migration 後の `audit_logs` / `T-12-14` ②のゲート履歴の境界 / `T-12-15` の `F-006` の 5 種別と取引先 2 種別 / `T-12-16` の 404 条件と `engineer.view` の記録**（2026-09-17 追加）。 |
+| **E2E** | 🔴 **T-12-03 の ~~18~~ 19 シナリオ + T-12-04 の 5 環境 + T-12-05。** 実行ログを保存する。**#8 は `reload()` 無し（`T-12-13` ⑤）、`home.mobile.spec.ts` に要対応キューのモバイル 1 ケース（`T-12-15`）。** |
 | **負荷** | `seed:perf` に対する `F-009` / `F-015` / `gate.run` / `send.proposal` の p50 / p95 / p99。 |
 | **外部 API のモック方針** | 全モック（`packages/connectors/src/mock/**` / `packages/ai/src/mock/`）+ **コンテナのネットワーク外向き遮断**。🔴 **改訂（2026-09-10）: ~~`sandbox` の分類 1 のみ MailHog で実受信を検証~~ → `sandbox` は Phase 2 へ移ったため、実受信の検証は `development` / `demo` の MailHog で行う。** **`production` は実 SES であり、モックが選ばれたら起動失敗する**（`T-12-11` ②）。 |
 
@@ -253,7 +334,9 @@
 | 🔴 **12** | 🔴 **第 1 回リリースの準備（`T-12-11`）の受け入れ基準 ①〜⑨ がすべて満たされている**（[Issue #46](https://github.com/Festal-KM/SES-Platform/issues/46)） | T-12-11 の完了記録（本番環境と `T-12-09` の参照 / `production` の起動時検証の確認記録 / 障害対応手順書のパス / 手動請求の算出根拠の確認 / 制約説明 §2.2 RL-1〜RL-5 / `staging` 後回しの扱い） |
 | 🔴 **13** | 🔴 **`SP-21`（UI 基盤 = Tailwind CSS + shadcn/ui）が完了している** —— 素の CSS のまま顧客が触る画面を出さない（[Issue #43](https://github.com/Festal-KM/SES-Platform/issues/43)）。✅ **2026-09-11 に完了**（7 / 7。§7 の 13 項目すべて OK）。🔴 **残りは申し送り 2 件（`T-08-10` / `T-08-11`）の消化である** | `docs/sprints/SP-21-ui-foundation.md` §8（完了記録 + 13 項目の判定表）+ `docs/dev-plan.md` §8 の 2026-09-11 の 3 行 + **CI run `34553246355`**（E2E 35 passed。build → … → `test:isolation` → `test:e2e` の 1 ジョブ直列）+ `docs/sprints/SP-08-anonymous-share.md` §7 の 9 / 10 |
 
-🔴 **本表の 1〜11 は「Phase 1 の完了」の判定、12〜13 を加えたものが「第 1 回リリース」の判定である**（2026-09-10。[Issue #46](https://github.com/Festal-KM/SES-Platform/issues/46)）。**判定は同じ `MODE: REVIEW` / `TARGET: Phase 1` で行い、別手順を作らない**（`docs/dev-plan.md` §7）。
+| **14** | 🔴 **SP-09 からの申し送り 11 項目（`T-12-13` に 6 / `T-12-14` に 4 / `T-12-15` に 1）+ E2E #23 前半の扱い（`T-12-14` ⑤）が消化され、Phase 1 で予定されていた未実装 2 件 —— `S-003` / `S-004` の要対応キュー（`F-006`。SP-03 T-03-06 が「Phase 1」と明記）と #46b 差分ビュー + `S-006` セクション 4・5（`F-019 AC-2`）—— が実在する**（2026-09-17 追加。SP-09 の完了確認 §8 ①②③） | `T-12-13` / `T-12-14` の各表の「完了の判定」列 + `T-12-15` の `F-006` 結合テスト + `T-12-16` の `F-019 AC-2` 結合テスト + `T-12-03` の表の #23 / #25 行の読み替え |
+
+🔴 **本表の 1〜11 と 14 は「Phase 1 の完了」の判定、12〜13 を加えたものが「第 1 回リリース」の判定である**（2026-09-10。[Issue #46](https://github.com/Festal-KM/SES-Platform/issues/46)。**14 は 2026-09-17 に追加** —— `F-006` / `F-019 AC-2` は Phase 1 の機能であり、欠けたまま「Phase 1 完了」とはできない）。**判定は同じ `MODE: REVIEW` / `TARGET: Phase 1` で行い、別手順を作らない**（`docs/dev-plan.md` §7）。
 
 **次フェーズの前提条件の確認**（Phase 2 着手前に揃っていること）:
 
