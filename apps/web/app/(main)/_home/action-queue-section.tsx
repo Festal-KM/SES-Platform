@@ -279,7 +279,10 @@ function ActionQueueRowItem({
     row.deadline === null ? formatElapsedWith(row.since, nowMs, messages.elapsed) : formatRemaining(row.deadline, nowMs, messages.remaining);
   return (
     <li
-      className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 py-2 text-sm sm:grid-cols-[8rem_minmax(0,1fr)_minmax(0,12rem)_7rem_10rem] sm:gap-3"
+      // 🔴 モバイル（sm 未満）は 3 要素 = 種別バッジ + 対象 + 経過時間（docs/04 §S-003 デバイス別）。バッジと経過時間を 1 行目、
+      //    対象は 2 行目に全幅で置く（3 列の grid だと対象が 100px 程度に潰れ、折り返し検出器が wrapped-short-label で落ちる）。
+      //    sm 以上は 5 列の grid（DOM 順 = バッジ / 対象 / 相手 / 経過時間 / 期限）。
+      className="flex flex-wrap items-center gap-x-2 gap-y-1 py-2 text-sm sm:grid sm:grid-cols-[8rem_minmax(0,1fr)_minmax(0,12rem)_7rem_10rem] sm:gap-3"
       data-testid={`home-action-queue-row-${row.targetId}`}
       data-kind={row.kind}
       data-changed={changed ? 'true' : 'false'}
@@ -294,17 +297,25 @@ function ActionQueueRowItem({
           </Badge>
         ) : null}
       </span>
+      {/* 🔴 docs/04 §10.3「長い名称」: lg 以上 = 1 行切り詰め + title（導線はこのリンク自身）/ lg 未満 = 折り返し
+          （触端末ではツールチップを開けず、切り詰めると対象の末尾が読めない。CLAUDE.md §13.3）。
+          CI の折り返し検出器（expectNoBrokenLabels）がモバイルの `truncate` を clipped-x として捕まえた（f03abf2）。 */}
       <Link
         href={row.href}
-        className="truncate font-medium text-slate-900 underline-offset-2 hover:underline"
+        title={row.subjectLabel}
+        className="order-last min-w-0 basis-full whitespace-normal break-words font-medium text-slate-900 underline-offset-2 hover:underline sm:order-none sm:basis-auto lg:truncate"
         data-testid={`home-action-queue-subject-${row.targetId}`}
       >
         {row.subjectLabel}
       </Link>
-      <span className="hidden truncate text-slate-700 sm:inline" data-testid={`home-action-queue-counterparty-${row.targetId}`}>
+      <span
+        className="hidden min-w-0 whitespace-normal break-words text-slate-700 sm:inline lg:truncate"
+        title={row.counterpartyLabel ?? undefined}
+        data-testid={`home-action-queue-counterparty-${row.targetId}`}
+      >
         {row.counterpartyLabel ?? messages.valueNone}
       </span>
-      <span className="whitespace-nowrap text-slate-700" data-testid={`home-action-queue-time-${row.targetId}`}>
+      <span className="ml-auto whitespace-nowrap text-slate-700 sm:ml-0" data-testid={`home-action-queue-time-${row.targetId}`}>
         {time}
       </span>
       <span className="hidden whitespace-nowrap text-slate-600 sm:inline" data-testid={`home-action-queue-deadline-${row.targetId}`}>
