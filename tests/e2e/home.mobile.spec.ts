@@ -18,6 +18,9 @@
 //    🔴 判断材料の判定（`S-021`）は `support/proposal-flow.ts` の `expectApprovalJudgmentMaterial` の 1 実装であり、
 //    `proposal-cycle.spec.ts` シナリオ 5（iPhone 15）と同じ関数を呼ぶ（同じ検証を 2 箇所に書かない）。冪等性（#7 / #8 / #9）と
 //    承認の無効化の送信側（#10）の**契約そのもの**は `proposal-cycle.spec.ts` が表明し、本ファイルは**モバイルでの通し**を見る。
+//    ✅ **T-10-05（SP-10）で `F-028 AC-1` のモバイル分（環境バナーがモバイルビューポートで視認でき、スクロールしても消えない）を
+//    ホストのホームの test の冒頭に足した**（test の本数は増やさない。`expectEnvironmentBannerPinned` は `isolation.spec.ts` の
+//    主平面 / 管理平面と同じ 1 実装。docs/05 §13.5 の読み替え）。
 //
 // 🔴 「モバイルだから省略する」を作らない（`CLAUDE.md` §13.3）。サインイン（2 要素認証を含む）が
 //    モバイルで完結することを、デスクトップと同じ経路で確かめる。
@@ -31,7 +34,13 @@ import { expectApprovalJudgmentMaterial, waitForProposalState } from './support/
 //    散ると、1 箇所だけ閾値が緩められたことに気づけない）。
 // 🔴 T-08-11: ラベルの折り返し・溢れの判定（`expectNoBrokenLabels`）も同じ置き場所から呼ぶ
 //    （SP-21 §8.5。横溢れの式では「1 文字ずつ折り返して箱の中に収まる」壊れ方を捉えられない）。
-import { expectNoBrokenLabels, expectNoHiddenCountHints, expectNoHorizontalOverflow } from './support/assertions';
+// ✅ T-10-05: 環境バナー（`F-028 AC-1`）の固定表示の判定も同じ置き場所の 1 実装（`isolation.spec.ts` の主平面 / 管理平面と同じ関数）。
+import {
+  expectEnvironmentBannerPinned,
+  expectNoBrokenLabels,
+  expectNoHiddenCountHints,
+  expectNoHorizontalOverflow,
+} from './support/assertions';
 import { partnerIds, tenantIds } from './support/population';
 import { hostOwner, openTenantSession, partnerSales } from './support/sessions';
 
@@ -73,6 +82,10 @@ test.describe('モバイルビューポートのスモーク（S-003 / S-004 は
       await expect(session.page.getByText(t('home.host.empty.title')).first()).toBeVisible();
       await expectNoHorizontalOverflow('S-003 ホストのホーム', session.page);
       await expectNoBrokenLabels('S-003 ホストのホーム', session.page);
+      // ✅ T-10-05（`F-028 AC-1`）: 🔴 **モバイルビューポート（Pixel 5）でも非本番環境バナーが視認でき、スクロールしても消えない**
+      //    （docs/05 §13.5「モバイルでも消さない」）。判定は `isolation.spec.ts` の主平面 / 管理平面と同じ 1 実装。ハーネスは
+      //    `development` 固定なのでその文言で見る（`demo` / `sandbox` / `staging` の文言と `production` で出ないことは render テスト）。
+      await expectEnvironmentBannerPinned('S-003 ホストのホーム（モバイル）', session.page, t('env.development'));
       session.outbound.assertNone();
 
       // ✅ T-09-03: 🔴 **モバイルビューポートでの承認**（docs/05 §17.3 #13 / `F-021 AC-4` / `AC-6` / `CLAUDE.md` §13.3）。
