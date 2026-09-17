@@ -63,6 +63,8 @@ import {
 } from '../../apps/worker/src/jobs/scan-quarantine-notice.js';
 import { readQuarantinedSkillSheets } from '../../apps/web/lib/skill-sheets/service.js';
 import { startIsolationDatabase, type IsolationDatabase } from './support/postgres.js';
+// 🔴 T-12-12: 執行点の deps は固定の上限ではなく既定値（`quotaDefaults`）を受け、`resolveTenantQuotas` が実 DB の上書きと合わせて解く。
+import { quotaDefaultsWith } from './support/quota-defaults.js';
 
 const SETUP_TIMEOUT_MS = 600_000;
 const NOW = new Date('2026-09-06T04:00:00.000Z');
@@ -187,7 +189,7 @@ function emailDispatchDeps(): EmailDispatchDeps {
     emailSender: connectors.email,
     emailImplementationKind: implementationKind,
     minuteWindow: new InMemoryMinuteWindowCounter(),
-    dailyLimit: 500,
+    quotaDefaults: quotaDefaultsWith({ emailDailyLimit: 500 }),
     minuteLimit: 30,
     providerDailyQuota: 200,
     providerSentCounter: new InMemoryProviderSendCounter(),

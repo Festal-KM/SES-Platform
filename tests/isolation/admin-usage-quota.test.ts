@@ -440,10 +440,9 @@ describe('⑥ resolveTenantQuotas: 適用日前は既定値・以降は上書き
     expect(tomorrow.aiUnitQuotas.AI_UNIT_SHEET_PARSE).toBe(10);
     expect(tomorrow.sources.AI_UNIT_SHEET_PARSE).toBe('OVERRIDE');
     expect(decideAiUnitQuota({ metric: 'AI_UNIT_SHEET_PARSE', monthCount: 30, quota: tomorrow.aiUnitQuotas.AI_UNIT_SHEET_PARSE }).kind).toBe('ALLOW_OVERAGE');
-    // 他の計測・他テナントは既定値のまま。
+    // 他の計測・他テナントは既定値のまま（AI 単位の上書きに引きずられない）。
     expect(tomorrow.emailDailyLimit).toBe(500);
     expect(tomorrow.storageLimitBytes).toBe(50n * GB);
-    // 🔴 T-11-02 NG-1: メール / ストレージは上書きの対象外（執行点の配線が無い）。出所は常に DEFAULT。
     expect(today.sources.EMAIL_COUNT).toBe('DEFAULT');
     expect(today.sources.STORAGE_BYTES).toBe('DEFAULT');
     expect(tomorrow.sources.EMAIL_COUNT).toBe('DEFAULT');
@@ -455,11 +454,38 @@ describe('⑥ resolveTenantQuotas: 適用日前は既定値・以降は上書き
     expect(other.aiUnitQuotas.AI_UNIT_SHEET_PARSE).toBe(180);
   });
 
-  it('🔴 PUT で metric: EMAIL_COUNT / STORAGE_BYTES を送ると 400（Zod。QUOTA_OVERRIDE_METRICS は AI 4 単位のみ）', () => {
+  it('🔴 T-12-12: PUT の metric は 6 計測（EMAIL_COUNT / STORAGE_BYTES を受ける。金額 AI_COST_USD は 400）。EMAIL_COUNT / STORAGE_BYTES の上書きが resolveTenantQuotas と A-004 の両方に同じ値で写る', async () => {
     const base = { limit: '900', effectiveFrom: TOMORROW, notifyTenantAdmins: true, reason: 'テスト' };
-    expect(parseQuotaChangeBody({ ...base, metric: 'EMAIL_COUNT' })).toEqual({ ok: false, issues: ['metric'] });
-    expect(parseQuotaChangeBody({ ...base, metric: 'STORAGE_BYTES' })).toEqual({ ok: false, issues: ['metric'] });
-    expect(parseQuotaChangeBody({ ...base, metric: 'AI_UNIT_SHEET_PARSE' }).ok).toBe(true);
+    expect(parseQuotaChangeBody({ ...base, metric: 'EMAIL_COUNT' }).ok).toBe(true);
+    expect(parseQuotaChangeBody({ ...base, metric: 'STORAGE_BYTES' }).ok).toBe(true);
+    expect(parseQuotaChangeBody({ ...base, metric: 'AI_COST_USD' })).toEqual({ ok: false, issues: ['metric'] });
+
+    await setTenantQuotaOverride(
+      ownerCtx,
+      { tenantId: TENANT_1.tenantId, metric: 'EMAIL_COUNT', limit: 900n, effectiveFrom: TODAY, notifyTenantAdmins: false, reason: 'x' },
+      { now: NOW, defaults: DEFAULTS },
+    );
+    await setTenantQuotaOverride(
+      ownerCtx,
+      { tenantId: TENANT_1.tenantId, metric: 'STORAGE_BYTES', limit: 100n * GB, effectiveFrom: TODAY, notifyTenantAdmins: false, reason: 'x' },
+      { now: NOW, defaults: DEFAULTS },
+    );
+    const ctx = systemTenantCtx(TENANT_1.tenantId, { queue: 'usage.limit-check', jobId: 'test' });
+    const resolved = await resolveTenantQuotas(ctx, { now: NOW, defaults: DEFAULTS });
+    expect(resolved.emailDailyLimit).toBe(900);
+    expect(resolved.storageLimitBytes).toBe(100n * GB);
+    expect(resolved.sources.EMAIL_COUNT).toBe('OVERRIDE');
+    expect(resolved.sources.STORAGE_BYTES).toBe('OVERRIDE');
+    // A-004（API-A6）も同じ resolveQuotaLimit で解く。
+    const row = tenantRow(await readPlatformUsage(supportCtx, META), TENANT_1.tenantId);
+    expect(row.email).toMatchObject({ limit: 900, quota: { source: 'OVERRIDE', effectiveFrom: TODAY } });
+    expect(row.storage).toMatchObject({ limitBytes: (100n * GB).toString(), quota: { source: 'OVERRIDE', effectiveFrom: TODAY } });
+    // 監査行の from は既定値（500 / 50 GiB）。
+    const audits = await quotaAudits(TENANT_1.tenantId);
+    expect(audits.map((audit) => [(audit.summary as { metric: string }).metric, (audit.summary as { from: string }).from])).toEqual([
+      ['EMAIL_COUNT', '500'],
+      ['STORAGE_BYTES', (50n * GB).toString()],
+    ]);
   });
 
   it('usage.limit-check が上書き後の上限で評価する（当日適用の引き上げ 1,000 件で、900 件は BELOW = 既定 180 なら REACHED）', async () => {
@@ -533,11 +559,11 @@ describe('⑦ DB 権限とポリシー（migration 20260924000000）', () => {
     expect(await overrides(TENANT_2.tenantId)).toHaveLength(0);
   });
 
-  it('app_tenant: ホスト文脈は自テナントの行を読める。パートナー文脈は 0 行。INSERT は permission denied', async () => {
+  it('app_tenant: ホスト文脈は自テナントの行を読める。パートナー文脈は AI 単位の行が 0 行（C2。開くのは STORAGE_BYTES だけ。T-12-12 / F-027 AC-1）。他テナントは 0 行。reason / set_by_platform_user_id は列 GRANT で permission denied。INSERT は permission denied', async () => {
     await setTenantQuotaOverride(ownerCtx, { tenantId: TENANT_1.tenantId, ...RAISE }, { now: NOW, defaults: DEFAULTS });
     const rawTenant = createUnextendedClient(database.tenantUrl);
     try {
-      const read = (partnerCompanyId: string, tenantId = TENANT_1.tenantId) =>
+      const read = (partnerCompanyId: string, tenantId = TENANT_1.tenantId, columns = 'metric') =>
         rawTenant.$transaction(async (tx) => {
           await tx.$executeRawUnsafe(
             `SELECT set_config('app.tenant_id', $1, true), set_config('app.partner_company_id', $2, true),
@@ -546,11 +572,20 @@ describe('⑦ DB 権限とポリシー（migration 20260924000000）', () => {
             partnerCompanyId,
             TENANT_1.hostUserId,
           );
-          return tx.$queryRawUnsafe<Array<{ metric: string }>>(`SELECT metric FROM tenant_quota_overrides`);
+          return tx.$queryRawUnsafe<Array<{ metric: string }>>(`SELECT ${columns} FROM tenant_quota_overrides`);
         });
       expect(await read('')).toHaveLength(1);
+      // 🔴 T-12-12: パートナー文脈に開くのは `STORAGE_BYTES` の行だけ（migration 20260928000000 判断事項 2）。AI 単位の上書きは 0 行
+      //    （`F-027 AC-1`。上限値はホスト所属ロールにのみ表示する）。ストレージ側は `quota-override-enforcement.test.ts` ③。
       expect(await read(TENANT_1.partners[0].partnerCompanyId)).toHaveLength(0);
       expect(await read('', TENANT_2.tenantId)).toHaveLength(0);
+      expect(await read(TENANT_1.partners[0].partnerCompanyId, TENANT_2.tenantId)).toHaveLength(0);
+      // 🔴 運営者の記述・識別子は業務ロールから読めない（ホスト文脈でも）。
+      for (const partner of ['', TENANT_1.partners[0].partnerCompanyId]) {
+        await expect(read(partner, TENANT_1.tenantId, 'reason')).rejects.toThrow(/permission denied/);
+        await expect(read(partner, TENANT_1.tenantId, 'set_by_platform_user_id')).rejects.toThrow(/permission denied/);
+        await expect(read(partner, TENANT_1.tenantId, '*')).rejects.toThrow(/permission denied/);
+      }
       await expect(
         rawTenant.$transaction(async (tx) => {
           await tx.$executeRawUnsafe(`SELECT set_config('app.tenant_id', $1, true), set_config('app.partner_company_id', '', true), set_config('app.actor_user_id', $2, true)`, TENANT_1.tenantId, TENANT_1.hostUserId);

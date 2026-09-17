@@ -22,6 +22,8 @@ const clearProposalSendHold = vi.fn();
 const holdProposalSend = vi.fn();
 const resolveProposalSendResumeOrigin = vi.fn();
 const readEmailDailyCount = vi.fn();
+// 🔴 T-12-12: 日次上限の出所（既定値 + `tenant_quota_overrides`）。deps の固定値ではなくこの戻り値で解消を判定する。
+const resolveTenantQuotas = vi.fn();
 const withTenant = vi.fn();
 
 vi.mock('@ses/db', () => ({
@@ -33,6 +35,7 @@ vi.mock('@ses/db', () => ({
   holdProposalSend,
   resolveProposalSendResumeOrigin,
   readEmailDailyCount,
+  resolveTenantQuotas,
   withTenant,
   systemTenantCtx: (tenantId: string, job: { queue: string; jobId: string }) => ({
     tenantId,
@@ -67,6 +70,17 @@ function held(overrides: Record<string, unknown> = {}) {
   };
 }
 
+const QUOTA_DEFAULTS = {
+  aiUnitQuotas: { AI_UNIT_SHEET_PARSE: 180, AI_UNIT_MATCH_RATIONALE: 6_200, AI_UNIT_PROPOSAL_DRAFT: 180, AI_UNIT_RENEWAL_SUMMARY: 20 },
+  emailDailyLimit: 500,
+  storageLimitBytes: 1n << 35n,
+};
+
+/** `resolveTenantQuotas` の応答（上書きの再現は `emailDailyLimit` を差し替える）。 */
+function resolvedQuotas(emailDailyLimit: number) {
+  return { dayKey: '2026-09-16', aiUnitQuotas: QUOTA_DEFAULTS.aiUnitQuotas, emailDailyLimit, storageLimitBytes: QUOTA_DEFAULTS.storageLimitBytes, sources: {} };
+}
+
 function makeHandler(overrides: Record<string, unknown> = {}) {
   const enqueueEmailDispatch = vi.fn(
     async (job: { dispatchId: string; tenantId: string | null; recipientClass: string }) => void job,
@@ -82,7 +96,7 @@ function makeHandler(overrides: Record<string, unknown> = {}) {
     providerDailyQuota: 200,
     providerQuotaWarnRatio: 0.8,
     providerSentCounter,
-    emailDailyLimit: 500,
+    quotaDefaults: QUOTA_DEFAULTS,
     enqueueEmailDispatch,
     reissueAccountMail,
     enqueueSendProposal,
@@ -118,7 +132,11 @@ beforeEach(() => {
   holdProposalSend.mockReset();
   resolveProposalSendResumeOrigin.mockReset();
   readEmailDailyCount.mockReset();
+  resolveTenantQuotas.mockReset();
   withTenant.mockReset();
+  resolveTenantQuotas.mockImplementation(async (_ctx: unknown, input: { defaults: { emailDailyLimit: number } }) =>
+    resolvedQuotas(input.defaults.emailDailyLimit),
+  );
   requeueHeldEmailDispatch.mockResolvedValue(true);
   resolveVerifiedSendingDomain.mockResolvedValue(null);
   listHeldEmailDispatches.mockResolvedValue([]);
@@ -343,12 +361,26 @@ describe('🔴 ⑥ 提案の PROVIDER_QUOTA 以外の保留（T-09-06。docs/05 
   it('RATE_LIMIT はテナントの日次上限に余地が戻ったときだけ復帰する', async () => {
     listHeldProposalSends.mockResolvedValue([heldProposal({ reasonKey: 'RATE_LIMIT' })]);
     readEmailDailyCount.mockResolvedValue(500);
-    const full = makeHandler({ emailDailyLimit: 500 });
+    const full = makeHandler();
     expect((await full.handler({ tenantId: TENANT_ID }, 'j-1')).sendHoldsReleased).toBe(0);
 
     readEmailDailyCount.mockResolvedValue(0);
-    const room = makeHandler({ emailDailyLimit: 500 });
+    const room = makeHandler();
     expect((await room.handler({ tenantId: TENANT_ID }, 'j-2')).sendHoldsReleased).toBe(1);
+  });
+
+  it('🔴 T-12-12: RATE_LIMIT の解消判定は resolveTenantQuotas の上限で行う（上書きで上限が上がれば同じ暦日のうちに復帰する）', async () => {
+    listHeldProposalSends.mockResolvedValue([heldProposal({ reasonKey: 'RATE_LIMIT' })]);
+    readEmailDailyCount.mockResolvedValue(500);
+    // 既定 500 のまま → 余地なし。
+    const full = makeHandler();
+    expect((await full.handler({ tenantId: TENANT_ID }, 'j-1')).sendHoldsReleased).toBe(0);
+    expect(resolveTenantQuotas.mock.calls[0]?.[1]).toEqual({ now: NOW, defaults: QUOTA_DEFAULTS });
+    // 上書きで 1,000 通 → 500 通送信済みでも余地あり（deps の既定値は 500 のまま）。
+    resolveTenantQuotas.mockResolvedValue(resolvedQuotas(1_000));
+    const raised = makeHandler();
+    expect((await raised.handler({ tenantId: TENANT_ID }, 'j-2')).sendHoldsReleased).toBe(1);
+    expect(raised.enqueueSendProposal).toHaveBeenCalledTimes(1);
   });
 
   it('TENANT_SUSPENDED はテナントが実行可（SANDBOX / ACTIVE）に戻ったときだけ復帰する', async () => {

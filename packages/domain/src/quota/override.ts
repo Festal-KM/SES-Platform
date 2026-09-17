@@ -5,11 +5,13 @@
 // ============================================================================
 // 🔴 このモジュールが答えるのは 3 つである
 // ============================================================================
-//   ① どの計測を上書きできるか（`QUOTA_OVERRIDE_METRICS`。**AI の月次件数 4 単位（`AI_UNIT_METRICS`）だけ**。
-//      金額（`AI_COST_USD`）は運営者の内部指標であり、テナントに件数で約束する上限ではない（SP-20 の
-//      `Subscription.quotaOverrideUsd` が持つ）。メール日次通数（`EMAIL_COUNT`）とストレージ（`STORAGE_BYTES`）は
-//      上限を持つが、執行点（`email-send.ts` / `send-hold-release.ts` / `issueSkillSheetUploadUrl`）が既定値しか
-//      読まないため上書きの対象に**しない**（表示だけ差し替えて執行が変わらない事故を作らない。SP-12 に配線タスクを申し送る）
+//   ① どの計測を上書きできるか（`QUOTA_OVERRIDE_METRICS`。**AI の月次件数 4 単位（`AI_UNIT_METRICS`）+ メール日次通数
+//      （`EMAIL_COUNT`）+ ストレージ（`STORAGE_BYTES`）の 6 計測**）。金額（`AI_COST_USD`）は運営者の内部指標であり、
+//      テナントに件数で約束する上限ではない（SP-20 の `Subscription.quotaOverrideUsd` が持つ）。
+//      🔴 `EMAIL_COUNT` / `STORAGE_BYTES` は T-11-02 NG-1 で一度外し、**T-12-12 で執行点（`email-send.ts` / `send-proposal.ts` /
+//      `send-hold-release.ts` / `issueSkillSheetUploadUrl`）が `resolveTenantQuotas` を読むように配線してから戻した**
+//      （表示だけ差し替えて執行が変わらない事故を作らない、という条件が満たされた）。分次上限（`EMAIL_MINUTE_LIMIT_PER_TENANT`）は
+//      対象外のまま（`packages/config` の値。docs/05 §5.8.1 ⑧）
 //   ② ある日にどの上書き行が効いているか（`selectEffectiveQuotaOverride`。**適用日 ≤ その日**のうち適用日が最も遅く、
 //      同日なら最後に作られた行。無ければ既定値）。ワーカーの判定・主平面の表示・運営者の一覧が**同じ 1 実装**で解く
 //   ③ 🔴 引き下げか引き上げか（`decideQuotaChange`。`F-057 AC-3`）—— **引き下げは翌日以降の適用日と通知が必須**であり、
@@ -19,17 +21,21 @@
 // 🔴 `Date` を生成しない（`tests/static/domain-purity.test.ts`）。暦日は `YYYY-MM-DD` のキー（`usagePeriodKey('DAY', now)` が
 //    `Asia/Tokyo` で作ったもの）で受け、比較は `compareDayKeys`（`day-keys.ts`）で行う。
 // 🔴 金額を扱わない（件数・通数・バイト数の `bigint` だけ。docs/03 §7.6.3-1「件数は金額から割り戻さない」）。
-import { AI_UNIT_METRICS, type AiUnitMetric } from '../ai/units.js';
+import { AI_UNIT_METRICS } from '../ai/units.js';
 import { compareDayKeys } from '../usage/day-keys.js';
 
 /**
- * 🔴 上書きできる計測（`tenant_quota_overrides.metric` の CHECK 値集合。migration 20260924000000）。
- *    `AI_UNIT_METRICS`（AI の月次件数 4 単位）と**同一**である。列挙し直さず `AI_UNIT_METRICS` から引く
- *    （単位が増えたときに片方だけ古くなる状態を作らない。`tests/static/schema-enum-drift.test.ts` が突合）。
+ * 🔴 上書きできる計測（`tenant_quota_overrides.metric` の CHECK 値集合。migration 20260924000000 → 20260928000000 で再定義）。
+ *    `AI_UNIT_METRICS`（AI の月次件数 4 単位）+ `EMAIL_COUNT` + `STORAGE_BYTES` の 6 計測。AI の 4 単位は列挙し直さず
+ *    `AI_UNIT_METRICS` から引く（単位が増えたときに片方だけ古くなる状態を作らない。`tests/static/schema-enum-drift.test.ts` が突合）。
+ *    🔴 `AI_COST_USD`（金額）と分次上限は含めない。
  */
-export const QUOTA_OVERRIDE_METRICS = AI_UNIT_METRICS;
+export const QUOTA_OVERRIDE_METRICS = [...AI_UNIT_METRICS, 'EMAIL_COUNT', 'STORAGE_BYTES'] as const;
 
-export type QuotaOverrideMetric = AiUnitMetric;
+export type QuotaOverrideMetric = (typeof QUOTA_OVERRIDE_METRICS)[number];
+
+/** 件数・通数として `number` で判定する計測（ストレージだけは `bigint` のまま判定する）。 */
+export type QuotaOverrideCountMetric = Exclude<QuotaOverrideMetric, 'STORAGE_BYTES'>;
 
 export function isQuotaOverrideMetric(value: string): value is QuotaOverrideMetric {
   return (QUOTA_OVERRIDE_METRICS as readonly string[]).includes(value);

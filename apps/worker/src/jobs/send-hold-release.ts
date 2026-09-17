@@ -32,12 +32,14 @@ import {
   listHeldProposalSends,
   readEmailDailyCount,
   requeueHeldEmailDispatch,
+  resolveTenantQuotas,
   resolveVerifiedSendingDomain,
   systemTenantCtx,
   withTenant,
   type HeldEmailDispatchRow,
   type HeldProposalSendRow,
   type SystemTenantCtx,
+  type TenantQuotaDefaults,
 } from '@ses/db';
 import {
   decideProviderQuota,
@@ -104,10 +106,12 @@ export type SendHoldReleaseDeps = ProposalHoldReleaseDeps & {
   /** 🔴 `SesEmailSender` に渡したものと同一のインスタンス（`email-send.ts` と同じ規律）。 */
   readonly providerSentCounter: ProviderSendCounter;
   /**
-   * 🔴 T-09-06: テナントの日次上限（`EMAIL_DAILY_LIMIT_PER_TENANT`）。`RATE_LIMIT` の保留が解消したか
-   *    （暦日が変わった / 上限が上がった）の判定に使う。**送信ジョブの ①-e と同じキーから渡す**。
+   * 🔴 T-09-06 → T-12-12: 上書きが無いときの上限（`packages/config`）。`RATE_LIMIT` の保留が解消したか
+   *    （暦日が変わった / 上限が上がった）の判定は `resolveTenantQuotas(ctx, { now, defaults })` の `emailDailyLimit`
+   *    で行う —— 送信ジョブ（`email-send.ts` / `send-proposal.ts`）と**同じ関数・同じ既定値**であり、「上限を上げたのに
+   *    保留が解けない」経路を作らない。固定の `emailDailyLimit: number` を渡す口は無い。
    */
-  readonly emailDailyLimit: number;
+  readonly quotaDefaults: TenantQuotaDefaults;
   /** 保留中の運用メールを `email.dispatch` へ戻す。 */
   readonly enqueueEmailDispatch: (job: OperationalMailDispatch) => Promise<void>;
   /** 🔴 T-04-05 が実装する（既定値を置かない）。 */
@@ -143,6 +147,16 @@ async function readProviderQuota(
     // 🔴 `email-send.ts` と同じ規律 —— 取得できないことは判定をやめる理由にならない。
     return null;
   }
+}
+
+/**
+ * 🔴 T-12-12: `RATE_LIMIT` の解消判定。上限は `resolveTenantQuotas`（既定値 + `tenant_quota_overrides`。判定・表示・送信ジョブと
+ *    同じ 1 関数）から解く。上書きで上限が上がれば同じ暦日のうちに解消し、翌日以降の引き下げは適用日から効く（`effective_from` の
+ *    評価も同じ関数に閉じる）。
+ */
+async function readDailyQuotaHasRoom(deps: SendHoldReleaseDeps, ctx: SystemTenantCtx, now: Date): Promise<boolean> {
+  const { emailDailyLimit } = await resolveTenantQuotas(ctx, { now, defaults: deps.quotaDefaults });
+  return (await readEmailDailyCount(ctx, now)) < emailDailyLimit;
 }
 
 /** 🔴 テナント状態は `tenants` から読む（`ctx.lifecycleState` は常に `'ACTIVE'` 固定。読めなければ fail-closed）。 */
@@ -185,7 +199,7 @@ export function createSendHoldReleaseHandler(deps: SendHoldReleaseDeps): SendHol
     const facts: ProposalHoldFacts = {
       domainVerified,
       tenantExecutable: proposals.length === 0 ? true : await readTenantExecutable(ctx),
-      dailyQuotaHasRoom: proposals.length === 0 ? true : (await readEmailDailyCount(ctx, now)) < deps.emailDailyLimit,
+      dailyQuotaHasRoom: proposals.length === 0 ? true : await readDailyQuotaHasRoom(deps, ctx, now),
     };
 
     let domainReleased = 0;

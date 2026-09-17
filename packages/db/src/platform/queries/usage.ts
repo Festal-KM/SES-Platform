@@ -220,11 +220,10 @@ function toWhole(value: string): bigint {
   return parsed;
 }
 
-/** メール / ストレージは上書きの対象外（`QUOTA_OVERRIDE_METRICS` は AI 4 単位のみ）。常に既定値・出所は `'DEFAULT'`。 */
-function defaultOnlyQuotaView(limit: bigint): { readonly limit: bigint; readonly view: PlatformQuotaSourceView } {
-  return { limit, view: { source: 'DEFAULT', effectiveFrom: null, pending: null } };
-}
-
+/**
+ * 上書き行 + 既定値 → 効いている上限と出所・予定。🔴 6 計測すべてがここを通る（T-12-12 でメール / ストレージも上書きの対象に戻した。
+ * 執行点が `resolveTenantQuotas` を読むので、ここで解く値と実際の執行が一致する）。
+ */
 function quotaSourceView(
   rows: readonly QuotaOverrideRow[],
   metric: QuotaOverrideMetric,
@@ -331,12 +330,12 @@ export function summarizePlatformUsage(input: PlatformUsageSummaryInput): Platfo
     }
 
     const emailUsed = toWhole(counterValue('DAY', 'EMAIL_COUNT')?.value ?? '0');
-    const emailQuota = defaultOnlyQuotaView(BigInt(input.defaults.emailDailyLimit));
+    const emailQuota = quotaSourceView(overrides, 'EMAIL_COUNT', input.dayKey, BigInt(input.defaults.emailDailyLimit), previousLimits);
     const emailPercent = consumptionPercent(emailUsed, emailQuota.limit);
     percents.push(emailPercent);
 
     const storageUsed = toWhole(counterValue('MONTH', 'STORAGE_BYTES')?.value ?? '0');
-    const storageQuota = defaultOnlyQuotaView(input.defaults.storageLimitBytes);
+    const storageQuota = quotaSourceView(overrides, 'STORAGE_BYTES', input.dayKey, input.defaults.storageLimitBytes, previousLimits);
     const storagePercent = consumptionPercent(storageUsed, storageQuota.limit);
     percents.push(storagePercent);
 

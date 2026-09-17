@@ -74,8 +74,6 @@ export type AdminUsageTableMessages = {
   readonly band: Readonly<Record<ConsumptionBand, string>>;
   readonly quota: {
     readonly default: string;
-    /** 🔴 メール / ストレージ専用（上書きの対象外。Phase 1 では変更不可）。AI 4 単位の `default` とは文言を分ける。 */
-    readonly defaultFixed: string;
     readonly override: string;
     readonly pending: string;
     readonly pendingLowering: string;
@@ -137,23 +135,11 @@ function LevelBadge({ level, messages }: { level: UsageLimitLevel | null; messag
   return <Badge variant={LEVEL_BADGE_VARIANTS[level]}>{messages.level[level]}</Badge>;
 }
 
-function QuotaSource({
-  quota,
-  messages,
-  fixed = false,
-}: {
-  quota: AdminQuotaSourceView;
-  messages: AdminUsageTableMessages;
-  /** 🔴 メール / ストレージ（上書きの対象外。Phase 1 では変更不可）。既定値のときの文言だけを差し替える。 */
-  fixed?: boolean;
-}) {
+/** 出所と予定。🔴 6 計測すべてが同じ表示（T-12-12 でメール / ストレージも上書きの対象に戻し、専用文言を撤去した）。 */
+function QuotaSource({ quota, messages }: { quota: AdminQuotaSourceView; messages: AdminUsageTableMessages }) {
   return (
     <span className="text-xs text-slate-500">
-      {quota.source === 'OVERRIDE'
-        ? `${messages.quota.override} ${quota.effectiveFrom ?? ''}`
-        : fixed
-          ? messages.quota.defaultFixed
-          : messages.quota.default}
+      {quota.source === 'OVERRIDE' ? `${messages.quota.override} ${quota.effectiveFrom ?? ''}` : messages.quota.default}
       {quota.pending === null ? null : (
         <>
           {' / '}
@@ -166,17 +152,7 @@ function QuotaSource({
   );
 }
 
-function CountQuota({
-  value,
-  unit,
-  messages,
-  fixed = false,
-}: {
-  value: AdminCountQuotaView;
-  unit: string;
-  messages: AdminUsageTableMessages;
-  fixed?: boolean;
-}) {
+function CountQuota({ value, unit, messages }: { value: AdminCountQuotaView; unit: string; messages: AdminUsageTableMessages }) {
   return (
     <div className="flex flex-col gap-0.5">
       <span>
@@ -184,7 +160,7 @@ function CountQuota({
       </span>
       <span className="flex items-center gap-1">
         <LevelBadge level={value.level} messages={messages} />
-        <QuotaSource quota={value.quota} messages={messages} fixed={fixed} />
+        <QuotaSource quota={value.quota} messages={messages} />
       </span>
     </div>
   );
@@ -312,7 +288,7 @@ function TenantRow({
         </details>
       </TableCell>
       <TableCell className="align-top">
-        <CountQuota value={row.email} unit={messages.unitMessages} messages={messages} fixed />
+        <CountQuota value={row.email} unit={messages.unitMessages} messages={messages} />
       </TableCell>
       <TableCell className="align-top">
         <div className="flex flex-col gap-0.5">
@@ -321,7 +297,7 @@ function TenantRow({
           </span>
           <span className="flex items-center gap-1">
             <LevelBadge level={row.storage.level} messages={messages} />
-            <QuotaSource quota={row.storage.quota} messages={messages} fixed />
+            <QuotaSource quota={row.storage.quota} messages={messages} />
           </span>
         </div>
       </TableCell>

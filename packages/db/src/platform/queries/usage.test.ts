@@ -178,7 +178,7 @@ describe('クォータの上書き（tenant_quota_overrides）が上限と出所
     expect(snapshot.tenants.find((row) => row.tenantId === TENANT_A)?.aiUnits.AI_UNIT_PROPOSAL_DRAFT.quota.source).toBe('DEFAULT');
   });
 
-  it('🔴 ストレージ / メールは上書きの対象外（T-11-02 NG-1）。既定値のまま bigint で返り、source は他の計測の上書きがあっても常に DEFAULT', () => {
+  it('AI 単位の上書きだけならストレージ / メールは既定値のまま bigint で返り、source は DEFAULT（他の計測の上書きに引きずられない）', () => {
     const big = 200n * GB;
     const snapshot = summarizePlatformUsage(
       input({ defaults: { ...DEFAULTS, storageLimitBytes: big }, overrides: [override({ id: 'o3' })] }),
@@ -187,6 +187,34 @@ describe('クォータの上書き（tenant_quota_overrides）が上限と出所
     expect(row?.storage.limitBytes).toBe(big.toString());
     expect(row?.storage.quota).toEqual({ source: 'DEFAULT', effectiveFrom: null, pending: null });
     expect(row?.email.quota).toEqual({ source: 'DEFAULT', effectiveFrom: null, pending: null });
+  });
+
+  it('🔴 T-12-12: EMAIL_COUNT / STORAGE_BYTES の上書きが上限・消費率・出所・予定に反映される（AI 単位と同じ 1 実装）', () => {
+    const snapshot = summarizePlatformUsage(
+      input({
+        counters: [counter(TENANT_A, 'DAY', 'EMAIL_COUNT', '2.000000'), counter(TENANT_A, 'MONTH', 'STORAGE_BYTES', (3n * GB).toString())],
+        overrides: [
+          override({ id: 'e1', metric: 'EMAIL_COUNT', limit: 4n, previousLimit: 500n, effectiveFrom: '2026-09-10' }),
+          override({ id: 'e2', metric: 'EMAIL_COUNT', limit: 2n, previousLimit: 4n, effectiveFrom: '2026-09-17', createdAt: new Date('2026-09-16T00:00:00.000Z') }),
+          override({ id: 's1', metric: 'STORAGE_BYTES', limit: 4n * GB, previousLimit: 50n * GB, effectiveFrom: '2026-09-16' }),
+        ],
+      }),
+    );
+    const row = snapshot.tenants.find((row) => row.tenantId === TENANT_A);
+    expect(row?.email).toMatchObject({
+      used: 2,
+      limit: 4,
+      consumptionPercent: 50,
+      quota: { source: 'OVERRIDE', effectiveFrom: '2026-09-10', pending: { limit: '2', effectiveFrom: '2026-09-17', lowering: true } },
+    });
+    expect(row?.storage).toMatchObject({
+      usedBytes: (3n * GB).toString(),
+      limitBytes: (4n * GB).toString(),
+      consumptionPercent: 75,
+      quota: { source: 'OVERRIDE', effectiveFrom: '2026-09-16', pending: null },
+    });
+    // 他テナントは既定値のまま。
+    expect(snapshot.tenants.find((row) => row.tenantId === TENANT_B)?.email.limit).toBe(500);
   });
 });
 

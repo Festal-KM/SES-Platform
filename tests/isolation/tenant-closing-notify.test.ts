@@ -62,6 +62,8 @@ import {
 import { fanOutToTenants } from '../../apps/worker/src/runtime.js';
 import { TENANT_A, TENANT_B, USER_A_HOST, USER_A_PARTNER } from './support/fixtures.js';
 import { startIsolationDatabase, type IsolationDatabase } from './support/postgres.js';
+// 🔴 T-12-12: 執行点の deps は固定の上限ではなく既定値（`quotaDefaults`）を受け、`resolveTenantQuotas` が実 DB の上書きと合わせて解く。
+import { quotaDefaultsWith } from './support/quota-defaults.js';
 
 const SETUP_TIMEOUT_MS = 600_000;
 const PURGE_GRACE_DAYS = 30;
@@ -185,7 +187,7 @@ function dispatchDeps(input: {
     emailSender: input.emailSender,
     emailImplementationKind: input.kind,
     minuteWindow: new InMemoryMinuteWindowCounter(),
-    dailyLimit: 500,
+    quotaDefaults: quotaDefaultsWith({ emailDailyLimit: 500 }),
     minuteLimit: 30,
     providerDailyQuota: input.providerDailyQuota ?? 200,
     providerSentCounter: input.providerSentCounter ?? new InMemoryProviderSendCounter(),

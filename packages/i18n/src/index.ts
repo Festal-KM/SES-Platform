@@ -646,9 +646,8 @@ const ja = {
   'admin.usage.band.MID': '—',
   'admin.usage.band.HIGH': '張り付き',
   'admin.usage.quota.default': '既定',
-  // 🔴 メール / ストレージ専用（T-11-02 NG-1）。上限を上げても執行点が既定値しか読まないため上書きの対象にしない
-  //    （`QUOTA_OVERRIDE_METRICS` は AI 4 単位のみ。migration 20260924000000）。配線は SP-12 に申し送り。
-  'admin.usage.quota.defaultFixed': '既定値（Phase 1 では変更不可）',
+  // ✅ T-12-12: メール / ストレージ専用の「既定値（Phase 1 では変更不可）」（`admin.usage.quota.defaultFixed`）は撤去した。
+  //    執行点が `resolveTenantQuotas` を読むようになり、6 計測とも同じ出所の表示（既定 / 個別 / 予定）になる。
   'admin.usage.quota.override': '個別',
   'admin.usage.quota.pending': '予定',
   'admin.usage.quota.pendingLowering': '引き下げ予定',

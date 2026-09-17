@@ -70,11 +70,14 @@ describe('parseQuotaChangeBody（PUT）', () => {
     expect(parseQuotaChangeBody({ ...valid, limit: '12a' }).ok).toBe(false);
   });
 
-  it('🔴 金額（AI_COST_USD）とメール / ストレージは上書きできる計測に無い（値集合は QUOTA_OVERRIDE_METRICS = AI 4 単位のみ。T-11-02 NG-1）', () => {
+  it('🔴 金額（AI_COST_USD）と席数は上書きできる計測に無い。メール / ストレージは受ける（値集合は QUOTA_OVERRIDE_METRICS = 6 計測。T-12-12）', () => {
     expect(parseQuotaChangeBody({ ...valid, metric: 'AI_COST_USD' })).toEqual({ ok: false, issues: ['metric'] });
-    expect(parseQuotaChangeBody({ ...valid, metric: 'EMAIL_COUNT' })).toEqual({ ok: false, issues: ['metric'] });
-    expect(parseQuotaChangeBody({ ...valid, metric: 'STORAGE_BYTES' })).toEqual({ ok: false, issues: ['metric'] });
     expect(parseQuotaChangeBody({ ...valid, metric: 'SEAT_COUNT' }).ok).toBe(false);
+    expect(parseQuotaChangeBody({ ...valid, metric: 'EMAIL_COUNT' }).ok).toBe(true);
+    // ストレージは安全整数を超えるバイト数を十進整数文字列で受けて `bigint` にする。
+    const storage = parseQuotaChangeBody({ ...valid, metric: 'STORAGE_BYTES', limit: '10995116277760' });
+    expect(storage.ok).toBe(true);
+    if (storage.ok) expect(storage.value.limit).toBe(10_995_116_277_760n);
   });
 
   it('effectiveFrom は YYYY-MM-DD の形。notifyTenantAdmins は boolean 必須。reason は 1〜500 文字', () => {

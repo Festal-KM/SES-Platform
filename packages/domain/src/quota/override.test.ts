@@ -28,18 +28,36 @@ function row(over: Partial<QuotaOverrideRow> & { readonly id: string }): QuotaOv
 }
 
 describe('QUOTA_OVERRIDE_METRICS', () => {
-  it('🔴 AI の月次件数 4 単位（AI_UNIT_METRICS）と同一である。EMAIL_COUNT / STORAGE_BYTES は上書きの対象外（執行点の配線が無い）', () => {
+  it('🔴 AI の月次件数 4 単位（AI_UNIT_METRICS）+ EMAIL_COUNT + STORAGE_BYTES の 6 計測（T-12-12 で執行点を配線して戻した）。金額 AI_COST_USD だけが対象外', () => {
     expect(QUOTA_OVERRIDE_METRICS).toEqual([
       'AI_UNIT_SHEET_PARSE',
       'AI_UNIT_MATCH_RATIONALE',
       'AI_UNIT_PROPOSAL_DRAFT',
       'AI_UNIT_RENEWAL_SUMMARY',
-    ]);
-    expect(USAGE_LIMIT_METRICS.filter((metric) => !isQuotaOverrideMetric(metric))).toEqual([
-      'AI_COST_USD',
       'EMAIL_COUNT',
       'STORAGE_BYTES',
     ]);
+    expect(QUOTA_OVERRIDE_METRICS).toHaveLength(6);
+    expect(USAGE_LIMIT_METRICS.filter((metric) => !isQuotaOverrideMetric(metric))).toEqual(['AI_COST_USD']);
+    expect(isQuotaOverrideMetric('AI_COST_USD')).toBe(false);
+  });
+
+  it('EMAIL_COUNT / STORAGE_BYTES も AI 単位と同じ規則で解ける（bigint。ストレージは安全整数を超える値も持てる）', () => {
+    const big = 1n << 40n;
+    const rows: QuotaOverrideRow[] = [
+      row({ id: 'e', metric: 'EMAIL_COUNT', limit: 2n, effectiveFrom: '2026-09-16' }),
+      row({ id: 's', metric: 'STORAGE_BYTES', limit: big, effectiveFrom: '2026-09-17' }),
+    ];
+    expect(resolveQuotaLimit({ rows, metric: 'EMAIL_COUNT', onDate: '2026-09-16', defaultLimit: 500n })).toMatchObject({ limit: 2n, source: 'OVERRIDE' });
+    expect(resolveQuotaLimit({ rows, metric: 'STORAGE_BYTES', onDate: '2026-09-16', defaultLimit: 10n })).toMatchObject({ limit: 10n, source: 'DEFAULT' });
+    expect(resolveQuotaLimit({ rows, metric: 'STORAGE_BYTES', onDate: '2026-09-17', defaultLimit: 10n })).toMatchObject({ limit: big, source: 'OVERRIDE' });
+    // 引き下げの規律は計測を問わず同じ（翌日以降 + 通知）。
+    expect(() =>
+      decideQuotaChange({ metric: 'EMAIL_COUNT', currentLimit: 500n, nextLimit: 2n, effectiveFrom: '2026-09-16', today: '2026-09-16', notifyTenantAdmins: true }),
+    ).toThrow(QuotaChangeRejectedError);
+    expect(
+      decideQuotaChange({ metric: 'STORAGE_BYTES', currentLimit: 10n, nextLimit: big, effectiveFrom: '2026-09-16', today: '2026-09-16', notifyTenantAdmins: false }),
+    ).toMatchObject({ kind: 'RAISE', to: big });
   });
 });
 

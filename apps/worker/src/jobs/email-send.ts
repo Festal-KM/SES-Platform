@@ -54,10 +54,12 @@ import {
   markEmailDispatchSent,
   readEmailDailyCount,
   reserveEmailDailyQuota,
+  resolveTenantQuotas,
   resolveVerifiedSendingDomain,
   suppressEmailDispatch,
   type EmailDispatchRow,
   type SystemTenantCtx,
+  type TenantQuotaDefaults,
 } from '@ses/db';
 import {
   decideEmailRate,
@@ -112,8 +114,14 @@ export type EmailSendDeps = {
   readonly emailImplementationKind: ConnectorImplementationKind;
   /** 分次のスライディングウィンドウ（docs/05 §8.7）。 */
   readonly minuteWindow: MinuteWindowCounter;
-  /** `EMAIL_DAILY_LIMIT_PER_TENANT` / `EMAIL_MINUTE_LIMIT_PER_TENANT`（`packages/config`）。 */
-  readonly dailyLimit: number;
+  /**
+   * 🔴 T-12-12: 上書きが無いときの上限（`packages/config` の `EMAIL_DAILY_LIMIT_PER_TENANT` ほか）。
+   *    日次上限は**この値を直接使わず**、`resolveTenantQuotas(ctx, { now, defaults })` が解いた `emailDailyLimit`
+   *    （既定値 + `tenant_quota_overrides` の効いている行）を使う。判定（`usage.limit-check`）・表示（`GET /api/usage`）と
+   *    同じ 1 関数であり、deps に固定の `dailyLimit: number` を渡す口は無い（渡せると「上げたのに送られない」が再発する）。
+   */
+  readonly quotaDefaults: TenantQuotaDefaults;
+  /** `EMAIL_MINUTE_LIMIT_PER_TENANT`（`packages/config`）。🔴 分次上限は上書きの対象外（docs/05 §5.8.1 ⑧）。 */
   readonly minuteLimit: number;
   /**
    * 🔴 送信基盤（環境全体）の 24h 枠（`MAIL_PROVIDER_DAILY_QUOTA`。`packages/config` §13.4）。
@@ -218,9 +226,11 @@ export async function performEmailSend(
   }
 
   // ④ レート判定（docs/05 §8.7 / `F-027 AC-2`）。🔴 外部の 429 に頼らない。
+  //    🔴 T-12-12: 日次上限は `resolveTenantQuotas`（既定値 + 上書き。判定・表示と同じ 1 関数）から。④ と ⑤ は同じ値を使う。
+  const { emailDailyLimit: dailyLimit } = await resolveTenantQuotas(ctx, { now, defaults: deps.quotaDefaults });
   const minute = await deps.minuteWindow.peek(ctx.tenantId, now);
   const decision = decideEmailRate({
-    dailyLimit: deps.dailyLimit,
+    dailyLimit,
     dailySent: await readEmailDailyCount(ctx, now),
     minuteLimit: deps.minuteLimit,
     minuteSent: minute.count,
@@ -237,10 +247,10 @@ export async function performEmailSend(
   }
 
   // ⑤ 並行実行を閉じる原子的な予約。④をすり抜けた同時実行はここで落ちる。
-  const reservation = await reserveEmailDailyQuota(ctx, { limit: deps.dailyLimit, observedAt: now });
+  const reservation = await reserveEmailDailyQuota(ctx, { limit: dailyLimit, observedAt: now });
   if (!reservation.allowed) {
     await suppressEmailDispatch(ctx, { dispatchId: dispatch.dispatchId, reason: 'RATE_LIMIT' });
-    return { kind: 'RATE_LIMITED', dailyLimit: deps.dailyLimit };
+    return { kind: 'RATE_LIMITED', dailyLimit };
   }
   await deps.minuteWindow.record(ctx.tenantId, now);
 

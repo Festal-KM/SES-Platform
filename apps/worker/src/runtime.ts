@@ -87,6 +87,7 @@ import {
   configureTokenEncryption,
   listSchedulerFanoutTenants,
   type SchedulerFanoutPopulation,
+  type TenantQuotaDefaults,
 } from '@ses/db';
 import {
   billingTermsNotRecorded,
@@ -321,6 +322,20 @@ export function startWorkerRuntime(config: RuntimeConfig, options: WorkerRuntime
   // 4. スケジュールジョブの deps（🔴 交差型。1 つでも欠けたらコンパイルエラー）
   // --------------------------------------------------------------------------
   const now = (): Date => new Date();
+  // 🔴 T-12-12: 上書きが無いときの上限（`packages/config`。プラン別の値が入るまでの既定値。docs/05 §7.12 ⑧）。**1 つの値**を
+  //    `usage.limit-check`（判定）/ `send.hold-release`（復帰）/ `send.proposal`（執行）に渡し、いずれも `resolveTenantQuotas` で
+  //    `tenant_quota_overrides` の効いている行と合わせて解く。`GET /api/usage`（#69。表示）と #18（アップロード）が
+  //    `usageLimitsRuntime()` から読む値と同じキー。金額を含まない。
+  const tenantQuotaDefaults: TenantQuotaDefaults = {
+    aiUnitQuotas: {
+      AI_UNIT_SHEET_PARSE: env.AI_UNIT_QUOTA_SHEET_PARSE_DEFAULT,
+      AI_UNIT_MATCH_RATIONALE: env.AI_UNIT_QUOTA_MATCH_RATIONALE_DEFAULT,
+      AI_UNIT_PROPOSAL_DRAFT: env.AI_UNIT_QUOTA_PROPOSAL_DRAFT_DEFAULT,
+      AI_UNIT_RENEWAL_SUMMARY: env.AI_UNIT_QUOTA_RENEWAL_SUMMARY_DEFAULT,
+    },
+    emailDailyLimit: env.EMAIL_DAILY_LIMIT_PER_TENANT,
+    storageLimitBytes: BigInt(env.STORAGE_LIMIT_BYTES_PER_TENANT),
+  };
   const deps: ScheduledJobDeps = {
     now,
     // usage.seat-snapshot
@@ -344,10 +359,10 @@ export function startWorkerRuntime(config: RuntimeConfig, options: WorkerRuntime
       invitationTtlMs: INVITATION_TTL_MS,
       now,
     }),
-    // 🔴 T-09-06: `Proposal` の保留の復帰（docs/05 §9.4 / §10.4）。`RATE_LIMIT` の解消判定は送信ジョブの ①-e と
-    //    **同じキー**（`EMAIL_DAILY_LIMIT_PER_TENANT`）から読む。
+    // 🔴 T-09-06 → T-12-12: `Proposal` の保留の復帰（docs/05 §9.4 / §10.4）。`RATE_LIMIT` の解消判定は送信ジョブの ①-e と
+    //    **同じ既定値・同じ `resolveTenantQuotas`** で解く。
     enqueueSendProposal: (job) => sendProposalQueue.enqueue(job),
-    emailDailyLimit: env.EMAIL_DAILY_LIMIT_PER_TENANT,
+    quotaDefaults: tenantQuotaDefaults,
     // scan.poll
     get malwareScanner(): MalwareScanner {
       return resolveMalwareScanner();
@@ -369,17 +384,7 @@ export function startWorkerRuntime(config: RuntimeConfig, options: WorkerRuntime
     pricingRuleset: PRICING_RULESET_V1,
     // 🔴 T-10-03: usage.limit-check（docs/02 F-027）。上限値の出所は `packages/config` だけ（プラン別の上書きが
     //    入るまでの既定値。docs/05 §7.12 ⑧）。`GET /api/usage`（#69）が同じ値を `usageLimitsRuntime()` から読む。
-    usageLimits: {
-      warnPercent: env.QUOTA_WARNING_THRESHOLD_PERCENT,
-      aiUnitQuotas: {
-        AI_UNIT_SHEET_PARSE: env.AI_UNIT_QUOTA_SHEET_PARSE_DEFAULT,
-        AI_UNIT_MATCH_RATIONALE: env.AI_UNIT_QUOTA_MATCH_RATIONALE_DEFAULT,
-        AI_UNIT_PROPOSAL_DRAFT: env.AI_UNIT_QUOTA_PROPOSAL_DRAFT_DEFAULT,
-        AI_UNIT_RENEWAL_SUMMARY: env.AI_UNIT_QUOTA_RENEWAL_SUMMARY_DEFAULT,
-      },
-      emailDailyLimit: env.EMAIL_DAILY_LIMIT_PER_TENANT,
-      storageLimitBytes: BigInt(env.STORAGE_LIMIT_BYTES_PER_TENANT),
-    },
+    usageLimits: { warnPercent: env.QUOTA_WARNING_THRESHOLD_PERCENT, ...tenantQuotaDefaults },
     // 🔴 T-09-07: send.settle-unknown（docs/05 §10.6）。閾値は `A-005` 項目 2（`readSubmittingStalls`）と同じキー。
     submittingStallMinutes: env.SUBMITTING_STALL_ALERT_MINUTES,
     // 🔴 T-10-12: tenant.closing-notify（docs/05 §9.7）。削除予定日 = `closing_entered_at + TENANT_PURGE_GRACE_DAYS`。
@@ -417,7 +422,7 @@ export function startWorkerRuntime(config: RuntimeConfig, options: WorkerRuntime
     },
     emailImplementationKind: connectors.email,
     minuteWindow,
-    dailyLimit: env.EMAIL_DAILY_LIMIT_PER_TENANT,
+    quotaDefaults: tenantQuotaDefaults,
     minuteLimit: env.EMAIL_MINUTE_LIMIT_PER_TENANT,
     providerDailyQuota: env.MAIL_PROVIDER_DAILY_QUOTA,
     get providerSentCounter(): ProviderSendCounter {

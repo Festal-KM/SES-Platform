@@ -702,3 +702,76 @@ describe('④ app_platform への SELECT は §5.5 の非開示列を除外し�
     }
   });
 });
+
+/**
+ * 🔴 T-12-12: `app_tenant` の**列単位 GRANT**（migration 20260928000000 ③）。`tenant_quota_overrides` は `app_tenant` に
+ *    列単位の SELECT だけを持つ最初の表である —— `reason`（運営者の自由記述）と `set_by_platform_user_id`（運営者の識別子）を
+ *    業務ロール（ホスト / パートナーを問わず）から閉じるため。期待値はここで固定する（増えたら必ず落ちる）。
+ */
+const TENANT_QUOTA_OVERRIDES_APP_TENANT_SELECT_COLUMNS = [
+  'id',
+  'tenant_id',
+  'metric',
+  'limit',
+  'previous_limit',
+  'effective_from',
+  'created_at',
+] as const;
+
+const TENANT_QUOTA_OVERRIDES_APP_TENANT_DENIED_COLUMNS = ['reason', 'set_by_platform_user_id'] as const;
+
+describe('⑤ app_tenant の tenant_quota_overrides への SELECT は 7 列だけ（reason / set_by_platform_user_id は不可。T-12-12）', () => {
+  it('テーブル単位の SELECT / INSERT / UPDATE / DELETE を 1 つも持たない（列単位の SELECT だけ）', async () => {
+    for (const privilege of ['SELECT', 'INSERT', 'UPDATE', 'DELETE'] as const) {
+      expect(
+        await hasTablePrivilege(unextended, 'app_tenant', 'tenant_quota_overrides', privilege),
+        `tenant_quota_overrides: app_tenant にテーブル単位の ${privilege} がある`,
+      ).toBe(false);
+    }
+  });
+
+  it('🔴 role_column_grants は 7 列の SELECT ちょうど（全 9 列のうち reason / set_by_platform_user_id を除く）', async () => {
+    const columns = await readTableColumns(unextended, 'tenant_quota_overrides');
+    expect([...columns].sort()).toEqual(
+      [...TENANT_QUOTA_OVERRIDES_APP_TENANT_SELECT_COLUMNS, ...TENANT_QUOTA_OVERRIDES_APP_TENANT_DENIED_COLUMNS].sort(),
+    );
+    for (const column of columns) {
+      const expected = (TENANT_QUOTA_OVERRIDES_APP_TENANT_SELECT_COLUMNS as readonly string[]).includes(column);
+      expect(
+        await hasColumnPrivilege(unextended, 'app_tenant', 'tenant_quota_overrides', column, 'SELECT'),
+        `tenant_quota_overrides.${column}: app_tenant の SELECT が期待（${expected}）と違う`,
+      ).toBe(expected);
+      for (const privilege of ['INSERT', 'UPDATE'] as const) {
+        expect(
+          await hasColumnPrivilege(unextended, 'app_tenant', 'tenant_quota_overrides', column, privilege),
+          `tenant_quota_overrides.${column}: app_tenant に ${privilege} がある`,
+        ).toBe(false);
+      }
+    }
+    // カタログ側でも同じ集合（migrator 接続。role_column_grants は現在のロールに関わる行しか返さない）。
+    const rows = await migrator.$queryRaw<Array<{ column_name: string; privilege_type: string }>>`
+      SELECT column_name, privilege_type
+      FROM information_schema.role_column_grants
+      WHERE grantee = 'app_tenant' AND table_schema = 'public' AND table_name = 'tenant_quota_overrides'
+      ORDER BY column_name`;
+    expect(rows.every((row) => row.privilege_type === 'SELECT')).toBe(true);
+    expect(rows.map((row) => row.column_name).sort()).toEqual([...TENANT_QUOTA_OVERRIDES_APP_TENANT_SELECT_COLUMNS].sort());
+  });
+
+  it('実測: app_tenant 接続 + GUC（ホスト文脈）でも SELECT reason / set_by_platform_user_id は permission denied。対照: metric は読める', async () => {
+    const tenantIds = await migrator.$queryRaw<Array<{ id: string }>>`SELECT id::text AS id FROM tenants ORDER BY id LIMIT 1`;
+    const tenantId = tenantIds[0]?.id ?? '00000000-0000-0000-0000-000000000000';
+    const asHost = async <T>(sql: string) =>
+      unextended.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(
+          `SELECT set_config('app.tenant_id', $1, true), set_config('app.partner_company_id', '', true), set_config('app.actor_user_id', '', true)`,
+          tenantId,
+        );
+        return tx.$queryRawUnsafe<T[]>(sql);
+      });
+    await expect(asHost('SELECT reason FROM tenant_quota_overrides')).rejects.toThrow(/permission denied/i);
+    await expect(asHost('SELECT set_by_platform_user_id FROM tenant_quota_overrides')).rejects.toThrow(/permission denied/i);
+    await expect(asHost('SELECT * FROM tenant_quota_overrides')).rejects.toThrow(/permission denied/i);
+    await expect(asHost('SELECT metric, "limit", effective_from FROM tenant_quota_overrides')).resolves.toBeInstanceOf(Array);
+  });
+});

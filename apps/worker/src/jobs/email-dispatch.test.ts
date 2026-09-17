@@ -12,6 +12,14 @@ vi.mock('@ses/db', () => ({
   readEmailDispatch,
   readEmailDailyCount: vi.fn(async () => 0),
   reserveEmailDailyQuota: vi.fn(async () => ({ allowed: true, value: 1 })),
+  // 🔴 T-12-12: 日次上限の出所（既定値 + 上書き）。ここでは既定値をそのまま返す。
+  resolveTenantQuotas: vi.fn(async (_ctx: unknown, input: { defaults: { emailDailyLimit: number } }) => ({
+    dayKey: '2026-09-05',
+    aiUnitQuotas: {},
+    emailDailyLimit: input.defaults.emailDailyLimit,
+    storageLimitBytes: 0n,
+    sources: {},
+  })),
   markEmailDispatchSent: vi.fn(async () => true),
   markEmailDispatchMocked: vi.fn(async () => true),
   holdEmailDispatch: vi.fn(async () => true),
@@ -57,7 +65,7 @@ function makeHandler(resolveTemplateParams = vi.fn(async () => ({}))) {
     },
     emailImplementationKind: 'real',
     minuteWindow: new InMemoryMinuteWindowCounter(),
-    dailyLimit: 500,
+    quotaDefaults: { aiUnitQuotas: {}, emailDailyLimit: 500, storageLimitBytes: 0n },
     minuteLimit: 30,
     // 🔴 T-04-04: 送信基盤（環境全体）の枠（docs/05 §8.3-Q）。枯渇の検証は email-send.test.ts。
     providerDailyQuota: 200,

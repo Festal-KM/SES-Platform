@@ -690,14 +690,17 @@ export type {
 // 🔴 T-10-03: テナント管理者（分類 1）宛の運用メールの宛先。上限接近・到達の通知（`F-027` 処理④）が使う。
 export { readTenantAdminRecipients } from './tenant-admin-recipients.js';
 export type { TenantAdminRecipient } from './tenant-admin-recipients.js';
-// 🔴 T-11-02: テナント個別のクォータ上書き（`tenant_quota_overrides`。docs/02 F-057 / docs/05 §6.9 API-A6 /
-//    migration 20260924000000）の**読み取り**。書き手は `@ses/db/platform`（`app_platform_write` の INSERT）だけ。
-//    ワーカー（`usage.limit-check`）と主平面（`GET /api/usage`）が `resolveTenantQuotas` で**同じ上限値**を得る。
-export { listPendingQuotaLoweringNotices, resolveTenantQuotas } from './quota-overrides.js';
+// 🔴 T-11-02 → T-12-12: テナント個別のクォータ上書き（`tenant_quota_overrides`。docs/02 F-057 / docs/05 §5.8.1 ⑧ / §6.9 API-A6 /
+//    migration 20260924000000 / 20260928000000）の**読み取り**。書き手は `@ses/db/platform`（`app_platform_write` の INSERT）だけ。
+//    判定（`usage.limit-check`）・表示（`GET /api/usage`）・執行（`email-send.ts` / `send-proposal.ts` / `send-hold-release.ts`）の
+//    3 者が `resolveTenantQuotas`（6 計測。`HostTenantCtx` 限定 = `F-027 AC-1`）で**同じ上限値**を得る。パートナー文脈でも呼べるのは
+//    `resolveTenantStorageQuota`（`STORAGE_BYTES` 1 計測。`issueSkillSheetUploadUrl` の執行点）だけ。
+export { listPendingQuotaLoweringNotices, resolveTenantQuotas, resolveTenantStorageQuota } from './quota-overrides.js';
 export type {
   PendingQuotaLoweringNotice,
   QuotaSource,
   ResolvedTenantQuotas,
+  ResolvedTenantStorageQuota,
   TenantQuotaDefaults,
 } from './quota-overrides.js';
 // 🔴 T-11-11: `S-015` の検索述語（自社台帳〔RLS C3〕に対する 氏名 / 稼働可能時期 の絞り込み。docs/05 §6.4「#29 の改訂」）。

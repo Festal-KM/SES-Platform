@@ -36,7 +36,7 @@ export type ProposalHoldFacts = {
   readonly domainVerified: boolean;
   /** テナントが実行可（`SANDBOX` / `ACTIVE`）か。`tenants` から読んだ値。 */
   readonly tenantExecutable: boolean;
-  /** テナントの日次上限に余地があるか（`readEmailDailyCount < EMAIL_DAILY_LIMIT_PER_TENANT`）。 */
+  /** テナントの日次上限に余地があるか（`readEmailDailyCount < resolveTenantQuotas(...).emailDailyLimit`。T-12-12）。 */
   readonly dailyQuotaHasRoom: boolean;
 };
 

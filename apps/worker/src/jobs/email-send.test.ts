@@ -14,6 +14,8 @@ import type { EmailSendInput } from '@ses/connectors';
 
 const readEmailDailyCount = vi.fn();
 const reserveEmailDailyQuota = vi.fn();
+// 🔴 T-12-12: 日次上限の出所（既定値 + `tenant_quota_overrides`）。deps の固定値ではなくこの戻り値で判定・予約する。
+const resolveTenantQuotas = vi.fn();
 const holdEmailDispatch = vi.fn();
 const suppressEmailDispatch = vi.fn();
 const failEmailDispatch = vi.fn();
@@ -23,6 +25,7 @@ const markEmailDispatchMocked = vi.fn();
 vi.mock('@ses/db', () => ({
   readEmailDailyCount,
   reserveEmailDailyQuota,
+  resolveTenantQuotas,
   holdEmailDispatch,
   suppressEmailDispatch,
   failEmailDispatch,
@@ -96,7 +99,7 @@ function makeDeps(
     emailSender: { send, callCount: () => send.mock.calls.length, getQuota },
     emailImplementationKind: 'real' as const,
     minuteWindow: new InMemoryMinuteWindowCounter(),
-    dailyLimit: 500,
+    quotaDefaults: QUOTA_DEFAULTS,
     minuteLimit: 30,
     providerDailyQuota: 200,
     providerSentCounter,
@@ -107,10 +110,28 @@ function makeDeps(
   return { deps: deps as never, send, minuteWindow: deps.minuteWindow, providerSentCounter };
 }
 
+const QUOTA_DEFAULTS = {
+  aiUnitQuotas: { AI_UNIT_SHEET_PARSE: 180, AI_UNIT_MATCH_RATIONALE: 6_200, AI_UNIT_PROPOSAL_DRAFT: 180, AI_UNIT_RENEWAL_SUMMARY: 20 },
+  emailDailyLimit: 500,
+  storageLimitBytes: 1n << 35n,
+};
+
+/** `resolveTenantQuotas` の既定の応答（上書き無し = 既定値のまま）。上書きの再現は `emailDailyLimit` を差し替える。 */
+function resolvedQuotas(emailDailyLimit: number) {
+  return {
+    dayKey: '2026-09-16',
+    aiUnitQuotas: QUOTA_DEFAULTS.aiUnitQuotas,
+    emailDailyLimit,
+    storageLimitBytes: QUOTA_DEFAULTS.storageLimitBytes,
+    sources: {},
+  };
+}
+
 beforeEach(() => {
   for (const fn of [
     readEmailDailyCount,
     reserveEmailDailyQuota,
+    resolveTenantQuotas,
     holdEmailDispatch,
     suppressEmailDispatch,
     failEmailDispatch,
@@ -121,6 +142,9 @@ beforeEach(() => {
   }
   readEmailDailyCount.mockResolvedValue(0);
   reserveEmailDailyQuota.mockResolvedValue({ allowed: true, value: 1 });
+  resolveTenantQuotas.mockImplementation(async (_ctx: unknown, input: { defaults: { emailDailyLimit: number } }) =>
+    resolvedQuotas(input.defaults.emailDailyLimit),
+  );
   holdEmailDispatch.mockResolvedValue(true);
   suppressEmailDispatch.mockResolvedValue(true);
   failEmailDispatch.mockResolvedValue(true);
@@ -284,6 +308,28 @@ describe('🔴 ④ レート上限（docs/05 §8.7 / F-027 AC-2）', () => {
     const outcome = await performEmailSend(deps, { ctx: CTX, dispatch: dispatchRow(), params: {} });
     expect(outcome).toEqual({ kind: 'RATE_LIMITED', dailyLimit: 500 });
     expect(send).not.toHaveBeenCalled();
+  });
+
+  it('🔴 T-12-12: 日次上限は resolveTenantQuotas（既定値 + 上書き）の値で判定・予約する。deps の既定値 500 は直接使わない', async () => {
+    // 上書きで 2 通に引き下げられている（既定値は 500 のまま）。2 通送信済みなら 3 通目は止まる。
+    resolveTenantQuotas.mockResolvedValue(resolvedQuotas(2));
+    readEmailDailyCount.mockResolvedValue(2);
+    const { deps, send } = makeDeps();
+    const outcome = await performEmailSend(deps, { ctx: CTX, dispatch: dispatchRow(), params: {} });
+    expect(outcome).toEqual({ kind: 'RATE_LIMITED', dailyLimit: 2 });
+    expect(send).not.toHaveBeenCalled();
+    expect(reserveEmailDailyQuota).not.toHaveBeenCalled();
+    // 呼び出しは ctx + { now, defaults }（既定値は deps から。今日の判定は関数の中）。
+    const [ctx, input] = resolveTenantQuotas.mock.calls[0] as [{ tenantId: string }, { now: Date; defaults: unknown }];
+    expect(ctx.tenantId).toBe(TENANT_ID);
+    expect(input).toEqual({ now: NOW, defaults: QUOTA_DEFAULTS });
+
+    // 上書きで 1,000 通に引き上げられていれば、既定値 500 を超えていても送れる。予約の上限も同じ値。
+    resolveTenantQuotas.mockResolvedValue(resolvedQuotas(1_000));
+    readEmailDailyCount.mockResolvedValue(700);
+    const raised = await performEmailSend(deps, { ctx: CTX, dispatch: dispatchRow(), params: {} });
+    expect(raised.kind).toBe('SENT');
+    expect(reserveEmailDailyQuota.mock.calls[0]?.[1]).toEqual({ limit: 1_000, observedAt: NOW });
   });
 
   it('送信した分だけ分次ウィンドウが進む（DEFER / BLOCK では進まない）', async () => {

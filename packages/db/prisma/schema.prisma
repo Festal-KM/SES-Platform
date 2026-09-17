@@ -1957,11 +1957,13 @@ model UsageLimitState {
 ///    適用日 ≤ 今日 のうち適用日が最も遅い行、同日なら最後に作られた行。@ses/domain の resolveQuotaLimit）。
 /// 🔴 引き下げ（limit < previous_limit）は翌日以降しか積めない（app_platform_write の WITH CHECK。F-057 AC-3）。
 ///    RLS: app_tenant はホスト文脈の SELECT のみ（usage.limit-check と GET /api/usage が読む）。金額（AI_COST_USD）の上書きは持たない。
+///    T-12-12（migration 20260928000000）: 例外として STORAGE_BYTES の行だけパートナー文脈にも SELECT を開く（取引先のアップロードも
+///    同じ枠を消費するため。F-027 AC-1 のとおり他の上限値はホストのみ）。reason / set_by_platform_user_id は app_tenant に列 GRANT が無い。
 model TenantQuotaOverride {
   id                    String   @id @default(uuid(7)) @db.Uuid
   tenantId              String   @map("tenant_id") @db.Uuid
-  /// QuotaOverrideMetric（TEXT + CHECK）: AI_UNIT_METRICS と同じ 4 値。EMAIL_COUNT / STORAGE_BYTES は
-  /// 執行点の配線が無いため対象外（migration 20260924000000 の判断事項）
+  /// QuotaOverrideMetric（TEXT + CHECK）: QUOTA_OVERRIDE_METRICS = AI 4 単位 + EMAIL_COUNT + STORAGE_BYTES（6 値。
+  /// migration 20260928000000 で再定義。T-12-12 で執行点を配線してから戻した）
   metric                String
   /// 上限（件数 / 通数 / バイト数）。CHECK >= 1
   limit                 BigInt

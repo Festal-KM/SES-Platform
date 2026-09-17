@@ -82,6 +82,8 @@ import {
   USER_A_PARTNER,
 } from './support/fixtures.js';
 import { startIsolationDatabase, type IsolationDatabase } from './support/postgres.js';
+// 🔴 T-12-12: 執行点の deps は固定の上限ではなく既定値（`quotaDefaults`）を受け、`resolveTenantQuotas` が実 DB の上書きと合わせて解く。
+import { quotaDefaultsWith } from './support/quota-defaults.js';
 import { startIsolationRedis, type IsolationRedis } from './support/redis.js';
 
 const SETUP_TIMEOUT_MS = 600_000;
@@ -359,7 +361,7 @@ function sendDeps(overrides: Partial<SendProposalDeps> = {}): SendProposalDeps {
     emailSender: mockConnectors.email,
     emailImplementationKind: 'mock',
     minuteWindow: new InMemoryMinuteWindowCounter(),
-    dailyLimit: 500,
+    quotaDefaults: quotaDefaultsWith({ emailDailyLimit: 500 }),
     minuteLimit: 30,
     providerDailyQuota: 200,
     providerSentCounter: new InMemoryProviderSendCounter(),
@@ -387,7 +389,7 @@ function holdRelease(overrides: Record<string, unknown> = {}) {
     providerDailyQuota: 200,
     providerQuotaWarnRatio: 0.8,
     providerSentCounter: new InMemoryProviderSendCounter(),
-    emailDailyLimit: 500,
+    quotaDefaults: quotaDefaultsWith({ emailDailyLimit: 500 }),
     enqueueEmailDispatch: async () => {
       throw new Error('本テストは運用メールの保留を作らない');
     },
@@ -809,7 +811,7 @@ describe('🔴 ⑥ docs/05 §17.3 #23 send.* 経路: MAIL_PROVIDER_DAILY_QUOTA=1
     // 日次 500 のカウンタを上限まで埋める（判定は UsageCounter が正）。
     await admin.usageCounter.deleteMany({ where: { metric: 'EMAIL_COUNT' } });
     const dailyLimit = 3;
-    const full = sendDeps({ dailyLimit });
+    const full = sendDeps({ quotaDefaults: quotaDefaultsWith({ emailDailyLimit: dailyLimit }) });
     // 3 通ぶんの予約を先に積む（別の送信が消費した状態）。
     for (let i = 0; i < dailyLimit; i += 1) {
       const other = await approvedProposal();
@@ -821,7 +823,7 @@ describe('🔴 ⑥ docs/05 §17.3 #23 send.* 経路: MAIL_PROVIDER_DAILY_QUOTA=1
     const rows = proposalApprovalRows(await readProposalApproval(hostSales, id, { now: clock }), clock);
     expect(rows.sendHold).toMatchObject({ reasonKey: 'RATE_LIMIT', settingsLink: { href: '/settings/usage' } });
     // 上限に余地が戻れば hold-release が復帰させる。
-    const release = holdRelease({ emailDailyLimit: dailyLimit + 1 });
+    const release = holdRelease({ quotaDefaults: quotaDefaultsWith({ emailDailyLimit: dailyLimit + 1 }) });
     expect((await release.run()).sendHoldsReleased).toBe(1);
   });
 });
@@ -922,7 +924,7 @@ describe('🔴 ⑧ 取引先 / VIEWER の #43 は 403。他テナント / 不存
       providerDailyQuota: 200,
       providerQuotaWarnRatio: 0.8,
       providerSentCounter: new InMemoryProviderSendCounter(),
-      emailDailyLimit: 500,
+      quotaDefaults: quotaDefaultsWith({ emailDailyLimit: 500 }),
       enqueueEmailDispatch: async () => {
         throw new Error('unexpected');
       },

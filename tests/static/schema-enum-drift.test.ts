@@ -104,22 +104,35 @@ const migrationsDir = path.join(repoRoot, 'packages', 'db', 'prisma', 'migration
  * 増えても、対象の CONSTRAINT がどのファイルにあっても拾える。
  */
 function readAllMigrationSql(): string {
-  const entries = readdirSync(migrationsDir, { withFileTypes: true }).filter((e) => e.isDirectory());
+  // 🔴 T-12-12: フォルダ名（タイムスタンプ）順に連結する。`readdirSync` の順序は環境依存であり、`extractCheckInValues` の
+  //    「最後の定義を採る」が適用順（= migrate deploy の順）に一致することをここで固定する。
+  const entries = readdirSync(migrationsDir, { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   return entries
     .map((entry) => readFileSync(path.join(migrationsDir, entry.name, 'migration.sql'), 'utf8'))
     .join('\n');
 }
 
 /**
+ * 同名 CHECK を DROP + 再定義している制約（migration 順で**最後の定義**が実効の値集合）。
+ * 🔴 ここに無い制約が 2 回以上定義されていたら loud failure（`extractCheckInValues`）。「再定義したら必ずここに足す」ことで、
+ *    古い定義とだけ突合して drift を見逃す状態を作らない。
+ */
+const REDEFINED_CHECK_CONSTRAINTS: Readonly<Record<string, { readonly definitions: number; readonly reason: string }>> = {
+  // T-11-02（20260924000000。AI 4 単位）→ T-12-12（20260928000000。+ EMAIL_COUNT / STORAGE_BYTES = 6 計測）
+  tenant_quota_overrides_metric_check: { definitions: 2, reason: 'T-12-12 で執行点を配線し EMAIL_COUNT / STORAGE_BYTES を戻した' },
+};
+
+/**
  * `CONSTRAINT "<name>" CHECK ("col" IN ('A', 'B', ...))` 形式から値集合を抽出する。
- * 対象の 6 制約はいずれも `col IN (...)` の前後に丸括弧のネストが無い単一行の宣言のため、
+ * 対象の制約はいずれも `col IN (...)` の前後に丸括弧のネストが無い単一行の宣言のため、
  * 「CHECK の直後の開き括弧」〜「IN リストの閉じ括弧 + CHECK の閉じ括弧」を欲張らずに切り出せば足りる。
  *
- * 🔴 `matchAll`（`g` フラグ）で全マッチを取り、同名 `CONSTRAINT` が 2 件以上ヒットしたら throw する
- * （code-reviewer 指摘）。migration.sql は複数ファイルを連結したテキストであり、将来 DROP + 再定義
- * のような形で同名 CHECK が複数マイグレーションにまたがって現れても、素朴に「最初の 1 件」を拾うと
- * 古い定義とだけ突合して silent に drift を見逃す。「最後の定義を採る」等へパーサを更新すべき状況を
- * loud failure にする。
+ * 🔴 `matchAll`（`g` フラグ）で全マッチを取る。同名 `CONSTRAINT` が 2 件以上ヒットしたら、`REDEFINED_CHECK_CONSTRAINTS` に
+ * **宣言どおりの件数**で登録されている場合に限り migration 順の**最後の定義**を採り、それ以外は throw する（code-reviewer 指摘）。
+ * migration.sql は複数ファイルを連結したテキストであり、DROP + 再定義で同名 CHECK が複数マイグレーションにまたがって現れたとき、
+ * 素朴に「最初の 1 件」を拾うと古い定義とだけ突合して silent に drift を見逃す。
  */
 function extractCheckInValues(sql: string, constraintName: string): string[] {
   const pattern = new RegExp(
@@ -130,14 +143,15 @@ function extractCheckInValues(sql: string, constraintName: string): string[] {
   if (matches.length === 0) {
     throw new Error(`CHECK constraint "${constraintName}" が migration.sql に見つかりません`);
   }
-  if (matches.length > 1) {
+  const redefined = REDEFINED_CHECK_CONSTRAINTS[constraintName];
+  if (matches.length > 1 && redefined?.definitions !== matches.length) {
     throw new Error(
       `CHECK constraint "${constraintName}" の定義が migration.sql 群に ${matches.length} 件見つかりました` +
         `（再定義を検知した）。DROP + 再定義等で同名 CHECK が複数回宣言されています。` +
-        `extractCheckInValues を「最後の定義を採る」等の意図的な方針に更新してください。`,
+        `意図した再定義なら REDEFINED_CHECK_CONSTRAINTS に件数と理由を登録してください（最後の定義を採る）。`,
     );
   }
-  const match = matches[0]!;
+  const match = matches[matches.length - 1]!;
   return match[1]!.split(',').map((raw) => {
     const trimmed = raw.trim();
     const valueMatch = /^'([^']*)'$/.exec(trimmed);
@@ -566,16 +580,35 @@ describe('CHECK 制約と TS 単一出所の drift 検査（docs/05 §3.1「列�
       expectSameValueSet(values, USAGE_COUNTER_PERIOD_KINDS);
     });
 
-    // 🔴 T-11-02（docs/02 F-057 / docs/05 §6.9 API-A6 / migration 20260924000000）: テナント個別のクォータ上書き。
-    //    metric は `usage_limit_states` の**部分集合**（AI の月次件数 4 単位のみ。金額 `AI_COST_USD` は運営者の内部指標、
-    //    `EMAIL_COUNT` / `STORAGE_BYTES` は執行点の配線が無いため上書きの対象ではない。T-11-02 NG-1 で 6 → 4 に修正）。
-    //    単一出所は `@ses/domain` の `QUOTA_OVERRIDE_METRICS`（`AI_UNIT_METRICS` から引く。列挙し直さない）。
-    it('tenant_quota_overrides_metric_check ⇔ @ses/domain QUOTA_OVERRIDE_METRICS（usage_limit_states_metric_check から AI_COST_USD / EMAIL_COUNT / STORAGE_BYTES を除いた 4）', () => {
+    // 🔴 T-11-02 → T-12-12（docs/02 F-057 / docs/05 §5.8.1 ⑧ / §6.9 API-A6 / migration 20260924000000 → 20260928000000）:
+    //    テナント個別のクォータ上書き。metric は `usage_limit_states` の**部分集合**（AI の月次件数 4 単位 + `EMAIL_COUNT` +
+    //    `STORAGE_BYTES` = 6 計測。金額 `AI_COST_USD` だけが運営者の内部指標として対象外）。T-11-02 NG-1 で 6 → 4 に絞り、
+    //    T-12-12 で執行点（`email-send.ts` / `send-proposal.ts` / `send-hold-release.ts` / `issueSkillSheetUploadUrl`）を
+    //    `resolveTenantQuotas` に配線してから 4 → 6 に戻した（CHECK は 20260928000000 で再定義 = 最後の定義を採る）。
+    //    単一出所は `@ses/domain` の `QUOTA_OVERRIDE_METRICS`（AI 4 単位は `AI_UNIT_METRICS` から引く。列挙し直さない）。
+    it('tenant_quota_overrides_metric_check ⇔ @ses/domain QUOTA_OVERRIDE_METRICS（usage_limit_states_metric_check から AI_COST_USD を除いた 6。20260928000000 の再定義が実効）', () => {
       const values = extractCheckInValues(migrationSql, 'tenant_quota_overrides_metric_check');
       expectSameValueSet(values, QUOTA_OVERRIDE_METRICS);
+      expect(values).toHaveLength(6);
       const limitMetrics: readonly string[] = USAGE_LIMIT_METRICS;
       expect(values.filter((value) => !limitMetrics.includes(value))).toEqual([]);
-      expect(limitMetrics.filter((value) => !values.includes(value))).toEqual(['AI_COST_USD', 'EMAIL_COUNT', 'STORAGE_BYTES']);
+      expect(limitMetrics.filter((value) => !values.includes(value))).toEqual(['AI_COST_USD']);
+    });
+
+    it('対照: tenant_quota_overrides_metric_check は 2 回定義されており（T-11-02 → T-12-12）、最初の定義（4 単位）ではなく最後の定義を採っている', () => {
+      const pattern = /CONSTRAINT\s+"tenant_quota_overrides_metric_check"\s+CHECK/g;
+      expect([...migrationSql.matchAll(pattern)]).toHaveLength(2);
+      // 最後の定義を消すと最初の定義（4 単位）だけになり、値集合が 6 と一致しない（= 「最後を採る」が空振りでない）。
+      const withoutLast = migrationSql.replace(
+        /ALTER TABLE tenant_quota_overrides\s+ADD CONSTRAINT "tenant_quota_overrides_metric_check" CHECK \([^;]*\);/,
+        '',
+      );
+      expect(extractCheckInValues(withoutLast, 'tenant_quota_overrides_metric_check')).toHaveLength(4);
+    });
+
+    it('対照: 登録の無い制約が 2 回定義されていたら例外になる（再定義を黙って通さない）', () => {
+      const duplicated = `${migrationSql}\nCONSTRAINT "memberships_role_check" CHECK ("role" IN ('X'))`;
+      expect(() => extractCheckInValues(duplicated, 'memberships_role_check')).toThrow(/再定義を検知した/);
     });
 
     it('tenant_esign_connections_provider_check ⇔ packages/db CONTRACT_DOCUMENT_EXTERNAL_PROVIDERS（ContractDocument と同じ値集合を共有。決定済み Issue #11）', () => {

@@ -31,6 +31,8 @@ import { createUnextendedClient, type UnextendedClient } from '@ses/db/testing';
 import { ISOLATION_SEED_IDS, runSeed } from '@ses/db/seed';
 import { createObjectStore, type ObjectStore } from '@ses/connectors';
 import { startIsolationDatabase, type IsolationDatabase } from './support/postgres.js';
+// 🔴 T-12-12: 執行点の deps は固定の上限ではなく既定値（`quotaDefaults`）を受け、`resolveTenantQuotas` が実 DB の上書きと合わせて解く。
+import { quotaDefaultsWith } from './support/quota-defaults.js';
 
 const SETUP_TIMEOUT_MS = 600_000;
 /** 🔴 「実行日 = T」を固定する（docs/05 §17.6）。JST では 2026-09-06。 */
@@ -115,7 +117,7 @@ function deps(overrides: Partial<Parameters<typeof issueSkillSheetUploadUrl>[3]>
   return {
     objectStore: store,
     uploadMaxBytes: 20 * 1024 * 1024,
-    storageLimitBytes: LIMIT_BYTES,
+    quotaDefaults: quotaDefaultsWith({ storageLimitBytes: LIMIT_BYTES }),
     now: () => NOW,
     ...overrides,
   };

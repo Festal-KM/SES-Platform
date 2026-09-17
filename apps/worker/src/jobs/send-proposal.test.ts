@@ -16,6 +16,8 @@ const readProposalGateFreshness = vi.fn();
 const readEmailDailyCount = vi.fn();
 const readSendAttempt = vi.fn();
 const reserveEmailDailyQuota = vi.fn();
+// 🔴 T-12-12: 日次上限の出所（既定値 + `tenant_quota_overrides`）。deps の固定値ではなくこの戻り値で判定・予約する。
+const resolveTenantQuotas = vi.fn();
 const castProposalToSubmitting = vi.fn();
 const reserveSendAttempt = vi.fn();
 const settleProposalSubmission = vi.fn();
@@ -30,6 +32,7 @@ vi.mock('@ses/db', () => ({
   readEmailDailyCount,
   readSendAttempt,
   reserveEmailDailyQuota,
+  resolveTenantQuotas,
   castProposalToSubmitting,
   reserveSendAttempt,
   settleProposalSubmission,
@@ -93,6 +96,17 @@ function approvedProposal(overrides: Record<string, unknown> = {}) {
   };
 }
 
+const QUOTA_DEFAULTS = {
+  aiUnitQuotas: { AI_UNIT_SHEET_PARSE: 180, AI_UNIT_MATCH_RATIONALE: 6_200, AI_UNIT_PROPOSAL_DRAFT: 180, AI_UNIT_RENEWAL_SUMMARY: 20 },
+  emailDailyLimit: 500,
+  storageLimitBytes: 1n << 35n,
+};
+
+/** `resolveTenantQuotas` の応答（上書きの再現は `emailDailyLimit` を差し替える）。 */
+function resolvedQuotas(emailDailyLimit: number) {
+  return { dayKey: '2026-09-16', aiUnitQuotas: QUOTA_DEFAULTS.aiUnitQuotas, emailDailyLimit, storageLimitBytes: QUOTA_DEFAULTS.storageLimitBytes, sources: {} };
+}
+
 function makeHandler(overrides: Record<string, unknown> = {}) {
   const send = vi.fn(async (input: unknown) => ({ externalId: input === undefined ? 'mock-0' : 'mock-1' }));
   const emailSender = { send, callCount: () => send.mock.calls.length, getQuota: async () => ({ max24h: 200, sentLast24h: 0, observedAt: NOW }) };
@@ -100,7 +114,7 @@ function makeHandler(overrides: Record<string, unknown> = {}) {
     emailSender,
     emailImplementationKind: 'mock',
     minuteWindow: new InMemoryMinuteWindowCounter(),
-    dailyLimit: 500,
+    quotaDefaults: QUOTA_DEFAULTS,
     minuteLimit: 30,
     providerDailyQuota: 200,
     providerSentCounter: new InMemoryProviderSendCounter(),
@@ -119,6 +133,7 @@ beforeEach(() => {
     readEmailDailyCount,
     readSendAttempt,
     reserveEmailDailyQuota,
+    resolveTenantQuotas,
     castProposalToSubmitting,
     reserveSendAttempt,
     settleProposalSubmission,
@@ -134,6 +149,9 @@ beforeEach(() => {
   readEmailDailyCount.mockResolvedValue(0);
   readSendAttempt.mockResolvedValue(null);
   reserveEmailDailyQuota.mockResolvedValue({ allowed: true, value: 1 });
+  resolveTenantQuotas.mockImplementation(async (_ctx: unknown, input: { defaults: { emailDailyLimit: number } }) =>
+    resolvedQuotas(input.defaults.emailDailyLimit),
+  );
   castProposalToSubmitting.mockResolvedValue({ kind: 'SUBMITTING', contentHash: 'h' });
   reserveSendAttempt.mockResolvedValue({ outcome: 'RESERVED', token: TOKEN });
   settleProposalSubmission.mockResolvedValue({ kind: 'SETTLED', state: 'SUBMITTED' });
@@ -224,11 +242,28 @@ describe('③ 事前判定・遅延判定は CAS より前で止まり、外部�
 
   it('①-e テナントの日次上限 BLOCK は RATE_LIMIT の保留（PROVIDER_QUOTA ではない）', async () => {
     readEmailDailyCount.mockResolvedValue(500);
-    const { handler, send } = makeHandler({ dailyLimit: 500 });
+    const { handler, send } = makeHandler();
 
     expect(await handler(payload(), 'j-1')).toEqual({ kind: 'HELD', reasonKey: 'RATE_LIMIT', applied: true });
     expect(reserveEmailDailyQuota).not.toHaveBeenCalled();
     expect(send).not.toHaveBeenCalled();
+  });
+
+  it('🔴 T-12-12 ①-e: 日次上限は resolveTenantQuotas（既定値 + 上書き）の値。上書きで 2 通なら 3 通目が RATE_LIMIT、1,000 通なら既定 500 を超えても送れる', async () => {
+    resolveTenantQuotas.mockResolvedValue(resolvedQuotas(2));
+    readEmailDailyCount.mockResolvedValue(2);
+    const { handler, send } = makeHandler();
+    expect(await handler(payload(), 'j-1')).toEqual({ kind: 'HELD', reasonKey: 'RATE_LIMIT', applied: true });
+    expect(send).not.toHaveBeenCalled();
+    const [ctx, input] = resolveTenantQuotas.mock.calls[0] as [{ tenantId: string }, { now: Date; defaults: unknown }];
+    expect(ctx.tenantId).toBe(TENANT_ID);
+    expect(input).toEqual({ now: NOW, defaults: QUOTA_DEFAULTS });
+
+    resolveTenantQuotas.mockResolvedValue(resolvedQuotas(1_000));
+    readEmailDailyCount.mockResolvedValue(700);
+    expect((await handler(payload(), 'j-2')).kind).toBe('SENT');
+    // 予約の上限も同じ値（判定と予約で別の上限を見ない）。
+    expect(reserveEmailDailyQuota.mock.calls[0]?.[1]).toEqual({ limit: 1_000, observedAt: NOW });
   });
 
   it('🔴 ①-e 分次上限 DEFER は保留ではなく待機（deferJob）。状態・保留列・カウンタを動かさない', async () => {

@@ -57,6 +57,7 @@ import {
   reserveEmailDailyQuota,
   reserveSendAttempt,
   resolveRecipientClass,
+  resolveTenantQuotas,
   resolveVerifiedSendingDomain,
   settleProposalSubmission,
   systemTenantCtx,
@@ -66,6 +67,7 @@ import {
   type SendAttemptSettlement,
   type SettleProposalSubmissionOutcome,
   type SystemTenantCtx,
+  type TenantQuotaDefaults,
 } from '@ses/db';
 import {
   decideEmailRate,
@@ -157,8 +159,12 @@ export type SendProposalDeps = {
   readonly emailImplementationKind: ConnectorImplementationKind;
   /** 分次のスライディングウィンドウ（docs/05 §8.7）。 */
   readonly minuteWindow: MinuteWindowCounter;
-  /** `EMAIL_DAILY_LIMIT_PER_TENANT` / `EMAIL_MINUTE_LIMIT_PER_TENANT`（`packages/config`）。 */
-  readonly dailyLimit: number;
+  /**
+   * 🔴 T-12-12: 上書きが無いときの上限（`packages/config`）。日次上限は `resolveTenantQuotas(ctx, { now, defaults })` が解いた値
+   *    （既定値 + `tenant_quota_overrides`）を ①-e と予約の両方で使う。`email-send.ts` と同じ規律で、固定の `dailyLimit` を渡す口は無い。
+   */
+  readonly quotaDefaults: TenantQuotaDefaults;
+  /** `EMAIL_MINUTE_LIMIT_PER_TENANT`（`packages/config`）。🔴 分次上限は上書きの対象外（docs/05 §5.8.1 ⑧）。 */
   readonly minuteLimit: number;
   /** `MAIL_PROVIDER_DAILY_QUOTA`（環境全体の枠。テナントの上限と混同しない。§8.3-Q ⑥）。 */
   readonly providerDailyQuota: number;
@@ -284,9 +290,11 @@ export function createSendProposalHandler(deps: SendProposalDeps): SendProposalH
     if (fromDomain === null) return hold('DOMAIN_UNVERIFIED');
 
     // e. テナントの上限（日次 = 停止 / 分次 = 待機）。🔴 外部の 429 に頼らない。
+    //    🔴 T-12-12: 日次上限は `resolveTenantQuotas`（既定値 + 上書き。判定・表示・`email-send.ts` と同じ 1 関数）から。
+    const { emailDailyLimit: dailyLimit } = await resolveTenantQuotas(ctx, { now, defaults: deps.quotaDefaults });
     const minute = await deps.minuteWindow.peek(ctx.tenantId, now);
     const rate = decideEmailRate({
-      dailyLimit: deps.dailyLimit,
+      dailyLimit,
       dailySent: await readEmailDailyCount(ctx, now),
       minuteLimit: deps.minuteLimit,
       minuteSent: minute.count,
@@ -324,7 +332,7 @@ export function createSendProposalHandler(deps: SendProposalDeps): SendProposalH
 
     // 日次枠の原子的な予約（①-e の判定は消費ではない）。並行実行の取りこぼしはここで閉じる。
     // 🔴 予約に成功したのに ③ で負けた分は戻さない（`reserveEmailDailyQuota` の契約。超過は安全側に倒す）。
-    const quota = await reserveEmailDailyQuota(ctx, { limit: deps.dailyLimit, observedAt: now });
+    const quota = await reserveEmailDailyQuota(ctx, { limit: dailyLimit, observedAt: now });
     if (!quota.allowed) return hold('RATE_LIMIT');
     await deps.minuteWindow.record(ctx.tenantId, now);
 

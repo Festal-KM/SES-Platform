@@ -6,12 +6,14 @@ import { AI_ROLES, AI_UNIT_METRICS, QUOTA_OVERRIDE_METRICS, type QuotaOverrideMe
 import { t } from '@ses/i18n';
 import type { AdminUsageViewMessages } from '../admin-usage-view';
 
-// 🔴 `QuotaOverrideMetric` は AI の月次件数 4 単位のみ（メール / ストレージは上書きの対象外。表示は `quota.defaultFixed`）。
+// 🔴 `QuotaOverrideMetric` は 6 計測（AI の月次件数 4 単位 + メール日次通数 + ストレージ。T-12-12 で執行点を配線して戻した）。
 const METRIC_MESSAGE_KEYS = {
   AI_UNIT_SHEET_PARSE: 'admin.usage.metric.AI_UNIT_SHEET_PARSE',
   AI_UNIT_MATCH_RATIONALE: 'admin.usage.metric.AI_UNIT_MATCH_RATIONALE',
   AI_UNIT_PROPOSAL_DRAFT: 'admin.usage.metric.AI_UNIT_PROPOSAL_DRAFT',
   AI_UNIT_RENEWAL_SUMMARY: 'admin.usage.metric.AI_UNIT_RENEWAL_SUMMARY',
+  EMAIL_COUNT: 'admin.usage.metric.EMAIL_COUNT',
+  STORAGE_BYTES: 'admin.usage.metric.STORAGE_BYTES',
 } as const satisfies Readonly<Record<QuotaOverrideMetric, string>>;
 
 export function adminUsageMessages(): AdminUsageViewMessages {
@@ -79,7 +81,6 @@ export function adminUsageMessages(): AdminUsageViewMessages {
     },
     quota: {
       default: t('admin.usage.quota.default'),
-      defaultFixed: t('admin.usage.quota.defaultFixed'),
       override: t('admin.usage.quota.override'),
       pending: t('admin.usage.quota.pending'),
       pendingLowering: t('admin.usage.quota.pendingLowering'),

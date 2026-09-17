@@ -40,6 +40,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { TENANT_SCOPE_EXCLUDED_MODELS, TENANT_SCOPE_SYSTEM_ONLY_MODELS } from '@ses/db';
 import {
   createUnextendedClient,
+  hasAnyColumnPrivilege,
   hasColumnPrivilege,
   hasTablePrivilege,
   readPolicies,
@@ -115,6 +116,19 @@ describe('#2 全表にポリシーが 1 つ以上ある（docs/05 §4.7 #2）', 
   });
 });
 
+/**
+ * 🔴 T-12-12: 「ロールに権限がある表」は表単位 **または** 列単位の GRANT で数える。`tenant_quota_overrides` は `app_tenant` に
+ *    列単位の SELECT だけを持つ（`reason` / `set_by_platform_user_id` を閉じるため。migration 20260928000000 ③）。
+ *    `has_table_privilege` だけで数えると、この表がポリシー走査（#3）と孤児検出（#4）から静かに抜ける。
+ */
+async function hasAnyPrivilege(role: string, table: string): Promise<boolean> {
+  const granted = await Promise.all([
+    ...(['SELECT', 'INSERT', 'UPDATE'] as const).map((privilege) => hasAnyColumnPrivilege(db, role, table, privilege)),
+    hasTablePrivilege(db, role, table, 'DELETE'),
+  ]);
+  return granted.some(Boolean);
+}
+
 describe('#3 app_tenant に権限がある表の全ポリシーが app_tenant_id() を参照する（docs/05 §4.7 #3）', () => {
   it('USING(true) の類が無く、app_tenant_id() を参照しないポリシー式が無い', async () => {
     const tables = await businessTables();
@@ -122,13 +136,10 @@ describe('#3 app_tenant に権限がある表の全ポリシーが app_tenant_id
 
     const offenders: string[] = [];
     let checked = 0;
+    let columnOnly = 0;
     for (const table of tables) {
-      const privileges = await Promise.all(
-        (['SELECT', 'INSERT', 'UPDATE', 'DELETE'] as const).map((privilege) =>
-          hasTablePrivilege(db, 'app_tenant', table, privilege),
-        ),
-      );
-      if (!privileges.some(Boolean)) continue;
+      if (!(await hasAnyPrivilege('app_tenant', table))) continue;
+      if (!(await hasTablePrivilege(db, 'app_tenant', table, 'SELECT'))) columnOnly += 1;
 
       for (const policy of policies.filter((candidate) => candidate.table === table)) {
         // app_tenant に適用されるポリシー = TO app_tenant または TO PUBLIC。
@@ -141,7 +152,23 @@ describe('#3 app_tenant に権限がある表の全ポリシーが app_tenant_id
       }
     }
     expect(checked).toBeGreaterThan(0); // 空振り防止（対照）
+    // 🔴 T-12-12: 列単位の GRANT だけを持つ表（tenant_quota_overrides）が母集団に入っている（対照。抜けたら 0 になる）。
+    expect(columnOnly).toBeGreaterThanOrEqual(1);
     expect(offenders).toEqual([]);
+  });
+
+  it('🔴 T-12-12: tenant_quota_overrides の app_tenant 向け SELECT ポリシーは C2 + STORAGE_BYTES 例外（tenant_id = app_tenant_id() AND (app_is_host() OR metric = STORAGE_BYTES)。usage_limit_states_select と同型）', async () => {
+    const policies = (await readPolicies(db)).filter(
+      (policy) => policy.table === 'tenant_quota_overrides' && policy.roles.includes('app_tenant'),
+    );
+    expect(policies.map((policy) => [policy.policy, policy.command])).toEqual([['tenant_quota_overrides_select', 'SELECT']]);
+    const using = policies[0]?.using ?? '';
+    expect(using).toContain('app_tenant_id()');
+    // 🔴 `F-027 AC-1`: 上限値はホスト所属ロールにのみ。パートナー文脈に開くのは自社も消費する `STORAGE_BYTES` の行だけ。
+    expect(using).toContain('app_is_host()');
+    expect(using).toMatch(/metric\s*=\s*'STORAGE_BYTES'/);
+    expect(using).not.toMatch(/EMAIL_COUNT|AI_UNIT_/);
+    expect(policies[0]?.withCheck).toBeNull();
   });
 
   it('🔴 USING (true) / WITH CHECK (true) 相当のポリシーが 1 件も無い', async () => {
@@ -158,18 +185,9 @@ describe('#4 孤児表の検出（docs/05 §4.7 #4）', () => {
     const tables = await businessTables();
     const orphans: string[] = [];
     for (const table of tables) {
-      const tenant = await Promise.all(
-        (['SELECT', 'INSERT', 'UPDATE', 'DELETE'] as const).map((privilege) =>
-          hasTablePrivilege(db, 'app_tenant', table, privilege),
-        ),
-      );
-      if (tenant.some(Boolean)) continue;
+      if (await hasAnyPrivilege('app_tenant', table)) continue;
       const platform = await Promise.all(
-        (['app_platform', 'app_platform_write'] as const).flatMap((role) =>
-          (['SELECT', 'INSERT', 'UPDATE'] as const).map((privilege) =>
-            hasTablePrivilege(db, role, table, privilege),
-          ),
-        ),
+        (['app_platform', 'app_platform_write'] as const).map((role) => hasAnyPrivilege(role, table)),
       );
       if (!platform.some(Boolean)) orphans.push(table);
     }

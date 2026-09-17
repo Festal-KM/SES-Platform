@@ -222,6 +222,23 @@ export async function hasTablePrivilege(
   return rows[0]?.has ?? false;
 }
 
+/**
+ * `has_any_column_privilege(role, table, privilege)`。表単位の GRANT **または** 1 列以上の列レベル GRANT があれば `true`。
+ * 🔴 T-12-12: `app_tenant` にも列レベルだけの GRANT を持つ表（`tenant_quota_overrides`）ができたため、「app_tenant に権限がある表」の
+ *    母集団は `hasTablePrivilege`（表単位のみ）ではなくこちらで数える（列単位の表がポリシー走査から静かに抜けない）。
+ */
+export async function hasAnyColumnPrivilege(
+  client: RawQueryable,
+  role: string,
+  table: string,
+  privilege: 'SELECT' | 'INSERT' | 'UPDATE',
+): Promise<boolean> {
+  const rows = await client.$queryRaw<Array<{ has: boolean }>>(
+    Prisma.sql`SELECT has_any_column_privilege(${role}, ${table}, ${privilege}) AS has`,
+  );
+  return rows[0]?.has ?? false;
+}
+
 /** `has_column_privilege(role, table, column, privilege)`。列レベル GRANT の有無を調べる。 */
 export async function hasColumnPrivilege(
   client: RawQueryable,

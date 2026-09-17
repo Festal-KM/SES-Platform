@@ -56,8 +56,13 @@ function nextDay(dayKey: string): string {
   return at.toISOString().slice(0, 10);
 }
 
-/** 行から現在効いている上限（文字列）を引く。🔴 `QuotaOverrideMetric` は AI の月次件数 4 単位のみ（メール / ストレージは上書きの対象外）。 */
+/**
+ * 行から現在効いている上限（文字列）を引く。🔴 6 計測（T-12-12）。ストレージはバイト数の十進文字列のまま（`Number` に落とさない。
+ * `limit` の入力も十進整数文字列で送る = `parseQuotaChangeBody` が `bigint` にする）。
+ */
 function currentLimitOf(tenant: AdminUsageTenantRow, metric: QuotaOverrideMetric): string {
+  if (metric === 'EMAIL_COUNT') return String(tenant.email.limit);
+  if (metric === 'STORAGE_BYTES') return tenant.storage.limitBytes;
   return String(tenant.aiUnits[metric].limit);
 }
 

@@ -29,6 +29,8 @@ import { createUnextendedClient, type UnextendedClient } from '@ses/db/testing';
 import { performEmailSend } from '../../apps/worker/src/jobs/email-send.js';
 import { TENANT_A, TENANT_B } from './support/fixtures.js';
 import { startIsolationDatabase, type IsolationDatabase } from './support/postgres.js';
+// 🔴 T-12-12: 執行点の deps は固定の上限ではなく既定値（`quotaDefaults`）を受け、`resolveTenantQuotas` が実 DB の上書きと合わせて解く。
+import { quotaDefaultsWith } from './support/quota-defaults.js';
 
 const SETUP_TIMEOUT_MS = 600_000;
 const NOW = new Date('2026-09-05T03:00:00.000Z');
@@ -58,7 +60,7 @@ function deps(overrides: Record<string, unknown> = {}) {
     // 🔴 全モックの選択（`development` / `demo` 相当）なので記録は `MOCKED` になる。
     emailImplementationKind: 'mock' as const,
     minuteWindow: new InMemoryMinuteWindowCounter(),
-    dailyLimit: DAILY_LIMIT,
+    quotaDefaults: quotaDefaultsWith({ emailDailyLimit: DAILY_LIMIT }),
     minuteLimit: MINUTE_LIMIT,
     // 🔴 T-04-04: 送信基盤（環境全体）の枠（docs/05 §8.3-Q）。ここでは十分に空けておく
     //    （枯渇の再現は `tests/isolation/provider-quota-hold.test.ts` が扱う）。

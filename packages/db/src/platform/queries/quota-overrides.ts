@@ -47,7 +47,7 @@ export const QUOTA_OVERRIDE_REASON_MAX_LENGTH = 500;
 export type SetTenantQuotaOverrideInput = {
   readonly tenantId: string;
   readonly metric: QuotaOverrideMetric;
-  /** 新しい上限（AI の月次件数）。1 以上。 */
+  /** 新しい上限（AI の月次件数 / メール日次通数 / ストレージのバイト数）。1 以上。 */
   readonly limit: bigint;
   /** 適用日（`YYYY-MM-DD`。`Asia/Tokyo`）。引き下げは翌日以降。 */
   readonly effectiveFrom: string;
@@ -78,8 +78,10 @@ export class QuotaOverrideTenantNotFoundError extends Error {
   }
 }
 
-// 🔴 `QuotaOverrideMetric` は AI の月次件数 4 単位のみ（`EMAIL_COUNT` / `STORAGE_BYTES` は上書きの対象外）。
+/** 既定値（`packages/config`）から計測の上限を引く。🔴 6 計測（T-12-12 で `EMAIL_COUNT` / `STORAGE_BYTES` を戻した）。 */
 function defaultLimitOf(defaults: TenantQuotaDefaults, metric: QuotaOverrideMetric): bigint {
+  if (metric === 'EMAIL_COUNT') return BigInt(defaults.emailDailyLimit);
+  if (metric === 'STORAGE_BYTES') return defaults.storageLimitBytes;
   return BigInt(defaults.aiUnitQuotas[metric]);
 }
 

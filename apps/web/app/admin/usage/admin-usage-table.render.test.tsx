@@ -117,11 +117,32 @@ describe('① 件数と金額（USD）が同一画面に出る（F-063 AC-5 / do
     expect(html).toContain(`${formatGib('2147483648')} / ${formatGib('53687091200')}（4%）`);
   });
 
-  it('🔴 メール / ストレージの既定値表示は AI 単位とは別文言（T-11-02 NG-1: 上書きの対象外。Phase 1 では変更不可）', () => {
+  it('🔴 T-12-12: メール / ストレージの出所も AI 単位と同じ通常表示（既定 / 個別 + 適用日 / 予定）。「変更不可」の専用文言は無い', () => {
     const html = render({ view: view() });
-    expect(html).toContain(t('admin.usage.quota.defaultFixed'));
-    // AI 単位（`aiUnits`）は上書き可能なので通常の既定文言が出る。
     expect(html).toContain(t('admin.usage.quota.default'));
+    expect(html).not.toContain('変更不可');
+    const base = row({ tenantId: TENANT_A });
+    const overridden = render({
+      view: view({
+        items: [
+          row({
+            tenantId: TENANT_A,
+            email: {
+              used: 12,
+              limit: 4,
+              consumptionPercent: 300,
+              level: 'REACHED',
+              quota: { source: 'OVERRIDE', effectiveFrom: '2026-09-10', pending: { limit: '2', effectiveFrom: '2026-09-17', lowering: true } },
+            },
+            storage: { ...base.storage, limitBytes: '4294967296', quota: { source: 'OVERRIDE', effectiveFrom: '2026-09-16', pending: null } },
+          }),
+        ],
+      }),
+    });
+    expect(overridden).toContain(`${t('admin.usage.quota.override')} 2026-09-10`);
+    expect(overridden).toContain(`${t('admin.usage.quota.pendingLowering')} 2026-09-17 → 2`);
+    expect(overridden).toContain(`${t('admin.usage.quota.override')} 2026-09-16`);
+    expect(overridden).toContain('12 / 4 通（300%）');
   });
 
   it('金額はテナント側には出ないという注記が明示される', () => {

@@ -12,7 +12,7 @@
 //    `S-041` の操作種別フィルタに、実際には何も起きていない行が混ざる。**
 import { requireExecutable, requireNotViewer, requireRole } from '../../../../../../../lib/api/guards';
 import { withApiRoute } from '../../../../../../../lib/api/withApiRoute';
-import { objectStore, storageRuntime } from '../../../../../../../lib/db/bootstrap';
+import { objectStore, storageRuntime, tenantQuotaDefaults } from '../../../../../../../lib/db/bootstrap';
 import { SKILL_SHEET_MANAGER_ROLES } from '../../../../../../../lib/skill-sheets/policy';
 import { issueSkillSheetUploadUrl } from '../../../../../../../lib/skill-sheets/service';
 import {
@@ -42,12 +42,12 @@ export const POST = withApiRoute(
     body: skillSheetUploadUrlBodySchema,
   },
   async ({ ctx, params, body }) => {
-    const runtimeConfig = storageRuntime();
     return Response.json(
       await issueSkillSheetUploadUrl(ctx, params.id, body, {
         objectStore: objectStore(),
-        uploadMaxBytes: runtimeConfig.uploadMaxBytes,
-        storageLimitBytes: runtimeConfig.storageLimitBytes,
+        uploadMaxBytes: storageRuntime().uploadMaxBytes,
+        // 🔴 T-12-12: 上限の既定値。実際の上限は `issueSkillSheetUploadUrl` が `resolveTenantQuotas` で解く（上書きを含む）。
+        quotaDefaults: tenantQuotaDefaults(),
         now: () => new Date(),
       }),
       { status: 201 },

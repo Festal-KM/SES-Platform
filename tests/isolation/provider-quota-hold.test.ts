@@ -41,6 +41,8 @@ import { createSendHoldReleaseHandler } from '../../apps/worker/src/jobs/send-ho
 import { performEmailSend } from '../../apps/worker/src/jobs/email-send.js';
 import { TENANT_A } from './support/fixtures.js';
 import { startIsolationDatabase, type IsolationDatabase } from './support/postgres.js';
+// 🔴 T-12-12: 執行点の deps は固定の上限ではなく既定値（`quotaDefaults`）を受け、`resolveTenantQuotas` が実 DB の上書きと合わせて解く。
+import { quotaDefaultsWith } from './support/quota-defaults.js';
 
 const SETUP_TIMEOUT_MS = 600_000;
 const NOW = new Date('2026-09-05T03:00:00.000Z');
@@ -102,7 +104,7 @@ function sendDeps(overrides: Record<string, unknown> = {}) {
     // 🔴 実装種別は `real`（SES 実装）。モック sink に流していないので枠を消費する。
     emailImplementationKind: 'real' as const,
     minuteWindow: new InMemoryMinuteWindowCounter(),
-    dailyLimit: 500,
+    quotaDefaults: quotaDefaultsWith({ emailDailyLimit: 500 }),
     minuteLimit: 30,
     providerDailyQuota: providerDailyQuotaFromEnv('1'),
     providerSentCounter,
@@ -155,7 +157,7 @@ function holdReleaseDeps(overrides: Record<string, unknown> = {}) {
     // `send.*`（`Proposal`）側の復帰は `tests/isolation/send-proposal.test.ts`（T-09-06）が見る。本テストの
     //    テナントには保留中の提案が無いので枠を使わない。
     enqueueSendProposal: async () => 'ENQUEUED',
-    emailDailyLimit: 500,
+    quotaDefaults: quotaDefaultsWith({ emailDailyLimit: 500 }),
     now: () => clock,
     ...overrides,
   };

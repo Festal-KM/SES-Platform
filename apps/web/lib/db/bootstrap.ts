@@ -305,9 +305,8 @@ export function ensureDbConfigured(): void {
     ...(env.S3_KMS_KEY_ID === undefined ? {} : { kmsKeyId: env.S3_KMS_KEY_ID }),
     presignedUrlTtlSeconds: env.S3_PRESIGNED_URL_TTL_SECONDS,
     uploadMaxBytes: env.UPLOAD_MAX_BYTES,
-    // 🔴 プラン別の上書き（`Plan.storageLimitBytes`）が入るまでの既定値（`packages/config`）。
-    //    判定関数は `limitBytes` を引数で受け取るため、上書きが入っても呼び出し側は変わらない。
-    storageLimitBytes: BigInt(env.STORAGE_LIMIT_BYTES_PER_TENANT),
+    // 🔴 T-12-12: ストレージ上限はここに載せない。#18 は `tenantQuotaDefaults()` を `resolveTenantQuotas` に渡して
+    //    既定値 + `tenant_quota_overrides` から解く（固定値を渡す口を置くと「上げたのに止まる」が再発する）。
   };
   // 🔴 T-05-04: S3 クライアントの接続設定。**`storageRuntime()` には載せない** ——
   //    あちらはルート・画面が読む値であり、資格情報を混ぜると「設定を読むついでに鍵が読める」
@@ -520,7 +519,6 @@ export type StorageRuntime = {
   readonly kmsKeyId?: string;
   readonly presignedUrlTtlSeconds: number;
   readonly uploadMaxBytes: number;
-  readonly storageLimitBytes: bigint;
 };
 
 export function storageRuntime(): StorageRuntime {
@@ -703,6 +701,20 @@ export function usageLimitsRuntime(): UsageLimitsRuntime {
     throw new Error('利用量の上限が解決されていません（bootstrap の不変条件違反）。');
   }
   return cachedUsageLimitsRuntime;
+}
+
+/**
+ * 🔴 T-12-12: `resolveTenantQuotas` に渡す既定値（`usageLimitsRuntime()` の同じキー。`warnPercent` / 分次上限を含まない）。
+ *    執行点（#18 `issueSkillSheetUploadUrl`）が使う。ワーカーの `tenantQuotaDefaults`（`apps/worker/src/runtime.ts`）と同じ
+ *    `packages/config` のキーから読むため、判定・表示・執行の 3 者で既定値がずれない。
+ */
+export function tenantQuotaDefaults(): TenantQuotaDefaults {
+  const runtime = usageLimitsRuntime();
+  return {
+    aiUnitQuotas: runtime.aiUnitQuotas,
+    emailDailyLimit: runtime.emailDailyLimit,
+    storageLimitBytes: runtime.storageLimitBytes,
+  };
 }
 
 /**

@@ -37,9 +37,11 @@ import {
   accountSkillSheetStorage,
   readStorageBytesUsed,
   releaseSkillSheetStorage,
+  resolveTenantStorageQuota,
   withTenant,
   writeAuditLog,
   type AuthenticatedTenantCtx,
+  type TenantQuotaDefaults,
 } from '@ses/db';
 import type { ObjectStore } from '@ses/connectors';
 import {
@@ -104,8 +106,15 @@ export type SkillSheetUploadDeps = {
   readonly objectStore: ObjectStore;
   /** `UPLOAD_MAX_BYTES`（既定 20 MB）。 */
   readonly uploadMaxBytes: number;
-  /** テナントのストレージ上限（`Plan.storageLimitBytes` / `STORAGE_LIMIT_BYTES_PER_TENANT`）。 */
-  readonly storageLimitBytes: bigint;
+  /**
+   * 🔴 T-12-12: 上書きが無いときの上限（`usageLimitsRuntime()` = `packages/config` の `STORAGE_LIMIT_BYTES_PER_TENANT` ほか）。
+   *    ストレージ上限は**この値を直接使わず**、`resolveTenantStorageQuota(ctx, { now, defaults })` が解いた `storageLimitBytes`
+   *    （既定値 + `tenant_quota_overrides` の効いている `STORAGE_BYTES` 行）で判定する。判定（`usage.limit-check`）・表示
+   *    （`GET /api/usage`）の `resolveTenantQuotas` と同じ `resolveQuotaLimit` で解くので値は一致する。🔴 パートナー文脈
+   *    （`PARTNER_*` の自社エンジニア分）でも同じ関数を通る —— ストレージはテナント単位の枠であり、取引先のアップロードも同じ枠を
+   *    消費する（migration 20260928000000 判断事項 2。パートナーに開くのは `STORAGE_BYTES` の行だけ）。固定の `storageLimitBytes` を渡す口は無い。
+   */
+  readonly quotaDefaults: TenantQuotaDefaults;
   /** 🔴 現在時刻は引数で受け取る（計測の期間キーと有効期限の算出に使う）。 */
   readonly now: () => Date;
 };
@@ -159,10 +168,13 @@ export async function issueSkillSheetUploadUrl(
 
   // ③ 🔴 ストレージ上限（docs/03 §4.5）。**超過していたら署名を発行しない。**
   //    使用量の正は `UsageCounter(STORAGE_BYTES)` であり、S3 を数えに行かない（間に合わない）。
+  //    🔴 T-12-12: 上限は `resolveTenantStorageQuota`（既定値 + `STORAGE_BYTES` の上書き。判定・表示と同じ `resolveQuotaLimit`）から。
+  //       ホスト / パートナーを問わない（パートナー文脈に開いている上書き行は `STORAGE_BYTES` だけ。`F-027 AC-1`）。
   const now = deps.now();
+  const { storageLimitBytes } = await resolveTenantStorageQuota(ctx, { now, defaults: deps.quotaDefaults });
   const usedBytes = await readStorageBytesUsed(ctx, now);
   const decision = decideStorageUpload({
-    limitBytes: deps.storageLimitBytes,
+    limitBytes: storageLimitBytes,
     usedBytes,
     requestedBytes: BigInt(input.byteSize),
   });

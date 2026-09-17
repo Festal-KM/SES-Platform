@@ -88,6 +88,7 @@ export {
   type QuotaChangeInput,
   type QuotaChangeKind,
   type QuotaChangeRejection,
+  type QuotaOverrideCountMetric,
   type QuotaOverrideMetric,
   type QuotaOverrideRow,
 } from './override.js';

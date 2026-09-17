@@ -87,6 +87,8 @@ import {
   USER_A_PARTNER,
 } from './support/fixtures.js';
 import { startIsolationDatabase, type IsolationDatabase } from './support/postgres.js';
+// 🔴 T-12-12: 執行点の deps は固定の上限ではなく既定値（`quotaDefaults`）を受け、`resolveTenantQuotas` が実 DB の上書きと合わせて解く。
+import { quotaDefaultsWith } from './support/quota-defaults.js';
 import { startIsolationRedis, type IsolationRedis } from './support/redis.js';
 
 const SETUP_TIMEOUT_MS = 600_000;
@@ -356,7 +358,7 @@ function sendDeps(emailSender: EmailSender, overrides: Partial<SendProposalDeps>
     emailSender,
     emailImplementationKind: 'mock',
     minuteWindow: new InMemoryMinuteWindowCounter(),
-    dailyLimit: 500,
+    quotaDefaults: quotaDefaultsWith({ emailDailyLimit: 500 }),
     minuteLimit: 30,
     providerDailyQuota: 200,
     providerSentCounter: new InMemoryProviderSendCounter(),
@@ -383,7 +385,7 @@ function holdRelease(emailSender: EmailSender) {
     providerDailyQuota: 200,
     providerQuotaWarnRatio: 0.8,
     providerSentCounter: new InMemoryProviderSendCounter(),
-    emailDailyLimit: 500,
+    quotaDefaults: quotaDefaultsWith({ emailDailyLimit: 500 }),
     enqueueEmailDispatch: async () => {
       throw new Error('本テストは運用メールの保留を作らない');
     },

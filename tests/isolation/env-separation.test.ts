@@ -105,6 +105,8 @@ import {
   OUTBOUND_PROBE_HOST,
 } from '../support/outbound-network-guard.mjs';
 import { startIsolationDatabase, type IsolationDatabase } from './support/postgres.js';
+// 🔴 T-12-12: 執行点の deps は固定の上限ではなく既定値（`quotaDefaults`）を受け、`resolveTenantQuotas` が実 DB の上書きと合わせて解く。
+import { quotaDefaultsWith } from './support/quota-defaults.js';
 
 const SETUP_TIMEOUT_MS = 600_000;
 /** 🔴 「実行日 = T」を固定する（`docs/05` §17.6）。 */
@@ -240,7 +242,7 @@ function sendDeps(
     emailSender: connectors.email,
     emailImplementationKind: implementationKind,
     minuteWindow: new InMemoryMinuteWindowCounter(),
-    dailyLimit: DAILY_LIMIT,
+    quotaDefaults: quotaDefaultsWith({ emailDailyLimit: DAILY_LIMIT }),
     minuteLimit: MINUTE_LIMIT,
     providerDailyQuota: PROVIDER_QUOTA,
     providerSentCounter: new InMemoryProviderSendCounter(),
