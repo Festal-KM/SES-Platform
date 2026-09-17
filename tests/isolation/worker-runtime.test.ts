@@ -21,7 +21,13 @@ import { loadAppEnv } from '../../packages/config/src/load-env.js';
 import type { RuntimeConfig } from '../../packages/config/src/startup.js';
 import { buildValidEnv } from '../../packages/config/src/testing/fixtures.js';
 import { DEMO_MOCK_ANTHROPIC_SCRIPT, MockAnthropicScriptNotApplicableError } from '@ses/ai';
-import { GATE_RUN_JOB, MockEmailScriptNotApplicableError, SEND_PROPOSAL_JOB } from '@ses/connectors';
+import {
+  EXPORT_GENERATE_JOB,
+  GATE_RUN_JOB,
+  MockEmailScriptNotApplicableError,
+  SEND_PROPOSAL_JOB,
+  TENANT_PURGE_JOB,
+} from '@ses/connectors';
 import {
   createBullMqGateRunQueue,
   listBullMqJobSchedulers,
@@ -65,10 +71,12 @@ afterAll(async () => {
 }, SETUP_TIMEOUT_MS);
 
 describe('🔴 受け入れ基準 ①: development でワーカーが起動し gate.run が待ち受ける', () => {
-  it('配線したキューの一覧に gate.run / send.proposal と宣言済み 12 本がすべて含まれる', () => {
+  it('配線したキューの一覧に gate.run / send.proposal と宣言済み 16 本がすべて含まれる', () => {
     expect(runtime.queues).toEqual([
       GATE_RUN_JOB,
       SEND_PROPOSAL_JOB,
+      TENANT_PURGE_JOB,
+      EXPORT_GENERATE_JOB,
       ...SCHEDULED_JOBS.map((declaration) => declaration.name),
     ]);
     // 🔴 T-10-02 で計測の 4 本（usage.daily-rollup / usage.gap-check / usage.storage-reconcile / cost.monthly-rollup）が加わった。
@@ -76,7 +84,9 @@ describe('🔴 受け入れ基準 ①: development でワーカーが起動し g
     // 🔴 T-09-06 で `send.proposal` の Worker（イベント起動。docs/05 §10.2）が加わった。
     // 🔴 T-09-07 で `send.settle-unknown`（`SUBMITTING` 滞留の確定。毎 10 分。docs/05 §10.6）が加わった。
     // 🔴 T-10-12 で `tenant.closing-notify`（削除予告。毎日 02:08 JST。母集団 CLOSING。docs/05 §9.7）が加わった。
-    expect(runtime.queues).toHaveLength(15);
+    // 🔴 T-10-09 で `tenant.purge-scan`（スケジュール）/ `tenant.purge`（イベント起動）/ `export.generate`
+    //    （イベント起動）の 3 本が加わった（docs/05 §9.7）。
+    expect(runtime.queues).toHaveLength(18);
   });
 
   it('🔴 enqueue した gate.run が実際に消費される（対象が無い提案は TARGET_NOT_FOUND で完了する）', async () => {

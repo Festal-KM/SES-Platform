@@ -203,7 +203,7 @@ describe('① DB 制約（docs/05 §3.4 / §3.4.1。migration 20260917000000）'
     expect(await admin.engineerCareer.count({ where: { engineerId: PARTNER_1_2.engineerId } })).toBe(0);
   });
 
-  it('🔴 RLS が有効 + FORCE で、ポリシーは C3（親 engineers と同じ式）。共有スコープの追加ポリシーは無い', async () => {
+  it('🔴 RLS が有効 + FORCE で、ポリシーは C3（親 engineers と同じ式）。共有スコープの追加ポリシーは無い。削除スコープ（T-10-09。`tenant_id = app_tenant_id() AND app_is_host() AND app_purge_scope_on()`）のポリシーは在る', async () => {
     const status = (await readTableRlsStatus(admin, ['engineer_careers']))[0];
     expect(status?.rlsEnabled).toBe(true);
     expect(status?.rlsForced).toBe(true);
@@ -214,14 +214,27 @@ describe('① DB 制約（docs/05 §3.4 / §3.4.1。migration 20260917000000）'
       'engineer_careers_c3_insert',
       'engineer_careers_c3_select',
       'engineer_careers_c3_update',
+      'engineer_careers_purge_scope_delete',
+      'engineer_careers_purge_scope_select',
+      'engineer_careers_purge_scope_update',
     ]);
-    for (const policy of tenantPolicies) {
+
+    const c3Policies = tenantPolicies.filter((policy) => policy.policy.startsWith('engineer_careers_c3_'));
+    for (const policy of c3Policies) {
       const expression = `${policy.using ?? ''} ${policy.withCheck ?? ''}`;
       expect(expression).toContain('app_tenant_id()');
       // `pg_get_expr` は `IS NOT DISTINCT FROM` を `NOT (... IS DISTINCT FROM ...)` に正規化して返す。
       expect(expression).toContain('NOT (owner_partner_company_id IS DISTINCT FROM app_partner_id())');
       expect(expression).not.toContain('shared_scope');
       expect(expression).not.toContain('app_engineer_is_shared');
+    }
+
+    // 🔴 T-10-09（migration 20260927000000 ④）: 削除スコープの追加ポリシー。C3 とは別の式（`app_purge_scope_on()`）で開く。
+    const purgeScopePolicies = tenantPolicies.filter((policy) => policy.policy.startsWith('engineer_careers_purge_scope_'));
+    for (const policy of purgeScopePolicies) {
+      const expression = `${policy.using ?? ''} ${policy.withCheck ?? ''}`;
+      expect(expression).toContain('app_tenant_id()');
+      expect(expression).toContain('app_purge_scope_on()');
     }
   });
 
