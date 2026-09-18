@@ -327,10 +327,13 @@ test.describe('⑤ T-12-16: S-006 → セクション 4（提案履歴）→ 提
       const ids = tenantIds(1);
       const tag = randomUUID().slice(0, 8);
       // 🔴 合成データ（`BR-47`）。凍結側と現在値を見分けられる語を業務内容に入れる。
+      //    🔴 表示名は 12 文字以内・ハイフン無し（`T1216凍結前xxxx`）にする —— 20 文字の名を残すと `S-005` のモバイル一覧
+      //    （名前列 123px）で 3 行に折り返し、`settings.mobile.spec.ts` の折り返し検出器（`wrapped-short-label` = 24 文字以内が
+      //    3 行以上）が落ちる（CI run 35295936774。fixture は spec 後も台帳に残る）。
       const createdResponse = await apiRequest(session.page, '/api/engineers', {
         method: 'POST',
         body: {
-          displayName: `T1216合成-${tag}-凍結前`,
+          displayName: `T1216凍結前${tag.slice(0, 4)}`,
           unitPriceMin: 650000,
           unitPriceMax: 750000,
           prefecture: '13',
@@ -370,7 +373,7 @@ test.describe('⑤ T-12-16: S-006 → セクション 4（提案履歴）→ 提
       const updateResponse = await apiRequest(session.page, `/api/engineers/${engineerId}`, {
         method: 'PATCH',
         body: {
-          displayName: `T1216合成-${tag}-凍結後`,
+          displayName: `T1216凍結後${tag.slice(0, 4)}`,
           unitPriceMax: 800000,
           careers: [
             { periodFrom: '2024-04', periodTo: null, role: 'PL', description: `T1216 現在の基幹刷新（改） ${tag}`, technologies: 'Java' },
@@ -394,8 +397,8 @@ test.describe('⑤ T-12-16: S-006 → セクション 4（提案履歴）→ 提
       await expect(session.page.getByTestId(`engineer-proposal-row-${proposalId}`)).toHaveAttribute('data-selected', 'true');
 
       // 🔴 項目: 凍結側は提案時点、現在値は変更後。変えた項目（氏名 / 上限）にだけ「提案後に変更」。
-      await expect(session.page.getByTestId('engineer-snapshot-diff-frozen-displayName')).toContainText(`T1216合成-${tag}-凍結前`);
-      await expect(session.page.getByTestId('engineer-snapshot-diff-current-displayName')).toContainText(`T1216合成-${tag}-凍結後`);
+      await expect(session.page.getByTestId('engineer-snapshot-diff-frozen-displayName')).toContainText(`T1216凍結前${tag.slice(0, 4)}`);
+      await expect(session.page.getByTestId('engineer-snapshot-diff-current-displayName')).toContainText(`T1216凍結後${tag.slice(0, 4)}`);
       await expect(session.page.getByTestId('engineer-snapshot-diff-field-displayName')).toHaveAttribute('data-changed', 'true');
       await expect(session.page.getByTestId('engineer-snapshot-diff-field-unitPriceMax')).toHaveAttribute('data-changed', 'true');
       await expect(session.page.getByTestId('engineer-snapshot-diff-frozen-unitPriceMax')).toContainText('750,000');
