@@ -142,8 +142,8 @@ const REMOTE_MODES = ['FULL_REMOTE', 'PARTIAL_REMOTE', 'ONSITE_ONLY'] as const;
  */
 export const DEMO_SEED_PASSWORD = 'seed-demo-password-1';
 
-/** 上の平文に対応する Argon2id ハッシュ（`apps/web/lib/auth/password.ts` の `ARGON2_OPTIONS`。m=19456,t=2,p=1）。 */
-const DEMO_SEED_PASSWORD_HASH =
+/** 上の平文に対応する Argon2id ハッシュ（`apps/web/lib/auth/password.ts` の `ARGON2_OPTIONS`。m=19456,t=2,p=1）。`perf` も同じ値を使う。 */
+export const DEMO_SEED_PASSWORD_HASH =
   '$argon2id$v=19$m=19456,t=2,p=1$njVryvGaze4gUls71U5fgw$sy1qmwBk+VflUpvHchvHjC4lnbXK61R9F7yur/swZmg';
 
 function seedEmail(tenantIndex: number, local: string): string {

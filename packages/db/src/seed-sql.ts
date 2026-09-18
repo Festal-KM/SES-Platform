@@ -44,6 +44,13 @@ export async function readTenantScopedTables(db: PrismaClient): Promise<string[]
 }
 
 /**
+ * 🔴 T-12-01: `deleteTenantData` の 1 トランザクションの上限。Prisma の既定（5 秒）は `isolation` / `demo` の規模の
+ *    ものであり、`perf`（30 テナント・約 13 万行。docs/03 §3.7.2）の削除は負荷次第で 10 秒前後かかる。途中で切れると
+ *    「reset が失敗して半端に残る」ではなくロールバックされるが、`--reset` が成立しないので上限を規模に合わせて置く。
+ */
+const DELETE_TENANT_DATA_TIMEOUT_MS = 10 * 60 * 1000;
+
+/**
  * 指定テナントの業務データを削除する（`reset()`。docs/05 §13.6 / F-053 AC-2）。
  *
  * 🔴 `session_replication_role = replica` を**このトランザクションの中だけ**で有効にし、
@@ -80,7 +87,7 @@ export async function deleteTenantData(
     await tx.$executeRaw(
       Prisma.sql`DELETE FROM tenants WHERE id::text = ANY(${ids})`,
     );
-  });
+  }, { timeout: DELETE_TENANT_DATA_TIMEOUT_MS });
 }
 
 /**

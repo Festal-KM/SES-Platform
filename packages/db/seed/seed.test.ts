@@ -6,14 +6,27 @@
 //    ②ID が決定的かつ衝突しないこと（F-053 AC-2 の冪等な再生成の前提）
 //    ③状態は必ず transition() を通ること（docs/05 §13.6）
 //    の 3 点である。
+import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import { InvalidStateTransitionError, proposalMachine } from '@ses/domain';
 import { SeedNotAllowedError } from '@ses/config';
 import { SeedArgsError, parseSeedArgs, resolveSeedDatabaseUrl } from './args.js';
 import { runSeed, runSeedReset } from './index.js';
-import { SeedPresetNotImplementedError, getSeedPreset } from './presets/index.js';
+import { getSeedPreset } from './presets/index.js';
 import { DEMO_SEED_IDS, DEMO_SEED_NAME_RULES, demoPreset, demoSeedCompanyNames } from './presets/demo.js';
 import { ISOLATION_SEED_IDS, isolationPreset } from './presets/isolation.js';
+import {
+  buildPerfTenantPlans,
+  PERF_SEED_NAME_RULES,
+  PERF_SEED_PROFILES,
+  PERF_SEED_TENANT_IDS,
+  PERF_SEED_TOTALS,
+  perfPartnerEngineerCount,
+  perfPartnerShareCount,
+  perfPreset,
+  perfSeedCompanyNames,
+  perfSeedIds,
+} from './presets/perf.js';
 import { createSeedRng } from './rng.js';
 import { addDays, advanceState, dateOnly, seedUuid } from './support.js';
 
@@ -47,6 +60,17 @@ describe('🔴 環境ガードは投入・削除の前にある（F-053 AC-6 / d
       await expect(runSeed({ appEnv, databaseUrl: INVALID_URL, preset: 'demo', reset: true })).rejects.toBeInstanceOf(SeedNotAllowedError);
       await expect(runSeed({ appEnv, databaseUrl: INVALID_URL, preset: 'demo', reset: false })).rejects.toBeInstanceOf(SeedNotAllowedError);
       await expect(runSeedReset({ appEnv, databaseUrl: INVALID_URL, preset: 'demo' })).rejects.toBeInstanceOf(SeedNotAllowedError);
+    },
+  );
+
+  // ✅ T-12-01: `perf`（1 万件の母集団）も同じガード。`sandbox`（見込み客の実データ）/ `staging` / `production` に 1 万件の
+  //    合成データを流し込む経路が無いことを、投入（`reset: true` / `false`）と削除の 3 経路で固定する。
+  it.each(['production', 'sandbox', 'staging', undefined, ''])(
+    '🔴 T-12-01: APP_ENV=%s では perf プリセットが投入・削除のどちらにも到達しない（seed:perf は demo / development 専用）',
+    async (appEnv) => {
+      await expect(runSeed({ appEnv, databaseUrl: INVALID_URL, preset: 'perf', reset: true })).rejects.toBeInstanceOf(SeedNotAllowedError);
+      await expect(runSeed({ appEnv, databaseUrl: INVALID_URL, preset: 'perf', reset: false })).rejects.toBeInstanceOf(SeedNotAllowedError);
+      await expect(runSeedReset({ appEnv, databaseUrl: INVALID_URL, preset: 'perf' })).rejects.toBeInstanceOf(SeedNotAllowedError);
     },
   );
 });
@@ -100,9 +124,189 @@ describe('プリセットの登録簿', () => {
     expect(demoPreset.tenantIds).not.toContain(isolationPreset.tenantIds[0]);
   });
 
-  it('🔴 未実装のプリセットは静かに何もせず終わらない', () => {
-    expect(() => getSeedPreset('perf')).toThrow(SeedPresetNotImplementedError);
+  it('✅ T-12-01: perf は実装済み（30 テナント。isolation / demo と ID 空間が重ならない）', () => {
+    expect(getSeedPreset('perf')).toBe(perfPreset);
+    expect(perfPreset.tenantIds).toHaveLength(30);
+    expect(perfPreset.tenantIds).toEqual(PERF_SEED_TENANT_IDS);
+    for (const tenantId of [...isolationPreset.tenantIds, ...demoPreset.tenantIds]) {
+      expect(perfPreset.tenantIds).not.toContain(tenantId);
+    }
   });
+});
+
+// ---------------------------------------------------------------------------
+// ✅ T-12-01: seed:perf（docs/03 §3.7.2 / docs/05 §13.6）
+// ---------------------------------------------------------------------------
+
+describe('✅ T-12-01: seed:perf の配分表（docs/03 §3.7.2「30 テナントに配分し、最大 1 社に 3,000 / 3,000 / 15 社」）', () => {
+  it('🔴 合計がちょうどエンジニア 10,000 / 案件 10,000 で、テナントは 30', () => {
+    expect(PERF_SEED_PROFILES).toHaveLength(PERF_SEED_TOTALS.tenants);
+    expect(PERF_SEED_PROFILES.map((row) => row.tenantIndex)).toEqual(Array.from({ length: 30 }, (_, n) => n + 1));
+    expect(PERF_SEED_PROFILES.reduce((sum, row) => sum + row.engineers, 0)).toBe(PERF_SEED_TOTALS.engineers);
+    expect(PERF_SEED_PROFILES.reduce((sum, row) => sum + row.projects, 0)).toBe(PERF_SEED_TOTALS.projects);
+  });
+
+  it('🔴 最大テナント（1 社）がエンジニア 3,000 / 案件 3,000 / 取引先 15 社で、残り 29 社の取引先は 2〜5 社', () => {
+    const largest = PERF_SEED_PROFILES.find((row) => row.tenantIndex === PERF_SEED_TOTALS.largestTenantIndex);
+    expect(largest).toMatchObject({ engineers: 3000, projects: 3000, partners: 15 });
+    for (const row of PERF_SEED_PROFILES) {
+      if (row.tenantIndex === PERF_SEED_TOTALS.largestTenantIndex) continue;
+      expect(row.engineers, `tenant ${row.tenantIndex}`).toBeLessThan(3000);
+      expect(row.projects, `tenant ${row.tenantIndex}`).toBeLessThan(3000);
+      expect(row.partners, `tenant ${row.tenantIndex}`).toBeGreaterThanOrEqual(2);
+      expect(row.partners, `tenant ${row.tenantIndex}`).toBeLessThanOrEqual(5);
+    }
+  });
+
+  it('🔴 均等割ではない（規模の異なるテナントが 5 段階以上あり、最小は 100 件未満）', () => {
+    const sizes = new Set(PERF_SEED_PROFILES.map((row) => row.engineers));
+    expect(sizes.size).toBeGreaterThanOrEqual(5);
+    expect(Math.min(...sizes)).toBeLessThan(100);
+    expect(Math.max(...sizes)).toBe(3000);
+  });
+
+  it('取引先所属の人数は総数を超えず、各取引先へ均等に割れる（端数は先頭から 1 名ずつ）', () => {
+    for (const row of PERF_SEED_PROFILES) {
+      expect(row.partnerEngineers).toBeLessThanOrEqual(row.engineers);
+      let sum = 0;
+      for (let partnerIndex = 1; partnerIndex <= row.partners; partnerIndex += 1) sum += perfPartnerEngineerCount(row, partnerIndex);
+      expect(sum, `tenant ${row.tenantIndex}`).toBe(row.partnerEngineers);
+    }
+  });
+
+  it('🔴 匿名共有 2,000 件はすべて最大テナントの取引先 15 社に置かれ、各社の所属人数を超えない', () => {
+    let total = 0;
+    for (const row of PERF_SEED_PROFILES) {
+      for (let partnerIndex = 1; partnerIndex <= row.partners; partnerIndex += 1) {
+        const shares = perfPartnerShareCount(row, partnerIndex);
+        if (row.tenantIndex !== PERF_SEED_TOTALS.largestTenantIndex) {
+          expect(shares).toBe(0);
+        } else {
+          expect(shares).toBeGreaterThan(0);
+          expect(shares).toBeLessThanOrEqual(perfPartnerEngineerCount(row, partnerIndex));
+        }
+        total += shares;
+      }
+    }
+    expect(total).toBe(PERF_SEED_TOTALS.engineerShares);
+  });
+
+  it('商号は demo と同じ接頭辞規則（株式会社サンプル / 株式会社ダミー / 架空）に従い、30 テナント × 取引先で重複しない', () => {
+    expect(DEMO_SEED_NAME_RULES.companyPrefixes.some((prefix) => PERF_SEED_NAME_RULES.hostCompanyPrefix.startsWith(prefix))).toBe(true);
+    expect(DEMO_SEED_NAME_RULES.companyPrefixes.some((prefix) => PERF_SEED_NAME_RULES.partnerCompanyPrefix.startsWith(prefix))).toBe(true);
+    expect(PERF_SEED_NAME_RULES.familyNames).toBe(DEMO_SEED_NAME_RULES.familyNames);
+    const all: string[] = [];
+    for (const row of PERF_SEED_PROFILES) {
+      const names = perfSeedCompanyNames(row.tenantIndex);
+      expect(names.partners).toHaveLength(row.partners);
+      all.push(names.host, ...names.partners);
+    }
+    expect(new Set(all).size).toBe(all.length);
+    // demo の商号とも重ならない（同じ DB に両方を投入して A-002 で見分けられる）。
+    for (const tenantIndex of [1, 2]) {
+      const demo = demoSeedCompanyNames(tenantIndex);
+      expect(all).not.toContain(demo.host);
+      for (const partner of demo.partners) expect(all).not.toContain(partner);
+    }
+  });
+});
+
+describe('✅ T-12-01: seed:perf の計画は決定的（固定シード ses-perf-v1。F-053 AC-2 の前提）', () => {
+  const NOW = new Date('2026-09-18T00:00:00.000Z');
+  const digest = (value: unknown): string => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+  // 1 万件の計画（約 0.5 秒）。この describe の各テストで共有する（生成し直さない）。
+  const first = buildPerfTenantPlans(createSeedRng(perfPreset.rngSeed), NOW);
+  const HEAVY_TIMEOUT_MS = 60_000;
+
+  it('🔴 同じシード・同じ now で 2 回生成すると、全テナントの氏名・ID・値が一致する', () => {
+    const second = buildPerfTenantPlans(createSeedRng(perfPreset.rngSeed), NOW);
+    expect(first).toHaveLength(30);
+    expect(digest(first)).toBe(digest(second));
+    // 抜き取り（ハッシュ一致だけでは「何が一致したか」が読めない）。
+    const [a, b] = [first[0], second[0]];
+    expect(a?.engineers[0]?.displayName).toBe(b?.engineers[0]?.displayName);
+    expect(a?.engineers[2999]?.engineerId).toBe(b?.engineers[2999]?.engineerId);
+    expect(a?.projects[2999]?.name).toBe(b?.projects[2999]?.name);
+    // シードが違えば別の母集団になる（固定値を返しているだけではない）。
+    const other = buildPerfTenantPlans(createSeedRng('ses-perf-other'), NOW);
+    expect(digest(other)).not.toBe(digest(first));
+  }, HEAVY_TIMEOUT_MS);
+
+  it('🔴 規模が配分表どおりで、共有は最大テナントの取引先所属だけ、氏名は規則の姓 + 空白 + 名', () => {
+    const plans = first;
+    let engineers = 0;
+    let projects = 0;
+    let shares = 0;
+    let careers = 0;
+    for (const plan of plans) {
+      expect(plan.engineers).toHaveLength(plan.profile.engineers);
+      expect(plan.projects).toHaveLength(plan.profile.projects);
+      engineers += plan.engineers.length;
+      projects += plan.projects.length;
+      for (const engineer of plan.engineers) {
+        careers += engineer.careers.length;
+        expect(engineer.careers.length).toBeGreaterThanOrEqual(2);
+        expect(engineer.careers.length).toBeLessThanOrEqual(4);
+        expect(engineer.skills.length).toBeGreaterThanOrEqual(3);
+        expect(engineer.skills.length).toBeLessThanOrEqual(8);
+        if (engineer.shared) {
+          shares += 1;
+          expect(plan.profile.tenantIndex).toBe(PERF_SEED_TOTALS.largestTenantIndex);
+          expect(engineer.ownerPartnerIndex).not.toBeNull();
+        }
+        const [family, given, ...rest] = engineer.displayName.split(' ');
+        expect(rest).toEqual([]);
+        expect(PERF_SEED_NAME_RULES.familyNames as readonly string[]).toContain(family);
+        expect(PERF_SEED_NAME_RULES.givenNames as readonly string[]).toContain(given);
+      }
+    }
+    expect(engineers).toBe(PERF_SEED_TOTALS.engineers);
+    expect(projects).toBe(PERF_SEED_TOTALS.projects);
+    expect(shares).toBe(PERF_SEED_TOTALS.engineerShares);
+    // 経歴は 1 人 2〜4 行（約 3 万行）。
+    expect(careers).toBeGreaterThan(20_000);
+    expect(careers).toBeLessThan(40_000);
+  }, HEAVY_TIMEOUT_MS);
+
+  it('🔴 ID がすべて相異なり（エンジニア・案件・取引先・利用者・テナント）、demo / isolation とも重ならない', () => {
+    const plans = first;
+    const ids: string[] = [];
+    for (const plan of plans) {
+      const bundle = perfSeedIds(plan.profile.tenantIndex);
+      ids.push(bundle.tenantId, bundle.hostOwnerUserId, bundle.hostAdminUserId, ...bundle.hostSalesUserIds, bundle.sendingDomainId, bundle.assignmentId);
+      for (const partner of bundle.partners) {
+        ids.push(partner.partnerCompanyId, partner.adminUserId, partner.salesUserId, partner.adminMembershipId, partner.salesMembershipId);
+      }
+      for (const engineer of plan.engineers) ids.push(engineer.engineerId);
+      for (const project of plan.projects) ids.push(project.projectId);
+      for (let seq = 1; seq <= 4; seq += 1) ids.push(bundle.proposalId(seq));
+    }
+    expect(ids.length).toBeGreaterThan(20_000);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const value of ids) expect(value).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    const foreign = new Set([...demoPreset.tenantIds, ...isolationPreset.tenantIds, DEMO_SEED_IDS.tenants[0].hostOwnerUserId, ISOLATION_SEED_IDS.tenants[0].tenantId]);
+    for (const value of ids) expect(foreign.has(value)).toBe(false);
+  }, HEAVY_TIMEOUT_MS);
+
+  it('検索が当たる分布: 主要スキル・都道府県・リモート区分・稼働状況が最大テナントにそれぞれ数百件ある', () => {
+    const [largest] = first;
+    if (largest === undefined) throw new Error('plan');
+    const count = (predicate: (engineer: (typeof largest.engineers)[number]) => boolean): number => largest.engineers.filter(predicate).length;
+    expect(count((e) => e.skills.some((s) => s.name === 'Java' && s.years >= 3))).toBeGreaterThan(300);
+    expect(count((e) => e.prefecture === '13')).toBeGreaterThan(500);
+    expect(count((e) => e.prefecture === '13')).toBeLessThan(2500);
+    expect(count((e) => e.remoteMode === 'FULL_REMOTE')).toBeGreaterThan(500);
+    expect(count((e) => e.availability === 'STANDBY')).toBeGreaterThan(200);
+    expect(count((e) => e.unitPriceMin <= 700_000 && e.unitPriceMax >= 700_000)).toBeGreaterThan(300);
+    expect(count((e) => e.preferenceNote.includes('フルリモート'))).toBeGreaterThan(200);
+    // 都道府県は 47 通りすべてが現れる（`F-009` の都道府県条件がどの値でも空にならない）。
+    expect(new Set(largest.engineers.map((e) => e.prefecture)).size).toBe(47);
+    // 案件: 公開済み（経路 1）が半数程度、状態は 3 値すべて。
+    const published = largest.projects.filter((p) => p.publishedAt !== null).length;
+    expect(published).toBeGreaterThan(1000);
+    expect(published).toBeLessThan(2000);
+    expect(new Set(largest.projects.map((p) => p.status))).toEqual(new Set(['OPEN', 'FILLED', 'SUCCESSOR_WANTED']));
+  }, HEAVY_TIMEOUT_MS);
 });
 
 describe('ID は決定的で衝突しない（F-053 AC-2 の前提）', () => {

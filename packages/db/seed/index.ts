@@ -14,7 +14,7 @@ import { createSeedRng } from './rng.js';
 import { SEED_PRESET_NAMES, type SeedPreset, type SeedPresetName } from './types.js';
 
 export { SEED_PRESET_NAMES, type SeedContext, type SeedPreset, type SeedPresetName } from './types.js';
-export { getSeedPreset, SeedPresetNotImplementedError } from './presets/index.js';
+export { getSeedPreset } from './presets/index.js';
 // 🔴 T-05-01: グローバルなスキル辞書（`skills`。射程外 4 表のマスタ）。
 export {
   GLOBAL_SKILL_IDS,
@@ -51,6 +51,33 @@ export {
   type DemoProposalRequestIds,
   type DemoTenantIds,
 } from './presets/demo.js';
+// 🔴 T-12-01: `seed:perf`（1 万 / 1 万 / 匿名共有 2,000 の負荷測定の母集団。docs/03 §3.7.2）。CLI 専用。
+export {
+  buildPerfTenantPlan,
+  buildPerfTenantPlans,
+  PERF_SEED_NAME_RULES,
+  PERF_SEED_PASSWORD,
+  PERF_SEED_PROFILES,
+  PERF_SEED_PROPOSALS_PER_TENANT,
+  PERF_SEED_TENANT_IDS,
+  PERF_SEED_TOTALS,
+  PerfSeedScaleError,
+  perfPartnerEngineerCount,
+  perfPartnerShareCount,
+  perfSeedCompanyNames,
+  perfSeedDomain,
+  perfSeedEmails,
+  perfSeedIds,
+  perfSeedProfile,
+  perfSeedProvisioningRequestId,
+  readPerfSeedScale,
+  type PerfEngineerPlan,
+  type PerfPartnerIds,
+  type PerfProjectPlan,
+  type PerfTenantIds,
+  type PerfTenantPlan,
+  type PerfTenantProfile,
+} from './presets/perf.js';
 export { createSeedRng, type SeedRng } from './rng.js';
 // 🔴 T-10-07: テナント ID で絞った行数の実測（読み取りだけ）。結合テストが「reset で消える / 他テナントは消えない」を
 //    テーブルを列挙せずに突き合わせるために公開する。`deleteTenantData`（削除の実体）は公開しない —— 環境ガード

@@ -1,7 +1,8 @@
 // tests/static/demo-seed-no-real-names.test.ts
 // 🔴 `F-053 AC-1` / `BR-47` / `CLAUDE.md` §11「`demo` は合成データのみ」: `seed:demo` のソース
 //    （`packages/db/seed/presets/demo.ts`）に**実在の企業名・実在のドメイン・実在の個人名を思わせる語が無い**ことを
-//    走査で固定する。T-10-06。
+//    走査で固定する。T-10-06。✅ T-12-01: `seed:perf`（`presets/perf.ts`。1 万件の母集団も合成データのみ〔`BR-47`〕）を
+//    走査対象に加えた（同じ規則・同じ禁止リスト）。
 //
 // なぜ静的テストか: 結合テスト（`tests/isolation/seed-demo.test.ts`）は投入された行の値を接頭辞規則と突き合わせるが、
 // 「規則の外の語をソースに書いた」瞬間に気づけるのはここである（実 DB を要らず、CI で毎回走る）。
@@ -18,10 +19,15 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { DEMO_SEED_NAME_RULES } from '../../packages/db/seed/presets/demo.js';
+import { PERF_SEED_NAME_RULES } from '../../packages/db/seed/presets/perf.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '..', '..');
-const PRESET_FILE = path.join(repoRoot, 'packages', 'db', 'seed', 'presets', 'demo.ts');
+/** 🔴 走査対象（合成データを作るプリセット）。`isolation` は `ISOLATION_FORBIDDEN_MARKERS` で別途固定している。 */
+const PRESET_FILES = [
+  { preset: 'demo', file: path.join(repoRoot, 'packages', 'db', 'seed', 'presets', 'demo.ts') },
+  { preset: 'perf', file: path.join(repoRoot, 'packages', 'db', 'seed', 'presets', 'perf.ts') },
+] as const;
 
 /** コメントを落としたソース（設計意図のコメントに社名の例が出ても検査を落とさない。判定は「値として書かれているか」）。 */
 function stripComments(source: string): string {
@@ -88,12 +94,13 @@ const REAL_DOMAIN_PATTERNS: readonly RegExp[] = [
 /** 値として現れるメール・ドメインは予約 TLD だけ。 */
 const ALLOWED_TLDS = ['.example', '.test'] as const;
 
-describe('🔴 seed:demo のソースに実在の企業名・ドメイン・個人名を思わせる語が無い（F-053 AC-1 / BR-47）', () => {
-  const source = readFileSync(PRESET_FILE, 'utf8');
+describe.each(PRESET_FILES)('🔴 seed:$preset のソースに実在の企業名・ドメイン・個人名を思わせる語が無い（F-053 AC-1 / BR-47）', ({ preset, file }) => {
+  const source = readFileSync(file, 'utf8');
   const code = stripComments(source);
 
-  it('対照: 走査対象が空振りしていない（demo プリセットの本体を読んでいる）', () => {
-    expect(code).toContain("name: 'demo'");
+  it(`対照: 走査対象が空振りしていない（${preset} プリセットの本体を読んでいる）`, () => {
+    expect(code).toContain(`name: '${preset}'`);
+    // 氏名・商号の規則は `demo` の 1 出所（`perf` はそれを参照する）。
     expect(code).toContain('DEMO_SEED_NAME_RULES');
   });
 
@@ -127,7 +134,10 @@ describe('🔴 seed:demo のソースに実在の企業名・ドメイン・個�
     expect(outside).toEqual([]);
   });
 
-  it('生成規則そのものが「架空であることが語から分かる」語で構成されている（規則を実在名に変えられない）', () => {
+});
+
+describe('生成規則そのものが「架空であることが語から分かる」語で構成されている（規則を実在名に変えられない）', () => {
+  it('demo の規則（perf も同じ姓・名・接頭辞を参照する）', () => {
     for (const family of DEMO_SEED_NAME_RULES.familyNames) {
       expect(['サンプル', '架空', '仮名', '見本', '例示', '試験', '模擬', '仮想']).toContain(family);
     }
@@ -136,5 +146,13 @@ describe('🔴 seed:demo のソースに実在の企業名・ドメイン・個�
     }
     expect(DEMO_SEED_NAME_RULES.partnerCompanyPrefix).toBe('株式会社ダミー');
     expect(DEMO_SEED_NAME_RULES.endClientPrefix).toBe('架空');
+  });
+
+  it('✅ T-12-01: perf の商号の接頭辞は demo の接頭辞（株式会社サンプル / 株式会社ダミー）に「性能」を足した形で、姓・名は demo と同一', () => {
+    expect(PERF_SEED_NAME_RULES.hostCompanyPrefix).toBe('株式会社サンプル性能');
+    expect(PERF_SEED_NAME_RULES.partnerCompanyPrefix).toBe('株式会社ダミー性能');
+    expect(PERF_SEED_NAME_RULES.endClientPrefix).toBe(DEMO_SEED_NAME_RULES.endClientPrefix);
+    expect(PERF_SEED_NAME_RULES.familyNames).toBe(DEMO_SEED_NAME_RULES.familyNames);
+    expect(PERF_SEED_NAME_RULES.givenNames).toBe(DEMO_SEED_NAME_RULES.givenNames);
   });
 });
