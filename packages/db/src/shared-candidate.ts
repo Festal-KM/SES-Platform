@@ -10,7 +10,9 @@
 //     経路が毎回 `'off'` で上書きする（docs/05 §4.7 二重防御テスト #6）
 //   ②**DB** … `engineer_shares`（C3）の行はホストに 1 行も見えない。存在の真偽だけを
 //     `app_engineer_is_shared()`（`SECURITY DEFINER`。所有者 `app_share_probe`）が返す
-//     （migration 20260916000000。二重防御テスト #7）
+//     （migration 20260916000000。二重防御テスト #7）。ポリシーの述語は T-12-19（migration
+//     20260930000000）で `id IN (SELECT unnest(app_shared_engineer_ids(app_tenant_id())))` の集合評価に
+//     なった（1 行ごとの関数呼び出しをやめた）が、**読める行・読み手・GUC の guard は同一**である
 //   ③**メソッドの形** … `fn` が受け取る `SharedCandidateDb` は**素の Prisma デリゲートを
 //     1 つも持たない**。公開するのは用途ごとの専用メソッドだけで、引数・戻り値は**スカラーと
 //     固定形の DTO に限る**（`select` / `include` を受け取る型を表面に出さない）。
@@ -34,7 +36,8 @@
 //    テナントに属するパートナーは `requireExecutable()` により共有を**解除できない**ため
 //    （docs/05 §17.2 #7）、「停止中の候補がホストに出続け、かつ本人は下ろせない」組み合わせが
 //    実在しうる。🔴 **回答が C（停止中は自動的に無効化）になった場合の変更点は、migration
-//    20260916000000 の `app_engineer_is_shared()` の述語 1 箇所だけである** ——
+//    20260916000000 の `app_engineer_is_shared()` の述語 1 箇所だけである**（T-12-19 以降は
+//    その本体が委譲する `app_shared_engineer_ids()` の述語 1 箇所）——
 //    本ファイル・呼び出し側・型は変わらない。**判定をここ（アプリ層）へ持ち出さないこと。**
 import { Prisma } from '@prisma/client';
 import { writeAuditLog } from './audit.js';
@@ -44,6 +47,7 @@ import { tenantScopeExtension } from './extension.js';
 import { sharedCandidateScopeSettingsSql, type TenantScopeSettings } from './scope-settings.js';
 import { ENGINEER_LIST_ORDER_BY } from './search/index.js';
 import type { RemoteMode } from './schema-value-sets.js';
+import { uuidV7 } from './uuid.js';
 
 /**
  * Prisma の `Decimal`。
@@ -244,8 +248,9 @@ export type SharedCandidateDb = {
    *
    * 手順（1 トランザクション）:
    *   ① `engineers` を `id = engineerId AND owner_partner_company_id IS NOT NULL` で読む。
-   *      共有ポリシー（`app_engineer_is_shared()`）越しにしか出ない行であり、**これが「いま共有中か」の
-   *      再確認**である（自社の行は `IS NOT NULL` で外れる）。無ければ `NOT_SHARED`
+   *      共有ポリシー（`engineers_shared_candidate_read` = `app_shared_engineer_ids()` の集合）越しにしか
+   *      出ない行であり、**これが「いま共有中か」の再確認**である（自社の行は `IS NOT NULL` で外れる）。
+   *      無ければ `NOT_SHARED`
    *   ② `proposal_requests` に INSERT（`partner_company_id` = ①の owner。`issued_by` = ctx）
    *   ③ `AuditLog`（`proposal_request.create`）を同じトランザクションで書く（書けなければ発行も成立しない）
    *
@@ -318,27 +323,43 @@ async function listSharedEngineers(
   if (engineers.length === 0) return [];
 
   // 🔴 スキルは別クエリで引く（`include` にすると `engineers` の select が広がりやすい）。
-  //    `engineer_skills` にも共有スコープの追加ポリシーが効く（migration 20260916000000）。
+  //    `engineer_skills` にも共有スコープの追加ポリシーが効く（migration 20260916000000 / 20260930000000）。
+  // 🔴 T-12-19 (c): `select` は**平坦な 3 列**だけ（`engineerId` / `skillId` / `yearsOfExperience`）。
+  //    入れ子の `skill: { select … }` は Prisma クライアント側の解決が 1 万行で ≈ 0.5 秒かかる
+  //    （T-12-02 の実測。docs/05 §17.3）ので、辞書は下で 1 回だけ引いて JS で結ぶ。
+  //    **読む列は増やしていない**（`originalLabel` / `level` / `source` は依然として読まない）。
   const skills = await tx.engineerSkill.findMany({
     where: { engineerId: { in: engineers.map((engineer) => engineer.id) } },
-    select: {
-      engineerId: true,
-      yearsOfExperience: true,
-      skill: { select: { id: true, name: true, sortKey: true } },
-    },
+    select: { engineerId: true, skillId: true, yearsOfExperience: true },
     // 🔴 全順序で返す。上位 8 件の選別と並びは `anonymizeEngineer`（`経験年数 desc → sortKey asc →
     //    skillId asc`）が決めるが、**DB の返す順に依存しない**ことをここでも明示しておく
     //    （依存すると、索引の選ばれ方が変わっただけで表示スキルが入れ替わる）。
     orderBy: [{ skillId: 'asc' }],
   });
 
+  // 🔴 辞書（`Skill`）はグローバルな射程外表（RLS なし。`CLAUDE.md` §3.1）。読むのは名称と並び順の 2 列だけ。
+  const skillIds = [...new Set(skills.map((row) => row.skillId))];
+  const dictionary = new Map(
+    (
+      await tx.skill.findMany({
+        where: { id: { in: skillIds } },
+        select: { id: true, name: true, sortKey: true },
+      })
+    ).map((skill) => [skill.id, skill] as const),
+  );
+
   const skillsByEngineer = new Map<string, SharedCandidateSkill[]>();
   for (const row of skills) {
+    const skill = dictionary.get(row.skillId);
+    if (skill === undefined) {
+      // FK（`engineer_skills.skill_id → skills.id`。`onDelete: Restrict`）が壊れている。黙って落とさない。
+      throw new Error('engineer_skills が参照する skills の行が見つかりません（辞書の不整合）。');
+    }
     const bucket = skillsByEngineer.get(row.engineerId) ?? [];
     bucket.push({
-      skillId: row.skill.id,
-      sortKey: row.skill.sortKey,
-      name: row.skill.name,
+      skillId: skill.id,
+      sortKey: skill.sortKey,
+      name: skill.name,
       yearsOfExperience: row.yearsOfExperience,
     });
     skillsByEngineer.set(row.engineerId, bucket);
@@ -359,8 +380,16 @@ async function listSharedEngineers(
 /**
  * この案件の匿名候補（`MatchCandidate.isAnonymous = true`）を、渡された集合で置き換える。
  *
+ * 🔴 T-12-19 (b): 生 SQL にした根拠 = Prisma クライアントの `createMany` 入力検証 2,000 行 ≈ 0.35 秒が支配的
+ *    （T-12-02 の実測。docs/05 §17.3。DB 側は DELETE 数 ms + INSERT の FK 検査 4 本 × 2,000 行 ≈ 0.1〜0.2 秒で、
+ *    こちらは読み取りから生成を外す (d) `match.build`〔Phase 2〕でしか消えない）。置き場所は `packages/db/src/**`
+ *    （docs/05 §2.2。`tests/static/db-raw-access.test.ts` ④ の既存の許可の中であり、許可リストは広げない）。
+ *    **書く列・行数・`tenant_id` の出所（引数 = ctx 由来）は `createMany` のときと同一**。
+ *    `id` は `schema.prisma` の `@default(uuid(7))` と同じ v7 を `uuidV7(computedAt)` で採番する
+ *    （`packages/db/src/uuid.ts` 冒頭。v4 を混ぜない）。
  * 🔴 `select` / `include` を受け取らない（`SharedCandidateDb` の 🔴 を参照）。戻り値も件数だけである。
- * 🔴 自社候補（`isAnonymous = false`）は `deleteMany` の条件から外してある。
+ * 🔴 自社候補（`isAnonymous = false`）は DELETE の条件から外してある。
+ * 🔴 `app.shared_scope` の GUC には触れない（`tests/static/shared-scope-single-path.test.ts`）。
  */
 async function replaceAnonymousCandidates(
   tx: ScopedTransactionClient,
@@ -368,28 +397,34 @@ async function replaceAnonymousCandidates(
   projectId: string,
   rows: readonly AnonymousCandidateRow[],
 ): Promise<number> {
-  await tx.matchCandidate.deleteMany({ where: { projectId, isAnonymous: true } });
+  // 🔴 `tenant_id` は RLS（C2 HOST_ONLY）が縛るが、Prisma 拡張が `deleteMany` に注入していた述語を
+  //    生 SQL でも明示して二重防御を保つ（射程は従来と同一）。
+  await tx.$executeRaw(Prisma.sql`
+    DELETE FROM match_candidates
+     WHERE tenant_id = ${tenantId}::uuid
+       AND project_id = ${projectId}::uuid
+       AND is_anonymous = true`);
   if (rows.length === 0) return 0;
-  const created = await tx.matchCandidate.createMany({
-    data: rows.map((row) => ({
-      tenantId,
-      projectId,
-      engineerId: row.engineerId,
-      isAnonymous: true,
-      computedAt: row.computedAt,
-    })),
-    // 🔴 T-08-05: 同一案件への並行 GET（候補一覧の読み取りが Phase 1 の唯一の生成経路）に耐える。
-    //    READ COMMITTED では、先行トランザクションの削除待ちから復帰した側の `deleteMany` が
-    //    0 行を消し（先行の INSERT は文のスナップショットに無い）、続く INSERT が
-    //    `@@unique([tenantId, projectId, engineerId])` に当たって 500 になる。
-    //    `ON CONFLICT DO NOTHING` なら先行の行がそのまま残る。⚠️ 2 つの読み取りの間に共有の解除が挟まれば
-    //    1 回分古い集合が残り得るが、候補一覧の応答は `listSharedEngineers` の `rows` から組み（この表を
-    //    読み返さない）、`candidateRef` の逆引き側（#31。T-08-06）は共有中かを共有スコープで再確認する
-    //    （docs/05 §4.5「`MatchCandidate` をそのまま返さず、必ず再確認してからフィルタする」）。
-    //    戻り値「作成した行数」の意味は変えない（飛ばした行は数えない）。
-    skipDuplicates: true,
-  });
-  return created.count;
+
+  const ids = rows.map((row) => uuidV7(row.computedAt));
+  const engineerIds = rows.map((row) => row.engineerId);
+  const computedAts = rows.map((row) => row.computedAt.toISOString());
+  // 🔴 T-08-05: 同一案件への並行 GET（候補一覧の読み取りが Phase 1 の唯一の生成経路）に耐える。
+  //    READ COMMITTED では、先行トランザクションの削除待ちから復帰した側の DELETE が
+  //    0 行を消し（先行の INSERT は文のスナップショットに無い）、続く INSERT が
+  //    `@@unique([tenantId, projectId, engineerId])` に当たって 500 になる。
+  //    `ON CONFLICT DO NOTHING` なら先行の行がそのまま残る。⚠️ 2 つの読み取りの間に共有の解除が挟まれば
+  //    1 回分古い集合が残り得るが、候補一覧の応答は `listSharedEngineers` の `rows` から組み（この表を
+  //    読み返さない）、`candidateRef` の逆引き側（#31。T-08-06）は共有中かを共有スコープで再確認する
+  //    （docs/05 §4.5「`MatchCandidate` をそのまま返さず、必ず再確認してからフィルタする」）。
+  //    戻り値「作成した行数」の意味は変えない（`$executeRaw` の件数 = 実際に INSERT された行。飛ばした行は数えない）。
+  const inserted = await tx.$executeRaw(Prisma.sql`
+    INSERT INTO match_candidates (id, tenant_id, project_id, engineer_id, is_anonymous, computed_at)
+    SELECT r.id, ${tenantId}::uuid, ${projectId}::uuid, r.engineer_id, true, r.computed_at
+      FROM unnest(${ids}::uuid[], ${engineerIds}::uuid[], ${computedAts}::timestamptz[])
+             AS r(id, engineer_id, computed_at)
+    ON CONFLICT (tenant_id, project_id, engineer_id) DO NOTHING`);
+  return inserted;
 }
 
 /** Prisma の一意制約違反（`row-context.ts` / `platform/queries/provisioning.ts` と同じ判定）。 */

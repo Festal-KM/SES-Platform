@@ -21,10 +21,16 @@
 // ---------------------------------------------------------------------------
 // 🔴 判定
 // ---------------------------------------------------------------------------
-//   条件の組ごとに `p95 <= PERF_P95_BUDGET_MS`（`tests/perf/budget.ts`。**値を上げない**）を `expect.soft` で固定する
+//   条件の組ごとに `p95 <= 予算`（`tests/perf/budget.ts`。**値を上げない**）を `expect.soft` で固定する
 //   （1 組が未達でも全組を測り切って表に出す。未達の組は `docs/dev-plan.md` §8 に記録して人間に提起する材料にする）。
+//   予算は 2 本 —— 自社スコープ 7 組 + 案件 6 組 = `PERF_P95_BUDGET_MS`（1,000）/ `projectId` あり（匿名候補混在）の
+//   2 組 = `MATCH_P95_BUDGET_MS`（3,000。`CLAUDE.md` §7「マッチング候補の初回提示」/ Issue #71 既定 A）。
+//   `budgetOf()` が `query` の `projectId=` の有無で選ぶ（行ごと）。
 //   ⚠️ 2026-09-18 の実測では `projectId` あり（匿名候補混在）の 2 組が p95 2.3 秒 / 3.9 秒で未達であり、本スイートは
 //      その是正（docs/05 §17.3「T-12-02 の実測の決着」の (a)〜(d)）が入るまで赤である。**予算を上げて緑にしない。**
+//      → **T-12-19（2026-09-18。同日）で (a) 共有スコープ RLS の集合化 / (b) `replaceAnonymousCandidates` の生 SQL 化 /
+//        (c) `listSharedEngineers` の平坦化 を入れて是正し、混在 2 組の予算だけを `MATCH_P95_BUDGET_MS` に分けた**
+//        （再測定は `docs/dev-plan.md` §8「T-12-19 の再測定」の行）。自社スコープ / 案件検索の 1 秒は据え置き。
 //
 // 🔴 モックは `requireTenantCtx` / `readRequestMeta`（ctx の出所）と `lib/db/bootstrap`（起動時 DI の 2 値）だけ。
 //    DB・RLS・Route Handler・検索・共有スコープ・キュー・Worker はすべて実物である。実 API に接続しない。
@@ -71,6 +77,7 @@ import { startIsolationRedis, type IsolationRedis } from '../isolation/support/r
 import {
   GATE_RUN_P95_BUDGET_MS,
   JOB_SAMPLE_COUNT,
+  MATCH_P95_BUDGET_MS,
   PERF_P95_BUDGET_MS,
   SEARCH_SAMPLE_COUNT,
   SEARCH_WARMUP_COUNT,
@@ -273,7 +280,7 @@ afterAll(async () => {
       `## T-12-02 負荷測定（${NOW.toISOString()}）`,
       `- 環境: ${environmentLabel()}`,
       `- シード: perf v1（${seedRun?.outcome ?? '-'}。${Math.round(seedDurationMs ?? 0)} ms）。engineers ${String(seedRun?.counts.engineers ?? '-')} / projects ${String(seedRun?.counts.projects ?? '-')} / engineer_shares ${String(seedRun?.counts.engineer_shares ?? '-')}`,
-      `- 予算: 検索 p95 ${String(PERF_P95_BUDGET_MS)} ms / gate.run p95 ${String(GATE_RUN_P95_BUDGET_MS)} ms / send.proposal p95 ${String(SEND_PROPOSAL_P95_BUDGET_MS)} ms`,
+      `- 予算: 複合検索（自社スコープ / 案件）p95 ${String(PERF_P95_BUDGET_MS)} ms / 匿名候補混在の候補一覧（projectId あり）p95 ${String(MATCH_P95_BUDGET_MS)} ms / gate.run p95 ${String(GATE_RUN_P95_BUDGET_MS)} ms / send.proposal p95 ${String(SEND_PROPOSAL_P95_BUDGET_MS)} ms`,
       '',
       ...reports,
       '',
@@ -322,6 +329,19 @@ describe('母集団（docs/03 §3.7.2 の分布）', () => {
 
 type SearchCase = { readonly label: string; readonly query: string };
 
+/** 匿名候補が混在する候補一覧（#30 / `S-016` 相当 = `projectId` あり）か。予算の選択と補足の判定に使う。 */
+function isMixedCandidateCase(searchCase: SearchCase): boolean {
+  return searchCase.query.includes('projectId=');
+}
+
+/**
+ * 🔴 行ごとの予算（T-12-19）。`projectId` あり = `MATCH_P95_BUDGET_MS`（3,000）、それ以外 = `PERF_P95_BUDGET_MS`（1,000）。
+ *    上げるのは混在 2 組だけであり、自社スコープ 7 組 / 案件 6 組の 1 秒は据え置き。
+ */
+function budgetOf(searchCase: SearchCase): number {
+  return isMixedCandidateCase(searchCase) ? MATCH_P95_BUDGET_MS : PERF_P95_BUDGET_MS;
+}
+
 const ENGINEER_CASES: readonly SearchCase[] = [
   { label: '絞り込みなし', query: '' },
   { label: 'スキル 1 つ（Java）', query: `skills=${SKILL_JAVA}` },
@@ -367,11 +387,11 @@ async function measureSearch(
       },
       { samples: SEARCH_SAMPLE_COUNT, warmup: SEARCH_WARMUP_COUNT },
     );
-    const anonymousNote = searchCase.query.includes('projectId=') ? ` / 1 ページ目の匿名候補 ${String(anonymousOnPage)} 件` : '';
+    const anonymousNote = isMixedCandidateCase(searchCase) ? ` / 1 ページ目の匿名候補 ${String(anonymousOnPage)} 件` : '';
     rows.push({
       label: searchCase.label,
       summary: summarize(durations),
-      budgetMs: PERF_P95_BUDGET_MS,
+      budgetMs: budgetOf(searchCase),
       note: `total ${String(total)} 件${anonymousNote}`,
     });
   }
@@ -379,8 +399,13 @@ async function measureSearch(
   return rows;
 }
 
+const OWN_SCOPE_CASE_COUNT = ENGINEER_CASES.filter((searchCase) => !isMixedCandidateCase(searchCase)).length;
+const MIXED_CASE_COUNT = ENGINEER_CASES.length - OWN_SCOPE_CASE_COUNT;
+
 describe('測定 1: F-009 複合検索（GET /api/engineers。最大テナントのホスト SALES）', () => {
-  it(`🔴 条件の組 ${String(ENGINEER_CASES.length)} 通り × N = ${String(SEARCH_SAMPLE_COUNT)} で p95 <= ${String(PERF_P95_BUDGET_MS)} ms（F-009 AC-4）`, async () => {
+  it(`🔴 自社スコープ ${String(OWN_SCOPE_CASE_COUNT)} 組 × N = ${String(SEARCH_SAMPLE_COUNT)} で p95 <= ${String(PERF_P95_BUDGET_MS)} ms（F-009 AC-4）/ 匿名候補混在（projectId あり）${String(MIXED_CASE_COUNT)} 組で p95 <= ${String(MATCH_P95_BUDGET_MS)} ms（CLAUDE.md §7 マッチング候補の初回提示 / F-029 AC-5 / Issue #71 既定 A）`, async () => {
+    // 🔴 予算の分け方が縮んでいない（混在 2 組だけが 3 秒。それ以外は 1 秒）。
+    expect(MIXED_CASE_COUNT).toBe(2);
     const rows = await measureSearch(
       `測定 1: GET /api/engineers（F-009。N = ${String(SEARCH_SAMPLE_COUNT)}、ウォームアップ ${String(SEARCH_WARMUP_COUNT)} 回を除く）`,
       engineersRoute,
@@ -391,7 +416,8 @@ describe('測定 1: F-009 複合検索（GET /api/engineers。最大テナント
     for (const row of rows) {
       // 🔴 条件が当たっていること（0 件の検索を速いと言わない）。
       expect.soft(row.note, row.label).not.toMatch(/^total (-1|0) 件/);
-      expect.soft(row.summary.p95, `${row.label}: p95 ${row.summary.p95.toFixed(1)} ms`).toBeLessThanOrEqual(PERF_P95_BUDGET_MS);
+      // 🔴 行ごとの予算（`budgetOf`）で判定する。`budgetMs` は表の「予算(p95)」列にそのまま出る。
+      expect.soft(row.summary.p95, `${row.label}: p95 ${row.summary.p95.toFixed(1)} ms（予算 ${String(row.budgetMs)} ms）`).toBeLessThanOrEqual(row.budgetMs);
     }
   });
 });

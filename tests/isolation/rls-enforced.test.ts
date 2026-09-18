@@ -868,6 +868,11 @@ describe('#14 partner_companies を指す FK は全て複合 FK である（docs
  *    ならない**。表名を列挙した許可リストにすると「足すときに一緒に足す」で通ってしまうため、
  *    カタログ全体を走査して集合が一致することだけを見る。
  *    `engineer_careers`（T-09-12）はもちろん、将来の子表がここに現れた時点で FAIL する。
+ *
+ * 🔴 T-12-19: 走査条件に `app_shared_engineer_ids` を加える。新関数は本体で GUC（`app.shared_scope`）を
+ *    要求するため、将来 3 表目のポリシーが GUC guard を述語に明示せず `app_shared_engineer_ids` だけを
+ *    参照して書かれると、旧条件（`app_engineer_is_shared` / `shared_scope` の文字列一致）では拾えず
+ *    「2 表ちょうど」の固定が空振りする。
  */
 const SHARED_SCOPE_POLICIES = [
   { table: 'engineer_skills', policy: 'engineer_skills_shared_candidate_read' },
@@ -875,14 +880,18 @@ const SHARED_SCOPE_POLICIES = [
 ];
 
 describe('#15 共有スコープ（経路 4）の追加ポリシーが 2 表だけである（docs/05 §4.7 #15 / §4.5）', () => {
-  it('🔴 app_engineer_is_shared / shared_scope を参照するポリシーは engineers / engineer_skills の 2 本だけ', async () => {
+  it('🔴 app_engineer_is_shared / app_shared_engineer_ids / shared_scope を参照するポリシーは engineers / engineer_skills の 2 本だけ', async () => {
     const policies = await readPolicies(db);
     expect(policies.length).toBeGreaterThan(0); // 空振り防止（対照）
 
     const matching = policies
       .filter((policy) => {
         const expression = `${policy.using ?? ''} ${policy.withCheck ?? ''}`;
-        return expression.includes('app_engineer_is_shared') || expression.includes('shared_scope');
+        return (
+          expression.includes('app_engineer_is_shared') ||
+          expression.includes('app_shared_engineer_ids') ||
+          expression.includes('shared_scope')
+        );
       })
       .map((policy) => ({ table: policy.table, policy: policy.policy }))
       .sort((left, right) =>
@@ -920,6 +929,19 @@ describe('#15 共有スコープ（経路 4）の追加ポリシーが 2 表だ�
       Array<{ role: string; can_execute: boolean }>
     >`
       SELECT role, has_function_privilege(role, 'app_engineer_is_shared(uuid, uuid)', 'EXECUTE') AS can_execute
+        FROM (VALUES ('app_tenant'), ('app_platform'), ('app_platform_write'), ('public')) AS r(role)`;
+    const byRole = new Map(rows.map((row) => [row.role, row.can_execute]));
+    expect(byRole.get('app_tenant')).toBe(true);
+    expect(byRole.get('app_platform')).toBe(false);
+    expect(byRole.get('app_platform_write')).toBe(false);
+    expect(byRole.get('public')).toBe(false);
+  });
+
+  it('🔴 app_shared_engineer_ids() の EXECUTE を持つのは app_tenant だけである（PUBLIC に無い）', async () => {
+    const rows = await migrator.$queryRaw<
+      Array<{ role: string; can_execute: boolean }>
+    >`
+      SELECT role, has_function_privilege(role, 'app_shared_engineer_ids(uuid)', 'EXECUTE') AS can_execute
         FROM (VALUES ('app_tenant'), ('app_platform'), ('app_platform_write'), ('public')) AS r(role)`;
     const byRole = new Map(rows.map((row) => [row.role, row.can_execute]));
     expect(byRole.get('app_tenant')).toBe(true);

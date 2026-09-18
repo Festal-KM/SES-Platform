@@ -454,6 +454,78 @@ describe('🔴 ⑤ 入口の fail-closed（CLAUDE.md §3.1 / docs/05 §4.8）', 
   });
 
   /**
+   * 🔴 T-12-19 レビュー指摘: `app_shared_engineer_ids()` は行に相関しない集合を返すため、
+   *    「他テナントの id を引数に渡せば列挙できてしまわないか」を別途固定する必要がある。
+   *    host B（`TENANT_B` 文脈）が `TENANT_A` を引数に渡しても、関数内の `engineer_shares` 参照は
+   *    `app_share_probe` の行ポリシー（`tenant_id = app_tenant_id()` = `TENANT_B`）を経由するため、
+   *    `tenant_id = t`（`TENANT_A`）と両立せず 0 行 → `ARRAY()` は `{}`（`NULL` ではない）を返す。
+   */
+  it('🔴 他テナントの id を渡しても列挙できない（host B が TENANT_A を指定しても `{}`）', async () => {
+    const result = await runUnextended(
+      unextended,
+      { tenantId: TENANT_B, partnerCompanyId: null, actorUserId: USER_B_HOST },
+      async (tx) => {
+        await tx.$executeRawUnsafe(`SELECT set_config('app.shared_scope', 'on', true)`);
+        const [idsRow] = await tx.$queryRawUnsafe<Array<{ ids: string[]; isnull: boolean }>>(
+          `SELECT app_shared_engineer_ids('${TENANT_A}'::uuid) AS ids, app_shared_engineer_ids('${TENANT_A}'::uuid) IS NULL AS isnull`,
+        );
+        const [sharedRow] = await tx.$queryRawUnsafe<Array<{ shared: boolean }>>(
+          `SELECT app_engineer_is_shared('${ENGINEER_A_PARTNER}'::uuid, '${TENANT_A}'::uuid) AS shared`,
+        );
+        return { idsRow, sharedRow };
+      },
+    );
+    expect(result.idsRow?.ids).toEqual([]);
+    expect(result.idsRow?.isnull).toBe(false);
+    expect(result.sharedRow?.shared).toBe(false);
+  });
+
+  it('🔴 対照: 自テナントの共有中 ID だけが集合として返る（host A / 他テナント引数 / GUC off / パートナー文脈）', async () => {
+    const hostA = await runUnextended(
+      unextended,
+      { tenantId: TENANT_A, partnerCompanyId: null, actorUserId: USER_A_HOST },
+      async (tx) => {
+        await tx.$executeRawUnsafe(`SELECT set_config('app.shared_scope', 'on', true)`);
+        const [ownRow] = await tx.$queryRawUnsafe<Array<{ ids: string[]; isnull: boolean }>>(
+          `SELECT app_shared_engineer_ids('${TENANT_A}'::uuid) AS ids, app_shared_engineer_ids('${TENANT_A}'::uuid) IS NULL AS isnull`,
+        );
+        const [otherRow] = await tx.$queryRawUnsafe<Array<{ ids: string[]; isnull: boolean }>>(
+          `SELECT app_shared_engineer_ids('${TENANT_B}'::uuid) AS ids, app_shared_engineer_ids('${TENANT_B}'::uuid) IS NULL AS isnull`,
+        );
+        return { ownRow, otherRow };
+      },
+    );
+    expect(hostA.ownRow?.ids).toEqual([ENGINEER_A_PARTNER]);
+    expect(hostA.ownRow?.isnull).toBe(false);
+    expect(hostA.otherRow?.ids).toEqual([]);
+    expect(hostA.otherRow?.isnull).toBe(false);
+
+    const guardOff = await runUnextended(
+      unextended,
+      { tenantId: TENANT_A, partnerCompanyId: null, actorUserId: USER_A_HOST },
+      (tx) =>
+        tx.$queryRawUnsafe<Array<{ ids: string[]; isnull: boolean }>>(
+          `SELECT app_shared_engineer_ids('${TENANT_A}'::uuid) AS ids, app_shared_engineer_ids('${TENANT_A}'::uuid) IS NULL AS isnull`,
+        ),
+    );
+    expect(guardOff[0]?.ids).toEqual([]);
+    expect(guardOff[0]?.isnull).toBe(false);
+
+    const partnerOn = await runUnextended(
+      unextended,
+      { tenantId: TENANT_A, partnerCompanyId: PARTNER_A1, actorUserId: USER_A_PARTNER },
+      async (tx) => {
+        await tx.$executeRawUnsafe(`SELECT set_config('app.shared_scope', 'on', true)`);
+        return tx.$queryRawUnsafe<Array<{ ids: string[]; isnull: boolean }>>(
+          `SELECT app_shared_engineer_ids('${TENANT_A}'::uuid) AS ids, app_shared_engineer_ids('${TENANT_A}'::uuid) IS NULL AS isnull`,
+        );
+      },
+    );
+    expect(partnerOn[0]?.ids).toEqual([]);
+    expect(partnerOn[0]?.isnull).toBe(false);
+  });
+
+  /**
    * 🔴 T-09-13 レビュー指摘の横断適用（`app_engineer_is_shared` にも同じ穴があった）: `SECURITY DEFINER` の
    *    `SET search_path = public` に `pg_temp` が無いと、リレーション名の解決で一時スキーマが最初に探される。
    *    ホスト文脈の呼び出し側が一時表 `engineer_shares` に**非共有**エンジニアの行を仕込み `app_share_probe` に
@@ -487,16 +559,27 @@ describe('🔴 ⑤ 入口の fail-closed（CLAUDE.md §3.1 / docs/05 §4.8）', 
           const shared = await tx.$queryRawUnsafe<Array<{ shared: boolean }>>(
             `SELECT app_engineer_is_shared('${ENGINEER_A_PARTNER2}'::uuid, '${TENANT_A}'::uuid) AS shared`,
           );
+          // 🔴 `app_shared_engineer_ids()` を直接呼んでも、仕込んだ非共有 ID が集合に混ざらないこと。
+          const idsDirect = await tx.$queryRawUnsafe<Array<{ ids: string[] }>>(
+            `SELECT app_shared_engineer_ids('${TENANT_A}'::uuid) AS ids`,
+          );
           // 🔴 `listSharedEngineers()` と同じ表・同じポリシー・同じ GUC。
           const visible = await tx.engineer.findMany({
             where: { id: { in: [ENGINEER_A_PARTNER, ENGINEER_A_PARTNER2] } },
             select: { id: true },
           });
-          return { planted: Number(planted[0]?.n ?? 0), shared: shared[0]?.shared, visible: visible.map((row) => row.id) };
+          return {
+            planted: Number(planted[0]?.n ?? 0),
+            shared: shared[0]?.shared,
+            idsDirect: idsDirect[0]?.ids,
+            visible: visible.map((row) => row.id),
+          };
         },
       );
       expect(result.planted).toBe(1); // 仕込みが空振りしていない（対照）
       expect(result.shared).toBe(false);
+      // 🔴 直接呼び出しでも、仕込んだ非共有エンジニアは混ざらず共有中の P1 のままである。
+      expect(result.idsDirect).toEqual([ENGINEER_A_PARTNER]);
       // 🔴 共有中の P1 は見え、非共有の P2 は一時表を仕込んでも見えない。
       expect(result.visible).toEqual([ENGINEER_A_PARTNER]);
     } finally {
