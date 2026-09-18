@@ -154,6 +154,8 @@ describe('スケジュール宣言（docs/05 §9.8 / §9.1）', () => {
       providerDailyQuota: 200,
       providerQuotaWarnRatio: 0.8,
       providerSentCounter: { record: async () => undefined, countLast24h: async () => 0 },
+      // T-12-17 ⑤: 接近の目印（表示専用）。
+      nearingMarker: { observe: async () => null },
       enqueueEmailDispatch: async () => undefined,
       reissueAccountMail: async () => 'SKIPPED',
       // 🔴 T-09-06 → T-12-12: `send.hold-release` の `Proposal` 側（同じ `attemptSeq` の再 enqueue 口と、`resolveTenantQuotas` に

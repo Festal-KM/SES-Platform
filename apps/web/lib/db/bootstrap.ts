@@ -28,6 +28,7 @@ import {
   type ConnectorImplementationKind,
   type EmailSender,
   type ObjectStore,
+  type ProviderQuotaCache,
   type ProviderQuotaNearingMarker,
   type ProviderSendCounter,
 } from '@ses/connectors';
@@ -45,6 +46,7 @@ import {
   createBullMqFailedJobsReader,
   createBullMqGateRunQueue,
   createBullMqSendProposalQueue,
+  createRedisProviderQuotaCache,
   createRedisProviderQuotaNearingMarker,
   createRedisProviderSendCounter,
   type BullMqFailedJobsReader,
@@ -192,6 +194,7 @@ let cachedSesEnv: {
 let cachedEmailConnectorKind: ConnectorImplementationKind | null = null;
 let cachedRedisUrl: string | null = null;
 let cachedProviderSentCounter: ProviderSendCounter | null = null;
+let cachedProviderQuotaCache: ProviderQuotaCache | null = null;
 let cachedNearingMarker: ProviderQuotaNearingMarker | null = null;
 let cachedFailedJobsReader: BullMqFailedJobsReader | null = null;
 
@@ -353,6 +356,7 @@ export function ensureDbConfigured(): void {
     mailDispatchStuckMinutes: env.MAIL_DISPATCH_STUCK_ALERT_MINUTES,
     scanStallMinutes: env.SCAN_STALL_ALERT_MINUTES,
     purgeGraceDays: env.TENANT_PURGE_GRACE_DAYS,
+    purgeRunStallMinutes: env.PURGE_RUN_STALL_ALERT_MINUTES,
     schedulerStaleHours: SCHEDULER_HEARTBEAT_STALE_HOURS,
     gateFailRateWindowHours: GATE_FAIL_RATE_WINDOW_HOURS,
     gateFailRateBaselineDays: GATE_FAIL_RATE_BASELINE_DAYS,
@@ -418,6 +422,12 @@ function nearingMarker(): ProviderQuotaNearingMarker {
   return cachedNearingMarker;
 }
 
+/** 🔴 T-12-17 ⑧: `getQuota()` の 60 秒キャッシュはプロセス横断（Redis `mail:provider:quota`。docs/05 §8.3-Q ③）。worker と同じキー。 */
+function providerQuotaCache(): ProviderQuotaCache {
+  cachedProviderQuotaCache ??= createRedisProviderQuotaCache(redisConnection()).cache;
+  return cachedProviderQuotaCache;
+}
+
 /**
  * 🔴 `getQuota()` だけに使う `EmailSender`（項目 13）。`createEmailSender` は `apps/worker/src/runtime.ts` と**同じファクトリ**であり、
  *    web と worker で別の実装が選ばれることは無い。`APP_ENV` を見ない（`cachedEmailConnectorKind` は起動時の解決結果）。
@@ -434,6 +444,7 @@ function quotaEmailSender(): EmailSender {
         defaultFromAddress: cachedSesEnv.defaultFromAddress,
         configurationSet: cachedSesEnv.configurationSet,
         sentCounter: providerSentCounter(),
+        quotaCache: providerQuotaCache(),
       },
     });
   }

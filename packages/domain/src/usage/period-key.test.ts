@@ -3,7 +3,7 @@
 //    前日の集計に落ち、`usage.gap-check`（docs/05 §9.8 / `F-026 AC-4`）が
 //    「欠測」と「1 日ずれ」を区別できなくなる。
 import { describe, expect, it } from 'vitest';
-import { usagePeriodKey } from './period-key.js';
+import { previousMonthPeriodKey, usagePeriodKey } from './period-key.js';
 
 describe('usagePeriodKey（docs/05 §3.8 / §9.8）', () => {
   it('DAY は Asia/Tokyo の暦日で YYYY-MM-DD を返す', () => {
@@ -25,6 +25,26 @@ describe('usagePeriodKey（docs/05 §3.8 / §9.8）', () => {
 
   it('不正な日時は例外にする（黙って現在時刻に落とさない）', () => {
     expect(() => usagePeriodKey('DAY', new Date('not-a-date'))).toThrow(RangeError);
+  });
+});
+
+describe('previousMonthPeriodKey（T-12-17 ⑩。`Date` を生成しない文字列の算術）', () => {
+  it.each([
+    ['2026-09', '2026-08'],
+    ['2026-01', '2025-12'],
+    ['2026-12', '2026-11'],
+    ['2000-01', '1999-12'],
+  ])('%s の前月は %s', (key, previous) => {
+    expect(previousMonthPeriodKey(key)).toBe(previous);
+  });
+
+  it('usagePeriodKey の月境界と整合する（JST 10/1 00:00 の前月キー = JST 9/30 23:59 のキー）', () => {
+    const firstOfOctober = usagePeriodKey('MONTH', new Date('2026-09-30T15:00:00.000Z'));
+    expect(previousMonthPeriodKey(firstOfOctober)).toBe(usagePeriodKey('MONTH', new Date('2026-09-30T14:59:59.999Z')));
+  });
+
+  it.each(['2026-9', '2026-09-01', '2026-13', '2026-00', 'not-a-key'])('%s は MONTH キーではない → RangeError', (key) => {
+    expect(() => previousMonthPeriodKey(key)).toThrow(RangeError);
   });
 });
 

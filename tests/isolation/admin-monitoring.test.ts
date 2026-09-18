@@ -102,6 +102,9 @@ const FINDING_GAP = '01930000-0000-7000-8000-000000001221';
 const PURGE_RUN_B_FAILED = '01930000-0000-7000-8000-000000001231';
 const PURGE_RUN_A_FAILED = '01930000-0000-7000-8000-000000001232';
 const PURGE_RUN_A_COMPLETED = '01930000-0000-7000-8000-000000001233';
+// T-12-17 ⑱: RUNNING の滞留（閾値 30 分超過）と、閾値内の RUNNING（載らない）。
+const PURGE_RUN_A_RUNNING_OVERDUE = '01930000-0000-7000-8000-000000001234';
+const PURGE_RUN_B_RUNNING_RECENT = '01930000-0000-7000-8000-000000001235';
 const DOMAIN_B = '01930000-0000-7000-8000-000000001241';
 const TENANT_CLOSING_PENDING = '01930000-0000-7000-8000-0000000000c3';
 const TENANT_CLOSING_UNDELIVERED = '01930000-0000-7000-8000-0000000000c4';
@@ -117,6 +120,7 @@ const THRESHOLDS = {
   mailDispatchStuckMinutes: 15,
   scanStallMinutes: 10,
   purgeGraceDays: 30,
+  purgeRunStallMinutes: 30,
   schedulerStaleHours: 24,
   gateFailRateWindowHours: 24,
   gateFailRateBaselineDays: 7,
@@ -386,7 +390,9 @@ beforeAll(async () => {
     INSERT INTO tenant_purge_runs (id, tenant_id, cause, status, started_at, completed_at, counts, failure_reason) VALUES
       (${PURGE_RUN_B_FAILED}::uuid, ${TENANT_B}::uuid, 'RETENTION', 'FAILED', ${daysAgo(1)}, NULL, '{}'::jsonb, ${FORBIDDEN.purgeFailureReason}),
       (${PURGE_RUN_A_FAILED}::uuid, ${TENANT_A}::uuid, 'RETENTION', 'FAILED', ${daysAgo(3)}, NULL, '{}'::jsonb, ${FORBIDDEN.purgeFailureReason}),
-      (${PURGE_RUN_A_COMPLETED}::uuid, ${TENANT_A}::uuid, 'RETENTION', 'COMPLETED', ${daysAgo(2)}, ${daysAgo(2)}, '{"engineerContacts": 3}'::jsonb, NULL)`;
+      (${PURGE_RUN_A_COMPLETED}::uuid, ${TENANT_A}::uuid, 'RETENTION', 'COMPLETED', ${daysAgo(2)}, ${daysAgo(2)}, '{"engineerContacts": 3}'::jsonb, NULL),
+      (${PURGE_RUN_A_RUNNING_OVERDUE}::uuid, ${TENANT_A}::uuid, 'RETENTION', 'RUNNING', ${minutesAgo(95)}, NULL, '{"engineerContacts": 7}'::jsonb, NULL),
+      (${PURGE_RUN_B_RUNNING_RECENT}::uuid, ${TENANT_B}::uuid, 'TENANT_PURGED', 'RUNNING', ${minutesAgo(5)}, NULL, '{}'::jsonb, NULL)`;
 
   // --- ⑤ 項目 11: A は未登録、B は PENDING（DKIM トークン等を仕込む） ---
   await superuser.$executeRaw`
@@ -606,6 +612,29 @@ describe('項目 14 / 15 / 16 / 7 / スケジューラ', () => {
     expect(purge.rows).toEqual([{ tenantId: TENANT_B, cause: 'RETENTION', failedCount: 1, lastFailedAt: expect.any(String) }]);
     expect(purge.total).toBe(1);
     expect(JSON.stringify(purge)).not.toContain(FORBIDDEN.purgeFailureReason);
+  });
+
+  it('🔴 T-12-17 ⑱ 項目 7: RUNNING の滞留（閾値 30 分超過）は RUNNING_OVERDUE の別区分に出て、FAILED の件数に加算されず、counts / failure_reason が応答に無い', async () => {
+    const view = await snapshot();
+    const purge = okOf(view, 'PURGE_JOB_FAILED');
+    // 失敗の表は従来どおり（A の COMPLETED 後の RUNNING は失敗に混ざらない）。
+    expect(purge.total).toBe(1);
+    expect(purge.rows.map((row) => row.tenantId)).toEqual([TENANT_B]);
+    // 別区分: A の RUNNING（95 分前）だけ。B の RUNNING（5 分前）は閾値内なので載らない。
+    expect(purge.runningOverdue.kind).toBe('RUNNING_OVERDUE');
+    expect(purge.runningOverdue.stallThresholdMinutes).toBe(30);
+    expect(purge.runningOverdue.total).toBe(1);
+    expect(purge.runningOverdue.rows).toEqual([
+      { tenantId: TENANT_A, cause: 'RETENTION', runningCount: 1, oldestStartedAt: expect.any(String), longestRunningMinutes: expect.any(Number) },
+    ]);
+    expect(purge.runningOverdue.rows[0]?.longestRunningMinutes).toBeGreaterThanOrEqual(95);
+    // 🔴 件数の内訳（counts）・失敗理由・完了時刻は応答に無い（完了の事実は API-A12 のみ）。
+    const json = JSON.stringify(purge);
+    expect(json).not.toContain('engineerContacts');
+    expect(json).not.toMatch(/counts|failureReason|failure_reason|completedAt/);
+    expect(json).not.toContain(FORBIDDEN.purgeFailureReason);
+    // 項目 15（予告待ち）とは混ざらない（A は CLOSING ではない）。
+    expect(okOf(view, 'PURGE_NOTICE_PENDING').rows.map((row) => row.tenantId)).not.toContain(TENANT_A);
   });
 
   it('⑨ 項目 16: QUEUED の滞留は閾値（15 分）超過の 1 件だけ。失敗ジョブ数には加算されない', async () => {

@@ -25,7 +25,12 @@
 // ⑤ 🔴 **再 enqueue されたジョブは §8.3-Q / §10.2 の判定を最初から通る**（`held_at` / 保留列を NULL に戻す）。
 //    保留を経たものだけが判定を免れる経路を作らない。
 // ⑥ 🔴 `Proposal` の `GATE_STALE` は対象外（§10.5。`listHeldProposalSends` が返さない）。人間が `S-021` / `S-022` から選ぶ。
-import type { OperationalMailDispatch, EmailSender, ProviderSendCounter } from '@ses/connectors';
+import type {
+  OperationalMailDispatch,
+  EmailSender,
+  ProviderQuotaNearingMarker,
+  ProviderSendCounter,
+} from '@ses/connectors';
 import { isOperationalMailRecipientClass } from '@ses/connectors';
 import {
   listHeldEmailDispatches,
@@ -105,6 +110,12 @@ export type SendHoldReleaseDeps = ProposalHoldReleaseDeps & {
   readonly providerQuotaWarnRatio: number;
   /** 🔴 `SesEmailSender` に渡したものと同一のインスタンス（`email-send.ts` と同じ規律）。 */
   readonly providerSentCounter: ProviderSendCounter;
+  /**
+   * 🔴 T-12-17 ⑤: 接近（`warning`）の目印 `mail:provider:nearingSince`（docs/05 §16.5 項目 13 ③）。**表示専用の揮発値**で、
+   *    毎 10 分の本ジョブが `observe()` することで、誰も `A-005` を開かなくても「最初に接近を観測した時刻」が
+   *    TTL 24h で消えずに維持される。判定（`decideProviderQuota` / `isProviderQuotaWarning`）には使わない。
+   */
+  readonly nearingMarker: ProviderQuotaNearingMarker;
   /**
    * 🔴 T-09-06 → T-12-12: 上書きが無いときの上限（`packages/config`）。`RATE_LIMIT` の保留が解消したか
    *    （暦日が変わった / 上限が上がった）の判定は `resolveTenantQuotas(ctx, { now, defaults })` の `emailDailyLimit`
@@ -251,6 +262,15 @@ export function createSendHoldReleaseHandler(deps: SendHoldReleaseDeps): SendHol
       }
     }
 
+    const warning = isProviderQuotaWarning(usage, deps.providerQuotaWarnRatio);
+    // ⑤ 🔴 接近の目印を維持する（T-12-17 ⑤）。表示専用なので、目印を書けなくても復帰の結果は変えない
+    //    （`A-005` は `nearingSince: null` で項目 13 を成立させる。`mail-provider-quota.ts` と同じ扱い）。
+    try {
+      await deps.nearingMarker.observe(warning, now);
+    } catch {
+      // 表示専用の揮発値。失敗はこのジョブの失敗にしない。
+    }
+
     return {
       scanned: rows.length,
       domainReleased,
@@ -259,7 +279,7 @@ export function createSendHoldReleaseHandler(deps: SendHoldReleaseDeps): SendHol
       sendHoldsReleased,
       sendHoldsBlocked,
       headroom,
-      warning: isProviderQuotaWarning(usage, deps.providerQuotaWarnRatio),
+      warning,
     };
   };
 }

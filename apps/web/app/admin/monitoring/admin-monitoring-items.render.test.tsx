@@ -37,7 +37,7 @@ const OK_PAYLOADS: MonitoringPayloadByKind = {
   SCAN_FAILED: { rows: [], total: 0, scanningStalled: { count: 0, oldestUploadedAt: null }, scanStallThresholdMinutes: 10 },
   GATE_FAIL_RATE: { rows: [], recent: EMPTY_RATE, baseline: EMPTY_RATE, windowHours: 24, baselineDays: 7 },
   USAGE_MEASUREMENT: { countsByKind: { GAP_MISSING: 0, GAP_MISMATCH: 0, STORAGE_DIVERGENCE: 0 }, items: [] },
-  PURGE_JOB_FAILED: { rows: [], total: 0 },
+  PURGE_JOB_FAILED: { rows: [], total: 0, runningOverdue: { kind: 'RUNNING_OVERDUE', rows: [], total: 0, stallThresholdMinutes: 30 } },
   SENDING_DOMAIN_UNVERIFIED: { items: [], countsByStatus: { NOT_REGISTERED: 0, REGISTERED: 0, PENDING: 0, FAILED: 0, REVOKED: 0 }, total: 0 },
   GATE_STALL: {
     stallThresholdMinutes: 30,
@@ -128,6 +128,68 @@ describe('① 全項目 0 件（docs/04 §A-005 空状態）', () => {
       expect(severityOf(html, kind), kind).toBe('ok');
       expect(badgeVariantOf(html, kind), kind).toBe('success');
     }
+  });
+});
+
+describe('🔴 T-12-17 ⑱ 項目 7: RUNNING の滞留は FAILED とは別区分で出る（完了の事実は出さない）', () => {
+  it('RUNNING_OVERDUE の行だけ（FAILED 0 件）→ 失敗の表は「0 件」のまま、別区分の表に件数・原因・開始・経過が出て、重さは hold', () => {
+    const html = render(
+      snapshot({
+        PURGE_JOB_FAILED: {
+          kind: 'PURGE_JOB_FAILED',
+          ok: true,
+          rows: [],
+          total: 0,
+          runningOverdue: {
+            kind: 'RUNNING_OVERDUE',
+            rows: [{ tenantId: TENANT_A, cause: 'RETENTION', runningCount: 1, oldestStartedAt: NOW, longestRunningMinutes: 95 }],
+            total: 1,
+            stallThresholdMinutes: 30,
+          },
+        },
+      }),
+    );
+    expect(html).toContain('data-testid="admin-monitoring-item-PURGE_JOB_FAILED-empty"');
+    expect(html).toContain('data-testid="admin-monitoring-purge-running-overdue-table"');
+    expect(html).toContain(`data-testid="admin-monitoring-purge-running-overdue-row-${TENANT_A}"`);
+    expect(html).toContain('実行中のまま閾値を超えた削除ジョブ');
+    expect(html).toContain('閾値: 30 分');
+    expect(html).toContain('95 分');
+    expect(html).toContain('失敗ではありません');
+    expect(html).not.toContain('data-testid="admin-monitoring-purge-running-overdue-empty"');
+    expect(severityOf(html, 'PURGE_JOB_FAILED')).toBe('hold');
+    expect(html).not.toContain('data-testid="admin-monitoring-all-clear"');
+    // 🔴 完了の事実・件数の内訳・失敗理由に相当する語が無い。
+    expect(html).not.toContain('削除完了（');
+    expect(html).not.toContain('engineerContacts');
+  });
+
+  it('FAILED と RUNNING_OVERDUE が両方あるとき、失敗の表と別区分の表が別々に出て、失敗の重さ（failure）が勝つ', () => {
+    const html = render(
+      snapshot({
+        PURGE_JOB_FAILED: {
+          kind: 'PURGE_JOB_FAILED',
+          ok: true,
+          rows: [{ tenantId: TENANT_B, cause: 'RETENTION', failedCount: 2, lastFailedAt: NOW }],
+          total: 2,
+          runningOverdue: {
+            kind: 'RUNNING_OVERDUE',
+            rows: [{ tenantId: TENANT_A, cause: 'TENANT_PURGED', runningCount: 1, oldestStartedAt: NOW, longestRunningMinutes: 40 }],
+            total: 1,
+            stallThresholdMinutes: 30,
+          },
+        },
+      }),
+    );
+    expect(html).not.toContain('data-testid="admin-monitoring-item-PURGE_JOB_FAILED-empty"');
+    expect(html).toContain('data-testid="admin-monitoring-purge-running-overdue-table"');
+    expect(severityOf(html, 'PURGE_JOB_FAILED')).toBe('failure');
+  });
+
+  it('0 件のときは別区分も「0 件」と明示する', () => {
+    const html = render(snapshot());
+    expect(html).toContain('data-testid="admin-monitoring-purge-running-overdue-empty"');
+    expect(html).toContain('実行中のまま閾値を超えた削除ジョブ 0 件');
   });
 });
 
@@ -273,6 +335,21 @@ describe('④ { ok: false } は項目単位で「取得できませんでした�
     expect(html).toContain('data-testid="admin-monitoring-item-SEND_HOLD-empty"');
     expect(html).toContain('data-testid="admin-monitoring-provider-spend-summary"');
     expect(html).not.toContain('data-testid="admin-monitoring-all-clear"');
+  });
+
+  it('🔴 T-12-17 ⑦: 項目 13 の DB_READ_FAILED と PROVIDER_READ_FAILED は別の語で出る（「上限を確認できていません」とも別）', () => {
+    const dbFailed = render(
+      snapshot({ MAIL_PROVIDER_QUOTA: { kind: 'MAIL_PROVIDER_QUOTA', ok: false, errorKind: 'DB_READ_FAILED' } }),
+    );
+    const section = (page: string) => {
+      const start = page.indexOf('data-testid="admin-monitoring-item-MAIL_PROVIDER_QUOTA"');
+      return page.slice(start, page.indexOf('</section>', start));
+    };
+    expect(section(dbFailed)).toContain('データベースの読み取りに失敗しました。');
+    expect(section(dbFailed)).not.toContain('送信基盤のカウンタ（Redis）を読めませんでした。');
+    expect(section(dbFailed)).not.toContain('上限を確認できていません');
+    expect(section(html)).toContain('送信基盤のカウンタ（Redis）を読めませんでした。');
+    expect(section(html)).not.toContain('データベースの読み取りに失敗しました。');
   });
 });
 

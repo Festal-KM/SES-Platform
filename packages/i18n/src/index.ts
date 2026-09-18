@@ -497,6 +497,14 @@ const ja = {
   'admin.monitoring.item.PURGE_JOB_FAILED.cause.TENANT_PURGED': '解約に伴う削除',
   'admin.monitoring.item.PURGE_JOB_FAILED.cause.RETENTION': '保持期間の削除',
   'admin.monitoring.item.PURGE_JOB_FAILED.note': 'この画面が示すのは失敗だけです。削除完了の確認はテナント詳細の削除状況（A-010）で行います。',
+  // T-12-17 ⑱: `RUNNING` の滞留（`FAILED` とは別区分）。完了の事実は出さない。
+  'admin.monitoring.item.PURGE_JOB_FAILED.runningOverdue.title': '実行中のまま閾値を超えた削除ジョブ',
+  'admin.monitoring.item.PURGE_JOB_FAILED.runningOverdue.empty': '実行中のまま閾値を超えた削除ジョブ 0 件',
+  'admin.monitoring.item.PURGE_JOB_FAILED.runningOverdue.note':
+    '失敗ではありません。削除は進んだが完了の記録に失敗した疑いがあります。完了しているかは A-010 で確認してください。',
+  'admin.monitoring.column.runningCount': '実行中の件数',
+  'admin.monitoring.column.oldestStartedAt': '最も古い開始',
+  'admin.monitoring.column.longestRunning': '最長の経過',
   // 項目 11
   'admin.monitoring.item.SENDING_DOMAIN_UNVERIFIED.title': '11. 送信ドメインが未検証・失効のテナント',
   'admin.monitoring.item.SENDING_DOMAIN_UNVERIFIED.empty': '未検証・失効 0 件',

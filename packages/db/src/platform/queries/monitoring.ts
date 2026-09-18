@@ -376,9 +376,34 @@ export type PurgeJobFailureRow = {
   readonly lastFailedAt: Date | null;
 };
 
+/** 🔴 T-12-17 ⑱: `RUNNING` の滞留（`FAILED` とは別区分）の 1 行。件数・状態・時刻だけ（`counts` / `failure_reason` は読まない）。 */
+export type PurgeRunOverdueRow = {
+  readonly tenantId: string;
+  readonly cause: TenantPurgeCause;
+  readonly runningCount: number;
+  /** 最も古い `started_at`。 */
+  readonly oldestStartedAt: Date | null;
+  readonly longestRunningMinutes: number;
+};
+
+export type PurgeRunOverdue = {
+  /** 区分の名前（`FAILED` と混ぜないための目印。`A-005` 項目 12 の `RUNNING_OVERDUE` と同じ語）。 */
+  readonly kind: 'RUNNING_OVERDUE';
+  readonly rows: readonly PurgeRunOverdueRow[];
+  readonly total: number;
+  readonly stallThresholdMinutes: number;
+};
+
 export type PurgeJobFailures = {
   readonly rows: readonly PurgeJobFailureRow[];
+  /** 🔴 `FAILED` の件数だけ（`runningOverdue` を加算しない）。 */
   readonly total: number;
+  /**
+   * 🔴 T-12-17 ⑱: `status='RUNNING'` が `PURGE_RUN_STALL_ALERT_MINUTES` を超えて残る行（SP-10 T-10-09 の「④成功 → ⑤失敗」=
+   *    削除は済んだが完了の書き込みに失敗した疑い）。**同じ項目の別区分**であり `FAILED` の件数に加算しない。
+   *    完了の事実は引き続き返さない（API-A12 だけ）。項目 15（予告待ち）とも混ぜない。
+   */
+  readonly runningOverdue: PurgeRunOverdue;
 };
 
 export type PurgeRunGroup = {
@@ -395,6 +420,10 @@ export type PurgeRunGroup = {
 export function summarizePurgeJobFailures(input: {
   readonly failed: readonly PurgeRunGroup[];
   readonly completed: readonly PurgeRunGroup[];
+  /** `status='RUNNING' AND started_at <= now − 閾値` の `GROUP BY tenant_id, cause`（`latestAt` = 最も古い `started_at`）。 */
+  readonly runningOverdue: readonly PurgeRunGroup[];
+  readonly now: Date;
+  readonly stallThresholdMinutes: number;
 }): PurgeJobFailures {
   const completedAt = new Map(input.completed.map((group) => [`${group.tenantId}/${group.cause}`, group.latestAt]));
   const rows: PurgeJobFailureRow[] = [];
@@ -414,13 +443,39 @@ export function summarizePurgeJobFailures(input: {
     if (ta !== tb) return ta - tb;
     return a.tenantId < b.tenantId ? -1 : a.tenantId > b.tenantId ? 1 : 0;
   });
-  return { rows: rows.slice(0, ROWS_LIMIT), total: rows.reduce((sum, row) => sum + row.failedCount, 0) };
+  // 🔴 `RUNNING` の滞留は別区分。`FAILED` の後に `COMPLETED` があっても、いま `RUNNING` で残っている行は「未完了」として出す。
+  const overdueRows: PurgeRunOverdueRow[] = input.runningOverdue
+    .map((group) => ({
+      tenantId: group.tenantId,
+      cause: group.cause as TenantPurgeCause,
+      runningCount: group.count,
+      oldestStartedAt: group.latestAt,
+      longestRunningMinutes: group.latestAt === null ? 0 : wholeMinutesBetween(group.latestAt, input.now),
+    }))
+    .sort((a, b) => {
+      const ta = a.oldestStartedAt?.getTime() ?? 0;
+      const tb = b.oldestStartedAt?.getTime() ?? 0;
+      if (ta !== tb) return ta - tb;
+      return a.tenantId < b.tenantId ? -1 : a.tenantId > b.tenantId ? 1 : 0;
+    });
+  return {
+    rows: rows.slice(0, ROWS_LIMIT),
+    total: rows.reduce((sum, row) => sum + row.failedCount, 0),
+    runningOverdue: {
+      kind: 'RUNNING_OVERDUE',
+      rows: overdueRows.slice(0, ROWS_LIMIT),
+      total: overdueRows.reduce((sum, row) => sum + row.runningCount, 0),
+      stallThresholdMinutes: input.stallThresholdMinutes,
+    },
+  };
 }
 
 export async function readPurgeJobFailures(
   ctx: AuthenticatedPlatformCtx,
-  meta: MonitoringRequestMeta,
+  meta: MonitoringRequestMeta & { readonly stallThresholdMinutes: number },
 ): Promise<PurgeJobFailures> {
+  assertPositiveInt('stallThresholdMinutes', meta.stallThresholdMinutes);
+  const cutoff = new Date(meta.now.getTime() - meta.stallThresholdMinutes * MILLISECONDS_PER_MINUTE);
   return withPlatformRead(monitoringOp(ctx, 'PURGE_JOB_FAILED', meta.ipAddress), async (db) => {
     const failed = await db.tenantPurgeRun.groupBy({
       by: ['tenantId', 'cause'],
@@ -433,7 +488,22 @@ export async function readPurgeJobFailures(
       where: { status: 'COMPLETED' },
       _max: { completedAt: true },
     });
+    // 🔴 T-12-17 ⑱: `RUNNING` の滞留（閾値超過）。`groupBy` だけで触れ、`counts` / `failure_reason` は読まない。
+    const runningOverdue = await db.tenantPurgeRun.groupBy({
+      by: ['tenantId', 'cause'],
+      where: { status: 'RUNNING', startedAt: { lte: cutoff } },
+      _count: { _all: true },
+      _min: { startedAt: true },
+    });
     return summarizePurgeJobFailures({
+      now: meta.now,
+      stallThresholdMinutes: meta.stallThresholdMinutes,
+      runningOverdue: runningOverdue.map((group) => ({
+        tenantId: group.tenantId,
+        cause: group.cause,
+        count: group._count._all,
+        latestAt: group._min.startedAt,
+      })),
       failed: failed.map((group) => ({
         tenantId: group.tenantId,
         cause: group.cause,

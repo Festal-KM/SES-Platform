@@ -196,6 +196,8 @@ export type {
   MonitoringRequestMeta,
   PurgeJobFailureRow,
   PurgeJobFailures,
+  PurgeRunOverdue,
+  PurgeRunOverdueRow,
   PurgeNoticeCause,
   PurgeNoticePending,
   PurgeNoticePendingRow,

@@ -34,6 +34,7 @@ import { DelayedError, Queue, Worker, type Job } from 'bullmq';
 import { Redis } from 'ioredis';
 import { RedisProviderSendCounter, type ProviderSendCounter } from './email/ses/counter.js';
 import { RedisProviderQuotaNearingMarker, type ProviderQuotaNearingMarker } from './email/ses/nearing-marker.js';
+import { RedisProviderQuotaCache, type ProviderQuotaCache } from './email/ses/quota-cache.js';
 import {
   exportGenerateJobId,
   gateRunJobId,
@@ -604,71 +605,136 @@ function isGateRunJobData(value: unknown): value is Pick<GateRunJob, 'tenantId' 
   );
 }
 
-function failedAtOf(job: Job): Date {
+/** `gate.run` の写しに要る `Job` の部分（payload の 3 つの ID と失敗時刻）。 */
+type FailedGateRunJob = Pick<Job, 'id' | 'data' | 'finishedOn' | 'timestamp'>;
+
+function failedAtOf(job: FailedGateRunJob): Date {
   return new Date(job.finishedOn ?? job.timestamp);
+}
+
+/**
+ * `readFailedJobsSnapshot` が触る Redis / `Queue` の最小集合。🔴 T-12-17 ⑥: **`gate.run` 以外のキューでは `Job` ハッシュを
+ * 取得する口が無い**（`latestFailedAt` は failed ZSET のスコアだけを読む）。`account.mail` の failed ジョブの `data`
+ * （平文トークン）がプロセスのメモリに乗る経路を型で塞ぐ。
+ */
+export interface FailedJobsSource {
+  readonly queueNames: readonly QueueName[];
+  failedCount(name: QueueName): Promise<number>;
+  /**
+   * 最も新しい失敗の時刻。failed ZSET の先頭要素のスコア（BullMQ は `ZADD failed <finishedOn> <jobId>` で積むため
+   * `Job.finishedOn` と同じ値）。空なら `null`。🔴 `HGETALL`（`Job` ハッシュ）を発行しない。
+   */
+  latestFailedAt(name: QueueName): Promise<Date | null>;
+  /** 🔴 `gate.run` の failed ジョブだけを読む（payload の 3 つの ID が要る唯一のキュー）。 */
+  gateRunFailed(limit: number): Promise<readonly FailedGateRunJob[]>;
+}
+
+/** `bullMqFailedJobsSource` が `Queue` から使う部分。 */
+export type FailedJobsQueue = Pick<Queue, 'getFailedCount' | 'getFailed' | 'toKey'>;
+
+/** `bullMqFailedJobsSource` が Redis から使う部分（ioredis と構造的に一致。🔴 `hgetall` を含めない）。 */
+export interface FailedJobsRedis {
+  zrevrange(key: string, start: number, stop: number, withscores: 'WITHSCORES'): Promise<string[]>;
+}
+
+/**
+ * BullMQ の `Queue` と Redis から `FailedJobsSource` を組み立てる。🔴 `gate.run` 以外で呼ぶのは `getFailedCount()`（ZCARD）と
+ * `zrevrange(<failed>, 0, 0, 'WITHSCORES')` だけであり、`getFailed()`（`Job` ハッシュの `HGETALL`）には到達しない。
+ */
+export function bullMqFailedJobsSource(
+  redis: FailedJobsRedis,
+  resolve: (name: QueueName) => FailedJobsQueue,
+  queueNames: readonly QueueName[] = Object.keys(QUEUE_DEFINITIONS) as QueueName[],
+): FailedJobsSource {
+  return {
+    queueNames,
+    failedCount: (name) => resolve(name).getFailedCount(),
+    async latestFailedAt(name) {
+      const [, score] = await redis.zrevrange(resolve(name).toKey('failed'), 0, 0, 'WITHSCORES');
+      if (score === undefined) return null;
+      const at = new Date(Number(score));
+      // 🔴 壊れたスコアは「時刻不明」にする（例外にして項目 3 / 12 を止めない。件数は `failedCount` が別に持つ）。
+      return Number.isNaN(at.getTime()) ? null : at;
+    },
+    gateRunFailed: (limit) => resolve(GATE_RUN_JOB).getFailed(0, limit - 1),
+  };
 }
 
 /**
  * 🔴 全キューの failed セットを**読むだけ**（`A-005` 項目 3「失敗ジョブ数」/ 項目 12 の `JOB_FAILED` の検知元）。
  *
- * - 件数は `getFailedCount()`、最終失敗時刻は `getFailed(0, 0)`（failed セットは失敗時刻の降順）の先頭から取る
+ * - 件数は `failedCount`（`getFailedCount()` = ZCARD）、最終失敗時刻は `latestFailedAt`（failed ZSET の先頭のスコア）
+ *   🔴 T-12-17 ⑥: 旧実装は全キューで `getFailed(0, 0)` を呼び、`Job` ハッシュ全体（`account.mail` の `data.token` を含む）を
+ *   Redis から取得してから時刻だけを写していた。応答・ログには出ないが、平文トークンがプロセスのメモリに乗る経路であり、
+ *   スコアだけを読む形に寄せた（`FailedJobsSource` の型が `gate.run` 以外の `Job` 取得を持たない）
  * - `gate.run` だけは payload の 3 つの ID を写す（`listGateStalls` が対象ごとに区別するため）。
  *   🔴 **他のキューの payload は読まない** —— `account.mail` の payload には平文トークンが載る（docs/05 §9.4）。
  *   件数と時刻以外を管理平面へ運ばない（`BR-40` / `CLAUDE.md` §3.4「トークンをログ・エラーに出さない」）
  * - 🔴 `gate.run` の payload が期待の形でない行は**黙って捨てず落とす**（Redis の中身が壊れている）
- * - `Queue` は最初の呼び出しまで作らない（`createBullMqGateRunQueue` と同じ。起動時 DI が Redis へ繋ぎにいかない）
  * - 読み取りに失敗したら throw する（呼び出し側が「失敗記録を照合できていません」に落とす。0 件で埋めない）
+ */
+export async function readFailedJobsSnapshot(source: FailedJobsSource): Promise<FailedJobsSnapshot> {
+  const byQueue: FailedJobsByQueue[] = [];
+  let gateRun: FailedGateRunJobRecord[] = [];
+  let gateRunTruncated = false;
+  for (const name of source.queueNames) {
+    const count = await source.failedCount(name);
+    const lastFailedAt = count > 0 ? await source.latestFailedAt(name) : null;
+    byQueue.push({ queueName: name, count, lastFailedAt });
+    if (name === GATE_RUN_JOB && count > 0) {
+      const jobs = await source.gateRunFailed(FAILED_GATE_RUN_READ_LIMIT);
+      gateRunTruncated = count > jobs.length;
+      gateRun = jobs.map((job) => {
+        if (!isGateRunJobData(job.data)) {
+          throw new Error(
+            `${GATE_RUN_JOB} の failed ジョブ ${String(job.id)} の payload が GateRunJob の形ではありません（Redis の中身を確認してください）。`,
+          );
+        }
+        return {
+          tenantId: job.data.tenantId,
+          targetType: job.data.targetType,
+          targetId: job.data.targetId,
+          failedAt: failedAtOf(job),
+        };
+      });
+    }
+  }
+  return {
+    byQueue,
+    total: byQueue.reduce((sum, entry) => sum + entry.count, 0),
+    gateRun,
+    gateRunTruncated,
+  };
+}
+
+/**
+ * `readFailedJobsSnapshot` を BullMQ / Redis に結線した読み取り専用の口。
+ *
+ * - `Queue` は最初の呼び出しまで作らない（`createBullMqGateRunQueue` と同じ。起動時 DI が Redis へ繋ぎにいかない）
+ * - 🔴 `Job` / `Queue` を外に出さない（`retry()` / `remove()` / `add()` に到達できる形を持たない）
  */
 export function createBullMqFailedJobsReader(connection: BullMqConnection): BullMqFailedJobsReader {
   let client: Redis | null = null;
   const queues = new Map<QueueName, Queue>();
-  const resolve = (name: QueueName): Queue => {
+  const resolveClient = (): Redis => {
     client ??= createClient(connection);
+    return client;
+  };
+  const resolve = (name: QueueName): Queue => {
     let queue = queues.get(name);
     if (queue === undefined) {
-      queue = createQueue(name, client);
+      queue = createQueue(name, resolveClient());
       queues.set(name, queue);
     }
     return queue;
   };
-  const names = Object.keys(QUEUE_DEFINITIONS) as QueueName[];
+  const redis: FailedJobsRedis = {
+    zrevrange: (key, start, stop, withscores) => resolveClient().zrevrange(key, start, stop, withscores),
+  };
+  const source = bullMqFailedJobsSource(redis, resolve);
 
   return {
-    async list(): Promise<FailedJobsSnapshot> {
-      const byQueue: FailedJobsByQueue[] = [];
-      let gateRun: FailedGateRunJobRecord[] = [];
-      let gateRunTruncated = false;
-      for (const name of names) {
-        const queue = resolve(name);
-        const count = await queue.getFailedCount();
-        const latest = count > 0 ? await queue.getFailed(0, 0) : [];
-        const lastFailedAt = latest[0] === undefined ? null : failedAtOf(latest[0]);
-        byQueue.push({ queueName: name, count, lastFailedAt });
-        if (name === GATE_RUN_JOB && count > 0) {
-          const jobs = await queue.getFailed(0, FAILED_GATE_RUN_READ_LIMIT - 1);
-          gateRunTruncated = count > jobs.length;
-          gateRun = jobs.map((job) => {
-            if (!isGateRunJobData(job.data)) {
-              throw new Error(
-                `${GATE_RUN_JOB} の failed ジョブ ${String(job.id)} の payload が GateRunJob の形ではありません（Redis の中身を確認してください）。`,
-              );
-            }
-            return {
-              tenantId: job.data.tenantId,
-              targetType: job.data.targetType,
-              targetId: job.data.targetId,
-              failedAt: failedAtOf(job),
-            };
-          });
-        }
-      }
-      return {
-        byQueue,
-        total: byQueue.reduce((sum, entry) => sum + entry.count, 0),
-        gateRun,
-        gateRunTruncated,
-      };
-    },
+    list: () => readFailedJobsSnapshot(source),
     async close(): Promise<void> {
       for (const queue of queues.values()) await queue.close();
       queues.clear();
@@ -689,6 +755,24 @@ export function createRedisProviderQuotaNearingMarker(connection: BullMqConnecti
   const client = createClient(connection);
   return {
     marker: new RedisProviderQuotaNearingMarker(client),
+    async close(): Promise<void> {
+      await client.quit();
+    },
+  };
+}
+
+/**
+ * 🔴 T-12-17 ⑧: `getQuota()`（SES `GetAccount`）の **60 秒キャッシュ**（docs/05 §8.3-Q ③「Redis に 60 秒キャッシュ」）の実体化。
+ *    web / worker のどちらの `createEmailSender` にも渡す（省略時のプロセス内キャッシュはプロセス数だけ `GetAccount` を増やし、
+ *    1 req/s の上限に当たる）。TTL は `SES_QUOTA_CACHE_TTL_MS`（60 秒）のまま。Redis クライアントを作ってよいのはこのファイルだけ。
+ */
+export function createRedisProviderQuotaCache(connection: BullMqConnection): {
+  readonly cache: ProviderQuotaCache;
+  close(): Promise<void>;
+} {
+  const client = createClient(connection);
+  return {
+    cache: new RedisProviderQuotaCache(client),
     async close(): Promise<void> {
       await client.quit();
     },

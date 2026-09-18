@@ -2,7 +2,7 @@
 // 🔴 API-A8 の「項目ごとに独立して返す」（docs/05 §6.9 / docs/04 §A-005）。T-11-04。
 //    1 項目の材料が throw しても他の項目は返り、失敗した項目は `{ ok: false, errorKind }`（0 件で埋めない）。
 import { describe, expect, it, vi } from 'vitest';
-import { buildMonitoringSnapshot, type MonitoringReader, type MonitoringReaders } from './snapshot';
+import { buildMonitoringSnapshot, MonitoringReadError, type MonitoringReader, type MonitoringReaders } from './snapshot';
 import { MONITORING_KINDS, type MonitoringKind, type MonitoringPayloadByKind } from './view';
 
 const NOW = new Date('2026-09-16T09:00:00.000Z');
@@ -17,7 +17,7 @@ const PAYLOADS: MonitoringPayloadByKind = {
   SCAN_FAILED: { rows: [], total: 0, scanningStalled: { count: 0, oldestUploadedAt: null }, scanStallThresholdMinutes: 10 },
   GATE_FAIL_RATE: { rows: [], recent: EMPTY_RATE, baseline: EMPTY_RATE, windowHours: 24, baselineDays: 7 },
   USAGE_MEASUREMENT: { countsByKind: { GAP_MISSING: 0, GAP_MISMATCH: 0, STORAGE_DIVERGENCE: 0 }, items: [] },
-  PURGE_JOB_FAILED: { rows: [], total: 0 },
+  PURGE_JOB_FAILED: { rows: [], total: 0, runningOverdue: { kind: 'RUNNING_OVERDUE', rows: [], total: 0, stallThresholdMinutes: 30 } },
   SENDING_DOMAIN_UNVERIFIED: {
     items: [],
     countsByStatus: { NOT_REGISTERED: 0, REGISTERED: 0, PENDING: 0, FAILED: 0, REVOKED: 0 },
@@ -118,6 +118,24 @@ describe('buildMonitoringSnapshot（項目ごとに独立。docs/04 §A-005）',
     expect(byKind.get('MAIL_PROVIDER_QUOTA')).toMatchObject({ ok: false, errorKind: 'PROVIDER_READ_FAILED' });
     expect(byKind.get('SEND_HOLD')).toMatchObject({ ok: false, errorKind: 'DB_READ_FAILED' });
     expect(byKind.get('PROVIDER_SPEND')).toMatchObject({ ok: true, level: 'BELOW' });
+  });
+
+  it('🔴 T-12-17 ⑦: MonitoringReadError は reader の既定を上書きし、原因（cause）が sink に流れる', async () => {
+    const onFailure = vi.fn();
+    const cause = new Error('ECONNREFUSED postgres');
+    const reader: MonitoringReader<'MAIL_PROVIDER_QUOTA'> = {
+      errorKind: 'PROVIDER_READ_FAILED',
+      read: async () => {
+        throw new MonitoringReadError('DB_READ_FAILED', cause);
+      },
+    };
+    const snapshot = await buildMonitoringSnapshot(readers({ MAIL_PROVIDER_QUOTA: reader }), NOW, onFailure);
+    expect(snapshot.items.find((item) => item.kind === 'MAIL_PROVIDER_QUOTA')).toEqual({
+      kind: 'MAIL_PROVIDER_QUOTA',
+      ok: false,
+      errorKind: 'DB_READ_FAILED',
+    });
+    expect(onFailure).toHaveBeenCalledWith('MAIL_PROVIDER_QUOTA', 'DB_READ_FAILED', cause);
   });
 
   it('成功した項目は kind / ok と材料のキーを持つ（材料のキーを落とさない）', async () => {

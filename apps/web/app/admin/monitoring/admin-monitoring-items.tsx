@@ -39,6 +39,8 @@ const SECTION_HEAD_CLASSES = 'mb-2 flex flex-wrap items-center justify-between g
 const TITLE_CLASSES = 'text-base font-bold text-slate-900';
 const SUMMARY_CLASSES = 'mb-2 text-sm text-slate-800';
 const NOTE_CLASSES = 'mt-3 text-xs text-slate-600';
+/** 項目の中の区分見出し（T-12-17 ⑱。項目 7 の `RUNNING` 滞留）。 */
+const SUBTITLE_CLASSES = 'mt-4 mb-2 text-sm font-bold text-slate-900';
 const EMPTY_CLASSES = 'text-sm text-slate-600';
 const LINK_CLASSES = 'text-slate-700 underline-offset-2 hover:underline';
 /** 折り返して全文を出す（監視画面では切り詰めない。docs/04 §5-8 `A-005`）。 */
@@ -107,7 +109,20 @@ export type AdminMonitoringMessages = {
   };
   readonly gateFailRate: { readonly recent: string; readonly baseline: string; readonly noRuns: string; readonly spike: string; readonly note: string };
   readonly usageMeasurement: { readonly empty: string; readonly kind: Readonly<Record<UsageMeasurementFindingKind, string>>; readonly note: string };
-  readonly purgeJobFailed: { readonly empty: string; readonly cause: Readonly<Record<string, string>>; readonly note: string };
+  readonly purgeJobFailed: {
+    readonly empty: string;
+    readonly cause: Readonly<Record<string, string>>;
+    readonly note: string;
+    /** T-12-17 ⑱: `RUNNING` の滞留（別区分）。 */
+    readonly runningOverdue: {
+      readonly title: string;
+      readonly empty: string;
+      readonly note: string;
+      readonly runningCount: string;
+      readonly oldestStartedAt: string;
+      readonly longestRunning: string;
+    };
+  };
   readonly sendingDomain: {
     readonly empty: string;
     readonly status: Readonly<Record<SendingDomainStatusView, string>>;
@@ -476,6 +491,39 @@ function Body({ item, messages }: { readonly item: MonitoringItemView; readonly 
             </Table>
           )}
           <p className={NOTE_CLASSES}>{messages.purgeJobFailed.note}</p>
+          {/* 🔴 T-12-17 ⑱: `RUNNING` の滞留は同じ項目の**別区分**（`FAILED` の表・件数に混ぜない）。完了の事実は出さない。 */}
+          <h3 className={SUBTITLE_CLASSES} data-testid="admin-monitoring-purge-running-overdue-title">
+            {messages.purgeJobFailed.runningOverdue.title}（{messages.threshold}: {item.runningOverdue.stallThresholdMinutes} {messages.unitMinutes}）
+          </h3>
+          {item.runningOverdue.total === 0 ? (
+            <p className={SUMMARY_CLASSES} data-testid="admin-monitoring-purge-running-overdue-empty">
+              {messages.purgeJobFailed.runningOverdue.empty}
+            </p>
+          ) : (
+            <Table data-testid="admin-monitoring-purge-running-overdue-table">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{c.tenant}</TableHead>
+                  <TableHead>{c.cause}</TableHead>
+                  <TableHead>{messages.purgeJobFailed.runningOverdue.runningCount}</TableHead>
+                  <TableHead>{messages.purgeJobFailed.runningOverdue.oldestStartedAt}</TableHead>
+                  <TableHead>{messages.purgeJobFailed.runningOverdue.longestRunning}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {item.runningOverdue.rows.map((row) => (
+                  <TableRow key={`${row.tenantId}/${row.cause}`} data-testid={`admin-monitoring-purge-running-overdue-row-${row.tenantId}`}>
+                    <TenantCell tenantId={row.tenantId} messages={messages} />
+                    <TableCell>{messages.purgeJobFailed.cause[row.cause] ?? row.cause}</TableCell>
+                    <TableCell>{row.runningCount}</TableCell>
+                    <TableCell>{dateTime(row.oldestStartedAt)}</TableCell>
+                    <TableCell>{row.longestRunningMinutes} {messages.unitMinutes}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+          <p className={NOTE_CLASSES}>{messages.purgeJobFailed.runningOverdue.note}</p>
         </>
       );
     case 'SENDING_DOMAIN_UNVERIFIED': {

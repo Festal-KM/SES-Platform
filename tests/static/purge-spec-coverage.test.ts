@@ -14,7 +14,7 @@
 //      `delete` にあり、`retain` の表には含まれない（`F-064 AC-2` / `CLAUDE.md` §3.5）
 //   ④ 削除スコープの追加ポリシー（migration 20260927000000 ④）が並べる表の集合と `PURGE_SPEC.delete` の表の集合が一致する
 //      （spec に表を足したのにポリシーを足し忘れると、その表の取引先所有行に削除が届かない）
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -191,8 +191,17 @@ describe('🔴 docs/05 §17.2 #12: 全業務テーブルが PURGE_SPEC.delete / 
     const schema = readFileSync(path.join(repoRoot, 'packages', 'config', 'src', 'schema.ts'), 'utf8');
     const keys = [...schema.matchAll(/^\s+([A-Z][A-Z0-9_]*)\s*:/gm)].map((m) => m[1]!);
     const related = keys.filter((key) => /PURGE|RETENTION|CLOSING/.test(key)).sort();
-    // 猶予日数と保持年数の 2 つだけ（どちらも全環境で同じ既定値。環境名を含むキーは無い）。
-    expect(related).toEqual(['PII_RETENTION_YEARS', 'TENANT_PURGE_GRACE_DAYS']);
+    // 猶予日数と保持年数の 2 つ（どちらも全環境で同じ既定値。環境名を含むキーは無い）と、
+    // T-12-17 ⑱ の `PURGE_RUN_STALL_ALERT_MINUTES`（`A-005` 項目 7 に `RUNNING` の滞留を載せるまでの分数 = **監視の閾値**。
+    // 削除を止める / 期限を延ばす効果は無く、読むのは `apps/web/lib/db/bootstrap.ts` の `monitoringThresholdsRuntime()` だけ）。
+    expect(related).toEqual(['PII_RETENTION_YEARS', 'PURGE_RUN_STALL_ALERT_MINUTES', 'TENANT_PURGE_GRACE_DAYS']);
+    // 🔴 監視の閾値が削除の経路（worker の `tenant-purge*.ts` / `packages/db` の purge 実装）から読まれていない。
+    const purgeSources = ['apps/worker/src/jobs/tenant-purge.ts', 'apps/worker/src/jobs/tenant-purge-scan.ts', 'packages/db/src/tenant-purge.ts'];
+    for (const source of purgeSources) {
+      const full = path.join(repoRoot, source);
+      if (!existsSync(full)) continue;
+      expect(readFileSync(full, 'utf8'), source).not.toContain('PURGE_RUN_STALL_ALERT_MINUTES');
+    }
     expect(keys.filter((key) => /(SANDBOX|DEMO|STAGING).*(PURGE|RETENTION)|(PURGE|RETENTION).*(SANDBOX|DEMO|STAGING)|SKIP_PURGE|DISABLE_PURGE/.test(key))).toEqual([]);
   });
 

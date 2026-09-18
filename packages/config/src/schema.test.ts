@@ -396,6 +396,31 @@ describe('MALWARE_SCANNER=clamav のとき CLAMAV_HOST / CLAMAV_PORT が必須',
   });
 });
 
+describe('🔴 T-12-17 ⑲ (b): TENANT_PURGE_GRACE_DAYS は production / sandbox / staging で 30 に固定（Issue #68 / CLAUDE.md §4.2）', () => {
+  it.each(['production', 'sandbox', 'staging'] as const)('APP_ENV=%s × 29 → 起動失敗（変数名だけを出し、値は出さない）', (kind) => {
+    const input = buildValidEnv(kind, { TENANT_PURGE_GRACE_DAYS: '29' });
+    expect(() => loadAppEnv(input)).toThrow(EnvValidationError);
+    try {
+      loadAppEnv(input);
+    } catch (error) {
+      expect(error).toBeInstanceOf(EnvValidationError);
+      const message = String((error as Error).message);
+      expect(message).toContain('TENANT_PURGE_GRACE_DAYS');
+      expect(message).not.toContain('29');
+      expect((error as EnvValidationError).issues.map((issue) => issue.variable)).toContain('TENANT_PURGE_GRACE_DAYS');
+    }
+  });
+
+  it.each(['production', 'sandbox', 'staging'] as const)('APP_ENV=%s × 30（既定 / 明示）は通る', (kind) => {
+    expect(loadAppEnv(buildValidEnv(kind)).TENANT_PURGE_GRACE_DAYS).toBe(30);
+    expect(loadAppEnv(buildValidEnv(kind, { TENANT_PURGE_GRACE_DAYS: '30' })).TENANT_PURGE_GRACE_DAYS).toBe(30);
+  });
+
+  it.each(['development', 'demo'] as const)('APP_ENV=%s × 1 は通る（結合 / E2E のため可変のまま）', (kind) => {
+    expect(loadAppEnv(buildValidEnv(kind, { TENANT_PURGE_GRACE_DAYS: '1' })).TENANT_PURGE_GRACE_DAYS).toBe(1);
+  });
+});
+
 describe('検証エラーの列挙と秘匿（docs/05 §13.4 規則 4 / 6）', () => {
   it('複数の問題があれば 1 件目で止めず全件 issues に列挙する', () => {
     // 🔴 意図的に crossFieldChecks（superRefine）側の違反を 2 つ同時に起こす。

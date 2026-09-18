@@ -48,6 +48,7 @@ import {
   Button,
   Field,
   Input,
+  NameCell,
   SECONDARY_LINK_CLASSES,
   SECONDARY_LINK_STACKED_CLASSES,
   Select,
@@ -57,6 +58,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  type NameCellNameProps,
 } from '@ses/ui';
 import {
   FILTER_ACTIONS_CLASSES,
@@ -190,7 +192,7 @@ type Pending =
  *   - `REVOKED_NOW` … `共有中` フィルタ中に解除した（フィルタに合致しなくなったがその場に残す）
  *   - `DELETED`     … 操作の応答が 404（対象が削除済み。`docs/04` §10.1 `S-015`）
  */
-type RowMark = 'REVOKED_NOW' | 'DELETED';
+export type EngineerShareRowMark = 'REVOKED_NOW' | 'DELETED';
 
 /** タブレット以上で出す列（共有状態 / 共有開始日）。 */
 const TABLET_UP = 'hidden sm:table-cell';
@@ -198,6 +200,100 @@ const TABLET_UP = 'hidden sm:table-cell';
 const DESKTOP_UP = 'hidden lg:table-cell';
 
 const API_PATH = '/api/engineer-shares';
+
+/** 氏名セルに載せるプレビュー選択ボタン（`NameCell` の `nameComponent`。導線ではないので切り詰めは起きない）。 */
+function SelectNameButton({ className, children, ...rest }: NameCellNameProps) {
+  return (
+    <button type="button" className={className} {...rest}>
+      {children}
+    </button>
+  );
+}
+
+export type EngineerShareTableRowProps = {
+  readonly row: EngineerShareRowView;
+  readonly mark: EngineerShareRowMark | undefined;
+  /** 実行可か（停止中 = `false`。操作ボタンを描かない。`F-004 AC-7`）。 */
+  readonly canExecute: boolean;
+  /** 他の行を送信中（操作ボタンを無効化する）。 */
+  readonly busy: boolean;
+  readonly messages: Pick<
+    EngineerShareScreenMessages,
+    'stateShared' | 'stateNotShared' | 'stateRevokedNow' | 'stateDeleted' | 'share' | 'revoke'
+  >;
+  readonly onSelect: (engineerId: string) => void;
+  readonly onAsk: (kind: 'SHARE' | 'REVOKE', engineerId: string) => void;
+};
+
+/**
+ * 一覧の 1 行。画面本体から切り出したのは、`DELETED` の印が付いた行（404 競合時にだけ生じる状態）を
+ * render テストで静的に描くため（T-12-17 ①）。
+ */
+export function EngineerShareTableRow({
+  row,
+  mark,
+  canExecute,
+  busy,
+  messages,
+  onSelect,
+  onAsk,
+}: EngineerShareTableRowProps) {
+  const stateLabel =
+    mark === 'DELETED'
+      ? messages.stateDeleted
+      : mark === 'REVOKED_NOW'
+        ? messages.stateRevokedNow
+        : row.shared
+          ? messages.stateShared
+          : messages.stateNotShared;
+  return (
+    <TableRow data-testid={`engineer-share-row-${row.engineerId}`}>
+      {/* 🔴 氏名は `docs/04` §10.3 の名称規約（`NameCell`）。`S-015` の氏名に詳細画面への導線は無く（プレビューを
+          選ぶボタンが載るだけ）、導線が無い名称はどのブレークポイントでも切り詰めない（§11-14。T-12-17 ④）。 */}
+      <NameCell
+        name={row.displayName}
+        href={null}
+        nameComponent={SelectNameButton}
+        linkTestId={`engineer-share-select-${row.engineerId}`}
+        onClick={() => onSelect(row.engineerId)}
+      />
+      <TableCell className={TABLET_UP} data-testid={`engineer-share-state-${row.engineerId}`}>
+        {stateLabel}
+      </TableCell>
+      <TableCell className={TABLET_UP}>{row.sharedOn}</TableCell>
+      <TableCell className={DESKTOP_UP}>{row.proposalRequestCount}</TableCell>
+      <TableCell>{row.availability}</TableCell>
+      <TableCell>
+        {/* 🔴 行ごとに `共有する` **または** `解除する` のどちらか 1 つ（両方を並べない）。
+            停止中は操作を描かない。削除済みの行は操作の代わりに理由（`削除済み`）を描く ——
+            共有状態の列は `sm` 未満で隠れるため、操作セルに描かないとモバイルではボタンが消えるだけで
+            理由が見えない（`CLAUDE.md` §13.3 / `docs/04` §10.1。T-12-17 ①。デスクトップでは 2 箇所に同じ語が出てよい）。 */}
+        {mark === 'DELETED' ? (
+          <span data-testid={`engineer-share-deleted-${row.engineerId}`}>{messages.stateDeleted}</span>
+        ) : !canExecute ? null : row.shared ? (
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => onAsk('REVOKE', row.engineerId)}
+            disabled={busy}
+            data-testid={`engineer-share-revoke-${row.engineerId}`}
+          >
+            {messages.revoke}
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            onClick={() => onAsk('SHARE', row.engineerId)}
+            disabled={busy}
+            data-testid={`engineer-share-share-${row.engineerId}`}
+          >
+            {messages.share}
+          </Button>
+        )}
+      </TableCell>
+    </TableRow>
+  );
+}
 
 export function EngineerShareScreen({
   rows: initialRows,
@@ -216,7 +312,7 @@ export function EngineerShareScreen({
 }: EngineerShareScreenProps) {
   const [rows, setRows] = useState<readonly EngineerShareRowView[]>(initialRows);
   const [nextCursor, setNextCursor] = useState<string | null>(initialNextCursor);
-  const [marks, setMarks] = useState<Readonly<Record<string, RowMark>>>({});
+  const [marks, setMarks] = useState<Readonly<Record<string, EngineerShareRowMark>>>({});
   const [pending, setPending] = useState<Pending>({ kind: 'NONE' });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [submittingId, setSubmittingId] = useState<string | null>(null);
@@ -314,13 +410,6 @@ export function EngineerShareScreen({
     } finally {
       setLoadingMore(false);
     }
-  }
-
-  function stateLabel(row: EngineerShareRowView): string {
-    const mark = marks[row.engineerId];
-    if (mark === 'DELETED') return messages.stateDeleted;
-    if (mark === 'REVOKED_NOW') return messages.stateRevokedNow;
-    return row.shared ? messages.stateShared : messages.stateNotShared;
   }
 
   function renderPreview(row: EngineerShareRowView) {
@@ -539,53 +628,18 @@ export function EngineerShareScreen({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((row) => {
-                const mark = marks[row.engineerId];
-                return (
-                  <TableRow key={row.engineerId} data-testid={`engineer-share-row-${row.engineerId}`}>
-                    <TableCell whitespace="normal">
-                      <button
-                        type="button"
-                        className={SECONDARY_LINK_CLASSES}
-                        onClick={() => select(row.engineerId)}
-                        data-testid={`engineer-share-select-${row.engineerId}`}
-                      >
-                        {row.displayName}
-                      </button>
-                    </TableCell>
-                    <TableCell className={TABLET_UP} data-testid={`engineer-share-state-${row.engineerId}`}>
-                      {stateLabel(row)}
-                    </TableCell>
-                    <TableCell className={TABLET_UP}>{row.sharedOn}</TableCell>
-                    <TableCell className={DESKTOP_UP}>{row.proposalRequestCount}</TableCell>
-                    <TableCell>{row.availability}</TableCell>
-                    <TableCell>
-                      {/* 🔴 行ごとに `共有する` **または** `解除する` のどちらか 1 つ（両方を並べない）。
-                          削除済みの行と停止中は操作を描かない。 */}
-                      {!canExecute || mark === 'DELETED' ? null : row.shared ? (
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          onClick={() => ask('REVOKE', row.engineerId)}
-                          disabled={submittingId !== null}
-                          data-testid={`engineer-share-revoke-${row.engineerId}`}
-                        >
-                          {messages.revoke}
-                        </Button>
-                      ) : (
-                        <Button
-                          type="button"
-                          onClick={() => ask('SHARE', row.engineerId)}
-                          disabled={submittingId !== null}
-                          data-testid={`engineer-share-share-${row.engineerId}`}
-                        >
-                          {messages.share}
-                        </Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
+              {rows.map((row) => (
+                <EngineerShareTableRow
+                  key={row.engineerId}
+                  row={row}
+                  mark={marks[row.engineerId]}
+                  canExecute={canExecute}
+                  busy={submittingId !== null}
+                  messages={messages}
+                  onSelect={select}
+                  onAsk={ask}
+                />
+              ))}
             </TableBody>
           </Table>
 

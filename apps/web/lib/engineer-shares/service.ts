@@ -305,7 +305,14 @@ function toCandidateView(
 }
 
 /** `EngineerShareListQuery` のうち、母集団と並びを決める部分（`limit` を除く）。 */
-type EngineerShareListCriteria = Pick<EngineerShareListQuery, 'q' | 'availableBy' | 'shared' | 'cursor'>;
+/**
+ * 一覧の検索条件。`cursor` は**復号済み**（`decodeEngineerShareCursor`）。
+ * 🔴 復号は `withTenant` の**外**で行う（T-12-17 ②）—— 形が不正なカーソル（400）のためにトランザクションと
+ *    `SET LOCAL` を開かない。
+ */
+type EngineerShareListCriteria = Pick<EngineerShareListQuery, 'q' | 'availableBy' | 'shared'> & {
+  readonly cursor: EngineerShareCursor | undefined;
+};
 
 /**
  * `shared=true` の駆動表 `engineer_shares` のキーセット述語（`shared_at DESC, engineer_id DESC` の「その後ろ」）。
@@ -343,10 +350,7 @@ async function readSharedPage(
   criteria: EngineerShareListCriteria,
   limit: number,
 ): Promise<CursorPage<ShareStateRow>> {
-  const cursor =
-    criteria.cursor === undefined
-      ? undefined
-      : decodeEngineerShareCursor(criteria.cursor, criteria.shared);
+  const cursor = criteria.cursor;
   const rows = await db.engineerShare.findMany({
     where: {
       revokedAt: null,
@@ -374,10 +378,7 @@ async function readLedgerPage(
   criteria: EngineerShareListCriteria,
   limit: number,
 ): Promise<CursorPage<EngineerShareSourceRow>> {
-  const cursor =
-    criteria.cursor === undefined
-      ? undefined
-      : decodeEngineerShareCursor(criteria.cursor, criteria.shared);
+  const cursor = criteria.cursor;
   const rows = await db.engineer.findMany({
     where: {
       AND: [
@@ -418,11 +419,12 @@ export async function listEngineerShares(
   referenceDate: string,
 ): Promise<EngineerShareListView> {
   assertPartnerContext(ctx);
+  // 🔴 カーソルの復号は `withTenant` の手前（T-12-17 ②）。不正な形は 400 になるだけで、DB には触れない。
   const criteria: EngineerShareListCriteria = {
     q: query.q,
     availableBy: query.availableBy,
     shared: query.shared,
-    cursor: query.cursor,
+    cursor: query.cursor === undefined ? undefined : decodeEngineerShareCursor(query.cursor, query.shared),
   };
 
   return withTenant(ctx, async (db) => {

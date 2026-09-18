@@ -22,6 +22,10 @@
 //    全文へ到達できる（判定は緩めていない。`tests/e2e/support/assertions.ts`）。
 // 🔴 **文言を持たない**（名称・導線の部品は呼び出し側が渡す）。**`next/link` に依存しない** —— Next.js の
 //    画面は `linkComponent={Link}` で `next/link` を渡す（既定は素の `<a>`）。
+// 🔴 **導線が無い名称に行内の操作を載せる場合（`S-015` のプレビュー選択ボタン。T-12-17 ④）は `nameComponent`
+//    で渡す。** `href={null}` の枝でだけ使われ、**切り詰めの規約は変わらない**（導線が無い = どのブレークポイント
+//    でも切り詰めない）。ボタンは全文へ「到達する」導線ではなく行内の操作なので、`href` の枝（切り詰め + 導線の
+//    組）に寄せてはならない（§11-14）。
 // 🔴 `'use client'` を付けない（状態もイベントハンドラも持たない。`../index.ts` 規約 4）。
 import type { ComponentType, ReactNode } from 'react';
 import { cn } from '../lib/cn.js';
@@ -46,6 +50,16 @@ export type NameCellLinkProps = {
   readonly 'data-testid'?: string;
 };
 
+/** 導線が無い名称に載せる行内操作の部品が受け取る props（`href={null}` の枝でだけ使われる）。 */
+export type NameCellNameProps = {
+  readonly className: string;
+  readonly children: ReactNode;
+  readonly 'data-testid'?: string;
+};
+
+/** 行内操作（`nameComponent`）の見た目。折り返す名称の器なので `inline`（`inline-block` だと語の途中で折り返せない）。 */
+export const NAME_CELL_ACTION_CLASSES = 'text-left font-medium text-slate-900 underline';
+
 function DefaultLink({ href, className, children, ...rest }: NameCellLinkProps) {
   return (
     <a href={href} className={className} {...rest}>
@@ -64,7 +78,12 @@ export type NameCellProps = Omit<TableCellProps, 'whitespace' | 'children' | 'ti
   readonly href: string | null;
   /** 導線を描く部品。既定は素の `<a>`。Next.js の画面は `next/link` の `Link` を渡す。 */
   readonly linkComponent?: ComponentType<NameCellLinkProps>;
-  /** 導線（`<a>`）に付ける `data-testid`。セル自身の testid は `data-testid` で渡す。 */
+  /**
+   * 導線が無い名称に載せる行内操作の部品（`S-015` のプレビュー選択ボタン）。🔴 `href` が `null` のときだけ描かれ、
+   * `href` があるときは無視される（導線と行内操作を同じ名称に重ねない）。
+   */
+  readonly nameComponent?: ComponentType<NameCellNameProps>;
+  /** 導線（`<a>`）または行内操作（`nameComponent`）に付ける `data-testid`。セル自身の testid は `data-testid` で渡す。 */
   readonly linkTestId?: string;
 };
 
@@ -72,6 +91,7 @@ export function NameCell({
   name,
   href,
   linkComponent: LinkComponent = DefaultLink,
+  nameComponent: NameComponent,
   linkTestId,
   className,
   ...props
@@ -84,7 +104,13 @@ export function NameCell({
     >
       <span className={href === null ? NAME_CELL_TEXT_WRAP_CLASSES : NAME_CELL_TEXT_CLASSES} title={name}>
         {href === null ? (
-          name
+          NameComponent === undefined ? (
+            name
+          ) : (
+            <NameComponent className={NAME_CELL_ACTION_CLASSES} data-testid={linkTestId}>
+              {name}
+            </NameComponent>
+          )
         ) : (
           <LinkComponent href={href} className={NAME_CELL_LINK_CLASSES} data-testid={linkTestId}>
             {name}

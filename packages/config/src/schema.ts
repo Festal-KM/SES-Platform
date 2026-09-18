@@ -212,6 +212,12 @@ const commonShape = {
   EXPIRY_ALERT_DAYS_BEFORE: z.coerce.number().int().positive().default(60),
   PII_RETENTION_YEARS: z.coerce.number().int().positive().default(3),
   SANDBOX_TRIAL_DAYS: z.coerce.number().int().positive().default(30),
+  /**
+   * 🔴 `CLOSING` → `PURGED` の猶予日数（`CLAUDE.md` §4.2 `Tenant` = **30 日**）。T-12-17 ⑲ (b)（[Issue #68](https://github.com/Festal-KM/SES-Platform/issues/68)）:
+   *    **`production` / `sandbox` / `staging` では 30 に固定**（30 以外なら起動失敗。`crossFieldChecks`）。顧客データのある環境で
+   *    猶予を短くできると、削除予告の「30 日後」と実際の削除がずれ、返却の機会を奪う。`development` / `demo` は
+   *    結合 / E2E（#24 が短い値を使う）のため可変のまま（`SEED_DATABASE_URL` の環境制限〔docs/05 §13.4 規則 7〕と同型）。
+   */
   TENANT_PURGE_GRACE_DAYS: z.coerce.number().int().positive().default(30),
   QUOTA_WARNING_THRESHOLD_PERCENT: z.coerce.number().int().min(1).max(99).default(80),
   /**
@@ -236,6 +242,14 @@ const commonShape = {
    *    十分長く取る（再試行の途中を疑いに数えない）。🔴 **短くしすぎると、正常な再試行待ちが「送ったのに書けなかった」に見える。**
    */
   MAIL_DISPATCH_STUCK_ALERT_MINUTES: z.coerce.number().int().positive().default(15),
+  /**
+   * 🔴 T-12-17 ⑱: `tenant_purge_runs(status='RUNNING')` の滞留を `A-005` 項目 7 に `RUNNING_OVERDUE`（`FAILED` とは別区分）で
+   *    載せるまでの分数（docs/05 §16.5「削除ジョブの失敗」。既定 30。`SUBMITTING_STALL_ALERT_MINUTES` と同型）。
+   *    `tenant.purge` は削除 → `COMPLETED` の書き込みまで数秒〜数分で確定する。閾値を超えて `RUNNING` のままなのは、
+   *    削除は済んだが完了の書き込みに失敗した（SP-10 T-10-09 ④成功 → ⑤失敗）か、ワーカーが止まった疑いである。
+   *    🔴 完了の事実はここからも出さない（`A-010` の 1 本だけ）。ハードコードしない。
+   */
+  PURGE_RUN_STALL_ALERT_MINUTES: z.coerce.number().int().positive().default(30),
   /**
    * 🔴 T-11-01: `A-002` テナント健全性（異常度スコア。docs/05 §6.9 API-A2 / `F-056 AC-2`）の閾値 4 つ。
    *    重み（並びの優先順）は `packages/domain` の定数で、ここは**いつから異常と数えるか**だけを持つ。
@@ -330,6 +344,9 @@ type EnvUnionData = z.infer<typeof envUnion>;
 /** `superRefine` のコールバックに渡される `ctx`（`addIssue` のみ使う）の正確な型。 */
 type IssueSink = z.core.$RefinementCtx<EnvUnionData>;
 
+/** 🔴 `CLAUDE.md` §4.2 `Tenant`: `CLOSING` → `PURGED` は 30 日。顧客データのある環境ではこの値に固定する（T-12-17 ⑲ (b)）。 */
+export const TENANT_PURGE_GRACE_DAYS_FIXED = 30;
+
 function addIssue(ctx: IssueSink, variable: string, message: string): void {
   ctx.addIssue({ code: 'custom', path: [variable], message });
 }
@@ -417,6 +434,15 @@ function crossFieldChecks(data: EnvUnionData, ctx: IssueSink): void {
     if (!hasSslModeRequire(data.SEED_DATABASE_URL)) {
       addIssue(ctx, 'SEED_DATABASE_URL', 'sslmode=require を含める必要があります');
     }
+  }
+  // 🔴 T-12-17 ⑲ (b): 顧客データのある環境（`production` / `sandbox` / `staging`）では猶予日数を `CLAUDE.md` §4.2 の 30 日に固定する。
+  //    値は出さない（変数名だけ。規則 5 と同じ形）。`development` / `demo` は可変のまま（結合 / E2E のため）。
+  if (!isSeedableAppEnv(data.APP_ENV) && data.TENANT_PURGE_GRACE_DAYS !== TENANT_PURGE_GRACE_DAYS_FIXED) {
+    addIssue(
+      ctx,
+      'TENANT_PURGE_GRACE_DAYS',
+      `APP_ENV が ${SEEDABLE_APP_ENVS.join(' / ')} 以外の実行時環境では ${TENANT_PURGE_GRACE_DAYS_FIXED} に固定です（CLAUDE.md §4.2 の Tenant の猶予日数。Issue #68）`,
+    );
   }
   if (data.DATABASE_URL === data.PLATFORM_DATABASE_URL) {
     addIssue(ctx, 'PLATFORM_DATABASE_URL', 'DATABASE_URL と同じ値は使用できません');

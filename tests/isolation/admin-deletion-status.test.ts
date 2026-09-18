@@ -253,7 +253,7 @@ describe('⑨ A-003 / A-005 に削除完了の確認が無い（API-A12 が唯�
   });
 
   it('🔴 A-005 項目 7（readPurgeJobFailures）は失敗の件数だけ。後に COMPLETED がある TENANT_PURGED の失敗は対応済みとして落ち、完了日時・件数は無い', async () => {
-    const failures = await readPurgeJobFailures(ownerCtx, { ...META, now: NOW });
+    const failures = await readPurgeJobFailures(ownerCtx, { ...META, now: NOW, stallThresholdMinutes: 30 });
     const mine = failures.rows.filter((row) => row.tenantId === TENANT_PURGED);
     // TENANT_PURGED の FAILED は再試行の COMPLETED で対応済み → 落ちる。RETENTION の FAILED だけが残る。
     expect(mine.map((row) => row.cause)).toEqual(['RETENTION']);

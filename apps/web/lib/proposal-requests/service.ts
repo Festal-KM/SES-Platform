@@ -45,6 +45,7 @@ import {
 } from '@ses/db';
 import {
   InvalidStateTransitionError as DomainInvalidStateTransitionError,
+  PROPOSAL_REQUEST_OPERATION,
   proposalRequestMachine,
   type ProposalRequestState,
 } from '@ses/domain';
@@ -99,10 +100,11 @@ export const PROPOSAL_REQUEST_AUDIT_ACTIONS = {
   invalidTransition: INVALID_TRANSITION_AUDIT_ACTION,
 } as const;
 
+/** 🔴 T-12-17 ⑮: 値は `packages/domain` の閉集合（`PROPOSAL_REQUEST_OPERATION`）への参照。ここにリテラルを書かない。 */
 export const PROPOSAL_REQUEST_OPERATIONS = {
-  withdraw: 'WITHDRAW',
-  accept: 'ACCEPT',
-  decline: 'DECLINE',
+  withdraw: PROPOSAL_REQUEST_OPERATION.WITHDRAW,
+  accept: PROPOSAL_REQUEST_OPERATION.ACCEPT,
+  decline: PROPOSAL_REQUEST_OPERATION.DECLINE,
 } as const;
 
 /** 監査ログに載せる補助情報（IP はリクエストから、端末種別は ctx から）。 */

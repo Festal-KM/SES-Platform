@@ -339,6 +339,32 @@ describe('③ usage.storage-reconcile: 乖離は検知結果に出るだけで�
     expect(matched).toMatchObject({ decision: { kind: 'MATCH' }, detected: 0, resolved: 1 });
     expect(await readCounter(TENANT_A, 'MONTH', '2026-09', 'STORAGE_BYTES')).toEqual({ value: '1000', reservedValue: '0' });
   });
+
+  it('🔴 T-12-17 ⑩: 月末日に開いた行は翌月 1 日の一致で閉じる（前月キーが解消スコープに入る。カウンタは動かない）', async () => {
+    // 月末日（2026-09-30 01:30 JST = 09-29 16:30 UTC）に乖離 → `2026-09` の行が開く。
+    const endOfMonth = new Date('2026-09-29T16:30:00.000Z');
+    await upsertCounter(TENANT_B, 'MONTH', '2026-09', 'STORAGE_BYTES', '5000');
+    const divergent = await reconcileTenantStorage(ctxB, { measuredBytes: 5300n, now: endOfMonth });
+    expect(divergent).toMatchObject({ periodKey: '2026-09', decision: { kind: 'DIVERGENCE', deltaBytes: 300n }, opened: 1 });
+    expect(await readFindings(TENANT_B)).toContainEqual(
+      expect.objectContaining({ kind: 'STORAGE_DIVERGENCE', periodKey: '2026-09', resolved: false }),
+    );
+
+    // 翌月 1 日（2026-10-01 01:30 JST）に一致 → 当月キーは `2026-10` だが、前月 `2026-09` の行が閉じる。
+    const firstOfNextMonth = new Date('2026-09-30T16:30:00.000Z');
+    await upsertCounter(TENANT_B, 'MONTH', '2026-10', 'STORAGE_BYTES', '5300');
+    const matched = await reconcileTenantStorage(ctxB, { measuredBytes: 5300n, now: firstOfNextMonth });
+    expect(matched).toMatchObject({ periodKey: '2026-10', decision: { kind: 'MATCH' }, detected: 0, resolved: 1 });
+    expect(await readFindings(TENANT_B)).toContainEqual(
+      expect.objectContaining({ kind: 'STORAGE_DIVERGENCE', periodKey: '2026-09', resolved: true }),
+    );
+    expect(await readFindings(TENANT_B)).not.toContainEqual(
+      expect.objectContaining({ kind: 'STORAGE_DIVERGENCE', periodKey: '2026-10' }),
+    );
+    // 🔴 `usage_counters` は 1 バイトも動かない（前月・当月とも）。
+    expect(await readCounter(TENANT_B, 'MONTH', '2026-09', 'STORAGE_BYTES')).toEqual({ value: '5000', reservedValue: '0' });
+    expect(await readCounter(TENANT_B, 'MONTH', '2026-10', 'STORAGE_BYTES')).toEqual({ value: '5300', reservedValue: '0' });
+  });
 });
 
 describe('④ AC-5 cost.monthly-rollup: テナント × 月 × ロール別に保持し、月末を過ぎた月は書き換わらない', () => {

@@ -7,7 +7,12 @@
 //
 // 🔴 実測値は引数で受ける（オブジェクトストアを呼ぶのは `apps/worker`。`packages/db` は
 //    `@ses/connectors` に依存できない。`CLAUDE.md` §2.1）。
-import { reconcileStorageUsage, usagePeriodKey, type StorageReconcileDecision } from '@ses/domain';
+import {
+  previousMonthPeriodKey,
+  reconcileStorageUsage,
+  usagePeriodKey,
+  type StorageReconcileDecision,
+} from '@ses/domain';
 import type { HostTenantCtx } from './context.js';
 import { readStorageBytesUsed } from './storage-usage.js';
 import { syncUsageMeasurementFindings, type UsageMeasurementFindingSync } from './usage-findings.js';
@@ -26,6 +31,9 @@ export type StorageReconcileOutcome = UsageMeasurementFindingSync & {
  *
  * 行は (tenant, STORAGE_DIVERGENCE, STORAGE_BYTES, MONTH, 当月) につき 1 つ。翌日の検算で一致すれば
  * `resolved_at` が立つ（一時的な乖離〔進行中のアップロード〕は自然に閉じる）。
+ * 🔴 T-12-17 ⑩: 解消のスコープは**当月 + 前月**のキー。月末日に開いた行は翌月 1 日の検算で当月キーが変わるため、
+ *    当月だけをスコープにすると前月キーの行が閉じられず残る（SP-10 T-10-02 → SP-11 T-11-04 申し送り ④）。
+ *    閉じるのは `usage_measurement_findings.resolved_at` だけであり、`usage_counters` は 1 バイトも動かない（docs/05 §9.8.1 ③）。
  */
 export async function reconcileTenantStorage(
   ctx: HostTenantCtx,
@@ -44,7 +52,11 @@ export async function reconcileTenantStorage(
       syncUsageMeasurementFindings(tx, {
         tenantId: ctx.tenantId,
         now: input.now,
-        scope: { kinds: ['STORAGE_DIVERGENCE'], periodKind: 'MONTH', periodKeys: [periodKey] },
+        scope: {
+          kinds: ['STORAGE_DIVERGENCE'],
+          periodKind: 'MONTH',
+          periodKeys: [previousMonthPeriodKey(periodKey), periodKey],
+        },
         findings:
           decision.kind === 'MATCH'
             ? []

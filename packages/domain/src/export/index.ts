@@ -1,6 +1,6 @@
 // packages/domain/src/export/index.ts
 // 返却データ（`F-064 AC-5` / docs/05 §9.6 `export.generate`）の公開面。T-10-09。
-export { encodeCsv } from './csv.js';
+export { encodeCsv, sanitizeCsvCellText } from './csv.js';
 export type { CsvCell } from './csv.js';
 export { buildZipArchive, crc32, listZipEntries } from './zip.js';
 export { decodeUtf8, encodeUtf8 } from './utf8.js';

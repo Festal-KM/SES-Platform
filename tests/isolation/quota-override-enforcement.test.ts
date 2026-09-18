@@ -23,6 +23,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import {
   createConnectors,
   InMemoryMinuteWindowCounter,
+  InMemoryProviderQuotaNearingMarker,
   InMemoryProviderSendCounter,
   type Connectors,
 } from '@ses/connectors';
@@ -531,6 +532,8 @@ describe('⑤ send.hold-release: RATE_LIMIT の保留は、上限の引き上げ
       providerDailyQuota: 200,
       providerQuotaWarnRatio: 0.8,
       providerSentCounter: new InMemoryProviderSendCounter(),
+      // T-12-17 ⑤: 接近の目印（表示専用）。結合ではプロセス内実装で足りる。
+      nearingMarker: new InMemoryProviderQuotaNearingMarker(),
       quotaDefaults: TEST_QUOTA_DEFAULTS,
       enqueueEmailDispatch: async () => {
         throw new Error('本テストは運用メールの保留を作らない');

@@ -4,7 +4,7 @@
 //   🔴 匿名候補のファイルが無く、経歴の列を持つのは `engineer_careers.csv` / `engineer_snapshot_careers.csv` の 2 つだけ。
 import { describe, expect, it } from 'vitest';
 import { buildClosingReturnArchive, CLOSING_RETURN_FILES, type ClosingReturnDataset } from './closing-return.js';
-import { encodeCsv } from './csv.js';
+import { encodeCsv, sanitizeCsvCellText } from './csv.js';
 import { decodeUtf8, encodeUtf8 } from './utf8.js';
 import { buildZipArchive, crc32, listZipEntries } from './zip.js';
 
@@ -292,6 +292,36 @@ describe('encodeCsv（RFC 4180）', () => {
 
   it('列数がヘッダと違う行は例外', () => {
     expect(() => encodeCsv(['a', 'b'], [['only-one']])).toThrow(RangeError);
+  });
+});
+
+describe('🔴 T-12-17 ⑲ (a): CSV 数式注入の無害化（sanitizeCsvCellText。Issue #68）', () => {
+  it.each([
+    ['=', '=SUM(A1:A3)', "'=SUM(A1:A3)"],
+    ['+', '+1+cmd', "'+1+cmd"],
+    ['-', '-2+3', "'-2+3"],
+    ['@', '@SUM(1)', "'@SUM(1)"],
+    ['タブ', '\t=1', "'\t=1"],
+    ['CR', '\r=1', "'\r=1"],
+  ])('先頭が %s のセルは \' を前置する（値そのものは落とさない）', (_label, input, expected) => {
+    expect(sanitizeCsvCellText(input)).toBe(expected);
+    expect(sanitizeCsvCellText(input).slice(1)).toBe(input);
+  });
+
+  it.each([
+    ['通常の文字列', 'ホストの経歴'],
+    ['途中に = を含む', 'a=b'],
+    ['空文字', ''],
+    ['メールアドレス', 'owner@example.co.jp'],
+    ['ISO 8601', '2026-09-18'],
+    ['既に \' で始まる', "'=1"],
+  ])('%s（%s）は変えない', (_label, input) => {
+    expect(sanitizeCsvCellText(input)).toBe(input);
+  });
+
+  it('encodeCsv は文字列セルにだけ掛ける（数値の負数・真偽値・null は対象外）。引用は無害化の後に掛かる', () => {
+    expect(encodeCsv(['a', 'b', 'c', 'd'], [['=SUM(A1)', -1, true, null]])).toBe("\ufeffa,b,c,d\r\n'=SUM(A1),-1,true,\r\n");
+    expect(encodeCsv(['a'], [['=HYPERLINK("http://x","y")']])).toBe("\ufeffa\r\n\"'=HYPERLINK(\"\"http://x\"\",\"\"y\"\")\"\r\n");
   });
 });
 

@@ -12,6 +12,8 @@
 //    ⑥ 🔴 **総件数・残件数に相当する表示が無い**（`docs/05` §4.8。「次の 50 件」はボタンだけ）
 //    ⑦ 🔴 **検索 3 条件がモバイルでも省略されない**（フォームの入力欄に `hidden` が付かない。`CLAUDE.md` §13.3）
 //    ⑧ 共有状態フィルタの 3 状態で、1 表の testid が母集団を示す
+//    ⑨ T-12-17 ①: 削除済み（`DELETED`）の行は、`sm` 未満で隠れる共有状態の列だけでなく**操作セルにも理由が在る**
+//    ⑩ T-12-17 ④: 氏名セルは `@ses/ui` の `NameCell`（導線が無い = どのブレークポイントでも切り詰めない）
 //
 // 🔴 `@testing-library/react` を使わず `react-dom/server` の `renderToStaticMarkup` を使う
 //    （新規依存を増やさない。`visibility-screen.render.test.tsx` と同じ）。
@@ -20,6 +22,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import {
   EngineerShareScreen,
+  EngineerShareTableRow,
+  type EngineerShareRowMark,
   type EngineerShareRowView,
   type EngineerShareScreenMessages,
   type EngineerShareScreenProps,
@@ -141,6 +145,34 @@ const BASE_PROPS: EngineerShareScreenProps = {
 
 function render(overrides: Partial<EngineerShareScreenProps> = {}): string {
   return renderToStaticMarkup(createElement(EngineerShareScreen, { ...BASE_PROPS, ...overrides }));
+}
+
+/** 1 行だけを静的に描く（`DELETED` の印は 404 応答でしか付かず、画面本体の props からは注入できない）。 */
+function renderRow(row: EngineerShareRowView, mark: EngineerShareRowMark | undefined): string {
+  return renderToStaticMarkup(
+    createElement(
+      'table',
+      null,
+      createElement(
+        'tbody',
+        null,
+        createElement(EngineerShareTableRow, {
+          row,
+          mark,
+          canExecute: true,
+          busy: false,
+          messages,
+          onSelect: () => undefined,
+          onAsk: () => undefined,
+        }),
+      ),
+    ),
+  );
+}
+
+function rowCells(html: string, engineerId: string): readonly string[] {
+  const start = html.indexOf(`engineer-share-row-${engineerId}`);
+  return html.slice(start, html.indexOf('</tr>', start)).split('<td').slice(1);
 }
 
 describe('S-015 の骨格（docs/04 §S-015 のセクション 1〜5）', () => {
@@ -410,5 +442,49 @@ describe('🔴 モバイルで判断材料を隠さない（`CLAUDE.md` §13.3 /
   it('独自ブレークポイントを使っていない（Tailwind の既定 `sm` / `lg` のみ）', () => {
     const html = render();
     expect(html).not.toMatch(/\[\d+px\]:/);
+  });
+
+  it('🔴 T-12-17 ①: 削除済みの行は操作セル（どのブレークポイントでも隠れない）に理由が在り、操作ボタンは無い', () => {
+    const html = renderRow(SHARED_ROW, 'DELETED');
+    const cells = rowCells(html, SHARED_ROW.engineerId);
+    expect(cells).toHaveLength(6);
+    // 共有状態の列（`sm` 未満で隠れる）の描画は変えない: 従来どおり `削除済み`。
+    expect(cells[1]).toContain('hidden sm:table-cell');
+    expect(cells[1]).toContain('>削除済み<');
+    // 操作セルにも同じ理由が在る（モバイルで「ボタンが消えただけ」にならない）。
+    expect(cells[5]).not.toContain('hidden');
+    expect(cells[5]).toContain(`data-testid="engineer-share-deleted-${SHARED_ROW.engineerId}"`);
+    expect(cells[5]).toContain('>削除済み<');
+    expect(cells[5]).not.toContain('engineer-share-revoke-');
+    expect(cells[5]).not.toContain('engineer-share-share-');
+  });
+
+  it('削除済みでない行の操作セルには理由の語が無い（`REVOKED_NOW` / 印なし）', () => {
+    for (const mark of ['REVOKED_NOW', undefined] as const) {
+      const cells = rowCells(renderRow(SHARED_ROW, mark), SHARED_ROW.engineerId);
+      expect(cells[5]).not.toContain('削除済み');
+      expect(cells[5]).not.toContain('engineer-share-deleted-');
+    }
+  });
+});
+
+describe('🔴 T-12-17 ④: 氏名セルは `NameCell`（`docs/04` §10.3 / §11-14。導線が無い名称は切り詰めない）', () => {
+  it('氏名セルが `NameCell` の器（下限幅 10rem + 折り返し + `title` の全文）を持ち、プレビュー選択ボタンが載る', () => {
+    const cells = rowCells(render({ rows: [SHARED_ROW] }), SHARED_ROW.engineerId);
+    // `NameCell` の器: `min-w-40` + `whitespace-normal`、本文は `<span class="block" title>`。
+    expect(cells[0]).toContain('min-w-40');
+    expect(cells[0]).toContain('whitespace-normal');
+    expect(cells[0]).toContain(`<span class="block" title="${SHARED_ROW.displayName}">`);
+    // 行内の操作（プレビューの選択）はボタンのまま（testid 不変）。
+    expect(cells[0]).toMatch(
+      new RegExp(`<button type="button"[^>]*data-testid="engineer-share-select-${SHARED_ROW.engineerId}"[^>]*>${SHARED_ROW.displayName}</button>`),
+    );
+  });
+
+  it('🔴 導線（`href`）が無いので、どのブレークポイントでも切り詰めない（`lg:truncate` / `lg:max-w-64` / `<a` が無い）', () => {
+    const cells = rowCells(render({ rows: [SHARED_ROW] }), SHARED_ROW.engineerId);
+    expect(cells[0]).not.toContain('truncate');
+    expect(cells[0]).not.toContain('max-w-');
+    expect(cells[0]).not.toContain('<a ');
   });
 });

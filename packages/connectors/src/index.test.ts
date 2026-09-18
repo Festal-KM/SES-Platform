@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createConnectors, createEmailSender } from './index.js';
 import { ConnectorImplementationNotAvailableError, MockEmailScriptNotApplicableError } from './errors.js';
 import { SandboxRecipientScopedEmailSender } from './email/sandbox-recipient-scoped.js';
-import { SesEmailSender } from './email/ses/index.js';
+import { RedisProviderQuotaCache, SesEmailSender } from './email/ses/index.js';
 import { MockEmailSender } from './mock/index.js';
 import { S3ObjectStore } from './storage/index.js';
 import {
@@ -177,6 +177,31 @@ describe('🔴 email の 3 種別すべてが解決できる（T-04-03。docs/05
       token: dispatchTokenFor({ dispatchId: 'd1', dedupeKey: 'k1' }),
     });
     expect(sendEmail).toHaveBeenCalledTimes(1);
+  });
+
+  it('🔴 T-12-17 ⑧: quotaCache（Redis）を渡すと 2 回目の getQuota() は Redis の値を返し、GetAccount を叩かない', async () => {
+    // ioredis と構造的に一致する最小の偽 Redis（`RedisProviderQuotaCache` の口）。
+    const store = new Map<string, string>();
+    const redis = {
+      get: async (key: string) => store.get(key) ?? null,
+      set: async (key: string, value: string) => {
+        store.set(key, value);
+        return 'OK';
+      },
+    };
+    const getAccount = vi.fn(async () => ({ SendQuota: { Max24HourSend: 200, SentLast24Hours: 7 } }));
+    const quotaCache = new RedisProviderQuotaCache(redis);
+    const sender = createEmailSender('real', { ses: { ...ses, api: { ...ses.api, getAccount }, quotaCache } });
+
+    const first = await sender.getQuota();
+    expect(getAccount).toHaveBeenCalledTimes(1);
+    expect(store.has('mail:provider:quota')).toBe(true);
+
+    // 🔴 別プロセスが書いた値を読む形を再現する: Redis の値を書き換え、同じ sender で 2 回目を読む。
+    store.set('mail:provider:quota', JSON.stringify({ max24h: 200, sentLast24h: 150, observedAt: first.observedAt.toISOString() }));
+    const second = await sender.getQuota();
+    expect(getAccount).toHaveBeenCalledTimes(1);
+    expect(second.sentLast24h).toBe(150);
   });
 });
 

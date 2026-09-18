@@ -66,6 +66,8 @@ import {
   type MockEmailStep,
   type ObjectStore,
   type OperationalMailDispatch,
+  type ProviderQuotaCache,
+  type ProviderQuotaNearingMarker,
   type ProviderSendCounter,
   type QueueName,
   type SesIdentityApi,
@@ -79,6 +81,8 @@ import {
   createBullMqSendProposalQueue,
   createBullMqTenantPurgeQueue,
   createBullMqWorker,
+  createRedisProviderQuotaCache,
+  createRedisProviderQuotaNearingMarker,
   createRedisProviderSendCounter,
   type BullMqConnection,
 } from '@ses/connectors/bullmq';
@@ -256,6 +260,8 @@ export function startWorkerRuntime(config: RuntimeConfig, options: WorkerRuntime
   let emailSender: EmailSender | null = null;
   let malwareScanner: MalwareScanner | null = null;
   let sentCounter: ProviderSendCounter | null = null;
+  let quotaCache: ProviderQuotaCache | null = null;
+  let nearingMarker: ProviderQuotaNearingMarker | null = null;
   let identityApi: SesIdentityApi | null = null;
   let objectStore: ObjectStore | null = null;
 
@@ -268,6 +274,24 @@ export function startWorkerRuntime(config: RuntimeConfig, options: WorkerRuntime
     }
     return sentCounter;
   };
+  // 🔴 T-12-17 ⑤: 接近の目印（`mail:provider:nearingSince`）。`apps/web/lib/db/bootstrap.ts` の `nearingMarker()` と
+  //    同じ Redis キーを共有する（環境全体で 1 本）。`send.hold-release` が毎 10 分 `observe()` して維持する。
+  const resolveNearingMarker = (): ProviderQuotaNearingMarker => {
+    if (nearingMarker === null) {
+      const created = track(createRedisProviderQuotaNearingMarker(connection));
+      nearingMarker = created.marker;
+    }
+    return nearingMarker;
+  };
+  // 🔴 T-12-17 ⑧: `getQuota()` の 60 秒キャッシュはプロセス横断（docs/05 §8.3-Q ③）。`apps/web/lib/db/bootstrap.ts` の
+  //    `providerQuotaCache()` と同じ Redis キー。プロセス内キャッシュに倒すと `GetAccount`（1 req/s）をプロセス数だけ叩く。
+  const resolveQuotaCache = (): ProviderQuotaCache => {
+    if (quotaCache === null) {
+      const created = track(createRedisProviderQuotaCache(connection));
+      quotaCache = created.cache;
+    }
+    return quotaCache;
+  };
   const resolveEmailSender = (): EmailSender => {
     emailSender ??= createEmailSender(connectors.email, {
       ses: {
@@ -275,6 +299,7 @@ export function startWorkerRuntime(config: RuntimeConfig, options: WorkerRuntime
         defaultFromAddress: env.SES_DEFAULT_FROM_ADDRESS,
         configurationSet: env.SES_CONFIGURATION_SET,
         sentCounter: resolveSentCounter(),
+        quotaCache: resolveQuotaCache(),
       },
       ...mockEmail,
     });
@@ -352,6 +377,9 @@ export function startWorkerRuntime(config: RuntimeConfig, options: WorkerRuntime
     providerQuotaWarnRatio: env.MAIL_PROVIDER_QUOTA_WARN_RATIO,
     get providerSentCounter(): ProviderSendCounter {
       return resolveSentCounter();
+    },
+    get nearingMarker(): ProviderQuotaNearingMarker {
+      return resolveNearingMarker();
     },
     enqueueEmailDispatch: (job: OperationalMailDispatch) => emailDispatchQueue.enqueue(job),
     reissueAccountMail: createAccountMailReissue({

@@ -99,10 +99,38 @@ describe('summarizePurgeJobFailures（項目 7。docs/04 申し送り 15）', ()
         { tenantId: T_A, cause: 'TENANT_PURGED', count: 0, latestAt: at('2026-09-15T01:00:00Z') },
         { tenantId: T_B, cause: 'RETENTION', count: 0, latestAt: at('2026-09-14T00:00:00Z') },
       ],
+      runningOverdue: [],
+      now: at('2026-09-16T12:00:00Z'),
+      stallThresholdMinutes: 30,
     });
     expect(result.rows).toEqual([{ tenantId: T_B, cause: 'RETENTION', failedCount: 1, lastFailedAt: at('2026-09-16T00:00:00Z') }]);
     expect(result.total).toBe(1);
+    expect(result.runningOverdue).toEqual({ kind: 'RUNNING_OVERDUE', rows: [], total: 0, stallThresholdMinutes: 30 });
     expect(JSON.stringify(result)).not.toMatch(/completed|counts/i);
+  });
+
+  it('🔴 T-12-17 ⑱: RUNNING の滞留は別区分（runningOverdue）に出て、FAILED の件数（total）に加算されない。後に COMPLETED があっても落とさない', () => {
+    const now = at('2026-09-16T12:00:00Z');
+    const result = summarizePurgeJobFailures({
+      failed: [{ tenantId: T_B, cause: 'RETENTION', count: 1, latestAt: at('2026-09-16T00:00:00Z') }],
+      completed: [{ tenantId: T_A, cause: 'RETENTION', count: 0, latestAt: at('2026-09-16T11:00:00Z') }],
+      runningOverdue: [
+        { tenantId: T_A, cause: 'RETENTION', count: 2, latestAt: at('2026-09-16T10:00:00Z') },
+        { tenantId: T_B, cause: 'TENANT_PURGED', count: 1, latestAt: at('2026-09-16T09:30:00Z') },
+      ],
+      now,
+      stallThresholdMinutes: 30,
+    });
+    expect(result.total).toBe(1);
+    expect(result.rows.map((row) => row.tenantId)).toEqual([T_B]);
+    expect(result.runningOverdue.kind).toBe('RUNNING_OVERDUE');
+    expect(result.runningOverdue.total).toBe(3);
+    // 最も古い開始が先。
+    expect(result.runningOverdue.rows).toEqual([
+      { tenantId: T_B, cause: 'TENANT_PURGED', runningCount: 1, oldestStartedAt: at('2026-09-16T09:30:00Z'), longestRunningMinutes: 150 },
+      { tenantId: T_A, cause: 'RETENTION', runningCount: 2, oldestStartedAt: at('2026-09-16T10:00:00Z'), longestRunningMinutes: 120 },
+    ]);
+    expect(JSON.stringify(result)).not.toMatch(/completed|counts|failureReason/i);
   });
 });
 

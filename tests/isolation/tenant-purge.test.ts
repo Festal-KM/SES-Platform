@@ -249,6 +249,9 @@ async function getDownloadUrl(ctx: AuthenticatedTenantCtx, id: string): Promise<
   return downloadRoute.GET(new Request(`https://app.test/api/data-exports/${id}/download-url`), segment(id));
 }
 
+/** 🔴 T-12-17 ⑲ (a): 先頭が `=` のセル値（技術欄に紛れた数式）。返却 CSV では `'=` で出る（Issue #68）。 */
+const CSV_INJECTION_TECHNOLOGIES = '=SUM(A1:A3)';
+
 async function runExportGenerate(job: { tenantId: string; exportRequestId: string }, now: Date) {
   const handler = createExportGenerateHandler({ now: () => now, objectStore: store, exportAvailableDays: 7 });
   return handler(job, `export.generate.${job.exportRequestId}`);
@@ -288,7 +291,7 @@ beforeAll(async () => {
      WHERE id = ${ENGINEER_A_PARTNER}::uuid`;
   await admin.$executeRaw`
     INSERT INTO engineer_careers (id, tenant_id, owner_partner_company_id, engineer_id, period_from, period_to, role, description, technologies)
-    VALUES (gen_random_uuid(), ${TENANT_A}::uuid, NULL, ${ENGINEER_A_HOST}::uuid, '2020-04', NULL, 'SE', 'ホストの経歴', 'TypeScript'),
+    VALUES (gen_random_uuid(), ${TENANT_A}::uuid, NULL, ${ENGINEER_A_HOST}::uuid, '2020-04', NULL, 'SE', 'ホストの経歴', ${CSV_INJECTION_TECHNOLOGIES}),
            (gen_random_uuid(), ${TENANT_A}::uuid, ${PARTNER_A1}::uuid, ${ENGINEER_A_PARTNER}::uuid, '2019-04', '2021-03', 'PG', '取引先の経歴', 'Go')`;
   await admin.$executeRaw`
     INSERT INTO skill_sheets (id, tenant_id, owner_partner_company_id, engineer_id, version, object_key, content_type, byte_size, scan_status, is_latest, uploaded_by)
@@ -411,6 +414,9 @@ describe('AC-5 / AC-6 / AC-7 / AC-8 ② CLOSING 中の返却（#77 → export.ge
     expect(careers).toHaveLength(2);
     expect(careers[1]).toContain('ホストの経歴');
     expect(careers.join('\n')).not.toContain('取引先の経歴');
+    // 🔴 T-12-17 ⑲ (a): 先頭 `=` のセルは `'=` で出る（生の `=SUM(` が無い）。値そのものは失わない。
+    expect(careers[1]).toContain(`,'${CSV_INJECTION_TECHNOLOGIES},`);
+    expect(careers[1]).not.toContain(`,${CSV_INJECTION_TECHNOLOGIES},`);
     // engineer_snapshots.csv: 越境経路 2 で開示済みの凍結コピーは**ここにだけ**。
     const snapshots = csvRows(archive!, 'engineer_snapshots.csv');
     expect(snapshots).toHaveLength(2);

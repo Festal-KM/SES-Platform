@@ -33,7 +33,7 @@ import {
 import { gateStallWithFailedJobs, gateStallWithoutFailedJobs } from '../../../../../lib/admin-monitoring/gate-stall';
 import { readMailProviderQuota } from '../../../../../lib/admin-monitoring/mail-provider-quota';
 import type { FailedJobsSnapshot, MonitoringRuntime } from '../../../../../lib/admin-monitoring/runtime';
-import type { MonitoringReaders } from '../../../../../lib/admin-monitoring/snapshot';
+import { MonitoringReadError, type MonitoringReaders } from '../../../../../lib/admin-monitoring/snapshot';
 import type { GateStallPayload, SendHoldByReasonView } from '../../../../../lib/admin-monitoring/view';
 
 export type MonitoringReadMeta = {
@@ -188,7 +188,7 @@ export function createMonitoringReaders(
     PURGE_JOB_FAILED: {
       errorKind: 'DB_READ_FAILED',
       read: async () => {
-        const result = await readPurgeJobFailures(ctx, base);
+        const result = await readPurgeJobFailures(ctx, { ...base, stallThresholdMinutes: thresholds.purgeRunStallMinutes });
         return {
           rows: result.rows.map((row) => ({
             tenantId: row.tenantId,
@@ -197,6 +197,19 @@ export function createMonitoringReaders(
             lastFailedAt: iso(row.lastFailedAt),
           })),
           total: result.total,
+          // 🔴 T-12-17 ⑱: `RUNNING` の滞留は別区分（`FAILED` の件数に加算しない）。
+          runningOverdue: {
+            kind: result.runningOverdue.kind,
+            rows: result.runningOverdue.rows.map((row) => ({
+              tenantId: row.tenantId,
+              cause: row.cause,
+              runningCount: row.runningCount,
+              oldestStartedAt: iso(row.oldestStartedAt),
+              longestRunningMinutes: row.longestRunningMinutes,
+            })),
+            total: result.runningOverdue.total,
+            stallThresholdMinutes: result.runningOverdue.stallThresholdMinutes,
+          },
         };
       },
     },
@@ -246,7 +259,15 @@ export function createMonitoringReaders(
     MAIL_PROVIDER_QUOTA: {
       errorKind: 'PROVIDER_READ_FAILED',
       read: async () => {
-        const held = await readMailProviderHeld(ctx, base);
+        // 🔴 T-12-17 ⑦: 保留件数（DB）の失敗は `DB_READ_FAILED`。既定の `PROVIDER_READ_FAILED`（「送信基盤のカウンタ（Redis）を
+        //    読めませんでした」）に落とすと原因を誤案内する。Redis のカウンタ（`readLocalSent24h`）の失敗だけが既定に落ちる。
+        //    `getQuota()` の失敗は `available: false`（項目は成立）であり、どちらでもない（`readMailProviderQuota`）。
+        let held;
+        try {
+          held = await readMailProviderHeld(ctx, base);
+        } catch (error) {
+          throw new MonitoringReadError('DB_READ_FAILED', error);
+        }
         return readMailProviderQuota(runtime.mailProvider, held, meta.now, mailProviderMemory);
       },
     },

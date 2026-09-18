@@ -122,6 +122,14 @@ export function adminMonitoringMessages(): AdminMonitoringViewMessages {
         RETENTION: t('admin.monitoring.item.PURGE_JOB_FAILED.cause.RETENTION'),
       },
       note: t('admin.monitoring.item.PURGE_JOB_FAILED.note'),
+      runningOverdue: {
+        title: t('admin.monitoring.item.PURGE_JOB_FAILED.runningOverdue.title'),
+        empty: t('admin.monitoring.item.PURGE_JOB_FAILED.runningOverdue.empty'),
+        note: t('admin.monitoring.item.PURGE_JOB_FAILED.runningOverdue.note'),
+        runningCount: t('admin.monitoring.column.runningCount'),
+        oldestStartedAt: t('admin.monitoring.column.oldestStartedAt'),
+        longestRunning: t('admin.monitoring.column.longestRunning'),
+      },
     },
     sendingDomain: {
       empty: t('admin.monitoring.item.SENDING_DOMAIN_UNVERIFIED.empty'),

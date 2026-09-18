@@ -125,7 +125,24 @@ export type UsageMeasurementPayload = {
 
 export type PurgeJobFailedPayload = {
   readonly rows: readonly { readonly tenantId: string; readonly cause: string; readonly failedCount: number; readonly lastFailedAt: Iso | null }[];
+  /** 🔴 `FAILED` の件数だけ（`runningOverdue` を加算しない）。 */
   readonly total: number;
+  /**
+   * 🔴 T-12-17 ⑱: `RUNNING` の滞留（`PURGE_RUN_STALL_ALERT_MINUTES` 超過）。同じ項目の**別区分**（`FAILED` と混ぜない /
+   *    項目 15 とも混ぜない）。件数・状態・時刻だけ。完了の事実は出さない（API-A12 のみ）。
+   */
+  readonly runningOverdue: {
+    readonly kind: 'RUNNING_OVERDUE';
+    readonly rows: readonly {
+      readonly tenantId: string;
+      readonly cause: string;
+      readonly runningCount: number;
+      readonly oldestStartedAt: Iso | null;
+      readonly longestRunningMinutes: number;
+    }[];
+    readonly total: number;
+    readonly stallThresholdMinutes: number;
+  };
 };
 
 // --- 項目 11 ---------------------------------------------------------------

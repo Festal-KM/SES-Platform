@@ -53,6 +53,29 @@ export function usagePeriodKey(kind: UsagePeriodKind, at: Date): string {
   return kind === 'DAY' ? `${year}-${month}-${day}` : `${year}-${month}`;
 }
 
+const MONTH_PERIOD_KEY_PATTERN = /^(\d{4})-(\d{2})$/;
+
+/**
+ * `MONTH` キー（`YYYY-MM`）の前月キー。T-12-17 ⑩（`usage.storage-reconcile` の解消スコープに前月を含める）。
+ *
+ * 🔴 `Date` を生成しない（本パッケージの純粋性検査 `tests/static/domain-purity.test.ts`）。文字列の算術だけで求める ——
+ *    月の切り替わりは `usagePeriodKey` が `Asia/Tokyo` の暦で決めており、その結果の文字列に対する前月は暦に依らない。
+ */
+export function previousMonthPeriodKey(periodKey: string): string {
+  const match = MONTH_PERIOD_KEY_PATTERN.exec(periodKey);
+  if (match === null) {
+    throw new RangeError(`previousMonthPeriodKey: MONTH キー（YYYY-MM）ではありません（${periodKey}）。`);
+  }
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (month < 1 || month > 12) {
+    throw new RangeError(`previousMonthPeriodKey: 月が範囲外です（${periodKey}）。`);
+  }
+  const previousYear = month === 1 ? year - 1 : year;
+  const previousMonth = month === 1 ? 12 : month - 1;
+  return `${String(previousYear).padStart(4, '0')}-${String(previousMonth).padStart(2, '0')}`;
+}
+
 /**
  * 🔴 期間が切り替わる時刻（`F-027` の `resetAt`）は **`packages/db` の `usagePeriodResetAt`** が持つ
  *    （T-07-04）。ここに置けない理由は 1 つ ——`Date` の**生成**は `packages/domain` の純粋性検査

@@ -5,15 +5,30 @@
 //    先頭に UTF-8 BOM を置く（Excel が UTF-8 と認識するため。返却先は SES 企業の管理部門であり Excel で開く）。
 // 🔴 値の整形はここで閉じる: `null` → 空セル、`boolean` → `true` / `false`、数値 → `String()`、
 //    `Date` は受け取らない（呼び出し側が ISO 8601 の文字列にしてから渡す。`packages/domain` は時刻を扱わない）。
+// 🔴 T-12-17 ⑲ (a)（[Issue #68](https://github.com/Festal-KM/SES-Platform/issues/68)）: **CSV 数式注入の無害化**。返却先は
+//    Excel で開く管理部門であり、先頭が `=` / `+` / `-` / `@` / タブ / CR の文字列セルは数式として評価されうる
+//    （`=HYPERLINK(...)` / `=cmd|...` 等）。文字列セルだけを対象に先頭へ `'` を前置する（`sanitizeCsvCellText`。純粋関数）。
+//    **値そのものは変えない**（元の文字は 1 文字も落とさない・置き換えない。`'` はスプレッドシートが「文字列」の
+//    印として読む接頭辞であり、復元は先頭 1 文字を落とすだけ）。数値・真偽値・`null` は対象外（負数 `-1` を `'-1` にしない）。
 
 export type CsvCell = string | number | boolean | null;
 
 const UTF8_BOM = '﻿';
 const NEEDS_QUOTING = /[",\r\n]/;
+/** 数式として評価されうる先頭文字（OWASP「CSV Injection」の 6 文字）。 */
+const FORMULA_LEADING = /^[=+\-@\t\r]/;
+
+/**
+ * 文字列セルの数式注入を無害化する（純粋関数）。先頭が `=` / `+` / `-` / `@` / `\t` / `\r` なら `'` を前置し、
+ * それ以外はそのまま返す。🔴 引用・エスケープはここでは行わない（`encodeCell` が後段で RFC 4180 の引用を掛ける）。
+ */
+export function sanitizeCsvCellText(text: string): string {
+  return FORMULA_LEADING.test(text) ? `'${text}` : text;
+}
 
 function encodeCell(cell: CsvCell): string {
   if (cell === null) return '';
-  const text = typeof cell === 'string' ? cell : String(cell);
+  const text = typeof cell === 'string' ? sanitizeCsvCellText(cell) : String(cell);
   return NEEDS_QUOTING.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 

@@ -30,6 +30,8 @@ export type MonitoringThresholds = {
   readonly scanStallMinutes: number;
   /** `TENANT_PURGE_GRACE_DAYS` */
   readonly purgeGraceDays: number;
+  /** `PURGE_RUN_STALL_ALERT_MINUTES`（T-12-17 ⑱。項目 7 の `RUNNING_OVERDUE`） */
+  readonly purgeRunStallMinutes: number;
   /** `SCHEDULER_HEARTBEAT_STALE_HOURS` */
   readonly schedulerStaleHours: number;
   /** `GATE_FAIL_RATE_WINDOW_HOURS` */

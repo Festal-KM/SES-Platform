@@ -31,6 +31,21 @@ export type MonitoringReaders = { readonly [K in MonitoringKind]: MonitoringRead
  */
 export type MonitoringFailureSink = (kind: MonitoringKind, errorKind: MonitoringErrorKind, error: unknown) => void;
 
+/**
+ * 🔴 T-12-17 ⑦: 1 つの reader の中に**出所の異なる**読み取りが同居するとき（項目 13 = DB の保留件数 + Redis のカウンタ）、
+ *    失敗した側の種別を運ぶ。`readOne` はこれを見て `errorKind` を決め、持たない例外は reader の既定（`errorKind`）に落とす。
+ *    種別は `MONITORING_ERROR_KINDS` の閉集合から出ない（内容ではなく出所だけ。`BR-40`）。
+ */
+export class MonitoringReadError extends Error {
+  constructor(
+    readonly errorKind: MonitoringErrorKind,
+    override readonly cause: unknown,
+  ) {
+    super(`監視項目の材料を読めませんでした（${errorKind}）。`);
+    this.name = 'MonitoringReadError';
+  }
+}
+
 async function readOne<K extends MonitoringKind>(
   kind: K,
   reader: MonitoringReader<K>,
@@ -40,8 +55,9 @@ async function readOne<K extends MonitoringKind>(
     const payload = await reader.read();
     return { kind, ok: true, ...payload } as MonitoringItemView<K>;
   } catch (error) {
-    onFailure(kind, reader.errorKind, error);
-    return { kind, ok: false, errorKind: reader.errorKind };
+    const errorKind = error instanceof MonitoringReadError ? error.errorKind : reader.errorKind;
+    onFailure(kind, errorKind, error instanceof MonitoringReadError ? error.cause : error);
+    return { kind, ok: false, errorKind };
   }
 }
 

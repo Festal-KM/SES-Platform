@@ -33,8 +33,11 @@ export function severityOf(item: MonitoringItemView): MonitoringSeverity | 'unav
     case 'SUBMIT_FAILED_UNATTENDED':
     case 'SUBMITTING_STALL':
     case 'FAILED_JOBS':
-    case 'PURGE_JOB_FAILED':
       return item.total > 0 ? 'failure' : 'ok';
+    case 'PURGE_JOB_FAILED':
+      // 🔴 T-12-17 ⑱: `RUNNING` の滞留は失敗ではなく「未完了の疑い」（項目 4 の `SCANNING` 滞留と同じ扱い = hold）。
+      if (item.total > 0) return 'failure';
+      return item.runningOverdue.total > 0 ? 'hold' : 'ok';
     case 'SCAN_FAILED':
       if (item.total > 0) return 'failure';
       return item.scanningStalled.count > 0 ? 'hold' : 'ok';

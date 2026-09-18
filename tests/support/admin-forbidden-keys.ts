@@ -114,6 +114,16 @@ export type AdminForbiddenKeyException = {
   readonly rationale: string;
   /** 値の形の確認（例外を「同名の別物」にしか使えないようにする）。 */
   readonly accept: (value: unknown) => boolean;
+  /**
+   * 🔴 T-12-17 ⑬: 例外が効く**型名**（静的テスト `tests/static/admin-forbidden-keys.test.ts` の走査）。省略時はファイル単位。
+   *    指定すると、同じファイルの他の export 型に同名キーが現れた瞬間に違反になる（ファイル単位 → 型単位に狭める）。
+   */
+  readonly typeName?: RegExp;
+  /**
+   * 🔴 T-12-17 ⑬: 例外が効く **JSON パス**（E2E `admin-non-disclosure.spec.ts` / `collectForbiddenKeySightings`）。省略時は
+   *    応答のどこでも。指定すると、そのパス以外に同名キーが現れた瞬間に違反になる（`typeName` と同じ向きの狭め）。
+   */
+  readonly path?: RegExp;
 };
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -149,13 +159,21 @@ export const ADMIN_FORBIDDEN_KEY_EXCEPTIONS: Readonly<
     },
   },
   'API-A8': {
+    // 🔴 T-12-17 ⑬: ファイル単位 → 型単位。`GateStall*`（`GateStallRow` / `GateStallRowView` / `GateStallsMeta` / `GateStallCandidates`）と、
+    //    その材料 2 型（`FailedGateRunJob` = failed セットの写し / `HeldReviewGateRow` = `review_gates` の行。どちらも
+    //    `GateStallRow.targetId` の出所であり、`listGateStalls` の入力として同じファイルに export されている）に限る。
+    //    JSON では項目 12 の `items[*].rows[*]` の下だけ。
     targetId: {
       rationale: 'A-005 項目 12 GATE_STALL の対象 ID（T-11-05 決着。リンクにしない）',
       accept: (value) => typeof value === 'string' && UUID_PATTERN.test(value),
+      typeName: /^(GateStall|FailedGateRunJob$|HeldReviewGateRow$)/,
+      path: /^items\[\d+\]\.rows\[\d+\]\.targetId$/,
     },
     reason: {
       rationale: 'A-005 項目 12 GATE_STALL の理由（列挙値 3 値。T-11-05 決着）',
       accept: (value) => typeof value === 'string' && GATE_STALL_REASON_VALUES.includes(value),
+      typeName: /^GateStall/,
+      path: /^items\[\d+\]\.rows\[\d+\]\.reason$/,
     },
   },
   'API-A16': {},
@@ -204,7 +222,9 @@ export function collectForbiddenKeySightings(value: unknown, responseId: AdminRe
       if (group !== null) {
         const exception = exceptions[key];
         if (exception !== undefined) {
-          if (!exception.accept(child)) {
+          if (exception.path !== undefined && !exception.path.test(childPath)) {
+            sightings.push({ path: childPath, key, group, detail: `例外のパスの外に現れた（${exception.rationale}）` });
+          } else if (!exception.accept(child)) {
             sightings.push({ path: childPath, key, group, detail: `例外の形を満たさない値（${exception.rationale}）` });
           }
         } else if (maskedZone && group === 'IDENTITY') {

@@ -12,6 +12,9 @@
 //      （🔴 一括の共有 / 解除のエンドポイントが存在しない。`F-016 AC-1`。`engineer-shares.test.ts:291` と対）
 //   ⑤ `apps/web/lib/engineer-shares/**` に `contains` / `mode: 'insensitive'` が現れない（フリーワードの照合は
 //      `packages/db/src/search/free-word.ts` の 1 箇所。#22 `search-sql-single-path.test.ts` の走査対象に含まれることを対照で確認）
+//   ⑥ T-12-17 ③: `i18n` の `次の 50 件`（`engineerShares.loadMore`）と `PAGE_SIZE_DEFAULT`（`packages/config/src/limits.ts`）
+//      は手で同期している —— 値と文言の対照を固定する（`PAGE_SIZE_DEFAULT` を変えるとここが落ちる。文言を `t()` の
+//      引数で組み立てる形には変えない = T-10-01 の決着「`t()` に引数は足さない」）
 //
 // 🔴 ④⑤は **AST** で見る（正規表現ではコメント中の `contains` / `export` を実物と区別できない）。
 import { readdirSync, readFileSync } from 'node:fs';
@@ -20,6 +23,8 @@ import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import type { CursorPage } from '../../apps/web/lib/api/pagination';
+import { PAGE_SIZE_DEFAULT } from '../../packages/config/src/limits.js';
+import { t } from '../../packages/i18n/src/index.js';
 import {
   engineerShareBodySchema,
   engineerShareCursorSchema,
@@ -162,5 +167,12 @@ describe('⑤ フリーワードの照合が `apps/web/lib/engineer-shares/**` �
     const source = readFileSync(SEARCH_SINGLE_PATH_TEST, 'utf8');
     expect(source).toMatch(/SCANNED_ROOTS\s*=\s*\[[^\]]*'apps'/);
     expect(source).toContain("'packages/db/src/search/'");
+  });
+});
+
+describe('⑥ T-12-17 ③: 「次の 50 件」の文言と `PAGE_SIZE_DEFAULT` の対照（手で同期している 2 箇所）', () => {
+  it('`PAGE_SIZE_DEFAULT` は 50 で、`engineerShares.loadMore` の文言がその数を含む', () => {
+    expect(PAGE_SIZE_DEFAULT).toBe(50);
+    expect(t('engineerShares.loadMore')).toBe(`次の ${PAGE_SIZE_DEFAULT} 件`);
   });
 });

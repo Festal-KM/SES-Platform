@@ -19,7 +19,7 @@
 // 🔴 冪等: 2 度走っても 2 度目は母集団が 0 件（未処理条件）。`attempts: 3` を許せる根拠でもある。
 // 🔴 `responded_at = now` / `responded_by = NULL`（#35 の決着の解釈「`REQUESTED` を離れた時刻と主体」。
 //    期限切れの主体は system なので NULL）。
-import { proposalRequestMachine } from '@ses/domain';
+import { PROPOSAL_REQUEST_OPERATION, proposalRequestMachine } from '@ses/domain';
 import { writeAuditLog } from './audit.js';
 import type { SystemTenantCtx } from './context.js';
 import { withTenant } from './with-tenant.js';
@@ -31,8 +31,8 @@ import { withTenant } from './with-tenant.js';
  */
 export const PROPOSAL_REQUEST_AUDIT_ACTION_UPDATE = 'proposal_request.update';
 
-/** `AuditLog.summary.operation`（期限切れ）。 */
-export const PROPOSAL_REQUEST_EXPIRE_OPERATION = 'EXPIRE';
+/** `AuditLog.summary.operation`（期限切れ）。🔴 T-12-17 ⑮: 値は `packages/domain` の閉集合への参照（リテラルを書かない）。 */
+export const PROPOSAL_REQUEST_EXPIRE_OPERATION = PROPOSAL_REQUEST_OPERATION.EXPIRE;
 
 /** 1 回の実行で読む上限の既定（残りは翌日の実行が拾う。DB を舐め続けない）。 */
 export const PROPOSAL_REQUEST_EXPIRE_DEFAULT_LIMIT = 500;

@@ -92,6 +92,20 @@ export const PARTNER_LEDGER_ACTION_PREFIXES = [
  */
 export const PROPOSAL_REQUEST_OPERATIONS = ['ACCEPT', 'DECLINE', 'WITHDRAW', 'EXPIRE'] as const;
 
+export type ProposalRequestOperation = (typeof PROPOSAL_REQUEST_OPERATIONS)[number];
+
+/**
+ * 🔴 T-12-17 ⑮: 書き込み側（`apps/web/lib/proposal-requests/service.ts` / `packages/db/src/proposal-request-expiry.ts`）が
+ *    `summary.operation` に載せる値の**名前付き参照**。値は上の閉集合から取る（リテラルを 2 度書かない。監査ログの値は不変）。
+ *    `satisfies` が「キー名 = 値」を型で固定するので、閉集合と食い違う定義はコンパイルできない。
+ */
+export const PROPOSAL_REQUEST_OPERATION = {
+  ACCEPT: PROPOSAL_REQUEST_OPERATIONS[0],
+  DECLINE: PROPOSAL_REQUEST_OPERATIONS[1],
+  WITHDRAW: PROPOSAL_REQUEST_OPERATIONS[2],
+  EXPIRE: PROPOSAL_REQUEST_OPERATIONS[3],
+} as const satisfies { readonly [K in ProposalRequestOperation]: K };
+
 const PAIR_VISIBILITY_BEFORE: AuditDetailPair = { id: 'visibility', side: 'BEFORE' };
 const PAIR_VISIBILITY_AFTER: AuditDetailPair = { id: 'visibility', side: 'AFTER' };
 const PAIR_ROLE_BEFORE: AuditDetailPair = { id: 'role', side: 'BEFORE' };

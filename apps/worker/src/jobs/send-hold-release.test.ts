@@ -91,11 +91,13 @@ function makeHandler(overrides: Record<string, unknown> = {}) {
     return 'ENQUEUED' as const;
   });
   const providerSentCounter = new InMemoryProviderSendCounter();
+  const nearingMarker = { observe: vi.fn(async (nearing: boolean, now: Date) => (nearing ? now : null)) };
   const deps = {
     emailSender: { getQuota: vi.fn(async () => ({ max24h: 200, sentLast24h: 0, observedAt: NOW })) },
     providerDailyQuota: 200,
     providerQuotaWarnRatio: 0.8,
     providerSentCounter,
+    nearingMarker,
     quotaDefaults: QUOTA_DEFAULTS,
     enqueueEmailDispatch,
     reissueAccountMail,
@@ -110,6 +112,7 @@ function makeHandler(overrides: Record<string, unknown> = {}) {
     reissueAccountMail: deps.reissueAccountMail,
     enqueueSendProposal: deps.enqueueSendProposal,
     providerSentCounter: deps.providerSentCounter,
+    nearingMarker: deps.nearingMarker,
   };
 }
 
@@ -508,5 +511,37 @@ describe('上限への接近（A-005 項目 13。到達とは別物）', () => {
 
     expect(outcome.warning).toBe(true);
     expect(outcome.headroom).toBe(2);
+  });
+
+  it('🔴 T-12-17 ⑤: warning が真なら nearingMarker.observe(true, now) を 1 回だけ呼ぶ（目印が TTL で消えない）', async () => {
+    const providerSentCounter = new InMemoryProviderSendCounter();
+    for (let i = 0; i < 8; i += 1) await providerSentCounter.record(NOW);
+    const { handler, nearingMarker } = makeHandler({ providerDailyQuota: 10, providerSentCounter });
+
+    const outcome = await handler({ tenantId: TENANT_ID }, 'j-1');
+
+    expect(outcome.warning).toBe(true);
+    expect(nearingMarker.observe).toHaveBeenCalledTimes(1);
+    expect(nearingMarker.observe).toHaveBeenCalledWith(true, NOW);
+  });
+
+  it('🔴 T-12-17 ⑤: warning が偽なら nearingMarker.observe(false, now) を 1 回だけ呼ぶ（下回ったら目印を消す）', async () => {
+    const { handler, nearingMarker } = makeHandler();
+
+    const outcome = await handler({ tenantId: TENANT_ID }, 'j-1');
+
+    expect(outcome.warning).toBe(false);
+    expect(nearingMarker.observe).toHaveBeenCalledTimes(1);
+    expect(nearingMarker.observe).toHaveBeenCalledWith(false, NOW);
+  });
+
+  it('目印の書き込みに失敗しても復帰の結果は変わらない（表示専用の揮発値）', async () => {
+    const nearingMarker = { observe: vi.fn(async () => { throw new Error('redis down'); }) };
+    const { handler } = makeHandler({ nearingMarker });
+
+    const outcome = await handler({ tenantId: TENANT_ID }, 'j-1');
+
+    expect(outcome.warning).toBe(false);
+    expect(nearingMarker.observe).toHaveBeenCalledTimes(1);
   });
 });
