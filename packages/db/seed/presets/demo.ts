@@ -55,6 +55,7 @@ import {
   type ProposalState,
 } from '@ses/domain';
 import { auditLogRowValues, type AuditLogEntry } from '../../src/audit.js';
+import { PROPOSAL_AUDIT_TARGET_TYPE } from '../../src/proposal-draft.js';
 import { computeProposalContentHash, gateContentHash } from '../../src/gate-content-hash.js';
 import { addDays, advanceState, dateOnly, seedUuid, type StateStep } from '../support.js';
 import type { SeedRng } from '../rng.js';
@@ -1258,7 +1259,7 @@ async function seedTenant(ctx: SeedContext, tenantIndex: number, profile: Tenant
       action: 'proposal.create',
       actorKind: 'USER',
       actorId: createdBy,
-      targetType: 'Proposal',
+      targetType: PROPOSAL_AUDIT_TARGET_TYPE,
       targetId: proposalId,
       summary: { projectId: ids.projects[plan.projectKey], proposalRequestId: plan.proposalRequestId ?? null },
       createdAt: plan.createdAt,
@@ -1294,7 +1295,7 @@ async function seedTenant(ctx: SeedContext, tenantIndex: number, profile: Tenant
     await audit.write({
       action: 'proposal.update',
       actorKind: 'SYSTEM',
-      targetType: 'PROPOSAL',
+      targetType: PROPOSAL_AUDIT_TARGET_TYPE,
       targetId: ids.proposals[plan.key],
       summary: {
         operation: 'GATE_RESULT',
@@ -1375,7 +1376,7 @@ async function seedTenant(ctx: SeedContext, tenantIndex: number, profile: Tenant
     await audit.write({
       action: 'proposal.submit',
       actorKind: 'SYSTEM',
-      targetType: 'Proposal',
+      targetType: PROPOSAL_AUDIT_TARGET_TYPE,
       targetId: ids.proposals[plan.key],
       summary: { operation: 'SUBMIT_SETTLE', attemptSeq: 1, result: 'SUCCEEDED', toState: 'SUBMITTED', externalCallMade: true },
       createdAt: submittedAt,
@@ -1386,7 +1387,7 @@ async function seedTenant(ctx: SeedContext, tenantIndex: number, profile: Tenant
       action: 'proposal.approve',
       actorKind: 'USER',
       actorId: salesUserId,
-      targetType: 'Proposal',
+      targetType: PROPOSAL_AUDIT_TARGET_TYPE,
       targetId: ids.proposals[plan.key],
       summary: { operation: 'APPROVE', reviewGateId: gate.gateId, contentHash: gate.contentHash, approvedBySystem: false },
       createdAt: approvedAt,

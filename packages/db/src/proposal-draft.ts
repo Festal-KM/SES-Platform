@@ -54,7 +54,11 @@ export const PROPOSAL_AUDIT_ACTION_CREATE = 'proposal.create';
 /**
  * 🔴 `AuditLog.targetType`（提案）。T-09-09 で定数にした —— 表記が `'Proposal'`（#36 / #37 / #41 / #42 / #43 / #44 / #48）と
  *    `'PROPOSAL'`（`gate.run` の `GATE_RESULT`）で揺れており、#45 / #46 / #47 の**読み書きはこの 1 定数**を使う。
- *    書き込み側の統一と既存行の移行は SP-12（Phase 1 hardening）に申し送った（既存データがあるため本タスクでは変えない）。
+ *    ✅ T-12-13 ①（SP-12）: 書き込み側（`apps/web/lib/proposals/**` / `packages/db/src/proposal-{approval,send}.ts` /
+ *    `apps/worker/src/jobs/gate-run.ts` / `seed/presets/demo.ts`）を全部この定数に寄せ、既存行は migration
+ *    20260929000000 が `UPDATE audit_logs SET target_type = 'Proposal' WHERE target_type = 'PROPOSAL' AND action LIKE 'proposal.%'`
+ *    で移した。`audit_logs.targetType` に `'Proposal'` / `'PROPOSAL'` のリテラルを書く箇所は
+ *    `tests/static/audit-target-type-literal.test.ts` が非テストソースで 0 件に固定する。
  *    `review_gates.target_type` / `send_attempts.entity_type` の `'PROPOSAL'`（`GateTargetType` / `PROPOSAL_SEND_ENTITY_TYPE`）は
  *    別の列であり、この定数とは独立である。
  */

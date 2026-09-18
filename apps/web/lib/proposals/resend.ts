@@ -33,6 +33,7 @@
 // 🔴 本モジュールは Next.js / Auth.js に依存しない（結合テストがサーバを立てずに同じ経路を実行できるようにする）。
 import {
   nextSendAttemptSeq,
+  PROPOSAL_AUDIT_TARGET_TYPE,
   PROPOSAL_SEND_ENTITY_TYPE,
   withTenant,
   writeAuditLog,
@@ -65,9 +66,6 @@ export const PROPOSAL_RESEND_OPERATION = 'RESEND';
 
 /** `ProposalEvent.note` の印（`S-023` の履歴が「再送（理由）」として描く。T-09-09）。 */
 export const PROPOSAL_RESEND_NOTE_PREFIX = 'RESEND:';
-
-/** `AuditLog.targetType`（#41 / #43 / #48 と同じ語）。 */
-const PROPOSAL_TARGET_TYPE = 'Proposal';
 
 /**
  * 🔴 本経路が動かす遷移と、その所有者（`PROPOSAL_TRANSITION_OWNERS`。T-09-02）。
@@ -170,7 +168,7 @@ export async function requestProposalResend(
         action: PROPOSAL_AUDIT_ACTION_RESEND,
         actorKind: 'USER',
         actorId: ctx.userId,
-        targetType: PROPOSAL_TARGET_TYPE,
+        targetType: PROPOSAL_AUDIT_TARGET_TYPE,
         targetId: row.id,
         // 🔴 本文・宛先・単価・氏名を載せない（docs/05 §16.2）。自由入力の `reason` は PII を含みうるため
         //    文字数だけを載せる（`F-023` 処理④は全文が残る `ProposalEvent.note` で満たす）。
@@ -193,7 +191,7 @@ export async function requestProposalResend(
   } catch (error: unknown) {
     return rethrowWithInvalidTransitionAudit(
       ctx,
-      { targetType: PROPOSAL_TARGET_TYPE, targetId: proposalId, ipAddress: deps.meta.ipAddress },
+      { targetType: PROPOSAL_AUDIT_TARGET_TYPE, targetId: proposalId, ipAddress: deps.meta.ipAddress },
       error,
     );
   }

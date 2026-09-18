@@ -31,7 +31,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { catalogRoleModelResolver, createAiClient } from '@ses/ai';
 import { gateRunJobId } from '@ses/connectors';
 import { createBullMqGateRunQueue, type BullMqGateRunQueue } from '@ses/connectors/bullmq';
-import { configureTenantDb, disconnectTenantDb, resolveTenantCtx, type AuthenticatedTenantCtx } from '@ses/db';
+import { configureTenantDb, disconnectTenantDb, PROPOSAL_AUDIT_TARGET_TYPE, resolveTenantCtx, type AuthenticatedTenantCtx } from '@ses/db';
 import { createUnextendedClient, type UnextendedClient } from '@ses/db/testing';
 import { createGateRunHandler } from '../../apps/worker/src/jobs/gate-run.js';
 import {
@@ -423,6 +423,23 @@ describe('🔴 ② F-021 AC-2: 既定は人間承認必須。取引先が作成�
     for (const forbidden of [CLEAN_BODY, '650000', RECIPIENT.recipientCompanyName, RECIPIENT.recipientEmail, P1_NAME]) {
       expect(serialized).not.toContain(forbidden);
     }
+
+    // 🔴 T-12-13 ①: `audit_logs.target_type` の表記は 1 定数（`PROPOSAL_AUDIT_TARGET_TYPE`）に統一されている ——
+    //    #36（作成）/ #39（依頼）/ 実 `gate.run`（`GATE_RESULT`。以前は `'PROPOSAL'`）/ #41（承認）が残した行が**すべて**
+    //    同じ `targetType` で引け、`'PROPOSAL'` + `proposal.%` の行が 0 件（migration 20260929000000 の移行後の不変条件）。
+    const byConstant = await admin.auditLog.findMany({
+      where: { targetId: id, targetType: PROPOSAL_AUDIT_TARGET_TYPE, action: { startsWith: 'proposal.' } },
+      orderBy: { createdAt: 'asc' },
+      select: { action: true, actorKind: true, summary: true },
+    });
+    expect(byConstant.map((row) => [row.action, row.actorKind, (row.summary as { operation?: string }).operation ?? null])).toEqual([
+      ['proposal.create', 'USER', null],
+      ['proposal.update', 'USER', 'GATE_REQUEST'],
+      ['proposal.update', 'SYSTEM', 'GATE_RESULT'],
+      ['proposal.approve', 'USER', 'APPROVE'],
+    ]);
+    expect(await admin.auditLog.count({ where: { targetId: id, action: { startsWith: 'proposal.' } } })).toBe(byConstant.length);
+    expect(await admin.auditLog.count({ where: { targetType: 'PROPOSAL', action: { startsWith: 'proposal.' } } })).toBe(0);
   });
 
   it('🔴 ③ #41 は body を読まない: GATE_FAILED に { gate: PASS, force: true, reviewGateId } を送っても 422。APPROVAL_PENDING では空 body と同じ 200', async () => {

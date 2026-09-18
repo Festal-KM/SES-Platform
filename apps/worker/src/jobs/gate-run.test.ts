@@ -46,6 +46,8 @@ vi.mock('@ses/db', () => ({
   settleAiCost: vi.fn(),
   recordAiUsage: vi.fn(async () => 'ai-usage-id'),
   countAiUnit: vi.fn(async () => null),
+  // 🔴 T-12-13 ①: `audit_logs.target_type`（提案）の 1 定数（実物と同じ値。`review_gates.target_type` の 'PROPOSAL' とは別）。
+  PROPOSAL_AUDIT_TARGET_TYPE: 'Proposal',
 }));
 
 const { createAiClient, catalogRoleModelResolver, AiCostLimitExceededError } = await import('@ses/ai');
@@ -350,7 +352,8 @@ describe('gate.run（docs/05 §11）', () => {
     expect(writeAuditLog.mock.calls[0]?.[1]).toMatchObject({
       action: 'proposal.update',
       actorKind: 'SYSTEM',
-      targetType: 'PROPOSAL',
+      // 🔴 T-12-13 ①: 監査行の targetType は `PROPOSAL_AUDIT_TARGET_TYPE`（'Proposal'）。ゲートの 'PROPOSAL' を流用しない。
+      targetType: 'Proposal',
       targetId: PROPOSAL_ID,
       summary: { operation: 'GATE_RESULT', overall: 'PASS' },
     });

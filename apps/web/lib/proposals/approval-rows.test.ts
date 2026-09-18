@@ -14,8 +14,8 @@ import { describe, expect, it } from 'vitest';
 import type { GateFinding, GateResultView, SendHoldReasonKey } from '@ses/domain';
 import { t } from '@ses/i18n';
 import type { ProposalApprovalView } from './approval';
-import { APPROVAL_HEADER_REQUIRED_FIELDS, formatElapsed, proposalApprovalRows } from './approval-rows';
-import type { HostProposalView, PartnerProposalView } from './views';
+import { APPROVAL_HEADER_REQUIRED_FIELDS, formatElapsed, isAwaitingSendSettlement, proposalApprovalRows } from './approval-rows';
+import type { HostProposalView, PartnerProposalView, ProposalSendAttemptView } from './views';
 
 const NOW = new Date('2026-09-16T03:00:00.000Z');
 const PROPOSAL_ID = '01930000-0000-7000-8000-000000000301';
@@ -90,9 +90,68 @@ function view(overrides: Partial<ProposalApprovalView> = {}): ProposalApprovalVi
     canApprove: true,
     canSubmit: true,
     submittedAt: null,
+    sendAttempts: [],
     ...overrides,
   };
 }
+
+/** T-12-13 ⑤: 送信試行 1 件（`status` 以外は判定に使わない）。 */
+function attempt(attemptSeq: number, status: string): ProposalSendAttemptView {
+  return { attemptSeq, status, failureKind: null, startedAt: '2026-09-16T00:00:00.000Z', settledAt: null, externalId: null };
+}
+
+describe('🔴 T-12-13 ⑤: APPROVED のまま送信の確定を待っているか（isAwaitingSendSettlement / rows.awaitingSendSettlement）', () => {
+  const approved = { ...HOST_VIEW, state: 'APPROVED' } as const;
+
+  it('試行の末尾が未確定（RESERVED）なら true。確定済み（SUCCEEDED / FAILED / UNKNOWN）だけなら false', () => {
+    expect(isAwaitingSendSettlement({ state: 'APPROVED', sendHold: null, sendAttempts: [attempt(1, 'RESERVED')] })).toBe(true);
+    expect(isAwaitingSendSettlement({ state: 'APPROVED', sendHold: null, sendAttempts: [attempt(1, 'FAILED'), attempt(2, 'RESERVED')] })).toBe(true);
+    for (const status of ['SUCCEEDED', 'FAILED', 'UNKNOWN']) {
+      expect(isAwaitingSendSettlement({ state: 'APPROVED', sendHold: null, sendAttempts: [attempt(1, status)] }), status).toBe(false);
+    }
+    expect(isAwaitingSendSettlement({ state: 'APPROVED', sendHold: null, sendAttempts: [] })).toBe(false);
+  });
+
+  it('🔴 APPROVED で試行の末尾が確定済み（#44 の CAS 後、seq N+1 の行がまだ無い形）は false —— 送信中と断定しない', () => {
+    // 🔴 レビュー指摘（2026-09-18）: `APPROVED` + 末尾 `UNKNOWN`（`last_failure_reason` が前回の失敗のまま残る）は「#44 の受け付け直後」
+    //    にも「enqueue が 409 `SEND_JOB_BLOCKED` で止まった」「seq 2 のジョブが ③ CAS より前に落ちた（failed job）」にも見える。
+    //    後者で「送信中」を恒久的に出すと `S-021` / `S-022` / `S-023` のどこにも復帰導線が無い行き止まりになるので、ここは **`false`**
+    //    にして「送信する」が戻ること。前者（受け付け直後の窓）は `S-022` が残すセッションの印（`submit-intent.ts`）が埋める。
+    //    `last_failure_reason` は入力に無い（根拠にしない）。
+    expect(isAwaitingSendSettlement({ state: 'APPROVED', sendHold: null, sendAttempts: [attempt(1, 'UNKNOWN')] })).toBe(false);
+    expect(isAwaitingSendSettlement({ state: 'APPROVED', sendHold: null, sendAttempts: [attempt(1, 'FAILED')] })).toBe(false);
+    // 確定後（SUBMITTED / SUBMIT_FAILED は APPROVED ではない）。
+    expect(isAwaitingSendSettlement({ state: 'SUBMITTED', sendHold: null, sendAttempts: [attempt(1, 'UNKNOWN'), attempt(2, 'SUCCEEDED')] })).toBe(false);
+    expect(isAwaitingSendSettlement({ state: 'SUBMIT_FAILED', sendHold: null, sendAttempts: [attempt(1, 'UNKNOWN'), attempt(2, 'FAILED')] })).toBe(false);
+  });
+
+  it('🔴 APPROVED 以外・保留中（sendHold が非 null）は false（保留は別の枠で描き、GATE_STALE の「送信する」を消さない）', () => {
+    for (const state of ['APPROVAL_PENDING', 'SUBMITTING', 'GATE_FAILED', 'DRAFT', 'WON'] as const) {
+      expect(isAwaitingSendSettlement({ state, sendHold: null, sendAttempts: [attempt(1, 'RESERVED')] }), state).toBe(false);
+    }
+    expect(isAwaitingSendSettlement({ state: 'APPROVED', sendHold: { reasonKey: 'GATE_STALE' }, sendAttempts: [] })).toBe(false);
+    expect(isAwaitingSendSettlement({ state: 'APPROVED', sendHold: { reasonKey: 'RATE_LIMIT' }, sendAttempts: [attempt(1, 'RESERVED')] })).toBe(false);
+  });
+
+  it('rows.awaitingSendSettlement: ホストの view の試行だけから導かれ、取引先の view は常に false（試行が型に無い）', () => {
+    const settledOnly = proposalApprovalRows(view({ view: approved, sendAttempts: [attempt(1, 'UNKNOWN')] }), NOW);
+    expect(settledOnly.awaitingSendSettlement).toBe(false);
+    expect(settledOnly.sendHold).toBeNull();
+    const reserved = proposalApprovalRows(view({ view: approved, sendAttempts: [attempt(1, 'RESERVED')] }), NOW);
+    expect(reserved.awaitingSendSettlement).toBe(true);
+    const idle = proposalApprovalRows(view({ view: approved }), NOW);
+    expect(idle.awaitingSendSettlement).toBe(false);
+    const held = proposalApprovalRows(
+      view({ view: { ...approved, sendHold: { reasonKey: 'GATE_STALE', since: '2026-09-16T00:00:00.000Z' } }, sendAttempts: [attempt(1, 'RESERVED')] }),
+      NOW,
+    );
+    expect(held.awaitingSendSettlement).toBe(false);
+    expect(held.sendHold?.reasonKey).toBe('GATE_STALE');
+    const partnerView = { ...approved, audience: 'PARTNER' } as unknown as PartnerProposalView;
+    const partner = proposalApprovalRows(view({ view: partnerView, canApprove: false, canSubmit: false }), NOW);
+    expect(partner.awaitingSendSettlement).toBe(false);
+  });
+});
 
 describe('🔴 T-09-06: 送信の保留と送信後の状態（docs/05 §10.4 / §10.5 / F-059 AC-7）', () => {
   const since = '2026-09-16T00:00:00.000Z';

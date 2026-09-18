@@ -17,6 +17,9 @@
 //   ④ 🔴 **「応答不明」は「失敗」と別の見た目**（琥珀の注記 + `data-delivery-unknown`）。届いている可能性が最も高い区分であり、
 //      再送の判断が変わる（`docs/04` §S-022 失敗理由の語）。
 //   ⑤ 202 の後は **`S-021` へ遷移**する（送信中の表示は `S-021` が持つ。押した瞬間に「送信済み」と見せない）。
+//      🔴 T-12-13 ⑤: 遷移の直前に `markSubmitRequested`（`lib/proposals/submit-intent.ts`。`sessionStorage`）で「受け付けた」印を置く。
+//      `S-021` はマウント時にこれを消費して #43 と同じ `SUBMIT_REQUESTED` の枠に入り、#46 の読み直しで確定を拾う。
+//      印は 409 / ネットワーク失敗では置かない（`response.ok` の後）。
 //   ⑥ 再送の導線は `canResend`（ロール）× `denialMessage === null`（テナント状態）のときだけ。`VIEWER` は閲覧のみ。
 //      ⚠️ これは UI の配慮であり、拒否の本体は #44 のガード（`requireRole` / `requireExecutable` / `requireNotViewer`）と
 //      `assertResendable` の 3 段 + CAS である。
@@ -43,6 +46,7 @@ import {
   Textarea,
 } from '@ses/ui';
 import type { SendFailureAttemptRowView, SendFailureRowView, SendFailureSummaryView } from '../../../../lib/proposals/send-failure-rows';
+import { markSubmitRequested } from '../../../../lib/proposals/submit-intent';
 
 export type SendFailureScreenMessages = {
   readonly lead: string;
@@ -211,6 +215,10 @@ export function SendFailureScreen({ rows, summary, canResend, denialMessage, app
         return;
       }
       // 🔴 202 = 受け付け。「送信済み」と見せない。送信中の表示と確定は `S-021` が読み直して描く。
+      // 🔴 T-12-13 ⑤: 受け付けの事実をセッションに残す（`S-021` がマウント時に消費して #43 と同じ `SUBMIT_REQUESTED` に入る）。
+      //    DB の `last_failure_reason` を「送信中」の根拠にしない（409 / failed job の行が行き止まりになる）ための印であり、
+      //    置けなくても遷移は止めない（`markSubmitRequested` は throw しない）。
+      markSubmitRequested(() => window.sessionStorage, selected.id);
       router.push(approveHrefPattern.replace('{id}', selected.id));
     } catch {
       setSubmitting(false);

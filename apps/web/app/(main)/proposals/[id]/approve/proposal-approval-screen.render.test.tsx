@@ -12,13 +12,28 @@
 //   ⑥🔴 取引先（`canApprove=false` + 注記）・`VIEWER`・停止中（`denialMessage`）には操作が無い
 //   ⑦🔴 「無視して承認」「警告を無視して進む」「一括承認」に相当する語・ボタンが無い（`F-020 AC-2` / `BR-50`）
 //   ⑧ 自動承認の承認者欄と監査ログへの導線（`F-021 AC-5`）
+//   ⑨🔴 T-12-13 ⑤: `APPROVED` で送信の確定を待っている間（`awaitingSendSettlement` = 試行の末尾が未確定 `RESERVED`）は #46 の
+//     読み直しが走り（`data-send-polling="true"`）、「送信する」（`proposal-approval-submit`）を描かない。確定後（`SUBMITTED` /
+//     `SUBMIT_FAILED`）は読まず「送信する」も無い。保留中も読む。🔴 `APPROVED` + `awaitingSendSettlement: false`（= #44 の CAS 後に
+//     ジョブが無い行 / 409 / failed job もこの形）は読まず「送信する」を描く —— #44 の受け付け直後の窓は `S-022` が残すセッションの印
+//     （`lib/proposals/submit-intent.ts`）が `SUBMIT_REQUESTED` で埋めるので、サーバ描画（印は `useEffect` でしか読まない）では
+//     「送信する」がある
+//   ⑩🔴 T-12-13 ⑥: `data-can-approve`（立場）と `data-can-approve-now`（この瞬間に #41 を呼べるか）の差。`GATE_FAILED` は前者だけ `true`、
+//     `APPROVAL_PENDING` は末尾の確認済みで両方 `true`（末尾の観測は `renderToStaticMarkup` では起きないので、その部分は画面が使う
+//     同じ純粋関数 `canApproveNow` で固定する）
 //
 // 🔴 `react-dom/server` の `renderToStaticMarkup` を使う（他の render テストと同じ）。`useEffect` は走らない。
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import type { ProposalApprovalRows } from '../../../../../lib/proposals/approval-rows';
-import { ProposalApprovalScreen, type ProposalApprovalScreenMessages, type ProposalApprovalScreenProps } from './proposal-approval-screen';
+import {
+  canApproveNow,
+  ProposalApprovalScreen,
+  shouldPollSendSettlement,
+  type ProposalApprovalScreenMessages,
+  type ProposalApprovalScreenProps,
+} from './proposal-approval-screen';
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: () => undefined, refresh: () => undefined }),
@@ -130,6 +145,7 @@ const baseRows: ProposalApprovalRows = {
   canApprove: true,
   canSubmit: true,
   sendHold: null,
+  awaitingSendSettlement: false,
   audienceNotice: null,
   editorHref: `/proposals/${PROPOSAL_ID}/edit`,
 };
@@ -456,5 +472,110 @@ describe('S-021 ⑨（T-09-06）: 承認後の primary は「送信する」で�
     expect(html).toContain('data-testid="proposal-approval-open-send-failures"');
     expect(html).toContain('href="/proposals/send-failures"');
     expect(html).toContain('送信失敗の一覧へ');
+  });
+});
+
+describe('S-021 ⑨（T-12-13 ⑤）: APPROVED で送信の確定を待つ間は #46 を読み続け、「送信する」を描かない', () => {
+  it('🔴 APPROVED + 未確定の送信試行（awaitingSendSettlement）: data-send-polling="true"、「送信する」は無く、受け付けの枠がある', () => {
+    const html = render({}, { ...approvedRows, awaitingSendSettlement: true });
+    expect(html).toContain('data-send-polling="true"');
+    expect(html).not.toContain('data-testid="proposal-approval-submit"');
+    expect(html).not.toContain('data-testid="proposal-approval-submit-block"');
+    expect(html).toContain('data-testid="proposal-approval-send-pending"');
+    expect(html).toContain('送信を受け付けました。送信中です。');
+    // 🔴 送信済みとは見せない（確定は #46 の差分で拾う）。
+    expect(html).not.toContain('送信済み');
+  });
+
+  it('APPROVED で確定待ちでない（awaitingSendSettlement=false・保留なし）: 読まず、「送信する」を描く（T-09-06 のまま）', () => {
+    // 🔴 レビュー指摘（2026-09-18）: #44 の CAS 後に enqueue が 409 `SEND_JOB_BLOCKED` で止まった / seq N+1 のジョブが ③ CAS より前に
+    //    落ちた行もこの形（`APPROVED` + 試行の末尾が確定済み）で描かれる。「送信する」が戻り、受け付けの枠を出さない（行き止まりにしない）。
+    //    受け付け直後の窓はセッションの印（`submit-intent.ts`）が `useEffect` で埋めるので、サーバ描画には現れない。
+    const html = render({}, approvedRows);
+    expect(html).toContain('data-send-polling="false"');
+    expect(html).toContain('data-testid="proposal-approval-submit"');
+    expect(html).not.toContain('data-testid="proposal-approval-send-pending"');
+    expect(html).not.toContain('data-result="SUBMIT_REQUESTED"');
+  });
+
+  it('🔴 確定後（SUBMITTED / SUBMIT_FAILED）: 読まず、「送信する」も受け付けの枠も無い（SUBMITTED = 完了の表示 / SUBMIT_FAILED = S-022 への導線）', () => {
+    const submitted = render(
+      {},
+      { state: 'SUBMITTED', stateLabel: '送信済み', disposition: { kind: 'SUBMITTED', notice: 'この提案は送信済みです（2026-09-16 09:01 JST）。' }, awaitingSendSettlement: false },
+    );
+    expect(submitted).toContain('data-send-polling="false"');
+    expect(submitted).not.toContain('data-testid="proposal-approval-submit"');
+    expect(submitted).not.toContain('data-testid="proposal-approval-send-pending"');
+    expect(submitted).toContain('data-disposition="SUBMITTED"');
+    const failed = render({}, { state: 'SUBMIT_FAILED', stateLabel: '送信失敗', disposition: { kind: 'SUBMIT_FAILED', notice: '送信に失敗しました。' } });
+    expect(failed).toContain('data-send-polling="false"');
+    expect(failed).not.toContain('data-testid="proposal-approval-submit"');
+    expect(failed).not.toContain('data-testid="proposal-approval-send-pending"');
+    expect(failed).toContain('data-testid="proposal-approval-open-send-failures"');
+  });
+
+  it('SUBMITTING と保留中（sendHold）は読む。GATE_STALE の保留では「送信する」を再び選べるまま（消さない）', () => {
+    const submitting = render({}, { state: 'SUBMITTING', stateLabel: '送信中', disposition: { kind: 'SUBMITTING', notice: 'この提案は送信中です。' } });
+    expect(submitting).toContain('data-send-polling="true"');
+    const hold = {
+      reasonKey: 'GATE_STALE' as const,
+      title: '送信は保留中です。',
+      message: '送信を保留しました。内容の確認後にあらためて送信してください。',
+      since: '保留開始: 2026-09-16 09:00 JST',
+      autoRelease: false,
+      settingsLink: null,
+    };
+    const held = render({}, { ...approvedRows, sendHold: hold, awaitingSendSettlement: false });
+    expect(held).toContain('data-send-polling="true"');
+    expect(held).toContain('data-testid="proposal-approval-submit"');
+    expect(held).not.toContain('data-testid="proposal-approval-send-pending"');
+  });
+
+  it('shouldPollSendSettlement: 読む条件は 4 つ（SUBMIT_REQUESTED × APPROVED × 保留なし / SUBMITTING / APPROVED × 確定待ち / APPROVED × 保留）で、確定後は読まない', () => {
+    expect(shouldPollSendSettlement({ phaseKind: 'SUBMIT_REQUESTED', dispositionKind: 'APPROVED', holdReasonKey: null, awaitingSendSettlement: false })).toBe(true);
+    expect(shouldPollSendSettlement({ phaseKind: 'IDLE', dispositionKind: 'SUBMITTING', holdReasonKey: null, awaitingSendSettlement: false })).toBe(true);
+    expect(shouldPollSendSettlement({ phaseKind: 'IDLE', dispositionKind: 'APPROVED', holdReasonKey: null, awaitingSendSettlement: true })).toBe(true);
+    expect(shouldPollSendSettlement({ phaseKind: 'IDLE', dispositionKind: 'APPROVED', holdReasonKey: 'RATE_LIMIT', awaitingSendSettlement: false })).toBe(true);
+    expect(shouldPollSendSettlement({ phaseKind: 'IDLE', dispositionKind: 'APPROVED', holdReasonKey: null, awaitingSendSettlement: false })).toBe(false);
+    for (const dispositionKind of ['SUBMITTED', 'SUBMIT_FAILED', 'PENDING', 'GATE_FAILED', 'GATE_RUNNING', 'DRAFT', 'OTHER'] as const) {
+      expect(shouldPollSendSettlement({ phaseKind: 'IDLE', dispositionKind, holdReasonKey: null, awaitingSendSettlement: true }), dispositionKind).toBe(false);
+    }
+  });
+});
+
+describe('S-021 ⑩（T-12-13 ⑥）: data-can-approve（立場）と data-can-approve-now（この瞬間に #41 を呼べるか）は別の属性', () => {
+  it('🔴 GATE_FAILED: data-can-approve="true"（立場）かつ data-can-approve-now="false"（状態が承認待ちでない）', () => {
+    const html = render({}, { state: 'GATE_FAILED', stateLabel: '不合格', disposition: { kind: 'GATE_FAILED', notice: '検査で不合格のため承認できません。' } });
+    expect(html).toContain('data-can-approve="true"');
+    expect(html).toContain('data-can-approve-now="false"');
+    expect(html).not.toContain('data-testid="proposal-approval-approve"');
+  });
+
+  it('APPROVAL_PENDING の観測前（末尾に未到達）: data-can-approve="true" / data-can-approve-now="false"（ボタンの disabled と同じ値）', () => {
+    const html = render();
+    expect(html).toContain('data-can-approve="true"');
+    expect(html).toContain('data-can-approve-now="false"');
+    expect(html).toContain('data-reached-end="false"');
+    expect(html).toMatch(/<button[^>]*\sdisabled=""[^>]*data-testid="proposal-approval-approve"/);
+  });
+
+  it('🔴 APPROVAL_PENDING + 末尾の確認済み: 両方 true（canApproveNow）。立場・状態・実行可・要求中 / 確定後のいずれか 1 つでも欠けると false', () => {
+    const base = { canApprove: true, dispositionKind: 'PENDING', denialMessage: null, reachedEnd: true, phaseKind: 'IDLE' } as const;
+    expect(canApproveNow(base)).toBe(true);
+    expect(canApproveNow({ ...base, phaseKind: 'REJECT_FORM' })).toBe(true);
+    expect(canApproveNow({ ...base, reachedEnd: false })).toBe(false);
+    expect(canApproveNow({ ...base, canApprove: false })).toBe(false);
+    expect(canApproveNow({ ...base, denialMessage: '停止中です。' })).toBe(false);
+    for (const dispositionKind of ['GATE_FAILED', 'APPROVED', 'SUBMITTING', 'SUBMITTED', 'SUBMIT_FAILED', 'GATE_RUNNING', 'DRAFT', 'OTHER'] as const) {
+      expect(canApproveNow({ ...base, dispositionKind }), dispositionKind).toBe(false);
+    }
+    for (const phaseKind of ['SUBMITTING', 'APPROVED', 'REJECTED'] as const) {
+      expect(canApproveNow({ ...base, phaseKind }), phaseKind).toBe(false);
+    }
+  });
+
+  it('取引先 / VIEWER（canApprove=false）と停止中（denialMessage）: data-can-approve-now="false"', () => {
+    expect(render({}, { canApprove: false, canSubmit: false, audienceNotice: 'ホスト側が行います。' })).toContain('data-can-approve-now="false"');
+    expect(render({ denialMessage: '停止中です。' })).toContain('data-can-approve-now="false"');
   });
 });

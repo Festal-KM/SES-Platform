@@ -24,7 +24,7 @@
 //    `tenantId` / `ownerPartnerCompanyId` を書かない。見えなければ 404（docs/05 §4.8）。
 // 🔴 本モジュールは Next.js / Auth.js に依存しない（結合テストがサーバを立てずに同じ経路を実行できるようにする。
 //    `lib/proposals/gate.ts` / `service.ts` と同方針）。
-import { withTenant, writeAuditLog, type AuthenticatedTenantCtx } from '@ses/db';
+import { PROPOSAL_AUDIT_TARGET_TYPE, withTenant, writeAuditLog, type AuthenticatedTenantCtx } from '@ses/db';
 import {
   InvalidStateTransitionError as DomainInvalidStateTransitionError,
   proposalMachine,
@@ -44,9 +44,6 @@ import { PROPOSAL_AUDIT_ACTION_UPDATE, type ProposalActionMeta } from './service
 
 /** `AuditLog.summary.operation`（#37 の `DRAFT_UPDATE` / #39 の `GATE_REQUEST` と同じ置き場所）。 */
 export const PROPOSAL_TRANSITION_AUDIT_OPERATION = 'TRANSITION';
-
-/** `AuditLog.targetType`（`state.invalid_transition` の `entity` と同じ語）。 */
-const PROPOSAL_TARGET_TYPE = 'Proposal';
 
 export type ProposalTransitionDeps = {
   /** 🔴 現在時刻は呼び出し側から渡す（`packages/domain` と同じ規律）。 */
@@ -135,7 +132,7 @@ export async function transitionProposal(
         action: PROPOSAL_AUDIT_ACTION_UPDATE,
         actorKind: 'USER',
         actorId: ctx.userId,
-        targetType: PROPOSAL_TARGET_TYPE,
+        targetType: PROPOSAL_AUDIT_TARGET_TYPE,
         targetId: row.id,
         // 🔴 `note`（自由入力）・本文・単価・提案先を載せない（docs/05 §16.2）。載せるのは操作と状態だけである。
         summary: { operation: PROPOSAL_TRANSITION_AUDIT_OPERATION, fromState: from, toState: next },
@@ -148,7 +145,7 @@ export async function transitionProposal(
   } catch (error: unknown) {
     return rethrowWithInvalidTransitionAudit(
       ctx,
-      { targetType: PROPOSAL_TARGET_TYPE, targetId: proposalId, ipAddress: deps.meta.ipAddress },
+      { targetType: PROPOSAL_AUDIT_TARGET_TYPE, targetId: proposalId, ipAddress: deps.meta.ipAddress },
       error,
     );
   }

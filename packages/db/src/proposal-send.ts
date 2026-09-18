@@ -30,6 +30,7 @@ import {
 } from '@ses/domain';
 import { writeAuditLog } from './audit.js';
 import type { AuthenticatedTenantCtx, SystemTenantCtx } from './context.js';
+import { PROPOSAL_AUDIT_TARGET_TYPE } from './proposal-draft.js';
 import {
   nextSendAttemptSeqInTx,
   SendAttemptOriginError,
@@ -371,7 +372,7 @@ export async function failProposalSubmissionWithoutAttempt(
         action: PROPOSAL_AUDIT_ACTION_SUBMIT,
         actorKind: 'SYSTEM',
         actorId: null,
-        targetType: 'Proposal',
+        targetType: PROPOSAL_AUDIT_TARGET_TYPE,
         targetId: input.proposalId,
         summary: {
           operation: PROPOSAL_SUBMIT_OPERATIONS.SETTLE,
@@ -482,7 +483,7 @@ export async function settleProposalSubmission(
         action: PROPOSAL_AUDIT_ACTION_SUBMIT,
         actorKind: 'SYSTEM',
         actorId: null,
-        targetType: 'Proposal',
+        targetType: PROPOSAL_AUDIT_TARGET_TYPE,
         targetId: input.proposalId,
         summary: {
           operation: PROPOSAL_SUBMIT_OPERATIONS.SETTLE,
@@ -654,7 +655,7 @@ export async function settleStalledProposalSubmissions(
         action: PROPOSAL_AUDIT_ACTION_SUBMIT,
         actorKind: 'SYSTEM',
         actorId: null,
-        targetType: 'Proposal',
+        targetType: PROPOSAL_AUDIT_TARGET_TYPE,
         targetId: row.id,
         summary: {
           operation: PROPOSAL_SUBMIT_OPERATIONS.SETTLE,

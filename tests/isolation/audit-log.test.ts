@@ -12,6 +12,8 @@
 //
 // 検証はアプリの実装（`apps/web/lib/audit-logs/service.ts`）をそのまま呼ぶ
 // （`tests/isolation/invitations.test.ts` と同じ方針。HTTP 層の検証は E2E の範囲）。
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   configureTenantDb,
@@ -31,7 +33,7 @@ import {
 import { ISOLATION_SEED_IDS, runSeed } from '@ses/db/seed';
 import { buildTenantCtx } from '../../apps/web/lib/auth/tenant-context';
 import { listAuditLogs } from '../../apps/web/lib/audit-logs/service';
-import { startIsolationDatabase, type IsolationDatabase } from './support/postgres.js';
+import { REPO_ROOT, startIsolationDatabase, type IsolationDatabase } from './support/postgres.js';
 
 const SETUP_TIMEOUT_MS = 600_000;
 /** 🔴 「実行日 = T」を固定する（docs/05 §17.6）。 */
@@ -375,5 +377,245 @@ describe('🔴 F-005 AC-3: AuditLog は利用者・運営者のいずれから�
       data: { summary: { touched: true } },
     });
     expect(updated.summary).toEqual({ touched: true });
+  });
+});
+
+// ============================================================================
+// 🔴 T-12-13 ①（SP-09 T-09-09 ③-① の申し送り）: migration 20260929000000（`audit_logs.target_type` の表記統一）の再生
+// ============================================================================
+// `prisma migrate deploy` は起動時（`startIsolationDatabase`）に空の `audit_logs` へ本 migration を適用済みである。ここでは
+// **旧表記の行がある状態**で、デプロイと同じロール（`app_migrator` = 所有者。`NOBYPASSRLS` + FORCE RLS）で同じ SQL を流し、
+//   ① `target_type = 'PROPOSAL' AND action LIKE 'proposal.%'` の行だけが `'Proposal'` に移る（FORCE RLS の下で「0 件で成功」に
+//      ならない —— migration が FORCE を一時解除しているから。対照の 2 本目が「解除しなければ 0 件」を実測する）
+//   ② 移った行の他の列（`action` / `summary` / `actor_*` / `target_id` / `created_at`）は 1 バイトも変わらない（表記の統一であり改変ではない）
+//   ③ 射程外の行（`proposal_request.*`〔下線〕/ `action` が提案でない `'PROPOSAL'` / 既に `'Proposal'`）と `review_gates.target_type`
+//      （別の列）は不変
+//   ④ 流し終えた後は FORCE ROW LEVEL SECURITY が戻っている
+// をトランザクションの中で確かめ、最後にロールバックする（他のテストの母集団に影響させない）。
+
+/** migration.sql を文ごとに分ける（`--` コメント / `$$ … $$` のドル引用 / `'…'` を尊重する。Prisma の `$executeRawUnsafe` は 1 文ずつ）。 */
+function splitSqlStatements(sql: string): string[] {
+  const statements: string[] = [];
+  let current = '';
+  let index = 0;
+  let inSingleQuote = false;
+  let dollarTag: string | null = null;
+  while (index < sql.length) {
+    const ch = sql[index] ?? '';
+    if (dollarTag !== null) {
+      if (sql.startsWith(dollarTag, index)) {
+        current += dollarTag;
+        index += dollarTag.length;
+        dollarTag = null;
+      } else {
+        current += ch;
+        index += 1;
+      }
+      continue;
+    }
+    if (inSingleQuote) {
+      current += ch;
+      if (ch === "'") inSingleQuote = false;
+      index += 1;
+      continue;
+    }
+    if (ch === '-' && sql[index + 1] === '-') {
+      const end = sql.indexOf('\n', index);
+      index = end === -1 ? sql.length : end;
+      continue;
+    }
+    if (ch === "'") {
+      inSingleQuote = true;
+      current += ch;
+      index += 1;
+      continue;
+    }
+    if (ch === '$') {
+      const tag = /^\$[A-Za-z_]*\$/.exec(sql.slice(index));
+      if (tag !== null) {
+        dollarTag = tag[0];
+        current += tag[0];
+        index += tag[0].length;
+        continue;
+      }
+    }
+    if (ch === ';') {
+      const statement = current.trim();
+      if (statement.length > 0) statements.push(statement);
+      current = '';
+      index += 1;
+      continue;
+    }
+    current += ch;
+    index += 1;
+  }
+  const tail = current.trim();
+  if (tail.length > 0) statements.push(tail);
+  return statements;
+}
+
+const TARGET_TYPE_MIGRATION = path.join(
+  REPO_ROOT,
+  'packages/db/prisma/migrations/20260929000000_audit_target_type_proposal/migration.sql',
+);
+
+/** ロールバック専用の印（`$transaction` の callback から投げて、観測値だけを持ち帰る）。 */
+class ReplayRollback extends Error {
+  constructor(readonly observed: unknown) {
+    super('T-12-13 ①: 再生の観測が終わったのでロールバックする');
+    this.name = 'ReplayRollback';
+  }
+}
+
+type ReplayAuditRow = Record<string, unknown>;
+
+type ReplayObserved = {
+  readonly gatesBefore: number;
+  readonly gatesAfter: number;
+  readonly rows: readonly { readonly key: string; readonly before: ReplayAuditRow; readonly after: ReplayAuditRow | null }[];
+  readonly forced: readonly { readonly relname: string; readonly relrowsecurity: boolean; readonly relforcerowsecurity: boolean }[];
+  readonly remaining: number;
+};
+
+describe('🔴 T-12-13 ①: migration 20260929000000（audit_logs.target_type の表記統一）を app_migrator で再生する', () => {
+  it("'PROPOSAL' + proposal.% の行だけが 'Proposal' に移り、他の列・射程外の行・review_gates は不変。FORCE RLS は戻る", async () => {
+    const statements = splitSqlStatements(readFileSync(TARGET_TYPE_MIGRATION, 'utf8').replace(/\r\n/g, '\n'));
+    // 対照（空振り防止）: 分割が FORCE の一時解除 / UPDATE / DO ブロック 2 つ / FORCE の復帰を 1 文ずつ取り出している。
+    expect(statements.filter((statement) => statement.startsWith('UPDATE audit_logs'))).toHaveLength(1);
+    expect(statements.filter((statement) => /^DO \$\$/.test(statement))).toHaveLength(2);
+    expect(statements.filter((statement) => /NO FORCE ROW LEVEL SECURITY$/.test(statement))).toHaveLength(1);
+    expect(statements.filter((statement) => /"audit_logs" FORCE ROW LEVEL SECURITY$/.test(statement))).toHaveLength(1);
+
+    const createdAt = new Date('2026-09-10T01:02:03.456Z');
+    const targetId = '01930000-0000-7000-8000-00000000d213';
+    const marker = 'T1213-replay';
+    const seedRows = [
+      // 移る: 旧表記 + 提案の action（`gate.run` の `GATE_RESULT` / #39 の `GATE_REQUEST` が残していた形）。
+      { key: 'legacy-gate-result', targetType: 'PROPOSAL', action: 'proposal.update', actorKind: 'SYSTEM', actorId: null, summary: { operation: 'GATE_RESULT', overall: 'PASS', marker } },
+      { key: 'legacy-gate-request', targetType: 'PROPOSAL', action: 'proposal.update', actorKind: 'USER', actorId: TENANT_1.hostUserId, summary: { operation: 'GATE_REQUEST', marker } },
+      // 移らない: action が `proposal_request.*`（下線。`LIKE 'proposal.%'` に一致しない）。
+      { key: 'request-underscore', targetType: 'PROPOSAL', action: 'proposal_request.create', actorKind: 'USER', actorId: TENANT_1.hostUserId, summary: { marker } },
+      // 移らない: action が提案でない。
+      { key: 'other-action', targetType: 'PROPOSAL', action: 'project.view', actorKind: 'USER', actorId: TENANT_1.hostUserId, summary: { marker } },
+      // 移らない（既に統一済み）。
+      { key: 'already-unified', targetType: 'Proposal', action: 'proposal.approve', actorKind: 'USER', actorId: TENANT_1.hostUserId, summary: { operation: 'APPROVE', marker } },
+    ] as const;
+
+    const observed = await admin
+      .$transaction(
+        async (tx) => {
+          // 1. 旧表記の行と対照の行を superuser で入れる（RLS を素通りする。`id` は既定の uuidv7）。
+          const ids = new Map<string, string>();
+          for (const row of seedRows) {
+            const created = await tx.auditLog.create({
+              data: {
+                tenantId: TENANT_1.tenantId,
+                actorKind: row.actorKind,
+                actorId: row.actorId,
+                action: row.action,
+                targetType: row.targetType,
+                targetId,
+                summary: row.summary,
+                ipAddress: '203.0.113.213',
+                deviceKind: 'desktop',
+                createdAt,
+              },
+              select: { id: true },
+            });
+            ids.set(row.key, created.id);
+          }
+          const select = {
+            id: true,
+            tenantId: true,
+            actorKind: true,
+            actorId: true,
+            action: true,
+            targetType: true,
+            targetId: true,
+            summary: true,
+            ipAddress: true,
+            deviceKind: true,
+            createdAt: true,
+          } as const;
+          const before = new Map<string, ReplayAuditRow>();
+          for (const [key, id] of ids) {
+            before.set(key, await tx.auditLog.findUniqueOrThrow({ where: { id }, select }));
+          }
+          const gatesBefore = await tx.reviewGate.count({ where: { targetType: 'PROPOSAL' } });
+
+          // 2. 🔴 デプロイと同じロールで流す（superuser ではない = FORCE RLS が効く側）。`SET LOCAL` はこのトランザクション限り。
+          await tx.$executeRawUnsafe('SET LOCAL ROLE app_migrator');
+          for (const statement of statements) {
+            await tx.$executeRawUnsafe(statement);
+          }
+          await tx.$executeRawUnsafe('RESET ROLE');
+
+          // 3. 観測（superuser に戻して全行を読む）。
+          const rows: { key: string; before: ReplayAuditRow; after: ReplayAuditRow | null }[] = [];
+          for (const [key, id] of ids) {
+            rows.push({ key, before: before.get(key) ?? {}, after: await tx.auditLog.findUnique({ where: { id }, select }) });
+          }
+          const gatesAfter = await tx.reviewGate.count({ where: { targetType: 'PROPOSAL' } });
+          const forced = await tx.$queryRawUnsafe<ReplayObserved['forced'][number][]>(
+            "SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relname = 'audit_logs'",
+          );
+          const remaining = await tx.auditLog.count({ where: { targetType: 'PROPOSAL', action: { startsWith: 'proposal.' } } });
+          throw new ReplayRollback({ gatesBefore, gatesAfter, rows, forced, remaining } satisfies ReplayObserved);
+        },
+        { timeout: 60_000 },
+      )
+      .catch((error: unknown) => {
+        if (error instanceof ReplayRollback) return error.observed as ReplayObserved;
+        throw error;
+      });
+
+    // ① 移る 2 行は `'Proposal'` に、③ 射程外の 3 行は元のまま。
+    const byKey = new Map(observed.rows.map((row) => [row.key, row]));
+    expect(byKey.get('legacy-gate-result')?.after?.targetType).toBe('Proposal');
+    expect(byKey.get('legacy-gate-request')?.after?.targetType).toBe('Proposal');
+    expect(byKey.get('request-underscore')?.after?.targetType).toBe('PROPOSAL');
+    expect(byKey.get('other-action')?.after?.targetType).toBe('PROPOSAL');
+    expect(byKey.get('already-unified')?.after?.targetType).toBe('Proposal');
+    expect(observed.remaining).toBe(0);
+    // ② `target_type` 以外の列は 1 バイトも変わらない（誰が・いつ・何をしたか）。
+    for (const row of observed.rows) {
+      expect(row.after, row.key).not.toBeNull();
+      const withoutTargetType = (values: Record<string, unknown>): Record<string, unknown> =>
+        Object.fromEntries(Object.entries(values).filter(([column]) => column !== 'targetType'));
+      expect(withoutTargetType(row.after ?? {}), row.key).toEqual(withoutTargetType(row.before));
+      expect((row.after ?? {}).createdAt).toEqual(createdAt);
+    }
+    // ③ `review_gates.target_type`（別の列）は件数ごと不変（シードが `'PROPOSAL'` の行を持つので 0 件の空振りではない）。
+    expect(observed.gatesBefore).toBeGreaterThan(0);
+    expect(observed.gatesAfter).toBe(observed.gatesBefore);
+    // ④ FORCE ROW LEVEL SECURITY が戻っている。
+    expect(observed.forced).toEqual([{ relname: 'audit_logs', relrowsecurity: true, relforcerowsecurity: true }]);
+
+    // 後始末の対照: ロールバックされたので、入れた行は残っていない（他のテストの母集団に影響しない）。
+    expect(await admin.auditLog.count({ where: { targetId } })).toBe(0);
+  });
+
+  it('🔴 対照: FORCE を外さずに app_migrator が同じ UPDATE を流すと 0 件で「成功」する（migration が一時解除する理由）', async () => {
+    const targetId = '01930000-0000-7000-8000-00000000d214';
+    type Observed = { readonly updated: number; readonly after: { readonly targetType: string | null } | null };
+    const observed = await admin
+      .$transaction(async (tx) => {
+        await tx.auditLog.create({
+          data: { tenantId: TENANT_1.tenantId, actorKind: 'SYSTEM', action: 'proposal.update', targetType: 'PROPOSAL', targetId, summary: { operation: 'GATE_RESULT' } },
+        });
+        await tx.$executeRawUnsafe('SET LOCAL ROLE app_migrator');
+        const updated = await tx.$executeRawUnsafe(
+          "UPDATE audit_logs SET target_type = 'Proposal' WHERE target_type = 'PROPOSAL' AND action LIKE 'proposal.%'",
+        );
+        await tx.$executeRawUnsafe('RESET ROLE');
+        const after = await tx.auditLog.findFirst({ where: { targetId }, select: { targetType: true } });
+        throw new ReplayRollback({ updated, after } satisfies Observed);
+      })
+      .catch((error: unknown) => {
+        if (error instanceof ReplayRollback) return error.observed as Observed;
+        throw error;
+      });
+    expect(observed.updated).toBe(0);
+    expect(observed.after?.targetType).toBe('PROPOSAL');
   });
 });

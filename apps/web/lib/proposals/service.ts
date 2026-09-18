@@ -26,6 +26,7 @@
 import {
   computeProposalContentHash,
   createProposalDraft,
+  PROPOSAL_AUDIT_TARGET_TYPE,
   toDateOnly,
   withTenant,
   writeAuditLog,
@@ -269,7 +270,7 @@ export async function updateProposalDraft(
       action: PROPOSAL_AUDIT_ACTION_UPDATE,
       actorKind: 'USER',
       actorId: ctx.userId,
-      targetType: 'Proposal',
+      targetType: PROPOSAL_AUDIT_TARGET_TYPE,
       targetId: row.id,
       summary: { operation: PROPOSAL_AUDIT_OPERATIONS.draftUpdate, fields: fieldList },
       ipAddress: deps.meta.ipAddress,

@@ -49,6 +49,7 @@ import {
   findCachedReviewGate,
   holdReviewGate,
   loadGateInput,
+  PROPOSAL_AUDIT_TARGET_TYPE,
   settleProjectPublish,
   systemTenantCtx,
   withTenant,
@@ -216,8 +217,9 @@ async function settleProposalState(
     //    独自の action を作らず `*.update` に畳む（`S-041` の操作種別フィルタから漏らさない。§16.1）。
     await writeAuditLog(db, {
       action: 'proposal.update',
+      // 🔴 T-12-13 ①: `audit_logs.target_type` は `@ses/db` の 1 定数（`review_gates.target_type` の `'PROPOSAL'` とは別の列）。
       actorKind: 'SYSTEM',
-      targetType: 'PROPOSAL',
+      targetType: PROPOSAL_AUDIT_TARGET_TYPE,
       targetId: input.proposalId,
       summary: {
         operation: 'GATE_RESULT',

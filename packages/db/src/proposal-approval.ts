@@ -48,6 +48,7 @@ import { AUTO_APPROVE_REASON, proposalMachine } from '@ses/domain';
 import { writeAuditLog } from './audit.js';
 import type { AuthenticatedTenantCtx, SystemTenantCtx } from './context.js';
 import { computeProposalContentHash } from './gate-content-hash.js';
+import { PROPOSAL_AUDIT_TARGET_TYPE } from './proposal-draft.js';
 import { runInTenantTransaction, type TenantTransactionClient } from './with-tenant.js';
 
 /** docs/05 §16.1 の `proposal.approve`（#41。自動承認は `SYSTEM` + `summary.reason='ALL_LAYERS_PASS'`）。 */
@@ -292,7 +293,7 @@ export async function approveProposal(
         action: PROPOSAL_AUDIT_ACTION_APPROVE,
         actorKind: approvedBySystem ? 'SYSTEM' : 'USER',
         actorId: approvedBy,
-        targetType: 'Proposal',
+        targetType: PROPOSAL_AUDIT_TARGET_TYPE,
         targetId: row.id,
         summary: {
           operation: PROPOSAL_APPROVE_OPERATION,

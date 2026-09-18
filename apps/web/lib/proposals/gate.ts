@@ -34,6 +34,7 @@ import {
   findCachedReviewGate,
   findPendingReviewGate,
   gateHoldTimestamps,
+  PROPOSAL_AUDIT_TARGET_TYPE,
   readReviewGateResult,
   withTenant,
   writeAuditLog,
@@ -159,10 +160,10 @@ export async function requestProposalGate(
     // 🔴 T-09-02: 遷移表に無い状態からの依頼（`GATE_FAILED` / `APPROVAL_PENDING` / … → `GATE_RUNNING`）と
     //    CAS の 0 件は `state.invalid_transition` に記録して 422（`F-024 AC-1`「エラーが記録される」。
     //    #48 / 提案依頼と同じ 1 実装）。それ以外の例外はそのまま。
-    //    `targetType` は状態機械の entity 名（`'Proposal'`。#48 / #36 / #37 と同じ語）。
+    //    `targetType` は `audit_logs.target_type` の 1 定数（T-12-13 ①で統一。#48 / #36 / #37 と同じ）。
     return rethrowWithInvalidTransitionAudit(
       ctx,
-      { targetType: 'Proposal', targetId: proposalId, ipAddress: deps.meta.ipAddress },
+      { targetType: PROPOSAL_AUDIT_TARGET_TYPE, targetId: proposalId, ipAddress: deps.meta.ipAddress },
       error,
     );
   }
@@ -283,7 +284,9 @@ async function requestProposalGateInner(
       action: PROPOSAL_GATE_AUDIT_ACTION,
       actorKind: 'USER',
       actorId: ctx.userId,
-      targetType: PROPOSAL_GATE_TARGET_TYPE,
+      // 🔴 T-12-13 ①: `audit_logs.target_type` は `review_gates.target_type`（`PROPOSAL_GATE_TARGET_TYPE` = `'PROPOSAL'`）とは
+      //    別の列。以前はゲートの定数を流用しており `GATE_REQUEST` の行だけ `'PROPOSAL'` で残っていた（migration 20260929000000 が移した）。
+      targetType: PROPOSAL_AUDIT_TARGET_TYPE,
       targetId: target.id,
       // 🔴 件名・本文・単価を載せない（docs/05 §16.2）。載せるのは操作と状態だけである。
       summary: {

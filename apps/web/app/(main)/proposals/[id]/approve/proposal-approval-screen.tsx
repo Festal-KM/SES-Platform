@@ -25,6 +25,20 @@
 //      である。受け付け後は「送信中」を出し、#46（`GET /api/proposals/{id}`。T-09-09）で状態を監視して変化があればサーバコンポーネントを読み直し、確定・保留を反映する。
 //      送信の保留（`sendHoldReasonKey`）は理由ごとの文言と設定導線で描き、🔴 `PROVIDER_QUOTA` には `S-038` への導線を出さない。
 //      `GATE_STALE` だけは自動復帰しないので「送信する」を再び選べる（§10.5）。Tier 1 のまま（モバイルで完結する）。
+//   ⑨ 🔴 T-12-13 ⑤（SP-09 T-09-11 ①-① の申し送り）: #46 の読み直しは「送信する」を押した直後（`SUBMIT_REQUESTED`）と `SUBMITTING` の間
+//      だけでなく、**`APPROVED` で送信の確定を待っている間**（`rows.awaitingSendSettlement` = 試行の末尾が `RESERVED`）**と保留中
+//      （`sendHold` が非 null）**にも走らせる（`shouldPollSendSettlement`。根の `data-send-polling`）。#44 の 202 の後に遷移してきた
+//      `S-021` が `APPROVED` のまま止まり、読み直すまで「送信する」が押せる状態に見える、を無くす —— #44 の受け付け直後（③ CAS の前で
+//      試行の行がまだ無い窓）は `S-022` がセッションに残した印（`lib/proposals/submit-intent.ts`）をマウント時に消費して、#43 と同じ
+//      `SUBMIT_REQUESTED`（セッション限定の枠）に入る。🔴 **DB の `last_failure_reason` を「送信中」の根拠にしない**（レビュー指摘。
+//      2026-09-18）: #44 の CAS が残すこの列は enqueue が 409 `SEND_JOB_BLOCKED` で止まった行 / ジョブが ③ CAS より前に落ちた行でも
+//      非 null のままで、それを「送信中」と断定すると「送信する」が二度と描かれない行き止まりになる。リロードで枠が消えて
+//      「送信する」が戻るのは #43 と同じ既定挙動（押しても同じ `attemptSeq` で 1 本に畳まれる）。🔴 **確定を待つ間は「送信する」を
+//      描かず**「送信を受け付けました。送信中です」を出す（押せる表示そのものを出さない）。確定後（`SUBMITTED` / `SUBMIT_FAILED`）は
+//      従来どおり描かない。
+//   ⑩ 🔴 T-12-13 ⑥（同 ①-②）: 根の `data-can-approve` は**立場**の表明で状態を含まない（`GATE_FAILED` でも `true`）。属性名から状態の可否と
+//      誤読しないよう、「この瞬間に #41 を呼べるか」（立場 × `APPROVAL_PENDING` × 実行可 × 末尾の確認済み × 要求中 / 確定後でない）を
+//      **`data-can-approve-now`** に別に出す（`canApproveNow`。承認ボタンの `disabled` と同じ 1 つの判定）。既存の属性・testid は変えない。
 //
 // 🔴 `'use client'` は末尾の観測・承認/却下フォーム・#40 のポーリングのためだけである。**`@ses/db` に依存する
 //    モジュールから値を import しない**（`tests/static/client-db-boundary.test.ts`）。文言と表示値は props で受け取る。
@@ -36,6 +50,7 @@ import { Badge, Button, Field, SECONDARY_LINK_CLASSES, Textarea, type BadgeVaria
 import type { GateLayerState, GateResultView, ProposalState } from '@ses/domain';
 import type { ApprovalGateFindingRow, ApprovalHighlight, ProposalApprovalRows } from '../../../../../lib/proposals/approval-rows';
 import type { ProposalSendingDomainRows } from '../../../../../lib/proposals/editor-rows';
+import { consumeSubmitRequested } from '../../../../../lib/proposals/submit-intent';
 
 export type ProposalApprovalScreenMessages = {
   readonly sectionHeader: string;
@@ -201,6 +216,46 @@ type Phase =
 
 type ErrorBody = { readonly error?: { readonly code?: string } };
 
+/**
+ * 🔴 T-12-13 ⑥: 「この瞬間に #41 を呼べるか」（根の `data-can-approve-now`。承認・却下ボタンの `disabled` と同じ判定）。
+ *    `data-can-approve`（= `rows.canApprove`）は立場の表明で状態を含まない（`GATE_FAILED` でも `true`）。ここは
+ *    立場 × 状態 `APPROVAL_PENDING` × テナントが実行可 × プレビュー末尾の確認済み × 要求中 / 確定後でない、のすべて。
+ *    🔴 純粋関数として export する: render テスト（`renderToStaticMarkup` では `IntersectionObserver` が走らず `reachedEnd` を真にできない）が
+ *    「末尾確認済みなら真」をここで固定する。画面はこの 1 本しか使わない（判定を 2 箇所に書かない）。
+ */
+export function canApproveNow(input: {
+  readonly canApprove: boolean;
+  readonly dispositionKind: ProposalApprovalRows['disposition']['kind'];
+  readonly denialMessage: string | null;
+  readonly reachedEnd: boolean;
+  readonly phaseKind: Phase['kind'];
+}): boolean {
+  if (!input.canApprove || input.dispositionKind !== 'PENDING' || input.denialMessage !== null) return false;
+  if (input.phaseKind === 'APPROVED' || input.phaseKind === 'REJECTED' || input.phaseKind === 'SUBMITTING') return false;
+  return input.reachedEnd;
+}
+
+/**
+ * 🔴 T-12-13 ⑤: #46 を読み続けるか（根の `data-send-polling`）。
+ *  - `SUBMIT_REQUESTED`（#43 の 202 の直後）で `APPROVED` かつ保留なし —— 従来（T-09-06）
+ *  - `SUBMITTING` —— 従来（T-09-06）
+ *  - 🔴 `APPROVED` で送信の確定を待っている（`awaitingSendSettlement` = 試行の末尾が `RESERVED`）
+ *  - 🔴 `APPROVED` で保留中（`holdReasonKey` が非 null）—— `send.hold-release` の復帰（`SUBMITTING` へ）を拾う
+ *  #44 の受け付け直後は `S-022` の印（`submit-intent.ts`）から `SUBMIT_REQUESTED` に入るので 1 つ目の条件に合流する。
+ *  確定後（`SUBMITTED` / `SUBMIT_FAILED` / 終端）は読まない。
+ */
+export function shouldPollSendSettlement(input: {
+  readonly phaseKind: Phase['kind'];
+  readonly dispositionKind: ProposalApprovalRows['disposition']['kind'];
+  readonly holdReasonKey: string | null;
+  readonly awaitingSendSettlement: boolean;
+}): boolean {
+  if (input.dispositionKind === 'SUBMITTING') return true;
+  if (input.dispositionKind !== 'APPROVED') return false;
+  if (input.phaseKind === 'SUBMIT_REQUESTED' && input.holdReasonKey === null) return true;
+  return input.awaitingSendSettlement || input.holdReasonKey !== null;
+}
+
 function Section({ id, title, children }: { readonly id: string; readonly title: string; readonly children: ReactNode }) {
   return (
     <section className="border border-slate-200 bg-white" data-testid={`proposal-approval-section-${id}`}>
@@ -302,12 +357,22 @@ export function ProposalApprovalScreen(props: ProposalApprovalScreenProps) {
   const submitting = phase.kind === 'SUBMITTING';
   const settled = phase.kind === 'APPROVED' || phase.kind === 'REJECTED';
   const actionable = pending && canExecute && !settled;
-  const buttonsEnabled = actionable && reachedEnd && !submitting;
-  // 🔴 ⑧: 送信を要求できるのは「承認済み × 送信の立場 × テナントが実行可 × 保留が無いか自動復帰しない保留（GATE_STALE）」。
+  // 🔴 ⑩: 承認・却下ボタンの `disabled` と根の `data-can-approve-now` は同じ 1 つの判定（`canApproveNow`）。
+  const buttonsEnabled = canApproveNow({
+    canApprove: rows.canApprove,
+    dispositionKind: rows.disposition.kind,
+    denialMessage,
+    reachedEnd,
+    phaseKind: phase.kind,
+  });
+  // 🔴 ⑨: 送信の確定を待っている間（#43 / #44 の受け付け直後 = `SUBMIT_REQUESTED` / 試行の末尾が未確定）は「送信する」を描かず、
+  //    受け付けの枠を出す。押しても 1 本に畳まれるが、押せる表示そのものを出さない。
+  const sendPending = phase.kind === 'SUBMIT_REQUESTED' || (rows.disposition.kind === 'APPROVED' && rows.awaitingSendSettlement);
+  // 🔴 ⑧: 送信を要求できるのは「承認済み × 送信の立場 × テナントが実行可 × 保留が無いか自動復帰しない保留（GATE_STALE）× 確定待ちでない」。
   //    自動復帰する保留（ドメイン未検証 / 上限 / 環境の枠 / 停止）中は `send.hold-release` に任せ、ボタンを出さない。
   const holdBlocksSubmit = rows.sendHold !== null && rows.sendHold.autoRelease;
   const sendActionable =
-    rows.disposition.kind === 'APPROVED' && rows.canSubmit && denialMessage === null && !holdBlocksSubmit && phase.kind !== 'SUBMIT_REQUESTED';
+    rows.disposition.kind === 'APPROVED' && rows.canSubmit && denialMessage === null && !holdBlocksSubmit && !sendPending;
   const sendButtonEnabled = sendActionable && reachedEnd && !submitting;
 
   useEffect(() => {
@@ -325,19 +390,34 @@ export function ProposalApprovalScreen(props: ProposalApprovalScreenProps) {
   //    T-09-09）を読み、`state` か保留（`sendHold`）が props と食い違ったときだけサーバコンポーネントを読み直す
   //    （T-09-06 の申し送り 3: `router.refresh()` の定期実行から #46 の `GET` に置き換えた —— RSC の全再描画を 3 秒ごとに
   //    行わない）。確定（`SUBMITTED` / `SUBMIT_FAILED`）や保留は props に現れるので、それで受け付けの枠を閉じる。
+  //    🔴 ⑨（T-12-13 ⑤）: 加えて、`APPROVED` で送信の確定を待っている間（`rows.awaitingSendSettlement`）と保留中（`sendHold`）も読む
+  //    （`shouldPollSendSettlement` の 1 判定。根の `data-send-polling` と同じ値）。#44 の 202 の後に遷移してきた画面は `APPROVED` で
+  //    描かれるが、この効果が `SUBMITTING` / `SUBMITTED` / `SUBMIT_FAILED` への確定を #46 の差分で拾って読み直す。
   const holdReasonKey = rows.sendHold?.reasonKey ?? null;
+  const sendPolling = shouldPollSendSettlement({
+    phaseKind: phase.kind,
+    dispositionKind: rows.disposition.kind,
+    holdReasonKey,
+    awaitingSendSettlement: rows.awaitingSendSettlement,
+  });
+  // 🔴 ⑨（T-12-13 ⑤）: #44 の 202 の直後に `S-022` から遷移してきたか（セッションの印。マウント時に 1 回だけ消費する）。
+  //    印があり、かつ行が `APPROVED` で保留なし（= 受け付け後・③ CAS 前の窓）なら #43 と同じ `SUBMIT_REQUESTED` に入り、
+  //    下の効果が #46 を読んで `SUBMITTING` / 確定 / 保留で枠を閉じる。印はどの状態でも消費する（残さない）。
+  //    DB の値（`last_failure_reason`）を根拠にしないのは、409 / failed job の行を恒久的に「送信中」と描かないため。
   useEffect(() => {
-    if (phase.kind !== 'SUBMIT_REQUESTED') return undefined;
-    if (rows.disposition.kind !== 'APPROVED' || holdReasonKey !== null) {
+    if (!consumeSubmitRequested(() => window.sessionStorage, proposalId)) return;
+    if (rows.disposition.kind === 'APPROVED' && rows.sendHold === null) setPhase({ kind: 'SUBMIT_REQUESTED' });
+    // マウント時にだけ評価する（印は 1 回きり。以後の props の変化で再評価しても常に `false`）。
+  }, [proposalId]);
+  useEffect(() => {
+    // #43 の受け付けの枠は、読み直しで確定・保留が props に現れたら閉じる（保留中の読み直しは下の `sendPolling` が引き継ぐ）。
+    if (phase.kind === 'SUBMIT_REQUESTED' && (rows.disposition.kind !== 'APPROVED' || holdReasonKey !== null)) {
       setPhase({ kind: 'IDLE' });
       return undefined;
     }
+    if (!sendPolling) return undefined;
     return pollProposalUntilChanged(proposalId, { state: rows.state, holdReasonKey }, () => router.refresh());
-  }, [phase.kind, rows.disposition.kind, rows.state, holdReasonKey, proposalId, router]);
-  useEffect(() => {
-    if (rows.disposition.kind !== 'SUBMITTING') return undefined;
-    return pollProposalUntilChanged(proposalId, { state: rows.state, holdReasonKey }, () => router.refresh());
-  }, [rows.disposition.kind, rows.state, holdReasonKey, proposalId, router]);
+  }, [phase.kind, sendPolling, rows.disposition.kind, rows.state, holdReasonKey, proposalId, router]);
 
   // 🔴 ゲート結果（#40）: 検査中の間だけ 5 秒ごとに読み、確定したらサーバコンポーネントを読み直す。
   useEffect(() => {
@@ -424,7 +504,8 @@ export function ProposalApprovalScreen(props: ProposalApprovalScreenProps) {
 
   async function reject(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
-    if (!actionable || submitting || !reachedEnd) return;
+    // 🔴 ⑩: 承認と同じ 1 つの判定（`canApproveNow`）。前提を 2 箇所に書かない。
+    if (!buttonsEnabled) return;
     if (reason.trim().length === 0) {
       setError(messages.errorValidation);
       return;
@@ -458,8 +539,10 @@ export function ProposalApprovalScreen(props: ProposalApprovalScreenProps) {
       data-testid="proposal-approval"
       data-proposal-state={rows.state}
       data-can-approve={rows.canApprove ? 'true' : 'false'}
+      data-can-approve-now={buttonsEnabled ? 'true' : 'false'}
       data-can-submit={rows.canSubmit ? 'true' : 'false'}
       data-send-hold={rows.sendHold?.reasonKey ?? ''}
+      data-send-polling={sendPolling ? 'true' : 'false'}
       data-reached-end={reachedEnd ? 'true' : 'false'}
     >
       {/* 左（モバイルでは上）: 判断ヘッダ + ゲート結果 */}
@@ -717,6 +800,12 @@ export function ProposalApprovalScreen(props: ProposalApprovalScreenProps) {
             )}
             {phase.kind === 'SUBMIT_REQUESTED' ? (
               <p role="status" className="m-0 text-sm text-slate-800" data-testid="proposal-approval-result" data-result="SUBMIT_REQUESTED">
+                {messages.submitRequested}
+              </p>
+            ) : null}
+            {/* 🔴 ⑨（T-12-13 ⑤）: 読み直して `APPROVED` のまま確定を待っている（試行の末尾が未確定 = `RESERVED`）。「送信する」の代わりに受け付けの枠。 */}
+            {phase.kind !== 'SUBMIT_REQUESTED' && rows.disposition.kind === 'APPROVED' && rows.awaitingSendSettlement ? (
+              <p role="status" className="m-0 text-sm text-slate-800" data-testid="proposal-approval-send-pending">
                 {messages.submitRequested}
               </p>
             ) : null}

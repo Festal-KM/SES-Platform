@@ -23,7 +23,7 @@ import { formatThousands } from '../format/number';
 import type { ProposalApprovalRecordView, ProposalApprovalView } from './approval';
 import { proposalStateLabel } from './editor-rows';
 import { proposalEditHref, SENDING_DOMAIN_SETTINGS_HREF, USAGE_SETTINGS_HREF } from './hrefs';
-import type { ProposalSendHoldView } from './views';
+import type { ProposalSendAttemptView, ProposalSendHoldView } from './views';
 
 /** 判断ヘッダの 1 行（定義リスト）。`field` は `data-field` に載せる機械名。 */
 export type ApprovalHeaderRow = {
@@ -122,10 +122,46 @@ export type ProposalApprovalRows = {
   readonly canSubmit: boolean;
   /** 🔴 T-09-06: 送信の保留（ホストの view にだけある。取引先・保留なしは `null`）。 */
   readonly sendHold: ApprovalSendHoldRows | null;
+  /**
+   * 🔴 T-12-13 ⑤: `APPROVED` のまま**送信の確定を待っている**か（`isAwaitingSendSettlement` = 送信試行の末尾が `RESERVED`。ホストだけ。
+   *    取引先は常に `false`）。`S-021` はこれか保留（`sendHold`）が立っている間、#46 を読み続けて `SUBMITTED` / `SUBMIT_FAILED` への
+   *    確定を拾う。#44 の受け付け直後（試行の行がまだ無い窓）は DB の値ではなく `S-022` が残すセッション限定の印
+   *    （`lib/proposals/submit-intent.ts`）で `S-021` が `SUBMIT_REQUESTED` に入る。
+   */
+  readonly awaitingSendSettlement: boolean;
   /** 取引先（◐）向けの注記。ホストなら `null`。 */
   readonly audienceNotice: string | null;
   readonly editorHref: string;
 };
+
+/**
+ * 🔴 T-12-13 ⑤（SP-09 T-09-11 ①-① の申し送り）: `APPROVED` のまま送信の確定を待っているか
+ *    = **送信試行の末尾が未確定（`RESERVED`）** —— 送信ジョブが ④ の予約まで進み ⑥ の確定を残している。**これだけ**を根拠にする。
+ *
+ * 🔴 `last_failure_reason` を根拠にしない（レビュー指摘。2026-09-18）。#44 の CAS `SUBMIT_FAILED → APPROVED` はこの列を次の確定まで
+ *    残すので「`APPROVED` で非 null = 再送の受け付け後・確定前」と読みたくなるが、この列を消すのは ⑥ の確定だけであり、
+ *    (a) CAS の後の enqueue が `BLOCKED_BY_FAILED_JOB` で 409 `SEND_JOB_BLOCKED` になった / (b) seq N+1 のジョブが ③ CAS より前に
+ *    落ちた（`attempts: 1`）/ (c) キューが失われた、のいずれでも `APPROVED` + 非 null のまま**ジョブが無い**行が残る。それを
+ *    「送信中」と断定すると `S-021` が「送信を受け付けました。送信中です」を恒久的に出して「送信する」を描かず、`S-022`
+ *    （`SUBMIT_FAILED` 専用）にも `S-023` にも復帰導線が無い行き止まりになる（`CLAUDE.md` §11.1「成功したように見えて実際には
+ *    送信されていない」の形）。#44 の 202 の直後（③ CAS の前で試行の行がまだ無い窓）は、DB の値ではなく `S-022` がセッションに
+ *    残す印（`submit-intent.ts`）で `S-021` が #43 と同じ `SUBMIT_REQUESTED` に入り、既存の #46 の読み直しが確定を拾う。
+ *
+ * 🔴 `APPROVED` 以外では常に `false`（`SUBMITTING` は別の効果が読み続ける。確定後は読まない）。
+ * 🔴 保留中（`sendHold` が非 null）は `false` —— 保留はジョブが ① / ② で止めた**確定した**状態であり、待っているのは
+ *    `send.hold-release`（自動復帰）か人間の「送信する」（`GATE_STALE`）である。`S-021` は保留を別の枠で描き、保留中の
+ *    読み直しは画面が `sendHold` で決める（保留中に「送信を受け付けました」を出さない / `GATE_STALE` の「送信する」を消さない）。
+ * 取引先の view は試行を持たないので常に `false`。
+ */
+export function isAwaitingSendSettlement(input: {
+  readonly state: ProposalState;
+  readonly sendHold: Pick<ProposalSendHoldView, 'reasonKey'> | null;
+  readonly sendAttempts: readonly Pick<ProposalSendAttemptView, 'status'>[];
+}): boolean {
+  if (input.state !== 'APPROVED' || input.sendHold !== null) return false;
+  const tail = input.sendAttempts.at(-1);
+  return tail !== undefined && tail.status === 'RESERVED';
+}
 
 function none(): string {
   return t('proposals.approval.valueNone');
@@ -424,6 +460,13 @@ export function proposalApprovalRows(view: ProposalApprovalView, now: Date): Pro
     canApprove: view.canApprove,
     canSubmit: view.canSubmit,
     sendHold: proposal.audience === 'HOST' ? approvalSendHoldRows(proposal.sendHold) : null,
+    awaitingSendSettlement:
+      proposal.audience === 'HOST' &&
+      isAwaitingSendSettlement({
+        state: proposal.state,
+        sendHold: proposal.sendHold,
+        sendAttempts: view.sendAttempts,
+      }),
     audienceNotice: proposal.audience === 'PARTNER' ? t('proposals.approval.partnerNotice') : null,
     editorHref: proposalEditHref(proposal.id),
   };

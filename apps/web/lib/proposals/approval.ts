@@ -24,6 +24,7 @@
 // 🔴 本モジュールは Next.js / Auth.js に依存しない（結合テストがサーバを立てずに同じ経路を実行できるようにする）。
 import {
   approveProposal,
+  PROPOSAL_AUDIT_TARGET_TYPE,
   withTenant,
   writeAuditLog,
   type AuthenticatedTenantCtx,
@@ -46,19 +47,17 @@ import {
 } from '../api/errors';
 import { rethrowWithInvalidTransitionAudit } from '../state/invalid-transition';
 import { readProposalGateResult } from './gate';
+import { readSendAttemptsByProposal } from './list';
 import { canApproveProposal, canSubmitProposal } from './policy';
 import type { RejectProposalBody } from './schemas';
 import { readProposalViewInTx, type ProposalActionMeta, type ProposalApprovalRecordRow } from './service';
-import type { ProposalApprovalRecordView, ProposalView } from './views';
+import type { ProposalApprovalRecordView, ProposalSendAttemptView, ProposalView } from './views';
 
 /** docs/05 §16.1 の `proposal.reject`（#42）。 */
 export const PROPOSAL_AUDIT_ACTION_REJECT = 'proposal.reject';
 
 /** `AuditLog.summary.operation`（#42）。 */
 export const PROPOSAL_REJECT_OPERATION = 'REJECT';
-
-/** `AuditLog.targetType`（`state.invalid_transition` の `entity` と同じ語。#48 と同じ）。 */
-const PROPOSAL_TARGET_TYPE = 'Proposal';
 
 /**
  * 🔴 本経路が動かす遷移と、その所有者（`PROPOSAL_TRANSITION_OWNERS`。T-09-02）。
@@ -156,7 +155,7 @@ export async function approveProposalByUser(
   } catch (error: unknown) {
     return rethrowWithInvalidTransitionAudit(
       ctx,
-      { targetType: PROPOSAL_TARGET_TYPE, targetId: proposalId, ipAddress: deps.meta.ipAddress },
+      { targetType: PROPOSAL_AUDIT_TARGET_TYPE, targetId: proposalId, ipAddress: deps.meta.ipAddress },
       error,
     );
   }
@@ -230,7 +229,7 @@ export async function rejectProposal(
         action: PROPOSAL_AUDIT_ACTION_REJECT,
         actorKind: 'USER',
         actorId: ctx.userId,
-        targetType: PROPOSAL_TARGET_TYPE,
+        targetType: PROPOSAL_AUDIT_TARGET_TYPE,
         targetId: row.id,
         // 🔴 理由（自由入力）・本文・単価・提案先を載せない（docs/05 §16.2）。
         summary: { operation: PROPOSAL_REJECT_OPERATION, fromState: from, toState: to },
@@ -242,7 +241,7 @@ export async function rejectProposal(
   } catch (error: unknown) {
     return rethrowWithInvalidTransitionAudit(
       ctx,
-      { targetType: PROPOSAL_TARGET_TYPE, targetId: proposalId, ipAddress: deps.meta.ipAddress },
+      { targetType: PROPOSAL_AUDIT_TARGET_TYPE, targetId: proposalId, ipAddress: deps.meta.ipAddress },
       error,
     );
   }
@@ -287,6 +286,14 @@ export type ProposalApprovalView = {
   readonly canSubmit: boolean;
   /** T-09-06: 送信の確定時刻（ISO 8601）。`SUBMITTED` 以降のみ。 */
   readonly submittedAt: string | null;
+  /**
+   * 🔴 T-12-13 ⑤: 送信試行（`attempt_seq` 昇順。#46 と同じ `readSendAttemptsByProposal`。`send_attempts` は C2 HOST_ONLY なので
+   *    **ホストだけ**が持ち、取引先は `[]`）。`S-021` が `APPROVED` のまま送信の確定を待つか（末尾が `RESERVED`）の**唯一の**材料。
+   *    🔴 `proposals.last_failure_reason` はここに持たせない —— #44 の CAS が残すこの列は「ジョブが無い」行（409 `SEND_JOB_BLOCKED` /
+   *    ③ CAS 前に落ちた failed job）でも非 null のままであり、送信中の根拠にすると行き止まりになる（`approval-rows.ts` の
+   *    `isAwaitingSendSettlement` の注記）。
+   */
+  readonly sendAttempts: readonly ProposalSendAttemptView[];
 };
 
 /**
@@ -308,7 +315,15 @@ export async function readProposalApproval(
       found.approval.approvedBy === null
         ? null
         : await db.user.findFirst({ where: { id: found.approval.approvedBy }, select: { displayName: true } });
-    return { ...found, createdByName: creator?.displayName ?? null, approverName: approver?.displayName ?? null };
+    // 🔴 T-12-13 ⑤: ホストだけ、送信試行（C2 HOST_ONLY）を同じトランザクションで読む（#46 と同じ経路）。
+    //    取引先の文脈では `send_attempts` は 0 行になるが、型として持たせない（`PartnerProposalView` と同じ線）。
+    const attempts = found.view.audience === 'HOST' ? await readSendAttemptsByProposal(db, [found.view.id]) : null;
+    return {
+      ...found,
+      createdByName: creator?.displayName ?? null,
+      approverName: approver?.displayName ?? null,
+      sendAttempts: attempts?.get(found.view.id) ?? [],
+    };
   });
   if (read === null) throw new NotFoundError();
 
@@ -322,5 +337,6 @@ export async function readProposalApproval(
     canApprove: canApproveProposal(ctx),
     canSubmit: canSubmitProposal(ctx),
     submittedAt: read.submittedAt?.toISOString() ?? null,
+    sendAttempts: read.sendAttempts,
   };
 }

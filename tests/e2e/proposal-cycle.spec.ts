@@ -33,6 +33,7 @@ import {
   T0911_SYNTHETIC_PROJECT_PREFIX,
   T0911_SYNTHETIC_PROPOSAL_PREFIX,
 } from './harness/db-admin';
+import { SUBMIT_INTENT_MARK, submitIntentKey } from '../../apps/web/lib/proposals/submit-intent';
 import { E2E_VERIFIED_SENDING_DOMAIN } from './harness/sending-domain';
 import { E2E_UNKNOWN_ONCE_RECIPIENT_DOMAIN } from './harness/worker';
 import { apiRequest, parseJson } from './support/api';
@@ -455,6 +456,33 @@ test.describe('シナリオ 3: 送信の冪等性 — 2 回起動で外部 1 回
       const proposalId = await createProposalViaApi(host.page, { tenant: 1, tag: 'unknown', recipientEmail: UNKNOWN_ONCE_RECIPIENT_EMAIL });
       await requestGateAndWait(host.page, proposalId);
       await approveViaApi(host.page, proposalId);
+
+      // --- T-12-13 ⑤（レビュー指摘の修正）: `S-022` → `S-021` の「受け付けた」印の消費側を、worker の速さに依らず固定する ------------
+      // 🔴 `APPROVED` でジョブが無い行（= #44 の CAS 後に enqueue が 409 で止まった / ジョブが ③ CAS 前に落ちた行と同じ形）に、`S-022` が
+      //    置くのと同じ印（`submitIntentKey` / `SUBMIT_INTENT_MARK`。書式は `apps/web/lib/proposals/submit-intent.ts` だけが持つ）を
+      //    セッションに置いて `S-021` を開く: 印を消費して #43 と同じ `SUBMIT_REQUESTED` の枠に入り、「送信する」を描かず #46 を読む。
+      //    🔴 リロードで枠が消えて「送信する」が戻る（印は 1 回きり。DB の `last_failure_reason` を根拠にしないので行き止まりにならない）。
+      //    ⚠️ 印は **`S-021` 以外のページ**（本来置く側の `S-022`）で置いてから `S-021` を開く —— `S-021` を開いた document で置くと、
+      //    `domcontentloaded` の後に完了するハイドレーションの効果がその document で印を消費してしまい、次の読み込みには残らない。
+      await host.page.goto('/proposals/send-failures', { waitUntil: 'domcontentloaded' });
+      await host.page.evaluate(
+        ([key, mark]) => window.sessionStorage.setItem(key, mark),
+        [submitIntentKey(proposalId), SUBMIT_INTENT_MARK] as const,
+      );
+      await host.page.goto(`/proposals/${proposalId}/approve`, { waitUntil: 'domcontentloaded' });
+      const primedScreen = host.page.getByTestId('proposal-approval');
+      await expect(primedScreen).toHaveAttribute('data-proposal-state', 'APPROVED');
+      await expect(host.page.getByTestId('proposal-approval-result')).toHaveAttribute('data-result', 'SUBMIT_REQUESTED');
+      await expect(host.page.getByTestId('proposal-approval-submit')).toHaveCount(0);
+      await expect(primedScreen).toHaveAttribute('data-send-polling', 'true');
+      expect(await host.page.evaluate((key) => window.sessionStorage.getItem(key), submitIntentKey(proposalId))).toBeNull();
+      await host.page.reload({ waitUntil: 'domcontentloaded' });
+      await expect(primedScreen).toHaveAttribute('data-proposal-state', 'APPROVED');
+      await expect(host.page.getByTestId('proposal-approval-result')).toHaveCount(0);
+      await expect(host.page.getByTestId('proposal-approval-send-pending')).toHaveCount(0);
+      await expect(host.page.getByTestId('proposal-approval-submit')).toBeVisible();
+      await expect(primedScreen).toHaveAttribute('data-send-polling', 'false');
+
       const requested = await submitViaApi(host.page, proposalId);
       expect(requested.status, requested.text).toBe(202);
       const failed = await waitForProposalState(host.page, proposalId, ['SUBMIT_FAILED', 'SUBMITTED'], { label: 'E2E #8 応答不明' });
@@ -513,12 +541,55 @@ test.describe('シナリオ 3: 送信の冪等性 — 2 回起動で外部 1 回
         captured.body = (await response.json()) as SendRequestBody;
         await route.fulfill({ response });
       });
+      // 🔴 T-12-13 ⑤: `S-022` は 202 の後、`router.push` の**前**に印を置く。遷移の要求（RSC の fetch。prefetch は除く）を止めた瞬間に
+      //    `sessionStorage` を読めば、遷移先がマウントして印を消費するより前の値が決定的に取れる（worker の速さに依らない）。
+      const approvePath = `/proposals/${proposalId}/approve`;
+      const isApproveNavigation = (url: URL): boolean => url.pathname === approvePath;
+      const markAtNavigation: { value: string | null | undefined } = { value: undefined };
+      await host.page.route(isApproveNavigation, async (route) => {
+        // 最初の遷移要求だけを見る（2 本目以降は遷移先がマウントして印を消費した後になりうる）。
+        if (markAtNavigation.value === undefined && route.request().headers()['next-router-prefetch'] === undefined) {
+          markAtNavigation.value = await host.page
+            .evaluate((key) => window.sessionStorage.getItem(key), submitIntentKey(proposalId))
+            // 遷移が client-side でなく document 単位になった場合は古い document で評価できない。値を捏造せず、後段の断言で気づけるようにする。
+            .catch(() => '<evaluate-failed>');
+        }
+        await route.continue();
+      });
       await resendSubmit.click();
       await host.page.waitForURL(`**/proposals/${proposalId}/approve`);
       await host.page.unroute(resendApiUrl);
+      await host.page.unroute(isApproveNavigation);
       expect(captured.status).toBe(202);
       expect(captured.body).toMatchObject({ outcome: 'ENQUEUED', attemptSeq: 2, state: 'APPROVED', sendHoldReasonKey: null });
+      expect(markAtNavigation.value).toBe(SUBMIT_INTENT_MARK);
 
+      // 🔴 T-12-13 ⑤（SP-09 T-09-11 ①-① の回収）: #44 の 202 の後に遷移した `S-021` は、`APPROVED` で描かれれば `S-022` の印を消費して
+      //    #43 と同じ `SUBMIT_REQUESTED` の枠に入り（上の前段で固定した挙動）、#46 を読み続けて `SUBMITTED` への確定を**画面が自分で拾う**
+      //    （`reload()` しない）。🔴 根拠は DB の `last_failure_reason` ではない（レビュー指摘。409 / failed job の行を恒久的に「送信中」と
+      //    描かないため）。確定を待つ間も確定後も「送信する」は描かれない（押せる表示そのものを出さない）。
+      //    ⚠️ worker はハーネスのプロセス内で即座に走るため、`S-021` の初回描画が `APPROVED`（印 → 受け付けの枠）か、③ CAS の後の
+      //    `SUBMITTING` / 確定後の `SUBMITTED` かは実行ごとに変わる。どの形でも「送信する」が無いことと、印だけで入る枠は前段が固定する。
+      const approvalScreen = host.page.getByTestId('proposal-approval');
+      await expect(approvalScreen).toBeVisible();
+      await expect
+        .poll(
+          () =>
+            host.page.evaluate(() => {
+              const result = document.querySelector('[data-testid="proposal-approval-result"]')?.getAttribute('data-result');
+              const state = document.querySelector('[data-testid="proposal-approval"]')?.getAttribute('data-proposal-state');
+              return result === 'SUBMIT_REQUESTED' ? 'SUBMIT_REQUESTED' : (state ?? null);
+            }),
+          { message: '#44 の 202 の後の S-021 は受け付けの枠（SUBMIT_REQUESTED）か送信中 / 送信済みのいずれかで描かれる' },
+        )
+        .toMatch(/^(SUBMIT_REQUESTED|SUBMITTING|SUBMITTED)$/);
+      await expect(host.page.getByTestId('proposal-approval-submit')).toHaveCount(0);
+      await expect(approvalScreen).toHaveAttribute('data-proposal-state', 'SUBMITTED', { timeout: 60_000 });
+      // 確定後は読まない・「送信する」も受け付けの枠も無い（`SUBMITTED` = 完了の表示）。
+      await expect(approvalScreen).toHaveAttribute('data-send-polling', 'false');
+      await expect(host.page.getByTestId('proposal-approval-submit')).toHaveCount(0);
+      await expect(host.page.getByTestId('proposal-approval-send-pending')).toHaveCount(0);
+      await expect(host.page.getByTestId('proposal-approval-notice')).toHaveAttribute('data-disposition', 'SUBMITTED');
       // 🔴 seq 2 は届く（試行は `[UNKNOWN(1), SUCCEEDED(2)]`。外部は合計 2 = 応答不明 1 + 人手再送 1。自動の 3 回目は無い）。
       const resent = await waitForProposalState(host.page, proposalId, ['SUBMITTED', 'SUBMIT_FAILED'], { label: 'E2E #8 再送' });
       expect(resent.state).toBe('SUBMITTED');
@@ -526,10 +597,6 @@ test.describe('シナリオ 3: 送信の冪等性 — 2 回起動で外部 1 回
         [1, 'UNKNOWN'],
         [2, 'SUCCEEDED'],
       ]);
-      // ⚠️ #44 の 202 後に遷移した `S-021` は `APPROVED` として描かれ、送信中のポーリング（#46）は「送信する」を押した直後にしか
-      //    走らない（`SUBMIT_REQUESTED` の間だけ）。再送の確定を画面が拾うには読み直しが要る（SP-12 への申し送り）。
-      await host.page.reload({ waitUntil: 'domcontentloaded' });
-      await expect(host.page.getByTestId('proposal-approval')).toHaveAttribute('data-proposal-state', 'SUBMITTED');
       await host.page.goto('/proposals/send-failures', { waitUntil: 'domcontentloaded' });
       await expect(host.page.getByTestId('send-failure-screen')).toBeVisible();
       await expect(host.page.getByTestId(`send-failure-row-${proposalId}`)).toHaveCount(0);

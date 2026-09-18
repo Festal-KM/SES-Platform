@@ -157,9 +157,13 @@ export async function approveOnScreen(page: Page, options: { readonly expectScro
   if (options.expectScrollGate === true) {
     await expect(approve).toBeDisabled();
     await expect(page.getByTestId('proposal-approval-scroll-required')).toBeVisible();
+    // 🔴 T-12-13 ⑥: 立場（`data-can-approve`）は true でも、「この瞬間に #41 を呼べるか」（`data-can-approve-now`）は末尾に到達するまで false。
+    await expect(screen).toHaveAttribute('data-can-approve-now', 'false');
   }
   await page.getByTestId('proposal-approval-preview-end').scrollIntoViewIfNeeded();
   await expect(screen).toHaveAttribute('data-reached-end', 'true');
+  // 🔴 T-12-13 ⑥: 末尾の確認済み × 承認待ち × 立場 → 両方 true（ボタンの enabled と同じ判定）。
+  await expect(screen).toHaveAttribute('data-can-approve-now', 'true');
   await expect(approve).toBeEnabled();
   await expect(page.getByTestId('proposal-approval-reject')).toBeEnabled();
   await approve.click();
@@ -167,6 +171,9 @@ export async function approveOnScreen(page: Page, options: { readonly expectScro
   await expect(screen).toHaveAttribute('data-proposal-state', 'APPROVED');
   await expect(page.getByTestId('proposal-approval-approver')).toBeVisible();
   await expect(page.getByTestId('proposal-approval-approve')).toHaveCount(0);
+  // 🔴 T-12-13 ⑥: 承認後は立場（`data-can-approve`）は変わらず true のまま、`data-can-approve-now` だけが false に落ちる（状態が承認待ちでない）。
+  await expect(screen).toHaveAttribute('data-can-approve', 'true');
+  await expect(screen).toHaveAttribute('data-can-approve-now', 'false');
 }
 
 /**

@@ -42,6 +42,7 @@ import {
   holdProposalSend,
   nextSendAttemptSeq,
   PROPOSAL_AUDIT_ACTION_SUBMIT,
+  PROPOSAL_AUDIT_TARGET_TYPE,
   PROPOSAL_SEND_ENTITY_TYPE,
   PROPOSAL_SUBMIT_OPERATIONS,
   withTenant,
@@ -68,9 +69,6 @@ import type { SendingDomainResolver } from '../settings/sending-domains';
 import { rethrowWithInvalidTransitionAudit } from '../state/invalid-transition';
 import { canSubmitProposal } from './policy';
 import type { ProposalActionMeta } from './service';
-
-/** `AuditLog.targetType`（#41 / #48 と同じ語）。 */
-const PROPOSAL_TARGET_TYPE = 'Proposal';
 
 /**
  * 🔴 #43 が前提にする遷移と、その所有者（`SEND_JOB` = 送信ジョブ。#43 自身は動かさない）。
@@ -189,7 +187,7 @@ export async function requestProposalSubmission(
   } catch (error: unknown) {
     return rethrowWithInvalidTransitionAudit(
       ctx,
-      { targetType: PROPOSAL_TARGET_TYPE, targetId: proposalId, ipAddress: deps.meta.ipAddress },
+      { targetType: PROPOSAL_AUDIT_TARGET_TYPE, targetId: proposalId, ipAddress: deps.meta.ipAddress },
       error,
     );
   }
@@ -276,7 +274,7 @@ async function writeSubmitRequestAudit(
       action: PROPOSAL_AUDIT_ACTION_SUBMIT,
       actorKind: 'USER',
       actorId: ctx.userId,
-      targetType: PROPOSAL_TARGET_TYPE,
+      targetType: PROPOSAL_AUDIT_TARGET_TYPE,
       targetId: proposalId,
       summary,
       ipAddress: meta.ipAddress,
