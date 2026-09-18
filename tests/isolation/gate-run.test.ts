@@ -15,7 +15,7 @@
 //    テスト専用の別モックを書かない。
 import { randomUUID } from 'node:crypto';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { catalogRoleModelResolver, createAiClient } from '@ses/ai';
+import { catalogRoleModelResolver, createAiClient, MAX_LLM_ATTEMPTS } from '@ses/ai';
 import {
   configureTenantDb,
   disconnectTenantDb,
@@ -583,6 +583,74 @@ describe('🔴 AI の失敗は判定不能 = FAIL（PASS へフォールバッ�
     expect(usage.length).toBeGreaterThanOrEqual(1);
     expect(usage.every((row) => row.succeeded === false)).toBe(true);
   });
+
+  /**
+   * ✅ T-12-05（docs/05 §17.3 #19 / SP-12 T-12-05 の 1 点目 / `docs/02` 章 8.7「安全側の倒し方」）:
+   *    **AI 全停止の 3 つの形を別々に固定する** —— ① API 障害（5xx = `TIMEOUT` 分類。再試行 2 回の後に失敗）② キー無効
+   *    （401 = `API` 分類。**再試行しない**）③ スキーマ違反（応答は返るが形が不正。同一プロンプトで再試行 2 回の後に失敗）。
+   *    いずれも PII 層 / 商流層は**判定不能 = FAIL**（PASS へフォールバックしない）、整合層は機械的照合の結果のまま、
+   *    対象は `GATE_FAILED`、試行はすべて `AiUsage` に残る（原価は発生している。`F-026 AC-1`）。
+   * 🔴 3 つを 1 つの it に畳まない —— 再試行の有無（`decideRetry`）が形ごとに違い、`AiUsage` の行数で見分ける。
+   */
+  const AI_OUTAGE_FORMS: readonly {
+    readonly label: string;
+    readonly script: MockStep;
+    readonly failureKind: 'TIMEOUT' | 'API' | 'SCHEMA';
+    readonly attempts: number;
+  }[] = [
+    { label: 'API 障害（5xx）', script: [{ kind: 'error', error: 'TIMEOUT', status: 503 }], failureKind: 'TIMEOUT', attempts: MAX_LLM_ATTEMPTS },
+    { label: 'キー無効（401）', script: [{ kind: 'error', error: 'API', status: 401 }], failureKind: 'API', attempts: 1 },
+    { label: 'スキーマ違反（不正 JSON）', script: [{ kind: 'output', output: { pii: 'broken', commerce: null } }], failureKind: 'SCHEMA', attempts: MAX_LLM_ATTEMPTS },
+  ];
+
+  it.each(AI_OUTAGE_FORMS)(
+    '🔴 T-12-05: $label → PII / 商流は FAIL（PASS へ倒さない）、整合層は機械照合の結果のまま、GATE_FAILED。試行 $attempts 回が AiUsage に残る',
+    async ({ script, failureKind, attempts }) => {
+      // 本文は清潔・凍結スキルは台帳に裏付けあり → 整合層は機械的照合で PASS になるはず（AI の成否と独立に）。
+      await admin.skill.upsert({
+        where: { id: SKILL_BACKED },
+        create: { id: SKILL_BACKED, name: 'Kotlin(gate-run)', category: 'LANGUAGE', sortKey: 901 },
+        update: {},
+      });
+      await admin.engineerSkill.create({
+        data: { tenantId: TENANT_A, engineerId: ENGINEER_A_HOST, skillId: SKILL_BACKED, yearsOfExperience: 5, level: 3, source: 'MANUAL' },
+      });
+      await prepareProposal({
+        proposalId: PROPOSAL_A_HOST,
+        body: '清潔な本文です。',
+        snapshotSkills: [{ skillId: SKILL_BACKED, name: 'Kotlin(gate-run)', years: 5, level: 3 }],
+      });
+
+      const outcome = await runGate({
+        targetType: 'PROPOSAL',
+        targetId: PROPOSAL_A_HOST,
+        contentHash: `hash-outage-${failureKind}`,
+        script,
+      });
+
+      expect(outcome).toMatchObject({ kind: 'COMPLETED', overall: 'FAIL', aiFailed: true, transitioned: true, autoApproval: null });
+      const gate = await readGate(PROPOSAL_A_HOST);
+      expect(gate).toMatchObject({
+        execution: 'DONE',
+        piiVerdict: 'FAIL',
+        commerceVerdict: 'FAIL',
+        // 🔴 整合層は AI を待たない / AI の成否と独立（`BR-61` / `F-027 AC-5`）。
+        consistencyVerdict: 'PASS',
+        aiFailed: true,
+        role: null,
+        promptVersion: null,
+        aiUsageId: null,
+      });
+      // 🔴 判定不能の FAIL は「元データの指摘」を持たない（直せる元データが無い。画面は「検査を完了できなかった」を出す）。
+      expect(gate?.findings).toEqual([]);
+      expect(await proposalState(PROPOSAL_A_HOST)).toBe('GATE_FAILED');
+
+      // 🔴 再試行の有無が形ごとに違う: 5xx / スキーマ違反は最大 3 回、401 は 1 回で確定。全行が失敗として残る。
+      const usage = await admin.aiUsage.findMany({ where: { tenantId: TENANT_A }, orderBy: { attemptNo: 'asc' } });
+      expect(usage.map((row) => row.attemptNo)).toEqual(Array.from({ length: attempts }, (_, index) => index + 1));
+      expect(usage.every((row) => row.succeeded === false && row.failureKind === failureKind)).toBe(true);
+    },
+  );
 
   it('🔴 aiFailed の結果はキャッシュされない（再実行で PASS になりうる）', async () => {
     await prepareProposal({ proposalId: PROPOSAL_A_HOST, body: '清潔な本文です。', snapshotSkills: [] });

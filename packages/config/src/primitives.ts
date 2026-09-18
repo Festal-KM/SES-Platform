@@ -87,6 +87,21 @@ export function csvOf<const T extends readonly [string, ...string[]]>(values: T)
     });
 }
 
+/**
+ * ARN（`arn:partition:service:region:account-id:resource`）に埋め込まれた AWS アカウント ID（12 桁）を取り出す。
+ * ARN の形でない値（KMS のキー ID など）や、アカウント部が 12 桁でない ARN（S3 バケット等）は `null`。
+ *
+ * 🔴 T-12-04（NFR-ENV-4 / docs/05 §13.4 規則 2）: 「本番の識別子」は `AWS_ACCOUNT_ID` の直接一致だけでなく、
+ *    **ARN の中にも現れる**（`SES_EVENT_TOPIC_ARN` / `S3_KMS_KEY_ID`）。`AWS_ACCOUNT_ID` が非本番の値でも、
+ *    ARN だけ本番からコピーされていれば本番のリソース（SNS トピック / KMS 鍵）を指す設定になる。
+ */
+export function arnAccountId(value: string): string | null {
+  const parts = value.split(':');
+  if (parts.length < 6 || parts[0] !== 'arn') return null;
+  const account = parts[4] ?? '';
+  return /^\d{12}$/.test(account) ? account : null;
+}
+
 /** PostgreSQL 接続文字列が `sslmode=require` を含むかどうか。 */
 export function hasSslModeRequire(url: string): boolean {
   return /[?&]sslmode=require(&|$)/.test(url);

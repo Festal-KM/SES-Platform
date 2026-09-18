@@ -15,6 +15,7 @@
 
 import { z } from 'zod';
 import {
+  arnAccountId,
   base64AtLeastBytes,
   base64ExactBytes,
   csvOf,
@@ -348,6 +349,18 @@ function crossFieldChecks(data: EnvUnionData, ctx: IssueSink): void {
   // NFR-ENV-4: 非本番に本番の識別子が紛れ込んでいないか
   if (!isProduction && data.AWS_ACCOUNT_ID === data.AWS_ACCOUNT_ID_EXPECTED_PRODUCTION) {
     addIssue(ctx, 'AWS_ACCOUNT_ID', '本番の AWS アカウント ID（AWS_ACCOUNT_ID_EXPECTED_PRODUCTION）と一致しています');
+  }
+  // 🔴 T-12-04（NFR-ENV-4 の網羅）: ARN に埋め込まれたアカウント ID も「本番の識別子」である。
+  //    `AWS_ACCOUNT_ID` が非本番の値でも、`SES_EVENT_TOPIC_ARN`（バウンス通知の受け口）/ `S3_KMS_KEY_ID`（原本の暗号鍵）
+  //    だけが本番からコピーされていると、非本番のプロセスが本番のリソースを指す。判定できる区分はここで止める
+  //    （判定できない区分 = `ANTHROPIC_API_KEY` は docs/05 §17.4 に「判定不能」と記録している）。
+  if (!isProduction) {
+    for (const variable of ['SES_EVENT_TOPIC_ARN', 'S3_KMS_KEY_ID'] as const) {
+      const value = data[variable];
+      if (value !== undefined && arnAccountId(value) === data.AWS_ACCOUNT_ID_EXPECTED_PRODUCTION) {
+        addIssue(ctx, variable, '本番の AWS アカウント ID（AWS_ACCOUNT_ID_EXPECTED_PRODUCTION）を含む ARN は非本番環境で使用できません');
+      }
+    }
   }
   if (!isProduction && data.DOCUSIGN_OAUTH_BASE_URL === 'https://account.docusign.com') {
     addIssue(ctx, 'DOCUSIGN_OAUTH_BASE_URL', '本番の DocuSign エンドポイントは非本番環境で使用できません');

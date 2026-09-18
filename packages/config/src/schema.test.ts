@@ -192,6 +192,96 @@ describe('🔴 非本番に本番の API キー・識別子があれば起動失
   });
 });
 
+// ---------------------------------------------------------------------------
+// 🔴 T-12-04（docs/05 §17.4「`production` の起動検証」/ SP-12 T-12-04 の表 2 行目）: 区分ごとの網羅
+// ---------------------------------------------------------------------------
+// ① `production` でモックが選ばれる組 → 起動失敗。**環境変数でモックを指名できる区分**はここ（スキーマの枝）で落ち、
+//    環境変数を持たない区分（email / objectStore / billing / ai）は選択表が `APP_ENV` だけで決まるため
+//    `assertNoMockInProduction`（`connector-selection.test.ts`）が 6 区分すべてを走査する。**どちらも「判定が無い区分」を残さない。**
+// ② 非本番に本番の識別子 → 起動失敗。**「本番キーの形」で判定できる区分**を環境 × 識別子の表で網羅する。
+//    🔴 `ANTHROPIC_API_KEY` は本番 / 非本番でキーの形（`sk-ant-`）が同じで判定不能（docs/05 §17.4 に理由を記録）。
+//    SES / S3 は API キーではなく IAM ロール + アカウント ID で本番を識別するため、`AWS_ACCOUNT_ID` と
+//    **ARN に埋め込まれたアカウント ID**（`SES_EVENT_TOPIC_ARN` / `S3_KMS_KEY_ID`。T-12-04 で追加）が判定の実体である。
+
+function issuesOf(input: Record<string, string | undefined>): readonly string[] {
+  try {
+    loadAppEnv(input);
+  } catch (error) {
+    expect(error).toBeInstanceOf(EnvValidationError);
+    return (error as EnvValidationError).issues.map((issue) => issue.variable);
+  }
+  throw new Error('起動時検証が失敗していない（モック / 本番の識別子が素通りしている）');
+}
+
+describe('🔴 T-12-04 ①: production でモックを指名できる環境変数は、区分ごとにパースの時点で失敗する（NFR-ENV-3）', () => {
+  const MOCK_SELECTIONS: readonly { readonly category: string; readonly variable: string; readonly overrides: Record<string, string> }[] = [
+    { category: 'malwareScanner', variable: 'MALWARE_SCANNER', overrides: { MALWARE_SCANNER: 'mock' } },
+    { category: 'esign', variable: 'ESIGN_PROVIDER_DEFAULT', overrides: { ESIGN_PROVIDER_DEFAULT: 'mock' } },
+    { category: 'esign', variable: 'ESIGN_ENABLED_PROVIDERS', overrides: { ESIGN_ENABLED_PROVIDERS: 'mock' } },
+    // 🔴 実装と並べて `mock` を混ぜても通らない（1 件でも混ざれば失敗）。
+    { category: 'esign', variable: 'ESIGN_ENABLED_PROVIDERS', overrides: { ESIGN_ENABLED_PROVIDERS: 'docusign,mock' } },
+  ];
+
+  it.each(MOCK_SELECTIONS)('$category: $overrides → $variable で起動失敗', ({ variable, overrides }) => {
+    expect(issuesOf(buildValidEnv('production', overrides))).toContain(variable);
+  });
+
+  it('🔴 ai: production では ANTHROPIC_API_KEY が必須（未設定・形が違う → 失敗。モックへ倒す枝が無い）', () => {
+    expect(issuesOf(buildValidEnv('production', { ANTHROPIC_API_KEY: undefined }))).toContain('ANTHROPIC_API_KEY');
+    expect(issuesOf(buildValidEnv('production', { ANTHROPIC_API_KEY: 'not-an-anthropic-key' }))).toContain('ANTHROPIC_API_KEY');
+  });
+
+  it('対照: development / demo は ANTHROPIC_API_KEY 無しで起動できる（ai=mock。CLAUDE.md §11）', () => {
+    expect(loadAppEnv(buildValidEnv('development', { ANTHROPIC_API_KEY: undefined })).ANTHROPIC_API_KEY).toBeUndefined();
+    expect(loadAppEnv(buildValidEnv('demo', { ANTHROPIC_API_KEY: undefined })).ANTHROPIC_API_KEY).toBeUndefined();
+  });
+});
+
+describe('🔴 T-12-04 ②: 非本番 × 本番の識別子 の表を網羅する（NFR-ENV-4）', () => {
+  const NON_PRODUCTION = allAppEnvKinds().filter((kind) => kind !== 'production');
+  /** 本番の識別子（`buildValidEnv('production')` の値そのもの、または本番の形をした値）。 */
+  const PRODUCTION_IDENTIFIERS: readonly { readonly category: string; readonly variable: string; readonly value: string }[] = [
+    { category: 'aws（SES / S3 の共通）', variable: 'AWS_ACCOUNT_ID', value: '999999999999' },
+    { category: 'ses（イベント通知の ARN）', variable: 'SES_EVENT_TOPIC_ARN', value: 'arn:aws:sns:ap-northeast-1:999999999999:ses-platform-prod-events' },
+    { category: 's3（KMS 鍵の ARN）', variable: 'S3_KMS_KEY_ID', value: 'arn:aws:kms:ap-northeast-1:999999999999:key/prod' },
+    { category: 'esign（OAuth）', variable: 'DOCUSIGN_OAUTH_BASE_URL', value: 'https://account.docusign.com' },
+    { category: 'esign（API）', variable: 'ESIGN_API_BASE_URL', value: 'https://na3.docusign.net/restapi' },
+    { category: 'billing', variable: 'STRIPE_SECRET_KEY', value: 'sk_live_dummy_not_a_real_key' },
+  ];
+  const MATRIX = NON_PRODUCTION.flatMap((kind) => PRODUCTION_IDENTIFIERS.map((identifier) => ({ kind, ...identifier })));
+
+  it('表の大きさ（4 環境 × 6 識別子 = 24。縮んでいたら「網羅」が空振りする）', () => {
+    expect(NON_PRODUCTION).toEqual(['development', 'demo', 'sandbox', 'staging']);
+    expect(MATRIX).toHaveLength(4 * 6);
+  });
+
+  it.each(MATRIX)('APP_ENV=$kind に $category の本番値（$variable）→ 起動失敗', ({ kind, variable, value }) => {
+    expect(issuesOf(buildValidEnv(kind, { [variable]: value }))).toContain(variable);
+  });
+
+  it.each(PRODUCTION_IDENTIFIERS)('対照: production では $variable の本番値で失敗しない', ({ variable, value }) => {
+    expect(() => loadAppEnv(buildValidEnv('production', { [variable]: value }))).not.toThrow();
+  });
+
+  it('対照: 非本番の ARN（アカウント部が本番と違う / ARN でない KMS キー ID）は通る', () => {
+    expect(() =>
+      loadAppEnv(
+        buildValidEnv('sandbox', {
+          SES_EVENT_TOPIC_ARN: 'arn:aws:sns:ap-northeast-1:100000000003:ses-platform-sandbox-events',
+          S3_KMS_KEY_ID: '1234abcd-12ab-34cd-56ef-1234567890ab',
+        }),
+      ),
+    ).not.toThrow();
+  });
+
+  it('🔴 判定不能の区分 = ANTHROPIC_API_KEY: 本番のキーと非本番のキーは同じ形（sk-ant-）であり、値の形では止められない（docs/05 §17.4）', () => {
+    // 🔴 これは「止められないことの記録」であり、止められるようになったらこの it を反転させる。
+    //    運用側の担保は AWS アカウント分離（T-12-09）と同型の「Anthropic の Workspace（キーの発行単位）を環境ごとに分ける」で、
+    //    コードでは判定しない（docs/05 §17.4）。
+    expect(() => loadAppEnv(buildValidEnv('sandbox', { ANTHROPIC_API_KEY: 'sk-ant-api03-looks-like-any-environment' }))).not.toThrow();
+  });
+});
+
 describe('SCHEDULER_TIMEZONE は z.literal("Asia/Tokyo") で固定する', () => {
   it('Asia/Tokyo 以外の値は拒否する', () => {
     const input = buildValidEnv('development', { SCHEDULER_TIMEZONE: 'UTC' });

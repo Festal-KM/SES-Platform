@@ -38,6 +38,7 @@ import {
   type SendProposalJob,
   type SesApi,
   type SesIdentityApi,
+  type SesSendEmailRequest,
 } from '@ses/connectors';
 import {
   createBullMqGateRunQueue,
@@ -143,18 +144,20 @@ const PII_FAIL_OUTPUT = {
 const AUDIT_ACTIONS = ['proposal.create', 'proposal.update', 'proposal.approve', 'proposal.submit', 'state.invalid_transition'];
 
 /** 🔴 実 SES の代わり（`production` 相当の構成で「実 `EmailSender` をモックした」もの。§17.3 #23）。ネットワークに出ない。 */
-function stubSesApi(): SesApi & { sent: number } {
+function stubSesApi(): SesApi & { sent: number; readonly requests: SesSendEmailRequest[] } {
   const api = {
     sent: 0,
-    async sendEmail() {
+    requests: [] as SesSendEmailRequest[],
+    async sendEmail(request: SesSendEmailRequest) {
       api.sent += 1;
+      api.requests.push(request);
       return { MessageId: `ses-msg-${api.sent}` };
     },
     async getAccount() {
       return { SendQuota: { Max24HourSend: 50_000, SentLast24Hours: 0 } };
     },
   };
-  return api as SesApi & { sent: number };
+  return api;
 }
 
 function stubIdentityApi(): SesIdentityApi {
@@ -1063,5 +1066,59 @@ describe('🔴 ⑪ F-022 AC-4 / AC-5: 提案先（分類 3）は production 以�
     const listed = await listSendAttempts(hostSales, { entityType: 'PROPOSAL', entityId: id });
     expect(listed).toHaveLength(1);
     expect(listed[0]?.externalId).toMatch(/^mock-/);
+  });
+
+  // ✅ T-12-04（docs/05 §17.4「`production` の送信経路」= NFR-ENV-10 / SP-12 T-12-04 の Phase 1 の 3 行目）。
+  //    ④ はモックの選択で「未検証は保留 → 検証後に自動復帰」を通した。ここは **`production` の選択表（実コネクタ `SesEmailSender`。
+  //    SES の HTTP API はスタブ）**で同じ経路を通し、①未検証テナントの提案送信は `DOMAIN_UNVERIFIED` の保留で SES スタブが 0 通
+  //    ②検証済みテナントでは 1 通 ③取引先宛の `From` に共通ドメイン（`SES_DEFAULT_FROM_ADDRESS`）が使われない、を固定する。
+  //    ⚠️ 実 SES への疎通は E-1（本番アクセス承認）が前提で CI では叩けない —— 実 SES での 1 回の疎通は `T-12-11`（リリース手順）で行う。
+  it('🔴 T-12-04 NFR-ENV-10: production の選択（real + SES スタブ）で、未検証は DOMAIN_UNVERIFIED の保留（SES 0 通）→ 検証後に 1 通。From は独自ドメインで共通ドメインではない', async () => {
+    const production = resolveConnectorSelection(loadAppEnv(buildValidEnv('production')));
+    expect(production.email).toBe('real');
+    const sesApi = stubSesApi();
+    const providerSentCounter = new InMemoryProviderSendCounter();
+    const commonFrom = 'no-reply@ses-platform.example';
+    const real = createConnectors(
+      { email: production.email, objectStore: 'mock', malwareScanner: 'mock', esign: 'mock', billing: 'mock' },
+      { ses: { api: sesApi, defaultFromAddress: commonFrom, configurationSet: 'ses-platform-test', sentCounter: providerSentCounter, now: () => clock } },
+    );
+    const deps = sendDeps({ emailSender: real.email, emailImplementationKind: production.email, providerSentCounter });
+
+    // ① 未検証（`sendingDomainRuntime.verificationRequired = true`。前のテストが検証済みにした行を消して「未登録」に戻す）。
+    //    #43 は保留で積まず、ジョブを直叩きしても ①-d で保留。
+    await admin.tenantSendingDomain.deleteMany({ where: { tenantId: TENANT_A } });
+    const { id } = await approvedProposal();
+    const held = await submitAccepted(hostSales, id);
+    expect(held).toMatchObject({ outcome: 'HELD', attemptSeq: 1, jobId: null, state: 'APPROVED', sendHoldReasonKey: 'DOMAIN_UNVERIFIED' });
+    expect(await runJob({ tenantId: TENANT_A, proposalId: id, attemptSeq: 1, requestedBy: null, enqueuedAt: clock.toISOString() }, deps)).toEqual({
+      kind: 'HELD',
+      reasonKey: 'DOMAIN_UNVERIFIED',
+      applied: true,
+    });
+    expect(sesApi.sent).toBe(0);
+    expect(real.email.callCount()).toBe(0);
+    expect(await attempts(id)).toHaveLength(0);
+    expect((await proposalRow(id)).state).toBe('APPROVED');
+
+    // ② 検証完了 → `send.hold-release` が同じ attemptSeq で再 enqueue → 実コネクタで 1 通。
+    await verifyDomain();
+    const release = holdRelease({ emailSender: real.email, providerSentCounter });
+    expect((await release.run()).sendHoldsReleased).toBe(1);
+    expect(release.enqueued).toHaveLength(1);
+    expect(await runJob(release.enqueued[0]!, deps)).toMatchObject({ kind: 'SENT', attemptSeq: 1, mocked: false, externalId: 'ses-msg-1' });
+    expect(sesApi.sent).toBe(1);
+    expect(real.email.callCount()).toBe(1);
+    expect((await proposalRow(id)).state).toBe('SUBMITTED');
+    expect((await attempts(id))[0]).toMatchObject({ attemptSeq: 1, status: 'SUCCEEDED', externalId: 'ses-msg-1' });
+
+    // ③ 🔴 取引先（分類 3）宛の From は検証済みの独自ドメイン。共通ドメインが 1 度も使われていない。
+    expect(sesApi.requests).toHaveLength(1);
+    const request = sesApi.requests[0]!;
+    expect(request.Destination.ToAddresses).toEqual([RECIPIENT.recipientEmail]);
+    expect(request.FromEmailAddress).toBe(`no-reply@${DOMAIN}`);
+    expect(request.FromEmailAddress).not.toBe(commonFrom);
+    expect(request.TenantName).toBe(`t-${TENANT_A}`);
+    expect(request.Content.Template.TemplateName).toBe('PROPOSAL_SUBMISSION');
   });
 });

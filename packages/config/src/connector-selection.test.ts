@@ -100,6 +100,33 @@ describe('🔴 isAllMockEmailEnv — MOCKED を配送済みとみなせるのは
 });
 
 describe('assertNoMockInProduction — 実行時の二重防御', () => {
+  const ALL_REAL: ConnectorSelection = { email: 'real', objectStore: 'real', malwareScanner: 'real', esign: 'real', billing: 'real', ai: 'real' };
+  const CATEGORIES = Object.keys(ALL_REAL) as (keyof ConnectorSelection)[];
+
+  // ✅ T-12-04（docs/05 §17.4「`production` の起動検証」）: **6 区分すべて**を 1 つずつ `mock` にして走査する。
+  //    email / objectStore / billing / ai は環境変数でモックを指名できない（選択表が `APP_ENV` だけで決まる）ため、
+  //    スキーマの枝では落ちようがなく、**この走査が唯一の防御**である（`schema.test.ts` の T-12-04 ① と対）。
+  it('走査する区分は 6 つ（縮んでいたら網羅が空振りする）', () => {
+    expect(CATEGORIES).toEqual(['email', 'objectStore', 'malwareScanner', 'esign', 'billing', 'ai']);
+  });
+
+  it.each(CATEGORIES)('🔴 production で %s だけが mock でも起動失敗（ProductionMockConnectorError に区分名が載る）', (category) => {
+    const selection: ConnectorSelection = { ...ALL_REAL, [category]: 'mock' };
+    let caught: unknown;
+    try {
+      assertNoMockInProduction({ APP_ENV: 'production' }, selection);
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(ProductionMockConnectorError);
+    expect(String((caught as Error).message)).toContain(category);
+  });
+
+  it('🔴 production で sandboxRecipientScoped（メールの宛先分岐）が選ばれても mock ではないので走査は通す —— 選択表がそれを返さないことは上のスナップショットが固定する', () => {
+    expect(() => assertNoMockInProduction({ APP_ENV: 'production' }, { ...ALL_REAL, email: 'sandboxRecipientScoped' })).not.toThrow();
+    expect(resolveConnectorSelection(loadAppEnv(buildValidEnv('production'))).email).toBe('real');
+  });
+
   it('production かつ選択結果に mock が混ざっていたら throw する', () => {
     expect(() =>
       assertNoMockInProduction(

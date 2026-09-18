@@ -1378,6 +1378,7 @@ packages/connectors/src/index.ts           … createConnectors(selection) が�
 | `AWS_ACCOUNT_ID_EXPECTED_PRODUCTION` | `production` の AWS アカウント ID（照合用の定数） | 🔴 必須 | 同上。🔴 **`APP_ENV !== 'production'` かつ `AWS_ACCOUNT_ID === この値` なら起動失敗** |
 | `SES_DEFAULT_FROM_ADDRESS` | 共通ドメインの送信元（§3.2.7） | 🔴 必須 | `z.string().email()` |
 | `SES_CONFIGURATION_SET` | イベント発行用の configuration set 名 | 必須 | `z.string().max(64)` |
+| `SES_EVENT_TOPIC_ARN` | SES イベント（バウンス / 苦情）を受ける SNS トピックの ARN（T-04-03 以来の表の欠落。2026-09-18 追記） | 必須 | `z.string().regex(/^arn:aws:sns:…:\d{12}:…$/)`。✅ T-12-04: 非本番で本番アカウント ID を含む ARN なら起動失敗（`arnAccountId`） |
 | `EMAIL_DAILY_LIMIT_PER_TENANT` | テナント 1 日の上限（既定 500） | 必須 | `z.coerce.number().int().positive()` |
 | `EMAIL_MINUTE_LIMIT_PER_TENANT` | テナント 1 分の上限（既定 30） | 必須 | 同上 |
 | `SES_GLOBAL_RATE_PER_SECOND` | 🔴 **全テナント合計の送信レート（グローバルトークンバケット。§4.5）** | 必須 | 同上。**SES の本番クォータ以下であることを運用で担保する** |
@@ -1389,7 +1390,7 @@ packages/connectors/src/index.ts           … createConnectors(selection) が�
 | 変数 | 用途 | 必須 | フォーマット / 検証 |
 |---|---|---|---|
 | `S3_BUCKET` | スキルシート・契約書・添付の格納先 | 🔴 必須 | `z.string()` |
-| `S3_KMS_KEY_ID` | SSE-KMS の鍵 | `production` / `sandbox` で必須 | `z.string()` |
+| `S3_KMS_KEY_ID` | SSE-KMS の鍵 | `production` / `sandbox` で必須 | `z.string()`。✅ T-12-04: 非本番で本番アカウント ID を含む ARN なら起動失敗（ARN 形式のときだけ判定できる。本番 / `sandbox` は ARN 形式で設定する = `T-12-11`） |
 | `S3_PRESIGNED_URL_TTL_SECONDS` | 署名付き URL の有効期限（既定 300） | 必須 | `z.coerce.number().int().min(60).max(3600)` |
 | `UPLOAD_MAX_BYTES` | アップロード上限（既定 20 MB） | 必須 | `z.coerce.number().int().positive()` |
 | `STORAGE_LIMIT_BYTES_PER_TENANT` | 🔴 **テナントあたりのストレージ上限**（§4.5。超過なら署名付き URL を発行しない）。**プラン別の値（`Plan.storageLimitBytes`）が入るまでの既定値**であり、`EMAIL_DAILY_LIMIT_PER_TENANT` と同じ扱い（T-05-04 で追加） | 必須 | `z.coerce.number().int().positive()`（既定 50 GiB = §7.1 の基準ユニット 1.5 GB の約 33 倍） |
@@ -1453,7 +1454,7 @@ packages/connectors/src/index.ts           … createConnectors(selection) が�
 |---|---|
 | 1 | 🔴 **`z.discriminatedUnion('APP_ENV', [...])` で、環境ごとに必須項目を変える。** 「未設定なら既定値」を実装系の変数に適用しない（NFR-ENV-3） |
 | 2 | 🔴 **`production` でモック実装が選ばれたら `throw`。** `MALWARE_SCANNER` / `ESIGN_PROVIDER_DEFAULT` / メールの実装選択 / 🔴 **`SMS_PROVIDER`**（§6.11）がこれに該当（NFR-ENV-3） |
-| 3 | 🔴 **`APP_ENV !== 'production'` で本番の識別子（`AWS_ACCOUNT_ID_EXPECTED_PRODUCTION` との一致 / `sk_live_` / 本番の `ESIGN_API_BASE_URL` / `DOCUSIGN_OAUTH_BASE_URL` が `https://account.docusign.com`）を検出したら `throw`**（NFR-ENV-4） |
+| 3 | 🔴 **`APP_ENV !== 'production'` で本番の識別子（`AWS_ACCOUNT_ID_EXPECTED_PRODUCTION` との一致 / `sk_live_` / 本番の `ESIGN_API_BASE_URL` / `DOCUSIGN_OAUTH_BASE_URL` が `https://account.docusign.com` / `SES_EVENT_TOPIC_ARN` / `S3_KMS_KEY_ID` の ARN に埋め込まれたアカウント ID が `AWS_ACCOUNT_ID_EXPECTED_PRODUCTION` と一致（`arnAccountId`。✅ T-12-04。`S3_KMS_KEY_ID` は ARN 形式のときだけ判定できる —— 素のキー ID / `alias/…` は判定不能。`T-12-11` のリリース手順で ARN 形式に固定する））を検出したら `throw`**（NFR-ENV-4） |
 | 4 | **検証エラーは「どの変数が、なぜ不正か」を列挙して落とす。** 1 つ目で止めない |
 | 5 | 🔴 **検証結果のログにシークレットの値を出さない。** 変数名と理由のみ（§4.10） |
 

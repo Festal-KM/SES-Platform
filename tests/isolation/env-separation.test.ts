@@ -48,6 +48,8 @@ import {
   InMemoryMinuteWindowCounter,
   InMemoryProviderSendCounter,
   isExternalRecipientClass,
+  isMockedDelivery,
+  isOperationalMailRecipientClass,
   RECIPIENT_CLASSES,
   type ConnectorImplementationKind,
   type Connectors,
@@ -90,6 +92,7 @@ import {
   type EmailDispatchDeps,
 } from '../../apps/worker/src/jobs/email-dispatch.js';
 import { performEmailSend, type EmailSendDeps } from '../../apps/worker/src/jobs/email-send.js';
+import { InvalidJobPayloadError } from '../../apps/worker/src/jobs/payload.js';
 import { requestPasswordReset } from '../../apps/web/lib/auth/password-reset.js';
 import {
   configureAccountMailQueue,
@@ -304,9 +307,14 @@ async function drainAccountMail(
 
 /** `email.dispatch` 用に 1 行予約する（宛先分類は分類 1 / 分類外しか載らない）。 */
 async function reserveHostDispatch(targetId: string, recipientEmail: string) {
+  return reserveDispatch('HOST_MEMBER', targetId, recipientEmail);
+}
+
+/** `email.dispatch` 用に、指定した宛先分類で 1 行予約する（T-12-04 の 5 分類 × 2 環境の表が使う）。 */
+async function reserveDispatch(recipientClass: RecipientClass, targetId: string, recipientEmail: string) {
   const templateKey = 'TENANT_CLOSING_NOTICE';
   return reserveEmailDispatch(systemCtx, {
-    recipientClass: 'HOST_MEMBER',
+    recipientClass,
     recipientEmail,
     templateKey,
     dedupeKey: emailDispatchDedupeKey({ templateKey, targetId, recipientEmail }),
@@ -496,6 +504,84 @@ describe.each(['development', 'demo'] as const)(
     });
   },
 );
+
+// ============================================================================
+// 🔴 T-12-04（docs/05 §17.4 の表「`development` / `demo`」の行 = SP-12 T-12-04 の Phase 1 の 1 行目）
+// ============================================================================
+// **5 分類 × 2 環境の表を 1 つの `it.each` で網羅する。** 上の `describe.each` が「全分類をまとめて 1 通ずつ」
+// 流すのに対し、ここは**行 = (環境, 宛先分類)** ごとに独立した `EmailSender` を組み、その行だけで
+//   ① `resolveConnectorSelection` の選択が `mock` で、`isMockedDelivery` がその分類を `true` と読む
+//   ② 実ジョブの経路を通す —— 分類 1 / 2 は `email.dispatch`（`createEmailDispatchHandler` → `performEmailSend`）、
+//      分類 3 / 4 は `email.dispatch` の門番が拒み（業務上の外部送信は `send.*` = `attempts: 1` の経路）、`send.proposal` ⑤ が
+//      呼ぶのと同じ単一経路 `EmailSender.send` に流す（ジョブ本体は `send-proposal.test.ts` ⑪ が `mocked = true` で固定する）、
+//      分類外は `email.dispatch` が **`PlatformDispatchNotSupportedError` で明示的に失敗**し（黙ってモックに倒れない）、単一経路に流す
+//   ③ 🔴 モックの `callCount()` が **その分類で 1**、SES ポート（実コネクタ）は **0**、外向き遮断（①）が効いている
+// を固定する。表が縮んでいれば最初の it が落ちる。
+
+const ENV_SEPARATION_MATRIX = (['development', 'demo'] as const).flatMap((appEnvKind) =>
+  RECIPIENT_CLASSES.map((recipientClass) => ({ appEnvKind, recipientClass })),
+);
+
+/** 分類 3 / 4 の門番テスト用の（実在しない）`dispatchId`。門番は行を読む前に payload で落とすので DB には触れない。 */
+const UNREACHABLE_DISPATCH_ID = '01930000-0000-7000-8000-0000000000fe';
+
+describe('🔴 T-12-04: 5 分類 × 2 環境 —— 分類ごとに送信を実行し、モックが 1 通受け、SES へ 0 通、外向き遮断が効いている（docs/05 §17.4）', () => {
+  it('表の大きさ（2 環境 × 5 分類 = 10。縮んでいたら「網羅」が空振りする）', () => {
+    expect(RECIPIENT_CLASSES).toEqual(['HOST_MEMBER', 'PARTNER_MEMBER', 'CLIENT', 'ENGINEER', 'PLATFORM']);
+    expect(ENV_SEPARATION_MATRIX).toHaveLength(2 * RECIPIENT_CLASSES.length);
+  });
+
+  it.each(ENV_SEPARATION_MATRIX)(
+    '🔴 $appEnvKind × $recipientClass: モック 1 通 / SES 0 通 / 遮断あり',
+    async ({ appEnvKind, recipientClass }) => {
+      // ① 起動時 DI の選択（判断は 1 箇所。CLAUDE.md §11.1）。
+      const { connectors, implementationKind } = connectorsFor(appEnvKind);
+      expect(implementationKind).toBe('mock');
+      expect(isMockedDelivery(implementationKind, recipientClass)).toBe(true);
+      // 遮断の自己診断（「読み込まれたが効いていない」で green にしない）。
+      expect(isOutboundBlocked()).toBe(true);
+
+      const to = recipientClass === 'PLATFORM' ? PLATFORM_EMAIL : `${recipientClass.toLowerCase()}@${TEST_MAIL_DOMAIN}`;
+      const handler = createEmailDispatchHandler(emailDispatchDeps(connectors, implementationKind));
+      const jobId = `env-separation:${appEnvKind}:${recipientClass}`;
+
+      // ② 実ジョブの経路。
+      if (recipientClass === 'PLATFORM') {
+        // 分類外: ジョブ経路は未実装（`F-055`）。黙ってモックに倒れず明示的に失敗し、外部にも出ていない。
+        await expect(
+          handler({ dispatchId: UNREACHABLE_DISPATCH_ID, tenantId: null, recipientClass }, jobId),
+        ).rejects.toBeInstanceOf(PlatformDispatchNotSupportedError);
+        expect(connectors.email.callCount()).toBe(0);
+        await connectors.email.send(sendInput(recipientClass, to));
+      } else if (isOperationalMailRecipientClass(recipientClass)) {
+        // 分類 1 / 2: `email.dispatch` の実ジョブ → `performEmailSend` → 単一経路。記録は `MOCKED`（`SENT` と取り違えない）。
+        const reservation = await reserveDispatch(recipientClass, `matrix-${appEnvKind}-${recipientClass}`, to);
+        expect(reservation.created).toBe(true);
+        const outcome = await handler(
+          { dispatchId: reservation.dispatchId, tenantId: TENANT.tenantId, recipientClass },
+          jobId,
+        );
+        expect(outcome).toEqual({ kind: 'MOCKED' });
+        const row = await admin.emailDispatch.findFirst({ where: { id: reservation.dispatchId } });
+        expect(row?.status).toBe('MOCKED');
+        expect(row?.recipientClass).toBe(recipientClass);
+        expect(row?.sesMessageId).toBeNull();
+      } else {
+        // 分類 3 / 4: `email.dispatch` の門番が拒む（`attempts: 3` を許した前提 = 宛先が業務上の外部送信でない）。
+        //    外部には 1 通も出ていない。業務上の外部送信は `send.*`（`attempts: 1`）が同じ単一経路を呼ぶ。
+        await expect(
+          handler({ dispatchId: UNREACHABLE_DISPATCH_ID, tenantId: TENANT.tenantId, recipientClass }, jobId),
+        ).rejects.toBeInstanceOf(InvalidJobPayloadError);
+        expect(connectors.email.callCount()).toBe(0);
+        await connectors.email.send(sendInput(recipientClass, to));
+      }
+
+      // ③ 🔴 モックがその分類の 1 通を受け、SES ポート（実コネクタ）は 1 度も呼ばれていない。
+      expect(connectors.email.callCount()).toBe(1);
+      expect(sesSent).toEqual([]);
+    },
+  );
+});
 
 describe('🔴 sandbox ②: 分類 1 / 分類外が実際に送信され、宛先が限定される（docs/05 §17.4）', () => {
   it('起動時 DI の選択が email=sandboxRecipientScoped である', () => {

@@ -19,8 +19,12 @@ import {
   createConnectors,
   InMemoryMinuteWindowCounter,
   InMemoryProviderSendCounter,
+  type ConnectorImplementationKind,
   type Connectors,
+  type EmailSender,
+  type SesApi,
   type SesIdentityApi,
+  type SesSendEmailRequest,
 } from '@ses/connectors';
 import {
   configureTenantDb,
@@ -32,7 +36,11 @@ import {
   type SystemTenantCtx,
 } from '@ses/db';
 import { createUnextendedClient, type UnextendedClient } from '@ses/db/testing';
+// 🔴 ルートの package.json は `@ses/config` を依存に持たないため、実装のソースを相対 import する（`env-separation.test.ts` と同じ扱い）。
+import { resolveConnectorSelection } from '../../packages/config/src/connector-selection.js';
 import { INVITATION_TTL_MS } from '../../packages/config/src/limits.js';
+import { loadAppEnv } from '../../packages/config/src/load-env.js';
+import { buildValidEnv } from '../../packages/config/src/testing/fixtures.js';
 import { createAccountMailHandler } from '../../apps/worker/src/jobs/account-mail.js';
 import { createAccountMailReissue } from '../../apps/worker/src/jobs/account-mail-reissue.js';
 import { createDomainProvisionHandler } from '../../apps/worker/src/jobs/domain-provision.js';
@@ -109,10 +117,15 @@ function stubIdentityApi(): SesIdentityApi {
  *    （`resolveSendingDomainFromDb`）。ここをスタブにすると、検証しているのが
  *    「テストの都合で null を返す関数」になってしまい、`BR-51` の担保にならない。
  */
-function accountMailDeps() {
+function accountMailDeps(
+  email: { readonly sender: EmailSender; readonly implementationKind: ConnectorImplementationKind } = {
+    sender: connectors.email,
+    implementationKind: 'mock',
+  },
+) {
   return {
-    emailSender: connectors.email,
-    emailImplementationKind: 'mock' as const,
+    emailSender: email.sender,
+    emailImplementationKind: email.implementationKind,
     minuteWindow: new InMemoryMinuteWindowCounter(),
     quotaDefaults: quotaDefaultsWith({ emailDailyLimit: 500 }),
     minuteLimit: 30,
@@ -133,20 +146,23 @@ function accountMailDeps() {
   } as never;
 }
 
-async function runAccountMail(job: {
-  tenantId: string;
-  kind: string;
-  targetId: string;
-  recipientClass: string;
-  token: string;
-}) {
-  return createAccountMailHandler(accountMailDeps())(job, 'job-account-mail');
+async function runAccountMail(
+  job: {
+    tenantId: string;
+    kind: string;
+    targetId: string;
+    recipientClass: string;
+    token: string;
+  },
+  email?: { readonly sender: EmailSender; readonly implementationKind: ConnectorImplementationKind },
+) {
+  return createAccountMailHandler(accountMailDeps(email))(job, 'job-account-mail');
 }
 
 /** `send.hold-release`（毎 10 分）。🔴 `reissueAccountMail` に**実体**を渡す。 */
-async function runHoldRelease() {
+async function runHoldRelease(emailSender: EmailSender = connectors.email) {
   const handler = createSendHoldReleaseHandler({
-    emailSender: connectors.email,
+    emailSender,
     providerDailyQuota: 200,
     providerQuotaWarnRatio: 0.8,
     providerSentCounter: new InMemoryProviderSendCounter(),
@@ -494,5 +510,110 @@ describe('🔴 ジョブ文脈でも判定は同じ経路を通る（2 つの実
       mailFromDomain: 'mail.example.co.jp',
       verifiedAt: NOW,
     });
+  });
+});
+
+// ============================================================================
+// 🔴 T-12-04（docs/05 §17.4「`production` の送信経路」= NFR-ENV-10 / SP-12 T-12-04 の Phase 1 の 3 行目）
+// ============================================================================
+// 上の describe はすべてモック（`development` / `demo` の選択）で通している。**`production` の選択表では実コネクタ
+// （`SesEmailSender`）が選ばれる**ので、同じ判定が実コネクタの側でも成立することを **SES の HTTP API をスタブ**して固定する:
+//   ① 未検証テナントで取引先へ届く送信（分類 2 = 取引先招待）は `HELD_DOMAIN_UNVERIFIED` で止まり、SES スタブは 0 通・`callCount()` 0
+//   ② 検証済みになると同じ招待が **1 通**だけ SES へ出る（トークン再発行 → `SENT` + `sesMessageId`）
+//   ③ 🔴 取引先宛の `From` は検証済みの独自ドメインであり、**共通ドメイン（`SES_DEFAULT_FROM_ADDRESS`）が使われない**。
+//      対照として、分類 1（自社メンバー宛）は未検証でも共通ドメインで送られる（docs/03 §3.2.7 規律 2。NFR-ENV-10 の後段）
+// ⚠️ 実 SES への疎通（本番アクセス承認 E-1 が前提）は CI では叩けない —— スタブで代替し、実 SES での 1 回の疎通は
+//    E-1 承認後の `T-12-11`（リリース手順）で行う（docs/05 §17.4 の T-12-04 の決着）。
+describe('🔴 T-12-04 NFR-ENV-10: production の選択表（実コネクタ = SES スタブ）でも未検証は保留・共通ドメインへ落ちない', () => {
+  /** 共通ドメインの送信元（`SES_DEFAULT_FROM_ADDRESS` 相当）。取引先宛の `From` に現れてはならない値。 */
+  const COMMON_FROM = 'no-reply@ses-platform.example';
+  let sesRequests: SesSendEmailRequest[];
+  let production: { readonly sender: EmailSender; readonly implementationKind: ConnectorImplementationKind };
+
+  function stubSesApi(): SesApi {
+    return {
+      async sendEmail(request) {
+        sesRequests.push(request);
+        return { MessageId: `ses-${sesRequests.length}` };
+      },
+      async getAccount() {
+        return { SendQuota: { Max24HourSend: 200, SentLast24Hours: 0 } };
+      },
+    };
+  }
+
+  beforeEach(() => {
+    sesRequests = [];
+    // 🔴 実装種別は起動時 DI の判断（`resolveConnectorSelection`）そのものから取る（`production` は `real`）。
+    const selection = resolveConnectorSelection(loadAppEnv(buildValidEnv('production')));
+    expect(selection.email).toBe('real');
+    const real = createConnectors(
+      { email: selection.email, objectStore: 'mock', malwareScanner: 'mock', esign: 'mock', billing: 'mock' },
+      {
+        ses: {
+          api: stubSesApi(),
+          defaultFromAddress: COMMON_FROM,
+          configurationSet: 'ses-platform-test',
+          sentCounter: new InMemoryProviderSendCounter(),
+          now: () => NOW,
+        },
+      },
+    );
+    production = { sender: real.email, implementationKind: selection.email };
+  });
+
+  it('🔴 ① 未検証テナントの取引先招待は HELD_DOMAIN_UNVERIFIED で止まり、SES スタブは 0 通（共通ドメインへフォールバックしない）', async () => {
+    await invitePartner('partner-prod-held@hold-test.example');
+    const outcome = await runAccountMail(mailQueue.jobsOf('INVITATION')[0] as never, production);
+
+    expect(outcome).toEqual({ kind: 'HELD_DOMAIN_UNVERIFIED' });
+    expect(sesRequests).toEqual([]);
+    expect(production.sender.callCount()).toBe(0);
+    const dispatch = await admin.emailDispatch.findFirst({ where: { tenantId: TENANT_A } });
+    expect(dispatch?.status).toBe('HELD_DOMAIN_UNVERIFIED');
+    expect(dispatch?.sesMessageId).toBeNull();
+  });
+
+  it('🔴 ②③ 検証済みなら 1 通だけ SES へ出て、From は独自ドメイン（共通ドメインではない）。SENT + sesMessageId', async () => {
+    await invitePartner('partner-prod-sent@hold-test.example');
+    await runAccountMail(mailQueue.jobsOf('INVITATION')[0] as never, production);
+    expect(sesRequests).toEqual([]);
+
+    await verifyDomain();
+    expect((await runHoldRelease(production.sender)).domainReleased).toBe(1);
+    expect(reissued).toHaveLength(1);
+
+    const sent = await runAccountMail(reissued[0] as never, production);
+    expect(sent.kind).toBe('SENT');
+    expect(production.sender.callCount()).toBe(1);
+    expect(sesRequests).toHaveLength(1);
+    const request = sesRequests[0]!;
+    expect(request.Destination.ToAddresses).toEqual(['partner-prod-sent@hold-test.example']);
+    // 🔴 From は検証済みの独自ドメイン。ローカル部は共通アドレスのものを引き継ぐ（`resolveFromAddress`）。
+    expect(request.FromEmailAddress).toBe(`no-reply@${DOMAIN}`);
+    expect(request.FromEmailAddress).not.toBe(COMMON_FROM);
+    expect(request.FromEmailAddress.endsWith('@ses-platform.example')).toBe(false);
+    // SES Tenants によるテナント別レピュテーションの前提（docs/05 §8.3）。
+    expect(request.TenantName).toBe(`t-${TENANT_A}`);
+    const dispatch = await admin.emailDispatch.findFirst({ where: { recipientEmail: 'partner-prod-sent@hold-test.example', status: 'SENT' } });
+    expect(dispatch?.recipientClass).toBe('PARTNER_MEMBER');
+    expect(dispatch?.sesMessageId).toBe('ses-1');
+  });
+
+  it('対照: 分類 1（自社メンバー宛）は未検証でも共通ドメインで送られる —— 共通ドメインが使われるのは分類 1 / 分類外だけ', async () => {
+    await issueInvitation(
+      ownerA,
+      { email: 'host-prod@hold-test.example', role: 'SALES' },
+      META,
+      REQUIRED,
+      () => INVITE_URL_NOT_DISCLOSED,
+      NOW,
+    );
+    const outcome = await runAccountMail(mailQueue.jobsOf('INVITATION')[0] as never, production);
+
+    expect(outcome.kind).toBe('SENT');
+    expect(sesRequests).toHaveLength(1);
+    expect(sesRequests[0]?.FromEmailAddress).toBe(COMMON_FROM);
+    expect(sesRequests[0]?.Destination.ToAddresses).toEqual(['host-prod@hold-test.example']);
   });
 });
