@@ -29,7 +29,8 @@
     "apps/**/*.d.ts",
     "vitest.config.ts",
     "vitest.smoke.config.ts",
-    "vitest.isolation.config.ts"
+    "vitest.isolation.config.ts",
+    "vitest.perf.config.ts"
   ],
   // 🔴 T-03-11: `tests/e2e/**` のうち **`@playwright/test` に依存する部分だけ**を外す
   //    （`*.spec.ts` と `support/**`）。Playwright は E2E 実行環境にしか入っていないため、

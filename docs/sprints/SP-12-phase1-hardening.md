@@ -74,6 +74,7 @@
 - 🔴 **満たせない場合**: 検索基盤の代替（OpenSearch）の要否を**人間に提起する**（Issue を起票）。**実装は `packages/db/src/search/*.ts` の 1 箇所に閉じているため、差し替えの影響範囲が限定される**（SP-06 の T-06-05）。
 - 🔴 **測定結果（p50 / p95 / p99・実行日時・シード条件）を `docs/dev-plan.md` §8 に記録する。** これが Phase 1 完了確認の証跡になる。
 - **完了の判定**: 1 / 2 が目標を満たす、または未達の理由と対応方針が Issue として起票されている。
+- ⚠️ **決着（2026-09-18）**: `tests/perf/phase1-load.test.ts` + `vitest.perf.config.ts`（`pnpm test:perf`。CI には載せず手動 / リリース前。Testcontainers PostgreSQL 17 + Redis、`beforeAll` で `seed:perf`、Route Handler 直呼び、実 BullMQ Worker + モック AI / モックメール）で実測した。✅ **`F-009 AC-4`（#15 自社スコープ 7 組）と `F-015 AC-2`（#25 6 組）は green**（p95 ≤ 190 ms / ≤ 55 ms。**SP-06 §6-1 が本タスクへ送っていた 2 つの AC はこれで green**）。✅ 3 / 4（`gate.run` / `send.proposal`）も起動〜確定 p95 0.4 秒で green（実 API のレイテンシは含まない）。🔴 **未達が 2 組: 匿名候補が混在する候補一覧（#15 `projectId` あり = #30 / `S-016`）が p95 2.3 秒（絞り込みなし）/ 3.9 秒（全部盛り）。** 原因は索引ではなく（実行計画は索引走査）、共有スコープ RLS の 1 行ごとの SECURITY DEFINER 関数（`engineer_skills` 10,928 行）と Prisma クライアント側の処理（入れ子 `select` / `createMany` 2,000 行）。**OpenSearch は無関係**（フリーワード無しでも遅い）。テストは 1 秒の予算のまま赤で置き（判定を緩めない）、是正候補 (a) RLS ポリシーの集合化 (b) `replaceAnonymousCandidates` の生 SQL 化 (c) `listSharedEngineers` の入れ子 `select` 平坦化 (d) `MatchCandidate` 生成を読み取りから外す（Phase 2 `match.build`）と、予算の読み方（`F-009` の 1 秒か `F-029 AC-5` の 3 秒か）を人間判断として `docs/dev-plan.md` §8 に置いた（**Issue の起票はオーケストレーター**）。実測の表・実行計画の要点は `docs/05` §17.3「T-12-02 の実測の決着」。索引は足していない（`search-indexes.test.ts` ④ は不変）。
 
 ### T-12-03 E2E の総仕上げ（L）
 

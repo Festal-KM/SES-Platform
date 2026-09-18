@@ -1,0 +1,24 @@
+// tests/perf/budget.ts
+// 🔴 T-12-02: 負荷測定の判定に使う予算（`CLAUDE.md` §7 / `docs/02` 章 7.1 / `F-009 AC-4` / `F-015 AC-2` / `A-18`）。
+//
+// 🔴 `packages/config`（環境変数）には置かない。予算は**製品の目標値**であって環境ごとに変える設定ではなく、
+//    環境変数にすると「CI のマシンが遅いから上げる」ができてしまう。**ローカル計測が正**であり、値を上げる変更は
+//    このファイルの差分としてレビューに出る（判定を緩めない。SP-12 T-12-02 の 🔴）。
+
+/** 複合検索（`GET /api/engineers` / `GET /api/projects`）の p95 予算（ミリ秒）。`CLAUDE.md` §7「1 秒以内（p95）」。 */
+export const PERF_P95_BUDGET_MS = 1_000;
+
+/** `gate.run`（レビュー依頼 → 確定）の p95 予算。`docs/02` 章 7.1 / `A-18`「ゲート実行 p95 30 秒」。 */
+export const GATE_RUN_P95_BUDGET_MS = 30_000;
+
+/** `send.proposal`（送信要求 → `SUBMITTED`）の p95 予算。`docs/02` 章 7.1 / `A-18`「送信ジョブ p95 60 秒」。 */
+export const SEND_PROPOSAL_P95_BUDGET_MS = 60_000;
+
+/** 検索の 1 条件あたりの標本数（ウォームアップを除く）。T-12-01 の申し送り「N = 50〜100 回」。 */
+export const SEARCH_SAMPLE_COUNT = 60;
+
+/** 検索のウォームアップ回数（接続プール・プランキャッシュ・JIT の立ち上がりを標本から除く）。 */
+export const SEARCH_WARMUP_COUNT = 5;
+
+/** ジョブ（`gate.run` / `send.proposal`）の標本数。`perf` プリセットの各テナント 1 件（30 テナント）を使う。 */
+export const JOB_SAMPLE_COUNT = 30;

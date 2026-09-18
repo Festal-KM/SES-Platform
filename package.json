@@ -15,6 +15,7 @@
     "test:unit": "vitest run",
     "test:smoke": "vitest run -c vitest.smoke.config.ts",
     "test:isolation": "vitest run -c vitest.isolation.config.ts",
+    "test:perf": "vitest run -c vitest.perf.config.ts --maxWorkers=1",
     "test:e2e": "playwright test",
     "typecheck:e2e": "tsc -p tsconfig.e2e.json",
     "seed": "pnpm --filter @ses/db run seed",
