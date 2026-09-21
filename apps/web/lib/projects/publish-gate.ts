@@ -46,6 +46,7 @@ import {
   upsertProjectPublishRequest,
   type AuthenticatedTenantCtx,
   type ProjectPublishContentHashReader,
+  type ProjectPublishRequestKind,
   type ProjectPublishRequestWriter,
 } from '@ses/db';
 import { InternalError } from '../api/errors';
@@ -65,9 +66,18 @@ export type ProjectPublishGateRequest = {
   /** ゲートの対象（`ReviewGate.targetId`）。 */
   readonly projectId: string;
   /**
+   * 🔴 T-12-10: 要求の種類（docs/05 §11.11「T-12-10 の実装の決着」②）。
+   *   - `PUBLISH` … `#28`（相手を増やす）。FAIL は「追加しない」だけ
+   *   - `RECHECK` … `#26`（公開中の内容を検査し直す）。FAIL は**公開中の行をすべて落とす**
+   * 🔴 **既定値を持たせない。** 書かなければ公開、にすると再検査が `#28` の行を奪う。
+   */
+  readonly kind: ProjectPublishRequestKind;
+  /**
    * 🔴 **これから公開しようとしている相手だけ**（すでに公開中の相手は含まない）。
    *    ゲートが見る `audience` は「すでに公開済み ∪ ここで渡した相手」の和である
    *    （`packages/db` の `loadGateInput`）。
+   * 🔴 T-12-10: `RECHECK` では**常に空**である（`audience` は現在の公開先そのもの）。
+   *    DB の CHECK（`(kind='RECHECK') = (cardinality(partner_company_ids) = 0)`）が対応を縛る。
    */
   readonly partnerCompanyIds: readonly string[];
 };
@@ -133,6 +143,7 @@ export function createProjectPublishGate(deps: ProjectPublishGateDeps): ProjectP
 
     await upsertProjectPublishRequest(db, ctx.tenantId, {
       projectId: request.projectId,
+      kind: request.kind,
       partnerCompanyIds: request.partnerCompanyIds,
       contentHash,
       requestedAt: deps.now,

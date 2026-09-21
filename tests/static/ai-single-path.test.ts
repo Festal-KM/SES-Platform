@@ -349,18 +349,25 @@ describe('🔴 T-08-06: apps/web からの @ses/ai import はマスキング系�
     expect(webAiImporters).toContain('apps/web/lib/proposal-requests/message-check.ts');
   });
 
-  it('🔴 apps/web の非テストソースに、許可リスト外の @ses/ai import が 1 つも無い', () => {
-    const offenders = webSourceFiles
-      .map((file) => ({
-        file: toRepoRelative(file),
-        violations: webAiImportViolations(readFileSync(file, 'utf8'), file),
-      }))
-      .filter((entry) => entry.violations.length > 0);
-    expect(
-      offenders,
-      'apps/web は @ses/ai から mask / MASK_CATEGORIES / MASK_PLACEHOLDERS と型だけを import できます' +
-        '（docs/05 §1.2「apps/web に LLM 呼び出しを置かない」/ CLAUDE.md §3.2）。' +
-        'LLM を呼ぶ処理は apps/worker のジョブに置いてください。',
-    ).toEqual([]);
-  });
+  // 🔴 T-12-10: `apps/web` のソースが増えて既定の 5 秒に収まらなくなったため、この 1 本にだけ
+  //    明示のタイムアウトを置く。**走査対象は 1 ファイルも狭めない** —— 狭めると
+  //    「`apps/web` から LLM を呼ぶ import」の検出が静かに抜ける（`CLAUDE.md` §3.2）。
+  it(
+    '🔴 apps/web の非テストソースに、許可リスト外の @ses/ai import が 1 つも無い',
+    () => {
+      const offenders = webSourceFiles
+        .map((file) => ({
+          file: toRepoRelative(file),
+          violations: webAiImportViolations(readFileSync(file, 'utf8'), file),
+        }))
+        .filter((entry) => entry.violations.length > 0);
+      expect(
+        offenders,
+        'apps/web は @ses/ai から mask / MASK_CATEGORIES / MASK_PLACEHOLDERS と型だけを import できます' +
+          '（docs/05 §1.2「apps/web に LLM 呼び出しを置かない」/ CLAUDE.md §3.2）。' +
+          'LLM を呼ぶ処理は apps/worker のジョブに置いてください。',
+      ).toEqual([]);
+    },
+    30_000,
+  );
 });

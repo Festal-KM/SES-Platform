@@ -120,6 +120,10 @@ export function projectVisibilityScreenMessages(): ProjectVisibilityScreenMessag
     previewNote: t('projects.visibilitySettings.preview.note'),
     previewWarningTitle: t('projects.visibilitySettings.preview.warning.title'),
     previewWarningLead: t('projects.visibilitySettings.preview.warning.lead'),
+    // 🔴 T-12-10: セクション 4 のゲート結果の履歴（`docs/04` 改訂 14 §S-013）。
+    gateHistoryTitle: t('projects.visibilitySettings.gate.history.title'),
+    gateHistoryEmpty: t('projects.visibilitySettings.gate.history.empty'),
+    gateHistoryCurrent: t('projects.visibilitySettings.gate.history.current'),
     gatePendingTitle: t('projects.visibilitySettings.gate.pending.title'),
     gatePendingLead: t('projects.visibilitySettings.gate.pending.lead'),
     submit: t('projects.visibilitySettings.submit'),

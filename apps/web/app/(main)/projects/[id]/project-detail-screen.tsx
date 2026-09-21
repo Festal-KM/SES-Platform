@@ -24,6 +24,7 @@ import Link from 'next/link';
 // 🔴 型だけを import する（本ファイルはサーバコンポーネントだが、`@ses/db` の**値**を
 //    持ち込むと `*.render.test.tsx` が Prisma クライアントを読み込むことになる）。
 import type { RequirementKind } from '@ses/db';
+import type { ProjectPublicField, ProjectPublishStateView } from '@ses/domain';
 import {
   cn,
   NameCell,
@@ -44,6 +45,7 @@ import {
   type ProjectDetailRow,
   type ProjectRequirementRow,
 } from '../../../../lib/projects/detail';
+import { formatDateTimeJst } from '../../../../lib/format/datetime';
 import type { ProjectDetailView } from '../../../../lib/projects/service';
 
 export type ProjectDetailScreenMessages = {
@@ -74,6 +76,34 @@ export type ProjectDetailScreenMessages = {
   readonly candidates: string;
   readonly edit: string;
   readonly viewRecorded: string;
+  /**
+   * 🔴 T-12-10: 公開の状態（4 値）の語（`docs/04` 改訂 14 §S-011）。
+   *    **自動解除（橙・塗り = 直せば進む）と保留（点線枠 = 待つ）は別の語・別の見た目である。**
+   */
+  readonly publishState: ProjectPublishStateMessages;
+};
+
+/** 🔴 T-12-10: `docs/04` §S-011 の 4 値ブロックの語（`F-014 AC-9` / `AC-12`）。 */
+export type ProjectPublishStateMessages = {
+  readonly autoRevokedTitle: string;
+  readonly autoRevokedFieldsLabel: string;
+  /** 🔴 欄名は閉集合（3 値）。`S-012` の入力欄のラベルと同じ語を使う。 */
+  readonly fieldLabels: Readonly<Record<ProjectPublicField, string>>;
+  /** 🔴 判定不能（LLM の失敗）。**欄名を推測して並べない**（`docs/02` A-26 の既定①）。 */
+  readonly autoRevokedInconclusive: string;
+  readonly autoRevokedHiddenFromPrefix: string;
+  readonly autoRevokedHiddenFromSuffix: string;
+  readonly autoRevokedRecovery: string;
+  readonly autoRevokedFindings: string;
+  readonly autoRevokedFix: string;
+  /** 🔴 `VIEWER` には 2 導線を出さず、この理由テキストを置く（`docs/04` §7.6）。 */
+  readonly autoRevokedReadOnly: string;
+  readonly recheckRunning: string;
+  readonly recheckRunningNote: string;
+  readonly heldTitle: string;
+  readonly heldLead: string;
+  readonly heldResetAt: string;
+  readonly heldLimitRaise: string;
 };
 
 /**
@@ -162,6 +192,127 @@ function RequirementTable({
   );
 }
 
+/**
+ * 🔴 T-12-10: 自動解除の帯（`docs/04` 改訂 14 §S-011。`F-014 AC-9`）。
+ *
+ * 🔴 **要件の上に置く**（見落とすと「なぜ問い合わせが止まったのか」が分からない）。
+ * 🔴 **3 デバイスとも折りたたまない** —— 原因の欄と 2 導線まで帯の中に出し切る
+ *    （`CLAUDE.md` §13.3「狭い画面を理由に判断材料を隠さない」）。
+ * 🔴 **「無視して公開」「このまま再公開」に相当するボタン・チェックボックス・確認ダイアログを
+ *    1 つも置かない**（`BR-18` / `CLAUDE.md` §3.3。**直せるのは元データだけである**）。
+ *    代わりに「どうすれば戻るか」（2 手順）を文言で書く —— 書かないと迂回路を探す動機になる。
+ * 🔴 **指摘の本文をここに出さない。** 出すのは原因の欄（3 値の閉集合）だけであり、
+ *    本文（＝ エンド企業名そのもの）は `S-013` セクション 4 でのみ読む。
+ * 🔴 **`VIEWER` にも帯は出すが、2 導線は描かない**（`docs/04` §S-011 権限差分）。
+ */
+function AutoRevokedBanner({
+  projectId,
+  revocation,
+  canEdit,
+  messages,
+}: {
+  readonly projectId: string;
+  readonly revocation: NonNullable<Extract<ProjectPublishStateView, { state: 'AUTO_REVOKED' }>['revocation']>;
+  readonly canEdit: boolean;
+  readonly messages: ProjectDetailScreenMessages;
+}) {
+  const copy = messages.publishState;
+  const cause = revocation.cause;
+  return (
+    <section
+      className="mb-4 border border-amber-400 bg-amber-100 px-4 py-3 text-sm text-amber-900"
+      data-testid="project-detail-publish-auto-revoked"
+    >
+      <p className="font-bold" data-testid="project-detail-publish-auto-revoked-title">
+        {cause.kind === 'GATE_FINDINGS' ? copy.autoRevokedTitle : copy.autoRevokedInconclusive}
+      </p>
+      {cause.kind === 'GATE_FINDINGS' ? (
+        <p className="mt-1" data-testid="project-detail-publish-auto-revoked-fields">
+          {copy.autoRevokedFieldsLabel}:{' '}
+          {cause.fields.map((field) => copy.fieldLabels[field]).join(' / ')}
+        </p>
+      ) : null}
+      <p className="mt-1" data-testid="project-detail-publish-auto-revoked-hidden">
+        {copy.autoRevokedHiddenFromPrefix}
+        {revocation.revokedPartnerCount}
+        {copy.autoRevokedHiddenFromSuffix}
+      </p>
+      <p className="mt-1" data-testid="project-detail-publish-auto-revoked-recovery">
+        {copy.autoRevokedRecovery}
+      </p>
+      {canEdit ? (
+        <div className="mt-2 flex flex-wrap items-center gap-4">
+          {/* 🔴 「指摘を見る」→ `S-013` セクション 4（層別のゲート結果。判定を上書きする操作はそこにも無い）。 */}
+          <Link
+            className={SECONDARY_LINK_CLASSES}
+            href={`/projects/${projectId}/visibility#gate-results`}
+            data-testid="project-detail-publish-auto-revoked-findings"
+          >
+            {copy.autoRevokedFindings}
+          </Link>
+          {/* 🔴 「該当の欄を直す」→ `S-012`（編集）。**再公開の近道ではない。** */}
+          <Link
+            className={SECONDARY_LINK_CLASSES}
+            href={`/projects/${projectId}/edit`}
+            data-testid="project-detail-publish-auto-revoked-fix"
+          >
+            {copy.autoRevokedFix}
+          </Link>
+        </div>
+      ) : (
+        <p className="mt-2 text-xs" data-testid="project-detail-publish-auto-revoked-read-only">
+          {copy.autoRevokedReadOnly}
+        </p>
+      )}
+    </section>
+  );
+}
+
+/**
+ * 🔴 T-12-10: 再検査の進行 / 保留（`docs/04` 改訂 14 §S-011。**セクション 5 の中**に置く）。
+ *
+ * 🔴 **帯（要件の上）にしない** —— 公開は落ちておらず、今すぐ人が直すものが無い。
+ * 🔴 **点線枠**（§5-3 の `検査中` と同じ形）。**橙・塗りを使わない**（自動解除と見た目を分ける）。
+ * 🔴 **「問題が見つかりました」に相当する語を 1 つも使わない**（上限到達は元データの欠陥ではない）。
+ * 🔴 **再試行ボタンを置かない**（保留はジョブ側が上限解除後に自動で再実行する。`AC-12`）。
+ */
+function PublishProgressNotice({
+  state,
+  messages,
+}: {
+  readonly state: ProjectPublishStateView;
+  readonly messages: ProjectDetailScreenMessages;
+}) {
+  const copy = messages.publishState;
+  if (state.state === 'PUBLISHED_RECHECK_HELD') {
+    return (
+      <div
+        className="mt-3 border border-dashed border-slate-400 px-3 py-2 text-xs text-slate-700"
+        data-testid="project-detail-publish-held"
+      >
+        <p className="font-bold">{copy.heldTitle}</p>
+        <p className="mt-1">{copy.heldLead}</p>
+        <p className="mt-1">
+          {copy.heldResetAt}: {formatDateTimeJst(state.held.resetAt)}
+        </p>
+        <p className="mt-1">{copy.heldLimitRaise}</p>
+      </div>
+    );
+  }
+  if (state.state === 'PUBLISHED' && state.recheckRunning) {
+    return (
+      <div
+        className="mt-3 border border-dashed border-slate-400 px-3 py-2 text-xs text-slate-700"
+        data-testid="project-detail-publish-recheck-running"
+      >
+        <p className="font-bold">{copy.recheckRunning}</p>
+        <p className="mt-1">{copy.recheckRunningNote}</p>
+      </div>
+    );
+  }
+  return null;
+}
+
 export function ProjectDetailScreen({
   view,
   requirementKinds,
@@ -207,9 +358,22 @@ export function ProjectDetailScreen({
         ))}
       </dl>
 
+      {/* 🔴 T-12-10: 自動解除の帯（`docs/04` 改訂 14 §S-011）。要件の上に置く。 */}
+      {view.audience === 'HOST' && view.publishState.state === 'AUTO_REVOKED' ? (
+        <AutoRevokedBanner
+          projectId={view.id}
+          revocation={view.publishState.revocation}
+          canEdit={canEdit}
+          messages={messages}
+        />
+      ) : null}
+
       {/* 🔴 `docs/04` §S-011: 公開範囲未設定（ホスト）の警告は**要件の上**に置く（`F-014 AC-2`。
-          既定は非公開であり、設定を忘れると誰にも届かない）。 */}
-      {view.audience === 'HOST' && view.visibilities.length === 0 ? (
+          既定は非公開であり、設定を忘れると誰にも届かない）。
+          🔴 **T-12-10: 自動解除の帯が出ている間はこの警告を出さない**（`docs/04` 改訂 14 §S-011）——
+          どちらも公開先 0 社だが**原因が違う**（設定し忘れ / 検査で落ちた）。帯は 1 本だけにし、
+          自動解除を優先する。条件は「公開先 0 社」ではなく**公開の状態の 4 値**で書く。 */}
+      {view.audience === 'HOST' && view.publishState.state === 'UNPUBLISHED' ? (
         <p
           className="mb-4 border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
           data-testid="project-detail-visibility-warning"
@@ -329,6 +493,8 @@ export function ProjectDetailScreen({
                 <p className="mt-3 text-xs text-slate-500" data-testid="project-detail-visibility-proposal-count">
                   {messages.visibilityProposalCountComingSoon}
                 </p>
+                {/* 🔴 T-12-10: 再検査の進行 / 保留はセクション 5 の中に置く（帯にしない）。 */}
+                <PublishProgressNotice state={view.publishState} messages={messages} />
                 {/* ✅ T-06-06: `S-013`（公開範囲の設定）への導線（`docs/04` §S-011 操作と結果）。
                     🔴 `canEdit`（＝ `PROJECT_EDITOR_ROLES`）のときだけ出す —— `VIEWER` は
                     公開範囲を変更できない（`BR-31`）。取引先はこのセクション自体に到達しない。 */}

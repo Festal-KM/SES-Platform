@@ -72,6 +72,13 @@ const { PROJECT_DETAIL_SELECT_KEYS, readProjectDetail, readProjectForEdit } = aw
 );
 const projectsRoute = await import('../../apps/web/app/api/(main)/projects/route');
 const projectRoute = await import('../../apps/web/app/api/(main)/projects/[id]/route');
+// 🔴 T-12-10: `#26`（PATCH）は公開中の案件で公開欄 3 欄が変わったとき `gate.run` を積む。
+//    キューが未登録なら **`#26` ごと失敗させる**（`CLAUDE.md` §11.1。黙って「再検査しない」に
+//    倒さない）ので、この結合テストでも登録しておく。**積まれたジョブの実行は
+//    `tests/isolation/project-publish-gate.test.ts` が本番と同じ経路で見る。**
+const { configureGateRunJobQueue, resetGateRunJobQueue } = await import(
+  '../../apps/web/lib/jobs/gate-run-queue'
+);
 
 const TENANT_1 = ISOLATION_SEED_IDS.tenants[0];
 const TENANT_2 = ISOLATION_SEED_IDS.tenants[1];
@@ -249,9 +256,14 @@ beforeAll(async () => {
 
   await enrollTwoFactor(TENANT_1.hostUserId, TENANT_1.tenantId);
   await enrollTwoFactor(TENANT_2.hostUserId, TENANT_2.tenantId);
+  configureGateRunJobQueue({
+    enqueue: async () => 'ENQUEUED',
+    removeFailedJob: async () => 'NOT_FOUND',
+  });
 }, SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
+  resetGateRunJobQueue();
   await disconnectTenantDb();
   await admin?.$disconnect();
   await database?.stop();
@@ -272,7 +284,10 @@ afterEach(async () => {
   // 🔴 T-06-02: 公開範囲は seed の 1 行（パートナー 1 社目）だけに戻す
   //    （公開解除・2 社公開のテストが seed の前提を書き換えるため）。
   await admin.projectVisibility.deleteMany({ where: { id: { notIn: SEED_VISIBILITY_IDS } } });
-  await admin.projectVisibility.updateMany({ data: { revokedAt: null } });
+  // 🔴 T-12-10: 解除の痕跡は 3 列そろって戻す（CHECK が revoked_at と revoked_reason の対応を要求する）。
+  await admin.projectVisibility.updateMany({
+    data: { revokedAt: null, revokedReason: null, revokedReviewGateId: null },
+  });
   // 🔴 `project_requirements` は `ON DELETE CASCADE`（migration 20260903010000）。
   await admin.project.deleteMany({ where: { name: { startsWith: MARKER } } });
   await admin.auditLog.deleteMany({ where: { action: { in: PROJECT_AUDIT_ACTIONS } } });
@@ -706,7 +721,8 @@ async function publishTo(partnerCompanyId: string): Promise<void> {
 async function revokeVisibilityOf(partnerCompanyId: string): Promise<void> {
   const updated = await admin.projectVisibility.updateMany({
     where: { projectId: TENANT_1.publishedProjectId, partnerCompanyId },
-    data: { revokedAt: NOW },
+    // 🔴 T-12-10: 人の解除は `revoked_reason='MANUAL'`（`revoked_at` 単独は CHECK が拒む）。
+    data: { revokedAt: NOW, revokedReason: 'MANUAL' },
   });
   if (updated.count !== 1) throw new Error('公開範囲の行が 1 件ではありません（前提の破綻）。');
 }
@@ -843,6 +859,7 @@ describe('🔴 案件詳細の境界（docs/05 §4.8 / docs/04 §10.1 S-011）',
     const ctx = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
 
     const error = await readProjectDetail(ctx, TENANT_1.publishedProjectId, {
+      now: NOW,
       ipAddress: null,
     }).catch((caught: unknown) => caught);
 
@@ -1125,6 +1142,9 @@ describe('🔴 F-013 AC-2: 一覧にも商流情報が現れない', () => {
       'mustRequirements',
       'name',
       'prefecture',
+      // 🔴 T-12-10: ホストのみの 3 値（`docs/04` 改訂 14 §S-010 の公開状況列）。
+      //    **取引先の行には現れない**（下の取引先向けのテストが型と応答の両方で固定する）。
+      'publishStatus',
       'remoteMode',
       'startDate',
       'status',

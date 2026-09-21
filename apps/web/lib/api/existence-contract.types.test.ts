@@ -28,6 +28,8 @@ import { describe, expectTypeOf, it } from 'vitest';
 import type * as engineerList from '../engineers/list';
 import type * as engineerService from '../engineers/service';
 import type * as projectList from '../projects/list';
+// 🔴 T-12-10: `#26` の応答型（`ProjectMutationView` / `ProjectRecheckOutcome`）の出所。
+import type * as projectSchemas from '../projects/schemas';
 import type * as projectService from '../projects/service';
 import type * as projectVisibility from '../projects/visibility';
 // 🔴 T-07-08: SP-07 で足した #39 / #40（`docs/05` §6.5）。表に足すだけで全名前が自動的に効く。
@@ -240,15 +242,23 @@ describe('🔴 docs/05 §4.8: 一覧の封筒は `items` / `total` / `nextCursor
 });
 
 describe('🔴 docs/05 §4.8: 書き込み系（#26 / #28）の応答も「境界の外」を語らない', () => {
-  it('#26 の応答は採番された `id` だけである（作成・更新とも）', () => {
+  it('#26 の応答は採番された `id` と `recheck` だけである（作成・更新とも）', () => {
     // 🔴 「作成後の全項目」を返すと、商流情報を含む型がもう 1 つ増える（`ProjectEditView` は
     //    ホスト専用であり、応答型として流用すると射影の担保が 2 本になる。`service.ts` の注記）。
+    // 🔴 T-12-10（`docs/05` §6.4 #26）: `recheck` が増えた。**「再検査を積んだか / 積まなかった
+    //    ならなぜか」だけ**であり、公開先の件数・社名・ゲートの合否は 1 つも含まない
+    //    （合否は非同期であり、この応答の時点では存在しない）。
     expectTypeOf<
       Awaited<ReturnType<typeof projectService.createProject>>
-    >().toEqualTypeOf<{ readonly id: string }>();
+    >().toEqualTypeOf<projectSchemas.ProjectMutationView>();
     expectTypeOf<
       Awaited<ReturnType<typeof projectService.updateProject>>
-    >().toEqualTypeOf<{ readonly id: string }>();
+    >().toEqualTypeOf<projectSchemas.ProjectMutationView>();
+    // 🔴 `reason` の値は 2 つで閉じる（「積まないことを選べた」と読める値を作らない。
+    //    `docs/05` §11.11「T-12-10 の実装の決着」③⑧ / `BR-18`）。
+    expectTypeOf<
+      Extract<projectSchemas.ProjectRecheckOutcome, { queued: false }>['reason']
+    >().toEqualTypeOf<'NOT_PUBLISHED' | 'PUBLIC_FIELDS_UNCHANGED'>();
   });
 
   it('🔴 #28 の応答は `reviewGateId` / `verdict` だけで、公開先の件数を返さない', () => {

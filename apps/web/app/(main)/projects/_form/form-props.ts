@@ -164,6 +164,14 @@ export function projectFormMessages(): ProjectFormMessages {
     publicSummaryLabel: t('projects.publicSummary.label'),
     publicSummaryNote: t('projects.publicSummary.note'),
 
+    // 🔴 T-12-10（`docs/04` 改訂 14 §S-012 / `F-014 AC-6`）。
+    publicFieldNotice: t('projects.publicField.notice'),
+    recheckPublishedToPrefix: t('projects.recheckNotice.publishedToPrefix'),
+    recheckPublishedToSuffix: t('projects.recheckNotice.publishedToSuffix'),
+    recheckWillRun: t('projects.recheckNotice.willRun'),
+    recheckWillNotRun: t('projects.recheckNotice.willNotRun'),
+    savedRecheckQueued: t('projects.saved.recheckQueued'),
+
     visibilityNotice: t('projects.visibility.notice'),
     visibilitySettings: t('projects.visibility.settings'),
     save: t('projects.save'),

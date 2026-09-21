@@ -705,6 +705,12 @@ model ProjectVisibility {
   publishedAt      DateTime  @map("published_at") @db.Timestamptz(3)
   publishedBy      String    @map("published_by") @db.Uuid
   revokedAt        DateTime? @map("revoked_at") @db.Timestamptz(3)
+  /// 🔴 T-12-10: 解除の原因。ProjectVisibilityRevokeReason（'MANUAL'|'GATE_RECHECK'。CHECK）。
+  /// **「公開先が 0 社」という事実だけから画面に推測させない**ための列である（F-014 AC-9 /
+  /// docs/04 §S-010 の 3 値列）。#28 の人の解除は必ず 'MANUAL' を書く（CHECK が revoked_at 単独を拒む）。
+  revokedReason       String?   @map("revoked_reason")
+  /// 🔴 T-12-10: 'GATE_RECHECK' のとき NOT NULL（CHECK）。S-011 の帯「指摘を見る」の導線。
+  revokedReviewGateId String?   @map("revoked_review_gate_id") @db.Uuid
   reviewGateId     String    @map("review_gate_id") @db.Uuid // 公開時のゲート結果（F-014 処理②）
 
   tenant         Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -713,11 +719,23 @@ model ProjectVisibility {
   partnerCompany PartnerCompany @relation(fields: [tenantId, partnerCompanyId], references: [tenantId, id], onDelete: Restrict)
   // 🔴 T-02-03: T-02-02 では列のみだった review_gate_id の FK をここで解決する（前方参照の解決）。
   reviewGate     ReviewGate     @relation(fields: [reviewGateId], references: [id], onDelete: Restrict)
+  // 🔴 T-12-10: 自動解除の根拠となったゲート結果（別リレーション。ON DELETE RESTRICT）。
+  revokedReviewGate ReviewGate? @relation("ProjectVisibilityRevokedGate", fields: [revokedReviewGateId], references: [id], onDelete: Restrict)
 
   @@unique([tenantId, projectId, partnerCompanyId])
   @@index([tenantId, partnerCompanyId, revokedAt]) // RLS ポリシーの EXISTS が使う（T-02-06）
+  @@index([tenantId, projectId, revokedAt(sort: Desc)]) // 🔴 T-12-10: 「最後に解除された行」を引く
   @@map("project_visibilities")
 }
+
+// 🔴 DB 制約（migration.sql で手書き。T-12-10。docs/05 §3.5）:
+//   CHECK ( (revoked_at IS NULL) = (revoked_reason IS NULL) )
+//   CHECK ( revoked_reason IS NULL OR revoked_reason IN ('MANUAL','GATE_RECHECK') )
+//   CHECK ( revoked_reason IS DISTINCT FROM 'GATE_RECHECK' OR revoked_review_gate_id IS NOT NULL )
+// 🔴 migration は既存の解除済みの行を 'MANUAL' で backfill してから CHECK を張る
+//    （自動解除は T-12-10 以前に存在しない）。
+// 🔴 再公開（settleProjectPublish の upsert）は revoked_at / revoked_reason /
+//    revoked_review_gate_id を**同時に NULL へ戻す**。
 
 /// 🔴 T-07-09: 「**これから公開する相手**」をゲートまで運ぶ中間テーブル（docs/05 §11.11）。
 ///
@@ -733,7 +751,12 @@ model ProjectPublishRequest {
   id        String @id @default(uuid(7)) @db.Uuid
   tenantId  String @map("tenant_id") @db.Uuid
   projectId String @map("project_id") @db.Uuid
+  /// 🔴 T-12-10: 要求の種類。ProjectPublishRequestKind（'PUBLISH'|'RECHECK'。CHECK）。
+  /// 'PUBLISH' = #28（相手を増やす）/ 'RECHECK' = #26（公開中の内容を検査し直す）。
+  /// **FAIL の意味が違う**（PUBLISH = 増やさない / RECHECK = 公開中の行を落とす）ので同じ行に混ぜない。
+  kind      String @default("PUBLISH")
   /// 🔴 これから公開する相手だけ（すでに公開中の相手は含まない）。GateInput.audience の材料
+  /// 🔴 T-12-10: 'RECHECK' の行は必ず 0 件である（CHECK が kind と対応を縛る）
   partnerCompanyIds String[] @map("partner_company_ids") @db.Uuid
   /// 🔴 ReviewGate.contentHash と同じ値（gate.run の payload / jobId の材料）。
   /// 消費は (project_id, content_hash) の CAS であり、要求が差し替わったら古い実行は何もしない
@@ -745,10 +768,19 @@ model ProjectPublishRequest {
   tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
-  /// 🔴 案件ごとに保留中の要求は 1 つ（差し替えは UPDATE。積み上がらない）
-  @@unique([tenantId, projectId])
+  /// 🔴 案件 × 種類ごとに保留中の要求は 1 つ（差し替えは UPDATE。積み上がらない）。
+  /// 🔴 T-12-10 で改訂（旧 [tenantId, projectId]）—— PUBLISH と RECHECK は同時に存在しうる
+  /// （編集の直後に S-013 で公開先を足す、など）。
+  @@unique([tenantId, projectId, kind])
   @@map("project_publish_requests")
 }
+
+// 🔴 DB 制約（migration.sql で手書き。T-12-10。docs/05 §3.5）:
+//   CHECK ( kind IN ('PUBLISH','RECHECK') )
+//   CHECK ( (kind = 'RECHECK') = (cardinality(partner_company_ids) = 0) )
+//     PUBLISH の行は必ず 1 件以上の追加先を持ち（追加が無い要求は #28 が取り下げる）、
+//     RECHECK の行は必ず 0 件である。**「空配列なら再検査」という暗黙の規約にしない** ——
+//     種類を列として持ち、対応を DB の CHECK で縛る。
 
 /// 🔴 越境経路 4 の唯一の根拠。既定オフ（行の非存在で表現する。F-016 AC-1）。
 model EngineerShare {
@@ -994,9 +1026,15 @@ model ReviewGate {
   aiUsageId             String?   @map("ai_usage_id") @db.Uuid
   aiFailed              Boolean   @default(false) @map("ai_failed") // true なら PII/商流は FAIL 扱い（LLM 失敗）
   executedAt            DateTime? @map("executed_at") @db.Timestamptz(3) // DONE のとき NOT NULL
+  /// 🔴 T-12-10: **この行を作った実行の契機**。ProjectPublishRunTrigger（'PUBLISH'|'RECHECK'。CHECK）。
+  /// PROJECT_PUBLISH のときだけ値を持ち、他の対象種別では NULL（docs/04 §S-013 セクション 4 のラベルの出所）。
+  /// ⚠️ キャッシュ再利用（§9.3 の ALREADY_DONE）では行が増えないので契機も増えない。
+  runTrigger            String?   @map("run_trigger")
 
   tenant              Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   projectVisibilities ProjectVisibility[]
+  /// 🔴 T-12-10: 自動解除の根拠として参照されている行（`ProjectVisibility.revoked_review_gate_id`）。
+  revokedProjectVisibilities ProjectVisibility[] @relation("ProjectVisibilityRevokedGate")
   messages            Message[] // T-02-04（CHAT_ATTACHMENT）
   contractDocuments   ContractDocument[] // T-02-04（CONTRACT_DOCUMENT）
   // 🔴 T-02-05: ai_usage 表が実在するようになったため前方参照を解決する。
@@ -1010,6 +1048,10 @@ model ReviewGate {
 // 🔴 DB 制約（migration.sql で手書き）:
 //   CHECK ( (execution = 'DONE') = (pii_verdict IS NOT NULL AND commerce_verdict IS NOT NULL AND executed_at IS NOT NULL) )
 //   CHECK ( (execution = 'HELD_AI_COST_LIMIT') = (held_since IS NOT NULL) )
+//   🔴 CHECK ( (target_type = 'PROJECT_PUBLISH') = (run_trigger IS NOT NULL) )        … T-12-10
+//   🔴 CHECK ( run_trigger IS NULL OR run_trigger IN ('PUBLISH','RECHECK') )          … T-12-10
+//      🔴 書き忘れは INSERT で落ちる —— holdReviewGate / completeReviewGate が契機を運ばなければ、
+//         案件の公開のゲートは 1 行も保存できない（実行時ガードではなく DB 制約で担保する）。
 // 🔴 部分 UNIQUE: ON review_gates(tenant_id, target_type, target_id) WHERE execution <> 'DONE' … 保留は対象ごとに 1 行。
 //    再実行（§9.3 gate.hold-release）は同じ行を DONE に完了させる（新しい行を足さない）。
 

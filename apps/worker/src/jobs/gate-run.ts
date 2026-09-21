@@ -288,6 +288,12 @@ async function autoApproveIfEnabled(
  *    したがって「A に公開 → 解除 → もう一度 A に公開」はキャッシュを引き当てるが、
  *    ここで確定させなければ**公開要求だけが残って永久に公開されない**。
  *    確定は `(project_id, content_hash)` の CAS なので、二重に実行しても行は 1 度しか動かない。
+ *
+ * 🔴 **T-12-10: 帰結が 2 つ増えた**（`RECHECK_PASSED` / `REVOKED_BY_RECHECK`）。分岐は
+ *    `settleProjectPublish` の中（消費した公開要求の `kind`）にあり、**ジョブ側に `if` は 1 つも
+ *    増えていない** —— 公開範囲の行を作る / 落とす場所は 1 か所のままである（`F-014 AC-13`）。
+ * 🔴 **上限到達（`HELD_AI_COST_LIMIT`）ではここへ来ない**（保留は `holdReviewGate` で終わる）。
+ *    したがって**保留では公開が落ちない**（`AC-12`）。「保留だから解除しない」という `if` は無い。
  */
 async function settlePublish(
   ctx: SystemTenantCtx,
@@ -352,6 +358,12 @@ export function createGateRunHandler(deps: GateRunDeps): GateRunHandler {
     if (lookup.kind === 'NOT_FOUND') return { kind: 'TARGET_NOT_FOUND' };
     const input: GateInput = lookup.input;
 
+    // 🔴 T-12-10: この実行の契機（`review_gates.run_trigger`。docs/05 §11.11「T-12-10 の実装の
+    //    決着」⑪）。`GateInput` の `PROJECT_PUBLISH` 変種が運び、保存の 2 経路（保留 / 確定）が
+    //    そのまま書く。**ジョブがここで値を作らない**（`loadGateInput` が消費する公開要求の
+    //    `kind` そのものであり、2 か所で決めると「検査した契機」と「保存した契機」がずれる）。
+    const runTrigger = input.targetType === 'PROJECT_PUBLISH' ? input.runTrigger : null;
+
     // ③ 🔴 整合層（機械的照合）。**AI を待たない / AI の成否と独立**（`BR-61` / `F-027 AC-5`）。
     const consistency = decideConsistency(input.consistency);
 
@@ -404,6 +416,7 @@ export function createGateRunHandler(deps: GateRunDeps): GateRunHandler {
         //    ジョブは**正常終了**する（BullMQ の failed に入れない = 失敗ジョブ数に混ぜない）。
         const held = await holdReviewGate(ctx, {
           ...key,
+          runTrigger,
           consistencyVerdict: consistency.verdict,
           findings: consistency.findings,
           heldSince: deps.now(),
@@ -425,6 +438,7 @@ export function createGateRunHandler(deps: GateRunDeps): GateRunHandler {
     const executedAt = deps.now();
     const saved = await completeReviewGate(ctx, {
       ...key,
+      runTrigger,
       piiVerdict: decision.piiVerdict,
       commerceVerdict: decision.commerceVerdict,
       consistencyVerdict: decision.consistencyVerdict,

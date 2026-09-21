@@ -44,6 +44,8 @@ function hostView(overrides: Partial<HostProjectDetailView> = {}): HostProjectDe
     endClientName: '架空エンド株式会社',
     internalUnitPrice: 900_000,
     visibilities: [],
+    // 🔴 T-12-10: 公開の状態（4 値）はホストの枝の必須項目である（`docs/04` §S-011）。
+    publishState: { state: 'UNPUBLISHED', visibleToCount: 0, latestGate: null },
     ...overrides,
   };
 }

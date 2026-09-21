@@ -8,6 +8,8 @@
 //    `docs/04` §S-011 / §10.1）。それ以外は同じ語を使う。
 import { t } from '@ses/i18n';
 import {
+  // 🔴 T-12-10: 公開欄 3 欄の語（`S-011` の原因の欄 / `S-012` の印が同じキーを見る）。
+  PROJECT_PUBLIC_FIELD_MESSAGE_KEYS,
   REQUIREMENT_KIND_EMPTY_KEYS,
   REQUIREMENT_KIND_HEADING_KEYS,
   REQUIREMENT_KIND_NOTE_KEYS,
@@ -60,5 +62,27 @@ export function projectDetailScreenMessages(
     candidates: t('projects.detail.candidates.open'),
     edit: t('projects.detail.edit'),
     viewRecorded: t('projects.detail.viewRecorded'),
+    // 🔴 T-12-10: 公開の状態（4 値）の語（`docs/04` 改訂 14 §S-011 / `F-014 AC-9` / `AC-12`）。
+    //    🔴 **取引先の枝でも同じ props を組み立てるが、画面が描くのはホストの枝だけである**
+    //    （`PartnerProjectDetailView` に `publishState` が型として無い）。
+    publishState: {
+      autoRevokedTitle: t('projects.detail.publishState.autoRevoked.title'),
+      autoRevokedFieldsLabel: t('projects.detail.publishState.autoRevoked.fields'),
+      // 🔴 欄名の写像は閉集合（3 値）。欄が増えたらコンパイラが割り当てを強制する。
+      fieldLabels: messageRecord(PROJECT_PUBLIC_FIELD_MESSAGE_KEYS),
+      autoRevokedInconclusive: t('projects.detail.publishState.autoRevoked.inconclusive'),
+      autoRevokedHiddenFromPrefix: t('projects.detail.publishState.autoRevoked.hiddenFromPrefix'),
+      autoRevokedHiddenFromSuffix: t('projects.detail.publishState.autoRevoked.hiddenFromSuffix'),
+      autoRevokedRecovery: t('projects.detail.publishState.autoRevoked.recovery'),
+      autoRevokedFindings: t('projects.detail.publishState.autoRevoked.findings'),
+      autoRevokedFix: t('projects.detail.publishState.autoRevoked.fix'),
+      autoRevokedReadOnly: t('projects.detail.publishState.autoRevoked.readOnly'),
+      recheckRunning: t('projects.detail.publishState.recheckRunning'),
+      recheckRunningNote: t('projects.detail.publishState.recheckRunning.note'),
+      heldTitle: t('projects.detail.publishState.held.title'),
+      heldLead: t('projects.detail.publishState.held.lead'),
+      heldResetAt: t('projects.detail.publishState.held.resetAt'),
+      heldLimitRaise: t('projects.detail.publishState.held.limitRaise'),
+    },
   };
 }

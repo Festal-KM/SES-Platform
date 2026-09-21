@@ -2238,6 +2238,25 @@ const ja = {
   'projects.visibility.notice':
     '保存しただけでは、この案件はどの取引先にも公開されません。公開先は「公開範囲を設定」で 1 社ずつ指定します。',
   'projects.visibility.settings': '公開範囲を設定',
+
+  // --- 🔴 T-12-10 `S-012` の事前表示（`docs/04` 改訂 14 §S-012 / `F-014 AC-6` / `UC-26` 手順 2）---
+  // 🔴 **3 欄に「この欄は公開先が読む」印を添える。** 既存の商流情報ブロックの注記
+  //    （`projects.commerce.notice`）と**同じ位置・同じ体裁で、向きだけが逆**である ——
+  //    2 つを 1 画面に並べることで「外に出る欄 / 出ない欄」が入力中に読める。
+  'projects.publicField.notice': 'この欄は公開先の取引先が読みます。',
+  // 🔴 **公開中の案件を編集しているときだけ**出す（未公開・新規登録では出さない ——
+  //    「何も起きない警告」に慣れさせない）。**編集開始時から常時**であり、押した後ではない。
+  'projects.recheckNotice.publishedToPrefix': 'この案件は ',
+  'projects.recheckNotice.publishedToSuffix': ' 社に公開中です。',
+  'projects.recheckNotice.willRun':
+    '案件名 / 外部公開用の記載 / 要件の自由記述 のいずれかを変更して保存すると、保存後に再検査が実行されます。検査で問題が見つかると、この案件の公開は解除され、取引先の画面から見えなくなります。',
+  // 🔴 **走らない条件も同じ帯に書く。** 書かないと「保存のたびに公開が消えるかもしれない」と
+  //    読まれて編集が避けられ、台帳が更新されなくなる（`docs/01` 章 1.1-1 の再発）。
+  'projects.recheckNotice.willNotRun':
+    '上記 3 欄以外の変更（募集人数・開始日・状態・商流情報・条件）と、同じ内容での再保存では再検査は実行されません。公開先の追加・削除も契機になりません（追加した公開先に対する検査は「公開範囲を設定」の公開の実行が行います）。',
+  // 🔴 保存の完了表示。**保存の成否と再検査の結果を 1 つの表示に混ぜない**（保存は同期で
+  //    成功しており、再検査はこれからである。混ぜると「保存できなかった」と誤読される）。
+  'projects.saved.recheckQueued': '保存しました。公開中の内容を再検査しています。',
   // 🔴 境界外（他テナント）と不存在（削除済み）を区別しない 1 文（docs/05 §4.8）。
   'projects.notFound': 'この案件の情報は見つかりませんでした。',
 
@@ -2287,6 +2306,45 @@ const ja = {
   // ✅ T-08-05: `S-016` へ接続した（それまでは `projects.detail.candidates.comingSoon` の注記だった）。
   'projects.detail.candidates.open': '候補を探す',
 
+  // --- 🔴 T-12-10 公開の状態（`docs/04` 改訂 14 §S-011 の 4 値 / `F-014 AC-6`〜`AC-13` / `UC-26`）---
+  // 🔴 **4 値はどれも別の語である**（`CLAUDE.md` §4.2「失敗と保留を混同しない」）。
+  //    自動解除は「公開が落ちている（今すぐ直す）」、保留は「公開が続いている（待つ）」であり、
+  //    利用者が取るべき行動が逆になる。**保留に「問題が見つかりました」に相当する語を 1 つも使わない。**
+  // 🔴 **取引先には帯そのものを描かない**（`AC-10`）。ここにあるのはホスト向けの語だけである。
+  // 🔴 **指摘の本文（どの語が引っかかったか）をここに置かない** —— 商流層の指摘はエンド企業名
+  //    そのものであり、案件詳細に常時表示される経路を作らない（読む場所は `S-013` セクション 4）。
+  'projects.detail.publishState.autoRevoked.title':
+    '検査で問題が見つかったため、この案件の公開を解除しました。',
+  'projects.detail.publishState.autoRevoked.fields': '原因の欄',
+  // 🔴 欄名は `S-012` の入力欄のラベルと同じ語を使う（別の語にすると直す場所に辿り着けない）。
+  'projects.detail.publishState.field.name': '案件名',
+  'projects.detail.publishState.field.publicSummary': '外部公開用の記載',
+  'projects.detail.publishState.field.requirementFreeText': '要件の自由記述',
+  // 🔴 判定不能（LLM の失敗・タイムアウト・スキーマ違反）。**欄名を推測して並べない**（A-26 の既定①）。
+  'projects.detail.publishState.autoRevoked.inconclusive':
+    '検査を完了できなかったため、この案件の公開を解除しました。',
+  'projects.detail.publishState.autoRevoked.hiddenFromPrefix': '公開先だった ',
+  'projects.detail.publishState.autoRevoked.hiddenFromSuffix':
+    ' 社の画面から、この案件は見えなくなっています。',
+  // 🔴 「どうすれば戻るか」を書く（書かないと迂回路を探す動機になる）。**再公開の近道は無い。**
+  'projects.detail.publishState.autoRevoked.recovery':
+    '再び公開するには、指摘された欄を直して再検査に通す必要があります。案件を編集して該当の欄を直し、公開範囲の設定から公開し直してください。',
+  'projects.detail.publishState.autoRevoked.findings': '指摘を見る',
+  'projects.detail.publishState.autoRevoked.fix': '該当の欄を直す',
+  // 🔴 `VIEWER` には 2 導線を出さず、理由テキストを置く（`docs/04` §S-011 権限差分 / §7.6）。
+  'projects.detail.publishState.autoRevoked.readOnly':
+    '案件の編集と公開範囲の変更は、閲覧のみの権限では行えません。',
+  // 🔴 再検査の実行中（公開は維持されている）。**「公開を解除しました」と先回りして描かない。**
+  'projects.detail.publishState.recheckRunning': '公開中の内容を再検査しています。',
+  'projects.detail.publishState.recheckRunning.note':
+    'このページを離れても検査は続きます。結果はこの画面の公開の状態で確認できます。検査に通れば公開はそのまま維持されます。',
+  // 🔴 保留（AI の日次上限）。**公開は落ちていない**（`AC-12`）。「問題が見つかった」と書かない。
+  'projects.detail.publishState.held.title': '公開は維持されています。',
+  'projects.detail.publishState.held.lead':
+    'AI が上限に達しているため、編集した内容の再検査をまだ実行できていません。上限のリセット後に自動で再検査されます。',
+  'projects.detail.publishState.held.resetAt': '再開の見込み',
+  'projects.detail.publishState.held.limitRaise': '上限の引き上げは運営者が行います。',
+
   // --- S-010 案件一覧・検索（docs/04 §S-010 / `F-015` / docs/05 §6.4 #25。T-06-03）---
   // 🔴 `F-015 AC-1` / `docs/04` §3.2 項目 2: **母集団が違うことを画面上で明示する。**
   //    ホストは「自社案件」、取引先は「御社に公開された案件」であり、件数も母集団も別物である。
@@ -2324,6 +2382,9 @@ const ja = {
   // 🔴 0 件は「0 社に公開中」ではなく**状態の語**で出す（`F-014 AC-2` の既定に気づかせる）。
   'projects.list.visibility.unset': '未設定',
   'projects.list.visibility.publishedTo': '社に公開中',
+  // 🔴 T-12-10（`docs/04` §S-010 改訂 14 / `F-014 AC-9`）: 3 値目。**同じ 0 社でも原因が違う**
+  //    （設定し忘れ / 検査で落ちた）。列は 1 語であり、理由・原因の欄・指摘は `S-011` で読む。
+  'projects.list.visibility.autoRevoked': '公開を解除（検査）',
   'projects.list.requirements.separator': '、',
   'projects.list.requirements.yearsOrMore': '年以上',
   // --- 検索条件（`docs/04` §S-010 セクション 1）---
@@ -2402,6 +2463,27 @@ const ja = {
   'projects.visibilitySettings.preview.warning.kind.endClientName': 'エンド企業名',
   'projects.visibilitySettings.preview.warning.kind.internalUnitPrice': '自社単価',
   // 🔴 ゲートの現状をそのまま書く（保留を成功と書かない）。
+  // --- 🔴 T-12-10 `S-013` セクション 4（ゲート結果の履歴。`docs/04` 改訂 14 §S-013）---
+  // 🔴 **実行の契機を 1 行で添える**（`公開の実行` / `公開欄の編集による再検査` + 実行日時）。
+  //    契機が読めないと、`S-011` の帯から辿った利用者が「これは公開しようとしたときの古い結果では」
+  //    と迷う。🔴 **どちらも同じ体裁で描き、層の並びも語も変えない。**
+  'projects.visibilitySettings.gate.history.title': 'ゲート結果の履歴',
+  'projects.visibilitySettings.gate.history.empty':
+    'この案件のゲートはまだ 1 度も実行されていません。',
+  'projects.visibilitySettings.gate.history.trigger.PUBLISH': '公開の実行',
+  'projects.visibilitySettings.gate.history.trigger.RECHECK': '公開欄の編集による再検査',
+  'projects.visibilitySettings.gate.history.current': '現在の内容に対する結果',
+  // 🔴 保留は §5-3 の `検査中` と同じ表現（「修正して再実行」を促さない / `S-038` 導線を出さない）。
+  'projects.visibilitySettings.gate.history.held': '検査中（AI の上限で保留）',
+  // 🔴 層の並びも語も `S-020` / `S-023` と揃える（§5-3。**承認者・設定者が画面をまたいで
+  //    同じ読み方をできることがゲートの成立条件**）。キーは画面別に持つ（`docs/04` の原則）。
+  'projects.visibilitySettings.gate.layer.pii': 'PII 層',
+  'projects.visibilitySettings.gate.layer.commerce': '商流層',
+  'projects.visibilitySettings.gate.layer.consistency': '整合層',
+  'projects.visibilitySettings.gate.verdict.PASS': '合格',
+  'projects.visibilitySettings.gate.verdict.FAIL': '不合格',
+  'projects.visibilitySettings.gate.verdict.RUNNING': '検査中',
+  'projects.visibilitySettings.gate.verdict.HELD': '検査中',
   'projects.visibilitySettings.gate.pending.title':
     '公開の前に品質ゲート（PII 層・商流層・整合層）を実行します。',
   'projects.visibilitySettings.gate.pending.lead':

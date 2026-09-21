@@ -424,7 +424,10 @@ afterEach(async () => {
   await admin.partnerCompany.updateMany({ data: { suspendedAt: null } });
   // 🔴 公開範囲を seed の 1 行（パートナー 1 社目）だけに戻す。
   await admin.projectVisibility.deleteMany({ where: { id: { notIn: SEED_VISIBILITY_IDS } } });
-  await admin.projectVisibility.updateMany({ data: { revokedAt: null } });
+  // 🔴 T-12-10: 解除の痕跡は 3 列そろって戻す（CHECK が revoked_at と revoked_reason の対応を要求する）。
+  await admin.projectVisibility.updateMany({
+    data: { revokedAt: null, revokedReason: null, revokedReviewGateId: null },
+  });
   // 🔴 T-07-09: ゲート待ちの公開要求は、ワーカーが確定させるまで残る（本テストはワーカーを
   //    走らせないので必ず残る）。片付けないと次のテストの差分計算に混ざる。
   await admin.projectPublishRequest.deleteMany({});

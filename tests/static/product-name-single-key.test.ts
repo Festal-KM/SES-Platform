@@ -194,10 +194,17 @@ describe('🔴 §17.2 #35 ① 製品コードにプロダクト名の直書き�
     expect(relative.some((file) => file.startsWith('packages/i18n/'))).toBe(false);
   });
 
-  it('文字列 / テンプレート / JSX テキストのどこにもプロダクト名（綴りの揺れを含む）が無い', () => {
-    const findings = files.flatMap((file) => productNameFindings(file, parse(file)));
-    expect(findings).toEqual([]);
-  });
+  // 🔴 T-12-10: 走査対象（`apps/**` / `packages/**` の全ソース）が増えて既定の 5 秒に収まらなく
+  //    なったため、この 1 本にだけ明示のタイムアウトを置く。**検査の範囲は 1 ファイルも狭めない**
+  //    —— 狭めると「プロダクト名の直書き」の検出が静かに抜ける（`§17.2 #35 ①` の趣旨そのもの）。
+  it(
+    '文字列 / テンプレート / JSX テキストのどこにもプロダクト名（綴りの揺れを含む）が無い',
+    () => {
+      const findings = files.flatMap((file) => productNameFindings(file, parse(file)));
+      expect(findings).toEqual([]);
+    },
+    30_000,
+  );
 });
 
 // ============================================================================

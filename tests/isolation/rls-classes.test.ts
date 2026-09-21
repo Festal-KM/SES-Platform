@@ -373,14 +373,21 @@ describe('C4 VISIBILITY（越境経路 1。docs/05 §4.4）', () => {
 
   it('🔴 公開の取り消し（revoked_at）で即座に見えなくなる = 行の有無がそのまま境界である', async () => {
     await runUnextended(db, HOST_A, (tx) =>
-      tx.projectVisibility.updateMany({ where: { id: VISIBILITY_A_P1 }, data: { revokedAt: new Date() } }),
+      // 🔴 T-12-10: `revoked_at` 単独は CHECK が拒む（原因を必ず書く。docs/05 §3.5）。
+      tx.projectVisibility.updateMany({
+        where: { id: VISIBILITY_A_P1 },
+        data: { revokedAt: new Date(), revokedReason: 'MANUAL' },
+      }),
     );
     try {
       const rows = await runUnextended(db, P1_A, (tx) => tx.project.findMany());
       expect(rows).toHaveLength(0);
     } finally {
       await runUnextended(db, HOST_A, (tx) =>
-        tx.projectVisibility.updateMany({ where: { id: VISIBILITY_A_P1 }, data: { revokedAt: null } }),
+        tx.projectVisibility.updateMany({
+          where: { id: VISIBILITY_A_P1 },
+          data: { revokedAt: null, revokedReason: null, revokedReviewGateId: null },
+        }),
       );
     }
   });

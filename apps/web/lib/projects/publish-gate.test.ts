@@ -26,7 +26,8 @@ const CTX = {
 const NOW = new Date('2026-09-09T03:00:00.000Z');
 
 type UpsertCall = {
-  where: { tenantId_projectId: { tenantId: string; projectId: string } };
+  // 🔴 T-12-10: 鍵は `(tenantId, projectId, kind)`（`PUBLISH` と `RECHECK` が同時に存在しうる）。
+  where: { tenantId_projectId_kind: { tenantId: string; projectId: string; kind: string } };
   create: Record<string, unknown>;
   update: Record<string, unknown>;
 };
@@ -126,6 +127,7 @@ describe('createProjectPublishGate（#28 の接続点。docs/05 §11.11）', () 
 
     const outcome = await createProjectPublishGate({ queue, now: NOW })(db, CTX, {
       projectId: '33333333-3333-4333-8333-333333333333',
+      kind: 'PUBLISH',
       partnerCompanyIds: ['partner-a'],
     });
 
@@ -139,13 +141,16 @@ describe('createProjectPublishGate（#28 の接続点。docs/05 §11.11）', () 
 
     await createProjectPublishGate({ queue, now: NOW })(db, CTX, {
       projectId: '33333333-3333-4333-8333-333333333333',
+      kind: 'PUBLISH',
       partnerCompanyIds: ['partner-a'],
     });
 
     expect(upserts).toHaveLength(1);
-    expect(upserts[0]?.where.tenantId_projectId).toEqual({
+    // 🔴 T-12-10: 鍵に `kind` が入った（`PUBLISH` と `RECHECK` は同時に存在しうる）。
+    expect(upserts[0]?.where.tenantId_projectId_kind).toEqual({
       tenantId: CTX.tenantId,
       projectId: '33333333-3333-4333-8333-333333333333',
+      kind: 'PUBLISH',
     });
     expect(upserts[0]?.update).toMatchObject({
       partnerCompanyIds: ['partner-a'],
@@ -162,6 +167,7 @@ describe('createProjectPublishGate（#28 の接続点。docs/05 §11.11）', () 
 
     const outcome = await createProjectPublishGate({ queue, now: NOW })(db, CTX, {
       projectId: '33333333-3333-4333-8333-333333333333',
+      kind: 'PUBLISH',
       partnerCompanyIds: ['partner-a'],
     });
     expect(calls).toEqual([]);
@@ -177,6 +183,7 @@ describe('createProjectPublishGate（#28 の接続点。docs/05 §11.11）', () 
 
     const outcome = await createProjectPublishGate({ queue, now: NOW })(db, CTX, {
       projectId: '33333333-3333-4333-8333-333333333333',
+      kind: 'PUBLISH',
       partnerCompanyIds: ['partner-a'],
     });
     await outcome.enqueue();
@@ -197,6 +204,7 @@ describe('createProjectPublishGate（#28 の接続点。docs/05 §11.11）', () 
       const { queue } = fakeQueue();
       await createProjectPublishGate({ queue, now: NOW })(db, CTX, {
         projectId: '33333333-3333-4333-8333-333333333333',
+        kind: 'PUBLISH',
         partnerCompanyIds: ['partner-a'],
       });
       return upserts[0]?.update.contentHash;
@@ -214,6 +222,7 @@ describe('createProjectPublishGate（#28 の接続点。docs/05 §11.11）', () 
       const { queue } = fakeQueue();
       await createProjectPublishGate({ queue, now: NOW })(db, CTX, {
         projectId: '33333333-3333-4333-8333-333333333333',
+        kind: 'PUBLISH',
         partnerCompanyIds: ['partner-a'],
       });
       return upserts[0]?.update.contentHash;
@@ -227,6 +236,7 @@ describe('createProjectPublishGate（#28 の接続点。docs/05 §11.11）', () 
       const { queue } = fakeQueue();
       await createProjectPublishGate({ queue, now: NOW })(db, CTX, {
         projectId: '33333333-3333-4333-8333-333333333333',
+        kind: 'PUBLISH',
         partnerCompanyIds: ['partner-a'],
       });
       return upserts[0]?.update.contentHash;
@@ -246,6 +256,7 @@ describe('createProjectPublishGate（#28 の接続点。docs/05 §11.11）', () 
       const { queue } = fakeQueue();
       await createProjectPublishGate({ queue, now: NOW })(db, CTX, {
         projectId: '33333333-3333-4333-8333-333333333333',
+        kind: 'PUBLISH',
         partnerCompanyIds,
       });
       return upserts[0]?.update.contentHash;
@@ -263,6 +274,7 @@ describe('createProjectPublishGate（#28 の接続点。docs/05 §11.11）', () 
       const { queue } = fakeQueue();
       await createProjectPublishGate({ queue, now: NOW })(db, CTX, {
         projectId: '33333333-3333-4333-8333-333333333333',
+        kind: 'PUBLISH',
         partnerCompanyIds: ['partner-a'],
       });
       return upserts[0]?.update.contentHash;
@@ -277,6 +289,7 @@ describe('createProjectPublishGate（#28 の接続点。docs/05 §11.11）', () 
     await expect(
       createProjectPublishGate({ queue, now: NOW })(db, CTX, {
         projectId: '33333333-3333-4333-8333-333333333333',
+        kind: 'PUBLISH',
         partnerCompanyIds: ['partner-a'],
       }),
     ).rejects.toThrow();

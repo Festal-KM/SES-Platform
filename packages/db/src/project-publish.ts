@@ -23,7 +23,7 @@
 // （`ReviewGate` の行は残るが、それは「その内容を検査した」という事実であって公開ではない）。
 
 import { Prisma } from '@prisma/client';
-import type { GateVerdict } from '@ses/domain';
+import type { GateVerdict, ProjectPublishRequestKind } from '@ses/domain';
 import { writeAuditLog } from './audit.js';
 import type { SystemTenantCtx } from './context.js';
 import { uuidV7 } from './uuid.js';
@@ -49,7 +49,12 @@ export const PROJECT_PUBLISH_SETTLE_OPERATION = 'GATE_RESULT';
 /** ゲート待ちの公開要求（ジョブが読む形）。 */
 export type PendingProjectPublish = {
   readonly projectId: string;
-  /** 🔴 これから公開する相手だけ（すでに公開中の相手は含まない）。 */
+  /**
+   * 🔴 T-12-10: 要求の種類（docs/05 §11.11「T-12-10 の実装の決着」②）。
+   *    確定（`settleProjectPublish`）の枝と `review_gates.run_trigger` の両方がこの値で決まる。
+   */
+  readonly kind: ProjectPublishRequestKind;
+  /** 🔴 これから公開する相手だけ（すでに公開中の相手は含まない。`RECHECK` では常に 0 件）。 */
   readonly partnerCompanyIds: readonly string[];
   readonly contentHash: string;
   readonly requestedBy: string;
@@ -57,6 +62,11 @@ export type PendingProjectPublish = {
 
 export type ProjectPublishRequestInput = {
   readonly projectId: string;
+  /**
+   * 🔴 T-12-10: 要求の種類。**既定値を持たせない** —— 「書かなければ公開」になると、
+   *    再検査の要求が `#28` と同じ行を奪い合い、`@@unique(tenant_id, project_id, kind)` の意味が消える。
+   */
+  readonly kind: ProjectPublishRequestKind;
   readonly partnerCompanyIds: readonly string[];
   readonly contentHash: string;
   readonly requestedAt: Date;
@@ -85,10 +95,13 @@ export async function upsertProjectPublishRequest(
     requestedBy: input.requestedBy,
   };
   await db.projectPublishRequest.upsert({
-    where: { tenantId_projectId: { tenantId, projectId: input.projectId } },
+    // 🔴 T-12-10: 鍵に `kind` が入った（`PUBLISH` と `RECHECK` は同時に存在しうる）。
+    where: {
+      tenantId_projectId_kind: { tenantId, projectId: input.projectId, kind: input.kind },
+    },
     // 🔴 分離キーは呼び出し側の引数ではなく Prisma 拡張が文脈の値で確定させる。
     //    値が文脈と違えば拡張が例外にする（`CLAUDE.md` §3.1）。
-    create: { tenantId, projectId: input.projectId, ...values },
+    create: { tenantId, projectId: input.projectId, kind: input.kind, ...values },
     update: values,
   });
 }
@@ -101,12 +114,18 @@ export async function upsertProjectPublishRequest(
  *    走り出していたジョブがそれを消費して A に公開してしまう。公開要求は**常に最後の要求**を
  *    表していなければならない。
  * 🔴 取り下げても `ReviewGate` は消さない（検査した事実は残る）。消えるのは「公開する意思」だけである。
+ *
+ * 🔴 **T-12-10: 種類を必ず指定する。** `#28` が触ってよいのは `kind='PUBLISH'` の行だけである ——
+ *    `RECHECK` の行まで消すと、**公開先を 1 社解除しただけで「編集された内容の再検査」が消え、
+ *    残った公開先に未検査の内容が見え続ける**（T-12-10 が塞ぐ穴が `#28` 経由で開く）。
+ *    引数を省略可能にしないのは、その取り違えを型で防ぐためである。
  */
 export async function withdrawProjectPublishRequest(
   db: ProjectPublishRequestWriter,
   projectId: string,
+  kind: ProjectPublishRequestKind,
 ): Promise<void> {
-  await db.projectPublishRequest.deleteMany({ where: { projectId } });
+  await db.projectPublishRequest.deleteMany({ where: { projectId, kind } });
 }
 
 /**
@@ -115,23 +134,54 @@ export async function withdrawProjectPublishRequest(
  * 🔴 引数の `db` はすでに開いているトランザクションのクライアントである（`loadGateInput` と
  *    同じトランザクションで読む）。別トランザクションで読むと、検査した公開先と
  *    確定する公開先がずれうる。
+ *
+ * 🔴 **T-12-10: `contentHash` で引く。** 案件ごとに最大 2 行（`PUBLISH` / `RECHECK`）あるため、
+ *    「案件の要求」ではなく「**この実行が検査する内容の要求**」を引かなければならない
+ *    （引き当てた行の `kind` が、確定の枝と `review_gates.run_trigger` を決める）。
  */
 export async function readProjectPublishRequest(
   db: Pick<TenantDbArg, 'projectPublishRequest'>,
   projectId: string,
+  contentHash: string,
 ): Promise<PendingProjectPublish | null> {
   const row = await db.projectPublishRequest.findFirst({
-    where: { projectId },
-    select: { projectId: true, partnerCompanyIds: true, contentHash: true, requestedBy: true },
+    where: { projectId, contentHash },
+    select: {
+      projectId: true,
+      kind: true,
+      partnerCompanyIds: true,
+      contentHash: true,
+      requestedBy: true,
+    },
   });
   return row === null
     ? null
     : {
         projectId: row.projectId,
+        kind: row.kind as ProjectPublishRequestKind,
         partnerCompanyIds: row.partnerCompanyIds,
         contentHash: row.contentHash,
         requestedBy: row.requestedBy,
       };
+}
+
+/**
+ * 未消費の `kind='RECHECK'` の要求があるか（`#26` の 5-② と `#27` の公開の状態。T-12-10）。
+ *
+ * 🔴 **`#26` が「すでに再検査を頼んであるのに積まれていない」窓から復帰するための材料**である
+ *    （docs/05 §11.11「T-12-10 の実装の決着」③ 5-②）。enqueue は commit の後なので、
+ *    「要求だけが残ってジョブが積まれない」状態がありうる。そのとき利用者が同じ内容でもう一度
+ *    保存するだけで積み直せるようにする。
+ */
+export async function hasPendingProjectRecheck(
+  db: Pick<TenantDbArg, 'projectPublishRequest'>,
+  projectId: string,
+): Promise<boolean> {
+  const row = await db.projectPublishRequest.findFirst({
+    where: { projectId, kind: 'RECHECK' },
+    select: { id: true },
+  });
+  return row !== null;
 }
 
 /**
@@ -140,9 +190,17 @@ export async function readProjectPublishRequest(
  * - `PUBLISHED` … 全層 PASS だったので公開範囲の行を確定させた
  * - 🔴 `BLOCKED` … 1 層でも FAIL。**要求を消費したうえで 1 行も公開しない**（`F-014 AC-3`）
  * - `NOT_PENDING` … その内容の公開要求がもう無い（差し替えられた / 既に確定した / 別の実行が消費した）
+ *
+ * 🔴 T-12-10 で 2 つ増えた（`kind='RECHECK'` の要求を消費したとき。docs/05 §11.11
+ *    「T-12-10 の実装の決着」②④）:
+ * - `RECHECK_PASSED` … 再検査が全層 PASS。🔴 **行を 1 つも動かさない**（`AC-8`。解除 → 再公開の
+ *   往復を起こさない ＝ 公開先の画面から一時的にも消えない）
+ * - `REVOKED_BY_RECHECK` … 再検査が FAIL。**生きている公開範囲の行をすべて落とした**（`AC-7`）
  */
 export type ProjectPublishSettlement =
   | { readonly kind: 'PUBLISHED' | 'BLOCKED'; readonly partnerCompanyIds: readonly string[] }
+  | { readonly kind: 'RECHECK_PASSED'; readonly partnerCompanyIds: readonly [] }
+  | { readonly kind: 'REVOKED_BY_RECHECK'; readonly partnerCompanyIds: readonly string[] }
   | { readonly kind: 'NOT_PENDING' };
 
 export type ProjectPublishSettleInput = {
@@ -168,10 +226,19 @@ export type ProjectPublishSettleInput = {
  *      解除された行は**消えていない**（`revoked_at` を入れただけ。T-06-07 の決着）ので、
  *      再公開は `revoked_at` を NULL に戻す UPDATE になる。素の INSERT だと一意制約で落ち、
  *      **一度解除した相手には二度と公開できない**。
- *   4. 監査ログを 1 行（#28 の `pending` と対になる `published` / `blocked`。`F-014 AC-5`）。
+ *   4. 🔴 **T-12-10: `kind='RECHECK'` の要求なら、PASS で行を 1 つも触らず（`AC-8`）、
+ *      FAIL で生きている行をすべて落とす**（`AC-7`。`revoked_reason='GATE_RECHECK'`）。
+ *   5. 監査ログを 1 行（#28 の `pending` と対になる `published` / `blocked` / `revoked`。`F-014 AC-5`）。
  *
  * 🔴 **判定そのものをここで作らない。** 引数は確定済みの 3 層の判定であり、この関数に
  *    「FAIL を無視して公開する」経路は無い（`BR-18` / `F-020 AC-2`）。
+ *
+ * 🔴 **T-12-10: ここが公開範囲の行を作る / 落とす唯一の場所のままである**（`AC-13`）。
+ *    2 本目の関数を作らない —— 作ると片方がゲート結果を見ない経路になる。
+ * 🔴 **`HELD_AI_COST_LIMIT` はここへ来ない。** `gate.run` は上限到達時に `holdReviewGate` で
+ *    終わり、本関数を呼ばない（docs/05 §9.3）。したがって**保留では要求が消費されず、公開も
+ *    落ちない**（`AC-12`）。🔴 **「保留だから解除しない」という `if` をどこにも書かない** ——
+ *    呼ばれないことが担保である。
  */
 export async function settleProjectPublish(
   ctx: SystemTenantCtx,
@@ -187,7 +254,8 @@ export async function settleProjectPublish(
     async (tx): Promise<ProjectPublishSettlement> => {
       const pending = await tx.projectPublishRequest.findFirst({
         where: { projectId: input.projectId, contentHash: input.contentHash },
-        select: { id: true, partnerCompanyIds: true, requestedBy: true },
+        // 🔴 T-12-10: `kind` を読む（下の分岐と `summary.verdict` の出所）。
+        select: { id: true, kind: true, partnerCompanyIds: true, requestedBy: true },
       });
       if (pending === null) return { kind: 'NOT_PENDING' };
 
@@ -197,6 +265,62 @@ export async function settleProjectPublish(
       });
       if (consumed.count !== 1) return { kind: 'NOT_PENDING' };
 
+      const requestKind = pending.kind as ProjectPublishRequestKind;
+
+      // ----------------------------------------------------------------------
+      // 🔴 T-12-10: `RECHECK`（#26 の編集による再検査）—— PASS で何も触らず、FAIL で落とす。
+      // ----------------------------------------------------------------------
+      if (requestKind === 'RECHECK') {
+        // 🔴 PASS は**行を 1 つも動かさない**（`AC-8`）。`review_gate_id` の差し替えもしない ——
+        //    「公開はそのまま維持される」の実装が「動かさないこと」そのものである。
+        //    「今見えている内容を最後に検査した結果」は `#27` の `latestGate` から読む。
+        const revoked = passed
+          ? []
+          : await tx.$queryRaw<{ partner_company_id: string }[]>(Prisma.sql`
+              UPDATE project_visibilities
+                 SET revoked_at = ${input.now}::timestamptz,
+                     revoked_reason = 'GATE_RECHECK',
+                     revoked_review_gate_id = ${input.reviewGateId}::uuid
+               WHERE project_id = ${input.projectId}::uuid
+                 AND revoked_at IS NULL
+              RETURNING partner_company_id
+            `);
+        // 🔴 `tenant_id` を WHERE に書かない —— C2 の UPDATE ポリシー
+        //    （`tenant_id = app_tenant_id() AND app_is_host()` + FORCE RLS）が決める。
+        //    🔴 生 SQL は Prisma クライアント拡張のフックを通らないため第 2 防御はここには無く、
+        //    直前の `findFirst` と CAS（`deleteMany` の `count !== 1` で `NOT_PENDING`）が
+        //    同一トランザクション内でテナント整合を確定させている（docs/05 §11.11 ④ / §4.3
+        //    実装の規約 3。`packages/db/src/**` の生 SQL は `tests/static/db-raw-access.test.ts`
+        //    ④ が許可する既存パターン）。
+        const revokedIds = revoked.map((row) => row.partner_company_id).sort();
+
+        await writeAuditLog(tx, {
+          action: PROJECT_VISIBILITY_AUDIT_ACTION,
+          actorKind: 'SYSTEM',
+          targetType: 'Project',
+          targetId: input.projectId,
+          summary: {
+            operation: PROJECT_PUBLISH_SETTLE_OPERATION,
+            // 🔴 `#28` の人の解除とは**主体**（`SYSTEM`）と `verdict` で区別でき、
+            //    落とした相手は**同じキー `revoked`** で読める（`AC-11` / `S-041`）。
+            verdict: passed ? 'RECHECK_PASSED' : 'REVOKED_BY_RECHECK',
+            published: '',
+            blocked: '',
+            revoked: revokedIds.join(','),
+            reviewGateId: input.reviewGateId,
+            piiVerdict: input.piiVerdict,
+            commerceVerdict: input.commerceVerdict,
+            consistencyVerdict: input.consistencyVerdict,
+          },
+        });
+        // 🔴 原因の欄（`fields`）・指摘の本文・`runTrigger` を `summary` に書かない（§16.2。
+        //    商流層の指摘はエンド企業名そのものであり、監査ログを第 2 の露出面にしない）。
+
+        return passed
+          ? { kind: 'RECHECK_PASSED', partnerCompanyIds: [] }
+          : { kind: 'REVOKED_BY_RECHECK', partnerCompanyIds: revokedIds };
+      }
+
       const partnerCompanyIds = [...pending.partnerCompanyIds].sort();
 
       if (passed) {
@@ -204,18 +328,32 @@ export async function settleProjectPublish(
           await tx.$executeRaw(Prisma.sql`
             INSERT INTO project_visibilities
               (id, tenant_id, project_id, partner_company_id, published_at, published_by,
-               revoked_at, review_gate_id)
+               revoked_at, revoked_reason, revoked_review_gate_id, review_gate_id)
             VALUES
               (${uuidV7(input.now)}::uuid, ${ctx.tenantId}::uuid, ${input.projectId}::uuid,
                ${partnerCompanyId}::uuid, ${input.now}::timestamptz, ${pending.requestedBy}::uuid,
-               NULL, ${input.reviewGateId}::uuid)
+               NULL, NULL, NULL, ${input.reviewGateId}::uuid)
             ON CONFLICT (tenant_id, project_id, partner_company_id) DO UPDATE SET
               revoked_at = NULL,
+              -- 🔴 T-12-10: 解除の痕跡を**同時に**消す（CHECK が revoked_at と revoked_reason の
+              --    対応を要求する。片方だけ NULL に戻すと INSERT/UPDATE が落ちる）。
+              revoked_reason = NULL,
+              revoked_review_gate_id = NULL,
               published_at = EXCLUDED.published_at,
               published_by = EXCLUDED.published_by,
               review_gate_id = EXCLUDED.review_gate_id
           `);
         }
+
+        // 🔴 T-12-10: 公開が成立したら、未消費の `RECHECK` の要求を**同じトランザクションで**消す。
+        //    ①`PUBLISH` の `audience` は `RECHECK` の `audience` の上位集合であり、上位集合での
+        //      PASS は下位集合でも PASS である（公開先が増えると禁止語が増えるだけ）＝ 再検査は済んでいる
+        //    ②消さないと、公開先が増えた後に「増える前の集合を前提に取ったハッシュ」の要求が残り、
+        //      `#27` の公開の状態（`recheckRunning`）が実態とずれる
+        //    🔴 `BLOCKED` では消さない（公開範囲は動いておらず、再検査はまだ要る）。
+        await tx.projectPublishRequest.deleteMany({
+          where: { projectId: input.projectId, kind: 'RECHECK' },
+        });
       }
 
       // 🔴 記録は業務トランザクションの内側（書けなければ公開そのものが巻き戻る。`F-014 AC-5`）。

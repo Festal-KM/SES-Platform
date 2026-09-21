@@ -79,6 +79,8 @@ export default async function EditProjectPage({
         // ✅ T-06-06: `S-013` への secondary（`docs/04` §S-012 操作と結果）。
         //    🔴 ID が確定している編集時だけ出す（新規は保存後の `S-011` から辿る）。
         visibilityHref={`/projects/${view.id}/visibility`}
+        // 🔴 T-12-10: 公開中の案件だけに事前表示の帯を出す（`F-014 AC-6` / `docs/04` §S-012）。
+        publishedToCount={view.publishedToCount}
         messages={projectFormMessages()}
       />
     </main>

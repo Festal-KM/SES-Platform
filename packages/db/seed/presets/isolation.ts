@@ -766,6 +766,8 @@ async function seedTenant(ctx: SeedContext, tenantIndex: number): Promise<void> 
       targetType: 'PROJECT_PUBLISH',
       targetId: ids.publishedProjectId,
       contentHash: `seed-publish-hash-t${tenantIndex}`,
+      // 🔴 T-12-10: 公開の実行（§3.6 の CHECK）。
+      runTrigger: 'PUBLISH',
       execution: 'DONE',
       piiVerdict: 'PASS',
       commerceVerdict: 'PASS',

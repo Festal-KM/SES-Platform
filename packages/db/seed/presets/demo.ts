@@ -1061,6 +1061,8 @@ async function seedTenant(ctx: SeedContext, tenantIndex: number, profile: Tenant
         targetType: 'PROJECT_PUBLISH',
         targetId: ids.projects[publish.key],
         contentHash,
+        // 🔴 T-12-10: 公開の実行（§3.6 の CHECK が PROJECT_PUBLISH に契機を要求する）。
+        runTrigger: 'PUBLISH',
         ...PASS_GATE,
         executedAt: publishedAt,
       },

@@ -66,6 +66,10 @@ export default async function NewProjectPage() {
         // 🔴 新規登録では案件がまだ存在せず、`S-013` に渡す ID が無い（T-06-06）。
         //    保存後に遷移する `S-011`（`PROJECT_CREATED_HREF_PATTERN`）に同じ導線がある。
         visibilityHref={null}
+        // 🔴 T-12-10: 新規登録では公開範囲の行が 1 件も作られない（`F-014 AC-2`）ので、
+        //    再検査の事前表示も出さない（`docs/04` 改訂 14 §S-012「未公開の案件・新規登録では
+        //    帯を出さない」—— 出すと「何も起きない警告」に慣れてしまう）。
+        publishedToCount={0}
         messages={projectFormMessages()}
       />
     </main>

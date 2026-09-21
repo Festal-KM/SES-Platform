@@ -143,7 +143,11 @@ export {
   MATCH_WEIGHT_FACTORS,
   ORDER_PAYMENT_STATES,
   PLATFORM_ROLES,
+  // 🔴 T-12-10: 公開後の再検査と自動解除の値集合（docs/05 §3.5 / §3.6。宣言は `packages/domain`）。
+  PROJECT_PUBLISH_REQUEST_KINDS,
+  PROJECT_PUBLISH_RUN_TRIGGERS,
   PROJECT_STATUSES,
+  PROJECT_VISIBILITY_REVOKE_REASONS,
   PROPOSAL_EVENT_KINDS,
   REMOTE_MODES,
   REQUIREMENT_KINDS,
@@ -198,7 +202,11 @@ export type {
   MatchWeightFactor,
   OrderPaymentState,
   PlatformRole,
+  // 🔴 T-12-10。
+  ProjectPublishRequestKind,
+  ProjectPublishRunTrigger,
   ProjectStatus,
+  ProjectVisibilityRevokeReason,
   ProposalEventKind,
   RemoteMode,
   RequirementKind,
@@ -568,6 +576,8 @@ export {
   listPendingReviewGates,
   // 🔴 T-12-14 ②: #40b（履歴。全行）。`readReviewGateResult`（#40）はこの結果から 1 行選ぶだけ（母集団は 1 実装）。
   listReviewGateResults,
+  // 🔴 T-12-10: 同じ母集団を**開いているトランザクション**で読む版（案件の公開の状態が使う）。
+  listReviewGateResultsIn,
   readReviewGateResult,
 } from './review-gate.js';
 export type { GateHoldTimestamps, ReviewGateResultRow } from './review-gate.js';
@@ -589,6 +599,8 @@ export type {
 // 🔴 T-07-09: 案件の公開のゲート待ち → 確定（docs/05 §11.11 / `F-014` / `F-020 AC-1`）。
 //    🔴 `project_visibilities` の行を**作る**唯一の場所である（`apps/web` は解除しかしない）。
 export {
+  // 🔴 T-12-10: 未消費の `RECHECK` 要求の有無（`#26` の積み直しと `#27` の公開の状態）。
+  hasPendingProjectRecheck,
   PROJECT_PUBLISH_SETTLE_OPERATION,
   PROJECT_VISIBILITY_AUDIT_ACTION,
   readProjectPublishRequest,

@@ -264,6 +264,8 @@ describe('✅ T-12-14 ② セクション 4「ゲート結果の履歴」の表�
     aiWarnings: [{ layer: 'CONSISTENCY', kind: 'SKILL_SHEET_MISMATCH', field: 'body', offsetStart: null, offsetEnd: null, excerpt: '要確認', severity: 'WARN' }],
     aiFailed: false,
     contentHash: 'h-current',
+    // 🔴 T-12-10: 提案の行は常に `null`（契機は `PROJECT_PUBLISH` のみ）。
+    runTrigger: null,
   };
   const HELD_ITEM: GateResultHistoryItem = {
     reviewGateId: 'gate-3',
@@ -279,6 +281,7 @@ describe('✅ T-12-14 ② セクション 4「ゲート結果の履歴」の表�
     aiWarnings: [],
     aiFailed: false,
     contentHash: 'h-old',
+    runTrigger: null,
     held: {
       heldReasonKey: 'gate.held.aiCostLimit',
       heldSince: '2026-09-16T01:00:00.000Z',

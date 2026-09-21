@@ -93,6 +93,24 @@ export const REQUIREMENT_KINDS = ['MUST', 'NICE'] as const;
 
 export type RequirementKind = (typeof REQUIREMENT_KINDS)[number];
 
+/**
+ * 🔴 T-12-10（docs/05 §3.5 / §3.6。migration 20261001000000）。3 つとも**宣言の唯一の出所は
+ *    `packages/domain`** であり（`GATE_TARGET_TYPES` と同じ整理）、ここは re-export である ——
+ *    公開の状態の導出（`deriveProjectPublishState`）と CHECK を持つ側（本パッケージ）と
+ *    画面（`apps/web`）が同じ値集合を要るのに、`packages/domain` しか共有点が無い。
+ *    `tests/static/schema-enum-drift.test.ts` は引き続き `@ses/db` の名前で CHECK と突合する。
+ */
+export {
+  PROJECT_PUBLISH_REQUEST_KINDS,
+  PROJECT_PUBLISH_RUN_TRIGGERS,
+  PROJECT_VISIBILITY_REVOKE_REASONS,
+} from '@ses/domain';
+export type {
+  ProjectPublishRequestKind,
+  ProjectPublishRunTrigger,
+  ProjectVisibilityRevokeReason,
+} from '@ses/domain';
+
 // 🔴 T-02-03（docs/05 §3.6。docs/sprints/SP-02-schema-isolation.md）:
 // 20260903020000_proposal_request_gate/migration.sql が値集合の CHECK を持つ列。
 // ProposalState / ProposalRequestState は CLAUDE.md §4.2 の状態機械であり、単一の出所は

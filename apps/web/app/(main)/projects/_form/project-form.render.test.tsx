@@ -90,6 +90,14 @@ const messages: ProjectFormMessages = {
   saveError: '保存できませんでした。',
   cancel: 'キャンセル',
   leaveConfirm: '入力内容が保存されていません。',
+
+  // 🔴 T-12-10（`docs/04` 改訂 14 §S-012 / `F-014 AC-6`）。
+  publicFieldNotice: 'この欄は公開先の取引先が読みます。',
+  recheckPublishedToPrefix: 'この案件は ',
+  recheckPublishedToSuffix: ' 社に公開中です。',
+  recheckWillRun: '3 欄のいずれかを変更して保存すると、保存後に再検査が実行されます。',
+  recheckWillNotRun: '上記 3 欄以外の変更と、同じ内容での再保存では再検査は実行されません。',
+  savedRecheckQueued: '保存しました。公開中の内容を再検査しています。',
 };
 
 const EMPTY_VALUES: ProjectFormValues = {
@@ -124,6 +132,7 @@ function render(overrides: Partial<ProjectFormProps> = {}): string {
     cancelHref: '/',
     createdHrefPattern: '/projects/{id}/edit',
     visibilityHref: null,
+    publishedToCount: 0,
     messages,
     ...overrides,
   };
@@ -299,5 +308,51 @@ describe('送信 body（docs/05 §6.4 #26 の ProjectInput）', () => {
     });
     expect(body.endClientName).toBe('架空エンド株式会社');
     expect(body.internalUnitPrice).toBe(900_000);
+  });
+});
+
+
+// ============================================================================
+// 🔴 T-12-10: 「この欄は公開先が読む」印と、再検査の事前表示（`docs/04` 改訂 14 §S-012 /
+//    `F-014 AC-6` / `UC-26` 手順 2）
+// ============================================================================
+describe('🔴 T-12-10: 公開欄 3 欄の印と、再検査が走る条件の事前表示', () => {
+  it('🔴 3 欄すべてに「この欄は公開先が読む」印が付く（商流情報の注記と対になる）', () => {
+    const html = render();
+    expect(html).toContain('data-testid="project-public-field-notice-name"');
+    expect(html).toContain('data-testid="project-public-field-notice-public-summary"');
+    expect(html).toContain('data-testid="project-public-field-notice-requirement-MUST"');
+    expect(html).toContain('data-testid="project-public-field-notice-requirement-NICE"');
+    // 🔴 向きが逆の 2 つが 1 画面に並ぶ（外に出る欄 / 出ない欄が入力中に読める）。
+    expect(html).toContain(messages.commerceNotice);
+    expect(html).toContain(messages.publicFieldNotice);
+  });
+
+  it('🔴 公開中の案件の編集では、走る条件と走らない条件の両方を出す', () => {
+    const html = render({ mode: 'EDIT', projectId: 'p1', publishedToCount: 2 });
+    expect(html).toContain('data-testid="project-form-recheck-notice"');
+    expect(html).toContain(messages.recheckWillRun);
+    // 🔴 **走らない条件を書かないと「保存のたびに公開が消える」と読まれ、編集が避けられる。**
+    expect(html).toContain('data-testid="project-form-recheck-notice-will-not-run"');
+    expect(html).toContain(messages.recheckWillNotRun);
+  });
+
+  it('🔴 未公開の案件の編集では帯を出さない（「何も起きない警告」に慣れさせない）', () => {
+    const html = render({ mode: 'EDIT', projectId: 'p1', publishedToCount: 0 });
+    expect(html).not.toContain('data-testid="project-form-recheck-notice"');
+  });
+
+  it('🔴 新規登録では帯を出さない（公開範囲の行が 1 件も作られない。`F-014 AC-2`）', () => {
+    const html = render({ mode: 'CREATE', publishedToCount: 0 });
+    expect(html).not.toContain('data-testid="project-form-recheck-notice"');
+  });
+
+  it('🔴 保存前に確認ダイアログ・「公開を解除してよいか」の同意を挟まない（`docs/04` §S-012）', () => {
+    const html = render({ mode: 'EDIT', projectId: 'p1', publishedToCount: 2 });
+    expect(html).not.toContain('type="checkbox"');
+    expect(html).not.toContain('<dialog');
+    for (const forbidden of ['了解', '無視', '同意']) {
+      expect(html).not.toContain(forbidden);
+    }
   });
 });

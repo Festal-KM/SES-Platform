@@ -34,6 +34,9 @@ function projectInput(overrides: Partial<ProjectPublishGateInput> = {}): Project
     targetType: 'PROJECT_PUBLISH',
     targetId: '01930000-0000-7000-8000-000000000002',
     contentHash: HASH,
+    // 🔴 T-12-10: 実行の契機（`review_gates.run_trigger`）。**検査の内容には 1 ビットも影響しない**
+    //    —— 契機が決めるのは「確定で何をするか」だけである（docs/05 §11.11「T-12-10 の実装の決着」⑪）。
+    runTrigger: 'PUBLISH',
     audience: { kind: 'PARTNER', partnerCompanyIds: [] },
     sections: [{ field: 'public_summary', text: '基幹システムの刷新案件です。' }],
     forbiddenTerms: { unitPrices: [], endClientNames: [], otherCompanyNames: [] },

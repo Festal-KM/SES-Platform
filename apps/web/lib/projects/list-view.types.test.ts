@@ -11,7 +11,7 @@
 // 🔴 本ファイルは `import type` だけを使う（`list.ts` の実行時依存〔`@ses/db`〕を引き込まない）。
 import { describe, expectTypeOf, it } from 'vitest';
 import type { ProjectStatus, RemoteMode } from '@ses/db';
-import type { PrefectureCode } from '@ses/domain';
+import type { PrefectureCode, ProjectPublishListStatus } from '@ses/domain';
 import type {
   HostProjectView,
   PartnerProjectView,
@@ -59,6 +59,8 @@ describe('🔴 F-014 AC-4 / BR-07: PartnerProjectView に他社の存在を示�
         readonly endClientName?: never;
         readonly internalUnitPrice?: never;
         readonly visibleToCount?: never;
+        // 🔴 T-12-10（`F-014 AC-10`）: 公開状況（自動解除を含む 3 値）も型として持たない。
+        readonly publishStatus?: never;
       }
     >();
   });
@@ -82,7 +84,15 @@ describe('🔴 F-014 AC-4 / BR-07: PartnerProjectView に他社の存在を示�
       // @ts-expect-error 🔴 内部単価も同じ（同上）。
       internalUnitPrice: 900_000,
     };
+    // 🔴 T-12-10: 自動解除の事実が一覧の列からも読めない（`F-014 AC-10`）。
+    const withPublishStatus: PartnerProjectView = {
+      ...shared,
+      audience: 'PARTNER',
+      // @ts-expect-error 🔴 公開状況（`AUTO_REVOKED` を含む 3 値）を取引先の応答に入れられない。
+      publishStatus: 'AUTO_REVOKED',
+    };
 
+    expectTypeOf(withPublishStatus).toExtend<PartnerProjectView>();
     expectTypeOf(withVisibleToCount).toExtend<PartnerProjectView>();
     expectTypeOf(withEndClient).toExtend<PartnerProjectView>();
     expectTypeOf(withInternalPrice).toExtend<PartnerProjectView>();
@@ -94,6 +104,8 @@ describe('🔴 F-014 AC-4 / BR-07: PartnerProjectView に他社の存在を示�
       ExpectedShared & {
         readonly audience: 'HOST';
         readonly visibleToCount: number;
+        // 🔴 T-12-10: ホストの枝にだけある 3 値（`docs/04` §S-010 の公開状況列）。
+        readonly publishStatus: ProjectPublishListStatus;
       }
     >();
   });

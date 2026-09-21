@@ -217,6 +217,7 @@
   | ⑤ | **再検査が PASS なら公開はそのまま維持される**（無用な解除・再公開の往復を起こさない） | 結合テスト |
   | ⑥ | 🔴 **上限到達（`HELD_AI_COST_LIMIT`）では公開を解除しない。** 保留のまま維持し、解除後に再検査する | **原価の都合で取引先の画面から案件が消えるのは、事故と区別がつかない** |
 - **完了の判定**: ①決定（②の採用）が Issue #42 のコメントと `docs/dev-plan.md` §8 に記録されている ②上流 3 文書（`docs/02` / `docs/04` / `docs/05`）が先に更新されている ③上表①〜⑥の結合テストが green ④`tests/isolation/project-publish-gate.test.ts` の既存 11 本が引き続き green。
+- ✅ **実装完了（2026-09-21）。** 設計の一次資料は `docs/05` §11.11「T-12-10 の実装の決着」①〜⑬（実装で決めた 4 点は同 ⑭）。🔴 **確認した値**: `tests/isolation/project-publish-gate.test.ts` が **33 passed**（**既存 16 本は `it` の本体を 1 行も変えずに green**。足したのは共有 harness `runEnqueuedGate` の任意引数 3 つ〔`script` / `dailyLimitUsd` / `now`〕と、末尾の (a)〜(k) に対応する 17 本）/ `packages/domain/src/gate/project-publish.test.ts` **28 passed**（3 欄の 1 対 1・契機の比較・原因の欄・4 値の導出）/ 描画 `S-011` **26 passed**・`S-012` **18 passed**・`S-013` **20 passed** / `tests/static/**` **1023 passed**。migration は `20261001000000_project_publish_recheck`（`project_visibilities` の 2 列 + CHECK 3 + 索引 1、`project_publish_requests.kind` + CHECK 2 + `@@unique` 改訂、`review_gates.run_trigger` + CHECK 2。backfill は `MANUAL` / `PUBLISH`）。⚠️ **`kind='PUBLISH'` は追加 0 件で作れない**（CHECK）ため、公開先を渡さずにゲートの層だけを見ていた既存の結合テスト（`gate-run` / `gate-injection`）は `kind='RECHECK'` の要求になった —— 層の判定は 1 ビットも変わらないが、**FAIL が公開中の行を落とす**ので、それぞれの後始末で `revoked_*` の 3 列を戻している。
 
 ### T-12-11 🔴 第 1 回リリースの準備（L・非コードタスク中心）
 

@@ -203,12 +203,13 @@ INSERT INTO project_requirements (id, tenant_id, project_id, kind, free_text) VA
   ('${REQUIREMENT_A_PRIVATE}',   '${TENANT_A}', '${PROJECT_A_PRIVATE}',   'MUST', 'Go 3 年');
 
 -- 公開時のゲート結果（project_visibilities.review_gate_id の FK 先）。
+-- 🔴 T-12-10: run_trigger は PROJECT_PUBLISH のとき NOT NULL（docs/05 §3.6 の CHECK）。公開の実行 = 'PUBLISH'。
 INSERT INTO review_gates (
   id, tenant_id, owner_partner_company_id, target_type, target_id, content_hash,
-  execution, pii_verdict, commerce_verdict, consistency_verdict, findings, ai_warnings, executed_at
+  execution, pii_verdict, commerce_verdict, consistency_verdict, findings, ai_warnings, executed_at, run_trigger
 ) VALUES (
   '${REVIEW_GATE_A_PUBLISH}', '${TENANT_A}', NULL, 'PROJECT_PUBLISH', '${PROJECT_A_PUBLISHED}', 'seed-content-hash',
-  'DONE', 'PASS', 'PASS', 'PASS', '[]'::jsonb, '[]'::jsonb, now()
+  'DONE', 'PASS', 'PASS', 'PASS', '[]'::jsonb, '[]'::jsonb, now(), 'PUBLISH'
 );
 
 -- 🔴 越境経路 1 の唯一の根拠（PARTNER_A1 にだけ公開する）。

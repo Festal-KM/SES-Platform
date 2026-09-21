@@ -43,7 +43,14 @@ function sharedView() {
 }
 
 function hostView(overrides: Partial<HostProjectView> = {}): HostProjectView {
-  return { ...sharedView(), audience: 'HOST', visibleToCount: 3, ...overrides };
+  // 🔴 T-12-10: 公開状況（3 値）はホストの枝の必須項目である（`docs/04` §S-010）。
+  return {
+    ...sharedView(),
+    audience: 'HOST',
+    visibleToCount: 3,
+    publishStatus: 'PUBLISHED',
+    ...overrides,
+  };
 }
 
 function partnerView(overrides: Partial<PartnerProjectView> = {}): PartnerProjectView {
@@ -99,14 +106,33 @@ describe('勤務地・リモート（docs/04 §S-010 の 1 列）', () => {
   });
 });
 
-describe('🔴 公開先の設定状況（docs/04 §S-010。ホストのみ）', () => {
+describe('🔴 公開先の設定状況（docs/04 §S-010。ホストのみ。**T-12-10 で 3 値**）', () => {
   it('0 件は「0 社に公開中」ではなく状態の語（`F-014 AC-2` の既定に気づかせる）', () => {
-    expect(formatVisibilityStatus(0)).toBe('未設定');
+    expect(formatVisibilityStatus(0, 'UNSET')).toBe('未設定');
   });
 
   it('1 件以上は社数を出す（3 桁区切り）', () => {
-    expect(formatVisibilityStatus(3)).toBe('3 社に公開中');
-    expect(formatVisibilityStatus(1_200)).toBe('1,200 社に公開中');
+    expect(formatVisibilityStatus(3, 'PUBLISHED')).toBe('3 社に公開中');
+    expect(formatVisibilityStatus(1_200, 'PUBLISHED')).toBe('1,200 社に公開中');
+  });
+
+  // 🔴 T-12-10（`docs/04` 改訂 14 §S-010 / `F-014 AC-9`）: 同じ 0 社を `未設定` と別の語で出す。
+  it('🔴 再検査で自動解除された 0 件は `未設定` と別の語である（原因に辿り着けるようにする）', () => {
+    expect(formatVisibilityStatus(0, 'AUTO_REVOKED')).toBe('公開を解除（検査）');
+    expect(formatVisibilityStatus(0, 'AUTO_REVOKED')).not.toBe(
+      formatVisibilityStatus(0, 'UNSET'),
+    );
+  });
+
+  it('🔴 理由・原因の欄・指摘を列に出さない（1 語だけ）', () => {
+    const label = formatVisibilityStatus(0, 'AUTO_REVOKED');
+    expect(label).not.toContain('案件名');
+    expect(label).not.toContain('外部公開用');
+    expect(label.length).toBeLessThanOrEqual(12);
+  });
+
+  it('🔴 保留（上限到達）は一覧で区別しない（公開は維持されているので社数のまま）', () => {
+    expect(formatVisibilityStatus(2, 'PUBLISHED')).toBe('2 社に公開中');
   });
 });
 

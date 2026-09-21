@@ -33,7 +33,6 @@ import {
   computeProposalContentHash,
   findCachedReviewGate,
   findPendingReviewGate,
-  gateHoldTimestamps,
   listReviewGateResults,
   PROPOSAL_AUDIT_TARGET_TYPE,
   readReviewGateResult,
@@ -59,6 +58,8 @@ import {
   ProposalRecipientMissingError,
   requireFound,
 } from '../api/errors';
+// 🔴 T-12-10: 保留の説明は #40 / #40b / 案件の公開の 3 呼び出し元が**同じ 1 実装**を通る。
+import { heldViewFor as sharedHeldViewFor, PROPOSAL_GATE_RERUN } from '../gate/held-view';
 import { rethrowWithInvalidTransitionAudit } from '../state/invalid-transition';
 import { canRequestProposalGate } from './policy';
 import { hasProposalRecipient } from './recipient';
@@ -85,8 +86,12 @@ export const PROPOSAL_GATE_AUDIT_OPERATIONS = {
   rerun: 'GATE_RERUN',
 } as const;
 
-/** 🔴 `GateHeldView.rerun.manual`（#40 が返す「手動の再開経路」）。 */
-export const PROPOSAL_GATE_MANUAL_RERUN = 'POST /api/proposals/{id}/gate';
+/**
+ * 🔴 `GateHeldView.rerun.manual`（#40 が返す「手動の再開経路」）。
+ * 🔴 **宣言は `lib/gate/held-view.ts` に移した**（T-12-10。`heldViewFor` と同じ場所に置く）。
+ *    ここは re-export であり、既存の import 元（`S-020` / `S-023` 周辺）を動かさない。
+ */
+export { PROPOSAL_GATE_MANUAL_RERUN } from '../gate/held-view';
 
 /** 再実行の理由（監査に残す。`A-005` の滞留検知と突き合わせるため）。 */
 export type ProposalGateRerunReason = 'HELD_AI_COST_LIMIT' | 'JOB_FAILED';
@@ -356,29 +361,13 @@ export async function readProposalGateResult(
 }
 
 /**
- * 🔴 HELD 行の `GateHeldView`（#40 / #40b の **2 呼び出し元が共有する 1 実装**。T-12-14 ②で #40 の分岐から
- *    切り出した。docs/05 §6.5「#40b と `S-023` セクション 4 の設計」手順 ④）。`DONE` 行は `undefined`
- *    （`toGateResultView` は `execution` と `held` の有無が一致しないと `RangeError` を投げる）。
- *
- * 🔴 リセット時刻は暦の計算（`Asia/Tokyo` の翌 0 時）であり `packages/db` が出す（§11.9 ⑧-4）。
- * 🔴 金額（USD）を載せない（`F-027 AC-6`）。
+ * 🔴 HELD 行の `GateHeldView`。**実装は `lib/gate/held-view.ts` に移した**（T-12-10。
+ *    docs/05 §11.11「T-12-10 の実装の決着」⑤）—— 呼び出し元が #40 / #40b に加えて
+ *    案件の公開の状態（`lib/projects/publish-state.ts`）の 3 つになったためである。
+ *    **書き写さない**（保留の説明が画面ごとに違ってはならない）。
  */
 function heldViewFor(row: ReviewGateResultRow, now: Date): GateHeldView | undefined {
-  if (row.execution !== 'HELD_AI_COST_LIMIT') return undefined;
-  if (row.heldSince === null) {
-    // 保留行は `held_since` を必ず持つ（`holdReviewGate`）。壊れていたら握り潰さない。
-    throw new InternalError('review_gates の保留行に held_since がありません。');
-  }
-  const timestamps = gateHoldTimestamps({ heldSince: row.heldSince, now });
-  return {
-    heldReasonKey: 'gate.held.aiCostLimit',
-    heldSince: timestamps.heldSince,
-    resetAt: timestamps.resetAt,
-    // 🔴 上限の引き上げは運営者だけができる（`F-057`）。テナント側の導線を作らない。
-    limitRaise: 'PLATFORM_OPERATOR',
-    // 🔴 自動（`gate.hold-release`）と手動（#39）の**両方**があることを示す。
-    rerun: { auto: true, manual: PROPOSAL_GATE_MANUAL_RERUN },
-  };
+  return sharedHeldViewFor(row, now, PROPOSAL_GATE_RERUN);
 }
 
 /**
@@ -417,6 +406,9 @@ export async function readProposalGateResults(
       executedAt: row.executedAt === null ? null : row.executedAt.toISOString(),
       heldSince: row.heldSince === null ? null : row.heldSince.toISOString(),
       matchesCurrentContent: row.contentHash === target.contentHash,
+      // 🔴 T-12-10: 提案の行は常に `null`（`review_gates.run_trigger` は `PROJECT_PUBLISH` のみ。
+      //    CHECK が提案の行に契機を書かせない）。**ここで既定値を作らない。**
+      runTrigger: row.runTrigger,
       layers: view.layers,
       aiWarnings: view.aiWarnings,
       aiFailed: view.aiFailed,

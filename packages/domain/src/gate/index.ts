@@ -40,6 +40,34 @@ export type {
   ProposalGateInput,
   SkillSheetShareGateInput,
 } from './input.js';
+// 🔴 T-12-10: 公開後の再検査と自動解除（docs/05 §11.11「T-12-10 の実装の決着」）。
+//    3 欄の比較・原因の欄の導出・公開の状態の 4 値は**純粋関数**であり、#26 / #27 / #25 が同じ規則を通る。
+export {
+  deriveProjectPublishState,
+  PROJECT_PUBLIC_FIELD_BY_GATE_FINDING_FIELD,
+  PROJECT_PUBLIC_FIELDS,
+  PROJECT_PUBLISH_LIST_STATUSES,
+  PROJECT_PUBLISH_REQUEST_KINDS,
+  PROJECT_PUBLISH_RUN_TRIGGERS,
+  PROJECT_VISIBILITY_REVOKE_REASONS,
+  projectPublicFieldsChanged,
+  projectPublicFieldsFromFindings,
+  projectPublishListStatus,
+} from './project-publish.js';
+export type {
+  DeriveProjectPublishStateInput,
+  ProjectPublicField,
+  ProjectPublicFieldValues,
+  ProjectPublishGateRef,
+  ProjectPublishLastRevoked,
+  ProjectPublishListStatus,
+  ProjectPublishRequestKind,
+  ProjectPublishRevocation,
+  ProjectPublishRevocationCause,
+  ProjectPublishRunTrigger,
+  ProjectPublishStateView,
+  ProjectVisibilityRevokeReason,
+} from './project-publish.js';
 export { runningGateResultView, toGateResultView } from './view.js';
 export type {
   GateHeldView,

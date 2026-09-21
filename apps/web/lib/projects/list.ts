@@ -46,9 +46,15 @@ import {
   type AuthenticatedTenantCtx,
   type ProjectStatus,
   type RemoteMode,
+  type ProjectVisibilityRevokeReason,
   type RequirementKind,
 } from '@ses/db';
-import type { PrefectureCode } from '@ses/domain';
+import {
+  // 🔴 T-12-10: 一覧の 3 値（`docs/04` §S-010）。詳細（`#27`）と**同じ規則**を通す。
+  projectPublishListStatus,
+  type PrefectureCode,
+  type ProjectPublishListStatus,
+} from '@ses/domain';
 import { buildCursorPage, takeForCursorPage } from '../api/pagination';
 import { toJstIsoDay } from '../format/datetime';
 import { decimalToNumber, toDateOnlyString } from '../format/db-values';
@@ -115,6 +121,18 @@ export type HostProjectView = ProjectListShared & {
   readonly audience: 'HOST';
   /** 現在公開中の取引先の社数（解除済みは数えない）。 */
   readonly visibleToCount: number;
+  /**
+   * 🔴 T-12-10: 公開状況の 1 語（`docs/04` §S-010 の 3 値列。`F-014 AC-9`）。
+   *
+   * 🔴 **3 値目（`AUTO_REVOKED`）を足した理由**: 再検査の FAIL で自動解除された案件は公開先が
+   *    0 社になるため、2 値のままだと `未設定`（一度も公開していない）と同じ表示になる。
+   *    **同じ 0 社を一覧と詳細が別の言葉で説明すると、営業は「設定し忘れた」と読んで
+   *    原因の欄に辿り着けない。**
+   * 🔴 **保留は一覧で区別しない**（公開は維持されているので `PUBLISHED`）。したがって一覧は
+   *    `project_publish_requests` も `review_gates` も読まない（`docs/04` §S-010）。
+   * 🔴 **理由・原因の欄・指摘を一覧に出さない**（列は 1 語である。読むのは `S-011`）。
+   */
+  readonly publishStatus: ProjectPublishListStatus;
 };
 
 /**
@@ -131,6 +149,11 @@ export type PartnerProjectView = ProjectListShared & {
   readonly endClientName?: never;
   readonly internalUnitPrice?: never;
   readonly visibleToCount?: never;
+  /**
+   * 🔴 T-12-10（`F-014 AC-10`）: **公開状況を取引先の型として持たない。** 自動解除の事実が
+   *    一覧の列・件数・並び順のいずれからも読めない（はじめから非公開の案件と区別がつかない）。
+   */
+  readonly publishStatus?: never;
 };
 
 /** `#25` の 1 件（🔴 判別子は `audience`。`#27` と同じ規約）。 */
@@ -193,6 +216,16 @@ type MustSummary = {
 };
 
 /**
+ * 🔴 T-12-10: 公開状況の材料（ホストの枝だけが読む）。
+ *    判定そのものは `projectPublishListStatus`（`packages/domain`）が行い、**詳細（`#27` の
+ *    `deriveProjectPublishState`）と同じ 1 つの規則**を通る。
+ */
+type VisibilitySummary = {
+  readonly liveCount: number;
+  readonly lastRevokedReason: ProjectVisibilityRevokeReason | null;
+};
+
+/**
  * 1 ページ分の案件の**必須要件**を 1 往復で読む（案件ごとに引くと N+1 になり、
  * `F-015 AC-2` の p95 1 秒を満たせない）。
  *
@@ -251,20 +284,42 @@ async function readMustRequirementSummaries(
  *    `F-014 AC-4`）。なお仮に呼んでも RLS の C5 が自社宛の 1 行しか通さないため、
  *    他社の存在は**二重に**届かない。
  */
-async function readVisibleToCounts(
+async function readVisibilitySummaries(
   db: ProjectListDb,
   projectIds: readonly string[],
-): Promise<ReadonlyMap<string, number>> {
-  const result = new Map<string, number>();
+): Promise<ReadonlyMap<string, VisibilitySummary>> {
+  const result = new Map<string, VisibilitySummary>();
   if (projectIds.length === 0) return result;
 
-  const rows = await db.projectVisibility.groupBy({
-    by: ['projectId'],
-    where: { projectId: { in: [...projectIds] }, revokedAt: null },
-    _count: { _all: true },
+  // 🔴 T-12-10: 1 本の問い合わせで**生存件数**と**最後に解除された行の理由**の両方を作る
+  //    （`groupBy` を 2 本に増やさない。ページあたり定数本 = 行数に比例しない）。
+  const rows = await db.projectVisibility.findMany({
+    where: { projectId: { in: [...projectIds] } },
+    select: { id: true, projectId: true, revokedAt: true, revokedReason: true },
   });
+
+  const revokedLatest = new Map<string, { at: number; id: string; reason: string | null }>();
   for (const row of rows) {
-    result.set(row.projectId, row._count._all);
+    const current = result.get(row.projectId) ?? { liveCount: 0, lastRevokedReason: null };
+    if (row.revokedAt === null) {
+      result.set(row.projectId, { ...current, liveCount: current.liveCount + 1 });
+      continue;
+    }
+    result.set(row.projectId, current);
+    // 🔴 「最後に解除された行」は `revoked_at DESC → id DESC`（詳細〔`readProjectPublishState`〕と
+    //    同じ決定的順序。docs/05 §4.8）。
+    const latest = revokedLatest.get(row.projectId);
+    const at = row.revokedAt.getTime();
+    if (latest === undefined || at > latest.at || (at === latest.at && row.id > latest.id)) {
+      revokedLatest.set(row.projectId, { at, id: row.id, reason: row.revokedReason });
+    }
+  }
+  for (const [projectId, latest] of revokedLatest) {
+    const current = result.get(projectId) ?? { liveCount: 0, lastRevokedReason: null };
+    result.set(projectId, {
+      ...current,
+      lastRevokedReason: latest.reason as ProjectVisibilityRevokeReason | null,
+    });
   }
   return result;
 }
@@ -336,13 +391,22 @@ export async function listProjects(
       };
     }
 
-    const visibleToCounts = await readVisibleToCounts(db, projectIds);
+    const visibilitySummaries = await readVisibilitySummaries(db, projectIds);
     return {
-      items: page.items.map((row) => ({
-        ...toSharedView(row, summaries.get(row.id)),
-        audience: 'HOST' as const,
-        visibleToCount: visibleToCounts.get(row.id) ?? 0,
-      })),
+      items: page.items.map((row) => {
+        const summary = visibilitySummaries.get(row.id);
+        const liveVisibilityCount = summary?.liveCount ?? 0;
+        return {
+          ...toSharedView(row, summaries.get(row.id)),
+          audience: 'HOST' as const,
+          visibleToCount: liveVisibilityCount,
+          // 🔴 T-12-10: 判定は `packages/domain` の 1 関数（詳細と規則が食い違わない）。
+          publishStatus: projectPublishListStatus({
+            liveVisibilityCount,
+            lastRevokedReason: summary?.lastRevokedReason ?? null,
+          }),
+        };
+      }),
       total,
       nextCursor: page.nextCursor,
     };

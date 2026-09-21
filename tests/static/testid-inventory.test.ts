@@ -706,6 +706,17 @@ const FROZEN_EXACT: readonly string[] = [
   'project-detail-proposals-coming-soon',
   'project-detail-proposals-empty',
   'project-detail-public-summary',
+  // 🔴 T-12-10: 公開の状態（4 値）の帯と通知（`docs/04` 改訂 14 §S-011 / `F-014 AC-9` / `AC-12`）。
+  'project-detail-publish-auto-revoked',
+  'project-detail-publish-auto-revoked-fields',
+  'project-detail-publish-auto-revoked-findings',
+  'project-detail-publish-auto-revoked-fix',
+  'project-detail-publish-auto-revoked-hidden',
+  'project-detail-publish-auto-revoked-read-only',
+  'project-detail-publish-auto-revoked-recovery',
+  'project-detail-publish-auto-revoked-title',
+  'project-detail-publish-held',
+  'project-detail-publish-recheck-running',
   'project-detail-screen',
   'project-detail-view-recorded',
   'project-detail-visibility-empty',
@@ -716,6 +727,9 @@ const FROZEN_EXACT: readonly string[] = [
   'project-end-client-name',
   'project-form',
   'project-form-error',
+  // 🔴 T-12-10: 公開中の案件を編集しているときの事前表示（`docs/04` 改訂 14 §S-012 / `F-014 AC-6`）。
+  'project-form-recheck-notice',
+  'project-form-recheck-notice-will-not-run',
   'project-form-saved',
   'project-headcount',
   'project-internal-unit-price',
@@ -745,6 +759,10 @@ const FROZEN_EXACT: readonly string[] = [
   'project-name',
   'project-not-found',
   'project-prefecture',
+  // 🔴 T-12-10: 「この欄は公開先が読む」印（3 欄。`name` / `publicSummary` は完全一致、
+  //    要件は区分ごとの接尾辞つき = `project-public-field-notice-requirement-`）。
+  'project-public-field-notice-name',
+  'project-public-field-notice-public-summary',
   'project-public-summary',
   'project-public-summary-note',
   'project-remote-mode',
@@ -768,6 +786,9 @@ const FROZEN_EXACT: readonly string[] = [
   'project-visibility-execute',
   'project-visibility-form',
   'project-visibility-gate',
+  // 🔴 T-12-10: セクション 4 のゲート結果の履歴（`docs/04` 改訂 14 §S-013）。
+  'project-visibility-gate-history',
+  'project-visibility-gate-history-empty',
   'project-visibility-gate-lead',
   'project-visibility-gate-title',
   'project-visibility-lead',
@@ -1330,6 +1351,8 @@ const FROZEN_PREFIXES: readonly string[] = [
   'project-list-more-requirements-',
   'project-list-row-',
   'project-list-visibility-',
+  // 🔴 T-12-10: 「この欄は公開先が読む」印は要件の区分ごとに値が変わる（`MUST` / `NICE`）。
+  'project-public-field-notice-requirement-',
   'project-requirement-add-',
   'project-requirement-error-',
   'project-requirement-free-text-',
@@ -1343,6 +1366,9 @@ const FROZEN_PREFIXES: readonly string[] = [
   'project-requirements-table-',
   'project-section-requirements-',
   'project-visibility-choice-',
+  // 🔴 T-12-10: セクション 4 の履歴は実行ごとに行が増える（`docs/04` 改訂 14 §S-013）。
+  'project-visibility-gate-history-',
+  'project-visibility-gate-trigger-',
   'project-visibility-preview-warning-',
   // ✅ T-08-06: `S-017` の動的 testid（行 / 案件 / 候補 / 残り / 状態バッジ）。
   // ✅ T-09-03: `S-021` の動的 testid（セクション / 判断ヘッダの行 / ゲートの層 / 指摘リスト / プレビューの強調）。

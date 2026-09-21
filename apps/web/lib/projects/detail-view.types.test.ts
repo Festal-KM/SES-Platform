@@ -12,6 +12,7 @@
 // 🔴 本ファイルは `import type` だけを使う（`service.ts` の実行時依存〔`@ses/db`〕を引き込まない）。
 import { describe, expectTypeOf, it } from 'vitest';
 import type { ProjectStatus, RemoteMode, RequirementKind } from '@ses/db';
+import type { ProjectPublishStateView } from '@ses/domain';
 import type { PrefectureCode } from '@ses/domain';
 import type {
   HostProjectDetailView,
@@ -45,6 +46,11 @@ describe('🔴 F-013 AC-2: PartnerProjectDetailView に商流情報のフィー�
         readonly internalUnitPrice?: never;
         readonly visibilities?: never;
         readonly visibleToCount?: never;
+        // 🔴 T-12-10（`F-014 AC-10`）: 自動解除の事実・理由・ゲート結果を**型として持たない**。
+        readonly publishState?: never;
+        readonly revokedReason?: never;
+        readonly revokedAt?: never;
+        readonly gateResult?: never;
       }
     >();
   });
@@ -88,12 +94,27 @@ describe('🔴 F-013 AC-2: PartnerProjectDetailView に商流情報のフィー�
       // @ts-expect-error 🔴 「他に N 社に公開されています」に相当する件数も型に無い（docs/05 §4.8）。
       visibleToCount: 3,
     };
+    // 🔴 T-12-10（`F-014 AC-10`）: 取引先向けの応答は 1 バイトも変わらない。
+    const withPublishState: PartnerProjectDetailView = {
+      ...shared,
+      audience: 'PARTNER',
+      // @ts-expect-error 🔴 公開の状態（自動解除 / 保留）を取引先の応答に入れられない。
+      publishState: { state: 'UNPUBLISHED', visibleToCount: 0, latestGate: null },
+    };
+    const withRevokedReason: PartnerProjectDetailView = {
+      ...shared,
+      audience: 'PARTNER',
+      // @ts-expect-error 🔴 解除の理由（人の解除 / 再検査）を取引先の応答に入れられない。
+      revokedReason: 'GATE_RECHECK',
+    };
 
     // 値を「使う」ことでコンパイラに型検査を強制する（未使用変数の除去で消えないように）。
     expectTypeOf(withEndClient).toExtend<PartnerProjectDetailView>();
     expectTypeOf(withInternalPrice).toExtend<PartnerProjectDetailView>();
     expectTypeOf(withVisibilities).toExtend<PartnerProjectDetailView>();
     expectTypeOf(withVisibleToCount).toExtend<PartnerProjectDetailView>();
+    expectTypeOf(withPublishState).toExtend<PartnerProjectDetailView>();
+    expectTypeOf(withRevokedReason).toExtend<PartnerProjectDetailView>();
   });
 
   it('🔴 判別子で絞り込むまで商流情報のプロパティに触れられない（合併の使い方の固定）', () => {
@@ -107,8 +128,28 @@ describe('🔴 F-013 AC-2: PartnerProjectDetailView に商流情報のフィー�
         readonly endClientName: string | null;
         readonly internalUnitPrice: number | null;
         readonly visibilities: readonly ProjectVisibilityView[];
+        // 🔴 T-12-10: 公開の状態（4 値）はホストの枝にだけある。
+        readonly publishState: ProjectPublishStateView;
       }
     >();
+  });
+
+  it('🔴 T-12-10: `revocation`（自動解除）と `held`（保留）が同時に読めない（4 値の判別可能な合併）', () => {
+    // 🔴 画面は前者で「公開を解除しました（今すぐ直す）」、後者で「公開は維持されています（待つ）」と
+    //    **逆のこと**を書く。型としてどちらか一方しか読めないことが `F-014 AC-12` の担保である。
+    expectTypeOf<
+      Extract<ProjectPublishStateView, { state: 'AUTO_REVOKED' }>['held']
+    >().toEqualTypeOf<undefined>();
+    expectTypeOf<
+      Extract<ProjectPublishStateView, { state: 'PUBLISHED_RECHECK_HELD' }>['revocation']
+    >().toEqualTypeOf<undefined>();
+    // 🔴 `PUBLISHED` / `UNPUBLISHED` はどちらも持たない。
+    expectTypeOf<
+      Extract<ProjectPublishStateView, { state: 'PUBLISHED' }>['revocation']
+    >().toEqualTypeOf<undefined>();
+    expectTypeOf<
+      Extract<ProjectPublishStateView, { state: 'UNPUBLISHED' }>['held']
+    >().toEqualTypeOf<undefined>();
   });
 
   it('🔴 公開先 1 件に含まれるのは会社名・ID・公開日だけ（提案数や他社の件数を持たない）', () => {

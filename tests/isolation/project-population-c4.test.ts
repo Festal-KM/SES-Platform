@@ -214,7 +214,8 @@ async function publishTo(projectId: string, partnerCompanyId: string): Promise<v
 async function revokeVisibility(projectId: string, partnerCompanyId: string): Promise<void> {
   const updated = await admin.projectVisibility.updateMany({
     where: { projectId, partnerCompanyId, revokedAt: null },
-    data: { revokedAt: NOW },
+    // 🔴 T-12-10: 人の解除は `revoked_reason='MANUAL'`（`revoked_at` 単独は CHECK が拒む）。
+    data: { revokedAt: NOW, revokedReason: 'MANUAL' },
   });
   if (updated.count !== 1) throw new Error('解除対象の公開行が 1 件ではありません（前提の破綻）。');
 }
@@ -321,7 +322,10 @@ afterEach(async () => {
   // 🔴 テスト間で前提を持ち越さない（公開範囲は seed の 1 行だけに戻す）。
   await admin.project.deleteMany({ where: { name: { startsWith: MARKER } } });
   await admin.projectVisibility.deleteMany({ where: { id: { notIn: SEED_VISIBILITY_IDS } } });
-  await admin.projectVisibility.updateMany({ data: { revokedAt: null } });
+  // 🔴 T-12-10: 解除の痕跡は 3 列そろって戻す（CHECK が revoked_at と revoked_reason の対応を要求する）。
+  await admin.projectVisibility.updateMany({
+    data: { revokedAt: null, revokedReason: null, revokedReviewGateId: null },
+  });
   await admin.auditLog.deleteMany({ where: { action: 'project.view' } });
 });
 

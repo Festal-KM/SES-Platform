@@ -338,6 +338,8 @@ beforeAll(async () => {
   }
   await holdReviewGate(systemTenantCtx(TENANT_A, { queue: 'gate.run', jobId: 't-11-04-held' }), {
     targetType: 'PROPOSAL',
+    // 🔴 T-12-10: 提案の行は契機を持たない（§3.6 の CHECK が書かせない）。
+    runTrigger: null,
     targetId: PROPOSAL_A_HOST,
     contentHash: `hash-${PROPOSAL_A_HOST}`,
     consistencyVerdict: 'FAIL',

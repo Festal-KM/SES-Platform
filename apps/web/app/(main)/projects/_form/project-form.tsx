@@ -137,6 +137,21 @@ export type ProjectFormMessages = {
   readonly publicSummaryLabel: string;
   readonly publicSummaryNote: string;
 
+  /**
+   * 🔴 T-12-10（`docs/04` 改訂 14 §S-012 / `F-014 AC-6`）: **公開欄 3 欄に添える印**。
+   *    既存の商流情報ブロックの注記（`commerceNotice`）と**同じ位置・同じ体裁で、向きだけが逆**である
+   *    —— 2 つを 1 画面に並べることで「外に出る欄 / 出ない欄」が入力中に読める。
+   */
+  readonly publicFieldNotice: string;
+  /** 🔴 公開中の案件を編集しているときの事前表示（**編集開始時から常時**。押した後ではない）。 */
+  readonly recheckPublishedToPrefix: string;
+  readonly recheckPublishedToSuffix: string;
+  readonly recheckWillRun: string;
+  /** 🔴 **走らない条件も同じ帯に書く**（書かないと編集が避けられ、台帳が更新されなくなる）。 */
+  readonly recheckWillNotRun: string;
+  /** 🔴 保存の完了表示（再検査が積まれたとき）。**保存の成否と再検査の結果を混ぜない。** */
+  readonly savedRecheckQueued: string;
+
   readonly visibilityNotice: string;
   /** ✅ T-06-06: `S-013` への導線のラベル（`docs/04` §S-012「操作と結果」の secondary）。 */
   readonly visibilitySettings: string;
@@ -175,6 +190,12 @@ export type ProjectFormProps = {
    *    （保存後に遷移する `S-011` に同じ導線がある）。**存在しない画面・ID へのリンクを作らない。**
    */
   readonly visibilityHref: string | null;
+  /**
+   * 🔴 T-12-10（`F-014 AC-6` / `docs/04` 改訂 14 §S-012）: **現在公開中の取引先の社数**。
+   *    0（または新規登録）なら事前表示の帯を出さない —— 再検査が走らない画面に出すと
+   *    「何も起きない警告」に慣れてしまう。
+   */
+  readonly publishedToCount: number;
   readonly messages: ProjectFormMessages;
 };
 
@@ -232,6 +253,7 @@ export function ProjectForm({
   cancelHref,
   createdHrefPattern,
   visibilityHref,
+  publishedToCount,
   messages,
 }: ProjectFormProps) {
   const [values, setValues] = useState<ProjectFormValues>(initial);
@@ -246,6 +268,8 @@ export function ProjectForm({
   const [drafts, setDrafts] = useState<Readonly<Record<string, ProjectFormRequirement>>>({});
   const [errors, setErrors] = useState<Readonly<Record<string, RequirementError>>>({});
   const [sequence, setSequence] = useState(0);
+  /** 🔴 T-12-10: 直前の保存で再検査が積まれたか（`#26` の応答の `recheck.queued`）。 */
+  const [recheckQueued, setRecheckQueued] = useState(false);
 
   // 🔴 `docs/04` §10.1 `S-012`「未保存の状態で離脱しようとすると確認」。
   //    ブラウザの標準ダイアログを使う（自前のモーダルでは戻る・タブを閉じるを捕まえられない）。
@@ -347,7 +371,14 @@ export function ProjectForm({
         setPhase('error');
         return;
       }
-      const created = (await response.json()) as { readonly id: string };
+      // 🔴 T-12-10: `#26` の応答は `{ id, recheck }`（docs/05 §6.4 #26）。
+      //    `recheck.queued` が「保存しました」と「保存しました。公開中の内容を再検査しています」を
+      //    書き分ける**唯一の材料**である（`docs/04` 改訂 14 §S-012）。
+      const created = (await response.json()) as {
+        readonly id: string;
+        readonly recheck?: { readonly queued: boolean };
+      };
+      setRecheckQueued(created.recheck?.queued === true);
       // 🔴 離脱確認を先に解除してから遷移する（保存できているのに確認を出さない）。
       setDirty(false);
       if (mode === 'CREATE') {
@@ -375,8 +406,35 @@ export function ProjectForm({
       ) : null}
       {phase === 'saved' ? (
         <p role="status" className="text-sm text-emerald-700" data-testid="project-form-saved">
-          {messages.saved}
+          {/* 🔴 T-12-10: 保存は同期で成功しており、再検査はこれからである。
+              **1 つの表示に混ぜない**（混ぜると「保存できなかった」と誤読される）。 */}
+          {recheckQueued ? messages.savedRecheckQueued : messages.saved}
         </p>
+      ) : null}
+
+      {/* 🔴 T-12-10: 公開中の案件を編集しているときの事前表示（`docs/04` 改訂 14 §S-012 /
+          `F-014 AC-6` / `UC-26` 手順 2）。**編集開始時から常時**であり、保存ボタンを押した後ではない。
+          🔴 **走る条件と走らない条件の両方**を書く —— 走らない条件を書かないと、利用者は
+          「保存のたびに公開が消えるかもしれない」と読んで編集を避け、台帳が更新されなくなる
+          （`docs/01` 章 1.1-1 の再発）。
+          🔴 **未公開の案件・新規登録では出さない**（「何も起きない警告」に慣れさせない）。
+          🔴 **確認ダイアログを挟まない**（止めるべきは外へ出す操作であり、外へ出るものを減らす
+          方向の編集ではない。`docs/04` §S-012）。 */}
+      {mode === 'EDIT' && publishedToCount > 0 ? (
+        <section
+          className="border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+          data-testid="project-form-recheck-notice"
+        >
+          <p>
+            {messages.recheckPublishedToPrefix}
+            {publishedToCount}
+            {messages.recheckPublishedToSuffix}
+          </p>
+          <p className="mt-1">{messages.recheckWillRun}</p>
+          <p className="mt-1" data-testid="project-form-recheck-notice-will-not-run">
+            {messages.recheckWillNotRun}
+          </p>
+        </section>
       ) : null}
 
       {/* --- 1. 基本 ------------------------------------------------------- */}
@@ -392,6 +450,10 @@ export function ProjectForm({
             disabled={phase === 'submitting'}
             data-testid="project-name"
           />
+          {/* 🔴 T-12-10: 「この欄は公開先が読む」印（`docs/04` 改訂 14 §S-012 / `F-014 AC-6`）。 */}
+          <p className="mt-1 text-xs text-slate-600" data-testid="project-public-field-notice-name">
+            {messages.publicFieldNotice}
+          </p>
         </Field>
         <Field
           className="mb-4"
@@ -507,6 +569,13 @@ export function ProjectForm({
                   disabled={phase === 'submitting'}
                   data-testid={`project-requirement-free-text-${kind}`}
                 />
+                {/* 🔴 T-12-10: 自由記述だけが公開先に届く（スキル指定は辞書の名前である）。 */}
+                <p
+                  className="mt-1 text-xs text-slate-600"
+                  data-testid={`project-public-field-notice-requirement-${kind}`}
+                >
+                  {messages.publicFieldNotice}
+                </p>
               </Field>
               <Button
                 type="button"
@@ -702,6 +771,13 @@ export function ProjectForm({
         {/* 🔴 docs/04 §S-012: 入力中に商流層の観点を注意書きで示す（合否はここで判定しない）。 */}
         <p className="mb-2 text-sm text-slate-600" data-testid="project-public-summary-note">
           {messages.publicSummaryNote}
+        </p>
+        {/* 🔴 T-12-10: 「この欄は公開先が読む」印（3 欄で同じ語・同じ体裁）。 */}
+        <p
+          className="mb-2 text-xs text-slate-600"
+          data-testid="project-public-field-notice-public-summary"
+        >
+          {messages.publicFieldNotice}
         </p>
         <Field className="mb-4" label={messages.publicSummaryLabel}>
           {/* ⚠️ `Textarea` は `field-sizing-content` を持つため、`rows` は**初期値ではなく

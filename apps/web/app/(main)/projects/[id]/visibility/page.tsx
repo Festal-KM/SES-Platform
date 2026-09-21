@@ -21,6 +21,8 @@ import { NotFoundError } from '../../../../../lib/api/errors';
 import { executionDenialMessageKey } from '../../../../../lib/api/guards';
 import { readRequestMeta, resolveTenantCtxOutcome } from '../../../../../lib/auth/session';
 import { isProjectEditorRole } from '../../../../../lib/projects/policy';
+import { projectGateHistoryRows } from '../../../../../lib/projects/gate-history-rows';
+import { readProjectPublishGateResults } from '../../../../../lib/projects/publish-state';
 import { PROJECT_VIEW_VIA, readProjectDetail } from '../../../../../lib/projects/service';
 import { listProjectVisibilityChoices } from '../../../../../lib/projects/visibility';
 import { projectPublishPreview, projectVisibilityScreenMessages } from './visibility-props';
@@ -52,7 +54,8 @@ export default async function ProjectVisibilityPage({
   const view = await readProjectDetail(
     outcome.ctx,
     id,
-    { ipAddress: meta.ipAddress },
+    // 🔴 T-12-10: 公開の状態（保留の再開時刻）のために現在時刻を渡す。
+    { ipAddress: meta.ipAddress, now: new Date() },
     PROJECT_VIEW_VIA.visibility,
   ).catch((error: unknown) => {
     // 🔴 境界外・不存在のどちらも 404 に畳む（区別すると存在を教えることになる）。
@@ -65,6 +68,12 @@ export default async function ProjectVisibilityPage({
   if (view.audience !== 'HOST') notFound();
 
   const choices = await listProjectVisibilityChoices(outcome.ctx, view.id);
+  // 🔴 T-12-10: セクション 4 のゲート結果（公開の実行 + 公開後の再検査の両方）。
+  //    🔴 **サーバコンポーネントから直接呼ぶ**（`#46b` / `S-006` と同じ作法。読み取り専用の
+  //    API の面を増やさない。`docs/05` §6.8 / §11.11「T-12-10 の実装の決着」⑤）。
+  const gateResults = await readProjectPublishGateResults(outcome.ctx, view.id, {
+    now: new Date(),
+  });
   // 🔴 `F-004 AC-7`: 停止中・解約手続き中は公開操作の導線を出さず、理由を表示する。
   const denialKey = executionDenialMessageKey(outcome.ctx.lifecycleState);
 
@@ -83,6 +92,7 @@ export default async function ProjectVisibilityPage({
         editHref={`/projects/${view.id}/edit`}
         partnerCompaniesHref={PARTNER_COMPANIES_HREF}
         denialMessage={denialKey === null ? null : t(denialKey)}
+        gateHistory={projectGateHistoryRows(gateResults.items)}
         messages={projectVisibilityScreenMessages()}
       />
     </main>

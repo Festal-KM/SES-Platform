@@ -10,6 +10,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import type { ProjectGateHistoryRow } from '../../../../../lib/projects/gate-history-rows';
 import type { ProjectVisibilityChoice } from '../../../../../lib/projects/visibility';
 import {
   ProjectVisibilityScreen,
@@ -80,6 +81,10 @@ const messages: ProjectVisibilityScreenMessages = {
   previewWarningLead: 'これは文字列の照合による注意喚起です。',
   gatePendingTitle: '公開の前に品質ゲートを実行します。',
   gatePendingLead: 'ゲートの実行は後続のリリースで有効になります。',
+  // 🔴 T-12-10: セクション 4 のゲート結果の履歴（`docs/04` 改訂 14 §S-013）。
+  gateHistoryTitle: 'ゲート結果の履歴',
+  gateHistoryEmpty: 'この案件のゲートはまだ 1 度も実行されていません。',
+  gateHistoryCurrent: '現在の内容に対する結果',
   submit: '保存する',
   submitting: '送信しています…',
   revokeConfirmTitle: '公開を解除しますか？',
@@ -103,6 +108,7 @@ function render(overrides: Partial<ProjectVisibilityScreenProps> = {}): string {
     preview: PREVIEW,
     detailHref: '/projects/01930000-0000-7000-8000-0000000000a1',
     editHref: '/projects/01930000-0000-7000-8000-0000000000a1/edit',
+    gateHistory: [],
     partnerCompaniesHref: '/settings/partner-companies',
     denialMessage: null,
     messages,
@@ -240,5 +246,69 @@ describe('🔴 docs/04 §10.1 S-013: 選択変更の途中で離脱 → 確認',
     expect(sameSelection(sentSelection, sentSelection)).toBe(true);
     // 公開中を基準にすると「未保存」のままになる（＝ 確認が鳴り止まない）。
     expect(sameSelection(sentSelection, publishedAfterSave)).toBe(false);
+  });
+});
+
+
+// ============================================================================
+// 🔴 T-12-10: セクション 4 のゲート結果に**実行の契機**が読める（`docs/04` 改訂 14 §S-013）
+// ============================================================================
+describe('🔴 T-12-10: ゲート結果の履歴に実行の契機が 1 行添う', () => {
+  const PUBLISH_ROW: ProjectGateHistoryRow = {
+    reviewGateId: 'g-publish',
+    trigger: '公開の実行',
+    occurredAt: '2026-09-20 10:00',
+    heldLabel: null,
+    matchesCurrentContent: false,
+    layers: [
+      { key: 'pii', label: 'PII 層', verdict: '合格', findings: [] },
+      { key: 'commerce', label: '商流層', verdict: '合格', findings: [] },
+      { key: 'consistency', label: '整合層', verdict: '合格', findings: [] },
+    ],
+  };
+  const RECHECK_ROW: ProjectGateHistoryRow = {
+    reviewGateId: 'g-recheck',
+    trigger: '公開欄の編集による再検査',
+    occurredAt: '2026-09-21 11:00',
+    heldLabel: null,
+    matchesCurrentContent: true,
+    layers: [
+      { key: 'pii', label: 'PII 層', verdict: '合格', findings: [] },
+      { key: 'commerce', label: '商流層', verdict: '不合格', findings: ['[企業名]'] },
+      { key: 'consistency', label: '整合層', verdict: '合格', findings: [] },
+    ],
+  };
+
+  it('🔴 公開の実行と再検査が、同じ体裁で契機つきに並ぶ（層の並びも語も変えない）', () => {
+    const html = render({ gateHistory: [RECHECK_ROW, PUBLISH_ROW] });
+    expect(html).toContain('data-testid="project-visibility-gate-trigger-g-recheck"');
+    expect(html).toContain('data-testid="project-visibility-gate-trigger-g-publish"');
+    expect(html).toContain('公開欄の編集による再検査');
+    expect(html).toContain('公開の実行');
+    // 層の並び（PII → 商流 → 整合）が 2 行とも同じである。
+    const order = [...html.matchAll(/(PII 層|商流層|整合層)/g)].map((m) => m[1]);
+    expect(order.slice(0, 3)).toEqual(['PII 層', '商流層', '整合層']);
+    expect(order.slice(3, 6)).toEqual(['PII 層', '商流層', '整合層']);
+  });
+
+  it('🔴 指摘の本文はこの画面でだけ読む（`S-011` の帯には載せない）', () => {
+    expect(render({ gateHistory: [RECHECK_ROW] })).toContain('[企業名]');
+  });
+
+  it('現在の内容に対する結果に印が付く', () => {
+    const html = render({ gateHistory: [RECHECK_ROW] });
+    expect(html).toContain(messages.gateHistoryCurrent);
+  });
+
+  it('🔴 「再検査だけをもう一度実行する」ボタンを置かない（`docs/05` §6.8）', () => {
+    const html = render({ gateHistory: [RECHECK_ROW, PUBLISH_ROW] });
+    for (const forbidden of ['再検査する', '再実行', '検査をやり直']) {
+      expect(html).not.toContain(forbidden);
+    }
+  });
+
+  it('1 度も実行していなければ空文言（履歴セクション自体は出す）', () => {
+    const html = render({ gateHistory: [] });
+    expect(html).toContain('data-testid="project-visibility-gate-history-empty"');
   });
 });

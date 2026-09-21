@@ -16,6 +16,10 @@
 // 🔴 本モジュールは Next.js / Auth.js に依存しない（`@ses/db` のみ）。結合テストがサーバを
 //    立てずに同じ経路を実行できるようにするため（`engineers/service.ts` と同じ方針）。
 import {
+  // 🔴 T-12-10: 未消費の `RECHECK` 要求の有無（`#26` の積み直し。docs/05 §11.11 ③ 5-②）。
+  hasPendingProjectRecheck,
+  // 🔴 T-12-10: 要件のフリーテキストの**唯一の読み取り順序**（ハッシュ側と同じ 1 実装）。
+  readProjectRequirementTexts,
   requireHost,
   withTenant,
   writeAuditLog,
@@ -24,12 +28,21 @@ import {
   type RemoteMode,
   type RequirementKind,
 } from '@ses/db';
-import type { PrefectureCode } from '@ses/domain';
+import {
+  projectPublicFieldsChanged,
+  type PrefectureCode,
+  type ProjectPublicFieldValues,
+  type ProjectPublishStateView,
+} from '@ses/domain';
 import { NotFoundError, ProjectNotSharedError, ValidationError } from '../api/errors';
 import { toJstIsoDay } from '../format/datetime';
 import { decimalToNumber, toDateOnly, toDateOnlyString } from '../format/db-values';
+import type { ProjectPublishGate } from './publish-gate';
+// 🔴 T-12-10: 公開の状態（4 値）の materialize。**ホストの枝でだけ**呼ぶ。
+import { readProjectPublishState } from './publish-state';
 import type {
   CreateProjectBody,
+  ProjectMutationView,
   ProjectRequirementInput,
   UpdateProjectBody,
 } from './schemas';
@@ -96,6 +109,15 @@ export type ProjectViewMeta = {
   readonly ipAddress: string | null;
 };
 
+/**
+ * `#27` / `S-011` / `S-013` が渡す実行環境。
+ * 🔴 T-12-10: 公開の状態（`publishState`）は保留の再開時刻（`GateHeldView.resetAt` = 暦の計算）を
+ *    含むため、**現在時刻を呼び出し側から受け取る**（`packages/domain` と同じ規律。既定値を持たない）。
+ */
+export type ProjectDetailMeta = ProjectViewMeta & {
+  readonly now: Date;
+};
+
 export type ProjectRequirementView = {
   readonly kind: RequirementKind;
   readonly skillId: string | null;
@@ -130,6 +152,14 @@ export type ProjectEditView = {
   readonly internalUnitPrice: number | null;
   readonly publicSummary: string | null;
   readonly requirements: readonly ProjectRequirementView[];
+  /**
+   * 🔴 T-12-10（`F-014 AC-6` / `docs/04` 改訂 14 §S-012）: **現在公開中の取引先の社数**。
+   *    `S-012` の事前表示（「この案件は N 社に公開中です。3 欄を変更して保存すると再検査が
+   *    実行されます」）の材料であり、**0 なら帯を出さない**（再検査が走らない画面に出すと
+   *    「何も起きない警告」に慣れてしまう）。
+   * 🔴 **ホスト専用の view にだけある**（`S-012` はホスト専用。`F-014 AC-4` / `BR-07`）。
+   */
+  readonly publishedToCount: number;
 };
 
 // ============================================================================
@@ -184,6 +214,16 @@ export type HostProjectDetailView = ProjectDetailShared & {
   readonly internalUnitPrice: number | null;
   /** 現在の公開先（解除済みは含まない）。`docs/04` §S-011 セクション 5。 */
   readonly visibilities: readonly ProjectVisibilityView[];
+  /**
+   * 🔴 T-12-10: 公開の状態（**4 値の判別可能な合併**。`docs/04` §S-011 / `F-014 AC-9` / `AC-12`）。
+   *
+   * 🔴 **`revocation`（自動解除）と `held`（再検査の保留）は別の枝の別フィールドである** ——
+   *    画面は前者で「公開を解除しました（今すぐ直す）」、後者で「公開は維持されています（待つ）」と
+   *    **逆のこと**を書く。型としてどちらか一方しか読めない。
+   * 🔴 **指摘の本文をここに載せない**（原因の欄は 3 値の閉集合のコードだけ。本文は `S-013`
+   *    セクション 4 でのみ読む）。
+   */
+  readonly publishState: ProjectPublishStateView;
 };
 
 /**
@@ -202,6 +242,16 @@ export type PartnerProjectDetailView = ProjectDetailShared & {
   readonly internalUnitPrice?: never;
   readonly visibilities?: never;
   readonly visibleToCount?: never;
+  /**
+   * 🔴 T-12-10（`F-014 AC-10`）: **取引先向けの応答は 1 バイトも変わらない。**
+   *    自動解除の事実・理由・原因の欄・ゲート結果・再検査の保留を**型として持たない**。
+   *    公開が落ちた案件は既存の「公開解除された案件を開いたとき」の扱い（`ProjectNotSharedError`。
+   *    HTTP は 404 のまま）に合流し、**はじめから公開されていない案件と区別がつかない**。
+   */
+  readonly publishState?: never;
+  readonly revokedReason?: never;
+  readonly revokedAt?: never;
+  readonly gateResult?: never;
 };
 
 /** `#27` の応答（🔴 判別子は `audience`）。 */
@@ -299,7 +349,7 @@ function requirementRows(
 export async function createProject(
   ctx: AuthenticatedTenantCtx,
   input: CreateProjectBody,
-): Promise<{ readonly id: string }> {
+): Promise<ProjectMutationView> {
   assertUnitPriceRange(input.unitPriceMin, input.unitPriceMax);
   const requirements = normalizeRequirements(input.requirements);
 
@@ -333,7 +383,9 @@ export async function createProject(
     // 🔴 公開範囲（`ProjectVisibility`）の行はここで 1 件も作らない（`F-014 AC-2`
     //    「既定は誰にも公開されない」）。公開は `PUT /api/projects/{id}/visibility`（#28。
     //    T-06-06）の明示的な操作だけが行う。**「作成時に既定で公開」を絶対に作らない。**
-    return { id: created.id };
+    // 🔴 T-12-10: したがって**新規作成が再検査の契機になることはない**（`NOT_PUBLISHED` 固定。
+    //    docs/05 §6.4「#26 の実装の決着」）。`S-012` の新規登録では帯も出ない（`docs/04` §S-012）。
+    return { id: created.id, recheck: { queued: false, reason: 'NOT_PUBLISHED' } };
   });
 }
 
@@ -350,21 +402,64 @@ export async function createProject(
  * 🔴 `requirements` を指定したときは**その集合で置き換える**（差分適用にしない）。`S-012` は
  *    必須 / 尚可の 2 ブロックを丸ごと編集する画面であり、差分にすると「画面から消した行が
  *    消えない」ずれが出る（`updateEngineer` の `skills` と同じ）。
+ *
+ * ============================================================================
+ * 🔴 T-12-10: **公開中の案件で公開欄 3 欄が実際に変わった保存は、再検査の契機になる**
+ * ============================================================================
+ * （`F-014 AC-6`。[Issue #42](https://github.com/Festal-KM/SES-Platform/issues/42) = 回答②。
+ *  docs/05 §11.11「T-12-10 の実装の決着」①③）
+ *
+ * 手順（業務トランザクションの内側 1〜5、コミット後に 6）:
+ *   1. 更新の**前**に 3 欄の値を読む
+ *   2. 更新を適用する（既存のとおり）
+ *   3. 更新の**後**に同じ 3 欄を**読み直して**比較する（🔴 「保存した値」ではない ——
+ *      要件は置き換えで `id` が振り直されるため、並び（`kind` → `id`）は書き込み後にしか
+ *      確定しない。**ハッシュが覆う値と変更検知が見る値を同じ関数から取る**ことで、
+ *      「検知は変わったと言うがハッシュは同じ」「その逆」を構造的に起こせなくする）
+ *   4. 生きている公開範囲の行を数える。0 件なら `NOT_PUBLISHED`
+ *   5. 3 欄が変わった **または** 未消費の `RECHECK` 要求が残っているなら、要求を置く
+ *   6. コミット後に `gate.run` を積む（`enqueue` を**関数として返して順序を型で強制する**）
+ *
+ * 🔴 **`PROJECT_PUBLISH` の `contentHash` を契機にしない**（`projectPublicFieldsChanged`）。
+ *    ハッシュは公開先の集合と取引先の社名まで含むので、**公開先を 1 社増やしただけで動く** ——
+ *    それを契機にすると `AC-6`（3 欄が実際に変わったときに限る）に反し、AI 原価が無用に増える。
+ * 🔴 **公開範囲の行はここで 1 行も動かさない。** 落とすのは `settleProjectPublish` だけである
+ *    （`AC-13`。2 か所目を作ると、どちらか一方がゲート結果を見ない経路になる）。
+ * 🔴 **`force` / `skipGate` / `keepPublished` に類する引数を持たない**（`BR-18` / `F-020 AC-2`。
+ *    FAIL を「了解のうえ公開」できる操作・API・設定が存在しない）。
  */
 export async function updateProject(
   ctx: AuthenticatedTenantCtx,
   id: string,
   patch: UpdateProjectBody,
-): Promise<{ readonly id: string }> {
+  // 🔴 既定値を持たない（`updateProjectVisibility` と同じ）。「実装が入るまで保留するスタブ」を
+  //    既定にすると、配線を忘れた経路が**静かに再検査を行わないまま成功を返す**
+  //    （`CLAUDE.md` §11.1 の壊れ方 ＝ T-12-10 が塞ごうとしている穴そのもの）。
+  deps: { readonly gate: ProjectPublishGate },
+): Promise<ProjectMutationView> {
   const requirements =
     patch.requirements === undefined ? undefined : normalizeRequirements(patch.requirements);
 
-  return withTenant(ctx, async (db) => {
+  const { view, enqueue } = await withTenant(ctx, async (db) => {
     const current = await db.project.findFirst({
       where: { id },
-      select: { id: true, unitPriceMin: true, unitPriceMax: true },
+      // 🔴 T-12-10: 3 欄のうち 2 欄（`name` / `publicSummary`）をここで読む（手順 1）。
+      select: {
+        id: true,
+        unitPriceMin: true,
+        unitPriceMax: true,
+        name: true,
+        publicSummary: true,
+      },
     });
     if (current === null) throw new NotFoundError();
+
+    // 🔴 手順 1 の残り。ハッシュ側（`readProjectPublishGateHashInput`）と**同じ 1 実装・同じ順序**。
+    const before: ProjectPublicFieldValues = {
+      name: current.name,
+      publicSummary: current.publicSummary,
+      requirementFreeTexts: await readProjectRequirementTexts(db, id),
+    };
 
     // 🔴 単価レンジは**更新後の値**で判定する（片方だけ更新できるため、既存値と合成する）。
     assertUnitPriceRange(
@@ -404,8 +499,58 @@ export async function updateProject(
       }
     }
 
-    return { id };
+    // ------------------------------------------------------------------
+    // 🔴 T-12-10: 手順 3〜5（`F-014 AC-6`）。
+    // ------------------------------------------------------------------
+    const saved = await db.project.findFirst({
+      where: { id },
+      select: { name: true, publicSummary: true },
+    });
+    // 直前に更新した行が消えている（並行削除）＝ 不変条件違反。0 件を成功にしない。
+    if (saved === null) throw new NotFoundError();
+    const after: ProjectPublicFieldValues = {
+      name: saved.name,
+      publicSummary: saved.publicSummary,
+      requirementFreeTexts: await readProjectRequirementTexts(db, id),
+    };
+
+    // 🔴 手順 4。`revoked_at IS NULL` が「現在の公開先」の定義である（C4 の述語と鏡写し）。
+    const liveVisibilityCount = await db.projectVisibility.count({
+      where: { projectId: id, revokedAt: null },
+    });
+    if (liveVisibilityCount === 0) {
+      return { view: notPublishedRecheckView(id), enqueue: null };
+    }
+
+    // 🔴 手順 5-②「未消費の `RECHECK` 要求が残っている」を条件に入れる理由（docs/05 §11.11
+    //    「T-12-10 の実装の決着」③）: 手順 6 は commit の後なので、`BLOCKED_BY_FAILED_JOB` や
+    //    プロセス断で「**要求だけが残ってジョブが積まれない**」窓がある。そのとき再検査は
+    //    owed のまま公開が続く（＝ T-12-10 が塞ごうとしている穴が開いたまま）。この条件があれば、
+    //    利用者が**同じ内容でもう一度保存する**だけで積み直せる（`jobId` は同じなので二重実行に
+    //    ならず、内容が同じなら `DONE` 行のキャッシュを引くので `F-026` も増えない）。
+    const changed = projectPublicFieldsChanged(before, after);
+    if (!changed && !(await hasPendingProjectRecheck(db, id))) {
+      return {
+        view: { id, recheck: { queued: false, reason: 'PUBLIC_FIELDS_UNCHANGED' } } as const,
+        enqueue: null,
+      };
+    }
+
+    // 🔴 `RECHECK` の `audience` は**現在の公開先そのもの**である（追加する相手は 0 件）。
+    const gate = await deps.gate(db, ctx, { projectId: id, kind: 'RECHECK', partnerCompanyIds: [] });
+    return { view: { id, recheck: { queued: true } } as const, enqueue: gate.enqueue };
   });
+
+  // 🔴 手順 6。トランザクションを**抜けてから**積む（`#28` と同じ規律。docs/05 §11.11 ①）。
+  // 🔴 積めなかったら握り潰さず `InternalError`（500）にする（`createProjectPublishGate` が投げる）。
+  //    保存自体は commit 済みで失われず、復帰は手順 5-② である。
+  if (enqueue !== null) await enqueue();
+  return view;
+}
+
+/** 🔴 公開中でない案件の `recheck`（`#26` の `POST` と、公開先 0 社の `PATCH`）。 */
+function notPublishedRecheckView(id: string): ProjectMutationView {
+  return { id, recheck: { queued: false, reason: 'NOT_PUBLISHED' } };
 }
 
 /**
@@ -525,6 +670,10 @@ export async function readProjectForEdit(
       internalUnitPrice: decimalToNumber(row.internalUnitPrice),
       publicSummary: row.publicSummary,
       requirements: await readProjectRequirements(db, row.id),
+      // 🔴 T-12-10: `revoked_at IS NULL` が「現在の公開先」の定義である（C4 の述語と鏡写し）。
+      publishedToCount: await db.projectVisibility.count({
+        where: { projectId: row.id, revokedAt: null },
+      }),
     };
   });
 }
@@ -681,7 +830,7 @@ async function projectWasSharedWithPartner(
 export async function readProjectDetail(
   ctx: AuthenticatedTenantCtx,
   id: string,
-  meta: ProjectViewMeta,
+  meta: ProjectDetailMeta,
   /**
    * 🔴 記録に残す経路（`summary.via`）。**action は分けない**（`S-041` の操作種別フィルタは
    *    接尾辞一致であり、`project.detail_view` のような名前は検索から漏れる）。
@@ -698,6 +847,10 @@ export async function readProjectDetail(
 
       const requirements = await readProjectRequirements(db, row.id);
       const visibilities = await readProjectVisibilities(db, row.id);
+      // 🔴 T-12-10: 公開の状態は**ホストの枝でだけ**、同じトランザクションから読む
+      //    （docs/05 §11.11「T-12-10 の実装の決着」⑤）。取引先の枝はこの関数を 1 回も呼ばない
+      //    ＝ 取引先の経路では `project_publish_requests` / `review_gates` を 1 回も読まない。
+      const publishState = await readProjectPublishState(db, row.id, meta.now);
       await recordProjectView(db, ctx, row.id, via, meta);
 
       return {
@@ -706,6 +859,7 @@ export async function readProjectDetail(
         endClientName: row.endClientName,
         internalUnitPrice: decimalToNumber(row.internalUnitPrice),
         visibilities,
+        publishState,
       };
     });
   }

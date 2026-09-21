@@ -120,6 +120,8 @@ async function hold(tenantId: string, targetType: 'PROPOSAL' | 'PROJECT_PUBLISH'
   // 🔴 `gate.run` が上限で呼べなかったときと**同じ書き込み**（docs/05 §7.6。整合層の結果と指摘を保持したまま保留する）。
   return holdReviewGate(systemTenantCtx(tenantId, { queue: 'gate.run', jobId: `t-11-05-${targetId}` }), {
     targetType,
+    // 🔴 T-12-10: 実行の契機（`PROJECT_PUBLISH` のときだけ値を持つ。§3.6 の CHECK）。
+    runTrigger: targetType === 'PROJECT_PUBLISH' ? 'PUBLISH' : null,
     targetId,
     contentHash: `hash-held-${targetId}`,
     consistencyVerdict: 'FAIL',

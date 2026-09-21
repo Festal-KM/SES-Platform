@@ -746,6 +746,8 @@ describe('🔴 #40b ゲート結果の履歴（T-12-14 ②。docs/05 §6.5「#40
       systemTenantCtx(TENANT_1.tenantId, { queue: 'gate.run', jobId: `t1214-${input.contentHash}` }),
       {
         targetType: TARGET_TYPE,
+        // 🔴 T-12-10: 提案の行は契機を持たない（§3.6 の CHECK が書かせない）。
+        runTrigger: null,
         targetId: input.proposalId,
         contentHash: input.contentHash,
         piiVerdict: input.piiVerdict ?? 'PASS',

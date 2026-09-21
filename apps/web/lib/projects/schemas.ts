@@ -147,6 +147,28 @@ export type UpdateProjectBodyIsolationGuard = AssertNoIsolationKeys<UpdateProjec
 
 assertNoIsolationKeys(Object.keys(updateProjectBodySchema.shape), 'updateProjectBodySchema');
 
+/**
+ * 🔴 `#26` の応答の `recheck`（T-12-10。docs/05 §6.4 #26 / §11.11「T-12-10 の実装の決着」③。
+ *    `F-014 AC-6`）—— 「**再検査を積んだか / 積まなかったならなぜか**」。
+ *
+ * 🔴 `S-012` が「保存しました」と「保存しました。公開中の内容を再検査しています」を書き分ける
+ *    **唯一の材料**である（`docs/04` §S-012）。
+ * 🔴 **`reason` の値はこの 2 つで閉じる。** `SKIPPED_BY_REQUEST` / `GATE_DISABLED` のような
+ *    「積まないことを**選べた**」と読める値を作らない（迂回の入口を型として作らないのと同じ理由。
+ *    docs/05 §11.11「T-12-10 の実装の決着」⑧ / `BR-18`）。
+ * 🔴 **保存の成否と再検査の結果を 1 つの値にまとめない** —— 保存は同期で成功しており、
+ *    再検査はこれからである（結果は `S-011` の公開の状態で読む）。
+ */
+export type ProjectRecheckOutcome =
+  | { readonly queued: true; readonly reason?: never }
+  | { readonly queued: false; readonly reason: 'NOT_PUBLISHED' | 'PUBLIC_FIELDS_UNCHANGED' };
+
+/** `POST /api/projects` / `PATCH /api/projects/{id}`（#26）の応答（docs/05 §6.4 #26）。 */
+export type ProjectMutationView = {
+  readonly id: string;
+  readonly recheck: ProjectRecheckOutcome;
+};
+
 /** フリーワード（`docs/04` §S-010 の検索条件）。過大な入力を境界で止める。 */
 const FREE_WORD_MAX_LENGTH = 200;
 

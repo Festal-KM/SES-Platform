@@ -257,12 +257,22 @@ async function runGate(options: {
     // 🔴 案件の公開は「これから公開する相手」を `ProjectPublishRequest` で運ぶ（docs/05 §11.11 ①）。
     //    ここでは**空**にする —— 見たいのは層の判定であり、公開先の母集団は
     //    `tests/isolation/project-publish-gate.test.ts` が実データの経路で見る。
+    // 🔴 T-12-10: 追加が 0 件の要求は `kind='RECHECK'` である（§3.5 の CHECK が
+    //    `(kind='RECHECK') = (cardinality(partner_company_ids) = 0)` を縛る）。**層の判定は
+    //    契機で 1 ビットも変わらない**（契機が決めるのは「確定で何をするか」だけである）。
     await admin.projectPublishRequest.upsert({
-      where: { tenantId_projectId: { tenantId: TENANT_A, projectId: options.targetId } },
+      where: {
+        tenantId_projectId_kind: {
+          tenantId: TENANT_A,
+          projectId: options.targetId,
+          kind: 'RECHECK',
+        },
+      },
       create: {
         id: randomUUID(),
         tenantId: TENANT_A,
         projectId: options.targetId,
+        kind: 'RECHECK',
         partnerCompanyIds: [],
         contentHash: options.contentHash,
         requestedAt: NOW,
@@ -381,6 +391,14 @@ beforeAll(async () => {
  * 🔴 シードの公開ゲート（`project_visibilities.review_gate_id` の FK 先）は消さない。
  */
 async function resetGateFixtures(): Promise<void> {
+  // 🔴 T-12-10: `kind='RECHECK'` の FAIL は**公開中の行を落とす**（`F-014 AC-7`）。
+  //    次のテストの `audience` を seed の状態（`PARTNER_A1` の 1 社）に戻す（3 列そろって戻す）。
+  await admin.projectVisibility.updateMany({
+    where: { projectId: PROJECT_A_PUBLISHED },
+    data: { revokedAt: null, revokedReason: null, revokedReviewGateId: null },
+  });
+  // 🔴 上の UPDATE は `review_gates` の削除より**前**に置く（`revoked_review_gate_id` は
+  //    ON DELETE RESTRICT であり、参照を外す前に削除すると FK 違反になる）。
   await admin.reviewGate.deleteMany({ where: { targetId: PROPOSAL_A_HOST } });
   await admin.reviewGate.deleteMany({
     where: { targetId: PROJECT_A_PUBLISHED, contentHash: { not: 'seed-content-hash' } },
@@ -533,10 +551,20 @@ describe('🔴 ① 本文の指示は合否を変えない（K-3 / docs/05 §7.8
       const findings = gate?.findings as FindingRow[];
       expect(findings.map((finding) => finding.kind)).toEqual([kind]);
       // 🔴 FAIL である以上、公開範囲の行は 1 つも増えない（`F-014 AC-3`）。
-      const visibilities = await admin.projectVisibility.findMany({
-        where: { projectId: PROJECT_A_PUBLISHED, revokedAt: null },
+      //    🔴 **T-12-10**: この要求は追加が 0 件 ＝ `kind='RECHECK'` であり、FAIL は
+      //    **公開中の行を落とす**（`F-014 AC-7`）。したがって「増えない」に加えて
+      //    「生きている行が残らない」ことも真である（行そのものは消えず `revoked_at` が入る）。
+      const all = await admin.projectVisibility.findMany({
+        where: { projectId: PROJECT_A_PUBLISHED },
+        select: { revokedAt: true, revokedReason: true },
       });
-      expect(visibilities).toHaveLength(1);
+      expect(all).toHaveLength(1);
+      expect(all[0]?.revokedReason).toBe('GATE_RECHECK');
+      expect(
+        await admin.projectVisibility.count({
+          where: { projectId: PROJECT_A_PUBLISHED, revokedAt: null },
+        }),
+      ).toBe(0);
     },
   );
 

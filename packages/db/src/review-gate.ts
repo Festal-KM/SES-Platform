@@ -24,7 +24,14 @@
 // （`ai-cost-guard.ts` / `storage-usage.ts` と同じ規律。テナントキーの述語は RLS が課す）。
 
 import { Prisma } from '@prisma/client';
-import type { GateExecution, GateFinding, GateTargetType, GateVerdict, PersistedGateResult } from '@ses/domain';
+import type {
+  GateExecution,
+  GateFinding,
+  GateTargetType,
+  GateVerdict,
+  PersistedGateResult,
+  ProjectPublishRunTrigger,
+} from '@ses/domain';
 import { AI_COST_PERIOD_KIND } from './ai-cost-guard.js';
 import type { AuthenticatedTenantCtx, SystemTenantCtx } from './context.js';
 import { usagePeriodResetAt } from './usage-period.js';
@@ -68,7 +75,19 @@ export type PendingReviewGateRow = PendingReviewGate & {
   readonly targetId: string;
 };
 
-export type ReviewGateResultInput = ReviewGateKey & {
+/**
+ * 🔴 T-12-10: **この行を作った実行の契機**（`review_gates.run_trigger`。docs/05 §3.6 / §11.11
+ *    「T-12-10 の実装の決着」⑪）。`PROJECT_PUBLISH` のときだけ値を持ち、他の対象では `null`。
+ *
+ * 🔴 **省略可能にしない**（`?:` を付けない）。書き忘れは DB の CHECK
+ *    （`(target_type='PROJECT_PUBLISH') = (run_trigger IS NOT NULL)`）が INSERT で落とすが、
+ *    型の側でも「渡したかどうか」を呼び出し側に必ず書かせる（`GateInput` から写すだけである）。
+ */
+type ReviewGateRunTriggerInput = {
+  readonly runTrigger: ProjectPublishRunTrigger | null;
+};
+
+export type ReviewGateResultInput = ReviewGateKey & ReviewGateRunTriggerInput & {
   readonly piiVerdict: GateVerdict;
   readonly commerceVerdict: GateVerdict;
   readonly consistencyVerdict: GateVerdict;
@@ -83,7 +102,7 @@ export type ReviewGateResultInput = ReviewGateKey & {
   readonly executedAt: Date;
 };
 
-export type ReviewGateHoldInput = ReviewGateKey & {
+export type ReviewGateHoldInput = ReviewGateKey & ReviewGateRunTriggerInput & {
   /** 🔴 保留中でも整合層は確定している（機械的照合のみで決まる。`F-027 AC-5`）。 */
   readonly consistencyVerdict: GateVerdict;
   readonly findings: readonly GateFinding[];
@@ -326,16 +345,19 @@ export async function holdReviewGate(
       >(Prisma.sql`
         INSERT INTO review_gates
           (id, tenant_id, target_type, target_id, content_hash, execution, held_since,
-           consistency_verdict, findings, ai_warnings, ai_failed)
+           consistency_verdict, findings, ai_warnings, ai_failed, run_trigger)
         VALUES
           (${id}::uuid, ${ctx.tenantId}::uuid, ${input.targetType}, ${input.targetId}::uuid,
            ${input.contentHash}, 'HELD_AI_COST_LIMIT', ${input.heldSince}::timestamptz,
-           ${input.consistencyVerdict}, ${findings}::jsonb, '[]'::jsonb, false)
+           ${input.consistencyVerdict}, ${findings}::jsonb, '[]'::jsonb, false, ${input.runTrigger})
         ON CONFLICT (tenant_id, target_type, target_id) WHERE execution <> 'DONE'
         DO UPDATE SET
           content_hash = EXCLUDED.content_hash,
           consistency_verdict = EXCLUDED.consistency_verdict,
-          findings = EXCLUDED.findings
+          findings = EXCLUDED.findings,
+          -- 🔴 T-12-10: 保留が差し替わったら契機も差し替える（保留行は対象ごとに 1 行であり、
+          --    公開の保留中に再検査が来ることがある。行が表すのは「最後の実行」である）。
+          run_trigger = EXCLUDED.run_trigger
         RETURNING id, content_hash, held_since, consistency_verdict
       `);
       const row = rows[0];
@@ -383,7 +405,8 @@ export async function completeReviewGate(
     model_id = ${input.modelId},
     ai_usage_id = ${input.aiUsageId}::uuid,
     ai_failed = ${input.aiFailed},
-    executed_at = ${input.executedAt}::timestamptz
+    executed_at = ${input.executedAt}::timestamptz,
+    run_trigger = ${input.runTrigger}
   `;
 
   return runInTenantTransaction(
@@ -427,14 +450,14 @@ export async function completeReviewGate(
         INSERT INTO review_gates
           (id, tenant_id, target_type, target_id, content_hash, execution, held_since,
            pii_verdict, commerce_verdict, consistency_verdict, findings, ai_warnings,
-           role, prompt_version, model_id, ai_usage_id, ai_failed, executed_at)
+           role, prompt_version, model_id, ai_usage_id, ai_failed, executed_at, run_trigger)
         VALUES
           (${id}::uuid, ${ctx.tenantId}::uuid, ${input.targetType}, ${input.targetId}::uuid,
            ${input.contentHash}, 'DONE', NULL,
            ${input.piiVerdict}, ${input.commerceVerdict}, ${input.consistencyVerdict},
            ${findings}::jsonb, ${warnings}::jsonb,
            ${input.role}, ${input.promptVersion}, ${input.modelId}, ${input.aiUsageId}::uuid,
-           ${input.aiFailed}, ${input.executedAt}::timestamptz)
+           ${input.aiFailed}, ${input.executedAt}::timestamptz, ${input.runTrigger})
         RETURNING id
       `);
       const insertedRow = inserted[0];
@@ -457,6 +480,11 @@ export type ReviewGateResultRow = PersistedGateResult & {
   readonly id: string;
   readonly executedAt: Date | null;
   readonly heldSince: Date | null;
+  /**
+   * 🔴 T-12-10: 実行の契機（`PROJECT_PUBLISH` のみ。提案の行は `null`）。
+   *    `S-013` セクション 4 が 1 行ずつに添えるラベル（`公開の実行` / `公開欄の編集による再検査`）の出所。
+   */
+  readonly runTrigger: ProjectPublishRunTrigger | null;
 };
 
 /**
@@ -503,46 +531,64 @@ export async function listReviewGateResults(
 ): Promise<readonly ReviewGateResultRow[]> {
   return runInTenantTransaction(
     { tenantId: ctx.tenantId, partnerCompanyId: ctx.partnerCompanyId, actorUserId: ctx.userId },
-    async (tx) => {
-      const rows = await tx.reviewGate.findMany({
-        where: { targetType: target.targetType, targetId: target.targetId },
-        select: {
-          id: true,
-          execution: true,
-          contentHash: true,
-          piiVerdict: true,
-          commerceVerdict: true,
-          consistencyVerdict: true,
-          findings: true,
-          aiWarnings: true,
-          aiFailed: true,
-          executedAt: true,
-          heldSince: true,
-        },
-      });
-      return [...rows]
-        .sort((a, b) => {
-          const diff = reviewGateSortKey(b) - reviewGateSortKey(a);
-          if (diff !== 0) return diff;
-          if (b.id > a.id) return 1;
-          if (b.id < a.id) return -1;
-          return 0;
-        })
-        .map((row) => ({
-          id: row.id,
-          execution: row.execution as GateExecution,
-          contentHash: row.contentHash,
-          piiVerdict: row.piiVerdict as GateVerdict | null,
-          commerceVerdict: row.commerceVerdict as GateVerdict | null,
-          consistencyVerdict: row.consistencyVerdict as GateVerdict,
-          findings: fromJson(row.findings),
-          aiWarnings: fromJson(row.aiWarnings),
-          aiFailed: row.aiFailed,
-          executedAt: row.executedAt,
-          heldSince: row.heldSince,
-        }));
-    },
+    async (tx) => listReviewGateResultsIn(tx, target),
   );
+}
+
+/**
+ * 🔴 `listReviewGateResults` の本体（**すでに開いているトランザクションのクライアント**で読む）。
+ *    T-12-10（docs/05 §11.11「T-12-10 の実装の決着」⑤）。
+ *
+ * 🔴 **母集団・射影・並びの実装はここ 1 つだけである。** 案件の公開の状態（`#27` のホストの枝）は
+ *    公開範囲・公開要求と**同じトランザクション**で読む必要があるため、`ctx` からトランザクションを
+ *    開く版を呼べない。**書き写すのではなく、トランザクションの開き方だけを外に出す。**
+ * 🔴 分離キーは**呼び出し側が開いたトランザクション**が持つ（`withTenant` / `runInTenantTransaction`
+ *    が `SET LOCAL` 済み）。ここで ctx を見ない ＝ ホスト相当に固定する余地も無い。
+ */
+export async function listReviewGateResultsIn(
+  db: ReviewGateReader,
+  target: Pick<ReviewGateKey, 'targetType' | 'targetId'>,
+): Promise<readonly ReviewGateResultRow[]> {
+  const rows = await db.reviewGate.findMany({
+    where: { targetType: target.targetType, targetId: target.targetId },
+    select: {
+      id: true,
+      execution: true,
+      contentHash: true,
+      piiVerdict: true,
+      commerceVerdict: true,
+      consistencyVerdict: true,
+      findings: true,
+      aiWarnings: true,
+      aiFailed: true,
+      executedAt: true,
+      heldSince: true,
+      // 🔴 T-12-10: 実行の契機（`S-013` セクション 4 のラベル）。
+      runTrigger: true,
+    },
+  });
+  return [...rows]
+    .sort((a, b) => {
+      const diff = reviewGateSortKey(b) - reviewGateSortKey(a);
+      if (diff !== 0) return diff;
+      if (b.id > a.id) return 1;
+      if (b.id < a.id) return -1;
+      return 0;
+    })
+    .map((row) => ({
+      id: row.id,
+      execution: row.execution as GateExecution,
+      contentHash: row.contentHash,
+      piiVerdict: row.piiVerdict as GateVerdict | null,
+      commerceVerdict: row.commerceVerdict as GateVerdict | null,
+      consistencyVerdict: row.consistencyVerdict as GateVerdict,
+      findings: fromJson(row.findings),
+      aiWarnings: fromJson(row.aiWarnings),
+      aiFailed: row.aiFailed,
+      executedAt: row.executedAt,
+      heldSince: row.heldSince,
+      runTrigger: row.runTrigger as ProjectPublishRunTrigger | null,
+    }));
 }
 
 /**

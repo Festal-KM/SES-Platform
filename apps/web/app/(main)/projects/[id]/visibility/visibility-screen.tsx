@@ -38,6 +38,7 @@ import {
 } from '@ses/ui';
 // 🔴 **型だけ**を import する（`lib/projects/visibility.ts` は `@ses/db` に依存する
 //    サーバ専用モジュールである。`tests/static/client-db-boundary.test.ts`）。
+import type { ProjectGateHistoryRow } from '../../../../../lib/projects/gate-history-rows';
 import type { ProjectVisibilityChoice } from '../../../../../lib/projects/visibility';
 
 /** プレビューの定義リスト 1 行（値は**サーバ側で文言化済み**）。 */
@@ -99,6 +100,10 @@ export type ProjectVisibilityScreenMessages = {
   readonly previewWarningLead: string;
   readonly gatePendingTitle: string;
   readonly gatePendingLead: string;
+  /** 🔴 T-12-10: セクション 4 のゲート結果の履歴（`docs/04` 改訂 14 §S-013）。 */
+  readonly gateHistoryTitle: string;
+  readonly gateHistoryEmpty: string;
+  readonly gateHistoryCurrent: string;
   readonly submit: string;
   readonly submitting: string;
   readonly revokeConfirmTitle: string;
@@ -128,6 +133,13 @@ export type ProjectVisibilityScreenProps = {
    *    **拒否の本体は `#28` の `requireExecutable`** であり、これはその理由の表示である。
    */
   readonly denialMessage: string | null;
+  /**
+   * 🔴 T-12-10: ゲート結果の履歴（セクション 4。`docs/04` 改訂 14 §S-013 / `F-020 AC-7`）。
+   *    **公開の実行と公開後の再検査の両方**が、契機の 1 行つきで同じ体裁で並ぶ。
+   *    🔴 サーバコンポーネントが `readProjectPublishGateResults` で読む（**Route Handler を
+   *    新設しない**。`docs/05` §6.8）。この画面は文字列を受け取るだけである。
+   */
+  readonly gateHistory: readonly ProjectGateHistoryRow[];
   readonly messages: ProjectVisibilityScreenMessages;
 };
 
@@ -161,6 +173,7 @@ export function ProjectVisibilityScreen({
   editHref,
   partnerCompaniesHref,
   denialMessage,
+  gateHistory,
   messages,
 }: ProjectVisibilityScreenProps) {
   /**
@@ -432,7 +445,7 @@ export function ProjectVisibilityScreen({
 
         {/* --- 4. 品質ゲート --------------------------------------------------- */}
         {/* 🔴 保留を「公開しました」と書かない（`CLAUDE.md` §11.1）。 */}
-        <section className="mb-6" data-testid="project-visibility-gate">
+        <section className="mb-6" id="gate-results" data-testid="project-visibility-gate">
           <h2 className="mb-2 text-base font-bold text-slate-900">{messages.sectionGate}</h2>
           <div className="border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
             <p className="font-bold" data-testid="project-visibility-gate-title">
@@ -440,6 +453,54 @@ export function ProjectVisibilityScreen({
             </p>
             <p data-testid="project-visibility-gate-lead">{messages.gatePendingLead}</p>
           </div>
+
+          {/* 🔴 T-12-10: 実行ごとの履歴（`docs/04` 改訂 14 §S-013 セクション 4 / `F-020 AC-7`）。
+              🔴 **公開の実行によるものと、公開後の再検査によるものの両方を同じ体裁で描き、
+              契機を 1 行添える**（`公開の実行` / `公開欄の編集による再検査`）。
+              🔴 **「再検査だけをもう一度実行する」ボタンを置かない**（結果が変わらず `F-026` の
+              件数だけを消費する。`docs/05` §6.8）。保留も「修正して再実行」を促さない。 */}
+          <h3 className="mt-4 mb-2 text-sm font-bold text-slate-900">
+            {messages.gateHistoryTitle}
+          </h3>
+          {gateHistory.length === 0 ? (
+            <p className="text-sm text-slate-600" data-testid="project-visibility-gate-history-empty">
+              {messages.gateHistoryEmpty}
+            </p>
+          ) : (
+            <ol className="flex flex-col gap-3" data-testid="project-visibility-gate-history">
+              {gateHistory.map((row) => (
+                <li
+                  key={row.reviewGateId}
+                  className="border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800"
+                  data-testid={`project-visibility-gate-history-${row.reviewGateId}`}
+                >
+                  <p className="font-bold" data-testid={`project-visibility-gate-trigger-${row.reviewGateId}`}>
+                    {row.trigger}
+                    {row.occurredAt === '' ? '' : ` / ${row.occurredAt}`}
+                  </p>
+                  {row.matchesCurrentContent ? (
+                    <p className="text-xs text-slate-600">{messages.gateHistoryCurrent}</p>
+                  ) : null}
+                  {row.heldLabel === null ? null : (
+                    <p className="text-xs text-slate-600">{row.heldLabel}</p>
+                  )}
+                  <dl className="mt-1 text-xs">
+                    {row.layers.map((layer) => (
+                      <div key={layer.key} className="flex gap-2">
+                        <dt className="w-20 shrink-0 text-slate-500">{layer.label}</dt>
+                        <dd className="m-0 text-slate-900">
+                          {layer.verdict}
+                          {layer.findings.length === 0
+                            ? ''
+                            : ` — ${layer.findings.join(' / ')}`}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                </li>
+              ))}
+            </ol>
+          )}
         </section>
 
         {/* --- 5. 公開の実行 --------------------------------------------------- */}

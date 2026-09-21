@@ -54,6 +54,20 @@ import type { ProjectPublishGate, ProjectPublishGateOutcome } from './publish-ga
 export const PROJECT_VISIBILITY_AUDIT_ACTION = 'project.visibility_change';
 
 /**
+ * 🔴 T-12-10: `#28` が扱う公開要求の種類（docs/05 §11.11「T-12-10 の実装の決着」②）。
+ *    **この経路は `RECHECK` の行に一切触らない。**
+ */
+const PROJECT_PUBLISH_REQUEST_KIND = 'PUBLISH' as const;
+
+/**
+ * 🔴 T-12-10: 人の操作による解除の `revoked_reason`（docs/05 §3.5）。
+ *    **必ず書く** —— `revoked_at` だけを入れる書き方は CHECK が拒む。
+ *    これが無いと `S-010` / `S-011` が「公開先 0 社」を**設定し忘れ**と**検査で落ちた**に
+ *    読み分けられない（`F-014 AC-9`）。
+ */
+const MANUAL_REVOKE_REASON = 'MANUAL' as const;
+
+/**
  * `#28` の応答の `verdict`（docs/05 §6.4 #28）。
  *
  * 🔴 **`PASS` / `FAIL` を持たない。** ゲートは非同期であり（docs/05 §12.1 / §11.1）、
@@ -302,7 +316,11 @@ export async function updateProjectVisibility(
     //    🔴 条件を付けない（「追加が無いときだけ取り下げる」にすると、競合窓が
     //    「追加がある要求」でだけ再び開く）。追加がある枝では、このあと `deps.gate` が
     //    新しい要求を置き直すので不変条件は保たれる ＝ 要求は常に「最後の要求」を表す。
-    await withdrawProjectPublishRequest(db, projectId);
+    // 🔴 **T-12-10: 触るのは `kind='PUBLISH'` の行だけである。** `RECHECK` の行まで消すと、
+    //    公開先を 1 社解除しただけで「編集された内容の再検査」が消え、**残った公開先に
+    //    未検査の内容が見え続ける**（T-12-10 が塞ぐ穴が `#28` 経由で開く。docs/05 §11.11
+    //    「T-12-10 の実装の決着」②）。
+    await withdrawProjectPublishRequest(db, projectId, PROJECT_PUBLISH_REQUEST_KIND);
 
     const currentRows = await db.projectVisibility.findMany({
       where: { projectId, revokedAt: null },
@@ -318,14 +336,22 @@ export async function updateProjectVisibility(
       //    （その相手には公開されていない）であり、失敗にする理由が無い。
       await db.projectVisibility.updateMany({
         where: { projectId, partnerCompanyId: { in: [...revoked] }, revokedAt: null },
-        data: { revokedAt: meta.now },
+        // 🔴 T-12-10: 原因を必ず書く（`revoked_at` 単独は CHECK が拒む）。
+        //    `revoked_review_gate_id` は書かない —— 人の解除に「指摘」は無い。
+        data: { revokedAt: meta.now, revokedReason: MANUAL_REVOKE_REASON },
       });
     }
 
     // 🔴 追加は 1 件も行にならない（ゲート通過後にワーカーが作る。`publish-gate.ts`）。
     //    追加があるときだけ、上で消費した公開要求を**新しい内容で置き直す**。
     const gate: ProjectPublishGateOutcome | null =
-      added.length === 0 ? null : await deps.gate(db, ctx, { projectId, partnerCompanyIds: added });
+      added.length === 0
+        ? null
+        : await deps.gate(db, ctx, {
+            projectId,
+            kind: PROJECT_PUBLISH_REQUEST_KIND,
+            partnerCompanyIds: added,
+          });
     // 🔴 `verdict` はゲートを呼んだかどうかから導く（`added.length` を 2 度読まない ——
     //    2 度読むと、ゲートを呼ぶ条件と応答の意味が別々に動きうる）。
     const verdict: ProjectVisibilityVerdict =

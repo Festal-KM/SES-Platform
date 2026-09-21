@@ -68,7 +68,11 @@ export default async function ProjectDetailPage({
   const { id } = await params;
   const meta = await readRequestMeta();
 
-  const view = await readProjectDetail(outcome.ctx, id, { ipAddress: meta.ipAddress }).catch(
+  // 🔴 T-12-10: 公開の状態（保留の再開時刻）のために現在時刻を渡す（既定値を持たない）。
+  const view = await readProjectDetail(outcome.ctx, id, {
+    ipAddress: meta.ipAddress,
+    now: new Date(),
+  }).catch(
     (error: unknown) => {
       // 🔴 判定の順序が重要: `ProjectNotSharedError` は `NotFoundError` の派生なので先に見る。
       if (error instanceof ProjectNotSharedError) return null;

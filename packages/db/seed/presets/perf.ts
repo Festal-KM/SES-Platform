@@ -1105,6 +1105,8 @@ async function seedTenant(db: PrismaClient, now: Date, plan: PerfTenantPlan): Pr
       audiencePartnerCompanyIds: project.audience.map((partnerIndex) => partnerOf(partnerIndex).partnerCompanyId),
       partnerCompanies,
     }),
+    // 🔴 T-12-10: 公開の実行（§3.6 の CHECK）。
+    runTrigger: 'PUBLISH',
     ...PASS_GATE,
     executedAt: project.publishedAt as Date,
   }));

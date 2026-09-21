@@ -109,23 +109,31 @@ async function runGate(options: {
   readonly publishTo?: readonly string[];
 }): Promise<GateRunOutcome> {
   if (options.targetType === 'PROJECT_PUBLISH') {
+    // 🔴 T-12-10: 要求の種類は「これから公開する相手がいるか」で決まる（§3.5 の CHECK が
+    //    `(kind='RECHECK') = (cardinality(partner_company_ids) = 0)` を縛る）。
+    //    **追加が 0 件の `PUBLISH` は作れない**（追加が無い要求は `#28` が取り下げる）ので、
+    //    公開先を渡さないケース（= 層の判定だけを見るケース）は `RECHECK` である。
+    const publishTo = [...(options.publishTo ?? [])];
+    const kind = publishTo.length === 0 ? 'RECHECK' : 'PUBLISH';
     await admin.projectPublishRequest.upsert({
       where: {
-        tenantId_projectId: { tenantId: options.tenantId ?? TENANT_A, projectId: options.targetId },
+        tenantId_projectId_kind: {
+          tenantId: options.tenantId ?? TENANT_A,
+          projectId: options.targetId,
+          kind,
+        },
       },
       create: {
         id: randomUUID(),
         tenantId: options.tenantId ?? TENANT_A,
         projectId: options.targetId,
-        partnerCompanyIds: [...(options.publishTo ?? [])],
+        kind,
+        partnerCompanyIds: publishTo,
         contentHash: options.contentHash,
         requestedAt: NOW,
         requestedBy: USER_A_HOST,
       },
-      update: {
-        partnerCompanyIds: [...(options.publishTo ?? [])],
-        contentHash: options.contentHash,
-      },
+      update: { partnerCompanyIds: publishTo, contentHash: options.contentHash },
     });
   }
   const handler = createGateRunHandler({
@@ -205,6 +213,14 @@ beforeAll(async () => {
  * 🔴 シードの公開ゲート（`project_visibilities.review_gate_id` の FK 先）は消さない。
  */
 async function resetGateFixtures(): Promise<void> {
+  // 🔴 T-12-10: `kind='RECHECK'` の FAIL は**公開中の行を落とす**（`F-014 AC-7`）。次のテストの
+  //    `audience` を seed の状態（`PARTNER_A1` の 1 社）に戻す（3 列そろって戻す。§3.5 の CHECK）。
+  await admin.projectVisibility.updateMany({
+    where: { projectId: PROJECT_A_PUBLISHED },
+    data: { revokedAt: null, revokedReason: null, revokedReviewGateId: null },
+  });
+  // 🔴 上の UPDATE は `review_gates` の削除より**前**に置く（`revoked_review_gate_id` は
+  //    ON DELETE RESTRICT であり、参照を外す前に削除すると FK 違反になる）。
   await admin.reviewGate.deleteMany({
     where: { targetId: { in: [PROPOSAL_A_HOST, PROPOSAL_A_P1] } },
   });

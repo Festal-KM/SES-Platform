@@ -24,6 +24,7 @@
 //    §17.2 #9（引数型に AI 由来の型・自由文が現れない）の検査が実質的に成立しなくなる。
 
 import type { ConsistencyInput, ConsistencySubject } from './consistency.js';
+import type { ProjectPublishRunTrigger } from './project-publish.js';
 import type { GateAudienceKind, GateFindingField } from './types.js';
 
 /**
@@ -122,6 +123,15 @@ export type ProjectPublishGateInput = GateInputBase<
   'project_name' | 'public_summary' | 'requirement'
 > & {
   readonly targetType: 'PROJECT_PUBLISH';
+  /**
+   * 🔴 T-12-10: **この実行の契機**（消費する公開要求の `kind`。docs/05 §11.11「T-12-10 の実装の決着」⑪）。
+   *    `holdReviewGate` / `completeReviewGate` がそのまま `review_gates.run_trigger` に書く ——
+   *    **書き忘れは §3.6 の CHECK が INSERT で落とす**（実行時ガードではなく DB 制約で担保する）。
+   * 🔴 **検査の内容を 1 ビットも変えない。** 契機は「PASS / FAIL のときに何を確定させるか」を
+   *    決める値であり（`PUBLISH` = 追加分を公開 / `RECHECK` = 公開中の行を落とす）、
+   *    3 層の判定そのものには 1 つも影響しない（ハッシュの材料にも入らない）。
+   */
+  readonly runTrigger: ProjectPublishRunTrigger;
   readonly consistency: SubjectlessConsistencyInput;
 };
 

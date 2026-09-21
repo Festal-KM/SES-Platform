@@ -50,7 +50,10 @@ import {
   MATCH_WEIGHT_FACTORS,
   ORDER_PAYMENT_STATES,
   PLATFORM_ROLES,
+  PROJECT_PUBLISH_REQUEST_KINDS,
+  PROJECT_PUBLISH_RUN_TRIGGERS,
   PROJECT_STATUSES,
+  PROJECT_VISIBILITY_REVOKE_REASONS,
   PROPOSAL_EVENT_KINDS,
   REMOTE_MODES,
   REQUIREMENT_KINDS,
@@ -747,6 +750,32 @@ describe('CHECK 制約と TS 単一出所の drift 検査（docs/05 §3.1「列�
     it('tenant_match_weights_factor_check ⇔ packages/db MATCH_WEIGHT_FACTORS（[Issue #3]）', () => {
       const values = extractCheckInValues(migrationSql, 'tenant_match_weights_factor_check');
       expectSameValueSet(values, MATCH_WEIGHT_FACTORS);
+    });
+  });
+
+  // 🔴 T-12-10（docs/05 §3.5 / §3.6 / §11.11「T-12-10 の実装の決着」⑫。migration 20261001000000）:
+  //    公開後の再検査と自動解除で足した 3 つの値集合。**宣言の出所は `packages/domain`** であり、
+  //    `packages/db` は re-export である（`GATE_TARGET_TYPES` と同じ整理）。
+  describe('T-12-10: 公開後の再検査と自動解除の CHECK', () => {
+    it('project_visibilities_revoked_reason_check ⇔ packages/db PROJECT_VISIBILITY_REVOKE_REASONS', () => {
+      const values = extractCheckInValues(migrationSql, 'project_visibilities_revoked_reason_check');
+      expectSameValueSet(values, PROJECT_VISIBILITY_REVOKE_REASONS);
+    });
+
+    it('project_publish_requests_kind_check ⇔ packages/db PROJECT_PUBLISH_REQUEST_KINDS', () => {
+      const values = extractCheckInValues(migrationSql, 'project_publish_requests_kind_check');
+      expectSameValueSet(values, PROJECT_PUBLISH_REQUEST_KINDS);
+    });
+
+    it('review_gates_run_trigger_check ⇔ packages/db PROJECT_PUBLISH_RUN_TRIGGERS', () => {
+      const values = extractCheckInValues(migrationSql, 'review_gates_run_trigger_check');
+      expectSameValueSet(values, PROJECT_PUBLISH_RUN_TRIGGERS);
+    });
+
+    it('🔴 対照: 解除の原因に GATE_RECHECK があり、人の解除（MANUAL）と区別できる（`F-014 AC-11`）', () => {
+      const values = extractCheckInValues(migrationSql, 'project_visibilities_revoked_reason_check');
+      expect(values).toContain('GATE_RECHECK');
+      expect(values).toContain('MANUAL');
     });
   });
 });

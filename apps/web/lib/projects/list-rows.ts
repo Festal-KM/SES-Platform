@@ -8,6 +8,7 @@
 //    ここは **I/O を持たない純粋関数だけ**で、`@ses/db` にも Prisma にも触れない。
 // 🔴 文言は `packages/i18n` が唯一の出所（`CLAUDE.md` §3.5）。本ファイルは**日本語の語を書かない**。
 import { PAGE_SIZE_DEFAULT } from '@ses/config';
+import type { ProjectPublishListStatus } from '@ses/domain';
 import { t } from '@ses/i18n';
 import { formatThousands } from '../format/number';
 import { PREFECTURE_MESSAGE_KEYS } from '../format/prefectures';
@@ -85,12 +86,22 @@ export function formatProjectLocation(
 }
 
 /**
- * 🔴 公開先の設定状況（`docs/04` §S-010「ホストのみ 9 列目に `未設定` / `N 社に公開中`」）。
+ * 🔴 公開先の設定状況（`docs/04` §S-010「ホストのみ 9 列目」。**T-12-10 で 3 値になった**）。
  *
  * 🔴 **0 件を「0 社に公開中」と書かない。** 既定は誰にも公開されない（`F-014 AC-2`）ので、
  *    0 は「設定を忘れている」ことを指す状態であり、件数ではなく**状態の語**で出す。
+ * 🔴 **T-12-10: 3 値目（`AUTO_REVOKED` = `公開を解除（検査）`）を足した。** 再検査の FAIL で
+ *    自動解除された案件も公開先は 0 社になるため、2 値のままだと `未設定`（一度も公開していない）と
+ *    同じ表示になる —— **同じ 0 社を一覧と詳細が別の言葉で説明すると、営業は「設定し忘れた」と
+ *    読んで原因の欄（`S-011` の帯）に辿り着けない**（`F-014 AC-9`）。
+ * 🔴 **理由・原因の欄・指摘は一覧に出さない**（列は 1 語である。`docs/04` §S-010 / §7.1）。
+ * 🔴 **保留は区別しない**（公開は維持されているので `N 社に公開中` のまま）。
  */
-export function formatVisibilityStatus(visibleToCount: number): string {
+export function formatVisibilityStatus(
+  visibleToCount: number,
+  publishStatus: ProjectPublishListStatus,
+): string {
+  if (publishStatus === 'AUTO_REVOKED') return t('projects.list.visibility.autoRevoked');
   if (visibleToCount === 0) return t('projects.list.visibility.unset');
   return `${formatThousands(visibleToCount)} ${t('projects.list.visibility.publishedTo')}`;
 }
@@ -110,7 +121,10 @@ export function projectListRow(view: ProjectView): ProjectListRowView {
     headcount: `${formatThousands(view.headcount)} ${t('projects.headcount.unit')}`,
     updatedOn: view.updatedOn,
     // 🔴 判別子で絞り込んだ枝でしか `visibleToCount` に到達できない（型で保証されている）。
-    visibility: view.audience === 'HOST' ? formatVisibilityStatus(view.visibleToCount) : null,
+    visibility:
+      view.audience === 'HOST'
+        ? formatVisibilityStatus(view.visibleToCount, view.publishStatus)
+        : null,
   };
 }
 

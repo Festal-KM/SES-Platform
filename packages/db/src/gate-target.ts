@@ -418,8 +418,9 @@ async function loadProjectPublishGateInput(
       if (project === null) return { kind: 'NOT_FOUND' };
 
       // 🔴 同じトランザクションで読む（検査した公開先と、確定する公開先をずらさない）。
-      const pending = await readProjectPublishRequest(tx, project.id);
-      if (pending === null || pending.contentHash !== contentHash) return { kind: 'NOT_FOUND' };
+      // 🔴 T-12-10: 案件ごとに最大 2 行（`PUBLISH` / `RECHECK`）あるので `contentHash` で引く。
+      const pending = await readProjectPublishRequest(tx, project.id, contentHash);
+      if (pending === null) return { kind: 'NOT_FOUND' };
 
       const visibilities = await tx.projectVisibility.findMany({
         where: { projectId: project.id, revokedAt: null },
@@ -444,6 +445,10 @@ async function loadProjectPublishGateInput(
         targetType: 'PROJECT_PUBLISH',
         targetId: project.id,
         contentHash,
+        // 🔴 T-12-10: この実行の契機（消費する公開要求の `kind`）。`holdReviewGate` /
+        //    `completeReviewGate` がそのまま `review_gates.run_trigger` に書く（docs/05 §11.11
+        //    「T-12-10 の実装の決着」⑪）。**検査の内容は 1 ビットも変わらない。**
+        runTrigger: pending.kind,
         audience: { kind: 'PARTNER', partnerCompanyIds: audienceIds },
         sections: [
           { field: 'project_name', text: project.name },

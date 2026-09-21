@@ -9,6 +9,7 @@
 //    `HELD_AI_COST_LIMIT`（上限で呼べていない）を `RUNNING` に潰すと利用者は永遠に待ち、
 //    `DONE` に潰すと未判定が確定として扱われる。
 
+import type { ProjectPublishRunTrigger } from './project-publish.js';
 import type { GateExecution, GateFinding, GateVerdict } from './types.js';
 
 /**
@@ -40,8 +41,15 @@ export type GateHeldView = {
   readonly resetAt: string;
   /** 🔴 上限の引き上げは運営者だけができる（`F-057`）。テナント側の導線を作らない。 */
   readonly limitRaise: 'PLATFORM_OPERATOR';
-  /** 再開の経路。🔴 自動（`gate.hold-release`）と手動（#39）の**両方**があることを示す。 */
-  readonly rerun: { readonly auto: true; readonly manual: string };
+  /**
+   * 再開の経路。🔴 自動（`gate.hold-release`）は**常にある**。
+   *
+   * 🔴 **T-12-10: `manual` は `null` を取る。** 手動の再実行の入口があるのは提案（#39）だけであり、
+   *    **案件の公開には無い**（docs/05 §6.8。「再検査だけをもう一度実行する」エンドポイントを
+   *    置かない —— 元データが変わっていない再実行は結果が変わらず `F-026` の件数だけを消費する）。
+   *    ここに提案の入口を書き写すと、案件の画面・応答に**存在しない操作**を広告することになる。
+   */
+  readonly rerun: { readonly auto: true; readonly manual: string | null };
 };
 
 export type GateResultView = {
@@ -83,6 +91,14 @@ export type GateResultHistoryItem = {
   readonly aiWarnings: GateResultView['aiWarnings'];
   readonly aiFailed: boolean;
   readonly contentHash: string;
+  /**
+   * 🔴 T-12-10: **この実行の契機**（`review_gates.run_trigger`）。`S-013` セクション 4 が
+   *    1 行ずつに添えるラベル（`公開の実行` / `公開欄の編集による再検査`）の出所であり、
+   *    **提案（`S-023`）の行は常に `null`** である（提案に「公開欄の編集」は無い）。
+   *    契機が読めないと、`S-011` の帯から辿った利用者が「これは公開しようとしたときの
+   *    古い結果では」と迷う（docs/04 §S-013）。
+   */
+  readonly runTrigger: ProjectPublishRunTrigger | null;
   /** `execution='HELD_AI_COST_LIMIT'` のときだけ（#40 と同じ `GateHeldView`）。 */
   readonly held?: GateHeldView;
 };
