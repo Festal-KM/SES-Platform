@@ -787,23 +787,41 @@ model ProjectVisibility {                                        // 🔴 越境�
   publishedAt      DateTime @db.Timestamptz(3)
   publishedBy      String   @db.Uuid
   revokedAt        DateTime? @db.Timestamptz(3)
+  // 🔴 T-12-10: 解除の原因。'MANUAL'（人が #28 で解除した）| 'GATE_RECHECK'（公開後の再検査が FAIL したので
+  //    system が解除した。F-014 AC-7 / AC-11）。**「公開先が 0 社」という事実だけから画面に推測させない**
+  //    ための列である（未公開 = 設定し忘れ と 自動解除 を区別する。docs/04 §S-010 / §S-011）。
+  revokedReason    String?                                       // ProjectVisibilityRevokeReason（CHECK）
+  revokedReviewGateId String? @db.Uuid                           // 🔴 'GATE_RECHECK' のとき NOT NULL（指摘への導線）
   reviewGateId     String   @db.Uuid                             // 公開時のゲート結果（F-014 処理②）
   @@unique([tenantId, projectId, partnerCompanyId])
   @@index([tenantId, partnerCompanyId, revokedAt])               // RLS ポリシーの EXISTS が使う
+  @@index([tenantId, projectId, revokedAt(sort: Desc)])          // 🔴 T-12-10: 「最後に解除された行」を引く
   @@map("project_visibilities")
 }
+// 🔴 CHECK ( (revoked_at IS NULL) = (revoked_reason IS NULL) )                      … T-12-10
+// 🔴 CHECK ( revoked_reason IS NULL OR revoked_reason IN ('MANUAL','GATE_RECHECK') ) … T-12-10
+// 🔴 CHECK ( revoked_reason IS DISTINCT FROM 'GATE_RECHECK' OR revoked_review_gate_id IS NOT NULL ) … T-12-10
+// 🔴 migration は既存の解除済みの行を 'MANUAL' で backfill してから CHECK を張る（自動解除は T-12-10 以前に存在しない）。
+// 🔴 再公開（settleProjectPublish の upsert）は revoked_at / revoked_reason / revoked_review_gate_id を**同時に NULL へ戻す**。
 // 🔴 T-07-09: ゲート PASS 待ちの公開要求（§11.11 ①）。RLS は C2 HOST_ONLY（オーナー列を持たない）
 model ProjectPublishRequest {
   id                String   @id @default(uuid(7)) @db.Uuid
   tenantId          String   @db.Uuid
   projectId         String   @db.Uuid
+  // 🔴 T-12-10: 要求の種類。'PUBLISH'（#28 = 相手を増やす）| 'RECHECK'（#26 = 公開中の内容を検査し直す）。
+  //    FAIL の意味が違う（PUBLISH = 増やさない / RECHECK = 公開中の行を落とす）ので、同じ行に混ぜない。
+  kind              String   @default("PUBLISH")                 // ProjectPublishRequestKind（CHECK）
   partnerCompanyIds String[] @db.Uuid                            // 🔴 これから公開する相手だけ（公開済みは含まない）
   contentHash       String                                       // ReviewGate.contentHash と同じ値。消費は (project_id, content_hash) の CAS
   requestedAt       DateTime @db.Timestamptz(3)
   requestedBy       String   @db.Uuid                            // 🔴 ProjectVisibility.published_by になる（実施者）
-  @@unique([tenantId, projectId])                                // 🔴 案件ごとに 1 行（差し替えは UPDATE。積み上げない）
+  @@unique([tenantId, projectId, kind])                          // 🔴 T-12-10 で改訂（旧 [tenantId, projectId]）。種類ごとに 1 行
   @@map("project_publish_requests")
 }
+// 🔴 CHECK ( kind IN ('PUBLISH','RECHECK') )                                         … T-12-10
+// 🔴 CHECK ( (kind = 'RECHECK') = (cardinality(partner_company_ids) = 0) )          … T-12-10
+//    PUBLISH の行は必ず 1 件以上の追加先を持ち（追加が無い要求は #28 が取り下げる）、RECHECK の行は必ず 0 件である。
+//    **「空配列なら再検査」という暗黙の規約にしない** —— 種類を列として持ち、対応を DB の CHECK で縛る。
 model EngineerShare {                                            // 🔴 越境経路 4 の唯一の根拠。既定オフ
   id                String   @id @default(uuid(7)) @db.Uuid
   tenantId          String   @db.Uuid
@@ -982,12 +1000,22 @@ model ReviewGate {
   aiUsageId        String?  @db.Uuid
   aiFailed         Boolean  @default(false)                      // true なら PII/商流は FAIL 扱い（LLM 失敗。HELD とは別物）
   executedAt       DateTime? @db.Timestamptz(3)                  // DONE のとき NOT NULL
+  // 🔴 T-12-10: **この行を作った実行の契機**。'PUBLISH'（公開の実行）| 'RECHECK'（公開欄の編集による再検査）。
+  //    `PROJECT_PUBLISH` のときだけ値を持ち、他の対象種別では NULL（`docs/04` §S-013 セクション 4 が
+  //    結果に 1 行添えるラベルの出所）。⚠️ **キャッシュ再利用（§9.3 の `ALREADY_DONE`）では行が増えないので
+  //    契機も増えない** —— 同じ内容なら同じ結果（`F-020 AC-3`）であり、行の契機は「この結果を最初に生んだ実行」を指す。
+  runTrigger       String?                                       // ProjectPublishRunTrigger（CHECK）
   @@index([tenantId, targetType, targetId, executedAt])
   @@index([tenantId, execution, executedAt])                      // ゲート FAIL 率の集計（A-005。🔴 execution='DONE' のみを分母にする）
   @@map("review_gates")
 }
 // 🔴 CHECK ( (execution = 'DONE') = (pii_verdict IS NOT NULL AND commerce_verdict IS NOT NULL AND executed_at IS NOT NULL) )
 // 🔴 CHECK ( (execution = 'HELD_AI_COST_LIMIT') = (held_since IS NOT NULL) )
+// 🔴 CHECK ( (target_type = 'PROJECT_PUBLISH') = (run_trigger IS NOT NULL) )        … T-12-10
+// 🔴 CHECK ( run_trigger IS NULL OR run_trigger IN ('PUBLISH','RECHECK') )          … T-12-10
+//    migration は既存の PROJECT_PUBLISH 行を 'PUBLISH' で backfill してから CHECK を張る（RECHECK は T-12-10 以前に存在しない）。
+//    🔴 書き忘れは INSERT で落ちる —— `holdReviewGate` / `completeReviewGate` が契機を運ばなければ、
+//    案件の公開のゲートは 1 行も保存できない（実行時ガードではなく DB 制約で担保する）。
 // 🔴 部分 UNIQUE: ON review_gates(tenant_id, target_type, target_id) WHERE execution <> 'DONE'  … 保留は対象ごとに 1 行。
 //    再実行（§9.3 gate.hold-release）は同じ行を DONE に完了させる（新しい行を足さない）。承認 CAS / 送信事前判定は
 //    g.execution='DONE' を条件に含める（§11.5）ため、HELD 行が PASS として読まれる経路は無い。
@@ -2733,9 +2761,9 @@ requireEsignConnection(ctx);                           // 🔴 §8.4。未接続
 | 22 | `POST /api/skill-sheets/{id}/extract` | `F-032` / Phase 2 | — | `{ jobId }` | `SALES` 以上 |
 | 23 | `GET /api/skills` / `GET /api/skill-aliases` | `F-010` / `S-009` | `?q=`（`/skills`）/ `?q=&status=`（`/skill-aliases`。🔴 `status` は `skill_aliases` 側の値集合であり、`skills` に状態は無い。T-05-03） | `{ items }` | 全ロール |
 | 24 | `POST /api/skill-aliases/{id}/decide` | `F-010 AC-1` | `{ decision:'ACCEPT'\|'REJECT', skillId? }` | `204` | **`OWNER`** / `ADMIN` / `SALES`（🔴 **`OWNER` は 2026-09-06 に追加。暫定**。[Issue #36](https://github.com/Festal-KM/SES-Platform/issues/36) 既定 A。`docs/02` `F-010 AC-1` / `docs/04` §S-009 権限差分と同時に更新した）。🔴 パートナーは起票のみ |
-| 25 | `GET /api/projects` | `F-015` / `S-010` | `?q=&status=&startFrom=&prefecture=&cursor=` | `{ items: (HostProjectView\|PartnerProjectView)[], total }` | 全ロール |
-| 26 | `POST /api/projects` / `PATCH /api/projects/{id}` | `F-013` / `S-012` | `ProjectInput` | `{ id }` | `OWNER`/`ADMIN`/`SALES` |
-| 27 | `GET /api/projects/{id}` | `F-013` / `S-011` | — | `HostProjectDetailView` \| `PartnerProjectDetailView`（🔴 判別子は `audience`） | 全ロール。🔴 公開範囲外のパートナーには **404**（403 と区別しない）。🔴 **公開が解除された相手だけ** `PROJECT_NOT_SHARED`（**HTTP は 404 のまま**。`docs/04` §10.1 の `S-011`「404 にしない」＝ 汎用の 404 **画面**を出さない、の意。下記の決着） |
+| 25 | `GET /api/projects` | `F-015` / `S-010` | `?q=&status=&startFrom=&prefecture=&cursor=` | `{ items: (HostProjectView\|PartnerProjectView)[], total }`（🔴 **T-12-10: `HostProjectView` に `publishStatus`〔3 値〕を追加**。`PartnerProjectView` は `publishStatus?: never`。§11.11 の「T-12-10 の実装の決着」⑥） | 全ロール |
+| 26 | `POST /api/projects` / `PATCH /api/projects/{id}` | `F-013` / `S-012` / **`F-014 AC-6`** | `ProjectInput` | `{ id, recheck: ProjectRecheckOutcome }`（🔴 **T-12-10 で `recheck` を追加** —— 「再検査を積んだか / 積まなかったならなぜか」。`S-012` が「保存しました」と「保存しました。公開中の内容を再検査しています」を書き分ける唯一の材料。§11.11「T-12-10 の実装の決着」③） | `OWNER`/`ADMIN`/`SALES` |
+| 27 | `GET /api/projects/{id}` | `F-013` / `S-011` | — | `HostProjectDetailView` \| `PartnerProjectDetailView`（🔴 判別子は `audience`。🔴 **T-12-10: ホスト側に `publishState`〔4 値の判別可能な合併〕を追加**。`PartnerProjectDetailView` は `publishState?: never`。§11.11「T-12-10 の実装の決着」④⑤） | 全ロール。🔴 公開範囲外のパートナーには **404**（403 と区別しない）。🔴 **公開が解除された相手だけ** `PROJECT_NOT_SHARED`（**HTTP は 404 のまま**。`docs/04` §10.1 の `S-011`「404 にしない」＝ 汎用の 404 **画面**を出さない、の意。下記の決着）。🔴 **自動解除でも取引先向けの応答は 1 バイトも変わらない**（`F-014 AC-10`。§11.11「T-12-10 の実装の決着」⑦） |
 | 28 | `PUT /api/projects/{id}/visibility` | `F-014` / `S-013` | `{ partnerCompanyIds: string[] }`（🔴 **`publicSummary` は受け取らない** —— 理由は下記「#28 の実装の決着」。T-06-06） | `{ reviewGateId, verdict }`（🔴 `verdict` は `'PENDING_GATE' \| 'NO_PUBLISH_REQUESTED'`。**合否ではない**。`reviewGateId` は `PUT` 時点で常に `null`） | `OWNER`/`ADMIN`/`SALES`。🔴 **ゲート FAIL なら公開しない**（`F-014 AC-3`） |
 | 29 | `GET /api/engineer-shares` / `PUT /api/engineers/{id}/share` | `F-016` / `S-015` | GET: `?q=&availableBy=&shared=&cursor=&limit=`（🔴 **改訂あり（T-11-11。2026-09-17）→ 下記「#29 の改訂」**。T-08-02 時点は query なし・先頭 200 件） / PUT: `{ shared: boolean }` | GET: `{ items, nextCursor }`（🔴 **`total` を返さない**） / PUT: `{ engineerId, shared, sharedOn, previewedFields }` | 🔴 **`PARTNER_ADMIN` / `PARTNER_SALES` のみ**。ホストは 403 |
 
@@ -2955,6 +2983,7 @@ export type CareerRowView = CareerRowInput & {
   - **是正**: 共有したい定数は「サーバでもクライアントでもない第 3 のモジュール」に置く（**`apps/web/lib/projects/created-href.ts`**）。条件は 3 つ: ①`'use client'` を宣言しない ②`@ses/db` などの実行時依存を持たない（`'use client'` 側からも import するため。`tests/static/client-db-boundary.test.ts`）③🔴 **`app/**` ではなく `lib/**` に置く** —— `vitest.config.ts` は `app/**` から `*.render.test.tsx` しか拾わないため、`_form/` に置くと**値を固定するテストが 1 度も走らない**（Iteration 2 の初稿で実際に空振りした）。`form-props.ts` は `project-form.tsx` から**型しか import しない**状態に戻した。担保は `apps/web/lib/projects/created-href.test.ts` と上記 3 条件である。**存在しない画面へのリンクを置かない**（`S-003` の `S-012` 導線を T-05-01 で保留したのと同じ判断）。同じ理由で `S-013`（公開範囲の設定）への導線もまだ置かず、「**保存しただけでは公開されない**」という事実だけを画面に出す。
 - ✅ **`S-003` の初回空の導線が 2 本そろった**（`docs/04` §S-003「`S-012` / `S-007` への導線 2 本」。T-03-06 の追跡依頼の残り）。🔴 **2 つのフラグ（`canRegisterProject` / `canRegisterEngineer`）を 1 つに畳まない** —— 案件の登録はホストの 3 ロールのみ、人材の登録はパートナーロールも含む（`docs/04` §S-012 / §S-007）。畳むとどちらかの権限差分が実際とずれる。
 - ⚠️ **`decimalToNumber` / `toIsoDay` を `apps/web/lib/engineers/service.ts` から `apps/web/lib/format/db-values.ts` へ移した。** 案件も同じ変換を要し、「エンジニアのサービスから案件のサービスが import する」形にすると機能モジュール間に意味の無い依存が生まれるためである（re-export も置かない —— 入口が 2 つあると片方だけが残る）。**変換規則は 1 つしか無いので置き場所も 1 つ**にする（2 本になると単価と日付の見え方が画面ごとにずれる）。
+- 🔴 **T-12-10（2026-09-21）で `updateProject` が再検査の契機になった**（`F-014 AC-6`。[Issue #42](https://github.com/Festal-KM/SES-Platform/issues/42) = 回答②）。**公開中の案件で公開欄 3 欄（`name` / `publicSummary` / `project_requirements.free_text`）の値が実際に変わった保存**は、コミット後に `gate.run{ PROJECT_PUBLISH }` を積み、応答に **`recheck: ProjectRecheckOutcome`** を返す。判定・順序・走らない条件・enqueue 失敗時の復帰は **§11.11「T-12-10 の実装の決着」①③** を正とする。🔴 **`POST`（新規作成）は常に `{ queued:false, reason:'NOT_PUBLISHED' }`**（作成時に公開範囲の行を 1 件も作らないため。上記）。
 
 🔴 **#27 の実装の決着（T-06-02。`F-013 AC-2` / `AC-3` / `F-014 AC-4`）**:
 
@@ -3016,6 +3045,7 @@ export type CareerRowView = CareerRowInput & {
 - 🔴 **解除しても `Proposal` は残る**（`F-014` 処理④）。担保は「行を消さない（`revoked_at` を入れるだけ）」ことに加えて、**`proposals` の RLS が C5 PARTY であり C4（案件の公開範囲）に依存しない**ことである —— 公開をやめた後も、**作成した会社は自社の提案を読み続けられる**（案件そのものは C4 で 1 行も見えなくなる）。この非対称を結合テストで固定した。
 - 🔴 **解除した相手を再び選んでも行は復活しない。** 差分は「生きている行」の集合に対して取るので、再公開は `added` に入り**ゲートを通り直す**（`F-014 AC-3`）。🔴 ~~**SP-07 がゲート通過後に行を作るときは**~~ → ✅ **T-07-09 で実装した**（`settleProjectPublish`。`ON CONFLICT … DO UPDATE` で `revoked_at` を戻し、`published_at` / `published_by` / `review_gate_id` を新しい公開のもので上書きする。§11.11 ④）。⚠️ **同じ内容の再公開はゲート結果のキャッシュを引く**（`#28` はそれを理由に断らない。理由は §11.11 ③）。
 - ⚠️ **`project_visibilities` に「誰が解除したか」の列を足していない**（`published_by` の対になる `revoked_by` を持たない）。解除の実施者は `AuditLog`（`project.visibility_change` の `actor_id`）にあり、`S-013` は**生きている公開先しか表示しない**ため画面にも要らない。列を足すのは §3.5 のスキーマ改訂であり、必要になった時点で行う。
+  - 🔴 **その時点が来た（T-12-10。2026-09-21）。** ただし足したのは `revoked_by` ではなく **`revoked_reason`（`MANUAL` / `GATE_RECHECK`）と `revoked_review_gate_id`** である（§3.5）。要るのは「**誰が**」ではなく「**人の解除か、再検査による自動解除か**」で、それが無いと `S-010` / `S-011` が「公開先 0 社」を**設定し忘れ**と**検査で落ちた**に読み分けられない（`F-014 AC-9` / `docs/04` §S-010 の 3 値列）。🔴 **`#28` の解除は `revoked_reason='MANUAL'` を必ず書く**（`revoked_at` だけを入れる書き方は §3.5 の CHECK が拒む）。設計は §11.11「T-12-10 の実装の決着」。
 
 🔴 **§4.8「見えない ＝ 存在しない」を SP-06 の全ルート（#15 / #17 / #25〜#28）へ適用した結果（T-06-09。`F-004 AC-4`）**:
 
@@ -3130,7 +3160,7 @@ export type AuditLogListItem = {
 
 | action | キー（種類） | 値の出所と注記 |
 |---|---|---|
-| `project.visibility_change` | `before → after`（REF_LIST）/ `requested` `pending` `revoked`（REF_LIST）/ 🔴 **`published` `blocked`（REF_LIST）** / `verdict` `operation`（ENUM） | `USER` 行は #28 の `projectVisibilityAuditSummary` の 6 キー（`apps/web/lib/projects/visibility.ts`。ID の昇順の `,` 連結）。`SYSTEM` 行（`operation='GATE_RESULT'`。`packages/db/src/project-publish.ts` の `settleProjectPublish`）は **`published` / `blocked` に確定した相手**を書く。⚠️ **`docs/04` の表に `published` / `blocked` は無い。しかし無いと確定行が「何も公開されなかった」に読め、「要求 → 確定」を 2 行で読む §S-041 の意図に反する。本表が正であり、`docs/04` の表に 2 キーを足す**（申し送り）。`reviewGateId` / `piiVerdict` / `commerceVerdict` / `consistencyVerdict` は落ちる |
+| `project.visibility_change` | `before → after`（REF_LIST）/ `requested` `pending` `revoked`（REF_LIST）/ 🔴 **`published` `blocked`（REF_LIST）** / `verdict` `operation`（ENUM） | `USER` 行は #28 の `projectVisibilityAuditSummary` の 6 キー（`apps/web/lib/projects/visibility.ts`。ID の昇順の `,` 連結）。`SYSTEM` 行（`operation='GATE_RESULT'`。`packages/db/src/project-publish.ts` の `settleProjectPublish`）は **`published` / `blocked` に確定した相手**を書く。⚠️ **`docs/04` の表に `published` / `blocked` は無い。しかし無いと確定行が「何も公開されなかった」に読め、「要求 → 確定」を 2 行で読む §S-041 の意図に反する。本表が正であり、`docs/04` の表に 2 キーを足す**（申し送り）。`reviewGateId` / `piiVerdict` / `commerceVerdict` / `consistencyVerdict` は落ちる。🔴 **T-12-10（2026-09-21）: キーは 1 つも増やさない。** 自動解除は**既存キー `verdict` の値**（`PUBLISHED` / `BLOCKED` / **`RECHECK_PASSED`** / **`REVOKED_BY_RECHECK`** の 4 値）と `actorKind='SYSTEM'` だけで人の解除と区別できる（`F-014 AC-11`）。`verdict` の spec に `values` の閉集合は無く、値は大文字スネークの形の検査を通るので **`AUDIT_DETAIL_ALLOWLIST` の改訂も `docs/04` §S-041 の表の改訂も要らない**（自動解除で落ちた相手は既存の `revoked`〔REF_LIST〕に社名で解決されて出る）。🔴 **原因の欄（`fields`）・指摘の本文・`runTrigger` は `summary` に 1 つも書かない**（記録側から落とす。§16.2。商流層の指摘はエンド企業名そのものであり、監査ログを第 2 の露出面にしない） |
 | `membership.role_change` | `beforeRole → afterRole`（ENUM） | `apps/web/lib/members/service.ts:336`。`targetUserId` / `partnerScoped` は落ちる（対象は `対象` 列の解決に任せる） |
 | `membership.revoke` | `beforeRole`（ENUM。対の片側のみ） | 実装は `role` ではなく **`beforeRole`** を書く（同 :428）。⚠️ **`docs/04` の表の `role` は実装に無い —— 本表が正**（申し送り） |
 | `proposal.submit` / `proposal.resend` / `proposal.approve` / `proposal.reject` / `proposal.update`（exact。接尾辞族より優先） | `operation` `outcome` `result` `rerunReason`（ENUM）/ `fromState → toState`（ENUM。閉集合 `PROPOSAL_STATES`）/ 🔴 **`attemptSeq`**（NUMBER）/ `reasonLength`（NUMBER）/ `requestedBy`（REF USER）/ `externalCallMade`（BOOLEAN）/ 🔴 **`reason`（ENUM。閉集合 `[AUTO_APPROVE_REASON]`。`proposal.approve` の spec にだけ置く）** | ⚠️ **`docs/04` の `attempt` は実装では `attemptSeq`**（`packages/db/src/proposal-send.ts` / `apps/web/lib/proposals/resend.ts`）—— 本表が正（申し送り）。`reason` は `proposal.approve` 行の spec にだけ在る = **`proposal.reject` が将来 `reason` を書いても出ない**（現行は書いていない。`apps/web/lib/proposals/approval.ts:190`）。`rerunReason` は `HELD_AI_COST_LIMIT` / `JOB_FAILED` の 2 値（`apps/web/lib/proposals/gate.ts`）。~~`GATE_RESULT`（`apps/worker/src/jobs/gate-run.ts`）の `overall` / `*Verdict` / `aiFailed` / `findingCount` / `warningCount`、および~~ ✅ 🔴 **T-12-18 ⑨（2026-09-18。`docs/04` §S-041 の表 → 本表 → `AUDIT_DETAIL_ALLOWLIST` の順）: `GATE_RESULT`（`apps/worker/src/jobs/gate-run.ts`。`SYSTEM` 主体）の各層 verdict を `proposal.update` の spec に足す** —— `overall` / `piiVerdict` / `commerceVerdict` / `consistencyVerdict`（ENUM。🔴 **閉集合 `GATE_VERDICTS` = `PASS` / `FAIL`**。`@ses/domain` の `gate/types.ts` を `pick-detail.ts` が import する〔同じパッケージ内〕）/ `findingCount` / `warningCount`（NUMBER）。承認の根拠（どの層が何件の指摘で不合格か）と再検証の履歴は `BR-27` の目的そのものであり、指摘の**本文**（`findings` / `aiWarnings`）は `summary` に元々無い（§16.2）。**`aiFailed` は既定の列挙に無いので落としたまま**（載せるなら同じ順序で）。`contentHash` / `idempotencyKey` / `externalId` / `failureKind` / `jobQueue` / `jobId` / `previousFailureKind` / `fields`（`DRAFT_UPDATE` の項目名の列挙。**既定 = 載せない**〔運用上の必要が出るまで〕）は `docs/04` の表に無いので落ちる |
@@ -3555,6 +3585,8 @@ type SubmitAccepted = { attemptSeq: number; jobId: string; state: 'SUBMITTING' }
 | 🔴 匿名候補に経歴を返す API / `hasCareers` / `careerCount` を返すフィールド | 🔴 `F-008 AC-7` / `BR-55`。**型として存在させない**（§4.6）。開示項目を 5 から増やすことは**人間の承認事項**（`CLAUDE.md` §8.6） |
 | 🔴 「抽出結果を常に上書きする」テナント設定 | 🔴 `F-008 AC-8`。設定にすると、人が採否を選ぶ機会そのものが消える（§6.4 #16b） |
 | 🔴 `POST /api/members/{id}/restore`（無効化の取り消し）/ `PATCH /api/members/{id}` の所属変更 | 🔴 T-04-09。前者は「無効化した相手のパスワードが生き返る」経路であり、復帰は #14 の招待の再発行に限る。後者は「他社のアカウントを自社に移す」ことと同義で、第二境界（`CLAUDE.md` §3.1）をその場で破る |
+| 🔴 `POST /api/projects/{id}/visibility/restore`（自動解除の取り消し）/ `POST /api/projects/{id}/recheck`（再検査だけの再実行）/ `#26`・`#28` の `force` / `skipGate` / `keepPublished` / `ignoreFindings` | 🔴 T-12-10（`F-014 AC-9` / `AC-13`）。**FAIL を「了解のうえ公開」できる操作・API・設定が存在しない**（`BR-18` / `F-020 AC-2`）。復帰は「`S-012` で 3 欄を直す → `S-013` で公開し直す」の 2 手だけであり、**自動解除を取り消せる / 上書きできるロールは `OWNER` を含めて存在しない**（権限で開くと `BR-18` が「権限のある人なら迂回できる」に変わる）。再検査の再実行も置かない（元データが変わっていない再実行は結果が変わらず `F-026` の件数だけを消費する。保留からの復帰は `gate.hold-release`）。詳細は §11.11「T-12-10 の実装の決着」⑧ |
+| 🔴 `GET /api/projects/{id}/gate-results`（案件のゲート結果の履歴を返す Route Handler） | 🔴 T-12-10。`S-013` セクション 4 は**サーバコンポーネントから `readProjectPublishGateResults` を直接呼ぶ**（`#46b` / `S-006` と同じ作法）。提案側の #40b と**同じ `listReviewGateResults` を流用する**ので二重実装にはならず、読み取り専用の API の面だけを増やさない（§11.11「T-12-10 の実装の決着」⑤） |
 
 ### 6.9 管理平面 API（`/api/admin/**`）
 
@@ -4673,7 +4705,7 @@ export function systemTenantCtx(tenantId: string, job: JobIdentity): HostTenantC
 | `ai.match-explain` | `{ tenantId, projectId, refs[] }` | 🔴 **上位 N 件（既定 10）を 1 リクエストにまとめる**（`docs/03` 申し送り 9） | `attempts: 1` | p95 20 秒 | `MatchCandidate.rationale` が非 null なら再生成しない |
 | `ai.proposal-draft` | `{ tenantId, proposalId }` | `runRole(proposalDrafter)` → `Proposal.draftBody` | `attempts: 1` | p95 30 秒 | `DRAFT` 以外は no-op |
 | `ai.renewal-advise` | `{ tenantId, extensionReviewId }` | `runRole(renewalAdvisor)` → `ExtensionReview.summary` | `attempts: 1` | p95 30 秒 | `summary` が非 null なら no-op |
-| `gate.run` | `{ tenantId, targetType, targetId, contentHash }` | §11 のパイプライン。🔴 **`reserveAiCost` が `AiCostLimitExceededError` なら `ReviewGate` を `execution='HELD_AI_COST_LIMIT'` で upsert し正常終了**（§7.6。対象は `GATE_RUNNING` のまま。`GATE_FAILED` にしない）。🔴 **対象の確定**（T-07-09）: `PROPOSAL` は状態遷移（§11.9 ⑥）、`PROJECT_PUBLISH` は `settleProjectPublish`（PASS で公開範囲の行、FAIL で 1 行も作らない。§11.11 ④）。**確定済みの結果を引いたとき（`ALREADY_DONE`）も `PROJECT_PUBLISH` の確定は行う**（§11.11 ③） | `attempts: 1` | 🔴 **p95 30 秒**（`docs/02` 章 7.1） | 🔴 **`jobId = gateRunJobId({ targetType, targetId, contentHash })`**（⚠️ **区切りは `.`**。`'gate.run.{targetType}.{targetId}.{contentHash}'`。当初のスケッチは `:` だったが、**BullMQ はカスタム `jobId` に `:` を含められない**〔実測。§11.10 ③〕）で enqueue（BullMQ が待機中・実行中の同 ID を重複排除）。開始時に `ReviewGate(targetType, targetId, contentHash, execution='DONE')` があれば再実行しない（同じ内容なら同じ結果。`F-020 AC-3`）。HELD 行があれば**同じ行を CAS で DONE に完了**させる（`UPDATE review_gates SET execution='DONE', … WHERE id=$held AND execution='HELD_AI_COST_LIMIT'`。0 件なら結果を破棄。`P-A-09`）。🔴 **HELD 部分 UNIQUE + `jobId` + 完了 CAS の 3 段**で、#39 の手動再実行と `gate.hold-release` が同時に走っても結果は 1 行・遷移は 1 回（`F-027 AC-5`） |
+| `gate.run` | `{ tenantId, targetType, targetId, contentHash }` | §11 のパイプライン。🔴 **`reserveAiCost` が `AiCostLimitExceededError` なら `ReviewGate` を `execution='HELD_AI_COST_LIMIT'` で upsert し正常終了**（§7.6。対象は `GATE_RUNNING` のまま。`GATE_FAILED` にしない）。🔴 **対象の確定**（T-07-09）: `PROPOSAL` は状態遷移（§11.9 ⑥）、`PROJECT_PUBLISH` は `settleProjectPublish`（PASS で公開範囲の行、FAIL で 1 行も作らない。§11.11 ④）。**確定済みの結果を引いたとき（`ALREADY_DONE`）も `PROJECT_PUBLISH` の確定は行う**（§11.11 ③）。🔴 **T-12-10: 公開要求が `kind='RECHECK'` のときは「PASS で何も触らない / FAIL で公開中の行をすべて落とす」**（`F-014 AC-7` / `AC-8`。§11.11「T-12-10 の実装の決着」②④）。🔴 **上限到達（`HELD_AI_COST_LIMIT`）では `settleProjectPublish` を呼ばないので、保留では公開が落ちない**（`AC-12`。「保留だから解除しない」という `if` はどこにも無い）。🔴 **`run_trigger`（§3.6）を `holdReviewGate` / `completeReviewGate` に渡す**（`GateInput` の `PROJECT_PUBLISH` 変種が運ぶ。書き忘れは CHECK が INSERT で落とす） | `attempts: 1` | 🔴 **p95 30 秒**（`docs/02` 章 7.1） | 🔴 **`jobId = gateRunJobId({ targetType, targetId, contentHash })`**（⚠️ **区切りは `.`**。`'gate.run.{targetType}.{targetId}.{contentHash}'`。当初のスケッチは `:` だったが、**BullMQ はカスタム `jobId` に `:` を含められない**〔実測。§11.10 ③〕）で enqueue（BullMQ が待機中・実行中の同 ID を重複排除）。開始時に `ReviewGate(targetType, targetId, contentHash, execution='DONE')` があれば再実行しない（同じ内容なら同じ結果。`F-020 AC-3`）。HELD 行があれば**同じ行を CAS で DONE に完了**させる（`UPDATE review_gates SET execution='DONE', … WHERE id=$held AND execution='HELD_AI_COST_LIMIT'`。0 件なら結果を破棄。`P-A-09`）。🔴 **HELD 部分 UNIQUE + `jobId` + 完了 CAS の 3 段**で、#39 の手動再実行と `gate.hold-release` が同時に走っても結果は 1 行・遷移は 1 回（`F-027 AC-5`） |
 | `gate.hold-release` | 毎 10 分（スケジュール） | 🔴 **AI 上限で保留したゲートの自動再試行**（送信系ではないので許される。`F-027 AC-5`）。`review_gates(execution='HELD_AI_COST_LIMIT')` を走査し、そのテナントの日次カウンタに見積り分の余地があれば（`decideQuota` が `ALLOW`）`gate.run` を**同じ payload・同じ `jobId` で再 enqueue**。余地が無ければ何もしない。**実装の決着は §11.12**（判定は `probeAiCostHeadroom` = 予約と同じ判定式の**空撃ち**、見積りは `gate-inspector` 1 回ぶんの**下限**、配分は `capacity` 件だけ `held_since` の古い順） | `attempts: 3` | p95 10 秒 | `gate.run` と同じ 3 段（HELD 部分 UNIQUE / `jobId` / 完了 CAS）。#39 の手動再実行と重なっても 2 回目は重複排除か 0 件更新で no-op |
 
 🔴 **AI ジョブの `attempts: 1`**: LLM の再試行は `runRole` の内部で最大 2 回まで行い、**ジョブ単位での再試行は行わない**。ジョブが再実行されるとマスキング・プロンプト構築からやり直しになり、`AiUsage` が二重に積まれる。🔴 **`gate.run` の重複排除の役割分担**: BullMQ の `jobId` 重複排除は**待機中・実行中**にのみ効かせる（completed は §9.1 の `removeOnComplete: true` で即座に消え、再 enqueue を阻まない）。**確定後の抑止は DB 側** — 開始時の `execution='DONE'` 行チェック（同じ内容なら再実行しない）と HELD 完了 CAS（0 件なら結果を破棄。`P-A-09`）が担う。
@@ -5605,7 +5637,294 @@ tests/isolation/support/redis.ts          Testcontainers の Redis
 1. ✅ **解消（T-07-10）**: `gate.hold-release` が保留行から再 enqueue する際、`PROJECT_PUBLISH` の公開要求は**そのまま残っている**（消費するのは確定時だけ）。したがって復帰後の実行は公開先を正しく復元でき、追加の処理は要らない。🔴 **`gate.hold-release` 側で公開要求を触らない** —— この不在は `tests/static/gate-hold-release-enqueue.test.ts` が識別子の走査で固定した。
 2. **SP-09 へ**: 承認 CAS（§11.5 手順 3）と本節⑥の前提条件は**同じ 3 条件**（`execution='DONE'` かつ 3 層 PASS）を見る。読み出しは `findPassedReviewGate`（`packages/db`）に 1 実装がある。
 3. **SP-09 へ**: 経路 2 の例外（ホストがパートナー所有のスキルシートを `Proposal` 作成後に読む）を RLS に開くときは、**⑥の分類が自動的に `EXTERNAL` を返す**。⑤のとおり Phase 1 の `SKILL_SHEET_SHARE` は PASS しないので、**開いた瞬間にホストがその版を落とせなくなる**（409）。開くタスクは Phase 2 の抽出テキスト（⑤）とセットで計画すること。
-4. 🔴 **未解決（本タスクの範囲外）**: 公開が成立した後に `publicSummary` を編集しても（`#26`）、公開範囲は変わらず**再検査も走らない**。`F-014 AC-3` の射程は「公開する瞬間」であり、公開後の編集は現状どのゲートも通らない。**`#26` が `publicSummary` を変えたときに公開を解除する / 再検査を起こすべきか**は仕様判断であり、`docs/02` `F-014` の処理②の解釈を人間に確認する必要がある（Issue 起票の候補）。
+4. ~~🔴 **未解決（本タスクの範囲外）**: 公開が成立した後に `publicSummary` を編集しても（`#26`）、公開範囲は変わらず**再検査も走らない**。`F-014 AC-3` の射程は「公開する瞬間」であり、公開後の編集は現状どのゲートも通らない。**`#26` が `publicSummary` を変えたときに公開を解除する / 再検査を起こすべきか**は仕様判断であり、`docs/02` `F-014` の処理②の解釈を人間に確認する必要がある（Issue 起票の候補）。~~ → ✅ **決着（2026-09-10。[Issue #42](https://github.com/Festal-KM/SES-Platform/issues/42) = 人間の回答②「再検査し、FAIL なら公開を解除する」）。設計は下の「🔴 T-12-10 の実装の決着」、上流は `docs/02` `F-014 AC-6`〜`AC-13` / `UC-26` / A-26 と `docs/04` 改訂 14（§S-010 / §S-011 / §S-012 / §S-013 / §5-1 / §11-20 / 申し送り 21）。** 🔴 **本項が言う「`publicSummary` を編集しても」の射程は誤っていた** —— 検査対象の欄は ⑧ のとおり **3 欄**（案件名 / 公開文 / 要件のフリーテキスト）であり、再検査の契機も 3 欄である。
+
+#### 🔴 T-12-10 の実装の決着（公開後の再検査と自動解除。2026-09-21。[Issue #42](https://github.com/Festal-KM/SES-Platform/issues/42) = 回答②）
+
+**本ブロックは `T-12-10` の実装の一次資料である。** 上流は `docs/02` `F-014 AC-6`〜`AC-13` / `UC-26` / A-26 / `program-design` 申し送り 17 と、`docs/04` 改訂 14（§S-010 の 3 値列 / §S-011 の 4 値と帯 / §S-012 の事前表示 / §S-013 のセクション 1・4 / §5-1 / §11-20 / `program-design` 申し送り 21 の 8 点）である。🔴 **上の §11.11 ⑪-4 が「未解決」として残していた穴を塞ぐ改訂であり、§11.11 の ④⑧⑨⑩ の形は 1 ビットも変えない。** ⚠️ **本ブロック内の丸数字は本ブロックの節番号**であり、`§11.11 ⑧` のように接頭辞が付くものだけが上の T-07-09 の節を指す。
+
+**守るべき 1 行**: 🔴 **公開の瞬間に検査を通した内容が、後から商流情報を含む状態で取引先に見え続ける経路を塞ぐ。** そのために増やしてよいのは「再検査を起こす契機」と「FAIL のときに公開中の行を落とす確定」だけであり、**公開範囲の行を作る / 落とす場所は `settleProjectPublish` の 1 か所のままにする**（`AC-13`）。
+
+##### ① 🔴 再検査の契機は「3 欄の**値の比較**」であり、`contentHash` ではない
+
+- **対象の 3 欄**（`AC-6`。**§11.11 ⑧ の検査対象と 1 対 1**）: **`projects.name`（案件名）/ `projects.public_summary`（外部公開用の記載）/ `project_requirements.free_text`（要件の自由記述）**。
+- 🔴 **`PROJECT_PUBLISH` の `contentHash` をそのまま契機に使わない。** ハッシュの材料は ② のとおり**公開先の集合と取引先すべての社名**を含むので、**公開先を 1 社増やしただけ・取引先の社名が変わっただけでハッシュが動く**。それを契機にすると `AC-6`（「3 欄が実際に変わったときに限る」）に反し、AI 原価が無用に増える。
+- **値の比較は純粋関数に閉じる**（`packages/domain/src/gate/project-publish.ts`。新設）:
+
+```ts
+/** 🔴 公開先が読む自由入力の欄。**閉集合。** `GATE_FINDING_FIELDS` の 3 つ・`PUBLISHED_FIELDS` と 1 対 1（下記 ⑨）。 */
+export const PROJECT_PUBLIC_FIELDS = ['name', 'publicSummary', 'requirementFreeText'] as const;
+export type ProjectPublicField = (typeof PROJECT_PUBLIC_FIELDS)[number];
+
+export type ProjectPublicFieldValues = {
+  readonly name: string;
+  readonly publicSummary: string | null;
+  /** 🔴 `readProjectRequirementTexts`（`packages/db`）が返す順（`kind` → `id` 昇順、空文字は除外済み）。 */
+  readonly requirementFreeTexts: readonly string[];
+};
+
+/** 🔴 完全一致で比較する（trim / 正規化をここで足さない —— 揃えるなら ② のハッシュ側と両方を同時に変える）。 */
+export function projectPublicFieldsChanged(
+  before: ProjectPublicFieldValues,
+  after: ProjectPublicFieldValues,
+): boolean;
+```
+
+- 🔴 **`after` は「保存した値」ではなく「保存後に DB から読み直した値」である。** 要件は置き換え（`#26` の決着）で `id` が振り直されるため、並び（`kind` → `id`）は書き込み後にしか確定しない。**ハッシュが覆う値と、変更検知が見る値を同じ関数（`readProjectRequirementTexts`）から取る**ことで、「検知は変わったと言うがハッシュは同じ」「その逆」を構造的に起こせなくする。
+- 🔴 **提案側（§11.5）との対応**: 提案は「**保存済みの `contentHash` 列を読み返さず、現在の内容からその場で計算して突き合わせる**」ことで「内容が変わったのに承認が生き残る」を防ぐ。案件の公開でも同じ規律を使い、**`ProjectPublishRequest.content_hash` 列を契機の判定に使わない**（列は「どの内容を検査するよう頼んだか」であって「今の内容」ではない）。違うのは**突き合わせる相手**だけである —— 提案は「ゲート結果のハッシュ」、案件は「保存前の 3 欄の値」。
+- **`packages/domain` に置ける**（DB・ネットワーク・現在時刻を持たない純粋関数。`CLAUDE.md` §2.1）。`packages/db` が値を読み、`apps/web` が比較の結果で分岐する。
+- **`POST /api/projects`（新規作成）は常に契機にならない** —— 作成時に `ProjectVisibility` の行は 1 件も作られない（`#26` の決着）ので、公開中の案件ではありえない。
+
+##### ② 🔴 要求の種類を列で持つ（`PUBLISH` / `RECHECK`）。FAIL の意味が違うから分ける
+
+- `ProjectPublishRequest.kind`（§3.5。CHECK 2 本つき）を足し、`@@unique` を **`(tenant_id, project_id, kind)`** に改める。**PUBLISH と RECHECK は同時に存在しうる**（編集の直後に `S-013` で公開先を足す、など）。
+- 🔴 **FAIL の意味が違うので、1 つの行に混ぜてはならない**:
+
+| 種類 | 置く場所 | `audience`（⑧ の検査範囲） | PASS | FAIL |
+|---|---|---|---|---|
+| `PUBLISH` | `#28`（`createProjectPublishGate`） | 公開済み ∪ **これから公開する相手** | 追加分を公開する | 🔴 **追加しない。公開中の行は落とさない**（従来どおり） |
+| 🔴 `RECHECK` | `#26`（`updateProject`） | 公開済み**だけ**（`partnerCompanyIds = []`） | 🔴 **何も触らない**（`AC-8`。行を 1 つも動かさない） | 🔴 **公開中の行をすべて落とす**（`AC-7`） |
+
+- 🔴 **`PUBLISH` の FAIL で公開中の行を落としてはならない。** 判定は `audience` に対する相対的なものであり、`{A}` に公開中の案件へ B を足す要求が「公開文に A 社の社名がある」で FAIL しても（**§11.11 ⑨** の規律 = 自社名を許すのは公開先がちょうど 1 社のときだけ）、**`{A}` だけに対しては同じ本文が適法である**。落とすと、A から見て理由のない失効になる。**これが既存 16 本のテストの挙動を 1 つも変えない理由でもある。**
+- 🔴 **`RECHECK` の FAIL は `audience` が現在の公開先そのものなので、落とすのが正しい。**
+- **消費は従来どおり `(project_id, content_hash)` の CAS**（`settleProjectPublish`）。2 つの行のハッシュは必ず異なる（`PUBLISH` の `audience` は公開済みの真部分集合ではなく**真に大きい**集合になる。追加が 0 件の要求は `#28` が取り下げる）。したがって CAS は今までどおり高々 1 行を消費する。**消費した行の `kind` で上の表を分岐する**（`select` に `kind` を足す）。
+- 🔴 **`PUBLISH` が `PUBLISHED` で確定したら、同じ案件の未消費の `RECHECK` 行を同じトランザクションで削除する。** 理由は 2 つ: ①`PUBLISH` の `audience` は `RECHECK` の `audience` の**上位集合**であり、上位集合での PASS は下位集合でも PASS である（公開先が 2 社以上になると自社名の除外が効かなくなる ＝ 禁止語が増えるだけ。`forbiddenTerms` の組み立ては **§11.11 ⑨**）。**再検査は済んでいる。** ②削除しないと、公開先が増えた後に「増える前の集合を前提に取ったハッシュ」の要求が残り、⑤ の状態表示が実態とずれる。**`BLOCKED` では削除しない**（公開範囲は動いておらず、再検査はまだ要る）。
+- 🔴 **`#28` が触るのは `kind='PUBLISH'` の行だけである。** §11.11 ⑩ の「最初に公開要求を消費（削除）してから `project_visibilities` を読む」の**消費対象に `kind='PUBLISH'` を足す**（`withdrawProjectPublishRequest(db, projectId)` → `withdrawProjectPublishRequest(db, projectId, 'PUBLISH')`）。🔴 **`RECHECK` の行を `#28` が消してはならない** —— 公開先を 1 社解除しただけで「編集された内容の再検査」が消え、残った公開先に未検査の内容が見え続ける（T-12-10 が塞ぐ穴が `#28` 経由で開く）。⚠️ **既存テスト（`project-publish-gate.test.ts:309` の「取り下げ」）は `RECHECK` の行が無い状態で `findMany({ projectId })` が 0 件になることを見ているので、この限定を入れても green のままである。**
+- ⚠️ **手動の解除で公開先が減っても、走行中の `RECHECK` はそのまま走る。** 確定時の live 集合に対して確定するので、**残った公開先があれば落ち、0 社なら落とす行が無い**（`verdict='REVOKED_BY_RECHECK'` / `revoked=''`）。どちらも安全側であり、**`#28` 側に再検査を積み直す枝を足さない**（③ の 5-② が次の保存で積み直す）。
+
+##### ③ 🔴 `#26` が「再検査を積んだか」を返す（`AC-6` の説明材料）
+
+```ts
+// apps/web/lib/projects/schemas.ts（応答型）
+export type ProjectRecheckOutcome =
+  | { readonly queued: true;  readonly reason?: never }
+  | { readonly queued: false; readonly reason: 'NOT_PUBLISHED' | 'PUBLIC_FIELDS_UNCHANGED' };
+// 🔴 `reason` の値はこの 2 つで閉じる。`SKIPPED_BY_REQUEST` / `GATE_DISABLED` のような
+//    「積まないことを選べた」と読める値を作らない（⑧ の迂回禁止と同じ理由）。
+```
+
+- **判定（`updateProject` の業務トランザクション内）**:
+  1. 更新の**前**に 3 欄の値を読む（`name` / `publicSummary` は `findFirst` の `select` に足し、要件は `readProjectRequirementTexts`）。
+  2. 更新を適用する（既存のとおり）。
+  3. 更新の**後**に同じ 3 欄を読み直し、`projectPublicFieldsChanged` で比較する。
+  4. `project_visibilities` の**生きている行数**を数える。0 件なら `{ queued: false, reason: 'NOT_PUBLISHED' }`。
+  5. 生きている行があり、かつ **①3 欄が変わった** または 🔴 **②未消費の `RECHECK` 要求が残っている** なら、`computeProjectPublishContentHash(db, projectId, [])` を取り、`upsertProjectPublishRequest(db, tenantId, { kind: 'RECHECK', partnerCompanyIds: [], … })` を置く。どちらでもなければ `{ queued: false, reason: 'PUBLIC_FIELDS_UNCHANGED' }`。
+  6. **コミット後に** `gate.run` を enqueue する（`removeFailedJob` → `enqueue`。`ProjectPublishGateOutcome` と同じく **`enqueue` を関数として返して順序を型で強制する**。§11.11 ①）。
+- 🔴 **5-② を置く理由**: 6 は commit の後なので、`BLOCKED_BY_FAILED_JOB` やプロセス断で「要求だけが残ってジョブが積まれない」窓がある。そのとき **再検査は owed のまま公開が続く**（＝ T-12-10 が塞ごうとしている穴が開いたまま）。5-② があれば、利用者が**同じ内容でもう一度保存する**だけで積み直せる（`jobId` は同じなので二重実行にならず、内容が同じなら `DONE` 行のキャッシュを引くので `F-026` も増えない）。🔴 **`AC-6`「同一値での再保存では AI 利用量も増えない」は破っていない** —— 増えるのは「すでに owed だった 1 件」だけである。
+- 🔴 **enqueue に失敗したら握り潰さず `InternalError`（500）にする**（`#28` と同じ。「積めたことを確かめる」）。保存自体は commit 済みで失われず、復帰は 5-② である。
+- 🔴 **再検査は `#26` の応答を待たない**（`S-012` は保存の完了表示に「公開中の内容を再検査しています」を添えるだけで、結果は `S-011` の公開の状態で読む。`docs/04` §S-012）。**保存の成否と再検査の結果を 1 つの値にまとめない。**
+
+##### ④ 🔴 確定は `settleProjectPublish` の 1 か所のまま（`AC-13`）
+
+`packages/db/src/project-publish.ts` の `settleProjectPublish` を**拡張する**（2 本目の関数を作らない。作ると片方がゲート結果を見ない経路になる）。
+
+```ts
+export type ProjectPublishSettlement =
+  | { readonly kind: 'PUBLISHED' | 'BLOCKED'; readonly partnerCompanyIds: readonly string[] }
+  // 🔴 T-12-10 で 2 つ増える（`kind='RECHECK'` の要求を消費したとき）。
+  | { readonly kind: 'RECHECK_PASSED';      readonly partnerCompanyIds: readonly [] }
+  | { readonly kind: 'REVOKED_BY_RECHECK';  readonly partnerCompanyIds: readonly string[] }  // 落とした相手
+  | { readonly kind: 'NOT_PENDING' };
+```
+
+- **手順（1 トランザクション。既存の 1〜4 に枝を足すだけ）**:
+  1. `(project_id, content_hash)` の要求を `findFirst`（`select` に **`kind` を足す**）→ 無ければ `NOT_PENDING`。
+  2. CAS（`deleteMany({ id, contentHash })`）。0 件なら `NOT_PENDING`。
+  3. `kind='PUBLISH'` … **従来どおり**（PASS で upsert / FAIL で 1 行も作らない）。加えて PASS のときだけ、同じ案件の `kind='RECHECK'` の行を削除する（② の末尾）。
+  4. 🔴 `kind='RECHECK'` … **PASS なら行を 1 つも触らない**（`AC-8`）。**FAIL なら生きている行をすべて落とす**:
+     `UPDATE project_visibilities SET revoked_at = $now, revoked_reason = 'GATE_RECHECK', revoked_review_gate_id = $reviewGateId WHERE project_id = $1 AND revoked_at IS NULL RETURNING partner_company_id`
+     （🔴 **`tenant_id` は WHERE に書かない** —— C2 / C4 の RLS と Prisma 拡張が決める。§11.11 ④ と同じ規律）。
+  5. 監査を 1 行（⑩）。
+- 🔴 **`RECHECK` の PASS で `project_visibilities.review_gate_id` を新しいゲートに差し替えない。** `AC-8` は「公開はそのまま維持される」であり、**行を動かさないことがその実装**である。「今見えている内容を最後に検査した結果」は ⑤ の `latestGate` から読む。
+- 🔴 **`HELD_AI_COST_LIMIT` はここへ来ない。** `gate.run` は上限到達時に `holdReviewGate` で終わり、`settleProjectPublish` を呼ばない（§9.3）。したがって **保留では要求が消費されず、公開も落ちない**（`AC-12`）。復帰は `gate.hold-release` が同じ `jobId` で積み直し、そのときに初めて確定する。🔴 **「保留だから解除しない」という `if` をどこにも書かない** —— 呼ばれないことが担保である。
+- ⚠️ **TOCTOU の扱いは §11.11 ② の ⚠️ と同じ**。要求を置いてから `gate.run` が読むまでの間に公開先が増減すると、ジョブは**その時点の事実**で検査し、結果は enqueue 時のハッシュの下に保存される。`RECHECK` も同じ扱いとし、**新しい防御を足さない**（足すと `PUBLISH` 側と規律が 2 本になる）。③ の 5-② が「前提が古くなった再検査」を次の保存で積み直す。
+
+##### ⑤ 🔴 公開の状態は 4 値の**判別可能な合併**で返す（`docs/04` 申し送り 21 ①②③④）
+
+```ts
+// packages/domain/src/gate/project-publish.ts（純粋関数の側）
+export type ProjectPublishRevocationCause =
+  | { readonly kind: 'GATE_FINDINGS'; readonly fields: readonly [ProjectPublicField, ...ProjectPublicField[]] }
+  | { readonly kind: 'GATE_INCONCLUSIVE'; readonly fields?: never };
+  // 🔴 「判定不能（LLM の失敗・タイムアウト・スキーマ違反）」は **FAIL であって保留ではない**（A-26 の既定①）。
+  //    画面は前者で欄名を並べ、後者で「検査を完了できなかったため公開を解除しました」を描く（docs/04 §S-013）。
+
+export type ProjectPublishGateRef = {
+  readonly reviewGateId: string;
+  readonly runTrigger: 'PUBLISH' | 'RECHECK';          // 🔴 review_gates.run_trigger（§3.6）
+  readonly execution: 'DONE' | 'HELD_AI_COST_LIMIT';
+  readonly executedAt: string | null;                  // DONE のとき ISO 8601
+  readonly heldSince: string | null;                   // HELD のとき ISO 8601
+};
+
+export type ProjectPublishRevocation = {
+  readonly revokedAt: string;                          // ISO 8601。確定の時刻
+  readonly revokedPartnerCount: number;                // 🔴 件数だけ（社名は帯に出さない。docs/04 §S-011）
+  readonly reviewGateId: string;                       // 「指摘を見る」の導線（S-013 セクション 4）
+  readonly cause: ProjectPublishRevocationCause;
+};
+
+export type ProjectPublishStateView =
+  | { readonly state: 'UNPUBLISHED';            readonly visibleToCount: 0;
+      readonly revocation?: never; readonly held?: never; readonly recheckRunning?: never;
+      readonly latestGate: ProjectPublishGateRef | null }
+  | { readonly state: 'PUBLISHED';              readonly visibleToCount: number;
+      readonly revocation?: never; readonly held?: never;
+      /** 🔴 再検査のジョブが走っている（= 未消費の RECHECK 要求があり、保留行が無い）。公開は維持。 */
+      readonly recheckRunning: boolean;
+      readonly latestGate: ProjectPublishGateRef | null }
+  | { readonly state: 'AUTO_REVOKED';           readonly visibleToCount: 0;
+      readonly revocation: ProjectPublishRevocation; readonly held?: never; readonly recheckRunning?: never;
+      readonly latestGate: ProjectPublishGateRef | null }
+  | { readonly state: 'PUBLISHED_RECHECK_HELD'; readonly visibleToCount: number;
+      readonly revocation?: never;
+      /** 🔴 §11.7 の `GateHeldView` **そのもの**（`usageHref` を足さない。docs/04 `U-19` / T-12-18 ③）。 */
+      readonly held: GateHeldView; readonly recheckRunning?: never;
+      readonly latestGate: ProjectPublishGateRef | null };
+
+/** 🔴 入力は `packages/db` / `apps/web` 側が materialize する（domain に I/O と現在時刻を持ち込まない）。 */
+export type DeriveProjectPublishStateInput = {
+  /** `project_visibilities` の `revoked_at IS NULL` の件数。 */
+  readonly liveVisibilityCount: number;
+  /** 🔴 **最後に解除された行**（`revoked_at DESC → id DESC` の 1 行）。1 度も解除していなければ `null`。 */
+  readonly lastRevoked: {
+    readonly reason: 'MANUAL' | 'GATE_RECHECK';
+    readonly revokedAt: string;              // ISO 8601
+    readonly reviewGateId: string | null;    // 'GATE_RECHECK' のとき非 null（§3.5 の CHECK）
+    /** その `revoked_at` と `revoked_review_gate_id` で落ちた行の数（帯の「N 社」）。 */
+    readonly partnerCount: number;
+  } | null;
+  /** 未消費の `kind='RECHECK'` の公開要求があるか。 */
+  readonly recheckPending: boolean;
+  /** 🔴 `listReviewGateResults` の先頭 1 行を写したもの（無ければ `null`）。 */
+  readonly latestGate: ProjectPublishGateRef | null;
+  /** `latestGate.execution === 'HELD_AI_COST_LIMIT'` のときだけ渡す（`heldViewFor` が組み立てる）。 */
+  readonly latestGateHeld: GateHeldView | null;
+  /** 🔴 `lastRevoked.reviewGateId` が指す行の中身（原因の欄の導出にだけ使う）。 */
+  readonly revokingGate: { readonly findings: readonly GateFinding[]; readonly aiFailed: boolean } | null;
+};
+export function deriveProjectPublishState(input: DeriveProjectPublishStateInput): ProjectPublishStateView;
+export function projectPublicFieldsFromFindings(findings: readonly GateFinding[]): readonly ProjectPublicField[];
+```
+
+- 🔴 **`revocation`（FAIL）と `held`（保留）は別の枝の別のフィールドである。** 1 つの `reason` に畳まない —— 画面は前者で「公開を解除しました（今すぐ直す）」、後者で「公開は維持されています（待つ）」と**逆のこと**を書く（`docs/04` §S-011 / `AC-12`）。**型としてどちらか一方しか読めない。**
+- **導出の規則**（`deriveProjectPublishState`。純粋関数。入力はすべて `packages/db` 側が materialize する）:
+
+| 条件 | `state` |
+|---|---|
+| 生きている行 ≥ 1 かつ 未消費の `RECHECK` 要求の `review_gates` 行が `HELD_AI_COST_LIMIT` | `PUBLISHED_RECHECK_HELD` |
+| 生きている行 ≥ 1（上以外） | `PUBLISHED`（`recheckRunning` = 未消費の `RECHECK` 要求があるか） |
+| 生きている行 = 0 かつ **最後に解除された行の `revoked_reason = 'GATE_RECHECK'`** | 🔴 `AUTO_REVOKED` |
+| 生きている行 = 0（上以外。1 度も公開していない / 人が解除した） | `UNPUBLISHED` |
+
+- 🔴 **「公開先が 0 社」という事実だけから画面に推測させない**（`docs/04` 申し送り 21 ①）。**`revoked_reason` 列が根拠**であり、人の解除と自動解除を DB の値で分ける。**「最後に解除された行」は `revoked_at DESC` の 1 行**（同着は `id DESC`。§4.8 の決定的順序）。`revokedPartnerCount` は **`revoked_review_gate_id = lastRevoked.reviewGateId` の行数**（同じ確定で落ちた相手の数。`revoked_at` の同値比較に頼らない）。
+- ⚠️ **`PUBLISHED_RECHECK_HELD` の判定に `latestGate.runTrigger` を使わない。** 保留行は対象ごとに高々 1 行（§3.6 の部分 UNIQUE）で常に先頭に来るので、`recheckPending && latestGate.execution === 'HELD_AI_COST_LIMIT'` で足りる。`PUBLISH` の要求が先に保留された状態で再検査が積まれた場合、保留行の契機は `PUBLISH` だが**上限に達しているという事実と再開条件は同じ**であり、画面の文言（「AI が上限に達しているため、編集した内容の再検査をまだ実行できていません」）は正しい。**契機で分岐させると、同じ「上限で止まっている」を 2 通りに描くことになる。**
+- 🔴 **`AUTO_REVOKED` の判定に `latestGate` を使わない。** 自動解除の後にホストが公開し直して FAIL すると `latestGate` は `PUBLISH` の FAIL になるが、**その案件は依然として「再検査で落ちたまま」である**。根拠は常に `project_visibilities.revoked_reason` 側に置く（行の事実 > 直近の実行）。
+- 🔴 **原因の欄はサーバが `ReviewGate.findings` から導出する**（`projectPublicFieldsFromFindings`。`docs/04` 申し送り 21 ②）。規則: **`severity='BLOCK'` かつ `layer ∈ {'PII','COMMERCE'}` の指摘だけ**を見て、`field` を `project_name → name` / `public_summary → publicSummary` / `requirement → requirementFreeText` に写し、**`PROJECT_PUBLIC_FIELDS` の宣言順**で重複なく返す。3 欄に写せない `field` は無視する。
+- 🔴 **`cause.kind` の決め方**: ①`aiFailed = true` なら **無条件に `GATE_INCONCLUSIVE`**（機械的検出が欄を特定できていても、である。検査の一部が完了していないことのほうが重要で、「この欄だけ直せば通る」と読ませてはならない —— 直しても AI 層が再び落ちれば同じ結果になる）②そうでなく `fields` が 1 つ以上あれば `GATE_FINDINGS` ③`fields` が空なら `GATE_INCONCLUSIVE`（欄に帰せない FAIL）。**`fields` が空の `GATE_FINDINGS` を型として作らない**（非空タプルで縛る）。
+- 🔴 **指摘の本文（`excerpt`）・オフセット・層別の判定を `ProjectPublishStateView` に載せない**（`docs/04` 申し送り 21 ②）。商流層の指摘は**エンド企業名そのもの**であり、案件詳細（`S-011`）に常時表示される経路を作らない。本文を読む場所は `S-013` セクション 4 だけである。
+- 🔴 **欄の表示文字列を返さない。** 返すのは `ProjectPublicField` のコードだけで、「案件名 / 外部公開用の記載 / 要件の自由記述」の語は `packages/i18n`（`projects.publishState.field.*`）にある（§4.6.2 と同じ規律）。
+- **読み出しの置き場所**: `apps/web/lib/projects/publish-state.ts` の `readProjectPublishState(db, projectId)`。`readProjectDetail`（#27）の**ホストの枝でだけ**、同じトランザクションから呼ぶ。材料は 3 本の問い合わせ（①`project_visibilities` の全行〔生存・`revoked_*`〕②`project_publish_requests` の `kind='RECHECK'` の行 ③`listReviewGateResults(ctx, { targetType: 'PROJECT_PUBLISH', targetId })`）。
+- 🔴 **③は #40b と同じ 1 実装を流用する**（`docs/04` 申し送り 21 ④「#40b と同じ材料を使えるなら流用し、二重実装にしない」）。`listReviewGateResults` は対象種別で分岐しない汎用の関数であり（§6.5「#40b と `S-023` セクション 4 の設計」）、**案件の公開でもそのまま使える**。`ReviewGateResultRow` に `runTrigger` を足し、`GateResultHistoryItem` にも `runTrigger: 'PUBLISH' | 'RECHECK' | null` を足す（提案の行は `null`）。`held` の組み立て（`heldViewFor`）は `apps/web/lib/proposals/gate.ts` から **`apps/web/lib/gate/held-view.ts` へ移し**、#40 / #40b / 本節の 3 呼び出し元が同じ 1 実装を通る（**書き写さない**。移動であり挙動は 1 ビットも変えない）。
+- 🔴 **`latestGate` は `listReviewGateResults` の先頭 1 行**（保留行を優先し、次に `COALESCE(executed_at, held_since) DESC`）。**公開の時点の結果を再検査の結果で黙って上書きしない** —— 行は `F-020 AC-7` のとおり積み上がり、`S-013` セクション 4 は**実行ごとの履歴**として全行を描く（`S-023` と同じ形）。`runTrigger` がその 1 行ずつのラベル（`公開の実行` / `公開欄の編集による再検査`）の出所である。
+- **`S-013` セクション 4 の履歴**は `readProjectPublishGateResults(ctx, projectId)`（同ファイル。`listReviewGateResults` + `toGateResultView` + `heldViewFor` の組み合わせ）を**サーバコンポーネントから直接呼ぶ**。🔴 **Route Handler を新設しない**（`#46b` / `S-006` と同じ作法。読み取り専用の面を増やさない）。
+
+##### ⑥ 一覧（`#25` / `S-010`）は 3 値の 1 語だけ
+
+```ts
+export type ProjectPublishListStatus = 'UNSET' | 'PUBLISHED' | 'AUTO_REVOKED';
+// HostProjectView に `publishStatus: ProjectPublishListStatus` を足す（`visibleToCount` は据え置き）。
+// PartnerProjectView は `publishStatus?: never`（#27 / #25 の既存の手法。F-014 AC-4 / BR-07）。
+```
+
+- 🔴 **保留は一覧で区別しない**（公開は維持されているので `PUBLISHED`。`docs/04` §S-010「保留は一覧で対処する事象ではない」）。**したがって一覧は `project_publish_requests` も `review_gates` も読まない。**
+- 🔴 **理由・原因の欄・指摘を一覧に出さない**（`docs/04` §S-010 / §7.1 の情報密度）。列は 1 語である。
+- **問い合わせはページあたり定数本**（行数に比例しない）。既存の「ホストの枝でだけ `project_visibilities` を引く」1 本に、**生存件数**と**最後に解除された行の `revoked_reason`** の両方を持たせる（`AUTO_REVOKED` = 生存 0 かつ最後の解除理由が `GATE_RECHECK`。⑤ と**同じ規則**を `packages/domain` の 1 関数に閉じ、詳細と一覧で判定が食い違わないようにする）。🔴 **取引先の経路では 1 回も引かない**（従来どおり）。
+
+##### ⑦ 🔴 取引先向けの応答は 1 バイトも変わらない（`AC-10`）
+
+- `PartnerProjectDetailView` / `PartnerProjectView` に **`publishState` / `publishStatus` / `revokedReason` / `revokedAt` / `gateResult` に類するフィールドを 1 つも持たせない。** `?: never` を置き、**うっかり入れた実装がコンパイルで落ちる**（#14 の `inviteUrl?: never` / #27 の `visibleToCount?: never` と同じ手法）。🔴 **フィルタで落とすのではなく存在させない**（`docs/04` 申し送り 2 / 9 と同じ規律）。
+- 🔴 **`PARTNER_PROJECT_DETAIL_SELECT` に `revoked_reason` / `revoked_review_gate_id` を書かない** —— 取得してからシリアライザで落とす形にしない（#27 の決着と同じ理由）。
+- **自動解除された案件を取引先が開いたときの挙動は従来のまま**: `project_visibilities` の自社宛の行が「存在するが `revoked_at` が入っている」状態なので、C4 で案件が見えず、`ProjectNotSharedError`（**HTTP 404**、画面は「この案件は現在御社に公開されていません」）に合流する（§6.4「#27 の実装の決着」）。**はじめから公開されていない案件・他テナントの案件・不存在の ID とバイト列で区別できない**のも従来どおりである。🔴 **人の解除と自動解除でこの応答が変わらない**ことをテストで固定する（⑫-③）。
+- **通知・エクスポートにも出さない**（Phase 1 に案件のエクスポートは無い。`F-039` の通知は ⑬）。
+
+##### ⑧ 🔴 迂回の入口を型として 1 つも作らない（`AC-9` / `AC-13`）
+
+| 作らないもの | なぜ |
+|---|---|
+| `force` / `skipGate` / `keepPublished` / `ignoreFindings` に類するパラメータ（`#26` / `#28` / ジョブ payload のいずれにも） | 🔴 **FAIL を「了解のうえ公開」できる操作・API・設定が存在しない**（`BR-18` / `F-020 AC-2`）。存在しないことを `tests/static/forbidden-api-routes.test.ts` の語彙検査（`#30`）と Zod スキーマのキー集合テストで固定する |
+| 再公開専用のエンドポイント / 「前回の公開先を復元」 | 復元は「直していない内容を再び外に出す」入口である（`docs/04` §S-013）。復帰は `S-012` で 3 欄を直し、`S-013` で公開し直す 2 手だけ |
+| 解除の取り消し（`POST /api/projects/{id}/visibility/restore` 等） | 🔴 **自動解除を取り消せる / 上書きできるロールは存在しない**（`F-014` 関連ロール）。`OWNER` にも出さない —— 権限で開くと `BR-18` が「権限のある人なら迂回できる」に変わる |
+| 「再検査だけをもう一度実行する」エンドポイント | 画面に操作が無い（`docs/04` §S-013）。元データが変わっていない再実行は結果が変わらず、`F-026` の件数だけを消費する。保留からの復帰は `gate.hold-release` が行う |
+| 公開範囲の行を作る / 落とす 2 か所目 | 🔴 `settleProjectPublish` の 1 か所のまま（④）。`apps/web` が `project_visibilities` に書けるのは**人の解除**（`#28`）だけであり、その経路も `revoked_reason='MANUAL'` を**必ず**書く（`revoked_at` だけを入れる書き方は §3.5 の CHECK が拒む） |
+
+🔴 **担保の層**: 型（`?: never` と非空タプルと判別可能な合併）／ DB 制約（§3.5 の CHECK 5 本・§3.6 の CHECK 2 本・`review_gate_id` の NOT NULL + FK）／ 静的テスト（禁止語彙・単一経路）。**実行時ガードだけに頼っている箇所は無い。**
+
+##### ⑨ 🔴 3 欄の定義を 3 か所で同時にしか増やせなくする
+
+**同じ「3 欄」が 3 つの型に現れる。** ずれると「プレビューに出ないのに FAIL する」「FAIL したのに原因の欄が出ない」が起きる（**§11.11 ⑧** の T-07-09 レビューが是正したのと同じ事故）。
+
+| 出所 | 何に使うか |
+|---|---|
+| `GATE_FINDING_FIELDS` の `project_name` / `public_summary` / `requirement` | ゲートが検査する欄（§11.11 ⑧） |
+| `publish-preview.ts` の `PUBLISHED_FIELDS`（`name` / `publicSummary` / `requirement`） | `S-013` のプレビューの警告 |
+| 🔴 **新設** `PROJECT_PUBLIC_FIELDS`（`name` / `publicSummary` / `requirementFreeText`） | ①`#26` の変更検知（①）②自動解除の原因の欄（⑤）③`S-012` の「この欄は公開先が読む」印 |
+
+- **ユニットテストで 3 者の 1 対 1 を固定する**（`packages/domain/src/gate/project-publish.test.ts`）。要素数が同じで、写像 `project_name ↔ name ↔ name` / `public_summary ↔ publicSummary ↔ publicSummary` / `requirement ↔ requirement ↔ requirementFreeText` が全単射であること。**片方に欄を足したらもう片方も足さざるを得ない**（コンパイルエラーか、このテストの失敗になる）。
+- 🔴 **語の違い（`requirement` と `requirementFreeText`）を「同じもの」と読める形に固定するのがこのテストの目的である。** 名前を揃えるために既存の 2 つを改名しない（`GATE_FINDING_FIELDS` は `ReviewGate.findings`（JSON）に保存済みの値であり、改名は過去の行の読み替えを要求する）。
+
+##### ⑩ 🔴 監査（`AC-11`）
+
+- **`settleProjectPublish` は従来どおり `project.visibility_change` / `actorKind='SYSTEM'` / `summary.operation='GATE_RESULT'` の 1 行を書く**（独自 action を作らない。§11.11 ④ / §16.1）。🔴 **人の操作（`#28` の `actorKind='USER'`）と主体で区別でき、`verdict` で「公開の確定」と「再検査による自動解除」が区別できる**（`AC-11` / `AC-5`）。
+
+| `kind` | 判定 | `summary.verdict` | `summary` のその他 |
+|---|---|---|---|
+| `PUBLISH` | PASS | `PUBLISHED` | `published` = 公開した相手 / `blocked` = `''`（従来どおり） |
+| `PUBLISH` | FAIL | `BLOCKED` | `published` = `''` / `blocked` = 公開しなかった相手（従来どおり） |
+| 🔴 `RECHECK` | PASS | **`RECHECK_PASSED`** | `published` = `''` / `blocked` = `''` / `revoked` = `''` |
+| 🔴 `RECHECK` | FAIL | **`REVOKED_BY_RECHECK`** | `revoked` = **落とした相手**（ID の昇順の `,` 連結。`#28` の人の解除と**同じキー名**） |
+
+- 🔴 **`revoked` を `#28` と同じキーにする理由**: `S-041` の「公開範囲の変更」で並べたとき、**人の解除と自動解除が同じ読み方（どの取引先が落ちたか）で読める**。区別は主体（`SYSTEM`）と `verdict` である。
+- 🔴 **`summary` に原因の欄（`fields`）・指摘の本文・`runTrigger` を書かない**（§16.2。商流層の指摘はエンド企業名そのもの。監査ログを第 2 の露出面にしない）。`reviewGateId` / 層別の判定は従来どおり**記録には残るが許可リストに無いので `S-041` の詳細には出ない**。
+- 🔴 **許可リスト（§6.4 の `AUDIT_DETAIL_ALLOWLIST`）にキーを 1 つも足さない。** `verdict` は既に ENUM として許可されており、値が 2 つ増えるだけである（spec に `values` の閉集合は無く、大文字スネークの形の検査を通る）。**`docs/04` §S-041 の表の改訂も要らない。**
+- **記録は業務トランザクションの内側**（従来どおり。書けなければ解除そのものが巻き戻る）。
+
+##### ⑪ ジョブ側の配線（§9.3 `gate.run`）
+
+- `loadGateInput` は `PROJECT_PUBLISH` の枝で **`runTrigger`（要求行の `kind`）を `GateInput` に載せて返す**（判別可能な合併の `PROJECT_PUBLISH` 変種に 1 フィールド追加）。`holdReviewGate` / `completeReviewGate` はそれを `review_gates.run_trigger` に書く（§3.6 の CHECK が書き忘れを INSERT で落とす）。
+- **`ALREADY_DONE`（キャッシュ）の枝は行を作らないので `runTrigger` を要求しない**。確定（`settlePublish`）は従来どおり呼ぶ —— **`RECHECK` の要求もキャッシュで確定してよい**（同じ 3 欄・同じ公開先なら結果は同じ。`F-020 AC-3`）。🔴 **これは AI 原価を増やさずに再検査を済ませる正しい経路である**（例: FAIL → 直して公開 → また元に戻す、で過去の FAIL 行が引かれて即座に解除される）。
+- 🔴 **`gate.hold-release` は 1 行も変えない**（`review_gates` の保留行だけを材料に同じ payload・同じ `jobId` で積み直す）。`RECHECK` の要求は確定時にしか消費されないので、復帰後の実行が**公開先も種類も正しく復元できる**（§11.11 ⑪-1 と同じ根拠）。
+- `GateRunOutcome` の `publish` は ④ の `ProjectPublishSettlement` をそのまま載せる（枝が 2 つ増える）。
+
+##### ⑫ 検証（`programmer` が緑にするもの）
+
+🔴 **前提: `tests/isolation/project-publish-gate.test.ts` の既存 16 本が 1 行も直さずに green であること。** ② のとおり `PUBLISH` の挙動は 1 ビットも変えていないので、直す必要が出たら**設計が間違っている**（先に本節へ戻ること）。
+
+**同ファイルに追加する結合テスト**（`SP-12` `T-12-10` の受け入れ基準 ①〜⑥ に 1 対 1）:
+
+| # | 受け入れ基準 | テスト |
+|---|---|---|
+| (a) | ① | 公開中（PASS で `{A}` に公開済み）の案件の **`publicSummary` にエンド企業名を入れて `#26` で保存** → 応答が `{ recheck: { queued: true } }` → 積まれた `gate.run` を実行 → **`project_visibilities` の行が `revoked_at` 非 null / `revoked_reason='GATE_RECHECK'` / `revoked_review_gate_id` が当該ゲート**になり、**パートナー文脈から `#25` / `#27` のいずれでも見えない**（404・件数 0・並びに痕跡なし。`F-004 AC-3`） |
+| (b) | ① | 🔴 **3 欄それぞれで落ちる**: `projects.name` にエンド企業名 / `project_requirements.free_text` に内部単価 / `public_summary` に非公開先の社名 —— **3 ケースとも自動解除**（⑨ の 1 対 1 が効いていること） |
+| (c) | ② | `#27`（ホスト）の `publishState` が `{ state:'AUTO_REVOKED', visibleToCount:0, revocation:{ revokedPartnerCount:1, reviewGateId, cause:{ kind:'GATE_FINDINGS', fields:['publicSummary'] } } }`。🔴 **応答の JSON に指摘の本文（`excerpt`）・エンド企業名・取引先の社名が 1 バイトも現れない**。`#25`（ホスト）の当該行が `publishStatus:'AUTO_REVOKED'` |
+| (d) | ③ | 🔴 **取引先向けの応答が人の解除のときと 1 バイトも違わない**: 同じ案件を ①人が `#28` で解除した場合と ②再検査で自動解除された場合で、パートナー文脈の `#27` の**ステータスコードと応答ボディが完全一致**し、`#25` の `items` / `total` も一致する。`JSON.stringify` に `revoked` / `GATE_RECHECK` / `recheck` の語が現れない |
+| (e) | ④ | 監査に `project.visibility_change` が **`actorKind='SYSTEM'` / `summary.verdict='REVOKED_BY_RECHECK'` / `summary.revoked` = 落とした相手**で 1 行残り、**人の解除（`USER` / `revoked`）と主体で区別できる**。🔴 `summary` に `fields` / `excerpt` / `runTrigger` が無い。`#10` の `detail` には `verdict` と `revoked`（社名に解決）だけが出て、許可リスト外のキーが 0 件 |
+| (f) | ⑤ | **PASS の再検査では行が 1 つも動かない**: `published_at` / `published_by` / `review_gate_id` / `revoked_at` が保存前と**同一**（`AC-8`。解除 → 再公開の往復が起きていない）。`publishState.state = 'PUBLISHED'`、`latestGate.runTrigger = 'RECHECK'` |
+| (g) | ⑥ | 🔴 **上限到達では解除しない**: 日次上限を使い切った状態で 3 欄を編集 → `gate.run` が `HELD_AI_COST_LIMIT` で終わる → **公開中の行がそのまま**で、`publishState` が `{ state:'PUBLISHED_RECHECK_HELD', held:{ heldReasonKey:'gate.held.aiCostLimit', resetAt, limitRaise:'PLATFORM_OPERATOR' } }`。`held` に `usageHref` が無い。**`A-005` 項目 12 のゲート FAIL 率の分母・分子に加算されない**（`execution='DONE'` のみを数える既存の集計。§16.5）。その後 `gate.hold-release` で復帰させると (a) または (f) の結末に確定する |
+| (h) | `AC-6` | **走らない 3 ケース**: ①未公開の案件の保存 → `{ queued:false, reason:'NOT_PUBLISHED' }` ②公開中だが 3 欄以外（`headcount` / `startDate` / `status` / `endClientName` / `internalUnitPrice` / 単価レンジ）だけの保存 → `{ queued:false, reason:'PUBLIC_FIELDS_UNCHANGED' }` ③公開中で 3 欄を**同じ値**で再保存 → 同上。🔴 **3 ケースとも `gate.run` が 1 件も積まれず、`AiUsage` の行が 1 行も増えない**（`F-026`）。④対照: `#28` で公開先を 1 社**追加**しても `#26` は呼ばれておらず、`RECHECK` の要求が 1 行も作られない |
+| (i) | A-26 ① | **判定不能は FAIL**: AI をエラーで落として再検査を走らせる → `aiFailed = true` → **公開が解除され**、`revocation.cause = { kind:'GATE_INCONCLUSIVE' }`（`fields` を持たない）。🔴 **`PUBLISHED_RECHECK_HELD` にならない**（保留と判定不能を混ぜない） |
+| (j) | ② / ④ | **要求の共存と消費**: 公開中の案件で ①`#26` の編集（`RECHECK` の行）→ ②`#28` で B を追加（`PUBLISH` の行）を続けて行うと **`project_publish_requests` に 2 行**ある。`PUBLISH` の側を PASS で確定させると **B が公開され、同じトランザクションで `RECHECK` の行が消える**（②の末尾）。`BLOCKED` のときは `RECHECK` の行が残る |
+| (k) | ⑧ | 🔴 **迂回が存在しない**: `#26` / `#28` に `force` / `skipGate` / `keepPublished` を渡しても**応答のバイト列が 1 つも変わらない**（未知キーは Zod が落とす）。`POST /api/projects/{id}/visibility/restore` / `POST /api/projects/{id}/recheck` が **404**（`tests/static/forbidden-api-routes.test.ts` の禁止パターンにも追加する） |
+
+- **ユニット**（`packages/domain/src/gate/project-publish.test.ts`）: ⑨ の 1 対 1 / `projectPublicFieldsChanged`（3 欄それぞれの変更・要件の並べ替え・同一値・`null` ↔ `''` の区別）/ `projectPublicFieldsFromFindings`（`WARN` と整合層の指摘を拾わない・宣言順・重複排除・3 欄に写せない `field` を無視）/ `deriveProjectPublishState`（上の 4 行の表を網羅し、`AUTO_REVOKED` と `PUBLISHED_RECHECK_HELD` を取り違えない）/ `cause.kind` の 3 分岐（`aiFailed` 優先）。
+- **型**（`apps/web/lib/projects/detail-view.types.test.ts` / `list-view.types.test.ts` に追加）: `PartnerProjectDetailView` / `PartnerProjectView` が `publishState` / `publishStatus` / `revokedReason` / `revokedAt` / `gateResult` を**持たない**こと（`?: never`）。`ProjectPublishStateView` の各枝で `revocation` と `held` が**同時に読めない**こと。
+- **静的**: `tests/static/schema-enum-drift.test.ts` に `PROJECT_VISIBILITY_REVOKE_REASONS` / `PROJECT_PUBLISH_REQUEST_KINDS` / `PROJECT_PUBLISH_RUN_TRIGGERS` を登録し、DB の CHECK と突合する。
+- 🔴 **境界領域なので `code-reviewer` を 1 回**（`CLAUDE.md` §8.3。越境経路 1・RLS・ゲート・監査に触る）。`e2e-tester` は省略（上表の結合で足りる）。
+
+##### ⑬ ⚠️ 本改訂の射程外（`pm` への申し送り）
+
+1. 🔴 **通知（`F-039`）と `S-003` の要対応キューへの掲出**。`docs/04` §S-011 の「離脱してよい（結果は通知と要対応キューに現れる）」と §S-013 の「解除された場合は要対応として残る」を満たすには、`#9` の `ACTION_QUEUE`（T-12-15）に「自動解除された公開中だった案件」の行種別を足す必要がある。**`docs/04` 申し送り 21 の 8 点にも `T-12-10` の受け入れ基準 ①〜⑥ にも無い**ため本改訂では設計しない。🔴 **掲出が無いと、ホストは案件詳細を開くまで解除に気づけない**（`AC-9` の趣旨は帯で満たしているが、能動的な気づきは無い）。**`pm` が SP-12 内の別タスクか Phase 2 に割り当てること。** `## TBD` にも残した。
+2. `docs/04` §S-041 の表に `published` / `blocked` を足す申し送り（§6.4 の既存の ⚠️）は本改訂でも未消化のままである。**`verdict` に 2 値が増えることは表の改訂を要しない**（値であってキーではない）。
 
 ### 11.12 🔴 §9.3（`gate.hold-release`）と HELD の自動復帰の実装の決着（T-07-10。2026-09-09）
 
@@ -6696,7 +7015,7 @@ export class InvalidStateTransitionError extends AppError {
 | 🔴 `skill_alias.update` | `#24`（`F-010 AC-3`「別名の採用・却下が監査ログに残る」）。**採用・却下に独自 action（`skill_alias.decide`）を作らず `*.update` に畳む** —— `S-041` の操作種別フィルタ（`CREATE_UPDATE_DELETE` = 接尾辞一致）から漏れ、**記録されているのに検索で出てこない**（`partner_company.suspend` を作らなかったのと同じ理由）。区別は `summary.decision`（`ACCEPT` / `REJECT`）。🔴 **`withApiRoute` の `audit` ではなく `decideSkillAlias` の業務トランザクション内**（`writeAuditLog`）で書く（`membership.role_change` と同じ形）: ①`audit` はハンドラの前に別トランザクションで書くため、**起きなかった採否**（403 / 404 / 409 / 400）まで記録に残る ②`summary` に載せる由来（`origin`）は行を読むまで分からない。🔴 `summary` に**別名の表記そのものを載せない**（利用者の自由入力であり PII が紛れうる。§16.2） | `USER` |
 | `proposal.submit` / `proposal.resend` | 送信ジョブの ⑥（§10.2）。✅ **T-09-06: #43 の要求も同じ `proposal.submit` で `USER` の行を残す**（`summary.operation` = `SUBMIT_REQUEST`〔要求。`outcome` = `ENQUEUED` / `HELD`〕/ `SUBMIT_SETTLE`〔確定〕。要求 → 確定の 2 行で 1 つの物語。`proposal.submit.request` のような独自 action は作らない —— `S-041` の `PROPOSAL_SUBMIT` は action を列挙しており、増やすと検索から漏れる） | `SYSTEM`（`summary.requestedBy` に人間を記録）/ `USER`（#43 / #44 の要求） |
 | `proposal.approve` / `proposal.reject` | `#41` / `#42`。自動承認は `SYSTEM` + `summary.reason='ALL_LAYERS_PASS'` | `USER` / `SYSTEM` |
-| `membership.role_change` / `membership.revoke` / `project.visibility_change` | `#14` 周辺 / `#28` | `USER`。🔴 **`project.visibility_change` だけは `SYSTEM` の行も立つ**（T-07-09。ゲート結果による公開の確定。`summary.operation='GATE_RESULT'`）—— 1 回の公開は「要求（`USER`）→ 確定（`SYSTEM`）」の 2 行で 1 つの物語になる。**ワーカー側だけ独自 action にしない**（`S-041` の `VISIBILITY_CHANGE` で検索したときに、実際に公開が成立した行だけが出てこなくなる。§11.11 ④） |
+| `membership.role_change` / `membership.revoke` / `project.visibility_change` | `#14` 周辺 / `#28` | `USER`。🔴 **`project.visibility_change` だけは `SYSTEM` の行も立つ**（T-07-09。ゲート結果による公開の確定。`summary.operation='GATE_RESULT'`）—— 1 回の公開は「要求（`USER`）→ 確定（`SYSTEM`）」の 2 行で 1 つの物語になる。**ワーカー側だけ独自 action にしない**（`S-041` の `VISIBILITY_CHANGE` で検索したときに、実際に公開が成立した行だけが出てこなくなる。§11.11 ④）。🔴 **T-12-10（2026-09-21）: 公開後の再検査による自動解除も同じ action・同じ `SYSTEM` の 1 行**で残す（`F-014 AC-11`）。区別は **`summary.verdict`** の 4 値（`PUBLISHED` / `BLOCKED` / `RECHECK_PASSED` / `REVOKED_BY_RECHECK`）であり、落とした相手は `#28` の人の解除と**同じキー `revoked`** に書く。🔴 **原因の欄・指摘の本文・`runTrigger` は `summary` に書かない**（§16.2。商流層の指摘はエンド企業名そのもの）。詳細は §11.11「T-12-10 の実装の決着」⑩ |
 | `impersonation.start` / `impersonation.end` | `withImpersonation`（§5.6） | `PLATFORM_USER` |
 | 🔴 `assignment.view` / `contract.view` / `contract_document.download`（経路 5。`F-065 AC-5` / `F-066 AC-6`） | `#80` / `#81` / `#82`（`withApiRoute` の `audit`。DL は `issueDownloadUrl`）。ホストのプレビューも同じ action で記録し `summary.preview=true` | `USER` |
 | `esign.connect` / `esign.disconnect` / `sending_domain.state_change` | `#73` / `#73b` / `domain.verify` / `domain.recheck`（`F-001` 処理⑥。資格情報は記録しない） | `USER` / `SYSTEM` |
@@ -7014,6 +7333,7 @@ export const logger = pino({
 | **TBD-18** | **取引先が `S-044` から延長確認に直接回答できるようにするか**（`docs/02` `## Open Questions` 末尾。Phase 2 の設計時に別 Issue） | 🔴 **作らない**。経路 5 は読み取り専用（`BR-68`）であり、意思表示は経路 3（チャット）。回答機能を作る場合は経路 5 に書き込みが生じ `CLAUDE.md` §3.1 の改訂から始まる | Phase 2 の `S-044` の導線（現状は「この稼働について相談する」→ `S-031`） | `docs/02` A-23 / `BR-68` |
 | **TBD-20** | 🔴 **`EngineerCareer`（経験内容）を保持期間の削除対象に含めるか**（T-09-12。`docs/02` 章 6.8 / A-24 が「含める」を既定として置いたが、🔴 **`CLAUDE.md` §3.5 / `BR-29` の削除対象の列挙〔連絡先・スキルシート原本〕には経歴が入っていない**。列挙への追加は上流の改訂であり**人間の承認事項**。`CLAUDE.md` §8.6） | 🔴 **暫定。[Issue #48](https://github.com/Festal-KM/SES-Platform/issues/48) で確認中**（既定 = A「削除対象に含める」）。**確定事項として扱わない。** 本書は `PURGE_SPEC.delete` に `{ table: 'engineer_careers', rows: 'ALL', provisional: 'ISSUE-48' }` として置き（§9.7）、**回答で変わるのは設定値 1 要素だけ**にした（`retention.delete` / `tenant.purge` のハンドラは `PURGE_SPEC` を読むだけなのでコードは変わらない）。B（含めない）なら `retain` へ移すだけである | **止まらない。** `T-09-12` は既定で実装でき、削除ジョブの実装（**SP-16 T-16-06**）までに決着すればよい。🔴 **ただし SP-16 の着手前には決着が要る** —— 一度削除してしまった経歴は戻らない（不可逆） | `docs/02` A-24 / 章 6.8 / `BR-29` / `CLAUDE.md` §3.5 / **§9.7** |
 | **TBD-19** | **席単価と、取引先の席を課金対象に含めるか**（`Q-20` / `Q-T-3`①。事業判断） | `Plan.monthlySeatPriceJpy` は設定値。**取引先の席を含めるかで `usage.seat-snapshot`（§9.8）の分母（`Membership` の有効行数にパートナーロールを含めるか）が変わる**ため、集計関数に `countPartnerSeats: boolean` を引数で持たせ決め打ちしない | `F-062` の Stripe `Price` 設計（Phase 3）。Phase 1 のうちに再提起（`docs/03` `pm` 申し送り 14） | `docs/01` `Q-20` / `docs/03` `Q-T-3` |
+| **TBD-21** | 🔴 **公開後の自動解除を「気づける場所」に出すか**（T-12-10 の射程外。2026-09-21） — `docs/04` §S-011「結果は通知（`F-039`）と `S-003` の要対応キューに現れる」/ §S-013「解除された場合は要対応として残る（見に行かないと気づけない事象にしない）」は、**`#9` の `ACTION_QUEUE`（T-12-15）に行種別を足すこと**を要求している。🔴 **`docs/04` 申し送り 21 の 8 点にも `T-12-10` の受け入れ基準 ①〜⑥ にも無い**ため、本書は §11.11「T-12-10 の実装の決着」⑬-1 に射程外として明記した | **設計は済んでいる部分で止まらない。** 自動解除の事実・原因の欄・指摘への導線は `#27` の `publishState`（§11.11「T-12-10 の実装の決着」⑤）から読め、`S-011` / `S-013` / `S-010` は帯と列で描ける。足りないのは**能動的な気づき**（一覧を開かないと分からない）だけであり、`ACTION_QUEUE` に 1 行種別を足す独立した変更で閉じる（`publishState` の材料をそのまま使える） | 🔴 **止まるのは「ホストが解除に数日気づかない」ケースだけ**（SES の案件は公開から反応まで数日空くので、実運用では起こりうる。`F-014 AC-9` の趣旨の半分）。**`pm` が SP-12 内の別タスクにするか Phase 2 に送るかを決める** | `docs/04` §S-011 / §S-013 / §6.3 #9 / **§11.11「T-12-10 の実装の決着」⑬** |
 
 🔴 **`CLAUDE.md` §4.2 の改訂が必要になった項目は 0 件である。** 保留（§10.4）・遅延保留（§10.5）・AI 上限によるゲート未実行（§7.6）は**属性 / `ReviewGate.execution`（状態機械ではない実行属性）で表現し、5 つの状態機械に状態を 1 つも追加していない**（`P-A-02` / `P-A-16`）。**§3.3（契約書）と §3.1（経路 5）の改訂は 2026-09-01 に人間が行い、本書はそれに追随した。** 未回答の Issue（#1 プロダクト名 / #3 重み / `Q-20` 席単価）は TBD-5 / TBD-19 に確認中のまま残す。🔴 **[Issue #5](https://github.com/Festal-KM/SES-Platform/issues/5)（匿名候補の丸め粒度。Phase 1 のリリース条件）は 2026-09-10 に回答を得て決着し、TBD-2 を閉じた**（§4.6.1 / `docs/03` §4.13.1 を確定値として扱う）。🔴 **[Issue #35](https://github.com/Festal-KM/SES-Platform/issues/35)（経験内容の保存先）も 2026-09-10 に回答「A」を得て決着した** —— `EngineerCareer` を新設し（`P-A-20`）、**`TBD` には残していない**（決着済みの論点に「暫定 / 確認中」を残さない）。**その副作用として生じた新しい判断事項**（保持期間の削除対象への追加が `CLAUDE.md` §3.5 / `BR-29` の列挙と食い違う件）は **[Issue #48](https://github.com/Festal-KM/SES-Platform/issues/48) として別に起票され、TBD-20 に確認中として残している**（`CLAUDE.md` §8.6「決定の副作用で新たな判断が生じたら、その場で新しい Issue を立て、元の Issue から参照する」）。🔴 **[Issue #41](https://github.com/Festal-KM/SES-Platform/issues/41)（ゲート実行文脈からパートナー台帳を読む経路。§11.9 ⑦）も 2026-09-10 に回答「1」を得て決着した** —— `app_gate_probe` として §11.14 に確定させ（`P-A-21`）、**`TBD` には残していない**。回答の実装は T-09-13（SP-09 の 2 番目）であり、**着手前に本書が先に更新されている**（`CLAUDE.md` §8.7）。⚠️ 決着の過程で `docs/sprints/SP-09` T-09-13 の括弧書き（「連絡先を読めるようにしない」）が本書 §11.14 ② の分析と食い違うことが分かった。**人間の判断事項ではない**（選択肢 1 の原文「マスキングに要る値だけを読む」の範囲内であり、開示範囲は増えない）ため Issue は起票せず、`pm` が sprint 文書を本書に追随させる。
 
@@ -7054,7 +7374,9 @@ export const logger = pino({
 | 29 | 越境経路 5 は当事者列 + RLS。行だけでなく列も絞る。`ExtensionReview` にパートナー読み取りのポリシーを書かない。書込ポリシーも書かない。当事者列はテーブル作成時から | **§4.4 C9** / **§4.9** / §3.7 / §4.4.1 / §4.7 #8〜#10 / §17.2 #17 |
 | 30 | `UsageCounter` は金額と件数の両方。`Plan` も 2 種の上限。1 件の定義は §7.6.1。再試行は件数に加算せず金額に計上。`AiUsage` の行数から数え直さない。`gate-inspector` は記録するがクォータ外、1 日上限には含めゲートも停止。スキップして PASS にしない。Stripe は 4 単位の件数 | **§7.6** / §3.8（`UsageCounter`）/ §3.10（`Plan`）/ §5.8 / §5.10 / §9.3 / §9.8 / §17.2 #18 |
 
-## 付録 B. `docs/04` の `program-design` 宛申し送り 17 項目（改訂 3 の連番 1〜16 + 改訂 8 の 17）と `docs/02` 申し送り 13〜14 のマッピング
+## 付録 B. `docs/04` の `program-design` 宛申し送り（改訂 3 の連番 1〜16 + 改訂 8 の 17 + 🔴 **改訂 14 の 21**）と `docs/02` 申し送り 13〜14 のマッピング
+
+⚠️ **改訂 12 の 18・19 と改訂 13 の 20 は本表に行を持たない** —— いずれも §6.4（#29 の改訂 / #10 の改訂）と §6.5・§11.7 の該当節に**直接**反映済みであり、表の二重管理を避けた（各節の 🔴 が出所を示す）。**21 は射程が §3 / §6 / §11 / §16 にまたがるため行を置く。**
 
 **全項目を反映した。欠けている項目は無い。** `docs/02` の `program-design` 宛申し送り 1〜12 は初版で反映済み（§4 / §7〜§11）。2026-09-01 追加分: **13**（経路 5 の当事者を行レベル分離と同じ層で表現。①当事者列 = `engineer_id` の所有パートナー / 相手方パートナー → §3.7 / §4.4.1 ②当事者判定は認証コンテキストのみ → §4.9 ③同じアクセサ・RLS 述語 → §4.4 C9 ④取得時の射影 → §4.9 のビュー ⑤書込ハンドラを実装しない → §6.6 / §17.2 #17）/ **14**（取引先へ届く送信の前提条件を単一経路で判定。①ジョブが検証状態を確認 → §10.2 ①-d ②フォールバックしない → §8.3 ③`SUBMIT_FAILED` ではなく設定未了 → §10.4 `DOMAIN_UNVERIFIED` ④`TenantEsignConnection` 前提・未接続では `SENDING` を起動しない → §8.4）。**`A-005` 項目 13 / `F-059 AC-7`**（送信基盤クォータ。環境全体・対象テナント欄なし・失敗に加算しない・再送導線なし）→ §8.3-Q / §9.4 / §16.5 / API-A8。**`docs/04` 申し送り 14 / 15**（項目 14 = 送信保留の理由別内訳。`PROVIDER_QUOTA` は `tenant_id` なし・`RATE_LIMIT` はテナント別で `A-004` へ / 項目 15 = 削除予告の未配送。`NOTICE_PENDING` / `NOTICE_UNDELIVERED` の区別・削除ジョブ失敗と別行）→ §8.3-Q / §9.4 / §9.7 / §16.5 / API-A8 / §17.3 #24。**16**（クォータ取得不能を「不明」で表現）→ API-A8 `providerReading.available=false` / §16.5 項目 13。
 
@@ -7078,6 +7400,8 @@ export const logger = pino({
 | 16 | クォータ取得不能を「不明」で表現する（0 件と表示させない） | API-A8 `providerReading.available=false` / §16.5 項目 13 |
 | 🔴 **17**（改訂 8。2026-09-10。Issue #35 = A） | 🔴 **経験内容（`EngineerCareer`）を画面が必要とする形で返す。** ①並び順をサーバ側で確定（期間降順 → 同期間は登録順。配列順 = 表示順。終了年月は `null` = 継続中）②0 行を `[]` で返し「未取得」と区別。0 行で `Proposal` を 422 にしない ③**匿名候補の応答スキーマに経歴を型として持たせない**（件数・要約・`hasCareers` も返さない。`match-explainer` の入力にも渡さない。`F-052` のエクスポートにも列を作らない）④**`EngineerSnapshot` は行単位で複製**し、`S-023` は凍結側だけを返す ⑤**行の追加・更新・削除をそれぞれ監査**（保存の粒度と監査の粒度を一致させない）⑥Phase 2 の反映は `追加` / `置換` を取る **1 本**の API。`置換` は消える行を事前に返す。「常に上書き」の設定値を作らない ⑦保持期間の削除対象に含める（**暫定。Issue #48**） | ① **§3.4.1** / §6.4「#16 / #16b / #17 の経験内容の決着」 ② 同・§6.5 の凍結の節 ③ **§4.5** / **§4.6** / §7.1 / §9.6（`export.generate`）/ §17.2 #28 ④ **§3.6** / §6.5（#46 / #46b） ⑤ **§16.1** / §17.2 #29 ⑥ §6.4（#16b） ⑦ **§9.7** / **TBD-20** |
 
+| 🔴 **21**（改訂 14。2026-09-21。SP-12 `T-12-10` / [Issue #42](https://github.com/Festal-KM/SES-Platform/issues/42) = ②） | 🔴 **公開後の再検査と自動解除で画面が必要とする 8 点。** ①公開の状態を **4 値**で返す（人の解除と自動解除を 1 つの「未公開」に潰さない。0 社という事実から画面に推測させない）②**原因の欄を閉集合でサーバが導出**（指摘の本文を帯用の応答に載せない）③**保留（`HELD_AI_COST_LIMIT`）を FAIL と別フィールド**で返し、**判定不能は保留ではなく FAIL** ④**直近の `ReviewGate` 識別子・実行の契機（`PUBLISH` / `RECHECK`）・実行日時**を同じ応答から読む（公開時点の結果を黙って上書きしない。#40b と同じ材料を流用）⑤**`#26` が「再検査を積んだか / 積まなかったならなぜか」を返す** ⑥**取引先向けの応答を 1 バイトも変えない**（型として存在させない）⑦**迂回の入口を型として作らない** ⑧**監査は `system` で人の操作と区別**（詳細に出すキーを足すなら許可リストに先に足す） | ①②③④⑤⑦ **§11.11「T-12-10 の実装の決着」①〜⑨** / ⑤ §6.4（#26 とその決着）/ ①④ §6.4（#25 / #27）/ ③ §11.7（`GateHeldView` を流用。`usageHref` を足さない）/ ④ §3.6（`review_gates.run_trigger`）・§6.5（#40b の `listReviewGateResults` を流用）/ ⑥ §11.11「T-12-10 の実装の決着」⑦ / ⑧ **§16.1** / §6.4（許可リスト表 = **キーは 1 つも増やさない**）/ 検証 §11.11「T-12-10 の実装の決着」⑫ / 射程外 同⑬ と **TBD-21** |
+
 ## 付録 C. `F-001`〜`F-066` の実装設計カバレッジ
 
 **全 66 機能が実装設計に落ちている。**（`F-xxx` の欠番は無い。`F-065` / `F-066` は 2026-09-01 追加）
@@ -7097,7 +7421,7 @@ export const logger = pino({
 | F-011 | §3.4(`SkillSheet`) / §8.5 / §14.2 / **§6.4(#18,#19,#19b,#19c)** | F-033 | §7.1 / §9.3 / §3.4(`EngineerSkill.originalLabel`) | F-055 | **§5.1** / §3.10(`PlatformUser`) |
 | F-012 | §14.2 / §16.1 / §6.4(#20,#21) | F-034 | §7.1 / §9.3 / §6.5(#38) | F-056 | §5.7 / §6.9(API-A2〔🔴 `summary` + `?signal=`〕,A3) |
 | F-013 | §3.5(`Project`) / §6.4(#26) | F-035 | **§7.5** / §3.10 / §6.7(#66) | F-057 | §5.8 / §6.9(API-A6) |
-| F-014 | §3.5(`ProjectVisibility`) / §4.4(C4) / §6.4(#28) | F-036 | §3.10(`TenantRoleModel`) / §6.7(#67) | F-058 | §5.5(シリアライザ) / §6.9(API-A7) |
+| F-014 | §3.5(`ProjectVisibility`,`ProjectPublishRequest`) / §4.4(C4) / §6.4(#25,#26,#27,#28) / **§11.11「T-12-10 の実装の決着」（`AC-6`〜`AC-13` = 公開後の再検査と自動解除）** / §16.1 | F-036 | §3.10(`TenantRoleModel`) / §6.7(#67) | F-058 | §5.5(シリアライザ) / §6.9(API-A7) |
 | F-015 | §6.4(#25) / §4.4(C4) | F-037 | §11.3 / §4.8 / §6.5(#46) | F-059 | **§16.5** / §6.9(API-A8) / §8.3-Q / §9.4(AC-7) |
 | F-016 | §3.5(`EngineerShare`) / §6.4(#29) / §12.2 | F-038 | §3.7 / §4.4(C6) / §8.9 / §6.5(#50-52) | F-060 | **§5.6** / §6.9(API-A9,A10) / §17.3(#14) |
 | F-017 | **§4.5 / §4.6（4.6.1〜4.6.3。🔴 経歴を型として持たない）** / §6.5(#30) / §17.2(#28) / ~~TBD-2~~ | F-039 | §3.8(`Notification`) / §8.2 / §9.4 | F-061 | §3.10(`Announcement`) / §6.9(API-A11) |
