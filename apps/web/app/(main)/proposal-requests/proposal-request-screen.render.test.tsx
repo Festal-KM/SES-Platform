@@ -76,7 +76,7 @@ const messages: ProposalRequestScreenMessages = {
   withdrawConfirmTitle: 'この提案依頼を取り下げますか',
   withdrawConfirmLead: '取り下げると、取引先はこの依頼に応諾できなくなります。',
   withdrawConfirmSubmit: '取り下げる',
-  withdrawConfirmCancel: 'やめる',
+  withdrawConfirmCancel: 'キャンセル',
   withdrawSubmitting: '取り下げています…',
   withdrawError: '取り下げられませんでした。',
   withdrawErrorState: 'この依頼は既に返答待ちではありません。',

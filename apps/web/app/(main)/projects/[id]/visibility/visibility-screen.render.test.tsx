@@ -85,7 +85,7 @@ const messages: ProjectVisibilityScreenMessages = {
   revokeConfirmTitle: '公開を解除しますか？',
   revokeConfirmLead: '作成済みの提案は残ります。',
   revokeConfirmSubmit: '解除して保存',
-  revokeConfirmCancel: 'やめる',
+  revokeConfirmCancel: 'キャンセル',
   resultPendingGate: '公開の要求を受け付けました。',
   resultNoPublish: '公開範囲を更新しました。',
   errorSave: '公開範囲を保存できませんでした。',

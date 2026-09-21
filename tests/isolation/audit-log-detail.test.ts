@@ -16,6 +16,10 @@
 //   (g) `SYSTEM` 主体の `project.visibility_change`（`GATE_RESULT`）で `published` が社名に解決される
 //   (h) 1 ページの DB クエリ本数が行数に依らず一定（`configureTenantDb` の `onQuery` で数える。N+1 の固定。
 //       `audit_logs` + `users` + `memberships` + `partner_companies` + `projects` の最大 5 本）
+//   (i) 🔴 T-12-18 ⑨ / ⑩ / ⑫（2026-09-18。docs/05 §6.4 の「T-12-18 ⑨ / ⑩ / ⑫ の追加分」）: 許可リストに足した行の**正のケース**
+//       （`GATE_RESULT` の 4 verdict / `state.invalid_transition` の `entity` + `from → to` / `tenant.purge` の `count_{table}` /
+//       `data_export.download` の `kind`）と、**負のケース**（`fields` / `wasLatest` / `runId` / `exportRequestId` / 形の合わない
+//       `count_*` が落ちる）、および `admin.*` が接尾辞族の評価対象にならないこと
 //   ＋ 認可: `VIEWER` は 403、他テナントの行は一覧に現れない（C2 HOST_ONLY）、`summary` プロパティが応答に無い
 //
 // 🔴 検証は `withApiRoute` が組み立てた**実物の Route Handler**（`GET /api/audit-logs`）に `Request` を渡して行う
@@ -25,11 +29,14 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   configureTenantDb,
+  dataExportDownloadSummary,
   disconnectTenantDb,
   type AuthenticatedTenantCtx,
   type TenantIdentity,
   type TenantRole,
 } from '@ses/db';
+// 🔴 `@ses/config` をパッケージ名で import しない（`env-separation.test.ts` と同じ）。`tenant.purge` の表名の閉集合の出所。
+import { PURGE_SPEC } from '../../packages/config/src/retention.js';
 import { createUnextendedClient, type UnextendedClient } from '@ses/db/testing';
 import {
   ISOLATION_SEED_IDS,
@@ -676,6 +683,190 @@ describe('(h) 1 ページの DB クエリ本数が行数に依らず一定（N+1
     expect(reads['memberships'] ?? 0).toBe(0);
     expect(reads['partner_companies'] ?? 0).toBe(0);
     expect(reads['projects'] ?? 0).toBe(0);
+  });
+});
+
+describe('(i) 🔴 T-12-18 ⑨ / ⑩ / ⑫: 許可リストに足した行の正のケースと、載せないキーが落ちる負のケース', () => {
+  it('⑨ proposal.update の GATE_RESULT（SYSTEM 主体。gate-run.ts の形）: 4 つの verdict が ENUM、件数が NUMBER で出て、aiFailed は落ちる', async () => {
+    await insertRows([
+      {
+        action: 'proposal.update',
+        actorKind: 'SYSTEM',
+        actorId: null,
+        // `apps/worker/src/jobs/gate-run.ts` が書く `summary` と同じキー集合。
+        summary: {
+          operation: 'GATE_RESULT',
+          overall: 'FAIL',
+          piiVerdict: 'FAIL',
+          commerceVerdict: 'PASS',
+          consistencyVerdict: 'PASS',
+          aiFailed: true,
+          findingCount: 2,
+          warningCount: 1,
+        },
+      },
+    ]);
+    const reader = await ctxOf(HOST_OWNER, 'ADMIN');
+    const item = only(await markerItems(reader));
+    expect(keysOf(item)).toEqual([
+      'operation',
+      'overall',
+      'piiVerdict',
+      'commerceVerdict',
+      'consistencyVerdict',
+      'findingCount',
+      'warningCount',
+    ]);
+    expect(entry(item, 'overall').value).toEqual({ kind: 'ENUM', value: 'FAIL' });
+    expect(entry(item, 'piiVerdict').value).toEqual({ kind: 'ENUM', value: 'FAIL' });
+    expect(entry(item, 'commerceVerdict').value).toEqual({ kind: 'ENUM', value: 'PASS' });
+    expect(entry(item, 'consistencyVerdict').value).toEqual({ kind: 'ENUM', value: 'PASS' });
+    expect(entry(item, 'findingCount').value).toEqual({ kind: 'NUMBER', value: 2 });
+    expect(entry(item, 'warningCount').value).toEqual({ kind: 'NUMBER', value: 1 });
+    expect(JSON.stringify(item)).not.toContain('aiFailed');
+  });
+
+  it('⑨ state.invalid_transition（invalid-transition.ts の形 { entity, from, to }）: entity は閉集合の ENUM、from → to は state の対。取引先主体でも出る', async () => {
+    await insertRows([
+      { action: 'state.invalid_transition', actorKind: 'USER', actorId: PARTNER_1_1.userId, summary: { entity: 'Proposal', from: 'DRAFT', to: 'WON' } },
+      {
+        action: 'state.invalid_transition',
+        actorKind: 'USER',
+        actorId: TENANT_1.hostUserId,
+        summary: { entity: 'ProposalRequest', from: 'REQUESTED', to: 'ACCEPTED', reason: '応諾できません' },
+      },
+    ]);
+    const reader = await ctxOf(HOST_OWNER, 'ADMIN');
+    const items = await markerItems(reader);
+    expect(items).toHaveLength(2);
+    for (const item of items) {
+      expect(item.detailSuppressedReason).toBeNull();
+      expect(keysOf(item)).toEqual(['entity', 'from', 'to']);
+      expect(entry(item, 'from').pair).toEqual({ id: 'state', side: 'BEFORE' });
+      expect(entry(item, 'to').pair).toEqual({ id: 'state', side: 'AFTER' });
+    }
+    const partnerRow = only(items.filter((item) => item.actorId === PARTNER_1_1.userId));
+    expect(entry(partnerRow, 'entity').value).toEqual({ kind: 'ENUM', value: 'Proposal' });
+    expect(entry(partnerRow, 'to').value).toEqual({ kind: 'ENUM', value: 'WON' });
+    expect(JSON.stringify(items)).not.toContain('応諾できません');
+  });
+
+  it('🔴 ⑩ tenant.purge（tenant-purge.ts の形。SYSTEM 主体）: count_{table} が PURGE_SPEC.delete の表名ぶん NUMBER で出て、runId は落ちる', async () => {
+    const tables = PURGE_SPEC.delete.map((spec) => spec.table);
+    const runId = randomUUID();
+    const counts: Record<string, number> = {};
+    tables.forEach((table, index) => {
+      counts[`count_${table}`] = index;
+    });
+    await insertRows([
+      {
+        action: 'tenant.purge',
+        actorKind: 'SYSTEM',
+        actorId: null,
+        summary: { cause: 'TENANT_PURGED', runId, tables: tables.length, ...counts },
+        targetId: TENANT_1.tenantId,
+      },
+    ]);
+    const reader = await ctxOf(HOST_OWNER, 'ADMIN');
+    const item = only(await markerItems(reader));
+    expect(keysOf(item)).toEqual(['cause', 'tables', ...tables.map((table) => `count_${table}`).sort()]);
+    expect(entry(item, 'cause').value).toEqual({ kind: 'ENUM', value: 'TENANT_PURGED' });
+    expect(entry(item, 'tables').value).toEqual({ kind: 'NUMBER', value: tables.length });
+    for (const [index, table] of tables.entries()) {
+      expect(entry(item, `count_${table}`).value).toEqual({ kind: 'NUMBER', value: index });
+    }
+    const json = JSON.stringify(item);
+    expect(json).not.toContain('runId');
+    expect(json).not.toContain(runId);
+    expect(tables.length).toBeGreaterThan(10);
+  });
+
+  it('⑩ data_export.download（dataExportDownloadSummary の形）: kind = CLOSING_RETURN が出て、exportRequestId は落ちる', async () => {
+    const exportRequestId = randomUUID();
+    await insertRows([
+      {
+        action: 'data_export.download',
+        actorKind: 'USER',
+        actorId: TENANT_1.hostOwnerUserId,
+        summary: dataExportDownloadSummary(exportRequestId),
+        targetId: exportRequestId,
+      },
+    ]);
+    const reader = await ctxOf(HOST_OWNER, 'ADMIN');
+    const item = only(await markerItems(reader));
+    expect(item.detail.entries).toEqual([{ key: 'kind', pair: null, value: { kind: 'ENUM', value: 'CLOSING_RETURN' } }]);
+    // 要求の識別子は `対象` 列（targetId）で読む。detail には重ねない。
+    expect(item.targetId).toBe(exportRequestId);
+    expect(JSON.stringify(item.detail)).not.toContain(exportRequestId);
+    expect(JSON.stringify(item.detail)).not.toContain('exportRequestId');
+  });
+
+  it('🔴 負のケース: DRAFT_UPDATE の fields / skill_sheet.update の wasLatest / 表名の形でない count_ / 負数の count_ が落ちる', async () => {
+    await insertRows([
+      { action: 'proposal.update', actorKind: 'USER', actorId: TENANT_1.hostUserId, summary: { operation: 'DRAFT_UPDATE', fields: 'body,subject' } },
+      { action: 'skill_sheet.update', actorKind: 'USER', actorId: TENANT_1.hostUserId, summary: { operation: 'SET_LATEST', version: 2, wasLatest: false } },
+      {
+        action: 'tenant.purge',
+        actorKind: 'SYSTEM',
+        actorId: null,
+        summary: { cause: 'RETENTION', tables: 2, 'count_Engineers!': 1, count_engineers: -1, count_skill_sheets: 3 },
+      },
+    ]);
+    const reader = await ctxOf(HOST_OWNER, 'ADMIN');
+    const items = await markerItems(reader);
+    const draft = only(items.filter((item) => item.action === 'proposal.update'));
+    expect(keysOf(draft)).toEqual(['operation']);
+    const sheet = only(items.filter((item) => item.action === 'skill_sheet.update'));
+    expect(keysOf(sheet)).toEqual(['operation']);
+    const purge = only(items.filter((item) => item.action === 'tenant.purge'));
+    expect(keysOf(purge)).toEqual(['cause', 'tables', 'count_skill_sheets']);
+    const json = JSON.stringify(items);
+    for (const forbidden of ['fields', 'body,subject', 'wasLatest', 'count_Engineers!', '"count_engineers"']) {
+      expect(json, `${forbidden} が応答に現れた`).not.toContain(forbidden);
+    }
+  });
+
+  it('🔴 ⑫ admin.tenant.create / admin.tenant.update は CRUD_KEYS の全キーを持っていても entries: []（対照: partner_company.update は出る）', async () => {
+    const crud: Record<string, string | number> = {
+      operation: 'SUSPEND',
+      decision: 'ACCEPT',
+      mode: 'AUTO',
+      status: 'ACTIVE',
+      fields: 'name',
+      changedFields: 'name',
+      skillCount: 1,
+      headcount: 2,
+      mustCount: 3,
+      niceCount: 4,
+      periodFrom: '2026-09',
+      periodTo: '2026-10',
+    };
+    await insertRows([
+      { action: 'admin.tenant.create', actorKind: 'PLATFORM_USER', actorId: null, summary: { ...crud, before: 'x', after: 'y', platformRole: 'PLATFORM_OWNER' } },
+      { action: 'admin.tenant.update', actorKind: 'PLATFORM_USER', actorId: null, summary: crud },
+      {
+        action: 'partner_company.update',
+        actorKind: 'USER',
+        actorId: TENANT_1.hostOwnerUserId,
+        summary: { operation: 'SUSPEND', reason: 'PII を含みうる自由文' },
+        targetId: PARTNER_1_1.partnerCompanyId,
+      },
+    ]);
+    const reader = await ctxOf(HOST_OWNER, 'ADMIN');
+    const items = await markerItems(reader);
+    for (const action of ['admin.tenant.create', 'admin.tenant.update']) {
+      const row = only(items.filter((item) => item.action === action));
+      expect(row.detail, action).toEqual({ entries: [] });
+      expect(row.detailSuppressedReason).toBeNull();
+      expect(row.actorKind).toBe('PLATFORM_USER');
+    }
+    const partner = only(items.filter((item) => item.action === 'partner_company.update'));
+    expect(partner.detail.entries).toEqual([{ key: 'operation', pair: null, value: { kind: 'ENUM', value: 'SUSPEND' } }]);
+    const json = JSON.stringify(items);
+    // 🔴 `SUSPEND` が出るのは `partner_company.update` の 1 件だけ（`admin.*` に CRUD の許可キーが当たっていない）。
+    expect(json.match(/"SUSPEND"/g)).toHaveLength(1);
+    expect(json).not.toContain('PII を含みうる');
+    expect(json).not.toContain('platformRole');
   });
 });
 

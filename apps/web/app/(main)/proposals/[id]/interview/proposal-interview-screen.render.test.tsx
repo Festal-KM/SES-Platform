@@ -90,7 +90,7 @@ const messages: ProposalInterviewScreenMessages = {
   notePreviewNone: '（記録の本文なし）',
   submit: '記録する',
   submitting: '記録しています…',
-  cancel: 'やめる',
+  cancel: 'キャンセル',
   confirmTitle: 'この記録は取り消せません',
   confirmSubmit: '確定する',
   confirmCancel: '戻る',

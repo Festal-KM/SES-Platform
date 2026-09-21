@@ -447,30 +447,65 @@ export async function completeReviewGate(
 }
 
 /**
- * 対象の最新のゲート結果を読む（#40 / 承認画面が使う。docs/05 §11.7）。
+ * 対象のゲート結果 1 行（#40 の最新 1 件 / #40b の履歴の各行）。`PersistedGateResult` の射影に
+ * 行の識別子と 2 つの時刻を足した形。
  *
- * 🔴 保留行（`execution <> 'DONE'`）を優先して返す。保留中に古い `DONE` の行を返すと、
- *    画面は「確定済み」と表示し、利用者は上限で止まっていることに気づけない（`F-027 AC-5`）。
+ * - `executedAt` … `execution='DONE'` のとき非 NULL（確定した時刻）。保留行は `null`
+ * - `heldSince` … `execution='HELD_AI_COST_LIMIT'` のとき非 NULL（最初に保留した時刻）。確定行は `null`
+ */
+export type ReviewGateResultRow = PersistedGateResult & {
+  readonly id: string;
+  readonly executedAt: Date | null;
+  readonly heldSince: Date | null;
+};
+
+/**
+ * 🔴 並びのキー（`COALESCE(executed_at, held_since)` の JS 版）。
  *
- * 🔴 **本関数だけは利用者の文脈（`AuthenticatedTenantCtx`）でも呼ぶ**（#40。T-07-08）。
- *    したがって分離キーは ctx から**そのまま**取る —— 上の書き込み系のように
- *    `partnerCompanyId: null`（ホスト相当）に固定してはならない。固定すると、パートナー所属の
- *    利用者の読み取りがホスト文脈で走り、`review_gates` の C5 ポリシー
- *    （`app_is_host() OR owner_partner_company_id = app_partner_id()`）が**他社のゲート結果まで
- *    見せてしまう**（`CLAUDE.md` §3.1 の第二境界をその場で破る）。
+ * `execution='DONE'` の行は `executed_at` が、保留行は `held_since` が必ず入る
+ * （migration 20260903020000 の CHECK）。**両方 NULL は不変条件違反であり、`0` や
+ * `new Date()` へ黙って落とさず例外にする**（T-12-14 レビュー対応）。
+ */
+function reviewGateSortKey(row: { readonly executedAt: Date | null; readonly heldSince: Date | null }): number {
+  if (row.executedAt !== null) return row.executedAt.getTime();
+  if (row.heldSince !== null) return row.heldSince.getTime();
+  throw new Error(
+    'review_gates の行が executedAt と heldSince の両方とも NULL です（docs/05 §3.6 の CHECK が壊れています）。',
+  );
+}
+
+/**
+ * 🔴 対象のゲート結果を**全行**読む（#40b `GET /api/proposals/{id}/gate-results`。docs/05 §6.5
+ *    「#40b と `S-023` セクション 4 の設計」/ `F-020 AC-7`）。T-12-14 ②。
+ *
+ * 🔴 **#40（`readReviewGateResult`）の母集団はこの関数である。** 「最新の 1 件」と「履歴の全行」で
+ *    `where` / `select` を別々に書くと、片方だけに条件が増えて「履歴には出るが現在の結果には出ない行」
+ *    （またはその逆）が生まれる。母集団のクエリは 1 実装にし、#40 はその結果から 1 行選ぶだけにする。
+ *
+ * 🔴 並びは **`COALESCE(executed_at, held_since) DESC, id DESC`**（新しい実行が先。保留行は
+ *    `executed_at` を持たないので保留開始時刻で並ぶ）。保留行は部分 UNIQUE により対象ごとに高々 1 行で、
+ *    確定行は保留行を CAS で確定させた後にしか増えない（`completeReviewGate`）ため、保留行があれば
+ *    常に先頭に来る。`id`（uuidv7 = 時刻順）を第 2 キーにして、同時刻でも並びが実行のたびに変わらないようにする。
+ *
+ * 🔴 **利用者の文脈（`AuthenticatedTenantCtx`）で呼ぶ**（#40 / #40b / `S-023`）。したがって分離キーは
+ *    ctx から**そのまま**取る —— 上の書き込み系のように `partnerCompanyId: null`（ホスト相当）に
+ *    固定してはならない。固定すると、パートナー所属の利用者の読み取りがホスト文脈で走り、
+ *    `review_gates` の C5 ポリシー（`app_is_host() OR owner_partner_company_id = app_partner_id()`）が
+ *    **他社のゲート結果まで見せてしまう**（`CLAUDE.md` §3.1 の第二境界をその場で破る）。
  *    `SystemTenantCtx` は `AuthenticatedTenantCtx` の部分型であり、その `partnerCompanyId` は
  *    常に `null` なので、ジョブ側の呼び出しの振る舞いは 1 ビットも変わらない。
+ * 🔴 **読み取りは Prisma デリゲートで行う**（クライアント拡張のテナントスコープ注入 = 第 2 防御を通すため。
+ *    `COALESCE` の並びは `orderBy` で表せないので JS で作る —— 1 対象あたり数行であり、旧実装も全行読んでいた）。
  */
-export async function readReviewGateResult(
+export async function listReviewGateResults(
   ctx: AuthenticatedTenantCtx,
   target: Pick<ReviewGateKey, 'targetType' | 'targetId'>,
-): Promise<(PersistedGateResult & { readonly id: string; readonly heldSince: Date | null }) | null> {
+): Promise<readonly ReviewGateResultRow[]> {
   return runInTenantTransaction(
     { tenantId: ctx.tenantId, partnerCompanyId: ctx.partnerCompanyId, actorUserId: ctx.userId },
     async (tx) => {
       const rows = await tx.reviewGate.findMany({
         where: { targetType: target.targetType, targetId: target.targetId },
-        orderBy: [{ execution: 'asc' }, { executedAt: 'desc' }],
         select: {
           id: true,
           execution: true,
@@ -481,26 +516,51 @@ export async function readReviewGateResult(
           findings: true,
           aiWarnings: true,
           aiFailed: true,
+          executedAt: true,
           heldSince: true,
         },
       });
-      // 'DONE' < 'HELD_AI_COST_LIMIT' なので、保留行は昇順の末尾に来る。保留を優先する。
-      const row = rows.find((candidate) => candidate.execution !== 'DONE') ?? rows[0];
-      if (row === undefined) return null;
-      return {
-        id: row.id,
-        execution: row.execution as GateExecution,
-        contentHash: row.contentHash,
-        piiVerdict: row.piiVerdict as GateVerdict | null,
-        commerceVerdict: row.commerceVerdict as GateVerdict | null,
-        consistencyVerdict: row.consistencyVerdict as GateVerdict,
-        findings: fromJson(row.findings),
-        aiWarnings: fromJson(row.aiWarnings),
-        aiFailed: row.aiFailed,
-        heldSince: row.heldSince,
-      };
+      return [...rows]
+        .sort((a, b) => {
+          const diff = reviewGateSortKey(b) - reviewGateSortKey(a);
+          if (diff !== 0) return diff;
+          if (b.id > a.id) return 1;
+          if (b.id < a.id) return -1;
+          return 0;
+        })
+        .map((row) => ({
+          id: row.id,
+          execution: row.execution as GateExecution,
+          contentHash: row.contentHash,
+          piiVerdict: row.piiVerdict as GateVerdict | null,
+          commerceVerdict: row.commerceVerdict as GateVerdict | null,
+          consistencyVerdict: row.consistencyVerdict as GateVerdict,
+          findings: fromJson(row.findings),
+          aiWarnings: fromJson(row.aiWarnings),
+          aiFailed: row.aiFailed,
+          executedAt: row.executedAt,
+          heldSince: row.heldSince,
+        }));
     },
   );
+}
+
+/**
+ * 対象の最新のゲート結果を読む（#40 / 承認画面が使う。docs/05 §11.7）。
+ *
+ * 🔴 T-12-14 ②: 母集団は `listReviewGateResults`（#40b と同じ 1 実装）であり、本関数は
+ *    その結果から **保留行（`execution <> 'DONE'`）を優先して 1 行選ぶ**だけである。
+ *    保留中に古い `DONE` の行を返すと、画面は「確定済み」と表示し、利用者は上限で止まっていることに
+ *    気づけない（`F-027 AC-5`）。並びは上の関数が保証しているので、保留行が無ければ先頭 = 最新の確定行。
+ *
+ * 🔴 分離キーの扱い（ctx からそのまま取る理由）は `listReviewGateResults` の注記のとおり（T-07-08）。
+ */
+export async function readReviewGateResult(
+  ctx: AuthenticatedTenantCtx,
+  target: Pick<ReviewGateKey, 'targetType' | 'targetId'>,
+): Promise<ReviewGateResultRow | null> {
+  const rows = await listReviewGateResults(ctx, target);
+  return rows.find((candidate) => candidate.execution !== 'DONE') ?? rows[0] ?? null;
 }
 
 /** `GateHeldView`（docs/05 §11.7）の時刻 2 つ。ISO 8601。 */

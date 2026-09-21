@@ -39,7 +39,7 @@ const messages: AdminAuditLogsResultsMessages = {
   columnMeta: 'IP・デバイス',
   actorKinds: { USER: '利用者', PLATFORM_USER: '運営者', SYSTEM: 'システム' },
   tenantCrossTenant: '（横断）',
-  tenantUnresolved: '（不明）',
+  tenantUnresolved: '—',
   tenantOpenDetail: 'テナント詳細',
 };
 

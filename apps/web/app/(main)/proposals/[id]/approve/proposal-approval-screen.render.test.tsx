@@ -82,7 +82,7 @@ const messages: ProposalApprovalScreenMessages = {
   rejectSubmit: '却下して差し戻す',
   rejecting: '差し戻しています…',
   rejected: '却下しました。',
-  rejectCancel: '却下をやめる',
+  rejectCancel: 'キャンセル',
   scrollRequired: '承認・却下は、プレビューの末尾まで確認すると選べるようになります。',
   openEditor: '提案の内容を開く',
   backHome: 'ホームに戻る',

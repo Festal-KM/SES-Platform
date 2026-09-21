@@ -9,6 +9,9 @@
 // 🔴 **ロールで到達を止めない**（`docs/04` §S-023 の必要ロールは全ロール）。メモの導線だけ `canAddNote`（立場）× 実行可 × 非 `VIEWER` で
 //    出し分ける。拒否の本体は #47 のガードと `createProposalNote`。
 // 🔴 **`AuditLog` を書かない。** 提案詳細の閲覧は `BR-27` の閲覧記録の対象ではない（スキルシートの閲覧・DL は `S-008` 側で記録される）。
+// ✅ T-12-14 ②: セクション 4「ゲート結果の履歴」は #40b と**同じ関数** `readProposalGateResults` をサーバコンポーネントで直接呼ぶ
+//    （Route Handler を経由しない。#46b / `S-006` と同じ作法）。境界は #40 と同じ（`loadTarget` の 404 + RLS の C5）で、
+//    `readProposalDetail` が見えた提案なら同じ ctx で必ず見える。
 import { notFound, redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { t } from '@ses/i18n';
@@ -16,7 +19,8 @@ import { NotFoundError } from '../../../../lib/api/errors';
 import { executionDenialMessageKey } from '../../../../lib/api/guards';
 import { resolveTenantCtxOutcome } from '../../../../lib/auth/session';
 import { readProposalDetail } from '../../../../lib/proposals/detail';
-import { proposalDetailRows } from '../../../../lib/proposals/detail-rows';
+import { proposalDetailRows, proposalGateHistoryRows } from '../../../../lib/proposals/detail-rows';
+import { readProposalGateResults } from '../../../../lib/proposals/gate';
 import { PROPOSALS_PATH } from '../../../../lib/proposals/hrefs';
 import { PROPOSAL_NOTE_MAX_LENGTH, proposalParamsSchema } from '../../../../lib/proposals/schemas';
 import { proposalDetailScreenMessages } from './detail-props';
@@ -46,6 +50,8 @@ export default async function ProposalDetailPage({ params }: { readonly params: 
   });
 
   const rows = proposalDetailRows(screen, now);
+  // ✅ T-12-14 ②: 実行ごとの履歴（#40b と同じ関数）。`readProposalDetail` が 200 の後なので 404 にはならない（同じ ctx・同じ母集団）。
+  const gateHistory = proposalGateHistoryRows(await readProposalGateResults(ctx, parsed.data.id, { now }));
   // 🔴 `F-004 AC-7`: 停止中・解約手続き中はメモの追加を出さず、理由を表示する（閲覧は可能）。
   const denialKey = executionDenialMessageKey(ctx.lifecycleState);
 
@@ -58,6 +64,7 @@ export default async function ProposalDetailPage({ params }: { readonly params: 
       <ProposalDetailScreen
         proposalId={rows.id}
         rows={rows}
+        gateHistory={gateHistory}
         isViewer={ctx.role === 'VIEWER'}
         denialMessage={denialKey === null ? null : t(denialKey)}
         listHref={PROPOSALS_PATH}

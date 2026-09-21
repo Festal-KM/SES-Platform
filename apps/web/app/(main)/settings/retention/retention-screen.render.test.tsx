@@ -5,7 +5,7 @@
 //   ① `CLOSING` では最上部に固定バナー（「解約手続き中です … あと N 日で削除されます」）が出て、`N` は view の残り日数
 //   ② `ACTIVE` では「削除予定のデータはありません」、バナー無し、返却の生成ボタン無し（`CLOSING` 以外では依頼できない）
 //   ③ 生成中（最新の依頼が `QUEUED` / `RUNNING`）は「生成しています」で、生成ボタンが無い
-//   ④ 完了（`READY`）は「生成が完了しました」+ 履歴の行にダウンロードの導線。`FAILED` は「再試行」
+//   ④ 完了（`READY`）は「生成が完了しました」+ 履歴の行にダウンロードの導線。`FAILED` は「もう一度試す」（docs/04 §7.8）
 //   ⑤ 🔴 削除を実行する導線（ボタン・リンク）が無い。セクション 1（保持期間の設定）を描かない
 //   ⑥ 削除予定の一覧は `PURGE_SPEC.delete` の表ごとに 1 行（種別 / 件数 / 削除予定日）
 //
@@ -47,7 +47,7 @@ const messages: RetentionScreenMessages = {
   exportDownload: 'ダウンロード',
   exportDownloading: 'ダウンロードの準備をしています',
   exportFailed: '生成できませんでした',
-  exportRetry: '再試行',
+  exportRetry: 'もう一度試す',
   exportRequestFailed: '受け付けられませんでした',
   exportDownloadFailed: 'ダウンロードの準備ができませんでした',
   exportExpired: '有効期限が切れています',
@@ -112,7 +112,7 @@ describe('RetentionScreen（S-042）', () => {
     expect(html).toContain('生成中');
   });
 
-  it('④ 完了: 「生成が完了しました」+ 履歴の行にダウンロードの導線。FAILED は再試行', () => {
+  it('④ 完了: 「生成が完了しました」+ 履歴の行にダウンロードの導線。FAILED は「もう一度試す」', () => {
     const ready = render(
       closingView([
         { id: 'r-2', status: 'READY', requestedAt: '2026-09-20T00:00:00.000Z', readyAt: '2026-09-20T00:01:00.000Z', expiresAt: '2026-09-27T00:01:00.000Z' },
@@ -127,7 +127,7 @@ describe('RetentionScreen（S-042）', () => {
       closingView([{ id: 'r-3', status: 'FAILED', requestedAt: '2026-09-20T00:00:00.000Z', readyAt: null, expiresAt: null }]),
     );
     expect(failed).toContain('data-testid="retention-export-failed"');
-    expect(failed).toContain('再試行');
+    expect(failed).toContain('もう一度試す');
     expect(failed).not.toContain('data-testid="retention-history-download-r-3"');
   });
 

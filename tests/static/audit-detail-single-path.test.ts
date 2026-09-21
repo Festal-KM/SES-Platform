@@ -14,8 +14,10 @@
 //      禁止パターンを置いた。ここでは対照として禁止リストに載っていることだけを見る
 //   ⑥ `apps/web/lib/admin-audit-logs/**` / `packages/db/src/serializers/platform/**` から `pickAuditDetail` を
 //      import しない（`A-006` を許可リスト方式へ静かに寄せる変更を落とす。`CLAUDE.md` §10.5）
-//   ＋ CSV: `S-041` の CSV エクスポートは未実装。実装が入ったとき `detail` / `summary` を列に含めないことを、
-//      対象ディレクトリの `text/csv` を持つソースに `detail` / `summary` の識別子が無いことで見る
+//   ＋ CSV（✅ T-12-18 ⑪で実装。docs/05 §6.4「CSV エクスポート」行 ④）: `S-041` の CSV エクスポート（`lib/audit-logs/csv.ts` /
+//      `lib/audit-logs/export.ts` / #10b の route `app/api/(main)/audit-logs/export/route.ts`）が `detail` / `summary` の識別子と
+//      `pickAuditDetail` / `AUDIT_DETAIL_ALLOWLIST` / `maskAuditSummary` の参照を持たない（許可リストの 2 実装が構造的に書けない）。
+//      加えて対象ディレクトリの `text/csv` を持つソースにも同じ検査を当てる（CSV を生成する別のファイルが増えても自動で対象になる）
 //
 // 🔴 識別子の走査は TypeScript の AST で行う（コメントの中の `summary` を実物と区別するため。
 //    `tests/static/testid-inventory.test.ts` と同じ）。import の走査は正規表現で足りる（コメントを落としてから）。
@@ -163,9 +165,12 @@ describe('⑤ 行の詳細の追加取得 API（GET /api/audit-logs/{id}）が�
     const source = read('tests/static/forbidden-api-routes.test.ts');
     expect(source).toContain("url: '/api/audit-logs/{}'");
   });
-  it('apps/web/app/api/(main)/audit-logs/ 配下に動的セグメントのディレクトリが無い', () => {
+  it('apps/web/app/api/(main)/audit-logs/ 配下に動的セグメントのディレクトリが無い（在るのは #10b の静的セグメント export だけ）', () => {
     const entries = readdirSync(path.join(repoRoot, 'apps/web/app/api/(main)/audit-logs'), { withFileTypes: true });
-    expect(entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name)).toEqual([]);
+    const directories = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+    expect(directories.filter((name) => name.startsWith('['))).toEqual([]);
+    // ✅ T-12-18 ⑪: `export`（`GET /api/audit-logs/export`。docs/05 §6.3 #10b）は静的セグメントであり、行の詳細の追加取得ではない。
+    expect(directories).toEqual(['export']);
   });
 });
 
@@ -181,19 +186,46 @@ describe('⑥ A-006（運営者）を許可リスト方式へ寄せない', () =
   });
 });
 
-describe('CSV: S-041 のエクスポートに detail / summary の列を足さない', () => {
-  it('lib/audit-logs/** と app/(main)/audit-logs/** の CSV 生成（text/csv を持つソース）が detail / summary を参照しない', () => {
-    const csvSources = sourcesUnder(LIB_ROOT, SCREEN_ROOT).filter((file) => /text\/csv/.test(stripComments(readFileSync(file, 'utf8'))));
-    const offenders = csvSources
+describe('CSV: S-041 のエクスポート（#10b。T-12-18 ⑪）に detail / summary の列を足さない', () => {
+  /** 🔴 CSV を生成する側の 3 本（docs/05 §6.4「CSV エクスポート」行 ④）。増えたら `text/csv` の走査が自動で拾う。 */
+  const CSV_SOURCES = [
+    'apps/web/lib/audit-logs/csv.ts',
+    'apps/web/lib/audit-logs/export.ts',
+    'apps/web/app/api/(main)/audit-logs/export/route.ts',
+  ] as const;
+  const EXPORT_ROUTE_ROOT = 'apps/web/app/api/(main)/audit-logs/export';
+
+  function csvOffenders(files: readonly string[]): readonly string[] {
+    return files
       .filter((file) => {
         const relative = toRepoRelative(file);
         const source = readFileSync(file, 'utf8');
         return (
           identifierOccurrences(source, relative, 'detail').length > 0 ||
-          identifierOccurrences(source, relative, 'summary').length > 0
+          identifierOccurrences(source, relative, 'summary').length > 0 ||
+          /\b(pickAuditDetail|AUDIT_DETAIL_ALLOWLIST|maskAuditSummary|resolveAuditDetailKeySpecs)\b/.test(stripComments(source))
         );
       })
       .map(toRepoRelative);
-    expect(offenders).toEqual([]);
+  }
+
+  it('🔴 csv.ts / export.ts / #10b の route が detail / summary の識別子と許可リスト・マスクの関数を参照しない', () => {
+    const files = CSV_SOURCES.map((relative) => path.join(repoRoot, relative));
+    expect(csvOffenders(files)).toEqual([]);
+    // 対照: 3 本は実在し、CSV の生成・読み出し・応答をそれぞれ担っている（走査が空振りしていない）。
+    expect(stripComments(read(CSV_SOURCES[0]))).toMatch(/encodeCsv\(/);
+    expect(stripComments(read(CSV_SOURCES[1]))).toMatch(/listAuditLogs\(/);
+    expect(stripComments(read(CSV_SOURCES[2]))).toMatch(/text\/csv|AUDIT_LOG_CSV_CONTENT_TYPE/);
+    // 🔴 監査記録 `audit_log.export` の組み立て（`summary` を持つ）は `packages/db`（`recordAuditLogExport`）に閉じ、route は呼ぶだけ。
+    expect(stripComments(read(CSV_SOURCES[2]))).toMatch(/recordAuditLogExport\(/);
+    expect(stripComments(read('packages/db/src/audit-log-export.ts'))).toMatch(/writeAuditLog\(/);
+  });
+
+  it('lib/audit-logs/** / app/(main)/audit-logs/** / #10b の route 配下の text/csv を持つソースが detail / summary を参照しない', () => {
+    const csvSources = sourcesUnder(LIB_ROOT, SCREEN_ROOT, EXPORT_ROUTE_ROOT).filter((file) =>
+      /text\/csv/.test(stripComments(readFileSync(file, 'utf8'))),
+    );
+    expect(csvSources.map(toRepoRelative)).toContain('apps/web/lib/audit-logs/csv.ts');
+    expect(csvOffenders(csvSources)).toEqual([]);
   });
 });

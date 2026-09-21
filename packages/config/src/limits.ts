@@ -108,6 +108,17 @@ export const PAGE_CURSOR_MAX_LENGTH = 256;
 export const AUDIT_LOG_SEARCH_MAX_PERIOD_DAYS = 31;
 
 /**
+ * 🔴 `S-041` の CSV エクスポート（#10b `GET /api/audit-logs/export`。docs/05 §6.3 #10b / §6.4「CSV エクスポート」行）で
+ *    1 回に書き出せる行数の上限。T-12-18 ⑪。
+ *
+ * Phase 1 は**同期生成 + 上限**であり、超える母集団は 400 `AUDIT_LOG_EXPORT_TOO_LARGE`（期間短縮を促す）。
+ * `docs/04` §S-041「大量件数のエクスポートはジョブ」は、この上限に当たる実例が出てからジョブ化する
+ * （早すぎるジョブ化は完了通知・保管・失効の設計を伴い、`DataExportRequest` と第 2 の返却経路を作る）。
+ * 🔴 暫定 10,000。運用で変える判断はこの 1 行で済む（呼び出し側は引数で受け取る）。
+ */
+export const AUDIT_LOG_EXPORT_MAX_ROWS = 10_000;
+
+/**
  * 管理平面の監視系一覧（`A-005` / `A-006`）の 1 ページの既定行数（docs/04 §5-6「管理平面の監視系は 100 行」）。
  * 🔴 `PAGE_SIZE_MAX`（200）を超えない。
  */

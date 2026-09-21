@@ -104,6 +104,28 @@ export class AuditLogPeriodTooLongError extends AppError {
 }
 
 /**
+ * 🔴 `S-041` の CSV エクスポート（#10b `GET /api/audit-logs/export`）の母集団が `AUDIT_LOG_EXPORT_MAX_ROWS` を超えた（**400**）。
+ *    T-12-18 ⑪（docs/05 §6.3 #10b / §6.4「CSV エクスポート」行 ①）。
+ *
+ * 🔴 `ValidationError` と別コードにする理由: 入力の書式は正しく、**件数だけ**が問題である。画面は「期間を短くして再実行」へ導く。
+ * 🔴 `params.maxRows` は秘匿ではない（`packages/config` の固定の方針値。テナントの利用状況を含まない）。**実際の件数は載せない**
+ *    （母集団の大きさを 400 で教えない）。
+ */
+export class AuditLogExportTooLargeError extends AppError {
+  readonly code = 'AUDIT_LOG_EXPORT_TOO_LARGE';
+  readonly httpStatus = 400;
+  readonly userMessageKey: MessageKey = 'error.auditLogs.exportTooLarge';
+  override readonly details: readonly string[] = ['query.from', 'query.to'];
+  override readonly params: Readonly<Record<string, unknown>>;
+
+  constructor(maxRows: number) {
+    super(`エクスポートの対象が上限（${maxRows} 行）を超えています。`);
+    this.name = 'AuditLogExportTooLargeError';
+    this.params = { maxRows };
+  }
+}
+
+/**
  * 🔴 再送（#44）の body に `acknowledged: true` が無い（**400**）。T-09-08。`F-023 AC-2` / docs/05 §10.6「`POST /resend` は
  *    `{ acknowledged: true }` を必須にする。『届いている可能性がある』旨の確認を経ないと呼べない」。
  *

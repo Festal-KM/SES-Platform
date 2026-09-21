@@ -16,7 +16,8 @@
 // 🔴 汎用のエスケープハッチにしない。ここで公開するのは「K-7 の前提を作るための 1 関数」と、
 //    T-08-09 の 3 関数（下段。worker 不在を補う期限到来の前提づくり / 凍結行の表明 / 合成データの後始末）、
 //    T-09-11 の「API を通らない経路の模擬」2 関数（送信元ドメインの検証 / 承認後の `content_hash` のずれ）と後始末、
-//    T-11-07 の「非開示の値の仕込みと後始末」2 関数（E2E #15。最下段）
+//    T-11-07 の「非開示の値の仕込みと後始末」2 関数（E2E #15）、
+//    T-12-14 ⑤ の「AI の上限到達の模擬」3 関数（E2E #23 (b) 後半。`usage_counters` を上限値に置く / 戻す。最下段）
 //    だけであり、任意の SQL を実行できる経路を増やさない（`packages/db/src/testing/isolation.ts`
 //    冒頭コメントと同じ規律）。関数を足すときは目的を 1 つに絞り、SQL を固定文にすること。
 //    ✅ T-09-11 で worker がハーネスに入り（`harness/worker.ts`）、提案の**状態を直接書く**シームは削除した（下段の注記）。
@@ -31,6 +32,9 @@
 //    同じパターン）。
 import { execFileSync } from 'node:child_process';
 import process from 'node:process';
+// 🔴 `@ses/domain` をパッケージ名で import しない（`app-env.ts` / `worker.ts` と同じ理由。実装は同じファイル）。
+//    期間キーの暦（`Asia/Tokyo`）を app と同じ 1 実装から取る（書き写すと日付の境界だけがずれる）。
+import { usagePeriodKey } from '../../../packages/domain/src/usage/period-key.js';
 import { PRISMA_CLI } from './paths.js';
 
 /** `globalSetup` が書き、本ファイルが読む唯一のキー。 */
@@ -615,5 +619,92 @@ export function removeDeletionStatusFixturesForE2e(): void {
   execSql(
     `DELETE FROM tenant_purge_runs WHERE id IN ('${T1010_RUN_IDS.failed}', '${T1010_RUN_IDS.completed}');\n` +
       `DELETE FROM tenants WHERE id = '${T1010_DELETION_STATUS_TENANT_ID}';`,
+  );
+}
+
+// ============================================================================
+// ✅ T-12-14 ⑤（E2E #23 (b) 後半。`tests/e2e/ai-limit.spec.ts`）: AI の上限到達を「API を通らない経路の模擬」で作る
+// ============================================================================
+// 🔴 なぜシームか: ハーネスの env は 1 組（`app-env.ts`）で、他の全シナリオがゲート PASS を前提にする。上限到達を実経路
+//    （`AI_DAILY_COST_LIMIT_USD_DEFAULT` を下げた worker / 運営者の `A-004`〔Phase 3〕）で再現すると spec ごとに worker の起動が
+//    要る。上限到達の**判定**そのものは結合層（`tests/isolation/gate-hold-release.test.ts` / `ai-degraded.test.ts` ④）に固定済みで、
+//    E2E が見るのは**表示**（`S-038` の残量 / `S-021` の HELD / 承認・送信の 422）だけである（SP-12 `T-12-03` 表 A #23 = 既定 (b)）。
+// 🔴 書くのは `usage_counters` の **2 行だけ**（当日の `AI_COST_USD` / 当月の `AI_UNIT_PROPOSAL_DRAFT`）。提案・ゲート・状態は書かない。
+//    - `AI_COST_USD` は **`reserved_value`** を上限値に置く。判定式は `value + reserved_value + 見積 <= 上限`（`reserveAiCost` /
+//      `decideAiDailyCost`）であり、どちらの列でも上限到達になる。`value` は実績（モック AI の原価）であり、後始末で 0 に戻すと
+//      `usage.gap-check`（`ai_usage` との突き合わせ）が乖離を報告する。`reserved_value` は予約の残高（暦日で消える設計。
+//      `ai-cost-guard.ts` 冒頭）なので、0 に戻すことがそのまま正しい後始末になる。
+//    - `AI_UNIT_PROPOSAL_DRAFT` は **`value`** をクォータに置く（Phase 1 に件数を積む AI ロールは無く、0 に戻して失うものが無い）。
+//      🔴 `gate-inspector` は件数クォータの対象外（`F-027 AC-7`）なので、`S-038` の「上限到達」は件数 4 単位のどれかでしか描けない。
+// 🔴 上限値・クォータは呼び出し側（spec）が **app と同じ出所**から渡す（`e2eAiDailyCostLimitUsd()` / `GET /api/usage` の `quota`）。
+//    ここに数値を書かない。
+
+/** 🔴 T-12-14 ⑤ の合成提案の件名の接頭辞。`ai-limit.spec.ts` と一致させる。 */
+export const T1214_SYNTHETIC_PROPOSAL_PREFIX = 'T1214合成-';
+
+export function deleteT1214SyntheticProposals(proposalIds: readonly string[]): void {
+  deleteSyntheticProposals(T1214_SYNTHETIC_PROPOSAL_PREFIX, proposalIds);
+}
+
+/** 十進の USD（`AI_DAILY_COST_LIMIT_USD_DEFAULT` の形。`z.coerce.number().positive()` を通った値の文字列）。 */
+const USD_DECIMAL_PATTERN = /^(?:0|[1-9][0-9]{0,8})(?:\.[0-9]{1,6})?$/;
+
+function assertUsd(label: string, value: string): void {
+  if (!USD_DECIMAL_PATTERN.test(value) || Number(value) <= 0) {
+    throw new Error(`${label} が正の十進 USD の形ではありません: ${value}`);
+  }
+}
+
+function assertPositiveInteger(label: string, value: number): void {
+  if (!Number.isInteger(value) || value <= 0) throw new Error(`${label} が正の整数ではありません: ${String(value)}`);
+}
+
+/**
+ * 🔴 当日（`Asia/Tokyo`）の AI の日次コスト上限に**到達した**状態にする（`reserved_value = 上限値`）。
+ *    以後、そのテナントの `gate.run` は `reserveAiCost` で `LIMIT_REACHED` になり、ゲートは `HELD_AI_COST_LIMIT` で保留される
+ *    （`F-027 AC-5`。`GATE_FAILED` にならない）。2 回呼んでも同じ 1 行（`ON CONFLICT` の UPDATE）。
+ */
+export function reachAiDailyCostLimitForE2e(tenantId: string, limitUsd: string): void {
+  if (!UUID_PATTERN.test(tenantId)) throw new Error(`tenantId が UUID の形をしていません: ${tenantId}`);
+  assertUsd('limitUsd', limitUsd);
+  const periodKey = usagePeriodKey('DAY', new Date());
+  execSql(
+    `INSERT INTO usage_counters (id, tenant_id, period_kind, period_key, metric, value, reserved_value, observed_at) ` +
+      `VALUES (gen_random_uuid(), '${tenantId}', 'DAY', '${periodKey}', 'AI_COST_USD', 0, ${limitUsd}::numeric, now()) ` +
+      `ON CONFLICT (tenant_id, period_kind, period_key, metric) DO UPDATE SET reserved_value = ${limitUsd}::numeric, observed_at = now();`,
+  );
+}
+
+/**
+ * 🔴 当月（`Asia/Tokyo`）の提案ドラフト（`AI_UNIT_PROPOSAL_DRAFT`）の件数を**クォータちょうど**にする（`value = quota`）。
+ *    `S-038` の残量が「あと 0 件」「上限に達しました」（`level = REACHED`）になる。判定は `GET /api/usage` と同じ
+ *    `decideAiUnitQuota` / `assessAiUnitLimit`（`packages/domain`）。2 回呼んでも同じ 1 行。
+ */
+export function reachAiUnitQuotaForE2e(tenantId: string, quota: number): void {
+  if (!UUID_PATTERN.test(tenantId)) throw new Error(`tenantId が UUID の形をしていません: ${tenantId}`);
+  assertPositiveInteger('quota', quota);
+  const periodKey = usagePeriodKey('MONTH', new Date());
+  execSql(
+    `INSERT INTO usage_counters (id, tenant_id, period_kind, period_key, metric, value, reserved_value, observed_at) ` +
+      `VALUES (gen_random_uuid(), '${tenantId}', 'MONTH', '${periodKey}', 'AI_UNIT_PROPOSAL_DRAFT', ${String(quota)}, 0, now()) ` +
+      `ON CONFLICT (tenant_id, period_kind, period_key, metric) DO UPDATE SET value = ${String(quota)}, observed_at = now();`,
+  );
+}
+
+/**
+ * 後始末（`afterAll`）: 上の 2 関数が置いた値を戻す（`AI_COST_USD` の `reserved_value` → 0 / `AI_UNIT_PROPOSAL_DRAFT` の `value` → 0）。
+ * 🔴 `AI_COST_USD` の `value`（実績）には触れない。行は消さない（`usage.gap-check` の母集団を変えない）。
+ * 同じ実行の後続 spec（`proposal-cycle.spec.ts` 等）はゲート PASS を前提にするため、**必ず呼ぶ**こと。
+ */
+export function clearAiLimitFixturesForE2e(tenantId: string): void {
+  if (!UUID_PATTERN.test(tenantId)) throw new Error(`tenantId が UUID の形をしていません: ${tenantId}`);
+  const now = new Date();
+  const dayKey = usagePeriodKey('DAY', now);
+  const monthKey = usagePeriodKey('MONTH', now);
+  execSql(
+    `UPDATE usage_counters SET reserved_value = 0, observed_at = now() ` +
+      `WHERE tenant_id = '${tenantId}' AND period_kind = 'DAY' AND period_key = '${dayKey}' AND metric = 'AI_COST_USD';\n` +
+      `UPDATE usage_counters SET value = 0, observed_at = now() ` +
+      `WHERE tenant_id = '${tenantId}' AND period_kind = 'MONTH' AND period_key = '${monthKey}' AND metric = 'AI_UNIT_PROPOSAL_DRAFT';`,
   );
 }

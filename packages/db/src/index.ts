@@ -566,9 +566,11 @@ export {
   holdReviewGate,
   // 🔴 T-07-10: `gate.hold-release` の走査（docs/05 §9.3）。読み取りのみで、行を書き換えない。
   listPendingReviewGates,
+  // 🔴 T-12-14 ②: #40b（履歴。全行）。`readReviewGateResult`（#40）はこの結果から 1 行選ぶだけ（母集団は 1 実装）。
+  listReviewGateResults,
   readReviewGateResult,
 } from './review-gate.js';
-export type { GateHoldTimestamps } from './review-gate.js';
+export type { GateHoldTimestamps, ReviewGateResultRow } from './review-gate.js';
 // 🔴 T-07-08: ゲート対象の内容のハッシュ（docs/05 §11.5）の唯一の出所。
 //    #37（内容の更新）・#39（レビュー依頼）・承認 CAS（#41）が**同じ 1 実装**を通る。
 //    🔴 T-07-09: 案件の公開（`PROJECT_PUBLISH`）も同じ 1 実装を通る（#28 とジョブが同じ値を作る）。
@@ -772,3 +774,7 @@ export type {
   DataExportSettlement,
   TenantRetentionState,
 } from './data-export.js';
+// 🔴 T-12-18 ⑪: `S-041` の CSV エクスポート（#10b）の監査記録 `audit_log.export`（docs/05 §6.3 #10b / §16.1）。
+//    `summary` の組み立てをここに閉じ、CSV を生成する側（`apps/web/lib/audit-logs/**` / route）に `summary` の識別子を置かない。
+export { AUDIT_LOG_EXPORT_AUDIT_ACTION, recordAuditLogExport } from './audit-log-export.js';
+export type { AuditLogExportMeta, AuditLogExportOutcome } from './audit-log-export.js';

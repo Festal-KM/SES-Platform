@@ -10,6 +10,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   compareTenantHealthOrder,
+  countTenantHealthSignals,
   DEFAULT_TENANT_HEALTH_THRESHOLDS,
   scoreTenantHealth,
   TENANT_HEALTH_SIGNAL_WEIGHTS,
@@ -271,5 +272,32 @@ describe('tenantListComparator — 並び順', () => {
 
   it('sort の値集合は 3 つ（health が既定）', () => {
     expect(TENANT_LIST_SORT_KEYS).toEqual(['health', 'name', 'createdAt']);
+  });
+});
+
+describe('countTenantHealthSignals — 要約（A-002 セクション 1 / API-A2 summary。T-12-18 ③）', () => {
+  it('🔴 5 キーを必ず全部持ち、0 件も 0 で出る（空の母集団）', () => {
+    expect(countTenantHealthSignals([])).toEqual({ TRIAL_EXPIRED: 0, INACTIVE: 0, SEATS_UNUSED: 0, NO_PARTNERS: 0, TRIAL_EXPIRING: 0 });
+    expect(Object.keys(countTenantHealthSignals([]))).toEqual([...TENANT_HEALTH_SIGNALS]);
+  });
+
+  it('1 テナントが 2 種別を持てば両方に数える。CLOSING / PURGED（signals: []）はどこにも数えない', () => {
+    const summary = countTenantHealthSignals([
+      { health: { signals: ['TRIAL_EXPIRED', 'INACTIVE'] } },
+      { health: { signals: ['INACTIVE'] } },
+      { health: { signals: ['NO_PARTNERS'] } },
+      { health: { signals: [] } },
+      { health: { signals: [] } },
+    ]);
+    expect(summary).toEqual({ TRIAL_EXPIRED: 1, INACTIVE: 2, SEATS_UNUSED: 0, NO_PARTNERS: 1, TRIAL_EXPIRING: 0 });
+  });
+
+  it('同じシグナルが重複していても 1 テナント 1 回。決定性（同じ入力に同じ出力、入力を変異させない）', () => {
+    const items = [{ health: { signals: ['SEATS_UNUSED', 'SEATS_UNUSED'] as const } }];
+    const first = countTenantHealthSignals(items);
+    const second = countTenantHealthSignals([...items]);
+    expect(first.SEATS_UNUSED).toBe(1);
+    expect(second).toEqual(first);
+    expect(items[0]?.health.signals).toEqual(['SEATS_UNUSED', 'SEATS_UNUSED']);
   });
 });

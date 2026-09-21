@@ -660,7 +660,12 @@ test.describe('S-024 商談結果の記録（iPhone 15 / T1）', () => {
       }
       // 🔴 自動確定・一括に相当する導線・語が無い（`F-025 AC-1` / `BR-50`）。
       await expect(session.page.locator('[data-testid*="auto"], [data-testid*="bulk"], [data-testid*="expire"], [data-testid*="force"]')).toHaveCount(0);
-      expect(await session.page.content()).not.toMatch(/自動的に|一括|期限で見送り/);
+      // 🔴 走査は **S-024 の画面そのもの**（`proposal-interview` の配下。閉じた要素・視認できない部分も含む）に絞る。
+      //    `page.content()` には直前の画面（S-023）の RSC ペイロードが残っており、T-12-14 でゲート文言
+      //    （「上限がリセットされると**自動的に**再開します」= S-023 の保留の説明）が props に入ったため、
+      //    別画面の文字列を拾ってしまう。**判定そのものは緩めていない**（S-024 の DOM 全体が対象で、
+      //    上の testid 走査〔auto / bulk / expire / force〕も従来どおりページ全体に掛かっている）。
+      expect(await screen.innerHTML()).not.toMatch(/自動的に|一括|期限で見送り/);
       expectNoHiddenCountHints('S-024 商談結果の記録（iPhone 15）', await session.page.locator('body').innerText());
       await expectNoHorizontalOverflow('S-024 商談結果の記録', session.page);
       await expectNoBrokenLabels('S-024 商談結果の記録', session.page);

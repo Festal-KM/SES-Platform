@@ -59,6 +59,37 @@ export type GateResultView = {
   readonly held?: GateHeldView;
 };
 
+/**
+ * 🔴 ゲート結果の履歴の 1 行（#40b `GET /api/proposals/{id}/gate-results` / `S-023` セクション 4。
+ *    docs/05 §6.5「#40b と `S-023` セクション 4 の設計」/ `F-020 AC-7`）。T-12-14 ②。
+ *
+ * `GateResultView` の**拡張**であり、`layers` / `aiWarnings` / `aiFailed` / `contentHash` / `held` は
+ * #40 と同じ射影（`toGateResultView` の出力をそのまま写す）。画面は `approvalGateRows(gate)` に
+ * そのまま渡せる（履歴用の別の描画実装を書かない）。
+ *
+ * 🔴 履歴に `'RUNNING'` は無い（`RUNNING` = 「確定した行がまだ無い」であり、行として存在しない。§11.7）。
+ */
+export type GateResultHistoryItem = {
+  /** 🔴 `review_gates.id`。`S-023` の承認の履歴行「検査 #<id>」（`reviewGateId`）と突合するため。 */
+  readonly reviewGateId: string;
+  readonly execution: GateExecution;
+  /** `DONE` のとき ISO 8601、HELD は `null`。 */
+  readonly executedAt: string | null;
+  /** HELD のとき ISO 8601、`DONE` は `null`。 */
+  readonly heldSince: string | null;
+  /** 🔴 `contentHash` === 現在の内容のハッシュ。画面が「現在の内容に対する結果」を印で示す。 */
+  readonly matchesCurrentContent: boolean;
+  readonly layers: GateResultView['layers'];
+  readonly aiWarnings: GateResultView['aiWarnings'];
+  readonly aiFailed: boolean;
+  readonly contentHash: string;
+  /** `execution='HELD_AI_COST_LIMIT'` のときだけ（#40 と同じ `GateHeldView`）。 */
+  readonly held?: GateHeldView;
+};
+
+/** #40b の応答。降順（新しい実行が先）。0 件 = まだ一度も依頼していない。 */
+export type GateResultHistoryView = { readonly items: readonly GateResultHistoryItem[] };
+
 /** `ReviewGate` の行のうち、画面が読む値だけ（`packages/db` が読み出して渡す）。 */
 export type PersistedGateResult = {
   readonly execution: GateExecution;

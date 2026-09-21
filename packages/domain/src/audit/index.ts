@@ -11,14 +11,17 @@ export {
   MASKED_VALUE,
   maskAuditSummary,
 } from './mask-summary.js';
-export type { ProposalRequestOperation } from './pick-detail.js';
+export type { DataExportKind, ProposalRequestOperation, TenantPurgeCause } from './pick-detail.js';
 export type { MaskedAuditSummary, MaskedAuditValue } from './mask-summary.js';
 export {
   AUDIT_DETAIL_ALLOWLIST,
   AUDIT_DETAIL_SUFFIX_FAMILIES,
+  AUDIT_DETAIL_SUFFIX_FAMILY_EXCLUDED_PREFIXES,
+  DATA_EXPORT_KINDS,
   PARTNER_LEDGER_ACTION_PREFIXES,
   PROPOSAL_REQUEST_OPERATION,
   PROPOSAL_REQUEST_OPERATIONS,
+  TENANT_PURGE_CAUSES,
   isPartnerLedgerAction,
   pickAuditDetail,
   resolveAuditDetailKeySpecs,

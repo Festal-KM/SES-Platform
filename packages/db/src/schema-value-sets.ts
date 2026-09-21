@@ -333,20 +333,24 @@ export const WEBHOOK_PROVIDERS = ['ses', 'guardduty', 'docusign', 'cloudsign', '
 
 export type WebhookProvider = (typeof WEBHOOK_PROVIDERS)[number];
 
-/** docs/05 §3.9 `DataExportRequest.kind`（TEXT + CHECK）。F-064 AC-5 / F-052。 */
-export const DATA_EXPORT_KINDS = ['CLOSING_RETURN', 'OPERATIONAL'] as const;
-
-export type DataExportKind = (typeof DATA_EXPORT_KINDS)[number];
+/**
+ * docs/05 §3.9 `DataExportRequest.kind`（TEXT + CHECK）。F-064 AC-5 / F-052。
+ * 🔴 宣言の出所は `packages/domain`（T-12-18 ⑩。`S-041` の許可リストの閉集合と 1 実装にする。`GATE_VERDICTS` と同じ作法）。
+ */
+export { DATA_EXPORT_KINDS } from '@ses/domain';
+export type { DataExportKind } from '@ses/domain';
 
 /** docs/05 §3.9 `DataExportRequest.status`（TEXT + CHECK）。 */
 export const DATA_EXPORT_STATUSES = ['QUEUED', 'RUNNING', 'READY', 'FAILED', 'EXPIRED'] as const;
 
 export type DataExportStatus = (typeof DATA_EXPORT_STATUSES)[number];
 
-/** docs/05 §3.9 `TenantPurgeRun.cause`（TEXT + CHECK）。 */
-export const TENANT_PURGE_CAUSES = ['TENANT_PURGED', 'RETENTION'] as const;
-
-export type TenantPurgeCause = (typeof TENANT_PURGE_CAUSES)[number];
+/**
+ * docs/05 §3.9 `TenantPurgeRun.cause`（TEXT + CHECK）。
+ * 🔴 宣言の出所は `packages/domain`（T-12-18 ⑩。同上）。
+ */
+export { TENANT_PURGE_CAUSES } from '@ses/domain';
+export type { TenantPurgeCause } from '@ses/domain';
 
 /** docs/05 §3.9 `TenantPurgeRun.status`（TEXT + CHECK）。F-062 AC-7。 */
 export const TENANT_PURGE_STATUSES = ['RUNNING', 'COMPLETED', 'FAILED'] as const;

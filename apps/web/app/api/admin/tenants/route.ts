@@ -17,6 +17,9 @@
 //    `?sort=health|name|createdAt`。閾値は `tenantHealthRuntime()`（`packages/config` 起点）から渡し、
 //    ルートで `process.env` を読まない。応答の各行に `health: { score, signals }` が載る（件数・状態・日時・
 //    シグナル名のみ。利用者名・メール・業務データは無い）。
+// 🔴 T-12-18 ③: 応答の最上位に `summary: Record<TenantHealthSignal, number>`（種別ごとのテナント数。`A-002` セクション 1）が載り、
+//    `?signal=<TenantHealthSignal>` で `items` を絞り込める（docs/05 §6.9 API-A2「応答の形」）。`summary` の母集団は絞り込み前の
+//    全行。キーは列挙値・値は整数だけ（テナントの内容には立ち入らない。`BR-40`）。未知の `signal` は 400。
 // 🔴 `cursor` はテナント ID（uuid(7)）そのもの。不正な形の値は `parseAdminTenantListQuery`
 //    （`apps/web/lib/admin-tenants/schemas.ts`）で UUID 形状を検証して 400 に畳む（並びがメモリで確定する
 //    現在の実装では DB エラーにはならないが、境界の契約として維持する）。

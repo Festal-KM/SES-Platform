@@ -131,7 +131,7 @@ const messages: CandidateScreenMessages = {
   requestExpiresAtHint: '最長 30 日。',
   requestSubmit: '依頼を送る',
   requestSubmitting: '送信しています…',
-  requestCancel: 'やめる',
+  requestCancel: 'キャンセル',
   requestSent: '提案依頼を送りました。',
   requestOpenList: '提案依頼の一覧を開く',
   requestErrorNotFound: '共有が解除されたか、一覧が古くなっています。',

@@ -45,6 +45,9 @@ export type {
   GateHeldView,
   GateLayerState,
   GateLayerView,
+  // 🔴 T-12-14 ②: #40b の履歴（`GateResultView` の拡張。docs/05 §6.5「#40b と `S-023` セクション 4 の設計」）。
+  GateResultHistoryItem,
+  GateResultHistoryView,
   GateResultView,
   PersistedGateResult,
 } from './view.js';

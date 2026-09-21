@@ -70,6 +70,84 @@ describe('カタログの構造', () => {
     }
   });
 
+  // 🔴 T-12-18 ⑯（`docs/04` §7.8 用語の統一）: 「同じ概念に別の語」を 1 語に寄せた結果を固定する。
+  //    キーは変えていない（値だけ）。ここが落ちるのは、別の画面が同じ概念を別の語で呼び始めたときである。
+  describe('③ docs/04 §7.8 用語の統一（T-12-18 ⑯）', () => {
+    it('🔴 寄せる前の語（やめる / 戻る〔取消〕/ 再試行 / （不明） / （なし））が値として 1 つも残っていない', () => {
+      const retired = new Set(['やめる', '戻る', '再試行', '再試行する', '（不明）', '（なし）', '却下をやめる']);
+      const remaining = Object.entries(ja).filter(([, value]) => retired.has(value)).map(([key]) => key);
+      expect(remaining).toEqual([]);
+      // 文中の「再試行してください」も動詞形（「もう一度お試しください」）に寄せた（§7.3）。
+      expect(Object.entries(ja).filter(([, value]) => value.includes('再試行してください')).map(([key]) => key)).toEqual([]);
+    });
+
+    it('確認ダイアログ・フォームの取消は「キャンセル」1 語（統一前: やめる 9 / キャンセル 5 / 戻る 3）', () => {
+      const keys = duplicateValueGroups(ja).get('キャンセル') ?? [];
+      expect(keys).toEqual(
+        [
+          'admin.demo.reset.confirm.back',
+          'admin.demo.seed.confirm.back',
+          'candidates.request.cancel',
+          'engineerShares.revoke.confirmCancel',
+          'engineerShares.share.confirmCancel',
+          'engineers.cancel',
+          'members.revoke.cancel',
+          'members.roleChange.cancel',
+          'partnerCompanies.suspend.cancel',
+          'projects.cancel',
+          'projects.visibilitySettings.revoke.confirm.cancel',
+          'proposalRequests.respond.accept.confirmCancel',
+          'proposalRequests.respond.decline.cancel',
+          'proposalRequests.withdraw.confirmCancel',
+          'proposals.approval.action.rejectCancel',
+          'proposals.interview.cancel',
+          'proposals.interview.confirm.cancel',
+          'sendFailures.resend.confirmCancel',
+        ].sort(),
+      );
+    });
+
+    it('🔴 失敗後の再試行は「もう一度試す」1 語。外部送信の再送（S-022 の「再送する」）はこの語を使わない', () => {
+      const keys = duplicateValueGroups(ja).get('もう一度試す') ?? [];
+      expect(keys).toEqual(
+        [
+          'admin.demo.reset.retry',
+          'admin.demo.seed.retry',
+          'engineerShares.loadMore.retry',
+          'engineers.list.error.retry',
+          'projects.list.error.retry',
+          'proposals.list.error.retry',
+          'retention.export.retry',
+          'sendFailures.error.retry',
+        ].sort(),
+      );
+      // 再送の語は別（「先方に届いている可能性がある」確認を伴う操作。§7.6）。
+      const resendKeys = Object.entries(ja).filter(([key, value]) => key.startsWith('sendFailures.resend') && value === 'もう一度試す');
+      expect(resendKeys).toEqual([]);
+    });
+
+    it('🔴 「却下」は承認の却下（提案の差し戻し）に限る。新語候補の不採用は「採用しない」', () => {
+      const rejectKeys = Object.entries(ja).filter(([, value]) => value === '却下').map(([key]) => key);
+      expect(rejectKeys).toEqual(['auditLogs.detail.enum.operation.REJECT']);
+      const notAdoptKeys = Object.entries(ja).filter(([, value]) => value === '採用しない').map(([key]) => key).sort();
+      expect(notAdoptKeys).toEqual(['auditLogs.detail.enum.decision.REJECT', 'skillDictionary.candidates.reject']);
+      expect(ja['skillDictionary.candidates.accept']).toBe('採用する');
+      // 新語候補の文言に「却下」が無い（承認の語を辞書整備に持ち込まない）。
+      const dictionaryWithReject = Object.entries(ja).filter(([key, value]) => key.startsWith('skillDictionary.') && value.includes('却下'));
+      expect(dictionaryWithReject).toEqual([]);
+    });
+
+    it('不明値は表のセル「—」と文中「不明」の 2 用法（括弧付きは使わない）', () => {
+      const dash = duplicateValueGroups(ja).get('—') ?? [];
+      for (const key of ['admin.auditLogs.tenant.unresolved', 'auditLogs.detail.emptyList', 'proposals.approval.createdByUnknown', 'sendFailures.valueNone', 'proposals.list.createdBy.unknown']) {
+        expect(dash, key).toContain(key);
+      }
+      expect(ja['auditLogs.detail.boolean.unknown']).toBe('不明');
+      const parenthesized = Object.entries(ja).filter(([, value]) => /^（(不明|なし)）$/.test(value)).map(([key]) => key);
+      expect(parenthesized).toEqual([]);
+    });
+  });
+
   it('同じ語が別の概念を指す既知の組は、少なくとも語幹の共有にとどまる（「辞退」= 操作の語 / `WITHDRAWN` の状態語）', () => {
     // 🔴 `auditLogs.detail.enum.operation.DECLINE`（提案依頼を辞退する**操作**）と `proposals.state.WITHDRAWN`（提案の**状態**）が
     //    同じ「辞退」を持つのは意図した重複である（`GLOSSARY.decline` の語幹）。同じ画面に並ばない。

@@ -14,6 +14,8 @@
 //   ⑦ 読み取りが `AuditLog(admin.tenant.list)` に横断（`tenant_id IS NULL`）で記録される（既存の action を維持）
 //   ⑧ カーソルページングが並びを保ち、改竄されたカーソルは空ページ（先頭へ戻さない）
 //   ⑨ 閾値は引数で受ける（`packages/config` の値を差し替えると判定が変わる。決め打ちしていない）
+//   ⑩ 🔴 T-12-18 ③: `summary`（種別ごとのテナント数。5 キー固定。絞り込み前の母集団）が `items` の集計と一致し、`?signal=X` の
+//      `items` に X を持たない行が 0 件かつ `summary` は絞り込み前と同じ。未知の `signal` は境界検証で 400 相当
 //
 // 🔴 最終アクティビティ = 利用者の `last_login_at` の最大値、使われている席 = 有効な所属のうち `last_login_at` が
 //    停滞閾値以内のもの（docs/05 §6.9 API-A2 の定義）。現在時刻は `now` で注入する。
@@ -25,6 +27,7 @@ import { createUnextendedClient, type UnextendedClient } from '@ses/db/testing';
 import {
   DEFAULT_TENANT_HEALTH_THRESHOLDS,
   TENANT_HEALTH_SIGNAL_WEIGHTS,
+  TENANT_HEALTH_SIGNALS,
   type TenantHealthThresholds,
 } from '../../packages/domain/src/health/tenant-health.js';
 import { TENANT_A, TENANT_B, USER_A_HOST, USER_A_PARTNER, USER_A_PARTNER2, USER_B_HOST } from './support/fixtures.js';
@@ -357,9 +360,62 @@ describe('⑤ 応答に非開示のものが無い（BR-40）', () => {
     expect(serialized).toMatch(/"signals":\["TRIAL_EXPIRED","INACTIVE","SEATS_UNUSED","NO_PARTNERS"\]/);
   });
 
-  it('応答の最上位は items / nextCursor / observedAt だけ（total を持たない）', async () => {
+  it('応答の最上位は items / nextCursor / observedAt / summary だけ（total を持たない。T-12-18 ③ で summary を追加）', async () => {
     const page = await list(supportCtx);
-    expect(Object.keys(page).sort()).toEqual(['items', 'nextCursor', 'observedAt']);
+    expect(Object.keys(page).sort()).toEqual(['items', 'nextCursor', 'observedAt', 'summary']);
+  });
+});
+
+describe('⑩ T-12-18 ③: 要約（summary）と ?signal= の絞り込み（docs/05 §6.9 API-A2「応答の形」/ docs/04 §A-002 セクション 1）', () => {
+  it('🔴 summary は 5 キーを全部持ち、各値が items（全ページ）の signals の集計と一致する', async () => {
+    const page = await list(supportCtx);
+    expect(Object.keys(page.summary)).toEqual([...TENANT_HEALTH_SIGNALS]);
+    const expected: Record<string, number> = { TRIAL_EXPIRED: 0, INACTIVE: 0, SEATS_UNUSED: 0, NO_PARTNERS: 0, TRIAL_EXPIRING: 0 };
+    for (const item of page.items) for (const signal of item.health.signals) expected[signal] = (expected[signal] ?? 0) + 1;
+    expect(page.summary).toEqual(expected);
+    // fixture の内訳: 期限切れ 2（TRIAL_EXPIRED / ALL）/ 停滞 2（INACTIVE / ALL）/ 席 2（SEATS / ALL）/ パートナー 0 は 3（B / OLD / ALL）/ 接近 1。
+    expect(page.summary).toEqual({ TRIAL_EXPIRED: 2, INACTIVE: 2, SEATS_UNUSED: 2, NO_PARTNERS: 3, TRIAL_EXPIRING: 1 });
+    // 値はすべて非負整数（件数だけ。テナントの内容には立ち入らない。BR-40）。
+    for (const value of Object.values(page.summary)) expect(Number.isInteger(value) && value >= 0).toBe(true);
+  });
+
+  it('🔴 ?signal=X の items は X を持つ行だけ（他の種別だけの行は 0 件）で、summary は絞り込み前と同じ', async () => {
+    const full = await list(supportCtx);
+    for (const signal of TENANT_HEALTH_SIGNALS) {
+      const filtered = await list(supportCtx, { limit: 200, signal });
+      expect(filtered.items.length, signal).toBe(full.summary[signal]);
+      expect(filtered.items.every((item) => item.health.signals.includes(signal)), signal).toBe(true);
+      expect(filtered.summary, signal).toEqual(full.summary);
+      // 並びは絞り込み前の相対順を保つ。
+      const fullOrder = idsOf(full.items).filter((id) => idsOf(filtered.items).includes(id));
+      expect(idsOf(filtered.items), signal).toEqual(fullOrder);
+    }
+    const noPartners = await list(supportCtx, { limit: 200, signal: 'NO_PARTNERS' });
+    expect(idsOf(noPartners.items)).toEqual([TENANT_ALL, TENANT_NO_PARTNERS_OLD, TENANT_B]);
+    // CLOSING / PURGED は signals: [] なのでどの絞り込みにも現れない。
+    expect(idsOf(noPartners.items)).not.toContain(TENANT_CLOSING);
+    expect(idsOf(noPartners.items)).not.toContain(TENANT_PURGED);
+  });
+
+  it('絞り込み + カーソル: 絞り込んだ並びの中でカーソルが効き、並びに無い ID は空ページ。summary は不変', async () => {
+    const first = await list(supportCtx, { limit: 2, signal: 'NO_PARTNERS' });
+    expect(idsOf(first.items)).toEqual([TENANT_ALL, TENANT_NO_PARTNERS_OLD]);
+    expect(first.nextCursor).toBe(TENANT_NO_PARTNERS_OLD);
+    const second = await list(supportCtx, { limit: 2, signal: 'NO_PARTNERS', cursor: first.nextCursor ?? undefined });
+    expect(idsOf(second.items)).toEqual([TENANT_B]);
+    expect(second.nextCursor).toBeNull();
+    expect(second.summary).toEqual(first.summary);
+    // 絞り込みの外にあるテナントをカーソルにしても、その並びには無いので空ページ（先頭へ戻さない）。
+    const outside = await list(supportCtx, { limit: 2, signal: 'NO_PARTNERS', cursor: TENANT_TRIAL_EXPIRING });
+    expect(outside.items).toEqual([]);
+    expect(outside.nextCursor).toBeNull();
+    expect(outside.summary).toEqual(first.summary);
+  });
+
+  it('🔴 未知の signal は境界検証（parseAdminTenantListQuery）で 400 相当になり、クエリには渡らない', async () => {
+    const { parseAdminTenantListQuery } = await import('../../apps/web/lib/admin-tenants/schemas');
+    expect(parseAdminTenantListQuery({ signal: 'SUBMIT_FAILED' })).toEqual({ ok: false, issues: ['signal'] });
+    expect(parseAdminTenantListQuery({ signal: 'INACTIVE' })).toEqual({ ok: true, value: { limit: 50, sort: 'health', signal: 'INACTIVE' } });
   });
 });
 

@@ -10,6 +10,7 @@ import {
   parseAdminTenantListQuery,
   parseCreateTenantBody,
   parseOwnerInvitationBody,
+  parseTenantListSignal,
   parseTenantListSort,
 } from './schemas';
 import { ISOLATION_KEYS } from '../api/isolation-keys';
@@ -55,6 +56,28 @@ describe('parseAdminTenantListQuery（API-A2 の境界検証）', () => {
     expect(parseTenantListSort('name')).toBe('name');
     expect(parseTenantListSort('createdAt')).toBe('createdAt');
     expect(parseTenantListSort('bogus')).toBe('health');
+  });
+
+  it.each(['TRIAL_EXPIRED', 'INACTIVE', 'SEATS_UNUSED', 'NO_PARTNERS', 'TRIAL_EXPIRING'] as const)(
+    '🔴 T-12-18 ③: signal=%s を受け付ける（TENANT_HEALTH_SIGNALS の値集合）',
+    (signal) => {
+      const result = parseAdminTenantListQuery({ signal });
+      expect(result).toEqual({ ok: true, value: { limit: 50, sort: 'health', signal } });
+    },
+  );
+
+  it('🔴 T-12-18 ③: 未知の signal は 400 相当（黙って絞り込み無しに丸めない）。省略は絞り込み無し', () => {
+    expect(parseAdminTenantListQuery({ signal: 'SUBMIT_FAILED' })).toEqual({ ok: false, issues: ['signal'] });
+    expect(parseAdminTenantListQuery({ signal: '' })).toEqual({ ok: false, issues: ['signal'] });
+    const result = parseAdminTenantListQuery({});
+    if (!result.ok) throw new Error('unreachable');
+    expect(result.value.signal).toBeUndefined();
+  });
+
+  it('🔴 T-12-18 ③: 画面の門番 parseTenantListSignal は不正な値を「絞り込み無し」に倒す', () => {
+    expect(parseTenantListSignal(undefined)).toBeUndefined();
+    expect(parseTenantListSignal('INACTIVE')).toBe('INACTIVE');
+    expect(parseTenantListSignal('bogus')).toBeUndefined();
   });
 
   it('🔴 UUID 形式でない cursor は 400 相当（issues に cursor を含む）で拒否する（500 にしない）', () => {

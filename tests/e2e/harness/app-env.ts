@@ -19,6 +19,20 @@ import type { E2eRedis } from './redis.js';
 
 export type E2eAppEnv = ReturnType<typeof buildValidEnv>;
 
+/**
+ * ✅ T-12-14 ⑤: `ai-limit.spec.ts` のシーム（`reachAiDailyCostLimitForE2e`）が「上限値」に置く値。
+ * 🔴 web / worker と**同じ 1 組の env**（`buildE2eAppEnv` = `buildValidEnv('development', …)`）から読む。`buildE2eAppEnv` はこのキーを
+ *    上書きしないので、`buildValidEnv('development')` の値がそのまま worker の `AI_DAILY_COST_LIMIT_USD_DEFAULT` である。
+ *    spec に数値を書き写さない（写すと worker の上限と spec の「上限値」が別々に変わる）。
+ */
+export function e2eAiDailyCostLimitUsd(): string {
+  const value = buildValidEnv('development').AI_DAILY_COST_LIMIT_USD_DEFAULT;
+  if (value === undefined || value === '') {
+    throw new Error('[e2e] AI_DAILY_COST_LIMIT_USD_DEFAULT が E2E の env に無い（buildValidEnv の fixture が変わった？）。');
+  }
+  return value;
+}
+
 export function buildE2eAppEnv(database: E2eDatabase, objectStorage: E2eObjectStorage, redis: E2eRedis): E2eAppEnv {
   return buildValidEnv('development', {
     APP_URL: E2E_BASE_URL,

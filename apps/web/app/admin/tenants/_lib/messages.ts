@@ -65,5 +65,12 @@ export function adminTenantsMessages(): AdminTenantsListMessages {
     lastActivityNone: t('admin.tenants.lastActivity.none'),
     loadMore: t('admin.tenants.loadMore'),
     empty: t('admin.tenants.empty'),
+    summary: {
+      label: t('admin.tenants.summary.label'),
+      unit: t('admin.tenants.summary.unit'),
+      clear: t('admin.tenants.summary.clear'),
+      filteredEmpty: t('admin.tenants.summary.filteredEmpty'),
+      outOfRange: t('admin.tenants.summary.outOfRange'),
+    },
   };
 }

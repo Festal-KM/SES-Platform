@@ -1,6 +1,6 @@
 // apps/web/lib/proposals/gate.ts
-// 🔴 **品質ゲートの入口（#39）と結果の読み出し（#40）**（docs/05 §6.5 #39 / #40 / §9.10 / §11.5 / §11.7）。
-//    T-07-08。`F-020` / `F-027 AC-5`。
+// 🔴 **品質ゲートの入口（#39）と結果の読み出し（#40 = 最新 1 件 / #40b = 実行ごとの履歴）**
+//    （docs/05 §6.5 #39 / #40 / #40b / §9.10 / §11.5 / §11.7）。T-07-08（#40b は T-12-14 ②）。`F-020` / `F-027 AC-5`。
 //
 // ============================================================================
 // 🔴 #39 が守るもの
@@ -34,11 +34,13 @@ import {
   findCachedReviewGate,
   findPendingReviewGate,
   gateHoldTimestamps,
+  listReviewGateResults,
   PROPOSAL_AUDIT_TARGET_TYPE,
   readReviewGateResult,
   withTenant,
   writeAuditLog,
   type AuthenticatedTenantCtx,
+  type ReviewGateResultRow,
 } from '@ses/db';
 import {
   InvalidStateTransitionError,
@@ -46,6 +48,8 @@ import {
   runningGateResultView,
   toGateResultView,
   type GateHeldView,
+  type GateResultHistoryItem,
+  type GateResultHistoryView,
   type GateResultView,
 } from '@ses/domain';
 import {
@@ -348,15 +352,25 @@ export async function readProposalGateResult(
   //    「承認後に内容が変わった」を検知するのに使う。§11.7）。
   if (row === null) return runningGateResultView(target.contentHash);
 
-  if (row.execution !== 'HELD_AI_COST_LIMIT') return toGateResultView(row);
+  return toGateResultView(row, heldViewFor(row, meta.now));
+}
 
+/**
+ * 🔴 HELD 行の `GateHeldView`（#40 / #40b の **2 呼び出し元が共有する 1 実装**。T-12-14 ②で #40 の分岐から
+ *    切り出した。docs/05 §6.5「#40b と `S-023` セクション 4 の設計」手順 ④）。`DONE` 行は `undefined`
+ *    （`toGateResultView` は `execution` と `held` の有無が一致しないと `RangeError` を投げる）。
+ *
+ * 🔴 リセット時刻は暦の計算（`Asia/Tokyo` の翌 0 時）であり `packages/db` が出す（§11.9 ⑧-4）。
+ * 🔴 金額（USD）を載せない（`F-027 AC-6`）。
+ */
+function heldViewFor(row: ReviewGateResultRow, now: Date): GateHeldView | undefined {
+  if (row.execution !== 'HELD_AI_COST_LIMIT') return undefined;
   if (row.heldSince === null) {
     // 保留行は `held_since` を必ず持つ（`holdReviewGate`）。壊れていたら握り潰さない。
     throw new InternalError('review_gates の保留行に held_since がありません。');
   }
-  // 🔴 リセット時刻は暦の計算（`Asia/Tokyo` の翌 0 時）であり `packages/db` が出す（§11.9 ⑧-4）。
-  const timestamps = gateHoldTimestamps({ heldSince: row.heldSince, now: meta.now });
-  const held: GateHeldView = {
+  const timestamps = gateHoldTimestamps({ heldSince: row.heldSince, now });
+  return {
     heldReasonKey: 'gate.held.aiCostLimit',
     heldSince: timestamps.heldSince,
     resetAt: timestamps.resetAt,
@@ -365,5 +379,50 @@ export async function readProposalGateResult(
     // 🔴 自動（`gate.hold-release`）と手動（#39）の**両方**があることを示す。
     rerun: { auto: true, manual: PROPOSAL_GATE_MANUAL_RERUN },
   };
-  return toGateResultView(row, held);
+}
+
+/**
+ * 🔴 ゲート結果の履歴（#40b `GET /api/proposals/{id}/gate-results`。docs/05 §6.5「#40b と `S-023` セクション 4 の設計」/
+ *    `F-020 AC-7`「再実行で上書きせず履歴として残す」）。T-12-14 ②。
+ *
+ * 手順は設計の ①〜⑤ をそのまま並べたものである:
+ *   ① **#40 と同じ `loadTarget`**（C5。見えなければ `requireFound` が 404 = 他社・他テナント・不存在で本文まで同一）
+ *   ② `listReviewGateResults`（`packages/db`。#40 の母集団と同じ 1 実装。分離キーは ctx からそのまま）で**全行**
+ *   ③ 並びは `packages/db` が保証する（`COALESCE(executed_at, held_since) DESC, id DESC`）
+ *   ④ 各行を **#40 と同じ `toGateResultView(row, heldViewFor(row, now))`** に通す（射影を書き写さない）
+ *   ⑤ `matchesCurrentContent` = `row.contentHash` と**現在の内容のハッシュ**（#40 が `RUNNING` のときに返す値と同じ
+ *      `target.contentHash`）の等値
+ *
+ * 🔴 境界の担保は #40 と同じ 2 枚（RLS の C5 + ①の 404）。応答に `owner` / 主体 / 提案先は無く、`GateResultView` と
+ *    同じ材料だけ（`GateInput` を返す API は引き続き存在しない。§11.14）。
+ * 🔴 0 件は `items: []`（一度も依頼していない `DRAFT`。404 にしない —— 提案は見えている）。
+ * 🔴 監査は書かない（#40 / #46 と同じ線引き）。
+ */
+export async function readProposalGateResults(
+  ctx: AuthenticatedTenantCtx,
+  proposalId: string,
+  meta: { readonly now: Date },
+): Promise<GateResultHistoryView> {
+  const target = requireFound(await loadTarget(ctx, proposalId));
+
+  const rows = await listReviewGateResults(ctx, {
+    targetType: PROPOSAL_GATE_TARGET_TYPE,
+    targetId: target.id,
+  });
+  const items: GateResultHistoryItem[] = rows.map((row) => {
+    const view = toGateResultView(row, heldViewFor(row, meta.now));
+    return {
+      reviewGateId: row.id,
+      execution: row.execution,
+      executedAt: row.executedAt === null ? null : row.executedAt.toISOString(),
+      heldSince: row.heldSince === null ? null : row.heldSince.toISOString(),
+      matchesCurrentContent: row.contentHash === target.contentHash,
+      layers: view.layers,
+      aiWarnings: view.aiWarnings,
+      aiFailed: view.aiFailed,
+      contentHash: view.contentHash,
+      ...(view.held === undefined ? {} : { held: view.held }),
+    };
+  });
+  return { items };
 }

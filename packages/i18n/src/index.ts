@@ -145,6 +145,14 @@ const ja = {
   'admin.tenants.sort.health': '異常度の高い順',
   'admin.tenants.sort.name': 'テナント名',
   'admin.tenants.sort.createdAt': '開設の新しい順',
+  // 🔴 T-12-18 ③: `A-002` セクション 1「異常の要約」（種別ごとの件数。クリックで絞り込み。docs/04 §A-002 / docs/05 §6.9 API-A2）。
+  'admin.tenants.summary.label': '異常の要約',
+  'admin.tenants.summary.unit': ' 件',
+  'admin.tenants.summary.clear': '絞り込みを解除',
+  'admin.tenants.summary.filteredEmpty': 'この種別の異常が検知されているテナントはありません。',
+  // 🔴 低-3（レビュー指摘。2026-09-21）: 絞り込み無し + 範囲外カーソル（0 件・先頭ページでない）。
+  //    `filteredEmpty`（絞り込み中）とは別の文言 —— 絞り込みの解除は導けない状況のため。
+  'admin.tenants.summary.outOfRange': 'このページには表示する行がありません。',
   // 🔴 CLAUDE.md §4.2 の Tenant ステートマシン 5 状態（欠落禁止。テンプレートリテラルで
   //    動的にキーを組み立てず、apps/web/app/admin/tenants/_lib/labels.ts が固定の対応表を持つ）。
   'admin.tenants.lifecycleState.SANDBOX': 'サンドボックス',
@@ -291,12 +299,12 @@ const ja = {
   'admin.demo.seed.confirm.lead': '対象は合成データのみです。顧客の業務データには一切及びません。',
   'admin.demo.seed.confirm.environment': '環境',
   'admin.demo.seed.confirm.submit': '投入する',
-  'admin.demo.seed.confirm.back': '戻る',
+  'admin.demo.seed.confirm.back': 'キャンセル',
   'admin.demo.seed.submitting': '投入しています（数分かかります）',
   'admin.demo.seed.done': '投入が完了しました。投入状況が更新されます。',
   'admin.demo.seed.alreadySeeded': '投入済みのため、何も書き込みませんでした。',
-  'admin.demo.seed.failed': '投入できませんでした。時間をおいて再試行してください。',
-  'admin.demo.seed.retry': '再試行する',
+  'admin.demo.seed.failed': '投入できませんでした。時間をおいてもう一度お試しください。',
+  'admin.demo.seed.retry': 'もう一度試す',
   'admin.demo.seed.notConfigured':
     '投入経路（SEED_DATABASE_URL）が設定されていないため、この画面から投入できません。環境変数を設定して再起動してください。',
   // ✅ T-10-07: リセット（F-053 AC-2 / AC-6）。確認ステップ = 環境名 + テナント名の入力（docs/04 §A-012「操作と結果」）。
@@ -314,12 +322,12 @@ const ja = {
   'admin.demo.reset.confirm.tenantInput': '対象テナント名を入力（対象のいずれかと一致させる）',
   'admin.demo.reset.confirm.mismatch': '環境名と対象テナント名の両方が一致するまで実行できません。',
   'admin.demo.reset.confirm.submit': '削除して初期状態に戻す',
-  'admin.demo.reset.confirm.back': '戻る',
+  'admin.demo.reset.confirm.back': 'キャンセル',
   'admin.demo.reset.submitting': 'リセットしています',
   'admin.demo.reset.done': 'リセットが完了しました。合成データは投入されていません。',
   'admin.demo.reset.nothingToReset': '削除対象のテナントが存在しなかったため、何も消していません（既に初期状態です）。',
-  'admin.demo.reset.failed': 'リセットできませんでした。時間をおいて再試行してください。',
-  'admin.demo.reset.retry': '再試行する',
+  'admin.demo.reset.failed': 'リセットできませんでした。時間をおいてもう一度お試しください。',
+  'admin.demo.reset.retry': 'もう一度試す',
   'admin.demo.section.scenarios': '実演シナリオ',
   'admin.demo.scenarios.lead':
     '投入直後の状態から、次の 2 本を通しで実演できます（F-053 AC-3）。開始地点のリンクは主平面（別タブ）で開きます。',
@@ -384,7 +392,7 @@ const ja = {
   'admin.auditLogs.actor.PLATFORM_USER': '運営者',
   'admin.auditLogs.actor.SYSTEM': 'システム',
   'admin.auditLogs.tenant.crossTenant': '（横断）',
-  'admin.auditLogs.tenant.unresolved': '（不明）',
+  'admin.auditLogs.tenant.unresolved': '—',
   'admin.auditLogs.tenant.openDetail': 'テナント詳細',
   'admin.auditLogs.record.note':
     'この検索の実行（誰が・いつ・どの条件で）は監査ログに記録されます。結果の内容は記録されません。',
@@ -911,6 +919,9 @@ const ja = {
   // 🔴 T-11-03: 監査ログ横断検索（API-A7）の期間上限超過（400）。次の行動 = 期間を短縮。
   'error.admin.auditLogs.periodTooLong':
     '検索期間が上限を超えています。期間を短くして再実行してください。',
+  // 🔴 T-12-18 ⑪: `S-041` の CSV エクスポート（#10b）の上限超過（400 `AUDIT_LOG_EXPORT_TOO_LARGE`）。次の行動 = 期間を短縮。
+  'error.auditLogs.exportTooLarge':
+    'エクスポートの対象が上限の件数を超えています。期間を短くして再実行してください。',
   // 🔴 T-11-02: クォータ変更の規律違反（400。API-A6 / F-057 AC-3）。理由ごとに次の行動を示す。
   'error.admin.quota.limitOutOfRange': '上限は 1 以上の整数で指定してください。',
   'error.admin.quota.effectiveFromPast': '適用日は今日以降を指定してください。過去に遡って上限は変えられません。',
@@ -1140,6 +1151,15 @@ const ja = {
   'auditLogs.column.detail': '詳細',
   'auditLogs.actor.system': 'システム',
   'auditLogs.actor.platform': '運営者',
+  // 🔴 T-12-18 ⑪: セクション 4 エクスポート（`docs/04` §S-041。CSV は監査ログに記録される）。検索条件がそのまま範囲になる。
+  'auditLogs.export.button': 'CSV でエクスポート',
+  'auditLogs.export.note': '現在の検索条件の記録を CSV（6 列。行の詳細は含まない）で書き出します。エクスポートは監査ログに記録されます。',
+  // 🔴 レビュー指摘 NG-1（2026-09-21）: 上限の予告。`{maxRows}` は `AUDIT_LOG_EXPORT_MAX_ROWS`（`packages/config`）に
+  //    差し替える（`page.tsx` が値として渡す。文言にも `packages/config` にも件数を二重定義しない）。既存キーは変えない。
+  'auditLogs.export.note.limit': '1 回のエクスポートは最大 {maxRows} 行です。超える場合は期間を短くしてください。',
+  // 🔴 レビュー指摘 NG-1: 400 で弾かれたときの表示。`error.auditLogs.exportTooLarge`（既存キー）は上限超過専用、
+  //    それ以外の失敗（ネットワークエラー等）はこちらを使う。
+  'auditLogs.export.error.failed': 'エクスポートを実行できませんでした。',
   // 🔴 BR-27 の記録対象を過不足なく網羅する（docs/04 §S-041。選択肢に無い種別は
   //    「記録されていない」と読まれるため、Phase 0 でまだ発生しない種別も選択肢に含める）。
   'auditLogs.category.LOGIN_LOGOUT': 'ログイン・ログアウト',
@@ -1167,7 +1187,7 @@ const ja = {
   'auditLogs.detail.deleted.partnerCompany': '削除済みの取引先',
   'auditLogs.detail.deleted.project': '削除済みの案件',
   'auditLogs.detail.deleted.user': '削除済みの利用者',
-  'auditLogs.detail.emptyList': '（なし）',
+  'auditLogs.detail.emptyList': '—',
   'auditLogs.detail.boolean.true': 'はい',
   'auditLogs.detail.boolean.false': 'いいえ',
   'auditLogs.detail.boolean.unknown': '不明',
@@ -1235,6 +1255,19 @@ const ja = {
   'auditLogs.detail.key.targetPartnerCompanyId': '取引先',
   'auditLogs.detail.key.periodFrom': '期間（開始）',
   'auditLogs.detail.key.periodTo': '期間（終了）',
+  // 🔴 T-12-18 ⑨ / ⑩ / ⑪: 許可リストに足した行（`docs/04` §S-041 改訂 13 → docs/05 §6.4 → `AUDIT_DETAIL_ALLOWLIST`）のラベル。
+  'auditLogs.detail.key.overall': 'ゲートの総合判定',
+  'auditLogs.detail.key.piiVerdict': 'PII 層',
+  'auditLogs.detail.key.commerceVerdict': '商流層',
+  'auditLogs.detail.key.consistencyVerdict': '整合層',
+  'auditLogs.detail.key.findingCount': '指摘の件数',
+  'auditLogs.detail.key.warningCount': 'AI の警告の件数',
+  'auditLogs.detail.key.entity': '状態機械',
+  'auditLogs.detail.key.cause': '削除の契機',
+  'auditLogs.detail.key.tables': '対象種別の数',
+  'auditLogs.detail.key.kind': '返却の種別',
+  'auditLogs.detail.key.rowCount': '書き出した行数',
+  'auditLogs.detail.key.truncated': '上限で打ち切り',
   // 列挙値（キー別。同じトークンでもキーで意味が違うものはキー付きで持つ）
   'auditLogs.detail.enum.verdict.PENDING_GATE': 'ゲート待ち',
   'auditLogs.detail.enum.verdict.NO_PUBLISH_REQUESTED': '公開の追加なし',
@@ -1259,8 +1292,21 @@ const ja = {
   'auditLogs.detail.enum.operation.SET_LATEST': '最新版に設定',
   'auditLogs.detail.enum.operation.SUSPEND': '停止',
   'auditLogs.detail.enum.operation.RESUME': '再開',
-  'auditLogs.detail.enum.decision.ACCEPT': '採用',
-  'auditLogs.detail.enum.decision.REJECT': '却下',
+  // 🔴 `docs/04` §7.8: 新語候補の採否は「採用する / 採用しない」の対（承認の「却下」と語を共有しない）。
+  'auditLogs.detail.enum.decision.ACCEPT': '採用する',
+  'auditLogs.detail.enum.decision.REJECT': '採用しない',
+  // T-12-18 ⑨ / ⑩: ゲートの各層 verdict（`GATE_VERDICTS`）/ 不正遷移の状態機械（`STATE_MACHINE_ENTITIES`）/ 削除の契機 / 返却の種別。
+  'auditLogs.detail.enum.gateVerdict.PASS': '合格',
+  'auditLogs.detail.enum.gateVerdict.FAIL': '不合格',
+  'auditLogs.detail.enum.entity.Proposal': '提案',
+  'auditLogs.detail.enum.entity.ProposalRequest': '提案依頼',
+  'auditLogs.detail.enum.entity.Assignment': '稼働',
+  'auditLogs.detail.enum.entity.Contract': '契約書',
+  'auditLogs.detail.enum.entity.Tenant': 'テナント契約',
+  'auditLogs.detail.enum.cause.TENANT_PURGED': '解約手続きの期限到来',
+  'auditLogs.detail.enum.cause.RETENTION': '保持期間の到来',
+  'auditLogs.detail.enum.kind.CLOSING_RETURN': '解約時の返却',
+  'auditLogs.detail.enum.kind.OPERATIONAL': '運用中のエクスポート',
   'auditLogs.detail.enum.via.DETAIL': '詳細',
   'auditLogs.detail.enum.via.EDIT_FORM': '編集フォーム',
   'auditLogs.detail.enum.via.SKILL_SHEETS': '版一覧',
@@ -2051,18 +2097,18 @@ const ja = {
   'skillDictionary.candidates.column.target': '正規化先',
   'skillDictionary.candidates.column.actions': '採否',
   'skillDictionary.candidates.target.placeholder': '正規化先を選ぶ',
-  'skillDictionary.candidates.accept': '採用',
-  'skillDictionary.candidates.reject': '却下',
+  'skillDictionary.candidates.accept': '採用する',
+  'skillDictionary.candidates.reject': '採用しない',
   'skillDictionary.candidates.submitting': '反映しています…',
   'skillDictionary.candidates.acceptHint': '採用するには正規化先を選んでください。',
   // 🔴 却下は「候補を閉じる」操作である（`docs/04` §S-009「操作と結果」）。消えることを先に伝える。
   'skillDictionary.candidates.rejectNote':
-    '却下した表記は候補の一覧から外れます。採用・却下の記録は監査ログに残ります。',
+    '採用しない表記は候補の一覧から外れます。採否の記録は監査ログに残ります。',
   'skillDictionary.candidates.error': '採否を反映できませんでした。もう一度お試しください。',
   // 🔴 `docs/04` §S-009 権限差分「取引先は候補の起票のみ（採否の導線が無い）。`VIEWER` は閲覧のみ」。
   //    導線を消すだけにせず、**誰が決めるのか**を書く（行き止まりにしない）。
   'skillDictionary.candidates.readOnlyNote':
-    '採否の操作はこの画面では行えません。新語候補の採用・却下は、自社（発注元）の管理者または営業担当が行います。',
+    '採否の操作はこの画面では行えません。新語候補の採否は、自社（発注元）の管理者または営業担当が行います。',
   // 🔴 `docs/04` §S-009 の「出現件数」列に対応する保存先が docs/05 §3.4 に無い（本文の注記参照）。
   //    列を勝手に足さず、いまは出せないことを画面に書く（「保存先も表示元も無いセクションを隠さずに予告する」規律。`S-006` の注記と同じ）。
   'skillDictionary.candidates.occurrenceComingSoon':
@@ -2367,7 +2413,7 @@ const ja = {
   'projects.visibilitySettings.revoke.confirm.lead':
     '選択から外した取引先の一覧・検索・通知から、この案件が消えます。作成済みの提案は残ります。',
   'projects.visibilitySettings.revoke.confirm.submit': '解除して保存',
-  'projects.visibilitySettings.revoke.confirm.cancel': 'やめる',
+  'projects.visibilitySettings.revoke.confirm.cancel': 'キャンセル',
   'projects.visibilitySettings.result.pendingGate':
     '公開の要求を受け付けました。品質ゲートを通過するまで公開されません。',
   'projects.visibilitySettings.result.noPublish': '公開範囲を更新しました。',
@@ -2491,7 +2537,7 @@ const ja = {
   'candidates.request.expiresAt.hint': '期限を過ぎると依頼は自動的に期限切れになります（最長 30 日）。',
   'candidates.request.submit': '依頼を送る',
   'candidates.request.submitting': '送信しています…',
-  'candidates.request.cancel': 'やめる',
+  'candidates.request.cancel': 'キャンセル',
   'candidates.request.sent': '提案依頼を送りました。返答は提案依頼の一覧で確認できます。',
   'candidates.request.openList': '提案依頼の一覧を開く',
   'candidates.request.error.notFound':
@@ -2559,7 +2605,7 @@ const ja = {
   'proposalRequests.withdraw.confirmTitle': 'この提案依頼を取り下げますか',
   'proposalRequests.withdraw.confirmLead': '取り下げると、取引先はこの依頼に応諾できなくなります。同じ候補に同じ案件で再度依頼を送ることはできません。',
   'proposalRequests.withdraw.confirmSubmit': '取り下げる',
-  'proposalRequests.withdraw.confirmCancel': 'やめる',
+  'proposalRequests.withdraw.confirmCancel': 'キャンセル',
   'proposalRequests.withdraw.submitting': '取り下げています…',
   'proposalRequests.withdraw.error': '取り下げられませんでした。依頼の状態は変わっていません。',
   // 🔴 422（`REQUESTED` 以外からの取り下げ）。状態が動いたことを伝え、画面の再読込を促す。
@@ -2607,7 +2653,7 @@ const ja = {
   'proposalRequests.respond.accept.confirmTitle': '応諾して、次の項目をホストに開示しますか',
   'proposalRequests.respond.accept.confirmLead': '応諾は取り消せません。提案の下書きが 1 件作成され、以後は提案の流れに合流します。',
   'proposalRequests.respond.accept.confirmSubmit': '開示して応諾する',
-  'proposalRequests.respond.accept.confirmCancel': 'やめる',
+  'proposalRequests.respond.accept.confirmCancel': 'キャンセル',
   'proposalRequests.respond.accept.submitting': '提案の下書きを作成しています…',
   'proposalRequests.respond.accept.done': '応諾しました。提案の下書きを作成しました。',
   // ✅ T-09-01: `S-020`（提案の作成・編集）が入った。下書きの ID を示したうえで編集画面へ送る。
@@ -2620,7 +2666,7 @@ const ja = {
   // 🔴 `F-018 AC-1`: 非開示を入力欄の直下に明記する。
   'proposalRequests.respond.decline.reasonNote': 'この理由はホストには開示されません。貴社内の記録としてだけ保存されます。',
   'proposalRequests.respond.decline.submit': '辞退を確定する',
-  'proposalRequests.respond.decline.cancel': 'やめる',
+  'proposalRequests.respond.decline.cancel': 'キャンセル',
   'proposalRequests.respond.decline.submitting': '辞退を記録しています…',
   'proposalRequests.respond.decline.done': '辞退しました。理由はホストには開示されません。',
   'proposalRequests.respond.decline.recordedReason': '記録した理由（社内限定）',
@@ -2819,7 +2865,7 @@ const ja = {
   'proposals.approval.affiliation.host': '自社',
   'proposals.approval.affiliation.partner': '取引先',
   'proposals.approval.owner.host': '自社',
-  'proposals.approval.createdByUnknown': '（不明）',
+  'proposals.approval.createdByUnknown': '—',
   'proposals.approval.elapsed.minutesSuffix': ' 分',
   'proposals.approval.elapsed.hoursSuffix': ' 時間',
   'proposals.approval.elapsed.daysSuffix': ' 日',
@@ -2897,7 +2943,7 @@ const ja = {
   'proposals.approval.action.rejectSubmit': '却下して差し戻す',
   'proposals.approval.action.rejecting': '差し戻しています…',
   'proposals.approval.action.rejected': '却下しました。提案は下書きに戻りました。',
-  'proposals.approval.action.rejectCancel': '却下をやめる',
+  'proposals.approval.action.rejectCancel': 'キャンセル',
   'proposals.approval.action.scrollRequired': '承認・却下は、プレビューの末尾まで確認すると選べるようになります。',
   'proposals.approval.action.openEditor': '提案の内容を開く',
   'proposals.approval.action.backHome': 'ホームに戻る',
@@ -2969,7 +3015,7 @@ const ja = {
   'sendFailures.column.elapsed': '経過時間',
   'sendFailures.column.attemptCount': '試行回数',
   'sendFailures.attemptCountSuffix': ' 回',
-  'sendFailures.valueNone': '（不明）',
+  'sendFailures.valueNone': '—',
   'sendFailures.failureKind.UNKNOWN': '応答不明（到達したか確認できない）',
   'sendFailures.failureKind.DOMAIN_UNVERIFIED': '送信元ドメインが未検証',
   'sendFailures.failureKind.AUTH': '認証エラー',
@@ -3005,7 +3051,7 @@ const ja = {
   'sendFailures.resend.acknowledge': '先方に届いていないことを確認しました',
   'sendFailures.resend.reasonLabel': '再送の理由（提案の履歴に残ります）',
   'sendFailures.resend.confirmSubmit': '確認のうえ再送する',
-  'sendFailures.resend.confirmCancel': 'やめる',
+  'sendFailures.resend.confirmCancel': 'キャンセル',
   'sendFailures.resend.submitting': '再送を受け付けています…',
   'sendFailures.resend.error.validation': '確認のチェックと再送の理由の両方が必要です。',
   'sendFailures.resend.error.state': 'この提案は送信失敗の状態ではありません。再読込して現在の状態をご確認ください。',
@@ -3066,7 +3112,7 @@ const ja = {
   'proposals.list.recipient.unset': '提案先が未設定',
   'proposals.list.project.notShared': '（案件名は公開されていません）',
   'proposals.list.engineer.unknown': '（凍結情報なし）',
-  'proposals.list.createdBy.unknown': '（不明）',
+  'proposals.list.createdBy.unknown': '—',
   'proposals.list.valueNone': '—',
   // 🔴 保留の注記。`SUBMIT_FAILED`（送信失敗）とは別の語・別の印。
   'proposals.list.hold.badge': '送信を保留中',
@@ -3165,6 +3211,22 @@ const ja = {
   'proposals.detail.note.error.forbidden': 'この提案にメモを残す権限がありません。',
   'proposals.detail.note.error.generic': 'メモを追加できませんでした。提案の状態は変わっていません。',
   'proposals.detail.deniedTitle': 'メモの追加を行えません。',
+  // ✅ T-12-14 ②③: `S-023` セクション 4「ゲート結果の履歴」（実行ごと。docs/05 §6.5 #40b / `F-020 AC-7`）と、
+  //    履歴タイムライン・履歴の折りたたみ（docs/04 §10.3 の共通規約「直近 10 行 + 「すべて表示」」）。
+  // 🔴 「すべて表示」に件数を混ぜない（「他 N 件」は `F-004 AC-3` / `AC-4` の走査が禁じる語）。
+  'proposals.detail.showAll': 'すべて表示',
+  'proposals.detail.gateHistory.section': 'ゲート結果の履歴',
+  'proposals.detail.gateHistory.lead': '実行ごとの層別結果です。再実行しても上書きされず、履歴として残ります。',
+  'proposals.detail.gateHistory.executedAt.prefix': '実行日時: ',
+  // 🔴 HELD は「未実行」であり不合格ではない（`F-027 AC-5` / `CLAUDE.md` §4.2「失敗と保留を混同しない」）。
+  'proposals.detail.gateHistory.held.prefix': '上限到達で未実行（保留開始: ',
+  'proposals.detail.gateHistory.held.suffix': '）',
+  'proposals.detail.gateHistory.matchesCurrent': '現在の内容に対する結果',
+  'proposals.detail.gateHistory.previousContent': '以前の内容に対する結果',
+  // 🔴 整合層の機械照合の合否（`findings`）と AI の警告（`aiWarnings`）は別の見出し（`CLAUDE.md` §3.3 第 3 層 / docs/02 申し送り 5）。
+  'proposals.detail.gateHistory.warningsTitle': 'AI の警告（合否に影響しません）',
+  // 🔴 `aiFailed` は PII 層・商流層の不合格とは別物（判定不能）。「検査を完了できなかった」の語で区別する（`S-021` と同じ）。
+  'proposals.detail.gateHistory.aiFailed': '検査を完了できなかった実行です（AI の応答が得られませんでした）。元データの不備による不合格ではありません。',
 
   // --- S-024 商談結果の記録（docs/04 §S-024 / `F-025` / docs/05 §6.5 #48。T-09-10）---
   // 🔴 T1（モバイル完結）。面談日程の確定・面談実施・結果待ち・結果の確定（決定 / 見送り）・辞退を、
@@ -3216,14 +3278,14 @@ const ja = {
   'proposals.interview.note.reasonClose': '）',
   'proposals.interview.submit': '記録する',
   'proposals.interview.submitting': '記録しています…',
-  'proposals.interview.cancel': 'やめる',
+  'proposals.interview.cancel': 'キャンセル',
   // 🔴 終端（決定 / 見送り / 辞退）は戻れないので確認ステップを置く。
   'proposals.interview.confirm.title': 'この記録は取り消せません',
   'proposals.interview.confirm.lead.WON': '決定として確定します。確定後にこの提案の状態を変えることはできません。',
   'proposals.interview.confirm.lead.LOST': '見送りとして確定します。確定後にこの提案の状態を変えることはできません。',
   'proposals.interview.confirm.lead.WITHDRAWN': '辞退として記録します。記録後にこの提案の状態を変えることはできません。',
   'proposals.interview.confirm.submit': '確定する',
-  'proposals.interview.confirm.cancel': '戻る',
+  'proposals.interview.confirm.cancel': 'キャンセル',
   'proposals.interview.recorded': '記録しました。',
   'proposals.interview.recorded.statePrefix': '現在の状態: ',
   // 終端・記録できない状態の注記。
@@ -3290,7 +3352,7 @@ const ja = {
   'engineerShares.share': '共有可にする',
   'engineerShares.share.confirmTitle': 'この内容がホストに表示されます',
   'engineerShares.share.confirmSubmit': '共有可にする',
-  'engineerShares.share.confirmCancel': 'やめる',
+  'engineerShares.share.confirmCancel': 'キャンセル',
   'engineerShares.share.submitting': '設定しています…',
   // 解除（確認は 1 段。`docs/04` §S-015「解除は安全側の操作」）。
   'engineerShares.revoke': '共有を解除する',
@@ -3298,7 +3360,7 @@ const ja = {
   'engineerShares.revoke.confirmLead':
     '解除した時点で、ホストの候補一覧に表示されなくなります。あとから共有可に戻せます。',
   'engineerShares.revoke.confirmSubmit': '解除する',
-  'engineerShares.revoke.confirmCancel': 'やめる',
+  'engineerShares.revoke.confirmCancel': 'キャンセル',
   'engineerShares.revoke.submitting': '解除しています…',
   'engineerShares.error.save': '設定を変更できませんでした。',
   // 🔴 「反映まで数分かかります」に相当する語を置かない（`docs/04` §S-015 非同期処理の表現）。
@@ -3326,7 +3388,7 @@ const ja = {
   'engineerShares.loadMore': '次の 50 件',
   'engineerShares.loadMore.loading': '取得しています…',
   'engineerShares.loadMore.error': '続きを取得できませんでした。',
-  'engineerShares.loadMore.retry': '再試行',
+  'engineerShares.loadMore.retry': 'もう一度試す',
   // 🔴 `CURSOR_MODE_MISMATCH`（400。docs/05 §6.4「#29 の改訂」）。画面は条件を変えるたびにカーソルを捨てるので、
   //    利用者が通常操作でここへ到達することはない（改竄・流用した URL への応答）。
   'error.engineerShares.cursorModeMismatch':
@@ -3455,9 +3517,9 @@ const ja = {
   'retention.export.download': 'ダウンロード',
   'retention.export.downloading': 'ダウンロードの準備をしています',
   'retention.export.failed': '生成できませんでした',
-  'retention.export.retry': '再試行',
-  'retention.export.requestFailed': '返却データの生成を受け付けられませんでした。時間をおいて再試行してください。',
-  'retention.export.downloadFailed': 'ダウンロードの準備ができませんでした。時間をおいて再試行してください。',
+  'retention.export.retry': 'もう一度試す',
+  'retention.export.requestFailed': '返却データの生成を受け付けられませんでした。時間をおいてもう一度お試しください。',
+  'retention.export.downloadFailed': 'ダウンロードの準備ができませんでした。時間をおいてもう一度お試しください。',
   'retention.export.expired': '有効期限が切れています。再生成してください。',
   'retention.section.history': '実行履歴',
   'retention.history.empty': '返却データはまだ生成されていません',

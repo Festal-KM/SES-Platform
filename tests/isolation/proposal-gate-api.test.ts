@@ -32,8 +32,11 @@ import {
   type BullMqGateRunWorker,
 } from '@ses/connectors/bullmq';
 import {
+  completeReviewGate,
   configureTenantDb,
   disconnectTenantDb,
+  listReviewGateResults,
+  systemTenantCtx,
   type AuthenticatedTenantCtx,
   type TenantIdentity,
   type TenantRole,
@@ -57,6 +60,8 @@ vi.mock('../../apps/web/lib/auth/session', () => ({
 
 const { buildTenantCtx } = await import('../../apps/web/lib/auth/tenant-context');
 const gateRoute = await import('../../apps/web/app/api/(main)/proposals/[id]/gate/route');
+// ✅ T-12-14 ②: #40b（履歴）。境界は #40 と同じ結合で固定する（docs/05 §6.5「#40b と `S-023` セクション 4 の設計」検証 ①〜⑤）。
+const gateResultsRoute = await import('../../apps/web/app/api/(main)/proposals/[id]/gate-results/route');
 const { configureGateRunJobQueue, resetGateRunJobQueue } = await import(
   '../../apps/web/lib/jobs/gate-run-queue'
 );
@@ -132,6 +137,19 @@ async function callReadGate(ctx: AuthenticatedTenantCtx, proposalId: string): Pr
   requireTenantCtxMock.mockResolvedValue(ctx);
   return gateRoute.GET(
     new Request(`https://app.test/api/proposals/${proposalId}/gate`),
+    segment(proposalId),
+  );
+}
+
+/** #40b `GET /api/proposals/{id}/gate-results`（T-12-14 ②）。`query` は「未知のクエリが結果を変えない」の対照に使う。 */
+async function callReadGateResults(
+  ctx: AuthenticatedTenantCtx,
+  proposalId: string,
+  query = '',
+): Promise<Response> {
+  requireTenantCtxMock.mockResolvedValue(ctx);
+  return gateResultsRoute.GET(
+    new Request(`https://app.test/api/proposals/${proposalId}/gate-results${query}`),
     segment(proposalId),
   );
 }
@@ -695,6 +713,288 @@ describe('🔴 状態と認可（docs/05 §6.5 #39 / §9.10 ①）', () => {
     const readAbsent = await callReadGate(partner2Ctx, ABSENT_ID);
     expect(readCross.status).toBe(404);
     expect(await readCross.text()).toBe(await readAbsent.text());
+  });
+});
+
+describe('🔴 #40b ゲート結果の履歴（T-12-14 ②。docs/05 §6.5「#40b と S-023 セクション 4 の設計」検証 ①〜⑤ / F-020 AC-7）', () => {
+  type HistoryItem = {
+    reviewGateId: string;
+    execution: string;
+    executedAt: string | null;
+    heldSince: string | null;
+    matchesCurrentContent: boolean;
+    contentHash: string;
+    layers: Record<'pii' | 'commerce' | 'consistency', { state: string; findings: unknown[] }>;
+    aiWarnings: unknown[];
+    aiFailed: boolean;
+    held?: { heldReasonKey: string; heldSince: string; resetAt: string; limitRaise: string; rerun: { auto: boolean; manual: string } };
+  };
+  type HistoryBody = { items: HistoryItem[] };
+
+  /**
+   * 🔴 確定行は **`gate.run` が結果を書くのと同じ関数**（`completeReviewGate`。`SystemTenantCtx`）で作る。
+   *    ゲート本体（AI）は動かさないが、書き込み側の 1 実装を通すことで「履歴の行の形」を本番経路と同じにする。
+   */
+  async function completeGate(input: {
+    readonly proposalId: string;
+    readonly contentHash: string;
+    readonly executedAt: Date;
+    readonly piiVerdict?: 'PASS' | 'FAIL';
+    readonly aiFailed?: boolean;
+  }): Promise<string> {
+    const outcome = await completeReviewGate(
+      systemTenantCtx(TENANT_1.tenantId, { queue: 'gate.run', jobId: `t1214-${input.contentHash}` }),
+      {
+        targetType: TARGET_TYPE,
+        targetId: input.proposalId,
+        contentHash: input.contentHash,
+        piiVerdict: input.piiVerdict ?? 'PASS',
+        commerceVerdict: 'PASS',
+        consistencyVerdict: 'PASS',
+        findings:
+          input.piiVerdict === 'FAIL'
+            ? [{ layer: 'PII', kind: 'FULL_NAME', field: 'body', offsetStart: 0, offsetEnd: 5, excerpt: '[名前]', severity: 'BLOCK' }]
+            : [],
+        aiWarnings: [
+          { layer: 'CONSISTENCY', kind: 'SKILL_SHEET_MISMATCH', field: 'body', offsetStart: null, offsetEnd: null, excerpt: '要確認', severity: 'WARN' },
+        ],
+        aiFailed: input.aiFailed ?? false,
+        role: 'gate-inspector',
+        promptVersion: 'v1',
+        modelId: 'mock',
+        aiUsageId: null,
+        executedAt: input.executedAt,
+      },
+    );
+    if (outcome.kind === 'RACED') throw new Error('前提の破綻: 保留行が無いのに RACED になりました。');
+    return outcome.id;
+  }
+
+  async function readHistory(ctx: AuthenticatedTenantCtx, proposalId: string): Promise<HistoryBody> {
+    const response = await callReadGateResults(ctx, proposalId);
+    expect(response.status).toBe(200);
+    return (await response.json()) as HistoryBody;
+  }
+
+  it('① 内容を変えて 2 回実行すると 2 行が降順で返り、新しい行だけ matchesCurrentContent、古い行の contentHash が残る（上書きしない）', async () => {
+    const proposalId = TENANT_1.hostProposalId;
+    await prepareProposal({ id: proposalId, state: 'DRAFT', body: 'history-two-runs' });
+    const ctx = await ctxOf(HOST_SALES, 'SALES');
+
+    // 現在の内容のハッシュ（#39 の `jobId` から。#40 が `RUNNING` のときに返す値と同じ 1 実装）。
+    const { jobId } = (await (await callRequestGate(ctx, proposalId)).json()) as { jobId: string };
+    const currentHash = hashOfJobId(jobId);
+    // 以前の内容のハッシュ（値は任意。現在の内容と一致しないことだけが要件）。
+    const olderHash = 'history-two-runs-older-content';
+
+    // 1 回目 = 以前の内容（PII で FAIL）。2 回目 = 現在の内容（PASS）。
+    const olderId = await completeGate({ proposalId, contentHash: olderHash, executedAt: new Date(NOW.getTime() - 60 * 60 * 1000), piiVerdict: 'FAIL' });
+    const newerId = await completeGate({ proposalId, contentHash: currentHash, executedAt: NOW });
+    expect(newerId).not.toBe(olderId);
+
+    const { items } = await readHistory(ctx, proposalId);
+    expect(items).toHaveLength(2);
+    // 🔴 降順（新しい実行が先）。
+    expect(items.map((item) => item.reviewGateId)).toEqual([newerId, olderId]);
+    expect(items[0]).toMatchObject({ execution: 'DONE', executedAt: NOW.toISOString(), heldSince: null, matchesCurrentContent: true, contentHash: currentHash });
+    // 🔴 古い行は上書きされず、`contentHash` も層別の結果も**そのまま**残る（`F-020 AC-7`）。
+    expect(items[1]).toMatchObject({ execution: 'DONE', heldSince: null, matchesCurrentContent: false, contentHash: olderHash });
+    expect(items[1]?.layers.pii.state).toBe('FAIL');
+    expect(items[1]?.layers.pii.findings).toHaveLength(1);
+    expect(items[0]?.layers.pii.state).toBe('PASS');
+    // 🔴 警告は指摘と別のフィールド（合否に効かない）。`held` は DONE 行に無い。
+    expect(items[0]?.aiWarnings).toHaveLength(1);
+    expect(items[0]?.held).toBeUndefined();
+    expect(items[1]?.held).toBeUndefined();
+
+    // #40（最新 1 件）と #40b の先頭は同じ行 = 母集団が 1 実装であることの対照。
+    const latest = (await (await callReadGate(ctx, proposalId)).json()) as { execution: string; contentHash: string };
+    expect(latest).toMatchObject({ execution: 'DONE', contentHash: currentHash });
+
+    // 🔴 応答に主体・提案先・`GateInput` の材料（本文・件名）のキーが無い（§11.14。指摘の `field: "body"` は欄の名前であり本文ではない）。
+    const text = JSON.stringify(items);
+    expect(text).not.toMatch(/"(owner|recipient|actor|createdBy|subject|body)":/);
+    expect(text.toLowerCase()).not.toContain('usd');
+  });
+
+  it('② HELD 行がある提案は先頭が HELD_AI_COST_LIMIT + held、DONE 行の held は undefined', async () => {
+    const proposalId = TENANT_1.hostProposalId;
+    await prepareProposal({ id: proposalId, state: 'GATE_RUNNING', body: 'history-held' });
+    // 以前の内容の確定行（1 時間前）+ 現在の内容で保留中（上限到達）。
+    const doneId = await completeGate({ proposalId, contentHash: 'history-held-old', executedAt: new Date(NOW.getTime() - 60 * 60 * 1000) });
+    const held = await admin.reviewGate.create({
+      data: {
+        tenantId: TENANT_1.tenantId,
+        targetType: TARGET_TYPE,
+        targetId: proposalId,
+        contentHash: 'history-held-current',
+        execution: 'HELD_AI_COST_LIMIT',
+        heldSince: NOW,
+        piiVerdict: null,
+        commerceVerdict: null,
+        consistencyVerdict: 'PASS',
+        findings: [],
+        aiWarnings: [],
+        aiFailed: false,
+      },
+      select: { id: true },
+    });
+    const ctx = await ctxOf(HOST_SALES, 'SALES');
+
+    const { items } = await readHistory(ctx, proposalId);
+    expect(items.map((item) => item.reviewGateId)).toEqual([held.id, doneId]);
+    expect(items[0]).toMatchObject({
+      execution: 'HELD_AI_COST_LIMIT',
+      executedAt: null,
+      heldSince: NOW.toISOString(),
+      layers: { pii: { state: 'HELD' }, commerce: { state: 'HELD' }, consistency: { state: 'PASS' } },
+    });
+    // 🔴 `held` は #40 と同じ `GateHeldView`（金額は無い）。
+    expect(items[0]?.held).toMatchObject({ heldReasonKey: 'gate.held.aiCostLimit', heldSince: NOW.toISOString(), limitRaise: 'PLATFORM_OPERATOR', rerun: { auto: true, manual: 'POST /api/proposals/{id}/gate' } });
+    expect(items[0]?.held?.resetAt.endsWith('T15:00:00.000Z')).toBe(true);
+    expect(items[1]).toMatchObject({ execution: 'DONE', heldSince: null });
+    expect(items[1]?.held).toBeUndefined();
+    expect(JSON.stringify(items).toLowerCase()).not.toContain('usd');
+  });
+
+  it('🔴 ③ 取引先 A1 が他社（A2）の提案 / テナント B の提案 / 不存在 ID で叩くと同じ 404（本文まで #40 と同一）。自社提案は 200', async () => {
+    // 他社（A2）の提案にも履歴の行を置く（「行が無いから 404」ではなく「見えないから 404」であることの対照）。
+    await prepareProposal({ id: PARTNER_1_2.wonProposalId, state: 'GATE_FAILED', body: 'history-boundary-a2' });
+    await admin.reviewGate.create({
+      data: {
+        tenantId: TENANT_1.tenantId,
+        targetType: TARGET_TYPE,
+        targetId: PARTNER_1_2.wonProposalId,
+        contentHash: 'history-boundary-a2',
+        execution: 'DONE',
+        piiVerdict: 'FAIL',
+        commerceVerdict: 'PASS',
+        consistencyVerdict: 'PASS',
+        findings: [],
+        aiWarnings: [],
+        aiFailed: false,
+        executedAt: NOW,
+      },
+    });
+    // 自社（A1）の提案（作成者は A1 の利用者。seed のまま）。
+    await prepareProposal({ id: PARTNER_1_1.wonProposalId, state: 'GATE_FAILED', body: 'history-boundary-a1' });
+    await admin.proposal.update({ where: { id: PARTNER_1_1.wonProposalId }, data: { createdBy: PARTNER_1_1.userId } });
+    await admin.reviewGate.create({
+      data: {
+        tenantId: TENANT_1.tenantId,
+        targetType: TARGET_TYPE,
+        targetId: PARTNER_1_1.wonProposalId,
+        contentHash: 'history-boundary-a1',
+        execution: 'DONE',
+        piiVerdict: 'PASS',
+        commerceVerdict: 'PASS',
+        consistencyVerdict: 'PASS',
+        findings: [],
+        aiWarnings: [],
+        aiFailed: false,
+        executedAt: NOW,
+      },
+    });
+    const partner1Ctx = await ctxOf(PARTNER_1_USER, 'PARTNER_SALES');
+
+    const crossPartner = await callReadGateResults(partner1Ctx, PARTNER_1_2.wonProposalId);
+    const crossTenant = await callReadGateResults(partner1Ctx, TENANT_2.hostProposalId);
+    const absent = await callReadGateResults(partner1Ctx, ABSENT_ID);
+    expect(crossPartner.status).toBe(404);
+    expect(crossTenant.status).toBe(404);
+    expect(absent.status).toBe(404);
+    // 🔴 本文まで 1 バイト同じ（応答の差から存在を推測させない）。#40 の 404 とも同一。
+    const absentBody = await absent.text();
+    expect(await crossPartner.text()).toBe(absentBody);
+    expect(await crossTenant.text()).toBe(absentBody);
+    expect(await (await callReadGate(partner1Ctx, ABSENT_ID)).text()).toBe(absentBody);
+    expect(await (await callReadGate(partner1Ctx, PARTNER_1_2.wonProposalId)).text()).toBe(absentBody);
+    // 🔴 他社の行の `contentHash` が 1 バイトも現れない（404 の本文にも）。
+    expect(absentBody).not.toContain('history-boundary-a2');
+
+    // 自社の提案は 200 で、自社の行だけ（他社の行が混ざらない）。
+    const own = await readHistory(partner1Ctx, PARTNER_1_1.wonProposalId);
+    expect(own.items).toHaveLength(1);
+    expect(own.items[0]?.contentHash).toBe('history-boundary-a1');
+    expect(JSON.stringify(own)).not.toContain('history-boundary-a2');
+
+    // 🔴 VIEWER も読める（#40 の GET と同じガード。読み取りに `requireNotViewer` を掛けない）。
+    const viewerCtx = await ctxOf(HOST_SALES, 'VIEWER');
+    expect((await callReadGateResults(viewerCtx, PARTNER_1_1.wonProposalId)).status).toBe(200);
+  });
+
+  it('🔴 [中] アクセサ自身の境界: listReviewGateResults はテナント B の ctx では他テナントの行を返さない（loadTarget を経由せず直接呼ぶ。第 2 防御）', async () => {
+    // 🔴 `loadTarget` の 404 に頼らず、アクセサ自身に述語が効いていることを直接確認する
+    //    （HTTP 経由の境界テストは `loadTarget` が先に 404 を返すため、この関数の `where` が
+    //    空でも全テストが通ってしまう）。
+    await admin.reviewGate.create({
+      data: {
+        tenantId: TENANT_1.tenantId,
+        targetType: TARGET_TYPE,
+        targetId: TENANT_1.hostProposalId,
+        contentHash: 'history-accessor-boundary-tenant',
+        execution: 'DONE',
+        piiVerdict: 'PASS',
+        commerceVerdict: 'PASS',
+        consistencyVerdict: 'PASS',
+        findings: [],
+        aiWarnings: [],
+        aiFailed: false,
+        executedAt: NOW,
+      },
+    });
+    // 🔴 既定のロール（seed の `SALES`）のまま ctx を作る。役割を書き換えないので afterEach の
+    //    リセット対象（HOST_SALES / PARTNER_1_USER / PARTNER_2_USER）に加える必要が無い。
+    const tenant2Ctx = await ctxOf(
+      { tenantId: TENANT_2.tenantId, partnerCompanyId: null, userId: TENANT_2.hostUserId },
+      'SALES',
+    );
+
+    const rows = await listReviewGateResults(tenant2Ctx, {
+      targetType: TARGET_TYPE,
+      targetId: TENANT_1.hostProposalId,
+    });
+    expect(rows).toEqual([]);
+  });
+
+  it('🔴 [中] アクセサ自身の境界: listReviewGateResults は取引先 A1 の ctx では他社（A2）の行を返さない（loadTarget を経由せず直接呼ぶ。第 2 防御）', async () => {
+    // 検証 ③ で PARTNER_1_2（A2）の提案に作った行（contentHash: 'history-boundary-a2'）をそのまま使う。
+    const partner1Ctx = await ctxOf(PARTNER_1_USER, 'PARTNER_SALES');
+
+    const rows = await listReviewGateResults(partner1Ctx, {
+      targetType: TARGET_TYPE,
+      targetId: PARTNER_1_2.wonProposalId,
+    });
+    expect(rows).toEqual([]);
+  });
+
+  it('④ 一度も依頼していない DRAFT は items: []（404 にしない）', async () => {
+    const proposalId = TENANT_1.hostProposalId;
+    await prepareProposal({ id: proposalId, state: 'DRAFT', body: 'history-never' });
+    const ctx = await ctxOf(HOST_SALES, 'SALES');
+
+    const { items } = await readHistory(ctx, proposalId);
+    expect(items).toEqual([]);
+    // 対照: #40 は同じ提案で `RUNNING`（行の非存在 = 実行中）。
+    expect(((await (await callReadGate(ctx, proposalId)).json()) as { execution: string }).execution).toBe('RUNNING');
+  });
+
+  it('🔴 ⑤ `?force=true` 等の未知のクエリが 1 バイトも結果を変えない（入力が存在しない）', async () => {
+    const proposalId = TENANT_1.hostProposalId;
+    await prepareProposal({ id: proposalId, state: 'GATE_FAILED', body: 'history-query' });
+    await completeGate({ proposalId, contentHash: 'history-query-1', executedAt: NOW, piiVerdict: 'FAIL' });
+    const ctx = await ctxOf(HOST_SALES, 'SALES');
+
+    const plain = await callReadGateResults(ctx, proposalId);
+    const forced = await callReadGateResults(ctx, proposalId, '?force=true&override=1&history=0&limit=0');
+    expect(plain.status).toBe(200);
+    expect(forced.status).toBe(200);
+    expect(await forced.text()).toBe(await plain.text());
+  });
+
+  it('履歴のルートが export するのは GET だけ（履歴を書き換える経路が無い。F-020 AC-7）', () => {
+    const exported = Object.keys(gateResultsRoute).filter((name) => ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(name));
+    expect(exported).toEqual(['GET']);
   });
 });
 

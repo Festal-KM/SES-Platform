@@ -316,7 +316,13 @@ const FROZEN_EXACT: readonly string[] = [
   'admin-tenants-health-signals',
   'admin-tenants-load-more',
   'admin-tenants-observed-at',
+  // ✅ 低-3（レビュー指摘。2026-09-21）: 絞り込み無し + 範囲外カーソル（0 件・先頭ページでない）の専用文言。
+  'admin-tenants-out-of-range',
   'admin-tenants-sort',
+  // ✅ T-12-18 ③: `A-002` セクション 1「異常の要約」（種別ごとの件数チップ・解除・絞り込み 0 件）。チップの testid は接頭辞 `admin-tenants-summary-`。
+  'admin-tenants-summary',
+  'admin-tenants-summary-clear',
+  'admin-tenants-summary-filtered-empty',
   'admin-tenants-table',
   'admin-tenants-thresholds',
   // ✅ T-11-02: `A-004` 利用量・クォータ管理（`admin-usage-view.tsx` / `admin-usage-table.tsx` / `quota-override-form.tsx`）。
@@ -353,6 +359,11 @@ const FROZEN_EXACT: readonly string[] = [
   'audit-logs-detail-empty',
   'audit-logs-detail-list',
   'audit-logs-detail-suppressed',
+  // ✅ T-12-18 ⑪: `S-041` セクション 4 の CSV エクスポート（`audit-logs-view.tsx`。検索後にだけ描く）。
+  'audit-logs-export',
+  // ✅ レビュー指摘 NG-1（2026-09-21）: エクスポートの 400（上限超過等）のエラー表示。
+  'audit-logs-export-error',
+  'audit-logs-export-link',
   'audit-logs-table',
   // ✅ T-08-05: `S-016` 候補検索（`candidate-screen.tsx` / `page.tsx`）。実装から機械抽出した 45 個。
   'candidate-detail-anonymous',
@@ -845,7 +856,12 @@ const FROZEN_EXACT: readonly string[] = [
   'proposal-detail-frozen-careers-title',
   'proposal-detail-frozen-notice',
   'proposal-detail-frozen-subject',
+  // ✅ T-12-14 ②③: `S-023` の現在の結果の HELD / 判定不能の注記と、セクション 4「ゲート結果の履歴」（#40b。履歴の行は FROZEN_PREFIXES）。
+  'proposal-detail-gate-ai-failed',
   'proposal-detail-gate-findings',
+  'proposal-detail-gate-held',
+  'proposal-detail-gate-history',
+  'proposal-detail-gate-history-empty',
   'proposal-detail-gate-not-requested',
   'proposal-detail-gate-warnings',
   'proposal-detail-header-row-state',
@@ -863,6 +879,7 @@ const FROZEN_EXACT: readonly string[] = [
   'proposal-detail-section-actions',
   'proposal-detail-section-frozen',
   'proposal-detail-section-gate',
+  'proposal-detail-section-gate-history',
   'proposal-detail-section-header',
   'proposal-detail-section-note',
   'proposal-detail-section-timeline',
@@ -1219,6 +1236,7 @@ const FROZEN_PREFIXES: readonly string[] = [
   'admin-tenants-row-',
   'admin-tenants-seats-',
   'admin-tenants-sort-',
+  'admin-tenants-summary-',
   // ✅ T-11-02: `A-004` の動的 testid（行 / 4 単位 / 当日・当月 AI / 標準原価比 / 抽出ボタン / OWNER の操作導線。テナント ID・抽出値で変わる）。
   'admin-usage-ai-daily-',
   'admin-usage-ai-monthly-',
@@ -1342,6 +1360,15 @@ const FROZEN_PREFIXES: readonly string[] = [
   'proposal-detail-event-detail-',
   'proposal-detail-event-title-',
   'proposal-detail-frozen-career-',
+  // ✅ T-12-14 ②: `S-023` セクション 4「ゲート結果の履歴」の 1 実行（`reviewGateId` ごと）の見出し / 印 / 層 / 指摘 / 警告 / HELD / 判定不能。
+  'proposal-detail-gate-history-ai-failed-',
+  'proposal-detail-gate-history-content-note-',
+  'proposal-detail-gate-history-findings-',
+  'proposal-detail-gate-history-held-',
+  'proposal-detail-gate-history-item-',
+  'proposal-detail-gate-history-layer-',
+  'proposal-detail-gate-history-title-',
+  'proposal-detail-gate-history-warnings-',
   'proposal-detail-gate-layer-',
   'proposal-detail-header-row-',
   // ✅ T-09-01: `S-020` の動的 testid（セクション / ゲートの層 / 指摘リスト）。

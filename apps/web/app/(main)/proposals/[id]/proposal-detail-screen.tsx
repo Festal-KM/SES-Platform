@@ -19,6 +19,12 @@
 //      導線は `canAddNote`（立場）× `denialMessage === null`（テナントが実行可）のときだけ。
 //   ⑥ 🔴 取引先の props に承認者・送信試行・保留・作成会社は**来ない**（`proposalDetailRows` が `null` にする。型の分離は `views.ts`）。
 //      重複提案（`F-037`。Phase 2）の欄はこの画面に存在しない。
+//   ⑦ ✅ T-12-14 ②③: **セクション 4「ゲート結果の履歴」は実行ごとの履歴**（#40b `readProposalGateResults`。`F-020 AC-7`）。
+//      1 実行 = 1 ブロックで、層別結果は「ゲート結果」（現在の結果 = #46 の `gate`）と**同じ描画部品** `GateResultBlock`
+//      （view model も同じ `approvalGateRows`）。🔴 整合層の機械照合の合否（`findings`）と AI の警告（`aiWarnings`）は
+//      **別の見出し**で描き、`aiFailed` の行は「検査を完了できなかった」の語で PII / 商流の FAIL と区別する（`CLAUDE.md` §3.3 第 3 層）。
+//      🔴 履歴タイムラインと履歴の折りたたみは `docs/04` §10.3 の共通規約（直近 10 行 + 「すべて表示」= `@ses/ui` の `FoldedList`）に
+//      合流し、本画面固有の例外を作らない。タイムラインは新しい順で、最新行は直近 10 行の先頭にあるため構造的に隠れない。
 //
 // 🔴 `'use client'` はメモの投稿フォームのためだけである。**`@ses/db` に依存するモジュールから値を import しない**
 //    （`tests/static/client-db-boundary.test.ts`）。文言と表示値は props で受け取る。
@@ -26,9 +32,10 @@
 import { useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Badge, Button, Field, SECONDARY_LINK_CLASSES, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Textarea, type BadgeVariant } from '@ses/ui';
+import { Badge, Button, Field, FoldedList, SECONDARY_LINK_CLASSES, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Textarea, type BadgeVariant } from '@ses/ui';
 import type { GateLayerState } from '@ses/domain';
-import type { ProposalDetailRows, ProposalStateTone, ProposalTimelineRow } from '../../../../lib/proposals/detail-rows';
+import type { ApprovalGateRows } from '../../../../lib/proposals/approval-rows';
+import type { ProposalDetailRows, ProposalGateHistoryRows, ProposalStateTone, ProposalTimelineRow } from '../../../../lib/proposals/detail-rows';
 
 export type ProposalDetailScreenMessages = {
   readonly sectionHeader: string;
@@ -36,6 +43,18 @@ export type ProposalDetailScreenMessages = {
   readonly sectionTimeline: string;
   readonly sectionFrozen: string;
   readonly sectionGate: string;
+  /** ✅ T-12-14 ②: セクション 4「ゲート結果の履歴」。 */
+  readonly sectionGateHistory: string;
+  readonly gateHistoryLead: string;
+  /** docs/04 §10.3 の共通規約「すべて表示」。 */
+  readonly showAll: string;
+  /** HELD の説明（停止理由 + 再開条件。`S-021` と同じ語。`S-038` への導線は出さない = Issue #70 既定）。 */
+  readonly gateHeld: string;
+  readonly gateHeldResetAtPrefix: string;
+  /** 現在の結果が `aiFailed` のとき（`S-021` と同じ語）。 */
+  readonly gateAiFailed: string;
+  /** 履歴の行が `aiFailed` のとき（「検査を完了できなかった」）。 */
+  readonly gateHistoryAiFailed: string;
   readonly sectionActions: string;
   readonly sectionNote: string;
   readonly fieldState: string;
@@ -73,6 +92,8 @@ export type ProposalDetailScreenMessages = {
 export type ProposalDetailScreenProps = {
   readonly proposalId: string;
   readonly rows: ProposalDetailRows;
+  /** ✅ T-12-14 ②: セクション 4「ゲート結果の履歴」（#40b。降順）。`page.tsx` が `readProposalGateResults` を直接呼んで組む。 */
+  readonly gateHistory: ProposalGateHistoryRows;
   /** 🔴 `VIEWER` はメモを残せない（`requireNotViewer`）。導線を描かず理由を出す。 */
   readonly isViewer: boolean;
   /** 実行系を止めている理由（`F-004 AC-7`）。`null` なら実行可。拒否の本体は #47 の `requireExecutable`。 */
@@ -127,7 +148,90 @@ function TimelineItem({ row }: { readonly row: ProposalTimelineRow }) {
   );
 }
 
-export function ProposalDetailScreen({ proposalId, rows, isViewer, denialMessage, listHref, noteMaxLength, messages }: ProposalDetailScreenProps) {
+/**
+ * 層別結果の描画の**置き場**。`CURRENT` = 「ゲート結果」（#46 の `gate`。凍結済みの testid）/ `HISTORY` = セクション 4 の 1 実行
+ * （`reviewGateId` で testid を分ける。同じ DOM に同じ testid が複数現れないようにするため）。
+ */
+type GateBlockScope = { readonly kind: 'CURRENT' } | { readonly kind: 'HISTORY'; readonly id: string };
+
+/**
+ * ✅ T-12-14 ②: 層別結果（3 層のバッジ / HELD の停止理由と再開条件 / 判定不能 / 不合格の指摘 / AI の警告）の**唯一の描画部品**。
+ *    「ゲート結果」（現在）とセクション 4 の各実行が同じ部品を使う（履歴用の別実装を書かない）。
+ * 🔴 不合格の指摘（`findings`）と AI の警告（`warnings`）は**別の見出し・別のリスト**（合否に効かない側を混ぜない）。
+ * 🔴 HELD は「検査中」のバッジ + 停止理由 + 再開予定だけ（`S-038` への導線・金額は無い。Issue #70 既定 / `F-027 AC-6`）。
+ */
+function GateResultBlock({ gate, scope, messages }: { readonly gate: ApprovalGateRows; readonly scope: GateBlockScope; readonly messages: ProposalDetailScreenMessages }) {
+  const current = scope.kind === 'CURRENT';
+  return (
+    <div data-gate-execution={gate.execution} data-ai-failed={gate.aiFailed ? 'true' : 'false'}>
+      <ul className="mb-3 flex flex-wrap gap-2">
+        {gate.layers.map((layer) => (
+          <li
+            key={layer.key}
+            data-testid={current ? `proposal-detail-gate-layer-${layer.key}` : `proposal-detail-gate-history-layer-${scope.id}-${layer.key}`}
+            data-layer-state={layer.state}
+          >
+            <Badge variant={LAYER_VARIANTS[layer.state]}>
+              {layer.label}: {layer.verdictLabel}
+            </Badge>
+          </li>
+        ))}
+      </ul>
+      {gate.execution === 'HELD_AI_COST_LIMIT' ? (
+        <p
+          role="status"
+          className="mb-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+          data-testid={current ? 'proposal-detail-gate-held' : `proposal-detail-gate-history-held-${scope.id}`}
+        >
+          {messages.gateHeld} {messages.gateHeldResetAtPrefix}
+          {gate.heldResetAt}
+        </p>
+      ) : null}
+      {gate.aiFailed ? (
+        <p
+          role="alert"
+          className="mb-2 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900"
+          data-testid={current ? 'proposal-detail-gate-ai-failed' : `proposal-detail-gate-history-ai-failed-${scope.id}`}
+        >
+          {current ? messages.gateAiFailed : messages.gateHistoryAiFailed}
+        </p>
+      ) : null}
+      {gate.lead === null ? null : <p className="mb-2 text-sm text-slate-700">{gate.lead}</p>}
+      <h4 className="text-sm font-semibold text-red-800">{messages.gateFindingsTitle}</h4>
+      {gate.findings.length === 0 ? (
+        <p className="mb-2 text-sm text-slate-600">{messages.gateFindingsEmpty}</p>
+      ) : (
+        <ul
+          className="mb-2 list-disc pl-5 text-sm text-red-800"
+          data-testid={current ? 'proposal-detail-gate-findings' : `proposal-detail-gate-history-findings-${scope.id}`}
+        >
+          {gate.findings.map((finding) => (
+            <li key={finding.key}>
+              {finding.fieldLabel}: {finding.excerpt}
+            </li>
+          ))}
+        </ul>
+      )}
+      <h4 className="text-sm font-semibold text-amber-800">{messages.gateWarningsTitle}</h4>
+      {gate.warnings.length === 0 ? (
+        <p className="text-sm text-slate-600">{messages.gateWarningsEmpty}</p>
+      ) : (
+        <ul
+          className="list-disc pl-5 text-sm text-amber-800"
+          data-testid={current ? 'proposal-detail-gate-warnings' : `proposal-detail-gate-history-warnings-${scope.id}`}
+        >
+          {gate.warnings.map((warning) => (
+            <li key={warning.key}>
+              {warning.fieldLabel}: {warning.excerpt}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+export function ProposalDetailScreen({ proposalId, rows, gateHistory, isViewer, denialMessage, listHref, noteMaxLength, messages }: ProposalDetailScreenProps) {
   const router = useRouter();
   const [note, setNote] = useState('');
   const [phase, setPhase] = useState<NotePhase>({ kind: 'IDLE' });
@@ -280,14 +384,16 @@ export function ProposalDetailScreen({ proposalId, rows, isViewer, denialMessage
         </ul>
       </section>
 
-      {/* ② 履歴タイムライン。 */}
+      {/* ② 履歴タイムライン（新しい順。11 行以上で直近 10 行 + 「すべて表示」= docs/04 §10.3 の共通規約）。 */}
       <section className="mb-6" data-testid="proposal-detail-section-timeline">
         <h2 className="mb-2 text-base font-semibold text-slate-900">{messages.sectionTimeline}</h2>
-        <ol className="flex flex-col gap-3" data-testid="proposal-detail-timeline">
-          {rows.timeline.map((row) => (
+        <FoldedList
+          data-testid="proposal-detail-timeline"
+          showAllLabel={messages.showAll}
+          rows={rows.timeline.map((row) => (
             <TimelineItem key={row.id} row={row} />
           ))}
-        </ol>
+        />
       </section>
 
       {/* ⑤ メモ追加（#47）。状態を動かさない。 */}
@@ -395,7 +501,7 @@ export function ProposalDetailScreen({ proposalId, rows, isViewer, denialMessage
         )}
       </section>
 
-      {/* ゲート結果（#40 と同じ形。3 値）。 */}
+      {/* ゲート結果（現在の結果。#46 の `gate` = #40 と同じ形。3 値）。 */}
       <section className="mb-6" data-testid="proposal-detail-section-gate" data-gate-execution={rows.gate.execution}>
         <h2 className="mb-2 text-base font-semibold text-slate-900">{messages.sectionGate}</h2>
         {rows.gate.execution === 'RUNNING' && !rows.gate.layers.some((layer) => layer.state !== 'RUNNING') ? (
@@ -403,42 +509,42 @@ export function ProposalDetailScreen({ proposalId, rows, isViewer, denialMessage
             {messages.gateNotRequested}
           </p>
         ) : (
-          <>
-            <ul className="mb-3 flex flex-wrap gap-2">
-              {rows.gate.layers.map((layer) => (
-                <li key={layer.key} data-testid={`proposal-detail-gate-layer-${layer.key}`} data-layer-state={layer.state}>
-                  <Badge variant={LAYER_VARIANTS[layer.state]}>
-                    {layer.label}: {layer.verdictLabel}
+          <GateResultBlock gate={rows.gate} scope={{ kind: 'CURRENT' }} messages={messages} />
+        )}
+      </section>
+
+      {/* ④ ゲート結果の履歴（#40b。実行ごと。降順。11 件以上で直近 10 件 + 「すべて表示」）。 */}
+      <section className="mb-6" data-testid="proposal-detail-section-gate-history" data-history-count={gateHistory.items.length}>
+        <h2 className="mb-2 text-base font-semibold text-slate-900">{messages.sectionGateHistory}</h2>
+        <p className="mb-3 text-xs text-slate-600">{messages.gateHistoryLead}</p>
+        {gateHistory.empty !== null ? (
+          <p className="text-sm text-slate-600" data-testid="proposal-detail-gate-history-empty">
+            {gateHistory.empty}
+          </p>
+        ) : (
+          <FoldedList
+            data-testid="proposal-detail-gate-history"
+            showAllLabel={messages.showAll}
+            rows={gateHistory.items.map((item) => (
+              <li
+                key={item.reviewGateId}
+                className="rounded-md border border-slate-200 p-3"
+                data-testid={`proposal-detail-gate-history-item-${item.reviewGateId}`}
+                data-gate-execution={item.execution}
+                data-matches-current-content={item.matchesCurrentContent ? 'true' : 'false'}
+              >
+                <div className="mb-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                  <h3 className="text-sm font-semibold text-slate-900" data-testid={`proposal-detail-gate-history-title-${item.reviewGateId}`}>
+                    {item.title}
+                  </h3>
+                  <Badge variant={item.matchesCurrentContent ? 'success' : 'neutral'} data-testid={`proposal-detail-gate-history-content-note-${item.reviewGateId}`}>
+                    {item.contentNote}
                   </Badge>
-                </li>
-              ))}
-            </ul>
-            {rows.gate.lead === null ? null : <p className="mb-2 text-sm text-slate-700">{rows.gate.lead}</p>}
-            <h3 className="text-sm font-semibold text-red-800">{messages.gateFindingsTitle}</h3>
-            {rows.gate.findings.length === 0 ? (
-              <p className="mb-2 text-sm text-slate-600">{messages.gateFindingsEmpty}</p>
-            ) : (
-              <ul className="mb-2 list-disc pl-5 text-sm text-red-800" data-testid="proposal-detail-gate-findings">
-                {rows.gate.findings.map((finding) => (
-                  <li key={finding.key}>
-                    {finding.fieldLabel}: {finding.excerpt}
-                  </li>
-                ))}
-              </ul>
-            )}
-            <h3 className="text-sm font-semibold text-amber-800">{messages.gateWarningsTitle}</h3>
-            {rows.gate.warnings.length === 0 ? (
-              <p className="text-sm text-slate-600">{messages.gateWarningsEmpty}</p>
-            ) : (
-              <ul className="list-disc pl-5 text-sm text-amber-800" data-testid="proposal-detail-gate-warnings">
-                {rows.gate.warnings.map((warning) => (
-                  <li key={warning.key}>
-                    {warning.fieldLabel}: {warning.excerpt}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </>
+                </div>
+                <GateResultBlock gate={item.gate} scope={{ kind: 'HISTORY', id: item.reviewGateId }} messages={messages} />
+              </li>
+            ))}
+          />
         )}
       </section>
     </div>

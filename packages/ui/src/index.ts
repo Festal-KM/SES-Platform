@@ -64,6 +64,10 @@ export type {
   EnvironmentBannerProps,
   EnvironmentBannerVisibleEnv,
 } from './components/environment-banner.js';
+// 🔴 T-12-14 ③: docs/04 §10.3「多数行（履歴・展開リスト）」の共通規約（直近 10 行 + 「すべて表示」）。shadcn/ui の
+//    取り込みではなく本リポジトリ固有。`<details>` に展開の状態を持たせ、フックを持たない（規約 4）。文言を持たない（規約 5）。
+export { FOLDED_LIST_DEFAULT_VISIBLE_COUNT, FoldedList } from './components/folded-list.js';
+export type { FoldedListProps } from './components/folded-list.js';
 export { Field, FieldDescription, FieldError, FieldLabel } from './components/field.js';
 export type {
   FieldElement,

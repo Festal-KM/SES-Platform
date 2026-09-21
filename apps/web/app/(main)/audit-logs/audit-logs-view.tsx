@@ -18,7 +18,17 @@
 //    **詳細は一覧の応答（`detail` / `detailSuppressedReason`）に同梱されており、展開時の追加取得は無い**
 //    （展開ごとに監査ログの閲覧が記録される経路を作らない）。複数行を同時に開ける（「要求 → 確定」の 2 行を
 //    並べて読む）。検索し直すと全行が閉じ、「さらに読み込む」では開いた行を保つ。**既存 5 列は変えない。**
-import { useCallback, useState, type FormEvent } from 'react';
+// 🔴 T-12-18 ⑪: セクション 4 エクスポート（docs/04 §S-041 / docs/05 §6.3 #10b）。検索を実行した後に、**その検索条件をそのまま**
+//    `GET /api/audit-logs/export` へ渡す。ページングは渡さない（エクスポート側が #10 を追う）。
+//    本画面は `OWNER` / `ADMIN` だけが到達する（`page.tsx`）ので、導線の出し分けはここでは行わない。
+// 🔴 レビュー指摘 NG-1（2026-09-21）: `<a href download>` の素のナビゲーションだと、400（上限超過）のとき
+//    ブラウザが JSON のエラー本文をファイルとして落としてしまい、文言が利用者に届かない。`onClick` で
+//    `preventDefault()` し `fetch` → `blob()` → 一時 `<a>` でダウンロードに切り替える（`href` 属性は
+//    そのまま残す。`docs/05` §6.4 ⑥「`<a href>` の GET」の形は変えない = JS 無効時の直リンクを壊さない）。
+//    エクスポート節（`AuditLogsExportSection`）は状態を持たない純粋な描画部品として切り出した
+//    —— `renderToStaticMarkup` は検索後の状態へ進められない（`useEffect` 同様、クリックの結果も再描画できない）ため、
+//    `*.render.test.tsx` は本部品を状態ごとに直接描いて固定する（`AdminAuditLogsResults` と同じ分離）。
+import { useCallback, useState, type FormEvent, type MouseEvent } from 'react';
 import {
   Button,
   Field,
@@ -39,6 +49,13 @@ import {
 } from '../_shared/filter-form-classes';
 import { AUDIT_LOG_CATEGORY_KEYS, type AuditLogCategoryKey } from '../../../lib/audit-logs/categories';
 import type { AuditLogDetailMessages } from '../../../lib/audit-logs/detail-labels';
+import {
+  auditLogCsvFileName,
+  auditLogExportHref,
+  classifyAuditLogExportError,
+  type AuditLogExportCondition,
+  type AuditLogExportErrorReason,
+} from '../../../lib/audit-logs/export-href';
 import type { AuditLogListItem } from '../../../lib/audit-logs/view';
 import { AuditLogDetail } from './audit-log-detail';
 
@@ -76,6 +93,15 @@ export type AuditLogsViewMessages = {
   readonly actorSystem: string;
   readonly actorPlatform: string;
   readonly detail: AuditLogDetailMessages;
+  /** T-12-18 ⑪: セクション 4 エクスポート。 */
+  readonly exportButton: string;
+  readonly exportNote: string;
+  /** 🔴 レビュー指摘 NG-1: 上限の予告（`page.tsx` が `AUDIT_LOG_EXPORT_MAX_ROWS` を差し込み済みの文字列）。 */
+  readonly exportNoteLimit: string;
+  /** 🔴 レビュー指摘 NG-1: 上限超過（400 `AUDIT_LOG_EXPORT_TOO_LARGE`）の表示。 */
+  readonly exportTooLarge: string;
+  /** 🔴 レビュー指摘 NG-1: 上限超過以外のエクスポート失敗（ネットワークエラー等）の表示。 */
+  readonly exportFailed: string;
 };
 
 /** 応答の 1 行（`GET /api/audit-logs` の `AuditLogListItem`）。 */
@@ -111,6 +137,48 @@ function actorLabel(item: AuditLogItem, messages: AuditLogsViewMessages): string
   return item.actorDisplayName ?? item.actorId ?? '—';
 }
 
+export type AuditLogsExportSectionMessages = Pick<
+  AuditLogsViewMessages,
+  'exportButton' | 'exportNote' | 'exportNoteLimit' | 'exportTooLarge' | 'exportFailed'
+>;
+
+export type AuditLogsExportSectionProps = {
+  readonly href: string;
+  readonly exporting: boolean;
+  readonly error: AuditLogExportErrorReason | null;
+  readonly messages: AuditLogsExportSectionMessages;
+  readonly onExport: (event: MouseEvent<HTMLAnchorElement>) => void;
+};
+
+/**
+ * `S-041` セクション 4（エクスポート）の**状態を持たない**描画部品（NG-1 / NG-2）。
+ * 🔴 `href` 属性は常に本物の `#10b` の URL のまま（`onClick` が横取りするので JS 有効時は素のナビゲーションが
+ *    走らないが、右クリック・コピー・JS 無効時のフォールバックとして機能する）。
+ */
+export function AuditLogsExportSection({ href, exporting, error, messages, onExport }: AuditLogsExportSectionProps) {
+  return (
+    <section className="mt-6 border-t border-slate-200 pt-4" data-testid="audit-logs-export">
+      <p className="mb-1 text-xs text-slate-600">{messages.exportNote}</p>
+      <p className="mb-2 text-xs text-slate-500">{messages.exportNoteLimit}</p>
+      <a
+        className="inline-flex items-center rounded border border-slate-300 px-3 py-1.5 text-sm text-slate-900 underline-offset-2 hover:underline aria-disabled:pointer-events-none aria-disabled:opacity-50"
+        href={href}
+        download
+        aria-disabled={exporting}
+        data-testid="audit-logs-export-link"
+        onClick={onExport}
+      >
+        {messages.exportButton}
+      </a>
+      {error === null ? null : (
+        <FieldError className="mt-2" data-testid="audit-logs-export-error">
+          {error === 'TOO_LARGE' ? messages.exportTooLarge : messages.exportFailed}
+        </FieldError>
+      )}
+    </section>
+  );
+}
+
 export function AuditLogsView({ messages }: { messages: AuditLogsViewMessages }) {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -120,6 +188,10 @@ export function AuditLogsView({ messages }: { messages: AuditLogsViewMessages })
   const [phase, setPhase] = useState<Phase>('idle');
   const [results, setResults] = useState<AuditLogPage | null>(null);
   const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(() => new Set());
+  // 🔴 エクスポートの範囲は「最後に実行した検索の条件」（入力欄を書き換えただけでは変わらない = 一覧と同じ範囲）。
+  const [exportCondition, setExportCondition] = useState<AuditLogExportCondition | null>(null);
+  const [exportError, setExportError] = useState<AuditLogExportErrorReason | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   function toggleExpanded(id: string): void {
     setExpandedIds((prev) => {
@@ -139,9 +211,15 @@ export function AuditLogsView({ messages }: { messages: AuditLogsViewMessages })
       setPeriodError(false);
       setPhase(cursor === null ? 'loading' : 'loadingMore');
 
-      const params = new URLSearchParams({ from: toRangeStartIso(from), to: toRangeEndIso(to) });
-      if (category !== '') params.set('action', category);
-      if (actorId.trim() !== '') params.set('actorId', actorId.trim());
+      const condition = {
+        from: toRangeStartIso(from),
+        to: toRangeEndIso(to),
+        action: category === '' ? undefined : category,
+        actorId: actorId.trim() === '' ? undefined : actorId.trim(),
+      };
+      const params = new URLSearchParams({ from: condition.from, to: condition.to });
+      if (condition.action !== undefined) params.set('action', condition.action);
+      if (condition.actorId !== undefined) params.set('actorId', condition.actorId);
       if (cursor !== null) params.set('cursor', cursor);
 
       try {
@@ -153,7 +231,11 @@ export function AuditLogsView({ messages }: { messages: AuditLogsViewMessages })
           return;
         }
         const body = (await response.json()) as AuditLogPage;
-        if (cursor === null) setExpandedIds(new Set());
+        if (cursor === null) {
+          setExpandedIds(new Set());
+          setExportCondition(condition);
+          setExportError(null);
+        }
         setResults((prev) => ({
           items: cursor === null || prev === null ? body.items : [...prev.items, ...body.items],
           nextCursor: body.nextCursor,
@@ -169,6 +251,38 @@ export function AuditLogsView({ messages }: { messages: AuditLogsViewMessages })
   function onSubmit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
     void runSearch(null);
+  }
+
+  /**
+   * 🔴 レビュー指摘 NG-1: `<a href download>` の素のナビゲーションを横取りし、`fetch` → `blob()` の
+   *    ダウンロードに切り替える。400（`AUDIT_LOG_EXPORT_TOO_LARGE`）はエラー文言を出す（`classifyAuditLogExportError`。
+   *    応答の `messageKey` は解釈しない）。ファイル名は `#10b` の route と同じ `auditLogCsvFileName` を使う。
+   */
+  async function onExport(event: MouseEvent<HTMLAnchorElement>): Promise<void> {
+    event.preventDefault();
+    if (exportCondition === null || exporting) return;
+    setExporting(true);
+    setExportError(null);
+    try {
+      const response = await fetch(auditLogExportHref(exportCondition));
+      if (!response.ok) {
+        setExportError(await classifyAuditLogExportError(response));
+        return;
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = auditLogCsvFileName(exportCondition);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      setExportError('FAILED');
+    } finally {
+      setExporting(false);
+    }
   }
 
   const searching = phase === 'loading';
@@ -313,6 +427,15 @@ export function AuditLogsView({ messages }: { messages: AuditLogsViewMessages })
             >
               {loadingMore ? messages.loadingMore : messages.loadMore}
             </button>
+          )}
+          {exportCondition === null ? null : (
+            <AuditLogsExportSection
+              href={auditLogExportHref(exportCondition)}
+              exporting={exporting}
+              error={exportError}
+              messages={messages}
+              onExport={onExport}
+            />
           )}
         </div>
       )}

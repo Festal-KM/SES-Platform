@@ -7,7 +7,7 @@
 // 🔴 文言は `packages/i18n` が唯一の出所（`CLAUDE.md` §3.5）。本ファイルは日本語の語を書かない。
 // 🔴 **概要は `S-021` の判断ヘッダと同じ材料・同じ関数**（`approvalHeaderRows`）。凍結側だけを描き、台帳の現在値を混ぜない。
 import { t, type MessageKey } from '@ses/i18n';
-import type { ProposalState } from '@ses/domain';
+import type { GateExecution, GateResultHistoryItem, GateResultHistoryView, ProposalState } from '@ses/domain';
 import { formatCareerPeriod } from '../engineers/detail';
 import { formatDateTimeJst } from '../format/datetime';
 import { formatThousands } from '../format/number';
@@ -94,6 +94,28 @@ export type ProposalDetailAction = {
   readonly label: string;
   /** 導線の前に置く説明（却下由来 / 検査で不合格）。無ければ `null`。 */
   readonly lead: string | null;
+};
+
+/**
+ * ✅ T-12-14 ②: `S-023` セクション 4「ゲート結果の履歴」の 1 実行（docs/05 §6.5「#40b と `S-023` セクション 4 の設計」）。
+ * 🔴 層別結果（`gate`）は `S-021` と同じ view model 関数 `approvalGateRows` で組む（履歴用の別実装を書かない）。
+ */
+export type ProposalGateHistoryItemRows = {
+  readonly reviewGateId: string;
+  readonly execution: GateExecution;
+  /** 見出し。`DONE` = 「実行日時: …」/ HELD = 「上限到達で未実行（保留開始: …）」。 */
+  readonly title: string;
+  /** 🔴 「現在の内容に対する結果」/「以前の内容に対する結果」の印。 */
+  readonly contentNote: string;
+  readonly matchesCurrentContent: boolean;
+  readonly gate: ApprovalGateRows;
+};
+
+export type ProposalGateHistoryRows = {
+  /** 降順（新しい実行が先。#40b の並びのまま）。 */
+  readonly items: readonly ProposalGateHistoryItemRows[];
+  /** 0 件（まだ一度も依頼していない）の文言。1 件以上なら `null`。 */
+  readonly empty: string | null;
 };
 
 export type ProposalDetailRows = {
@@ -359,7 +381,9 @@ export function proposalDetailRows(screen: ProposalDetailScreenView, now: Date):
     sendHold: detail.audience === 'HOST' ? approvalSendHoldRows(detail.sendHold) : null,
     sendAttempts: detail.audience === 'HOST' ? sendAttemptsRows(detail.sendAttempts) : null,
     lastFailureReason: detail.audience === 'HOST' ? detail.lastFailureReason : null,
-    timeline: detail.events.map(proposalTimelineRow),
+    // 🔴 T-12-14 ③: 履歴は**新しい順**（docs/04 §10.3「履歴 = 新しい順」/ §S-023 改訂 13「最新行は直近 10 行の先頭であるため
+    //    構造的に隠れない」）。#46 の `events` は古い順（`readEvents`）なので、ここで反転する（`S-024` の直近 3 件と同じ向き）。
+    timeline: detail.events.map(proposalTimelineRow).reverse(),
     frozen: {
       notice: `${t('proposals.approval.frozenNotice.prefix')}${formatDateTimeJst(detail.snapshot.frozenAt)}${t('proposals.approval.frozenNotice.suffix')}`,
       subject: detail.content.subject ?? t('proposals.detail.frozen.empty'),
@@ -381,6 +405,34 @@ export function proposalDetailRows(screen: ProposalDetailScreenView, now: Date):
     canAddNote: screen.canAddNote,
     audienceNotice: detail.audience === 'PARTNER' ? t('proposals.detail.partnerNotice') : null,
   };
+}
+
+function gateHistoryTitle(item: GateResultHistoryItem): string {
+  if (item.execution === 'HELD_AI_COST_LIMIT') {
+    // 🔴 HELD は未実行であり不合格ではない。保留開始時刻（`heldSince`）を添える（`F-027 AC-5`）。
+    const since = item.heldSince === null ? none() : formatDateTimeJst(item.heldSince);
+    return `${t('proposals.detail.gateHistory.held.prefix')}${since}${t('proposals.detail.gateHistory.held.suffix')}`;
+  }
+  return `${t('proposals.detail.gateHistory.executedAt.prefix')}${item.executedAt === null ? none() : formatDateTimeJst(item.executedAt)}`;
+}
+
+/**
+ * ✅ T-12-14 ②③: `S-023` セクション 4「ゲート結果の履歴」（#40b `readProposalGateResults` の結果）。
+ *
+ * - 1 実行 = 1 ブロック。見出しは実行日時（HELD は「上限到達で未実行（保留開始: …）」）+ `matchesCurrentContent` の印
+ * - 🔴 層別結果は `approvalGateRows`（`S-021` と同じ 1 関数）。`GateResultHistoryItem` は `GateResultView` の部分構造をそのまま持つ
+ * - 並びは #40b のまま（降順）。折りたたみ（直近 10 件 + 「すべて表示」）は画面の共通部品（`FoldedList`）が担う
+ */
+export function proposalGateHistoryRows(history: GateResultHistoryView): ProposalGateHistoryRows {
+  const items = history.items.map((item) => ({
+    reviewGateId: item.reviewGateId,
+    execution: item.execution,
+    title: gateHistoryTitle(item),
+    contentNote: item.matchesCurrentContent ? t('proposals.detail.gateHistory.matchesCurrent') : t('proposals.detail.gateHistory.previousContent'),
+    matchesCurrentContent: item.matchesCurrentContent,
+    gate: approvalGateRows(item),
+  }));
+  return { items, empty: items.length === 0 ? t('proposals.approval.gate.notRequested') : null };
 }
 
 /** 🔴 3 区分（`GATE_FAILED` / `SUBMIT_FAILED` / `LOST`）の語が互いに異なることをテストが固定するための出所。 */

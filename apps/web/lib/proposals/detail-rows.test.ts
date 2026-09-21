@@ -1,10 +1,10 @@
 // apps/web/lib/proposals/detail-rows.test.ts
 // 🔴 `S-023` の表示値（履歴の描き分け / 自動承認の主体 / 却下由来の DRAFT の導線 / 取引先の行の欠落）。T-09-09。
 import { describe, expect, it } from 'vitest';
-import type { GateResultView } from '@ses/domain';
+import type { GateResultHistoryItem, GateResultView } from '@ses/domain';
 import { t } from '@ses/i18n';
 import type { ProposalDetailScreenView } from './detail';
-import { isRejectedDraft, proposalDetailRows, proposalTimelineRow, PROPOSAL_FAILURE_STATE_LABELS } from './detail-rows';
+import { isRejectedDraft, proposalDetailRows, proposalGateHistoryRows, proposalTimelineRow, PROPOSAL_FAILURE_STATE_LABELS } from './detail-rows';
 import type { HostProposalDetailView, PartnerProposalDetailView, ProposalEventView } from './views';
 
 const NOW = new Date('2026-09-16T03:00:00.000Z');
@@ -235,5 +235,87 @@ describe('凍結内容と概要', () => {
   it('3 区分の語は互いに異なる（GATE_FAILED / SUBMIT_FAILED / LOST）', () => {
     const labels = Object.values(PROPOSAL_FAILURE_STATE_LABELS());
     expect(new Set(labels).size).toBe(3);
+  });
+});
+
+describe('✅ T-12-14 ③ 履歴タイムラインは新しい順（docs/04 §10.3「履歴 = 新しい順」/ §S-023 改訂 13）', () => {
+  it('#46 の events（古い順）を反転し、最新行が先頭に来る（最新の「検査中」/「送信中」が直近 10 行の先頭 = 折りたたみの外）', () => {
+    const rows = proposalDetailRows(screen(hostDetail({ events: [CREATED, GATE_REQUESTED, GATE_PASSED, AUTO_APPROVED] })), NOW);
+    expect(rows.timeline.map((row) => row.id)).toEqual(['e5', 'e4', 'e3', 'e1']);
+    expect(rows.timeline[0]?.kind).toBe('APPROVAL');
+  });
+});
+
+describe('✅ T-12-14 ② セクション 4「ゲート結果の履歴」の表示値（proposalGateHistoryRows）', () => {
+  const DONE_ITEM: GateResultHistoryItem = {
+    reviewGateId: 'gate-2',
+    execution: 'DONE',
+    executedAt: '2026-09-16T00:30:00.000Z',
+    heldSince: null,
+    matchesCurrentContent: true,
+    layers: {
+      pii: { state: 'PASS', findings: [] },
+      commerce: { state: 'PASS', findings: [] },
+      consistency: {
+        state: 'FAIL',
+        findings: [{ layer: 'CONSISTENCY', kind: 'MUST_REQUIREMENT_MISMATCH', field: 'snapshot', offsetStart: null, offsetEnd: null, excerpt: 'TypeScript -/3.0', severity: 'BLOCK' }],
+      },
+    },
+    aiWarnings: [{ layer: 'CONSISTENCY', kind: 'SKILL_SHEET_MISMATCH', field: 'body', offsetStart: null, offsetEnd: null, excerpt: '要確認', severity: 'WARN' }],
+    aiFailed: false,
+    contentHash: 'h-current',
+  };
+  const HELD_ITEM: GateResultHistoryItem = {
+    reviewGateId: 'gate-3',
+    execution: 'HELD_AI_COST_LIMIT',
+    executedAt: null,
+    heldSince: '2026-09-16T01:00:00.000Z',
+    matchesCurrentContent: false,
+    layers: {
+      pii: { state: 'HELD', findings: [] },
+      commerce: { state: 'HELD', findings: [] },
+      consistency: { state: 'PASS', findings: [] },
+    },
+    aiWarnings: [],
+    aiFailed: false,
+    contentHash: 'h-old',
+    held: {
+      heldReasonKey: 'gate.held.aiCostLimit',
+      heldSince: '2026-09-16T01:00:00.000Z',
+      resetAt: '2026-09-16T15:00:00.000Z',
+      limitRaise: 'PLATFORM_OPERATOR',
+      rerun: { auto: true, manual: 'POST /api/proposals/{id}/gate' },
+    },
+  };
+
+  it('1 実行 = 1 行。DONE は「実行日時: …」、HELD は「上限到達で未実行（保留開始: …）」。現在 / 以前の内容の印。並びは #40b のまま', () => {
+    const rows = proposalGateHistoryRows({ items: [HELD_ITEM, DONE_ITEM] });
+    expect(rows.empty).toBeNull();
+    expect(rows.items.map((item) => item.reviewGateId)).toEqual(['gate-3', 'gate-2']);
+    expect(rows.items[0]?.title).toBe(`${t('proposals.detail.gateHistory.held.prefix')}2026-09-16 10:00 JST${t('proposals.detail.gateHistory.held.suffix')}`);
+    expect(rows.items[0]?.contentNote).toBe(t('proposals.detail.gateHistory.previousContent'));
+    expect(rows.items[1]?.title).toBe(`${t('proposals.detail.gateHistory.executedAt.prefix')}2026-09-16 09:30 JST`);
+    expect(rows.items[1]?.contentNote).toBe(t('proposals.detail.gateHistory.matchesCurrent'));
+  });
+
+  it('🔴 層別結果は approvalGateRows と同じ形（不合格の指摘と AI の警告が別のリスト。HELD は再開予定を持つ）', () => {
+    const rows = proposalGateHistoryRows({ items: [HELD_ITEM, DONE_ITEM] });
+    const done = rows.items[1]?.gate;
+    expect(done?.execution).toBe('DONE');
+    expect(done?.layers.map((layer) => [layer.key, layer.state])).toEqual([['pii', 'PASS'], ['commerce', 'PASS'], ['consistency', 'FAIL']]);
+    expect(done?.findings.map((finding) => finding.excerpt)).toEqual(['TypeScript -/3.0']);
+    expect(done?.warnings.map((warning) => warning.excerpt)).toEqual(['要確認']);
+    expect(done?.failed).toBe(true);
+    const held = rows.items[0]?.gate;
+    expect(held?.execution).toBe('HELD_AI_COST_LIMIT');
+    expect(held?.layers.map((layer) => layer.state)).toEqual(['HELD', 'HELD', 'PASS']);
+    expect(held?.heldResetAt).toBe('2026-09-17 00:00 JST');
+    expect(held?.failed).toBe(false);
+  });
+
+  it('0 件は empty の文言（現在の結果と同じ「まだレビューに出されていません」）', () => {
+    const rows = proposalGateHistoryRows({ items: [] });
+    expect(rows.items).toEqual([]);
+    expect(rows.empty).toBe(t('proposals.approval.gate.notRequested'));
   });
 });

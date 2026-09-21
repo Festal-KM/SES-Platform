@@ -16,14 +16,20 @@
 //      日単位の停滞判定にはこれで足りる。`audit_logs` の MAX は月次パーティション全体の走査になり、かつ
 //      運営者・システムの行を除く条件が要るため採らない）。
 //    - 使われている席 = 有効な `memberships` のうち、利用者の `last_login_at` が停滞閾値以内のもの。
+// 🔴 T-12-18 ③: 応答に `summary: Record<TenantHealthSignal, number>`（種別ごとのテナント数）を足し、`signal` で絞り込む
+//    （docs/05 §6.9 API-A2「応答の形」/ `docs/04` §A-002 セクション 1「異常の要約」）。要約の母集団は絞り込み・カーソルの前の
+//    全行（並びと同じくメモリで確定した算出結果）。件数だけであり、テナントの内容には立ち入らない（`BR-40`）。
 // 🔴 応答は必ず `packages/db/src/serializers/platform/tenants.ts` の `toPlatformTenant*` を
 //    通す（docs/05 §5.5 第 2 層。DB の行をそのまま返さない）。
 import {
   assertTenantHealthThresholds,
+  countTenantHealthSignals,
   DEFAULT_TENANT_LIST_SORT,
   scoreTenantHealth,
   tenantListComparator,
   type TenantHealth,
+  type TenantHealthSignal,
+  type TenantHealthSummary,
   type TenantHealthThresholds,
   type TenantLifecycleState,
   type TenantListSortable,
@@ -49,6 +55,11 @@ export type PlatformTenantListQuery = {
   readonly limit: number;
   /** 既定は `health`（異常度の高い順。`F-056 AC-2`）。 */
   readonly sort?: TenantListSortKey;
+  /**
+   * 🔴 T-12-18 ③: 異常の種別で絞り込む（`A-002` セクション 1 の要約チップのクリック）。`items` は `health.signals` にその種別を
+   *    含む行だけになる。並び・カーソルの意味は不変（絞り込みの切替でカーソルを捨てる = `sort` と同じ）。`summary` には効かない。
+   */
+  readonly signal?: TenantHealthSignal;
 };
 
 /**
@@ -64,6 +75,12 @@ export type PlatformTenantListPage = {
   readonly nextCursor: string | null;
   /** 🔴 異常度を算出した時刻（docs/04 §A-002「集計日時」。都度集計であり、日次バッチではない）。 */
   readonly observedAt: string;
+  /**
+   * 🔴 T-12-18 ③: 種別ごとのテナント数（`A-002` セクション 1「異常の要約」。docs/05 §6.9 API-A2「応答の形」）。
+   *    5 キーを必ず全部持つ（0 件も `0`）。母集団は **絞り込み・カーソルを外した**同じ算出結果（#45 の `byState` と同型）。
+   *    件数だけであり、テナントの内容には立ち入らない（`BR-40`）。
+   */
+  readonly summary: TenantHealthSummary;
 };
 
 const RECENT_ACTIVITY_WINDOW_DAYS = 30;
@@ -242,14 +259,19 @@ export async function listPlatformTenants(
       });
       scored.sort(tenantListComparator(sort));
 
+      // 🔴 要約は絞り込み・カーソルの**前**の全行から数える（絞り込み中も他の種別の件数が見えて切り替えられる）。
+      const summary = countTenantHealthSignals(scored);
+      const signal = query.signal;
+      const visible = signal === undefined ? scored : scored.filter((row) => row.health.signals.includes(signal));
+
       let start = 0;
       if (query.cursor !== undefined) {
-        const index = scored.findIndex((row) => row.id === query.cursor);
-        if (index === -1) return { items: [], nextCursor: null, observedAt: now.toISOString() };
+        const index = visible.findIndex((row) => row.id === query.cursor);
+        if (index === -1) return { items: [], nextCursor: null, observedAt: now.toISOString(), summary };
         start = index + 1;
       }
-      const page = scored.slice(start, start + query.limit);
-      const hasNext = start + query.limit < scored.length;
+      const page = visible.slice(start, start + query.limit);
+      const hasNext = start + query.limit < visible.length;
 
       // 🔴 エンジニア数・案件数は表示専用。ページに載る分だけ数える（大表を全件走査しない）。
       const counts = await loadTenantCounts(
@@ -280,6 +302,7 @@ export async function listPlatformTenants(
         items,
         nextCursor: hasNext && last !== undefined ? last.id : null,
         observedAt: now.toISOString(),
+        summary,
       };
     },
   );

@@ -140,6 +140,13 @@ type SprintResponseType = {
   '#40 GET /api/proposals/{id}/gate': Awaited<
     ReturnType<typeof proposalGate.readProposalGateResult>
   >;
+  // 🔴 T-12-14 ②: #40b（履歴。`docs/05` §6.5）。封筒（`{ items }`）と 1 件の両方を載せる（境界は #40 と同一 = 取引先も到達する）。
+  '#40b GET /api/proposals/{id}/gate-results': Awaited<
+    ReturnType<typeof proposalGate.readProposalGateResults>
+  >;
+  '#40b GET /api/proposals/{id}/gate-results（items の 1 件）': Awaited<
+    ReturnType<typeof proposalGate.readProposalGateResults>
+  >['items'][number];
 };
 
 /**
@@ -163,10 +170,12 @@ type PartnerReachableResponseType = Pick<
   //    指摘の抜粋（`excerpt`）は伏せ字であり原文を含まない（`docs/05` §11.9 ③）。
   | '#39 POST /api/proposals/{id}/gate'
   | '#40 GET /api/proposals/{id}/gate'
+  | '#40b GET /api/proposals/{id}/gate-results'
+  | '#40b GET /api/proposals/{id}/gate-results（items の 1 件）'
 >;
 
 describe('🔴 docs/05 §4.8: 「他にも N 件」「あなたは N 番目」に相当するフィールドを型に持たない', () => {
-  it('SP-06 / SP-07 の全ルート（#15 / #17 / #25〜#28 / #39 / #40）の応答型が、件数・順位の示唆を 1 つも運べない', () => {
+  it('SP-06 / SP-07 の全ルート（#15 / #17 / #25〜#28 / #39 / #40 / #40b）の応答型が、件数・順位の示唆を 1 つも運べない', () => {
     expectTypeOf<RoutesCarrying<SprintResponseType, ExistenceHintKey>>().toEqualTypeOf<never>();
   });
 

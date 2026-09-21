@@ -91,7 +91,7 @@ const messages: SendFailureScreenMessages = {
   resendAcknowledge: '先方に届いていないことを確認しました',
   resendReasonLabel: '再送の理由',
   resendConfirmSubmit: '確認のうえ再送する',
-  resendConfirmCancel: 'やめる',
+  resendConfirmCancel: 'キャンセル',
   resendSubmitting: '再送を受け付けています…',
   resendErrorValidation: '確認のチェックと再送の理由の両方が必要です。',
   resendErrorState: 'この提案は送信失敗の状態ではありません。',

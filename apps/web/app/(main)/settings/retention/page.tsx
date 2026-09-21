@@ -16,7 +16,8 @@ import type { DataExportStatus, TenantRole } from '@ses/db';
 import { resolveTenantCtxOutcome } from '../../../../lib/auth/session';
 import { DATA_EXPORT_ROLES } from '../../../../lib/data-exports/service';
 import { purgeGraceDays } from '../../../../lib/db/bootstrap';
-import { PURGE_TARGET_TABLES, readRetentionView, type PurgeTargetTable } from '../../../../lib/retention/view';
+import { PURGE_TARGET_MESSAGE_KEYS } from '../../../../lib/retention/labels';
+import { PURGE_TARGET_TABLES, readRetentionView } from '../../../../lib/retention/view';
 import { RetentionScreen, type RetentionScreenMessages } from './retention-screen';
 
 export const runtime = 'nodejs';
@@ -26,31 +27,7 @@ export const metadata: Metadata = { title: t('retention.title') };
 
 const HOME_PATH = '/';
 
-/** 🔴 `PURGE_SPEC.delete` の表 → 文言キー。表が増減すればコンパイルで落ちる（文言の書き忘れを作らない）。 */
-const PURGE_TARGET_MESSAGE_KEYS = {
-  engineers: 'retention.schedule.kind.engineers',
-  skill_sheets: 'retention.schedule.kind.skill_sheets',
-  skill_sheet_extractions: 'retention.schedule.kind.skill_sheet_extractions',
-  engineer_careers: 'retention.schedule.kind.engineer_careers',
-  users: 'retention.schedule.kind.users',
-  invitations: 'retention.schedule.kind.invitations',
-  partner_companies: 'retention.schedule.kind.partner_companies',
-  engineer_snapshots: 'retention.schedule.kind.engineer_snapshots',
-  proposals: 'retention.schedule.kind.proposals',
-  proposal_events: 'retention.schedule.kind.proposal_events',
-  proposal_requests: 'retention.schedule.kind.proposal_requests',
-  review_gates: 'retention.schedule.kind.review_gates',
-  match_candidates: 'retention.schedule.kind.match_candidates',
-  messages: 'retention.schedule.kind.messages',
-  contract_documents: 'retention.schedule.kind.contract_documents',
-  contract_templates: 'retention.schedule.kind.contract_templates',
-  contracts: 'retention.schedule.kind.contracts',
-  extension_reviews: 'retention.schedule.kind.extension_reviews',
-  notifications: 'retention.schedule.kind.notifications',
-  email_dispatches: 'retention.schedule.kind.email_dispatches',
-  send_attempts: 'retention.schedule.kind.send_attempts',
-  data_export_requests: 'retention.schedule.kind.data_export_requests',
-} as const satisfies Readonly<Record<PurgeTargetTable, MessageKey>>;
+// 🔴 T-12-18 ⑩: `PURGE_SPEC.delete` の表 → 文言キーは `lib/retention/labels.ts` へ移した（`S-041` の `tenant.purge` 行と同じ種別ラベルを共用する）。
 
 const STATUS_MESSAGE_KEYS = {
   QUEUED: 'retention.status.QUEUED',

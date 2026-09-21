@@ -63,6 +63,7 @@ export {
 // 🔴 期限・長さの方針値（docs/05 §2.1 の limits.ts）。環境変数ではないので schema.ts に置かない。
 export {
   ADMIN_MONITORING_PAGE_SIZE,
+  AUDIT_LOG_EXPORT_MAX_ROWS,
   AUDIT_LOG_SEARCH_MAX_PERIOD_DAYS,
   DATA_EXPORT_AVAILABLE_DAYS,
   DATA_EXPORT_DOWNLOAD_URL_TTL_SECONDS,

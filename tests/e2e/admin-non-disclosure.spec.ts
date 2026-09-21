@@ -34,6 +34,8 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
 import { ISOLATION_SEED_PLATFORM_USERS } from '@ses/db/seed';
 import { t } from '../../packages/i18n/src/index';
+// 🔴 `@ses/domain` をパッケージ名で import しない（ルートの package.json は依存に持たない。`harness/worker.ts` と同じ理由）。
+import { TENANT_HEALTH_SIGNALS } from '../../packages/domain/src/health/tenant-health';
 import { defaultAuditLogPeriod, toRangeEndIso, toRangeStartIso } from '../../apps/web/lib/admin-audit-logs/period';
 import {
   collectForbiddenKeySightings,
@@ -200,9 +202,26 @@ test.describe('E2E #15 運営者に非開示のものが管理平面のどの応
       // --- API（JSON） ---------------------------------------------------------------------------------------------
       for (const sort of ['health', 'name', 'createdAt'] as const) {
         const response = await apiRequest(session.page, `/api/admin/tenants?limit=200&sort=${sort}`);
-        const json = expectCleanAdminJson(`API-A2 GET /api/admin/tenants?sort=${sort}`, response, 'API-A2') as { items: unknown[] };
+        const json = expectCleanAdminJson(`API-A2 GET /api/admin/tenants?sort=${sort}`, response, 'API-A2') as {
+          items: Array<{ health: { signals: string[] } }>;
+          summary: Record<string, unknown>;
+        };
         expect(json.items.length).toBeGreaterThanOrEqual(2);
+        // 🔴 T-12-18 ③（正のケース）: `summary` のキー集合は `TENANT_HEALTH_SIGNALS` の列挙値そのもので、値はすべて非負整数
+        //    （禁止キー走査は上で通っている = キーも値も「内容」ではない。docs/05 §6.9 API-A2「応答の形」）。
+        expect(Object.keys(json.summary)).toEqual([...TENANT_HEALTH_SIGNALS]);
+        for (const value of Object.values(json.summary)) expect(Number.isInteger(value) && (value as number) >= 0).toBe(true);
+        const expected: Record<string, number> = Object.fromEntries(TENANT_HEALTH_SIGNALS.map((signal) => [signal, 0]));
+        for (const item of json.items) for (const signal of item.health.signals) expected[signal] = (expected[signal] ?? 0) + 1;
+        expect(json.summary).toEqual(expected);
       }
+      // 🔴 T-12-18 ③: `?signal=` の絞り込み応答も禁止キー走査を通り、`items` は指定の種別を持つ行だけ。
+      const filtered = expectCleanAdminJson(
+        'API-A2 GET /api/admin/tenants?signal=NO_PARTNERS',
+        await apiRequest(session.page, '/api/admin/tenants?limit=200&signal=NO_PARTNERS'),
+        'API-A2',
+      ) as { items: Array<{ health: { signals: string[] } }> };
+      expect(filtered.items.every((item) => item.health.signals.includes('NO_PARTNERS'))).toBe(true);
       for (const index of [1, 2] as const) {
         const response = await apiRequest(session.page, `/api/admin/tenants/${tenantIds(index).tenantId}`);
         expectCleanAdminJson(`API-A3 GET /api/admin/tenants/{テナント ${index}}`, response, 'API-A3');

@@ -190,6 +190,35 @@ export function scoreTenantHealth(
 }
 
 // ---------------------------------------------------------------------------
+// 要約（`A-002` セクション 1「異常の要約」/ API-A2 の `summary`。T-12-18 ③）
+// ---------------------------------------------------------------------------
+
+/** 種別ごとのテナント数。🔴 5 キーを必ず全部持つ（0 件も `0`。型が `Record` なので欠けられない）。 */
+export type TenantHealthSummary = Readonly<Record<TenantHealthSignal, number>>;
+
+/**
+ * 🔴 種別ごとに「そのシグナルを持つテナントの数」を数える（純粋関数。docs/05 §6.9 API-A2「応答の形」）。
+ *    1 テナントが 2 種別を持てば両方に数える。`CLOSING` / `PURGED` は `signals: []` なのでどこにも数えない。
+ *    母集団は呼び出し側が渡す（絞り込み・カーソルを**外した**同じ算出結果 = #45 の `byState` と同型）。
+ *    件数だけであり、テナントの内容には立ち入らない（`BR-40`）。
+ */
+export function countTenantHealthSignals(
+  items: readonly { readonly health: Pick<TenantHealth, 'signals'> }[],
+): TenantHealthSummary {
+  const counts: Record<TenantHealthSignal, number> = {
+    TRIAL_EXPIRED: 0,
+    INACTIVE: 0,
+    SEATS_UNUSED: 0,
+    NO_PARTNERS: 0,
+    TRIAL_EXPIRING: 0,
+  };
+  for (const item of items) {
+    for (const signal of new Set(item.health.signals)) counts[signal] += 1;
+  }
+  return counts;
+}
+
+// ---------------------------------------------------------------------------
 // 並び順（`A-002` / API-A2 の `sort`）
 // ---------------------------------------------------------------------------
 

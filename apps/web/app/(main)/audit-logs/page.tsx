@@ -5,8 +5,11 @@
 //    （docs/04 §S-041）。データ境界は `GET /api/audit-logs`（`requireRole` + RLS の C2）が
 //    最終的に強制するが、画面としても到達させない（ホームへ戻す。他画面の「見えない＝存在しない」
 //    ＝ 404 の規律とは別に、この画面は認証済み利用者向けのため 404 ではなくホームへ戻す）。
+// 🔴 T-12-18 ⑪: セクション 4 の CSV エクスポート（`GET /api/audit-logs/export`。#10b）の導線もこの権限差分の内側にだけ在る
+//    （`OWNER` / `ADMIN` にだけ描く = 本ページ自体が両ロール以外を戻す）。API 側も同じ `requireRole`。
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
+import { AUDIT_LOG_EXPORT_MAX_ROWS } from '@ses/config';
 import { t } from '@ses/i18n';
 import { resolveTenantCtxOutcome } from '../../../lib/auth/session';
 import { AUDIT_LOG_CATEGORY_KEYS, type AuditLogCategoryKey } from '../../../lib/audit-logs/categories';
@@ -52,6 +55,14 @@ const messages: AuditLogsViewMessages = {
   actorPlatform: t('auditLogs.actor.platform'),
   // T-11-09: 行の詳細（docs/04 §S-041「行の詳細」）。ラベルの辞書であり、許可リストは `@ses/domain` 側。
   detail: auditLogDetailMessages(),
+  // T-12-18 ⑪: セクション 4 エクスポート（CSV。#10b。監査ログに記録される）。
+  exportButton: t('auditLogs.export.button'),
+  exportNote: t('auditLogs.export.note'),
+  // 🔴 レビュー指摘 NG-1: 上限の予告（`{maxRows}` を `AUDIT_LOG_EXPORT_MAX_ROWS` に差し替える。
+  //    値は `packages/config` の 1 箇所だけに置き、文言に埋め込まない）。
+  exportNoteLimit: t('auditLogs.export.note.limit').replace('{maxRows}', String(AUDIT_LOG_EXPORT_MAX_ROWS)),
+  exportTooLarge: t('error.auditLogs.exportTooLarge'),
+  exportFailed: t('auditLogs.export.error.failed'),
 };
 
 export default async function AuditLogsPage() {

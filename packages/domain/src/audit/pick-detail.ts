@@ -9,7 +9,8 @@
 //    **相互に import しない**（`tests/static/audit-detail-single-path.test.ts` ④ が固定する）。
 //
 // 🔴 2 段の網:
-//   1 段目 = キーの許可（`AUDIT_DETAIL_ALLOWLIST`。action の exact 一致 → 接尾辞族 → 0 キー）。
+//   1 段目 = キーの許可（`AUDIT_DETAIL_ALLOWLIST`。action の exact 一致 → 接尾辞族〔`admin.` は除外。T-12-18 ⑫〕→ 0 キー）。
+//            キーの照合は完全一致が基本で、キー接頭辞族（`count_*`）は `tenant.purge` の 1 行だけ（T-12-18 ⑩）。
 //   2 段目 = 値の形（`ENUM` は大文字スネーク or 閉集合 / `NUMBER` は有限数 / `DATE` は `YYYY-MM` `YYYY-MM-DD`
 //            ISO 8601 / `FIELD_NAMES` は識別子の列挙 / `REF` `REF_LIST` は UUID）。形に合わない値は**キーごと落ちる**。
 //   形の検査は 2 段目であり、**1 段目を緩める理由にしない**。
@@ -25,8 +26,10 @@
 import { AI_MODEL_PRICING } from '../ai/pricing.js';
 import { AI_ROLES } from '../ai/roles.js';
 import { AUTO_APPROVE_REASON } from '../gate/autoApprove.js';
+import { GATE_VERDICTS } from '../gate/types.js';
 import { USAGE_LIMIT_LEVELS } from '../quota/limit-level.js';
 import { SCAN_STATUSES } from '../scan/status.js';
+import { STATE_MACHINE_ENTITIES } from '../state/errors.js';
 import { PROPOSAL_STATES } from '../state/proposal.js';
 
 /** ID を表示名に解決できるエンティティ。🔴 `'ENGINEER'` は無い（docs/05 §6.4「#10 の改訂」）。 */
@@ -106,6 +109,19 @@ export const PROPOSAL_REQUEST_OPERATION = {
   EXPIRE: PROPOSAL_REQUEST_OPERATIONS[3],
 } as const satisfies { readonly [K in ProposalRequestOperation]: K };
 
+/**
+ * 🔴 T-12-18 ⑩: `tenant.purge` の `cause` / `data_export.download` の `kind` の閉集合（docs/05 §6.4「#10 の改訂」の許可リスト表）。
+ *    `packages/domain` は `@ses/db` に依存できないため**ここが値の出所**であり、`packages/db/src/schema-value-sets.ts` が
+ *    再 export する（`GATE_VERDICTS` と同じ作法 = 1 実装。DB の CHECK との一致は `tests/static/schema-enum-drift.test.ts`）。
+ */
+export const TENANT_PURGE_CAUSES = ['TENANT_PURGED', 'RETENTION'] as const;
+
+export type TenantPurgeCause = (typeof TENANT_PURGE_CAUSES)[number];
+
+export const DATA_EXPORT_KINDS = ['CLOSING_RETURN', 'OPERATIONAL'] as const;
+
+export type DataExportKind = (typeof DATA_EXPORT_KINDS)[number];
+
 const PAIR_VISIBILITY_BEFORE: AuditDetailPair = { id: 'visibility', side: 'BEFORE' };
 const PAIR_VISIBILITY_AFTER: AuditDetailPair = { id: 'visibility', side: 'AFTER' };
 const PAIR_ROLE_BEFORE: AuditDetailPair = { id: 'role', side: 'BEFORE' };
@@ -142,6 +158,21 @@ const PROPOSAL_KEYS: AuditDetailKeySpecs = {
   reasonLength: { kind: 'NUMBER' },
   requestedBy: { kind: 'REF', entity: 'USER' },
   externalCallMade: { kind: 'BOOLEAN' },
+};
+
+/**
+ * 🔴 T-12-18 ⑨: `proposal.update` は `PROPOSAL_KEYS` + `GATE_RESULT`（`apps/worker/src/jobs/gate-run.ts`。`SYSTEM` 主体）の
+ *    各層 verdict（閉集合 `GATE_VERDICTS`）と件数。承認の根拠（どの層が何件の指摘で不合格か）は `BR-27` の目的そのもの。
+ *    `aiFailed` / `contentHash` / `DRAFT_UPDATE` の `fields` は載せない（docs/05 §6.4 の表。既定）。
+ */
+const PROPOSAL_UPDATE_KEYS: AuditDetailKeySpecs = {
+  ...PROPOSAL_KEYS,
+  overall: { kind: 'ENUM', values: GATE_VERDICTS },
+  piiVerdict: { kind: 'ENUM', values: GATE_VERDICTS },
+  commerceVerdict: { kind: 'ENUM', values: GATE_VERDICTS },
+  consistencyVerdict: { kind: 'ENUM', values: GATE_VERDICTS },
+  findingCount: { kind: 'NUMBER' },
+  warningCount: { kind: 'NUMBER' },
 };
 
 /** `engineer.view` / `skill_sheet.view` / `skill_sheet.download`（🔴 主体がパートナーならこの表に到達しない）。 */
@@ -188,10 +219,32 @@ const CRUD_KEYS: AuditDetailKeySpecs = {
 export const AUDIT_DETAIL_SUFFIX_FAMILIES = ['*.create', '*.update', '*.delete'] as const;
 
 /**
+ * 🔴 T-12-18 ⑫: 接尾辞族の評価から除外する action の接頭辞（docs/05 §6.4 の表「上記以外のすべて」行の決定）。
+ *    運営者の action（`admin.tenant.create` / `admin.quota.change` …）は `S-041` の閲覧者に見せる対象ではなく `A-006` の側で
+ *    扱う。将来 `admin.*.update` が `status` / `operation` 等を書いた瞬間に `CRUD_KEYS` が**誤って**適用される経路を閉じる。
+ */
+export const AUDIT_DETAIL_SUFFIX_FAMILY_EXCLUDED_PREFIXES = ['admin.'] as const;
+
+/**
+ * 🔴 T-12-18 ⑩: キー接頭辞族（spec のキーが `count_*` のように `*` で終わるもの）。`tenant.purge` の 1 行だけが使う。
+ *    接頭辞の後ろは snake_case の表名の形（`PURGE_SPEC.delete` の表名）、値は非負整数でなければキーごと落ちる。
+ *    **接頭辞族を他の action に増やさない**（docs/05 §6.4「キーの選び方」）。
+ */
+const KEY_PREFIX_FAMILY_SUFFIX = '*';
+const PURGE_TABLE_NAME_PATTERN = /^[a-z][a-z0-9_]{0,62}$/;
+
+/** `tenant.purge`（`packages/db/src/tenant-purge.ts`。`SYSTEM` 主体。`{ cause, runId, tables, count_{table} }`）。`runId` は落ちる。 */
+const TENANT_PURGE_KEYS: AuditDetailKeySpecs = {
+  cause: { kind: 'ENUM', values: TENANT_PURGE_CAUSES },
+  tables: { kind: 'NUMBER' },
+  'count_*': { kind: 'NUMBER' },
+};
+
+/**
  * 🔴 action → キー → 値の種類（docs/05 §6.4「#10 の改訂」の許可リスト表。**この表が 1 箇所**）。
  *
  * - キーは action の完全名、または接尾辞族 `'*.create'` / `'*.update'` / `'*.delete'`。
- * - 表に無い action は 0 キー（`auth.*` / `state.invalid_transition` / `esign.*` / `admin.*` …）。
+ * - 表に無い action は 0 キー（`auth.*` / `esign.*` / `admin.*` …）。
  * - 足すときは `docs/04` §S-041 の表 → docs/05 の表 → ここ、の順（`pick-detail.test.ts` のスナップショットが差分を出す）。
  */
 export const AUDIT_DETAIL_ALLOWLIST: Readonly<Record<string, AuditDetailKeySpecs>> = {
@@ -220,7 +273,24 @@ export const AUDIT_DETAIL_ALLOWLIST: Readonly<Record<string, AuditDetailKeySpecs
     reason: { kind: 'ENUM', values: [AUTO_APPROVE_REASON] },
   },
   'proposal.reject': PROPOSAL_KEYS,
-  'proposal.update': PROPOSAL_KEYS,
+  'proposal.update': PROPOSAL_UPDATE_KEYS,
+  // 🔴 T-12-18 ⑨: 不正な状態遷移（`apps/web/lib/state/invalid-transition.ts`。`{ entity, from, to }` だけ）。
+  //    `entity` は PascalCase なので閉集合が必須（大文字スネークの正規表現では通らない）。
+  'state.invalid_transition': {
+    entity: { kind: 'ENUM', values: STATE_MACHINE_ENTITIES },
+    from: { kind: 'ENUM', pair: PAIR_STATE_BEFORE },
+    to: { kind: 'ENUM', pair: PAIR_STATE_AFTER },
+  },
+  // 🔴 T-12-18 ⑩: 削除の実行と返却の実施（`F-064 AC-8` の画面側）。件数・種別・列挙値だけ（内容には到達しない）。
+  'tenant.purge': TENANT_PURGE_KEYS,
+  'data_export.download': {
+    kind: { kind: 'ENUM', values: DATA_EXPORT_KINDS },
+  },
+  // 🔴 T-12-18 ⑪: `S-041` の CSV エクスポート（#10b）。書き出した行数と打ち切りの真偽だけ（検索条件は元から無い）。
+  'audit_log.export': {
+    rowCount: { kind: 'NUMBER' },
+    truncated: { kind: 'BOOLEAN' },
+  },
   'proposal_request.create': {
     projectId: { kind: 'REF', entity: 'PROJECT' },
   },
@@ -270,14 +340,35 @@ export function isPartnerLedgerAction(action: string): boolean {
   return PARTNER_LEDGER_ACTION_PREFIXES.some((prefix) => action.startsWith(prefix));
 }
 
-/** ①exact → ②接尾辞族 → ③無し。 */
+/** ①exact → ②接尾辞族（🔴 `admin.` で始まる action には当てない。T-12-18 ⑫）→ ③無し。 */
 export function resolveAuditDetailKeySpecs(action: string): AuditDetailKeySpecs | null {
   const exact = AUDIT_DETAIL_ALLOWLIST[action];
   if (exact !== undefined) return exact;
+  if (AUDIT_DETAIL_SUFFIX_FAMILY_EXCLUDED_PREFIXES.some((prefix) => action.startsWith(prefix))) return null;
   for (const family of AUDIT_DETAIL_SUFFIX_FAMILIES) {
     if (action.endsWith(family.slice(1))) return AUDIT_DETAIL_ALLOWLIST[family] ?? null;
   }
   return null;
+}
+
+function isKeyPrefixFamily(specKey: string): boolean {
+  return specKey.endsWith(KEY_PREFIX_FAMILY_SUFFIX);
+}
+
+/**
+ * キー接頭辞族（`count_*`）に当たる `summary` のキーを昇順で返す（🔴 JSONB はキー順を保たないため、出力を決定的にする）。
+ * 接頭辞の後ろが snake_case の表名の形でないキーは対象外。
+ */
+function matchKeyPrefixFamily(specKey: string, raw: Readonly<Record<string, unknown>>): readonly string[] {
+  const prefix = specKey.slice(0, -KEY_PREFIX_FAMILY_SUFFIX.length);
+  return Object.keys(raw)
+    .filter((key) => key.startsWith(prefix) && PURGE_TABLE_NAME_PATTERN.test(key.slice(prefix.length)))
+    .sort();
+}
+
+/** 接頭辞族の値は非負整数だけ（件数）。 */
+function isNonNegativeInteger(raw: unknown): raw is number {
+  return typeof raw === 'number' && Number.isInteger(raw) && raw >= 0;
 }
 
 function splitList(value: string, separator: ','): readonly string[] {
@@ -355,11 +446,22 @@ export function pickAuditDetail(
   const raw = summary as Readonly<Record<string, unknown>>;
 
   const entries: AuditDetailEntry[] = [];
-  for (const [key, spec] of Object.entries(specs)) {
-    if (!Object.prototype.hasOwnProperty.call(raw, key)) continue;
-    const value = shapeValue(spec, raw[key]);
+  for (const [specKey, spec] of Object.entries(specs)) {
+    if (isKeyPrefixFamily(specKey)) {
+      // 🔴 接頭辞族は件数（非負整数）専用である。将来 `NUMBER` 以外の spec を接頭辞族に置いても**何も出さない**
+      //    （黙って別の種類として解釈しない。増やすときは docs/04 §S-041 → docs/05 §6.4 → ここ、の順で意図的に広げる）。
+      if (spec.kind !== 'NUMBER') continue;
+      for (const key of matchKeyPrefixFamily(specKey, raw)) {
+        const count = raw[key];
+        if (!isNonNegativeInteger(count)) continue;
+        entries.push({ key, pair: null, value: { kind: 'NUMBER', value: count } });
+      }
+      continue;
+    }
+    if (!Object.prototype.hasOwnProperty.call(raw, specKey)) continue;
+    const value = shapeValue(spec, raw[specKey]);
     if (value === undefined) continue;
-    entries.push({ key, pair: pairOf(spec), value });
+    entries.push({ key: specKey, pair: pairOf(spec), value });
   }
   return { kind: 'DETAIL', entries };
 }

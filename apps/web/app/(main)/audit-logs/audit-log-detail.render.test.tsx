@@ -9,7 +9,8 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import type { AuditLogDetailMessages } from '../../../lib/audit-logs/detail-labels';
+import { t } from '@ses/i18n';
+import { auditLogDetailMessages, type AuditLogDetailMessages } from '../../../lib/audit-logs/detail-labels';
 import type { AuditDetailEntryView } from '../../../lib/audit-logs/view';
 import { AuditLogDetail } from './audit-log-detail';
 
@@ -23,7 +24,7 @@ const messages: AuditLogDetailMessages = {
   empty: '詳細はありません',
   suppressed: { PARTNER_LEDGER: '取引先の台帳に関する記録のため、詳細は表示されません' },
   deletedPartnerCompany: '削除済みの取引先',
-  emptyList: '（なし）',
+  emptyList: '—',
   booleanTrue: 'はい',
   booleanFalse: 'いいえ',
   booleanUnknown: '不明',
@@ -137,7 +138,7 @@ describe('AuditLogDetail — 展開部の描画（docs/04 §S-041「行の詳細
     expect(deleted).not.toContain('削除済みの取引先');
   });
 
-  it('engineer_career.*（ホスト主体）: periodTo の null は「継続中」、changedFields は項目名の列挙、空は「（なし）」', () => {
+  it('engineer_career.*（ホスト主体）: periodTo の null は「継続中」、changedFields は項目名の列挙、空は「—」（docs/04 §7.8）', () => {
     const html = render([
       { key: 'changedFields', pair: null, value: { kind: 'FIELD_NAMES', value: ['periodFrom', 'role'] } },
       { key: 'periodFrom', pair: null, value: { kind: 'DATE', value: '2020-04' } },
@@ -149,7 +150,7 @@ describe('AuditLogDetail — 展開部の描画（docs/04 §S-041「行の詳細
     // 項目名はラベルがあればラベル、無ければ識別子のまま。
     expect(html).toContain('>role<');
     expect(html).toContain('期間（開始）</li>');
-    expect(render([{ key: 'before', pair: null, value: { kind: 'NAME_LIST', value: [] } }])).toContain('（なし）');
+    expect(render([{ key: 'before', pair: null, value: { kind: 'NAME_LIST', value: [] } }])).toContain('—');
   });
 
   it('BOOLEAN / NUMBER の描き方', () => {
@@ -161,5 +162,92 @@ describe('AuditLogDetail — 展開部の描画（docs/04 §S-041「行の詳細
     expect(html).toContain('>2<');
     // ラベル未登録のキーはキー名のまま描く（落とさない）。
     expect(html).toContain('externalCallMade');
+  });
+});
+
+describe('T-12-18 ⑨ / ⑩ / ⑪ — 許可リストに足した行の描画（実物の文言 `auditLogDetailMessages()`）', () => {
+  function renderWithCatalog(entries: readonly AuditDetailEntryView[]): string {
+    return renderToStaticMarkup(
+      createElement(AuditLogDetail, {
+        item: { id: '01930000-0000-7000-8000-00000000a002', detail: { entries }, detailSuppressedReason: null },
+        messages: auditLogDetailMessages(),
+      }),
+    );
+  }
+
+  it('⑨ GATE_RESULT: 各層 verdict は「合格 / 不合格」、件数は数値。トークンのまま描かない', () => {
+    const html = renderWithCatalog([
+      { key: 'operation', pair: null, value: { kind: 'ENUM', value: 'GATE_RESULT' } },
+      { key: 'overall', pair: null, value: { kind: 'ENUM', value: 'FAIL' } },
+      { key: 'piiVerdict', pair: null, value: { kind: 'ENUM', value: 'FAIL' } },
+      { key: 'commerceVerdict', pair: null, value: { kind: 'ENUM', value: 'PASS' } },
+      { key: 'consistencyVerdict', pair: null, value: { kind: 'ENUM', value: 'PASS' } },
+      { key: 'findingCount', pair: null, value: { kind: 'NUMBER', value: 2 } },
+      { key: 'warningCount', pair: null, value: { kind: 'NUMBER', value: 0 } },
+    ]);
+    expect(html).toContain(t('auditLogs.detail.key.overall'));
+    expect(html).toContain(t('auditLogs.detail.key.piiVerdict'));
+    expect(html).toContain(t('auditLogs.detail.enum.gateVerdict.PASS'));
+    expect(html).toContain(t('auditLogs.detail.enum.gateVerdict.FAIL'));
+    expect(html).not.toMatch(/>PASS<|>FAIL</);
+    expect(html).toContain(`${t('auditLogs.detail.key.findingCount')}</span>`);
+    expect(html).toContain('>2<');
+  });
+
+  it('⑨ state.invalid_transition: entity は状態機械の名前、from → to は「状態」の対（状態名ラベル）', () => {
+    const html = renderWithCatalog([
+      { key: 'entity', pair: null, value: { kind: 'ENUM', value: 'Proposal' } },
+      { key: 'from', pair: { id: 'state', side: 'BEFORE' }, value: { kind: 'ENUM', value: 'DRAFT' } },
+      { key: 'to', pair: { id: 'state', side: 'AFTER' }, value: { kind: 'ENUM', value: 'WON' } },
+    ]);
+    expect(html).toContain(t('auditLogs.detail.key.entity'));
+    expect(html).toContain(t('auditLogs.detail.enum.entity.Proposal'));
+    expect(html).toContain('data-testid="audit-logs-detail-row-from"');
+    expect(html).toContain(t('auditLogs.detail.pair.state'));
+    expect(html).toContain(t('proposals.state.DRAFT'));
+    expect(html).toContain(t('proposals.state.WON'));
+    // ProposalRequest / Tenant の状態名も引ける。
+    const request = renderWithCatalog([
+      { key: 'entity', pair: null, value: { kind: 'ENUM', value: 'ProposalRequest' } },
+      { key: 'from', pair: { id: 'state', side: 'BEFORE' }, value: { kind: 'ENUM', value: 'REQUESTED' } },
+      { key: 'to', pair: { id: 'state', side: 'AFTER' }, value: { kind: 'ENUM', value: 'ACCEPTED' } },
+    ]);
+    expect(request).toContain(t('proposalRequests.state.REQUESTED'));
+    const tenant = renderWithCatalog([
+      { key: 'entity', pair: null, value: { kind: 'ENUM', value: 'Tenant' } },
+      { key: 'from', pair: { id: 'state', side: 'BEFORE' }, value: { kind: 'ENUM', value: 'PURGED' } },
+      { key: 'to', pair: { id: 'state', side: 'AFTER' }, value: { kind: 'ENUM', value: 'ACTIVE' } },
+    ]);
+    expect(tenant).toContain(t('admin.tenants.lifecycleState.PURGED'));
+  });
+
+  it('⑩ tenant.purge: count_{table} は S-042 と同じ種別ラベルの件数行。cause / kind はラベル化。未知の表名はキーのまま', () => {
+    const html = renderWithCatalog([
+      { key: 'cause', pair: null, value: { kind: 'ENUM', value: 'TENANT_PURGED' } },
+      { key: 'tables', pair: null, value: { kind: 'NUMBER', value: 2 } },
+      { key: 'count_engineers', pair: null, value: { kind: 'NUMBER', value: 12 } },
+      { key: 'count_skill_sheets', pair: null, value: { kind: 'NUMBER', value: 4 } },
+      { key: 'count_unknown_table', pair: null, value: { kind: 'NUMBER', value: 1 } },
+    ]);
+    expect(html).toContain(t('auditLogs.detail.enum.cause.TENANT_PURGED'));
+    expect(html).toContain(t('retention.schedule.kind.engineers'));
+    expect(html).toContain(t('retention.schedule.kind.skill_sheets'));
+    expect(html).toContain('data-testid="audit-logs-detail-row-count_engineers"');
+    expect(html).toContain('>12<');
+    expect(html).toContain('count_unknown_table');
+    const download = renderWithCatalog([{ key: 'kind', pair: null, value: { kind: 'ENUM', value: 'CLOSING_RETURN' } }]);
+    expect(download).toContain(t('auditLogs.detail.key.kind'));
+    expect(download).toContain(t('auditLogs.detail.enum.kind.CLOSING_RETURN'));
+  });
+
+  it('⑪ audit_log.export: rowCount は数値、truncated は はい / いいえ', () => {
+    const html = renderWithCatalog([
+      { key: 'rowCount', pair: null, value: { kind: 'NUMBER', value: 120 } },
+      { key: 'truncated', pair: null, value: { kind: 'BOOLEAN', value: false } },
+    ]);
+    expect(html).toContain(t('auditLogs.detail.key.rowCount'));
+    expect(html).toContain('>120<');
+    expect(html).toContain(t('auditLogs.detail.key.truncated'));
+    expect(html).toContain(t('auditLogs.detail.boolean.false'));
   });
 });

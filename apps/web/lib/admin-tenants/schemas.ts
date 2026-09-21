@@ -20,7 +20,9 @@ import {
   DEFAULT_TENANT_LIST_SORT,
   TENANT_CREATION_STATES,
   TENANT_ENVIRONMENTS,
+  TENANT_HEALTH_SIGNALS,
   TENANT_LIST_SORT_KEYS,
+  type TenantHealthSignal,
   type TenantListSortKey,
 } from '@ses/domain';
 import { cursorPageQuerySchema, type CursorPageQuery } from '../api/pagination';
@@ -39,9 +41,15 @@ export function isTenantIdLike(value: string): boolean {
  */
 const adminTenantListQuerySchema = cursorPageQuerySchema.extend({
   sort: z.enum(TENANT_LIST_SORT_KEYS).default(DEFAULT_TENANT_LIST_SORT),
+  // 🔴 T-12-18 ③: `signal`（API-A2 の絞り込み。`A-002` セクション 1 の要約チップ）。値集合は `TENANT_HEALTH_SIGNALS`
+  //    （境界検証とクエリが同じ 1 つを見る）。未知の値は 400（黙って落とさない）。
+  signal: z.enum(TENANT_HEALTH_SIGNALS).optional(),
 });
 
-export type AdminTenantListQuery = CursorPageQuery & { readonly sort: TenantListSortKey };
+export type AdminTenantListQuery = CursorPageQuery & {
+  readonly sort: TenantListSortKey;
+  readonly signal?: TenantHealthSignal;
+};
 
 export type AdminTenantListQueryResult =
   | { readonly ok: true; readonly value: AdminTenantListQuery }
@@ -51,6 +59,12 @@ export type AdminTenantListQueryResult =
 export function parseTenantListSort(value: string | undefined): TenantListSortKey {
   const parsed = z.enum(TENANT_LIST_SORT_KEYS).safeParse(value);
   return parsed.success ? parsed.data : DEFAULT_TENANT_LIST_SORT;
+}
+
+/** 画面（`A-002`）が `?signal=` を読むときの門番。不正な値は「絞り込み無し」に倒す（画面は 400 を返せない）。 */
+export function parseTenantListSignal(value: string | undefined): TenantHealthSignal | undefined {
+  const parsed = z.enum(TENANT_HEALTH_SIGNALS).safeParse(value);
+  return parsed.success ? parsed.data : undefined;
 }
 
 /**

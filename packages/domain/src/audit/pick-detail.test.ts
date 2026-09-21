@@ -13,12 +13,17 @@ import { AUTO_APPROVE_REASON } from '../gate/autoApprove.js';
 import { USAGE_LIMIT_LEVELS } from '../quota/limit-level.js';
 import { SCAN_STATUSES } from '../scan/status.js';
 import { PROPOSAL_STATES } from '../state/proposal.js';
+import { GATE_VERDICTS } from '../gate/types.js';
+import { STATE_MACHINE_ENTITIES } from '../state/errors.js';
 import { COMMERCE_WORDS, CONTENT_WORDS, IDENTITY_WORDS } from './mask-summary.js';
 import {
   AUDIT_DETAIL_ALLOWLIST,
   AUDIT_DETAIL_SUFFIX_FAMILIES,
+  AUDIT_DETAIL_SUFFIX_FAMILY_EXCLUDED_PREFIXES,
+  DATA_EXPORT_KINDS,
   PARTNER_LEDGER_ACTION_PREFIXES,
   PROPOSAL_REQUEST_OPERATIONS,
+  TENANT_PURGE_CAUSES,
   pickAuditDetail,
   resolveAuditDetailKeySpecs,
   type AuditActorScope,
@@ -141,6 +146,13 @@ describe('① 許可リストのスナップショット（action → キー →
           "aiRole": "ENUM - closed(6) -",
           "beforeModel": "ENUM model:BEFORE closed(3) -",
         },
+        "audit_log.export": {
+          "rowCount": "NUMBER - - -",
+          "truncated": "BOOLEAN - - -",
+        },
+        "data_export.download": {
+          "kind": "ENUM - closed(2) -",
+        },
         "engineer.view": {
           "scanStatus": "ENUM - closed(5) -",
           "version": "NUMBER - - -",
@@ -231,15 +243,21 @@ describe('① 許可リストのスナップショット（action → キー →
         },
         "proposal.update": {
           "attemptSeq": "NUMBER - - -",
+          "commerceVerdict": "ENUM - closed(2) -",
+          "consistencyVerdict": "ENUM - closed(2) -",
           "externalCallMade": "BOOLEAN - - -",
+          "findingCount": "NUMBER - - -",
           "fromState": "ENUM state:BEFORE closed(14) -",
           "operation": "ENUM - - -",
           "outcome": "ENUM - - -",
+          "overall": "ENUM - closed(2) -",
+          "piiVerdict": "ENUM - closed(2) -",
           "reasonLength": "NUMBER - - -",
           "requestedBy": "REF - - USER",
           "rerunReason": "ENUM - - -",
           "result": "ENUM - - -",
           "toState": "ENUM state:AFTER closed(14) -",
+          "warningCount": "NUMBER - - -",
         },
         "proposal_request.create": {
           "projectId": "REF - - PROJECT",
@@ -256,6 +274,16 @@ describe('① 許可リストのスナップショット（action → キー →
           "scanStatus": "ENUM - closed(5) -",
           "version": "NUMBER - - -",
           "via": "ENUM - - -",
+        },
+        "state.invalid_transition": {
+          "entity": "ENUM - closed(5) -",
+          "from": "ENUM state:BEFORE - -",
+          "to": "ENUM state:AFTER - -",
+        },
+        "tenant.purge": {
+          "cause": "ENUM - closed(2) -",
+          "count_*": "NUMBER - - -",
+          "tables": "NUMBER - - -",
         },
         "usage.limit_nearing": {
           "effect": "ENUM - - -",
@@ -294,6 +322,21 @@ describe('① 許可リストのスナップショット（action → キー →
       values: PROPOSAL_REQUEST_OPERATIONS,
     });
     expect([...PROPOSAL_REQUEST_OPERATIONS].sort()).toEqual(['ACCEPT', 'DECLINE', 'EXPIRE', 'WITHDRAW']);
+    // T-12-18 ⑨ / ⑩: 各層 verdict は `GATE_VERDICTS`、`entity` は `STATE_MACHINE_ENTITIES`、`cause` / `kind` は domain 側の閉集合。
+    for (const key of ['overall', 'piiVerdict', 'commerceVerdict', 'consistencyVerdict']) {
+      expect(AUDIT_DETAIL_ALLOWLIST['proposal.update']?.[key]).toMatchObject({ values: GATE_VERDICTS });
+    }
+    expect(AUDIT_DETAIL_ALLOWLIST['state.invalid_transition']?.['entity']).toMatchObject({ values: STATE_MACHINE_ENTITIES });
+    expect(AUDIT_DETAIL_ALLOWLIST['tenant.purge']?.['cause']).toMatchObject({ values: TENANT_PURGE_CAUSES });
+    expect(AUDIT_DETAIL_ALLOWLIST['data_export.download']?.['kind']).toMatchObject({ values: DATA_EXPORT_KINDS });
+  });
+
+  it('🔴 T-12-18 ⑩: 閉集合の値は DB の CHECK（packages/db/src/schema-value-sets.ts が再 export する）と同じ', () => {
+    // `packages/db` 側は本定数を再 export しており（1 実装）、migration の CHECK との一致は `tests/static/schema-enum-drift.test.ts` が見る。
+    expect([...TENANT_PURGE_CAUSES]).toEqual(['TENANT_PURGED', 'RETENTION']);
+    expect([...DATA_EXPORT_KINDS]).toEqual(['CLOSING_RETURN', 'OPERATIONAL']);
+    expect([...GATE_VERDICTS]).toEqual(['PASS', 'FAIL']);
+    expect([...STATE_MACHINE_ENTITIES]).toEqual(['Proposal', 'ProposalRequest', 'Assignment', 'Contract', 'Tenant']);
   });
 
   it('自由文を表す種類（TEXT / STRING）が 1 つも無い', () => {
@@ -564,23 +607,14 @@ describe('④ actorScope と台帳系 4 族', () => {
   });
 
   it('auth.* / 表に無い action は 0 キー', () => {
-    for (const action of ['auth.login', 'auth.login_failed', 'auth.logout', 'state.invalid_transition', 'esign.sent', 'admin.tenant.view', 'tenant.update', 'sending_domain.state_change']) {
+    for (const action of ['auth.login', 'auth.login_failed', 'auth.logout', 'esign.sent', 'admin.tenant.view', 'tenant.update', 'sending_domain.state_change']) {
       expect(pickAuditDetail(action, { reason: 'PASSWORD_MISMATCH', method: 'credentials', entity: 'Proposal', from: 'DRAFT', to: 'WON' }, HOST)).toEqual({ kind: 'DETAIL', entries: [] });
     }
   });
 });
 
-describe('⑤ キーの選び方と決定性', () => {
-  it('exact 一致が接尾辞族より優先される（proposal.update は proposal.* の行）', () => {
-    expect(resolveAuditDetailKeySpecs('proposal.update')).toBe(AUDIT_DETAIL_ALLOWLIST['proposal.update']);
-    expect(resolveAuditDetailKeySpecs('engineer_share.update')).toBe(AUDIT_DETAIL_ALLOWLIST['*.update']);
-    expect(resolveAuditDetailKeySpecs('invitation.create')).toBe(AUDIT_DETAIL_ALLOWLIST['*.create']);
-    expect(resolveAuditDetailKeySpecs('auth.login')).toBeNull();
-    expect(resolveAuditDetailKeySpecs('proposal_event.create')).toBe(AUDIT_DETAIL_ALLOWLIST['*.create']);
-    expect([...AUDIT_DETAIL_SUFFIX_FAMILIES]).toEqual(['*.create', '*.update', '*.delete']);
-  });
-
-  it('proposal.update の GATE_RESULT / DRAFT_UPDATE の付随キーは落ちる', () => {
+describe('⑥ T-12-18 ⑨ / ⑩ / ⑫ の追加行', () => {
+  it('🔴 ⑨ proposal.update の GATE_RESULT は各層 verdict（閉集合）と件数が出て、aiFailed / contentHash は落ちる', () => {
     const gate = pickAuditDetail(
       'proposal.update',
       {
@@ -596,9 +630,138 @@ describe('⑤ キーの選び方と決定性', () => {
       },
       HOST,
     );
-    expect(entriesOf(gate).map((entry) => entry.key)).toEqual(['operation']);
+    expect(entriesOf(gate).map((entry) => `${entry.key}=${JSON.stringify(entry.value)}`)).toEqual([
+      'operation={"kind":"ENUM","value":"GATE_RESULT"}',
+      'overall={"kind":"ENUM","value":"FAIL"}',
+      'piiVerdict={"kind":"ENUM","value":"FAIL"}',
+      'commerceVerdict={"kind":"ENUM","value":"PASS"}',
+      'consistencyVerdict={"kind":"ENUM","value":"PASS"}',
+      'findingCount={"kind":"NUMBER","value":2}',
+      'warningCount={"kind":"NUMBER","value":0}',
+    ]);
+    expect(JSON.stringify(gate)).not.toContain('aiFailed');
+    expect(JSON.stringify(gate)).not.toContain('contentHash');
+    // 閉集合の外（`HELD` / 自由文 / null）は落ちる。
+    expect(entriesOf(pickAuditDetail('proposal.update', { overall: 'HELD', piiVerdict: null, commerceVerdict: '合格' }, HOST))).toEqual([]);
+  });
+
+  it('⑨ state.invalid_transition は entity（閉集合）と from → to の対。理由・本文に相当するキーは無い', () => {
+    const picked = pickAuditDetail(
+      'state.invalid_transition',
+      { entity: 'Proposal', from: 'DRAFT', to: 'WON', reason: '承認を経ていません', proposalId: UUID_A },
+      PARTNER,
+    );
+    expect(entriesOf(picked)).toEqual([
+      { key: 'entity', pair: null, value: { kind: 'ENUM', value: 'Proposal' } },
+      { key: 'from', pair: { id: 'state', side: 'BEFORE' }, value: { kind: 'ENUM', value: 'DRAFT' } },
+      { key: 'to', pair: { id: 'state', side: 'AFTER' }, value: { kind: 'ENUM', value: 'WON' } },
+    ]);
+    expect(JSON.stringify(picked)).not.toContain('承認を経て');
+    expect(JSON.stringify(picked)).not.toContain(UUID_A);
+    // `entity` は閉集合（PascalCase）。集合外・大文字スネークは落ちる。
+    expect(entriesOf(pickAuditDetail('state.invalid_transition', { entity: 'PROPOSAL' }, HOST))).toEqual([]);
+    expect(entriesOf(pickAuditDetail('state.invalid_transition', { entity: 'Invoice' }, HOST))).toEqual([]);
+    for (const entity of STATE_MACHINE_ENTITIES) {
+      expect(entriesOf(pickAuditDetail('state.invalid_transition', { entity }, HOST))).toHaveLength(1);
+    }
+  });
+
+  it('🔴 ⑩ tenant.purge は cause / tables / count_{table}（接頭辞族。昇順）が出て、runId は落ちる', () => {
+    const picked = pickAuditDetail(
+      'tenant.purge',
+      { cause: 'TENANT_PURGED', runId: UUID_A, tables: 3, count_skill_sheets: 4, count_engineers: 12, count_users: 0 },
+      UNRESOLVED,
+    );
+    expect(entriesOf(picked)).toEqual([
+      { key: 'cause', pair: null, value: { kind: 'ENUM', value: 'TENANT_PURGED' } },
+      { key: 'tables', pair: null, value: { kind: 'NUMBER', value: 3 } },
+      { key: 'count_engineers', pair: null, value: { kind: 'NUMBER', value: 12 } },
+      { key: 'count_skill_sheets', pair: null, value: { kind: 'NUMBER', value: 4 } },
+      { key: 'count_users', pair: null, value: { kind: 'NUMBER', value: 0 } },
+    ]);
+    expect(JSON.stringify(picked)).not.toContain('runId');
+    expect(JSON.stringify(picked)).not.toContain(UUID_A);
+  });
+
+  it('⑩ count_ の後ろが表名の形でない・値が非負整数でないキーは落ちる。count_* は tenant.purge 以外に無い', () => {
+    const picked = pickAuditDetail(
+      'tenant.purge',
+      {
+        cause: 'RETENTION',
+        'count_Engineers!': 1,
+        count_: 1,
+        'count_engineers.display_name': 1,
+        count_engineers: -1,
+        count_users: 1.5,
+        count_messages: '3',
+        count_skill_sheets: Number.NaN,
+        count_proposals: 7,
+      },
+      HOST,
+    );
+    expect(entriesOf(picked).map((entry) => entry.key)).toEqual(['cause', 'count_proposals']);
+    // 接頭辞族の spec を持つ行は `tenant.purge` の 1 行だけ。
+    const prefixFamilies = allSpecs().filter(({ key }) => key.endsWith('*'));
+    expect(prefixFamilies.map(({ action, key }) => `${action}.${key}`)).toEqual(['tenant.purge.count_*']);
+    // 対照: 他の action で `count_*` 風のキーは出ない。
+    expect(entriesOf(pickAuditDetail('proposal.submit', { count_engineers: 1, attemptSeq: 1 }, HOST)).map((entry) => entry.key)).toEqual(['attemptSeq']);
+  });
+
+  it('⑩ data_export.download は kind（閉集合）だけ。exportRequestId は落ちる', () => {
+    const picked = pickAuditDetail('data_export.download', { kind: 'CLOSING_RETURN', exportRequestId: UUID_A }, HOST);
+    expect(entriesOf(picked)).toEqual([{ key: 'kind', pair: null, value: { kind: 'ENUM', value: 'CLOSING_RETURN' } }]);
+    expect(JSON.stringify(picked)).not.toContain(UUID_A);
+    expect(entriesOf(pickAuditDetail('data_export.download', { kind: 'FULL_DUMP' }, HOST))).toEqual([]);
+  });
+
+  it('⑪ audit_log.export は rowCount / truncated だけ（検索条件を書いても落ちる）', () => {
+    const picked = pickAuditDetail(
+      'audit_log.export',
+      { rowCount: 120, truncated: false, from: '2026-09-01T00:00:00.000Z', to: '2026-09-17T00:00:00.000Z', action: 'ENGINEER_SKILL_SHEET_ACCESS', actorId: UUID_A },
+      HOST,
+    );
+    expect(entriesOf(picked)).toEqual([
+      { key: 'rowCount', pair: null, value: { kind: 'NUMBER', value: 120 } },
+      { key: 'truncated', pair: null, value: { kind: 'BOOLEAN', value: false } },
+    ]);
+    expect(JSON.stringify(picked)).not.toContain('2026-09-01');
+    expect(JSON.stringify(picked)).not.toContain(UUID_A);
+  });
+
+  it('🔴 ⑫ admin.* は接尾辞族（CRUD_KEYS）の評価対象にならない（対照: partner_company.update は出る）', () => {
+    expect([...AUDIT_DETAIL_SUFFIX_FAMILY_EXCLUDED_PREFIXES]).toEqual(['admin.']);
+    const crudSummary: Record<string, unknown> = {};
+    for (const [key, spec] of Object.entries(AUDIT_DETAIL_ALLOWLIST['*.update'] ?? {})) {
+      crudSummary[key] =
+        spec.kind === 'NUMBER' ? 1 : spec.kind === 'DATE' ? '2026-09-18' : spec.kind === 'FIELD_NAMES' ? 'status' : spec.kind === 'REF' ? UUID_A : 'SUSPEND';
+    }
+    for (const action of ['admin.tenant.create', 'admin.tenant.update', 'admin.quota.change', 'admin.tenant.delete']) {
+      expect(resolveAuditDetailKeySpecs(action), action).toBeNull();
+      expect(pickAuditDetail(action, crudSummary, HOST), action).toEqual({ kind: 'DETAIL', entries: [] });
+    }
+    expect(resolveAuditDetailKeySpecs('partner_company.update')).toBe(AUDIT_DETAIL_ALLOWLIST['*.update']);
+    expect(entriesOf(pickAuditDetail('partner_company.update', crudSummary, HOST)).length).toBeGreaterThan(0);
+    // exact 一致は除外の前に評価される（将来 `admin.*` の行を表に足せば出る）。現時点で `admin.` の exact 行は無い。
+    expect(Object.keys(AUDIT_DETAIL_ALLOWLIST).filter((action) => action.startsWith('admin.'))).toEqual([]);
+  });
+});
+
+describe('⑤ キーの選び方と決定性', () => {
+  it('exact 一致が接尾辞族より優先される（proposal.update は proposal.* の行）', () => {
+    expect(resolveAuditDetailKeySpecs('proposal.update')).toBe(AUDIT_DETAIL_ALLOWLIST['proposal.update']);
+    expect(resolveAuditDetailKeySpecs('engineer_share.update')).toBe(AUDIT_DETAIL_ALLOWLIST['*.update']);
+    expect(resolveAuditDetailKeySpecs('invitation.create')).toBe(AUDIT_DETAIL_ALLOWLIST['*.create']);
+    expect(resolveAuditDetailKeySpecs('auth.login')).toBeNull();
+    expect(resolveAuditDetailKeySpecs('proposal_event.create')).toBe(AUDIT_DETAIL_ALLOWLIST['*.create']);
+    expect([...AUDIT_DETAIL_SUFFIX_FAMILIES]).toEqual(['*.create', '*.update', '*.delete']);
+  });
+
+  it('proposal.update の DRAFT_UPDATE の fields は落ちる（GATE_RESULT の verdict は ⑥。T-12-18 ⑨）。proposal.* の他 4 行に verdict は無い', () => {
     const draft = pickAuditDetail('proposal.update', { operation: 'DRAFT_UPDATE', fields: 'body,subject' }, HOST);
     expect(entriesOf(draft).map((entry) => entry.key)).toEqual(['operation']);
+    for (const action of ['proposal.submit', 'proposal.resend', 'proposal.approve', 'proposal.reject']) {
+      expect(Object.keys(AUDIT_DETAIL_ALLOWLIST[action] ?? {})).not.toContain('overall');
+    }
   });
 
   it('membership.role_change の対（beforeRole / afterRole）と revoke の片側', () => {

@@ -5,6 +5,8 @@
 //    画面は「選ぶ・伏せる」をせず「描くだけ」（docs/05 §17.2 #32 ③）。ここに無いキー・列挙値はトークンの
 //    まま描かれる（形の検査を通った大文字スネークであり自由文ではない）。
 import { t } from '@ses/i18n';
+import { PURGE_TARGET_MESSAGE_KEYS } from '../retention/labels';
+import { TENANT_LIFECYCLE_STATE_MESSAGE_KEYS } from '../tenants/labels';
 
 /** 変更前 / 変更後の対の識別子（`packages/domain` の `AuditDetailPair.id` と同じ語）。 */
 const PAIR_IDS = ['visibility', 'role', 'state', 'level', 'mode', 'model', 'weight'] as const;
@@ -51,7 +53,23 @@ const KEY_LABEL_KEYS = [
   'targetPartnerCompanyId',
   'periodFrom',
   'periodTo',
+  // T-12-18 ⑨ / ⑩ / ⑪（`docs/04` §S-041 改訂 13 → docs/05 §6.4 → `AUDIT_DETAIL_ALLOWLIST` の順で足した行）。
+  'overall',
+  'piiVerdict',
+  'commerceVerdict',
+  'consistencyVerdict',
+  'findingCount',
+  'warningCount',
+  'entity',
+  'cause',
+  'tables',
+  'kind',
+  'rowCount',
+  'truncated',
 ] as const;
+
+/** `tenant.purge` の `count_{table}`（キー接頭辞族）の項目名は `S-042` セクション 2 と同じ種別ラベル。 */
+const PURGE_COUNT_KEY_PREFIX = 'count_';
 
 /** キー付きの列挙値ラベル（`auditLogs.detail.enum.<key>.<TOKEN>`）。 */
 const ENUM_LABEL_KEYS = [
@@ -98,7 +116,30 @@ const ENUM_LABEL_KEYS = [
   'level.BELOW',
   'level.NEARING',
   'level.REACHED',
+  // T-12-18 ⑨ / ⑩。
+  'entity.Proposal',
+  'entity.ProposalRequest',
+  'entity.Assignment',
+  'entity.Contract',
+  'entity.Tenant',
+  'cause.TENANT_PURGED',
+  'cause.RETENTION',
+  'kind.CLOSING_RETURN',
+  'kind.OPERATIONAL',
 ] as const;
+
+/** ゲートの各層 verdict（`overall` / `piiVerdict` / `commerceVerdict` / `consistencyVerdict`）は同じ 2 値のラベル。 */
+const GATE_VERDICT_KEYS = ['overall', 'piiVerdict', 'commerceVerdict', 'consistencyVerdict'] as const;
+const GATE_VERDICT_TOKENS = ['PASS', 'FAIL'] as const;
+
+/**
+ * `state.invalid_transition` の `from` / `to`（`pair.id = 'state'`）は §4.2 の状態名。Phase 1 で起こりうるのは `Proposal` /
+ * `ProposalRequest` / `Tenant` の 3 機械であり、状態名は互いに衝突しない。
+ * ⚠️ `Assignment`（Phase 2。`ACTIVE` が `Tenant` と衝突）/ `Contract`（Phase 3。`DRAFT` / `WITHDRAWN` / `EXPIRED` が衝突）を実装するときは
+ *    `entity` で引き分ける形に改める（ラベルの辞書はキー + トークンだけで引いている）。
+ */
+const PROPOSAL_REQUEST_STATE_TOKENS = ['REQUESTED', 'ACCEPTED', 'DECLINED', 'WITHDRAWN_BY_HOST', 'EXPIRED'] as const;
+const TENANT_STATE_TOKENS = ['SANDBOX', 'ACTIVE', 'SUSPENDED', 'CLOSING', 'PURGED'] as const;
 
 /** 状態名（`fromState` / `toState`）は `proposals.state.*` を、ロール名は `role.*` を流用する。 */
 const PROPOSAL_STATE_TOKENS = [
@@ -157,6 +198,10 @@ export function auditLogDetailMessages(): AuditLogDetailMessages {
   }
   const keyLabels: Record<string, string> = {};
   for (const key of KEY_LABEL_KEYS) keyLabels[key] = t(`auditLogs.detail.key.${key}`);
+  // `tenant.purge` の `count_{table}` は表名ごとの件数行（`S-042` セクション 2 と同じ種別ラベル。表名は `PURGE_SPEC.delete` の閉集合）。
+  for (const [table, messageKey] of Object.entries(PURGE_TARGET_MESSAGE_KEYS)) {
+    keyLabels[`${PURGE_COUNT_KEY_PREFIX}${table}`] = t(messageKey);
+  }
 
   const enumLabels: Record<string, string> = {};
   for (const key of ENUM_LABEL_KEYS) enumLabels[key] = t(`auditLogs.detail.enum.${key}`);
@@ -166,6 +211,17 @@ export function auditLogDetailMessages(): AuditLogDetailMessages {
   // `usage.limit_*` の `from` / `to` は水準（`level.*`）。
   for (const token of ['BELOW', 'NEARING', 'REACHED'] as const) {
     enumLabels[`from.${token}`] = enumLabels[`to.${token}`] = t(`auditLogs.detail.enum.level.${token}`);
+  }
+  // T-12-18 ⑨: ゲートの各層 verdict / `state.invalid_transition` の `from` / `to`（状態名。Phase 1 の 3 機械）。
+  for (const key of GATE_VERDICT_KEYS) {
+    for (const token of GATE_VERDICT_TOKENS) enumLabels[`${key}.${token}`] = t(`auditLogs.detail.enum.gateVerdict.${token}`);
+  }
+  for (const token of PROPOSAL_STATE_TOKENS) enumLabels[`from.${token}`] = enumLabels[`to.${token}`] = t(`proposals.state.${token}`);
+  for (const token of PROPOSAL_REQUEST_STATE_TOKENS) {
+    enumLabels[`from.${token}`] = enumLabels[`to.${token}`] = t(`proposalRequests.state.${token}`);
+  }
+  for (const token of TENANT_STATE_TOKENS) {
+    enumLabels[`from.${token}`] = enumLabels[`to.${token}`] = t(TENANT_LIFECYCLE_STATE_MESSAGE_KEYS[token]);
   }
 
   return {

@@ -22,6 +22,15 @@ export const auditLogQuerySchema = cursorPageQuerySchema.extend({
 
 export type AuditLogQuery = z.infer<typeof auditLogQuerySchema>;
 
+/**
+ * 🔴 T-12-18 ⑪: #10b `GET /api/audit-logs/export` の query = #10 と**同じスキーマから `cursor` / `limit` を除いたもの**
+ *    （docs/05 §6.3 #10b）。期間必須・`from <= to` の判定も #10 と同じ（`isValidAuditLogPeriod`）。ページングは
+ *    エクスポート側（`export.ts`）が #10 を内部的に追うので、利用者から受け取らない。
+ */
+export const auditLogExportQuerySchema = auditLogQuerySchema.omit({ cursor: true, limit: true });
+
+export type AuditLogExportQuery = z.infer<typeof auditLogExportQuerySchema>;
+
 /** `from` が `to` 以前であること（Zod スキーマの外で検証する理由は本ファイル冒頭コメント）。 */
 export function isValidAuditLogPeriod(query: Pick<AuditLogQuery, 'from' | 'to'>): boolean {
   return new Date(query.from).getTime() <= new Date(query.to).getTime();

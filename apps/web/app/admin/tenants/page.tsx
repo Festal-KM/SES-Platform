@@ -22,7 +22,7 @@ import {
   readPlatformRequestMeta,
   resolvePlatformCtxOutcome,
 } from '../../../lib/auth/platform-session';
-import { isTenantIdLike, parseTenantListSort } from '../../../lib/admin-tenants/schemas';
+import { isTenantIdLike, parseTenantListSignal, parseTenantListSort } from '../../../lib/admin-tenants/schemas';
 import { tenantHealthRuntime } from '../../../lib/db/bootstrap';
 import { adminTenantsMessages } from './_lib/messages';
 import { AdminTenantsList } from './admin-tenants-list';
@@ -35,22 +35,24 @@ const PAGE_LIMIT = 50;
 export default async function AdminTenantsPage({
   searchParams,
 }: {
-  readonly searchParams: Promise<{ readonly cursor?: string; readonly sort?: string }>;
+  readonly searchParams: Promise<{ readonly cursor?: string; readonly sort?: string; readonly signal?: string }>;
 }) {
   const outcome = await resolvePlatformCtxOutcome();
   if (outcome.status === 'UNAUTHENTICATED') redirect('/admin/signin');
   if (outcome.status === 'TWO_FACTOR_REQUIRED') redirect('/admin/signin?step=2fa');
 
-  const { cursor, sort: rawSort } = await searchParams;
+  const { cursor, sort: rawSort, signal: rawSignal } = await searchParams;
   // 🔴 カーソルはテナント ID（uuid(7)）そのもの。不正な形状は DB に触れず「カーソル無し（先頭ページ）」
   //    として扱う（画面を壊さない。500 にしない）。`sort` の不正な値も既定（異常度順）に倒す。
+  //    T-12-18 ③: `signal`（異常の要約チップの絞り込み）の不正な値は「絞り込み無し」に倒す。
   const safeCursor = cursor !== undefined && isTenantIdLike(cursor) ? cursor : undefined;
   const sort = parseTenantListSort(rawSort);
+  const signal = parseTenantListSignal(rawSignal);
   const thresholds = tenantHealthRuntime();
   const meta = await readPlatformRequestMeta();
   const page = await listPlatformTenants(
     outcome.ctx,
-    { cursor: safeCursor, limit: PAGE_LIMIT, sort },
+    { cursor: safeCursor, limit: PAGE_LIMIT, sort, ...(signal === undefined ? {} : { signal }) },
     { ipAddress: meta.ipAddress, healthThresholds: thresholds },
   );
 
@@ -84,6 +86,7 @@ export default async function AdminTenantsPage({
       <AdminTenantsList
         page={page}
         sort={sort}
+        signal={signal ?? null}
         isFirstPage={safeCursor === undefined}
         thresholds={thresholds}
         messages={adminTenantsMessages()}
