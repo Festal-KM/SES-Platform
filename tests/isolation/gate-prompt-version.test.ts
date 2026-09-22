@@ -157,6 +157,8 @@ async function saveReviewGate(
         //    値が ctx と違えば Prisma 拡張が例外にする（`tests/isolation/double-defense.test.ts`）。
         tenantId: ctx.tenantId,
         targetType: 'PROJECT_PUBLISH',
+        // 🔴 T-12-10: `review_gates_run_trigger_paired_check` が `PROJECT_PUBLISH` の行に NOT NULL を要求する。
+        runTrigger: 'PUBLISH',
         targetId: TARGET_ID,
         contentHash: CONTENT_HASH,
         execution: 'DONE',

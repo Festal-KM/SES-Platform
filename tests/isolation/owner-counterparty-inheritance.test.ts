@@ -277,6 +277,9 @@ describe('T-02-08: オーナー列 / 当事者列の継承・freeze トリガ（
             tenantId: TENANT_A,
             ownerPartnerCompanyId: PARTNER_A1, // 🔴 偽装値（このターゲット種別は常に NULL）
             targetType,
+            // 🔴 T-12-10: review_gates_run_trigger_paired_check が PROJECT_PUBLISH に NOT NULL を要求する
+            //    （CONTRACT_DOCUMENT は対象外のため触らない＝ NULL のまま）。
+            runTrigger: targetType === 'PROJECT_PUBLISH' ? 'PUBLISH' : undefined,
             targetId: randomUUID(),
             contentHash: `hash-${randomUUID()}`,
             piiVerdict: 'PASS',

@@ -138,6 +138,8 @@ describe('T-02-02: docs/05 §3.4 / §3.5 の新 10 表 + engineers 拡張', () =
         data: {
           tenantId: TENANT_A,
           targetType: 'PROJECT_PUBLISH',
+          // 🔴 T-12-10: review_gates_run_trigger_paired_check が PROJECT_PUBLISH に NOT NULL を要求する。
+          runTrigger: 'PUBLISH',
           targetId: projectId,
           contentHash: `hash-${randomUUID()}`,
           piiVerdict: 'PASS',

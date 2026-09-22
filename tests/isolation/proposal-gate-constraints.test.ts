@@ -658,6 +658,8 @@ describe('T-02-03: docs/05 §3.6 の新 5 表', () => {
           data: {
             tenantId: TENANT_A,
             targetType: 'PROJECT_PUBLISH',
+            // 🔴 T-12-10: review_gates_run_trigger_paired_check が PROJECT_PUBLISH に NOT NULL を要求する。
+            runTrigger: 'PUBLISH',
             targetId: target,
             contentHash: 'hash-held',
             execution: 'HELD_AI_COST_LIMIT',
@@ -679,6 +681,8 @@ describe('T-02-03: docs/05 §3.6 の新 5 表', () => {
           data: {
             tenantId: TENANT_A,
             targetType: 'PROJECT_PUBLISH',
+            // 🔴 T-12-10: review_gates_run_trigger_paired_check が PROJECT_PUBLISH に NOT NULL を要求する。
+            runTrigger: 'PUBLISH',
             targetId: target,
             contentHash: 'hash-a',
             execution: 'HELD_AI_COST_LIMIT',
@@ -693,6 +697,7 @@ describe('T-02-03: docs/05 §3.6 の新 5 表', () => {
             data: {
               tenantId: TENANT_A,
               targetType: 'PROJECT_PUBLISH',
+              runTrigger: 'PUBLISH',
               targetId: target,
               contentHash: 'hash-b',
               execution: 'HELD_AI_COST_LIMIT',
@@ -711,6 +716,8 @@ describe('T-02-03: docs/05 §3.6 の新 5 表', () => {
           data: {
             tenantId: TENANT_A,
             targetType: 'PROJECT_PUBLISH',
+            // 🔴 T-12-10: review_gates_run_trigger_paired_check が PROJECT_PUBLISH に NOT NULL を要求する。
+            runTrigger: 'PUBLISH',
             targetId: target,
             contentHash: 'hash-c1',
             piiVerdict: 'PASS',
@@ -725,6 +732,7 @@ describe('T-02-03: docs/05 §3.6 の新 5 表', () => {
           data: {
             tenantId: TENANT_A,
             targetType: 'PROJECT_PUBLISH',
+            runTrigger: 'PUBLISH',
             targetId: target,
             contentHash: 'hash-c2',
             piiVerdict: 'FAIL',
