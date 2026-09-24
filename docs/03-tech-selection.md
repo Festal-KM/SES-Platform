@@ -644,7 +644,7 @@ Claude の PDF サポートは技術的には xlsx を除く多くの文書を�
 |---|---|
 | **選定** | **Amazon S3。** §3.2（SES）と §3.4（GuardDuty）が AWS に寄っており、**GuardDuty Malware Protection for S3 は S3 バケットにしか適用できない**ため、実質的に S3 一択になる |
 | **`CLAUDE.md` §2「S3 互換」との整合** | 整合する。§2 は「S3 互換」であり S3 そのものを排除していない。**`packages/connectors` は S3 互換の最小 API のみを使い**、GuardDuty 依存の部分（EventBridge の受信）はスキャナ側のコネクタに分離する（§9 の置き換え可能性） |
-| **料金（東京リージョン）** | **未確認**（本書では [S3 料金](https://aws.amazon.com/s3/pricing/) を確認しきれなかった）。§7 の試算では **$0.025 / GB・月（S3 Standard の一般的な水準）を仮置き**し、**Phase 1 の構築時に一次情報で確定させる**。担当: `programmer`。期限: Phase 1 のストレージ構築時 |
+| **料金（東京リージョン）** | 🔴 **確定（2026-09-24、`T-12-08` / `U-9`）**。~~未確認（本書では [S3 料金](https://aws.amazon.com/s3/pricing/) を確認しきれなかった）。$0.025 / GB・月 を仮置き~~ → **一次情報で確定した。S3 Standard $0.025 / GB・月（〜50 TB）/ PUT 等 $0.0047 / 1,000 / GET 等 $0.00037 / 1,000 / S3 Inventory $0.0028 / 100 万オブジェクト / Storage Lens 無料メトリクス $0.00**（[AmazonS3 / ap-northeast-1 の料金表](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonS3/current/ap-northeast-1/index.csv)。内訳は §7.4.1 #14〜#18）。**仮置きと同値だったため §7.2.2 の小計は変わらない。** ⚠️ **[S3 料金ページ](https://aws.amazon.com/s3/pricing/)はリージョン別の表を JavaScript で描画するため、静的 HTML からは取得できない**（料金表一括 API を使うこと） |
 | **署名付き URL** | **有効期限を短く（既定 5 分）**し、`BR-26` の「`CLEAN` でなければ発行しない」をアプリ層で判定する。**署名付き URL の発行そのものを監査ログに記録する**（`BR-28`。`F-012`） |
 | **暗号化** | **SSE-KMS**（顧客管理キー）。運営者にもオブジェクト本文を見せない（`CLAUDE.md` §10.5）ため、**管理平面のロールに `s3:GetObject` を付与しない**（§4.3.3） |
 | **ライフサイクル** | `F-046`（保持期間 3 年）と `F-064`（削除）は**アプリのジョブで削除する**。S3 のライフサイクルルールに委ねない（**削除の実行と監査ログの記録を同じトランザクションの流れで扱えないため**。`docs/05` 申し送り 9） |
@@ -1006,7 +1006,7 @@ Claude の PDF サポートは技術的には xlsx を除く多くの文書を�
 |---|---|
 | **S3 から都度取れないか** | 🔴 **取れない。S3 はプレフィックス単位の合計サイズを安価に返す API を持たない。** `ListObjectsV2` でプレフィックス配下を全走査すればサイズは出るが、**テナント数 × オブジェクト数に比例したリクエスト課金と時間がかかり、`F-027` の「アップロード前の停止判定」には間に合わない**（判定は §4.5 の他の項目と同じく**呼び出し前**に即答する必要がある） |
 | **`F-027` の停止判定への接続** | 🔴 **`UsageCounter` の現在使用量が上限を超えていたら、`F-011` のアップロード用署名付き URL を発行しない。** 「発行してから失敗させる」のではなく**発行しない**（発行すると S3 側には書けてしまい、カウンタと実体がずれる）。上限の 80%（`QUOTA_WARNING_THRESHOLD_PERCENT`）で `F-027` の通知を出す |
-| **突き合わせの位置づけ** | **S3 Inventory / Storage Lens は「検算」であって「正」ではない。** 生成が非同期であり、停止判定に使えない。**乖離が出たら `F-059` に出し、原因（アップロード完了通知の取りこぼし、削除ジョブの片側失敗。§4.12）を人間が特定する。** ⚠️ **S3 Inventory / Storage Lens の課金と生成頻度は本書では未確認。`U-9`（S3 の実額）に含めて Phase 1 のストレージ構築時に確定させる** |
+| **突き合わせの位置づけ** | **S3 Inventory / Storage Lens は「検算」であって「正」ではない。** 生成が非同期であり、停止判定に使えない。**乖離が出たら `F-059` に出し、原因（アップロード完了通知の取りこぼし、削除ジョブの片側失敗。§4.12）を人間が特定する。** 🔴 **課金は確定した（2026-09-24、`T-12-08` / `U-9`）**: ~~未確認~~ → **S3 Inventory $0.0028 / 100 万オブジェクト（listed）、S3 Storage Lens の無料メトリクスは $0.00**（高度メトリクスは $0.20 / 100 万オブジェクト・月。§7.4.1 #17 / #18）。**日次で Inventory を回しても 20 テナント規模で月 $0.002、100 テナント規模で月 $0.011 であり、費用は突き合わせの頻度を決める制約にならない**（§7.4.2 の S3 行）。⚠️ **生成頻度（日次か週次か）は費用ではなく「乖離をいつ知りたいか」で決める設計事項であり、`docs/05` が持つ** |
 | **`F-063` の原価③との接続** | `docs/02` 章 7.5 の原価③は「**月末使用量** × 単価」。**月末時点の `UsageCounter` のスナップショットを `TenantMonthlyCost` に固定する**（§4.15）。月末を過ぎてから遡って再計算しない |
 
 🔴 **分散環境での正確性**:
@@ -1522,7 +1522,7 @@ packages/connectors/src/index.ts           … createConnectors(selection) が�
 |---|---|---|---|---|
 | **メール（Amazon SES Essentials）** | **$0.16 / 1,000 通** | [SES 料金](https://aws.amazon.com/ses/pricing/) | 410 通 | **$0.07** |
 | 🔴 **SES Tenants（テナント分離。§3.2.1 の要件 3）** | **$0.005 / 月 / テナント + $0.005 / 1,000 通** | [SES 料金](https://aws.amazon.com/ses/pricing/) | 1 テナント / 410 通 | **$0.01**（実額 $0.0071） |
-| **ストレージ（S3 Standard）** | **$0.025 / GB・月（未確認・仮置き）** | ⚠️ 未確認（§3.6 / `U-9`） | 1.5 GB | **$0.04** |
+| **ストレージ（S3 Standard）** | 🔴 **$0.025 / GB・月** | 🔴 **一次情報**（[AmazonS3 / ap-northeast-1](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonS3/current/ap-northeast-1/index.csv)。**2026-09-24 に確定。`U-9` / §7.4.1 #14**。~~未確認・仮置き~~ **だった値と一致したため小計は変わらない**） | 1.5 GB | **$0.04** |
 | **ウイルススキャン（GuardDuty）** | **$0.09 / GB + $0.215 / 1,000 オブジェクト** | [GuardDuty 料金](https://aws.amazon.com/guardduty/pricing/) | 0.06 GB / 60 obj | **$0.02** |
 | **電子署名** | 🔴 **$0** | §3.1.2（BYO 接続方式のためテナント持ち） | — | **$0.00** |
 | 🔴 **SMS 2FA（Amazon SNS。Phase 2。2026-09-17 追記）** | **$0.07451 / 通** | [End User Messaging SMS 価格 CSV](https://d1.awsstatic.com/onedam/marketing-channels/website/aws/en_US/business-applications/approved/documents/End-User-Messaging-SMS-Prices.ebc340b4d416d90832dd59629c4792b0deb6f8bc.csv)（§3.10.1-1） | **27 通 / 月**（27 席 × 採用率 50% × 月 2 回。**30 日の端末信頼あり**。`T-A-14` / `Q-T-11`） | **$2.01**（⚠️ **端末信頼なし・毎営業日送信なら 270 通 = $20.1 で AI 原価を上回る**。§3.10.3-12） |
@@ -1571,56 +1571,151 @@ packages/connectors/src/index.ts           … createConnectors(selection) が�
 | 3 | **`match-explainer` のモデルを Haiku 4.5 に固定しない**（`F-036` でテナント × ロール単位に設定可能。`CLAUDE.md` §12.3）。**ただし既定は Haiku 4.5 とし、Sonnet 5 に上げるとコストが 2 倍になることを設定画面に表示する**（`docs/04` へ） |
 | 4 | **`proposal-drafter` を Haiku 4.5 に落とすと $0.60 / 月の削減**（変動費の 4.6%）。**削減効果が小さいわりに外部共有物の質を落とすため、既定は Sonnet 5 のままとする** |
 
-### 7.4 固定費
+### 7.4 固定費（**2026-09-24 に一次情報で再確定。`T-12-08` / `U-9` / `U-10`**）
 
-⚠️ **本節の金額のうち、出典の無いものはすべて「未確認・仮置き」である。** **Phase 0 のインフラ構築時に AWS Pricing Calculator で実額を確定させる。担当: `programmer`。期限: Phase 0 完了時。**
+🔴 **本節は 2026-09-24 に全面改訂した。** 従前は 7 行のうち 6 行が「未確認・仮置き」（合計 $560〜$1,470、レンジ $400〜$900）であり、その仮置きが §7.5 の損益分岐と席単価の議論（[Issue #12](https://github.com/Festal-KM/SES-Platform/issues/12)）の土台になっていた。**Fargate / ElastiCache / CloudWatch / S3 / Route 53 / データ転送 / Sentry / ACM は一次情報で確定した。RDS と NAT Gateway は取得できず、理由を §7.4.4 に明記して未確認のまま残した。**
 
-| 項目 | 構成 | 月額（20 テナント規模） | 月額（100 テナント規模） | 確度 |
+**前提**:
+
+| # | 前提 | 値 |
+|---|---|---|
+| 1 | リージョン | **東京（`ap-northeast-1`）** |
+| 2 | 購入形態 | **オンデマンド**（Reserved / Savings Plans を前提にしない。**席数が読めない段階で 1 年コミットを積まない**という判断。`T-A-15`） |
+| 3 | 稼働時間 | **730 時間 / 月**（= 8,760 / 12。AWS の月次換算の慣行） |
+| 4 | 対象環境 | 🔴 **`production` のみ。** `staging` / `sandbox` / `demo` の費用は本表に含まない（`T-12-09` のアカウント分離後に別途算定する。`U-26`） |
+| 5 | 🔴 **為替** | **¥150 / USD**（`T-A-04`）。⚠️ **これは市場レートの実勢値ではなく、本書が試算用に固定した丸い値であり一次情報の出典を持たない。2026-09-24 の改訂でも変更しない** — 固定費の実額を確定させることが目的であり、**為替を同時に動かすと前回との差分が読めなくなる**。変更する場合は `T-A-04` を改め、§7 の全表を引き直す |
+| 6 | 価格の取得日 | 🔴 **すべて 2026-09-24**（出典は §7.4.1 の各行） |
+
+#### 7.4.1 単価（一次情報。東京リージョン / オンデマンド / 2026-09-24 取得）
+
+**取得方法**: AWS の[料金表一括 API（Price List Bulk API）](https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/using-the-aws-price-list-bulk-api-fetching-price-list-files-manually.html)のリージョン別ファイルから直接読んだ。⚠️ **AWS の料金ページ（`aws.amazon.com/*/pricing/`）は料金表を JavaScript で描画するため、静的 HTML にリージョン別の数値が無く、本パスでは典拠にできなかった。**
+
+| # | サービス | 単価 | 単位 | 発効日 | 出典 |
+|---|---|---|---|---|---|
+| 1 | **Fargate vCPU**（x86） | **$0.05056** | vCPU・時 | 2026-07-01 | [AmazonECS / ap-northeast-1](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonECS/current/ap-northeast-1/index.csv)（`APN1-Fargate-vCPU-Hours:perCPU`） |
+| 2 | **Fargate メモリ**（x86） | **$0.00553** | GB・時 | 2026-07-01 | 同上（`APN1-Fargate-GB-Hours`） |
+| 3 | **Fargate vCPU**（ARM / Graviton） | **$0.04045** | vCPU・時 | 2026-07-01 | 同上（`APN1-Fargate-ARM-vCPU-Hours:perCPU`） |
+| 4 | **Fargate メモリ**（ARM） | **$0.00442** | GB・時 | 2026-07-01 | 同上（`APN1-Fargate-ARM-GB-Hours`） |
+| 5 | **ElastiCache `cache.t4g.small`**（Redis OSS） | **$0.049** | ノード・時 | 2026-09-01 | [AmazonElastiCache / ap-northeast-1](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonElastiCache/current/ap-northeast-1/index.csv)（`APN1-NodeUsage:cache.t4g.small`） |
+| 6 | **ElastiCache `cache.m7g.large`**（Redis OSS） | **$0.202** | ノード・時 | 2026-09-01 | 同上（`APN1-NodeUsage:cache.m7g.large`） |
+| 7 | （参考）同 Valkey エンジン | **$0.0392** / **$0.1616** | ノード・時 | 2026-09-01 | 同上。**Redis OSS より 20% 安い**（§7.4.3-2） |
+| 8 | **CloudWatch Logs 取り込み**（Standard クラス） | **$0.76** | GB | — | [AmazonCloudWatch / ap-northeast-1](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonCloudWatch/current/ap-northeast-1/index.csv) |
+| 9 | **CloudWatch Logs 保存** | **$0.033** | GB・月 | — | 同上（`APN1-TimedStorage-ByteHrs`。Infrequent Access は $0.0198） |
+| 10 | **CloudWatch カスタムメトリクス** | **$0.30**（〜10,000 件）/ $0.10（次の 240,000 件） | メトリクス・月 | — | 同上 |
+| 11 | **CloudWatch アラーム** | **$0.10**（標準解像度）/ $0.30（高解像度） | アラーム・月 | — | 同上 |
+| 12 | **CloudWatch API リクエスト** | **$0.01** | 1,000 リクエスト | — | 同上（`APN1-CW:Requests`） |
+| 13 | 🔴 **CloudWatch 無料枠** | **カスタムメトリクス 10 / アラーム 10（標準解像度）/ API 100 万リクエスト（`GetMetricData` 等 3 操作は常に課金）/ ログ 5 GB（取り込み・保存・Logs Insights のスキャンの合計）/ カスタムダッシュボード 3** | — | — | [CloudWatch 料金ページ「無料利用枠」](https://aws.amazon.com/cloudwatch/pricing/) |
+| 14 | **S3 Standard ストレージ** | 🔴 **$0.025**（〜50 TB）/ $0.024（〜500 TB）/ $0.023（500 TB 超） | GB・月 | 2026-09-01 | [AmazonS3 / ap-northeast-1](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonS3/current/ap-northeast-1/index.csv)（`APN1-TimedStorage-ByteHrs`）。**§7.2.2 / `T-A-06` の仮置き $0.025 は一次情報と一致した** |
+| 15 | **S3 PUT / COPY / POST / LIST** | **$0.0047** | 1,000 リクエスト | 2026-09-01 | 同上（`APN1-Requests-Tier1`） |
+| 16 | **S3 GET / その他** | **$0.00037** | 1,000 リクエスト | 2026-09-01 | 同上（`APN1-Requests-Tier2`。$0.0037 / 10,000） |
+| 17 | **S3 Inventory** | **$0.0028** | 100 万オブジェクト（listed） | 2026-09-01 | 同上（`APN1-Inventory-ObjectsListed`） |
+| 18 | **S3 Storage Lens 無料メトリクス** | 🔴 **$0.00** | — | 2026-09-01 | 同上（`APN1-StorageLensFreeTier-ObjCount`）。**高度メトリクスは $0.20 / 100 万オブジェクト・月**（`APN1-StorageLens-ObjCount`） |
+| 19 | **Route 53 ホストゾーン** | **$0.50**（先頭 25 ゾーン）/ $0.10（以降） | ゾーン・月 | 2026-08-01 | [AmazonRoute53](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonRoute53/current/index.csv)（`HostedZone`） |
+| 20 | **Route 53 標準 DNS クエリ** | **$0.40**（〜10 億件）/ $0.20（以降） | 100 万クエリ | 2026-08-01 | 同上（`Global-DNS-Queries`） |
+| 21 | **インターネットへのデータ転送（OUT）** | **$0.114**（〜10 TB）/ $0.089 / $0.086 / $0.084 | GB | 2026-06-01 | [AWSDataTransfer / ap-northeast-1](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AWSDataTransfer/current/ap-northeast-1/index.csv)（`APN1-DataTransfer-Out-Bytes`）。⚠️ **料金説明文に「beyond the global free tier」とあり全社共通の無料枠が存在するが、その GB 数を一次情報で確認できなかったため本表では適用しない**（保守側） |
+| 22 | **使用中のパブリック IPv4 アドレス** | **$0.005** | アドレス・時 | — | [AmazonVPC / ap-northeast-1](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonVPC/current/ap-northeast-1/index.csv)（`APN1-PublicIPv4:InUseAddress`） |
+| 23 | **ACM のパブリック証明書** | 🔴 **$0.00** | — | — | [ACM 料金](https://aws.amazon.com/certificate-manager/pricing/)「ACM は ACM と統合された AWS サービスで使用する証明書を無償で発行する」。⚠️ **エクスポート可能な証明書（$7 / ドメイン）と ACME 発行（$1 / ドメイン〜）は有償だが、本プロダクトは使わない** |
+| 24 | **Sentry Team** | **$26**（年払い時の月額） | 月 | — | [Sentry Pricing](https://sentry.io/pricing/)。**含まれる枠はエラー 5 万件 / スパン 500 万 / リプレイ 50 / 添付 1 GB / 1 Cron モニタ。** ⚠️ **月払いの単価は料金ページのトグルがクライアント側描画のため未取得** |
+| 25 | **Sentry Business** | **$80**（年払い時の月額） | 月 | — | 同上 |
+| 26 | **Vercel Pro** | **$20** / 席・月（1 席目に $20 の利用クレジット込み） | 席・月 | — | [Vercel Pro Plan](https://vercel.com/docs/plans/pro)（従前から一次情報）。**含まれる枠は 1 TB Fast Data Transfer + 1,000 万 Edge Requests / 月** |
+
+#### 7.4.2 構成と月額（計算式つき）
+
+| 項目 | 構成 | 月額（20 テナント規模）と計算式 | 月額（100 テナント規模）と計算式 | 確度 |
 |---|---|---|---|---|
-| **Vercel Pro** | プラットフォーム料 $20（1 席・$20 の利用クレジット込み）+ 追加席 $20 × 2 | **$60** | **$60〜$150** | 🔴 **一次情報**（[Vercel Pro Plan](https://vercel.com/docs/plans/pro)）。**含まれる枠は 1 TB Fast Data Transfer + 1,000 万 Edge Requests / 月** |
-| **ワーカー（ECS Fargate）** | 2 タスク × 0.5 vCPU / 1 GB 常時 → 4 タスク | $60 | $150 | ⚠️ **未確認・仮置き** |
-| **DB（RDS PostgreSQL, Multi-AZ）** | db.m7g.large + 100 GB gp3 → db.m7g.xlarge + 500 GB | $300 | $700 | ⚠️ **未確認・仮置き**（[RDS 料金](https://aws.amazon.com/rds/postgresql/pricing/) は本書では実額を取得できなかった） |
-| **Redis（ElastiCache）** | cache.t4g.small × 2 → cache.m7g.large × 2 | $50 | $200 | ⚠️ **未確認・仮置き** |
-| **監視（CloudWatch）** | ログ・メトリクス・アラーム | $30 | $100 | ⚠️ **未確認・仮置き** |
-| **Sentry** | Team プラン相当 | $30 | $80 | ⚠️ **未確認・仮置き** |
-| **その他**（ドメイン・証明書・データ転送・NAT） | — | $30 | $80 | ⚠️ **未確認・仮置き** |
-| 🔴 **固定費 合計** | — | 🔴 **約 $560 / 月**（¥84,000） | 🔴 **約 $1,470 / 月**（¥220,500） | **レンジ: $400〜$900 / $1,000〜$2,200** |
-| **1 テナントあたりの固定費配賦** | — | **$28.00** | **$14.70** | — |
+| **Vercel Pro** | 開発・運用の 3 席 → 8 席 | **$60.00** = $20 × 3 席 | **$160.00** = $20 × 8 席 | 🔴 単価は一次情報（#26）。⚠️ **席数は本書が置いた前提**（`T-A-17`）。従前は「$60〜$150」とレンジで置いていたが、**席数で表すほうが根拠を追える**ため席数に改めた。**含まれる枠（1 TB 転送 + 1,000 万 Edge Requests / 月）の超過は、`docs/02` 章 7.1 の規模では発生しない見込みで計上していない** |
+| **ワーカー（ECS Fargate, x86）** | 2 タスク × 0.5 vCPU / 1 GB 常時 → 4 タスク | 🔴 **$44.98** = vCPU 1.0 × 730 h × $0.05056（$36.91）+ メモリ 2 GB × 730 h × $0.00553（$8.07） | 🔴 **$89.97** = vCPU 2.0 × 730 × $0.05056（$73.82）+ メモリ 4 GB × 730 × $0.00553（$16.15） | 🔴 一次情報（#1 / #2）。**エフェメラルストレージは既定 20 GB が無償枠内のため $0** |
+| **Redis（ElastiCache, Redis OSS）** | `cache.t4g.small` × 2（プライマリ + レプリカ）→ `cache.m7g.large` × 2 | 🔴 **$71.54** = 2 ノード × 730 h × $0.049 | 🔴 **$294.92** = 2 ノード × 730 h × $0.202 | 🔴 一次情報（#5 / #6）。⚠️ **従前の仮置き $50 / $200 より高い** |
+| **監視（CloudWatch）** | 下記の想定量 | 🔴 **$10.46** = 取り込み (6−5) GB × $0.76（$0.76）+ 保存 6 GB × $0.033（$0.20）+ メトリクス (30−10) × $0.30（$6.00）+ アラーム (25−10) × $0.10（$1.50）+ API 20 万 × $0.00001（$2.00） | 🔴 **$39.03** = 取り込み (25−5) GB × $0.76（$15.20）+ 保存 25 GB × $0.033（$0.83）+ メトリクス (60−10) × $0.30（$15.00）+ アラーム (40−10) × $0.10（$3.00）+ API 50 万 × $0.00001（$5.00） | 🔴 一次情報の単価（#8〜#13）× **本書が置いた想定量**（下表。`T-A-16`） |
+| **Sentry** | Team → Business | 🔴 **$26.00** | 🔴 **$80.00** | 🔴 一次情報（#24 / #25） |
+| **その他**（DNS / 証明書 / データ転送） | Route 53 ホストゾーン 2（アプリ用 + 運営通知メール用）+ クエリ + S3 からの下り + ACM | 🔴 **$3.34** = ゾーン 2 × $0.50（$1.00）+ クエリ 5 百万 × $0.40 / 百万（$2.00）+ 下り 3 GB × $0.114（$0.34）+ ACM $0.00 | 🔴 **$10.71** = ゾーン 2 × $0.50（$1.00）+ クエリ 20 百万 × $0.40（$8.00）+ 下り 15 GB × $0.114（$1.71）+ ACM $0.00 | 🔴 一次情報（#19〜#21 / #23）× 想定量 |
+| 🔴 **S3 + GuardDuty Malware Protection for S3** | 1 バケット + テナント別プレフィックス（`T-12-09` ②）/ 保護バケット 1 | 🔴 **$0.00**（S3 Inventory 日次 = 2.5 万オブジェクト × 30 回 = 75 万 × $0.0000000028 = $0.002、Storage Lens 無料メトリクス $0.00） | 🔴 **$0.01**（12.5 万 × 30 = 375 万 × $0.0000000028 = $0.011） | 🔴 一次情報（#17 / #18）。🔴 **ストレージ本体（$0.025 / GB・月）とスキャン（$0.09 / GB + $0.215 / 1,000 オブジェクト）は §7.2.2 の変動費で 1 テナントあたり $0.04 + $0.02 として計上済みであり、本行で二重計上しない。** GuardDuty Malware Protection for S3 に**固定料金は無い** |
+| ⚠️ **DB（RDS PostgreSQL, Multi-AZ）** | `db.m7g.large` + 100 GB gp3 → `db.m7g.xlarge` + 500 GB | **$300**（⚠️ **未確認・仮置き。従前値を据え置き**） | **$700**（⚠️ **未確認・仮置き**） | ⚠️ **未確認**（理由は §7.4.4） |
+| ⚠️ **RDS Proxy** | 1 プロキシ（`db.m7g.large` = 2 vCPU → `db.m7g.xlarge` = 4 vCPU。vCPU 時間課金） | **未確認**（仮置きもしない） | **未確認** | ⚠️ **未確認**（理由は §7.4.4） |
+| ⚠️ **NAT Gateway** | 2 AZ × 1 台 常時（ワーカーの外向き通信: Anthropic API / SES / Stripe） | **未確認**（仮置きもしない。参考値は §7.4.4） | **未確認** | ⚠️ **未確認**（理由は §7.4.4） |
+| 🔴 **固定費 合計（確定分 + RDS 仮置き。🔴 RDS Proxy と NAT Gateway を含まないため下限である）** | — | 🔴 **$516.32 / 月**（**¥77,448**） | 🔴 **$1,374.64 / 月**（**¥206,196**） | **うち一次情報の単価で積んだ分は $216.32 / $674.64。従前は「約 $560 / 約 $1,470、レンジ $400〜$900」** |
+| **1 テナントあたりの固定費配賦** | — | 🔴 **$25.82** | 🔴 **$13.75** | 従前 $28.00 / $14.70 |
+
+**CloudWatch の想定量の根拠**（単価は一次情報だが、**量は本書が置いた前提**である。`T-A-16`）:
+
+| 内訳 | 20 テナント | 100 テナント | 根拠 |
+|---|---|---|---|
+| ログ取り込み | **6 GB / 月** | **25 GB / 月** | RDS の `postgresql.log`（Multi-AZ 2 台 × 1 日 80 MB ≒ 4.8 GB / 月）+ ECS ワーカーの stdout（2 タスク × 730 h × 100 KB/h ≒ 0.15 GB）+ ジョブログ（20 テナント × 約 1,150 件 / 月 × 2 KB ≒ 0.05 GB）≒ 5 GB に余裕をみて **6 GB**。100 テナントは DB ログ 4 倍（19.2 GB）+ タスク 2 倍（0.3 GB）+ ジョブログ 5 倍（0.25 GB）≒ 20 GB に余裕をみて **25 GB**。⚠️ **VPC Flow Logs は含まない**（`A-005` の監視項目に無い） |
+| ログ保存量 | **6 GB** | **25 GB** | 保持 30 日。定常状態では「取り込み 1 か月分」が保存量になる |
+| カスタムメトリクス | **30** | **60** | EMF で出す業務メトリクス（キュー待ち数 / ジョブ失敗数 / `SUBMITTING` 滞留 / `SUBMIT_FAILED` 未対応 / ゲート FAIL 率 / スキャン滞留 / AI 原価 …。`A-005`） |
+| アラーム | **25**（標準解像度） | **40** | `A-005` の監視項目。**高解像度（$0.30）は使わない** |
+| API リクエスト | **20 万** | **50 万** | 🔴 **`GetMetricData` は無料枠の対象外**（#13）。運用監視画面の描画で毎回課金される |
+
+#### 7.4.3 判明した選択肢（いずれも本書では採用しない。決定は人間）
+
+| # | 選択肢 | 削減額 | なぜ本書で採らないか |
+|---|---|---|---|
+| 1 | **Fargate を ARM（Graviton）にする** | 20 テナント **−$9.00**（$44.98 → $35.98）/ 100 テナント **−$18.00**（$89.97 → $71.97） | 単価は一次情報で 20% 安い（#3 / #4）。**ワーカーのコンテナイメージが `arm64` でビルド・動作することの確認が要る**（Prisma のエンジンバイナリ・ネイティブ依存）。**`T-12-09` のインフラ構築時に `programmer` が検証して決める**（`U-27`） |
+| 2 | **ElastiCache のエンジンを Valkey にする** | 20 テナント **−$14.31**（$71.54 → $57.23）/ 100 テナント **−$58.98**（$294.92 → $235.94） | 単価は一次情報で 20% 安い（#7）。⚠️ **`CLAUDE.md` §2 は「BullMQ + Redis」と明記しており、エンジンの変更は `CLAUDE.md` の改訂（§8.6 の人間の承認事項）にあたる。** 本書からは提起のみ行う（`U-28`） |
+| 3 | **Reserved / Savings Plans** | ElastiCache `cache.t4g.small` の 1 年 No Upfront は $0.033 / 時（オンデマンド $0.049 の 67%） | 一次情報で確認できた（#5 の同一ファイル）。**席数と規模が読めない段階で 1 年コミットを積まない**（`T-A-15`）。**20 テナントに達した時点で `pm` が再評価する** |
+
+#### 7.4.4 🔴 未確認として残した項目と、その理由
+
+⚠️ **以下は「調べなかった」のではなく「一次情報に到達する経路が無かった」ものである。推測値を確定値として書かない**（`CLAUDE.md` §8.6 / 本書の規律）。
+
+| 項目 | なぜ取れなかったか | 参考になる一次情報 | 誰が / いつ / 何をもって確定させるか |
+|---|---|---|---|
+| **RDS PostgreSQL の インスタンス時間（`db.m7g.large` / `db.m7g.xlarge`、Multi-AZ）/ gp3 ストレージ / バックアップストレージ** | ①[Price List Bulk API の `AmazonRDS` / `ap-northeast-1` ファイル](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonRDS/current/ap-northeast-1/index.csv)が **10 MB を超え、本パスの取得上限を超過**した（同リージョンの ECS 352 KB / ElastiCache 1.1 MB / S3 173 KB は取得できた）②AWS の料金マップ（`b0.p.awsstatic.com/pricing/2.0/meteredUnitMaps/rds/...`）は**リージョンが降順に並び、先頭（US West）しか読めず Asia Pacific に到達しない**。リージョン別に分割されたファイルは RDS には存在しない（EC2 には存在する）③[RDS for PostgreSQL 料金ページ](https://aws.amazon.com/rds/postgresql/pricing/)は料金表を JavaScript で描画し、**静的 HTML に数値が無い** | — | 🔴 **`programmer` + 人間。`T-12-09`（本番 AWS アカウントの作成）と同時。** **AWS マネジメントコンソールまたは [AWS Pricing Calculator](https://calculator.aws/) で東京リージョン / Multi-AZ / gp3 の実額を読み、本節と §7.5 を引き直す。** 🔴 **`T-12-09` の完了判定に本項を追加すること**（`pm` 申し送り 8） |
+| **RDS Proxy（vCPU 時間課金）** | 同上（`AmazonRDS` の同じファイルに含まれる） | 課金の**構造**は確定している（プロキシを張る DB インスタンスの vCPU 数 × 時間）。`db.m7g.large` = 2 vCPU / `db.m7g.xlarge` = 4 vCPU | 同上。🔴 **§4.14 の「RDS Proxy を必ず挟む」は動かさない**（Vercel の同時実行数に対する接続数の防御であり、費用を理由に外さない） |
+| **NAT Gateway（時間 + 処理データ）** | ①NAT Gateway は Price List では **`AmazonEC2`** に属し、同リージョンのファイルが**数百 MB で取得上限を大きく超える**（`AmazonVPC` の東京ファイルを全文検索したが NAT の項目は 1 件も無かった）②[VPC 料金ページ](https://aws.amazon.com/vpc/pricing/)は静的 HTML に **US East（オハイオ）の例（$0.045 / 時、処理データ $0.045 / GB）しか載っておらず**、東京の数値は JavaScript 描画③[NAT ゲートウェイの料金（AWS ドキュメント）](https://docs.aws.amazon.com/vpc/latest/userguide/nat-gateway-pricing.html)は課金の**仕組み**のみで数値を持たない | 🔴 **オハイオの公開単価 $0.045 / 時を援用すると 2 台で $65.70 / 月**（= 2 × 730 × $0.045）**+ 処理データ**。⚠️ **東京はオハイオより高いことが通例であり、これは下限の目安にすぎない。合計には加算していない。** ⚠️ **代替案（Fargate をパブリックサブネットに置きパブリック IPv4 を使う）なら 2 アドレス × 730 h × $0.005 = $7.30 / 月**（#22。一次情報）だが、**ワーカーを公開サブネットに出す構成変更であり、`docs/05` の VPC 設計の改訂を伴う。本書では採らない** | 🔴 **`programmer` + 人間。`T-12-09` と同時。** コンソール / Pricing Calculator で東京の実額を読む。🔴 **同時に「NAT Gateway を使うか、VPC エンドポイント（S3 はゲートウェイ型で無償）で削るか」を決める**（`U-29`） |
+
+🔴 **合計 $516.32 / $1,374.64 は下限である。** NAT Gateway をオハイオ単価で積んだだけでも **$582.02 / 20 テナント**（1 テナント $29.10）になる。**§7.5 の損益分岐は「+$100 / 月 の未計上分」を感度として併記する**（§7.5.4）。
 
 ### 7.5 🔴 損益分岐（料金モデルの材料）
 
 **決済手数料**: ⚠️ **Stripe の日本の手数料率は未確認**（§3.8.4）。**本節では 3.6% を仮置きする。**
 
-#### 7.5.1 1 テナントあたりの原価
+#### 7.5.1 1 テナントあたりの原価（**2026-09-24 に §7.4 の実額で引き直した**）
 
-| 規模 | 変動費 | 固定費配賦 | **原価計** | 円換算 |
-|---|---|---|---|---|
-| **20 テナント** | $12.95 | $28.00 | 🔴 **$40.95** | **¥6,143** |
-| **100 テナント** | $12.95 | $14.70 | 🔴 **$27.65** | **¥4,148** |
+| 規模 | 変動費 | 固定費配賦 | **原価計** | 円換算 | 従前（仮置き） |
+|---|---|---|---|---|---|
+| **20 テナント** | $12.95 | **$25.82** | 🔴 **$38.77** | **¥5,816** | $40.95（−$2.18） |
+| **100 テナント** | $12.95 | **$13.75** | 🔴 **$26.70** | **¥4,005** | $27.65（−$0.95） |
+
+🔴 **固定費配賦は §7.4 の下限（RDS Proxy / NAT Gateway 未計上）に基づく。** 未計上分の影響は §7.5.4 に感度として示す。**変動費 $12.95 は §7.2 の値をそのまま用いている**（本改訂では変動費に手を入れていない）。
 
 #### 7.5.2 損益分岐点（粗利 0 になる月額）
 
-売上 `P` に対し `P = 原価 + 0.036P` を解く。
+売上 `P` に対し `P = 原価 + 0.036P`、すなわち `P = 原価 / 0.964` を解く。
 
-| 規模 | 損益分岐の月額（テナント） | **損益分岐の席単価**（30 席） |
-|---|---|---|
-| 🔴 **20 テナント** | 🔴 **$42.48 = ¥6,372 / テナント・月** | 🔴 **¥213 / 席・月** |
-| 🔴 **100 テナント** | 🔴 **$28.69 = ¥4,304 / テナント・月** | 🔴 **¥144 / 席・月** |
+| 規模 | 損益分岐の月額（テナント） | **損益分岐の席単価**（30 席） | 従前 |
+|---|---|---|---|
+| 🔴 **20 テナント** | 🔴 **$40.22 = ¥6,033 / テナント・月** | 🔴 **¥201 / 席・月** | ¥6,372 / ¥213 |
+| 🔴 **100 テナント** | 🔴 **$27.70 = ¥4,155 / テナント・月** | 🔴 **¥139 / 席・月** | ¥4,304 / ¥144 |
 
-#### 7.5.3 席単価ごとの粗利率（20 テナント規模。30 席前提）
+#### 7.5.3 席単価ごとの粗利率（20 テナント規模。30 席前提。原価 $38.77）
 
-| 席単価 | テナント月額 | 売上（USD） | 原価 + 決済手数料 | **粗利率** | 判定 |
-|---|---|---|---|---|---|
-| ¥250 | ¥7,500 | $50.00 | $42.75 | **14.5%** | 🔴 **赤字寸前。採らない** |
-| ¥500 | ¥15,000 | $100.00 | $44.55 | **55.5%** | 危険域 |
-| ¥1,000 | ¥30,000 | $200.00 | $48.15 | **75.9%** | 下限 |
-| **¥3,000** | ¥90,000 | $600.00 | $62.55 | 🔴 **89.6%** | **健全** |
-| **¥5,000** | ¥150,000 | $1,000.00 | $76.95 | **92.3%** | 健全 |
+| 席単価 | テナント月額 | 売上（USD） | 原価 + 決済手数料 | **粗利率** | 判定 | 従前 |
+|---|---|---|---|---|---|---|
+| ¥250 | ¥7,500 | $50.00 | $40.57 | **18.9%** | 🔴 **赤字寸前。採らない** | 14.5% |
+| ¥500 | ¥15,000 | $100.00 | $42.37 | **57.6%** | 危険域 | 55.5% |
+| ¥1,000 | ¥30,000 | $200.00 | $45.97 | **77.0%** | 下限 | 75.9% |
+| **¥3,000** | ¥90,000 | $600.00 | $60.37 | 🔴 **89.9%** | **健全** | 89.6% |
+| **¥5,000** | ¥150,000 | $1,000.00 | $74.77 | **92.5%** | 健全 | 92.3% |
+
+#### 7.5.4 🔴 感度: §7.4 の未計上分（RDS Proxy + NAT Gateway）
+
+**§7.4.4 のとおり 2 項目の単価が未確認である。** 仮に 20 テナント規模で **合計 +$100 / 月**（NAT Gateway 2 台 + RDS Proxy）だった場合:
+
+| 項目 | 未計上（§7.5.1〜3） | +$100 / 月 を織り込んだ場合 | 差 |
+|---|---|---|---|
+| 固定費配賦 / テナント | $25.82 | **$30.82** | +$5.00 |
+| 原価計 / テナント | $38.77 | **$43.77** | +$5.00 |
+| 損益分岐の月額 | $40.22（¥6,033） | **$45.40（¥6,810）** | +¥777 |
+| 損益分岐の席単価（30 席） | ¥201 | **¥227** | +¥26 |
+| 席単価 ¥3,000 の粗利率 | 89.9% | **89.1%** | **−0.8pt** |
+
+🔴 **結論は変わらない。** ⚠️ **+$100 は「実額が判明するまでの上振れ枠」であり、一次情報に基づく値ではない**（§7.4.4 のオハイオ単価からの目安は NAT 単体で $65.70）。**この枠が $100 を超えた場合だけ、§7.5-1 の結論を見直す。**
 
 🔴 **結論**:
 
-1. **損益分岐は 20 テナント規模で 1 テナント月額 ¥6,400（1 席 ¥215）である。** 国内 SaaS の一般的な席単価（¥3,000〜8,000）に対して**原価は十分に小さく、通常の利用では逆ざやにならない**。
-2. 🔴 **逆ざやが起きるのは「AI 利用量が基準の 10 倍以上になったテナント」だけである。** 席単価 ¥3,000（テナント月額 $600）の場合、**AI 原価が $560 を超えると赤字**になる。基準の $12.82 に対して **44 倍**。§7.3 の感度分析で最悪ケース（8,000 回 × Sonnet 5）でも AI は $69 であり、**通常の使い方では到達しない**。
+1. **損益分岐は 20 テナント規模で 1 テナント月額 ¥6,033（1 席 ¥201）である**（未計上分 +$100 を織り込んでも ¥6,810 / ¥227。§7.5.4）。国内 SaaS の一般的な席単価（¥3,000〜8,000）に対して**原価は十分に小さく、通常の利用では逆ざやにならない**。🔴 **2026-09-24 の固定費実額化で従前の ¥6,372 / ¥213 から約 5% 下がった。結論の向きは変わらない。**
+2. 🔴 **逆ざやが起きるのは「AI 利用量が基準の 10 倍以上になったテナント」だけである。** 席単価 ¥3,000（テナント月額 $600）の場合、**AI 原価が $552 を超えると赤字**になる（= $600 − 決済手数料 $21.60 − 固定費配賦 $25.82 − AI 以外の変動費 $0.13）。基準の $12.82 に対して **43 倍**。§7.3 の感度分析で最悪ケース（8,000 回 × Sonnet 5）でも AI は $69 であり、**通常の使い方では到達しない**。
 3. 🔴 **したがって `CLAUDE.md` §10.2 の逆ざやリスクは「構造的に起きる」ものではなく「異常な使い方をしたテナントで起きる」ものである。** 監視の閾値は「粗利率」ではなく **「AI 原価が基準ユニットの N 倍を超えたテナント」** で設計するほうが早く検知できる。**`F-063` の一覧の並び順に、粗利率と併せて「基準比の倍率」を出す**（`docs/04` へ）。
 4. 🔴 **`Q-15`（プラン別 AI クォータの初期値）— 金額上限は運営者の内部指標として採用済み**（`CLAUDE.md` §9-11 に暫定値として反映。[Issue #12](https://github.com/Festal-KM/SES-Platform/issues/12)、2026-09-01）:
 
@@ -1843,6 +1938,13 @@ packages/connectors/src/index.ts           … createConnectors(selection) が�
 | 47 | **SNS SMS のレート制限・属性・冪等性・エラー** | **Transactional 配信 20 通 / 秒（アカウント）、Sender ID 10 MPS、同一宛先 1 通 / 秒（増枠不可）。`AWS.SNS.SMS.MaxPrice` / `SMSType` / `SenderID` 属性。`MessageDeduplicationId` は FIFO トピック専用で電話番号直送には効かない。配信結果は CloudWatch Logs に非同期（最大 72 時間遅延）で、失敗理由は 12 種** | [SNS endpoints and quotas](https://docs.aws.amazon.com/general/latest/gr/sns.html) / [MPS limits](https://docs.aws.amazon.com/sms-voice/latest/userguide/sms-limitations-mps.html) / [Publish API](https://docs.aws.amazon.com/sns/latest/api/API_Publish.html) / [SMS delivery monitoring](https://docs.aws.amazon.com/sns/latest/dg/sms_stats_cloudwatch.html) |
 | 48 | **オプトアウト / Protect configuration / AWS の見解** | **opt-out は送信元番号への STOP 返信（米国・カナダ等）。再 opt-in は 30 日に 1 回。Protect configuration（アカウント既定）で許可国以外は基盤側で失敗。AWS 自身が「SMS 認証はベストプラクティスではない。TOTP を実装せよ」と明記** | [Managing SNS phone numbers](https://docs.aws.amazon.com/sns/latest/dg/sms_manage.html) / [SMS preferences](https://docs.aws.amazon.com/sns/latest/dg/sms_preferences.html) / [Cognito: SMS message settings](https://docs.aws.amazon.com/cognito/latest/developerguide/user-pool-sms-settings.html) |
 | 49 | **代替の単価**（比較のみ） | **Notify: $0.045 / 通（25,000 通まで）+ 配送料。日本は Basic tier。独自の月次上限。Twilio Verify: $0.05 / 成功検証 + 日本 SMS $0.089 / セグメント（英数字 Sender ID）。Cognito: SNS と同額で Cognito ユーザープールが前提** | [Notify](https://docs.aws.amazon.com/sms-voice/latest/userguide/notify.html) / [Notify 対応国](https://docs.aws.amazon.com/sms-voice/latest/userguide/notify-countries.html) / [End User Messaging Pricing](https://aws.amazon.com/end-user-messaging/pricing/) / [Twilio Verify Pricing](https://www.twilio.com/en-us/verify/pricing) / [Twilio SMS Pricing — Japan](https://www.twilio.com/en-us/sms/pricing/jp) / [Cognito SMS MFA](https://docs.aws.amazon.com/cognito/latest/developerguide/user-pool-settings-mfa-sms-text-message.html) |
+| 50 | 🔴 **ECS Fargate の単価（東京 / オンデマンド）** | **x86: $0.05056 / vCPU・時、$0.00553 / GB・時。ARM（Graviton）: $0.04045 / vCPU・時、$0.00442 / GB・時（20% 安い）。エフェメラルストレージは 20 GB 超過分が $0.000133 / GB・時**（発効 2026-07-01。取得 2026-09-24） | [AmazonECS / ap-northeast-1 の料金表](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonECS/current/ap-northeast-1/index.csv)（[Price List Bulk API](https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/using-the-aws-price-list-bulk-api-fetching-price-list-files-manually.html)） |
+| 51 | 🔴 **ElastiCache の単価（東京 / オンデマンド）** | **`cache.t4g.small`: Redis OSS $0.049 / Valkey $0.0392 / Memcached $0.049。`cache.m7g.large`: Redis OSS $0.202 / Valkey $0.1616。予約（1 年 No Upfront）は `cache.t4g.small` $0.033**（発効 2026-09-01。取得 2026-09-24） | [AmazonElastiCache / ap-northeast-1 の料金表](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonElastiCache/current/ap-northeast-1/index.csv) |
+| 52 | 🔴 **CloudWatch の単価と無料枠（東京）** | **ログ取り込み $0.76 / GB（Standard）/ 保存 $0.033 / GB・月（IA $0.0198）/ カスタムメトリクス $0.30（〜10,000）/ アラーム $0.10（標準）$0.30（高解像度）/ API $0.01 / 1,000。無料枠はメトリクス 10・アラーム 10・API 100 万（`GetMetricData` 等 3 操作は常に課金）・ログ 5 GB・ダッシュボード 3**（取得 2026-09-24） | [AmazonCloudWatch / ap-northeast-1 の料金表](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonCloudWatch/current/ap-northeast-1/index.csv) / [CloudWatch 料金ページ「無料利用枠」](https://aws.amazon.com/cloudwatch/pricing/) |
+| 53 | 🔴 **S3 の単価（東京）** | **Standard $0.025 / GB・月（〜50 TB）、$0.024（〜500 TB）、$0.023（超）/ PUT 等 $0.0047 / 1,000 / GET 等 $0.00037 / 1,000 / Inventory $0.0028 / 100 万オブジェクト / Storage Lens 無料メトリクス $0.00（高度メトリクス $0.20 / 100 万オブジェクト・月）**（発効 2026-09-01。取得 2026-09-24。**`U-9` / `T-A-06` を確定**） | [AmazonS3 / ap-northeast-1 の料金表](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonS3/current/ap-northeast-1/index.csv) |
+| 54 | **Route 53 / データ転送 / パブリック IPv4 / ACM の単価** | **ホストゾーン $0.50 / 月（先頭 25）、$0.10（以降）/ 標準 DNS クエリ $0.40 / 100 万（〜10 億）/ 東京からのインターネット下り $0.114 / GB（〜10 TB。「全社共通の無料枠を超えた分」と明記されるが枠の GB 数は未確認）/ 使用中パブリック IPv4 $0.005 / 時 / ACM のパブリック証明書は統合サービス向けは無償（エクスポート可能証明書は $7 / ドメイン）**（取得 2026-09-24） | [AmazonRoute53](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonRoute53/current/index.csv) / [AWSDataTransfer / ap-northeast-1](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AWSDataTransfer/current/ap-northeast-1/index.csv) / [AmazonVPC / ap-northeast-1](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonVPC/current/ap-northeast-1/index.csv) / [ACM 料金](https://aws.amazon.com/certificate-manager/pricing/) |
+| 55 | **Sentry のプラン価格** | **Team $26 / 月、Business $80 / 月（いずれも年払い時の月額）。Team に含まれる枠はエラー 5 万件 / スパン 500 万 / リプレイ 50 / 添付 1 GB / Cron モニタ 1**（取得 2026-09-24）。⚠️ **月払いの単価は料金ページのトグルがクライアント側描画のため未取得** | [Sentry Pricing](https://sentry.io/pricing/) |
+| 56 | ⚠️ 🔴 **AWS の料金ページは静的 HTML にリージョン別の数値を持たない**（本書の取得手段に関する事実） | **`aws.amazon.com/*/pricing/` の料金表は JavaScript 描画であり、静的 HTML には US East の例のみが載る。リージョン別の実額は [Price List Bulk API](https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/using-the-aws-price-list-bulk-api-fetching-price-list-files-manually.html) のリージョン別ファイルから読む。ただし `AmazonRDS` と `AmazonEC2` の東京ファイルは大きすぎて本書の取得手段では読めない**（§7.4.4） | [Price List Bulk API（AWS ドキュメント）](https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/using-the-aws-price-list-bulk-api-fetching-price-list-files-manually.html) |
 
 ### 10.2 🔴 未確認の項目（この値を前提にした設計をしてはならない）
 
@@ -1856,8 +1958,12 @@ packages/connectors/src/index.ts           … createConnectors(selection) が�
 | **U-6** | **SES のサンドボックス状態のまま送信クォータだけ引き上げられるか** | §3.2.8。`sandbox` 環境の 200 通 / 日で足りない場合の対処 | **`programmer` / 人間。`sandbox` 環境の構築時（Phase 1）。** AWS サポートへ確認 |
 | **U-7** | **GuardDuty Malware Protection for S3 のスキャン所要時間** | 🔴 `docs/02` 章 7.1 の「2 分以内」を満たせるか。**満たせない場合は目標値の見直しが要る** | 🔴 **`programmer`。~~Phase 1 の `F-011` 実装時~~ → AWS 環境の構築時（SP-12 前後）へ移す**（T-05-05、2026-09-06）。理由: 実測には GuardDuty Malware Protection for S3 を有効化した実 AWS アカウントと保護バケットが要り、実装時点では存在しない。**設計・実装は既に所要時間に依存していない**（§3.4.3-8 / `docs/05` TBD-7）ため、実測の遅れが Phase 1 の受け入れをブロックしない。代表的な xlsx / pdf（1〜10 MB）で実測し、結果で `SCAN_STALL_ALERT_MINUTES` だけを調整する。🔴 **時期の変更は [Issue #37](https://github.com/Festal-KM/SES-Platform/issues/37) で確認中（`assumption`。回答が来るまでは本行の既定で進める）** |
 | **U-8** | ~~**マネージド PostgreSQL で `pg_bigm` / `pgroonga` が使えるか**~~ — **決定済み（2026-09-02）**。`pg_trgm` / `pg_bigm` は RDS / Aurora で利用可、`pgroonga` は不可 | §3.7.2。日本語の全文検索の実現方式 | **`programmer`。Phase 0 の DB 構築時（SP-01 T-01-02）に実測で確認済み。** ~~`pg_trgm` を基本とし、`pg_bigm` は精度不足時の代替として温存~~ → 🔴 **2026-09-07 追記（SP-06 T-06-05）: 拡張が使えるかどうかとは別に、RLS 下では転置索引を索引条件に降ろせないため、`pg_trgm` も `pg_bigm` も索引としては使わない**（§3.7.2 懸念 4）。`pg_trgm` は `similarity()` を関数として使うために有効化する。`pgroonga` は不採用 |
-| **U-9** | **Amazon S3（東京リージョン）の実額** | §7.2.2 / §7.4 の試算 | **`programmer`。Phase 0 のストレージ構築時。** AWS Pricing Calculator |
-| **U-10** | **RDS / ElastiCache / Fargate / CloudWatch の実額** | §7.4 の固定費（**$400〜$900 / 月 のレンジで仮置き**） | **`programmer`。Phase 0 完了時。** AWS Pricing Calculator |
+| **U-9** | ~~**Amazon S3（東京リージョン）の実額**~~ — 🔴 **確定（2026-09-24、`T-12-08`）。S3 Standard $0.025 / GB・月（〜50 TB）/ PUT 等 $0.0047 / 1,000 / GET 等 $0.00037 / 1,000 / Inventory $0.0028 / 100 万オブジェクト / Storage Lens 無料メトリクス $0.00。** 仮置きと同値だったため §7.2.2 の小計は変わらない | §7.2.2 / §7.4 の試算 / §3.6 / §4.12 | ~~`programmer`。Phase 0 のストレージ構築時。AWS Pricing Calculator~~ → **確定済み。** 出典は [AmazonS3 / ap-northeast-1 の料金表](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonS3/current/ap-northeast-1/index.csv)（取得日 2026-09-24。§7.4.1 #14〜#18） |
+| **U-10** | ~~**RDS / ElastiCache / Fargate / CloudWatch の実額**~~ — 🔴 **一部確定（2026-09-24、`T-12-08`）。Fargate（$0.05056 / vCPU・時、$0.00553 / GB・時）/ ElastiCache（`cache.t4g.small` $0.049、`cache.m7g.large` $0.202 / ノード・時）/ CloudWatch（ログ取り込み $0.76 / GB、保存 $0.033 / GB・月、メトリクス $0.30、アラーム $0.10、API $0.01 / 1,000）は確定。** ⚠️ 🔴 **RDS（インスタンス時間 / gp3 / バックアップ / RDS Proxy）と NAT Gateway は未確定のまま残る** — 取得できなかった理由は §7.4.4（Price List の `AmazonRDS` / `AmazonEC2` の東京ファイルが取得上限超、料金マップはリージョン降順で Asia Pacific に到達せず、料金ページは JS 描画） | §7.4 の固定費（~~$400〜$900 / 月 のレンジで仮置き~~ → 🔴 **確定分 $216.32 / 月 + RDS 仮置き $300 = 合計 $516.32（20 テナント規模）。RDS Proxy / NAT Gateway 未計上のため下限**）。§7.5 の損益分岐に伝播済み | 🔴 **`programmer` + 人間。`T-12-09`（本番 AWS アカウントの作成）と同時**（~~Phase 0 完了時~~ から移した。**実アカウントとコンソールが無いと Pricing Calculator の構成が固められないため**）。**AWS マネジメントコンソール / [AWS Pricing Calculator](https://calculator.aws/) で東京リージョンの RDS Multi-AZ・gp3・RDS Proxy・NAT Gateway を読み、§7.4 と §7.5 を引き直す**（`pm` 申し送り 8） |
+| **U-26** | **非本番環境（`staging` / `sandbox` / `demo`）の月額** | §7.4 は 🔴 **`production` のみ**を計上している。アカウント分離（`T-12-09`）後の総支出は本表より大きい | **`programmer`。`T-12-09` / `T-13-11`（`sandbox` 構築）と同時。** 各環境の構成（ワーカー 1 タスク / DB は Single-AZ / Redis 1 ノード 等）を決めてから §7.4.1 の単価で積む。**予算アラートの額の根拠にもなる**（`T-12-09` ④） |
+| **U-27** | **ワーカーのコンテナイメージが `arm64`（Graviton）でビルド・動作するか** | §7.4.3-1。**月 $9〜$18 の削減**（Fargate ARM は 20% 安い。一次情報） | **`programmer`。`T-12-09` のインフラ構築時。** Prisma のエンジンバイナリとネイティブ依存を `arm64` で通す。**通らなければ x86 のままにする**（本書の試算は x86 で立てている） |
+| **U-28** | **ElastiCache のエンジンを Valkey に替えてよいか** | §7.4.3-2。**月 $14〜$59 の削減**（一次情報）。⚠️ **`CLAUDE.md` §2 が「BullMQ + Redis」と明記しているため、`CLAUDE.md` の改訂（§8.6 の人間の承認事項）にあたる** | 🔴 **人間（`CLAUDE.md` §8.6）。20 テナントに達して原価が効き始めた時点。** 本書からは提起のみ行い、**Phase 1 では Redis OSS のまま進める** |
+| **U-29** | **NAT Gateway を使うか、VPC エンドポイントで削るか** | §7.4.4。**NAT は固定費の中で額が大きく、かつ本書で単価が取れていない唯一の常時課金項目**。S3 はゲートウェイ型エンドポイントが無償で、Anthropic API 宛だけが本当に NAT を要求する | **`programmer` + 人間。`T-12-09` と同時。** 東京の実額を読んだうえで、①NAT 2 台（可用性）②NAT 1 台（コスト優先・AZ 障害で停止）③パブリックサブネット + パブリック IPv4（$0.005 / 時 × 2 = $7.30 / 月。**`docs/05` の VPC 設計の改訂を伴う**）を比較する |
 | **U-11** | **Stripe の日本の決済手数料率** | §7.5 の損益分岐（**3.6% で仮置き**） | **人間（`CLAUDE.md` §8.6）。料金モデル決定時。** |
 | **U-12** | **Stripe Tax の日本の消費税対応の詳細条件** | §3.8.4。`F-062` の実装方式 | **人間。Phase 3 の `F-062` 着手前。** |
 | **U-13** | **Anthropic の ZDR（Zero Data Retention）の適用条件と申請手順** | §3.3.6。**スキルシートの抽出テキストを扱うため重要** | 🔴 **人間（`CLAUDE.md` §8.6）。Phase 2 の着手前。** |
@@ -1918,6 +2024,7 @@ packages/connectors/src/index.ts           … createConnectors(selection) が�
 | [#13](https://github.com/Festal-KM/SES-Platform/issues/13) | **メールは Amazon SES で確定。取引先へ届く送信は独自ドメイン検証が前提。本番アクセス申請と送信ドメイン認証は Phase 1 のクリティカルパス** | 🔴 **§3.2.6 / §3.2.7**（`Q-T-7` / `Q-T-8` 決着）/ §10.3 §9-3 |
 | [#15](https://github.com/Festal-KM/SES-Platform/issues/15) | **契約書は品質ゲートの対象**（発注書は対象外） | §7.1（基準ユニットの注記。Phase 3 で AI 原価 $0.20 / 月 増）/ §7.6.1（`gate-inspector` をクォータから外す判断はこの追加後も変わらない） |
 | [#45](https://github.com/Festal-KM/SES-Platform/issues/45)（**2026-09-10**。追補 2026-09-17） | **2 要素認証に SMS を追加。既定プロバイダは Amazon SNS。管理権限ロールは TOTP 必須のまま** | 🔴 **§3.10（新設。一次情報 17 項目 / 代替比較 / 設計への含意 12 項目 / 申請の実務）** / §3.0 表 11 / §4.5 / §4.8 / §4.9 / **§6.11（新設）** / §6.10-2 / §7.2.2（+$2.01。端末信頼あり前提）/ §10.1 #43〜49 / `U-23`〜`U-25` / `T-A-14` / `Q-T-10` / `Q-T-11` / 申し送り（`ui-design` 16 / `program-design` 31 / `pm` 16） |
+| — （**2026-09-24。`T-12-08`**。Issue 由来ではなく **`U-9` / `U-10` の裏取り**） | 🔴 **固定費を東京リージョンの一次情報で実額化**（Fargate / ElastiCache / CloudWatch / S3 / Route 53 / データ転送 / ACM / Sentry）。⚠️ **RDS・RDS Proxy・NAT Gateway は取得経路が無く未確認のまま** | 🔴 **§7.4 全面改訂（§7.4.1 単価 / §7.4.2 計算式 / §7.4.3 判明した選択肢 / §7.4.4 未確認の理由）** / 🔴 **§7.5.1〜§7.5.3 を引き直し §7.5.4（感度）を新設** / §7.5 結論 1・2 / §7.2.2（S3 行の出典）/ §3.6（S3 料金）/ §4.12（Inventory / Storage Lens の課金）/ §10.1 #50〜56 / `U-9`（確定）/ `U-10`（一部確定）/ 🔴 **`U-26`〜`U-29`（新設）** / `T-A-04` / `T-A-06` / `T-A-07` / 🔴 **`T-A-15` / `T-A-16`（新設）** / `Q-T-3`（粗利率）/ 申し送り（`pm` 8 を改訂・**`pm` 8b を新設**） |
 
 ---
 
@@ -1930,10 +2037,13 @@ packages/connectors/src/index.ts           … createConnectors(selection) が�
 | **T-A-01** | **AI ロール別の入出力トークン数**（`sheet-parser` 6,000/1,500 tok 等） | §3.3.2 / §3.5.4 / §7.2.1 のコスト試算 | 🔴 **本書の見積り。実測ではない。** Phase 2 の実装直後に実測へ差し替える |
 | **T-A-02** | **基準ユニットの利用量**（スキルシート 60 件 / マッチング 200 回 / 提案 60 件 等） | §7 のコスト試算と損益分岐 | 🔴 **本書が置いた前提。** Phase 2 リリース後 3 か月の実測で置き換える |
 | **T-A-03** | **根拠文（`match-explainer`）を上位 10 候補にのみ自動生成する** | §7.2.1 の最大項。全候補に生成すると原価が 2 倍になる | **本書が置いた設計前提。** `docs/04` / `docs/05` はこれに従うこと |
-| **T-A-04** | **為替 ¥150 / USD** | §7 の円換算 | 本書が置いた前提 |
+| **T-A-04** | **為替 ¥150 / USD** | §7 の円換算 | 🔴 **本書が置いた前提。市場レートの実勢値ではなく、一次情報の出典を持たない。** 2026-09-24 の固定費実額化（`T-12-08`）でも**変更しなかった** — 理由: **為替を同時に動かすと従前値との差分が読めなくなる**。変更する場合は §7 の全表を引き直す（§7.4 の前提 5） |
 | **T-A-05** | **Stripe の決済手数料 3.6%** | §7.5 の損益分岐 | ⚠️ **未確認（U-11）** |
-| **T-A-06** | **S3 Standard $0.025 / GB・月** | §7.2.2 / §7.4 | ⚠️ **未確認（U-9）** |
-| **T-A-07** | **固定費の内訳（Vercel 以外）** | §7.4 | ⚠️ **未確認（U-10）。レンジで提示した** |
+| **T-A-06** | ~~**S3 Standard $0.025 / GB・月**~~ | §7.2.2 / §7.4 | 🔴 **確定（2026-09-24、`T-12-08` / `U-9`）。** ~~未確認（U-9）~~ → **一次情報で $0.025 / GB・月（〜50 TB）と確定し、仮置きと一致した**（§7.4.1 #14）。**前提ではなくなったため本行は履歴として残す** |
+| **T-A-07** | ~~**固定費の内訳（Vercel 以外）**~~ | §7.4 / §7.5 | 🔴 **大半が確定（2026-09-24、`T-12-08` / `U-10`）。** ~~未確認（U-10）。レンジで提示した~~ → **Fargate / ElastiCache / CloudWatch / S3 / Route 53 / データ転送 / ACM / Sentry を一次情報の単価で確定し、$216.32（20 テナント）/ $674.64（100 テナント）を確定分として置いた。** ⚠️ 🔴 **RDS（$300 / $700 の仮置きを据え置き）と RDS Proxy / NAT Gateway（仮置きもしない）は未確認のまま**（理由と確定手順は §7.4.4）。**したがって §7.4 の合計は下限であり、§7.5 の損益分岐も下限側に振れている**（感度は §7.5.4） |
+| **T-A-15** | 🔴 **固定費をオンデマンド価格で積む**（Reserved Instances / Savings Plans を前提にしない） | §7.4 / §7.5 の損益分岐 | **本書が置いた前提。席数と規模が読めない段階で 1 年コミットを積まない。** ⚠️ **ElastiCache の 1 年 No Upfront はオンデマンドの 67%（一次情報）であり、20 テナントに達した時点で `pm` が再評価する**（§7.4.3-3） |
+| **T-A-16** | 🔴 **CloudWatch の利用量**（ログ取り込み 6 / 25 GB・月、カスタムメトリクス 30 / 60、アラーム 25 / 40、API 20 / 50 万リクエスト） | §7.4.2 の CloudWatch 行（$10.46 / $39.03） | 🔴 **単価は一次情報だが、量は本書が置いた前提である**（根拠は §7.4.2 の表）。**実測が無い。** `T-A-02` と同時に Phase 2 リリース後 3 か月の実測で置き換える。⚠️ **`GetMetricData` が無料枠の対象外であるため、運用監視画面の描画頻度が増えると API の項が最も伸びる** |
+| **T-A-17** | **Vercel Pro の席数**（20 テナント規模で 3 席 / 100 テナント規模で 8 席）と、**Route 53 のホストゾーン 2・クエリ 5 / 20 百万件、インターネット下り 3 / 15 GB** | §7.4.2 の Vercel 行と「その他」行 | 🔴 **単価は一次情報だが、数量は本書が置いた前提である。** 席数は開発・運用メンバー数であってテナント数に比例しない。**従前の「$60〜$150」というレンジを席数（$20 × N）に置き換えた** — レンジは根拠を追えないため。**Phase 1 のリリース時点の実メンバー数で確定させる**（担当: `pm`。時期: 第 1 回リリース時） |
 | **T-A-08** | **テナントが自社で電子署名サービス（DocuSign）と契約している**（BYO 接続の前提） | §3.1.2。契約していないテナントでは `F-049` が使えない | 🔴 **決定済み（2026-09-01、[Issue #11](https://github.com/Festal-KM/SES-Platform/issues/11)）。** 「電子署名は接続したテナントのみのオプション機能」として設計する |
 | **T-A-09** | **匿名共有の丸めの粒度**（経験年数 5 段階、単価 10 万円刻み 等） | §4.13.1。`CLAUDE.md` §9-13 / Phase 1 のリリース条件 `R-1` | 🔴 **決定済み（2026-09-10、[Issue #5](https://github.com/Festal-KM/SES-Platform/issues/5)「OK です」。旧 `Q-T-2`）。** ~~人間の承認が必要~~ → 承認済み（承認者は事業責任者単独。[Issue #18](https://github.com/Festal-KM/SES-Platform/issues/18) 回答①）。**値の変更は無い。** 根拠の記録は `T-12-06` が持つ（`docs/01` `Q-17` / `docs/02` `A-04` と同一の論点） |
 | **T-A-10** | **AWS を主たるインフラとする**（SES / S3 / GuardDuty / RDS） | §3.2 / §3.4 / §3.6 / §4.14 | **`CLAUDE.md` §2 は「S3 互換」「コンテナ基盤」と書いており、AWS を排除していない。整合する** |
@@ -1969,7 +2079,7 @@ packages/connectors/src/index.ts           … createConnectors(selection) が�
 
 | # | 決めてほしいこと | なぜ今か | 選択肢と得失 | 回答が来るまでの既定値 | いつまでに | 参照 |
 |---|---|---|---|---|---|---|
-| **`Q-T-3`** | 🔴 **①席単価（未定。事業判断。🔴 `docs/01` `Q-20` と同一の論点であり、「取引先（`PARTNER_ADMIN` / `PARTNER_SALES`）の席を課金対象に含めるか」を含む — 含めると取引先を招くほど顧客のコストが上がり、母集団の拡大という中核価値と料金体系が逆を向く。本書はどちらも既定として置かない）② §7.6.2 の件数クォータの初期値でよいか** | 🔴 **クォータの「単位」は決定済み（件数。[Issue #12](https://github.com/Festal-KM/SES-Platform/issues/12)）だが、席単価が決まらないと §7.5-3 の粗利率が確定せず、プランの位置づけ（Starter / Standard / Business の値段）も決まらない。** `F-057` / `F-062` の設定値 | **席単価**: ①¥3,000 / 席・月（§7.5-3 で粗利 89.6%。**本書の推奨**）②¥1,000（粗利 75.9%。下限）③¥5,000（粗利 92.3%）。**件数クォータ**: ①🔴 **§7.6.2 の案** ②より緩く — 逆ざやリスクが上がる ③より厳しく — 通常利用でも上限に当たる | 🔴 **内部の金額上限は Starter $15 / Standard $40 / Business $120、件数は §7.6.2 の表。席単価は決め打ちせず、`docs/04` / `docs/05` では「プランの設定値」として扱う**（画面に固定の金額を書かない） | **席単価: 料金モデルの決定時（`docs/04` の料金・請求画面より前）／件数クォータ: Phase 2 の完了時**（実測原価が出た時点） | 🔴 **`docs/01` `Q-20`（席単価。同一の論点。相互参照する）** / `CLAUDE.md` §9-11 / `docs/01` `Q-15` / [Issue #12](https://github.com/Festal-KM/SES-Platform/issues/12) / 本書 §7.5 / §7.6 |
+| **`Q-T-3`** | 🔴 **①席単価（未定。事業判断。🔴 `docs/01` `Q-20` と同一の論点であり、「取引先（`PARTNER_ADMIN` / `PARTNER_SALES`）の席を課金対象に含めるか」を含む — 含めると取引先を招くほど顧客のコストが上がり、母集団の拡大という中核価値と料金体系が逆を向く。本書はどちらも既定として置かない）② §7.6.2 の件数クォータの初期値でよいか** | 🔴 **クォータの「単位」は決定済み（件数。[Issue #12](https://github.com/Festal-KM/SES-Platform/issues/12)）だが、席単価が決まらないと §7.5-3 の粗利率が確定せず、プランの位置づけ（Starter / Standard / Business の値段）も決まらない。** `F-057` / `F-062` の設定値 | **席単価**: ①¥3,000 / 席・月（§7.5.3 で粗利 **89.9%**。**本書の推奨**）②¥1,000（粗利 **77.0%**。下限）③¥5,000（粗利 **92.5%**）。🔴 **2026-09-24 に固定費を実額化したため、粗利率を 89.6% / 75.9% / 92.3% から上記に更新した**（`T-12-08`。原価 $40.95 → $38.77。**損益分岐は ¥6,372 → ¥6,033 / テナント・月、¥213 → ¥201 / 席・月**）。⚠️ **RDS Proxy / NAT Gateway が未計上のため、確定値はこれより 1pt 程度低くなりうる**（§7.5.4）。**件数クォータ**: ①🔴 **§7.6.2 の案** ②より緩く — 逆ざやリスクが上がる ③より厳しく — 通常利用でも上限に当たる | 🔴 **内部の金額上限は Starter $15 / Standard $40 / Business $120、件数は §7.6.2 の表。席単価は決め打ちせず、`docs/04` / `docs/05` では「プランの設定値」として扱う**（画面に固定の金額を書かない） | **席単価: 料金モデルの決定時（`docs/04` の料金・請求画面より前）／件数クォータ: Phase 2 の完了時**（実測原価が出た時点） | 🔴 **`docs/01` `Q-20`（席単価。同一の論点。相互参照する）** / `CLAUDE.md` §9-11 / `docs/01` `Q-15` / [Issue #12](https://github.com/Festal-KM/SES-Platform/issues/12) / 本書 §7.5 / §7.6 |
 | **`Q-T-5`** | **Anthropic の ZDR（データ保持なし）を適用するか**（U-13） | **スキルシートの抽出テキスト（マスキング済みだが業務情報を含む）を外部 API に送る。取引先への説明責任に関わる** | ①ZDR を適用（条件と手続きが要る）②適用しない（通常のデータ保持ポリシーで運用し、その旨を利用規約に明記する） | **①を目指す。適用条件を確認するまでは②で設計を止めない** | **Phase 2 の着手前** | `CLAUDE.md` §3.2 / 本書 §3.3.6 |
 | **`Q-T-6`** | **Stripe の決済手数料率と Stripe Tax の日本対応**（U-11 / U-12） | §7.5 の損益分岐と `F-062` の実装。**`Q-T-3` の席単価と同じタイミングで要る**（手数料率が決まらないと粗利率が確定しない） | — | **手数料 3.6% で仮置き** | **料金モデル決定時 / Phase 3 の `F-062` 着手前** | 本書 §3.8.4 / §3.8.5 / §7.5 |
 | **`Q-T-9`** | 🔴 **第二コネクタ（クラウドサイン）をいつ実装するか、そもそも実装するか** | 🔴 **BYO 接続方式では、テナントが契約している電子署名サービスが DocuSign でなければ `F-049` が使えない。** 国内 SES ではクラウドサインの保有率が高い可能性があり、**第一コネクタだけでは電子署名機能が使えないテナントが出る**。実装するなら `U-3`（規約確認）が先に要る | ①Phase 3 は DocuSign のみ、第二コネクタは実テナントの保有状況を見てから — **推奨。実装コストを実需が判明するまで払わない** ②Phase 3 で 2 コネクタ同時 — 確実だが**実装・保守コストが 2 倍**で、`U-3` の規約確認が Phase 3 のクリティカルパスに乗る ③第二コネクタを作らず「DocuSign 未契約のテナントは契約書をメール添付で送る」で通す — **`F-047` は成立するが `F-049` が使えない** | 🔴 **①。`EsignProvider` のインタフェースとプロバイダのマップ（§9.1）だけは Phase 3 で用意し、実装は 1 つに留める** | **Phase 3 の設計時**（`docs/05` の `TenantEsignConnection` 設計より前） | [Issue #11](https://github.com/Festal-KM/SES-Platform/issues/11) / `U-3` / 本書 §3.1.2 / §3.1.3 / §9.1 |
@@ -2045,7 +2155,8 @@ packages/connectors/src/index.ts           … createConnectors(selection) が�
 5. 🔴 **Phase 1 の完了条件に「エンジニア 1 万件 / 案件 1 万件 / 匿名共有 2,000 件のシードでの負荷テスト（`F-009` の p95 1 秒）」を含める**（§3.7.2）。**検索基盤の代替（OpenSearch）の要否はこの結果で判断する。**
 6. ~~**Phase 1 の `F-011` 実装時に GuardDuty のスキャン所要時間を実測する**（U-7）~~ — **実測時期を AWS 環境の構築時（SP-12 前後）へ移した（T-05-05、2026-09-06。§3.4.3-8 / `docs/05` TBD-7）。** 実 AWS アカウント + 保護バケットが無いと計測できず、かつ**設計は既に所要時間に依存していない**（滞留の判定は `SCAN_STALL_ALERT_MINUTES` の 1 設定値のみ）。**`docs/02` 章 7.1 の「2 分以内」を満たせない場合に目標値の見直しを人間に提起する点は変わらない。** 🔴 **時期の変更は [Issue #37](https://github.com/Festal-KM/SES-Platform/issues/37) で確認中（`assumption`）。**
 7. **Phase 2 の `F-032` 実装直後に、代表的な 20 件のスキルシートで AI の実測原価を出す**（§3.5.4 / T-A-01）。**`Q-15`（`Q-T-3`）の確定はこれを待つ。** 🔴 **実測に差し替えるときは §3.3.2 / §3.5.4 の「1 回あたり推定コスト」と §7.6.1 の「1 件あたり標準原価」と §7.6.2 の件数表を同時に更新する**（片方だけ直すと、利用者に見せる件数と実際の原価がずれる）。🔴 **再計算では §7.6.2 の丸め規則（切り捨て / 10 の倍数 / 1,000 件超は 100 の倍数 / **各単位の下限 10 件**）を必ず適用する** — 下限を省くと、按分比率の小さい単位（延長論点 1.2%）が Starter で 0 件になり、**`F-044` が使えないプランができあがる。**
-8. **Phase 0 完了時に、AWS Pricing Calculator で固定費の実額を確定させる**（U-9 / U-10）。**§7.4 の $400〜$900 / 月 のレンジを実額に置き換え、本書を更新する**（`CLAUDE.md` §8.7）。
+8. ~~**Phase 0 完了時に、AWS Pricing Calculator で固定費の実額を確定させる**（U-9 / U-10）。**§7.4 の $400〜$900 / 月 のレンジを実額に置き換え、本書を更新する**~~ → 🔴 **大半を実施済み（2026-09-24、`T-12-08`）。** §7.4 を全面改訂し、**Fargate / ElastiCache / CloudWatch / S3 / Route 53 / データ転送 / ACM / Sentry を東京リージョンの一次情報（[Price List Bulk API](https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/using-the-aws-price-list-bulk-api-fetching-price-list-files-manually.html) のリージョン別ファイル）で確定**させ、§7.5 の損益分岐に伝播させた（**原価 $40.95 → $38.77、損益分岐 ¥6,372 → ¥6,033 / テナント・月。固定費合計 $560 → $516.32 / $1,470 → $1,374.64**）。🔴 **残件を `T-12-09` の完了判定に足すこと**: ⚠️ **RDS（インスタンス時間 / gp3 / バックアップ）・RDS Proxy・NAT Gateway の東京リージョンの実額は取得できなかった**（理由は §7.4.4。Price List の該当ファイルが取得上限超、料金マップはリージョン降順で Asia Pacific に到達せず、料金ページは JS 描画）。**本番 AWS アカウントを作る `T-12-09` の場で、コンソールまたは [AWS Pricing Calculator](https://calculator.aws/) から読み、§7.4.2 / §7.4.4 / §7.5 を引き直す**（`U-10` / `U-29`）。🔴 **同時に `U-26`（非本番環境の月額）/ `U-27`（ARM 化）/ `U-28`（Valkey）も判断できる**。🔴 **原価の数値は `docs/03` の §7.4 / §7.5 を唯一の出所とし、コード（`packages/config`）には持たせない** — 理由は次項 8b。
+8b. 🔴 **原価・単価をコードに持ち込まない**（2026-09-24、`T-12-08` の判断）。⚠️ **`T-12-08` の完了判定は当初 `packages/config/src/pricing.ts` への反映を挙げていたが、このファイルは作らないことにした。** 理由は 2 つ: ①**原価（AI / インフラの USD 単価と粗利）は運営者向けの内部指標であり、それを読む画面は `A-011` / `A-013` / `F-063` で Phase 3 である** — Phase 1 のコードが参照する値が 1 つも無い。②**`docs/05` に金額を書き込まない規律**（原価の数値が設計書とコードに二重化すると、実測で更新したときに片方だけ古くなる）と整合させる。🔴 **利用者に見せる件数クォータ・上限（`F-027` / `F-057`）は `Plan` の DB 値であって単価ではない**ため、本判断はそれらに影響しない。**原価を実装が読む必要が生じるのは Phase 3 の `A-013`（粗利ダッシュボード）であり、そのときに「`Plan` / `TenantMonthlyCost` の DB 値として持つか、設定値として持つか」を改めて決める。**
 9. 🔴 **`Q-T-1`（電子署名の BYO 接続）は承認済み（2026-09-01）。`docs/02` の更新が残っている**（`CLAUDE.md` §8.7）。①`docs/02` 章 7.5 の原価定義から「④電子署名（リクエスト数 × 単価）」を外す ②`F-049` の受け入れ基準に「未接続テナントでは `Contract` が `DRAFT` → `SENDING` に遷移しない」を追加する ③`F-063` の原価内訳から電子署名を外す ④🔴 **`F-047` / `F-049` に「双方署名は 1 エンベロープの複数署名者で表現し、`Contract` の状態を増やさない」を追加する**（§3.1.10）。**本書（下流）だけを直して `docs/02` を放置しない** — 次に `functional-requirements` を回した瞬間に古い原価定義で上書きされる。
 10. 🔴 **`Q-T-7`（取引先へ届く送信は独自ドメイン検証を前提条件とする）は承認済み（2026-09-01）。`docs/02` の更新が残っている**（`CLAUDE.md` §8.7）。①`F-001` の処理・受け入れ基準に「送信ドメインの登録と検証」を追加 ②🔴 **`F-007` / `F-022` / `F-041` / `F-047` / `F-049` の外部 API 依存欄に「未検証テナントでは実行しない」を追加**（`F-007` を落とさない）③`F-054`（本契約への移行）のチェック項目に独自ドメイン検証を追加 ④章 7.6 に「`sandbox` は共通ドメインで動く」旨と、🔴 **「取引先企業の担当者宛はテナント所属でもモック」**（[Issue #10](https://github.com/Festal-KM/SES-Platform/issues/10)）を明記。**影響する ID を欠番にせず追記する**（§8.8）。
 11. 🔴 **`U-19`（Stripe の制限業種の該当判定）だけは Phase 1 のうちに済ませる**（§3.8.5）。**該当が判明すると Phase 3 の `F-062` が丸ごと止まる**ため、Phase 3 の着手を待たない。それ以外の Stripe の審査（本人確認 2〜3 営業日 / 最長 1〜2 週間）は **`CLAUDE.md` §5 のとおり Phase 3 配置のままでよい**。
