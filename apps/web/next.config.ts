@@ -12,6 +12,10 @@ const nextConfig: NextConfig = {
   //    `mask()` を使うため）。Web は LLM を呼ばないので、SDK 本体をバンドルへ取り込まない
   //    （docs/05 §7.9 ⑥ / §6.5「#31 / #32 / #35 の実装の決着」）。
   serverExternalPackages: ['@node-rs/argon2', '@prisma/client', '@anthropic-ai/sdk'],
+  // 🔴 Next 16 は `next dev` のたびに apps/web/AGENTS.md と apps/web/CLAUDE.md を生成する。
+  //    本リポジトリの `CLAUDE.md`（ルート）は全エージェントの一次資料であり、`apps/web` に同名の
+  //    別ファイルが生えると、そこで作業するエージェントが二次的な指示を読んでしまう。生成を止める。
+  agentRules: false,
 };
 
 export default nextConfig;
