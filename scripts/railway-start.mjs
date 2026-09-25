@@ -22,7 +22,7 @@
  * 依存ゼロ（Node.js の標準機能のみ）。
  */
 
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -91,8 +91,46 @@ function resolveLaunch() {
   return LAUNCHERS[role]();
 }
 
+/**
+ * 🔴 DB のブートストラップ（ロール作成 → migration → シード）を**起動の前に**実行する。
+ *
+ * 🔴 なぜ `deploy.preDeployCommand` ではなくここなのか: Railway の現行のビルド経路（Railpack への
+ *    移行後）では `railway.json` の `deploy.*` が適用されず、pre-deploy が 1 度も実行されなかった
+ *    （2026-09-25 の実測。マイグレーション未適用のままアプリが起動し、サインインが 500 になった）。
+ *    サービス設定を画面で触らずに済ませるため、**コンテナの中で必ず通る唯一の経路**である起動時に寄せる。
+ *
+ * 🔴 `SES_DB_BOOTSTRAP === '1'` のサービス（web だけ）でしか走らない。実体は
+ *    `scripts/railway-predeploy.mjs` のままで、ロジックを 2 箇所に書かない。
+ * 🔴 失敗したらアプリを起動しない（fail-closed）。マイグレーションが当たっていない DB に対して
+ *    アプリを上げると、利用者には 500 としか見えず原因に辿り着けない。
+ * ⚠️ 再起動のたびに走るが、3 つの操作はいずれも冪等である（ロールは `\gexec` の存在チェック、
+ *    migration は `migrate deploy`、シードは `ALREADY_SEEDED` 契約）。
+ */
+function bootstrapDatabaseIfRequested() {
+  if (process.env.SES_DB_BOOTSTRAP !== '1') return;
+
+  log('DB のブートストラップを実行します（SES_DB_BOOTSTRAP=1）。');
+  const result = spawnSync(process.execPath, [path.join(PROJECT_ROOT, 'scripts', 'railway-predeploy.mjs')], {
+    cwd: PROJECT_ROOT,
+    stdio: 'inherit',
+    env: process.env,
+  });
+
+  if (result.error !== undefined) {
+    failAndExit([`ブートストラップを起動できませんでした: ${result.error.message}`]);
+  }
+  if (result.status !== 0) {
+    failAndExit([
+      `ブートストラップが失敗しました（exit code ${result.status}）。アプリは起動しません。`,
+      '🔴 マイグレーションが当たっていない DB でアプリを上げない（利用者には 500 としか見えない）。',
+    ]);
+  }
+  log('DB のブートストラップが完了しました。');
+}
+
 function main() {
   const launch = resolveLaunch();
+  bootstrapDatabaseIfRequested();
   if (!fs.existsSync(launch.command)) {
     failAndExit([`起動対象が見つかりません: ${path.relative(PROJECT_ROOT, launch.command)}`, launch.missingHint]);
   }
