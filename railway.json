@@ -1,0 +1,13 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "NIXPACKS",
+    "buildCommand": "pnpm install --frozen-lockfile --prod=false && pnpm --filter '@ses/db...' --filter '@ses/worker...' --filter '@ses/web...' run build"
+  },
+  "deploy": {
+    "preDeployCommand": "node scripts/railway-predeploy.mjs",
+    "preDeployTimeoutSeconds": 900,
+    "startCommand": "node scripts/railway-start.mjs",
+    "restartPolicyType": "ON_FAILURE"
+  }
+}
