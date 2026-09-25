@@ -12,6 +12,17 @@
 
 ## 1. URL
 
+### 1.1 Railway のデモ環境（`APP_ENV=demo`。ブラウザから今すぐ触れる）
+
+| 何 | URL |
+|---|---|
+| **主平面** | **https://web-production-9a8f44.up.railway.app** |
+| **管理平面** | https://web-production-9a8f44.up.railway.app/admin |
+
+🔴 **外部 API はすべてモック**（`email` / `objectStore` / `malwareScanner` / `esign` / `billing` / `ai` の 6 つとも）。**実在の取引先へメールが飛ぶ経路は存在しない**（`CLAUDE.md` §11）。アカウントは下の §3 と同じ（同じシードを投入している）。メールの確認は MailHog ではなくモックの呼び出し記録で行う（`demo` に MailHog は無い）。構築手順は `docs/DEPLOY-DEMO-RAILWAY.md`。
+
+### 1.2 ローカル開発（`APP_ENV=development`）
+
 | 何 | URL | 備考 |
 |---|---|---|
 | **主平面**（テナント利用者の画面） | **http://localhost:3000** | 未ログインなら `/signin` へ飛ぶ |
