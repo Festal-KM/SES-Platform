@@ -1,0 +1,32 @@
+# Dockerfile のビルドコンテキストから外すもの（`demo` 環境。docs/DEPLOY-DEMO-RAILWAY.md）。
+#
+# 🔴 `.env*` を必ず外す —— ローカルの環境変数ファイルをイメージに焼き込まない
+#    （値は Railway の環境変数で渡す。`CLAUDE.md` §3.5）。
+
+.git
+.env
+.env.*
+!.env.example
+
+node_modules
+**/node_modules
+
+# ビルド成果物（イメージの中で作り直す）
+.next
+**/.next
+dist
+**/dist
+apps/web/.next
+packages/*/dist
+
+# テストと開発専用の生成物
+test-results
+playwright-report
+coverage
+**/*.tsbuildinfo
+
+# 設計ドキュメントとワイヤーフレーム画像（実行に不要。イメージを小さく保つ）
+docs/wireframes
+
+.vscode
+.idea
