@@ -397,6 +397,9 @@ describe('AC-5 / AC-6 / AC-7 / AC-8 ② CLOSING 中の返却（#77 → export.ge
     const row = await admin.dataExportRequest.findUniqueOrThrow({ where: { id: exportId } });
     expect(row.status).toBe('READY');
     expect(row.objectKey).toMatch(new RegExp(`^t/${TENANT_A}/exports/${exportId}/[0-9a-f-]{36}\\.zip$`));
+    // 🔴 有効期限は readyAt + DATA_EXPORT_AVAILABLE_DAYS（7 日）。**ここが窓の計算を固定する唯一の場所**であり、
+    //    下の #78 は実時刻に左右されないよう expiresAt を明示的に置き換えてから 200 を見る（2026-09-28 の是正）。
+    expect(row.expiresAt?.getTime()).toBe(jstNoon('2026-09-20').getTime() + 7 * 24 * 60 * 60 * 1000);
     const archive = store.readBody(row.objectKey!);
     expect(archive).not.toBeNull();
 
@@ -432,6 +435,11 @@ describe('AC-5 / AC-6 / AC-7 / AC-8 ② CLOSING 中の返却（#77 → export.ge
   });
 
   it('🔴 #78: READY なら署名 URL（3600 秒）+ 監査（data_export.download）。期限超過は EXPIRED に確定して 410', async () => {
+    // 🔴 **実時刻に依存させない**（2026-09-28 の是正）。生成は jstNoon(2026-09-20) の擬似時刻で走るが、
+    //    ダウンロード経路（route handler）は実時刻を読むため、放置すると expiresAt = 2026-09-27 を過ぎた日から
+    //    このテストが必ず 410 で落ちる（実際に 2026-09-28 の CI で落ちた）。窓の計算は上の generate テストが
+    //    固定しているので、ここでは「READY かつ期限内なら 200 + 監査 1 行」だけを見る。
+    await admin.dataExportRequest.update({ where: { id: exportId }, data: { expiresAt: new Date('2099-01-01T00:00:00.000Z') } });
     const response = await getDownloadUrl(hostOwnerA, exportId);
     expect(response.status).toBe(200);
     const ticket = (await response.json()) as { url: string; expiresIn: number };
