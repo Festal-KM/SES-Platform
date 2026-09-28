@@ -27,6 +27,8 @@ import {
   projectStatusOptions,
   toProjectFormValues,
 } from '../../_form/form-props';
+import { PageHeading } from '../../../_shell/page-heading';
+import { PROJECT_EDIT_TRAIL } from '../../../../../lib/shell/page-trail';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -60,11 +62,7 @@ export default async function EditProjectPage({
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-8">
-      <p className="mb-1 text-sm text-slate-500">
-        {t('projects.breadcrumb.home')} / {t('projects.breadcrumb.list')} /{' '}
-        {t('projects.breadcrumb.edit')}
-      </p>
-      <h1 className="mb-6 text-xl font-bold text-slate-900">{t('projects.edit.title')}</h1>
+      <PageHeading trail={PROJECT_EDIT_TRAIL} title={t('projects.edit.title')} />
       <ProjectForm
         mode="EDIT"
         projectId={view.id}

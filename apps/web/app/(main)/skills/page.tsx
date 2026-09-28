@@ -15,6 +15,8 @@ import { resolveTenantCtxOutcome } from '../../../lib/auth/session';
 import { isSkillAliasDeciderRole } from '../../../lib/skills/policy';
 import { listSkillAliases, listSkills } from '../../../lib/skills/service';
 import { SkillDictionaryScreen } from './skill-dictionary-screen';
+import { PageHeading } from '../_shell/page-heading';
+import { SKILL_DICTIONARY_TRAIL } from '../../../lib/shell/page-trail';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -31,10 +33,7 @@ export default async function SkillDictionaryPage() {
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-8">
-      <p className="mb-1 text-sm text-slate-500">
-        {t('skillDictionary.breadcrumb.home')} / {t('skillDictionary.breadcrumb.current')}
-      </p>
-      <h1 className="mb-6 text-xl font-bold text-slate-900">{t('skillDictionary.title')}</h1>
+      <PageHeading trail={SKILL_DICTIONARY_TRAIL} title={t('skillDictionary.title')} />
       <SkillDictionaryScreen
         initialAliases={aliases}
         initialSkills={skills}

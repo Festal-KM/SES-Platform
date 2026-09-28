@@ -26,6 +26,8 @@ import { PARTNER_TENANT_ROLES } from '../../../../lib/tenants/roles';
 import { TENANT_ROLE_MESSAGE_KEYS, TENANT_ROLE_CAPABILITY_MESSAGE_KEYS } from '../../../../lib/tenants/labels';
 import type { MemberPanelProps } from './partner-companies-screen';
 import { PartnerCompaniesScreen } from './partner-companies-screen';
+import { PageHeading } from '../../_shell/page-heading';
+import { PARTNER_COMPANIES_TRAIL } from '../../../../lib/shell/page-trail';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -149,10 +151,7 @@ export default async function PartnerCompaniesPage() {
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-8">
-      <p className="mb-1 text-sm text-slate-500">
-        {t('partnerCompanies.breadcrumb.home')} / {t('partnerCompanies.breadcrumb.settings')}
-      </p>
-      <h1 className="mb-6 text-xl font-bold text-slate-900">{t('partnerCompanies.title')}</h1>
+      <PageHeading trail={PARTNER_COMPANIES_TRAIL} title={t('partnerCompanies.title')} />
       <PartnerCompaniesScreen
         initial={view}
         canManage={canManage}

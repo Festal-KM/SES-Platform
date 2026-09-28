@@ -7,10 +7,8 @@
 // 🔴 パスは `/settings/retention`（予告メールの本文の URL = `apps/worker/src/jobs/operational-mail-params.ts` の
 //    `RETENTION_SCREEN_PATH` と一致させる。変えるなら両方）。
 // 🔴 `requireExecutable` 相当のガードを掛けない —— この画面は `CLOSING` でこそ使う（返却）。
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
-import { SECONDARY_LINK_CLASSES } from '@ses/ui';
 import { t, type MessageKey } from '@ses/i18n';
 import type { DataExportStatus, TenantRole } from '@ses/db';
 import { resolveTenantCtxOutcome } from '../../../../lib/auth/session';
@@ -19,6 +17,8 @@ import { purgeGraceDays } from '../../../../lib/db/bootstrap';
 import { PURGE_TARGET_MESSAGE_KEYS } from '../../../../lib/retention/labels';
 import { PURGE_TARGET_TABLES, readRetentionView } from '../../../../lib/retention/view';
 import { RetentionScreen, type RetentionScreenMessages } from './retention-screen';
+import { PageHeading } from '../../_shell/page-heading';
+import { RETENTION_TRAIL } from '../../../../lib/shell/page-trail';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -93,13 +93,10 @@ export default async function RetentionSettingsPage() {
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-8" data-testid="retention-page">
-      <p className="mb-1 text-sm text-slate-500">
-        <Link className={SECONDARY_LINK_CLASSES} href="/" data-testid="retention-breadcrumb-home">
-          {t('retention.breadcrumb.home')}
-        </Link>{' '}
-        / {t('retention.breadcrumb.settings')}
-      </p>
-      <h1 className="mb-6 text-xl font-bold text-slate-900">{t('retention.title')}</h1>
+      {/* 🔴 T-12-21 の指摘の回収: `設定`（`S-035`）がリンクになったことで、帯の「最後のリンク
+          （＝戻り先）」が「ホーム」から「設定」に変わった（`PageHeading` の `linkTestId` は
+          最後のリンクにだけ付く）。testid をその実体に合わせる。 */}
+      <PageHeading trail={RETENTION_TRAIL} title={t('retention.title')} linkTestId="retention-breadcrumb-settings" />
       <RetentionScreen view={view} messages={retentionMessages()} />
     </main>
   );

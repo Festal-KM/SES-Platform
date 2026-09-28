@@ -21,6 +21,8 @@ import {
 } from '../../../../lib/settings/sending-domains';
 import { SENDING_DOMAIN_STATE_MESSAGE_KEYS } from '../../../../lib/settings/sending-domain-fact';
 import { SendingDomainScreen, type SendingDomainScreenMessages } from './sending-domain-screen';
+import { PageHeading } from '../../_shell/page-heading';
+import { SENDING_DOMAIN_TRAIL } from '../../../../lib/shell/page-trail';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -123,10 +125,7 @@ export default async function SendingDomainSettingsPage() {
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-8">
-      <p className="mb-1 text-sm text-slate-500">
-        {t('settings.sendingDomain.breadcrumb.home')} / {t('settings.sendingDomain.breadcrumb.settings')}
-      </p>
-      <h1 className="mb-6 text-xl font-bold text-slate-900">{t('settings.sendingDomain.title')}</h1>
+      <PageHeading trail={SENDING_DOMAIN_TRAIL} title={t('settings.sendingDomain.title')} />
       <SendingDomainScreen initial={view} canRegister={outcome.ctx.role === 'OWNER'} messages={messages} />
     </main>
   );

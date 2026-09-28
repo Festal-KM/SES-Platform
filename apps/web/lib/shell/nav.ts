@@ -1,12 +1,12 @@
 // apps/web/lib/shell/nav.ts
-// 主平面のグローバルナビの**項目表**（docs/04 §3.3 のサイドバーの表 / §3.4 のボトムタブ）。
+// 主平面のグローバルナビの**項目表**（docs/04 §3.1 のサイドバーの表 / §3.4 のボトムタブ）。
 //
 // 🔴 **純粋な組み立てだけを置く**（React / DB / i18n の値に依存しない）。文言は `MessageKey` で
 //    持ち、解決は描画側（`app-shell.tsx`）が `packages/i18n` で行う（CLAUDE.md §3.5 / BR-32）。
 //    こうしておくと「ホストと取引先で項目集合が違う」ことを、描画せずに単体テストで固定できる。
 //
 // 🔴 **並びは `CLAUDE.md` §1.3 の業務ループ ①〜⑥ の順**であり、ステージ番号を接頭辞に持つ
-//    （docs/04 §3.3「ナビの並びがループの順序と一致していること自体が、利用者にループを教える」）。
+//    （docs/04 §3.1「ナビの並びがループの順序と一致していること自体が、利用者にループを教える」）。
 //    **順序を入れ替えない。**
 //
 // 🔴 **404 を作らない。** 遷移先は次の 3 つのいずれかに分類し、`LINK` 以外は**リンクにしない**:
@@ -38,23 +38,45 @@ export type NavItem = {
   readonly reach: NavReach;
   /** 子項目（`設定` だけが持つ）。 */
   readonly children: readonly NavItem[];
+  /**
+   * 項目に添えるバッジの文字列（`③ 提案依頼` の期限バッジだけが持つ。docs/04 §3.1 取引先列）。
+   *
+   * 🔴 **件数を入れない。** 入れてよいのは「最も近い返答期限」の残り時間だけである
+   *    （件数は他社情報の示唆になりうる。`CLAUDE.md` §3.1 / `F-004 AC-4`）。
+   *    文字列の組み立ては `lib/proposal-requests/remaining.ts` の `formatRemaining` が 1 実装で行い、
+   *    ここにはその結果を渡す（このモジュールは現在時刻も i18n の値も読まない）。
+   */
+  readonly badge: NavBadge | null;
+};
+
+/** バッジ（語 + 値）。語は読み上げのための見出しであり、値は残り時間である。 */
+export type NavBadge = {
+  readonly labelKey: MessageKey;
+  readonly text: string;
 };
 
 export type NavContext = {
   readonly audience: NavAudience;
   readonly role: TenantRole;
+  /**
+   * `③ 提案依頼`（`S-017`）の期限バッジに出す残り時間（例: `残り 2 日`）。`null` ならバッジを描かない。
+   *
+   * 🔴 docs/04 §3.1 は**取引先列**にだけバッジを書いている。値を読むのはレイアウト側であり、
+   *    ここは「渡されたときに取り付ける」だけを決める（渡すかどうかの判定を 2 箇所に置かない）。
+   */
+  readonly proposalRequestDueText?: string | null;
 };
 
-function link(id: string, labelKey: MessageKey, href: string): NavItem {
-  return { id, labelKey, reach: { kind: 'LINK', href }, children: [] };
+function link(id: string, labelKey: MessageKey, href: string, badge: NavBadge | null = null): NavItem {
+  return { id, labelKey, reach: { kind: 'LINK', href }, children: [], badge };
 }
 
 function unavailable(id: string, labelKey: MessageKey, noteKey: MessageKey): NavItem {
-  return { id, labelKey, reach: { kind: 'UNAVAILABLE', noteKey }, children: [] };
+  return { id, labelKey, reach: { kind: 'UNAVAILABLE', noteKey }, children: [], badge: null };
 }
 
 function group(id: string, labelKey: MessageKey, children: readonly NavItem[]): NavItem {
-  return { id, labelKey, reach: { kind: 'GROUP' }, children };
+  return { id, labelKey, reach: { kind: 'GROUP' }, children, badge: null };
 }
 
 /** ホスト所属で `OWNER` / `ADMIN` にだけ到達できる設定画面（各 `page.tsx` の redirect と同じ条件）。 */
@@ -65,7 +87,7 @@ function isTenantAdminRole(role: TenantRole): boolean {
 /**
  * `設定` の子項目。
  *
- * 🔴 docs/04 §3.3 の表はここを `設定` の 1 行にまとめているが、**§4.8 の設定画面 7 つのうち
+ * 🔴 docs/04 §3.1 の表はここを `設定` の 1 行にまとめているが、**§4.8 の設定画面 7 つのうち
  *    2 つ（`S-041` 監査ログ / `S-009` スキル辞書）はリポジトリ内に到達経路が 1 本も無い**
  *    （着手時に `href` を全走査して確認した）。ナビが唯一の入口であるため、子項目として出す。
  *    増やしたのは**実在する画面への到達手段だけ**であり、新しい画面も新しい機能も足していない。
@@ -110,6 +132,7 @@ function settingsChildren(context: NavContext): readonly NavItem[] {
  * この表は「語」と「遷移先」だけを持つ。
  */
 export function buildMainNav(context: NavContext): readonly NavItem[] {
+  const proposalRequestDue = context.proposalRequestDueText ?? null;
   const items: NavItem[] = [link('home', 'shell.nav.home', '/')];
 
   if (context.audience === 'HOST') {
@@ -129,7 +152,18 @@ export function buildMainNav(context: NavContext): readonly NavItem[] {
 
   items.push(
     link('proposals', 'shell.nav.proposals', '/proposals'), // S-019
-    link('proposal-requests', 'shell.nav.proposalRequests', '/proposal-requests'), // S-017
+    // 🔴 S-017。取引先にだけ期限バッジを添える（docs/04 §3.1 の取引先列。
+    //    🔴 **件数でなく期限**。件数は他社情報の示唆になりうる。`CLAUDE.md` §3.1）。
+    //    ホストに出さないのは docs/04 の表が取引先列にしか書いていないからである
+    //    （ホスト側の期限の見張りは `S-003` の要対応キューが持つ）。
+    link(
+      'proposal-requests',
+      'shell.nav.proposalRequests',
+      '/proposal-requests',
+      proposalRequestDue === null || context.audience !== 'PARTNER'
+        ? null
+        : { labelKey: 'shell.nav.proposalRequests.due.label', text: proposalRequestDue },
+    ), // S-017
     // S-024（面談日程の調整と結果記録）は `S-023` 経由（`/proposals/{id}/interview`）。
     unavailable('interviews', 'shell.nav.interviews', 'shell.nav.note.fromProposal'),
   );

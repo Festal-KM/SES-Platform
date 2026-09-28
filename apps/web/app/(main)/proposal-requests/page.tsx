@@ -31,6 +31,8 @@ import { listProposalRequests } from '../../../lib/proposal-requests/service';
 import { PollingRefresher } from '../_shared/polling-refresher';
 import { ProposalRequestScreen } from './proposal-request-screen';
 import { proposalRequestScreenMessages } from './request-props';
+import { PageHeading } from '../_shell/page-heading';
+import { PROPOSAL_REQUEST_LIST_TRAIL } from '../../../lib/shell/page-trail';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -70,10 +72,7 @@ export default async function ProposalRequestsPage({
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
-      <p className="mb-1 text-sm text-slate-500">
-        {t('proposalRequests.breadcrumb.home')} / {t('proposalRequests.breadcrumb.current')}
-      </p>
-      <h1 className="mb-4 text-xl font-bold text-slate-900">{t('proposalRequests.title')}</h1>
+      <PageHeading trail={PROPOSAL_REQUEST_LIST_TRAIL} title={t('proposalRequests.title')} />
       {/* 🔴 応諾の反映（`ACCEPTED`）はホストの一覧を 60 秒ごとに読み直して拾う（選択状態は保つ）。 */}
       {view.audience === 'HOST' ? <PollingRefresher intervalMs={HOST_POLL_INTERVAL_MS} /> : null}
       <ProposalRequestScreen

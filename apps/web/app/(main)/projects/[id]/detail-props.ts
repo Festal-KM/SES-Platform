@@ -59,7 +59,6 @@ export function projectDetailScreenMessages(
       ? t('projects.detail.proposals.emptyHost')
       : t('projects.detail.proposals.emptyPartner'),
     proposalsComingSoon: t('projects.detail.proposals.comingSoon'),
-    candidates: t('projects.detail.candidates.open'),
     edit: t('projects.detail.edit'),
     viewRecorded: t('projects.detail.viewRecorded'),
     // 🔴 T-12-10: 公開の状態（4 値）の語（`docs/04` 改訂 14 §S-011 / `F-014 AC-9` / `AC-12`）。

@@ -15,6 +15,8 @@ import { resolveTenantCtxOutcome } from '../../../lib/auth/session';
 import { AUDIT_LOG_CATEGORY_KEYS, type AuditLogCategoryKey } from '../../../lib/audit-logs/categories';
 import { auditLogDetailMessages } from '../../../lib/audit-logs/detail-labels';
 import { AuditLogsView, type AuditLogsViewMessages } from './audit-logs-view';
+import { PageHeading } from '../_shell/page-heading';
+import { AUDIT_LOG_TRAIL } from '../../../lib/shell/page-trail';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -75,7 +77,7 @@ export default async function AuditLogsPage() {
   //          （同じ「単一カラムの業務画面」が 2 種類の余白を持つと、次の画面が倣う先を選べない）。
   return (
     <main className="mx-auto max-w-5xl px-4 py-8">
-      <h1 className="mb-6 text-xl font-bold text-slate-900">{t('auditLogs.title')}</h1>
+      <PageHeading trail={AUDIT_LOG_TRAIL} title={t('auditLogs.title')} />
       <AuditLogsView messages={messages} />
     </main>
   );

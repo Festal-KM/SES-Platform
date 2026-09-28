@@ -12,6 +12,7 @@
 //   ④ `readShellUsageIndicator`（ホスト）: 全単位が閾値未満なら `NONE`（平常時は何も出さない）、
 //      AI の 1 日コスト上限で停止中なら `STOPPED`
 //   ⑤ 🔴 外枠が 1 リクエストに足す**トランザクションの本数**（`app/(main)/layout.tsx` 冒頭の表）。
+//      ✅ T-12-21: 取引先は **2 本 → 3 本**（`③ 提案依頼` の期限バッジ）。ホストは 4 本のまま。
 //      外枠は主平面の**全ページ**に乗るため、1 本の追加が全画面の p95（`CLAUDE.md` §7）に効く。
 //
 // 🔴 母集団は `seed:isolation`（2 テナント × 2 パートナー）を使う（docs/05 §17.5。固定 SQL を使わない）。
@@ -124,6 +125,7 @@ vi.mock('../../apps/web/lib/db/bootstrap', () => ({
 const { buildTenantCtx } = await import('../../apps/web/lib/auth/tenant-context');
 const { readShellIdentity } = await import('../../apps/web/lib/shell/identity');
 const { readShellUsageIndicator } = await import('../../apps/web/lib/shell/usage-indicator');
+const { readProposalRequestDue } = await import('../../apps/web/lib/shell/proposal-request-due');
 const { createUsageLimitCheckHandler, USAGE_LIMIT_CHECK_JOB } = await import(
   '../../apps/worker/src/jobs/usage-limit-check.js'
 );
@@ -341,7 +343,7 @@ describe('🔴 ⑤ 外枠が 1 リクエストに足すトランザクション�
    * 🔴 この数が増えたら、**主平面の全ページ**が同じだけ遅くなる（`CLAUDE.md` §7 の p95）。
    *    外枠に読み取りを足すときは、この期待値と `app/(main)/layout.tsx` の表を必ず一緒に直すこと。
    */
-  it('ホスト所属: 4 本（identity 1 + usage 3）', async () => {
+  it('ホスト所属: 4 本（identity 1 + usage 3。T-12-21 の期限バッジは取引先だけなので増えない）', async () => {
     const ctx = await ctxOf(HOST_USER, 'SALES');
     resetTxCalls();
 
@@ -356,18 +358,34 @@ describe('🔴 ⑤ 外枠が 1 リクエストに足すトランザクション�
     expect(TX_CALLS.loadTenantMembership).toBe(0);
   });
 
-  it('取引先所属: 2 本（identity 1 + 停止の事実 1）', async () => {
+  it('取引先所属: 3 本（identity 1 + 停止の事実 1 + 提案依頼の期限 1）', async () => {
     const ctx = await ctxOf(PARTNER_1_USER, 'PARTNER_SALES');
     resetTxCalls();
 
-    await Promise.all([readShellIdentity(ctx), readShellUsageIndicator(ctx, NOW)]);
+    // ✅ T-12-21: 取引先の外枠は `③ 提案依頼` の期限バッジのために 1 本だけ増えた
+    //    （docs/04 §3.3 の取引先列。`app/(main)/layout.tsx` 冒頭の表と同じ内訳）。
+    await Promise.all([
+      readShellIdentity(ctx),
+      readShellUsageIndicator(ctx, NOW),
+      readProposalRequestDue(ctx),
+    ]);
 
-    expect(shellTransactions()).toBe(2);
-    expect(TX_CALLS.withTenant).toBe(1);
+    expect(shellTransactions()).toBe(3);
+    expect(TX_CALLS.withTenant).toBe(2);
     expect(TX_CALLS.readAiStopNotice).toBe(1);
     // 🔴 取引先は残量も上限も読まない（読む経路が存在しない）。
     expect(TX_CALLS.readTenantUsageSnapshot).toBe(0);
     expect(TX_CALLS.resolveTenantQuotas).toBe(0);
+  });
+
+  it('🔴 ホスト所属で期限バッジを読んでも境界の外に出ない（対照。本数は取引先だけ増える）', async () => {
+    // 🔴 レイアウトは `audience === 'PARTNER'` のときだけ呼ぶので、ホストの本数は 4 本のままである
+    //    （その分岐は `app/(main)/layout.tsx` に在り、`shell-header` の ⑤ の表と対になっている）。
+    //    ここで確かめるのは「呼んでも 1 本で済み、RLS の外に出ない」ことである。
+    const ctx = await ctxOf(HOST_USER, 'SALES');
+    resetTxCalls();
+    await readProposalRequestDue(ctx);
+    expect(TX_CALLS.withTenant).toBe(1);
   });
 
   it('対照: ctx の解決は 1 回で 1 本である（外枠とページで 2 本にならないことの根拠）', async () => {

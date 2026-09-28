@@ -16,13 +16,14 @@ import { NotFoundError } from '../../../../../lib/api/errors';
 import { executionDenialMessageKey } from '../../../../../lib/api/guards';
 import { resolveTenantCtxOutcome } from '../../../../../lib/auth/session';
 import { proposalStateLabel } from '../../../../../lib/proposals/editor-rows';
-import { PROPOSALS_PATH, proposalDetailHref } from '../../../../../lib/proposals/hrefs';
 import { readProposalInterview } from '../../../../../lib/proposals/interview';
 import { PROPOSAL_INTERVIEW_MEMO_MAX_LENGTH } from '../../../../../lib/proposals/interview-note';
 import { proposalInterviewRows } from '../../../../../lib/proposals/interview-rows';
 import { proposalParamsSchema } from '../../../../../lib/proposals/schemas';
 import { proposalInterviewNoteLabels, proposalInterviewScreenMessages } from './interview-props';
 import { ProposalInterviewScreen } from './proposal-interview-screen';
+import { PageHeading } from '../../../_shell/page-heading';
+import { proposalInterviewTrail } from '../../../../../lib/shell/page-trail';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -57,11 +58,7 @@ export default async function ProposalInterviewPage({ params }: { readonly param
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-8">
-      <p className="mb-1 text-sm text-slate-500">
-        {t('proposals.interview.breadcrumb.home')} / <a href={PROPOSALS_PATH}>{t('proposals.interview.breadcrumb.list')}</a> /{' '}
-        <a href={proposalDetailHref(rows.id)}>{t('proposals.interview.breadcrumb.detail')}</a> / {t('proposals.interview.breadcrumb.current')}
-      </p>
-      <h1 className="mb-4 text-xl font-bold text-slate-900">{t('proposals.interview.title')}</h1>
+      <PageHeading trail={proposalInterviewTrail(rows.id)} title={t('proposals.interview.title')} />
       <ProposalInterviewScreen
         proposalId={rows.id}
         rows={rows}

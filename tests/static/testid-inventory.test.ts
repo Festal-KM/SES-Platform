@@ -200,6 +200,13 @@ const totalOccurrences = scannedFiles.reduce((sum, file) => sum + file.extractio
  */
 const UNRESOLVED_ALLOWLIST: readonly string[] = [
   'apps/web/app/(main)/_home/home-sections.tsx',
+  // ✅ T-12-21: 帯（パンくず / 画面タイトル / primary アクション）の共通部品。**上の 2 件と同じ形**である ——
+  //    値は呼び出し側（各 `page.tsx`）が `testId="project-detail-candidates"` /
+  //    `linkTestId="engineer-detail-list-link"` のように**文字列リテラル**で書いており、
+  //    `ATTRIBUTE_NAMES` がそれを拾うので **`FROZEN_EXACT` の削除・改名の検知は効いたままである**
+  //    （この行が免除するのは「受け取る側のファイル」だけで、値は凍結されている）。
+  //    🔴 29 画面が同じ帯を使うため、受け取り側を 1 つにしないと同じ見た目の実装が 29 個できる。
+  'apps/web/app/(main)/_shell/page-heading.tsx',
   'apps/web/app/_components/otpauth-qr.tsx',
 ];
 

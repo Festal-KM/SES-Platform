@@ -1,5 +1,5 @@
 // apps/web/app/(main)/_shell/app-shell.render.test.tsx
-// 共通外枠の描画（docs/04 §3.1 / §3.2 / §3.3 / §3.4 / §7.5）。
+// 共通外枠の描画（docs/04 §3.1 / §3.2 / §3.1 / §3.4 / §7.5）。
 //
 // 🔴 なぜ描画のテストが要るか: 外枠が守るのは**見えていること**そのものである ——
 //    「第二境界が常時見えている」「未実装の項目がリンクになっていない」「平常時に上限の警告を
@@ -46,7 +46,7 @@ function partnerMarkup(overrides: Partial<AppShellProps> = {}): string {
   });
 }
 
-describe('ヘッダ（docs/04 §3.3 の 5 要素）', () => {
+describe('ヘッダ（docs/04 §3.1 の 5 要素）', () => {
   it('ワードマークはホームへのリンクで、製品名は `product.name` から来る（U-01）', () => {
     const html = render();
     expect(html).toContain('data-testid="app-header-wordmark"');
@@ -136,7 +136,7 @@ describe('🔴 上限インジケータ（F-027 AC-6 / BR-24）', () => {
   });
 });
 
-describe('🔴 サイドバー（docs/04 §3.3 の項目表 / §7.5 アイコン禁止）', () => {
+describe('🔴 サイドバー（docs/04 §3.1 の項目表 / §7.5 アイコン禁止）', () => {
   it('🔴 アイコンを 1 つも使わない（語だけで区別する）', () => {
     const html = render();
     expect(html).not.toContain('<svg');
@@ -241,5 +241,56 @@ describe('レイアウト（docs/04 §3.1 のレイアウト図）', () => {
     const html = render();
     expect(html).not.toMatch(/(?:min|max)-\[/);
     expect(html).not.toMatch(/\bmax-(?:sm|md|lg|xl):/);
+  });
+});
+
+describe('🔴 ③ 提案依頼の期限バッジ（docs/04 §3.1 取引先列。T-12-21）', () => {
+  const DUE = '残り 2 日';
+
+  it('取引先のサイドバーと「その他」の両方に出る（項目表は 1 本なので同じ値）', () => {
+    const html = partnerMarkup({
+      nav: buildMainNav({ audience: 'PARTNER', role: 'PARTNER_SALES', proposalRequestDueText: DUE }),
+    });
+    expect(html).toContain('data-testid="app-nav-proposal-requests-due"');
+    expect(html).toContain('data-testid="app-more-nav-proposal-requests-due"');
+    expect(html).toContain(DUE);
+  });
+
+  it('🔴 件数を出さない（出すのは期限だけ。CLAUDE.md §3.1 / F-004 AC-4）', () => {
+    const html = partnerMarkup({
+      nav: buildMainNav({ audience: 'PARTNER', role: 'PARTNER_SALES', proposalRequestDueText: DUE }),
+    });
+    // バッジの中身に「N 件」に相当する表現が無い。
+    const badge = /data-testid="app-nav-proposal-requests-due"[^>]*>(.*?)<\/span>/s.exec(html);
+    expect(badge).not.toBeNull();
+    expect(badge?.[1] ?? '').not.toMatch(/\d+\s*件/);
+  });
+
+  it('残り時間が無ければバッジの要素ごと出さない', () => {
+    const html = partnerMarkup({
+      nav: buildMainNav({ audience: 'PARTNER', role: 'PARTNER_SALES', proposalRequestDueText: null }),
+    });
+    expect(html).not.toContain('app-nav-proposal-requests-due');
+  });
+
+  it('🔴 ホストには出ない', () => {
+    const html = render({
+      nav: buildMainNav({ audience: 'HOST', role: 'SALES', proposalRequestDueText: DUE }),
+    });
+    expect(html).not.toContain('app-nav-proposal-requests-due');
+  });
+
+  it('読み上げ専用の見出し語が添えられる（「残り 2 日」が何の残りか分かる）', () => {
+    const html = partnerMarkup({
+      nav: buildMainNav({ audience: 'PARTNER', role: 'PARTNER_SALES', proposalRequestDueText: DUE }),
+    });
+    expect(html).toContain(`<span class="sr-only">${t('shell.nav.proposalRequests.due.label')}</span>`);
+  });
+
+  it('🔴 アイコンを使わない（§7.5。色 + 語で示す）', () => {
+    const html = partnerMarkup({
+      nav: buildMainNav({ audience: 'PARTNER', role: 'PARTNER_SALES', proposalRequestDueText: DUE }),
+    });
+    expect(html).not.toContain('<svg');
   });
 });

@@ -30,6 +30,8 @@ import {
   projectStatusFilterOptions,
 } from '../list-props';
 import { ProjectListScreen } from '../project-list-screen';
+import { PageHeading } from '../../_shell/page-heading';
+import { PROJECT_LIST_TRAIL } from '../../../../lib/shell/page-trail';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -59,10 +61,7 @@ export default async function ProjectListPage({
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
-      <p className="mb-1 text-sm text-slate-500">
-        {t('projects.breadcrumb.home')} / {t('projects.breadcrumb.list')}
-      </p>
-      <h1 className="mb-6 text-xl font-bold text-slate-900">{t('projects.list.title')}</h1>
+      <PageHeading trail={PROJECT_LIST_TRAIL} title={t('projects.list.title')} />
       <ProjectListScreen
         rows={projectListRows(view.items)}
         filters={{

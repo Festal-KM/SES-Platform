@@ -37,6 +37,8 @@ import {
   engineerSkillModeOptions,
 } from '../list-props';
 import { EngineerLedgerScreen } from '../engineer-ledger-screen';
+import { PageHeading } from '../../_shell/page-heading';
+import { ENGINEER_LIST_TRAIL } from '../../../../lib/shell/page-trail';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -70,10 +72,7 @@ export default async function EngineerLedgerPage({
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
-      <p className="mb-1 text-sm text-slate-500">
-        {t('engineers.breadcrumb.home')} / {t('engineers.breadcrumb.list')}
-      </p>
-      <h1 className="mb-6 text-xl font-bold text-slate-900">{t('engineers.list.title')}</h1>
+      <PageHeading trail={ENGINEER_LIST_TRAIL} title={t('engineers.list.title')} />
       <EngineerLedgerScreen
         rows={engineerListRows(view.items)}
         filters={{

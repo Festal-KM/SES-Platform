@@ -43,11 +43,11 @@ const ja = {
 
   // ==========================================================================
   // 共通外枠（ヘッダ + グローバルナビ + モバイルのボトムタブ + 管理平面の横並びタブ）
-  // docs/04 §3.3 / §3.4 / §7.5。T-12-20。
+  // docs/04 §3.1 / §3.4 / §7.5。T-12-20。
   // ==========================================================================
   // 🔴 ナビの項目は**すべて**ここから引く（画面にベタ書きしない。CLAUDE.md §3.5 / BR-32）。
   // 🔴 並びは `CLAUDE.md` §1.3 の業務ループ ①〜⑥ の順であり、ステージ番号を接頭辞に持つ
-  //    （docs/04 §3.3「ナビの並びがループの順序と一致していること自体が、利用者にループを教える」）。
+  //    （docs/04 §3.1「ナビの並びがループの順序と一致していること自体が、利用者にループを教える」）。
   //    **番号を外さない・順序を変えない。**
   // 🔴 ホストと取引先で語が違う項目は別キーにする（同じ画面でも母集団が違う。docs/04 §3.2）。
   //    語が同じもの（③ 提案 / ③ 提案依頼 / ④ 面談・結果 / チャット / タスク）は 1 キーを共有する。
@@ -81,7 +81,7 @@ const ja = {
   'shell.nav.note.phase3': 'Phase 3',
   'shell.nav.note.fromProject': '案件から開きます',
   'shell.nav.note.fromProposal': '提案から開きます',
-  // --- ヘッダ（docs/04 §3.3 の 5 要素）---
+  // --- ヘッダ（docs/04 §3.1 の 5 要素）---
   // 🔴 スコープ表示はパートナー所属で「組織名 ＞ 自社名」の 2 段（第二境界の常時表現。§3.2）。
   'shell.header.scope.organizationLabel': '所属組織',
   'shell.header.scope.ownCompanySuffix': '（御社）',
@@ -99,6 +99,12 @@ const ja = {
   'shell.tab.chat': 'チャット',
   'shell.tab.more': 'その他',
   'shell.tab.more.heading': 'すべての項目',
+  // --- 帯（パンくず / 画面タイトル / primary アクション）。docs/04 §3.1 / §3.4。T-12-21 ---
+  // 🔴 読み上げで「この一覧が何なのか」が分かる語にする（画面上は `/` 区切りの列にしか見えない）。
+  'shell.breadcrumb.label': '現在の位置',
+  // 🔴 サイドバーの ③ 提案依頼（`S-017`）の期限バッジ（docs/04 §3.1 取引先列）。
+  //    🔴 **件数ではなく期限を出す**（件数は他社情報の示唆になりうる。CLAUDE.md §3.1）。
+  'shell.nav.proposalRequests.due.label': '最も近い返答期限',
   // --- 管理平面の横並びタブ 5 グループ（docs/04 §3.3-2）---
   // 🔴 主平面の左サイドバー（縦積み・①〜⑥）と置き場所も並び方も変える（平面の取り違えを防ぐ手段）。
   'shell.admin.nav.label': '運営者コンソールのナビ',
@@ -820,6 +826,7 @@ const ja = {
 
   // --- S-035 組織設定（docs/04 §S-035 / F-001 / F-021。T-03-10）---
   'orgSettings.title': '組織設定',
+  'orgSettings.breadcrumb.home': 'ホーム',
   'orgSettings.section.organization': '組織情報',
   'orgSettings.name.label': '商号',
   'orgSettings.timezone.label': 'タイムゾーン',
@@ -1212,6 +1219,10 @@ const ja = {
 
   // --- S-041 監査ログ（自テナント。docs/04 §S-041 / F-005 / F-012。T-03-05）---
   'auditLogs.title': '監査ログ',
+  'auditLogs.breadcrumb.home': 'ホーム',
+  'auditLogs.breadcrumb.settings': '設定',
+  // 🔴 `S-035` からの導線の語（docs/04 §S-041「関連画面: ← `S-035`」。T-12-21）。
+  'auditLogs.open': '監査ログを開く',
   'auditLogs.filter.from.label': '期間（開始）',
   'auditLogs.filter.to.label': '期間（終了）',
   'auditLogs.filter.category.label': '操作種別',
@@ -1492,6 +1503,8 @@ const ja = {
   // --- S-036 画面本体（docs/04 §S-036 / F-001 AC-4。T-04-06）---
   // 🔴 設定画面ではなくオンボーディングの最終工程として書く（docs/02 `ui-design` 申し送り 13）。
   'settings.sendingDomain.title': '送信ドメインの設定と検証',
+  // 🔴 `S-035` からの導線の語（docs/04 §S-036「関連画面: ← `S-035`」。T-12-21）。
+  'settings.sendingDomain.open': '送信ドメインの設定と検証を開く',
   'settings.sendingDomain.breadcrumb.home': 'ホーム',
   'settings.sendingDomain.breadcrumb.settings': '設定',
 
@@ -1576,6 +1589,8 @@ const ja = {
 
   // --- S-014 取引先企業の一覧・詳細と招待（docs/04 §S-014 / `F-007` `F-002`。T-04-07）---
   'partnerCompanies.title': '取引先企業',
+  // 🔴 `S-035` からの導線の語（docs/04 §S-014「関連画面: → `S-035`」の逆方向。T-12-21）。
+  'partnerCompanies.open': '取引先企業の一覧と招待を開く',
   'partnerCompanies.breadcrumb.home': 'ホーム',
   'partnerCompanies.breadcrumb.settings': '設定',
   // 🔴 `F-007 AC-1`: パートナーには自社 1 社しか出ない。母集団を絞っているのは RLS だが、
@@ -2167,6 +2182,8 @@ const ja = {
   'skillDictionary.breadcrumb.home': 'ホーム',
   'skillDictionary.breadcrumb.current': 'スキル辞書',
   'skillDictionary.title': 'スキル辞書・別名・新語候補',
+  // 🔴 `S-007` / `S-008` からの導線の語（docs/04 §S-007 / §S-008「関連画面: → `S-009`」。T-12-21）。
+  'skillDictionary.open': 'スキル辞書を開く',
 
   'skillDictionary.section.candidates': '新語候補（採否待ち）',
   'skillDictionary.candidates.note':
@@ -3208,6 +3225,7 @@ const ja = {
   'sendFailures.detail.attemptCount': '試行回数',
   'sendFailures.detail.unitPrice': '提示単価',
   'sendFailures.detail.openApproval': '提案の内容を確認する',
+  'sendFailures.detail.openDetail': '提案の詳細を見る',
   'sendFailures.detail.openSendingDomain': '送信元ドメインを設定する',
   'sendFailures.resend': '再送する',
   'sendFailures.resend.confirmTitle': 'この提案は先方に届いている可能性があります。',

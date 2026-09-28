@@ -1,6 +1,6 @@
 // apps/web/app/(main)/_shell/app-shell.tsx
 // 主平面（`/`）の共通外枠 —— ヘッダ + サイドバー（グローバルナビ）+ モバイルのボトムタブ。
-// docs/04 §3.1（レイアウト図）/ §3.2（第二境界の表現）/ §3.3（ヘッダとサイドバーの表）/ §3.4（モバイル）/ §7.5（アイコン）。
+// docs/04 §3.1（レイアウト図・ヘッダ 5 要素の表・サイドバーの項目表）/ §3.2（第二境界の表現）/ §3.4（モバイル）/ §7.5（アイコン）。
 //
 // ============================================================================
 // 🔴 この部品が守るもの
@@ -14,7 +14,10 @@
 //    クライアントバンドルへ移る（`_components/auth-shell.tsx` と同じ規律。
 //    `tests/static/client-db-boundary.test.ts`）。
 // 5. **primary アクションを外枠から出さない** —— 作成系の導線は各画面が権限差分つきで持っている
-//    （`VIEWER` / 取引先の閲覧専用に、押せない導線を外枠から配らない）。
+//    （`VIEWER` / 取引先の閲覧専用に、押せない導線を外枠から配らない）。**帯の primary も同じで、
+//    出すか出さないかは画面が決める**（`_shell/page-heading.tsx` の `canAct`）。
+// 7. **バッジに件数を出さない** —— `③ 提案依頼` に添えるのは「最も近い返答期限」だけである
+//    （件数は他社情報の示唆になりうる。`CLAUDE.md` §3.1 / `F-004 AC-4`）。`NavBadgeMark` の 🔴。
 // 6. **ブレークポイントは Tailwind の既定だけ**（`md:` のみ。`CLAUDE.md` §13.3）。
 //
 // 🔴 サイドバーと「その他」の一覧は**同じ項目表（`buildMainNav`）から描く**。2 本持つと、
@@ -32,7 +35,7 @@ export type AppShellProps = {
   /** スコープ表示（§3.2 の #1）。`partnerCompanyName` が非 null なら 2 段。 */
   readonly organizationName: string;
   readonly partnerCompanyName: string | null;
-  /** 「自分」= 氏名 + ロール名（§3.3「なぜこの操作ができないかの一次説明になる」）。 */
+  /** 「自分」= 氏名 + ロール名（§3.1「なぜこの操作ができないかの一次説明になる」）。 */
   readonly userName: string;
   readonly roleLabel: string;
   /** 上限インジケータ（🔴 80% 超のときだけ出す。金額を出さない）。 */
@@ -65,6 +68,35 @@ const NAV_NOTE_CLASSES = 'ml-2 text-xs text-slate-400';
 type NavVariant = 'sidebar' | 'more';
 
 /**
+ * 項目に添えるバッジ（`③ 提案依頼` の期限バッジ。docs/04 §3.1 取引先列）。
+ *
+ * 🔴 **件数を描かない。** 描くのは「最も近い返答期限」の残り時間だけであり、値の組み立ては
+ *    `lib/proposal-requests/remaining.ts` の `formatRemaining`（1 実装）が行っている
+ *    （件数は他社情報の示唆になりうる。`CLAUDE.md` §3.1 / `F-004 AC-4`）。
+ * 🔴 語（最も近い返答期限）は読み上げ専用で添える —— 画面では項目名の隣にあるので文脈で読めるが、
+ *    読み上げでは「残り 2 日」が何の残りなのかが分からない（スコープ表示の見出し語と同じ作法）。
+ * 🔴 アイコンを使わない（§7.5）。色 + 語で示す。
+ */
+function NavBadgeMark({
+  badge,
+  variant,
+}: {
+  readonly badge: NavItem['badge'];
+  readonly variant: NavVariant;
+}) {
+  if (badge === null) return null;
+  return (
+    <span
+      className="ml-2 rounded bg-amber-100 px-1 py-0.5 text-xs text-amber-900"
+      data-testid={variant === 'sidebar' ? 'app-nav-proposal-requests-due' : 'app-more-nav-proposal-requests-due'}
+    >
+      <span className="sr-only">{t(badge.labelKey)}</span>
+      {badge.text}
+    </span>
+  );
+}
+
+/**
  * 1 項目。🔴 `LINK` 以外は `<a>` を作らない（押せない導線を押せる形で見せない。404 を作らない）。
  */
 function NavEntry({ item, variant }: { readonly item: NavItem; readonly variant: NavVariant }) {
@@ -77,6 +109,7 @@ function NavEntry({ item, variant }: { readonly item: NavItem; readonly variant:
           data-testid={variant === 'sidebar' ? `app-nav-${item.id}` : `app-more-nav-${item.id}`}
         >
           {t(item.labelKey)}
+          <NavBadgeMark badge={item.badge} variant={variant} />
         </Link>
       </li>
     );
@@ -84,7 +117,7 @@ function NavEntry({ item, variant }: { readonly item: NavItem; readonly variant:
   if (item.reach.kind === 'UNAVAILABLE') {
     return (
       <li>
-        {/* 🔴 未実装・単独の URL を持たない画面。項目は出すが**リンクにしない**（docs/04 §3.3 の並びを欠けさせない）。 */}
+        {/* 🔴 未実装・単独の URL を持たない画面。項目は出すが**リンクにしない**（docs/04 §3.1 の並びを欠けさせない）。 */}
         <span
           className={NAV_DISABLED_CLASSES}
           aria-disabled="true"
@@ -130,7 +163,7 @@ function NavList({
 }
 
 /**
- * 上限インジケータ（docs/04 §3.3 / §3.4）。
+ * 上限インジケータ（docs/04 §3.1 / §3.4）。
  *
  * 🔴 `NONE` のときは**要素ごと描かない**（平常時の常時警告を作らない）。
  * 🔴 停止中は残量ではなく「停止中」と理由を出す。**件数・通数・GB だけで、金額は 1 つも出さない**
@@ -263,11 +296,13 @@ export function AppShell({
         {/* 🔴 `pb-24` はボトムタブ（`fixed`）に隠れる領域の逃がし。`md:` 以上では不要。 */}
         <div className="min-w-0 flex-1 pb-24 md:pb-0">
           {/* 🔴 パンくず / 画面タイトル / primary アクション（1 つ）の領域（§3.1 のレイアウト図）。
-              当面は**各画面が自前で描く**ため、外枠は場所だけを確保して中身を持たない ——
-              いま外枠に見出しを出すと、既存 20 画面すべてでタイトルが二重になる。
-              🔴 **消さないこと。`T-12-21`（画面間の動線。パンくず / 画面タイトル / 次の操作。未着手）が
-                 ここに中身を入れる。** 空だから不要と判断して外すと、次のタスクが「外枠のどこに
-                 置くか」から議論をやり直すことになる（場所の合意がこの 1 行である）。 */}
+              ✅ **T-12-21 で中身が入った**: 帯の実体は `_shell/page-heading.tsx` の `<PageHeading>` であり、
+              **各画面が自分の本文の先頭で描く**（直下の `children` の先頭に在る）。
+              🔴 **消さないこと。** レイアウトから帯を描けない理由は `page-heading.tsx` 冒頭にある
+                 （RSC ではページのデータがレイアウトへ流れず、並列ルートで受け取ると読み取りが
+                 二重になり、クライアントコンテキストにすると外枠が `'use client'` になる）。
+                 この要素は**帯が入る位置の印**であり、`app-shell.render.test.tsx` が
+                 「本文の手前」を固定している。 */}
           <div data-testid="app-page-heading-slot" />
           {children}
         </div>

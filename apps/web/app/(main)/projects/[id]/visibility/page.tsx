@@ -27,6 +27,8 @@ import { PROJECT_VIEW_VIA, readProjectDetail } from '../../../../../lib/projects
 import { listProjectVisibilityChoices } from '../../../../../lib/projects/visibility';
 import { projectPublishPreview, projectVisibilityScreenMessages } from './visibility-props';
 import { ProjectVisibilityScreen } from './visibility-screen';
+import { PageHeading } from '../../../_shell/page-heading';
+import { PROJECT_VISIBILITY_TRAIL } from '../../../../../lib/shell/page-trail';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -79,10 +81,9 @@ export default async function ProjectVisibilityPage({
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-8">
-      <p className="mb-1 text-sm text-slate-500">
-        {t('projects.breadcrumb.home')} / {t('projects.breadcrumb.list')} /{' '}
-        {t('projects.visibilitySettings.breadcrumb')}
-      </p>
+      {/* 🔴 T-12-21: 帯にタイトルを渡さない —— この画面のタイトルは案件名であり、
+          `project-visibility-name` が `h1` として持つ（タイトルを二重に描かない）。 */}
+      <PageHeading trail={PROJECT_VISIBILITY_TRAIL} />
       <ProjectVisibilityScreen
         projectId={view.id}
         projectName={view.name}

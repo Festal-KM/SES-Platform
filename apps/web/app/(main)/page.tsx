@@ -39,6 +39,8 @@ import {
   ScanQuarantineSection,
 } from './_home/home-sections';
 import { SendingDomainGuardBanner } from './_shared/sending-domain-guard-banner';
+import { PageHeading } from './_shell/page-heading';
+import { HOME_TRAIL } from '../../lib/shell/page-trail';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -93,7 +95,7 @@ export default async function HomePage({
           linkLabel: t('settings.sendingDomain.guardBanner.linkLabel'),
         }}
       />
-      <h1 className="mb-6 text-xl font-bold text-slate-900">{t('home.title')}</h1>
+      <PageHeading trail={HOME_TRAIL} title={t('home.title')} />
       {/* 🔴 T-05-08（`F-011` 処理④）: 隔離の周知は**宛先分類によらず必ず出す**。
           `sandbox` でメールがモックになるパートナー（分類 2）にとっては、ここが
           唯一の気づく場所である。ホスト / パートナーで同じ位置・同じ見せ方にする。 */}

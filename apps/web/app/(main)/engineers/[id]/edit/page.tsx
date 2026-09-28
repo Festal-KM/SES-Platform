@@ -7,7 +7,6 @@
 // 🔴 **閲覧を `AuditLog` に記録する**（`BR-27` / `F-008 AC-4`）。氏名・連絡先という PII を
 //    画面に出す以上、記録できないなら**内容を返さない**（記録は業務トランザクションの内側）。
 // 🔴 `VIEWER` は到達できない（docs/04 §S-007 権限差分）。
-import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { t } from '@ses/i18n';
@@ -25,6 +24,8 @@ import {
   skillLevelOptions,
   toEngineerFormValues,
 } from '../../_form/form-props';
+import { PageHeading } from '../../../_shell/page-heading';
+import { ENGINEER_EDIT_TRAIL } from '../../../../../lib/shell/page-trail';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -59,15 +60,9 @@ export default async function EditEngineerPage({
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-8">
-      {/* 🔴 T-05-09: 「人材」を `S-005`（一覧）へのリンクにした（戻り経路を文字だけにしない）。 */}
-      <p className="mb-1 text-sm text-slate-500">
-        {t('engineers.breadcrumb.home')} /{' '}
-        <Link className="underline" href="/engineers">
-          {t('engineers.breadcrumb.list')}
-        </Link>{' '}
-        / {t('engineers.breadcrumb.edit')}
-      </p>
-      <h1 className="mb-6 text-xl font-bold text-slate-900">{t('engineers.edit.title')}</h1>
+      {/* 🔴 T-05-09 / T-12-21: 「人材」は `S-005`（一覧）へのリンクである（戻り経路を文字だけにしない）。
+          パンくずの表は `lib/shell/page-trail.ts`（保存・キャンセルの戻り先と同じ値）。 */}
+      <PageHeading trail={ENGINEER_EDIT_TRAIL} title={t('engineers.edit.title')} />
       <EngineerForm
         mode="EDIT"
         engineerId={view.id}

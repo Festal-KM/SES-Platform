@@ -24,6 +24,8 @@ import { readSendingDomainSettings } from '../../../../lib/settings/sending-doma
 import { TENANT_LIFECYCLE_STATE_MESSAGE_KEYS } from '../../../../lib/tenants/labels';
 import { SendingDomainGuardBanner } from '../../_shared/sending-domain-guard-banner';
 import { OrganizationForm } from './organization-form';
+import { PageHeading } from '../../_shell/page-heading';
+import { ORG_SETTINGS_TRAIL } from '../../../../lib/shell/page-trail';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -54,7 +56,7 @@ export default async function OrganizationSettingsPage() {
           linkLabel: t('settings.sendingDomain.guardBanner.linkLabel'),
         }}
       />
-      <h1 className="mb-6 text-xl font-bold text-slate-900">{t('orgSettings.title')}</h1>
+      <PageHeading trail={ORG_SETTINGS_TRAIL} title={t('orgSettings.title')} />
       <OrganizationForm
         initial={settings}
         messages={{
@@ -95,6 +97,37 @@ export default async function OrganizationSettingsPage() {
         <h2 className="mb-2 text-base font-bold text-slate-900">{t('retention.summary.heading')}</h2>
         <Link className={SECONDARY_LINK_CLASSES} href="/settings/retention" data-testid="org-settings-retention-link">
           {t('retention.open')}
+        </Link>
+      </section>
+      {/* 🔴 T-12-21: docs/04 §S-035「関連画面: → `S-014` `S-036`〜`S-043`」のうち、
+          **Phase 1 に実在する画面だけ**への導線（`S-014` / `S-036` / `S-041`。`S-038` / `S-042` は上の 2 節）。
+          `S-037` / `S-039` / `S-040` / `S-043` は未実装なのでリンクを作らない（404 を作らない。
+          `lib/shell/nav.ts` と同じ規律）。ここに来られるのはホスト所属の `OWNER` / `ADMIN` だけなので、
+          導線側で追加のロール判定は要らない（本画面冒頭の redirect と同じ条件）。 */}
+      <section className="mt-8" data-testid="org-settings-partner-companies">
+        <h2 className="mb-2 text-base font-bold text-slate-900">{t('partnerCompanies.title')}</h2>
+        <Link
+          className={SECONDARY_LINK_CLASSES}
+          href="/settings/partner-companies"
+          data-testid="org-settings-partner-companies-link"
+        >
+          {t('partnerCompanies.open')}
+        </Link>
+      </section>
+      <section className="mt-8" data-testid="org-settings-sending-domains">
+        <h2 className="mb-2 text-base font-bold text-slate-900">{t('settings.sendingDomain.title')}</h2>
+        <Link
+          className={SECONDARY_LINK_CLASSES}
+          href="/settings/sending-domains"
+          data-testid="org-settings-sending-domains-link"
+        >
+          {t('settings.sendingDomain.open')}
+        </Link>
+      </section>
+      <section className="mt-8" data-testid="org-settings-audit-logs">
+        <h2 className="mb-2 text-base font-bold text-slate-900">{t('auditLogs.title')}</h2>
+        <Link className={SECONDARY_LINK_CLASSES} href="/audit-logs" data-testid="org-settings-audit-logs-link">
+          {t('auditLogs.open')}
         </Link>
       </section>
     </main>

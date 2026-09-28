@@ -14,7 +14,7 @@
 import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
 import type { Metadata } from 'next';
-import { SECONDARY_LINK_STACKED_CLASSES } from '@ses/ui';
+import { SECONDARY_LINK_CLASSES, SECONDARY_LINK_STACKED_CLASSES } from '@ses/ui';
 import { t } from '@ses/i18n';
 import { NotFoundError } from '../../../../../lib/api/errors';
 import { readRequestMeta, resolveTenantCtxOutcome } from '../../../../../lib/auth/session';
@@ -24,6 +24,8 @@ import {
 } from '../../../../../lib/skill-sheets/policy';
 import { readSkillSheetVersions } from '../../../../../lib/skill-sheets/service';
 import { SkillSheetScreen } from './skill-sheet-screen';
+import { PageHeading } from '../../../_shell/page-heading';
+import { SKILL_SHEET_TRAIL } from '../../../../../lib/shell/page-trail';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -53,11 +55,7 @@ export default async function SkillSheetsPage({
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-8">
-      <p className="mb-1 text-sm text-slate-500">
-        {t('skillSheets.breadcrumb.home')} / {t('skillSheets.breadcrumb.engineers')} /{' '}
-        {t('skillSheets.breadcrumb.current')}
-      </p>
-      <h1 className="mb-2 text-xl font-bold text-slate-900">{t('skillSheets.title')}</h1>
+      <PageHeading trail={SKILL_SHEET_TRAIL} title={t('skillSheets.title')} />
       {/* 🔴 誰のスキルシートかを取り違えないために氏名を出す（だからこの画面の閲覧は記録される）。 */}
       <p className="mb-4 text-sm text-slate-700" data-testid="skill-sheet-engineer-name">
         {view.engineer.displayName}
@@ -150,6 +148,14 @@ export default async function SkillSheetsPage({
           extractionComingSoon: t('skillSheets.extraction.comingSoon'),
         }}
       />
+      {/* 🔴 T-12-21: docs/04 §S-007 / §S-008「関連画面: → `S-009`」。辞書に無い語は
+          別名候補として起票される（`F-010`）ため、**何が起票されたかを確かめる経路**が要る。
+          `S-009` は取引先も閲覧できる（`F-010 AC-1`。起票のみ）ので、ロールで出し分けない。 */}
+      <p className="mt-6">
+        <Link className={SECONDARY_LINK_CLASSES} href="/skills" data-testid="skill-sheets-skill-dictionary-link">
+          {t('skillDictionary.open')}
+        </Link>
+      </p>
     </main>
   );
 }

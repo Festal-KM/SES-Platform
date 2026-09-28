@@ -61,6 +61,8 @@ import { readProposalSnapshotDiff } from '../../../../lib/proposals/snapshot-dif
 import { DetailSection } from './detail-section';
 import { EngineerProposalSections, type EngineerSnapshotDiffState } from './engineer-proposal-sections';
 import { engineerProposalSectionsMessages } from './proposal-sections-props';
+import { PageHeading } from '../../_shell/page-heading';
+import { ENGINEER_DETAIL_TRAIL } from '../../../../lib/shell/page-trail';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -137,14 +139,11 @@ export default async function EngineerDetailPage({
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-8">
-      {/* 🔴 T-05-09: 「人材」を `S-005`（一覧）へのリンクにした（docs/04 §S-006 関連画面
-          「← `S-005`」の戻り経路。パンくずが文字だけだと一覧へ戻れない）。 */}
-      <p className="mb-1 text-sm text-slate-500">
-        {t('engineers.breadcrumb.home')} /{' '}
-        <Link className="underline" href="/engineers" data-testid="engineer-detail-list-link">
-          {t('engineers.breadcrumb.list')}
-        </Link>
-      </p>
+      {/* 🔴 T-05-09 / T-12-21: 「人材」は `S-005`（一覧）へのリンクである（docs/04 §S-006 関連画面
+          「← `S-005`」の戻り経路。パンくずが文字だけだと一覧へ戻れない）。表は `lib/shell/page-trail.ts`。
+          🔴 **帯にタイトルを渡さない** —— この画面のタイトルは氏名であり、直下の
+             `engineer-detail-name` が `h1` として持つ（タイトルを二重に描かない）。 */}
+      <PageHeading trail={ENGINEER_DETAIL_TRAIL} linkTestId="engineer-detail-list-link" />
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <h1 className="text-xl font-bold text-slate-900" data-testid="engineer-detail-name">

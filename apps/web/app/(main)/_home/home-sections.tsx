@@ -71,7 +71,7 @@ export function HostHomeSections({
               ロールで隠さない —— `VIEWER` も取引先も一覧に到達してよく、見えるものは
               `engineers` の RLS（C3）が決める。**登録できないことと、見られないことは別である。** */}
           <EngineerLedgerLink testId="home-host-engineer-ledger" />
-          {/* 🔴 T-06-03: `S-010`（案件一覧）への導線（docs/04 §3.3「`S-003` → `S-010`」/
+          {/* 🔴 T-06-03: `S-010`（案件一覧）への導線（docs/04 §2「`S-003` → `S-010`」/
               §S-010 関連画面「← `S-003`」）。`S-005` と同じくロールで隠さない —— 見えるものは
               `projects` の RLS（C4）が決める。 */}
           <ProjectListLink testId="home-host-project-list" />
@@ -152,7 +152,7 @@ function EngineerLedgerLink({ testId }: { readonly testId: string }) {
 
 /**
  * 🔴 `S-010`（案件一覧）への導線。`S-003` / `S-004` の**両方**に同じ形で置く
- *    （docs/04 §3.3 の遷移図は `S-003` / `S-004` の両方から `S-010` へ向かう）。
+ *    （docs/04 §2 の遷移図は `S-003` / `S-004` の両方から `S-010` へ向かう）。
  * 🔴 **文言は同じでも母集団は違う**（ホスト = 自社案件 / 取引先 = 御社に公開された案件）。
  *    母集団の説明は `S-010` 側が 1 行で出す（docs/04 §3.2 項目 2）。ここで書き分けると、
  *    「取引先には案件が少ない」ことをホーム側でも示唆することになる。

@@ -28,6 +28,8 @@ import {
   projectRequirementKinds,
   projectStatusOptions,
 } from '../_form/form-props';
+import { PageHeading } from '../../_shell/page-heading';
+import { PROJECT_NEW_TRAIL } from '../../../../lib/shell/page-trail';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -46,12 +48,7 @@ export default async function NewProjectPage() {
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-8">
-      {/* ⚠️ 「案件」は T-06-03（`S-010`）までリンクにしない（存在しない画面へ送らない）。 */}
-      <p className="mb-1 text-sm text-slate-500">
-        {t('projects.breadcrumb.home')} / {t('projects.breadcrumb.list')} /{' '}
-        {t('projects.breadcrumb.new')}
-      </p>
-      <h1 className="mb-6 text-xl font-bold text-slate-900">{t('projects.new.title')}</h1>
+      <PageHeading trail={PROJECT_NEW_TRAIL} title={t('projects.new.title')} />
       <ProjectForm
         mode="CREATE"
         projectId={null}

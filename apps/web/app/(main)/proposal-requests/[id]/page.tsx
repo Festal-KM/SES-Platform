@@ -22,6 +22,8 @@ import { proposalRequestParamsSchema } from '../../../../lib/proposal-requests/s
 import { readPartnerProposalRequestDetail } from '../../../../lib/proposal-requests/service';
 import { ProposalRequestRespondScreen } from './proposal-request-respond-screen';
 import { proposalRequestRespondScreenMessages } from './respond-props';
+import { PageHeading } from '../../_shell/page-heading';
+import { PROPOSAL_REQUEST_RESPOND_TRAIL } from '../../../../lib/shell/page-trail';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -57,10 +59,7 @@ export default async function ProposalRequestRespondPage({
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-8">
-      <p className="mb-1 text-sm text-slate-500">
-        {t('proposalRequests.breadcrumb.home')} / {t('proposalRequests.respond.breadcrumb.list')}
-      </p>
-      <h1 className="mb-4 text-xl font-bold text-slate-900">{t('proposalRequests.respond.title')}</h1>
+      <PageHeading trail={PROPOSAL_REQUEST_RESPOND_TRAIL} title={t('proposalRequests.respond.title')} />
       <ProposalRequestRespondScreen
         rows={proposalRequestDetailRows(view)}
         canRespond={isProposalRequestResponderRole(ctx.role)}

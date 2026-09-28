@@ -13,10 +13,8 @@
 //    API ルート（#69 / #70）と**同じ 1 実装**を通るため、画面と API で数値がずれない。
 // 🔴 金額（USD / 円）の文言は `usage.billing.*` 以外に無い（`packages/i18n`。静的テスト #18 が走査する）。
 // 🔴 閲覧のみの画面であり、`CLOSING` でも残量は見られる（実行系ガードを掛けない。#69 と同じ）。
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
-import { SECONDARY_LINK_CLASSES } from '@ses/ui';
 import { t, type MessageKey } from '@ses/i18n';
 import { resolveTenantCtxOutcome } from '../../../../lib/auth/session';
 import { requestNow } from '../../../../lib/request/now';
@@ -34,6 +32,8 @@ import {
   type UsageBlockedNoticeMessages,
   type UsageScreenMessages,
 } from './usage-screen';
+import { PageHeading } from '../../_shell/page-heading';
+import { USAGE_TRAIL } from '../../../../lib/shell/page-trail';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -133,13 +133,7 @@ export default async function UsageSettingsPage() {
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-8">
-      <p className="mb-1 text-sm text-slate-500">
-        <Link className={SECONDARY_LINK_CLASSES} href="/" data-testid="usage-breadcrumb-home">
-          {t('usage.breadcrumb.home')}
-        </Link>{' '}
-        / {t('usage.breadcrumb.settings')}
-      </p>
-      <h1 className="mb-6 text-xl font-bold text-slate-900">{t('usage.title')}</h1>
+      <PageHeading trail={USAGE_TRAIL} title={t('usage.title')} linkTestId="usage-breadcrumb-home" />
       {body}
     </main>
   );

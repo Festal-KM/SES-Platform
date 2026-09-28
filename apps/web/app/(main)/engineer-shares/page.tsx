@@ -21,7 +21,9 @@
 //    足さない 2 キーの契約。docs/05 §6.4「#29 の改訂」）。
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { t } from '@ses/i18n';
+import { SECONDARY_LINK_CLASSES } from '@ses/ui';
 import { executionDenialMessageKey } from '../../../lib/api/guards';
 import { resolveTenantCtxOutcome } from '../../../lib/auth/session';
 import { isEngineerShareRole } from '../../../lib/engineer-shares/policy';
@@ -43,6 +45,9 @@ import {
   engineerShareRows,
   engineerShareScreenMessages,
 } from './share-props';
+import { PageHeading } from '../_shell/page-heading';
+import { ENGINEER_SHARE_TRAIL } from '../../../lib/shell/page-trail';
+import { PROPOSAL_REQUESTS_PATH } from '../../../lib/proposal-requests/list-rows';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -83,10 +88,7 @@ export default async function EngineerSharesPage({
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-8">
-      <p className="mb-1 text-sm text-slate-500">
-        {t('engineerShares.breadcrumb.home')} / {t('engineerShares.breadcrumb.current')}
-      </p>
-      <h1 className="mb-2 text-xl font-bold text-slate-900">{t('engineerShares.title')}</h1>
+      <PageHeading trail={ENGINEER_SHARE_TRAIL} title={t('engineerShares.title')} />
       <EngineerShareScreen
         rows={engineerShareRows(view.items, rowLabels)}
         nextCursor={view.nextCursor}
@@ -106,6 +108,19 @@ export default async function EngineerSharesPage({
         rowLabels={rowLabels}
         messages={engineerShareScreenMessages()}
       />
+      {/* 🔴 T-12-21: docs/04 §S-015「関連画面: → `S-017`（受け取った提案依頼）」。
+          共有可にした結果として届くのが提案依頼であり、**共有の設定から 1 手で受信箱へ行けないと
+          期限つきの依頼に気づけない**（`EXPIRED` で商談機会が消える。`F-018`）。
+          🔴 出すのは件数ではなくリンクだけである（件数は他社情報の示唆になりうる。`CLAUDE.md` §3.1）。 */}
+      <p className="mt-6">
+        <Link
+          className={SECONDARY_LINK_CLASSES}
+          href={PROPOSAL_REQUESTS_PATH}
+          data-testid="engineer-share-proposal-requests-link"
+        >
+          {t('proposalRequests.open')}
+        </Link>
+      </p>
     </main>
   );
 }

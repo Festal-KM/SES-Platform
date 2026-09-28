@@ -23,6 +23,8 @@ import { proposalParamsSchema } from '../../../../../lib/proposals/schemas';
 import { proposalSendingDomainFact } from '../../sending-domain';
 import { PROPOSAL_APPROVAL_AUDIT_PATH, PROPOSAL_APPROVAL_HOME_PATH, proposalApprovalScreenMessages } from './approval-props';
 import { ProposalApprovalScreen } from './proposal-approval-screen';
+import { PageHeading } from '../../../_shell/page-heading';
+import { proposalApproveTrail } from '../../../../../lib/shell/page-trail';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -61,10 +63,7 @@ export default async function ProposalApprovalPage({ params }: { readonly params
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
-      <p className="mb-1 text-sm text-slate-500">
-        {t('proposals.approval.breadcrumb.home')} / {t('proposals.approval.breadcrumb.current')}
-      </p>
-      <h1 className="mb-4 text-xl font-bold text-slate-900">{t('proposals.approval.title')}</h1>
+      <PageHeading trail={proposalApproveTrail(rows.id)} title={t('proposals.approval.title')} />
       <ProposalApprovalScreen
         proposalId={rows.id}
         rows={rows}

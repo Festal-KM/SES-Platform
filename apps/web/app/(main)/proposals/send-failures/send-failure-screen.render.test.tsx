@@ -14,8 +14,15 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
+import { proposalDetailHref } from '../../../../lib/proposals/hrefs';
 import type { SendFailureAttemptRowView, SendFailureRowView, SendFailureSummaryView } from '../../../../lib/proposals/send-failure-rows';
-import { SendFailureAttemptList, SendFailureScreen, type SendFailureScreenMessages, type SendFailureScreenProps } from './send-failure-screen';
+import {
+  SendFailureAttemptList,
+  SendFailureDetailLinks,
+  SendFailureScreen,
+  type SendFailureScreenMessages,
+  type SendFailureScreenProps,
+} from './send-failure-screen';
 
 // 🔴 `useRouter`（202 の後に `S-021` へ遷移する）は App Router の外では mount されていない（`S-021` の render テストと同じ措置）。
 vi.mock('next/navigation', () => ({
@@ -84,6 +91,7 @@ const messages: SendFailureScreenMessages = {
   detailUnitPrice: '提示単価',
   detailAttemptsTitle: '試行ごとの記録',
   detailOpenApproval: '提案の内容を確認する',
+  detailOpenDetail: '提案の詳細を見る',
   detailOpenSendingDomain: '送信元ドメインを設定する',
   resend: '再送する',
   resendConfirmTitle: 'この提案は先方に届いている可能性があります。',
@@ -194,5 +202,35 @@ describe('S-022 詳細パネル / 再送の確認ステップ: 試行ごとの�
 
   it('0 件のときは何も描かない', () => {
     expect(renderToStaticMarkup(createElement(SendFailureAttemptList, { title: '試行ごとの記録', attempts: [] }))).toBe('');
+  });
+});
+
+// 🔴 詳細パネルの遷移リンクも同じ理由（`SendFailureAttemptList` の直前の注記）で
+//    純粋なコンポーネント（`SendFailureDetailLinks`）に切り出してあるので、ここで直接描画して固定する。
+describe('S-022 詳細パネル: 遷移リンク（SendFailureDetailLinks）', () => {
+  it('`S-023`（提案の詳細と履歴）へのリンクが在り、href は proposalDetailHref と同じである', () => {
+    const html = renderToStaticMarkup(
+      createElement(SendFailureDetailLinks, {
+        approveHref: `/proposals/${FAILED_ID}/approve`,
+        detailHref: proposalDetailHref(FAILED_ID),
+        sendingDomainHref: null,
+        messages,
+      }),
+    );
+    expect(html).toContain('data-testid="send-failure-detail-open-detail"');
+    expect(html).toContain(`href="${proposalDetailHref(FAILED_ID)}"`);
+    expect(proposalDetailHref(FAILED_ID)).toBe(`/proposals/${FAILED_ID}`);
+  });
+
+  it('送信元ドメインの導線が無いとき（`sendingDomainHref: null`）は描かない', () => {
+    const html = renderToStaticMarkup(
+      createElement(SendFailureDetailLinks, {
+        approveHref: `/proposals/${FAILED_ID}/approve`,
+        detailHref: proposalDetailHref(FAILED_ID),
+        sendingDomainHref: null,
+        messages,
+      }),
+    );
+    expect(html).not.toContain('data-testid="send-failure-detail-open-sending-domain"');
   });
 });

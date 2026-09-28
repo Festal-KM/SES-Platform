@@ -53,6 +53,8 @@ import {
 import { PROJECT_FORM_CANCEL_HREF } from '../../_form/form-props';
 import { candidateScreenMessages } from './candidate-props';
 import { CandidateScreen } from './candidate-screen';
+import { PageHeading } from '../../../_shell/page-heading';
+import { CANDIDATE_TRAIL } from '../../../../../lib/shell/page-trail';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -162,11 +164,7 @@ export default async function ProjectCandidatesPage({
     //    横スクロール無しに並置するため（`docs/04` §S-016「デスクトップの列幅配分」/ `candidate-screen.tsx` 冒頭）。
     //    72rem では 1440 でもパネルに 3rem しか残らない。
     <main className="mx-auto max-w-[96rem] px-4 py-8">
-      <p className="mb-1 text-sm text-slate-500">
-        {t('projects.breadcrumb.home')} / {t('projects.breadcrumb.list')} /{' '}
-        {t('candidates.breadcrumb.current')}
-      </p>
-      <h1 className="mb-4 text-xl font-bold text-slate-900">{t('candidates.title')}</h1>
+      <PageHeading trail={CANDIDATE_TRAIL} title={t('candidates.title')} />
       <CandidateScreen
         projectId={view.project.id}
         projectName={view.project.name}

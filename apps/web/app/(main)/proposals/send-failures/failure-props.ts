@@ -28,6 +28,7 @@ export function sendFailureScreenMessages(): SendFailureScreenMessages {
     detailUnitPrice: t('sendFailures.detail.unitPrice'),
     detailAttemptsTitle: t('sendFailures.attempt.title'),
     detailOpenApproval: t('sendFailures.detail.openApproval'),
+    detailOpenDetail: t('sendFailures.detail.openDetail'),
     detailOpenSendingDomain: t('sendFailures.detail.openSendingDomain'),
     resend: t('sendFailures.resend'),
     resendConfirmTitle: t('sendFailures.resend.confirmTitle'),

@@ -25,6 +25,8 @@ import { readProjectDetail } from '../../../../lib/projects/service';
 import { PROJECT_FORM_CANCEL_HREF } from '../_form/form-props';
 import { projectDetailScreenMessages } from './detail-props';
 import { ProjectDetailScreen } from './project-detail-screen';
+import { PageHeading } from '../../_shell/page-heading';
+import { isPageActionRole, PROJECT_DETAIL_TRAIL } from '../../../../lib/shell/page-trail';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -85,9 +87,21 @@ export default async function ProjectDetailPage({
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-8">
-      <p className="mb-1 text-sm text-slate-500">
-        {t('projects.breadcrumb.home')} / {t('projects.breadcrumb.list')}
-      </p>
+      {/* 🔴 T-12-21: 帯にタイトルを渡さない —— この画面のタイトルは案件名であり、
+          `project-detail-name` が `h1` として持つ（タイトルを二重に描かない）。
+          🔴 primary は `docs/04` §S-011 の「候補を探す」（→ `S-016`）1 つである。
+             **`NAVIGATION` なのでロールで隠さない** —— 取引先の `S-016` は自社台帳のみ、
+             `VIEWER` も閲覧でき、絞り込みの本体は `#30` の RLS である（同§の 🔴）。 */}
+      <PageHeading
+        trail={PROJECT_DETAIL_TRAIL}
+        primaryAction={{
+          labelKey: 'projects.detail.candidates.open',
+          href: `/projects/${view.id}/candidates`,
+          kind: 'NAVIGATION',
+        }}
+        canAct={isPageActionRole(outcome.ctx.role)}
+        testId="project-detail-candidates"
+      />
       <ProjectDetailScreen
         view={view}
         requirementKinds={REQUIREMENT_KINDS}

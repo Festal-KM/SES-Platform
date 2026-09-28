@@ -22,6 +22,8 @@ import { readProposalEditor } from '../../../../../lib/proposals/service';
 import { proposalEditorMessages } from '../../_editor/editor-props';
 import { ProposalEditor } from '../../_editor/proposal-editor';
 import { proposalSendingDomainFact } from '../../sending-domain';
+import { PageHeading } from '../../../_shell/page-heading';
+import { PROPOSAL_EDIT_TRAIL } from '../../../../../lib/shell/page-trail';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -52,10 +54,7 @@ export default async function EditProposalPage({ params }: { readonly params: Pr
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
-      <p className="mb-1 text-sm text-slate-500">
-        {t('proposals.editor.breadcrumb.home')} / {t('proposals.editor.breadcrumb.edit')}
-      </p>
-      <h1 className="mb-4 text-xl font-bold text-slate-900">{t('proposals.editor.title.edit')}</h1>
+      <PageHeading trail={PROPOSAL_EDIT_TRAIL} title={t('proposals.editor.title.edit')} />
       <ProposalEditor
         mode="EDIT"
         proposalId={rows.id}

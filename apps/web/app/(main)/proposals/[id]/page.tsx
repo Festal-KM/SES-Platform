@@ -25,6 +25,8 @@ import { PROPOSALS_PATH } from '../../../../lib/proposals/hrefs';
 import { PROPOSAL_NOTE_MAX_LENGTH, proposalParamsSchema } from '../../../../lib/proposals/schemas';
 import { proposalDetailScreenMessages } from './detail-props';
 import { ProposalDetailScreen } from './proposal-detail-screen';
+import { PageHeading } from '../../_shell/page-heading';
+import { PROPOSAL_DETAIL_TRAIL } from '../../../../lib/shell/page-trail';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -57,10 +59,7 @@ export default async function ProposalDetailPage({ params }: { readonly params: 
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
-      <p className="mb-1 text-sm text-slate-500">
-        {t('proposals.detail.breadcrumb.home')} / {t('proposals.detail.breadcrumb.list')} / {t('proposals.detail.breadcrumb.current')}
-      </p>
-      <h1 className="mb-4 text-xl font-bold text-slate-900">{t('proposals.detail.title')}</h1>
+      <PageHeading trail={PROPOSAL_DETAIL_TRAIL} title={t('proposals.detail.title')} />
       <ProposalDetailScreen
         proposalId={rows.id}
         rows={rows}

@@ -21,6 +21,8 @@ import { sendFailureRows, sendFailureSummary } from '../../../../lib/proposals/s
 import { listProposalSendFailures } from '../../../../lib/proposals/send-failures';
 import { sendFailureScreenMessages } from './failure-props';
 import { SendFailureScreen } from './send-failure-screen';
+import { PageHeading } from '../../_shell/page-heading';
+import { SEND_FAILURE_TRAIL } from '../../../../lib/shell/page-trail';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -49,10 +51,7 @@ export default async function SendFailuresPage() {
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
-      <p className="mb-1 text-sm text-slate-500">
-        {t('sendFailures.breadcrumb.home')} / {t('sendFailures.breadcrumb.current')}
-      </p>
-      <h1 className="mb-4 text-xl font-bold text-slate-900">{t('sendFailures.title')}</h1>
+      <PageHeading trail={SEND_FAILURE_TRAIL} title={t('sendFailures.title')} />
       <SendFailureScreen
         rows={rows}
         summary={summary}

@@ -45,6 +45,7 @@ import {
   TableRow,
   Textarea,
 } from '@ses/ui';
+import { proposalDetailHref } from '../../../../lib/proposals/hrefs';
 import type { SendFailureAttemptRowView, SendFailureRowView, SendFailureSummaryView } from '../../../../lib/proposals/send-failure-rows';
 import { markSubmitRequested } from '../../../../lib/proposals/submit-intent';
 
@@ -69,6 +70,8 @@ export type SendFailureScreenMessages = {
   /** 試行ごとの記録の見出し（詳細パネル / 再送の確認ステップの両方で使う）。 */
   readonly detailAttemptsTitle: string;
   readonly detailOpenApproval: string;
+  /** `S-023`（提案の詳細と履歴）への導線（`docs/04` §S-022 関連画面「→ `S-023`」）。 */
+  readonly detailOpenDetail: string;
   readonly detailOpenSendingDomain: string;
   readonly resend: string;
   readonly resendConfirmTitle: string;
@@ -151,6 +154,39 @@ export function SendFailureAttemptList({
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+/**
+ * 🔴 詳細パネルの遷移リンク（承認画面 / `S-023` 提案の詳細 / 送信元ドメイン設定）。
+ *    `SendFailureAttemptList` と同じ理由（行の選択を経ずに直接描画してテストで固定できるように
+ *    切り出す。冒頭の注記）で分けている。
+ */
+export function SendFailureDetailLinks({
+  approveHref,
+  detailHref,
+  sendingDomainHref,
+  messages,
+}: {
+  readonly approveHref: string;
+  readonly detailHref: string;
+  readonly sendingDomainHref: string | null;
+  readonly messages: Pick<SendFailureScreenMessages, 'detailOpenApproval' | 'detailOpenDetail' | 'detailOpenSendingDomain'>;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-4">
+      <Link className={SECONDARY_LINK_CLASSES} href={approveHref} data-testid="send-failure-detail-open-approval">
+        {messages.detailOpenApproval}
+      </Link>
+      <Link className={SECONDARY_LINK_CLASSES} href={detailHref} data-testid="send-failure-detail-open-detail">
+        {messages.detailOpenDetail}
+      </Link>
+      {sendingDomainHref === null ? null : (
+        <Link className={SECONDARY_LINK_CLASSES} href={sendingDomainHref} data-testid="send-failure-detail-open-sending-domain">
+          {messages.detailOpenSendingDomain}
+        </Link>
+      )}
     </div>
   );
 }
@@ -355,16 +391,12 @@ export function SendFailureScreen({ rows, summary, canResend, denialMessage, app
                     ))}
                   </ul>
                 )}
-                <div className="flex flex-wrap items-center gap-4">
-                  <Link className={SECONDARY_LINK_CLASSES} href={selected.approveHref} data-testid="send-failure-detail-open-approval">
-                    {messages.detailOpenApproval}
-                  </Link>
-                  {selected.sendingDomainHref === null ? null : (
-                    <Link className={SECONDARY_LINK_CLASSES} href={selected.sendingDomainHref} data-testid="send-failure-detail-open-sending-domain">
-                      {messages.detailOpenSendingDomain}
-                    </Link>
-                  )}
-                </div>
+                <SendFailureDetailLinks
+                  approveHref={selected.approveHref}
+                  detailHref={proposalDetailHref(selected.id)}
+                  sendingDomainHref={selected.sendingDomainHref}
+                  messages={messages}
+                />
 
                 {/* 🔴 再送（ホストの 3 ロール × 実行可）。確認ステップは省略しない（`F-023 AC-2`）。 */}
                 {canExecute ? (

@@ -23,6 +23,8 @@ import { readProposalCreationTarget } from '../../../../lib/proposals/service';
 import { proposalEditorMessages, PROPOSAL_EDITOR_HOME_PATH } from '../_editor/editor-props';
 import { ProposalEditor } from '../_editor/proposal-editor';
 import { proposalSendingDomainFact } from '../sending-domain';
+import { PageHeading } from '../../_shell/page-heading';
+import { PROPOSAL_NEW_TRAIL } from '../../../../lib/shell/page-trail';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -74,10 +76,7 @@ export default async function NewProposalPage({
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
-      <p className="mb-1 text-sm text-slate-500">
-        {t('proposals.editor.breadcrumb.home')} / {t('proposals.editor.breadcrumb.new')}
-      </p>
-      <h1 className="mb-4 text-xl font-bold text-slate-900">{t('proposals.editor.title.new')}</h1>
+      <PageHeading trail={PROPOSAL_NEW_TRAIL} title={t('proposals.editor.title.new')} />
       <ProposalEditor
         mode="CREATE"
         proposalId={null}

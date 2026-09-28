@@ -1,8 +1,8 @@
 // apps/web/lib/shell/nav.test.ts
-// グローバルナビの項目表（docs/04 §3.3 / §3.4）の固定。
+// グローバルナビの項目表（docs/04 §3.1 / §3.4）の固定。
 //
 // 🔴 ここで固定するのは 3 つ:
-//    ① **ホストと取引先で項目集合が違う**（第二境界の表現。§3.2 / §3.3 の 2 列）
+//    ① **ホストと取引先で項目集合が違う**（第二境界の表現。§3.2 / §3.1 の 2 列）
 //    ② **404 を作らない** —— `LINK` の遷移先が `apps/web/app/(main)/**/page.tsx` に実在する
 //       （推測で書かれたリンクをリポジトリの実体と突き合わせる。**未実装の画面はリンクにしない**）
 //    ③ **業務ループ ①〜⑥ の順**が保たれ、取引先にも ⑤ ⑥ が出る（Issue #8 = 経路 5）
@@ -186,5 +186,48 @@ describe('モバイルのボトムタブ（docs/04 §3.4）', () => {
       'candidates',
       'chat',
     ]);
+  });
+});
+
+describe('🔴 ③ 提案依頼（`S-017`）の期限バッジ（docs/04 §3.1 取引先列。T-12-21）', () => {
+  function badgeOf(items: readonly NavItem[]): NavItem['badge'] {
+    return items.find((item) => item.id === 'proposal-requests')?.badge ?? null;
+  }
+
+  it('取引先所属で残り時間が渡されたときだけ付く', () => {
+    const withDue = buildMainNav({
+      audience: 'PARTNER',
+      role: 'PARTNER_SALES',
+      proposalRequestDueText: '残り 2 日',
+    });
+    expect(badgeOf(withDue)).toEqual({ labelKey: 'shell.nav.proposalRequests.due.label', text: '残り 2 日' });
+
+    const withoutDue = buildMainNav({ audience: 'PARTNER', role: 'PARTNER_SALES', proposalRequestDueText: null });
+    expect(badgeOf(withoutDue)).toBeNull();
+    // 渡されない（未指定）ときも付かない。
+    expect(badgeOf(buildMainNav({ audience: 'PARTNER', role: 'PARTNER_SALES' }))).toBeNull();
+  });
+
+  it('🔴 ホストには付かない（docs/04 §3.1 の表はバッジを取引先列にしか書いていない）', () => {
+    const host = buildMainNav({ audience: 'HOST', role: 'SALES', proposalRequestDueText: '残り 2 日' });
+    expect(badgeOf(host)).toBeNull();
+  });
+
+  it('🔴 バッジを持つのは `proposal-requests` の 1 項目だけ（他の項目に件数・期限を配らない）', () => {
+    const items = buildMainNav({
+      audience: 'PARTNER',
+      role: 'PARTNER_SALES',
+      proposalRequestDueText: '残り 2 日',
+    });
+    const withBadge = [...items, ...items.flatMap((item) => item.children)].filter((item) => item.badge !== null);
+    expect(withBadge.map((item) => item.id)).toEqual(['proposal-requests']);
+  });
+
+  it('🔴 バッジの文字列は渡された値そのままである（件数を組み立てない）', () => {
+    // 🔴 `formatRemaining` の結果をそのまま運ぶだけであり、このモジュールは数を数えない
+    //    （件数は他社情報の示唆になりうる。`CLAUDE.md` §3.1 / `F-004 AC-4`）。
+    const items = buildMainNav({ audience: 'PARTNER', role: 'PARTNER_SALES', proposalRequestDueText: '残り 1 時間' });
+    expect(badgeOf(items)?.text).toBe('残り 1 時間');
+    expect(badgeOf(items)?.text).not.toMatch(/\d+\s*件/);
   });
 });

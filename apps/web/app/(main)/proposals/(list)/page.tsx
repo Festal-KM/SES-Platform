@@ -27,6 +27,8 @@ import {
 import { proposalListQuerySchema } from '../../../../lib/proposals/schemas';
 import { proposalListScreenMessages } from './list-props';
 import { ProposalListScreen } from './proposal-list-screen';
+import { PageHeading } from '../../_shell/page-heading';
+import { PROPOSAL_LIST_TRAIL } from '../../../../lib/shell/page-trail';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -64,10 +66,7 @@ export default async function ProposalListPage({
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
-      <p className="mb-1 text-sm text-slate-500">
-        {t('proposals.list.breadcrumb.home')} / {t('proposals.list.breadcrumb.current')}
-      </p>
-      <h1 className="mb-4 text-xl font-bold text-slate-900">{t('proposals.list.title')}</h1>
+      <PageHeading trail={PROPOSAL_LIST_TRAIL} title={t('proposals.list.title')} />
       <ProposalListScreen
         audience={view.audience}
         rows={rows}
