@@ -1,6 +1,7 @@
 // apps/web/lib/auth/platform-session.ts
 // 🔴 管理平面のページ / Route Handler が認証に触れる**唯一の入口**（主平面の `session.ts` と対）。
 //    Auth.js の型・関数はここから外へ出さない（docs/03 §4.9 の回避策）。
+import { cache } from 'react';
 import { headers } from 'next/headers';
 import { AuthError, CredentialsSignin } from 'next-auth';
 import type { AuthenticatedPlatformCtx, PlatformOwnerCtx } from '@ses/db';
@@ -13,7 +14,7 @@ import { ensureDbConfigured } from '../db/bootstrap';
 import type { AuthAttemptMeta } from './credentials';
 import { classifyDeviceKind } from './device';
 import type { PlatformSessionClaims } from './platform-claims';
-import { buildPlatformCtx } from './platform-context';
+import { buildPlatformCtx, buildPlatformCtxResolution } from './platform-context';
 import { platformAuth, platformSignIn, platformSignOut, platformUpdate } from './platform';
 
 export type { PlatformSessionClaims } from './platform-claims';
@@ -77,7 +78,16 @@ export async function requirePlatformOwnerCtx(): Promise<PlatformOwnerCtx> {
  *    第 2 要素が未充足のため **ctx が存在しない**（= 管理平面のどの画面にも到達できない）。
  */
 export type PlatformCtxOutcome =
-  | { readonly status: 'AUTHENTICATED'; readonly ctx: AuthenticatedPlatformCtx }
+  | {
+      readonly status: 'AUTHENTICATED';
+      readonly ctx: AuthenticatedPlatformCtx;
+      /**
+       * 🔴 運営者自身の表示名（`docs/04` §3.3-2 の区別手段 #3 の材料）。
+       *    `buildPlatformCtxResolution` が**認証で既に読んだ行**から持ってくるため、
+       *    外枠がこれを描くのに追加の DB 読み取りは発生しない。
+       */
+      readonly displayName: string;
+    }
   | { readonly status: 'UNAUTHENTICATED' }
   | { readonly status: 'TWO_FACTOR_REQUIRED' };
 
@@ -85,21 +95,29 @@ export type PlatformCtxOutcome =
  * ページ（Server Component）が遷移を決めるための解決。
  * 🔴 例外に頼らず分岐したいのはページだけである。**API は `requirePlatformCtx` を使い、
  *    例外のまま §15 のエラー写像に載せる**（握り潰す経路を作らない）。
+ *
+ * 🔴 **`cache()` で 1 リクエスト 1 回に畳む**（T-12-20 の code-reviewer 指摘 #5）。
+ *    管理平面は外枠（`AdminConsoleFrame`）と各ページの**両方**がこれを呼ぶため、包まないと
+ *    `loadPlatformUserFacts` が毎リクエスト 2 回走る。
+ *    🔴 `cache()` の有効範囲は**そのリクエストのレンダリング**だけであり、リクエストを越えて
+ *    共有されない（React が要求ごとに用意するキャッシュに入る）。**モジュールスコープの変数に
+ *    ctx を持たせてはならない** —— それは「前のリクエストの運営者として見える」事故になる。
+ *    この不変条件は `apps/web/lib/auth/request-cache.test.ts` が固定する。
  */
-export async function resolvePlatformCtxOutcome(): Promise<PlatformCtxOutcome> {
+export const resolvePlatformCtxOutcome = cache(async (): Promise<PlatformCtxOutcome> => {
   ensureDbConfigured();
   const claims = await currentPlatformClaims();
   if (claims === null) return { status: 'UNAUTHENTICATED' };
   const meta = await readPlatformRequestMeta();
   try {
-    const ctx = await buildPlatformCtx(claims, { deviceKind: meta.deviceKind });
-    if (ctx === null) return { status: 'UNAUTHENTICATED' };
-    return { status: 'AUTHENTICATED', ctx };
+    const resolution = await buildPlatformCtxResolution(claims, { deviceKind: meta.deviceKind });
+    if (resolution === null) return { status: 'UNAUTHENTICATED' };
+    return { status: 'AUTHENTICATED', ctx: resolution.ctx, displayName: resolution.displayName };
   } catch (error) {
     if (error instanceof DbTwoFactorRequiredError) return { status: 'TWO_FACTOR_REQUIRED' };
     throw error;
   }
-}
+});
 
 /**
  * 🔴 このセッションで第 2 要素を検証したことを記録する（API-A1）。

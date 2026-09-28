@@ -19,14 +19,14 @@ import type { Metadata } from 'next';
 import { SECONDARY_LINK_CLASSES } from '@ses/ui';
 import { t, type MessageKey } from '@ses/i18n';
 import { resolveTenantCtxOutcome } from '../../../../lib/auth/session';
-// 🔴 4 単位の表示名の写像は `lib/usage/labels.ts` の 1 箇所（共通外枠の上限インジケータと共有する。T-1220）。
+import { requestNow } from '../../../../lib/request/now';
+// 🔴 4 単位の表示名の写像は `lib/usage/labels.ts` の 1 箇所（共通外枠の上限インジケータと共有する。T-12-20）。
 import { AI_UNIT_MESSAGE_KEYS } from '../../../../lib/usage/labels';
-import {
-  AI_STOPPED_FEATURES,
-  readBlockedNotice,
-  readUsageView,
-  type AiStoppedFeature,
-} from '../../../../lib/usage/view';
+// 🔴 T-12-20: 共通外枠のヘッダ（上限インジケータ）と**同じリクエストで同じ読み取り**になるため、
+//    畳んだ経路を通す。`ctx`（`cache()` 済みの `resolveTenantCtxOutcome`）と `now`（`requestNow()`）を
+//    そのまま渡すことがヒットの条件である（`lib/usage/request-scope.ts` の 🔴）。
+import { readBlockedNoticeOnce, readUsageViewOnce } from '../../../../lib/usage/request-scope';
+import { AI_STOPPED_FEATURES, type AiStoppedFeature } from '../../../../lib/usage/view';
 import {
   AI_UNIT_ORDER,
   UsageBlockedNoticeScreen,
@@ -122,13 +122,13 @@ export default async function UsageSettingsPage() {
   if (outcome.status === 'UNAUTHENTICATED') redirect('/signin');
   if (outcome.status === 'TWO_FACTOR_REQUIRED') redirect('/signin?step=2fa');
   const ctx = outcome.ctx;
-  const now = new Date();
+  const now = requestNow();
 
   const body =
     ctx.partnerCompanyId !== null ? (
-      <UsageBlockedNoticeScreen notice={await readBlockedNotice(ctx, now)} messages={partnerMessages()} />
+      <UsageBlockedNoticeScreen notice={await readBlockedNoticeOnce(ctx, now)} messages={partnerMessages()} />
     ) : (
-      <UsageScreen view={await readUsageView(ctx, now)} messages={hostMessages()} />
+      <UsageScreen view={await readUsageViewOnce(ctx, now)} messages={hostMessages()} />
     );
 
   return (

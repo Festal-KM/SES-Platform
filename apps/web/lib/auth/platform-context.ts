@@ -17,7 +17,23 @@ export type PlatformRequestMeta = {
 };
 
 /**
- * セッションの主張から運営者の認証コンテキストを作る。
+ * 認証コンテキストと、**管理平面の外枠が主体表示に使う自分の表示名**（`docs/04` §3.3-2 の
+ * 区別手段 #3 / `BR-44`）。
+ *
+ * 🔴 `AuthenticatedPlatformCtx` に表示名を足さない（`packages/db` の型はブランド付きで、
+ *    分離・認可に要る最小の情報だけを持つ）。一方で表示名は
+ *    **`loadPlatformUserFacts` が既に読んだ同じ 1 行**に在るため、ここで捨てずに返せば
+ *    **追加の DB 読み取りが 1 本も要らない**。外枠のために別経路で読み直すと、
+ *    運営者コンソールの全リクエストにトランザクションが 1 本増える。
+ * 🔴 出すのは**氏名とロールだけ**である（`CLAUDE.md` §10.5）。ここに `email` を足さない。
+ */
+export type PlatformCtxResolution = {
+  readonly ctx: AuthenticatedPlatformCtx;
+  readonly displayName: string;
+};
+
+/**
+ * セッションの主張から運営者の認証コンテキストと主体表示の材料を作る。
  *
  * `null` を返すのは次のいずれか（呼び出し側は 401 に写像する）:
  *   - `platform_users` の行が無い（削除済み / 別の主体）
@@ -26,13 +42,13 @@ export type PlatformRequestMeta = {
  * 🔴 2FA が未充足のときは `null` ではなく `TwoFactorRequiredError` が投げられる
  *    （`resolvePlatformCtx` の中。`F-055 AC-3`）。「未認証」と「第 2 要素が未充足」は別物である。
  */
-export async function buildPlatformCtx(
+export async function buildPlatformCtxResolution(
   claims: PlatformSessionClaims,
   meta: PlatformRequestMeta,
-): Promise<AuthenticatedPlatformCtx | null> {
+): Promise<PlatformCtxResolution | null> {
   const facts = await loadPlatformUserFacts({ platformUserId: claims.platformUserId });
   if (facts === null) return null;
-  return resolvePlatformCtx(
+  const ctx = await resolvePlatformCtx(
     {
       platformUserId: claims.platformUserId,
       platformRole: facts.role,
@@ -45,6 +61,19 @@ export async function buildPlatformCtx(
     },
     { deviceKind: meta.deviceKind },
   );
+  return { ctx, displayName: facts.displayName };
+}
+
+/**
+ * ctx だけが要る経路（`requirePlatformCtx`）のための薄い包み。
+ * 🔴 `buildPlatformCtxResolution` に委譲するだけで、判定は 1 実装のままである。
+ */
+export async function buildPlatformCtx(
+  claims: PlatformSessionClaims,
+  meta: PlatformRequestMeta,
+): Promise<AuthenticatedPlatformCtx | null> {
+  const resolution = await buildPlatformCtxResolution(claims, meta);
+  return resolution === null ? null : resolution.ctx;
 }
 
 /**

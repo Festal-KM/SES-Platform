@@ -18,6 +18,27 @@
 //
 // 🔴 `'use client'` を持ち込まない（`_shell/app-shell.tsx` の規律）。
 //
+// ============================================================================
+// 🔴 外枠が 1 リクエストに足すトランザクションの本数（2026-09-28 の実測値。是正後）
+// ============================================================================
+// 計測の方法: `tests/isolation/shell-header.test.ts` ⑤ が、**1 トランザクションを開く
+// `@ses/db` の関数**（`withTenant` / `readTenantUsageSnapshot` / `readAiStopNotice` /
+// `resolveTenantQuotas`。いずれも本体が `runInTenantTransaction` 1 回）の呼び出し回数を
+// 実 DB 上で数える。**テストが数を固定している**ので、読み取りを足すと落ちる。
+//
+//   | 所属 | 本数 | 内訳 |
+//   |---|---|---|
+//   | ホスト | **4** | `readShellIdentity` 1 + `readUsageView` 3（使用量 / AI 停止 / 上限の解決。`Promise.all`） |
+//   | 取引先 | **2** | `readShellIdentity` 1 + `readBlockedNotice` 1 |
+//
+// 🔴 **`resolveTenantCtxOutcome` はここに含まれない（0 本）。** ページも同じものを呼ぶため
+//    `cache()` でリクエスト内 1 回に畳んだ（`lib/auth/session.ts` の 🔴）。畳む前は主平面の
+//    全ページで `loadTenantMembership` が 2 回走り、外枠だけで 5 本増えていた。
+// 🔴 `/settings/usage` でも本数は上の表のままである。ページ側の `readUsageView` は
+//    `lib/usage/request-scope.ts` の畳み込みで外枠と共有される（畳む前は 3 本増えていた）。
+// 🔴 ここに読み取りを足すときは、上の表と `tests/isolation/shell-header.test.ts` を必ず更新する。
+//    外枠は**主平面の全ページ**に乗るので、1 本の追加が全画面の p95（`CLAUDE.md` §7）に効く。
+//
 // 🔴 **セグメント設定（`dynamic` / `runtime`）をここに書かない。** `dynamic = 'force-dynamic'` は
 //    ルートレイアウト（`app/layout.tsx`）が宣言済みで、Next はページから上へ全レイアウトの設定を
 //    畳み込む（`next/dist/build/get-static-info-including-layouts.js`）ため、主平面の全ページに
@@ -29,6 +50,7 @@
 import type { ReactNode } from 'react';
 import { t } from '@ses/i18n';
 import { resolveTenantCtxOutcome } from '../../lib/auth/session';
+import { requestNow } from '../../lib/request/now';
 import { readShellIdentity } from '../../lib/shell/identity';
 import { buildBottomTabs, buildMainNav, type NavAudience } from '../../lib/shell/nav';
 import { readShellUsageIndicator } from '../../lib/shell/usage-indicator';
@@ -44,8 +66,12 @@ export default async function MainPlaneLayout({ children }: { readonly children:
   const ctx = outcome.ctx;
   // 🔴 所属（`partnerCompanyId`）で決める。ロール名で代用しない（`memberships` の CHECK と 1 対 1）。
   const audience: NavAudience = ctx.partnerCompanyId === null ? 'HOST' : 'PARTNER';
-  const identity = await readShellIdentity(ctx);
-  const usage = await readShellUsageIndicator(ctx, new Date());
+  // 🔴 `now` は `requestNow()` から取る（`new Date()` を自前で作らない）。ページ側の読み取りと
+  //    同じインスタンスであることが、`lib/usage/request-scope.ts` の畳み込みがヒットする条件である。
+  const [identity, usage] = await Promise.all([
+    readShellIdentity(ctx),
+    readShellUsageIndicator(ctx, requestNow()),
+  ]);
 
   return (
     <AppShell

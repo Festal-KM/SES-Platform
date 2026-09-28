@@ -52,11 +52,23 @@ const MONEY_PATTERN = /[Uu]sd|USD|[Cc]ost|COST|[Pp]rice|PRICE|[Aa]mount|AMOUNT|\
 const GATE_PATTERN = /gate|inspector/i;
 
 const MAIN_API_DIR = path.join(webRoot, 'app', 'api', '(main)');
-/** ② の対象（`S-038` の実装）。 */
+/**
+ * ② の対象（`S-038` の実装 + 上限クォータの**第 2 の表示面**）。
+ *
+ * 🔴 **末尾に足すこと。** 下の it が `USAGE_DIRS[0]`（`lib/usage`）と `[1]` / `[2]`（ルートと画面）を
+ *    **添字で**参照している（`gate` の許容が「view」と「screen」で違うため、この 3 つは順序が意味を持つ）。
+ *    先頭・中間に挿入すると、`gate` の検査が別のディレクトリに掛かって静かに緩む。
+ * 🔴 `lib/shell` / `app/(main)/_shell` を足した理由（T-12-20）: 共通外枠のヘッダが**上限インジケータ**を
+ *    出すようになり、残量（件数 / 通数 / GB）が `S-038` 以外にも現れる面を持った。`F-027 AC-6` は
+ *    **主平面の全画面・全応答**に対する要求なので、新しい表示面を走査に載せないと、そこだけが
+ *    「金額を出さない」の担保から外れる。
+ */
 const USAGE_DIRS = [
   path.join(webRoot, 'lib', 'usage'),
   path.join(webRoot, 'app', 'api', '(main)', 'usage'),
   path.join(webRoot, 'app', '(main)', 'settings', 'usage'),
+  path.join(webRoot, 'lib', 'shell'),
+  path.join(webRoot, 'app', '(main)', '_shell'),
 ];
 const USAGE_VIEW_FILE = path.join(webRoot, 'lib', 'usage', 'view.ts');
 const I18N_FILE = path.join(repoRoot, 'packages', 'i18n', 'src', 'index.ts');
@@ -482,7 +494,7 @@ describe('🔴 §17.2 #18 ① 主平面の応答型の閉包に金額の名前�
 });
 
 describe('🔴 §17.2 #18 ② S-038 の実装（lib/usage / api usage / settings/usage）', () => {
-  it('対照: 3 ディレクトリに実装が実在する', () => {
+  it('対照: 5 ディレクトリに実装が実在する（S-038 + 共通外枠の上限インジケータ）', () => {
     expect(usageFiles.map(toRepoRelative)).toEqual(
       expect.arrayContaining([
         'apps/web/lib/usage/view.ts',
@@ -491,6 +503,9 @@ describe('🔴 §17.2 #18 ② S-038 の実装（lib/usage / api usage / settings
         'apps/web/app/api/(main)/usage/blocked-notice/route.ts',
         'apps/web/app/(main)/settings/usage/page.tsx',
         'apps/web/app/(main)/settings/usage/usage-screen.tsx',
+        // 🔴 T-12-20 で足した第 2 の表示面（走査が空振りしていないことの対照）。
+        'apps/web/lib/shell/usage-indicator.ts',
+        'apps/web/app/(main)/_shell/app-shell.tsx',
       ]),
     );
   });

@@ -217,6 +217,12 @@ export function AppShell({
             data-testid="app-header-scope"
             data-scope={partnerCompanyName === null ? 'HOST' : 'PARTNER'}
           >
+            {/* 🔴 画面では組織名だけが見えていれば足りるが、読み上げでは「この文字列が何なのか」が
+                文脈から分からない（ヘッダに並ぶ他の語と区別できない）。見出し語を読み上げ専用で添える。
+                🔴 `app-header-scope-organization` の**外**に置く —— 中に入れると同要素の文字列が
+                「所属組織 + 組織名」になり、組織名そのものを照合している E2E / 描画テストが
+                意味を変えられてしまう。 */}
+            <span className="sr-only">{t('shell.header.scope.organizationLabel')}</span>
             <p className="text-xs text-slate-500" data-testid="app-header-scope-organization">
               {organizationName}
             </p>
@@ -258,7 +264,10 @@ export function AppShell({
         <div className="min-w-0 flex-1 pb-24 md:pb-0">
           {/* 🔴 パンくず / 画面タイトル / primary アクション（1 つ）の領域（§3.1 のレイアウト図）。
               当面は**各画面が自前で描く**ため、外枠は場所だけを確保して中身を持たない ——
-              いま外枠に見出しを出すと、既存 20 画面すべてでタイトルが二重になる。 */}
+              いま外枠に見出しを出すと、既存 20 画面すべてでタイトルが二重になる。
+              🔴 **消さないこと。`T-12-21`（画面間の動線。パンくず / 画面タイトル / 次の操作。未着手）が
+                 ここに中身を入れる。** 空だから不要と判断して外すと、次のタスクが「外枠のどこに
+                 置くか」から議論をやり直すことになる（場所の合意がこの 1 行である）。 */}
           <div data-testid="app-page-heading-slot" />
           {children}
         </div>

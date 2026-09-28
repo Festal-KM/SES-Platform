@@ -22,12 +22,10 @@ import type { MessageKey } from '@ses/i18n';
 import { formatThousands } from '../format/number';
 import { formatGigabytes } from '../usage/format';
 import { AI_UNIT_MESSAGE_KEYS } from '../usage/labels';
-import {
-  AI_UNIT_KEYS,
-  readBlockedNotice,
-  readUsageView,
-  type UsageView,
-} from '../usage/view';
+// 🔴 T-12-20: 読み取りは**リクエスト内 1 回**に畳んだ経路を通す（`lib/usage/request-scope.ts`）。
+//    `/settings/usage` ではヘッダと本文が同じ結果を共有する（同じ `ctx` / 同じ `now` を渡すこと）。
+import { readBlockedNoticeOnce, readUsageViewOnce } from '../usage/request-scope';
+import { AI_UNIT_KEYS, type UsageView } from '../usage/view';
 
 /** 接近している 1 つの単位（ヘッダは**最も切迫した 1 つ**だけを出す。ヘッダに表を置かない）。 */
 export type ShellUsageMetric = {
@@ -119,8 +117,8 @@ export async function readShellUsageIndicator(
   now: Date,
 ): Promise<ShellUsageIndicator> {
   if (ctx.partnerCompanyId !== null) {
-    const notice = await readBlockedNotice(ctx, now);
+    const notice = await readBlockedNoticeOnce(ctx, now);
     return notice.blocked ? { kind: 'STOPPED' } : { kind: 'NONE' };
   }
-  return selectShellUsageIndicator(await readUsageView(ctx, now));
+  return selectShellUsageIndicator(await readUsageViewOnce(ctx, now));
 }

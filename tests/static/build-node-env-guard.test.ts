@@ -18,8 +18,16 @@
 //    ビルドのフェーズ名を列挙する向きにすると、Next がフェーズ名を変えた日にガードが黙って
 //    効かなくなる。許す側に置けば、最悪でも「dev で落ちる」= すぐ気づける方向に倒れる。
 //    このテストは**未知のフェーズ名で落ちること**を明示的に確かめる。
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import nextConfigForPhase, { assertProductionNodeEnv } from '../../apps/web/next.config.js';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(here, '..', '..');
+const NEXT_CONFIG = path.join(repoRoot, 'apps', 'web', 'next.config.ts');
 
 /**
  * 🔴 Next の `next/constants` が定める値（`PHASE_PRODUCTION_BUILD` / `PHASE_EXPORT` /
@@ -80,6 +88,60 @@ describe('assertProductionNodeEnv — NODE_ENV=development のままビルドさ
     expect(() => {
       assertProductionNodeEnv(PHASE_PRODUCTION_BUILD, 'test');
     }).toThrow(/NODE_ENV=test/);
+  });
+});
+
+describe('🔴 next.config.ts の process.env 直読みは NODE_ENV の 1 箇所だけ', () => {
+  /**
+   * 🔴 本リポジトリの規律は「`process.env` を直接読まない」（環境変数は `packages/config` の Zod
+   *    スキーマ経由。`CLAUDE.md` §3.5）であり、例外は**起動時 DI の 2 箇所**
+   *    （`apps/web/instrumentation.ts` / `apps/web/lib/db/bootstrap.ts`）に限られてきた。
+   *    `next.config.ts` はビルドの入口（`DATABASE_URL` 等がまだ揃っていない時点）で判定しなければ
+   *    ならないため 3 つ目の例外だが、**例外の射程は `NODE_ENV` 1 つである**。
+   *
+   * 🔴 ここが緩むと、`APP_ENV` や接続先をこの設定ファイルで読んで分岐する経路が生まれる ——
+   *    それは `CLAUDE.md` §11.1 が名指しで禁じている「リクエストごと / 設定ごとの `if` 分岐」の
+   *    最上流版であり、`packages/config` の検証を素通りする。**AST で数を固定する。**
+   */
+  it('参照は `process.env.NODE_ENV` の 1 箇所（コメント中の言及は数えない）', () => {
+    const source = ts.createSourceFile(
+      NEXT_CONFIG,
+      readFileSync(NEXT_CONFIG, 'utf8'),
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TS,
+    );
+    const reads: string[] = [];
+    const visit = (node: ts.Node): void => {
+      if (
+        ts.isPropertyAccessExpression(node) &&
+        ts.isIdentifier(node.expression) &&
+        node.expression.text === 'process'
+      ) {
+        // `process.env` そのもの（`process.env` を丸ごと渡す形）も拾う。
+        reads.push(node.name.text === 'env' ? 'process.env' : `process.${node.name.text}`);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+    // `process.env.NODE_ENV` は `process.env` への 1 アクセスとして現れる。
+    expect(reads).toEqual(['process.env']);
+    // その 1 箇所が読むのは `NODE_ENV` である（別の変数名にすり替わっていない）。
+    const accesses: string[] = [];
+    const visitEnv = (node: ts.Node): void => {
+      if (
+        ts.isPropertyAccessExpression(node) &&
+        ts.isPropertyAccessExpression(node.expression) &&
+        ts.isIdentifier(node.expression.expression) &&
+        node.expression.expression.text === 'process' &&
+        node.expression.name.text === 'env'
+      ) {
+        accesses.push(node.name.text);
+      }
+      ts.forEachChild(node, visitEnv);
+    };
+    visitEnv(source);
+    expect(accesses).toEqual(['NODE_ENV']);
   });
 });
 

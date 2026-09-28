@@ -2,6 +2,7 @@
 // 🔴 ページ / Route Handler が認証に触れる**唯一の入口**（docs/03 §4.9 の回避策）。
 //    Auth.js の型・関数はここから外へ出さない。Auth.js v5（beta）の API 変更の影響を
 //    このファイルに閉じる。
+import { cache } from 'react';
 import { headers } from 'next/headers';
 import { AuthError, CredentialsSignin } from 'next-auth';
 import type { AuthenticatedTenantCtx } from '@ses/db';
@@ -68,8 +69,26 @@ export type TenantCtxOutcome =
  * ページ（Server Component）が遷移を決めるための解決。
  * 🔴 例外に頼らず分岐したいのはページだけである。**API は `requireTenantCtx` を使い、
  *    例外のまま §15 のエラー写像に載せる**（握り潰す経路を作らない）。
+ *
+ * ============================================================================
+ * 🔴 `cache()` で 1 リクエスト 1 回に畳む（T-12-20 の code-reviewer 指摘 #5）
+ * ============================================================================
+ * 共通外枠（`app/(main)/layout.tsx`）が入ったことで、**主平面の全ページで本関数が 2 回**
+ * （レイアウトとページ）呼ばれるようになった。1 回あたり `loadTenantMembership` の
+ * トランザクション 1 本であり、`CLAUDE.md` §7 の p95 目標（複合検索 1 秒 / 候補 3 秒）に
+ * そのまま乗る。**ここで包むと呼び出し側を 1 行も変えずに 1 回になる。**
+ *
+ * 🔴 **`cache()` の有効範囲はそのリクエストのレンダリングだけ**である（React がリクエストごとに
+ *    用意するキャッシュに入り、リクエストを越えて共有されない）。**モジュールスコープの変数に
+ *    ctx を持たせる実装に置き換えてはならない** —— それは「前のリクエストの利用者として
+ *    見える」＝ §7 の「テナント越境の情報漏洩 0 件」を破る事故そのものである。
+ *    この不変条件は `apps/web/lib/auth/request-cache.test.ts` が固定する。
+ * 🔴 ロール・テナント状態を毎リクエスト DB から確定する規律は変わらない（`tenant-context.ts` の
+ *    🔴）。畳んだのは**同一リクエスト内の重複**だけであり、リクエストをまたいだ再確定は残る。
+ * 🔴 `requireTenantCtx`（API の入口）は包まない。Route Handler は 1 リクエストで 1 回しか
+ *    呼ばず、包むと「同じ関数が経路によって畳まれる／畳まれない」差が生まれるだけである。
  */
-export async function resolveTenantCtxOutcome(): Promise<TenantCtxOutcome> {
+export const resolveTenantCtxOutcome = cache(async (): Promise<TenantCtxOutcome> => {
   ensureDbConfigured();
   const claims = await currentClaims();
   if (claims === null) return { status: 'UNAUTHENTICATED' };
@@ -82,7 +101,7 @@ export async function resolveTenantCtxOutcome(): Promise<TenantCtxOutcome> {
     if (error instanceof DbTwoFactorRequiredError) return { status: 'TWO_FACTOR_REQUIRED' };
     throw error;
   }
-}
+});
 
 /**
  * 🔴 このセッションで第 2 要素を検証したことを記録する（docs/05 §6.3 #2）。

@@ -40,7 +40,7 @@ export default async function AdminHomePage() {
   const demoSeedAvailable = isSeedableAppEnv(currentAppEnv());
 
   return (
-    // 🔴 T-1220: 共通ナビ（横並びタブ 5 グループ。docs/04 §3.3-2）。ホームはどのタブにも属さない
+    // 🔴 T-12-20: 共通ナビ（横並びタブ 5 グループ。docs/04 §3.3-2）。ホームはどのタブにも属さない
     //    ため `current={null}`。既存の各導線（`admin-home-*-link`）は**残す** —— ホームは
     //    「件数 + 次にどこを見るか」を出す画面であり、ナビとは役割が違う。
     <AdminConsoleFrame current={null}>

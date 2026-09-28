@@ -72,6 +72,15 @@ describe('ヘッダ（docs/04 §3.3 の 5 要素）', () => {
     expect(html).toContain(`${PARTNER_COMPANY}${t('shell.header.scope.ownCompanySuffix')}`);
   });
 
+  it('スコープ表示に読み上げ専用の見出し語が付く（組織名そのものの文字列は変えない）', () => {
+    const html = render();
+    expect(html).toContain(`<span class="sr-only">${t('shell.header.scope.organizationLabel')}</span>`);
+    // 🔴 見出し語は `app-header-scope-organization` の**外**に在る（同要素の文字列は組織名だけ）。
+    expect(html).toContain(
+      `<p class="text-xs text-slate-500" data-testid="app-header-scope-organization">${HOST_ORG}</p>`,
+    );
+  });
+
   it('自分は氏名 + ロール名で出る（なぜこの操作ができないかの一次説明）', () => {
     expect(render()).toContain(`山田太郎（${t('members.role.SALES')}）`);
   });
