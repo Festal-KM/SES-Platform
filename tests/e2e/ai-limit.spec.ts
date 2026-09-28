@@ -191,7 +191,10 @@ test.describe('E2E #23 (b) 後半: AI の上限到達の表示（S-038 の残量
       await expect(session.page.getByTestId('proposal-approval-notice')).toContainText(t('proposals.approval.state.gateRunning'));
       // 🔴 Issue #70 既定（`U-19`）: HELD のブロックに `S-038` への導線を出さない。金額も無い。
       await expect(session.page.getByTestId('proposal-approval-gate').locator('a[href="/settings/usage"]')).toHaveCount(0);
-      await expect(session.page.locator('a[href="/settings/usage"]')).toHaveCount(0);
+      // 🔴 走査は **S-021 の画面（承認）配下**に限る。`docs/04` §3.3 のヘッダ（上限インジケータ = 「クリックで `S-038`」）と
+      //    サイドバーの設定子項目は**外枠の恒常的な導線**であり、`U-19` が禁じた「HELD のブロックから `S-038` へ誘導する」
+      //    ものではない（Issue #70 の射程は上の 193 行のスコープ付き検査が正しく表している）。判定は緩めていない。
+      await expect(session.page.getByTestId('proposal-approval').locator('a[href="/settings/usage"]')).toHaveCount(0);
       expect(await session.page.content()).not.toMatch(/修正して再実行|無視して|一括承認|一括送信/);
       expectNoMarkers('S-021（HELD）の可視テキスト', await visibleText(session), [...USD_MARKERS]);
       await expectNoHorizontalOverflow('S-021 提案の承認（HELD）', session.page);

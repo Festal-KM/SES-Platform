@@ -19,12 +19,13 @@ import type { Metadata } from 'next';
 import { SECONDARY_LINK_CLASSES } from '@ses/ui';
 import { t, type MessageKey } from '@ses/i18n';
 import { resolveTenantCtxOutcome } from '../../../../lib/auth/session';
+// 🔴 4 単位の表示名の写像は `lib/usage/labels.ts` の 1 箇所（共通外枠の上限インジケータと共有する。T-1220）。
+import { AI_UNIT_MESSAGE_KEYS } from '../../../../lib/usage/labels';
 import {
   AI_STOPPED_FEATURES,
   readBlockedNotice,
   readUsageView,
   type AiStoppedFeature,
-  type AiUnitKey,
 } from '../../../../lib/usage/view';
 import {
   AI_UNIT_ORDER,
@@ -38,14 +39,6 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = { title: t('usage.title') };
-
-/** 🔴 4 単位の表示名。`Record<AiUnitKey, MessageKey>` なので単位が増えれば写像の書き忘れがコンパイルで落ちる。`gate-inspector` は無い。 */
-const AI_UNIT_MESSAGE_KEYS = {
-  sheetParse: 'usage.aiUnit.sheetParse',
-  matchRationale: 'usage.aiUnit.matchRationale',
-  proposalDraft: 'usage.aiUnit.proposalDraft',
-  renewalSummary: 'usage.aiUnit.renewalSummary',
-} as const satisfies Readonly<Record<AiUnitKey, MessageKey>>;
 
 /** 🔴 止まった機能の表示名（停止理由としてだけ現れる。残量には出さない。`F-027 AC-7`）。 */
 const STOPPED_FEATURE_MESSAGE_KEYS = {

@@ -23,6 +23,7 @@ import { t } from '@ses/i18n';
 import { ADMIN_MONITORING_HREF, ADMIN_USAGE_HREF } from '../../lib/admin-monitoring/hrefs';
 import { readPlatformRequestMeta, resolvePlatformCtxOutcome } from '../../lib/auth/platform-session';
 import { currentAppEnv } from '../../lib/db/bootstrap';
+import { AdminConsoleFrame } from './_components/console-frame';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -39,63 +40,68 @@ export default async function AdminHomePage() {
   const demoSeedAvailable = isSeedableAppEnv(currentAppEnv());
 
   return (
-    <main className="mx-auto max-w-3xl px-4 py-8">
-      <h1 className="mb-6 text-xl font-bold text-slate-900">{t('admin.home.title')}</h1>
-      {/* 🔴 運営者に見せてよいのは件数・状態・エラーだけである（CLAUDE.md §10.5）。
-          テナント名・エンジニア名・案件名などの「内容」と、それらへの導線を置かない。 */}
-      <dl className="mb-6 flex items-baseline gap-3">
-        <dt className="text-sm text-slate-700">{t('admin.home.tenantCount.label')}</dt>
-        <dd className="text-2xl font-bold text-slate-900">{summary.tenantCount}</dd>
-      </dl>
-      {/* 🔴 A-002（テナント一覧。T-03-09）への導線。件数・状態・日時以外は出さない。 */}
-      <p className="mb-2 text-sm">
-        <Link className="text-slate-700 underline-offset-2 hover:underline" href="/admin/tenants">
-          {t('admin.tenants.title')}
-        </Link>
-      </p>
-      {/* A-006（監査ログ横断検索。T-11-03）への導線。開いただけでは検索を実行しない（期間を入れて検索する）。 */}
-      <p className="mb-2 text-sm">
-        <Link
-          className="text-slate-700 underline-offset-2 hover:underline"
-          href="/admin/audit-logs"
-          data-testid="admin-home-audit-logs-link"
-        >
-          {t('admin.auditLogs.title')}
-        </Link>
-      </p>
-      {/* A-004（利用量・クォータ管理。T-11-02）への導線。件数と金額（USD）の両方を出す運営者向けの画面（F-057）。 */}
-      <p className="mb-2 text-sm">
-        <Link
-          className="text-slate-700 underline-offset-2 hover:underline"
-          href={ADMIN_USAGE_HREF}
-          data-testid="admin-home-usage-link"
-        >
-          {t('admin.home.usage.link')}
-        </Link>
-      </p>
-      {/* A-005（運用監視。T-11-04）への導線。件数・状態・エラー種別・日時だけを出す画面（F-059 AC-3）。 */}
-      <p className="mb-2 text-sm">
-        <Link
-          className="text-slate-700 underline-offset-2 hover:underline"
-          href={ADMIN_MONITORING_HREF}
-          data-testid="admin-home-monitoring-link"
-        >
-          {t('admin.home.monitoring.link')}
-        </Link>
-      </p>
-      {/* A-012（デモ環境の合成データ管理。T-10-06）への導線。🔴 demo / development 以外では**導線そのものが存在しない**（F-053 AC-6）。 */}
-      {demoSeedAvailable ? (
+    // 🔴 T-1220: 共通ナビ（横並びタブ 5 グループ。docs/04 §3.3-2）。ホームはどのタブにも属さない
+    //    ため `current={null}`。既存の各導線（`admin-home-*-link`）は**残す** —— ホームは
+    //    「件数 + 次にどこを見るか」を出す画面であり、ナビとは役割が違う。
+    <AdminConsoleFrame current={null}>
+      <main className="mx-auto max-w-3xl px-4 py-8">
+        <h1 className="mb-6 text-xl font-bold text-slate-900">{t('admin.home.title')}</h1>
+        {/* 🔴 運営者に見せてよいのは件数・状態・エラーだけである（CLAUDE.md §10.5）。
+            テナント名・エンジニア名・案件名などの「内容」と、それらへの導線を置かない。 */}
+        <dl className="mb-6 flex items-baseline gap-3">
+          <dt className="text-sm text-slate-700">{t('admin.home.tenantCount.label')}</dt>
+          <dd className="text-2xl font-bold text-slate-900">{summary.tenantCount}</dd>
+        </dl>
+        {/* 🔴 A-002（テナント一覧。T-03-09）への導線。件数・状態・日時以外は出さない。 */}
+        <p className="mb-2 text-sm">
+          <Link className="text-slate-700 underline-offset-2 hover:underline" href="/admin/tenants">
+            {t('admin.tenants.title')}
+          </Link>
+        </p>
+        {/* A-006（監査ログ横断検索。T-11-03）への導線。開いただけでは検索を実行しない（期間を入れて検索する）。 */}
         <p className="mb-2 text-sm">
           <Link
             className="text-slate-700 underline-offset-2 hover:underline"
-            href="/admin/demo"
-            data-testid="admin-home-demo-link"
+            href="/admin/audit-logs"
+            data-testid="admin-home-audit-logs-link"
           >
-            {t('admin.home.demo.link')}
+            {t('admin.auditLogs.title')}
           </Link>
         </p>
-      ) : null}
-      <p className="mt-4 text-sm text-slate-700">{t('admin.home.placeholder')}</p>
-    </main>
+        {/* A-004（利用量・クォータ管理。T-11-02）への導線。件数と金額（USD）の両方を出す運営者向けの画面（F-057）。 */}
+        <p className="mb-2 text-sm">
+          <Link
+            className="text-slate-700 underline-offset-2 hover:underline"
+            href={ADMIN_USAGE_HREF}
+            data-testid="admin-home-usage-link"
+          >
+            {t('admin.home.usage.link')}
+          </Link>
+        </p>
+        {/* A-005（運用監視。T-11-04）への導線。件数・状態・エラー種別・日時だけを出す画面（F-059 AC-3）。 */}
+        <p className="mb-2 text-sm">
+          <Link
+            className="text-slate-700 underline-offset-2 hover:underline"
+            href={ADMIN_MONITORING_HREF}
+            data-testid="admin-home-monitoring-link"
+          >
+            {t('admin.home.monitoring.link')}
+          </Link>
+        </p>
+        {/* A-012（デモ環境の合成データ管理。T-10-06）への導線。🔴 demo / development 以外では**導線そのものが存在しない**（F-053 AC-6）。 */}
+        {demoSeedAvailable ? (
+          <p className="mb-2 text-sm">
+            <Link
+              className="text-slate-700 underline-offset-2 hover:underline"
+              href="/admin/demo"
+              data-testid="admin-home-demo-link"
+            >
+              {t('admin.home.demo.link')}
+            </Link>
+          </p>
+        ) : null}
+        <p className="mt-4 text-sm text-slate-700">{t('admin.home.placeholder')}</p>
+      </main>
+    </AdminConsoleFrame>
   );
 }

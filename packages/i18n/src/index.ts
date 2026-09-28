@@ -41,6 +41,78 @@ const ja = {
     'サンドボックス環境 — 取引先への提案・面談調整・契約書・署名依頼、および取引先の担当者宛のメール（招待を含む）は送信されません。取引先の招待は、画面に表示されるリンクをお渡しください。自社メンバー宛の招待・期限のお知らせは、お使いのアドレスに実際に届きます。それ以外は本番と同じ動作です',
   'env.staging': '検証環境 — 外部サービスは各社の検証用エンドポイントに接続しています',
 
+  // ==========================================================================
+  // 共通外枠（ヘッダ + グローバルナビ + モバイルのボトムタブ + 管理平面の横並びタブ）
+  // docs/04 §3.3 / §3.4 / §7.5。T-1220。
+  // ==========================================================================
+  // 🔴 ナビの項目は**すべて**ここから引く（画面にベタ書きしない。CLAUDE.md §3.5 / BR-32）。
+  // 🔴 並びは `CLAUDE.md` §1.3 の業務ループ ①〜⑥ の順であり、ステージ番号を接頭辞に持つ
+  //    （docs/04 §3.3「ナビの並びがループの順序と一致していること自体が、利用者にループを教える」）。
+  //    **番号を外さない・順序を変えない。**
+  // 🔴 ホストと取引先で語が違う項目は別キーにする（同じ画面でも母集団が違う。docs/04 §3.2）。
+  //    語が同じもの（③ 提案 / ③ 提案依頼 / ④ 面談・結果 / チャット / タスク）は 1 キーを共有する。
+  'shell.nav.label': 'グローバルナビ',
+  'shell.nav.home': 'ホーム',
+  'shell.nav.host.engineers': '① 人材',
+  'shell.nav.host.projects': '① 案件',
+  'shell.nav.host.candidates': '② 候補を探す',
+  'shell.nav.proposals': '③ 提案',
+  'shell.nav.proposalRequests': '③ 提案依頼',
+  'shell.nav.interviews': '④ 面談・結果',
+  'shell.nav.host.contracts': '⑤ 契約',
+  'shell.nav.host.assignments': '⑥ 稼働',
+  'shell.nav.host.reports': '実績',
+  'shell.nav.host.settings': '設定',
+  'shell.nav.partner.engineers': '① 自社の人材',
+  'shell.nav.partner.projects': '① 公開された案件',
+  'shell.nav.partner.candidates': '② 自社の候補を探す',
+  // 🔴 経路 5（Issue #8）: 取引先にも ⑤ ⑥ を出す。遷移先はホストの S-025 / S-029 ではなく
+  //    開示項目を BR-66 に固定した専用画面（S-045 / S-044）であり、どちらも未実装である。
+  'shell.nav.partner.contracts': '⑤ 自社が当事者の契約',
+  'shell.nav.partner.assignments': '⑥ 自社エンジニアの稼働',
+  'shell.nav.partner.shares': '共有の設定',
+  'shell.nav.partner.reports': '実績（自社分）',
+  'shell.nav.partner.settings': '設定（自社アカウントのみ）',
+  'shell.nav.chat': 'チャット',
+  'shell.nav.tasks': 'タスク',
+  // 🔴 未実装の画面は**リンクにせず**注記を添える（404 を作らない）。
+  //    「案件から / 提案から開きます」は、実在はするが単独の URL を持たない画面（S-016 / S-024）。
+  'shell.nav.note.phase2': 'Phase 2',
+  'shell.nav.note.phase3': 'Phase 3',
+  'shell.nav.note.fromProject': '案件から開きます',
+  'shell.nav.note.fromProposal': '提案から開きます',
+  // --- ヘッダ（docs/04 §3.3 の 5 要素）---
+  // 🔴 スコープ表示はパートナー所属で「組織名 ＞ 自社名」の 2 段（第二境界の常時表現。§3.2）。
+  'shell.header.scope.organizationLabel': '所属組織',
+  'shell.header.scope.ownCompanySuffix': '（御社）',
+  'shell.header.notifications': '通知',
+  // 🔴 上限インジケータは 80% 超のときだけ出す。件数で出し、金額は出さない（F-027 AC-6 / BR-24）。
+  'shell.header.usage.nearing': '上限に接近',
+  'shell.header.usage.reached': '上限に到達',
+  // 🔴 AI が 1 日のコスト上限で停止しているときは、残量ではなく「停止中」と理由を出す。
+  'shell.header.usage.stopped': 'AI 機能 停止中',
+  // --- モバイルのボトムタブ（docs/04 §3.4）---
+  'shell.tab.label': 'メニュー',
+  'shell.tab.home': 'ホーム',
+  'shell.tab.proposals': '提案',
+  'shell.tab.candidates': '候補',
+  'shell.tab.chat': 'チャット',
+  'shell.tab.more': 'その他',
+  'shell.tab.more.heading': 'すべての項目',
+  // --- 管理平面の横並びタブ 5 グループ（docs/04 §3.3-2）---
+  // 🔴 主平面の左サイドバー（縦積み・①〜⑥）と置き場所も並び方も変える（平面の取り違えを防ぐ手段）。
+  'shell.admin.nav.label': '運営者コンソールのナビ',
+  'shell.admin.tab.monitoring': '監視',
+  'shell.admin.tab.tenants': 'テナント',
+  'shell.admin.tab.contracts': '契約',
+  'shell.admin.tab.records': '記録',
+  'shell.admin.tab.operations': '運用',
+  'shell.admin.item.costDashboard': '原価・粗利ダッシュボード',
+  'shell.admin.item.sandboxTenants': 'サンドボックステナントの管理',
+  'shell.admin.item.impersonationStart': '代理閲覧の開始',
+  'shell.admin.item.impersonationRecords': '代理閲覧の記録',
+  'shell.admin.item.announcements': 'お知らせ・機能フラグ',
+
   // --- S-001 サインイン（docs/04 §S-001 / F-003）---
   'auth.signin.title': 'サインイン',
   'auth.signin.email.label': 'メールアドレス',
@@ -1027,6 +1099,8 @@ const ja = {
   'error.proposal.noteForbidden':
     'この提案へのメモは、提案の作成者と自社の営業担当・管理者のみが残せます。',
   'error.internal': '処理に失敗しました。時間をおいて再度お試しください。',
+  // 🔴 `global-error`（ルートレイアウトごと落ちたときの受け皿）の再試行。語は `docs/04` §7.8 の統一に従う。
+  'error.retry': 'もう一度試す',
 
   // --- 品質ゲート（F-020 / F-027 AC-5。docs/05 §11.7 の GateResultView）---
   // 🔴 T-07-08: `GateHeldView.heldReasonKey` が指すキー（#40 の応答に載る）。

@@ -115,6 +115,9 @@ describe('カタログの構造', () => {
           'admin.demo.seed.retry',
           'engineerShares.loadMore.retry',
           'engineers.list.error.retry',
+          // `global-error`（ルートレイアウトごと落ちたときの受け皿）の再試行。画面に紐づかない
+          // ため `error.*` 群に置く（`error.internal` と同じ群）。語は他の再試行と同一である。
+          'error.retry',
           'projects.list.error.retry',
           'proposals.list.error.retry',
           'retention.export.retry',

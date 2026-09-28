@@ -1,0 +1,61 @@
+'use client';
+// apps/web/app/global-error.tsx
+// ルートレイアウトごと落ちたときの最後の受け皿（Next.js の `global-error`）。
+//
+// 🔴 **なぜ必要か**: Next.js のビルトインの `global-error` は英語の固定文言
+//    （"This page couldn’t load" / "Reload"）である。ここは利用者が実際に見る画面なので、
+//    文言は `packages/i18n` から引かなければならない（`CLAUDE.md` §3.5 / `BR-32`）。
+//
+// 🔴 **ビルドの失敗とは無関係である（2026-09-28 に実測して確定）。** このファイルは一時期
+//    「`next build` が `/_global-error` の事前生成で落ちるのを避けるため」と説明されていたが、
+//    それは誤りだった。`/_global-error` が事前生成するのは Next 自身の
+//    `next/dist/client/components/builtin/app-error.js`（サーバコンポーネント）であり、
+//    **この `global-error.tsx` は事前生成の対象に入っていない**。したがって置いても外しても
+//    ビルドの成否は変わらない。真の原因は `NODE_ENV=development` のままビルドしていたことで、
+//    対処は `apps/web/next.config.ts` の `assertProductionNodeEnv`（同ファイルの 🔴 に詳述）。
+//    **この画面をビルド回避のために触らないこと。**
+//
+// 🔴 `global-error` はルートレイアウトを**置き換える**ため、`<html>` と `<body>` を自分で描く
+//    （Next.js の仕様）。したがってここにはルートレイアウトの環境バナーが無い —— この画面に
+//    到達している時点でアプリの外枠が落ちており、バナーの有無より「操作をやり直せること」が先である。
+//
+// 🔴 文言は `packages/i18n` から引く（`CLAUDE.md` §3.5 / `BR-32`）。ベタ書きしない。
+//    `t()` は純粋関数（辞書の参照）なのでクライアント側でも同じ値を返す。
+//
+// 🔴 `error` の中身を画面に出さない。スタックトレースやメッセージには内部の識別子・SQL・
+//    接続情報が入りうる（`CLAUDE.md` §3.5 / §10.5 の「内容を出さない」と同じ規律）。
+//    出すのは `digest`（Sentry・サーバログと突き合わせるための不透明な識別子）だけである。
+import { t } from '@ses/i18n';
+
+export default function GlobalError({
+  error,
+  reset,
+}: {
+  readonly error: Error & { readonly digest?: string };
+  readonly reset: () => void;
+}) {
+  return (
+    <html lang="ja">
+      <body className="min-h-dvh bg-white">
+        <main className="mx-auto max-w-lg px-4 py-16" data-testid="global-error">
+          <h1 className="mb-4 text-xl font-bold text-slate-900">{t('error.internal')}</h1>
+          <button
+            type="button"
+            className="inline-flex min-h-11 items-center justify-center rounded-md bg-slate-900 px-4 text-sm font-medium text-white transition-colors hover:bg-slate-700"
+            data-testid="global-error-retry"
+            onClick={() => {
+              reset();
+            }}
+          >
+            {t('error.retry')}
+          </button>
+          {error.digest === undefined ? null : (
+            <p className="mt-6 text-xs text-slate-500" data-testid="global-error-digest">
+              {error.digest}
+            </p>
+          )}
+        </main>
+      </body>
+    </html>
+  );
+}
