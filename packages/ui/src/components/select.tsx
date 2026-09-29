@@ -31,10 +31,26 @@
 // | `[&_svg]:*` `data-[placeholder]:*` `*:data-[slot=select-value]:*` | 取り込まない | アイコンと Radix の内部スロットが前提。ネイティブでは対応物が無い |
 // | `appearance-none` | **付けない** | 付けると UA の▼が消え、代わりのアイコン（`lucide-react`）が要る。**選択肢であることが見えなくなるほうが害が大きい** |
 // | `data-[size=default]:h-9` / `data-[size=sm]:h-8` | `h-10`（`CONTROL_FIELD_SIZE_CLASSES`） | 高さは `Input` / `Button` と揃える |
-// | `border-input` / `ring-ring` / `shadow-xs` / `disabled:*` / `aria-invalid:*` / `dark:*` | 実色へ置換 / 取り込まない | `CONTROL_BASE_CLASSES` を `Input` と共有しているため、判断は `../lib/control-classes.ts` の表に同じ（upstream に無い `disabled:pointer-events-none` が入る点も同じ） |
+// | `border-input` / `ring-ring` / `shadow-xs` / `disabled:*` / `aria-invalid:*` / `dark:*` | トークンへ置換 / 取り込まない | `CONTROL_BASE_CLASSES` を `Input` と共有しているため、判断は `../lib/control-classes.ts` の表に同じ（T-22-01 で実色 → semantic トークン、影と `disabled:pointer-events-none` は撤去） |
+import { cva } from 'class-variance-authority';
 import type { ComponentProps } from 'react';
 import { cn } from '../lib/cn.js';
 import { CONTROL_BASE_CLASSES, CONTROL_FIELD_SIZE_CLASSES } from '../lib/control-classes.js';
+
+/**
+ * 1 行のプルダウンと複数行のリストボックスは**高さの決まり方が違う**。
+ * 🔴 呼び出し側に選ばせない（下の `Select` が `multiple` / `size` から一意に決める）。
+ */
+const selectVariants = cva(CONTROL_BASE_CLASSES, {
+  variants: {
+    shape: {
+      field: CONTROL_FIELD_SIZE_CLASSES,
+      // リストボックスは行数（`size`）が高さを決める。上下の余白だけ揃える。
+      listbox: 'py-1',
+    },
+  },
+  defaultVariants: { shape: 'field' },
+});
 
 export type SelectProps = ComponentProps<'select'>;
 
@@ -54,12 +70,7 @@ export function Select({ className, multiple, size, ...props }: SelectProps) {
     <select
       multiple={multiple}
       size={size}
-      className={cn(
-        CONTROL_BASE_CLASSES,
-        // リストボックスは行数（`size`）が高さを決める。上下の余白だけ揃える。
-        isListBox ? 'py-1' : CONTROL_FIELD_SIZE_CLASSES,
-        className,
-      )}
+      className={cn(selectVariants({ shape: isListBox ? 'listbox' : 'field' }), className)}
       {...props}
     />
   );

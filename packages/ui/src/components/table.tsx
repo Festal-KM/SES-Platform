@@ -21,22 +21,38 @@
 // | 🔴 器の `relative w-full overflow-x-auto` | 同じ | **落とさない。** 横溢れを器の内側に閉じ込める唯一の仕掛けであり、モバイル E2E の `expectNoHorizontalOverflow`（`document.documentElement` の横溢れを見る）が守っているものそのもの（`docs/sprints/SP-21` T-21-05 ③） |
 // | `w-full caption-bottom text-sm` | 同じ | そのまま |
 // | （`border-collapse` は書かない） | 同じ | Tailwind の preflight が `table { border-collapse: collapse }` を当てる（実測: `tailwindcss@4.3.3/preflight.css:171`）。既存画面の `border-collapse` は冗長 |
-// | 🔴 `border-b` / `border-t`（色を書かない） | `border-b border-slate-200` のように**色を必ず書く** | **v4 の border 既定色は `currentColor` である。** upstream は自分の `globals.css` で `* { @apply border-border }` を当てているが、本リポジトリにその宣言も `--color-border` も無い（実測: `theme.css` に 0 件）。**そのまま写すと文字色の濃い罫線が出る** |
-// | `bg-muted/50` `bg-muted` `text-foreground` `text-muted-foreground` | `bg-slate-50` `bg-slate-100` `text-slate-500` | テーマ変数が無いため実色に置換（既存画面の `border-b border-slate-200 text-left text-slate-500` に合わせる） |
+// | 🔴 `border-b` / `border-t`（色を書かない） | `border-b border-border` のように**色を必ず書く** | **v4 の border 既定色は `currentColor` である。** upstream は自分の `globals.css` で `* { @apply border-border }` を当てている。T-21-02 の時点では本リポジトリに `--color-border` が無く（実測: `theme.css` に 0 件）実色 `border-slate-200` に置いた。**T-22-01 で `docs/04` §7.9 の `--color-border`（= `slate-200`。値は同一）を宣言したので、上流と同じ語に戻った。** 色を書かなければ文字色の濃い罫線が出る点は変わらない |
+// | `bg-muted/50` `bg-muted` `text-muted-foreground` | `bg-bg-subtle`（`slate-50`）/ `bg-brand-bg`（下の selected）/ `text-fg-muted`（`slate-500`） | T-21-02 は実色に置換していた（既存画面の `border-b border-slate-200 text-left text-slate-500` に合わせた）。T-22-01 で §7.9 の semantic トークンに置き換えた（**値は同一**。🔴 component 層は `@theme` ではなく `../lib/state-classes.ts` のクラス定数に置く。`docs/05` §2.3.2） |
+// | `text-sm`（`Table`） | **`text-cell`**（13px） | 🔴 T-22-01。`docs/04` §7.3 の「テーブルのセル = 13px / 400」。**50 行 × 8 列を 1 画面に収めるための 1px**（§7.1）であり、**12px 以下にしない**（日本語の漢字が潰れる）。列ヘッダは `TableHead` が 12px に落とす |
+// | `font-medium`（`TableHead`） | 同じ + **`text-xs`**（12px） | §7.3 の「テーブルの列ヘッダ = 12px / 500 / `--color-fg-muted`」。🔴 **大文字化・字間拡大をしない**（英語 SaaS の作法。日本語に大文字は無く、字間を開けると単語の切れ目が読めなくなる） |
 // | 🔴 `whitespace-nowrap`（`TableHead` / `TableCell`） | 同じ。ただし `whitespace` prop で切り替えられる | **落とさない**（移行前の `.ses-table th, td { white-space: nowrap }` と同じ）。ただし折り返したいセル（スキル一覧など）が実在するため、**`className` ではなく prop で選ばせる** —— `cn()` は競合解決をせず `whitespace-normal` を渡しても勝てないため（`../lib/cn.ts` の規律 2） |
 // | `p-2`（`TableCell`） / `px-2`（`TableHead`） | `px-3 py-2` | 既存 20 画面の実装（`px-3 py-2` が 57 + 32 箇所）に合わせる。**間隔だけの差** |
 // | `[&:has([role=checkbox])]:pr-0` `[&>[role=checkbox]]:translate-y-[2px]` | 同じ | `S-013`（公開範囲）が表の中にチェックボックスを持つ |
 // | `has-aria-expanded:bg-muted/50` | 取り込まない | 展開できる行を持つ表が無い。効かない語を増やさない |
-// | `data-[state=selected]:bg-muted` | `data-[state=selected]:bg-slate-100` | フックは残す（行選択を作るときに使う） |
+// | `data-[state=selected]:bg-muted` | **`SELECTED_ROW_CLASSES`**（背景 `--color-brand-bg` + 文字 `--color-brand` + 左端 2px） | フックは残す（行選択を作るときに使う。`docs/04` §5-13 のとおり **`DataTable` の行選択は既定で無効**であり、現に使っている画面は無い）。T-22-01 で §7.10 の selected に揃えた —— 🔴 **hover と selected を同じ見た目にしない**（`--color-bg-subtle` と `--color-brand-bg` で分ける。選択は maintained、hover は transient） |
 // | `"use client"`（upstream の table.tsx に付いている） | **付けない** | 🔴 状態もイベントハンドラも持たない器である。付けると、これを描いていた**サーバコンポーネントの画面が丸ごとクライアントバンドルへ移る**（T-21-02 の受け入れ基準 ③） |
 // | `data-slot="table-*"` | 取り込まない | 理由は `../lib/control-classes.ts` の表に同じ |
+//
+// ============================================================================
+// 🔴 `docs/04` §7.10 の 8 状態（`TableRow`。T-22-01）
+// ============================================================================
+// | 状態 | ここでの実装 |
+// |---|---|
+// | default | 下 border `--color-border` |
+// | hover | 背景 `--color-row-hover-bg`（transient）。**文字色は変えない**。⚠️ Tailwind は `hover:` を `@media (hover: hover)` に包むので、触端末では hover が残らない |
+// | active | **持たない**。行は押下の対象ではなく（行クリックの遷移はリンクが担う）、押下中の面を作ると「ボタンの行」に見える |
+// | selected | `SELECTED_ROW_CLASSES`（背景 `--color-brand-bg` + 文字 `--color-brand` + 左端 2px。maintained） |
+// | focus-visible | **行自身は持たない**（`<tr>` はフォーカスを受けない）。セルの中のリンク・ボタンが各自のリングを持つ |
+// | disabled / loading / error | **持たない**。行の読み込み中は `Skeleton`（Phase 3b）、エラーは領域のメッセージ（§7.10） |
 //
 // ⚠️ **移行時の注意**: 既存画面は `<div className="overflow-x-auto"><table …>` と自前で器を
 //    書いている（14 箇所）。`Table` は器を内蔵するので、**移行では外側の器を残さず外す**
 //    （二重にしても壊れないが、`overflow-x-auto` が 2 段になると横スクロールの起点が
 //    どちらか読めなくなる）。器へクラスを渡したいときは `containerClassName` を使う。
+import { cva } from 'class-variance-authority';
 import type { ComponentProps } from 'react';
 import { cn } from '../lib/cn.js';
+import { SELECTED_ROW_CLASSES, TRANSITION_CLASSES } from '../lib/state-classes.js';
 
 /** セルの折り返し。🔴 `className` では基底の `whitespace-nowrap` に勝てないため prop にする。 */
 export type TableCellWhitespace = 'nowrap' | 'normal';
@@ -107,6 +123,30 @@ const ALIGN_CLASSES: Readonly<Record<TableCellAlign, string>> = {
 const CHECKBOX_CELL_CLASSES =
   '[&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]';
 
+/**
+ * 列ヘッダ（`<th>`）。
+ * 🔴 サイズ・色・weight は `docs/04` §7.3 の「テーブルの列ヘッダ」（12px / 500 /
+ *    `--color-fg-muted`）であり、**画面側で上書きしない**。
+ */
+const tableHeadVariants = cva('h-10 text-left text-xs font-medium text-fg-muted', {
+  variants: {
+    whitespace: WHITESPACE_CLASSES,
+    align: ALIGN_CLASSES,
+    padding: HEAD_PADDING_CLASSES,
+  },
+  defaultVariants: { whitespace: 'nowrap', align: 'inherit', padding: 'normal' },
+});
+
+/** セル（`<td>`）。文字サイズは `Table`（`--text-cell`）から継ぐ（セルごとに変えない）。 */
+const tableCellVariants = cva('', {
+  variants: {
+    whitespace: WHITESPACE_CLASSES,
+    align: ALIGN_CLASSES,
+    padding: CELL_PADDING_CLASSES,
+  },
+  defaultVariants: { whitespace: 'nowrap', align: 'inherit', padding: 'normal' },
+});
+
 export type TableProps = ComponentProps<'table'> & {
   /**
    * 器（`overflow-x-auto` の `<div>`）に足すクラス。
@@ -119,7 +159,7 @@ export type TableProps = ComponentProps<'table'> & {
 export function Table({ className, containerClassName, ...props }: TableProps) {
   return (
     <div className={cn('relative w-full overflow-x-auto', containerClassName)}>
-      <table className={cn('w-full caption-bottom text-sm', className)} {...props} />
+      <table className={cn('w-full caption-bottom text-cell', className)} {...props} />
     </div>
   );
 }
@@ -136,7 +176,7 @@ export function TableFooter({ className, ...props }: ComponentProps<'tfoot'>) {
   return (
     <tfoot
       className={cn(
-        'border-t border-slate-200 bg-slate-50 font-medium [&>tr]:last:border-b-0',
+        'border-t border-border bg-bg-subtle font-medium [&>tr]:last:border-b-0',
         className,
       )}
       {...props}
@@ -160,7 +200,11 @@ export function TableRow({ className, align = 'inherit', ...props }: TableRowPro
   return (
     <tr
       className={cn(
-        'border-b border-slate-200 transition-colors hover:bg-slate-50 data-[state=selected]:bg-slate-100',
+        'border-b border-border',
+        TRANSITION_CLASSES,
+        // hover（transient）: 背景を 1 段暗く。🔴 **文字色は変えない**（docs/04 §7.10）。
+        'hover:bg-bg-subtle',
+        SELECTED_ROW_CLASSES,
         ALIGN_CLASSES[align],
         className,
       )}
@@ -187,10 +231,7 @@ export function TableHead({
   return (
     <th
       className={cn(
-        'h-10 text-left font-medium text-slate-500',
-        HEAD_PADDING_CLASSES[padding],
-        WHITESPACE_CLASSES[whitespace],
-        ALIGN_CLASSES[align],
+        tableHeadVariants({ whitespace, align, padding }),
         CHECKBOX_CELL_CLASSES,
         className,
       )}
@@ -217,9 +258,7 @@ export function TableCell({
   return (
     <td
       className={cn(
-        CELL_PADDING_CLASSES[padding],
-        WHITESPACE_CLASSES[whitespace],
-        ALIGN_CLASSES[align],
+        tableCellVariants({ whitespace, align, padding }),
         CHECKBOX_CELL_CLASSES,
         className,
       )}
@@ -229,5 +268,5 @@ export function TableCell({
 }
 
 export function TableCaption({ className, ...props }: ComponentProps<'caption'>) {
-  return <caption className={cn('mt-4 text-sm text-slate-500', className)} {...props} />;
+  return <caption className={cn('mt-4 text-xs text-fg-muted', className)} {...props} />;
 }

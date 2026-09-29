@@ -12,8 +12,15 @@
 //    件数を語に混ぜない（「他 N 件」は `F-004 AC-3` / `AC-4` の走査が「見えない件数の示唆」として禁じる語であり、
 //    ここで既定の文言を作ると全画面がその語を持つことになる）。件数は `data-*` 属性に置く。
 // 🔴 行（`rows`）は呼び出し側が `<li key=…>` として渡す。**このコンポーネントは行を並べ替えない・間引かない**。
+//
+// 🔴 T-22-01（デザイントークン）: 実色（`text-slate-700`）を `docs/04` §7.9 の semantic トークン
+//    （`text-fg`）に、`text-sm` を §7.3 の本文トークン（`text-body`。実寸は同じ 14px）に置き換えた。
+//    間隔（`gap-3` / `mt-3` = 12px）は §7.9 の spacing 7 段に一致しているのでそのまま。
+//    ⚠️ **`<summary>` に共通のフォーカスリングを付けた**（§7.10「全プリミティブで同一」）——
+//    `<summary>` はキーボードで到達する操作であり、ここだけリングが無いと展開の位置を見失う。
 import type { ReactNode } from 'react';
 import { cn } from '../lib/cn.js';
+import { FOCUS_RING_CLASSES } from '../lib/state-classes.js';
 
 /** 直近として常に見せる行数（docs/04 §10.3「直近 10 行」）。折りたたむのはこれを**超えた**とき（= 11 行以上）。 */
 export const FOLDED_LIST_DEFAULT_VISIBLE_COUNT = 10;
@@ -62,7 +69,7 @@ export function FoldedList({
       <ol className={cn('flex flex-col gap-3', listClassName)}>{visible}</ol>
       {folded ? (
         <details className="mt-3">
-          <summary className="cursor-pointer text-sm font-medium text-slate-700 underline underline-offset-2">{showAllLabel}</summary>
+          <summary className={cn('cursor-pointer text-body font-medium text-fg underline underline-offset-2', FOCUS_RING_CLASSES)}>{showAllLabel}</summary>
           <ol className={cn('mt-3 flex flex-col gap-3', listClassName)}>{rest}</ol>
         </details>
       ) : null}

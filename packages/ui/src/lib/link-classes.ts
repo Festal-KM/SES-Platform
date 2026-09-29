@@ -36,17 +36,23 @@
 // | `.ses-secondary-link` の宣言 | Tailwind | 置き場所 |
 // |---|---|---|
 // | `display: inline-block` | `inline-block` | 両方の定数（見た目そのもの） |
-// | `font-size: 0.875rem` | `text-sm` | 同上 |
-// | `color: var(--ses-muted)`（`#6b7280`） | `text-slate-500`（`#64748b`） | 同上。`--ses-muted` は T-21-07 で撤去済みの変数であり、パレットを slate（`Button` / `Input` と同系統）に統一した |
+// | `font-size: 0.875rem` | `text-body`（14px。**実寸は同じ**） | 同上。T-22-01 で §7.9 の 6 トークン（役割名）で参照する形にした |
+// | `color: var(--ses-muted)`（`#6b7280`） | `text-fg-muted`（`slate-500` = `#64748b`） | 同上。`--ses-muted` は T-21-07 で撤去済みの変数であり、T-21-04 でパレットを slate に統一、**T-22-01 で `docs/04` §7.9 の semantic トークン（補助 = `--color-fg-muted`。値は同一）に置き換えた** |
 // | 🔴 `margin-top: 1rem` | `mt-4` | **`SECONDARY_LINK_STACKED_CLASSES` だけ**が持つ |
 
 /**
  * 副次的な導線の見た目（**間隔を持たない**）。
  *
+ * 🔴 T-22-01: **共通のフォーカスリングを含む**（`docs/04` §7.10「全プリミティブで同一」）。
+ *    この定数は `<Link>` / `<a>` / `<button type="button">` の 3 種に当たり（下の 🔴）、
+ *    **リングが無いと「キャンセル」「一覧へ戻る」をキーボードで辿れない**（`VIEWER` 以外の
+ *    全ロールの日常。§7 の既定採用理由の表）。語の意味は `./state-classes.ts` が一次資料。
+ *
  * 🔴 **横に並べる文脈ではこちらを使う** —— `flex items-center` の操作行、`gap-*` を持つ
  *    ナビゲーション、文中に置くリンク。間隔は器（`gap-*` / `mb-*`）が決める。
  */
-export const SECONDARY_LINK_CLASSES = 'inline-block text-sm text-slate-500';
+export const SECONDARY_LINK_CLASSES =
+  'inline-block text-body text-fg-muted outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2';
 
 /**
  * 縦に積む文脈用（`SECONDARY_LINK_CLASSES` + 上マージン）。旧 `.ses-secondary-link` と同値。

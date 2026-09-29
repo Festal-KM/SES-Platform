@@ -21,11 +21,12 @@
 // | `peer` | 同じ | `Label` / `FieldLabel` の `peer-disabled:*` が効くように残す |
 // | `size-4` `shrink-0` | 同じ | 16px 角。`shrink-0` は横並び（`flex items-center gap-2`）で潰れないため |
 // | `border` `border-input` `rounded-[4px]` `shadow-xs` `dark:bg-input/30` | **取り込まない** | 🔴 `appearance-none` を採らない以上、枠線・角丸・影は UA の描画に**上書きされて効かない**。効かない語を増やさない（`../index.ts` の共通規約 3 と同じ理由） |
-// | `data-[state=checked]:bg-primary` `data-[state=checked]:text-primary-foreground` `data-[state=checked]:border-primary` | `accent-slate-900` | 🔴 `data-state` は Radix が立てる属性でありネイティブでは存在しない。**チェック時の色はネイティブの `accent-color` で与える**（`bg-slate-900` と同じ実色。テーマ変数は本リポジトリに無い） |
-// | `focus-visible:border-ring` `focus-visible:ring-ring/50` `focus-visible:ring-[3px]` | `focus-visible:ring-2` `focus-visible:ring-slate-400` `focus-visible:ring-offset-2` | 実色へ置換し、**リングの形を `Button` / `Input` と同一にする**（同じ画面で 2 種類のフォーカス表現を出さない。`../lib/control-classes.ts` と同じ判断） |
-// | `outline-none` `transition-shadow` | 同じ | そのまま |
+// | `data-[state=checked]:bg-primary` `data-[state=checked]:text-primary-foreground` `data-[state=checked]:border-primary` | **`accent-brand`** | 🔴 `data-state` は Radix が立てる属性でありネイティブでは存在しない。**チェック時の色はネイティブの `accent-color` で与える**。T-21-02 は実色（`accent-slate-900`）だったが、T-22-01 で `docs/04` §7.4 のブランド藍（primary と同じ意味）を指す形にした —— upstream も `bg-primary` である |
+// | `focus-visible:border-ring` `focus-visible:ring-ring/50` `focus-visible:ring-[3px]` | **`FOCUS_RING_CLASSES`** | 実色へ置換し、**リングの形を `Button` / `Input` と同一にする**（同じ画面で 2 種類のフォーカス表現を出さない）。T-22-01 で全プリミティブ共通の 1 定数にした（`docs/04` §7.10） |
+// | `outline-none` | 同じ（`FOCUS_RING_CLASSES` が対で持つ） | そのまま |
+// | `transition-shadow` | **`transition-colors`** | T-22-01。§7.9 は遷移の対象を background-color / border-color / color / opacity に限る（影を遷移させない） |
 // | `disabled:cursor-not-allowed` | 同じ | そのまま |
-// | `disabled:opacity-50` | `disabled:opacity-60` | 既存 `Button` / `CONTROL_BASE_CLASSES` に合わせる（数値のみの差） |
+// | `disabled:opacity-50` | `disabled:opacity-60`（`DISABLED_TOGGLE_CLASSES`） | 既存 `Button` に合わせた数値差。🔴 **T-22-01 でも opacity のまま残す**（他のプリミティブは §7.10 の 2 色の組に移した）。理由は `../lib/state-classes.ts` の `DISABLED_TOGGLE_CLASSES` に書いた —— **チェックボックスの箱は UA が描くので `bg-*` / `text-*` が届かない** |
 // | `aria-invalid:*` | 取り込まない | 理由は `../lib/control-classes.ts` の表に同じ（テーマ変数前提） |
 // | `data-slot="checkbox"` | 取り込まない | 同上 |
 //
@@ -35,6 +36,11 @@
 // 🔴 **`Input` を流用しない**（`./input.tsx` 冒頭の 🔴 と対）。
 import type { ComponentProps } from 'react';
 import { cn } from '../lib/cn.js';
+import {
+  DISABLED_TOGGLE_CLASSES,
+  FOCUS_RING_CLASSES,
+  TRANSITION_CLASSES,
+} from '../lib/state-classes.js';
 
 /**
  * ネイティブの切り替え入力（`<input type="checkbox">` / `<input type="radio">`）の見た目。
@@ -43,12 +49,17 @@ import { cn } from '../lib/cn.js';
  *    並んだときに**片方だけ色やフォーカスリングが違う**状態を作らないためであり、
  *    「同じ見た目のローカル実装を 2 つ作らない」（T-21-02 ①）そのものである。
  *    ⚠️ 上の表の判断（`accent-color` / リングの形 / `opacity-60`）は radio にもそのまま効く。
+ *
+ * ⚠️ §7.10 の 8 状態のうちここが取るのは default / focus-visible / disabled である。
+ *    hover / active（背景を 1 段暗く）は**箱を UA が描くため当てられない**。selected に当たるのは
+ *    チェック状態そのもの（`accent-color`）であり、`SELECTED_CLASSES`（行・ナビ・タブ用）ではない。
  */
-export const TOGGLE_CONTROL_CLASSES = [
-  'peer size-4 shrink-0 accent-slate-900 outline-none transition-shadow',
-  'focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2',
-  'disabled:cursor-not-allowed disabled:opacity-60',
-].join(' ');
+export const TOGGLE_CONTROL_CLASSES = cn(
+  'peer size-4 shrink-0 accent-brand',
+  TRANSITION_CLASSES,
+  FOCUS_RING_CLASSES,
+  DISABLED_TOGGLE_CLASSES,
+);
 
 export type CheckboxProps = Omit<ComponentProps<'input'>, 'type'>;
 

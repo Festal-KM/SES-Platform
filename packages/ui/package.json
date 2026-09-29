@@ -12,6 +12,10 @@
   "peerDependencies": {
     "react": "^19"
   },
+  "dependencies": {
+    "class-variance-authority": "0.7.1",
+    "tailwind-merge": "3.7.0"
+  },
   "devDependencies": {
     "@types/react": "^19.2.0",
     "react": "19.2.8",

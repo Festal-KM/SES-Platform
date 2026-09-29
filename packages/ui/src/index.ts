@@ -14,12 +14,16 @@
 //    `style` が `new-york`）。**照合日を書く。**
 //
 // 🔴 **2. テーマ変数（`bg-primary` / `border-input` / `text-muted-foreground` / `ring-ring` /
-//    `bg-card` / `text-destructive`）をそのまま写さない。** 本リポジトリは `@theme` を
-//    宣言しておらず、Tailwind v4 の既定 theme にもこれらは無い（実測: `theme.css` に
-//    `--color-input` / `--color-ring` / `--color-primary` / `--color-muted` /
-//    `--color-destructive` / `--color-card` いずれも 0 件）。**写した語は CSS を 1 行も
-//    生成せず、枠線・文字色・背景が無いまま出る。** slate / emerald / amber / red の実色に置く。
-//    同じ理由で `border` は色付きの語（`border-slate-200` 等）と必ず対にする
+//    `bg-card` / `text-destructive`）をそのまま写さない。** upstream の名前は本リポジトリに
+//    存在せず（実測: Tailwind v4 の `theme.css` に `--color-input` / `--color-ring` /
+//    `--color-primary` / `--color-muted` / `--color-destructive` / `--color-card` いずれも 0 件）、
+//    **写した語は CSS を 1 行も生成せず、枠線・文字色・背景が無いまま出る。**
+//    ⚠️ **T-22-01 で置き換え先が変わった**: T-21-02 は実色（`border-slate-300` 等）に置いていたが、
+//    いまは **`docs/04` §7.9 の semantic トークン**（`border-border-strong` / `text-fg-muted` /
+//    `bg-brand` / `text-danger` …）に置く。**値は同一**で、所在が `apps/web/app/tailwind.css` の
+//    `@theme` 1 箇所になった。🔴 **実色（`text-slate-500` 等）を新しく書かない**
+//    （primitive 層はアプリコードから直接使わない。§7.9 / `tests/static/design-tokens.test.ts`）。
+//    同じ理由で `border` は色付きの語（`border-border` 等）と必ず対にする
 //    （v4 の border 既定色は `currentColor`）。
 //
 // 🔴 **3. `dark:` を取り込まない。** `tailwind.css` が `color-scheme: light` を宣言しており、
@@ -34,12 +38,35 @@
 // 🔴 **5. 文言を持たない。** 日本語の固定文言を 1 つも置かない（CLAUDE.md §3.5 / BR-32）。
 //    文字列は呼び出し側が `packages/i18n` から解決して渡す。
 //
-// 🔴 **6. 依存を増やさない。** `class-variance-authority` / `tailwind-merge` / `radix-ui` /
-//    `lucide-react` はいずれも入れていない（新規依存は承認事項）。バリアントは
-//    `Readonly<Record<…, string>>` の対応表で表し、`asChild` とアイコンは取り込まない。
-//    ⚠️ その結果 **`cn()` は競合するクラス名を解決しない** —— 呼び出し側が `className` で
-//    上書きできるのは「競合しないユーティリティ」だけである。競合する上書きは prop として
-//    ここに足す（`lib/cn.ts` の規律 / `Badge` の `variant` / `TableCell` の `whitespace`）。
+// 🔴 **6. 依存を増やさない（ただし 2 つは入った）。** 2026-09-29 に人間が `docs/04` §5-13 で
+//    **`class-variance-authority`（バリアント）と `tailwind-merge`（クラスの合成）の追加を承認**した
+//    （位置づけは「`CLAUDE.md` §2 が宣言している shadcn/ui を宣言どおりに入れる」）。T-22-01 で
+//    入れたのはこの 2 つだけである。🔴 **`@radix-ui/*` と `lucide-react` はまだ入れていない**
+//    （Phase 3b。`Dialog` / `Drawer` / `DropdownMenu` / `Tooltip` / `Tabs` / アイコンと同時に入る）
+//    ので、`asChild`（`Slot`）とアイコンは取り込まない。
+//    ⚠️ **`cn()` は競合するクラス名を後勝ちで解決するようになった**（`lib/cn.ts` に経緯）。
+//    それでも**色・サイズ・状態は `variant` / `size` として prop に置く** —— 理由は競合解決の
+//    有無ではなく、§7.4 の意味の割り当てを 1 箇所に閉じるためである。
+//
+// 🔴 **7. 色・文字サイズ・余白・radius は `docs/04` §7.9 のトークンで書く。**
+//    実装先は `apps/web/app/tailwind.css` の `@theme` 1 本であり、**`packages/ui` 側に 2 本目の
+//    宣言（CSS ファイル・色変数）を作らない**。トークンを足したいときは §7.9 の改訂（= 人間の
+//    判断。`CLAUDE.md` §8.6）を経る。⚠️ **`@theme` が読まれるのは `apps/web` の CSS 入口**
+//    なので、`packages/ui` のクラスが生成 CSS に載るには `tailwind.css` の
+//    `@source '../../../packages/ui/src'` が要る（その 1 行を消すと**テストが緑のまま見た目だけ
+//    消える**。同ファイル冒頭の実測）。
+//
+// 🔴 **8. §7.10 の 8 状態はプリミティブが持つ（画面側で `hover:` を書かせない）。**
+//    共通語は `lib/state-classes.ts`（`FOCUS_RING_CLASSES` / `DISABLED_CLASSES` /
+//    `SELECTED_CLASSES` / `TRANSITION_CLASSES`）。**状態を取りうるプリミティブは、ファイル先頭に
+//    「8 状態のうちどれを取り、どれを取らないか」を書く**（**取らないことにも理由がある** ——
+//    例えば `Badge` は表示であって操作ではないので hover を持たない）。現に書いてあるのは
+//    `components/button.tsx` / `components/badge.tsx` / `components/checkbox.tsx` /
+//    `components/table.tsx` と、入力系 3 つを束ねる `lib/control-classes.ts` である
+//    （`Card` / `Alert` / `Label` / `EnvironmentBanner` のように **default しか取らない**
+//    部品には書かない —— 全ファイルに同じ表を貼ると、読む価値のある差分が埋もれる）。
+//    🔴 **`disabled` で権限・代理閲覧の不能を表さない**（`docs/04` `U-10`）。**描画せず、その位置に
+//    理由テキストを置く**（CSS で隠すのではなく DOM から取り除く）。
 export { Alert, AlertDescription, AlertTitle } from './components/alert.js';
 export type { AlertProps, AlertVariant } from './components/alert.js';
 export { Badge } from './components/badge.js';
@@ -118,6 +145,16 @@ export type {
 export { Textarea } from './components/textarea.js';
 export type { TextareaProps } from './components/textarea.js';
 export { cn } from './lib/cn.js';
+// 🔴 T-22-01: `docs/04` §7.10 の 8 状態の共通語（規約 8）。**画面側でこれを組み直さない**
+//    （`hover:` / `focus-visible:` を画面に書くと、画面ごとに違う状態表現が生まれる）。
+export {
+  DISABLED_CLASSES,
+  DISABLED_TOGGLE_CLASSES,
+  FOCUS_RING_CLASSES,
+  SELECTED_CLASSES,
+  SELECTED_ROW_CLASSES,
+  TRANSITION_CLASSES,
+} from './lib/state-classes.js';
 export {
   SECONDARY_LINK_CLASSES,
   SECONDARY_LINK_STACKED_CLASSES,

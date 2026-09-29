@@ -27,6 +27,13 @@
 //    でも切り詰めない）。ボタンは全文へ「到達する」導線ではなく行内の操作なので、`href` の枝（切り詰め + 導線の
 //    組）に寄せてはならない（§11-14）。
 // 🔴 `'use client'` を付けない（状態もイベントハンドラも持たない。`../index.ts` 規約 4）。
+//
+// 🔴 T-22-01（デザイントークン）: 実色（`text-slate-900`）を semantic トークン（`text-fg`。同値）に
+//    置き換え、**導線（`<a>`）と行内操作（`nameComponent`）に共通のフォーカスリングを付けた**
+//    （`docs/04` §7.10「全プリミティブで同一」）。一覧を Tab で走るとき、名称セルだけリングの形が
+//    違うと現在位置が読めない。⚠️ **リングの語は literal で書く**（`FOCUS_RING_CLASSES` を
+//    import して結合しても同じ結果になるが、ここは**クラス定数として外へ export している**ため、
+//    定数の値が実行時の結合に依存しない形を保つ。語の意味は `../lib/state-classes.ts` が一次資料）。
 import type { ComponentType, ReactNode } from 'react';
 import { cn } from '../lib/cn.js';
 import { TableCell, type TableCellProps } from './table.js';
@@ -39,8 +46,12 @@ export const NAME_CELL_MAX_WIDTH_CLASS = 'lg:max-w-64';
 export const NAME_CELL_TEXT_CLASSES = 'block lg:truncate';
 /** 導線が無い名称の本文の器: どのブレークポイントでも折り返す。 */
 export const NAME_CELL_TEXT_WRAP_CLASSES = 'block';
-/** 導線（詳細画面へのリンク）の見た目。既存の一覧（`S-005` / `S-010`）と同じ語。 */
-export const NAME_CELL_LINK_CLASSES = 'font-medium text-slate-900 underline';
+/**
+ * 導線（詳細画面へのリンク）の見た目。既存の一覧（`S-005` / `S-010`）と同じ語。
+ * 🔴 T-22-01: 実色（`text-slate-900`）を `docs/04` §7.9 の `--color-fg`（**同値**）に置き換えた。
+ *    **文字サイズを持たない**（セルの `--text-cell` を継ぐ。名称だけ大きくしない）。
+ */
+export const NAME_CELL_LINK_CLASSES = 'font-medium text-fg underline outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2';
 
 /** 導線の部品が受け取る props（`next/link` の `Link` がそのまま満たす）。 */
 export type NameCellLinkProps = {
@@ -58,7 +69,7 @@ export type NameCellNameProps = {
 };
 
 /** 行内操作（`nameComponent`）の見た目。折り返す名称の器なので `inline`（`inline-block` だと語の途中で折り返せない）。 */
-export const NAME_CELL_ACTION_CLASSES = 'text-left font-medium text-slate-900 underline';
+export const NAME_CELL_ACTION_CLASSES = 'text-left font-medium text-fg underline outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2';
 
 function DefaultLink({ href, className, children, ...rest }: NameCellLinkProps) {
   return (

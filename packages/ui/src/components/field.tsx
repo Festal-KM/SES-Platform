@@ -17,7 +17,7 @@
 // |---|---|---|
 // | `Field` = `<div role="group">` | `<label>`（既定） / `<div>` / `<p>` を `as` で選ぶ | 🔴 本リポジトリの 20 画面は**ラベルが入力を包む**形（移行前は `<label className="ses-field">`）であり、`htmlFor` を使っている箇所は 0 件である。`role="group"` の `<div>` に変えると **`id` を発番して `htmlFor` で結び直す**ことになり、SP-21 の「`id` / `aria-*` を変えない」に反する。`<p>` / `<div>` は移行前にあった形（旧 `.ses-field` は `<p>` 2 箇所・`<div>` 1 箇所でも使われていた） |
 // | `flex w-full` + vertical の `flex-col` | 同じ | そのまま |
-// | `gap-3` | `gap-1.5` | 12px はラベルと入力の間隔として広い。移行前（`.ses-field > span { margin-bottom: 0.25rem }`）に近い 6px にする |
+// | `gap-3` | 同じ（**T-22-01 で `gap-1.5` から戻した**） | T-21-02 は「12px はラベルと入力の間隔として広い」として移行前（`.ses-field > span { margin-bottom: 0.25rem }`）に近い 6px（`gap-1.5`）にしていた。🔴 **`docs/04` §7.9 の spacing は 7 段（4 / 8 / 12 / 16 / 24 / 32 / 48）で、6px はどの段でもない**。しかも §7.9 は 12px（`--space-3`）に「**フォームのラベルと入力の間**」を名指しで割り当てている ——「これ以外の値を使わない」に従い、upstream と同じ 12px に戻る（**縦に 6px ぶん広がる**。トークン表が既存実装より上位である） |
 // | 🔴 `[&>*]:w-full`（vertical バリアント） | **取り込まない** | 旧 `globals.css` の T-06-04 が `.ses-field input[type='checkbox'] { width: auto }` を**例外として明示的に入れていた**（「伸びると押下領域が帯全体になり誤操作を招く」）。器が子を一律に伸ばすと、この事故がそのまま戻る。**幅は `Input` / `Select` / `Textarea` 側の `w-full` が持つ** |
 // | `[&>.sr-only]:w-auto` | 取り込まない | 上の語の打ち消しであり、上を取らないなら不要 |
 // | `data-[invalid=true]:text-destructive` `group/field` `group-data-[disabled=true]/field:*` | 取り込まない | `data-invalid` / `data-disabled` を立てる仕組み（upstream の `FieldSet` と react-hook-form 連携）を取り込んでいないため、常に効かない |
@@ -25,8 +25,9 @@
 // | `FieldLabel` = `Label`（`<label>`） | `<span>` | 🔴 `Field` 自身が `<label>` であるため、**`<label>` の入れ子になる**（不正な HTML であり、クリックの転送先が曖昧になる）。移行前の `.ses-field > span` と同じ形にする。見た目は `Label` と**同じクラス定数を共有**する（`./label.tsx` の `LABEL_CLASSES`） |
 // | `FieldError` の `errors` prop（`useMemo` で配列を畳む） | 取り込まない | 🔴 `useMemo` はクライアント専用フックであり、これを持つと **`'use client'` が必要になる**（T-21-02 の受け入れ基準 ③「状態・イベントハンドラを持たないものはサーバコンポーネントのままにする」）。本リポジトリのエラーは `{error ? <p …>{error}</p> : null}` の 1 本であり、配列を畳む必要が無い |
 // | `FieldError` の `role="alert"` / 中身が空なら `null` を返す | 同じ | 現況の `<p role="alert" …>` と条件描画を保つ |
-// | `FieldError` の `text-destructive` | `text-red-700` | テーマ変数が無いため実色に置換。既存画面の `text-sm text-red-700`（25 箇所以上）に合わせる |
-// | `FieldDescription` の `text-muted-foreground` | `text-slate-500` | 同上 |
+// | `FieldError` の `text-destructive` | **`text-danger`** | テーマ変数が無いため T-21-02 は実色（`text-red-700`。既存画面の 25 箇所以上に合わせた）に置換した。T-22-01 で `docs/04` §7.9 の `--color-danger`（= `red-700`。**値は同一**）を指す形にした。§7.10 の error は「入力欄 = border `--color-danger-border` + 下にメッセージ（**赤の文字は `--color-danger`**）」であり、ここはその「下のメッセージ」である |
+// | `FieldDescription` の `text-muted-foreground` | **`text-fg-muted`** | 同上（T-21-02 は `text-slate-500`。値は同一） |
+// | `FieldError` / `FieldDescription` の `text-sm` | **`text-body`**（実寸は同じ 14px） | T-22-01。§7.3 の「本文（値・説明）」であり**補助テキストの 12px ではない** —— 入力の説明とエラーは注記ではなく、**入力の可否を決める内容**である（`CLAUDE.md` §13.3「判断材料を隠さない」）。`FieldDescription` の `leading-normal` は `--text-body--line-height`（1.6）に任せて落とした |
 // | `FieldDescription` の `last:mt-0 nth-last-2:-mt-1 [[data-variant=legend]+&]:-mt-1.5` `group-has-[[data-orientation=horizontal]]/field:text-balance` | 取り込まない | `FieldLegend` / `FieldGroup` / horizontal の体系に属する語 |
 // | `data-slot="field-*"` | 取り込まない | 理由は `../lib/control-classes.ts` の表に同じ |
 //
@@ -48,6 +49,7 @@
 //    入るのは内容モデル違反であり、**説明文とエラー文が入力欄のアクセシブル名に畳み込まれる**。
 //    本リポジトリの `role="alert"` はすべてフォーム単位・セクション単位で `<label>` の外にある
 //    （SP-21 の「`aria-*` / 要素の並びを変えない」）。`FieldError` を `Field` の外に置くこと。
+import { cva } from 'class-variance-authority';
 import type { LabelHTMLAttributes, ComponentProps, ReactNode } from 'react';
 import { cn } from '../lib/cn.js';
 import { LABEL_CLASSES } from './label.js';
@@ -62,10 +64,19 @@ export type FieldElement = 'label' | 'div' | 'p';
  */
 export type FieldWidth = 'full' | 'auto';
 
-const WIDTH_CLASSES: Readonly<Record<FieldWidth, string>> = {
-  full: 'w-full',
-  auto: 'w-auto',
-};
+/**
+ * 🔴 間隔（`gap-3` = 12px）は `docs/04` §7.9 の「フォームのラベルと入力の間」である。
+ *    **`Field` は下マージンを持たない**（ファイル冒頭の 🔴）。
+ */
+const fieldVariants = cva('flex flex-col gap-3', {
+  variants: {
+    width: {
+      full: 'w-full',
+      auto: 'w-auto',
+    },
+  },
+  defaultVariants: { width: 'full' },
+});
 
 export type FieldProps = Omit<LabelHTMLAttributes<HTMLLabelElement>, 'children'> & {
   readonly as?: FieldElement;
@@ -93,7 +104,7 @@ export function Field({
   // JSX の属性型を 1 つに固定するためのキャストであり、値は変換していない。
   const Element = as as 'label';
   return (
-    <Element className={cn('flex flex-col gap-1.5', WIDTH_CLASSES[width], className)} {...props}>
+    <Element className={cn(fieldVariants({ width }), className)} {...props}>
       {label === undefined ? null : <FieldLabel className={labelClassName}>{label}</FieldLabel>}
       {children}
       {description === undefined ? null : <FieldDescription>{description}</FieldDescription>}
@@ -115,7 +126,7 @@ export function FieldDescription({ className, ...props }: ComponentProps<'p'>) {
   return (
     <p
       className={cn(
-        'text-sm leading-normal font-normal text-slate-500 [&>a]:underline [&>a]:underline-offset-4',
+        'text-body font-normal text-fg-muted [&>a]:underline [&>a]:underline-offset-4',
         className,
       )}
       {...props}
@@ -143,7 +154,7 @@ export function FieldError({ as = 'p', className, children, ...props }: FieldErr
   // `as` の union を JSX の属性型 1 つに固定するためのキャスト（`Field` と同じ）。
   const Element = as as 'p';
   return (
-    <Element role="alert" className={cn('text-sm font-normal text-red-700', className)} {...props}>
+    <Element role="alert" className={cn('text-body font-normal text-danger', className)} {...props}>
       {children}
     </Element>
   );

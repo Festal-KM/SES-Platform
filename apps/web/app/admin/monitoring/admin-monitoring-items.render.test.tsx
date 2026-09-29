@@ -93,13 +93,22 @@ function severityOf(html: string, kind: MonitoringKind): string | null {
   return match?.[1] ?? null;
 }
 
+/**
+ * `Badge` の `variant` を、描かれたクラスから読み取る。
+ *
+ * ⚠️ 対応表は **`@ses/ui` の `Badge` の実装**（`packages/ui/src/components/badge.tsx`）に追随する。
+ *    T-22-01（デザイントークン）で実色（`bg-red-100` 等）が `docs/04` §7.9 の semantic トークン
+ *    （`bg-danger-bg` 等）に変わったため、**読み取り側の語だけを合わせた**。
+ *    🔴 **判定は緩めていない** —— 4 バリアントがそれぞれ別のクラスで区別できることも、
+ *    どの項目がどのバリアントかを確かめる下の各 `expect` も変えていない。
+ */
 function badgeVariantOf(html: string, kind: MonitoringKind): 'danger' | 'warning' | 'success' | 'outline' | null {
   const match = new RegExp(`<span class="([^"]*)"[^>]*data-testid="admin-monitoring-item-${kind}-severity"`).exec(html);
   const classes = match?.[1] ?? '';
-  if (classes.includes('bg-red-100')) return 'danger';
-  if (classes.includes('bg-amber-100')) return 'warning';
-  if (classes.includes('bg-emerald-100')) return 'success';
-  if (classes.includes('border-slate-300')) return 'outline';
+  if (classes.includes('bg-danger-bg')) return 'danger';
+  if (classes.includes('bg-warning-bg')) return 'warning';
+  if (classes.includes('bg-success-bg')) return 'success';
+  if (classes.includes('border-neutral-border')) return 'outline';
   return null;
 }
 
