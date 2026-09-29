@@ -24,8 +24,6 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readdirSync } from 'node:fs';
-import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { TOKEN_COLOR_SCALE, TOKEN_TEXT_SCALE, cn } from '../../packages/ui/src/lib/cn.js';
 import {
@@ -34,6 +32,18 @@ import {
   TRANSITION_CLASSES,
 } from '../../packages/ui/src/lib/state-classes.js';
 import { contrastRatio, relativeLuminance } from './support/oklch.js';
+import {
+  ALLOWED_RADIUS,
+  RADIUS_UTILITY,
+  classTokensOf,
+  collectSourceFiles,
+  isRawColorClass,
+  offScaleSpacingValue,
+  offScaleTextSizeValue,
+  readSource,
+  toRepoRelative,
+  utilityOf,
+} from './support/ui-classes.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '..', '..');
@@ -290,76 +300,26 @@ describe('🔴 §7.9 のトークンが `@theme` に全部ある（欠けたら�
 
 const UI_SRC = path.join(repoRoot, 'packages', 'ui', 'src');
 
-function collectFiles(dir: string): string[] {
-  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    const absolute = path.join(dir, entry.name);
-    if (entry.isDirectory()) return collectFiles(absolute);
-    return /\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name) ? [absolute] : [];
-  });
-}
-
 /**
- * ソース中の**文字列リテラル**（`'…'` / テンプレートの静的部分）を空白で割ってクラス名候補にする。
+ * 🔴 **走査と「何が違反か」の定義は `support/ui-classes.ts` にある**（✅ T-22-02）。
  *
- * 🔴 **ファイル全体を正規表現で割らない**（`tailwind-breakpoints.test.ts` と同じ理由）——
- *    コメントに書いた説明（本リポジトリのプリミティブは upstream との差分を**表で残している**）
- *    まで拾ってしまい、**規律を書き残した瞬間に落ちる検査**になる。誤検知する検査は、いずれ
- *    緩められて意味を失う。オブジェクトのキー（`shadow: [...]`）を拾わないためでもある。
+ * `docs/05` §17.7.1 の (a)(f)(g) は、本ファイル（`packages/ui` 側）と
+ * `ui-color-tokens` / `ui-spacing-scale` / `ui-type-scale`（`apps/web/app` 側のラチェット）の
+ * **両方が同じ判定を使う**。判定を 2 箇所に写すと、片方だけが直る
+ * （例えば「`bg-white` も色の選択である」という改善が片方にしか入らない）。
+ * 従って **何を見るか（射程）は各テストが、何が違反かは support が 1 箇所で持つ**
+ * （`docs/05` §17.4 の「同じ検証を 2 箇所に書かない」）。
+ *
+ * ⚠️ 射程の違いを取り違えないこと:
+ *    | 射程 | 見るファイル | 許可リスト |
+ *    |---|---|---|
+ *    | `packages/ui/src/**`（`.ts` + `.tsx`） | **本ファイル** | 無し（既に 0 件） |
+ *    | `apps/web/app/**`（`.tsx`） | `ui-color-tokens` / `ui-spacing-scale` / `ui-type-scale` | 有り（段①〜⑤で縮む） |
  */
-function classTokensOf(text: string, fileName: string): string[] {
-  const sourceFile = ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest, false, ts.ScriptKind.TSX);
-  const literals: string[] = [];
-  function visit(node: ts.Node): void {
-    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
-      literals.push(node.text);
-    } else if (ts.isTemplateExpression(node)) {
-      literals.push(node.head.text, ...node.templateSpans.map((span) => span.literal.text));
-    }
-    ts.forEachChild(node, visit);
-  }
-  visit(sourceFile);
-  return literals.flatMap((literal) => literal.split(/\s+/).filter(Boolean));
-}
-
-const uiFiles = collectFiles(UI_SRC).map((absolute) => ({
-  label: path.relative(repoRoot, absolute).split(path.sep).join('/'),
-  tokens: classTokensOf(readFileSync(absolute, 'utf8'), absolute),
+const uiFiles = collectSourceFiles(UI_SRC, ['.ts', '.tsx']).map((absolute) => ({
+  label: toRepoRelative(absolute),
+  tokens: classTokensOf(readSource(absolute), absolute).map(({ token }) => token),
 }));
-
-/** ユーティリティ本体（バリアント接頭辞を落とした部分）。`hover:bg-slate-50` → `bg-slate-50`。 */
-function utilityOf(token: string): string {
-  let depth = 0;
-  let last = 0;
-  for (let index = 0; index < token.length; index += 1) {
-    const char = token[index];
-    if (char === '[' || char === '(') depth += 1;
-    else if (char === ']' || char === ')') depth -= 1;
-    else if (char === ':' && depth === 0) last = index + 1;
-  }
-  return token.slice(last);
-}
-
-const PALETTE_NAMES = [
-  'slate', 'gray', 'zinc', 'neutral', 'stone', 'red', 'orange', 'amber', 'yellow', 'lime', 'green',
-  'emerald', 'teal', 'cyan', 'sky', 'blue', 'indigo', 'violet', 'purple', 'fuchsia', 'pink', 'rose',
-];
-/** ① primitive 層の直接参照（`text-slate-700` / `bg-amber-50` / `ring-slate-400` …）。 */
-const RAW_COLOR = new RegExp(
-  `^(?:text|bg|border|border-[xytrbl]{1,2}|ring|accent|caret|decoration|divide|fill|stroke|outline|placeholder|from|via|to|shadow)-(?:${PALETTE_NAMES.join('|')})-\\d{1,3}(?:/\\d{1,3})?$`,
-);
-/** 任意値の色（`bg-[#fff]` / `text-[rgb(…)]`）。**独自の hex を起こさない**（`U-21`）。 */
-const ARBITRARY_COLOR = /^(?:text|bg|border|ring|accent|fill|stroke|outline)-\[(?:#|rgb|hsl|oklch|color-mix)/;
-
-const SPACING_UTILITY = /^(?:p|px|py|pt|pb|pl|pr|ps|pe|m|mx|my|mt|mb|ml|mr|ms|me|gap|gap-x|gap-y|space-x|space-y)-(\d+(?:\.\d+)?)$/;
-/** §7.9 の 7 段（+ 打ち消しの 0）。 */
-const ALLOWED_SPACING = new Set(['0', '1', '2', '3', '4', '6', '8', '12']);
-
-const TEXT_SIZE_UTILITY = /^text-(xs|sm|base|lg|xl|2xl|3xl|4xl|5xl|6xl|7xl|8xl|9xl|title|body|cell|micro)$/;
-const ALLOWED_TEXT_SIZES = new Set<string>(TOKEN_TEXT_SCALE);
-
-const RADIUS_UTILITY = /^rounded(?:-[xytrbleks]{1,2})?(?:-(.+))?$/;
-/** §7.9 の 2 段（`docs/05` §2.3.2 の名前）+ 打ち消しの `none`。 */
-const ALLOWED_RADIUS = new Set<string>(['sm', 'md', 'none']);
 
 /**
  * 🔴 `packages/ui` で許す影は **`shadow-xs`（入力欄の輪郭）1 語だけ**で、置き場所も
@@ -387,7 +347,7 @@ describe('🔴 `packages/ui` は semantic / component トークンだけを見�
   it('🔴 生の色ユーティリティ（`text-slate-700` 等）が 1 件も無い', () => {
     const offenders = uiFiles.flatMap((file) =>
       file.tokens
-        .filter((token) => RAW_COLOR.test(utilityOf(token)) || ARBITRARY_COLOR.test(utilityOf(token)))
+        .filter((token) => isRawColorClass(token))
         .map((token) => `${file.label}: ${token}`),
     );
     expect(
@@ -412,9 +372,8 @@ describe('🔴 `packages/ui` は semantic / component トークンだけを見�
   it('余白は §7.9 の 7 段だけを使う', () => {
     const offenders = uiFiles.flatMap((file) =>
       file.tokens
-        .map((token) => ({ token, match: SPACING_UTILITY.exec(utilityOf(token)) }))
-        .filter(({ match }) => match !== null && !ALLOWED_SPACING.has(match[1] ?? ''))
-        .map(({ token }) => `${file.label}: ${token}`),
+        .filter((token) => offScaleSpacingValue(token) !== null)
+        .map((token) => `${file.label}: ${token}`),
     );
     expect(
       offenders,
@@ -427,9 +386,8 @@ describe('🔴 `packages/ui` は semantic / component トークンだけを見�
   it('文字サイズは §7.9 の 6 トークンだけを使う', () => {
     const offenders = uiFiles.flatMap((file) =>
       file.tokens
-        .map((token) => ({ token, match: TEXT_SIZE_UTILITY.exec(utilityOf(token)) }))
-        .filter(({ match }) => match !== null && !ALLOWED_TEXT_SIZES.has(match[1] ?? ''))
-        .map(({ token }) => `${file.label}: ${token}`),
+        .filter((token) => offScaleTextSizeValue(token) !== null)
+        .map((token) => `${file.label}: ${token}`),
     );
     expect(
       offenders,

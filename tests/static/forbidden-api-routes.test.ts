@@ -59,6 +59,15 @@ const FORBIDDEN_ROUTES: readonly { readonly url: string; readonly reason: string
       '🔴 docs/05 §6.4「#10 の改訂」/ §17.2 #32 ⑤（T-11-09）: S-041 の行の詳細は一覧の応答に同梱する。' +
       '展開ごとの追加取得を作ると、監査ログの閲覧そのものが記録の対象になり行数が読めなくなる（docs/04 §S-041）',
   },
+  {
+    // 🔴 T-22-02（`docs/05` §17.7.1 (l)④ / §6.11.3）。`home-drawer-no-ledger.test.ts` の ④ がこの行である。
+    url: '/api/home/{}',
+    reason:
+      '🔴 docs/05 §6.11.3 / docs/04 §11-25: ホームの `Drawer`（`内容を見る`）の中身は ' +
+      '`GET /api/home` の応答に同梱する（`HomeBlock` は追加専用）。行ごとの詳細エンドポイントを作ると、' +
+      '①開いた回数だけ台帳への到達点が増え（経路 4 の匿名候補の身元露出 = CLAUDE.md §7 の「0 件」）' +
+      '②`GET /api/home` の第二境界（RLS C5）とは別の認可をもう 1 箇所で書くことになる',
+  },
 ];
 
 /** `app/api` 配下で `route.ts` を持つディレクトリの、URL としてのパスを列挙する。 */

@@ -58,8 +58,15 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
+import {
+  TESTID_PATTERN,
+  TESTID_PREFIX_PATTERN,
+  extractTestIds,
+  testIdValueOrigins,
+  type Extraction,
+  type TestIdValueOrigin,
+} from './support/testid-extract.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '..', '..');
@@ -67,100 +74,23 @@ const repoRoot = path.resolve(here, '..', '..');
 /**
  * 🔴 走査対象。**減らさない。** testid を別パッケージへ移した場合はここに足す
  *    （凍結リストから消さない。ファイル冒頭のコメント参照）。
+ *
+ * ✅ **T-22-02: `packages/ui` を足した**（`docs/05` §17.7.3 の「`data-testid`（部品の移動）」の行）。
+ *    理由: `SP-22` は 19 部品を `packages/ui` に置き、`AppShell` / `PageHeading` / `DataTable` を
+ *    そこへ移す。🔴 **足さないと、部品を移した瞬間に凍結の射程から抜ける** ——
+ *    `FROZEN_EXACT` の値が `apps/web` から消え、`packages/ui` に現れても「削除」と判定されるため、
+ *    移した人は**凍結リストから消す**という誤った直し方に誘導される（それは検査の無効化である）。
  */
-const SCAN_ROOTS: readonly string[] = [path.join(repoRoot, 'apps', 'web')];
+const SCAN_ROOTS: readonly string[] = [
+  path.join(repoRoot, 'apps', 'web'),
+  path.join(repoRoot, 'packages', 'ui'),
+];
 
 const SKIPPED_DIR_NAMES = new Set(['node_modules', 'dist', '.next', '.turbo', 'coverage', '.git']);
 
 /** testid の命名規約（このリポジトリの実体はすべて kebab-case である）。 */
-const TESTID_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
-/** 動的 testid の静的接頭辞（末尾は必ず `-`。`engineer-list-row-` など）。 */
-const TESTID_PREFIX_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*-$/;
-
-/**
- * 拾う属性名。`testId` は `data-testid={testId}` へ流れるプロパティ（冒頭コメント (2)）。
- * ✅ T-11-12: `linkTestId` は `@ses/ui` の `NameCell` が導線（`<a>`）の `data-testid` へ流す（`engineer-list-link-` /
- *    `project-list-link-` / `candidate-list-link-`）。凍結済みの接頭辞を `packages/ui` へ移した形なので、リストから
- *    消さずに走査対象（属性名）を足す（冒頭「凍結リストを直すとき」）。
- */
-const ATTRIBUTE_NAMES = new Set(['data-testid', 'testId', 'linkTestId']);
-
-type Extraction = {
-  /** 完全一致で凍結する値。 */
-  readonly exact: readonly string[];
-  /** 静的接頭辞で凍結する値（末尾 `-`）。 */
-  readonly prefixes: readonly string[];
-  /** 静的に解決できなかった式（`testId` のような素の識別子）。 */
-  readonly unresolved: readonly string[];
-  /** 属性の出現回数（走査が空振りしていないことの対照に使う）。 */
-  readonly occurrences: number;
-};
-
-/** 🔴 抽出器の本体。自己検査は末尾の `describe('抽出器そのものの検査', ...)` が行う。 */
-export function extractTestIds(source: string, fileName = 'source.tsx'): Extraction {
-  const sourceFile = ts.createSourceFile(
-    fileName,
-    source,
-    ts.ScriptTarget.Latest,
-    /* setParentNodes */ true,
-    ts.ScriptKind.TSX,
-  );
-  const exact: string[] = [];
-  const prefixes: string[] = [];
-  const unresolved: string[] = [];
-  let occurrences = 0;
-
-  /** 値の式から静的に決まる部分を拾う。拾えたら true。 */
-  function collectFrom(expression: ts.Expression): boolean {
-    if (ts.isParenthesizedExpression(expression)) return collectFrom(expression.expression);
-    if (ts.isStringLiteral(expression) || ts.isNoSubstitutionTemplateLiteral(expression)) {
-      exact.push(expression.text);
-      return true;
-    }
-    // `engineer-list-row-${row.id}` → 静的接頭辞は `head`（`${` の手前）。
-    if (ts.isTemplateExpression(expression)) {
-      prefixes.push(expression.head.text);
-      return true;
-    }
-    // 🔴 三項演算子は**枝だけ**を見る（条件に書かれた列挙値は testid ではない）。
-    if (ts.isConditionalExpression(expression)) {
-      const whenTrue = collectFrom(expression.whenTrue);
-      const whenFalse = collectFrom(expression.whenFalse);
-      return whenTrue || whenFalse;
-    }
-    if (
-      ts.isBinaryExpression(expression) &&
-      (expression.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken ||
-        expression.operatorToken.kind === ts.SyntaxKind.BarBarToken)
-    ) {
-      const left = collectFrom(expression.left);
-      const right = collectFrom(expression.right);
-      return left || right;
-    }
-    return false;
-  }
-
-  function visit(node: ts.Node): void {
-    if (ts.isJsxAttribute(node) && ATTRIBUTE_NAMES.has(node.name.getText(sourceFile))) {
-      occurrences += 1;
-      const initializer = node.initializer;
-      if (initializer !== undefined && ts.isStringLiteral(initializer)) {
-        exact.push(initializer.text);
-      } else if (
-        initializer !== undefined &&
-        ts.isJsxExpression(initializer) &&
-        initializer.expression !== undefined &&
-        !collectFrom(initializer.expression)
-      ) {
-        unresolved.push(initializer.expression.getText(sourceFile));
-      }
-    }
-    ts.forEachChild(node, visit);
-  }
-  visit(sourceFile);
-
-  return { exact, prefixes, unresolved, occurrences };
-}
+// 🔴 抽出器と命名規約は `support/testid-extract.ts` にある（✅ T-22-02。
+//    `testid-freeze.test.ts` と共有するため。`docs/05` §17.4）。抽出の規則の一次資料は本ファイルの冒頭である。
 
 function collectTsxFiles(root: string, relative = ''): string[] {
   const entries = readdirSync(root, { withFileTypes: true });
@@ -237,6 +167,11 @@ const FROZEN_EXACT: readonly string[] = [
   'admin-audit-logs-table',
   'admin-audit-logs-target-tenant-id',
   'admin-audit-logs-to',
+  // ✅ T-22-02: 実装に在るのに凍結リストに欠けていた値を足した（`docs/05` §17.7.3。詳細はファイル末尾の `testid-freeze.test.ts` と `support/testid-baseline.ts`）。
+  'admin-console-nav',
+  'admin-console-subject',
+  'admin-console-subject-name',
+  'admin-console-subject-role',
   // ✅ T-10-10: `A-010` セクション 4「削除完了の確認」（`tenants/[id]/contract/deletion-status-screen.tsx`）。内訳・履歴の行は
   //    FROZEN_PREFIXES。🔴 操作導線（停止 / 解約 / 再実行）・返却データへの導線に相当する testid は存在しない（`F-062 AC-7` / `BR-40`）。
   'admin-deletion-status-back',
@@ -295,8 +230,28 @@ const FROZEN_EXACT: readonly string[] = [
   'admin-home-audit-logs-link',
   // ✅ T-10-06: 管理ホームの `A-012` への導線（demo / development でしか描かれない）。
   'admin-home-demo-link',
+  // ✅ T-22-02: 実装に在るのに凍結リストに欠けていた値を足した（`docs/05` §17.7.3。詳細はファイル末尾の `testid-freeze.test.ts` と `support/testid-baseline.ts`）。
+  'admin-home-monitoring-link',
   // ✅ T-11-02: 管理ホームの `A-004` への導線。
   'admin-home-usage-link',
+  // ✅ T-22-02: 実装に在るのに凍結リストに欠けていた値を足した（`docs/05` §17.7.3。詳細はファイル末尾の `testid-freeze.test.ts` と `support/testid-baseline.ts`）。
+  'admin-monitoring-all-clear',
+  'admin-monitoring-gate-fail-rate-summary',
+  'admin-monitoring-gate-stall-failed-jobs-unavailable',
+  'admin-monitoring-lead',
+  'admin-monitoring-load-failed',
+  'admin-monitoring-loading',
+  'admin-monitoring-mail-dispatch-stuck-summary',
+  'admin-monitoring-mail-provider-summary',
+  'admin-monitoring-mail-provider-unavailable',
+  'admin-monitoring-observed-at',
+  'admin-monitoring-provider-spend-reached',
+  'admin-monitoring-provider-spend-summary',
+  'admin-monitoring-purge-running-overdue-empty',
+  'admin-monitoring-purge-running-overdue-table',
+  'admin-monitoring-purge-running-overdue-title',
+  'admin-monitoring-reload',
+  'admin-monitoring-scheduler-summary',
   'admin-signin-2fa-code',
   'admin-signin-2fa-form',
   'admin-signin-2fa-submit',
@@ -361,6 +316,26 @@ const FROZEN_EXACT: readonly string[] = [
   'admin-usage-quota-form-tenant',
   'admin-usage-reload',
   'admin-usage-table',
+  // ✅ T-22-02: 実装に在るのに凍結リストに欠けていた値を足した（`docs/05` §17.7.3。詳細はファイル末尾の `testid-freeze.test.ts` と `support/testid-baseline.ts`）。
+  'app-bottom-tabs',
+  'app-header',
+  'app-header-account',
+  'app-header-notifications',
+  'app-header-scope',
+  'app-header-scope-company',
+  'app-header-scope-organization',
+  'app-header-usage',
+  'app-header-usage-remaining',
+  'app-header-wordmark',
+  'app-more-nav-proposal-requests-due',
+  'app-nav-proposal-requests-due',
+  'app-page-breadcrumb',
+  'app-page-heading',
+  'app-page-heading-slot',
+  'app-shell',
+  'app-sidebar',
+  'app-tab-more',
+  'app-tab-more-summary',
   // ✅ T-11-09: `S-041` 行の詳細（`audit-log-detail.tsx` / `audit-logs-view.tsx`）。行・トグル・展開部の testid は FROZEN_PREFIXES。
   'audit-logs-detail-deleted-partner',
   'audit-logs-detail-empty',
@@ -559,6 +534,8 @@ const FROZEN_EXACT: readonly string[] = [
   'engineer-share-preview-careers-note',
   'engineer-share-preview-note',
   'engineer-share-preview-placeholder',
+  // ✅ T-22-02: 実装に在るのに凍結リストに欠けていた値を足した（`docs/05` §17.7.3。詳細はファイル末尾の `testid-freeze.test.ts` と `support/testid-baseline.ts`）。
+  'engineer-share-proposal-requests-link',
   'engineer-share-revoke-confirm',
   'engineer-share-screen',
   'engineer-share-search',
@@ -596,6 +573,10 @@ const FROZEN_EXACT: readonly string[] = [
   // ✅ T-10-05: `F-028` 非本番環境バナー（`app/_components/environment-banner.tsx`。`app/layout.tsx` が全画面に描く）。
   //    E2E（`isolation.spec.ts`）と render テスト（`layout.render.test.tsx` / `environment-banner.render.test.tsx`）が掴む。
   'environment-banner',
+  // ✅ T-22-02: 実装に在るのに凍結リストに欠けていた値を足した（`docs/05` §17.7.3。詳細はファイル末尾の `testid-freeze.test.ts` と `support/testid-baseline.ts`）。
+  'global-error',
+  'global-error-digest',
+  'global-error-retry',
   // ✅ T-12-15: `S-003` / `S-004` の要対応キュー（`_home/action-queue-section.tsx`）。E2E（`home.mobile.spec.ts`）と render テストが掴む。
   'home-action-queue',
   'home-action-queue-empty',
@@ -640,6 +621,15 @@ const FROZEN_EXACT: readonly string[] = [
   'members-panel',
   'members-read-only-note',
   'members-table',
+  // ✅ T-22-02: 実装に在るのに凍結リストに欠けていた値を足した（`docs/05` §17.7.3。詳細はファイル末尾の `testid-freeze.test.ts` と `support/testid-baseline.ts`）。
+  'org-settings-audit-logs',
+  'org-settings-audit-logs-link',
+  'org-settings-partner-companies',
+  'org-settings-partner-companies-link',
+  'org-settings-retention',
+  'org-settings-retention-link',
+  'org-settings-sending-domains',
+  'org-settings-sending-domains-link',
   // ✅ T-10-04: `S-035` セクション 5「プランと利用量」の `S-038` への導線。
   'org-settings-usage',
   'org-settings-usage-link',
@@ -859,6 +849,8 @@ const FROZEN_EXACT: readonly string[] = [
   //    「再送」に相当する testid は存在しない（`BR-21` / `BR-22`。再送は `S-022` = T-09-08）。
   'proposal-approval-send-hold',
   'proposal-approval-send-hold-link',
+  // ✅ T-22-02: 実装に在るのに凍結リストに欠けていた値を足した（`docs/05` §17.7.3。詳細はファイル末尾の `testid-freeze.test.ts` と `support/testid-baseline.ts`）。
+  'proposal-approval-send-pending',
   'proposal-approval-sending-domain',
   'proposal-approval-sending-domain-open',
   'proposal-approval-state',
@@ -1100,6 +1092,26 @@ const FROZEN_EXACT: readonly string[] = [
   'proposal-request-withdraw-confirm',
   'proposal-request-withdraw-error',
   'proposal-request-withdraw-submit',
+  // ✅ T-22-02: 実装に在るのに凍結リストに欠けていた値を足した（`docs/05` §17.7.3。詳細はファイル末尾の `testid-freeze.test.ts` と `support/testid-baseline.ts`）。
+  'retention-banner-closing',
+  'retention-banner-days',
+  'retention-banner-suspended',
+  'retention-breadcrumb-settings',
+  'retention-export',
+  'retention-export-failed',
+  'retention-export-generate',
+  'retention-export-generated',
+  'retention-export-generating',
+  'retention-export-not-closing',
+  'retention-export-request-error',
+  'retention-history',
+  'retention-history-empty',
+  'retention-history-table',
+  'retention-page',
+  'retention-schedule',
+  'retention-schedule-empty',
+  'retention-schedule-table',
+  'send-failure-attempt-list',
   // ✅ T-09-08: `S-022` 送信失敗一覧と再送（`proposals/send-failures/**`）。実装から機械抽出した 29 個。🔴 一括再送・自動再送・
   //    force / override に相当する testid は存在しない（`F-023 AC-1` / `BR-50`）。再送は確認ステップ（`send-failure-resend-confirm`）
   //    の中の `send-failure-resend-acknowledge`（チェック）+ `send-failure-resend-reason`（理由）を経て `send-failure-resend-submit`。
@@ -1109,6 +1121,8 @@ const FROZEN_EXACT: readonly string[] = [
   'send-failure-detail-engineer',
   'send-failure-detail-notes',
   'send-failure-detail-open-approval',
+  // ✅ T-22-02: 実装に在るのに凍結リストに欠けていた値を足した（`docs/05` §17.7.3。詳細はファイル末尾の `testid-freeze.test.ts` と `support/testid-baseline.ts`）。
+  'send-failure-detail-open-detail',
   'send-failure-detail-open-sending-domain',
   'send-failure-detail-panel',
   'send-failure-detail-recipient',
@@ -1207,6 +1221,8 @@ const FROZEN_EXACT: readonly string[] = [
   'skill-sheet-versions-empty',
   'skill-sheet-versions-section',
   'skill-sheet-versions-table',
+  // ✅ T-22-02: 実装に在るのに凍結リストに欠けていた値を足した（`docs/05` §17.7.3。詳細はファイル末尾の `testid-freeze.test.ts` と `support/testid-baseline.ts`）。
+  'skill-sheets-skill-dictionary-link',
   // ✅ T-10-04: `S-038` 利用量と上限（`usage-*`。ホスト向け `usage-screen` / 取引先向け `usage-partner-screen`）。
   //    🔴 金額を掴む testid（`usage-billing-estimate`）は請求見込みのブロックにしか無い。残量のブロック
   //    （`usage-remaining` 配下）に金額の testid は存在しない（`F-027 AC-6`）。`gate` を含む testid は
@@ -1259,6 +1275,13 @@ const FROZEN_PREFIXES: readonly string[] = [
   'admin-deletion-status-run-',
   // ✅ T-10-06: `A-012` の投入状況の行（テナント ID で変わる）。
   'admin-demo-status-tenant-',
+  // ✅ T-22-02: 実装に在るのに凍結リストに欠けていた値を足した（`docs/05` §17.7.3。詳細はファイル末尾の `testid-freeze.test.ts` と `support/testid-baseline.ts`）。
+  'admin-monitoring-gate-stall-',
+  'admin-monitoring-item-',
+  'admin-monitoring-purge-running-overdue-row-',
+  'admin-monitoring-send-hold-',
+  'admin-nav-',
+  'admin-nav-tab-',
   // ✅ T-11-01: `A-002` の動的 testid（シグナルのバッジ / 行 / 席 / 並び替えの候補。列挙値・テナント ID で変わる）。
   'admin-tenants-health-signal-',
   'admin-tenants-row-',
@@ -1273,6 +1296,10 @@ const FROZEN_PREFIXES: readonly string[] = [
   'admin-usage-quota-open-',
   'admin-usage-row-',
   'admin-usage-unit-cost-ratio-',
+  // ✅ T-22-02: 実装に在るのに凍結リストに欠けていた値を足した（`docs/05` §17.7.3。詳細はファイル末尾の `testid-freeze.test.ts` と `support/testid-baseline.ts`）。
+  'app-more-nav-',
+  'app-nav-',
+  'app-tab-',
   // ✅ T-11-09: `S-041` の動的 testid（行 / 展開トグル / 展開部 / 展開部の項目行）。
   'audit-logs-detail-row-',
   'audit-logs-row-',
@@ -1316,6 +1343,8 @@ const FROZEN_PREFIXES: readonly string[] = [
   'engineer-proposal-diff-link-',
   'engineer-proposal-diff-selected-',
   'engineer-proposal-row-',
+  // ✅ T-22-02: 実装に在るのに凍結リストに欠けていた値を足した（`docs/05` §17.7.3。詳細はファイル末尾の `testid-freeze.test.ts` と `support/testid-baseline.ts`）。
+  'engineer-share-deleted-',
   'engineer-share-preview-',
   'engineer-share-preview-field-',
   'engineer-share-remove-filter-',
@@ -1432,6 +1461,11 @@ const FROZEN_PREFIXES: readonly string[] = [
   'proposal-request-respond-requirements-',
   'proposal-request-row-',
   'proposal-request-state-',
+  // ✅ T-22-02: 実装に在るのに凍結リストに欠けていた値を足した（`docs/05` §17.7.3。詳細はファイル末尾の `testid-freeze.test.ts` と `support/testid-baseline.ts`）。
+  'retention-history-download-',
+  'retention-history-row-',
+  'retention-history-status-',
+  'retention-schedule-row-',
   // ✅ T-09-08: `S-022` の行（提案先 / エンジニア / 失敗理由 / 試行回数）。
   // ✅ T-09-08 修正 1: 詳細パネル / 再送の確認ステップに描く試行ごとの記録（`SendFailureAttemptList`）。
   'send-failure-attempt-',
@@ -1520,6 +1554,15 @@ describe('🔴 data-testid インベントリの凍結（SP-21 T-21-01 ③）', 
 
   it('🔴 静的に解決できない data-testid が許可リストの外に増えていない', () => {
     const offenders = scannedFiles
+      // 🔴 **穴の会計は「値を書く側」= `apps/web` に対して行う**（✅ T-22-02）。
+      //    `packages/ui` の部品は props を素通しするだけで**値を持てない** ——
+      //    値は呼び出し側（`apps/web`）が `testId="…"` / `linkTestId="…"` の文字列リテラルで書き、
+      //    `ATTRIBUTE_NAMES` がそれを拾う。したがって部品側を `UNRESOLVED_ALLOWLIST` に
+      //    足すのは「穴を許す」ことではなく、**穴の場所を二重に数える**ことである。
+      //    🔴 **`docs/05` §17.7.3 の「`UNRESOLVED_ALLOWLIST` を増やさない」を守るため、
+      //    許可リストは 3 件のまま据え置き、部品側には下の「`packages/ui` の testid の形」で
+      //    **より強い**構造検査を当てる**（素通し以外＝ローカルで計算した値を禁じる）。
+      .filter((file) => file.label.startsWith('apps/web/'))
       .filter((file) => file.extraction.unresolved.length > 0)
       .map((file) => file.label)
       .filter((label) => !UNRESOLVED_ALLOWLIST.includes(label));
@@ -1596,5 +1639,110 @@ describe('抽出器そのものの検査（fixtures。空振り・取りこぼ�
 
   it('`data-testid` に似た別属性（`data-testid-note`）を拾わない', () => {
     expect(extraction.exact).not.toContain('not-a-testid');
+  });
+});
+
+// ============================================================================
+// 🔴 `packages/ui` の testid の形（✅ T-22-02。`docs/05` §17.7.3「data-testid（部品の移動）」）
+// ============================================================================
+// `SCAN_ROOTS` に `packages/ui` を足したことで、**部品側の `data-testid={<識別子>}` が視界に入る**
+// （`folded-list.tsx` / `name-cell.tsx` が `testId` / `linkTestId` を素通しする形）。
+//
+// 🔴 これを `UNRESOLVED_ALLOWLIST` に足さない。足すと `docs/05` §17.7.3 の
+//    「**`UNRESOLVED_ALLOWLIST` を増やさない**」に反し、しかも**穴ではないものを穴として数える**。
+//    代わりに、部品側には**より強い**構造検査を当てる:
+//
+//      部品が `data-testid` / `testId` / `linkTestId` に渡してよいのは
+//        ① 文字列リテラル ② テンプレート（接頭辞は凍結される） ③ **自身の props / 引数の識別子**
+//      の 3 つだけである。🔴 **ローカルで計算した値（`const id = …` / 関数の戻り値）を渡さない。**
+//
+// なぜこれが「許可リストに足す」より強いか: ③ の素通しは**値を隠せない** ——
+// 呼び出し側が非リテラルを渡せば、その穴は**呼び出し側のファイル**で `unresolved` として現れ、
+// 上の検査（`apps/web` が射程）が捕まえる。一方 ①②③ 以外は値の出所がファイル内に閉じるため、
+// どこからも凍結できない。**つまり ①②③ に限れば、凍結の射程に穴は開かない。**
+// `T-22-03`〜`T-22-05` が 19 部品を置くときも、この形を外れた瞬間に落ちる。
+
+/** 属性の値の出所（🔴 ③ の「自身の props / 引数」を構造で判定する）。 */
+
+function originsOf(label: string): TestIdValueOrigin[] {
+  return testIdValueOrigins(readFileSync(path.join(repoRoot, label), 'utf8'), label);
+}
+
+describe('🔴 `packages/ui` の testid は「リテラル / テンプレート / props の素通し」だけである（T-22-02）', () => {
+  const uiFiles = scannedFiles.filter((file) => file.label.startsWith('packages/ui/'));
+
+  it('走査が空振りしていない（`packages/ui` を現に読み、testid を持つ部品が在る）', () => {
+    expect(uiFiles.length).toBeGreaterThanOrEqual(15);
+    expect(uiFiles.some((file) => file.extraction.occurrences > 0)).toBe(true);
+  });
+
+  it('ローカルで計算した値を `data-testid` に渡している部品が無い', () => {
+    const offenders = uiFiles.flatMap((file) =>
+      originsOf(file.label)
+        .filter((origin) => origin.kind === 'local')
+        .map((origin) => `${file.label}:${origin.line} ${origin.text}`),
+    );
+    expect(
+      offenders,
+      '🔴 部品が値を作ると、その testid は `apps/web` 側からも `packages/ui` 側からも凍結できない。' +
+        '文字列リテラル / テンプレートの接頭辞 / props の素通しのいずれかにすること' +
+        '（docs/05 §17.7.3 / T-22-04 受け入れ基準 4）',
+    ).toEqual([]);
+  });
+
+  it('素通ししている部品が現に在る（`folded-list` / `name-cell`。③ の判定が働いていることの対照）', () => {
+    const passThrough = uiFiles.filter((file) =>
+      originsOf(file.label).some((origin) => origin.kind === 'prop-or-param'),
+    );
+    expect(passThrough.map((file) => file.label).sort()).toEqual([
+      'packages/ui/src/components/folded-list.tsx',
+      'packages/ui/src/components/name-cell.tsx',
+    ]);
+  });
+});
+
+describe('対照: testid の値の出所の判定（合成ソース）', () => {
+  it('リテラル / テンプレート / props の素通し / ローカル計算を区別する', () => {
+    const origins = testIdValueOrigins(
+      [
+        'export function Part({ testId, rows }: { testId: string; rows: R[] }) {',
+        '  const computed = `x-${rows.length}`;',
+        '  return (',
+        '    <div data-testid="literal-id">',
+        '      <span data-testid={`row-${rows[0].id}`} />',
+        '      <span data-testid={testId} />',
+        '      <span data-testid={computed} />',
+        '    </div>',
+        '  );',
+        '}',
+      ].join('\n'),
+    );
+    expect(origins.map((origin) => `${origin.line}:${origin.kind}`)).toEqual([
+      '4:literal',
+      '5:template',
+      '6:prop-or-param',
+      '7:local',
+    ]);
+  });
+
+  it('🔴 分割代入・入れ子の props・アロー関数の引数も「素通し」と判定する', () => {
+    const cases = [
+      'export const A = ({ testId }: P) => <div data-testid={testId} />;',
+      'export const B = (props: P) => <div data-testid={props.testId} />;',
+      'export const C = ({ ids: { rowTestId } }: P) => <div data-testid={rowTestId} />;',
+      'export const D = (rows: R[]) => rows.map((row) => <div key={row.id} data-testid={row.testId} />);',
+    ];
+    for (const source of cases) {
+      expect(testIdValueOrigins(source).map((origin) => origin.kind), source).toEqual(['prop-or-param']);
+    }
+  });
+
+  it('🔴 モジュールスコープの定数・関数呼び出しは「ローカル計算」と判定する', () => {
+    for (const source of [
+      "const ID = 'x';\nexport const A = () => <div data-testid={ID} />;",
+      'export const B = () => <div data-testid={makeId()} />;',
+    ]) {
+      expect(testIdValueOrigins(source).map((origin) => origin.kind), source).toEqual(['local']);
+    }
   });
 });
