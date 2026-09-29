@@ -1,5 +1,5 @@
 // tests/e2e/harness/redis.ts
-// docs/05 §17.6 globalSetup ①「コンテナ起動（PostgreSQL / Redis / MinIO / MailHog / ClamAV）」の Redis。T-09-06。
+// docs/05 §17.6 globalSetup ①「コンテナ起動（PostgreSQL / Redis / オブジェクトストレージ / MailHog / ClamAV）」の Redis。T-09-06。
 //
 // 🔴 なぜここで Redis を足すか: T-09-06 で `S-021` の primary が「送信する」（#43）になり、#43 は `send.proposal` を
 //    **BullMQ（Redis）に積む**（`lib/db/bootstrap.ts` の `configureSendProposalJobQueue`。`gate.run` と同じく環境で分岐しない）。

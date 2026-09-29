@@ -1,5 +1,5 @@
 // tests/e2e/global-teardown.ts
-// worker・アプリのプロセスとコンテナ（PostgreSQL / MinIO / Redis）を止める。
+// worker・アプリのプロセスとコンテナ（PostgreSQL / オブジェクトストレージ / Redis）を止める。
 //
 // 🔴 片方の停止が失敗しても、もう片方の停止を試みる（片付け漏れでポートとコンテナが
 //    残ると、次の実行が「原因不明の起動失敗」になる）。
@@ -32,7 +32,9 @@ export default async function globalTeardown(): Promise<void> {
   try {
     await objectStorage?.stop();
   } catch (error) {
-    failures.push(`MinIO の停止に失敗: ${error instanceof Error ? error.message : String(error)}`);
+    failures.push(
+      `オブジェクトストレージの停止に失敗: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
   try {
     await redis?.stop();

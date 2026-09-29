@@ -37,7 +37,7 @@ export default async function globalSetup(): Promise<void> {
   //    spawn するテストのワーカープロセスにも引き継がれる（`harness/endpoint.ts` と同じ理屈）。
   writeAdminDatabaseUrlEnv(database.seedUrl);
 
-  log('① MinIO を起動し、バケットの作成とバージョニングの有効化を行います（T-05-10）');
+  log('① オブジェクトストレージ（s3mock）を起動し、バケットの作成とバージョニングの有効化を行います（T-05-10）');
   const objectStorage = await startE2eObjectStorage();
   writeObjectStorageOriginEnv(objectStorage.endpoint);
   log(`   ${objectStorage.endpoint}（bucket=${objectStorage.bucket}）`);

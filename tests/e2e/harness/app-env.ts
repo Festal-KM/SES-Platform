@@ -47,7 +47,7 @@ export function buildE2eAppEnv(database: E2eDatabase, objectStorage: E2eObjectSt
     // 🔴 T-05-10（K-7）: `objectStore` は development で `real`（`connector-selection.ts`
     //    `developmentSelection()`）であり、モックにフォールバックしない（`CLAUDE.md` §11.1）。
     //    `docker-compose.yml` 既定の固定ポート（9000）ではなく、`harness/object-storage.ts` が
-    //    起動した E2E 専用の使い捨て MinIO インスタンスを指す（`docker compose up -d` の実行を
+    //    起動した E2E 専用の使い捨てオブジェクトストレージを指す（`docker compose up -d` の実行を
     //    前提にしない。PostgreSQL と同じ方針）。
     S3_ENDPOINT: objectStorage.endpoint,
     S3_ACCESS_KEY_ID: objectStorage.accessKeyId,

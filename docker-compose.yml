@@ -1,8 +1,8 @@
 # docker-compose.yml — ローカル開発コンテナ（T-01-02 / CLAUDE.md §2 / §11）
 #
-# APP_ENV=development の既定接続先。5 サービス: PostgreSQL / Redis / MinIO / MailHog / ClamAV。
-# 加えて 1 回だけ走る初期化コンテナ minio-init（バケット作成 + バージョニング有効化。T-05-06）。
-# 起動: docker compose up -d（🔴 `--wait` は使わない。minio-init は終了するコンテナであり待てない）
+# APP_ENV=development の既定接続先。5 サービス: PostgreSQL / Redis / s3mock（S3 互換） / MailHog / ClamAV。
+# 加えて 1 回だけ走る初期化コンテナ s3mock-init（バージョニング有効化。T-05-06）。
+# 起動: docker compose up -d（🔴 `--wait` は使わない。s3mock-init は終了するコンテナであり待てない）
 # 疎通確認: tests/smoke/docker-services.test.ts（pnpm test:smoke）
 #
 # 🔴 本ファイルが定義するのは development 専用の最小構成である。
@@ -62,28 +62,47 @@ services:
       retries: 20
       start_period: 5s
 
-  minio:
-    # 🔴 :latest の浮動タグを避け、RELEASE 日時タグに固定する（code-reviewer 指摘 #4）。
-    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
-    container_name: ses-minio
+  # 🔴 **オブジェクトストレージ（S3 互換）は adobe/s3mock である**（2026-09-28。Issue #75）。
+  #    MinIO のコンテナイメージが匿名で取得できなくなり（docker.io / quay.io = 401、ghcr.io = 403。
+  #    **401 はリポジトリ単位なので古いタグへの固定でも回避できず、ミラーも作れない**）、
+  #    CI の E2E がイメージ取得の段階で落ちたためである。実測の一覧と、失う忠実度
+  #    （SigV4 の署名検証。s3mock はどんな署名でも通す）の評価は
+  #    `tests/e2e/harness/object-storage.ts` 冒頭のコメントに書いた —— **経緯は 1 箇所に置く**。
+  # 🔴 `tests/e2e/harness/object-storage.ts` と**同じイメージ・同じタグ**に揃える
+  #    （`:latest` の浮動タグを避ける。片方だけ変えるとローカルと CI で別のイメージを引く）。
+  # ⚠️ s3mock は資格情報を検証しない。`S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` は
+  #    `packages/config` が必須にしているのでアプリ側には残るが、このコンテナには渡さない
+  #    （渡すと「効いている」と誤解させる）。
+  s3mock:
+    image: adobe/s3mock:4.7.0
+    container_name: ses-s3mock
     restart: unless-stopped
-    command: ['server', '/data', '--console-address', ':9001']
     environment:
-      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID:-ses_dev_minio}
-      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY:-ses_dev_minio_secret}
+      # バケットの作成はここで行う（MinIO 時代の `mc mb` は不要になった）。
+      initialBuckets: ${S3_BUCKET:-ses-platform-dev}
+      # 🔴 既定は false（終了時にファイルを消す）。development は再起動でアップロード済みの
+      #    スキルシートが消えると `skill_sheets` の行だけが残るため、保持する側に倒す。
+      #    ボリュームを付けたうえで、バケット・バージョニング設定・オブジェクトが
+      #    `docker restart` を跨いで残ることを実測で確認した。
+      retainFilesOnExit: 'true'
     ports:
-      - '127.0.0.1:${MINIO_API_PORT:-9000}:9000'
-      - '127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001'
+      # 🔴 コンテナ内のポートは 9090（s3mock の HTTP。9191 は HTTPS で使わない）。ホスト側は
+      #    9000 のまま公開し、`S3_ENDPOINT=http://localhost:9000` を変えずに済ませる。
+      - '127.0.0.1:${S3MOCK_API_PORT:-9000}:9090'
     volumes:
-      - ses_minio_data:/data
+      # イメージ既定の `root=/s3mockroot`（コンテナの環境変数）に合わせる。
+      - ses_s3mock_data:/s3mockroot
     healthcheck:
-      test: ['CMD', 'curl', '-f', 'http://localhost:9000/minio/health/live']
+      # 🔴 `GET /`（ListBuckets）が 200 なら S3 API が応答している。`/actuator/health` は
+      #    `Accept: application/json` を要求し、付けないと 406 を返す（実測）ため使わない。
+      #    curl はこのイメージに無い（busybox の wget を使う）。
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://localhost:9090/']
       interval: 5s
       timeout: 5s
       retries: 20
       start_period: 10s
 
-  # 🔴 T-05-06: バケットの作成と**バージョニングの有効化**（1 回だけ走って終了する初期化）。
+  # 🔴 T-05-06: **バージョニングの有効化**（1 回だけ走って終了する初期化）。
   #    development のストレージ初期化はこの 1 箇所に集める。
   #
   # 🔴 なぜバージョニングが必須か: `ObjectStore.head()` は `VersionId` が空なら**例外**にする
@@ -93,45 +112,48 @@ services:
   #    無いバケットでは `VersionId` が返らず、**アップロードの確定（#19）が必ず失敗する**。
   #    「未設定なら空文字で代替」は、全オブジェクトの重複排除キーが衝突する壊れ方になる
   #    （`CLAUDE.md` §11.1 の「静かに degrade させない」と同じ判断）。
+  #    🔴 s3mock の `initialBuckets` はバケットを作るだけで、**バージョニングは既定で無効**である
+  #    （有効化前の `PutObject` は `x-amz-version-id` を返さないことを実測で確認した）。
+  #
+  # 🔴 なぜ初期化に**この同じイメージ**を使うか: 新しいレジストリ依存を 1 つも増やさないためである
+  #    （MinIO 時代の `minio/mc` が取得不能になったのが Issue #75 の原因の半分でもある）。
+  #    s3mock のイメージには busybox が入っており、`nc`（PUT の送信）と `wget`（確認の GET）だけで足りる。
+  #    ⚠️ 署名は付けない。s3mock は SigV4 を検証しないため不要である（実測）。
+  # 🔴 PUT の 2xx で満足せず、**読み直して `Enabled` を確認して**から成功にする。黙って無効のままだと
+  #    「アップロードの確定が失敗する」という遠い症状でしか気づけない。
   #
   # 🔴 CORS はここでは設定しない（T-05-06 / T-05-10 の e2e-tester 所見への回答。実測に基づく）。
-  #    スキルシートは**ブラウザから S3 / MinIO へ直接 PUT** する（docs/05 §14.2）。この PUT は
+  #    スキルシートは**ブラウザからオブジェクトストレージへ直接 PUT** する（docs/05 §14.2）。この PUT は
   #    `Content-Type` / `Content-Length` を伴う**非単純リクエスト**なので、ブラウザは必ず OPTIONS
-  #    のプリフライトを送る。ただし **MinIO は既定で全 origin を許可する**（`api.cors_allow_origin`
-  #    の既定は `*`）—— 素の MinIO へ任意の Origin でプリフライトを投げると
-  #    `204` + `Access-Control-Allow-Origin: <その origin>` が返ることを実測で確認した。
-  #    したがって `development` の設定は不要であり、**動かないものを設定で埋めない**。
-  # ⚠️ 絞りたい場合は `mc admin config set local api cors_allow_origin="<origins>"`（動的。再起動不要）
-  #    か `minio` サービスの `MINIO_API_CORS_ALLOW_ORIGIN` を使う。**両方は設定しない**
-  #    （環境変数があると設定値が上書き固定され、どちらが効いているのか分からなくなる）。
-  #    ⚠️ この MinIO（RELEASE.2025-09-07）は **`PutBucketCors`（バケット単位の CORS）を実装して
-  #    いない**（`mc cors set` は `... functionality that is not implemented.` で失敗する。実測）。
+  #    のプリフライトを送る。ただし **s3mock は既定で全 origin を許可する**（MinIO と同じ）——
+  #    素の s3mock へ任意の Origin でプリフライトを投げると `200` +
+  #    `Access-Control-Allow-Origin: <その origin>` + `Access-Control-Allow-Methods: PUT` が返ることを
+  #    実測で確認した。したがって `development` の設定は不要であり、**動かないものを設定で埋めない**。
   # 🔴 **実 S3（`sandbox` / `staging` / `production`）は既定で全拒否であり、`PutBucketCors` が
   #    無いと S-008 のアップロードは必ず失敗する。** 設定は環境構築（SP-12 T-12-09）で行う
   #    （docs/05 §14.2 / docs/03 §4.18.1）。
   #
   # ⚠️ このサービスは終了する（`restart: "no"`）。`docker compose up -d --wait` は
   #    「終了したコンテナ」を待てないため、起動は `docker compose up -d` を使うこと。
-  minio-init:
-    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
-    container_name: ses-minio-init
+  s3mock-init:
+    image: adobe/s3mock:4.7.0
+    container_name: ses-s3mock-init
     depends_on:
-      minio:
+      s3mock:
         condition: service_healthy
     restart: 'no'
     environment:
       S3_BUCKET: ${S3_BUCKET:-ses-platform-dev}
-      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-ses_dev_minio}
-      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-ses_dev_minio_secret}
     entrypoint:
       - /bin/sh
       - -c
       - |
         set -e
-        mc alias set local http://minio:9000 "$${S3_ACCESS_KEY_ID}" "$${S3_SECRET_ACCESS_KEY}"
-        mc mb --ignore-existing "local/$${S3_BUCKET}"
-        mc version enable "local/$${S3_BUCKET}"
-        mc version info "local/$${S3_BUCKET}"
+        BODY='<VersioningConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Status>Enabled</Status></VersioningConfiguration>'
+        printf 'PUT /%s?versioning HTTP/1.1\r\nHost: s3mock:9090\r\nContent-Type: application/xml\r\nContent-Length: %s\r\nConnection: close\r\n\r\n%s' \
+          "$${S3_BUCKET}" "$${#BODY}" "$${BODY}" | nc s3mock 9090 | head -1
+        wget -q -O - "http://s3mock:9090/$${S3_BUCKET}?versioning" | grep -q '<Status>Enabled</Status>'
+        echo "versioning enabled: $${S3_BUCKET}"
 
   mailhog:
     image: mailhog/mailhog:v1.0.1
@@ -168,5 +190,5 @@ services:
 volumes:
   ses_postgres_data:
   ses_redis_data:
-  ses_minio_data:
+  ses_s3mock_data:
   ses_clamav_data:

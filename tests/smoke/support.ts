@@ -134,6 +134,37 @@ export function httpOk(url: string, timeoutMs = 3000): Promise<boolean> {
   });
 }
 
+/**
+ * HTTP GET の本文を返す（2xx 以外・失敗は `null`）。`httpOk` と同じ理由で node:http のみ。
+ *
+ * 用途: s3mock のバケットが**バージョニング有効になっているか**の確認（`?versioning` の XML を読む）。
+ * 有効になっていないと `HeadObject` が `VersionId` を返さず、アップロードの確定が必ず失敗する
+ * （docker-compose.yml `s3mock-init` のコメント / docs/05 §14.1）。
+ */
+export function httpBody(url: string, timeoutMs = 3000): Promise<string | null> {
+  return new Promise((resolve) => {
+    const req = http.get(url, { timeout: timeoutMs }, (res) => {
+      const status = res.statusCode ?? 0;
+      if (status < 200 || status >= 300) {
+        res.resume();
+        resolve(null);
+        return;
+      }
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk: string) => {
+        body += chunk;
+      });
+      res.on('end', () => resolve(body));
+    });
+    req.on('timeout', () => {
+      req.destroy();
+      resolve(null);
+    });
+    req.on('error', () => resolve(null));
+  });
+}
+
 /** `probe` が true を返すまで、`timeoutMs` の予算内で `intervalMs` 間隔でリトライする。 */
 export async function waitFor(
   probe: () => Promise<boolean>,

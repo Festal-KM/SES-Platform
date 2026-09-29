@@ -1,6 +1,11 @@
 // tests/smoke/docker-services.test.ts
 // T-01-02 (docs/sprints/SP-01-bootstrap.md): `docker compose up -d` 後の
-// PostgreSQL / Redis / MinIO / MailHog / ClamAV への疎通スモークテスト。
+// PostgreSQL / Redis / s3mock（S3 互換） / MailHog / ClamAV への疎通スモークテスト。
+//
+// 🔴 2026-09-28（Issue #75）: オブジェクトストレージを MinIO → adobe/s3mock に置き換えたため、
+//    サービス名と生存確認の URL をそれに合わせた（経緯は tests/e2e/harness/object-storage.ts 冒頭）。
+//    s3mock には `/minio/health/live` が無く、`/actuator/health` は `Accept: application/json` を
+//    要求して付けないと 406 を返すので、**`GET /`（ListBuckets）が 200 か**で見る。
 //
 // 実行: `pnpm test:smoke`（専用設定 vitest.smoke.config.ts 経由。事前に `docker compose up -d`
 // すること）。既定の `pnpm test:unit`（vitest.config.ts）はこのファイルを収集しないため、
@@ -15,6 +20,7 @@ import {
   clamdPing,
   envIntOrDefault,
   envOrDefault,
+  httpBody,
   httpOk,
   isDockerComposeAvailable,
   isForceSkip,
@@ -30,7 +36,7 @@ loadDotEnv();
 
 const SKIP = isForceSkip() || !isDockerComposeAvailable();
 
-const EXPECTED_SERVICES = ['postgres', 'redis', 'minio', 'mailhog', 'clamav'] as const;
+const EXPECTED_SERVICES = ['postgres', 'redis', 's3mock', 'mailhog', 'clamav'] as const;
 
 const POSTGRES_HOST = envOrDefault('POSTGRES_HOST', 'localhost');
 const POSTGRES_PORT = envIntOrDefault('POSTGRES_PORT', 5432);
@@ -38,8 +44,9 @@ const POSTGRES_PORT = envIntOrDefault('POSTGRES_PORT', 5432);
 const REDIS_HOST = envOrDefault('REDIS_HOST', 'localhost');
 const REDIS_PORT = envIntOrDefault('REDIS_PORT', 6379);
 
-const MINIO_HOST = envOrDefault('MINIO_HOST', 'localhost');
-const MINIO_API_PORT = envIntOrDefault('MINIO_API_PORT', 9000);
+const S3MOCK_HOST = envOrDefault('S3MOCK_HOST', 'localhost');
+const S3MOCK_API_PORT = envIntOrDefault('S3MOCK_API_PORT', 9000);
+const S3_BUCKET = envOrDefault('S3_BUCKET', 'ses-platform-dev');
 
 const MAILHOG_HOST = envOrDefault('MAILHOG_HOST', 'localhost');
 const MAILHOG_WEB_PORT = envIntOrDefault('MAILHOG_WEB_PORT', 8025);
@@ -131,12 +138,29 @@ describe.skipIf(SKIP)('docker-compose 開発コンテナの疎通（T-01-02）',
   );
 
   it(
-    'MinIO: /minio/health/live が 200',
+    's3mock: GET /（ListBuckets）が 200',
     async () => {
-      const ok = await waitFor(() => httpOk(`http://${MINIO_HOST}:${MINIO_API_PORT}/minio/health/live`), {
+      const ok = await waitFor(() => httpOk(`http://${S3MOCK_HOST}:${S3MOCK_API_PORT}/`), {
         timeoutMs: DEFAULT_TIMEOUT_MS,
         intervalMs: 2000,
       });
+      expect(ok).toBe(true);
+    },
+    DEFAULT_TIMEOUT_MS + 10_000,
+  );
+
+  // 🔴 s3mock-init（バージョニングの有効化）が走ったことの確認。s3mock の `initialBuckets` は
+  //    バケットを作るだけで**バージョニングは既定で無効**であり、無効だと `HeadObject` が
+  //    `VersionId` を返さずアップロードの確定が必ず失敗する（docs/05 §14.1）。
+  //    「コンテナは起動しているのに保存だけが失敗する」という遠い症状で気づくのを避ける。
+  it(
+    's3mock: バケットのバージョニングが Enabled（s3mock-init が走ったこと）',
+    async () => {
+      const url = `http://${S3MOCK_HOST}:${S3MOCK_API_PORT}/${S3_BUCKET}?versioning`;
+      const ok = await waitFor(
+        async () => ((await httpBody(url)) ?? '').includes('<Status>Enabled</Status>'),
+        { timeoutMs: DEFAULT_TIMEOUT_MS, intervalMs: 2000 },
+      );
       expect(ok).toBe(true);
     },
     DEFAULT_TIMEOUT_MS + 10_000,

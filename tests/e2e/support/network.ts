@@ -16,7 +16,7 @@ export type OutboundWatcher = {
 };
 
 /**
- * @param extraAllowedOrigins 🔴 T-05-10（K-7）: ダウンロードの署名付き URL（MinIO。development の
+ * @param extraAllowedOrigins 🔴 T-05-10（K-7）: ダウンロードの署名付き URL（オブジェクトストレージ。development の
  *   `objectStore` は `real`）へブラウザが実際にナビゲートする経路だけに使う、限定的な追加許可。
  *   「何でも許可する」抜け道にしないため、**呼び出し側が明示的に渡した文字列だけ**を足す
  *   （既定は空配列 = 従来どおりアプリのオリジンしか許可しない）。
