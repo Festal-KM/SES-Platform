@@ -1,7 +1,7 @@
 # 05. 実装設計書 — SES Platform（仮称）
 
 > **位置づけ**: 本書は `programmer` が**アーキテクチャを再決定せずにコードを書ける**粒度の実装ブループリントである。
-> **上流**: `CLAUDE.md`（一次資料。2026-09-01 改訂: §3.1 越境経路 4 → **5** / §3.3 契約書 / §4.2 確定 / §2 件数クォータ / §9-2 DocuSign / §9-3 独自ドメイン / §11.1 sandbox 射程）→ `docs/01-business-requirements.md`（`BR-01`〜`BR-73`）→ `docs/02-functional-requirements.md`（`F-001`〜`F-066` / `UC-01`〜`UC-25`）→ `docs/03-tech-selection.md`（`U-1`〜`U-22` / `Q-T-1`〜`Q-T-9`）→ `docs/04-ui-design.md`（`S-001`〜`S-045` / `A-001`〜`A-014` / `U-01`〜`U-12`）。**本版（2026-09-01）は Issue #6〜#15 の人間の決定を反映した改訂版**であり、決着済みの論点に「暫定 / 確認中」の表記を残していない。
+> **上流**: `CLAUDE.md`（一次資料。2026-09-01 改訂: §3.1 越境経路 4 → **5** / §3.3 契約書 / §4.2 確定 / §2 件数クォータ / §9-2 DocuSign / §9-3 独自ドメイン / §11.1 sandbox 射程）→ `docs/01-business-requirements.md`（`BR-01`〜`BR-73`）→ `docs/02-functional-requirements.md`（`F-001`〜`F-066` / `UC-01`〜`UC-25`）→ `docs/03-tech-selection.md`（`U-1`〜`U-22` / `Q-T-1`〜`Q-T-9`）→ `docs/04-ui-design.md`（`S-001`〜`S-046` / `A-001`〜`A-014` / `U-01`〜`U-23` / `Q-04-1`〜`Q-04-6`）。**本版（2026-09-01）は Issue #6〜#15 の人間の決定を反映した改訂版**であり、決着済みの論点に「暫定 / 確認中」の表記を残していない。
 > **矛盾する場合は `CLAUDE.md` が正。** 本書は上流のハードルール・ビジネスルール・受け入れ基準を弱める記述を含まない。
 > **本書に無いものを実装しない。** 判断に迷う箇所が残っていたら `## TBD` を見ること。そこにも無ければ `pm` に上げる。
 > 改訂（2026-09-07）: [Issue #33](https://github.com/Festal-KM/SES-Platform/issues/33) **既定 C** を反映し、**§3.3.1「パートナー FK 列の複合 FK 化」を新設**した（§3.1 に規約 1 行 / §4.7 にカタログ走査テスト 1 本 / §6.4 #14 に条件②の理由の書き換え / §17.1 の本数を 13 → 14 に追随）。🔴 **SP-06 着手前に migration で入れる。** 実装・migration の実ファイルは次の `programmer` タスクの範囲であり、本改訂は `docs/05` のみを変更している。
@@ -12,6 +12,8 @@
 > 🔴 **改訂 10（2026-09-11。T-08-04）**: **§4.6 の参照子 `candidateRef` と `AnonymousCandidateView` の置き場所を `packages/domain` から `apps/web/lib/anonymize/**` に変えた。** 改訂前の記述は**実装不能**である（`packages/domain` は `node:crypto` を import できない。`CLAUDE.md` §2.1 / `eslint.config.mjs` の `forbidNodeIo` / `tests/static/domain-purity.test.ts`）。**実装と不可分**のため `CLAUDE.md` §8.7 に従い本書を先に改訂した。あわせて ①退けた代替案（自前 SHA-256 / `hmac` の注入 / 構成とハッシュの分割）を記録 ②`score` / `rationale` を **Phase 1 では型に持たせない**（`F-017 AC-7`）ことを明記 ③並び順の規則（`updatedOn` 降順 → `candidateRef` 昇順。`docs/03` §4.13.2-2）を明記 ④🔴 **`F-017 AC-2` で「防ぐもの」と「Phase 1 の残存リスク」の線引き表**を新設。**変更箇所は §4.6 のみである。**
 
 > 🔴 **改訂 11（2026-09-15。[Issue #41](https://github.com/Festal-KM/SES-Platform/issues/41) = 人間の回答「1」〔2026-09-10〕。T-09-13 の実装前提）**: **§11.9 ⑦（パートナー所属エンジニアの提案はゲートを通せない）を決着させ、§11.14 を新設した。** `app_scan_probe` / `app_share_probe` / `app_scheduler_probe` と同型の**専用ロール `app_gate_probe` + `SECURITY DEFINER` 2 関数 + 列レベル `GRANT`（16 列・`SELECT` のみ）**。🔴 **読む列は 3 層から逆算して確定した**: 整合層の裏付け（`engineer_skills` 3 列）**に加えて PII 層の既知値 5 列（氏名・生年月日・メール・電話・現所属）が要る** —— `mask()` がパターンで伏せた値を `gate-inspector` は指摘せず、機械的検出は既知値しか見ないため、連絡先の既知値が無いとエンジニア本人のメールが本文に残ったまま PASS になる（§11.14 ②）。鍵は `engineer_id` ではなく **`proposal_id`**、**`state='GATE_RUNNING'` の間だけ 1 人分**を返し、ID を返さない。順序は **本書 → migration → 実装**（`CLAUDE.md` §8.7）。変更箇所は §1.4（対応表 1 行）/ §4.2（ロール 1 行）/ §4.4.2（経路 1 行）/ §4.7（#5 / #10 の文言・**#16** 新設・二重防御 **#12〜#14**）/ §8.5.1 / §11.9 ⑦・⑨ / §11.10 ⑩-5 / §11.11 ⑤ / **§11.14**（新設）/ §17.2 **#31** / `P-A-21` / `## TBD` 末尾。**本改訂は `docs/05` のみを変更している**（`000_roles.sql` / migration / `packages/db` / テストは T-09-13 の範囲。`docs/sprints/SP-09` T-09-13 の括弧書きの追随は `pm`）。
+
+> 🔴 **改訂 12（2026-09-30。`docs/04` 改訂 16〜18「UI/UX の全面刷新」の `program-design` 宛申し送り 22〔①〜⑧〕の消化）**: **§2.3（UI 層の実装構成）/ §6.11（UI 刷新に伴う読み取りの追補）/ §17.7（UI 刷新の静的検査と不変条件）を新設した。** 🔴 **`docs/04` は `design-reviewer` の `## APPROVED` を得た確定版であり、本改訂はその実装先を決めるだけである**（画面仕様・幅の割り当て・部品の一覧・禁止事項を 1 つも変えていない）。🔴 **既存の API / DB スキーマ / URL / ルーティング / 権限制御 / 業務ロジックを変えない**（新しいエンドポイントを 1 本も作らず、`SummaryStrip` / 要対応キューの 2 列 / `Drawer` はすべて既存の `#9` と既存の詳細・一覧 API に同梱する）。変更箇所は §2.1（ディレクトリツリーの `ui/`）/ §2.2（依存方向 3 行）/ **§2.3**（新設）/ §6.8（作らないもの 3 行）/ **§6.11**（新設）/ §17.2（#38 = §17.7 への参照）/ **§17.7**（新設）/ `P-A-25`〜`P-A-27` / `TBD-22`〜`TBD-24` / 付録 B（申し送り 22 の行）。**本改訂は `docs/05` のみを変更している**（`@theme` / `packages/ui` / `tests/static/**` の実ファイルは `pm` が割るタスクの範囲）。
 
 **構成**: 1 アーキテクチャ概観 / 2 リポジトリ構成 / 3 DB スキーマ / 4 データ分離設計 / 5 管理平面の設計 / 6 API 仕様 / 7 AI 層の設計 / 8 外部連携層の設計 / 9 ジョブ仕様 / 10 冪等性・不可逆事故の防止設計 / 11 品質ゲートのパイプライン設計 / 12 業務シーケンス / 13 環境分離の設計 / 14 ファイルストレージ規約 / 15 エラー処理方針 / 16 オブザーバビリティ / 17 テスト戦略 / 付録（`## Assumptions` / `## TBD` / 申し送りマッピング / 機能カバレッジ）
 
@@ -179,7 +181,11 @@ ses-platform/
       src/queues.ts                       # BullMQ のキュー定義（送信系は attempts:1 固定 / stepped バックオフの表。§9.1）
       src/mock/                           # モック実装（E2E と同一実装。§13.3）
     config/         # schema.ts（Zod）/ load-env.ts / connector-selection.ts（🔴 APP_ENV 分岐の唯一の場所。resolveConnectorSelection(env)）/ limits.ts / redact.ts
-    ui/, i18n/
+    ui/             # 🔴 §5-13 の 19 部品の唯一の置き場所（§2.3.1）。exports は "." と "./client" の 2 つだけ
+      src/components/                     # プリミティブ。"./client" 側だけが 'use client' を宣言する
+      src/icons.ts                        # 🔴 lucide-react を import する唯一のファイル（閉じた写像 + IconName。§2.3.3）
+      src/lib/cn.ts                       # 🔴 tailwind-merge を import する唯一のファイル（extendTailwindMerge の設定もここ）
+    i18n/
   prompts/          # 🔴 ワークスペースパッケージ @ses/prompts（依存ゼロ。T-07-05 / §7.13 ①）
     roles/          # 製品プロンプト {role}.v{n}.ts + index.ts（Issue #23 決定 A、2026-09-08）。packages/ai からのみ読む
                     # 直下の *.md はハーネスの指示文テンプレートであり、パッケージの include に入らない
@@ -201,8 +207,148 @@ ses-platform/
 | `$queryRaw` / `$executeRaw` / `$transaction` の直接呼び出し | `no-restricted-syntax`。例外は `packages/db/src/**` のみ（`docs/03` §4.3.1） |
 | `prompts/roles/**`（= `@ses/prompts`）を `packages/ai` 以外から import しない | `no-restricted-imports`（パッケージ名・相対パス・動的 import の 3 経路。T-07-05）。**さらに `packages/ai` の中でも読み込み口は `src/prompts.ts` の 1 本**（§17.2 #25） |
 | 🔴 `prompts/roles/**` は**何にも依存しない**（`@ses/*` にも `node:*` にも） | `no-restricted-imports`（専用ゾーン。§7.13 ①）+ §17.2 #25。プロンプトはデータであって実行主体ではない（`CLAUDE.md` §12.3） |
+| 🔴 **`packages/ui` は `next/*` と `@ses/i18n` に依存しない**（文言とリンクは props で受ける。§2.3.1） | `no-restricted-imports`（`packages/ui` ゾーンに `next` / `@ses/i18n` を追加）+ §17.7 (i) ④ |
+| 🔴 **`lucide-react` / `tailwind-merge` の import はそれぞれ 1 ファイルだけ**（`packages/ui/src/icons.ts` / `src/lib/cn.ts`） | §17.7 (i) ①②（ESLint は「`packages/ui` 以外は不可」までしか言えず、パッケージ内部で散ると閉じた写像も merge 設定も 2 つ目ができる。#10 / #10b と同じ発想） |
+| 🔴 **`@ses/ui/client` を import するファイルは自身が `'use client'` を宣言している** | §17.7 (i) ⑤（クライアント境界を暗黙に増やさない。`tests/static/client-db-boundary.test.ts` の規律と衝突させない） |
 
 🔴 **`packages/domain` から `Date` を追放する理由**: マッチングスコア（`F-029 AC-1`）・匿名化の丸め（`F-017 AC-3`）・満了判定（`F-043 AC-4`）はすべて「同じ入力に同じ出力」をテストで証明する必要がある。現在時刻を内部で読むとこれが成立しない。**`now: Date` を引数で受け取り、呼び出し側（handler / job）が渡す。**
+
+### 2.3 UI 層の実装構成（`docs/04` 改訂 16〜18 の受け皿。2026-09-30）
+
+⚠️ **節番号の読み方（本節 / §6.11 / §17.7 に共通）**: **`§3.1` `§3.4` `§4.1` `§5-1` `§5-13` `§7.x` `§10.x` `§11-xx` は `docs/04` の節**を指す（本書の既存の記法どおり）。**本書自身の参照は `§2.x` `§4.3` `§4.8` `§4.9` `§6.x` `§8.3` `§16.1` `§17.x`** である。`申し送り N` は `docs/04` の `program-design` 宛申し送りの番号。
+
+🔴 **`docs/04` 申し送り 22（①〜⑧）を、本節（①⑦⑧の一部）・§6.11（④⑤⑥⑧）・§17.7（②③）の 3 箇所で引き受ける。** 🔴 **`docs/04` は確定である。本節はその実装先を決めるだけで、画面仕様・幅の割り当て・部品の一覧・禁止事項を 1 つも変えない。** 🔴 **既存の API / DB スキーマ / URL / ルーティング / 権限制御 / 業務ロジックを変えない**（UI/UX の刷新であり機能改修ではない）。適用順序は `docs/04` `Q-04-5` の 5 段（`pm` が `docs/dev-plan.md` に落とす）。
+
+#### 2.3.1 19 部品の置き場所とクライアント境界（申し送り 22 ⑦）
+
+🔴 **19 部品すべてを `packages/ui/src/components/**` に置く**（`docs/04` §5-13 の 🔴「`packages/ui` の外に部品を作らない」）。`apps/web/app/(main)/_shell/**` に残るのは**値の組み立てだけ**である（ロールで解決した nav 配列・`t()` の呼び出し・`next/link` の受け渡し）。現行 `app-shell.tsx` / `page-heading.tsx` は**描画を `packages/ui` に移し、組み立てを据え置く**。
+
+| # | 部品 | サブパス | 種別 | 🔴 備考 |
+|---|---|---|---|---|
+| 1〜4 | `AppShell` / `Sidebar` / `TopBar` / `PageHeader` | `@ses/ui` | サーバ | 🔴 **`'use client'` を宣言しない**（現行 `app-shell.tsx` の 🔴 4 を変えない）。開閉は `<details>` |
+| 5 | `SummaryStrip` | `@ses/ui` | サーバ | 入力は `{ label, value, href? }` の 3〜5 件（§6.11.1） |
+| 6 | `DataTable`（器） | `@ses/ui` | サーバ | 行の描画をクライアントへ移さない（50 行 × 8 列。p95 に効く） |
+| 6b | `DataTableSortLink` / `DataTableColumnToggle` / `DataTableSelection` | `@ses/ui/client` | クライアント | 並び替えは**リンク**（並びはサーバが確定。§2.3.5） |
+| 7〜8 | `Pagination` / `Toolbar` | `@ses/ui` | サーバ | |
+| 9〜13 | `Tabs` / `Dialog` / `Drawer` / `DropdownMenu` / `Tooltip` | `@ses/ui/client` | クライアント | Radix。`Drawer` は `Dialog` 派生（別依存を足さない） |
+| 14〜15 | `EmptyState` / `Skeleton` | `@ses/ui` | サーバ | |
+| 16 | `Toast` | `@ses/ui/client` | クライアント | |
+| 17 | `IconButton` | `@ses/ui` | サーバ | 🔴 既存 `Button` の**バリアント**。新ファイルを起こさない |
+| 18 | `SearchInput` | `@ses/ui/client` | クライアント | 🔴 既存 `Input` のバリアント。デバウンスのためクライアント |
+| 19 | `StatusBadge` | `@ses/ui` | サーバ | 🔴 既存 `Badge` のバリアント。**状態名から表示を導出し、画面側で色を指定させない** |
+
+- 🔴 **バレルを 2 つに割る**（`package.json` の `exports` は `"."` と `"./client"` の 2 つだけ）。`packages/connectors` の `"."` / `"./aws"` と**同じ形**であり、理由も同じ —— 主バレルに載せると参照していない側までバンドルに引き込まれる。
+- 🔴 **`'use client'` は `@ses/ui/client` 側の各ファイル先頭に置く。** 主バレルにも `apps/web/app/(main)/layout.tsx` にも置かない（置くと主平面の全画面がクライアントバンドルへ移り、`tests/static/client-db-boundary.test.ts` の前提が崩れる）。
+- 🔴 **`packages/ui` は `next/*` と `@ses/i18n` に依存しない**（`CLAUDE.md` §2.1 の一方向 + 汎用部品パッケージの依存を平面の事情で増やさない）。
+  - **文言**: 解決済みの文字列を props で受ける（現行 `AppShell` と同じ規約）。`tests/static/no-hardcoded-copy.test.ts` の走査対象に `packages/ui/src/**/*.tsx` が入っているため、ここに日本語を置く選択肢は初めから無い。
+  - **リンク**: `linkComponent?: ComponentType<{ href: string; className?: string; children: ReactNode; 'data-testid'?: string }>` を prop で受け、`apps/web` が `next/link` を渡す。未指定なら素の `<a>`。🔴 **`next/navigation` も使わない**（現在地の判定は `currentPath` を prop で受ける）。
+- 🔴 **`data-testid` は `packages/ui` の中でも文字列リテラルで書く**（テンプレートの接頭辞 + 呼び出し側のリテラル）。あわせて **`tests/static/testid-inventory.test.ts` の `SCAN_ROOTS` に `packages/ui` を足す**（同テスト冒頭が「testid を別パッケージへ移した場合はここに足す（凍結リストから消さない）」と指示している。§17.7.3）。
+
+#### 2.3.2 デザイントークンの実装先（申し送り 22 ①）
+
+🔴 **実装先は `apps/web/app/tailwind.css` の `@theme` 1 本。** 2 本目の CSS を作らない / `packages/ui` 側に CSS 変数を宣言しない（同ファイル冒頭の規律と `T-21-07` で外したものを戻さない）。🔴 **`@theme` に `--breakpoint-*` を宣言しない**（`CLAUDE.md` §13.3 / `tests/static/tailwind-breakpoints.test.ts`）。🔴 **`@source '../../../packages/ui/src'` を消さない** —— 消すと `@ses/ui` のスタイルが本番ビルドから無言で消える（同ファイルに実測の記録がある）。
+
+🔴 **`packages/ui` は「`@theme` から生成された Tailwind のユーティリティ名」を書く。これが `apps/web` に依存せずにトークンを参照できる唯一の形である**（`@source` によって `packages/ui/src` が同じ 1 本のエントリの走査対象に入っているため、クラス名を書くだけで CSS が生成される。コード上の import は 1 つも生じない ＝ §2.2 の一方向を破らない）。
+
+| 種別 | `@theme` の宣言 | 書き方 | 🔴 規約 |
+|---|---|---|---|
+| **色**（semantic。§7.9 の表をそのまま写す） | `--color-fg` / `-fg-muted` / `-fg-placeholder` / `-bg` / `-bg-subtle` / `-bg-inset` / `-border` / `-border-strong` / `-brand` / `-brand-hover` / `-brand-bg` / `-brand-fg` / `-danger{,-bg,-border}` / `-warning{,-bg,-border}` / `-success{,-bg,-border}` / `-info{,-bg,-border}` / `-neutral-bg` / `-neutral-border` | ユーティリティ名（`text-fg-muted` / `bg-bg-subtle` / `border-border-strong` / `bg-warning-bg`） | 🔴 **値は Tailwind 既定パレットの階調を参照する**（`--color-warning: var(--color-amber-800)`。独自 hex を起こさない。`U-21`）。🔴 **`var(--color-…)` を直接引かない / 任意値（`text-[var(--color-fg)]`）を書かない**（1 つでも許すと検査 (a) が無意味になる） |
+| **文字サイズ** | `--text-title`(20px) / `--text-lg`(16px) / `--text-body`(14px) / `--text-cell`(13px) / `--text-xs`(12px) / `--text-micro`(11px) | `text-title` / `text-lg` / `text-body` / `text-cell` / `text-xs` / `text-micro` | ⚠️ 🔴 **`--text-lg` と `--text-xs` は Tailwind 既定の同名キーを上書きする**（既定は 18px / 12px）。**`--text-lg` の宣言が欠けると `text-lg` が 18px のまま検査 (g) は緑になる**ため、§17.7 (g) は「6 トークンが `@theme` に宣言されていること」も併せて見る。`--text-sm` / `--text-base` / `--text-2xl` は**宣言しない**（宣言すると使ってよい名前に見える） |
+| **spacing** | 🔴 **宣言しない** | Tailwind 既定の数値（`1`=4 / `2`=8 / `3`=12 / `4`=16 / `6`=24 / `8`=32 / `12`=48） | 🔴 §7.9 の 7 段は**既定スケールの 7 段と 1 対 1 で一致する**。`--space-*` を宣言すると同じ値が 2 つの名前を持つ。7 段の強制は §17.7 (f) の静的検査で行う |
+| **radius / transition** | `--radius-sm`(4px) / `--radius-md`(6px) | `rounded-sm` / `rounded-md` / `transition-colors duration-150 ease-out` | 🔴 **2 段だけ**。`rounded-lg` 以上を使わない（現行 `Button` の `rounded-md` / `Input` の `rounded-md` は `--radius-md` = 6px に収まる）。transition は既定の `duration-150` / `ease-out` を使い、トークンを起こさない。🔴 `transform` / `height` を遷移させない |
+| **shadow** | 宣言しない（既定の `shadow-sm` / `shadow-md` を使う） | overlay 部品（`Dialog` / `Drawer` / `DropdownMenu` / `Tooltip` / `Toast`）の**中だけ** | 🔴 **画面から `shadow-*` を書かない**（階層は border + 背景で表す。§7.9）。既存 `Input` / `Select` / `Textarea` の `shadow-xs` は入力欄の輪郭であり据え置く |
+| **component 層** | 🔴 **`@theme` に置かない** | `packages/ui` の各部品のクラス定数（現行 `control-classes.ts` / `link-classes.ts` と同じ形） | 🔴 component 層は semantic だけを参照する（§7.9）。`@theme` に置くと画面からも書けてしまい「部品ごと」の縛りが消える |
+
+- 🔴 **ブランド階調は `--color-brand` の 1 行で差し替えられる形にする**（`docs/04` `Q-04-2` = `indigo-700` 既定 / [Issue #1](https://github.com/Festal-KM/SES-Platform/issues/1) のブランド確定に従属）。
+- 🔴 **ダークテーマ用の 2 セット目を作らない**（`Q-04-3` の既定 ①）。`tailwind.css` の `color-scheme: light` と `dark:` を 1 つも書かない現行方針を変えない。
+- 🔴 **`@theme` の宣言と `docs/04` §7.9 の表の対応をミラーテストで固定する**（§17.7 (h)）。
+
+#### 2.3.3 依存の追加と `cn()` の新しい規律（申し送り 22 ⑦）
+
+🔴 **人間が承認済み（2026-09-29。`docs/04` §5-13）。`CLAUDE.md` §2 が宣言している shadcn/ui を宣言どおりに入れる位置づけであり、スタックの変更ではない。**
+
+| パッケージ | 追加先 | 用途 | 🔴 制約 |
+|---|---|---|---|
+| `lucide-react` | **`packages/ui`** | ナビ項目のアイコン + 操作アイコン（閉じる / 展開 / コピー / `内容を見る` / 並び替え / 検索） | 🔴 **import は `packages/ui/src/icons.ts` の 1 本**（§17.7 (i)。#10 / #10b と同じ発想）。同ファイルは**使うアイコンだけを named import した閉じた写像**と `IconName`（文字列リテラル型）を export し、`apps/web/lib/shell/nav.ts` と画面は `IconName` だけを扱う。🔴 **写像に無い名前は型エラー**になるので、比喩アイコン（きらめき / 稲妻 / ロケット / 脳 / 電球）も別セットの混入も構造的に起きない（`docs/04` §7.5 / §11-22） |
+| `@radix-ui/react-dialog` / `-dropdown-menu` / `-tooltip` / `-tabs` | **`packages/ui`**（`./client` 側） | `Dialog` / `Drawer`（Dialog 派生）/ `DropdownMenu` / `Tooltip` / `Tabs` | 🔴 **`Drawer` 用に別依存を足さない。** 🔴 `@radix-ui/*` の import は `packages/ui/src/components/**` のみ |
+| `class-variance-authority` | **`packages/ui`** | バリアント定義 | 🔴 画面側で `cva` を呼ばない（バリアントは部品が持つ） |
+| `tailwind-merge` | **`packages/ui`** | `cn()` の競合解決 | 🔴 **import は `packages/ui/src/lib/cn.ts` の 1 本**（§17.7 (i)） |
+
+- 🔴 **`packages/domain` には 1 つも足さない**（`CLAUDE.md` §2.1「何にも依存しない」）。🔴 **`apps/web` にも足さない**（部品は `packages/ui` にしか無い ＝ `apps/web` が Radix / lucide / cva / twMerge を直接触る理由が存在しない）。
+
+**`cn()` の新しい規律（🔴 現行 `packages/ui/src/lib/cn.ts` 冒頭の規律 1・2 を差し替える）**
+
+1. `cn()` は **`twMerge` で競合を解決する**。→ `className` で基底クラスを**上書きできる**（現行の「上書きできない」制限が解消される）。シグネチャ（`ReadonlyArray<string | false | null | undefined>`）は変えない。
+2. 🔴 **`extendTailwindMerge` で `@theme` の semantic 名を登録する。** `tailwind-merge` は CSS を読まないため、登録しないと **`text-cell` が「色」のグループに分類され、`cn('text-cell', 'text-fg-muted')` が `text-cell` を黙って落とす**（見た目だけが壊れ、テストは落ちない）。登録する群は `font-size`（6 トークン）/ `text-color` / `bg-color` / `border-color` / `ring-color`（semantic 名）。🔴 **設定は `cn.ts` の 1 箇所**（2 つ目の merge 設定を作らない）。🔴 **登録名の集合と `@theme` の宣言が一致することをミラーテストで固定する**（§17.7 (h)。`tests/static/anonymize-rounding-mirror.test.ts` と同じ形）。
+3. 🔴 **バリアントは `cva` に寄せる。** 同じ `className` 上書きが**3 箇所目に現れる前に variant を足す**（`className` を常用の逃げ道にしない）。
+4. 🔴 **`twMerge` が入っても prop に残すもの**（既存 4 つを消さない）:
+   - (a) **「クラスを出さない」という選択**を持つもの —— `TableCell` / `TableHead` / `TableRow` の `align='inherit'`。`className` では「何も出さない」を表現できず、出してしまうと行側の指定が届かなくなる（実測の根拠は `table.tsx` の表）。
+   - (b) **トークン外の値が入りうるもの** —— `variant` / `size` / `padding` / `whitespace`。任意文字列を許すと §7.9 の外の値が入る。
+   - (c) **列定義由来の寸法** —— `DataTable` の `minWidth`（§2.3.5）。
+5. 🔴 **画面側で `hover:` / `active:` / `focus-visible:` / `disabled:` を書かない**（§7.10 の 8 状態はプリミティブが持つ。§17.7 (j) が検査）。`focus-visible` のリングは全プリミティブで同一にする（`docs/04` `Q-04-6` の既定 ① = 既存 15 プリミティブの見た目が変わることを許容する）。
+
+#### 2.3.4 幅 3 クラスの実装（申し送り 22 ②(c) / `docs/04` §7.1）
+
+🔴 **幅は `PageBody`（`packages/ui`。`AppShell` の本体カラム直下）が決める。** `widthClass: 'full' | 'split' | 'prose'` を受け取り、`docs/04` §7.1 の表どおりに描く。
+
+| クラス | 実装 | 対象 |
+|---|---|---|
+| `full` | 左右 gutter（`px-6` = 24px）のみ。**上限を設けない** | A の 26 画面（主平面 15 / 管理平面 11） |
+| `split` | `grid` + 主カラム `1fr` / 副カラム **`lg:w-90` (360) → `xl:w-100` (400) → `2xl:w-120` (480)**。`lg` 未満は 1 列に落として副カラムを下へ | B の 18 画面 |
+| `prose` | **`max-w-180`（720px）+ 左寄せ**（🔴 `mx-auto` を書かない）。フォーム 1 列 | C の 16 画面（主平面 13 / 管理平面 3） |
+
+- 🔴 **画面ファイルに `max-w-*` と `style` による幅指定を書かない**（§17.7 (c)）。上表の任意寸法（`w-90` / `max-w-180`）は **`PageBody` の中だけに存在する**。
+- 🔴 **60 画面の割り当ては `docs/04` §7.1 の表が唯一の出所である。`docs/05` に写し替えない**（2 箇所に持つと片方だけ動く）。実装は各 `page.tsx` が `PageBody` に `widthClass` を渡す形とし、**渡していない画面が無いこと**を §17.7 (k) が検査する（`docs/04` `U-23` の「二重割り当ても未割り当ても残さない」の機械側）。
+- 🔴 **境界は Tailwind 既定の `lg` / `xl` / `2xl` の 3 本だけ**（1440 / 1920 に境界を作らない。`docs/04` 改訂 17）。サイドバーの形態が変わるのは **`xl` の 1 本だけ**で、`lg` 未満は §3.4 のボトムタブに置き換わる。
+- ⚠️ **`prose` の左寄せは「サイドバーの右端から 720px」であり、ビューポート中央ではない**（視線の起点を画面ごとに動かさないため。§11-24 ③）。
+
+#### 2.3.5 `DataTable` の設計（申し送り 22 ⑧）
+
+```ts
+// packages/ui/src/components/data-table.tsx（器 = サーバコンポーネント）
+export type ColumnPriority = 'always' | 'lg' | 'sm';        // 🔴 落とす順序を値で持つ
+export type DataTableColumn<Row> = {
+  readonly id: string;
+  readonly header: string;                  // 🔴 解決済み文字列（i18n は呼び出し側。§2.3.1）
+  readonly priority: ColumnPriority;        // 🔴 docs/04 §10.3 の表が一次資料
+  readonly minWidth: `${number}rem`;        // 🔴 下限幅（名称列は 10rem をどの境界でも維持。U-16）
+  readonly grow?: true;                     // 🔴 余りを配分する列（明示した列だけが伸びる）
+  readonly sortKey?: string;                 // 省略 = 並び替え不可
+  readonly hideable?: true;                  // 9 列目以降（列表示切替に格納する）
+  readonly whitespace?: 'nowrap' | 'normal'; // 既存 TableCell の prop をそのまま通す
+  readonly cell: (row: Row) => ReactNode;
+};
+export type DataTableProps<Row> = {
+  readonly columns: readonly DataTableColumn<Row>[];
+  readonly rows: readonly Row[];
+  readonly rowKey: (row: Row) => string;
+  readonly rowHref?: (row: Row) => string;          // 行クリック（linkComponent で描く）
+  readonly rowAction?: (row: Row) => ReactNode;     // 操作列（🔴 1 行につき 1 つ）
+  readonly sort?: { readonly key: string; readonly dir: 'asc' | 'desc' };
+  readonly empty: ReactNode;                        // EmptyState を受ける
+  readonly loadingRows?: number;                    // Skeleton の行数（🔴 実際に入る行数）
+  readonly selection?: DataTableSelection<Row>;     // 🔴 省略が既定 = 行選択を描かない
+};
+```
+
+| 要求（`docs/04` §5-13） | 実装 |
+|---|---|
+| sticky header | `<thead>` に `sticky top-0` + **下 border**（🔴 影で示さない。§7.9） |
+| 並び替え | `sortKey` を持つ列だけ `DataTableSortLink`（`@ses/ui/client`）。🔴 **並び順はサーバが確定させる** —— リンクの `href` にソートキーを載せ、既存の各一覧 API の決定的順序（`F-008 AC-5` / #29 ② / #10 等）を変えない。**クライアントで並べ替えない**（同じデータで順序が変わると監査・営業判断の根拠にならない） |
+| 列表示切替 | `hideable` を持つ列だけ `DataTableColumnToggle`（`DropdownMenu`）。🔴 **既定 8 列 + 操作列**を超える分に `hideable` を付ける（`docs/04` §7.1 を変えない） |
+| 行選択 | 🔴 **`selection` は任意で、省略が既定 = 選択列を描かない**（改訂 17。`S-015` の `F-016 AC-1` と `S-019` の `U-18` を部品側で守る）。🔴 **Phase 1 で `selection` を渡す画面は 0 である** |
+| 行アクション | `rowAction`。🔴 **1 つだけ**（一括操作は `Toolbar` 側。モバイルで既定にしない） |
+| 空状態 | `empty`（`EmptyState`）。🔴 **初回空と絞込 0 は呼び出し側が文言を分ける**（§10.1 / §10.4） |
+| カーソルページング | `Pagination`（別部品）。`DataTable` はページングを知らない |
+| 幅 | 各セルに `minWidth` を当て、`grow` の列にだけ余りを配分する（`docs/04` §7.1 の「`minmax()` で下限を持ち、余りは伸縮する列に配分」の挙動。実装形は **TBD-22**） |
+| 列の落とし方 | `priority='lg'` → `hidden lg:table-cell` / `'sm'` → `hidden sm:table-cell` / `'always'` → 常に描く。🔴 **`max-*:` の打ち消し方向を使わない**（モバイル優先。`tailwind-breakpoints.test.ts`） |
+| 名称セル | 🔴 **既存の `NameCell` に委譲する**（`lg` 以上 = 切り詰め + `title` / `lg` 未満 = 折り返し。`U-16`）。`DataTable` 側で 2 つ目の実装を持たない |
+| モバイル | 🔴 **1 レコードをカードに割る表示形態を持たない**（列を間引いたテーブルのまま。§11-12） |
+
+- 🔴 **`docs/04` §10.3 の 11 画面分の省略方針を、各画面の列定義の `priority` に写す。画面側に `hidden lg:` を書かせない**（部品に移すことで 11 画面分の規約が 1 箇所で守られる）。
+- 🔴 **`S-044` / `S-045`（経路 5）は `priority='always'` の列だけで構成し、`hideable` を 1 つも持たない**（列を増やすことも減らすこともしない。`BR-66`。§17.7 (m) が検査）。
+- **既定行数**は呼び出し側が `limit` として API に渡す（一覧 50 / 承認キュー 25 / 監視 100。`docs/04` §7.1）。§6.1 の「既定 50、最大 200」は変えない。`DataTable` は行数を知らない。
+- ⚠️ **`Pagination` の「前ページ」**: 現行の一覧 API は `nextCursor` だけを返す（`prevCursor` が無い）。🔴 **API を変えない**方針のため、`Pagination` は `prevCursor` を任意とし、無い画面では「前へ」を **URL の `cursor` 履歴**（ブラウザの戻る / 画面が積んだ 1 つ前のカーソル）で実現する（**TBD-24**）。
 
 ## 3. DB スキーマ
 
@@ -3586,6 +3732,9 @@ type SubmitAccepted = { attemptSeq: number; jobId: string; state: 'SUBMITTING' }
 | 🔴 「抽出結果を常に上書きする」テナント設定 | 🔴 `F-008 AC-8`。設定にすると、人が採否を選ぶ機会そのものが消える（§6.4 #16b） |
 | 🔴 `POST /api/members/{id}/restore`（無効化の取り消し）/ `PATCH /api/members/{id}` の所属変更 | 🔴 T-04-09。前者は「無効化した相手のパスワードが生き返る」経路であり、復帰は #14 の招待の再発行に限る。後者は「他社のアカウントを自社に移す」ことと同義で、第二境界（`CLAUDE.md` §3.1）をその場で破る |
 | 🔴 `POST /api/projects/{id}/visibility/restore`（自動解除の取り消し）/ `POST /api/projects/{id}/recheck`（再検査だけの再実行）/ `#26`・`#28` の `force` / `skipGate` / `keepPublished` / `ignoreFindings` | 🔴 T-12-10（`F-014 AC-9` / `AC-13`）。**FAIL を「了解のうえ公開」できる操作・API・設定が存在しない**（`BR-18` / `F-020 AC-2`）。復帰は「`S-012` で 3 欄を直す → `S-013` で公開し直す」の 2 手だけであり、**自動解除を取り消せる / 上書きできるロールは `OWNER` を含めて存在しない**（権限で開くと `BR-18` が「権限のある人なら迂回できる」に変わる）。再検査の再実行も置かない（元データが変わっていない再実行は結果が変わらず `F-026` の件数だけを消費する。保留からの復帰は `gate.hold-release`）。詳細は §11.11「T-12-10 の実装の決着」⑧ |
+| 🔴 **`Drawer` 専用のエンドポイント**（`GET /api/home/queue/{targetId}` / `…/drawer` に類するもの） | 🔴 `docs/04` 申し送り 22 ⑥ / 19 ⑥。**行を開くたびに取得が走る経路は、開くたびに監査ログが積まれる経路でもある**（60 秒ポーリング + 往復で `engineer.view` が実質的に無意味になる）。Drawer が読むのは `#9` に同梱した値と、**監査記録を伴わない既存の詳細 API**（提案詳細）だけである（§6.11.3） |
+| 🔴 **`SummaryStrip` 専用のエンドポイント** | 🔴 同 ④。件数は `#9` の応答に同梱し、**要対応キューと同じ 60 秒ポーリングに乗せる**（別の更新周期を作ると、数と行が食い違う瞬間ができる。§6.11.1） |
+| 🔴 **`S-019` / `S-041` / `S-016` 用の `Drawer` 応答** | 🔴 `docs/04` 改訂 17（§5-13）。`Drawer` プリミティブが在るのは `S-003` / `S-004` の要対応キューだけである。`S-041` は行の詳細を一覧に同梱（#10）、`S-016` は既存の候補 API の右パネル用フィールド（#30）、`S-019` は `S-023` への遷移 |
 | 🔴 `GET /api/projects/{id}/gate-results`（案件のゲート結果の履歴を返す Route Handler） | 🔴 T-12-10。`S-013` セクション 4 は**サーバコンポーネントから `readProjectPublishGateResults` を直接呼ぶ**（`#46b` / `S-006` と同じ作法）。提案側の #40b と**同じ `listReviewGateResults` を流用する**ので二重実装にはならず、読み取り専用の API の面だけを増やさない（§11.11「T-12-10 の実装の決着」⑤） |
 
 ### 6.9 管理平面 API（`/api/admin/**`）
@@ -3705,6 +3854,122 @@ POST /api/webhooks/esign/docusign/{tenantId}   // 🔴 HMAC-SHA256（X-Docusign-
 POST /api/webhooks/esign/cloudsign/{tenantId}/{secret}  // 第二コネクタのみ。署名検証が無いため URL パスのシークレットで代替（docs/03 §3.1.5b）
 // いずれも成功・失敗にかかわらず 200 を返す（4xx は再送されないプロバイダがある。docs/03 §3.1.5）。例外は「署名検証失敗」の 401 のみ。DocuSign は 100 秒以内（実際は 1 秒以内）に返す
 ```
+### 6.11 UI 刷新に伴う読み取りの追補（`docs/04` 改訂 16 / 申し送り 22 ④⑤⑥⑧。2026-09-30）
+
+🔴 **新しいエンドポイントを 1 本も作らない。** すべて既存の `GET /api/home`（#9）と既存の一覧 API に**同梱**する（§6.8 に 3 行を追加した）。🔴 **既存の URL / query / 応答キー / 並び順 / カーソルの形 / 認可を変えない。**
+
+#### 6.11.1 `SummaryStrip` のデータ源（申し送り 22 ④）
+
+- 🔴 **`#9` の `blocks` に `kind: 'SUMMARY'` を足す**（`HomeBlock` は**追加専用**という既存の規約どおり。`SCAN_QUARANTINE` / `ACTION_QUEUE` の意味を変えない）。
+
+```ts
+// apps/web/lib/home/types.ts（追加。既存の型は変えない）
+export type HostSummaryMetricKind =
+  | 'PROJECTS' | 'ENGINEERS' | 'PROPOSALS_IN_FLIGHT' | 'INTERVIEWS_SCHEDULED' | 'ASSIGNMENTS_ACTIVE';
+export type PartnerSummaryMetricKind =
+  | 'PUBLISHED_PROJECTS' | 'OWN_ENGINEERS' | 'SHARED_ENGINEERS' | 'PROPOSALS_IN_FLIGHT' | 'ASSIGNMENTS_ACTIVE';
+export type SummaryMetric<K> = { readonly kind: K; readonly count: number; readonly href: string | null };
+export type SummaryHomeBlock =
+  | { readonly kind: 'SUMMARY'; readonly audience: 'HOST';    readonly items: readonly SummaryMetric<HostSummaryMetricKind>[] }
+  | { readonly kind: 'SUMMARY'; readonly audience: 'PARTNER'; readonly items: readonly SummaryMetric<PartnerSummaryMetricKind>[] };
+```
+
+- 🔴 **`kind` を所属で分けた 2 つの合併型にする**（`HostHomeView` / `PartnerHomeView` と同じ形。型テストで固定）。🔴 **`TOTAL_*` / `RANK` / `COMPARISON` / `OTHER_COMPANIES` / `SAME_PROJECT_PROPOSALS` に類する `kind` を作らない** —— **フィルタで落とすのではなく、型に存在させない**（`BR-07` / `F-004 AC-4` / 申し送り 1・9 と同じ規律）。
+- 🔴 **ラベルは返さない。** `kind`（閉集合）→ 文言キーの写像は画面側の 1 箇所に置く（数の意味を API とクライアントの 2 箇所で決めない）。取引先の「見える範囲の説明」は既存の `PartnerHomeView.visibilityNotice` をそのまま使う（新しい文言フィールドを足さない）。
+
+| `kind` | 所属 | 集計 | Phase | 相乗り先（トランザクション） |
+|---|---|---|---|---|
+| `PROJECTS` | ホスト | `projects` の件数 | 1 | ✔ 要対応キューの `withTenant` |
+| `ENGINEERS` | ホスト | `engineers` の件数 | 1 | ✔ 同 |
+| `PROPOSALS_IN_FLIGHT` | 両方 | `proposals` の件数（🔴 **終端 `WON` / `LOST` / `WITHDRAWN` を除く**。`docs/04` §S-003 の「進行中の提案」） | 1 | ✔ 同 |
+| `PUBLISHED_PROJECTS` | 取引先 | `projects` の件数（C4 で自社に公開された行だけが見える） | 1 | ✔ 同 |
+| `OWN_ENGINEERS` | 取引先 | `engineers` の件数（C3 で自社所有だけ） | 1 | ✔ 同 |
+| `SHARED_ENGINEERS` | 取引先 | `engineer_shares` の有効行の件数 | 1 | ✔ 同 |
+| `INTERVIEWS_SCHEDULED` | ホスト | `proposals` の `state = 'INTERVIEW_SCHEDULED'` | 2 | ✔ 同 |
+| `ASSIGNMENTS_ACTIVE` | ホスト | `assignments` の `state = 'ACTIVE'` | 2 | ✔ **セクション 2（満了が近い稼働）の `withHostTenant`**（§4.3-6。基底表はホスト文脈専用） |
+| `ASSIGNMENTS_ACTIVE` | 取引先 | 🔴 **`partner_assignment_v`（§4.9 のビュー）**。基底表には型として触れない | 2 | ✖ `withPartnerScope` が **1 本増える** |
+
+- 🔴 **平常時に増えるトランザクション本数**: **Phase 1 は +0 本。** 実装は `readActionQueueBlock` の本体を `db` を受け取る内部関数に切り出し、**同じ `withTenant` の中で `readSummaryCounts(db, audience)` を呼ぶ**（`apps/web/lib/home/action-queue-read.ts`。🔴 **既存の export と呼び出し側の形は変えない**）。Phase 2 は **ホスト +0**（セクション 2 の `withHostTenant` に相乗り）/ **取引先 +1**（ビュー越しでしか読めず避けられない）。
+  - 🔴 **本数は `readHomeBlocks` 冒頭のコメント表と結合テストで固定する**（`tests/isolation/shell-header.test.ts` ⑤ と同じ作法）。🔴 **`apps/web/app/(main)/layout.tsx` の外枠の表〔ホスト 4 / 取引先 3〕は変わらない** —— ストリップは外枠ではなく**画面**の読み取りである。
+  - 🔴 **件数は `count` で取り、`where` に `tenant_id` / `partner_company_id` / `owner_partner_company_id` を書かない**（母集団は RLS が決める。`action-queue-read.ts` 冒頭と同じ規律）。🔴 **生 SQL を使わない**（`$queryRaw` は `TenantDb` の型から除去済み。§4.3-3）。
+- **Phase 1 に出る指標はホスト 3 件 / 取引先 4 件、Phase 2 で両方 5 件になる**（`Assignment` は Phase 2、`INTERVIEW_SCHEDULED` はホームの面談セクションと同じ Phase 2）。🔴 **`docs/04` §5-13 の「3〜5 件」の範囲に両フェーズとも収まっており、指標の選定（`Q-04-4` の 5 指標）を減らしていない。** Phase 2 で `kind` を足すのは**追加専用**の変更である（既存 `kind` の意味を変えない）。
+- 🔴 **0 件でも `count: 0` を返す**（描かない判断は画面側。申し送り 22 ④）。🔴 **`items` を空配列にする分岐を作らない**（「まだ読んでいない」と区別できなくなる）。
+- 🔴 **ストリップを描かない判定は画面側の 1 箇所**（`apps/web/app/(main)/_home/**`）で、条件は **「全 metric の `count` が 0」= 初回空**である（`docs/04` §4.1「0 が 5 個並ぶ画面を作らない」/ §3.4 のモバイルも同じ）。**個々の 0 で項目を間引かない**（並びが日によって変わると走査の記憶が効かない）。
+- 🔴 **更新周期は要対応キューと同じ 60 秒**。`?changedSince=` を付けた差分応答でも **`SUMMARY` は毎回全量返す**（5 件の数値であり差分にする意味が無く、数と行が食い違う瞬間を作らない）。
+
+#### 6.11.2 要対応キューの `状態` 列と `操作` 列（申し送り 22 ⑤）
+
+```ts
+// 既存の ActionQueueRow に 2 フィールドを追加（既存フィールドと rowVersion の意味は変えない）
+// 🔴 状態の型は既存の単一出所を使う（`@ses/domain` の ProposalState / ProposalRequestState。新しい列挙を起こさない）
+readonly stateBadge:
+  | { readonly entity: 'PROPOSAL';          readonly state: ProposalState }
+  | { readonly entity: 'PROPOSAL_REQUEST';  readonly state: ProposalRequestState };
+readonly action: { readonly kind: ActionQueueActionKind; readonly href: string } | null;
+
+// ブロック直下に追加（ctx 由来 = 全行に一様な不能条件）
+export type ActionQueueActionKind = 'APPROVE' | 'FIX' | 'RESEND' | 'RESPOND';
+readonly actionAvailability: Readonly<Record<ActionQueueActionKind,
+  { readonly enabled: boolean; readonly reasonKey: MessageKey | null }>>;   // 🔴 enabled=false のとき reasonKey は非 null
+```
+
+- 🔴 **`stateBadge` は「エンティティ + 状態」の組**で返す（`StatusBadge` が色を決める。§5-13）。🔴 **色・バリアント名・表示文字列を応答に入れない**（1 箇所でしか色が決まらないことが §7.4 の意味の対応を守る唯一の方法）。
+- 🔴 **`action` はサーバが決める。画面は種別と状態から推測しない。** 判定は **`apps/web/lib/home/action-queue.ts` の 1 関数**に置き、種別ごとの分岐を画面に散らさない。
+
+| 行の種別 | `action.kind` | `href`（🔴 **既存 URL のみ。新しいルートを作らない**） |
+|---|---|---|
+| `APPROVAL_PENDING` | `APPROVE` | `S-021`（`/proposals/{id}/approve`） |
+| `GATE_FAILED` | `FIX` | `S-020`（`/proposals/{id}/edit`） |
+| `SUBMIT_FAILED` | `RESEND` | `S-022`（`/proposals/send-failures`） |
+| `SEND_HELD` | `FIX` | `GATE_STALE` は `S-019`（`APPROVED` フィルタ）/ `DOMAIN_UNVERIFIED` は `S-036`（🔴 `PROVIDER_QUOTA` はキューに載せない。既存の定め） |
+| `PROPOSAL_REQUEST_PENDING`（取引先） | `RESPOND` | `S-018`（`/proposal-requests/{id}`） |
+| `PROPOSAL_REQUEST_PENDING`（**ホスト**） | 🔴 **`action: null`** | 返答するのは取引先であり、ホストにこの行の操作は無い（`href`〔行クリック〕は `S-017` のまま） |
+
+- 🔴 **4 つの不能条件は `actionAvailability` に 1 箇所へ集める**（`docs/04` 申し送り 22 ⑤ の「画面側の条件分岐に散り、どこかで漏れる」を構造で防ぐ）。判定順は §6.2 の `requireExecutable` と**同じ順序**にする:
+
+| 順 | 条件 | 影響する `kind` | `reasonKey` |
+|---|---|---|---|
+| 1 | `ctx.lifecycleState ∈ {SUSPENDED, CLOSING, PURGED}` | **全部** | テナント停止（解除は `PLATFORM_OWNER`） |
+| 2 | `ctx.partnerSuspendedAt !== null` | 全部 | 取引先企業の停止（解除は招いたホスト） |
+| 3 | ロール（🔴 **既存の `deriveMainCapabilities(ctx.role)` を再利用する。2 つ目のロール判定表を作らない**） | `approve` → `APPROVE` / `submit` → `RESEND` / `RESPOND` | 権限（`U-10` の理由テキスト） |
+| 4 | 送信ドメイン未検証（§8.3） | **`RESEND` だけ** | `S-036` へ（`F-001 AC-4`。🔴 `APPROVE` / `FIX` / `RESPOND` は対象外） |
+
+- 🔴 **なぜ ctx 由来の条件を行に持たせないのか**: `action` を行ごとに ctx 込みで確定させると、**ドメイン検証の完了やロール変更では行の `updated_at` が動かないため差分応答（`rowVersion >= changedSince`）に乗らず、クライアントの `action` が古いまま残る**。`actionAvailability` はブロック直下で**毎回全量返す**（4 エントリ）ので、差分と矛盾しない。🔴 画面の条件は `row.action !== null && actionAvailability[row.action.kind].enabled` の 2 項だけで、**両方がサーバの与えた事実**である（ロールも状態も画面が見ない）。
+- 🔴 **`enabled === false` のとき、画面はボタンを描画せずその位置に `reasonKey` の文言を置く**（`disabled` で表さない。§7.10 / `U-10`）。
+- 🔴 **`action` は 1 行につき 1 つで、配列にしない**（ホームに一括操作を置かない。`docs/04` §S-003 / `F-021 AC-4`）。
+- 🔴 **代理閲覧**: 主平面のセッションに代理閲覧は無い（§5.6）。`/admin/impersonate/**` が同じ表示部品で描くときは `Capabilities.mode='IMPERSONATION'` を**同じ 1 関数に渡して `actionAvailability` を全 `false`** にする（部品側で分岐しない）。
+
+#### 6.11.3 `Drawer` の応答（申し送り 22 ⑥）
+
+🔴 **台帳のエンジニア詳細とスキルシートを含めない。** 含めた時点で `CLAUDE.md` §3.5 の 🔴（閲覧・ダウンロードは必ず監査ログに記録する）が発火し、**一覧で行を開くたびに `engineer.view` が積まれて「誰の経歴を誰がいつ見たか」が読めなくなる**。担保は**型・経路・静的検査の 3 層**にする。
+
+| 行の種別 | Drawer が読むもの | 監査 |
+|---|---|---|
+| 提案の 4 種別（`APPROVAL_PENDING` / `GATE_FAILED` / `SUBMIT_FAILED` / `SEND_HELD`） | 🔴 **既存の提案詳細の読み取り**（`S-023` の材料。`ProposalEvent` の直近 3 行 + 凍結情報）。**`EngineerSnapshot` の凍結情報は出してよい**（申し送り 22 ⑥「出すのは提案・タスク・依頼の側の情報（凍結情報を含む）」） | 🔴 **記録しない経路である**（`BR-27` / §16.1 が記録するのは**エンジニア詳細・スキルシート・案件詳細**の閲覧であり、提案の閲覧は対象外）。この線引きが「既存の詳細 API のうち監査記録を伴わないものだけを使う」の実体である |
+| `PROPOSAL_REQUEST_PENDING`（ホスト） | 🔴 **既存の `HostProposalRequestView`（#32）のまま**。**対象 = 案件名 + `共有候補（匿名）` / 相手 = `null`**（画面が `—` を描く） | 記録しない（一覧の取得は `BR-27` の対象外） |
+| `PROPOSAL_REQUEST_PENDING`（取引先） | 🔴 **自社エンジニアなので実名でよい**（`PartnerProposalRequestView` が `engineers.display_name` を読む現行のまま。**非対称であることが正しい**） | 同上 |
+
+- 🔴 **ホスト向けの型に `engineerId` / エンジニア名 / 所属会社名 / `EngineerSnapshot` を持たせない**（経路 4。**フィルタで落とすのではなく存在させない**。現行の `toHostProposalRequestView` は `engineerId` を `select` していないため既にこれを満たす）。型テスト（`apps/web/lib/home/types.test.ts`）に行を足す。
+- 🔴 **`EngineerSnapshot` が存在しない段階（依頼の行）では凍結情報の欄を 1 つも描かない**（無い情報の空欄は「開示されていない」ではなく「まだ入っていない」に読める。`docs/04` §S-003）。これは**型で表す**（依頼の行の Drawer ビューに凍結情報のキーが無い）。
+- 🔴 **Drawer に実行系のアクションを置かない**（承認 / 送信 / 再送 / 応諾 / 公開 / 解除）。Drawer の末尾は**詳細画面への遷移 1 本**で閉じる。担保: 🔴 **`Drawer` の中身を組み立てる関数の戻り値の型に `action` を持たせない**（§6.11.2 の `action` は**キューの行**が持つもので、Drawer ビューには型として無い）。
+- 🔴 **`Drawer` 用の追加エンドポイントを作らない**（§6.8 に 3 行追加）。`forbidden-api-routes.test.ts`（§17.2 #30）の禁止パターンに `api/home/**` の行詳細ルートを足す。
+
+#### 6.11.4 既存一覧 API との接続（申し送り 22 ⑧）
+
+| 画面 | 既存 API | ページング | `DataTable` 側 |
+|---|---|---|---|
+| `S-005` | #15 `GET /api/engineers` | カーソル（`cursor` = 行の ID / 案件ありは並びのキー）。`{ items, total, nextCursor }` | 列 = §10.3 の `S-005` 行の優先度。🔴 `selection` を渡さない |
+| `S-010` | #25 `GET /api/projects` | カーソル。`{ items, total }` | 同（`S-010` 行） |
+| `S-015` | #29 `GET /api/engineer-shares` | カーソル。`{ items, nextCursor }`（🔴 **`total` を返さない契約を変えない**） | 🔴 **`selection` を渡さない**（`F-016 AC-1`。一括の共有 / 解除を作らない）。操作列はどの境界でも隠さない（`priority='always'`） |
+| `S-016` | #30 `GET /api/projects/{id}/candidates` | カーソル（並びのキー） | 🔴 右パネルは **幅クラス B の副カラム**であり `Drawer` ではない（§2.3.4） |
+| `S-019` | #45 提案一覧 | カーソル | 🔴 **Phase 1 は `selection` を渡さない**（`U-18`。選択チェックボックスも一括承認も描かない） |
+| `S-041` | #10 `GET /api/audit-logs` | カーソル。行の詳細は応答に同梱 | 🔴 **行の直下へのインライン展開**（`Drawer` を使わない。複数行を同時に開ける） |
+| `S-044` / `S-045` | #80〜#82 | カーソル | 🔴 **`priority='always'` の列だけ。`hideable` を 1 つも持たない**（`BR-66`） |
+| `A-002` / `A-005` / `A-006` | API-A2 / A8 / A7 | 既存のまま | 🔴 **監視画面では列を隠さない**（§10.3）＝ 全列 `priority='always'` |
+
+- 🔴 **`limit` の既定は画面が渡す**（一覧 50 / `S-019` の承認待ちフィルタ 25 / `A-005`・`A-006` 100）。§6.1 の「既定 50、最大 200」を変えない。
+- 🔴 **応答のキーを 1 つも足さない / 変えない。** 列の優先度・幅・並び替え可否は**画面の列定義**に置く（API は列を知らない）。
+
 ## 7. AI 層の設計（`CLAUDE.md` §3.2 / §12）
 
 ### 7.1 ロールをパイプライン工程として定義する
@@ -7162,6 +7427,8 @@ export const logger = pino({
 | 36 | 🔴 `no-hardcoded-copy.test.ts`（T-10-01。§15.2.1） | 🔴 **ビュー（`apps/web/**/*.tsx` / `packages/ui/src/**/*.tsx`。`*.test.tsx` / `__fixtures__` を除く）に日本語の文言の直書きが無い**（CLAUDE.md §3.5 / `BR-32`）。4 種別を AST で見る: ①JSX テキスト ②JSX 属性の値（`aria-label` / `title` / `placeholder` / `alt` に限らず**すべての属性**。`label="…"` の props 渡しも）③JSX の子の式に直接置かれた文字列 / テンプレートリテラル ④それ以外の文字列 / テンプレートリテラル（変数に置いてから JSX に流す経路を塞ぐ）。④の例外は **`new XxxError('…')` の引数だけ**（開発者向けの例外メッセージ。利用者向けは `userMessageKey` で運ぶ。§15.2）。「日本語の文字」= ひらがな / カタカナの文字（`・` `ー` を除く）/ CJK 統合漢字。`t(...)` / `messages.*` / props 経由は許可。🔴 **許可リスト `ALLOWED_HARDCODED_COPY` はファイル単位 + 理由つきで、使われていない項目があれば落ちる。T-10-01 時点の違反は 0 件でリストは空。** `apps/web/lib/**/*.ts` の日本語は**開発者向けの `Error.message`（165 件）で走査対象外**（利用者向け文言は `userMessageKey`）。合成ソース（`__fixtures__/no-hardcoded-copy/`）で 4 種別 + 例外の働きを対照 |
 | 37 | 🔴 `audit-target-type-literal.test.ts`（T-12-13 ①。§6.5「T-12-13 ①⑤⑥ の実装の決着」/ §16.1） | 🔴 **`audit_logs.target_type`（提案）の表記が 1 定数に統一されている**。`apps/**` + `packages/**` の非テストソースを AST で走査し、監査行（監査を書く呼び出し `writeAuditLog` / `recordAuditLog` / `recordAuthAuditLog` / `rethrowWithInvalidTransitionAudit` / `auditLogRowValues` / `audit.write` / `auditLog.create(Many)` の引数、または `action` + `actorKind` を持つリテラル）の `targetType` に ①`'Proposal'` / `'PROPOSAL'` のリテラルが 0 件 ①'`*GATE_TARGET_TYPE` / `*SEND_ENTITY_TYPE`（別の列の定数）の流用が 0 件、提案の `action` を持つ監査行は識別子 `PROPOSAL_AUDIT_TARGET_TYPE` そのもの ②定数経由の書き込みが 4 経路（`apps/web` / `packages/db` / `apps/worker` / seed）に実在する ③監査行の外には `review_gates` の `'PROPOSAL'` が残っている（走査が列を見分けている対照）④migration 20260929000000 は原文の `UPDATE` 1 文だけで、列の追加・GRANT / REVOKE / ポリシー・DELETE / INSERT が無く、`NO FORCE` → 残存検査 → `FORCE` の順を守る。結合側は `proposal-approval.test.ts` ② と `audit-log.test.ts`「T-12-13 ①」（migration の再生） |
 
+| 38 | 🔴 **UI 刷新の検査 13 本（(a)〜(m)）** | 🔴 **一覧と段階的有効化は §17.7 が持つ**（色トークン / プリミティブ二重実装 / 画面幅 / ブレークポイント / コントラスト比 / spacing / 文字サイズ / トークンのミラー / 依存の単一経路 / 8 状態 / 幅クラスの網羅 / Drawer の台帳到達 / 列定義の契約）。**本表に写し替えない**（2 箇所に持つと片方だけ動く） |
+
 ### 17.3 E2E の主要シナリオ
 
 | # | シナリオ | 対応 |
@@ -7289,6 +7556,67 @@ export const logger = pino({
 | 🔴 **ブラウザ**（T-03-11 で確定） | Chromium 系のみ（`desktop-chromium` / `mobile-chromium`）。セッション Cookie が `__Host-` + `Secure` であり、http のローカル環境で保存されるかは「ループバックを信頼できるオリジンとして扱うか」に依存するため。WebKit / Firefox を足す場合は**ローカルの HTTPS 起動**が前提になる |
 | **型検査** | `tests/e2e/**` のうち `@playwright/test` に依存するのは `*.spec.ts` と `support/**` だけであり、そこは `pnpm typecheck:e2e`（`tsconfig.e2e.json`）が検査する。ハーネス（`harness/**` / `global-*.ts`）は Playwright に依存させず、`pnpm typecheck` の射程に置く（E2E 基盤を無検査にしない） |
 
+### 17.7 UI 刷新の静的検査と不変条件（`docs/04` 申し送り 22 ②③。2026-09-30）
+
+🔴 **`CLAUDE.md` §8.3 のレビュー方針（UI のみは静的テスト群で機械的に捕まえる）の受け皿である。** 置き場所は **`tests/static/**`**（既存 57 本と同じ作法 —— TypeScript の AST で走査 / コメントは対象外 / 走査の空振りを対照テストで示す / 許可リストは理由つきで未使用なら落ちる）。
+
+#### 17.7.1 検査の一覧
+
+| # | テスト | 検査内容 | 段階的有効化 |
+|---|---|---|---|
+| **(a)** | `ui-color-tokens.test.ts` | 🔴 **アプリコードに primitive の色クラスが出現しない。** 対象は `apps/web/app/**/*.tsx` と `packages/ui/src/**/*.tsx`（`*.test.tsx` / `__fixtures__` を除く）。禁止は `{text,bg,border,ring,outline,divide,fill,stroke,decoration,accent,caret,placeholder,from,via,to,shadow}-{slate,gray,zinc,neutral,stone,red,orange,amber,yellow,lime,green,emerald,teal,cyan,sky,blue,indigo,violet,purple,fuchsia,pink,rose}-{50〜950}` と `*-white` / `*-black` と任意値（`text-[#…]` / `bg-[oklch(…)]` / `text-[var(--color-…)]`）。🔴 **`transparent` / `current` / `inherit` は対象外**（構造であって色の選択ではない） | 🔴 **要**（現状 1,273 箇所） |
+| **(b)** | `ui-primitive-single-impl.test.ts` | 🔴 **プリミティブの二重実装が無い。** ①`role="dialog"` / `role="alertdialog"` を出すソースが `packages/ui/src/components/**` の 1 箇所（申し送り 22 ②(f)）②`@radix-ui/*` の import が `packages/ui/src/components/**` だけ ③`apps/web` に `AppShell` / `PageHeader` / `DataTable` / `Drawer` / `EmptyState` / `Skeleton` / `Toast` / `StatusBadge` を**宣言**するソースが無い（`export function <名前>` の走査。**props を組み立てて渡すだけの `_shell/**` は宣言ではない**）④`IconButton` / `SearchInput` / `StatusBadge` が**独立ファイルを持たない**（`button.tsx` / `input.tsx` / `badge.tsx` の中のバリアントである） | 不要（新規に 0 件を保つ） |
+| **(c)** | `ui-screen-width.test.ts` | 🔴 **画面ファイルに幅の指定が無い。** ①`apps/web/app/**/*.tsx` に `max-w-` が現れない ②同じ範囲に `style` 属性による `width` / `maxWidth` / `minWidth` が現れない（幅は §2.3.4 の 3 クラスと `DataTable` の列定義が決める）。🔴 **`packages/ui/src/**` は対象外**（`PageBody` / `NameCell` / `DataTable` が唯一の置き場所である） | 🔴 **要**（実測 86 箇所。`*.render.test.tsx` を含む概数であり、**着手時に走査で再実測する**。うち `max-w-sm` 系の入力欄幅は `Input` の `width` prop へ、`max-w-64` / `max-w-68` は `NameCell` / QR 部品へ移す） |
+| **(d)** | `tailwind-breakpoints.test.ts`（**既存を維持**） | 🔴 **`--breakpoint-*` の宣言が無い / 画面幅バリアントは `sm:` `md:` `lg:` `xl:` `2xl:` だけ / 任意値と打ち消し方向（`max-sm:`）が無い / `@source` が消えていない。** 🔴 **本テストを刷新で 1 行も緩めない**（`@theme` にトークンを足す改訂であり、ブレークポイントを足す改訂ではない） | 不要（既に 0 件） |
+| **(e)** | `ui-contrast.test.ts` | 🔴 **semantic の文字色 × 背景色のコントラスト比が 4.5:1 以上。** 手順: ①`apps/web/app/tailwind.css` の `@theme` から `--color-*` の宣言を読み、`var(--color-{family}-{step})` の参照を **`node_modules/tailwindcss/theme.css` の既定パレット**まで解決する（🔴 **パレットの値をテストに写さない** —— 写すと Tailwind の更新で静かに嘘になる）②oklch → sRGB → 相対輝度 → コントラスト比（変換は `tests/static/support/oklch.ts` の純粋関数。既知の 3 値で対照テスト）③組は**導出する**: 前景 = `-bg` / `-border` 接尾を持たない `--color-*`、背景 = `--color-bg*` / `-bg` 接尾 / `--color-brand`（`brand-fg` の背景）。同系統 + 無彩色前景 × 全背景。🔴 **除外は「`--color-fg-placeholder` を前景に持つ組」の 1 条件だけ**（§7.10 の `disabled` と placeholder は意図して約 2:1 に落としている。WCAG 1.4.3 も無効な UI 部品を対象外とする）。**画面ごとの除外リストを作らない** | 不要（トークン定義と同時に緑にする） |
+| **(f)** | `ui-spacing-scale.test.ts` | 🔴 **spacing が §7.9 の 7 段以外を使っていない。** 対象プロパティは `{p,px,py,pt,pr,pb,pl,m,mx,my,mt,mr,mb,ml,gap,gap-x,gap-y,space-x,space-y}`。許す値は **`1` / `2` / `3` / `4` / `6` / `8` / `12`** と **`0` / `auto` / `px`**（段ではなく「無し」の表現）。🔴 `0.5` / `5` / `7` / `9` / `10` / `24` などは違反 | 🔴 **要**（現状 48 種類。`AppShell` のボトムタブ逃がし `pb-24` は**理由つきの恒久例外 1 件**として許可リストに置く —— これは余白の段ではなく `fixed` 要素の高さ分の逃がしである） |
+| **(g)** | `ui-type-scale.test.ts` | 🔴 **文字サイズが §7.9 の 6 トークン以外を使っていない。** ①`text-{title,lg,body,cell,xs,micro}` だけを許し、`text-{sm,base,xl,2xl,3xl,…}` と任意値（`text-[15px]`）を違反とする ②🔴 **`@theme` に 6 トークンすべてが宣言されていることを併せて見る** —— `--text-lg`（16px）/ `--text-xs`（12px）は **Tailwind 既定の同名キーの上書き**であり、宣言が欠けると `text-lg` が 18px のまま**①だけでは緑になる**（§2.3.2）③`--text-sm` / `--text-base` / `--text-2xl` が `@theme` に**宣言されていないこと**（宣言すると使ってよい名前に見える） | 🔴 **要**（実測 832 箇所 / 92 ファイル。`*.test.tsx` を含む概数であり、**着手時に走査で再実測する**。大半は `text-sm` → `text-body` の置換で、`text-xs` は据え置き） |
+| **(h)** | `ui-token-mirror.test.ts` | 🔴 **3 箇所の宣言が一致する**（`tests/static/anonymize-rounding-mirror.test.ts` と同じ形）: ①`apps/web/app/tailwind.css` の `@theme` の `--color-*` / `--text-*` の名前集合 ②`docs/04` §7.9 の semantic トークン名（本書 §2.3.2 の表に写したもの）③`packages/ui/src/lib/cn.ts` の `extendTailwindMerge` に登録した名前集合。🔴 **③が欠けると `cn()` がトークンを黙って落とす**（§2.3.3 規律 2） | 不要 |
+| **(i)** | `ui-dependency-single-path.test.ts` | 🔴 **新規依存の入口を固定する**（§17.2 #10 / #10b と同じ発想）: ①`lucide-react` の import が `packages/ui/src/icons.ts` の 1 本 ②`tailwind-merge` の import が `packages/ui/src/lib/cn.ts` の 1 本 ③`class-variance-authority` / `@radix-ui/*` の import が `packages/ui/src/**` だけ ④`packages/ui/src/**` に `next/` と `@ses/i18n` の import が 1 つも無い（§2.3.1）⑤`@ses/ui/client` を import するファイルは**自身が `'use client'` を宣言している**（クライアント境界を暗黙に増やさない。`tests/static/client-db-boundary.test.ts` の規律と衝突させない）⑥`packages/ui/package.json` の `exports` が `"."` と `"./client"` の 2 つだけ | 不要 |
+| **(j)** | `ui-state-in-primitives.test.ts` | 🔴 **8 状態を画面側で書かない**（§7.10）: `apps/web/app/**/*.tsx` に `hover:` / `active:` / `focus-visible:` / `focus:` / `disabled:` / `data-[state=selected]:` のバリアントが現れない | 🔴 **要**（許可リストは段ごとに縮める） |
+| **(k)** | `ui-width-class-coverage.test.ts` | 🔴 **60 画面すべてが幅クラスを 1 つ持つ**（`docs/04` `U-23`）: `apps/web/app/**/page.tsx` のうち**認証前の画面を含むすべて**が `PageBody` に `widthClass` を渡していること（AST）。**渡していない / 2 回渡している画面があれば FAIL。** 🔴 **画面数の期待値をテストに書かない**（60 という数は `docs/04` が持つ。ここが数を持つと画面追加のたびに 2 箇所を直す） | 🔴 **要**（段ごとに対象を広げる） |
+| **(l)** | `home-drawer-no-ledger.test.ts` | 🔴 **Drawer が台帳に到達しない**（§6.11.3）: ①`apps/web/app/(main)/_home/**` と `apps/web/lib/home/**` に `engineer` / `engineerSkill` / `engineerCareer` / `skillSheet` のデリゲート参照が無い（🔴 **例外は `action-queue-read.ts` の取引先の枝 1 箇所**〔自社台帳の `display_name`。自社の情報であり越境ではない〕）②同範囲から `/api/engineers` / `/api/skill-sheets` への fetch が無い ③ホスト向けの Drawer ビュー型に `engineerId` / エンジニア名 / 所属会社名 / 凍結情報のキーが無い（型テスト）④`forbidden-api-routes.test.ts`（#30）の禁止パターンに `api/home/**` の行詳細ルートを足す | 不要（0 件を保つ） |
+| **(m)** | `datatable-column-contract.test.ts` | 🔴 **列定義の契約**: ①`S-044` / `S-045` の列定義が `priority === 'always'` のみで `hideable` を持たない（`BR-66`。列を増やすことも減らすこともしない）②`A-005` / `A-006` の列定義が全列 `priority === 'always'`（🔴 監視画面では列を隠さない。§10.3）③`selection` を渡す `DataTable` の呼び出しが **0 件**（Phase 1。`S-015` の `F-016 AC-1` / `S-019` の `U-18`）④`priority !== 'always'` の列を持つ画面で `hidden lg:` / `hidden sm:` を**画面側に直書きしていない**（部品が出す） | 不要（0 件を保つ） |
+
+#### 17.7.2 段階的有効化（🔴 「後で有効にする」で終わらせない）
+
+🔴 **(a)(c)(f)(g)(j)(k) を一度に有効化すると全画面が赤くなって前に進めない。** そこで **既存の `no-hardcoded-copy.test.ts` の `ALLOWED_HARDCODED_COPY` と同じラチェット**を使う。
+
+| # | 仕組み | 効果 |
+|---|---|---|
+| 1 | **許可リストは「ファイル単位 + 理由 + どの段（`Q-04-5` の 5 段）で外すか」**を持つ | 外す基準が文書ではなくコードに書かれる |
+| 2 | 🔴 **未使用の項目があれば落ちる**（そのファイルの違反が 0 になったのに載っているなら FAIL） | **直したら必ず外れる。** 縮小が機械的に強制される |
+| 3 | 🔴 **許可リストの行数をスナップショットで固定する** | **増える変更は落ちる**（単調減少しか許されない） |
+| 4 | 🔴 **許可リストは初回コミット時点の実体で凍結し、以後 1 行も追加しない**（新規ファイルは最初から semantic トークンで書く） | 「新しい画面だから例外」が成立しない |
+| 5 | **各段のタスクの完了条件に「その段で触った画面を許可リストから削除すること」を入れる**（`pm` が `docs/dev-plan.md` に落とす） | 段が終わるたびに検査の射程が広がる |
+
+- 🔴 **(b)(d)(e)(h)(i)(l)(m) には許可リストを置かない**（いずれも現状 0 件、またはトークン定義と同時に緑になる）。
+- 🔴 **許可リストの対象は「ファイル」であって「クラス」ではない。** クラス単位にすると「この色だけは許す」が増えて、semantic 層が意味を失う。
+- **段ごとの見通し**（`Q-04-5` の 5 段。件数は着手時点で再実測する）:
+
+| 段 | 対象 | この段で許可リストから外れるもの |
+|---|---|---|
+| ① 外枠 | `@theme` / `packages/ui` の 19 部品 / `_shell/**` | (e)(h)(i) が緑になる。(a)(f)(g)(j) から `packages/ui/src/**` と `_shell/**` が外れる |
+| ② 一覧 | `S-005` `S-010` `S-015` `S-016` `S-019` `S-041` `A-002` `A-005` `A-006` | (c)(k)(m) がこの 9 画面で緑。(a)(f)(g) から 9 画面が外れる |
+| ③ ホーム | `S-003` `S-004` | (l) が緑。2 画面が外れる |
+| ④ 承認・判断 | `S-020` `S-021` `S-023` `S-024` `S-030` `S-018` ほか B / C クラス | 同 |
+| ⑤ 管理平面 | `A-*` の残り | 🔴 **ここで許可リストが空になり、スナップショット（行数 0）が最終状態になる** |
+
+#### 17.7.3 `data-testid` と文言キーの凍結（申し送り 22 ③ / `docs/04` `U-22` / §11-26）
+
+🔴 **刷新で `data-testid` と `packages/i18n` の「キー名」を変えない（値＝表示文字列は変えてよい）。** これにより既存の **E2E 71 ケース / render 41 本 / 静的 57 本**がそのまま回帰検出器として働き、**落ちたテストはすべて挙動の回帰**になる。
+
+| 対象 | 現状の担保 | 🔴 足りないもの / 追加する担保 |
+|---|---|---|
+| `data-testid` | `tests/static/testid-inventory.test.ts` が「実体 ⊇ `FROZEN_EXACT` / `FROZEN_PREFIXES`」を検査する | ⚠️ **`FROZEN_EXACT` 自体を編集すれば緑になる**（凍結リストは同じ PR で書き換えられる）。→ 🔴 **`tests/static/support/testid-baseline.ts` に 2026-09-30 時点の値を固定し、`FROZEN_EXACT` / `FROZEN_PREFIXES` がそのベースラインを部分集合として含むことを検査する**（`testid-freeze.test.ts`）。**追加は可、改名と削除は不可。** 🔴 **`UNRESOLVED_ALLOWLIST` を増やさない**（同テスト冒頭の規約。新部品の testid は呼び出し側の文字列リテラルで書く） |
+| `data-testid`（部品の移動） | `SCAN_ROOTS = [apps/web]` | 🔴 **`packages/ui` を `SCAN_ROOTS` に足す**（同テスト冒頭が「testid を別パッケージへ移した場合はここに足す（凍結リストから消さない）」と指示している）。足さないと、部品を `packages/ui` に移した瞬間に**凍結の射程から抜ける** |
+| 文言キー | `no-hardcoded-copy.test.ts` が直書きを禁じる（キー集合は固定していない） | 🔴 **`tests/static/support/i18n-key-baseline.ts` に 2026-09-30 時点の `Object.keys(ja)` を固定し、現在のキー集合がそれを包含することを検査する**（`i18n-key-freeze.test.ts`）。🔴 **値は比較しない**（①〜⑥ の接頭辞の除去・グループ名の追加・`内容を見る` の追加は**値の変更**であり許される） |
+| 画面の `h1` | `page-heading-single.test.ts`（1 画面に `h1` は 1 つ） | 🔴 **維持する**（`PageHeader` を `packages/ui` に移しても、`title` を渡さない 3 画面〔`S-006` / `S-011` / `S-013`〕の扱いを変えない） |
+| 折り返し / 溢れ | `expectNoBrokenLabels` / `expectNoHorizontalOverflow`（E2E） | 🔴 **維持する**。🔴 **名称列の下限幅 10rem をどの境界でも維持する**（`U-16`。`DataTable` の `minWidth` に写す） |
+
+- 🔴 **`packages/i18n` の値の差し替えは `programmer` の作業であり、本書の改訂を要しない**（キーは不変。`docs/04` 申し送り 20 ⑦ と同じ）。
+- 🔴 **ベースラインの 2 ファイルは「刷新の期間中の不変条件」である。** 刷新の完了後にキーを整理したくなったら、**Issue を立てて `docs/04` `U-22` の改訂から始める**（`CLAUDE.md` §8.6 / §8.7）。
+
 ## Assumptions
 
 **本書が置いた前提。上流で未確定のものは `## TBD` と相互参照する。**
@@ -7320,6 +7648,10 @@ export const logger = pino({
 | **P-A-23** | 🔴 **`S-015` の一覧（#29。T-11-11）で、`docs/04` 申し送り 18-⑥ の「`PUT` の応答に `sharedAt` を含める」を既存の `sharedOn`（共有開始日。JST 暦日）で満たすと解釈し、新しいキーを足さない。** カーソルは並びのキーの組（`s:{epochMs}:{engineerId}` / `u:{epochMs}:{engineerId}`）とし、`mode` と `shared` の不一致を 400 で弾く。`availableBy` は本画面ではソフト条件ではなく絞り込みとして評価する | §6.4「#29 の改訂」/ §17.2 #33 / `docs/04` §S-015 | 🔴 **本書が置いた確定（2026-09-17）。** 画面が描くのは共有開始**日**であり、秒精度の値を別キーで返すと応答のキー集合（`tests/isolation/engineer-shares.test.ts:557`）が変わる一方で新しい判断材料は増えない。`docs/04` の語を `sharedOn` に揃える追随はオーケストレーターが行う。応答の 2 キー契約・匿名 5 項目・一括操作の不在は変えていない |
 | **P-A-24** | 🔴 **SP-12 `T-12-14` ② ④ / `T-12-18` ③ ⑥ ⑦ ⑧ ⑨ ⑩ ⑪ ⑫ の上流改訂（2026-09-18）は、すべてスプリントの表の「既定」で確定させた。** 既定を実キー形に写す際に本書が置いた 5 点: ①`tenant.purge` の「`counts` のキー = 表名と数値のみ」を、書き込み側の平坦な **`count_{table}`** に対する**キー接頭辞族**（`count_*`。`tenant.purge` 1 行だけ）で満たす（記録側を入れ子に変えない = T-11-09「記録側は変えない」の規律。`runId` は落ちる）②`data_export.download` の「`requestId`」は同じ行の **`対象` 列（`targetType = 'DataExportRequest'` / `targetId`）で既に出ている**ため `detail` に重ねず、「`format`」= 実キー `kind` だけを載せる（不透明 ID の表示種類を型に作らない規律を優先）③`GATE_RESULT` は既定の 6 キーだけで **`aiFailed` は載せない**（既定の列挙に無い）④`S-041` の CSV（#10b）は ~~閲覧（#10）と同じ規律で監査に記録しない~~ → ✅ **上流に合わせて記録する形で確定（2026-09-18）**。`docs/04` §S-041「（監査ログに記録される）」が上流であり、`CLAUDE.md` §8.7 に従い本書を合わせた——`audit_log.export`（`USER`。`summary = { rowCount, truncated }`）を §16.1 / §6.4「CSV エクスポート」行 ⑤ / 許可リスト表に追加した。⑤API-A2 の `summary` は**絞り込み前の母集団**で数える（#45 `byState` と同型） | §4.4 C8 / §5.5 / §6.3 #10b / §6.4「#10 の改訂」/ §6.5 #40b / §6.9 API-A2 / §11.10 ⑨ / §16.1 / §17.3 #2 | 🔴 **本書が置いた確定。人間判断を要するものは Issue で確認中（回答を待たず既定で進む。`CLAUDE.md` §8.6）**: [Issue #73](https://github.com/Festal-KM/SES-Platform/issues/73)（`ProposalEvent` の実行者名の取引先への開示。既定 = 現状維持 = C8 DIRECTORY の意図された開示）/ ~~[Issue #69](https://github.com/Festal-KM/SES-Platform/issues/69)（`auth.login_failed` の `reason` の `[masked]` と `withPlatformWrite` の `before` / `after` の文字列化。既定 = 現状維持）~~ → ✅ **確定（2026-09-22、[Issue #69](https://github.com/Festal-KM/SES-Platform/issues/69) = 回答「現状維持でOK」）。§5.5 / §16.1 の「暫定」注記を確定に書き換えた（実装は無改変）**。⚠️ **[Issue #73](https://github.com/Festal-KM/SES-Platform/issues/73) は未回答のままであり、§4.4 C8 の「暫定」注記は外していない**。~~**回答が来たら §4.4 C8 / §5.5 / §16.1 の「暫定」注記を確定に書き換える**~~。①〜⑤の `docs/04` §S-041 / §A-002 / §S-023 への追随（`requestId` → `対象` 列の読み替え / CSV の記録の有無 / 履歴の描き方）はオーケストレーターが `ui-design` に渡す |
 
+| **P-A-25** | 🔴 **`docs/04` §5-13 の 19 部品をすべて `packages/ui` に置き、`packages/ui` が `next/*` と `@ses/i18n` に依存しない形で成立させる**（§2.3.1）: ①**文言は解決済みの文字列を props で受ける**（現行 `AppShell` と同じ規約。`no-hardcoded-copy` の走査対象に `packages/ui/src/**/*.tsx` が入っているため、ここに日本語を置く選択肢は初めから無い）②**リンクは `linkComponent` prop で受ける**（`apps/web` が `next/link` を渡す。未指定なら素の `<a>`）③**現在地は `currentPath` を prop で受ける**（`next/navigation` を使わない）④**バレルを `"."`（サーバ安全）/ `"./client"`（`'use client'`）の 2 つに割る**（`packages/connectors` の `"."` / `"./aws"` と同じ形）⑤`apps/web/app/(main)/_shell/**` に残るのは**値の組み立てだけ** | §2.3.1 / §2.3.3 / §17.7 (b)(i) | 🔴 **本書が置いた実装方法。** `docs/04` §5-13 の 🔴「`packages/ui` の外に部品を作らない」と `CLAUDE.md` §2.1 の一方向を**同時に**満たす形はこれしか無い（`packages/ui` に `next/link` と `@ses/i18n` を入れる案は、汎用部品パッケージの依存が平面の事情で増える。外枠 4 部品だけ `apps/web` に据え置く案は §5-13 の 🔴 に反する）。🔴 **画面仕様・部品の一覧・禁止事項は 1 つも変えていない** |
+| **P-A-26** | 🔴 **トークンの参照は「`@theme` から生成された Tailwind のユーティリティ名」だけで行い、`packages/ui` から CSS 変数を直接引かない**（§2.3.2）。成立の根拠は `apps/web/app/tailwind.css` の **`@source '../../../packages/ui/src'`**（コード上の import が 1 つも生じないため §2.2 の一方向を破らない）。🔴 **spacing は `@theme` に宣言しない**（§7.9 の 7 段が Tailwind 既定スケールの 7 段と 1 対 1 で一致するため、宣言すると同じ値が 2 つの名前を持つ）。🔴 **component 層（`--table-header-bg` / `--badge-*` 等）は `@theme` ではなく部品のクラス定数として持つ**（`@theme` に置くと画面からも書けて「部品ごと」の縛りが消える） | §2.3.2 / §17.7 (a)(f)(h) | 🔴 **本書が置いた実装方法。** `docs/04` §7.9 の 🔴「実装先は `tailwind.css` の `@theme` 1 本」「2 本目の CSS を足さない」「`packages/ui` 側に 2 本目の宣言を作らない」をすべて満たす。**値・名前・意味の割り当ては §7.9 の表のまま写した**（1 つも変えていない） |
+| **P-A-27** | 🔴 **色 / 幅 / spacing / 文字サイズ / 8 状態 / 幅クラスの静的検査を「ファイル単位の許可リスト + 4 つのラチェット」で段階的に有効化する**（§17.7.2）: ①許可リストは理由 + 外す段つき ②**未使用なら落ちる**（直したら必ず外れる）③**行数をスナップショットで固定**（増える変更は落ちる）④**初回コミット時点で凍結し以後 1 行も追加しない**（新規ファイルは最初から semantic）⑤各段のタスクの完了条件に「その段で触った画面を許可リストから削除すること」を入れる | §17.7.2 / `docs/dev-plan.md`（`pm`） | 🔴 **本書が置いた運用。** 既存 `no-hardcoded-copy.test.ts` の `ALLOWED_HARDCODED_COPY`（ファイル単位 + 理由 + 未使用なら落ちる）と**同じ形**であり、新しい作法を持ち込んでいない。🔴 **「後で有効にする」で終わらせない**ことが ②③④の目的である（現状 1,273 + 86 + 48 種 + 832 箇所を一度に赤くすると前に進めない） |
+
 ## TBD
 
 **上流で未確定・暫定のもの。`pm` が優先度を判断できるよう、「本書がどう扱ったか」と「決着しないと何が止まるか」を書く。確定事項として扱わない。**
@@ -7347,6 +7679,10 @@ export const logger = pino({
 | **TBD-20** | 🔴 **`EngineerCareer`（経験内容）を保持期間の削除対象に含めるか**（T-09-12。`docs/02` 章 6.8 / A-24 が「含める」を既定として置いたが、🔴 **`CLAUDE.md` §3.5 / `BR-29` の削除対象の列挙〔連絡先・スキルシート原本〕には経歴が入っていない**。列挙への追加は上流の改訂であり**人間の承認事項**。`CLAUDE.md` §8.6） | 🔴 **暫定。[Issue #48](https://github.com/Festal-KM/SES-Platform/issues/48) で確認中**（既定 = A「削除対象に含める」）。**確定事項として扱わない。** 本書は `PURGE_SPEC.delete` に `{ table: 'engineer_careers', rows: 'ALL', provisional: 'ISSUE-48' }` として置き（§9.7）、**回答で変わるのは設定値 1 要素だけ**にした（`retention.delete` / `tenant.purge` のハンドラは `PURGE_SPEC` を読むだけなのでコードは変わらない）。B（含めない）なら `retain` へ移すだけである | **止まらない。** `T-09-12` は既定で実装でき、削除ジョブの実装（**SP-16 T-16-06**）までに決着すればよい。🔴 **ただし SP-16 の着手前には決着が要る** —— 一度削除してしまった経歴は戻らない（不可逆） | `docs/02` A-24 / 章 6.8 / `BR-29` / `CLAUDE.md` §3.5 / **§9.7** |
 | **TBD-19** | **席単価と、取引先の席を課金対象に含めるか**（`Q-20` / `Q-T-3`①。事業判断） | `Plan.monthlySeatPriceJpy` は設定値。**取引先の席を含めるかで `usage.seat-snapshot`（§9.8）の分母（`Membership` の有効行数にパートナーロールを含めるか）が変わる**ため、集計関数に `countPartnerSeats: boolean` を引数で持たせ決め打ちしない | `F-062` の Stripe `Price` 設計（Phase 3）。Phase 1 のうちに再提起（`docs/03` `pm` 申し送り 14） | `docs/01` `Q-20` / `docs/03` `Q-T-3` |
 | **TBD-21** | 🔴 **公開後の自動解除を「気づける場所」に出すか**（T-12-10 の射程外。2026-09-21） — `docs/04` §S-011「結果は通知（`F-039`）と `S-003` の要対応キューに現れる」/ §S-013「解除された場合は要対応として残る（見に行かないと気づけない事象にしない）」は、**`#9` の `ACTION_QUEUE`（T-12-15）に行種別を足すこと**を要求している。🔴 **`docs/04` 申し送り 21 の 8 点にも `T-12-10` の受け入れ基準 ①〜⑥ にも無い**ため、本書は §11.11「T-12-10 の実装の決着」⑬-1 に射程外として明記した | **設計は済んでいる部分で止まらない。** 自動解除の事実・原因の欄・指摘への導線は `#27` の `publishState`（§11.11「T-12-10 の実装の決着」⑤）から読め、`S-011` / `S-013` / `S-010` は帯と列で描ける。足りないのは**能動的な気づき**（一覧を開かないと分からない）だけであり、`ACTION_QUEUE` に 1 行種別を足す独立した変更で閉じる（`publishState` の材料をそのまま使える） | 🔴 **止まるのは「ホストが解除に数日気づかない」ケースだけ**（SES の案件は公開から反応まで数日空くので、実運用では起こりうる。`F-014 AC-9` の趣旨の半分）。**`pm` が SP-12 内の別タスクにするか Phase 2 に送るかを決める** | `docs/04` §S-011 / §S-013 / §6.3 #9 / **§11.11「T-12-10 の実装の決着」⑬** |
+
+| **TBD-22** | 🔴 **`DataTable` を CSS Grid（`display:grid` + `grid-template-columns: minmax(…)`）で組むか、`<table>` を保ったまま §7.1 の挙動（列の下限幅 + 明示した列にだけ余りを配分）を満たすか**（`docs/04` §7.1 の 🔴 は実現手段として「CSS Grid（`minmax(下限, 最大)` の列定義）」と書いている） | 🔴 **暫定。既定 = B「`<table>` を保つ」**（§2.3.5）。各セルに列定義の `minWidth` を当て、`grow: true` の列にだけ余りを配分する（`table-auto` の分配 ＝ `minmax(下限, auto)` + `1fr` と同じ挙動）。理由: A（CSS Grid）は `<table>` / `<tr>` / `<td>` の DOM と器の `overflow-x-auto` が同時に変わり、**E2E 71 / render 41 の行・列セレクタと `expectNoHorizontalOverflow` の前提が一度に動く** —— `docs/04` `U-22` の不変条件（**落ちたテストはすべて挙動の回帰**）が刷新のいちばん危険な段で壊れる。🔴 **§7.1 が求める挙動（下限幅と伸縮列の明示）は B でも満たせる**ため、要求を弱めていない。A に決まった場合は `role="table"` / `row` / `cell` を明示し、`DataTable` の器 1 箇所の変更で済む | **止まらない**（既定で実装できる）。決着が要るのは **段② 一覧の着手前**。A なら E2E / render の一斉見直しが同じスプリントに入る | `docs/04` §7.1 / §5-13 / `U-22` / §11-24 / **§2.3.5** |
+| **TBD-23** | 🔴 **`docs/04` 申し送り 22 ②(g) の「Tailwind の `text-base` / `text-lg` / `text-2xl` の不使用」と、§7.9 の「6 トークンに `--text-lg`（16px）が含まれる」の両立の読み** | 🔴 **暫定。既定 = 「`--text-lg` を `@theme` で 16px に上書きし、ユーティリティ `text-lg` は 6 トークンの 1 つとして許可する」**（§2.3.2 / §17.7 (g)）。(g) が禁じているのは **Tailwind 既定値の 18px** であり、`@theme` で上書きした後の `text-lg` は §7.9 が定めた 2 段目そのものである、と読んだ。🔴 **この読みの弱点は「宣言が欠けると検査だけが緑になる」ことであり、(g) に「6 トークンが `@theme` に宣言されていること」の検査を足して塞いだ。** 代替案（`--text-section` のように既定と衝突しない名前にする）は `docs/04` §7.9 の表の**名前を変える**ことになり、上流の改訂が要る | **止まらない**（既定で実装できる）。🔴 **段① 外枠の着手前**に決着が望ましい —— `--text-lg` の上書きは**既存の `text-lg` の描画を 18px → 16px に変える**（3 箇所。`page-heading.tsx`） | `docs/04` §7.9 / 申し送り 22 ②(g) / **§2.3.2** / **§17.7 (g)** |
+| **TBD-24** | 🔴 **`docs/04` §7.1 の「『もっと読む』ではなく次ページ / 前ページを明示」に対し、既存の一覧 API が `nextCursor` しか返さない**（`prevCursor` が無い） | 🔴 **暫定。既定 = 「API を変えず、`Pagination` の `prevCursor` を任意にする」**（§2.3.5）。「前へ」は画面が積んだ 1 つ前のカーソル（URL の `cursor` の履歴）で実現し、**応答に `prevCursor` を足さない**（`{ items, nextCursor }` の 2 キー契約は `tests/isolation/engineer-shares.test.ts:550` / §4.8 が固定しており、キーを足すと契約テストが動く）。B（`prevCursor` を足す）に決まった場合は、`buildCursorPage` の 1 関数と応答型に 1 キーを足す変更で済む | **止まらない**。決着が要るのは **段② 一覧の着手前**（「前へ」の実装形が決まらないと `Pagination` の props が決まらない） | `docs/04` §7.1 / `U-08` / §4.8 / §6.1 / **§2.3.5** |
 
 🔴 **`CLAUDE.md` §4.2 の改訂が必要になった項目は 0 件である。** 保留（§10.4）・遅延保留（§10.5）・AI 上限によるゲート未実行（§7.6）は**属性 / `ReviewGate.execution`（状態機械ではない実行属性）で表現し、5 つの状態機械に状態を 1 つも追加していない**（`P-A-02` / `P-A-16`）。**§3.3（契約書）と §3.1（経路 5）の改訂は 2026-09-01 に人間が行い、本書はそれに追随した。** 未回答の Issue（#1 プロダクト名 / #3 重み / `Q-20` 席単価）は TBD-5 / TBD-19 に確認中のまま残す。🔴 **[Issue #5](https://github.com/Festal-KM/SES-Platform/issues/5)（匿名候補の丸め粒度。Phase 1 のリリース条件）は 2026-09-10 に回答を得て決着し、TBD-2 を閉じた**（§4.6.1 / `docs/03` §4.13.1 を確定値として扱う）。🔴 **[Issue #35](https://github.com/Festal-KM/SES-Platform/issues/35)（経験内容の保存先）も 2026-09-10 に回答「A」を得て決着した** —— `EngineerCareer` を新設し（`P-A-20`）、**`TBD` には残していない**（決着済みの論点に「暫定 / 確認中」を残さない）。**その副作用として生じた新しい判断事項**（保持期間の削除対象への追加が `CLAUDE.md` §3.5 / `BR-29` の列挙と食い違う件）は **[Issue #48](https://github.com/Festal-KM/SES-Platform/issues/48) として別に起票され、TBD-20 に確認中として残している**（`CLAUDE.md` §8.6「決定の副作用で新たな判断が生じたら、その場で新しい Issue を立て、元の Issue から参照する」）。🔴 **[Issue #41](https://github.com/Festal-KM/SES-Platform/issues/41)（ゲート実行文脈からパートナー台帳を読む経路。§11.9 ⑦）も 2026-09-10 に回答「1」を得て決着した** —— `app_gate_probe` として §11.14 に確定させ（`P-A-21`）、**`TBD` には残していない**。回答の実装は T-09-13（SP-09 の 2 番目）であり、**着手前に本書が先に更新されている**（`CLAUDE.md` §8.7）。⚠️ 決着の過程で `docs/sprints/SP-09` T-09-13 の括弧書き（「連絡先を読めるようにしない」）が本書 §11.14 ② の分析と食い違うことが分かった。**人間の判断事項ではない**（選択肢 1 の原文「マスキングに要る値だけを読む」の範囲内であり、開示範囲は増えない）ため Issue は起票せず、`pm` が sprint 文書を本書に追随させる。
 
@@ -7387,9 +7723,9 @@ export const logger = pino({
 | 29 | 越境経路 5 は当事者列 + RLS。行だけでなく列も絞る。`ExtensionReview` にパートナー読み取りのポリシーを書かない。書込ポリシーも書かない。当事者列はテーブル作成時から | **§4.4 C9** / **§4.9** / §3.7 / §4.4.1 / §4.7 #8〜#10 / §17.2 #17 |
 | 30 | `UsageCounter` は金額と件数の両方。`Plan` も 2 種の上限。1 件の定義は §7.6.1。再試行は件数に加算せず金額に計上。`AiUsage` の行数から数え直さない。`gate-inspector` は記録するがクォータ外、1 日上限には含めゲートも停止。スキップして PASS にしない。Stripe は 4 単位の件数 | **§7.6** / §3.8（`UsageCounter`）/ §3.10（`Plan`）/ §5.8 / §5.10 / §9.3 / §9.8 / §17.2 #18 |
 
-## 付録 B. `docs/04` の `program-design` 宛申し送り（改訂 3 の連番 1〜16 + 改訂 8 の 17 + 🔴 **改訂 14 の 21**）と `docs/02` 申し送り 13〜14 のマッピング
+## 付録 B. `docs/04` の `program-design` 宛申し送り（改訂 3 の連番 1〜16 + 改訂 8 の 17 + 🔴 **改訂 14 の 21** + 🔴 **改訂 16〜18 の 22**）と `docs/02` 申し送り 13〜14 のマッピング
 
-⚠️ **改訂 12 の 18・19 と改訂 13 の 20 は本表に行を持たない** —— いずれも §6.4（#29 の改訂 / #10 の改訂）と §6.5・§11.7 の該当節に**直接**反映済みであり、表の二重管理を避けた（各節の 🔴 が出所を示す）。**21 は射程が §3 / §6 / §11 / §16 にまたがるため行を置く。**
+⚠️ **改訂 12 の 18・19 と改訂 13 の 20 は本表に行を持たない** —— いずれも §6.4（#29 の改訂 / #10 の改訂）と §6.5・§11.7 の該当節に**直接**反映済みであり、表の二重管理を避けた（各節の 🔴 が出所を示す）。**21 は射程が §3 / §6 / §11 / §16 にまたがるため行を置く。22 は §2 / §6 / §17 にまたがるため行を置く。**
 
 **全項目を反映した。欠けている項目は無い。** `docs/02` の `program-design` 宛申し送り 1〜12 は初版で反映済み（§4 / §7〜§11）。2026-09-01 追加分: **13**（経路 5 の当事者を行レベル分離と同じ層で表現。①当事者列 = `engineer_id` の所有パートナー / 相手方パートナー → §3.7 / §4.4.1 ②当事者判定は認証コンテキストのみ → §4.9 ③同じアクセサ・RLS 述語 → §4.4 C9 ④取得時の射影 → §4.9 のビュー ⑤書込ハンドラを実装しない → §6.6 / §17.2 #17）/ **14**（取引先へ届く送信の前提条件を単一経路で判定。①ジョブが検証状態を確認 → §10.2 ①-d ②フォールバックしない → §8.3 ③`SUBMIT_FAILED` ではなく設定未了 → §10.4 `DOMAIN_UNVERIFIED` ④`TenantEsignConnection` 前提・未接続では `SENDING` を起動しない → §8.4）。**`A-005` 項目 13 / `F-059 AC-7`**（送信基盤クォータ。環境全体・対象テナント欄なし・失敗に加算しない・再送導線なし）→ §8.3-Q / §9.4 / §16.5 / API-A8。**`docs/04` 申し送り 14 / 15**（項目 14 = 送信保留の理由別内訳。`PROVIDER_QUOTA` は `tenant_id` なし・`RATE_LIMIT` はテナント別で `A-004` へ / 項目 15 = 削除予告の未配送。`NOTICE_PENDING` / `NOTICE_UNDELIVERED` の区別・削除ジョブ失敗と別行）→ §8.3-Q / §9.4 / §9.7 / §16.5 / API-A8 / §17.3 #24。**16**（クォータ取得不能を「不明」で表現）→ API-A8 `providerReading.available=false` / §16.5 項目 13。
 
@@ -7414,6 +7750,8 @@ export const logger = pino({
 | 🔴 **17**（改訂 8。2026-09-10。Issue #35 = A） | 🔴 **経験内容（`EngineerCareer`）を画面が必要とする形で返す。** ①並び順をサーバ側で確定（期間降順 → 同期間は登録順。配列順 = 表示順。終了年月は `null` = 継続中）②0 行を `[]` で返し「未取得」と区別。0 行で `Proposal` を 422 にしない ③**匿名候補の応答スキーマに経歴を型として持たせない**（件数・要約・`hasCareers` も返さない。`match-explainer` の入力にも渡さない。`F-052` のエクスポートにも列を作らない）④**`EngineerSnapshot` は行単位で複製**し、`S-023` は凍結側だけを返す ⑤**行の追加・更新・削除をそれぞれ監査**（保存の粒度と監査の粒度を一致させない）⑥Phase 2 の反映は `追加` / `置換` を取る **1 本**の API。`置換` は消える行を事前に返す。「常に上書き」の設定値を作らない ⑦保持期間の削除対象に含める（**暫定。Issue #48**） | ① **§3.4.1** / §6.4「#16 / #16b / #17 の経験内容の決着」 ② 同・§6.5 の凍結の節 ③ **§4.5** / **§4.6** / §7.1 / §9.6（`export.generate`）/ §17.2 #28 ④ **§3.6** / §6.5（#46 / #46b） ⑤ **§16.1** / §17.2 #29 ⑥ §6.4（#16b） ⑦ **§9.7** / **TBD-20** |
 
 | 🔴 **21**（改訂 14。2026-09-21。SP-12 `T-12-10` / [Issue #42](https://github.com/Festal-KM/SES-Platform/issues/42) = ②） | 🔴 **公開後の再検査と自動解除で画面が必要とする 8 点。** ①公開の状態を **4 値**で返す（人の解除と自動解除を 1 つの「未公開」に潰さない。0 社という事実から画面に推測させない）②**原因の欄を閉集合でサーバが導出**（指摘の本文を帯用の応答に載せない）③**保留（`HELD_AI_COST_LIMIT`）を FAIL と別フィールド**で返し、**判定不能は保留ではなく FAIL** ④**直近の `ReviewGate` 識別子・実行の契機（`PUBLISH` / `RECHECK`）・実行日時**を同じ応答から読む（公開時点の結果を黙って上書きしない。#40b と同じ材料を流用）⑤**`#26` が「再検査を積んだか / 積まなかったならなぜか」を返す** ⑥**取引先向けの応答を 1 バイトも変えない**（型として存在させない）⑦**迂回の入口を型として作らない** ⑧**監査は `system` で人の操作と区別**（詳細に出すキーを足すなら許可リストに先に足す） | ①②③④⑤⑦ **§11.11「T-12-10 の実装の決着」①〜⑨** / ⑤ §6.4（#26 とその決着）/ ①④ §6.4（#25 / #27）/ ③ §11.7（`GateHeldView` を流用。`usageHref` を足さない）/ ④ §3.6（`review_gates.run_trigger`）・§6.5（#40b の `listReviewGateResults` を流用）/ ⑥ §11.11「T-12-10 の実装の決着」⑦ / ⑧ **§16.1** / §6.4（許可リスト表 = **キーは 1 つも増やさない**）/ 検証 §11.11「T-12-10 の実装の決着」⑫ / 射程外 同⑬ と **TBD-21** |
+
+| 🔴 **22**（改訂 16〜18。2026-09-29 / 09-30。UI/UX の全面刷新） | 🔴 **8 点。** ①**トークンの実装先を 1 箇所に固定**（`tailwind.css` の `@theme`。2 本目の CSS を足さない / `packages/ui` 側に宣言しない / §7.9 の表をそのまま写す）②**静的検査 (a)〜(g)** を置く（色の直書き / spacing 7 段 / 画面の `max-w-*` / `--breakpoint-*` / コントラスト 4.5:1〔🔴 除外は `--color-fg-placeholder` を前景に持つ組の 1 条件だけ〕/ `role="dialog"` の単一実装 / 文字サイズ 6 トークン）③**`data-testid` と i18n のキー名を凍結**（値は変えてよい。追加は可、改名と削除は不可）④**`SummaryStrip` のデータ源**（取引先の応答に他社を示唆する値を型として持たせない / 要対応キューと同じ 60 秒ポーリング / 0 件でも 0 を返す）⑤**要対応キューの `状態` 列と `操作` 列**（状態はエンティティ + 状態の組 / 操作はサーバが決める / 不能なら `null` + 理由の文言キー）⑥**`Drawer` の応答**（台帳のエンジニア詳細とスキルシートを含めない / 専用エンドポイントを作らない / ホスト向けに実名・所属会社名・`EngineerSnapshot` を型として持たせない / `S-019`・`S-041`・`S-016` 用の Drawer 応答を作らない）⑦**`packages/ui` の依存追加**（`lucide-react` / `@radix-ui/*` / `cva` / `tailwind-merge`。`packages/domain` に足さない / `IconButton`・`SearchInput`・`StatusBadge` は既存のバリアント）⑧**`DataTable` の列定義に `優先度`**（§10.3 が一次資料 / 画面ごとに実装しない / `S-044`・`S-045` は優先度を持たない / 行選択は既定で無効） | ① **§2.3.2** / `P-A-26` ② **§17.7.1 (a)〜(g)** + **§17.7.2**（段階的有効化）③ **§17.7.3** ④ **§6.11.1** / §6.8（専用 API を作らない）⑤ **§6.11.2** ⑥ **§6.11.3** / §6.8 / §17.7.1 (l) ⑦ **§2.3.1** / **§2.3.3** / §17.7.1 (i) / `P-A-25` ⑧ **§2.3.5** / §6.11.4 / §17.7.1 (m)。幅 3 クラスは **§2.3.4** / §17.7.1 (c)(k)。判断事項は **TBD-22**（`DataTable` の組み方）/ **TBD-23**（`--text-lg` の上書き）/ **TBD-24**（`prevCursor`） |
 
 ## 付録 C. `F-001`〜`F-066` の実装設計カバレッジ
 
