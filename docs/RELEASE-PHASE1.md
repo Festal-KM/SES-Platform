@@ -308,7 +308,7 @@
 | `S3_PRESIGNED_URL_TTL_SECONDS` | `300` | 署名付き URL の有効期限（60〜3600） |
 | `UPLOAD_MAX_BYTES` | `20971520` | アップロード上限 |
 | `STORAGE_LIMIT_BYTES_PER_TENANT` | `53687091200` | テナントあたりのストレージ上限（超過なら署名付き URL を発行しない） |
-| `S3_FORCE_PATH_STYLE` | `false` | MinIO 向けのパススタイル。🔴 **`production` で `true` は起動失敗** |
+| `S3_FORCE_PATH_STYLE` | `false` | ローカルの S3 互換ストレージ（`adobe/s3mock`）向けのパススタイル。🔴 **`production` で `true` は起動失敗** |
 | `SCAN_STALL_ALERT_MINUTES` | `10` | `SCANNING` 滞留の検知閾値。🔴 **GuardDuty の所要時間の実測（E-13）で調整するのはこの 1 つだけ** |
 | `LOG_LEVEL` | `info` | pino のレベル |
 | `EXPIRY_ALERT_DAYS_BEFORE` | `60` | 満了アラートの日数（Phase 2 で効く） |
@@ -398,8 +398,8 @@
 | 区分 | 変数 |
 |---|---|
 | 🔴 **`production` で必須なのに `.env.example` に `KEY=` 行が無い**（= 最も忘れやすい 2 件） | **`SENTRY_DSN`** / **`S3_KMS_KEY_ID`**（どちらも `development` では不要なため `.env.example` に無い） |
-| **`production` では設定しない（`.env.example` にあるのはローカル用）** | `S3_ENDPOINT` / `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY`（MinIO）/ `SMTP_HOST` / `SMTP_PORT`（MailHog）/ `CLAMAV_HOST` / `CLAMAV_PORT`（ClamAV） |
-| **`.env.example` にあるがアプリのスキーマ外**（docker-compose / ワイヤーフレーム生成スクリプト用。`production` には不要） | `POSTGRES_*` / `APP_*_PASSWORD`（`000_roles.sql` に渡す値。§2.1 手順 2）/ `REDIS_PORT` / `MINIO_*` / `MAILHOG_*` / `WIREFRAME_*` / `OPENAI_API_KEY` / `GEMINI_API_KEY` |
+| **`production` では設定しない（`.env.example` にあるのはローカル用）** | `S3_ENDPOINT` / `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY`（ローカルの S3 互換ストレージ）/ `SMTP_HOST` / `SMTP_PORT`（MailHog）/ `CLAMAV_HOST` / `CLAMAV_PORT`（ClamAV） |
+| **`.env.example` にあるがアプリのスキーマ外**（docker-compose / ワイヤーフレーム生成スクリプト用。`production` には不要） | `POSTGRES_*` / `APP_*_PASSWORD`（`000_roles.sql` に渡す値。§2.1 手順 2）/ `REDIS_PORT` / `S3MOCK_*` / `MAILHOG_*` / `WIREFRAME_*` / `OPENAI_API_KEY` / `GEMINI_API_KEY` |
 | **スキーマにあるが `.env.example` に `KEY=` 行が無く、`production` でも任意**（Phase 3 / ローテーション / 既定値で足りるもの） | `DOCUSIGN_*` / `ESIGN_*` / `STRIPE_*` / `TOKEN_ENCRYPTION_KEY_PREVIOUS` / `GUARDDUTY_WEBHOOK_HMAC_SECRET_PREVIOUS` / `MIGRATION_DATABASE_URL` / `EMAIL_DAILY_LIMIT_PER_TENANT` / `EMAIL_MINUTE_LIMIT_PER_TENANT` / `EXPIRY_ALERT_DAYS_BEFORE` / `PII_RETENTION_YEARS` / `SANDBOX_TRIAL_DAYS` / `TENANT_PURGE_GRACE_DAYS` / `QUOTA_WARNING_THRESHOLD_PERCENT` / `S3_PRESIGNED_URL_TTL_SECONDS` / `UPLOAD_MAX_BYTES` |
 
 ⚠️ **`docs/03` §6.11 の SMS（Amazon SNS）の変数は、まだ `packages/config` のスキーマに無い。** 2 要素認証への SMS 追加は **Phase 2（`T-13-10`）** であり、**第 1 回リリースでは投入しない**（`SMS_SENDER_ID` は正式名称〔E-10〕に依存する。`docs/dev-plan.md` §5 E-10 / E-17）。🔴 **管理権限ロールは TOTP 必須のままなので、SMS が無くても `CLAUDE.md` §3.5 の 2FA 要件は満たされている**（`docs/dev-plan.md` §5 E-17）。

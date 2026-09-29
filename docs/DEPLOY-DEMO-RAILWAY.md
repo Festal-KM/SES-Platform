@@ -37,7 +37,7 @@ Railway project: ses-platform-demo
       ├─ pre-deploy: 何もしない（SES_DB_BOOTSTRAP が無いため即 exit 0）
       └─ start: node apps/worker/dist/main.js（BullMQ の常駐ワーカー）
 
-要らないもの: S3 / MinIO / ClamAV / SMTP / DocuSign / Stripe / Anthropic
+要らないもの: S3 互換ストレージ / ClamAV / SMTP / DocuSign / Stripe / Anthropic
 （demo は全区分 mock。§0 参照）
 ```
 

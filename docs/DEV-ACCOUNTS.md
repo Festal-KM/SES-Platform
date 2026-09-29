@@ -28,7 +28,7 @@
 | **主平面**（テナント利用者の画面） | **http://localhost:3000** | 未ログインなら `/signin` へ飛ぶ |
 | **管理平面**（運営者コンソール） | **http://localhost:3000/admin** | **別認証**（`PlatformUser`）。テナントのアカウントでは入れない |
 | **MailHog**（送信されたメールの確認） | http://localhost:8025 | `development` は全モック。実送信は 1 通も出ない |
-| **MinIO コンソール**（S3 互換） | http://localhost:9001 | スキルシートの実体の確認用 |
+| **S3 互換ストレージ**（`adobe/s3mock`） | http://localhost:9000 | スキルシートの実体の確認用。🔴 **管理コンソールは無い**（2026-09-30 に MinIO から置き換えた。[Issue #75](https://github.com/Festal-KM/SES-Platform/issues/75)）。中身を見るには AWS CLI / SDK で `ListObjectsV2` を叩く |
 
 画面の上部に「**開発環境 — 外部送信はすべてモックです**」の帯が常時出る（`F-028`）。これが出ていない画面があれば不具合。
 
@@ -46,7 +46,7 @@ sed -e 's/^POSTGRES_PORT=5432$/POSTGRES_PORT=5433/' \
     .env.example > .env.development.local
 #    （5432 が空いているなら `cp .env.example .env.development.local` でよい）
 
-# 2) コンテナを起動（PostgreSQL / Redis / MinIO / MailHog / ClamAV）
+# 2) コンテナを起動（PostgreSQL / Redis / S3 互換ストレージ / MailHog / ClamAV）
 set -a; . ./.env.development.local; set +a
 docker compose up -d
 
