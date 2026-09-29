@@ -10,19 +10,15 @@
 // |---|---|
 // | default | `variant`（primary = `--color-brand` / secondary = 枠 + `--color-bg` / ghost = 透明） |
 // | hover | primary = `--color-brand-hover`、secondary / ghost = `--color-bg-subtle`。**文字色は変えない** |
-// | active | secondary / ghost = `--color-bg-inset`（もう 1 段暗く）。primary は下の 🔴 |
+// | active | primary = `--color-brand-active`、secondary / ghost = `--color-bg-inset`（もう 1 段暗く） |
 // | selected | **持たない**。ボタンは maintained な選択状態を持たない（現在地・タブ・行選択は `Sidebar` / `Tabs` / `DataTable` の仕事。§7.10 の selected は `../lib/state-classes.ts`） |
 // | focus-visible | `FOCUS_RING_CLASSES`（全プリミティブ共通） |
 // | disabled | `DISABLED_CLASSES`。🔴 **「権限が無い」「代理閲覧中」を disabled で表さない**（`U-10`。描画せず理由テキストを置く） |
 // | loading | `loading` prop（ラベルを `loadingLabel` に置換し、押下を封じる） |
 // | error | **持たない**。§7.10 の error は入力欄と領域の状態であり、ボタン自身は持たない |
 //
-// 🔴 **primary の active（「もう 1 段暗く」）が実装できていない。** §7.9 の semantic トークンは
-//    ブランド藍を `--color-brand` / `--color-brand-hover` の **2 段しか定めていない**ため、
-//    3 段目の値をここで作ると「semantic に無い色を画面で作らない」（§7.9）に反する。
-//    したがって primary の active は hover と同じ `--color-brand-hover` にしてある。
-//    ⚠️ **押し込むアニメーション・影・1px の移動で代替してはならない**（§7.10 の 🔴）。
-//    トークンを 1 つ増やすかどうかは `docs/04` §7.9 の改訂＝人間の判断（`CLAUDE.md` §8.6）。
+// 🔴 primary の active は `--color-brand-active`（`indigo-900`。`docs/04` §7.9 改訂 19）。
+//    ⚠️ 押し込むアニメーション・影・1px の移動で代替してはならない（§7.10 の 🔴）。
 import { cva, type VariantProps } from 'class-variance-authority';
 import { forwardRef } from 'react';
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
@@ -58,7 +54,7 @@ const buttonVariants = cva(
         // 🔴 primary = ブランド藍（§7.4「いま進行中・次はあなたの番」）。T-22-01 で
         //    `bg-slate-900`（無彩色）から変えた —— §7.4 は 2026-09-01 から primary をブランド色と
         //    定めているが、実装には `indigo` が 1 箇所も入っていなかった（§7.4 の実装漏れの記録）。
-        primary: 'bg-brand text-brand-fg hover:bg-brand-hover active:bg-brand-hover',
+        primary: 'bg-brand text-brand-fg hover:bg-brand-hover active:bg-brand-active',
         secondary:
           'border border-border-strong bg-bg text-fg hover:bg-bg-subtle active:bg-bg-inset',
         ghost: 'bg-transparent text-fg hover:bg-bg-subtle active:bg-bg-inset',

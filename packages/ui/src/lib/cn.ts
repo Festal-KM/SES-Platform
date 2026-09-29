@@ -74,6 +74,7 @@ export const TOKEN_COLOR_SCALE = [
   'border-strong',
   'brand',
   'brand-hover',
+  'brand-active',
   'brand-bg',
   'brand-fg',
   'danger',

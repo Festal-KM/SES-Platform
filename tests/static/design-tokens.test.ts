@@ -82,6 +82,7 @@ const SEMANTIC_COLORS: ReadonlyArray<readonly [token: string, primitive: string]
   ['--color-border-strong', 'slate-300'],
   ['--color-brand', 'indigo-700'],
   ['--color-brand-hover', 'indigo-800'],
+  ['--color-brand-active', 'indigo-900'],
   ['--color-brand-bg', 'indigo-50'],
   ['--color-brand-fg', 'white'],
   ['--color-danger', 'red-700'],
@@ -164,7 +165,7 @@ describe('🔴 §7.9 のトークンが `@theme` に全部ある（欠けたら�
     ).toBe(true);
   });
 
-  it('semantic の色 26 トークンが在り、値が §7.9 の階調（primitive）を参照している', () => {
+  it('semantic の色 27 トークンが在り、値が §7.9 の階調（primitive）を参照している', () => {
     const missing = SEMANTIC_COLORS.filter(([token]) => !declared.has(token)).map(([t]) => t);
     expect(
       missing,
@@ -182,7 +183,7 @@ describe('🔴 §7.9 のトークンが `@theme` に全部ある（欠けたら�
     ).toEqual([]);
   });
 
-  it('🔴 `@theme` の `--color-*` は semantic の 26 個「だけ」である（component 層を置かない）', () => {
+  it('🔴 `@theme` の `--color-*` は semantic の 27 個「だけ」である（component 層を置かない）', () => {
     const declaredColors = [...declared.keys()].filter((token) => /^--color-[a-z0-9-]+$/.test(token));
     expect(
       [...declaredColors].sort(),
@@ -474,6 +475,21 @@ describe('🔴 `packages/ui` は semantic / component トークンだけを見�
     // 🔴 例外が「実在するから許している」ことを対照で示す（許可だけが残るのを防ぐ）。
     const allowed = uiFiles.find((file) => file.label === SHADOW_ALLOWED_FILE);
     expect(allowed?.tokens.some((token) => utilityOf(token) === SHADOW_ALLOWED_UTILITY)).toBe(true);
+  });
+
+  it('🔴 `packages/ui` に出現する `shadow-` は control-classes.ts の `shadow-xs` の 1 箇所だけ（§7.9 / §17.7 (h)）', () => {
+    // 🔴 Phase 3b（T-22-03）で overlay 部品（Dialog / Drawer / DropdownMenu / Tooltip / Toast）が入るとき、
+    //    この検査の許可対象を広げる必要がある。根拠は「§7.9 が overlay の影を認めているから」であり、
+    //    「落ちたから広げる」ではない。広げるのは overlay 部品のファイルに限り、他の要素には広げない。
+    const found = uiFiles.flatMap((file) =>
+      file.tokens
+        .filter((token) => /^shadow(-|$)/.test(utilityOf(token)))
+        .map((token) => `${file.label}: ${token}`),
+    );
+    expect(
+      found,
+      '🔴 §7.9: 入力欄の輪郭（shadow-xs）は例外として 1 語 1 箇所に限る。新しい要素に影を足していないか確認してください。',
+    ).toEqual([`${SHADOW_ALLOWED_FILE}: ${SHADOW_ALLOWED_UTILITY}`]);
   });
 
   it('全周 2px 以上の border が無い（強調は左端 2px だけ）', () => {
