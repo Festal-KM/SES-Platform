@@ -41,6 +41,23 @@
 // ⚠️ **後続タスクで増えるのは `DataTableSortLink` / `DataTableColumnToggle` /
 //    `DataTableSelection`（`T-22-04`）と `SearchInput`（デバウンス）だけ**である
 //    （`docs/05` §2.3.1 の表）。🔴 **サーバのまま描ける部品をここへ移さない。**
+//
+// ============================================================================
+// ✅ T-22-04 で 4 つ増えた。🔴 **どれも `'use client'` を宣言しない**（読み違えないこと）
+// ============================================================================
+// | 部品 | ファイル | なぜここ（`./client`）か | なぜ `'use client'` を書かないか |
+// |---|---|---|---|
+// | `DataTableSortLink` | `components/data-table-sort-link.tsx` | `docs/05` §2.3.1 の 6b | 🔴 **並び替えはリンクである**（状態・ハンドラ・Radix を持たない）。ヘッダは器（サーバ）が描くので、ここに境界を置くと **8 列のヘッダごとにクライアント境界**が生まれる |
+// | `DataTableColumnToggle` | `components/data-table-column-toggle.tsx` | 同上 | `DropdownMenu`（`'use client'` 済み）を**合成する**だけ。境界はあちらが宣言している |
+// | `DataTableSelectionCheckbox` | `components/data-table-selection.tsx` | 同上 | ハンドラを props で受けるだけ（フックを使わない） |
+// | `SearchInput` | 🔴 **`components/input.tsx`**（`Input` のバリアント。別ファイルを起こさない。§5-13） | `docs/05` §2.3.1 の 18 | 🔴 **同じファイルに `Input` が在る** —— 付けると 20 画面以上のサーバコンポーネントがクライアントバンドルへ移る。デバウンスは要素をキーにした `WeakMap` で持つ（`components/input.tsx` の 🔴） |
+//
+// 🔴 **宣言が無いことは「クライアントで使えない」ことを意味しない。** 境界を宣言するのは
+//    **取り込む側**であり、`@ses/ui/client` を import する画面は自身が `'use client'` である
+//    （検査 (i)⑤）。いずれの部品も**関数を prop で要求する**ので、サーバコンポーネントからは
+//    構造的に渡せない。
+// 🔴 したがって `tests/static/ui-overlay-contract.test.ts` の
+//    「`'use client'` を宣言するファイル = overlay 6 部品」の凍結は **1 行も動いていない。**
 export { Dialog } from './components/dialog.js';
 export type { DialogProps } from './components/dialog.js';
 export { Drawer } from './components/drawer.js';
@@ -87,3 +104,25 @@ export {
   TOOLTIP_CONTENT_CLASSES,
 } from './lib/overlay-classes.js';
 export type { OverlayLinkProps } from './lib/overlay-classes.js';
+// ✅ T-22-04: `DataTable` の 3 部品（`docs/05` §2.3.1 の 6b）。🔴 **器（`DataTable`）は
+//    `@ses/ui`（主バレル）側のサーバコンポーネントである** —— 行の描画をここへ移さない。
+export { DataTableColumnToggle } from './components/data-table-column-toggle.js';
+export type {
+  DataTableColumnToggleProps,
+  DataTableToggleableColumn,
+} from './components/data-table-column-toggle.js';
+export { DataTableSelectionCheckbox } from './components/data-table-selection.js';
+export type {
+  DataTableSelection,
+  DataTableSelectionCheckboxProps,
+} from './components/data-table-selection.js';
+export { DataTableSortLink } from './components/data-table-sort-link.js';
+export type {
+  DataTableSort,
+  DataTableSortDirection,
+  DataTableSortIndicators,
+  DataTableSortLinkProps,
+} from './components/data-table-sort-link.js';
+// ✅ T-22-04: 一覧の検索欄（🔴 `Input` のバリアント。デバウンスで、`Enter` を要求しない。§5-13）。
+export { SEARCH_INPUT_DEBOUNCE_MS, SearchInput } from './components/input.js';
+export type { SearchInputProps } from './components/input.js';

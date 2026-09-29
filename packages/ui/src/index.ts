@@ -85,10 +85,20 @@
 //    理由テキストを置く**（CSS で隠すのではなく DOM から取り除く）。
 export { Alert, AlertDescription, AlertTitle } from './components/alert.js';
 export type { AlertProps, AlertVariant } from './components/alert.js';
-export { Badge } from './components/badge.js';
-export type { BadgeProps, BadgeVariant } from './components/badge.js';
-export { Button } from './components/button.js';
-export type { ButtonProps, ButtonSize, ButtonVariant } from './components/button.js';
+export { Badge, STATUS_BADGE_APPEARANCES, StatusBadge } from './components/badge.js';
+export type {
+  BadgeProps,
+  BadgeShape,
+  BadgeVariant,
+  StatusBadgeAppearance,
+  StatusBadgeEntity,
+  StatusBadgeProps,
+  StatusBadgeState,
+} from './components/badge.js';
+// 🔴 T-22-04: `IconButton` は `Button` の**バリアント**である（別ファイルを起こさない。docs/04 §5-13）。
+//    アイコンの要素は呼び出し側から受ける（`lucide-react` は T-22-05。`components/button.tsx` の 🔴）。
+export { Button, IconButton } from './components/button.js';
+export type { ButtonProps, ButtonSize, ButtonVariant, IconButtonProps } from './components/button.js';
 export {
   Card,
   CardContent,
@@ -98,6 +108,31 @@ export {
 } from './components/card.js';
 export { Checkbox } from './components/checkbox.js';
 export type { CheckboxProps } from './components/checkbox.js';
+// 🔴 T-22-04: 一覧の器（**サーバコンポーネント**）。行の描画をクライアントへ移さない
+//    （50 行 × 8 列は §7 の p95 に効く）。並び替え / 列表示切替 / 行選択の 3 部品は
+//    `./index.client.ts` 側に在る（docs/05 §2.3.1 の 6b）。
+export {
+  DATA_TABLE_HEADER_CLASSES,
+  DATA_TABLE_MAX_VISIBLE_COLUMNS,
+  DATA_TABLE_NAME_COLUMN_MIN_REM,
+  DataTable,
+} from './components/data-table.js';
+export type {
+  ColumnPriority,
+  DataTableColumn,
+  DataTableNameCell,
+  DataTableProps,
+} from './components/data-table.js';
+// 🔴 並び / 行選択の**型**は器の prop の型であり、部品（`./index.client.ts`）とは別に要る。
+export type {
+  DataTableSort,
+  DataTableSortDirection,
+  DataTableSortIndicators,
+} from './components/data-table-sort-link.js';
+export type { DataTableSelection } from './components/data-table-selection.js';
+// 🔴 T-22-04: 空状態（docs/04 §10.4 の `初回空` / `絞込 0`）。構造は 説明 → Primary → Secondary。
+export { EmptyState } from './components/empty-state.js';
+export type { EmptyStateLinkProps, EmptyStateProps } from './components/empty-state.js';
 // 🔴 T-10-05: `F-028` 非本番環境バナー。shadcn/ui の取り込みではなく本リポジトリ固有
 //    （docs/05 §13.5）。`APP_ENV` の分岐を持つ唯一の UI 部品であり、文言は持たない。
 export { EnvironmentBanner } from './components/environment-banner.js';
@@ -135,10 +170,33 @@ export {
   NameCell,
 } from './components/name-cell.js';
 export type { NameCellLinkProps, NameCellNameProps, NameCellProps } from './components/name-cell.js';
+// 🔴 T-22-04: 幅 3 クラス（docs/04 §7.1）。**本体カラムの幅を決める唯一の場所**であり、
+//    任意寸法（`w-90` / `max-w-180`）が書かれているのもこのファイルだけである（docs/05 §2.3.4）。
+//    🔴 60 画面の割り当ては `docs/04` §7.1 の表が唯一の出所であり、ここに写さない。
+export {
+  PAGE_BODY_ASIDE_WIDTH_CLASSES,
+  PAGE_BODY_GUTTER_CLASS,
+  PAGE_BODY_PROSE_MAX_WIDTH_CLASS,
+  PageBody,
+} from './components/page-body.js';
+export type { PageBodyProps, PageWidthClass } from './components/page-body.js';
+// 🔴 T-22-04: カーソル方式のページ送り。🔴 オフセット・総件数・無限スクロールの prop を持たない。
+export { Pagination } from './components/pagination.js';
+export type { PaginationLinkProps, PaginationProps } from './components/pagination.js';
 export { Radio } from './components/radio.js';
 export type { RadioProps } from './components/radio.js';
 export { Select } from './components/select.js';
 export type { SelectProps } from './components/select.js';
+// 🔴 T-22-04: ローディングの骨格。🔴 行数・列数は呼び出し側（`DataTable`）が決める（跳ねない）。
+export { Skeleton } from './components/skeleton.js';
+export type { SkeletonHeight, SkeletonProps, SkeletonWidth } from './components/skeleton.js';
+// 🔴 T-22-04: 1 行の密な指標ストリップ。🔴 カードにしない / グラフを置かない / 0 件のとき描かない。
+export { SUMMARY_STRIP_MAX_ITEMS, SUMMARY_STRIP_MIN_ITEMS, SummaryStrip } from './components/summary-strip.js';
+export type {
+  SummaryStripItem,
+  SummaryStripLinkProps,
+  SummaryStripProps,
+} from './components/summary-strip.js';
 export {
   Table,
   TableBody,
@@ -160,6 +218,9 @@ export type {
 } from './components/table.js';
 export { Textarea } from './components/textarea.js';
 export type { TextareaProps } from './components/textarea.js';
+// 🔴 T-22-04: 一覧の上の帯。**母集団の 1 行（§3.2-2）と §5-10 の説明ブロックの置き場所を固定する。**
+export { Toolbar } from './components/toolbar.js';
+export type { ToolbarProps } from './components/toolbar.js';
 export { cn } from './lib/cn.js';
 // 🔴 T-22-01: `docs/04` §7.10 の 8 状態の共通語（規約 8）。**画面側でこれを組み直さない**
 //    （`hover:` / `focus-visible:` を画面に書くと、画面ごとに違う状態表現が生まれる）。

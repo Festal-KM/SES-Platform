@@ -134,3 +134,59 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     </button>
   );
 });
+
+// ============================================================================
+// 🔴 `IconButton` — テキスト無しで意味が通る操作（SP-22 `T-22-04`。`docs/04` §5-13 / §7.5 の許可①）
+// ============================================================================
+// 🔴 **`Button` のバリアントとして実装し、別部品（`icon-button.tsx`）を起こさない**（§5-13 の 🔴。
+//    機械検査は `tests/static/ui-primitive-single-impl.test.ts` (b)④ がファイルの不在を見る）。
+//    したがって 8 状態・radius・focus リング・`loading` は**上の `Button` のものがそのまま効く**
+//    （アイコンのボタンだけ hover の出方が違う、という状態が生まれない）。
+//
+// 🔴 **使ってよいのは §7.5 の許可① だけ**: 閉じる / 展開・折りたたみ / 並び替え / コピー /
+//    外部リンク / 検索 / 行の `内容を見る`（`Drawer`）。**primary / secondary の通常ボタンに
+//    アイコンを付けない**（§7.5 の「引き続き使わない場所」）。
+//
+// 🔴 **`aria-label` は必須である**（§5-13）。型で必須にしてあるので、語を渡さずには描けない
+//    （`ButtonHTMLAttributes` の `'aria-label'?: string` を**必須に絞っている**）。
+//    ⚠️ 語は呼び出し側が `packages/i18n` から解決して渡す（`../index.ts` の共通規約 5）。
+//
+// ============================================================================
+// 🔴 アイコンは「呼び出し側から `ReactNode` で受ける」（`T-22-04` の判断。**完了記録に出す**）
+// ============================================================================
+// `lucide-react` は **`T-22-05` で入る**依存であり（`docs/04` §5-13 の依存追加 / `docs/05` §2.3.3）、
+// 本タスクでは **`packages/ui` に依存を足さない**。したがって次の 2 案のうち後者を採った。
+//
+//   ① `T-22-05` まで `IconButton` を作らない → `DropdownMenu` / `Drawer` / `Dialog` の
+//      トリガに使う部品が無いまま段② に入ることになり、画面側が `<button>` を自作する余地が残る
+//      （§5-13 の「同じ部品を二重実装しない」が破れる入口になる）。
+//   ② 🔴 **`icon: ReactNode` を呼び出し側から受ける** → 依存を 1 つも足さずに部品が完成し、
+//      `T-22-05` で `packages/ui/src/icons.ts` の閉じた写像から要素を渡すだけで絵が入る。
+//      **`IconButton` 自体は `lucide-react` を知らない**ので、(i)① の「import は `icons.ts` の
+//      1 本」も構造的に守られる。
+/** アイコンの当たり判定（正方形）。`size` は `Button` と同じ 2 段に対応させる。 */
+const ICON_BUTTON_SIZE_CLASSES: Readonly<Record<ButtonSize, string>> = {
+  default: 'h-10 w-10 px-0',
+  sm: 'h-8 w-8 px-0',
+};
+
+export type IconButtonProps = Omit<ButtonProps, 'children' | 'loadingLabel' | 'aria-label'> & {
+  /**
+   * 🔴 アイコンの要素（`T-22-05` 以降は `packages/ui/src/icons.ts` の写像から渡す）。
+   *    ここで `lucide-react` を import しない（上の 🔴）。
+   */
+  readonly icon: ReactNode;
+  /** 🔴 **必須**（テキストが無い操作には語が要る。§5-13）。 */
+  readonly 'aria-label': string;
+};
+
+export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton(
+  { icon, className, size = 'default', ...props },
+  ref,
+) {
+  return (
+    <Button ref={ref} size={size} className={cn(ICON_BUTTON_SIZE_CLASSES[size], className)} {...props}>
+      {icon}
+    </Button>
+  );
+});
