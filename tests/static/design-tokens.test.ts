@@ -322,18 +322,37 @@ const uiFiles = collectSourceFiles(UI_SRC, ['.ts', '.tsx']).map((absolute) => ({
 }));
 
 /**
- * 🔴 `packages/ui` で許す影は **`shadow-xs`（入力欄の輪郭）1 語だけ**で、置き場所も
- *    `lib/control-classes.ts` 1 ファイルだけである。
+ * 🔴 `packages/ui` で影が出てよいのは **2 箇所 2 語だけ**である。**ファイル単位 × 語単位**で
+ *    固定し、「どちらか片方だけ」も許さない（`docs/04` §7.9 の shadow の規約）。
  *
- * ⚠️ **ここは `docs/04` §7.9 と `docs/05` §2.3.2 で読みが分かれた唯一の箇所である。**
- *    §7.9 は「shadow は overlay にのみ使う」、`docs/05` §2.3.2 は「既存 `Input` / `Select` /
- *    `Textarea` の `shadow-xs` は入力欄の輪郭であり**据え置く**」と書いている。実装は
- *    **実装設計（`docs/05`）に従い据え置き**、その範囲をここで 1 ファイル 1 語に固定した
- *    （`Card` の `shadow-sm` は「浮かせるための影」なので撤去した）。
- *    🔴 **食い違いの解消は文書側の判断**（`CLAUDE.md` §8.6 / §8.7）。完了報告で提起する。
+ * | 許す場所 | 語 | 根拠 |
+ * |---|---|---|
+ * | `lib/control-classes.ts` | `shadow-xs` | **入力欄の輪郭**。`docs/04` §7.9（改訂 19。2026-09-30）が **明示的な例外**として追記し、`docs/05` §2.3.2 が「既存 `Input` / `Select` / `Textarea` の `shadow-xs` は据え置く」と名指しした。🔴 **例外はこの 1 語 1 箇所に限る** |
+ * | `lib/overlay-classes.ts` | `shadow-md` | **overlay そのもの**。§7.9 は「shadow は **overlay（`Dialog` / `Drawer` / `DropdownMenu` / `Tooltip` / `Toast`）**と入力欄の輪郭にのみ使う」と定めており、overlay は禁止の対象ではなく**唯一の本来の用途**である |
+ *
+ * ⚠️ **✅ T-22-03 で overlay の行を足した。** 🔴 **「落ちたから広げた」のではない** ——
+ *    §7.9 が overlay の影を**認めている**からである（この検査の前身は
+ *    「`shadow-xs` の 1 箇所だけ」と書いてあり、その行に
+ *    「Phase 3b で overlay 部品が入るとき、根拠は『§7.9 が overlay の影を認めているから』で
+ *    あり『落ちたから広げる』ではない」という予告が置かれていた。本改訂はその予告の実行である）。
+ *    🔴 **広げたのは overlay 部品の component 層 1 ファイルだけ**で、
+ *    **語も `shadow-md` の 1 語に固定した**（`shadow-lg` / `shadow-2xl` は落ちる）。
+ *    🔴 **overlay 部品それぞれ（`components/{dialog,drawer,dropdown-menu,tooltip,toast}.tsx`）に
+ *    影の語を書くことは許していない** —— 5 箇所に散ると「新しい要素に影を足した」のか
+ *    「overlay だから正しい」のかを機械で見分けられなくなる（§7.9 の 🔴「新しい要素に
+ *    『輪郭だから』と言って影を足せない」と同じ構え）。
+ *
+ * ⚠️ T-22-01 の時点では §7.9 と `docs/05` §2.3.2 で**入力欄の輪郭の読みが分かれていた**が、
+ *    `docs/04` 改訂 19 が §7.9 側に例外を明記して解消済みである（完了報告で提起した件）。
  */
-const SHADOW_ALLOWED_FILE = 'packages/ui/src/lib/control-classes.ts';
-const SHADOW_ALLOWED_UTILITY = 'shadow-xs';
+const SHADOW_ALLOWANCES: ReadonlyArray<readonly [file: string, utility: string]> = [
+  ['packages/ui/src/lib/control-classes.ts', 'shadow-xs'],
+  ['packages/ui/src/lib/overlay-classes.ts', 'shadow-md'],
+];
+
+function isAllowedShadow(file: string, utility: string): boolean {
+  return SHADOW_ALLOWANCES.some(([allowedFile, allowedUtility]) => allowedFile === file && allowedUtility === utility);
+}
 
 describe('🔴 `packages/ui` は semantic / component トークンだけを見る（トークン化の完了を固定する）', () => {
   it('走査が空振りしていない（対照）', () => {
@@ -413,32 +432,36 @@ describe('🔴 `packages/ui` は semantic / component トークンだけを見�
     ).toEqual([]);
   });
 
-  it('🔴 影は「入力欄の輪郭」1 語だけで、他のプリミティブは 1 件も持たない', () => {
+  it('🔴 影は「入力欄の輪郭」と「overlay」の 2 箇所だけで、他のプリミティブは 1 件も持たない', () => {
     const offenders = uiFiles.flatMap((file) =>
       file.tokens
         .filter((token) => /^shadow(-|$)/.test(utilityOf(token)))
-        .filter(
-          (token) =>
-            !(file.label === SHADOW_ALLOWED_FILE && utilityOf(token) === SHADOW_ALLOWED_UTILITY),
-        )
+        .filter((token) => !isAllowedShadow(file.label, utilityOf(token)))
         .map((token) => `${file.label}: ${token}`),
     );
     expect(
       offenders,
-      '🔴 影は overlay（Dialog / Drawer / DropdownMenu / Tooltip / Toast。Phase 3b）の中だけです' +
+      '🔴 影は overlay（Dialog / Drawer / DropdownMenu / Tooltip / Toast）の中と、入力欄の輪郭だけです' +
         '（`docs/04` §7.9）。**階層は border と background の差で表す** —— カードを浮かせる影は' +
-        '「どれが操作可能か」の手がかりを薄めます。唯一の例外は入力欄の輪郭' +
-        `（${SHADOW_ALLOWED_FILE} の ${SHADOW_ALLOWED_UTILITY}。\`docs/05\` §2.3.2 の名指しの据え置き）です。`,
+        '「どれが操作可能か」の手がかりを薄めます。許されるのは ' +
+        `${SHADOW_ALLOWANCES.map(([file, utility]) => `${file} の ${utility}`).join(' / ')} だけです。`,
     ).toEqual([]);
-    // 🔴 例外が「実在するから許している」ことを対照で示す（許可だけが残るのを防ぐ）。
-    const allowed = uiFiles.find((file) => file.label === SHADOW_ALLOWED_FILE);
-    expect(allowed?.tokens.some((token) => utilityOf(token) === SHADOW_ALLOWED_UTILITY)).toBe(true);
+    // 🔴 許可が「実在するから許している」ことを対照で示す（未使用の許可が残るのを防ぐ）。
+    for (const [file, utility] of SHADOW_ALLOWANCES) {
+      const allowed = uiFiles.find((entry) => entry.label === file);
+      expect(
+        allowed?.tokens.some((token) => utilityOf(token) === utility),
+        `${file} に ${utility} が無い（許可だけが残っている）`,
+      ).toBe(true);
+    }
   });
 
-  it('🔴 `packages/ui` に出現する `shadow-` は control-classes.ts の `shadow-xs` の 1 箇所だけ（§7.9 / §17.7 (h)）', () => {
-    // 🔴 Phase 3b（T-22-03）で overlay 部品（Dialog / Drawer / DropdownMenu / Tooltip / Toast）が入るとき、
-    //    この検査の許可対象を広げる必要がある。根拠は「§7.9 が overlay の影を認めているから」であり、
-    //    「落ちたから広げる」ではない。広げるのは overlay 部品のファイルに限り、他の要素には広げない。
+  it('🔴 `packages/ui` に出現する `shadow-` は許可された 2 箇所 2 語だけ（§7.9 / §17.7 (h)）', () => {
+    // ✅ T-22-03: overlay 部品（Dialog / Drawer / DropdownMenu / Tooltip / Toast）が入ったので、
+    //    `lib/overlay-classes.ts` の `shadow-md` を許可に足した。🔴 **根拠は「§7.9 が overlay の
+    //    影を認めているから」であり、「落ちたから広げる」ではない**（この行の前身にその予告があった）。
+    //    🔴 **広げたのは overlay の component 層 1 ファイル / 1 語だけ**で、
+    //    overlay 部品それぞれ（`components/*.tsx`）に影を書くことは許していない。
     const found = uiFiles.flatMap((file) =>
       file.tokens
         .filter((token) => /^shadow(-|$)/.test(utilityOf(token)))
@@ -446,8 +469,9 @@ describe('🔴 `packages/ui` は semantic / component トークンだけを見�
     );
     expect(
       found,
-      '🔴 §7.9: 入力欄の輪郭（shadow-xs）は例外として 1 語 1 箇所に限る。新しい要素に影を足していないか確認してください。',
-    ).toEqual([`${SHADOW_ALLOWED_FILE}: ${SHADOW_ALLOWED_UTILITY}`]);
+      '🔴 §7.9: 影の語は「入力欄の輪郭（shadow-xs）」と「overlay（shadow-md）」の 2 箇所 2 語に限る。' +
+        '新しい要素に影を足していないか確認してください。',
+    ).toEqual(SHADOW_ALLOWANCES.map(([file, utility]) => `${file}: ${utility}`));
   });
 
   it('全周 2px 以上の border が無い（強調は左端 2px だけ）', () => {

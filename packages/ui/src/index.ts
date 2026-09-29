@@ -1,7 +1,14 @@
-// packages/ui/src/index.ts — @ses/ui の公開 API。
+// packages/ui/src/index.ts — @ses/ui の公開 API（**サーバのまま描ける部品だけ**）。
 // 🔴 取り込んだ shadcn/ui コンポーネントは、ここから export したものだけを `apps/*` が使う
 //    （CLAUDE.md §2.1「共有 UI コンポーネント」/ docs/03 §2「取り込んだコンポーネントは
 //    packages/ui に一元管理」）。
+//
+// 🔴 **バレルは 2 つある（T-22-03。`docs/05` §2.3.1）。** `package.json` の `exports` は
+//    **`"."`（本ファイル）と `"./client"`（`./index.client.ts`）の 2 つだけ**である
+//    （`packages/connectors` の `"."` / `"./aws"` と同じ形）。overlay 6 部品
+//    （`Dialog` / `Drawer` / `DropdownMenu` / `Tooltip` / `Tabs` / `Toast`）は `./client` 側に在り、
+//    🔴 **本ファイルからは export しない** —— 載せると、`Button` を 1 つ使うだけの
+//    サーバコンポーネントが Radix と `'use client'` の塊をバンドルへ引き込む。
 //
 // ============================================================================
 // 取り込みの共通規約（SP-21 T-21-02。各ファイルの表と併せて読む）
@@ -34,6 +41,10 @@
 //    クライアントバンドルへ移る（T-21-02 の受け入れ基準 ③）。**フックが要る設計に
 //    なったら、まず「フックを使わずに書けないか」を疑うこと**（`field.tsx` の `FieldError`
 //    は upstream の `useMemo` を落とすことでサーバのままにしている）。
+//    ⚠️ **T-22-03 で例外の置き場所ができた**が、規約は変わっていない: `'use client'` を書けるのは
+//    **`./index.client.ts` が export する overlay 6 部品のファイルだけ**であり、🔴 **本バレルと
+//    ここから export されるファイルには 1 つも書かない**（`docs/05` §2.3.1 の 🔴）。
+//    検査は `tests/static/ui-overlay-contract.test.ts`。
 //
 // 🔴 **5. 文言を持たない。** 日本語の固定文言を 1 つも置かない（CLAUDE.md §3.5 / BR-32）。
 //    文字列は呼び出し側が `packages/i18n` から解決して渡す。
@@ -41,9 +52,14 @@
 // 🔴 **6. 依存を増やさない（ただし 2 つは入った）。** 2026-09-29 に人間が `docs/04` §5-13 で
 //    **`class-variance-authority`（バリアント）と `tailwind-merge`（クラスの合成）の追加を承認**した
 //    （位置づけは「`CLAUDE.md` §2 が宣言している shadcn/ui を宣言どおりに入れる」）。T-22-01 で
-//    入れたのはこの 2 つだけである。🔴 **`@radix-ui/*` と `lucide-react` はまだ入れていない**
-//    （Phase 3b。`Dialog` / `Drawer` / `DropdownMenu` / `Tooltip` / `Tabs` / アイコンと同時に入る）
-//    ので、`asChild`（`Slot`）とアイコンは取り込まない。
+//    入れたのはこの 2 つだけである。
+//    ⚠️ **T-22-03 で `@radix-ui/react-{dialog,dropdown-menu,tooltip,tabs}` の 4 つが入った**
+//    （同じ §5-13 の承認の範囲。`Dialog` / `Drawer`〔Dialog 派生〕/ `DropdownMenu` / `Tooltip` /
+//    `Tabs` の 5 部品が使う。`Toast` は Radix を使わない ——
+//    `@radix-ui/react-toast` は承認の列挙に無い。`components/toast.tsx` の冒頭）。
+//    🔴 **`@radix-ui/*` の import は `./components/**` だけ**であり、**本バレル側の 15 部品は
+//    1 つも Radix を使わない**（`tests/static/ui-primitive-single-impl.test.ts` (b)②）。
+//    🔴 **`lucide-react` はまだ入れていない**（`T-22-05`）ので、アイコンは取り込まない。
 //    ⚠️ **`cn()` は競合するクラス名を後勝ちで解決するようになった**（`lib/cn.ts` に経緯）。
 //    それでも**色・サイズ・状態は `variant` / `size` として prop に置く** —— 理由は競合解決の
 //    有無ではなく、§7.4 の意味の割り当てを 1 箇所に閉じるためである。

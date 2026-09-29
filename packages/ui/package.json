@@ -5,20 +5,37 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./client": {
+      "types": "./dist/index.client.d.ts",
+      "default": "./dist/index.client.js"
+    }
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "peerDependencies": {
-    "react": "^19"
+    "react": "^19",
+    "react-dom": "^19"
   },
   "dependencies": {
+    "@radix-ui/react-dialog": "1.1.23",
+    "@radix-ui/react-dropdown-menu": "2.1.24",
+    "@radix-ui/react-tabs": "1.1.21",
+    "@radix-ui/react-tooltip": "1.2.16",
     "class-variance-authority": "0.7.1",
     "tailwind-merge": "3.7.0"
   },
   "devDependencies": {
     "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
     "react": "19.2.8",
+    "react-dom": "19.2.8",
     "typescript": "6.0.3"
   }
 }

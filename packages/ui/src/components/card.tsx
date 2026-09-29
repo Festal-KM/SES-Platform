@@ -11,8 +11,13 @@
 // §7.9: **shadow は overlay（Dialog / Drawer / DropdownMenu / Tooltip / Toast）にのみ使う。**
 // 🔴 **階層は border と background の差で表す**（`--color-border` + `--color-bg-subtle`）——
 // **カードを浮かせるための shadow を乱用しない。影が多い画面は「どれが操作可能か」の手がかりを
-// 失う。** したがってカードの立体感は 1px の境界線だけで表す（`--shadow-overlay` は宣言だけ
-// してあり、使うのは Phase 3b の overlay 部品である）。
+// 失う。** したがってカードの立体感は 1px の境界線だけで表す。
+// ⚠️ **訂正（T-22-03）**: 旧文はここに「`--shadow-overlay` は宣言だけしてあり、使うのは
+//    Phase 3b の overlay 部品である」と書いていたが、**そのトークンは宣言されていない**
+//    （`docs/05` §2.3.2 の shadow の行が「宣言しない（既定の `shadow-sm` / `shadow-md` を使う）」と
+//    定めており、`tests/static/design-tokens.test.ts` の `FORBIDDEN_TOKEN_PATTERNS` が
+//    `/^--shadow-/` を `@theme` で禁じている）。T-22-03 で入った overlay 部品は
+//    **Tailwind 既定の `shadow-md`** を使い、その語は `../lib/overlay-classes.ts` の 1 箇所にしか無い。
 //
 // | 語 | T-21 まで | T-22-01 | 理由 |
 // |---|---|---|---|
