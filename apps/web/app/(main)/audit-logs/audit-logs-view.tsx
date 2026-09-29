@@ -28,7 +28,7 @@
 //    エクスポート節（`AuditLogsExportSection`）は状態を持たない純粋な描画部品として切り出した
 //    —— `renderToStaticMarkup` は検索後の状態へ進められない（`useEffect` 同様、クリックの結果も再描画できない）ため、
 //    `*.render.test.tsx` は本部品を状態ごとに直接描いて固定する（`AdminAuditLogsResults` と同じ分離）。
-import { useCallback, useState, type FormEvent, type MouseEvent } from 'react';
+import { useCallback, useRef, useState, type FormEvent, type MouseEvent } from 'react';
 import {
   Button,
   Field,
@@ -180,10 +180,23 @@ export function AuditLogsExportSection({ href, exporting, error, messages, onExp
 }
 
 export function AuditLogsView({ messages }: { messages: AuditLogsViewMessages }) {
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
-  const [category, setCategory] = useState<AuditLogCategoryKey | ''>('');
-  const [actorId, setActorId] = useState('');
+  // 🔴 2026-09-30: 検索条件の 4 つの入力は**非制御**（値は DOM が持ち、検索の実行時に読む）。
+  //
+  //    制御（`useState` + `value=`）にすると、**ハイドレーションが終わる前に入力された値が捨てられる**。
+  //    React は水和のあいだは DOM の value を書き換えない（`initInput` の `isHydrating ||` の枝）が、
+  //    その後**最初の再描画**で `updateInput` が `element.value !== props.value` を見て props の値
+  //    （= 空文字）を書き戻す。つまり「水和前に入力 → 水和後に別の欄を触る」と、先に入れた値が画面から
+  //    消え、検索は「期間を指定してください」で止まる。
+  //    🔴 実害として観測した（2026-09-29 の CI。`settings.mobile.spec.ts` の `S-041`。トレースで
+  //    ①2 つの日付欄に値が入る ②操作種別を選んだ瞬間に**両方が空に戻る** ③「期間を指定してください」
+  //    を確認）。共通外枠（`T-12-20` / `T-12-21`）が入って水和が遅くなり、表面化した。
+  //    🔴 **これはテストの都合ではない** —— 移動中の営業が開いた直後に日付を入れると同じことが起きる
+  //    （`CLAUDE.md` §13.3「モバイルで破綻させない」）。本画面の入力は「検索の実行時に 1 度読む」だけで
+  //    再描画に使わないので、DOM を値の持ち主にするのが素直でもある（1 文字ごとの再描画も無くなる）。
+  const fromRef = useRef<HTMLInputElement>(null);
+  const toRef = useRef<HTMLInputElement>(null);
+  const categoryRef = useRef<HTMLSelectElement>(null);
+  const actorIdRef = useRef<HTMLInputElement>(null);
   const [periodError, setPeriodError] = useState(false);
   const [phase, setPhase] = useState<Phase>('idle');
   const [results, setResults] = useState<AuditLogPage | null>(null);
@@ -204,6 +217,12 @@ export function AuditLogsView({ messages }: { messages: AuditLogsViewMessages })
 
   const runSearch = useCallback(
     async (cursor: string | null): Promise<void> => {
+      // 🔴 条件は**実行の瞬間に入力欄から読む**（上の 🔴）。読む先が state から DOM に変わっただけで、
+      //    「さらに読み込む」が現在の入力欄の条件を使う点（＝ 従来の挙動）は変わらない。
+      const from = fromRef.current?.value ?? '';
+      const to = toRef.current?.value ?? '';
+      const category = (categoryRef.current?.value ?? '') as AuditLogCategoryKey | '';
+      const actorId = actorIdRef.current?.value ?? '';
       if (from === '' || to === '') {
         setPeriodError(true);
         return;
@@ -245,7 +264,8 @@ export function AuditLogsView({ messages }: { messages: AuditLogsViewMessages })
         setPhase('error');
       }
     },
-    [from, to, category, actorId],
+    // 🔴 入力欄は ref 経由で読むため依存は無い（`runSearch` の同一性が入力のたびに変わらない）。
+    [],
   );
 
   function onSubmit(event: FormEvent<HTMLFormElement>): void {
@@ -291,30 +311,15 @@ export function AuditLogsView({ messages }: { messages: AuditLogsViewMessages })
   return (
     <>
       <form className={FILTER_FORM_CLASSES} onSubmit={onSubmit} noValidate>
+        {/* 🔴 非制御（`value` / `onChange` を持たない）。理由は `AuditLogsView` 冒頭の 🔴。 */}
         <Field label={messages.fromLabel}>
-          <Input
-            type="date"
-            value={from}
-            required
-            disabled={searching}
-            onChange={(event) => setFrom(event.target.value)}
-          />
+          <Input type="date" ref={fromRef} required disabled={searching} />
         </Field>
         <Field label={messages.toLabel}>
-          <Input
-            type="date"
-            value={to}
-            required
-            disabled={searching}
-            onChange={(event) => setTo(event.target.value)}
-          />
+          <Input type="date" ref={toRef} required disabled={searching} />
         </Field>
         <Field label={messages.categoryLabel}>
-          <Select
-            value={category}
-            disabled={searching}
-            onChange={(event) => setCategory(event.target.value as AuditLogCategoryKey | '')}
-          >
+          <Select ref={categoryRef} disabled={searching}>
             <option value="">{messages.categoryAll}</option>
             {AUDIT_LOG_CATEGORY_KEYS.map((key) => (
               <option key={key} value={key}>
@@ -324,12 +329,7 @@ export function AuditLogsView({ messages }: { messages: AuditLogsViewMessages })
           </Select>
         </Field>
         <Field label={messages.actorIdLabel}>
-          <Input
-            type="text"
-            value={actorId}
-            disabled={searching}
-            onChange={(event) => setActorId(event.target.value)}
-          />
+          <Input type="text" ref={actorIdRef} disabled={searching} />
         </Field>
         <div className={FILTER_ACTIONS_CLASSES}>
           <Button type="submit" disabled={searching}>

@@ -500,6 +500,31 @@ describe('🔴 T-11-12: 表示名セルの規約（docs/04 §10.3 / §S-016 列�
     expect(html).toContain(`data-testid="candidate-list-updated-on-${REF}"`);
   });
 
+  /**
+   * 🔴 回帰の固定（2026-09-29 の CI で `anonymous-share.spec.ts` / `admin-demo.spec.ts` の `S-016` が落ちた実害）。
+   *
+   * 共通外枠のサイドバー（`w-56` = 224px）が入り、`xl`（1280px）で本文に残るのは 1024px になった。
+   * 2 列の下限の和は **984（表）+ 16（gap）+ 320（パネル）** なので `xl` では必ず溢れる。溢れ先が
+   * **ドキュメントの横スクロール**だと右パネルが「到達不能」になり（E2E の `unreachable-overflow`)、
+   * 判断材料が読めない。器の内側（`overflow-x-auto`）に閉じ込めれば、横スクロールで必ず到達できる。
+   *
+   * 🔴 幾何そのもの（何 px 溢れるか）は `renderToStaticMarkup` では測れない（レイアウトが無い）。
+   *    ここで固定するのは **「2 列の指定と、溢れを閉じ込める器がセットである」** という不変条件であり、
+   *    実測は E2E（`expectNoBrokenLabels`）が持つ。`T-22-07` で `PageBody`（`docs/04` §7.1 の幅クラス B）へ
+   *    移したら（`T-22-07`）、この検査も一緒に置き換えること。
+   */
+  it('🔴 右パネルを並置する xl の 2 列指定は、溢れを閉じ込める器（overflow-x-auto）とセットである', () => {
+    const html = render();
+    const grid = /<div class="(grid grid-cols-1[^"]*)"/.exec(html);
+    expect(grid).not.toBeNull();
+    const classes = (grid?.[1] ?? '').split(' ');
+    expect(classes).toContain('xl:grid-cols-[minmax(61.5rem,1fr)_20rem]');
+    expect(classes).toContain('xl:overflow-x-auto');
+    // 🔴 「溢れたら隠す」で通さない（判断材料を消す方向の修正の禁止。`CLAUDE.md` §13.3）。
+    expect(classes).not.toContain('overflow-hidden');
+    expect(classes).not.toContain('xl:overflow-hidden');
+  });
+
   it('スキル列は lg 以上で 1 行固定（nowrap + overflow-hidden）、サーバ描画は上位 3 + +N（N = 総数 − 3）', () => {
     const html = render({ rows: [ownRow] });
     expect(html).toContain('class="flex flex-wrap items-center gap-1 lg:flex-nowrap lg:overflow-hidden"');

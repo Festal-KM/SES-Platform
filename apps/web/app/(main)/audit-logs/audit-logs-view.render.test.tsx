@@ -66,6 +66,29 @@ describe('AuditLogsView（S-041。① 検索前はエクスポート節が無い
     expect(html).not.toContain('data-testid="audit-logs-export"');
     expect(html).not.toContain('data-testid="audit-logs-export-link"');
   });
+
+  /**
+   * 🔴 回帰の固定（2026-09-29 の CI で `settings.mobile.spec.ts` の `S-041` が落ちた実害）。
+   *
+   * 検索条件の 4 つの入力が**制御**（`value=` を持つ）に戻ると、**水和が終わる前に入れた値が、
+   * 次の再描画で空に戻される**（React の `updateInput` が `props.value` を DOM へ書き戻す）。
+   * 実害は「日付を入れて検索したのに『期間を指定してください』が出て、日付欄も空になる」。
+   *
+   * 🔴 ここで見るのは **SSR の出力に `value` 属性が無いこと**である —— 制御（`value=''`）なら
+   *    React は `value=""` を出力し、非制御なら出力しない。属性の有無で両者を機械的に見分けられる。
+   *    水和そのもの（`hydrateRoot`）は DOM 環境を要するため本設定では回せない（`vitest.config.ts` は
+   *    `environment: 'node'`）。**この検査は「制御に戻す変更」を確実に落とす**ところまでを担う。
+   */
+  it('🔴 検索条件の入力が非制御である（水和前に入れた値を捨てない。value 属性を持たない）', () => {
+    const html = renderToStaticMarkup(createElement(AuditLogsView, { messages }));
+    const inputs = html.match(/<input[^>]*>/g) ?? [];
+    expect(inputs).toHaveLength(3);
+    for (const input of inputs) {
+      expect(input, `${input} が value 属性を持っている（制御に戻っている）`).not.toMatch(/\svalue="/);
+    }
+    // 操作種別（`<select>`）も同じ —— 制御なら React は `<option value="" selected="">` を出す。
+    expect(html).not.toContain('selected=""');
+  });
 });
 
 describe('AuditLogsExportSection（S-041 セクション 4 の純粋な描画部品。② ③）', () => {

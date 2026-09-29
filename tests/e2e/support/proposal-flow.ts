@@ -122,6 +122,19 @@ export async function expectApprovalJudgmentMaterial(
   page: Page,
   expected: { readonly recipientCompanyName: string; readonly unitPriceText: string; readonly body: string },
 ): Promise<void> {
+  // 🔴 2026-09-30（共通外枠 `T-12-20` / `T-12-21` の投入後に E2E ジョブが再開して判明した破れの回収）:
+  //    「折りたたみ・タブ・一括」の走査は **`S-021` の画面（`proposal-approval` の配下）**に絞る。
+  //    この検査が表明しているのは「**判断材料**が折りたたまれていない」（`docs/04` §6.1 / `CLAUDE.md` §13.3）で
+  //    あって「アプリのどこにも開閉ウィジェットが無い」ではない。共通外枠（`app/(main)/_shell/app-shell.tsx`）の
+  //    ボトムタブ「その他」は `<details data-testid="app-tab-more">` で**どの幅でも DOM に在る**ナビゲーションで
+  //    あり、判断材料ではない（`md:hidden` は表示の切り替えで、`toHaveCount` は DOM を数える）。
+  //    同じ理由で `role="tab"` と `bulk` も外枠・共有部品が正当に持ちうる語である（`@ses/ui` の `Tabs` /
+  //    `Toolbar` の一括操作 = `{prefix}toolbar-bulk`。T-22-03 / T-22-04。`T-22-06` 以降で各一覧に載る）。
+  //    **判定は緩めていない** —— 画面の DOM 全体（閉じた要素・視認できない部分も含む）が対象のままである。
+  //    先例: `ai-limit.spec.ts` の `a[href="/settings/usage"]`（ヘッダの上限インジケータが正当に張るリンク）。
+  //    🔴 `force` / `override` / `skip`（下）と本文の語（`page.content()`）は**ページ全体のまま**にする ——
+  //    これらを正当に持つ外枠・共有部品が無く、絞ると検査が弱くなるだけだからである。
+  const screen = page.getByTestId('proposal-approval');
   for (const field of ['recipient', 'engineer', 'project', 'unit-price', 'start-date', 'created-by', 'elapsed']) {
     await expect(page.getByTestId(`proposal-approval-header-row-${field}`)).toBeVisible();
   }
@@ -133,10 +146,10 @@ export async function expectApprovalJudgmentMaterial(
   await expect(page.getByTestId('proposal-approval-gate-findings')).toBeVisible();
   await expect(page.getByTestId('proposal-approval-gate-warnings')).toBeVisible();
   await expect(page.getByTestId('proposal-approval-preview-body')).toContainText(expected.body);
-  await expect(page.locator('details')).toHaveCount(0);
-  await expect(page.locator('[role="tab"]')).toHaveCount(0);
+  await expect(screen.locator('details')).toHaveCount(0);
+  await expect(screen.locator('[role="tab"]')).toHaveCount(0);
   // 🔴 `F-021 AC-6` / `BR-50`: 一括承認・force / override に相当する操作が存在しない。
-  await expect(page.locator('[data-testid*="bulk"]')).toHaveCount(0);
+  await expect(screen.locator('[data-testid*="bulk"]')).toHaveCount(0);
   await expect(page.locator('[data-testid*="force"], [data-testid*="override"], [data-testid*="skip"]')).toHaveCount(0);
   expect(await page.content()).not.toMatch(/一括承認|一括送信|無視して/);
 }

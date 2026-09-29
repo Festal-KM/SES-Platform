@@ -650,8 +650,12 @@ test.describe('S-024 商談結果の記録（iPhone 15 / T1）', () => {
       await expect(session.page.getByTestId('proposal-interview-header-row-recipient')).toContainText('T0910 架空エンド株式会社');
       await expect(session.page.getByTestId('proposal-interview-header-row-unit-price')).toContainText('720,000');
       await expect(session.page.getByTestId('proposal-interview-lead')).toContainText(t('proposals.interview.lead'));
-      await expect(session.page.locator('details')).toHaveCount(0);
-      await expect(session.page.locator('[role="tab"]')).toHaveCount(0);
+      // 🔴 2026-09-30（共通外枠 `T-12-20` / `T-12-21` の投入後の回収）: 折りたたみ・タブの走査は **S-024 の画面（`proposal-interview` の配下）**に絞る（下の
+      //    `screen.innerHTML()` と同じ射程）。共通外枠のボトムタブ「その他」は `<details data-testid="app-tab-more">`
+      //    で**どの幅でも DOM に在る**ナビゲーションであり、判断材料ではない（`support/proposal-flow.ts` の同じ検査と
+      //    同じ判断）。**判定は緩めていない**（画面の DOM 全体が対象のまま）。
+      await expect(screen.locator('details')).toHaveCount(0);
+      await expect(screen.locator('[role="tab"]')).toHaveCount(0);
       // 🔴 SUBMITTED では「面談日程を確定する」と「辞退を記録する」だけ。結果の確定・面談実施は出ない。
       await expect(session.page.getByTestId('proposal-interview-operation-SCHEDULE')).toBeVisible();
       await expect(session.page.getByTestId('proposal-interview-operation-WITHDRAWN')).toBeVisible();
@@ -664,7 +668,8 @@ test.describe('S-024 商談結果の記録（iPhone 15 / T1）', () => {
       //    `page.content()` には直前の画面（S-023）の RSC ペイロードが残っており、T-12-14 でゲート文言
       //    （「上限がリセットされると**自動的に**再開します」= S-023 の保留の説明）が props に入ったため、
       //    別画面の文字列を拾ってしまう。**判定そのものは緩めていない**（S-024 の DOM 全体が対象で、
-      //    上の testid 走査〔auto / bulk / expire / force〕も従来どおりページ全体に掛かっている）。
+      //    上の testid 走査〔auto / bulk / expire / force〕は従来どおりページ全体に掛かっている ——
+      //    これらを正当に持つ外枠・共有部品が無いため絞る理由が無い）。
       expect(await screen.innerHTML()).not.toMatch(/自動的に|一括|期限で見送り/);
       expectNoHiddenCountHints('S-024 商談結果の記録（iPhone 15）', await session.page.locator('body').innerText());
       await expectNoHorizontalOverflow('S-024 商談結果の記録', session.page);
