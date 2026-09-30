@@ -23,7 +23,7 @@ import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { t } from '@ses/i18n';
-import { SECONDARY_LINK_CLASSES } from '@ses/ui';
+import { PageBody, SECONDARY_LINK_CLASSES } from '@ses/ui';
 import { executionDenialMessageKey } from '../../../lib/api/guards';
 import { resolveTenantCtxOutcome } from '../../../lib/auth/session';
 import { isEngineerShareRole } from '../../../lib/engineer-shares/policy';
@@ -87,7 +87,11 @@ export default async function EngineerSharesPage({
   const rowLabels = engineerShareRowLabels();
 
   return (
-    <main className="mx-auto max-w-4xl px-4 py-8">
+    // 🔴 T-22-07: 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`）。`S-015` は
+    //    **クラス A = 全幅**である（§7.1 の表）。**画面ファイルに `max-w-*` を書かない**
+    //    （検査 (c) / (k)）—— 旧 `max-w-4xl`（896px）では 6 列 + 右のプレビューが成立しない。
+    <main className="py-6">
+      <PageBody widthClass="full">
       <PageHeading trail={ENGINEER_SHARE_TRAIL} title={t('engineerShares.title')} />
       <EngineerShareScreen
         rows={engineerShareRows(view.items, rowLabels)}
@@ -121,6 +125,7 @@ export default async function EngineerSharesPage({
           {t('proposalRequests.open')}
         </Link>
       </p>
+      </PageBody>
     </main>
   );
 }

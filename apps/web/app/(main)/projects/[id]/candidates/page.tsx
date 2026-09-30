@@ -16,7 +16,7 @@ import { notFound, redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { ordersByFit } from '@ses/db';
 import { t } from '@ses/i18n';
-import { SECONDARY_LINK_STACKED_CLASSES } from '@ses/ui';
+import { PageBody, SECONDARY_LINK_STACKED_CLASSES } from '@ses/ui';
 import { NotFoundError, ProjectNotSharedError } from '../../../../../lib/api/errors';
 import { readRequestMeta, resolveTenantCtxOutcome } from '../../../../../lib/auth/session';
 import { listProjectCandidates } from '../../../../../lib/candidates/list';
@@ -68,10 +68,11 @@ const REGISTER_HREF = '/engineers/new';
 /** 🔴 公開が解除された取引先に出す画面（404 ページではない。`S-011` と同じ）。 */
 function NotSharedNotice() {
   return (
-    <main className="mx-auto max-w-3xl px-4 py-8">
-      <h1 className="mb-4 text-xl font-bold text-slate-900">{t('candidates.title')}</h1>
+    // 🔴 T-22-07: 画面ファイルに `max-w-*` を書かない（検査 (c)）。左右 gutter は `PageBody` と同じ 24px。
+    <main className="px-6 py-6">
+      <h1 className="mb-4 text-title font-bold text-fg">{t('candidates.title')}</h1>
       <p
-        className="mb-4 border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700"
+        className="mb-4 border border-border bg-bg-subtle px-4 py-3 text-body text-fg"
         data-testid="candidate-project-not-shared"
       >
         {t('projects.detail.notShared')}
@@ -159,11 +160,26 @@ export default async function ProjectCandidatesPage({
       : t(denialKey);
 
   return (
-    // 🔴 T-11-12: 器は 96rem（= Tailwind の `2xl` の幅。ブレークポイントの定義ではなく max-width）。一覧の他画面
-    //    （`max-w-6xl` = 72rem）より広いのは、`xl` 以上で **8 列（表の最小幅 61.5rem）+ 右パネル（15〜20rem）+ 間隔**を
-    //    横スクロール無しに並置するため（`docs/04` §S-016「デスクトップの列幅配分」/ `candidate-screen.tsx` 冒頭）。
-    //    72rem では 1440 でもパネルに 3rem しか残らない。
-    <main className="mx-auto max-w-[96rem] px-4 py-8">
+    // ========================================================================
+    // 🔴 T-22-07: 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`）。`S-016` は
+    //    **クラス B = 分割**である（一覧 + 右パネル）。旧 `max-w-[96rem]` を撤去した（検査 (c) / (k)）。
+    // ========================================================================
+    // 🔴 **副カラム（`aside`）を `PageBody` に渡していない。** 理由は 2 つで、どちらも実測に基づく:
+    //   ① `docs/04` §7.1 の `lg` の行が **`S-016` だけは「テーブルに重なるドロワー形式」**という例外を
+    //      明記しており（8 列を削らないため。§4.3 / §S-016 デバイス別）、`PageBody` の副カラムは
+    //      `lg` で **360px の枠を確保する**形なので、この例外を表せない（枠のぶん 8 列がさらに潰れる）。
+    //   ② `xl`（1280）で本文に残るのは **1280 − 224（サイドバー `xl:w-56`）− 48（`px-6`）= 1008px** であり、
+    //      `PageBody` の副カラム（`xl` 400px）を引くと主カラムは 560px になる。候補テーブルの最小幅は
+    //      **61.5rem = 984px**（`T-11-12` の実測。8 列の最長ラベル）なので、主カラムの側で
+    //      **表が器の内側で横スクロールする**。`tests/e2e/anonymous-share.spec.ts` は 1440 で
+    //      「候補テーブルの器が横にスクロールしていない（`containerOverflow ≤ 1`）」ことを検証しており、
+    //      副カラムに載せ替えるとこの判定が壊れる（判定は緩めない）。1440 でも主カラムは
+    //      1440 − 224 − 48 − 24（gap）− 400 = **744px** で 984px に届かない。
+    //   → したがって**この画面の 2 列は画面側の grid が組み**、`PageBody` は幅クラス B の宣言（`widthClass`）と
+    //     左右 gutter を担う。副カラムの**幅そのもの**は `PAGE_BODY_ASIDE_WIDTH_CLASSES`（360 / 400 / 480px）を
+    //     `candidate-screen.tsx` が import して使う ＝ 寸法の出所は 1 箇所のままである。
+    <main className="py-6">
+      <PageBody widthClass="split">
       <PageHeading trail={CANDIDATE_TRAIL} title={t('candidates.title')} />
       <CandidateScreen
         projectId={view.project.id}
@@ -218,6 +234,7 @@ export default async function ProjectCandidatesPage({
           checkboxOn: query.onlyInTime || query.onlyCommutable,
         })}
       />
+      </PageBody>
     </main>
   );
 }

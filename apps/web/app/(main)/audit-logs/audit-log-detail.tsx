@@ -11,6 +11,12 @@
 //    20 社を超えても「他 N 社」で省略しない（docs/04 §10.3 `S-041` 行。省略した瞬間に `F-014 AC-5` が欠ける）。
 // 🔴 未知の列挙値・キーはトークンのまま描く（形の検査を通った大文字スネークであり自由文ではない）。
 // 🔴 モバイルでも展開でき、3 列は縦に積む（`grid` の 1 列 → `sm` 以上で 3 列。`CLAUDE.md` §13.3）。
+//
+// 🔴 **SP-22 `T-22-07` で変えたのは見せ方だけである**（`docs/04` §7.9 / `docs/05` §17.7.1 (a)(f)(g)）:
+//    実色（`text-slate-*` / `bg-slate-100` / `border-slate-100`）を semantic トークンへ、`text-sm` を
+//    `--text-body`（**実寸は同じ 14px**）へ、`px-1.5 py-0.5` を spacing 7 段（`px-1`）へ寄せた。
+//    🔴 **描くキー・値の種別・伏せる規則・testid は 1 つも変えていない**（許可リストの判定は
+//    `packages/domain` の `pickAuditDetail` とサーバ側に在り、この部品は描くだけである）。
 import type { AuditDetailEntryView, AuditDetailValueView, AuditLogListItem } from '../../../lib/audit-logs/view';
 import type { AuditLogDetailMessages } from '../../../lib/audit-logs/detail-labels';
 
@@ -90,7 +96,7 @@ function ValueText({
       ) : (
         <ul className="flex flex-wrap gap-1">
           {value.value.map((name) => (
-            <li key={name} className="rounded-sm bg-slate-100 px-1.5 py-0.5 font-mono text-xs text-slate-700">
+            <li key={name} className="rounded-sm bg-bg-inset px-1 font-mono text-xs text-fg">
               {messages.keyLabels[name] ?? name}
             </li>
           ))}
@@ -107,7 +113,7 @@ function ValueText({
             <li
               key={`${index}-${name ?? 'deleted'}`}
               data-testid={name === null ? 'audit-logs-detail-deleted-partner' : undefined}
-              className={name === null ? 'text-slate-500' : undefined}
+              className={name === null ? 'text-fg-muted' : undefined}
             >
               {name ?? messages.deletedPartnerCompany}
             </li>
@@ -125,7 +131,7 @@ export type AuditLogDetailProps = {
 export function AuditLogDetail({ item, messages }: AuditLogDetailProps) {
   if (item.detailSuppressedReason !== null) {
     return (
-      <p data-testid="audit-logs-detail-suppressed" className="text-sm text-slate-600">
+      <p data-testid="audit-logs-detail-suppressed" className="text-body text-fg-muted">
         {messages.suppressed[item.detailSuppressedReason]}
       </p>
     );
@@ -133,7 +139,7 @@ export function AuditLogDetail({ item, messages }: AuditLogDetailProps) {
   const rows = toRows(item.detail.entries, messages);
   if (rows.length === 0) {
     return (
-      <p data-testid="audit-logs-detail-empty" className="text-sm text-slate-500">
+      <p data-testid="audit-logs-detail-empty" className="text-body text-fg-muted">
         {messages.empty}
       </p>
     );
@@ -143,8 +149,8 @@ export function AuditLogDetail({ item, messages }: AuditLogDetailProps) {
     ? 'sm:grid-cols-[minmax(8rem,1fr)_2fr_2fr] sm:gap-x-4'
     : 'sm:grid-cols-[minmax(8rem,1fr)_4fr] sm:gap-x-4';
   return (
-    <div data-testid="audit-logs-detail-list" role="table" className="text-sm">
-      <div role="row" className={`hidden text-xs font-medium text-slate-500 sm:grid ${gridClasses}`}>
+    <div data-testid="audit-logs-detail-list" role="table" className="text-body">
+      <div role="row" className={`hidden text-xs font-medium text-fg-muted sm:grid ${gridClasses}`}>
         <span role="columnheader">{messages.columnItem}</span>
         {hasPair ? (
           <>
@@ -161,17 +167,17 @@ export function AuditLogDetail({ item, messages }: AuditLogDetailProps) {
             key={`pair-${row.before.key}-${row.after.key}`}
             role="row"
             data-testid={`audit-logs-detail-row-${row.before.key}`}
-            className={`grid grid-cols-1 gap-y-1 border-t border-slate-100 py-2 ${gridClasses}`}
+            className={`grid grid-cols-1 gap-y-1 border-t border-border py-2 ${gridClasses}`}
           >
-            <span role="rowheader" className="font-medium text-slate-700">
+            <span role="rowheader" className="font-medium text-fg">
               {row.label}
             </span>
             <span role="cell" className="whitespace-normal">
-              <span className="mr-1 text-xs text-slate-500 sm:hidden">{messages.columnBefore}:</span>
+              <span className="mr-1 text-xs text-fg-muted sm:hidden">{messages.columnBefore}:</span>
               <ValueText entryKey={row.before.key} value={row.before.value} messages={messages} />
             </span>
             <span role="cell" className="whitespace-normal">
-              <span className="mr-1 text-xs text-slate-500 sm:hidden">{messages.columnAfter}:</span>
+              <span className="mr-1 text-xs text-fg-muted sm:hidden">{messages.columnAfter}:</span>
               <ValueText entryKey={row.after.key} value={row.after.value} messages={messages} />
             </span>
           </div>
@@ -180,9 +186,9 @@ export function AuditLogDetail({ item, messages }: AuditLogDetailProps) {
             key={`single-${row.entry.key}`}
             role="row"
             data-testid={`audit-logs-detail-row-${row.entry.key}`}
-            className={`grid grid-cols-1 gap-y-1 border-t border-slate-100 py-2 ${gridClasses}`}
+            className={`grid grid-cols-1 gap-y-1 border-t border-border py-2 ${gridClasses}`}
           >
-            <span role="rowheader" className="font-medium text-slate-700">
+            <span role="rowheader" className="font-medium text-fg">
               {row.label}
             </span>
             <span role="cell" className={hasPair ? 'whitespace-normal sm:col-span-2' : 'whitespace-normal'}>

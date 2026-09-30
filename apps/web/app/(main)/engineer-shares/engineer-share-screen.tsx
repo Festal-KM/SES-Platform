@@ -42,15 +42,39 @@
 //
 // 🔴 文言は props（`packages/i18n`）から受け取る。ここにベタ書きしない（`CLAUDE.md` §3.5）。
 // 🔴 `@ses/db` / `@ses/i18n` を値 import しない（型だけ。`tests/static/client-db-boundary.test.ts`）。
+//
+// ============================================================================
+// 🔴 SP-22 `T-22-07`（一覧の適用 ②）で変えたもの / 変えていないもの
+// ============================================================================
+// | 変えたもの | 一次資料 | 変えていないもの |
+// |---|---|---|
+// | 実色 → semantic トークン / `text-sm`→`--text-body`（実寸同じ）/ `text-base`→`--text-lg` | `docs/04` §7.9 / 検査 (a)(g) | 🔴 **6 列の集合・並び・間引きの境界**（`hidden sm:` 2 列 / `hidden lg:` 1 列） |
+// | 空状態 4 通りの器 → `@ses/ui` の `EmptyState` | §5-13 / §10.1 / §10.4 | 🔴 **4 通りの出し分けと文言**（`engineerShareEmptyState`）。**煽らない** |
+// | 幅 → `PageBody widthClass="full"`（`page.tsx`。旧 `max-w-4xl` を撤去） | §7.1 / `U-23` / 検査 (c)(k) | 🔴 **総件数・残件数を出さない**（`Pagination` を使わないのもこれが理由。下の 🔴） |
+//
+// 🔴 **「次の 50 件」に `@ses/ui` の `Pagination` を使わない。** `Pagination` は **href を受け取るリンク**の
+//    部品であり（`docs/05` §2.3.5 / `pagination.tsx`）、本画面の「次の 50 件」は**取得済みの行の下に追加する
+//    ボタン**である（`docs/04` §S-015: 置き換えない / 1 ページ目に戻さない）。リンクに替えると、3 ページ目で
+//    操作した行が視界から消える（上の ⑦）。**部品の選択を条文に合わせる**のが本スプリントの規律である。
+// 🔴 **`@ses/ui` の `DataTable` には移していない。** 本画面の名称セルは `NameCell` の `nameComponent`
+//    （プレビューを選ぶボタン）と**セルの `onClick`** を伴い、testid は凍結済みの
+//    `engineer-share-select-{id}` である。`DataTable` の `DataTableNameCell`（`docs/05` §2.3.5）は
+//    `name` / `href` だけを受け取る形であり、行内操作・ハンドラ・testid の接尾辞を通す口が無い。
+//    口を開けるには §2.3.5 の改訂（+ `data-testid` を式で組む形 = 凍結の弱化）が要るため、**実装側で
+//    決めない**（`CLAUDE.md` §8.7）。完了記録で `docs/05` への追記として提起する。
+//    ⚠️ 表そのものは `@ses/ui` の `Table` プリミティブであり、ローカルの `<table>` ではない。
+//    🔴 それでも `docs/05` §6.11.4 の 2 つの 🔴 は**この画面の実装が直接守っている**:
+//       ①行の選択チェックボックス・全選択が 1 つも無い（`type="checkbox"` が 0 件）
+//       ②操作列はどのブレークポイントでも隠さない（`<th>` / `<td>` に `hidden` が付かない）
 import { useState } from 'react';
 import Link from 'next/link';
 import {
   Button,
+  EmptyState,
   Field,
   Input,
   NameCell,
   SECONDARY_LINK_CLASSES,
-  SECONDARY_LINK_STACKED_CLASSES,
   Select,
   Table,
   TableBody,
@@ -427,39 +451,57 @@ export function EngineerShareScreen({
     ];
     return (
       <div
-        className="border border-slate-200 bg-white p-4"
+        className="border border-border bg-bg p-4"
         data-testid={`engineer-share-preview-${row.engineerId}`}
       >
-        <p className="mb-2 text-sm font-bold text-slate-900">{row.displayName}</p>
-        <dl className="text-sm">
+        <p className="mb-2 text-body font-bold text-fg">{row.displayName}</p>
+        <dl className="text-body">
           {items.map((item) => (
             <div
               key={item.key}
-              className="flex gap-3 border-b border-slate-100 py-1 last:border-b-0"
+              className="flex gap-3 border-b border-border py-1 last:border-b-0"
               data-testid={`engineer-share-preview-field-${item.key}`}
             >
-              <dt className="w-40 shrink-0 text-slate-500">{item.label}</dt>
-              <dd className="m-0 break-words text-slate-900">{item.value}</dd>
+              <dt className="w-40 shrink-0 text-fg-muted">{item.label}</dt>
+              <dd className="m-0 break-words text-fg">{item.value}</dd>
             </div>
           ))}
         </dl>
         {/* 🔴 「経歴は開示されません」を本文で明示する（`F-008 AC-7` / `docs/04` §5-2）。
             見えていないことを目で確かめられて初めて共有が続く。 */}
-        <p className="mt-2 text-xs text-slate-500" data-testid="engineer-share-preview-careers-note">
+        <p className="mt-2 text-xs text-fg-muted" data-testid="engineer-share-preview-careers-note">
           {messages.previewCareersNote}
         </p>
       </div>
     );
   }
 
+  /**
+   * 空状態の 4 通り（`docs/04` §S-015 / §10.1 / §10.4）。
+   *
+   * 🔴 T-22-07: 器を `@ses/ui` の `EmptyState`（§5-13。説明 → Primary → Secondary の 3 段）に寄せた。
+   *    **文言と導線の出し分けは 1 つも変えていない** —— どの文言を渡すかは画面の判断であり
+   *    （`engineerShareEmptyState` が種別を決める）、`EmptyState` は文言を持たない。
+   * 🔴 **煽らない**（`docs/04` §S-015）: `EmptyState` は「説明」以外の語を自分で足さない器なので、
+   *    「共有すると機会が来る」に相当する文が入り込む余地が構造的に無い。
+   * 🔴 **`ALL_SHARED` には Primary を置かない**（§10.4「0 件が正常な画面ではアクションを置かない」）——
+   *    「すべて共有中」は欠陥ではなく正常である。
+   * ⚠️ 器の `data-testid` は凍結済みの値（`engineer-share-ledger-empty` 等。`docs/04` `U-22`）であり、
+   *    `EmptyState` が出す `{prefix}root` / `{prefix}description` は**追加**である（改名ではない）。
+   */
   function renderEmptyState(kind: EngineerShareEmptyState) {
     if (kind === 'LEDGER') {
       return (
         <div data-testid="engineer-share-ledger-empty">
-          <p className="mb-2 text-sm text-slate-600">{messages.ledgerEmpty}</p>
-          <Link className={SECONDARY_LINK_STACKED_CLASSES} href={registerHref}>
-            {messages.ledgerRegister}
-          </Link>
+          <EmptyState
+            testIdPrefix="engineer-share-ledger-empty-state-"
+            description={messages.ledgerEmpty}
+            primary={
+              <Link className={SECONDARY_LINK_CLASSES} href={registerHref}>
+                {messages.ledgerRegister}
+              </Link>
+            }
+          />
         </div>
       );
     }
@@ -467,49 +509,60 @@ export function EngineerShareScreen({
       // 🔴 煽らない。事実だけを述べ、フィルタ切替の導線を置く（`docs/04` §S-015）。
       return (
         <div data-testid="engineer-share-shared-empty">
-          <p className="mb-2 text-sm text-slate-600">{messages.sharedEmpty}</p>
-          <Link
-            className={SECONDARY_LINK_CLASSES}
-            href={showNotSharedHref}
-            data-testid="engineer-share-show-not-shared"
-          >
-            {messages.sharedEmptyShowNotShared}
-          </Link>
+          <EmptyState
+            testIdPrefix="engineer-share-shared-empty-state-"
+            description={messages.sharedEmpty}
+            primary={
+              <Link
+                className={SECONDARY_LINK_CLASSES}
+                href={showNotSharedHref}
+                data-testid="engineer-share-show-not-shared"
+              >
+                {messages.sharedEmptyShowNotShared}
+              </Link>
+            }
+          />
         </div>
       );
     }
     if (kind === 'ALL_SHARED') {
       return (
-        <p className="text-sm text-slate-600" data-testid="engineer-share-not-shared-empty">
-          {messages.notSharedEmpty}
-        </p>
+        <div data-testid="engineer-share-not-shared-empty">
+          <EmptyState
+            testIdPrefix="engineer-share-not-shared-empty-state-"
+            description={messages.notSharedEmpty}
+          />
+        </div>
       );
     }
     // 条件あり・0 件: 効いている条件を 1 つずつ外せる導線（`S-005` と同じ形。共有状態も条件の 1 つ）。
+    // 🔴 §10.4「絞込 0 の Primary は『条件を外す』であって新規作成ではない」。
     return (
-      <div
-        className="border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700"
-        data-testid="engineer-share-filtered-empty"
-      >
-        <p className="m-0">{messages.filteredEmpty}</p>
-        {activeFilters.length === 0 ? null : (
-          <div className="mt-3" data-testid="engineer-share-active-filters">
-            <p className="mb-1 font-semibold">{messages.activeFiltersTitle}</p>
-            <ul className="m-0 flex list-none flex-wrap gap-2 p-0">
-              {activeFilters.map((filter) => (
-                <li key={filter.key}>
-                  <Link
-                    className={SECONDARY_LINK_CLASSES}
-                    href={filter.href}
-                    data-testid={`engineer-share-remove-filter-${filter.key}`}
-                  >
-                    {filter.label} {messages.removeFilterSuffix}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+      <div data-testid="engineer-share-filtered-empty">
+        <EmptyState
+          testIdPrefix="engineer-share-filtered-empty-state-"
+          description={messages.filteredEmpty}
+          primary={
+            activeFilters.length === 0 ? undefined : (
+              <div data-testid="engineer-share-active-filters">
+                <p className="mb-1 text-body font-semibold text-fg">{messages.activeFiltersTitle}</p>
+                <ul className="m-0 flex list-none flex-wrap gap-2 p-0">
+                  {activeFilters.map((filter) => (
+                    <li key={filter.key}>
+                      <Link
+                        className={SECONDARY_LINK_CLASSES}
+                        href={filter.href}
+                        data-testid={`engineer-share-remove-filter-${filter.key}`}
+                      >
+                        {filter.label} {messages.removeFilterSuffix}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )
+          }
+        />
       </div>
     );
   }
@@ -517,14 +570,14 @@ export function EngineerShareScreen({
   return (
     <div data-testid="engineer-share-screen">
       {/* --- 1. 共有の意味の説明（常設） ------------------------------------- */}
-      <p className="mb-4 text-sm text-slate-600" data-testid="engineer-share-lead">
+      <p className="mb-4 text-body text-fg-muted" data-testid="engineer-share-lead">
         {messages.lead}
       </p>
 
       {denialMessage === null ? null : (
         <div
           role="alert"
-          className="mb-4 border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+          className="mb-4 border border-warning-border bg-warning-bg px-4 py-3 text-body text-warning"
           data-testid="engineer-share-denied"
         >
           <p className="font-bold">{messages.deniedTitle}</p>
@@ -584,11 +637,11 @@ export function EngineerShareScreen({
       </form>
 
       {failed ? (
-        <p role="alert" className="mb-4 text-sm text-red-700" data-testid="engineer-share-error">
+        <p role="alert" className="mb-4 text-body text-danger" data-testid="engineer-share-error">
           {messages.errorSave}
           <br />
           {/* 🔴 「反映まで数分かかります」ではなく「状態は変わっていない」と書く。 */}
-          <span className="text-slate-600">{messages.errorRetryNote}</span>
+          <span className="text-fg-muted">{messages.errorRetryNote}</span>
         </p>
       ) : null}
 
@@ -607,7 +660,7 @@ export function EngineerShareScreen({
                 : 'engineer-share-list'
           }
         >
-          <h2 className="mb-2 text-base font-bold text-slate-900">{messages.sectionList}</h2>
+          <h2 className="mb-2 text-lg font-bold text-fg">{messages.sectionList}</h2>
           <Table
             data-testid={
               filters.shared === 'true'
@@ -660,7 +713,7 @@ export function EngineerShareScreen({
                     : messages.loadMore}
               </Button>
               {loadMoreFailed ? (
-                <p role="alert" className="m-0 text-sm text-red-700" data-testid="engineer-share-load-more-error">
+                <p role="alert" className="m-0 text-body text-danger" data-testid="engineer-share-load-more-error">
                   {messages.loadMoreError}
                 </p>
               ) : null}
@@ -672,13 +725,13 @@ export function EngineerShareScreen({
       {/* --- 5. 選択した候補の開示プレビュー ---------------------------------- */}
       {emptyState !== null ? null : (
         <section data-testid="engineer-share-preview">
-          <h2 className="mb-2 text-base font-bold text-slate-900">{messages.sectionPreview}</h2>
-          <p className="mb-3 text-xs text-slate-500" data-testid="engineer-share-preview-note">
+          <h2 className="mb-2 text-lg font-bold text-fg">{messages.sectionPreview}</h2>
+          <p className="mb-3 text-xs text-fg-muted" data-testid="engineer-share-preview-note">
             {messages.previewNote}
           </p>
 
           {focused === null ? (
-            <p className="text-sm text-slate-600" data-testid="engineer-share-preview-placeholder">
+            <p className="text-body text-fg-muted" data-testid="engineer-share-preview-placeholder">
               {messages.previewSelect}
             </p>
           ) : (
@@ -687,7 +740,7 @@ export function EngineerShareScreen({
                   （`docs/04` §S-015「操作と結果」）。プレビューを飛ばす導線を作らない。 */}
               {pending.kind === 'SHARE' ? (
                 <div
-                  className="mb-3 border border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-800"
+                  className="mb-3 border border-border-strong bg-bg-subtle px-4 py-3 text-body text-fg"
                   data-testid="engineer-share-share-confirm"
                 >
                   <p className="font-bold">{messages.shareConfirmTitle}</p>
@@ -695,7 +748,7 @@ export function EngineerShareScreen({
               ) : null}
               {pending.kind === 'REVOKE' ? (
                 <div
-                  className="mb-3 border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+                  className="mb-3 border border-warning-border bg-warning-bg px-4 py-3 text-body text-warning"
                   data-testid="engineer-share-revoke-confirm"
                 >
                   <p className="font-bold">{messages.revokeConfirmTitle}</p>

@@ -21,7 +21,13 @@ import { t } from '@ses/i18n';
 import { AUDIT_LOG_CATEGORY_KEYS, type AuditLogCategoryKey } from '../../../lib/audit-logs/categories';
 import { auditLogDetailMessages } from '../../../lib/audit-logs/detail-labels';
 import { auditLogExportHref, classifyAuditLogExportError } from '../../../lib/audit-logs/export-href';
-import { AuditLogsExportSection, AuditLogsView, type AuditLogsViewMessages } from './audit-logs-view';
+import type { AuditLogListItem } from '../../../lib/audit-logs/view';
+import {
+  AuditLogsExportSection,
+  AuditLogsResults,
+  AuditLogsView,
+  type AuditLogsViewMessages,
+} from './audit-logs-view';
 
 function categoryNames(): Readonly<Record<AuditLogCategoryKey, string>> {
   const entries = AUDIT_LOG_CATEGORY_KEYS.map((key) => [key, t(`auditLogs.category.${key}`)] as const);
@@ -88,6 +94,98 @@ describe('AuditLogsView（S-041。① 検索前はエクスポート節が無い
     }
     // 操作種別（`<select>`）も同じ —— 制御なら React は `<option value="" selected="">` を出す。
     expect(html).not.toContain('selected=""');
+  });
+});
+
+// ============================================================================
+// 🔴 T-22-07: 行の詳細は**行の直下へのインライン展開**であり、複数行を同時に開ける
+// ============================================================================
+// `docs/04` §7.2（「監査ログの行の中身を読む」）/ §S-041「行の詳細」/ [Issue #40] = 選択肢 2:
+//   - 🔴 **`Drawer` / モーダル / オーバーレイにしない** —— 前後の行を並べて読むのが監査の読み方
+//     （`USER` の要求行と `SYSTEM` の確定行の 2 行で 1 つの物語。1 行に畳まない）
+//   - 🔴 **複数行を同時に開ける**
+//   - 🔴 **詳細は一覧の応答に同梱**（展開時の追加取得を作らない。追加取得は監査ログの閲覧を記録させる）
+const ROW_A = '01930000-0000-7000-8000-0000000000c1';
+const ROW_B = '01930000-0000-7000-8000-0000000000c2';
+
+function item(id: string, action: string): AuditLogListItem {
+  return {
+    id,
+    createdAt: '2026-09-18T01:02:03.000Z',
+    actorKind: 'USER',
+    actorId: '01930000-0000-7000-8000-00000000000b',
+    actorDisplayName: '合成 花子',
+    action,
+    targetType: 'PROJECT',
+    targetId: '01930000-0000-7000-8000-0000000000f1',
+    ipAddress: '203.0.113.10',
+    deviceKind: 'desktop',
+    detail: {
+      entries: [
+        { key: 'verdict', pair: null, value: { kind: 'ENUM', value: 'PUBLISHED' } },
+      ],
+    },
+    detailSuppressedReason: null,
+  };
+}
+
+const RESULT_ITEMS = [item(ROW_A, 'project.visibility_change'), item(ROW_B, 'project.visibility_change')];
+
+function renderResults(expandedIds: readonly string[]): string {
+  return renderToStaticMarkup(
+    createElement('div', null,
+      createElement(AuditLogsResults, {
+        items: RESULT_ITEMS,
+        expandedIds: new Set(expandedIds),
+        messages,
+        onToggle: () => {},
+      }),
+    ),
+  );
+}
+
+describe('🔴 T-22-07: S-041 の行の詳細はインライン展開で、複数行を同時に開ける（docs/04 §7.2 / §S-041）', () => {
+  it('開いていない行には詳細が無く、`aria-expanded` が false である', () => {
+    const html = renderResults([]);
+    expect(html).toContain(`data-testid="audit-logs-row-${ROW_A}"`);
+    expect(html).not.toContain('data-testid="audit-logs-row-detail-');
+    expect(html).toMatch(new RegExp(`data-testid="audit-logs-row-toggle-${ROW_A}"[^>]*aria-expanded="false"`));
+  });
+
+  it('🔴 2 行を同時に開ける（詳細が 2 つ同時に描かれる）', () => {
+    const html = renderResults([ROW_A, ROW_B]);
+    expect(html).toContain(`data-testid="audit-logs-row-detail-${ROW_A}"`);
+    expect(html).toContain(`data-testid="audit-logs-row-detail-${ROW_B}"`);
+    expect(html.match(/data-testid="audit-logs-row-detail-/g) ?? []).toHaveLength(2);
+    expect(html.match(/data-testid="audit-logs-detail-list"/g) ?? []).toHaveLength(2);
+  });
+
+  it('🔴 詳細は**その行の直下の `<tr>`**（同じ表の中）であり、オーバーレイではない', () => {
+    const html = renderResults([ROW_A]);
+    // 行 → 直後に詳細の `<tr>` が来る（間に他の行が挟まらない）。
+    const rowIndex = html.indexOf(`data-testid="audit-logs-row-${ROW_A}"`);
+    const detailIndex = html.indexOf(`data-testid="audit-logs-row-detail-${ROW_A}"`);
+    const nextRowIndex = html.indexOf(`data-testid="audit-logs-row-${ROW_B}"`);
+    expect(rowIndex).toBeGreaterThan(-1);
+    expect(detailIndex).toBeGreaterThan(rowIndex);
+    expect(detailIndex).toBeLessThan(nextRowIndex);
+    // 🔴 `Drawer` / モーダルの語（overlay の器）が 1 つも無い。
+    expect(html).not.toContain('role="dialog"');
+    expect(html).not.toContain('data-slot="drawer"');
+    expect(html).not.toContain('aria-modal');
+    // 同じ表の 1 行として描く（`colSpan` が既存 6 列ぶん）。
+    expect(html).toMatch(new RegExp(`colspan="6"[^>]*id="audit-logs-detail-${ROW_A}"|id="audit-logs-detail-${ROW_A}"[^>]*colspan="6"`, 'i'));
+    // `aria-controls` が展開部の `id` を指す（開閉の対象が行の直下であることの表明）。
+    expect(html).toContain(`aria-controls="audit-logs-detail-${ROW_A}"`);
+  });
+
+  it('🔴 展開部は渡された `item` だけから描かれる（追加取得を持たない = fetch を呼ばない部品である）', () => {
+    // 部品の props は `items` / `expandedIds` / `messages` / `onToggle` の 4 つだけであり、
+    // 「開いた行の詳細を取りに行く」経路（URL・ローダ）を受け取る口が無い。
+    const html = renderResults([ROW_A]);
+    expect(html).not.toContain('/api/audit-logs/');
+    // 一覧の応答に入っていた値（`verdict` の列挙）がそのまま描かれている。
+    expect(html).toContain('data-testid="audit-logs-detail-row-verdict"');
   });
 });
 

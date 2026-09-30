@@ -11,6 +11,7 @@ import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { AUDIT_LOG_EXPORT_MAX_ROWS } from '@ses/config';
 import { t } from '@ses/i18n';
+import { PageBody } from '@ses/ui';
 import { resolveTenantCtxOutcome } from '../../../lib/auth/session';
 import { AUDIT_LOG_CATEGORY_KEYS, type AuditLogCategoryKey } from '../../../lib/audit-logs/categories';
 import { auditLogDetailMessages } from '../../../lib/audit-logs/detail-labels';
@@ -73,12 +74,17 @@ export default async function AuditLogsPage() {
   if (outcome.status === 'TWO_FACTOR_REQUIRED') redirect('/signin?step=2fa');
   if (outcome.ctx.role !== 'OWNER' && outcome.ctx.role !== 'ADMIN') redirect(HOME_PATH);
 
-  // T-21-03: 旧 `.ses-page` を Tailwind へ。余白は他の業務画面と同じ器に揃えた
-  //          （同じ「単一カラムの業務画面」が 2 種類の余白を持つと、次の画面が倣う先を選べない）。
+  // T-21-03: 旧 `.ses-page` を Tailwind へ。
+  // 🔴 T-22-07: 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`）。`S-041` は
+  //    **クラス A = 全幅**である（§7.1 の表。監査ログは一覧であり、列を削らないことが先）。
+  //    **画面ファイルに `max-w-*` を書かない**（`tests/static/ui-screen-width.test.ts` (c) /
+  //    `ui-width-class-coverage.test.ts` (k)）—— 旧 `max-w-5xl` は 1920px で 6 列を 1024px に絞っていた。
   return (
-    <main className="mx-auto max-w-5xl px-4 py-8">
-      <PageHeading trail={AUDIT_LOG_TRAIL} title={t('auditLogs.title')} />
-      <AuditLogsView messages={messages} />
+    <main className="py-6">
+      <PageBody widthClass="full">
+        <PageHeading trail={AUDIT_LOG_TRAIL} title={t('auditLogs.title')} />
+        <AuditLogsView messages={messages} />
+      </PageBody>
     </main>
   );
 }

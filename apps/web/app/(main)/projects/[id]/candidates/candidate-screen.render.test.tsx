@@ -18,6 +18,7 @@
 //      （スキル列だけ幅を持たない）、更新日セルは `candidate-list-updated-on-{key}` で掴める。
 //
 // 🔴 `react-dom/server` の `renderToStaticMarkup` を使う（新規依存を増やさない。他の render テストと同じ）。
+import { readFileSync } from 'node:fs';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
@@ -503,37 +504,169 @@ describe('🔴 T-11-12: 表示名セルの規約（docs/04 §10.3 / §S-016 列�
   /**
    * 🔴 回帰の固定（2026-09-29 の CI で `anonymous-share.spec.ts` / `admin-demo.spec.ts` の `S-016` が落ちた実害）。
    *
-   * 共通外枠のサイドバー（`w-56` = 224px）が入り、`xl`（1280px）で本文に残るのは 1024px になった。
-   * 2 列の下限の和は **984（表）+ 16（gap）+ 320（パネル）** なので `xl` では必ず溢れる。溢れ先が
-   * **ドキュメントの横スクロール**だと右パネルが「到達不能」になり（E2E の `unreachable-overflow`)、
+   * 共通外枠のサイドバー（`xl:w-56` = 224px）が入り、`xl`（1280px）で本文に残るのは
+   * **1280 − 224 − 48（`PageBody` の `px-6`）= 1008px** である。2 列の下限の和は
+   * **984（表の最小幅 61.5rem）+ 16（gap）+ 400（副カラム `xl:w-100`）= 1400px** なので `xl` では必ず溢れる。
+   * 溢れ先が**ドキュメントの横スクロール**だと右パネルが「到達不能」になり（E2E の `unreachable-overflow`）、
    * 判断材料が読めない。器の内側（`overflow-x-auto`）に閉じ込めれば、横スクロールで必ず到達できる。
+   *
+   * ⚠️ **`T-22-07` の結論（暫定を残した理由）**: `PageBody` の副カラム（`aside`）へ載せ替えると、
+   *    主カラムは 1440 で `1440 − 224 − 48 − 24 − 400 = 744px` になり、**表が器の内側で横スクロールする**。
+   *    `tests/e2e/anonymous-share.spec.ts` は 1440 で「候補テーブルの器が横にスクロールしていない
+   *    （`containerOverflow ≤ 1`）」ことを検証しており（`docs/04` §S-016「競合したら譲るのはパネル」）、
+   *    載せ替えるとその判定が壊れる。**判定は緩めないので、溢れは引き続き器に閉じ込める。**
+   *    ✅ 一方、**副カラムの幅そのもの**は `docs/04` §7.1 の幅クラス B（360 / 400 / 480px）へ移した
+   *    （画面独自の `20rem` / `lg:w-80` を撤去）。下の「右パネルが幅クラス B の副カラムに載っている」が固定する。
    *
    * 🔴 幾何そのもの（何 px 溢れるか）は `renderToStaticMarkup` では測れない（レイアウトが無い）。
    *    ここで固定するのは **「2 列の指定と、溢れを閉じ込める器がセットである」** という不変条件であり、
-   *    実測は E2E（`expectNoBrokenLabels`）が持つ。`T-22-07` で `PageBody`（`docs/04` §7.1 の幅クラス B）へ
-   *    移したら（`T-22-07`）、この検査も一緒に置き換えること。
+   *    実測は E2E（`expectNoBrokenLabels` / `containerOverflow`）が持つ。
    */
   it('🔴 右パネルを並置する xl の 2 列指定は、溢れを閉じ込める器（overflow-x-auto）とセットである', () => {
     const html = render();
     const grid = /<div class="(grid grid-cols-1[^"]*)"/.exec(html);
     expect(grid).not.toBeNull();
     const classes = (grid?.[1] ?? '').split(' ');
-    expect(classes).toContain('xl:grid-cols-[minmax(61.5rem,1fr)_20rem]');
+    // 1 列目は表の最小幅（984px）を下限に持ち、2 列目は副カラム自身の幅（`auto`）に従う。
+    expect(classes).toContain('xl:grid-cols-[minmax(61.5rem,1fr)_auto]');
     expect(classes).toContain('xl:overflow-x-auto');
     // 🔴 「溢れたら隠す」で通さない（判断材料を消す方向の修正の禁止。`CLAUDE.md` §13.3）。
     expect(classes).not.toContain('overflow-hidden');
     expect(classes).not.toContain('xl:overflow-hidden');
   });
 
-  it('スキル列は lg 以上で 1 行固定（nowrap + overflow-hidden）、サーバ描画は上位 3 + +N（N = 総数 − 3）', () => {
+  /**
+   * 🔴 T-22-07 受け入れ基準: **右パネルは幅クラス B の副カラムであり `Drawer` プリミティブではない**
+   *    （`docs/04` §11-25 の**例外 1 件** / §7.1 の幅クラス B）。
+   */
+  it('🔴 `S-016` は幅クラス B（`split`）を宣言している（`docs/04` §7.1 の表）', () => {
+    // 🔴 幅クラスの宣言は `page.tsx` の `PageBody` にちょうど 1 つである（静的検査 (k) が「1 回」を見る）。
+    //    ここで固定するのは **その 1 つが `split`（分割）であること** —— (k) は「いくつ渡したか」しか
+    //    見ないので、`full` に取り違えても緑になる。`S-016` は一覧 + 右パネルの画面であり B である。
+    const page = readFileSync(new URL('./page.tsx', import.meta.url), 'utf8');
+    expect(page).toContain('<PageBody widthClass="split">');
+    expect(page).not.toContain('widthClass="full"');
+    expect(page).not.toContain('widthClass="prose"');
+    // ⚠️ 「画面ファイルが幅を自分で決めない」（旧 `max-w-*` の撤去）は静的検査 (c)
+    //    （`tests/static/ui-screen-width.test.ts`）が見る —— あちらは**文字列リテラルだけ**を走査するので
+    //    規律を書き残したコメントで誤検知しない。ここでは二重に見ない（§17.4「同じ検証を 2 箇所に書かない」）。
+  });
+
+  it('🔴 右パネルが幅クラス B の副カラムの寸法（lg 360 / xl 400 / 2xl 480px）に載っている', () => {
+    const html = render();
+    const aside = /<aside class="([^"]*)"/.exec(html);
+    expect(aside).not.toBeNull();
+    const classes = (aside?.[1] ?? '').split(' ');
+    // 🔴 `@ses/ui` の `PAGE_BODY_ASIDE_WIDTH_CLASSES` の語そのもの（寸法の出所は 1 箇所）。
+    for (const token of ['w-full', 'lg:w-90', 'lg:shrink-0', 'xl:w-100', '2xl:w-120']) {
+      expect(classes, token).toContain(token);
+    }
+    // 🔴 画面独自の幅（旧 `lg:w-80` / grid の `20rem`）が残っていない。
+    expect(classes).not.toContain('lg:w-80');
+    expect(html).not.toContain('_20rem]');
+    // 🔴 `Drawer` プリミティブに置き換えていない（§11-25 の例外は「幅クラス B の副カラム」である）。
+    expect(html).not.toContain('role="dialog"');
+    expect(html).not.toContain('aria-modal');
+    // 🔴 画面が幅クラスを宣言するのは `page.tsx` の `PageBody` であり、ここには `max-w-*` が無い。
+    expect(html).not.toContain('max-w-[');
+  });
+
+  it('🔴 スキル列はどのブレークポイントでも 1 行固定（nowrap + overflow-hidden）、サーバ描画は上位 3 + +N（N = 総数 − 3）', () => {
     const html = render({ rows: [ownRow] });
-    expect(html).toContain('class="flex flex-wrap items-center gap-1 lg:flex-nowrap lg:overflow-hidden"');
+    // 🔴 T-22-07: 旧 `lg:flex-nowrap lg:overflow-hidden`（`lg` 以上だけ）→ 全ブレークポイント。
+    //    `sm`〜`lg` でバッジが折り返して**行の高さが件数で変わる**のを止めた（§10.3 画面固有 `S-016`）。
+    expect(html).toContain('class="flex flex-nowrap items-center gap-1 overflow-hidden"');
+    expect(html).not.toContain('flex-wrap items-center gap-1 lg:flex-nowrap');
     expect(html).toContain(`data-testid="candidate-list-more-skills-${ENGINEER}">+2<`);
     // 上位 3 件が描かれ、3 件目はモバイルで隠れる（従来どおり）。
     expect(html).toContain('>Java<');
     expect(html).toContain('>AWS<');
     expect(html).toContain('<span class="hidden sm:inline" data-skill-badge=""><span class="inline-flex');
     expect(html).toContain('>React</span></span>');
+  });
+
+  /**
+   * 🔴 T-22-07 受け入れ基準 ①: **スキルが 1 件の候補と 8 件の候補で行の高さが変わらない。**
+   *    行の高さが候補ごとに変わると、それ自体が「その候補が何をどれだけ持っているか」という
+   *    開示項目の増加になる（`docs/04` §10.3 画面固有 `S-016` の 🔴）。
+   *
+   * 🔴 `renderToStaticMarkup` は高さを測れない（レイアウトが無い）。ここで固定するのは
+   *    **高さが件数に依存しないための構造的な条件**である:
+   *      ① スキルのセルが**1 行固定の器**（`flex-nowrap` + `overflow-hidden`）を持つ
+   *      ② 器のクラスが**行によって変わらない**（1 件の行と 8 件の行で同一の文字列）
+   *      ③ 行の `<td>` の数・並び・クラスが**行によって変わらない**（セルが増減しない）
+   *      ④ 経歴（`EngineerCareer`）に相当する列・要約・件数がどの行にも無い（`F-008 AC-7`）
+   */
+  it('🔴 スキル 1 件の候補と 8 件の候補で、行の器（セル数・クラス・スキル列の 1 行固定）が同一である', () => {
+    const one: CandidateRowView = { ...anonymousRow, key: 'ref-one', candidateRef: 'ref-one', skills: ['Go'], moreSkills: null, skillCount: 1, allSkills: ['Go'] };
+    const eight: CandidateRowView = {
+      ...anonymousRow,
+      key: 'ref-eight',
+      candidateRef: 'ref-eight',
+      skills: ['TypeScript', 'Go', 'AWS'],
+      moreSkills: '+5',
+      skillCount: 8,
+      allSkills: ['TypeScript', 'Go', 'AWS', 'Docker', 'Terraform', 'Kubernetes', 'Python', 'Rust'],
+    };
+    const html = render({ rows: [one, eight] });
+    const rowHtml = (key: string): string => {
+      const start = html.indexOf(`data-testid="candidate-list-row-${key}"`);
+      expect(start, key).toBeGreaterThan(-1);
+      return html.slice(start, html.indexOf('</tr>', start));
+    };
+    const cellsOf = (key: string): readonly string[] => rowHtml(key).split('<td').slice(1);
+    const oneCells = cellsOf('ref-one');
+    const eightCells = cellsOf('ref-eight');
+    // ③ セルの数が同じ（8 列）。
+    expect(oneCells).toHaveLength(8);
+    expect(eightCells).toHaveLength(8);
+    // ③ 各セルの `class` 属性が同一（= 幅・間引き・折り返しの指定が行で変わらない）。
+    const classOf = (cell: string): string => /class="([^"]*)"/.exec(cell)?.[1] ?? '';
+    expect(oneCells.map(classOf)).toEqual(eightCells.map(classOf));
+    // ① ② スキル列の器は 1 行固定で、両方の行で同じクラス文字列である。
+    const box = 'class="flex flex-nowrap items-center gap-1 overflow-hidden"';
+    expect(rowHtml('ref-one')).toContain(box);
+    expect(rowHtml('ref-eight')).toContain(box);
+    expect(html.match(/class="flex flex-nowrap items-center gap-1 overflow-hidden"/g) ?? []).toHaveLength(2);
+    // ② 折り返しを許す語（`flex-wrap`）がスキルの器に無い（行が 2 行になる唯一の経路を閉じる）。
+    expect(rowHtml('ref-eight')).not.toContain('flex-wrap items-center');
+    // ④ 経歴に相当する列・件数・評語がどの行にも無い（`F-008 AC-7`）。
+    for (const word of ['経歴', '経験内容', '業務内容', '使用技術', '役割', '従事期間']) {
+      expect(html, word).not.toContain(word);
+    }
+  });
+
+  /**
+   * 🔴 T-22-07 受け入れ基準 ②: **匿名候補に `U-06` の 5 項目以外が出ない。**
+   *    行（8 列）は 種別 / 表示名 / スキル / 経験年数 / 単価レンジ / 稼働可能時期 / 勤務地・リモート / 更新日 で
+   *    あり、このうち候補の属性は**5 項目 + 更新日（日単位に丸めた値。`U-06`）**だけである。
+   */
+  it('🔴 匿名候補の行と右パネルに、5 項目以外の候補の属性が 1 つも無い（型に無い = 描けない）', () => {
+    const html = render({ rows: [anonymousRow] });
+    // 🔴 射程は**候補の行と右パネル**である（検索条件の帯には `稼働状況` の絞り込みが在り、それは
+    //    「候補が持つ属性の表示」ではなく自社台帳に効く条件である。`docs/04` §S-016 実装の補足）。
+    const rowStart = html.indexOf(`data-testid="candidate-list-row-${REF}"`);
+    expect(rowStart).toBeGreaterThan(-1);
+    const row = html.slice(rowStart, html.indexOf('</tr>', rowStart));
+    const panel = renderAnonymousDetail();
+    for (const target of [row, panel]) {
+      // 実名・所属会社名・社内 ID・営業メモ・スキルシート・稼働状況への到達が無い。
+      expect(target).not.toContain('架空 太郎');
+      expect(target).not.toContain('稼働中');
+      expect(target).not.toContain('/engineers/');
+      expect(target).not.toContain('skill-sheet');
+      expect(target).not.toContain(ENGINEER);
+      // 🔴 稼働状況は**列としても**存在しない（`docs/04` §S-016 実装の補足。空欄が「何かがある」を示さないため）。
+      expect(target).not.toContain(messages.fieldAvailabilityStatus);
+    }
+    // 右パネルの定義リストは 5 項目 + 更新日のちょうど 6 行である（`data-field` の数）。
+    const fields = [...panel.matchAll(/data-field="([^"]*)"/g)].map((m) => m[1]);
+    expect(fields).toEqual(['skills', 'years', 'price', 'availability', 'location', 'updated-on']);
+    // 🔴 丸めた区分のまま（丸める前の値を並置しない。`docs/04` §5-2）。
+    expect(panel).toContain('5〜10 年');
+    expect(panel).toContain('60〜70 万円');
+    expect(panel).not.toContain('650,000');
+    expect(panel).not.toContain('7 年');
   });
 
   it('右パネルの「閉じる」は行を選んでいない初期状態では描かれない（ドロワーは lg〜xl 未満で行を選んだときだけ）', () => {

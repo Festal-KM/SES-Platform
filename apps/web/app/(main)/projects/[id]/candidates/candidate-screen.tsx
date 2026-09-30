@@ -36,19 +36,48 @@
 //     単価レンジ / 稼働可能時期 / 勤務地・リモート / 更新日 = 最長ラベル）、**残りをスキル列だけ**が吸収する
 //     （`CANDIDATE_COLUMN_WIDTH`）。🔴 **更新日は最右列だが幅を先に確保する**（Phase 1 の並び順のキー。
 //     `T-08-09` のスクリーンショットでは右パネルに押し出されて読めなかった）。列を削らない（8 列は §S-016 の定め）。
-//   - **表の最小幅（`CANDIDATE_TABLE_MIN_WIDTH_CLASS`）** = 固定 7 列の和 + スキル列の下限（1 件 + `+N`）。
-//     これより狭い器では表が器の内側で横にスクロールする（`Table` の `overflow-x-auto`）が、`lg`（1024px −
-//     `px-4` × 2 = 992px）以上ではスクロールしない値に置く。セルは `padding="compact"`（`px-2`）—— `px-3` では
-//     8 列が `lg` の幅に収まらない（実測: T-11-12）。
+//   - **表の最小幅（`CANDIDATE_TABLE_CLASSES`）** = 固定 7 列の和 + スキル列の下限（1 件 + `+N`）= 61.5rem。
+//     これより狭い器では表が器の内側で横にスクロールする（`Table` の `overflow-x-auto`）。セルは
+//     `padding="compact"`（`px-2`）—— `px-3` では 8 列が `lg` の幅に収まらない（実測: T-11-12）。
+//     ⚠️ **`T-11-12` 当時の「`lg` 以上ではスクロールしない」は、共通外枠（`T-22-05` のサイドバー 56 / 224px）が
+//        入る前の実測である。** 現在の実測は下の JSX の 🔴 の表にある（`T-22-07`）。
 //   - **スキル列は 1 行固定**（行の高さを揃える。スキルが 1 件でも 8 件でも行の高さが変わらない = 「経歴の量」を
 //     6 つ目の開示項目にしない。§10.3 画面固有）。描く件数は上位 3 + `+N` を上限とし、**幅が足りなければ
 //     件数を減らす（下限 1 件 + `+N`）**。件数は `SkillBadges` が実測（`ResizeObserver`）→ `fitSkillBadges`
-//     （純粋関数）で決め、`+N` は隠した分を含めて描き直す。**`lg` 未満は従来どおり折り返し**（CSS が決め、JS は追随する）。
+//     （純粋関数）で決め、`+N` は隠した分を含めて描き直す。
+//     🔴 **`T-22-07` で 1 行固定を全ブレークポイントへ広げた**（旧実装は `lg:` だけで、`sm`〜`lg` では
+//     折り返して**行の高さが件数で変わっていた**）。詳細は `SkillBadges` の 🔴。
 //   - **右パネル**: `xl` 以上は並置（grid の 2 列目。🔴 **競合したら譲るのはパネル** —— 1 列目の下限を表の最小幅に
-//     し、パネルは `20rem` 固定〔2026-09-30 に `minmax(15rem, 20rem)` から変更。理由は下の JSX の 🔴〕）。
+//     し、パネルの幅は `PAGE_BODY_ASIDE_WIDTH_CLASSES`〔`lg` 360 / `xl` 400 / `2xl` 480px。`docs/04` §7.1 の
+//     幅クラス B。`T-22-07` で画面独自の `20rem` / `lg:w-80` から移した〕）。
 //     **`lg` 以上 `xl` 未満は並置すると 8 列が成立しない**ので、パネルは
 //     テーブルに重なる**ドロワー**（行を選ぶと右端に出る。「閉じる」を明示的に置く。閉じれば 8 列に戻る）。
 //     `lg` 未満は従来どおり一覧の下。**列を削ってパネルを並置する形は採らない**（§S-016 デバイス別）。
+//     🔴 **このパネルは幅クラス B の副カラムであり `Drawer` プリミティブではない**（`docs/04` §11-25 の
+//     **例外 1 件**）。したがって §5-13 の「`Drawer` に実行系のアクションを置かない」の対象外であり、
+//     **パネル内で `ProposalRequest` の発行まで完結する**（判断材料が `U-06` の 5 項目で閉じており、
+//     その**全量**がパネル内に在るから許される）。🔴 **`Drawer` に置き換えてはならない。**
+//
+// ============================================================================
+// 🔴 SP-22 `T-22-07`（一覧の適用 ②）で変えたもの / 変えていないもの
+// ============================================================================
+// | 変えたもの | 一次資料 | 変えていないもの |
+// |---|---|---|
+// | 実色 → semantic トークン / `text-sm`→`--text-body` / `text-base`→`--text-lg`（実寸同じ） | `docs/04` §7.9 / 検査 (a)(g) | 🔴 **8 列の集合・並び・幅・間引きの境界**（`CANDIDATE_COLUMN_WIDTH` / `padding='compact'`） |
+// | primary リンク → `PRIMARY_LINK_CLASSES`（画面の `hover:` を撤去） | §7.4 / §7.10 / 検査 (j) | 🔴 **匿名候補の行・パネルに出す項目**（`U-06` の 5 項目。型に無いものは描けない） |
+// | 母集団 + 検索の帯 → `Toolbar` / 空状態 → `EmptyState` / ページ送り → `Pagination` | §5-13 / §10.4 | 🔴 **母集団は混在した総件数の 1 行だけ**（共有候補の件数を別に出さない） |
+// | パネルの幅 → `PAGE_BODY_ASIDE_WIDTH_CLASSES`（360 / 400 / 480px） | §7.1 の幅クラス B | 🔴 **行の選択で右パネルが切り替わる**（遷移ではない）。**testid** は削除・改名 0 件 |
+// | スキル列の 1 行固定を全ブレークポイントへ | §10.3 画面固有 `S-016` | 🔴 **上位 3 + `+N`** の上限と `fitSkillBadges` の算術 |
+// | 幅 → `PageBody widthClass="split"`（`page.tsx`。旧 `max-w-[96rem]` を撤去） | §7.1 / `U-23` / 検査 (c)(k) | 🔴 **`xl:overflow-x-auto`（暫定）は残る** —— 理由と実測は下の JSX の 🔴 |
+//
+// 🔴 **`@ses/ui` の `DataTable` には移していない。** 本画面の行は `role="button"` / `onClick` / `onKeyDown` /
+//    `aria-selected` を持つ**選択の対象**であり（行クリックで右パネルが切り替わる）、`docs/05` §2.3.5 の
+//    `DataTableProps` には行の**選択**（遷移ではない）を通す口が無い（`rowAttributes` は `className` と
+//    `data-*` だけ）。加えて 8 列は `padding='compact'`（`px-2`）+ `lg:table-fixed` + 列ごとの `lg:w-*`
+//    という `T-11-12` の実測値に依っており、器の `minWidth` + `grow` へ移すと **1440 で表が器の内側で
+//    横スクロールし、E2E の `containerOverflow ≤ 1` が壊れる**。口を開けるのは §2.3.5 の改訂であり
+//    実装側で決めない（`CLAUDE.md` §8.7）。完了記録で提起する。
+//    ⚠️ 表そのものは `@ses/ui` の `Table` プリミティブであり、ローカルの `<table>` ではない。
 //   - 表示名は `docs/04` §10.3 の名称規約（`@ses/ui` の `NameCell`）: 自社候補は `lg` 以上 = 切り詰め + `title` +
 //     同じ行に `S-006` への導線、`lg` 未満 = 折り返し。**匿名候補は「共有候補」の一語で、リンクを持たない**
 //     （`href={null}`。E2E ③「匿名候補の行にリンクが無い」）。
@@ -68,9 +97,13 @@ import {
   Button,
   Checkbox,
   cn,
+  EmptyState,
   Field,
   Input,
   NameCell,
+  PAGE_BODY_ASIDE_WIDTH_CLASSES,
+  PRIMARY_LINK_CLASSES,
+  Pagination,
   SECONDARY_LINK_CLASSES,
   SECONDARY_LINK_STACKED_CLASSES,
   Select,
@@ -81,6 +114,8 @@ import {
   TableHeader,
   TableRow,
   Textarea,
+  Toolbar,
+  type PaginationLinkProps,
 } from '@ses/ui';
 import { FILTER_ACTIONS_CLASSES, FILTER_FORM_CLASSES } from '../../../_shared/filter-form-classes';
 import type { CandidateRowView } from '../../../../../lib/candidates/list-rows';
@@ -259,9 +294,11 @@ const MORE_WIDTH_FALLBACK_PX = 40;
 
 /**
  * スキル列（1 行固定。ファイル冒頭「デスクトップの列幅配分」）。
- * 🔴 描く件数は **CSS が決めた描き方に JS が追随する**形で決める: 器の `flex-wrap` が `nowrap`（= `lg` 以上の
- *    1 行固定）のときだけ、器の幅とバッジの実測幅から `fitSkillBadges` で件数を決め、`+N` を隠した分を含めて
- *    描き直す。`wrap`（`lg` 未満）なら全件を描く（折り返しは CSS）。ブレークポイントを JS に重複して持たない。
+ * 🔴 描く件数は **CSS が決めた描き方に JS が追随する**形で決める: 器の `flex-wrap` が `nowrap`
+ *    （= 1 行固定。`T-22-07` で**どのブレークポイントでもそうなった**）のとき、器の幅とバッジの実測幅から
+ *    `fitSkillBadges` で件数を決め、`+N` を隠した分を含めて描き直す。`wrap` のときは全件を描く
+ *    （折り返しは CSS が決める）。**ブレークポイントを JS に重複して持たない**（この分岐はそのまま残す ——
+ *    器の描き方が変わったら JS が追随する形を崩さない）。
  * 🔴 バッジの幅は**全件が描かれている間に 1 度だけ**測って保持する（隠した後は測れない。スキル名は行ごとに不変）。
  * 🔴 サーバ描画（初期 HTML）は上位 3 件 + `+N` のまま（測れないため）。マウント後に幅が足りなければ減る。
  */
@@ -320,8 +357,19 @@ function SkillBadges({
   if (skills.length === 0) return <>{valueNone}</>;
   const hidden = Math.max(skillCount - shown, 0);
   return (
-    // 🔴 `lg` 以上: 1 行固定（`flex-nowrap` + `overflow-hidden`）。`lg` 未満: 折り返し（従来どおり）。
-    <span ref={boxRef} className="flex flex-wrap items-center gap-1 lg:flex-nowrap lg:overflow-hidden">
+    // ========================================================================
+    // 🔴 スキル列は**どのブレークポイントでも 1 行固定**である（`flex-nowrap` + `overflow-hidden`）
+    // ========================================================================
+    // 🔴 `docs/04` §10.3 画面固有 `S-016`: **「スキルが 1 件だけの候補と 8 件の候補で行の高さが変わらない」。**
+    //    行の高さが候補によって変わると、それ自体が「その候補が何をどれだけ持っているか」という
+    //    **開示項目の増加**になる（同節の「経験内容は 0 行でも 100 行でも見え方が変わらない」と同じ規律）。
+    // ⚠️ **`T-22-07` で `lg:flex-nowrap lg:overflow-hidden` → `flex-nowrap overflow-hidden` にした。**
+    //    旧実装は `lg` 以上でだけ 1 行固定で、`sm`〜`lg`（タブレット）ではバッジが折り返して
+    //    **行の高さが件数で変わっていた**（条文は幅を限定していない）。`lg` 未満でも同じ不変条件にする。
+    // ⚠️ 溢れの扱いは変わらない: `SkillBadges` が器の幅を実測して描く件数を減らし（`fitSkillBadges`）、
+    //    隠した分は `+N` に載る。器の祖先（`Table` の `overflow-x-auto`）があるので、
+    //    E2E の `unreachable-overflow`（到達できない溢れ）にはならない。
+    <span ref={boxRef} className="flex flex-nowrap items-center gap-1 overflow-hidden">
       {skills.map((skill, index) =>
         // 🔴 3 件目以降はモバイルで隠す。`Badge` 自身の `inline-flex` と display を競わせないよう、外側の
         //    `<span>` で包んで隠す（`cn` は単純な連結であり、後勝ちの解決をしない）。
@@ -336,7 +384,7 @@ function SkillBadges({
       )}
       {hidden === 0 ? null : (
         <span
-          className="hidden shrink-0 px-1.5 py-0.5 text-xs text-slate-500 sm:inline"
+          className="hidden shrink-0 px-1 text-xs text-fg-muted sm:inline"
           data-skill-more=""
           data-testid={`candidate-list-more-skills-${rowKey}`}
         >
@@ -344,6 +392,28 @@ function SkillBadges({
         </span>
       )}
     </span>
+  );
+}
+
+/**
+ * ページ送りのリンク（`@ses/ui` の `Pagination` に `next/link` を渡す）。
+ *
+ * 🔴 **凍結済み testid の維持**（`docs/04` `U-22` / `SP-22` §3.2 の代替 ④「旧キーの併記」）:
+ *    `Pagination` は `candidate-list-pagination-prev` / `…-next` を出すが、2026-09-30 に凍結された値は
+ *    **`candidate-list-first`（最初のページに戻る）/ `candidate-list-next`（次のページ）**である。
+ *    **同じ 2 本のリンクに、同じ意味のまま**付け直している（改名ではない —— 凍結値を DOM に残す）。
+ * ⚠️ 三項で書くのは、静的抽出器（`tests/static/support/testid-extract.ts`）が**枝のリテラル**を
+ *    拾って凍結を検査できる形にするためである（`S-005` の `EngineerPagingLink` と同じ作法）。
+ */
+function CandidatePagingLink({ href, className, children, 'data-testid': testId }: PaginationLinkProps) {
+  return (
+    <Link
+      href={href}
+      className={className}
+      data-testid={testId === undefined || testId.endsWith('-prev') ? 'candidate-list-first' : 'candidate-list-next'}
+    >
+      {children}
+    </Link>
   );
 }
 
@@ -362,9 +432,9 @@ function RequirementTable({
 }) {
   return (
     <div className="mb-3">
-      <h3 className="mb-1 text-sm font-semibold text-slate-900">{heading}</h3>
+      <h3 className="mb-1 text-body font-semibold text-fg">{heading}</h3>
       {rows.length === 0 ? (
-        <p className="m-0 text-sm text-slate-500">{empty}</p>
+        <p className="m-0 text-body text-fg-muted">{empty}</p>
       ) : (
         <Table>
           <TableHeader>
@@ -394,9 +464,9 @@ function RequirementTable({
  */
 function DetailRow({ label, value, field }: { readonly label: string; readonly value: string; readonly field: string }) {
   return (
-    <div className="flex gap-3 border-b border-slate-100 py-2 last:border-b-0">
-      <dt className="w-28 shrink-0 text-slate-500">{label}</dt>
-      <dd className="m-0 text-slate-900" data-field={field}>
+    <div className="flex gap-3 border-b border-border py-2 last:border-b-0">
+      <dt className="w-28 shrink-0 text-fg-muted">{label}</dt>
+      <dd className="m-0 text-fg" data-field={field}>
         {value}
       </dd>
     </div>
@@ -482,10 +552,10 @@ export function AnonymousDetail({
 
   return (
     <div data-testid="candidate-detail-anonymous">
-      <p className="mb-2 text-base font-semibold text-slate-900" data-testid="candidate-detail-kind">
+      <p className="mb-2 text-lg font-semibold text-fg" data-testid="candidate-detail-kind">
         {messages.kindAnonymous}
       </p>
-      <dl className="mb-3 text-sm">
+      <dl className="mb-3 text-body">
         <DetailRow label={messages.fieldSkills} value={row.allSkills.length === 0 ? messages.valueNone : row.allSkills.join(' / ')} field="skills" />
         <DetailRow label={messages.fieldYears} value={row.years} field="years" />
         <DetailRow label={messages.fieldPrice} value={row.unitPrice} field="price" />
@@ -493,12 +563,12 @@ export function AnonymousDetail({
         <DetailRow label={messages.fieldLocation} value={row.location} field="location" />
         <DetailRow label={messages.fieldUpdatedOn} value={row.updatedOn} field="updated-on" />
       </dl>
-      <p className="mb-2 text-xs text-slate-600" data-testid="candidate-detail-anonymous-note">
+      <p className="mb-2 text-xs text-fg-muted" data-testid="candidate-detail-anonymous-note">
         {messages.detailAnonymousNote}
       </p>
 
       {phase.kind === 'SENT' ? (
-        <div className="border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900" data-testid="candidate-request-sent">
+        <div className="border border-success-border bg-success-bg px-4 py-3 text-body text-success" data-testid="candidate-request-sent">
           <p role="status" className="mb-2 font-bold">
             {messages.requestSent}
           </p>
@@ -508,7 +578,7 @@ export function AnonymousDetail({
         </div>
       ) : !request.canRequest ? (
         request.unavailableMessage === null ? null : (
-          <p className="m-0 text-xs text-slate-500" data-testid="candidate-request-unavailable">
+          <p className="m-0 text-xs text-fg-muted" data-testid="candidate-request-unavailable">
             {request.unavailableMessage}
           </p>
         )
@@ -518,9 +588,9 @@ export function AnonymousDetail({
         </Button>
       ) : (
         // 🔴 右パネルがフォームに切り替わる（モーダルにしない。5 項目を見ながら書く）。
-        <form className="border border-slate-200 bg-slate-50 p-3" onSubmit={submit} data-testid="candidate-request-form">
-          <p className="mb-1 text-sm font-bold text-slate-900">{messages.requestTitle}</p>
-          <p className="mb-3 text-xs text-slate-600" data-testid="candidate-request-lead">
+        <form className="border border-border bg-bg-subtle p-3" onSubmit={submit} data-testid="candidate-request-form">
+          <p className="mb-1 text-body font-bold text-fg">{messages.requestTitle}</p>
+          <p className="mb-3 text-xs text-fg-muted" data-testid="candidate-request-lead">
             {messages.requestLead}
           </p>
           <Field label={messages.requestMessageLabel} description={messages.requestMessageHint} className="mb-3">
@@ -549,7 +619,7 @@ export function AnonymousDetail({
             />
           </Field>
           {error === null ? null : (
-            <p role="alert" className="mb-3 text-sm text-red-700" data-testid="candidate-request-error">
+            <p role="alert" className="mb-3 text-body text-danger" data-testid="candidate-request-error">
               {error}
             </p>
           )}
@@ -596,7 +666,7 @@ function DetailPanel({
 }) {
   if (row === null) {
     return (
-      <p className="m-0 text-sm text-slate-600" data-testid="candidate-detail-empty">
+      <p className="m-0 text-body text-fg-muted" data-testid="candidate-detail-empty">
         {messages.detailSelect}
       </p>
     );
@@ -636,10 +706,10 @@ export function OwnDetail({
 }) {
   return (
     <div data-testid="candidate-detail-own">
-      <p className="mb-2 text-base font-semibold text-slate-900" data-testid="candidate-detail-name">
+      <p className="mb-2 text-lg font-semibold text-fg" data-testid="candidate-detail-name">
         {row.displayName}
       </p>
-      <dl className="mb-3 text-sm">
+      <dl className="mb-3 text-body">
         <DetailRow label={messages.fieldSkills} value={row.skills.length === 0 ? messages.valueNone : [...row.skills, ...(row.moreSkills === null ? [] : [row.moreSkills])].join(' / ')} field="skills" />
         <DetailRow label={messages.fieldYears} value={row.years} field="years" />
         <DetailRow label={messages.fieldPrice} value={row.unitPrice} field="price" />
@@ -655,14 +725,16 @@ export function OwnDetail({
       {proposal.canCreate ? (
         // 🔴 primary の見え方は `@ses/ui` の `Button`（primary / default）と同じ語を使う（別の見た目を作らない）。
         <Link
-          className="mt-3 inline-flex h-10 shrink-0 items-center justify-center whitespace-nowrap rounded-md bg-slate-900 px-4 text-sm font-medium text-white transition-colors hover:bg-slate-700"
+          // 🔴 T-22-07: primary リンクの見た目は `@ses/ui` の `PRIMARY_LINK_CLASSES` の 1 箇所（§7.4 /
+          //    §7.10。画面に `hover:` を書かない = 検査 (j)）。配置（`mt-3`）だけが文脈の話である。
+          className={cn("mt-3", PRIMARY_LINK_CLASSES)}
           href={proposalCreateHref(projectId, row.id)}
           data-testid="candidate-detail-create-proposal"
         >
           {messages.detailCreateProposal}
         </Link>
       ) : proposal.unavailableMessage === null ? null : (
-        <p className="mt-2 mb-0 text-xs text-slate-500" data-testid="candidate-detail-create-proposal-unavailable">
+        <p className="mt-2 mb-0 text-xs text-fg-muted" data-testid="candidate-detail-create-proposal-unavailable">
           {proposal.unavailableMessage}
         </p>
       )}
@@ -707,24 +779,24 @@ export function CandidateScreen({
 
   return (
     <div data-testid="candidate-screen">
-      <p className="mb-4 text-sm text-slate-600" data-testid="candidate-lead">
+      <p className="mb-4 text-body text-fg-muted" data-testid="candidate-lead">
         {messages.lead}
       </p>
 
       {/* セクション 1: 対象案件の要件サマリ（🔴 折りたたまない。docs/04 §S-016） */}
-      <section className="mb-6 border border-slate-200 bg-white" data-testid="candidate-project-summary">
-        <h2 className="border-b border-slate-200 px-4 py-3 text-base font-bold text-slate-900">
+      <section className="mb-6 border border-border bg-bg" data-testid="candidate-project-summary">
+        <h2 className="border-b border-border px-4 py-3 text-lg font-bold text-fg">
           {messages.sectionProject}
-          <span className="ml-2 font-normal text-slate-700" data-testid="candidate-project-name">
+          <span className="ml-2 font-normal text-fg" data-testid="candidate-project-name">
             {projectName}
           </span>
         </h2>
         <div className="px-4 py-4">
-          <dl className="mb-3 flex flex-wrap gap-x-6 gap-y-1 text-sm">
+          <dl className="mb-3 flex flex-wrap gap-x-6 gap-y-1 text-body">
             {[...headlineRows, ...conditionRows].map((row) => (
               <div key={row.key} className="flex gap-2">
-                <dt className="text-slate-500">{row.label}</dt>
-                <dd className="m-0 text-slate-900" data-testid={`candidate-project-${row.key}`}>
+                <dt className="text-fg-muted">{row.label}</dt>
+                <dd className="m-0 text-fg" data-testid={`candidate-project-${row.key}`}>
                   {row.value}
                 </dd>
               </div>
@@ -754,168 +826,205 @@ export function CandidateScreen({
         </div>
       </section>
 
-      {/* セクション 2・3: 検索条件と絞り込みチェックボックス（`S-005` と同じ項目・同じ既定） */}
-      <form className={FILTER_FORM_CLASSES} method="get" action={formAction} data-testid="candidate-list-filters">
-        <fieldset className="contents">
-          <legend className="sr-only">{messages.searchLegend}</legend>
-          <Field label={messages.searchQ}>
-            <Input type="search" name="q" defaultValue={filters.q} data-testid="candidate-list-filter-q" />
-          </Field>
-          <Field label={messages.searchSkills}>
-            <Select name="skills" multiple size={5} defaultValue={[...filters.skills]} data-testid="candidate-list-filter-skills">
-              {skillOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </Select>
-            <span className="text-xs text-slate-500">{messages.searchSkillsHint}</span>
-          </Field>
-          <Field label={messages.searchSkillMode}>
-            <Select name="skillMode" defaultValue={filters.skillMode} data-testid="candidate-list-filter-skill-mode">
-              {skillModeOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label={messages.searchYearsMin}>
-            <Input type="number" name="yearsMin" min={0} step={0.5} defaultValue={filters.yearsMin} data-testid="candidate-list-filter-years-min" />
-          </Field>
-          <Field label={messages.searchPriceMin}>
-            <Input type="number" name="priceMin" min={0} step={10000} defaultValue={filters.priceMin} data-testid="candidate-list-filter-price-min" />
-          </Field>
-          <Field label={messages.searchPriceMax}>
-            <Input type="number" name="priceMax" min={0} step={10000} defaultValue={filters.priceMax} data-testid="candidate-list-filter-price-max" />
-          </Field>
-          <Field label={messages.searchAvailableBy}>
-            <Input type="date" name="availableBy" defaultValue={filters.availableBy} data-testid="candidate-list-filter-available-by" />
-          </Field>
-          <Field label={messages.searchPrefecture}>
-            <Select name="prefecture" defaultValue={filters.prefecture} data-testid="candidate-list-filter-prefecture">
-              {prefectureOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label={messages.searchRemote}>
-            <Select name="remote" defaultValue={filters.remote} data-testid="candidate-list-filter-remote">
-              {remoteOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label={messages.searchAvailability}>
-            <Select name="availability" defaultValue={filters.availability} data-testid="candidate-list-filter-availability">
-              {availabilityOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          {/* 🔴 絞り込みチェックボックス 2 種。**既定オフ**（`F-009 AC-5` / `docs/02` A-03）。 */}
-          <Field as="div">
-            <label className="flex items-center gap-2 text-sm">
-              <Checkbox name="onlyInTime" value="1" defaultChecked={filters.onlyInTime} data-testid="candidate-list-filter-only-in-time" />
-              <span>{messages.searchOnlyInTime}</span>
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <Checkbox name="onlyCommutable" value="1" defaultChecked={filters.onlyCommutable} data-testid="candidate-list-filter-only-commutable" />
-              <span>{messages.searchOnlyCommutable}</span>
-            </label>
-            <span className="text-xs text-slate-500" data-testid="candidate-list-checkbox-note">
-              {messages.searchCheckboxNote}
-            </span>
-          </Field>
-          <div className={FILTER_ACTIONS_CLASSES}>
-            <Button type="submit" data-testid="candidate-list-search">
-              {messages.searchSubmit}
-            </Button>
-            {/* 🔴 「条件をクリア」ではなく「案件の要件に戻す」（本画面の既定は空ではなく要件。docs/04 §S-016） */}
-            <Link className={SECONDARY_LINK_CLASSES} href={resetHref} data-testid="candidate-list-reset">
-              {messages.searchReset}
-            </Link>
-          </div>
-        </fieldset>
-      </form>
+      {/* 🔴 T-22-07: §5-13 の `Toolbar`: **母集団の 1 行（§3.2-2 の #2）と検索の帯の置き場所をここに固定する。**
+          画面ごとに位置が変わると、取引先が「自社分だけか」を毎画面で探すことになる。
+          🔴 **母集団は混在した総件数の 1 行だけ**（`docs/04` §S-016。共有候補の件数を別に出さない ——
+          出すと取引先の共有状況を推測させる）。`Toolbar` は**2 つ目の母集団を受け取る prop を持たない**。
 
+          ⚠️ **凍結済み testid の併記**（`docs/04` `U-22` / `SP-22` §3.2 の代替 ④）:
+             `Toolbar` は母集団の 1 行を `candidate-list-toolbar-population` として描くが、
+             2026-09-30 に凍結されている値は **`candidate-list-population`** である。**改名は不可**なので、
+             母集団の 1 行を含む帯の器にその値を残す（部品の testid は `testIdPrefix` が決め、
+             画面から上書きできない）。 */}
+      <div data-testid="candidate-list-population">
+      <Toolbar
+        testIdPrefix="candidate-list-"
+        population={messages.populationLabel}
+        filters={
+            /* セクション 2・3: 検索条件と絞り込みチェックボックス（`S-005` と同じ項目・同じ既定）。
+               ⚠️ `mb-0` / `w-full` は帯の中に置いたための余白・幅の調整である（`cn()` の規律 1）。 */
+            <form className={cn(FILTER_FORM_CLASSES, 'mb-0 w-full')} method="get" action={formAction} data-testid="candidate-list-filters">
+              <fieldset className="contents">
+                <legend className="sr-only">{messages.searchLegend}</legend>
+                <Field label={messages.searchQ}>
+                  <Input type="search" name="q" defaultValue={filters.q} data-testid="candidate-list-filter-q" />
+                </Field>
+                <Field label={messages.searchSkills}>
+                  <Select name="skills" multiple size={5} defaultValue={[...filters.skills]} data-testid="candidate-list-filter-skills">
+                    {skillOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </Select>
+                  <span className="text-xs text-fg-muted">{messages.searchSkillsHint}</span>
+                </Field>
+                <Field label={messages.searchSkillMode}>
+                  <Select name="skillMode" defaultValue={filters.skillMode} data-testid="candidate-list-filter-skill-mode">
+                    {skillModeOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field label={messages.searchYearsMin}>
+                  <Input type="number" name="yearsMin" min={0} step={0.5} defaultValue={filters.yearsMin} data-testid="candidate-list-filter-years-min" />
+                </Field>
+                <Field label={messages.searchPriceMin}>
+                  <Input type="number" name="priceMin" min={0} step={10000} defaultValue={filters.priceMin} data-testid="candidate-list-filter-price-min" />
+                </Field>
+                <Field label={messages.searchPriceMax}>
+                  <Input type="number" name="priceMax" min={0} step={10000} defaultValue={filters.priceMax} data-testid="candidate-list-filter-price-max" />
+                </Field>
+                <Field label={messages.searchAvailableBy}>
+                  <Input type="date" name="availableBy" defaultValue={filters.availableBy} data-testid="candidate-list-filter-available-by" />
+                </Field>
+                <Field label={messages.searchPrefecture}>
+                  <Select name="prefecture" defaultValue={filters.prefecture} data-testid="candidate-list-filter-prefecture">
+                    {prefectureOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field label={messages.searchRemote}>
+                  <Select name="remote" defaultValue={filters.remote} data-testid="candidate-list-filter-remote">
+                    {remoteOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field label={messages.searchAvailability}>
+                  <Select name="availability" defaultValue={filters.availability} data-testid="candidate-list-filter-availability">
+                    {availabilityOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                {/* 🔴 絞り込みチェックボックス 2 種。**既定オフ**（`F-009 AC-5` / `docs/02` A-03）。 */}
+                <Field as="div">
+                  <label className="flex items-center gap-2 text-body">
+                    <Checkbox name="onlyInTime" value="1" defaultChecked={filters.onlyInTime} data-testid="candidate-list-filter-only-in-time" />
+                    <span>{messages.searchOnlyInTime}</span>
+                  </label>
+                  <label className="flex items-center gap-2 text-body">
+                    <Checkbox name="onlyCommutable" value="1" defaultChecked={filters.onlyCommutable} data-testid="candidate-list-filter-only-commutable" />
+                    <span>{messages.searchOnlyCommutable}</span>
+                  </label>
+                  <span className="text-xs text-fg-muted" data-testid="candidate-list-checkbox-note">
+                    {messages.searchCheckboxNote}
+                  </span>
+                </Field>
+                <div className={FILTER_ACTIONS_CLASSES}>
+                  <Button type="submit" data-testid="candidate-list-search">
+                    {messages.searchSubmit}
+                  </Button>
+                  {/* 🔴 「条件をクリア」ではなく「案件の要件に戻す」（本画面の既定は空ではなく要件。docs/04 §S-016） */}
+                  <Link className={SECONDARY_LINK_CLASSES} href={resetHref} data-testid="candidate-list-reset">
+                    {messages.searchReset}
+                  </Link>
+                </div>
+              </fieldset>
+            </form>
+        }
+      />
+      </div>
+
+      {/* 🔴 共有候補への条件の効き方（`docs/04` §S-016 実装の補足「検索条件の帯の直下に 1 行で書く」）。
+          ⚠️ 凍結済み `candidate-list-anonymous-filter-note` を維持するため、`Toolbar` の `scopeNote`
+             （`…-toolbar-scope-note` を出す）ではなく帯の直下の 1 行に残す。 */}
       {messages.anonymousFilterNote === null ? null : (
-        <p className="mb-3 text-xs text-slate-500" data-testid="candidate-list-anonymous-filter-note">
+        <p className="mt-1 mb-3 text-xs text-fg-muted" data-testid="candidate-list-anonymous-filter-note">
           {messages.anonymousFilterNote}
         </p>
       )}
 
-      {/* セクション 4: 母集団の明示（🔴 混在した総件数だけ）と並び順の説明 */}
-      <p className="mb-1 text-sm font-semibold text-slate-900" data-testid="candidate-list-population">
-        {messages.populationLabel}
-      </p>
-      <p className="mb-3 text-sm text-slate-600" data-testid="candidate-list-order-note">
+      {/* セクション 4 の残り: 並び順の説明（母集団の 1 行は `Toolbar` が持つ） */}
+      <p className="mb-3 text-body text-fg-muted" data-testid="candidate-list-order-note">
         {messages.orderNote}
       </p>
       {request.showListLink ? (
         // 🔴 `S-016` → `S-017`（`docs/04` §S-017 関連画面「← `S-016`」）。ホストにだけ置く。
-        <p className="mb-3 text-sm">
+        <p className="mb-3 text-body">
           <Link className={SECONDARY_LINK_CLASSES} href={request.listHref} data-testid="candidate-list-open-requests">
             {messages.requestOpenList}
           </Link>
         </p>
       ) : null}
 
-      {/* 🔴 `xl` 以上で並置。1 列目（表）の下限を表の最小幅に揃え、パネル（2 列目）は `20rem` 固定 ——
-          競合したら譲るのはパネル（ファイル冒頭「デスクトップの列幅配分と右パネル」）。`lg`〜`xl` 未満はパネルが
-          ドロワー（`fixed`）になり grid の流れから外れるので 1 列。
+      {/* ====================================================================
+          🔴 `xl` 以上で並置する 2 列（`docs/04` §7.1 の幅クラス B）。`T-22-07` の実測の記録
+          ====================================================================
+          1 列目（表）の下限は**表の最小幅 61.5rem = 984px**（`T-11-12` の実測。8 列の最長ラベル）。
+          2 列目（パネル）の幅は `PAGE_BODY_ASIDE_WIDTH_CLASSES`（**`lg` 360 / `xl` 400 / `2xl` 480px**。
+          寸法の出所は `@ses/ui` の `page-body.tsx` 1 箇所）であり、grid のトラックは `auto` で
+          その幅に従う。`lg`〜`xl` 未満はパネルがドロワー（`fixed`）になり grid の流れから外れるので 1 列。
 
-          🔴 **暫定（2026-09-30。`T-22-07` で落とす）**（`xl:overflow-x-auto`）: 共通外枠（`app/(main)/_shell/main-shell.tsx` + `@ses/ui` の `AppShell`）の
-          サイドバー（`w-56` = 224px）が入り、本文に残る幅が `xl`（1280px）で 1024px になった。2 列の
-          下限の和は 984 + gap 16 + 240 = **1240px** なので、`xl` では**必ず溢れる**（実測: E2E
-          `anonymous-share.spec.ts` の `expectNoBrokenLabels` が右パネルを `unreachable-overflow` で検出。
-          240×191px）。溢れ自体は**ドキュメントの横スクロール**になっていて、そこが「到達不能」＝破綻である。
-          🔴 **隠さず、器の内側に閉じ込める**（`Table` の `overflow-x-auto` と同じ考え方。判断材料は
-          横スクロールで必ず到達できる。`CLAUDE.md` §13.3 / `docs/04` §6.1）。列を削る・パネルを
-          `hidden` にする方向の解決は採らない。
-          🔴 併せてパネルの列を `minmax(15rem,20rem)` から **`20rem` 固定**にした。溢れる幅では `minmax` の
-          下限（15rem = 240px）まで縮むが、**外枠が入る前に E2E が通っていた実寸は 248px（1280）/ 320px（1440）**
-          であり、240px はそのどちらより狭い（パネルの中のラベルが新しく折り返す余地を作ってしまう）。
-          20rem = 320px はドロワー（`lg:w-80`）と同じ幅で、**どの幅でも一定**になる。
-          🔴 **本命は `docs/04` §7.1 の幅クラス B**（副カラムを `lg` 360 → `xl` 400 → `2xl` 480px の固定に
-          する `PageBody`。`T-22-04` で実装済み）であり、**この画面の移行は `T-22-07`（一覧の適用 ②）の仕事**である。移行したら
-          この `xl:overflow-x-auto` と固定幅は不要になるので、そのとき一緒に落とすこと。 */}
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(61.5rem,1fr)_20rem] xl:overflow-x-auto">
+          🔴 **`xl:overflow-x-auto` は残す（`T-22-07` で落とせなかった）。実測:**
+          | 幅 | 本文に残る幅 | 2 列の下限の和 | 判定 |
+          |---|---|---|---|
+          | `xl` 1280 | 1280 − 224（サイドバー `xl:w-56`）− 48（`px-6`）= **1008** | 984 + 16 + 400 = **1400** | 溢れる |
+          | 1440 | 1440 − 224 − 48 = **1168** | 同上 **1400** | 溢れる |
+          | `2xl` 1536 | 1536 − 224 − 48 = **1264** | 984 + 16 + 480 = **1480** | 溢れる |
+          | 1920 | 1920 − 224 − 48 = **1648** | 同上 **1480** | 収まる |
+          🔴 **`PageBody` の副カラム（`aside`）に載せ替えられない**のも同じ算術である —— 載せ替えると
+          主カラムは `1168 − 24 − 400 = 744px` になり、**表が器の内側で横スクロールする**。
+          `tests/e2e/anonymous-share.spec.ts` は 1440 で「候補テーブルの器が横にスクロールしていない
+          （`containerOverflow ≤ 1`）」かつ「更新日セルがビューポート内」かつ「右パネルが同時に見える」ことを
+          検証しており（`docs/04` §S-016 の 🔴「競合したら譲るのはパネル」）、**譲らせる相手を逆にすると
+          その判定が壊れる**。判定は緩めない。
+          🔴 したがって**溢れは器の内側に閉じ込める**（`Table` の `overflow-x-auto` と同じ考え方。判断材料は
+          横スクロールで必ず到達できる。`CLAUDE.md` §13.3）。列を削る・パネルを `hidden` にする方向の
+          解決は採らない（`docs/04` §S-016「`lg` 以上では列を隠さない」）。
+          ⚠️ **根の原因は `docs/04` §7.1 の `xl` の 🔴「`S-016` は 8 列と右パネルが同時に読める」が、
+             共通外枠のサイドバー（224px）を織り込んでいないことである**（984 + 24 + 400 + 48 + 224 = 1680px を
+             要する）。幅クラス B の「副カラムを可変にしない」との両立は `docs/04` の改訂事項であり、
+             完了記録で提起する（`CLAUDE.md` §8.7）。 */}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(61.5rem,1fr)_auto] xl:overflow-x-auto">
         {/* セクション 5: 候補テーブル */}
         <div>
           {rows.length === 0 ? (
-            <div className="border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700" data-testid="candidate-list-empty">
-              <p className="mb-1 font-semibold">{messages.emptyTitle}</p>
-              <p className="m-0">{messages.emptyLead}</p>
-              {messages.emptyRegister === null ? null : (
-                <Link className={cn(SECONDARY_LINK_CLASSES, 'mt-2 inline-block')} href={registerHref} data-testid="candidate-list-register">
-                  {messages.emptyRegister}
-                </Link>
-              )}
+            // 🔴 T-22-07: 空状態は `@ses/ui` の `EmptyState`（§5-13 / §10.4 の「説明 → Primary → Secondary」）。
+            //    🔴 **初回空と絞込 0 件は文言も導線も別物**（§10.1。選び分けは `candidateScreenMessages`）。
+            //    初回空の Primary は `S-007` への登録導線、絞込 0 件の Primary は
+            //    **効いている条件を 1 つずつ外せる導線**（§10.4「Primary は『条件を外す』であって新規作成ではない」）。
+            //    ⚠️ 器の `data-testid` は凍結済みの `candidate-list-empty` である（`docs/04` `U-22`）。
+            <div data-testid="candidate-list-empty">
+              <EmptyState
+                testIdPrefix="candidate-list-empty-state-"
+                description={`${messages.emptyTitle}${messages.emptyLead}`}
+                primary={
+                  messages.emptyRegister !== null ? (
+                    <Link className={SECONDARY_LINK_CLASSES} href={registerHref} data-testid="candidate-list-register">
+                      {messages.emptyRegister}
+                    </Link>
+                  ) : activeFilters.length === 0 ? undefined : (
+                    <div data-testid="candidate-list-active-filters">
+                      <p className="mb-1 text-body font-semibold text-fg">{messages.activeFiltersTitle}</p>
+                      <ul className="m-0 flex list-none flex-wrap gap-2 p-0">
+                        {activeFilters.map((filter) => (
+                          <li key={filter.key}>
+                            <Link className={SECONDARY_LINK_CLASSES} href={filter.href} data-testid={`candidate-list-remove-filter-${filter.key}`}>
+                              {filter.label} {messages.removeFilterSuffix}
+                            </Link>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )
+                }
+              />
+              {/* 🔴 絞り込みチェックボックスがオンで 0 件のときだけの注意（`docs/04` §10.1 `S-016`）。 */}
               {messages.emptyCheckboxNotice === null ? null : (
-                <p className="mt-2 mb-0" data-testid="candidate-list-empty-checkbox-notice">
+                <p className="text-body text-fg" data-testid="candidate-list-empty-checkbox-notice">
                   {messages.emptyCheckboxNotice}
                 </p>
-              )}
-              {activeFilters.length === 0 ? null : (
-                <div className="mt-3" data-testid="candidate-list-active-filters">
-                  <p className="mb-1 font-semibold">{messages.activeFiltersTitle}</p>
-                  <ul className="m-0 flex list-none flex-wrap gap-2 p-0">
-                    {activeFilters.map((filter) => (
-                      <li key={filter.key}>
-                        <Link className={SECONDARY_LINK_CLASSES} href={filter.href} data-testid={`candidate-list-remove-filter-${filter.key}`}>
-                          {filter.label} {messages.removeFilterSuffix}
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
               )}
             </div>
           ) : (
@@ -1001,20 +1110,23 @@ export function CandidateScreen({
             </Table>
           )}
 
-          {/* 🔴 カーソルページング。「全 N ページ中 M ページ目」を出さない（docs/05 §4.8）。 */}
+          {/* 🔴 カーソルページング（`@ses/ui` の `Pagination`。§5-13 / §7.1）。
+              🔴 **オフセット・総件数・無限スクロールの prop を持たない部品**であり、「全 N ページ中 M ページ目」を
+              描く余地が構造的に無い（docs/05 §4.8）。リンクは**検索条件を保った URL** である。
+              ⚠️ 1 ページに収まるとき（次も前も無い）は領域ごと描かない。器の `data-testid` は
+                 凍結済みの `candidate-list-paging` である（`U-22`）。 */}
           {nextPageHref === null && firstPageHref === null ? null : (
-            <nav className="mt-4 flex flex-wrap gap-4" data-testid="candidate-list-paging">
-              {firstPageHref === null ? null : (
-                <Link className={SECONDARY_LINK_CLASSES} href={firstPageHref} data-testid="candidate-list-first">
-                  {messages.firstPage}
-                </Link>
-              )}
-              {nextPageHref === null ? null : (
-                <Link className={SECONDARY_LINK_CLASSES} href={nextPageHref} data-testid="candidate-list-next">
-                  {messages.nextPage}
-                </Link>
-              )}
-            </nav>
+            <div className="mt-4" data-testid="candidate-list-paging">
+              <Pagination
+                testIdPrefix="candidate-list-"
+                nextHref={nextPageHref}
+                nextLabel={messages.nextPage}
+                // 🔴 `null` = 「前へは在るが今は先頭にいる」（`Pagination` は要素を消さない。§5-13）。
+                prevHref={firstPageHref}
+                prevLabel={messages.firstPage}
+                linkComponent={CandidatePagingLink}
+              />
+            </div>
           )}
         </div>
 
@@ -1022,27 +1134,33 @@ export function CandidateScreen({
             （行を選ぶまで描かず、「閉じる」か Escape で 8 列に戻る）/ `lg` 未満 = 一覧の下。
             🔴 ドロワーは `fixed`（長い一覧の下の方の行を選んでも見える）で、環境バナー（`sticky top-0 z-20`）より上
             （`z-30`）に置く —— 下に置くと見出しの「閉じる」がバナーに覆われて押せない（T-11-12 の実測で発見）。
-            バナーの文言は中央寄せで、ドロワー（右端 20rem）に覆われずに読める（`F-028 AC-1`）。 */}
+            バナーの文言は中央寄せで、ドロワー（右端。`T-22-07` で `lg` 360 / `xl` 400 / `2xl` 480px = 幅クラス B）に
+            覆われずに読める（`F-028 AC-1`。1024px でもパネルの左端は 664px であり、中央〔512px〕を覆わない）。 */}
         <aside
           className={cn(
-            'border border-slate-200 bg-white',
-            'lg:fixed lg:inset-y-0 lg:right-0 lg:z-30 lg:w-80 lg:overflow-y-auto lg:shadow-xl',
+            'border border-border bg-bg',
+            // 🔴 T-22-07: 副カラムの**幅**は `docs/04` §7.1 の幅クラス B（`lg` 360 → `xl` 400 → `2xl` 480px）
+            //    であり、その寸法が書かれているのは `@ses/ui` の `page-body.tsx` の 1 箇所だけである
+            //    （`docs/05` §2.3.4）。ここは**定数を import して使う** —— 旧 `lg:w-80` / grid の `20rem` は
+            //    画面が独自に決めた寸法だった（`T-11-12` の暫定）。
+            PAGE_BODY_ASIDE_WIDTH_CLASSES,
+            'lg:fixed lg:inset-y-0 lg:right-0 lg:z-30 lg:overflow-y-auto lg:shadow-xl',
             selected === null ? 'lg:hidden xl:block' : null,
-            'xl:static xl:z-auto xl:w-auto xl:overflow-visible xl:shadow-none',
+            'xl:static xl:z-auto xl:overflow-visible xl:shadow-none',
           )}
           onKeyDown={(event) => {
             if (event.key === 'Escape') setSelectedKey(null);
           }}
           data-testid="candidate-detail-panel"
         >
-          <h2 className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 text-base font-bold text-slate-900">
+          <h2 className="flex items-center justify-between gap-3 border-b border-border px-4 py-3 text-lg font-bold text-fg">
             <span>{messages.sectionDetail}</span>
             {/* 🔴 `SECONDARY_LINK_CLASSES` は `inline-block` を持ち、`hidden` と競合する（`cn` は解決しない）ので
                 見た目の語（`text-sm text-slate-500`）だけを写し、display はブレークポイント別に書く。 */}
             {selected === null ? null : (
               <button
                 type="button"
-                className="hidden shrink-0 text-sm text-slate-500 underline lg:inline-block xl:hidden"
+                className="hidden shrink-0 text-body text-fg-muted underline lg:inline-block xl:hidden"
                 onClick={() => setSelectedKey(null)}
                 data-testid="candidate-detail-close"
               >

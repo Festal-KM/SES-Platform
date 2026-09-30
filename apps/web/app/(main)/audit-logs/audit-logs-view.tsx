@@ -18,6 +18,31 @@
 //    **詳細は一覧の応答（`detail` / `detailSuppressedReason`）に同梱されており、展開時の追加取得は無い**
 //    （展開ごとに監査ログの閲覧が記録される経路を作らない）。複数行を同時に開ける（「要求 → 確定」の 2 行を
 //    並べて読む）。検索し直すと全行が閉じ、「さらに読み込む」では開いた行を保つ。**既存 5 列は変えない。**
+// ============================================================================
+// 🔴 SP-22 `T-22-07`（一覧の適用 ②）で変えたもの / 変えていないもの
+// ============================================================================
+// | 変えたもの | 一次資料 | 変えていないもの |
+// |---|---|---|
+// | 実色（`text-slate-*` / `bg-slate-*` / `border-slate-*`）→ semantic トークン | `docs/04` §7.9 / 検査 (a) | 🔴 **列の集合・並び・間引きの境界**（6 列 / `hidden sm:table-cell`） |
+// | `text-sm` → `--text-body`（**実寸は同じ 14px**） | §7.9 / 検査 (g) | 🔴 **行の詳細の描き方**（許可リスト・伏せる規則はサーバと `packages/domain`） |
+// | `py-1.5` → spacing 7 段 | §7.9 / 検査 (f) | 🔴 **エクスポートの範囲と上限の扱い**（`exportCondition`） |
+// | 画面側の `hover:` を撤去（8 状態はプリミティブが持つ） | §7.10 / 検査 (j) | 🔴 **testid**（削除・改名 0 件。`EmptyState` の 2 つは**追加**） |
+// | 骨格 → `@ses/ui` の `Skeleton` / 空状態 → `EmptyState` | §5-13 / §10.4 | 🔴 **骨格の本数（3 本）と空状態の 2 通りの文言** |
+// | 幅 → `PageBody widthClass="full"`（`page.tsx`。旧 `max-w-5xl` を撤去） | §7.1 / `U-23` / 検査 (c)(k) | — |
+//
+// 🔴 **`@ses/ui` の `DataTable` には移していない**（`T-22-06` の 3 画面とは形が違う）。理由は 2 つで、
+//    どちらも `docs/05` §2.3.5 の `DataTableProps` に**口が無い**ことに由来する:
+//      ① **行の直下にもう 1 本の `<tr>` を挿す**（`docs/04` §7.2 の 🔴「監査ログの行の中身は行の直下への
+//         インライン展開。`Drawer` にしない。複数行を同時に開ける」）。`DataTable` は **1 行 = 1 `<tr>`** で
+//         あり、`rowDetail` に相当する prop は §2.3.5 に無い。
+//      ② **`<tr>` 自身の `onClick`**（行をクリックしても開く）。`rowAttributes` は `className` と `data-*`
+//         だけを通す形で設計されており（`data-table.tsx` の 🔴）、ハンドラを通す口が無い。
+//    🔴 器に ① ② の穴を開けるのは `docs/05` §2.3.5 の改訂であり、**実装側で勝手に決めない**
+//       （`CLAUDE.md` §8.7 / `programmer` の「設計書にないアーキテクチャ変更をしない」）。完了記録で提起する。
+//    ⚠️ ただし表そのものは `@ses/ui` の `Table` プリミティブであり、ローカルの `<table>` ではない
+//       （§5-13「同じ見た目のローカル実装を 2 つ作らない」は満たしている）。列の間引きは `docs/04` §10.3 の
+//       `S-041` の行（`IP・デバイス種別` → `対象種別`）どおり `hidden sm:table-cell` の 1 段だけである。
+//
 // 🔴 T-12-18 ⑪: セクション 4 エクスポート（docs/04 §S-041 / docs/05 §6.3 #10b）。検索を実行した後に、**その検索条件をそのまま**
 //    `GET /api/audit-logs/export` へ渡す。ページングは渡さない（エクスポート側が #10 を追う）。
 //    本画面は `OWNER` / `ADMIN` だけが到達する（`page.tsx`）ので、導線の出し分けはここでは行わない。
@@ -31,17 +56,22 @@
 import { useCallback, useRef, useState, type FormEvent, type MouseEvent } from 'react';
 import {
   Button,
+  EmptyState,
+  FOCUS_RING_CLASSES,
   Field,
   FieldError,
   Input,
+  SECONDARY_LINK_CLASSES,
   SECONDARY_LINK_STACKED_CLASSES,
   Select,
+  Skeleton,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
+  cn,
 } from '@ses/ui';
 import {
   FILTER_ACTIONS_CLASSES,
@@ -64,10 +94,16 @@ import { AuditLogDetail } from './audit-log-detail';
  *    **機能の省略ではなく列の間引き**であり、`CLAUDE.md` §13.3 の「遮断しない」を満たす。
  */
 const TABLET_UP = 'hidden sm:table-cell';
-/** 検索前・0 件の空状態（旧 `.ses-empty`）。 */
-const EMPTY_CLASSES = 'py-8 text-center text-slate-500';
-/** 読み込み中の骨格 1 行（旧 `.ses-skeleton-line`）。 */
-const SKELETON_LINE_CLASSES = 'mb-3 h-4 rounded-sm bg-slate-200';
+
+/**
+ * 🔴 行を開く / 閉じる（展開の起点）。§7.10 の 8 状態はプリミティブが持つので、ここに
+ *    `hover:` を書かない（`docs/05` §17.7.1 (j)）。フォーカスリングは共通の 1 語を使う。
+ * ⚠️ `h-6 w-6` は**寸法**であり §7.9 の spacing 7 段の話ではない（余白ではない）。
+ */
+const ROW_TOGGLE_CLASSES = cn(
+  'inline-flex h-6 w-6 items-center justify-center rounded-sm text-fg-muted',
+  FOCUS_RING_CLASSES,
+);
 
 export type AuditLogsViewMessages = {
   readonly fromLabel: string;
@@ -131,10 +167,123 @@ function formatDateTime(iso: string): string {
   )}:${pad(date.getMinutes())}`;
 }
 
-function actorLabel(item: AuditLogItem, messages: AuditLogsViewMessages): string {
+function actorLabel(
+  item: AuditLogItem,
+  messages: Pick<AuditLogsViewMessages, 'actorSystem' | 'actorPlatform'>,
+): string {
   if (item.actorKind === 'SYSTEM') return messages.actorSystem;
   if (item.actorKind === 'PLATFORM_USER') return messages.actorPlatform;
   return item.actorDisplayName ?? item.actorId ?? '—';
+}
+
+export type AuditLogsResultsMessages = Pick<
+  AuditLogsViewMessages,
+  | 'columnDate'
+  | 'columnActor'
+  | 'columnAction'
+  | 'columnTarget'
+  | 'columnMeta'
+  | 'columnDetail'
+  | 'actorSystem'
+  | 'actorPlatform'
+  | 'detail'
+>;
+
+export type AuditLogsResultsProps = {
+  readonly items: readonly AuditLogItem[];
+  /** 🔴 **開いている行の集合**（複数。`docs/04` §S-041「複数行を同時に開ける」）。 */
+  readonly expandedIds: ReadonlySet<string>;
+  readonly messages: AuditLogsResultsMessages;
+  readonly onToggle: (id: string) => void;
+};
+
+/**
+ * `S-041` セクション 2〜3（結果テーブルと**行の直下へのインライン展開**）の**状態を持たない**描画部品。
+ *
+ * ============================================================================
+ * 🔴 なぜ切り出すのか（`T-22-07`。`AuditLogsExportSection` と同じ理由）
+ * ============================================================================
+ * `AuditLogsView` は検索の結果を `useState` で持つため、`renderToStaticMarkup` では**検索後の状態に
+ * 進められない**（`useEffect` 同様、クリックの結果も再描画できない）。ところが `docs/04` §7.2 /
+ * §S-041 が定める 🔴 は **検索後の描画の形**そのものである:
+ *   ① 行の詳細は**行の直下の `<tr>`**（同じ表の中）であり、`Drawer` / モーダル / オーバーレイではない
+ *   ② **複数行を同時に開ける**（「要求 → 確定」の 2 行を並べて読む）
+ *   ③ 詳細は**一覧の応答に同梱**されており、展開時の追加取得が無い（`item` を渡すだけ = fetch を持たない）
+ * 🔴 この 3 つを render テストで固定できる形にするために、**状態（`expandedIds`）を props で受ける**
+ *    純粋な描画部品にした。**JSX は 1 行も書き換えていない**（`toggleExpanded` → `onToggle` の名だけ）。
+ */
+export function AuditLogsResults({ items, expandedIds, messages, onToggle }: AuditLogsResultsProps) {
+  return (
+    <Table data-testid="audit-logs-table">
+      <TableHeader>
+        <TableRow>
+          <TableHead>
+            <span className="sr-only">{messages.columnDetail}</span>
+          </TableHead>
+          <TableHead>{messages.columnDate}</TableHead>
+          <TableHead>{messages.columnActor}</TableHead>
+          <TableHead>{messages.columnAction}</TableHead>
+          <TableHead className={TABLET_UP}>{messages.columnTarget}</TableHead>
+          <TableHead className={TABLET_UP}>{messages.columnMeta}</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {items.map((item) => {
+          const expanded = expandedIds.has(item.id);
+          return [
+            <TableRow
+              key={item.id}
+              data-testid={`audit-logs-row-${item.id}`}
+              data-state={expanded ? 'selected' : undefined}
+              className="cursor-pointer"
+              onClick={() => onToggle(item.id)}
+            >
+              <TableCell padding="compact">
+                <button
+                  type="button"
+                  data-testid={`audit-logs-row-toggle-${item.id}`}
+                  aria-expanded={expanded}
+                  aria-controls={`audit-logs-detail-${item.id}`}
+                  aria-label={expanded ? messages.detail.toggleClose : messages.detail.toggleOpen}
+                  className={ROW_TOGGLE_CLASSES}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onToggle(item.id);
+                  }}
+                >
+                  <span aria-hidden="true">{expanded ? '▾' : '▸'}</span>
+                </button>
+              </TableCell>
+              <TableCell>{formatDateTime(item.createdAt)}</TableCell>
+              <TableCell>{actorLabel(item, messages)}</TableCell>
+              <TableCell>{item.action}</TableCell>
+              <TableCell className={TABLET_UP}>{item.targetType ?? '—'}</TableCell>
+              <TableCell className={TABLET_UP}>
+                {[item.deviceKind, item.ipAddress].filter(Boolean).join(' / ') || '—'}
+              </TableCell>
+            </TableRow>,
+            expanded ? (
+              // 🔴 T-22-07: 面は §7.9 の `--color-bg-subtle`（旧 `bg-slate-50` と同値）。
+              //    `hover:bg-slate-50` は `TableRow` の hover を打ち消すために書かれていたが、
+              //    `TableRow` の hover は同じ `bg-bg-subtle` なので**打ち消しが要らなくなった**
+              //    （画面側に状態バリアントを書かない = 検査 (j)）。
+              <TableRow key={`${item.id}-detail`} className="bg-bg-subtle">
+                <TableCell
+                  id={`audit-logs-detail-${item.id}`}
+                  data-testid={`audit-logs-row-detail-${item.id}`}
+                  colSpan={6}
+                  whitespace="normal"
+                  className="pl-8"
+                >
+                  <AuditLogDetail item={item} messages={messages.detail} />
+                </TableCell>
+              </TableRow>
+            ) : null,
+          ];
+        })}
+      </TableBody>
+    </Table>
+  );
 }
 
 export type AuditLogsExportSectionMessages = Pick<
@@ -157,11 +306,15 @@ export type AuditLogsExportSectionProps = {
  */
 export function AuditLogsExportSection({ href, exporting, error, messages, onExport }: AuditLogsExportSectionProps) {
   return (
-    <section className="mt-6 border-t border-slate-200 pt-4" data-testid="audit-logs-export">
-      <p className="mb-1 text-xs text-slate-600">{messages.exportNote}</p>
-      <p className="mb-2 text-xs text-slate-500">{messages.exportNoteLimit}</p>
+    <section className="mt-6 border-t border-border pt-4" data-testid="audit-logs-export">
+      <p className="mb-1 text-xs text-fg-muted">{messages.exportNote}</p>
+      <p className="mb-2 text-xs text-fg-muted">{messages.exportNoteLimit}</p>
       <a
-        className="inline-flex items-center rounded border border-slate-300 px-3 py-1.5 text-sm text-slate-900 underline-offset-2 hover:underline aria-disabled:pointer-events-none aria-disabled:opacity-50"
+        // 🔴 T-22-07: 見た目は §7.6 の secondary（`SECONDARY_LINK_CLASSES`。リポジトリで唯一の語）。
+        //    `hover:underline` を画面に書かない（§7.10 の 8 状態は部品側が持つ。検査 (j)）。
+        //    ⚠️ `aria-disabled:*` は 8 状態の `disabled` ではなく「生成中は押させない」の表現であり、
+        //       `<a>` には `disabled` 属性が無いためここに残す（`onExport` 側も二重に弾いている）。
+        className={cn(SECONDARY_LINK_CLASSES, 'aria-disabled:pointer-events-none aria-disabled:opacity-50')}
         href={href}
         download
         aria-disabled={exporting}
@@ -342,82 +495,29 @@ export function AuditLogsView({ messages }: { messages: AuditLogsViewMessages })
       {phase === 'error' ? <FieldError className="mb-4">{messages.searchFailed}</FieldError> : null}
 
       {searching ? (
-        <div aria-busy="true" aria-live="polite">
-          <p className={SKELETON_LINE_CLASSES} />
-          <p className={SKELETON_LINE_CLASSES} />
-          <p className={SKELETON_LINE_CLASSES} />
+        // 🔴 T-22-07: 骨格は `@ses/ui` の `Skeleton`（§5-13。同じ見た目のローカル実装を 2 つ作らない）。
+        //    本数は従来どおり 3 本である（**行数は変えていない**）。
+        <div aria-busy="true" aria-live="polite" className="mb-3">
+          <Skeleton height="body" lines={3} />
         </div>
       ) : results === null ? (
-        <p className={EMPTY_CLASSES}>{messages.emptyBeforeSearch}</p>
+        // 🔴 T-22-07: 空状態は `EmptyState`（§10.4）。**検索前と 0 件で別の語**であり（§10.1）、
+        //    どちらも**アクションを置かない** —— 期間を指定して検索するのが次の一手であり、
+        //    その導線は直上の検索条件そのものである（ナビの写しを空状態に並べない。§5-13）。
+        <EmptyState testIdPrefix="audit-logs-empty-before-search-" description={messages.emptyBeforeSearch} />
       ) : results.items.length === 0 ? (
-        <p className={EMPTY_CLASSES}>{messages.emptyNoMatch}</p>
+        <EmptyState testIdPrefix="audit-logs-empty-no-match-" description={messages.emptyNoMatch} />
       ) : (
         <div>
-          <Table data-testid="audit-logs-table">
-            <TableHeader>
-              <TableRow>
-                <TableHead>
-                  <span className="sr-only">{messages.columnDetail}</span>
-                </TableHead>
-                <TableHead>{messages.columnDate}</TableHead>
-                <TableHead>{messages.columnActor}</TableHead>
-                <TableHead>{messages.columnAction}</TableHead>
-                <TableHead className={TABLET_UP}>{messages.columnTarget}</TableHead>
-                <TableHead className={TABLET_UP}>{messages.columnMeta}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {results.items.map((item) => {
-                const expanded = expandedIds.has(item.id);
-                return [
-                  <TableRow
-                    key={item.id}
-                    data-testid={`audit-logs-row-${item.id}`}
-                    data-state={expanded ? 'selected' : undefined}
-                    className="cursor-pointer"
-                    onClick={() => toggleExpanded(item.id)}
-                  >
-                    <TableCell padding="compact">
-                      <button
-                        type="button"
-                        data-testid={`audit-logs-row-toggle-${item.id}`}
-                        aria-expanded={expanded}
-                        aria-controls={`audit-logs-detail-${item.id}`}
-                        aria-label={expanded ? messages.detail.toggleClose : messages.detail.toggleOpen}
-                        className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-slate-500 hover:bg-slate-100"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          toggleExpanded(item.id);
-                        }}
-                      >
-                        <span aria-hidden="true">{expanded ? '▾' : '▸'}</span>
-                      </button>
-                    </TableCell>
-                    <TableCell>{formatDateTime(item.createdAt)}</TableCell>
-                    <TableCell>{actorLabel(item, messages)}</TableCell>
-                    <TableCell>{item.action}</TableCell>
-                    <TableCell className={TABLET_UP}>{item.targetType ?? '—'}</TableCell>
-                    <TableCell className={TABLET_UP}>
-                      {[item.deviceKind, item.ipAddress].filter(Boolean).join(' / ') || '—'}
-                    </TableCell>
-                  </TableRow>,
-                  expanded ? (
-                    <TableRow key={`${item.id}-detail`} className="bg-slate-50 hover:bg-slate-50">
-                      <TableCell
-                        id={`audit-logs-detail-${item.id}`}
-                        data-testid={`audit-logs-row-detail-${item.id}`}
-                        colSpan={6}
-                        whitespace="normal"
-                        className="pl-8"
-                      >
-                        <AuditLogDetail item={item} messages={messages.detail} />
-                      </TableCell>
-                    </TableRow>
-                  ) : null,
-                ];
-              })}
-            </TableBody>
-          </Table>
+          {/* 🔴 詳細は**一覧の応答に同梱されたまま**（`item` をそのまま渡す）。展開時の追加取得を持たない ——
+              展開ごとに取得すると監査ログの閲覧自体が記録の対象になり、行数が読めなくなる
+              （`docs/04` §S-041「空 / ローディング / エラー」/ `audit-detail-single-path.test.ts` ⑤）。 */}
+          <AuditLogsResults
+            items={results.items}
+            expandedIds={expandedIds}
+            messages={messages}
+            onToggle={toggleExpanded}
+          />
           {results.nextCursor === null ? null : (
             <button
               className={SECONDARY_LINK_STACKED_CLASSES}

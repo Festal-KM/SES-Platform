@@ -300,6 +300,41 @@ describe('🔴 一括で全件をオンにする操作が存在しない（`F-01
     expect(html).not.toContain('すべて解除');
     expect(html).not.toContain('一括');
   });
+
+  /**
+   * 🔴 T-22-07（`docs/05` §6.11.4 の 2 つの 🔴 / `SP-22` `T-22-07` 受け入れ基準 2）。
+   *
+   * `docs/05` §2.3.5 は「行選択は `selection` を渡した画面にだけ現れ、省略が既定」と定めており、
+   * 本画面はそれを**部品の既定に頼らず自前の表で**満たしている（`DataTable` へ移していない理由は
+   * 画面ファイル冒頭の 🔴）。したがって **「選択列が無い」「操作列がどの幅でも在る」の 2 つは、
+   * この画面の描画そのもので固定する**。
+   */
+  it('🔴 選択列（行選択・全選択）が 1 列も無い —— ヘッダの列数は 6 で、操作列がその 6 列目である', () => {
+    const html = render();
+    const head = html.slice(html.indexOf('<thead'), html.indexOf('</thead>'));
+    // `<thead` を列として数えないよう `<th` の直後が空白か `>` のときだけ割る。
+    const heads = head.split(/<th[\s>]/).slice(1);
+    expect(heads).toHaveLength(6);
+    // 選択の起点（チェックボックス・`aria-label` の全選択）がヘッダにも本文にも無い。
+    expect(html).not.toContain('type="checkbox"');
+    expect(html).not.toContain('role="checkbox"');
+    // 6 列目が操作列（ヘッダの語が `columnAction`）。
+    expect(heads[5]).toContain(messages.columnAction);
+  });
+
+  it('🔴 操作列はどのブレークポイントでも隠さない（ヘッダ・セルの両方に `hidden` が付かない）', () => {
+    const html = render({ rows: [SHARED_ROW, NOT_SHARED_ROW] });
+    const head = html.slice(html.indexOf('<thead'), html.indexOf('</thead>'));
+    const actionHead = head.split(/<th[\s>]/).slice(1)[5] ?? '';
+    expect(actionHead).not.toContain('hidden');
+    for (const row of [SHARED_ROW, NOT_SHARED_ROW]) {
+      const cells = rowCells(html, row.engineerId);
+      expect(cells).toHaveLength(6);
+      expect(cells[5]).not.toContain('hidden');
+    }
+    // 🔴 独自ブレークポイントも打ち消し方向（`max-sm:`）も使わない（`CLAUDE.md` §13.3）。
+    expect(html).not.toMatch(/max-(?:sm|md|lg|xl):/);
+  });
 });
 
 describe('🔴 空状態は 4 通りで、煽らない（`docs/04` §S-015）', () => {
