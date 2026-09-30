@@ -34,7 +34,16 @@ function walk(dir: string): readonly string[] {
   });
 }
 
-const ALL_FILES: readonly SourceFile[] = walk(mainPlaneRoot)
+/**
+ * 🔴 ✅ `T-22-05`: 走査に **`packages/ui/src/components`** を足した。帯の**描画**が
+ *    `packages/ui/src/components/page-header.tsx` へ移った（`docs/05` §2.3.1: 19 部品はすべて
+ *    `packages/ui` に置く）ため、ここを見ないと「帯の実装は 1 つだけ」が**0 件でも真**になる
+ *    （＝ 検査が空振りする）。`testid-inventory.test.ts` が `SCAN_ROOTS` に `packages/ui` を
+ *    足したのと同じ理由である。🔴 **判定は変えていない**（実装は 1 ファイルだけ）。
+ */
+const SCAN_ROOTS = [mainPlaneRoot, path.join(repoRoot, 'packages', 'ui', 'src', 'components')];
+
+const ALL_FILES: readonly SourceFile[] = SCAN_ROOTS.flatMap(walk)
   .filter((full) => !full.includes('.test.'))
   .map((full) => ({
     rel: path.relative(repoRoot, full).split(path.sep).join('/'),
@@ -91,7 +100,9 @@ describe('🔴 ① 帯は 1 画面に 1 つ（パンくずが二重に出ない�
     const owners = ALL_FILES.filter((file) => file.text.includes('data-testid="app-page-breadcrumb"')).map(
       (file) => file.rel,
     );
-    expect(owners).toEqual(['apps/web/app/(main)/_shell/page-heading.tsx']);
+    // ✅ `T-22-05`: 描画が `packages/ui` へ移った（値の組み立ては `_shell/page-heading.tsx` に残る）。
+    //    🔴 **「1 つだけ」という判定は変えていない。**
+    expect(owners).toEqual(['packages/ui/src/components/page-header.tsx']);
   });
 
   it('🔴 自前のパンくずの列（`*.breadcrumb.*` を `/` で連ねたもの）が 1 つも残っていない', () => {

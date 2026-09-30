@@ -46,37 +46,55 @@ const ja = {
   // docs/04 §3.1 / §3.4 / §7.5。T-12-20。
   // ==========================================================================
   // 🔴 ナビの項目は**すべて**ここから引く（画面にベタ書きしない。CLAUDE.md §3.5 / BR-32）。
-  // 🔴 並びは `CLAUDE.md` §1.3 の業務ループ ①〜⑥ の順であり、ステージ番号を接頭辞に持つ
+  // 🔴 並びは `CLAUDE.md` §1.3 の業務ループ ①〜⑥ の順である
   //    （docs/04 §3.1「ナビの並びがループの順序と一致していること自体が、利用者にループを教える」）。
-  //    **番号を外さない・順序を変えない。**
+  //    **順序を変えない。**
+  // 🔴 **SP-22 T-22-05（docs/04 改訂 16。人間の決定 2026-09-29）でステージ番号の接頭辞
+  //    （`① 人材` …）を外し、代わりに日本語 4 群（`営業` / `連絡` / `分析` / `設定`）で構造化した。**
+  //    変えたのは**値だけ**であり、キーは 1 つも動かしていない（`U-22` / §11-26 の凍結）。
+  //    根拠（§11-21）: 番号は順序を読ませる手段の 1 つであって順序そのものではなく、丸数字は
+  //    日本語の本文中で 1 文字ぶんの重さを持つため、**8 項目のラベルの先頭 2 文字を毎回潰していた**。
+  //    群の見出しと余白が、番号と同じ「まとまりと順序」をラベルの文字を奪わずに表す。
   // 🔴 ホストと取引先で語が違う項目は別キーにする（同じ画面でも母集団が違う。docs/04 §3.2）。
-  //    語が同じもの（③ 提案 / ③ 提案依頼 / ④ 面談・結果 / チャット / タスク）は 1 キーを共有する。
+  //    語が同じもの（提案 / 提案依頼 / 面談・結果 / チャット / タスク）は 1 キーを共有する。
   'shell.nav.label': 'グローバルナビ',
+  // 🔴 群名（docs/04 §3.1 の 4 群。`U-20` / `Q-04-1` 既定 ①）。🔴 **`分析` を `実績` にしない**
+  //    （群名と項目名は別物であり、`分析` の中の項目が `実績` である）。
+  //    `設定` 群の名前は `shell.nav.{host,partner}.settings` が持つ（所属で語を変えられる形を残す）。
+  'shell.nav.group.sales': '営業',
+  'shell.nav.group.comms': '連絡',
+  'shell.nav.group.analytics': '分析',
   'shell.nav.home': 'ホーム',
-  'shell.nav.host.engineers': '① 人材',
-  'shell.nav.host.projects': '① 案件',
-  'shell.nav.host.candidates': '② 候補を探す',
-  'shell.nav.proposals': '③ 提案',
-  'shell.nav.proposalRequests': '③ 提案依頼',
-  'shell.nav.interviews': '④ 面談・結果',
-  'shell.nav.host.contracts': '⑤ 契約',
-  'shell.nav.host.assignments': '⑥ 稼働',
+  'shell.nav.host.engineers': '人材',
+  'shell.nav.host.projects': '案件',
+  'shell.nav.host.candidates': '候補を探す',
+  'shell.nav.proposals': '提案',
+  'shell.nav.proposalRequests': '提案依頼',
+  'shell.nav.interviews': '面談・結果',
+  'shell.nav.host.contracts': '契約',
+  'shell.nav.host.assignments': '稼働',
   'shell.nav.host.reports': '実績',
   'shell.nav.host.settings': '設定',
-  'shell.nav.partner.engineers': '① 自社の人材',
-  'shell.nav.partner.projects': '① 公開された案件',
-  'shell.nav.partner.candidates': '② 自社の候補を探す',
-  // 🔴 経路 5（Issue #8）: 取引先にも ⑤ ⑥ を出す。遷移先はホストの S-025 / S-029 ではなく
-  //    開示項目を BR-66 に固定した専用画面（S-045 / S-044）であり、どちらも未実装である。
-  'shell.nav.partner.contracts': '⑤ 自社が当事者の契約',
-  'shell.nav.partner.assignments': '⑥ 自社エンジニアの稼働',
+  'shell.nav.partner.engineers': '自社の人材',
+  'shell.nav.partner.projects': '公開された案件',
+  'shell.nav.partner.candidates': '自社の候補を探す',
+  // 🔴 経路 5（Issue #8）: 取引先にも ⑤ ⑥ に当たる 2 項目を出す（`営業` 群の中の位置は不変）。
+  //    遷移先はホストの S-025 / S-029 ではなく開示項目を BR-66 に固定した専用画面
+  //    （S-045 / S-044）であり、どちらも未実装である。
+  'shell.nav.partner.contracts': '自社が当事者の契約',
+  'shell.nav.partner.assignments': '自社エンジニアの稼働',
   'shell.nav.partner.shares': '共有の設定',
   'shell.nav.partner.reports': '実績（自社分）',
-  'shell.nav.partner.settings': '設定（自社アカウントのみ）',
+  // 🔴 群名は `設定` に揃える（docs/04 §3.1 の 4 群）。**中身が自社分だけであることは項目が示す**
+  //    （群名に括弧書きを持たせると、アイコンのみの形態で語が消えたときに情報が失われる）。
+  'shell.nav.partner.settings': '設定',
   'shell.nav.chat': 'チャット',
   'shell.nav.tasks': 'タスク',
-  // 🔴 未実装の画面は**リンクにせず**注記を添える（404 を作らない）。
-  //    「案件から / 提案から開きます」は、実在はするが単独の URL を持たない画面（S-016 / S-024）。
+  // 🔴 未実装の画面は**リンクにせず**印を添える（404 を作らない）。
+  //    🔴 `Phase 2` / `Phase 3` は **無彩色の Badge** として描く（docs/04 §3.1 の改訂 16。
+  //    注記テキストを置き換えたもの。色を持たせない = 未実装は障害でも注意でもない）。
+  //    「案件から / 提案から開きます」は、実在はするが単独の URL を持たない画面（S-016 / S-024）で
+  //    あり、**`Phase N` とは別物である**（利用者が取るべき行動が違う）。
   'shell.nav.note.phase2': 'Phase 2',
   'shell.nav.note.phase3': 'Phase 3',
   'shell.nav.note.fromProject': '案件から開きます',
@@ -91,6 +109,11 @@ const ja = {
   'shell.header.usage.reached': '上限に到達',
   // 🔴 AI が 1 日のコスト上限で停止しているときは、残量ではなく「停止中」と理由を出す。
   'shell.header.usage.stopped': 'AI 機能 停止中',
+  // 🔴 サイドバーの 2 形態（展開 / アイコンのみ）の切替（docs/04 §3.1 / SP-22 T-22-05）。
+  //    🔴 **方向を断定しない語にする** —— 既定は `xl` 以上で展開 / `xl` 未満でアイコンのみであり、
+  //    トグルは「既定と逆の形態にする」ものなので、`折りたたむ` と書くと `xl` 未満で嘘になる
+  //    （実装の理由は `packages/ui/src/components/sidebar.tsx` 冒頭）。
+  'shell.sidebar.toggle': 'サイドバーの表示を切り替える',
   // --- モバイルのボトムタブ（docs/04 §3.4）---
   'shell.tab.label': 'メニュー',
   'shell.tab.home': 'ホーム',

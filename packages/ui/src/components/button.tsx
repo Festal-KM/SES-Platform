@@ -190,3 +190,22 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
     </Button>
   );
 });
+
+/**
+ * 🔴 **`<button>` にできない操作に `IconButton` と同じ見た目を当てるための語**（SP-22 `T-22-05`）。
+ *
+ * 用途は 1 つだけである: **サイドバーの開閉トグル**（`components/sidebar.tsx`）。あれは
+ * `<label for>` + `<input type="checkbox">` の CSS だけのトグルであり、`<button>` にすると
+ * `onClick` が要る ＝ 外枠が `'use client'` になる（`docs/05` §2.3.1 の 🔴。包まれる主平面の
+ * 全画面がクライアントバンドルへ移る）。
+ *
+ * 🔴 **定数として切り出す理由は「同じ見た目のローカル実装を 2 つ作らない」**（SP-21 `T-21-02` ①）。
+ *    `IconButton` の見た目をサイドバー側に書き写すと、8 状態・radius・寸法が 2 箇所に分かれ、
+ *    片方だけ直る状態が生まれる。**ここから取れば、`Button` の定義を直せば両方が動く。**
+ * ⚠️ `focus-visible:` の語は含まれるが `<label>` はフォーカスを受けないので効かない。
+ *    リングは隣の `<input>`（`peer`）から当てる（`components/sidebar.tsx` の 🔴）。
+ */
+export const ICON_CONTROL_CLASSES = cn(
+  buttonVariants({ variant: 'ghost', size: 'sm' }),
+  ICON_BUTTON_SIZE_CLASSES.sm,
+);

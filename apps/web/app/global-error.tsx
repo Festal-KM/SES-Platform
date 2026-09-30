@@ -27,7 +27,7 @@
 //
 //    🔴 **再確認の手順**（`NODE_ENV` を持たないシェルで `pnpm --filter @ses/web run build` の後）:
 //      ① `.next/server/app/_global-error.html` に `*.css` への参照が 1 本ある
-//      ② その CSS チャンクに本ファイルが使うユーティリティ（`.max-w-lg` / `.min-h-11`）が含まれる
+//      ② その CSS チャンクに本ファイルが使うユーティリティ（`PageBody` の `.max-w-180` / `.min-h-11`）が含まれる
 //    2026-09-28 の実測では ①1 本（`rel="preload" as="style"`）②いずれも含まれる、であった。
 //
 // 🔴 文言は `packages/i18n` から引く（`CLAUDE.md` §3.5 / `BR-32`）。ベタ書きしない。
@@ -36,7 +36,7 @@
 // 🔴 `error` の中身を画面に出さない。スタックトレースやメッセージには内部の識別子・SQL・
 //    接続情報が入りうる（`CLAUDE.md` §3.5 / §10.5 の「内容を出さない」と同じ規律）。
 //    出すのは `digest`（Sentry・サーバログと突き合わせるための不透明な識別子）だけである。
-import { Button } from '@ses/ui';
+import { Button, PageBody } from '@ses/ui';
 import { t } from '@ses/i18n';
 // 🔴 ルートレイアウトの import は効かない（上の 🔴）。この 1 本がこの画面の唯一のスタイル源である。
 import './tailwind.css';
@@ -50,9 +50,13 @@ export default function GlobalError({
 }) {
   return (
     <html lang="ja">
-      <body className="min-h-dvh bg-white">
-        <main className="mx-auto max-w-lg px-4 py-16" data-testid="global-error">
-          <h1 className="mb-4 text-xl font-bold text-slate-900">{t('error.internal')}</h1>
+      <body className="min-h-dvh bg-bg">
+        {/* 🔴 T-22-05: 幅は `PageBody` の 3 クラス（`docs/04` §7.1）に寄せた。**画面ファイルに
+            `max-w-*` を書かない**（`tests/static/ui-screen-width.test.ts`）。この画面は 1 対象の
+            文章なのでクラス C（読み幅 720px・左寄せ）である。 */}
+        <main className="py-12" data-testid="global-error">
+          <PageBody widthClass="prose">
+          <h1 className="mb-4 text-title font-semibold text-fg">{t('error.internal')}</h1>
           {/* 🔴 手書きの `<button>` にしない（既存の error 境界 5 本と同じ `Button` を使う）。
               手書きだと `focus-visible:ring-*`（キーボードだけで操作している利用者が押す先を
               見失わない）と `disabled:*` が落ちる —— この画面はキーボード操作だけで抜ける先である。 */}
@@ -69,10 +73,11 @@ export default function GlobalError({
             {t('error.retry')}
           </Button>
           {error.digest === undefined ? null : (
-            <p className="mt-6 text-xs text-slate-500" data-testid="global-error-digest">
+            <p className="mt-6 text-xs text-fg-muted" data-testid="global-error-digest">
               {error.digest}
             </p>
           )}
+          </PageBody>
         </main>
       </body>
     </html>

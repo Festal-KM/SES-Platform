@@ -57,7 +57,7 @@ export const dynamic = 'force-dynamic';
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang={DEFAULT_LOCALE}>
-      <body className="min-h-dvh bg-white">
+      <body className="min-h-dvh bg-bg">
         <AppEnvironmentBanner env={currentAppEnv()} />
         {children}
       </body>

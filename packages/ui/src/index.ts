@@ -85,6 +85,30 @@
 //    理由テキストを置く**（CSS で隠すのではなく DOM から取り除く）。
 export { Alert, AlertDescription, AlertTitle } from './components/alert.js';
 export type { AlertProps, AlertVariant } from './components/alert.js';
+// 🔴 T-22-05: 主平面の外枠 4 部品（`docs/05` §2.3.1 の 1〜4）。**いずれもサーバのまま描ける**
+//    （`'use client'` を宣言しない。開閉は `<details>` と `<input type="checkbox">` + CSS）。
+export { AppShell } from './components/app-shell.js';
+export type { AppShellLabels, AppShellProps, BottomTab } from './components/app-shell.js';
+export { PageHeader } from './components/page-header.js';
+export type { PageHeaderAction, PageHeaderCrumb, PageHeaderProps } from './components/page-header.js';
+export { Sidebar, SidebarDefaultLink, SidebarNavList, isCurrentNavPath } from './components/sidebar.js';
+export type {
+  SidebarBadge,
+  SidebarGroup,
+  SidebarItem,
+  SidebarLabels,
+  SidebarLinkProps,
+  SidebarNavListProps,
+  SidebarProps,
+  SidebarReach,
+  SidebarVariant,
+} from './components/sidebar.js';
+export { TopBar } from './components/top-bar.js';
+export type { TopBarProps, TopBarScope, TopBarUsage, TopBarUsageState } from './components/top-bar.js';
+// 🔴 T-22-05: アイコンの唯一の入口（`docs/05` §17.7.1 (i)①）。**写像に無い名前は型エラー**になる。
+//    画面と `lib/shell/nav.ts` が扱うのは `IconName`（文字列リテラル型）だけである。
+export { ICON_CLASSES, ICON_NAMES, ICONS, Icon } from './icons.js';
+export type { IconName, IconProps } from './icons.js';
 export { Badge, STATUS_BADGE_APPEARANCES, StatusBadge } from './components/badge.js';
 export type {
   BadgeProps,
@@ -97,7 +121,10 @@ export type {
 } from './components/badge.js';
 // 🔴 T-22-04: `IconButton` は `Button` の**バリアント**である（別ファイルを起こさない。docs/04 §5-13）。
 //    アイコンの要素は呼び出し側から受ける（`lucide-react` は T-22-05。`components/button.tsx` の 🔴）。
-export { Button, IconButton } from './components/button.js';
+// 🔴 T-22-05: `ICON_CONTROL_CLASSES` は「`<button>` にできない操作」（サイドバーの開閉トグル =
+//    `<label>` + `<input type="checkbox">`）に `IconButton` と同じ見た目を当てるための語である
+//    （同じ見た目のローカル実装を 2 つ作らない。`components/button.tsx` の 🔴）。
+export { Button, ICON_CONTROL_CLASSES, IconButton } from './components/button.js';
 export type { ButtonProps, ButtonSize, ButtonVariant, IconButtonProps } from './components/button.js';
 export {
   Card,
@@ -233,6 +260,7 @@ export {
   TRANSITION_CLASSES,
 } from './lib/state-classes.js';
 export {
+  PRIMARY_LINK_CLASSES,
   SECONDARY_LINK_CLASSES,
   SECONDARY_LINK_STACKED_CLASSES,
 } from './lib/link-classes.js';

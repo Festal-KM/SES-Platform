@@ -504,8 +504,12 @@ describe('🔴 §17.2 #18 ② S-038 の実装（lib/usage / api usage / settings
         'apps/web/app/(main)/settings/usage/page.tsx',
         'apps/web/app/(main)/settings/usage/usage-screen.tsx',
         // 🔴 T-12-20 で足した第 2 の表示面（走査が空振りしていないことの対照）。
+        //    ✅ T-22-05: 外枠の描画が `@ses/ui` へ移り、`apps/web` 側は値の組み立て
+        //    （`_shell/main-shell.tsx` = 上限インジケータの props を作る）だけになった。
+        //    🔴 **金額の語が無いことを見る対象は減っていない**（`usageFiles` は `lib/shell/**` と
+        //    `_shell/**` を丸ごと走査しており、下の本検査の射程はむしろ広がっている）。
         'apps/web/lib/shell/usage-indicator.ts',
-        'apps/web/app/(main)/_shell/app-shell.tsx',
+        'apps/web/app/(main)/_shell/main-shell.tsx',
       ]),
     );
   });

@@ -11,6 +11,10 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { AppEnvKind } from '@ses/config';
 import { t } from '@ses/i18n';
+import { Sidebar } from '@ses/ui';
+// 🔴 ④ の最後の 1 本（平面の差）だけが主平面の項目表を使う（`T-22-05`）。
+import { buildMainNav } from '../../../lib/shell/nav';
+import { resolveNavGroups } from '../../../lib/shell/nav-view';
 import { AdminConsoleNav, ADMIN_NAV_TAB_IDS } from './console-nav';
 
 function render(appEnv: AppEnvKind = 'development', current: 'tenants' | null = null): string {
@@ -111,5 +115,31 @@ describe('🔴 ④ アイコンを使わない（docs/04 §7.5）', () => {
     const html = render();
     expect(html).not.toContain('<svg');
     expect(html).not.toContain('<img');
+  });
+
+  /**
+   * ✅ SP-22 `T-22-05`: **アイコンの有無そのものが平面の差である**ことを 1 箇所で固定する
+   * （`docs/04` §3.3 の改訂 16 の扱い ②）。
+   *
+   * 🔴 主平面のサイドバーは改訂 16 で**全項目にアイコンを付けた**（§7.5 ③。根拠は縦 15〜16 項目の
+   *    走査性）。管理平面の横並び 5 項目にはその根拠が成立せず、かつ**運営者は 2 つの平面を
+   *    行き来する**（代理閲覧）ので、アイコンの有無が「いまどちらにいるか」の手がかりになる。
+   * 🔴 したがって「片方にアイコンが入ったのに、もう片方にも入った」は**この 1 本で落ちる**
+   *    （どちらか一方だけを見ていると、差が消えたことに気づけない）。
+   */
+  it('🔴 主平面のサイドバーにはアイコンが在り、管理平面のタブには 1 つも無い（平面の差）', () => {
+    const adminHtml = render();
+    const mainHtml = renderToStaticMarkup(
+      createElement(
+        Sidebar,
+        {
+          groups: resolveNavGroups(buildMainNav({ audience: 'HOST', role: 'SALES' })),
+          currentPath: '/engineers',
+          labels: { nav: t('shell.nav.label'), toggle: t('shell.sidebar.toggle') },
+        },
+      ),
+    );
+    expect(mainHtml).toContain('<svg');
+    expect(adminHtml).not.toContain('<svg');
   });
 });

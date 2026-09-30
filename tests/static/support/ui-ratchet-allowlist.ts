@@ -20,11 +20,9 @@ import type { AllowEntry } from './ui-ratchet.js';
  * 🔴 段が進むごとに削る。空になった時点で (a) 色の直書き は無条件 green になる（`SP-22` §4.1 段⑤）。
  */
 export const UI_RATCHET_ALLOWLIST_A: ReadonlyMap<string, AllowEntry> = new Map<string, AllowEntry>([
-  // ── 段①
-  ['apps/web/app/(main)/_shell/app-shell.tsx', { stage: 1, reason: '外枠（AppShell / PageHeading） の刷新（段①）で semantic トークンへ置き換える。移行中 19 行' }],
-  ['apps/web/app/(main)/_shell/page-heading.tsx', { stage: 1, reason: '外枠（AppShell / PageHeading） の刷新（段①）で semantic トークンへ置き換える。移行中 4 行' }],
-  ['apps/web/app/global-error.tsx', { stage: 1, reason: '外枠（root error boundary） の刷新（段①）で semantic トークンへ置き換える。移行中 3 行' }],
-  ['apps/web/app/layout.tsx', { stage: 1, reason: '外枠（root layout） の刷新（段①）で semantic トークンへ置き換える。移行中 1 行' }],
+  // ── 段① ✅ T-22-05 で外枠（AppShell / Sidebar / TopBar / PageHeader）を packages/ui へ移し、
+  //    semantic トークン / 7 段 / 6 トークン / 8 状態へ寄せたので**この段の項目は空になった**
+  //    （残しておくとラチェット ②「未使用の許可が残っていない」で落ちる）。
   // ── 段②
   ['apps/web/app/(main)/audit-logs/audit-log-detail.tsx', { stage: 2, reason: 'S-041 の刷新（段②）で semantic トークンへ置き換える。移行中 11 行' }],
   ['apps/web/app/(main)/audit-logs/audit-logs-view.tsx', { stage: 2, reason: 'S-041 の刷新（段②）で semantic トークンへ置き換える。移行中 8 行' }],
@@ -122,21 +120,13 @@ export const UI_RATCHET_ALLOWLIST_A: ReadonlyMap<string, AllowEntry> = new Map<s
 
 /**
  * (b) プリミティブの二重実装（③）— 着手時 1 ファイル / 1 行。
- * 🔴 段① の `T-22-05` が `AppShell` を `packages/ui/src/components/app-shell.tsx` へ移したら
- *    **この 1 行を消す**（消さなければ ② で落ちる）。理由は `ui-ratchet-baseline.ts` の同名の定数。
+ * ✅ **`T-22-05` で空になった。** `AppShell` は `packages/ui/src/components/app-shell.tsx` に在り、
+ *    `apps/web/app/(main)/_shell/` に残っているのは**値の組み立てだけ**（`main-shell.tsx` /
+ *    `page-heading.tsx`）である。🔴 **これで (b) は無条件 green である**（`SP-22` §4.1 段①）。
+ *    以後、画面側に `AppShell` / `PageHeader` / `DataTable` / `Drawer` / `EmptyState` / `Skeleton` /
+ *    `Toast` / `StatusBadge` を**宣言**するソースは 1 つも作れない。
  */
-export const UI_RATCHET_ALLOWLIST_B: ReadonlyMap<string, AllowEntry> = new Map<string, AllowEntry>([
-  // ── 段①
-  [
-    'apps/web/app/(main)/_shell/app-shell.tsx',
-    {
-      stage: 1,
-      reason:
-        '外枠（AppShell）の刷新（段① / T-22-05）で `packages/ui/src/components/app-shell.tsx` へ移すまでの移行中。' +
-        'T-12-20 が `apps/web` 側に置いた `export function AppShell` が 1 件残っている',
-    },
-  ],
-]);
+export const UI_RATCHET_ALLOWLIST_B: ReadonlyMap<string, AllowEntry> = new Map<string, AllowEntry>([]);
 
 /**
  * (c) 画面の幅指定 — 着手時 67 ファイル / 78 行。
@@ -144,7 +134,6 @@ export const UI_RATCHET_ALLOWLIST_B: ReadonlyMap<string, AllowEntry> = new Map<s
  */
 export const UI_RATCHET_ALLOWLIST_C: ReadonlyMap<string, AllowEntry> = new Map<string, AllowEntry>([
   // ── 段①
-  ['apps/web/app/global-error.tsx', { stage: 1, reason: '外枠（root error boundary） の刷新（段①）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
   // ── 段②
   ['apps/web/app/(main)/audit-logs/page.tsx', { stage: 2, reason: 'S-041 の刷新（段②）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
   ['apps/web/app/(main)/engineer-shares/page.tsx', { stage: 2, reason: 'S-015 の刷新（段②）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
@@ -223,8 +212,6 @@ export const UI_RATCHET_ALLOWLIST_C: ReadonlyMap<string, AllowEntry> = new Map<s
  */
 export const UI_RATCHET_ALLOWLIST_F: ReadonlyMap<string, AllowEntry> = new Map<string, AllowEntry>([
   // ── 段①
-  ['apps/web/app/(main)/_shell/app-shell.tsx', { stage: 1, reason: '外枠（AppShell / PageHeading） の刷新（段①）で §7.9 の 7 段へ寄せる。移行中 1 行' }],
-  ['apps/web/app/global-error.tsx', { stage: 1, reason: '外枠（root error boundary） の刷新（段①）で §7.9 の 7 段へ寄せる。移行中 1 行' }],
   // ── 段②
   ['apps/web/app/(main)/audit-logs/audit-log-detail.tsx', { stage: 2, reason: 'S-041 の刷新（段②）で §7.9 の 7 段へ寄せる。移行中 1 行' }],
   ['apps/web/app/(main)/audit-logs/audit-logs-view.tsx', { stage: 2, reason: 'S-041 の刷新（段②）で §7.9 の 7 段へ寄せる。移行中 1 行' }],
@@ -253,9 +240,6 @@ export const UI_RATCHET_ALLOWLIST_F: ReadonlyMap<string, AllowEntry> = new Map<s
  */
 export const UI_RATCHET_ALLOWLIST_G: ReadonlyMap<string, AllowEntry> = new Map<string, AllowEntry>([
   // ── 段①
-  ['apps/web/app/(main)/_shell/app-shell.tsx', { stage: 1, reason: '外枠（AppShell / PageHeading） の刷新（段①）で §7.9 の 6 トークンへ置き換える。移行中 4 行' }],
-  ['apps/web/app/(main)/_shell/page-heading.tsx', { stage: 1, reason: '外枠（AppShell / PageHeading） の刷新（段①）で §7.9 の 6 トークンへ置き換える。移行中 3 行' }],
-  ['apps/web/app/global-error.tsx', { stage: 1, reason: '外枠（root error boundary） の刷新（段①）で §7.9 の 6 トークンへ置き換える。移行中 1 行' }],
   // ── 段②
   ['apps/web/app/(main)/audit-logs/audit-log-detail.tsx', { stage: 2, reason: 'S-041 の刷新（段②）で §7.9 の 6 トークンへ置き換える。移行中 3 行' }],
   ['apps/web/app/(main)/audit-logs/audit-logs-view.tsx', { stage: 2, reason: 'S-041 の刷新（段②）で §7.9 の 6 トークンへ置き換える。移行中 1 行' }],
@@ -355,8 +339,6 @@ export const UI_RATCHET_ALLOWLIST_G: ReadonlyMap<string, AllowEntry> = new Map<s
  */
 export const UI_RATCHET_ALLOWLIST_J: ReadonlyMap<string, AllowEntry> = new Map<string, AllowEntry>([
   // ── 段①
-  ['apps/web/app/(main)/_shell/app-shell.tsx', { stage: 1, reason: '外枠（AppShell / PageHeading） の刷新（段①）で プリミティブ側の 8 状態に委ねる。移行中 1 行' }],
-  ['apps/web/app/(main)/_shell/page-heading.tsx', { stage: 1, reason: '外枠（AppShell / PageHeading） の刷新（段①）で プリミティブ側の 8 状態に委ねる。移行中 2 行' }],
   // ── 段②
   ['apps/web/app/(main)/audit-logs/audit-logs-view.tsx', { stage: 2, reason: 'S-041 の刷新（段②）で プリミティブ側の 8 状態に委ねる。移行中 3 行' }],
   ['apps/web/app/(main)/projects/[id]/candidates/candidate-screen.tsx', { stage: 2, reason: 'S-016 の刷新（段②）で プリミティブ側の 8 状態に委ねる。移行中 1 行' }],

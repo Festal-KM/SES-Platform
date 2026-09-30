@@ -15,6 +15,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { MAIN_SESSION_COOKIE_NAME, PLATFORM_SESSION_COOKIE_NAME } from './lib/auth/cookie-names';
 import { decidePlane } from './lib/middleware/planes';
+import { CURRENT_PATH_HEADER } from './lib/shell/current-path';
 
 export default function proxy(request: NextRequest): NextResponse {
   const decision = decidePlane({
@@ -26,7 +27,16 @@ export default function proxy(request: NextRequest): NextResponse {
   if (decision.kind === 'REDIRECT') {
     return NextResponse.redirect(new URL(decision.location, request.nextUrl));
   }
-  return NextResponse.next();
+  // 🔴 SP-22 T-22-05: **現在のパスをリクエストヘッダに添える**（追加のみ）。
+  //    理由と他の選択肢を却下した根拠は `lib/shell/current-path.ts` 冒頭にある ——
+  //    要点は「RSC のレイアウトはパスを受け取らず、`usePathname` を使うと外枠が
+  //    `'use client'` になって**主平面の全画面**がクライアントへ移る」ことである。
+  // 🔴 **判定・リダイレクト・Cookie の扱い・`matcher` は 1 行も変えていない。**
+  // 🔴 **毎リクエストで上書きする**（`set`）。外部から差し込まれた同名ヘッダは残らない。
+  //    それでも**認可の材料にしない**（`current-path.ts` の 🔴。用途は現在地のハイライトだけ）。
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set(CURRENT_PATH_HEADER, request.nextUrl.pathname);
+  return NextResponse.next({ request: { headers: requestHeaders } });
 }
 
 // 🔴 docs/05 §5.1 の matcher（`['/((?!admin).*)', '/admin/:path*']`）に Next.js の内部アセットの

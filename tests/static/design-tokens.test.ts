@@ -34,9 +34,11 @@ import {
 import { contrastRatio, relativeLuminance } from './support/oklch.js';
 import {
   ALLOWED_RADIUS,
+  PERMANENT_SPACING_EXCEPTION,
   RADIUS_UTILITY,
   classTokensOf,
   collectSourceFiles,
+  isPermanentSpacingException,
   isRawColorClass,
   offScaleSpacingValue,
   offScaleTextSizeValue,
@@ -317,6 +319,7 @@ const UI_SRC = path.join(repoRoot, 'packages', 'ui', 'src');
  *    | `apps/web/app/**`（`.tsx`） | `ui-color-tokens` / `ui-spacing-scale` / `ui-type-scale` | 有り（段①〜⑤で縮む） |
  */
 const uiFiles = collectSourceFiles(UI_SRC, ['.ts', '.tsx']).map((absolute) => ({
+  absolute,
   label: toRepoRelative(absolute),
   tokens: classTokensOf(readSource(absolute), absolute).map(({ token }) => token),
 }));
@@ -392,6 +395,11 @@ describe('🔴 `packages/ui` は semantic / component トークンだけを見�
     const offenders = uiFiles.flatMap((file) =>
       file.tokens
         .filter((token) => offScaleSpacingValue(token) !== null)
+        // 🔴 恒久例外（リポジトリ全体で 1 件）。定義は `support/ui-classes.ts` に在り、
+        //    `apps/web` 側（`ui-spacing-scale.test.ts`）と**同じ 1 件**を指す。
+        //    ✅ `T-22-05` で `AppShell` が `packages/ui` に移ったので、ここでも除外が要る
+        //    （例外は部品の責務に付いており、置き場所に付いていない）。
+        .filter((token) => !isPermanentSpacingException(file.absolute, token))
         .map((token) => `${file.label}: ${token}`),
     );
     expect(
@@ -400,6 +408,17 @@ describe('🔴 `packages/ui` は semantic / component トークンだけを見�
         '`p-5` / `gap-7` / `mt-9` / `gap-1.5` を書かないでください（Tailwind の既定スケールには' +
         '存在しますが、本プロダクトでは使いません。現状 48 種類からの収束です）。',
     ).toEqual([]);
+  });
+
+  it('🔴 恒久例外（`AppShell` の `pb-24`）が現に使われており、他へ広がっていない', () => {
+    // 🔴 「許可だけが残っている」状態（例外が未使用のまま居座る）を防ぐ ——
+    //    `SHADOW_ALLOWANCES` の対照と同じ構えである。件数の上限は
+    //    `ui-spacing-scale.test.ts` の「例外は 1 箇所だけ」が両ルートを走査して固定する。
+    const used = uiFiles.filter((file) =>
+      file.tokens.some((token) => isPermanentSpacingException(file.absolute, token)),
+    );
+    expect(used.map((file) => file.label)).toEqual(['packages/ui/src/components/app-shell.tsx']);
+    expect(PERMANENT_SPACING_EXCEPTION.utility).toBe('pb-24');
   });
 
   it('文字サイズは §7.9 の 6 トークンだけを使う', () => {

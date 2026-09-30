@@ -174,6 +174,35 @@ export function offScaleSpacingValue(token: string): string | null {
   return ALLOWED_SPACING.has(value) ? null : value;
 }
 
+/**
+ * 🔴 **spacing の恒久例外（リポジトリ全体で 1 件のみ）。** `AppShell` のボトムタブの逃がし。
+ *
+ * - `component`: 部品の**ファイル名**で判定する —— 例外は「その部品の責務」に付いており、
+ *   置き場所に付いていない。✅ **`T-22-05` で `AppShell` が
+ *   `packages/ui/src/components/app-shell.tsx` へ移った**（ディレクトリで縛っていたら移動で
+ *   例外が消えていた。この定数の設計はその移動を予期して書かれていた）。
+ * - 🔴 **増やさない。** 2 件目が必要になったと思ったら、それは余白の段の問題である。
+ *
+ * 🔴 **`support` に置くのは、`apps/web` 側（`ui-spacing-scale.test.ts`）と `packages/ui` 側
+ *    （`design-tokens.test.ts`）の両方が同じ 1 件を指すためである** —— 2 箇所に書くと、
+ *    片方だけが例外を増やせる状態になる（`docs/05` §17.4「同じ検証を 2 箇所に書かない」）。
+ */
+export const PERMANENT_SPACING_EXCEPTION = {
+  component: 'app-shell.tsx',
+  utility: 'pb-24',
+  reason:
+    '🔴 `fixed` なボトムタブ（モバイル）の高さ分の逃がしであり、余白の段ではない。' +
+    'これを段に寄せると最後の行がタブの下に隠れる（docs/04 §3.1 / SP-22 §4.1 の恒久例外 1 件）',
+} as const;
+
+/** その語がその位置で恒久例外に当たるか（`absolute` はファイルの絶対パス）。 */
+export function isPermanentSpacingException(absolute: string, token: string): boolean {
+  return (
+    token === PERMANENT_SPACING_EXCEPTION.utility &&
+    path.basename(absolute) === PERMANENT_SPACING_EXCEPTION.component
+  );
+}
+
 // ============================================================================
 // (g) 文字サイズ — §7.9 の 6 トークン
 // ============================================================================

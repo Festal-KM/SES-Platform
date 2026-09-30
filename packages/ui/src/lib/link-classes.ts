@@ -62,3 +62,21 @@ export const SECONDARY_LINK_CLASSES =
  *    （両方あると間隔が二重になる）。
  */
 export const SECONDARY_LINK_STACKED_CLASSES = `mt-4 ${SECONDARY_LINK_CLASSES}`;
+
+/**
+ * primary な導線（**リンクとして描く primary**）の見た目。SP-22 `T-22-05`。
+ *
+ * 🔴 **`Button`（`variant='primary'`）と同じトークンでなければならない**（§7.4: primary は
+ *    ブランド藍 = 「いま進行中・次はあなたの番」）。`Button` は `<button>` 専用で `asChild` を
+ *    持たないため、**遷移する primary（`PageHeader` のアクション）はリンクで描く**しかない。
+ * 🔴 **リポジトリ内でここが唯一の primary リンクの見た目である**（`T-12-21` はこれを
+ *    `apps/web/app/(main)/_shell/page-heading.tsx` の中に持っていた。部品を `packages/ui` へ
+ *    移すのに合わせてここへ寄せた ＝ 同じ見た目のローカル実装を 2 つ作らない。SP-21 `T-21-02` ①）。
+ * ⚠️ **配置（`fixed` / `md:static`）は含めない** —— 置かれる文脈が決める
+ *    （`./link-classes.ts` の「間隔を基底に入れない」と同じ理由）。
+ */
+export const PRIMARY_LINK_CLASSES =
+  'inline-flex h-10 shrink-0 items-center justify-center rounded-sm px-4 text-body font-medium whitespace-nowrap ' +
+  'bg-brand text-brand-fg hover:bg-brand-hover active:bg-brand-active ' +
+  'transition-colors duration-150 ease-out ' +
+  'outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2';

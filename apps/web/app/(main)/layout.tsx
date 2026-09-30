@@ -57,12 +57,13 @@ import { resolveTenantCtxOutcome } from '../../lib/auth/session';
 import { requestNow } from '../../lib/request/now';
 import { remainingLabels } from '../../lib/proposal-requests/list-rows';
 import { formatRemaining } from '../../lib/proposal-requests/remaining';
+import { readCurrentPath } from '../../lib/shell/current-path';
 import { readShellIdentity } from '../../lib/shell/identity';
 import { readProposalRequestDue } from '../../lib/shell/proposal-request-due';
 import { buildBottomTabs, buildMainNav, type NavAudience } from '../../lib/shell/nav';
 import { readShellUsageIndicator } from '../../lib/shell/usage-indicator';
 import { TENANT_ROLE_MESSAGE_KEYS } from '../../lib/tenants/labels';
-import { AppShell } from './_shell/app-shell';
+import { MainShell } from './_shell/main-shell';
 
 
 export default async function MainPlaneLayout({ children }: { readonly children: ReactNode }) {
@@ -75,7 +76,10 @@ export default async function MainPlaneLayout({ children }: { readonly children:
   const audience: NavAudience = ctx.partnerCompanyId === null ? 'HOST' : 'PARTNER';
   // 🔴 `now` は `requestNow()` から取る（`new Date()` を自前で作らない）。ページ側の読み取りと
   //    同じインスタンスであることが、`lib/usage/request-scope.ts` の畳み込みがヒットする条件である。
-  const [identity, usage, proposalRequestDue] = await Promise.all([
+  const [currentPath, identity, usage, proposalRequestDue] = await Promise.all([
+    // 🔴 T-22-05: 現在地（サイドバーのハイライト。docs/04 §3.1）。`proxy.ts` が添えたリクエスト
+    //    ヘッダを読むだけであり、**DB のトランザクションは 1 本も増えない**（下の表は不変）。
+    readCurrentPath(),
     readShellIdentity(ctx),
     readShellUsageIndicator(ctx, requestNow()),
     // 🔴 T-12-21: `③ 提案依頼`（`S-017`）の期限バッジ（docs/04 §3.1 の取引先列）。
@@ -92,7 +96,7 @@ export default async function MainPlaneLayout({ children }: { readonly children:
       : formatRemaining(proposalRequestDue.expiresAtIso, requestNow().getTime(), remainingLabels());
 
   return (
-    <AppShell
+    <MainShell
       wordmark={t('product.name')}
       organizationName={identity.organizationName}
       partnerCompanyName={identity.partnerCompanyName}
@@ -104,8 +108,9 @@ export default async function MainPlaneLayout({ children }: { readonly children:
       usageHref={ctx.partnerCompanyId === null ? '/settings/usage' : null}
       nav={buildMainNav({ audience, role: ctx.role, proposalRequestDueText })}
       tabs={buildBottomTabs()}
+      currentPath={currentPath}
     >
       {children}
-    </AppShell>
+    </MainShell>
   );
 }

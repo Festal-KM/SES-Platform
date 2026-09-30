@@ -1690,13 +1690,18 @@ describe('🔴 `packages/ui` の testid は「リテラル / テンプレート 
     ).toEqual([]);
   });
 
-  it('素通ししている部品が現に在る（`folded-list` / `name-cell`。③ の判定が働いていることの対照）', () => {
+  it('素通ししている部品が現に在る（`folded-list` / `name-cell` / `page-header`。③ の判定が働いていることの対照）', () => {
     const passThrough = uiFiles.filter((file) =>
       originsOf(file.label).some((origin) => origin.kind === 'prop-or-param'),
     );
+    // ✅ T-22-05: `page-header.tsx` が 3 件目になった（帯の描画が `packages/ui` へ移った）。
+    //    🔴 **判定は変えていない** —— 素通し（`prop-or-param`）は許され、**ローカルで計算した値
+    //    （`local`）は 1 件も許さない**（上の検査）。値は呼び出し側の各 `page.tsx` が
+    //    `testId="…"` / `linkTestId="…"` の文字列リテラルで書いており、凍結は効いたままである。
     expect(passThrough.map((file) => file.label).sort()).toEqual([
       'packages/ui/src/components/folded-list.tsx',
       'packages/ui/src/components/name-cell.tsx',
+      'packages/ui/src/components/page-header.tsx',
     ]);
   });
 });

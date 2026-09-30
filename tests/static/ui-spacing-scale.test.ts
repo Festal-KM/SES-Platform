@@ -26,9 +26,11 @@ import { describe, expect, it } from 'vitest';
 import path from 'node:path';
 import {
   ALLOWED_SPACING,
+  PERMANENT_SPACING_EXCEPTION,
   SPACING_UTILITY,
   classTokensOf,
   collectSourceFiles,
+  isPermanentSpacingException,
   offScaleSpacingValue,
   readSource,
   repoRoot,
@@ -45,26 +47,20 @@ import { UI_RATCHET_BASELINE_F } from './support/ui-ratchet-baseline.js';
 const APP_ROOT = path.join(repoRoot, 'apps', 'web', 'app');
 
 /**
- * 🔴 **恒久例外（1 件のみ）。** `AppShell` のボトムタブの逃がし。
- * - `component`: 部品の**ファイル名**で判定する —— `T-22-05` が `AppShell` を
- *   `packages/ui/src/components/app-shell.tsx` へ移すため、ディレクトリで縛ると移動で例外が消える。
- *   例外は「その部品の責務」に付いており、置き場所に付いていない。
- * - 🔴 **増やさない。** 2 件目が必要になったと思ったら、それは余白の段の問題である。
+ * 🔴 **恒久例外（リポジトリ全体で 1 件のみ）の定義は `support/ui-classes.ts` に在る。**
+ *    ✅ `T-22-05` でそこへ移した —— `AppShell` が `packages/ui` に移り、**例外を数える側が
+ *    2 つ（`apps/web` 側のこの検査と `packages/ui` 側の `design-tokens.test.ts`）になった**ため、
+ *    定義が 2 箇所にあると片方だけが例外を増やせる（`docs/05` §17.4）。
+ * 🔴 **判定（1 件だけ / ファイル名で縛る / 理由をコードに書く）は 1 つも変えていない。**
  */
-export const PERMANENT_SPACING_EXCEPTION = {
-  component: 'app-shell.tsx',
-  utility: 'pb-24',
-  reason:
-    '🔴 `fixed` なボトムタブ（モバイル）の高さ分の逃がしであり、余白の段ではない。' +
-    'これを段に寄せると最後の行がタブの下に隠れる（docs/04 §3.1 / SP-22 §4.1 の恒久例外 1 件）',
-} as const;
+const isPermanentException = isPermanentSpacingException;
 
-function isPermanentException(absolute: string, token: string): boolean {
-  return (
-    token === PERMANENT_SPACING_EXCEPTION.utility &&
-    path.basename(absolute) === PERMANENT_SPACING_EXCEPTION.component
-  );
-}
+/**
+ * 🔴 恒久例外を数える範囲は **`apps/web/app` と `packages/ui/src` の両方**である。
+ *    片方だけ見ると、`AppShell` の移動（`T-22-05`）が**例外の消滅**に見えてしまう
+ *    （例外は部品の責務に付いており、置き場所に付いていない）。
+ */
+const EXCEPTION_ROOTS = [APP_ROOT, path.join(repoRoot, 'packages', 'ui', 'src')];
 
 const scanned = collectSourceFiles(APP_ROOT, ['.tsx']);
 type Finding = { readonly file: string; readonly line: number; readonly token: string };
@@ -79,12 +75,14 @@ const all: Finding[] = scanned.flatMap((absolute) => {
 });
 const actual = violationLinesByFile(all);
 
-const permanent: Finding[] = scanned.flatMap((absolute) => {
-  const file = toRepoRelative(absolute);
-  return classTokensOf(readSource(absolute), absolute)
-    .filter(({ token }) => isPermanentException(absolute, token))
-    .map(({ token, line }) => ({ file, line, token }));
-});
+const permanent: Finding[] = EXCEPTION_ROOTS.flatMap((root) =>
+  collectSourceFiles(root, ['.tsx']).flatMap((absolute) => {
+    const file = toRepoRelative(absolute);
+    return classTokensOf(readSource(absolute), absolute)
+      .filter(({ token }) => isPermanentException(absolute, token))
+      .map(({ token, line }) => ({ file, line, token }));
+  }),
+);
 
 describeRatchetInvariants({
   label: '(f) spacing 7 段',
@@ -113,8 +111,11 @@ describe('🔴 (f) apps/web/app の spacing が §7.9 の 7 段だけである�
 
 describe('🔴 恒久例外（`AppShell` の `pb-24`）が 1 件を超えない', () => {
   it('例外は 1 箇所だけであり、`AppShell` のファイルにだけ在る', () => {
+    // ✅ `T-22-05`: `AppShell` の描画が `packages/ui` へ移ったので、例外もそこへ付いていった
+    //    （**件数は 1 のまま / 語は `pb-24` のまま / 判定はファイル名のまま**）。
+    //    🔴 `apps/web` 側に `pb-24` が残っていれば 2 件になって落ちる。
     expect(permanent.map((finding) => `${finding.file} ${finding.token}`)).toEqual([
-      `apps/web/app/(main)/_shell/app-shell.tsx ${PERMANENT_SPACING_EXCEPTION.utility}`,
+      `packages/ui/src/components/app-shell.tsx ${PERMANENT_SPACING_EXCEPTION.utility}`,
     ]);
   });
 
@@ -124,8 +125,10 @@ describe('🔴 恒久例外（`AppShell` の `pb-24`）が 1 件を超えない'
   });
 
   it('🔴 例外は許可リストに二重に載っていない（ラチェットで消える対象ではない）', () => {
-    // `app-shell.tsx` は `py-0.5` で許可リストに載る。そちらは段① で消えるが `pb-24` は残る。
-    const remaining = all.filter((finding) => finding.file.endsWith('_shell/app-shell.tsx'));
+    // ✅ `T-22-05` で `_shell/app-shell.tsx` は無くなり、許可リストの段① も空になった。
+    //    🔴 それでも **`pb-24` は違反として数えられていない**ことをここで固定する
+    //    （数え始めると、許可リストに載っていない `packages/ui` 側で落ちる）。
+    const remaining = all.filter((finding) => finding.file.endsWith('app-shell.tsx'));
     expect(remaining.every((finding) => finding.token !== PERMANENT_SPACING_EXCEPTION.utility)).toBe(true);
   });
 });
