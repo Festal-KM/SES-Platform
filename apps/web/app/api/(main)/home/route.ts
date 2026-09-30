@@ -7,6 +7,7 @@
 // ✅ T-12-15: `?scope=mine|all`（既定 `mine`）と `?changedSince=`（60 秒ポーリングの差分）を要対応キューが使う。
 //    隔離ブロック（T-05-08）は**担当で絞らない** —— 隔離は「誰の担当か」より先に片付けるべき事象であり、絞ると気づけない人が生まれる。
 import { withApiRoute } from '../../../../lib/api/withApiRoute';
+import { sendingDomainRuntime } from '../../../../lib/db/bootstrap';
 import { readHomeBlocks } from '../../../../lib/home/blocks';
 import { getHomeView } from '../../../../lib/home/service';
 import { DEFAULT_HOME_SCOPE, homeQuerySchema } from '../../../../lib/home/schemas';
@@ -22,6 +23,9 @@ export const GET = withApiRoute(
     const blocks = await readHomeBlocks(ctx, {
       scope: query.scope ?? DEFAULT_HOME_SCOPE,
       changedSince: query.changedSince === undefined ? null : new Date(query.changedSince),
+      // ✅ T-22-09: `操作` 列の不能条件 ④（送信ドメイン未検証）。起動時に確定した値であり、
+      //    ここで `process.env` を読まない（`CLAUDE.md` §3.5）。
+      sendingDomainVerificationRequired: sendingDomainRuntime().verificationRequired,
     });
     return Response.json(getHomeView(ctx, blocks, readAt));
   },

@@ -10,15 +10,40 @@
 //
 // 🔴 **ブロックが空でもセクションを消さない**判断は画面側（`home-sections.tsx` / `action-queue-section.tsx`）が持つ。
 //    ここは「何があるか」だけを返す。
+//
+// ============================================================================
+// 🔴 ホームが 1 リクエストに足すトランザクションの本数（T-22-09。`tests/isolation/shell-header.test.ts` ⑤ と同じ作法）
+// ============================================================================
+// 🔴 **この数が増えたら、60 秒ごとのポーリングがその分だけ重くなる**（`CLAUDE.md` §7 の p95）。
+//    増やすときはこの表と `./blocks.transactions.test.ts` の期待値を必ず一緒に直すこと。
+//
+// | ブロック | 読み取り | トランザクション | Phase |
+// |---|---|---|---|
+// | `SCAN_QUARANTINE` | `readQuarantinedSkillSheets` | **1 本** | 1 |
+// | `ACTION_QUEUE` | `readActionQueueWithSummary` | **1 本** | 1 |
+// | `SUMMARY` | 🔴 **同じ `withTenant` に相乗り**（`readSummaryBlock`） | **+0 本** | 1 |
+// | 送信ドメインの事実（`actionAvailability` の条件 ④） | 🔴 **同じ `withTenant` に相乗り** | **+0 本** | 1 |
+// | 合計 | | 🔴 **2 本**（ホスト / 取引先とも） | 1 |
+//
+// 🔴 Phase 2 は **ホスト +0 本**（`ASSIGNMENTS_ACTIVE` はセクション 2〔満了が近い稼働〕の
+//    `withHostTenant` に相乗りする）/ **取引先 +1 本**（`partner_assignment_v` 越しでしか読めず避けられない。
+//    docs/05 §6.11.1 の表）。
+// 🔴 `apps/web/app/(main)/layout.tsx` の**外枠**の表（ホスト 4 / 取引先 3）は変わらない ——
+//    ストリップは外枠ではなく**画面**の読み取りである。
 import type { AuthenticatedTenantCtx } from '@ses/db';
 import { readQuarantinedSkillSheets } from '../skill-sheets/service';
-import { readActionQueueBlock } from './action-queue-read';
+import { readActionQueueWithSummary } from './action-queue-read';
 import { DEFAULT_HOME_SCOPE, type HomeScope } from './schemas';
 import type { HomeBlock } from './types';
 
 export type HomeBlocksOptions = {
   /** 「自分の担当のみ」（既定）/ 組織全体。要対応キューだけが使う（隔離の周知は担当で絞らない）。 */
   readonly scope?: HomeScope;
+  /**
+   * 🔴 T-22-09: 送信ドメインの検証が要る環境か（`sendingDomainRuntime().verificationRequired`）。
+   *    **必須にする** —— 既定値を置くと、渡し忘れた経路だけが `RESEND` の可否を別の前提で決める。
+   */
+  readonly sendingDomainVerificationRequired: boolean;
   /**
    * 60 秒ポーリングの差分応答（前回応答の `changedSince`）。`null` / 未指定なら全行。
    * 🔴 T-12-15 指摘 4: 前回応答の `changedSince` は読み取り時刻から安全マージン分だけ過去に丸められている
@@ -39,13 +64,18 @@ export type HomeBlocksOptions = {
  */
 export async function readHomeBlocks(
   ctx: AuthenticatedTenantCtx,
-  options: HomeBlocksOptions = {},
+  options: HomeBlocksOptions,
 ): Promise<readonly HomeBlock[]> {
-  const [quarantined, actionQueue] = await Promise.all([
+  const [quarantined, { actionQueue, summary }] = await Promise.all([
     readQuarantinedSkillSheets(ctx),
-    readActionQueueBlock(ctx, { scope: options.scope ?? DEFAULT_HOME_SCOPE, changedSince: options.changedSince ?? null }),
+    readActionQueueWithSummary(ctx, {
+      scope: options.scope ?? DEFAULT_HOME_SCOPE,
+      changedSince: options.changedSince ?? null,
+      sendingDomainVerificationRequired: options.sendingDomainVerificationRequired,
+    }),
   ]);
-  const blocks: HomeBlock[] = [];
+  // 🔴 T-22-09: `SUMMARY` は**常に**返す（0 件でも `count: 0`。描かない判断は画面側の 1 箇所）。
+  const blocks: HomeBlock[] = [summary];
   if (quarantined.length > 0) {
     blocks.push({
       kind: 'SCAN_QUARANTINE',

@@ -17,7 +17,7 @@ import {
   toPartnerRequestActionRow,
   toProposalActionRow,
 } from './action-queue';
-import type { ActionQueueRow } from './types';
+import type { ActionQueueHomeBlock, ActionQueueRow } from './types';
 
 const PROJECT = { id: '01930000-0000-7000-8000-0000000000f1', name: 'Project A Published' };
 
@@ -134,7 +134,46 @@ describe('toProposalActionRow — 4 つの「うまくいかなかった」を�
       deadline: null,
       rowVersion: Date.parse('2026-09-16T01:00:00.000Z'),
       href: '/proposals/p1/approve',
+      // ✅ T-22-09: `状態` は**実状態**、`操作` はサーバが決める（docs/05 §6.11.2）。
+      stateBadge: { entity: 'PROPOSAL', state: 'APPROVAL_PENDING' },
+      action: { kind: 'APPROVE', href: '/proposals/p1/approve' },
     });
+  });
+
+  // ============================================================================
+  // ✅ T-22-09: `状態` 列と `操作` 列（docs/05 §6.11.2 の表）
+  // ============================================================================
+  it('🔴 状態バッジは種別ではなく実状態を返す（`SEND_HELD` の行は `APPROVED` のまま保留している事実が読める）', () => {
+    const held = toProposalActionRow(
+      hostItem({ id: 'h1', state: 'APPROVED', sendHold: { reasonKey: 'GATE_STALE', since: '2026-09-16T01:00:00.000Z' } }),
+    );
+    expect(held?.kind).toBe('SEND_HELD');
+    expect(held?.stateBadge).toEqual({ entity: 'PROPOSAL', state: 'APPROVED' });
+  });
+
+  it('🔴 操作は種別ごとに 1 つで、遷移先は既存の URL だけである', () => {
+    expect(toProposalActionRow(hostItem({ id: 'a1', state: 'APPROVAL_PENDING' }))?.action).toEqual({
+      kind: 'APPROVE',
+      href: '/proposals/a1/approve',
+    });
+    expect(toProposalActionRow(hostItem({ id: 'g1', state: 'GATE_FAILED' }))?.action).toEqual({
+      kind: 'FIX',
+      href: '/proposals/g1/edit',
+    });
+    expect(toProposalActionRow(hostItem({ id: 's1', state: 'SUBMIT_FAILED' }))?.action).toEqual({
+      kind: 'RESEND',
+      href: '/proposals/send-failures',
+    });
+  });
+
+  it('🔴 `SEND_HELD` の操作は保留理由で行き先が変わる（`DOMAIN_UNVERIFIED` → `S-036` / `GATE_STALE` → `S-019`）', () => {
+    const since = '2026-09-16T01:00:00.000Z';
+    const domain = toProposalActionRow(hostItem({ id: 'h1', state: 'APPROVED', sendHold: { reasonKey: 'DOMAIN_UNVERIFIED', since } }));
+    const stale = toProposalActionRow(hostItem({ id: 'h2', state: 'APPROVED', sendHold: { reasonKey: 'GATE_STALE', since } }));
+    expect(domain?.action).toEqual({ kind: 'FIX', href: '/settings/sending-domains' });
+    expect(stale?.action).toEqual({ kind: 'FIX', href: '/proposals?state=APPROVED' });
+    // 🔴 行クリック（`href`）は**どちらも `S-019`**のままである（保留は失敗ではないので `S-022` へ送らない）。
+    expect(domain?.href).toBe('/proposals?state=APPROVED');
   });
 
   it('案件名を出せない / 凍結が無い / 提案先が未設定でも行は落とさず、代替の語で埋める', () => {
@@ -161,10 +200,32 @@ describe('提案依頼の行 — REQUESTED だけ。DECLINED / EXPIRED / WITHDRA
       deadline: '2026-09-20T00:00:00.000Z',
       rowVersion: Date.parse('2026-09-15T00:00:00.000Z'),
       href: '/proposal-requests',
+      stateBadge: { entity: 'PROPOSAL_REQUEST', state: 'REQUESTED' },
+      // 🔴 T-22-09: **ホストにこの行の操作は無い**（返答するのは取引先。docs/05 §6.11.2 の表）。
+      action: null,
     });
     expect(Object.keys(row ?? {}).sort()).toEqual(
-      ['counterpartyLabel', 'deadline', 'href', 'kind', 'rowVersion', 'since', 'subjectLabel', 'targetId'],
+      [
+        'action',
+        'counterpartyLabel',
+        'deadline',
+        'href',
+        'kind',
+        'rowVersion',
+        'since',
+        'stateBadge',
+        'subjectLabel',
+        'targetId',
+      ],
     );
+  });
+
+  it('🔴 T-22-09: 取引先の行の操作は `返答する`（`S-018`）。ホストの行は `null` である（非対称）', () => {
+    expect(toPartnerRequestActionRow(partnerRequest({ id: 'r2' }))?.action).toEqual({
+      kind: 'RESPOND',
+      href: '/proposal-requests/r2',
+    });
+    expect(toHostRequestActionRow(hostRequest({ id: 'r1' }))?.action).toBeNull();
   });
 
   it('取引先の行は案件名 + 自社の台帳の表示名（自社の情報）。遷移先は S-018', () => {
@@ -190,8 +251,27 @@ describe('提案依頼の行 — REQUESTED だけ。DECLINED / EXPIRED / WITHDRA
 });
 
 function rowOf(kind: ActionQueueRow['kind'], targetId: string, since: string, deadline: string | null = null): ActionQueueRow {
-  return { kind, targetId, subjectLabel: 's', counterpartyLabel: null, since, deadline, rowVersion: Date.parse(since), href: '/' };
+  return {
+    kind,
+    targetId,
+    subjectLabel: 's',
+    counterpartyLabel: null,
+    since,
+    deadline,
+    rowVersion: Date.parse(since),
+    href: '/',
+    stateBadge: { entity: 'PROPOSAL', state: 'APPROVAL_PENDING' },
+    action: null,
+  };
 }
+
+/** 🔴 可否は**ブロック直下に 4 エントリ全量**（`buildActionQueueBlock` の引数。docs/05 §6.11.2）。 */
+const ALLOW_ALL: ActionQueueHomeBlock['actionAvailability'] = {
+  APPROVE: { enabled: true, reasonKey: null },
+  FIX: { enabled: true, reasonKey: null },
+  RESEND: { enabled: true, reasonKey: null },
+  RESPOND: { enabled: true, reasonKey: null },
+};
 
 describe('sortActionQueueRows — 「放置時間 × 取り返しのつかなさ」（docs/04 §S-003）', () => {
   it('ホスト: SEND_FAILED → APPROVAL_PENDING → GATE_FAILED → SEND_HELD → PROPOSAL_REQUEST_PENDING。種別の中は放置が長い順、依頼は期限昇順', () => {
@@ -231,21 +311,33 @@ describe('buildActionQueueBlock — changedSince の差分（docs/05 §6.3 #9 �
   ];
 
   it('changedSince 無し = 全行。targetIds は表示順の全件', () => {
-    const block = buildActionQueueBlock(sorted, null);
+    const block = buildActionQueueBlock(sorted, null, ALLOW_ALL);
     expect(block.kind).toBe('ACTION_QUEUE');
     expect(block.targetIds).toEqual(['s1', 'a1', 'g1']);
     expect(block.items).toEqual(sorted);
   });
 
   it('🔴 changedSince あり = rowVersion >= changedSince の行だけ（変わっていない行は返さない）。targetIds は全件のまま', () => {
-    const block = buildActionQueueBlock(sorted, new Date('2026-09-16T00:05:00.000Z'));
+    const block = buildActionQueueBlock(sorted, new Date('2026-09-16T00:05:00.000Z'), ALLOW_ALL);
     expect(block.targetIds).toEqual(['s1', 'a1', 'g1']);
     expect(block.items.map((row) => row.targetId)).toEqual(['a1', 'g1']);
-    expect(buildActionQueueBlock(sorted, new Date('2026-09-16T01:00:00.000Z')).items).toEqual([]);
+    expect(buildActionQueueBlock(sorted, new Date('2026-09-16T01:00:00.000Z'), ALLOW_ALL).items).toEqual([]);
   });
 
   it('🔴 種別ごとの件数を 1 つの合計に丸めるフィールドが無い', () => {
-    expect(Object.keys(buildActionQueueBlock(sorted, null)).sort()).toEqual(['items', 'kind', 'targetIds']);
+    // ✅ T-22-09: `actionAvailability` が増えた（4 エントリを毎回全量返す。docs/05 §6.11.2）。
+    //    🔴 **件数の合計・種別別件数のフィールドは依然として無い。**
+    expect(Object.keys(buildActionQueueBlock(sorted, null, ALLOW_ALL)).sort()).toEqual([
+      'actionAvailability',
+      'items',
+      'kind',
+      'targetIds',
+    ]);
+  });
+
+  it('🔴 可否は差分応答でも全量返る（行が 0 件でも 4 エントリ）', () => {
+    const block = buildActionQueueBlock([], new Date('2026-09-16T01:00:00.000Z'), ALLOW_ALL);
+    expect(Object.keys(block.actionAvailability).sort()).toEqual(['APPROVE', 'FIX', 'RESEND', 'RESPOND']);
   });
 });
 

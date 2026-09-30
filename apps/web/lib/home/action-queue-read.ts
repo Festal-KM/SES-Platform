@@ -28,10 +28,12 @@
 //    **ホストの枝では** `engineer.view` の対象（台帳の現在値）を読んでいない（取引先の枝は自社の台帳の `engineers.display_name` を
 //    読む。自社の情報なので実名でよい。`S-017` と同じ）。
 import { withTenant, type AuthenticatedTenantCtx } from '@ses/db';
+import { isEngineerShareRole } from '../engineer-shares/policy';
 import { readEngineerRefs, readProjectRefs } from '../proposal-requests/service';
 import type { ProposalRequestRow } from '../proposal-requests/views';
 import { toHostProposalRequestView, toPartnerProposalRequestView } from '../proposal-requests/views';
 import { projectProposalListItems, PROPOSAL_LIST_SELECT, type TenantDb } from '../proposals/list';
+import { actionQueueActionAvailability } from './action-availability';
 import {
   ACTION_QUEUE_SEND_HOLD_REASONS,
   buildActionQueueBlock,
@@ -42,7 +44,8 @@ import {
   type ActionQueueAudience,
 } from './action-queue';
 import type { HomeScope } from './schemas';
-import type { ActionQueueHomeBlock, ActionQueueRow } from './types';
+import { readSummaryBlock } from './summary';
+import type { ActionQueueHomeBlock, ActionQueueRow, SummaryHomeBlock } from './types';
 
 /**
  * 🔴 1 回の読み取りで拾う行数の上限。docs/05 §6.1 の一覧上限（200）と同じ値。
@@ -59,6 +62,25 @@ export type ActionQueueReadOptions = {
   readonly scope: HomeScope;
   /** 前回応答の `changedSince`。`null` なら全行を返す。 */
   readonly changedSince: Date | null;
+  /**
+   * 🔴 T-22-09: 取引先へ届く送信にテナント独自ドメインの検証が要る環境か
+   *    （`sendingDomainRuntime().verificationRequired`。`docs/03` §3.2.7-4 / `CLAUDE.md` §9-3）。
+   *    `false`（`development` / `demo` / `sandbox`）では共通ドメインで送れるため、
+   *    **`RESEND` をドメインの理由で止めない**。
+   * 🔴 起動時に確定した値であり、**呼び出し側（`readHomeBlocks`）から渡す** ——
+   *    本ファイルが `lib/db/bootstrap` を import すると、ユニットテストから呼べなくなる。
+   */
+  readonly sendingDomainVerificationRequired: boolean;
+};
+
+/**
+ * 🔴 T-22-09: 1 トランザクションで読む 2 ブロック（`docs/05` §6.11.1「同じ `withTenant` の中で数える」）。
+ *    **`SummaryStrip` のためにトランザクションを増やさない**ことが型に現れている
+ *    （2 つを別々に返す関数を作らない）。
+ */
+export type ActionQueueAndSummary = {
+  readonly actionQueue: ActionQueueHomeBlock;
+  readonly summary: SummaryHomeBlock;
 };
 
 /** 🔴 取引先がキューに載せる提案の状態（`GATE_FAILED` だけ。承認・送信はホストの工程）。 */
@@ -132,6 +154,24 @@ export async function readActionQueueBlock(
   ctx: AuthenticatedTenantCtx,
   options: ActionQueueReadOptions,
 ): Promise<ActionQueueHomeBlock> {
+  return (await readActionQueueWithSummary(ctx, options)).actionQueue;
+}
+
+/**
+ * 🔴 T-22-09: 要対応キューと `SummaryStrip` の件数を **1 トランザクション**で読む
+ *    （`docs/05` §6.11.1「実装は `readActionQueueBlock` の本体を `db` を受け取る内部関数に切り出し、
+ *    同じ `withTenant` の中で `readSummaryCounts` を呼ぶ」）。
+ *
+ * 🔴 **平常時に増えるトランザクションは +0 本**である（本数の表は `./blocks.ts` 冒頭）。
+ * 🔴 送信ドメインの事実も**同じトランザクションの中**で読む（`db.tenantSendingDomain`）——
+ *    `listSendingDomains`（`@ses/db`）は自分でトランザクションを開くので使えない。
+ *    読むのはホスト文脈だけである（`tenant_sending_domains` は C2 HOST_ONLY であり、
+ *    取引先は再送・送信を行えない）。
+ */
+export async function readActionQueueWithSummary(
+  ctx: AuthenticatedTenantCtx,
+  options: ActionQueueReadOptions,
+): Promise<ActionQueueAndSummary> {
   const audience: ActionQueueAudience = ctx.partnerCompanyId === null ? 'HOST' : 'PARTNER';
   return withTenant(ctx, async (db) => {
     // 🔴 放置が長い順（`updated_at` 昇順）。`id` は uuid(7) なので同時刻のタイブレークも時系列。
@@ -157,9 +197,31 @@ export async function readActionQueueBlock(
       .map((item) => toProposalActionRow(item))
       .filter((row): row is ActionQueueRow => row !== null);
 
-    const requestActionRows = await readRequestActionRows(ctx, db, audience, options.scope);
+    const [requestActionRows, summary, verifiedDomains] = await Promise.all([
+      readRequestActionRows(ctx, db, audience, options.scope),
+      readSummaryBlock(db, audience, { canManageShares: isEngineerShareRole(ctx.role) }),
+      // 🔴 検証が要らない環境では読まない（起動時に確定した値で分岐する。クエリを 1 本節約する）。
+      audience === 'HOST' && options.sendingDomainVerificationRequired
+        ? db.tenantSendingDomain.count({ where: { state: 'VERIFIED' } })
+        : Promise.resolve(0),
+    ]);
     const sorted = sortActionQueueRows([...proposalActionRows, ...requestActionRows], audience);
-    return buildActionQueueBlock(sorted, options.changedSince);
+    const actionQueue = buildActionQueueBlock(
+      sorted,
+      options.changedSince,
+      actionQueueActionAvailability({
+        role: ctx.role,
+        lifecycleState: ctx.lifecycleState,
+        partnerSuspendedAt: ctx.partnerSuspendedAt,
+        // 🔴 検証が要らない環境（`development` / `demo` / `sandbox`）では常に「未検証ではない」。
+        sendingDomainUnverified:
+          audience === 'HOST' && options.sendingDomainVerificationRequired && verifiedDomains === 0,
+        // 🔴 主平面のセッションに代理閲覧は無い（docs/05 §5.6）。`/admin/impersonate/**`（Phase 2）が
+        //    同じ表示部品を描くときは `'IMPERSONATION'` を渡す。
+        mode: 'NORMAL',
+      }),
+    );
+    return { actionQueue, summary };
   });
 }
 

@@ -148,7 +148,10 @@ const totalOccurrences = scannedFiles.reduce((sum, file) => sum + file.extractio
  *    `testId="..."` の形で文字列リテラルを残すこと。
  */
 const UNRESOLVED_ALLOWLIST: readonly string[] = [
-  'apps/web/app/(main)/_home/home-sections.tsx',
+  // ✅ **T-22-09 で `apps/web/app/(main)/_home/home-sections.tsx` を外した**（穴が 1 つ閉じた）。
+  //    移行前は `data-testid={testId}` を受け取る小さなリンク部品が 5 つあったが、リンクは
+  //    `SummaryStrip` の値 / `EmptyState` / 帯のアクションへ移り、**すべて文字列リテラル（三項の各枝を含む）**に
+  //    なった。🔴 **凍結値は 1 つも消していない**（`home-host-*` / `home-partner-*` はいずれも実装に在る）。
   // ✅ T-12-21: 帯（パンくず / 画面タイトル / primary アクション）の共通部品。**上の 2 件と同じ形**である ——
   //    値は呼び出し側（各 `page.tsx`）が `testId="project-detail-candidates"` /
   //    `linkTestId="engineer-detail-list-link"` のように**文字列リテラル**で書いており、

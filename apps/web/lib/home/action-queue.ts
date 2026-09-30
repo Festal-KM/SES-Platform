@@ -25,12 +25,24 @@
 //      取引先に `APPROVAL_PENDING` / `SEND_FAILED` / `SEND_HELD` を出さないのは**工程の判断**（承認・送信はホストの工程）であり、
 //      `action-queue-read.ts` が取引先の枝でそれらの状態を**読まない**ことで成立する。
 //
+//   ⑦ 🔴 **`action`（`操作` 列）はサーバが決める**（T-22-09。docs/05 §6.11.2）。画面は種別と状態から推測しない。
+//      **不能の 4 条件は `actionQueueActionAvailability` の 1 関数に集める**（画面側の条件分岐に散らさない）。
+//
 // 🔴 I/O を持たない（`@ses/db` に依存しない）。文言は `packages/i18n` が唯一の出所（`CLAUDE.md` §3.5）。
+// 🔴 T-22-09: **ctx 由来の 4 条件（`actionAvailability`）は本ファイルに置かない** ——
+//    判定が `executionDenialMessageKey`（`lib/api/guards`）を通じて `lib/db/bootstrap` に辿るため、
+//    ここへ持ち込むと本ファイルの「I/O を持たない」が崩れる。置き場所は `./action-availability.ts` の 1 関数である。
 import { t } from '@ses/i18n';
 import type { SendHoldReasonKey } from '@ses/domain';
 import type { HostProposalRequestView, PartnerProposalRequestView } from '../proposal-requests/views';
 import { proposalRequestRespondHref, PROPOSAL_REQUESTS_PATH } from '../proposal-requests/list-rows';
-import { proposalApproveHref, proposalEditHref, PROPOSAL_SEND_FAILURES_PATH, proposalsHref } from '../proposals/hrefs';
+import {
+  proposalApproveHref,
+  proposalEditHref,
+  PROPOSAL_SEND_FAILURES_PATH,
+  proposalsHref,
+  SENDING_DOMAIN_SETTINGS_HREF,
+} from '../proposals/hrefs';
 import type { HostProposalListItem, PartnerProposalListItem } from '../proposals/views';
 import type { ActionQueueHomeBlock, ActionQueueKind, ActionQueueRow } from './types';
 
@@ -94,7 +106,39 @@ export function toProposalActionRow(item: HostProposalListItem | PartnerProposal
     deadline: null,
     rowVersion: Date.parse(item.updatedAt),
     href: proposalActionHref(kind, item.id),
+    // 🔴 T-22-09: `状態` 列。**種別ではなく実状態**を返す（`SEND_HELD` の行は `APPROVED` のまま保留している、
+    //    という事実が読めないと「押す前にどこで止まっているか」が分からない。`docs/04` §S-003 セクション 1）。
+    stateBadge: { entity: 'PROPOSAL', state: item.state },
+    // 🔴 T-22-09: `操作` 列。**サーバが決める**（画面が種別と状態から推測しない）。
+    action: proposalActionOf(kind, item),
   };
+}
+
+/**
+ * 🔴 T-22-09: 提案の行の `操作`（docs/05 §6.11.2 の表）。**href は既存の URL だけ**を使う。
+ *    `SEND_HELD` だけは保留理由で行き先が変わる（`DOMAIN_UNVERIFIED` → `S-036` / `GATE_STALE` → `S-019`）——
+ *    **どちらも「直せば進む」ので `操作` の語は `FIX` で同じ**であり、遷移先だけが違う。
+ */
+function proposalActionOf(
+  kind: ProposalActionKind,
+  item: HostProposalListItem | PartnerProposalListItem,
+): ActionQueueRow['action'] {
+  switch (kind) {
+    case 'APPROVAL_PENDING':
+      return { kind: 'APPROVE', href: proposalApproveHref(item.id) };
+    case 'GATE_FAILED':
+      return { kind: 'FIX', href: proposalEditHref(item.id) };
+    case 'SEND_FAILED':
+      return { kind: 'RESEND', href: PROPOSAL_SEND_FAILURES_PATH };
+    case 'SEND_HELD':
+      return {
+        kind: 'FIX',
+        href:
+          item.audience === 'HOST' && item.sendHold?.reasonKey === 'DOMAIN_UNVERIFIED'
+            ? SENDING_DOMAIN_SETTINGS_HREF
+            : proposalsHref({ state: ['APPROVED'] }, null),
+      };
+  }
 }
 
 /** 提案から生まれる種別（`PROPOSAL_REQUEST_PENDING` は `proposal_requests` の行からしか生まれない）。 */
@@ -152,6 +196,10 @@ export function toHostRequestActionRow(item: HostProposalRequestView): ActionQue
     deadline: item.expiresAt,
     rowVersion: Date.parse(item.createdAt),
     href: PROPOSAL_REQUESTS_PATH,
+    stateBadge: { entity: 'PROPOSAL_REQUEST', state: item.state },
+    // 🔴 T-22-09: **ホストにこの行の操作は無い**（返答するのは取引先である。docs/05 §6.11.2 の表）。
+    //    `href`（行クリック）は `S-017` のままで、読むことはできる。
+    action: null,
   };
 }
 
@@ -174,6 +222,9 @@ export function toPartnerRequestActionRow(item: PartnerProposalRequestView): Act
     deadline: item.expiresAt,
     rowVersion: Date.parse(item.createdAt),
     href: proposalRequestRespondHref(item.id),
+    stateBadge: { entity: 'PROPOSAL_REQUEST', state: item.state },
+    // 🔴 T-22-09: 返答するのは取引先である（`S-018` で応諾・辞退。開示項目の列挙を伴う確認は `S-018` が持つ）。
+    action: { kind: 'RESPOND', href: proposalRequestRespondHref(item.id) },
   };
 }
 
@@ -210,11 +261,15 @@ export const CHANGED_SINCE_SAFETY_MARGIN_MS = 5_000;
 export function buildActionQueueBlock(
   sortedRows: readonly ActionQueueRow[],
   changedSince: Date | null,
+  availability: ActionQueueHomeBlock['actionAvailability'],
 ): ActionQueueHomeBlock {
   const threshold = changedSince === null ? null : changedSince.getTime();
   return {
     kind: 'ACTION_QUEUE',
     targetIds: sortedRows.map((row) => row.targetId),
     items: threshold === null ? sortedRows : sortedRows.filter((row) => row.rowVersion >= threshold),
+    // 🔴 T-22-09: **差分応答でも毎回全量返す**（4 エントリ）。行の `updated_at` が動かない変化
+    //    （ドメイン検証の完了 / ロール変更 / 停止の解除）を差分に乗せられないため（docs/05 §6.11.2）。
+    actionAvailability: availability,
   };
 }

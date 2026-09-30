@@ -1464,12 +1464,20 @@ const ja = {
   //    Phase 2 が文言を追加する。ここに置くのは Phase 0 から出る文言だけ。
   'home.title': 'ホーム',
   // docs/04 §S-003「空 / ローディング / エラー」の初回空の文言をそのまま使う。
+  // ⚠️ T-22-09: **画面からの参照は無くなった**（`EmptyState` の説明は下の `.description` が持つ）。
+  //    🔴 **キーは消さない**（`docs/04` `U-22`: 追加は可、改名と削除は不可）。値も変えない ——
+  //    同じ事実の 1 文目であり、文言を戻したいときの出所になる。
   'home.host.empty.title': 'まだ案件と人材が登録されていません',
   // 🔴 T-05-01: docs/04 §S-003 の初回空は「`S-012` / `S-007` への導線 2 本」である。
   //    `S-007`（人材の登録）は T-05-01 で、🔴 **`S-012`（案件の登録）は T-06-01 で**
   //    実在するようになったので、導線 2 本がここで揃った。
   'home.host.empty.registerEngineer': '人材を登録する',
   'home.host.empty.registerProject': '案件を登録する',
+  // 🔴 ✅ T-22-09: `EmptyState` の 3 段構造の ①説明（docs/04 §S-003「`EmptyState` の構造」）。
+  //    **次に何が起きるか**まで書く（行き止まりにしない）。`home.host.empty.title` は**残す**
+  //    （キーの削除は不可。`U-22`）—— 見出しとしての語であり、説明文とは別物である。
+  'home.host.empty.description':
+    'まだ案件と人材が登録されていません。案件を登録すると、公開・提案・稼働までが 1 本で繋がります。',
   // docs/04 §S-004「空 / ローディング / エラー」の初回空の文言をそのまま使う。
   'home.partner.empty.title':
     'まだ御社に公開された案件はありません。案件が公開されると、この画面に表示されます。',
@@ -1508,10 +1516,49 @@ const ja = {
   'home.actionQueue.kind.PROPOSAL_REQUEST_PENDING': `${GLOSSARY.proposalRequest}の返答待ち`,
   // 「対象」= 案件名 + エンジニア名（凍結側）/ 案件名 + 「共有候補（匿名）」の区切り。
   'home.actionQueue.subject.separator': ' / ',
+  // --- ✅ T-22-09: `状態` 列 / `操作` 列（docs/04 §S-003 セクション 1 改訂 16 / docs/05 §6.11.2）---
+  // 🔴 状態の語は**既存の状態ラベル**（`proposals.state.*` / `proposalRequests.state.*`）をそのまま使う。
+  //    ホーム専用の状態ラベルを作らない（同じ状態が画面によって別の語になる）。
+  'home.actionQueue.column.state': '状態',
+  'home.actionQueue.column.action': '操作',
+  // 🔴 操作は**行につき 1 つ**（一括操作の語を持たない。`F-021 AC-4` / `BR-49`）。語幹は `GLOSSARY` に合わせる。
+  // 🔴 既存の操作の語と**同じ語**にする（`proposals.approval.action.approve` = 「承認する」/
+  //    `sendFailures.resend` = 「再送する」）。ホーム専用の語を作ると、同じ操作が画面によって別の語になる。
+  'home.actionQueue.action.APPROVE': `${GLOSSARY.approve}する`,
+  'home.actionQueue.action.FIX': '修正する',
+  'home.actionQueue.action.RESEND': '再送する',
+  'home.actionQueue.action.RESPOND': '返答する',
+  // 🔴 実行できない理由（`U-10`「ボタンを描画せず、その位置に理由テキストを置く」）。
+  //    🔴 **表のセルに収まる短い語**にする（`error.tenant.*` は API のエラー本文であり、セルには入らない）。
+  //    🔴 停止 / 解約手続き中 / 終了を 1 つの語に畳まない（`F-004 AC-9`。止まっている理由が違う）。
+  'home.actionQueue.denied.tenantSuspended': 'ご利用の停止中は実行できません',
+  'home.actionQueue.denied.tenantClosing': '解約のお手続き中は実行できません',
+  'home.actionQueue.denied.tenantPurged': 'ご利用が終了しています',
+  // 🔴 テナントの停止と**別の語**（止まっている単位も、解除を依頼する相手も違う。`F-007 AC-2`）。
+  'home.actionQueue.denied.partnerSuspended': '取引先の停止中は実行できません',
+  'home.actionQueue.denied.role': '閲覧のみのため実行できません',
+  // 🔴 「状態であってエラーではない」（`docs/04` program-design 申し送り 8）。次の行動（検証）を示す。
+  'home.actionQueue.denied.sendingDomain': '送信元ドメインの検証が必要です',
+  // 🔴 代理閲覧は read-only（`CLAUDE.md` §10.5 / `F-060 AC-3`）。
+  'home.actionQueue.denied.impersonation': '代理閲覧中は実行できません',
   'home.actionQueue.valueNone': '—',
   // 🔴 60 秒ポーリングで更新があった行の印（docs/04 §S-003 非同期処理の表現）。
   'home.actionQueue.changed': '新着',
   'home.actionQueue.pollError': '最新の状態を取得できませんでした。次の更新で自動的に再試行します。',
+  // --- ✅ T-22-09: `SummaryStrip` の指標（`Q-04-4` / docs/04 §S-003 / §S-004 / docs/05 §6.11.1）---
+  // 🔴 **件数の語だけ**である（前月比・達成率・率・金額を持たない。§7.2）。
+  // 🔴 取引先の語は**自社の範囲を肯定形で書く**（「御社に公開された案件」。§5-10 —— 「他社は見えません」
+  //    のような否定形は他社の存在を意識させる）。🔴 他社に関する数・比較・順位の語を 1 つも置かない（`BR-07`）。
+  'home.summary.host.PROJECTS': '案件',
+  'home.summary.host.ENGINEERS': '人材',
+  'home.summary.host.INTERVIEWS_SCHEDULED': '面談予定',
+  'home.summary.partner.PUBLISHED_PROJECTS': '御社に公開された案件',
+  'home.summary.partner.OWN_ENGINEERS': '自社の人材',
+  'home.summary.partner.SHARED_ENGINEERS': '共有中',
+  // 🔴 ホストと取引先で同じ語（母集団は違うが、数の意味は同じ「進行中の提案」である。母集団の説明は
+  //    取引先側のストリップ直下の 1 行（`home.partner.visibilityNotice`）が担う）。
+  'home.summary.PROPOSALS_IN_FLIGHT': '進行中の提案',
+  'home.summary.ASSIGNMENTS_ACTIVE': '稼働中',
 
   // --- S-036 送信ドメインの設定と検証（docs/04 §S-036 / F-001 AC-4 / docs/03 §3.2.7。T-04-04）---
   // 🔴 **状態であってエラーではない**（docs/04 `program-design` 申し送り 8）。
@@ -2009,6 +2056,8 @@ const ja = {
   //    絞り込みがまだ無い（T-06-04）ため、本リリースで到達するのは**初回空だけ**である
   //    —— 到達しない状態の文言を先回りで置かない（`engineers.notFound` の判断と同じ）。
   'engineers.list.title': '人材台帳',
+  // ⚠️ T-22-09: ホームからの独立したナビゲーションリンクを撤去したため**画面からの参照は無い**
+  //    （入口は `SummaryStrip` の `人材` の値に移った）。🔴 **キーは消さない**（`U-22`）。
   'engineers.list.open': '人材台帳を開く',
   // 🔴 `docs/04` §3.2 項目 2「一覧の母集団を 1 行で明示」。ホストと取引先で語を変える。
   'engineers.list.population.host': '自社台帳',
@@ -2490,6 +2539,7 @@ const ja = {
   //    （「他 N 社にも公開されています」「全 N 件中」に相当する語彙を作らない）。
   // 🔴 `F-009 AC-2` と同じ Phase 1 の規律: **スコア・順位・重みの語を使わない。**
   'projects.list.title': '案件一覧',
+  // ⚠️ T-22-09: 同上（入口は `SummaryStrip` の `案件` の値）。🔴 キーは消さない（`U-22`）。
   'projects.list.open': '案件一覧を開く',
   'projects.list.population.host': '自社案件',
   'projects.list.population.partner': '御社に公開された案件',
@@ -3303,6 +3353,7 @@ const ja = {
   // 🔴 保留（`APPROVED` + 保留理由）は `SUBMIT_FAILED` と別の語（docs/05 §10.4「失敗率の指標に混入させない」）。
   // 🔴 一括承認・一括送信・自動再送に相当する語を持たない（`BR-50`。一括承認は本タスクでは置かない）。
   'proposals.list.title': '提案一覧',
+  // ⚠️ T-22-09: 同上（入口は `SummaryStrip` の `進行中の提案` の値）。🔴 キーは消さない（`U-22`）。
   'proposals.list.open': '提案の一覧を開く',
   'proposals.list.breadcrumb.home': 'ホーム',
   'proposals.list.breadcrumb.current': '提案一覧',

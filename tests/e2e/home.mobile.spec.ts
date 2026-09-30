@@ -79,7 +79,13 @@ test.describe('モバイルビューポートのスモーク（S-003 / S-004 は
     try {
       await session.page.goto('/', { waitUntil: 'domcontentloaded' });
       await expect(session.page.getByRole('heading', { name: t('home.title') })).toBeVisible();
-      await expect(session.page.getByText(t('home.host.empty.title')).first()).toBeVisible();
+      // ✅ T-22-09: `S-003` の最上部は **`SummaryStrip`（件数）→ ✅ 0 → 要対応キュー**になった
+      //    （`docs/04` §S-003 改訂 16）。🔴 **`EmptyState`（「まだ案件と人材が登録されていません」）が出るのは
+      //    「全 metric が 0」= 初回空のときだけ**であり、`seed:isolation` のテナントは案件も人材も持つので
+      //    出ない（`0` が並ぶ画面を作らないための定め）。**「実際に描画されている」ことの根拠は器で見る** ——
+      //    件数の器（初回空でも `EmptyState` が入る）と、この画面の Primary である要対応キューの 2 つ。
+      await expect(session.page.getByTestId('home-host-summary')).toBeVisible();
+      await expect(session.page.getByTestId('home-action-queue')).toBeVisible();
       await expectNoHorizontalOverflow('S-003 ホストのホーム', session.page);
       await expectNoBrokenLabels('S-003 ホストのホーム', session.page);
       // ✅ T-10-05（`F-028 AC-1`）: 🔴 **モバイルビューポート（Pixel 5）でも非本番環境バナーが視認でき、スクロールしても消えない**

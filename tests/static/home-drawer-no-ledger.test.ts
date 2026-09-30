@@ -64,6 +64,32 @@ const LEDGER_EXCEPTIONS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   ['apps/web/lib/home/action-queue-read.ts', new Set(['engineer'])],
 ]);
 
+/**
+ * 🔴 **件数だけを数えてよいファイル**（`T-22-09`。`docs/05` §6.11.1）。
+ *
+ * ============================================================================
+ * 🔴 なぜ `count` を上の例外と分けるのか（**緩めたのではなく、境界を言い直した**）
+ * ============================================================================
+ * `docs/05` §6.11.1 は `SummaryStrip` の Phase 1 の指標として **`ENGINEERS` = `engineers` の件数**
+ * （取引先は `OWN_ENGINEERS`）を定めている。つまりホームは台帳の**件数**を読む。
+ *
+ * 🔴 本検査が守っているのは `CLAUDE.md` §7 の「**匿名候補の身元**が提案の作成前にホストへ露出した
+ *    件数 = 0 件」であり、危ないのは**行**（氏名・所属会社名・経歴・スキルシート）である。
+ *    **`count` は行を返さないので身元を運べない**（母集団は RLS が決めており、ホストが数えるのは
+ *    自社台帳、取引先が数えるのは自社所有だけである）。
+ * 🔴 したがって「例外」は**メソッドの単位**で置く: このリストに載ったファイルでも、
+ *    `findMany` / `findFirst` / `findUnique` / `aggregate` / `groupBy` など**行や列を返す形は
+ *    1 つも許さない**（下の `record` の判定）。
+ * 🔴 **ファイルを増やさない。** 件数を数えたい画面が増えたら、それは `SummaryStrip` の指標を
+ *    増やすということであり、`docs/04` §S-003 の改訂（= 人間の承認事項）を先に経る。
+ */
+const LEDGER_COUNT_ONLY: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  ['apps/web/lib/home/summary.ts', new Set(['engineer'])],
+]);
+
+/** 🔴 身元を運べない唯一のメソッド（行を返さない）。 */
+const COUNT_METHOD = 'count';
+
 /** デリゲートを持つ側の識別子（`admin-no-content-reach.test.ts` と同じ規約）。 */
 const DELEGATE_HOLDER_PATTERN = /^(?:db|tx|prisma|client)$|(?:Db|Tx|Client|Prisma)$/;
 
@@ -84,8 +110,12 @@ function lineOf(source: ts.SourceFile, node: ts.Node): number {
 export function ledgerDelegateFindings(file: string, source: ts.SourceFile): Finding[] {
   const findings: Finding[] = [];
   const allowed = LEDGER_EXCEPTIONS.get(file) ?? new Set<string>();
-  const record = (node: ts.Node, model: string, shape: string): void => {
+  /** 🔴 `count` だけが許されるデリゲート（`LEDGER_COUNT_ONLY`）。 */
+  const countOnly = LEDGER_COUNT_ONLY.get(file) ?? new Set<string>();
+  const record = (node: ts.Node, model: string, shape: string, method: string | null = null): void => {
     if (allowed.has(model)) return;
+    // 🔴 件数だけの経路は許す（`LEDGER_COUNT_ONLY` の 🔴）。**`count` 以外は許さない。**
+    if (countOnly.has(model) && (method === null || method === COUNT_METHOD)) return;
     findings.push({ file, line: lineOf(source, node), detail: `${model}（${shape}）` });
   };
   const visit = (node: ts.Node): void => {
@@ -93,7 +123,8 @@ export function ledgerDelegateFindings(file: string, source: ts.SourceFile): Fin
     if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
       const receiver = node.expression.expression;
       if (ts.isPropertyAccessExpression(receiver) && LEDGER_DELEGATES.has(receiver.name.text)) {
-        record(node, receiver.name.text, `デリゲートの呼び出し .${node.expression.name.text}()`);
+        const method = node.expression.name.text;
+        record(node, receiver.name.text, `デリゲートの呼び出し .${method}()`, method);
       }
     }
     // (2) 別名への束縛
@@ -268,6 +299,28 @@ describe('🔴 (l) ホームの Drawer が台帳に到達しない（docs/05 §6
         withoutException.map((finding) => finding.detail.split('（')[0]),
         `${file} は台帳デリゲートを参照しなくなりました。LEDGER_EXCEPTIONS から外してください`,
       ).toEqual(expect.arrayContaining([...models]));
+    }
+  });
+
+  it('🔴 ① 件数だけの例外（`summary.ts`）が現に使われており、`count` 以外の形を持たない', () => {
+    for (const [file, models] of LEDGER_COUNT_ONLY) {
+      const entry = scanned.find((candidate) => candidate.file === file);
+      expect(entry, `${file} が走査対象に無い`).toBeDefined();
+      if (entry === undefined) continue;
+      // 例外を外すと現に違反として現れる（= 空振りしていない）。
+      const withoutException = ledgerDelegateFindings(`${file}#no-exception`, entry.source);
+      expect(
+        withoutException.map((finding) => finding.detail.split('（')[0]),
+        `${file} は台帳デリゲートを参照しなくなりました。LEDGER_COUNT_ONLY から外してください`,
+      ).toEqual(expect.arrayContaining([...models]));
+      // 🔴 **行や列を返す形が 1 つも無い**（`count` 以外は例外の対象外なので、本体の ① が捕まえる）。
+      const rowShaped = withoutException.filter(
+        (finding) => !finding.detail.includes(`.${COUNT_METHOD}()`) && finding.detail.includes('デリゲートの呼び出し'),
+      );
+      expect(
+        rowShaped.map((finding) => `${finding.file}:${finding.line} ${finding.detail}`),
+        `🔴 ${file} は件数だけを数える（行を返す形は身元を運べる）`,
+      ).toEqual([]);
     }
   });
 

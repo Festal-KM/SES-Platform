@@ -15,7 +15,8 @@
 //   ④ 🔴 取引先は 2 種別（自社宛の `REQUESTED` → `S-018` / 自社提案の `GATE_FAILED` → `S-020`）のみ。`APPROVAL_PENDING` / `SEND_FAILED` /
 //      `SEND_HELD` は自社提案であっても載らない。依頼が先（`S-004` セクション 1）。**取引先宛の依頼は `scope` で絞らない**
 //   ⑤ 🔴 他社の行・件数が 0（A1 の応答に A2 の提案・依頼・凍結名・社名が 1 文字も無い。A2 も同様。他テナントも 0 件）
-//   ⑥ 🔴 ホストの `PROPOSAL_REQUEST_PENDING` の行を深さ走査して、実名・`engineerId`・所属会社名（ID / 社名）が 0 件。行のキーは 8 つだけ
+//   ⑥ 🔴 ホストの `PROPOSAL_REQUEST_PENDING` の行を深さ走査して、実名・`engineerId`・所属会社名（ID / 社名）が 0 件。行のキーは 10 個だけ
+//   ⑧ ✅ T-22-09: `SUMMARY` ブロック（`SummaryStrip` の件数）が**同じ応答に同梱**され、**取引先の応答に他社由来の値が 1 つも無い**
 //   ⑦ `changedSince`: 変わっていない行は `items` に返らない（`targetIds` は全件）。更新した行だけが返る。形が壊れていれば 400
 //
 // 🔴 モックは `requireTenantCtx`（ctx の出所）だけ。Redis / worker は要らない。状態の材料（`SUBMIT_FAILED` / 保留中 `APPROVED` / `GATE_FAILED` /
@@ -85,8 +86,23 @@ type ActionRow = {
   readonly deadline: string | null;
   readonly rowVersion: number;
   readonly href: string;
+  // ✅ T-22-09: `状態` 列 / `操作` 列（docs/05 §6.11.2）。
+  readonly stateBadge: { readonly entity: string; readonly state: string };
+  readonly action: { readonly kind: string; readonly href: string } | null;
 };
-type ActionBlock = { readonly kind: 'ACTION_QUEUE'; readonly targetIds: readonly string[]; readonly items: readonly ActionRow[] };
+type ActionBlock = {
+  readonly kind: 'ACTION_QUEUE';
+  readonly targetIds: readonly string[];
+  readonly items: readonly ActionRow[];
+  // ✅ T-22-09: 4 エントリを毎回全量返す（行ごとに持たない = 差分と矛盾しない）。
+  readonly actionAvailability: Readonly<Record<string, { readonly enabled: boolean; readonly reasonKey: string | null }>>;
+};
+/** ✅ T-22-09: `SummaryStrip` の件数（docs/05 §6.11.1）。 */
+type SummaryBlock = {
+  readonly kind: 'SUMMARY';
+  readonly audience: string;
+  readonly items: readonly { readonly kind: string; readonly count: number; readonly href: string | null }[];
+};
 type HomeBody = { readonly audience: string; readonly blocks: readonly { readonly kind: string }[]; readonly changedSince: string };
 
 let database: IsolationDatabase;
@@ -133,6 +149,13 @@ async function homeResponse(ctx: AuthenticatedTenantCtx, query = ''): Promise<Re
   return homeRoute.GET(new Request(`https://app.test/api/home${query}`));
 }
 
+/** ✅ T-22-09: 同じ応答の `SUMMARY` ブロック（**別のエンドポイントを作らない**。docs/05 §6.11.1）。 */
+function summaryOf(body: HomeBody): SummaryBlock {
+  const block = body.blocks.find((candidate): candidate is SummaryBlock => candidate.kind === 'SUMMARY');
+  if (block === undefined) throw new Error('SUMMARY ブロックが無い（0 件でも `count: 0` で必ず返る契約）。');
+  return block;
+}
+
 async function home(ctx: AuthenticatedTenantCtx, query = ''): Promise<{ readonly body: HomeBody; readonly block: ActionBlock; readonly text: string }> {
   const response = await homeResponse(ctx, query);
   expect(response.status).toBe(200);
@@ -167,7 +190,26 @@ function collect(value: unknown, into: { keys: Set<string>; values: string[] }):
   if (value !== null && value !== undefined) into.values.push(String(value));
 }
 
-const ROW_KEYS = ['counterpartyLabel', 'deadline', 'href', 'kind', 'rowVersion', 'since', 'subjectLabel', 'targetId'];
+/** 行のキー（✅ T-22-09 で `stateBadge` / `action` が増えた。**件数・順位・所属を示唆するキーは無い**）。 */
+const ROW_KEYS = [
+  'action',
+  'counterpartyLabel',
+  'deadline',
+  'href',
+  'kind',
+  'rowVersion',
+  'since',
+  'stateBadge',
+  'subjectLabel',
+  'targetId',
+];
+
+/**
+ * 深さ走査で現れるキー（`ROW_KEYS` + `stateBadge` の中身）。
+ * 🔴 ホストの `PROPOSAL_REQUEST_PENDING` の行では `action` が `null` なので、`action` の中身は現れない
+ *    （返答するのは取引先であり、ホストにこの行の操作は無い。docs/05 §6.11.2）。
+ */
+const ROW_KEYS_DEEP = [...ROW_KEYS, 'entity', 'state'].sort();
 
 beforeAll(async () => {
   database = await startIsolationDatabase();
@@ -356,9 +398,12 @@ describe('🔴 ① ② ホスト scope=all: 5 種別が種別表の並びで載�
     expect(block.items.find((row) => row.targetId === requests.r1)?.href).toBe('/proposal-requests');
   });
 
-  it('🔴 ブロックは kind / targetIds / items の 3 キーだけ（種別ごとの件数を 1 つの合計に丸めるフィールドが無い）', async () => {
+  it('🔴 ブロックは kind / targetIds / items / actionAvailability の 4 キーだけ（種別ごとの件数を 1 つの合計に丸めるフィールドが無い）', async () => {
     const { block, body } = await home(hostSales, '?scope=all');
-    expect(Object.keys(block).sort()).toEqual(['items', 'kind', 'targetIds']);
+    // ✅ T-22-09: `actionAvailability` が増えた（4 エントリ全量。docs/05 §6.11.2）。
+    //    🔴 **合計・種別別件数・順位のフィールドは依然として無い。**
+    expect(Object.keys(block).sort()).toEqual(['actionAvailability', 'items', 'kind', 'targetIds']);
+    expect(Object.keys(block.actionAvailability).sort()).toEqual(['APPROVE', 'FIX', 'RESEND', 'RESPOND']);
     expect(body.audience).toBe('HOST');
     expect(Object.keys(body).sort()).toEqual(['audience', 'blocks', 'changedSince']);
   });
@@ -475,7 +520,7 @@ describe('🔴 ④ ⑤ 取引先: 自社宛の REQUESTED → 自社提案の GAT
     ]) {
       expect(text, forbidden).not.toContain(forbidden);
     }
-    // 🔴 行のキーは 8 つだけ（件数・順位・所属を示唆するキーが無い）。
+    // 🔴 行のキーは 10 個だけ（件数・順位・所属を示唆するキーが無い）。
     for (const row of block.items) expect(Object.keys(row).sort()).toEqual(ROW_KEYS);
     expect(text).not.toMatch(/他\s*[0-9]+\s*件|[0-9]+\s*件中|[0-9]+\s*番目/);
   });
@@ -505,13 +550,13 @@ describe('🔴 ④ ⑤ 取引先: 自社宛の REQUESTED → 自社提案の GAT
 // ---------------------------------------------------------------------------
 
 describe('🔴 ⑥ 経路 4: ホストの PROPOSAL_REQUEST_PENDING の行を深さ走査して実名・engineerId・所属会社名が 0 件', () => {
-  it('行は 8 キーだけ。対象は案件名 + 「共有候補（匿名）」、相手は null', async () => {
+  it('行は 10 キーだけ（`action` は `null`）。対象は案件名 + 「共有候補（匿名）」、相手は null', async () => {
     const { block, text } = await home(hostSales, '?scope=all');
     const rows = block.items.filter((row) => row.kind === 'PROPOSAL_REQUEST_PENDING');
     expect(rows).toHaveLength(3);
     const collected = { keys: new Set<string>(), values: [] as string[] };
     collect(rows, collected);
-    expect([...collected.keys].sort()).toEqual(ROW_KEYS);
+    expect([...collected.keys].sort()).toEqual(ROW_KEYS_DEEP);
     for (const forbidden of [ENGINEER_A_PARTNER, ENGINEER_A_PARTNER2, P1_ENGINEER_NAME, P2_ENGINEER_NAME, P1_COMPANY_NAME, P2_COMPANY_NAME, PARTNER_A1, PARTNER_A2, USER_A_PARTNER, USER_A_PARTNER2]) {
       expect(collected.values.some((value) => value.includes(forbidden)), forbidden).toBe(false);
     }
@@ -574,5 +619,87 @@ describe('🔴 ⑦ changedSince: 変わっていない行は items に返らず�
     const after = Date.now();
     expect(Date.parse(body.changedSince)).toBeGreaterThanOrEqual(before - CHANGED_SINCE_SAFETY_MARGIN_MS);
     expect(Date.parse(body.changedSince)).toBeLessThanOrEqual(after - CHANGED_SINCE_SAFETY_MARGIN_MS);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ⑧ ✅ T-22-09: `SummaryStrip` の件数（docs/05 §6.11.1 / `BR-07` / `F-004 AC-4`）
+// ---------------------------------------------------------------------------
+
+describe('🔴 ⑧ SUMMARY は同じ応答に同梱され、取引先の応答に他社由来の値が 1 つも無い', () => {
+  it('ホストは Phase 1 の 3 指標（案件 / 人材 / 進行中の提案）。件数は 0 でも返る', async () => {
+    const { body } = await home(hostSales, '?scope=all');
+    const summary = summaryOf(body);
+    expect(summary.audience).toBe('HOST');
+    expect(summary.items.map((item) => item.kind)).toEqual(['PROJECTS', 'ENGINEERS', 'PROPOSALS_IN_FLIGHT']);
+    // 🔴 件数は**自テナントの実体と一致する**（特権接続で数え直す = 母集団が RLS で閉じていることの確認）。
+    expect(summary.items.every((item) => Number.isInteger(item.count) && item.count >= 0)).toBe(true);
+    expect(summary.items.find((item) => item.kind === 'PROJECTS')?.count).toBe(
+      await admin.project.count({ where: { tenantId: TENANT_A } }),
+    );
+    // 🔴 ホスト文脈から見える `engineers` は **`owner_partner_company_id IS NULL` の行だけ**である
+    //    （C3 OWNER_SCOPED。`CLAUDE.md` §3.1 経路 2「パートナーのエンジニア台帳全体をホストが読むことはできない」）。
+    //    つまり `人材` の件数に**取引先の台帳は 1 件も入らない**。
+    expect(summary.items.find((item) => item.kind === 'ENGINEERS')?.count).toBe(
+      await admin.engineer.count({ where: { tenantId: TENANT_A, ownerPartnerCompanyId: null } }),
+    );
+    expect(await admin.engineer.count({ where: { tenantId: TENANT_A } })).toBeGreaterThan(
+      summary.items.find((item) => item.kind === 'ENGINEERS')?.count ?? -1,
+    );
+    // 🔴 応答に載るキーは 3 つだけ（ラベル・色・率・前月比を返さない）。
+    for (const item of summary.items) expect(Object.keys(item).sort()).toEqual(['count', 'href', 'kind']);
+  });
+
+  it('🔴 取引先は Phase 1 の 4 指標（すべて自社スコープ）。他社を示唆する kind / 値が 1 つも無い', async () => {
+    const { body, text } = await home(partnerA1, '?scope=all');
+    const summary = summaryOf(body);
+    expect(summary.audience).toBe('PARTNER');
+    expect(summary.items.map((item) => item.kind)).toEqual([
+      'PUBLISHED_PROJECTS',
+      'OWN_ENGINEERS',
+      'SHARED_ENGINEERS',
+      'PROPOSALS_IN_FLIGHT',
+    ]);
+    // 🔴 自社の台帳だけが数に入る（C3 OWNER_SCOPED）。**他社（A2）の人材は入らない。**
+    expect(summary.items.find((item) => item.kind === 'OWN_ENGINEERS')?.count).toBe(
+      await admin.engineer.count({ where: { tenantId: TENANT_A, ownerPartnerCompanyId: PARTNER_A1 } }),
+    );
+    // 🔴 自社に公開された案件だけが数に入る（C4）。テナント全体の案件数より少ない。
+    const published = summary.items.find((item) => item.kind === 'PUBLISHED_PROJECTS')?.count ?? -1;
+    expect(published).toBe(
+      // 🔴 解除された公開（`revoked_at`）は C4 が通さないので、数え直す側も同じ条件で数える。
+      await admin.projectVisibility.count({
+        where: { tenantId: TENANT_A, partnerCompanyId: PARTNER_A1, revokedAt: null },
+      }),
+    );
+    expect(published).toBeLessThan(await admin.project.count({ where: { tenantId: TENANT_A } }));
+    // 🔴 他社を示唆する語が応答全体に 1 つも無い（フィルタで落とすのではなく型に存在しない）。
+    for (const forbidden of ['TOTAL_', 'RANK', 'COMPARISON', 'OTHER_COMPANIES', 'SAME_PROJECT']) {
+      expect(text, forbidden).not.toContain(forbidden);
+    }
+    // 🔴 A2（他社）の値が 1 文字も無い。
+    const collected = { keys: new Set<string>(), values: [] as string[] };
+    collect(summary, collected);
+    for (const forbidden of [ENGINEER_A_PARTNER2, P2_ENGINEER_NAME, P2_COMPANY_NAME, PARTNER_A2]) {
+      expect(collected.values.some((value) => value.includes(forbidden)), forbidden).toBe(false);
+    }
+  });
+
+  it('🔴 差分応答（`changedSince`）でも `SUMMARY` は毎回全量返る（数と行が食い違う瞬間を作らない）', async () => {
+    const first = await home(hostSales, '?scope=all');
+    const delta = await home(hostSales, `?scope=all&changedSince=${encodeURIComponent(first.body.changedSince)}`);
+    expect(delta.block.items).toEqual([]);
+    expect(summaryOf(delta.body).items).toEqual(summaryOf(first.body).items);
+  });
+
+  it('🔴 他テナント（B）の件数が混ざらない（母集団は RLS が決める）', async () => {
+    const summaryB = summaryOf((await home(hostB, '?scope=all')).body);
+    const countOf = (summary: SummaryBlock, kind: string): number =>
+      summary.items.find((item) => item.kind === kind)?.count ?? -1;
+    // 🔴 B の件数は **B のテナントの実体**と一致する（A の行を 1 件も数えていない）。
+    expect(countOf(summaryB, 'PROJECTS')).toBe(await admin.project.count({ where: { tenantId: TENANT_B } }));
+    expect(countOf(summaryB, 'ENGINEERS')).toBe(
+      await admin.engineer.count({ where: { tenantId: TENANT_B, ownerPartnerCompanyId: null } }),
+    );
   });
 });

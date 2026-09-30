@@ -259,7 +259,11 @@ test.describe('② テナント A の OWNER で URL 直打ち（他テナント�
     try {
       const home = await pageContent(session, '/');
       expect(home).toContain(t('home.title'));
-      expect(home).toContain(t('home.host.empty.title'));
+      // ✅ T-22-09: 初回空（全 metric が 0）でないテナントでは `EmptyState`（「まだ案件と人材が…」）は出ず、
+      //    `SummaryStrip` が出る（`docs/04` §S-003 改訂 16）。**描画されていることの根拠**は
+      //    件数の器（初回空でも `EmptyState` が入る）と、この画面の Primary である要対応キューで見る。
+      expect(home).toContain('data-testid="home-host-summary"');
+      expect(home).toContain(t('home.actionQueue.title'));
 
       const auditLogs = await pageContent(session, '/audit-logs');
       expect(auditLogs).toContain(t('auditLogs.title'));
