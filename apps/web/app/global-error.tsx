@@ -25,10 +25,20 @@
 //    `.next/server/app/_global-error.html` に CSS への参照が 0 本だった）。
 //    この画面は「一番壊れているときに見る画面」であり、そこだけ体裁が崩れてよい理由は無い。
 //
-//    🔴 **再確認の手順**（`NODE_ENV` を持たないシェルで `pnpm --filter @ses/web run build` の後）:
+//    🔴 **再確認の手順**（`env -u NODE_ENV pnpm --filter @ses/web run build` の後）:
 //      ① `.next/server/app/_global-error.html` に `*.css` への参照が 1 本ある
-//      ② その CSS チャンクに本ファイルが使うユーティリティ（`PageBody` の `.max-w-180` / `.min-h-11`）が含まれる
-//    2026-09-28 の実測では ①1 本（`rel="preload" as="style"`）②いずれも含まれる、であった。
+//      ② その CSS チャンクに本ファイルが使うユーティリティが含まれる
+//    🔴 **この画面のクラスを 1 つでも差し替えたら、②を実測し直してこの行を更新すること**
+//      （`T-12-20` のレビューが CSS 欠落の実バグを捕まえたのはここである）。
+//
+//    2026-09-30 の実測（`T-22-05` で全クラスを semantic トークンへ差し替え、`PageBody` / `Button` を
+//    引き込んだ後の再実測）:
+//      ① **1 本**（`<link rel="preload" href="/_next/static/chunks/<hash>.css" as="style"/>`）
+//      ② 6 つすべてが、その 1 チャンクに規則として在った（各 1 回）:
+//         `.max-w-180{max-width:…}` / `.min-h-11{min-height:…}` / `.bg-bg{background-color:var(--color-bg)}` /
+//         `.text-title{font-size:var(--text-title);…}` / `.text-fg{color:var(--color-fg)}` /
+//         `.text-fg-muted{color:var(--color-fg-muted)}`
+//    （2026-09-28 の実測も ①1 本 ②`.max-w-180` / `.min-h-11` が含まれる、であった）
 //
 // 🔴 文言は `packages/i18n` から引く（`CLAUDE.md` §3.5 / `BR-32`）。ベタ書きしない。
 //    `t()` は純粋関数（辞書の参照）なのでクライアント側でも同じ値を返す。

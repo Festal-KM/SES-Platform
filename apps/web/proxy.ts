@@ -15,7 +15,9 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { MAIN_SESSION_COOKIE_NAME, PLATFORM_SESSION_COOKIE_NAME } from './lib/auth/cookie-names';
 import { decidePlane } from './lib/middleware/planes';
-import { CURRENT_PATH_HEADER } from './lib/shell/current-path';
+// 🔴 `./lib/shell/current-path` からは import しない —— あちらは `next/headers` を持ち、
+//    Edge のバンドルにサーバ側実装を引き込む（`./lib/shell/current-path-header.ts` 冒頭の 🔴）。
+import { CURRENT_PATH_HEADER } from './lib/shell/current-path-header';
 
 export default function proxy(request: NextRequest): NextResponse {
   const decision = decidePlane({

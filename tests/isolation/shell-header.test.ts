@@ -17,7 +17,7 @@
 //
 // 🔴 母集団は `seed:isolation`（2 テナント × 2 パートナー）を使う（docs/05 §17.5。固定 SQL を使わない）。
 // 🔴 実 Anthropic API にも実 SES にも接続しない。描画（HTML）の検査は
-//    `apps/web/app/(main)/_shell/app-shell.render.test.tsx` の担当であり、ここは**読み取りの結果**だけを見る。
+//    `apps/web/app/(main)/_shell/main-shell.render.test.tsx` の担当であり、ここは**読み取りの結果**だけを見る。
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   configureTenantDb,

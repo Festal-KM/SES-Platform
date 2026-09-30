@@ -29,7 +29,15 @@ function resolveItem(item: NavItem): SidebarItem {
     // 🔴 `Phase N`（無彩色の Badge）と注記（別の入口から開く）は別物であり、混ぜない。
     phase: item.phaseKey === null ? null : t(item.phaseKey),
     note: item.noteKey === null ? null : t(item.noteKey),
-    badge: item.badge === null ? null : { label: t(item.badge.labelKey), text: item.badge.text },
+    badge:
+      item.badge === null
+        ? null
+        : {
+            label: t(item.badge.labelKey),
+            text: item.badge.text,
+            // 🔴 アイコンのみの形態で点に添える語（`packages/ui` の `SidebarBadge.dotLabel`）。
+            dotLabel: t(item.badge.dotLabelKey),
+          },
   };
 }
 

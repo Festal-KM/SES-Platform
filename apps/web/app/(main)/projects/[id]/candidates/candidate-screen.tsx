@@ -871,7 +871,7 @@ export function CandidateScreen({
           競合したら譲るのはパネル（ファイル冒頭「デスクトップの列幅配分と右パネル」）。`lg`〜`xl` 未満はパネルが
           ドロワー（`fixed`）になり grid の流れから外れるので 1 列。
 
-          🔴 **暫定（2026-09-30。`T-22-07` で落とす）**（`xl:overflow-x-auto`）: 共通外枠（`app/(main)/_shell/app-shell.tsx`）の
+          🔴 **暫定（2026-09-30。`T-22-07` で落とす）**（`xl:overflow-x-auto`）: 共通外枠（`app/(main)/_shell/main-shell.tsx` + `@ses/ui` の `AppShell`）の
           サイドバー（`w-56` = 224px）が入り、本文に残る幅が `xl`（1280px）で 1024px になった。2 列の
           下限の和は 984 + gap 16 + 240 = **1240px** なので、`xl` では**必ず溢れる**（実測: E2E
           `anonymous-share.spec.ts` の `expectNoBrokenLabels` が右パネルを `unreachable-overflow` で検出。

@@ -125,7 +125,7 @@ export async function expectApprovalJudgmentMaterial(
   // 🔴 2026-09-30（共通外枠 `T-12-20` / `T-12-21` の投入後に E2E ジョブが再開して判明した破れの回収）:
   //    「折りたたみ・タブ・一括」の走査は **`S-021` の画面（`proposal-approval` の配下）**に絞る。
   //    この検査が表明しているのは「**判断材料**が折りたたまれていない」（`docs/04` §6.1 / `CLAUDE.md` §13.3）で
-  //    あって「アプリのどこにも開閉ウィジェットが無い」ではない。共通外枠（`app/(main)/_shell/app-shell.tsx`）の
+  //    あって「アプリのどこにも開閉ウィジェットが無い」ではない。共通外枠（`app/(main)/_shell/main-shell.tsx` + `@ses/ui` の `AppShell`）の
   //    ボトムタブ「その他」は `<details data-testid="app-tab-more">` で**どの幅でも DOM に在る**ナビゲーションで
   //    あり、判断材料ではない（`md:hidden` は表示の切り替えで、`toHaveCount` は DOM を数える）。
   //    同じ理由で `role="tab"` と `bulk` も外枠・共有部品が正当に持ちうる語である（`@ses/ui` の `Tabs` /

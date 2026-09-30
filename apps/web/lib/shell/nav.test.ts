@@ -78,6 +78,15 @@ const PARTNER_ROLES: readonly TenantRole[] = ['PARTNER_ADMIN', 'PARTNER_SALES'];
  *    である（`./nav.ts` の `settingsItems` の 🔴。`T-12-20` で人間のレビューを通った判断であり、
  *    `T-22-05` の受け入れ基準 1「ロール別の項目集合が 1 つも変わっていない」により減らせない）。
  *    アイコンの根拠は `packages/ui/src/icons.ts` の (2) に記録した。
+ *
+ * ⚠️ **ホストの `設定` 群は並びも表と違う。** 表の並びは `取引先企業 / 利用量と上限 / スキル辞書 /
+ *    組織設定` だが、実装は **`組織設定` が先頭**である（`./nav.ts` の `settingsItems`）。
+ *    下の写しは**実装の並び**で書いてあり、この照合は並びも見る —— したがってここは
+ *    「表の並びからの逸脱をそのまま固定している」状態である。
+ *
+ * 🔴 **上の 3 項目多いことと、この並びの差は、どちらも [Issue #82] で `docs/04` §3.1 側の
+ *    確認中である**（表を実装に合わせるのか、実装を表に戻すのかは人間の判断事項）。
+ *    `T-22-05` の受け入れ基準 1 により、**実装の項目集合と並びはこのタスクでは変えない。**
  */
 const SECTION_3_1_TABLE = {
   HOST: [
@@ -124,6 +133,23 @@ const SECTION_3_1_TABLE = {
     ['analytics', 'reports', 'shell.nav.partner.reports', 'bar-chart-3', 'Phase 3'],
     // 🔴 取引先に `組織設定` / `送信ドメイン` / `利用量と上限` / `監査ログ` / `データの返却` は無い
     //    （第二境界 / `F-027 AC-1`）。**存在しない項目は行そのものを描かない。**
+    //
+    // ⚠️ **取引先の `設定` 群は、表の 2 行と 1 対 1 になっていない。** `docs/04` §3.1 の取引先列は
+    //    `スキル辞書・別名・新語候補（S-009。book-open）` → `自社アカウントの設定（settings）` の
+    //    2 行だが、実装は `取引先企業（building-2）` → `スキル辞書（book-open）` である。差は 2 点:
+    //
+    //    (a) 🔴 **表に無い `取引先企業`（`S-014`）が在る。** `docs/04` §S-014 が
+    //        「`PARTNER_ADMIN` は**自社 1 社の詳細のみ**に到達し、他社は一覧にも件数にも現れない」と
+    //        定めており、母集団を 1 行に絞るのは画面のロール判定ではなく **RLS の C5** である
+    //        （`settings/partner-companies/page.tsx` の 🔴。`T-12-20` で人間のレビューを通った判断）。
+    //        したがって **他社の社名・件数の露出は無い**（`F-007 AC-1` / `F-004 AC-1` / 第二境界）。
+    //    (b) 🔴 **表に在る `自社アカウントの設定`（`settings`）に対応する項目が無い。** その画面は
+    //        リポジトリに実在せず（`app/(main)/settings/**` は organization / partner-companies /
+    //        retention / sending-domains / usage の 5 つだけ）、上の ② の規律により
+    //        **実在しない遷移先をリンクにできない**（404 を作らない）。
+    //
+    // 🔴 **この食い違いは [Issue #82] で `docs/04` §3.1 側の確認中である。** `T-22-05` の
+    //    受け入れ基準 1（ロール別の項目集合が 1 つも変わっていない）により、実装側は変えない。
     ['settings', 'settings-partner-companies', 'partnerCompanies.title', 'building-2', null],
     ['settings', 'settings-skills', 'skillDictionary.title', 'book-open', null],
   ],
@@ -388,7 +414,13 @@ describe('🔴 提案依頼（`S-017`）の期限バッジ（docs/04 §3.1 取�
       role: 'PARTNER_SALES',
       proposalRequestDueText: '残り 2 日',
     });
-    expect(badgeOf(withDue)).toEqual({ labelKey: 'shell.nav.proposalRequests.due.label', text: '残り 2 日' });
+    // 🔴 `dotLabelKey` はアイコンのみの形態で点に添える語（T-22-05 のレビュー指摘 11）。
+    //    **期限の値と別のキーである**（点には件数も期限も出さない。`CLAUDE.md` §3.1 / `F-004 AC-4`）。
+    expect(badgeOf(withDue)).toEqual({
+      labelKey: 'shell.nav.proposalRequests.due.label',
+      text: '残り 2 日',
+      dotLabelKey: 'shell.nav.proposalRequests.due.dot',
+    });
 
     const withoutDue = buildMainNav({ audience: 'PARTNER', role: 'PARTNER_SALES', proposalRequestDueText: null });
     expect(badgeOf(withoutDue)).toBeNull();

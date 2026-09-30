@@ -334,6 +334,12 @@ const FROZEN_EXACT: readonly string[] = [
   'app-page-heading-slot',
   'app-shell',
   'app-sidebar',
+  // ✅ T-22-05 のレビュー指摘 9: サイドバーの 2 形態の開閉トグル（`<input type="checkbox">` と
+  //    それを押す `<label>`）。🔴 `FROZEN_PREFIXES` には `app-sidebar-` が無いので、
+  //    ここに載せないと改名・削除が 1 つも検知されない（`app-nav-*` は接頭辞で覆われている）。
+  //    `*.render.test.tsx` の「⑤ 2 形態の切替は JS を持たない」がこの 2 値を掴んでいる。
+  'app-sidebar-toggle',
+  'app-sidebar-toggle-control',
   'app-tab-more',
   'app-tab-more-summary',
   // ✅ T-11-09: `S-041` 行の詳細（`audit-log-detail.tsx` / `audit-logs-view.tsx`）。行・トグル・展開部の testid は FROZEN_PREFIXES。

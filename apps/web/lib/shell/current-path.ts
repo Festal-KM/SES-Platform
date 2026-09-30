@@ -18,10 +18,13 @@
 //    （ヘッダは `proxy.ts` が毎リクエストで上書きするので外部から差し込めないが、仮に任意の値が
 //    入っても起きることは「サイドバーの 1 項目が選択状態に見える」だけである）。
 //    境界の強制は各画面 / 各 API の `resolveTenantCtxOutcome` + `withTenant` が行う。
+//
+// 🔴 **ヘッダ名はこのファイルに置かない。** `proxy.ts`（Edge）が同じ定数を要るが、この
+//    ファイルは `next/headers` を import しており Edge から読めない。定数だけを
+//    `./current-path-header.ts`（import を 1 本も持たない）に切り出し、**両者がそこから読む**
+//    （理由は同ファイル冒頭。`lib/auth/cookie-names.ts` と同型の切り分けである）。
 import { headers } from 'next/headers';
-
-/** 🔴 `apps/web/proxy.ts` が添える名前。**両者でこの定数を共有する**（綴りを 2 箇所に書かない）。 */
-export const CURRENT_PATH_HEADER = 'x-ses-pathname';
+import { CURRENT_PATH_HEADER } from './current-path-header';
 
 /**
  * いま開いている画面のパス（`/engineers/123` など）。

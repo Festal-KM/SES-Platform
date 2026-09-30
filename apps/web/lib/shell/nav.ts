@@ -73,6 +73,12 @@ export type NavItem = {
 export type NavBadge = {
   readonly labelKey: MessageKey;
   readonly text: string;
+  /**
+   * 🔴 アイコンのみの形態でバッジの代わりに出る**点（dot）**に添える読み上げの語
+   *    （`packages/ui` の `SidebarBadge.dotLabel`。T-22-05 のレビュー指摘 11）。
+   * 🔴 **件数も期限の文字も持たない語である**（`CLAUDE.md` §3.1 / `F-004 AC-4`）。
+   */
+  readonly dotLabelKey: MessageKey;
 };
 
 /**
@@ -209,7 +215,12 @@ function salesItems(context: NavContext): readonly NavItem[] {
       '/proposal-requests',
       proposalRequestDue === null || context.audience !== 'PARTNER'
         ? null
-        : { labelKey: 'shell.nav.proposalRequests.due.label', text: proposalRequestDue },
+        : {
+            labelKey: 'shell.nav.proposalRequests.due.label',
+            text: proposalRequestDue,
+            // 🔴 アイコンのみの形態で点に添える語（期限も件数も含まない。上の `NavBadge` の 🔴）。
+            dotLabelKey: 'shell.nav.proposalRequests.due.dot',
+          },
     ), // S-017
     // S-024（面談日程の調整と結果記録）は `S-023` 経由（`/proposals/{id}/interview`）。
     elsewhere('interviews', 'shell.nav.interviews', 'handshake', 'shell.nav.note.fromProposal'),

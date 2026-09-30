@@ -62,6 +62,11 @@ const MAIN_API_DIR = path.join(webRoot, 'app', 'api', '(main)');
  *    出すようになり、残量（件数 / 通数 / GB）が `S-038` 以外にも現れる面を持った。`F-027 AC-6` は
  *    **主平面の全画面・全応答**に対する要求なので、新しい表示面を走査に載せないと、そこだけが
  *    「金額を出さない」の担保から外れる。
+ * 🔴 `packages/ui/src/components` を足した理由（T-22-05）: 上限インジケータの**描画**
+ *    （`残り 12 件` の組み立てと `data-usage-state` の出力）が `_shell/app-shell.tsx` から
+ *    `packages/ui/src/components/top-bar.tsx` へ移り、**走査の外に出た**。`apps/web` 側に残るのは
+ *    値の組み立て（`lib/shell/usage-indicator.ts` / `_shell/main-shell.tsx`）だけであり、
+ *    語が画面に出る最後の 1 手は `packages/ui` に在る。**表示面が動いたら走査根も動かす。**
  */
 const USAGE_DIRS = [
   path.join(webRoot, 'lib', 'usage'),
@@ -69,6 +74,7 @@ const USAGE_DIRS = [
   path.join(webRoot, 'app', '(main)', 'settings', 'usage'),
   path.join(webRoot, 'lib', 'shell'),
   path.join(webRoot, 'app', '(main)', '_shell'),
+  path.join(repoRoot, 'packages', 'ui', 'src', 'components'),
 ];
 const USAGE_VIEW_FILE = path.join(webRoot, 'lib', 'usage', 'view.ts');
 const I18N_FILE = path.join(repoRoot, 'packages', 'i18n', 'src', 'index.ts');
@@ -494,7 +500,7 @@ describe('🔴 §17.2 #18 ① 主平面の応答型の閉包に金額の名前�
 });
 
 describe('🔴 §17.2 #18 ② S-038 の実装（lib/usage / api usage / settings/usage）', () => {
-  it('対照: 5 ディレクトリに実装が実在する（S-038 + 共通外枠の上限インジケータ）', () => {
+  it('対照: 6 ディレクトリに実装が実在する（S-038 + 共通外枠の上限インジケータ）', () => {
     expect(usageFiles.map(toRepoRelative)).toEqual(
       expect.arrayContaining([
         'apps/web/lib/usage/view.ts',
@@ -506,10 +512,13 @@ describe('🔴 §17.2 #18 ② S-038 の実装（lib/usage / api usage / settings
         // 🔴 T-12-20 で足した第 2 の表示面（走査が空振りしていないことの対照）。
         //    ✅ T-22-05: 外枠の描画が `@ses/ui` へ移り、`apps/web` 側は値の組み立て
         //    （`_shell/main-shell.tsx` = 上限インジケータの props を作る）だけになった。
-        //    🔴 **金額の語が無いことを見る対象は減っていない**（`usageFiles` は `lib/shell/**` と
-        //    `_shell/**` を丸ごと走査しており、下の本検査の射程はむしろ広がっている）。
+        //    🔴 **描画面が `packages/ui` へ移ったので走査根を足した**（`USAGE_DIRS` の末尾 =
+        //    `packages/ui/src/components`）。足すまでは、`残り 12 件` の組み立てと
+        //    `data-usage-state` の出力を持つ `top-bar.tsx` が**走査の外に居た** ——
+        //    `apps/web` だけを見ていた射程は T-22-05 で実際に縮んでいた。
         'apps/web/lib/shell/usage-indicator.ts',
         'apps/web/app/(main)/_shell/main-shell.tsx',
+        'packages/ui/src/components/top-bar.tsx',
       ]),
     );
   });

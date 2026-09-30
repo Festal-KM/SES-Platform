@@ -94,6 +94,15 @@ export type SidebarBadge = {
   readonly label: string;
   /** 値（`残り 2 日`）。🔴 組み立ては呼び出し側の 1 実装が行う。 */
   readonly text: string;
+  /**
+   * 🔴 **アイコンのみの形態で点（dot）に添える読み上げの語**（`返答期限が近い依頼があります`）。
+   *
+   * 🔴 **件数も期限の文字も入れない。** 点が伝えるのは「対応が要るものがある」だけである
+   *    （`CLAUDE.md` §3.1 / `F-004 AC-4`「件数バッジ・間接的な示唆も作らない」）。
+   * 🔴 語が要る理由: 点は `aria-hidden` の装飾なので、**添えないとアイコンのみの形態で
+   *    スクリーンリーダ利用者だけが期限に気づけない**（1024–1279px は既定でアイコンのみ）。
+   */
+  readonly dotLabel: string;
 };
 
 export type SidebarItem = {
@@ -160,11 +169,16 @@ const SIDEBAR_SHELL_CLASSES = 'group hidden shrink-0 md:block';
  * - 幅: 🔴 **アイコンのみ 56px / 展開 224px**。切り替えは上の 4 クラスの規則で行う。
  * - 🔴 **影を足さない**（階層は border と背景の差で表す。§7.9）。
  * - `sticky top-0 h-dvh` … 50 行の一覧を読んでいる間もナビに戻れる（`overflow-y-auto` は
- *   16 項目が縦に収まらない小さな高さのため）。**`self-start` が無いと `sticky` が効かない**
- *   （flex の既定 `align-items: stretch` で高さが確定してしまう）。
+ *   16 項目が縦に収まらない小さな高さのため）。
+ *   🔴 **sticky が成立している理由**: 器（`SIDEBAR_SHELL_CLASSES`）が外枠の **flex item** として
+ *   既定の `align-items: stretch` でページ全高まで伸び、**その内側で `md:sticky top-0 h-dvh` の
+ *   `<nav>` が動ける**。🔴 **器に `self-start` を付けないこと** —— 付けると器の高さが内容で
+ *   確定し、スクロールしても追従する余地が無くなって sticky が死ぬ。
+ *   ⚠️ `<nav>` 自身に `self-start` を書いても**効かない**（`align-self` は flex / grid item に
+ *   しか効き、器は `md:block` なので `<nav>` は item ではない）。T-22-05 のレビューで除去した。
  */
 const SIDEBAR_CLASSES = cn(
-  'flex flex-col self-start overflow-y-auto border-r border-border bg-bg pb-3',
+  'flex flex-col overflow-y-auto border-r border-border bg-bg pb-3',
   'md:sticky md:top-0 md:h-dvh',
   'w-14 group-has-checked:w-56 xl:w-56 xl:group-has-checked:w-14',
   TRANSITION_CLASSES,
@@ -221,8 +235,23 @@ const SIDEBAR_LINK_CLASSES = cn(
 );
 /** 🔴 未実装の項目（`<span>`）。押せないので hover を持たない。 */
 const SIDEBAR_UNAVAILABLE_CLASSES = cn(SIDEBAR_ITEM_BASE_CLASSES, 'text-fg-muted');
-/** 🔴 現在地 = 背景 + 文字色 + 左端 2px の 3 点（§7.10 の selected）。**太字だけで示さない。** */
-const SIDEBAR_CURRENT_CLASSES = cn(SIDEBAR_LINK_CLASSES, SELECTED_CLASSES);
+/**
+ * 🔴 現在地 = 背景 + 文字色 + 左端 2px の 3 点（§7.10 の selected）。**太字だけで示さない。**
+ *
+ * 🔴 **`hover:` / `active:` を selected の色で塗り直す。** `SIDEBAR_LINK_CLASSES` が持つ
+ *    `hover:bg-bg-subtle`（特異度 0,2,0）は `SELECTED_CLASSES` の `bg-brand-bg`（0,1,0）より強く、
+ *    そのままでは**現在地の項目にポインタが乗った瞬間に背景が hover 色に置き換わる**。
+ *    §7.10 の組み合わせ優先順は `selected > active > hover` であり、
+ *    「hover と selected を同じ見た目にしない」（`lib/state-classes.ts` の 🔴）に反する。
+ * ⚠️ 塗り直しの 2 語は `hover:bg-bg-subtle` / `active:bg-bg-inset` と**同特異度**なので、
+ *    勝敗は生成 CSS の順序が決める（`cn` の並びではない）。その順序は
+ *    `tests/static/sidebar-form-css-order.test.ts` がビルド出力上で固定している。
+ */
+const SIDEBAR_CURRENT_CLASSES = cn(
+  SIDEBAR_LINK_CLASSES,
+  SELECTED_CLASSES,
+  'hover:bg-brand-bg active:bg-brand-bg',
+);
 
 /**
  * ラベル（**見える語**）。
@@ -234,7 +263,10 @@ const SIDEBAR_LABEL_CLASSES: Readonly<Record<SidebarVariant, string>> = {
   more: 'min-w-0 truncate',
 };
 
-/** 項目の右に添えるもの（`Phase N` / 期限バッジ）。ラベルと同じ規則で出し入れする。 */
+/**
+ * 項目の右に添えるもの（`Phase N` / 期限バッジ）。ラベルと同じ規則で出し入れする。
+ * 🔴 **アイコンのみの形態ではここが消える。** 期限バッジの代わりに点を出す（`SIDEBAR_DOT_CLASSES`）。
+ */
 const SIDEBAR_MARK_CLASSES: Readonly<Record<SidebarVariant, string>> = {
   sidebar: 'ml-auto hidden group-has-checked:block xl:block xl:group-has-checked:hidden',
   more: 'ml-auto',
@@ -242,6 +274,36 @@ const SIDEBAR_MARK_CLASSES: Readonly<Record<SidebarVariant, string>> = {
 
 /** 期限バッジ（🔴 注意色 = 「直せば / 動けば進む」もの。§7.4）。 */
 const SIDEBAR_BADGE_CLASSES = 'ml-1';
+
+/**
+ * 🔴 **アイコンのみの形態でだけ現れる**（上のラベル / 印の 4 クラスの**裏返し**。優先順の理屈は
+ *    ファイル冒頭の 🔴 と同じで、特異度 (0,2,0) 側が (0,1,0) 側に勝つ）。
+ */
+const SIDEBAR_ICON_ONLY_CLASSES = 'block group-has-checked:hidden xl:hidden xl:group-has-checked:block';
+
+/**
+ * 期限バッジを持つ項目の**点（dot）**。アイコンの右上に出す。
+ *
+ * 🔴 **なぜ点が要るか**: `SIDEBAR_MARK_CLASSES.sidebar` はアイコンのみの形態で `Phase N` / 注記と
+ *    一緒に**期限バッジも隠す**。`xl` 未満は既定でアイコンのみなので、そのままだと
+ *    **1024–1279px の取引先利用者は既定で返答期限を見られない** —— 取引先は 1 日 4〜5 時間の
+ *    主利用者である（`CLAUDE.md` §1.2）。
+ * 🔴 **点は件数も期限の文字も出さない**（`CLAUDE.md` §3.1 / `F-004 AC-4`）。伝えるのは
+ *    「注意すべきものがある」だけで、語は隣の `sr-only` が持つ。
+ * 🔴 色は `--color-warning`（「直せば / 動けば進む」= 期限。§7.4）。**赤にしない。**
+ * 🔴 **`Phase N` の無彩色 Badge には点を出さない** —— あれは「まだ無い」であって
+ *    「対応が要る」ではない（点が出るのは `badge` を持つ項目だけ）。
+ * ⚠️ `rounded-sm`（4px）は 8px の箱では真円になる。§7.9 の radius は 2 段だけで
+ *    `rounded-full` はアバターとカウンタに限られるため、段の中で円を作る。
+ */
+const SIDEBAR_DOT_CLASSES = cn(
+  'absolute top-0 right-0 size-2 rounded-sm bg-warning',
+  SIDEBAR_ICON_ONLY_CLASSES,
+);
+/** 点に添える読み上げの語。🔴 **点と同じ形態のときだけ読み上げに出す**（展開形ではバッジが読まれる）。 */
+const SIDEBAR_DOT_LABEL_CLASSES = cn('sr-only', SIDEBAR_ICON_ONLY_CLASSES);
+/** 点を載せるために `<svg>` を包む器（`Icon` の 16px がそのまま位置の基準になる）。 */
+const SIDEBAR_DOT_ANCHOR_CLASSES = 'relative flex shrink-0';
 
 // ============================================================================
 // 現在地の判定（🔴 純粋関数。テストが固定する）
@@ -310,10 +372,25 @@ function SidebarEntry({
   readonly currentPath: string;
   readonly linkComponent: ComponentType<SidebarLinkProps>;
 }) {
+  // 🔴 アイコンのみの形態では `ItemMarks` が消えるので、**期限バッジの代わりに点**を出す
+  //    （`SIDEBAR_DOT_CLASSES` の 🔴）。「その他」（`more`）の一覧は常に語が見えるので不要である。
+  const dot = variant === 'sidebar' ? item.badge : null;
   const body = (
     <>
-      <Icon name={item.icon} />
+      {dot === null ? (
+        <Icon name={item.icon} />
+      ) : (
+        <span className={SIDEBAR_DOT_ANCHOR_CLASSES}>
+          <Icon name={item.icon} />
+          <span
+            className={SIDEBAR_DOT_CLASSES}
+            aria-hidden="true"
+            data-testid="app-nav-proposal-requests-due-dot"
+          />
+        </span>
+      )}
       <span className="sr-only">{item.label}</span>
+      {dot === null ? null : <span className={SIDEBAR_DOT_LABEL_CLASSES}>{dot.dotLabel}</span>}
       <span className={SIDEBAR_LABEL_CLASSES[variant]} aria-hidden="true">
         {item.label}
       </span>

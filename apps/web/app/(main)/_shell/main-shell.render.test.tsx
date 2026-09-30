@@ -459,6 +459,75 @@ describe('🔴 提案依頼の期限バッジ（docs/04 §3.1 取引先列。T-1
   });
 });
 
+// ============================================================================
+// 🔴 アイコンのみの形態の点（dot）。T-22-05 のレビュー指摘 11
+// ============================================================================
+// `SIDEBAR_MARK_CLASSES.sidebar` はアイコンのみの形態で `Phase N` / 注記と一緒に**期限バッジも
+// 隠す**。`xl` 未満は既定でアイコンのみなので、**1024–1279px の取引先利用者は既定で返答期限を
+// 見られない**（取引先は 1 日 4〜5 時間の主利用者。`CLAUDE.md` §1.2）。
+// そこでバッジの代わりに点を出す —— 🔴 **件数も期限の文字も出さず**、語は `sr-only` が持つ。
+describe('🔴 アイコンのみの形態の点（期限バッジの代替。T-22-05 レビュー指摘 11）', () => {
+  const DUE = '残り 2 日';
+  const DOT = 'data-testid="app-nav-proposal-requests-due-dot"';
+
+  function dueMarkup(): string {
+    return partnerMarkup({
+      nav: buildMainNav({ audience: 'PARTNER', role: 'PARTNER_SALES', proposalRequestDueText: DUE }),
+    });
+  }
+
+  /** 点の `<span …/>` そのもの（クラスを読むため）。 */
+  function dotTag(html: string): string {
+    return /<span[^>]*data-testid="app-nav-proposal-requests-due-dot"[^>]*>/.exec(html)?.[0] ?? '';
+  }
+
+  it('🔴 期限バッジを持つ項目に点が出て、アイコンのみの形態でだけ見える', () => {
+    const html = dueMarkup();
+    expect(html).toContain(DOT);
+    const tag = dotTag(html);
+    // 🔴 ラベル・印（`SIDEBAR_MARK_CLASSES`）の**裏返し**の 4 クラス。
+    //    展開形（既定の `xl` 以上 / `xl` 未満でチェック時）では消え、アイコンのみの形態で現れる。
+    for (const cls of ['block', 'group-has-checked:hidden', 'xl:hidden', 'xl:group-has-checked:block']) {
+      expect(tag, cls).toContain(cls);
+    }
+    // 🔴 注意色（§7.4「直せば / 動けば進む」）。**赤にしない。**
+    expect(tag).toContain('bg-warning');
+    expect(tag).not.toContain('bg-danger');
+  });
+
+  it('🔴 点は件数も期限の文字も出さない（CLAUDE.md §3.1 / F-004 AC-4）', () => {
+    const html = dueMarkup();
+    // 空要素である（子テキストを持たない）。
+    expect(html).toMatch(/data-testid="app-nav-proposal-requests-due-dot"[^>]*>\s*<\/span>/);
+    const tag = dotTag(html);
+    expect(tag).not.toContain(DUE);
+    expect(tag).not.toMatch(/\d+\s*件/);
+    // 🔴 装飾なので読み上げからは外し、語は隣の `sr-only` が持つ。
+    expect(tag).toContain('aria-hidden="true"');
+    expect(html).toContain(t('shell.nav.proposalRequests.due.dot'));
+    expect(t('shell.nav.proposalRequests.due.dot')).not.toMatch(/\d/);
+  });
+
+  it('🔴 `Phase N` の項目には点が出ない（「まだ無い」は「対応が要る」ではない）', () => {
+    const html = dueMarkup();
+    // 点は 1 つだけで、それは期限バッジを持つ `proposal-requests` の行に在る。
+    expect((html.match(/app-nav-proposal-requests-due-dot/g) ?? []).length).toBe(1);
+    const phaseItem = tagOf(html, 'app-nav-assignments');
+    expect(phaseItem).not.toContain('bg-warning');
+    // 「その他」（常に語が見える一覧）にも点は出さない。
+    expect(html).not.toContain('app-more-nav-proposal-requests-due-dot');
+  });
+
+  it('期限が無ければ点も出ない（ホスト / 残り時間なし）', () => {
+    expect(
+      partnerMarkup({ nav: buildMainNav({ audience: 'PARTNER', role: 'PARTNER_SALES', proposalRequestDueText: null }) }),
+    ).not.toContain('-due-dot');
+    expect(render({ nav: buildMainNav({ audience: 'HOST', role: 'SALES', proposalRequestDueText: DUE }) })).not.toContain(
+      '-due-dot',
+    );
+  });
+});
+
 describe('🔴 読み上げ（アイコンのみの形態でも語が失われない。docs/04 §3.1）', () => {
   it('項目には `title` と読み上げ用の語の写しが付く', () => {
     const html = render();
