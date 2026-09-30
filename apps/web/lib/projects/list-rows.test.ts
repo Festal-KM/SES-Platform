@@ -12,10 +12,13 @@ import {
   formatProjectLocation,
   formatVisibilityStatus,
   hasProjectListFilters,
+  parseHiddenProjectColumns,
+  projectColumnToggleHref,
   projectListHref,
   projectListRow,
   projectListRows,
   projectPopulationLabel,
+  PROJECT_HIDEABLE_COLUMN_IDS,
   PROJECT_LIST_PATH,
 } from './list-rows';
 import type { ProjectListQuery } from './schemas';
@@ -270,4 +273,59 @@ describe('🔴 絞込 0 と初回空の判定（docs/04 §10.1 `S-010`）', () =
       expect(hasProjectListFilters(query({ [key]: values[key] }))).toBe(true);
     },
   );
+});
+
+// ============================================================================
+// 🔴 T-22-06: 列表示切替の URL（`docs/04` §7.1「9 列目以降は列表示切替に格納する」）
+// ============================================================================
+// 🔴 状態は URL だけが持つ。したがって固定するのは次の 3 点である:
+//    ①既定（何も隠していない）では URL に痕跡が 1 文字も増えない
+//    ②切替のリンクは**検索条件といま見ているページ（`cursor`）を保つ**
+//    ③許可リスト外の値は効かない（URL 直打ちで壊れない）
+describe('🔴 列表示切替の対象（9 列目）', () => {
+  it('`S-010` で外せるのは公開先の設定状況（9 列目）だけである', () => {
+    expect(PROJECT_HIDEABLE_COLUMN_IDS).toEqual(['visibility']);
+  });
+
+  it('🔴 URL の値を読む（許可リスト外は捨てる）', () => {
+    expect(parseHiddenProjectColumns(undefined)).toEqual([]);
+    expect(parseHiddenProjectColumns('visibility')).toEqual(['visibility']);
+    // 列として実在しない id（`unitPrice` は `hideable` ではない）は効かない。
+    expect(parseHiddenProjectColumns('unitPrice')).toEqual([]);
+  });
+});
+
+describe('🔴 列表示切替のリンク（条件とページの位置を保つ）', () => {
+  it('既定（何も隠していない）の URL は移行前と 1 文字も変わらない', () => {
+    expect(projectListHref(query(), null)).toBe(PROJECT_LIST_PATH);
+    expect(projectListHref(query(), null, [])).toBe(PROJECT_LIST_PATH);
+  });
+
+  it('隠す列は最後に載る（`hide=` は条件・カーソルの後ろ）', () => {
+    expect(projectListHref(query({ status: 'OPEN' }), PROJECT_ID, ['visibility'])).toBe(
+      `/projects?status=OPEN&cursor=${PROJECT_ID}&hide=visibility`,
+    );
+  });
+
+  it('🔴 表示中の列を押すと「隠す」URL になる（条件と `cursor` は保つ）', () => {
+    expect(
+      projectColumnToggleHref(query({ q: '基幹', cursor: PROJECT_ID }), PROJECT_ID, [], 'visibility'),
+    ).toBe(`/projects?q=%E5%9F%BA%E5%B9%B9&cursor=${PROJECT_ID}&hide=visibility`);
+  });
+
+  it('🔴 隠している列を押すと「戻す」URL になる（`hide` が消える）', () => {
+    expect(
+      projectColumnToggleHref(query({ q: '基幹' }), null, ['visibility'], 'visibility'),
+    ).toBe('/projects?q=%E5%9F%BA%E5%B9%B9');
+  });
+
+  it('🔴 ページングのリンクでも列の表示状態が落ちない', () => {
+    expect(projectListHref(query({ q: '基幹' }), PROJECT_ID, ['visibility'])).toBe(
+      `/projects?q=%E5%9F%BA%E5%B9%B9&cursor=${PROJECT_ID}&hide=visibility`,
+    );
+    // 先頭ページへ戻すリンクはカーソルだけを落とす（列の状態は残る）。
+    expect(projectListHref(query({ q: '基幹', cursor: PROJECT_ID }), null, ['visibility'])).toBe(
+      '/projects?q=%E5%9F%BA%E5%B9%B9&hide=visibility',
+    );
+  });
 });

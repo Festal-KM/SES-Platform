@@ -341,3 +341,164 @@ describe('対照: (m) の検出器', () => {
     expect(hiddenColumnClassFindings('x.tsx', parseText("const c = 'lg:table-cell';"))).toEqual([]);
   });
 });
+
+// ============================================================================
+// 🔴 ⑤ `hideable` を持つ列がある画面は、**列表示切替を置いている**（`T-22-06` で追加）
+// ============================================================================
+// なぜこの検査が要るのか（実測で起きた抜け）:
+// `T-22-06` は `S-010` の 9 列目に `hideable: true` を付けたが、**`DataTableColumnToggle` を
+// どこにも置いていなかった**（デモ環境の `/projects` の HTML で確認）。結果として
+// `docs/04` §7.1 の「既定 8 列 + 操作列。**9 列目以降は列表示切替に格納する**」が
+// **満たされていないのに、①②③④ のどれも赤くならない**状態になっていた。
+//
+// 🔴 `hideable` は「切替に入る列」の**宣言**であって切替そのものではない。宣言だけが在ると
+//    ①利用者は列を隠せない（条文が未達）②`DataTable` の 8 列の壁（`hideable` を持つ列は
+//    数えない）を通り抜けられるため、**9 列目以降が「常に出ている 9 列目」として増えていく**。
+//
+// 判定: `hideable` を持つ列定義があるファイルは、**`@ses/ui/client` の `DataTableColumnToggle` へ
+// 到達していること**。到達の形は 2 つだけである:
+//   (a) そのファイル自身が `DataTableColumnToggle` を import している
+//   (b) `DataTableColumnToggle` を import している**同一アプリ内のファイル**を相対 import している
+//       （🔴 画面はサーバコンポーネントであり `@ses/ui/client` を直接 import できない
+//        ——検査 (i)⑤。したがって薄い `'use client'` の配線を経由するのが正しい形である）
+
+/** `@ses/ui/client` から `DataTableColumnToggle` を取り込んでいるか（= 切替を提供するファイル）。 */
+export function importsColumnToggle(source: ts.SourceFile): boolean {
+  let found = false;
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isImportDeclaration(node) &&
+      ts.isStringLiteralLike(node.moduleSpecifier) &&
+      node.moduleSpecifier.text === '@ses/ui/client'
+    ) {
+      const bindings = node.importClause?.namedBindings;
+      if (bindings !== undefined && ts.isNamedImports(bindings)) {
+        if (
+          bindings.elements.some(
+            (element) => (element.propertyName ?? element.name).text === 'DataTableColumnToggle',
+          )
+        ) {
+          found = true;
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return found;
+}
+
+/**
+ * 相対 import の解決候補（リポジトリ相対・POSIX）。
+ * 🔴 型解決を持たない AST 走査なので、拡張子と `index` の 4 通りを候補として返す
+ *    （どれかが実在すれば到達したとみなす。**見つからなければ「到達していない = 落ちる」に倒れる**）。
+ */
+export function relativeImportTargets(file: string, source: ts.SourceFile): string[] {
+  const directory = file.split('/').slice(0, -1).join('/');
+  const targets: string[] = [];
+  const visit = (node: ts.Node): void => {
+    const specifier =
+      (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier !== undefined
+        ? node.moduleSpecifier
+        : undefined;
+    if (specifier !== undefined && ts.isStringLiteralLike(specifier) && specifier.text.startsWith('.')) {
+      const base = path.posix.normalize(path.posix.join(directory, specifier.text)).replace(/\.js$/, '');
+      targets.push(`${base}.tsx`, `${base}.ts`, `${base}/index.tsx`, `${base}/index.ts`);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return targets;
+}
+
+const columnToggleProviders = new Set(
+  appScanned.filter(({ source }) => importsColumnToggle(source)).map(({ file }) => file),
+);
+
+/** `hideable` を持つ列定義があるファイル（= 切替が要る画面）。 */
+const hideableColumnFiles = [...new Set(definitions.filter((definition) => definition.hideable).map((d) => d.file))];
+
+function reachesColumnToggle(file: string): boolean {
+  if (columnToggleProviders.has(file)) return true;
+  const scanned = appScanned.find((entry) => entry.file === file);
+  if (scanned === undefined) return false;
+  return relativeImportTargets(file, scanned.source).some((target) => columnToggleProviders.has(target));
+}
+
+describe('🔴 (m)⑤ `hideable` を持つ列がある画面は列表示切替を置いている（docs/04 §7.1 / T-22-06）', () => {
+  it('走査が空振りしていない（`hideable` を持つ画面と、切替を提供するファイルが現に在る）', () => {
+    expect(
+      hideableColumnFiles.length,
+      '`hideable` を持つ列が 0 件になった。9 列目が消えたのなら、この固定を見直すこと',
+    ).toBeGreaterThan(0);
+    // 🔴 `T-22-06` の `S-010`（9 列目 = 公開先の設定状況）。
+    expect(hideableColumnFiles).toContain('apps/web/app/(main)/projects/project-list-screen.tsx');
+    expect(
+      columnToggleProviders.size,
+      '`@ses/ui/client` の `DataTableColumnToggle` を取り込んでいるファイルが 1 つも無い',
+    ).toBeGreaterThan(0);
+  });
+
+  it('🔴 `hideable` を持つ画面がすべて列表示切替へ到達している', () => {
+    expect(
+      hideableColumnFiles.filter((file) => !reachesColumnToggle(file)),
+      '🔴 docs/04 §7.1「既定 8 列 + 操作列。9 列目以降は列表示切替に格納する」: ' +
+        '`hideable` を付けただけでは利用者が列を隠す手段が無く、条文が満たされない。' +
+        '`DataTableColumnToggle`（`@ses/ui/client`）を `Toolbar` に置くこと（`S-010` の実装が手本）。' +
+        '画面はサーバコンポーネントのままにするため、薄い `use client` の配線を経由する（検査 (i)⑤）',
+    ).toEqual([]);
+  });
+});
+
+// ============================================================================
+// 対照: ⑤ の検出器（合成ソース）
+// ============================================================================
+describe('対照: (m)⑤ の検出器', () => {
+  const parseSource = (text: string, name = 'apps/web/app/x.tsx'): ts.SourceFile =>
+    ts.createSourceFile(name, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+
+  it('`@ses/ui/client` からの `DataTableColumnToggle` の import を拾う', () => {
+    expect(
+      importsColumnToggle(parseSource("import { DataTableColumnToggle } from '@ses/ui/client';")),
+    ).toBe(true);
+    expect(
+      importsColumnToggle(
+        parseSource("import { Dialog, DataTableColumnToggle as Toggle } from '@ses/ui/client';"),
+      ),
+    ).toBe(true);
+  });
+
+  it('🔴 名前だけ・別モジュール・コメントは拾わない（「置いたつもり」を通さない）', () => {
+    expect(importsColumnToggle(parseSource("import { Dialog } from '@ses/ui/client';"))).toBe(false);
+    // 🔴 主バレル（`@ses/ui`）には無い部品である（あると Radix を全画面が引き込む）。
+    expect(importsColumnToggle(parseSource("import { DataTableColumnToggle } from '@ses/ui';"))).toBe(
+      false,
+    );
+    expect(importsColumnToggle(parseSource("// import { DataTableColumnToggle } from '@ses/ui/client';"))).toBe(
+      false,
+    );
+  });
+
+  it('相対 import を候補パスに解決する（`.js` 付き・親ディレクトリを含む）', () => {
+    expect(
+      relativeImportTargets(
+        'apps/web/app/(main)/projects/project-list-screen.tsx',
+        parseSource("import { ColumnToggle } from '../../_components/column-toggle';"),
+      ),
+    ).toContain('apps/web/app/_components/column-toggle.tsx');
+    expect(
+      relativeImportTargets('apps/web/app/x.tsx', parseSource("import { A } from './a.js';")),
+    ).toContain('apps/web/app/a.tsx');
+  });
+
+  it('🔴 パッケージからの import は相対 import として数えない', () => {
+    expect(relativeImportTargets('apps/web/app/x.tsx', parseSource("import { A } from '@ses/ui';"))).toEqual([]);
+  });
+
+  it('🔴 `S-010` が現に (b) の形（薄い配線経由）で到達している', () => {
+    expect(reachesColumnToggle('apps/web/app/(main)/projects/project-list-screen.tsx')).toBe(true);
+    // 🔴 到達していない画面では false になる（`S-005` は `hideable` を 1 列も持たないため
+    //    切替を置いていない = ⑤ の対象ではない）。**判定が常に true を返していないことの対照**である。
+    expect(reachesColumnToggle('apps/web/app/(main)/engineers/engineer-ledger-screen.tsx')).toBe(false);
+  });
+});

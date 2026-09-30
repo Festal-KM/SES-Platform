@@ -84,6 +84,17 @@ export type PageBodyProps = {
 /** 主カラム側の器。🔴 `min-w-0` が無いと、テーブルの横溢れが副カラムを押し出す。 */
 const MAIN_COLUMN_CLASSES = 'min-w-0 flex-1';
 
+/**
+ * ✅ `T-22-06`: **`data-testid="page-body"` を足した**（3 クラスすべてで同じ値）。
+ *
+ * 🔴 この器には testid が 1 つも無く、**本体カラムを掴めるのが `data-width-class` だけ**だった。
+ *    幅クラスの割り当て（検査 (k)）は「`widthClass` を渡しているか」をソースで見るが、
+ *    **描画結果の側で「本体がどこからどこまでか」を掴む手がかりが無い**（帯・トースト・
+ *    overlay が同じ DOM に混ざる）。値は 3 クラスで同一にする —— **幅は
+ *    `data-width-class` が表しており、testid で幅を表すと 2 か所で同じことを言う**ことになる。
+ * 🔴 `testIdPrefix` を受け取る形にしない（1 画面に 1 つしか置けない器であり、接頭辞で
+ *    区別する対象が無い。渡せる形にすると画面ごとに違う値が生まれる）。
+ */
 export function PageBody({ widthClass, children, aside, className }: PageBodyProps) {
   // 🔴 実行時の壁。`full` / `prose` に副カラムを渡すのは「幅クラスの取り違え」であり、
   //    黙って捨てると**判断材料が 1 つ消えたまま画面が成立する**（プレビューが出ない `S-021`）。
@@ -95,6 +106,7 @@ export function PageBody({ widthClass, children, aside, className }: PageBodyPro
   if (widthClass === 'split') {
     return (
       <div
+        data-testid="page-body"
         data-width-class="split"
         className={cn('flex flex-col gap-6', PAGE_BODY_GUTTER_CLASS, 'lg:flex-row', className)}
       >
@@ -110,14 +122,14 @@ export function PageBody({ widthClass, children, aside, className }: PageBodyPro
   if (widthClass === 'prose') {
     // 🔴 `mx-auto` を書かない（左寄せ。§7.1）。
     return (
-      <div data-width-class="prose" className={cn(PAGE_BODY_GUTTER_CLASS, className)}>
+      <div data-testid="page-body" data-width-class="prose" className={cn(PAGE_BODY_GUTTER_CLASS, className)}>
         <div className={PAGE_BODY_PROSE_MAX_WIDTH_CLASS}>{children}</div>
       </div>
     );
   }
   // `full`: 🔴 上限を設けない（列を削らないことが先。§7.1）。
   return (
-    <div data-width-class="full" className={cn(PAGE_BODY_GUTTER_CLASS, className)}>
+    <div data-testid="page-body" data-width-class="full" className={cn(PAGE_BODY_GUTTER_CLASS, className)}>
       {children}
     </div>
   );

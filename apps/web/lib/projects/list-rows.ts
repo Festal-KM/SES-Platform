@@ -12,6 +12,12 @@ import type { ProjectPublishListStatus } from '@ses/domain';
 import { t } from '@ses/i18n';
 import { formatThousands } from '../format/number';
 import { PREFECTURE_MESSAGE_KEYS } from '../format/prefectures';
+import {
+  HIDDEN_COLUMNS_PARAM,
+  hiddenColumnsParamValue,
+  parseHiddenColumns,
+  toggleHiddenColumn,
+} from '../ui/hidden-columns';
 import { formatProjectUnitPriceRange } from './detail';
 import { PROJECT_REMOTE_MODE_MESSAGE_KEYS, PROJECT_STATUS_MESSAGE_KEYS } from './labels';
 import type { ProjectMustRequirementView, ProjectView } from './list';
@@ -157,8 +163,16 @@ export function projectPopulationLabel(partnerCompanyId: string | null, total: n
  *    引き継ぐのか捨てるのか」を書かずに済ませられないようにするためである。
  * 🔴 パラメータの並びは固定である（同じ条件からは必ず同じ URL になる。テストで固定できる）。
  * 🔴 `limit` は**既定値と違うときだけ**載せる（既定の URL を `?limit=50` で汚さない）。
+ * 🔴 `hiddenColumns`（`T-22-06`）は**最後**に載せ、既定（何も隠していない）では 1 文字も足さない
+ *    —— ページングで**列の表示状態も落ちない**ようにするためである（次ページで隠した列が
+ *    復活すると、利用者は「何が起きたか」を説明できない）。**API には渡さない**
+ *    （`projectListQuerySchema` はこのキーを持たず、表示の状態にすぎない）。
  */
-export function projectListHref(query: ProjectListQuery, cursor: string | null): string {
+export function projectListHref(
+  query: ProjectListQuery,
+  cursor: string | null,
+  hiddenColumns: readonly ProjectHideableColumnId[] = [],
+): string {
   const params = new URLSearchParams();
   if (query.q !== undefined) params.set('q', query.q);
   if (query.status !== undefined) params.set('status', query.status);
@@ -166,8 +180,47 @@ export function projectListHref(query: ProjectListQuery, cursor: string | null):
   if (query.prefecture !== undefined) params.set('prefecture', query.prefecture);
   if (query.limit !== PAGE_SIZE_DEFAULT) params.set('limit', String(query.limit));
   if (cursor !== null) params.set('cursor', cursor);
+  const hide = hiddenColumnsParamValue(hiddenColumns);
+  if (hide !== null) params.set(HIDDEN_COLUMNS_PARAM, hide);
   const search = params.toString();
   return search === '' ? PROJECT_LIST_PATH : `${PROJECT_LIST_PATH}?${search}`;
+}
+
+/**
+ * 🔴 **`S-010` で利用者が外せる列**（`docs/04` §7.1「既定 8 列 + 操作列。**9 列目以降は
+ *    列表示切替に格納する**」）。9 列目 = 公開先の設定状況（**ホストのみ**。`F-014 AC-4` / `BR-07`）。
+ *
+ * 🔴 **この配列がクエリの許可リストである** —— ここに無い値が `?hide=` に来ても無視される。
+ * 🔴 **並びが URL の正規形を決める**（`hidden-columns.ts`）。
+ * 🔴 列を増やすときは `docs/04` §10.3 / §S-010 の列の定めが先である（画面の都合で足さない）。
+ */
+export const PROJECT_HIDEABLE_COLUMN_IDS = ['visibility'] as const;
+
+export type ProjectHideableColumnId = (typeof PROJECT_HIDEABLE_COLUMN_IDS)[number];
+
+/** URL のクエリ（`?hide=`）→ いま隠れている列。許可リスト外は捨てる。 */
+export function parseHiddenProjectColumns(
+  raw: string | readonly string[] | undefined,
+): readonly ProjectHideableColumnId[] {
+  return parseHiddenColumns(raw, PROJECT_HIDEABLE_COLUMN_IDS);
+}
+
+/**
+ * その列の表示 / 非表示を反転した `S-010` の URL。
+ * 🔴 **検索条件とページの位置（`cursor`）を保つ** —— 列を 1 つ外したせいで 1 ページ目に
+ *    戻されると、いま読んでいた行を見失う。
+ */
+export function projectColumnToggleHref(
+  query: ProjectListQuery,
+  cursor: string | null,
+  hidden: readonly ProjectHideableColumnId[],
+  columnId: ProjectHideableColumnId,
+): string {
+  return projectListHref(
+    query,
+    cursor,
+    toggleHiddenColumn(hidden, PROJECT_HIDEABLE_COLUMN_IDS, columnId),
+  );
 }
 
 /**

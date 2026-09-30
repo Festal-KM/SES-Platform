@@ -63,6 +63,7 @@ const messages: ProjectListScreenMessages = {
   columnHeadcount: '募集人数',
   columnUpdatedOn: '更新日',
   columnVisibility: '公開先の設定状況',
+  columnToggleTrigger: '表示する列',
   emptyTitle: 'まだ案件が登録されていません。',
   emptyLead: '案件を登録すると、この一覧に表示されます。',
   nextPage: '次のページ',
@@ -83,20 +84,47 @@ const prefectureOptions = [
 
 const emptyFilters = { q: '', status: '', startFrom: '', prefecture: '' } as const;
 
+/**
+ * 🔴 列表示切替の項目（`T-22-06`）。**組み立てはサーバ側**（`list-props.ts` の
+ * `projectColumnToggleItems` / `list-rows.ts` の `projectColumnToggleHref`）であり、
+ * ここでは「画面が受け取った形をどう描くか」だけを見る。
+ */
+const COLUMN_TOGGLE_SHOWN = [
+  {
+    id: 'visibility',
+    label: '「公開先の設定状況」の列を隠す',
+    hidden: false,
+    href: '/projects?hide=visibility',
+  },
+] as const;
+
+/** 🔴 隠している状態（URL に `?hide=visibility` が載っている状態）で届く形。 */
+const COLUMN_TOGGLE_HIDDEN = [
+  {
+    id: 'visibility',
+    label: '「公開先の設定状況」の列を表示する',
+    hidden: true,
+    href: '/projects',
+  },
+] as const;
+
 function render(
   overrides: Partial<Parameters<typeof ProjectListScreen>[0]> = {},
 ): string {
+  // 🔴 取引先には 9 列目そのものが無いので、切替も届かない（`page.tsx` と同じ導き方）。
+  const showVisibilityColumn = overrides.showVisibilityColumn ?? true;
   return renderToStaticMarkup(
     createElement(ProjectListScreen, {
       rows: [row()],
       filters: emptyFilters,
       statusOptions,
       prefectureOptions,
-      showVisibilityColumn: true,
+      showVisibilityColumn,
       canRegister: true,
       showClearFilters: false,
       nextPageHref: null,
       firstPageHref: null,
+      columnToggleItems: showVisibilityColumn ? COLUMN_TOGGLE_SHOWN : [],
       messages,
       ...overrides,
     }),
@@ -358,5 +386,89 @@ describe('🔴 T-22-06: 列の契約（移行前と同一。増減 0）', () => 
 
   it('🔴 行選択（`selection`）を描かない（Phase 1 に一括操作は無い）', () => {
     expect(render()).not.toContain('data-testid="project-list-select-');
+  });
+});
+
+// ============================================================================
+// 🔴 T-22-06 の仕上げ: 列表示切替（`docs/04` §7.1 / §5-13）
+// ============================================================================
+// 🔴 §7.1 は「**既定 8 列 + 操作列。9 列目以降は列表示切替に格納する**」と定めている。
+//    列定義に `hideable` を付けただけでは**利用者が列を隠す手段が無く**、条文が満たされない。
+// ⚠️ **メニューの項目（`隠す` / `表示する` のリンク）は DOM に出ない** —— Radix の
+//    `DropdownMenu` は開いた状態を `Portal` に載せ、`react-dom/server` には `document` が
+//    無いためサーバ描画では何も出さない（`app/_components/ui-overlays.render.test.tsx` の実測）。
+//    したがってここで観測するのは **①トリガの置き場所 ②いま隠している列（`data-hidden-columns`）
+//    ③`<thead>` / 行に現れる列**の 3 つである。項目の href の組み立ては
+//    `lib/projects/list-rows.test.ts` が固定する。
+describe('🔴 T-22-06: 列表示切替（§7.1「9 列目以降は列表示切替に格納する」）', () => {
+  it('🔴 切替は `Toolbar` の中にある（帯の外・テーブルの脇に置かない）', () => {
+    const html = render();
+    const filters = html.indexOf('data-testid="project-list-toolbar-filters"');
+    const toggle = html.indexOf('data-testid="project-list-column-toggle-root"');
+    const population = html.indexOf('data-testid="project-list-toolbar-population"');
+    const table = html.indexOf('data-testid="project-list-table"');
+
+    expect(filters, 'Toolbar の検索の段が描かれていない').toBeGreaterThanOrEqual(0);
+    // 🔴 `Toolbar` は 検索の段 → 母集団の 1 行 → テーブル の順に描く（`packages/ui/src/components/toolbar.tsx`）。
+    //    切替がその 2 つの間に在ることが「帯の中に在る」ことの機械的な判定である。
+    expect(toggle, '列表示切替が描かれていない').toBeGreaterThan(filters);
+    expect(toggle, '列表示切替が母集団の 1 行より後にある（帯の外に出ている）').toBeLessThan(population);
+    expect(toggle, '列表示切替がテーブルより後にある').toBeLessThan(table);
+  });
+
+  it('切替のトリガは語を持つ（アイコンだけで開かせない）', () => {
+    const html = render();
+
+    expect(html).toContain('data-testid="project-list-column-toggle-trigger"');
+    expect(html).toContain('表示する列');
+  });
+
+  it('🔴 既定では 9 列すべてが出る（切替を置いても見え方は変わらない。受け入れ基準 2）', () => {
+    const html = render();
+    const head = /<thead[^>]*>(.*?)<[/]thead>/s.exec(html)?.[1] ?? '';
+
+    expect([...head.matchAll(/data-column-id="([^"]+)"/g)].map((match) => match[1])).toEqual([
+      'name',
+      'status',
+      'mustRequirements',
+      'unitPrice',
+      'startDate',
+      'location',
+      'headcount',
+      'updatedOn',
+      'visibility',
+    ]);
+    // 🔴 「何も隠していない」は空である（`?hide=` が URL に無い状態と 1 対 1）。
+    expect(html).toContain('data-hidden-columns=""');
+  });
+
+  it('🔴 隠している列は `<thead>` と行の両方から消える（CSS で隠すのではない）', () => {
+    const html = render({ columnToggleItems: COLUMN_TOGGLE_HIDDEN });
+    const head = /<thead[^>]*>(.*?)<[/]thead>/s.exec(html)?.[1] ?? '';
+
+    expect([...head.matchAll(/data-column-id="([^"]+)"/g)].map((match) => match[1])).toEqual([
+      'name',
+      'status',
+      'mustRequirements',
+      'unitPrice',
+      'startDate',
+      'location',
+      'headcount',
+      'updatedOn',
+    ]);
+    expect(html).not.toContain('公開先の設定状況');
+    expect(html).not.toContain('data-testid="project-list-visibility-');
+    expect(html).not.toContain('3 社に公開中');
+    // 🔴 いま何を外しているかは画面から読める（戻す導線が消えない）。
+    expect(html).toContain('data-hidden-columns="visibility"');
+    expect(html).toContain('data-testid="project-list-column-toggle-root"');
+  });
+
+  it('🔴 取引先には切替そのものが無い（9 列目が存在しないため。`F-014 AC-4` / `BR-07`）', () => {
+    const html = render({ showVisibilityColumn: false, rows: [row({ visibility: null })] });
+
+    expect(html).not.toContain('data-testid="project-list-column-toggle-root"');
+    expect(html).not.toContain('data-testid="project-list-column-toggle-trigger"');
+    expect(html).not.toContain('表示する列');
   });
 });

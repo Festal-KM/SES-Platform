@@ -25,6 +25,18 @@
 //   | 8 | 更新日 | `sm` | 同上 |
 //   | 9 | 公開先の設定状況 | `lg` + **`hideable`** | 🔴 **ホストのみ**（`F-014 AC-4` / `BR-07`）。§7.1「既定 8 列 + 操作列。**9 列目以降は列表示切替に格納する**」に従い `hideable` を付ける（既定では表示されたままで、**見え方は移行前と同じ**） |
 //
+// ============================================================================
+// ✅ `T-22-06` の仕上げ: **列表示切替（`ColumnToggle`）を `Toolbar` に置いた**
+// ============================================================================
+// 🔴 `hideable` を付けただけでは**利用者が列を隠す手段が無く**、§7.1 の「9 列目以降は列表示切替に
+//    格納する」が満たされていなかった（`hideable` は「切替に入る列」の宣言であって切替そのもの
+//    ではない）。置き場所は §5-13 の `Toolbar`（検索の帯と同じ段）である。
+// 🔴 **状態は URL のクエリ（`?hide=visibility`）が持ち、サーバが `hiddenColumnIds` を組む**
+//    （`lib/ui/hidden-columns.ts` / `lib/projects/list-rows.ts`）。この画面は
+//    **`'use client'` を宣言しない** —— クライアント境界は `ColumnToggle` の 1 ファイルだけである。
+// 🔴 **列の集合・並び・既定の見え方は 1 つも変えていない**（既定では 9 列すべてが出る。受け入れ基準 2）。
+// 🔴 **API には渡さない**（列の表示・非表示は表示の話であり、取得する項目は変わらない）。
+//
 // 🔴 **公開状況列は 3 値**（`未設定` / `N 社に公開中` / `公開を解除（検査）`）を維持する。値は
 //    `lib/projects/list-rows.ts` が組み、**理由・原因の欄は一覧に出さない**（読むのは `S-011`）。
 // 🔴 **`selection` を渡さない**（Phase 1 に一括操作は無い。検査 (m)③）。
@@ -62,6 +74,10 @@ import {
   FILTER_ACTIONS_CLASSES,
   FILTER_FORM_CLASSES,
 } from '../_shared/filter-form-classes';
+// 🔴 列表示切替はクライアント境界の内側にある（`@ses/ui/client` の `DropdownMenu`）。
+//    **この画面は `'use client'` を宣言しない** —— 境界は `ColumnToggle` の 1 ファイルに閉じており、
+//    行の描画（50 行 × 9 列）はサーバに残る（`_components/column-toggle.tsx` 冒頭）。
+import { ColumnToggle, type ColumnToggleItem } from '../../_components/column-toggle';
 import type { ProjectListRowView } from '../../../lib/projects/list-rows';
 
 /** 検索条件の選択肢 1 件（`value` は API の query に載る値そのもの）。 */
@@ -102,6 +118,8 @@ export type ProjectListScreenMessages = {
   readonly columnHeadcount: string;
   readonly columnUpdatedOn: string;
   readonly columnVisibility: string;
+  /** 🔴 列表示切替を開く語（`T-22-06`。§7.1 の「9 列目以降は列表示切替に格納する」）。 */
+  readonly columnToggleTrigger: string;
   readonly emptyTitle: string;
   readonly emptyLead: string;
   readonly nextPage: string;
@@ -241,6 +259,7 @@ export function ProjectListScreen({
   showClearFilters,
   nextPageHref,
   firstPageHref,
+  columnToggleItems,
   messages,
 }: {
   readonly rows: readonly ProjectListRowView[];
@@ -259,8 +278,20 @@ export function ProjectListScreen({
   readonly nextPageHref: string | null;
   /** 2 ページ目以降でだけ「最初のページに戻る」を出す（無ければ `null`）。 */
   readonly firstPageHref: string | null;
+  /**
+   * 🔴 **列表示切替の対象**（`T-22-06`。`docs/04` §7.1「9 列目以降は列表示切替に格納する」）。
+   *
+   * 🔴 **どの列が隠れているかは URL が持ち、サーバがこの配列を組む**（`lib/projects/list-rows.ts` の
+   *    `parseHiddenProjectColumns` / `projectColumnToggleHref`）。画面はここから
+   *    `hiddenColumnIds` を導くだけで、**自分で状態を持たない**（持つと再読込・共有で消える）。
+   * 🔴 **空配列 = 切替を描かない**（取引先には 9 列目そのものが無いため空で届く。
+   *    `showVisibilityColumn` と同じ出所〔`ctx.partnerCompanyId`〕で決まる）。
+   */
+  readonly columnToggleItems: readonly ColumnToggleItem[];
   readonly messages: ProjectListScreenMessages;
 }) {
+  // 🔴 隠す列は props の `hidden` から導く（画面に 2 つ目の出所を作らない）。
+  const hiddenColumnIds = columnToggleItems.filter((item) => item.hidden).map((item) => item.id);
   return (
     <div data-testid="project-list-screen">
       {/* 🔴 §5-13 の `Toolbar`: **母集団の 1 行（§3.2-2 の #2）と検索の帯の置き場所をここに固定する。**
@@ -272,9 +303,10 @@ export function ProjectListScreen({
           testIdPrefix="project-list-"
           population={messages.populationLabel}
           filters={
-            /* 🔴 検索条件（docs/04 §S-010 セクション 1）。`method="get"` なので、実行した検索が
+            <>
+            {/* 🔴 検索条件（docs/04 §S-010 セクション 1）。`method="get"` なので、実行した検索が
                そのまま URL になり、共有・再読込・戻るのいずれでも同じ結果に戻る。
-               ⚠️ `mb-0` / `w-full` は帯の中に置いたための余白・幅の調整である（`cn()` の規律 1）。 */
+               ⚠️ `mb-0` / `w-full` は帯の中に置いたための余白・幅の調整である（`cn()` の規律 1）。 */}
             <form
               className={cn(FILTER_FORM_CLASSES, 'mb-0 w-full')}
               method="get"
@@ -328,6 +360,19 @@ export function ProjectListScreen({
                 </div>
               </fieldset>
             </form>
+            {/* 🔴 **列表示切替の置き場所は `Toolbar` である**（`docs/04` §5-13 / §7.1。`T-22-06`）。
+                §5-13 の `Toolbar` は「検索 + フィルタ + 一括操作」の**置き場所を固定する**部品であり、
+                列の出し入れも一覧の上の帯に属する —— **画面ごとに位置が変わらないこと**が条文の趣旨で
+                あるため、検索の帯と同じ段（`filters`）に並べる。
+                🔴 9 列目が無い取引先には `columnToggleItems` が空で届き、**何も描かない**。 */}
+            {columnToggleItems.length === 0 ? null : (
+              <ColumnToggle
+                columns={columnToggleItems}
+                triggerLabel={messages.columnToggleTrigger}
+                testIdPrefix="project-list-column-toggle-"
+              />
+            )}
+            </>
           }
         />
       </div>
@@ -372,6 +417,9 @@ export function ProjectListScreen({
         rows={rows}
         rowKey={(row) => row.id}
         linkComponent={Link}
+        // 🔴 利用者が外した列（`hideable` を持つ列だけが対象。`priority` とは別の仕組み）。
+        //    値の出所は URL であり、既定（`?hide=` 無し）では**9 列すべてが出る**。
+        hiddenColumnIds={hiddenColumnIds}
         empty={
           // 🔴 docs/04 §10.1 `S-010`: **初回空と絞込 0 で文言が違う**（呼び出し側が選ぶ）。
           //    取引先の初回空は「案件が無い」ではなく「公開されていない」である。

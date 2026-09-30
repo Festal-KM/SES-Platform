@@ -2508,6 +2508,12 @@ const ja = {
   'projects.list.column.updatedOn': '更新日',
   // 🔴 ホストのみの 9 列目（`docs/04` §S-010「🔴 取引先にはこの列を出さない」）。
   'projects.list.column.visibility': '公開先の設定状況',
+  // --- 🔴 列表示切替（`T-22-06`。`docs/04` §7.1「既定 8 列 + 操作列。9 列目以降は列表示切替に格納する」）---
+  // 🔴 **項目の語は「いまの状態に対する操作」で書く** —— メニューの項目はチェックの印を持たない
+  //    （§5-13）ため、`公開先の設定状況` とだけ書くと開いても表示中か非表示中か分からない。
+  'projects.list.columnToggle.trigger': '表示する列',
+  'projects.list.columnToggle.hide.visibility': '「公開先の設定状況」の列を隠す',
+  'projects.list.columnToggle.show.visibility': '「公開先の設定状況」の列を表示する',
   // 🔴 0 件は「0 社に公開中」ではなく**状態の語**で出す（`F-014 AC-2` の既定に気づかせる）。
   'projects.list.visibility.unset': '未設定',
   'projects.list.visibility.publishedTo': '社に公開中',

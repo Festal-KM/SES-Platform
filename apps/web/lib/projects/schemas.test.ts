@@ -9,6 +9,7 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 import { ISOLATION_KEYS } from '../api/isolation-keys';
 import {
   createProjectBodySchema,
+  projectListQuerySchema,
   projectParamsSchema,
   projectRequirementInputSchema,
   updateProjectBodySchema,
@@ -164,5 +165,26 @@ describe('PATCH は「未指定 = 変更しない」', () => {
     const parsed = updateProjectBodySchema.parse({ endClientName: null });
     expect(parsed).toEqual({ endClientName: null });
     expect(Object.keys(parsed)).toContain('endClientName');
+  });
+});
+
+// ============================================================================
+// 🔴 T-22-06: 表示の状態（列表示切替）は API の query に混ざらない
+// ============================================================================
+// `S-010` は隠している列を URL の `?hide=` で持つ（`lib/ui/hidden-columns.ts`）。
+// 🔴 **列の表示・非表示は表示の話であり、取得する項目は変わらない** ——
+//    したがって `GET /api/projects`（#25）の query にキーを足さない。
+// 🔴 それでも画面（`app/(main)/projects/(list)/page.tsx`）は**同じスキーマで検証している**ので、
+//    「未知のキーが来ると壊れた条件として素の一覧へ戻される」形だと `?hide=` を付けた URL が
+//    毎回書き換えられてしまう。**strip されて success になること**をここで固定する。
+describe('🔴 GET /api/projects の query は表示の状態を受け取らない（#25）', () => {
+  it('`hide` はスキーマのキーに無い', () => {
+    expect(Object.keys(projectListQuerySchema.shape)).not.toContain('hide');
+  });
+
+  it('🔴 `?hide=` が付いていても検証は成功し、値はハンドラに届かない（Zod の strip）', () => {
+    const parsed = projectListQuerySchema.safeParse({ q: '基幹', hide: 'visibility' });
+    expect(parsed.success).toBe(true);
+    expect(parsed.success ? Object.keys(parsed.data) : []).not.toContain('hide');
   });
 });

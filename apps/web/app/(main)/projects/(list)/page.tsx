@@ -18,6 +18,8 @@ import { resolveTenantCtxOutcome } from '../../../../lib/auth/session';
 import { listProjects } from '../../../../lib/projects/list';
 import {
   hasProjectListFilters,
+  parseHiddenProjectColumns,
+  projectColumnToggleHref,
   projectListHref,
   projectListRows,
   projectPopulationLabel,
@@ -25,7 +27,9 @@ import {
 } from '../../../../lib/projects/list-rows';
 import { isProjectEditorRole } from '../../../../lib/projects/policy';
 import { projectListQuerySchema } from '../../../../lib/projects/schemas';
+import { HIDDEN_COLUMNS_PARAM } from '../../../../lib/ui/hidden-columns';
 import {
+  projectColumnToggleItems,
   projectListScreenMessages,
   projectPrefectureFilterOptions,
   projectStatusFilterOptions,
@@ -52,13 +56,29 @@ export default async function ProjectListPage({
   // 🔴 API と**同じスキーマ**で検証する（不正なカーソル・未知の状態が Prisma に届かない）。
   //    画面では 400 を出す先が無いので、壊れた条件は素の一覧へ戻す（URL も揃える）——
   //    黙って無視すると、URL には残っているのに効いていない状態になる。
-  const parsed = projectListQuerySchema.safeParse(await searchParams);
+  const raw = await searchParams;
+  const parsed = projectListQuerySchema.safeParse(raw);
   if (!parsed.success) redirect(PROJECT_LIST_PATH);
 
   const query = parsed.data;
   const view = await listProjects(ctx, query);
   const isPartner = ctx.partnerCompanyId !== null;
   const filtered = hasProjectListFilters(query);
+  // 🔴 **列表示切替の状態は URL のクエリ（`?hide=`）だけが持つ**（`T-22-06`。`docs/04` §7.1）。
+  //    🔴 **API には渡さない** —— 列の表示・非表示は表示の話であり、取得する項目は変わらない
+  //       （`projectListQuerySchema` はこのキーを持たず、未知のキーは Zod の既定（strip）で落ちる。
+  //       したがって `?hide=` が付いていても上の `safeParse` は成功し、URL も書き換わらない）。
+  //    🔴 許可リスト外の値は捨てる（URL 直打ちで壊れない）。
+  const hiddenColumns = parseHiddenProjectColumns(raw[HIDDEN_COLUMNS_PARAM]);
+  // 🔴 9 列目（公開先の設定状況）そのものが無い取引先には**切替を渡さない**（`F-014 AC-4` / `BR-07`）。
+  const columnToggleItems = isPartner
+    ? []
+    : projectColumnToggleItems({
+        hidden: hiddenColumns,
+        // 🔴 検索条件と**いま見ているページ**（`cursor`）を保つ（列を外して行を見失わない）。
+        hrefOf: (columnId) =>
+          projectColumnToggleHref(query, query.cursor ?? null, hiddenColumns, columnId),
+      });
 
   return (
     // 🔴 T-22-06: 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`）。`S-010` は
@@ -83,9 +103,15 @@ export default async function ProjectListPage({
         //    `S-012` のリダイレクトである。
         canRegister={isProjectEditorRole(ctx.role)}
         showClearFilters={filtered}
-        // 🔴 ページングのリンクは**検索条件を保つ**（`projectListHref`）。
-        nextPageHref={view.nextCursor === null ? null : projectListHref(query, view.nextCursor)}
-        firstPageHref={query.cursor === undefined ? null : projectListHref(query, null)}
+        // 🔴 ページングのリンクは**検索条件と列の表示状態を保つ**（`projectListHref`）——
+        //    次ページで隠した列が復活すると、利用者は何が起きたか説明できない。
+        nextPageHref={
+          view.nextCursor === null ? null : projectListHref(query, view.nextCursor, hiddenColumns)
+        }
+        firstPageHref={
+          query.cursor === undefined ? null : projectListHref(query, null, hiddenColumns)
+        }
+        columnToggleItems={columnToggleItems}
         messages={projectListScreenMessages({
           populationLabel: projectPopulationLabel(ctx.partnerCompanyId, view.total),
           isPartner,
