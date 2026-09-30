@@ -66,7 +66,7 @@ export function AdminMonitoringView({ messages, endpoint }: AdminMonitoringViewP
           {loading ? messages.reloading : messages.reload}
         </Button>
         {loading && shown === null ? (
-          <p className="text-sm text-slate-600" data-testid="admin-monitoring-loading">
+          <p className="text-body text-fg-muted" data-testid="admin-monitoring-loading">
             {messages.loading}
           </p>
         ) : null}

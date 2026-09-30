@@ -193,7 +193,7 @@ export function AdminAuditLogsView({
   return (
     <>
       <section className="mb-6" data-testid="admin-audit-logs-filters">
-        <h2 className="mb-2 text-sm font-semibold text-slate-700">{messages.sectionFilters}</h2>
+        <h2 className="mb-2 text-body font-semibold text-fg">{messages.sectionFilters}</h2>
         <form className={FILTER_FORM_CLASSES} onSubmit={onSubmit} noValidate>
           <Field label={messages.fromLabel}>
             <Input
@@ -278,7 +278,7 @@ export function AdminAuditLogsView({
       </section>
 
       <section className="mb-6" data-testid="admin-audit-logs-results">
-        <h2 className="mb-2 text-sm font-semibold text-slate-700">{messages.sectionResults}</h2>
+        <h2 className="mb-2 text-body font-semibold text-fg">{messages.sectionResults}</h2>
         <AdminAuditLogsResults
           state={state}
           messages={messages}
@@ -288,9 +288,9 @@ export function AdminAuditLogsView({
 
       {/* 🔴 セクション 3「検索の実行記録」（docs/04 §A-006）と、内容へ到達できないことの明示（F-058 AC-2）。 */}
       <section data-testid="admin-audit-logs-record">
-        <h2 className="mb-2 text-sm font-semibold text-slate-700">{messages.sectionRecord}</h2>
-        <p className="text-sm text-slate-600">{messages.recordNote}</p>
-        <p className="mt-1 text-sm text-slate-600" data-testid="admin-audit-logs-no-reach-note">
+        <h2 className="mb-2 text-body font-semibold text-fg">{messages.sectionRecord}</h2>
+        <p className="text-body text-fg-muted">{messages.recordNote}</p>
+        <p className="mt-1 text-body text-fg-muted" data-testid="admin-audit-logs-no-reach-note">
           {messages.noReachNote}
         </p>
       </section>

@@ -235,3 +235,116 @@ describe('T-12-18 ③ セクション 1「異常の要約」（docs/04 §A-002 /
     expect(summaryHtml).not.toContain(TENANT_A);
   });
 });
+
+// ============================================================================
+// 🔴 SP-22 `T-22-08`（段② の一覧 ③）—— 列の集合と列表示切替
+// ============================================================================
+describe('T-22-08 列の集合・並び・列表示切替（docs/04 §7.1 / §10.3 改訂 21）', () => {
+  /** 描かれた列を `<th>` の `data-column-id` の出現順で読む（器が付ける属性）。 */
+  function columnIds(html: string): readonly string[] {
+    const head = html.slice(html.indexOf('<thead'), html.indexOf('</thead>'));
+    return [...head.matchAll(/data-column-id="([^"]+)"/g)].map((match) => match[1] as string);
+  }
+
+  it('🔴 ① 9 列の集合と並びが移行前と同一である（整形のついでに列を足していない）', () => {
+    const html = render({ page: pageOf([ABNORMAL, HEALTHY], null) });
+    expect(columnIds(html)).toEqual([
+      'name',
+      'lifecycleState',
+      'environment',
+      'seats',
+      'partners',
+      'engineers',
+      'projects',
+      'lastActivity',
+      'health',
+    ]);
+    // 🔴 列ヘッダの語も移行前と同じ（`席数` は 2 語を 1 行に束ねたが、どちらの語も出る）。
+    for (const key of [
+      'admin.tenants.column.name',
+      'admin.tenants.column.lifecycleState',
+      'admin.tenants.column.environment',
+      'admin.tenants.column.seats',
+      'admin.tenants.column.seats.detail',
+      'admin.tenants.column.partners',
+      'admin.tenants.column.engineers',
+      'admin.tenants.column.projects',
+      'admin.tenants.column.lastActivity',
+      'admin.tenants.column.health',
+    ] as const) {
+      expect(html, key).toContain(t(key));
+    }
+    // 🔴 操作列・選択列が無い（運営者コンソールは read-only。検査 (m)③）。
+    expect(html).not.toContain('type="checkbox"');
+  });
+
+  it('🔴 ② 列表示切替は `Toolbar` の中に在り、9 列目（案件数）だけを対象にする', () => {
+    const html = render({
+      page: pageOf([HEALTHY], null),
+      columnToggleItems: [
+        { id: 'projects', label: t('admin.tenants.columnToggle.hide.projects'), hidden: false, href: '/admin/tenants?hide=projects' },
+      ],
+    });
+    const toolbarAt = html.indexOf('data-testid="admin-tenants-toolbar"');
+    const toggleAt = html.indexOf('data-testid="admin-tenants-column-toggle-trigger"');
+    expect(toolbarAt).toBeGreaterThan(-1);
+    expect(toggleAt).toBeGreaterThan(toolbarAt);
+    // 🔴 帯（`Toolbar`）の内側である = 一覧の上の帯に置き場所が固定されている（§5-13）。
+    expect(toggleAt).toBeLessThan(html.indexOf('data-testid="admin-tenants-summary"'));
+    expect(html).toContain(t('admin.tenants.columnToggle.trigger'));
+    // ⚠️ 項目（語と URL）は `DropdownMenu` の中身であり、開くまで DOM に無い（Radix の portal）。
+    //    静的な描画で確かめられるのは **いま何を隠しているか**（器が出す `data-hidden-columns`）である。
+    expect(html).toContain('data-hidden-columns=""');
+    // 切替が在っても列は 9 列すべて出る（`hidden: false`）。
+    expect(columnIds(html)).toContain('projects');
+  });
+
+  it('🔴 ② 隠している列は `<th>` / `<td>` から消える（URL が状態の唯一の持ち主）', () => {
+    const html = render({
+      page: pageOf([HEALTHY], null),
+      columnToggleItems: [
+        { id: 'projects', label: t('admin.tenants.columnToggle.show.projects'), hidden: true, href: '/admin/tenants' },
+      ],
+    });
+    expect(columnIds(html)).toEqual([
+      'name',
+      'lifecycleState',
+      'environment',
+      'seats',
+      'partners',
+      'engineers',
+      'lastActivity',
+      'health',
+    ]);
+    expect(html).not.toContain('data-column-id="projects"');
+    // 🔴 隠している列は器の `data-hidden-columns` に出る（状態の出所が URL の 1 本であることの印）。
+    expect(html).toContain('data-hidden-columns="projects"');
+  });
+
+  it('🔴 切替を渡さない既定では帯だけが出て、書き込みの導線（button / form）が 1 つも無い', () => {
+    const html = render({ page: pageOf([HEALTHY], null) });
+    expect(html).toContain('data-testid="admin-tenants-toolbar"');
+    expect(html).not.toContain('admin-tenants-column-toggle');
+    expect(html).not.toContain('<button');
+    expect(html).not.toContain('<form');
+  });
+
+  it('🔴 ページ送りは並び・絞り込み・列の表示状態を保つ（隠した列が次ページで復活しない）', () => {
+    const html = render({
+      page: pageOf([HEALTHY], TENANT_B),
+      sort: 'name',
+      signal: 'INACTIVE',
+      isFirstPage: false,
+      columnToggleItems: [
+        { id: 'projects', label: t('admin.tenants.columnToggle.show.projects'), hidden: true, href: '/admin/tenants' },
+      ],
+    });
+    expect(html).toContain(
+      `href="/admin/tenants?sort=name&amp;signal=INACTIVE&amp;cursor=${TENANT_B}&amp;hide=projects"`,
+    );
+    // 先頭ページへ戻る導線も同じ条件を保つ（カーソルだけが落ちる）。
+    expect(html).toContain('href="/admin/tenants?sort=name&amp;signal=INACTIVE&amp;hide=projects"');
+    // 🔴 凍結済み testid（`admin-tenants-load-more`）が `Pagination` の「次へ」に残っている。
+    expect(html).toContain('data-testid="admin-tenants-load-more"');
+  });
+});

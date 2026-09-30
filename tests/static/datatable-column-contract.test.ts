@@ -221,12 +221,13 @@ describe('🔴 (m) DataTable の列定義の契約（docs/05 §17.7.1 (m) / §2.
     //    「列定義は 1 件も無い」という固定はここで**追随させた** —— 検出器の判定は 1 つも
     //    緩めていない（①②③④ の本体はそのままで、むしろ ④ が現に対象を持つようになった）。
     expect(definitions.length, '列定義が 0 件に戻った（`DataTable` の適用が失われていないか）').toBeGreaterThan(0);
-    // 🔴 `T-22-06` の 3 画面が現に列定義を持っている（`T-22-07` / `T-22-08` で残り 6 画面が入る）。
+    // 🔴 `T-22-06` の 3 画面 + `T-22-08` の `A-002` が現に列定義を持っている。
     const filesWithColumns = new Set(definitions.map((definition) => definition.file));
     for (const file of [
       'apps/web/app/(main)/engineers/engineer-ledger-screen.tsx',
       'apps/web/app/(main)/projects/project-list-screen.tsx',
       'apps/web/app/(main)/proposals/(list)/proposal-list-screen.tsx',
+      'apps/web/app/admin/tenants/admin-tenants-list.tsx',
     ]) {
       expect(filesWithColumns, `${file} の列定義が見つからない`).toContain(file);
     }
@@ -283,6 +284,59 @@ describe('🔴 (m) DataTable の列定義の契約（docs/05 §17.7.1 (m) / §2.
       'updatedAt:lg',
       'elapsed:always',
     ]);
+  });
+
+  it('🔴 `T-22-08` の `A-002` の列の集合・並び・優先度が `docs/04` §10.3 改訂 21 と一致する', () => {
+    // 🔴 **9 列である**（改訂 21 = 2026-09-30 に `docs/04` が実装の実測へ追随した）。
+    //    優先度は §10.3 の `A-002` の行「優先度の低い列（先に隠す）: エンジニア数・案件数 → プラン →
+    //    席数」を写す（`プラン` の列は実装に無い）。🔴 **`案件数` だけが `hideable`**（9 列目）であり、
+    //    残り 8 列は `DATA_TABLE_MAX_VISIBLE_COLUMNS` の壁の内側に収まる。
+    // 🔴 **列を増やすことは `BR-40` / `CLAUDE.md` §10.5 に触れる**（運営者に見せるものを増やす）。
+    const columnsOf = (file: string): string[] =>
+      definitions
+        .filter((definition) => definition.file === file)
+        .map((definition) => `${definition.id ?? '?'}:${definition.priority ?? '?'}${definition.hideable ? ':hideable' : ''}`);
+    expect(columnsOf('apps/web/app/admin/tenants/admin-tenants-list.tsx')).toEqual([
+      'name:always',
+      'lifecycleState:always',
+      'environment:always',
+      'seats:sm',
+      'partners:always',
+      'engineers:lg',
+      'projects:lg:hideable',
+      'lastActivity:always',
+      'health:always',
+    ]);
+  });
+
+  it('🔴 `hideable` を持つ列があるのは `S-010` と `A-002` の 2 画面だけである（列を隠せる画面を増やさない）', () => {
+    // 🔴 `hideable` は「切替に入る列」の宣言であり、**8 列の壁を通り抜ける唯一の口**である
+    //    （`DataTable` は `hideable` を持つ列を数えない）。増やすには `docs/04` §7.1 / §10.3 の
+    //    改訂が先であり、**画面の都合で足せない**（`CLAUDE.md` §8.7）。
+    expect([...new Set(definitions.filter((definition) => definition.hideable).map((d) => d.file))].sort()).toEqual([
+      'apps/web/app/(main)/projects/project-list-screen.tsx',
+      'apps/web/app/admin/tenants/admin-tenants-list.tsx',
+    ]);
+  });
+
+  it('🔴 `A-005` / `A-006` は `hideable` を 1 件も持たない（監視画面では列を隠さない。docs/04 §10.3）', () => {
+    // 🔴 ①② の `it.each` と同じ事実を、**`A-005` / `A-006` について名指しで**固定する ——
+    //    あちらは「`always` のみ」を見る形なので、**列定義が 0 件でも緑になる**（この 2 画面は
+    //    `Table` プリミティブで組まれており列定義を持たない）。したがって
+    //    「隠せる列が 1 つも無い」ことを、`hideable` の側からもう 1 本で言う。
+    //    消えた列に運用者は気づけない（`F-059 AC-3` の材料が黙って落ちる）。
+    const hideableIn = (fragment: string): string[] =>
+      definitions
+        .filter((definition) => definition.file.includes(fragment) && definition.hideable)
+        .map((definition) => `${definition.file}:${definition.line} id=${definition.id ?? '?'}`);
+    expect(hideableIn('app/admin/monitoring')).toEqual([]);
+    expect(hideableIn('app/admin/audit-logs')).toEqual([]);
+    // 🔴 画面が自前で `hideable` 相当を持たないこと（`priority` も `always` 以外を持たない）は
+    //    ①② が見ている。ここは**その 2 画面が走査の射程に現に入っている**ことの対照である。
+    const scannedAdminFiles = appScanned.filter(
+      ({ file }) => file.includes('app/admin/monitoring/') || file.includes('app/admin/audit-logs/'),
+    );
+    expect(scannedAdminFiles.length, 'A-005 / A-006 のファイルが走査対象に無い').toBeGreaterThanOrEqual(6);
   });
 });
 

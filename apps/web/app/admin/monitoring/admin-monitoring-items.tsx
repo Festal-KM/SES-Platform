@@ -13,7 +13,18 @@
 // 🔴 モバイルでは各項目が縦に積まれ、表は `Table` の器の中で横スクロールする（列を隠さない。`CLAUDE.md` §13.3 / docs/04 §5-8）。
 // 🔴 文言は props（`packages/i18n`）から受け取る。ここにベタ書きしない（`CLAUDE.md` §3.5）。
 import Link from 'next/link';
-import { Alert, AlertDescription, Badge, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@ses/ui';
+import {
+  Alert,
+  AlertDescription,
+  Badge,
+  SECONDARY_LINK_CLASSES,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@ses/ui';
 import type { BadgeVariant } from '@ses/ui';
 import { adminTenantDetailHref, adminTenantQuotaHref } from '../../../lib/admin-monitoring/hrefs';
 import { isAllClear, isGateFailRateSpike, severityOf } from '../../../lib/admin-monitoring/severity';
@@ -34,17 +45,20 @@ import {
 } from '../../../lib/admin-monitoring/view';
 import { formatDateTimeJst } from '../../../lib/format/datetime';
 
-const SECTION_CLASSES = 'mb-8 rounded-lg border border-slate-200 bg-white p-4';
+// 🔴 T-22-08: 色は §7.9 の semantic トークン、文字サイズは 6 トークン（`text-sm` → `--text-body` は
+//    **実寸が同じ 14px** / `text-base` → `--text-lg` は同じ 16px）。radius は §7.9 の 2 段である。
+const SECTION_CLASSES = 'mb-8 rounded-md border border-border bg-bg p-4';
 const SECTION_HEAD_CLASSES = 'mb-2 flex flex-wrap items-center justify-between gap-2';
-const TITLE_CLASSES = 'text-base font-bold text-slate-900';
-const SUMMARY_CLASSES = 'mb-2 text-sm text-slate-800';
-const NOTE_CLASSES = 'mt-3 text-xs text-slate-600';
+const TITLE_CLASSES = 'text-lg font-bold text-fg';
+const SUMMARY_CLASSES = 'mb-2 text-body text-fg';
+const NOTE_CLASSES = 'mt-3 text-xs text-fg-muted';
 /** 項目の中の区分見出し（T-12-17 ⑱。項目 7 の `RUNNING` 滞留）。 */
-const SUBTITLE_CLASSES = 'mt-4 mb-2 text-sm font-bold text-slate-900';
-const EMPTY_CLASSES = 'text-sm text-slate-600';
-const LINK_CLASSES = 'text-slate-700 underline-offset-2 hover:underline';
+const SUBTITLE_CLASSES = 'mt-4 mb-2 text-body font-bold text-fg';
+const EMPTY_CLASSES = 'text-body text-fg-muted';
+/** 🔴 §7.6 の secondary（`@ses/ui` の 1 語）。8 状態はプリミティブが持つ（画面に `hover:` を書かない）。 */
+const LINK_CLASSES = SECONDARY_LINK_CLASSES;
 /** 折り返して全文を出す（監視画面では切り詰めない。docs/04 §5-8 `A-005`）。 */
-const ID_CLASSES = 'break-all font-mono text-xs text-slate-600';
+const ID_CLASSES = 'break-all font-mono text-xs text-fg-muted';
 
 const SEVERITY_BADGE: Readonly<Record<MonitoringSeverity, BadgeVariant>> = {
   failure: 'danger',
@@ -838,7 +852,7 @@ export function AdminMonitoringItems({ snapshot, messages }: AdminMonitoringItem
   const byKind = new Map(snapshot.items.map((item) => [item.kind, item]));
   return (
     <div>
-      <p className="mb-4 text-sm text-slate-600" data-testid="admin-monitoring-observed-at">
+      <p className="mb-4 text-body text-fg-muted" data-testid="admin-monitoring-observed-at">
         {messages.observedAt}: {formatDateTimeJst(snapshot.observedAt)}
       </p>
       {isAllClear(snapshot.items) ? (

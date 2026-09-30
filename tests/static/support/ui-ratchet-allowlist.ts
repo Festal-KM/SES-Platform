@@ -14,6 +14,12 @@
 //    作らないため。恒久例外は `AppShell` の `pb-24` の 1 件だけで、それは
 //    `ui-spacing-scale.test.ts` の `PERMANENT_SPACING_EXCEPTION` に理由つきで置く。
 //
+// ✅ **`T-22-08`（段② の一覧 ③ = 段② の締め）で外したもの**: `A-002` / `A-005` / `A-006` の 8 ファイル
+//    （`admin/tenants/{page,admin-tenants-list}.tsx` /
+//    `admin/monitoring/{page,admin-monitoring-view,admin-monitoring-items}.tsx` /
+//    `admin/audit-logs/{page,admin-audit-logs-view,admin-audit-logs-results}.tsx`）を
+//    (a)(c)(g)(j)(k) の 5 本から**計 27 エントリ**削除した。🔴 **これで段② の項目は 6 本すべて空である。**
+//
 // ✅ **`T-22-07`（段② の一覧 ②）で外したもの**: `S-015` / `S-016` / `S-041` の 7 ファイル
 //    （`audit-logs/{audit-log-detail,audit-logs-view,page}.tsx` /
 //    `engineer-shares/{engineer-share-screen,page}.tsx` /
@@ -36,15 +42,10 @@ export const UI_RATCHET_ALLOWLIST_A: ReadonlyMap<string, AllowEntry> = new Map<s
   // ── 段① ✅ T-22-05 で外枠（AppShell / Sidebar / TopBar / PageHeader）を packages/ui へ移し、
   //    semantic トークン / 7 段 / 6 トークン / 8 状態へ寄せたので**この段の項目は空になった**
   //    （残しておくとラチェット ②「未使用の許可が残っていない」で落ちる）。
-  // ── 段②
-  ['apps/web/app/admin/audit-logs/admin-audit-logs-results.tsx', { stage: 2, reason: 'A-006 の刷新（段②）で semantic トークンへ置き換える。移行中 6 行' }],
-  ['apps/web/app/admin/audit-logs/admin-audit-logs-view.tsx', { stage: 2, reason: 'A-006 の刷新（段②）で semantic トークンへ置き換える。移行中 5 行' }],
-  ['apps/web/app/admin/audit-logs/page.tsx', { stage: 2, reason: 'A-006 の刷新（段②）で semantic トークンへ置き換える。移行中 2 行' }],
-  ['apps/web/app/admin/monitoring/admin-monitoring-items.tsx', { stage: 2, reason: 'A-005 の刷新（段②）で semantic トークンへ置き換える。移行中 9 行' }],
-  ['apps/web/app/admin/monitoring/admin-monitoring-view.tsx', { stage: 2, reason: 'A-005 の刷新（段②）で semantic トークンへ置き換える。移行中 1 行' }],
-  ['apps/web/app/admin/monitoring/page.tsx', { stage: 2, reason: 'A-005 の刷新（段②）で semantic トークンへ置き換える。移行中 2 行' }],
-  ['apps/web/app/admin/tenants/admin-tenants-list.tsx', { stage: 2, reason: 'A-002 の刷新（段②）で semantic トークンへ置き換える。移行中 16 行' }],
-  ['apps/web/app/admin/tenants/page.tsx', { stage: 2, reason: 'A-002 の刷新（段②）で semantic トークンへ置き換える。移行中 2 行' }],
+  // ── 段② ✅ T-22-06 / T-22-07 / T-22-08 で一覧 9 画面（S-005 / S-010 / S-015 / S-016 /
+  //    S-019 / S-041 / A-002 / A-005 / A-006）を semantic トークン / 7 段 / 6 トークン /
+  //    8 状態 / `PageBody` の幅 3 クラスへ寄せたので**この段の項目は空になった**
+  //    （残しておくとラチェット ②「未使用の許可が残っていない」で落ちる）。
   // ── 段③
   ['apps/web/app/(main)/_home/action-queue-section.tsx', { stage: 3, reason: 'S-003 / S-004 の刷新（段③）で semantic トークンへ置き換える。移行中 11 行' }],
   ['apps/web/app/(main)/_home/home-sections.tsx', { stage: 3, reason: 'S-003 / S-004 の刷新（段③）で semantic トークンへ置き換える。移行中 6 行' }],
@@ -133,11 +134,10 @@ export const UI_RATCHET_ALLOWLIST_B: ReadonlyMap<string, AllowEntry> = new Map<s
  */
 export const UI_RATCHET_ALLOWLIST_C: ReadonlyMap<string, AllowEntry> = new Map<string, AllowEntry>([
   // ── 段①
-  // ── 段②
-  ['apps/web/app/admin/audit-logs/admin-audit-logs-results.tsx', { stage: 2, reason: 'A-006 の刷新（段②）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
-  ['apps/web/app/admin/audit-logs/page.tsx', { stage: 2, reason: 'A-006 の刷新（段②）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
-  ['apps/web/app/admin/monitoring/page.tsx', { stage: 2, reason: 'A-005 の刷新（段②）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
-  ['apps/web/app/admin/tenants/page.tsx', { stage: 2, reason: 'A-002 の刷新（段②）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
+  // ── 段② ✅ T-22-06 / T-22-07 / T-22-08 で一覧 9 画面（S-005 / S-010 / S-015 / S-016 /
+  //    S-019 / S-041 / A-002 / A-005 / A-006）を semantic トークン / 7 段 / 6 トークン /
+  //    8 状態 / `PageBody` の幅 3 クラスへ寄せたので**この段の項目は空になった**
+  //    （残しておくとラチェット ②「未使用の許可が残っていない」で落ちる）。
   // ── 段③
   ['apps/web/app/(main)/page.tsx', { stage: 3, reason: 'S-003 / S-004 の刷新（段③）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
   // ── 段④
@@ -199,7 +199,10 @@ export const UI_RATCHET_ALLOWLIST_C: ReadonlyMap<string, AllowEntry> = new Map<s
  */
 export const UI_RATCHET_ALLOWLIST_F: ReadonlyMap<string, AllowEntry> = new Map<string, AllowEntry>([
   // ── 段①
-  // ── 段②
+  // ── 段② ✅ T-22-06 / T-22-07 / T-22-08 で一覧 9 画面（S-005 / S-010 / S-015 / S-016 /
+  //    S-019 / S-041 / A-002 / A-005 / A-006）を semantic トークン / 7 段 / 6 トークン /
+  //    8 状態 / `PageBody` の幅 3 クラスへ寄せたので**この段の項目は空になった**
+  //    （残しておくとラチェット ②「未使用の許可が残っていない」で落ちる）。
   // ── 段④
   ['apps/web/app/(main)/(auth)/invite/[token]/invite-form.tsx', { stage: 4, reason: 'S-001 / S-002 / S-046 の刷新（段④）で §7.9 の 7 段へ寄せる。移行中 1 行' }],
   ['apps/web/app/(main)/(auth)/signin/signin-form.tsx', { stage: 4, reason: 'S-001 / S-002 / S-046 の刷新（段④）で §7.9 の 7 段へ寄せる。移行中 1 行' }],
@@ -223,15 +226,10 @@ export const UI_RATCHET_ALLOWLIST_F: ReadonlyMap<string, AllowEntry> = new Map<s
  */
 export const UI_RATCHET_ALLOWLIST_G: ReadonlyMap<string, AllowEntry> = new Map<string, AllowEntry>([
   // ── 段①
-  // ── 段②
-  ['apps/web/app/admin/audit-logs/admin-audit-logs-results.tsx', { stage: 2, reason: 'A-006 の刷新（段②）で §7.9 の 6 トークンへ置き換える。移行中 1 行' }],
-  ['apps/web/app/admin/audit-logs/admin-audit-logs-view.tsx', { stage: 2, reason: 'A-006 の刷新（段②）で §7.9 の 6 トークンへ置き換える。移行中 5 行' }],
-  ['apps/web/app/admin/audit-logs/page.tsx', { stage: 2, reason: 'A-006 の刷新（段②）で §7.9 の 6 トークンへ置き換える。移行中 2 行' }],
-  ['apps/web/app/admin/monitoring/admin-monitoring-items.tsx', { stage: 2, reason: 'A-005 の刷新（段②）で §7.9 の 6 トークンへ置き換える。移行中 5 行' }],
-  ['apps/web/app/admin/monitoring/admin-monitoring-view.tsx', { stage: 2, reason: 'A-005 の刷新（段②）で §7.9 の 6 トークンへ置き換える。移行中 1 行' }],
-  ['apps/web/app/admin/monitoring/page.tsx', { stage: 2, reason: 'A-005 の刷新（段②）で §7.9 の 6 トークンへ置き換える。移行中 2 行' }],
-  ['apps/web/app/admin/tenants/admin-tenants-list.tsx', { stage: 2, reason: 'A-002 の刷新（段②）で §7.9 の 6 トークンへ置き換える。移行中 7 行' }],
-  ['apps/web/app/admin/tenants/page.tsx', { stage: 2, reason: 'A-002 の刷新（段②）で §7.9 の 6 トークンへ置き換える。移行中 2 行' }],
+  // ── 段② ✅ T-22-06 / T-22-07 / T-22-08 で一覧 9 画面（S-005 / S-010 / S-015 / S-016 /
+  //    S-019 / S-041 / A-002 / A-005 / A-006）を semantic トークン / 7 段 / 6 トークン /
+  //    8 状態 / `PageBody` の幅 3 クラスへ寄せたので**この段の項目は空になった**
+  //    （残しておくとラチェット ②「未使用の許可が残っていない」で落ちる）。
   // ── 段③
   ['apps/web/app/(main)/_home/action-queue-section.tsx', { stage: 3, reason: 'S-003 / S-004 の刷新（段③）で §7.9 の 6 トークンへ置き換える。移行中 4 行' }],
   ['apps/web/app/(main)/_home/home-sections.tsx', { stage: 3, reason: 'S-003 / S-004 の刷新（段③）で §7.9 の 6 トークンへ置き換える。移行中 1 行' }],
@@ -308,11 +306,10 @@ export const UI_RATCHET_ALLOWLIST_G: ReadonlyMap<string, AllowEntry> = new Map<s
  */
 export const UI_RATCHET_ALLOWLIST_J: ReadonlyMap<string, AllowEntry> = new Map<string, AllowEntry>([
   // ── 段①
-  // ── 段②
-  ['apps/web/app/admin/audit-logs/admin-audit-logs-results.tsx', { stage: 2, reason: 'A-006 の刷新（段②）で プリミティブ側の 8 状態に委ねる。移行中 1 行' }],
-  ['apps/web/app/admin/monitoring/admin-monitoring-items.tsx', { stage: 2, reason: 'A-005 の刷新（段②）で プリミティブ側の 8 状態に委ねる。移行中 1 行' }],
-  ['apps/web/app/admin/tenants/admin-tenants-list.tsx', { stage: 2, reason: 'A-002 の刷新（段②）で プリミティブ側の 8 状態に委ねる。移行中 3 行' }],
-  ['apps/web/app/admin/tenants/page.tsx', { stage: 2, reason: 'A-002 の刷新（段②）で プリミティブ側の 8 状態に委ねる。移行中 1 行' }],
+  // ── 段② ✅ T-22-06 / T-22-07 / T-22-08 で一覧 9 画面（S-005 / S-010 / S-015 / S-016 /
+  //    S-019 / S-041 / A-002 / A-005 / A-006）を semantic トークン / 7 段 / 6 トークン /
+  //    8 状態 / `PageBody` の幅 3 クラスへ寄せたので**この段の項目は空になった**
+  //    （残しておくとラチェット ②「未使用の許可が残っていない」で落ちる）。
   // ── 段③
   ['apps/web/app/(main)/_home/action-queue-section.tsx', { stage: 3, reason: 'S-003 / S-004 の刷新（段③）で プリミティブ側の 8 状態に委ねる。移行中 2 行' }],
   // ── 段⑤
@@ -331,10 +328,10 @@ export const UI_RATCHET_ALLOWLIST_J: ReadonlyMap<string, AllowEntry> = new Map<s
  * 🔴 段が進むごとに削る。空になった時点で (k) 幅クラスの網羅 は無条件 green になる（`SP-22` §4.1 段⑤）。
  */
 export const UI_RATCHET_ALLOWLIST_K: ReadonlyMap<string, AllowEntry> = new Map<string, AllowEntry>([
-  // ── 段②
-  ['apps/web/app/admin/audit-logs/page.tsx', { stage: 2, reason: 'A-006 の刷新（段②）で `PageBody` に `widthClass` を渡す。移行中 1 行' }],
-  ['apps/web/app/admin/monitoring/page.tsx', { stage: 2, reason: 'A-005 の刷新（段②）で `PageBody` に `widthClass` を渡す。移行中 1 行' }],
-  ['apps/web/app/admin/tenants/page.tsx', { stage: 2, reason: 'A-002 の刷新（段②）で `PageBody` に `widthClass` を渡す。移行中 1 行' }],
+  // ── 段② ✅ T-22-06 / T-22-07 / T-22-08 で一覧 9 画面（S-005 / S-010 / S-015 / S-016 /
+  //    S-019 / S-041 / A-002 / A-005 / A-006）を semantic トークン / 7 段 / 6 トークン /
+  //    8 状態 / `PageBody` の幅 3 クラスへ寄せたので**この段の項目は空になった**
+  //    （残しておくとラチェット ②「未使用の許可が残っていない」で落ちる）。
   // ── 段③
   ['apps/web/app/(main)/page.tsx', { stage: 3, reason: 'S-003 / S-004 の刷新（段③）で `PageBody` に `widthClass` を渡す。移行中 1 行' }],
   // ── 段④

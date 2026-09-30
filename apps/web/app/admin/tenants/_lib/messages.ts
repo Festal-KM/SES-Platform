@@ -3,7 +3,13 @@
 // 🔴 `page.tsx` から分けているのは Next.js のページが任意の名前を export できないため（`*.render.test.tsx` もここから読む）。
 // 🔴 文言は `packages/i18n` にのみ置く（`CLAUDE.md` §3.5）。ここは `t()` の呼び出しの束であり、文言そのものを書かない。
 import { TENANT_HEALTH_SIGNALS, TENANT_LIST_SORT_KEYS } from '@ses/domain';
-import { t } from '@ses/i18n';
+import { t, type MessageKey } from '@ses/i18n';
+import {
+  TENANT_HIDEABLE_COLUMN_IDS,
+  type TenantHideableColumnId,
+} from '../../../../lib/admin-tenants/list-href';
+import type { ColumnToggleItem } from '../../../_components/column-toggle';
+import type { AdminTenantsHeaderMessages } from '../admin-tenants-header';
 import type { AdminTenantsListMessages } from '../admin-tenants-list';
 import {
   TENANT_HEALTH_SIGNAL_MESSAGE_KEYS,
@@ -64,6 +70,8 @@ export function adminTenantsMessages(): AdminTenantsListMessages {
     },
     lastActivityNone: t('admin.tenants.lastActivity.none'),
     loadMore: t('admin.tenants.loadMore'),
+    firstPage: t('admin.tenants.firstPage'),
+    columnToggleTrigger: t('admin.tenants.columnToggle.trigger'),
     empty: t('admin.tenants.empty'),
     summary: {
       label: t('admin.tenants.summary.label'),
@@ -73,4 +81,52 @@ export function adminTenantsMessages(): AdminTenantsListMessages {
       outOfRange: t('admin.tenants.summary.outOfRange'),
     },
   };
+}
+
+/** `A-002` の画面ヘッダ（タイトル / `A-014` の導線 / `閲覧のみ`）の文言。 */
+export function adminTenantsHeaderMessages(): AdminTenantsHeaderMessages {
+  return {
+    title: t('admin.tenants.title'),
+    provision: t('admin.provisioning.link'),
+    readOnlyBadge: t('admin.readOnly.badge'),
+  };
+}
+
+/**
+ * 🔴 **列表示切替の項目**（`T-22-08`。`docs/04` §7.1「9 列目以降は列表示切替に格納する」/
+ *    §10.3 改訂 21「優先度が最も低い `案件数` を `hideable` にする」）。
+ *
+ * 🔴 **語は「いまの状態に対する操作」である**（`隠す` / `表示する`）—— 切替の項目は
+ *    `DropdownMenu` の 1 行であり、チェックの印を持たない（§5-13）。したがって
+ *    **項目の語が状態を語らなければ、開いても「いまどちらか」が分からない**。
+ *    `packages/i18n` に列ごとの 2 語を置き、**ここで文字列を合成しない**（`CLAUDE.md` §3.5）。
+ *    形は `S-010`（`projects/list-props.ts`）と同じである（画面ごとに別の形を作らない）。
+ */
+const TENANT_COLUMN_TOGGLE_MESSAGE_KEYS: Readonly<
+  Record<TenantHideableColumnId, { readonly hide: MessageKey; readonly show: MessageKey }>
+> = {
+  projects: {
+    hide: 'admin.tenants.columnToggle.hide.projects',
+    show: 'admin.tenants.columnToggle.show.projects',
+  },
+};
+
+export function adminTenantsColumnToggleItems(params: {
+  /** いま隠れている列（URL 由来。`parseHiddenTenantColumns`）。 */
+  readonly hidden: readonly TenantHideableColumnId[];
+  /** その列の表示 / 非表示を反転した URL（`tenantColumnToggleHref`）。 */
+  readonly hrefOf: (columnId: TenantHideableColumnId) => string;
+}): readonly ColumnToggleItem[] {
+  const { hidden, hrefOf } = params;
+  // 🔴 並びは `TENANT_HIDEABLE_COLUMN_IDS`（= 列の並び）で固定する（メニューの順序が動かない）。
+  return TENANT_HIDEABLE_COLUMN_IDS.map((id) => {
+    const isHidden = hidden.includes(id);
+    const keys = TENANT_COLUMN_TOGGLE_MESSAGE_KEYS[id];
+    return {
+      id,
+      label: t(isHidden ? keys.show : keys.hide),
+      hidden: isHidden,
+      href: hrefOf(id),
+    };
+  });
 }

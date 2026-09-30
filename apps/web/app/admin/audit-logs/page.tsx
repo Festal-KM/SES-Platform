@@ -10,12 +10,17 @@
 //    監査行を残さない）。`?targetTenantId=`（`A-003` の導線）は形だけ検証して初期値に入れる。
 // 🔴 表示するのは日時・テナント・主体（種別 + ID）・操作・対象種別・マスク済みの記録・IP・デバイス
 //    （`F-058 AC-1`）。行から遷移できるのは `A-003` だけで、対象の内容へ到達する導線は無い（`F-058 AC-2`）。
+//
+// 🔴 SP-22 T-22-08: 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`）。`A-006` は
+//    **クラス A = 全幅**である。**画面ファイルに `max-w-*` を書かない**（検査 (c) / (k)）——
+//    🔴 §7.1 は「`2xl` で `A-005` / `A-006` が **100 行 × 全列**を出せることが監視の前提」と定めており、
+//    旧 `max-w-6xl`（1152px）では 7 列 × 100 行が幅で潰れていた（§10.3「監視画面では列を隠さない」）。
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { ADMIN_MONITORING_PAGE_SIZE, AUDIT_LOG_SEARCH_MAX_PERIOD_DAYS } from '@ses/config';
 import { AUDIT_ACTOR_KINDS, AUDIT_DEVICE_KINDS, type AuditActorKind } from '@ses/db';
 import { t } from '@ses/i18n';
-import { Badge } from '@ses/ui';
+import { Badge, PageBody } from '@ses/ui';
 import { resolvePlatformCtxOutcome } from '../../../lib/auth/platform-session';
 import { defaultAuditLogPeriod } from '../../../lib/admin-audit-logs/period';
 import { isTenantIdLike } from '../../../lib/admin-tenants/schemas';
@@ -99,25 +104,27 @@ export default async function AdminAuditLogsPage({
   };
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-8">
-      <div className="mb-2 flex items-center justify-between">
-        <h1 className="text-xl font-bold text-slate-900">{t('admin.auditLogs.title')}</h1>
-        {/* 🔴 BR-37: 運営者コンソールは既定 read-only。書き込み操作なしを常時明示する。 */}
-        <Badge>{t('admin.readOnly.badge')}</Badge>
-      </div>
-      <p className="mb-6 text-sm text-slate-600" data-testid="admin-audit-logs-lead">
-        {t('admin.auditLogs.lead')}
-      </p>
-      <AdminAuditLogsView
-        messages={messages}
-        initialPeriod={defaultAuditLogPeriod(new Date(), DEFAULT_PERIOD_DAYS)}
-        initialTargetTenantId={initialTargetTenantId}
-        maxPeriodDays={AUDIT_LOG_SEARCH_MAX_PERIOD_DAYS}
-        pageSize={ADMIN_MONITORING_PAGE_SIZE}
-        actorTypeOptions={AUDIT_ACTOR_KINDS.map((kind) => ({ value: kind, label: actorLabels[kind] }))}
-        // デバイス種別は値をそのまま表示する（技術的な列挙値。`S-041` の IP・デバイス列と同じ扱い）。
-        deviceKindOptions={AUDIT_DEVICE_KINDS.map((kind) => ({ value: kind, label: kind }))}
-      />
+    <main className="py-6">
+      <PageBody widthClass="full">
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <h1 className="text-title font-bold text-fg">{t('admin.auditLogs.title')}</h1>
+          {/* 🔴 BR-37: 運営者コンソールは既定 read-only。書き込み操作なしを常時明示する。 */}
+          <Badge>{t('admin.readOnly.badge')}</Badge>
+        </div>
+        <p className="mb-6 text-body text-fg-muted" data-testid="admin-audit-logs-lead">
+          {t('admin.auditLogs.lead')}
+        </p>
+        <AdminAuditLogsView
+          messages={messages}
+          initialPeriod={defaultAuditLogPeriod(new Date(), DEFAULT_PERIOD_DAYS)}
+          initialTargetTenantId={initialTargetTenantId}
+          maxPeriodDays={AUDIT_LOG_SEARCH_MAX_PERIOD_DAYS}
+          pageSize={ADMIN_MONITORING_PAGE_SIZE}
+          actorTypeOptions={AUDIT_ACTOR_KINDS.map((kind) => ({ value: kind, label: actorLabels[kind] }))}
+          // デバイス種別は値をそのまま表示する（技術的な列挙値。`S-041` の IP・デバイス列と同じ扱い）。
+          deviceKindOptions={AUDIT_DEVICE_KINDS.map((kind) => ({ value: kind, label: kind }))}
+        />
+      </PageBody>
     </main>
   );
 }

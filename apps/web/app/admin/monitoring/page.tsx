@@ -7,10 +7,15 @@
 // 🔴 表示するのは件数・状態・エラー種別・日時のみで、提案本文・エンジニア氏名・スキルシート内容・チャット本文は含まれない（`F-059 AC-3`）。
 // 🔴 このページ自身は DB を読まない（材料は API-A8 が読み、その読み取りが `admin.monitoring.view` として記録される）。
 // 🔴 文言は `packages/i18n` から引いてクライアントへ props で渡す（`CLAUDE.md` §3.5）。
+//
+// 🔴 SP-22 T-22-08: 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`）。`A-005` は
+//    **クラス A = 全幅**である。**画面ファイルに `max-w-*` を書かない**（検査 (c) / (k)）——
+//    🔴 §7.1 は「`2xl` で `A-005` / `A-006` が **100 行 × 全列**を出せることが監視の前提」と定めており、
+//    旧 `max-w-6xl`（1152px）はその前提を満たしていなかった（§10.3「監視画面では列を隠さない」）。
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { t } from '@ses/i18n';
-import { Badge } from '@ses/ui';
+import { Badge, PageBody } from '@ses/ui';
 import { resolvePlatformCtxOutcome } from '../../../lib/auth/platform-session';
 import { AdminMonitoringView } from './admin-monitoring-view';
 import { adminMonitoringMessages } from './_lib/messages';
@@ -29,16 +34,18 @@ export default async function AdminMonitoringPage() {
   if (outcome.status === 'TWO_FACTOR_REQUIRED') redirect('/admin/signin?step=2fa');
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-8">
-      <div className="mb-2 flex items-center justify-between">
-        <h1 className="text-xl font-bold text-slate-900">{t('admin.monitoring.title')}</h1>
-        {/* 🔴 BR-37: 運営者コンソールは既定 read-only。書き込み操作なしを常時明示する。 */}
-        <Badge>{t('admin.readOnly.badge')}</Badge>
-      </div>
-      <p className="mb-6 text-sm text-slate-600" data-testid="admin-monitoring-lead">
-        {t('admin.monitoring.lead')}
-      </p>
-      <AdminMonitoringView messages={adminMonitoringMessages()} endpoint={MONITORING_ENDPOINT} />
+    <main className="py-6">
+      <PageBody widthClass="full">
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <h1 className="text-title font-bold text-fg">{t('admin.monitoring.title')}</h1>
+          {/* 🔴 BR-37: 運営者コンソールは既定 read-only。書き込み操作なしを常時明示する。 */}
+          <Badge>{t('admin.readOnly.badge')}</Badge>
+        </div>
+        <p className="mb-6 text-body text-fg-muted" data-testid="admin-monitoring-lead">
+          {t('admin.monitoring.lead')}
+        </p>
+        <AdminMonitoringView messages={adminMonitoringMessages()} endpoint={MONITORING_ENDPOINT} />
+      </PageBody>
     </main>
   );
 }

@@ -232,6 +232,15 @@ const ja = {
   'admin.tenants.column.projects': '案件数',
   'admin.tenants.column.lastActivity': '最終アクティビティ',
   'admin.tenants.loadMore': 'さらに読み込む',
+  // 🔴 T-22-08: `Pagination`（カーソル方式）の「前へ」。`docs/04` §7.1 は「もっと読む」ではなく
+  //    **次ページ / 前ページを明示**すると定めており、`S-010` と同じ語を使う（画面ごとに語を変えない）。
+  'admin.tenants.firstPage': '最初のページに戻る',
+  // 🔴 T-22-08: 列表示切替（`docs/04` §7.1「既定 8 列 + 操作列。9 列目以降は列表示切替に格納する」/
+  //    §10.3 改訂 21「優先度が最も低い `案件数` を `hideable` にする」）。語は `S-010` と同じ形である
+  //    （項目はチェックの印を持たないため、語が「いまの状態に対する操作」を表す）。
+  'admin.tenants.columnToggle.trigger': '表示する列',
+  'admin.tenants.columnToggle.hide.projects': '「案件数」の列を隠す',
+  'admin.tenants.columnToggle.show.projects': '「案件数」の列を表示する',
   'admin.tenants.lastActivity.none': '記録なし',
   // --- T-11-01: 健全性（異常度の高い順。docs/04 §A-002 / docs/05 §6.9 API-A2 / F-056 AC-2）---
   // 🔴 シグナル名は列挙値の写しであり、理由の自由文・内容（氏名・本文・単価）を持たない（BR-40）。
