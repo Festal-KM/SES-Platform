@@ -31,7 +31,7 @@
 // | 骨格 | `loadingRows`。🔴 **実際に入る行数**（画面が `limit` を渡す）と**実際の列数**で描く（跳ねない。§5-13） |
 // | カーソルページング | `./pagination.tsx`（別部品）。🔴 **この器はページングを知らない**（オフセット・総件数の prop を持たない） |
 //
-// ⚠️ **`docs/05` §2.3.5 のスケッチとの差分（2 点。完了記録に出す）**
+// ⚠️ **`docs/05` §2.3.5 のスケッチとの差分（3 点。完了記録に出す）**
 //   ① **`rowHref`（行クリック）を持たない。** HTML では `<tr>` をリンクにできず、実現するには
 //      クライアントの `onClick` か全セルの `<a>` 化が要る。前者は受け入れ基準 3（器はサーバ）に反し、
 //      後者は 8 列 × 50 行 = 400 個の `<a>` を生む。`docs/04` §10.3 は全文への到達を
@@ -40,6 +40,10 @@
 //   ② **`sort` に加えて `sortHref` を受け取る。** §2.3.5 は「リンクの `href` にソートキーを載せる」と
 //      定めているが、href の組み立ては URL（既存のクエリ）の話であり `packages/ui` は
 //      `next/navigation` に依存しない（§2.3.1）。したがって**呼び出し側から関数で受ける**。
+//   ③ **`rowAttributes`（行の `data-*` と `className`）を受け取る**（`T-22-06` で追加）。
+//      理由は `DataTableRowAttributes` の 🔴 にある —— `S-019` の「保留と送信失敗は別の印」を
+//      検証している E2E が `<tr>` の属性を掴んでおり、器が通せないと**検出器が弱くなる**。
+//      🔴 **`data-testid` は通さない**（凍結された行の testid を画面から上書きさせない）。
 import type { ComponentType, CSSProperties, ReactNode } from 'react';
 import {
   DataTableSortLink,
@@ -123,10 +127,41 @@ export type DataTableColumn<Row> =
       readonly nameCell: DataTableNameCell<Row>;
     });
 
+/**
+ * 行（`<tr>`）に足す属性。🔴 **`data-*` と `className` だけ**である。
+ *
+ * ============================================================================
+ * 🔴 なぜこの穴が要るのか（`T-22-06` で足した。**装飾のためではない**）
+ * ============================================================================
+ * `S-019`（提案一覧）の行は、状態そのものを `<tr>` の属性として持っている:
+ *   `data-state` / `data-failure-kind` / `data-send-hold` / `data-in-progress`。
+ * 🔴 **これは E2E の掴み手であり、`CLAUDE.md` §7 の「0 件」を守っているテストの一部である** ——
+ *    `tests/e2e/proposal-cycle.spec.ts` は「保留（`APPROVED` + 理由）と `SUBMIT_FAILED` が
+ *    **別の印**であること」を、`tests/e2e/home.mobile.spec.ts` は「`SUBMIT_FAILED` の行が
+ *    保留の印を持たないこと」を、**行の属性**で検証している（`docs/05` §10.4「失敗と保留を
+ *    混同しない」）。器が行の属性を通せないと、この 2 本は `<td>` の中を覗く形に書き換える
+ *    しかなくなり、**検出器が弱くなる**。
+ * 🔴 **`data-testid` は受け取らない。** 行の testid は `testIdPrefix` + `rowKey` が決める
+ *    （凍結された値〔`docs/04` `U-22`〕を画面から上書きできてはならない）。
+ * 🔴 **見た目の自由を与えるための穴ではない。** `className` を許すのは
+ *    `docs/04` §S-019 の「`検査中` / `送信中` の行は進行中の表現（点線枠）」のためである。
+ */
+export type DataTableRowAttributes = {
+  readonly className?: string;
+  /**
+   * 🔴 **行の testid は渡せない**（型で封じる）。値は `testIdPrefix` + `rowKey` が決める ——
+   *    凍結された値（`docs/04` `U-22`）を画面から上書きできてはならない。
+   */
+  readonly 'data-testid'?: never;
+  readonly [key: `data-${string}`]: string | undefined;
+};
+
 export type DataTableProps<Row> = {
   readonly columns: readonly DataTableColumn<Row>[];
   readonly rows: readonly Row[];
   readonly rowKey: (row: Row) => string;
+  /** 行に足す `data-*` / `className`（上の 🔴）。省略が既定。 */
+  readonly rowAttributes?: (row: Row) => DataTableRowAttributes;
   /**
    * 操作列（🔴 **1 行につき 1 つ**。一括操作は `Toolbar` 側）。
    * 🔴 **操作列はどのブレークポイントでも隠さない**（`S-015`: 1 件ずつの解除がモバイルで完結すること）。
@@ -180,6 +215,7 @@ export function DataTable<Row>({
   columns,
   rows,
   rowKey,
+  rowAttributes,
   rowAction,
   rowActionHeader,
   sort,
@@ -309,7 +345,14 @@ export function DataTable<Row>({
           : rows.map((row) => {
               const key = rowKey(row);
               return (
-                <TableRow key={key} data-testid={`${testIdPrefix}row-${key}`}>
+                // 🔴 行の testid は器が決める（`rowAttributes` の `data-testid` は型で封じてある
+                //    ので、先に書いても上書きされない）。**属性の並びは移行前と同じ**
+                //    （`class` → `data-testid` → 画面が足した `data-*`）。
+                <TableRow
+                  key={key}
+                  data-testid={`${testIdPrefix}row-${key}`}
+                  {...(rowAttributes === undefined ? {} : rowAttributes(row))}
+                >
                   {selection === undefined ? null : (
                     <TableCell className="w-10">
                       <DataTableSelectionCheckbox

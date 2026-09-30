@@ -221,7 +221,12 @@ describe('③ S-022 への導線 / ④ 一括の語が無い / ⑤ 空状態', (
     const initial = render({ rows: [], summary: { ...summary, sendFailuresHref: null } });
     expect(initial).toMatch(/data-testid="proposal-list-empty"[^>]*data-filtered="false"/);
     expect(initial).toContain('data-testid="proposal-list-empty-open-projects"');
-    expect(initial).not.toContain('data-testid="proposal-list-table"');
+    // ⚠️ **T-22-06 で判定の形を追随させた（緩めていない）**: `@ses/ui` の `DataTable` は空状態を
+    //    **表の中の 1 行**（`proposal-list-empty-row` の `colSpan`）として描く契約である
+    //    （`docs/05` §2.3.5 の `empty`）。🔴 守るべき中身は「**データ行が 0 であること**」なので、
+    //    それを直接見る（列ヘッダは骨格として残るのが部品の契約）。
+    expect(initial).toContain('data-testid="proposal-list-empty-row"');
+    expect(initial).not.toContain('data-testid="proposal-list-row-');
     const filtered = render({
       rows: [],
       filtered: true,
@@ -238,5 +243,72 @@ describe('③ S-022 への導線 / ④ 一括の語が無い / ⑤ 空状態', (
     expect(html).toMatch(/data-testid="proposal-list-screen"[^>]*data-audience="PARTNER"/);
     expect(html).not.toContain('Partner A1');
     expect(html).not.toContain('data-testid="proposal-list-open-send-failures"');
+  });
+});
+
+// ============================================================================
+// 🔴 T-22-06: 列の集合・並び・ブレークポイントが**移行前と同一**である（受け入れ基準 2）
+// ============================================================================
+// 🔴 **整形のついでに列を足さない / 落とさない。** `hidden lg:table-cell` の直書きを列定義の
+//    `priority` に移しただけであり、DOM に出る列と消える境界は 1 つも変わっていない
+//    （§S-019「デバイス別」= モバイル 4 / タブレット 6 / デスクトップ 8）。
+//
+// | 列 | 移行前のクラス | 移行後の `priority` |
+// |---|---|---|
+// | 状態 | （常時） | `always` |
+// | エンジニア | （常時） | `always` |
+// | 提案先 | （常時） | `always` |
+// | 案件 | `hidden sm:table-cell` | `sm` |
+// | 単価 | `hidden sm:table-cell` | `sm` |
+// | 作成者 | `hidden lg:table-cell` | `lg` |
+// | 最終更新 | `hidden lg:table-cell` | `lg` |
+// | 経過時間 | （常時） | `always` |
+describe('🔴 T-22-06: 列の契約（移行前と同一。増減 0）', () => {
+  function headerColumns(html: string): { readonly id: string; readonly breakpoint: string }[] {
+    const head = /<thead[^>]*>(.*?)<[/]thead>/s.exec(html)?.[1] ?? '';
+    return [...head.matchAll(/<th ([^>]*)>/g)].map((match) => {
+      const attributes = match[1] ?? '';
+      const id = /data-column-id="([^"]+)"/.exec(attributes)?.[1] ?? '?';
+      const classes = /class="([^"]*)"/.exec(attributes)?.[1] ?? '';
+      const breakpoint = classes.includes('hidden lg:table-cell')
+        ? 'lg'
+        : classes.includes('hidden sm:table-cell')
+          ? 'sm'
+          : 'always';
+      return { id, breakpoint };
+    });
+  }
+
+  it('8 列。並びと境界が移行前と一致する（ホスト / 取引先で同じ列）', () => {
+    const expected = [
+      { id: 'state', breakpoint: 'always' },
+      { id: 'engineer', breakpoint: 'always' },
+      { id: 'recipient', breakpoint: 'always' },
+      { id: 'project', breakpoint: 'sm' },
+      { id: 'unitPrice', breakpoint: 'sm' },
+      { id: 'createdBy', breakpoint: 'lg' },
+      { id: 'updatedAt', breakpoint: 'lg' },
+      { id: 'elapsed', breakpoint: 'always' },
+    ];
+    expect(headerColumns(render())).toEqual(expected);
+    // 🔴 取引先も同じ 8 列である（違うのは行の中身 = 作成会社の 1 行が無いこと）。
+    expect(headerColumns(render({ audience: 'PARTNER', rows: rows.map((item) => ({ ...item, owner: null, hold: null })) }))).toEqual(
+      expected,
+    );
+  });
+
+  it('🔴 モバイル（`sm` 未満）に残るのは 4 列（状態 / エンジニア / 提案先 / 経過時間）', () => {
+    const always = headerColumns(render()).filter((column) => column.breakpoint === 'always');
+    expect(always.map((column) => column.id)).toEqual(['state', 'engineer', 'recipient', 'elapsed']);
+  });
+
+  it('🔴 `U-18`: 行選択のチェックボックスと一括承認のボタンを 1 つも描かない（Phase 1）', () => {
+    const html = render();
+    // `DataTable` の選択列（`selection`）を渡していない = 選択のチェックボックスが存在しない。
+    expect(html).not.toContain('data-testid="proposal-list-select-');
+    // 一括操作の置き場所（`Toolbar` の `bulkActions`）も渡していない。
+    expect(html).not.toContain('data-testid="proposal-list-toolbar-bulk"');
+    // 🔴 状態の絞り込みはフィルタであってタブではない（§10.3「多数タブ」）。
+    expect(html).not.toContain('role="tablist"');
   });
 });

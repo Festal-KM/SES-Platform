@@ -149,6 +149,7 @@ export type {
   DataTableColumn,
   DataTableNameCell,
   DataTableProps,
+  DataTableRowAttributes,
 } from './components/data-table.js';
 // 🔴 並び / 行選択の**型**は器の prop の型であり、部品（`./index.client.ts`）とは別に要る。
 export type {

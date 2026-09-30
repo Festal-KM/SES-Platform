@@ -34,19 +34,29 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { collectSourceFiles, repoRoot, toRepoRelative } from './support/ui-classes.js';
 import { TESTID_BASELINE_EXACT, TESTID_BASELINE_PREFIXES } from './support/testid-baseline.js';
-import { extractTestIds } from './support/testid-extract.js';
+import { composeTestIds, extractTestIds } from './support/testid-extract.js';
 
 /** 🔴 `testid-inventory.test.ts` の `SCAN_ROOTS` と同じ 2 ルート（片方だけ見ない）。 */
 const SCAN_ROOTS = [path.join(repoRoot, 'apps', 'web'), path.join(repoRoot, 'packages', 'ui')];
 
 const scanned = SCAN_ROOTS.flatMap((root) =>
-  collectSourceFiles(root, ['.tsx']).map((absolute) => ({
-    label: toRepoRelative(absolute),
-    extraction: extractTestIds(readFileSync(absolute, 'utf8'), toRepoRelative(absolute)),
-  })),
+  collectSourceFiles(root, ['.tsx']).map((absolute) => {
+    const label = toRepoRelative(absolute);
+    const source = readFileSync(absolute, 'utf8');
+    return { label, source, extraction: extractTestIds(source, label) };
+  }),
 );
-const presentExact = new Set(scanned.flatMap((file) => file.extraction.exact));
-const presentPrefixes = new Set(scanned.flatMap((file) => file.extraction.prefixes));
+/**
+ * 🔴 **`testIdPrefix` から組まれる testid を解いて足す**（`T-22-06`。`support/testid-extract.ts` の
+ *    「`testIdPrefix` から組まれる testid の解決」）。`T-22-04` の一覧の部品は
+ *    `${testIdPrefix}table` の形で testid を組むため、これを解かないと
+ *    **`engineer-list-table` / `engineer-list-row-` が「消えた」と誤判定される**。
+ * 🔴 **凍結リストを緩めたのではない。** 解けなかった場合に起きるのは「見つからない = 落ちる」で
+ *    あり、この解決は**実際に DOM に出る値だけ**を足す（要素名で突き合わせる）。
+ */
+const composed = composeTestIds(scanned);
+const presentExact = new Set([...scanned.flatMap((file) => file.extraction.exact), ...composed.exact]);
+const presentPrefixes = new Set([...scanned.flatMap((file) => file.extraction.prefixes), ...composed.prefixes]);
 const totalOccurrences = scanned.reduce((sum, file) => sum + file.extraction.occurrences, 0);
 
 /**
@@ -179,5 +189,18 @@ describe('🔴 data-testid の凍結（docs/05 §17.7.3 / docs/04 U-22）', () =
     expect(isCoveredByFrozen('this-testid-does-not-exist')).toBe(false);
     // 接頭辞の覆いが機能している（ENUM 由来の値が接頭辞で覆われる形）。
     expect(isCoveredByFrozen('admin-monitoring-send-hold-PROVIDER_QUOTA')).toBe(true);
+  });
+
+  it('🔴 `testIdPrefix` の合成が現に働いている（`T-22-06`。解けていなければ上の ① が落ちる側に倒れる）', () => {
+    // 🔴 一覧の 3 画面は `DataTable` に `testIdPrefix` を渡す形へ移った（`T-22-06`）。
+    //    合成が働いていることを**実在の値**で示す（0 件でも緑にならないようにする）。
+    expect(composed.exact).toContain('engineer-list-table');
+    expect(composed.exact).toContain('project-list-table');
+    expect(composed.exact).toContain('proposal-list-table');
+    expect(composed.prefixes).toContain('engineer-list-row-');
+    expect(composed.prefixes).toContain('engineer-list-link-');
+    // 🔴 合成は要素名で突き合わせる（総当たりではない）—— `Toolbar` の接尾辞が
+    //    `DataTable` の接頭辞に付くことはない。
+    expect(composed.exact).not.toContain('engineer-list-toolbar-table');
   });
 });

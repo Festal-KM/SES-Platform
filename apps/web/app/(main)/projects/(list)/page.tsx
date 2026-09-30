@@ -13,6 +13,7 @@
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { t } from '@ses/i18n';
+import { PageBody } from '@ses/ui';
 import { resolveTenantCtxOutcome } from '../../../../lib/auth/session';
 import { listProjects } from '../../../../lib/projects/list';
 import {
@@ -60,7 +61,10 @@ export default async function ProjectListPage({
   const filtered = hasProjectListFilters(query);
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-8">
+    // 🔴 T-22-06: 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`）。`S-010` は
+    //    **クラス A = 全幅**である。画面ファイルに `max-w-*` を書かない（検査 (c) / (k)）。
+    <main className="py-6">
+      <PageBody widthClass="full">
       <PageHeading trail={PROJECT_LIST_TRAIL} title={t('projects.list.title')} />
       <ProjectListScreen
         rows={projectListRows(view.items)}
@@ -88,6 +92,7 @@ export default async function ProjectListPage({
           filtered,
         })}
       />
+      </PageBody>
     </main>
   );
 }

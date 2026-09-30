@@ -216,18 +216,73 @@ describe('🔴 (m) DataTable の列定義の契約（docs/05 §17.7.1 (m) / §2.
     ).toEqual([]);
   });
 
-  it('⚠️ 着手時点の実体を明示的に固定する（0 件を「何も見ていない」で済ませない）', () => {
-    // 🔴 `DataTable` は `T-22-04` が作る。列定義は 1 件も無い。
-    expect(definitions).toEqual([]);
-    // 🔴 一方で「画面が自前で列を隠している」ソースは現に在る（④ の対象が段② 以降に生まれることの根拠）。
+  it('⚠️ 現在の実体を明示的に固定する（0 件を「何も見ていない」で済ませない）', () => {
+    // 🔴 **`T-22-06`（段② の一覧 ①）で列定義が実在するようになった。** 着手時（2026-09-30）の
+    //    「列定義は 1 件も無い」という固定はここで**追随させた** —— 検出器の判定は 1 つも
+    //    緩めていない（①②③④ の本体はそのままで、むしろ ④ が現に対象を持つようになった）。
+    expect(definitions.length, '列定義が 0 件に戻った（`DataTable` の適用が失われていないか）').toBeGreaterThan(0);
+    // 🔴 `T-22-06` の 3 画面が現に列定義を持っている（`T-22-07` / `T-22-08` で残り 6 画面が入る）。
+    const filesWithColumns = new Set(definitions.map((definition) => definition.file));
+    for (const file of [
+      'apps/web/app/(main)/engineers/engineer-ledger-screen.tsx',
+      'apps/web/app/(main)/projects/project-list-screen.tsx',
+      'apps/web/app/(main)/proposals/(list)/proposal-list-screen.tsx',
+    ]) {
+      expect(filesWithColumns, `${file} の列定義が見つからない`).toContain(file);
+    }
+    // 🔴 一方で「画面が自前で列を隠している」ソースは**まだ在る**（段② の残り 6 画面と段④）。
+    //    ④ の対象が今後も生まれることの根拠であり、0 になったらこの固定を見直す。
     const selfHiding = appScanned.flatMap(({ file, source }) => hiddenColumnClassFindings(file, source));
     expect(
       selfHiding.length,
       '画面が自前で `hidden lg:table-cell` を書いている箇所が 0 になった。' +
-        '列定義が入ったのなら ④ の対象になっているはずで、この固定を見直すこと',
+        '全画面が `priority` へ移ったのなら、この固定を見直すこと',
     ).toBeGreaterThan(0);
-    // ④ は「列定義を持つ画面」に限って見るので、いまは 0 件である（緩めていないことの確認）。
+    // 🔴 ④ は「列定義を持つ画面」に限って見る。移行済みの 3 画面に直書きが残っていない。
     expect(hiddenClassFindings).toEqual([]);
+  });
+
+  it('🔴 `T-22-06` の 3 画面の列の集合・並び・優先度が `docs/04` §10.3 / §S-0xx と一致する', () => {
+    // 🔴 **これは「整形のついでに列を足していない」ことの機械側である**（`T-22-06` 受け入れ基準 2）。
+    //    画面の render テストは「ロール別に描かれるか」を見るが、**列の順序と優先度の表**は
+    //    ここで 1 箇所に固定する（§10.3 の表が一次資料。`docs/05` にも `packages/ui` にも写さない）。
+    const columnsOf = (file: string): string[] =>
+      definitions
+        .filter((definition) => definition.file === file)
+        .map((definition) => `${definition.id ?? '?'}:${definition.priority ?? '?'}${definition.hideable ? ':hideable' : ''}`);
+
+    expect(columnsOf('apps/web/app/(main)/engineers/engineer-ledger-screen.tsx')).toEqual([
+      'name:always',
+      'ownership:lg',
+      'skills:always',
+      'unitPrice:sm',
+      'availableFrom:always',
+      'location:lg',
+      'availability:sm',
+      'updatedOn:lg',
+    ]);
+    expect(columnsOf('apps/web/app/(main)/projects/project-list-screen.tsx')).toEqual([
+      'name:always',
+      'status:always',
+      'mustRequirements:lg',
+      'unitPrice:always',
+      'startDate:always',
+      'location:sm',
+      'headcount:lg',
+      'updatedOn:sm',
+      // 🔴 9 列目（ホストのみ）。§7.1「9 列目以降は列表示切替に格納する」。
+      'visibility:lg:hideable',
+    ]);
+    expect(columnsOf('apps/web/app/(main)/proposals/(list)/proposal-list-screen.tsx')).toEqual([
+      'state:always',
+      'engineer:always',
+      'recipient:always',
+      'project:sm',
+      'unitPrice:sm',
+      'createdBy:lg',
+      'updatedAt:lg',
+      'elapsed:always',
+    ]);
   });
 });
 

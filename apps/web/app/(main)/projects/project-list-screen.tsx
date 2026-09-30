@@ -1,25 +1,37 @@
 // apps/web/app/(main)/projects/project-list-screen.tsx
-// `S-010` 案件一覧・検索 — 本体（docs/04 §S-010 / `F-015` / docs/05 §6.4 #25）。T-06-03。
+// `S-010` 案件一覧・検索 — 本体（docs/04 §S-010 / `F-015` / docs/05 §6.4 #25）。
+// T-06-03 → **SP-22 `T-22-06`（一覧の適用 ①）**。
 //
-// 🔴 **一覧はテーブルで描く。カードで並べない**（docs/04 §11-2「`S-010` は 1 万件規模を前提に
-//    したテーブル」）。既定 50 行のカーソルページングで、無限スクロールにしない。
+// ============================================================================
+// 🔴 `T-22-06` で何が変わったか（**見せ方だけ**。`SP-22` §3.1）
+// ============================================================================
+// ローカルの `<Table>` → `@ses/ui` の **`DataTable`** / 帯 → **`Toolbar`** / ページ送り →
+// **`Pagination`** / 空状態 → **`EmptyState`** / 幅 → **`PageBody widthClass="full"`**（クラス A）。
+// 色と文字サイズは §7.9 の semantic トークンと 6 トークンへ寄せた。
+// 🔴 **機能・API・並び順・権限差分・表示項目は 1 つも変えていない。**
 //
-// 🔴 **T2（モバイル閲覧可）。列は間引くが遮断しない**（`CLAUDE.md` §13.3 / docs/04 §S-010
-//    デバイス別）。ブレークポイントは Tailwind の既定のみを使う（独自定義しない）:
-//      - モバイル（< sm） … 案件名 / 状態 / 単価レンジ / 開始日 の 4 列
-//      - タブレット（sm 〜 lg） … + 勤務地・リモート / 更新日 の 6 列
-//      - デスクトップ（lg 〜） … + 必須要件の要約 / 募集人数（+ ホストのみ公開先の設定状況）
-//    ⚠️ docs/04 §S-010 デバイス別は モバイルを「2 行構成」と書いているが、**列の間引きで表現した**
-//    （項目は同じ 4 つ。案件名が長いときはセル内で折り返る）。理由は docs/04 §11-2
-//    「一覧はテーブルで描く。カードで並べない」であり、行を 2 段に割ると `S-005` と描き方が
-//    分かれる。docs/04 §S-010 に ⚠️ として記録した。
+// 🔴 **列を 1 つも増減させていない**（受け入れ基準 2）。`hidden lg:table-cell` の直書きを
+//    列定義の `priority` に移しただけである（§10.3 の `S-010` の行 / §S-010「デバイス別」）:
 //
+//   | # | 列 | `priority` | 根拠 |
+//   |---|---|---|---|
+//   | 1 | 案件名 | `always` | モバイル 4 列に残る（`NameCell` に委譲。`U-16`） |
+//   | 2 | 状態 | `always` | 同上（`募集中` / `充足` / `後任募集`） |
+//   | 3 | 必須要件の要約 | `lg` | §10.3「切り詰める列」かつ補助列。余りを配分する列（`grow`） |
+//   | 4 | 単価レンジ | `always` | モバイル 4 列に残る |
+//   | 5 | 開始日 | `always` | 同上 |
+//   | 6 | 勤務地・リモート | `sm` | §10.3「優先度の低い列: 募集人数 → 勤務地 → 更新日」 |
+//   | 7 | 募集人数 | `lg` | 同上（最初に隠れる） |
+//   | 8 | 更新日 | `sm` | 同上 |
+//   | 9 | 公開先の設定状況 | `lg` + **`hideable`** | 🔴 **ホストのみ**（`F-014 AC-4` / `BR-07`）。§7.1「既定 8 列 + 操作列。**9 列目以降は列表示切替に格納する**」に従い `hideable` を付ける（既定では表示されたままで、**見え方は移行前と同じ**） |
+//
+// 🔴 **公開状況列は 3 値**（`未設定` / `N 社に公開中` / `公開を解除（検査）`）を維持する。値は
+//    `lib/projects/list-rows.ts` が組み、**理由・原因の欄は一覧に出さない**（読むのは `S-011`）。
+// 🔴 **`selection` を渡さない**（Phase 1 に一括操作は無い。検査 (m)③）。
+// 🔴 **`sortKey` を渡さない** —— 並びは `後任募集 → 募集中 → 充足` → 更新日の降順でサーバが確定
+//    させており（`docs/05` §6.4「#25 の実装の決着」）、**既存 API の決定的順序を変えない**。
 // 🔴 **スコア・順位・重みに相当する表示項目を持たない**（Phase 1。`F-009 AC-2` と同じ規律）。
-//    並び順の説明は 1 行で常時出す（`docs/04` §S-010）。
 // 🔴 **「全 N ページ中 M ページ目」「他に N 件」を描かない**（docs/05 §4.8）。
-// 🔴 **公開先の設定状況の列は `showVisibilityColumn` が真のときだけ描く**（`F-014 AC-4` /
-//    `BR-07`）。判定の出所は `ctx.partnerCompanyId` であり、行の値ではない。加えて
-//    取引先の行には `visibility` が `null` で届く（`ProjectListRowView` の注記）。
 //
 // 🔴 文言は props（`packages/i18n`）から受け取る。ここにベタ書きしない（`CLAUDE.md` §3.5）。
 // 🔴 検索は**同期**（`docs/04` §S-010 非同期処理の表現）。素の `<form method="get">` で送るので、
@@ -33,18 +45,18 @@
 import Link from 'next/link';
 import {
   Button,
+  DataTable,
+  EmptyState,
   Field,
   Input,
-  NameCell,
+  Pagination,
   SECONDARY_LINK_CLASSES,
   SECONDARY_LINK_STACKED_CLASSES,
   Select,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+  Toolbar,
+  cn,
+  type DataTableColumn,
+  type PaginationLinkProps,
 } from '@ses/ui';
 import {
   FILTER_ACTIONS_CLASSES,
@@ -96,10 +108,128 @@ export type ProjectListScreenMessages = {
   readonly firstPage: string;
 };
 
-/** デスクトップでだけ出す列（docs/04 §11「優先度の低い列（先に隠す）」）。 */
-const DESKTOP_ONLY = 'hidden lg:table-cell';
-/** タブレット以上で出す列。 */
-const TABLET_UP = 'hidden sm:table-cell';
+/**
+ * ページ送りのリンク。🔴 **凍結済み testid の維持**（`docs/04` `U-22` / `SP-22` §3.2 の代替 ④）:
+ * `Pagination` は `project-list-pagination-prev` / `…-next` を出すが、凍結されている値は
+ * **`project-list-first` / `project-list-next`** である（`EngineerPagingLink` と同じ形・同じ理由）。
+ */
+function ProjectPagingLink({ href, className, children, 'data-testid': testId }: PaginationLinkProps) {
+  return (
+    <Link
+      href={href}
+      className={className}
+      data-testid={testId === undefined || testId.endsWith('-prev') ? 'project-list-first' : 'project-list-next'}
+    >
+      {children}
+    </Link>
+  );
+}
+
+/**
+ * 列定義（🔴 **§10.3 の `S-010` の行をそのまま写す**。ファイル冒頭の表）。
+ * 🔴 **画面に `hidden lg:table-cell` を書かない**（検査 (m)④）。
+ */
+function projectColumns(
+  messages: ProjectListScreenMessages,
+  showVisibilityColumn: boolean,
+): readonly DataTableColumn<ProjectListRowView>[] {
+  return [
+    {
+      id: 'name',
+      header: messages.columnName,
+      priority: 'always',
+      // 🔴 名称列の下限 10rem はどのブレークポイントでも維持する（`U-16`）。
+      minWidth: '10rem',
+      // 🔴 案件名セルは `NameCell` に委譲する（`lg` 以上 = 切り詰め + `title` + 同じ行に `S-011` への
+      //    導線 / `lg` 未満 = 折り返し）。**閲覧の監査記録は遷移先が書く**（`BR-27`）。
+      nameCell: {
+        name: (row) => row.name,
+        href: (row) => `/projects/${row.id}`,
+      },
+    },
+    {
+      id: 'status',
+      header: messages.columnStatus,
+      priority: 'always',
+      minWidth: '5rem',
+      cell: (row) => row.status,
+    },
+    {
+      id: 'mustRequirements',
+      header: messages.columnMustRequirements,
+      priority: 'lg',
+      minWidth: '10rem',
+      // 🔴 余りはこの列に配分する（§7.1 の `2xl`「要件の要約」）。
+      grow: true,
+      whitespace: 'normal',
+      cell: (row) => (
+        <>
+          {row.mustRequirements}
+          {row.moreMustRequirements === null ? null : (
+            <span
+              className="ml-1 text-xs text-fg-muted"
+              data-testid={`project-list-more-requirements-${row.id}`}
+            >
+              {row.moreMustRequirements}
+            </span>
+          )}
+        </>
+      ),
+    },
+    {
+      id: 'unitPrice',
+      header: messages.columnUnitPrice,
+      priority: 'always',
+      // 🔴 単価は円単位・3 桁区切り（§10.3「大きい数値」）。値は `list-rows` が組む。
+      minWidth: '10rem',
+      cell: (row) => row.unitPrice,
+    },
+    {
+      id: 'startDate',
+      header: messages.columnStartDate,
+      priority: 'always',
+      minWidth: '8rem',
+      cell: (row) => row.startDate,
+    },
+    {
+      id: 'location',
+      header: messages.columnLocation,
+      priority: 'sm',
+      minWidth: '9rem',
+      cell: (row) => row.location,
+    },
+    {
+      id: 'headcount',
+      header: messages.columnHeadcount,
+      priority: 'lg',
+      minWidth: '5rem',
+      cell: (row) => row.headcount,
+    },
+    {
+      id: 'updatedOn',
+      header: messages.columnUpdatedOn,
+      priority: 'sm',
+      minWidth: '7rem',
+      cell: (row) => row.updatedOn,
+    },
+    // 🔴 取引先には公開先の列を出さない（`F-014 AC-4` / `BR-07`）。**DOM から取り除く**。
+    ...(showVisibilityColumn
+      ? [
+          {
+            id: 'visibility',
+            header: messages.columnVisibility,
+            priority: 'lg',
+            minWidth: '8rem',
+            // 🔴 9 列目は列表示切替に格納する列である（§7.1「既定 8 列 + 操作列」）。
+            hideable: true,
+            cell: (row: ProjectListRowView) => (
+              <span data-testid={`project-list-visibility-${row.id}`}>{row.visibility}</span>
+            ),
+          } satisfies DataTableColumn<ProjectListRowView>,
+        ]
+      : []),
+  ];
+}
 
 export function ProjectListScreen({
   rows,
@@ -133,78 +263,90 @@ export function ProjectListScreen({
 }) {
   return (
     <div data-testid="project-list-screen">
-      {/* 🔴 検索条件（docs/04 §S-010 セクション 1）。`method="get"` なので、実行した検索が
-          そのまま URL になり、共有・再読込・戻るのいずれでも同じ結果に戻る。 */}
-      <form
-        className={FILTER_FORM_CLASSES}
-        method="get"
-        action="/projects"
-        data-testid="project-list-filters"
-      >
-        <fieldset className="contents">
-          <legend className="sr-only">{messages.searchLegend}</legend>
-          <Field label={messages.searchQ}>
-            <Input type="search" name="q" defaultValue={filters.q} data-testid="project-list-filter-q" />
-          </Field>
-          <Field label={messages.searchStatus}>
-            <Select name="status" defaultValue={filters.status} data-testid="project-list-filter-status">
-              {statusOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label={messages.searchStartFrom}>
-            <Input
-              type="date"
-              name="startFrom"
-              defaultValue={filters.startFrom}
-              data-testid="project-list-filter-start-from"
-            />
-          </Field>
-          <Field label={messages.searchPrefecture}>
-            <Select
-              name="prefecture"
-              defaultValue={filters.prefecture}
-              data-testid="project-list-filter-prefecture"
+      {/* 🔴 §5-13 の `Toolbar`: **母集団の 1 行（§3.2-2 の #2）と検索の帯の置き場所をここに固定する。**
+          ⚠️ **凍結済み testid の併記**（`U-22` / `SP-22` §3.2 の代替 ④）: `Toolbar` は母集団の 1 行を
+             `project-list-toolbar-population` として描くが、凍結されている値は
+             **`project-list-population`** であり `tests/e2e/projects.mobile.spec.ts` が掴んでいる。 */}
+      <div data-testid="project-list-population">
+        <Toolbar
+          testIdPrefix="project-list-"
+          population={messages.populationLabel}
+          filters={
+            /* 🔴 検索条件（docs/04 §S-010 セクション 1）。`method="get"` なので、実行した検索が
+               そのまま URL になり、共有・再読込・戻るのいずれでも同じ結果に戻る。
+               ⚠️ `mb-0` / `w-full` は帯の中に置いたための余白・幅の調整である（`cn()` の規律 1）。 */
+            <form
+              className={cn(FILTER_FORM_CLASSES, 'mb-0 w-full')}
+              method="get"
+              action="/projects"
+              data-testid="project-list-filters"
             >
-              {prefectureOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <div className={FILTER_ACTIONS_CLASSES}>
-            <Button type="submit" data-testid="project-list-search">
-              {messages.searchSubmit}
-            </Button>
-            {showClearFilters ? (
-              <Link className={SECONDARY_LINK_CLASSES} href="/projects" data-testid="project-list-clear">
-                {messages.searchClear}
-              </Link>
-            ) : null}
-          </div>
-        </fieldset>
-      </form>
+              <fieldset className="contents">
+                <legend className="sr-only">{messages.searchLegend}</legend>
+                <Field label={messages.searchQ}>
+                  <Input type="search" name="q" defaultValue={filters.q} data-testid="project-list-filter-q" />
+                </Field>
+                <Field label={messages.searchStatus}>
+                  <Select name="status" defaultValue={filters.status} data-testid="project-list-filter-status">
+                    {statusOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field label={messages.searchStartFrom}>
+                  <Input
+                    type="date"
+                    name="startFrom"
+                    defaultValue={filters.startFrom}
+                    data-testid="project-list-filter-start-from"
+                  />
+                </Field>
+                <Field label={messages.searchPrefecture}>
+                  <Select
+                    name="prefecture"
+                    defaultValue={filters.prefecture}
+                    data-testid="project-list-filter-prefecture"
+                  >
+                    {prefectureOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <div className={FILTER_ACTIONS_CLASSES}>
+                  <Button type="submit" data-testid="project-list-search">
+                    {messages.searchSubmit}
+                  </Button>
+                  {showClearFilters ? (
+                    <Link className={SECONDARY_LINK_CLASSES} href="/projects" data-testid="project-list-clear">
+                      {messages.searchClear}
+                    </Link>
+                  ) : null}
+                </div>
+              </fieldset>
+            </form>
+          }
+        />
+      </div>
 
       {/* 🔴 まだ効かない条件を黙って描かない（`engineers.list.searchComingSoon` と同じ規律）。 */}
-      <p className="mb-3 text-sm text-slate-500" data-testid="project-list-search-coming-soon">
+      <p className="mb-3 text-body text-fg-muted" data-testid="project-list-search-coming-soon">
         {messages.searchComingSoon}
       </p>
 
-      {/* 🔴 母集団を 1 行で明示する（docs/04 §3.2 項目 2）。件数は API の `total` だけを使う。 */}
-      <p className="mb-1 text-sm font-semibold text-slate-900" data-testid="project-list-population">
-        {messages.populationLabel}
-      </p>
       {messages.partnerScopeNotice === null ? null : (
-        <p className="mb-1 text-sm text-slate-600" data-testid="project-list-partner-scope-notice">
+        // 🔴 §5-10 の「見える範囲の説明」はフィルタ帯の直下である。
+        //    ⚠️ 凍結済み `project-list-partner-scope-notice` を維持するため、`Toolbar` の
+        //       `scopeNote`（`…-toolbar-scope-note` を出す）ではなく画面側の 1 行に残す。
+        <p className="mb-1 text-body text-fg-muted" data-testid="project-list-partner-scope-notice">
           {messages.partnerScopeNotice}
         </p>
       )}
       {/* 🔴 並び順の説明（docs/04 §S-010）。スコア・順位・重みの語を含めない。 */}
-      <p className="mb-3 text-sm text-slate-600" data-testid="project-list-order-note">
+      <p className="mb-3 text-body text-fg-muted" data-testid="project-list-order-note">
         {messages.orderNote}
       </p>
 
@@ -218,100 +360,45 @@ export function ProjectListScreen({
             {messages.register}
           </Link>
         ) : (
-          <p className="text-sm text-slate-500" data-testid="project-list-read-only-note">
+          <p className="text-body text-fg-muted" data-testid="project-list-read-only-note">
             {messages.readOnlyNote}
           </p>
         )}
       </div>
 
-      {rows.length === 0 ? (
-        // 🔴 docs/04 §10.1 `S-010`: **初回空と絞込 0 で文言が違う**（呼び出し側が選ぶ）。
-        //    取引先の初回空は「案件が無い」ではなく「公開されていない」である。
-        <div
-          className="border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700"
-          data-testid="project-list-empty"
-        >
-          <p className="mb-1 font-semibold">{messages.emptyTitle}</p>
-          <p className="m-0">{messages.emptyLead}</p>
-        </div>
-      ) : (
-        <Table data-testid="project-list-table">
-          <TableHeader>
-            <TableRow>
-              <TableHead>{messages.columnName}</TableHead>
-              <TableHead>{messages.columnStatus}</TableHead>
-              <TableHead className={DESKTOP_ONLY}>{messages.columnMustRequirements}</TableHead>
-              <TableHead>{messages.columnUnitPrice}</TableHead>
-              <TableHead>{messages.columnStartDate}</TableHead>
-              <TableHead className={TABLET_UP}>{messages.columnLocation}</TableHead>
-              <TableHead className={DESKTOP_ONLY}>{messages.columnHeadcount}</TableHead>
-              <TableHead className={TABLET_UP}>{messages.columnUpdatedOn}</TableHead>
-              {showVisibilityColumn ? (
-                <TableHead className={DESKTOP_ONLY}>{messages.columnVisibility}</TableHead>
-              ) : null}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((row) => (
-              <TableRow key={row.id} data-testid={`project-list-row-${row.id}`}>
-                {/* 🔴 案件名セルは `docs/04` §10.3「長い名称」のブレークポイント別規約（T-11-12。`@ses/ui` の
-                    `NameCell` が 1 か所で実装する）: `lg` 以上 = 1 行切り詰め + `title` + 同じ行の導線（`S-011`）、
-                    `lg` 未満 = 折り返し（T-06-03 の「セル内で折り返って 2 行になる」はこちらに残る）。下限幅 10rem は
-                    維持（T-08-11 の折り返し検出器が CI で捕捉した「名称列だけが 62px に潰れる」の再発防止。run 34924436520）。
-                    **閲覧の監査記録は遷移先が書く**（`readProjectDetail`。`BR-27`）。 */}
-                <NameCell
-                  name={row.name}
-                  href={`/projects/${row.id}`}
-                  linkComponent={Link}
-                  linkTestId={`project-list-link-${row.id}`}
-                />
-                <TableCell>{row.status}</TableCell>
-                <TableCell whitespace="normal" className={DESKTOP_ONLY}>
-                  {row.mustRequirements}
-                  {row.moreMustRequirements === null ? null : (
-                    <span
-                      className="ml-1 text-xs text-slate-500"
-                      data-testid={`project-list-more-requirements-${row.id}`}
-                    >
-                      {row.moreMustRequirements}
-                    </span>
-                  )}
-                </TableCell>
-                <TableCell>{row.unitPrice}</TableCell>
-                <TableCell>{row.startDate}</TableCell>
-                <TableCell className={TABLET_UP}>{row.location}</TableCell>
-                <TableCell className={DESKTOP_ONLY}>{row.headcount}</TableCell>
-                <TableCell className={TABLET_UP}>{row.updatedOn}</TableCell>
-                {showVisibilityColumn ? (
-                  <TableCell
-                    className={DESKTOP_ONLY}
-                    data-testid={`project-list-visibility-${row.id}`}
-                  >
-                    {row.visibility}
-                  </TableCell>
-                ) : null}
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      )}
+      <DataTable
+        testIdPrefix="project-list-"
+        columns={projectColumns(messages, showVisibilityColumn)}
+        rows={rows}
+        rowKey={(row) => row.id}
+        linkComponent={Link}
+        empty={
+          // 🔴 docs/04 §10.1 `S-010`: **初回空と絞込 0 で文言が違う**（呼び出し側が選ぶ）。
+          //    取引先の初回空は「案件が無い」ではなく「公開されていない」である。
+          //    ⚠️ 器の `data-testid` は凍結済みの `project-list-empty` である（`U-22`）。
+          <div data-testid="project-list-empty">
+            <EmptyState
+              testIdPrefix="project-list-empty-state-"
+              description={`${messages.emptyTitle}${messages.emptyLead}`}
+            />
+          </div>
+        }
+      />
 
-      {/* 🔴 カーソルページング（docs/05 §6.1）。**「全 N ページ中 M ページ目」を出さない** ——
-          ページ番号は境界外の行を含む全体件数を前提にした概念であり、§4.8 の「順位」に当たる。
-          🔴 リンクは検索条件を保った URL である（`projectListHref`）。 */}
+      {/* 🔴 カーソルページング（docs/05 §6.1）。**「全 N ページ中 M ページ目」を出さない**。
+          🔴 リンクは検索条件を保った URL である（`projectListHref`）。
+          ⚠️ 器の `data-testid` は凍結済みの `project-list-paging` である（`U-22`）。 */}
       {nextPageHref === null && firstPageHref === null ? null : (
-        <nav className="mt-4 flex flex-wrap gap-4" data-testid="project-list-paging">
-          {firstPageHref === null ? null : (
-            <Link className={SECONDARY_LINK_CLASSES} href={firstPageHref} data-testid="project-list-first">
-              {messages.firstPage}
-            </Link>
-          )}
-          {nextPageHref === null ? null : (
-            <Link className={SECONDARY_LINK_CLASSES} href={nextPageHref} data-testid="project-list-next">
-              {messages.nextPage}
-            </Link>
-          )}
-        </nav>
+        <div className="mt-4" data-testid="project-list-paging">
+          <Pagination
+            testIdPrefix="project-list-"
+            nextHref={nextPageHref}
+            nextLabel={messages.nextPage}
+            prevHref={firstPageHref}
+            prevLabel={messages.firstPage}
+            linkComponent={ProjectPagingLink}
+          />
+        </div>
       )}
     </div>
   );

@@ -181,10 +181,14 @@ describe('行から詳細への導線（docs/04 §S-010「行クリックで `S-
 });
 
 describe('空状態（docs/04 §10.1 `S-010`）', () => {
-  it('0 件のときはテーブルを描かず、呼び出し側が選んだ文言を出す', () => {
+  it('0 件のときはデータ行を 1 行も描かず、呼び出し側が選んだ文言を出す', () => {
     const html = render({ rows: [] });
 
-    expect(html).not.toContain('data-testid="project-list-table"');
+    // ⚠️ **T-22-06 で判定の形を追随させた（緩めていない）**: `@ses/ui` の `DataTable` は空状態を
+    //    **表の中の 1 行**（`project-list-empty-row` の `colSpan`）として描く契約である
+    //    （`docs/05` §2.3.5 の `empty`）。🔴 守るべき中身は「**データ行が 0 であること**」である。
+    expect(html).toContain('data-testid="project-list-empty-row"');
+    expect(html).not.toContain('data-testid="project-list-row-');
     expect(html).toContain('まだ案件が登録されていません。');
   });
 
@@ -259,7 +263,9 @@ describe('ページング（検索条件を保つ）', () => {
 describe('🔴 T-11-12: 案件名セルが docs/04 §10.3「長い名称」のブレークポイント別規約と一致する（`@ses/ui` の `NameCell`）', () => {
   it('lg 未満 = 折り返し + 下限 10rem、lg 以上 = 切り詰め（器）+ title + 同じ行に S-011 への導線', () => {
     const html = render({ rows: [row({ name: '金融系 Web API 改修' })] });
-    const cell = /<td class="([^"]*)">(<span class="[^"]*" title="金融系 Web API 改修">.*?<[/]span>)<[/]td>/.exec(html);
+    // ⚠️ **T-22-06: `<td>` の属性が増えたぶんだけ正規表現を緩めた（判定は 1 つも緩めていない）**。
+    //    `DataTable` は列定義由来の `style="min-width:…"` と `data-column-id` をセルに付ける。
+    const cell = /<td class="([^"]*)"[^>]*>(<span class="[^"]*" title="金融系 Web API 改修">.*?<[/]span>)<[/]td>/.exec(html);
     expect(cell).not.toBeNull();
     const classes = (cell?.[1] ?? '').split(' ');
     expect(classes).toContain('whitespace-normal');
@@ -274,5 +280,83 @@ describe('🔴 T-11-12: 案件名セルが docs/04 §10.3「長い名称」の�
     expect(link?.[1]).toContain(`href="/projects/${PROJECT_A}"`);
     expect(link?.[1]).toContain(`data-testid="project-list-link-${PROJECT_A}"`);
     expect(link?.[1]).not.toContain('truncate');
+  });
+});
+
+// ============================================================================
+// 🔴 T-22-06: 列の集合・並び・ブレークポイントが**移行前と同一**である（受け入れ基準 2）
+// ============================================================================
+// 🔴 **整形のついでに列を足さない / 落とさない。** `hidden lg:table-cell` の直書きを列定義の
+//    `priority` に移しただけであり、DOM に出る列と消える境界は 1 つも変わっていない
+//    （§10.3 の `S-010` の行「募集人数 → 勤務地 → 更新日」/ §S-010「デバイス別」）。
+//
+// | 列 | 移行前のクラス | 移行後の `priority` |
+// |---|---|---|
+// | 案件名 | （常時） | `always` |
+// | 状態 | （常時） | `always` |
+// | 必須要件の要約 | `hidden lg:table-cell` | `lg` |
+// | 単価レンジ | （常時） | `always` |
+// | 開始日 | （常時） | `always` |
+// | 勤務地・リモート | `hidden sm:table-cell` | `sm` |
+// | 募集人数 | `hidden lg:table-cell` | `lg` |
+// | 更新日 | `hidden sm:table-cell` | `sm` |
+// | 公開先の設定状況（ホストのみ） | `hidden lg:table-cell` | `lg` + `hideable`（9 列目） |
+describe('🔴 T-22-06: 列の契約（移行前と同一。増減 0）', () => {
+  function headerColumns(html: string): { readonly id: string; readonly breakpoint: string }[] {
+    const head = /<thead[^>]*>(.*?)<[/]thead>/s.exec(html)?.[1] ?? '';
+    return [...head.matchAll(/<th ([^>]*)>/g)].map((match) => {
+      const attributes = match[1] ?? '';
+      const id = /data-column-id="([^"]+)"/.exec(attributes)?.[1] ?? '?';
+      const classes = /class="([^"]*)"/.exec(attributes)?.[1] ?? '';
+      const breakpoint = classes.includes('hidden lg:table-cell')
+        ? 'lg'
+        : classes.includes('hidden sm:table-cell')
+          ? 'sm'
+          : 'always';
+      return { id, breakpoint };
+    });
+  }
+
+  it('ホスト = 9 列（9 列目は公開先の設定状況）。並びと境界が移行前と一致する', () => {
+    expect(headerColumns(render())).toEqual([
+      { id: 'name', breakpoint: 'always' },
+      { id: 'status', breakpoint: 'always' },
+      { id: 'mustRequirements', breakpoint: 'lg' },
+      { id: 'unitPrice', breakpoint: 'always' },
+      { id: 'startDate', breakpoint: 'always' },
+      { id: 'location', breakpoint: 'sm' },
+      { id: 'headcount', breakpoint: 'lg' },
+      { id: 'updatedOn', breakpoint: 'sm' },
+      { id: 'visibility', breakpoint: 'lg' },
+    ]);
+  });
+
+  it('🔴 取引先 = 8 列（公開先の列そのものが無い。CSS で隠すのではない）', () => {
+    const columns = headerColumns(render({ showVisibilityColumn: false }));
+    expect(columns.map((column) => column.id)).toEqual([
+      'name',
+      'status',
+      'mustRequirements',
+      'unitPrice',
+      'startDate',
+      'location',
+      'headcount',
+      'updatedOn',
+    ]);
+    expect(render({ showVisibilityColumn: false })).not.toContain('data-testid="project-list-visibility-');
+  });
+
+  it('🔴 モバイル（`sm` 未満）に残るのは 4 列（案件名 / 状態 / 単価レンジ / 開始日）', () => {
+    const always = headerColumns(render()).filter((column) => column.breakpoint === 'always');
+    expect(always.map((column) => column.id)).toEqual(['name', 'status', 'unitPrice', 'startDate']);
+  });
+
+  it('🔴 公開状況列は 1 語だけを描く（理由・原因の欄を一覧に出さない）', () => {
+    const html = render({ rows: [row({ visibility: '公開を解除（検査）' })] });
+    expect(html).toMatch(/data-testid="project-list-visibility-[^"]+">公開を解除（検査）<\/span>/);
+  });
+
+  it('🔴 行選択（`selection`）を描かない（Phase 1 に一括操作は無い）', () => {
+    expect(render()).not.toContain('data-testid="project-list-select-');
   });
 });

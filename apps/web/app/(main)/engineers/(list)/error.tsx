@@ -12,20 +12,24 @@
 //    URL を捨てたりしない —— 利用者が組み立てた条件が失われる。
 // 🔴 **失敗の理由を画面に出さない**（docs/05 §15.2）。`error.message` には内部の情報が入りうる。
 //    相関 ID（`x-request-id`）は API 応答のヘッダにあり、画面側は持たない。
-import { Button } from '@ses/ui';
+// 🔴 T-22-06: 色は §7.9 の semantic トークン（失敗は `--color-danger`）。幅は
+//    `PageBody widthClass="full"`（`S-005` はクラス A）であり、画面に `max-w-*` を書かない。
+import { Button, PageBody } from '@ses/ui';
 import { t } from '@ses/i18n';
 
 export default function EngineerLedgerError({ reset }: { readonly reset: () => void }) {
   return (
-    <main className="mx-auto max-w-6xl px-4 py-8">
-      <h1 className="mb-6 text-xl font-bold text-slate-900">{t('engineers.list.title')}</h1>
-      <p role="alert" className="mb-1 text-sm font-semibold text-red-700" data-testid="engineer-list-error">
-        {t('engineers.list.error.title')}
-      </p>
-      <p className="mb-4 text-sm text-slate-700">{t('engineers.list.error.lead')}</p>
-      <Button type="button" onClick={() => reset()} data-testid="engineer-list-retry">
-        {t('engineers.list.error.retry')}
-      </Button>
+    <main className="py-6">
+      <PageBody widthClass="full">
+        <h1 className="mb-6 text-title font-semibold text-fg">{t('engineers.list.title')}</h1>
+        <p role="alert" className="mb-1 text-body font-semibold text-danger" data-testid="engineer-list-error">
+          {t('engineers.list.error.title')}
+        </p>
+        <p className="mb-4 text-body text-fg">{t('engineers.list.error.lead')}</p>
+        <Button type="button" onClick={() => reset()} data-testid="engineer-list-retry">
+          {t('engineers.list.error.retry')}
+        </Button>
+      </PageBody>
     </main>
   );
 }

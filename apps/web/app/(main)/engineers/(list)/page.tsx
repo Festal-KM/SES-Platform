@@ -17,6 +17,7 @@ import type { Metadata } from 'next';
 //    （画面の説明文と母集団の分割が同じ関数を通る）。ここに条件式を書き写さない。
 import { ordersByFit } from '@ses/db';
 import { t } from '@ses/i18n';
+import { PageBody } from '@ses/ui';
 import { resolveTenantCtxOutcome } from '../../../../lib/auth/session';
 import { listEngineers } from '../../../../lib/engineers/list';
 import {
@@ -71,7 +72,12 @@ export default async function EngineerLedgerPage({
   const filtered = hasEngineerListFilters(query);
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-8">
+    // 🔴 T-22-06: 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`）。`S-005` は
+    //    **クラス A = 全幅**である。**画面ファイルに `max-w-*` を書かない**
+    //    （`tests/static/ui-screen-width.test.ts` (c) / `ui-width-class-coverage.test.ts` (k)）——
+    //    旧 `max-w-6xl` は 1920px のディスプレイで 8 列 + 12 行を成立させられなかった。
+    <main className="py-6">
+      <PageBody widthClass="full">
       <PageHeading trail={ENGINEER_LIST_TRAIL} title={t('engineers.list.title')} />
       <EngineerLedgerScreen
         rows={engineerListRows(view.items)}
@@ -114,6 +120,7 @@ export default async function EngineerLedgerPage({
           checkboxOn: query.onlyInTime || query.onlyCommutable,
         })}
       />
+      </PageBody>
     </main>
   );
 }

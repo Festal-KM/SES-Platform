@@ -100,6 +100,153 @@ export function extractTestIds(source: string, fileName = 'source.tsx'): Extract
   return { exact, prefixes, unresolved, occurrences };
 }
 
+// ============================================================================
+// 🔴 `testIdPrefix` から組まれる testid の解決（`T-22-06` で追加）
+// ============================================================================
+// `T-22-04` の一覧の部品（`DataTable` / `Toolbar` / `Pagination` / `EmptyState`）は testid を
+// **`${testIdPrefix}` + 固定の接尾辞**で組む。したがって部品側のソースだけを見ると
+// 静的接頭辞は**空文字**であり、`engineer-list-table` / `engineer-list-row-` のような
+// **凍結済みの値（`docs/04` `U-22`）がどのファイルにも現れない**ように見える。
+//
+// 🔴 **これは「testid が消えた」ではなく「抽出器が合成を知らない」である。** 製品側の testid を
+//    部品に合わせて改名して回避してはならない（`SP-22` §3.2 / `T-22-04` の申し送り）。よって
+//    **抽出器の側で合成を解く**。解き方は次の 2 段で、どちらも AST である。
+//
+//   ① 部品側: `data-testid={`${testIdPrefix}row-${key}`}` のような形から
+//      **接尾辞**（`row-`）と**動的な尾があるか**を拾い、**囲む部品の名前**（`DataTable`）に紐づける。
+//   ② 呼び出し側: `<DataTable testIdPrefix="engineer-list-" …>` から **要素名 → 接頭辞**を拾う。
+//
+// ③ 突き合わせ: 同じ要素名について ①×② を合成する（`engineer-list-` + `row-` → 接頭辞
+//    `engineer-list-row-` / `engineer-list-` + `table` → 完全一致 `engineer-list-table`）。
+//
+// 🔴 **要素名で突き合わせる**（モジュール解決をしない）理由: 解けなかったときに起きるのは
+//    「凍結値が見つからない = 検査が落ちる」であって、**緩む側に倒れない**。逆に接頭辞と接尾辞を
+//    総当たりで掛けると、実際には描かれない値まで「在る」ことになって緩む。
+// ⚠️ **合成は 1 段だけ解く。** 部品が別の部品へ `testIdPrefix={`${testIdPrefix}sort-`}` と
+//    渡す形（`DataTable` → `DataTableSortLink`）は解かない —— 接頭辞がリテラルでないためである。
+//    2026-09-30 の凍結値にこの形で組まれるものは 1 つも無く、**解けない場合は厳しい側に倒れる**。
+
+/** 部品が `testIdPrefix` の後ろに置く固定文字列 1 件。 */
+export type ComposedSuffix = {
+  /** `${testIdPrefix}` の直後の静的文字列（`row-` / `table` / `''`）。 */
+  readonly suffix: string;
+  /** さらに動的な尾が続くか（続くなら合成結果は「接頭辞」である）。 */
+  readonly dynamicTail: boolean;
+};
+
+/** 囲む関数（= 部品）の名前。見つからなければ `null`。 */
+function enclosingComponentName(node: ts.Node, sourceFile: ts.SourceFile): string | null {
+  for (let current: ts.Node | undefined = node.parent; current !== undefined; current = current.parent) {
+    if (ts.isFunctionDeclaration(current) && current.name !== undefined) return current.name.getText(sourceFile);
+    if (ts.isVariableDeclaration(current) && ts.isIdentifier(current.name)) return current.name.text;
+  }
+  return null;
+}
+
+/** JSX 要素のタグ名（`<DataTable …>` → `DataTable`）。 */
+function jsxTagName(attribute: ts.JsxAttribute, sourceFile: ts.SourceFile): string | null {
+  const attributes = attribute.parent;
+  const element = attributes.parent;
+  if (ts.isJsxSelfClosingElement(element) || ts.isJsxOpeningElement(element)) {
+    return element.tagName.getText(sourceFile);
+  }
+  return null;
+}
+
+/**
+ * ① 部品名 → その部品が `testIdPrefix` から組む接尾辞の集合。
+ * 🔴 対象は `ATTRIBUTE_NAMES` の属性だけである（`testIdPrefix` を下流へ渡す形は対象外）。
+ */
+export function testIdSuffixesByComponent(
+  source: string,
+  fileName = 'source.tsx',
+): Map<string, ComposedSuffix[]> {
+  const sourceFile = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const found = new Map<string, ComposedSuffix[]>();
+  const visit = (node: ts.Node): void => {
+    if (ts.isJsxAttribute(node) && ATTRIBUTE_NAMES.has(node.name.getText(sourceFile))) {
+      const initializer = node.initializer;
+      if (
+        initializer !== undefined &&
+        ts.isJsxExpression(initializer) &&
+        initializer.expression !== undefined &&
+        ts.isTemplateExpression(initializer.expression)
+      ) {
+        const template = initializer.expression;
+        const [first] = template.templateSpans;
+        // 🔴 `${testIdPrefix}…` の形だけを解く（頭に文字があるものは接頭辞が合成でない）。
+        if (template.head.text === '' && first !== undefined && first.expression.getText(sourceFile) === 'testIdPrefix') {
+          const component = enclosingComponentName(node, sourceFile);
+          if (component !== null) {
+            const entries = found.get(component) ?? [];
+            entries.push({ suffix: first.literal.text, dynamicTail: template.templateSpans.length > 1 });
+            found.set(component, entries);
+          }
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return found;
+}
+
+/** ② 要素名 → 呼び出し側がリテラルで渡した `testIdPrefix` の集合。 */
+export function testIdPrefixArguments(source: string, fileName = 'source.tsx'): Map<string, string[]> {
+  const sourceFile = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const found = new Map<string, string[]>();
+  const record = (tag: string | null, value: string): void => {
+    if (tag === null) return;
+    const entries = found.get(tag) ?? [];
+    entries.push(value);
+    found.set(tag, entries);
+  };
+  const visit = (node: ts.Node): void => {
+    if (ts.isJsxAttribute(node) && node.name.getText(sourceFile) === 'testIdPrefix') {
+      const initializer = node.initializer;
+      if (initializer !== undefined && ts.isStringLiteral(initializer)) {
+        record(jsxTagName(node, sourceFile), initializer.text);
+      } else if (
+        initializer !== undefined &&
+        ts.isJsxExpression(initializer) &&
+        initializer.expression !== undefined &&
+        (ts.isStringLiteral(initializer.expression) || ts.isNoSubstitutionTemplateLiteral(initializer.expression))
+      ) {
+        record(jsxTagName(node, sourceFile), initializer.expression.text);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return found;
+}
+
+/** ③ ①×② の突き合わせ（同じ要素名のものだけ）。 */
+export function composeTestIds(
+  files: readonly { readonly label: string; readonly source: string }[],
+): { readonly exact: readonly string[]; readonly prefixes: readonly string[] } {
+  const suffixes = new Map<string, ComposedSuffix[]>();
+  const prefixes = new Map<string, string[]>();
+  for (const file of files) {
+    for (const [component, entries] of testIdSuffixesByComponent(file.source, file.label)) {
+      suffixes.set(component, [...(suffixes.get(component) ?? []), ...entries]);
+    }
+    for (const [tag, values] of testIdPrefixArguments(file.source, file.label)) {
+      prefixes.set(tag, [...(prefixes.get(tag) ?? []), ...values]);
+    }
+  }
+  const exact: string[] = [];
+  const composedPrefixes: string[] = [];
+  for (const [tag, values] of prefixes) {
+    for (const prefix of values) {
+      for (const entry of suffixes.get(tag) ?? []) {
+        (entry.dynamicTail ? composedPrefixes : exact).push(`${prefix}${entry.suffix}`);
+      }
+    }
+  }
+  return { exact, prefixes: composedPrefixes };
+}
+
 export type TestIdValueOrigin = {
   readonly line: number;
   readonly text: string;

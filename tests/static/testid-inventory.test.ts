@@ -62,7 +62,10 @@ import { describe, expect, it } from 'vitest';
 import {
   TESTID_PATTERN,
   TESTID_PREFIX_PATTERN,
+  composeTestIds,
   extractTestIds,
+  testIdPrefixArguments,
+  testIdSuffixesByComponent,
   testIdValueOrigins,
   type Extraction,
   type TestIdValueOrigin,
@@ -107,17 +110,33 @@ function collectTsxFiles(root: string, relative = ''): string[] {
   });
 }
 
-type ScannedFile = { readonly label: string; readonly extraction: Extraction };
+type ScannedFile = { readonly label: string; readonly source: string; readonly extraction: Extraction };
 
 const scannedFiles: readonly ScannedFile[] = SCAN_ROOTS.flatMap((root) =>
-  collectTsxFiles(root).map((relative) => ({
-    label: `${path.relative(repoRoot, root).split(path.sep).join('/')}/${relative}`,
-    extraction: extractTestIds(readFileSync(path.join(root, relative), 'utf8'), relative),
-  })),
+  collectTsxFiles(root).map((relative) => {
+    const source = readFileSync(path.join(root, relative), 'utf8');
+    return {
+      label: `${path.relative(repoRoot, root).split(path.sep).join('/')}/${relative}`,
+      source,
+      extraction: extractTestIds(source, relative),
+    };
+  }),
 );
 
-const presentExact = new Set(scannedFiles.flatMap((file) => file.extraction.exact));
-const presentPrefixes = new Set(scannedFiles.flatMap((file) => file.extraction.prefixes));
+/**
+ * 🔴 **`testIdPrefix` から組まれる testid を解いて足す**（`T-22-06`。規則は
+ *    `support/testid-extract.ts` の「`testIdPrefix` から組まれる testid の解決」）。
+ *    `T-22-04` の一覧の部品は `${testIdPrefix}table` の形で組むため、解かないと
+ *    **凍結済みの `engineer-list-table` / `engineer-list-row-` が「削除された」と誤判定される**。
+ *    🔴 **これは凍結を緩める変更ではない** —— 解けない形は「見つからない = 落ちる」に倒れる。
+ */
+const composed = composeTestIds(scannedFiles);
+
+const presentExact = new Set([...scannedFiles.flatMap((file) => file.extraction.exact), ...composed.exact]);
+const presentPrefixes = new Set([
+  ...scannedFiles.flatMap((file) => file.extraction.prefixes),
+  ...composed.prefixes,
+]);
 const totalOccurrences = scannedFiles.reduce((sum, file) => sum + file.extraction.occurrences, 0);
 
 /**
@@ -1645,6 +1664,93 @@ describe('抽出器そのものの検査（fixtures。空振り・取りこぼ�
 
   it('`data-testid` に似た別属性（`data-testid-note`）を拾わない', () => {
     expect(extraction.exact).not.toContain('not-a-testid');
+  });
+});
+
+// ============================================================================
+// 🔴 `testIdPrefix` の合成の検査（✅ `T-22-06`）
+// ============================================================================
+// `T-22-04` の一覧の部品は testid を **`${testIdPrefix}` + 固定の接尾辞**で組む。
+// 抽出器がこれを解かないと、**凍結済みの値（`engineer-list-table` / `engineer-list-row-`）が
+// どのファイルにも現れないことになり「削除された」と誤判定される。**
+// 🔴 **その誤判定を「凍結リストから消す」で直すのは検査の無効化である**（冒頭の 🔴）。
+//    ここでは合成器そのものが「何を解き / 何を解かないか」を合成ソースで固定する。
+describe('🔴 `testIdPrefix` の合成（T-22-06。部品と呼び出し側をまたぐ値の解決）', () => {
+  const component = [
+    'export function DataTable({ testIdPrefix, rows }) {',
+    '  return (',
+    '    <Table data-testid={`${testIdPrefix}table`}>',
+    '      {rows.map((row) => (',
+    '        <TableRow data-testid={`${testIdPrefix}row-${row.id}`}>',
+    '          <NameCell linkTestId={`${testIdPrefix}link-${row.id}`} />',
+    '        </TableRow>',
+    '      ))}',
+    '      <SortLink testIdPrefix={`${testIdPrefix}sort-`} />',
+    '    </Table>',
+    '  );',
+    '}',
+    'export function Toolbar({ testIdPrefix }) {',
+    '  return <p data-testid={`${testIdPrefix}toolbar-population`} />;',
+    '}',
+  ].join('\n');
+  const screen = [
+    'export function Screen() {',
+    '  return (',
+    '    <>',
+    '      <DataTable testIdPrefix="engineer-list-" rows={rows} />',
+    '      <Toolbar testIdPrefix="engineer-list-" />',
+    '      <DataTable testIdPrefix={dynamicPrefix} rows={rows} />',
+    '    </>',
+    '  );',
+    '}',
+  ].join('\n');
+  const files = [
+    { label: 'component.tsx', source: component },
+    { label: 'screen.tsx', source: screen },
+  ];
+
+  it('部品名ごとに接尾辞を拾う（動的な尾があるかを区別する）', () => {
+    const suffixes = testIdSuffixesByComponent(component, 'component.tsx');
+    expect(suffixes.get('DataTable')).toEqual([
+      { suffix: 'table', dynamicTail: false },
+      { suffix: 'row-', dynamicTail: true },
+      { suffix: 'link-', dynamicTail: true },
+    ]);
+    expect(suffixes.get('Toolbar')).toEqual([{ suffix: 'toolbar-population', dynamicTail: false }]);
+  });
+
+  it('🔴 `testIdPrefix` を下流へ渡す形（`${testIdPrefix}sort-`）を接尾辞として拾わない', () => {
+    // `testIdPrefix` は `ATTRIBUTE_NAMES` に無いので、`SortLink` の接頭辞は解かない（1 段だけ解く）。
+    expect(testIdSuffixesByComponent(component, 'component.tsx').has('SortLink')).toBe(false);
+    expect(testIdPrefixArguments(component, 'component.tsx').has('SortLink')).toBe(false);
+  });
+
+  it('呼び出し側の接頭辞は**リテラルだけ**を拾う（式は解かない = 厳しい側に倒れる）', () => {
+    expect(testIdPrefixArguments(screen, 'screen.tsx').get('DataTable')).toEqual(['engineer-list-']);
+  });
+
+  it('要素名で突き合わせ、完全一致と接頭辞に分けて合成する', () => {
+    const composedSample = composeTestIds(files);
+    expect([...composedSample.exact].sort()).toEqual([
+      'engineer-list-table',
+      'engineer-list-toolbar-population',
+    ]);
+    expect([...composedSample.prefixes].sort()).toEqual(['engineer-list-link-', 'engineer-list-row-']);
+  });
+
+  it('🔴 接頭辞と接尾辞を総当たりしない（`Toolbar` の接尾辞が `DataTable` に付かない）', () => {
+    const composedSample = composeTestIds(files);
+    expect(composedSample.exact).not.toContain('engineer-list-toolbar-table');
+    // 呼び出しの無い部品の接尾辞は 1 つも出ない（対照）。
+    expect(composeTestIds([{ label: 'component.tsx', source: component }])).toEqual({
+      exact: [],
+      prefixes: [],
+    });
+  });
+
+  it('🔴 本番の走査でも現に合成が働いている（0 件で緑にならない）', () => {
+    expect(composed.exact).toContain('engineer-list-table');
+    expect(composed.prefixes).toContain('engineer-list-row-');
   });
 });
 

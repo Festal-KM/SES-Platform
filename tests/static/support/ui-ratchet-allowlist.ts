@@ -13,6 +13,13 @@
 // 🔴 **対象は「ファイル」であって「クラス」ではない**（`docs/05` §17.7.2）。「この色だけは許す」を
 //    作らないため。恒久例外は `AppShell` の `pb-24` の 1 件だけで、それは
 //    `ui-spacing-scale.test.ts` の `PERMANENT_SPACING_EXCEPTION` に理由つきで置く。
+//
+// ✅ **`T-22-06`（段② の一覧 ①）で外したもの**: `S-005` / `S-010` / `S-019` の 12 ファイル
+//    （`engineers/(list)/{error,loading,page}.tsx` + `engineers/engineer-ledger-screen.tsx` /
+//    `projects/(list)/{error,loading,page}.tsx` + `projects/project-list-screen.tsx` /
+//    `proposals/(list)/{error,loading,page,proposal-list-screen}.tsx`）を
+//    (a)(c)(f)(g)(j)(k) の 6 本から削除した。段② の残りは `S-015` / `S-016` / `S-041`（`T-22-07`）と
+//    `A-002` / `A-005` / `A-006`（`T-22-08`）である。
 import type { AllowEntry } from './ui-ratchet.js';
 
 /**
@@ -27,17 +34,8 @@ export const UI_RATCHET_ALLOWLIST_A: ReadonlyMap<string, AllowEntry> = new Map<s
   ['apps/web/app/(main)/audit-logs/audit-log-detail.tsx', { stage: 2, reason: 'S-041 の刷新（段②）で semantic トークンへ置き換える。移行中 11 行' }],
   ['apps/web/app/(main)/audit-logs/audit-logs-view.tsx', { stage: 2, reason: 'S-041 の刷新（段②）で semantic トークンへ置き換える。移行中 8 行' }],
   ['apps/web/app/(main)/engineer-shares/engineer-share-screen.tsx', { stage: 2, reason: 'S-015 の刷新（段②）で semantic トークンへ置き換える。移行中 21 行' }],
-  ['apps/web/app/(main)/engineers/(list)/error.tsx', { stage: 2, reason: 'S-005 の刷新（段②）で semantic トークンへ置き換える。移行中 3 行' }],
-  ['apps/web/app/(main)/engineers/(list)/loading.tsx', { stage: 2, reason: 'S-005 の刷新（段②）で semantic トークンへ置き換える。移行中 3 行' }],
-  ['apps/web/app/(main)/engineers/engineer-ledger-screen.tsx', { stage: 2, reason: 'S-005 の刷新（段②）で semantic トークンへ置き換える。移行中 10 行' }],
-  ['apps/web/app/(main)/projects/(list)/error.tsx', { stage: 2, reason: 'S-010 の刷新（段②）で semantic トークンへ置き換える。移行中 3 行' }],
-  ['apps/web/app/(main)/projects/(list)/loading.tsx', { stage: 2, reason: 'S-010 の刷新（段②）で semantic トークンへ置き換える。移行中 3 行' }],
   ['apps/web/app/(main)/projects/[id]/candidates/candidate-screen.tsx', { stage: 2, reason: 'S-016 の刷新（段②）で semantic トークンへ置き換える。移行中 33 行' }],
   ['apps/web/app/(main)/projects/[id]/candidates/page.tsx', { stage: 2, reason: 'S-016 の刷新（段②）で semantic トークンへ置き換える。移行中 2 行' }],
-  ['apps/web/app/(main)/projects/project-list-screen.tsx', { stage: 2, reason: 'S-010 の刷新（段②）で semantic トークンへ置き換える。移行中 7 行' }],
-  ['apps/web/app/(main)/proposals/(list)/error.tsx', { stage: 2, reason: 'S-019 の刷新（段②）で semantic トークンへ置き換える。移行中 2 行' }],
-  ['apps/web/app/(main)/proposals/(list)/loading.tsx', { stage: 2, reason: 'S-019 の刷新（段②）で semantic トークンへ置き換える。移行中 3 行' }],
-  ['apps/web/app/(main)/proposals/(list)/proposal-list-screen.tsx', { stage: 2, reason: 'S-019 の刷新（段②）で semantic トークンへ置き換える。移行中 16 行' }],
   ['apps/web/app/admin/audit-logs/admin-audit-logs-results.tsx', { stage: 2, reason: 'A-006 の刷新（段②）で semantic トークンへ置き換える。移行中 6 行' }],
   ['apps/web/app/admin/audit-logs/admin-audit-logs-view.tsx', { stage: 2, reason: 'A-006 の刷新（段②）で semantic トークンへ置き換える。移行中 5 行' }],
   ['apps/web/app/admin/audit-logs/page.tsx', { stage: 2, reason: 'A-006 の刷新（段②）で semantic トークンへ置き換える。移行中 2 行' }],
@@ -137,16 +135,7 @@ export const UI_RATCHET_ALLOWLIST_C: ReadonlyMap<string, AllowEntry> = new Map<s
   // ── 段②
   ['apps/web/app/(main)/audit-logs/page.tsx', { stage: 2, reason: 'S-041 の刷新（段②）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
   ['apps/web/app/(main)/engineer-shares/page.tsx', { stage: 2, reason: 'S-015 の刷新（段②）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
-  ['apps/web/app/(main)/engineers/(list)/error.tsx', { stage: 2, reason: 'S-005 の刷新（段②）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
-  ['apps/web/app/(main)/engineers/(list)/loading.tsx', { stage: 2, reason: 'S-005 の刷新（段②）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
-  ['apps/web/app/(main)/engineers/(list)/page.tsx', { stage: 2, reason: 'S-005 の刷新（段②）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
-  ['apps/web/app/(main)/projects/(list)/error.tsx', { stage: 2, reason: 'S-010 の刷新（段②）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
-  ['apps/web/app/(main)/projects/(list)/loading.tsx', { stage: 2, reason: 'S-010 の刷新（段②）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
-  ['apps/web/app/(main)/projects/(list)/page.tsx', { stage: 2, reason: 'S-010 の刷新（段②）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
   ['apps/web/app/(main)/projects/[id]/candidates/page.tsx', { stage: 2, reason: 'S-016 の刷新（段②）で `PageBody` の幅 3 クラスへ移す。移行中 2 行' }],
-  ['apps/web/app/(main)/proposals/(list)/error.tsx', { stage: 2, reason: 'S-019 の刷新（段②）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
-  ['apps/web/app/(main)/proposals/(list)/loading.tsx', { stage: 2, reason: 'S-019 の刷新（段②）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
-  ['apps/web/app/(main)/proposals/(list)/page.tsx', { stage: 2, reason: 'S-019 の刷新（段②）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
   ['apps/web/app/admin/audit-logs/admin-audit-logs-results.tsx', { stage: 2, reason: 'A-006 の刷新（段②）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
   ['apps/web/app/admin/audit-logs/page.tsx', { stage: 2, reason: 'A-006 の刷新（段②）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
   ['apps/web/app/admin/monitoring/page.tsx', { stage: 2, reason: 'A-005 の刷新（段②）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
@@ -215,7 +204,6 @@ export const UI_RATCHET_ALLOWLIST_F: ReadonlyMap<string, AllowEntry> = new Map<s
   // ── 段②
   ['apps/web/app/(main)/audit-logs/audit-log-detail.tsx', { stage: 2, reason: 'S-041 の刷新（段②）で §7.9 の 7 段へ寄せる。移行中 1 行' }],
   ['apps/web/app/(main)/audit-logs/audit-logs-view.tsx', { stage: 2, reason: 'S-041 の刷新（段②）で §7.9 の 7 段へ寄せる。移行中 1 行' }],
-  ['apps/web/app/(main)/engineers/engineer-ledger-screen.tsx', { stage: 2, reason: 'S-005 の刷新（段②）で §7.9 の 7 段へ寄せる。移行中 1 行' }],
   ['apps/web/app/(main)/projects/[id]/candidates/candidate-screen.tsx', { stage: 2, reason: 'S-016 の刷新（段②）で §7.9 の 7 段へ寄せる。移行中 1 行' }],
   // ── 段④
   ['apps/web/app/(main)/(auth)/invite/[token]/invite-form.tsx', { stage: 4, reason: 'S-001 / S-002 / S-046 の刷新（段④）で §7.9 の 7 段へ寄せる。移行中 1 行' }],
@@ -244,17 +232,8 @@ export const UI_RATCHET_ALLOWLIST_G: ReadonlyMap<string, AllowEntry> = new Map<s
   ['apps/web/app/(main)/audit-logs/audit-log-detail.tsx', { stage: 2, reason: 'S-041 の刷新（段②）で §7.9 の 6 トークンへ置き換える。移行中 3 行' }],
   ['apps/web/app/(main)/audit-logs/audit-logs-view.tsx', { stage: 2, reason: 'S-041 の刷新（段②）で §7.9 の 6 トークンへ置き換える。移行中 1 行' }],
   ['apps/web/app/(main)/engineer-shares/engineer-share-screen.tsx', { stage: 2, reason: 'S-015 の刷新（段②）で §7.9 の 6 トークンへ置き換える。移行中 15 行' }],
-  ['apps/web/app/(main)/engineers/(list)/error.tsx', { stage: 2, reason: 'S-005 の刷新（段②）で §7.9 の 6 トークンへ置き換える。移行中 3 行' }],
-  ['apps/web/app/(main)/engineers/(list)/loading.tsx', { stage: 2, reason: 'S-005 の刷新（段②）で §7.9 の 6 トークンへ置き換える。移行中 2 行' }],
-  ['apps/web/app/(main)/engineers/engineer-ledger-screen.tsx', { stage: 2, reason: 'S-005 の刷新（段②）で §7.9 の 6 トークンへ置き換える。移行中 9 行' }],
-  ['apps/web/app/(main)/projects/(list)/error.tsx', { stage: 2, reason: 'S-010 の刷新（段②）で §7.9 の 6 トークンへ置き換える。移行中 3 行' }],
-  ['apps/web/app/(main)/projects/(list)/loading.tsx', { stage: 2, reason: 'S-010 の刷新（段②）で §7.9 の 6 トークンへ置き換える。移行中 2 行' }],
   ['apps/web/app/(main)/projects/[id]/candidates/candidate-screen.tsx', { stage: 2, reason: 'S-016 の刷新（段②）で §7.9 の 6 トークンへ置き換える。移行中 22 行' }],
   ['apps/web/app/(main)/projects/[id]/candidates/page.tsx', { stage: 2, reason: 'S-016 の刷新（段②）で §7.9 の 6 トークンへ置き換える。移行中 2 行' }],
-  ['apps/web/app/(main)/projects/project-list-screen.tsx', { stage: 2, reason: 'S-010 の刷新（段②）で §7.9 の 6 トークンへ置き換える。移行中 6 行' }],
-  ['apps/web/app/(main)/proposals/(list)/error.tsx', { stage: 2, reason: 'S-019 の刷新（段②）で §7.9 の 6 トークンへ置き換える。移行中 2 行' }],
-  ['apps/web/app/(main)/proposals/(list)/loading.tsx', { stage: 2, reason: 'S-019 の刷新（段②）で §7.9 の 6 トークンへ置き換える。移行中 2 行' }],
-  ['apps/web/app/(main)/proposals/(list)/proposal-list-screen.tsx', { stage: 2, reason: 'S-019 の刷新（段②）で §7.9 の 6 トークンへ置き換える。移行中 8 行' }],
   ['apps/web/app/admin/audit-logs/admin-audit-logs-results.tsx', { stage: 2, reason: 'A-006 の刷新（段②）で §7.9 の 6 トークンへ置き換える。移行中 1 行' }],
   ['apps/web/app/admin/audit-logs/admin-audit-logs-view.tsx', { stage: 2, reason: 'A-006 の刷新（段②）で §7.9 の 6 トークンへ置き換える。移行中 5 行' }],
   ['apps/web/app/admin/audit-logs/page.tsx', { stage: 2, reason: 'A-006 の刷新（段②）で §7.9 の 6 トークンへ置き換える。移行中 2 行' }],
@@ -342,7 +321,6 @@ export const UI_RATCHET_ALLOWLIST_J: ReadonlyMap<string, AllowEntry> = new Map<s
   // ── 段②
   ['apps/web/app/(main)/audit-logs/audit-logs-view.tsx', { stage: 2, reason: 'S-041 の刷新（段②）で プリミティブ側の 8 状態に委ねる。移行中 3 行' }],
   ['apps/web/app/(main)/projects/[id]/candidates/candidate-screen.tsx', { stage: 2, reason: 'S-016 の刷新（段②）で プリミティブ側の 8 状態に委ねる。移行中 1 行' }],
-  ['apps/web/app/(main)/proposals/(list)/proposal-list-screen.tsx', { stage: 2, reason: 'S-019 の刷新（段②）で プリミティブ側の 8 状態に委ねる。移行中 1 行' }],
   ['apps/web/app/admin/audit-logs/admin-audit-logs-results.tsx', { stage: 2, reason: 'A-006 の刷新（段②）で プリミティブ側の 8 状態に委ねる。移行中 1 行' }],
   ['apps/web/app/admin/monitoring/admin-monitoring-items.tsx', { stage: 2, reason: 'A-005 の刷新（段②）で プリミティブ側の 8 状態に委ねる。移行中 1 行' }],
   ['apps/web/app/admin/tenants/admin-tenants-list.tsx', { stage: 2, reason: 'A-002 の刷新（段②）で プリミティブ側の 8 状態に委ねる。移行中 3 行' }],
@@ -368,10 +346,7 @@ export const UI_RATCHET_ALLOWLIST_K: ReadonlyMap<string, AllowEntry> = new Map<s
   // ── 段②
   ['apps/web/app/(main)/audit-logs/page.tsx', { stage: 2, reason: 'S-041 の刷新（段②）で `PageBody` に `widthClass` を渡す。移行中 1 行' }],
   ['apps/web/app/(main)/engineer-shares/page.tsx', { stage: 2, reason: 'S-015 の刷新（段②）で `PageBody` に `widthClass` を渡す。移行中 1 行' }],
-  ['apps/web/app/(main)/engineers/(list)/page.tsx', { stage: 2, reason: 'S-005 の刷新（段②）で `PageBody` に `widthClass` を渡す。移行中 1 行' }],
-  ['apps/web/app/(main)/projects/(list)/page.tsx', { stage: 2, reason: 'S-010 の刷新（段②）で `PageBody` に `widthClass` を渡す。移行中 1 行' }],
   ['apps/web/app/(main)/projects/[id]/candidates/page.tsx', { stage: 2, reason: 'S-016 の刷新（段②）で `PageBody` に `widthClass` を渡す。移行中 1 行' }],
-  ['apps/web/app/(main)/proposals/(list)/page.tsx', { stage: 2, reason: 'S-019 の刷新（段②）で `PageBody` に `widthClass` を渡す。移行中 1 行' }],
   ['apps/web/app/admin/audit-logs/page.tsx', { stage: 2, reason: 'A-006 の刷新（段②）で `PageBody` に `widthClass` を渡す。移行中 1 行' }],
   ['apps/web/app/admin/monitoring/page.tsx', { stage: 2, reason: 'A-005 の刷新（段②）で `PageBody` に `widthClass` を渡す。移行中 1 行' }],
   ['apps/web/app/admin/tenants/page.tsx', { stage: 2, reason: 'A-002 の刷新（段②）で `PageBody` に `widthClass` を渡す。移行中 1 行' }],

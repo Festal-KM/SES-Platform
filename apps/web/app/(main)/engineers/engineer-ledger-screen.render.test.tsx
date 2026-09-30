@@ -329,11 +329,17 @@ describe('ページング（カーソル方式。docs/05 §6.1）', () => {
 });
 
 describe('🔴 初回空（docs/04 §10.1 `S-005`）', () => {
-  it('0 件なら空状態と登録導線を出す（テーブルは描かない）', () => {
+  it('0 件なら空状態と登録導線を出す（データ行を 1 行も描かない）', () => {
     const html = render({ rows: [] });
     expect(html).toContain('engineer-list-empty');
     expect(html).toContain('まだ人材が登録されていません。');
-    expect(html).not.toContain('engineer-list-table');
+    // ⚠️ **T-22-06 で判定の形を追随させた（緩めていない）**: `@ses/ui` の `DataTable` は空状態を
+    //    **表の中の 1 行**（`engineer-list-empty-row` の `colSpan`）として描く契約である
+    //    （`docs/05` §2.3.5 の `empty`）。旧実装は表そのものを描かなかったため
+    //    「`engineer-list-table` が無い」を見ていた。🔴 **守るべき中身は「データ行が 0 であること」**
+    //    であり、それを直接見る形にした（列ヘッダは骨格として残るのが部品の契約である）。
+    expect(html).toContain('engineer-list-empty-row');
+    expect(html).not.toContain('engineer-list-row-');
     expect(html).toContain('href="/engineers/new"');
   });
 
@@ -345,7 +351,10 @@ describe('🔴 初回空（docs/04 §10.1 `S-005`）', () => {
 describe('🔴 T-11-12: 氏名セルが docs/04 §10.3「長い名称」のブレークポイント別規約と一致する（`@ses/ui` の `NameCell`）', () => {
   it('lg 未満 = 折り返し + 下限 10rem、lg 以上 = 切り詰め（器）+ title + 同じ行に S-006 への導線', () => {
     const html = render({ rows: [row({ displayName: '架空 太郎' })] });
-    const cell = /<td class="([^"]*)">(<span class="[^"]*" title="架空 太郎">.*?<[/]span>)<[/]td>/.exec(html);
+    // ⚠️ **T-22-06: `<td>` の属性が増えたぶんだけ正規表現を緩めた（判定は 1 つも緩めていない）**。
+    //    `DataTable` は列定義由来の `style="min-width:…"` と `data-column-id` をセルに付ける
+    //    （`docs/05` §2.3.5 の「幅」）。**クラスに対する検査は下の 5 行でそのまま維持している。**
+    const cell = /<td class="([^"]*)"[^>]*>(<span class="[^"]*" title="架空 太郎">.*?<[/]span>)<[/]td>/.exec(html);
     expect(cell).not.toBeNull();
     const classes = (cell?.[1] ?? '').split(' ');
     expect(classes).toContain('whitespace-normal');
@@ -361,5 +370,79 @@ describe('🔴 T-11-12: 氏名セルが docs/04 §10.3「長い名称」のブ�
     expect(link?.[1]).toContain(`href="/engineers/${ENGINEER_A}"`);
     expect(link?.[1]).toContain(`data-testid="engineer-list-link-${ENGINEER_A}"`);
     expect(link?.[1]).not.toContain('truncate');
+  });
+});
+
+// ============================================================================
+// 🔴 T-22-06: 列の集合・並び・ブレークポイントが**移行前と同一**である（受け入れ基準 2）
+// ============================================================================
+// 🔴 **整形のついでに列を足さない / 落とさない。** `DataTable` への移行は
+//    「`hidden lg:table-cell` の直書きを列定義の `priority` に移す」だけであり、
+//    **DOM に出る列とその消える境界は 1 つも変わっていない**ことをここで固定する
+//    （§10.3 の `S-005` の行 / §S-005「デバイス別」）。
+//
+// | 列 | 移行前のクラス | 移行後の `priority` |
+// |---|---|---|
+// | 氏名 | （常時） | `always` |
+// | 所属区分 | `hidden lg:table-cell` | `lg` |
+// | 主要スキル | （常時） | `always` |
+// | 単価レンジ | `hidden sm:table-cell` | `sm` |
+// | 稼働可能時期 | （常時） | `always` |
+// | 勤務地・リモート | `hidden lg:table-cell` | `lg` |
+// | 稼働状況 | `hidden sm:table-cell` | `sm` |
+// | 更新日 | `hidden lg:table-cell` | `lg` |
+describe('🔴 T-22-06: 列の契約（移行前と同一。増減 0）', () => {
+  /** 列ヘッダ（`<th>`）を DOM の並びのまま `id` と「消える境界」の組で読む。 */
+  function headerColumns(html: string): { readonly id: string; readonly breakpoint: string }[] {
+    const head = /<thead[^>]*>(.*?)<[/]thead>/s.exec(html)?.[1] ?? '';
+    return [...head.matchAll(/<th ([^>]*)>/g)].map((match) => {
+      const attributes = match[1] ?? '';
+      const id = /data-column-id="([^"]+)"/.exec(attributes)?.[1] ?? '?';
+      const classes = /class="([^"]*)"/.exec(attributes)?.[1] ?? '';
+      const breakpoint = classes.includes('hidden lg:table-cell')
+        ? 'lg'
+        : classes.includes('hidden sm:table-cell')
+          ? 'sm'
+          : 'always';
+      return { id, breakpoint };
+    });
+  }
+
+  it('ホスト = 8 列。並びと境界が移行前と一致する', () => {
+    expect(headerColumns(render())).toEqual([
+      { id: 'name', breakpoint: 'always' },
+      { id: 'ownership', breakpoint: 'lg' },
+      { id: 'skills', breakpoint: 'always' },
+      { id: 'unitPrice', breakpoint: 'sm' },
+      { id: 'availableFrom', breakpoint: 'always' },
+      { id: 'location', breakpoint: 'lg' },
+      { id: 'availability', breakpoint: 'sm' },
+      { id: 'updatedOn', breakpoint: 'lg' },
+    ]);
+  });
+
+  it('🔴 取引先 = 7 列（所属区分の列そのものが無い。CSS で隠すのではない）', () => {
+    const columns = headerColumns(render({ showOwnershipColumn: false }));
+    expect(columns.map((column) => column.id)).toEqual([
+      'name',
+      'skills',
+      'unitPrice',
+      'availableFrom',
+      'location',
+      'availability',
+      'updatedOn',
+    ]);
+  });
+
+  it('🔴 モバイル（`sm` 未満）に残るのは 3 列（氏名 / 主要スキル / 稼働可能時期）', () => {
+    const always = headerColumns(render()).filter((column) => column.breakpoint === 'always');
+    expect(always.map((column) => column.id)).toEqual(['name', 'skills', 'availableFrom']);
+  });
+
+  it('🔴 行選択（`selection`）と操作列を描かない（Phase 1 に一括操作は無い）', () => {
+    const html = render();
+    expect(html).not.toContain('engineer-list-select-');
+    // 操作列のヘッダが無い = `rowAction` を渡していない。
+    expect(headerColumns(html).every((column) => column.id !== '?')).toBe(true);
   });
 });
