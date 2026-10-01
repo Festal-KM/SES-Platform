@@ -379,7 +379,7 @@
   - **モバイルは全画面オーバーレイ**（下からのシートにしない）。🔴 **Tier 1 の判断画面（`S-021` / `S-018` / `S-030`）では Drawer を使わず専用画面へ遷移する。**
   - **閉じたら一覧の位置とスクロールが保たれる。** **Drawer の中で Drawer を開かない。**
 - **受け入れ基準**:
-  1. 🔴 **検査 (l) が無条件 green**: `_home/**` と `lib/home/**` に `engineer` / `engineerSkill` / `engineerCareer` / `skillSheet` のデリゲート参照が無い（**例外は `action-queue-read.ts` の取引先の枝 1 箇所** = 自社台帳の `display_name`）/ `/api/engineers` `/api/skill-sheets` への fetch が無い / **ホスト向けの Drawer ビュー型に `engineerId` / エンジニア名 / 所属会社名 / 凍結情報のキーが無い**（型テスト）/ `forbidden-api-routes` に `api/home/**` の行詳細ルートが入っている。
+  1. 🔴 **検査 (l) が無条件 green**: `_home/**` と `lib/home/**` に `engineer` / `engineerSkill` / `engineerCareer` / `skillSheet` のデリゲート参照が無い（**例外は `action-queue-read.ts` の取引先の枝 1 箇所** = 自社台帳の `display_name`） 🔴 **2 系統目の例外（2026-10-01。`T-22-09`）: `apps/web/lib/home/summary.ts` の `engineer` だが **`count` のみ**。行を返す形は 1 つも許さない**（根拠 = §6.11.1 が `ENGINEERS` / `OWN_ENGINEERS` を Phase 1 の `SummaryStrip` の指標に定めていること / `count` は身元を運べないこと）。🔴 **例外のファイルを 3 系統目に増やさない。** 別名束縛（`const e = db.engineer`）と分割代入（`const { engineer } = db`）は**例外の対象外**であり、この 2 形は `count` のみの例外でも検出されて落ちる（一度別名に入ると呼び出し形を追えなくなるため）** / `/api/engineers` `/api/skill-sheets` への fetch が無い / **ホスト向けの Drawer ビュー型に `engineerId` / エンジニア名 / 所属会社名 / 凍結情報のキーが無い**（型テスト）/ `forbidden-api-routes` に `api/home/**` の行詳細ルートが入っている。
   2. 🔴 **Drawer ビューの型に `action` が無い**（実行系を置けないことを型で示す）。
   3. 🔴 **`role="dialog"` の実装が `packages/ui` の 1 箇所のまま**（検査 (b)）。
   4. **E2E に「Drawer を開いても `engineer.view` の監査ログが増えない」ことの確認を含める**（🔴 **既存シナリオの中で確認し、新規 spec を増やさない**）。
