@@ -149,6 +149,7 @@ function partnerProposalWhere(ctx: AuthenticatedTenantCtx, scope: HomeScope): Pr
 /**
  * 要対応キューのブロックを読む（`GET /api/home` / `S-003` / `S-004` の共通経路）。1 トランザクション（`withTenant`）で
  * 提案 → 提案依頼 → 参照の解決を行い、並べて（`sortActionQueueRows`）差分を切る（`buildActionQueueBlock`）。
+ * 呼び出し元は無いが契約として残す。使うと `SUMMARY` と送信ドメインまで読む。
  */
 export async function readActionQueueBlock(
   ctx: AuthenticatedTenantCtx,

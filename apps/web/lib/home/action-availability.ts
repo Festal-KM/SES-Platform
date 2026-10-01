@@ -63,6 +63,8 @@ export type ActionQueueAvailabilityFacts = {
  */
 const DENIAL_REASON_KEYS = {
   lifecycle: {
+    SANDBOX: null,
+    ACTIVE: null,
     SUSPENDED: 'home.actionQueue.denied.tenantSuspended',
     CLOSING: 'home.actionQueue.denied.tenantClosing',
     PURGED: 'home.actionQueue.denied.tenantPurged',
@@ -72,12 +74,24 @@ const DENIAL_REASON_KEYS = {
   sendingDomain: 'home.actionQueue.denied.sendingDomain',
   impersonation: 'home.actionQueue.denied.impersonation',
 } as const satisfies {
-  readonly lifecycle: Readonly<Record<'SUSPENDED' | 'CLOSING' | 'PURGED', MessageKey>>;
+  readonly lifecycle: Readonly<Record<TenantLifecycleState, MessageKey | null>>;
   readonly partnerSuspended: MessageKey;
   readonly role: MessageKey;
   readonly sendingDomain: MessageKey;
   readonly impersonation: MessageKey;
 };
+
+/**
+ * 🔴 サーバが返しうる `reasonKey` の全体（平坦）。画面側の文言解決（`action-queue-props.ts`）はここから導出する ——
+ *    手写しの写しを持つと、理由を足した瞬間に「ボタンも理由も無い空白セル」（`U-10` が禁じた形）になる。
+ */
+export const ACTION_QUEUE_DENIAL_REASON_KEYS: readonly MessageKey[] = [
+  ...Object.values(DENIAL_REASON_KEYS.lifecycle).flatMap((key) => (key === null ? [] : [key])),
+  DENIAL_REASON_KEYS.partnerSuspended,
+  DENIAL_REASON_KEYS.role,
+  DENIAL_REASON_KEYS.sendingDomain,
+  DENIAL_REASON_KEYS.impersonation,
+];
 
 const ALLOWED: ActionQueueActionAvailability = { enabled: true, reasonKey: null };
 
@@ -92,9 +106,8 @@ function denied(reasonKey: MessageKey): ActionQueueActionAvailability {
  */
 function lifecycleReasonKey(state: TenantLifecycleState): MessageKey | null {
   if (executionDenialMessageKey(state) === null) return null;
-  // 🔴 `Record` で 3 状態を網羅している（`executionDenialMessageKey` が非 null を返すのはこの 3 つだけ）。
-  //    万一増えたら `undefined` になるので、安全側（停止中の語）に倒す。
-  return DENIAL_REASON_KEYS.lifecycle[state as 'SUSPENDED' | 'CLOSING' | 'PURGED'] ?? DENIAL_REASON_KEYS.lifecycle.SUSPENDED;
+  // 🔴 `Record<TenantLifecycleState, …>` なので、状態が増えると語の当て忘れでコンパイルが落ちる。
+  return DENIAL_REASON_KEYS.lifecycle[state];
 }
 
 /**

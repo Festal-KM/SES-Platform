@@ -101,8 +101,11 @@ export type ActionQueueStateBadge =
  * - `deadline` … 提案依頼の返答期限（`expiresAt`）。提案の行は `null`。
  * - `rowVersion` … 60 秒ポーリングの差分判別（`since` のエポックミリ秒。docs/04 申し送り 6）。
  * - `href` … 種別ごとの遷移先（`S-022` / `S-021` / `S-020` / `S-019` / `S-017` or `S-018`）。
- * - `stateBadge` … ✅ T-22-09（`docs/04` 改訂 16 の `状態` 列）。種別だけでは「承認待ち」の中の
- *   `GATE_RUNNING` 由来と `APPROVAL_PENDING` 由来が区別できず、**押す前にどこで止まっているか**が読めない。
+ * - `stateBadge` … ✅ T-22-09（`docs/04` 改訂 16 の `状態` 列）。（`docs/04` の文面は「承認待ちの中の
+ *   `GATE_RUNNING` 由来と `APPROVAL_PENDING` 由来が区別できない」。ただし本実装は `GATE_RUNNING` をキューに載せない
+ *   〔`proposalActionKindOf`〕ので当てはまらない。）本実装で効くのは、種別だけでは読めない
+ *   **`SEND_HELD` 行 = `APPROVED`（承認済みで送信待ち）/ `SEND_FAILED` 行 = `SUBMIT_FAILED`（送信失敗）** の現在の提案状態で、
+ *   **押す前にどこで止まっているか**が読める。
  * - `action` … ✅ T-22-09（同・`操作` 列）。🔴 **ホストの `PROPOSAL_REQUEST_PENDING` は `null`**
  *   （返答するのは取引先であり、ホストにこの行の操作は無い）。
  */

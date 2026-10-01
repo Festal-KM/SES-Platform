@@ -8,6 +8,10 @@
 import type { TenantRole } from '@ses/db';
 import type { MainCapabilities } from './types';
 
+// ⚠️ 申し送り（F9）: `role !== 'VIEWER'` の 1 行なので、`T-16-12` が `PARTNER_VIEWER` を `TENANT_ROLES` に入れた時点で
+//    `RESPOND` が `PARTNER_VIEWER` に有効と判定される（§10.1 は提案の作成・チャット投稿も不可と定める）。
+//    `lib/shell/page-trail.ts` は既に `endsWith('VIEWER')` で判定しており 2 つの UI ロール表が食い違う。
+//    🔴 `T-16-12` 着手時に本関数を単一出所として直すこと（要対応キューの `操作` 列がこれを引いている）。
 export function deriveMainCapabilities(role: TenantRole): MainCapabilities {
   const allowed = role !== 'VIEWER';
   return {

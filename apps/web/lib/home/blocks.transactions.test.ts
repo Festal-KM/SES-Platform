@@ -16,6 +16,9 @@
 //    要しないので、**ユニットテストとして毎回 CI で回る側**に置いた ——
 //    `withTenant` の本体は `runInTenantTransaction(...)` 1 回だけであり、
 //    **呼び出し 1 回 = トランザクション 1 本**である。
+// ⚠️ 申し送り（F8）: 数えているのは `withTenant` だけである。Phase 2 で `withHostTenant` / `withPartnerScope` を
+//    ホームが使うようになっても、その本数は**ここでは数えられず取り落とされる**。そのときは両関数もモックして
+//    `CALLS.counts` に足し、合計を主張すること。
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthenticatedTenantCtx } from '@ses/db';
 

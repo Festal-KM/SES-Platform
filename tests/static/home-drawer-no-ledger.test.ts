@@ -90,6 +90,9 @@ const LEDGER_COUNT_ONLY: ReadonlyMap<string, ReadonlySet<string>> = new Map([
 /** 🔴 身元を運べない唯一のメソッド（行を返さない）。 */
 const COUNT_METHOD = 'count';
 
+/** 型での要求（`Pick<TenantDb, …>`）の `shape` の接頭辞。`record` の判定と (3) の文言を結ぶ。 */
+const TYPE_REQUEST_SHAPE = '型でのデリゲートの要求';
+
 /** デリゲートを持つ側の識別子（`admin-no-content-reach.test.ts` と同じ規約）。 */
 const DELEGATE_HOLDER_PATTERN = /^(?:db|tx|prisma|client)$|(?:Db|Tx|Client|Prisma)$/;
 
@@ -114,8 +117,10 @@ export function ledgerDelegateFindings(file: string, source: ts.SourceFile): Fin
   const countOnly = LEDGER_COUNT_ONLY.get(file) ?? new Set<string>();
   const record = (node: ts.Node, model: string, shape: string, method: string | null = null): void => {
     if (allowed.has(model)) return;
-    // 🔴 件数だけの経路は許す（`LEDGER_COUNT_ONLY` の 🔴）。**`count` 以外は許さない。**
-    if (countOnly.has(model) && (method === null || method === COUNT_METHOD)) return;
+    // 🔴 件数だけの経路は許す（`LEDGER_COUNT_ONLY` の 🔴）。**`count` 呼び出しと型での要求だけ**。
+    //    別名束縛・分割代入は `method === null` でも通さない（一度別名に入ると `e.findMany()` を
+    //    形 (1) が検出できず、行を返す経路が緑のまま開く）。
+    if (countOnly.has(model) && (method === COUNT_METHOD || shape.startsWith(TYPE_REQUEST_SHAPE))) return;
     findings.push({ file, line: lineOf(source, node), detail: `${model}（${shape}）` });
   };
   const visit = (node: ts.Node): void => {
@@ -167,7 +172,7 @@ export function ledgerDelegateFindings(file: string, source: ts.SourceFile): Fin
           collect(argument);
           for (const literal of literals) {
             if (LEDGER_DELEGATES.has(literal) && name !== 'Omit') {
-              record(node, literal, `型でのデリゲートの要求 ${name}<…, '${literal}'>`);
+              record(node, literal, `${TYPE_REQUEST_SHAPE} ${name}<…, '${literal}'>`);
             }
           }
         }
@@ -372,6 +377,19 @@ describe('対照: (l) の検出器', () => {
         parseText("export function f(db: Pick<TenantDb, 'proposal' | 'engineer'>) { return db; }"),
       ).map((f) => f.detail),
     ).toContain("engineer（型でのデリゲートの要求 Pick<…, 'engineer'>）");
+  });
+
+  it('🔴 ① 件数だけの例外ファイルでも、別名束縛・分割代入・`count` 以外の呼び出しは拾い、`count` と型での要求は拾わない', () => {
+    const file = 'apps/web/lib/home/summary.ts';
+    const detailsOf = (text: string): string[] =>
+      ledgerDelegateFindings(file, parseText(text)).map((f) => f.detail);
+    expect(detailsOf('const { engineer } = db;')).toEqual(['engineer（デリゲートの分割代入）']);
+    expect(detailsOf('const e = db.engineer;')).toEqual(['engineer（デリゲートの別名への束縛）']);
+    expect(detailsOf('const n = db.engineer.findMany({});')).toEqual([
+      'engineer（デリゲートの呼び出し .findMany()）',
+    ]);
+    expect(detailsOf('const n = db.engineer.count({});')).toEqual([]);
+    expect(detailsOf("export function f(db: Pick<TenantDb, 'engineer'>) { return db; }")).toEqual([]);
   });
 
   it('🔴 ① 台帳でないデリゲートと、コメント中の記述を拾わない', () => {

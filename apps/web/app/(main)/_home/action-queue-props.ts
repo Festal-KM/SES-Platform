@@ -10,7 +10,7 @@
 //    作ると `S-019` と `S-003` で同じ状態が別の語になる。
 import { t, type MessageKey } from '@ses/i18n';
 import { PROPOSAL_REQUEST_STATES, PROPOSAL_STATES } from '@ses/domain';
-import { ACTION_QUEUE_ACTION_KINDS } from '../../../lib/home/action-availability';
+import { ACTION_QUEUE_ACTION_KINDS, ACTION_QUEUE_DENIAL_REASON_KEYS } from '../../../lib/home/action-availability';
 import type { ActionQueueActionKind, ActionQueueKind } from '../../../lib/home/types';
 import { PROPOSAL_REQUEST_STATE_MESSAGE_KEYS, remainingLabels } from '../../../lib/proposal-requests/list-rows';
 import { elapsedLabels } from '../../../lib/proposals/approval-rows';
@@ -42,15 +42,7 @@ export const ACTION_QUEUE_ACTION_MESSAGE_KEYS = {
  * 🔴 **サーバが返しうるキーを漏れなく解決する** —— 解決できないキーが来ると理由が空になり、
  *    `U-10` の「何も無い空白にもしない」が破れる。
  */
-export const ACTION_QUEUE_DENIAL_MESSAGE_KEYS = [
-  'home.actionQueue.denied.tenantSuspended',
-  'home.actionQueue.denied.tenantClosing',
-  'home.actionQueue.denied.tenantPurged',
-  'home.actionQueue.denied.partnerSuspended',
-  'home.actionQueue.denied.role',
-  'home.actionQueue.denied.sendingDomain',
-  'home.actionQueue.denied.impersonation',
-] as const satisfies readonly MessageKey[];
+export const ACTION_QUEUE_DENIAL_MESSAGE_KEYS: readonly MessageKey[] = ACTION_QUEUE_DENIAL_REASON_KEYS;
 
 function resolved<K extends string>(entries: readonly (readonly [K, MessageKey])[]): Readonly<Record<K, string>> {
   return Object.fromEntries(entries.map(([key, messageKey]) => [key, t(messageKey)])) as Readonly<Record<K, string>>;
