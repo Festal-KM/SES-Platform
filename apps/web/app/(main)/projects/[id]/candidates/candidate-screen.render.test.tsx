@@ -506,7 +506,8 @@ describe('🔴 T-11-12: 表示名セルの規約（docs/04 §10.3 / §S-016 列�
    *
    * 共通外枠のサイドバー（`xl:w-56` = 224px）が入り、`xl`（1280px）で本文に残るのは
    * **1280 − 224 − 48（`PageBody` の `px-6`）= 1008px** である。2 列の下限の和は
-   * **984（表の最小幅 61.5rem）+ 16（gap）+ 400（副カラム `xl:w-100`）= 1400px** なので `xl` では必ず溢れる。
+   * **986（表の最小幅 61.5rem = 984 + `Table` の器の枠 2px）+ 16（gap）+ 400（副カラム `xl:w-100`）= 1402px**
+   * なので `xl` では必ず溢れる。
    * 溢れ先が**ドキュメントの横スクロール**だと右パネルが「到達不能」になり（E2E の `unreachable-overflow`）、
    * 判断材料が読めない。器の内側（`overflow-x-auto`）に閉じ込めれば、横スクロールで必ず到達できる。
    *
@@ -527,8 +528,11 @@ describe('🔴 T-11-12: 表示名セルの規約（docs/04 §10.3 / §S-016 列�
     const grid = /<div class="(grid grid-cols-1[^"]*)"/.exec(html);
     expect(grid).not.toBeNull();
     const classes = (grid?.[1] ?? '').split(' ');
-    // 1 列目は表の最小幅（984px）を下限に持ち、2 列目は副カラム自身の幅（`auto`）に従う。
-    expect(classes).toContain('xl:grid-cols-[minmax(61.5rem,1fr)_auto]');
+    // 1 列目は**表の最小幅（984px）+ `Table` の器の枠 2px = 986px** を下限に持ち、2 列目は副カラム自身の
+    // 幅（`auto`）に従う。🔴 ✅ 2026-10-03: 器が白い面（1px の枠）を持つようになり内幅が 2px 減ったため、
+    // 下限に枠のぶんを足した（足さないと表が器の内側で 2px だけ横スクロールし、E2E の
+    // `containerOverflow ≤ 1` が破れる）。**表の最小幅 `lg:min-w-[61.5rem]` は変えていない。**
+    expect(classes).toContain('xl:grid-cols-[minmax(61.625rem,1fr)_auto]');
     expect(classes).toContain('xl:overflow-x-auto');
     // 🔴 「溢れたら隠す」で通さない（判断材料を消す方向の修正の禁止。`CLAUDE.md` §13.3）。
     expect(classes).not.toContain('overflow-hidden');

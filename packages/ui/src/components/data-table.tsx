@@ -199,6 +199,11 @@ export type DataTableProps<Row> = {
  * ✅ 2026-10-02: 面は `--color-table-header-bg`（**値は従来と同一の `slate-50`**）。列ヘッダの地は
  *    「部品 1 つのための色」なので component 層の名前を持つ（§7.9 の ③）—— 行の hover と
  *    同じ `slate-50` でも**別の判断**であり、片方だけ変えたくなる日に差分が読める。
+ * 🔴 ✅ 2026-10-03: **この `slate-50` が「何の上の `slate-50`」かは `Table` の器が決める。**
+ *    `acbdd80` でページ地が `slate-50` になった直後は**ページ地と同値**で分離が消えていた。
+ *    `./table.tsx` の器が `CARD_SURFACE_CLASSES`（白）を持つようになったので、列ヘッダは
+ *    再び**白地の上の `slate-50`** に戻った。🔴 **値は 1 つも変えていない**（理由と実測は
+ *    `./table.tsx` 冒頭の 🔴）。したがって `DataTable` 側の変更は 0 行である。
  */
 export const DATA_TABLE_HEADER_CLASSES = 'sticky top-0 z-10 bg-table-header-bg';
 

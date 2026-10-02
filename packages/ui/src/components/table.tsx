@@ -18,7 +18,7 @@
 //
 // | upstream の語 | ここ | 判断と理由 |
 // |---|---|---|
-// | 🔴 器の `relative w-full overflow-x-auto` | 同じ | **落とさない。** 横溢れを器の内側に閉じ込める唯一の仕掛けであり、モバイル E2E の `expectNoHorizontalOverflow`（`document.documentElement` の横溢れを見る）が守っているものそのもの（`docs/sprints/SP-21` T-21-05 ③） |
+// | 🔴 器の `relative w-full overflow-x-auto` | 同じ + **`CARD_SURFACE_CLASSES`**（✅ 2026-10-03。下の 🔴） | **落とさない。** 横溢れを器の内側に閉じ込める唯一の仕掛けであり、モバイル E2E の `expectNoHorizontalOverflow`（`document.documentElement` の横溢れを見る）が守っているものそのもの（`docs/sprints/SP-21` T-21-05 ③） |
 // | `w-full caption-bottom text-sm` | 同じ | そのまま |
 // | （`border-collapse` は書かない） | 同じ | Tailwind の preflight が `table { border-collapse: collapse }` を当てる（実測: `tailwindcss@4.3.3/preflight.css:171`）。既存画面の `border-collapse` は冗長 |
 // | 🔴 `border-b` / `border-t`（色を書かない） | `border-b border-border` のように**色を必ず書く** | **v4 の border 既定色は `currentColor` である。** upstream は自分の `globals.css` で `* { @apply border-border }` を当てている。T-21-02 の時点では本リポジトリに `--color-border` が無く（実測: `theme.css` に 0 件）実色 `border-slate-200` に置いた。**T-22-01 で `docs/04` §7.9 の `--color-border`（= `slate-200`。値は同一）を宣言したので、上流と同じ語に戻った。** 色を書かなければ文字色の濃い罫線が出る点は変わらない |
@@ -49,10 +49,45 @@
 //    書いている（14 箇所）。`Table` は器を内蔵するので、**移行では外側の器を残さず外す**
 //    （二重にしても壊れないが、`overflow-x-auto` が 2 段になると横スクロールの起点が
 //    どちらか読めなくなる）。器へクラスを渡したいときは `containerClassName` を使う。
+//
+// ============================================================================
+// 🔴 ✅ 2026-10-03: 器が**白い面**を持つ（`CARD_SURFACE_CLASSES`）
+// ============================================================================
+// `acbdd80` が `AppShell` の本体の地を `--color-bg-subtle`（`slate-50`）にした結果、
+// **一覧系の画面だけが「面を持たないまま淡いグレーの地に直接載る」状態になった** ——
+// `Card` / `KpiCard` / `RailCard` / overlay は `--color-surface`（白）なので面として分離した
+// のに、`Table` / `DataTable` を直に置く画面（`S-005` / `S-009` / `S-010` / `S-014` / `S-015` /
+// `S-016` / `S-017` / `S-019` / `S-022` / `S-041` / `A-002` / `A-005` / `A-006` ほか）は器に
+// 地が無く、**sticky ヘッダ（`--color-table-header-bg`）と行 hover（`--color-row-hover-bg`）が
+// ページ地と同値の `slate-50` になって分離そのものが消えていた。**
+//
+// 🔴 **`rounded-md border border-border bg-surface` をここに書き写さない。**
+//    `../lib/surface-classes.ts` の **`CARD_SURFACE_CLASSES` を import する** ——
+//    面が 2 本目になると「どれがカードか」が画面ごとに変わる（あちらの冒頭の 🔴）。
+//    ⚠️ 書き写すと `tests/static/ui-shadow-and-size.test.ts` の対照（`bg-surface` の持ち主は
+//    `surface-classes.ts` / `overlay-classes.ts` の 2 ファイルだけ）が落ちる。**検査が正しい。**
+//
+// 🔴 **`--color-table-header-bg` / `--color-row-hover-bg` の値は変えていない**（どちらも
+//    `slate-50` のまま）。**生成 CSS で実測して判断した**（`apps/web/.next/static/chunks/*.css`）:
+//      `--color-surface: var(--color-white)` / `--color-table-header-bg: var(--color-bg-subtle)`
+//    ＝ 器が白になったことで、列ヘッダと行 hover は**白地の上の `slate-50`** に戻り、
+//    `acbdd80` の前と同じ分離に戻る。**値を変える必要が無い**（変えれば `acbdd80` の前から
+//    見え方が変わってしまう）。
+// 🔴 **生成 CSS に新しいクラスは 1 つも増えない** —— `rounded-md` / `border` / `border-border` /
+//    `bg-surface` は `Card` が既に使っており出力済みである。したがって
+//    `tests/static/sidebar-form-css-order.test.ts` が固定している宣言順（行の `hover` と
+//    `selected` の勝敗）は**変わりえない**（実測で確認した）。
+//
+// ⚠️ **二重の面になる箇所がある。** 画面側が自前の枠付きパネル（`border border-border bg-bg`）の
+//    中に `Table` を置いている箇所（`A-012` 運用監視の 11 表 / `S-016` の右パネル内の要件表 ほか）は、
+//    枠が 2 段に見える。🔴 **ここでは画面を直していない** —— それらのパネルは段④⑤（`T-22-11`〜
+//    `T-22-14`）で部品に置き換わる対象であり、いまクラスを剥がすとラチェットの許可リスト
+//    （段④⑤ の 231 エントリ）が未使用になって落ちる（`tests/static/support/ui-ratchet-*`）。
 import { cva } from 'class-variance-authority';
 import type { ComponentProps } from 'react';
 import { cn } from '../lib/cn.js';
 import { SELECTED_ROW_CLASSES, TRANSITION_CLASSES } from '../lib/state-classes.js';
+import { CARD_SURFACE_CLASSES } from '../lib/surface-classes.js';
 
 /** セルの折り返し。🔴 `className` では基底の `whitespace-nowrap` に勝てないため prop にする。 */
 export type TableCellWhitespace = 'nowrap' | 'normal';
@@ -163,13 +198,17 @@ export type TableProps = ComponentProps<'table'> & {
    * 器（`overflow-x-auto` の `<div>`）に足すクラス。
    * ⚠️ upstream は器を触れないが、既存画面が器に枠線・角丸を持たせているため穴を開ける。
    * 🔴 `overflow-x-auto` を打ち消すクラスを渡さないこと（横溢れが `<html>` に抜ける）。
+   * 🔴 **面（`rounded-md border border-border bg-surface`）を打ち消す / 書き足すために使わない**
+   *    （✅ 2026-10-03。器は `CARD_SURFACE_CLASSES` を既に持つ。ファイル冒頭の 🔴）。
    */
   readonly containerClassName?: string;
 };
 
 export function Table({ className, containerClassName, ...props }: TableProps) {
   return (
-    <div className={cn('relative w-full overflow-x-auto', containerClassName)}>
+    // 🔴 面は `CARD_SURFACE_CLASSES`（= `Card` / `KpiCard` / `RailCard` / overlay と同じ 1 定数）。
+    //    `rounded-md` は `overflow-x-auto` と対であり、**横スクロールの中身が角から出ない**。
+    <div className={cn('relative w-full overflow-x-auto', CARD_SURFACE_CLASSES, containerClassName)}>
       <table className={cn('w-full caption-bottom text-cell', className)} {...props} />
     </div>
   );
