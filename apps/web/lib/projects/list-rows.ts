@@ -12,6 +12,8 @@ import type { ProjectPublishListStatus } from '@ses/domain';
 import { t } from '@ses/i18n';
 import { formatThousands } from '../format/number';
 import { PREFECTURE_MESSAGE_KEYS } from '../format/prefectures';
+// 🔴 型だけを import する（帯の primary の形は `lib/shell/page-trail.ts` が持つ 1 箇所である）。
+import type { PagePrimaryAction } from '../shell/page-trail';
 import {
   HIDDEN_COLUMNS_PARAM,
   hiddenColumnsParamValue,
@@ -172,6 +174,7 @@ export function projectListHref(
   query: ProjectListQuery,
   cursor: string | null,
   hiddenColumns: readonly ProjectHideableColumnId[] = [],
+  selectedId: string | null = null,
 ): string {
   const params = new URLSearchParams();
   if (query.q !== undefined) params.set('q', query.q);
@@ -182,8 +185,55 @@ export function projectListHref(
   if (cursor !== null) params.set('cursor', cursor);
   const hide = hiddenColumnsParamValue(hiddenColumns);
   if (hide !== null) params.set(HIDDEN_COLUMNS_PARAM, hide);
+  if (selectedId !== null) params.set(PROJECT_SELECTED_PARAM, selectedId);
   const search = params.toString();
   return search === '' ? PROJECT_LIST_PATH : `${PROJECT_LIST_PATH}?${search}`;
+}
+
+/**
+ * 🔴 **副カラム（案件の要点パネル）で開いている行**を表す URL のクエリ（SP-22 段④）。
+ *
+ * 🔴 **表示の状態であり、API には渡さない**（`?hide=` と同じ扱い。`projectListQuerySchema` は
+ *    このキーを持たず、Zod の既定〔strip〕で落ちるので `safeParse` も URL も動かない）。
+ * 🔴 **状態を画面側に持たない** —— 持つと再読込・共有・戻るで消え、`'use client'` が要る。
+ */
+export const PROJECT_SELECTED_PARAM = 'selected';
+
+/**
+ * 🔴 `?selected=` → **いまのページに実在する行の ID**（無ければ先頭行、行が無ければ `null`）。
+ *
+ * 🔴 **いまのページの行に照合してから使う**（`docs/05` §6.4 #14 の条件②と同じ構え）。
+ *    照合しないと、URL 直打ちで「このページに無い ID」を指した状態が作れてしまい、
+ *    **パネルが空のまま「選択されている」ことになる**（何も読めない画面になる）。
+ *    🔴 **ここで DB を引かない。** 他のページ・他テナントの案件を指されても、
+ *    **この関数は与えられた行の集合しか見ない**（境界は `projects` の RLS が決めている）。
+ * 🔴 **既定は先頭行である**（ワイヤーフレームどおり、パネルを空で置かない）。先頭行は
+ *    サーバが確定させた決定的な並び（`PROJECT_LIST_ORDER_BY`）の 1 行目であり、
+ *    **順位・スコアを表すものではない**。
+ */
+export function selectedProjectId(
+  raw: string | readonly string[] | undefined,
+  rows: readonly ProjectListRowView[],
+): string | null {
+  const first = rows[0];
+  if (first === undefined) return null;
+  const requested = Array.isArray(raw) ? raw[0] : (raw as string | undefined);
+  if (requested === undefined) return first.id;
+  return rows.some((row) => row.id === requested) ? requested : first.id;
+}
+
+/**
+ * その行を副カラムで開く `S-010` の URL。
+ * 🔴 **検索条件・ページの位置・列の表示状態を保つ**（パネルを開いたせいで 1 ページ目に
+ *    戻されると、いま読んでいた行を見失う。`projectColumnToggleHref` と同じ理由）。
+ */
+export function projectSelectHref(
+  query: ProjectListQuery,
+  cursor: string | null,
+  hiddenColumns: readonly ProjectHideableColumnId[],
+  projectId: string,
+): string {
+  return projectListHref(query, cursor, hiddenColumns, projectId);
 }
 
 /**
@@ -215,12 +265,34 @@ export function projectColumnToggleHref(
   cursor: string | null,
   hidden: readonly ProjectHideableColumnId[],
   columnId: ProjectHideableColumnId,
+  /** 🔴 副カラムで開いている行も保つ（列を 1 つ出し入れしてパネルが閉じない）。 */
+  selectedId: string | null = null,
 ): string {
   return projectListHref(
     query,
     cursor,
     toggleHiddenColumn(hidden, PROJECT_HIDEABLE_COLUMN_IDS, columnId),
+    selectedId,
   );
+}
+
+/**
+ * 🔴 **帯（`PageHeader`）の primary**（SP-22 段④。`docs/04` §S-010「『案件を登録』（primary、
+ *    ホストのみ）→ `S-012`」/ §7.6「primary は大きく」/ §3.1 のレイアウト図）。
+ *
+ * 🔴 **`canRegister` が偽なら `null` を返す** —— 押しても戻されるだけの導線を描かない
+ *    （`docs/04` §S-010 権限差分「取引先は『案件を登録』が無い」。理由テキストは画面側が出す）。
+ *    ⚠️ これは UI の配慮であり、拒否の本体は `#26` の `requireRole` / `S-012` の `redirect` /
+ *    `projects` の RLS（C2 の `app_is_host()`）である。
+ * 🔴 **判定をここ（`lib/**`）に置くのは、`page.tsx` がユニットテストの対象外だからである**
+ *    （`vitest.config.ts`）。`T-22-05` の `page-heading.tsx` が「帯のテストだけを根拠にすると
+ *    画面側の判定が外れても緑のまま通る」と記録しているのと同じ穴を、ここで塞ぐ。
+ * 🔴 `kind` は **`ACTION`**（作成系）である。`PageHeading` 側でも `canAct` で落ちる二重の壁になる。
+ */
+export function projectListPrimaryAction(canRegister: boolean): PagePrimaryAction | null {
+  return canRegister
+    ? { labelKey: 'projects.list.register', href: `${PROJECT_LIST_PATH}/new`, kind: 'ACTION' }
+    : null;
 }
 
 /**

@@ -51,6 +51,20 @@ export type ToolbarProps = {
   readonly scopeNote?: string;
   /** 検索欄・フィルタ（画面が組む。`SearchInput` / `Select` など）。 */
   readonly filters?: ReactNode;
+  /**
+   * ✅ 2026-10-03（SP-22 段④ / 人間のワイヤーフレーム「件数バー」）:
+   * 🔴 **母集団の 1 行の右端**に置く補助（`S-010` の並び順の説明など）。
+   *
+   * 🔴 **なぜ `population` と同じ行なのか**: ワイヤーフレームの件数バーは
+   *    「左に 母集団・件数 / 右に 並び順」の 1 本の帯である。画面側で別の行に積むと、
+   *    **帯の中身の位置が画面ごとに変わる**（この部品の存在理由そのものを崩す）。
+   * 🔴 **件数・他社の存在・示唆を含めない**（§3.2 の「表現しないこと」）。この穴は
+   *    **並び順・表示の説明のため**であり、2 つ目の母集団を置く場所ではない。
+   * ⚠️ `ReactNode` を受けるのは `filters` / `bulkActions` と同じ理由である ——
+   *    画面が凍結済みの `data-testid` を持つ要素をそのまま渡せる必要がある
+   *    （`project-list-order-note` は `docs/04` `U-22` の凍結対象で、E2E が掴んでいる）。
+   */
+  readonly note?: ReactNode;
   /** 一括操作。🔴 **どの幅でも既定で閉じた `<details>` の中に入る**（上の表）。 */
   readonly bulkActions?: ReactNode;
   /** 一括操作の開閉の語（`packages/i18n`）。`bulkActions` を渡すなら必須。 */
@@ -66,6 +80,7 @@ export function Toolbar({
   population,
   scopeNote,
   filters,
+  note,
   bulkActions,
   bulkActionsLabel,
   selectedCount,
@@ -90,10 +105,16 @@ export function Toolbar({
         </div>
       )}
       <div className="flex flex-col gap-1">
-        {/* 🔴 母集団の 1 行。補助テキストの段（§7.3: 12px / `--color-fg-muted`）。 */}
-        <p data-testid={`${testIdPrefix}toolbar-population`} className="text-xs text-fg-muted">
-          {population}
-        </p>
+        {/* 🔴 件数バー: 左に母集団の 1 行、右に `note`（並び順の説明）。
+            🔴 母集団は補助テキストの段（§7.3: 12px / `--color-fg-muted`）。 */}
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <p data-testid={`${testIdPrefix}toolbar-population`} className="text-xs text-fg-muted">
+            {population}
+          </p>
+          {note === undefined ? null : (
+            <div data-testid={`${testIdPrefix}toolbar-note`}>{note}</div>
+          )}
+        </div>
         {/* 🔴 §5-10 の説明ブロック。**フィルタ帯の直下**であることがこの部品の約束である。 */}
         {scopeNote === undefined ? null : (
           <p data-testid={`${testIdPrefix}toolbar-scope-note`} className="text-xs text-fg-muted">

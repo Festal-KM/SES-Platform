@@ -17,6 +17,7 @@
 import { redirect, notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { t } from '@ses/i18n';
+import { PageBody } from '@ses/ui';
 import { NotFoundError } from '../../../../../lib/api/errors';
 import { executionDenialMessageKey } from '../../../../../lib/api/guards';
 import { readRequestMeta, resolveTenantCtxOutcome } from '../../../../../lib/auth/session';
@@ -80,7 +81,13 @@ export default async function ProjectVisibilityPage({
   const denialKey = executionDenialMessageKey(outcome.ctx.lifecycleState);
 
   return (
-    <main className="mx-auto max-w-3xl px-4 py-8">
+    // 🔴 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`）。`S-013` は
+    //    **クラス B = 分割**である（画面ファイルに `max-w-*` を書かない。検査 (c) / (k)）。
+    // ⚠️ 副カラム（`aside`）はまだ渡していない —— 本画面の「公開されたときの見え方」を
+    //    副カラムへ移すのは `T-22-12`（`S-011`〜`S-014` の刷新）の射程であり、本タスクは
+    //    **幅の所在を `PageBody` に移すところまで**である（`aside` は任意の prop である）。
+    <main className="py-6">
+      <PageBody widthClass="split">
       {/* 🔴 T-12-21: 帯にタイトルを渡さない —— この画面のタイトルは案件名であり、
           `project-visibility-name` が `h1` として持つ（タイトルを二重に描かない）。 */}
       <PageHeading trail={PROJECT_VISIBILITY_TRAIL} />
@@ -96,6 +103,7 @@ export default async function ProjectVisibilityPage({
         gateHistory={projectGateHistoryRows(gateResults.items)}
         messages={projectVisibilityScreenMessages()}
       />
+      </PageBody>
     </main>
   );
 }

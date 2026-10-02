@@ -21,22 +21,29 @@ import {
   parseHiddenProjectColumns,
   projectColumnToggleHref,
   projectListHref,
+  projectListPrimaryAction,
   projectListRows,
   projectPopulationLabel,
+  projectSelectHref,
+  selectedProjectId,
   PROJECT_LIST_PATH,
+  PROJECT_SELECTED_PARAM,
 } from '../../../../lib/projects/list-rows';
 import { isProjectEditorRole } from '../../../../lib/projects/policy';
 import { projectListQuerySchema } from '../../../../lib/projects/schemas';
 import { HIDDEN_COLUMNS_PARAM } from '../../../../lib/ui/hidden-columns';
 import {
   projectColumnToggleItems,
+  projectListDescription,
   projectListScreenMessages,
   projectPrefectureFilterOptions,
   projectStatusFilterOptions,
+  projectSummaryPanelMessages,
 } from '../list-props';
 import { ProjectListScreen } from '../project-list-screen';
+import { ProjectSummaryPanel } from '../project-summary-panel';
 import { PageHeading } from '../../_shell/page-heading';
-import { PROJECT_LIST_TRAIL } from '../../../../lib/shell/page-trail';
+import { isPageActionRole, PROJECT_LIST_TRAIL } from '../../../../lib/shell/page-trail';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -70,24 +77,71 @@ export default async function ProjectListPage({
   //       したがって `?hide=` が付いていても上の `safeParse` は成功し、URL も書き換わらない）。
   //    🔴 許可リスト外の値は捨てる（URL 直打ちで壊れない）。
   const hiddenColumns = parseHiddenProjectColumns(raw[HIDDEN_COLUMNS_PARAM]);
+  const rows = projectListRows(view.items);
+  // 🔴 **副カラムで開く行**（SP-22 段④）。`?selected=` も**表示の状態**であり API には渡さない
+  //    （`?hide=` と同じ扱い。`projectListQuerySchema` はこのキーを持たず、Zod の既定〔strip〕で
+  //    落ちるので上の `safeParse` は成功し、URL も書き換わらない）。
+  // 🔴 **いまのページの行に照合してから使う** —— URL 直打ちで「このページに無い ID」を
+  //    指されても、先頭行に落ちる（`selectedProjectId`）。**DB を引き直さない。**
+  const selectedId = selectedProjectId(raw[PROJECT_SELECTED_PARAM], rows);
+  const selectedRow = rows.find((row) => row.id === selectedId) ?? null;
+  const canRegister = isProjectEditorRole(ctx.role);
   // 🔴 9 列目（公開先の設定状況）そのものが無い取引先には**切替を渡さない**（`F-014 AC-4` / `BR-07`）。
   const columnToggleItems = isPartner
     ? []
     : projectColumnToggleItems({
         hidden: hiddenColumns,
-        // 🔴 検索条件と**いま見ているページ**（`cursor`）を保つ（列を外して行を見失わない）。
+        // 🔴 検索条件と**いま見ているページ**（`cursor`）、**開いている行**を保つ
+        //    （列を外して行を見失わない / パネルが閉じない）。
         hrefOf: (columnId) =>
-          projectColumnToggleHref(query, query.cursor ?? null, hiddenColumns, columnId),
+          projectColumnToggleHref(
+            query,
+            query.cursor ?? null,
+            hiddenColumns,
+            columnId,
+            selectedId,
+          ),
       });
 
   return (
-    // 🔴 T-22-06: 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`）。`S-010` は
-    //    **クラス A = 全幅**である。画面ファイルに `max-w-*` を書かない（検査 (c) / (k)）。
+    // 🔴 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`）。画面ファイルに
+    //    `max-w-*` を書かない（検査 (c) / (k)）。
+    // 🔴 ✅ **SP-22 段④ で `full`（クラス A）→ `split`（クラス B）に変えた**（人間のワイヤー
+    //    フレーム「SES Hub案件管理ダッシュボード.png」= 一覧 + 右の案件詳細パネル）。
+    //    ⚠️ **`docs/04` §7.1 の表はまだ `S-010` をクラス A に置いている**（完了報告で
+    //    上流の訂正として申し送る。`CLAUDE.md` §8.7）。
+    //    🔴 副カラムは **`lg` 未満では `PageBody` が本体の下に積む**（遮断しない。§13.3）。
+    //    🔴 **`Drawer` ではない**（`Drawer` は `S-003` / `S-004` の要対応キュー専用。§11-25）。
     <main className="py-6">
-      <PageBody widthClass="full">
-      <PageHeading trail={PROJECT_LIST_TRAIL} title={t('projects.list.title')} />
+      <PageBody
+        widthClass="split"
+        aside={
+          <ProjectSummaryPanel
+            row={selectedRow}
+            // 🔴 `S-012`（編集）に到達できるのはホストの 3 ロールだけ（`PROJECT_EDITOR_ROLES`）。
+            canEdit={canRegister}
+            messages={projectSummaryPanelMessages()}
+          />
+        }
+      >
+      {/* 🔴 primary は帯の 1 つだけ（§7.6）。`ACTION` なので `canAct` が偽のロールには
+          描かれない（`PageHeading`）。**判定の出所は `canRegister` の 1 つ**であり、
+          `projectListPrimaryAction` が `null` を返す側と二重の壁になっている。
+          ⚠️ testid（`project-list-register`）は移設前から凍結されている値である（`U-22`）。 */}
+      <PageHeading
+        trail={PROJECT_LIST_TRAIL}
+        title={t('projects.list.title')}
+        primaryAction={projectListPrimaryAction(canRegister)}
+        canAct={isPageActionRole(ctx.role)}
+        testId="project-list-register"
+      />
+      {/* 🔴 帯の「説明 1 行」（`docs/04` §3.1）。`settings/page.tsx` と同じ形で帯の直下に置く
+          （`PageHeader` は説明の prop を持たない）。母集団が違うので文も違う。 */}
+      <p className="mb-4 text-body text-fg-muted" data-testid="project-list-description">
+        {projectListDescription(isPartner)}
+      </p>
       <ProjectListScreen
-        rows={projectListRows(view.items)}
+        rows={rows}
         filters={{
           q: query.q ?? '',
           status: query.status ?? '',
@@ -101,10 +155,12 @@ export default async function ProjectListPage({
         // 🔴 `S-012` に到達できるのはホストの 3 ロールだけである（`PROJECT_EDITOR_ROLES`）。
         //    押しても戻されるだけの導線を描かない。拒否の本体は `#26` のガードと
         //    `S-012` のリダイレクトである。
-        canRegister={isProjectEditorRole(ctx.role)}
+        canRegister={canRegister}
         showClearFilters={filtered}
         // 🔴 ページングのリンクは**検索条件と列の表示状態を保つ**（`projectListHref`）——
         //    次ページで隠した列が復活すると、利用者は何が起きたか説明できない。
+        // 🔴 **`?selected=` は引き継がない** —— 開いていた行は次のページに居ないので、
+        //    引き継ぐと「このページに無い ID」になる（遷移先で先頭行に落ちる）。
         nextPageHref={
           view.nextCursor === null ? null : projectListHref(query, view.nextCursor, hiddenColumns)
         }
@@ -112,6 +168,11 @@ export default async function ProjectListPage({
           query.cursor === undefined ? null : projectListHref(query, null, hiddenColumns)
         }
         columnToggleItems={columnToggleItems}
+        selectedId={selectedId}
+        // 🔴 行から副カラムを開く URL（検索条件・ページの位置・列の表示状態を保つ）。
+        selectHrefOf={(projectId) =>
+          projectSelectHref(query, query.cursor ?? null, hiddenColumns, projectId)
+        }
         messages={projectListScreenMessages({
           populationLabel: projectPopulationLabel(ctx.partnerCompanyId, view.total),
           isPartner,

@@ -12,6 +12,7 @@
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { t } from '@ses/i18n';
+import { PageBody } from '@ses/ui';
 import { resolveTenantCtxOutcome } from '../../../../lib/auth/session';
 import { isProjectEditorRole } from '../../../../lib/projects/policy';
 import { listSkills } from '../../../../lib/skills/service';
@@ -47,7 +48,10 @@ export default async function NewProjectPage() {
   const skillDictionary = (await listSkills(outcome.ctx, {})).items;
 
   return (
-    <main className="mx-auto max-w-3xl px-4 py-8">
+    // 🔴 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`）。`S-012` は
+    //    **クラス C = 読み幅 720px** である（画面ファイルに `max-w-*` を書かない。検査 (c) / (k)）。
+    <main className="py-6">
+      <PageBody widthClass="prose">
       <PageHeading trail={PROJECT_NEW_TRAIL} title={t('projects.new.title')} />
       <ProjectForm
         mode="CREATE"
@@ -69,6 +73,7 @@ export default async function NewProjectPage() {
         publishedToCount={0}
         messages={projectFormMessages()}
       />
+      </PageBody>
     </main>
   );
 }

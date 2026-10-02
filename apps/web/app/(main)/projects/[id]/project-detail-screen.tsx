@@ -121,8 +121,8 @@ function Section({
   readonly children: ReactNode;
 }) {
   return (
-    <section className="border border-slate-200 bg-white" data-testid={`project-detail-${id}`}>
-      <h2 className="border-b border-slate-200 px-4 py-3 text-base font-bold text-slate-900">
+    <section className="border border-border bg-bg" data-testid={`project-detail-${id}`}>
+      <h2 className="border-b border-border px-4 py-3 text-lg font-bold text-fg">
         {title}
       </h2>
       <div className="px-4 py-4">{children}</div>
@@ -138,11 +138,11 @@ function DefinitionList({
   readonly rows: readonly ProjectDetailRow[];
 }) {
   return (
-    <dl className="text-sm">
+    <dl className="text-body">
       {rows.map((row) => (
-        <div key={row.key} className="flex gap-3 border-b border-slate-100 py-2 last:border-b-0">
-          <dt className="w-40 shrink-0 text-slate-500">{row.label}</dt>
-          <dd className="m-0 text-slate-900" data-testid={`project-detail-${id}-${row.key}`}>
+        <div key={row.key} className="flex gap-3 border-b border-border py-2 last:border-b-0">
+          <dt className="w-40 shrink-0 text-fg-muted">{row.label}</dt>
+          <dd className="m-0 text-fg" data-testid={`project-detail-${id}-${row.key}`}>
             {row.value}
           </dd>
         </div>
@@ -162,10 +162,10 @@ function RequirementTable({
 }) {
   return (
     <div className="mb-4 last:mb-0" data-testid={`project-detail-requirements-${kind}`}>
-      <h3 className="text-sm font-bold text-slate-900">{messages.requirementHeadings[kind]}</h3>
-      <p className="mb-2 text-xs text-slate-500">{messages.requirementNotes[kind]}</p>
+      <h3 className="text-body font-bold text-fg">{messages.requirementHeadings[kind]}</h3>
+      <p className="mb-2 text-xs text-fg-muted">{messages.requirementNotes[kind]}</p>
       {rows.length === 0 ? (
-        <p className="text-sm text-slate-600" data-testid={`project-detail-requirements-${kind}-empty`}>
+        <p className="text-body text-fg-muted" data-testid={`project-detail-requirements-${kind}-empty`}>
           {messages.requirementEmpties[kind]}
         </p>
       ) : (
@@ -218,7 +218,7 @@ function AutoRevokedBanner({
   const cause = revocation.cause;
   return (
     <section
-      className="mb-4 border border-amber-400 bg-amber-100 px-4 py-3 text-sm text-amber-900"
+      className="mb-4 border border-warning-border bg-warning-bg px-4 py-3 text-body text-warning"
       data-testid="project-detail-publish-auto-revoked"
     >
       <p className="font-bold" data-testid="project-detail-publish-auto-revoked-title">
@@ -285,7 +285,7 @@ function PublishProgressNotice({
   if (state.state === 'PUBLISHED_RECHECK_HELD') {
     return (
       <div
-        className="mt-3 border border-dashed border-slate-400 px-3 py-2 text-xs text-slate-700"
+        className="mt-3 border border-dashed border-border-strong px-3 py-2 text-xs text-fg"
         data-testid="project-detail-publish-held"
       >
         <p className="font-bold">{copy.heldTitle}</p>
@@ -300,7 +300,7 @@ function PublishProgressNotice({
   if (state.state === 'PUBLISHED' && state.recheckRunning) {
     return (
       <div
-        className="mt-3 border border-dashed border-slate-400 px-3 py-2 text-xs text-slate-700"
+        className="mt-3 border border-dashed border-border-strong px-3 py-2 text-xs text-fg"
         data-testid="project-detail-publish-recheck-running"
       >
         <p className="font-bold">{copy.recheckRunning}</p>
@@ -333,21 +333,21 @@ export function ProjectDetailScreen({
   return (
     <div data-testid="project-detail-screen" data-audience={view.audience}>
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <h1 className="text-xl font-bold text-slate-900" data-testid="project-detail-name">
+        <h1 className="text-title font-semibold text-fg" data-testid="project-detail-name">
           {view.name}
         </h1>
       </div>
 
       {/* 🔴 折りたたみの外（`CLAUDE.md` §13.3）。移動中の判断に要る 3 値。 */}
       <dl
-        className="mb-4 grid grid-cols-1 gap-3 border border-slate-200 bg-slate-50 p-4 text-sm sm:grid-cols-3"
+        className="mb-4 grid grid-cols-1 gap-3 border border-border bg-bg-subtle p-4 text-body sm:grid-cols-3"
         data-testid="project-detail-headline"
       >
         {headline.map((row) => (
           <div key={row.key}>
-            <dt className="text-slate-500">{row.label}</dt>
+            <dt className="text-fg-muted">{row.label}</dt>
             <dd
-              className="m-0 font-bold text-slate-900"
+              className="m-0 font-bold text-fg"
               data-testid={`project-detail-headline-${row.key}`}
             >
               {row.value}
@@ -372,8 +372,14 @@ export function ProjectDetailScreen({
           どちらも公開先 0 社だが**原因が違う**（設定し忘れ / 検査で落ちた）。帯は 1 本だけにし、
           自動解除を優先する。条件は「公開先 0 社」ではなく**公開の状態の 4 値**で書く。 */}
       {view.audience === 'HOST' && view.publishState.state === 'UNPUBLISHED' ? (
+        // 🔴 **無彩色 / 枠線**（`docs/04` 改訂 14 §S-011 の 4 値表の「未公開」の行）。
+        //    ⚠️ SP-22 段④ の記録: 旧実装は `amber-300 / amber-50`（橙）で、自動解除の
+        //    `amber-400 / amber-100` と**濃さだけで**区別していた。semantic トークンに寄せると
+        //    どちらも `--color-warning-*` に畳まれて**見た目が同じになる**ため、条文どおり
+        //    無彩色・枠線に直した（🔴 **4 値はどれも別の見た目にする**。`F-014 AC-12` と同じ趣旨）。
+        //    塗り / 枠線の区別は `StatusBadge` と同じ語彙（背景あり / `bg-transparent`）で表す。
         <p
-          className="mb-4 border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+          className="mb-4 border border-neutral-border bg-transparent px-4 py-3 text-body text-fg"
           data-testid="project-detail-visibility-warning"
         >
           {messages.visibilityEmpty}
@@ -383,7 +389,7 @@ export function ProjectDetailScreen({
       {/* 🔴 `docs/04` §S-011 取引先セクション 4「公開されている旨の説明」。 */}
       {view.audience === 'PARTNER' ? (
         <p
-          className="mb-4 border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700"
+          className="mb-4 border border-border bg-bg-subtle px-4 py-3 text-body text-fg"
           data-testid="project-detail-partner-published"
         >
           {messages.partnerPublished}
@@ -400,7 +406,7 @@ export function ProjectDetailScreen({
             {messages.edit}
           </Link>
         ) : null}
-        <p className="text-sm text-slate-500" data-testid="project-detail-view-recorded">
+        <p className="text-body text-fg-muted" data-testid="project-detail-view-recorded">
           {messages.viewRecorded}
         </p>
       </div>
@@ -424,7 +430,7 @@ export function ProjectDetailScreen({
           </Section>
 
           <Section id="public-summary" title={messages.sectionPublicSummary}>
-            <p className="whitespace-pre-wrap text-sm text-slate-900" data-testid="project-detail-public-summary">
+            <p className="whitespace-pre-wrap text-body text-fg" data-testid="project-detail-public-summary">
               {view.publicSummary ?? messages.publicSummaryEmpty}
             </p>
           </Section>
@@ -433,10 +439,10 @@ export function ProjectDetailScreen({
         {/* 右（デスクトップ）/ 下（タブレット以下）: 提案 → 商流情報・公開範囲 */}
         <div className="flex flex-col gap-4">
           <Section id="proposals" title={messages.sectionProposals}>
-            <p className="mb-2 text-sm text-slate-600" data-testid="project-detail-proposals-empty">
+            <p className="mb-2 text-body text-fg-muted" data-testid="project-detail-proposals-empty">
               {messages.proposalsEmpty}
             </p>
-            <p className="text-xs text-slate-500" data-testid="project-detail-proposals-coming-soon">
+            <p className="text-xs text-fg-muted" data-testid="project-detail-proposals-coming-soon">
               {messages.proposalsComingSoon}
             </p>
             {/* ✅ T-08-05 → 🔴 **T-12-21 で帯へ移した**: `docs/04` §S-011 の「候補を探す」は
@@ -450,7 +456,7 @@ export function ProjectDetailScreen({
           {view.audience === 'HOST' ? (
             <>
               <Section id="commerce" title={messages.sectionCommerce}>
-                <p className="mb-3 text-xs text-slate-500" data-testid="project-detail-commerce-notice">
+                <p className="mb-3 text-xs text-fg-muted" data-testid="project-detail-commerce-notice">
                   {messages.commerceNotice}
                 </p>
                 <DefinitionList id="commerce" rows={projectCommerceRows(view)} />
@@ -458,7 +464,7 @@ export function ProjectDetailScreen({
 
               <Section id="visibility" title={messages.sectionVisibility}>
                 {view.visibilities.length === 0 ? (
-                  <p className="text-sm text-slate-600" data-testid="project-detail-visibility-empty">
+                  <p className="text-body text-fg-muted" data-testid="project-detail-visibility-empty">
                     {messages.visibilityEmpty}
                   </p>
                 ) : (
@@ -482,7 +488,7 @@ export function ProjectDetailScreen({
                     </TableBody>
                   </Table>
                 )}
-                <p className="mt-3 text-xs text-slate-500" data-testid="project-detail-visibility-proposal-count">
+                <p className="mt-3 text-xs text-fg-muted" data-testid="project-detail-visibility-proposal-count">
                   {messages.visibilityProposalCountComingSoon}
                 </p>
                 {/* 🔴 T-12-10: 再検査の進行 / 保留はセクション 5 の中に置く（帯にしない）。 */}

@@ -20,6 +20,7 @@ import type {
   ProjectFilterOption,
   ProjectListScreenMessages,
 } from './project-list-screen';
+import type { ProjectSummaryPanelMessages } from './project-summary-panel';
 
 /**
  * 「すべて」を表す選択肢の値。
@@ -71,6 +72,8 @@ export function projectListScreenMessages(params: {
     columnHeadcount: t('projects.list.column.headcount'),
     columnUpdatedOn: t('projects.list.column.updatedOn'),
     columnVisibility: t('projects.list.column.visibility'),
+    columnAction: t('projects.list.column.action'),
+    panelOpen: t('projects.list.panel.open'),
     columnToggleTrigger: t('projects.list.columnToggle.trigger'),
     // 🔴 3 通りある（絞込 0 / ホストの初回空 / 取引先の初回空）。docs/04 §10.1 `S-010`。
     emptyTitle: filtered
@@ -85,6 +88,40 @@ export function projectListScreenMessages(params: {
         : t('projects.list.empty.host.lead'),
     nextPage: t('projects.list.nextPage'),
     firstPage: t('projects.list.firstPage'),
+  };
+}
+
+/**
+ * 🔴 **帯の説明 1 行**（SP-22 段④。`docs/04` §3.1 のレイアウト図「説明 1 行」）。
+ *    **母集団が違うので文も違う**（§3.2 項目 2 / `F-015 AC-1`）。出所は `ctx.partnerCompanyId`。
+ */
+export function projectListDescription(isPartner: boolean): string {
+  return isPartner
+    ? t('projects.list.description.partner')
+    : t('projects.list.description.host');
+}
+
+/**
+ * 🔴 **副カラム（案件の要点パネル）の語**（SP-22 段④）。
+ *
+ * 🔴 **キーバリューのラベルは一覧の列見出しと同じキーを引く** —— 同じ値に 2 つの名前を
+ *    作らない（表で「単価レンジ」、パネルで「単価」になると、同じ数字を 2 回探すことになる）。
+ */
+export function projectSummaryPanelMessages(): ProjectSummaryPanelMessages {
+  return {
+    title: t('projects.list.panel.title'),
+    empty: t('projects.list.panel.empty'),
+    detail: t('projects.list.panel.detail'),
+    edit: t('projects.list.panel.edit'),
+    candidates: t('projects.list.panel.candidates'),
+    fieldStatus: t('projects.list.column.status'),
+    fieldMustRequirements: t('projects.list.column.mustRequirements'),
+    fieldUnitPrice: t('projects.list.column.unitPrice'),
+    fieldStartDate: t('projects.list.column.startDate'),
+    fieldLocation: t('projects.list.column.location'),
+    fieldHeadcount: t('projects.list.column.headcount'),
+    fieldUpdatedOn: t('projects.list.column.updatedOn'),
+    fieldVisibility: t('projects.list.column.visibility'),
   };
 }
 

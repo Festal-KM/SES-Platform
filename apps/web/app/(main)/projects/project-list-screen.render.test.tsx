@@ -63,6 +63,8 @@ const messages: ProjectListScreenMessages = {
   columnHeadcount: '募集人数',
   columnUpdatedOn: '更新日',
   columnVisibility: '公開先の設定状況',
+  columnAction: '操作',
+  panelOpen: '内容を見る',
   columnToggleTrigger: '表示する列',
   emptyTitle: 'まだ案件が登録されていません。',
   emptyLead: '案件を登録すると、この一覧に表示されます。',
@@ -125,6 +127,11 @@ function render(
       nextPageHref: null,
       firstPageHref: null,
       columnToggleItems: showVisibilityColumn ? COLUMN_TOGGLE_SHOWN : [],
+      // 🔴 SP-22 段④: 副カラムで開いている行（既定は先頭行）と、行から開く URL。
+      //    組み立ては `lib/projects/list-rows.test.ts`（`selectedProjectId` / `projectSelectHref`）が
+      //    固定する。ここでは「画面が受け取った形をどう描くか」だけを見る。
+      selectedId: PROJECT_A,
+      selectHrefOf: (projectId: string) => `/projects?selected=${projectId}`,
       messages,
       ...overrides,
     }),
@@ -170,15 +177,29 @@ describe('🔴 docs/05 §4.8: 順位・全体件数・スコアを描かない',
 });
 
 describe('権限差分（docs/04 §S-010）', () => {
-  it('登録できるロールには「案件を登録」が出る', () => {
-    expect(render()).toContain('href="/projects/new"');
+  // 🔴 **SP-22 段④で登録の導線は帯（`PageHeader`）へ移った**（`docs/04` §S-010「案件を登録
+  //    （primary、ホストのみ）」/ §7.6「primary は大きく」）。したがって本体には描かれない。
+  //    🔴 **判定の検出器は失っていない** —— `projectListPrimaryAction(canRegister)` が
+  //    `null` を返すことを `lib/projects/list-rows.test.ts` が固定し（`page.tsx` は
+  //    ユニットテストの対象外であるため、判定を `lib/**` に置いた）、`PageHeading` 側の
+  //    `kind: 'ACTION'` × `canAct` の落とし方は `_shell/page-heading.render.test.tsx` が固定する。
+  it('🔴 本体（一覧）には登録導線が無い（帯の primary へ移したため。二重に描かない）', () => {
+    expect(render()).not.toContain('href="/projects/new"');
+    expect(render({ canRegister: false })).not.toContain('href="/projects/new"');
   });
 
-  it('🔴 取引先・`VIEWER` には登録導線が無く、代わりに理由が出る', () => {
+  it('🔴 取引先・`VIEWER` には理由テキストが出る（`disabled` のボタンを置かない。§7.6）', () => {
     const html = render({ canRegister: false });
 
-    expect(html).not.toContain('href="/projects/new"');
+    expect(html).toContain('data-testid="project-list-read-only-note"');
     expect(html).toContain('案件の登録は、閲覧のみの権限では行えません。');
+  });
+
+  it('🔴 登録できるロールには理由テキストを出さない（出すと「できない」と読める）', () => {
+    const html = render();
+
+    expect(html).not.toContain('data-testid="project-list-read-only-note"');
+    expect(html).not.toContain('案件の登録は、閲覧のみの権限では行えません。');
   });
 
   it('取引先には母集団の説明が 1 行増える', () => {
@@ -330,20 +351,34 @@ describe('🔴 T-11-12: 案件名セルが docs/04 §10.3「長い名称」の�
 // | 更新日 | `hidden sm:table-cell` | `sm` |
 // | 公開先の設定状況（ホストのみ） | `hidden lg:table-cell` | `lg` + `hideable`（9 列目） |
 describe('🔴 T-22-06: 列の契約（移行前と同一。増減 0）', () => {
+  /**
+   * 🔴 **データ列だけを返す**（`data-column-id` を持つ `<th>`）。
+   *    ⚠️ **SP-22 段④ で操作列（`内容を見る`）が増えた**が、操作列は `docs/04` §7.1 の
+   *    「既定 8 列 + **操作列**」の後者であり、**データ列の集合は 1 つも変わっていない**。
+   *    操作列が 1 つだけ在ることは下の専用のテストが固定する（判定を緩めていない）。
+   */
   function headerColumns(html: string): { readonly id: string; readonly breakpoint: string }[] {
     const head = /<thead[^>]*>(.*?)<[/]thead>/s.exec(html)?.[1] ?? '';
-    return [...head.matchAll(/<th ([^>]*)>/g)].map((match) => {
-      const attributes = match[1] ?? '';
-      const id = /data-column-id="([^"]+)"/.exec(attributes)?.[1] ?? '?';
-      const classes = /class="([^"]*)"/.exec(attributes)?.[1] ?? '';
-      const breakpoint = classes.includes('hidden lg:table-cell')
-        ? 'lg'
-        : classes.includes('hidden sm:table-cell')
-          ? 'sm'
-          : 'always';
-      return { id, breakpoint };
-    });
+    return [...head.matchAll(/<th ([^>]*)>/g)]
+      .map((match) => {
+        const attributes = match[1] ?? '';
+        const id = /data-column-id="([^"]+)"/.exec(attributes)?.[1] ?? '?';
+        const classes = /class="([^"]*)"/.exec(attributes)?.[1] ?? '';
+        const breakpoint = classes.includes('hidden lg:table-cell')
+          ? 'lg'
+          : classes.includes('hidden sm:table-cell')
+            ? 'sm'
+            : 'always';
+        return { id, breakpoint };
+      })
+      .filter((column) => column.id !== '?');
   }
+
+  it('🔴 データ列のほかに `<th>` が 1 つだけ在る（= 操作列。2 つ目の無名の列が生えていない）', () => {
+    const head = /<thead[^>]*>(.*?)<[/]thead>/s.exec(render())?.[1] ?? '';
+    const all = [...head.matchAll(/<th ([^>]*)>/g)].length;
+    expect(all - headerColumns(render()).length).toBe(1);
+  });
 
   it('ホスト = 9 列（9 列目は公開先の設定状況）。並びと境界が移行前と一致する', () => {
     expect(headerColumns(render())).toEqual([
@@ -470,5 +505,133 @@ describe('🔴 T-22-06: 列表示切替（§7.1「9 列目以降は列表示切�
     expect(html).not.toContain('data-testid="project-list-column-toggle-root"');
     expect(html).not.toContain('data-testid="project-list-column-toggle-trigger"');
     expect(html).not.toContain('表示する列');
+  });
+});
+
+// ============================================================================
+// 🔴 SP-22 段④: ワイヤーフレームへの刷新（**見せ方だけ**。人間の
+//    「SES Hub案件管理ダッシュボード.png」）
+// ============================================================================
+describe('🔴 SP-22 段④: 絞り込みカードと件数バー', () => {
+  it('🔴 絞り込みは白い面のカード（`@ses/ui` の `Card`）の中にある（ページ地に溶けない）', () => {
+    const html = render();
+    // 🔴 面の語（`CARD_SURFACE_CLASSES`）は `packages/ui` にしか無いので、**ここでは
+    //    その語を書かない**（書くと `tests/static/ui-shadow-and-size.test.ts` の
+    //    「画面が面のクラス定数を再実装していない」に当たる）。radius + 枠線で器を掴む。
+    const card = html.indexOf('rounded-md border border-border');
+    const form = html.indexOf('data-testid="project-list-filters"');
+
+    expect(card, '絞り込みカードの面が描かれていない').toBeGreaterThanOrEqual(0);
+    expect(form, '検索フォームがカードの外にある').toBeGreaterThan(card);
+  });
+
+  it('🔴 フリーワードは全幅である（他の 3 条件と同じ幅に並べない）', () => {
+    const html = render();
+    const label = /<label class="([^"]*)"[^>]*>\s*<span[^>]*>フリーワード/.exec(html);
+
+    expect(label, 'フリーワードの欄が見つからない').not.toBeNull();
+    const classes = (label?.[1] ?? '').split(' ');
+    expect(classes).toContain('sm:col-span-2');
+    expect(classes).toContain('lg:col-span-3');
+    expect(classes).toContain('xl:col-span-4');
+  });
+
+  it('🔴 「効かない条件」の 1 行は絞り込みカードの中にある（条件の群の隣で読む）', () => {
+    const html = render();
+    const comingSoon = html.indexOf('data-testid="project-list-search-coming-soon"');
+    const form = html.indexOf('data-testid="project-list-filters"');
+    const population = html.indexOf('data-testid="project-list-toolbar-population"');
+
+    expect(comingSoon).toBeGreaterThan(form);
+    expect(comingSoon, '件数バーより後に出ている（カードの外）').toBeLessThan(population);
+  });
+
+  it('🔴 件数バー: 母集団の 1 行と並び順の説明が同じ段にある', () => {
+    const html = render();
+    const population = html.indexOf('data-testid="project-list-toolbar-population"');
+    const note = html.indexOf('data-testid="project-list-toolbar-note"');
+    const orderNote = html.indexOf('data-testid="project-list-order-note"');
+    const table = html.indexOf('data-testid="project-list-table"');
+
+    expect(population).toBeGreaterThanOrEqual(0);
+    expect(note, '並び順の置き場所（`Toolbar` の `note`）が無い').toBeGreaterThan(population);
+    // 🔴 凍結済みの `project-list-order-note` が `note` の中に在る（`U-22`）。
+    expect(orderNote).toBeGreaterThan(note);
+    expect(orderNote, '並び順の説明がテーブルより後に出ている').toBeLessThan(table);
+    expect(html).toContain('後任募集 → 募集中 → 充足');
+  });
+
+  it('🔴 並び順は**選べる形にしない**（`?sort=` は既存 API に無い）', () => {
+    const html = render();
+
+    // 並び替えのリンク（`DataTableSortLink`）も、並び順のセレクトも描かない。
+    expect(html).not.toContain('data-testid="project-list-sort-');
+    expect(html).not.toContain('name="sort"');
+    expect(html).not.toContain('name="order"');
+  });
+
+  it('🔴 既存 API（#25）に無い条件の入力欄を 1 つも描かない', () => {
+    const html = render();
+
+    for (const name of [
+      'name="skills"',
+      'name="priceMin"',
+      'name="priceMax"',
+      'name="remote"',
+      'name="category"',
+      'name="kind"',
+      'name="parallel"',
+      'name="openOnly"',
+      'name="limit"',
+    ]) {
+      expect(html, `${name} の入力欄が描かれている（API に無い条件）`).not.toContain(name);
+    }
+  });
+});
+
+describe('🔴 SP-22 段④: 操作列から副カラム（案件の要点パネル）を開く', () => {
+  it('操作列の語は §7.8 の統一語（`内容を見る`）で、行ごとに URL を持つ', () => {
+    const html = render({ rows: [row(), row({ id: PROJECT_B, name: '物流管理システム保守' })] });
+
+    expect(html).toContain('操作');
+    expect(html).toContain(`data-testid="project-list-panel-open-${PROJECT_A}"`);
+    expect(html).toContain(`data-testid="project-list-panel-open-${PROJECT_B}"`);
+    expect(html).toContain(`href="/projects?selected=${PROJECT_A}"`);
+    expect(html).toContain(`href="/projects?selected=${PROJECT_B}"`);
+  });
+
+  it('🔴 `詳細` の語を操作列に使わない（`詳細` は画面〔`S-011`〕を指す語である。§7.8）', () => {
+    const html = render();
+    const actionCell = /内容を見る/.exec(html);
+
+    expect(actionCell).not.toBeNull();
+    // 操作列のリンクのラベルが `詳細` になっていない（同じ語が 2 概念を指さない）。
+    expect(html).not.toContain('>詳細<');
+  });
+
+  it('🔴 行クリック（名称セル）の行き先は `S-011` のまま（閲覧の監査記録は遷移先が書く）', () => {
+    const html = render();
+
+    expect(html).toContain(`href="/projects/${PROJECT_A}"`);
+    expect(html).toContain(`data-testid="project-list-link-${PROJECT_A}"`);
+  });
+
+  it('副カラムで開いている行に印が付く（選択＝一括操作ではない）', () => {
+    const html = render({
+      rows: [row(), row({ id: PROJECT_B, name: '物流管理システム保守' })],
+      selectedId: PROJECT_B,
+    });
+    const selected = /<tr class="[^"]*" data-testid="project-list-row-([^"]+)" data-selected="true">/.exec(
+      html,
+    );
+
+    expect(selected?.[1]).toBe(PROJECT_B);
+    // 🔴 チェックボックスは置かない（Phase 1 に一括操作は 1 つも無い）。
+    expect(html).not.toContain('data-testid="project-list-select-');
+    expect(html).not.toContain('type="checkbox"');
+  });
+
+  it('🔴 どの行も選ばれていないときは印が 1 つも付かない', () => {
+    expect(render({ selectedId: null })).not.toContain('data-selected="true"');
   });
 });

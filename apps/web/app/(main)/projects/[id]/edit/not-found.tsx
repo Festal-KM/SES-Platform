@@ -6,20 +6,22 @@
 //    したがって文言も 1 種類しか持たない。
 // 🔴 戻り先は `PROJECT_FORM_CANCEL_HREF` と共有する（キャンセルと 404 でずれないように）。
 //    T-06-03 で `S-010`（案件一覧）になった（docs/04 §10.1 `S-012`「対象が削除済み → 一覧へ」）。
-import { SECONDARY_LINK_STACKED_CLASSES } from '@ses/ui';
+import { PageBody, SECONDARY_LINK_STACKED_CLASSES } from '@ses/ui';
 import { t } from '@ses/i18n';
 import { PROJECT_FORM_CANCEL_HREF } from '../../_form/form-props';
 
 export default function EditProjectNotFound() {
   return (
-    <main className="mx-auto max-w-3xl px-4 py-8">
-      <h1 className="mb-4 text-xl font-bold text-slate-900">{t('projects.edit.title')}</h1>
-      <p className="mb-4 text-sm text-slate-700" data-testid="project-not-found">
-        {t('projects.notFound')}
-      </p>
-      <a className={SECONDARY_LINK_STACKED_CLASSES} href={PROJECT_FORM_CANCEL_HREF}>
-        {t('projects.breadcrumb.list')}
-      </a>
+    <main className="py-6">
+      <PageBody widthClass="prose">
+        <h1 className="mb-4 text-title font-semibold text-fg">{t('projects.edit.title')}</h1>
+        <p className="mb-4 text-body text-fg" data-testid="project-not-found">
+          {t('projects.notFound')}
+        </p>
+        <a className={SECONDARY_LINK_STACKED_CLASSES} href={PROJECT_FORM_CANCEL_HREF}>
+          {t('projects.breadcrumb.list')}
+        </a>
+      </PageBody>
     </main>
   );
 }

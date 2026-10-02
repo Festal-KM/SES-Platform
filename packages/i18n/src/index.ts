@@ -2722,6 +2722,13 @@ const ja = {
   'projects.list.title': '案件一覧',
   // ⚠️ T-22-09: 同上（入口は `SummaryStrip` の `案件` の値）。🔴 キーは消さない（`U-22`）。
   'projects.list.open': '案件一覧を開く',
+  // --- ✅ SP-22 段④: 帯の説明 1 行（`docs/04` §3.1 のレイアウト図「説明 1 行」）---
+  // 🔴 **母集団が違うので 2 本持つ**（`F-015 AC-1` / §3.2 項目 2）。取引先向けの文には
+  //    ホスト側の件数・他社の存在を示す語を 1 つも置かない（`F-014 AC-4` / `BR-07`）。
+  'projects.list.description.host':
+    '自社の案件を探し、要件と公開範囲の設定状況を確かめます。行の「内容を見る」を押すと、右側に要点が出ます。',
+  'projects.list.description.partner':
+    '御社に公開された案件を探します。行の「内容を見る」を押すと、右側に要点が出ます。',
   'projects.list.population.host': '自社案件',
   'projects.list.population.partner': '御社に公開された案件',
   'projects.list.population.unit': '件',
@@ -2748,6 +2755,19 @@ const ja = {
   'projects.list.column.updatedOn': '更新日',
   // 🔴 ホストのみの 9 列目（`docs/04` §S-010「🔴 取引先にはこの列を出さない」）。
   'projects.list.column.visibility': '公開先の設定状況',
+  // --- ✅ SP-22 段④: 副カラム（案件の要点パネル）---
+  // 🔴 操作列の語。`docs/04` §7.8 の統一語（「一覧の行の中身を確かめる操作」= `内容を見る`）に
+  //    従う。**`詳細` を使わない** —— `詳細` は画面（`S-011`）を指す語であり、要点パネルは
+  //    判断材料の全量ではない（同節の 🔴）。
+  'projects.list.column.action': '操作',
+  'projects.list.panel.open': '内容を見る',
+  'projects.list.panel.title': '案件の要点',
+  'projects.list.panel.empty': '行の「内容を見る」を押すと、ここに案件の要点が出ます。',
+  // 🔴 要点パネルからの導線。**一覧には無かった画面を新しく足していない**
+  //    （`S-011` / `S-012` / `S-016` はいずれも `S-011` から到達できる既存の画面である）。
+  'projects.list.panel.detail': '案件詳細を開く',
+  'projects.list.panel.edit': '編集する',
+  'projects.list.panel.candidates': 'この案件に合う人材を探す',
   // --- 🔴 列表示切替（`T-22-06`。`docs/04` §7.1「既定 8 列 + 操作列。9 列目以降は列表示切替に格納する」）---
   // 🔴 **項目の語は「いまの状態に対する操作」で書く** —— メニューの項目はチェックの印を持たない
   //    （§5-13）ため、`公開先の設定状況` とだけ書くと開いても表示中か非表示中か分からない。

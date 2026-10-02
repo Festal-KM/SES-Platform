@@ -1,6 +1,24 @@
 // apps/web/app/(main)/projects/project-list-screen.tsx
 // `S-010` 案件一覧・検索 — 本体（docs/04 §S-010 / `F-015` / docs/05 §6.4 #25）。
-// T-06-03 → **SP-22 `T-22-06`（一覧の適用 ①）**。
+// T-06-03 → **SP-22 `T-22-06`（一覧の適用 ①）** → **SP-22 段④（ワイヤーフレームへの刷新）**。
+//
+// ============================================================================
+// 🔴 SP-22 段④ で何が変わったか（**見せ方だけ**。人間のワイヤーフレーム）
+// ============================================================================
+// | 変えたもの | 一次資料 | 🔴 変えていないもの |
+// |---|---|---|
+// | 絞り込みを **`Card`（白い面）**に入れた（ページ地は `--color-bg-subtle`） | §7.9 / `Table` の器と同じ判断 | 🔴 **条件の集合・`name`・送り先・`method="get"`** |
+// | 並び順の説明を **件数バーの右端**（`Toolbar` の `note`）へ | ワイヤーフレーム「件数バー」/ §5-13 | 🔴 **選べる形にしない**（`?sort=` は既存 API に無い。`HANDOFF.md` §5） |
+// | 登録の導線を **帯の primary** へ（`projectListPrimaryAction`） | §S-010 / §7.6 | 🔴 **testid `project-list-register`** / 閲覧専用ロールには描かない |
+// | **操作列**（`内容を見る`）で副カラムを開く | §7.1「8 列 + 操作列」/ §7.8 の統一語 | 🔴 **名称セルは `S-011` へ遷移**（閲覧の監査記録は遷移先が書く） |
+// | 「効かない条件」の 1 行を絞り込みカードの中へ | — | 🔴 **文言と testid**（`project-list-search-coming-soon`） |
+//
+// 🔴 **API / 取得経路 / 権限判定 / URL / 列の集合・並び・間引きの境界は 1 つも変えていない。**
+// 🔴 **ワイヤーフレームから意図して落としたもの**: 行のチェックボックス（Phase 1 に一括操作が
+//    1 つも無い。押せるのに何も起きない UI を作らない）/ `案件をインポート`（案件の取込は
+//    画面も API も存在しない）/ `案件区分` `カテゴリ` `稼働形態` `単価` `並行可否` `募集中のみ`
+//    （既存 query〔`#25`〕に無い条件は描かない）/ `表示件数` のセレクト（`?limit=` は API に
+//    在るが、動く控制にするには client JS か件数バー内の送信ボタンが要る。§7.1 の既定 50 行のまま）。
 //
 // ============================================================================
 // 🔴 `T-22-06` で何が変わったか（**見せ方だけ**。`SP-22` §3.1）
@@ -57,13 +75,14 @@
 import Link from 'next/link';
 import {
   Button,
+  Card,
+  CardContent,
   DataTable,
   EmptyState,
   Field,
   Input,
   Pagination,
   SECONDARY_LINK_CLASSES,
-  SECONDARY_LINK_STACKED_CLASSES,
   Select,
   Toolbar,
   cn,
@@ -118,6 +137,10 @@ export type ProjectListScreenMessages = {
   readonly columnHeadcount: string;
   readonly columnUpdatedOn: string;
   readonly columnVisibility: string;
+  /** 操作列の列ヘッダ（SP-22 段④。`docs/04` §7.1「既定 8 列 + 操作列」）。 */
+  readonly columnAction: string;
+  /** 行から副カラムを開く語（§7.8 の統一語 `内容を見る`）。 */
+  readonly panelOpen: string;
   /** 🔴 列表示切替を開く語（`T-22-06`。§7.1 の「9 列目以降は列表示切替に格納する」）。 */
   readonly columnToggleTrigger: string;
   readonly emptyTitle: string;
@@ -260,6 +283,8 @@ export function ProjectListScreen({
   nextPageHref,
   firstPageHref,
   columnToggleItems,
+  selectedId,
+  selectHrefOf,
   messages,
 }: {
   readonly rows: readonly ProjectListRowView[];
@@ -288,6 +313,17 @@ export function ProjectListScreen({
    *    `showVisibilityColumn` と同じ出所〔`ctx.partnerCompanyId`〕で決まる）。
    */
   readonly columnToggleItems: readonly ColumnToggleItem[];
+  /**
+   * 🔴 **副カラム（案件の要点パネル）で開いている行の ID**（SP-22 段④）。
+   *
+   * 🔴 **出所は URL（`?selected=`）であり、画面は状態を持たない**（`selectedProjectId`。
+   *    持つと再読込・共有・戻るで消え、`'use client'` が要る）。1 件も無いページでは `null`。
+   * 🔴 **これは「選択」（一括操作の対象）ではない** —— Phase 1 に一括操作は 1 つも無く、
+   *    `DataTable` の `selection`（チェックボックス）は渡さない。
+   */
+  readonly selectedId: string | null;
+  /** その行を副カラムで開く URL（`projectSelectHref`。検索条件とページの位置を保つ）。 */
+  readonly selectHrefOf: (projectId: string) => string;
   readonly messages: ProjectListScreenMessages;
 }) {
   // 🔴 隠す列は props の `hidden` から導く（画面に 2 つ目の出所を作らない）。
@@ -297,119 +333,146 @@ export function ProjectListScreen({
       {/* 🔴 §5-13 の `Toolbar`: **母集団の 1 行（§3.2-2 の #2）と検索の帯の置き場所をここに固定する。**
           ⚠️ **凍結済み testid の併記**（`U-22` / `SP-22` §3.2 の代替 ④）: `Toolbar` は母集団の 1 行を
              `project-list-toolbar-population` として描くが、凍結されている値は
-             **`project-list-population`** であり `tests/e2e/projects.mobile.spec.ts` が掴んでいる。 */}
+             **`project-list-population`** であり `tests/e2e/projects.mobile.spec.ts` が掴んでいる。
+          ✅ **SP-22 段④**: 絞り込みを `Card`（白い面）に入れ、並び順の説明を母集団と同じ行
+             （件数バー）の右端へ移した（ワイヤーフレームの「絞り込みカード」+「件数バー」）。
+             🔴 **条件の集合・`name` 属性・送り先は 1 つも変えていない。** */}
       <div data-testid="project-list-population">
         <Toolbar
           testIdPrefix="project-list-"
           population={messages.populationLabel}
+          note={
+            // 🔴 並び順の説明（docs/04 §S-010「並び順の説明は 1 行で常時出す」）。
+            //    スコア・順位・重みの語を含めない。
+            // 🔴 **選べる形にしない** —— 既存 API に `?sort=` が無い（`HANDOFF.md` §5）。
+            //    動かないセレクトを置かず、サーバが確定させた並びを文で述べる。
+            //    ⚠️ 器の `data-testid` は凍結済みの `project-list-order-note` である（`U-22`）。
+            <p className="text-xs text-fg-muted" data-testid="project-list-order-note">
+              {messages.orderNote}
+            </p>
+          }
           filters={
-            <>
-            {/* 🔴 検索条件（docs/04 §S-010 セクション 1）。`method="get"` なので、実行した検索が
-               そのまま URL になり、共有・再読込・戻るのいずれでも同じ結果に戻る。
-               ⚠️ `mb-0` / `w-full` は帯の中に置いたための余白・幅の調整である（`cn()` の規律 1）。 */}
-            <form
-              className={cn(FILTER_FORM_CLASSES, 'mb-0 w-full')}
-              method="get"
-              action="/projects"
-              data-testid="project-list-filters"
-            >
-              <fieldset className="contents">
-                <legend className="sr-only">{messages.searchLegend}</legend>
-                <Field label={messages.searchQ}>
-                  <Input type="search" name="q" defaultValue={filters.q} data-testid="project-list-filter-q" />
-                </Field>
-                <Field label={messages.searchStatus}>
-                  <Select name="status" defaultValue={filters.status} data-testid="project-list-filter-status">
-                    {statusOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-                <Field label={messages.searchStartFrom}>
-                  <Input
-                    type="date"
-                    name="startFrom"
-                    defaultValue={filters.startFrom}
-                    data-testid="project-list-filter-start-from"
-                  />
-                </Field>
-                <Field label={messages.searchPrefecture}>
-                  <Select
-                    name="prefecture"
-                    defaultValue={filters.prefecture}
-                    data-testid="project-list-filter-prefecture"
-                  >
-                    {prefectureOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-                <div className={FILTER_ACTIONS_CLASSES}>
-                  <Button type="submit" data-testid="project-list-search">
-                    {messages.searchSubmit}
-                  </Button>
-                  {showClearFilters ? (
-                    <Link className={SECONDARY_LINK_CLASSES} href="/projects" data-testid="project-list-clear">
-                      {messages.searchClear}
-                    </Link>
-                  ) : null}
-                </div>
-              </fieldset>
-            </form>
-            {/* 🔴 **列表示切替の置き場所は `Toolbar` である**（`docs/04` §5-13 / §7.1。`T-22-06`）。
-                §5-13 の `Toolbar` は「検索 + フィルタ + 一括操作」の**置き場所を固定する**部品であり、
-                列の出し入れも一覧の上の帯に属する —— **画面ごとに位置が変わらないこと**が条文の趣旨で
-                あるため、検索の帯と同じ段（`filters`）に並べる。
-                🔴 9 列目が無い取引先には `columnToggleItems` が空で届き、**何も描かない**。 */}
-            {columnToggleItems.length === 0 ? null : (
-              <ColumnToggle
-                columns={columnToggleItems}
-                triggerLabel={messages.columnToggleTrigger}
-                testIdPrefix="project-list-column-toggle-"
-              />
-            )}
-            </>
+            // 🔴 絞り込みは**白い面のカード**に入れる（ページ地は `--color-bg-subtle` なので、
+            //    面を持たないと入力欄の群が地に溶ける。`Table` の器と同じ判断）。
+            //    🔴 面・余白・radius は `Card` の中にしか無い（画面に `rounded-md border …` を書かない）。
+            <Card className="w-full">
+              {/* `CardContent` は `p-4 pt-0`。見出しを持たないカードなので上の余白を戻す
+                  （`cn()` = `tailwind-merge` が `pt-0` を落とす）。 */}
+              <CardContent className="pt-4">
+                {/* 🔴 検索条件（docs/04 §S-010 セクション 1）。`method="get"` なので、実行した検索が
+                   そのまま URL になり、共有・再読込・戻るのいずれでも同じ結果に戻る。
+                   🔴 **既存 API（`#25`）に在る 4 条件だけを描く**（`q` / `status` / `startFrom` /
+                      `prefecture`）。スキル要件・単価レンジ・リモート可否は query に無いので
+                      **入力欄を描かず**、下の 1 行で「できないこと」を書く。
+                   ⚠️ `mb-0` / `w-full` は帯の中に置いたための余白・幅の調整である（`cn()` の規律 1）。 */}
+                <form
+                  className={cn(FILTER_FORM_CLASSES, 'mb-0 w-full')}
+                  method="get"
+                  action="/projects"
+                  data-testid="project-list-filters"
+                >
+                  <fieldset className="contents">
+                    <legend className="sr-only">{messages.searchLegend}</legend>
+                    {/* 🔴 フリーワードは**全幅**（ワイヤーフレームの検索欄）。最も使う条件を
+                        1 行目に単独で置く —— 他の 3 条件と同じ幅に並べると、入力できる語数が
+                        画面幅で変わる。 */}
+                    <Field
+                      className="sm:col-span-2 lg:col-span-3 xl:col-span-4"
+                      label={messages.searchQ}
+                    >
+                      <Input type="search" name="q" defaultValue={filters.q} data-testid="project-list-filter-q" />
+                    </Field>
+                    <Field label={messages.searchStatus}>
+                      <Select name="status" defaultValue={filters.status} data-testid="project-list-filter-status">
+                        {statusOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                    <Field label={messages.searchStartFrom}>
+                      <Input
+                        type="date"
+                        name="startFrom"
+                        defaultValue={filters.startFrom}
+                        data-testid="project-list-filter-start-from"
+                      />
+                    </Field>
+                    <Field label={messages.searchPrefecture}>
+                      <Select
+                        name="prefecture"
+                        defaultValue={filters.prefecture}
+                        data-testid="project-list-filter-prefecture"
+                      >
+                        {prefectureOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                    {/* 🔴 送信と「条件をクリア」は必ず 1 行を占める（列の途中に紛れると
+                        押せる場所が毎回変わる）。`justify-end` はカードの中で右に寄せるための
+                        配置の調整であり、共有定数（`FILTER_ACTIONS_CLASSES`）は変えていない。 */}
+                    <div className={cn(FILTER_ACTIONS_CLASSES, 'justify-end')}>
+                      {showClearFilters ? (
+                        <Link className={SECONDARY_LINK_CLASSES} href="/projects" data-testid="project-list-clear">
+                          {messages.searchClear}
+                        </Link>
+                      ) : null}
+                      <Button type="submit" data-testid="project-list-search">
+                        {messages.searchSubmit}
+                      </Button>
+                    </div>
+                  </fieldset>
+                </form>
+
+                {/* 🔴 まだ効かない条件を黙って描かない（`engineers.list.searchComingSoon` と同じ規律）。
+                    ✅ SP-22 段④: 場所を絞り込みカードの中へ移した（**どの条件が無いのか**は
+                       条件の群の隣で読むものであり、一覧の上の独立した 1 行ではない）。 */}
+                <p className="mt-3 text-xs text-fg-muted" data-testid="project-list-search-coming-soon">
+                  {messages.searchComingSoon}
+                </p>
+
+                {/* 🔴 **列表示切替の置き場所は `Toolbar` である**（`docs/04` §5-13 / §7.1。`T-22-06`）。
+                    §5-13 の `Toolbar` は「検索 + フィルタ + 一括操作」の**置き場所を固定する**部品であり、
+                    列の出し入れも一覧の上の帯に属する —— **画面ごとに位置が変わらないこと**が条文の趣旨で
+                    あるため、検索の帯と同じ段（`filters`）に並べる。
+                    🔴 9 列目が無い取引先には `columnToggleItems` が空で届き、**何も描かない**。 */}
+                {columnToggleItems.length === 0 ? null : (
+                  <div className="mt-3">
+                    <ColumnToggle
+                      columns={columnToggleItems}
+                      triggerLabel={messages.columnToggleTrigger}
+                      testIdPrefix="project-list-column-toggle-"
+                    />
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           }
         />
       </div>
-
-      {/* 🔴 まだ効かない条件を黙って描かない（`engineers.list.searchComingSoon` と同じ規律）。 */}
-      <p className="mb-3 text-body text-fg-muted" data-testid="project-list-search-coming-soon">
-        {messages.searchComingSoon}
-      </p>
 
       {messages.partnerScopeNotice === null ? null : (
         // 🔴 §5-10 の「見える範囲の説明」はフィルタ帯の直下である。
         //    ⚠️ 凍結済み `project-list-partner-scope-notice` を維持するため、`Toolbar` の
         //       `scopeNote`（`…-toolbar-scope-note` を出す）ではなく画面側の 1 行に残す。
-        <p className="mb-1 text-body text-fg-muted" data-testid="project-list-partner-scope-notice">
+        <p className="mb-1 text-xs text-fg-muted" data-testid="project-list-partner-scope-notice">
           {messages.partnerScopeNotice}
         </p>
       )}
-      {/* 🔴 並び順の説明（docs/04 §S-010）。スコア・順位・重みの語を含めない。 */}
-      <p className="mb-3 text-body text-fg-muted" data-testid="project-list-order-note">
-        {messages.orderNote}
-      </p>
 
-      <div className="mb-4">
-        {canRegister ? (
-          <Link
-            className={SECONDARY_LINK_STACKED_CLASSES}
-            href="/projects/new"
-            data-testid="project-list-register"
-          >
-            {messages.register}
-          </Link>
-        ) : (
-          <p className="text-body text-fg-muted" data-testid="project-list-read-only-note">
-            {messages.readOnlyNote}
-          </p>
-        )}
-      </div>
+      {/* 🔴 §7.6: 操作できないときは `disabled` で表さず、**その位置に理由テキストを置く**。
+          ✅ SP-22 段④: 登録の導線そのものは**帯の primary** へ移した
+             （`projectListPrimaryAction`。`docs/04` §S-010「案件を登録（primary、ホストのみ）」/
+             §7.6「primary は大きく」）。testid（`project-list-register`）は帯が引き継いでいる。 */}
+      {canRegister ? null : (
+        <p className="mb-3 text-body text-fg-muted" data-testid="project-list-read-only-note">
+          {messages.readOnlyNote}
+        </p>
+      )}
 
       <DataTable
         testIdPrefix="project-list-"
@@ -420,6 +483,25 @@ export function ProjectListScreen({
         // 🔴 利用者が外した列（`hideable` を持つ列だけが対象。`priority` とは別の仕組み）。
         //    値の出所は URL であり、既定（`?hide=` 無し）では**9 列すべてが出る**。
         hiddenColumnIds={hiddenColumnIds}
+        // 🔴 副カラムで開いている行の印（`data-selected`）。**選択（一括操作）ではない**ので
+        //    `selection`（チェックボックス）は渡さない —— Phase 1 に一括操作は 1 つも無い。
+        rowAttributes={(row) => ({ 'data-selected': row.id === selectedId ? 'true' : undefined })}
+        // 🔴 操作列（1 行につき 1 つ。`docs/04` §7.1「既定 8 列 + 操作列」）。
+        //    行の名称セルは `S-011` へ遷移する（`docs/04` §S-010「行クリック → `S-011`」。
+        //    **閲覧の監査記録は遷移先が書く**）。ここは**副カラムを開くだけ**の導線であり、
+        //    語は §7.8 の統一語（`内容を見る`）である。
+        rowActionHeader={messages.columnAction}
+        rowAction={(row) => (
+          <Link
+            className={SECONDARY_LINK_CLASSES}
+            href={selectHrefOf(row.id)}
+            data-testid={`project-list-panel-open-${row.id}`}
+            // 🔴 同じ語のリンクが 50 行に並ぶので、読み上げでは案件名で区別できるようにする。
+            aria-label={`${messages.panelOpen}: ${row.name}`}
+          >
+            {messages.panelOpen}
+          </Link>
+        )}
         empty={
           // 🔴 docs/04 §10.1 `S-010`: **初回空と絞込 0 で文言が違う**（呼び出し側が選ぶ）。
           //    取引先の初回空は「案件が無い」ではなく「公開されていない」である。

@@ -400,12 +400,12 @@ export function ProjectForm({
       className="flex flex-col gap-8"
     >
       {phase === 'error' ? (
-        <p role="alert" className="text-sm text-red-700" data-testid="project-form-error">
+        <p role="alert" className="text-body text-danger" data-testid="project-form-error">
           {messages.saveError}
         </p>
       ) : null}
       {phase === 'saved' ? (
-        <p role="status" className="text-sm text-emerald-700" data-testid="project-form-saved">
+        <p role="status" className="text-body text-success" data-testid="project-form-saved">
           {/* 🔴 T-12-10: 保存は同期で成功しており、再検査はこれからである。
               **1 つの表示に混ぜない**（混ぜると「保存できなかった」と誤読される）。 */}
           {recheckQueued ? messages.savedRecheckQueued : messages.saved}
@@ -422,7 +422,7 @@ export function ProjectForm({
           方向の編集ではない。`docs/04` §S-012）。 */}
       {mode === 'EDIT' && publishedToCount > 0 ? (
         <section
-          className="border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+          className="border border-warning-border bg-warning-bg px-4 py-3 text-body text-warning"
           data-testid="project-form-recheck-notice"
         >
           <p>
@@ -439,7 +439,7 @@ export function ProjectForm({
 
       {/* --- 1. 基本 ------------------------------------------------------- */}
       <section data-testid="project-section-basic">
-        <h2 className="mb-3 text-base font-bold text-slate-900">{messages.sectionBasic}</h2>
+        <h2 className="mb-3 text-lg font-bold text-fg">{messages.sectionBasic}</h2>
         <Field className="mb-4" label={messages.nameLabel}>
           <Input
             name="name"
@@ -451,7 +451,7 @@ export function ProjectForm({
             data-testid="project-name"
           />
           {/* 🔴 T-12-10: 「この欄は公開先が読む」印（`docs/04` 改訂 14 §S-012 / `F-014 AC-6`）。 */}
-          <p className="mt-1 text-xs text-slate-600" data-testid="project-public-field-notice-name">
+          <p className="mt-1 text-xs text-fg-muted" data-testid="project-public-field-notice-name">
             {messages.publicFieldNotice}
           </p>
         </Field>
@@ -499,7 +499,7 @@ export function ProjectForm({
             ))}
           </Select>
         </Field>
-        <p className="text-sm text-slate-500" data-testid="project-status-note">
+        <p className="text-body text-fg-muted" data-testid="project-status-note">
           {messages.statusNote}
         </p>
       </section>
@@ -512,11 +512,11 @@ export function ProjectForm({
         const error = errors[kind] ?? null;
         return (
           <section key={kind} data-testid={`project-section-requirements-${kind}`}>
-            <h2 className="mb-3 text-base font-bold text-slate-900">
+            <h2 className="mb-3 text-lg font-bold text-fg">
               {messages.requirementHeadings[kind]}
             </h2>
             <p
-              className="mb-3 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700"
+              className="mb-3 rounded-md border border-border bg-bg-subtle p-3 text-body text-fg"
               data-testid={`project-requirements-note-${kind}`}
             >
               {messages.requirementNotes[kind]}
@@ -571,7 +571,7 @@ export function ProjectForm({
                 />
                 {/* 🔴 T-12-10: 自由記述だけが公開先に届く（スキル指定は辞書の名前である）。 */}
                 <p
-                  className="mt-1 text-xs text-slate-600"
+                  className="mt-1 text-xs text-fg-muted"
                   data-testid={`project-public-field-notice-requirement-${kind}`}
                 >
                   {messages.publicFieldNotice}
@@ -590,7 +590,7 @@ export function ProjectForm({
             {error === null ? null : (
               <p
                 role="alert"
-                className="mb-2 text-sm text-red-700"
+                className="mb-2 text-body text-danger"
                 data-testid={`project-requirement-error-${kind}`}
               >
                 {error === 'EMPTY'
@@ -603,7 +603,7 @@ export function ProjectForm({
               // 🔴 `docs/04` §10.1 `S-012`: 必須 0 件は**警告**（保存は許す）。尚可 0 件は通常の空状態。
               <p
                 className={
-                  kind === 'MUST' ? 'text-sm text-amber-700' : 'text-sm text-slate-600'
+                  kind === 'MUST' ? 'text-body text-warning' : 'text-body text-fg-muted'
                 }
                 data-testid={`project-requirements-empty-${kind}`}
               >
@@ -628,7 +628,7 @@ export function ProjectForm({
                       <TableCell whitespace="normal">
                         {row.skillName === '' ? row.freeText : row.skillName}
                         {row.skillName !== '' && row.freeText !== '' ? (
-                          <span className="ml-2 text-slate-600">{row.freeText}</span>
+                          <span className="ml-2 text-fg-muted">{row.freeText}</span>
                         ) : null}
                       </TableCell>
                       <TableCell>
@@ -658,9 +658,9 @@ export function ProjectForm({
 
       {/* --- 4. 条件 ------------------------------------------------------- */}
       <section data-testid="project-section-conditions">
-        <h2 className="mb-3 text-base font-bold text-slate-900">{messages.sectionConditions}</h2>
+        <h2 className="mb-3 text-lg font-bold text-fg">{messages.sectionConditions}</h2>
         <fieldset className="mb-2">
-          <legend className="text-sm text-slate-700">
+          <legend className="text-body text-fg">
             {messages.unitPriceLabel}（{messages.unitPriceUnit}）
           </legend>
           <Field className="mb-4" label={messages.unitPriceMin}>
@@ -726,10 +726,10 @@ export function ProjectForm({
       {/* 🔴 F-013 AC-2: 「公開範囲の相手には表示されません」を**常時**添える。 */}
       <section
         data-testid="project-section-commerce"
-        className="rounded-md border border-amber-200 bg-amber-50 p-4"
+        className="rounded-md border border-warning-border bg-warning-bg p-4"
       >
-        <h2 className="mb-3 text-base font-bold text-slate-900">{messages.sectionCommerce}</h2>
-        <p className="mb-3 text-sm text-slate-800" data-testid="project-commerce-notice">
+        <h2 className="mb-3 text-lg font-bold text-fg">{messages.sectionCommerce}</h2>
+        <p className="mb-3 text-body text-fg" data-testid="project-commerce-notice">
           {messages.commerceNotice}
         </p>
         <Field className="mb-4" label={messages.endClientNameLabel}>
@@ -765,16 +765,16 @@ export function ProjectForm({
 
       {/* --- 6. 外部公開用の記載 -------------------------------------------- */}
       <section data-testid="project-section-public-summary">
-        <h2 className="mb-3 text-base font-bold text-slate-900">
+        <h2 className="mb-3 text-lg font-bold text-fg">
           {messages.sectionPublicSummary}
         </h2>
         {/* 🔴 docs/04 §S-012: 入力中に商流層の観点を注意書きで示す（合否はここで判定しない）。 */}
-        <p className="mb-2 text-sm text-slate-600" data-testid="project-public-summary-note">
+        <p className="mb-2 text-body text-fg-muted" data-testid="project-public-summary-note">
           {messages.publicSummaryNote}
         </p>
         {/* 🔴 T-12-10: 「この欄は公開先が読む」印（3 欄で同じ語・同じ体裁）。 */}
         <p
-          className="mb-2 text-xs text-slate-600"
+          className="mb-2 text-xs text-fg-muted"
           data-testid="project-public-field-notice-public-summary"
         >
           {messages.publicFieldNotice}
@@ -795,7 +795,7 @@ export function ProjectForm({
 
       {/* 🔴 docs/04 §S-012「保存だけでは公開されない」（`F-014 AC-2`）。 */}
       <p
-        className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700"
+        className="rounded-md border border-border bg-bg-subtle p-3 text-body text-fg"
         data-testid="project-visibility-notice"
       >
         {messages.visibilityNotice}

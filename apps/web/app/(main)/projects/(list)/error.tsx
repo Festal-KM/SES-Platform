@@ -11,14 +11,15 @@
 //    組み立てた条件が失われる（`S-005` の error と同じ規律）。
 // 🔴 **失敗の理由を画面に出さない**（docs/05 §15.2）。`error.message` には内部の情報が入りうる。
 // 🔴 T-22-06: 色は §7.9 の semantic トークン（失敗は `--color-danger`）。幅は
-//    `PageBody widthClass="full"`（`S-010` はクラス A）であり、画面に `max-w-*` を書かない。
+//    `PageBody widthClass="split"`（🔴 ✅ SP-22 段④ で `S-010` はクラス B になった。
+//    `aside` は渡さない —— 読み込み中・失敗時に副カラムの中身が無いため）であり、画面に `max-w-*` を書かない。
 import { Button, PageBody } from '@ses/ui';
 import { t } from '@ses/i18n';
 
 export default function ProjectListError({ reset }: { readonly reset: () => void }) {
   return (
     <main className="py-6">
-      <PageBody widthClass="full">
+      <PageBody widthClass="split">
         <h1 className="mb-6 text-title font-semibold text-fg">{t('projects.list.title')}</h1>
         <p role="alert" className="mb-1 text-body font-semibold text-danger" data-testid="project-list-error">
           {t('projects.list.error.title')}

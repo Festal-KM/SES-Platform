@@ -28,7 +28,8 @@
 //    `COUNT`**（docs/05 §4.8）であり、行より先に確定する経路が無い。ここに**件数を書かない**
 //    （0 件と読み違えられる。`S-005` の loading と同じ判断）。
 // 🔴 T-22-06: 骨格は `@ses/ui` の `Skeleton` が描く（§10.4 の `Load` の行）。幅は
-//    `PageBody widthClass="full"`（`S-010` はクラス A）であり、画面に `max-w-*` を書かない。
+//    `PageBody widthClass="split"`（🔴 ✅ SP-22 段④ で `S-010` はクラス B になった。
+//    `aside` は渡さない —— 読み込み中・失敗時に副カラムの中身が無いため）であり、画面に `max-w-*` を書かない。
 import { t } from '@ses/i18n';
 import { PageBody, Skeleton } from '@ses/ui';
 
@@ -38,7 +39,7 @@ const SKELETON_ROWS = 12;
 export default function ProjectListLoading() {
   return (
     <main className="py-6" aria-busy="true">
-      <PageBody widthClass="full">
+      <PageBody widthClass="split">
         <h1 className="mb-6 text-title font-semibold text-fg">{t('projects.list.title')}</h1>
         <p role="status" className="mb-4 text-body text-fg-muted" data-testid="project-list-loading">
           {t('projects.list.loading')}

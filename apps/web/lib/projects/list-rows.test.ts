@@ -15,9 +15,12 @@ import {
   parseHiddenProjectColumns,
   projectColumnToggleHref,
   projectListHref,
+  projectListPrimaryAction,
   projectListRow,
   projectListRows,
   projectPopulationLabel,
+  projectSelectHref,
+  selectedProjectId,
   PROJECT_HIDEABLE_COLUMN_IDS,
   PROJECT_LIST_PATH,
 } from './list-rows';
@@ -326,6 +329,74 @@ describe('🔴 列表示切替のリンク（条件とページの位置を保�
     // 先頭ページへ戻すリンクはカーソルだけを落とす（列の状態は残る）。
     expect(projectListHref(query({ q: '基幹', cursor: PROJECT_ID }), null, ['visibility'])).toBe(
       '/projects?q=%E5%9F%BA%E5%B9%B9&hide=visibility',
+    );
+  });
+});
+
+// ============================================================================
+// 🔴 SP-22 段④: 帯の primary と、副カラムで開く行
+// ============================================================================
+describe('🔴 帯の primary（docs/04 §S-010「案件を登録（primary、ホストのみ）」/ §7.6）', () => {
+  it('登録できるロールには `S-012` への `ACTION` を返す', () => {
+    expect(projectListPrimaryAction(true)).toEqual({
+      labelKey: 'projects.list.register',
+      href: '/projects/new',
+      kind: 'ACTION',
+    });
+  });
+
+  it('🔴 取引先・`VIEWER` には `null` を返す（押しても戻されるだけの導線を描かない）', () => {
+    expect(projectListPrimaryAction(false)).toBeNull();
+  });
+
+  it('🔴 `kind` は `ACTION` である（帯の `canAct` で落ちる側に倒す。`NAVIGATION` にしない）', () => {
+    expect(projectListPrimaryAction(true)?.kind).toBe('ACTION');
+  });
+});
+
+describe('🔴 副カラムで開く行（`?selected=`。SP-22 段④）', () => {
+  const rowA = projectListRow(hostView() as ProjectView);
+  const rowB = projectListRow(hostView({ id: '01930000-0000-7000-8000-0000000000c2' }) as ProjectView);
+  const rows = [rowA, rowB];
+
+  it('指定が無ければ先頭行（パネルを空で置かない）', () => {
+    expect(selectedProjectId(undefined, rows)).toBe(rowA.id);
+  });
+
+  it('いまのページに在る ID はそのまま使う', () => {
+    expect(selectedProjectId(rowB.id, rows)).toBe(rowB.id);
+  });
+
+  it('🔴 いまのページに無い ID は先頭行に落とす（URL 直打ちでパネルが空にならない）', () => {
+    expect(selectedProjectId('01930000-0000-7000-8000-0000000000ff', rows)).toBe(rowA.id);
+    expect(selectedProjectId('not-a-uuid', rows)).toBe(rowA.id);
+  });
+
+  it('🔴 行が 1 件も無いページでは `null`（存在しない行を指さない）', () => {
+    expect(selectedProjectId(rowA.id, [])).toBeNull();
+    expect(selectedProjectId(undefined, [])).toBeNull();
+  });
+
+  it('同じキーが 2 つ来たら先頭だけを読む（URL 直打ちで壊れない）', () => {
+    expect(selectedProjectId([rowB.id, rowA.id], rows)).toBe(rowB.id);
+  });
+
+  it('🔴 開く URL は検索条件・ページの位置・列の表示状態を保つ', () => {
+    expect(projectSelectHref(query({ q: '基幹' }), PROJECT_ID, ['visibility'], rowB.id)).toBe(
+      `/projects?q=%E5%9F%BA%E5%B9%B9&cursor=${PROJECT_ID}&hide=visibility&selected=${rowB.id}`,
+    );
+  });
+
+  it('🔴 列の出し入れでもパネルが閉じない（`selected` を引き継ぐ）', () => {
+    expect(projectColumnToggleHref(query(), null, [], 'visibility', rowA.id)).toBe(
+      `/projects?hide=visibility&selected=${rowA.id}`,
+    );
+  });
+
+  it('🔴 `selected` を渡さなければ URL に 1 文字も足さない（既定の URL を汚さない）', () => {
+    expect(projectListHref(query(), null, [])).toBe(PROJECT_LIST_PATH);
+    expect(projectColumnToggleHref(query(), null, ['visibility'], 'visibility')).toBe(
+      PROJECT_LIST_PATH,
     );
   });
 });

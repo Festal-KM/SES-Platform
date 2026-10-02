@@ -281,17 +281,17 @@ export function ProjectVisibilityScreen({
 
   return (
     <div data-testid="project-visibility-screen">
-      <h1 className="mb-2 text-xl font-bold text-slate-900" data-testid="project-visibility-name">
+      <h1 className="mb-2 text-title font-semibold text-fg" data-testid="project-visibility-name">
         {projectName}
       </h1>
-      <p className="mb-4 text-sm text-slate-600" data-testid="project-visibility-lead">
+      <p className="mb-4 text-body text-fg-muted" data-testid="project-visibility-lead">
         {messages.lead}
       </p>
 
       {denialMessage === null ? null : (
         <div
           role="alert"
-          className="mb-4 border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+          className="mb-4 border border-warning-border bg-warning-bg px-4 py-3 text-body text-warning"
           data-testid="project-visibility-denied"
         >
           <p className="font-bold">{messages.deniedTitle}</p>
@@ -301,9 +301,9 @@ export function ProjectVisibilityScreen({
 
       {/* --- 1. 現在の公開状態 ------------------------------------------------ */}
       <section className="mb-6" data-testid="project-visibility-current">
-        <h2 className="mb-2 text-base font-bold text-slate-900">{messages.sectionCurrent}</h2>
+        <h2 className="mb-2 text-lg font-bold text-fg">{messages.sectionCurrent}</h2>
         {publishedIds.length === 0 ? (
-          <p className="text-sm text-slate-600" data-testid="project-visibility-current-empty">
+          <p className="text-body text-fg-muted" data-testid="project-visibility-current-empty">
             {messages.currentEmpty}
           </p>
         ) : (
@@ -329,33 +329,33 @@ export function ProjectVisibilityScreen({
       <form onSubmit={onSubmit} noValidate data-testid="project-visibility-form">
         {/* --- 2. 公開先の選択 ------------------------------------------------ */}
         <section className="mb-6" data-testid="project-visibility-select">
-          <h2 className="mb-2 text-base font-bold text-slate-900">{messages.sectionSelect}</h2>
+          <h2 className="mb-2 text-lg font-bold text-fg">{messages.sectionSelect}</h2>
           {choices.length === 0 ? (
             // 🔴 `docs/04` §10.1 `S-013`: 取引先が 1 社も無いときは `S-014` へ導く。
             <div data-testid="project-visibility-select-empty">
-              <p className="text-sm font-bold text-slate-900">{messages.selectEmptyTitle}</p>
-              <p className="mb-2 text-sm text-slate-600">{messages.selectEmptyLead}</p>
+              <p className="text-body font-bold text-fg">{messages.selectEmptyTitle}</p>
+              <p className="mb-2 text-body text-fg-muted">{messages.selectEmptyLead}</p>
               <Link className={SECONDARY_LINK_STACKED_CLASSES} href={partnerCompaniesHref}>
                 {messages.selectEmptyLink}
               </Link>
             </div>
           ) : (
             <fieldset disabled={!canExecute || phase === 'submitting'}>
-              <legend className="text-sm text-slate-700">{messages.selectLegend}</legend>
+              <legend className="text-body text-fg">{messages.selectLegend}</legend>
               {/* 🔴 「すべて選択」を置かない（`docs/04` §S-013）。理由も画面に書く。 */}
-              <p className="mb-2 text-xs text-slate-500" data-testid="project-visibility-select-note">
+              <p className="mb-2 text-xs text-fg-muted" data-testid="project-visibility-select-note">
                 {messages.selectNote}
               </p>
               <ul className="list-none p-0">
                 {choices.map((choice) => (
-                  <li key={choice.partnerCompanyId} className="border-b border-slate-100 py-2">
-                    <label className="flex items-center gap-2 text-sm">
+                  <li key={choice.partnerCompanyId} className="border-b border-border py-2">
+                    <label className="flex items-center gap-2 text-body">
                       <Checkbox
                         checked={selectedSet.has(choice.partnerCompanyId)}
                         onChange={() => toggle(choice.partnerCompanyId)}
                         data-testid={`project-visibility-choice-${choice.partnerCompanyId}`}
                       />
-                      <span className="text-slate-900">{choice.name}</span>
+                      <span className="text-fg">{choice.name}</span>
                       {/* 🔴 表示項目の集合を増やさない（T-21-04 の受け入れ基準 ⑦）。
                           出しているのは「自社が公開済みか」「その取引先が停止中か」の 2 つだけで、
                           他社の公開状況・提案の有無には 1 つも触れていない（`CLAUDE.md` §3.1）。 */}
@@ -370,7 +370,7 @@ export function ProjectVisibilityScreen({
                 ))}
               </ul>
               {choices.some((choice) => choice.suspended) ? (
-                <p className="mt-2 text-xs text-slate-500" data-testid="project-visibility-suspended-note">
+                <p className="mt-2 text-xs text-fg-muted" data-testid="project-visibility-suspended-note">
                   {messages.selectSuspendedNote}
                 </p>
               ) : null}
@@ -380,18 +380,18 @@ export function ProjectVisibilityScreen({
 
         {/* --- 3. 公開されたときの見え方 --------------------------------------- */}
         <section className="mb-6" data-testid="project-visibility-preview">
-          <h2 className="mb-2 text-base font-bold text-slate-900">{messages.sectionPreview}</h2>
-          <p className="mb-3 text-xs text-slate-500" data-testid="project-visibility-preview-note">
+          <h2 className="mb-2 text-lg font-bold text-fg">{messages.sectionPreview}</h2>
+          <p className="mb-3 text-xs text-fg-muted" data-testid="project-visibility-preview-note">
             {messages.previewNote}
           </p>
 
           {preview.warnings.length === 0 ? null : (
             <div
-              className="mb-3 border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+              className="mb-3 border border-warning-border bg-warning-bg px-4 py-3 text-body text-warning"
               data-testid="project-visibility-preview-warning"
             >
               <p className="font-bold">{messages.previewWarningTitle}</p>
-              <ul className="list-disc pl-5">
+              <ul className="list-disc pl-6">
                 {preview.warnings.map((warning) => (
                   <li key={warning.key} data-testid={`project-visibility-preview-warning-${warning.key}`}>
                     {warning.field} / {warning.kind}
@@ -402,21 +402,21 @@ export function ProjectVisibilityScreen({
             </div>
           )}
 
-          <div className="border border-slate-200 bg-white p-4">
-            <p className="mb-2 text-base font-bold text-slate-900">{preview.name}</p>
-            <dl className="mb-3 text-sm">
+          <div className="border border-border bg-bg p-4">
+            <p className="mb-2 text-lg font-bold text-fg">{preview.name}</p>
+            <dl className="mb-3 text-body">
               {[...preview.headline, ...preview.conditions].map((row) => (
-                <div key={row.key} className="flex gap-3 border-b border-slate-100 py-1 last:border-b-0">
-                  <dt className="w-40 shrink-0 text-slate-500">{row.label}</dt>
-                  <dd className="m-0 text-slate-900">{row.value}</dd>
+                <div key={row.key} className="flex gap-3 border-b border-border py-1 last:border-b-0">
+                  <dt className="w-40 shrink-0 text-fg-muted">{row.label}</dt>
+                  <dd className="m-0 text-fg">{row.value}</dd>
                 </div>
               ))}
             </dl>
             {preview.requirements.map((block) => (
               <div key={block.kind} className="mb-3">
-                <h3 className="text-sm font-bold text-slate-900">{block.heading}</h3>
+                <h3 className="text-body font-bold text-fg">{block.heading}</h3>
                 {block.rows.length === 0 ? (
-                  <p className="text-sm text-slate-600">{block.empty}</p>
+                  <p className="text-body text-fg-muted">{block.empty}</p>
                 ) : (
                   <Table>
                     <TableHeader>
@@ -437,7 +437,7 @@ export function ProjectVisibilityScreen({
                 )}
               </div>
             ))}
-            <p className="whitespace-pre-wrap text-sm text-slate-900" data-testid="project-visibility-preview-summary">
+            <p className="whitespace-pre-wrap text-body text-fg" data-testid="project-visibility-preview-summary">
               {preview.publicSummary}
             </p>
           </div>
@@ -446,8 +446,8 @@ export function ProjectVisibilityScreen({
         {/* --- 4. 品質ゲート --------------------------------------------------- */}
         {/* 🔴 保留を「公開しました」と書かない（`CLAUDE.md` §11.1）。 */}
         <section className="mb-6" id="gate-results" data-testid="project-visibility-gate">
-          <h2 className="mb-2 text-base font-bold text-slate-900">{messages.sectionGate}</h2>
-          <div className="border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+          <h2 className="mb-2 text-lg font-bold text-fg">{messages.sectionGate}</h2>
+          <div className="border border-border bg-bg-subtle px-4 py-3 text-body text-fg">
             <p className="font-bold" data-testid="project-visibility-gate-title">
               {messages.gatePendingTitle}
             </p>
@@ -459,11 +459,11 @@ export function ProjectVisibilityScreen({
               契機を 1 行添える**（`公開の実行` / `公開欄の編集による再検査`）。
               🔴 **「再検査だけをもう一度実行する」ボタンを置かない**（結果が変わらず `F-026` の
               件数だけを消費する。`docs/05` §6.8）。保留も「修正して再実行」を促さない。 */}
-          <h3 className="mt-4 mb-2 text-sm font-bold text-slate-900">
+          <h3 className="mt-4 mb-2 text-body font-bold text-fg">
             {messages.gateHistoryTitle}
           </h3>
           {gateHistory.length === 0 ? (
-            <p className="text-sm text-slate-600" data-testid="project-visibility-gate-history-empty">
+            <p className="text-body text-fg-muted" data-testid="project-visibility-gate-history-empty">
               {messages.gateHistoryEmpty}
             </p>
           ) : (
@@ -471,7 +471,7 @@ export function ProjectVisibilityScreen({
               {gateHistory.map((row) => (
                 <li
                   key={row.reviewGateId}
-                  className="border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800"
+                  className="border border-border bg-bg px-3 py-2 text-body text-fg"
                   data-testid={`project-visibility-gate-history-${row.reviewGateId}`}
                 >
                   <p className="font-bold" data-testid={`project-visibility-gate-trigger-${row.reviewGateId}`}>
@@ -479,16 +479,16 @@ export function ProjectVisibilityScreen({
                     {row.occurredAt === '' ? '' : ` / ${row.occurredAt}`}
                   </p>
                   {row.matchesCurrentContent ? (
-                    <p className="text-xs text-slate-600">{messages.gateHistoryCurrent}</p>
+                    <p className="text-xs text-fg-muted">{messages.gateHistoryCurrent}</p>
                   ) : null}
                   {row.heldLabel === null ? null : (
-                    <p className="text-xs text-slate-600">{row.heldLabel}</p>
+                    <p className="text-xs text-fg-muted">{row.heldLabel}</p>
                   )}
                   <dl className="mt-1 text-xs">
                     {row.layers.map((layer) => (
                       <div key={layer.key} className="flex gap-2">
-                        <dt className="w-20 shrink-0 text-slate-500">{layer.label}</dt>
-                        <dd className="m-0 text-slate-900">
+                        <dt className="w-20 shrink-0 text-fg-muted">{layer.label}</dt>
+                        <dd className="m-0 text-fg">
                           {layer.verdict}
                           {layer.findings.length === 0
                             ? ''
@@ -505,15 +505,15 @@ export function ProjectVisibilityScreen({
 
         {/* --- 5. 公開の実行 --------------------------------------------------- */}
         <section data-testid="project-visibility-execute">
-          <h2 className="mb-2 text-base font-bold text-slate-900">{messages.sectionExecute}</h2>
+          <h2 className="mb-2 text-lg font-bold text-fg">{messages.sectionExecute}</h2>
 
           {phase === 'error' ? (
-            <p role="alert" className="mb-2 text-sm text-red-700" data-testid="project-visibility-error">
+            <p role="alert" className="mb-2 text-body text-danger" data-testid="project-visibility-error">
               {messages.errorSave}
             </p>
           ) : null}
           {result === null ? null : (
-            <p role="status" className="mb-2 text-sm text-emerald-700" data-testid="project-visibility-result">
+            <p role="status" className="mb-2 text-body text-success" data-testid="project-visibility-result">
               {result === 'PENDING_GATE' ? messages.resultPendingGate : messages.resultNoPublish}
             </p>
           )}
@@ -521,12 +521,12 @@ export function ProjectVisibilityScreen({
           {phase === 'confirmRevoke' ? (
             // 🔴 `docs/04` §5-4:「作成済みの提案は残ります」を確認画面に明記する。
             <div
-              className="mb-3 border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+              className="mb-3 border border-warning-border bg-warning-bg px-4 py-3 text-body text-warning"
               data-testid="project-visibility-revoke-confirm"
             >
               <p className="font-bold">{messages.revokeConfirmTitle}</p>
               <p className="mb-2">{messages.revokeConfirmLead}</p>
-              <ul className="mb-2 list-disc pl-5">
+              <ul className="mb-2 list-disc pl-6">
                 {willRevoke.map((id) => (
                   <li key={id}>{nameOf.get(id) ?? id}</li>
                 ))}

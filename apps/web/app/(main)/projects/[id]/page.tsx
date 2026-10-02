@@ -12,18 +12,19 @@
 //    知っているため、404 は不正確」）。HTTP の状態としては 404 のままである
 //    （`ProjectNotSharedError`。`lib/api/errors.ts` の注記）。
 // 🔴 `VIEWER` は**到達できる**（閲覧のみ。`F-004 AC-6` / `BR-31`）。編集への導線だけを出さない。
-import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import type { Metadata } from 'next';
-import { SECONDARY_LINK_STACKED_CLASSES } from '@ses/ui';
+import { PageBody } from '@ses/ui';
 import { REQUIREMENT_KINDS } from '@ses/db';
 import { t } from '@ses/i18n';
 import { NotFoundError, ProjectNotSharedError } from '../../../../lib/api/errors';
 import { readRequestMeta, resolveTenantCtxOutcome } from '../../../../lib/auth/session';
 import { isProjectEditorRole } from '../../../../lib/projects/policy';
 import { readProjectDetail } from '../../../../lib/projects/service';
-import { PROJECT_FORM_CANCEL_HREF } from '../_form/form-props';
 import { projectDetailScreenMessages } from './detail-props';
+// 🔴 公開解除の告知は**別ファイル**である（検査 (k) の「1 画面 1 幅クラス」。
+//    理由は `not-shared-notice.tsx` 冒頭）。
+import { NotSharedNotice } from './not-shared-notice';
 import { ProjectDetailScreen } from './project-detail-screen';
 import { PageHeading } from '../../_shell/page-heading';
 import { isPageActionRole, PROJECT_DETAIL_TRAIL } from '../../../../lib/shell/page-trail';
@@ -37,26 +38,6 @@ export const dynamic = 'force-dynamic';
  *    端末側の履歴に残す必要が無い）。
  */
 export const metadata: Metadata = { title: t('projects.detail.title') };
-
-/** 🔴 公開が解除された取引先に出す画面（404 ページではない。docs/04 §10.1 `S-011`）。 */
-function NotSharedNotice() {
-  return (
-    <main className="mx-auto max-w-3xl px-4 py-8">
-      <h1 className="mb-4 text-xl font-bold text-slate-900">{t('projects.detail.title')}</h1>
-      <p
-        className="mb-4 border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700"
-        data-testid="project-detail-not-shared"
-      >
-        {t('projects.detail.notShared')}
-      </p>
-      {/* 🔴 T-06-03: 戻り先は `S-010`（案件一覧）である（`PROJECT_FORM_CANCEL_HREF` と共有）。
-          公開が解除された取引先も、御社に公開されている**他の**案件へは戻れる。 */}
-      <Link className={SECONDARY_LINK_STACKED_CLASSES} href={PROJECT_FORM_CANCEL_HREF}>
-        {t('projects.breadcrumb.list')}
-      </Link>
-    </main>
-  );
-}
 
 export default async function ProjectDetailPage({
   params,
@@ -86,7 +67,14 @@ export default async function ProjectDetailPage({
   if (view === null) return <NotSharedNotice />;
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-8">
+    // 🔴 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`）。`S-011` は
+    //    **クラス B = 分割**である（画面ファイルに `max-w-*` を書かない。検査 (c) / (k)）。
+    // ⚠️ 副カラム（`aside`）はまだ渡していない —— 本画面の右側（提案 / 商流情報 / 公開範囲）を
+    //    副カラムへ移すのは `T-22-12`（`S-011`〜`S-014` の刷新）の射程であり、
+    //    いまは `ProjectDetailScreen` 内の `lg:grid-cols-2` が 2 カラムを作っている
+    //    （`aside` は任意の prop である）。本タスクで変えたのは**幅の所在**だけである。
+    <main className="py-6">
+      <PageBody widthClass="split">
       {/* 🔴 T-12-21: 帯にタイトルを渡さない —— この画面のタイトルは案件名であり、
           `project-detail-name` が `h1` として持つ（タイトルを二重に描かない）。
           🔴 primary は `docs/04` §S-011 の「候補を探す」（→ `S-016`）1 つである。
@@ -110,6 +98,7 @@ export default async function ProjectDetailPage({
         canEdit={isProjectEditorRole(outcome.ctx.role)}
         messages={projectDetailScreenMessages(view.audience)}
       />
+      </PageBody>
     </main>
   );
 }
