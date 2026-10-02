@@ -2,7 +2,7 @@
 
 🔴 **作業を始める前に、このファイルを最初に読む。** `CLAUDE.md` が一次資料（仕様・ハードルール）で、このファイルは**いま何が未完で、何に気をつけるか**を記録する。
 
-> **最終更新**: 2026-10-02 / HEAD = `e0cbada` / ブランチ = `main`
+> **最終更新**: 2026-10-02 / HEAD = `ae5709a` / ブランチ = `main` / 🔴 **CI 緑**（run [`36976938729`](https://github.com/Festal-KM/SES-Platform/actions/runs/36976938729)。`T-22-05` 以降で**全スイートが実際に実行された最初の run**）
 > **更新の作法**: 作業の節目（タスク完了・判断の確定・事故の発覚）でここを更新する。🔴 **終わった項目は消さず「✅ 完了（日付）」に書き換える** —— 消すと「なぜそうしたか」が失われ、同じ議論が再発する（`CLAUDE.md` §9 と同じ作法）。
 
 ---
@@ -12,11 +12,12 @@
 | # | 内容 | 状態 |
 |---|---|---|
 | 1 | ✅ **完了（2026-10-02。`1d5e079`）** —— **CI が赤。`GET /api/home` が実 DB で 500 を返していた**（`tests/isolation/home-action-queue.test.ts` の 25 件中 **23 件が `expected 500 to be 200`**）。🔴 **当初の見立て（`summary.ts` の `db.engineerShare.count` が RLS / `shared_scope` と衝突）は外れだった。** 真因は `T-22-09` が `GET /api/home` に**起動時 DI の参照**（`sendingDomainRuntime()` = `操作` 列の不能条件 ④）を足したこと。分離テストには `apps/web/instrumentation.ts` が無いため `ensureDbConfigured()` → `initializeRuntimeConfig(process.env)` が走り、`APP_ENV` 不在の `EnvValidationError` で 500 になっていた —— **DB も RLS も `count` も無関係で、ハンドラ本体に 1 行も入っていなかった**。直し方は `vi.mock` で起動時 DI をテスト側が注入する（既存 16 ファイルと同じ作法）。🔴 **環境変数を設定して通す直し方は採れない** —— `ensureDbConfigured()` が `configureTenantDb()` も行うため、`beforeAll` が指した Testcontainers の接続が別 URL に差し替わり、**検証対象の母集団が静かに入れ替わる**（今回より悪い壊れ方）。プロダクションコードは 1 行も触っていない | **✅ 完了** |
-| 2 | 🔴 **CI がまだ赤。E2E が 2 件落ちている**（run `36967915211` / HEAD `e0cbada`。61 passed / **2 failed** / 4 did not run）。🔴 **どちらも `T-22-09` の回帰で、どちらも情報境界の安全網そのもの**。① `tests/e2e/anonymous-share.spec.ts:1098` —— `HOST_HOME_ACTION_ROW_ALLOWED_KEYS`（同ファイル 227 行）が 8 キーのままで、`T-22-09` が `状態` 列 / `操作` 列で足した `stateBadge` / `entity` / `state` / `action` の 4 キーを知らない（**経路 4 の検査**）。② `tests/e2e/isolation.spec.ts:518` —— `#9` の `blocks` が `SUMMARY` を足して 2 本になったのに、519〜521 行が `blocks[0]` を要対応キューだと決め打ちしている（**「パートナー A1 に A2 のものが 1 件も現れない」の検査**）。🔴 **許可リストを広げるのは安全網を自分で緩める作業である** —— `toEqual` を `toContain` にしない / 走査の深さを下げない / 値の検査（`expectNoForbidden`）に触らない / **キーごとに「なぜ身元を運べないか」を型で確かめてコメントに残す**。`T-22-10` のエージェントに引き渡した（同じ E2E ファイルを触る予定のため並行編集を避けた） | **対応中** |
+| 2 | ✅ **完了（2026-10-02。`06638da`）** —— **E2E が 2 件落ちていた**（`T-22-09` の回帰。① `anonymous-share.spec.ts:1098` の行キー許可リスト〔**経路 4**〕② `isolation.spec.ts:518` の `blocks[0]` 決め打ち〔**A1 に A2 が現れない**〕）。🔴 **緩めずに直した**: `toEqual` のまま / `MAX_DEPTH = 8` のまま / 値の検査は 1 つも削らず、`expect(row['action']).toBeNull()` と取引先 `SUMMARY` の 4 指標固定を**足した**。🔴 **検出されなかった真因は `#3`** | **✅ 完了** |
+| 3 | ✅ **完了（2026-10-02。`ae5709a`）** —— 🔴🔴 **CI が 5 コミット分テストを 1 件も実行していなかった**（`pnpm audit` の赤が後続 7〜14 を全部 `skipped` にしていた）。`pnpm audit` を独立ジョブ `Security audit` に出した。詳細と教訓は §6-11 | **✅ 完了** |
 
 🔴 **500 を握りつぶして 200 にする直し方は禁止**（上記も握りつぶしていない。`expect(200)` はそのまま、指標の削減も `SummaryStrip` の縮小もしていない）。
 
-🔴 **`#2` が片付くまで CI は赤のままである。** 次の着手は §2.2 の `T-22-10`（ホームの要対応キューに `Drawer`）＝ 段③ の締めで、`#2` はその前段として同じエージェントが直している。
+🔴 **いま CI は緑である**（run `36976938729`。`Security audit` / `CI Pipeline` の 2 ジョブとも success、`skipped` は `if: failure()` の artifact 退避だけ）。**次の着手**: ①`SP-22` §9 の完了記録（🔴 **§9 はまだ存在しない**。§8 が参照しているのに節が無い）②**Railway のデモ環境へのデプロイと実機確認**（`T-22-09` / `T-22-10` の受け入れ基準）③段④ `T-22-11`。
 
 🔴 **`#1` と `#2` の両方が「ユニットは緑、CI でしか落ちない層」だったこと自体が教訓である**（§6 の 10 件目）。`#1` は分離テスト（Testcontainers）、`#2` は E2E（Playwright）—— **どちらもこの開発機では重く、ローカルで習慣的に回していなかった。** 🔴 **境界領域で API の応答の形を変えたら、`tests/isolation/` と `tests/e2e/` の該当ファイルを名指しで回す**（分離 1 ファイルは 26 秒、E2E 2 ファイルも数分）。
 
@@ -86,7 +87,8 @@
 | 🔴 **CI が赤のとき `skipped` を見る** | `gh run view <id> --json jobs --jq '.jobs[].steps[] | "\(.number). \(.name) → \(.conclusion)"'`。**早いステップの赤は後続を全部 `skipped` にする**（§6-11 で 5 コミット分のテストが消えた）。`pnpm audit` は独立ジョブ（`Security audit`）に出したが、**`ci` ジョブ内の build / lint / typecheck は依然として直列**であり、build が落ちればテストは走らない。🔴 **「失敗 1 件」と出ていても、その後ろで何件の検査が消えたかは別に数える** |
 | 🔴 **`tailwind.css` の `@source '../../../packages/ui/src'` を消さない** | 消すと `@ses/ui` のスタイルが**テストは緑のまま見た目だけ**消える（実測の記録が同ファイルにある） |
 | **分離テストは専用の config** | `npx vitest run -c vitest.isolation.config.ts <file>`（既定の `vitest.config.ts` は `tests/isolation/**` を除外している） |
-| **テストの基準値**（2026-10-02 時点） | `tests/static/` **1326** / `apps/web` **2586** / `packages` 2393 / `packages/i18n` 25 / 分離 94 ファイル / E2E 14 spec 71 ケース |
+| **テストの基準値**（2026-10-02。run `36976938729` の実測） | `tests/static/` **1327** / `apps/web` **2602** / `packages` 2393 / `packages/i18n` 25 / **ユニット合計 393 ファイル 6779 件** / **分離 94 ファイル 2236 件** / **E2E 14 spec 67 ケース** |
+| 🔴 **E2E は「71 ケース」ではない** | 本ファイルと `SP-22` の文中にあった **71 は誤り**。`T-22-05` 直前の緑 run（`36630709885`）も **67**、`grep -cE "^\s*test\("` の宣言合計も **67** で一致する。**ケースが失われたのではなく、記録していた数が間違っていた**（2026-10-02 に実測で確認）。🔴 **基準値は「前に書いた数」ではなく「直近の緑 run の実測」を正とする** |
 
 ### 3.2 この開発機の制約
 
@@ -114,7 +116,7 @@
 | `tests/static/sidebar-form-css-order.test.ts` | 🔴 **同特異度のクラスの勝敗は生成 CSS の順序だけが決める。** Tailwind のバリアント順が変わると**テストは緑のままサイドバーの形態や行の選択表示が反転する** |
 | `tests/static/home-drawer-no-ledger.test.ts` | 台帳への到達禁止。🔴 例外は **2 系統だけ**（`action-queue-read.ts` の取引先の枝 / `summary.ts` の `count` のみ）。**別名束縛と分割代入は例外の対象外**（一度別名に入ると呼び出し形を追えない。この穴が実在した） |
 
-🔴 **刷新の不変条件**: **`data-testid` と文言キーを変えない（値は変えてよい）。** これにより既存の **E2E 71 ケース / render 41 本 / 静的 1326 件**がそのまま回帰検出器になる。変える場合は安全網を失うので、必ず理由を記録する。
+🔴 **刷新の不変条件**: **`data-testid` と文言キーを変えない（値は変えてよい）。** これにより既存の **E2E 67 ケース / render 41 本 / 静的 1327 件**がそのまま回帰検出器になる。変える場合は安全網を失うので、必ず理由を記録する。
 
 ### 3.5 デザインシステム
 
@@ -221,8 +223,8 @@ Claude-Session: https://claude.ai/code/session_017gd8pEqXToQcMoFrnqRr7H
 env -u NODE_ENV pnpm --filter @ses/web run build
 
 # テスト
-npx vitest run tests/static/ --maxWorkers=1          # 1326 passed
-npx vitest run apps/web --maxWorkers=1               # 2586 passed
+npx vitest run tests/static/ --maxWorkers=1          # 1327 passed
+npx vitest run apps/web --maxWorkers=1               # 2602 passed
 npx vitest run -c vitest.isolation.config.ts <file>  # 分離（1 ファイルずつ）
 pnpm test:e2e                                        # 🔴 ローカルでは回せない（メモリ）
 
