@@ -60,7 +60,15 @@ import { formatRemaining } from '../../lib/proposal-requests/remaining';
 import { readCurrentPath } from '../../lib/shell/current-path';
 import { readShellIdentity } from '../../lib/shell/identity';
 import { readProposalRequestDue } from '../../lib/shell/proposal-request-due';
-import { buildBottomTabs, buildMainNav, type NavAudience } from '../../lib/shell/nav';
+import {
+  buildBottomTabs,
+  buildMainNav,
+  buildNavSections,
+  buildSettingsIndex,
+  currentNavSection,
+  type NavAudience,
+  type NavContext,
+} from '../../lib/shell/nav';
 import { readShellUsageIndicator } from '../../lib/shell/usage-indicator';
 import { TENANT_ROLE_MESSAGE_KEYS } from '../../lib/tenants/labels';
 import { MainShell } from './_shell/main-shell';
@@ -95,6 +103,13 @@ export default async function MainPlaneLayout({ children }: { readonly children:
       ? null
       : formatRemaining(proposalRequestDue.expiresAtIso, requestNow().getTime(), remainingLabels());
 
+  // 🔴 2026-10-03: サイドバーは 6 項目のフラットになり、消えた項目の到達手段は
+  //    **第 2 階層のタブ**と **`設定` の索引**になった（`lib/shell/nav.ts` 冒頭の表）。
+  //    🔴 **ロール条件の出所は `navContext` を受ける 3 つの関数だけ**であり、ここに判定を書かない。
+  //    🔴 **DB のトランザクションは 1 本も増えない**（いずれも純粋な組み立てである。上の表は不変）。
+  const navContext: NavContext = { audience, role: ctx.role, proposalRequestDueText };
+  const section = currentNavSection(buildNavSections(navContext), currentPath);
+
   return (
     <MainShell
       wordmark={t('product.name')}
@@ -106,7 +121,13 @@ export default async function MainPlaneLayout({ children }: { readonly children:
       // 🔴 上限インジケータの遷移先（`S-038`）はホスト所属にだけ置く（`docs/04` §S-038 /
       //    `F-027 AC-1`「取引先には停止の事実と理由だけ」）。
       usageHref={ctx.partnerCompanyId === null ? '/settings/usage' : null}
-      nav={buildMainNav({ audience, role: ctx.role, proposalRequestDueText })}
+      nav={buildMainNav(navContext)}
+      // 🔴 いま居るセクションのタブだけを渡す（`null` なら帯を描かない = タブが 1 つしか
+      //    無いセクションと、どのセクションにも属さない画面）。
+      sectionTabs={section === null ? null : section.items}
+      // 🔴 「自分」メニューの `組織設定` の有無は**索引と同じ 1 本の表**から決まる
+      //    （`_shell/main-shell.tsx` の 🔴。2 つのロール表を作らない）。
+      settingsIndex={buildSettingsIndex(navContext)}
       tabs={buildBottomTabs()}
       currentPath={currentPath}
     >

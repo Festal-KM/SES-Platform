@@ -12,7 +12,14 @@
 // 🔴 **ここに判断を置かない。** ロール別の出し分け・並び・アイコン・`Phase N` の有無はすべて
 //    `./nav.ts` が決めており、この関数は**写すだけ**である（2 箇所で判断すると、片方だけ変わる）。
 import { t } from '@ses/i18n';
-import type { BottomTab, SidebarGroup, SidebarItem, SidebarReach } from '@ses/ui';
+import type {
+  BottomTab,
+  NavIndexItem,
+  SectionNavItem,
+  SidebarGroup,
+  SidebarItem,
+  SidebarReach,
+} from '@ses/ui';
 import type { NavGroup, NavItem } from './nav';
 
 function resolveReach(item: NavItem): SidebarReach {
@@ -38,6 +45,8 @@ function resolveItem(item: NavItem): SidebarItem {
             // 🔴 アイコンのみの形態で点に添える語（`packages/ui` の `SidebarBadge.dotLabel`）。
             dotLabel: t(item.badge.dotLabelKey),
           },
+    // 🔴 現在地の射程（第 2 階層 / 索引の遷移先）。**ここで組み立てない**（`./nav.ts` が持つ）。
+    sectionPaths: item.sectionPaths,
   };
 }
 
@@ -61,4 +70,45 @@ export function resolveBottomTabs(tabs: readonly NavItem[]): readonly BottomTab[
     icon: tab.icon,
     reach: resolveReach(tab),
   }));
+}
+
+/**
+ * 第 2 階層のタブ（`SectionNav`）。
+ *
+ * 🔴 **`LINK` の項目だけを渡す**（押せないタブを置かない。`packages/ui` の `SectionNavItem` は
+ *    `href` を必須にしているので、**型としても押せないタブを作れない**）。
+ *    `apps/web/lib/shell/nav.ts` の `buildNavSections` は現に `LINK` だけを返すが、
+ *    ここで落としておくことで「後から `pending` を足したら黙ってタブが消える」ではなく
+ *    「足せない」側に倒れる。
+ */
+export function resolveSectionTabs(items: readonly NavItem[]): readonly SectionNavItem[] {
+  return items.flatMap((item) =>
+    item.reach.kind === 'LINK'
+      ? [{ id: item.id, label: t(item.labelKey), href: item.reach.href }]
+      : [],
+  );
+}
+
+/**
+ * 索引（`NavIndex`。`/settings`）の項目。
+ *
+ * 🔴 **`LINK` の項目だけを渡す**（上と同じ理由。索引に 404 への行を作らない）。
+ *    `Phase N` / 注記は型として受けられるようにしてあるが（`packages/ui` の `NavIndexItem`）、
+ *    **`UNAVAILABLE` の項目はそもそも渡さない。**
+ */
+export function resolveNavIndexItems(items: readonly NavItem[]): readonly NavIndexItem[] {
+  return items.flatMap((item) =>
+    item.reach.kind === 'LINK'
+      ? [
+          {
+            id: item.id,
+            label: t(item.labelKey),
+            icon: item.icon,
+            href: item.reach.href,
+            phase: item.phaseKey === null ? null : t(item.phaseKey),
+            note: item.noteKey === null ? null : t(item.noteKey),
+          },
+        ]
+      : [],
+  );
 }

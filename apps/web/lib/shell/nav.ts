@@ -1,25 +1,50 @@
 // apps/web/lib/shell/nav.ts
-// 主平面のグローバルナビの**項目表**（docs/04 §3.1 のサイドバーの表 / §3.4 のボトムタブ）。
+// 主平面のグローバルナビの**項目表**（サイドバー / セクション内の第 2 階層 / `設定` の索引 /
+// モバイルのボトムタブ）。
 //
 // 🔴 **純粋な組み立てだけを置く**（React / DB / i18n の値に依存しない）。文言は `MessageKey` で
 //    持ち、解決は `./nav-view.ts` が `packages/i18n` で行う（CLAUDE.md §3.5 / BR-32）。
 //    こうしておくと「ホストと取引先で項目集合が違う」ことを、描画せずに単体テストで固定できる。
 //
 // ============================================================================
-// 🔴 SP-22 `T-22-05`（docs/04 改訂 16）で変えた 3 点と、変えていない 1 点
+// 🔴 2026-10-03（人間の明示指示 + モックアップ 5 枚）: サイドバーを **6 項目のフラット**に畳んだ
 // ============================================================================
-// | # | 変更 | 根拠 |
-// |---|---|---|
-// | 1 | **ステージ番号の接頭辞（`① 人材` …）を外した** | docs/04 §3.1 / §11-21（人間の決定 2026-09-29）。**番号は順序を読ませる手段の 1 つであって順序そのものではない。** 丸数字は日本語の本文中で 1 文字ぶんの重さを持ち、**8 項目のラベルの先頭 2 文字を毎回潰していた**（外したのは `packages/i18n` の**値**であり、キーは 1 つも動かしていない = `U-22`） |
-// | 2 | **日本語 4 群（`営業` / `連絡` / `分析` / `設定`）で構造化した** | docs/04 §3.1 の表（`U-20`）。群の見出しと余白が、番号と同じ「まとまりと順序」をラベルの文字を奪わずに表す |
-// | 3 | **全項目に Lucide アイコンを付けた** | docs/04 §7.5 ③（禁止の解除。人間の決定）。**根拠は走査性の 1 点**であり装飾の許可ではない（§11-22）。写像は `@ses/ui` の `icons.ts` 1 本で、**表に無い名前は型エラー**になる |
-// | — | 🔴 **並びの順序は 1 つも動かしていない** | docs/04 §11-21 の 🔴（人材 → 案件 → 候補を探す → 提案 → 提案依頼 → 面談・結果 → 契約 → 稼働）。`営業` 群の中の並びが `CLAUDE.md` §1.3 の業務ループそのものである |
+// 指示は「サイドバーの内容が違うので、画像の内容と同じにして」であり、画像は
+// **群の見出しを持たない 6 項目**（`ホーム` / `チャット` / `人材管理` / `案件管理` / `レポート` /
+// `設定`）である。畳む前は **群 4 つ（`営業` / `連絡` / `分析` / `設定`）+ 16 項目**だった。
 //
-// 🔴 **`共有の設定`（`S-015`）は `自社の人材` の直下に置く**（docs/04 §3.1 の 🔴）。理由は条文に
-//    書かれている: この画面は「**今ホストに何を見せているか**」を毎日動かす画面であり、
-//    **稼働が決まった人材の共有解除は時間勝負**である（§11-13）。母集団が `自社の人材` と同じ
-//    台帳なので、その直下に置く。⚠️ `T-12-20` は改訂 16 より前の実装で**末尾（`稼働` の後）**に
-//    置いていた。**項目集合は変わっていない**（位置だけが表に合った）。
+// | 畳む前 | 畳んだ先 |
+// |---|---|
+// | ホーム | **ホーム**（`/`） |
+// | チャット（Phase 2）/ タスク（Phase 2） | **チャット**（Phase 2 のまま） |
+// | 自社の人材 `/engineers` / 共有の設定 `/engineer-shares` | **人材管理** + 第 2 階層のタブ |
+// | 案件 / 候補 / 提案 / 提案依頼 / 面談 / 契約 / 稼働 | **案件管理** + 第 2 階層のタブ |
+// | 実績（Phase 3） | **レポート**（Phase 3 のまま） |
+// | 組織設定 / 取引先企業 / 送信ドメイン / 利用量と上限 / データの返却 / 監査ログ / スキル辞書 | **設定**（`/settings` の索引） |
+//
+// 🔴 **到達性を 1 画面も落としていない。** 畳んだだけでは `S-036`（送信ドメイン）/ `S-041`
+//    （監査ログ）/ `S-042`（データの返却）/ `S-015`（共有の設定）が**到達不能になり、機能が
+//    消える**（この 4 画面はナビが唯一の入口である。下の `buildSettingsIndex` の 🔴）。そこで
+//    第 2 階層を 2 つ置いた:
+//
+//      - `buildNavSections` … `人材管理` / `案件管理` の**タブ**（別の URL への遷移）
+//      - `buildSettingsIndex` … `設定` の**索引ページ**（`/settings`）が並べる 7 項目
+//
+//    🔴 **ロール別の出し分けの条件は 1 つも変えていない**（`isTenantAdmin` / `audience` /
+//       `isEngineerShareRole` の判定をそのまま移しただけである）。🔴 **2 つ目のロール表を
+//       作らない** —— 条件はこのファイルの中に 1 箇所ずつしか無く、索引ページ・タブ・
+//       ヘッダの「自分」メニューはいずれもここが返した配列を描くだけである。
+//    🔴 到達集合（ロール別）が畳む前と一致することは `tests/static/nav-reach.test.ts` が
+//       機械的に証明する（`/settings` の索引だけが増えた 1 件である）。
+//
+// 🔴 **`docs/04` §3.1 は依然として「群 4 つ + 16 項目」を定めている**（本ファイルの実装が
+//    先行する）。設計書の追随はオーケストレーターが行う（`CLAUDE.md` §8.7。本タスクは
+//    `docs/**` を触らない）。同様に §3.4 のボトムタブの表（`ホーム / 提案 / 候補 / チャット`）も
+//    6 項目に合わせて見直した（下の `buildBottomTabs`）。
+//
+// 🔴 **チャットに件数バッジ（モックアップの `3`）を出さない。** `Notification` / 未読の実体は
+//    Phase 2 で存在せず、架空の数は「見たのに消えない」を作る（`T-22-05` でヘッダのベルを
+//    置かなかったのと同じ判断）。**Phase 2 の印はそのまま残す。**
 //
 // 🔴 **404 を作らない。** 遷移先は次の 2 つのいずれかで、`LINK` 以外は**リンクにしない**:
 //      - `LINK`        … `apps/web/app/(main)/**/page.tsx` が実在する画面
@@ -33,7 +58,7 @@
 //    `requireRole` であり、ここは UI の配慮にすぎない。
 import type { TenantRole } from '@ses/db';
 import type { MessageKey } from '@ses/i18n';
-import type { IconName } from '@ses/ui';
+import { isCurrentNavPath, type IconName } from '@ses/ui';
 import { isEngineerShareRole } from '../engineer-shares/policy';
 
 /** ホスト（契約 SES 企業）所属か、取引先（パートナー）所属か。母集団と項目名が変わる唯一の軸。 */
@@ -48,7 +73,7 @@ export type NavItem = {
   /** `data-testid` の接尾辞（kebab-case）。E2E と render テストが掴む。 */
   readonly id: string;
   readonly labelKey: MessageKey;
-  /** 🔴 docs/04 §3.1 の表のアイコン名（`@ses/ui` の写像に無い名前は**型エラー**）。 */
+  /** 🔴 アイコン名（`@ses/ui` の写像に無い名前は**型エラー**）。 */
   readonly icon: IconName;
   readonly reach: NavReach;
   /**
@@ -58,6 +83,18 @@ export type NavItem = {
   readonly phaseKey: MessageKey | null;
   /** 実在するが単独の URL を持たない項目の注記（`案件から開きます`）。🔴 `Phase N` とは別物。 */
   readonly noteKey: MessageKey | null;
+  /**
+   * 🔴 **その項目が「現在地」になる追加のパス**（第 2 階層 / 索引の遷移先）。
+   *
+   * 🔴 **これが無いと、畳み込みで「どこに居るか」が消える。** `提案`（`/proposals`）/
+   *    `提案依頼`（`/proposal-requests`）/ `共有の設定`（`/engineer-shares`）/ `監査ログ`
+   *    （`/audit-logs`）/ `スキル辞書`（`/skills`）は**親の項目と別のパス**であり、
+   *    `reach.href` の前方一致だけではサイドバーの 6 項目が 1 つも光らない
+   *    （`docs/04` §3.1「現在地 = 背景 + 文字色 + 左端 2px」が成立しなくなる）。
+   * 🔴 **出所は第 2 階層の表と索引の表である**（`buildMainNav` が `buildNavSections` /
+   *    `buildSettingsIndex` から引く）。**パスを書き写さない。**
+   */
+  readonly sectionPaths: readonly string[];
   /**
    * 項目に添えるバッジ（`提案依頼` の返答期限だけが持つ。docs/04 §3.1 取引先列）。
    *
@@ -82,8 +119,10 @@ export type NavBadge = {
 };
 
 /**
- * 群（docs/04 §3.1 の 4 群 + 群名なしの最上段）。
- * 🔴 **ホームは群に属さず最上段**（`labelKey: null`）。
+ * 群。
+ * 🔴 **2026-10-03 以降、群は 1 つだけ**（`primary` / 群名なし）である —— モックアップは
+ *    群の見出しを持たない 6 項目のフラットなナビであり、`labelKey: null` がそれを表す。
+ *    **型と `SidebarNavList` の形は変えていない**（群の配列を受ける器のまま）。
  */
 export type NavGroup = {
   /** `data-testid` の接尾辞（群名の要素に付く）。 */
@@ -96,10 +135,12 @@ export type NavContext = {
   readonly audience: NavAudience;
   readonly role: TenantRole;
   /**
-   * `提案依頼`（`S-017`）の期限バッジに出す残り時間（例: `残り 2 日`）。`null` ならバッジを描かない。
+   * `提案依頼`（`S-017`）の返答期限に出す残り時間（例: `残り 2 日`）。`null` ならバッジを描かない。
    *
-   * 🔴 docs/04 §3.1 は**取引先列**にだけバッジを書いている。値を読むのはレイアウト側であり、
-   *    ここは「渡されたときに取り付ける」だけを決める（渡すかどうかの判定を 2 箇所に置かない）。
+   * 🔴 **畳んだ後は `案件管理` の行が持つ**（`提案依頼` は第 2 階層のタブへ移った）。サイドバーは
+   *    どの画面でも見えている唯一の面であり、ここから期限が消えると
+   *    **取引先（1 日 4〜5 時間の主利用者。`CLAUDE.md` §1.2）が返答期限に気づけない**。
+   *    🔴 **出すのは期限であって件数ではない**（件数は他社情報の示唆になりうる）。
    */
   readonly proposalRequestDueText?: string | null;
 };
@@ -110,18 +151,32 @@ function link(
   icon: IconName,
   href: string,
   badge: NavBadge | null = null,
+  sectionPaths: readonly string[] = [],
 ): NavItem {
-  return { id, labelKey, icon, reach: { kind: 'LINK', href }, phaseKey: null, noteKey: null, badge };
+  return {
+    id,
+    labelKey,
+    icon,
+    reach: { kind: 'LINK', href },
+    phaseKey: null,
+    noteKey: null,
+    badge,
+    sectionPaths,
+  };
 }
 
 /** 🔴 未実装（Phase 2 / 3）。印は**無彩色の `Phase N` Badge**（注記テキストを置き換えたもの）。 */
 function pending(id: string, labelKey: MessageKey, icon: IconName, phaseKey: MessageKey): NavItem {
-  return { id, labelKey, icon, reach: { kind: 'UNAVAILABLE' }, phaseKey, noteKey: null, badge: null };
-}
-
-/** 🔴 実在するが単独の URL を持たない（案件・提案から開く）。印は注記であって `Phase N` ではない。 */
-function elsewhere(id: string, labelKey: MessageKey, icon: IconName, noteKey: MessageKey): NavItem {
-  return { id, labelKey, icon, reach: { kind: 'UNAVAILABLE' }, phaseKey: null, noteKey, badge: null };
+  return {
+    id,
+    labelKey,
+    icon,
+    reach: { kind: 'UNAVAILABLE' },
+    phaseKey,
+    noteKey: null,
+    badge: null,
+    sectionPaths: [],
+  };
 }
 
 /** ホスト所属で `OWNER` / `ADMIN` にだけ到達できる設定画面（各 `page.tsx` の redirect と同じ条件）。 */
@@ -129,18 +184,27 @@ function isTenantAdminRole(role: TenantRole): boolean {
   return role === 'OWNER' || role === 'ADMIN';
 }
 
+/** `設定` の索引（`/settings`）の URL。🔴 **この 1 箇所が出所である。** */
+export const SETTINGS_INDEX_PATH = '/settings';
+
+/** `人材管理` の入口（サイドバーの項目と第 2 階層の 1 つ目が指す同じ URL）。 */
+const ENGINEER_SECTION_PATH = '/engineers';
+/** `案件管理` の入口（同上）。 */
+const PROJECT_SECTION_PATH = '/projects';
+
 /**
- * `設定` 群の項目。
+ * `設定` の索引（`/settings`）が並べる項目。**畳む前の `設定` 群と 1 対 1 である。**
  *
  * 🔴 docs/04 §3.1 の表は `設定` の中身を **4 項目**（取引先企業 / 利用量と上限 / スキル辞書 /
  *    組織設定）しか列挙していないが、**§4.8 の設定画面のうち 3 つ（`S-036` 送信ドメイン /
- *    `S-041` 監査ログ / `S-042` データの返却と保持期間）はリポジトリ内に到達経路が 1 本も無い**
+ *    `S-041` 監査ログ / `S-042` データの返却と保持期間）はリポジトリ内に他の到達経路が 1 本も無い**
  *    （`T-12-20` の着手時に `href` を全走査して確認した）。ナビが唯一の入口であるため項目として出す。
  *    **増やしたのは実在する画面への到達手段だけ**であり、新しい画面も新しい機能も足していない。
- * 🔴 `T-22-05` の受け入れ基準 1（**ロール別の項目集合が 1 つも変わっていない**）により、この 3 つを
- *    減らすこともできない。アイコンの根拠は `@ses/ui` の `icons.ts` の (2) に記録した。
+ * 🔴 **この 7 項目とロール条件は 2026-10-03 の畳み込みで 1 つも変えていない。** 置き場所が
+ *    サイドバーの群から索引ページへ移っただけである（到達集合が一致することは
+ *    `tests/static/nav-reach.test.ts` が証明する）。
  */
-function settingsItems(context: NavContext): readonly NavItem[] {
+export function buildSettingsIndex(context: NavContext): readonly NavItem[] {
   // 🔴 4 画面（`S-035` / `S-036` / `S-042` / `S-041`）は**ホスト所属の `OWNER` / `ADMIN` だけ**が
   //    到達する（各 `page.tsx` の redirect と同じ条件）。1 つの述語にまとめて、画面ごとに
   //    条件が食い違わないようにする。
@@ -177,112 +241,170 @@ function settingsItems(context: NavContext): readonly NavItem[] {
   return items;
 }
 
-/**
- * `営業` 群の項目（🔴 **並びは `CLAUDE.md` §1.3 の業務ループそのもの**。入れ替えない）。
- */
-function salesItems(context: NavContext): readonly NavItem[] {
-  const proposalRequestDue = context.proposalRequestDueText ?? null;
-  const items: NavItem[] = [];
+// ============================================================================
+// 第 2 階層（セクション内のタブ）
+// ============================================================================
 
-  if (context.audience === 'HOST') {
-    items.push(link('engineers', 'shell.nav.host.engineers', 'users', '/engineers')); // S-005
-  } else {
-    items.push(link('engineers', 'shell.nav.partner.engineers', 'users', '/engineers'));
-    // 🔴 S-015（経路 4 の共有設定）は**取引先にだけ**在り、`自社の人材` の直下に置く（上の 🔴）。
-    //    🔴 ホスト側に `共有の設定` は存在しない（ホストは他社の共有設定に触れない。docs/04 §3.2）。
-    if (isEngineerShareRole(context.role)) {
-      items.push(link('engineer-shares', 'shell.nav.partner.shares', 'share-2', '/engineer-shares'));
-    }
-  }
+/** 第 2 階層を持つセクション（🔴 サイドバーの 6 項目のうちこの 2 つだけ）。 */
+export type NavSectionId = 'engineers' | 'projects';
 
-  items.push(
-    context.audience === 'HOST'
-      ? link('projects', 'shell.nav.host.projects', 'briefcase', '/projects') // S-010
-      : link('projects', 'shell.nav.partner.projects', 'briefcase', '/projects'),
-    // S-016 は案件起点（`/projects/{id}/candidates`）であり、単独の URL を持たない。
-    context.audience === 'HOST'
-      ? elsewhere('candidates', 'shell.nav.host.candidates', 'user-search', 'shell.nav.note.fromProject')
-      : elsewhere('candidates', 'shell.nav.partner.candidates', 'user-search', 'shell.nav.note.fromProject'),
-    link('proposals', 'shell.nav.proposals', 'send', '/proposals'), // S-019
-    // 🔴 S-017。取引先にだけ期限バッジを添える（docs/04 §3.1 の取引先列。
-    //    🔴 **件数でなく期限**。件数は他社情報の示唆になりうる。`CLAUDE.md` §3.1）。
-    //    ホストに出さないのは docs/04 の表が取引先列にしか書いていないからである
-    //    （ホスト側の期限の見張りは `S-003` の要対応キューが持つ）。
-    link(
-      'proposal-requests',
-      'shell.nav.proposalRequests',
-      'inbox',
-      '/proposal-requests',
-      proposalRequestDue === null || context.audience !== 'PARTNER'
-        ? null
-        : {
-            labelKey: 'shell.nav.proposalRequests.due.label',
-            text: proposalRequestDue,
-            // 🔴 アイコンのみの形態で点に添える語（期限も件数も含まない。上の `NavBadge` の 🔴）。
-            dotLabelKey: 'shell.nav.proposalRequests.due.dot',
-          },
-    ), // S-017
-    // S-024（面談日程の調整と結果記録）は `S-023` 経由（`/proposals/{id}/interview`）。
-    elsewhere('interviews', 'shell.nav.interviews', 'handshake', 'shell.nav.note.fromProposal'),
-  );
-
-  if (context.audience === 'HOST') {
-    items.push(
-      pending('contracts', 'shell.nav.host.contracts', 'file-signature', 'shell.nav.note.phase3'), // S-025
-      pending('assignments', 'shell.nav.host.assignments', 'calendar-clock', 'shell.nav.note.phase2'), // S-029
-    );
-  } else {
-    // 🔴 経路 5（Issue #8）: 取引先にも ⑤ ⑥ を出す。遷移先は専用画面（S-045 / S-044）であり未実装。
-    items.push(
-      pending('contracts', 'shell.nav.partner.contracts', 'file-signature', 'shell.nav.note.phase3'), // S-045
-      pending('assignments', 'shell.nav.partner.assignments', 'calendar-clock', 'shell.nav.note.phase2'), // S-044
-    );
-  }
-  return items;
-}
+export type NavSection = {
+  readonly id: NavSectionId;
+  /**
+   * セクションの語。🔴 **サイドバーの同じ項目と同じ `MessageKey` を使う**
+   *    （所属で語が変わる判定を 2 箇所に持たない）。
+   */
+  readonly labelKey: MessageKey;
+  readonly items: readonly NavItem[];
+};
 
 /**
- * サイドバー（グローバルナビ）の群と項目。
+ * `人材管理` / `案件管理` の第 2 階層（タブ）。
  *
- * 🔴 **群は docs/04 §3.1 の表のとおり 4 つ**（`営業` / `連絡` / `分析` / `設定`）+ 群名なしの最上段。
- *    🔴 **`分析` を `実績` にしない**（群名と項目名は別物である）。
+ * 🔴 **ここが畳み込みで消えた項目の到達手段である。** `共有の設定`（`S-015`）/ `提案`（`S-019`）/
+ *    `提案依頼`（`S-017`）はサイドバーから消えたが、**同じロール条件のまま**ここに在る。
+ * 🔴 **`共有の設定` は取引先所属かつ `isEngineerShareRole` のときだけ**（経路 4 の opt-in を
+ *    動かせるのは自社の人材を持つ側だけであり、ホストは他社の共有設定に触れない。docs/04 §3.2）。
+ * 🔴 **並びは業務ループ（`CLAUDE.md` §1.3）のまま**: 案件 → 提案 → 提案依頼。
+ * ⚠️ `候補`（`S-016`）/ `面談・結果`（`S-024`）/ `契約` / `稼働` をタブにしていない ——
+ *    前 2 つは単独の URL を持たず（案件・提案から開く）、後 2 つは Phase 2 / 3 で画面が無い。
+ *    **タブは「別の URL へ遷移するもの」だけが載る**（押せないタブは `docs/04` §10.3 の
+ *    「タブは同一対象の面の切替」にも反する）。
  */
-export function buildMainNav(context: NavContext): readonly NavGroup[] {
+export function buildNavSections(context: NavContext): readonly NavSection[] {
+  const engineers: NavItem[] = [
+    link('engineers', 'shell.section.engineers.list', 'users', ENGINEER_SECTION_PATH),
+  ];
+  // 🔴 ホスト側に `共有の設定` は存在しない（ホストは他社の共有設定に触れない）。
+  if (context.audience === 'PARTNER' && isEngineerShareRole(context.role)) {
+    engineers.push(link('engineer-shares', 'shell.nav.partner.shares', 'share-2', '/engineer-shares'));
+  }
   return [
-    // 🔴 ホームは群に属さず最上段（docs/04 §3.1 の表の 1 行目）。
-    { id: 'primary', labelKey: null, items: [link('home', 'shell.nav.home', 'home', '/')] },
-    { id: 'sales', labelKey: 'shell.nav.group.sales', items: salesItems(context) },
     {
-      id: 'comms',
-      labelKey: 'shell.nav.group.comms',
-      items: [
-        pending('chat', 'shell.nav.chat', 'message-square', 'shell.nav.note.phase2'), // S-031
-        pending('tasks', 'shell.nav.tasks', 'list-checks', 'shell.nav.note.phase2'), // S-033
-      ],
+      id: 'engineers',
+      labelKey:
+        context.audience === 'HOST' ? 'shell.nav.host.engineers' : 'shell.nav.partner.engineers',
+      items: engineers,
     },
     {
-      id: 'analytics',
-      labelKey: 'shell.nav.group.analytics',
+      id: 'projects',
+      labelKey: context.audience === 'HOST' ? 'shell.nav.host.projects' : 'shell.nav.partner.projects',
       items: [
-        context.audience === 'HOST'
-          ? pending('reports', 'shell.nav.host.reports', 'bar-chart-3', 'shell.nav.note.phase3') // S-034
-          : pending('reports', 'shell.nav.partner.reports', 'bar-chart-3', 'shell.nav.note.phase3'),
+        link('projects', 'shell.section.projects.list', 'briefcase', PROJECT_SECTION_PATH), // S-010
+        link('proposals', 'shell.nav.proposals', 'send', '/proposals'), // S-019
+        link('proposal-requests', 'shell.nav.proposalRequests', 'inbox', '/proposal-requests'), // S-017
       ],
-    },
-    {
-      id: 'settings',
-      labelKey: context.audience === 'HOST' ? 'shell.nav.host.settings' : 'shell.nav.partner.settings',
-      items: settingsItems(context),
     },
   ];
 }
 
 /**
- * モバイルのボトムタブ（docs/04 §3.4「ホーム / 提案 / 候補 / チャット / その他」）。
+ * いま開いている画面が属するセクション（`null` = どのセクションにも属さない = タブを描かない）。
  *
- * 🔴 **「その他」から全項目に到達でき、業務ループの順序を保つ**（`buildMainNav` をそのまま出す）。
- *    ここが返すのは手前の 4 つだけで、5 つ目（その他）は描画側が `<details>` として持つ。
- * 🔴 **ボトムタブの 5 つにはアイコンを付ける**（docs/04 §3.4。既にラベルが 2〜3 文字に切り詰まって
+ * 🔴 判定は**そのセクションのタブの遷移先に居るか**であり、`isCurrentNavPath`（`@ses/ui`）の
+ *    1 実装を使う（`/engineers` が `/engineer-shares` を飲み込まない規則もそこに在る）。
+ *    **2 つ目の現在地判定を書かない。**
+ * 🔴 **タブが 1 つしか無いときは `null` を返す**（タブが 1 枚だけの帯は選択肢を示していない）。
+ *    その場合でもサイドバーの項目がその URL を指しているので、到達性は落ちない
+ *    （ホストの `人材管理` が実際にこれに当たる）。
+ */
+export function currentNavSection(
+  sections: readonly NavSection[],
+  currentPath: string,
+): NavSection | null {
+  const found = sections.find((section) =>
+    section.items.some(
+      (item) => item.reach.kind === 'LINK' && isCurrentNavPath(currentPath, item.reach.href),
+    ),
+  );
+  if (found === undefined || found.items.length < 2) return null;
+  return found;
+}
+
+// ============================================================================
+// サイドバー（6 項目）
+// ============================================================================
+
+/**
+ * サイドバー（グローバルナビ）の項目。
+ *
+ * 🔴 **モックアップどおり 6 項目のフラット**（群の見出しを持たない）。並びも画像のままである:
+ *    ホーム → チャット → 人材管理 → 案件管理 → レポート → 設定。
+ * ⚠️ この並びは `CLAUDE.md` §1.3 の業務ループ（① 集める → ② マッチング → ③ 提案 → …）の順では
+ *    ない（`チャット` が ① の手前に来る）。**ループの順序は第 2 階層（`案件管理` のタブ =
+ *    案件 → 提案 → 提案依頼）が保つ。** 人間の明示指示（2026-10-03「画像の内容と同じにして」）が
+ *    docs/04 §3.1 / §11-21 の並びより優先する判断であり、設計書の追随は別途行う。
+ */
+export function buildMainNav(context: NavContext): readonly NavGroup[] {
+  const proposalRequestDue = context.proposalRequestDueText ?? null;
+  // 🔴 現在地の射程（`NavItem.sectionPaths`）は**第 2 階層と索引の表から引く**（書き写さない）。
+  const sections = buildNavSections(context);
+  const sectionPathsOf = (id: NavSectionId): readonly string[] =>
+    navHrefs(sections.find((section) => section.id === id)?.items ?? []);
+  return [
+    {
+      id: 'primary',
+      labelKey: null,
+      items: [
+        link('home', 'shell.nav.home', 'home', '/'),
+        // S-031 チャット。🔴 件数バッジを出さない（未読の実体が無い。ファイル冒頭の 🔴）。
+        pending('chat', 'shell.nav.chat', 'message-square', 'shell.nav.note.phase2'),
+        link(
+          'engineers',
+          context.audience === 'HOST' ? 'shell.nav.host.engineers' : 'shell.nav.partner.engineers',
+          'users',
+          ENGINEER_SECTION_PATH,
+          null,
+          sectionPathsOf('engineers'),
+        ),
+        link(
+          'projects',
+          context.audience === 'HOST' ? 'shell.nav.host.projects' : 'shell.nav.partner.projects',
+          'briefcase',
+          PROJECT_SECTION_PATH,
+          // 🔴 S-017 の返答期限（docs/04 §3.1 の取引先列）。畳み込みで `提案依頼` が第 2 階層へ
+          //    移ったので、**その親である `案件管理` の行**が期限を預かる（`NavContext` の 🔴）。
+          //    ホストに出さないのは docs/04 の表が取引先列にしか書いていないからである
+          //    （ホスト側の期限の見張りは `S-003` の要対応キューが持つ）。
+          proposalRequestDue === null || context.audience !== 'PARTNER'
+            ? null
+            : {
+                labelKey: 'shell.nav.proposalRequests.due.label',
+                text: proposalRequestDue,
+                // 🔴 アイコンのみの形態で点に添える語（期限も件数も含まない。`NavBadge` の 🔴）。
+                dotLabelKey: 'shell.nav.proposalRequests.due.dot',
+              },
+          sectionPathsOf('projects'),
+        ),
+        // S-034 レポート（Phase 3）。語は所属で変わる（母集団が自社分だけであることを示す）。
+        context.audience === 'HOST'
+          ? pending('reports', 'shell.nav.host.reports', 'bar-chart-3', 'shell.nav.note.phase3')
+          : pending('reports', 'shell.nav.partner.reports', 'bar-chart-3', 'shell.nav.note.phase3'),
+        link(
+          'settings',
+          context.audience === 'HOST' ? 'shell.nav.host.settings' : 'shell.nav.partner.settings',
+          'settings',
+          SETTINGS_INDEX_PATH,
+          null,
+          // 🔴 索引の 7 項目のうち `/audit-logs` / `/skills` は `/settings` 配下に無い URL である
+          //    （前方一致では光らない）。索引の表から引いて射程に入れる。
+          navHrefs(buildSettingsIndex(context)),
+        ),
+      ],
+    },
+  ];
+}
+
+/**
+ * モバイルのボトムタブ（docs/04 §3.4）。
+ *
+ * 🔴 **6 項目に合わせて見直した**（2026-10-03）: `ホーム` / `人材管理` / `案件管理` / `チャット` +
+ *    「その他」。旧版は `ホーム` / `提案` / `候補` の 3 つを手前に出していたが、**`提案` は
+ *    第 2 階層へ移り、`候補` は単独の URL を持たない**ため、手前の 4 つを
+ *    「サイドバーの 6 項目のうち押せる上位 3 つ + チャット」に揃えた。
+ * 🔴 **「その他」から全項目に到達できる性質を壊していない**（描画側が `buildMainNav` の
+ *    6 項目をそのまま出す）。第 2 階層（タブ）と `設定` の索引は、その先の画面で同じ形で現れる。
+ * 🔴 **ボトムタブの 5 つにはアイコンを付ける**（docs/04 §3.4。ラベルが 2〜3 文字に切り詰まって
  *    おり、アイコンが弁別の主役になる）。**サイドバーと同じアイコンを使う** —— 同じ項目が端末で
  *    別の見え方をすると、迷ったときにデスクトップの記憶が使えない。
  * 🔴 ホストと取引先で同じ 4 つである（docs/04 §3.4 は 1 つの表しか持たない）。**所属で出し分けない** ——
@@ -292,8 +414,8 @@ export function buildMainNav(context: NavContext): readonly NavGroup[] {
 export function buildBottomTabs(): readonly NavItem[] {
   return [
     link('home', 'shell.tab.home', 'home', '/'),
-    link('proposals', 'shell.tab.proposals', 'send', '/proposals'),
-    elsewhere('candidates', 'shell.tab.candidates', 'user-search', 'shell.nav.note.fromProject'),
+    link('engineers', 'shell.tab.engineers', 'users', ENGINEER_SECTION_PATH),
+    link('projects', 'shell.tab.projects', 'briefcase', PROJECT_SECTION_PATH),
     pending('chat', 'shell.tab.chat', 'message-square', 'shell.nav.note.phase2'),
   ];
 }
@@ -306,4 +428,23 @@ export function navItems(groups: readonly NavGroup[]): readonly NavItem[] {
 /** ナビの中で実際にリンクになっている遷移先（テストと走査のため）。 */
 export function navHrefs(items: readonly NavItem[]): readonly string[] {
   return items.flatMap((item) => (item.reach.kind === 'LINK' ? [item.reach.href] : []));
+}
+
+/**
+ * 🔴 **そのロールがナビ・タブ・索引から到達できる遷移先の全体**（重複を畳む / 並びは問わない）。
+ *
+ * 🔴 **到達性の証明の入力はこの 1 関数である**（`tests/static/nav-reach.test.ts`）。
+ *    サイドバーだけを見ると、畳み込みで第 2 階層へ移った画面が「消えた」と誤判定する。
+ *    ボトムタブを含めるのは、モバイルでも同じ集合に到達できることを同時に見るためである。
+ */
+export function navReachableHrefs(context: NavContext): readonly string[] {
+  const sections = buildNavSections(context);
+  return [
+    ...new Set([
+      ...navHrefs(navItems(buildMainNav(context))),
+      ...navHrefs(sections.flatMap((section) => [...section.items])),
+      ...navHrefs(buildSettingsIndex(context)),
+      ...navHrefs(buildBottomTabs()),
+    ]),
+  ];
 }

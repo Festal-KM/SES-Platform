@@ -128,6 +128,18 @@ export type SidebarItem = {
    */
   readonly note: string | null;
   readonly badge: SidebarBadge | null;
+  /**
+   * 🔴 **その項目が「現在地」になる追加のパス**（第 2 階層 / 索引の遷移先）。SP-22（2026-10-03）。
+   *
+   * 🔴 サイドバーが 6 項目に畳まれ、`提案`（`/proposals`）/ `提案依頼`（`/proposal-requests`）/
+   *    `共有の設定`（`/engineer-shares`）/ `監査ログ`（`/audit-logs`）/ `スキル辞書`（`/skills`）が
+   *    第 2 階層と索引へ移った。**`reach.href` の前方一致だけでは、それらの画面を開いている間
+   *    6 項目が 1 つも光らない**（`docs/04` §3.1「現在地 = 背景 + 文字色 + 左端 2px」が成立しない）。
+   * 🔴 **どのパスが射程かは呼び出し側が決める**（`apps/web/lib/shell/nav.ts` の `sectionPaths`）。
+   *    この部品は判定（`isCurrentNavPath`）を適用するだけである。
+   * ⚠️ 未指定（`undefined`）は「追加の射程なし」である（`reach.href` だけで判定する）。
+   */
+  readonly sectionPaths?: readonly string[];
 };
 
 /**
@@ -375,6 +387,19 @@ export function isCurrentNavPath(currentPath: string, href: string): boolean {
   return currentPath === href || currentPath.startsWith(`${href}/`);
 }
 
+/**
+ * その項目が現在地か（**自分の遷移先 + 第 2 階層 / 索引の射程**）。
+ *
+ * 🔴 **判定は `isCurrentNavPath` の 1 実装を使う**（射程が増えても規則は同じ ——
+ *    `/engineers` が `/engineer-shares` を飲み込まない、ホームは完全一致）。
+ * 🔴 **射程を部品側で推測しない**（`SidebarItem.sectionPaths` の 🔴）。
+ */
+function isCurrentNavItem(currentPath: string, item: SidebarItem): boolean {
+  if (item.reach.kind !== 'LINK') return false;
+  if (isCurrentNavPath(currentPath, item.reach.href)) return true;
+  return (item.sectionPaths ?? []).some((candidate) => isCurrentNavPath(currentPath, candidate));
+}
+
 // ============================================================================
 // 描画
 // ============================================================================
@@ -472,7 +497,7 @@ function SidebarEntry({
       </li>
     );
   }
-  const current = variant === 'sidebar' && isCurrentNavPath(currentPath, item.reach.href);
+  const current = variant === 'sidebar' && isCurrentNavItem(currentPath, item);
   const Link = linkComponent;
   return (
     <li>

@@ -46,6 +46,7 @@ import type { ComponentType, ReactNode } from 'react';
 import { Icon, type IconName } from '../icons.js';
 import { cn } from '../lib/cn.js';
 import { FOCUS_RING_CLASSES, TRANSITION_CLASSES } from '../lib/state-classes.js';
+import { SectionNav, type SectionNavItem } from './nav-panel.js';
 import {
   Sidebar,
   SidebarNavList,
@@ -84,6 +85,19 @@ export type AppShellProps = {
   readonly navLabels: SidebarLabels;
   readonly tabs: readonly BottomTab[];
   readonly labels: AppShellLabels;
+  /**
+   * 🔴 **第 2 階層のタブ**（2026-10-03。サイドバーを 6 項目に畳んだぶんの到達手段。
+   *    `./nav-panel.tsx` の `SectionNav`）。**`null` / 未指定なら帯ごと描かない。**
+   *
+   * 🔴 **どのセクションに居るか / 項目が 1 つしか無いか の判断は呼び出し側**
+   *    （`apps/web/lib/shell/nav.ts` の `currentNavSection`）が持つ。この部品は
+   *    「渡されたら描く」だけである（上の 4。判断を 2 箇所に置かない）。
+   * 🔴 **サイドバーと同じ項目表から来る**（`lib/shell/nav.ts` の `buildNavSections`）—— 2 本持つと、
+   *    どちらかにだけ項目が増えた状態が必ず生まれる（`groups` と同じ理由）。
+   */
+  readonly sectionTabs?: readonly SectionNavItem[] | null;
+  /** 第 2 階層の `<nav aria-label>`（🔴 語は呼び出し側が `packages/i18n` から渡す）。 */
+  readonly sectionTabsLabel?: string;
   readonly linkComponent?: ComponentType<SidebarLinkProps>;
   readonly children: ReactNode;
 };
@@ -183,6 +197,8 @@ export function AppShell({
   navLabels,
   tabs,
   labels,
+  sectionTabs = null,
+  sectionTabsLabel,
   linkComponent = DefaultLink,
   children,
 }: AppShellProps) {
@@ -197,6 +213,17 @@ export function AppShell({
       />
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar {...header} linkComponent={linkComponent} />
+        {/* 🔴 第 2 階層のタブ（Top Header の直下 = ヘッダから続く 1 枚の面）。
+            🔴 **語が渡されていないときも描かない** —— `aria-label` の無いナビゲーションを
+               作らない（読み上げで「この帯が何か」が分からなくなる）。 */}
+        {sectionTabs === null || sectionTabs === undefined || sectionTabsLabel === undefined ? null : (
+          <SectionNav
+            items={sectionTabs}
+            currentPath={currentPath}
+            label={sectionTabsLabel}
+            linkComponent={linkComponent}
+          />
+        )}
         <div className={BODY_CLASSES}>
           {/* 🔴 パンくず / 画面タイトル / primary アクション（1 つ）が入る位置の印（§3.1 のレイアウト図）。
               帯の実体は `PageHeader` であり、**各画面が自分の本文の先頭で描く**（直下の `children` の

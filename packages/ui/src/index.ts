@@ -92,6 +92,16 @@ export type { AppShellLabels, AppShellProps, BottomTab } from './components/app-
 export { PageHeader } from './components/page-header.js';
 export type { PageHeaderAction, PageHeaderCrumb, PageHeaderProps } from './components/page-header.js';
 export { Sidebar, SidebarDefaultLink, SidebarNavList, isCurrentNavPath } from './components/sidebar.js';
+// 🔴 2026-10-03（人間の明示指示 + モックアップ）: サイドバーを 6 項目のフラットに畳んだぶんの
+//    **第 2 階層**（`components/nav-panel.tsx` の冒頭に「なぜ `Tabs` ではないのか」がある）。
+//    🔴 **いずれもサーバのまま描ける**（`'use client'` を宣言しない）。
+export { NavIndex, SectionNav } from './components/nav-panel.js';
+export type {
+  NavIndexItem,
+  NavIndexProps,
+  SectionNavItem,
+  SectionNavProps,
+} from './components/nav-panel.js';
 export type {
   SidebarBadge,
   SidebarGroup,

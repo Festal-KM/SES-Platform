@@ -255,6 +255,21 @@ export const ENGINEER_SHARE_TRAIL: readonly PageCrumb[] = [
 //    （押せる相手が変わっていないことは `page-trail.test.ts` ③ が固定する）。
 const ORG_SETTINGS_PATH = '/settings/organization';
 
+/**
+ * ✅ 2026-10-03 `設定` の索引（`/settings`）。
+ *
+ * 🔴 **祖先はホームだけである** —— この画面自身が `設定` の入口なので、`設定` の項目を
+ *    自分の祖先に置くと自己参照になる。
+ * ⚠️ 既存 5 画面の `設定` のパンくず（`href: null` または `/settings/organization`）は
+ *    **変えていない** —— あの判定は「押せる相手が変わらないこと」を `page-trail.test.ts` ③ が
+ *    固定しており、`/settings` へ向け直すのは**到達条件の変更**（全ロールが押せるようになる）に
+ *    当たるため、別タスクで `docs/04` と併せて行う（完了報告で申し送る）。
+ */
+export const SETTINGS_INDEX_TRAIL: readonly PageCrumb[] = [
+  { labelKey: 'settings.index.breadcrumb.home', href: '/' },
+  { labelKey: 'settings.index.title', href: null },
+];
+
 /** `S-035` 組織設定とメンバー管理。 */
 export const ORG_SETTINGS_TRAIL: readonly PageCrumb[] = [
   { labelKey: 'orgSettings.breadcrumb.home', href: '/' },
@@ -337,6 +352,7 @@ export const ALL_PAGE_TRAILS: readonly (readonly PageCrumb[])[] = [
   PROPOSAL_REQUEST_LIST_TRAIL,
   PROPOSAL_REQUEST_RESPOND_TRAIL,
   ENGINEER_SHARE_TRAIL,
+  SETTINGS_INDEX_TRAIL,
   ORG_SETTINGS_TRAIL,
   PARTNER_COMPANIES_TRAIL,
   SENDING_DOMAIN_TRAIL,

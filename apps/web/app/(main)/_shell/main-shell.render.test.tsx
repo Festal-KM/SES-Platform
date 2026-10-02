@@ -24,9 +24,16 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { t } from '@ses/i18n';
-import { buildBottomTabs, buildMainNav, navItems } from '../../../lib/shell/nav';
+import {
+  buildBottomTabs,
+  buildMainNav,
+  buildNavSections,
+  buildSettingsIndex,
+  currentNavSection,
+  navItems,
+} from '../../../lib/shell/nav';
 import type { ShellUsageIndicator } from '../../../lib/shell/usage-indicator';
-import { MainShell, type MainShellProps } from './main-shell';
+import { findOrganizationSettings, MainShell, type MainShellProps } from './main-shell';
 
 const HOST_ORG = 'テスト商事株式会社';
 const PARTNER_COMPANY = 'テストパートナー株式会社';
@@ -41,6 +48,9 @@ function render(overrides: Partial<MainShellProps> = {}): string {
     usage: { kind: 'NONE' },
     usageHref: '/settings/usage',
     nav: buildMainNav({ audience: 'HOST', role: 'SALES' }),
+    // 🔴 既定は「第 2 階層の帯を描かない」状態である（ホストの `人材管理` はタブが 1 つなので
+    //    `currentNavSection` が `null` を返す ＝ `/engineers` を開いても帯は出ない）。
+    settingsIndex: buildSettingsIndex({ audience: 'HOST', role: 'SALES' }),
     tabs: buildBottomTabs(),
     currentPath: '/engineers',
     children: createElement('main', { 'data-testid': 'shell-probe' }),
@@ -56,8 +66,30 @@ function partnerMarkup(overrides: Partial<MainShellProps> = {}): string {
     // 🔴 取引先所属では `S-038` への導線を持たない（docs/04 §S-038 / F-027 AC-1）。
     usageHref: null,
     nav: buildMainNav({ audience: 'PARTNER', role: 'PARTNER_SALES' }),
+    settingsIndex: buildSettingsIndex({ audience: 'PARTNER', role: 'PARTNER_SALES' }),
     ...overrides,
   });
+}
+
+/**
+ * ✅ 2026-10-03: **第 2 階層の帯が出ている状態**（`currentPath` のセクションのタブを渡す）。
+ * 🔴 **どのセクションかの判定は `lib/shell/nav.ts` の `currentNavSection`** であり、
+ *    ここで項目を書き写さない（書き写すと、実装と期待値が同時にずれたときに気づけない）。
+ */
+function sectionMarkup(
+  audience: 'HOST' | 'PARTNER',
+  role: 'SALES' | 'PARTNER_SALES',
+  currentPath: string,
+): string {
+  const context = { audience, role } as const;
+  const section = currentNavSection(buildNavSections(context), currentPath);
+  const overrides: Partial<MainShellProps> = {
+    nav: buildMainNav(context),
+    settingsIndex: buildSettingsIndex(context),
+    sectionTabs: section === null ? null : section.items,
+    currentPath,
+  };
+  return audience === 'HOST' ? render(overrides) : partnerMarkup(overrides);
 }
 
 /** `data-testid="x"` の付いた開始タグを 1 つ取り出す（属性の並び順に依存しない照合のため）。 */
@@ -164,10 +196,42 @@ describe('ヘッダ（docs/04 §3.1 の 5 要素）', () => {
   });
 
   it('🔴 `組織設定` の項目はナビの到達性から決まる（2 つのロール表を作らない）', () => {
-    // ホストの `SALES`（既定の合成）はナビに `settings-organization` を持たないので、
+    // ホストの `SALES`（既定の合成）は `設定` の索引に `settings-organization` を持たないので、
     // メニューの項目も出ない。🔴 **ここでロールを見ていない**ことがこの検査の主旨である。
     const html = render();
     expect(html).not.toContain('href="/settings/organization"');
+
+    // ✅ 2026-10-03: 探す先がサイドバーの `設定` 群から `/settings` の索引（`settingsIndex`）へ
+    //    移った。🔴 **出る側も固定する** —— 出ない側だけを見ていると、索引を渡し忘れた状態
+    //    （= `OWNER` でもメニューから `組織設定` が消えた状態）でも緑になる。
+    // ⚠️ `DropdownMenu`（Radix）の中身は**開くまで DOM に出ない**ため、描画結果では表明できない。
+    //    判定の関数（`findOrganizationSettings`）を直接見る。
+    for (const role of ['OWNER', 'ADMIN'] as const) {
+      const found = findOrganizationSettings(
+        buildMainNav({ audience: 'HOST', role }),
+        buildSettingsIndex({ audience: 'HOST', role }),
+      );
+      expect(found?.reach, role).toEqual({ kind: 'LINK', href: '/settings/organization' });
+      expect(found?.labelKey, role).toBe('orgSettings.title');
+    }
+    for (const role of ['SALES', 'VIEWER'] as const) {
+      expect(
+        findOrganizationSettings(
+          buildMainNav({ audience: 'HOST', role }),
+          buildSettingsIndex({ audience: 'HOST', role }),
+        ),
+        role,
+      ).toBeUndefined();
+    }
+    for (const role of ['PARTNER_ADMIN', 'PARTNER_SALES'] as const) {
+      expect(
+        findOrganizationSettings(
+          buildMainNav({ audience: 'PARTNER', role }),
+          buildSettingsIndex({ audience: 'PARTNER', role }),
+        ),
+        role,
+      ).toBeUndefined();
+    }
   });
 });
 
@@ -214,22 +278,67 @@ describe('🔴 上限インジケータ（F-027 AC-6 / BR-24）', () => {
   });
 });
 
-describe('🔴 サイドバー（docs/04 §3.1 の項目表 / §7.5 ③ アイコンの許可）', () => {
-  it('🔴 ① 群名が 4 つ出る（`営業` / `連絡` / `分析` / `設定`。🔴 `分析` を `実績` にしない）', () => {
+describe('🔴 サイドバー（モックアップの 6 項目 / §7.5 ③ アイコンの許可）', () => {
+  /** サイドバーの `<nav>` だけを取り出す（ヘッダ・本文・「その他」と混ぜない）。 */
+  function sidebarOf(html: string): string {
+    return /data-testid="app-sidebar"[\s\S]*?<\/nav>/.exec(html)?.[0] ?? '';
+  }
+
+  it('🔴 ① 6 項目がフラットに並ぶ（群の見出しが 1 つも無い。2026-10-03 のモックアップ）', () => {
     const html = render();
+    const sidebar = sidebarOf(html);
+    expect(sidebar.length).toBeGreaterThan(0);
+    // 画像の 6 項目（`ホーム` / `チャット` / `人材管理` / `案件管理` / `レポート` / `設定`）。
+    for (const id of ['home', 'chat', 'engineers', 'projects', 'reports', 'settings']) {
+      expect(sidebar, id).toContain(`data-testid="app-nav-${id}"`);
+    }
     for (const key of [
-      'shell.nav.group.sales',
-      'shell.nav.group.comms',
-      'shell.nav.group.analytics',
+      'shell.nav.home',
+      'shell.nav.chat',
+      'shell.nav.host.engineers',
+      'shell.nav.host.projects',
+      'shell.nav.host.reports',
       'shell.nav.host.settings',
     ] as const) {
-      expect(html, key).toContain(t(key));
+      expect(sidebar, key).toContain(t(key));
     }
-    // 群名の要素は 4 つ（最上段のホームは群名を持たない）。
-    for (const id of ['sales', 'comms', 'analytics', 'settings']) {
-      expect(html, id).toContain(`data-testid="app-nav-${id}"`);
+    // 🔴 群の要素が 1 つも無い（`primary` も含めて群名を描かない）。
+    for (const id of ['primary', 'sales', 'comms', 'analytics']) {
+      expect(sidebar, id).not.toContain(`data-testid="app-nav-${id}"`);
     }
-    expect(html).not.toContain('data-testid="app-nav-primary"');
+    // 🔴 旧 4 群の語がサイドバーに出ない（`営業` はヘッダのロール名に在るので射程を柱に限る）。
+    for (const key of ['shell.nav.group.sales', 'shell.nav.group.comms', 'shell.nav.group.analytics'] as const) {
+      expect(sidebar, key).not.toContain(t(key));
+    }
+    // 🔴 畳んだ項目の語がサイドバーに残っていない（二重の入口を作らない）。
+    for (const key of [
+      'shell.nav.tasks',
+      'shell.nav.host.candidates',
+      'shell.nav.interviews',
+      'shell.nav.host.contracts',
+      'shell.nav.host.assignments',
+      'orgSettings.title',
+      'auditLogs.title',
+      'skillDictionary.title',
+    ] as const) {
+      expect(sidebar, key).not.toContain(t(key));
+    }
+  });
+
+  it('🔴 ① `設定` は索引（`/settings`）を指し、7 項目を柱に並べない', () => {
+    const sidebar = sidebarOf(render({ nav: buildMainNav({ audience: 'HOST', role: 'OWNER' }) }));
+    expect(sidebar).toMatch(/<a[^>]*data-testid="app-nav-settings"[^>]*href="\/settings"/);
+    for (const testId of [
+      'app-nav-settings-organization',
+      'app-nav-settings-partner-companies',
+      'app-nav-settings-sending-domains',
+      'app-nav-settings-usage',
+      'app-nav-settings-retention',
+      'app-nav-settings-audit-logs',
+      'app-nav-settings-skills',
+    ]) {
+      expect(sidebar, testId).not.toContain(`data-testid="${testId}"`);
+    }
   });
 
   it('🔴 ① 全項目にアイコンが 1 つずつ付く（§7.5 ③ = 改訂 16 で禁止を解除。走査性のため）', () => {
@@ -243,37 +352,26 @@ describe('🔴 サイドバー（docs/04 §3.1 の項目表 / §7.5 ③ アイ�
     expect(sidebar).not.toContain('<img');
   });
 
-  it('🔴 ② ホストと取引先で項目集合が違う（取引先にだけ「共有の設定」がある）', () => {
+  it('🔴 ② ホストと取引先で語が違う（母集団が違うことを語で示す = 第二境界の常時表現）', () => {
     const host = render();
     const partner = partnerMarkup();
     expect(host).toContain(t('shell.nav.host.engineers'));
     expect(host).not.toContain(t('shell.nav.partner.engineers'));
     expect(partner).toContain(t('shell.nav.partner.engineers'));
-    expect(partner).toContain(t('shell.nav.partner.shares'));
-    expect(host).not.toContain(t('shell.nav.partner.shares'));
+    expect(partner).toContain(t('shell.nav.partner.reports'));
+    expect(host).not.toContain(t('shell.nav.partner.reports'));
     // 🔴 見えてはいけない導線は**DOM から取り除かれている**（CSS で隠れているだけにしない）。
-    expect(host).not.toContain('data-testid="app-nav-engineer-shares"');
+    //    🔴 `共有の設定`（経路 4）は第 2 階層へ移ったので、**ホストの外枠には帯ごと出ない**
+    //       （下の「第 2 階層の帯」の検査が、取引先にだけ出ることを固定する）。
+    expect(host).not.toContain(t('shell.nav.partner.shares'));
     expect(host).not.toContain('href="/engineer-shares"');
-    // 🔴 取引先には組織設定・送信ドメイン・監査ログ・利用量の項目が存在しない。
-    for (const testId of [
-      'app-nav-settings-organization',
-      'app-nav-settings-sending-domains',
-      'app-nav-settings-audit-logs',
-      'app-nav-settings-usage',
-    ]) {
-      expect(partner, testId).not.toContain(`data-testid="${testId}"`);
-    }
-  });
-
-  it('🔴 取引先にも ⑤ ⑥ が出る（Issue #8 = 越境経路 5）', () => {
-    const partner = partnerMarkup();
-    expect(partner).toContain(t('shell.nav.partner.contracts'));
-    expect(partner).toContain(t('shell.nav.partner.assignments'));
+    expect(partnerMarkup()).not.toContain('href="/engineer-shares"');
   });
 
   it('🔴 ③ 未実装の項目は `<span>` で描かれ `href` を持たない（404 を作らない）', () => {
     const html = render();
-    for (const id of ['contracts', 'assignments', 'chat', 'tasks', 'reports']) {
+    // 🔴 畳んだ後に未実装なのは `チャット`（Phase 2）と `レポート`（Phase 3）の 2 つだけである。
+    for (const id of ['chat', 'reports']) {
       expect(html, id).toMatch(new RegExp(`<span[^>]*aria-disabled="true"[^>]*data-testid="app-nav-${id}"`));
       expect(html, id).not.toMatch(new RegExp(`<a[^>]*data-testid="app-nav-${id}"`));
       // 🔴 印は無彩色の `Phase N` Badge（注記テキストを置き換えたもの）。
@@ -281,23 +379,29 @@ describe('🔴 サイドバー（docs/04 §3.1 の項目表 / §7.5 ③ アイ�
     }
     expect(html).toContain(t('shell.nav.note.phase3'));
     expect(html).toContain(t('shell.nav.note.phase2'));
-    // ② 候補・④ 面談は「実在するが単独の URL を持たない」ので `Phase N` ではなく注記になる。
-    expect(html).toContain(t('shell.nav.note.fromProject'));
-    expect(html).toContain(t('shell.nav.note.fromProposal'));
-    for (const id of ['candidates', 'interviews']) {
-      expect(html, id).not.toContain(`data-testid="app-nav-phase-${id}"`);
-    }
+    // 🔴 サイドバーに注記（`案件から開きます` / `提案から開きます`）を持つ項目は無い ——
+    //    `候補` / `面談・結果` は畳み込みで項目ごと無くなり、案件詳細 / 提案詳細から開く。
+    const sidebar = sidebarOf(html);
+    expect(sidebar).not.toContain(t('shell.nav.note.fromProject'));
+    expect(sidebar).not.toContain(t('shell.nav.note.fromProposal'));
   });
 
-  it('実在する画面はリンクになる（人材・案件・提案・提案依頼・設定の子項目）', () => {
+  it('🔴 ③ チャットに件数バッジを出さない（未読の実体が Phase 2 で存在しない）', () => {
+    const sidebar = sidebarOf(render());
+    // モックアップは `3` を出しているが、架空の数は「見たのに消えない」を作る。
+    const chat = /<span[^>]*data-testid="app-nav-chat"[\s\S]*?<\/span>\s*<\/li>/.exec(sidebar)?.[0] ?? '';
+    expect(chat.length).toBeGreaterThan(0);
+    expect(chat).not.toMatch(/>\s*\d+\s*</);
+    expect(chat).toContain(t('shell.nav.note.phase2'));
+  });
+
+  it('実在する画面はリンクになる（人材管理 / 案件管理 / 設定）', () => {
     const html = render({ nav: buildMainNav({ audience: 'HOST', role: 'OWNER' }) });
     for (const [testId, href] of [
+      ['app-nav-home', '/'],
       ['app-nav-engineers', '/engineers'],
       ['app-nav-projects', '/projects'],
-      ['app-nav-proposals', '/proposals'],
-      ['app-nav-proposal-requests', '/proposal-requests'],
-      ['app-nav-settings-audit-logs', '/audit-logs'],
-      ['app-nav-settings-skills', '/skills'],
+      ['app-nav-settings', '/settings'],
     ] as const) {
       expect(html, testId).toMatch(new RegExp(`<a[^>]*data-testid="${testId}"[^>]*href="${href}"`));
     }
@@ -323,9 +427,36 @@ describe('🔴 サイドバー（docs/04 §3.1 の項目表 / §7.5 ③ アイ�
     expect(current).not.toContain('font-semibold');
     // 現在地は 1 項目だけ（前方一致が別の項目を飲み込まない）。
     expect((html.match(/aria-current="page"/g) ?? []).length).toBe(1);
-    expect(tagOf(html, 'app-nav-engineer-shares')).not.toContain('aria-current');
     // ホームは完全一致のときだけ光る。
     expect(tagOf(html, 'app-nav-home')).not.toContain('aria-current');
+  });
+
+  it('🔴 ④ 第 2 階層の画面でも親の項目が光る（畳み込みで「どこに居るか」が消えない）', () => {
+    // 🔴 `提案` / `提案依頼` / `共有の設定` / `監査ログ` / `スキル辞書` は**親と別のパス**である。
+    //    `NavItem.sectionPaths` が無いと、これらの画面で 6 項目が 1 つも光らない。
+    for (const [currentPath, testId] of [
+      ['/proposals', 'app-nav-projects'],
+      ['/proposals/abc/approve', 'app-nav-projects'],
+      ['/proposal-requests', 'app-nav-projects'],
+      ['/skills', 'app-nav-settings'],
+      ['/audit-logs', 'app-nav-settings'],
+      ['/settings/organization', 'app-nav-settings'],
+    ] as const) {
+      const html = render({ nav: buildMainNav({ audience: 'HOST', role: 'OWNER' }), currentPath });
+      expect(tagOf(html, testId), currentPath).toContain('aria-current="page"');
+      // 🔴 光るのは 1 項目だけ（射程が重なっていない）。
+      const sidebar = sidebarOf(html);
+      expect((sidebar.match(/aria-current="page"/g) ?? []).length, currentPath).toBe(1);
+    }
+    // 取引先の `共有の設定` でも `人材管理` が光る（射程は所属で変わる）。
+    const partner = partnerMarkup({
+      nav: buildMainNav({ audience: 'PARTNER', role: 'PARTNER_SALES' }),
+      currentPath: '/engineer-shares',
+    });
+    expect(tagOf(partner, 'app-nav-engineers')).toContain('aria-current="page"');
+    // 🔴 ホスト側では `/engineer-shares` が射程に入らない（第二境界）。
+    const host = render({ currentPath: '/engineer-shares' });
+    expect(sidebarOf(host)).not.toContain('aria-current="page"');
   });
 
   it('🔴 ④ ホームは完全一致のときだけ現在地になる', () => {
@@ -375,12 +506,16 @@ describe('🔴 サイドバー（docs/04 §3.1 の項目表 / §7.5 ③ アイ�
 });
 
 describe('🔴 モバイル（docs/04 §3.4）', () => {
-  it('ボトムタブは 5 つ（ホーム / 提案 / 候補 / チャット / その他）', () => {
+  it('ボトムタブは 5 つ（ホーム / 人材 / 案件 / チャット / その他。2026-10-03 に 6 項目へ合わせた）', () => {
     const html = render();
-    for (const id of ['home', 'proposals', 'candidates', 'chat', 'more']) {
+    for (const id of ['home', 'engineers', 'projects', 'chat', 'more']) {
       expect(html, id).toContain(`data-testid="app-tab-${id}"`);
     }
     expect(html).toContain(t('shell.tab.more'));
+    // 🔴 旧タブ（`提案` / `候補`）は手前の 4 つから外れた（`提案` は第 2 階層、`候補` は案件詳細）。
+    const tabs = /data-testid="app-bottom-tabs"[\s\S]*?data-testid="app-tab-more"/.exec(html)?.[0] ?? '';
+    expect(tabs).not.toContain('data-testid="app-tab-proposals"');
+    expect(tabs).not.toContain('data-testid="app-tab-candidates"');
   });
 
   it('🔴 ボトムタブの 5 つにアイコンが付く（ラベルが 2〜3 文字に切り詰まっているため）', () => {
@@ -391,26 +526,22 @@ describe('🔴 モバイル（docs/04 §3.4）', () => {
     expect(/data-testid="app-tab-more-summary"[\s\S]*?<svg/.test(html)).toBe(true);
   });
 
-  it('🔴 「その他」からサイドバーと同じ項目に到達でき、業務ループの順序を保つ', () => {
+  it('🔴 「その他」からサイドバーと同じ 6 項目に到達でき、並びを保つ', () => {
     const html = render();
     // 同じ項目表から描くので、サイドバーの項目はすべて「その他」にも在る（接頭辞だけが違う）。
-    for (const id of ['home', 'engineers', 'projects', 'proposals', 'settings']) {
+    const ids = ['home', 'chat', 'engineers', 'projects', 'reports', 'settings'];
+    for (const id of ids) {
       expect(html, id).toContain(`data-testid="app-more-nav-${id}"`);
     }
-    const order = ['home', 'engineers', 'projects', 'candidates', 'proposals'].map((id) =>
-      html.indexOf(`data-testid="app-more-nav-${id}"`),
-    );
+    const order = ids.map((id) => html.indexOf(`data-testid="app-more-nav-${id}"`));
     expect(order).toEqual([...order].sort((a, b) => a - b));
   });
 
-  it('🔴 「その他」でも群の区切り・アイコン・`Phase N` Badge をデスクトップと同じにする（隠さない）', () => {
+  it('🔴 「その他」でもアイコン・`Phase N` Badge をデスクトップと同じにする（隠さない）', () => {
     const html = render();
     const more = /data-testid="app-tab-more"[\s\S]*?<\/details>/.exec(html)?.[0] ?? '';
     expect(more.length).toBeGreaterThan(0);
-    for (const id of ['sales', 'comms', 'analytics', 'settings']) {
-      expect(more, id).toContain(`data-testid="app-more-nav-${id}"`);
-    }
-    for (const id of ['contracts', 'assignments', 'chat', 'tasks', 'reports']) {
+    for (const id of ['chat', 'reports']) {
       expect(more, id).toContain(`data-testid="app-more-nav-phase-${id}"`);
     }
     const items = navItems(buildMainNav({ audience: 'HOST', role: 'SALES' }));
@@ -420,6 +551,89 @@ describe('🔴 モバイル（docs/04 §3.4）', () => {
 
   it('開閉は `<details>` で行う（クライアントコンポーネントを増やさない）', () => {
     expect(render()).toMatch(/<details[^>]*data-testid="app-tab-more"/);
+  });
+});
+
+// ============================================================================
+// 🔴 第 2 階層の帯（2026-10-03。サイドバーを 6 項目に畳んだぶんの到達手段）
+// ============================================================================
+// 🔴 **ここが「機能が消えていない」ことの描画側の表明である。** 畳んだだけでは
+//    `S-019` 提案 / `S-017` 提案依頼 / `S-015` 共有の設定 に到達できない
+//    （ロール別の到達集合の一致は `tests/static/nav-reach.test.ts` が別に証明する）。
+describe('🔴 第 2 階層の帯（`SectionNav`）', () => {
+  it('🔴 `案件管理` の配下では 案件一覧 / 提案 / 提案依頼 のタブが出る（業務ループの順）', () => {
+    const html = sectionMarkup('HOST', 'SALES', '/proposals');
+    expect(html).toContain('data-testid="app-section-nav"');
+    for (const [id, href] of [
+      ['projects', '/projects'],
+      ['proposals', '/proposals'],
+      ['proposal-requests', '/proposal-requests'],
+    ] as const) {
+      expect(html, id).toMatch(
+        new RegExp(`<a[^>]*data-testid="app-section-tab-${id}"[^>]*href="${href}"`),
+      );
+    }
+    const order = ['projects', 'proposals', 'proposal-requests'].map((id) =>
+      html.indexOf(`data-testid="app-section-tab-${id}"`),
+    );
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    // 🔴 いま開いているタブが現在地として示される（§7.10 の selected = 下端 2px + ブランド色）。
+    const current = tagOf(html, 'app-section-tab-proposals');
+    expect(current).toContain('aria-current="page"');
+    expect(current).toContain('border-b-brand');
+    expect(current).toContain('text-brand');
+    // 🔴 hover で現在地の色が置き換わらない（§7.10 の `selected > hover`）。`cn()` が
+    //    `hover:text-fg` を落としているので、生成 CSS の順序に依存しない。
+    expect(current).toContain('hover:text-brand');
+    expect(current).not.toContain('hover:text-fg"');
+    expect(current).not.toMatch(/hover:text-fg\s/);
+    // 🔴 太字だけで示していない（weight を現在地の手がかりにしない）。
+    expect(current).not.toContain('font-bold');
+    expect(tagOf(html, 'app-section-tab-projects')).not.toContain('aria-current');
+    expect(tagOf(html, 'app-section-tab-projects')).toContain('border-b-transparent');
+  });
+
+  it('🔴 取引先の `人材管理` の配下にだけ `共有の設定` のタブが出る（経路 4 / 第二境界）', () => {
+    const partner = sectionMarkup('PARTNER', 'PARTNER_SALES', '/engineer-shares');
+    expect(partner).toMatch(
+      /<a[^>]*data-testid="app-section-tab-engineer-shares"[^>]*href="\/engineer-shares"/,
+    );
+    expect(partner).toContain(t('shell.nav.partner.shares'));
+    expect(tagOf(partner, 'app-section-tab-engineer-shares')).toContain('aria-current="page"');
+    // 🔴 ホストの `人材管理` はタブが 1 つなので帯ごと出ない（`共有の設定` は DOM に無い）。
+    const host = sectionMarkup('HOST', 'SALES', '/engineers');
+    expect(host).not.toContain('data-testid="app-section-nav"');
+    expect(host).not.toContain('data-testid="app-section-tab-engineer-shares"');
+  });
+
+  it('🔴 どのセクションにも属さない画面では帯ごと描かない（空の帯を置かない）', () => {
+    for (const currentPath of ['/', '/settings', '/skills']) {
+      expect(sectionMarkup('HOST', 'SALES', currentPath), currentPath).not.toContain(
+        'data-testid="app-section-nav"',
+      );
+    }
+  });
+
+  it('🔴 帯は Top Header の直下・本文の手前に在る（ヘッダから続く 1 枚の面）', () => {
+    const html = sectionMarkup('HOST', 'SALES', '/proposals');
+    const header = html.indexOf('data-testid="app-header"');
+    const section = html.indexOf('data-testid="app-section-nav"');
+    const slot = html.indexOf('data-testid="app-page-heading-slot"');
+    expect(header).toBeGreaterThanOrEqual(0);
+    expect(section).toBeGreaterThan(header);
+    expect(slot).toBeGreaterThan(section);
+  });
+
+  it('🔴 帯はアイコンを持たず（§7.5 の装飾の禁止）、タブは折り返さない語で出る', () => {
+    const html = sectionMarkup('HOST', 'SALES', '/proposals');
+    const nav = /data-testid="app-section-nav"[\s\S]*?<\/nav>/.exec(html)?.[0] ?? '';
+    expect(nav.length).toBeGreaterThan(0);
+    expect(nav).not.toContain('<svg');
+    // 🔴 和文は文字単位で折り返せるため、`whitespace-nowrap` が無いと 1 文字ずつ割れる。
+    expect(tagOf(html, 'app-section-tab-proposal-requests')).toContain('whitespace-nowrap');
+    // 🔴 影を足さない / 独自ブレークポイントを使わない。
+    expect(nav).not.toMatch(/\bshadow-/);
+    expect(nav).not.toMatch(/(?:min|max)-\[/);
   });
 });
 
@@ -452,6 +666,14 @@ describe('レイアウト（docs/04 §3.1 のレイアウト図。改訂 16）',
   });
 });
 
+// ============================================================================
+// 🔴 提案依頼の期限バッジ（docs/04 §3.1 取引先列。T-12-21）
+// ============================================================================
+// ✅ 2026-10-03: 畳み込みで `提案依頼` は第 2 階層へ移ったので、**期限は親の `案件管理` の行が
+//    預かる**（`lib/shell/nav.ts` の `NavContext` の 🔴）。サイドバーはどの画面でも見えている
+//    唯一の面であり、ここから期限が消えると取引先（1 日 4〜5 時間の主利用者）が気づけない。
+// 🔴 **`data-testid` は `app-nav-proposal-requests-due` のまま**（凍結。`docs/04` `U-22`）——
+//    値の意味（最も近い返答期限）も変えていない。変えたのは**どの行に付くか**だけである。
 describe('🔴 提案依頼の期限バッジ（docs/04 §3.1 取引先列。T-12-21）', () => {
   const DUE = '残り 2 日';
 
@@ -556,9 +778,9 @@ describe('🔴 アイコンのみの形態の点（期限バッジの代替。T-
 
   it('🔴 `Phase N` の項目には点が出ない（「まだ無い」は「対応が要る」ではない）', () => {
     const html = dueMarkup();
-    // 点は 1 つだけで、それは期限バッジを持つ `proposal-requests` の行に在る。
+    // 点は 1 つだけで、それは期限バッジを持つ `案件管理` の行に在る。
     expect((html.match(/app-nav-proposal-requests-due-dot/g) ?? []).length).toBe(1);
-    const phaseItem = tagOf(html, 'app-nav-assignments');
+    const phaseItem = tagOf(html, 'app-nav-chat');
     expect(phaseItem).not.toContain('bg-warning');
     // 「その他」（常に語が見える一覧）にも点は出さない。
     expect(html).not.toContain('app-more-nav-proposal-requests-due-dot');

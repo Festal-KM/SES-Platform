@@ -58,22 +58,31 @@ const ja = {
   // 🔴 ホストと取引先で語が違う項目は別キーにする（同じ画面でも母集団が違う。docs/04 §3.2）。
   //    語が同じもの（提案 / 提案依頼 / 面談・結果 / チャット / タスク）は 1 キーを共有する。
   'shell.nav.label': 'グローバルナビ',
-  // 🔴 群名（docs/04 §3.1 の 4 群。`U-20` / `Q-04-1` 既定 ①）。🔴 **`分析` を `実績` にしない**
-  //    （群名と項目名は別物であり、`分析` の中の項目が `実績` である）。
-  //    `設定` 群の名前は `shell.nav.{host,partner}.settings` が持つ（所属で語を変えられる形を残す）。
+  // ==========================================================================
+  // ✅ 2026-10-03（人間の明示指示 + モックアップ 5 枚）: サイドバーを **6 項目のフラット**に畳んだ
+  // ==========================================================================
+  // 🔴 **群の見出し（`営業` / `連絡` / `分析` / `設定`）はサイドバーに描かれなくなった。**
+  //    🔴 **キーは消さない**（`docs/04` `U-22` の凍結。`tests/static/i18n-key-freeze.test.ts`）——
+  //    値も語として正しいままであり、群で構造化する形に戻す判断（人間の判断事項）の余地を残す。
+  // 🔴 **畳み込みで変えたのは値だけ**（キーは 1 つも動かしていない）:
+  //      `shell.nav.host.engineers` 人材 → **人材管理** / `shell.nav.host.projects` 案件 → **案件管理** /
+  //      `shell.nav.host.reports` 実績 → **レポート** / `shell.nav.partner.reports` → **レポート（自社分）**
+  //    モックアップのラベルがこの 4 語であり、`docs/04` §3.1 の表の語より人間の画像が優先する。
+  // 🔴 **取引先の語（`自社の人材` / `公開された案件`）は変えない** —— 母集団が違うことを語で示すのは
+  //    第二境界の常時表現（`CLAUDE.md` §3.1 / docs/04 §3.2）であり、モックアップはホスト側の画面である。
   'shell.nav.group.sales': '営業',
   'shell.nav.group.comms': '連絡',
   'shell.nav.group.analytics': '分析',
   'shell.nav.home': 'ホーム',
-  'shell.nav.host.engineers': '人材',
-  'shell.nav.host.projects': '案件',
+  'shell.nav.host.engineers': '人材管理',
+  'shell.nav.host.projects': '案件管理',
   'shell.nav.host.candidates': '候補を探す',
   'shell.nav.proposals': '提案',
   'shell.nav.proposalRequests': '提案依頼',
   'shell.nav.interviews': '面談・結果',
   'shell.nav.host.contracts': '契約',
   'shell.nav.host.assignments': '稼働',
-  'shell.nav.host.reports': '実績',
+  'shell.nav.host.reports': 'レポート',
   'shell.nav.host.settings': '設定',
   'shell.nav.partner.engineers': '自社の人材',
   'shell.nav.partner.projects': '公開された案件',
@@ -84,7 +93,7 @@ const ja = {
   'shell.nav.partner.contracts': '自社が当事者の契約',
   'shell.nav.partner.assignments': '自社エンジニアの稼働',
   'shell.nav.partner.shares': '共有の設定',
-  'shell.nav.partner.reports': '実績（自社分）',
+  'shell.nav.partner.reports': 'レポート（自社分）',
   // 🔴 群名は `設定` に揃える（docs/04 §3.1 の 4 群）。**中身が自社分だけであることは項目が示す**
   //    （群名に括弧書きを持たせると、アイコンのみの形態で語が消えたときに情報が失われる）。
   'shell.nav.partner.settings': '設定',
@@ -99,6 +108,14 @@ const ja = {
   'shell.nav.note.phase3': 'Phase 3',
   'shell.nav.note.fromProject': '案件から開きます',
   'shell.nav.note.fromProposal': '提案から開きます',
+  // --- ✅ 2026-10-03: 第 2 階層（セクション内のタブ）---
+  // 🔴 サイドバーを 6 項目に畳んだぶんの**到達手段**である（`lib/shell/nav.ts` の
+  //    `buildNavSections`）。語は**セクションの中で何の一覧か**を答えるものにする
+  //    （`人材管理` の中に `人材` があっても何も伝わらない）。
+  // 🔴 `共有の設定` / `提案` / `提案依頼` は**既存のキーを共有する**（同じ画面に 2 つの語を作らない）。
+  'shell.section.label': 'セクション内の切替',
+  'shell.section.engineers.list': '候補者一覧',
+  'shell.section.projects.list': '案件一覧',
   // --- ヘッダ（docs/04 §3.1 の 5 要素）---
   // 🔴 スコープ表示はパートナー所属で「組織名 ＞ 自社名」の 2 段（第二境界の常時表現。§3.2）。
   'shell.header.scope.organizationLabel': '所属組織',
@@ -135,6 +152,13 @@ const ja = {
   // --- モバイルのボトムタブ（docs/04 §3.4）---
   'shell.tab.label': 'メニュー',
   'shell.tab.home': 'ホーム',
+  // 🔴 ✅ 2026-10-03: 手前の 4 つは `ホーム` / `人材` / `案件` / `チャット` になった
+  //    （サイドバーの 6 項目に揃える。`lib/shell/nav.ts` の `buildBottomTabs`）。
+  //    🔴 **タブの語は 2〜3 文字で置く** —— `人材管理` は幅 1/5 の枠で折り返す（§3.4）。
+  //    🔴 `shell.tab.proposals` / `shell.tab.candidates` の**キーは消さない**（`U-22` の凍結）。
+  //    `提案` は第 2 階層（`案件管理` のタブ）から、`候補` は案件詳細から到達する。
+  'shell.tab.engineers': '人材',
+  'shell.tab.projects': '案件',
   'shell.tab.proposals': '提案',
   'shell.tab.candidates': '候補',
   'shell.tab.chat': 'チャット',
@@ -1705,6 +1729,17 @@ const ja = {
   'home.onePoint.partner.1': '共有の設定は既定でオフです。共有した人材は、匿名のままホストの検索結果に出ます。',
   'home.onePoint.partner.2': '提案依頼は返答期限を過ぎると失効します。辞退の理由はホストに伝わりません。',
   'home.onePoint.partner.3': '実名とスキルシートは、提案を作成して初めてホストに開示されます。',
+
+  // --- ✅ 2026-10-03: `設定` の索引（`/settings`）---
+  // 🔴 サイドバーを 6 項目に畳んだとき、`設定` の 7 項目（`S-035` / `S-014` / `S-036` / `S-038` /
+  //    `S-042` / `S-041` / `S-009`）の**唯一の入口**がこの画面になった（`lib/shell/nav.ts` の
+  //    `buildSettingsIndex`）。🔴 **新しい機能ではなく、既存画面への到達手段である。**
+  // 🔴 説明文に「どれが誰に見えるか」を書かない —— 項目自体がロールで出し入れされるので、
+  //    書くと**到達できない画面の存在**を知らせることになる（`BR-44` と同じ構え）。
+  'settings.index.title': '設定',
+  'settings.index.breadcrumb.home': 'ホーム',
+  'settings.index.label': '設定の項目',
+  'settings.index.description': 'この組織で変更できる設定の一覧です。',
 
   // --- S-036 送信ドメインの設定と検証（docs/04 §S-036 / F-001 AC-4 / docs/03 §3.2.7。T-04-04）---
   // 🔴 **状態であってエラーではない**（docs/04 `program-design` 申し送り 8）。

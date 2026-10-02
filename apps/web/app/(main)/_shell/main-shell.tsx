@@ -45,7 +45,7 @@ import { t } from '@ses/i18n';
 import { AppShell, type AppShellLabels, type TopBarUsage } from '@ses/ui';
 import { ENGINEER_LIST_PATH } from '../../../lib/engineers/list-rows';
 import type { NavGroup, NavItem } from '../../../lib/shell/nav';
-import { resolveBottomTabs, resolveNavGroups } from '../../../lib/shell/nav-view';
+import { resolveBottomTabs, resolveNavGroups, resolveSectionTabs } from '../../../lib/shell/nav-view';
 import type { ShellUsageIndicator } from '../../../lib/shell/usage-indicator';
 import { AccountMenu } from './account-menu';
 import { GlobalSearch } from './global-search';
@@ -69,6 +69,17 @@ export type MainShellProps = {
   readonly usageHref: string | null;
   /** サイドバーと「その他」に出す群と項目（🔴 **同じ 1 本**）。 */
   readonly nav: readonly NavGroup[];
+  /**
+   * 🔴 **第 2 階層のタブ**（2026-10-03。サイドバーを 6 項目に畳んだぶんの到達手段）。
+   *    **いま開いている画面が属するセクションの項目**を渡す（`null` なら帯を描かない）。
+   *    どのセクションかの判定は `lib/shell/nav.ts` の `currentNavSection` が 1 箇所で行う。
+   */
+  readonly sectionTabs?: readonly NavItem[] | null;
+  /**
+   * 🔴 **`設定` の索引（`/settings`）の項目**。この外枠が描くのは索引そのものではなく、
+   *    「自分」メニューの `組織設定` の有無だけである（下の 🔴）。
+   */
+  readonly settingsIndex?: readonly NavItem[];
   /** モバイルのボトムタブの手前 4 つ（5 つ目は「その他」）。 */
   readonly tabs: readonly NavItem[];
   /**
@@ -136,6 +147,28 @@ export function accountInitials(userName: string): string {
   return [...trimmed][0] ?? '?';
 }
 
+/**
+ * 「自分」メニューに出す `組織設定`（`S-035`）の項目。**無ければ `undefined`。**
+ *
+ * 🔴 **到達できるかはナビの項目表が既に決めている**（ホスト所属の `OWNER` / `ADMIN` だけが
+ *    `settings-organization` を持つ）。ここでロールを見ると **2 つのロール表**ができる
+ *    （`capabilities.ts` と `page-trail.ts` が食い違った前例がある）。
+ * ✅ 2026-10-03: 畳み込みで `設定` の 7 項目がサイドバーから `/settings` の索引へ移ったので、
+ *    **探す先が `nav` だけでなく `settingsIndex` になった**（`buildSettingsIndex` の返り値）。
+ * ⚠️ **関数として切り出してある理由**: `DropdownMenu`（Radix）の中身は**開くまで DOM に出ない**
+ *    ため、`renderToStaticMarkup` では「出る」側を表明できない（出ない側しか見えない）。
+ *    ここを関数にしておくと `main-shell.render.test.tsx` が**両側**を固定できる
+ *    （`accountInitials` と同じ判断）。
+ */
+export function findOrganizationSettings(
+  nav: readonly NavGroup[],
+  settingsIndex: readonly NavItem[],
+): NavItem | undefined {
+  return [...nav.flatMap((group) => group.items), ...settingsIndex].find(
+    (item) => item.id === 'settings-organization',
+  );
+}
+
 /** ボトムタブと「その他」の語（`docs/04` §3.4）。 */
 function shellLabels(): AppShellLabels {
   return {
@@ -154,17 +187,15 @@ export function MainShell({
   usage,
   usageHref,
   nav,
+  sectionTabs = null,
+  settingsIndex = [],
   tabs,
   currentPath,
   children,
 }: MainShellProps) {
   const accountLabel = `${userName}（${roleLabel}）`;
-  // 🔴 `組織設定`（`S-035`）に到達できるかは **`lib/shell/nav.ts` が既に決めている**
-  //    （ホスト所属の `OWNER` / `ADMIN` だけが項目を持つ）。ここでロールを見ると
-  //    **2 つのロール表**ができる（`capabilities.ts` と `page-trail.ts` が食い違った前例がある）。
-  const organizationSettings = nav
-    .flatMap((group) => group.items)
-    .find((item) => item.id === 'settings-organization');
+  // 🔴 判定は `findOrganizationSettings` の 1 箇所（上の 🔴。ここでロールを見ない）。
+  const organizationSettings = findOrganizationSettings(nav, settingsIndex);
   const organizationSettingsLink =
     organizationSettings === undefined || organizationSettings.reach.kind !== 'LINK'
       ? null
@@ -212,6 +243,9 @@ export function MainShell({
       groups={resolveNavGroups(nav)}
       currentPath={currentPath}
       navLabels={{ nav: t('shell.nav.label'), toggle: t('shell.sidebar.toggle') }}
+      // 🔴 第 2 階層のタブ（`null` のときは帯ごと描かれない。`@ses/ui` の `AppShell` の 🔴）。
+      sectionTabs={sectionTabs === null ? null : resolveSectionTabs(sectionTabs)}
+      sectionTabsLabel={t('shell.section.label')}
       tabs={resolveBottomTabs(tabs)}
       labels={shellLabels()}
       // 🔴 `packages/ui` は `next/*` に依存しない（`docs/05` §2.3.1）。ここで渡す。
