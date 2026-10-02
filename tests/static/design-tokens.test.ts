@@ -34,6 +34,7 @@ import {
 import { contrastRatio, relativeLuminance } from './support/oklch.js';
 import {
   ALLOWED_RADIUS,
+  ALLOWED_SPACING,
   PERMANENT_SPACING_EXCEPTION,
   RADIUS_UTILITY,
   classTokensOf,
@@ -111,6 +112,69 @@ const SEMANTIC_COLORS: ReadonlyArray<readonly [token: string, primitive: string]
   ['--color-info-border', 'sky-300'],
   ['--color-neutral-bg', 'slate-100'],
   ['--color-neutral-border', 'slate-300'],
+  // ✅ 2026-10-02（人間のブリーフ）: カード・パネル・overlay の地。
+  //    🔴 `--color-bg`（ページの地）と**値は同じで役割が違う**（`tailwind.css` の 🔴）。
+  ['--color-surface', 'white'],
+];
+
+/**
+ * ③ **component 層の色**（✅ 2026-10-02。`docs/04` §7.9 改訂 23 の濃色サイドバー +
+ * 一覧の 2 色）。`[トークン, 値（`var(...)` の全文）]`。
+ *
+ * 🔴 **T-22-01 の「component 層を `@theme` に置かない」からの変更点はここだけである。**
+ *    置けるのは **「部品 1 つのための色」**であり、`--focus-ring` / `--badge-*`（= 8 状態の
+ *    組み合わせ）は引き続き `packages/ui` のクラス定数に残す（下の禁止パターンが固定する）。
+ *    なぜ色だけ許すのか: **色は値であって振る舞いではない。** 「どの階調を使うか」は 1 箇所に
+ *    集めたいが、「hover のとき背景を 1 段暗くする」は部品の実装であり、`@theme` に置くと
+ *    画面からも組み直せてしまう（T-22-01 の判断の射程はそこだった）。
+ *
+ * 🔴 **`--color-sidebar-*` は primitive を直接参照する唯一の例外である**（§7.9 の 🔴）——
+ *    semantic 層は「白地の面の上の意味」として定義されており、濃色の面に載せると逆転する。
+ * 🔴 **一覧の 2 色は semantic を参照する**（値は従来と同一の `--color-bg-subtle`）。
+ */
+const COMPONENT_COLORS: ReadonlyArray<readonly [token: string, value: string]> = [
+  ['--color-sidebar-bg', 'var(--color-slate-900)'],
+  ['--color-sidebar-fg', 'var(--color-slate-100)'],
+  ['--color-sidebar-fg-muted', 'var(--color-slate-400)'],
+  ['--color-sidebar-border', 'var(--color-slate-700)'],
+  ['--color-sidebar-hover-bg', 'var(--color-slate-800)'],
+  ['--color-sidebar-selected-bg', 'var(--color-indigo-900)'],
+  ['--color-sidebar-selected-fg', 'var(--color-white)'],
+  // 🔴 現在地は藍のまま（§7.4 の割り当てを濃色でも変えない）。⚠️ **階調だけ `indigo-400`** である
+  //    —— §7.9 の表は `--color-brand`（`indigo-700`）だが**実測 2.21:1 で `U-25` の 3:1 を満たさない**
+  //    （下の濃色のコントラスト検査が実測で固定する。`tailwind.css` に実測値と経緯がある）。
+  ['--color-sidebar-selected-bar', 'var(--color-indigo-400)'],
+  ['--color-row-hover-bg', 'var(--color-bg-subtle)'],
+  ['--color-table-header-bg', 'var(--color-bg-subtle)'],
+];
+
+/**
+ * spacing の 7 段（✅ `docs/04` §7.9 改訂 23 / `U-26` で `@theme` に昇格した）。`[トークン, px]`。
+ *
+ * 🔴 **名前は `--spacing-*` である**（§7.9 の表記は `--space-*` だが、Tailwind v4 の spacing の
+ *    名前空間は `--spacing-*` であり、`--space-4` を宣言しても `p-4` は 1 行も生成されない）。
+ * 🔴 **段の値は 1 つも変えていない**（4 / 8 / 12 / 16 / 24 / 32 / 48px）。
+ */
+const SPACING_TOKENS: ReadonlyArray<readonly [token: string, px: number]> = [
+  ['--spacing-1', 4],
+  ['--spacing-2', 8],
+  ['--spacing-3', 12],
+  ['--spacing-4', 16],
+  ['--spacing-6', 24],
+  ['--spacing-8', 32],
+  ['--spacing-12', 48],
+];
+
+/**
+ * shadow の 2 トークン（✅ 改訂 23）。`[トークン, Tailwind 既定の対応トークン]`。
+ *
+ * 🔴 **値を本ファイルに写さない**（色の階調と同じ作法。`docs/05` §17.7.1 (e)）——
+ *    `node_modules/tailwindcss/theme.css` から読んだ値と**完全一致**であることを検査する。
+ *    一致していれば、改訂 23 の「名前を与えるだけで見た目を変えない」が守られている。
+ */
+const SHADOW_TOKENS: ReadonlyArray<readonly [token: string, tailwindToken: string]> = [
+  ['--shadow-control', '--shadow-xs'],
+  ['--shadow-overlay', '--shadow-md'],
 ];
 
 /** 文字サイズ 6 トークン（§7.3 の 6 種に 1 対 1）。`[トークン, px, 行間]`。 */
@@ -121,7 +185,19 @@ const TEXT_TOKENS: ReadonlyArray<readonly [token: string, px: number, lineHeight
   ['--text-cell', 13, '1.5'],
   ['--text-xs', 12, '1.5'],
   ['--text-micro', 11, '1.4'],
+  // ✅ 2026-10-02（§7.3 / §7.9 改訂 23）: 7 つ目。🔴 **`KpiCard` の件数 1 箇所のみ**であり、
+  //    参照元のファイルは下の「参照元の固定」が 1 つに縛る（段を 7 種に増やしたのではない）。
+  ['--text-metric', 24, '1.2'],
 ];
+
+/** 🔴 `--text-metric` を書いてよい唯一のファイル（§7.3 改訂 23 の 🔴 / 申し送り 22 ⑨(h)）。 */
+const METRIC_TEXT_OWNER = 'packages/ui/src/components/kpi-card.tsx';
+
+/**
+ * 🔴 `--color-sidebar-*` を書いてよい唯一のファイル（§7.9 改訂 23 の 🔴 / 申し送り 22 ⑨(j)）。
+ *    **濃色の面が他の画面に広がらないこと**がこの 1 行の意味である。
+ */
+const SIDEBAR_COLOR_OWNER = 'packages/ui/src/components/sidebar.tsx';
 
 /**
  * radius 2 段（§7.9）。🔴 **名前は Tailwind 既定のキーのまま**（`docs/05` §2.3.2:
@@ -134,21 +210,36 @@ const RADIUS_TOKENS: ReadonlyArray<readonly [token: string, px: number]> = [
 ];
 
 /**
- * 🔴 **`@theme` に宣言してはならないもの**（`docs/05` §2.3.2）。
- * - spacing … §7.9 の 7 段は Tailwind 既定スケールの `1` `2` `3` `4` `6` `8` `12` と 1 対 1 で
- *   一致する。宣言すると**同じ値が 2 つの名前を持つ**。
- * - component 層 … `@theme` に置くと**画面からも書けてしまい**「部品ごと」の縛りが消える
- *   （置き場所は `packages/ui` のクラス定数）。
+ * 🔴 **`@theme` に宣言してはならないもの**（`docs/05` §2.3.2 / ✅ 2026-10-02 の改訂 23 で
+ *    spacing と shadow が**許可**に移り、代わりに**より狭い禁止**が入った）。
+ *
+ * - 🔴 **`--space-*`** … **名前空間の誤りそのもの**である。Tailwind v4 の spacing は
+ *   `--spacing-*` であり、`--space-4` を宣言しても `p-4` / `gap-6` は 1 行も生成されない
+ *   ＝ **「宣言してあるのに効かない名前」**が生まれる（`docs/04` §7.9 の表記はこちらなので、
+ *   設計書から素直に写すと必ず踏む。**その踏み方をここで止める**）。
+ * - 🔴 **`--spacing`（基底の倍率）の打ち消し** … 消すと `h-10` / `w-56` / `size-4` / `pb-24` /
+ *   `min-w-48` など**寸法ユーティリティ全体が無言で死ぬ**（`tailwind.css` の 🔴）。
+ *   宣言そのものを禁じる（既定の 0.25rem を継ぐ）。
+ * - 🔴 **寸法・border 幅・focus リング** … 対応する名前空間が Tailwind v4 に無い。
+ *   置き場所は `packages/ui` のクラス定数（`lib/control-classes.ts` / `icons.ts` /
+ *   `lib/state-classes.ts`）である。
+ * - 🔴 **8 状態の組み合わせ**（`--row-hover-bg` ではなく `--focus-ring` / `--badge-*` の類） …
+ *   `@theme` に置くと**画面からも組み直せてしまい**「部品ごと」の縛りが消える。
  * - transition … 既定の `duration-150` / `ease-out` で足りる（トークンを起こさない）。
- * - shadow … overlay 部品（Phase 3b）の中で既定のユーティリティを使う。
  * - `--text-sm` / `--text-base` / `--text-2xl` … **宣言すると使ってよい名前に見える**（§17.7 (g)③）。
  */
 const FORBIDDEN_TOKEN_PATTERNS: ReadonlyArray<readonly [label: string, pattern: RegExp]> = [
-  ['spacing（Tailwind 既定スケールを使う）', /^--(?:space|spacing)-/],
-  ['spacing の倍率（既定のまま）', /^--spacing$/],
+  ['`--space-*`（名前空間が違う。`--spacing-*` を使う）', /^--space-/],
+  ['spacing の倍率の打ち消し（基底を消すと寸法ユーティリティが全部死ぬ）', /^--spacing$/],
   ['transition（既定の duration-150 / ease-out を使う）', /^--default-transition-/],
-  ['shadow（overlay 部品の中で既定を使う）', /^--shadow-/],
-  ['文字サイズの 6 トークン以外', /^--text-(?:sm|base|xl|2xl|3xl|4xl|5xl|6xl|7xl|8xl|9xl)$/],
+  ['文字サイズの 7 トークン以外', /^--text-(?:sm|base|xl|2xl|3xl|4xl|5xl|6xl|7xl|8xl|9xl)$/],
+  // 🔴 名前空間が存在しない寸法（宣言すると「効かない名前」になる）。
+  ['アイコン寸法（`packages/ui/src/icons.ts` の `ICON_SIZE_CLASSES`）', /^--icon-/],
+  ['操作要素の高さ（`lib/control-classes.ts` の `CONTROL_HEIGHT_CLASSES`）', /^--(?:control-h|input-h|row-h|height|size|width)(?:-|$)/],
+  ['border 幅（`border` / `border-l-2` の 2 つだけ）', /^--border-w/],
+  // 🔴 8 状態の組み合わせ（component 層のうち「振る舞い」側）。
+  ['focus リング（`lib/state-classes.ts` の `FOCUS_RING_CLASSES`）', /^--focus-ring/],
+  ['バッジの組み合わせ（`components/badge.tsx` の `cva`）', /^--badge-/],
 ];
 
 function remToPx(value: string): number | null {
@@ -195,15 +286,82 @@ describe('🔴 §7.9 のトークンが `@theme` に全部ある（欠けたら�
     ).toEqual([]);
   });
 
-  it('🔴 `@theme` の `--color-*` は semantic の 27 個「だけ」である（component 層を置かない）', () => {
+  it('🔴 `@theme` の `--color-*` は semantic 28 + component 10 の「列挙したものだけ」である', () => {
     const declaredColors = [...declared.keys()].filter((token) => /^--color-[a-z0-9-]+$/.test(token));
     expect(
       [...declaredColors].sort(),
-      '🔴 component 層（`--focus-ring` / `--row-hover-bg` / `--table-header-bg` / `--badge-*` / ' +
-        '`--sidebar-*`）を `@theme` に置かないでください（`docs/05` §2.3.2）。**`@theme` に置くと' +
-        '画面からも書けてしまい「部品ごと」という縛りが消えます。** 置き場所は `packages/ui` の' +
-        'クラス定数（`lib/state-classes.ts` / `lib/control-classes.ts` / `lib/link-classes.ts`）です。',
-    ).toEqual([...SEMANTIC_COLORS.map(([token]) => token)].sort());
+      '🔴 `@theme` に置けるのは **semantic（§7.4 の意味と 1 対 1）** と、' +
+        '**component 層のうち「部品 1 つのための色」**（`--color-sidebar-*` / `--color-row-hover-bg` / ' +
+        '`--color-table-header-bg`）だけです。**8 状態の組み合わせ（focus リング / バッジ）は ' +
+        '`packages/ui` のクラス定数に置いてください** —— `@theme` に置くと画面からも組み直せてしまい' +
+        '「部品ごと」という縛りが消えます（`docs/05` §2.3.2 の判断の射程はそこでした）。' +
+        '🔴 **画面ごとの component トークンを作らないこと**（部品ごとに作る。§7.9）。',
+    ).toEqual(
+      [...SEMANTIC_COLORS.map(([token]) => token), ...COMPONENT_COLORS.map(([token]) => token)].sort(),
+    );
+  });
+
+  it('🔴 component 層の色が「部品 1 つのため」であり、値が §7.9 改訂 23 のとおりである', () => {
+    const wrong = COMPONENT_COLORS.filter(([token, value]) => declared.get(token) !== value).map(
+      ([token, value]) => `${token}: ${declared.get(token) ?? '(無し)'} ≠ ${value}`,
+    );
+    expect(
+      wrong,
+      '🔴 濃色サイドバーの 8 色は **primitive を直接参照する唯一の例外**です（semantic は「白地の面の' +
+        '上の意味」として定義されており、濃色の面に載せると意味と見た目が逆転します。§7.9 の 🔴）。' +
+        '一覧の 2 色は **semantic（`--color-bg-subtle`）を参照**し、値を変えていません。' +
+        '🔴 **階調を実装側（TSX）で直書きしないこと**（`U-25`）。',
+    ).toEqual([]);
+  });
+
+  it('🔴 spacing の 7 段が宣言されており、静的検査の許容段と一致する（改訂 23 の (m)）', () => {
+    const wrong = SPACING_TOKENS.filter(([token, px]) => remToPx(declared.get(token) ?? '') !== px).map(
+      ([token, px]) => `${token}: ${declared.get(token) ?? '(無し)'} ≠ ${px}px`,
+    );
+    expect(
+      wrong,
+      '🔴 §7.9 の 7 段（4 / 8 / 12 / 16 / 24 / 32 / 48px）を `--spacing-1` … `--spacing-12` として' +
+        '宣言してください（改訂 23 / `U-26`: **「規約で禁止」より「名前が存在しない」ほうが強い**）。' +
+        '🔴 **名前は `--space-*` ではありません**（Tailwind v4 の spacing の名前空間は `--spacing-*`）。',
+    ).toEqual([]);
+    // 🔴 **規約とトークンが 2 本の真実にならないこと**（改訂 23 の (m)）——
+    //    宣言した段と、検査が許す段（`support/ui-classes.ts` の `ALLOWED_SPACING`）が一致する。
+    const declaredSteps = SPACING_TOKENS.map(([token]) => token.replace('--spacing-', '')).sort();
+    const allowedSteps = [...ALLOWED_SPACING].filter((value) => /^\d+$/.test(value) && value !== '0').sort();
+    expect(
+      declaredSteps,
+      '🔴 `@theme` の 7 段と `ALLOWED_SPACING`（静的検査が許す段）が食い違っています。' +
+        '**どちらかだけを直すと「宣言には無いが検査は通る値」または「宣言にあるのに書けない値」が' +
+        '生まれます**（改訂 23 の (m) がこの一致を要求しています）。',
+    ).toEqual(allowedSteps);
+    // 🔴 宣言は 7 段「だけ」である（`--spacing-5` を足せない）。
+    const declaredSpacing = [...declared.keys()].filter((token) => /^--spacing-/.test(token));
+    expect([...declaredSpacing].sort()).toEqual([...SPACING_TOKENS.map(([token]) => token)].sort());
+  });
+
+  it('🔴 shadow は 2 トークンだけで、値が Tailwind 既定と完全一致する（見た目を変えずに名前を与えた）', () => {
+    // 🔴 対照: 突き合わせ先が現に読めている（`undefined` 同士の一致で緑にならない）。
+    expect(tailwindTheme.get('--shadow-xs')).toBeDefined();
+    expect(tailwindTheme.get('--shadow-md')).toBeDefined();
+    const wrong = SHADOW_TOKENS.filter(
+      ([token, tailwindToken]) => declared.get(token) !== tailwindTheme.get(tailwindToken),
+    ).map(
+      ([token, tailwindToken]) =>
+        `${token}: ${declared.get(token) ?? '(無し)'} ≠ ${tailwindTheme.get(tailwindToken) ?? '(無し)'}`,
+    );
+    expect(
+      wrong,
+      '🔴 改訂 23 は **影の名前を 2 つに固定した**だけで、例外も見た目も増やしていません。' +
+        '`--shadow-control` は Tailwind の `--shadow-xs`（入力欄の輪郭）、`--shadow-overlay` は ' +
+        '`--shadow-md`（overlay の浮き）と**同一の値**でなければなりません。' +
+        '⚠️ `var(--shadow-xs)` で参照しないのは、`shadow-*` ユーティリティが値を解析して ' +
+        '`--tw-shadow-color` を差し込むためです（`var()` 1 個では解析できず出力の形が変わります）。',
+    ).toEqual([]);
+    const declaredShadows = [...declared.keys()].filter((token) => /^--shadow-/.test(token));
+    expect(
+      [...declaredShadows].sort(),
+      '🔴 影の名前はこの 2 つだけです。新しい影を作るには `docs/04` §7.9 への追記（= 人間の判断）が要ります。',
+    ).toEqual([...SHADOW_TOKENS.map(([token]) => token)].sort());
   });
 
   it('🔴 `@theme` に置いてはならないトークン（spacing / transition / shadow / 文字サイズの別名）が無い', () => {
@@ -218,7 +376,7 @@ describe('🔴 §7.9 のトークンが `@theme` に全部ある（欠けたら�
     ).toEqual([]);
   });
 
-  it('文字サイズが 6 トークンで、実寸と行間が §7.3 の表と一致する', () => {
+  it('文字サイズが 7 トークンで、実寸と行間が §7.3 の表と一致する', () => {
     const wrong = TEXT_TOKENS.flatMap(([token, px, lineHeight]) => {
       const issues: string[] = [];
       if (remToPx(declared.get(token) ?? '') !== px) {
@@ -349,9 +507,33 @@ const uiFiles = collectSourceFiles(UI_SRC, ['.ts', '.tsx']).map((absolute) => ({
  *    `docs/04` 改訂 19 が §7.9 側に例外を明記して解消済みである（完了報告で提起した件）。
  */
 const SHADOW_ALLOWANCES: ReadonlyArray<readonly [file: string, utility: string]> = [
-  ['packages/ui/src/lib/control-classes.ts', 'shadow-xs'],
-  ['packages/ui/src/lib/overlay-classes.ts', 'shadow-md'],
+  // ✅ 2026-10-02（改訂 23）: 語が Tailwind 既定の名前からトークン名に替わった。
+  //    🔴 **ファイルも件数も変えていない**（2 箇所 2 語）。値も同一である（上のミラー検査）。
+  ['packages/ui/src/lib/control-classes.ts', 'shadow-control'],
+  ['packages/ui/src/lib/overlay-classes.ts', 'shadow-overlay'],
 ];
+
+/**
+ * 🔴 **円形（`rounded-full`）が許される 2 箇所**（`docs/04` §7.9 の radius の 🔴
+ * 「**円形はアバターとカウンタのみ**」）。✅ 2026-10-02 に部品が入ったので列挙で固定した。
+ *
+ * | 許す場所 | 何が円か |
+ * |---|---|
+ * | `components/avatar.tsx` | **アバター**そのもの（`Avatar`） |
+ * | `components/rail-card.tsx` | **カウンタ**（`RankedList` の順位の数字） |
+ *
+ * 🔴 **ここに足すには §7.9 の改訂（人間の判断）が要る。** カード・ボタン・バッジ・タグを
+ *    丸くしない（§7.9: 密度の高い一覧で角丸が大きいと行の境界が曖昧になる。`Badge` は
+ *    `T-22-01` で円形をやめている）。
+ */
+const CIRCLE_ALLOWANCES: ReadonlyArray<readonly [file: string, utility: string]> = [
+  ['packages/ui/src/components/avatar.tsx', 'rounded-full'],
+  ['packages/ui/src/components/rail-card.tsx', 'rounded-full'],
+];
+
+function isAllowedCircle(file: string, utility: string): boolean {
+  return CIRCLE_ALLOWANCES.some(([allowedFile, allowedUtility]) => allowedFile === file && allowedUtility === utility);
+}
 
 function isAllowedShadow(file: string, utility: string): boolean {
   return SHADOW_ALLOWANCES.some(([allowedFile, allowedUtility]) => allowedFile === file && allowedUtility === utility);
@@ -440,6 +622,10 @@ describe('🔴 `packages/ui` は semantic / component トークンだけを見�
       file.tokens
         .map((token) => ({ token, match: RADIUS_UTILITY.exec(utilityOf(token)) }))
         .filter(({ match }) => match !== null && !ALLOWED_RADIUS.has(match[1] ?? ''))
+        // ✅ 2026-10-02: 🔴 **`rounded-full` は §7.9 が「アバターとカウンタのみ」として認めている。**
+        //    認めた以上、**どこで使ってよいかをファイル単位で固定する**（`SHADOW_ALLOWANCES` と
+        //    同じ構え）—— 語を一律に許すと、次の誰かがカードやボタンを丸くできる。
+        .filter(({ token }) => !isAllowedCircle(file.label, utilityOf(token)))
         .map(({ token }) => `${file.label}: ${token}`),
     );
     expect(
@@ -449,6 +635,14 @@ describe('🔴 `packages/ui` は semantic / component トークンだけを見�
         '12px 以上の大きな角丸を使わないでください（密度の高い一覧で行の境界が曖昧になります）。' +
         '`rounded-full` はアバターとカウンタのみです。',
     ).toEqual([]);
+    // 🔴 許可が「実在するから許している」ことの対照（未使用の許可が残るのを防ぐ。影と同じ構え）。
+    for (const [file, utility] of CIRCLE_ALLOWANCES) {
+      const allowed = uiFiles.find((entry) => entry.label === file);
+      expect(
+        allowed?.tokens.some((token) => utilityOf(token) === utility),
+        `${file} に ${utility} が無い（許可だけが残っている）`,
+      ).toBe(true);
+    }
   });
 
   it('🔴 影は「入力欄の輪郭」と「overlay」の 2 箇所だけで、他のプリミティブは 1 件も持たない', () => {
@@ -491,6 +685,59 @@ describe('🔴 `packages/ui` は semantic / component トークンだけを見�
       '🔴 §7.9: 影の語は「入力欄の輪郭（shadow-xs）」と「overlay（shadow-md）」の 2 箇所 2 語に限る。' +
         '新しい要素に影を足していないか確認してください。',
     ).toEqual(SHADOW_ALLOWANCES.map(([file, utility]) => `${file}: ${utility}`));
+  });
+
+  it('🔴 `text-metric`（24px）を書いているのは `KpiCard` の 1 ファイルだけである（改訂 23 の (h)）', () => {
+    const owners = uiFiles
+      .filter((file) => file.tokens.some((token) => utilityOf(token) === 'text-metric'))
+      .map((file) => file.label);
+    expect(
+      owners,
+      '🔴 `--text-metric` は **`KpiCard` の件数 1 箇所のみ**です（§7.3 / §7.9 改訂 23）。' +
+        '§7.3 の「20px より大きいサイズを作らない」の根拠は**日本語の見出しの過大化**であり、' +
+        '算用数字 1〜4 桁にだけ例外を認めたものです。**見出し・本文・セル・バッジに使わないでください。**' +
+        '使う場所を増やすには `docs/04` §7.3 / §7.9 への追記（= 人間の判断）が要ります。',
+    ).toEqual([METRIC_TEXT_OWNER]);
+  });
+
+  it('🔴 濃色（`--color-sidebar-*`）を参照しているのは `Sidebar` の 1 ファイルだけである（改訂 23 の (j)）', () => {
+    const owners = uiFiles
+      .filter((file) => file.tokens.some((token) => /^[a-z-]+-sidebar-[a-z-]+$/.test(utilityOf(token))))
+      .map((file) => file.label);
+    expect(
+      owners,
+      '🔴 濃色の面はサイドバー 1 部品だけです（§3.3: **色を平面の差にしない** / §7.9 の 🔴: ' +
+        '濃色の面を増やすには設計の改訂を要する）。管理平面のナビ・本体・モーダル・ヘッダに' +
+        '`bg-sidebar-bg` を使わないでください。',
+    ).toEqual([SIDEBAR_COLOR_OWNER]);
+  });
+
+  it('🔴 `Sidebar` が白地用の semantic（`text-fg` / `bg-bg` / `bg-bg-subtle`）を濃色の面に載せていない（(j) の後半）', () => {
+    const sidebar = uiFiles.find((file) => file.label === SIDEBAR_COLOR_OWNER);
+    expect(sidebar, `${SIDEBAR_COLOR_OWNER} が走査できていない`).toBeDefined();
+    // 🔴 「その他」（`variant='more'`）は**白地のパネル**なので、同じファイルに白地用の語が在るのは正しい。
+    //    ⚠️ したがってここで見るのは「濃色側の語と白地側の語が同じ**定数**に混ざっていないこと」ではなく、
+    //    **濃色の面を描く語の隣に、効かない白地の語が残っていないこと**である。
+    //    判定は現実的な形（`bg-bg` / `bg-bg-subtle` / `text-fg` の無修飾の出現が、
+    //    `more` 用の 3 定数の中だけに在ること）で行う —— 文字列の位置ではなく**件数**で固定する。
+    const whiteSurfaceTokens = (sidebar?.tokens ?? []).filter((token) =>
+      ['bg-bg', 'bg-bg-subtle', 'bg-bg-inset', 'text-fg', 'text-fg-muted'].includes(utilityOf(token)),
+    );
+    expect(
+      whiteSurfaceTokens.sort(),
+      '🔴 白地用の semantic が濃色の面に載っていないかを確認してください（`--color-fg` は ' +
+        '`slate-900` であり、`--color-sidebar-bg`（`slate-900`）の上では**完全に沈みます**）。' +
+        'ここに在ってよいのは「その他」（`variant="more"` = 白地のパネル）用の語だけです。',
+    ).toEqual([
+      // `SIDEBAR_LINK_CLASSES.more`（白地のパネルの 1 項目）
+      'active:bg-bg-inset',
+      'hover:bg-bg-subtle',
+      'text-fg',
+      // `SIDEBAR_GROUP_LABEL_CLASSES.more` / `SIDEBAR_UNAVAILABLE_CLASSES.more` / `NOTE_CLASSES.more`
+      'text-fg-muted',
+      'text-fg-muted',
+      'text-fg-muted',
+    ]);
   });
 
   it('全周 2px 以上の border が無い（強調は左端 2px だけ）', () => {
@@ -549,6 +796,14 @@ describe('🔴 ミラー: `docs/04` §7.9 の表 / `@theme` の宣言 / `cn()` �
     expect(cn('bg-bg-subtle', 'bg-brand')).toBe('bg-brand');
     // 🔴 バリアント付きは別の群として残る（`text-lg md:text-body` = iOS のズーム対策が消えない）。
     expect(cn('text-lg md:text-body')).toBe('text-lg md:text-body');
+    // ✅ 2026-10-02: **アイコンの 2 段**（`ICON_SIZE_CLASSES`）が後勝ちで畳まれること。
+    //    🔴 `Icon` は基底（`size-4 shrink-0`）に `size` を重ねるので、畳まれないと
+    //    **16px と 20px の 2 つのクラスが同時に載り、どちらが効くかが生成 CSS の順序に委ねられる**。
+    expect(cn('size-4', 'size-5')).toBe('size-5');
+    expect(cn('size-4 shrink-0', 'size-5')).toBe('shrink-0 size-5');
+    // ✅ 濃色の面の語が白地の語を上書きできること（`SIDEBAR_TOGGLE_CLASSES` が依存している）。
+    expect(cn('text-fg', 'text-sidebar-fg')).toBe('text-sidebar-fg');
+    expect(cn('hover:bg-bg-subtle', 'hover:bg-sidebar-hover-bg')).toBe('hover:bg-sidebar-hover-bg');
   });
 });
 
@@ -589,6 +844,18 @@ const palette = new Map<string, string>(
   ]),
 );
 
+/**
+ * Tailwind 既定テーマの**全トークン**（色に限らない）。✅ 2026-10-02 に shadow のミラーで要った。
+ * 🔴 **値をテストに写さない**という (e) の作法をそのまま shadow にも当てる —— 写すと
+ *    Tailwind の更新で静かに嘘になる。
+ */
+const tailwindTheme = new Map<string, string>(
+  [...paletteCss.matchAll(/(--[a-z0-9-]+)\s*:\s*([^;]+);/g)].map((match) => [
+    match[1] ?? '',
+    (match[2] ?? '').trim(),
+  ]),
+);
+
 function resolveColor(token: string): string | null {
   let value: string | undefined = declared.get(token) ?? palette.get(token);
   for (let depth = 0; depth < 5; depth += 1) {
@@ -621,7 +888,14 @@ function resolveColor(token: string): string | null {
  *    つかず、8 状態の弁別そのものが壊れる。WCAG 1.4.3 も無効な UI 部品を対象外とする）。
  *    **画面ごとの除外リストを作らない。**
  */
-const NEUTRAL_SURFACES = ['--color-bg', '--color-bg-subtle', '--color-bg-inset', '--color-neutral-bg'];
+const NEUTRAL_SURFACES = [
+  '--color-bg',
+  // ✅ 2026-10-02: カード・パネルの地（値は `--color-bg` と同じ白だが、**役割として検査する**）。
+  '--color-surface',
+  '--color-bg-subtle',
+  '--color-bg-inset',
+  '--color-neutral-bg',
+];
 const SYSTEM_TONES = ['brand', 'danger', 'warning', 'success', 'info'];
 
 const CONTRAST_PAIRS: ReadonlyArray<readonly [foreground: string, background: string]> = [
@@ -667,6 +941,63 @@ describe('🔴 semantic の文字色 × 背景色が 4.5:1 以上（docs/05 §17
         'であり、ここが読めないと運用が止まります。** 🔴 **この検査を緩めるのではなく、§7.9 の' +
         '階調を見直してください**（階調の変更は `docs/04` の改訂 = 人間の判断）。',
     ).toEqual([]);
+  });
+
+  // ==========================================================================
+  // ✅ 濃色サイドバー（`docs/04` §7.9 改訂 23 / `U-25` / 申し送り 22 ⑨(k)）
+  // ==========================================================================
+  // 🔴 `U-25` の要求は **ラベル 4.5:1 以上 / 区切り線・アイコンのみの要素 3:1 以上**である。
+  // 🔴 **(e) の除外条件（`--color-fg-placeholder` を前景に持つ組）は 1 つも広げていない。**
+  it('🔴 濃色サイドバーの「読む要素」が 4.5:1 以上である（ラベル / 現在地の文字）', () => {
+    const pairs: ReadonlyArray<readonly [string, string]> = [
+      ['--color-sidebar-fg', '--color-sidebar-bg'],
+      ['--color-sidebar-fg', '--color-sidebar-hover-bg'],
+      ['--color-sidebar-selected-fg', '--color-sidebar-selected-bg'],
+    ];
+    const failures = pairs.flatMap(([foreground, background]) => {
+      const ratio = contrastRatio(resolveColor(foreground) ?? '', resolveColor(background) ?? '');
+      if (ratio === null) return [`${foreground} on ${background}: 色を解決できません`];
+      return ratio >= 4.5 ? [] : [`${foreground} on ${background}: ${ratio.toFixed(2)}:1`];
+    });
+    expect(
+      failures,
+      '🔴 `U-25`: **項目ラベルは 4.5:1 以上**です。🔴 この検査を緩めるのではなく、`docs/04` §7.9 の' +
+        '階調（`--sidebar-fg` / `--sidebar-bg`）を見直してください（階調の変更は人間の判断）。' +
+        '🔴 **hover の面の上でも読めること**を併せて見ます（hover で文字色を変えないため。§7.10）。',
+    ).toEqual([]);
+  });
+
+  it('🔴 濃色サイドバーの「走査しない要素」が 3:1 以上である（群名 / 注記 / 期限の点）', () => {
+    const pairs: ReadonlyArray<readonly [string, string]> = [
+      ['--color-sidebar-fg-muted', '--color-sidebar-bg'],
+      // 🔴 期限の点（`SIDEBAR_DOT_CLASSES`）。`--color-warning`（`amber-800`）は濃色の上で 3:1 を
+      //    割るため、注意系統の**面の階調**（`--color-warning-bg`）を使っている。その妥当性を固定する。
+      ['--color-warning-bg', '--color-sidebar-bg'],
+      // 現在地の左端 2px のバー（ブランド藍。§7.4 の割り当てを変えないことの裏付け）。
+      ['--color-sidebar-selected-bar', '--color-sidebar-bg'],
+    ];
+    const failures = pairs.flatMap(([foreground, background]) => {
+      const ratio = contrastRatio(resolveColor(foreground) ?? '', resolveColor(background) ?? '');
+      if (ratio === null) return [`${foreground} on ${background}: 色を解決できません`];
+      return ratio >= 3 ? [] : [`${foreground} on ${background}: ${ratio.toFixed(2)}:1`];
+    });
+    expect(
+      failures,
+      '🔴 `U-25`: **区切り線・アイコンのみの要素は 3:1 以上**です。' +
+        '🔴 3:1 を満たせない色は「それ単独で情報を伝える要素」に使わないでください' +
+        '（`--color-sidebar-border` が実際にその扱いです。`tailwind.css` の 🔴）。',
+    ).toEqual([]);
+  });
+
+  it('🔴 `--color-sidebar-border` は 3:1 を満たさない（だから装飾にしか使っていない）という事実を固定する', () => {
+    // 🔴 「満たしていないことを知らずに情報を載せる」ことを防ぐための**対照**である。
+    //    値を上げたくなったら `docs/04` §7.9 の改訂（人間の判断）を経ること。
+    const ratio = contrastRatio(
+      resolveColor('--color-sidebar-border') ?? '',
+      resolveColor('--color-sidebar-bg') ?? '',
+    );
+    expect(ratio).not.toBeNull();
+    expect(ratio ?? 0).toBeLessThan(3);
   });
 
   it('🔴 除外した組（`--color-fg-placeholder` を前景に持つ）が意図どおり 4.5:1 を割っている', () => {

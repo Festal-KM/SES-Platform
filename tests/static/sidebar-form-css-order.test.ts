@@ -110,27 +110,39 @@ const ORDERED_GROUPS: ReadonlyArray<{
     label: '現在地の hover（§7.10 の優先順 `selected > hover`）',
     why:
       '🔴 反転すると、**現在地の項目にポインタが乗った瞬間に背景が hover 色に置き換わる**' +
-      '（`SIDEBAR_CURRENT_CLASSES` が `hover:bg-brand-bg` で塗り直している理由。' +
-      '`lib/state-classes.ts` の「hover と selected を同じ見た目にしない」）。',
-    selectors: [String.raw`.hover\:bg-bg-subtle`, String.raw`.hover\:bg-brand-bg`],
-  },
-  {
-    label: '現在地の active（§7.10 の優先順 `selected > active`）',
-    why: '🔴 反転すると、現在地の項目を押している間だけ背景が selected でなくなる。',
-    selectors: [String.raw`.active\:bg-bg-inset`, String.raw`.active\:bg-brand-bg`],
+      '（`SIDEBAR_CURRENT_CLASSES` が `hover:bg-sidebar-selected-bg` で塗り直している理由。' +
+      '`lib/state-classes.ts` の「hover と selected を同じ見た目にしない」）。' +
+      '✅ 2026-10-02: サイドバーが濃色になり、語が `bg-bg-subtle` / `bg-brand-bg` から濃色の' +
+      'トークンに替わった。🔴 **順序を見るという判定は 1 つも変えていない。**',
+    selectors: [String.raw`.hover\:bg-sidebar-hover-bg`, String.raw`.hover\:bg-sidebar-selected-bg`],
   },
   {
     label: 'テーブルの行の selected（§7.10 の優先順 `selected > hover`）',
     why:
-      '🔴 サイドバーと**完全に同型の脆さ**である。`TableRow` は `hover:bg-bg-subtle` と ' +
+      '🔴 サイドバーと**完全に同型の脆さ**である。`TableRow` は `hover:bg-row-hover-bg` と ' +
       '`data-[state=selected]:bg-brand-bg` を同時に持ち、どちらも特異度 (0,2,0) なので、' +
       '勝敗はこの順序だけが決める。`T-22-05` のレビュー（指摘 6）で「現時点では順序が正しいので' +
       'バグは無いが、依存している事実は sidebar と同型」と確認された。🔴 **行選択を使う画面が' +
       '段② で入る前に固定しておく** —— 反転しても既存のテストは緑のままで、選択した行が' +
-      'ポインタを乗せた瞬間に「選択中」に見えなくなる。',
-    selectors: [String.raw`.hover\:bg-bg-subtle`, String.raw`.data-\[state\=selected\]\:bg-brand-bg`],
+      'ポインタを乗せた瞬間に「選択中」に見えなくなる。' +
+      '✅ 2026-10-02: 行の hover の語が `bg-bg-subtle` → `bg-row-hover-bg`（**値は同一**）に替わった。',
+    selectors: [String.raw`.hover\:bg-row-hover-bg`, String.raw`.data-\[state\=selected\]\:bg-brand-bg`],
   },
 ];
+
+/**
+ * ⚠️ **2026-10-02 に 1 群（「現在地の active」）を外した。🔴 検査を緩めたのではない。**
+ *
+ * 濃色サイドバーには **`active` の段が無い**（`docs/04` §7.9 改訂 23 が定めた 8 トークンに
+ * `--sidebar-active-bg` が無く、🔴 **階調を実装側で作らない**（`U-25`）ため段を足せない）。
+ * したがって `active:bg-bg-inset` / `active:bg-brand-bg` の**組そのものがサイドバーから消えた** ——
+ * 存在しないクラスの順序を検査すると「1 回だけ出現する」の対照で必ず落ちる（＝ 嘘の検査になる）。
+ *
+ * 🔴 **`active` の段を足すときは、この群を同じ形で戻すこと**（`docs/04` §7.9 への追記 =
+ *    人間の判断が先に要る）。それまでは `hover` の群が「selected が hover に食われない」ことを
+ *    固定しており、§7.10 の優先順のうち**実装に存在する部分は全部見ている。**
+ */
+const REMOVED_GROUPS_REASON = 'サイドバーの active は濃色の 8 トークンに段が無いため実装していない';
 
 describe('🔴 サイドバーの 2 形態と現在地は、生成 CSS の宣言順に依存している（T-22-05 レビュー指摘 10）', () => {
   it('対照: ビルド出力にサイドバーの CSS が 1 ファイルだけ在る（走査が空振りしていない）', () => {
@@ -156,6 +168,19 @@ describe('🔴 サイドバーの 2 形態と現在地は、生成 CSS の宣言
       ).toEqual([...positions].sort((a, b) => a - b));
     });
   }
+
+  it('🔴 外した群（現在地の active）は「クラスが存在しないから」である（対照）', () => {
+    // 🔴 存在しないクラスの順序を検査すると、上の「1 回だけ出現する」の対照で必ず落ちる
+    //    （嘘の検査になる）。**本当に無いこと**をここで示し、戻すときの条件を文章で残す。
+    expect(files, BUILD_HINT).toHaveLength(1);
+    const file = files[0] as { readonly label: string; readonly css: string };
+    expect(
+      file.css.includes(String.raw`.active\:bg-brand-bg`),
+      '🔴 現在地の `active` を復活させたなら、`ORDERED_GROUPS` にその群を戻すこと' +
+        `（外した理由: ${REMOVED_GROUPS_REASON}）。`,
+    ).toBe(false);
+    expect(REMOVED_GROUPS_REASON).toContain('段が無い');
+  });
 
   it('🔴 対照: 判定が順序を実際に見ている（並べ替えた写しでは落ちる）', () => {
     // 🔴 「順序を見ている」は書かれていないことなので、**逆順なら落ちる形**で示す。

@@ -104,6 +104,15 @@ const ja = {
   'shell.header.scope.organizationLabel': '所属組織',
   'shell.header.scope.ownCompanySuffix': '（御社）',
   'shell.header.notifications': '通知',
+  // --- ✅ 2026-10-02（人間のブリーフ）: 上部バーの検索の入口（`GlobalSearchBox`）---
+  // 🔴 **見た目は入力欄だが実体は遷移である**（動かない検索窓を作らない。
+  //    `packages/ui/src/components/global-search-box.tsx` の 🔴）。語は「検索」で固定する。
+  'shell.header.search.label': '検索',
+  // 🔴 母集団を明示する（何が検索できるのかを placeholder が答える）。
+  'shell.header.search.placeholder': '案件・人材・提案を検索',
+  // 🔴 近道の表示。**記号をコードに書かない**（Windows では `Ctrl+K` になるため、
+  //    部品ではなくカタログが持つ）。⚠️ キーバインド自体は Phase 2 である。
+  'shell.header.search.shortcut': '⌘K',
   // 🔴 上限インジケータは 80% 超のときだけ出す。件数で出し、金額は出さない（F-027 AC-6 / BR-24）。
   'shell.header.usage.nearing': '上限に接近',
   'shell.header.usage.reached': '上限に到達',
@@ -1574,6 +1583,39 @@ const ja = {
   //    取引先側のストリップ直下の 1 行（`home.partner.visibilityNotice`）が担う）。
   'home.summary.PROPOSALS_IN_FLIGHT': '進行中の提案',
   'home.summary.ASSIGNMENTS_ACTIVE': '稼働中',
+
+  // ==========================================================================
+  // ✅ 2026-10-02（人間のブリーフ）: 共通フレームの語
+  // ==========================================================================
+  // 🔴 **キーの追加だけである**（既存のキーは 1 つも改名・削除していない。`U-22` の凍結）。
+  // 🔴 `t()` は差し込みを持たない（引数の無い写像である）。したがって氏名・件数を含む文は
+  //    **断片に割り、組み立ては呼び出し側**が行う（`shell.header.scope.ownCompanySuffix` と同じ形）。
+
+  // --- `PageGreeting`（時間帯で変わる挨拶。`packages/ui` の `greetingSlotOf` の 3 区分と 1 対 1）---
+  // 🔴 **区分は 3 つだけ**（深夜の 4 区分目を作らない。`components/page-greeting.tsx` の 🔴）。
+  // 🔴 **「お疲れさまです」を朝に出さない / 「おはようございます」を夜に出さない** ——
+  //    挨拶が時刻と合っていないと、画面が「今日のもの」に見えなくなる（ホームは毎朝最初に開く）。
+  'home.greeting.MORNING': 'おはようございます、',
+  'home.greeting.AFTERNOON': 'こんにちは、',
+  'home.greeting.EVENING': 'お疲れさまです、',
+  /** 氏名の後ろに付ける敬称（`山田` + `さん`）。🔴 氏名そのものはカタログに持たない。 */
+  'home.greeting.nameSuffix': 'さん',
+  // 🔴 標語は**この製品が何を守るかの 1 行**であり、煽り文句にしない（`docs/04` §7.8 の語調）。
+  'home.greeting.motto': '正しい情報を、正しい相手にだけ。',
+
+  // --- `Timeline`（今日のスケジュール）/ `RankedList`（優先アクション）---
+  // 🔴 **0 件のときの語を必ず持つ**（空の箱を出さない。部品は `emptyLabel` を必須にしている）。
+  'home.schedule.title': '今日の予定',
+  'home.schedule.empty': '今日の予定はありません',
+  'home.priority.title': '先に動くもの',
+  // 🔴 「優先度の高いタスク」ではなく「先に動くもの」—— 順位は**こちらが計算した提案**であり、
+  //    最終判断は利用者である（`CLAUDE.md` §12.1: ロールは提案するだけ）。
+  'home.priority.empty': '先に動くものはありません',
+
+  // --- 共通の導線（`SectionHeader` の右端）---
+  // 🔴 **語を 1 つに固定する**（`もっと見る` / `一覧へ` / `すべて表示` が画面ごとに混ざらない。
+  //    `docs/04` §7.8 の「同じ操作は同じ語」）。
+  'ui.seeAll': 'すべて見る',
 
   // --- S-036 送信ドメインの設定と検証（docs/04 §S-036 / F-001 AC-4 / docs/03 §3.2.7。T-04-04）---
   // 🔴 **状態であってエラーではない**（docs/04 `program-design` 申し送り 8）。

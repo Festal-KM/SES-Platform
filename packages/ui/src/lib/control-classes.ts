@@ -38,7 +38,7 @@
 // | `rounded-md` | **`rounded-sm`** | T-22-01。`docs/04` §7.9 の radius は **2 段だけ**（入力欄 / ボタン / バッジ / セル = 4px、パネル / Dialog / Card = 6px）。`rounded-md`（6px）は後者の段であり、入力欄は 4px に寄せる |
 // | `border` `border-input` | `border` **`border-border-strong`** | 🔴 upstream の `border-input` は本リポジトリでは**何も生成しない**（Tailwind v4 の既定 theme に `--color-input` は無い。そのまま写すと v4 の border 既定色 `currentColor` で文字色の枠が出る）。T-21-02 は既存画面に合わせて `border-slate-300` に置いたが、T-22-01 で **§7.9 の「区切り / 入力欄の輪郭」= `--color-border-strong`（= `slate-300`。値は同一）** を指す形にした |
 // | 🔴 `text-base` + `md:text-sm` | **`text-lg md:text-body`**（実寸 16px → 14px。**同じ**） | 🔴 **落とさない。** iOS Safari は 16px 未満の入力欄にフォーカスすると自動ズームする。旧 `.ses-field input { font-size: 1rem }` が担っていたのはこれであり、14px 一本にすると T1 画面（`S-001` / `S-046`）でズームが起きる（`CLAUDE.md` §13.2「モバイルで操作まで完結」）。T-22-01 で名前だけ役割名に替えた —— §7.9 は `text-base` を直接書かず役割名（16px = `--text-lg`）で参照することを求めており、**6 トークン以外の文字サイズを画面ごとに作らない**ためである。`md:` は Tailwind の既定接頭辞（§13.3） |
-// | `shadow-xs` | 同じ（**据え置く**） | ⚠️ ここだけ `docs/04` §7.9（「shadow は overlay にのみ使う」）と読みが分かれる。**`docs/05` §2.3.2 が「既存 `Input` / `Select` / `Textarea` の `shadow-xs` は入力欄の輪郭であり据え置く」と名指しで決めている**ため、実装設計に従って残す（§7.9 が禁じているのは「**カードを浮かせる**ための影」であり、1px 相当の輪郭は階層の表現ではない、という読み）。🔴 **`Card` の `shadow-sm` は撤去した**（あちらはまさに「浮かせるための影」である。`./card.tsx`）。**2 文書の食い違いとして完了報告に出す** |
+// | `shadow-xs` | **`shadow-control`**（✅ 2026-10-02。**値は `--shadow-xs` と同一**） | ⚠️ ここだけ `docs/04` §7.9（「shadow は overlay にのみ使う」）と読みが分かれる。**`docs/05` §2.3.2 が「既存 `Input` / `Select` / `Textarea` の `shadow-xs` は入力欄の輪郭であり据え置く」と名指しで決めている**ため、実装設計に従って残す（§7.9 が禁じているのは「**カードを浮かせる**ための影」であり、1px 相当の輪郭は階層の表現ではない、という読み）。🔴 **`Card` の `shadow-sm` は撤去した**（あちらはまさに「浮かせるための影」である。`./card.tsx`）。**2 文書の食い違いとして完了報告に出す** |
 // | `transition-[color,box-shadow]` | **`transition-colors`**（`TRANSITION_CLASSES`） | §7.9: 遷移の対象は background-color / border-color / color / opacity **のみ**。box-shadow（= `ring-*` の実体）を遷移から外したので、フォーカスリングは 150ms 待たずに即時に出る（キーボード操作では望ましい） |
 // | `placeholder:text-muted-foreground` | **`placeholder:text-fg-placeholder`** | テーマ変数が無いため T-21-02 は `placeholder:text-slate-400` に置いた。T-22-01 で §7.9 の「未入力」= `--color-fg-placeholder`（値は同一）を指す形にした |
 // | `disabled:cursor-not-allowed` | 同じ（`DISABLED_CLASSES`） | そのまま |
@@ -74,7 +74,7 @@ import { DISABLED_CLASSES, FOCUS_RING_CLASSES, TRANSITION_CLASSES } from './stat
  *    列挙する。`lib/cn.ts` の新しい規律 1）。
  */
 export const CONTROL_BASE_CLASSES = cn(
-  'w-full min-w-0 rounded-sm border border-border-strong bg-transparent px-3 shadow-xs',
+  'w-full min-w-0 rounded-sm border border-border-strong bg-transparent px-3 shadow-control',
   'text-lg md:text-body',
   TRANSITION_CLASSES,
   'placeholder:text-fg-placeholder',
@@ -82,6 +82,31 @@ export const CONTROL_BASE_CLASSES = cn(
   FOCUS_RING_CLASSES,
   'aria-invalid:border-danger-border',
 );
+
+/**
+ * 🔴 **操作要素の高さは 2 段だけ**（`docs/04` §7.9 の `--control-h-sm` / `--control-h-md` /
+ *    `--input-h`。✅ 改訂 23 で名前が付いた）。**リポジトリで高さを決めているのはここ 1 箇所である**
+ *    （`Button` / `IconButton` / `Input` / `Select` / `Textarea` がすべてこれを参照する）。
+ *
+ * 🔴 **`@theme` のトークンにはできない。** 高さの名前空間は Tailwind v4 に無く、`--control-h-md`
+ *    を宣言しても `h-control-h-md` は 1 行も生成されない（`apps/web/app/tailwind.css` の
+ *    食い違い表）。したがって**クラス定数 1 箇所**という既存の規律（component 層の置き場所。
+ *    `docs/05` §2.3.2）で守る。
+ *
+ * 🔴 **値は `docs/04` §7.9 の 28px / 36px ではなく 32px / 40px である**（実装側を正とした）。
+ *    理由は下の `CONTROL_FIELD_SIZE_CLASSES` の 🔴 と同じで、**`Button` と入力欄の底が
+ *    1 本の帯（`Toolbar` / 絞り込みフォーム）で揃うこと**が先に決まっており、36px に下げると
+ *    既存の全フォーム・全一覧の見え方が変わる。**食い違いは `docs/04` 側の訂正事項として報告する。**
+ *
+ * 🔴 **段を 3 つにしない。** 一覧の行内の操作は `sm`、フォームと primary は `md` である
+ *    （`md` を行内に使うと 50 行の一覧で §7.1 の「ファーストビューに 12 行」が崩れる）。
+ */
+export const CONTROL_HEIGHT_CLASSES = {
+  /** 32px … テーブル行内のボタン / `IconButton`（`size='sm'`）。 */
+  sm: 'h-8',
+  /** 40px … フォームの `Input` / `Select` / primary・secondary ボタン（`size='default'`）。 */
+  md: 'h-10',
+} as const;
 
 /**
  * 1 行の入力（`Input` / `Select`）の寸法。
@@ -93,4 +118,4 @@ export const CONTROL_BASE_CLASSES = cn(
  *    当たるが、**高さが `h-10` で固定されているため `py-*` は実効を持たない**（upstream の
  *    `py-1` をそのまま残す。段から外れた値を新たに持ち込まない）。
  */
-export const CONTROL_FIELD_SIZE_CLASSES = 'h-10 py-1';
+export const CONTROL_FIELD_SIZE_CLASSES = `${CONTROL_HEIGHT_CLASSES.md} py-1`;

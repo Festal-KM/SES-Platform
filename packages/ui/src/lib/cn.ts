@@ -40,14 +40,19 @@
 import { extendTailwindMerge } from 'tailwind-merge';
 
 /**
- * `docs/04` §7.9 の文字サイズトークン 6 種（`@theme` の `--text-*`）。
+ * `docs/04` §7.9 の文字サイズトークン 7 種（`@theme` の `--text-*`）。
+ *
+ * ✅ **`metric`（24px）は改訂 23 で足した 7 つ目**であり、**使ってよいのは `KpiCard` の件数 1 箇所
+ *    だけ**である（`tests/static/design-tokens.test.ts` が参照元のファイルを固定する）。
+ *    ここに登録するのは、登録しないと `cn('text-metric', 'text-fg')` が **`text-metric` を
+ *    文字色と解釈して黙って捨てる**ためであり、使ってよい場所を広げる意味は持たない。
  *
  * 🔴 `tailwind-merge` の既定は `text-*` を「T シャツサイズ（`xs` / `sm` / `base` / `lg` / …）なら
  *    font-size、それ以外は**文字色**」と解釈する。`title` / `body` / `cell` / `micro` は
  *    既定のサイズ名ではないため、教えないと文字色として扱われ、同じ要素に文字サイズと文字色を
  *    渡したときにどちらかが消える。
  */
-export const TOKEN_TEXT_SCALE = ['title', 'lg', 'body', 'cell', 'xs', 'micro'] as const;
+export const TOKEN_TEXT_SCALE = ['title', 'metric', 'lg', 'body', 'cell', 'xs', 'micro'] as const;
 
 /**
  * `docs/04` §7.9 の semantic な色の名前（`@theme` の `--color-*` から接頭辞を除いたもの）。
@@ -91,6 +96,21 @@ export const TOKEN_COLOR_SCALE = [
   'info-border',
   'neutral-bg',
   'neutral-border',
+  // ✅ 2026-10-02（`docs/04` §7.9 改訂 23 / 人間のブリーフ）。**カード・パネル・overlay の地。**
+  //    🔴 `bg`（ページの地）と値は同じで役割が違う（`apps/web/app/tailwind.css` の 🔴）。
+  'surface',
+  // ✅ ③ component 層の色（**部品 1 つのための色**）。🔴 参照してよい部品はそれぞれ 1 つだけで、
+  //    `design-tokens.test.ts` が参照元のファイルを固定する。
+  'sidebar-bg',
+  'sidebar-fg',
+  'sidebar-fg-muted',
+  'sidebar-border',
+  'sidebar-hover-bg',
+  'sidebar-selected-bg',
+  'sidebar-selected-fg',
+  'sidebar-selected-bar',
+  'row-hover-bg',
+  'table-header-bg',
 ] as const;
 
 const twMerge = extendTailwindMerge({

@@ -29,9 +29,13 @@
 // | `CardDescription` | `text-sm text-slate-500` | `text-body text-fg-muted` | 実寸は同じ 14px。§7.3 の「本文（値・説明）」であり、**補助テキストの 12px ではない**（カードの説明は注記ではなく内容である） |
 import type { HTMLAttributes } from 'react';
 import { cn } from '../lib/cn.js';
+import { CARD_SURFACE_CLASSES } from '../lib/surface-classes.js';
 
 export function Card({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('rounded-md border border-border bg-bg', className)} {...props} />;
+  // ✅ 2026-10-02: 面を `CARD_SURFACE_CLASSES`（`bg-surface`）から取る。**値は同一（白）** であり、
+  //    見た目は変わらない。🔴 **`KpiCard` / `RailCard` / `Timeline` / `RankedList` と同じ 1 定数**を
+  //    使う（カードの面が 5 箇所に散ると「どれがカードか」が画面ごとに変わる）。
+  return <div className={cn(CARD_SURFACE_CLASSES, className)} {...props} />;
 }
 
 export function CardHeader({ className, ...props }: HTMLAttributes<HTMLDivElement>) {

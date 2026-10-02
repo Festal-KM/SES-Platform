@@ -206,9 +206,13 @@ describe('🔴 `Toast`（docs/04 §5-13 / §4.4）', () => {
     expect(toastMarkup()).not.toContain('danger');
   });
 
-  it('🔴 影は overlay の面だけが持つ（§7.9。`shadow-md` が 1 語だけ出る）', () => {
+  it('🔴 影は overlay の面だけが持つ（§7.9。`shadow-overlay` が 1 語だけ出る）', () => {
     const markup = toastMarkup();
     expect((markup.match(/shadow-/g) ?? []).length).toBe(1);
-    expect(markup).toContain('shadow-md');
+    // ✅ 2026-10-02: `docs/04` §7.9 改訂 23 で影に**名前**が付いた（`shadow-md` → `shadow-overlay`）。
+    //    🔴 **値は Tailwind 既定の `--shadow-md` と同一であり、見た目は 1px も変わっていない**
+    //    （`tests/static/design-tokens.test.ts` が `node_modules/tailwindcss/theme.css` と突き合わせて固定する）。
+    //    🔴 **「1 語だけ」という検査の強さは変えていない。**
+    expect(markup).toContain('shadow-overlay');
   });
 });

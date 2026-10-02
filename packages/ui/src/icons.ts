@@ -80,6 +80,7 @@ import {
   MessageSquare,
   PanelLeft,
   ScrollText,
+  Search,
   Send,
   Settings,
   Share2,
@@ -121,6 +122,12 @@ export const ICONS = {
   'panel-left': PanelLeft,
   menu: Menu,
   eye: Eye, // ✅ T-22-10: 要対応キューの行の `内容を見る`（`Drawer`）
+  // ✅ 2026-10-02: `GlobalSearchBox`（上部バーの検索の入口）。
+  // 🔴 **§7.5 の許可① の列挙に「検索」が名指しで在り**、本ファイル冒頭の (1) も `docs/05` §2.3.3 も
+  //    操作アイコンとして「検索」を挙げている。**新しい用途の区分を作ったのではなく、既に
+  //    許可されている操作にアイコンを与えただけ**である（`eye` を足したときと同じ扱い）。
+  // 🔴 **比喩ではない**（虫めがね = 検索そのもの）。🔴 **他の意味で使い回していない。**
+  search: Search,
 } as const;
 
 /** 🔴 写像に無い名前は**型エラー**になる（`docs/05` §17.7.1 (i)①）。 */
@@ -135,7 +142,7 @@ export const ICON_NAMES = Object.keys(ICONS) as readonly IconName[];
 /**
  * アイコン 1 つの寸法。
  *
- * 🔴 **16px（`size-4`）に固定する。** 縦に 15〜16 項目が並ぶ列で 1 日に何十回も走査する道具
+ * 🔴 **既定は 16px（`size-4`）である。** 縦に 15〜16 項目が並ぶ列で 1 日に何十回も走査する道具
  *    （`docs/04` §11-22）であり、**大きさが項目ごとに違うと「偶然の強調」が生まれる**。
  *    `shrink-0` は狭い幅でアイコンが潰れないための当たり判定（`components/button.tsx` の
  *    `shrink-0` と同じ理由）。
@@ -144,8 +151,37 @@ export const ICON_NAMES = Object.keys(ICONS) as readonly IconName[];
  */
 export const ICON_CLASSES = 'size-4 shrink-0';
 
+/**
+ * 🔴 **寸法は 2 段だけ**（`docs/04` §7.9 の `--icon-sm` / `--icon-md`。✅ 改訂 23 で名前が付いた）。
+ *    **リポジトリでアイコンの大きさを決めているのはここ 1 箇所である。**
+ *
+ * 🔴 **`@theme` のトークンにはできない。** 寸法の名前空間は Tailwind v4 に無く、`--icon-md` を
+ *    宣言しても `size-icon-md` は 1 行も生成されない（`apps/web/app/tailwind.css` の食い違い表）。
+ *    代わりに **`size` prop の閉じた union** にしてある ＝ 🔴 **段外は型エラーで書けない**
+ *    （`<Icon size="lg" />` も `<Icon className="size-6" />` も通らない。後者は
+ *    `tests/static/ui-shadow-and-size.test.ts` が落とす）。
+ *
+ * 🔴 **24px 以上を作らない**（装飾になる。§7.5）。
+ * 🔴 **`md`（20px）を使ってよいのは `KpiCard` の角丸の四角の中だけ**である。
+ *    ⚠️ `docs/04` §7.9 は「サイドバーの項目も `--icon-md`」とするが、**サイドバーは 16px のまま**に
+ *    した —— 上の 🔴（15〜16 項目の列で大きさが揃っていること）が `T-22-05` の判断として
+ *    記録されており、20px に上げると 56px 幅のアイコンのみ形態の重心も変わる。
+ *    **食い違いは `docs/04` 側の訂正事項として報告する。**
+ */
+export const ICON_SIZE_CLASSES = {
+  /** 16px … 行内 / ボタン内 / `SectionHeader` の見出し横 / グローバルナビの項目。 */
+  sm: 'size-4',
+  /** 20px … `KpiCard` の角丸の四角の中だけ。 */
+  md: 'size-5',
+} as const;
+
+/** 🔴 段外（`lg` / 任意の px）は**型として存在しない**。 */
+export type IconSize = keyof typeof ICON_SIZE_CLASSES;
+
 export type IconProps = {
   readonly name: IconName;
+  /** 🔴 既定は `sm`（16px）。`md` を使ってよい場所は上の 🔴 に限る。 */
+  readonly size?: IconSize;
   readonly className?: string;
 };
 
@@ -158,9 +194,11 @@ export type IconProps = {
  * 🔴 `focusable="false"` は IE 由来の保険ではなく、**SVG がタブ順に入らないこと**の明示である
  *    （入ると、ナビ 1 項目につきフォーカスが 2 回止まる）。
  */
-export function Icon({ name, className }: IconProps) {
+export function Icon({ name, size = 'sm', className }: IconProps) {
   return createElement(ICONS[name], {
-    className: cn(ICON_CLASSES, className),
+    // 🔴 `ICON_CLASSES`（= `sm` + `shrink-0`）を基底に置き、`size` が後から上書きする
+    //    （`cn()` = `tailwind-merge` が同じ群を後勝ちで畳む。`lib/cn.ts`）。
+    className: cn(ICON_CLASSES, ICON_SIZE_CLASSES[size], className),
     'aria-hidden': true,
     focusable: 'false',
   });

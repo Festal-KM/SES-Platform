@@ -108,7 +108,44 @@ export type { TopBarProps, TopBarScope, TopBarUsage, TopBarUsageState } from './
 // 🔴 T-22-05: アイコンの唯一の入口（`docs/05` §17.7.1 (i)①）。**写像に無い名前は型エラー**になる。
 //    画面と `lib/shell/nav.ts` が扱うのは `IconName`（文字列リテラル型）だけである。
 export { ICON_CLASSES, ICON_NAMES, ICONS, Icon } from './icons.js';
-export type { IconName, IconProps } from './icons.js';
+export type { IconName, IconProps, IconSize } from './icons.js';
+// 🔴 2026-10-02（人間のブリーフ）: **共通フレームの部品**（複数人が別の画面を担当しても
+//    1 つの SaaS に見えるための器）。いずれも **文字列と配列だけを受け取る** ——
+//    🔴 `children` / `ReactNode` の prop を 1 つも持たない（`components/drawer.tsx` と同じ理由。
+//    任意の JSX を入れられる器は、規約がコメントだけになる）。
+// 🔴 **面・影・余白・色の決定はこれらの部品の中にしか無い**（画面側に `rounded-md border …` を
+//    書かせない）。検査は `tests/static/ui-shadow-and-size.test.ts` と
+//    `tests/static/ui-primitive-single-impl.test.ts`（単一実装）。
+export { Avatar, AVATAR_MAX_INITIALS } from './components/avatar.js';
+export type { AvatarProps } from './components/avatar.js';
+export { GlobalSearchBox } from './components/global-search-box.js';
+export type { GlobalSearchBoxProps } from './components/global-search-box.js';
+// 🔴 `KpiCard` は `docs/04` §7.9 / §7.3 改訂 23 の `MetricCard` と**同一物**である
+//    （名前の食い違いは `docs/04` 側の訂正事項）。**`--text-metric`（24px）を使ってよい唯一の部品。**
+export {
+  KPI_CARD_ROW_MAX_ITEMS,
+  KPI_CARD_ROW_MIN_ITEMS,
+  KpiCard,
+  KpiCardRow,
+} from './components/kpi-card.js';
+export type { KpiCardItem, KpiCardProps, KpiCardRowProps } from './components/kpi-card.js';
+// 🔴 挨拶は**時計を持たない**（`greetingSlotOf` で区分だけを決め、語と日付は呼び出し側が
+//    サーバで解決する。`components/page-greeting.tsx` の 🔴）。
+export { GREETING_SLOTS, PageGreeting, greetingSlotOf } from './components/page-greeting.js';
+export type { GreetingSlot, PageGreetingProps } from './components/page-greeting.js';
+// 🔴 右レールの 3 部品は**同じ面（`RailFrame`）を共有する 1 ファイル**に在る
+//    （`children` を取る器を作らないため。`components/rail-card.tsx` 冒頭）。
+export { RailCard, RankedList, Timeline } from './components/rail-card.js';
+export type {
+  RailCardLink,
+  RailCardProps,
+  RankedListItem,
+  RankedListProps,
+  TimelineEntry,
+  TimelineProps,
+} from './components/rail-card.js';
+export { SectionHeader } from './components/section-header.js';
+export type { SectionHeaderLink, SectionHeaderProps } from './components/section-header.js';
 export { Badge, STATUS_BADGE_APPEARANCES, StatusBadge } from './components/badge.js';
 export type {
   BadgeProps,

@@ -74,6 +74,17 @@ const HEAD_PADDING_CLASSES: Readonly<Record<TableCellPadding, string>> = {
   compact: 'px-2',
 };
 
+/**
+ * セルの内側（🔴 §7.9 の `--space-2`（8px）/ `--space-3`（12px）の 2 段だけ）。
+ *
+ * 🔴 **行の高さ（`docs/04` §7.9 の `--row-h` = 36px）はここから「結果として」決まる。**
+ *    実測（2026-10-02）: `py-2`（8px）× 2 + `--text-cell`（13px）× 行間 1.5 = 19.5px → **35.5px**、
+ *    `TableRow` の `border-b`（1px）を含めて **36.5px**（= §7.9 の 36px）。
+ * 🔴 **高さのクラス（`h-9` 等）を当てない。** 当てると §7.9 自身が認めている
+ *    「**名称セルが折り返す `lg` 未満では可変になる**」（`U-16`）が壊れ、2 行になった名称が
+ *    セルから溢れる。**寸法に名前を与える目的は「画面ごとに違う値を書かせない」ことであり、
+ *    固定することではない**（高さを決めているのは余白と文字サイズの段の組み合わせである）。
+ */
 const CELL_PADDING_CLASSES: Readonly<Record<TableCellPadding, string>> = {
   normal: 'px-3 py-2',
   compact: 'px-2 py-2',
@@ -203,7 +214,9 @@ export function TableRow({ className, align = 'inherit', ...props }: TableRowPro
         'border-b border-border',
         TRANSITION_CLASSES,
         // hover（transient）: 背景を 1 段暗く。🔴 **文字色は変えない**（docs/04 §7.10）。
-        'hover:bg-bg-subtle',
+        // ✅ 2026-10-02: `bg-bg-subtle` → `bg-row-hover-bg`（**値は同一の `slate-50`**）。
+        //    行の hover は「部品 1 つのための色」なので component 層の名前を持つ（§7.9 の ③）。
+        'hover:bg-row-hover-bg',
         SELECTED_ROW_CLASSES,
         ALIGN_CLASSES[align],
         className,

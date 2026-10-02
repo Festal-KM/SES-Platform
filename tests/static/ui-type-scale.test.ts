@@ -80,11 +80,31 @@ describe('対照: (g) の検出器', () => {
     }
   });
 
-  it('6 トークンは拾わない', () => {
-    for (const token of ['text-title', 'text-lg', 'text-body', 'text-cell', 'text-xs', 'text-micro']) {
+  it('7 トークンは拾わない（✅ 2026-10-02 に `metric` が 7 つ目として入った）', () => {
+    for (const token of [
+      'text-title',
+      'text-lg',
+      'text-body',
+      'text-cell',
+      'text-xs',
+      'text-micro',
+      // ✅ `docs/04` §7.3 / §7.9 改訂 23。🔴 **使ってよいのは `KpiCard` の件数 1 箇所だけ**であり、
+      //    「どこで使えるか」は `tests/static/design-tokens.test.ts` と
+      //    `tests/static/ui-shadow-and-size.test.ts` が**参照元のファイルを 1 つに固定**する。
+      //    本検査（段の集合）は「段として存在するか」だけを見る（射程が違う）。
+      'text-metric',
+    ]) {
       expect(offScaleTextSizeValue(token), token).toBeNull();
     }
-    expect([...ALLOWED_TEXT_SIZES].sort()).toEqual(['body', 'cell', 'lg', 'micro', 'title', 'xs']);
+    expect([...ALLOWED_TEXT_SIZES].sort()).toEqual([
+      'body',
+      'cell',
+      'lg',
+      'metric',
+      'micro',
+      'title',
+      'xs',
+    ]);
   });
 
   it('🔴 `text-` で始まる色・整列・装飾を拾わない（誤検知しない）', () => {

@@ -195,9 +195,12 @@ export type DataTableProps<Row> = {
 /**
  * 🔴 sticky ヘッダ（§5-13）。**下 border で示し、影で示さない**（§7.9 の 🔴
  * 「テーブルの sticky ヘッダは影ではなく下 border で示す」）。
- * ⚠️ `sticky` が効くには背景が要る（透過だと行が透けて読めない）。面は §7.9 の `--color-bg-subtle`。
+ * ⚠️ `sticky` が効くには背景が要る（透過だと行が透けて読めない）。
+ * ✅ 2026-10-02: 面は `--color-table-header-bg`（**値は従来と同一の `slate-50`**）。列ヘッダの地は
+ *    「部品 1 つのための色」なので component 層の名前を持つ（§7.9 の ③）—— 行の hover と
+ *    同じ `slate-50` でも**別の判断**であり、片方だけ変えたくなる日に差分が読める。
  */
-export const DATA_TABLE_HEADER_CLASSES = 'sticky top-0 z-10 bg-bg-subtle';
+export const DATA_TABLE_HEADER_CLASSES = 'sticky top-0 z-10 bg-table-header-bg';
 
 /** 列 1 つの寸法（`docs/05` §2.3.3-4(c): 列定義由来の寸法は prop に残す）。 */
 function columnStyle(column: DataTableColumnBase): CSSProperties {

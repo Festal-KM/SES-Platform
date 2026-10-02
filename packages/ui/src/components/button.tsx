@@ -23,6 +23,7 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import { forwardRef } from 'react';
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import { cn } from '../lib/cn.js';
+import { CONTROL_HEIGHT_CLASSES } from '../lib/control-classes.js';
 import { DISABLED_CLASSES, FOCUS_RING_CLASSES, TRANSITION_CLASSES } from '../lib/state-classes.js';
 
 const buttonVariants = cva(
@@ -59,10 +60,16 @@ const buttonVariants = cva(
           'border border-border-strong bg-bg text-fg hover:bg-bg-subtle active:bg-bg-inset',
         ghost: 'bg-transparent text-fg hover:bg-bg-subtle active:bg-bg-inset',
       },
-      /** 🔴 **すべてのボタンを同じサイズ・同じ形状にしない**（§7.6）。primary は大きく、閲覧系はテキストリンクに落とす。 */
+      /**
+       * 🔴 **すべてのボタンを同じサイズ・同じ形状にしない**（§7.6）。primary は大きく、閲覧系はテキストリンクに落とす。
+       * ✅ 2026-10-02: **高さは `../lib/control-classes.ts` の 1 箇所から取る**
+       *    （`docs/04` §7.9 の `--control-h-sm` / `--control-h-md`。**値は 32 / 40px のまま変えていない**）
+       *    —— ボタンと入力欄の高さが別々に書かれていると、`Toolbar` の 1 行の底が揃う条件が
+       *    2 箇所の暗黙の一致になる。
+       */
       size: {
-        default: 'h-10 px-4 text-body',
-        sm: 'h-8 px-3 text-xs',
+        default: `${CONTROL_HEIGHT_CLASSES.md} px-4 text-body`,
+        sm: `${CONTROL_HEIGHT_CLASSES.sm} px-3 text-xs`,
       },
     },
     defaultVariants: { variant: 'primary', size: 'default' },
@@ -166,8 +173,9 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
 //      1 本」も構造的に守られる。
 /** アイコンの当たり判定（正方形）。`size` は `Button` と同じ 2 段に対応させる。 */
 const ICON_BUTTON_SIZE_CLASSES: Readonly<Record<ButtonSize, string>> = {
-  default: 'h-10 w-10 px-0',
-  sm: 'h-8 w-8 px-0',
+  // ✅ 2026-10-02: 高さは `CONTROL_HEIGHT_CLASSES`（1 箇所）。**値は 40 / 32px のまま。**
+  default: `${CONTROL_HEIGHT_CLASSES.md} w-10 px-0`,
+  sm: `${CONTROL_HEIGHT_CLASSES.sm} w-8 px-0`,
 };
 
 export type IconButtonProps = Omit<ButtonProps, 'children' | 'loadingLabel' | 'aria-label'> & {

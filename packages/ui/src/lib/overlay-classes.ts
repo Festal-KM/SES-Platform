@@ -11,23 +11,26 @@
 // 「overlay だから正しい」のかを機械で見分けられなくなる**（§7.9 の 🔴「新しい要素に『輪郭
 // だから』と言って影を足せない」）。
 //
-// したがって **影の語はここ 1 箇所**に置く —— 入力欄の `shadow-xs` が
+// したがって **影の語はここ 1 箇所**に置く —— 入力欄の `shadow-control` が
 // `./control-classes.ts` の 1 箇所であるのと**同じ形**である。検査は
 // `tests/static/design-tokens.test.ts`（`docs/05` §17.7 (h)）が
-// 「`packages/ui` の `shadow-` は control-classes.ts の `shadow-xs` と overlay-classes.ts の
-// `shadow-md` の 2 箇所だけ」に固定する。
+// 「`packages/ui` の `shadow-` は control-classes.ts の `shadow-control` と overlay-classes.ts の
+// `shadow-overlay` の 2 箇所だけ」に固定する。
 //
-// 🔴 **`@theme` に `--shadow-overlay` を宣言しない。** `docs/05` §2.3.2 の shadow の行が
-//    「宣言しない（既定の `shadow-sm` / `shadow-md` を使う）」と定めており、
-//    `design-tokens.test.ts` の `FORBIDDEN_TOKEN_PATTERNS` が `/^--shadow-/` を禁じている
-//    （宣言すると画面からも `shadow-overlay` と書けてしまい「overlay の中だけ」の縛りが消える）。
-//    ⚠️ `components/card.tsx` の冒頭コメントに「`--shadow-overlay` は宣言だけしてある」と
-//    書かれているが、**実際には宣言されていない**（T-22-01 時点の記述の誤り）。完了報告で提起する。
+// ✅ **2026-10-02（`docs/04` §7.9 改訂 23）で `--shadow-overlay` が `@theme` に入った。**
+//    🔴 **方針が変わった**（旧文は「宣言しない」であり、その根拠は `docs/05` §2.3.2 だった）。
+//    改訂 23 は **影の名前を 2 つに固定することで、名前の側から規約を守る**ことを決めた ——
+//    `--shadow-overlay` / `--shadow-control` 以外の影は**名前が無い**ので、新しい要素に
+//    「輪郭だから」と言って影を足すには `@theme` への追記（= 設計の改訂）が要る。
+//    ⚠️ **「画面からも `shadow-overlay` と書けてしまう」という旧文の懸念は残る。** そこを
+//    埋めるのは名前ではなく検査であり、`tests/static/ui-shadow-and-size.test.ts` が
+//    **`packages/ui` の外（`apps/web/app/**`）で影の語を書けないこと**を固定する。
+//    🔴 **値は Tailwind 既定の `--shadow-md` と同一なので、見た目は 1px も変わっていない。**
 //
 // ============================================================================
 // 🔴 影の有無以外に、ここで 1 箇所に寄せているもの
 // ============================================================================
-// - **面の色と枠**（`bg-bg` + `border border-border`）。overlay は「下の面から浮いている」
+// - **面の色と枠**（`bg-surface` + `border border-border`）。overlay は「下の面から浮いている」
 //   ことを影で示す唯一の場所なので、面の色が部品ごとに違うと影の意味が読めない。
 // - **`z-index` の段**（背景 `z-40` / 前面 `z-50`）。`docs/04` は段を定めていないが、
 //   **2 段しか使わない**ことをここで固定する（部品ごとに `z-*` を足すと重なり順が破綻する）。
@@ -73,7 +76,8 @@ export const OVERLAY_BACKDROP_CLASSES = 'fixed inset-0 z-40 bg-fg/50';
  *    `design-tokens.test.ts` の radius 検査が担保する。
  */
 export const OVERLAY_SURFACE_CLASSES = cn(
-  'border border-border bg-bg shadow-md',
+  // ✅ 2026-10-02: `bg-bg` → `bg-surface` / `shadow-md` → `shadow-overlay`（**どちらも値は同一**）。
+  'border border-border bg-surface shadow-overlay',
   FOCUS_RING_CLASSES,
 );
 

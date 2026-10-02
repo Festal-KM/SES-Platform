@@ -40,6 +40,22 @@ const SINGLE_IMPL_COMPONENTS = [
   'Skeleton',
   'Toast',
   'StatusBadge',
+  // ✅ 2026-10-02（人間のブリーフ）: 共通フレームの 8 部品。
+  // 🔴 **ここに足すことが「共通フレーム」の意味である。** ブリーフの目的は
+  //    「複数人がそれぞれ別の画面を担当しても、1 つの統一された SaaS に見えること」であり、
+  //    **画面側に `KpiCard` 相当を自作されたらその目的は達成できない**（面・影・余白・色の決定が
+  //    画面に戻る）。`packages/ui` の 1 箇所にしか無いことを機械で固定する。
+  // ⚠️ `Timeline` / `RankedList` / `RailCard` は `components/rail-card.tsx` の 3 export であり、
+  //    ファイル数ではなく**宣言の場所**を見る検査なのでそのまま働く。
+  'KpiCard',
+  'KpiCardRow',
+  'SectionHeader',
+  'PageGreeting',
+  'RailCard',
+  'Timeline',
+  'RankedList',
+  'Avatar',
+  'GlobalSearchBox',
 ] as const;
 
 /** 🔴 独立ファイルを持ってはならない部品 → 実装が入るべきファイル（`docs/04` §5-13 / `T-22-04`）。 */

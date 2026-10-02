@@ -271,11 +271,17 @@ describe('🔴 サイドバー（docs/04 §3.1 の項目表 / §7.5 ③ アイ�
     const html = render({ currentPath: '/engineers/e1' });
     const current = tagOf(html, 'app-nav-engineers');
     expect(current).toContain('aria-current="page"');
-    // 🔴 3 点（`docs/04` §7.9 / §7.10 の selected = `SELECTED_CLASSES`）。
-    expect(current).toContain('bg-brand-bg');
-    expect(current).toContain('text-brand');
+    // 🔴 3 点（`docs/04` §7.9 / §7.10 の selected）。
+    // ✅ 2026-10-02: サイドバーが**濃色（濃紺）**になったため、白地用の `SELECTED_CLASSES`
+    //    （`bg-brand-bg` = `indigo-50`）から濃色用の component トークンに差し替わった
+    //    （`docs/04` `U-25` / §7.9 改訂 23）。🔴 **「背景 + 文字色 + 左端 2px の 3 点」という
+    //    条文は 1 つも変えていないし、検査の強さも落としていない**（語が替わっただけ）。
+    //    色の値とコントラスト比（ラベル 4.5:1 / 群名・バー 3:1）は
+    //    `tests/static/design-tokens.test.ts` が実測で固定する。
+    expect(current).toContain('bg-sidebar-selected-bg');
+    expect(current).toContain('text-sidebar-selected-fg');
     expect(current).toContain('border-l-2');
-    expect(current).toContain('border-l-brand');
+    expect(current).toContain('border-l-sidebar-selected-bar');
     // 🔴 太字で示していない（weight を現在地の手がかりにしない）。
     expect(current).not.toContain('font-bold');
     expect(current).not.toContain('font-semibold');
