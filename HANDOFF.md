@@ -57,6 +57,8 @@
 
 **残っている直書きの量**（ラチェットの許可リスト）: 段④⑤ で **231 エントリ**。段①②③ は**すべて空**（= 違反 0 件）。
 
+🔴 **上の ✅ は「コードが入った」の意味であり、「CI が緑だった」の意味ではない。** `T-22-05`〜`T-22-09` の 5 コミットの CI は **`pnpm audit` の赤で後続のテストが全部 `skipped`** になっており（§6-11）、**テストは 1 件も実行されていない**。🔴 **`SP-22` §8 の完了判定は「各タスクに CI run 番号がある」を求めるため、段①②③ の緑の run 番号は 2026-10-02 以降（audit を直した後）のものを使う** —— 段③ の締めの時点で**段①②③ の全テストが 1 本の run で緑になったこと**を記録する。
+
 ### 2.3 デモ環境
 
 **https://web-production-9a8f44.up.railway.app**（`APP_ENV=demo`。🔴 外部 API は 6 つとも全モック）
@@ -81,6 +83,7 @@
 | 🔴 **`NODE_ENV` を持つシェルでビルドしない** | `NODE_ENV=development` があると `next build` が `/_global-error` の事前生成で `TypeError: Cannot read properties of null (reading 'useContext')` で落ちる（事前生成のワーカーだけが React の development 版を読み、React が 2 つ同居する）。`apps/web/next.config.ts` の門番が変数名を名指しして止める。**必ず `env -u NODE_ENV pnpm --filter @ses/web run build`** |
 | 🔴 **`packages/ui` を変えたら `pnpm --filter @ses/ui run build`** | `apps/web` は `dist` を参照する。忘れると変更が反映されない |
 | 🔴 **`packages/i18n` にキーを足したら `npx tsc -p packages/i18n/tsconfig.json`** | 忘れると `t()` が `undefined` を返してテストが落ちる |
+| 🔴 **CI が赤のとき `skipped` を見る** | `gh run view <id> --json jobs --jq '.jobs[].steps[] | "\(.number). \(.name) → \(.conclusion)"'`。**早いステップの赤は後続を全部 `skipped` にする**（§6-11 で 5 コミット分のテストが消えた）。`pnpm audit` は独立ジョブ（`Security audit`）に出したが、**`ci` ジョブ内の build / lint / typecheck は依然として直列**であり、build が落ちればテストは走らない。🔴 **「失敗 1 件」と出ていても、その後ろで何件の検査が消えたかは別に数える** |
 | 🔴 **`tailwind.css` の `@source '../../../packages/ui/src'` を消さない** | 消すと `@ses/ui` のスタイルが**テストは緑のまま見た目だけ**消える（実測の記録が同ファイルにある） |
 | **分離テストは専用の config** | `npx vitest run -c vitest.isolation.config.ts <file>`（既定の `vitest.config.ts` は `tests/isolation/**` を除外している） |
 | **テストの基準値**（2026-10-02 時点） | `tests/static/` **1326** / `apps/web` **2586** / `packages` 2393 / `packages/i18n` 25 / 分離 94 ファイル / E2E 14 spec 71 ケース |
@@ -188,6 +191,7 @@
 | 8 | **`docs/04` の節番号の誤記**（主平面の表を §3.3 = 管理平面と書いていた） | 🔴 **タスク文に節番号を写すときは、その節を 1 回開いて確かめる。** 実装エージェントは指示された節を読む |
 | 9 | **外枠がサイドバー 224px を足したことで `S-016` の分割レイアウトが成立しなくなった** | 上流の幅の条文は、後から入る共通外枠を織り込んでいないことがある |
 | 10 | 🔴 **`T-22-09` がユニットだけ緑の状態でマージされた** —— 追加した `sendingDomainRuntime()` の import が分離テストを 23 件落とし、**さらに `#9` の応答の形を変えたことで E2E も 2 件落としていた**（経路 4 の許可リストと「A1 に A2 が現れない」の検査。2026-10-02 に発覚）。**分離スイートも E2E も CI でしか回らない**ため、どちらも気づかなかった。しかも 500 の理由がログに残らず（→ [#84](https://github.com/Festal-KM/SES-Platform/issues/84)）、原因の見立てを 1 度外した（`summary.ts` の `count` と RLS を疑ったが、ハンドラ本体に 1 行も入っていなかった） | 🔴 **境界領域のタスクで route の import が 1 つ増えたら、該当する `tests/isolation/` の 1 ファイルだけでも回す**（本件は 26 秒）。🔴 **「ユニットが全部緑」は実 DB の保証ではない。** モックが踏まない経路（起動時 DI / RLS / GUC）はユニットでは原理的に落ちない |
+| 11 | 🔴🔴 **CI が 5 コミット分、テストを 1 件も実行していなかった** —— `pnpm audit` が `ci` ジョブの **6 番目のステップ**に在り、**落ちると後続の 7〜14（build / lint / typecheck / unit / isolation / typecheck:e2e / e2e）がすべて `skipped`** になっていた。2026-09-27〜10-01 の 5 コミット（`31bd0c7` / `f71612c` / `1a55389` / `276e6fc` / `1ad779d` = **`T-22-05`〜`T-22-09`**）が該当し、**`#10` の回帰（分離 23 件 + E2E 2 件）が検出されなかった真因はこれ**である。`gh run view <id> --json jobs` の `steps[].conclusion` で 2026-10-02 に判明 | 🔴 **「赤は赤」ではない —— 早いステップの赤は、後ろにある検出器そのものを消す。** 🔴 **CI が赤のとき「どのステップが赤か」だけでなく「どのステップが `skipped` か」を見る。** 対策として `pnpm audit` を独立ジョブ（`Security audit`）に出した（`ci.yml` 冒頭に経緯）。🔴 **独立した関心事は独立したジョブに置く** —— 直列に並べると、前の赤が後ろの緑も赤も区別不能にする |
 
 ---
 

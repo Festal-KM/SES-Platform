@@ -1,6 +1,20 @@
 name: CI
 
 # T-01-08（docs/sprints/SP-01-bootstrap.md）。T-03-11 で E2E ステージを追加した。
+#
+# 🔴 **2026-10-02: `pnpm audit` を別ジョブ（`security`）に出した。** それまで audit は
+# `ci` ジョブの 6 番目のステップに在り、**落ちると後続の 7〜14（build / lint / typecheck /
+# unit / isolation / typecheck:e2e / e2e）がすべて `skipped` になっていた**。
+# 実害: 2026-09-27〜10-01 の 5 コミット（`31bd0c7` / `f71612c` / `1a55389` / `276e6fc` /
+# `1ad779d` = SP-22 の `T-22-05`〜`T-22-09`）で **CI がテストを 1 件も実行していなかった**。
+# その間に `T-22-09` が入れた回帰（分離 23 件 + E2E 2 件）が検出されず、audit を直した
+# 2026-10-02 に初めて表に出た。🔴 **「赤は赤」ではない —— 早いステップの赤が、後ろにある
+# 検出器そのものを消す。** 独立した関心事は独立したジョブに置く。
+# 🔴 **ゲートは弱めていない**: audit が落ちればワークフロー全体が失敗する（ジョブが別でも
+# 結論は AND）。⚠️ [Issue #25](https://github.com/Festal-KM/SES-Platform/issues/25) で
+# ブランチ保護を有効にする際は、**required status check に `CI Pipeline` と
+# `Security audit` の 2 つを登録する**（1 つだけだと片方の赤で merge できてしまう）。
+#
 # 1 ジョブ内の直列ステップ
 # （build → lint → typecheck → test:unit → test:isolation → typecheck:e2e → test:e2e）にしている。
 # ジョブを分けると build 成果物（各パッケージの dist / 生成済み Prisma Client）の受け渡しに
@@ -54,21 +68,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # docs/03-tech-selection.md §5.1 方針 #3: セキュリティ更新は即時。Critical / High で落とす。
-      # 個別の無視設定は pnpm-workspace.yaml の `auditConfig.ignoreGhsas`（理由・再評価の契機つき）。
-      # 🔴 このコマンドに `--json` を付けてはならない。pnpm は --json 出力時に ignoreGhsas を
-      # exit code へ反映せず、無視済みの advisory でも exit 1 になる（実測: 非 JSON=0 / JSON=1）。
-      # npm audit エンドポイントの断続的 ERR_SOCKET_TIMEOUT 対策(2026-09-04)。全試行失敗なら fail = ゲートは弱めない。
-      - name: Security audit (pnpm audit)
-        run: |
-          for attempt in 1 2 3 4; do
-            pnpm audit --audit-level high && exit 0
-            echo "Security audit attempt ${attempt}/4 failed" >&2
-            if [ "${attempt}" -lt 4 ]; then
-              sleep 90
-            fi
-          done
-          exit 1
+      # 🔴 `pnpm audit` はこのジョブに置かない（2026-10-02。理由はファイル冒頭のコメント）。
+      # 依存の脆弱性はテストの成否と独立した関心事であり、**ここに置くと赤が後続の検出器を消す**。
+      # 実体は下の `security` ジョブに在る。
 
       # 🔴 実行順は build → lint → typecheck → test:unit → test:isolation。
       # tests/isolation の型解決と test:unit（@prisma/client を import する packages/db の
@@ -124,3 +126,45 @@ jobs:
             playwright-report/
           retention-days: 7
           if-no-files-found: ignore
+
+  # 🔴 テストとは独立した関心事なので独立したジョブに置く（2026-10-02。理由はファイル冒頭）。
+  # build 成果物を要しない（`pnpm install` のみで判定できる）ため、1 ジョブに閉じる理由
+  # （dist / Prisma Client の受け渡し）が audit には当てはまらない。
+  security:
+    name: Security audit
+    runs-on: ubuntu-latest
+    # 4 回 × sleep 90 秒の再試行を含めても収まる幅。🔴 短縮のために再試行を削らない。
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Enable pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # docs/03-tech-selection.md §5.1 方針 #3: セキュリティ更新は即時。Critical / High で落とす。
+      # 個別の無視設定は pnpm-workspace.yaml の `auditConfig.ignoreGhsas`（理由・再評価の契機つき）。
+      # 🔴 このコマンドに `--json` を付けてはならない。pnpm は --json 出力時に ignoreGhsas を
+      # exit code へ反映せず、無視済みの advisory でも exit 1 になる（実測: 非 JSON=0 / JSON=1）。
+      # npm audit エンドポイントの断続的 ERR_SOCKET_TIMEOUT 対策(2026-09-04)。全試行失敗なら fail = ゲートは弱めない。
+      - name: Security audit (pnpm audit)
+        run: |
+          for attempt in 1 2 3 4; do
+            pnpm audit --audit-level high && exit 0
+            echo "Security audit attempt ${attempt}/4 failed" >&2
+            if [ "${attempt}" -lt 4 ]; then
+              sleep 90
+            fi
+          done
+          exit 1
