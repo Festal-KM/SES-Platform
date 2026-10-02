@@ -55,6 +55,23 @@ vi.mock('../../apps/web/lib/auth/session', () => ({
   readRequestMeta: async () => META,
 }));
 
+/**
+ * 🔴 起動時 DI の値を**注入する**（`proposal-resend` / `send-proposal` ほかと同じ作法）。
+ *
+ * 🔴 なぜ必須か: `GET /api/home` は T-22-09 で `sendingDomainRuntime()`（`操作` 列の不能条件 ④）を
+ *    読むようになった。分離テストには `apps/web/instrumentation.ts` が無いため、素のままだと
+ *    `ensureDbConfigured()` → `initializeRuntimeConfig(process.env)` が走り、`APP_ENV` 不在で
+ *    `EnvValidationError` になって **ルートが 500 を返す**（T-22-09 のあと CI で 23/25 が落ちた原因）。
+ * 🔴 **環境変数を代わりに設定して通すことはできない。** `ensureDbConfigured()` は
+ *    `configureTenantDb(env.DATABASE_URL)` も行うため、`beforeAll` が指した Testcontainers の
+ *    接続が別の URL に差し替わってしまう（検証したい母集団が消える）。
+ * 🔴 `verificationRequired: true`（`production` / `staging` 相当）にして、ホストの枝が
+ *    同じトランザクションで読む `tenant_sending_domains`（C2 HOST_ONLY）の count を**実 DB で通す**。
+ */
+vi.mock('../../apps/web/lib/db/bootstrap', () => ({
+  sendingDomainRuntime: () => ({ region: 'ap-northeast-1', verificationRequired: true }),
+}));
+
 const homeRoute = await import('../../apps/web/app/api/(main)/home/route');
 const proposalsRoute = await import('../../apps/web/app/api/(main)/proposals/route');
 const { CHANGED_SINCE_SAFETY_MARGIN_MS, HOST_ACTION_QUEUE_KIND_ORDER, PARTNER_ACTION_QUEUE_KIND_ORDER } = await import(
@@ -408,6 +425,24 @@ describe('🔴 ① ② ホスト scope=all: 5 種別が種別表の並びで載�
     expect(Object.keys(body).sort()).toEqual(['audience', 'blocks', 'changedSince']);
   });
 
+  /**
+   * ✅ T-22-09: `操作` 列の不能条件 ④（送信ドメイン未検証）は、**同じトランザクションで読む
+   * `tenant_sending_domains`（C2 HOST_ONLY）の実数**で決まる（docs/05 §6.11.2 / §8.3）。
+   * 🔴 この `it` が無いと、ホストの枝のその count が落ちていても気づけない
+   *    （本ファイルの母集団には検証済みドメインが 1 件も無いので、答えは必ず「未検証」になる）。
+   */
+  it('🔴 ホストの RESEND は送信ドメインの実数で不能になる（検証済みが 0 件 = fail-closed。他の 3 kind は可）', async () => {
+    const { block } = await home(hostSales, '?scope=all');
+    expect(await admin.tenantSendingDomain.count({ where: { tenantId: TENANT_A, state: 'VERIFIED' } })).toBe(0);
+    expect(block.actionAvailability.RESEND).toEqual({
+      enabled: false,
+      reasonKey: 'home.actionQueue.denied.sendingDomain',
+    });
+    for (const kind of ['APPROVE', 'FIX', 'RESPOND']) {
+      expect(block.actionAvailability[kind], kind).toEqual({ enabled: true, reasonKey: null });
+    }
+  });
+
   it('提案の行の「対象」は案件名 + 凍結側のエンジニア名、「相手」は提案先。since / rowVersion は updated_at', async () => {
     const { block } = await home(hostSales, '?scope=all');
     const row = block.items.find((item) => item.targetId === created.hostGateFailed);
@@ -627,6 +662,13 @@ describe('🔴 ⑦ changedSince: 変わっていない行は items に返らず�
 // ---------------------------------------------------------------------------
 
 describe('🔴 ⑧ SUMMARY は同じ応答に同梱され、取引先の応答に他社由来の値が 1 つも無い', () => {
+  /**
+   * 🔴 「進行中」から外れる終端 3 状態。**`summary.ts` の `PROPOSAL_TERMINAL_STATES` を import せず書き写す**
+   *    —— 実装の定数を参照すると、終端の集合が変わったときに期待値も一緒に動いて検知できない
+   *    （`CLAUDE.md` §4.2 の `WON` / `LOST` / `WITHDRAWN` は人間の承認事項）。
+   */
+  const TERMINAL_STATES = ['WON', 'LOST', 'WITHDRAWN'] as const;
+
   it('ホストは Phase 1 の 3 指標（案件 / 人材 / 進行中の提案）。件数は 0 でも返る', async () => {
     const { body } = await home(hostSales, '?scope=all');
     const summary = summaryOf(body);
@@ -646,6 +688,14 @@ describe('🔴 ⑧ SUMMARY は同じ応答に同梱され、取引先の応答�
     expect(await admin.engineer.count({ where: { tenantId: TENANT_A } })).toBeGreaterThan(
       summary.items.find((item) => item.kind === 'ENGINEERS')?.count ?? -1,
     );
+    // 🔴 `進行中の提案` は終端 3 状態を除いた自テナント全件（ホストは C5 PARTY で全件が見える）。
+    //    `created.hostLost`（`LOST`）が数から外れていることも、この一致が同時に固定する。
+    const inFlight = summary.items.find((item) => item.kind === 'PROPOSALS_IN_FLIGHT')?.count ?? -1;
+    expect(inFlight).toBe(
+      await admin.proposal.count({ where: { tenantId: TENANT_A, state: { notIn: [...TERMINAL_STATES] } } }),
+    );
+    // 🔴 0 件では「読めていない」と区別できないので、母集団があることも確かめる。
+    expect(inFlight).toBeGreaterThan(0);
     // 🔴 応答に載るキーは 3 つだけ（ラベル・色・率・前月比を返さない）。
     for (const item of summary.items) expect(Object.keys(item).sort()).toEqual(['count', 'href', 'kind']);
   });
@@ -673,6 +723,28 @@ describe('🔴 ⑧ SUMMARY は同じ応答に同梱され、取引先の応答�
       }),
     );
     expect(published).toBeLessThan(await admin.project.count({ where: { tenantId: TENANT_A } }));
+    // 🔴 `共有中` は**自社が共有した有効な行だけ**（`engineer_shares` = C3 OWNER_SCOPED + `revoked_at IS NULL`）。
+    //    🔴 ここを「整数であること」で済ませてはならない —— `engineer_shares` は**取引先の枝だけが読む表**であり、
+    //    RLS / 拡張 / `where` の都合で 0 件に化けてもホスト側のテストでは踏めない（`F-016 AC-2`「解除で即時に消える」の裏返し）。
+    const shared = summary.items.find((item) => item.kind === 'SHARED_ENGINEERS')?.count ?? -1;
+    expect(shared).toBe(
+      await admin.engineerShare.count({
+        where: { tenantId: TENANT_A, partnerCompanyId: PARTNER_A1, revokedAt: null },
+      }),
+    );
+    expect(shared).toBeGreaterThan(0);
+    // 🔴 `進行中の提案` は**自社が作成した提案だけ**（C5 PARTY）。テナント全体より少ない
+    //    = ホストと他社（A2）の提案が 1 件も数に入っていない。
+    const inFlight = summary.items.find((item) => item.kind === 'PROPOSALS_IN_FLIGHT')?.count ?? -1;
+    expect(inFlight).toBe(
+      await admin.proposal.count({
+        where: { tenantId: TENANT_A, ownerPartnerCompanyId: PARTNER_A1, state: { notIn: [...TERMINAL_STATES] } },
+      }),
+    );
+    expect(inFlight).toBeGreaterThan(0);
+    expect(inFlight).toBeLessThan(
+      await admin.proposal.count({ where: { tenantId: TENANT_A, state: { notIn: [...TERMINAL_STATES] } } }),
+    );
     // 🔴 他社を示唆する語が応答全体に 1 つも無い（フィルタで落とすのではなく型に存在しない）。
     for (const forbidden of ['TOTAL_', 'RANK', 'COMPARISON', 'OTHER_COMPANIES', 'SAME_PROJECT']) {
       expect(text, forbidden).not.toContain(forbidden);
