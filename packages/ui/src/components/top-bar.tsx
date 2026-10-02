@@ -6,6 +6,24 @@
 // ============================================================================
 // 1. 🔴 **5 要素とスコープ表示 2 段を変えない**（`T-22-05` 条文 8）:
 //    ワードマーク / スコープ表示 / 上限インジケータ / 通知 / 自分。
+//    ✅ **2026-10-02（`docs/04` 改訂 23 / §3.1 の ③）で「検索」が 6 つ目として入った**
+//    （要素を**足しただけ**であり、5 要素のどれも消していない。並びは
+//    **ワードマーク → 検索（幅いっぱい）→ スコープ表示 → 上限 → 通知 → 自分**）。
+//    ⚠️ **ワードマークは Top Header に残した。** 改訂 23 ② は「サイドバー上端へ移す」と定めるが、
+//    `app-header-wordmark` は凍結済みの `data-testid` であり（`U-22`）、移設は
+//    **testid の移動 + `Sidebar` の構造変更**を伴う別タスクである（`docs/04` 側の未達として報告する）。
+//    ⚠️ **ヘルプ（`circle-help`）は置いていない** —— 中身（「この画面でできること / できないこと」）の
+//    出所が 1 つも無く、押して何も出ないアイコンは §3.1 の ③ が禁じた「動かない検索窓」と同じものに
+//    なる（46 画面ぶんの説明が要るので別タスク）。
+//
+// 1b. 🔴 **検索と自分は「要素」で受ける**（値ではなく `ReactNode`）。理由はそれぞれ 1 つだけである:
+//    - **検索** … `⌘K` / `Ctrl+K` の出し分けは**プラットフォームの判定**を要し、サーバの値では決まらない
+//      （`apps/web/app/(main)/_shell/global-search.tsx` が client で決める）。
+//    - **自分** … `DropdownMenu` は Radix（`@ses/ui/client`）であり、**この部品は主バレル側**である
+//      （主バレルに overlay を載せると、`Button` 1 つのサーバ画面まで Radix を引き込む。
+//      `../index.client.ts` 冒頭の 🔴）。
+//    🔴 **他の要素を `ReactNode` にしない**（器が「何でも置ける場所」になると、ヘッダの規約が
+//    コメントだけになる）。
 // 2. 🔴 **ワードマークは製品名を表示する唯一の箇所**（`U-01`）。語は `product.name` から来る
 //    （呼び出し側が解決して渡す。この部品は `@ses/i18n` に依存しない）。
 // 3. 🔴 **第二境界の常時表現** —— パートナー所属では「組織名 ＞ 自社名」の **2 段**（§3.2 の #1）。
@@ -19,7 +37,7 @@
 // 7. 🔴 **見出し・ボタンにアイコンを付けない**（§7.5 の「引き続き使わない場所」）。
 //    ヘッダに `<svg>` は 1 つも出ない。
 // 8. 🔴 **`'use client'` を宣言しない / 文言を持たない**（`../index.ts` の共通規約 4・5）。
-import type { ComponentType } from 'react';
+import type { ComponentType, ReactNode } from 'react';
 import { Badge } from './badge.js';
 import type { SidebarLinkProps } from './sidebar.js';
 import { cn } from '../lib/cn.js';
@@ -58,12 +76,22 @@ export type TopBarProps = {
   readonly wordmark: string;
   /** ワードマークの遷移先（ホーム）。 */
   readonly homeHref: string;
+  /**
+   * ✅ 検索の入口（`GlobalSearchBox`）。🔴 **本体カラムの幅いっぱい**に置く（§3.1 の ③）。
+   * 🔴 **要素で受ける**（上の 1b）。`null` を許さない —— 検索は SES 営業の主動作であり、
+   *    「この画面だけ検索の入口が無い」状態を器が作れないようにする。
+   */
+  readonly search: ReactNode;
   readonly scope: TopBarScope;
   readonly usage: TopBarUsage | null;
   /** 通知（🔴 Phase 2。語 + 無彩色の Badge）。 */
   readonly notifications: { readonly label: string; readonly phase: string };
-  /** 自分（`山田太郎（営業）`。**解決済み**）。 */
-  readonly account: string;
+  /**
+   * ✅ 自分（会社名 + 氏名 + アバター + `DropdownMenu`）。🔴 **要素で受ける**（上の 1b）。
+   * 🔴 **氏名とロール名のテキストを必ず含める**（`app-header-account`）—— アバターだけを置くと
+   *    「なぜこの操作ができないか」の一次説明（ロール名）が画面から消える（§3.1）。
+   */
+  readonly account: ReactNode;
   readonly linkComponent?: ComponentType<SidebarLinkProps>;
 };
 
@@ -142,6 +170,7 @@ function UsageIndicator({
 export function TopBar({
   wordmark,
   homeHref,
+  search,
   scope,
   usage,
   notifications,
@@ -156,6 +185,12 @@ export function TopBar({
         <Link className={WORDMARK_CLASSES} href={homeHref} data-testid="app-header-wordmark">
           {wordmark}
         </Link>
+        {/* ✅ 検索（改訂 23。§3.1 の ③）。🔴 **本体カラムの幅いっぱい**に伸びる。
+            🔴 モバイルでは行を分けて全幅にする（`md` 未満）—— 1 段に 6 要素は入らないが、
+            **検索を隠さない**（`CLAUDE.md` §13.3「狭い画面を理由に判断材料を隠さない」）。 */}
+        <div className="order-last w-full min-w-0 md:order-none md:min-w-48 md:flex-1" data-testid="app-header-search-slot">
+          {search}
+        </div>
         {/* 🔴 スコープ表示。取引先所属は「組織名 ＞ 自社名」の 2 段（§3.2 の #1）。
             🔴 モバイルでも組織名を隠さない（`CLAUDE.md` §13.3 / §3.4 の 2026-09-28 の判断）。 */}
         <div
@@ -183,10 +218,12 @@ export function TopBar({
             {notifications.label}
             <Badge variant="neutral">{notifications.phase}</Badge>
           </span>
-          {/* 自分（氏名 + ロール名）。🔴 ロールが見えることが「なぜこの操作ができないか」の一次説明になる。 */}
-          <p className="text-xs text-fg" data-testid="app-header-account">
-            {account}
-          </p>
+          {/* 自分（会社名 + 氏名 + ロール名 + アバター。改訂 23 で `DropdownMenu` になった）。
+              🔴 ロールが見えることが「なぜこの操作ができないか」の一次説明になる。
+              🔴 `app-header-account` は**呼び出し側が出す**（凍結値。`U-22`）—— 器がテキストを
+                 組まないのは、会社名の 2 段目と `DropdownMenu` のトリガが一体の当たり判定である
+                 ためである（器が文字列を受けると、トリガの中に収められない）。 */}
+          {account}
         </div>
       </div>
     </header>

@@ -20,13 +20,35 @@
 //    クライアントバンドルへ移る（`tests/static/client-db-boundary.test.ts`）。
 // 🔴 **判断を置かない。** ロール別の出し分けは `lib/shell/nav.ts`、上限の選択は
 //    `lib/shell/usage-indicator.ts` が 1 箇所で決めている（2 箇所に置くと片方だけ変わる）。
+//
+// ============================================================================
+// ✅ 2026-10-02（`docs/04` §3.1 改訂 23 / 人間のモックアップ）で足した 2 つの島
+// ============================================================================
+// 🔴 **この 1 枚は `'use client'` を宣言しないままである。** 代わりに、クライアントを要する
+//    2 要素だけを**要素として**受け取る形に変えた（`TopBar` の `search` / `account`）:
+//
+//   | 要素 | 島 | クライアントが要る理由（**それ以外の理由では島を作らない**） |
+//   |---|---|---|
+//   | 検索 | `./global-search.tsx` | `⌘K` / `Ctrl+K` の**プラットフォーム判定** |
+//   | 自分 | `./account-menu.tsx` | `DropdownMenu` が Radix（`@ses/ui/client`。検査 (i)⑤） |
+//
+// 🔴 **ヘルプ（`circle-help`）は置いていない** —— 中身（「この画面でできること / できないこと」）の
+//    出所が 1 つも無く、押して何も出ないアイコンは §3.1 の ③ が禁じた「動かない検索窓」と同じものに
+//    なる（46 画面ぶんの説明が要るので別タスク。`docs/04` の未達として報告する）。
+// 🔴 **通知にベルのアイコンと未読ドットを置いていない** —— `Notification`（`F-039` / `S-032`）は
+//    Phase 2 であり、**未読の実体が無い**（架空のドットを描くと「見たのに消えない」になる）。
+//    押せない要素にアイコンだけを足すのは §7.5 の装飾の禁止に当たるため、**語 + `Phase 2` Badge**
+//    のままにした。
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { t } from '@ses/i18n';
 import { AppShell, type AppShellLabels, type TopBarUsage } from '@ses/ui';
+import { ENGINEER_LIST_PATH } from '../../../lib/engineers/list-rows';
 import type { NavGroup, NavItem } from '../../../lib/shell/nav';
 import { resolveBottomTabs, resolveNavGroups } from '../../../lib/shell/nav-view';
 import type { ShellUsageIndicator } from '../../../lib/shell/usage-indicator';
+import { AccountMenu } from './account-menu';
+import { GlobalSearch } from './global-search';
 
 export type MainShellProps = {
   /** ワードマーク（`product.name`）。🔴 製品名を表示する唯一の箇所（`U-01`）。 */
@@ -90,6 +112,30 @@ function resolveUsage(usage: ShellUsageIndicator, href: string | null): TopBarUs
   };
 }
 
+/**
+ * 🔴 アバターのイニシャル（**1〜2 文字**。`packages/ui` の `Avatar` は切り出しをしない ——
+ *    「山田太郎 → 山」の規則は言語と氏名の持ち方に依存するため、呼び出し側が決める）。
+ *
+ * 🔴 **日本語の氏名は先頭 1 文字**（姓の 1 文字目）。**ASCII の氏名は語頭 2 文字**（`Yamada Taro`
+ *    → `YT`）。🔴 **空文字を返さない**（円の中が空のアバターは「壊れている」に見える）。
+ * ⚠️ 置き場所がここなのは、`apps/web/app/**` のロジックで**ユニットテストの対象外**だが
+ *    `main-shell.render.test.tsx` が描画結果で固定できるためである（`lib/**` に出すほどの分量が無い）。
+ */
+export function accountInitials(userName: string): string {
+  const trimmed = userName.trim();
+  if (trimmed === '') return '?';
+  // 🔴 `[\x20-\x7E]` = 印字可能な ASCII（空白〜`~`）。全角の氏名はここに入らない。
+  const asciiWords = trimmed.split(/\s+/).filter((word) => /^[\x20-\x7E]+$/.test(word));
+  if (asciiWords.length >= 2) {
+    return `${asciiWords[0]?.[0] ?? ''}${asciiWords[1]?.[0] ?? ''}`.toUpperCase();
+  }
+  if (asciiWords.length === 1 && asciiWords[0] === trimmed) {
+    return trimmed.slice(0, 2).toUpperCase();
+  }
+  // 🔴 日本語（全角）は先頭 1 文字（2 文字にすると円の中で潰れる）。サロゲートペアを割らない。
+  return [...trimmed][0] ?? '?';
+}
+
 /** ボトムタブと「その他」の語（`docs/04` §3.4）。 */
 function shellLabels(): AppShellLabels {
   return {
@@ -112,11 +158,33 @@ export function MainShell({
   currentPath,
   children,
 }: MainShellProps) {
+  const accountLabel = `${userName}（${roleLabel}）`;
+  // 🔴 `組織設定`（`S-035`）に到達できるかは **`lib/shell/nav.ts` が既に決めている**
+  //    （ホスト所属の `OWNER` / `ADMIN` だけが項目を持つ）。ここでロールを見ると
+  //    **2 つのロール表**ができる（`capabilities.ts` と `page-trail.ts` が食い違った前例がある）。
+  const organizationSettings = nav
+    .flatMap((group) => group.items)
+    .find((item) => item.id === 'settings-organization');
+  const organizationSettingsLink =
+    organizationSettings === undefined || organizationSettings.reach.kind !== 'LINK'
+      ? null
+      : { href: organizationSettings.reach.href, label: t(organizationSettings.labelKey) };
   return (
     <AppShell
       header={{
         wordmark,
         homeHref: '/',
+        // 🔴 検索は**既存の検索画面**（`S-005` = 複合検索を持つ人材一覧）へ遷移する
+        //    （横断検索は存在しない。§3.1 の ③「動かない検索窓を置かない」）。
+        search: (
+          <GlobalSearch
+            href={ENGINEER_LIST_PATH}
+            placeholder={t('shell.header.search.placeholder')}
+            label={t('shell.header.search.label')}
+            shortcutMac={t('shell.header.search.shortcut')}
+            shortcutDefault={t('shell.header.search.shortcutDefault')}
+          />
+        ),
         scope: {
           organizationLabel: t('shell.header.scope.organizationLabel'),
           organizationName,
@@ -129,7 +197,17 @@ export function MainShell({
         usage: resolveUsage(usage, usageHref),
         // 🔴 通知（`S-032`）は Phase 2。**リンクにしない**（404 を作らない）。印は無彩色の Badge。
         notifications: { label: t('shell.header.notifications'), phase: t('shell.nav.note.phase2') },
-        account: `${userName}（${roleLabel}）`,
+        account: (
+          <AccountMenu
+            initials={accountInitials(userName)}
+            accountLabel={accountLabel}
+            // ⚠️ 自社名は**渡さない**（`./account-menu.tsx` の 5。トリガは 1 段であり、
+            //    第二境界の常時表現はスコープ表示〔`app-header-scope-company`〕が持つ）。
+            organizationSettings={organizationSettingsLink}
+            signOutLabel={t('shell.header.account.signOut')}
+            menuLabel={t('shell.header.account.menu')}
+          />
+        ),
       }}
       groups={resolveNavGroups(nav)}
       currentPath={currentPath}

@@ -21,7 +21,7 @@
 // |---|---|---|---|
 // | `SCAN_QUARANTINE` | `readQuarantinedSkillSheets` | **1 本** | 1 |
 // | `ACTION_QUEUE` | `readActionQueueWithSummary` | **1 本** | 1 |
-// | `SUMMARY` | 🔴 **同じ `withTenant` に相乗り**（`readSummaryBlock`） | **+0 本** | 1 |
+// | `SUMMARY` | 🔴 **同じ `withTenant` に相乗り**（`readSummaryCounts`。✅ 改訂 23 で KPI 4 枚になったが**本数は +0 本のまま**。`今日やること` は要対応キューの行数そのものでクエリ 0 本） | **+0 本** | 1 |
 // | 送信ドメインの事実（`actionAvailability` の条件 ④） | 🔴 **同じ `withTenant` に相乗り** | **+0 本** | 1 |
 // | 合計 | | 🔴 **2 本**（ホスト / 取引先とも） | 1 |
 //
@@ -51,6 +51,11 @@ export type HomeBlocksOptions = {
    *    その丸めた値をそのまま使うだけでよい（`>=` の重複は `targetId` 上書きで無害。`action-queue.ts` の注記）。
    */
   readonly changedSince?: Date | null;
+  /**
+   * 🔴 ✅ 2026-10-02（改訂 23）: KPI カードの差分の基準時刻。**必須**（`./periods.ts` の 🔴 ——
+   *    応答の `changedSince`（挨拶行の「◯時◯分 時点」）と**同じインスタンス**を渡す）。
+   */
+  readonly now: Date;
 };
 
 /**
@@ -72,6 +77,7 @@ export async function readHomeBlocks(
       scope: options.scope ?? DEFAULT_HOME_SCOPE,
       changedSince: options.changedSince ?? null,
       sendingDomainVerificationRequired: options.sendingDomainVerificationRequired,
+      now: options.now,
     }),
   ]);
   // 🔴 T-22-09: `SUMMARY` は**常に**返す（0 件でも `count: 0`。描かない判断は画面側の 1 箇所）。

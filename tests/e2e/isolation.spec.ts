@@ -515,6 +515,8 @@ test.describe('④ パートナー A1 で、パートナー A2 のものが 1 �
           audience?: string;
           items?: readonly Record<string, unknown>[];
           targetIds?: readonly string[];
+          /** ✅ 2026-10-02（改訂 23）: 初回空（案件も人材も 0 件）。**真偽値 1 つだけ**である。 */
+          initialEmpty?: boolean;
         }[];
         visibilityNotice?: { messageKey: string };
       };
@@ -551,8 +553,9 @@ test.describe('④ パートナー A1 で、パートナー A2 のものが 1 �
       }
       // 対照: `seed:isolation` はパートナー 1 に `GATE_FAILED` の自社提案を 1 件置く（`gateFailedProposalId`）。空振りで green にしない。
       expect((queue.items ?? []).some((row) => row['kind'] === 'GATE_FAILED')).toBe(true);
-      // 🔴 ✅ T-22-09: 取引先の `SummaryStrip` は **Phase 1 の 4 指標**だけで、**すべて自社スコープの件数**である
-      //    （`docs/04` §S-004 / docs/05 §6.11.1 の表。`ASSIGNMENTS_ACTIVE` は Phase 2）。
+      // 🔴 ✅ T-22-09 → ✅ 2026-10-02（`docs/04` 改訂 23）: 取引先の **KPI カード 4 枚**は
+      //    **すべて自社スコープの件数**である（`docs/04` §4.1 の表 = 返答が必要な依頼 / 返信待ち /
+      //    面談予定 / 今週公開された案件）。
       //    🔴 `TOTAL_*` / `RANK` / `COMPARISON` / `OTHER_COMPANIES` / `SAME_PROJECT` に類する値は
       //    **フィルタで落とすのではなく型に存在しない**（`BR-07` / `F-004 AC-4`）。
       //    ⚠️ `tests/isolation/home-action-queue.test.ts` ⑧ に同趣旨の検査があるが、**重複して構わない**
@@ -561,16 +564,26 @@ test.describe('④ パートナー A1 で、パートナー A2 のものが 1 �
       if (summary === undefined) throw new Error('SUMMARY ブロックが無い（0 件でも `count: 0` で必ず返る契約）。');
       expect(summary.audience).toBe('PARTNER');
       expect((summary.items ?? []).map((item) => item['kind'])).toEqual([
-        'PUBLISHED_PROJECTS',
-        'OWN_ENGINEERS',
-        'SHARED_ENGINEERS',
-        'PROPOSALS_IN_FLIGHT',
+        'REQUESTS_TO_ANSWER',
+        'AWAITING_REPLY',
+        'INTERVIEWS',
+        'PUBLISHED_THIS_WEEK',
       ]);
-      // 🔴 1 指標のキーは 3 つだけ（ラベル・色・率・前月比・金額を返さない）。
+      // 🔴 1 指標のキーは 4 つだけ（ラベル・色・率・前月比・金額を返さない）。
+      //    ✅ 改訂 23 で足したのは `delta`（**件数の差と基準だけ**を持つ組 / 比較できなければ `null`）である。
       for (const item of summary.items ?? []) {
-        expect(Object.keys(item).sort()).toEqual(['count', 'href', 'kind']);
+        expect(Object.keys(item).sort()).toEqual(['count', 'delta', 'href', 'kind']);
         expect(Number.isInteger(item['count']), '件数が整数でない').toBe(true);
+        // 🔴 差分は**率でない**（`percent` / `rate` / `ratio` のキーを持たない）。
+        const delta = item['delta'];
+        if (delta !== null && typeof delta === 'object') {
+          expect(Object.keys(delta).sort()).toEqual(['basis', 'count']);
+          expect(['PREVIOUS_DAY', 'PREVIOUS_WEEK']).toContain((delta as { basis: string }).basis);
+        }
       }
+      // 🔴 **初回空の判定はサーバの真偽値 1 つだけ**（台帳の件数を応答に出さない ——
+      //    取引先に「自社の人材が何人か」以外の数を返す枠を作らない）。
+      expect(typeof summary['initialEmpty']).toBe('boolean');
       for (const forbidden of ['TOTAL_', 'RANK', 'COMPARISON', 'OTHER_COMPANIES', 'SAME_PROJECT']) {
         expect(home9Response.text, forbidden).not.toContain(forbidden);
       }

@@ -1,78 +1,143 @@
 // apps/web/lib/home/summary-view.ts
-// 🔴 `SummaryStrip` の表示値の組み立て（`docs/04` §4.1 改訂 16 / §5-13 / §7.2 / §7.9 /
-//    docs/05 §6.11.1）。T-22-09。
+// 🔴 **KPI カード 4 枚の表示値の組み立て**（`docs/04` §4.1 / §7.2 / §7.9 改訂 23 / docs/05 §6.11.1）。
+//    T-22-09 → ✅ 2026-10-02（`SummaryStrip` → `KpiCardRow`）。
 //
 // ============================================================================
-// 🔴 このファイルが持つ 2 つの「1 箇所」
+// 🔴 このファイルが持つ 3 つの「1 箇所」
 // ============================================================================
-//   ① 🔴 **`kind`（閉集合）→ 文言キーの写像**（docs/05 §6.11.1「API はラベルを返さない。
-//      写像は画面側の 1 箇所に置く」）。`Record` で宣言してあるので、Phase 2 が `kind` を足したら
-//      **コンパイルが落ちる**（語を足し忘れた指標が無名で出ることが起きない）。
-//   ② 🔴 **ストリップを描かないかどうかの判定**（同「描かない判断は画面側の 1 箇所。条件は
-//      『全 metric の `count` が 0』= 初回空」）。🔴 **個々の 0 で項目を間引かない** ——
-//      並びが日によって変わると走査の記憶が効かない。
+//   ① 🔴 **`kind`（閉集合）→ 文言キーの写像**（docs/05 §6.11.1「API はラベルを返さない。写像は
+//      画面側の 1 箇所に置く」）。`Record` で宣言してあるので、`kind` が増えたら**コンパイルが
+//      落ちる**（語を足し忘れた指標が無名で出ることが起きない）。
+//   ② 🔴 **`kind` → アイコンの写像**（`docs/04` §7.5 の許可⑤）。同じ理由で `Record` である。
+//      🔴 **アイコンは印であって意味ではない**（意味は日本語ラベルが担う）。
+//   ③ 🔴 **差分の文字列の組み立て**（`↑ +2（先週比）`）。🔴 **率・% を作れない形にする** ——
+//      受け取るのは符号つきの整数 1 つと基準だけであり、**割り算をこのファイルに書かない**。
 //
-// 🔴 **値は件数だけ**（`docs/04` §7.2: 前月比・達成率・グラフ・率を渡さない）。書式は
-//    `formatThousands`（3 桁区切り。§10.3「大きい数値」）であり、単位の語は付けない ——
-//    ラベルが「案件」「人材」なので「128」で読める（`S-003` の例示も `案件 128`）。
+// 🔴 **`t()` を呼ばない。** 語は解決済みの束（`KpiCardMessages`）を受け取る ——
+//    **ポーリング後の再描画はクライアント側で起きる**（`_home/home-screen.tsx`）ため、
+//    `packages/i18n` のカタログをクライアントバンドルへ引き込まないようにする
+//    （`_home/action-queue-props.ts` と同じ分担）。語の解決は `_home/kpi-props.ts` が行う。
 // 🔴 **I/O を持たない**（`db` も `fetch` も触らない）。`app/**` はユニットテストの対象外なので、
-//    ここに置くことで ①② の 2 つを機械で固定できる（`./summary-view.test.ts`）。
-import { t, type MessageKey } from '@ses/i18n';
-import type { SummaryStripItem } from '@ses/ui';
+//    ここに置くことで ①②③ を機械で固定できる（`./summary-view.test.ts`）。
+import type { IconName, KpiCardItem } from '@ses/ui';
+import type { MessageKey } from '@ses/i18n';
 import { formatThousands } from '../format/number';
-import type { HostSummaryMetricKind, PartnerSummaryMetricKind, SummaryHomeBlock } from './types';
+import type { DeltaBasis } from './periods';
+import type {
+  HostSummaryMetricKind,
+  PartnerSummaryMetricKind,
+  SummaryHomeBlock,
+  SummaryMetric,
+  SummaryMetricDelta,
+} from './types';
 
-/** 🔴 ホストの指標の語（`Q-04-4`）。Phase 2 の 2 つも先に持つ（`kind` を足す側でだけ落ちる形にする）。 */
+/** 🔴 ホストの指標の語（`docs/04` §4.1 の表）。 */
 export const HOST_SUMMARY_METRIC_MESSAGE_KEYS: Readonly<Record<HostSummaryMetricKind, MessageKey>> = {
-  PROJECTS: 'home.summary.host.PROJECTS',
-  ENGINEERS: 'home.summary.host.ENGINEERS',
-  PROPOSALS_IN_FLIGHT: 'home.summary.PROPOSALS_IN_FLIGHT',
-  INTERVIEWS_SCHEDULED: 'home.summary.host.INTERVIEWS_SCHEDULED',
-  ASSIGNMENTS_ACTIVE: 'home.summary.ASSIGNMENTS_ACTIVE',
+  ACTION_QUEUE: 'home.kpi.host.ACTION_QUEUE',
+  AWAITING_REPLY: 'home.kpi.host.AWAITING_REPLY',
+  INTERVIEWS: 'home.kpi.host.INTERVIEWS',
+  PROPOSALS_THIS_WEEK: 'home.kpi.host.PROPOSALS_THIS_WEEK',
 };
 
 /**
- * 🔴 取引先の指標の語（同）。**すべて自社スコープの件数の語である** ——
- *    「御社に公開された案件」「自社の人材」のように**自社の範囲を肯定形で書く**（§5-10 /
- *    `F-004 AC-4`。「他社は…」という否定形は他社の存在を意識させる）。
+ * 🔴 取引先の指標の語。**すべて自社スコープの件数の語である** —— 自社の範囲を**肯定形**で書く
+ *    （§5-10 / `F-004 AC-4`。「他社は…」という否定形は他社の存在を意識させる）。
  */
 export const PARTNER_SUMMARY_METRIC_MESSAGE_KEYS: Readonly<
   Record<PartnerSummaryMetricKind, MessageKey>
 > = {
-  PUBLISHED_PROJECTS: 'home.summary.partner.PUBLISHED_PROJECTS',
-  OWN_ENGINEERS: 'home.summary.partner.OWN_ENGINEERS',
-  SHARED_ENGINEERS: 'home.summary.partner.SHARED_ENGINEERS',
-  PROPOSALS_IN_FLIGHT: 'home.summary.PROPOSALS_IN_FLIGHT',
-  ASSIGNMENTS_ACTIVE: 'home.summary.ASSIGNMENTS_ACTIVE',
+  REQUESTS_TO_ANSWER: 'home.kpi.partner.REQUESTS_TO_ANSWER',
+  AWAITING_REPLY: 'home.kpi.partner.AWAITING_REPLY',
+  INTERVIEWS: 'home.kpi.partner.INTERVIEWS',
+  PUBLISHED_THIS_WEEK: 'home.kpi.partner.PUBLISHED_THIS_WEEK',
 };
 
 /**
- * 🔴 **ストリップを描かない条件（唯一の判定）**: 全 metric の `count` が 0（= 初回空）。
- *
- * 🔴 `items` が空のときも `true` を返す（`0` が 1 つも無いのではなく「まだ何も無い」であり、
- *    どちらもストリップを出す意味が無い）。**個々の 0 では `false` のまま**である。
+ * 🔴 `kind` → アイコン（`docs/04` §7.5 の許可⑤。写像に無い名前は**型エラー**）。
+ * 🔴 **比喩アイコンを使わない**（稲妻 / 電球 / きらめき。§7.5 の「引き続き使わない場所」）。
+ *    `list-checks` = 今日やること（`docs/04` §4.1 のセクションと同じ印）/ `clock` = 返信待ち（同）/
+ *    `handshake` = 面談（ナビの `面談・結果` と同じ）/ `send` = 提案（同 `提案`）/
+ *    `inbox` = 提案依頼（同 `提案依頼`）/ `briefcase` = 案件（同 `案件`）。
  */
-export function isSummaryInitialEmpty(block: SummaryHomeBlock): boolean {
-  return block.items.every((item) => item.count === 0);
+export const HOST_SUMMARY_METRIC_ICONS: Readonly<Record<HostSummaryMetricKind, IconName>> = {
+  ACTION_QUEUE: 'list-checks',
+  AWAITING_REPLY: 'clock',
+  INTERVIEWS: 'handshake',
+  PROPOSALS_THIS_WEEK: 'send',
+};
+
+export const PARTNER_SUMMARY_METRIC_ICONS: Readonly<Record<PartnerSummaryMetricKind, IconName>> = {
+  REQUESTS_TO_ANSWER: 'inbox',
+  AWAITING_REPLY: 'clock',
+  INTERVIEWS: 'handshake',
+  PUBLISHED_THIS_WEEK: 'briefcase',
+};
+
+/** 差分の語（🔴 **記号と括弧書きまでカタログが持つ**。絵文字を使わない。§7.5）。 */
+export type KpiDeltaMessages = {
+  readonly increase: string;
+  readonly decrease: string;
+  readonly unchanged: string;
+  readonly basis: Readonly<Record<DeltaBasis, string>>;
+};
+
+export type KpiCardMessages = {
+  /** 指標の語（**ホスト / 取引先のどちらかの写像を解決したもの**）。 */
+  readonly labels: Readonly<Record<string, string>>;
+  readonly unit: string;
+  readonly delta: KpiDeltaMessages;
+};
+
+/**
+ * 🔴 **KPI カードを描かない条件（唯一の判定）**: サーバが返した `initialEmpty`
+ *    （= 案件も人材も 0 件 / 取引先は公開案件も自社人材も 0 件）。
+ *
+ * 🔴 **`items` の `count` から判定しない。** 改訂 23 の 4 指標は「いま対応が要るものの数」であり、
+ *    運用中のテナントでも平常日には全部 0 になる —— 旧 `SummaryStrip` の判定（全 metric が 0）を
+ *    そのまま使うと、**案件と人材が揃っているのに「まだ登録されていません」と出る**（`./types.ts`）。
+ */
+export function isHomeInitialEmpty(block: SummaryHomeBlock): boolean {
+  return block.initialEmpty;
 }
 
 /**
- * `SummaryStrip` に渡す 3〜5 件。🔴 **0 の項目も残す**（間引かない）。
- * 🔴 `href` が `null` の指標はリンクにしない（`SummaryStripItem.href` を省く）。
+ * 差分の 1 行（`↑ +2（先週比）`）。🔴 **比較できないときは `null`**（欄ごと描かない。
+ * `±0` と「比較できない」は別物である。`docs/04` §4.1）。
  */
-export function summaryStripItems(block: SummaryHomeBlock): readonly SummaryStripItem[] {
-  // 🔴 `audience` で分岐して**型付きの写像をそのまま引く**（`Record<string, …>` に緩めて
-  //    既定値で埋めると、語を足し忘れた指標が黙って別の語で出る）。
-  if (block.audience === 'HOST') {
-    return block.items.map((item) => toStripItem(t(HOST_SUMMARY_METRIC_MESSAGE_KEYS[item.kind]), item));
-  }
-  return block.items.map((item) => toStripItem(t(PARTNER_SUMMARY_METRIC_MESSAGE_KEYS[item.kind]), item));
+export function formatKpiDelta(delta: SummaryMetricDelta | null, messages: KpiDeltaMessages): string | null {
+  if (delta === null) return null;
+  const basis = messages.basis[delta.basis];
+  if (delta.count === 0) return `${messages.unchanged}${basis}`;
+  // 🔴 符号は**語の側**が持つ（`-` をそのまま出さない。`↓ −3` の `−` は U+2212 の全角相当であり、
+  //    ハイフンと見分けが付く。`packages/i18n` の `home.kpi.delta.decrease`）。
+  const sign = delta.count > 0 ? messages.increase : messages.decrease;
+  return `${sign}${formatThousands(Math.abs(delta.count))}${basis}`;
 }
 
-function toStripItem(label: string, item: { readonly count: number; readonly href: string | null }): SummaryStripItem {
-  return {
-    label,
+/**
+ * `KpiCardRow` に渡す 4 件。🔴 **0 の項目も残す**（間引かない —— 並びが日によって変わると
+ * 走査の記憶が効かない。`docs/05` §6.11.1）。
+ *
+ * 🔴 `id` は `kind` を小文字の kebab にしたもので、`data-testid` の接尾辞になる
+ *    （`home-host-kpi-action-queue` など。**値は呼び出し側が組む**という部品の規約に従い、
+ *    接頭辞は画面が渡す）。
+ */
+export function kpiCardItems(block: SummaryHomeBlock, messages: KpiCardMessages): readonly KpiCardItem[] {
+  const icons: Readonly<Record<string, IconName>> =
+    block.audience === 'HOST' ? HOST_SUMMARY_METRIC_ICONS : PARTNER_SUMMARY_METRIC_ICONS;
+  const items: readonly SummaryMetric<string>[] = block.items;
+  return items.map((item) => ({
+    id: kpiCardId(item.kind),
+    // 🔴 写像に無い `kind` は `undefined` にならない（`Record` が全キーを要求する）。
+    icon: icons[item.kind] ?? 'list-checks',
+    label: messages.labels[item.kind] ?? item.kind,
     value: formatThousands(item.count),
-    ...(item.href === null ? {} : { href: item.href }),
-  };
+    unit: messages.unit,
+    delta: formatKpiDelta(item.delta, messages.delta),
+  }));
+}
+
+/** 🔴 `ACTION_QUEUE` → `action-queue`（testid の接尾辞）。**写像を別に持たない**（機械変換）。 */
+export function kpiCardId(kind: string): string {
+  return kind.toLowerCase().replaceAll('_', '-');
 }

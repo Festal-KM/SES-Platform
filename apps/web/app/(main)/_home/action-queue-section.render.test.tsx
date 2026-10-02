@@ -25,7 +25,10 @@ import type {
   ActionQueueHomeBlock,
   ActionQueueRow,
 } from '../../../lib/home/types';
-import { ActionQueueSection, mergeActionQueueDelta, type ActionQueueMessages } from './action-queue-section';
+import { ActionQueueSection, type ActionQueueMessages } from './action-queue-section';
+// 🔴 ✅ 2026-10-02（改訂 23）: 差分の合成は `./home-screen.tsx`（ポーリングの持ち主）へ移った。
+//    **判定そのものは 1 文字も変えていない**ので、⑤ の検査はそのまま新しい置き場所に当てる。
+import { mergeActionQueueDelta } from './home-screen';
 
 const MESSAGES: ActionQueueMessages = {
   title: 'title(合成)',
@@ -145,6 +148,11 @@ function blockOf(
   };
 }
 
+/**
+ * ✅ 2026-10-02（改訂 23）: `ActionQueueSection` は**描画部品**になった（ポーリングと状態は
+ * `./home-screen.tsx` が持つ）。したがって**行と可否を直接渡す**。
+ * 🔴 **検査の内容は 1 つも減らしていない**（渡し方だけが変わった）。
+ */
 function render(
   rows: readonly ActionQueueRow[],
   scope: 'mine' | 'all' = 'mine',
@@ -155,14 +163,19 @@ function render(
 ): string {
   return renderToStaticMarkup(
     createElement(ActionQueueSection, {
-      initial: blockOf(rows, options.availability ?? allowAll()),
-      initialChangedSince: NOW,
+      rows,
+      availability: options.availability ?? allowAll(),
+      changedIds: new Set<string>(),
+      pollFailed: false,
+      nowMs: Date.parse(NOW),
       audience: options.audience ?? 'HOST',
       scope,
       scopeHrefs: { mine: '/', all: '/?scope=all' },
       requestListHref: '/proposal-requests',
+      seeAllHref: '/proposals',
+      seeAllLabel: 'seeAll(合成)',
+      countLabel: `${String(rows.length)}件`,
       messages: MESSAGES,
-      pollIntervalMs: 0,
     }),
   );
 }
@@ -301,8 +314,14 @@ describe('③ ④ モバイルの 3 要素と折りたたみ・合計の不在',
     }
   });
 
-  it('🔴 種別ごとの件数を 1 つの合計に丸めた表示（「N 件」）が無い', () => {
-    expect(render(ROWS)).not.toMatch(/[0-9０-９]+\s*件/);
+  it('🔴 種別ごとの件数を 1 つの合計に丸めた表示が**行の側に**無い', () => {
+    // ✅ 改訂 23: 見出しには `SectionHeader` の件数バッジ（`5件`）が出る —— これは
+    //    **この面に何件あるか**（タブの件数と同じ 1 つの数）であり、🔴 **4 つの「うまくいかなかった」を
+    //    1 つに丸めた数ではない**（種別ごとの件数は依然としてどこにも出ない）。
+    //    したがって検査は**見出しを除いた本体**に当てる（`④` の趣旨は「種別の混同を表示で作らない」）。
+    const html = render(ROWS);
+    const body = html.slice(html.indexOf('data-testid="home-action-queue-scope"'));
+    expect(body).not.toMatch(/[0-9０-９]+\s*件/);
   });
 });
 

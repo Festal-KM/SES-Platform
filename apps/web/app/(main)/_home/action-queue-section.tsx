@@ -8,22 +8,21 @@
 // ============================================================================
 //   ① 🔴 **1 本のテーブルに束ねる**（docs/04 §S-003「種別ごとにカードを分けると『今日どれから手を付けるか』が判断できない」）。
 //      並びはサーバ（`sortActionQueueRows`）が決めた `targetIds` の順をそのまま描く。クライアントで並べ替えない。
-//      ⚠️ T-22-09: 器は `@ses/ui` の `DataTable` **ではない**（理由は下の `ROW_GRID_CLASSES` の ⚠️ ——
-//      列の下限幅がブレークポイントを持てず、モバイルで器の内側が横スクロールする）。
-//      **ローカルの `<table>` も作らない**（`<ul>` + grid のまま。T-12-15 の形を保つ）。
-//   ② 🔴 **60 秒ポーリングは差分で描き直す**（docs/04 申し送り 6 / docs/05 §6.3 #9 の `changedSince` / `rowVersion`）。
-//      `GET /api/home?scope=&changedSince=` は `rowVersion >= changedSince` の行と、いまキューにある全行の `targetIds` を返す。
-//      手元の行を `targetId` で上書きし、`targetIds` に無い行を落とし、`targetIds` にあるのに手元にも差分にも無い行があれば
-//      （時計のずれ等）1 度だけ全行を読み直す。**`router.refresh()` / 全再読込はしない**（画面全体を再描画しない）。
-//      更新のあった行には「新着」の印（`data-changed="true"`）を付ける。
-//      🔴 T-22-09: **`actionAvailability` は毎回の応答で差し替える**（ブロック直下に全量で来る。docs/05 §6.11.2 ——
-//      ドメイン検証の完了・ロール変更・停止の解除は行の `updated_at` を動かさないので差分に乗らない）。
-//      🔴 **別の更新周期を作らない。** 件数（`SUMMARY`）は**同じ応答**に同梱されており、
-//      ポーリングの経路はこの 1 本だけである（`SummaryStrip` は**サーバ描画のまま**で独自の周期を持たない ——
-//      `'use client'` を増やさないため。次の遷移・再訪で更新される）。
+//      ⚠️ T-22-09: 器は `@ses/ui` の `DataTable` **ではない**（列の下限幅がブレークポイントを持てず、
+//      モバイルで器の内側が横スクロールする）。**ローカルの `<table>` も作らない**（`<ul>` のまま）。
+//      ✅ 2026-10-02（改訂 23）: **列の grid もやめた**（行は 2 段の compact な行。下の
+//      `ActionQueueRowItem` の 🔴 —— 右レールが実在したことで 7 列の固定トラックが主カラムに
+//      収まらなくなり、**行が右レールの下に潜って `内容を見る` が押せなくなっていた**）。
+//   ② 🔴 **ポーリングを持たない**（✅ 2026-10-02 / 改訂 23 で `./home-screen.tsx` へ移した）。
+//      理由: `docs/04` §4.1 は **「KPI カード 4 枚 / タブの件数 / 全セクションの行 / 優先アクション を
+//      同じ応答から一括で更新する。別々のタイミングで更新してはならない」**と定めており、
+//      右レールの「先に動くもの」が**この行と同じ 1 本のデータ**であるため、状態の持ち主を
+//      1 つにする必要がある。🔴 **この部品は渡された行を描くだけ**であり、順も件数も作らない。
+//      差分の合成（`mergeActionQueueDelta`）と `actionAvailability` の全量差し替えは `./home-screen.tsx`。
 //   ③ 🔴 **モバイルは 1 行 = 種別バッジ + 対象 + 経過時間の 3 要素**（docs/04 §S-003 デバイス別）。
 //      `相手` / `期限` は `sm` 以上、✅ T-22-09 で足した `状態` / `操作` は `xl` 以上に出す
-//      （下の `ROW_GRID_CLASSES` の実測。**横スクロールさせない**ほうを選んだ）。**セクションを折りたたまない**
+//      （✅ 改訂 23 で**2 段目の補足行**へ移したが、落とす境界は 1 つも変えていない）。
+//      🔴 **横スクロールさせない**（溢れる代わりに段を折る）。**セクションを折りたたまない**
 //      （`<details>` を使わない。畳むと期限が見えなくなる）。ブレークポイントは Tailwind の既定のみ。
 //      🔴 **承認そのものはモバイルでも完結する**（Tier 1）—— `対象` のリンクが `S-021` へ行く。`操作` 列は
 //      デスクトップで「どれから手を付けるか」を 1 手に縮める補助である。
@@ -41,6 +40,12 @@
 //      色付きになると色が意味を失う）—— **期限セルの文字色と、行頭 2px の縦バーだけ**である。
 //   ⑨ 🔴 **`操作` はサーバが決めた `action` と `actionAvailability` の 2 項だけを見る**（docs/05 §6.11.2）。
 //      画面はロールも状態も見ない。🔴 **`enabled === false` はボタンを描かず理由テキストを置く**（`disabled` にしない。§7.10 / `U-10`）。
+//   ⑪ ✅ 2026-10-02（改訂 23）: 🔴 **見出しは `SectionHeader`**（アイコン + 見出し + 件数バッジ +
+//      右端に `すべて見る >`）。アイコンは §7.5 の許可④（`S-003` / `S-004` のセクション見出しのみ）。
+//      🔴 **`すべて見る` の遷移先はセクションの母集団をそのまま開く 1 画面だけ**（`S-019`）。
+//      🔴 **`提案依頼の一覧`（`S-017`）への導線は別の 1 本として残す**（凍結済み testid
+//      `home-*-proposal-requests`。キューに `提案依頼の返答待ち` の行が載るので、その全体への
+//      入口はこのセクションの文脈である。§4.1「セクションのヘッダ右のテキストリンクは可」）。
 //   ⑩ ✅ T-22-10: 🔴 **行の `内容を見る`（`Drawer`）は読み取りだけである**（docs/04 §4.1 / §5-13 / §11-25）。
 //      引き出しの中身は `./action-queue-drawer.tsx` と `lib/home/drawer.ts` が持ち、**実行系のアクションを
 //      型として置けない**（`ActionQueueDrawerView` に `action` のキーが無い / `@ses/ui` の `Drawer` が
@@ -51,21 +56,20 @@
 // 🔴 時刻の基準は**サーバの応答時刻**（`changedSince`）である。端末時刻を混ぜると、サーバ描画と hydration 後の値が食い違う。
 //    次の応答が来るまで経過時間は動かない（60 秒の粒度で足りる。秒を出さない）。
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   Badge,
   Card,
   CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
   EmptyState,
   Icon,
   IconButton,
   NAME_CELL_LINK_CLASSES,
   SECONDARY_LINK_CLASSES,
+  SectionHeader,
   StatusBadge,
   type BadgeVariant,
+  type SidebarLinkProps,
 } from '@ses/ui';
 import { formatDateTimeJst } from '../../../lib/format/datetime';
 import { formatElapsedWith, type ElapsedLabels } from '../../../lib/format/elapsed';
@@ -77,7 +81,6 @@ import type {
   ActionQueueHomeBlock,
   ActionQueueKind,
   ActionQueueRow,
-  HomeBlock,
 } from '../../../lib/home/types';
 import { formatRemaining, type RemainingLabels } from '../../../lib/proposal-requests/remaining';
 import { ActionQueueDrawer, type ActionQueueDrawerMessageBundle } from './action-queue-drawer';
@@ -128,9 +131,16 @@ export type ActionQueueMessages = {
 };
 
 export type ActionQueueSectionProps = {
-  readonly initial: ActionQueueHomeBlock;
-  /** 初回描画時の `changedSince`（サーバの読み取り時刻）。差分ポーリングの基準であり、経過時間の基準でもある。 */
-  readonly initialChangedSince: string;
+  /** 🔴 **描く行**（順はサーバが決めた `targetIds` の順。この部品は並べ替えない）。 */
+  readonly rows: readonly ActionQueueRow[];
+  /** 🔴 ブロック直下の可否（4 エントリ全量。docs/05 §6.11.2）。 */
+  readonly availability: ActionQueueHomeBlock['actionAvailability'];
+  /** 「新着」の印を付ける行（前回のポーリングで更新があったもの）。 */
+  readonly changedIds: ReadonlySet<string>;
+  /** 直近のポーリングが失敗したか（手元の行は保ったまま注記だけ出す）。 */
+  readonly pollFailed: boolean;
+  /** 🔴 経過時間 / 残り時間の基準（**サーバの応答時刻**。端末時刻を混ぜない）。 */
+  readonly nowMs: number;
   /** ✅ T-22-09: ヘッダ右のリンクの testid を決めるためだけに使う（中身の違いはサーバが決めている）。 */
   readonly audience: 'HOST' | 'PARTNER';
   readonly scope: HomeScope;
@@ -138,9 +148,12 @@ export type ActionQueueSectionProps = {
   readonly scopeHrefs: { readonly mine: string; readonly all: string };
   /** `S-017`（提案依頼の一覧）。値の出所は `page.tsx`。 */
   readonly requestListHref: string;
+  /** ✅ 改訂 23: `すべて見る` の遷移先（`S-019`）と語。🔴 **セクションに 1 つだけ**。 */
+  readonly seeAllHref: string;
+  readonly seeAllLabel: string;
+  /** ✅ 改訂 23: 見出しの件数バッジ（整形済み。🔴 **金額を渡さない**）。 */
+  readonly countLabel: string;
   readonly messages: ActionQueueMessages;
-  /** 60 秒。0 以下ならポーリングしない（render テスト用）。 */
-  readonly pollIntervalMs: number;
 };
 
 /**
@@ -161,75 +174,38 @@ const KIND_VARIANTS: Readonly<Record<ActionQueueKind, BadgeVariant>> = {
   PROPOSAL_REQUEST_PENDING: 'brand',
 };
 
-type QueueState = {
-  readonly rows: readonly ActionQueueRow[];
-  readonly availability: ActionQueueHomeBlock['actionAvailability'];
-  readonly changedSince: string;
-  readonly changedIds: ReadonlySet<string>;
-  readonly pollFailed: boolean;
-};
-
-type HomeResponseBody = {
-  readonly blocks?: readonly HomeBlock[];
-  readonly changedSince?: string;
-};
-
-function actionQueueOf(body: HomeResponseBody): { readonly block: ActionQueueHomeBlock; readonly changedSince: string } | null {
-  const block = body.blocks?.find((candidate): candidate is ActionQueueHomeBlock => candidate.kind === 'ACTION_QUEUE');
-  if (block === undefined || typeof body.changedSince !== 'string') return null;
-  return { block, changedSince: body.changedSince };
-}
-
 /**
- * 差分を手元の行に重ねる（ファイル冒頭 ②）。`targetIds` にあるのに材料が無い行が 1 つでもあれば `null`（全行の読み直しが要る）。
+ * ✅ 2026-10-02（改訂 23）: 時間の欄の語（**行・引き出し・右レールで同じ 1 実装**）。
+ *
+ * 提案依頼の行 = 返答期限までの残り（期限切れが最も痛い）/ それ以外 = 経過時間（放置時間）。
+ * 🔴 **`./home-screen.tsx` の右レールもこれを呼ぶ** —— 同じ行が 2 箇所で違う時間を示すと、
+ *    どちらも信用されなくなる。
  */
-export function mergeActionQueueDelta(
-  previous: readonly ActionQueueRow[],
-  delta: ActionQueueHomeBlock,
-): readonly ActionQueueRow[] | null {
-  const known = new Map(previous.map((row) => [row.targetId, row]));
-  for (const row of delta.items) known.set(row.targetId, row);
-  const merged: ActionQueueRow[] = [];
-  for (const targetId of delta.targetIds) {
-    const row = known.get(targetId);
-    if (row === undefined) return null;
-    merged.push(row);
-  }
-  return merged;
-}
-
-function homeUrl(scope: HomeScope, changedSince: string | null): string {
-  const params = new URLSearchParams({ scope });
-  if (changedSince !== null) params.set('changedSince', changedSince);
-  return `/api/home?${params.toString()}`;
-}
-
-async function fetchActionQueue(
-  scope: HomeScope,
-  changedSince: string | null,
-): Promise<{ readonly block: ActionQueueHomeBlock; readonly changedSince: string } | null> {
-  const response = await fetch(homeUrl(scope, changedSince), { cache: 'no-store' });
-  if (!response.ok) return null;
-  return actionQueueOf((await response.json()) as HomeResponseBody);
+export function actionQueueRowTimeLabel(
+  row: ActionQueueRow,
+  nowMs: number,
+  messages: ActionQueueMessages,
+): string {
+  return row.deadline === null
+    ? formatElapsedWith(row.since, nowMs, messages.elapsed)
+    : formatRemaining(row.deadline, nowMs, messages.remaining);
 }
 
 export function ActionQueueSection({
-  initial,
-  initialChangedSince,
+  rows,
+  availability,
+  changedIds,
+  pollFailed,
+  nowMs,
   audience,
   scope,
   scopeHrefs,
   requestListHref,
+  seeAllHref,
+  seeAllLabel,
+  countLabel,
   messages,
-  pollIntervalMs,
 }: ActionQueueSectionProps) {
-  const [state, setState] = useState<QueueState>({
-    rows: initial.items,
-    availability: initial.actionAvailability,
-    changedSince: initialChangedSince,
-    changedIds: new Set(),
-    pollFailed: false,
-  });
   /**
    * ✅ T-22-10: 開いている行（`内容を見る`）。🔴 **引き出しは 1 つだけ据える**（ファイル冒頭 ⑩）。
    * 🔴 ポーリングで行が消えたら引き出しも閉じる（下の `openRow` が `null` になる）—— 承認済みの行の
@@ -237,84 +213,44 @@ export function ActionQueueSection({
    */
   const [openTargetId, setOpenTargetId] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!Number.isFinite(pollIntervalMs) || pollIntervalMs <= 0) return undefined;
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    let since = initialChangedSince;
-    let rows: readonly ActionQueueRow[] = initial.items;
-
-    async function poll(): Promise<void> {
-      try {
-        const delta = await fetchActionQueue(scope, since);
-        if (cancelled) return;
-        if (delta === null) throw new Error('poll failed');
-        let merged = mergeActionQueueDelta(rows, delta.block);
-        let changedIds: ReadonlySet<string> = new Set(delta.block.items.map((row) => row.targetId));
-        let nextSince = delta.changedSince;
-        // 🔴 可否はブロック直下に**全量**で来るので、差分応答でもそのまま差し替える（ファイル冒頭 ②）。
-        let availability = delta.block.actionAvailability;
-        if (merged === null) {
-          // 🔴 手元にも差分にも無い行がある（時計のずれ等）。1 度だけ全行を読み直す。
-          const full = await fetchActionQueue(scope, null);
-          if (cancelled) return;
-          if (full === null) throw new Error('poll failed');
-          const threshold = Date.parse(since);
-          merged = full.block.items;
-          changedIds = new Set(full.block.items.filter((row) => row.rowVersion >= threshold).map((row) => row.targetId));
-          nextSince = full.changedSince;
-          availability = full.block.actionAvailability;
-        }
-        rows = merged;
-        since = nextSince;
-        setState({ rows: merged, availability, changedSince: nextSince, changedIds, pollFailed: false });
-      } catch {
-        // 次の周期で読み直す。手元の行は保つ（消さない）。
-        if (!cancelled) setState((previous) => ({ ...previous, pollFailed: true }));
-      }
-      if (!cancelled) timer = setTimeout(() => void poll(), pollIntervalMs);
-    }
-    timer = setTimeout(() => void poll(), pollIntervalMs);
-    return () => {
-      cancelled = true;
-      if (timer !== null) clearTimeout(timer);
-    };
-  }, [initial, initialChangedSince, scope, pollIntervalMs]);
-
-  const nowMs = Date.parse(state.changedSince);
-  const openRow = state.rows.find((row) => row.targetId === openTargetId) ?? null;
+  const openRow = rows.find((row) => row.targetId === openTargetId) ?? null;
 
   return (
-    <Card className="mb-4" data-testid="home-action-queue" data-scope={scope}>
-      <CardHeader>
-        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-          <CardTitle>{messages.title}</CardTitle>
-          {/* 🔴 セクションに紐づく入口（`S-017`）。**独立したナビゲーションリンクの塊を作らない**
-              （docs/04 §S-003「セクションのヘッダ右のテキストリンクは可」）。キューには
-              `提案依頼の返答待ち` の行が載るので、その全体（辞退・期限切れを含む）への入口は
-              このセクションの文脈である。 */}
+    <div data-testid="home-action-queue" data-scope={scope}>
+      {/* ✅ 改訂 23: セクション見出し（アイコン + 見出し + 件数 + `すべて見る >`）。ファイル冒頭 ⑪。
+          🔴 `すべて見る` は**凍結済みの testid**（`home-*-proposals`）を持つ —— 改訂 16 では
+             `SummaryStrip` の `進行中の提案` の値が `S-019` への入口だったが、改訂 23 で
+             ストリップが無くなったため、**同じ遷移先を持つこの導線が引き継いだ**（`U-22`:
+             testid の削除・改名は不可。値は 1 つも消していない）。 */}
+      <SectionHeader
+        icon="list-checks"
+        title={messages.title}
+        count={countLabel}
+        link={{ href: seeAllHref, label: seeAllLabel }}
+        testIdPrefix="home-action-queue-header-"
+        linkComponent={audience === 'HOST' ? HostProposalsLink : PartnerProposalsLink}
+      />
+      <Card>
+      <CardContent>
+        {/* 🔴 「自分の担当のみ」トグル（既定オン）と `提案依頼の一覧`（`S-017`）への入口。
+            どちらも**このセクションの文脈に紐づく**導線である（ファイル冒頭 ⑪）。 */}
+        <nav aria-label={messages.scopeLegend} className="mb-2 flex flex-wrap items-center gap-2 text-body" data-testid="home-action-queue-scope">
+          <ScopeLink target="mine" active={scope === 'mine'} href={scopeHrefs.mine} label={messages.scopeMine} />
+          <ScopeLink target="all" active={scope === 'all'} href={scopeHrefs.all} label={messages.scopeAll} />
           <Link
-            className={SECONDARY_LINK_CLASSES}
+            className={`ml-auto ${SECONDARY_LINK_CLASSES}`}
             href={requestListHref}
             data-testid={audience === 'HOST' ? 'home-host-proposal-requests' : 'home-partner-proposal-requests'}
           >
             {messages.openRequestList}
           </Link>
-        </div>
-        <CardDescription>{messages.lead}</CardDescription>
-        {/* 🔴 「自分の担当のみ」トグル（既定オン）。同期のリンク（URL に載る）。 */}
-        <nav aria-label={messages.scopeLegend} className="mt-2 flex flex-wrap gap-2 text-body" data-testid="home-action-queue-scope">
-          <ScopeLink target="mine" active={scope === 'mine'} href={scopeHrefs.mine} label={messages.scopeMine} />
-          <ScopeLink target="all" active={scope === 'all'} href={scopeHrefs.all} label={messages.scopeAll} />
         </nav>
-      </CardHeader>
-      <CardContent>
-        {state.pollFailed ? (
+        {pollFailed ? (
           <p className="mb-2 text-body text-warning" role="status" data-testid="home-action-queue-poll-error">
             {messages.pollError}
           </p>
         ) : null}
-        {state.rows.length === 0 ? (
+        {rows.length === 0 ? (
           // ⚠️ 器の `data-testid`（`home-action-queue-empty`）は凍結済みの値であり、`EmptyState` が出す
           //    `{prefix}root` / `{prefix}description` は**追加**である（改名ではない。`U-22` / `T-22-06`〜`08` と同じ作法）。
           <div data-testid="home-action-queue-empty">
@@ -324,25 +260,24 @@ export function ActionQueueSection({
           </div>
         ) : (
           <ul className="flex flex-col divide-y divide-border" data-testid="home-action-queue-list">
-            {/* 見出し行（`sm` 以上）。モバイルでは各行の 3 要素だけで読める。 */}
-            <li className={`hidden py-1 text-xs font-medium text-fg-muted ${ROW_GRID_CLASSES}`} aria-hidden="true">
-              <span>{messages.columnKind}</span>
-              <span>{messages.columnSubject}</span>
-              <span>{messages.columnCounterparty}</span>
-              <span>{messages.columnTime}</span>
-              <span>{messages.columnDeadline}</span>
-              <span className={COLUMN_XL_CLASSES}>{messages.columnState}</span>
-              <span className={COLUMN_XL_CLASSES}>{messages.columnAction}</span>
-              {/* ✅ T-22-10: `内容を見る` の列。🔴 **見出しの語を置かない**（アイコンだけの操作列であり、
-                  語は各行の `aria-label` が持つ。docs/04 §10.3 の操作列と同じ扱い）。 */}
-              <span />
-            </li>
-            {state.rows.map((row) => (
+            {/* ✅ 2026-10-02（改訂 23）: **列の見出し行を外した。**
+                🔴 理由（実測）: `S-003` は幅クラス **B（分割）**であり、改訂 23 で**右レールが実在
+                した**ことで主カラムが `lg` = 約 504px / `xl` = 約 552px / `2xl` = 約 728px になった。
+                7 列の固定トラックの和（47rem + gap = 808px）は**どの幅にも収まらない** ——
+                収めようとすると `対象` が 0〜64px に潰れる。改訂 23 の §4.1 は行の構成を
+                **「件名（太字）+ 補足 + 時刻・期限 + 状態バッジ + 操作 + `…`」の 6 要素**と定め直して
+                おり（列のテーブルではない）、本実装はその形に合わせた。
+                🔴 **列が無いので見出しの語も無い**（`messages.columnKind` 等のキーは
+                **引き出しの項目名**として引き続き使われる。`./action-queue-props.ts`）。
+                ⚠️ 旧実装（固定トラックの grid）では、行が主カラムから溢れて**右レールの下に潜り、
+                `内容を見る` が押せなくなっていた**（`anonymous-share.spec.ts` が
+                「`<aside>` intercepts pointer events」で検出した）。 */}
+            {rows.map((row) => (
               <ActionQueueRowItem
                 key={row.targetId}
                 row={row}
-                availability={state.availability}
-                changed={state.changedIds.has(row.targetId)}
+                availability={availability}
+                changed={changedIds.has(row.targetId)}
                 nowMs={nowMs}
                 messages={messages}
                 onOpenDrawer={setOpenTargetId}
@@ -361,67 +296,29 @@ export function ActionQueueSection({
           onClose={() => setOpenTargetId(null)}
         />
       ) : null}
-    </Card>
+      </Card>
+    </div>
   );
 }
 
 /**
- * 🔴 行と見出しの列（**7 列** = 種別 / 対象 / 相手 / 経過時間 / 期限 / 状態 / 操作。docs/04 §S-003 改訂 16）。
+ * ✅ 2026-10-02（改訂 23）: **行は 2 段の compact な行である**（固定トラックの grid をやめた）。
  *
- * 🔴 **列を落とす境界は 2 段**（`docs/04` §10.3 の `S-005` と同じ作法。優先度の低い列から落とす）:
- *   - `xl` 未満 … ✅ T-22-09 で足した `状態` / `操作` を落とす（**5 列**。移行前と同じ見え方）
- *   - `sm` 未満 … さらに `相手` / `期限` を落とす（**モバイルは 3 要素** = 種別バッジ + 対象 + 経過時間）
+ * 🔴 **1 段目** … 種別バッジ / 件名（太字のリンク）/ 時刻・期限 / `内容を見る`
+ * 🔴 **2 段目（補足）** … 相手 / 期限 / 状態バッジ / 操作
  *
- * 🔴 **横スクロールさせない**（`docs/04` §S-003 タブレット「横スクロールさせず列を落とす」）。
- *    ⚠️ **なぜ `lg` ではなく `xl` なのか（実測）**: `S-003` は幅クラス **B（分割）**であり、
- *    主カラムの幅は `lg`（1024px）で **1024 − サイドバー 56 − gutter 48 − カードの余白 32 = 888px** である。
- *    7 列の固定トラックの和（8+7+5+10+7+8 = 45rem = 720px）+ `gap-3` × 6（72px）= 792px を引くと
- *    `対象` に 96px しか残らず、**案件名 + エンジニア名が読めない**（切り詰めても意味が残らない）。
- *    `xl`（1280px）ではサイドバーが 224px に広がるが主カラムは 976px あり、`対象` に 184px 残る。
- *    🔴 **「列を落とす」と「横スクロールさせない」を守るほうを選び、`状態` / `操作` を `xl` に置いた。**
- *
- * ⚠️ **`@ses/ui` の `DataTable` を使わなかった理由**（`T-22-07` が `A-005` / `A-006` で `Table`
- *    プリミティブに留めたのと同じ判断）: `DataTable` の列の下限幅は `style={{minWidth}}` の
- *    固定値であり**ブレークポイントを持てない**。モバイルでも 3 列の下限の和（種別バッジは
- *    `whitespace-nowrap` で ≒148px + 対象 + 経過時間）が 375px を超え、器（`overflow-x-auto`）の
- *    内側が横スクロールする。`docs/04` §S-003 の「モバイルは 3 要素」は**対象を 2 行目に全幅で置く**
- *    ことで初めて成立する（下の `ActionQueueRowItem` の `order-last basis-full`）。
- *    🔴 **ローカルの `<table>` も作らない**（T-12-15 の `<ul>` + grid のまま。§5-13 の二重実装禁止）。
- *    器の拡張（列の下限幅をブレークポイント別にする）は `docs/05` §2.3.5 の改訂が要るので、
- *    実装側で先取りしない（申し送りとして完了記録に残す）。
- *
- * ✅ **T-22-10 で 8 列目（`内容を見る`）を足した**（`docs/04` §4.1 の操作表。`IconButton` の `sm` =
- *    32px なので **`2rem` の固定トラック**）。🔴 **どのブレークポイントでも落とさない** ——
- *    `S-003` / `S-004` は Tier 1 であり、狭い画面で引き出しに到達できないのは遮断である
- *    （`CLAUDE.md` §13.3）。足した分は**他の列からではなく列間から払った**（実測）:
- *      - `xl`（1280px）… **列間を `gap-3`（12px）→ `gap-2`（8px）に詰めた**。
- *        固定トラックの和 47rem（752px）+ `gap-2` × 7（56px）= 808px。主カラム 976px に対し
- *        `対象` は **168px**（T-22-09 時点は 184px = 差 16px）。1440px では 328px。
- *        🔴 **`期限` / `状態` / `種別` は詰められない** —— `期限` は `YYYY-MM-DD HH:MM JST` の 20 字、
- *        `種別` は `提案依頼の返答待ち`、`状態` は `ゲート差し戻し` が入る。固定トラックなので
- *        `whitespace-nowrap` の文字が詰めた分だけ**隣の列へ溢れる**（行の横溢れになる）。
- *        列間を詰めるほうを選んだのは、本スプリントが**密度を上げる**刷新であり、8px は §7.9 の
- *        7 段の 2 段目で、`docs/04` がこの値を禁じていないためである。
- *      - `sm`〜`xl` 未満 … `相手` の上限を **12rem → 8rem** に詰めて 8 列目を払った。
- *        結果 `対象` は **増える**（`lg` = 1024px で 248px → 268px / 768px で 48px → 68px）——
- *        `相手` は社名の列であり、`xl` では既に 7rem で足りている。
- *      - ⚠️ 🔴 **`対象` に `docs/04` §10.3 の下限幅 10rem を宣言していない**（`minmax(0,1fr)` のまま。
- *        T-22-09 と同じ）。宣言すると **768px で行が約 90px 溢れ**、§S-003 タブレットの
- *        「横スクロールさせず列を落とす」に反する（`sm` の 6 列は 10rem の下限と両立しない）。
- *        **これは T-22-10 が作った問題ではなく 5 列の時点から在る**（768px の `対象` は T-22-09 時点で
- *        48px）。🔴 **解くには「タブレットでどの列を落とすか」を決める必要があり、それは
- *        `docs/04` §S-003 の改訂である**（実装側で列を落とす判断をしない）。**完了記録で申し送る。**
- *      - ⚠️ 🔴 **`相手` の上限も `minmax(0,12rem)` → `minmax(0,8rem)` に詰めている**。`docs/04` §10.3 の
- *        「名称列の下限幅 10rem はどのブレークポイントでも維持する」は**社名の列にも掛かる**ため、
- *        `xl` の `7rem`（T-22-09 由来）と合わせて**現状 `対象` と `相手` の 2 列が条文を満たしていない**。
- *        幅の値は変えない（`対象` は `xl` で 168px > 10rem、`sm` で 48px → 68px と改善。`xl:gap-2` も §7.9 の許容段内）。
- *        解決には「タブレットでどの列を落とすか」= `docs/04` §S-003 の改訂が要るため実装側では決めない
- *        （オーケストレーターが Issue を起票する）。
+ * 🔴 **なぜ段を分けるのか（実測）**: 右レール（副カラム 360〜480px）が実在したことで主カラムは
+ *    `lg` ≈ 504px / `xl` ≈ 552px / `2xl` ≈ 728px になった。7 列の固定トラックの和は 808px で
+ *    **どの幅にも入らず**、行が主カラムから溢れて**右レールの下に潜る**（`内容を見る` が
+ *    クリックできなくなる = Tier 1 の遮断）。改訂 23 の行の定義（6 要素 + `…`）がこの形である。
+ * 🔴 **横スクロールさせない**（`docs/04` §S-003 タブレット）。溢れる代わりに**段を折る**。
+ * 🔴 **落とす境界は 2 段のまま**（移行前と同じ判定。render テスト ③ が固定している）:
+ *    - `sm` 未満 … `相手` / `期限` を落とす（モバイルは 種別 + 件名 + 時刻 + `内容を見る`）
+ *    - `xl` 未満 … `状態` / `操作` を落とす
+ * 🔴 **行の高さが内容量で変わらない** —— 2 段目は該当が無くても同じ項目を `—` で描く
+ *    （`HANDOFF.md` §3.3 の 1 件目: 高さの差は、それ自体が開示項目になる）。
+ * ⚠️ **`内容を見る` はどのブレークポイントでも落とさない**（T-22-10。Tier 1 の条件）。
  */
-const ROW_GRID_CLASSES =
-  'sm:grid sm:grid-cols-[8rem_minmax(0,1fr)_minmax(0,8rem)_7rem_10rem_2rem] sm:gap-3 ' +
-  'xl:grid-cols-[8rem_minmax(0,1fr)_7rem_5rem_10rem_7rem_8rem_2rem] xl:gap-2';
-
 /** 🔴 `sm` 未満で落ちる列（`相手` / `期限`）。 */
 const COLUMN_SM_CLASSES = 'hidden sm:inline';
 /** 🔴 `xl` 未満で落ちる列（✅ T-22-09 で足した `状態` / `操作`。上の ⚠️ の実測）。 */
@@ -451,107 +348,104 @@ function ActionQueueRowItem({
   readonly messages: ActionQueueMessages;
   readonly onOpenDrawer: (targetId: string) => void;
 }) {
-  const time = rowTimeLabel(row, nowMs, messages);
+  const time = actionQueueRowTimeLabel(row, nowMs, messages);
   const urgent = isActionQueueRowUrgent(row, nowMs);
   const overdue = row.deadline !== null && Date.parse(row.deadline) < nowMs;
   return (
     <li
-      // 🔴 モバイル（sm 未満）は 3 要素 = 種別バッジ + 対象 + 経過時間（docs/04 §S-003 デバイス別）。バッジと経過時間を 1 行目、
-      //    対象は 2 行目に全幅で置く（3 列の grid だと対象が 100px 程度に潰れ、折り返し検出器が wrapped-short-label で落ちる）。
-      className={`flex flex-wrap items-center gap-x-2 gap-y-1 py-2 pl-2 text-cell ${
+      className={`flex flex-col gap-1 py-2 pl-2 text-cell ${
         urgent ? 'border-l-2 border-l-warning' : 'border-l-2 border-l-transparent'
-      } ${ROW_GRID_CLASSES}`}
+      }`}
       data-testid={`home-action-queue-row-${row.targetId}`}
       data-kind={row.kind}
       data-changed={changed ? 'true' : 'false'}
       data-urgent={urgent ? 'true' : 'false'}
     >
-      <span className="flex items-center gap-1">
-        <Badge variant={KIND_VARIANTS[row.kind]} data-testid={`home-action-queue-kind-${row.targetId}`}>
-          {messages.kinds[row.kind]}
-        </Badge>
-        {changed ? (
-          <Badge variant="success" data-testid={`home-action-queue-changed-${row.targetId}`}>
-            {messages.changed}
+      {/* 1 段目: 種別 / 件名 / 時刻 / `内容を見る`。🔴 モバイルでは件名が全幅の 2 行目に回る
+          （`basis-full`）—— 切り詰めると対象の末尾が読めず、触端末ではツールチップを開けない
+          （`CLAUDE.md` §13.3。CI の折り返し検出器がモバイルの `truncate` を clipped-x で捕まえた）。 */}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="flex items-center gap-1">
+          <Badge variant={KIND_VARIANTS[row.kind]} data-testid={`home-action-queue-kind-${row.targetId}`}>
+            {messages.kinds[row.kind]}
           </Badge>
-        ) : null}
-      </span>
-      {/* 🔴 docs/04 §10.3「長い名称」: lg 以上 = 1 行切り詰め + title（導線はこのリンク自身）/ lg 未満 = 折り返し
-          （触端末ではツールチップを開けず、切り詰めると対象の末尾が読めない。CLAUDE.md §13.3）。
-          CI の折り返し検出器（expectNoBrokenLabels）がモバイルの `truncate` を clipped-x として捕まえた（f03abf2）。 */}
-      <Link
-        href={row.href}
-        title={row.subjectLabel}
-        // 🔴 見た目（下線・文字色・フォーカスリング）は `@ses/ui` の 1 実装から取る
-        //    （`NAME_CELL_LINK_CLASSES`）—— 画面側に `hover:` / `focus-visible:` を書かない（§7.10 / 検査 (j)）。
-        className={`${NAME_CELL_LINK_CLASSES} order-last min-w-0 basis-full whitespace-normal break-words sm:order-none sm:basis-auto lg:truncate`}
-        data-testid={`home-action-queue-subject-${row.targetId}`}
-      >
-        {row.subjectLabel}
-      </Link>
-      <span
-        className={`min-w-0 whitespace-normal break-words text-fg lg:truncate ${COLUMN_SM_CLASSES}`}
-        title={row.counterpartyLabel ?? undefined}
-        data-testid={`home-action-queue-counterparty-${row.targetId}`}
-      >
-        {row.counterpartyLabel ?? messages.valueNone}
-      </span>
-      <span className="ml-auto whitespace-nowrap text-fg sm:ml-0" data-testid={`home-action-queue-time-${row.targetId}`}>
-        {time}
-      </span>
-      {/* 🔴 期限超過は**このセルの文字色だけ**で示す（行の背景を塗らない）。🔴 赤ではなく橙。 */}
-      <span
-        className={`whitespace-nowrap ${overdue ? 'text-warning' : 'text-fg-muted'} ${COLUMN_SM_CLASSES}`}
-        data-testid={`home-action-queue-deadline-${row.targetId}`}
-      >
-        {row.deadline === null ? messages.valueNone : formatDateTimeJst(row.deadline)}
-      </span>
-      {/* 🔴 状態は `StatusBadge`（`エンティティ + 状態` の組）。**画面側で色を決めない**（§5-13 / §7.4）。 */}
-      <span className={COLUMN_XL_CLASSES}>
-        {row.stateBadge.entity === 'PROPOSAL' ? (
-          <StatusBadge
-            entity="proposal"
-            state={row.stateBadge.state}
-            label={rowStateLabel(row, messages)}
-            data-testid={`home-action-queue-state-${row.targetId}`}
-          />
-        ) : (
-          <StatusBadge
-            entity="proposalRequest"
-            state={row.stateBadge.state}
-            label={rowStateLabel(row, messages)}
-            data-testid={`home-action-queue-state-${row.targetId}`}
-          />
-        )}
-      </span>
-      <span className={COLUMN_XL_CLASSES}>
-        <ActionCell row={row} availability={availability} messages={messages} />
-      </span>
-      {/* ✅ T-22-10: 行の `内容を見る`（`Drawer` を開く）。
-          🔴 **アイコンだけで意味が通る操作**（§7.5 の許可①。語は `aria-label` が持つ）。
-          🔴 **`ghost`** にする —— この画面の primary は帯の `案件を登録` 1 つだけであり（§7.6）、
-             50 行ぶんの枠線が並ぶと行の境界が読めなくなる。
-          🔴 **遷移ではない**（`<a>` にしない）—— 押しても URL は変わらず、一覧の位置は保たれる。 */}
-      <IconButton
-        variant="ghost"
-        size="sm"
-        icon={<Icon name="eye" />}
-        aria-label={messages.drawer.open}
-        onClick={() => onOpenDrawer(row.targetId)}
-        data-testid={`home-action-queue-drawer-open-${row.targetId}`}
-      />
+          {changed ? (
+            <Badge variant="success" data-testid={`home-action-queue-changed-${row.targetId}`}>
+              {messages.changed}
+            </Badge>
+          ) : null}
+        </span>
+        <Link
+          href={row.href}
+          title={row.subjectLabel}
+          // 🔴 見た目（下線・文字色・フォーカスリング）は `@ses/ui` の 1 実装から取る
+          //    （`NAME_CELL_LINK_CLASSES`）—— 画面側に `hover:` / `focus-visible:` を書かない（§7.10 / 検査 (j)）。
+          className={`${NAME_CELL_LINK_CLASSES} order-last min-w-0 basis-full font-medium whitespace-normal break-words sm:order-none sm:basis-auto sm:flex-1 lg:truncate`}
+          data-testid={`home-action-queue-subject-${row.targetId}`}
+        >
+          {row.subjectLabel}
+        </Link>
+        <span
+          className="ml-auto shrink-0 whitespace-nowrap text-fg sm:ml-0"
+          data-testid={`home-action-queue-time-${row.targetId}`}
+        >
+          {time}
+        </span>
+        {/* ✅ T-22-10: 行の `内容を見る`（`Drawer` を開く）。
+            🔴 **アイコンだけで意味が通る操作**（§7.5 の許可①。語は `aria-label` が持つ）。
+            🔴 **`ghost`** にする —— この画面の primary は帯の `案件を登録` 1 つだけであり（§7.6）、
+               50 行ぶんの枠線が並ぶと行の境界が読めなくなる。
+            🔴 **遷移ではない**（`<a>` にしない）—— 押しても URL は変わらず、一覧の位置は保たれる。
+            🔴 **どのブレークポイントでも落とさない**（Tier 1）。 */}
+        <IconButton
+          variant="ghost"
+          size="sm"
+          icon={<Icon name="eye" />}
+          aria-label={messages.drawer.open}
+          onClick={() => onOpenDrawer(row.targetId)}
+          data-testid={`home-action-queue-drawer-open-${row.targetId}`}
+        />
+      </div>
+      {/* 2 段目（補足）: 相手 / 期限 / 状態 / 操作。🔴 落とす境界は移行前と同じ 2 段である。 */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+        <span
+          className={`min-w-0 whitespace-normal break-words text-fg-muted lg:truncate ${COLUMN_SM_CLASSES}`}
+          title={row.counterpartyLabel ?? undefined}
+          data-testid={`home-action-queue-counterparty-${row.targetId}`}
+        >
+          {row.counterpartyLabel ?? messages.valueNone}
+        </span>
+        {/* 🔴 期限超過は**このセルの文字色だけ**で示す（行の背景を塗らない）。🔴 赤ではなく橙。 */}
+        <span
+          className={`whitespace-nowrap ${overdue ? 'text-warning' : 'text-fg-muted'} ${COLUMN_SM_CLASSES}`}
+          data-testid={`home-action-queue-deadline-${row.targetId}`}
+        >
+          {row.deadline === null ? messages.valueNone : formatDateTimeJst(row.deadline)}
+        </span>
+        {/* 🔴 状態は `StatusBadge`（`エンティティ + 状態` の組）。**画面側で色を決めない**（§5-13 / §7.4）。 */}
+        <span className={COLUMN_XL_CLASSES}>
+          {row.stateBadge.entity === 'PROPOSAL' ? (
+            <StatusBadge
+              entity="proposal"
+              state={row.stateBadge.state}
+              label={rowStateLabel(row, messages)}
+              data-testid={`home-action-queue-state-${row.targetId}`}
+            />
+          ) : (
+            <StatusBadge
+              entity="proposalRequest"
+              state={row.stateBadge.state}
+              label={rowStateLabel(row, messages)}
+              data-testid={`home-action-queue-state-${row.targetId}`}
+            />
+          )}
+        </span>
+        <span className={COLUMN_XL_CLASSES}>
+          <ActionCell row={row} availability={availability} messages={messages} />
+        </span>
+      </div>
     </li>
   );
-}
-
-/**
- * ✅ T-22-10: 時間の欄の語（**行と引き出しで同じ 1 実装**）。
- * 提案依頼の行 = 返答期限までの残り（期限切れが最も痛い）/ それ以外 = 経過時間（放置時間）。
- */
-function rowTimeLabel(row: ActionQueueRow, nowMs: number, messages: ActionQueueMessages): string {
-  return row.deadline === null
-    ? formatElapsedWith(row.since, nowMs, messages.elapsed)
-    : formatRemaining(row.deadline, nowMs, messages.remaining);
 }
 
 /**
@@ -574,7 +468,7 @@ function drawerValues(
   return {
     kind: messages.kinds[row.kind],
     state: rowStateLabel(row, messages),
-    time: rowTimeLabel(row, nowMs, messages),
+    time: actionQueueRowTimeLabel(row, nowMs, messages),
   };
 }
 
@@ -616,6 +510,28 @@ function ActionCell({
       data-testid={`home-action-queue-action-${row.targetId}`}
     >
       {messages.actions[row.action.kind]}
+    </Link>
+  );
+}
+
+/**
+ * 🔴 `すべて見る`（`S-019`）の導線。**凍結済みの testid を文字列リテラルで持つ**
+ *    （`tests/static/testid-inventory.test.ts` が静的に解けること）。
+ * 🔴 **所属ごとに別の部品**にする —— 1 つの部品で三項にすると `audience` を props で受け渡す
+ *    必要があり、`SectionHeader` の `linkComponent` の形（`SidebarLinkProps` だけ）から外れる。
+ */
+function HostProposalsLink({ href, className, children }: SidebarLinkProps) {
+  return (
+    <Link href={href} className={className} data-testid="home-host-proposals">
+      {children}
+    </Link>
+  );
+}
+
+function PartnerProposalsLink({ href, className, children }: SidebarLinkProps) {
+  return (
+    <Link href={href} className={className} data-testid="home-partner-proposals">
+      {children}
     </Link>
   );
 }

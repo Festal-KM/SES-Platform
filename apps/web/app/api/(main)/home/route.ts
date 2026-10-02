@@ -26,6 +26,9 @@ export const GET = withApiRoute(
       // ✅ T-22-09: `操作` 列の不能条件 ④（送信ドメイン未検証）。起動時に確定した値であり、
       //    ここで `process.env` を読まない（`CLAUDE.md` §3.5）。
       sendingDomainVerificationRequired: sendingDomainRuntime().verificationRequired,
+      // 🔴 ✅ 2026-10-02（改訂 23）: KPI カードの差分の基準時刻。**`readAt` と同じインスタンス**を
+      //    渡す（応答の `changedSince` = 画面の「◯時◯分 時点」と差分の窓を一致させる）。
+      now: readAt,
     });
     return Response.json(getHomeView(ctx, blocks, readAt));
   },

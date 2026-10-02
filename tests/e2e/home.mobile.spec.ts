@@ -574,8 +574,14 @@ test.describe('モバイルビューポートのスモーク（S-003 / S-004 は
       // `相手` / `期限` は DOM にはあるがモバイルでは描かれない（`hidden sm:inline`）。
       await expect(session.page.getByTestId(`home-action-queue-counterparty-${proposalId}`)).toBeHidden();
       await expect(session.page.getByTestId(`home-action-queue-deadline-${proposalId}`)).toBeHidden();
-      // 🔴 種別ごとの件数を 1 つの合計に丸めた表示が無い。
-      expect(await section.innerText()).not.toMatch(/[0-9０-９]+\s*件/);
+      // 🔴 種別ごとの件数を 1 つの合計に丸めた表示が**行の側に**無い。
+      //    ✅ 2026-10-02（`docs/04` 改訂 23）: セクション見出しには件数バッジ（`N件`）が出る ——
+      //    これは**この面に何件あるか**（タブの件数と同じ 1 つの数）であり、🔴 **4 つの
+      //    「うまくいかなかった」を 1 つに丸めた数ではない**（種別ごとの件数は依然どこにも出ない）。
+      //    したがって検査は**行の一覧**に当てる（`④` の趣旨は「種別の混同を表示で作らない」）。
+      expect(await session.page.getByTestId('home-action-queue-list').innerText()).not.toMatch(
+        /[0-9０-９]+\s*件/,
+      );
       expectNoHiddenCountHints('S-003 要対応キュー（モバイル）', await session.page.locator('body').innerText());
       await expectNoHorizontalOverflow('S-003 要対応キュー', session.page);
       await expectNoBrokenLabels('S-003 要対応キュー', session.page);

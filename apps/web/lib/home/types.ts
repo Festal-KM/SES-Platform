@@ -16,6 +16,7 @@ import type { AppEnvKind } from '@ses/config';
 import type { TenantLifecycleState, TenantRole } from '@ses/db';
 import type { ProposalRequestState, ProposalState, QuarantinedScanStatus } from '@ses/domain';
 import type { MessageKey } from '@ses/i18n';
+import type { DeltaBasis } from './periods';
 
 /**
  * 🔴 スキャン失敗・隔離の周知（`docs/02` `F-011` 処理④）。T-05-08。
@@ -143,30 +144,54 @@ export type ActionQueueHomeBlock = {
 };
 
 /**
- * 🔴 `SummaryStrip` の指標（`Q-04-4` / docs/05 §6.11.1）。T-22-09。
+ * 🔴 KPI カード 4 枚の指標（`docs/04` §4.1 / §7.2 改訂 23 / `U-24`）。T-22-09 → ✅ 2026-10-02。
+ *
+ * ⚠️ **改訂 23 で指標そのものが入れ替わった**（`SummaryStrip` の 台帳の総数 → KPI カードの
+ *    「朝一番の行動が変わる数」）。`docs/04` §4.1 の表が一次資料である:
+ *      - ホスト … 今日やること / 返信待ち / 面談予定 / 今週の提案
+ *      - 取引先 … 返答が必要な依頼 / 返信待ち / 面談予定 / 今週公開された案件
+ *    🔴 **旧 `kind`（`PROJECTS` / `ENGINEERS` / `PUBLISHED_PROJECTS` / `OWN_ENGINEERS` /
+ *    `SHARED_ENGINEERS` / `PROPOSALS_IN_FLIGHT`）は消した** —— 「見ても行動が変わらない数値を
+ *    ホームに置かない」（§S-003 の目的）が改訂 23 の判断であり、**残すと 2 組の指標が併存する**。
+ *    台帳の総数は一覧（`S-005` / `S-010`）の母集団の 1 行が持つ（§7.2 の一覧画面の行）。
+ *    ⚠️ 文言キー（`home.summary.*`）は**カタログに残してある**（`U-22`: キーの削除は不可）。
+ * ⚠️ `docs/04` は ③ を `今週の面談` と書くが、**面談日時の属性は Phase 2（`F-041`）**であり
+ *    Phase 1 に「今週」を決める日時が無い。したがって `INTERVIEWS`（期間を名乗らない）とし、
+ *    差分も付けない（`docs/04` §4.1 の「比較対象のデータが無い期間は差分の欄を描かない」）。
  *
  * 🔴 **所属で分けた 2 つの合併型にする**（`HostHomeView` / `PartnerHomeView` と同じ形）。
  * 🔴 **`TOTAL_*` / `RANK` / `COMPARISON` / `OTHER_COMPANIES` / `SAME_PROJECT_PROPOSALS` に
  *    類する `kind` を作らない** —— **フィルタで落とすのではなく、型に存在させない**
- *    （`BR-07` / `F-004 AC-4`）。取引先の 5 指標はすべて**自社スコープの件数**である。
+ *    （`BR-07` / `F-004 AC-4`）。取引先の 4 指標はすべて**自社スコープの件数**である。
  * 🔴 **ラベルを返さない。** `kind`（閉集合）→ 文言キーの写像は画面側の 1 箇所に置く
  *    （数の意味を API とクライアントの 2 箇所で決めない）。
- * 🔴 **Phase 1 に出るのはホスト 3 / 取引先 4**（`Assignment` と `INTERVIEW_SCHEDULED` は Phase 2）。
- *    `kind` は 5 つ宣言してあるが、Phase 1 の応答には現れない（docs/05 §6.11.1 の表）。
  */
 export type HostSummaryMetricKind =
-  | 'PROJECTS'
-  | 'ENGINEERS'
-  | 'PROPOSALS_IN_FLIGHT'
-  | 'INTERVIEWS_SCHEDULED'
-  | 'ASSIGNMENTS_ACTIVE';
+  | 'ACTION_QUEUE'
+  | 'AWAITING_REPLY'
+  | 'INTERVIEWS'
+  | 'PROPOSALS_THIS_WEEK';
 
 export type PartnerSummaryMetricKind =
-  | 'PUBLISHED_PROJECTS'
-  | 'OWN_ENGINEERS'
-  | 'SHARED_ENGINEERS'
-  | 'PROPOSALS_IN_FLIGHT'
-  | 'ASSIGNMENTS_ACTIVE';
+  | 'REQUESTS_TO_ANSWER'
+  | 'AWAITING_REPLY'
+  | 'INTERVIEWS'
+  | 'PUBLISHED_THIS_WEEK';
+
+/**
+ * 🔴 差分（`docs/04` §7.2 改訂 23 ②）。**件数の差と、その基準だけ**を持つ。
+ *
+ * 🔴 **率・% ・達成率・前月比を持たせない**（型に無い = 画面が作れない）。
+ * 🔴 **文字列（`↑ +2（昨日比）`）を API が返さない** —— 表示の語は `packages/i18n` の 1 箇所で
+ *    組む（`docs/05` §6.11.1「API はラベルを返さない」）。**符号の向きも画面で決めない**ために
+ *    `count` は**符号つきの整数**である（増加 = 正 / 減少 = 負 / 変化なし = 0）。
+ * 🔴 `null` = **比較できない**（比較対象の期間のデータが無い / 期間で数えられない指標）。
+ *    **`0` と `null` を混同しない**（`±0` と「比較できない」は別物。`docs/04` §4.1）。
+ */
+export type SummaryMetricDelta = {
+  readonly basis: DeltaBasis;
+  readonly count: number;
+};
 
 /**
  * 1 指標。🔴 **`count` は 0 でも返す**（描かない判断は画面側。docs/05 §6.11.1）。
@@ -176,18 +201,34 @@ export type SummaryMetric<K> = {
   readonly kind: K;
   readonly count: number;
   readonly href: string | null;
+  /** 🔴 差分（上の 🔴）。**比較できないときは `null`**。 */
+  readonly delta: SummaryMetricDelta | null;
 };
 
+/**
+ * 🔴 `initialEmpty` = **初回空**（`docs/04` §4.1: 「案件も人材も 0 件」/ 取引先は
+ *    「公開された案件も自社の人材も 0 件」）。`true` のとき KPI カード・タブ・右レールを描かず
+ *    `EmptyState` に倒す（`0` が 4 個並ぶ画面を作らない）。
+ *
+ * 🔴 **なぜ `items` から判定しないのか**: 改訂 23 の 4 指標は**どれも「いま対応が要るものの数」**
+ *    であり、**運用中のテナントでも全部 0 になりうる**（承認待ちも返信待ちも無い平常日）。
+ *    旧 `SummaryStrip` の判定（全 metric が 0）をそのまま使うと、**案件と人材が揃っているのに
+ *    「まだ登録されていません」と出る**（嘘になる）。したがって台帳の有無をサーバが数え、
+ *    **真偽値 1 つだけを応答に載せる**（件数そのものは KPI に出さないので返さない）。
+ * 🔴 「描くかどうか」の分岐は**画面側の 1 箇所**（`./summary-view.ts` の `isHomeInitialEmpty`）が持つ。
+ */
 export type SummaryHomeBlock =
   | {
       readonly kind: 'SUMMARY';
       readonly audience: 'HOST';
       readonly items: readonly SummaryMetric<HostSummaryMetricKind>[];
+      readonly initialEmpty: boolean;
     }
   | {
       readonly kind: 'SUMMARY';
       readonly audience: 'PARTNER';
       readonly items: readonly SummaryMetric<PartnerSummaryMetricKind>[];
+      readonly initialEmpty: boolean;
     };
 
 /**

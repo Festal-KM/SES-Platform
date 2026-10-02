@@ -36,9 +36,12 @@ const { CALLS, FAKE_DB } = vi.hoisted(() => {
       project: { count: count('project') },
       engineer: { count: count('engineer') },
       proposal: { count: count('proposal'), findMany: async () => [] },
+      // 🔴 ✅ 2026-10-02（改訂 23）: KPI カードは `project_visibilities` と `proposal_requests` も数える。
+      //    **どちらも同じ `withTenant` の中**であり、トランザクションは増えない（下の期待値）。
+      projectVisibility: { count: count('projectVisibility') },
       engineerShare: { count: count('engineerShare') },
       tenantSendingDomain: { count: count('tenantSendingDomain') },
-      proposalRequest: { findMany: async () => [] },
+      proposalRequest: { count: count('proposalRequest'), findMany: async () => [] },
       skillSheet: { findMany: async () => [] },
     },
   };
@@ -69,6 +72,9 @@ function ctxOf(partnerCompanyId: string | null): AuthenticatedTenantCtx {
   } as unknown as AuthenticatedTenantCtx;
 }
 
+/** 🔴 KPI カードの差分の基準時刻（`readHomeBlocks` が必須で要求する。1 リクエストに「いま」を 2 つ作らない）。 */
+const NOW = new Date('2026-10-02T03:00:00.000Z');
+
 beforeEach(() => {
   CALLS.counts.withTenant = 0;
   CALLS.queries.length = 0;
@@ -76,18 +82,19 @@ beforeEach(() => {
 
 describe('🔴 ホームが開くトランザクションの本数（docs/05 §6.11.1 / `./blocks.ts` 冒頭の表）', () => {
   it('ホスト所属: 2 本（隔離の周知 1 + 要対応キュー 1。`SUMMARY` は +0 本）', async () => {
-    await readHomeBlocks(ctxOf(null), { sendingDomainVerificationRequired: true });
+    await readHomeBlocks(ctxOf(null), { sendingDomainVerificationRequired: true, now: NOW });
     expect(CALLS.counts.withTenant).toBe(2);
   });
 
   it('取引先所属: 2 本（同じ）', async () => {
-    await readHomeBlocks(ctxOf('p1'), { sendingDomainVerificationRequired: true });
+    await readHomeBlocks(ctxOf('p1'), { sendingDomainVerificationRequired: true, now: NOW });
     expect(CALLS.counts.withTenant).toBe(2);
   });
 
   it('🔴 件数の読み取りはキューと同じトランザクションの中で起きている（`withTenant` が 2 本のまま）', async () => {
-    await readHomeBlocks(ctxOf(null), { sendingDomainVerificationRequired: true });
-    // ホストは 3 件数（案件 / 人材 / 進行中の提案）+ 送信ドメインの事実。
+    await readHomeBlocks(ctxOf(null), { sendingDomainVerificationRequired: true, now: NOW });
+    // ✅ 改訂 23 のホストは 6 件数（返信待ち / 面談 / 案件 / 人材 / 今週 / 先週）+ 送信ドメインの事実。
+    //    🔴 `where` を持たないのは**台帳の有無**を見る 2 本だけである（初回空の判定）。
     expect(CALLS.queries.filter((query) => query.endsWith(':null'))).toEqual([
       'project.count:null',
       'engineer.count:null',
@@ -96,30 +103,31 @@ describe('🔴 ホームが開くトランザクションの本数（docs/05 §6
     expect(CALLS.counts.withTenant).toBe(2);
   });
 
-  it('🔴 取引先は `engineer_shares` を 1 本増やさずに数える（同じトランザクション内）', async () => {
-    await readHomeBlocks(ctxOf('p1'), { sendingDomainVerificationRequired: true });
-    expect(CALLS.queries.some((query) => query.startsWith('engineerShare.count'))).toBe(true);
+  it('🔴 取引先は依頼と公開を 1 本増やさずに数える（同じトランザクション内）', async () => {
+    await readHomeBlocks(ctxOf('p1'), { sendingDomainVerificationRequired: true, now: NOW });
+    expect(CALLS.queries.some((query) => query.startsWith('proposalRequest.count'))).toBe(true);
+    expect(CALLS.queries.filter((query) => query.startsWith('projectVisibility.count'))).toHaveLength(2);
     // 🔴 取引先は送信ドメインを読まない（C2 HOST_ONLY。再送・送信の工程を持たない）。
     expect(CALLS.queries.some((query) => query.startsWith('tenantSendingDomain.count'))).toBe(false);
     expect(CALLS.counts.withTenant).toBe(2);
   });
 
   it('🔴 検証が要らない環境では送信ドメインを読まない（クエリ 1 本を節約する）', async () => {
-    await readHomeBlocks(ctxOf(null), { sendingDomainVerificationRequired: false });
+    await readHomeBlocks(ctxOf(null), { sendingDomainVerificationRequired: false, now: NOW });
     expect(CALLS.queries.some((query) => query.startsWith('tenantSendingDomain.count'))).toBe(false);
     expect(CALLS.counts.withTenant).toBe(2);
   });
 
   it('🔴 `SUMMARY` は 0 件でも必ず返る（`items` を空配列にする分岐が無い）', async () => {
-    const blocks = await readHomeBlocks(ctxOf(null), { sendingDomainVerificationRequired: true });
+    const blocks = await readHomeBlocks(ctxOf(null), { sendingDomainVerificationRequired: true, now: NOW });
     const summary = blocks.find((block) => block.kind === 'SUMMARY');
     expect(summary).toBeDefined();
-    expect(summary?.kind === 'SUMMARY' ? summary.items.length : 0).toBe(3);
+    expect(summary?.kind === 'SUMMARY' ? summary.items.length : 0).toBe(4);
     expect(summary?.kind === 'SUMMARY' ? summary.items.every((item) => item.count === 0) : false).toBe(true);
   });
 
   it('🔴 要対応キューも 0 件でも必ず返る（隔離の周知は 0 件なら出ない）', async () => {
-    const blocks = await readHomeBlocks(ctxOf(null), { sendingDomainVerificationRequired: true });
+    const blocks = await readHomeBlocks(ctxOf(null), { sendingDomainVerificationRequired: true, now: NOW });
     expect(blocks.map((block) => block.kind)).toEqual(['SUMMARY', 'ACTION_QUEUE']);
   });
 });

@@ -126,12 +126,48 @@ describe('ヘッダ（docs/04 §3.1 の 5 要素）', () => {
     expect(html).toContain(t('shell.nav.note.phase2'));
   });
 
-  it('🔴 ヘッダにアイコンを付けない（§7.5 の「見出し全部」「ボタン全部」）', () => {
+  it('🔴 ヘッダのアイコンは「検索」の 1 つだけ（§7.5 の許可① / 装飾を足さない）', () => {
+    // ✅ 2026-10-02（改訂 23）: §3.1 の ③ が **全幅の検索**を足した。虫めがねは §7.5 の許可①
+    //    （テキストなしで意味が通る操作）に**名指しで列挙**されている語である。
+    // 🔴 **それ以外のアイコンを置かない**（ベル / `?` / アバターの画像 / 比喩アイコン）——
+    //    通知は Phase 2 で押せず、ヘルプは中身の出所が無い（押して何も出ない印は装飾である）。
     const html = render();
     const header = /data-testid="app-header"[\s\S]*?<\/header>/.exec(html)?.[0] ?? '';
     expect(header.length).toBeGreaterThan(0);
-    expect(header).not.toContain('<svg');
+    expect((header.match(/<svg/g) ?? []).length).toBe(1);
+    expect(header).toContain('lucide-search');
+    // 🔴 画像は 1 つも無い（アバターはイニシャルの円である。`CLAUDE.md` §3.2 の顔写真を扱わない）。
     expect(header).not.toContain('<img');
+    // 🔴 未読ドット・ベル・ヘルプを描いていない（架空の未読を作らない / 404 を作らない）。
+    for (const forbidden of ['lucide-bell', 'lucide-circle-help', 'lucide-zap', 'lucide-lightbulb']) {
+      expect(header, forbidden).not.toContain(forbidden);
+    }
+  });
+
+  it('✅ 検索は既存の検索画面へ遷移し、近道は既定で `Ctrl+K`（macOS だけ島が差し替える）', () => {
+    const html = render();
+    expect(html).toContain('data-testid="app-header-search"');
+    expect(html).toContain('href="/engineers"');
+    expect(html).toContain(t('shell.header.search.shortcutDefault'));
+    expect(html).toContain(t('shell.header.search.placeholder'));
+  });
+
+  it('✅ 自分はアバター + 氏名（ロール名）で、`DropdownMenu` のトリガになっている', () => {
+    const html = render();
+    expect(html).toContain('data-testid="app-header-avatar"');
+    expect(html).toContain('data-testid="app-header-account-trigger"');
+    expect(html).toContain('data-testid="app-header-account"');
+    // 🔴 氏名とロール名のテキストが在る（アバターだけにしない。§3.1）。
+    expect(html).toContain('山田太郎（営業）');
+    // 🔴 イニシャルは 1 文字（日本語の氏名）。
+    expect(html).toMatch(/data-testid="app-header-avatar"[^>]*>山</);
+  });
+
+  it('🔴 `組織設定` の項目はナビの到達性から決まる（2 つのロール表を作らない）', () => {
+    // ホストの `SALES`（既定の合成）はナビに `settings-organization` を持たないので、
+    // メニューの項目も出ない。🔴 **ここでロールを見ていない**ことがこの検査の主旨である。
+    const html = render();
+    expect(html).not.toContain('href="/settings/organization"');
   });
 });
 
@@ -319,7 +355,11 @@ describe('🔴 サイドバー（docs/04 §3.1 の項目表 / §7.5 ③ アイ�
 
   it('🔴 外枠は primary アクション（作成系の導線）を持たない', () => {
     const html = render();
-    expect(html).not.toContain('<button');
+    // ✅ 2026-10-02（改訂 23）: `<button>` は **1 つだけ**在る —— 「自分」の `DropdownMenu` の
+    //    トリガである（§3.1 が定めた 3 項目までのメニュー）。🔴 **作成系の導線は 1 本も無い**
+    //    （それが本検査の主旨である。器が権限差分を持たない）。
+    expect((html.match(/<button/g) ?? []).length).toBe(1);
+    expect(html).toContain('data-testid="app-header-account-trigger"');
     expect(html).not.toContain('href="/engineers/new"');
     expect(html).not.toContain('href="/projects/new"');
     expect(html).not.toContain('href="/proposals/new"');

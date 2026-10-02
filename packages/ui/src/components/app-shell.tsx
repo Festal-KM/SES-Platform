@@ -105,8 +105,20 @@ const SHELL_CLASSES = 'flex min-h-dvh';
  *    `PERMANENT_SPACING_EXCEPTION`）: `fixed` なボトムタブ（モバイル）の高さ分の逃がしであり、
  *    §7.9 の余白の段ではない。これを段（`pb-12` = 48px）に寄せると**最後の行がタブの下に隠れる。**
  *    ⚠️ 例外は**この部品の責務**に付いており、置き場所（`apps/web` / `packages/ui`）には付かない。
+ *
+ * ✅ **2026-10-02（人間のモックアップ）: 本体の地を `--color-bg-subtle`（`slate-50`）にした。**
+ * 🔴 **トークンの値は変えていない**（`--color-bg` は白のまま）—— 変えると**白地を前提にした
+ *    全画面**（`--color-fg` との組のコントラスト / `Card` の白との差）が同時に動く。**適用箇所で
+ *    分ける**のが §7.9 の 3 層（semantic を参照する component 層）の形である。
+ * 🔴 **カード・パネル・overlay は `--color-surface`（白）のまま**なので、「淡いグレーの地に白い面」
+ *    という分離がここで初めて成立する（`../lib/surface-classes.ts` の 🔴 が予告していた判断）。
+ * ⚠️ **影響は主平面の全画面に及ぶ**（`/admin` は別の外枠であり変わらない）。白い面を持たない画面
+ *    （一覧の `DataTable` は器に地を持たない）は**表が地の上に直接載る**見え方になる ——
+ *    列ヘッダ（`--color-table-header-bg` = `slate-50`）と行 hover（`--color-row-hover-bg` = 同）が
+ *    **地と同値になるため、ヘッダと hover の分離が弱くなる**。これは器（`Table`）に面を与える
+ *    変更（= `docs/04` §5-13 の改訂）を要するので本タスクでは行わず、完了報告に挙げる。
  */
-const BODY_CLASSES = 'min-w-0 flex-1 pb-24 md:pb-0';
+const BODY_CLASSES = 'min-w-0 flex-1 bg-bg-subtle pb-24 md:pb-0';
 
 /** ボトムタブ（🔴 `fixed bottom-0 z-10`。帯の primary（`bottom-12` / `z-20`）とは重ならない）。 */
 const TABS_CLASSES = 'fixed inset-x-0 bottom-0 z-10 flex border-t border-border bg-bg md:hidden';

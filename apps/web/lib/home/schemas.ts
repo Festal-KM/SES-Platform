@@ -14,9 +14,27 @@ export type HomeScope = (typeof HOME_SCOPES)[number];
 /** 🔴 既定は「自分の担当のみ」（docs/04 §S-003 操作表「既定はオン」）。 */
 export const DEFAULT_HOME_SCOPE: HomeScope = 'mine';
 
+/**
+ * ✅ 2026-10-02（`docs/04` §4.1 改訂 23）: ホームのタブ 3 つ（**面の切替**）。
+ *
+ * 🔴 **`メッセージ` を置かない**（チャットは Phase 2。`F-038`。実体が無いタブを先に置かない）。
+ * 🔴 **状態の絞り込みに使わない**（§5-13 の `Tabs` 規約。同じ母集団のフィルタではない）。
+ * 🔴 **選択は URL に載せる**（戻って同じ面に帰れる。§4.1 の操作表）。値は `?tab=` である。
+ */
+export const HOME_TABS = ['actions', 'projects', 'engineers'] as const;
+export type HomeTab = (typeof HOME_TABS)[number];
+
+/** 🔴 既定タブは `要対応`（§4.1「既定タブは `要対応`」）。 */
+export const DEFAULT_HOME_TAB: HomeTab = 'actions';
+
 export const homeQuerySchema = z.object({
   scope: z.enum(HOME_SCOPES).optional(),
   changedSince: z.iso.datetime({ offset: true }).optional(),
+  /**
+   * 🔴 タブの選択（画面だけが使う。`GET /api/home` の応答は**タブで変わらない** ——
+   *    1 回のポーリングで 3 つの面すべてを同じ応答から更新するため。§4.1 改訂 23）。
+   */
+  tab: z.enum(HOME_TABS).optional(),
 });
 
 export type HomeQuery = z.infer<typeof homeQuerySchema>;

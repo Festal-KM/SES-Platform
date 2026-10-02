@@ -114,11 +114,21 @@ type ActionBlock = {
   // ✅ T-22-09: 4 エントリを毎回全量返す（行ごとに持たない = 差分と矛盾しない）。
   readonly actionAvailability: Readonly<Record<string, { readonly enabled: boolean; readonly reasonKey: string | null }>>;
 };
-/** ✅ T-22-09: `SummaryStrip` の件数（docs/05 §6.11.1）。 */
+/**
+ * ✅ T-22-09 → ✅ 2026-10-02（`docs/04` 改訂 23）: **KPI カード 4 枚**の件数（docs/05 §6.11.1）。
+ * 🔴 1 指標は `kind` / `count` / `href` / `delta` の 4 キーだけで、`delta` は**件数の差と基準**しか持たない。
+ */
 type SummaryBlock = {
   readonly kind: 'SUMMARY';
   readonly audience: string;
-  readonly items: readonly { readonly kind: string; readonly count: number; readonly href: string | null }[];
+  readonly items: readonly {
+    readonly kind: string;
+    readonly count: number;
+    readonly href: string | null;
+    readonly delta: { readonly basis: string; readonly count: number } | null;
+  }[];
+  /** 🔴 初回空（案件も人材も 0 件）。**真偽値 1 つだけ**（台帳の件数を応答に出さない）。 */
+  readonly initialEmpty: boolean;
 };
 type HomeBody = { readonly audience: string; readonly blocks: readonly { readonly kind: string }[]; readonly changedSince: string };
 
@@ -663,41 +673,68 @@ describe('🔴 ⑦ changedSince: 変わっていない行は items に返らず�
 
 describe('🔴 ⑧ SUMMARY は同じ応答に同梱され、取引先の応答に他社由来の値が 1 つも無い', () => {
   /**
-   * 🔴 「進行中」から外れる終端 3 状態。**`summary.ts` の `PROPOSAL_TERMINAL_STATES` を import せず書き写す**
-   *    —— 実装の定数を参照すると、終端の集合が変わったときに期待値も一緒に動いて検知できない
-   *    （`CLAUDE.md` §4.2 の `WON` / `LOST` / `WITHDRAWN` は人間の承認事項）。
+   * ⚠️ **`TERMINAL_STATES`（`WON` / `LOST` / `WITHDRAWN`）はここから消した。**
+   *    改訂 23 で `進行中の提案` の指標が無くなり（KPI は「今日やること / 返信待ち / 面談予定 /
+   *    今週の提案」の 4 つ）、**終端の集合を突き合わせる対象が応答に無くなった**ためである。
+   *    🔴 終端 3 状態の意味（`CLAUDE.md` §4.2）は `S-019` の一覧の検査が引き続き固定している。
+   *
+   * 🔴 当週の月曜 0:00（JST）。**実装（`apps/web/lib/home/periods.ts`）を import せず書き写す** ——
+   *    実装の関数を参照すると、境界の定義が変わったときに期待値も一緒に動いて検知できない
+   *    （`docs/04` §7.2 ② が定める基準そのものを書く）。
    */
-  const TERMINAL_STATES = ['WON', 'LOST', 'WITHDRAWN'] as const;
+  function startOfJstWeekForTest(now: Date): Date {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const JST_MS = 9 * 60 * 60 * 1000;
+    const dayStart = Math.floor((now.getTime() + JST_MS) / DAY_MS) * DAY_MS - JST_MS;
+    const weekday = new Date(dayStart + JST_MS).getUTCDay();
+    return new Date(dayStart - ((weekday + 6) % 7) * DAY_MS);
+  }
 
-  it('ホストは Phase 1 の 3 指標（案件 / 人材 / 進行中の提案）。件数は 0 でも返る', async () => {
-    const { body } = await home(hostSales, '?scope=all');
+  it('✅ 改訂 23: ホストは 4 指標（今日やること / 返信待ち / 面談予定 / 今週の提案）。件数は 0 でも返る', async () => {
+    const { body, block } = await home(hostSales, '?scope=all');
     const summary = summaryOf(body);
     expect(summary.audience).toBe('HOST');
-    expect(summary.items.map((item) => item.kind)).toEqual(['PROJECTS', 'ENGINEERS', 'PROPOSALS_IN_FLIGHT']);
-    // 🔴 件数は**自テナントの実体と一致する**（特権接続で数え直す = 母集団が RLS で閉じていることの確認）。
+    expect(summary.items.map((item) => item.kind)).toEqual([
+      'ACTION_QUEUE',
+      'AWAITING_REPLY',
+      'INTERVIEWS',
+      'PROPOSALS_THIS_WEEK',
+    ]);
     expect(summary.items.every((item) => Number.isInteger(item.count) && item.count >= 0)).toBe(true);
-    expect(summary.items.find((item) => item.kind === 'PROJECTS')?.count).toBe(
-      await admin.project.count({ where: { tenantId: TENANT_A } }),
-    );
-    // 🔴 ホスト文脈から見える `engineers` は **`owner_partner_company_id IS NULL` の行だけ**である
-    //    （C3 OWNER_SCOPED。`CLAUDE.md` §3.1 経路 2「パートナーのエンジニア台帳全体をホストが読むことはできない」）。
-    //    つまり `人材` の件数に**取引先の台帳は 1 件も入らない**。
-    expect(summary.items.find((item) => item.kind === 'ENGINEERS')?.count).toBe(
-      await admin.engineer.count({ where: { tenantId: TENANT_A, ownerPartnerCompanyId: null } }),
-    );
-    expect(await admin.engineer.count({ where: { tenantId: TENANT_A } })).toBeGreaterThan(
-      summary.items.find((item) => item.kind === 'ENGINEERS')?.count ?? -1,
-    );
-    // 🔴 `進行中の提案` は終端 3 状態を除いた自テナント全件（ホストは C5 PARTY で全件が見える）。
-    //    `created.hostLost`（`LOST`）が数から外れていることも、この一致が同時に固定する。
-    const inFlight = summary.items.find((item) => item.kind === 'PROPOSALS_IN_FLIGHT')?.count ?? -1;
-    expect(inFlight).toBe(
-      await admin.proposal.count({ where: { tenantId: TENANT_A, state: { notIn: [...TERMINAL_STATES] } } }),
-    );
+    // 🔴 **`今日やること` は要対応キューの行数そのもの**（別クエリにしない = 画面の 2 箇所で数が食い違わない）。
+    const queueCount = summary.items.find((item) => item.kind === 'ACTION_QUEUE')?.count ?? -1;
+    expect(queueCount).toBe(block.targetIds.length);
     // 🔴 0 件では「読めていない」と区別できないので、母集団があることも確かめる。
-    expect(inFlight).toBeGreaterThan(0);
-    // 🔴 応答に載るキーは 3 つだけ（ラベル・色・率・前月比を返さない）。
-    for (const item of summary.items) expect(Object.keys(item).sort()).toEqual(['count', 'href', 'kind']);
+    expect(queueCount).toBeGreaterThan(0);
+    // 🔴 `返信待ち` は**自テナントの `SUBMITTED` の実体と一致する**（特権接続で数え直す
+    //    = 母集団が RLS で閉じていることの確認。ホストは C5 PARTY で全件が見える）。
+    expect(summary.items.find((item) => item.kind === 'AWAITING_REPLY')?.count).toBe(
+      await admin.proposal.count({ where: { tenantId: TENANT_A, state: 'SUBMITTED' } }),
+    );
+    // 🔴 `面談予定` は `INTERVIEW_SCHEDULED` の件数（Phase 1 では到達しにくいが **0 でもカードは出る**）。
+    expect(summary.items.find((item) => item.kind === 'INTERVIEWS')?.count).toBe(
+      await admin.proposal.count({ where: { tenantId: TENANT_A, state: 'INTERVIEW_SCHEDULED' } }),
+    );
+    // 🔴 `今週の提案` は当週（月曜 0:00 JST 起点）に送信された提案だけを数える
+    //    —— 終端 3 状態（`TERMINAL_STATES`）を除く「進行中」の数ではない（期間の指標である）。
+    const weekStart = startOfJstWeekForTest(new Date());
+    expect(summary.items.find((item) => item.kind === 'PROPOSALS_THIS_WEEK')?.count).toBe(
+      await admin.proposal.count({ where: { tenantId: TENANT_A, submittedAt: { gte: weekStart } } }),
+    );
+    // 🔴 応答に載るキーは 4 つだけ（ラベル・色・率・前月比を返さない）。
+    for (const item of summary.items) {
+      expect(Object.keys(item).sort()).toEqual(['count', 'delta', 'href', 'kind']);
+      // 🔴 差分は**件数の差と基準だけ**（率・% の枠が無い）。在庫の指標は `null` である。
+      if (item.delta !== null) {
+        expect(Object.keys(item.delta).sort()).toEqual(['basis', 'count']);
+        expect(['PREVIOUS_DAY', 'PREVIOUS_WEEK']).toContain(item.delta.basis);
+      }
+    }
+    expect(summary.items.filter((item) => item.delta !== null).map((item) => item.kind)).toEqual([
+      'PROPOSALS_THIS_WEEK',
+    ]);
+    // 🔴 初回空は**真偽値 1 つ**で、台帳が在るテナントでは `false` である（KPI が 0 でも空に倒さない）。
+    expect(summary.initialEmpty).toBe(false);
   });
 
   it('🔴 取引先は Phase 1 の 4 指標（すべて自社スコープ）。他社を示唆する kind / 値が 1 つも無い', async () => {
@@ -705,45 +742,49 @@ describe('🔴 ⑧ SUMMARY は同じ応答に同梱され、取引先の応答�
     const summary = summaryOf(body);
     expect(summary.audience).toBe('PARTNER');
     expect(summary.items.map((item) => item.kind)).toEqual([
-      'PUBLISHED_PROJECTS',
-      'OWN_ENGINEERS',
-      'SHARED_ENGINEERS',
-      'PROPOSALS_IN_FLIGHT',
+      'REQUESTS_TO_ANSWER',
+      'AWAITING_REPLY',
+      'INTERVIEWS',
+      'PUBLISHED_THIS_WEEK',
     ]);
-    // 🔴 自社の台帳だけが数に入る（C3 OWNER_SCOPED）。**他社（A2）の人材は入らない。**
-    expect(summary.items.find((item) => item.kind === 'OWN_ENGINEERS')?.count).toBe(
-      await admin.engineer.count({ where: { tenantId: TENANT_A, ownerPartnerCompanyId: PARTNER_A1 } }),
+    // 🔴 `返答が必要な依頼` は**自社宛の `REQUESTED` だけ**（C5 PARTY）。他社宛の依頼は数に入らない。
+    const requests = summary.items.find((item) => item.kind === 'REQUESTS_TO_ANSWER')?.count ?? -1;
+    expect(requests).toBe(
+      await admin.proposalRequest.count({
+        where: { tenantId: TENANT_A, partnerCompanyId: PARTNER_A1, state: 'REQUESTED' },
+      }),
     );
-    // 🔴 自社に公開された案件だけが数に入る（C4）。テナント全体の案件数より少ない。
-    const published = summary.items.find((item) => item.kind === 'PUBLISHED_PROJECTS')?.count ?? -1;
-    expect(published).toBe(
-      // 🔴 解除された公開（`revoked_at`）は C4 が通さないので、数え直す側も同じ条件で数える。
+    // 🔴 0 件では「読めていない」と区別できない（`seed:isolation` と本テストが A1 宛の依頼を置く）。
+    expect(requests).toBeGreaterThan(0);
+    expect(requests).toBeLessThan(
+      await admin.proposalRequest.count({ where: { tenantId: TENANT_A, state: 'REQUESTED' } }),
+    );
+    // 🔴 `返信待ち` は**自社が作成した `SUBMITTED` だけ**（C5 PARTY）。ホストと他社（A2）の提案は入らない。
+    expect(summary.items.find((item) => item.kind === 'AWAITING_REPLY')?.count).toBe(
+      await admin.proposal.count({
+        where: { tenantId: TENANT_A, ownerPartnerCompanyId: PARTNER_A1, state: 'SUBMITTED' },
+      }),
+    );
+    // 🔴 `今週公開された案件` は**自社宛の公開のうち未解除**だけ（C5 + `revoked_at IS NULL`）。
+    //    🔴 ここを「整数であること」で済ませてはならない —— `project_visibilities` は
+    //    **取引先の枝だけが読む表**であり、RLS / `where` の都合で 0 件に化けてもホスト側では踏めない。
+    const weekStart = startOfJstWeekForTest(new Date());
+    const publishedThisWeek = summary.items.find((item) => item.kind === 'PUBLISHED_THIS_WEEK')?.count ?? -1;
+    expect(publishedThisWeek).toBe(
+      await admin.projectVisibility.count({
+        where: {
+          tenantId: TENANT_A,
+          partnerCompanyId: PARTNER_A1,
+          revokedAt: null,
+          publishedAt: { gte: weekStart },
+        },
+      }),
+    );
+    // 🔴 他社宛の公開が 1 件も数に入らない（自社宛の有効な公開の数を超えない）。
+    expect(publishedThisWeek).toBeLessThanOrEqual(
       await admin.projectVisibility.count({
         where: { tenantId: TENANT_A, partnerCompanyId: PARTNER_A1, revokedAt: null },
       }),
-    );
-    expect(published).toBeLessThan(await admin.project.count({ where: { tenantId: TENANT_A } }));
-    // 🔴 `共有中` は**自社が共有した有効な行だけ**（`engineer_shares` = C3 OWNER_SCOPED + `revoked_at IS NULL`）。
-    //    🔴 ここを「整数であること」で済ませてはならない —— `engineer_shares` は**取引先の枝だけが読む表**であり、
-    //    RLS / 拡張 / `where` の都合で 0 件に化けてもホスト側のテストでは踏めない（`F-016 AC-2`「解除で即時に消える」の裏返し）。
-    const shared = summary.items.find((item) => item.kind === 'SHARED_ENGINEERS')?.count ?? -1;
-    expect(shared).toBe(
-      await admin.engineerShare.count({
-        where: { tenantId: TENANT_A, partnerCompanyId: PARTNER_A1, revokedAt: null },
-      }),
-    );
-    expect(shared).toBeGreaterThan(0);
-    // 🔴 `進行中の提案` は**自社が作成した提案だけ**（C5 PARTY）。テナント全体より少ない
-    //    = ホストと他社（A2）の提案が 1 件も数に入っていない。
-    const inFlight = summary.items.find((item) => item.kind === 'PROPOSALS_IN_FLIGHT')?.count ?? -1;
-    expect(inFlight).toBe(
-      await admin.proposal.count({
-        where: { tenantId: TENANT_A, ownerPartnerCompanyId: PARTNER_A1, state: { notIn: [...TERMINAL_STATES] } },
-      }),
-    );
-    expect(inFlight).toBeGreaterThan(0);
-    expect(inFlight).toBeLessThan(
-      await admin.proposal.count({ where: { tenantId: TENANT_A, state: { notIn: [...TERMINAL_STATES] } } }),
     );
     // 🔴 他社を示唆する語が応答全体に 1 つも無い（フィルタで落とすのではなく型に存在しない）。
     for (const forbidden of ['TOTAL_', 'RANK', 'COMPARISON', 'OTHER_COMPANIES', 'SAME_PROJECT']) {
@@ -769,9 +810,13 @@ describe('🔴 ⑧ SUMMARY は同じ応答に同梱され、取引先の応答�
     const countOf = (summary: SummaryBlock, kind: string): number =>
       summary.items.find((item) => item.kind === kind)?.count ?? -1;
     // 🔴 B の件数は **B のテナントの実体**と一致する（A の行を 1 件も数えていない）。
-    expect(countOf(summaryB, 'PROJECTS')).toBe(await admin.project.count({ where: { tenantId: TENANT_B } }));
-    expect(countOf(summaryB, 'ENGINEERS')).toBe(
-      await admin.engineer.count({ where: { tenantId: TENANT_B, ownerPartnerCompanyId: null } }),
+    expect(countOf(summaryB, 'AWAITING_REPLY')).toBe(
+      await admin.proposal.count({ where: { tenantId: TENANT_B, state: 'SUBMITTED' } }),
     );
+    expect(countOf(summaryB, 'INTERVIEWS')).toBe(
+      await admin.proposal.count({ where: { tenantId: TENANT_B, state: 'INTERVIEW_SCHEDULED' } }),
+    );
+    // 🔴 空振り防止: A には `SUBMITTED` の実体がある（B の数に混ざっていないことが意味を持つ）。
+    expect(await admin.proposal.count({ where: { tenantId: TENANT_A, state: 'SUBMITTED' } })).toBeGreaterThan(0);
   });
 });

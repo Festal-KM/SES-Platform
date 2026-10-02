@@ -28,7 +28,6 @@
 //    **ホストの枝では** `engineer.view` の対象（台帳の現在値）を読んでいない（取引先の枝は自社の台帳の `engineers.display_name` を
 //    読む。自社の情報なので実名でよい。`S-017` と同じ）。
 import { withTenant, type AuthenticatedTenantCtx } from '@ses/db';
-import { isEngineerShareRole } from '../engineer-shares/policy';
 import { readEngineerRefs, readProjectRefs } from '../proposal-requests/service';
 import type { ProposalRequestRow } from '../proposal-requests/views';
 import { toHostProposalRequestView, toPartnerProposalRequestView } from '../proposal-requests/views';
@@ -44,7 +43,7 @@ import {
   type ActionQueueAudience,
 } from './action-queue';
 import type { HomeScope } from './schemas';
-import { readSummaryBlock } from './summary';
+import { buildSummaryBlock, readSummaryCounts } from './summary';
 import type { ActionQueueHomeBlock, ActionQueueRow, SummaryHomeBlock } from './types';
 
 /**
@@ -71,6 +70,12 @@ export type ActionQueueReadOptions = {
    *    本ファイルが `lib/db/bootstrap` を import すると、ユニットテストから呼べなくなる。
    */
   readonly sendingDomainVerificationRequired: boolean;
+  /**
+   * 🔴 ✅ 2026-10-02（改訂 23）: KPI カードの差分の基準時刻。**必須にする** ——
+   *    既定値（`new Date()`）を置くと、**応答に出る「◯時◯分 時点」と差分の窓が別の「いま」になる**
+   *    （`./periods.ts` の 🔴）。呼び出し側は `readAt` をそのまま渡す。
+   */
+  readonly now: Date;
 };
 
 /**
@@ -198,9 +203,11 @@ export async function readActionQueueWithSummary(
       .map((item) => toProposalActionRow(item))
       .filter((row): row is ActionQueueRow => row !== null);
 
-    const [requestActionRows, summary, verifiedDomains] = await Promise.all([
+    const [requestActionRows, summaryCounts, verifiedDomains] = await Promise.all([
       readRequestActionRows(ctx, db, audience, options.scope),
-      readSummaryBlock(db, audience, { canManageShares: isEngineerShareRole(ctx.role) }),
+      // 🔴 ✅ 2026-10-02（改訂 23）: KPI カードの件数。**`now` は呼び出し側の基準時刻**であり、
+      //    応答の `changedSince`（挨拶行の「◯時◯分 時点」）と同じインスタンスである。
+      readSummaryCounts(db, audience, { now: options.now }),
       // 🔴 検証が要らない環境では読まない（起動時に確定した値で分岐する。クエリを 1 本節約する）。
       audience === 'HOST' && options.sendingDomainVerificationRequired
         ? db.tenantSendingDomain.count({ where: { state: 'VERIFIED' } })
@@ -222,6 +229,11 @@ export async function readActionQueueWithSummary(
         mode: 'NORMAL',
       }),
     );
+    // 🔴 ✅ 2026-10-02: KPI カード 1（`今日やること`）は**要対応キューの行数そのもの**である
+    //    （`sorted.length` = `actionQueue.targetIds.length`）。別に数えないのは、
+    //    **同じ画面の中で「カードの数」と「キューの行数」が食い違う瞬間を作らない**ためである
+    //    （`docs/04` §7.2 ③ / §4.1 の非同期処理の表現）。
+    const summary = buildSummaryBlock(summaryCounts, audience, sorted.length);
     return { actionQueue, summary };
   });
 }

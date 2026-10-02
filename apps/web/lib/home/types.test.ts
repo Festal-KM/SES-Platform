@@ -26,6 +26,7 @@ import type {
   PartnerSummaryMetricKind,
   SummaryHomeBlock,
   SummaryMetric,
+  SummaryMetricDelta,
 } from './types';
 
 type ExpectedQuarantineBlock = {
@@ -66,11 +67,14 @@ type ExpectedSummaryBlock =
       readonly kind: 'SUMMARY';
       readonly audience: 'HOST';
       readonly items: readonly SummaryMetric<HostSummaryMetricKind>[];
+      /** ✅ 2026-10-02（改訂 23）: 初回空（案件も人材も 0 件）。🔴 **真偽値 1 つだけ**。 */
+      readonly initialEmpty: boolean;
     }
   | {
       readonly kind: 'SUMMARY';
       readonly audience: 'PARTNER';
       readonly items: readonly SummaryMetric<PartnerSummaryMetricKind>[];
+      readonly initialEmpty: boolean;
     };
 
 describe('HomeView の境界（型テスト）', () => {
@@ -127,15 +131,15 @@ describe('HomeView の境界（型テスト）', () => {
 // 🔴 T-22-09: `SummaryStrip` の指標の境界（docs/05 §6.11.1 / `BR-07` / `F-004 AC-4`）
 // ============================================================================
 describe('🔴 SUMMARY ブロックの境界（型テスト）', () => {
-  it('ホストの指標は 5 kind（`Q-04-4` の 5 指標。Phase 2 の 2 つを含む）', () => {
+  it('✅ 改訂 23: ホストの指標は 4 kind（`docs/04` §4.1 の表 = 今日やること / 返信待ち / 面談予定 / 今週の提案）', () => {
     expectTypeOf<HostSummaryMetricKind>().toEqualTypeOf<
-      'PROJECTS' | 'ENGINEERS' | 'PROPOSALS_IN_FLIGHT' | 'INTERVIEWS_SCHEDULED' | 'ASSIGNMENTS_ACTIVE'
+      'ACTION_QUEUE' | 'AWAITING_REPLY' | 'INTERVIEWS' | 'PROPOSALS_THIS_WEEK'
     >();
   });
 
-  it('🔴 取引先の指標は 5 kind で、すべて自社スコープの件数である', () => {
+  it('🔴 取引先の指標は 4 kind で、すべて自社スコープの件数である', () => {
     expectTypeOf<PartnerSummaryMetricKind>().toEqualTypeOf<
-      'PUBLISHED_PROJECTS' | 'OWN_ENGINEERS' | 'SHARED_ENGINEERS' | 'PROPOSALS_IN_FLIGHT' | 'ASSIGNMENTS_ACTIVE'
+      'REQUESTS_TO_ANSWER' | 'AWAITING_REPLY' | 'INTERVIEWS' | 'PUBLISHED_THIS_WEEK'
     >();
   });
 
@@ -154,16 +158,30 @@ describe('🔴 SUMMARY ブロックの境界（型テスト）', () => {
     expectTypeOf<Extract<HostSummaryMetricKind, Forbidden>>().toEqualTypeOf<never>();
   });
 
-  it('🔴 1 指標のキーは kind / count / href の 3 つだけ（ラベル・色・前月比・率を持たない）', () => {
+  it('🔴 1 指標のキーは kind / count / href / delta の 4 つだけ（ラベル・色・前月比・率を持たない）', () => {
     expectTypeOf<SummaryMetric<HostSummaryMetricKind>>().toEqualTypeOf<{
       readonly kind: HostSummaryMetricKind;
       readonly count: number;
       readonly href: string | null;
+      readonly delta: SummaryMetricDelta | null;
     }>();
     expectTypeOf<SummaryMetric<HostSummaryMetricKind>>().not.toHaveProperty('label');
     expectTypeOf<SummaryMetric<HostSummaryMetricKind>>().not.toHaveProperty('previousCount');
     expectTypeOf<SummaryMetric<HostSummaryMetricKind>>().not.toHaveProperty('rate');
     expectTypeOf<SummaryMetric<HostSummaryMetricKind>>().not.toHaveProperty('amount');
+  });
+
+  it('🔴 ✅ 改訂 23: 差分は「件数の差 + 基準」の 2 キーだけ（率 / % / 達成率を型として持てない）', () => {
+    expectTypeOf<SummaryMetricDelta>().toEqualTypeOf<{
+      readonly basis: 'PREVIOUS_DAY' | 'PREVIOUS_WEEK';
+      readonly count: number;
+    }>();
+    expectTypeOf<SummaryMetricDelta>().not.toHaveProperty('percent');
+    expectTypeOf<SummaryMetricDelta>().not.toHaveProperty('rate');
+    expectTypeOf<SummaryMetricDelta>().not.toHaveProperty('ratio');
+    expectTypeOf<SummaryMetricDelta>().not.toHaveProperty('previousCount');
+    // 🔴 **前月比・前年比の基準を作らない**（§7.2 は前月比を全画面で禁じている）。
+    expectTypeOf<SummaryMetricDelta['basis']>().not.toEqualTypeOf<string>();
   });
 
   it('🔴 所属で分けた 2 つの合併型である（ホストの kind を取引先の応答に入れられない）', () => {
