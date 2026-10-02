@@ -17,6 +17,7 @@ import {
   ENGINEER_SHARE_FILTER_MESSAGE_KEYS,
   ENGINEER_SHARE_FILTERS,
 } from '../../../lib/engineer-shares/screen-query';
+import type { EngineerShareFilter } from '../../../lib/engineer-shares/screen-query';
 import type { EngineerShareFilterOption, EngineerShareScreenMessages } from './engineer-share-screen';
 
 export { engineerShareRow, engineerShareRows } from '../../../lib/engineer-shares/row-view';
@@ -38,9 +39,24 @@ export function engineerShareFilterOptions(): readonly EngineerShareFilterOption
   }));
 }
 
-export function engineerShareScreenMessages(): EngineerShareScreenMessages {
+/**
+ * 🔴 SP-22 段④: **件数バーの 2 つの語**。
+ *
+ * 🔴 `population` に件数を入れない（`docs/04` §S-015 / `docs/05` §4.8。この画面の取得は
+ *    `total` を返さず、型にも無い）。`orderNote` は `docs/04` §S-015「並び順は決定的」の 2 通りを
+ *    **フィルタの値から**選ぶ（`共有中` = 共有開始日の新しい順 / それ以外 = 更新日の新しい順）。
+ *    🔴 選べる形（`?sort=`）にはしない —— `#29` の query に無い。
+ */
+export function engineerShareScreenMessages(params: {
+  readonly shared: EngineerShareFilter;
+}): EngineerShareScreenMessages {
   return {
     lead: t('engineerShares.lead'),
+    population: t('engineerShares.population'),
+    orderNote:
+      params.shared === 'true'
+        ? t('engineerShares.orderNote.shared')
+        : t('engineerShares.orderNote.default'),
     searchLegend: t('engineerShares.search.legend'),
     searchQ: t('engineerShares.search.q'),
     searchAvailableBy: t('engineerShares.search.availableBy'),

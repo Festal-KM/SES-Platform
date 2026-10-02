@@ -65,6 +65,9 @@ const NOT_SHARED_ROW: EngineerShareRowView = {
 
 const messages: EngineerShareScreenMessages = {
   lead: '共有可にすると、ホストの候補一覧に匿名で表示されます。',
+  // 🔴 SP-22 段④: 件数バーの 2 語。**`population` に件数を含めない**（`docs/04` §S-015 / `docs/05` §4.8）。
+  population: '御社が登録した人材',
+  orderNote: '共有開始日の新しい順に表示しています。',
   searchLegend: '検索条件',
   searchQ: '氏名',
   searchAvailableBy: '稼働可能時期（この日までに稼働可能）',
@@ -521,5 +524,145 @@ describe('🔴 T-12-17 ④: 氏名セルは `NameCell`（`docs/04` §10.3 / §11
     expect(cells[0]).not.toContain('truncate');
     expect(cells[0]).not.toContain('max-w-');
     expect(cells[0]).not.toContain('<a ');
+  });
+});
+
+// ============================================================================
+// 🔴 SP-22 段④: 絞り込みカードと件数バー（**見せ方だけ**。人間の
+//    「SES Hub社内外向け人材管理ダッシュボード.png」右＝他社公開用）
+// ============================================================================
+// 🔴 **本画面は経路 4 の入口である**（`CLAUDE.md` §3.1）。したがってここで固定するのは
+//    見た目の形だけでなく、**開示項目が 1 つも増えていないこと**である:
+//      ①プレビューの行は **5 項目 + 丸めた更新日**（`anonymizedAttributeRowsWith` の戻り）だけ
+//      ②件数バーの母集団に**数字を入れない**（総件数・残件数の禁止。`docs/05` §4.8）
+//      ③ワイヤーフレーム右側にある **`掲載元`（自社 / A社 / B社…）を描く枝が無い**
+//        —— これは他社の存在と人数をパートナーに見せることであり、§3.1 の 🔴
+//        「パートナー同士が相互に参照できる経路を 1 つも作らない」に正面から反する
+describe('🔴 SP-22 段④: 絞り込みカードと件数バー', () => {
+  it('🔴 絞り込みは白い面のカード（`@ses/ui` の `Card`）の中にある（ページ地に溶けない）', () => {
+    const html = render();
+    const card = html.indexOf('rounded-md border border-border');
+    const form = html.indexOf('data-testid="engineer-share-filters"');
+
+    expect(card, '絞り込みカードの面が描かれていない').toBeGreaterThanOrEqual(0);
+    expect(form, '検索フォームがカードの外にある').toBeGreaterThan(card);
+  });
+
+  it('🔴 氏名の条件は全幅である（モバイルの用途が「名前で探して解除する」であるため）', () => {
+    const html = render();
+    const label = /<label class="([^"]*)"[^>]*>\s*<span[^>]*>氏名/.exec(html);
+
+    expect(label, '氏名の欄が見つからない').not.toBeNull();
+    const classes = (label?.[1] ?? '').split(' ');
+    expect(classes).toContain('sm:col-span-2');
+    expect(classes).toContain('lg:col-span-3');
+    expect(classes).toContain('xl:col-span-4');
+  });
+
+  it('🔴 検索条件の集合は 3 つのまま（`#29` の query に無い条件を描かない）', () => {
+    const html = render();
+
+    expect(html).toContain('name="q"');
+    expect(html).toContain('name="availableBy"');
+    expect(html).toContain('name="shared"');
+    for (const name of ['name="skills"', 'name="priceMin"', 'name="priceMax"', 'name="prefecture"', 'name="remote"', 'name="sort"']) {
+      expect(html, `${name} の入力欄が描かれている`).not.toContain(name);
+    }
+  });
+
+  it('🔴 件数バー: 母集団の 1 行と並び順の説明が同じ段にあり、**母集団に数字が無い**', () => {
+    const html = render();
+    const population = html.indexOf('data-testid="engineer-share-toolbar-population"');
+    const note = html.indexOf('data-testid="engineer-share-toolbar-note"');
+    const orderNote = html.indexOf('data-testid="engineer-share-order-note"');
+    const table = html.indexOf('data-testid="engineer-share-table"');
+
+    expect(population).toBeGreaterThanOrEqual(0);
+    expect(note).toBeGreaterThan(population);
+    expect(orderNote).toBeGreaterThan(note);
+    expect(orderNote, '並び順の説明が表より後に出ている').toBeLessThan(table);
+
+    // 🔴 **母集団の語に数字が 1 文字も無い**（総件数・残件数・「あと N 件」の禁止。
+    //    `docs/04` §S-015 / `docs/05` §4.8）。語そのものを切り出して見る。
+    const populationText = /data-testid="engineer-share-toolbar-population"[^>]*>([^<]*)</.exec(html)?.[1] ?? '';
+    expect(populationText).toBe('御社が登録した人材');
+    expect(populationText).not.toMatch(/[0-9０-９]/);
+    expect(html).not.toContain('あと');
+    expect(html).not.toContain('ページ目');
+  });
+
+  it('🔴 ワイヤーフレーム右側の `掲載元` を描かない（他社の存在と人数の露出。§3.1 の 🔴）', () => {
+    const html = render();
+
+    for (const word of ['掲載元', '所属会社', '所属区分', '他社']) {
+      expect(html, `${word} が描かれている`).not.toContain(word);
+    }
+  });
+
+  it('🔴 ワイヤーフレーム右側の 5 項目外の列を描かない（`BR-54` の上限を越えない）', () => {
+    const html = render();
+
+    for (const word of ['性別', '年齢', 'PR ポイント', 'PRポイント', '並行状況', '最寄']) {
+      expect(html, `${word} が描かれている`).not.toContain(word);
+    }
+  });
+
+  it('🔴 一覧・カードの表示切替を置かない（§7.2「同型データはテーブル。カードで並べない」）', () => {
+    const html = render();
+
+    expect(html).not.toContain('data-testid="engineer-share-view-mode');
+    expect(html).not.toContain('カード表示');
+  });
+});
+
+// ============================================================================
+// 🔴 SP-22 段④: 開示プレビューの項目が 1 つも増えていない（経路 4 の上限）
+// ============================================================================
+// ⚠️ プレビューは**選択後**にしか描かれない（`renderToStaticMarkup` では選択が起こせず、
+//    既定では `engineer-share-preview-placeholder` が出る —— それは上の「ローディング」の検査が
+//    固定している）。したがってここでは **行が持てる開示の形**を直接見る ——
+//    画面は `row.preview` の 6 行をそのまま描くだけであり、**行に無い値は描けない**。
+describe('🔴 行が持つ開示の形は 5 項目 + 丸めた更新日だけである（`BR-54` / `U-06`）', () => {
+  it('`preview` のキーが 6 個ちょうどで、5 項目 + 丸めた更新日である', () => {
+    expect(Object.keys(SHARED_ROW.preview).sort()).toEqual([
+      'availabilityBand',
+      'location',
+      'priceBand',
+      'skills',
+      'updatedOn',
+      'yearsBand',
+    ]);
+  });
+
+  it('🔴 `preview` に氏名・所属会社・経歴・社内 ID のキーが無い（型に無いものは描けない）', () => {
+    const keys = Object.keys(SHARED_ROW.preview);
+    for (const forbidden of [
+      'displayName',
+      'name',
+      'partnerCompanyId',
+      'partnerCompanyName',
+      'careers',
+      'career',
+      'engineerId',
+      'city',
+      'unitPriceMin',
+      'unitPriceMax',
+      'availableFrom',
+    ]) {
+      expect(keys, `${forbidden} が開示の形に在る`).not.toContain(forbidden);
+    }
+  });
+
+  it('🔴 一覧の稼働可能時期は**丸めた区分**であり、生の日付を並置しない（`docs/04` §5-2）', () => {
+    // 行の `availability` は `preview.availabilityBand` と同一の値である（`row-view.ts`）。
+    expect(SHARED_ROW.availability).toBe(SHARED_ROW.preview.availabilityBand);
+    const html = render({ rows: [SHARED_ROW] });
+    const cells = rowCells(html, SHARED_ROW.engineerId);
+    // 稼働可能時期のセル（5 列目）に `YYYY-MM-DD` の生値が出ていない。
+    expect(cells[4]).not.toMatch(/\d{4}-\d{2}-\d{2}/);
+  });
+
+  it('🔴 「経歴は開示されません」の文言キーを画面が持っている（`F-008 AC-7`）', () => {
+    expect(messages.previewCareersNote).toBe('経歴は開示されません。');
   });
 });

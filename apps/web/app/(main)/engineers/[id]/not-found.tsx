@@ -8,21 +8,23 @@
 // ⚠️ docs/04 §S-006 の「保持期間を過ぎて削除されました」（`F-046 AC-2`）は**別の状態**であり、
 //    保持期間の削除ジョブと同じ SP-16（T-16-06）で足す。ジョブが無い Phase 1 では到達しない
 //    状態のために、ここに文言だけを置かない。
-import { SECONDARY_LINK_STACKED_CLASSES } from '@ses/ui';
+import { PageBody, SECONDARY_LINK_STACKED_CLASSES } from '@ses/ui';
 import { t } from '@ses/i18n';
 import { ENGINEER_FORM_CANCEL_HREF } from '../_form/form-props';
 
 export default function EngineerDetailNotFound() {
   return (
-    <main className="mx-auto max-w-3xl px-4 py-8">
-      <h1 className="mb-4 text-xl font-bold text-slate-900">{t('engineers.detail.title')}</h1>
-      <p className="mb-4 text-sm text-slate-700" data-testid="engineer-not-found">
-        {t('engineers.notFound')}
-      </p>
-      {/* 🔴 T-05-09: 戻り先を `S-005`（一覧）にした（`ENGINEER_FORM_CANCEL_HREF` と共有）。 */}
-      <a className={SECONDARY_LINK_STACKED_CLASSES} href={ENGINEER_FORM_CANCEL_HREF}>
-        {t('engineers.breadcrumb.list')}
-      </a>
+    <main className="py-6">
+      <PageBody widthClass="prose">
+        <h1 className="mb-4 text-title font-semibold text-fg">{t('engineers.detail.title')}</h1>
+        <p className="mb-4 text-body text-fg" data-testid="engineer-not-found">
+          {t('engineers.notFound')}
+        </p>
+        {/* 🔴 T-05-09: 戻り先を `S-005`（一覧）にした（`ENGINEER_FORM_CANCEL_HREF` と共有）。 */}
+        <a className={SECONDARY_LINK_STACKED_CLASSES} href={ENGINEER_FORM_CANCEL_HREF}>
+          {t('engineers.breadcrumb.list')}
+        </a>
+      </PageBody>
     </main>
   );
 }

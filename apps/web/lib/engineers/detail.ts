@@ -13,6 +13,7 @@ import { t, type MessageKey } from '@ses/i18n';
 //    画面ごとに違う**ので、ここで `packages/i18n` から引いて渡す。
 import { formatUnitPriceRange as formatRange } from '../format/number';
 import { PREFECTURE_MESSAGE_KEYS } from '../format/prefectures';
+import type { PagePrimaryAction } from '../shell/page-trail';
 import type { CareerRowView } from './careers';
 import type { EngineerDetailView, EngineerSkillView } from './service';
 import {
@@ -119,6 +120,30 @@ export function engineerDetailSkillRows(
     years: formatYears(skill.yearsOfExperience),
     level: skillLevelLabel(skill.level),
   }));
+}
+
+/**
+ * 🔴 **帯（`PageHeader`）の primary**（SP-22 段④。人間のワイヤーフレーム
+ *    「SES Hub人材プロフィール画面.png」の見出し右の `[編集]`）。
+ *
+ * 🔴 **`canEdit` が偽なら `null` を返す** —— 押しても戻されるだけの導線を描かない
+ *    （`docs/04` §S-007 権限差分「`VIEWER` は到達できない」）。⚠️ 拒否の本体は `#16` の
+ *    `requireNotViewer` と `S-007` の `redirect` である。
+ * 🔴 **`この人で提案を作る` を primary にしていない** —— `docs/04` §S-006 はそれを primary と
+ *    するが、`/proposals/new` は `projectId` と `engineerId` の**両方**を必須に取る
+ *    （`newProposalQuerySchema`）。エンジニアだけを決めて案件を選ぶ画面は存在しないため、
+ *    **押すと 404 になる導線**を置かない（完了報告で上流へ申し送る）。
+ * 🔴 **判定をここ（`lib/**`）に置くのは、`page.tsx` がユニットテストの対象外だからである**
+ *    （`projectListPrimaryAction` / `engineerListPrimaryAction` と同じ理由・同じ形）。
+ * 🔴 `kind` は **`ACTION`**（編集系）。`PageHeading` 側でも `canAct` で落ちる二重の壁になる。
+ */
+export function engineerDetailPrimaryAction(
+  canEdit: boolean,
+  engineerId: string,
+): PagePrimaryAction | null {
+  return canEdit
+    ? { labelKey: 'engineers.detail.edit', href: `/engineers/${engineerId}/edit`, kind: 'ACTION' }
+    : null;
 }
 
 /**

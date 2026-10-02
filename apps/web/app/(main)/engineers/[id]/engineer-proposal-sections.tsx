@@ -84,7 +84,7 @@ function Lines({ lines }: { readonly lines: readonly string[] }) {
 function FrozenCareers({ rows, messages }: { readonly rows: SnapshotDiffRows['careers']; readonly messages: EngineerProposalSectionsMessages }) {
   return (
     <div data-testid="engineer-snapshot-diff-careers-frozen" data-side="frozen">
-      <h4 className="mb-2 text-sm font-semibold text-slate-900">{messages.careersFrozenTitle}</h4>
+      <h4 className="mb-2 text-body font-semibold text-fg">{messages.careersFrozenTitle}</h4>
       {rows.frozenEmpty === null ? (
         <Table data-testid="engineer-snapshot-diff-careers-frozen-table">
           <TableHeader>
@@ -109,7 +109,7 @@ function FrozenCareers({ rows, messages }: { readonly rows: SnapshotDiffRows['ca
           </TableBody>
         </Table>
       ) : (
-        <p className="text-sm text-slate-600" data-testid="engineer-snapshot-diff-careers-frozen-empty">
+        <p className="text-body text-fg-muted" data-testid="engineer-snapshot-diff-careers-frozen-empty">
           {rows.frozenEmpty}
         </p>
       )}
@@ -120,7 +120,7 @@ function FrozenCareers({ rows, messages }: { readonly rows: SnapshotDiffRows['ca
 function CurrentCareers({ rows, messages }: { readonly rows: SnapshotDiffRows['careers']; readonly messages: EngineerProposalSectionsMessages }) {
   return (
     <div data-testid="engineer-snapshot-diff-careers-current" data-side="current">
-      <h4 className="mb-2 text-sm font-semibold text-slate-900">{messages.careersCurrentTitle}</h4>
+      <h4 className="mb-2 text-body font-semibold text-fg">{messages.careersCurrentTitle}</h4>
       {rows.currentEmpty === null ? (
         <Table data-testid="engineer-snapshot-diff-careers-current-table">
           <TableHeader>
@@ -147,7 +147,7 @@ function CurrentCareers({ rows, messages }: { readonly rows: SnapshotDiffRows['c
           </TableBody>
         </Table>
       ) : (
-        <p className="text-sm text-slate-600" data-testid="engineer-snapshot-diff-careers-current-empty">
+        <p className="text-body text-fg-muted" data-testid="engineer-snapshot-diff-careers-current-empty">
           {rows.currentEmpty}
         </p>
       )}
@@ -158,7 +158,7 @@ function CurrentCareers({ rows, messages }: { readonly rows: SnapshotDiffRows['c
 function SnapshotDiffView({ rows, messages }: { readonly rows: SnapshotDiffRows; readonly messages: EngineerProposalSectionsMessages }) {
   return (
     <div data-testid="engineer-snapshot-diff" data-proposal-id={rows.proposalId}>
-      <h3 className="mb-3 text-sm font-semibold text-slate-900" data-testid="engineer-snapshot-diff-title">
+      <h3 className="mb-3 text-body font-semibold text-fg" data-testid="engineer-snapshot-diff-title">
         {rows.title}
       </h3>
 
@@ -180,7 +180,7 @@ function SnapshotDiffView({ rows, messages }: { readonly rows: SnapshotDiffRows;
               data-testid={`engineer-snapshot-diff-field-${field.key}`}
               data-changed={field.changed ? 'true' : 'false'}
             >
-              <TableCell className="text-slate-500">{field.label}</TableCell>
+              <TableCell className="text-fg-muted">{field.label}</TableCell>
               <TableCell whitespace="normal" data-testid={`engineer-snapshot-diff-frozen-${field.key}`}>
                 <Lines lines={field.frozen} />
               </TableCell>
@@ -193,7 +193,7 @@ function SnapshotDiffView({ rows, messages }: { readonly rows: SnapshotDiffRows;
                     {field.note}
                   </Badge>
                 ) : (
-                  <span className="text-xs text-slate-500" data-testid={`engineer-snapshot-diff-note-${field.key}`}>
+                  <span className="text-xs text-fg-muted" data-testid={`engineer-snapshot-diff-note-${field.key}`}>
                     {field.note}
                   </span>
                 )}
@@ -211,11 +211,11 @@ function SnapshotDiffView({ rows, messages }: { readonly rows: SnapshotDiffRows;
               {rows.careers.note}
             </Badge>
           ) : (
-            <span className="text-xs text-slate-500" data-testid="engineer-snapshot-diff-careers-note" data-changed="false">
+            <span className="text-xs text-fg-muted" data-testid="engineer-snapshot-diff-careers-note" data-changed="false">
               {rows.careers.note}
             </span>
           )}
-          <p className="m-0 text-xs text-slate-500" data-testid="engineer-snapshot-diff-careers-lead">
+          <p className="m-0 text-xs text-fg-muted" data-testid="engineer-snapshot-diff-careers-lead">
             {messages.careersNote}
           </p>
         </div>
@@ -233,7 +233,7 @@ export function EngineerProposalSections({ history, diff, messages }: EngineerPr
     <>
       <DetailSection id="proposals" title={messages.sectionProposals}>
         {history.length === 0 ? (
-          <p className="text-sm text-slate-600" data-testid="engineer-detail-proposals-empty">
+          <p className="text-body text-fg-muted" data-testid="engineer-detail-proposals-empty">
             {messages.proposalsEmpty}
           </p>
         ) : (
@@ -268,7 +268,7 @@ export function EngineerProposalSections({ history, diff, messages }: EngineerPr
                         {messages.detailLink}
                       </Link>
                       {row.selected ? (
-                        <span className="text-sm text-slate-500" data-testid={`engineer-proposal-diff-selected-${row.id}`}>
+                        <span className="text-body text-fg-muted" data-testid={`engineer-proposal-diff-selected-${row.id}`}>
                           {messages.diffSelected}
                         </span>
                       ) : (
@@ -296,11 +296,11 @@ export function EngineerProposalSections({ history, diff, messages }: EngineerPr
       {history.length === 0 ? null : (
         <DetailSection id="snapshot-diff" title={messages.sectionDiff}>
           {diff.kind === 'NONE' ? (
-            <p className="text-sm text-slate-600" data-testid="engineer-snapshot-diff-lead">
+            <p className="text-body text-fg-muted" data-testid="engineer-snapshot-diff-lead">
               {messages.diffLead}
             </p>
           ) : diff.kind === 'UNAVAILABLE' ? (
-            <p className="text-sm text-slate-600" data-testid="engineer-snapshot-diff-unavailable">
+            <p className="text-body text-fg-muted" data-testid="engineer-snapshot-diff-unavailable">
               {messages.diffUnavailable}
             </p>
           ) : (

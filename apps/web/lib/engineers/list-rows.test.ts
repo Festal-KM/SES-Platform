@@ -9,7 +9,9 @@ import { PAGE_SIZE_DEFAULT } from '@ses/config';
 import { t } from '@ses/i18n';
 import {
   activeEngineerFilters,
+  engineerListDescription,
   engineerListHref,
+  engineerListPrimaryAction,
   engineerListRow,
   engineerPopulationLabel,
   formatLocation,
@@ -350,5 +352,47 @@ describe('activeEngineerFilters（🔴 効いている条件を 1 つずつ外�
       'onlyInTime',
       'onlyCommutable',
     ]);
+  });
+});
+
+// ============================================================================
+// 🔴 SP-22 段④: 帯（`PageHeader`）の primary と説明 1 行
+// ============================================================================
+// 🔴 **判定をここで固定するのは `page.tsx` がユニットテストの対象外だからである**
+//    （`vitest.config.ts`）。帯の `PageHeading` 側は `kind: 'ACTION'` を `canAct` で落とすが、
+//    **渡す値そのものが `null` になること**はここでしか固定できない
+//    （`projects/list-rows.test.ts` の同名の検査と同じ構え）。
+describe('🔴 SP-22 段④: `engineerListPrimaryAction`（docs/04 §S-005 権限差分）', () => {
+  it('登録できるロールには `S-007` への `ACTION` を返す', () => {
+    expect(engineerListPrimaryAction(true)).toEqual({
+      labelKey: 'engineers.list.register',
+      href: '/engineers/new',
+      kind: 'ACTION',
+    });
+  });
+
+  it('🔴 `VIEWER` には `null` を返す（押しても戻されるだけの導線を描かない）', () => {
+    expect(engineerListPrimaryAction(false)).toBeNull();
+  });
+
+  it('🔴 `kind` は `NAVIGATION` ではない（作成系は閲覧専用ロールに出さない）', () => {
+    expect(engineerListPrimaryAction(true)?.kind).not.toBe('NAVIGATION');
+  });
+});
+
+describe('🔴 SP-22 段④: `engineerListDescription`（docs/04 §3.1 の説明 1 行 / §3.2 項目 2）', () => {
+  it('ホストと取引先で別の文である（母集団が違う）', () => {
+    expect(engineerListDescription(false)).toBe(t('engineers.list.description.host'));
+    expect(engineerListDescription(true)).toBe(t('engineers.list.description.partner'));
+    expect(engineerListDescription(false)).not.toBe(engineerListDescription(true));
+  });
+
+  it('🔴 取引先向けの文に他社の存在・件数を示唆する語が無い（`docs/04` §3.2 の「表現しないこと」）', () => {
+    const partner = engineerListDescription(true);
+    for (const word of ['他社', '合計', '全体', 'ホスト']) {
+      expect(partner, `${word} が含まれている`).not.toContain(word);
+    }
+    // 母集団を**肯定形**で述べている（否定形は他社の存在を意識させる）。
+    expect(partner).toContain('御社');
   });
 });

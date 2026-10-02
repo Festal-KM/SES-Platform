@@ -7,20 +7,22 @@
 //    「他社の人材です」と書いた時点で、他社にその ID の人材が居ることを教えてしまう。
 // 🔴 T-05-09: 戻り先を `S-005`（一覧）にした（docs/04 §10.1 `S-007`「一覧へ戻す」の本来の指定）。
 //    値は `ENGINEER_FORM_CANCEL_HREF` と共有し、キャンセルと 404 で戻り先がずれないようにする。
-import { SECONDARY_LINK_STACKED_CLASSES } from '@ses/ui';
+import { PageBody, SECONDARY_LINK_STACKED_CLASSES } from '@ses/ui';
 import { t } from '@ses/i18n';
 import { ENGINEER_FORM_CANCEL_HREF } from '../../_form/form-props';
 
 export default function EditEngineerNotFound() {
   return (
-    <main className="mx-auto max-w-3xl px-4 py-8">
-      <h1 className="mb-4 text-xl font-bold text-slate-900">{t('engineers.edit.title')}</h1>
-      <p className="mb-4 text-sm text-slate-700" data-testid="engineer-not-found">
-        {t('engineers.notFound')}
-      </p>
-      <a className={SECONDARY_LINK_STACKED_CLASSES} href={ENGINEER_FORM_CANCEL_HREF}>
-        {t('engineers.breadcrumb.list')}
-      </a>
+    <main className="py-6">
+      <PageBody widthClass="prose">
+        <h1 className="mb-4 text-title font-semibold text-fg">{t('engineers.edit.title')}</h1>
+        <p className="mb-4 text-body text-fg" data-testid="engineer-not-found">
+          {t('engineers.notFound')}
+        </p>
+        <a className={SECONDARY_LINK_STACKED_CLASSES} href={ENGINEER_FORM_CANCEL_HREF}>
+          {t('engineers.breadcrumb.list')}
+        </a>
+      </PageBody>
     </main>
   );
 }

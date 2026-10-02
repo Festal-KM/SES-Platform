@@ -2169,6 +2169,11 @@ const ja = {
   'engineers.detail.section.skillSheets': 'スキルシートの版',
   'engineers.detail.section.proposals': '提案履歴',
   'engineers.detail.edit': 'この人材を編集',
+  // 🔴 SP-22 段④（人間のワイヤーフレーム「SES Hub人材プロフィール画面.png」の右レール）:
+  //    **クイックアクション**の見出し。🔴 操作の語はいずれも既存のキーのまま（`engineers.detail.edit` /
+  //    `engineers.detail.skillSheets.link` / `engineerShares.open`）であり、**この画面に新しい操作を
+  //    1 つも足していない**（`提案を作成` / `面談を設定` / `チャット` は到達できる経路が無いため置かない）。
+  'engineers.detail.rail.title': 'この人材への操作',
   // 🔴 未設定は空欄にせず `—` を置く（値が無いのか、読み込めていないのかを見分けられるように）。
   'engineers.detail.valueNone': '—',
   'engineers.detail.years.unit': '年',
@@ -2246,6 +2251,10 @@ const ja = {
   'engineers.list.population.unit': '件',
   // 🔴 `F-006 AC-2` と同じ規律（見える範囲を常時示す）。フィルタ帯の直下に 1 行置く。
   'engineers.list.partnerScopeNotice': 'この一覧には、御社が登録した人材のみが表示されます。',
+  // 🔴 SP-22 段④: **帯の「説明 1 行」**（`docs/04` §3.1 のレイアウト図）。母集団が違うので文も違う
+  //    （§3.2 項目 2）。`S-010` の `projects.list.description.*` と同じ形である。
+  'engineers.list.description.host': '自社に登録されている人材を検索し、提案の候補を探します。',
+  'engineers.list.description.partner': '御社が登録した人材を検索し、稼働可能時期と単価レンジを確かめます。',
   // 🔴 `docs/04` §S-005「並び順の説明を一覧の上部に 1 行で書く」。
   // 🔴 `F-009 AC-2`: **スコア・順位・重み・一致度の語を使わない。** `docs/04` §S-005 の例文
   //    （「一致度と更新日の順で表示しています」）は「一致度」という**度合い**の語を含むため
@@ -3803,6 +3812,15 @@ const ja = {
     '共有可にすると、ホストの候補一覧に匿名で表示されます。実名・貴社名・スキルシート・経験内容（従事期間・役割・業務内容・使用技術）は、貴社が提案を作成するまで開示されません。いつでも解除でき、解除した時点で表示されなくなります。',
   // 🔴 T-11-11（`docs/04` 改訂 12 / `U-15`）: 「共有中の一覧」「共有していない一覧」の 2 表を 1 表 + 共有状態フィルタに改めた。
   //    旧 `engineerShares.section.shared` / `.notShared` はその改訂で撤去し、一覧の見出しは `.section.list` の 1 つになった。
+  // 🔴 SP-22 段④: **母集団の 1 行**（`docs/04` §3.2 項目 2 / `Toolbar` の `population`）。
+  //    🔴 **件数を含めない** —— `docs/04` §S-015 と `docs/05` §4.8 が総件数・残件数・「あと N 件」を
+  //    禁じている（この画面は `total` を持たない）。語は母集団の範囲だけを肯定形で述べる。
+  'engineerShares.population': '御社が登録した人材',
+  // 🔴 SP-22 段④: **並び順の説明**（件数バーの右端。`S-005` / `S-010` と同じ形）。
+  //    🔴 `docs/04` §S-015 の「並び順は決定的」の 2 通りをそのまま書く（選べる形にはしない ——
+  //    `?sort=` は `#29` の query に無い）。
+  'engineerShares.orderNote.shared': '共有開始日の新しい順に表示しています。',
+  'engineerShares.orderNote.default': '更新日の新しい順に表示しています。',
   'engineerShares.section.list': '人材の一覧',
   'engineerShares.section.preview': '開示プレビュー',
   'engineerShares.column.name': '氏名（貴社内の表示）',

@@ -14,7 +14,7 @@
 import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
 import type { Metadata } from 'next';
-import { SECONDARY_LINK_CLASSES, SECONDARY_LINK_STACKED_CLASSES } from '@ses/ui';
+import { PageBody, SECONDARY_LINK_CLASSES, SECONDARY_LINK_STACKED_CLASSES } from '@ses/ui';
 import { t } from '@ses/i18n';
 import { NotFoundError } from '../../../../../lib/api/errors';
 import { readRequestMeta, resolveTenantCtxOutcome } from '../../../../../lib/auth/session';
@@ -54,10 +54,16 @@ export default async function SkillSheetsPage({
   );
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-8">
+    // 🔴 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`）。`S-008` は
+    //    **クラス B = 分割**である（画面ファイルに `max-w-*` を書かない。検査 (c) / (k)）。
+    // ⚠️ 副カラム（`aside`）はまだ渡していない —— §7.1 が B にした根拠「版の一覧と抽出結果を
+    //    同時に見る」の抽出結果は **Phase 2**（`F-032`）であり、本タスクでやったのは**幅の所在を
+    //    `PageBody` に移すところまで**である（`aside` は任意の prop。`S-013` と同じ扱い）。
+    <main className="py-6">
+      <PageBody widthClass="split">
       <PageHeading trail={SKILL_SHEET_TRAIL} title={t('skillSheets.title')} />
       {/* 🔴 誰のスキルシートかを取り違えないために氏名を出す（だからこの画面の閲覧は記録される）。 */}
-      <p className="mb-4 text-sm text-slate-700" data-testid="skill-sheet-engineer-name">
+      <p className="mb-4 text-body text-fg" data-testid="skill-sheet-engineer-name">
         {view.engineer.displayName}
       </p>
       <p className="mb-6">
@@ -156,6 +162,7 @@ export default async function SkillSheetsPage({
           {t('skillDictionary.open')}
         </Link>
       </p>
+      </PageBody>
     </main>
   );
 }

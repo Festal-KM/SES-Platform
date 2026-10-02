@@ -9,6 +9,7 @@
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { t } from '@ses/i18n';
+import { PageBody } from '@ses/ui';
 import { resolveTenantCtxOutcome } from '../../../../lib/auth/session';
 import { listSkills } from '../../../../lib/skills/service';
 import { EngineerForm } from '../_form/engineer-form';
@@ -44,7 +45,10 @@ export default async function NewEngineerPage() {
   const skillDictionary = (await listSkills(outcome.ctx, {})).items;
 
   return (
-    <main className="mx-auto max-w-3xl px-4 py-8">
+    // 🔴 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`）。`S-007` は
+    //    **クラス C = 読み幅 720px** である（画面ファイルに `max-w-*` を書かない。検査 (c) / (k)）。
+    <main className="py-6">
+      <PageBody widthClass="prose">
       {/* 🔴 T-05-09 / T-12-21: 「人材」は `S-005`（一覧）へのリンクである（戻り経路を文字だけにしない）。
           パンくずの表は `lib/shell/page-trail.ts`（保存・キャンセルの戻り先と同じ値）。 */}
       <PageHeading trail={ENGINEER_NEW_TRAIL} title={t('engineers.new.title')} />
@@ -60,6 +64,7 @@ export default async function NewEngineerPage() {
         cancelHref={ENGINEER_FORM_CANCEL_HREF}
         messages={engineerFormMessages(ownershipLabel(outcome.ctx.partnerCompanyId))}
       />
+      </PageBody>
     </main>
   );
 }

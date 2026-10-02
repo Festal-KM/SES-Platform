@@ -481,19 +481,19 @@ export function EngineerForm({
       className="flex flex-col gap-8"
     >
       {phase === 'error' ? (
-        <p role="alert" className="text-sm text-red-700" data-testid="engineer-form-error">
+        <p role="alert" className="text-body text-danger" data-testid="engineer-form-error">
           {messages.saveError}
         </p>
       ) : null}
       {phase === 'saved' ? (
-        <p role="status" className="text-sm text-emerald-700" data-testid="engineer-form-saved">
+        <p role="status" className="text-body text-success" data-testid="engineer-form-saved">
           {messages.saved}
         </p>
       ) : null}
 
       {/* 🔴 BR-52: 集めない情報を先に明示する（自由記述欄の推奨用途にもしない）。 */}
       <p
-        className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700"
+        className="rounded-md border border-border bg-bg-subtle p-3 text-body text-fg"
         data-testid="engineer-collection-scope"
       >
         {messages.collectionScope}
@@ -501,7 +501,7 @@ export function EngineerForm({
 
       {/* --- 1. 基本 ------------------------------------------------------- */}
       <section data-testid="engineer-section-basic">
-        <h2 className="mb-3 text-base font-bold text-slate-900">{messages.sectionBasic}</h2>
+        <h2 className="mb-3 text-lg font-semibold text-fg">{messages.sectionBasic}</h2>
         <Field className="mb-4" label={messages.displayNameLabel}>
           <Input
             name="displayName"
@@ -517,14 +517,14 @@ export function EngineerForm({
         <Field as="p" className="mb-4" label={messages.ownershipLabel}>
           <output data-testid="engineer-ownership">{messages.ownershipValue}</output>
         </Field>
-        <p className="text-sm text-slate-500" data-testid="engineer-ownership-note">
+        <p className="text-body text-fg-muted" data-testid="engineer-ownership-note">
           {messages.ownershipReadOnlyNote}
         </p>
       </section>
 
       {/* --- 2. スキル ----------------------------------------------------- */}
       <section data-testid="engineer-section-skills">
-        <h2 className="mb-3 text-base font-bold text-slate-900">{messages.sectionSkills}</h2>
+        <h2 className="mb-3 text-lg font-semibold text-fg">{messages.sectionSkills}</h2>
         <div className="mb-3 flex flex-wrap items-end gap-2">
           <Field width="auto" label={messages.skillSearchLabel}>
             <Input
@@ -572,13 +572,13 @@ export function EngineerForm({
           </Button>
         </div>
         {skillDuplicate ? (
-          <p role="alert" className="mb-2 text-sm text-red-700" data-testid="engineer-skill-duplicate">
+          <p role="alert" className="mb-2 text-body text-danger" data-testid="engineer-skill-duplicate">
             {messages.skillDuplicate}
           </p>
         ) : null}
 
         {values.skills.length === 0 ? (
-          <p className="text-sm text-slate-600" data-testid="engineer-skill-empty">
+          <p className="text-body text-fg-muted" data-testid="engineer-skill-empty">
             {messages.skillEmpty}
           </p>
         ) : (
@@ -648,7 +648,7 @@ export function EngineerForm({
 
         {/* 🔴 F-010 AC-1: 辞書に無い表記は起票のみ。採用されるまで検索に使われないと明示する。 */}
         <div className="mt-4">
-          <p className="mb-2 text-sm text-slate-600" data-testid="engineer-new-alias-note">
+          <p className="mb-2 text-body text-fg-muted" data-testid="engineer-new-alias-note">
             {messages.newAliasNote}
           </p>
           <div className="flex flex-wrap items-end gap-2">
@@ -671,13 +671,13 @@ export function EngineerForm({
             </Button>
           </div>
           {values.newSkillLabels.length === 0 ? (
-            <p className="mt-2 text-sm text-slate-600" data-testid="engineer-new-alias-empty">
+            <p className="mt-2 text-body text-fg-muted" data-testid="engineer-new-alias-empty">
               {messages.newAliasEmpty}
             </p>
           ) : (
             <ul className="mt-2 flex flex-wrap gap-2" data-testid="engineer-new-alias-list">
               {values.newSkillLabels.map((label) => (
-                <li key={label} className="flex items-center gap-1 text-sm">
+                <li key={label} className="flex items-center gap-1 text-body">
                   <Badge variant="outline">{label}</Badge>
                   <Button
                     type="button"
@@ -693,7 +693,7 @@ export function EngineerForm({
           )}
           {/* 🔴 T-05-03: 起票した候補の行き先（`S-009`）。`docs/04` §S-007 関連画面「→ `S-009`」。
               全ロールが到達してよい画面であり、採否の可否は `S-009` 側が判断する。 */}
-          <p className="mt-2 text-sm">
+          <p className="mt-2 text-body">
             <Link
               className={SECONDARY_LINK_STACKED_CLASSES}
               href={SKILL_DICTIONARY_HREF}
@@ -710,12 +710,12 @@ export function EngineerForm({
           🔴 0 行で開き、空行を初期表示しない（空行があると「埋めるべきもの」に見え、0 行が正常であることと矛盾する）。
           🔴 「未入力です」の警告・注意色・保存の抑止を作らない。 */}
       <section data-testid="engineer-section-careers">
-        <h2 className="mb-3 text-base font-bold text-slate-900">{messages.sectionCareers}</h2>
-        <p className="mb-3 text-sm text-slate-600" data-testid="engineer-career-order-note">
+        <h2 className="mb-3 text-lg font-semibold text-fg">{messages.sectionCareers}</h2>
+        <p className="mb-3 text-body text-fg-muted" data-testid="engineer-career-order-note">
           {messages.careerOrderNote}
         </p>
         {values.careers.length === 0 ? (
-          <p className="mb-3 text-sm text-slate-600" data-testid="engineer-career-empty">
+          <p className="mb-3 text-body text-fg-muted" data-testid="engineer-career-empty">
             {messages.careerEmpty}
           </p>
         ) : (
@@ -757,7 +757,7 @@ export function EngineerForm({
                           />
                         </Field>
                         {rowErrors.periodFrom === undefined ? null : (
-                          <p role="alert" className="text-sm text-red-700" data-testid={`engineer-career-error-period-from-${career.key}`}>
+                          <p role="alert" className="text-body text-danger" data-testid={`engineer-career-error-period-from-${career.key}`}>
                             {rowErrors.periodFrom}
                           </p>
                         )}
@@ -774,7 +774,7 @@ export function EngineerForm({
                             data-testid={`engineer-career-period-to-${career.key}`}
                           />
                         </Field>
-                        <label className="flex items-center gap-2 text-sm text-slate-700">
+                        <label className="flex items-center gap-2 text-body text-fg">
                           <Checkbox
                             checked={career.ongoing}
                             onChange={(event) => updateCareer(career.key, { ongoing: event.target.checked })}
@@ -784,7 +784,7 @@ export function EngineerForm({
                           {messages.careerOngoingToggle}
                         </label>
                         {rowErrors.periodTo === undefined ? null : (
-                          <p role="alert" className="text-sm text-red-700" data-testid={`engineer-career-error-period-to-${career.key}`}>
+                          <p role="alert" className="text-body text-danger" data-testid={`engineer-career-error-period-to-${career.key}`}>
                             {rowErrors.periodTo}
                           </p>
                         )}
@@ -802,7 +802,7 @@ export function EngineerForm({
                         data-testid={`engineer-career-role-${career.key}`}
                       />
                       {rowErrors.role === undefined ? null : (
-                        <p role="alert" className="mt-1 text-sm text-red-700" data-testid={`engineer-career-error-role-${career.key}`}>
+                        <p role="alert" className="mt-1 text-body text-danger" data-testid={`engineer-career-error-role-${career.key}`}>
                           {rowErrors.role}
                         </p>
                       )}
@@ -818,7 +818,7 @@ export function EngineerForm({
                         data-testid={`engineer-career-description-${career.key}`}
                       />
                       {rowErrors.description === undefined ? null : (
-                        <p role="alert" className="mt-1 text-sm text-red-700" data-testid={`engineer-career-error-description-${career.key}`}>
+                        <p role="alert" className="mt-1 text-body text-danger" data-testid={`engineer-career-error-description-${career.key}`}>
                           {rowErrors.description}
                         </p>
                       )}
@@ -846,7 +846,7 @@ export function EngineerForm({
                           >
                             {messages.careerRestore}
                           </Button>
-                          <span className="text-xs text-slate-500">{messages.careerRemovedNote}</span>
+                          <span className="text-xs text-fg-muted">{messages.careerRemovedNote}</span>
                         </div>
                       ) : (
                         <Button
@@ -880,7 +880,7 @@ export function EngineerForm({
 
       {/* --- 4. 稼働 ------------------------------------------------------- */}
       <section data-testid="engineer-section-availability">
-        <h2 className="mb-3 text-base font-bold text-slate-900">{messages.sectionAvailability}</h2>
+        <h2 className="mb-3 text-lg font-semibold text-fg">{messages.sectionAvailability}</h2>
         <Field className="mb-4" label={messages.availabilityLabel}>
           <Select
             name="availability"
@@ -910,9 +910,9 @@ export function EngineerForm({
 
       {/* --- 5. 条件 ------------------------------------------------------- */}
       <section data-testid="engineer-section-conditions">
-        <h2 className="mb-3 text-base font-bold text-slate-900">{messages.sectionConditions}</h2>
+        <h2 className="mb-3 text-lg font-semibold text-fg">{messages.sectionConditions}</h2>
         <fieldset className="mb-2">
-          <legend className="text-sm text-slate-700">
+          <legend className="text-body text-fg">
             {messages.unitPriceLabel}（{messages.unitPriceUnit}）
           </legend>
           <Field className="mb-4" label={messages.unitPriceMin}>
@@ -989,7 +989,7 @@ export function EngineerForm({
 
       {/* --- 6. 連絡先 ----------------------------------------------------- */}
       <section data-testid="engineer-section-contact">
-        <h2 className="mb-3 text-base font-bold text-slate-900">{messages.sectionContact}</h2>
+        <h2 className="mb-3 text-lg font-semibold text-fg">{messages.sectionContact}</h2>
         <Field className="mb-4" label={messages.contactEmailLabel}>
           <Input
             name="contactEmail"
@@ -1010,7 +1010,7 @@ export function EngineerForm({
             data-testid="engineer-contact-phone"
           />
         </Field>
-        <p className="text-sm text-slate-500" data-testid="engineer-contact-note">
+        <p className="text-body text-fg-muted" data-testid="engineer-contact-note">
           {messages.contactMinimumNote}
         </p>
       </section>

@@ -283,14 +283,27 @@ describe('🔴 絞込 0 件（docs/04 §10.1 `S-005`。初回空とは別物）'
 });
 
 describe('🔴 権限差分（docs/04 §S-005）', () => {
+  // 🔴 **SP-22 段④で登録の導線は帯（`PageHeader`）へ移った**（`docs/04` §S-005 操作
+  //    「『人材を登録』（primary）」/ §7.6「primary は大きく」）。したがって本体には描かれない。
+  //    🔴 **判定の検出器は失っていない** —— `engineerListPrimaryAction(canRegister)` が
+  //    `null` を返すことを `lib/engineers/list-rows.test.ts` が固定し（`page.tsx` は
+  //    ユニットテストの対象外であるため判定を `lib/**` に置いた）、`PageHeading` 側の
+  //    `kind: 'ACTION'` × `canAct` の落とし方は `_shell/page-heading.render.test.tsx` が固定する。
   it('`VIEWER` には登録導線を出さず、代わりに誰ができるかを書く', () => {
     const html = render({ canRegister: false });
     expect(html).not.toContain('href="/engineers/new"');
     expect(html).toContain('engineer-list-read-only-note');
   });
 
-  it('登録できるロールには `S-007` への導線を出す', () => {
-    expect(render()).toContain('href="/engineers/new"');
+  it('🔴 本体（一覧）には登録導線が無い（帯の primary へ移したため。二重に描かない）', () => {
+    expect(render()).not.toContain('href="/engineers/new"');
+    expect(render({ canRegister: false })).not.toContain('href="/engineers/new"');
+  });
+
+  it('🔴 登録できるロールには理由テキストを出さない（出すと「できない」と読める）', () => {
+    const html = render();
+    expect(html).not.toContain('engineer-list-read-only-note');
+    expect(html).not.toContain('閲覧のみの権限のため、人材の登録は行えません。');
   });
 
   it('🔴 取引先には所属区分の列を出さない（全件が自社であるため意味がない）', () => {
@@ -340,7 +353,9 @@ describe('🔴 初回空（docs/04 §10.1 `S-005`）', () => {
     //    であり、それを直接見る形にした（列ヘッダは骨格として残るのが部品の契約である）。
     expect(html).toContain('engineer-list-empty-row');
     expect(html).not.toContain('engineer-list-row-');
-    expect(html).toContain('href="/engineers/new"');
+    // ⚠️ **SP-22 段④: 登録導線は帯（`PageHeader`）が持つ**（上の権限差分の 🔴）。
+    //    初回空のときに登録へ行けることは `engineerListPrimaryAction` + `PageHeading` が担保する。
+    expect(html).not.toContain('href="/engineers/new"');
   });
 
   it('0 件でも母集団の行は出る（画面全体を空にしない）', () => {
@@ -444,5 +459,107 @@ describe('🔴 T-22-06: 列の契約（移行前と同一。増減 0）', () => 
     expect(html).not.toContain('engineer-list-select-');
     // 操作列のヘッダが無い = `rowAction` を渡していない。
     expect(headerColumns(html).every((column) => column.id !== '?')).toBe(true);
+  });
+});
+
+// ============================================================================
+// 🔴 SP-22 段④: ワイヤーフレームへの刷新（**見せ方だけ**。人間の
+//    「SES Hub社内外向け人材管理ダッシュボード.png」左＝社内用）
+// ============================================================================
+describe('🔴 SP-22 段④: 絞り込みカードと件数バー', () => {
+  it('🔴 絞り込みは白い面のカード（`@ses/ui` の `Card`）の中にある（ページ地に溶けない）', () => {
+    const html = render();
+    // 🔴 面の語（`CARD_SURFACE_CLASSES`）は `packages/ui` にしか無いので、**ここでは
+    //    その語を書かない**（書くと `tests/static/ui-shadow-and-size.test.ts` の
+    //    「画面が面のクラス定数を再実装していない」に当たる）。radius + 枠線で器を掴む。
+    const card = html.indexOf('rounded-md border border-border');
+    const form = html.indexOf('data-testid="engineer-list-filters"');
+
+    expect(card, '絞り込みカードの面が描かれていない').toBeGreaterThanOrEqual(0);
+    expect(form, '検索フォームがカードの外にある').toBeGreaterThan(card);
+  });
+
+  it('🔴 フリーワードは全幅である（他の条件と同じ幅に並べない）', () => {
+    const html = render();
+    const label = /<label class="([^"]*)"[^>]*>\s*<span[^>]*>フリーワード/.exec(html);
+
+    expect(label, 'フリーワードの欄が見つからない').not.toBeNull();
+    const classes = (label?.[1] ?? '').split(' ');
+    expect(classes).toContain('sm:col-span-2');
+    expect(classes).toContain('lg:col-span-3');
+    expect(classes).toContain('xl:col-span-4');
+  });
+
+  it('🔴 「できないこと」の 2 行は絞り込みカードの中にある（条件の群の隣で読む）', () => {
+    const html = render();
+    const form = html.indexOf('data-testid="engineer-list-filters"');
+    const searchComingSoon = html.indexOf('data-testid="engineer-list-search-coming-soon"');
+    const experienceComingSoon = html.indexOf('data-testid="engineer-list-experience-coming-soon"');
+    const population = html.indexOf('data-testid="engineer-list-toolbar-population"');
+
+    expect(searchComingSoon).toBeGreaterThan(form);
+    expect(experienceComingSoon).toBeGreaterThan(searchComingSoon);
+    expect(experienceComingSoon, '件数バーより後に出ている（カードの外）').toBeLessThan(population);
+  });
+
+  it('🔴 件数バー: 母集団の 1 行と並び順の説明が同じ段にある', () => {
+    const html = render();
+    const population = html.indexOf('data-testid="engineer-list-toolbar-population"');
+    const note = html.indexOf('data-testid="engineer-list-toolbar-note"');
+    const orderNote = html.indexOf('data-testid="engineer-list-order-note"');
+    const table = html.indexOf('data-testid="engineer-list-table"');
+
+    expect(population).toBeGreaterThanOrEqual(0);
+    expect(note, '並び順の置き場所（`Toolbar` の `note`）が無い').toBeGreaterThan(population);
+    // 🔴 凍結済みの `engineer-list-order-note` が `note` の中に在る（`U-22`）。
+    expect(orderNote).toBeGreaterThan(note);
+    expect(orderNote, '並び順の説明がテーブルより後に出ている').toBeLessThan(table);
+    expect(html).toContain('更新日の新しい順に表示しています。');
+  });
+
+  it('🔴 並び順は**選べる形にしない**（`?sort=` は `#15` の query に無い）', () => {
+    const html = render();
+
+    expect(html).not.toContain('data-testid="engineer-list-sort-');
+    expect(html).not.toContain('name="sort"');
+    expect(html).not.toContain('name="order"');
+  });
+
+  it('🔴 行のチェックボックス・列表示切替を置かない（Phase 1 に一括操作も 9 列目も無い）', () => {
+    const html = render();
+    // ⚠️ 絞り込みチェックボックス 2 種（`onlyInTime` / `onlyCommutable`）は**条件**であり
+    //    一括操作ではない（`F-009 AC-5`）。したがって見るのは**表の中**である。
+    const table = /<table[^>]*>(.*?)<[/]table>/s.exec(html)?.[1] ?? '';
+
+    expect(table, '表が描かれていない').not.toBe('');
+    expect(table).not.toContain('type="checkbox"');
+    expect(html).not.toContain('data-testid="engineer-list-select-');
+    expect(html).not.toContain('data-testid="engineer-list-column-toggle-');
+    // 対照: 条件側のチェックボックスは**残っている**（判定を緩めていないことの確認）。
+    expect(html).toContain('data-testid="engineer-list-filter-only-in-time"');
+  });
+
+  it('🔴 ワイヤーフレームにあって DB・API に無い列を 1 つも描かない（`BR-52` / `#15` の射影）', () => {
+    const html = render();
+
+    for (const word of ['性別', '年齢', 'カテゴリ', 'PR ポイント', 'PRポイント', '並行状況', '最寄']) {
+      expect(html, `${word} の列が描かれている`).not.toContain(word);
+    }
+  });
+
+  it('🔴 画面の中にタブを作らない（第 2 階層は外枠の `SectionNav` が持つ）', () => {
+    const html = render();
+
+    expect(html).not.toContain('role="tablist"');
+    for (const word of ['タレントプール', '対応履歴', 'スキル分析']) {
+      expect(html, `${word} のタブが描かれている`).not.toContain(word);
+    }
+  });
+
+  it('🔴 エクスポートの導線を置かない（エンジニアの書き出し API が存在しない）', () => {
+    const html = render();
+
+    expect(html).not.toContain('エクスポート');
+    expect(html).not.toContain('/api/data-exports');
   });
 });

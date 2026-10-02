@@ -14,6 +14,45 @@
 //    （`CLAUDE.md` §13.3 / docs/04 §S-006「移動中に見る値」）。セクションは `<details open>` で
 //    既定は開いた状態にする —— 折りたためるだけで、既定で隠す項目は 1 つも無い。
 //
+// ============================================================================
+// 🔴 SP-22 段④ で何が変わったか（**見せ方だけ**。人間のワイヤーフレーム
+//    「SES Hub人材プロフィール画面.png」）
+// ============================================================================
+// | 変えたもの | 一次資料 | 🔴 変えていないもの |
+// |---|---|---|
+// | `max-w-5xl` + 2 カラムの grid → **`PageBody widthClass="split"`**（クラス B） | `docs/04` §7.1 / `U-23` | 🔴 **セクションの集合・順序・testid** |
+// | 見出し直下の操作行とスキルシートのセクション → **右レール** | ワイヤーフレームの右レール / §S-006 デバイス別「右にスキルシート」 | 🔴 **testid**（`engineer-detail-skill-sheets{,-lead,-link}` / `…-share-link` / `…-view-recorded`） |
+// | `編集` → **帯の primary**（`engineerDetailPrimaryAction`） | ワイヤーフレーム見出し右の `[編集]` / §7.6 / §3.4 | 🔴 **testid `engineer-detail-edit-link`** / `VIEWER` には描かない |
+// | 折りたたみの外の 3 値を **`Card`（白い面）**に入れた | §7.9（ページ地は `--color-bg-subtle`） | 🔴 **`engineer-detail-headline` の 3 行と値の出所** |
+// | 色・文字サイズ → §7.9 の semantic トークン / 6 トークン | §7.9 | — |
+//
+// 🔴 **API / 取得経路 / 監査記録 / 権限判定 / URL は 1 つも変えていない。**
+// 🔴 **ワイヤーフレームから意図して落としたもの**:
+//    - **スキルレーダー（チャート）** —— ①チャートライブラリが依存に無く、追加は `CLAUDE.md` §2 の
+//      技術スタックの変更 ②`docs/04` §7.2 がグラフを禁じている ③**「市場需要」のデータ源が存在しない**。
+//      代わりに**スキル表（経験年数・レベル）をそのまま出す**（セクション 2）。
+//    - **AI 生成の人材サマリ** —— `CLAUDE.md` §12.2 の 6 ロールに「人材サマリ生成」は無い
+//      （ロールの追加は人間の承認事項。§8.6）。🔴 **枠だけ置くこともしない。**
+//    - **メモ（社内メモ / 公開メモ）** —— 実体が無い。🔴 **「社内」と「公開」の区別は情報境界
+//      そのもの**であり、実体の無い枠を置くと「社内メモが公開された」と誤解される経路になる。
+//    - **ID・性別・年齢** —— `BR-52` が収集しないと定めた項目であり、DB にも列が無い（`F-008 AC-1`）。
+//    - **カテゴリのタグ** —— 概念が DB にも API にも無い（`S-010` と同じ判断）。
+//    - **タブ 7 本**（基本情報 / 職務経歴 / スキル / 対応履歴 / 提案履歴 / ファイル / メモ）——
+//      🔴 `docs/04` §10.3 が「タブを 5 つ以上に増やさない」と定めており、`@ses/ui` の `Tabs` は
+//      **型で 4 本に制限**されている（`TABS_MAX_ITEMS`）。加えてタブは**既定で 6 面を隠す**ため、
+//      `CLAUDE.md` §13.3「判断材料を隠さない」と `<details open>` の現行（既定で全開）に反する。
+//      セクションの縦積みのままにした。
+//    - **状態バッジ** —— `Engineer.availability`（稼働中 / 待機中 / 待機予定）は `docs/04` §5-1 の
+//      36 状態に無く、`STATUS_BADGE_APPEARANCES` に `engineer` の表が無い。🔴 **色の割り当ては
+//      §7.4 / §5-1 の改訂（人間の判断。§8.6）**であり実装で決めない（`S-010` と同じ結論）。
+//      折りたたみの外の `稼働状況` は素のテキストのままである。
+// ⚠️ **`docs/04` §S-006「デバイス別」は「右にスキルシート・提案履歴・差分」と書いているが、
+//    クラス B の副カラムは 360 / 400 / 480px の固定**であり（§7.1）、**提案履歴（5 列）と凍結差分
+//    （項目 4 列 + 経歴の左右並置）は入らない**。副カラムに置いたのは**スキルシート（セクション 3）
+//    と操作**で、**提案履歴（4）と差分（5）は主カラムに縦積みした**（完了報告で上流へ申し送る）。
+// ⚠️ **副カラムの中身はロールで変わる**（`S-015` が存在しないホスト / `VIEWER` には操作のカードを
+//    描かない）。🔴 **グレーアウトで残さない**（`HANDOFF.md` §3.3 / `BR-44`）。
+//
 // ✅ T-12-16: セクション 4（提案履歴）・5（凍結情報との差分）を実装した（docs/04 §S-006 / §5-6 / `F-019 AC-2` /
 //    docs/05 §6.5 #46b「#46b の境界と記録の確定」）。
 //    - セクション 4 は `listProposals(ctx, { engineerId })`（#45 と同じ関数・同じ射影）。`AuditLog` は #45 と同じく書かない。
@@ -28,7 +67,11 @@ import type { Metadata } from 'next';
 import { z } from 'zod';
 import {
   Badge,
-  SECONDARY_LINK_CLASSES,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  PageBody,
   SECONDARY_LINK_STACKED_CLASSES,
   Table,
   TableBody,
@@ -44,6 +87,7 @@ import { readRequestMeta, resolveTenantCtxOutcome } from '../../../../lib/auth/s
 import {
   engineerBasicRows,
   engineerDetailCareerRows,
+  engineerDetailPrimaryAction,
   engineerDetailSkillRows,
   engineerHeadlineRows,
 } from '../../../../lib/engineers/detail';
@@ -62,7 +106,7 @@ import { DetailSection } from './detail-section';
 import { EngineerProposalSections, type EngineerSnapshotDiffState } from './engineer-proposal-sections';
 import { engineerProposalSectionsMessages } from './proposal-sections-props';
 import { PageHeading } from '../../_shell/page-heading';
-import { ENGINEER_DETAIL_TRAIL } from '../../../../lib/shell/page-trail';
+import { isPageActionRole, ENGINEER_DETAIL_TRAIL } from '../../../../lib/shell/page-trail';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -138,90 +182,142 @@ export default async function EngineerDetailPage({
   const canManageShares = isEngineerShareRole(outcome.ctx.role);
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-8">
-      {/* 🔴 T-05-09 / T-12-21: 「人材」は `S-005`（一覧）へのリンクである（docs/04 §S-006 関連画面
-          「← `S-005`」の戻り経路。パンくずが文字だけだと一覧へ戻れない）。表は `lib/shell/page-trail.ts`。
-          🔴 **帯にタイトルを渡さない** —— この画面のタイトルは氏名であり、直下の
-             `engineer-detail-name` が `h1` として持つ（タイトルを二重に描かない）。 */}
-      <PageHeading trail={ENGINEER_DETAIL_TRAIL} linkTestId="engineer-detail-list-link" />
+    // 🔴 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`）。`S-006` は
+    //    **クラス B = 分割**である（画面ファイルに `max-w-*` を書かない。検査 (c) / (k)）。
+    //    🔴 副カラムは `lg` 未満では `PageBody` が本体の下に積む（遮断しない。`CLAUDE.md` §13.3）。
+    //    🔴 `Drawer` ではない（`Drawer` は `S-003` / `S-004` の要対応キュー専用。§5-13）。
+    <main className="py-6">
+      <PageBody
+        widthClass="split"
+        aside={
+          // 🔴 右レール（ワイヤーフレームのクイックアクション + `docs/04` §S-006 デバイス別
+          //    「デスクトップ = … 右にスキルシート」）。
+          //    🔴 **新しい操作を 1 つも足していない** —— 既存の 3 つ（スキルシートの版の導線 /
+          //       匿名共有の設定 / 閲覧の記録の注記）をここに集めただけである。`編集` は帯の
+          //       primary へ移した（モバイルでは画面下部の固定バーになる。§3.4）。
+          //    🔴 **操作のカードは「操作が 1 つでもあるロール」にしか描かない** ——
+          //       見出しが `この人材への操作` なのに中身が注記だけ、という形を作らない
+          //       （`VIEWER` / ホストに `S-015` は存在しない。`F-016` 関連ロール）。
+          <div className="flex flex-col gap-4">
+            {/* 🔴 T-05-06: 版の管理は `S-008`（docs/04 §S-006 関連画面「→ `S-008`」）。
+                ⚠️ 版の一覧をこの画面に**再掲しない** —— 出すと「どちらが正か」が分かれ、
+                スキャン状態の見え方が 2 実装になる（`F-011 AC-2` の担保が割れる）。 */}
+            <DetailSection id="skill-sheets" title={t('engineers.detail.section.skillSheets')}>
+              <p className="mb-3 text-body text-fg-muted" data-testid="engineer-detail-skill-sheets-lead">
+                {t('engineers.detail.skillSheets.lead')}
+              </p>
+              <Link
+                className={SECONDARY_LINK_STACKED_CLASSES}
+                href={`/engineers/${view.id}/skill-sheets`}
+                data-testid="engineer-detail-skill-sheets-link"
+              >
+                {t('engineers.detail.skillSheets.link')}
+              </Link>
+            </DetailSection>
 
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <h1 className="text-xl font-bold text-slate-900" data-testid="engineer-detail-name">
-          {view.displayName}
-        </h1>
-        <Badge variant="outline" data-testid="engineer-detail-ownership">
-          {ownership}
-        </Badge>
-      </div>
+            {canManageShares ? (
+              <Card data-testid="engineer-detail-rail">
+                <CardHeader>
+                  {/* 🔴 `h1` にしない —— この画面の `h1` は氏名（`engineer-detail-name`）である。
+                      `CardTitle` は `h2` である（`tests/static/page-heading-single.test.ts`）。 */}
+                  <CardTitle>{t('engineers.detail.rail.title')}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {/* 🔴 T-08-02: `S-015`（匿名共有の設定）への導線（docs/04 §S-006 関連画面「→ `S-015`」）。
+                      「この人の稼働が決まった」と分かるのは詳細を開いたときであり、そこから 1 手で
+                      共有を止められないと、ホストに無効な候補が出続ける（`F-016 AC-2` の実運用面）。
+                      🔴 到達できるロール（`PARTNER_ADMIN` / `PARTNER_SALES`）にだけ描く ——
+                      ホストと `VIEWER` には `S-015` が存在しない（`F-016` 関連ロール）。
+                      ⚠️ **この画面から共有を切り替えない。** 切り替えは `S-015` の
+                      開示プレビュー付きの確認ステップを必ず通す（`docs/04` §S-015「操作と結果」）。 */}
+                  <Link
+                    className={SECONDARY_LINK_STACKED_CLASSES}
+                    href="/engineer-shares"
+                    data-testid="engineer-detail-share-link"
+                  >
+                    {t('engineerShares.open')}
+                  </Link>
+                </CardContent>
+              </Card>
+            ) : null}
 
-      {/* 🔴 折りたたみの外（`CLAUDE.md` §13.3）。移動中の判断に要る 3 値。 */}
-      <dl
-        className="mb-4 grid grid-cols-1 gap-3 border border-slate-200 bg-slate-50 p-4 text-sm sm:grid-cols-3"
-        data-testid="engineer-detail-headline"
-      >
-        {headline.map((row) => (
-          <div key={row.key}>
-            <dt className="text-slate-500">{row.label}</dt>
-            <dd className="m-0 font-bold text-slate-900" data-testid={`engineer-detail-headline-${row.key}`}>
-              {row.value}
-            </dd>
+            {/* 🔴 `BR-27` / `F-008 AC-4`: 閲覧が記録されることを利用者にも明示する。
+                🔴 **カードの中に入れない** —— 操作ではなく、この画面そのものの性質である。 */}
+            <p className="m-0 text-xs text-fg-muted" data-testid="engineer-detail-view-recorded">
+              {t('engineers.detail.viewRecorded')}
+            </p>
           </div>
-        ))}
-      </dl>
+        }
+      >
+        {/* 🔴 T-05-09 / T-12-21: 「人材」は `S-005`（一覧）へのリンクである（docs/04 §S-006 関連画面
+            「← `S-005`」の戻り経路。パンくずが文字だけだと一覧へ戻れない）。表は `lib/shell/page-trail.ts`。
+            🔴 **帯にタイトルを渡さない** —— この画面のタイトルは氏名であり、直下の
+               `engineer-detail-name` が `h1` として持つ（タイトルを二重に描かない）。
+            ✅ SP-22 段④: `編集` を帯の primary へ移した（ワイヤーフレームの見出し右の `[編集]`）。
+               testid（`engineer-detail-edit-link`）は移設前から凍結されている値である（`U-22`）。 */}
+        <PageHeading
+          trail={ENGINEER_DETAIL_TRAIL}
+          linkTestId="engineer-detail-list-link"
+          primaryAction={engineerDetailPrimaryAction(canEdit, view.id)}
+          canAct={isPageActionRole(outcome.ctx.role)}
+          testId="engineer-detail-edit-link"
+        />
 
-      <div className="mb-4 flex flex-wrap items-center gap-4">
-        {canEdit ? (
-          <Link
-            className={SECONDARY_LINK_CLASSES}
-            href={`/engineers/${view.id}/edit`}
-            data-testid="engineer-detail-edit-link"
-          >
-            {t('engineers.detail.edit')}
-          </Link>
-        ) : null}
-        {/* 🔴 T-08-02: `S-015`（匿名共有の設定）への導線（docs/04 §S-006 関連画面「→ `S-015`」）。
-            「この人の稼働が決まった」と分かるのは詳細を開いたときであり、そこから 1 手で
-            共有を止められないと、ホストに無効な候補が出続ける（`F-016 AC-2` の実運用面）。
-            🔴 到達できるロール（`PARTNER_ADMIN` / `PARTNER_SALES`）にだけ描く ——
-            ホストと `VIEWER` には `S-015` が存在しない（`F-016` 関連ロール）。
-            ⚠️ **この画面から共有を切り替えない。** 切り替えは `S-015` の
-            開示プレビュー付きの確認ステップを必ず通す（`docs/04` §S-015「操作と結果」）。 */}
-        {canManageShares ? (
-          <Link
-            className={SECONDARY_LINK_CLASSES}
-            href="/engineer-shares"
-            data-testid="engineer-detail-share-link"
-          >
-            {t('engineerShares.open')}
-          </Link>
-        ) : null}
-        <p className="text-sm text-slate-500" data-testid="engineer-detail-view-recorded">
-          {t('engineers.detail.viewRecorded')}
-        </p>
-      </div>
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          <h1 className="text-title font-semibold text-fg" data-testid="engineer-detail-name">
+            {view.displayName}
+          </h1>
+          <Badge variant="outline" data-testid="engineer-detail-ownership">
+            {ownership}
+          </Badge>
+        </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {/* 🔴 折りたたみの外（`CLAUDE.md` §13.3）。移動中の判断に要る 3 値。
+            ✅ SP-22 段④: 白い面（`Card`）に入れた —— ページ地が `--color-bg-subtle` なので、
+               淡い面のままでは地に溶けて「ここが要点である」ことが読めない。 */}
+        <Card className="mb-4">
+          <CardContent className="pt-4">
+            <dl
+              className="grid grid-cols-1 gap-3 text-body sm:grid-cols-3"
+              data-testid="engineer-detail-headline"
+            >
+              {headline.map((row) => (
+                <div key={row.key}>
+                  <dt className="text-fg-muted">{row.label}</dt>
+                  <dd
+                    className="m-0 font-semibold text-fg"
+                    data-testid={`engineer-detail-headline-${row.key}`}
+                  >
+                    {row.value}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </CardContent>
+        </Card>
+
+        {/* 🔴 セクションは縦積みである（副カラムは操作だけに使う。ファイル冒頭の ⚠️）。 */}
         <div className="flex flex-col gap-4">
           <DetailSection id="basic" title={t('engineers.detail.section.basic')}>
-            <dl className="text-sm">
+            <dl className="text-body">
               {basicRows.map((row) => (
-                <div key={row.key} className="flex gap-3 border-b border-slate-100 py-2 last:border-b-0">
-                  <dt className="w-32 shrink-0 text-slate-500">{row.label}</dt>
-                  <dd className="m-0 text-slate-900" data-testid={`engineer-detail-basic-${row.key}`}>
+                <div key={row.key} className="flex gap-3 border-b border-border py-2 last:border-b-0">
+                  <dt className="w-32 shrink-0 text-fg-muted">{row.label}</dt>
+                  <dd className="m-0 min-w-0 text-fg" data-testid={`engineer-detail-basic-${row.key}`}>
                     {row.value}
                   </dd>
                 </div>
               ))}
             </dl>
             {/* 🔴 `BR-52` / `F-008 AC-1`: 集めていない情報を明示する。 */}
-            <p className="mt-3 text-xs text-slate-500" data-testid="engineer-detail-collection-scope">
+            <p className="mt-3 text-xs text-fg-muted" data-testid="engineer-detail-collection-scope">
               {t('engineers.detail.collectionScope')}
             </p>
           </DetailSection>
 
           <DetailSection id="skills" title={t('engineers.detail.section.skills')}>
             {skillRows.length === 0 ? (
-              <p className="text-sm text-slate-600" data-testid="engineer-detail-skill-empty">
+              <p className="text-body text-fg-muted" data-testid="engineer-detail-skill-empty">
                 {t('engineers.skills.empty')}
               </p>
             ) : (
@@ -255,9 +351,9 @@ export default async function EngineerDetailPage({
           <DetailSection id="careers" title={t('engineers.detail.section.careers')}>
             {careerRows.length === 0 ? (
               <div data-testid="engineer-detail-career-empty">
-                <p className="text-sm text-slate-600">{t('engineers.careers.empty')}</p>
+                <p className="text-body text-fg-muted">{t('engineers.careers.empty')}</p>
                 {canEdit ? (
-                  <p className="mt-2 text-sm">
+                  <p className="mt-2 text-body">
                     <Link
                       className={SECONDARY_LINK_STACKED_CLASSES}
                       href={`/engineers/${view.id}/edit`}
@@ -270,7 +366,7 @@ export default async function EngineerDetailPage({
               </div>
             ) : (
               <>
-                <p className="mb-2 text-xs text-slate-500" data-testid="engineer-detail-career-order-note">
+                <p className="mb-2 text-xs text-fg-muted" data-testid="engineer-detail-career-order-note">
                   {t('engineers.careers.detailOrderNote')}
                 </p>
                 <Table data-testid="engineer-detail-career-table">
@@ -305,29 +401,13 @@ export default async function EngineerDetailPage({
               </>
             )}
           </DetailSection>
-        </div>
 
-        <div className="flex flex-col gap-4">
-          {/* 🔴 T-05-06: 版の管理は `S-008`（docs/04 §S-006 関連画面「→ `S-008`」）。
-              ⚠️ 版の一覧をこの画面に**再掲しない** —— 出すと「どちらが正か」が分かれ、
-              スキャン状態の見え方が 2 実装になる（`F-011 AC-2` の担保が割れる）。 */}
-          <DetailSection id="skill-sheets" title={t('engineers.detail.section.skillSheets')}>
-            <p className="mb-3 text-sm text-slate-600" data-testid="engineer-detail-skill-sheets-lead">
-              {t('engineers.detail.skillSheets.lead')}
-            </p>
-            <Link
-              className={SECONDARY_LINK_STACKED_CLASSES}
-              href={`/engineers/${view.id}/skill-sheets`}
-              data-testid="engineer-detail-skill-sheets-link"
-            >
-              {t('engineers.detail.skillSheets.link')}
-            </Link>
-          </DetailSection>
-
-          {/* --- 4. 提案履歴 / 5. 凍結情報との差分（T-12-16。docs/04 §S-006 デスクトップ = 右列）--- */}
+          {/* --- 4. 提案履歴 / 5. 凍結情報との差分（T-12-16）---
+              ⚠️ **副カラムではなく主カラムに置く**（ファイル冒頭の ⚠️。凍結差分は
+              項目 4 列 + 経歴の左右並置であり、360〜480px の副カラムに入らない）。 */}
           <EngineerProposalSections history={history} diff={diff} messages={engineerProposalSectionsMessages()} />
         </div>
-      </div>
+      </PageBody>
     </main>
   );
 }

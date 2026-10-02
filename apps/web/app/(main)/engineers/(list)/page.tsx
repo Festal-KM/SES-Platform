@@ -22,7 +22,9 @@ import { resolveTenantCtxOutcome } from '../../../../lib/auth/session';
 import { listEngineers } from '../../../../lib/engineers/list';
 import {
   activeEngineerFilters,
+  engineerListDescription,
   engineerListHref,
+  engineerListPrimaryAction,
   engineerListRows,
   engineerPopulationLabel,
   hasEngineerListFilters,
@@ -39,7 +41,7 @@ import {
 } from '../list-props';
 import { EngineerLedgerScreen } from '../engineer-ledger-screen';
 import { PageHeading } from '../../_shell/page-heading';
-import { ENGINEER_LIST_TRAIL } from '../../../../lib/shell/page-trail';
+import { isPageActionRole, ENGINEER_LIST_TRAIL } from '../../../../lib/shell/page-trail';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -70,6 +72,10 @@ export default async function EngineerLedgerPage({
   const skillOptions = skills.items.map((skill) => ({ value: skill.id, label: skill.name }));
   const skillNames = new Map(skills.items.map((skill) => [skill.id, skill.name]));
   const filtered = hasEngineerListFilters(query);
+  const isPartner = ctx.partnerCompanyId !== null;
+  // 🔴 `VIEWER` は `S-007` に到達できない（docs/04 §S-007 権限差分）。押しても戻されるだけの
+  //    導線を描かない。⚠️ 拒否の本体は `#16` のガードと `S-007` のリダイレクトである。
+  const canRegister = ctx.role !== 'VIEWER';
 
   return (
     // 🔴 T-22-06: 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`）。`S-005` は
@@ -78,7 +84,22 @@ export default async function EngineerLedgerPage({
     //    旧 `max-w-6xl` は 1920px のディスプレイで 8 列 + 12 行を成立させられなかった。
     <main className="py-6">
       <PageBody widthClass="full">
-      <PageHeading trail={ENGINEER_LIST_TRAIL} title={t('engineers.list.title')} />
+      {/* 🔴 primary は帯の 1 つだけ（§7.6）。`ACTION` なので `canAct` が偽のロールには
+          描かれない（`PageHeading`）。**判定の出所は `canRegister` の 1 つ**であり、
+          `engineerListPrimaryAction` が `null` を返す側と二重の壁になっている。
+          ⚠️ testid（`engineer-list-register`）は移設前から凍結されている値である（`U-22`）。 */}
+      <PageHeading
+        trail={ENGINEER_LIST_TRAIL}
+        title={t('engineers.list.title')}
+        primaryAction={engineerListPrimaryAction(canRegister)}
+        canAct={isPageActionRole(ctx.role)}
+        testId="engineer-list-register"
+      />
+      {/* 🔴 帯の「説明 1 行」（`docs/04` §3.1）。母集団が違うので文も違う（§3.2 項目 2）。
+          `S-010` と同じ形で帯の直下に置く（`PageHeader` は説明の prop を持たない）。 */}
+      <p className="mb-4 text-body text-fg-muted" data-testid="engineer-list-description">
+        {engineerListDescription(isPartner)}
+      </p>
       <EngineerLedgerScreen
         rows={engineerListRows(view.items)}
         filters={{
@@ -102,16 +123,15 @@ export default async function EngineerLedgerPage({
         availabilityOptions={engineerAvailabilityFilterOptions}
         activeFilters={activeEngineerFilters(query, skillNames)}
         // 🔴 取引先には所属区分の列を出さない（docs/04 §S-005 権限差分）。出所は ctx である。
-        showOwnershipColumn={ctx.partnerCompanyId === null}
-        // 🔴 `VIEWER` は `S-007` に到達できない（docs/04 §S-007 権限差分）。押しても戻される
-        //    だけの導線を描かない。⚠️ 拒否の本体は `#16` のガードと `S-007` のリダイレクトである。
-        canRegister={ctx.role !== 'VIEWER'}
+        showOwnershipColumn={!isPartner}
+        // 🔴 導線は帯へ移したので、本体が使うのは「理由テキストを出すか」の判定だけである。
+        canRegister={canRegister}
         // 🔴 ページングのリンクは**検索条件を保つ**（`engineerListHref`）。
         nextPageHref={view.nextCursor === null ? null : engineerListHref(query, view.nextCursor)}
         firstPageHref={query.cursor === undefined ? null : engineerListHref(query, null)}
         messages={engineerLedgerScreenMessages({
           populationLabel: engineerPopulationLabel(ctx.partnerCompanyId, view.total),
-          isPartner: ctx.partnerCompanyId !== null,
+          isPartner,
           filtered,
           // 🔴 並びの説明を切り替える判定は `engineerSearchPlan` と**同じ関数**である
           //    （`@ses/db` の `ordersByFit`）。条件式をここに書き写すと、並びは分割したのに

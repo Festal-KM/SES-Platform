@@ -70,6 +70,8 @@ import { useState } from 'react';
 import Link from 'next/link';
 import {
   Button,
+  Card,
+  CardContent,
   EmptyState,
   Field,
   Input,
@@ -82,6 +84,8 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  Toolbar,
+  cn,
   type NameCellNameProps,
 } from '@ses/ui';
 import {
@@ -120,6 +124,14 @@ export type EngineerShareFilterValues = {
 
 export type EngineerShareScreenMessages = {
   readonly lead: string;
+  /**
+   * 🔴 **母集団の 1 行**（SP-22 段④。`docs/04` §3.2 項目 2 / `Toolbar` の `population`）。
+   *    🔴 **件数を含めない** —— `docs/04` §S-015 と `docs/05` §4.8 が総件数・残件数を禁じており、
+   *    この画面の取得（`#29`）はそもそも `total` を返さない（型に無い）。
+   */
+  readonly population: string;
+  /** 🔴 並び順の説明（件数バーの右端）。`共有中` フィルタかどうかで 2 通り（`docs/04` §S-015）。 */
+  readonly orderNote: string;
   readonly searchLegend: string;
   readonly searchQ: string;
   readonly searchAvailableBy: string;
@@ -450,11 +462,10 @@ export function EngineerShareScreen({
       { key: 'updatedOn', label: messages.fieldUpdatedOn, value: row.preview.updatedOn },
     ];
     return (
-      <div
-        className="border border-border bg-bg p-4"
-        data-testid={`engineer-share-preview-${row.engineerId}`}
-      >
-        <p className="mb-2 text-body font-bold text-fg">{row.displayName}</p>
+      // 🔴 面は `@ses/ui` の `Card` だけが持つ（画面で面を作らない。
+      //    `tests/static/ui-shadow-and-size.test.ts`）。余白は置かれる文脈が決める（`p-4`）。
+      <Card className="p-4" data-testid={`engineer-share-preview-${row.engineerId}`}>
+        <p className="mb-2 text-body font-semibold text-fg">{row.displayName}</p>
         <dl className="text-body">
           {items.map((item) => (
             <div
@@ -472,7 +483,7 @@ export function EngineerShareScreen({
         <p className="mt-2 text-xs text-fg-muted" data-testid="engineer-share-preview-careers-note">
           {messages.previewCareersNote}
         </p>
-      </div>
+      </Card>
     );
   }
 
@@ -585,56 +596,88 @@ export function EngineerShareScreen({
         </div>
       )}
 
-      {/* --- 2. 検索条件（氏名 / 稼働可能時期 / 共有状態）。🔴 モバイルでも 3 条件を省略しない --- */}
-      <form
-        className={FILTER_FORM_CLASSES}
-        method="get"
-        action="/engineer-shares"
-        data-testid="engineer-share-filters"
-      >
-        <fieldset className="contents">
-          <legend className="sr-only">{messages.searchLegend}</legend>
-          <Field label={messages.searchQ}>
-            <Input
-              type="search"
-              name="q"
-              defaultValue={filters.q}
-              data-testid="engineer-share-filter-q"
-            />
-          </Field>
-          <Field label={messages.searchAvailableBy}>
-            <Input
-              type="date"
-              name="availableBy"
-              defaultValue={filters.availableBy}
-              data-testid="engineer-share-filter-available-by"
-            />
-          </Field>
-          <Field label={messages.searchShared}>
-            <Select
-              name="shared"
-              defaultValue={filters.shared}
-              data-testid="engineer-share-filter-shared"
-            >
-              {filterOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <div className={FILTER_ACTIONS_CLASSES}>
-            <Button type="submit" data-testid="engineer-share-search">
-              {messages.searchSubmit}
-            </Button>
-            {hasActiveConditions ? (
-              <Link className={SECONDARY_LINK_CLASSES} href={clearHref} data-testid="engineer-share-clear">
-                {messages.searchClear}
-              </Link>
-            ) : null}
-          </div>
-        </fieldset>
-      </form>
+      {/* --- 2. 検索条件（氏名 / 稼働可能時期 / 共有状態）。🔴 モバイルでも 3 条件を省略しない ---
+          ✅ SP-22 段④: 条件を **`Card`（白い面）**に入れ、**件数バー**（母集団の 1 行 + 並び順の説明）を
+             `Toolbar` で持たせた（`S-005` / `S-010` と同じ作法。置き場所を画面ごとに変えない。§5-13）。
+          🔴 **条件の集合・`name`・送り先・`method="get"` は 1 つも変えていない**（`#29` の query は
+             `q` / `availableBy` / `shared` / `cursor` / `limit` だけである）。
+          🔴 **件数を出さない**（`population` は母集団の範囲だけ。`docs/04` §S-015 / `docs/05` §4.8）。 */}
+      <div className="mb-4">
+        <Toolbar
+          testIdPrefix="engineer-share-"
+          population={messages.population}
+          note={
+            <p className="text-xs text-fg-muted" data-testid="engineer-share-order-note">
+              {messages.orderNote}
+            </p>
+          }
+          filters={
+            <Card className="w-full">
+              {/* `CardContent` は `p-4 pt-0`。見出しを持たないカードなので上の余白を戻す。 */}
+              <CardContent className="pt-4">
+                <form
+                  className={cn(FILTER_FORM_CLASSES, 'mb-0 w-full')}
+                  method="get"
+                  action="/engineer-shares"
+                  data-testid="engineer-share-filters"
+                >
+                  <fieldset className="contents">
+                    <legend className="sr-only">{messages.searchLegend}</legend>
+                    {/* 🔴 氏名は**全幅**（この画面のモバイルの用途は「稼働が決まった人を名前で探して
+                        解除する」であり、最も使う条件を 1 行目に単独で置く。`docs/04` §S-015 デバイス別）。 */}
+                    <Field
+                      className="sm:col-span-2 lg:col-span-3 xl:col-span-4"
+                      label={messages.searchQ}
+                    >
+                      <Input
+                        type="search"
+                        name="q"
+                        defaultValue={filters.q}
+                        data-testid="engineer-share-filter-q"
+                      />
+                    </Field>
+                    <Field label={messages.searchAvailableBy}>
+                      <Input
+                        type="date"
+                        name="availableBy"
+                        defaultValue={filters.availableBy}
+                        data-testid="engineer-share-filter-available-by"
+                      />
+                    </Field>
+                    <Field label={messages.searchShared}>
+                      <Select
+                        name="shared"
+                        defaultValue={filters.shared}
+                        data-testid="engineer-share-filter-shared"
+                      >
+                        {filterOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                    <div className={cn(FILTER_ACTIONS_CLASSES, 'justify-end')}>
+                      {hasActiveConditions ? (
+                        <Link
+                          className={SECONDARY_LINK_CLASSES}
+                          href={clearHref}
+                          data-testid="engineer-share-clear"
+                        >
+                          {messages.searchClear}
+                        </Link>
+                      ) : null}
+                      <Button type="submit" data-testid="engineer-share-search">
+                        {messages.searchSubmit}
+                      </Button>
+                    </div>
+                  </fieldset>
+                </form>
+              </CardContent>
+            </Card>
+          }
+        />
+      </div>
 
       {failed ? (
         <p role="alert" className="mb-4 text-body text-danger" data-testid="engineer-share-error">
@@ -660,7 +703,7 @@ export function EngineerShareScreen({
                 : 'engineer-share-list'
           }
         >
-          <h2 className="mb-2 text-lg font-bold text-fg">{messages.sectionList}</h2>
+          <h2 className="mb-2 text-lg font-semibold text-fg">{messages.sectionList}</h2>
           <Table
             data-testid={
               filters.shared === 'true'
@@ -725,7 +768,7 @@ export function EngineerShareScreen({
       {/* --- 5. 選択した候補の開示プレビュー ---------------------------------- */}
       {emptyState !== null ? null : (
         <section data-testid="engineer-share-preview">
-          <h2 className="mb-2 text-lg font-bold text-fg">{messages.sectionPreview}</h2>
+          <h2 className="mb-2 text-lg font-semibold text-fg">{messages.sectionPreview}</h2>
           <p className="mb-3 text-xs text-fg-muted" data-testid="engineer-share-preview-note">
             {messages.previewNote}
           </p>

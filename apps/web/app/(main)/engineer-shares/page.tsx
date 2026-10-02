@@ -110,7 +110,8 @@ export default async function EngineerSharesPage({
         registerHref={REGISTER_HREF}
         denialMessage={denialKey === null ? null : t(denialKey)}
         rowLabels={rowLabels}
-        messages={engineerShareScreenMessages()}
+        // 🔴 SP-22 段④: 並び順の説明はフィルタの値で 2 通りに出し分ける（説明が実態とずれない）。
+        messages={engineerShareScreenMessages({ shared: screen.shared })}
       />
       {/* 🔴 T-12-21: docs/04 §S-015「関連画面: → `S-017`（受け取った提案依頼）」。
           共有可にした結果として届くのが提案依頼であり、**共有の設定から 1 手で受信箱へ行けないと

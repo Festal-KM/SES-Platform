@@ -308,22 +308,22 @@ export function SkillSheetScreen({
   return (
     <div data-testid="skill-sheet-screen">
       <section className="mb-8" data-testid="skill-sheet-upload-section">
-        <h2 className="mb-2 text-sm font-semibold text-slate-700">{messages.uploadSection}</h2>
+        <h2 className="mb-2 text-lg font-semibold text-fg">{messages.uploadSection}</h2>
         {/* 🔴 対応形式と「画像は自動読み取りに対応しない」は**ロールを問わず**出す
             （`docs/03` 申し送り 8。`VIEWER` にも「なぜ手入力なのか」が伝わる必要がある）。 */}
-        <p className="mb-1 text-sm text-slate-600" data-testid="skill-sheet-upload-formats">
+        <p className="mb-1 text-body text-fg-muted" data-testid="skill-sheet-upload-formats">
           {messages.uploadFormats}
         </p>
-        <p className="mb-1 text-sm text-slate-600" data-testid="skill-sheet-upload-image-notice">
+        <p className="mb-1 text-body text-fg-muted" data-testid="skill-sheet-upload-image-notice">
           {messages.uploadImageNotice}
         </p>
-        <p className="mb-3 text-sm text-slate-600" data-testid="skill-sheet-upload-scan-notice">
+        <p className="mb-3 text-body text-fg-muted" data-testid="skill-sheet-upload-scan-notice">
           {messages.uploadScanNotice}
         </p>
 
         {canManage ? (
           <form onSubmit={onUpload} noValidate data-testid="skill-sheet-upload-form">
-            <Field className="mb-2 max-w-md" label={messages.uploadFileLabel}>
+            <Field className="mb-2" label={messages.uploadFileLabel}>
               {/* 🔴 `Input` の `file:*` 語（`file:inline-flex` / `file:h-7` ほか）は
                   `packages/ui` が upstream から**落とさずに**取り込んでいる。
                   ここが本リポジトリで唯一の `type="file"` である。 */}
@@ -336,7 +336,7 @@ export function SkillSheetScreen({
                 data-testid="skill-sheet-upload-file"
               />
             </Field>
-            <Field className="mb-3 max-w-md" label={messages.uploadNoteLabel}>
+            <Field className="mb-3" label={messages.uploadNoteLabel}>
               <Input
                 type="text"
                 name="note"
@@ -356,34 +356,34 @@ export function SkillSheetScreen({
               {uploadPhase === 'submitting' ? messages.uploadSubmitting : messages.uploadSubmit}
             </Button>
             {uploadPhase === 'done' ? (
-              <p role="status" className="mt-2 text-sm text-slate-700" data-testid="skill-sheet-upload-done">
+              <p role="status" className="mt-2 text-body text-fg" data-testid="skill-sheet-upload-done">
                 {messages.uploadDone}
               </p>
             ) : null}
             {uploadPhase === 'error' ? (
-              <p role="alert" className="mt-2 text-sm text-red-700" data-testid="skill-sheet-upload-error">
+              <p role="alert" className="mt-2 text-body text-danger" data-testid="skill-sheet-upload-error">
                 {uploadErrorMessage(uploadErrorCode, messages)}
               </p>
             ) : null}
           </form>
         ) : (
           // 🔴 導線を消すだけにせず、**誰に頼めばよいか**を書く（行き止まりにしない）。
-          <p className="text-sm text-slate-500" data-testid="skill-sheet-upload-read-only">
+          <p className="text-body text-fg-muted" data-testid="skill-sheet-upload-read-only">
             {messages.uploadReadOnlyNote}
           </p>
         )}
       </section>
 
       <section className="mb-8" data-testid="skill-sheet-versions-section">
-        <h2 className="mb-2 text-sm font-semibold text-slate-700">{messages.versionsSection}</h2>
+        <h2 className="mb-2 text-lg font-semibold text-fg">{messages.versionsSection}</h2>
         {/* 🔴 T-05-07: 閲覧・DL が記録されることを**隠さない**（`CLAUDE.md` §3.5 の説明責任は、
             見る側にも伝わっていなければ抑止として働かない）。ロールを問わず出す。 */}
-        <p className="mb-2 text-xs text-slate-500" data-testid="skill-sheet-audit-notice">
+        <p className="mb-2 text-xs text-fg-muted" data-testid="skill-sheet-audit-notice">
           {messages.auditNotice}
         </p>
         {versions.length === 0 ? (
           <p
-            className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700"
+            className="rounded-md border border-border bg-bg-subtle p-3 text-body text-fg"
             data-testid="skill-sheet-versions-empty"
           >
             {messages.versionsEmpty}
@@ -428,7 +428,7 @@ export function SkillSheetScreen({
                       {version.version}
                       {version.note === null ? null : (
                         <span
-                          className="mt-1 block text-xs text-slate-500"
+                          className="mt-1 block text-xs text-fg-muted"
                           data-testid={`skill-sheet-note-${version.id}`}
                         >
                           {messages.noteLabel}: {version.note}
@@ -525,7 +525,7 @@ export function SkillSheetScreen({
                               消すだけにせず、**誰に頼めばよいか**を書く（行き止まりにしない）。 */}
                           {canDownload ? null : (
                             <p
-                              className="text-xs text-slate-500"
+                              className="text-xs text-fg-muted"
                               data-testid={`skill-sheet-download-read-only-${version.id}`}
                             >
                               {messages.downloadReadOnlyNote}
@@ -534,7 +534,7 @@ export function SkillSheetScreen({
                           {/* 提案添付（SP-09）・チャット添付（SP-13）の置き場所。
                               🔴 **`CLEAN` の行にだけ**出す。 */}
                           <p
-                            className="text-xs text-slate-500"
+                            className="text-xs text-fg-muted"
                             data-testid={`skill-sheet-share-${version.id}`}
                           >
                             {messages.shareComingSoon}
@@ -543,7 +543,7 @@ export function SkillSheetScreen({
                       ) : (
                         <div className="flex flex-col gap-2">
                           <p
-                            className="text-xs text-slate-500"
+                            className="text-xs text-fg-muted"
                             data-testid={`skill-sheet-blocked-${version.id}`}
                           >
                             {messages.blockedReasons[version.scanStatus]}
@@ -570,7 +570,7 @@ export function SkillSheetScreen({
                       {/* 🔴 開いた版の情報（#21 の `{ meta }`）。**本文は無い**ことを明示する。 */}
                       {previewId === version.id && preview !== null ? (
                         <dl
-                          className="mt-2 rounded-md border border-slate-200 bg-slate-50 p-2 text-xs text-slate-700"
+                          className="mt-2 rounded-md border border-border bg-bg-subtle p-2 text-xs text-fg"
                           data-testid={`skill-sheet-preview-panel-${version.id}`}
                         >
                           <dt className="font-semibold">{messages.previewTitle}</dt>
@@ -592,7 +592,7 @@ export function SkillSheetScreen({
                       {previewId === version.id && previewPhase === 'error' ? (
                         <p
                           role="alert"
-                          className="mt-2 text-xs text-red-700"
+                          className="mt-2 text-xs text-danger"
                           data-testid={`skill-sheet-preview-error-${version.id}`}
                         >
                           {messages.previewError}
@@ -601,7 +601,7 @@ export function SkillSheetScreen({
                       {downloadId === version.id && downloadPhase === 'error' ? (
                         <p
                           role="alert"
-                          className="mt-2 text-xs text-red-700"
+                          className="mt-2 text-xs text-danger"
                           data-testid={`skill-sheet-download-error-${version.id}`}
                         >
                           {messages.downloadError}
@@ -615,7 +615,7 @@ export function SkillSheetScreen({
           </Table>
         )}
         {actionPhase === 'error' ? (
-          <p role="alert" className="mt-2 text-sm text-red-700" data-testid="skill-sheet-action-error">
+          <p role="alert" className="mt-2 text-body text-danger" data-testid="skill-sheet-action-error">
             {messages.actionError}
           </p>
         ) : null}
@@ -624,8 +624,8 @@ export function SkillSheetScreen({
       {/* 🔴 未実装のセクションを黙って消さない（`engineers.careers.comingSoon` と同じ規律）。
           抽出結果の採否とスキル正規化は `F-032` / `F-033`（SP-14）。 */}
       <section data-testid="skill-sheet-extraction-section">
-        <h2 className="mb-2 text-sm font-semibold text-slate-700">{messages.extractionSection}</h2>
-        <p className="text-sm text-slate-600" data-testid="skill-sheet-extraction-coming-soon">
+        <h2 className="mb-2 text-lg font-semibold text-fg">{messages.extractionSection}</h2>
+        <p className="text-body text-fg-muted" data-testid="skill-sheet-extraction-coming-soon">
           {messages.extractionComingSoon}
         </p>
       </section>

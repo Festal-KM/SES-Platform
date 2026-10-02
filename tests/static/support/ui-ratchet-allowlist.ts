@@ -14,6 +14,17 @@
 //    作らないため。恒久例外は `AppShell` の `pb-24` の 1 件だけで、それは
 //    `ui-spacing-scale.test.ts` の `PERMANENT_SPACING_EXCEPTION` に理由つきで置く。
 //
+// ✅ **段④ の第 2 弾（人材管理。2026-10-03）で外したもの**: `engineers/**` の 10 ファイル
+//    （`engineers/[id]/{page,detail-section,engineer-proposal-sections,not-found}.tsx` /
+//    `engineers/[id]/edit/{page,not-found}.tsx` /
+//    `engineers/[id]/skill-sheets/{page,skill-sheet-screen}.tsx` /
+//    `engineers/_form/engineer-form.tsx` / `engineers/new/page.tsx`）を
+//    (a) 8 / (c) 7 / (g) 8 / (k) 4 = **計 27 エントリ**削除した。
+//    🔴 **これで `engineers/**` の許可は 0 件である**（`grep "(main)/engineers/" ` で残るのは本コメントだけ）。
+//    ⚠️ `engineer-shares/**` は **`T-22-07` の時点で既に 0 件**であり、本弾で削るものは無かった。
+//    ⚠️ `S-007` / `S-008` でやったのは**トークンの置き換えと幅クラスの移設だけ**であり、
+//       画面の構成（セクション・列・導線）は 1 つも変えていない（刷新そのものは `T-22-12`）。
+//
 // ✅ **段④ の第 1 弾（案件管理。2026-10-03）で外したもの**: `projects/**` の 9 ファイル
 //    （`projects/[id]/{page,project-detail-screen,not-found}.tsx` /
 //    `projects/[id]/edit/{page,not-found}.tsx` /
@@ -75,14 +86,6 @@ export const UI_RATCHET_ALLOWLIST_A: ReadonlyMap<string, AllowEntry> = new Map<s
   ['apps/web/app/(main)/(auth)/signin/signin-form.tsx', { stage: 4, reason: 'S-001 / S-002 / S-046 の刷新（段④）で semantic トークンへ置き換える。移行中 6 行' }],
   ['apps/web/app/(main)/_shared/sending-domain-guard-banner.tsx', { stage: 4, reason: 'S-035 系（送信ドメインの帯） の刷新（段④）で semantic トークンへ置き換える。移行中 1 行' }],
   ['apps/web/app/(main)/_shared/sending-domain-status.tsx', { stage: 4, reason: 'S-035 系（送信ドメインの帯） の刷新（段④）で semantic トークンへ置き換える。移行中 3 行' }],
-  ['apps/web/app/(main)/engineers/[id]/detail-section.tsx', { stage: 4, reason: 'S-006〜S-009 の刷新（段④）で semantic トークンへ置き換える。移行中 3 行' }],
-  ['apps/web/app/(main)/engineers/[id]/edit/not-found.tsx', { stage: 4, reason: 'S-006〜S-009 の刷新（段④）で semantic トークンへ置き換える。移行中 2 行' }],
-  ['apps/web/app/(main)/engineers/[id]/engineer-proposal-sections.tsx', { stage: 4, reason: 'S-006〜S-009 の刷新（段④）で semantic トークンへ置き換える。移行中 13 行' }],
-  ['apps/web/app/(main)/engineers/[id]/not-found.tsx', { stage: 4, reason: 'S-006〜S-009 の刷新（段④）で semantic トークンへ置き換える。移行中 2 行' }],
-  ['apps/web/app/(main)/engineers/[id]/page.tsx', { stage: 4, reason: 'S-006〜S-009 の刷新（段④）で semantic トークンへ置き換える。移行中 13 行' }],
-  ['apps/web/app/(main)/engineers/[id]/skill-sheets/page.tsx', { stage: 4, reason: 'S-006〜S-009 の刷新（段④）で semantic トークンへ置き換える。移行中 1 行' }],
-  ['apps/web/app/(main)/engineers/[id]/skill-sheets/skill-sheet-screen.tsx', { stage: 4, reason: 'S-006〜S-009 の刷新（段④）で semantic トークンへ置き換える。移行中 20 行' }],
-  ['apps/web/app/(main)/engineers/_form/engineer-form.tsx', { stage: 4, reason: 'S-006〜S-009 の刷新（段④）で semantic トークンへ置き換える。移行中 24 行' }],
   ['apps/web/app/(main)/proposal-requests/[id]/not-found.tsx', { stage: 4, reason: 'S-017 / S-022 の刷新（段④）で semantic トークンへ置き換える。移行中 2 行' }],
   ['apps/web/app/(main)/proposal-requests/[id]/proposal-request-respond-screen.tsx', { stage: 4, reason: 'S-017 / S-022 の刷新（段④）で semantic トークンへ置き換える。移行中 29 行' }],
   ['apps/web/app/(main)/proposal-requests/proposal-request-screen.tsx', { stage: 4, reason: 'S-017 / S-022 の刷新（段④）で semantic トークンへ置き換える。移行中 14 行' }],
@@ -151,13 +154,6 @@ export const UI_RATCHET_ALLOWLIST_C: ReadonlyMap<string, AllowEntry> = new Map<s
   //    semantic トークン / 7 段 / 6 トークン / 8 状態 / `PageBody` の幅 3 クラスへ寄せたので
   //    **この段の項目は空になった**（残しておくとラチェット ②「未使用の許可が残っていない」で落ちる）。
   // ── 段④
-  ['apps/web/app/(main)/engineers/[id]/edit/not-found.tsx', { stage: 4, reason: 'S-006〜S-009 の刷新（段④）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
-  ['apps/web/app/(main)/engineers/[id]/edit/page.tsx', { stage: 4, reason: 'S-006〜S-009 の刷新（段④）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
-  ['apps/web/app/(main)/engineers/[id]/not-found.tsx', { stage: 4, reason: 'S-006〜S-009 の刷新（段④）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
-  ['apps/web/app/(main)/engineers/[id]/page.tsx', { stage: 4, reason: 'S-006〜S-009 の刷新（段④）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
-  ['apps/web/app/(main)/engineers/[id]/skill-sheets/page.tsx', { stage: 4, reason: 'S-006〜S-009 の刷新（段④）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
-  ['apps/web/app/(main)/engineers/[id]/skill-sheets/skill-sheet-screen.tsx', { stage: 4, reason: 'S-006〜S-009 の刷新（段④）で `PageBody` の幅 3 クラスへ移す。移行中 2 行' }],
-  ['apps/web/app/(main)/engineers/new/page.tsx', { stage: 4, reason: 'S-006〜S-009 の刷新（段④）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
   ['apps/web/app/(main)/proposal-requests/[id]/not-found.tsx', { stage: 4, reason: 'S-017 / S-022 の刷新（段④）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
   ['apps/web/app/(main)/proposal-requests/[id]/page.tsx', { stage: 4, reason: 'S-017 / S-022 の刷新（段④）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
   ['apps/web/app/(main)/proposal-requests/page.tsx', { stage: 4, reason: 'S-017 / S-022 の刷新（段④）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
@@ -247,14 +243,6 @@ export const UI_RATCHET_ALLOWLIST_G: ReadonlyMap<string, AllowEntry> = new Map<s
   ['apps/web/app/(main)/(auth)/signin/signin-form.tsx', { stage: 4, reason: 'S-001 / S-002 / S-046 の刷新（段④）で §7.9 の 6 トークンへ置き換える。移行中 6 行' }],
   ['apps/web/app/(main)/_shared/sending-domain-guard-banner.tsx', { stage: 4, reason: 'S-035 系（送信ドメインの帯） の刷新（段④）で §7.9 の 6 トークンへ置き換える。移行中 1 行' }],
   ['apps/web/app/(main)/_shared/sending-domain-status.tsx', { stage: 4, reason: 'S-035 系（送信ドメインの帯） の刷新（段④）で §7.9 の 6 トークンへ置き換える。移行中 3 行' }],
-  ['apps/web/app/(main)/engineers/[id]/detail-section.tsx', { stage: 4, reason: 'S-006〜S-009 の刷新（段④）で §7.9 の 6 トークンへ置き換える。移行中 1 行' }],
-  ['apps/web/app/(main)/engineers/[id]/edit/not-found.tsx', { stage: 4, reason: 'S-006〜S-009 の刷新（段④）で §7.9 の 6 トークンへ置き換える。移行中 2 行' }],
-  ['apps/web/app/(main)/engineers/[id]/engineer-proposal-sections.tsx', { stage: 4, reason: 'S-006〜S-009 の刷新（段④）で §7.9 の 6 トークンへ置き換える。移行中 9 行' }],
-  ['apps/web/app/(main)/engineers/[id]/not-found.tsx', { stage: 4, reason: 'S-006〜S-009 の刷新（段④）で §7.9 の 6 トークンへ置き換える。移行中 2 行' }],
-  ['apps/web/app/(main)/engineers/[id]/page.tsx', { stage: 4, reason: 'S-006〜S-009 の刷新（段④）で §7.9 の 6 トークンへ置き換える。移行中 8 行' }],
-  ['apps/web/app/(main)/engineers/[id]/skill-sheets/page.tsx', { stage: 4, reason: 'S-006〜S-009 の刷新（段④）で §7.9 の 6 トークンへ置き換える。移行中 1 行' }],
-  ['apps/web/app/(main)/engineers/[id]/skill-sheets/skill-sheet-screen.tsx', { stage: 4, reason: 'S-006〜S-009 の刷新（段④）で §7.9 の 6 トークンへ置き換える。移行中 12 行' }],
-  ['apps/web/app/(main)/engineers/_form/engineer-form.tsx', { stage: 4, reason: 'S-006〜S-009 の刷新（段④）で §7.9 の 6 トークンへ置き換える。移行中 25 行' }],
   ['apps/web/app/(main)/proposal-requests/[id]/not-found.tsx', { stage: 4, reason: 'S-017 / S-022 の刷新（段④）で §7.9 の 6 トークンへ置き換える。移行中 2 行' }],
   ['apps/web/app/(main)/proposal-requests/[id]/proposal-request-respond-screen.tsx', { stage: 4, reason: 'S-017 / S-022 の刷新（段④）で §7.9 の 6 トークンへ置き換える。移行中 26 行' }],
   ['apps/web/app/(main)/proposal-requests/proposal-request-screen.tsx', { stage: 4, reason: 'S-017 / S-022 の刷新（段④）で §7.9 の 6 トークンへ置き換える。移行中 11 行' }],
@@ -336,10 +324,6 @@ export const UI_RATCHET_ALLOWLIST_K: ReadonlyMap<string, AllowEntry> = new Map<s
   ['apps/web/app/(main)/(auth)/password-reset/confirm/page.tsx', { stage: 4, reason: 'S-001 / S-002 / S-046 の刷新（段④）で `PageBody` に `widthClass` を渡す。移行中 1 行' }],
   ['apps/web/app/(main)/(auth)/password-reset/page.tsx', { stage: 4, reason: 'S-001 / S-002 / S-046 の刷新（段④）で `PageBody` に `widthClass` を渡す。移行中 1 行' }],
   ['apps/web/app/(main)/(auth)/signin/page.tsx', { stage: 4, reason: 'S-001 / S-002 / S-046 の刷新（段④）で `PageBody` に `widthClass` を渡す。移行中 1 行' }],
-  ['apps/web/app/(main)/engineers/[id]/edit/page.tsx', { stage: 4, reason: 'S-006〜S-009 の刷新（段④）で `PageBody` に `widthClass` を渡す。移行中 1 行' }],
-  ['apps/web/app/(main)/engineers/[id]/page.tsx', { stage: 4, reason: 'S-006〜S-009 の刷新（段④）で `PageBody` に `widthClass` を渡す。移行中 1 行' }],
-  ['apps/web/app/(main)/engineers/[id]/skill-sheets/page.tsx', { stage: 4, reason: 'S-006〜S-009 の刷新（段④）で `PageBody` に `widthClass` を渡す。移行中 1 行' }],
-  ['apps/web/app/(main)/engineers/new/page.tsx', { stage: 4, reason: 'S-006〜S-009 の刷新（段④）で `PageBody` に `widthClass` を渡す。移行中 1 行' }],
   ['apps/web/app/(main)/proposal-requests/[id]/page.tsx', { stage: 4, reason: 'S-017 / S-022 の刷新（段④）で `PageBody` に `widthClass` を渡す。移行中 1 行' }],
   ['apps/web/app/(main)/proposal-requests/page.tsx', { stage: 4, reason: 'S-017 / S-022 の刷新（段④）で `PageBody` に `widthClass` を渡す。移行中 1 行' }],
   ['apps/web/app/(main)/proposals/[id]/approve/page.tsx', { stage: 4, reason: 'S-018 / S-020 / S-021 / S-023 / S-024 の刷新（段④）で `PageBody` に `widthClass` を渡す。移行中 1 行' }],

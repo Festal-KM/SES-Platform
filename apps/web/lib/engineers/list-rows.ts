@@ -11,6 +11,7 @@ import { t } from '@ses/i18n';
 // 🔴 T-06-02: 3 桁区切りは機能に属さない共通語彙（`lib/format/number.ts`）。
 import { formatThousands } from '../format/number';
 import { PREFECTURE_MESSAGE_KEYS } from '../format/prefectures';
+import type { PagePrimaryAction } from '../shell/page-trail';
 import { formatUnitPriceRange } from './detail';
 import { ENGINEER_AVAILABILITY_MESSAGE_KEYS, REMOTE_MODE_MESSAGE_KEYS } from './labels';
 import type { OwnEngineerView } from './list';
@@ -131,6 +132,33 @@ export function engineerPopulationLabel(partnerCompanyId: string | null, total: 
   // 🔴 3 桁区切りは `lib/format/number.ts` の `formatThousands` を使う（`toLocaleString` を使わない理由も
   //    そちらに書いてある。2 実装にすると単価と件数で桁区切りがずれる）。
   return `${scope} ${formatThousands(total)} ${t('engineers.list.population.unit')}`;
+}
+
+/**
+ * 🔴 **帯（`PageHeader`）の primary**（SP-22 段④。`docs/04` §S-005 操作「『人材を登録』（primary）→
+ *    `S-007`」/ §7.6「primary は 1 画面に 1 つ」/ §3.1 のレイアウト図）。
+ *
+ * 🔴 **`canRegister` が偽なら `null` を返す** —— 押しても戻されるだけの導線を描かない
+ *    （`docs/04` §S-005 権限差分「`VIEWER` は『人材を登録』が無い」。理由テキストは画面側が出す）。
+ *    ⚠️ UI の配慮であり拒否の本体ではない（`#16` の `requireNotViewer` / `S-007` の `redirect`）。
+ * 🔴 **判定をここ（`lib/**`）に置くのは、`page.tsx` がユニットテストの対象外だからである**
+ *    （`vitest.config.ts`。`projectListPrimaryAction` と同じ理由・同じ形）。
+ * 🔴 `kind` は **`ACTION`**（作成系）。`PageHeading` 側でも `canAct` で落ちる二重の壁になる。
+ */
+export function engineerListPrimaryAction(canRegister: boolean): PagePrimaryAction | null {
+  return canRegister
+    ? { labelKey: 'engineers.list.register', href: `${ENGINEER_LIST_PATH}/new`, kind: 'ACTION' }
+    : null;
+}
+
+/**
+ * 🔴 **帯の説明 1 行**（SP-22 段④。`docs/04` §3.1 のレイアウト図「説明 1 行」）。
+ *    **母集団が違うので文も違う**（§3.2 項目 2）。出所は `ctx.partnerCompanyId` である。
+ */
+export function engineerListDescription(isPartner: boolean): string {
+  return isPartner
+    ? t('engineers.list.description.partner')
+    : t('engineers.list.description.host');
 }
 
 // ============================================================================

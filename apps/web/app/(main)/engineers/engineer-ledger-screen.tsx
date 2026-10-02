@@ -1,6 +1,32 @@
 // apps/web/app/(main)/engineers/engineer-ledger-screen.tsx
 // `S-005` エンジニア台帳（一覧）— 本体（docs/04 §S-005 / `F-009` / docs/05 §6.4 #15）。
-// T-05-09 → T-06-04（検索条件）→ **SP-22 `T-22-06`（一覧の適用 ①）**。
+// T-05-09 → T-06-04（検索条件）→ **SP-22 `T-22-06`（一覧の適用 ①）** → **SP-22 段④（ワイヤー
+// フレームへの刷新。人間の「SES Hub社内外向け人材管理ダッシュボード.png」左＝社内用）**。
+//
+// ============================================================================
+// 🔴 SP-22 段④ で何が変わったか（**見せ方だけ**。`S-010` と同じ作法に揃えた）
+// ============================================================================
+// | 変えたもの | 一次資料 | 🔴 変えていないもの |
+// |---|---|---|
+// | 絞り込みを **`Card`（白い面）**に入れた（ページ地は `--color-bg-subtle`） | §7.9 / `S-010` の判断 | 🔴 **条件の集合・`name`・送り先・`method="get"`** |
+// | 並び順の説明を **件数バーの右端**（`Toolbar` の `note`）へ | ワイヤーフレーム「件数バー」/ §5-13 | 🔴 **選べる形にしない**（`?sort=` は `#15` に無い） |
+// | 登録の導線を **帯の primary** へ（`engineerListPrimaryAction`） | §S-005 / §7.6 / §3.1 | 🔴 **testid `engineer-list-register`** / `VIEWER` には描かない |
+// | 「できないこと」の 2 行を絞り込みカードの中へ | — | 🔴 **文言と testid**（`…-search-coming-soon` / `…-experience-coming-soon`） |
+//
+// 🔴 **API / 取得経路 / 権限判定 / URL / 列の集合・並び・間引きの境界は 1 つも変えていない。**
+// 🔴 **ワイヤーフレーム（左＝社内用）から意図して落としたもの**:
+//    - タブ `候補者一覧` / `タレントプール` / `対応履歴` / `スキル分析` —— 🔴 **`候補者一覧` /
+//      `共有の設定` は外枠（`SectionNav`。`docs/04` §7.8 改訂 24）が既に出している。**残り 3 つは
+//      画面も API も存在しない**（中身の無いタブを置かない。§10.3「増えるならフィルタかセクション」）。
+//    - 列 `性別` / `年齢` / `カテゴリ` / `PR ポイント` / `最寄` / `並行状況` —— **DB にも `#15` の
+//      射影にも無い**（`性別` / `年齢` は `BR-52` が収集しないと定めた項目であり、足すのは人間の承認事項）。
+//    - 件数バーの `表示項目`（列表示切替）—— 🔴 **`hideable` を持つ列が 1 つも無い**（9 列目は未実装。
+//      下の 🔴）。切替だけ置いても外せる列が無い。
+//    - 件数バーの `エクスポート` —— **エンジニアの書き出し API が存在しない**（`/api/data-exports` は
+//      `S-042` の解約時のテナント返却であって台帳の CSV ではない）。
+//    - 行のチェックボックス —— 🔴 **Phase 1 に一括操作が 1 つも無い**（`selection` を渡す画面 0 件）。
+//    - 操作列 —— 行の名称セルが `S-006` への導線であり、`S-005` はクラス A（副カラムを持たない。
+//      §7.1 の表）。**同じ行き先の導線を 2 本置かない**。
 //
 // ============================================================================
 // 🔴 `T-22-06` で何が変わったか（**見せ方だけ**。`SP-22` §3.1）
@@ -57,6 +83,8 @@ import Link from 'next/link';
 import {
   Badge,
   Button,
+  Card,
+  CardContent,
   Checkbox,
   DataTable,
   EmptyState,
@@ -64,7 +92,6 @@ import {
   Input,
   Pagination,
   SECONDARY_LINK_CLASSES,
-  SECONDARY_LINK_STACKED_CLASSES,
   Select,
   Toolbar,
   cn,
@@ -326,178 +353,213 @@ export function EngineerLedgerScreen({
         <Toolbar
           testIdPrefix="engineer-list-"
           population={messages.populationLabel}
+          note={
+            /* 🔴 並び順の説明（docs/04 §S-005「並び順の説明を一覧の上部に 1 行で書く」）。
+               スコア・順位・重み・一致度の語を含めない（`F-009 AC-2`）。
+               🔴 **選べる形にしない** —— `#15` の query に `?sort=` が無い（`HANDOFF.md` §5）。
+               ⚠️ 器の `data-testid` は凍結済みの `engineer-list-order-note` である（`U-22`）。 */
+            <p className="text-xs text-fg-muted" data-testid="engineer-list-order-note">
+              {messages.orderNote}
+            </p>
+          }
           filters={
-            /* 🔴 検索条件（docs/04 §S-005 セクション 1）。`method="get"` なので、実行した検索が
-               そのまま URL になり、共有・再読込・戻るのいずれでも同じ結果に戻る。
-               ⚠️ `mb-0` / `w-full` は帯の中に置いたための余白・幅の調整である（`cn()` の規律 1）。
-                  `FILTER_FORM_CLASSES` の `mb-6` は帯の外に置く 4 画面がまだ使っている。 */
-            <form
-              className={cn(FILTER_FORM_CLASSES, 'mb-0 w-full')}
-              method="get"
-              action="/engineers"
-              data-testid="engineer-list-filters"
-            >
-              <fieldset className="contents">
-                <legend className="sr-only">{messages.searchLegend}</legend>
-                <Field label={messages.searchQ}>
-                  <Input
-                    type="search"
-                    name="q"
-                    defaultValue={filters.q}
-                    data-testid="engineer-list-filter-q"
-                  />
-                </Field>
-                <Field label={messages.searchSkills}>
-                  {/* 🔴 辞書からの選択のみ（自由入力は別名候補の起票であり `S-007` の責務。
-                      `F-010 AC-1`「採用されるまで検索の正規化に使われない」）。 */}
-                  <Select
-                    name="skills"
-                    multiple
-                    size={5}
-                    defaultValue={[...filters.skills]}
-                    data-testid="engineer-list-filter-skills"
-                  >
-                    {skillOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </Select>
-                  {/* 🔴 `FieldDescription`（`<p>`）にしない —— `<label>` の中に `<p>` を入れると
-                      説明文が入力欄のアクセシブル名に畳み込まれる（`@ses/ui` の `field.tsx` 冒頭）。 */}
-                  <span className="text-xs text-fg-muted">{messages.searchSkillsHint}</span>
-                </Field>
-                <Field label={messages.searchSkillMode}>
-                  <Select
-                    name="skillMode"
-                    defaultValue={filters.skillMode}
-                    data-testid="engineer-list-filter-skill-mode"
-                  >
-                    {skillModeOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-                <Field label={messages.searchYearsMin}>
-                  <Input
-                    type="number"
-                    name="yearsMin"
-                    min={0}
-                    step={0.5}
-                    defaultValue={filters.yearsMin}
-                    data-testid="engineer-list-filter-years-min"
-                  />
-                </Field>
-                <Field label={messages.searchPriceMin}>
-                  <Input
-                    type="number"
-                    name="priceMin"
-                    min={0}
-                    step={10000}
-                    defaultValue={filters.priceMin}
-                    data-testid="engineer-list-filter-price-min"
-                  />
-                </Field>
-                <Field label={messages.searchPriceMax}>
-                  <Input
-                    type="number"
-                    name="priceMax"
-                    min={0}
-                    step={10000}
-                    defaultValue={filters.priceMax}
-                    data-testid="engineer-list-filter-price-max"
-                  />
-                </Field>
-                <Field label={messages.searchAvailableBy}>
-                  <Input
-                    type="date"
-                    name="availableBy"
-                    defaultValue={filters.availableBy}
-                    data-testid="engineer-list-filter-available-by"
-                  />
-                </Field>
-                <Field label={messages.searchPrefecture}>
-                  <Select
-                    name="prefecture"
-                    defaultValue={filters.prefecture}
-                    data-testid="engineer-list-filter-prefecture"
-                  >
-                    {prefectureOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-                <Field label={messages.searchRemote}>
-                  <Select
-                    name="remote"
-                    defaultValue={filters.remote}
-                    data-testid="engineer-list-filter-remote"
-                  >
-                    {remoteOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-                <Field label={messages.searchAvailability}>
-                  <Select
-                    name="availability"
-                    defaultValue={filters.availability}
-                    data-testid="engineer-list-filter-availability"
-                  >
-                    {availabilityOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-                {/* 🔴 絞り込みチェックボックス 2 種（docs/04 §S-005 セクション 2）。**既定オフ**であり、
-                    オフのときに何が起きるかを直下に書く（`F-009 AC-5` / `docs/02` A-03）。 */}
-                <Field as="div">
-                  <label className="flex items-center gap-2 text-body">
-                    <Checkbox
-                      name="onlyInTime"
-                      value="1"
-                      defaultChecked={filters.onlyInTime}
-                      data-testid="engineer-list-filter-only-in-time"
-                    />
-                    <span>{messages.searchOnlyInTime}</span>
-                  </label>
-                  <label className="flex items-center gap-2 text-body">
-                    <Checkbox
-                      name="onlyCommutable"
-                      value="1"
-                      defaultChecked={filters.onlyCommutable}
-                      data-testid="engineer-list-filter-only-commutable"
-                    />
-                    <span>{messages.searchOnlyCommutable}</span>
-                  </label>
-                  <span className="text-xs text-fg-muted" data-testid="engineer-list-checkbox-note">
-                    {messages.searchCheckboxNote}
-                  </span>
-                </Field>
-                <div className={FILTER_ACTIONS_CLASSES}>
-                  <Button type="submit" data-testid="engineer-list-search">
-                    {messages.searchSubmit}
-                  </Button>
-                  {activeFilters.length === 0 ? null : (
-                    <Link
-                      className={SECONDARY_LINK_CLASSES}
-                      href="/engineers"
-                      data-testid="engineer-list-clear"
-                    >
-                      {messages.searchClear}
-                    </Link>
-                  )}
-                </div>
-              </fieldset>
-            </form>
+            // 🔴 絞り込みは**白い面のカード**に入れる（ページ地は `--color-bg-subtle` なので、
+            //    面を持たないと入力欄の群が地に溶ける。`S-010` と同じ判断）。
+            //    🔴 面・余白・radius は `Card` の中にしか無い（画面に `rounded-md border …` を書かない）。
+            <Card className="w-full">
+              {/* `CardContent` は `p-4 pt-0`。見出しを持たないカードなので上の余白を戻す
+                  （`cn()` = `tailwind-merge` が `pt-0` を落とす）。 */}
+              <CardContent className="pt-4">
+                {/* 🔴 検索条件（docs/04 §S-005 セクション 1）。`method="get"` なので、実行した検索が
+                    そのまま URL になり、共有・再読込・戻るのいずれでも同じ結果に戻る。
+                    ⚠️ `mb-0` / `w-full` は帯の中に置いたための余白・幅の調整である（`cn()` の規律 1）。
+                       `FILTER_FORM_CLASSES` の `mb-6` は帯の外に置く 3 画面がまだ使っている。 */}
+                <form
+                  className={cn(FILTER_FORM_CLASSES, 'mb-0 w-full')}
+                  method="get"
+                  action="/engineers"
+                  data-testid="engineer-list-filters"
+                >
+                  <fieldset className="contents">
+                    <legend className="sr-only">{messages.searchLegend}</legend>
+                    {/* 🔴 フリーワードは**全幅**（ワイヤーフレームの検索欄。`S-010` と同じ）。最も使う
+                        条件を 1 行目に単独で置く —— 他の条件と同じ幅に並べると、入力できる語数が
+                        画面幅で変わる。 */}
+                    <Field className="sm:col-span-2 lg:col-span-3 xl:col-span-4" label={messages.searchQ}>
+                      <Input
+                        type="search"
+                        name="q"
+                        defaultValue={filters.q}
+                        data-testid="engineer-list-filter-q"
+                      />
+                    </Field>
+                    <Field label={messages.searchSkills}>
+                      {/* 🔴 辞書からの選択のみ（自由入力は別名候補の起票であり `S-007` の責務。
+                          `F-010 AC-1`「採用されるまで検索の正規化に使われない」）。 */}
+                      <Select
+                        name="skills"
+                        multiple
+                        size={5}
+                        defaultValue={[...filters.skills]}
+                        data-testid="engineer-list-filter-skills"
+                      >
+                        {skillOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </Select>
+                      {/* 🔴 `FieldDescription`（`<p>`）にしない —— `<label>` の中に `<p>` を入れると
+                          説明文が入力欄のアクセシブル名に畳み込まれる（`@ses/ui` の `field.tsx` 冒頭）。 */}
+                      <span className="text-xs text-fg-muted">{messages.searchSkillsHint}</span>
+                    </Field>
+                    <Field label={messages.searchSkillMode}>
+                      <Select
+                        name="skillMode"
+                        defaultValue={filters.skillMode}
+                        data-testid="engineer-list-filter-skill-mode"
+                      >
+                        {skillModeOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                    <Field label={messages.searchYearsMin}>
+                      <Input
+                        type="number"
+                        name="yearsMin"
+                        min={0}
+                        step={0.5}
+                        defaultValue={filters.yearsMin}
+                        data-testid="engineer-list-filter-years-min"
+                      />
+                    </Field>
+                    <Field label={messages.searchPriceMin}>
+                      <Input
+                        type="number"
+                        name="priceMin"
+                        min={0}
+                        step={10000}
+                        defaultValue={filters.priceMin}
+                        data-testid="engineer-list-filter-price-min"
+                      />
+                    </Field>
+                    <Field label={messages.searchPriceMax}>
+                      <Input
+                        type="number"
+                        name="priceMax"
+                        min={0}
+                        step={10000}
+                        defaultValue={filters.priceMax}
+                        data-testid="engineer-list-filter-price-max"
+                      />
+                    </Field>
+                    <Field label={messages.searchAvailableBy}>
+                      <Input
+                        type="date"
+                        name="availableBy"
+                        defaultValue={filters.availableBy}
+                        data-testid="engineer-list-filter-available-by"
+                      />
+                    </Field>
+                    <Field label={messages.searchPrefecture}>
+                      <Select
+                        name="prefecture"
+                        defaultValue={filters.prefecture}
+                        data-testid="engineer-list-filter-prefecture"
+                      >
+                        {prefectureOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                    <Field label={messages.searchRemote}>
+                      <Select
+                        name="remote"
+                        defaultValue={filters.remote}
+                        data-testid="engineer-list-filter-remote"
+                      >
+                        {remoteOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                    <Field label={messages.searchAvailability}>
+                      <Select
+                        name="availability"
+                        defaultValue={filters.availability}
+                        data-testid="engineer-list-filter-availability"
+                      >
+                        {availabilityOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                    {/* 🔴 絞り込みチェックボックス 2 種（docs/04 §S-005 セクション 2）。**既定オフ**であり、
+                        オフのときに何が起きるかを直下に書く（`F-009 AC-5` / `docs/02` A-03）。 */}
+                    <Field as="div">
+                      <label className="flex items-center gap-2 text-body">
+                        <Checkbox
+                          name="onlyInTime"
+                          value="1"
+                          defaultChecked={filters.onlyInTime}
+                          data-testid="engineer-list-filter-only-in-time"
+                        />
+                        <span>{messages.searchOnlyInTime}</span>
+                      </label>
+                      <label className="flex items-center gap-2 text-body">
+                        <Checkbox
+                          name="onlyCommutable"
+                          value="1"
+                          defaultChecked={filters.onlyCommutable}
+                          data-testid="engineer-list-filter-only-commutable"
+                        />
+                        <span>{messages.searchOnlyCommutable}</span>
+                      </label>
+                      <span className="text-xs text-fg-muted" data-testid="engineer-list-checkbox-note">
+                        {messages.searchCheckboxNote}
+                      </span>
+                    </Field>
+                    {/* 🔴 送信と「条件をクリア」は必ず 1 行を占める（列の途中に紛れると押せる場所が
+                        毎回変わる）。`justify-end` はカードの中で右に寄せるための配置の調整であり、
+                        共有定数（`FILTER_ACTIONS_CLASSES`）は変えていない。 */}
+                    <div className={cn(FILTER_ACTIONS_CLASSES, 'justify-end')}>
+                      {activeFilters.length === 0 ? null : (
+                        <Link
+                          className={SECONDARY_LINK_CLASSES}
+                          href="/engineers"
+                          data-testid="engineer-list-clear"
+                        >
+                          {messages.searchClear}
+                        </Link>
+                      )}
+                      <Button type="submit" data-testid="engineer-list-search">
+                        {messages.searchSubmit}
+                      </Button>
+                    </div>
+                  </fieldset>
+                </form>
+
+                {/* 🔴 まだ無い機能を黙って消さない（`engineers.careers.comingSoon` と同じ規律）。
+                    押しても効かない検索欄を描くより、いま何ができないのかを書く。
+                    ✅ SP-22 段④: 場所を絞り込みカードの中へ移した（**どの条件が無いのか**は
+                       条件の群の隣で読むものであり、一覧の上の独立した行ではない）。 */}
+                <p className="mt-3 text-xs text-fg-muted" data-testid="engineer-list-search-coming-soon">
+                  {messages.searchComingSoon}
+                </p>
+                <p className="mt-1 text-xs text-fg-muted" data-testid="engineer-list-experience-coming-soon">
+                  {messages.experienceComingSoon}
+                </p>
+              </CardContent>
+            </Card>
           }
         />
       </div>
@@ -505,39 +567,19 @@ export function EngineerLedgerScreen({
         // 🔴 §5-10 の「見える範囲の説明」は**フィルタ帯の直下**である（`Toolbar` の直後）。
         //    ⚠️ 凍結済み `engineer-list-partner-scope-notice` を維持するため、`Toolbar` の
         //       `scopeNote`（`…-toolbar-scope-note` を出す）ではなく画面側の 1 行に残す。
-        <p className="mb-1 text-body text-fg-muted" data-testid="engineer-list-partner-scope-notice">
+        <p className="mb-1 text-xs text-fg-muted" data-testid="engineer-list-partner-scope-notice">
           {messages.partnerScopeNotice}
         </p>
       )}
-      {/* 🔴 並び順の説明（docs/04 §S-005）。スコア・順位・重みの語を含めない（`F-009 AC-2`）。 */}
-      <p className="mb-3 text-body text-fg-muted" data-testid="engineer-list-order-note">
-        {messages.orderNote}
-      </p>
-
-      {/* 🔴 まだ無い機能を黙って消さない（`engineers.careers.comingSoon` と同じ規律）。
-          押しても効かない検索欄を描くより、いま何ができないのかを書く。 */}
-      <p className="mb-2 text-body text-fg-muted" data-testid="engineer-list-search-coming-soon">
-        {messages.searchComingSoon}
-      </p>
-      <p className="mb-4 text-body text-fg-muted" data-testid="engineer-list-experience-coming-soon">
-        {messages.experienceComingSoon}
-      </p>
-
-      <div className="mb-4">
-        {canRegister ? (
-          <Link
-            className={SECONDARY_LINK_STACKED_CLASSES}
-            href="/engineers/new"
-            data-testid="engineer-list-register"
-          >
-            {messages.register}
-          </Link>
-        ) : (
-          <p className="text-body text-fg-muted" data-testid="engineer-list-read-only-note">
-            {messages.readOnlyNote}
-          </p>
-        )}
-      </div>
+      {/* 🔴 §7.6: 操作できないときは `disabled` で表さず、**その位置に理由テキストを置く**。
+          ✅ SP-22 段④: 登録の導線そのものは**帯の primary** へ移した
+             （`engineerListPrimaryAction`。`docs/04` §S-005 操作「『人材を登録』（primary）」/
+             §7.6「primary は大きく」）。testid（`engineer-list-register`）は帯が引き継いでいる。 */}
+      {canRegister ? null : (
+        <p className="mb-3 text-body text-fg-muted" data-testid="engineer-list-read-only-note">
+          {messages.readOnlyNote}
+        </p>
+      )}
 
       <DataTable
         testIdPrefix="engineer-list-"

@@ -11,6 +11,7 @@ import { t } from '@ses/i18n';
 import {
   engineerBasicRows,
   engineerDetailCareerRows,
+  engineerDetailPrimaryAction,
   engineerDetailSkillRows,
   engineerHeadlineRows,
   formatCareerPeriod,
@@ -190,5 +191,28 @@ describe('engineerDetailCareerRows / formatCareerPeriod', () => {
 
   it('0 行は空配列（呼び出し側が「登録されていません」を出す。警告色にしない）', () => {
     expect(engineerDetailCareerRows([])).toEqual([]);
+  });
+});
+
+// ============================================================================
+// 🔴 SP-22 段④: 帯（`PageHeader`）の primary
+// ============================================================================
+describe('🔴 SP-22 段④: `engineerDetailPrimaryAction`（docs/04 §S-006 / §S-007 権限差分）', () => {
+  const ENGINEER = '01930000-0000-7000-8000-0000000000e1';
+
+  it('編集できるロールには `S-007` への `ACTION` を返す', () => {
+    expect(engineerDetailPrimaryAction(true, ENGINEER)).toEqual({
+      labelKey: 'engineers.detail.edit',
+      href: `/engineers/${ENGINEER}/edit`,
+      kind: 'ACTION',
+    });
+  });
+
+  it('🔴 `VIEWER` には `null` を返す（押しても戻されるだけの導線を描かない）', () => {
+    expect(engineerDetailPrimaryAction(false, ENGINEER)).toBeNull();
+  });
+
+  it('🔴 `この人で提案を作る` を primary にしていない（`/proposals/new` は案件も必須）', () => {
+    expect(engineerDetailPrimaryAction(true, ENGINEER)?.href).not.toContain('/proposals/new');
   });
 });
