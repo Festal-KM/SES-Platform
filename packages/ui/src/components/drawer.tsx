@@ -181,8 +181,9 @@ export function Drawer({
             <div className={OVERLAY_DEFINITION_LIST_CLASSES}>
               <p className={OVERLAY_LABEL_CLASSES}>{historyLabel}</p>
               <ol className={OVERLAY_DEFINITION_LIST_CLASSES}>
-                {historyRows.map((row) => (
-                  <li key={row} className={OVERLAY_BODY_CLASSES}>
+                {/* 履歴 1 行は分精度の日時 + 出来事の語 + 遷移で本文を含めない設計のため、同じ分の同種の出来事は文字列が一致する。値だけでは key が一意にならない。 */}
+                {historyRows.map((row, index) => (
+                  <li key={`${index}-${row}`} className={OVERLAY_BODY_CLASSES}>
                     {row}
                   </li>
                 ))}

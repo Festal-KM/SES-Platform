@@ -5,6 +5,9 @@
 //    「履歴の 6 種が別の語で描き分けられる」「自動承認は『システム（全層 PASS のため）』」「却下由来の `DRAFT` の導線が『内容を変更してから』
 //    と伝える」「取引先の行に承認者・送信試行・保留が現れない」を固定できる場所が要る。**I/O を持たない。**
 // 🔴 文言は `packages/i18n` が唯一の出所（`CLAUDE.md` §3.5）。本ファイルは日本語の語を書かない。
+// 🔴 **意図的な逸脱の記録**: 本ファイルの `t(` が 9 → 1 に減ったのは `docs/sprints/SP-22-ui-overhaul.md` §4.3-2 への意図的な逸脱である（T-22-10）。
+//    9 キーは `timeline-kind.ts` の写像へ**移しただけ**。キー名・解決される文言・`data-event-kind` の値・`CREATED` / `REJECT` / `TRANSITION` の分岐結果は 1 つも変わっておらず、
+//    日本語の直書きは 0 件。`i18n-key-freeze` は包含検査なので green。**この記録が無いと次のレビューがこれを回帰と読む。**
 // 🔴 **概要は `S-021` の判断ヘッダと同じ材料・同じ関数**（`approvalHeaderRows`）。凍結側だけを描き、台帳の現在値を混ぜない。
 import { t, type MessageKey } from '@ses/i18n';
 import type { GateExecution, GateResultHistoryItem, GateResultHistoryView, ProposalState } from '@ses/domain';
@@ -24,21 +27,21 @@ import { proposalStateLabel } from './editor-rows';
 import { PROPOSAL_SEND_FAILURES_PATH, proposalApproveHref, proposalEditHref, proposalInterviewHref } from './hrefs';
 import { PROPOSAL_FAILURE_STATES, proposalFailureKindOf, proposalStateTone, type ProposalFailureKind, type ProposalStateTone } from './list-rows';
 import type { UpdateProposalBody } from './schemas';
+import {
+  PROPOSAL_TIMELINE_KIND_MESSAGE_KEYS,
+  proposalTimelineKindOf,
+  type ProposalTimelineKind,
+} from './timeline-kind';
 import type { ProposalApprovalRecordView, ProposalEventView, ProposalSendAttemptView } from './views';
 
 export type { ProposalFailureKind, ProposalStateTone } from './list-rows';
-
-/** 履歴 1 件の表示（`kind` は `entry.kind` + 作成 / 却下の 2 つを足した 9 値。`data-event-kind` に載せる）。 */
-export type ProposalTimelineKind =
-  | 'CREATED'
-  | 'TRANSITION'
-  | 'REJECT'
-  | 'APPROVAL'
-  | 'RESEND'
-  | 'SEND_FAILURE'
-  | 'DRAFT_UPDATED'
-  | 'NOTE'
-  | 'OTHER';
+/**
+ * 履歴 1 件の表示（`kind` は `entry.kind` + 作成 / 却下の 2 つを足した 9 値。`data-event-kind` に載せる）。
+ * 🔴 ✅ T-22-10: **型と分類と語の出所は `./timeline-kind.ts` の 1 箇所**になった（`Drawer` の
+ *    「直近の履歴 3 行」が同じ分類・同じ語を使うため）。ここは再 export するだけで、
+ *    既存の import 元（`app/(main)/proposals/[id]/**` / テスト）は変わらない。
+ */
+export type { ProposalTimelineKind } from './timeline-kind';
 
 export type ProposalTimelineRow = {
   readonly id: string;
@@ -188,6 +191,13 @@ function approverLabel(approval: ProposalApprovalRecordView): string | null {
   }
 }
 
+/**
+ * ✅ T-22-10: 出来事の語。🔴 **写像は `./timeline-kind.ts` の 1 箇所**（`Drawer` が同じ語を使う）。
+ */
+function timelineKindLabel(kind: ProposalTimelineKind): string {
+  return t(PROPOSAL_TIMELINE_KIND_MESSAGE_KEYS[kind]);
+}
+
 function transitionLabel(from: ProposalState | null, to: ProposalState | null): string | null {
   if (to === null) return null;
   const arrow = t('proposals.detail.timeline.transition.arrow');
@@ -218,22 +228,15 @@ export function proposalTimelineRow(event: ProposalEventView): ProposalTimelineR
   const entry = event.entry;
   switch (entry.kind) {
     case 'TRANSITION': {
-      if (event.fromState === null && event.toState === 'DRAFT') {
-        return { ...base, kind: 'CREATED', title: t('proposals.detail.timeline.kind.created'), transition: null, detail: entry.note };
-      }
-      if (event.fromState === 'APPROVAL_PENDING' && event.toState === 'DRAFT') {
-        return {
-          ...base,
-          kind: 'REJECT',
-          title: t('proposals.detail.timeline.kind.reject'),
-          transition: transitionLabel(event.fromState, event.toState),
-          detail: entry.note,
-        };
+      // ✅ T-22-10: 作成 / 却下 / それ以外の分け方は `./timeline-kind.ts` の 1 実装（`Drawer` と共有）。
+      const kind = proposalTimelineKindOf(event);
+      if (kind === 'CREATED') {
+        return { ...base, kind, title: timelineKindLabel(kind), transition: null, detail: entry.note };
       }
       return {
         ...base,
-        kind: 'TRANSITION',
-        title: t('proposals.detail.timeline.kind.transition'),
+        kind,
+        title: timelineKindLabel(kind),
         transition: transitionLabel(event.fromState, event.toState),
         detail: entry.note,
       };
@@ -242,7 +245,7 @@ export function proposalTimelineRow(event: ProposalEventView): ProposalTimelineR
       return {
         ...base,
         kind: 'APPROVAL',
-        title: t('proposals.detail.timeline.kind.approval'),
+        title: timelineKindLabel('APPROVAL'),
         transition: transitionLabel(event.fromState, event.toState),
         detail: `${t('proposals.detail.timeline.approval.gatePrefix')}${entry.reviewGateId}`,
       };
@@ -250,7 +253,7 @@ export function proposalTimelineRow(event: ProposalEventView): ProposalTimelineR
       return {
         ...base,
         kind: 'RESEND',
-        title: t('proposals.detail.timeline.kind.resend'),
+        title: timelineKindLabel('RESEND'),
         transition: transitionLabel(event.fromState, event.toState),
         detail: entry.reason === null ? null : `${t('proposals.detail.timeline.resend.reasonPrefix')}${entry.reason}`,
       };
@@ -258,7 +261,7 @@ export function proposalTimelineRow(event: ProposalEventView): ProposalTimelineR
       return {
         ...base,
         kind: 'SEND_FAILURE',
-        title: t('proposals.detail.timeline.kind.sendFailure'),
+        title: timelineKindLabel('SEND_FAILURE'),
         transition: transitionLabel(event.fromState, event.toState),
         detail: entry.failureKind === null ? null : `${t('proposals.detail.timeline.sendFailure.kindPrefix')}${entry.failureKind}`,
       };
@@ -266,7 +269,7 @@ export function proposalTimelineRow(event: ProposalEventView): ProposalTimelineR
       return {
         ...base,
         kind: 'DRAFT_UPDATED',
-        title: t('proposals.detail.timeline.kind.draftUpdated'),
+        title: timelineKindLabel('DRAFT_UPDATED'),
         transition: null,
         detail:
           entry.fields.length === 0
@@ -274,12 +277,12 @@ export function proposalTimelineRow(event: ProposalEventView): ProposalTimelineR
             : `${t('proposals.detail.timeline.draftUpdated.fieldsPrefix')}${entry.fields.map(updateFieldLabel).join(' / ')}`,
       };
     case 'NOTE':
-      return { ...base, kind: 'NOTE', title: t('proposals.detail.timeline.kind.note'), transition: null, detail: entry.note };
+      return { ...base, kind: 'NOTE', title: timelineKindLabel('NOTE'), transition: null, detail: entry.note };
     case 'OTHER':
       return {
         ...base,
         kind: 'OTHER',
-        title: t('proposals.detail.timeline.kind.other'),
+        title: timelineKindLabel('OTHER'),
         transition: transitionLabel(event.fromState, event.toState),
         detail: entry.note,
       };

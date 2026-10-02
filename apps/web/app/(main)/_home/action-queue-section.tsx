@@ -41,6 +41,12 @@
 //      色付きになると色が意味を失う）—— **期限セルの文字色と、行頭 2px の縦バーだけ**である。
 //   ⑨ 🔴 **`操作` はサーバが決めた `action` と `actionAvailability` の 2 項だけを見る**（docs/05 §6.11.2）。
 //      画面はロールも状態も見ない。🔴 **`enabled === false` はボタンを描かず理由テキストを置く**（`disabled` にしない。§7.10 / `U-10`）。
+//   ⑩ ✅ T-22-10: 🔴 **行の `内容を見る`（`Drawer`）は読み取りだけである**（docs/04 §4.1 / §5-13 / §11-25）。
+//      引き出しの中身は `./action-queue-drawer.tsx` と `lib/home/drawer.ts` が持ち、**実行系のアクションを
+//      型として置けない**（`ActionQueueDrawerView` に `action` のキーが無い / `@ses/ui` の `Drawer` が
+//      `children` も `onClick` も受け取らない）。**台帳には触らない**（読むのは行の値と提案詳細〔#46〕の履歴だけ）。
+//      🔴 **引き出しは 1 つだけ据える**（行ごとに 50 個のポータルを作らない）。開いている行は `openTargetId` が持ち、
+//      **閉じたら一覧の位置とスクロールが保たれる**（遷移しない。フォーカスは Radix が `内容を見る` に戻す）。
 //
 // 🔴 時刻の基準は**サーバの応答時刻**（`changedSince`）である。端末時刻を混ぜると、サーバ描画と hydration 後の値が食い違う。
 //    次の応答が来るまで経過時間は動かない（60 秒の粒度で足りる。秒を出さない）。
@@ -54,6 +60,8 @@ import {
   CardHeader,
   CardTitle,
   EmptyState,
+  Icon,
+  IconButton,
   NAME_CELL_LINK_CLASSES,
   SECONDARY_LINK_CLASSES,
   StatusBadge,
@@ -62,6 +70,7 @@ import {
 import { formatDateTimeJst } from '../../../lib/format/datetime';
 import { formatElapsedWith, type ElapsedLabels } from '../../../lib/format/elapsed';
 import { isActionQueueRowUrgent } from '../../../lib/home/action-queue-urgency';
+import type { ActionQueueDrawerValues } from '../../../lib/home/drawer';
 import type { HomeScope } from '../../../lib/home/schemas';
 import type {
   ActionQueueActionKind,
@@ -71,6 +80,7 @@ import type {
   HomeBlock,
 } from '../../../lib/home/types';
 import { formatRemaining, type RemainingLabels } from '../../../lib/proposal-requests/remaining';
+import { ActionQueueDrawer, type ActionQueueDrawerMessageBundle } from './action-queue-drawer';
 
 export type ActionQueueMessages = {
   readonly title: string;
@@ -104,6 +114,12 @@ export type ActionQueueMessages = {
   readonly denied: Readonly<Record<string, string>>;
   /** ✅ T-22-09: セクションのヘッダ右のテキストリンク（`S-017` への入口）。 */
   readonly openRequestList: string;
+  /**
+   * ✅ T-22-10: 行の `内容を見る`（`Drawer`）の語。
+   * 🔴 **実行系の語を 1 つも持たない**（承認 / 送信 / 再送 / 応諾 の語は上の `actions` にあり、
+   *    引き出しの束には入れない。docs/04 §11-25）。
+   */
+  readonly drawer: ActionQueueDrawerMessageBundle;
   readonly valueNone: string;
   readonly changed: string;
   readonly pollError: string;
@@ -214,6 +230,12 @@ export function ActionQueueSection({
     changedIds: new Set(),
     pollFailed: false,
   });
+  /**
+   * ✅ T-22-10: 開いている行（`内容を見る`）。🔴 **引き出しは 1 つだけ据える**（ファイル冒頭 ⑩）。
+   * 🔴 ポーリングで行が消えたら引き出しも閉じる（下の `openRow` が `null` になる）—— 承認済みの行の
+   *    要約を開いたまま残さない。
+   */
+  const [openTargetId, setOpenTargetId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!Number.isFinite(pollIntervalMs) || pollIntervalMs <= 0) return undefined;
@@ -260,6 +282,7 @@ export function ActionQueueSection({
   }, [initial, initialChangedSince, scope, pollIntervalMs]);
 
   const nowMs = Date.parse(state.changedSince);
+  const openRow = state.rows.find((row) => row.targetId === openTargetId) ?? null;
 
   return (
     <Card className="mb-4" data-testid="home-action-queue" data-scope={scope}>
@@ -310,6 +333,9 @@ export function ActionQueueSection({
               <span>{messages.columnDeadline}</span>
               <span className={COLUMN_XL_CLASSES}>{messages.columnState}</span>
               <span className={COLUMN_XL_CLASSES}>{messages.columnAction}</span>
+              {/* ✅ T-22-10: `内容を見る` の列。🔴 **見出しの語を置かない**（アイコンだけの操作列であり、
+                  語は各行の `aria-label` が持つ。docs/04 §10.3 の操作列と同じ扱い）。 */}
+              <span />
             </li>
             {state.rows.map((row) => (
               <ActionQueueRowItem
@@ -319,11 +345,22 @@ export function ActionQueueSection({
                 changed={state.changedIds.has(row.targetId)}
                 nowMs={nowMs}
                 messages={messages}
+                onOpenDrawer={setOpenTargetId}
               />
             ))}
           </ul>
         )}
       </CardContent>
+      {/* ✅ T-22-10: 行の `内容を見る` の引き出し（**1 つだけ**。ファイル冒頭 ⑩）。
+          🔴 実行系のアクションを持たない（型で担保。`lib/home/drawer.ts`）。 */}
+      {openRow !== null ? (
+        <ActionQueueDrawer
+          row={openRow}
+          values={drawerValues(openRow, nowMs, messages)}
+          messages={messages.drawer}
+          onClose={() => setOpenTargetId(null)}
+        />
+      ) : null}
     </Card>
   );
 }
@@ -352,10 +389,38 @@ export function ActionQueueSection({
  *    🔴 **ローカルの `<table>` も作らない**（T-12-15 の `<ul>` + grid のまま。§5-13 の二重実装禁止）。
  *    器の拡張（列の下限幅をブレークポイント別にする）は `docs/05` §2.3.5 の改訂が要るので、
  *    実装側で先取りしない（申し送りとして完了記録に残す）。
+ *
+ * ✅ **T-22-10 で 8 列目（`内容を見る`）を足した**（`docs/04` §4.1 の操作表。`IconButton` の `sm` =
+ *    32px なので **`2rem` の固定トラック**）。🔴 **どのブレークポイントでも落とさない** ——
+ *    `S-003` / `S-004` は Tier 1 であり、狭い画面で引き出しに到達できないのは遮断である
+ *    （`CLAUDE.md` §13.3）。足した分は**他の列からではなく列間から払った**（実測）:
+ *      - `xl`（1280px）… **列間を `gap-3`（12px）→ `gap-2`（8px）に詰めた**。
+ *        固定トラックの和 47rem（752px）+ `gap-2` × 7（56px）= 808px。主カラム 976px に対し
+ *        `対象` は **168px**（T-22-09 時点は 184px = 差 16px）。1440px では 328px。
+ *        🔴 **`期限` / `状態` / `種別` は詰められない** —— `期限` は `YYYY-MM-DD HH:MM JST` の 20 字、
+ *        `種別` は `提案依頼の返答待ち`、`状態` は `ゲート差し戻し` が入る。固定トラックなので
+ *        `whitespace-nowrap` の文字が詰めた分だけ**隣の列へ溢れる**（行の横溢れになる）。
+ *        列間を詰めるほうを選んだのは、本スプリントが**密度を上げる**刷新であり、8px は §7.9 の
+ *        7 段の 2 段目で、`docs/04` がこの値を禁じていないためである。
+ *      - `sm`〜`xl` 未満 … `相手` の上限を **12rem → 8rem** に詰めて 8 列目を払った。
+ *        結果 `対象` は **増える**（`lg` = 1024px で 248px → 268px / 768px で 48px → 68px）——
+ *        `相手` は社名の列であり、`xl` では既に 7rem で足りている。
+ *      - ⚠️ 🔴 **`対象` に `docs/04` §10.3 の下限幅 10rem を宣言していない**（`minmax(0,1fr)` のまま。
+ *        T-22-09 と同じ）。宣言すると **768px で行が約 90px 溢れ**、§S-003 タブレットの
+ *        「横スクロールさせず列を落とす」に反する（`sm` の 6 列は 10rem の下限と両立しない）。
+ *        **これは T-22-10 が作った問題ではなく 5 列の時点から在る**（768px の `対象` は T-22-09 時点で
+ *        48px）。🔴 **解くには「タブレットでどの列を落とすか」を決める必要があり、それは
+ *        `docs/04` §S-003 の改訂である**（実装側で列を落とす判断をしない）。**完了記録で申し送る。**
+ *      - ⚠️ 🔴 **`相手` の上限も `minmax(0,12rem)` → `minmax(0,8rem)` に詰めている**。`docs/04` §10.3 の
+ *        「名称列の下限幅 10rem はどのブレークポイントでも維持する」は**社名の列にも掛かる**ため、
+ *        `xl` の `7rem`（T-22-09 由来）と合わせて**現状 `対象` と `相手` の 2 列が条文を満たしていない**。
+ *        幅の値は変えない（`対象` は `xl` で 168px > 10rem、`sm` で 48px → 68px と改善。`xl:gap-2` も §7.9 の許容段内）。
+ *        解決には「タブレットでどの列を落とすか」= `docs/04` §S-003 の改訂が要るため実装側では決めない
+ *        （オーケストレーターが Issue を起票する）。
  */
 const ROW_GRID_CLASSES =
-  'sm:grid sm:grid-cols-[8rem_minmax(0,1fr)_minmax(0,12rem)_7rem_10rem] sm:gap-3 ' +
-  'xl:grid-cols-[8rem_minmax(0,1fr)_7rem_5rem_10rem_7rem_8rem]';
+  'sm:grid sm:grid-cols-[8rem_minmax(0,1fr)_minmax(0,8rem)_7rem_10rem_2rem] sm:gap-3 ' +
+  'xl:grid-cols-[8rem_minmax(0,1fr)_7rem_5rem_10rem_7rem_8rem_2rem] xl:gap-2';
 
 /** 🔴 `sm` 未満で落ちる列（`相手` / `期限`）。 */
 const COLUMN_SM_CLASSES = 'hidden sm:inline';
@@ -377,17 +442,16 @@ function ActionQueueRowItem({
   changed,
   nowMs,
   messages,
+  onOpenDrawer,
 }: {
   readonly row: ActionQueueRow;
   readonly availability: ActionQueueHomeBlock['actionAvailability'];
   readonly changed: boolean;
   readonly nowMs: number;
   readonly messages: ActionQueueMessages;
+  readonly onOpenDrawer: (targetId: string) => void;
 }) {
-  const time =
-    row.deadline === null
-      ? formatElapsedWith(row.since, nowMs, messages.elapsed)
-      : formatRemaining(row.deadline, nowMs, messages.remaining);
+  const time = rowTimeLabel(row, nowMs, messages);
   const urgent = isActionQueueRowUrgent(row, nowMs);
   const overdue = row.deadline !== null && Date.parse(row.deadline) < nowMs;
   return (
@@ -448,14 +512,14 @@ function ActionQueueRowItem({
           <StatusBadge
             entity="proposal"
             state={row.stateBadge.state}
-            label={messages.proposalStates[row.stateBadge.state] ?? row.stateBadge.state}
+            label={rowStateLabel(row, messages)}
             data-testid={`home-action-queue-state-${row.targetId}`}
           />
         ) : (
           <StatusBadge
             entity="proposalRequest"
             state={row.stateBadge.state}
-            label={messages.proposalRequestStates[row.stateBadge.state] ?? row.stateBadge.state}
+            label={rowStateLabel(row, messages)}
             data-testid={`home-action-queue-state-${row.targetId}`}
           />
         )}
@@ -463,8 +527,55 @@ function ActionQueueRowItem({
       <span className={COLUMN_XL_CLASSES}>
         <ActionCell row={row} availability={availability} messages={messages} />
       </span>
+      {/* ✅ T-22-10: 行の `内容を見る`（`Drawer` を開く）。
+          🔴 **アイコンだけで意味が通る操作**（§7.5 の許可①。語は `aria-label` が持つ）。
+          🔴 **`ghost`** にする —— この画面の primary は帯の `案件を登録` 1 つだけであり（§7.6）、
+             50 行ぶんの枠線が並ぶと行の境界が読めなくなる。
+          🔴 **遷移ではない**（`<a>` にしない）—— 押しても URL は変わらず、一覧の位置は保たれる。 */}
+      <IconButton
+        variant="ghost"
+        size="sm"
+        icon={<Icon name="eye" />}
+        aria-label={messages.drawer.open}
+        onClick={() => onOpenDrawer(row.targetId)}
+        data-testid={`home-action-queue-drawer-open-${row.targetId}`}
+      />
     </li>
   );
+}
+
+/**
+ * ✅ T-22-10: 時間の欄の語（**行と引き出しで同じ 1 実装**）。
+ * 提案依頼の行 = 返答期限までの残り（期限切れが最も痛い）/ それ以外 = 経過時間（放置時間）。
+ */
+function rowTimeLabel(row: ActionQueueRow, nowMs: number, messages: ActionQueueMessages): string {
+  return row.deadline === null
+    ? formatElapsedWith(row.since, nowMs, messages.elapsed)
+    : formatRemaining(row.deadline, nowMs, messages.remaining);
+}
+
+/**
+ * ✅ T-22-10: 状態の語（**行と引き出しで同じ 1 実装**）。
+ * 🔴 写像は `action-queue-props.ts` が既存の `PROPOSAL_STATE_MESSAGE_KEYS` /
+ *    `PROPOSAL_REQUEST_STATE_MESSAGE_KEYS` から解決したものであり、ここで語を作らない。
+ */
+function rowStateLabel(row: ActionQueueRow, messages: ActionQueueMessages): string {
+  const map =
+    row.stateBadge.entity === 'PROPOSAL' ? messages.proposalStates : messages.proposalRequestStates;
+  return map[row.stateBadge.state] ?? row.stateBadge.state;
+}
+
+/** ✅ T-22-10: 引き出しに渡す値（🔴 **行の表示と同じ文字列**。食い違うと「同じものを見た」確認にならない）。 */
+function drawerValues(
+  row: ActionQueueRow,
+  nowMs: number,
+  messages: ActionQueueMessages,
+): ActionQueueDrawerValues {
+  return {
+    kind: messages.kinds[row.kind],
+    state: rowStateLabel(row, messages),
+    time: rowTimeLabel(row, nowMs, messages),
+  };
 }
 
 /**

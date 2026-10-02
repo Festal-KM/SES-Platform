@@ -221,8 +221,24 @@ const HOST_REQUEST_ALLOWED_KEYS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * ✅ T-12-15: ホストの `S-003` 要対応キューの 1 行に現れてよいキー（docs/05 §6.3 #9 `ActionQueueRow` の 8 キー）。
+ * ✅ T-12-15: ホストの `S-003` 要対応キューの 1 行に現れてよいキー（docs/05 §6.3 #9 `ActionQueueRow`）。
  * 🔴 `engineerId` / 依頼先（社名・ID）/ 参照子 / 件数・順位に相当するキーは**型として存在しない**。
+ *
+ * ✅ **T-22-09 が `状態` 列と `操作` 列を足した**（`docs/04` §S-003 改訂 16 / docs/05 §6.11.2）。
+ *    🔴 **足したのは下の 4 キーだけである。** 走査（`collect` / `MAX_DEPTH`）も値の検査
+ *    （`expectNoForbidden` / `expectNoHiddenCountHints` / `counterpartyLabel === null`）も 1 つも緩めていない
+ *    —— ここはキーの層であり、経路 4 の実体は値の層が守っている。
+ *    足した 1 キーずつの根拠（`apps/web/lib/home/types.ts` の型で確かめた。推測で足さない）:
+ *
+ *    | キー | 型 | なぜ身元・他社情報を運べないか |
+ *    |---|---|---|
+ *    | `stateBadge` | `{ entity, state }` の組（`ActionQueueStateBadge`） | **その行自身の状態**だけを持つ。他社の提案の存在・件数・順位を持つ枠が無い |
+ *    | `entity` | `'PROPOSAL' \| 'PROPOSAL_REQUEST'` の 2 値 | 閉じた列挙であり、ID でも名称でもない |
+ *    | `state` | `ProposalState` / `ProposalRequestState`（`@ses/domain` の列挙） | 同上。🔴 ホストの `PROPOSAL_REQUEST_PENDING` は `REQUESTED` の 1 値しかキューに載らない（`action-queue.ts`） |
+ *    | `action` | `{ kind, href } \| null` | 🔴 **ホストの依頼の行では `null`**（返答するのは取引先であり、ホストにこの行の操作は無い。docs/05 §6.11.2 の表）。下の `expect(row['action']).toBeNull()` で**値としても**固定する |
+ *
+ *    ⚠️ `kind` / `href` は `ActionQueueRow` 自身が既に持っているキーであり、`action` の中の
+ *    同名のキーも同じ許可で通る（走査はキー名の集合で見る）。
  */
 const HOST_HOME_ACTION_ROW_ALLOWED_KEYS: ReadonlySet<string> = new Set([
   'kind',
@@ -233,6 +249,10 @@ const HOST_HOME_ACTION_ROW_ALLOWED_KEYS: ReadonlySet<string> = new Set([
   'deadline',
   'rowVersion',
   'href',
+  'stateBadge',
+  'entity',
+  'state',
+  'action',
 ]);
 
 // ---------------------------------------------------------------------------
@@ -1097,6 +1117,10 @@ test.describe('🔴 経路 4（匿名共有と提案依頼）— CLAUDE.md §5 P
         const keys = [...new Set(collect(row).keys)];
         expect(keys.filter((key) => !HOST_HOME_ACTION_ROW_ALLOWED_KEYS.has(key)), '#9: 要対応キューの行に型に無いキーが現れました').toEqual([]);
         expect(row['counterpartyLabel'], '#9: 依頼の行に依頼先が載りました').toBeNull();
+        // 🔴 ✅ T-22-09 の `操作` 列: **ホストの依頼の行に操作は無い**（返答するのは取引先である。
+        //    docs/05 §6.11.2 の表）。キーを許可した以上、**値も固定する** —— ここが `null` でなくなると、
+        //    ホストが依頼の行から応諾相当の導線に到達できることになる。
+        expect(row['action'], '#9: ホストの依頼の行に操作が載りました').toBeNull();
       }
       expectNoForbidden('GET /api/home（ホスト。#9）', hostHome.text, forbiddenJsonMarkers(engineers()));
       expectNoHiddenCountHints('GET /api/home（ホスト）', hostHome.text);
@@ -1104,6 +1128,30 @@ test.describe('🔴 経路 4（匿名共有と提案依頼）— CLAUDE.md §5 P
       await expect(host.page.getByTestId(`home-action-queue-row-${xReq}`)).toBeVisible();
       expectNoForbidden('S-003 ホーム（ホスト・依頼直後）', hostHomeHtml, forbiddenMarkers(engineers()));
       expectNoHiddenCountHints('S-003 ホーム（ホスト）', hostHomeHtml);
+      // ✅ T-22-10: 🔴 **行の `内容を見る`（`Drawer`）も経路 4 の匿名化規則を継承する**
+      //    （`docs/04` §4.1 / §5-13 / docs/05 §6.11.3）。引き出しは「もう 1 項目だけ」を置く誘惑が
+      //    最も強い場所であり、ここで実名が出れば `CLAUDE.md` §7 の「匿名候補の身元が提案の作成前に
+      //    ホストへ露出した件数 = 0 件」が破れる。
+      await host.page.getByTestId(`home-action-queue-drawer-open-${xReq}`).click();
+      const hostDrawer = host.page.getByTestId('home-action-queue-drawer');
+      await expect(hostDrawer).toBeVisible();
+      const hostDrawerText = await hostDrawer.innerText();
+      // 🔴 対象 = 案件名 + 「共有候補（匿名）」/ 相手 = `—`（`S-017` と同じ規則）。
+      expect(hostDrawerText).toContain(t('proposalRequests.candidate.anonymous'));
+      expect(hostDrawerText).toContain(t('home.actionQueue.valueNone'));
+      // 🔴 **依頼の行では凍結情報の欄も履歴の欄も 1 つも描かない**（凍結は応諾で初めて起きる。
+      //    無い情報の空欄は「開示されていない」ではなく「まだ入っていない」に読める）。
+      expect(hostDrawerText, '依頼の行の引き出しに履歴の欄が現れました').not.toContain(
+        t('home.actionQueue.drawer.history'),
+      );
+      // 🔴 実名・所属会社名・連絡先・参照子が 1 文字も無い（引き出しを開いた状態の DOM 全体で見る）。
+      expectNoForbidden('S-003 ホーム（ホスト・引き出し）', await host.page.content(), forbiddenMarkers(engineers()));
+      expectNoHiddenCountHints('S-003 ホーム（ホスト・引き出し）', await host.page.content());
+      // 🔴 実行系の導線が無く、末尾は遷移 1 本だけ（`S-017` へ。応諾は取引先の `S-018` にしか無い）。
+      await expect(hostDrawer.locator('form')).toHaveCount(0);
+      await expect(hostDrawer.getByRole('link')).toHaveCount(1);
+      await hostDrawer.getByRole('button', { name: t('home.actionQueue.drawer.close') }).click();
+      await expect(hostDrawer).toHaveCount(0);
 
       // --- A1 が X の依頼を辞退する（`S-017` → `S-018` → #34。理由を入力） ---------------------------
       await pageHtml(partner, '/proposal-requests');

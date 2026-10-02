@@ -58,6 +58,37 @@ const MESSAGES: ActionQueueMessages = {
   proposalStates: { APPROVAL_PENDING: 'STATE_APPROVAL_PENDING', GATE_FAILED: 'STATE_GATE_FAILED', SUBMIT_FAILED: 'STATE_SUBMIT_FAILED', APPROVED: 'STATE_APPROVED' },
   proposalRequestStates: { REQUESTED: 'STATE_REQUESTED' },
   openRequestList: 'openRequestList(合成)',
+  // ✅ T-22-10: 行の `内容を見る`（`Drawer`）の語。🔴 **実行系の語を持たない**。
+  drawer: {
+    open: 'DRAWER_OPEN',
+    close: 'DRAWER_CLOSE',
+    fieldSubject: 'subject(合成)',
+    fieldCounterparty: 'counterparty(合成)',
+    fieldState: 'state(合成)',
+    fieldTime: 'time(合成)',
+    fieldDeadline: 'deadline(合成)',
+    detailLink: 'DRAWER_DETAIL',
+    historyLabel: 'DRAWER_HISTORY',
+    historyLoading: 'DRAWER_HISTORY_LOADING',
+    historyFailed: 'DRAWER_HISTORY_FAILED',
+    valueNone: 'NONE',
+    history: {
+      kinds: {
+        CREATED: 'K_CREATED',
+        TRANSITION: 'K_TRANSITION',
+        REJECT: 'K_REJECT',
+        APPROVAL: 'K_APPROVAL',
+        RESEND: 'K_RESEND',
+        SEND_FAILURE: 'K_SEND_FAILURE',
+        DRAFT_UPDATED: 'K_DRAFT_UPDATED',
+        NOTE: 'K_NOTE',
+        OTHER: 'K_OTHER',
+      },
+      states: { APPROVAL_PENDING: 'STATE_APPROVAL_PENDING' },
+      arrow: ' → ',
+      valueNone: 'NONE',
+    },
+  },
   valueNone: 'NONE',
   changed: 'CHANGED',
   pollError: 'pollError(合成)',
@@ -405,6 +436,68 @@ describe('🔴 ⑧ ホストの依頼の行に実名・所属会社名が無い'
     const html = render(ROWS);
     expect(html).toMatch(/home-action-queue-subject-r1"[^>]*>Project X \/ 共有候補（匿名）</);
     expect(html).toMatch(/home-action-queue-counterparty-r1"[^>]*>NONE</);
+  });
+});
+
+// ============================================================================
+// ⑩ 行の `内容を見る`（T-22-10。docs/04 §4.1 / §5-13 / §11-25 / docs/05 §6.11.3）
+// ============================================================================
+describe('🔴 ⑩ 行の `内容を見る`（Drawer）', () => {
+  /** その testid を持つ要素の開始タグ。 */
+  function tagOf(html: string, testId: string): string {
+    const match = html.match(new RegExp(`<[a-z]+[^>]*data-testid="${testId}"[^>]*>`));
+    if (match === null) throw new Error(`${testId} が無い`);
+    return match[0];
+  }
+
+  it('🔴 全行に引き出しを開く操作が在り、**どのブレークポイントでも落ちない**（Tier 1。狭い画面で遮断しない）', () => {
+    const html = render(ROWS);
+    for (const id of ['s1', 'a1', 'g1', 'h1', 'r1']) {
+      const tag = tagOf(html, `home-action-queue-drawer-open-${id}`);
+      // 🔴 `<button>` である（遷移ではない = 一覧の位置を失わない）。
+      expect(tag.startsWith('<button'), id).toBe(true);
+      // 🔴 テキストの無い操作には語が要る（§5-13。`aria-label` は必須の型である）。
+      expect(tag, id).toContain('aria-label="DRAWER_OPEN"');
+      // 🔴 `hidden` / `xl:` で落とさない（`状態` / `操作` 列とは扱いが違う）。
+      const classes = tag.match(/class="([^"]*)"/)?.[1]?.split(/\s+/) ?? [];
+      expect(classes, id).not.toContain('hidden');
+      expect(classes.filter((token) => token.startsWith('xl:')), id).toEqual([]);
+    }
+  });
+
+  it('🔴 閉じている間は引き出しが DOM に無い（`role="dialog"` も出さない）', () => {
+    const html = render(ROWS);
+    expect(html).not.toContain('data-testid="home-action-queue-drawer"');
+    expect(html).not.toContain('role="dialog"');
+    // 🔴 引き出しの語（遷移 1 本 / 閉じる / 履歴）も、開くまでは 1 つも描かれない。
+    for (const label of ['DRAWER_DETAIL', 'DRAWER_CLOSE', 'DRAWER_HISTORY']) {
+      expect(html, label).not.toContain(label);
+    }
+  });
+
+  it('🔴 引き出しの操作に実行系の語を持たせない（語の束に承認 / 送信 / 応諾 が無い）', () => {
+    // 🔴 `messages.drawer` は項目名・履歴の語・遷移 1 本の語しか持たない（型の網羅）。
+    expect(Object.keys(MESSAGES.drawer).sort()).toEqual(
+      [
+        'close',
+        'detailLink',
+        'fieldCounterparty',
+        'fieldDeadline',
+        'fieldState',
+        'fieldSubject',
+        'fieldTime',
+        'history',
+        'historyFailed',
+        'historyLabel',
+        'historyLoading',
+        'open',
+        'valueNone',
+      ].sort(),
+    );
+    const bundle = JSON.stringify(MESSAGES.drawer);
+    for (const label of Object.values(MESSAGES.actions)) {
+      expect(bundle, label).not.toContain(label);
+    }
   });
 });
 

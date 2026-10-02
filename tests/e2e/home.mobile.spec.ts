@@ -28,7 +28,7 @@ import { devices, expect, test, type Browser, type Page } from '@playwright/test
 import { t } from '../../packages/i18n/src/index';
 import { deleteT0903SyntheticProposals, T0903_SYNTHETIC_PROPOSAL_PREFIX } from './harness/db-admin';
 import { E2E_UNKNOWN_ONCE_RECIPIENT_DOMAIN } from './harness/worker';
-import { apiRequest, parseJson } from './support/api';
+import { apiRequest, auditLogPeriodQuery, parseJson } from './support/api';
 import { expectApprovalJudgmentMaterial, waitForProposalState } from './support/proposal-flow';
 // 🔴 T-06-09: 横溢れの判定は `support/assertions.ts` に集約した（同じ判定が spec ごとに
 //    散ると、1 箇所だけ閾値が緩められたことに気づけない）。
@@ -579,6 +579,76 @@ test.describe('モバイルビューポートのスモーク（S-003 / S-004 は
       expectNoHiddenCountHints('S-003 要対応キュー（モバイル）', await session.page.locator('body').innerText());
       await expectNoHorizontalOverflow('S-003 要対応キュー', session.page);
       await expectNoBrokenLabels('S-003 要対応キュー', session.page);
+
+      // ======================================================================
+      // ✅ T-22-10: 行の `内容を見る`（`Drawer`）— docs/04 §4.1 / §5-13 / §11-25 / docs/05 §6.11.3
+      // ======================================================================
+      // 🔴 **引き出しを開いても閲覧の監査ログが 1 件も増えない**（`CLAUDE.md` §3.5 / `BR-27`）。
+      //    これが崩れると、60 秒ポーリングと引き出しの往復で `engineer.view` が積まれ、
+      //    「誰の経歴を誰がいつ見たか」が読めなくなる（§7 の KPI「スキルシートの閲覧・DL で
+      //    監査ログが欠落した件数 = 0 件」の裏返しで、**記録が多すぎて意味を失う**）。
+      //    カテゴリ `ENGINEER_SKILL_SHEET_ACCESS` = `engineer.view` / `skill_sheet.view` /
+      //    `skill_sheet.download`（`apps/web/lib/audit-logs/categories.ts`）。
+      const viewAuditCount = async (): Promise<number> => {
+        const response = await apiRequest(
+          session.page,
+          `/api/audit-logs?${auditLogPeriodQuery()}&action=ENGINEER_SKILL_SHEET_ACCESS&limit=200`,
+        );
+        expect(response.status, 'GET /api/audit-logs が失敗しました').toBe(200);
+        return (parseJson(response) as { items: readonly unknown[] }).items.length;
+      };
+      const auditBefore = await viewAuditCount();
+      // 🔴 limit=200 で打ち切られると前後とも 200 になり「増えていない」が無条件に真になる。空振りの検査は「検査が無い」より悪い（在るように見える）ため、打ち切られていないことを示す。
+      expect(auditBefore, '監査ログの取得が limit で打ち切られており、増減の検査が空振りします').toBeLessThan(200);
+
+      const drawerTrigger = session.page.getByTestId(`home-action-queue-drawer-open-${proposalId}`);
+      // 🔴 どのブレークポイントでも落とさない（Tier 1。モバイルで引き出しに到達できないのは遮断である）。
+      await expect(drawerTrigger).toBeVisible();
+      await expect(drawerTrigger).toHaveAttribute('aria-label', t('home.actionQueue.drawer.open'));
+      await drawerTrigger.click();
+      const drawer = session.page.getByTestId('home-action-queue-drawer');
+      await expect(drawer).toBeVisible();
+      // 🔴 **モバイルは全画面オーバーレイ**（下からのシートにしない。`docs/04` §3.4）。
+      const viewport = session.page.viewportSize();
+      const panel = await drawer.boundingBox();
+      expect(viewport, 'ビューポートが取れない').not.toBeNull();
+      expect(panel, '引き出しの矩形が取れない').not.toBeNull();
+      expect(Math.round(panel?.width ?? 0), '引き出しが全画面幅でない').toBe(viewport?.width);
+      expect(Math.round(panel?.height ?? 0), '引き出しが全画面高でない').toBe(viewport?.height);
+      // 🔴 出すのは読み取り情報だけ（対象 / 相手 / 状態 / 経過時間 / 期限 + 直近の履歴）。
+      const drawerText = await drawer.innerText();
+      expect(drawerText).toContain(t('home.actionQueue.kind.APPROVAL_PENDING'));
+      expect(drawerText).toContain(t('home.actionQueue.column.subject'));
+      expect(drawerText).toContain(t('home.actionQueue.column.state'));
+      expect(drawerText).toContain(t('home.actionQueue.column.deadline'));
+      // 履歴は #46（提案詳細）から遅れて入る。🔴 **読めなかったことを空に見せない**ので、
+      //    「読み込んでいます」ではなく確定した行に落ち着くまで待つ。
+      await expect(drawer).toContainText(t('home.actionQueue.drawer.history'));
+      await expect(drawer).not.toContainText(t('home.actionQueue.drawer.historyLoading'), { timeout: 15_000 });
+      await expect(drawer).not.toContainText(t('home.actionQueue.drawer.historyFailed'));
+      // 🔴 **実行系の導線が 1 つも無い**（承認 / 修正 / 再送 / 返答。`docs/04` §11-25 ——
+      //    要約だけで押せる承認導線はゲートの形骸化である）。末尾は**遷移 1 本**だけ。
+      for (const forbidden of [
+        t('home.actionQueue.action.APPROVE'),
+        t('home.actionQueue.action.FIX'),
+        t('home.actionQueue.action.RESEND'),
+        t('home.actionQueue.action.RESPOND'),
+      ]) {
+        expect(drawerText, `引き出しに実行系の導線が現れました: ${forbidden}`).not.toContain(forbidden);
+      }
+      await expect(drawer.locator('form')).toHaveCount(0);
+      await expect(drawer.getByRole('link')).toHaveCount(1);
+      await expect(drawer.getByRole('link')).toHaveAttribute('href', `/proposals/${proposalId}/approve`);
+      await expectNoHorizontalOverflow('S-003 要対応キューの引き出し', session.page);
+      await expectNoBrokenLabels('S-003 要対応キューの引き出し', session.page);
+
+      // 🔴 閉じたら一覧に戻り、**位置（URL と行）が保たれる**（遷移していない）。
+      await drawer.getByRole('button', { name: t('home.actionQueue.drawer.close') }).click();
+      await expect(drawer).toHaveCount(0);
+      await expect(queueRow).toBeVisible();
+      expect(new URL(session.page.url()).pathname, '引き出しの開閉で画面が遷移しました').toBe('/');
+      // 🔴 **監査ログが 1 件も増えていない**（引き出しは台帳に触らない経路である）。
+      expect(await viewAuditCount(), '引き出しを開いただけで閲覧の監査ログが増えました').toBe(auditBefore);
 
       // 行の導線 → `S-021`（承認はモバイルで完結する。承認そのものは上の test が見る）。
       await subject.click();

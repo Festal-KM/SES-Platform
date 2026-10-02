@@ -506,24 +506,74 @@ test.describe('④ パートナー A1 で、パートナー A2 のものが 1 �
         expectNoHiddenCountHints(`パートナーの ${path}`, response.text);
       }
 
-      const home9 = parseJson(await apiRequest(session.page, '/api/home')) as {
+      const home9Response = await apiRequest(session.page, '/api/home');
+      const home9 = parseJson(home9Response) as {
         audience: string;
-        blocks: readonly { kind: string; items?: readonly Record<string, unknown>[]; targetIds?: readonly string[] }[];
+        blocks: readonly {
+          kind: string;
+          /** ✅ T-22-09: `SUMMARY` だけが持つ（`HostHomeView` / `PartnerHomeView` と同じ形の 2 合併型）。 */
+          audience?: string;
+          items?: readonly Record<string, unknown>[];
+          targetIds?: readonly string[];
+        }[];
         visibilityNotice?: { messageKey: string };
       };
       expect(home9.audience).toBe('PARTNER');
       // ✅ T-12-15: ~~Phase 0 は空のダッシュボード~~ → 要対応キュー（`ACTION_QUEUE`）が 0 件でも必ず載る。
       //    🔴 取引先に載る種別は自社宛の依頼（`PROPOSAL_REQUEST_PENDING`）と自社提案の `GATE_FAILED` だけ。
-      //    行は 8 キーだけで、他社の件数・存在・順位を示唆するキー（`total` / `rank` / `partnerCompanyName` 等）を持たない。
-      expect(home9.blocks.map((block) => block.kind)).toEqual(['ACTION_QUEUE']);
-      const queue = home9.blocks[0];
-      expect(Object.keys(queue).sort()).toEqual(['items', 'kind', 'targetIds']);
+      //    行は型に在るキーだけで、他社の件数・存在・順位を示唆するキー（`total` / `rank` / `partnerCompanyName` 等）を持たない。
+      // ✅ T-22-09: `SummaryStrip` の件数が**同じ応答に同梱**された（docs/05 §6.11.1 —— 🔴 **別のエンドポイントを作らない**）。
+      //    🔴 **並びも固定する**（`docs/04` §S-004 改訂 16 = ストリップは要対応キューの**上**。
+      //    画面の骨格が日によって変わると走査の記憶が効かない）。🔴 **`blocks[0]` を要対応キューと決め打ちしない**
+      //    —— ブロックは追加専用であり、位置で取ると次の追加で静かに別のブロックを見ることになる。
+      expect(home9.blocks.map((block) => block.kind)).toEqual(['SUMMARY', 'ACTION_QUEUE']);
+      const queue = home9.blocks.find((block) => block.kind === 'ACTION_QUEUE');
+      if (queue === undefined) throw new Error('ACTION_QUEUE ブロックが無い（0 件でも必ず返る契約）。');
+      // 🔴 ✅ T-22-09 が足したのは `actionAvailability`（ctx 由来の 4 条件。**ブロック直下に全量**）だけである。
+      expect(Object.keys(queue).sort()).toEqual(['actionAvailability', 'items', 'kind', 'targetIds']);
       for (const row of queue.items ?? []) {
         expect(['PROPOSAL_REQUEST_PENDING', 'GATE_FAILED']).toContain(row['kind']);
-        expect(Object.keys(row).sort()).toEqual(['counterpartyLabel', 'deadline', 'href', 'kind', 'rowVersion', 'since', 'subjectLabel', 'targetId']);
+        // 🔴 ✅ T-22-09 が足したのは `stateBadge`（`{ entity, state }` の組）と `action`（`{ kind, href } | null`）の
+        //    2 キーだけである。どちらも**その行自身**の状態と遷移先しか運べず、他社の提案の存在・件数・順位を
+        //    入れる枠が無い（`apps/web/lib/home/types.ts` の `ActionQueueStateBadge` / `ActionQueueActionKind`）。
+        expect(Object.keys(row).sort()).toEqual([
+          'action',
+          'counterpartyLabel',
+          'deadline',
+          'href',
+          'kind',
+          'rowVersion',
+          'since',
+          'stateBadge',
+          'subjectLabel',
+          'targetId',
+        ]);
       }
       // 対照: `seed:isolation` はパートナー 1 に `GATE_FAILED` の自社提案を 1 件置く（`gateFailedProposalId`）。空振りで green にしない。
       expect((queue.items ?? []).some((row) => row['kind'] === 'GATE_FAILED')).toBe(true);
+      // 🔴 ✅ T-22-09: 取引先の `SummaryStrip` は **Phase 1 の 4 指標**だけで、**すべて自社スコープの件数**である
+      //    （`docs/04` §S-004 / docs/05 §6.11.1 の表。`ASSIGNMENTS_ACTIVE` は Phase 2）。
+      //    🔴 `TOTAL_*` / `RANK` / `COMPARISON` / `OTHER_COMPANIES` / `SAME_PROJECT` に類する値は
+      //    **フィルタで落とすのではなく型に存在しない**（`BR-07` / `F-004 AC-4`）。
+      //    ⚠️ `tests/isolation/home-action-queue.test.ts` ⑧ に同趣旨の検査があるが、**重複して構わない**
+      //    —— あちらは API を直接呼ぶ層、ここは画面と同じセッションで HTTP を通る層である。
+      const summary = home9.blocks.find((block) => block.kind === 'SUMMARY');
+      if (summary === undefined) throw new Error('SUMMARY ブロックが無い（0 件でも `count: 0` で必ず返る契約）。');
+      expect(summary.audience).toBe('PARTNER');
+      expect((summary.items ?? []).map((item) => item['kind'])).toEqual([
+        'PUBLISHED_PROJECTS',
+        'OWN_ENGINEERS',
+        'SHARED_ENGINEERS',
+        'PROPOSALS_IN_FLIGHT',
+      ]);
+      // 🔴 1 指標のキーは 3 つだけ（ラベル・色・率・前月比・金額を返さない）。
+      for (const item of summary.items ?? []) {
+        expect(Object.keys(item).sort()).toEqual(['count', 'href', 'kind']);
+        expect(Number.isInteger(item['count']), '件数が整数でない').toBe(true);
+      }
+      for (const forbidden of ['TOTAL_', 'RANK', 'COMPARISON', 'OTHER_COMPANIES', 'SAME_PROJECT']) {
+        expect(home9Response.text, forbidden).not.toContain(forbidden);
+      }
       expect(home9.visibilityNotice?.messageKey).toBe('home.partner.visibilityNotice');
 
       session.outbound.assertNone();
