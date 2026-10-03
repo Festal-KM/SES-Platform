@@ -14,7 +14,7 @@
 // 🔴 **再表示しない。** 招待の発行直後の応答だけが平文トークンの出口であり、再表示 API を作らない
 //    （docs/04 §S-046 の「この画面を離れると再表示できません」と同じ規律）。
 import { useState } from 'react';
-import { Button } from '@ses/ui';
+import { Alert, Button } from '@ses/ui';
 
 export type InviteLinkPanelMessages = {
   readonly inviteLinkHeading: string;
@@ -46,28 +46,28 @@ export function SandboxInviteLinkPanel({
   }
 
   return (
-    <div
-      className="mt-3 rounded-md border border-sky-300 bg-sky-50 p-3 text-sm text-sky-900"
-      data-testid="partner-company-invite-link"
-    >
+    // 🔴 SP-22 段④: 器を `@ses/ui` の `Alert`（`info` = 青）に寄せた。
+    //    §7.4 の割り当てで 青 = 「補足・案内」であり、`sandbox` での手渡しの案内はそれに当たる
+    //    （旧実装の sky 系と同じ色系である）。`role` は `status`（成功した発行の結果の提示）。
+    <Alert variant="info" role="status" className="mt-3" data-testid="partner-company-invite-link">
       <p className="mb-1 font-medium">{messages.inviteLinkHeading}</p>
       <p className="mb-2">{messages.inviteLinkNotice}</p>
-      {/* 🔴 T-21-04: ここは `Field` / `Input` に置き換えていない。
-          この panel は sky 系の配色を持つ独自の器であり、`@ses/ui` の基底
-          （`border-slate-300` / `bg-transparent` / `text-base md:text-sm` /
-          ラベルの `text-sm`）を `className` で上書きすることになる。**`cn()` は
-          `tailwind-merge` ではなく、`class` 属性の並び順は勝敗を決めない**ため、
-          その上書きは「効いたように見えて効かない」（`packages/ui/src/lib/cn.ts` の規律 2）。
-          見た目を共有していない要素を無理に共有プリミティブへ寄せない。 */}
+      {/* 🔴 ここは `Field` / `Input` に置き換えていない。理由は色でなく**寸法**である:
+          `Input` は高さ 40px 固定・`text-lg md:text-body`（16/14px）であり、ここで欲しいのは
+          **12px の等幅で長い招待 URL をできるだけ一度に見せる**ことである（招待は 1 回限りで
+          再表示できず、読み違えれば取引先が sandbox に入れない）。**色はトークンで持つ。** */}
       <label className="mb-2 block">
-        <span className="mb-1 block text-xs text-sky-800">{messages.inviteLinkLabel}</span>
+        <span className="mb-1 block text-xs">{messages.inviteLinkLabel}</span>
         {/* 🔴 読み取り専用の入力に出す（長い URL をモバイルでも選択・コピーできる）。 */}
         <input
           type="text"
           readOnly
           value={inviteUrl}
           onFocus={(event) => event.currentTarget.select()}
-          className="w-full rounded-md border border-sky-300 bg-white px-3 py-2 font-mono text-xs"
+          /* 🔴 地は**ページ地**（`bg-bg`）を使う —— 面（`bg-surface`）は `packages/ui` の
+             部品だけが持つ（`tests/static/ui-shadow-and-size.test.ts`）。**値は同じ白**であり、
+             旧実装の `bg-white` と見た目は変わらない。 */
+          className="w-full rounded-md border border-info-border bg-bg px-3 py-2 font-mono text-xs text-fg"
           data-testid="partner-company-invite-link-value"
         />
       </label>
@@ -84,7 +84,7 @@ export function SandboxInviteLinkPanel({
         {copy === 'idle' ? null : (
           <span
             role="status"
-            className={copy === 'copied' ? 'text-xs text-emerald-700' : 'text-xs text-red-700'}
+            className={copy === 'copied' ? 'text-xs text-success' : 'text-xs text-danger'}
             data-testid="partner-company-invite-link-copy-status"
           >
             {copy === 'copied' ? messages.inviteLinkCopied : messages.inviteLinkCopyFailed}
@@ -92,9 +92,9 @@ export function SandboxInviteLinkPanel({
         )}
       </div>
       {/* 🔴 `production` の招待と同じ規律であることを明示する（期限 / 1 回限り / 再表示不可）。 */}
-      <p className="mt-2 text-xs text-sky-800" data-testid="partner-company-invite-link-once-only">
+      <p className="mt-2 text-xs" data-testid="partner-company-invite-link-once-only">
         {messages.inviteLinkOnceOnly}
       </p>
-    </div>
+    </Alert>
   );
 }

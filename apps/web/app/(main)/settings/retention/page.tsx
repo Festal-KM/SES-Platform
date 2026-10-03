@@ -9,6 +9,7 @@
 // 🔴 `requireExecutable` 相当のガードを掛けない —— この画面は `CLOSING` でこそ使う（返却）。
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
+import { PageBody } from '@ses/ui';
 import { t, type MessageKey } from '@ses/i18n';
 import type { DataExportStatus, TenantRole } from '@ses/db';
 import { resolveTenantCtxOutcome } from '../../../../lib/auth/session';
@@ -92,12 +93,17 @@ export default async function RetentionSettingsPage() {
   const view = await readRetentionView(outcome.ctx, { now: new Date(), purgeGraceDays: purgeGraceDays() });
 
   return (
-    <main className="mx-auto max-w-4xl px-4 py-8" data-testid="retention-page">
+    // 🔴 SP-22 段④: 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`）。
+    //    `S-042` は **クラス C = 読み幅 720px**（設定は低密度・1 項目ずつ。§7.1）であり、
+    //    画面ファイルに `max-w-*` を書かない（検査 (c) / (k)）。
+    <main className="py-6" data-testid="retention-page">
+      <PageBody widthClass="prose">
       {/* 🔴 T-12-21 の指摘の回収: `設定`（`S-035`）がリンクになったことで、帯の「最後のリンク
           （＝戻り先）」が「ホーム」から「設定」に変わった（`PageHeading` の `linkTestId` は
           最後のリンクにだけ付く）。testid をその実体に合わせる。 */}
       <PageHeading trail={RETENTION_TRAIL} title={t('retention.title')} linkTestId="retention-breadcrumb-settings" />
       <RetentionScreen view={view} messages={retentionMessages()} />
+      </PageBody>
     </main>
   );
 }

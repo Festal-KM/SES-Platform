@@ -105,11 +105,18 @@ const LEVEL_BADGE_VARIANT: Readonly<Record<Exclude<UsageLimitLevel, 'BELOW'>, Ba
   REACHED: 'danger',
 };
 
-const METER_TRACK = 'h-2 w-full overflow-hidden rounded-full bg-slate-100';
+const METER_TRACK = 'h-2 w-full overflow-hidden rounded-full bg-bg-inset';
+/**
+ * 🔴 SP-22 段④: メーターの塗りは §7.4 の 6 系統のトークンで持つ（階調を画面で選ばない）。
+ * 割り当ての根拠: 平常時（`BELOW`）は **意味の色を使わない**（消費していることは
+ * 正常であり、警告ではない）/ `NEARING` は橙（§7.4「期限が近い・要注意」）/
+ * `REACHED` は赤（上限到達 = これ以上は止まるか従量に移る）。
+ * ⚠️ `warning` / `danger` の実色は旧実装（`amber-500` / `red-600`）より 1〜2 段濃い。
+ */
 const METER_FILL: Readonly<Record<UsageLimitLevel, string>> = {
-  BELOW: 'h-2 rounded-full bg-slate-500',
-  NEARING: 'h-2 rounded-full bg-amber-500',
-  REACHED: 'h-2 rounded-full bg-red-600',
+  BELOW: 'h-2 rounded-full bg-fg-muted',
+  NEARING: 'h-2 rounded-full bg-warning',
+  REACHED: 'h-2 rounded-full bg-danger',
 };
 
 /** 水準の注記（`BELOW` は何も出さない。常時警告は無視される。docs/04 §3.2 上限インジケータ）。 */
@@ -149,7 +156,7 @@ function Meter({ percent, level, label }: { readonly percent: number; readonly l
       >
         <div className={METER_FILL[level]} style={{ width: `${width}%` }} />
       </div>
-      <span className="shrink-0 text-xs text-slate-500">
+      <span className="shrink-0 text-xs text-fg-muted">
         {label} {percent}%
       </span>
     </div>
@@ -177,7 +184,7 @@ export function UsageScreen({ view, messages }: { readonly view: UsageView; read
             <p data-testid="usage-stop-reason">{messages.stop.reason}</p>
             <div data-testid="usage-stop-features">
               <p className="font-medium">{messages.stop.stoppedFeaturesLabel}</p>
-              <ul className="list-disc pl-5">
+              <ul className="list-disc pl-6">
                 {stop.stoppedFeatures.map((feature) => (
                   <li key={feature} data-testid={`usage-stop-feature-${feature}`}>
                     <span>{messages.stop.stoppedFeatureLabels[feature]}</span>
@@ -201,8 +208,8 @@ export function UsageScreen({ view, messages }: { readonly view: UsageView; read
         </Alert>
       ) : null}
 
-      <p className="mb-2 text-sm text-slate-600">{messages.lead}</p>
-      <p className="mb-6 text-xs text-slate-500" data-testid="usage-as-of">
+      <p className="mb-2 text-body text-fg-muted">{messages.lead}</p>
+      <p className="mb-6 text-xs text-fg-muted" data-testid="usage-as-of">
         {messages.asOfLabel}: {formatDateTimeJst(view.asOf)}
         <br />
         {messages.freshnessNote}
@@ -210,11 +217,11 @@ export function UsageScreen({ view, messages }: { readonly view: UsageView; read
 
       {/* セクション 2: 残量（件数 / 通数 / GB / 人）。🔴 金額を混ぜない。 */}
       <section className="mb-8" data-testid="usage-remaining">
-        <h2 className="mb-3 text-base font-bold text-slate-900">{messages.sectionRemaining}</h2>
+        <h2 className="mb-3 text-lg font-bold text-fg">{messages.sectionRemaining}</h2>
 
         <section className="mb-6" data-testid="usage-ai-units">
-          <h3 className="mb-1 text-sm font-semibold text-slate-700">{messages.sectionAiUnits}</h3>
-          <p className="mb-3 text-xs text-slate-500">{messages.aiUnitsMeteredNote}</p>
+          <h3 className="mb-1 text-body font-semibold text-fg">{messages.sectionAiUnits}</h3>
+          <p className="mb-3 text-xs text-fg-muted">{messages.aiUnitsMeteredNote}</p>
           <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {AI_UNIT_ORDER.map((key) => {
               const unit = view.aiUnits[key];
@@ -223,12 +230,12 @@ export function UsageScreen({ view, messages }: { readonly view: UsageView; read
               return (
                 <li
                   key={key}
-                  className="rounded-md border border-slate-200 p-3"
+                  className="rounded-md border border-border p-3"
                   data-testid={`usage-ai-unit-${key}`}
                   data-level={unit.level}
                 >
-                  <p className="text-sm font-medium text-slate-900">{messages.aiUnitLabels[key]}</p>
-                  <p className="text-sm text-slate-700" data-testid={`usage-ai-unit-remaining-${key}`}>
+                  <p className="text-body font-medium text-fg">{messages.aiUnitLabels[key]}</p>
+                  <p className="text-body text-fg" data-testid={`usage-ai-unit-remaining-${key}`}>
                     {formatRemaining(unit.remaining, unit.quota, {
                       prefix: messages.remainingPrefix,
                       unit: messages.unitCount,
@@ -243,7 +250,7 @@ export function UsageScreen({ view, messages }: { readonly view: UsageView; read
                     </p>
                   )}
                   {unit.overageCount > 0 ? (
-                    <p className="mt-1 text-xs text-slate-700" data-testid={`usage-ai-unit-overage-${key}`}>
+                    <p className="mt-1 text-xs text-fg" data-testid={`usage-ai-unit-overage-${key}`}>
                       {messages.overagePrefix} {formatThousands(unit.overageCount)} {messages.overageSuffix}
                     </p>
                   ) : null}
@@ -254,9 +261,9 @@ export function UsageScreen({ view, messages }: { readonly view: UsageView; read
         </section>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <section className="rounded-md border border-slate-200 p-3" data-testid="usage-email" data-state={view.email.state}>
-            <h3 className="mb-1 text-sm font-semibold text-slate-700">{messages.sectionEmail}</h3>
-            <p className="text-sm text-slate-700">
+          <section className="rounded-md border border-border p-3" data-testid="usage-email" data-state={view.email.state}>
+            <h3 className="mb-1 text-body font-semibold text-fg">{messages.sectionEmail}</h3>
+            <p className="text-body text-fg">
               <span>{messages.emailTodayLabel}: </span>
               <span data-testid="usage-email-today">
                 {formatUsedOfLimit(view.email.usedToday, view.email.dailyLimit, messages.unitMessages)}
@@ -275,37 +282,37 @@ export function UsageScreen({ view, messages }: { readonly view: UsageView; read
               </p>
             )}
             {/* 🔴 分次と日次を別に表示する（`F-027 AC-2`）。 */}
-            <p className="mt-2 text-sm text-slate-700">
+            <p className="mt-2 text-body text-fg">
               <span>{messages.emailMinuteLabel}: </span>
               <span data-testid="usage-email-minute">
                 {formatUsedOfLimit(view.email.usedLastMinute, view.email.minuteLimit, messages.unitMessages)}
               </span>
             </p>
             {view.email.state === 'DEFER' ? (
-              <p className="mt-1 text-xs text-amber-800" data-testid="usage-email-defer-note">
+              <p className="mt-1 text-xs text-warning" data-testid="usage-email-defer-note">
                 {messages.emailDeferNote}
               </p>
             ) : null}
             {view.email.state === 'BLOCK' ? (
-              <p className="mt-1 text-xs text-red-800" data-testid="usage-email-block-note">
+              <p className="mt-1 text-xs text-danger" data-testid="usage-email-block-note">
                 {messages.emailBlockNote}
               </p>
             ) : null}
           </section>
 
           <section
-            className="rounded-md border border-slate-200 p-3"
+            className="rounded-md border border-border p-3"
             data-testid="usage-storage"
             data-level={view.storage.level}
           >
-            <h3 className="mb-1 text-sm font-semibold text-slate-700">{messages.sectionStorage}</h3>
-            <p className="text-sm text-slate-700">
+            <h3 className="mb-1 text-body font-semibold text-fg">{messages.sectionStorage}</h3>
+            <p className="text-body text-fg">
               <span>{messages.storageUsedLabel}: </span>
               <span data-testid="usage-storage-used">
                 {formatGigabytes(storageUsed)} / {formatGigabytes(storageLimit)} {messages.unitGb}
               </span>
             </p>
-            <p className="text-sm text-slate-700">
+            <p className="text-body text-fg">
               <span>{messages.storageRemainingLabel}: </span>
               <span data-testid="usage-storage-remaining">
                 {formatGigabytes(storageRemaining)} {messages.unitGb}
@@ -324,17 +331,17 @@ export function UsageScreen({ view, messages }: { readonly view: UsageView; read
               </p>
             )}
             {/* 🔴 超過でアップロードが止まる（従量に移行しない）。件数クォータと同じ見た目にしない。 */}
-            <p className="mt-1 text-xs text-slate-500">{messages.storageStopNote}</p>
+            <p className="mt-1 text-xs text-fg-muted">{messages.storageStopNote}</p>
             {view.storage.level === 'REACHED' ? (
-              <p className="mt-1 text-xs text-red-800" data-testid="usage-storage-reached-note">
+              <p className="mt-1 text-xs text-danger" data-testid="usage-storage-reached-note">
                 {messages.storageReachedNote}
               </p>
             ) : null}
           </section>
 
-          <section className="rounded-md border border-slate-200 p-3" data-testid="usage-seats">
-            <h3 className="mb-1 text-sm font-semibold text-slate-700">{messages.sectionSeats}</h3>
-            <p className="text-sm text-slate-700">
+          <section className="rounded-md border border-border p-3" data-testid="usage-seats">
+            <h3 className="mb-1 text-body font-semibold text-fg">{messages.sectionSeats}</h3>
+            <p className="text-body text-fg">
               <span>{messages.seatsUsedLabel}: </span>
               <span data-testid="usage-seats-used">
                 {view.seats.limit === null
@@ -343,7 +350,7 @@ export function UsageScreen({ view, messages }: { readonly view: UsageView; read
               </span>
             </p>
             {view.seats.limit === null ? (
-              <p className="mt-1 text-xs text-slate-500" data-testid="usage-seats-limit-by-plan">
+              <p className="mt-1 text-xs text-fg-muted" data-testid="usage-seats-limit-by-plan">
                 {messages.seatsLimitByPlan}
               </p>
             ) : null}
@@ -352,21 +359,21 @@ export function UsageScreen({ view, messages }: { readonly view: UsageView; read
       </section>
 
       {/* セクション 3: 超過分の請求見込み。🔴 金額を出してよい唯一の場所（残量とは別ブロック）。 */}
-      <section className="mb-6 rounded-md border border-slate-200 bg-slate-50 p-4" data-testid="usage-billing">
-        <h2 className="mb-1 text-base font-bold text-slate-900">{messages.billing.title}</h2>
-        <p className="mb-2 text-xs text-slate-500">{messages.billing.note}</p>
+      <section className="mb-6 rounded-md border border-border bg-bg-subtle p-4" data-testid="usage-billing">
+        <h2 className="mb-1 text-lg font-bold text-fg">{messages.billing.title}</h2>
+        <p className="mb-2 text-xs text-fg-muted">{messages.billing.note}</p>
         {view.overageEstimateJpy === null ? (
-          <p className="text-sm text-slate-700" data-testid="usage-billing-unavailable">
+          <p className="text-body text-fg" data-testid="usage-billing-unavailable">
             {messages.billing.unavailable}
           </p>
         ) : (
-          <p className="text-sm font-medium text-slate-900" data-testid="usage-billing-estimate">
+          <p className="text-body font-medium text-fg" data-testid="usage-billing-estimate">
             {formatJpy(view.overageEstimateJpy, messages.billing.unit)}
           </p>
         )}
       </section>
 
-      <p className="text-xs text-slate-500">{messages.readOnlyNote}</p>
+      <p className="text-xs text-fg-muted">{messages.readOnlyNote}</p>
     </div>
   );
 }
@@ -392,7 +399,7 @@ export function UsageBlockedNoticeScreen({
 }) {
   return (
     <div data-testid="usage-partner-screen" data-blocked={notice.blocked ? 'true' : 'false'}>
-      <h2 className="mb-3 text-base font-bold text-slate-900">{messages.title}</h2>
+      <h2 className="mb-3 text-lg font-bold text-fg">{messages.title}</h2>
       {notice.blocked ? (
         <Alert variant="danger" className="mb-4" data-testid="usage-partner-blocked">
           <AlertDescription>
@@ -400,11 +407,11 @@ export function UsageBlockedNoticeScreen({
           </AlertDescription>
         </Alert>
       ) : (
-        <p className="mb-4 text-sm text-slate-700" data-testid="usage-partner-not-blocked">
+        <p className="mb-4 text-body text-fg" data-testid="usage-partner-not-blocked">
           {messages.notBlocked}
         </p>
       )}
-      <p className="text-xs text-slate-500">{messages.scopeNote}</p>
+      <p className="text-xs text-fg-muted">{messages.scopeNote}</p>
     </div>
   );
 }

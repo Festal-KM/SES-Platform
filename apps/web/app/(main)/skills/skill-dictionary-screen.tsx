@@ -19,6 +19,7 @@
 import { useState, type FormEvent } from 'react';
 import {
   Button,
+  EmptyState,
   Field,
   Input,
   Select,
@@ -192,34 +193,35 @@ export function SkillDictionaryScreen({
   return (
     <div data-testid="skill-dictionary-screen">
       <section className="mb-8" data-testid="skill-candidates-section">
-        <h2 className="mb-2 text-sm font-semibold text-slate-700">
+        <h2 className="mb-2 text-body font-semibold text-fg">
           {messages.sectionCandidates}
         </h2>
         {/* 🔴 `F-010 AC-1` の明示。候補の一覧より前に置く。 */}
-        <p className="mb-2 text-sm text-slate-600" data-testid="skill-candidates-note">
+        <p className="mb-2 text-body text-fg-muted" data-testid="skill-candidates-note">
           {messages.candidatesNote}
         </p>
         {canDecide ? (
-          <p className="mb-2 text-sm text-slate-500" data-testid="skill-candidates-reject-note">
+          <p className="mb-2 text-body text-fg-muted" data-testid="skill-candidates-reject-note">
             {messages.candidatesRejectNote}
           </p>
         ) : (
-          <p className="mb-2 text-sm text-slate-500" data-testid="skill-candidates-read-only-note">
+          <p className="mb-2 text-body text-fg-muted" data-testid="skill-candidates-read-only-note">
             {messages.candidatesReadOnlyNote}
           </p>
         )}
         {/* 🔴 docs/04 の「出現件数」列は保存先が無いため出せない。隠さずに書く。 */}
-        <p className="mb-3 text-sm text-slate-500" data-testid="skill-candidates-occurrence-note">
+        <p className="mb-3 text-body text-fg-muted" data-testid="skill-candidates-occurrence-note">
           {messages.candidatesOccurrenceComingSoon}
         </p>
 
         {candidates.length === 0 ? (
-          <p
-            className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700"
-            data-testid="skill-candidates-empty"
-          >
-            {messages.candidatesEmpty}
-          </p>
+          // 🔴 SP-22 段④: 空状態の器は `@ses/ui` の `EmptyState`（§10.4）。器の `data-testid` は
+          //    凍結済みの値のままで、`{prefix}root` / `{prefix}description` は**追加**である。
+          //    🔴 **Primary を置かない** —— 新語候補が 0 件なのは**正常**であり、
+          //    起票は取引先・`skill-normalizer` が行う（この画面から起票する操作が存在しない）。
+          <div data-testid="skill-candidates-empty">
+            <EmptyState testIdPrefix="skill-candidates-empty-state-" description={messages.candidatesEmpty} />
+          </div>
         ) : (
           <div>
             <Table data-testid="skill-candidates-table">
@@ -315,7 +317,7 @@ export function SkillDictionaryScreen({
                         <>
                           <TableCell>{messages.valueNone}</TableCell>
                           <TableCell
-                            className="text-slate-500"
+                            className="text-fg-muted"
                             data-testid={`skill-candidate-read-only-${candidate.id}`}
                           >
                             {messages.scopeLabels[candidate.scope]}
@@ -328,7 +330,7 @@ export function SkillDictionaryScreen({
               </TableBody>
             </Table>
             {canDecide ? (
-              <p className="mt-2 text-sm text-slate-500" data-testid="skill-candidates-accept-hint">
+              <p className="mt-2 text-body text-fg-muted" data-testid="skill-candidates-accept-hint">
                 {messages.candidatesAcceptHint}
               </p>
             ) : null}
@@ -336,27 +338,26 @@ export function SkillDictionaryScreen({
         )}
 
         {decisionPhase === 'submitting' ? (
-          <p role="status" className="mt-2 text-sm text-slate-600" data-testid="skill-candidates-submitting">
+          <p role="status" className="mt-2 text-body text-fg-muted" data-testid="skill-candidates-submitting">
             {messages.candidatesSubmitting}
           </p>
         ) : null}
         {decisionPhase === 'error' ? (
-          <p role="alert" className="mt-2 text-sm text-red-700" data-testid="skill-candidates-error">
+          <p role="alert" className="mt-2 text-body text-danger" data-testid="skill-candidates-error">
             {messages.candidatesError}
           </p>
         ) : null}
       </section>
 
       <section className="mb-8" data-testid="skill-aliases-section">
-        <h2 className="mb-2 text-sm font-semibold text-slate-700">{messages.sectionAliases}</h2>
-        <p className="mb-3 text-sm text-slate-600">{messages.aliasesNote}</p>
+        <h2 className="mb-2 text-body font-semibold text-fg">{messages.sectionAliases}</h2>
+        <p className="mb-3 text-body text-fg-muted">{messages.aliasesNote}</p>
         {accepted.length === 0 ? (
-          <p
-            className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700"
-            data-testid="skill-aliases-empty"
-          >
-            {messages.aliasesEmpty}
-          </p>
+          // 🔴 SP-22 段④: 空状態の器は `@ses/ui` の `EmptyState`（§10.4）。器の `data-testid` は
+          //    凍結済みの値のままで、`{prefix}root` / `{prefix}description` は**追加**である。
+          <div data-testid="skill-aliases-empty">
+            <EmptyState testIdPrefix="skill-aliases-empty-state-" description={messages.aliasesEmpty} />
+          </div>
         ) : (
           <Table data-testid="skill-aliases-table">
             <TableHeader>
@@ -391,13 +392,13 @@ export function SkillDictionaryScreen({
       </section>
 
       <section data-testid="skill-dictionary-section">
-        <h2 className="mb-2 text-sm font-semibold text-slate-700">{messages.sectionDictionary}</h2>
+        <h2 className="mb-2 text-body font-semibold text-fg">{messages.sectionDictionary}</h2>
         {/* 🔴 `F-010 AC-2`: 読み取り専用であることを文言でも示す。 */}
-        <p className="mb-3 text-sm text-slate-600" data-testid="skill-dictionary-read-only-note">
+        <p className="mb-3 text-body text-fg-muted" data-testid="skill-dictionary-read-only-note">
           {messages.dictionaryReadOnlyNote}
         </p>
         <form onSubmit={onSearch} noValidate className="mb-3" data-testid="skill-dictionary-search-form">
-          <Field className="mb-2 max-w-sm" label={messages.dictionarySearchLabel}>
+          <Field className="mb-2" label={messages.dictionarySearchLabel}>
             <Input
               type="search"
               name="q"
@@ -419,18 +420,19 @@ export function SkillDictionaryScreen({
               : messages.dictionarySearchSubmit}
           </Button>
           {searchPhase === 'error' ? (
-            <p role="alert" className="mt-2 text-sm text-red-700" data-testid="skill-dictionary-error">
+            <p role="alert" className="mt-2 text-body text-danger" data-testid="skill-dictionary-error">
               {messages.dictionaryError}
             </p>
           ) : null}
         </form>
         {skills.length === 0 ? (
-          <p
-            className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700"
-            data-testid="skill-dictionary-empty"
-          >
-            {messages.dictionaryEmpty}
-          </p>
+          // 🔴 SP-22 段④: 空状態の器は `@ses/ui` の `EmptyState`（§10.4）。器の `data-testid` は
+          //    凍結済みの値のままで、`{prefix}root` / `{prefix}description` は**追加**である。
+          //    🔴 **Primary を置かない** —— 辞書は読み取り専用（`F-010 AC-2`）で「新規作成」が存在せず、
+          //    「条件を外す」の入口は検索欄そのものがこの直上に常時出ている（§10.4）。
+          <div data-testid="skill-dictionary-empty">
+            <EmptyState testIdPrefix="skill-dictionary-empty-state-" description={messages.dictionaryEmpty} />
+          </div>
         ) : (
           <Table data-testid="skill-dictionary-table">
             <TableHeader>

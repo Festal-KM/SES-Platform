@@ -14,6 +14,22 @@
 //    作らないため。恒久例外は `AppShell` の `pb-24` の 1 件だけで、それは
 //    `ui-spacing-scale.test.ts` の `PERMANENT_SPACING_EXCEPTION` に理由つきで置く。
 //
+// ✅ **段④ の第 4 弾（最終。設定まわり・スキル辞書・認証。2026-10-03）で外したもの**:
+//    `settings/**` の **31** / `skills/**` の **5** / `(auth)/**` の **22** / `_shared/**` の **4**
+//    = **計 61 エントリ**（対象 24 ファイル。
+//    検査別の内訳は **(a) 色 19 / (c) 幅 10 / (f) spacing 3 / (g) 文字サイズ 19 / (k) 幅クラス 10**）。
+//    🔴 **これで `apps/web/app/(main)/**` の許可は (c) の 1 件だけになった**
+//    （`usage-screen.tsx` のメーターの塗り幅。理由は (c) の段④ のブロックに書いた ——
+//    🔴 **`docs/04` §5-13 への部品追加（= 人間の判断）が先に要る**ため外せない）。
+//    残る 62 エントリは **管理平面 `admin/**` の 58**（段⑤）/
+//    **`app/_components/**` の 3**（`auth-shell.tsx` の `max-w-sm` 1 行 / `otpauth-qr.tsx` の 2 行）/
+//    **上記 `usage-screen.tsx` の 1** である。
+//    ⚠️ **`_components/**` の 3 件を残したのは意図である**: 認証画面の外枠（`AuthShell`）は
+//    `AppShell` の外側にある**中央寄せのカード**であり、その幅（`max-w-sm`）を `PageBody` の
+//    3 クラスに置き換えるには「中央寄せのカード」という 4 つ目の幅の概念が要る
+//    （= `docs/04` §7.1 の改訂 = 人間の判断。`CLAUDE.md` §8.6）。`otpauth-qr.tsx` の
+//    `max-w-68` / `bg-white` も QR の実寸と塗りつぶしであって画面の幅ではない。**段⑤ で扱う。**
+//
 // ✅ **段④ の第 3 弾（提案まわり。2026-10-03）で外したもの**: `proposals/**` と
 //    `proposal-requests/**` の **17 ファイル**
 //    （`proposal-requests/{page,proposal-request-screen}.tsx` /
@@ -92,25 +108,6 @@ export const UI_RATCHET_ALLOWLIST_A: ReadonlyMap<string, AllowEntry> = new Map<s
   //    semantic トークン / 7 段 / 6 トークン / 8 状態 / `PageBody` の幅 3 クラスへ寄せたので
   //    **この段の項目は空になった**（残しておくとラチェット ②「未使用の許可が残っていない」で落ちる）。
   // ── 段④
-  ['apps/web/app/(main)/(auth)/invite/[token]/invite-form.tsx', { stage: 4, reason: 'S-001 / S-002 / S-046 の刷新（段④）で semantic トークンへ置き換える。移行中 8 行' }],
-  ['apps/web/app/(main)/(auth)/invite/[token]/page.tsx', { stage: 4, reason: 'S-001 / S-002 / S-046 の刷新（段④）で semantic トークンへ置き換える。移行中 1 行' }],
-  ['apps/web/app/(main)/(auth)/password-reset/confirm/confirm-form.tsx', { stage: 4, reason: 'S-001 / S-002 / S-046 の刷新（段④）で semantic トークンへ置き換える。移行中 3 行' }],
-  ['apps/web/app/(main)/(auth)/password-reset/confirm/page.tsx', { stage: 4, reason: 'S-001 / S-002 / S-046 の刷新（段④）で semantic トークンへ置き換える。移行中 1 行' }],
-  ['apps/web/app/(main)/(auth)/password-reset/page.tsx', { stage: 4, reason: 'S-001 / S-002 / S-046 の刷新（段④）で semantic トークンへ置き換える。移行中 1 行' }],
-  ['apps/web/app/(main)/(auth)/password-reset/request-form.tsx', { stage: 4, reason: 'S-001 / S-002 / S-046 の刷新（段④）で semantic トークンへ置き換える。移行中 4 行' }],
-  ['apps/web/app/(main)/(auth)/signin/page.tsx', { stage: 4, reason: 'S-001 / S-002 / S-046 の刷新（段④）で semantic トークンへ置き換える。移行中 1 行' }],
-  ['apps/web/app/(main)/(auth)/signin/signin-form.tsx', { stage: 4, reason: 'S-001 / S-002 / S-046 の刷新（段④）で semantic トークンへ置き換える。移行中 6 行' }],
-  ['apps/web/app/(main)/_shared/sending-domain-guard-banner.tsx', { stage: 4, reason: 'S-035 系（送信ドメインの帯） の刷新（段④）で semantic トークンへ置き換える。移行中 1 行' }],
-  ['apps/web/app/(main)/_shared/sending-domain-status.tsx', { stage: 4, reason: 'S-035 系（送信ドメインの帯） の刷新（段④）で semantic トークンへ置き換える。移行中 3 行' }],
-  ['apps/web/app/(main)/settings/organization/organization-form.tsx', { stage: 4, reason: 'S-035 / S-036 / S-038 / S-042 の刷新（段④）で semantic トークンへ置き換える。移行中 7 行' }],
-  ['apps/web/app/(main)/settings/organization/page.tsx', { stage: 4, reason: 'S-035 / S-036 / S-038 / S-042 の刷新（段④）で semantic トークンへ置き換える。移行中 5 行' }],
-  ['apps/web/app/(main)/settings/partner-companies/invite-link-panel.tsx', { stage: 4, reason: 'S-035 / S-036 / S-038 / S-042 の刷新（段④）で semantic トークンへ置き換える。移行中 5 行' }],
-  ['apps/web/app/(main)/settings/partner-companies/members-panel.tsx', { stage: 4, reason: 'S-035 / S-036 / S-038 / S-042 の刷新（段④）で semantic トークンへ置き換える。移行中 18 行' }],
-  ['apps/web/app/(main)/settings/partner-companies/partner-companies-screen.tsx', { stage: 4, reason: 'S-035 / S-036 / S-038 / S-042 の刷新（段④）で semantic トークンへ置き換える。移行中 28 行' }],
-  ['apps/web/app/(main)/settings/retention/retention-screen.tsx', { stage: 4, reason: 'S-035 / S-036 / S-038 / S-042 の刷新（段④）で semantic トークンへ置き換える。移行中 16 行' }],
-  ['apps/web/app/(main)/settings/sending-domains/sending-domain-screen.tsx', { stage: 4, reason: 'S-035 / S-036 / S-038 / S-042 の刷新（段④）で semantic トークンへ置き換える。移行中 29 行' }],
-  ['apps/web/app/(main)/settings/usage/usage-screen.tsx', { stage: 4, reason: 'S-035 / S-036 / S-038 / S-042 の刷新（段④）で semantic トークンへ置き換える。移行中 39 行' }],
-  ['apps/web/app/(main)/skills/skill-dictionary-screen.tsx', { stage: 4, reason: 'S-014 系（スキル辞書） の刷新（段④）で semantic トークンへ置き換える。移行中 17 行' }],
   ['apps/web/app/_components/otpauth-qr.tsx', { stage: 4, reason: 'S-001 / S-002 / S-046（認証の外殻） の刷新（段④）で semantic トークンへ置き換える。移行中 1 行' }],
   // ── 段⑤
   ['apps/web/app/admin/_components/console-nav.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で semantic トークンへ置き換える。移行中 5 行' }],
@@ -155,17 +152,21 @@ export const UI_RATCHET_ALLOWLIST_C: ReadonlyMap<string, AllowEntry> = new Map<s
   //    semantic トークン / 7 段 / 6 トークン / 8 状態 / `PageBody` の幅 3 クラスへ寄せたので
   //    **この段の項目は空になった**（残しておくとラチェット ②「未使用の許可が残っていない」で落ちる）。
   // ── 段④
-  ['apps/web/app/(main)/settings/organization/page.tsx', { stage: 4, reason: 'S-035 / S-036 / S-038 / S-042 の刷新（段④）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
-  ['apps/web/app/(main)/settings/partner-companies/members-panel.tsx', { stage: 4, reason: 'S-035 / S-036 / S-038 / S-042 の刷新（段④）で `PageBody` の幅 3 クラスへ移す。移行中 2 行' }],
-  ['apps/web/app/(main)/settings/partner-companies/page.tsx', { stage: 4, reason: 'S-035 / S-036 / S-038 / S-042 の刷新（段④）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
-  ['apps/web/app/(main)/settings/partner-companies/partner-companies-screen.tsx', { stage: 4, reason: 'S-035 / S-036 / S-038 / S-042 の刷新（段④）で `PageBody` の幅 3 クラスへ移す。移行中 5 行' }],
-  ['apps/web/app/(main)/settings/retention/page.tsx', { stage: 4, reason: 'S-035 / S-036 / S-038 / S-042 の刷新（段④）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
-  ['apps/web/app/(main)/settings/sending-domains/page.tsx', { stage: 4, reason: 'S-035 / S-036 / S-038 / S-042 の刷新（段④）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
-  ['apps/web/app/(main)/settings/sending-domains/sending-domain-screen.tsx', { stage: 4, reason: 'S-035 / S-036 / S-038 / S-042 の刷新（段④）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
-  ['apps/web/app/(main)/settings/usage/page.tsx', { stage: 4, reason: 'S-035 / S-036 / S-038 / S-042 の刷新（段④）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
-  ['apps/web/app/(main)/settings/usage/usage-screen.tsx', { stage: 4, reason: 'S-035 / S-036 / S-038 / S-042 の刷新（段④）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
-  ['apps/web/app/(main)/skills/page.tsx', { stage: 4, reason: 'S-014 系（スキル辞書） の刷新（段④）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
-  ['apps/web/app/(main)/skills/skill-dictionary-screen.tsx', { stage: 4, reason: 'S-014 系（スキル辞書） の刷新（段④）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
+  // 🔴 **段④ で外せなかった 1 件（設計の判断待ち。理由を書き残す）**
+  //    対象は `S-038` の使用量メーターの塗り幅（`style={{ width: `${percent}%` }}`の 1 行）である。
+  //    残りの (a) 色 / (f) spacing / (g) 文字サイズ / (k) 幅クラス はすでに外れている。
+  //
+  //    🔴 **これは「画面が幅を決めている」のではなく、「データが割合を決めている」** ——
+  //    消費率（0〜100%）をバーの長さとして描く以上、値は実行時にしか決まらない。
+  //    `max-w-*`（本文が 768px に絞られる）とは別種のものである。
+  //    🔴 **正しい直し方は `packages/ui` にメーターの部品を置くことだが、それは
+  //    `docs/04` §5-13（UI プリミティブ 25 部品）に 26 部品目を足す改訂である**
+  //    （`UI_GUIDELINES.md` §8 「③ をやる前に必ず相談する」/ `CLAUDE.md` §8.7）。
+  //    §5-4「使用量メーター」はカタログに存在するが §5-13 の 25 部品には無いため、
+  //    実装エージェントの判断で増やす範囲ではない。⚠️ 検査を緩めたり、検出器に
+  //    かからない書き方（変数名を変えて `width` の語を消す / `transform: scaleX()` に逃げる）
+  //    への逃げ方はしていない —— **それは検査を無効にすることと同じ**である。
+  ['apps/web/app/(main)/settings/usage/usage-screen.tsx', { stage: 4, reason: '🔴 `S-038` の使用量メーターの塗り幅（`style` の `width`）。データ由来の割合であり、`docs/04` §5-13 にメーター部品を追加する改訂（= 人間の判断。`UI_GUIDELINES.md` §8 ③）を経て `packages/ui` へ移す' }],
   ['apps/web/app/_components/auth-shell.tsx', { stage: 4, reason: 'S-001 / S-002 / S-046（認証の外殻） の刷新（段④）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
   ['apps/web/app/_components/otpauth-qr.tsx', { stage: 4, reason: 'S-001 / S-002 / S-046（認証の外殻） の刷新（段④）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
   // ── 段⑤
@@ -189,10 +190,9 @@ export const UI_RATCHET_ALLOWLIST_F: ReadonlyMap<string, AllowEntry> = new Map<s
   //    S-019 / S-041 / A-002 / A-005 / A-006）を semantic トークン / 7 段 / 6 トークン /
   //    8 状態 / `PageBody` の幅 3 クラスへ寄せたので**この段の項目は空になった**
   //    （残しておくとラチェット ②「未使用の許可が残っていない」で落ちる）。
-  // ── 段④
-  ['apps/web/app/(main)/(auth)/invite/[token]/invite-form.tsx', { stage: 4, reason: 'S-001 / S-002 / S-046 の刷新（段④）で §7.9 の 7 段へ寄せる。移行中 1 行' }],
-  ['apps/web/app/(main)/(auth)/signin/signin-form.tsx', { stage: 4, reason: 'S-001 / S-002 / S-046 の刷新（段④）で §7.9 の 7 段へ寄せる。移行中 1 行' }],
-  ['apps/web/app/(main)/settings/usage/usage-screen.tsx', { stage: 4, reason: 'S-035 / S-036 / S-038 / S-042 の刷新（段④）で §7.9 の 7 段へ寄せる。移行中 1 行' }],
+  // ── 段④ ✅ 第 1〜4 弾（2026-10-03）で主平面の残り（案件 / 人材 / 提案 / 設定 / スキル辞書 / 認証）を
+  //    semantic トークン / 7 段 / 6 トークン / 8 状態 / `PageBody` の幅 3 クラスへ寄せたので
+  //    **この段の項目は空になった**（`app/_components/**` の 3 件は段⑤。本ファイル冒頭）。
   // ── 段⑤
   ['apps/web/app/admin/signin/admin-signin-form.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で §7.9 の 7 段へ寄せる。移行中 1 行' }],
   ['apps/web/app/admin/tenants/new/page.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で §7.9 の 7 段へ寄せる。移行中 1 行' }],
@@ -213,26 +213,9 @@ export const UI_RATCHET_ALLOWLIST_G: ReadonlyMap<string, AllowEntry> = new Map<s
   // ── 段③ ✅ T-22-09 で `S-003` / `S-004`（`_home/**` / `lib/home/**` / `page.tsx`）を
   //    semantic トークン / 7 段 / 6 トークン / 8 状態 / `PageBody` の幅 3 クラスへ寄せたので
   //    **この段の項目は空になった**（残しておくとラチェット ②「未使用の許可が残っていない」で落ちる）。
-  // ── 段④
-  ['apps/web/app/(main)/(auth)/invite/[token]/invite-form.tsx', { stage: 4, reason: 'S-001 / S-002 / S-046 の刷新（段④）で §7.9 の 6 トークンへ置き換える。移行中 5 行' }],
-  ['apps/web/app/(main)/(auth)/invite/[token]/page.tsx', { stage: 4, reason: 'S-001 / S-002 / S-046 の刷新（段④）で §7.9 の 6 トークンへ置き換える。移行中 1 行' }],
-  ['apps/web/app/(main)/(auth)/password-reset/confirm/confirm-form.tsx', { stage: 4, reason: 'S-001 / S-002 / S-046 の刷新（段④）で §7.9 の 6 トークンへ置き換える。移行中 3 行' }],
-  ['apps/web/app/(main)/(auth)/password-reset/confirm/page.tsx', { stage: 4, reason: 'S-001 / S-002 / S-046 の刷新（段④）で §7.9 の 6 トークンへ置き換える。移行中 1 行' }],
-  ['apps/web/app/(main)/(auth)/password-reset/page.tsx', { stage: 4, reason: 'S-001 / S-002 / S-046 の刷新（段④）で §7.9 の 6 トークンへ置き換える。移行中 1 行' }],
-  ['apps/web/app/(main)/(auth)/password-reset/request-form.tsx', { stage: 4, reason: 'S-001 / S-002 / S-046 の刷新（段④）で §7.9 の 6 トークンへ置き換える。移行中 4 行' }],
-  ['apps/web/app/(main)/(auth)/signin/page.tsx', { stage: 4, reason: 'S-001 / S-002 / S-046 の刷新（段④）で §7.9 の 6 トークンへ置き換える。移行中 1 行' }],
-  ['apps/web/app/(main)/(auth)/signin/signin-form.tsx', { stage: 4, reason: 'S-001 / S-002 / S-046 の刷新（段④）で §7.9 の 6 トークンへ置き換える。移行中 6 行' }],
-  ['apps/web/app/(main)/_shared/sending-domain-guard-banner.tsx', { stage: 4, reason: 'S-035 系（送信ドメインの帯） の刷新（段④）で §7.9 の 6 トークンへ置き換える。移行中 1 行' }],
-  ['apps/web/app/(main)/_shared/sending-domain-status.tsx', { stage: 4, reason: 'S-035 系（送信ドメインの帯） の刷新（段④）で §7.9 の 6 トークンへ置き換える。移行中 3 行' }],
-  ['apps/web/app/(main)/settings/organization/organization-form.tsx', { stage: 4, reason: 'S-035 / S-036 / S-038 / S-042 の刷新（段④）で §7.9 の 6 トークンへ置き換える。移行中 9 行' }],
-  ['apps/web/app/(main)/settings/organization/page.tsx', { stage: 4, reason: 'S-035 / S-036 / S-038 / S-042 の刷新（段④）で §7.9 の 6 トークンへ置き換える。移行中 5 行' }],
-  ['apps/web/app/(main)/settings/partner-companies/invite-link-panel.tsx', { stage: 4, reason: 'S-035 / S-036 / S-038 / S-042 の刷新（段④）で §7.9 の 6 トークンへ置き換える。移行中 1 行' }],
-  ['apps/web/app/(main)/settings/partner-companies/members-panel.tsx', { stage: 4, reason: 'S-035 / S-036 / S-038 / S-042 の刷新（段④）で §7.9 の 6 トークンへ置き換える。移行中 8 行' }],
-  ['apps/web/app/(main)/settings/partner-companies/partner-companies-screen.tsx', { stage: 4, reason: 'S-035 / S-036 / S-038 / S-042 の刷新（段④）で §7.9 の 6 トークンへ置き換える。移行中 17 行' }],
-  ['apps/web/app/(main)/settings/retention/retention-screen.tsx', { stage: 4, reason: 'S-035 / S-036 / S-038 / S-042 の刷新（段④）で §7.9 の 6 トークンへ置き換える。移行中 15 行' }],
-  ['apps/web/app/(main)/settings/sending-domains/sending-domain-screen.tsx', { stage: 4, reason: 'S-035 / S-036 / S-038 / S-042 の刷新（段④）で §7.9 の 6 トークンへ置き換える。移行中 16 行' }],
-  ['apps/web/app/(main)/settings/usage/usage-screen.tsx', { stage: 4, reason: 'S-035 / S-036 / S-038 / S-042 の刷新（段④）で §7.9 の 6 トークンへ置き換える。移行中 18 行' }],
-  ['apps/web/app/(main)/skills/skill-dictionary-screen.tsx', { stage: 4, reason: 'S-014 系（スキル辞書） の刷新（段④）で §7.9 の 6 トークンへ置き換える。移行中 16 行' }],
+  // ── 段④ ✅ 第 1〜4 弾（2026-10-03）で主平面の残り（案件 / 人材 / 提案 / 設定 / スキル辞書 / 認証）を
+  //    semantic トークン / 7 段 / 6 トークン / 8 状態 / `PageBody` の幅 3 クラスへ寄せたので
+  //    **この段の項目は空になった**（`app/_components/**` の 3 件は段⑤。本ファイル冒頭）。
   // ── 段⑤
   ['apps/web/app/admin/_components/console-nav.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で §7.9 の 6 トークンへ置き換える。移行中 2 行' }],
   ['apps/web/app/admin/demo/admin-demo-screen.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で §7.9 の 6 トークンへ置き換える。移行中 16 行' }],
@@ -285,17 +268,9 @@ export const UI_RATCHET_ALLOWLIST_K: ReadonlyMap<string, AllowEntry> = new Map<s
   // ── 段③ ✅ T-22-09 で `S-003` / `S-004`（`_home/**` / `lib/home/**` / `page.tsx`）を
   //    semantic トークン / 7 段 / 6 トークン / 8 状態 / `PageBody` の幅 3 クラスへ寄せたので
   //    **この段の項目は空になった**（残しておくとラチェット ②「未使用の許可が残っていない」で落ちる）。
-  // ── 段④
-  ['apps/web/app/(main)/(auth)/invite/[token]/page.tsx', { stage: 4, reason: 'S-001 / S-002 / S-046 の刷新（段④）で `PageBody` に `widthClass` を渡す。移行中 1 行' }],
-  ['apps/web/app/(main)/(auth)/password-reset/confirm/page.tsx', { stage: 4, reason: 'S-001 / S-002 / S-046 の刷新（段④）で `PageBody` に `widthClass` を渡す。移行中 1 行' }],
-  ['apps/web/app/(main)/(auth)/password-reset/page.tsx', { stage: 4, reason: 'S-001 / S-002 / S-046 の刷新（段④）で `PageBody` に `widthClass` を渡す。移行中 1 行' }],
-  ['apps/web/app/(main)/(auth)/signin/page.tsx', { stage: 4, reason: 'S-001 / S-002 / S-046 の刷新（段④）で `PageBody` に `widthClass` を渡す。移行中 1 行' }],
-  ['apps/web/app/(main)/settings/organization/page.tsx', { stage: 4, reason: 'S-035 / S-036 / S-038 / S-042 の刷新（段④）で `PageBody` に `widthClass` を渡す。移行中 1 行' }],
-  ['apps/web/app/(main)/settings/partner-companies/page.tsx', { stage: 4, reason: 'S-035 / S-036 / S-038 / S-042 の刷新（段④）で `PageBody` に `widthClass` を渡す。移行中 1 行' }],
-  ['apps/web/app/(main)/settings/retention/page.tsx', { stage: 4, reason: 'S-035 / S-036 / S-038 / S-042 の刷新（段④）で `PageBody` に `widthClass` を渡す。移行中 1 行' }],
-  ['apps/web/app/(main)/settings/sending-domains/page.tsx', { stage: 4, reason: 'S-035 / S-036 / S-038 / S-042 の刷新（段④）で `PageBody` に `widthClass` を渡す。移行中 1 行' }],
-  ['apps/web/app/(main)/settings/usage/page.tsx', { stage: 4, reason: 'S-035 / S-036 / S-038 / S-042 の刷新（段④）で `PageBody` に `widthClass` を渡す。移行中 1 行' }],
-  ['apps/web/app/(main)/skills/page.tsx', { stage: 4, reason: 'S-014 系（スキル辞書） の刷新（段④）で `PageBody` に `widthClass` を渡す。移行中 1 行' }],
+  // ── 段④ ✅ 第 1〜4 弾（2026-10-03）で主平面の残り（案件 / 人材 / 提案 / 設定 / スキル辞書 / 認証）を
+  //    semantic トークン / 7 段 / 6 トークン / 8 状態 / `PageBody` の幅 3 クラスへ寄せたので
+  //    **この段の項目は空になった**（`app/_components/**` の 3 件は段⑤。本ファイル冒頭）。
   // ── 段⑤
   ['apps/web/app/admin/demo/page.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で `PageBody` に `widthClass` を渡す。移行中 1 行' }],
   ['apps/web/app/admin/page.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で `PageBody` に `widthClass` を渡す。移行中 1 行' }],

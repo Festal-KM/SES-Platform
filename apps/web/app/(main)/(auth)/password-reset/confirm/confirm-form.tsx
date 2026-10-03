@@ -146,7 +146,7 @@ export function ConfirmForm({
   if (stage === 'success') {
     return (
       <div data-testid="password-reset-confirm-success">
-        <p className="text-sm text-emerald-700" role="status" data-testid="password-reset-confirm-success-message">
+        <p className="text-body text-success" role="status" data-testid="password-reset-confirm-success-message">
           {messages.success}
         </p>
         <a className={SECONDARY_LINK_STACKED_CLASSES} href={SIGNIN_PATH}>
@@ -158,7 +158,7 @@ export function ConfirmForm({
 
   return (
     <form onSubmit={onSubmit} noValidate data-testid="password-reset-confirm-form">
-      <h2 className="mb-3 text-base font-bold text-slate-900">{messages.eyebrow}</h2>
+      <h2 className="mb-3 text-lg font-bold text-fg">{messages.eyebrow}</h2>
       {error === null ? null : (
         <FieldError className="mb-4" data-testid="password-reset-confirm-error">
           {error}
@@ -188,7 +188,7 @@ export function ConfirmForm({
         {/* 🔴 `<small>` を `FieldDescription`（`<p>`）に置き換えない —— `<label>` の中に
             `<p>` が入るのは内容モデル違反であり、説明文が**入力欄のアクセシブル名に
             畳み込まれる**（`packages/ui/src/components/field.tsx` 冒頭の 🔴）。 */}
-        <small className="text-sm text-slate-500">{messages.passwordHint}</small>
+        <small className="text-body text-fg-muted">{messages.passwordHint}</small>
       </Field>
       <Button
         className="w-full"

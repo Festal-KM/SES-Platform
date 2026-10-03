@@ -48,8 +48,12 @@ export default async function PasswordResetConfirmPage({
 }) {
   const { token } = await searchParams;
   return (
-    <AuthShell wordmark={t('product.name')}>
-      <h1 className="mb-4 text-xl font-bold text-slate-900">{t('passwordReset.title')}</h1>
+    // 🔴 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`）。認証 5 画面は
+    //    **クラス C = 読み幅**である（画面ファイルに `max-w-*` を書かない。検査 (c) / (k)）。
+    // 🔴 **中央寄せは `AuthShell` が持つ**（`AppShell` の外側で柱が無く、§7.1 が
+    //    「中央寄せにしない」とした理由が当てはまらない。`app/_components/auth-shell.tsx` 冒頭）。
+    <AuthShell wordmark={t('product.name')} widthClass="prose">
+      <h1 className="mb-4 text-title font-bold text-fg">{t('passwordReset.title')}</h1>
       {/* 🔴 トークンはフォームの内部でしか使わない（画面にも監査ログにも出さない）。 */}
       <ConfirmForm token={token ?? ''} minLength={PASSWORD_MIN_LENGTH} messages={messages} />
     </AuthShell>

@@ -12,6 +12,7 @@
 //    `readOrganizationSettings` と同じ方針。docs/04 `program-design` 申し送り 6）。
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
+import { PageBody } from '@ses/ui';
 import { t, type MessageKey } from '@ses/i18n';
 import { resolveTenantCtxOutcome } from '../../../../lib/auth/session';
 import { sendingDomainRuntime } from '../../../../lib/db/bootstrap';
@@ -124,9 +125,15 @@ export default async function SendingDomainSettingsPage() {
   };
 
   return (
-    <main className="mx-auto max-w-3xl px-4 py-8">
+    // 🔴 SP-22 段④: 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`）。
+    //    `S-036` は **クラス C = 読み幅 720px** である（検査 (c) / (k)）。
+    // ⚠️ DNS レコード表はこの 720px の中で **`break-all` で全文を折り返して見せる**（切り詰めない）。
+    //    値をコピーして DNS に転記するものであり、**読めなくなったらこの画面は用を成さない**。
+    <main className="py-6">
+      <PageBody widthClass="prose">
       <PageHeading trail={SENDING_DOMAIN_TRAIL} title={t('settings.sendingDomain.title')} />
       <SendingDomainScreen initial={view} canRegister={outcome.ctx.role === 'OWNER'} messages={messages} />
+      </PageBody>
     </main>
   );
 }

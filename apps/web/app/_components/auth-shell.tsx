@@ -34,21 +34,47 @@
 // 🔴 `S-001` / `S-046` は T1（モバイル完結）である（`CLAUDE.md` §13.2 / `docs/04` §S-001）。
 //    **単一カラムのまま、幅で出し分けない** —— ここに `sm:` 以降のバリアントを足して
 //    「広い画面では 2 カラム」にすると、モバイルが劣った版に見える構造ができる。
+//
+// ============================================================================
+// 🔴 SP-22 段④: 認証画面の外枠は**別扱い**である（中央寄せを壊さない）
+// ============================================================================
+// `docs/04` §7.1 は `S-001` / `S-002` / `S-046` / `A-001` を**クラス C（読み幅）**に割り当てて
+// おり、検査 (k) は **`page.tsx` が `widthClass` をちょうど 1 回渡す**ことを求める。そこで
+// `widthClass` をここで受けて `PageBody` に素通しする（`ui-width-class-coverage.test.ts` の
+// 「`PageBody` を薄く包んだ画面固有のラッパ」に当たる形）。
+//
+// 🔴 **ただし `PageBody` の `prose` の「左寄せ」をここに持ち込まない。** 認証画面は
+//    `AppShell` の外側であり、**サイドバーが無く、カードがビューポートの中央に在る**
+//    （§7.1 が「中央寄せにしない」とした理由は「サイドバーが左にある構造で視線の起点が
+//    画面ごとに動く」ことであり、柱が無いこの画面には当てはまらない）。
+//    したがって中央寄せ（`flex justify-center` + `max-w-sm`）はそのまま残す。
+// 🔴 **`PageBody` の gutter（`px-6`）を `px-0` で打ち消す。** ここでは左右の余白を
+//    `<main>` の `px-4` が持っており（= ビューポートの端との間隔）、二重に入れると
+//    カードの内容幅が 384 → 336px に縮む。**見た目を 1px も変えないための打ち消しであり、
+//    幅クラスの打ち消しではない**（`max-w-180` はカードの `max-w-sm` の内側で不活性）。
 import type { ReactNode } from 'react';
+import { PageBody, type PageWidthClass } from '@ses/ui';
 
 export type AuthShellProps = {
   /** ワードマーク（`t('product.name')`）。🔴 文言はここで解決しない。 */
   readonly wordmark: ReactNode;
+  /**
+   * `docs/04` §7.1 の幅クラス。認証 5 画面はいずれも **C（読み幅）**である。
+   * ⚠️ 既定を持つのは **`A-001`（運営者サインイン）が段⑤ の刷新待ち**で、まだ
+   *    `page.tsx` から渡していないためである（`ui-ratchet-allowlist.ts` の (k) に
+   *    `admin/signin/page.tsx` が残っている）。段⑤ で渡すようになったら既定を外せる。
+   */
+  readonly widthClass?: PageWidthClass;
   readonly children: ReactNode;
 };
 
-export function AuthShell({ wordmark, children }: AuthShellProps) {
+export function AuthShell({ wordmark, widthClass = 'prose', children }: AuthShellProps) {
   return (
     <main className="flex min-h-dvh justify-center px-4 py-6">
-      <div className="w-full max-w-sm">
+      <PageBody widthClass={widthClass} className="w-full max-w-sm px-0">
         <p className="mb-8 text-lg font-bold">{wordmark}</p>
         {children}
-      </div>
+      </PageBody>
     </main>
   );
 }

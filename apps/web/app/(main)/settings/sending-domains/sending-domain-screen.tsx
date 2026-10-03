@@ -15,6 +15,8 @@
 //    2 行目を作ってしまい「どちらが有効か」を利用者が誤認する経路になる。
 import { useEffect, useState, type FormEvent } from 'react';
 import {
+  Alert,
+  Badge,
   Button,
   Field,
   Input,
@@ -215,29 +217,29 @@ export function SendingDomainScreen({
   const onboardingStrip = (
     <section
       data-testid="sending-domain-onboarding"
-      className="mb-6 rounded-md border border-slate-200 bg-slate-50 p-4"
+      /* 🔴 SP-22 段④: これは**工程の表示**であって告知でないので `Alert` に寄せない
+         （`role="alert"` / `role="status"` のいずれでもない）。色と文字サイズをトークンに寄せた。 */
+      className="mb-6 rounded-md border border-border bg-bg-subtle p-4"
     >
-      <h2 className="mb-2 text-sm font-semibold text-slate-700">{messages.onboardingHeading}</h2>
-      <ol className="mb-2 flex flex-wrap items-center gap-2 text-xs text-slate-600">
+      <h2 className="mb-2 text-body font-semibold text-fg">{messages.onboardingHeading}</h2>
+      <ol className="mb-2 flex flex-wrap items-center gap-2 text-xs text-fg-muted">
         {messages.onboardingSteps.map((step, index) => {
           const isCurrent = index === messages.onboardingSteps.length - 1;
           return (
             <li key={step} className="flex items-center gap-2">
               {index > 0 ? <span aria-hidden="true">→</span> : null}
-              <span
-                className={
-                  isCurrent
-                    ? 'rounded bg-slate-900 px-2 py-1 font-semibold text-white'
-                    : 'rounded border border-slate-300 px-2 py-1'
-                }
-              >
+              {/* 🔴 SP-22 段④: 工程の印は `Badge` に寄せた（色を画面で決めない）。
+                  現在の工程 = 藍（§7.4「現在地」）/ それ以外 = 無彩色の枠線。
+                  ⚠️ 旧実装の現在工程は **濃紺の塗り（`slate-900`）**だった —— 濃色の面は
+                  `Sidebar` だけが持つ（§7.9 の `--color-sidebar-*`）ため、藍に改めた。 */}
+              <Badge variant={isCurrent ? 'brand' : 'neutral'} shape={isCurrent ? 'solid' : 'outline'}>
                 {step}
-              </span>
+              </Badge>
             </li>
           );
         })}
       </ol>
-      <p className="text-xs text-slate-500">{messages.onboardingGoal}</p>
+      <p className="text-xs text-fg-muted">{messages.onboardingGoal}</p>
     </section>
   );
 
@@ -246,7 +248,7 @@ export function SendingDomainScreen({
       <div data-testid="sending-domain-screen" data-fact-kind="NOT_REQUIRED">
         {onboardingStrip}
         <section className="mb-6">
-          <h2 className="mb-2 text-sm font-semibold text-slate-700">{messages.sectionStatus}</h2>
+          <h2 className="mb-2 text-body font-semibold text-fg">{messages.sectionStatus}</h2>
           <SendingDomainStatusFact fact={fact} messages={messages.fact} />
         </section>
       </div>
@@ -261,41 +263,33 @@ export function SendingDomainScreen({
       {onboardingStrip}
 
       <section className="mb-6">
-        <h2 className="mb-2 text-sm font-semibold text-slate-700">{messages.sectionStatus}</h2>
+        <h2 className="mb-2 text-body font-semibold text-fg">{messages.sectionStatus}</h2>
         <SendingDomainStatusFact fact={fact} messages={messages.fact} />
       </section>
 
       {domain === null ? (
-        <p
-          data-testid="sending-domain-unset-banner"
-          role="alert"
-          className="mb-6 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
-        >
+        <Alert variant="warning" data-testid="sending-domain-unset-banner" className="mb-6">
           {messages.bannerUnset}
-        </p>
+        </Alert>
       ) : null}
 
       {domain !== null && domain.state === 'FAILED' ? (
-        <div
-          data-testid="sending-domain-failed-banner"
-          role="alert"
-          className="mb-6 rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900"
-        >
+        <Alert variant="danger" data-testid="sending-domain-failed-banner" className="mb-6">
           <p>{messages.bannerFailed}</p>
           {domain.failureReasonKey === null ? null : (
             <p data-testid="sending-domain-failure-reason">
               {messages.failureReasonLabels[domain.failureReasonKey] ?? domain.failureReasonKey}
             </p>
           )}
-        </div>
+        </Alert>
       ) : null}
 
       {domain === null ? (
         <section className="mb-6" data-testid="sending-domain-register-section">
-          <h2 className="mb-2 text-sm font-semibold text-slate-700">{messages.sectionRegister}</h2>
+          <h2 className="mb-2 text-body font-semibold text-fg">{messages.sectionRegister}</h2>
           {canRegister ? (
             <form onSubmit={onRegister} noValidate data-testid="sending-domain-register-form">
-              <Field className="mb-2 max-w-sm" label={messages.registerDomainLabel}>
+              <Field className="mb-2" label={messages.registerDomainLabel}>
                 <Input
                   type="text"
                   name="domain"
@@ -308,7 +302,7 @@ export function SendingDomainScreen({
                 />
               </Field>
               {registerPhase === 'error' ? (
-                <p role="alert" className="mb-2 text-sm text-red-700" data-testid="sending-domain-register-error">
+                <p role="alert" className="mb-2 text-body text-danger" data-testid="sending-domain-register-error">
                   {messages.registerError}
                 </p>
               ) : null}
@@ -317,7 +311,7 @@ export function SendingDomainScreen({
               </Button>
             </form>
           ) : (
-            <p className="text-sm text-slate-600" data-testid="sending-domain-register-owner-only">
+            <p className="text-body text-fg-muted" data-testid="sending-domain-register-owner-only">
               {messages.registerOwnerOnlyNote}
             </p>
           )}
@@ -326,9 +320,9 @@ export function SendingDomainScreen({
 
       {domain !== null ? (
         <section className="mb-6" data-testid="sending-domain-records-section">
-          <h2 className="mb-2 text-sm font-semibold text-slate-700">{messages.sectionRecords}</h2>
+          <h2 className="mb-2 text-body font-semibold text-fg">{messages.sectionRecords}</h2>
           {allRecords.length === 0 ? (
-            <p className="text-sm text-slate-600" data-testid="sending-domain-records-empty">
+            <p className="text-body text-fg-muted" data-testid="sending-domain-records-empty">
               {messages.recordsDkimPending}
             </p>
           ) : (
@@ -354,7 +348,7 @@ export function SendingDomainScreen({
                       <TableRow align="top" key={key}>
                         <TableCell>
                           {record.type}
-                          <span className="ml-1 text-xs text-slate-400">
+                          <span className="ml-1 text-xs text-fg-muted">
                             （{messages.recordPurposeLabels[record.purposeKey]}）
                           </span>
                         </TableCell>
@@ -377,9 +371,7 @@ export function SendingDomainScreen({
                           {status === undefined ? null : (
                             <span
                               role="status"
-                              className={
-                                status === 'ok' ? 'ml-2 text-xs text-emerald-700' : 'ml-2 text-xs text-red-700'
-                              }
+                              className={status === 'ok' ? 'ml-2 text-xs text-success' : 'ml-2 text-xs text-danger'}
                               data-testid={`sending-domain-record-copy-feedback-${index}`}
                             >
                               {status === 'ok' ? messages.recordsCopied : messages.recordsCopyFailed}
@@ -399,7 +391,7 @@ export function SendingDomainScreen({
               {/* 🔴 DKIM は `domain.provision` 完了後に現れる（MAIL FROM の MX/TXT はドメイン名から
                   即時に決まるため先に出る）。REGISTERED のまま留まる利用者への補足。 */}
               {domain.dkimRecords.length === 0 ? (
-                <p className="mt-2 text-xs text-slate-500" data-testid="sending-domain-dkim-pending">
+                <p className="mt-2 text-xs text-fg-muted" data-testid="sending-domain-dkim-pending">
                   {messages.recordsDkimPending}
                 </p>
               ) : null}
@@ -416,48 +408,48 @@ export function SendingDomainScreen({
               {verifyPhase === 'submitting' ? messages.verifySubmitting : messages.verifySubmit}
             </Button>
             {verifyPhase === 'error' ? (
-              <span role="alert" className="text-sm text-red-700" data-testid="sending-domain-verify-error">
+              <span role="alert" className="text-body text-danger" data-testid="sending-domain-verify-error">
                 {messages.verifyError}
               </span>
             ) : null}
           </div>
 
           {verifyRequested ? (
-            <p role="status" className="mt-2 text-sm text-slate-600" data-testid="sending-domain-verify-requested">
+            <p role="status" className="mt-2 text-body text-fg-muted" data-testid="sending-domain-verify-requested">
               {messages.verifyRequested}
             </p>
           ) : null}
 
           {domain.state === 'REGISTERED' || domain.state === 'PENDING' ? (
             <div
-              className="mt-2 rounded-md border border-dashed border-slate-300 p-3 text-sm text-slate-600"
+              className="mt-2 rounded-md border border-dashed border-border-strong p-3 text-body text-fg-muted"
               data-testid="sending-domain-verify-pending"
             >
               <p>{messages.verifyPending}</p>
-              <p className="text-xs text-slate-400">{messages.verifyPendingNote}</p>
+              <p className="text-xs text-fg-muted">{messages.verifyPendingNote}</p>
             </div>
           ) : null}
         </section>
       ) : null}
 
       <section data-testid="sending-domain-affects">
-        <h2 className="mb-2 text-sm font-semibold text-slate-700">{messages.sectionAffects}</h2>
-        <ul className="mb-2 divide-y divide-slate-100 rounded-md border border-slate-200">
+        <h2 className="mb-2 text-body font-semibold text-fg">{messages.sectionAffects}</h2>
+        <ul className="mb-2 divide-y divide-border rounded-md border border-border">
           {messages.affectedFeatures.map((label) => (
-            <li key={label} className="px-3 py-2 text-sm text-slate-700">
+            <li key={label} className="px-3 py-2 text-body text-fg">
               {label}
             </li>
           ))}
         </ul>
         {domain === null || domain.state !== 'VERIFIED' ? (
-          <p className="mb-4 text-sm font-medium text-slate-900">{messages.affectsBlocked}</p>
+          <p className="mb-4 text-body font-medium text-fg">{messages.affectsBlocked}</p>
         ) : null}
-        <p className="mb-1 text-xs text-slate-500">
+        <p className="mb-1 text-xs text-fg-muted">
           {messages.exclusionMemberInvite}
           <br />
-          <span className="text-slate-400">{messages.exclusionMemberInviteNote}</span>
+          <span className="text-fg-muted">{messages.exclusionMemberInviteNote}</span>
         </p>
-        <p className="text-xs text-slate-500">{messages.exclusionEsign}</p>
+        <p className="text-xs text-fg-muted">{messages.exclusionEsign}</p>
       </section>
     </div>
   );

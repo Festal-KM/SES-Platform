@@ -46,7 +46,7 @@ export function SendingDomainStatusFact({
       <p
         data-testid="sending-domain-fact"
         data-fact-kind="NOT_REQUIRED"
-        className="text-sm text-slate-700"
+        className="text-body text-fg"
       >
         {messages.notRequiredNotice}
       </p>
@@ -58,7 +58,7 @@ export function SendingDomainStatusFact({
       <p
         data-testid="sending-domain-fact"
         data-fact-kind="UNSET"
-        className="text-sm font-medium text-slate-900"
+        className="text-body font-medium text-fg"
       >
         {messages.domainLabel}: {messages.noneLabel}
       </p>
@@ -70,7 +70,7 @@ export function SendingDomainStatusFact({
       data-testid="sending-domain-fact"
       data-fact-kind="SET"
       data-state={fact.state}
-      className="flex flex-wrap items-center gap-2 text-sm font-medium text-slate-900"
+      className="flex flex-wrap items-center gap-2 text-body font-medium text-fg"
     >
       <span>
         {messages.domainLabel}: {fact.domain}

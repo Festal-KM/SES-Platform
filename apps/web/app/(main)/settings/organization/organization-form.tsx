@@ -17,7 +17,7 @@
 //    ラベル文字を先に描く。順序が変わると読み上げの順も変わる（SP-21 の
 //    「要素の並びを変えない」）。ここは `<label>` を素のまま残し、見た目だけを移した。
 import { useState, type FormEvent } from 'react';
-import { Button, Checkbox, Field, FieldError, Input } from '@ses/ui';
+import { Alert, Button, Checkbox, Field, FieldError, Input } from '@ses/ui';
 
 export type OrganizationSettings = {
   readonly name: string;
@@ -108,10 +108,10 @@ export function OrganizationForm({
 
   return (
     <form onSubmit={onSubmit} noValidate>
-      <h2 className="mb-3 text-base font-bold text-slate-900">{messages.organizationSection}</h2>
+      <h2 className="mb-3 text-lg font-bold text-fg">{messages.organizationSection}</h2>
       {error === null ? null : <FieldError className="mb-4">{error}</FieldError>}
       {saved ? (
-        <p className="mb-4 text-sm text-emerald-700" role="status">
+        <p className="mb-4 text-body text-success" role="status">
           {messages.saved}
         </p>
       ) : null}
@@ -140,7 +140,7 @@ export function OrganizationForm({
       <Field as="p" className="mb-4" label={messages.lifecycleLabel}>
         <output>{messages.lifecycleStateName}</output>
       </Field>
-      <p className="mb-4 text-sm text-slate-500">{messages.lifecycleReadOnlyNote}</p>
+      <p className="mb-4 text-body text-fg-muted">{messages.lifecycleReadOnlyNote}</p>
 
       <Field className="mb-4" label={messages.piiRetentionYearsLabel}>
         <Input
@@ -153,9 +153,9 @@ export function OrganizationForm({
         />
       </Field>
 
-      <h2 className="mb-3 text-base font-bold text-slate-900">{messages.approvalSection}</h2>
-      <p className="mb-2 text-sm text-slate-600">{messages.autoApproveScopeNote}</p>
-      <label className="mb-4 flex items-center gap-2 text-sm">
+      <h2 className="mb-3 text-lg font-bold text-fg">{messages.approvalSection}</h2>
+      <p className="mb-2 text-body text-fg-muted">{messages.autoApproveScopeNote}</p>
+      <label className="mb-4 flex items-center gap-2 text-body">
         <Checkbox
           name="autoApproveEnabled"
           checked={autoApprove}
@@ -166,14 +166,13 @@ export function OrganizationForm({
       </label>
       {turningOn ? (
         <>
-          {/* 🔴 危険な操作の確認（docs/04 §S-035）。1 層でも不合格なら人間に差し戻される旨を明記。 */}
-          <p
-            className="mb-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900"
-            role="alert"
-          >
+          {/* 🔴 危険な操作の確認（docs/04 §S-035）。1 層でも不合格なら人間に差し戻される旨を明記。
+              🔴 SP-22 段④: 器を `@ses/ui` の `Alert`（`warning`）へ。**確認の段取りは 1 つも
+              減らしていない**（警告 → 同意チェック → 送信ボタンの 3 段のまま。`CLAUDE.md` §3.3）。 */}
+          <Alert variant="warning" className="mb-2">
             {messages.autoApproveWarning}
-          </p>
-          <label className="mb-4 flex items-center gap-2 text-sm">
+          </Alert>
+          <label className="mb-4 flex items-center gap-2 text-body">
             <Checkbox
               name="acknowledged"
               checked={acknowledged}
@@ -190,7 +189,7 @@ export function OrganizationForm({
       </Button>
 
       {/* 🔴 Phase 0 の範囲を隠さない（メンバー一覧・招待は後続。docs/04 §S-035 は Phase 0→P1）。 */}
-      <p className="mt-4 text-sm text-slate-500">{messages.membersComingSoon}</p>
+      <p className="mt-4 text-body text-fg-muted">{messages.membersComingSoon}</p>
     </form>
   );
 }

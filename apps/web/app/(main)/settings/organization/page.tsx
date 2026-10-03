@@ -14,7 +14,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
-import { SECONDARY_LINK_CLASSES } from '@ses/ui';
+import { PageBody, SECONDARY_LINK_CLASSES } from '@ses/ui';
 import { t } from '@ses/i18n';
 import { resolveTenantCtxOutcome } from '../../../../lib/auth/session';
 import { sendingDomainRuntime } from '../../../../lib/db/bootstrap';
@@ -48,7 +48,12 @@ export default async function OrganizationSettingsPage() {
   // T-21-03: 旧 `.ses-page` を Tailwind へ。余白は他の業務画面と同じ器に揃えた
   //          （同じ「単一カラムの業務画面」が 2 種類の余白を持つと、次の画面が倣う先を選べない）。
   return (
-    <main className="mx-auto max-w-5xl px-4 py-8">
+    // 🔴 SP-22 段④: 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`）。
+    //    `S-035` は **クラス C = 読み幅 720px**（設定は「低密度・1 項目ずつ」。§7.1）であり、
+    //    画面ファイルに `max-w-*` を書かない（検査 (c) / (k)）。旧 `max-w-5xl`（1024px）は
+    //    §7.1 の割り当てと食い違っていた。
+    <main className="py-6">
+      <PageBody widthClass="prose">
       <SendingDomainGuardBanner
         visible={showSendingDomainBanner}
         messages={{
@@ -86,7 +91,7 @@ export default async function OrganizationSettingsPage() {
           要約の数値（席数 / 消化率）は本タスクでは置かず、導線だけを出す —— 要約を別実装で描くと
           `S-038` と数値がずれる経路になる（残量は `readUsageView` の 1 実装で読む）。 */}
       <section className="mt-8" data-testid="org-settings-usage">
-        <h2 className="mb-2 text-base font-bold text-slate-900">{t('usage.summary.heading')}</h2>
+        <h2 className="mb-2 text-lg font-bold text-fg">{t('usage.summary.heading')}</h2>
         <Link className={SECONDARY_LINK_CLASSES} href="/settings/usage" data-testid="org-settings-usage-link">
           {t('usage.open')}
         </Link>
@@ -94,7 +99,7 @@ export default async function OrganizationSettingsPage() {
       {/* 🔴 T-10-09: docs/04 §S-042「関連画面: ← S-035」。返却と削除予定の画面（`/settings/retention`）への導線。
           `OWNER` / `ADMIN` だけが本画面に到達しているので、導線側で追加のロール判定は要らない。 */}
       <section className="mt-8" data-testid="org-settings-retention">
-        <h2 className="mb-2 text-base font-bold text-slate-900">{t('retention.summary.heading')}</h2>
+        <h2 className="mb-2 text-lg font-bold text-fg">{t('retention.summary.heading')}</h2>
         <Link className={SECONDARY_LINK_CLASSES} href="/settings/retention" data-testid="org-settings-retention-link">
           {t('retention.open')}
         </Link>
@@ -105,7 +110,7 @@ export default async function OrganizationSettingsPage() {
           `lib/shell/nav.ts` と同じ規律）。ここに来られるのはホスト所属の `OWNER` / `ADMIN` だけなので、
           導線側で追加のロール判定は要らない（本画面冒頭の redirect と同じ条件）。 */}
       <section className="mt-8" data-testid="org-settings-partner-companies">
-        <h2 className="mb-2 text-base font-bold text-slate-900">{t('partnerCompanies.title')}</h2>
+        <h2 className="mb-2 text-lg font-bold text-fg">{t('partnerCompanies.title')}</h2>
         <Link
           className={SECONDARY_LINK_CLASSES}
           href="/settings/partner-companies"
@@ -115,7 +120,7 @@ export default async function OrganizationSettingsPage() {
         </Link>
       </section>
       <section className="mt-8" data-testid="org-settings-sending-domains">
-        <h2 className="mb-2 text-base font-bold text-slate-900">{t('settings.sendingDomain.title')}</h2>
+        <h2 className="mb-2 text-lg font-bold text-fg">{t('settings.sendingDomain.title')}</h2>
         <Link
           className={SECONDARY_LINK_CLASSES}
           href="/settings/sending-domains"
@@ -125,11 +130,12 @@ export default async function OrganizationSettingsPage() {
         </Link>
       </section>
       <section className="mt-8" data-testid="org-settings-audit-logs">
-        <h2 className="mb-2 text-base font-bold text-slate-900">{t('auditLogs.title')}</h2>
+        <h2 className="mb-2 text-lg font-bold text-fg">{t('auditLogs.title')}</h2>
         <Link className={SECONDARY_LINK_CLASSES} href="/audit-logs" data-testid="org-settings-audit-logs-link">
           {t('auditLogs.open')}
         </Link>
       </section>
+      </PageBody>
     </main>
   );
 }

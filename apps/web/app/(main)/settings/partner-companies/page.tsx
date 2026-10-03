@@ -11,6 +11,7 @@
 // 🔴 `listPartnerCompanies` を直接呼ぶ（自己 fetch しない。`S-035` / `S-036` と同じ方針）。
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
+import { PageBody } from '@ses/ui';
 import { t } from '@ses/i18n';
 import { resolveTenantCtxOutcome } from '../../../../lib/auth/session';
 import { inviteUrlRuntime, sendingDomainRuntime } from '../../../../lib/db/bootstrap';
@@ -150,7 +151,12 @@ export default async function PartnerCompaniesPage() {
     : null;
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-8">
+    // 🔴 SP-22 段④: 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`）。
+    //    `S-014` は **クラス A = 全幅**（一覧の画面。§7.1 の割り当て）であり、
+    //    画面ファイルに `max-w-*` を書かない（検査 (c) / (k)）。旧 `max-w-5xl`（1024px）は
+    //    🔴 **6 列 + 操作列の一覧を 1024px に押し込んでいた**（§7.1「列を削らないことが先」）。
+    <main className="py-6">
+      <PageBody widthClass="full">
       <PageHeading trail={PARTNER_COMPANIES_TRAIL} title={t('partnerCompanies.title')} />
       <PartnerCompaniesScreen
         initial={view}
@@ -232,6 +238,7 @@ export default async function PartnerCompaniesPage() {
           suspensionError: t('partnerCompanies.suspension.error'),
         }}
       />
+      </PageBody>
     </main>
   );
 }

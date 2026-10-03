@@ -15,6 +15,7 @@
 // 🔴 閲覧のみの画面であり、`CLOSING` でも残量は見られる（実行系ガードを掛けない。#69 と同じ）。
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
+import { PageBody } from '@ses/ui';
 import { t, type MessageKey } from '@ses/i18n';
 import { resolveTenantCtxOutcome } from '../../../../lib/auth/session';
 import { requestNow } from '../../../../lib/request/now';
@@ -132,9 +133,17 @@ export default async function UsageSettingsPage() {
     );
 
   return (
-    <main className="mx-auto max-w-3xl px-4 py-8">
+    // 🔴 SP-22 段④: 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`）。
+    //    `S-038` は §7.1 の表で **クラス B = 分割** に割り当てられている。
+    // ⚠️ **`aside` は渡していない** —— 副カラムに来るのは §S-038 のセクション 7
+    //    （履歴 = 日次推移の件数）であり、**それが未実装である**（同節の実装注記 ①。
+    //    集計の材料が SP-11 以降）。ないものを埋めるために別の内容を発明しない。
+    //    副カラムの中身が無いときに `aside` を渡さないのは `S-010` の読み込み中・失敗時と同じ扱いである。
+    <main className="py-6">
+      <PageBody widthClass="split">
       <PageHeading trail={USAGE_TRAIL} title={t('usage.title')} linkTestId="usage-breadcrumb-home" />
       {body}
+      </PageBody>
     </main>
   );
 }

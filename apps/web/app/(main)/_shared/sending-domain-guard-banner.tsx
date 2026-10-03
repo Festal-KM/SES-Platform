@@ -13,7 +13,14 @@
 //    （`CLAUDE.md` §13.3「判断材料を隠さない」は狭い画面のための規律であり、ここは
 //    「その場で行動できる相手にだけ導線を見せる」という別の観点）。パートナー所属ユーザーは
 //    そもそも `TenantSendingDomain` を読めない（RLS C2 HOST_ONLY）ため対象外。
+// 🔴 SP-22 段④: 器を `@ses/ui` の `Alert`（`variant="warning"`）に寄せた。色・枠線・余白・
+//    文字サイズの決定を画面から取り除く（§7.4 の「橙 = 期限が近い・要注意」。**赤にしない** ——
+//    外部で事故が起きたのではなく「まだ送れる状態になっていない」である）。
+//    ⚠️ **`role` は `status` のまま**（`Alert` の既定は `alert` だが、ここは利用者の操作に
+//    対する即時の警告ではなく、画面を開いた時点の事実の提示である。`Alert` は `role` を
+//    呼び出し側から上書きできる形で取り込まれている。`packages/ui/.../alert.tsx` の照合表）。
 import Link from 'next/link';
+import { Alert } from '@ses/ui';
 
 export type SendingDomainGuardBannerMessages = {
   readonly text: string;
@@ -29,10 +36,11 @@ export function SendingDomainGuardBanner({
 }) {
   if (!visible) return null;
   return (
-    <div
+    <Alert
+      variant="warning"
       role="status"
       data-testid="sending-domain-guard-banner"
-      className="mb-6 flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+      className="mb-6 flex flex-wrap items-center justify-between gap-2"
     >
       <p>{messages.text}</p>
       <Link
@@ -42,6 +50,6 @@ export function SendingDomainGuardBanner({
       >
         {messages.linkLabel}
       </Link>
-    </div>
+    </Alert>
   );
 }

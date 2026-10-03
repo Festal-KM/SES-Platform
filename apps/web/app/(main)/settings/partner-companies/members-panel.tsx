@@ -15,7 +15,9 @@
 //    一覧は横スクロールで劣化させ、非表示にはしない。
 import { useState, type FormEvent } from 'react';
 import {
+  Alert,
   Button,
+  EmptyState,
   Field,
   Input,
   Select,
@@ -187,20 +189,20 @@ export function MembersPanel({
 
   return (
     <section className="mb-8" data-testid="members-panel">
-      <h3 className="mb-2 text-sm font-semibold text-slate-700">{messages.section}</h3>
+      <h3 className="mb-2 text-body font-semibold text-fg">{messages.section}</h3>
       {canManage ? null : (
-        <p className="mb-2 text-xs text-slate-500" data-testid="members-read-only-note">
+        <p className="mb-2 text-xs text-fg-muted" data-testid="members-read-only-note">
           {messages.readOnlyNote}
         </p>
       )}
 
       {members.length === 0 ? (
-        <p
-          className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700"
-          data-testid="members-empty"
-        >
-          {messages.empty}
-        </p>
+        // 🔴 SP-22 段④: 空状態の器は `@ses/ui` の `EmptyState`（§10.4）。器の `data-testid` は
+        //    凍結済みの値のままで、`{prefix}root` / `{prefix}description` は**追加**である。
+        //    🔴 **Primary を置かない** —— 招待のフォームはこの下に常時出ている（`canManage`）。
+        <div data-testid="members-empty">
+          <EmptyState testIdPrefix="members-empty-state-" description={messages.empty} />
+        </div>
       ) : (
         // 🔴 Tier 3 の一覧は横スクロールで劣化させる（モバイルで隠さない。`CLAUDE.md` §13.3）。
         //    横スクロールの器は `Table` が自前で持つ（`overflow-x-auto` の `<div>`）ため、
@@ -239,14 +241,14 @@ export function MembersPanel({
                     <TableCell>
                       {self ? (
                         // 🔴 自分自身には操作を出さない（サーバも 422 で拒否する）。
-                        <span className="text-xs text-slate-500" data-testid={`member-self-${member.id}`}>
+                        <span className="text-xs text-fg-muted" data-testid={`member-self-${member.id}`}>
                           {messages.self}
                         </span>
                       ) : member.status === 'REVOKED' ? (
-                        <span className="text-xs text-slate-500">{messages.valueNone}</span>
+                        <span className="text-xs text-fg-muted">{messages.valueNone}</span>
                       ) : (
                         <div className="flex flex-wrap items-center gap-2">
-                          <label className="text-xs text-slate-600">
+                          <label className="text-xs text-fg-muted">
                             <span className="sr-only">{messages.roleChangeLabel}</span>
                             <Select
                               value={member.role}
@@ -288,24 +290,29 @@ export function MembersPanel({
 
       {/* 🔴 確認ステップ（`docs/04` §S-035「操作と結果」）。変更前後と影響を必ず出す。 */}
       {pending === null ? null : (
-        <div
-          className="mt-3 rounded-md border border-slate-300 p-3 text-sm"
+        // 🔴 SP-22 段④: 器は `Alert`。**確認のステップを 1 つも減らしていない**
+        //    （変更前後の提示 → 実行 / 取消の 2 ボタンのまま）。
+        // 🔴 **`neutral`（無彩色）を選んだ** —— 旧実装も無彩色の枠（`slate-300`）であり、
+        //    色の意味（橙 = 要注意 / 赤 = 不可逆な破棄）をここで新しく割り当てない（§7.4）。
+        <Alert
+          variant="neutral"
+          className="mt-3"
           data-testid={pending.kind === 'ROLE' ? 'member-role-confirm' : 'member-revoke-confirm'}
         >
-          <p className="mb-1 font-medium text-slate-900">
+          <p className="mb-1 font-medium">
             {pending.kind === 'ROLE' ? messages.roleChangeConfirmTitle : messages.revokeConfirmTitle}
           </p>
           {pending.kind === 'ROLE' ? (
-            <dl className="mb-2 text-slate-700">
+            <dl className="mb-2">
               <div className="mb-1">
-                <dt className="text-xs text-slate-500">{messages.roleChangeConfirmBefore}</dt>
+                <dt className="text-xs text-fg-muted">{messages.roleChangeConfirmBefore}</dt>
                 <dd data-testid="member-role-confirm-before">
                   {messages.roleLabels[pending.member.role]} —{' '}
                   {messages.roleCapabilities[pending.member.role]}
                 </dd>
               </div>
               <div>
-                <dt className="text-xs text-slate-500">{messages.roleChangeConfirmAfter}</dt>
+                <dt className="text-xs text-fg-muted">{messages.roleChangeConfirmAfter}</dt>
                 <dd data-testid="member-role-confirm-after">
                   {messages.roleLabels[pending.nextRole]} —{' '}
                   {messages.roleCapabilities[pending.nextRole]}
@@ -313,12 +320,12 @@ export function MembersPanel({
               </div>
             </dl>
           ) : (
-            <p className="mb-2 text-slate-700" data-testid="member-revoke-confirm-text">
+            <p className="mb-2" data-testid="member-revoke-confirm-text">
               {messages.revokeConfirmText}
             </p>
           )}
           {phase === 'error' ? (
-            <p role="alert" className="mb-2 text-sm text-red-700" data-testid="member-action-error">
+            <p role="alert" className="mb-2 text-body text-danger" data-testid="member-action-error">
               {pending.kind === 'ROLE' ? messages.roleChangeError : messages.revokeError}
             </p>
           ) : null}
@@ -350,29 +357,31 @@ export function MembersPanel({
               {pending.kind === 'ROLE' ? messages.roleChangeCancel : messages.revokeCancel}
             </Button>
           </div>
-        </div>
+        </Alert>
       )}
 
       {done === null ? null : (
-        <p role="status" className="mt-2 text-sm text-emerald-700" data-testid="member-action-done">
+        <p role="status" className="mt-2 text-body text-success" data-testid="member-action-done">
           {done === 'ROLE' ? messages.roleChangeDone : messages.revokeDone}
         </p>
       )}
 
       {canManage ? (
         <div className="mt-6" data-testid="members-invite-section">
-          <h4 className="mb-2 text-sm font-semibold text-slate-700">{messages.inviteSection}</h4>
+          <h4 className="mb-2 text-body font-semibold text-fg">{messages.inviteSection}</h4>
           {/* 🔴 docs/04 §3.5: `sandbox` では**操作の隣に**バナーと同じ趣旨を再掲する。 */}
           {sandboxLinkHandover ? (
-            <p
-              className="mb-3 rounded-md border border-sky-300 bg-sky-50 p-2 text-xs text-sky-900"
+            <Alert
+              variant="info"
+              role="status"
+              className="mb-3 text-xs"
               data-testid="members-invite-sandbox-notice"
             >
               {messages.invitePreNotice}
-            </p>
+            </Alert>
           ) : null}
           <form onSubmit={onInvite} noValidate data-testid="members-invite-form">
-            <Field className="mb-2 max-w-sm" label={messages.inviteEmailLabel}>
+            <Field className="mb-2" label={messages.inviteEmailLabel}>
               <Input
                 type="email"
                 name="email"
@@ -383,7 +392,7 @@ export function MembersPanel({
                 data-testid="members-invite-email"
               />
             </Field>
-            <Field className="mb-2 max-w-sm" label={messages.inviteRoleLabel}>
+            <Field className="mb-2" label={messages.inviteRoleLabel}>
               <Select
                 name="role"
                 value={inviteRole}
@@ -399,14 +408,14 @@ export function MembersPanel({
               </Select>
             </Field>
             {invitePhase === 'error' ? (
-              <p role="alert" className="mb-2 text-sm text-red-700" data-testid="members-invite-error">
+              <p role="alert" className="mb-2 text-body text-danger" data-testid="members-invite-error">
                 {messages.inviteError}
               </p>
             ) : null}
             {inviteResult === null ? null : (
               <p
                 role="status"
-                className="mb-2 text-sm text-slate-700"
+                className="mb-2 text-body text-fg"
                 data-testid="members-invite-result"
                 data-delivery-state={inviteResult}
               >

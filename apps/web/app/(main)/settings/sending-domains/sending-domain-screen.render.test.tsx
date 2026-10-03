@@ -206,6 +206,35 @@ describe('SendingDomainScreen の状態別描画（S-036。4 状態 + UNSET + NO
     expect(html).not.toContain('data-testid="sending-domain-register-form"');
   });
 
+  // 🔴 SP-22 段④（設定まわりの刷新。2026-10-03）で追加した。
+  //    **DNS レコードの値はコピーして顧客の DNS に転記するもの**であり、
+  //    🔴 **切り詰められたらこの画面は用を成さない**（`U-04` / §S-036 のオンボーディングの鎖がそこで切れる）。
+  //    幅クラスを C（720px）に移したので、折り返しで全文が読めることを固定する。
+  it('🔴 DNS レコードの値が切り詰められず、折り返しで全文読める', () => {
+    const html = render({ required: true, domains: [domain({ state: 'PENDING' })] });
+
+    // ① 4 行の名前と値がそのまま markup に入っている（省略記号を付けず、値を削っていない）。
+    // ② **そのセル自身**が折り返しを許す（`whitespace-normal` + `break-all`）。
+    //    🔴 幅を持たない器全体ではなく、**セルを名指しで見る** ——
+    //    `Badge` の基底が `overflow-hidden` を持っているため、markup 全体を見る形にすると
+    //    関係のない語を拾って誤検知する（= いずれ緩められる検査になる）。
+    for (const record of [...DKIM_RECORDS, ...MAIL_FROM_RECORDS]) {
+      for (const text of [record.name, record.value]) {
+        expect(html).toContain(text);
+        // 値を含む `<td>` を文字列操作で切り出す（正規表現のエスケープを持ち込まない）。
+        const end = html.indexOf(`>${text}</td>`);
+        expect(end, `値「${text}」のセルが見つからない`).toBeGreaterThan(-1);
+        const classes = html.slice(html.lastIndexOf('<td class="', end) + '<td class="'.length, end);
+        expect(classes, text).toContain('whitespace-normal');
+        expect(classes, text).toContain('break-all');
+        // ③ 🔴 切り詰める語を 1 つも使っていない。
+        expect(classes, text).not.toContain('truncate');
+        expect(classes, text).not.toContain('line-clamp');
+        expect(classes, text).not.toContain('text-ellipsis');
+      }
+    }
+  });
+
   it('NOT_REQUIRED（sandbox / demo / development）: 検証不要の注記のみで、登録・DNS・影響機能セクションは出ない', () => {
     const html = render({ required: false, domains: [] });
 

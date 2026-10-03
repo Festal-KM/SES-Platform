@@ -186,6 +186,19 @@ describe('S-014 ホストの ADMIN 視点（docs/04 §S-014）', () => {
     expect(html).not.toContain('data-testid="partner-company-invite-submit"');
   });
 
+  // 🔴 SP-22 段④（設定まわりの刷新。2026-10-03）で追加した。停止の確認ステップを
+  //    `Alert` の器に移したため、**1 クリックで停止できる形に退化していないこと**を固定する
+  //    （`docs/04` §S-014「操作と結果」/ §7.6 の摩擦。**停止はデータを消さないが取引を止める**）。
+  it('🔴 停止は 1 クリックでは実行できない（最初は開始ボタンだけで、確認と実行は出ていない）', () => {
+    const html = render({ items: [company()], total: 1 });
+
+    expect(html).toContain('data-testid="partner-company-suspend-start"');
+    // 🔴 確認ブロックと実行ボタンは、開始を押すまで DOM に無い。
+    expect(html).not.toContain('data-testid="partner-company-suspend-confirm"');
+    expect(html).not.toContain('data-testid="partner-company-suspend-confirm-submit"');
+    expect(html).not.toContain('data-testid="partner-company-suspend-cancel"');
+  });
+
   it('停止中の取引先では、停止ボタンではなく解除ボタンが出る', () => {
     const html = render({
       items: [company({ status: 'SUSPENDED', suspendedAt: '2026-09-01T00:00:00.000Z' })],

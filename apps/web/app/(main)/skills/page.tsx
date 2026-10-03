@@ -10,6 +10,7 @@
 // 🔴 一覧はサーバコンポーネントから直接読む（自己 fetch しない。`S-014` / `S-007` と同じ方針）。
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
+import { PageBody } from '@ses/ui';
 import { t } from '@ses/i18n';
 import { resolveTenantCtxOutcome } from '../../../lib/auth/session';
 import { isSkillAliasDeciderRole } from '../../../lib/skills/policy';
@@ -32,7 +33,11 @@ export default async function SkillDictionaryPage() {
   const [aliases, skills] = await Promise.all([listSkillAliases(ctx, {}), listSkills(ctx, {})]);
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-8">
+    // 🔴 SP-22 段④: 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`）。
+    //    `S-009` は **クラス A = 全幅**（一覧の画面。§7.1 の割り当て）であり、
+    //    画面ファイルに `max-w-*` を書かない（検査 (c) / (k)）。
+    <main className="py-6">
+      <PageBody widthClass="full">
       <PageHeading trail={SKILL_DICTIONARY_TRAIL} title={t('skillDictionary.title')} />
       <SkillDictionaryScreen
         initialAliases={aliases}
@@ -89,6 +94,7 @@ export default async function SkillDictionaryPage() {
           valueNone: t('skillDictionary.value.none'),
         }}
       />
+      </PageBody>
     </main>
   );
 }

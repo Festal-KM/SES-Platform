@@ -16,7 +16,7 @@
 //    T-21-07 に進めなかった（SP-21 §5 T-21-04 の「半分だけ Tailwind の状態で止めない」）。
 //    T-21-07 で `globals.css` は削除済みであり、手書き CSS への依存はもう無い。
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Button, Field, FieldError, Input, SECONDARY_LINK_STACKED_CLASSES } from '@ses/ui';
+import { Button, Field, FieldError, Input, SECONDARY_LINK_STACKED_CLASSES, Skeleton } from '@ses/ui';
 import { formatDateTimeJst } from '../../../../../lib/format/datetime';
 
 export type InviteRoleName =
@@ -78,10 +78,10 @@ const SIGNIN_PATH = '/signin';
  * 🔴 この 2 つは**この画面にしか無い**ため `packages/ui` へは出さない
  *    （使い手が 1 つのものを共有プリミティブにすると、次の画面が形を合わせに来る）。
  */
-const SUMMARY_CLASSES = 'mb-6 text-sm';
-const SUMMARY_TERM_CLASSES = 'mt-3 text-slate-500';
-const SUMMARY_VALUE_CLASSES = 'mt-0.5 wrap-anywhere';
-const NOTICE_CLASSES = 'mb-4 rounded-md border border-slate-300 px-3 py-2 text-sm';
+const SUMMARY_CLASSES = 'mb-6 text-body';
+const SUMMARY_TERM_CLASSES = 'mt-3 text-fg-muted';
+const SUMMARY_VALUE_CLASSES = 'mt-1 wrap-anywhere';
+const NOTICE_CLASSES = 'mb-4 rounded-md border border-border-strong px-3 py-2 text-body';
 
 export function InviteForm({
   token,
@@ -159,11 +159,12 @@ export function InviteForm({
 
   if (load.kind === 'loading') {
     // 🔴 招待内容の骨格（docs/04 §S-002 のローディング）。
+    // 🔴 SP-22 段④: 骨格の実装は `@ses/ui` の `Skeleton` 1 箇所である（§5-13 / §10.4）——
+    //    高さ・色・本数を画面ごとに決めない。`aria-busy` / `aria-live` は器に残す
+    //    （`Skeleton` は棒 1 本ずつに `aria-hidden` を付けるので、読み上げは器の 2 属性が担う）。
     return (
       <div aria-busy="true" aria-live="polite">
-        <p className="mb-3 h-4 rounded-sm bg-slate-200" />
-        <p className="mb-3 h-4 rounded-sm bg-slate-200" />
-        <p className="mb-3 h-4 rounded-sm bg-slate-200" />
+        <Skeleton height="body" lines={3} />
       </div>
     );
   }
@@ -201,7 +202,7 @@ export function InviteForm({
 
   return (
     <form onSubmit={onSubmit} noValidate>
-      <h2 className="mb-3 text-base font-bold text-slate-900">{messages.invitationHeading}</h2>
+      <h2 className="mb-3 text-lg font-bold text-fg">{messages.invitationHeading}</h2>
       <dl className={SUMMARY_CLASSES}>
         <dt className={SUMMARY_TERM_CLASSES}>{messages.tenantNameLabel}</dt>
         <dd className={SUMMARY_VALUE_CLASSES}>{view.tenantName}</dd>
@@ -222,7 +223,7 @@ export function InviteForm({
       {/* 🔴 VIEWER は「できないこと」を受諾前に示す（BR-31）。 */}
       {view.role === 'VIEWER' ? <p className={NOTICE_CLASSES}>{messages.viewerNotice}</p> : null}
 
-      <h2 className="mb-3 text-base font-bold text-slate-900">{messages.accountHeading}</h2>
+      <h2 className="mb-3 text-lg font-bold text-fg">{messages.accountHeading}</h2>
       {error === null ? null : <FieldError className="mb-4">{error}</FieldError>}
       <Field className="mb-4" label={messages.displayNameLabel}>
         <Input
@@ -245,7 +246,7 @@ export function InviteForm({
         />
         {/* 🔴 `<small>` のまま（`<label>` の中に `<p>` を入れない。`FieldDescription` を使うと
             説明文が入力欄のアクセシブル名に畳み込まれる）。 */}
-        <small className="text-sm text-slate-500">{messages.passwordHint}</small>
+        <small className="text-body text-fg-muted">{messages.passwordHint}</small>
       </Field>
 
       {/* 🔴 「受諾すると失効する」ことを、押す前に伝える。 */}

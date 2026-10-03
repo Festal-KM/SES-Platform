@@ -171,13 +171,13 @@ export function SignInForm({
   if (stage === 'twoFactor') {
     return (
       <form onSubmit={onSubmitCode} noValidate data-testid="signin-2fa-form">
-        <h2 className="mb-3 text-base font-bold text-slate-900">{messages.twoFactorTitle}</h2>
+        <h2 className="mb-3 text-lg font-bold text-fg">{messages.twoFactorTitle}</h2>
         {errorBlock}
         {enrollment === null ? (
-          <p className="mb-4 text-sm text-slate-700">{messages.twoFactorVerifyLead}</p>
+          <p className="mb-4 text-body text-fg">{messages.twoFactorVerifyLead}</p>
         ) : (
           <>
-            <p className="mb-4 text-sm text-slate-700">{messages.twoFactorSetupLead}</p>
+            <p className="mb-4 text-body text-fg">{messages.twoFactorSetupLead}</p>
             {/* 🔴 QR は利用者の端末の中だけで組み立てる（外部の QR 生成サービスに
                   `otpauth://` URL を渡さない。docs/05 §6.3 #3 / CLAUDE.md §3.5）。 */}
             <OtpauthQr
@@ -193,17 +193,17 @@ export function SignInForm({
                   🔴 長いアドレスを**折り返して全部見せる**（`wrap-anywhere`）。QR を読めない
                      環境での唯一の経路であり、切り詰めると設定を完了できない。 */}
               <code
-                className="block rounded-md border border-slate-300 p-2 text-xs wrap-anywhere"
+                className="block rounded-md border border-border-strong p-2 text-xs wrap-anywhere"
                 data-testid="signin-otpauth-uri"
               >
                 {enrollment.otpauthUrl}
               </code>
             </Field>
-            <h3 className="mb-1 text-sm font-bold text-slate-900">
+            <h3 className="mb-1 text-body font-bold text-fg">
               {messages.twoFactorRecoveryHeading}
             </h3>
-            <p className="mb-2 text-sm text-slate-700">{messages.twoFactorRecoveryNote}</p>
-            <ul className="mb-4 pl-5 text-sm">
+            <p className="mb-2 text-body text-fg">{messages.twoFactorRecoveryNote}</p>
+            <ul className="mb-4 pl-6 text-body">
               {enrollment.recoveryCodes.map((code) => (
                 <li key={code}>
                   <code>{code}</code>

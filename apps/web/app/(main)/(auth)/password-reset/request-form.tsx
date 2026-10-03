@@ -93,14 +93,14 @@ export function RequestForm({ messages }: { messages: RequestFormMessages }) {
   if (stage === 'complete') {
     return (
       <div data-testid="password-reset-complete">
-        <h2 className="mb-3 text-base font-bold text-slate-900">{messages.completeEyebrow}</h2>
+        <h2 className="mb-3 text-lg font-bold text-fg">{messages.completeEyebrow}</h2>
         <p
-          className="mb-4 rounded-md border border-slate-300 px-3 py-2 text-sm"
+          className="mb-4 rounded-md border border-border-strong px-3 py-2 text-body"
           data-testid="password-reset-complete-message"
         >
           {messages.completeMessage}
         </p>
-        <p className="text-sm text-slate-700">{messages.completeNote}</p>
+        <p className="text-body text-fg">{messages.completeNote}</p>
         <a className={SECONDARY_LINK_STACKED_CLASSES} href={SIGNIN_PATH}>
           {messages.backToSignIn}
         </a>
@@ -110,7 +110,7 @@ export function RequestForm({ messages }: { messages: RequestFormMessages }) {
 
   return (
     <form onSubmit={onSubmit} noValidate data-testid="password-reset-request-form">
-      <h2 className="mb-3 text-base font-bold text-slate-900">{messages.eyebrow}</h2>
+      <h2 className="mb-3 text-lg font-bold text-fg">{messages.eyebrow}</h2>
       {error === null ? null : (
         <FieldError className="mb-4" data-testid="password-reset-request-error">
           {error}

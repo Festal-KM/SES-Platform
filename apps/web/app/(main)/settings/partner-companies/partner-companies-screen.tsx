@@ -23,7 +23,9 @@
 import { useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import {
+  Alert,
   Button,
+  EmptyState,
   Field,
   Input,
   Table,
@@ -321,19 +323,24 @@ export function PartnerCompaniesScreen({
     <div data-testid="partner-companies-screen">
       {/* 🔴 `F-007 AC-1`: パートナーには自社 1 社しか出ない。件数の示唆を含めずに常時示す。 */}
       {canManage ? null : (
-        <p className="mb-4 text-sm text-slate-600" data-testid="partner-companies-scope-notice">
+        <p className="mb-4 text-body text-fg-muted" data-testid="partner-companies-scope-notice">
           {messages.partnerScopeNotice}
           <br />
-          <span className="text-slate-500">{messages.readOnlyNote}</span>
+          <span className="text-fg-muted">{messages.readOnlyNote}</span>
         </p>
       )}
 
       <section className="mb-8" data-testid="partner-companies-list-section">
-        <h2 className="mb-2 text-sm font-semibold text-slate-700">{messages.sectionList}</h2>
+        <h2 className="mb-2 text-body font-semibold text-fg">{messages.sectionList}</h2>
         {items.length === 0 ? (
-          <p className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700" data-testid="partner-companies-empty">
-            {messages.empty}
-          </p>
+          // 🔴 SP-22 段④: 空状態の器は `@ses/ui` の `EmptyState`（§10.4）。
+          //    ⚠️ 器の `data-testid` は凍結済みの値のままで、`EmptyState` が出す
+          //    `{prefix}root` / `{prefix}description` は**追加**である（改名ではない）。
+          //    🔴 **Primary を置かない** —— 登録のフォームがこの直下に常時出ているため（`canManage`）、
+          //    同じ操作への入口を 2 つ作らない（§10.4）。
+          <div data-testid="partner-companies-empty">
+            <EmptyState testIdPrefix="partner-companies-empty-state-" description={messages.empty} />
+          </div>
         ) : (
           // 🔴 Tier 3 の一覧は横スクロールで劣化させる（モバイルで隠さない。`CLAUDE.md` §13.3）。
           <Table data-testid="partner-companies-table">
@@ -352,7 +359,10 @@ export function PartnerCompaniesScreen({
               {items.map((item) => (
                 <TableRow
                   key={item.id}
-                  className={item.id === selectedId ? 'bg-slate-50' : undefined}
+                  /* 🔴 SP-22 段④: 選択行の見え方は `TableRow` が持つ（§7.10 の `selected`）。
+                     画面側で背景色を決めない —— 旧実装は hover と同じ `slate-50` を直書きしており、
+                     **マウスを乗せた行と選択中の行が区別できなかった**（`S-017` / `S-022` と同じ形に揃える）。 */
+                  data-state={item.id === selectedId ? 'selected' : undefined}
                   data-testid={`partner-company-row-${item.id}`}
                   data-status={item.status}
                 >
@@ -386,9 +396,9 @@ export function PartnerCompaniesScreen({
 
       {canManage ? (
         <section className="mb-8" data-testid="partner-companies-register-section">
-          <h2 className="mb-2 text-sm font-semibold text-slate-700">{messages.sectionRegister}</h2>
+          <h2 className="mb-2 text-body font-semibold text-fg">{messages.sectionRegister}</h2>
           <form onSubmit={onRegister} noValidate data-testid="partner-company-register-form">
-            <Field className="mb-2 max-w-sm" label={messages.registerNameLabel}>
+            <Field className="mb-2" label={messages.registerNameLabel}>
               <Input
                 type="text"
                 name="name"
@@ -399,7 +409,7 @@ export function PartnerCompaniesScreen({
                 data-testid="partner-company-register-name"
               />
             </Field>
-            <Field className="mb-2 max-w-sm" label={messages.registerContactNameLabel}>
+            <Field className="mb-2" label={messages.registerContactNameLabel}>
               <Input
                 type="text"
                 name="contactName"
@@ -409,7 +419,7 @@ export function PartnerCompaniesScreen({
                 data-testid="partner-company-register-contact-name"
               />
             </Field>
-            <Field className="mb-2 max-w-sm" label={messages.registerContactEmailLabel}>
+            <Field className="mb-2" label={messages.registerContactEmailLabel}>
               <Input
                 type="email"
                 name="contactEmail"
@@ -420,12 +430,12 @@ export function PartnerCompaniesScreen({
               />
             </Field>
             {registerPhase === 'error' ? (
-              <p role="alert" className="mb-2 text-sm text-red-700" data-testid="partner-company-register-error">
+              <p role="alert" className="mb-2 text-body text-danger" data-testid="partner-company-register-error">
                 {messages.registerError}
               </p>
             ) : null}
             {registered ? (
-              <p role="status" className="mb-2 text-sm text-emerald-700" data-testid="partner-company-register-done">
+              <p role="status" className="mb-2 text-body text-success" data-testid="partner-company-register-done">
                 {messages.registerDone}
               </p>
             ) : null}
@@ -437,38 +447,38 @@ export function PartnerCompaniesScreen({
       ) : null}
 
       <section data-testid="partner-companies-detail-section">
-        <h2 className="mb-2 text-sm font-semibold text-slate-700">{messages.sectionDetail}</h2>
+        <h2 className="mb-2 text-body font-semibold text-fg">{messages.sectionDetail}</h2>
         {selected === null ? (
-          <p className="text-sm text-slate-600" data-testid="partner-company-detail-prompt">
+          <p className="text-body text-fg-muted" data-testid="partner-company-detail-prompt">
             {messages.detailSelectPrompt}
           </p>
         ) : (
           <div data-testid="partner-company-detail" data-partner-company-id={selected.id}>
-            <h3 className="mb-2 text-base font-semibold text-slate-900">{selected.name}</h3>
-            <dl className="mb-6 grid grid-cols-1 gap-1 text-sm sm:grid-cols-2">
+            <h3 className="mb-2 text-lg font-semibold text-fg">{selected.name}</h3>
+            <dl className="mb-6 grid grid-cols-1 gap-1 text-body sm:grid-cols-2">
               <div>
-                <dt className="text-slate-500">{messages.columnStatus}</dt>
+                <dt className="text-fg-muted">{messages.columnStatus}</dt>
                 <dd data-testid="partner-company-detail-status">{messages.statusLabels[selected.status]}</dd>
               </div>
               <div>
-                <dt className="text-slate-500">{messages.detailInvitedAt}</dt>
+                <dt className="text-fg-muted">{messages.detailInvitedAt}</dt>
                 <dd>{formatDateTimeJst(selected.invitedAt)}</dd>
               </div>
               <div>
-                <dt className="text-slate-500">{messages.detailContactName}</dt>
+                <dt className="text-fg-muted">{messages.detailContactName}</dt>
                 <dd>{selected.contactName ?? messages.valueNone}</dd>
               </div>
               <div>
-                <dt className="text-slate-500">{messages.detailContactEmail}</dt>
+                <dt className="text-fg-muted">{messages.detailContactEmail}</dt>
                 <dd>{selected.contactEmail ?? messages.valueNone}</dd>
               </div>
               <div>
-                <dt className="text-slate-500">{messages.detailPendingInvitations}</dt>
+                <dt className="text-fg-muted">{messages.detailPendingInvitations}</dt>
                 <dd data-testid="partner-company-detail-pending-invitations">{selected.pendingInvitationCount}</dd>
               </div>
               {selected.suspendedAt === null ? null : (
                 <div>
-                  <dt className="text-slate-500">{messages.detailSuspendedAt}</dt>
+                  <dt className="text-fg-muted">{messages.detailSuspendedAt}</dt>
                   <dd>{formatDateTimeJst(selected.suspendedAt)}</dd>
                 </div>
               )}
@@ -500,14 +510,10 @@ export function PartnerCompaniesScreen({
             {canManage ? (
               <>
                 <section className="mb-8" data-testid="partner-company-invite-section">
-                  <h3 className="mb-2 text-sm font-semibold text-slate-700">{messages.sectionInvite}</h3>
+                  <h3 className="mb-2 text-body font-semibold text-fg">{messages.sectionInvite}</h3>
                   {invitationBlocked ? (
                     // 🔴 ボタンを出さず、理由と `S-036` への導線を置く（docs/04 §S-014）。
-                    <div
-                      role="status"
-                      className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
-                      data-testid="partner-company-invite-blocked"
-                    >
+                    <Alert variant="warning" role="status" data-testid="partner-company-invite-blocked">
                       <p>{messages.inviteBlocked}</p>
                       <Link
                         href="/settings/sending-domains"
@@ -516,23 +522,25 @@ export function PartnerCompaniesScreen({
                       >
                         {messages.inviteBlockedLink}
                       </Link>
-                      <p className="mt-1 text-xs text-amber-800">
+                      <p className="mt-1 text-xs">
                         {messages.inviteBlockedMemberInviteNote}
                       </p>
-                    </div>
+                    </Alert>
                   ) : (
                     <form onSubmit={onInvite} noValidate data-testid="partner-company-invite-form">
                       {/* 🔴 docs/04 §3.5: `sandbox` では**操作の隣に**バナーと同じ趣旨を再掲する
                           （バナーは常時目に入るが、招待の操作をする瞬間に必要な情報は操作の隣にある）。 */}
                       {sandboxLinkHandover ? (
-                        <p
-                          className="mb-3 rounded-md border border-sky-300 bg-sky-50 p-2 text-xs text-sky-900"
+                        <Alert
+                          variant="info"
+                          role="status"
+                          className="mb-3 text-xs"
                           data-testid="partner-company-invite-sandbox-notice"
                         >
                           {messages.inviteLinkPreNotice}
-                        </p>
+                        </Alert>
                       ) : null}
-                      <Field className="mb-2 max-w-sm" label={messages.inviteEmailLabel}>
+                      <Field className="mb-2" label={messages.inviteEmailLabel}>
                         <Input
                           type="email"
                           name="email"
@@ -548,14 +556,14 @@ export function PartnerCompaniesScreen({
                         <output data-testid="partner-company-invite-role">{messages.inviteRoleValue}</output>
                       </Field>
                       {invitePhase === 'error' ? (
-                        <p role="alert" className="mb-2 text-sm text-red-700" data-testid="partner-company-invite-error">
+                        <p role="alert" className="mb-2 text-body text-danger" data-testid="partner-company-invite-error">
                           {messages.inviteError}
                         </p>
                       ) : null}
                       {inviteResult === null ? null : (
                         <p
                           role="status"
-                          className="mb-2 text-sm text-slate-700"
+                          className="mb-2 text-body text-fg"
                           data-testid="partner-company-invite-result"
                           data-delivery-state={inviteResult}
                         >
@@ -576,8 +584,8 @@ export function PartnerCompaniesScreen({
                 </section>
 
                 <section data-testid="partner-company-suspension-section">
-                  <h3 className="mb-2 text-sm font-semibold text-slate-700">{messages.sectionSuspension}</h3>
-                  <Field className="mb-2 max-w-sm" label={messages.suspensionReasonLabel}>
+                  <h3 className="mb-2 text-body font-semibold text-fg">{messages.sectionSuspension}</h3>
+                  <Field className="mb-2" label={messages.suspensionReasonLabel}>
                     <Input
                       type="text"
                       name="reason"
@@ -588,7 +596,7 @@ export function PartnerCompaniesScreen({
                     />
                   </Field>
                   {suspensionPhase === 'error' ? (
-                    <p role="alert" className="mb-2 text-sm text-red-700" data-testid="partner-company-suspension-error">
+                    <p role="alert" className="mb-2 text-body text-danger" data-testid="partner-company-suspension-error">
                       {messages.suspensionError}
                     </p>
                   ) : null}
@@ -603,12 +611,14 @@ export function PartnerCompaniesScreen({
                     </Button>
                   ) : confirming ? (
                     // 🔴 確認ステップ（docs/04 §S-014）。何が起きて何が起きないかを両方書く。
-                    <div
-                      className="rounded-md border border-slate-300 p-3 text-sm"
-                      data-testid="partner-company-suspend-confirm"
-                    >
-                      <p className="mb-1 font-medium text-slate-900">{messages.suspendConfirmTitle}</p>
-                      <p className="mb-2 text-slate-700">{messages.suspendConfirmText}</p>
+                    // 🔴 SP-22 段④: 器は `Alert`。**ステップを 1 つも減らしていない**
+                    //    （開始 → 確認文 → 実行 / 取消の 2 ボタンのまま）。
+                    // 🔴 **`neutral`（無彩色）を選んだ** —— 旧実装も無彩色の枠であり、
+                    //    赤（不可逆な破棄）はここでは誤りである —— **停止ではデータを削除しない**
+                    //    （`F-007 AC-2`。確認文に「データは削除されません」を含めるのと同じ理由）。
+                    <Alert variant="neutral" data-testid="partner-company-suspend-confirm">
+                      <p className="mb-1 font-medium">{messages.suspendConfirmTitle}</p>
+                      <p className="mb-2">{messages.suspendConfirmText}</p>
                       <div className="flex flex-wrap gap-2">
                         <Button
                           type="button"
@@ -628,7 +638,7 @@ export function PartnerCompaniesScreen({
                           {messages.suspendCancel}
                         </Button>
                       </div>
-                    </div>
+                    </Alert>
                   ) : (
                     <Button
                       type="button"

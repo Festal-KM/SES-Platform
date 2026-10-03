@@ -138,17 +138,17 @@ export function RetentionScreen({ view, messages }: { readonly view: RetentionVi
         </Alert>
       ) : null}
 
-      <p className="text-sm text-slate-600">{messages.lead}</p>
+      <p className="text-body text-fg-muted">{messages.lead}</p>
 
       <section data-testid="retention-schedule">
-        <h2 className="mb-2 text-base font-bold text-slate-900">{messages.sectionSchedule}</h2>
+        <h2 className="mb-2 text-lg font-bold text-fg">{messages.sectionSchedule}</h2>
         {view.purge === null ? (
-          <p className="text-sm text-slate-600" data-testid="retention-schedule-empty">
+          <p className="text-body text-fg-muted" data-testid="retention-schedule-empty">
             {messages.scheduleEmpty}
           </p>
         ) : (
           <>
-            <p className="mb-3 text-sm text-slate-600">{messages.scheduleLead}</p>
+            <p className="mb-3 text-body text-fg-muted">{messages.scheduleLead}</p>
             <Table data-testid="retention-schedule-table">
               <TableHeader>
                 <TableRow>
@@ -172,18 +172,18 @@ export function RetentionScreen({ view, messages }: { readonly view: RetentionVi
             </Table>
           </>
         )}
-        <p className="mt-2 text-xs text-slate-500">{messages.readOnlyNote}</p>
+        <p className="mt-2 text-xs text-fg-muted">{messages.readOnlyNote}</p>
       </section>
 
       <section data-testid="retention-export">
-        <h2 className="mb-2 text-base font-bold text-slate-900">{messages.sectionExport}</h2>
-        <p className="mb-3 text-sm text-slate-600">{messages.exportLead}</p>
+        <h2 className="mb-2 text-lg font-bold text-fg">{messages.sectionExport}</h2>
+        <p className="mb-3 text-body text-fg-muted">{messages.exportLead}</p>
         {!isClosing ? (
-          <p className="text-sm text-slate-600" data-testid="retention-export-not-closing">
+          <p className="text-body text-fg-muted" data-testid="retention-export-not-closing">
             {messages.exportNotClosing}
           </p>
         ) : generating ? (
-          <p className="text-sm text-slate-700" data-testid="retention-export-generating" aria-live="polite">
+          <p className="text-body text-fg" data-testid="retention-export-generating" aria-live="polite">
             {messages.exportGenerating}
           </p>
         ) : (
@@ -192,28 +192,28 @@ export function RetentionScreen({ view, messages }: { readonly view: RetentionVi
               {latest?.status === 'FAILED' ? messages.exportRetry : messages.exportGenerate}
             </Button>
             {latest?.status === 'READY' ? (
-              <span className="text-sm text-slate-700" data-testid="retention-export-generated">
+              <span className="text-body text-fg" data-testid="retention-export-generated">
                 {messages.exportGenerated}
               </span>
             ) : null}
             {latest?.status === 'FAILED' ? (
-              <span className="text-sm text-red-700" data-testid="retention-export-failed">
+              <span className="text-body text-danger" data-testid="retention-export-failed">
                 {messages.exportFailed}
               </span>
             ) : null}
           </div>
         )}
         {requestPhase === 'error' ? (
-          <p className="mt-2 text-sm text-red-700" role="alert" data-testid="retention-export-request-error">
+          <p className="mt-2 text-body text-danger" role="alert" data-testid="retention-export-request-error">
             {messages.exportRequestFailed}
           </p>
         ) : null}
       </section>
 
       <section data-testid="retention-history">
-        <h2 className="mb-2 text-base font-bold text-slate-900">{messages.sectionHistory}</h2>
+        <h2 className="mb-2 text-lg font-bold text-fg">{messages.sectionHistory}</h2>
         {view.exports.length === 0 ? (
-          <p className="text-sm text-slate-600" data-testid="retention-history-empty">
+          <p className="text-body text-fg-muted" data-testid="retention-history-empty">
             {messages.historyEmpty}
           </p>
         ) : (
@@ -274,12 +274,12 @@ function HistoryRow({
           </Button>
         ) : null}
         {download?.kind === 'error' ? (
-          <span className="ml-2 text-sm text-red-700" role="alert">
+          <span className="ml-2 text-body text-danger" role="alert">
             {messages.exportDownloadFailed}
           </span>
         ) : null}
         {download?.kind === 'expired' ? (
-          <span className="ml-2 text-sm text-slate-600" role="alert">
+          <span className="ml-2 text-body text-fg-muted" role="alert">
             {messages.exportExpired}
           </span>
         ) : null}
