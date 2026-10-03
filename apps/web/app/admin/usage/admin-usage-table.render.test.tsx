@@ -105,7 +105,10 @@ describe('① 件数と金額（USD）が同一画面に出る（F-063 AC-5 / do
   it('4 単位の件数と 1 件あたり標準原価、当日 AI コスト / 上限、当月 AI 原価 / 上限、標準原価比・基準ユニット比が 1 行に出る', () => {
     const html = render({ view: view() });
     expect(html).toContain(t('admin.usage.metric.AI_UNIT_SHEET_PARSE'));
-    expect(html).toContain('18 / 180 件（10%）');
+    // 🔴 T-22-14: 率は `Meter`（§5-13 の 26 部品目）が出す。**数値は消していない**
+    //    （`18 / 180 件` と `使用率 10%` の両方が在ることを見る。情報は 1 つも減っていない）。
+    expect(html).toContain('18 / 180 件');
+    expect(html).toContain(`${t('usage.percentUsedLabel')} 10%`);
     expect(html).toContain(`${t('admin.usage.standardCost')} $0.033`);
     expect(html).toContain('$1.234 / $5.000（24%）');
     expect(html).toContain('$3.456 / $40.000（8%）');
@@ -113,8 +116,13 @@ describe('① 件数と金額（USD）が同一画面に出る（F-063 AC-5 / do
     expect(html).toContain('×0.99');
     expect(html).toContain(t('admin.usage.ratio.baseline'));
     expect(html).toContain('×0.27');
-    expect(html).toContain('12 / 500 通（2%）');
-    expect(html).toContain(`${formatGib('2147483648')} / ${formatGib('53687091200')}（4%）`);
+    expect(html).toContain('12 / 500 通');
+    expect(html).toContain(`${t('usage.percentUsedLabel')} 2%`);
+    expect(html).toContain(`${formatGib('2147483648')} / ${formatGib('53687091200')}`);
+    expect(html).toContain(`${t('usage.percentUsedLabel')} 4%`);
+    // 🔴 金額（当日 / 当月の AI コスト）にはメーターを置かない（`docs/04` §5-4。遮断器である）。
+    //    バーの本数 = （件数クォータ 4 + メール 1 + ストレージ 1）× 2 テナント = 12。
+    expect(html.match(/role="progressbar"/g)).toHaveLength(12);
   });
 
   it('🔴 T-12-12: メール / ストレージの出所も AI 単位と同じ通常表示（既定 / 個別 + 適用日 / 予定）。「変更不可」の専用文言は無い', () => {
@@ -142,7 +150,10 @@ describe('① 件数と金額（USD）が同一画面に出る（F-063 AC-5 / do
     expect(overridden).toContain(`${t('admin.usage.quota.override')} 2026-09-10`);
     expect(overridden).toContain(`${t('admin.usage.quota.pendingLowering')} 2026-09-17 → 2`);
     expect(overridden).toContain(`${t('admin.usage.quota.override')} 2026-09-16`);
-    expect(overridden).toContain('12 / 4 通（300%）');
+    // 🔴 100% を超えても数値はそのまま読める（塗りだけが 100% で止まる）。
+    expect(overridden).toContain('12 / 4 通');
+    expect(overridden).toContain(`${t('usage.percentUsedLabel')} 300%`);
+    expect(overridden).toContain('aria-valuenow="100"');
   });
 
   it('金額はテナント側には出ないという注記が明示される', () => {
@@ -220,8 +231,9 @@ describe('⑤ targetTenantId の行が先頭に来る（A-005 からの導線）
     const html = render({ view: view(), highlightedTenantId: TENANT_B });
     expect(html.indexOf(`admin-usage-row-${TENANT_B}`)).toBeLessThan(html.indexOf(`admin-usage-row-${TENANT_A}`));
     // `TableRow` は `class` を `data-testid` より前に描く。強調クラスが B の行に付き、A の行には付かない。
-    expect(html).toMatch(new RegExp(`class="[^"]*bg-amber-50[^"]*" data-testid="admin-usage-row-${TENANT_B}"`));
-    expect(html).not.toMatch(new RegExp(`class="[^"]*bg-amber-50[^"]*" data-testid="admin-usage-row-${TENANT_A}"`));
+    // 🔴 T-22-14: 強調は §7.9 のトークン（`bg-warning-bg`。値は旧 `amber-50` と同じ）。
+    expect(html).toMatch(new RegExp(`class="[^"]*bg-warning-bg[^"]*" data-testid="admin-usage-row-${TENANT_B}"`));
+    expect(html).not.toMatch(new RegExp(`class="[^"]*bg-warning-bg[^"]*" data-testid="admin-usage-row-${TENANT_A}"`));
   });
 });
 

@@ -11,11 +11,27 @@
 //
 // 🔴 T-21-05: 「直近の開設」の表を `@ses/ui` の `Table` へ移した。**列の集合は 1 つも
 //    変えていない**（招待先のメールアドレスは移行後も出さない。`BR-40`）。
+//
+// 🔴 T-22-14（段⑤）: 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`。検査 (c) / (k)）。
+//    **フォーム主体の画面なので クラス C = 読み幅**である（旧 `max-w-3xl` + `mx-auto`。
+//    6 列の「直近の開設」はその中で横スクロールに劣化する —— 🔴 ここは監視画面ではないので
+//    §10.3 の「列を隠さない」の対象ではなく、フォームの読み幅を優先する）。
+//    色・文字サイズ・8 状態は §7.9 / §7.10 のトークンと `packages/ui` の共通語へ寄せ、
+//    `mt-10` は §7.9 の 7 段の `mt-8`（32px）にした。
 import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
 import { listRecentProvisionings } from '@ses/db/platform';
 import { t } from '@ses/i18n';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@ses/ui';
+import {
+  PageBody,
+  SECONDARY_LINK_CLASSES,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@ses/ui';
 import {
   readPlatformRequestMeta,
   resolvePlatformCtxOutcome,
@@ -54,108 +70,110 @@ export default async function AdminTenantProvisioningPage() {
   );
 
   return (
-    <main className="mx-auto max-w-3xl px-4 py-8">
-      <h1 className="mb-6 text-xl font-bold text-slate-900">{t('admin.provisioning.title')}</h1>
+    <main className="py-6">
+      <PageBody widthClass="prose">
+        <h1 className="mb-6 text-title font-bold text-fg">{t('admin.provisioning.title')}</h1>
 
-      <ProvisioningForm
-        appEnv={currentAppEnv()}
-        existingNames={recent.map((item) => item.name)}
-        messages={{
-          environmentSection: t('admin.provisioning.section.environment'),
-          environmentReadOnlyNote: t('admin.provisioning.environment.readOnlyNote'),
-          companySection: t('admin.provisioning.section.company'),
-          nameLabel: t('admin.provisioning.name.label'),
-          currencyLabel: t('admin.provisioning.currency.label'),
-          currencyValue: t('admin.provisioning.currency.value'),
-          duplicateNameWarning: t('admin.provisioning.duplicateName.warning'),
-          lifecycleSection: t('admin.provisioning.section.lifecycle'),
-          lifecycleSandbox: t('admin.provisioning.lifecycle.SANDBOX'),
-          lifecycleActive: t('admin.provisioning.lifecycle.ACTIVE'),
-          lifecycleSandboxNote: t('admin.provisioning.lifecycle.sandboxNote'),
-          planSection: t('admin.provisioning.section.plan'),
-          planLabel: t('admin.provisioning.plan.label'),
-          planHint: t('admin.provisioning.plan.hint'),
-          ownerSection: t('admin.provisioning.section.owner'),
-          ownerEmailLabel: t('admin.provisioning.owner.email.label'),
-          ownerSingleNote: t('admin.provisioning.owner.singleNote'),
-          sendingDomainSection: t('admin.provisioning.section.sendingDomain'),
-          sendingDomainLabel: t('admin.provisioning.sendingDomain.label'),
-          sendingDomainNote: t('admin.provisioning.sendingDomain.note'),
-          defaultsSection: t('admin.provisioning.section.defaults'),
-          // 🔴 `F-001 AC-1` の既定値。開設**前**に運営者へ読ませる。
-          defaults: [
-            t('admin.provisioning.defaults.autoApprove'),
-            t('admin.provisioning.defaults.approvalMode'),
-            t('admin.provisioning.defaults.visibility'),
-            t('admin.provisioning.defaults.sendingDomain'),
-          ],
-          confirmSection: t('admin.provisioning.section.confirm'),
-          confirmLead: t('admin.provisioning.confirm.lead'),
-          confirmReview: t('admin.provisioning.confirm.review'),
-          confirmBack: t('admin.provisioning.confirm.back'),
-          submit: t('admin.provisioning.submit'),
-          submitting: t('admin.provisioning.submitting'),
-          notCreated: t('admin.provisioning.error.notCreated'),
-          invitationFailed: t('admin.provisioning.error.invitationFailed'),
-          duplicateRequest: t('admin.provisioning.error.duplicateRequest'),
-          success: t('admin.provisioning.success'),
-          retryInvitation: t('admin.provisioning.retryInvitation'),
-        }}
-      />
+        <ProvisioningForm
+          appEnv={currentAppEnv()}
+          existingNames={recent.map((item) => item.name)}
+          messages={{
+            environmentSection: t('admin.provisioning.section.environment'),
+            environmentReadOnlyNote: t('admin.provisioning.environment.readOnlyNote'),
+            companySection: t('admin.provisioning.section.company'),
+            nameLabel: t('admin.provisioning.name.label'),
+            currencyLabel: t('admin.provisioning.currency.label'),
+            currencyValue: t('admin.provisioning.currency.value'),
+            duplicateNameWarning: t('admin.provisioning.duplicateName.warning'),
+            lifecycleSection: t('admin.provisioning.section.lifecycle'),
+            lifecycleSandbox: t('admin.provisioning.lifecycle.SANDBOX'),
+            lifecycleActive: t('admin.provisioning.lifecycle.ACTIVE'),
+            lifecycleSandboxNote: t('admin.provisioning.lifecycle.sandboxNote'),
+            planSection: t('admin.provisioning.section.plan'),
+            planLabel: t('admin.provisioning.plan.label'),
+            planHint: t('admin.provisioning.plan.hint'),
+            ownerSection: t('admin.provisioning.section.owner'),
+            ownerEmailLabel: t('admin.provisioning.owner.email.label'),
+            ownerSingleNote: t('admin.provisioning.owner.singleNote'),
+            sendingDomainSection: t('admin.provisioning.section.sendingDomain'),
+            sendingDomainLabel: t('admin.provisioning.sendingDomain.label'),
+            sendingDomainNote: t('admin.provisioning.sendingDomain.note'),
+            defaultsSection: t('admin.provisioning.section.defaults'),
+            // 🔴 `F-001 AC-1` の既定値。開設**前**に運営者へ読ませる。
+            defaults: [
+              t('admin.provisioning.defaults.autoApprove'),
+              t('admin.provisioning.defaults.approvalMode'),
+              t('admin.provisioning.defaults.visibility'),
+              t('admin.provisioning.defaults.sendingDomain'),
+            ],
+            confirmSection: t('admin.provisioning.section.confirm'),
+            confirmLead: t('admin.provisioning.confirm.lead'),
+            confirmReview: t('admin.provisioning.confirm.review'),
+            confirmBack: t('admin.provisioning.confirm.back'),
+            submit: t('admin.provisioning.submit'),
+            submitting: t('admin.provisioning.submitting'),
+            notCreated: t('admin.provisioning.error.notCreated'),
+            invitationFailed: t('admin.provisioning.error.invitationFailed'),
+            duplicateRequest: t('admin.provisioning.error.duplicateRequest'),
+            success: t('admin.provisioning.success'),
+            retryInvitation: t('admin.provisioning.retryInvitation'),
+          }}
+        />
 
-      <section className="mt-10">
-        <h2 className="mb-3 text-lg font-semibold text-slate-900">
-          {t('admin.provisioning.recent.title')}
-        </h2>
-        {recent.length === 0 ? (
-          <p className="text-sm text-slate-600">{t('admin.provisioning.recent.empty')}</p>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t('admin.provisioning.recent.column.createdAt')}</TableHead>
-                <TableHead>{t('admin.provisioning.recent.column.name')}</TableHead>
-                <TableHead>{t('admin.provisioning.recent.column.environment')}</TableHead>
-                <TableHead>{t('admin.provisioning.recent.column.lifecycleState')}</TableHead>
-                <TableHead>{t('admin.provisioning.recent.column.invitation')}</TableHead>
-                <TableHead>{t('admin.provisioning.recent.column.sendingDomain')}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {recent.map((item) => {
-                const environmentKey = tenantEnvironmentMessageKey(item.environment);
-                return (
-                  <TableRow key={item.id}>
-                    <TableCell>{item.createdAt}</TableCell>
-                    <TableCell>
-                      <Link
-                        className="font-medium text-slate-900 underline-offset-2 hover:underline"
-                        href={`/admin/tenants/${item.id}`}
-                      >
-                        {item.name}
-                      </Link>
-                    </TableCell>
-                    <TableCell>
-                      {environmentKey === null ? item.environment : t(environmentKey)}
-                    </TableCell>
-                    <TableCell>
-                      {t(TENANT_LIFECYCLE_STATE_MESSAGE_KEYS[item.lifecycleState])}
-                    </TableCell>
-                    <TableCell>
-                      {t(PROVISIONING_INVITATION_MESSAGE_KEYS[item.invitationState])}
-                    </TableCell>
-                    <TableCell>
-                      {item.sendingDomainState === null
-                        ? t('admin.provisioning.sendingDomain.none')
-                        : t(SENDING_DOMAIN_STATE_MESSAGE_KEYS[item.sendingDomainState])}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        )}
-      </section>
+        <section className="mt-8">
+          <h2 className="mb-3 text-lg font-semibold text-fg">
+            {t('admin.provisioning.recent.title')}
+          </h2>
+          {recent.length === 0 ? (
+            <p className="text-body text-fg-muted">{t('admin.provisioning.recent.empty')}</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t('admin.provisioning.recent.column.createdAt')}</TableHead>
+                  <TableHead>{t('admin.provisioning.recent.column.name')}</TableHead>
+                  <TableHead>{t('admin.provisioning.recent.column.environment')}</TableHead>
+                  <TableHead>{t('admin.provisioning.recent.column.lifecycleState')}</TableHead>
+                  <TableHead>{t('admin.provisioning.recent.column.invitation')}</TableHead>
+                  <TableHead>{t('admin.provisioning.recent.column.sendingDomain')}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {recent.map((item) => {
+                  const environmentKey = tenantEnvironmentMessageKey(item.environment);
+                  return (
+                    <TableRow key={item.id}>
+                      <TableCell>{item.createdAt}</TableCell>
+                      <TableCell>
+                        <Link
+                          className={SECONDARY_LINK_CLASSES}
+                          href={`/admin/tenants/${item.id}`}
+                        >
+                          {item.name}
+                        </Link>
+                      </TableCell>
+                      <TableCell>
+                        {environmentKey === null ? item.environment : t(environmentKey)}
+                      </TableCell>
+                      <TableCell>
+                        {t(TENANT_LIFECYCLE_STATE_MESSAGE_KEYS[item.lifecycleState])}
+                      </TableCell>
+                      <TableCell>
+                        {t(PROVISIONING_INVITATION_MESSAGE_KEYS[item.invitationState])}
+                      </TableCell>
+                      <TableCell>
+                        {item.sendingDomainState === null
+                          ? t('admin.provisioning.sendingDomain.none')
+                          : t(SENDING_DOMAIN_STATE_MESSAGE_KEYS[item.sendingDomainState])}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          )}
+        </section>
+      </PageBody>
     </main>
   );
 }

@@ -9,6 +9,10 @@
 //    （`F-057 AC-2` / `BR-44`。グレーアウトではなく不在）。判定はサーバ（`page.tsx`）が `platformRole` から行い、ここは受け取るだけ。
 // 🔴 文言は props（`packages/i18n`）。`@ses/db` / `@ses/db/platform` を値 import しない（`tests/static/client-db-boundary.test.ts`）。
 //    応答の型は `apps/web/lib/admin-usage/view.ts`（純粋な型）だけを参照する。
+//
+// 🔴 T-22-14（段⑤）: 色と文字サイズを §7.9 のトークンへ寄せた
+//    （`text-slate-600` → `text-fg-muted` / `text-slate-700` → `text-fg` /
+//    `text-sm` → `text-body`。**実寸は同じ**）。
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { QuotaOverrideMetric } from '@ses/domain';
 import { Alert, AlertDescription, Button } from '@ses/ui';
@@ -106,11 +110,11 @@ export function AdminUsageView({
 
   return (
     <div>
-      <p className="mb-4 text-sm text-slate-600" data-testid="admin-usage-lead">
+      <p className="mb-4 text-body text-fg-muted" data-testid="admin-usage-lead">
         {messages.lead}
       </p>
       <div className="mb-4 flex flex-wrap items-center gap-2" role="group" aria-label={messages.filter.label} data-testid="admin-usage-filters">
-        <span className="text-sm text-slate-700">{messages.filter.label}:</span>
+        <span className="text-body text-fg">{messages.filter.label}:</span>
         {FILTERS.map((value) => (
           <Button
             key={value}
@@ -129,14 +133,14 @@ export function AdminUsageView({
         </Button>
       </div>
       {shown === null ? null : (
-        <p className="mb-4 text-xs text-slate-600" data-testid="admin-usage-filter-note">
+        <p className="mb-4 text-xs text-fg-muted" data-testid="admin-usage-filter-note">
           {filter === 'low' ? messages.filter.noteLow : filter === 'high' ? messages.filter.noteHigh : null}
           {filter === 'all' ? null : ' '}
           {messages.filter.thresholdLow}: {shown.lowPercent}% / {messages.filter.thresholdHigh}: {shown.warnPercent}%
         </p>
       )}
       {loading && shown === null ? (
-        <p className="text-sm text-slate-600" data-testid="admin-usage-loading">
+        <p className="text-body text-fg-muted" data-testid="admin-usage-loading">
           {messages.loading}
         </p>
       ) : null}

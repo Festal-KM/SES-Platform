@@ -11,9 +11,29 @@
 //    `COMPLETED` →「削除完了（YYYY-MM-DD、対象 N 件）」/ `FAILED` →「削除処理に失敗しています」+ `A-005` への導線
 //    （失敗の詳細は `A-005` 項目 7 の役割。確認と監視で役割が違う）。
 // 🔴 T3（デスクトップ主体）。モバイルでは劣化を許容するが遮断しない（`CLAUDE.md` §13.3）。
+//
+// ============================================================================
+// 🔴 T-22-14（段⑤）: 器を `page.tsx` に返し、色と文字サイズをトークンへ寄せた
+// ============================================================================
+// - 旧実装はこの部品が `<main className="mx-auto max-w-3xl px-4 py-8">` を持っていた。
+//   🔴 **幅は `PageBody` の 3 クラスが決める**（検査 (c) / (k)）ので、器は `page.tsx` へ移し、
+//   ここは **中身だけ**を描く（`data-testid="admin-deletion-status-screen"` は**同じ要素に
+//   残す** —— 掴み所を変えない。`A-002` の `AdminTenantsList` と同じ形）。
+// - 色は §7.9 の semantic トークン（`text-fg` / `text-fg-muted` / `border-border` /
+//   失敗の見出しは **`text-danger`**）。文字サイズは 6 段（`text-sm` → `text-body` /
+//   `text-base` → `text-lg` / `text-xl` → `text-title`。**いずれも実寸は同じ**）。
+// - リンクは `packages/ui` の `SECONDARY_LINK_CLASSES`（画面側に `hover:` を書かない = 検査 (j)）。
 import Link from 'next/link';
 import type { DeletionStatusRunView, DeletionStatusView } from '@ses/db/platform';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@ses/ui';
+import {
+  SECONDARY_LINK_CLASSES,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@ses/ui';
 import { formatDateTimeJst, toJstIsoDay } from '../../../../../lib/format/datetime';
 import { ADMIN_MONITORING_HREF, adminTenantDetailHref } from '../../../../../lib/admin-monitoring/hrefs';
 
@@ -51,9 +71,12 @@ export type DeletionStatusScreenProps = {
   readonly messages: DeletionStatusScreenMessages;
 };
 
-const SECTION_HEADING_CLASSES = 'mb-2 text-sm font-semibold text-slate-700';
-const NOTE_CLASSES = 'mt-2 text-sm text-slate-600';
-const LINK_CLASSES = 'text-sm text-slate-700 underline-offset-2 hover:underline';
+const SECTION_HEADING_CLASSES = 'mb-2 text-body font-semibold text-fg';
+const NOTE_CLASSES = 'mt-2 text-body text-fg-muted';
+const LINK_CLASSES = SECONDARY_LINK_CLASSES;
+/** 見出し（最新の実行の結論）。🔴 失敗だけが `--color-danger` を取る（§7.4。赤を乱用しない）。 */
+const HEADLINE_CLASSES = 'text-lg font-bold text-fg';
+const HEADLINE_FAILED_CLASSES = 'text-lg font-bold text-danger';
 
 /** 合計の削除件数（「対象 N 件」の N）。純粋な描画部品は `@ses/db/platform` から型だけを受ける（render テストが Prisma を要らないように）。 */
 function sumCounts(counts: DeletionStatusRunView['counts']): number {
@@ -68,7 +91,7 @@ function Headline({ latest, lifecycleState, messages }: {
   if (latest === null) {
     return (
       <div data-testid="admin-deletion-status-none">
-        <p className="text-base font-bold text-slate-900">{messages.none}</p>
+        <p className={HEADLINE_CLASSES}>{messages.none}</p>
         {lifecycleState === 'CLOSING' ? <p className={NOTE_CLASSES}>{messages.noneClosing}</p> : null}
       </div>
     );
@@ -77,14 +100,14 @@ function Headline({ latest, lifecycleState, messages }: {
     case 'RUNNING':
       return (
         <div data-testid="admin-deletion-status-running">
-          <p className="text-base font-bold text-slate-900">{messages.running}</p>
+          <p className={HEADLINE_CLASSES}>{messages.running}</p>
           <p className={NOTE_CLASSES}>{messages.runningNote}</p>
         </div>
       );
     case 'COMPLETED':
       return (
         <div data-testid="admin-deletion-status-completed">
-          <p className="text-base font-bold text-slate-900">
+          <p className={HEADLINE_CLASSES}>
             {messages.completedPrefix}
             {latest.completedAt === null ? '—' : toJstIsoDay(new Date(latest.completedAt))}
             {messages.completedCountPrefix}
@@ -96,7 +119,7 @@ function Headline({ latest, lifecycleState, messages }: {
     case 'FAILED':
       return (
         <div data-testid="admin-deletion-status-failed">
-          <p className="text-base font-bold text-red-700">{messages.failed}</p>
+          <p className={HEADLINE_FAILED_CLASSES}>{messages.failed}</p>
           <p className={NOTE_CLASSES}>{messages.failedNote}</p>
           <Link className={LINK_CLASSES} href={ADMIN_MONITORING_HREF} data-testid="admin-deletion-status-monitoring-link">
             {messages.failedLink}
@@ -113,17 +136,17 @@ export function DeletionStatusScreen({ view, messages }: DeletionStatusScreenPro
   const breakdown = latest?.status === 'COMPLETED' ? Object.entries(latest.counts) : [];
 
   return (
-    <main className="mx-auto max-w-3xl px-4 py-8" data-testid="admin-deletion-status-screen">
+    <div data-testid="admin-deletion-status-screen">
       <div className="mb-6">
-        <p className="text-sm text-slate-500">{messages.eyebrow}</p>
-        <h1 className="text-xl font-bold text-slate-900">{messages.title}</h1>
+        <p className="text-body text-fg-muted">{messages.eyebrow}</p>
+        <h1 className="text-title font-bold text-fg">{messages.title}</h1>
       </div>
-      <p className="mb-6 text-sm text-slate-700">{messages.lead}</p>
+      <p className="mb-6 text-body text-fg">{messages.lead}</p>
 
       <dl className="mb-6">
-        <div className="flex justify-between gap-4 border-b border-slate-100 py-2 text-sm">
-          <dt className="text-slate-500">{messages.lifecycleStateLabel}</dt>
-          <dd className="text-slate-900" data-testid="admin-deletion-status-lifecycle">
+        <div className="flex justify-between gap-4 border-b border-border py-2 text-body">
+          <dt className="text-fg-muted">{messages.lifecycleStateLabel}</dt>
+          <dd className="text-fg" data-testid="admin-deletion-status-lifecycle">
             {messages.lifecycleState}
           </dd>
         </div>
@@ -190,6 +213,6 @@ export function DeletionStatusScreen({ view, messages }: DeletionStatusScreenPro
       <Link className={LINK_CLASSES} href={adminTenantDetailHref(view.tenantId)} data-testid="admin-deletion-status-back">
         {messages.backToTenant}
       </Link>
-    </main>
+    </div>
   );
 }

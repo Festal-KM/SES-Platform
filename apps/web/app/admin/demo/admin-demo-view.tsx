@@ -13,6 +13,13 @@
 // 🔴 文言は props（`packages/i18n`）から受け取る。ここにベタ書きしない（`CLAUDE.md` §3.5）。
 // 🔴 `@ses/db` / `@ses/db/platform` / `@ses/db/seed` を値 import しない（`tests/static/client-db-boundary.test.ts`）。
 //    応答の型は `apps/web/lib/admin-demo/view.ts`（純粋な型）、照合は `reset-confirmation.ts`（import 無しの純粋関数）だけを参照する。
+//
+// 🔴 T-22-14（段⑤）: 色・文字サイズを §7.9 のトークンへ寄せた（`text-base` → `text-lg` /
+//    `text-sm` → `text-body` / `text-slate-*` → `text-fg` / `text-fg-muted` /
+//    `border-slate-300` `border-slate-400` → `border-border-strong`）。**実寸は同じ**である。
+//    🔴 確認ステップの入力欄の幅（旧 `sm:max-w-md`）は**グリッドの列幅**に替えた
+//    （画面に `max-w-*` を書かない = 検査 (c)。`sm:grid-cols-2` で 2 列に割る —— 入力は
+//    環境名とテナント名の 2 つであり、横並びのほうが「両方入れる」ことが読める）。
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, AlertDescription, Button, Field, Input, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@ses/ui';
 import {
@@ -113,25 +120,33 @@ type ResetPhase =
   | { readonly kind: 'done'; readonly outcome: DemoResetResponseView['outcome'] }
   | { readonly kind: 'failed' };
 
-const SECTION_HEADING_CLASSES = 'mt-8 mb-2 text-base font-bold text-slate-900';
+const SECTION_HEADING_CLASSES = 'mt-8 mb-2 text-lg font-bold text-fg';
+/** 補助テキスト / 項目名 / 値（§7.3 の段。`A-005` と同じ語に揃えた）。 */
+const NOTE_CLASSES = 'text-body text-fg-muted';
+const TERM_CLASSES = 'text-fg-muted';
+const VALUE_CLASSES = 'font-medium text-fg';
+const BODY_CLASSES = 'text-body text-fg';
+/** 確認ステップの箱と、送信中の帯（🔴 面〔`bg-surface`〕は部品だけが持つ。枠線で区切る）。 */
+const CONFIRM_BOX_CLASSES = 'border border-border-strong p-4';
+const SUBMITTING_BOX_CLASSES = 'border border-dashed border-border-strong p-3 text-body text-fg';
 
 function StatusTable({ status, messages }: { readonly status: DemoSeedStatusView; readonly messages: AdminDemoViewMessages['status'] }) {
   if (!status.seeded) {
     return (
-      <p className="text-sm text-slate-700" data-testid="admin-demo-status-not-seeded">
+      <p className={BODY_CLASSES} data-testid="admin-demo-status-not-seeded">
         {messages.notSeeded}
       </p>
     );
   }
   return (
     <div data-testid="admin-demo-status-seeded">
-      <dl className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
-        <dt className="text-slate-600">{messages.seededAt}</dt>
-        <dd className="font-medium text-slate-900" data-testid="admin-demo-status-seeded-at">
+      <dl className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-body">
+        <dt className={TERM_CLASSES}>{messages.seededAt}</dt>
+        <dd className={VALUE_CLASSES} data-testid="admin-demo-status-seeded-at">
           {status.seededAt}
         </dd>
       </dl>
-      <p className="mb-2 text-sm text-slate-600">{messages.tenants}</p>
+      <p className={`mb-2 ${NOTE_CLASSES}`}>{messages.tenants}</p>
       <Table>
         <TableHeader>
           <TableRow>
@@ -160,7 +175,7 @@ function StatusTable({ status, messages }: { readonly status: DemoSeedStatusView
           ))}
         </TableBody>
       </Table>
-      <p className="mt-2 text-sm text-slate-600">{messages.syntheticNote}</p>
+      <p className={`mt-2 ${NOTE_CLASSES}`}>{messages.syntheticNote}</p>
     </div>
   );
 }
@@ -192,20 +207,20 @@ function ResetConfirm({
   const matched = matchesDemoResetConfirmation(target, { confirmEnv, confirmTenantName });
 
   return (
-    <div className="border border-slate-400 p-4" data-testid="admin-demo-reset-confirm">
-      <p className="mb-1 text-base font-bold text-slate-900">{messages.confirmTitle}</p>
-      <p className="mb-3 text-sm text-slate-700">{messages.confirmLead}</p>
-      <dl className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
-        <dt className="text-slate-600">{messages.confirmEnvironment}</dt>
-        <dd className="font-mono font-medium text-slate-900" data-testid="admin-demo-reset-confirm-env">
+    <div className={CONFIRM_BOX_CLASSES} data-testid="admin-demo-reset-confirm">
+      <p className="mb-1 text-lg font-bold text-fg">{messages.confirmTitle}</p>
+      <p className={`mb-3 ${BODY_CLASSES}`}>{messages.confirmLead}</p>
+      <dl className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-body">
+        <dt className={TERM_CLASSES}>{messages.confirmEnvironment}</dt>
+        <dd className={`font-mono ${VALUE_CLASSES}`} data-testid="admin-demo-reset-confirm-env">
           {appEnv}
         </dd>
-        <dt className="text-slate-600">{messages.targets}</dt>
-        <dd className="font-medium text-slate-900" data-testid="admin-demo-reset-confirm-targets">
+        <dt className={TERM_CLASSES}>{messages.targets}</dt>
+        <dd className={VALUE_CLASSES} data-testid="admin-demo-reset-confirm-targets">
           {tenantNames.join(' / ')}
         </dd>
       </dl>
-      <div className="mb-3 grid grid-cols-1 gap-3 sm:max-w-md">
+      <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field label={messages.confirmEnvInput}>
           <Input
             type="text"
@@ -230,7 +245,7 @@ function ResetConfirm({
         </Field>
       </div>
       {!matched ? (
-        <p className="mb-3 text-sm text-slate-600" data-testid="admin-demo-reset-confirm-mismatch" aria-live="polite">
+        <p className={`mb-3 ${NOTE_CLASSES}`} data-testid="admin-demo-reset-confirm-mismatch" aria-live="polite">
           {messages.confirmMismatch}
         </p>
       ) : null}
@@ -325,7 +340,7 @@ export function AdminDemoView({ messages, endpoint, resetEndpoint, appEnv, reset
           {messages.status.section}
         </h2>
         {state.kind === 'loading' ? (
-          <p className="text-sm text-slate-600" data-testid="admin-demo-status-loading" aria-live="polite">
+          <p className={NOTE_CLASSES} data-testid="admin-demo-status-loading" aria-live="polite">
             …
           </p>
         ) : null}
@@ -341,14 +356,14 @@ export function AdminDemoView({ messages, endpoint, resetEndpoint, appEnv, reset
         <h2 id="admin-demo-seed-heading" className={SECTION_HEADING_CLASSES}>
           {messages.seed.section}
         </h2>
-        <dl className="mb-2 flex flex-wrap items-baseline gap-x-3 text-sm">
-          <dt className="text-slate-600">{messages.seed.dataset}</dt>
+        <dl className="mb-2 flex flex-wrap items-baseline gap-x-3 text-body">
+          <dt className={TERM_CLASSES}>{messages.seed.dataset}</dt>
           {/* 🔴 選択肢は合成データセットの 1 つだけ（BR-47）。ドロップダウンにしない。 */}
-          <dd className="font-medium text-slate-900" data-testid="admin-demo-seed-dataset">
+          <dd className={VALUE_CLASSES} data-testid="admin-demo-seed-dataset">
             {messages.seed.datasetName}
           </dd>
         </dl>
-        <p className="mb-4 text-sm text-slate-600">{messages.seed.lead}</p>
+        <p className={`mb-4 ${NOTE_CLASSES}`}>{messages.seed.lead}</p>
 
         {ready !== null && !configured ? (
           <Alert variant="warning" data-testid="admin-demo-seed-not-configured">
@@ -363,12 +378,12 @@ export function AdminDemoView({ messages, endpoint, resetEndpoint, appEnv, reset
         ) : null}
 
         {phase.kind === 'confirm' ? (
-          <div className="border border-slate-300 p-4" data-testid="admin-demo-seed-confirm">
-            <p className="mb-1 text-base font-bold text-slate-900">{messages.seed.confirmTitle}</p>
-            <p className="mb-3 text-sm text-slate-700">{messages.seed.confirmLead}</p>
-            <dl className="mb-4 flex items-baseline gap-3 text-sm">
-              <dt className="text-slate-600">{messages.seed.confirmEnvironment}</dt>
-              <dd className="font-mono font-medium text-slate-900" data-testid="admin-demo-seed-confirm-env">
+          <div className={CONFIRM_BOX_CLASSES} data-testid="admin-demo-seed-confirm">
+            <p className="mb-1 text-lg font-bold text-fg">{messages.seed.confirmTitle}</p>
+            <p className={`mb-3 ${BODY_CLASSES}`}>{messages.seed.confirmLead}</p>
+            <dl className="mb-4 flex items-baseline gap-3 text-body">
+              <dt className={TERM_CLASSES}>{messages.seed.confirmEnvironment}</dt>
+              <dd className={`font-mono ${VALUE_CLASSES}`} data-testid="admin-demo-seed-confirm-env">
                 {appEnv}
               </dd>
             </dl>
@@ -384,7 +399,7 @@ export function AdminDemoView({ messages, endpoint, resetEndpoint, appEnv, reset
         ) : null}
 
         {busy ? (
-          <p className="border border-dashed border-slate-400 p-3 text-sm text-slate-700" data-testid="admin-demo-seed-submitting" aria-live="polite">
+          <p className={SUBMITTING_BOX_CLASSES} data-testid="admin-demo-seed-submitting" aria-live="polite">
             {messages.seed.submitting}
           </p>
         ) : null}
@@ -413,10 +428,10 @@ export function AdminDemoView({ messages, endpoint, resetEndpoint, appEnv, reset
         <h2 id="admin-demo-reset-heading" className={SECTION_HEADING_CLASSES}>
           {messages.reset.section}
         </h2>
-        <p className="mb-2 text-sm text-slate-600">{messages.reset.lead}</p>
-        <dl className="mb-4 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
-          <dt className="text-slate-600">{messages.reset.targets}</dt>
-          <dd className="font-medium text-slate-900" data-testid="admin-demo-reset-targets">
+        <p className={`mb-2 ${NOTE_CLASSES}`}>{messages.reset.lead}</p>
+        <dl className="mb-4 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-body">
+          <dt className={TERM_CLASSES}>{messages.reset.targets}</dt>
+          <dd className={VALUE_CLASSES} data-testid="admin-demo-reset-targets">
             {resetTenantNames.join(' / ')}
           </dd>
         </dl>
@@ -445,7 +460,7 @@ export function AdminDemoView({ messages, endpoint, resetEndpoint, appEnv, reset
         ) : null}
 
         {resetBusy ? (
-          <p className="border border-dashed border-slate-400 p-3 text-sm text-slate-700" data-testid="admin-demo-reset-submitting" aria-live="polite">
+          <p className={SUBMITTING_BOX_CLASSES} data-testid="admin-demo-reset-submitting" aria-live="polite">
             {messages.reset.submitting}
           </p>
         ) : null}

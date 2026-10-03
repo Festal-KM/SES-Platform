@@ -233,6 +233,13 @@ export { Input } from './components/input.js';
 export type { InputProps } from './components/input.js';
 export { Label } from './components/label.js';
 export type { LabelProps } from './components/label.js';
+// 🔴 SP-22 段⑤（`T-22-14`）: 使用量メーター（`docs/04` §5-4 / **§5-13 の 26 部品目**）。
+//    🔴 **塗りの幅はデータ由来の割合**であり、クラスでは表せない（`components/meter.tsx` 冒頭）。
+//    `S-038`（テナント）と `A-004`（運営者）の**両方がこの 1 実装を使う** ——
+//    2 つ目の実装が生えないことは `tests/static/ui-primitive-single-impl.test.ts` が固定する。
+//    🔴 色は `state`（意味）から部品が決める。`children` / 色の prop を持たない。
+export { Meter, meterFillPercent } from './components/meter.js';
+export type { MeterProps, MeterState } from './components/meter.js';
 // 🔴 T-11-12: 一覧の名称セル（docs/04 §10.3「長い名称」のブレークポイント別規約）。shadcn/ui の取り込みではなく
 //    本リポジトリ固有。文言を持たず、`next/link` にも依存しない（`linkComponent` で受ける）。
 export {
@@ -312,3 +319,7 @@ export {
   SECONDARY_LINK_CLASSES,
   SECONDARY_LINK_STACKED_CLASSES,
 } from './lib/link-classes.js';
+// 🔴 SP-22 段⑤（`T-22-14`）: 「画面の幅ではない実寸」2 つ（認証カード / QR の図版）。
+//    🔴 **`PageWidthClass` の 4 つ目ではない**（型は 3 値のまま。`lib/fixed-width-classes.ts` 冒頭）。
+//    `apps/web/app/**` に `max-w-*` を書けない（検査 (c)）ため、寸法を持てる唯一の層へ移した。
+export { AUTH_CARD_WIDTH_CLASSES, QR_FIGURE_CLASSES } from './lib/fixed-width-classes.js';

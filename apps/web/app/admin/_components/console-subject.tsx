@@ -17,6 +17,12 @@
 //    「どの平面か」→「誰として」→「どこへ行けるか」の順に読めることが誤操作防止の道筋である。
 // 🔴 文言は `packages/i18n`（`CLAUDE.md` §3.5）。🔴 `'use client'` を宣言しない（状態を持たない）。
 // 🔴 アイコンを付けない（`docs/04` §7.5）。
+//
+// 🔴 SP-22 段⑤（`T-22-14`）: 色を §7.9 の semantic トークンへ寄せた
+//    （`bg-white` → `bg-bg`〔**値は同じ白**〕/ `border-slate-200` → `border-border` /
+//    `text-slate-700` → `text-fg` / `text-slate-500` → `text-fg-muted`）。
+//    🔴 面（`bg-surface`）は使わない —— 面を持てるのは `packages/ui` の部品だけである
+//    （`tests/static/ui-shadow-and-size.test.ts`）。ここは**帯**であってカードではない。
 import type { PlatformRole } from '@ses/db';
 import { t, type MessageKey } from '@ses/i18n';
 
@@ -45,11 +51,11 @@ export type AdminConsoleSubjectProps = {
 export function AdminConsoleSubject({ userName, platformRole }: AdminConsoleSubjectProps) {
   return (
     <p
-      className="border-b border-slate-200 bg-white px-4 py-1 text-xs text-slate-700"
+      className="border-b border-border bg-bg px-4 py-1 text-xs text-fg"
       data-testid="admin-console-subject"
       data-platform-role={platformRole}
     >
-      <span className="mr-2 font-bold text-slate-500">{t('shell.admin.subject.label')}</span>
+      <span className="mr-2 font-bold text-fg-muted">{t('shell.admin.subject.label')}</span>
       <span data-testid="admin-console-subject-name">{userName}</span>
       <span className="ml-2" data-testid="admin-console-subject-role">
         {`（${t(PLATFORM_ROLE_MESSAGE_KEYS[platformRole])}）`}

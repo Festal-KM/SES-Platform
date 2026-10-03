@@ -74,6 +74,9 @@ export function adminUsageMessages(): AdminUsageViewMessages {
       REACHED: t('admin.usage.level.REACHED'),
       unknown: t('admin.usage.level.unknown'),
     },
+    // 🔴 `S-038` と**同じキー**を使う（同じ概念を別の語で呼ばない。`CLAUDE.md` §3.5 /
+    //    `docs/04` §7.8 の用語統一）。メーターの語は平面をまたいで同一である。
+    percentUsedLabel: t('usage.percentUsedLabel'),
     band: {
       LOW: t('admin.usage.band.LOW'),
       MID: t('admin.usage.band.MID'),

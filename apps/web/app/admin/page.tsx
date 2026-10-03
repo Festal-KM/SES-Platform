@@ -15,11 +15,20 @@
 //    ページは Prisma を直接触らず `readAdminHomeSummary`（`@ses/db/platform`）を呼ぶ。
 //    同関数は `withPlatformRead` 経由であり、**監査ログの INSERT が成功した後でないと
 //    クエリを実行しない**（記録の無い閲覧が構造的に起こらない）。
+//
+// 🔴 T-22-14（段⑤）: 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`。検査 (c) / (k)）。
+//    `/admin` のホームは**件数 1 つと行ける先の列挙**だけの短い画面なので **クラス C = 読み幅**
+//    である（旧 `max-w-3xl` + `mx-auto` は 1920px で中央に 768px の柱を作っていた）。
+//    🔴 色・文字サイズ・8 状態は §7.9 / §7.10 のトークンと `packages/ui` の共通語に寄せた
+//    （`text-2xl` の件数は §7.3 の 6 段に無いため **`text-title`（20px）**にした ——
+//    `text-metric`（24px）は `KpiCard` 専用であり、ここで使うと検査が落ちる。`KpiCard` 自体も
+//    **ホーム 2 画面〔`S-003` / `S-004`〕専用**であって管理平面では使えない）。
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { isSeedableAppEnv } from '@ses/config';
 import { readAdminHomeSummary } from '@ses/db/platform';
 import { t } from '@ses/i18n';
+import { PageBody, SECONDARY_LINK_CLASSES } from '@ses/ui';
 import { ADMIN_MONITORING_HREF, ADMIN_USAGE_HREF } from '../../lib/admin-monitoring/hrefs';
 import { readPlatformRequestMeta, resolvePlatformCtxOutcome } from '../../lib/auth/platform-session';
 import { currentAppEnv } from '../../lib/db/bootstrap';
@@ -44,63 +53,65 @@ export default async function AdminHomePage() {
     //    ため `current={null}`。既存の各導線（`admin-home-*-link`）は**残す** —— ホームは
     //    「件数 + 次にどこを見るか」を出す画面であり、ナビとは役割が違う。
     <AdminConsoleFrame current={null}>
-      <main className="mx-auto max-w-3xl px-4 py-8">
-        <h1 className="mb-6 text-xl font-bold text-slate-900">{t('admin.home.title')}</h1>
-        {/* 🔴 運営者に見せてよいのは件数・状態・エラーだけである（CLAUDE.md §10.5）。
-            テナント名・エンジニア名・案件名などの「内容」と、それらへの導線を置かない。 */}
-        <dl className="mb-6 flex items-baseline gap-3">
-          <dt className="text-sm text-slate-700">{t('admin.home.tenantCount.label')}</dt>
-          <dd className="text-2xl font-bold text-slate-900">{summary.tenantCount}</dd>
-        </dl>
-        {/* 🔴 A-002（テナント一覧。T-03-09）への導線。件数・状態・日時以外は出さない。 */}
-        <p className="mb-2 text-sm">
-          <Link className="text-slate-700 underline-offset-2 hover:underline" href="/admin/tenants">
-            {t('admin.tenants.title')}
-          </Link>
-        </p>
-        {/* A-006（監査ログ横断検索。T-11-03）への導線。開いただけでは検索を実行しない（期間を入れて検索する）。 */}
-        <p className="mb-2 text-sm">
-          <Link
-            className="text-slate-700 underline-offset-2 hover:underline"
-            href="/admin/audit-logs"
-            data-testid="admin-home-audit-logs-link"
-          >
-            {t('admin.auditLogs.title')}
-          </Link>
-        </p>
-        {/* A-004（利用量・クォータ管理。T-11-02）への導線。件数と金額（USD）の両方を出す運営者向けの画面（F-057）。 */}
-        <p className="mb-2 text-sm">
-          <Link
-            className="text-slate-700 underline-offset-2 hover:underline"
-            href={ADMIN_USAGE_HREF}
-            data-testid="admin-home-usage-link"
-          >
-            {t('admin.home.usage.link')}
-          </Link>
-        </p>
-        {/* A-005（運用監視。T-11-04）への導線。件数・状態・エラー種別・日時だけを出す画面（F-059 AC-3）。 */}
-        <p className="mb-2 text-sm">
-          <Link
-            className="text-slate-700 underline-offset-2 hover:underline"
-            href={ADMIN_MONITORING_HREF}
-            data-testid="admin-home-monitoring-link"
-          >
-            {t('admin.home.monitoring.link')}
-          </Link>
-        </p>
-        {/* A-012（デモ環境の合成データ管理。T-10-06）への導線。🔴 demo / development 以外では**導線そのものが存在しない**（F-053 AC-6）。 */}
-        {demoSeedAvailable ? (
-          <p className="mb-2 text-sm">
-            <Link
-              className="text-slate-700 underline-offset-2 hover:underline"
-              href="/admin/demo"
-              data-testid="admin-home-demo-link"
-            >
-              {t('admin.home.demo.link')}
+      <main className="py-6">
+        <PageBody widthClass="prose">
+          <h1 className="mb-6 text-title font-bold text-fg">{t('admin.home.title')}</h1>
+          {/* 🔴 運営者に見せてよいのは件数・状態・エラーだけである（CLAUDE.md §10.5）。
+              テナント名・エンジニア名・案件名などの「内容」と、それらへの導線を置かない。 */}
+          <dl className="mb-6 flex items-baseline gap-3">
+            <dt className="text-body text-fg">{t('admin.home.tenantCount.label')}</dt>
+            <dd className="text-title font-bold text-fg">{summary.tenantCount}</dd>
+          </dl>
+          {/* 🔴 A-002（テナント一覧。T-03-09）への導線。件数・状態・日時以外は出さない。 */}
+          <p className="mb-2">
+            <Link className={SECONDARY_LINK_CLASSES} href="/admin/tenants">
+              {t('admin.tenants.title')}
             </Link>
           </p>
-        ) : null}
-        <p className="mt-4 text-sm text-slate-700">{t('admin.home.placeholder')}</p>
+          {/* A-006（監査ログ横断検索。T-11-03）への導線。開いただけでは検索を実行しない（期間を入れて検索する）。 */}
+          <p className="mb-2">
+            <Link
+              className={SECONDARY_LINK_CLASSES}
+              href="/admin/audit-logs"
+              data-testid="admin-home-audit-logs-link"
+            >
+              {t('admin.auditLogs.title')}
+            </Link>
+          </p>
+          {/* A-004（利用量・クォータ管理。T-11-02）への導線。件数と金額（USD）の両方を出す運営者向けの画面（F-057）。 */}
+          <p className="mb-2">
+            <Link
+              className={SECONDARY_LINK_CLASSES}
+              href={ADMIN_USAGE_HREF}
+              data-testid="admin-home-usage-link"
+            >
+              {t('admin.home.usage.link')}
+            </Link>
+          </p>
+          {/* A-005（運用監視。T-11-04）への導線。件数・状態・エラー種別・日時だけを出す画面（F-059 AC-3）。 */}
+          <p className="mb-2">
+            <Link
+              className={SECONDARY_LINK_CLASSES}
+              href={ADMIN_MONITORING_HREF}
+              data-testid="admin-home-monitoring-link"
+            >
+              {t('admin.home.monitoring.link')}
+            </Link>
+          </p>
+          {/* A-012（デモ環境の合成データ管理。T-10-06）への導線。🔴 demo / development 以外では**導線そのものが存在しない**（F-053 AC-6）。 */}
+          {demoSeedAvailable ? (
+            <p className="mb-2">
+              <Link
+                className={SECONDARY_LINK_CLASSES}
+                href="/admin/demo"
+                data-testid="admin-home-demo-link"
+              >
+                {t('admin.home.demo.link')}
+              </Link>
+            </p>
+          ) : null}
+          <p className="mt-4 text-body text-fg">{t('admin.home.placeholder')}</p>
+        </PageBody>
       </main>
     </AdminConsoleFrame>
   );

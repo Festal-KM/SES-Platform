@@ -8,10 +8,16 @@
 // 🔴 画面の閲覧・投入の記録は API-A16（`readDemoSeedStatus` = `withPlatformRead`）が残す。ページ自身は DB に触れない
 //    （投入状況の読み取りは client 部品が `GET /api/admin/demo/seed` で行う。`A-005` と同じ形）。
 // 🔴 「本番からコピー」に相当する操作を 1 つも置かない（`BR-47`）。
+//
+// 🔴 T-22-14（段⑤）: 器（`<main>` + `PageBody`）はここが持つ（検査 (k) は `page.tsx` が
+//    `widthClass` をちょうど 1 回渡すことを見る）。`A-012` は **クラス A = 全幅**である
+//    （8 列の投入状況の表を絞らない）。🔴 **`available` の分岐は描画部品の中だけ**であり、
+//    幅の判断を分岐させない（1 画面 1 クラス。`U-23`）。
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { isSeedableAppEnv } from '@ses/config';
 import { t } from '@ses/i18n';
+import { PageBody } from '@ses/ui';
 import { demoResetTargetTenantNames } from '../../../lib/admin-demo/reset-targets';
 import { demoScenarioStartPoints } from '../../../lib/admin-demo/scenarios';
 import { resolvePlatformCtxOutcome } from '../../../lib/auth/platform-session';
@@ -36,14 +42,18 @@ export default async function AdminDemoPage() {
 
   const appEnv = currentAppEnv();
   return (
-    <AdminDemoScreen
-      messages={adminDemoMessages()}
-      appEnv={appEnv}
-      available={isSeedableAppEnv(appEnv)}
-      endpoint={DEMO_SEED_ENDPOINT}
-      resetEndpoint={DEMO_RESET_ENDPOINT}
-      resetTenantNames={demoResetTargetTenantNames()}
-      scenarios={demoScenarioStartPoints(1)}
-    />
+    <main className="py-6">
+      <PageBody widthClass="full">
+        <AdminDemoScreen
+          messages={adminDemoMessages()}
+          appEnv={appEnv}
+          available={isSeedableAppEnv(appEnv)}
+          endpoint={DEMO_SEED_ENDPOINT}
+          resetEndpoint={DEMO_RESET_ENDPOINT}
+          resetTenantNames={demoResetTargetTenantNames()}
+          scenarios={demoScenarioStartPoints(1)}
+        />
+      </PageBody>
+    </main>
   );
 }

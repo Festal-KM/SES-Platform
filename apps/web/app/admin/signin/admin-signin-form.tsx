@@ -16,6 +16,12 @@
 //    運営者側だけ別の見た目を作ると、**片方だけ直る**状態がその場で生まれる
 //    （`docs/04` §A-001 改訂 7「`S-001` と同一の構成とし、同じ実装を共有する」）。
 //    **testid・`name`・`autoComplete`・`aria-*`・要素の並びは 1 つも変えていない。**
+//
+// 🔴 T-22-14（段⑤）: 色と文字サイズを §7.9 のトークンへ寄せた（`S-001` の
+//    `signin-form.tsx` と**同じ語**にした: `text-base` → `text-lg` / `text-sm` → `text-body` /
+//    `text-slate-*` → `text-fg` / `border-slate-300` → `border-border-strong` /
+//    復旧コードの `pl-5` → `pl-6`〔§7.9 の 7 段〕）。🔴 **実寸が変わるのは `pl-5` → `pl-6`
+//    （20 → 24px）の 1 件だけ**であり、他は役割名での参照に替えただけである。
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Button, Field, FieldError, Input } from '@ses/ui';
 import { OtpauthQr } from '../../_components/otpauth-qr';
@@ -158,14 +164,14 @@ export function AdminSignInForm({
   if (stage === 'twoFactor') {
     return (
       <form onSubmit={onSubmitCode} noValidate data-testid="admin-signin-2fa-form">
-        <h2 className="mb-3 text-base font-bold text-slate-900">{messages.twoFactorTitle}</h2>
-        <p className="mb-4 text-sm text-slate-700">{messages.twoFactorRequiredNotice}</p>
+        <h2 className="mb-3 text-lg font-bold text-fg">{messages.twoFactorTitle}</h2>
+        <p className="mb-4 text-body text-fg">{messages.twoFactorRequiredNotice}</p>
         {errorBlock}
         {enrollment === null ? (
-          <p className="mb-4 text-sm text-slate-700">{messages.twoFactorVerifyLead}</p>
+          <p className="mb-4 text-body text-fg">{messages.twoFactorVerifyLead}</p>
         ) : (
           <>
-            <p className="mb-4 text-sm text-slate-700">{messages.twoFactorSetupLead}</p>
+            <p className="mb-4 text-body text-fg">{messages.twoFactorSetupLead}</p>
             {/* 🔴 主平面と同じ 1 実装を使う（運営者側だけ規律を緩めない。docs/04 §A-001 改訂 7）。
                   QR は利用者の端末の中だけで組み立て、外部の QR 生成サービスに渡さない。 */}
             <OtpauthQr
@@ -180,19 +186,19 @@ export function AdminSignInForm({
                   🔴 長いアドレスを**折り返して全部見せる**（`wrap-anywhere`）。切り詰めると、
                      QR を読めない端末の運営者が 2FA の登録を完了できない。 */}
               <code
-                className="block rounded-md border border-slate-300 p-2 text-xs wrap-anywhere"
+                className="block rounded-md border border-border-strong p-2 text-xs wrap-anywhere"
                 data-testid="admin-signin-otpauth-uri"
               >
                 {enrollment.otpauthUrl}
               </code>
             </Field>
-            <h3 className="mb-1 text-sm font-bold text-slate-900">
+            <h3 className="mb-1 text-body font-bold text-fg">
               {messages.twoFactorRecoveryHeading}
             </h3>
-            <p className="mb-2 text-sm text-slate-700">{messages.twoFactorRecoveryNote}</p>
+            <p className="mb-2 text-body text-fg">{messages.twoFactorRecoveryNote}</p>
             {/* 🔴 復旧コードもシークレットである。等幅（`<code>`）のまま、選択してコピー
                 できる素のテキストで出す（画像化・伏せ字にしない）。 */}
-            <ul className="mb-4 pl-5 text-sm">
+            <ul className="mb-4 pl-6 text-body">
               {enrollment.recoveryCodes.map((code) => (
                 <li key={code}>
                   <code>{code}</code>

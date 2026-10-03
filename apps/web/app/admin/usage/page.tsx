@@ -8,10 +8,16 @@
 //    判定は `platformRole`（DB で確定した値。`resolvePlatformCtxOutcome`）から行い、クライアントへは真偽値だけ渡す。
 // 🔴 このページ自身は DB を読まない（材料は API-A6 が 1 回の `withPlatformRead` で読み、その読み取りが `admin.usage.view` として記録される）。
 // 🔴 文言は `packages/i18n` から引いてクライアントへ props で渡す（`CLAUDE.md` §3.5）。今日（JST）もサーバで決めて渡す。
+//
+// 🔴 T-22-14（段⑤）: 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`。検査 (c) / (k)）。
+//    `A-004` は **クラス A = 全幅**である（§7.1 の表の「管理平面 11 画面」。旧 `max-w-6xl` は
+//    1920px で 10 列のテーブルを 1152px に絞っていた —— §10.3「監視画面では列を隠さない」の
+//    前提を幅が壊していた）。
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { QUOTA_OVERRIDE_METRICS, usagePeriodKey } from '@ses/domain';
 import { t } from '@ses/i18n';
+import { PageBody } from '@ses/ui';
 import { parseAdminUsageFilter, parseTargetTenantId } from '../../../lib/admin-usage/schemas';
 import { resolvePlatformCtxOutcome } from '../../../lib/auth/platform-session';
 import { AdminUsageView } from './admin-usage-view';
@@ -44,20 +50,22 @@ export default async function AdminUsagePage({
   const canEditQuota = outcome.ctx.platformRole === 'PLATFORM_OWNER';
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-8">
-      <div className="mb-2 flex items-center justify-between">
-        <h1 className="text-xl font-bold text-slate-900">{t('admin.usage.title')}</h1>
-      </div>
-      <AdminUsageView
-        messages={adminUsageMessages()}
-        endpoint={USAGE_ENDPOINT}
-        tenantsEndpoint={TENANTS_ENDPOINT}
-        canEditQuota={canEditQuota}
-        initialFilter={filter}
-        {...(targetTenantId === undefined ? {} : { targetTenantId })}
-        today={usagePeriodKey('DAY', new Date())}
-        metrics={QUOTA_OVERRIDE_METRICS}
-      />
+    <main className="py-6">
+      <PageBody widthClass="full">
+        <div className="mb-2 flex items-center justify-between">
+          <h1 className="text-title font-bold text-fg">{t('admin.usage.title')}</h1>
+        </div>
+        <AdminUsageView
+          messages={adminUsageMessages()}
+          endpoint={USAGE_ENDPOINT}
+          tenantsEndpoint={TENANTS_ENDPOINT}
+          canEditQuota={canEditQuota}
+          initialFilter={filter}
+          {...(targetTenantId === undefined ? {} : { targetTenantId })}
+          today={usagePeriodKey('DAY', new Date())}
+          metrics={QUOTA_OVERRIDE_METRICS}
+        />
+      </PageBody>
     </main>
   );
 }

@@ -8,9 +8,32 @@
 // 🔴 引き下げ（新しい上限 < 現在の上限）のときは、適用日の最小値を**翌日**にし、通知の確認チェックを**必須**にする（`F-057 AC-3`）。
 //    画面の制約はあくまで補助であり、最終判定はサーバ（`decideQuotaChange` + RLS の `WITH CHECK`）が行う。**即時に下げる導線は無い。**
 // 🔴 文言は props（`packages/i18n`）。ここにベタ書きしない。`@ses/db` を import しない（`tests/static/client-db-boundary.test.ts`）。
+//
+// 🔴 T-22-14（段⑤）: 色・文字サイズ・幅をトークンと `PageBody` の語へ寄せた。
+//    - 色 → §7.9 の semantic（`border-slate-200` → `border-border` /
+//      `text-slate-900` → `text-fg` / `text-slate-600` → `text-fg-muted` /
+//      `text-slate-800` → `text-fg`）。文字サイズ → 6 段（**実寸は同じ**）。
+//    - 🔴 **フォームの最大幅は `@ses/ui` の `PAGE_BODY_PROSE_MAX_WIDTH_CLASS`（720px）から取る**
+//      （旧 `max-w-xl` = 576px）。`A-004` の画面そのものは**クラス A = 全幅**（10 列のテーブルを
+//      絞らない）だが、入力欄が 1920px まで伸びると読み書きができない。🔴 **寸法の出所は
+//      `packages/ui` の 1 箇所**であり、画面に `max-w-*` を書かない（検査 (c)。
+//      `candidate-screen.tsx` が `PAGE_BODY_ASIDE_WIDTH_CLASSES` を import しているのと同じ作法）。
 import { useMemo, useState, type FormEvent } from 'react';
 import type { QuotaOverrideMetric } from '@ses/domain';
-import { Alert, AlertDescription, Button, Checkbox, Field, FieldDescription, FieldError, Input, Select, Textarea } from '@ses/ui';
+import {
+  Alert,
+  AlertDescription,
+  Button,
+  Checkbox,
+  Field,
+  FieldDescription,
+  FieldError,
+  Input,
+  PAGE_BODY_PROSE_MAX_WIDTH_CLASS,
+  Select,
+  Textarea,
+  cn,
+} from '@ses/ui';
 import type { AdminUsageTenantRow } from '../../../lib/admin-usage/view';
 
 export type QuotaOverrideFormMessages = {
@@ -113,17 +136,20 @@ export function QuotaOverrideForm({ messages, metricLabels, metrics, tenant, tod
   }
 
   return (
-    <section className="mt-8 rounded border border-slate-200 p-4" data-testid="admin-usage-quota-form">
-      <h2 className="mb-1 text-base font-bold text-slate-900">{messages.title}</h2>
-      <p className="mb-4 text-sm text-slate-600">{messages.lead}</p>
+    <section className="mt-8 rounded-md border border-border p-4" data-testid="admin-usage-quota-form">
+      <h2 className="mb-1 text-lg font-bold text-fg">{messages.title}</h2>
+      <p className="mb-4 text-body text-fg-muted">{messages.lead}</p>
       {tenant === null ? (
-        <p className="text-sm text-slate-600" data-testid="admin-usage-quota-form-select-tenant">
+        <p className="text-body text-fg-muted" data-testid="admin-usage-quota-form-select-tenant">
           {messages.selectTenant}
         </p>
       ) : (
-        <form onSubmit={(event) => void submit(event)} className="flex max-w-xl flex-col gap-4">
+        <form
+          onSubmit={(event) => void submit(event)}
+          className={cn('flex flex-col gap-4', PAGE_BODY_PROSE_MAX_WIDTH_CLASS)}
+        >
           <Field as="div" label={messages.tenant}>
-            <p className="text-sm font-medium text-slate-900" data-testid="admin-usage-quota-form-tenant">
+            <p className="text-body font-medium text-fg" data-testid="admin-usage-quota-form-tenant">
               {tenant.name}
             </p>
           </Field>
@@ -171,7 +197,7 @@ export function QuotaOverrideForm({ messages, metricLabels, metrics, tenant, tod
             ) : null}
           </Field>
           <div>
-            <label className="flex items-start gap-2 text-sm text-slate-800">
+            <label className="flex items-start gap-2 text-body text-fg">
               <Checkbox
                 name="notifyTenantAdmins"
                 checked={notify}

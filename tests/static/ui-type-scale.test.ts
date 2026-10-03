@@ -27,7 +27,10 @@ import { describe, expect, it } from 'vitest';
 import path from 'node:path';
 import {
   ALLOWED_TEXT_SIZES,
+  classTokensOf,
+  collectSourceFiles,
   offScaleTextSizeValue,
+  readSource,
   repoRoot,
 } from './support/ui-classes.js';
 import {
@@ -65,8 +68,29 @@ describe('🔴 (g)① apps/web/app の文字サイズが §7.9 の 6 トーク�
     ).toEqual([]);
   });
 
-  it('走査が空振りしていない（移行中のファイルに現に違反が在る）', () => {
-    expect(findings.length).toBeGreaterThan(0);
+  // ============================================================================
+  // 🔴 段⑤（`T-22-14`）で違反が 0 件になった。**ここが「空振り」に化けないようにする**
+  // ============================================================================
+  // 旧実装は対照として **「移行中のファイルに現に違反が在る」**（= 本番の走査が非空）を見て
+  // いた。許可リストが空になった以上その条件は成立しないが、🔴 **代わりに何も見ないと、
+  // 検出器が壊れて 0 件になったときも「違反 0 件」が自明に真**になる（`testid-freeze.test.ts`
+  // の「抽出器が 0 件になれば削除が無いも自明に真になる」と同じ穴）。
+  // そこで対照を **2 つに置き換えた**:
+  //   ① **走査が現にファイルを読み、クラス名候補を取り出している**（件数の下限）。
+  //   ② **検出器が合成ソース（`__fixtures__/ui-classes/`）では現に違反を拾う**
+  //      （このファイル下部の「対照」ブロック。**0 件の根拠はそこに在る**）。
+  it('🔴 違反が 0 件である（段⑤ で許可リストが空になり、本検査は無条件 green である）', () => {
+    expect(findings).toEqual([]);
+    expect(actual.size).toBe(0);
+  });
+
+  it('① 走査が現にファイルを読み、クラス名候補を取り出している（空振りの対照）', () => {
+    const scanned = collectSourceFiles(APP_ROOT, ['.tsx']);
+    expect(scanned.length).toBeGreaterThan(80);
+    const tokens = scanned.flatMap((absolute) => classTokensOf(readSource(absolute), absolute));
+    expect(tokens.length).toBeGreaterThan(1000);
+    // 6 トークンが現に使われている（= 抽出が機能している）。
+    expect(tokens.some(({ token }) => token === 'text-body')).toBe(true);
   });
 });
 

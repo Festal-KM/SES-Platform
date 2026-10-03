@@ -52,17 +52,31 @@
 //    `<main>` の `px-4` が持っており（= ビューポートの端との間隔）、二重に入れると
 //    カードの内容幅が 384 → 336px に縮む。**見た目を 1px も変えないための打ち消しであり、
 //    幅クラスの打ち消しではない**（`max-w-180` はカードの `max-w-sm` の内側で不活性）。
+//
+// ============================================================================
+// 🔴 SP-22 段⑤（`T-22-14`）: カードの実寸を `@ses/ui` から取る
+// ============================================================================
+// 段④ はこのファイルを許可リスト（検査 (c)）に残していた。段⑤ で外すにあたり、
+// **`max-w-sm` を `@ses/ui` の `AUTH_CARD_WIDTH_CLASSES` から import する形にした**
+// （`candidate-screen.tsx` が `PAGE_BODY_ASIDE_WIDTH_CLASSES` を import しているのと同じ作法。
+// `packages/ui/src/components/page-body.tsx` 冒頭「他の部品がこの寸法を必要とするときは、
+// クラス文字列をここから import する」）。
+// 🔴 **値は 1px も変えていない**（`w-full max-w-sm` = 24rem）。
+// 🔴 **`PageWidthClass` に 4 つ目を足していない** —— 「中央寄せのカード」を幅クラスへ昇格させる
+//    のは `docs/04` §7.1 の改訂（= 人間の判断。`CLAUDE.md` §8.6）であり、ここでは先取りしない。
 import type { ReactNode } from 'react';
-import { PageBody, type PageWidthClass } from '@ses/ui';
+import { AUTH_CARD_WIDTH_CLASSES, PageBody, cn, type PageWidthClass } from '@ses/ui';
 
 export type AuthShellProps = {
   /** ワードマーク（`t('product.name')`）。🔴 文言はここで解決しない。 */
   readonly wordmark: ReactNode;
   /**
    * `docs/04` §7.1 の幅クラス。認証 5 画面はいずれも **C（読み幅）**である。
-   * ⚠️ 既定を持つのは **`A-001`（運営者サインイン）が段⑤ の刷新待ち**で、まだ
-   *    `page.tsx` から渡していないためである（`ui-ratchet-allowlist.ts` の (k) に
-   *    `admin/signin/page.tsx` が残っている）。段⑤ で渡すようになったら既定を外せる。
+   * ✅ **段⑤ で `A-001`（`admin/signin/page.tsx`）も明示的に渡すようになった**（検査 (k) が
+   *    `page.tsx` 側で満たされる）。
+   * 🔴 **既定は残す。** 認証画面は 5 枚とも C であり、6 枚目が増えたときに渡し忘れても
+   *    「左寄せ 720px」に落ちないほうが安全側である（`auth-shell.render.test.tsx` の
+   *    最後のケースがこの既定を固定している）。
    */
   readonly widthClass?: PageWidthClass;
   readonly children: ReactNode;
@@ -71,7 +85,7 @@ export type AuthShellProps = {
 export function AuthShell({ wordmark, widthClass = 'prose', children }: AuthShellProps) {
   return (
     <main className="flex min-h-dvh justify-center px-4 py-6">
-      <PageBody widthClass={widthClass} className="w-full max-w-sm px-0">
+      <PageBody widthClass={widthClass} className={cn(AUTH_CARD_WIDTH_CLASSES, 'px-0')}>
         <p className="mb-8 text-lg font-bold">{wordmark}</p>
         {children}
       </PageBody>

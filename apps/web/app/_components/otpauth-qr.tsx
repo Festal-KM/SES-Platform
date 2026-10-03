@@ -25,10 +25,26 @@
 // | `width: 100%` | `w-full` | 狭い画面でカラムからはみ出さない |
 // | `max-width: 17rem` | `max-w-68`（`0.25rem × 68 = 17rem`） | 広い画面で 1 モジュールあたりの画素数を確保する（読み取り精度） |
 // | `height: auto` | `h-auto` | 縦横比を `viewBox` に従わせる（潰さない） |
-// | `background: #ffffff` | `bg-white` | 🔴 QR は明暗の比で読む。地の色を透かさない |
+// | `background: #ffffff` | `bg-white` → ✅ **`bg-bg`**（段⑤。値は同じ白） | 🔴 QR は明暗の比で読む。地の色を透かさない |
 // | `margin: 0.5rem 0 1rem` | `Field` の `gap-1.5` + `mb-4` | 上の 0.5rem は見出しとの間隔であり、`Field` の gap がその役目を持つ |
+//
+// ============================================================================
+// 🔴 SP-22 段⑤（`T-22-14`）: 実寸を `@ses/ui` から取り、無彩色の極をトークンに替えた
+// ============================================================================
+// 段④ はこのファイルを許可リスト（検査 (a) の `bg-white` / 検査 (c) の `max-w-68`）に
+// 残していた。段⑤ で外すにあたり、**見え方を 1px / 1 階調も変えずに**次の 2 つを行った。
+//
+//   ① `block h-auto w-full max-w-68` → `@ses/ui` の **`QR_FIGURE_CLASSES`**（同じ 4 語）。
+//      🔴 **寸法を持てるのは部品の層だけである**（検査 (c) が `apps/web/app/**` を射程にし、
+//      `packages/ui` を外しているのはそのため。`lib/fixed-width-classes.ts` 冒頭）。
+//   ② `bg-white` → **`bg-bg`**（ページ地のトークン。`--color-bg: var(--color-white)` なので
+//      **値は同じ白**）。🔴 面（`bg-surface`）は使わない —— 面は `packages/ui` の部品だけが
+//      持つ（`tests/static/ui-shadow-and-size.test.ts`）。`invite-link-panel.tsx` が
+//      同じ判断を先にしている。
+//      ⚠️ `<rect fill="#ffffff">` は**残す** —— SVG の塗りであってクラスではなく、
+//      画像として保存・印刷されたときに地が白であることはこちらが担保している。
 import { useMemo } from 'react';
-import { Field } from '@ses/ui';
+import { Field, QR_FIGURE_CLASSES, cn } from '@ses/ui';
 import { encodeQrCode, qrCodeSvgPath } from '../../lib/auth/qr-code';
 
 /** クワイエットゾーン（ISO/IEC 18004 が要求する周囲 4 モジュールの余白）。 */
@@ -62,7 +78,7 @@ export function OtpauthQr({ otpauthUrl, caption, alt, testId }: OtpauthQrProps) 
   return (
     <Field as="p" className="mb-4" label={caption}>
       <svg
-        className="block h-auto w-full max-w-68 bg-white"
+        className={cn(QR_FIGURE_CLASSES, 'bg-bg')}
         viewBox={`0 0 ${drawing.extent} ${drawing.extent}`}
         role="img"
         aria-label={alt}

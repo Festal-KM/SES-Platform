@@ -3,7 +3,6 @@
 // 走査で固定する。ここは値の正しさだけを見る。
 import { describe, expect, it } from 'vitest';
 import {
-  clampPercent,
   formatGigabytes,
   formatJpy,
   formatRemaining,
@@ -31,20 +30,19 @@ describe('formatGigabytes', () => {
   });
 });
 
-describe('percentUsed / clampPercent', () => {
-  it('整数に切り捨て。上限超過は 100 を超えて返す（バーの幅は clampPercent が丸める）', () => {
+// 🔴 SP-22 段⑤: バーの幅の丸め（旧 `clampPercent`）は `packages/ui` の `Meter` へ移した。
+//    **事例はそのまま `packages/ui/src/components/meter.test.ts` に在る**（125 → 100 / 65 → 65 /
+//    `NaN` → 0 / -3 → 0）。消費率そのもの（`percentUsed`）はここに残る。
+describe('percentUsed', () => {
+  it('整数に切り捨て。上限超過は 100 を超えて返す（バーの幅は `Meter` が丸める）', () => {
     expect(percentUsed(118, 180)).toBe(65);
     expect(percentUsed(144, 180)).toBe(80);
     expect(percentUsed(25, 20)).toBe(125);
-    expect(clampPercent(125)).toBe(100);
-    expect(clampPercent(65)).toBe(65);
   });
 
   it('上限 0 以下・使用 0 は 0（表示で例外を出さない）', () => {
     expect(percentUsed(0, 180)).toBe(0);
     expect(percentUsed(10, 0)).toBe(0);
-    expect(clampPercent(Number.NaN)).toBe(0);
-    expect(clampPercent(-3)).toBe(0);
   });
 
   it('bigint（バイト数）も同じ式', () => {

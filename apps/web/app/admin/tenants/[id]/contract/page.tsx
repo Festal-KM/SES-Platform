@@ -7,8 +7,15 @@
 //    （`withPlatformRead` + `admin.deletion_status.view`）の 1 本であり、`A-003` / `A-013` / `A-005` に同じ確認を置かない。
 // 🔴 `PLATFORM_SUPPORT` も閲覧できる（`F-062 AC-7`）。Phase 1 に書き込み操作は無く、ロールで描き分ける要素も無い。
 // 🔴 表示は完了 / 未完了の別と件数のみ（`BR-40`）。削除された内容・返却データへの導線を持たない。
+//
+// 🔴 T-22-14（段⑤）: 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`。検査 (k) は
+//    **`page.tsx` が `widthClass` をちょうど 1 回渡すこと**を見る）。本画面は 1 セクションの
+//    読み物であり **クラス C = 読み幅**である。🔴 **器（`<main>` + `PageBody`）はここが持ち、
+//    描画部品（`DeletionStatusScreen`）は中身だけを持つ** —— `A-002` と同じ形に揃えた
+//    （部品側に `<main>` を残すと、`widthClass` を渡す場所と器の場所が別ファイルに割れる）。
 import { notFound, redirect } from 'next/navigation';
 import { readDeletionStatus } from '@ses/db/platform';
+import { PageBody } from '@ses/ui';
 import {
   readPlatformRequestMeta,
   resolvePlatformCtxOutcome,
@@ -37,5 +44,11 @@ export default async function AdminTenantContractPage({
   const view = await readDeletionStatus(outcome.ctx, id, { ipAddress: meta.ipAddress });
   if (view === null) notFound();
 
-  return <DeletionStatusScreen view={view} messages={deletionStatusMessages(view.lifecycleState)} />;
+  return (
+    <main className="py-6">
+      <PageBody widthClass="prose">
+        <DeletionStatusScreen view={view} messages={deletionStatusMessages(view.lifecycleState)} />
+      </PageBody>
+    </main>
+  );
 }

@@ -19,12 +19,11 @@
 // 🔴 パートナー所属ロール向け（`UsageBlockedNoticeScreen`）は #70 の 2 キーだけを受け取り、
 //    残量・上限値・リセット時刻・停止時刻を**型として受け取れない**（`F-027 AC-1` / `BR-04`）。
 // 🔴 Tier 2: モバイルは縦積み。数値・注記を `hidden` にしない（`CLAUDE.md` §13.3）。
-import { Alert, AlertDescription, AlertTitle, Badge, type BadgeVariant } from '@ses/ui';
+import { Alert, AlertDescription, AlertTitle, Badge, Meter, type BadgeVariant, type MeterState } from '@ses/ui';
 import type { UsageLimitLevel } from '@ses/domain';
 import { formatDateTimeJst } from '../../../../lib/format/datetime';
 import { formatThousands } from '../../../../lib/format/number';
 import {
-  clampPercent,
   formatGigabytes,
   formatJpy,
   formatRemaining,
@@ -105,18 +104,19 @@ const LEVEL_BADGE_VARIANT: Readonly<Record<Exclude<UsageLimitLevel, 'BELOW'>, Ba
   REACHED: 'danger',
 };
 
-const METER_TRACK = 'h-2 w-full overflow-hidden rounded-full bg-bg-inset';
 /**
- * 🔴 SP-22 段④: メーターの塗りは §7.4 の 6 系統のトークンで持つ（階調を画面で選ばない）。
- * 割り当ての根拠: 平常時（`BELOW`）は **意味の色を使わない**（消費していることは
- * 正常であり、警告ではない）/ `NEARING` は橙（§7.4「期限が近い・要注意」）/
- * `REACHED` は赤（上限到達 = これ以上は止まるか従量に移る）。
- * ⚠️ `warning` / `danger` の実色は旧実装（`amber-500` / `red-600`）より 1〜2 段濃い。
+ * 🔴 SP-22 段⑤: **上限の水準（業務の語）→ メーターの意味（部品の語）** の写像。
+ *
+ * 🔴 **色はここに書かない。** 色は `Meter` が `state` から決める（`packages/ui` の 1 箇所。
+ *    §7.4 の意味の割り当て）。ここが持つのは「`BELOW` は平常であって警告ではない」という
+ *    業務上の読み替えだけである。
+ * 🔴 `Record<UsageLimitLevel, MeterState>` にすることで、水準が増えたら写像の漏れを
+ *    コンパイラが落とす（`LEVEL_BADGE_VARIANT` と同じ形）。
  */
-const METER_FILL: Readonly<Record<UsageLimitLevel, string>> = {
-  BELOW: 'h-2 rounded-full bg-fg-muted',
-  NEARING: 'h-2 rounded-full bg-warning',
-  REACHED: 'h-2 rounded-full bg-danger',
+const LEVEL_METER_STATE: Readonly<Record<UsageLimitLevel, MeterState>> = {
+  BELOW: 'normal',
+  NEARING: 'warning',
+  REACHED: 'over',
 };
 
 /** 水準の注記（`BELOW` は何も出さない。常時警告は無視される。docs/04 §3.2 上限インジケータ）。 */
@@ -139,29 +139,16 @@ function levelBadge(level: UsageLimitLevel, warnPercent: number, messages: Usage
 }
 
 /**
- * 使用率のバー。🔴 `data-testid` は呼び出し側の包み要素に**文字列リテラルで**付ける
- * （`tests/static/testid-inventory.test.ts` が凍結できる形。`testId` の受け渡しをここに作らない）。
+ * 使用率のバー。
+ *
+ * 🔴 **SP-22 段⑤ で `packages/ui` の `Meter`（§5-13 の 26 部品目）へ移した。**
+ *    画面の中に部品を作らない（`UI_GUIDELINES.md` §8 の 🔴。ここに置いていた間は
+ *    `A-004` 側に 2 つ目の実装が生える余地が残っていた）。塗りの幅は**データ由来の割合**で
+ *    あり、クラスでは表せないため、寸法を持てる唯一の層（`packages/ui`）に置く。
+ * 🔴 `data-testid` は呼び出し側の包み要素に**文字列リテラルで**付ける
+ *    （`tests/static/testid-inventory.test.ts` が凍結できる形。`testId` の受け渡しを部品に作らない）。
+ * 🔴 直前の要素との間隔（`mt-1`）は**包み要素**が持つ（部品は余白を基底に持たない）。
  */
-function Meter({ percent, level, label }: { readonly percent: number; readonly level: UsageLimitLevel; readonly label: string }) {
-  const width = clampPercent(percent);
-  return (
-    <div className="mt-1 flex items-center gap-2">
-      <div
-        role="progressbar"
-        aria-label={label}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={width}
-        className={METER_TRACK}
-      >
-        <div className={METER_FILL[level]} style={{ width: `${width}%` }} />
-      </div>
-      <span className="shrink-0 text-xs text-fg-muted">
-        {label} {percent}%
-      </span>
-    </div>
-  );
-}
 
 /**
  * ホスト所属ロール向け（`OWNER` / `ADMIN` / `SALES` / `VIEWER`）。残量・上限値・リセット時刻・請求見込みを出す。
@@ -241,8 +228,8 @@ export function UsageScreen({ view, messages }: { readonly view: UsageView; read
                       unit: messages.unitCount,
                     })}
                   </p>
-                  <div data-testid={`usage-ai-unit-meter-${key}`} data-level={unit.level}>
-                    <Meter percent={percent} level={unit.level} label={messages.percentUsedLabel} />
+                  <div className="mt-1" data-testid={`usage-ai-unit-meter-${key}`} data-level={unit.level}>
+                    <Meter percent={percent} state={LEVEL_METER_STATE[unit.level]} label={messages.percentUsedLabel} />
                   </div>
                   {badge === null ? null : (
                     <p className="mt-1" data-testid={`usage-ai-unit-level-${key}`} data-level={badge.level}>
@@ -269,10 +256,10 @@ export function UsageScreen({ view, messages }: { readonly view: UsageView; read
                 {formatUsedOfLimit(view.email.usedToday, view.email.dailyLimit, messages.unitMessages)}
               </span>
             </p>
-            <div data-testid="usage-email-meter" data-level={view.email.level}>
+            <div className="mt-1" data-testid="usage-email-meter" data-level={view.email.level}>
               <Meter
                 percent={percentUsed(view.email.usedToday, view.email.dailyLimit)}
-                level={view.email.level}
+                state={LEVEL_METER_STATE[view.email.level]}
                 label={messages.percentUsedLabel}
               />
             </div>
@@ -318,10 +305,10 @@ export function UsageScreen({ view, messages }: { readonly view: UsageView; read
                 {formatGigabytes(storageRemaining)} {messages.unitGb}
               </span>
             </p>
-            <div data-testid="usage-storage-meter" data-level={view.storage.level}>
+            <div className="mt-1" data-testid="usage-storage-meter" data-level={view.storage.level}>
               <Meter
                 percent={percentUsed(storageUsed, storageLimit)}
-                level={view.storage.level}
+                state={LEVEL_METER_STATE[view.storage.level]}
                 label={messages.percentUsedLabel}
               />
             </div>

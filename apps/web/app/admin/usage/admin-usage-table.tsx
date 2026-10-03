@@ -10,6 +10,25 @@
 // 🔴 `PLATFORM_SUPPORT` には「クォータを変更」の導線を**描かない**（グレーアウトではなく不在。`F-057 AC-2` / `BR-44`）。
 // 🔴 表示するのはテナント名・件数・金額・比率・水準・日付だけ（`BR-40`）。横スクロールは `Table` の器の内側に閉じ、
 //    T3 だがモバイルで列を `hidden` にしない（`CLAUDE.md` §13.3）。
+//
+// ============================================================================
+// 🔴 T-22-14（段⑤）: トークン化と、**`S-038` と同じメーター部品に寄せたこと**
+// ============================================================================
+// - 色・文字サイズを §7.9 のトークンへ（`text-slate-*` → `text-fg` / `text-fg-muted`、
+//   引き下げ予定の `text-amber-700` → **`text-warning`**、強調行の `bg-amber-50` →
+//   **`bg-warning-bg`**〔値は同じ `amber-50`〕。`text-sm` → `text-body`。**実寸は同じ**）。
+//   余白は 7 段へ（`gap-0.5` → `gap-1`。2 → 4px）。リンクは `SECONDARY_LINK_CLASSES`
+//   （画面側に `hover:` を書かない = 検査 (j)）。
+// - 🔴 **件数クォータとストレージの消化率に `@ses/ui` の `Meter`（§5-13 の 26 部品目）を置いた。**
+//   `S-038`（テナント向け）と**同じ 1 実装**である —— あちらは段④ まで画面の中に `Meter` を
+//   抱えており、こちらに 2 つ目が生える余地が残っていた。`A-004` の目的は
+//   「**上限に張り付くテナントと、消化率が常に低いテナントの両方を抽出する**」（`F-057 AC-1`）で
+//   あり、率は**走査して見る**値なのでバーが効く。
+//   🔴 **金額（当日 / 当月の AI コスト）にはメーターを置かない** —— `docs/04` §5-4 は
+//   「AI のコスト上限はメーターにしない（遮断器として扱う）」と定めており、同じ画面で
+//   件数のバーと金額のバーが並ぶと「金額にもクォータの残量がある」と読める。
+//   🔴 **数値（`18 / 180 件`）を消していない**（バーは数値の代わりではない。`BR-40`：
+//   運営者に要るのは件数・状態・エラーである）。
 import Link from 'next/link';
 import type { AiRole, AiUnitMetric, ConsumptionBand, QuotaOverrideMetric, UsageLimitLevel } from '@ses/domain';
 import {
@@ -18,6 +37,8 @@ import {
   AlertTitle,
   Badge,
   Button,
+  Meter,
+  SECONDARY_LINK_CLASSES,
   Table,
   TableBody,
   TableCell,
@@ -25,6 +46,7 @@ import {
   TableHeader,
   TableRow,
   type BadgeVariant,
+  type MeterState,
 } from '@ses/ui';
 import { adminTenantDetailHref } from '../../../lib/admin-monitoring/hrefs';
 import type {
@@ -71,6 +93,8 @@ export type AdminUsageTableMessages = {
   readonly unitMessages: string;
   readonly standardCost: string;
   readonly level: Readonly<Record<UsageLimitLevel, string>> & { readonly unknown: string };
+  /** メーターに添える語（`使用率`）。🔴 `S-038` と同じキー（同じ概念を別の語で呼ばない）。 */
+  readonly percentUsedLabel: string;
   readonly band: Readonly<Record<ConsumptionBand, string>>;
   readonly quota: {
     readonly default: string;
@@ -110,6 +134,32 @@ const BAND_BADGE_VARIANTS: Readonly<Record<ConsumptionBand, BadgeVariant>> = {
   HIGH: 'danger',
 };
 
+/**
+ * 🔴 **上限の水準（業務の語）→ メーターの意味（部品の語）**。色はここに書かない
+ *    （`Meter` が `state` から決める。§7.4 の意味の割り当ては `packages/ui` の 1 箇所）。
+ * 🔴 `null`（計測欠測）は **`normal`** に倒す —— 欠測は「注意」でも「到達」でもなく、
+ *    その旨は `LevelBadge` が `level.unknown` の語で示す（色で嘘をつかない）。
+ */
+const LEVEL_METER_STATE: Readonly<Record<UsageLimitLevel, MeterState>> = {
+  BELOW: 'normal',
+  NEARING: 'warning',
+  REACHED: 'over',
+};
+
+function meterStateOf(level: UsageLimitLevel | null): MeterState {
+  return level === null ? 'normal' : LEVEL_METER_STATE[level];
+}
+
+/** 補助テキスト（§7.3 の 12px / `--color-fg-muted`）。`A-005` / `A-006` と同じ語に揃えた。 */
+const MUTED_CLASSES = 'text-xs text-fg-muted';
+/** 引き下げ予定（🔴 §7.4 の「期限が近い・要注意」= 橙。赤の代わりに使わない）。 */
+const PENDING_LOWERING_CLASSES = 'font-medium text-warning';
+/** 環境全体の帯の項目名 / 注記。 */
+const ENV_TERM_CLASSES = 'text-fg-muted';
+const ENV_NOTE_CLASSES = 'mt-2 text-xs text-fg-muted';
+/** 🔴 `A-005` から来た対象行の強調（値は旧 `amber-50` と同じ。トークンで指す）。 */
+const HIGHLIGHTED_ROW_CLASSES = 'bg-warning-bg';
+
 /** 十進の USD 文字列（小数 6 桁）を表示用に丸める（小数 3 桁。請求根拠ではなく表示）。 */
 export function formatUsd(value: string): string {
   const [whole = '0', fraction = ''] = value.split('.');
@@ -131,19 +181,19 @@ function formatPercent(percent: number): string {
 }
 
 function LevelBadge({ level, messages }: { level: UsageLimitLevel | null; messages: AdminUsageTableMessages }) {
-  if (level === null) return <span className="text-xs text-slate-500">{messages.level.unknown}</span>;
+  if (level === null) return <span className={MUTED_CLASSES}>{messages.level.unknown}</span>;
   return <Badge variant={LEVEL_BADGE_VARIANTS[level]}>{messages.level[level]}</Badge>;
 }
 
 /** 出所と予定。🔴 6 計測すべてが同じ表示（T-12-12 でメール / ストレージも上書きの対象に戻し、専用文言を撤去した）。 */
 function QuotaSource({ quota, messages }: { quota: AdminQuotaSourceView; messages: AdminUsageTableMessages }) {
   return (
-    <span className="text-xs text-slate-500">
+    <span className={MUTED_CLASSES}>
       {quota.source === 'OVERRIDE' ? `${messages.quota.override} ${quota.effectiveFrom ?? ''}` : messages.quota.default}
       {quota.pending === null ? null : (
         <>
           {' / '}
-          <span className={quota.pending.lowering ? 'font-medium text-amber-700' : undefined}>
+          <span className={quota.pending.lowering ? PENDING_LOWERING_CLASSES : undefined}>
             {quota.pending.lowering ? messages.quota.pendingLowering : messages.quota.pending} {quota.pending.effectiveFrom} → {quota.pending.limit}
           </span>
         </>
@@ -154,10 +204,16 @@ function QuotaSource({ quota, messages }: { quota: AdminQuotaSourceView; message
 
 function CountQuota({ value, unit, messages }: { value: AdminCountQuotaView; unit: string; messages: AdminUsageTableMessages }) {
   return (
-    <div className="flex flex-col gap-0.5">
+    <div className="flex flex-col gap-1">
       <span>
-        {formatThousands(value.used)} / {formatThousands(value.limit)} {unit}（{formatPercent(value.consumptionPercent)}）
+        {formatThousands(value.used)} / {formatThousands(value.limit)} {unit}
       </span>
+      {/* 🔴 率は `S-038` と同じ `Meter`（§5-13）で出す。100% を超えても数値はそのまま読める。 */}
+      <Meter
+        percent={value.consumptionPercent}
+        state={meterStateOf(value.level)}
+        label={messages.percentUsedLabel}
+      />
       <span className="flex items-center gap-1">
         <LevelBadge level={value.level} messages={messages} />
         <QuotaSource quota={value.quota} messages={messages} />
@@ -175,30 +231,30 @@ export function AdminUsageEnvironment({ env, messages }: { env: AdminUsageEnviro
         {messages.env.title}（{env.periodKey}）
       </AlertTitle>
       <AlertDescription>
-        <dl className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-4">
+        <dl className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 text-body sm:grid-cols-4">
           <div>
-            <dt className="text-slate-600">{messages.env.spent}</dt>
+            <dt className={ENV_TERM_CLASSES}>{messages.env.spent}</dt>
             <dd className="font-medium" data-testid="admin-usage-environment-spent">
               {formatUsd(env.spentUsd)}
             </dd>
           </div>
           <div>
-            <dt className="text-slate-600">{messages.env.cap}</dt>
+            <dt className={ENV_TERM_CLASSES}>{messages.env.cap}</dt>
             <dd className="font-medium">{formatUsd(env.capUsd)}</dd>
           </div>
           <div>
-            <dt className="text-slate-600">{messages.env.rate}</dt>
+            <dt className={ENV_TERM_CLASSES}>{messages.env.rate}</dt>
             <dd className="font-medium" data-testid="admin-usage-environment-rate">
               {formatPercent(percent)}
               {env.consumptionRate > 1 ? ` ${messages.env.over}` : ''}
             </dd>
           </div>
           <div>
-            <dt className="text-slate-600">{messages.env.tenants}</dt>
+            <dt className={ENV_TERM_CLASSES}>{messages.env.tenants}</dt>
             <dd className="font-medium">{env.tenantCount}</dd>
           </div>
         </dl>
-        <p className="mt-2 text-xs text-slate-600">{messages.env.byRole}</p>
+        <p className={ENV_NOTE_CLASSES}>{messages.env.byRole}</p>
         <ul className="grid grid-cols-2 gap-x-6 text-xs sm:grid-cols-3" data-testid="admin-usage-environment-by-role">
           {(Object.entries(env.byRole) as [AiRole, string][]).map(([role, usd]) => (
             <li key={role}>
@@ -206,7 +262,7 @@ export function AdminUsageEnvironment({ env, messages }: { env: AdminUsageEnviro
             </li>
           ))}
         </ul>
-        <p className="mt-2 text-xs text-slate-600">{messages.env.note}</p>
+        <p className={ENV_NOTE_CLASSES}>{messages.env.note}</p>
       </AlertDescription>
     </Alert>
   );
@@ -229,11 +285,11 @@ function TenantRow({
     <TableRow
       data-testid={`admin-usage-row-${row.tenantId}`}
       data-band={row.band}
-      className={highlighted ? 'bg-amber-50' : undefined}
+      className={highlighted ? HIGHLIGHTED_ROW_CLASSES : undefined}
     >
       <TableCell className="align-top">
-        <div className="font-medium text-slate-900">{row.name}</div>
-        <Link className="text-xs text-slate-700 underline-offset-2 hover:underline" href={adminTenantDetailHref(row.tenantId)}>
+        <div className="font-medium text-fg">{row.name}</div>
+        <Link className={SECONDARY_LINK_CLASSES} href={adminTenantDetailHref(row.tenantId)}>
           {messages.rowTenantDetail}
         </Link>
       </TableCell>
@@ -245,7 +301,7 @@ function TenantRow({
             const unit = row.aiUnits[metric];
             return (
               <li key={metric}>
-                <span className="text-xs text-slate-600">
+                <span className={MUTED_CLASSES}>
                   {messages.metric[metric]}（{messages.standardCost} {formatUsd(unit.standardCostUsd)}）
                 </span>
                 <CountQuota value={unit} unit={messages.unitCount} messages={messages} />
@@ -264,7 +320,7 @@ function TenantRow({
         <div data-testid={`admin-usage-ai-monthly-${row.tenantId}`}>
           {formatUsd(row.aiMonthly.costUsd)} / {formatUsd(row.aiMonthly.capUsd)}（{formatPercent(row.aiMonthly.consumptionPercent)}）
         </div>
-        <dl className="mt-1 text-xs text-slate-600">
+        <dl className={`mt-1 ${MUTED_CLASSES}`}>
           <div className="flex gap-1">
             <dt>{messages.ratio.unitCost}</dt>
             <dd title={messages.ratio.unitCostNote} data-testid={`admin-usage-unit-cost-ratio-${row.tenantId}`}>
@@ -276,7 +332,7 @@ function TenantRow({
             <dd>{formatRatio(row.aiMonthly.baselineRatio, messages.ratio.na)}</dd>
           </div>
         </dl>
-        <details className="mt-1 text-xs text-slate-600">
+        <details className={`mt-1 ${MUTED_CLASSES}`}>
           <summary>{messages.byRole}</summary>
           <ul>
             {(Object.entries(row.aiMonthly.byRole) as [AiRole, string][]).map(([role, usd]) => (
@@ -291,10 +347,15 @@ function TenantRow({
         <CountQuota value={row.email} unit={messages.unitMessages} messages={messages} />
       </TableCell>
       <TableCell className="align-top">
-        <div className="flex flex-col gap-0.5">
+        <div className="flex flex-col gap-1">
           <span>
-            {formatGib(row.storage.usedBytes)} / {formatGib(row.storage.limitBytes)}（{formatPercent(row.storage.consumptionPercent)}）
+            {formatGib(row.storage.usedBytes)} / {formatGib(row.storage.limitBytes)}
           </span>
+          <Meter
+            percent={row.storage.consumptionPercent}
+            state={meterStateOf(row.storage.level)}
+            label={messages.percentUsedLabel}
+          />
           <span className="flex items-center gap-1">
             <LevelBadge level={row.storage.level} messages={messages} />
             <QuotaSource quota={row.storage.quota} messages={messages} />
@@ -331,15 +392,15 @@ export function AdminUsageTable({ view, messages, canEditQuota, highlightedTenan
 
   return (
     <div>
-      <p className="mb-2 text-xs text-slate-600" data-testid="admin-usage-observed-at">
+      <p className="mb-2 text-xs text-fg-muted" data-testid="admin-usage-observed-at">
         {messages.observedAt}: {formatDateTimeJst(view.observedAt)}（{messages.periodDay} {view.dayKey} / {messages.periodMonth} {view.monthKey}）
       </p>
-      <p className="mb-4 text-xs text-slate-600" data-testid="admin-usage-money-note">
+      <p className="mb-4 text-xs text-fg-muted" data-testid="admin-usage-money-note">
         {messages.moneyNote}
       </p>
       <AdminUsageEnvironment env={view.environment} messages={messages} />
       {rows.length === 0 ? (
-        <p className="text-sm text-slate-600" data-testid="admin-usage-empty">
+        <p className="text-body text-fg-muted" data-testid="admin-usage-empty">
           {view.totalTenants === 0 ? messages.emptyNone : messages.emptyFiltered}
         </p>
       ) : (

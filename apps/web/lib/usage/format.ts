@@ -42,11 +42,12 @@ export function percentUsed(used: bigint | number, limit: bigint | number): numb
   return Number((usedBig * 100n) / limitBig);
 }
 
-/** バーの幅に使う値（0〜100 に丸める）。 */
-export function clampPercent(percent: number): number {
-  if (!Number.isFinite(percent) || percent < 0) return 0;
-  return percent > 100 ? 100 : Math.trunc(percent);
-}
+// 🔴 SP-22 段⑤（`T-22-14`）: **バーの幅に丸める `clampPercent` はここから `packages/ui` へ移した**
+//    （`Meter` の `meterFillPercent`）。塗りの幅はメーター部品の関心であり、`S-038` と `A-004` の
+//    2 画面が同じ部品を使う以上、丸め方を `apps/web` 側に残すと**同じ計算が 2 箇所**になる。
+//    ⚠️ **`percentUsed` は残す** —— あちらは「消費率そのもの」で API の応答と管理平面の表も使う値であり、
+//    `bigint` の厳密な整数演算が要る（`packages/ui` は業務の単位を知らない）。
+//    テストも同じ事例のまま `packages/ui/src/components/meter.test.ts` へ移した。
 
 export type RemainingLabels = {
   /** 例: 「あと」 */

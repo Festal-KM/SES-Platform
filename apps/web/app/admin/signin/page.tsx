@@ -59,12 +59,17 @@ export default async function AdminSignInPage({
 }) {
   const { step } = await searchParams;
   return (
-    <AuthShell wordmark={t('product.name')}>
+    // 🔴 T-22-14（段⑤）: 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`。検査 (k)）。
+    //    認証 5 画面は **クラス C = 読み幅**であり、`A-001` も `S-001` と同じく明示的に渡す
+    //    （中央寄せのカードは `AuthShell` が持つ。あちらの冒頭）。
+    <AuthShell wordmark={t('product.name')} widthClass="prose">
       {/* 🔴 T-21-05: 見出しとリード文の見え方を `S-001` に揃えた（`docs/04` §A-001）。
           平面帯（`app/admin/layout.tsx`）はこの `AuthShell` の**上**に常時在る —— ここに
-          最上部を占める要素を足さない。 */}
-      <h1 className="mb-2 text-xl font-bold text-slate-900">{t('admin.signin.title')}</h1>
-      <p className="mb-4 text-sm text-slate-700">{t('admin.signin.lead')}</p>
+          最上部を占める要素を足さない。
+          🔴 T-22-14: 文字サイズと色を §7.9 のトークンへ（`text-xl` → `text-title`〔20px。実寸同じ〕/
+          `text-sm` → `text-body`〔14px。実寸同じ〕/ `text-slate-*` → `text-fg`）。 */}
+      <h1 className="mb-2 text-title font-bold text-fg">{t('admin.signin.title')}</h1>
+      <p className="mb-4 text-body text-fg">{t('admin.signin.lead')}</p>
       <AdminSignInForm messages={messages} initialStage={initialStageOf(step)} />
     </AuthShell>
   );

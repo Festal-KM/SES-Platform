@@ -17,8 +17,30 @@
 //    フェーズの分岐・冪等キーの扱いは 1 つも変えていない**（`docs/sprints/SP-21` §5 冒頭）。
 // 🔴 **確認ステップの 4 項目と既定値の一覧は、移行後もモバイルで折りたたまない**
 //    （`docs/04` §A-014 操作表 / `CLAUDE.md` §13.3）。畳めるようにする実装を入れない。
+//
+// ============================================================================
+// 🔴 T-22-14（段⑤）: 色・文字サイズ・余白・8 状態をトークンと共通語へ寄せた
+// ============================================================================
+// - 色 → §7.9 の semantic（`text-slate-*` → `text-fg` / `text-fg-muted`、
+//   `border-slate-200` → `border-border`、成功の `text-emerald-700` → **`text-success`**、
+//   同名警告の `bg-amber-50` / `border-amber-300` / `text-amber-900` → **`Alert variant="warning"`**）。
+//   🔴 **同名テナントの警告は「警告であって禁止ではない」という性質を変えていない**
+//   （`FieldError` の赤にしない。`docs/04` §A-014）。
+// - 文字サイズ → 6 段（`text-base` → `text-lg` / `text-sm` → `text-body`。**実寸は同じ**）。
+// - 余白 → 7 段（`pl-5` → `pl-6`。20 → 24px。**実寸が変わる唯一の箇所**）。
+// - 8 状態 → `packages/ui` の共通語（リンクは `SECONDARY_LINK_CLASSES`。画面側に
+//   `hover:` を書かない = 検査 (j)）。
 import { useMemo, useState, type FormEvent } from 'react';
-import { Button, Field, FieldError, Input, Radio } from '@ses/ui';
+import {
+  Alert,
+  AlertDescription,
+  Button,
+  Field,
+  FieldError,
+  Input,
+  Radio,
+  SECONDARY_LINK_CLASSES,
+} from '@ses/ui';
 
 export type ProvisioningFormMessages = {
   readonly environmentSection: string;
@@ -61,17 +83,17 @@ export type ProvisioningFormMessages = {
  * 大きさで並んでいた（節の切れ目が読めない）。**1 つの定数にして 6 節で共有する** ——
  * 節ごとに書き下すと「片方だけ直る」状態がその場で生まれる（T-21-02 の受け入れ基準 ①）。
  */
-const SECTION_HEADING_CLASSES = 'mt-6 mb-2 text-base font-bold text-slate-900';
+const SECTION_HEADING_CLASSES = 'mt-6 mb-2 text-lg font-bold text-fg';
 
 /** 節に添える補足文（読み取り専用の注記・ヒント）。 */
-const SECTION_NOTE_CLASSES = 'mb-4 text-sm text-slate-600';
+const SECTION_NOTE_CLASSES = 'mb-4 text-body text-fg-muted';
 
 /**
  * 🔴 開設**前**に読ませる既定値の一覧（`docs/04` §A-014 セクション 6）。
  *    Tailwind の preflight が `ul` の `list-style` と `padding` を落とすため、
  *    箇条書きに見せるには `list-disc` と `pl-5` を明示する必要がある。
  */
-const DEFAULTS_LIST_CLASSES = 'mb-4 list-disc pl-5 text-sm text-slate-700';
+const DEFAULTS_LIST_CLASSES = 'mb-4 list-disc pl-6 text-body text-fg';
 
 /** 契約の初期状態（`TENANT_CREATION_STATES` と 1 対 1。docs/02 章 5.4）。 */
 type LifecycleChoice = 'SANDBOX' | 'ACTIVE';
@@ -212,13 +234,13 @@ export function ProvisioningForm({
       <section>
         {errorBlock}
         {notice === null ? null : (
-          <p role="status" className="mb-4 text-sm text-emerald-700">
+          <p role="status" className="mb-4 text-body text-success">
             {notice}
           </p>
         )}
-        <p className="mb-4 text-sm">
+        <p className="mb-4">
           <a
-            className="font-medium text-slate-900 underline-offset-2 hover:underline"
+            className={SECONDARY_LINK_CLASSES}
             href={createdTenantId === null ? '/admin/tenants' : `/admin/tenants/${createdTenantId}`}
           >
             {draft.name}
@@ -236,28 +258,28 @@ export function ProvisioningForm({
   if (phase === 'confirm' || phase === 'submitting') {
     return (
       <form onSubmit={onSubmit} noValidate>
-        <h2 className="mb-2 text-base font-bold text-slate-900">{messages.confirmSection}</h2>
+        <h2 className="mb-2 text-lg font-bold text-fg">{messages.confirmSection}</h2>
         <p className={SECTION_NOTE_CLASSES}>{messages.confirmLead}</p>
         {errorBlock}
         {/* 🔴 再掲する 4 項目（docs/04 §A-014 操作表）。モバイルでも折りたたまない。
               2 列グリッドはラベル列が内容幅なので、狭い画面でも値が潰れない。長い
               メールアドレスは `wrap-anywhere` で折り返して**全部見せる**（切り詰めない）。 */}
-        <dl className="mb-6 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 border-y border-slate-200 py-3 text-sm">
-          <dt className="text-slate-500">{messages.nameLabel}</dt>
-          <dd className="wrap-anywhere text-slate-900">{draft.name}</dd>
-          <dt className="text-slate-500">{messages.environmentSection}</dt>
-          <dd className="text-slate-900">{environment}</dd>
-          <dt className="text-slate-500">{messages.lifecycleSection}</dt>
-          <dd className="text-slate-900">
+        <dl className="mb-6 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 border-y border-border py-3 text-body">
+          <dt className="text-fg-muted">{messages.nameLabel}</dt>
+          <dd className="wrap-anywhere text-fg">{draft.name}</dd>
+          <dt className="text-fg-muted">{messages.environmentSection}</dt>
+          <dd className="text-fg">{environment}</dd>
+          <dt className="text-fg-muted">{messages.lifecycleSection}</dt>
+          <dd className="text-fg">
             {draft.lifecycleState === 'SANDBOX'
               ? messages.lifecycleSandbox
               : messages.lifecycleActive}
           </dd>
-          <dt className="text-slate-500">{messages.ownerEmailLabel}</dt>
-          <dd className="wrap-anywhere text-slate-900">{draft.ownerEmail}</dd>
+          <dt className="text-fg-muted">{messages.ownerEmailLabel}</dt>
+          <dd className="wrap-anywhere text-fg">{draft.ownerEmail}</dd>
         </dl>
         {/* 🔴 既定値の明示は確認ステップでも消さない（docs/04 §A-014 セクション 6）。 */}
-        <h3 className="mb-1 text-sm font-bold text-slate-900">{messages.defaultsSection}</h3>
+        <h3 className="mb-1 text-body font-bold text-fg">{messages.defaultsSection}</h3>
         <ul className={DEFAULTS_LIST_CLASSES}>
           {messages.defaults.map((line) => (
             <li key={line}>{line}</li>
@@ -289,9 +311,9 @@ export function ProvisioningForm({
       }}
       noValidate
     >
-      <h2 className="mb-2 text-base font-bold text-slate-900">{messages.environmentSection}</h2>
+      <h2 className="mb-2 text-lg font-bold text-fg">{messages.environmentSection}</h2>
       {/* 🔴 選ばせずに表示する（docs/04 §A-014 セクション 1）。 */}
-      <p className="mb-1 text-sm font-medium text-slate-900">
+      <p className="mb-1 text-body font-medium text-fg">
         <output>{appEnv}</output>
       </p>
       <p className={SECTION_NOTE_CLASSES}>{messages.environmentReadOnlyNote}</p>
@@ -310,21 +332,18 @@ export function ProvisioningForm({
             `FieldError` の赤にすると「直さないと進めない」と読めるため琥珀で出す
             （既存画面の警告帯と同じ語。`S-011` / `S-013` / `S-035` / `S-036`）。 */}
       {duplicateName ? (
-        <p
-          role="alert"
-          className="mb-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900"
-        >
-          {messages.duplicateNameWarning}
-        </p>
+        <Alert variant="warning" role="alert" className="mb-4">
+          <AlertDescription>{messages.duplicateNameWarning}</AlertDescription>
+        </Alert>
       ) : null}
       <Field as="p" className="mb-4" label={messages.currencyLabel}>
-        <output className="text-sm text-slate-900">{messages.currencyValue}</output>
+        <output className="text-body text-fg">{messages.currencyValue}</output>
       </Field>
 
       <h2 className={SECTION_HEADING_CLASSES}>{messages.lifecycleSection}</h2>
       {/* 🔴 ラジオはラベル文字が**後ろ**に来る。`Field` の `label` prop は文字を先に描くため
             使わない（SP-21 の「要素の並びを変えない」）。見た目は `Radio` が持つ。 */}
-      <label className="mb-2 flex w-fit items-center gap-2 text-sm font-medium text-slate-900 select-none">
+      <label className="mb-2 flex w-fit items-center gap-2 text-body font-medium text-fg select-none">
         <Radio
           name="lifecycleState"
           value="SANDBOX"
@@ -336,7 +355,7 @@ export function ProvisioningForm({
       {draft.lifecycleState === 'SANDBOX' ? (
         <p className={SECTION_NOTE_CLASSES}>{messages.lifecycleSandboxNote}</p>
       ) : null}
-      <label className="mb-2 flex w-fit items-center gap-2 text-sm font-medium text-slate-900 select-none">
+      <label className="mb-2 flex w-fit items-center gap-2 text-body font-medium text-fg select-none">
         <Radio
           name="lifecycleState"
           value="ACTIVE"

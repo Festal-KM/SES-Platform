@@ -41,6 +41,7 @@ import {
   DataTable,
   EmptyState,
   IconButton,
+  Meter,
   PAGE_BODY_ASIDE_WIDTH_CLASSES,
   PageBody,
   Pagination,
@@ -602,6 +603,53 @@ describe('🔴 Toolbar（docs/04 §5-13 / §3.2-2 / §5-10）', () => {
         }),
       ),
     ).toThrow(/bulkActionsLabel/);
+  });
+});
+
+describe('🔴 Meter（docs/04 §5-4 / §5-13 の 26 部品目。SP-22 段⑤）', () => {
+  const render = (percent: number, state: 'normal' | 'warning' | 'over'): string =>
+    renderToStaticMarkup(createElement(Meter, { percent, state, label: '使用率' }));
+
+  it('🔴 意味（`state`）が色を決める 1 箇所である（平常は無彩 / 接近は橙 / 到達は赤）', () => {
+    expect(render(42, 'normal')).toContain('bg-fg-muted');
+    expect(render(85, 'warning')).toContain('bg-warning');
+    expect(render(120, 'over')).toContain('bg-danger');
+    // 🔴 平常の消費を警告色・障害色で塗らない（§7.4。赤の乱用で本当に危ない状態が埋もれる）。
+    expect(render(42, 'normal')).not.toContain('bg-warning');
+    expect(render(42, 'normal')).not.toContain('bg-danger');
+    expect(render(85, 'warning')).not.toContain('bg-danger');
+  });
+
+  it('🔴 塗りは 100% で止まるが、添える数値は渡された値のまま出す（超過が読める）', () => {
+    const markup = render(300, 'over');
+    expect(markup).toContain('width:100%');
+    expect(markup).toContain('aria-valuenow="100"');
+    // 🔴 「300%」が読める（従量に移行した件数クォータは 100 で頭打ちにしない）。
+    expect(markup).toContain('300%');
+  });
+
+  it('読み上げに割合が載る（`role="progressbar"` + `aria-label` + 0〜100）', () => {
+    const markup = render(65, 'normal');
+    expect(markup).toContain('role="progressbar"');
+    expect(markup).toContain('aria-label="使用率"');
+    expect(markup).toContain('aria-valuemin="0"');
+    expect(markup).toContain('aria-valuemax="100"');
+    expect(markup).toContain('aria-valuenow="65"');
+  });
+
+  it('🔴 余白を基底に持たない（直前の要素との間隔は呼び出し側の `className` が与える）', () => {
+    expect(render(10, 'normal')).not.toContain('mt-');
+    expect(
+      renderToStaticMarkup(
+        createElement(Meter, { percent: 10, state: 'normal', label: '使用率', className: 'mt-1' }),
+      ),
+    ).toContain('mt-1');
+  });
+
+  it('🔴 円形（`rounded-full`）を使わない（§7.9: 円はアバターとカウンタのみ）', () => {
+    const markup = render(50, 'normal');
+    expect(markup).not.toContain('rounded-full');
+    expect(markup).toContain('rounded-sm');
   });
 });
 

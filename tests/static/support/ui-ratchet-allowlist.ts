@@ -14,21 +14,55 @@
 //    作らないため。恒久例外は `AppShell` の `pb-24` の 1 件だけで、それは
 //    `ui-spacing-scale.test.ts` の `PERMANENT_SPACING_EXCEPTION` に理由つきで置く。
 //
-// ✅ **段④ の第 4 弾（最終。設定まわり・スキル辞書・認証。2026-10-03）で外したもの**:
+// ✅ 🔴 **段⑤（最終。管理平面 `/admin` + `app/_components/**` + `S-038` のメーター。2026-10-03）で
+//    外したもの**: **62 エントリ = 許可リストの全部**である。🔴 **これで 6 本すべての
+//    許可リストが空になり、(a)(b)(c)(f)(g)(j)(k) の 7 検査が「許可リスト無しで」無条件 green に
+//    なった**（`SP-22` §4.1 段⑤ / `T-22-15` の完了条件の 1 つ目）。
+//
+//    内訳（対象 21 ファイル）:
+//      - 管理平面 `apps/web/app/admin/**` の **58**（`A-001` / `A-003` / `A-004` / `A-010` /
+//        `A-012` / `A-014` / `/admin` のホーム / 平面帯 / 横並びタブ / 主体表示）
+//      - `apps/web/app/_components/**` の **3**（`auth-shell.tsx` の `max-w-sm` /
+//        `otpauth-qr.tsx` の `max-w-68` と `bg-white`）
+//      - `apps/web/app/(main)/settings/usage/usage-screen.tsx` の **1**（`S-038` のメーターの塗り幅）
+//
+//    🔴 **どう外したか（検査を緩めた箇所は 1 つも無い）**:
+//      ① **`S-038` のメーターの塗り幅** —— `packages/ui` に **`Meter`（`docs/04` §5-13 の
+//         26 部品目）** を新設して移した。塗りの幅は**データ由来の割合**であり、寸法を持てる層は
+//         部品だけである（検査 (c) が `apps/web/app/**` を射程にし `packages/ui` を外しているのは
+//         そのため）。**`A-004`（運営者の利用量）も同じ 1 実装を使う** ——
+//         2 つ目が生えないことは `ui-primitive-single-impl.test.ts` の `SINGLE_IMPL_COMPONENTS`
+//         （`Meter` を追加）が機械で止める。
+//      ② **認証カードの `max-w-sm` と QR の `max-w-68`** —— `packages/ui` の
+//         `lib/fixed-width-classes.ts`（`AUTH_CARD_WIDTH_CLASSES` / `QR_FIGURE_CLASSES`）へ移した。
+//         🔴 **`PageWidthClass` に 4 つ目を足していない**（型は `full` / `split` / `prose` の
+//         3 値のまま）。**値も 1px も変えていない**（`auth-shell.render.test.tsx` が `max-w-sm` の
+//         実在を固定している）。「中央寄せのカード」を幅クラスへ昇格させるのは `docs/04` §7.1 の
+//         改訂（= 人間の判断。`CLAUDE.md` §8.6）であり、**そこは先取りしていない**。
+//      ③ **`bg-white`** → `bg-bg`（`--color-bg: var(--color-white)`。**値は同じ白**）。
+//         面（`bg-surface`）は使っていない（面を持てるのは `packages/ui` の部品だけ）。
+//      ④ **管理平面の平面帯の濃紺（`bg-slate-800` / `text-slate-50`）** → 無彩色の淡い帯
+//         （`bg-bg-inset` + `border-b` + `text-fg`）。🔴 **`docs/04` §7.9 は「濃色の面は
+//         サイドバー 1 部品だけ」と定めており**、2 つ目の濃色の面を増やすには §7.9 の改訂が要る。
+//         §3.3-1 は「**色でなく『帯という構造の有無』で区別する**」と定めているので、
+//         帯そのものは 1 文字も変えていない（経緯は `app/admin/layout.tsx` 冒頭）。
+//      ⑤ **`hover:underline`（検査 (j)）** → `packages/ui` の共通語
+//         （`SECONDARY_LINK_CLASSES` / `FOCUS_RING_CLASSES` / `TRANSITION_CLASSES`）。
+//      ⑥ **`max-w-3xl` / `max-w-5xl` / `max-w-6xl` / `max-w-xl`（検査 (c)(k)）** →
+//         `PageBody` の幅 3 クラス。🔴 **`widthClass` は 1 画面に 1 回**なので、
+//         `A-003` / `A-010` / `A-012` は**器を 1 つに畳み、分岐は中身だけ**にした。
+//
+//    ⚠️ **検出器にかからない書き方（変数名を変えて `width` の語を消す / `transform: scaleX()` /
+//       `w-68` に逃げる / 許可リストの行を残す）は 1 つも使っていない** —— それは検査を
+//       無効にすることと同じである（段④ が同じ理由でこの 1 件を残した）。
+//
+// ✅ **段④ の第 4 弾（設定まわり・スキル辞書・認証。2026-10-03）で外したもの**:
 //    `settings/**` の **31** / `skills/**` の **5** / `(auth)/**` の **22** / `_shared/**` の **4**
 //    = **計 61 エントリ**（対象 24 ファイル。
 //    検査別の内訳は **(a) 色 19 / (c) 幅 10 / (f) spacing 3 / (g) 文字サイズ 19 / (k) 幅クラス 10**）。
-//    🔴 **これで `apps/web/app/(main)/**` の許可は (c) の 1 件だけになった**
-//    （`usage-screen.tsx` のメーターの塗り幅。理由は (c) の段④ のブロックに書いた ——
-//    🔴 **`docs/04` §5-13 への部品追加（= 人間の判断）が先に要る**ため外せない）。
-//    残る 62 エントリは **管理平面 `admin/**` の 58**（段⑤）/
-//    **`app/_components/**` の 3**（`auth-shell.tsx` の `max-w-sm` 1 行 / `otpauth-qr.tsx` の 2 行）/
-//    **上記 `usage-screen.tsx` の 1** である。
-//    ⚠️ **`_components/**` の 3 件を残したのは意図である**: 認証画面の外枠（`AuthShell`）は
-//    `AppShell` の外側にある**中央寄せのカード**であり、その幅（`max-w-sm`）を `PageBody` の
-//    3 クラスに置き換えるには「中央寄せのカード」という 4 つ目の幅の概念が要る
-//    （= `docs/04` §7.1 の改訂 = 人間の判断。`CLAUDE.md` §8.6）。`otpauth-qr.tsx` の
-//    `max-w-68` / `bg-white` も QR の実寸と塗りつぶしであって画面の幅ではない。**段⑤ で扱う。**
+//    🔴 この弾の時点で `apps/web/app/(main)/**` の許可は (c) の 1 件だけになり、
+//    `app/_components/**` の 3 件と管理平面の 58 件とあわせた **62 件が段⑤ に残った**
+//    （上の ✅ がその 62 件の処理である）。
 //
 // ✅ **段④ の第 3 弾（提案まわり。2026-10-03）で外したもの**: `proposals/**` と
 //    `proposal-requests/**` の **17 ファイル**
@@ -97,35 +131,11 @@ import type { AllowEntry } from './ui-ratchet.js';
  * 🔴 段が進むごとに削る。空になった時点で (a) 色の直書き は無条件 green になる（`SP-22` §4.1 段⑤）。
  */
 export const UI_RATCHET_ALLOWLIST_A: ReadonlyMap<string, AllowEntry> = new Map<string, AllowEntry>([
-  // ── 段① ✅ T-22-05 で外枠（AppShell / Sidebar / TopBar / PageHeader）を packages/ui へ移し、
-  //    semantic トークン / 7 段 / 6 トークン / 8 状態へ寄せたので**この段の項目は空になった**
-  //    （残しておくとラチェット ②「未使用の許可が残っていない」で落ちる）。
-  // ── 段② ✅ T-22-06 / T-22-07 / T-22-08 で一覧 9 画面（S-005 / S-010 / S-015 / S-016 /
-  //    S-019 / S-041 / A-002 / A-005 / A-006）を semantic トークン / 7 段 / 6 トークン /
-  //    8 状態 / `PageBody` の幅 3 クラスへ寄せたので**この段の項目は空になった**
-  //    （残しておくとラチェット ②「未使用の許可が残っていない」で落ちる）。
-  // ── 段③ ✅ T-22-09 で `S-003` / `S-004`（`_home/**` / `lib/home/**` / `page.tsx`）を
-  //    semantic トークン / 7 段 / 6 トークン / 8 状態 / `PageBody` の幅 3 クラスへ寄せたので
-  //    **この段の項目は空になった**（残しておくとラチェット ②「未使用の許可が残っていない」で落ちる）。
-  // ── 段④
-  ['apps/web/app/_components/otpauth-qr.tsx', { stage: 4, reason: 'S-001 / S-002 / S-046（認証の外殻） の刷新（段④）で semantic トークンへ置き換える。移行中 1 行' }],
-  // ── 段⑤
-  ['apps/web/app/admin/_components/console-nav.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で semantic トークンへ置き換える。移行中 5 行' }],
-  ['apps/web/app/admin/_components/console-subject.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で semantic トークンへ置き換える。移行中 2 行' }],
-  ['apps/web/app/admin/demo/admin-demo-screen.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で semantic トークンへ置き換える。移行中 23 行' }],
-  ['apps/web/app/admin/demo/admin-demo-view.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で semantic トークンへ置き換える。移行中 28 行' }],
-  ['apps/web/app/admin/layout.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で semantic トークンへ置き換える。移行中 1 行' }],
-  ['apps/web/app/admin/page.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で semantic トークンへ置き換える。移行中 9 行' }],
-  ['apps/web/app/admin/signin/admin-signin-form.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で semantic トークンへ置き換える。移行中 7 行' }],
-  ['apps/web/app/admin/signin/page.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で semantic トークンへ置き換える。移行中 2 行' }],
-  ['apps/web/app/admin/tenants/[id]/contract/deletion-status-screen.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で semantic トークンへ置き換える。移行中 13 行' }],
-  ['apps/web/app/admin/tenants/[id]/page.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で semantic トークンへ置き換える。移行中 17 行' }],
-  ['apps/web/app/admin/tenants/new/page.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で semantic トークンへ置き換える。移行中 4 行' }],
-  ['apps/web/app/admin/tenants/new/provisioning-form.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で semantic トークンへ置き換える。移行中 22 行' }],
-  ['apps/web/app/admin/usage/admin-usage-table.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で semantic トークンへ置き換える。移行中 18 行' }],
-  ['apps/web/app/admin/usage/admin-usage-view.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で semantic トークンへ置き換える。移行中 4 行' }],
-  ['apps/web/app/admin/usage/page.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で semantic トークンへ置き換える。移行中 1 行' }],
-  ['apps/web/app/admin/usage/quota-override-form.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で semantic トークンへ置き換える。移行中 6 行' }],
+  // ── 🔴 **空である**（段① 〜 段⑤ ですべて外した）。`describeRatchetInvariants` の ②（未使用の
+  //    許可が残っていない）と、各検査の本体（許可リスト外に違反が 0 件）が**無条件**で成立する。
+  // 🔴 **ここに行を足せない**（④ が凍結集合の部分集合であることを要求し、凍結は 2026-09-30 の実体で
+  //    止まっている）。新しい画面は最初から semantic トークン / 7 段 / 6 トークン /
+  //    `PageBody` の幅 3 クラスで書く。
 ]);
 
 /**
@@ -143,41 +153,11 @@ export const UI_RATCHET_ALLOWLIST_B: ReadonlyMap<string, AllowEntry> = new Map<s
  * 🔴 段が進むごとに削る。空になった時点で (c) 画面の幅指定 は無条件 green になる（`SP-22` §4.1 段⑤）。
  */
 export const UI_RATCHET_ALLOWLIST_C: ReadonlyMap<string, AllowEntry> = new Map<string, AllowEntry>([
-  // ── 段①
-  // ── 段② ✅ T-22-06 / T-22-07 / T-22-08 で一覧 9 画面（S-005 / S-010 / S-015 / S-016 /
-  //    S-019 / S-041 / A-002 / A-005 / A-006）を semantic トークン / 7 段 / 6 トークン /
-  //    8 状態 / `PageBody` の幅 3 クラスへ寄せたので**この段の項目は空になった**
-  //    （残しておくとラチェット ②「未使用の許可が残っていない」で落ちる）。
-  // ── 段③ ✅ T-22-09 で `S-003` / `S-004`（`_home/**` / `lib/home/**` / `page.tsx`）を
-  //    semantic トークン / 7 段 / 6 トークン / 8 状態 / `PageBody` の幅 3 クラスへ寄せたので
-  //    **この段の項目は空になった**（残しておくとラチェット ②「未使用の許可が残っていない」で落ちる）。
-  // ── 段④
-  // 🔴 **段④ で外せなかった 1 件（設計の判断待ち。理由を書き残す）**
-  //    対象は `S-038` の使用量メーターの塗り幅（`style={{ width: `${percent}%` }}`の 1 行）である。
-  //    残りの (a) 色 / (f) spacing / (g) 文字サイズ / (k) 幅クラス はすでに外れている。
-  //
-  //    🔴 **これは「画面が幅を決めている」のではなく、「データが割合を決めている」** ——
-  //    消費率（0〜100%）をバーの長さとして描く以上、値は実行時にしか決まらない。
-  //    `max-w-*`（本文が 768px に絞られる）とは別種のものである。
-  //    🔴 **正しい直し方は `packages/ui` にメーターの部品を置くことだが、それは
-  //    `docs/04` §5-13（UI プリミティブ 25 部品）に 26 部品目を足す改訂である**
-  //    （`UI_GUIDELINES.md` §8 「③ をやる前に必ず相談する」/ `CLAUDE.md` §8.7）。
-  //    §5-4「使用量メーター」はカタログに存在するが §5-13 の 25 部品には無いため、
-  //    実装エージェントの判断で増やす範囲ではない。⚠️ 検査を緩めたり、検出器に
-  //    かからない書き方（変数名を変えて `width` の語を消す / `transform: scaleX()` に逃げる）
-  //    への逃げ方はしていない —— **それは検査を無効にすることと同じ**である。
-  ['apps/web/app/(main)/settings/usage/usage-screen.tsx', { stage: 4, reason: '🔴 `S-038` の使用量メーターの塗り幅（`style` の `width`）。データ由来の割合であり、`docs/04` §5-13 にメーター部品を追加する改訂（= 人間の判断。`UI_GUIDELINES.md` §8 ③）を経て `packages/ui` へ移す' }],
-  ['apps/web/app/_components/auth-shell.tsx', { stage: 4, reason: 'S-001 / S-002 / S-046（認証の外殻） の刷新（段④）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
-  ['apps/web/app/_components/otpauth-qr.tsx', { stage: 4, reason: 'S-001 / S-002 / S-046（認証の外殻） の刷新（段④）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
-  // ── 段⑤
-  ['apps/web/app/admin/demo/admin-demo-screen.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で `PageBody` の幅 3 クラスへ移す。移行中 2 行' }],
-  ['apps/web/app/admin/demo/admin-demo-view.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
-  ['apps/web/app/admin/page.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
-  ['apps/web/app/admin/tenants/[id]/contract/deletion-status-screen.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
-  ['apps/web/app/admin/tenants/[id]/page.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で `PageBody` の幅 3 クラスへ移す。移行中 2 行' }],
-  ['apps/web/app/admin/tenants/new/page.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
-  ['apps/web/app/admin/usage/page.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
-  ['apps/web/app/admin/usage/quota-override-form.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で `PageBody` の幅 3 クラスへ移す。移行中 1 行' }],
+  // ── 🔴 **空である**（段① 〜 段⑤ ですべて外した）。`describeRatchetInvariants` の ②（未使用の
+  //    許可が残っていない）と、各検査の本体（許可リスト外に違反が 0 件）が**無条件**で成立する。
+  // 🔴 **ここに行を足せない**（④ が凍結集合の部分集合であることを要求し、凍結は 2026-09-30 の実体で
+  //    止まっている）。新しい画面は最初から semantic トークン / 7 段 / 6 トークン /
+  //    `PageBody` の幅 3 クラスで書く。
 ]);
 
 /**
@@ -185,19 +165,11 @@ export const UI_RATCHET_ALLOWLIST_C: ReadonlyMap<string, AllowEntry> = new Map<s
  * 🔴 段が進むごとに削る。空になった時点で (f) spacing 7 段 は無条件 green になる（`SP-22` §4.1 段⑤）。
  */
 export const UI_RATCHET_ALLOWLIST_F: ReadonlyMap<string, AllowEntry> = new Map<string, AllowEntry>([
-  // ── 段①
-  // ── 段② ✅ T-22-06 / T-22-07 / T-22-08 で一覧 9 画面（S-005 / S-010 / S-015 / S-016 /
-  //    S-019 / S-041 / A-002 / A-005 / A-006）を semantic トークン / 7 段 / 6 トークン /
-  //    8 状態 / `PageBody` の幅 3 クラスへ寄せたので**この段の項目は空になった**
-  //    （残しておくとラチェット ②「未使用の許可が残っていない」で落ちる）。
-  // ── 段④ ✅ 第 1〜4 弾（2026-10-03）で主平面の残り（案件 / 人材 / 提案 / 設定 / スキル辞書 / 認証）を
-  //    semantic トークン / 7 段 / 6 トークン / 8 状態 / `PageBody` の幅 3 クラスへ寄せたので
-  //    **この段の項目は空になった**（`app/_components/**` の 3 件は段⑤。本ファイル冒頭）。
-  // ── 段⑤
-  ['apps/web/app/admin/signin/admin-signin-form.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で §7.9 の 7 段へ寄せる。移行中 1 行' }],
-  ['apps/web/app/admin/tenants/new/page.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で §7.9 の 7 段へ寄せる。移行中 1 行' }],
-  ['apps/web/app/admin/tenants/new/provisioning-form.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で §7.9 の 7 段へ寄せる。移行中 1 行' }],
-  ['apps/web/app/admin/usage/admin-usage-table.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で §7.9 の 7 段へ寄せる。移行中 2 行' }],
+  // ── 🔴 **空である**（段① 〜 段⑤ ですべて外した）。`describeRatchetInvariants` の ②（未使用の
+  //    許可が残っていない）と、各検査の本体（許可リスト外に違反が 0 件）が**無条件**で成立する。
+  // 🔴 **ここに行を足せない**（④ が凍結集合の部分集合であることを要求し、凍結は 2026-09-30 の実体で
+  //    止まっている）。新しい画面は最初から semantic トークン / 7 段 / 6 トークン /
+  //    `PageBody` の幅 3 クラスで書く。
 ]);
 
 /**
@@ -205,33 +177,11 @@ export const UI_RATCHET_ALLOWLIST_F: ReadonlyMap<string, AllowEntry> = new Map<s
  * 🔴 段が進むごとに削る。空になった時点で (g) 文字サイズ 6 トークン は無条件 green になる（`SP-22` §4.1 段⑤）。
  */
 export const UI_RATCHET_ALLOWLIST_G: ReadonlyMap<string, AllowEntry> = new Map<string, AllowEntry>([
-  // ── 段①
-  // ── 段② ✅ T-22-06 / T-22-07 / T-22-08 で一覧 9 画面（S-005 / S-010 / S-015 / S-016 /
-  //    S-019 / S-041 / A-002 / A-005 / A-006）を semantic トークン / 7 段 / 6 トークン /
-  //    8 状態 / `PageBody` の幅 3 クラスへ寄せたので**この段の項目は空になった**
-  //    （残しておくとラチェット ②「未使用の許可が残っていない」で落ちる）。
-  // ── 段③ ✅ T-22-09 で `S-003` / `S-004`（`_home/**` / `lib/home/**` / `page.tsx`）を
-  //    semantic トークン / 7 段 / 6 トークン / 8 状態 / `PageBody` の幅 3 クラスへ寄せたので
-  //    **この段の項目は空になった**（残しておくとラチェット ②「未使用の許可が残っていない」で落ちる）。
-  // ── 段④ ✅ 第 1〜4 弾（2026-10-03）で主平面の残り（案件 / 人材 / 提案 / 設定 / スキル辞書 / 認証）を
-  //    semantic トークン / 7 段 / 6 トークン / 8 状態 / `PageBody` の幅 3 クラスへ寄せたので
-  //    **この段の項目は空になった**（`app/_components/**` の 3 件は段⑤。本ファイル冒頭）。
-  // ── 段⑤
-  ['apps/web/app/admin/_components/console-nav.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で §7.9 の 6 トークンへ置き換える。移行中 2 行' }],
-  ['apps/web/app/admin/demo/admin-demo-screen.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で §7.9 の 6 トークンへ置き換える。移行中 16 行' }],
-  ['apps/web/app/admin/demo/admin-demo-view.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で §7.9 の 6 トークンへ置き換える。移行中 19 行' }],
-  ['apps/web/app/admin/layout.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で §7.9 の 6 トークンへ置き換える。移行中 1 行' }],
-  ['apps/web/app/admin/page.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で §7.9 の 6 トークンへ置き換える。移行中 9 行' }],
-  ['apps/web/app/admin/signin/admin-signin-form.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で §7.9 の 6 トークンへ置き換える。移行中 7 行' }],
-  ['apps/web/app/admin/signin/page.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で §7.9 の 6 トークンへ置き換える。移行中 2 行' }],
-  ['apps/web/app/admin/tenants/[id]/contract/deletion-status-screen.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で §7.9 の 6 トークンへ置き換える。移行中 11 行' }],
-  ['apps/web/app/admin/tenants/[id]/page.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で §7.9 の 6 トークンへ置き換える。移行中 15 行' }],
-  ['apps/web/app/admin/tenants/new/page.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で §7.9 の 6 トークンへ置き換える。移行中 2 行' }],
-  ['apps/web/app/admin/tenants/new/provisioning-form.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で §7.9 の 6 トークンへ置き換える。移行中 14 行' }],
-  ['apps/web/app/admin/usage/admin-usage-table.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で §7.9 の 6 トークンへ置き換える。移行中 2 行' }],
-  ['apps/web/app/admin/usage/admin-usage-view.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で §7.9 の 6 トークンへ置き換える。移行中 3 行' }],
-  ['apps/web/app/admin/usage/page.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で §7.9 の 6 トークンへ置き換える。移行中 1 行' }],
-  ['apps/web/app/admin/usage/quota-override-form.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で §7.9 の 6 トークンへ置き換える。移行中 5 行' }],
+  // ── 🔴 **空である**（段① 〜 段⑤ ですべて外した）。`describeRatchetInvariants` の ②（未使用の
+  //    許可が残っていない）と、各検査の本体（許可リスト外に違反が 0 件）が**無条件**で成立する。
+  // 🔴 **ここに行を足せない**（④ が凍結集合の部分集合であることを要求し、凍結は 2026-09-30 の実体で
+  //    止まっている）。新しい画面は最初から semantic トークン / 7 段 / 6 トークン /
+  //    `PageBody` の幅 3 クラスで書く。
 ]);
 
 /**
@@ -239,21 +189,11 @@ export const UI_RATCHET_ALLOWLIST_G: ReadonlyMap<string, AllowEntry> = new Map<s
  * 🔴 段が進むごとに削る。空になった時点で (j) 8 状態のバリアント は無条件 green になる（`SP-22` §4.1 段⑤）。
  */
 export const UI_RATCHET_ALLOWLIST_J: ReadonlyMap<string, AllowEntry> = new Map<string, AllowEntry>([
-  // ── 段①
-  // ── 段② ✅ T-22-06 / T-22-07 / T-22-08 で一覧 9 画面（S-005 / S-010 / S-015 / S-016 /
-  //    S-019 / S-041 / A-002 / A-005 / A-006）を semantic トークン / 7 段 / 6 トークン /
-  //    8 状態 / `PageBody` の幅 3 クラスへ寄せたので**この段の項目は空になった**
-  //    （残しておくとラチェット ②「未使用の許可が残っていない」で落ちる）。
-  // ── 段③ ✅ T-22-09 で `S-003` / `S-004` を寄せたので**この段の項目は空になった**。
-  // ── 段⑤
-  ['apps/web/app/admin/_components/console-nav.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で プリミティブ側の 8 状態に委ねる。移行中 1 行' }],
-  ['apps/web/app/admin/demo/admin-demo-screen.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で プリミティブ側の 8 状態に委ねる。移行中 1 行' }],
-  ['apps/web/app/admin/page.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で プリミティブ側の 8 状態に委ねる。移行中 5 行' }],
-  ['apps/web/app/admin/tenants/[id]/contract/deletion-status-screen.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で プリミティブ側の 8 状態に委ねる。移行中 1 行' }],
-  ['apps/web/app/admin/tenants/[id]/page.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で プリミティブ側の 8 状態に委ねる。移行中 3 行' }],
-  ['apps/web/app/admin/tenants/new/page.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で プリミティブ側の 8 状態に委ねる。移行中 1 行' }],
-  ['apps/web/app/admin/tenants/new/provisioning-form.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で プリミティブ側の 8 状態に委ねる。移行中 1 行' }],
-  ['apps/web/app/admin/usage/admin-usage-table.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で プリミティブ側の 8 状態に委ねる。移行中 1 行' }],
+  // ── 🔴 **空である**（段① 〜 段⑤ ですべて外した）。`describeRatchetInvariants` の ②（未使用の
+  //    許可が残っていない）と、各検査の本体（許可リスト外に違反が 0 件）が**無条件**で成立する。
+  // 🔴 **ここに行を足せない**（④ が凍結集合の部分集合であることを要求し、凍結は 2026-09-30 の実体で
+  //    止まっている）。新しい画面は最初から semantic トークン / 7 段 / 6 トークン /
+  //    `PageBody` の幅 3 クラスで書く。
 ]);
 
 /**
@@ -261,23 +201,10 @@ export const UI_RATCHET_ALLOWLIST_J: ReadonlyMap<string, AllowEntry> = new Map<s
  * 🔴 段が進むごとに削る。空になった時点で (k) 幅クラスの網羅 は無条件 green になる（`SP-22` §4.1 段⑤）。
  */
 export const UI_RATCHET_ALLOWLIST_K: ReadonlyMap<string, AllowEntry> = new Map<string, AllowEntry>([
-  // ── 段② ✅ T-22-06 / T-22-07 / T-22-08 で一覧 9 画面（S-005 / S-010 / S-015 / S-016 /
-  //    S-019 / S-041 / A-002 / A-005 / A-006）を semantic トークン / 7 段 / 6 トークン /
-  //    8 状態 / `PageBody` の幅 3 クラスへ寄せたので**この段の項目は空になった**
-  //    （残しておくとラチェット ②「未使用の許可が残っていない」で落ちる）。
-  // ── 段③ ✅ T-22-09 で `S-003` / `S-004`（`_home/**` / `lib/home/**` / `page.tsx`）を
-  //    semantic トークン / 7 段 / 6 トークン / 8 状態 / `PageBody` の幅 3 クラスへ寄せたので
-  //    **この段の項目は空になった**（残しておくとラチェット ②「未使用の許可が残っていない」で落ちる）。
-  // ── 段④ ✅ 第 1〜4 弾（2026-10-03）で主平面の残り（案件 / 人材 / 提案 / 設定 / スキル辞書 / 認証）を
-  //    semantic トークン / 7 段 / 6 トークン / 8 状態 / `PageBody` の幅 3 クラスへ寄せたので
-  //    **この段の項目は空になった**（`app/_components/**` の 3 件は段⑤。本ファイル冒頭）。
-  // ── 段⑤
-  ['apps/web/app/admin/demo/page.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で `PageBody` に `widthClass` を渡す。移行中 1 行' }],
-  ['apps/web/app/admin/page.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で `PageBody` に `widthClass` を渡す。移行中 1 行' }],
-  ['apps/web/app/admin/signin/page.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で `PageBody` に `widthClass` を渡す。移行中 1 行' }],
-  ['apps/web/app/admin/tenants/[id]/contract/page.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で `PageBody` に `widthClass` を渡す。移行中 1 行' }],
-  ['apps/web/app/admin/tenants/[id]/page.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で `PageBody` に `widthClass` を渡す。移行中 1 行' }],
-  ['apps/web/app/admin/tenants/new/page.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で `PageBody` に `widthClass` を渡す。移行中 1 行' }],
-  ['apps/web/app/admin/usage/page.tsx', { stage: 5, reason: 'A-001 / A-003 / A-004 / A-010 / A-012 / A-014 / /admin の刷新（段⑤）で `PageBody` に `widthClass` を渡す。移行中 1 行' }],
+  // ── 🔴 **空である**（段① 〜 段⑤ ですべて外した）。`describeRatchetInvariants` の ②（未使用の
+  //    許可が残っていない）と、各検査の本体（許可リスト外に違反が 0 件）が**無条件**で成立する。
+  // 🔴 **ここに行を足せない**（④ が凍結集合の部分集合であることを要求し、凍結は 2026-09-30 の実体で
+  //    止まっている）。新しい画面は最初から semantic トークン / 7 段 / 6 トークン /
+  //    `PageBody` の幅 3 クラスで書く。
 ]);
 
