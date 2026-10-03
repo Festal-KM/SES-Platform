@@ -86,6 +86,12 @@ export type KpiCardMessages = {
   readonly labels: Readonly<Record<string, string>>;
   readonly unit: string;
   readonly delta: KpiDeltaMessages;
+  /**
+   * ✅ 2026-10-03: 🔴 **4 指標がすべて 0 の日にカードの代わりに出す 1 行**
+   * （`isHomeAllMetricsZero` の 🔴）。🔴 **「0 件」と書かない** —— 数を 4 つ並べないための
+   * 置き換えなので、置き換え先で数を並べたら意味が無い。
+   */
+  readonly allZero: string;
 };
 
 /**
@@ -98,6 +104,30 @@ export type KpiCardMessages = {
  */
 export function isHomeInitialEmpty(block: SummaryHomeBlock): boolean {
   return block.initialEmpty;
+}
+
+/**
+ * 🔴 ✅ 2026-10-03: **4 指標がすべて 0 か**（KPI カードを描かない 2 つ目の条件）。
+ *
+ * `docs/04` §7.2 改訂 23 の表の最終行は 🔴 **「0 が並ぶ KPI カードを出す」ことを
+ * 「（認めていない）」側に置いている**（「データが無いときはカードを描かず `EmptyState` に倒す」）。
+ * デモ環境の実測（2026-10-03）: **取引先のホームは 4 枚とも `0 件`** であり、
+ * **1 日 4〜5 時間使う主利用者（`CLAUDE.md` §1.2）の画面の最上段が、意味の無い 0 の 4 連**だった。
+ * その下には要対応キューの行が現に 1 件在り、**見るべきものは下に在るのに上が場所を取っていた。**
+ *
+ * 🔴 **`initialEmpty`（案件も人材も 0 件）とは別の条件である。** あちらは「まだ何も登録されて
+ *    いない」で画面全体が `EmptyState` に倒れる。ここは **運用中だが今日は対応が要らない日**で
+ *    あり、キュー・タブ・右レールは出し続ける（§4.1「要対応 0 件 → KPI カードとタブは出し続ける」
+ *    の趣旨は**画面全体を空にしない**ことであって、0 を 4 つ並べることではない）。
+ * 🔴 **`S-004` のカード 1 だけは 0 を出してよい**という §7.2 の例外（「依頼 0 件は『カードが
+ *    壊れた』と区別できる必要があるため」）は**許可であって義務ではない**。本実装は
+ *    カードの代わりに**「対応が必要な指標はありません」と明示する 1 行**を置くので、
+ *    「壊れている」と区別できるという例外の目的はそのまま満たされる（むしろ語で満たす）。
+ * 🔴 **取得失敗（`docs/04` §4.1 の「数値の位置に `—` と `もう一度試す`」）とは別物である。**
+ *    ここは「0 件である」という**確定した事実**であり、`—`（不明）ではない。
+ */
+export function isHomeAllMetricsZero(block: SummaryHomeBlock): boolean {
+  return block.items.length > 0 && block.items.every((item) => item.count === 0);
 }
 
 /**
@@ -134,7 +164,20 @@ export function kpiCardItems(block: SummaryHomeBlock, messages: KpiCardMessages)
     value: formatThousands(item.count),
     unit: messages.unit,
     delta: formatKpiDelta(item.delta, messages.delta),
+    emphasis: isPrimaryMetric(block.audience, item.kind) ? ('primary' as const) : undefined,
   }));
+}
+
+/**
+ * 🔴 ✅ 2026-10-03: **件数を `--text-metric`（24px）で描いてよい 1 枚の判定**（1 箇所）。
+ *
+ * `docs/04` §7.2 改訂 23 の表: 🔴 **「KPI カードの件数を、画面の中でいちばん大きい文字にして
+ * よいのは `S-004` のカード 1 だけ」**（返答期限がこの画面の最重要の判断材料であるため。§11-4）。
+ * **`S-003`（ホスト）のカードはセクションの行より強くしない**と同じ行が名指しで明記している。
+ * 🔴 したがってホストは 1 枚も `primary` にならない（`audience === 'PARTNER'` が条件に入る）。
+ */
+export function isPrimaryMetric(audience: SummaryHomeBlock['audience'], kind: string): boolean {
+  return audience === 'PARTNER' && kind === 'REQUESTS_TO_ANSWER';
 }
 
 /** 🔴 `ACTION_QUEUE` → `action-queue`（testid の接尾辞）。**写像を別に持たない**（機械変換）。 */

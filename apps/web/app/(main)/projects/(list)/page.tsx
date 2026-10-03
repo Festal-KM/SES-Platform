@@ -115,6 +115,12 @@ export default async function ProjectListPage({
     <main className="py-6">
       <PageBody
         widthClass="split"
+        // 🔴 ✅ 2026-10-03: **副カラムの並置は `2xl` から**（`@ses/ui` の `PageBodyAsideFrom` の 🔴）。
+        //    実測（1280px）: 右パネル 400px により表の器が **582px** になり、9 列 1,313px のうち
+        //    **44% しか見えず、続きがあることを示す印も無かった**。§7.1 は「列を削らないことが先」
+        //    と定めているので列は 1 つも減らさず、**パネルを下段に送って主カラムを 1,008px にする**。
+        //    `2xl` 未満ではパネルは表の下に積まれる（遮断しない。`CLAUDE.md` §13.3）。
+        asideFrom="2xl"
         aside={
           <ProjectSummaryPanel
             row={selectedRow}

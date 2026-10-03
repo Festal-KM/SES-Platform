@@ -193,6 +193,27 @@ const tableCellVariants = cva('', {
   defaultVariants: { whitespace: 'nowrap', align: 'inherit', padding: 'normal' },
 });
 
+/**
+ * ============================================================================
+ * 🔴 ✅ 2026-10-03: **横に続きがあることを器の側で示す**（`overflow-indicator-x`）
+ * ============================================================================
+ * **何が起きていたか（デモ環境の実測）**: `S-010`（案件一覧）は 1280px で器 582px に対し
+ * 内容が 1,313px あり **可視率 44%**（9 列中 4 列）だった。🔴 **影もフェードもスクロールバーも
+ * 出ないため「続きがあること自体が画面から読めない」** —— 「650,000〜750,000 円」の「円」が
+ * 切れているのに、利用者はそれを**値の欠落**と読む。
+ *
+ * 🔴 **実装は CSS だけで、スクロール可能なときにだけ出る**（`background-attachment` の
+ *    `local` / `scroll` の組み合わせ。定義は `apps/web/app/tailwind.css` の `@utility`）。
+ *    JS で `scrollWidth > clientWidth` を測る案は採らなかった —— `Table` は
+ *    **サーバコンポーネントのままでなければならず**（`'use client'` を主バレルに入れると
+ *    主平面の全画面がクライアントへ移る。`../index.ts` 規約 4）、測るために器だけを
+ *    クライアント部品に割ると「面を持つ器」が 2 実装になる。
+ * 🔴 **影（`shadow-*`）ではない。** §7.9 の「影は 2 語だけ」は**要素の階層**の話であり、
+ *    ここで出しているのは**スクロールの端**の印（内容の切れ目）である。語も別（`shadow` を
+ *    1 文字も含まない）で、`tests/static/ui-shadow-and-size.test.ts` の (l) の射程に入らない。
+ */
+export const TABLE_OVERFLOW_INDICATOR_CLASS = 'overflow-indicator-x';
+
 export type TableProps = ComponentProps<'table'> & {
   /**
    * 器（`overflow-x-auto` の `<div>`）に足すクラス。
@@ -202,15 +223,43 @@ export type TableProps = ComponentProps<'table'> & {
    *    （✅ 2026-10-03。器は `CARD_SURFACE_CLASSES` を既に持つ。ファイル冒頭の 🔴）。
    */
   readonly containerClassName?: string;
+  /**
+   * ✅ 2026-10-03: 🔴 **「右端が切れていたら横にスクロールする」ことを語で示す 1 行**
+   *    （解決済みの文言。部品は語を持たない）。
+   *
+   * 🔴 **渡すのは、列が器に収まらないことが設計上わかっている表だけ**である
+   *    （`S-010` / `S-016` / `S-017` / `S-022` / `A-002` / `A-005` / `A-006`）。
+   *    上の `overflow-indicator-x` は**切れ目**を示すが、**切れていることに気づいた人が
+   *    次に何をすればよいか**は図形では伝わらない（`docs/04` §13.3「判断材料を隠さない」）。
+   * ⚠️ `data-testid` を持たない（凍結済み集合を増やさない）。機械検査は
+   *    `data-table-overflow-note` 属性で掴む。
+   */
+  readonly overflowNote?: string;
 };
 
-export function Table({ className, containerClassName, ...props }: TableProps) {
-  return (
+export function Table({ className, containerClassName, overflowNote, ...props }: TableProps) {
+  const container = (
     // 🔴 面は `CARD_SURFACE_CLASSES`（= `Card` / `KpiCard` / `RailCard` / overlay と同じ 1 定数）。
     //    `rounded-md` は `overflow-x-auto` と対であり、**横スクロールの中身が角から出ない**。
-    <div className={cn('relative w-full overflow-x-auto', CARD_SURFACE_CLASSES, containerClassName)}>
+    <div
+      className={cn(
+        'relative w-full overflow-x-auto',
+        CARD_SURFACE_CLASSES,
+        TABLE_OVERFLOW_INDICATOR_CLASS,
+        containerClassName,
+      )}
+    >
       <table className={cn('w-full caption-bottom text-cell', className)} {...props} />
     </div>
+  );
+  if (overflowNote === undefined) return container;
+  return (
+    <>
+      {container}
+      <p className="mt-1 mb-0 text-xs text-fg-muted" data-table-overflow-note="">
+        {overflowNote}
+      </p>
+    </>
   );
 }
 

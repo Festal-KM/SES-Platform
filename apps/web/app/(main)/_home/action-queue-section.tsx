@@ -222,16 +222,28 @@ export function ActionQueueSection({
              `SummaryStrip` の `進行中の提案` の値が `S-019` への入口だったが、改訂 23 で
              ストリップが無くなったため、**同じ遷移先を持つこの導線が引き継いだ**（`U-22`:
              testid の削除・改名は不可。値は 1 つも消していない）。 */}
-      <SectionHeader
-        icon="list-checks"
-        title={messages.title}
-        count={countLabel}
-        link={{ href: seeAllHref, label: seeAllLabel }}
-        testIdPrefix="home-action-queue-header-"
-        linkComponent={audience === 'HOST' ? HostProposalsLink : PartnerProposalsLink}
-      />
       <Card>
-      <CardContent>
+      {/* 🔴 ✅ 2026-10-03: **節見出しを器の中へ入れた**（`docs/04` §7.2 の「1 画面で最も強調するのは
+          要対応キュー」）。デモ巡回の実測では **KPI 帯が白い器 4 枚で常に 240px 先に在り、
+          件数が 24px / 600 でホーム内最大**という状態で、条文（🔴「件数を、その画面で最も
+          強調される要素より強くしない」）に反していた。強さの順序を戻すために 2 つを同時に行う:
+          ①KPI カードの件数を `--text-lg` に落とし、器を `p-3` に詰める（`@ses/ui` の `KpiCard`）
+          ②**見出しを行と同じ面の上に載せ、下 border で 1 つの塊にする**（見出しだけが面の外に
+          浮いていると、白い器 4 枚のほうが先に「まとまり」として読まれる）。
+          🔴 **見出しの段（`--text-lg` = 16px / 600）は 1px も上げていない**（`SectionHeader` は
+          サイズの prop を持たない。§7.3「画面タイトルより強くしない」）。 */}
+      <div className="border-b border-border px-4 pt-4 pb-3">
+        <SectionHeader
+          icon="list-checks"
+          title={messages.title}
+          count={countLabel}
+          link={{ href: seeAllHref, label: seeAllLabel }}
+          testIdPrefix="home-action-queue-header-"
+          linkComponent={audience === 'HOST' ? HostProposalsLink : PartnerProposalsLink}
+          className="mb-0"
+        />
+      </div>
+      <CardContent className="pt-4">
         {/* 🔴 「自分の担当のみ」トグル（既定オン）と `提案依頼の一覧`（`S-017`）への入口。
             どちらも**このセクションの文脈に紐づく**導線である（ファイル冒頭 ⑪）。 */}
         <nav aria-label={messages.scopeLegend} className="mb-2 flex flex-wrap items-center gap-2 text-body" data-testid="home-action-queue-scope">

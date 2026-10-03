@@ -59,7 +59,7 @@ import {
   Checkbox,
   EmptyState,
   Field,
-  PAGE_BODY_ASIDE_WIDTH_CLASSES,
+  PAGE_BODY_ASIDE_WIDTH_CLASSES_FROM_2XL,
   SECONDARY_LINK_CLASSES,
   Table,
   TableBody,
@@ -69,6 +69,7 @@ import {
   TableRow,
   Textarea,
   Toolbar,
+  cn,
 } from '@ses/ui';
 import { proposalDetailHref } from '../../../../lib/proposals/hrefs';
 import type { SendFailureAttemptRowView, SendFailureRowView, SendFailureSummaryView } from '../../../../lib/proposals/send-failure-rows';
@@ -90,6 +91,8 @@ export type SendFailureScreenMessages = {
   readonly population: string;
   /** 件数バーの右端（並び順の説明）。🔴 選べる形にしない（`?sort=` が無い）。 */
   readonly orderNote: string;
+  /** ✅ 2026-10-03: 表が器に収まらない幅での 1 行（`Table` の `overflowNote`）。 */
+  readonly overflowNote: string;
   readonly emptyTitle: string;
   readonly emptyLead: string;
   readonly detailTitle: string;
@@ -140,6 +143,20 @@ export type SendFailureScreenProps = {
 /** モバイルで間引く補助列（判断材料は詳細パネルに再掲する。`docs/04` §S-022 デバイス別）。 */
 const TABLET_UP = 'hidden sm:table-cell';
 const DESKTOP_ONLY = 'hidden lg:table-cell';
+
+/**
+ * 🔴 ✅ 2026-10-03: **テキスト列の下限幅**（`S-017` と同じ事故の予防）。
+ *
+ * 本画面は `S-017` と**同じ形**である —— 幅クラス B（右パネル 400px）× `table-layout: auto` ×
+ * **折り返さない日時列**（`最終試行` = `2026-09-23 11:11 JST` で約 149px）。この組み合わせでは、
+ * **折り返してよい列（提案先 / エンジニア / 案件）だけが min-content まで潰れる**。
+ * 日本語の min-content は 1 文字なので、`S-017` では実際に
+ * **「業務システムのクラウド移行」が 1 文字 1 行で 10 行**になっていた（2026-10-03 の実測）。
+ * 🔴 **デモ環境では本画面が 0 件（= 正常）であり、画面を見ても再現しない。**
+ *    `HANDOFF.md` §6-14 の「1 箇所直したら同じ写像の他の消費者を grep で全部洗う」に従って
+ *    **行が入る前に塞ぐ**（送信失敗は起きたときに初めて開く画面であり、そこで崩れては困る）。
+ */
+const TEXT_COLUMN_MIN_WIDTH = 'min-w-40';
 
 const RESEND_REASON_MAX_LENGTH = 2_000;
 
@@ -347,7 +364,9 @@ export function SendFailureScreen({ rows, summary, canResend, denialMessage, app
       {/* 🔴 副カラムの寸法は `@ses/ui` から取る（画面が寸法を決めない。`docs/05` §2.3.4）。
           `PageBody` の `aside` スロットを使えないのは、**パネルが表と同じクライアント状態
           （選択行・確認ステップ）を共有する**ためである。`lg` 未満では表の下に落ちる（§13.3）。 */}
-      <div className="mt-4 flex flex-col gap-6 lg:flex-row">
+      {/* 🔴 ✅ 2026-10-03: **副カラムの並置は `2xl` から**（`S-017` / `S-010` と同じ。
+          上の `TEXT_COLUMN_MIN_WIDTH` の 🔴）。`2xl` 未満ではパネルを表の下に積む。 */}
+      <div className="mt-4 flex flex-col gap-6 2xl:flex-row">
         {/* セクション 2: テーブル */}
         <div className="min-w-0 flex-1">
           {rows.length === 0 ? (
@@ -360,12 +379,12 @@ export function SendFailureScreen({ rows, summary, canResend, denialMessage, app
               />
             </div>
           ) : (
-            <Table data-testid="send-failure-table">
+            <Table data-testid="send-failure-table" overflowNote={messages.overflowNote}>
               <TableHeader>
                 <TableRow>
-                  <TableHead>{messages.columnRecipient}</TableHead>
-                  <TableHead>{messages.columnEngineer}</TableHead>
-                  <TableHead className={TABLET_UP}>{messages.columnProject}</TableHead>
+                  <TableHead className={TEXT_COLUMN_MIN_WIDTH}>{messages.columnRecipient}</TableHead>
+                  <TableHead className={TEXT_COLUMN_MIN_WIDTH}>{messages.columnEngineer}</TableHead>
+                  <TableHead className={cn(TABLET_UP, TEXT_COLUMN_MIN_WIDTH)}>{messages.columnProject}</TableHead>
                   <TableHead>{messages.columnFailureKind}</TableHead>
                   <TableHead className={DESKTOP_ONLY}>{messages.columnLastAttemptAt}</TableHead>
                   <TableHead className={TABLET_UP}>{messages.columnElapsed}</TableHead>
@@ -390,16 +409,29 @@ export function SendFailureScreen({ rows, summary, canResend, denialMessage, app
                     data-delivery-unknown={row.deliveryUnknown ? 'true' : 'false'}
                     data-repeated={row.repeated ? 'true' : 'false'}
                   >
-                    <TableCell whitespace="normal" data-testid={`send-failure-recipient-${row.id}`}>
+                    <TableCell
+                      className={TEXT_COLUMN_MIN_WIDTH}
+                      whitespace="normal"
+                      data-testid={`send-failure-recipient-${row.id}`}
+                    >
                       {row.recipient}
                     </TableCell>
-                    <TableCell whitespace="normal" data-testid={`send-failure-engineer-${row.id}`}>
+                    <TableCell
+                      className={TEXT_COLUMN_MIN_WIDTH}
+                      whitespace="normal"
+                      data-testid={`send-failure-engineer-${row.id}`}
+                    >
                       {row.engineer}
                     </TableCell>
-                    <TableCell className={TABLET_UP} whitespace="normal">
+                    <TableCell className={cn(TABLET_UP, TEXT_COLUMN_MIN_WIDTH)} whitespace="normal">
                       {row.project}
                     </TableCell>
-                    <TableCell whitespace="normal">
+                    {/* ⚠️ ✅ 2026-10-03: `whitespace="normal"` を外した（既定の `nowrap` に戻した）。
+                        中身は `Badge` 1 つで、`Badge` 自身が `whitespace-nowrap` を持つため
+                        **描画結果は 1px も変わらない**。外した理由は、この列が「折り返してよい列」に
+                        見えたまま下限幅を持たないと、下の検査（`whitespace-normal` のセルは
+                        必ず `min-w-*` を持つ）の意図が読めなくなるからである。 */}
+                    <TableCell>
                       {/* 🔴 応答不明は失敗と別の色（琥珀）。届いている可能性が最も高い区分であり、
                           再送の判断が変わる（§S-022 ④）。**これは状態バッジではない**（ファイル冒頭の 🔴）。 */}
                       <Badge variant={row.deliveryUnknown ? 'warning' : 'danger'} data-testid={`send-failure-kind-${row.id}`}>
@@ -434,7 +466,7 @@ export function SendFailureScreen({ rows, summary, canResend, denialMessage, app
 
         {/* セクション 3: 選択した行の失敗理由と再送（lg 以上は右、未満は一覧の下） */}
         {/* 🔴 面（radius / 枠線 / 地）は `@ses/ui` の `Card` だけが持つ（画面で面を作らない）。 */}
-        <div className={PAGE_BODY_ASIDE_WIDTH_CLASSES}>
+        <div className={PAGE_BODY_ASIDE_WIDTH_CLASSES_FROM_2XL}>
           <Card data-testid="send-failure-detail-panel">
             <h2 className="border-b border-border px-4 py-3 text-lg font-semibold text-fg">{messages.detailTitle}</h2>
             <CardContent className="pt-4">

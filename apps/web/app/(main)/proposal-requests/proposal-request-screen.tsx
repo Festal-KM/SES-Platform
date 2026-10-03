@@ -65,7 +65,7 @@ import {
   CardContent,
   EmptyState,
   Field,
-  PAGE_BODY_ASIDE_WIDTH_CLASSES,
+  PAGE_BODY_ASIDE_WIDTH_CLASSES_FROM_2XL,
   Pagination,
   SECONDARY_LINK_CLASSES,
   Select,
@@ -91,6 +91,8 @@ export type ProposalRequestScreenMessages = {
   readonly population: string;
   /** 件数バーの右端（並び順の説明）。🔴 選べる形にしない（`?sort=` が無い）。 */
   readonly orderNote: string;
+  /** ✅ 2026-10-03: 表が器に収まらない幅での 1 行（`Table` の `overflowNote`）。 */
+  readonly overflowNote: string;
   readonly filterLegend: string;
   readonly filterState: string;
   readonly filterApply: string;
@@ -157,6 +159,32 @@ export type ProposalRequestScreenProps = {
 /** モバイルで間引く補助列（判断材料ではない。`docs/04` §S-017 デバイス別）。 */
 const TABLET_UP = 'hidden sm:table-cell';
 const DESKTOP_ONLY = 'hidden lg:table-cell';
+
+/**
+ * ============================================================================
+ * 🔴 ✅ 2026-10-03: **テキスト列の下限幅**（1 文字ずつ縦に折り返す事故の再発防止）
+ * ============================================================================
+ * **何が起きていたか（デモ環境の実測。1280px）**: 本画面は幅クラス B であり、右パネル 400px に
+ * よって表の器が **582px** になる。表は `table-layout: auto` なので、
+ * **`whitespace-nowrap` の日時列（`2026-09-23 11:11 JST` = 約 149px）が折り返さずに幅を確保し続け、
+ * 折り返してよいテキスト列（案件 / 候補）だけが min-content まで潰れていた。**
+ * 日本語の min-content は **1 文字**なので、「業務システムのクラウド移行」が
+ * **1 文字 1 行で 10 行**になり、行の高さが 160〜180px に膨らんで表として読めなかった。
+ * 🔴 **1920px では再現しない**（器が広く潰れない）ため、広い画面でだけ見ていると気づけない。
+ *
+ * 🔴 **直し方として「日時列を折り返させる」は採らなかった**（実測で比較した）:
+ *    折り返すと min-content は `2026-09-23` の約 92px に下がるが、**全行の日時が 2 行になり
+ *    行の高さが 36px → 約 55px に増える**。一覧は「50 行を縦に走査する場」であり
+ *    （`docs/04` §7.1）、**全行を背が高くする代償のほうが大きい**。
+ * 🔴 **「列を落とす」も採らなかった**（§7.1「列を削らないことが先」/ 改訂 26 の 🔴）。
+ * 🔴 採ったのは **①テキスト列に下限幅を与える ②副カラムの並置を `2xl` まで遅らせる** の 2 つ。
+ *    ②で 1280px の主カラムが 582 → **1,008px** になり、下限幅の総和（約 865px）が**収まる**。
+ *
+ * 値の出所: 案件名は `docs/04` §10.3 の名称列の下限 **10rem**（`NAME_CELL_MIN_WIDTH_CLASS` と同値）。
+ * 候補は「共有候補（匿名）」の 8 文字（13px × 8 = 104px）+ セルの内側 `px-3` × 2 = **8rem**。
+ */
+const PROJECT_COLUMN_MIN_WIDTH = 'min-w-40';
+const CANDIDATE_COLUMN_MIN_WIDTH = 'min-w-32';
 
 const REMAINING_TICK_MS = 60_000;
 
@@ -334,7 +362,10 @@ export function ProposalRequestScreen({
 
       {/* 🔴 副カラムの寸法は `@ses/ui` から取る（画面が寸法を決めない。ファイル冒頭の 🔴）。
           `lg` 未満では表の下に落ちる（遮断しない。§13.3）。 */}
-      <div className="mt-4 flex flex-col gap-6 lg:flex-row">
+      {/* 🔴 ✅ 2026-10-03: **副カラムの並置は `2xl` から**（上の `PROJECT_COLUMN_MIN_WIDTH` の 🔴）。
+          `2xl` 未満では表の下に積む（遮断しない。§13.3）。`PageBody` の `asideFrom='2xl'` と
+          同じ境界であり、寸法は `@ses/ui` から取る（画面が寸法を決めない）。 */}
+      <div className="mt-4 flex flex-col gap-6 2xl:flex-row">
         {/* セクション 2: テーブル */}
         <div className="min-w-0 flex-1">
           {rows.length === 0 ? (
@@ -352,11 +383,11 @@ export function ProposalRequestScreen({
               />
             </div>
           ) : (
-            <Table data-testid="proposal-request-table">
+            <Table data-testid="proposal-request-table" overflowNote={messages.overflowNote}>
               <TableHeader>
                 <TableRow>
-                  <TableHead>{messages.columnProject}</TableHead>
-                  <TableHead className={TABLET_UP}>{messages.columnCandidate}</TableHead>
+                  <TableHead className={PROJECT_COLUMN_MIN_WIDTH}>{messages.columnProject}</TableHead>
+                  <TableHead className={cn(TABLET_UP, CANDIDATE_COLUMN_MIN_WIDTH)}>{messages.columnCandidate}</TableHead>
                   <TableHead className={TABLET_UP}>{messages.columnCreatedAt}</TableHead>
                   <TableHead>{messages.columnRemaining}</TableHead>
                   <TableHead>{messages.columnState}</TableHead>
@@ -379,10 +410,18 @@ export function ProposalRequestScreen({
                     data-testid={`proposal-request-row-${row.id}`}
                     data-request-state={row.state}
                   >
-                    <TableCell whitespace="normal" data-testid={`proposal-request-project-${row.id}`}>
+                    <TableCell
+                      className={PROJECT_COLUMN_MIN_WIDTH}
+                      whitespace="normal"
+                      data-testid={`proposal-request-project-${row.id}`}
+                    >
                       {row.projectName}
                     </TableCell>
-                    <TableCell className={TABLET_UP} whitespace="normal" data-testid={`proposal-request-candidate-${row.id}`}>
+                    <TableCell
+                      className={cn(TABLET_UP, CANDIDATE_COLUMN_MIN_WIDTH)}
+                      whitespace="normal"
+                      data-testid={`proposal-request-candidate-${row.id}`}
+                    >
                       {row.candidate}
                     </TableCell>
                     <TableCell className={TABLET_UP}>{row.createdAt}</TableCell>
@@ -434,7 +473,7 @@ export function ProposalRequestScreen({
         </div>
 
         {/* セクション 3: 選択した依頼の詳細パネル（lg 以上は右、未満は一覧の下。取り下げはここ） */}
-        <div className={PAGE_BODY_ASIDE_WIDTH_CLASSES}>
+        <div className={PAGE_BODY_ASIDE_WIDTH_CLASSES_FROM_2XL}>
           <Card data-testid="proposal-request-detail-panel">
             <h2 className="border-b border-border px-4 py-3 text-lg font-semibold text-fg">{messages.detailTitle}</h2>
             <CardContent className="pt-4">

@@ -319,6 +319,42 @@ describe('🔴 PageBody の幅 3 クラス（docs/04 §7.1 / docs/05 §2.3.4）'
     expect(markup).toContain('lg:flex-row');
   });
 
+  /**
+   * 🔴 ✅ 2026-10-03: **副カラムの並置を `2xl` まで遅らせる選択肢**（`asideFrom='2xl'`）。
+   *
+   * 実測（デモ環境 / 1280px）: `S-010`（案件一覧）は右パネル 400px により表の器が **582px** になり、
+   * 9 列 1,313px のうち **44% しか見えなかった**（しかも切れていることを示す印が無かった）。
+   * §7.1 は 🔴「列を削らないことが先」なので列は減らさず、**パネルを下段に送って主カラムを
+   * 1,008px にする**。🔴 **既定は `lg` のままである**（`S-003` の右レール・`S-021` のプレビューの
+   * ように「本体と同時に見えること自体が判断材料」の画面は 1 つも動かさない）。
+   */
+  it('🔴 B 分割（`asideFrom="2xl"`）: `2xl` 未満では副カラムを下段に送る', () => {
+    const markup = renderToStaticMarkup(
+      createElement(PageBody, {
+        widthClass: 'split',
+        asideFrom: '2xl',
+        children: '主カラム',
+        aside: '要点パネル',
+      }),
+    );
+    expect(markup).toContain('data-aside-from="2xl"');
+    expect(markup).toContain('2xl:flex-row');
+    // 🔴 `lg` / `xl` の語が 1 つも出ない（並置も固定幅も `2xl` から）。
+    expect(markup).not.toContain('lg:flex-row');
+    expect(markup).not.toContain('lg:w-90');
+    expect(markup).not.toContain('xl:w-100');
+    expect(markup).toContain('2xl:w-120');
+    expect(markup).toContain('2xl:shrink-0');
+  });
+
+  it('🔴 既定（`asideFrom` 省略）は `lg` のままである（他の画面を動かしていない対照）', () => {
+    const markup = renderToStaticMarkup(
+      createElement(PageBody, { widthClass: 'split', children: '主カラム', aside: 'プレビュー' }),
+    );
+    expect(markup).toContain('data-aside-from="lg"');
+    expect(markup).toContain('lg:flex-row');
+  });
+
   it('🔴 C 読み幅（`prose`）: 720px 上限 + 左寄せ（`mx-auto` を書かない）', () => {
     const markup = renderToStaticMarkup(createElement(PageBody, { widthClass: 'prose', children: 'フォーム' }));
     expect(markup).toContain('data-width-class="prose"');

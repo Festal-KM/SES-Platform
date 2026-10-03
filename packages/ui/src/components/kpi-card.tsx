@@ -26,7 +26,7 @@
 // 🔴 **`children` / `ReactNode` の prop を持たない**（`./drawer.tsx` と同じ理由 —— 任意の JSX を
 //    入れられる器は、規約がコメントだけになる）。
 import { cn } from '../lib/cn.js';
-import { CARD_PADDING_CLASSES, CARD_SURFACE_CLASSES } from '../lib/surface-classes.js';
+import { CARD_SURFACE_CLASSES } from '../lib/surface-classes.js';
 import { Icon, type IconName } from '../icons.js';
 
 /** 🔴 1 行に並べる上限（ブリーフの 4 枚）。5 枚目は実行時に落とす。 */
@@ -54,6 +54,20 @@ export type KpiCardItem = {
    * 比較できない指標に差分の枠があると、空欄が「0」に見える）。
    */
   readonly delta: string | null;
+  /**
+   * ✅ 2026-10-03: **件数を `--text-metric`（24px）で描いてよい 1 枚**。
+   *
+   * 🔴 **既定（`undefined`）は `--text-lg`（16px）であり、セクション見出しより大きくならない。**
+   *    `docs/04` §7.2 改訂 23 の「（認めていない）」の行が 🔴 **「件数を、その画面で最も強調される
+   *    要素より強くする（サイズ・太さ・色）」**を全画面で禁じており、**`S-003` で最も強調するのは
+   *    要対応キュー**だからである。実測（2026-10-03 のデモ巡回）では 24px / 600 の件数が
+   *    ホーム内で最大の文字になっており、この条文に反していた。
+   * 🔴 **`'primary'` を渡してよいのは `S-004` のカード 1（返答が必要な依頼）だけである** ——
+   *    同じ表が 🔴「**KPI カードの件数を、画面の中でいちばん大きい文字にしてよいのは `S-004` の
+   *    カード 1 だけ**（返答期限がこの画面の最重要の判断材料であるため）」と名指しで認めている。
+   *    **判断は呼び出し側**（`apps/web/lib/home/summary-view.ts` の 1 箇所）に在る。
+   */
+  readonly emphasis?: 'primary';
 };
 
 export type KpiCardProps = KpiCardItem & {
@@ -63,18 +77,40 @@ export type KpiCardProps = KpiCardItem & {
 };
 
 /**
- * アイコンの四角（`docs/04` §7.9: `--icon-md`（20px）+ `--space-2`（8px）の内側余白 + radius 4px）。
+ * アイコンの四角（`docs/04` §7.9: `--icon-sm`（16px）+ `--space-1`（4px）の内側余白 + radius 4px）。
  * 🔴 **寸法を画面側で決めない。** 🔴 **無彩色である**（上の表の 3 行目）。
+ *
+ * ✅ 2026-10-03: `--icon-md` + `--space-2`（= 36px の四角）→ `--icon-sm` + `--space-1`（= 24px）。
+ *    **実測**（1280px / デモ巡回）: カードの器は 134px、内側は `p-4` で 102px しか無く、
+ *    36px の四角 + `--space-2` を 1 行目に置くと**ラベルの幅が 56px しか残らず
+ *    「今日やるこ / と」「今週の提 / 案」が 2 行に折れていた**（B-1）。四角は印であって
+ *    判断材料ではないので、**先に縮めるのは四角の側**である。
  */
-const ICON_TILE_CLASSES = 'inline-flex rounded-sm bg-bg-inset p-2 text-fg-muted';
+const ICON_TILE_CLASSES = 'inline-flex rounded-sm bg-bg-inset p-1 text-fg-muted';
 
-/** 🔴 件数は `--text-metric`（24px / 600）。**この部品の 1 箇所だけが使ってよい**（§7.3 改訂 23）。 */
-const VALUE_CLASSES = 'text-metric font-semibold text-fg tabular-nums';
+/**
+ * 件数。
+ * 🔴 **既定は `--text-lg`（16px / 600）** —— §7.3 の 2 段目（セクション見出し）と同じ段であり、
+ *    **要対応キューの見出しより大きくならない**（§7.2 の「件数を最も強調される要素より強くしない」）。
+ * 🔴 `--text-metric`（24px / 600）は **`emphasis='primary'` の 1 枚だけ**（`S-004` のカード 1）。
+ *    **この部品の 1 箇所だけが `text-metric` を書いてよい**（§7.3 改訂 23。機械検査は
+ *    `tests/static/design-tokens.test.ts` / `tests/static/ui-shadow-and-size.test.ts`）。
+ */
+const VALUE_CLASSES = 'text-lg font-semibold text-fg tabular-nums';
+const VALUE_PRIMARY_CLASSES = 'text-metric font-semibold text-fg tabular-nums';
 /** 単位は本文より小さく、数の隣に置く（数が主役であることを崩さない）。 */
 const UNIT_CLASSES = 'text-xs text-fg-muted';
 /** ラベルと差分は補助テキスト（12px / `--color-fg-muted`。§7.3）。 */
 const LABEL_CLASSES = 'text-xs text-fg-muted';
 const DELTA_CLASSES = 'text-xs text-fg-muted tabular-nums';
+
+/**
+ * ✅ 2026-10-03: 器の内側を `--space-4`（16px）→ `--space-3`（12px）に落とした。
+ * 🔴 **段の外の値を作っていない**（§7.9 の 7 段のうち「セルの内側」と同じ 12px）。
+ *    実測（1280px）: カードの高さ 133px → **約 84px**。KPI 帯が要対応キューを 240px 押し下げて
+ *    いた状態（S-3）を、**器の高さの側からも**戻す。
+ */
+const CARD_COMPACT_PADDING_CLASSES = 'p-3';
 
 export function KpiCard({
   id,
@@ -83,23 +119,30 @@ export function KpiCard({
   value,
   unit,
   delta,
+  emphasis,
   testIdPrefix,
   className,
 }: KpiCardProps) {
   return (
     <div
       data-testid={`${testIdPrefix}${id}`}
-      className={cn(CARD_SURFACE_CLASSES, CARD_PADDING_CLASSES, 'flex flex-col gap-2', className)}
+      data-emphasis={emphasis ?? 'default'}
+      className={cn(
+        CARD_SURFACE_CLASSES,
+        CARD_COMPACT_PADDING_CLASSES,
+        'flex flex-col gap-1',
+        className,
+      )}
     >
-      <div className="flex items-center gap-2">
+      {/* 🔴 ラベルは**自分の行を 1 行まるごと使う**（上の `ICON_TILE_CLASSES` の実測。
+          アイコンと同じ行に置くと、狭い器でラベルだけが潰れて折り返す）。 */}
+      <span className={LABEL_CLASSES}>{label}</span>
+      <p className="m-0 flex items-center gap-2">
         {/* 🔴 アイコンは印にすぎない（`aria-hidden` は `Icon` が立てる）。意味はラベルが担う。 */}
         <span className={ICON_TILE_CLASSES}>
-          <Icon name={icon} size="md" />
+          <Icon name={icon} />
         </span>
-        <span className={LABEL_CLASSES}>{label}</span>
-      </div>
-      <p className="m-0 flex items-baseline gap-1">
-        <span className={VALUE_CLASSES}>{value}</span>
+        <span className={emphasis === 'primary' ? VALUE_PRIMARY_CLASSES : VALUE_CLASSES}>{value}</span>
         <span className={UNIT_CLASSES}>{unit}</span>
       </p>
       {/* 🔴 差分は無彩色（良し悪しを決めつけない）。無ければ行ごと描かない。 */}

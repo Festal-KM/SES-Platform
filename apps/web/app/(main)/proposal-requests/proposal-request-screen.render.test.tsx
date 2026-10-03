@@ -55,6 +55,7 @@ const messages: ProposalRequestScreenMessages = {
   // ✅ SP-22 段④: 件数バー（母集団 + 並び順の説明）。🔴 **母集団に件数を入れない**（`HANDOFF.md` §3.3）。
   population: '自社が送った提案依頼',
   orderNote: '依頼日の新しい順に表示しています。',
+  overflowNote: '右端が切れているときは、表を横にスクロールすると残りの列が見られます。',
   filterLegend: '状態で絞り込む',
   filterState: '状態',
   filterApply: '絞り込む',
@@ -274,5 +275,70 @@ describe('🔴 SP-22 段④: 状態バッジは `StatusBadge`（色は状態名�
     }
     expect(html).toMatch(new RegExp(`data-testid="proposal-request-row-${REQUESTED_ID}"`));
     expect(html).toContain('role="button"');
+  });
+});
+
+// ============================================================================
+// 🔴 ✅ 2026-10-03: **1 文字ずつ縦に折り返す事故の再発防止**（デモ巡回で発見）
+// ============================================================================
+// **何が起きていたか（1280px の実測）**: 本画面は幅クラス B であり、右パネル 400px により
+// 表の器が **582px** になる。`table-layout: auto` の下で **`whitespace-nowrap` の日時列
+// （`2026-09-23 11:11 JST` = 約 149px）が折り返さずに幅を確保し続け、折り返してよい
+// テキスト列（案件 / 候補）だけが min-content まで潰れた。** 日本語の min-content は 1 文字な
+// ので、「業務システムのクラウド移行」が **1 文字 1 行で 10 行**になり、行の高さが 160〜180px に
+// 膨らんで表として読めなかった。🔴 **1920px では再現しない**（器が広く潰れない）。
+//
+// 🔴 **`renderToStaticMarkup` は幅を測れない。** 固定するのは「潰れないための構造的な条件」=
+//    **折り返してよい列（`whitespace-normal`）が必ず下限幅（`min-w-*`）を持つこと**である。
+//    これは「列定義の最小幅を見る」という形であり、**実測値そのものではなく再発の経路を塞ぐ**。
+describe('🔴 テキスト列の下限幅（1 文字折り返しの再発防止）', () => {
+  /** `<td ... class="...">` の class 属性を列の出現順に取り出す。 */
+  function cellClasses(html: string, rowId: string): readonly string[] {
+    const start = html.indexOf(`data-testid="proposal-request-row-${rowId}"`);
+    expect(start, rowId).toBeGreaterThan(-1);
+    const rowHtml = html.slice(start, html.indexOf('</tr>', start));
+    return rowHtml
+      .split('<td')
+      .slice(1)
+      .map((cell) => /class="([^"]*)"/.exec(cell)?.[1] ?? '');
+  }
+
+  it('🔴 `whitespace-normal` のセルは必ず `min-w-*` を持つ（下限の無い折り返し列を作らない）', () => {
+    const html = render();
+    for (const id of [REQUESTED_ID, DECLINED_ID, EXPIRED_ID, WITHDRAWN_ID]) {
+      for (const classes of cellClasses(html, id)) {
+        if (!classes.includes('whitespace-normal')) continue;
+        expect(classes, `下限幅の無い折り返しセル: ${classes}`).toMatch(/(?:^|\s)min-w-\d/);
+      }
+    }
+  });
+
+  it('🔴 案件名の列は `docs/04` §10.3 の名称列の下限（10rem = `min-w-40`）を持つ', () => {
+    const html = render();
+    const projectCell = new RegExp(
+      `<td class="([^"]*)"[^>]*data-testid="proposal-request-project-${REQUESTED_ID}"`,
+    ).exec(html);
+    expect(projectCell?.[1]).toContain('min-w-40');
+    // 列ヘッダ側にも同じ下限を置く（`table-layout: auto` は `<th>` の幅も列幅に効く）。
+    expect(html).toMatch(/<th class="[^"]*min-w-40[^"]*"[^>]*>案件</);
+  });
+
+  it('🔴 日時列は折り返さないまま（`nowrap`）—— 全行の高さを上げる直し方を採っていない', () => {
+    const html = render();
+    const classes = cellClasses(html, REQUESTED_ID);
+    // 依頼日 / 最終更新 のセル（`whitespace-nowrap`）が現に在る。
+    expect(classes.filter((value) => value.includes('whitespace-nowrap')).length).toBeGreaterThan(0);
+  });
+
+  it('🔴 副カラムの並置は `2xl` から（1280px で主カラムを 1,008px にする）', () => {
+    const html = render();
+    expect(html).toContain('2xl:flex-row');
+    expect(html).not.toContain('lg:flex-row');
+  });
+
+  it('🔴 列が器に収まらないときの導線が語で示されている（`Table` の `overflowNote`）', () => {
+    const html = render();
+    expect(html).toContain('data-table-overflow-note');
+    expect(html).toContain(messages.overflowNote);
   });
 });

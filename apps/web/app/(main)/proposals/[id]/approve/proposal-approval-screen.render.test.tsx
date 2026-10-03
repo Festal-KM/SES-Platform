@@ -220,6 +220,55 @@ describe('S-021 ③: 不合格と警告は視覚的に別物で、警告だけ�
     expect(html).toContain('data-testid="proposal-approval-approve"');
   });
 
+  /**
+   * 🔴 ✅ 2026-10-03: **0 件のときに意味色を出さない**（デモ巡回で発見）。
+   *
+   * **何が起きていたか**: 全層合格の提案でも「指摘（不合格の原因…）」が**赤地・赤枠**、
+   * 「警告」が**琥珀地・琥珀枠**で常時描かれ、中身は「指摘はありません。」だった。
+   * 🔴 **承認者の目に最初に飛び込むのが赤**であり、`docs/04` §7.4 /（`UI_GUIDELINES.md` §3.3）の
+   *    「赤 = 失敗・エラー」「色は意味のあるときだけ使う」に反する。
+   * 🔴 `HANDOFF.md` §6-12（提案の状態の色が 4 通りに取り違えられていた）と**同じ種類の誤り**が
+   *    **空状態の側に残っていた**。同じことが戻らないよう、**0 件のときに意味色のクラスが
+   *    1 語も出ない**ことを固定する。
+   * 🔴 **`data-tone` は見ない** —— あれは「どちらのリストか」の識別であって描いた色ではなく、
+   *    上の ③ の検査（2 つが別物であること）が引き続きそれを見ている。
+   */
+  it('🔴 0 件の指摘・警告は意味色（danger / warning）のクラスを 1 語も持たない', () => {
+    const html = render();
+    const blockOf = (id: 'findings' | 'warnings'): string => {
+      const start = html.indexOf(`data-testid="proposal-approval-gate-${id}"`);
+      expect(start, id).toBeGreaterThan(-1);
+      // 直前の `<p ` / `<div ` からその要素の終わりまで。
+      const open = html.lastIndexOf('<', start);
+      return html.slice(open, html.indexOf('>', start) + 1);
+    };
+    for (const id of ['findings', 'warnings'] as const) {
+      const element = blockOf(id);
+      expect(element, `${id} に 0 件で意味色が出ている: ${element}`).not.toMatch(
+        /(?:bg|text|border)-(?:danger|warning)/,
+      );
+      expect(element).toContain('data-finding-count="0"');
+      // 0 件は「枠を持たない 1 行」である（器を持つと空の箱が注意を引く）。
+      expect(element.startsWith('<p')).toBe(true);
+    }
+    expect(html).toContain(messages.gateFindingsEmpty);
+    expect(html).toContain(messages.gateWarningsEmpty);
+  });
+
+  it('🔴 1 件でも在れば意味色が戻る（検出器が「常に色無し」になっていない対照）', () => {
+    const html = render({}, { gate: { ...baseRows.gate, warnings: [WARNING_ROW] } });
+    const start = html.indexOf('data-testid="proposal-approval-gate-warnings"');
+    const open = html.lastIndexOf('<', start);
+    const element = html.slice(open, html.indexOf('>', start) + 1);
+    expect(element).toContain('bg-warning-bg');
+    expect(element).toContain('border-warning-border');
+    expect(element).toContain('data-finding-count="1"');
+    // 🔴 同じ描画で、0 件のままの「指摘」側には赤が出ていない。
+    const findingsStart = html.indexOf('data-testid="proposal-approval-gate-findings"');
+    const findings = html.slice(html.lastIndexOf('<', findingsStart), html.indexOf('>', findingsStart) + 1);
+    expect(findings).not.toMatch(/(?:bg|text|border)-danger/);
+  });
+
   it('本文のハイライト: BLOCK と WARN で別の色（別の testid）になる', () => {
     const html = render(
       {},

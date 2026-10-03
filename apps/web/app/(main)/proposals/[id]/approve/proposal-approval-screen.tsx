@@ -334,28 +334,57 @@ function FindingList({
   // 🔴 不合格（赤）と警告（琥珀）を**同じ色・同じ形で並べない**（`docs/04` §5-3 /
   //    **`docs/05` §6.5 の `S-021` の行** / `docs/02` `ui-design` 申し送り 5。
   //    ⚠️ `docs/04` §S-021 ③ ではない —— 2026-10-03 のレビュー指摘）。
+  //
+  // ============================================================================
+  // 🔴 ✅ 2026-10-03: **0 件のときは意味色を出さない**
+  // ============================================================================
+  // **何が起きていたか（デモ環境の実測）**: 全層合格の提案でも
+  // 「指摘（不合格の原因…）」が**赤地・赤枠**、「警告」が**琥珀地・琥珀枠**で常時描かれ、
+  // 中身は「指摘はありません。」だった。🔴 **承認者の目に最初に飛び込むのが赤**であり、
+  // `UI_GUIDELINES.md` §3.3 /（`docs/04` §7.4）の「赤 = 失敗・エラー」「色は意味のあるときだけ」に
+  // 反する。`HANDOFF.md` §6-12（提案の状態の色が 4 通りに取り違えられていた）と**同じ種類の誤り**が
+  // **空状態の側に残っていた**ものである。
+  // 🔴 **`data-tone` は変えない** —— これは「どちらのリストか」の識別であって描いた色ではない。
+  //    2 つのリストが別物であることの検査（`*.render.test.tsx` の ③）はそのまま効く。
+  const empty = findings.length === 0;
   const frame = tone === 'danger' ? 'border-danger-border bg-danger-bg text-danger' : 'border-warning-border bg-warning-bg text-warning';
+  if (empty) {
+    // 🔴 0 件は**枠も地色も持たない 1 行の無彩文**にする（`docs/04` §10.4: 0 件は正常であり、
+    //    正常を注意色で描かない）。語は呼び出し側の `emptyLabel`（「指摘はありません。」）が
+    //    それ自体で何のリストかを言うので、見出しを重ねない。
+    return (
+      <p
+        className="mt-3 mb-0 text-body text-fg-muted"
+        data-testid={`proposal-approval-gate-${id}`}
+        data-tone={tone}
+        data-finding-count="0"
+      >
+        {emptyLabel}
+      </p>
+    );
+  }
   return (
-    <div className={cn('mt-3 rounded-md border px-3 py-2', frame)} data-testid={`proposal-approval-gate-${id}`} data-tone={tone}>
+    <div
+      className={cn('mt-3 rounded-md border px-3 py-2', frame)}
+      data-testid={`proposal-approval-gate-${id}`}
+      data-tone={tone}
+      data-finding-count={String(findings.length)}
+    >
       <h3 className="mb-1 text-body font-semibold">{title}</h3>
-      {findings.length === 0 ? (
-        <p className="m-0 text-body">{emptyLabel}</p>
-      ) : (
-        <ul className="m-0 list-disc pl-6 text-body">
-          {findings.map((finding) => (
-            <li key={finding.key} data-finding-kind={finding.kind}>
-              {severityLabel === null ? null : (
-                <Badge variant="outline" className="mr-2">
-                  {severityLabel}
-                </Badge>
-              )}
-              <span className="opacity-80">{finding.fieldLabel}: </span>
-              <span className="break-words">{finding.excerpt}</span>
-              {finding.locationNote === null ? null : <span className="ml-1 opacity-80">{finding.locationNote}</span>}
-            </li>
-          ))}
-        </ul>
-      )}
+      <ul className="m-0 list-disc pl-6 text-body">
+        {findings.map((finding) => (
+          <li key={finding.key} data-finding-kind={finding.kind}>
+            {severityLabel === null ? null : (
+              <Badge variant="outline" className="mr-2">
+                {severityLabel}
+              </Badge>
+            )}
+            <span className="opacity-80">{finding.fieldLabel}: </span>
+            <span className="break-words">{finding.excerpt}</span>
+            {finding.locationNote === null ? null : <span className="ml-1 opacity-80">{finding.locationNote}</span>}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

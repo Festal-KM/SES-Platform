@@ -53,6 +53,8 @@ export function projectListScreenMessages(params: {
     populationLabel,
     partnerScopeNotice: isPartner ? t('projects.list.partnerScopeNotice') : null,
     orderNote: t('projects.list.orderNote'),
+    // 🔴 ✅ 2026-10-03: 表が器に収まらない幅での 1 行（語は全画面で同じ 1 キー）。
+    overflowNote: t('ui.tableOverflowNote'),
     searchComingSoon: t('projects.list.searchComingSoon'),
     searchLegend: t('projects.list.search.legend'),
     searchQ: t('projects.list.search.q'),

@@ -25,6 +25,7 @@ export function sendFailureScreenMessages(): SendFailureScreenMessages {
     //    直接書くと「サーバは昇順のまま、文言だけ降順を名乗る」状態が書けてしまう
     //    （2026-10-03 のレビュー指摘 = 実害。現にそうなっていた）。
     orderNote: t(sendFailureOrderNoteKey()),
+    overflowNote: t('ui.tableOverflowNote'),
     // 🔴 母集団の 1 行には件数を入れない（件数は `summary.countLabel` が `note` の側で持つ）。
     population: t('sendFailures.population'),
     // 🔴 `docs/04` §S-022 空状態: 「空であることが正常」と分かる文言。

@@ -95,6 +95,8 @@ function kpiMessages(audience: 'HOST' | 'PARTNER'): KpiCardMessages {
   return {
     labels: resolved(Object.entries(keys).map(([kind, key]) => [kind, key] as const)),
     unit: t('home.kpi.unit'),
+    // 🔴 ✅ 2026-10-03: 4 指標がすべて 0 の日の 1 行（`lib/home/summary-view.ts` の 🔴）。
+    allZero: t('home.kpi.allZero'),
     delta: {
       increase: t('home.kpi.delta.increase'),
       decrease: t('home.kpi.delta.decrease'),

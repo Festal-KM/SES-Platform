@@ -118,14 +118,17 @@ describe('engineerListRow（1 行分の表示値）', () => {
       }),
     );
     expect(row.skills).toEqual(['Java', 'AWS']);
-    expect(row.moreSkills).toBe('+2');
+    // ✅ 2026-10-03: `moreSkills`（`+2` の整形済み文字列）→ **総数**（`skillCount`）。
+    //    🔴 `+N` の N は画面が器の幅から決める（`app/(main)/_shared/skill-badges.tsx`）。
+    expect(row.skillCount).toBe(4);
     expect(row.unitPrice).toContain('600,000');
     expect(row.availability).toBe(t('engineers.availability.WORKING'));
     expect(row.updatedOn).toBe('2026-09-05');
   });
 
-  it('🔴 超過が 0 件なら `+0` を描かない', () => {
-    expect(engineerListRow(view({ moreSkillCount: 0 })).moreSkills).toBeNull();
+  it('🔴 超過が 0 件なら総数は描いた件数と一致する（`+N` が出ない条件）', () => {
+    const row = engineerListRow(view({ moreSkillCount: 0 }));
+    expect(row.skillCount).toBe(row.skills.length);
   });
 
   it('稼働可能時期が未設定なら `—`', () => {
@@ -150,8 +153,8 @@ describe('engineerListRow（1 行分の表示値）', () => {
       'displayName',
       'id',
       'location',
-      'moreSkills',
       'ownership',
+      'skillCount',
       'skills',
       'unitPrice',
       'updatedOn',

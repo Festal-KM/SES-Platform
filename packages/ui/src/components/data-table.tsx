@@ -190,6 +190,11 @@ export type DataTableProps<Row> = {
   readonly className?: string;
   /** 器（`overflow-x-auto` の `<div>`）に足すクラス（`./table.tsx` の `containerClassName`）。 */
   readonly containerClassName?: string;
+  /**
+   * ✅ 2026-10-03: 表が器に収まらないことが設計上わかっている画面の 1 行（`./table.tsx` の
+   * `overflowNote`）。🔴 **渡す画面は `docs/04` §10.3 の「列を隠さない / 減らさない」表だけ**。
+   */
+  readonly overflowNote?: string;
 };
 
 /**
@@ -237,6 +242,7 @@ export function DataTable<Row>({
   testIdPrefix,
   className,
   containerClassName,
+  overflowNote,
 }: DataTableProps<Row>) {
   // ==========================================================================
   // 実行時の壁（🔴 型で縛れないものを、黙って描かせない）
@@ -279,6 +285,7 @@ export function DataTable<Row>({
       data-testid={`${testIdPrefix}table`}
       className={className}
       containerClassName={containerClassName}
+      overflowNote={overflowNote}
     >
       <TableHeader className={DATA_TABLE_HEADER_CLASSES}>
         <TableRow>

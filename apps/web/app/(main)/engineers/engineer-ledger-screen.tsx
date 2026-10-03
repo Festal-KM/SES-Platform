@@ -81,7 +81,6 @@
 //    props で受け取る** —— 組み立てはテストできる場所（`engineerListHref`）に置く。
 import Link from 'next/link';
 import {
-  Badge,
   Button,
   Card,
   CardContent,
@@ -102,6 +101,7 @@ import {
   FILTER_ACTIONS_CLASSES,
   FILTER_FORM_CLASSES,
 } from '../_shared/filter-form-classes';
+import { SkillBadges } from '../_shared/skill-badges';
 import type {
   EngineerActiveFilterView,
   EngineerListRowView,
@@ -240,24 +240,29 @@ function engineerColumns(
       // 🔴 余りはこの列に配分する（§7.1 の `2xl`「列幅のゆとりに使う」）。
       grow: true,
       whitespace: 'normal',
-      cell: (row) =>
-        row.skills.length === 0 ? (
-          messages.valueNone
-        ) : (
-          <span className="flex flex-wrap gap-1">
-            {row.skills.map((skill) => (
-              <Badge key={skill} variant="outline">
-                {skill}
-              </Badge>
-            ))}
-            {/* 🔴 超過は `+N`（docs/04 §S-005）。0 件のときは描かない。 */}
-            {row.moreSkills === null ? null : (
-              <span className="px-1 text-xs text-fg-muted" data-testid={`engineer-list-more-skills-${row.id}`}>
-                {row.moreSkills}
-              </span>
-            )}
-          </span>
-        ),
+      // ========================================================================
+      // 🔴 ✅ 2026-10-03: **1 行固定**（`S-016` と同じ 1 実装 = `_shared/skill-badges.tsx`）
+      // ========================================================================
+      // **何が起きていたか（デモ環境の実測。1280px）**: スキル列は約 150px しか無く、
+      // バッジ 3 件が 2 段に折り返して **10 行中 4 行だけ行の高さが 70px（他は 42px）** だった。
+      // 🔴 `docs/04` §10.3 の共通規約は **「行の高さは揃う（1 万件規模の走査性）」**と定めており、
+      //    §7.1 の「50 行を縦に走査する」はその前提である。
+      // 🔴 **`S-016` では `T-22-07` で既に 1 段固定に直っていた**（`HANDOFF.md` §6-1）。
+      //    同じ写像の消費者がここだけ取り残されていたので、**同じ 1 実装に合流させる**
+      //    （`HANDOFF.md` §6-14「1 箇所直したら、同じ写像の他の消費者を grep で全部洗う」）。
+      // 🔴 **`+N` の上限（上位 3 件）は変えていない**（`lib/engineers/list-rows.ts`）。
+      //    変わったのは「幅が足りないときに**折り返す**」が「**件数を減らして `+N` に載せる**」に
+      //    なったことだけで、**到達できなくなる情報は無い**（全件は `S-006` で読める）。
+      cell: (row) => (
+        <SkillBadges
+          skills={row.skills}
+          skillCount={row.skillCount}
+          valueNone={messages.valueNone}
+          // ⚠️ 凍結済みの testid（`U-22`）。合成後の値は移設前と同じである。
+          testIdPrefix="engineer-list-"
+          rowKey={row.id}
+        />
+      ),
     },
     {
       id: 'unitPrice',

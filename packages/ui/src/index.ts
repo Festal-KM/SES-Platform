@@ -256,12 +256,15 @@ export type { NameCellLinkProps, NameCellNameProps, NameCellProps } from './comp
 //    任意寸法（`w-90` / `max-w-180`）が書かれているのもこのファイルだけである（docs/05 §2.3.4）。
 //    🔴 60 画面の割り当ては `docs/04` §7.1 の表が唯一の出所であり、ここに写さない。
 export {
+  PAGE_BODY_ASIDE_ROW_CLASSES_BY_FROM,
   PAGE_BODY_ASIDE_WIDTH_CLASSES,
+  PAGE_BODY_ASIDE_WIDTH_CLASSES_BY_FROM,
+  PAGE_BODY_ASIDE_WIDTH_CLASSES_FROM_2XL,
   PAGE_BODY_GUTTER_CLASS,
   PAGE_BODY_PROSE_MAX_WIDTH_CLASS,
   PageBody,
 } from './components/page-body.js';
-export type { PageBodyProps, PageWidthClass } from './components/page-body.js';
+export type { PageBodyAsideFrom, PageBodyProps, PageWidthClass } from './components/page-body.js';
 // 🔴 T-22-04: カーソル方式のページ送り。🔴 オフセット・総件数・無限スクロールの prop を持たない。
 export { Pagination } from './components/pagination.js';
 export type { PaginationLinkProps, PaginationProps } from './components/pagination.js';
@@ -280,6 +283,7 @@ export type {
   SummaryStripProps,
 } from './components/summary-strip.js';
 export {
+  TABLE_OVERFLOW_INDICATOR_CLASS,
   Table,
   TableBody,
   TableCaption,

@@ -118,6 +118,8 @@ export type ProjectListScreenMessages = {
   /** 🔴 取引先にだけ出す「見える範囲の説明」（`F-006 AC-2` と同じ規律）。ホストは `null`。 */
   readonly partnerScopeNotice: string | null;
   readonly orderNote: string;
+  /** ✅ 2026-10-03: 表が器に収まらない幅での 1 行（`Table` の `overflowNote`）。 */
+  readonly overflowNote: string;
   readonly searchComingSoon: string;
   readonly searchLegend: string;
   readonly searchQ: string;
@@ -476,6 +478,11 @@ export function ProjectListScreen({
 
       <DataTable
         testIdPrefix="project-list-"
+        // 🔴 ✅ 2026-10-03: **9 列の表は 1280px の器に収まらない**（実測: 内容 1,313px）。
+        //    §7.1 は「列を削らないことが先」なので列は減らさず、**切れ目を示して語で伝える**。
+        //    器の側の印（`overflow-indicator-x`）は `Table` が常に持つ（CSS で、
+        //    スクロールできるときにだけ出る）。
+        overflowNote={messages.overflowNote}
         columns={projectColumns(messages, showVisibilityColumn)}
         rows={rows}
         rowKey={(row) => row.id}

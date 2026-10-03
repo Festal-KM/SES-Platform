@@ -44,6 +44,7 @@ const messages: ProjectListScreenMessages = {
   populationLabel: '自社案件 2 件',
   partnerScopeNotice: null,
   orderNote: '後任募集 → 募集中 → 充足 の順に、同じ状態のなかでは更新日の新しい順に表示しています。',
+  overflowNote: '右端が切れているときは、表を横にスクロールすると残りの列が見られます。',
   searchComingSoon: 'スキル要件・単価レンジ・リモート可否での絞り込みは、後続のリリースで行えます。',
   searchLegend: '検索条件',
   searchQ: 'フリーワード',

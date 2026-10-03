@@ -91,10 +91,9 @@
 //    `limits.ts`（外部 import を持たない純粋モジュール）だけである。
 // 🔴 検索は同期の `<form method="get">`（`S-005` と同じ。実行した検索がそのまま URL になる）。
 // 🔴 文言は props（`packages/i18n`）から受け取る。ここにベタ書きしない（`CLAUDE.md` §3.5）。
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { useState, type FormEvent, type KeyboardEvent } from 'react';
 import Link from 'next/link';
 import {
-  Badge,
   Button,
   Checkbox,
   cn,
@@ -120,7 +119,7 @@ import {
 } from '@ses/ui';
 import { FILTER_ACTIONS_CLASSES, FILTER_FORM_CLASSES } from '../../../_shared/filter-form-classes';
 import type { CandidateRowView } from '../../../../../lib/candidates/list-rows';
-import { fitSkillBadges } from '../../../../../lib/candidates/skill-fit';
+import { SkillBadges } from '../../../_shared/skill-badges';
 import type { EngineerActiveFilterView } from '../../../../../lib/engineers/list-rows';
 import type { EngineerFilterOption, EngineerListFilterValues } from '../../../engineers/engineer-ledger-screen';
 import type { ProjectDetailRow, ProjectRequirementRow } from '../../../../../lib/projects/detail';
@@ -290,111 +289,12 @@ const CANDIDATE_COLUMN_WIDTH = {
  *    `lg`（1024px）の器（992px = 62rem）に収まる。これ未満の器では表が器の内側で横にスクロールする。
  */
 const CANDIDATE_TABLE_CLASSES = 'lg:table-fixed lg:min-w-[61.5rem]';
-/** `+N` の幅の見込み（まだ描かれていないときの推定値。実測できたら実測値を使う）。 */
-const MORE_WIDTH_FALLBACK_PX = 40;
-
 /**
- * スキル列（1 行固定。ファイル冒頭「デスクトップの列幅配分」）。
- * 🔴 描く件数は **CSS が決めた描き方に JS が追随する**形で決める: 器の `flex-wrap` が `nowrap`
- *    （= 1 行固定。`T-22-07` で**どのブレークポイントでもそうなった**）のとき、器の幅とバッジの実測幅から
- *    `fitSkillBadges` で件数を決め、`+N` を隠した分を含めて描き直す。`wrap` のときは全件を描く
- *    （折り返しは CSS が決める）。**ブレークポイントを JS に重複して持たない**（この分岐はそのまま残す ——
- *    器の描き方が変わったら JS が追随する形を崩さない）。
- * 🔴 バッジの幅は**全件が描かれている間に 1 度だけ**測って保持する（隠した後は測れない。スキル名は行ごとに不変）。
- * 🔴 サーバ描画（初期 HTML）は上位 3 件 + `+N` のまま（測れないため）。マウント後に幅が足りなければ減る。
+ * 🔴 ✅ 2026-10-03: **スキル列（1 行固定）の実装は `app/(main)/_shared/skill-badges.tsx` へ出した。**
+ *    `S-005`（人材台帳）が同じ写像のもう 1 人の消費者でありながら折り返したままだった
+ *    （`HANDOFF.md` §6-1 / §6-14）。**2 つ目の実装を作らず、両方が同じ 1 実装を使う。**
+ *    `MORE_WIDTH_FALLBACK_PX` / `fitSkillBadges` の算術もそちらへ移した（**値は 1 つも変えていない**）。
  */
-function SkillBadges({
-  skills,
-  skillCount,
-  valueNone,
-  rowKey,
-}: {
-  readonly skills: readonly string[];
-  readonly skillCount: number;
-  readonly valueNone: string;
-  readonly rowKey: string;
-}) {
-  const boxRef = useRef<HTMLSpanElement>(null);
-  const widthsRef = useRef<{ readonly badges: readonly number[]; more: number | null } | null>(null);
-  const [shown, setShown] = useState(skills.length);
-
-  useEffect(() => {
-    const box = boxRef.current;
-    if (box === null || skills.length === 0 || typeof ResizeObserver === 'undefined') return undefined;
-    const measure = (): void => {
-      const style = getComputedStyle(box);
-      if (style.flexWrap !== 'nowrap') {
-        setShown(skills.length);
-        return;
-      }
-      const moreElement = box.querySelector<HTMLElement>('[data-skill-more]');
-      const moreWidth = moreElement === null ? 0 : moreElement.getBoundingClientRect().width;
-      if (widthsRef.current === null) {
-        const badges = Array.from(box.querySelectorAll<HTMLElement>('[data-skill-badge]')).map(
-          (element) => element.getBoundingClientRect().width,
-        );
-        // 隠したバッジ（幅 0）が混ざっているなら、この描画では測れない（次の描画で測る）。
-        if (badges.length !== skills.length || badges.some((width) => width === 0)) return;
-        widthsRef.current = { badges, more: moreWidth > 0 ? moreWidth : null };
-      } else if (moreWidth > 0 && widthsRef.current.more === null) {
-        widthsRef.current = { ...widthsRef.current, more: moreWidth };
-      }
-      const fit = fitSkillBadges({
-        available: box.clientWidth,
-        badgeWidths: widthsRef.current.badges,
-        moreWidth: widthsRef.current.more ?? MORE_WIDTH_FALLBACK_PX,
-        gap: Number.parseFloat(style.columnGap) || 0,
-        total: skillCount,
-      });
-      setShown(fit.shown);
-    };
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(box);
-    return () => observer.disconnect();
-    // 🔴 `shown` を依存に入れない —— 減らした後の描画で測り直すと隠したバッジの幅が 0 になる。
-  }, [skills.length, skillCount]);
-
-  if (skills.length === 0) return <>{valueNone}</>;
-  const hidden = Math.max(skillCount - shown, 0);
-  return (
-    // ========================================================================
-    // 🔴 スキル列は**どのブレークポイントでも 1 行固定**である（`flex-nowrap` + `overflow-hidden`）
-    // ========================================================================
-    // 🔴 `docs/04` §10.3 画面固有 `S-016`: **「スキルが 1 件だけの候補と 8 件の候補で行の高さが変わらない」。**
-    //    行の高さが候補によって変わると、それ自体が「その候補が何をどれだけ持っているか」という
-    //    **開示項目の増加**になる（同節の「経験内容は 0 行でも 100 行でも見え方が変わらない」と同じ規律）。
-    // ⚠️ **`T-22-07` で `lg:flex-nowrap lg:overflow-hidden` → `flex-nowrap overflow-hidden` にした。**
-    //    旧実装は `lg` 以上でだけ 1 行固定で、`sm`〜`lg`（タブレット）ではバッジが折り返して
-    //    **行の高さが件数で変わっていた**（条文は幅を限定していない）。`lg` 未満でも同じ不変条件にする。
-    // ⚠️ 溢れの扱いは変わらない: `SkillBadges` が器の幅を実測して描く件数を減らし（`fitSkillBadges`）、
-    //    隠した分は `+N` に載る。器の祖先（`Table` の `overflow-x-auto`）があるので、
-    //    E2E の `unreachable-overflow`（到達できない溢れ）にはならない。
-    <span ref={boxRef} className="flex flex-nowrap items-center gap-1 overflow-hidden">
-      {skills.map((skill, index) =>
-        // 🔴 3 件目以降はモバイルで隠す。`Badge` 自身の `inline-flex` と display を競わせないよう、外側の
-        //    `<span>` で包んで隠す（`cn` は単純な連結であり、後勝ちの解決をしない）。
-        //    `lg` 以上で幅に収まらない分（`index >= shown`）も同じ外側の `<span>` で隠す。
-        <span
-          key={skill}
-          className={index >= shown ? 'hidden' : index >= MOBILE_SKILL_LIMIT ? 'hidden sm:inline' : undefined}
-          data-skill-badge=""
-        >
-          <Badge variant="outline">{skill}</Badge>
-        </span>,
-      )}
-      {hidden === 0 ? null : (
-        <span
-          className="hidden shrink-0 px-1 text-xs text-fg-muted sm:inline"
-          data-skill-more=""
-          data-testid={`candidate-list-more-skills-${rowKey}`}
-        >
-          {`+${String(hidden)}`}
-        </span>
-      )}
-    </span>
-  );
-}
 
 /**
  * ページ送りのリンク（`@ses/ui` の `Pagination` に `next/link` を渡す）。
@@ -1098,7 +998,14 @@ export function CandidateScreen({
                       data-testid={`candidate-list-name-${row.key}`}
                     />
                     <TableCell padding="compact" whitespace="normal">
-                      <SkillBadges skills={row.skills} skillCount={row.skillCount} valueNone={messages.valueNone} rowKey={row.key} />
+                      <SkillBadges
+                        skills={row.skills}
+                        skillCount={row.skillCount}
+                        valueNone={messages.valueNone}
+                        testIdPrefix="candidate-list-"
+                        rowKey={row.key}
+                        mobileLimit={MOBILE_SKILL_LIMIT}
+                      />
                     </TableCell>
                     <TableCell padding="compact" className={TABLET_UP}>
                       {row.years}

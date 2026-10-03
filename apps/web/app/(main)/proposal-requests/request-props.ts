@@ -20,6 +20,8 @@ export function proposalRequestScreenMessages(params: {
     //    `#32` は総件数を返さず、取引先に件数を見せる必要も無い（`HANDOFF.md` §3.3）。
     population: isHost ? t('proposalRequests.population.host') : t('proposalRequests.population.partner'),
     orderNote: t('proposalRequests.orderNote'),
+    // 🔴 ✅ 2026-10-03: 表が器に収まらない幅での 1 行（語は全画面で同じ 1 キー）。
+    overflowNote: t('ui.tableOverflowNote'),
     filterLegend: t('proposalRequests.filter.legend'),
     filterState: t('proposalRequests.column.state'),
     filterApply: t('proposalRequests.filter.apply'),

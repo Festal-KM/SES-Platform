@@ -16,7 +16,9 @@ import {
   formatKpiDelta,
   HOST_SUMMARY_METRIC_ICONS,
   HOST_SUMMARY_METRIC_MESSAGE_KEYS,
+  isHomeAllMetricsZero,
   isHomeInitialEmpty,
+  isPrimaryMetric,
   kpiCardId,
   kpiCardItems,
   PARTNER_SUMMARY_METRIC_ICONS,
@@ -33,6 +35,7 @@ const MESSAGES: KpiCardMessages = {
     PROPOSALS_THIS_WEEK: 'L_PROPOSALS_THIS_WEEK',
   },
   unit: '件',
+  allZero: 'ALL_ZERO',
   delta: {
     increase: '↑ +',
     decrease: '↓ −',
@@ -196,5 +199,78 @@ describe('🔴 ⑤ アイコンは閉じた写像から来る（比喩アイコ�
   it('`kind` → testid の接尾辞は機械変換である（写像を 2 つ持たない）', () => {
     expect(kpiCardId('PROPOSALS_THIS_WEEK')).toBe('proposals-this-week');
     expect(kpiCardId('INTERVIEWS')).toBe('interviews');
+  });
+});
+
+// ============================================================================
+// 🔴 ✅ 2026-10-03: 強さの順序（`docs/04` §7.2 改訂 23）
+// ============================================================================
+describe('🔴 件数を 24px で描いてよい 1 枚（`S-004` のカード 1 だけ）', () => {
+  it('ホスト（`S-003`）はどの指標も `emphasis` を持たない', () => {
+    const block: SummaryHomeBlock = {
+      kind: 'SUMMARY',
+      audience: 'HOST',
+      initialEmpty: false,
+      items: HOST_KINDS.map((kind) => ({ kind, count: 1, href: null, delta: null })),
+    };
+    for (const item of kpiCardItems(block, MESSAGES)) {
+      expect(item.emphasis, item.id).toBeUndefined();
+    }
+  });
+
+  it('取引先（`S-004`）は `返答が必要な依頼` の 1 枚だけが `primary`', () => {
+    const block: SummaryHomeBlock = {
+      kind: 'SUMMARY',
+      audience: 'PARTNER',
+      initialEmpty: false,
+      items: (['REQUESTS_TO_ANSWER', 'AWAITING_REPLY', 'INTERVIEWS', 'PUBLISHED_THIS_WEEK'] as const).map(
+        (kind) => ({ kind, count: 0, href: null, delta: null }),
+      ),
+    };
+    const items = kpiCardItems(block, MESSAGES);
+    expect(items.filter((item) => item.emphasis === 'primary').map((item) => item.id)).toEqual([
+      'requests-to-answer',
+    ]);
+  });
+
+  it('🔴 判定は 1 箇所（`isPrimaryMetric`）であり、ホストでは同じ `kind` でも偽になる', () => {
+    expect(isPrimaryMetric('PARTNER', 'REQUESTS_TO_ANSWER')).toBe(true);
+    expect(isPrimaryMetric('HOST', 'REQUESTS_TO_ANSWER')).toBe(false);
+    expect(isPrimaryMetric('PARTNER', 'AWAITING_REPLY')).toBe(false);
+  });
+});
+
+describe('🔴 4 指標がすべて 0 の日の判定（0 が並ぶ KPI カードを出さない）', () => {
+  function block(counts: readonly number[]): SummaryHomeBlock {
+    return {
+      kind: 'SUMMARY',
+      audience: 'HOST',
+      initialEmpty: false,
+      items: HOST_KINDS.map((kind, index) => ({
+        kind,
+        count: counts[index] ?? 0,
+        href: null,
+        delta: null,
+      })),
+    };
+  }
+
+  it('すべて 0 なら true', () => {
+    expect(isHomeAllMetricsZero(block([0, 0, 0, 0]))).toBe(true);
+  });
+
+  it('1 つでも 0 でなければ false（「ほとんど 0」で消さない）', () => {
+    expect(isHomeAllMetricsZero(block([0, 0, 0, 1]))).toBe(false);
+    expect(isHomeAllMetricsZero(block([1, 0, 0, 0]))).toBe(false);
+  });
+
+  it('🔴 指標が 1 件も無い応答では false（「空の応答」と「全部 0」を混同しない）', () => {
+    expect(isHomeAllMetricsZero({ ...block([]), items: [] })).toBe(false);
+  });
+
+  it('🔴 `initialEmpty` とは別の判定である（まだ何も登録されていない ≠ 今日は 0 件）', () => {
+    const empty = { ...block([0, 0, 0, 0]), initialEmpty: true };
+    expect(isHomeInitialEmpty(empty)).toBe(true);
+    expect(isHomeInitialEmpty(block([0, 0, 0, 0]))).toBe(false);
   });
 });

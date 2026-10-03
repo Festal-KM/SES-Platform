@@ -213,7 +213,16 @@ function GateResultBlock({ gate, scope, messages }: { readonly gate: ApprovalGat
         </Alert>
       ) : null}
       {gate.lead === null ? null : <p className="mb-2 text-body text-fg">{gate.lead}</p>}
-      <h4 className="text-body font-semibold text-danger">{messages.gateFindingsTitle}</h4>
+      {/* 🔴 ✅ 2026-10-03: **0 件のときは見出しも無彩色にする**（`S-021` と同じ直し。
+          `docs/04` §10.4 / §7.4「色は意味のあるときだけ」。全層合格の提案を開いたときに
+          **赤い見出しが最初に目に入る**状態になっていた —— `HANDOFF.md` §6-12 と同じ種類の
+          誤り〔意味色の誤用〕が空状態の側に残っていた）。 */}
+      <h4
+        className={cn('text-body font-semibold', gate.findings.length === 0 ? 'text-fg-muted' : 'text-danger')}
+        data-finding-count={String(gate.findings.length)}
+      >
+        {messages.gateFindingsTitle}
+      </h4>
       {gate.findings.length === 0 ? (
         <p className="mb-2 text-body text-fg-muted">{messages.gateFindingsEmpty}</p>
       ) : (
@@ -228,7 +237,12 @@ function GateResultBlock({ gate, scope, messages }: { readonly gate: ApprovalGat
           ))}
         </ul>
       )}
-      <h4 className="text-body font-semibold text-warning">{messages.gateWarningsTitle}</h4>
+      <h4
+        className={cn('text-body font-semibold', gate.warnings.length === 0 ? 'text-fg-muted' : 'text-warning')}
+        data-warning-count={String(gate.warnings.length)}
+      >
+        {messages.gateWarningsTitle}
+      </h4>
       {gate.warnings.length === 0 ? (
         <p className="text-body text-fg-muted">{messages.gateWarningsEmpty}</p>
       ) : (

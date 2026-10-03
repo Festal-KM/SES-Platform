@@ -502,3 +502,24 @@ describe('🔴 ⑦ 折りたたみ（T-12-14 ③。docs/04 §10.3 の共通規�
     expect(ten).toMatch(/data-testid="proposal-detail-gate-history"[^>]*data-folded="false"/);
   });
 });
+
+// ============================================================================
+// 🔴 ✅ 2026-10-03: **0 件のゲート見出しに意味色を出さない**（`S-021` と同じ直し）
+// ============================================================================
+// 全層合格の提案を開いたときに「指摘（不合格の原因…）」が**赤**、「AI の警告」が**琥珀**の
+// 見出しとして常に描かれ、本文は「指摘はありません。」だった。`docs/04` §7.4 の
+// 「色は意味のあるときだけ」/ §10.4（0 件は正常）に反する。`HANDOFF.md` §6-12 と同じ種類の
+// 誤り（意味色の誤用）が**空状態の側**に残っていたものである。
+describe('🔴 ゲートの見出しは 0 件のとき無彩色（S-021 と同じ規律）', () => {
+  it('0 件では見出しに `text-danger` / `text-warning` が出ない', () => {
+    const html = render();
+    const headings = [...html.matchAll(/<h4 class="([^"]*)"[^>]*data-(?:finding|warning)-count="0"/g)].map(
+      (match) => match[1] ?? '',
+    );
+    expect(headings.length, '0 件の見出しが 1 つも見つからない（検出器の空振り）').toBeGreaterThan(0);
+    for (const classes of headings) {
+      expect(classes, `0 件で意味色が出ている: ${classes}`).not.toMatch(/text-(?:danger|warning)/);
+      expect(classes).toContain('text-fg-muted');
+    }
+  });
+});

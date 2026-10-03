@@ -63,8 +63,17 @@ export type EngineerListRowView = {
   readonly displayName: string;
   readonly ownership: string;
   readonly skills: readonly string[];
-  /** 🔴 超過件数の表示（`+2`）。0 件なら `null`（`+0` を描かない）。 */
-  readonly moreSkills: string | null;
+  /**
+   * ✅ 2026-10-03: 🔴 **開示されたスキルの総数**（`skills.length + moreSkillCount`）。
+   *
+   * ⚠️ **`moreSkills`（`+2` という整形済みの文字列）を置き換えた。** スキル列を `S-016` と
+   *    同じ **1 行固定**にしたことで、`+N` の N は**器の幅に応じて変わる**（`SkillBadges` が
+   *    描けた件数を実測して `総数 − 描いた件数` を出す）。整形済みの文字列からは逆算できず、
+   *    残すと **「サーバが決めた +N」と「器が決めた +N」の 2 つの真実**が並ぶ
+   *    （`HANDOFF.md` §6-14 の「同じ写像の消費者」が増えるのと同じ壊れ方）。
+   * 🔴 **上位 3 件という上限は変えていない**（`skills` の件数を決めるのは従来どおりサーバ側）。
+   */
+  readonly skillCount: number;
   readonly unitPrice: string;
   readonly availableFrom: string;
   /** 勤務地・リモート可否（`docs/04` §S-005 の 1 列）。 */
@@ -100,8 +109,8 @@ export function engineerListRow(view: OwnEngineerView): EngineerListRowView {
     ownership:
       view.ownership === 'HOST' ? t('engineers.ownership.host') : t('engineers.ownership.partner'),
     skills: view.primarySkills.map((skill) => skill.name),
-    // 🔴 `+N` は語ではなく記号 + 数値である（`formatUnitPriceRange` の `〜` と同じ扱い）。
-    moreSkills: view.moreSkillCount === 0 ? null : `+${view.moreSkillCount}`,
+    // 🔴 `+N` の N は**画面が器の幅から決める**（`_shared/skill-badges.tsx`）。ここは総数だけを渡す。
+    skillCount: view.primarySkills.length + view.moreSkillCount,
     unitPrice: formatUnitPriceRange(view.unitPriceMin, view.unitPriceMax),
     availableFrom: view.availableFrom ?? none(),
     location: formatLocation(view.prefecture, view.remoteMode),

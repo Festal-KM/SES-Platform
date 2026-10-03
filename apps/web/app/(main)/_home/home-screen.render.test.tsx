@@ -45,6 +45,7 @@ const MESSAGES: HomeScreenMessages = {
       PROPOSALS_THIS_WEEK: 'KPI_PROPOSALS_THIS_WEEK',
     },
     unit: '件',
+    allZero: 'KPI_ALL_ZERO',
     delta: {
       increase: '↑ +',
       decrease: '↓ −',
@@ -183,10 +184,30 @@ function summaryBlock(options: { readonly initialEmpty?: boolean } = {}): Summar
   };
 }
 
+/**
+ * 🔴 ✅ 2026-10-03: **4 指標がすべて 0**（取引先のデモで実際に起きていた状態）。
+ * ⚠️ `summaryBlock().items.map(...)` で作らない —— `SummaryHomeBlock` は所属で判別する
+ *    共用体であり、`map` の結果は**ホスト / 取引先が混ざった配列型**に広がって代入できない。
+ */
+function allZeroSummaryBlock(): SummaryHomeBlock {
+  return {
+    kind: 'SUMMARY',
+    audience: 'HOST',
+    initialEmpty: false,
+    items: [
+      { kind: 'ACTION_QUEUE', count: 0, href: null, delta: null },
+      { kind: 'AWAITING_REPLY', count: 0, href: '/proposals', delta: null },
+      { kind: 'INTERVIEWS', count: 0, href: null, delta: null },
+      { kind: 'PROPOSALS_THIS_WEEK', count: 0, href: '/proposals', delta: null },
+    ],
+  };
+}
+
 function render(
   options: {
     readonly rows?: readonly ActionQueueRow[];
     readonly initialEmpty?: boolean;
+    readonly allZero?: boolean;
     readonly tab?: 'actions' | 'projects' | 'engineers';
   } = {},
 ): string {
@@ -198,7 +219,10 @@ function render(
       userName: '山田太郎',
       dateLabel: '2026/10/02（金）',
       initialQueue: queueBlock(rows),
-      initialSummary: summaryBlock({ initialEmpty: options.initialEmpty ?? false }),
+      initialSummary:
+        options.allZero === true
+          ? allZeroSummaryBlock()
+          : summaryBlock({ initialEmpty: options.initialEmpty ?? false }),
       initialChangedSince: NOW,
       scope: 'mine',
       scopeHrefs: { mine: '/', all: '/?scope=all' },
@@ -368,5 +392,81 @@ describe('🔴 幅クラスは素通しされる（検査 (k) の 1 回）', () 
 
   it('🔴 初回空では副カラムを描かない（空の 360px を置かない）', () => {
     expect(render({ initialEmpty: true, rows: [] })).not.toContain('data-page-body-aside="true"');
+  });
+});
+
+// ============================================================================
+// 🔴 ✅ 2026-10-03: **強さの順序**（KPI 帯 < 要対応キュー）を機械で固定する
+// ============================================================================
+// **何が起きていたか（デモ巡回の実測）**:
+//   - KPI 帯が常に 240px 先に来て、375px では KPI のほうが背も高かった（256 > 198）
+//   - KPI の件数は **24px / 600** でホーム内最大の文字だった
+//   - KPI は白い器 4 枚（1920 で 1,144 × 133px。1 桁の数字 1 つに面積の 8 割が空白）
+//   - 取引先は 4 枚すべてが `0 件`
+//
+// 🔴 `docs/04` §7.2 改訂 23 の表は **「件数を、その画面で最も強調される要素より強くする
+//    （サイズ・太さ・色）」を「（認めていない）」側**に置き、🔴 **「`S-003` で最も強調するのは
+//    `要対応` タブのセクション 1 の行」**と名指ししている。現状はこれに反していた。
+// 🔴 **KPI カード 4 枚という形は人間の決定（[#86](https://github.com/Festal-KM/SES-Platform/issues/86)）
+//    なので無くさない。** 変えたのは**強さの順序だけ**である。
+describe('🔴 ⑧ 強さの順序: KPI の件数は要対応キューの見出しより強くない', () => {
+  it('🔴 `S-003`（ホスト）の KPI の件数は `--text-metric`（24px）を使わない', () => {
+    const html = render();
+    const values = [...html.matchAll(/<span class="(text-(?:metric|lg)[^"]*tabular-nums)"/g)].map(
+      (match) => match[1] ?? '',
+    );
+    expect(values.length, 'KPI の件数が 1 つも見つからない（検出器の空振り）').toBe(4);
+    for (const classes of values) {
+      expect(classes, `ホームの KPI が 24px で描かれている: ${classes}`).not.toContain('text-metric');
+      // 🔴 セクション見出し（`SectionHeader` の `text-lg`）と同じ段までに留める。
+      expect(classes).toContain('text-lg');
+    }
+  });
+
+  it('🔴 要対応キューは白い面（器）を持ち、その中に節見出しが入っている', () => {
+    const html = render();
+    const start = html.indexOf('data-testid="home-action-queue"');
+    expect(start).toBeGreaterThan(-1);
+    const queue = html.slice(start, start + 2000);
+    // 器（`Card` = `CARD_SURFACE_CLASSES`）が節見出しより先に在る。
+    const card = queue.indexOf('rounded-md border border-border bg-surface');
+    const header = queue.indexOf('data-testid="home-action-queue-header-root"');
+    expect(card, 'キューが器（白い面）を持っていない').toBeGreaterThan(-1);
+    expect(header).toBeGreaterThan(card);
+  });
+
+  it('🔴 KPI カードの器は要対応キューより小さい余白である（帯が画面を押し下げない）', () => {
+    const html = render();
+    const card = html.match(/<div[^>]*data-testid="home-host-kpi-action-queue"[^>]*>/)?.[0] ?? '';
+    expect(card).toContain('p-3');
+    expect(card).not.toContain('p-4');
+  });
+
+  it('🔴 同じ 1 件が KPI とキュー見出しに二重に出ない（KPI は `data-emphasis` で既定のまま）', () => {
+    const html = render();
+    // ホストのカードは 1 枚も `primary` にならない（24px を使ってよいのは `S-004` のカード 1 だけ）。
+    expect(html).not.toContain('data-emphasis="primary"');
+  });
+});
+
+describe('🔴 ⑨ 4 指標がすべて 0 の日は KPI カードを描かない（0 が並ぶカードを出さない）', () => {
+  it('カード 4 枚の代わりに 1 行を出し、器（`home-host-summary`）は残す', () => {
+    const html = render({ allZero: true });
+    expect(html).toContain('data-testid="home-host-summary"');
+    expect(html).toContain('data-metrics="all-zero"');
+    expect(html).toContain('data-testid="home-kpi-all-zero"');
+    expect(html).toContain('KPI_ALL_ZERO');
+    expect(html).not.toContain('data-testid="home-host-kpi-root"');
+    // 🔴 キュー・タブ・右レールは出し続ける（画面全体を空にしない。§4.1）。
+    expect(html).toContain('data-testid="home-action-queue"');
+    expect(html).toContain('data-testid="home-rail"');
+    expect(html).toContain('data-testid="synthetic-below-kpi"');
+  });
+
+  it('1 つでも 0 でなければカードが出る（対照: 常に隠れる実装になっていない）', () => {
+    const html = render();
+    expect(html).toContain('data-testid="home-host-kpi-root"');
+    expect(html).toContain('data-metrics="present"');
+    expect(html).not.toContain('data-testid="home-kpi-all-zero"');
   });
 });

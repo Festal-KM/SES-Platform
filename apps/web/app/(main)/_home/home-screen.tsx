@@ -52,7 +52,7 @@ import { isActionQueueRowUrgent } from '../../../lib/home/action-queue-urgency';
 import { formatJstHourMinute, jstDayIndex, jstHour } from '../../../lib/home/periods';
 // 🔴 型だけを読む（`./schemas.ts` は `zod` を持つ。クライアントバンドルに検証器を引き込まない）。
 import type { HomeScope, HomeTab } from '../../../lib/home/schemas';
-import { isHomeInitialEmpty, kpiCardItems } from '../../../lib/home/summary-view';
+import { isHomeAllMetricsZero, isHomeInitialEmpty, kpiCardItems } from '../../../lib/home/summary-view';
 import type {
   ActionQueueHomeBlock,
   ActionQueueRow,
@@ -331,6 +331,11 @@ export function HomeScreen({
   const nowMs = Date.parse(state.changedSince);
   const queueCount = state.rows.length;
   const initialEmpty = isHomeInitialEmpty(state.summary);
+  // 🔴 ✅ 2026-10-03: 4 指標がすべて 0 の日は**カードを描かず 1 行に倒す**
+  //    （`lib/home/summary-view.ts` の `isHomeAllMetricsZero` の 🔴。§7.2「0 が並ぶ KPI カードを
+  //    出す」は認められていない）。**器（`home-*-summary`）は残す** —— 残量の 1 行（`belowKpi`）が
+  //    この器の中に在り、E2E も器の実在を見ている。
+  const allMetricsZero = isHomeAllMetricsZero(state.summary);
 
   /**
    * 🔴 タブの選択を URL に載せる（サーバへ往復しない。上の ③）。
@@ -403,11 +408,21 @@ export function HomeScreen({
       ) : (
         <>
           {/* 🔴 KPI カード 4 枚（§7.2 改訂 23 ①）。**`md` 未満は 2×2 に畳む**（部品が持つ）。 */}
-          <div className="mb-4" data-testid={audience === 'HOST' ? 'home-host-summary' : 'home-partner-summary'}>
-            <KpiCardRow
-              items={kpiCardItems(state.summary, messages.kpi)}
-              testIdPrefix={audience === 'HOST' ? 'home-host-kpi-' : 'home-partner-kpi-'}
-            />
+          <div
+            className="mb-4"
+            data-testid={audience === 'HOST' ? 'home-host-summary' : 'home-partner-summary'}
+            data-metrics={allMetricsZero ? 'all-zero' : 'present'}
+          >
+            {allMetricsZero ? (
+              <p className="m-0 text-body text-fg-muted" data-testid="home-kpi-all-zero">
+                {messages.kpi.allZero}
+              </p>
+            ) : (
+              <KpiCardRow
+                items={kpiCardItems(state.summary, messages.kpi)}
+                testIdPrefix={audience === 'HOST' ? 'home-host-kpi-' : 'home-partner-kpi-'}
+              />
+            )}
             {belowKpi}
           </div>
           {/* 🔴 ✅ 0 はタブより上（§4.1）—— どのタブに居ても見えていなければならない。 */}

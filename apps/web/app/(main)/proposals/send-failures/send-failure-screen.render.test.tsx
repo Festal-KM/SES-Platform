@@ -96,6 +96,7 @@ const messages: SendFailureScreenMessages = {
   //    食い違いを検出できる場所がどこにも無くなる。** 並び順の説明は `sendFailureOrderNoteKey()`
   //    （= サーバの並びの定数から導出）を通して引く。
   orderNote: t(sendFailureOrderNoteKey()),
+  overflowNote: t('ui.tableOverflowNote'),
   population: t('sendFailures.population'),
   emptyTitle: '送信に失敗した提案はありません。',
   emptyLead: 'この一覧が空であることが正常な状態です。',
@@ -259,5 +260,42 @@ describe('S-022 詳細パネル: 遷移リンク（SendFailureDetailLinks）', (
       }),
     );
     expect(html).not.toContain('data-testid="send-failure-detail-open-sending-domain"');
+  });
+});
+
+// ============================================================================
+// 🔴 ✅ 2026-10-03: **1 文字ずつ縦に折り返す事故の予防**（`S-017` と同じ形の表）
+// ============================================================================
+// `S-017`（提案依頼一覧）では実際に起きていた —— 幅クラス B（右パネル 400px）× `table-layout: auto`
+// × 折り返さない日時列（`最終試行`）の組み合わせで、**折り返してよい列だけが min-content（日本語は
+// 1 文字）まで潰れる**。🔴 **デモ環境では本画面が 0 件（= 正常）なので、画面を見ても再現しない。**
+// `HANDOFF.md` §6-14 の「1 箇所直したら同じ写像の他の消費者を grep で全部洗う」に従って、
+// **行が入る前に塞ぐ**（送信失敗は起きたときに初めて開く画面であり、そこで崩れては困る）。
+describe('🔴 テキスト列の下限幅（1 文字折り返しの予防。S-017 と同じ検査）', () => {
+  function cellClasses(html: string, rowId: string): readonly string[] {
+    const start = html.indexOf(`data-testid="send-failure-row-${rowId}"`);
+    expect(start, rowId).toBeGreaterThan(-1);
+    const rowHtml = html.slice(start, html.indexOf('</tr>', start));
+    return rowHtml
+      .split('<td')
+      .slice(1)
+      .map((cell) => /class="([^"]*)"/.exec(cell)?.[1] ?? '');
+  }
+
+  it('🔴 `whitespace-normal` のセルは必ず `min-w-*` を持つ', () => {
+    const html = render();
+    for (const id of [FAILED_ID, UNKNOWN_ID]) {
+      for (const classes of cellClasses(html, id)) {
+        if (!classes.includes('whitespace-normal')) continue;
+        expect(classes, `下限幅の無い折り返しセル: ${classes}`).toMatch(/(?:^|\s)min-w-\d/);
+      }
+    }
+  });
+
+  it('🔴 副カラムの並置は `2xl` から / 列の切れ目が語で示されている', () => {
+    const html = render();
+    expect(html).toContain('2xl:flex-row');
+    expect(html).not.toContain('lg:flex-row');
+    expect(html).toContain('data-table-overflow-note');
   });
 });

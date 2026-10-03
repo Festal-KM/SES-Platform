@@ -424,3 +424,38 @@
     color: var(--color-fg);
   }
 }
+
+/* ===========================================================================
+ * 🔴 ✅ 2026-10-03: 表の「横に続きがある」ことを示す印（`overflow-indicator-x`）
+ * ===========================================================================
+ * **何を直したか（デモ環境の実測）**: `S-010`（案件一覧）は 1280px で器 582px / 内容 1,313px =
+ * **可視率 44%** だった。🔴 **影もフェードもスクロールバーも出ないため「続きがあること自体が
+ * 画面から読めない」** —— 「650,000〜750,000 円」の「円」が切れているのを、利用者は
+ * **値の欠落**として読む。§7.1 は「列を削らないことが先」と定めており、**列を減らして収める
+ * 直し方は採れない**（`docs/04` §7.1 改訂 25 / 26 の 🔴）。したがって**切れ目を示す**。
+ *
+ * 🔴 **スクロールできるときにだけ出る。** 2 層ずつの背景のうち
+ *   - 覆い（`--color-surface` のベタ 2 枚）は `background-attachment: local` = **内容と一緒に動く**
+ *   - 印（グラデーション 2 枚）は `background-attachment: scroll` = **器に固定**
+ * 左端まで戻っているときは左の覆いが左の印に重なって消し、右端まで送ると右が消える。
+ * **JS を 1 行も使わない**（`Table` はサーバコンポーネントのままでなければならない。
+ * `packages/ui/src/components/table.tsx` の 🔴）。
+ *
+ * 🔴 **これは §7.9 の「影は 2 語だけ」の影ではない。** あちらは**要素の階層**（浮き）の規約で、
+ *    ここで描いているのは**内容の切れ目**である。語に `shadow` を含めないのは、
+ *    `tests/static/ui-shadow-and-size.test.ts` の (l) と意味の上でも混ざらないようにするため。
+ * 🔴 **色は semantic トークンだけ**（`--color-surface` / `--color-border-strong`）。
+ *    リテラルの色・`rgba()` を書かない（このファイルの他のブロックと同じ規律）。
+ * 🔴 **縦（`y`）の版を作らない。** 一覧は縦に送るのが常態であり、上下に印を出すと常時点灯する。
+ * =========================================================================== */
+@utility overflow-indicator-x {
+  background-image:
+    linear-gradient(to right, var(--color-surface), var(--color-surface)),
+    linear-gradient(to left, var(--color-surface), var(--color-surface)),
+    linear-gradient(to right, var(--color-border-strong), transparent),
+    linear-gradient(to left, var(--color-border-strong), transparent);
+  background-position: left center, right center, left center, right center;
+  background-repeat: no-repeat;
+  background-size: 1.5rem 100%, 1.5rem 100%, 1.5rem 100%, 1.5rem 100%;
+  background-attachment: local, local, scroll, scroll;
+}

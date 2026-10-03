@@ -35,7 +35,7 @@ function row(overrides: Partial<EngineerListRowView> = {}): EngineerListRowView 
     displayName: '架空 太郎',
     ownership: '自社',
     skills: ['Java', 'AWS', 'React'],
-    moreSkills: '+2',
+    skillCount: 5,
     unitPrice: '600,000〜750,000 円',
     availableFrom: '2026-11-01',
     location: '東京都・一部リモート可',
@@ -167,13 +167,51 @@ describe('一覧の骨格（docs/04 §S-005）', () => {
 
   it('🔴 超過スキルは `+N`。0 件なら描かない', () => {
     expect(render()).toContain('+2');
-    expect(render({ rows: [row({ moreSkills: null })] })).not.toContain(
+    expect(render({ rows: [row({ skillCount: 3 })] })).not.toContain(
       `engineer-list-more-skills-${ENGINEER_A}`,
     );
   });
 
   it('スキルが 1 件も無い行は `—` を出す（空欄にしない）', () => {
-    expect(render({ rows: [row({ skills: [], moreSkills: null })] })).toContain('—');
+    expect(render({ rows: [row({ skills: [], skillCount: 0 })] })).toContain('—');
+  });
+
+  /**
+   * 🔴 ✅ 2026-10-03: **行の高さがスキルの件数で変わらない**（`S-016` に既に在る検査の作法を流用）。
+   *
+   * **何が起きていたか（デモ環境の実測。1280px）**: スキル列は約 150px しか無く、バッジ 3 件が
+   * 2 段に折り返して **10 行中 4 行だけ行の高さが 70px（他は 42px）** だった。
+   * 🔴 `docs/04` §10.3 の共通規約は「行の高さは揃う（1 万件規模の走査性）」であり、§7.1 の
+   *    「50 行を縦に走査する」はその前提である。
+   * 🔴 **`S-016` では `T-22-07` で既に直っていた**（`HANDOFF.md` §6-1）。同じ写像の消費者が
+   *    ここだけ取り残されていたので、**同じ 1 実装（`_shared/skill-badges.tsx`）へ合流させた**。
+   *
+   * 🔴 `renderToStaticMarkup` は高さを測れない。固定するのは**高さが件数に依存しないための
+   *    構造的な条件**である（`S-016` の同名の検査と同じ 3 点）:
+   *     ① スキルのセルが 1 行固定の器（`flex-nowrap` + `overflow-hidden`）を持つ
+   *     ② 器のクラスが行によって変わらない
+   *     ③ 行の `<td>` の数・クラスが行によって変わらない
+   */
+  it('🔴 スキル 1 件の行と 5 件の行で、行の器（セル数・クラス・スキル列の 1 行固定）が同一である', () => {
+    const one = row({ id: ENGINEER_A, skills: ['Go'], skillCount: 1 });
+    const many = row({ id: ENGINEER_B, skills: ['Java', 'AWS', 'React'], skillCount: 5 });
+    const html = render({ rows: [one, many] });
+    const rowHtml = (id: string): string => {
+      const start = html.indexOf(`data-testid="engineer-list-row-${id}"`);
+      expect(start, id).toBeGreaterThan(-1);
+      return html.slice(start, html.indexOf('</tr>', start));
+    };
+    const cellsOf = (id: string): readonly string[] => rowHtml(id).split('<td').slice(1);
+    const classOf = (cell: string): string => /class="([^"]*)"/.exec(cell)?.[1] ?? '';
+    // ③ セルの数と各セルの class が同一（= 幅・間引き・折り返しの指定が行で変わらない）。
+    expect(cellsOf(ENGINEER_A)).toHaveLength(cellsOf(ENGINEER_B).length);
+    expect(cellsOf(ENGINEER_A).map(classOf)).toEqual(cellsOf(ENGINEER_B).map(classOf));
+    // ① ② スキル列の器は 1 行固定で、両方の行で同じクラス文字列である。
+    const box = 'class="flex flex-nowrap items-center gap-1 overflow-hidden"';
+    expect(rowHtml(ENGINEER_A)).toContain(box);
+    expect(rowHtml(ENGINEER_B)).toContain(box);
+    // ② 折り返しを許す語（`flex-wrap`）がスキルの器に無い（行が 2 行になる唯一の経路を閉じる）。
+    expect(rowHtml(ENGINEER_B)).not.toContain('flex-wrap items-center');
   });
 
   it('🔴 スコア・順位・重みに相当する表示項目を持たない（`F-009 AC-2`）', () => {
