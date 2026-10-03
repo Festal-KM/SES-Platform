@@ -145,6 +145,7 @@ export function QuotaOverrideForm({ messages, metricLabels, metrics, tenant, tod
         </p>
       ) : (
         <form
+          method="post"
           onSubmit={(event) => void submit(event)}
           className={cn('flex flex-col gap-4', PAGE_BODY_PROSE_MAX_WIDTH_CLASS)}
         >

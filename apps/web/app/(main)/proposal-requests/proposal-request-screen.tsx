@@ -65,7 +65,9 @@ import {
   CardContent,
   EmptyState,
   Field,
-  PAGE_BODY_ASIDE_WIDTH_CLASSES_FROM_2XL,
+  PAGE_BODY_ASIDE_WIDTH_CLASSES_WRAP,
+  PAGE_BODY_SPLIT_MAIN_CLASSES_WRAP,
+  PAGE_BODY_SPLIT_ROW_CLASSES_WRAP,
   Pagination,
   SECONDARY_LINK_CLASSES,
   Select,
@@ -361,13 +363,15 @@ export function ProposalRequestScreen({
       />
 
       {/* 🔴 副カラムの寸法は `@ses/ui` から取る（画面が寸法を決めない。ファイル冒頭の 🔴）。
-          `lg` 未満では表の下に落ちる（遮断しない。§13.3）。 */}
-      {/* 🔴 ✅ 2026-10-03: **副カラムの並置は `2xl` から**（上の `PROJECT_COLUMN_MIN_WIDTH` の 🔴）。
-          `2xl` 未満では表の下に積む（遮断しない。§13.3）。`PageBody` の `asideFrom='2xl'` と
-          同じ境界であり、寸法は `@ses/ui` から取る（画面が寸法を決めない）。 */}
-      <div className="mt-4 flex flex-col gap-6 2xl:flex-row">
+          並置に入らないときは表の下に落ちる（遮断しない。§13.3）。 */}
+      {/* 🔴 ✅ 2026-10-03（**同日中に差し替え**）: **副カラムの並置は「主カラムが下限（1,320px）を
+          保てるとき」だけ**（`@ses/ui` の `PageBodyAsideFrom` の 🔴）。旧実装の `2xl:flex-row` は
+          **1536px で主カラムを 1,238 → 758px に半減させ、1280px より狭くしていた**（崖を 1280 から
+          1536 へ移しただけだった）。判定は `flex-wrap` が主カラムの `basis` で行うので、
+          **画面幅の境界を 1 つも使わない**。寸法とクラスは `@ses/ui` から取る。 */}
+      <div className={cn('mt-4 gap-6', PAGE_BODY_SPLIT_ROW_CLASSES_WRAP)}>
         {/* セクション 2: テーブル */}
-        <div className="min-w-0 flex-1">
+        <div className={PAGE_BODY_SPLIT_MAIN_CLASSES_WRAP}>
           {rows.length === 0 ? (
             // ⚠️ 器の `data-testid` は凍結済みの `proposal-request-empty` である（`U-22`）。
             <div data-testid="proposal-request-empty">
@@ -473,7 +477,7 @@ export function ProposalRequestScreen({
         </div>
 
         {/* セクション 3: 選択した依頼の詳細パネル（lg 以上は右、未満は一覧の下。取り下げはここ） */}
-        <div className={PAGE_BODY_ASIDE_WIDTH_CLASSES_FROM_2XL}>
+        <div className={PAGE_BODY_ASIDE_WIDTH_CLASSES_WRAP}>
           <Card data-testid="proposal-request-detail-panel">
             <h2 className="border-b border-border px-4 py-3 text-lg font-semibold text-fg">{messages.detailTitle}</h2>
             <CardContent className="pt-4">

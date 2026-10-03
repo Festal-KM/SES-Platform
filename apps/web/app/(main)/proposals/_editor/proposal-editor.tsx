@@ -511,6 +511,7 @@ export function ProposalEditor(props: ProposalEditorProps) {
 
   return (
     <form
+      method="post"
       // 🔴 **副カラム（添付 / ゲート結果 / 送信元ドメイン / 操作）の寸法は `@ses/ui` の
       //    `PAGE_BODY_ASIDE_WIDTH_CLASSES` から取る**（`lg` 360 → `xl` 400 → `2xl` 480px 固定。
       //    `docs/04` §7.1 / §S-020「デスクトップ = 左に条件・本文、右に添付・ゲート結果」）。

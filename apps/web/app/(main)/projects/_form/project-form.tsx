@@ -393,6 +393,7 @@ export function ProjectForm({
 
   return (
     <form
+      method="post"
       onSubmit={onSubmit}
       noValidate
       data-testid="project-form"

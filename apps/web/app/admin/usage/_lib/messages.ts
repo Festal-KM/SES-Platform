@@ -96,7 +96,10 @@ export function adminUsageMessages(): AdminUsageViewMessages {
       na: t('admin.usage.ratio.na'),
     },
     byRole: t('admin.usage.byRole'),
+    aiUnitsSummary: t('admin.usage.aiUnits.summary'),
+    aiUnitsPeak: t('admin.usage.aiUnits.peak'),
     roles: Object.fromEntries(AI_ROLES.map((role) => [role, role])) as Record<(typeof AI_ROLES)[number], string>,
+    rowSameName: t('admin.usage.row.sameName'),
     rowTenantDetail: t('admin.usage.row.tenantDetail'),
     rowOpenQuota: t('admin.usage.row.openQuota'),
     form: {

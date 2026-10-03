@@ -657,6 +657,33 @@ describe('🔴 SP-22 段④: モバイルの読む順序が DOM の順序で保�
     );
   });
 
+  /**
+   * 🔴 ✅ 2026-10-03（再監査）: **アクションのカードが他のカードを覆わない。**
+   *
+   * 旧実装は `sticky bottom-0 z-10 lg:static` で、375px では `scrollY=900` のとき**添付のカード
+   * 全体 130px**、`scrollY=1100` のとき**送信元ドメインのカード全体 94px** が覆われ、さらに
+   * **下部タブバーが承認カードの下 55px を隠していた**（`sticky bottom-0` はビューポート下端に
+   * 貼り付くため、本体の `pb-24` の外側に出る）。
+   *
+   * 🔴 **添付の有無と送信元ドメインの状態は承認の判断材料である**（`CLAUDE.md` §13.3）。
+   * 🔴 「末尾まで読むと有効になる」仕掛け（`reachedEnd`）は**この検査の対象外で、別の `it` が
+   *    固定している** —— こちらが壊れていないことは上の順序の検査と `disabled` の検査が見る。
+   */
+  it('🔴 アクションのカードが `sticky` で判断材料を覆わない（§13.3）', () => {
+    const html = render();
+    const index = html.indexOf('data-testid="proposal-approval-actions"');
+    expect(index).toBeGreaterThanOrEqual(0);
+    // そのカードの開きタグ（`<div ... data-testid="proposal-approval-actions" ...>`）だけを見る。
+    const openingTag = html.slice(html.lastIndexOf('<', index), html.indexOf('>', index) + 1);
+    expect(openingTag).not.toContain('sticky');
+    expect(openingTag).not.toContain('bottom-0');
+    // 🔴 対照: 上部の判断ヘッダは sticky のままでよい（**判断材料を見せ続ける**側であり、
+    //    `max-h-[45vh]` でプレビューを読む領域を残している）。
+    const headerIndex = html.indexOf('data-testid="proposal-approval-header"');
+    const headerTag = html.slice(html.lastIndexOf('<', headerIndex), html.indexOf('>', headerIndex) + 1);
+    expect(headerTag).toContain('sticky top-0');
+  });
+
   it('🔴 どのカラムも `display:none` で畳まれていない（幅で遮断しない。§13.3）', () => {
     const html = render();
     // 副カラムの寸法は `PAGE_BODY_ASIDE_WIDTH_CLASSES`（`w-full lg:w-90 …`）であり、

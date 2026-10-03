@@ -363,6 +363,10 @@ function ActionQueueRowItem({
   const time = actionQueueRowTimeLabel(row, nowMs, messages);
   const urgent = isActionQueueRowUrgent(row, nowMs);
   const overdue = row.deadline !== null && Date.parse(row.deadline) < nowMs;
+  // 🔴 種別と状態が同じ語になる行がある（下の 🔴）。語の一致だけで判定し、状態の集合を列挙しない
+  //    —— 列挙すると `ActionQueueKind` を足した人がここを直し忘れ、また 2 回出る。
+  const kindLabel = messages.kinds[row.kind];
+  const stateLabel = rowStateLabel(row, messages);
   return (
     <li
       className={`flex flex-col gap-1 py-2 pl-2 text-cell ${
@@ -434,24 +438,35 @@ function ActionQueueRowItem({
         >
           {row.deadline === null ? messages.valueNone : formatDateTimeJst(row.deadline)}
         </span>
-        {/* 🔴 状態は `StatusBadge`（`エンティティ + 状態` の組）。**画面側で色を決めない**（§5-13 / §7.4）。 */}
-        <span className={COLUMN_XL_CLASSES}>
-          {row.stateBadge.entity === 'PROPOSAL' ? (
-            <StatusBadge
-              entity="proposal"
-              state={row.stateBadge.state}
-              label={rowStateLabel(row, messages)}
-              data-testid={`home-action-queue-state-${row.targetId}`}
-            />
-          ) : (
-            <StatusBadge
-              entity="proposalRequest"
-              state={row.stateBadge.state}
-              label={rowStateLabel(row, messages)}
-              data-testid={`home-action-queue-state-${row.targetId}`}
-            />
-          )}
-        </span>
+        {/* 🔴 状態は `StatusBadge`（`エンティティ + 状態` の組）。**画面側で色を決めない**（§5-13 / §7.4）。
+            🔴 ✅ 2026-10-03（再監査）: **種別バッジと同じ語になる行では描かない。**
+            実測: `APPROVAL_PENDING` の行は「承認待ち」が種別と状態の 2 箇所に、取引先の
+            `GATE_FAILED` の行は「差し戻し（検査で不合格）」が 2 箇所に出ていた。
+            🔴 **情報は 1 つも失われない** —— 種別と状態が同じ語になるのは「その状態であること
+            そのものが行がキューに載った理由」だからであり（`GATE_FAILED` / `APPROVAL_PENDING` /
+            `SEND_FAILED`）、色も `KIND_VARIANTS` と `STATUS_BADGE_APPEARANCES` で一致している
+            （`SEND_FAILED` = 赤 / `GATE_FAILED` = 橙 / `APPROVAL_PENDING` = 藍）。
+            🔴 **語が違う行では必ず両方出す**（`SEND_HELD` の行の `APPROVED` / 提案依頼の
+            `REQUESTED` など。種別 = 何をすべきか / 状態 = いまどこか、で意味が別）。 */}
+        {stateLabel === kindLabel ? null : (
+          <span className={COLUMN_XL_CLASSES}>
+            {row.stateBadge.entity === 'PROPOSAL' ? (
+              <StatusBadge
+                entity="proposal"
+                state={row.stateBadge.state}
+                label={stateLabel}
+                data-testid={`home-action-queue-state-${row.targetId}`}
+              />
+            ) : (
+              <StatusBadge
+                entity="proposalRequest"
+                state={row.stateBadge.state}
+                label={stateLabel}
+                data-testid={`home-action-queue-state-${row.targetId}`}
+              />
+            )}
+          </span>
+        )}
         <span className={COLUMN_XL_CLASSES}>
           <ActionCell row={row} availability={availability} messages={messages} />
         </span>

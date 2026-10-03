@@ -383,7 +383,7 @@ export function ProposalInterviewScreen({
               </div>
             </Alert>
           ) : active !== null ? (
-            <form onSubmit={submitForm} className="rounded-md border border-border bg-bg-subtle p-4" data-testid="proposal-interview-form" data-operation={active.kind}>
+            <form method="post" onSubmit={submitForm} className="rounded-md border border-border bg-bg-subtle p-4" data-testid="proposal-interview-form" data-operation={active.kind}>
               <p className="mb-3 text-lg font-semibold text-fg">{active.label}</p>
               {active.inputs.scheduledAt ? (
                 <Field label={messages.inputScheduledAt} className="mb-3">

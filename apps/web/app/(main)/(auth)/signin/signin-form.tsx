@@ -13,6 +13,13 @@
 //    **モバイルで機能を省略しない**（コード入力は数字キーボードを呼ぶ）。
 //    設定ウィザード（`OWNER` / `ADMIN` が未設定の場合）もここに含める。
 //
+// 🔴 `<form method="post">` を必ず付ける（`tests/static/form-method-required.test.ts` が強制する）。
+//    `method` も `action` も無い `<form>` は、JS が水和する前に送信するとブラウザの既定の **GET** で
+//    `/signin?email=…&password=<平文>` を送り、アドレスバー・履歴・アクセスログ・以後の `Referer`
+//    に資格情報が残る（`CLAUDE.md` §3.5）。⚠️ `method="post"` は「JS が死んでいても動く」ことを
+//    意味しない（POST 先が無いので 405 になる）。**それでよい** —— ここでの目的は
+//    「平文が URL に残らないこと」の一点であり、JS 無しで動かすことは別の課題である。
+//
 // 🔴 T-21-04: 手書き CSS（`.ses-field` / `.ses-submit` / `.ses-error` / `.ses-secondary-link`）を
 //    `@ses/ui` と Tailwind へ移した。**testid・`name`・`aria-*`・要素の並びは 1 つも変えていない**
 //    （`Field` は現況と同じ `<label><span>…</span><input /></label>` の形を描く）。
@@ -170,7 +177,7 @@ export function SignInForm({
 
   if (stage === 'twoFactor') {
     return (
-      <form onSubmit={onSubmitCode} noValidate data-testid="signin-2fa-form">
+      <form method="post" onSubmit={onSubmitCode} noValidate data-testid="signin-2fa-form">
         <h2 className="mb-3 text-lg font-bold text-fg">{messages.twoFactorTitle}</h2>
         {errorBlock}
         {enrollment === null ? (
@@ -238,7 +245,7 @@ export function SignInForm({
   }
 
   return (
-    <form onSubmit={onSubmitCredentials} noValidate data-testid="signin-form">
+    <form method="post" onSubmit={onSubmitCredentials} noValidate data-testid="signin-form">
       {errorBlock}
       <Field className="mb-4" label={messages.emailLabel}>
         <Input

@@ -397,7 +397,7 @@ export function SkillDictionaryScreen({
         <p className="mb-3 text-body text-fg-muted" data-testid="skill-dictionary-read-only-note">
           {messages.dictionaryReadOnlyNote}
         </p>
-        <form onSubmit={onSearch} noValidate className="mb-3" data-testid="skill-dictionary-search-form">
+        <form method="post" onSubmit={onSearch} noValidate className="mb-3" data-testid="skill-dictionary-search-form">
           <Field className="mb-2" label={messages.dictionarySearchLabel}>
             <Input
               type="search"

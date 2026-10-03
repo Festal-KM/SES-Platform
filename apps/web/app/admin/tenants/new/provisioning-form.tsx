@@ -257,7 +257,7 @@ export function ProvisioningForm({
 
   if (phase === 'confirm' || phase === 'submitting') {
     return (
-      <form onSubmit={onSubmit} noValidate>
+      <form method="post" onSubmit={onSubmit} noValidate>
         <h2 className="mb-2 text-lg font-bold text-fg">{messages.confirmSection}</h2>
         <p className={SECTION_NOTE_CLASSES}>{messages.confirmLead}</p>
         {errorBlock}
@@ -305,6 +305,7 @@ export function ProvisioningForm({
 
   return (
     <form
+      method="post"
       onSubmit={(event) => {
         event.preventDefault();
         setPhase('confirm');

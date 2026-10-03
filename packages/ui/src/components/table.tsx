@@ -214,6 +214,24 @@ const tableCellVariants = cva('', {
  */
 export const TABLE_OVERFLOW_INDICATOR_CLASS = 'overflow-indicator-x';
 
+/**
+ * ============================================================================
+ * 🔴 ✅ 2026-10-03（再監査）: 注記を**印と同じ条件**で出す 3 クラス
+ * ============================================================================
+ * 実測: 印（`overflow-indicator-x`）は横に溢れているときだけ出るのに、**注記はどの幅でも
+ * 出ていた**。印が消えている幅で注記だけ残ると、**表が収まっていることを疑わせる**。
+ *
+ * 🔴 判定は「スクロールできるかどうか」であり、画面幅でも列数でもない（それらは文字数・
+ *    フォント・列の実内容で変わる表の内容幅を知らない）。実装は**名前付きスクロール
+ *    タイムライン**で、定義は `apps/web/app/tailwind.css` の `@utility` にある（🔴 **なぜ
+ *    この向きの壊れ方を選んだか**まで同所に書いてある。未対応ブラウザでは**注記が常に出る**
+ *    ＝ 直す前と同じになる側へ倒してある）。
+ * 🔴 **JS を 1 行も使わない**（`Table` はサーバコンポーネントのままでなければならない）。
+ */
+export const TABLE_OVERFLOW_SCOPE_CLASS = 'table-overflow-scope';
+export const TABLE_OVERFLOW_SCROLLER_CLASS = 'table-overflow-scroller';
+export const TABLE_OVERFLOW_NOTE_CLASS = 'table-overflow-note';
+
 export type TableProps = ComponentProps<'table'> & {
   /**
    * 器（`overflow-x-auto` の `<div>`）に足すクラス。
@@ -246,6 +264,9 @@ export function Table({ className, containerClassName, overflowNote, ...props }:
         'relative w-full overflow-x-auto',
         CARD_SURFACE_CLASSES,
         TABLE_OVERFLOW_INDICATOR_CLASS,
+        // 🔴 注記の出し分けの起点（上の 🔴）。器が常にタイムラインを作る —— 注記を
+        //    持たない表でも害は無く、**持つ表だけ別の器にすると実装が 2 つになる**。
+        TABLE_OVERFLOW_SCROLLER_CLASS,
         containerClassName,
       )}
     >
@@ -253,13 +274,19 @@ export function Table({ className, containerClassName, overflowNote, ...props }:
     </div>
   );
   if (overflowNote === undefined) return container;
+  // 🔴 `timeline-scope` を置くために器が 1 つ要る（兄弟に名前を見せる唯一の方法）。
+  //    ⚠️ 余白は注記側の `mt-1` が持つ（この器は余白もスタイルも持たない）。
   return (
-    <>
+    <div className={TABLE_OVERFLOW_SCOPE_CLASS}>
       {container}
-      <p className="mt-1 mb-0 text-xs text-fg-muted" data-table-overflow-note="">
+      {/* 🔴 **上の余白（`mt-1`）はクラスではなくユーティリティ側が持つ。** 畳んだときに余白まで
+          消す必要があるが、生成 CSS では `.mt-1` が `.table-overflow-note` より**後ろ**に出る
+          （同特異度は順序が勝敗を決める。`tests/static/sidebar-form-css-order.test.ts` と同じ罠）
+          ため、`mt-1` を併記すると畳んでも 4px の帯が残る。 */}
+      <p className={cn('mb-0 text-xs text-fg-muted', TABLE_OVERFLOW_NOTE_CLASS)} data-table-overflow-note="">
         {overflowNote}
       </p>
-    </>
+    </div>
   );
 }
 

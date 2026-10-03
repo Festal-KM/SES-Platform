@@ -474,6 +474,7 @@ export function EngineerForm({
 
   return (
     <form
+      method="post"
       onSubmit={onSubmit}
       noValidate
       data-testid="engineer-form"

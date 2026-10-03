@@ -259,10 +259,18 @@ export {
   PAGE_BODY_ASIDE_ROW_CLASSES_BY_FROM,
   PAGE_BODY_ASIDE_WIDTH_CLASSES,
   PAGE_BODY_ASIDE_WIDTH_CLASSES_BY_FROM,
-  PAGE_BODY_ASIDE_WIDTH_CLASSES_FROM_2XL,
+  PAGE_BODY_ASIDE_WIDTH_CLASSES_WRAP,
+  PAGE_BODY_ASIDE_WIDTH_PX,
   PAGE_BODY_GUTTER_CLASS,
   PAGE_BODY_PROSE_MAX_WIDTH_CLASS,
+  PAGE_BODY_SPLIT_GAP_PX,
+  PAGE_BODY_SPLIT_MAIN_CLASSES_BY_FROM,
+  PAGE_BODY_SPLIT_MAIN_CLASSES_WRAP,
+  PAGE_BODY_SPLIT_MAIN_MIN_CLASS,
+  PAGE_BODY_SPLIT_MAIN_MIN_PX,
+  PAGE_BODY_SPLIT_ROW_CLASSES_WRAP,
   PageBody,
+  pageBodySplitGeometry,
 } from './components/page-body.js';
 export type { PageBodyAsideFrom, PageBodyProps, PageWidthClass } from './components/page-body.js';
 // 🔴 T-22-04: カーソル方式のページ送り。🔴 オフセット・総件数・無限スクロールの prop を持たない。
@@ -284,6 +292,9 @@ export type {
 } from './components/summary-strip.js';
 export {
   TABLE_OVERFLOW_INDICATOR_CLASS,
+  TABLE_OVERFLOW_NOTE_CLASS,
+  TABLE_OVERFLOW_SCOPE_CLASS,
+  TABLE_OVERFLOW_SCROLLER_CLASS,
   Table,
   TableBody,
   TableCaption,

@@ -115,12 +115,15 @@ export default async function ProjectListPage({
     <main className="py-6">
       <PageBody
         widthClass="split"
-        // 🔴 ✅ 2026-10-03: **副カラムの並置は `2xl` から**（`@ses/ui` の `PageBodyAsideFrom` の 🔴）。
-        //    実測（1280px）: 右パネル 400px により表の器が **582px** になり、9 列 1,313px のうち
-        //    **44% しか見えず、続きがあることを示す印も無かった**。§7.1 は「列を削らないことが先」
-        //    と定めているので列は 1 つも減らさず、**パネルを下段に送って主カラムを 1,008px にする**。
-        //    `2xl` 未満ではパネルは表の下に積まれる（遮断しない。`CLAUDE.md` §13.3）。
-        asideFrom="2xl"
+        // 🔴 ✅ 2026-10-03（**同日中に差し替え**）: **副カラムの並置は「主カラムが下限（1,320px
+        //    = この表の min-content 1,313px）を保てるとき」だけ**（`@ses/ui` の
+        //    `PageBodyAsideFrom` の 🔴）。
+        //    ⚠️ 直前の実装（`asideFrom="2xl"`）は **1536px で主カラムを 1,238 → 758px に半減**させ、
+        //    この表の可視率を **94% → 58%** に落としていた（＝ **幅を広げると悪化する**）。
+        //    崖を 1280 から 1536 へ移しただけであり、1536 は Windows ノートで最も多い論理幅である。
+        //    判定は `flex-wrap` が主カラムの `basis` で行うので、**画面幅の境界を 1 つも使わない**。
+        //    🔴 列は 1 つも減らしていない（§7.1「列を削らないことが先」）。
+        asideFrom="main-min"
         aside={
           <ProjectSummaryPanel
             row={selectedRow}

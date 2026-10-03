@@ -380,7 +380,7 @@ export function MembersPanel({
               {messages.invitePreNotice}
             </Alert>
           ) : null}
-          <form onSubmit={onInvite} noValidate data-testid="members-invite-form">
+          <form method="post" onSubmit={onInvite} noValidate data-testid="members-invite-form">
             <Field className="mb-2" label={messages.inviteEmailLabel}>
               <Input
                 type="email"

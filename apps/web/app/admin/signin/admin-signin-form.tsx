@@ -10,6 +10,13 @@
 // 🔴 2 要素認証は**必須**（`F-055 AC-3`）。1 段階目の成功後は必ず 2 段階目に入る。
 // 🔴 文言は props で受け取る（`packages/i18n` が唯一の出所。ここにベタ書きしない）。
 //
+// 🔴 `<form method="post">` を必ず付ける（`tests/static/form-method-required.test.ts` が強制する）。
+//    `method` も `action` も無い `<form>` は、JS が水和する前に送信するとブラウザの既定の **GET** で
+//    資格情報をクエリに載せて送り、アドレスバー・履歴・アクセスログ・以後の `Referer` に平文が
+//    残る（`CLAUDE.md` §3.5）。⚠️ `method="post"` は「JS が死んでいても動く」ことを意味しない
+//    （POST 先が無いので 405 になる）。**それでよい** —— 目的は「平文が URL に残らないこと」の
+//    一点であり、JS 無しで動かすことは別の課題である。
+//
 // 🔴 T-21-05: 手書き CSS（`.ses-field` / `.ses-submit` / `.ses-error` / `.ses-otpauth-uri` /
 //    `.ses-recovery-codes`）を `@ses/ui` と Tailwind へ移した。**主平面の `S-001`
 //    （`app/(main)/(auth)/signin/signin-form.tsx`）と同じ部品・同じクラスを使う** ——
@@ -163,7 +170,7 @@ export function AdminSignInForm({
 
   if (stage === 'twoFactor') {
     return (
-      <form onSubmit={onSubmitCode} noValidate data-testid="admin-signin-2fa-form">
+      <form method="post" onSubmit={onSubmitCode} noValidate data-testid="admin-signin-2fa-form">
         <h2 className="mb-3 text-lg font-bold text-fg">{messages.twoFactorTitle}</h2>
         <p className="mb-4 text-body text-fg">{messages.twoFactorRequiredNotice}</p>
         {errorBlock}
@@ -233,7 +240,7 @@ export function AdminSignInForm({
   }
 
   return (
-    <form onSubmit={onSubmitCredentials} noValidate data-testid="admin-signin-form">
+    <form method="post" onSubmit={onSubmitCredentials} noValidate data-testid="admin-signin-form">
       {errorBlock}
       <Field className="mb-4" label={messages.emailLabel}>
         <Input

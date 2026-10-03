@@ -463,7 +463,7 @@ export function AuditLogsView({ messages }: { messages: AuditLogsViewMessages })
 
   return (
     <>
-      <form className={FILTER_FORM_CLASSES} onSubmit={onSubmit} noValidate>
+      <form method="post" className={FILTER_FORM_CLASSES} onSubmit={onSubmit} noValidate>
         {/* 🔴 非制御（`value` / `onChange` を持たない）。理由は `AuditLogsView` 冒頭の 🔴。 */}
         <Field label={messages.fromLabel}>
           <Input type="date" ref={fromRef} required disabled={searching} />

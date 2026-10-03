@@ -107,7 +107,7 @@ export function OrganizationForm({
   }
 
   return (
-    <form onSubmit={onSubmit} noValidate>
+    <form method="post" onSubmit={onSubmit} noValidate>
       <h2 className="mb-3 text-lg font-bold text-fg">{messages.organizationSection}</h2>
       {error === null ? null : <FieldError className="mb-4">{error}</FieldError>}
       {saved ? (

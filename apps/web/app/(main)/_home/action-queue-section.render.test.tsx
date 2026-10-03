@@ -25,6 +25,7 @@ import type {
   ActionQueueHomeBlock,
   ActionQueueRow,
 } from '../../../lib/home/types';
+import { actionQueueMessages } from './action-queue-props';
 import { ActionQueueSection, type ActionQueueMessages } from './action-queue-section';
 // 🔴 ✅ 2026-10-02（改訂 23）: 差分の合成は `./home-screen.tsx`（ポーリングの持ち主）へ移った。
 //    **判定そのものは 1 文字も変えていない**ので、⑤ の検査はそのまま新しい置き場所に当てる。
@@ -531,5 +532,60 @@ describe('🔴 提案依頼の一覧への入口はセクションのヘッダ�
     const partner = render(ROWS, 'mine', { audience: 'PARTNER' });
     expect(partner).toContain('data-testid="home-partner-proposal-requests"');
     expect(partner).toContain('href="/proposal-requests"');
+  });
+});
+
+// ============================================================================
+// 🔴 ✅ 2026-10-03（再監査）: 1 行に同じバッジが 2 回出ない
+// ============================================================================
+// 実測（`re-s3b-partner-home-1280.png` ほか）: `APPROVAL_PENDING` の行は「承認待ち」が
+// **種別バッジと状態バッジの両方**に、取引先の `GATE_FAILED` の行は
+// 「差し戻し（検査で不合格）」が**同じ行に 2 回**出ていた。
+//
+// 🔴 **これは「同じ語になる組があること」自体が実データで起きる**ので、合成文言だけで検査すると
+//    永遠に再現しない。したがって **① 実文言（`packages/i18n`）で組が一致することを突き止め**、
+//    **② 一致する行では状態バッジが描かれないこと**、**③ 一致しない行では必ず両方出ること**を見る。
+describe('🔴 ⑪ 種別と状態が同じ語になる行で、同じバッジを 2 回描かない', () => {
+  it('🔴 ① 実文言では 3 組が一致する（合成文言だけでは再現しない欠陥であることの対照）', () => {
+    const real = actionQueueMessages();
+    expect(real.kinds.APPROVAL_PENDING).toBe(real.proposalStates.APPROVAL_PENDING);
+    expect(real.kinds.GATE_FAILED).toBe(real.proposalStates.GATE_FAILED);
+    expect(real.kinds.SEND_FAILED).toBe(real.proposalStates.SUBMIT_FAILED);
+    // 🔴 一致しない組（種別 = 何をすべきか / 状態 = いまどこか、で意味が別）。
+    expect(real.kinds.SEND_HELD).not.toBe(real.proposalStates.APPROVED);
+    expect(real.kinds.PROPOSAL_REQUEST_PENDING).not.toBe(real.proposalRequestStates.REQUESTED);
+  });
+
+  it('🔴 ② 語が一致する行では状態バッジを描かない（種別バッジが同じ語・同じ色で残る）', () => {
+    const html = renderToStaticMarkup(
+      createElement(ActionQueueSection, {
+        rows: [row('GATE_FAILED', 'g9', { stateBadge: { entity: 'PROPOSAL', state: 'GATE_FAILED' } })],
+        availability: allowAll(),
+        changedIds: new Set<string>(),
+        pollFailed: false,
+        nowMs: Date.parse(NOW),
+        audience: 'PARTNER',
+        scope: 'mine',
+        scopeHrefs: { mine: '/', all: '/?scope=all' },
+        requestListHref: '/proposal-requests',
+        seeAllHref: '/proposals',
+        seeAllLabel: 'seeAll(合成)',
+        countLabel: '1件',
+        // 🔴 種別と状態を**同じ語**にした合成文言（実文言の `GATE_FAILED` と同じ関係）。
+        messages: { ...MESSAGES, kinds: { ...MESSAGES.kinds, GATE_FAILED: MESSAGES.proposalStates.GATE_FAILED } },
+      }),
+    );
+    expect(html).toContain('data-testid="home-action-queue-kind-g9"');
+    expect(html).not.toContain('data-testid="home-action-queue-state-g9"');
+    // 🔴 語そのものは 1 回だけ残る（消したのは重複であって情報ではない）。
+    expect(html.split(MESSAGES.proposalStates.GATE_FAILED).length - 1).toBe(1);
+  });
+
+  it('🔴 ③ 語が違う行では種別と状態の両方を描く（`SEND_HELD` / 提案依頼）', () => {
+    const html = render(ROWS);
+    expect(html).toContain('data-testid="home-action-queue-state-h1"');
+    expect(html).toContain('data-testid="home-action-queue-kind-h1"');
+    expect(html).toContain('data-testid="home-action-queue-state-r1"');
+    expect(html).toContain('data-testid="home-action-queue-kind-r1"');
   });
 });

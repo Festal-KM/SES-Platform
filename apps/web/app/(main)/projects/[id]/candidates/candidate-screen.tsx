@@ -489,7 +489,7 @@ export function AnonymousDetail({
         </Button>
       ) : (
         // 🔴 右パネルがフォームに切り替わる（モーダルにしない。5 項目を見ながら書く）。
-        <form className="border border-border bg-bg-subtle p-3" onSubmit={submit} data-testid="candidate-request-form">
+        <form method="post" className="border border-border bg-bg-subtle p-3" onSubmit={submit} data-testid="candidate-request-form">
           <p className="mb-1 text-body font-bold text-fg">{messages.requestTitle}</p>
           <p className="mb-3 text-xs text-fg-muted" data-testid="candidate-request-lead">
             {messages.requestLead}

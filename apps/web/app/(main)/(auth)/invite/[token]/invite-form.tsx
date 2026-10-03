@@ -9,6 +9,13 @@
 // 🔴 受諾処理中はボタンを無効化する（二重送信防止）。入力途中の離脱は確認する。
 // 🔴 文言は props で受け取る（`packages/i18n` が唯一の出所。ここにベタ書きしない）。
 //
+// 🔴 `<form method="post">` を必ず付ける（`tests/static/form-method-required.test.ts` が強制する）。
+//    `method` も `action` も無い `<form>` は、JS が水和する前に送信するとブラウザの既定の **GET** で
+//    資格情報をクエリに載せて送り、アドレスバー・履歴・アクセスログ・以後の `Referer` に平文が
+//    残る（`CLAUDE.md` §3.5）。⚠️ `method="post"` は「JS が死んでいても動く」ことを意味しない
+//    （POST 先が無いので 405 になる）。**それでよい** —— 目的は「平文が URL に残らないこと」の
+//    一点であり、JS 無しで動かすことは別の課題である。
+//
 // 🔴 T-21-04: 手書き CSS を `@ses/ui` と Tailwind へ移した（`signin-form.tsx` と同じ規律）。
 //    ⚠️ `S-002` は T-21-04 の 16 画面の列挙には無かったが、**認証系 5 画面の 1 つであり、
 //    旧 `.ses-field` / `.ses-submit` / `.ses-error` / `.ses-summary` / `.ses-notice` /
@@ -201,7 +208,7 @@ export function InviteForm({
   }
 
   return (
-    <form onSubmit={onSubmit} noValidate>
+    <form method="post" onSubmit={onSubmit} noValidate>
       <h2 className="mb-3 text-lg font-bold text-fg">{messages.invitationHeading}</h2>
       <dl className={SUMMARY_CLASSES}>
         <dt className={SUMMARY_TERM_CLASSES}>{messages.tenantNameLabel}</dt>

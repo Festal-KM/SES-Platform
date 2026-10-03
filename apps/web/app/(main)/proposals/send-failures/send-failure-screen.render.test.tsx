@@ -292,10 +292,29 @@ describe('🔴 テキスト列の下限幅（1 文字折り返しの予防。S-0
     }
   });
 
-  it('🔴 副カラムの並置は `2xl` から / 列の切れ目が語で示されている', () => {
+  /**
+   * 🔴 ✅ 2026-10-03（**同日中に差し替え**）: 副カラムの並置は **`flex-wrap` が主カラムの
+   *    `basis`（1,320px）で決める**。直前の `2xl:flex-row` は **1536px で主カラムを
+   *    1,238 → 758px に半減**させ、崖を 1280 から 1536 へ移しただけだった。
+   *    幅ごとの基準値は `tests/static/split-layout-width-regression.test.ts`。
+   */
+  it('🔴 副カラムの並置に画面幅の境界を 1 つも使わない（`flex-wrap` + 主カラムの `basis`）', () => {
     const html = render();
-    expect(html).toContain('2xl:flex-row');
+    expect(html).toContain('flex flex-wrap');
+    expect(html).toContain('min-w-0 grow shrink basis-330');
+    expect(html).toContain('w-full max-w-120');
+    // 🔴 幅の境界で並べ替える語が 1 つも無い（在ると「広げると悪化する」が戻る）。
+    expect(html).not.toContain('2xl:flex-row');
     expect(html).not.toContain('lg:flex-row');
+    expect(html).not.toContain('2xl:w-120');
+  });
+
+  it('🔴 列の切れ目が語で示されている（`Table` の `overflowNote`）', () => {
+    const html = render();
     expect(html).toContain('data-table-overflow-note');
+    // 🔴 ✅ 2026-10-03（再監査 ⑦）: その 1 行は**切れ目の印と同じ条件**でしか出ない
+    //    （`tests/static/table-overflow-note-conditional.test.ts`）。
+    expect(html).toContain('table-overflow-note');
+    expect(html).toContain('table-overflow-scope');
   });
 });

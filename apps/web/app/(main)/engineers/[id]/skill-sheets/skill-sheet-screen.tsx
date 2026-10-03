@@ -322,7 +322,7 @@ export function SkillSheetScreen({
         </p>
 
         {canManage ? (
-          <form onSubmit={onUpload} noValidate data-testid="skill-sheet-upload-form">
+          <form method="post" onSubmit={onUpload} noValidate data-testid="skill-sheet-upload-form">
             <Field className="mb-2" label={messages.uploadFileLabel}>
               {/* 🔴 `Input` の `file:*` 語（`file:inline-flex` / `file:h-7` ほか）は
                   `packages/ui` が upstream から**落とさずに**取り込んでいる。

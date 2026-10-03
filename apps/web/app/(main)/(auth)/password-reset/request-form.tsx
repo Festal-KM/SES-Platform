@@ -18,6 +18,13 @@
 //    「成功したように見えて実際には送信されていない」壊れ方そのもの）。
 //    判定は入力構文のみに基づきサーバ応答を読まないため、①②の非開示仕様は破らない。
 //
+// 🔴 `<form method="post">` を必ず付ける（`tests/static/form-method-required.test.ts` が強制する）。
+//    `method` も `action` も無い `<form>` は、JS が水和する前に送信するとブラウザの既定の **GET** で
+//    資格情報をクエリに載せて送り、アドレスバー・履歴・アクセスログ・以後の `Referer` に平文が
+//    残る（`CLAUDE.md` §3.5）。⚠️ `method="post"` は「JS が死んでいても動く」ことを意味しない
+//    （POST 先が無いので 405 になる）。**それでよい** —— 目的は「平文が URL に残らないこと」の
+//    一点であり、JS 無しで動かすことは別の課題である。
+//
 // 🔴 T-21-04: 手書き CSS を `@ses/ui` と Tailwind へ移した（`signin-form.tsx` と同じ規律 ——
 //    testid・`name`・`aria-*`・要素の並びは 1 つも変えていない）。
 import { useRef, useState, type FormEvent } from 'react';
@@ -109,7 +116,7 @@ export function RequestForm({ messages }: { messages: RequestFormMessages }) {
   }
 
   return (
-    <form onSubmit={onSubmit} noValidate data-testid="password-reset-request-form">
+    <form method="post" onSubmit={onSubmit} noValidate data-testid="password-reset-request-form">
       <h2 className="mb-3 text-lg font-bold text-fg">{messages.eyebrow}</h2>
       {error === null ? null : (
         <FieldError className="mb-4" data-testid="password-reset-request-error">

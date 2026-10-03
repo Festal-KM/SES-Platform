@@ -462,7 +462,7 @@ export function ProposalDetailScreen({ proposalId, rows, gateHistory, isViewer, 
               <p>{denialMessage}</p>
             </Alert>
           ) : (
-            <form onSubmit={(event) => void submitNote(event)} className="flex flex-col gap-3" data-testid="proposal-detail-note-form">
+            <form method="post" onSubmit={(event) => void submitNote(event)} className="flex flex-col gap-3" data-testid="proposal-detail-note-form">
               <p className="text-xs text-fg-muted">{messages.noteLead}</p>
               <Field label={messages.noteLabel}>
                 <Textarea

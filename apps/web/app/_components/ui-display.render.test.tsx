@@ -320,31 +320,36 @@ describe('🔴 PageBody の幅 3 クラス（docs/04 §7.1 / docs/05 §2.3.4）'
   });
 
   /**
-   * 🔴 ✅ 2026-10-03: **副カラムの並置を `2xl` まで遅らせる選択肢**（`asideFrom='2xl'`）。
+   * 🔴 ✅ 2026-10-03（**同日中に差し替え**）: **副カラムの並置を「主カラムが下限を保てるとき」に
+   *    限る選択肢**（`asideFrom='main-min'`）。
    *
-   * 実測（デモ環境 / 1280px）: `S-010`（案件一覧）は右パネル 400px により表の器が **582px** になり、
-   * 9 列 1,313px のうち **44% しか見えなかった**（しかも切れていることを示す印が無かった）。
-   * §7.1 は 🔴「列を削らないことが先」なので列は減らさず、**パネルを下段に送って主カラムを
-   * 1,008px にする**。🔴 **既定は `lg` のままである**（`S-003` の右レール・`S-021` のプレビューの
-   * ように「本体と同時に見えること自体が判断材料」の画面は 1 つも動かさない）。
+   * 直前の実装（`asideFrom='2xl'`）は **崖を 1280 から 1536 へ移しただけ**だった（再監査の実測:
+   * 1512 で主カラム 1,238px / `S-010` 94% → **1536 で 758px / 58%**）。🔴 **`2xl:flex-row` を使う
+   * 限り、並置に入った瞬間に主カラムが `gap + 480px` 狭くなるのは不可避**であり、境界を右へ
+   * ずらしても崖は移動するだけである。したがって判定を**画面幅から「主カラムが表の min-content
+   * 以上を保てるか」へ**変え、実装は `flex-wrap` + 主カラムの `flex-basis` だけにした。
+   *
+   * 🔴 **既定は `lg` のままである**（`S-003` の右レール・`S-021` のプレビューのように
+   * 「本体と同時に見えること自体が判断材料」の画面は 1 つも動かさない）。
+   * 🔴 幅ごとの可視率の基準値は `tests/static/split-layout-width-regression.test.ts`。
    */
-  it('🔴 B 分割（`asideFrom="2xl"`）: `2xl` 未満では副カラムを下段に送る', () => {
+  it('🔴 B 分割（`asideFrom="main-min"`）: 画面幅の境界を 1 つも使わない（`flex-wrap` が決める）', () => {
     const markup = renderToStaticMarkup(
       createElement(PageBody, {
         widthClass: 'split',
-        asideFrom: '2xl',
+        asideFrom: 'main-min',
         children: '主カラム',
         aside: '要点パネル',
       }),
     );
-    expect(markup).toContain('data-aside-from="2xl"');
-    expect(markup).toContain('2xl:flex-row');
-    // 🔴 `lg` / `xl` の語が 1 つも出ない（並置も固定幅も `2xl` から）。
-    expect(markup).not.toContain('lg:flex-row');
-    expect(markup).not.toContain('lg:w-90');
-    expect(markup).not.toContain('xl:w-100');
-    expect(markup).toContain('2xl:w-120');
-    expect(markup).toContain('2xl:shrink-0');
+    expect(markup).toContain('data-aside-from="main-min"');
+    // 🔴 並置／下段の判定は `flex-wrap` + 主カラムの `basis-330`（= 1,320px）だけで行う。
+    expect(markup).toContain('flex-wrap');
+    expect(markup).toContain('basis-330');
+    expect(markup).toContain('max-w-120');
+    // 🔴 画面幅のバリアントが 1 つも出ない（これが出た瞬間に「幅で決める」に戻る）。
+    expect(markup).not.toMatch(/(?:^|["\s])(?:sm|md|lg|xl|2xl):/);
+    expect(markup).not.toContain('flex-col');
   });
 
   it('🔴 既定（`asideFrom` 省略）は `lg` のままである（他の画面を動かしていない対照）', () => {

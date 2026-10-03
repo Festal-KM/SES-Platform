@@ -194,7 +194,7 @@ export function AdminAuditLogsView({
     <>
       <section className="mb-6" data-testid="admin-audit-logs-filters">
         <h2 className="mb-2 text-body font-semibold text-fg">{messages.sectionFilters}</h2>
-        <form className={FILTER_FORM_CLASSES} onSubmit={onSubmit} noValidate>
+        <form method="post" className={FILTER_FORM_CLASSES} onSubmit={onSubmit} noValidate>
           <Field label={messages.fromLabel}>
             <Input
               type="date"

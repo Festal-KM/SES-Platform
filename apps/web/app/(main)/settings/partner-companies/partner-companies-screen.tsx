@@ -397,7 +397,7 @@ export function PartnerCompaniesScreen({
       {canManage ? (
         <section className="mb-8" data-testid="partner-companies-register-section">
           <h2 className="mb-2 text-body font-semibold text-fg">{messages.sectionRegister}</h2>
-          <form onSubmit={onRegister} noValidate data-testid="partner-company-register-form">
+          <form method="post" onSubmit={onRegister} noValidate data-testid="partner-company-register-form">
             <Field className="mb-2" label={messages.registerNameLabel}>
               <Input
                 type="text"
@@ -527,7 +527,7 @@ export function PartnerCompaniesScreen({
                       </p>
                     </Alert>
                   ) : (
-                    <form onSubmit={onInvite} noValidate data-testid="partner-company-invite-form">
+                    <form method="post" onSubmit={onInvite} noValidate data-testid="partner-company-invite-form">
                       {/* 🔴 docs/04 §3.5: `sandbox` では**操作の隣に**バナーと同じ趣旨を再掲する
                           （バナーは常時目に入るが、招待の操作をする瞬間に必要な情報は操作の隣にある）。 */}
                       {sandboxLinkHandover ? (

@@ -288,7 +288,7 @@ export function SendingDomainScreen({
         <section className="mb-6" data-testid="sending-domain-register-section">
           <h2 className="mb-2 text-body font-semibold text-fg">{messages.sectionRegister}</h2>
           {canRegister ? (
-            <form onSubmit={onRegister} noValidate data-testid="sending-domain-register-form">
+            <form method="post" onSubmit={onRegister} noValidate data-testid="sending-domain-register-form">
               <Field className="mb-2" label={messages.registerDomainLabel}>
                 <Input
                   type="text"

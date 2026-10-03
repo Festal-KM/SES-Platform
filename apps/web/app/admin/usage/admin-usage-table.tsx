@@ -105,7 +105,13 @@ export type AdminUsageTableMessages = {
   };
   readonly ratio: { readonly unitCost: string; readonly unitCostNote: string; readonly baseline: string; readonly na: string };
   readonly byRole: string;
+  /** 🔴 4 指標の内訳を畳む `<summary>` の語（再監査: 行高 391px の是正）。 */
+  readonly aiUnitsSummary: string;
+  /** 畳んだときの 1 行要約の見出し（最も消化率の高い指標）。 */
+  readonly aiUnitsPeak: string;
   readonly roles: Readonly<Record<AiRole, string>>;
+  /** 🔴 同じ商号の行が 2 行以上あるときだけ出す前置き（再監査 ⑤）。 */
+  readonly rowSameName: string;
   readonly rowTenantDetail: string;
   readonly rowOpenQuota: string;
   readonly aiUnitMetrics: readonly AiUnitMetric[];
@@ -222,6 +228,41 @@ function CountQuota({ value, unit, messages }: { value: AdminCountQuotaView; uni
   );
 }
 
+/**
+ * 件数クォータ 4 指標のセル。🔴 **既定は畳む**（上の `TenantRow` の 🔴 を読むこと）。
+ * 畳んだ 1 行には**最も消化率の高い指標**を出す —— 「上限に張り付いているか」は
+ * 最大値で決まり、平均や合計では読めない（`row.peakPercent` と同じ考え方）。
+ */
+function AiUnitsCell({ row, messages }: { row: AdminUsageTenantRow; messages: AdminUsageTableMessages }) {
+  const peak = messages.aiUnitMetrics.reduce((worst, metric) =>
+    row.aiUnits[metric].consumptionPercent > row.aiUnits[worst].consumptionPercent ? metric : worst,
+  );
+  const peakUnit = row.aiUnits[peak];
+  return (
+    <details data-testid={`admin-usage-ai-units-${row.tenantId}`}>
+      <summary className="cursor-pointer">
+        <span className="font-medium text-fg">
+          {messages.aiUnitsPeak}: {messages.metric[peak]} {formatPercent(peakUnit.consumptionPercent)}
+        </span>
+        <span className={`ml-2 ${MUTED_CLASSES}`}>{messages.aiUnitsSummary}</span>
+      </summary>
+      <ul className="mt-1 flex flex-col gap-1">
+        {messages.aiUnitMetrics.map((metric) => {
+          const unit = row.aiUnits[metric];
+          return (
+            <li key={metric}>
+              <span className={MUTED_CLASSES}>
+                {messages.metric[metric]}（{messages.standardCost} {formatUsd(unit.standardCostUsd)}）
+              </span>
+              <CountQuota value={unit} unit={messages.unitCount} messages={messages} />
+            </li>
+          );
+        })}
+      </ul>
+    </details>
+  );
+}
+
 export function AdminUsageEnvironment({ env, messages }: { env: AdminUsageEnvironmentView; messages: AdminUsageTableMessages }) {
   const variant = env.level === 'REACHED' ? 'danger' : env.level === 'NEARING' ? 'warning' : 'info';
   const percent = Math.floor(env.consumptionRate * 100);
@@ -273,12 +314,15 @@ function TenantRow({
   messages,
   canEditQuota,
   highlighted,
+  duplicateName,
   onSelectTenant,
 }: {
   row: AdminUsageTenantRow;
   messages: AdminUsageTableMessages;
   canEditQuota: boolean;
   highlighted: boolean;
+  /** 🔴 同じ商号の行が他にもあるか（再監査 ⑤。下の 🔴）。 */
+  duplicateName: boolean;
   onSelectTenant?: (tenantId: string) => void;
 }) {
   return (
@@ -289,26 +333,40 @@ function TenantRow({
     >
       <TableCell className="align-top">
         <div className="font-medium text-fg">{row.name}</div>
+        {/* ============================================================================
+            🔴 ✅ 2026-10-03（再監査 ⑤）: **同じ商号の行が複数あるときだけ ID を添える**
+            ============================================================================
+            実測: 「株式会社サンプルアルファ」が席 2 と席 4 で 2 行出ており、**どちらを見れば
+            よいかを決める手がかりが行に 1 つも無かった**（`A-005` の列に ID も環境も無い）。
+            🔴 **原因は合成データ側**（`demo` と `isolation` の 2 プリセットがホスト商号を
+            同じ 2 語の配列から採り、デモ環境には両方が投入されている。`environment` は
+            どちらも `demo` なので環境列でも分けられない）。応答は `Tenant` 1 件につき 1 行で
+            正しく、**API は 1 行も変えていない**。
+            🔴 **本番でも同名の法人は実在しうる**ので、ここは恒久の表示の手当てである。
+            🔴 **同名が無ければ出さない**（常時 ID を出すと 1 行の情報量が無駄に増える）。 */}
+        {duplicateName ? (
+          <div className={MUTED_CLASSES} data-testid={`admin-usage-same-name-${row.tenantId}`}>
+            {messages.rowSameName} {row.tenantId}
+          </div>
+        ) : null}
         <Link className={SECONDARY_LINK_CLASSES} href={adminTenantDetailHref(row.tenantId)}>
           {messages.rowTenantDetail}
         </Link>
       </TableCell>
       <TableCell className="align-top">{row.lifecycleState}</TableCell>
       <TableCell className="align-top">{formatThousands(row.seatsUsed)}</TableCell>
+      {/* ============================================================================
+          🔴 ✅ 2026-10-03（再監査）: **4 指標の内訳を既定で畳む**
+          ============================================================================
+          実測: 1 行の高さが **391px**（4 指標 × 約 95px）で、4 テナントで表が **1,560px** =
+          **1 画面に 2 行**しか入らなかった。🔴 §10.2 の目的は「粗利率が閾値を割ったテナントを
+          **一覧の上位に出す**」であり、1 画面 2 行ではその走査が成立しない。
+          🔴 **情報は 1 つも減らしていない** —— 畳んだ状態でも
+          **最も消化率の高い指標とその率**（= 上限に張り付く兆候そのもの）が 1 行で読め、
+          `<summary>` を開けば従来どおり 4 指標すべてが出る。`<details>` なので JS を要しない
+          （ロール別内訳が既に同じ作法で畳まれている）。 */}
       <TableCell className="align-top">
-        <ul className="flex flex-col gap-1" data-testid={`admin-usage-ai-units-${row.tenantId}`}>
-          {messages.aiUnitMetrics.map((metric) => {
-            const unit = row.aiUnits[metric];
-            return (
-              <li key={metric}>
-                <span className={MUTED_CLASSES}>
-                  {messages.metric[metric]}（{messages.standardCost} {formatUsd(unit.standardCostUsd)}）
-                </span>
-                <CountQuota value={unit} unit={messages.unitCount} messages={messages} />
-              </li>
-            );
-          })}
-        </ul>
+        <AiUnitsCell row={row} messages={messages} />
       </TableCell>
       <TableCell className="align-top">
         <div data-testid={`admin-usage-ai-daily-${row.tenantId}`}>
@@ -390,6 +448,13 @@ export function AdminUsageTable({ view, messages, canEditQuota, highlightedTenan
       ? view.items
       : [...view.items.filter((row) => row.tenantId === highlightedTenantId), ...view.items.filter((row) => row.tenantId !== highlightedTenantId)];
 
+  // 🔴 同じ商号が 2 行以上ある商号の集合（再監査 ⑤。`TenantRow` の 🔴）。
+  //    🔴 **抽出前の全行ではなく、いま描く行の中で数える** —— 画面に 1 行しか出ていない商号に
+  //    「同名があります」と書くと、見えない行の存在を示唆するだけで役に立たない。
+  const duplicateNames = new Set(
+    rows.map((row) => row.name).filter((name, index, all) => all.indexOf(name) !== index),
+  );
+
   return (
     <div>
       <p className="mb-2 text-xs text-fg-muted" data-testid="admin-usage-observed-at">
@@ -427,6 +492,7 @@ export function AdminUsageTable({ view, messages, canEditQuota, highlightedTenan
                 messages={messages}
                 canEditQuota={canEditQuota}
                 highlighted={row.tenantId === highlightedTenantId}
+                duplicateName={duplicateNames.has(row.name)}
                 onSelectTenant={onSelectTenant}
               />
             ))}

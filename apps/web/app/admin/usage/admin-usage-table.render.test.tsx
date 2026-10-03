@@ -279,3 +279,94 @@ describe('⑥ 表示は件数・金額・比率・水準・日付だけ（BR-40�
     expect(html).toContain(`/admin/tenants/${TENANT_A}`);
   });
 });
+
+// ============================================================================
+// 🔴 ✅ 2026-10-03（再監査）: 行の高さ —— §10.2「上位に出す」が成立する密度
+// ============================================================================
+// 実測: 1 行 **391px**（件数クォータ 4 指標 × 約 95px）で、4 テナントの表が **1,560px** =
+// **1 画面に 2 行**しか入らなかった。🔴 §10.2 の受け入れ基準は「粗利率が閾値を割ったテナントを
+// **一覧の上位に出す**」であり、1 画面 2 行ではその走査自体が成立しない。
+//
+// 🔴 **情報は 1 つも減らしていない。** 畳んだ状態でも「最も消化率の高い指標とその率」が読め、
+//    開けば従来どおり 4 指標がすべて出る。したがってこの検査は**両方**を見る。
+describe('🔴 行の密度: 件数クォータ 4 指標は既定で畳まれ、開けば全部出る', () => {
+  it('既定で `<details>` に畳まれている（`open` を持たない）', () => {
+    const html = render({ view: view() });
+    const index = html.indexOf(`data-testid="admin-usage-ai-units-${TENANT_A}"`);
+    expect(index).toBeGreaterThanOrEqual(0);
+    const openingTag = html.slice(html.lastIndexOf('<', index), html.indexOf('>', index) + 1);
+    expect(openingTag.startsWith('<details')).toBe(true);
+    // 🔴 `open` が付くと畳んだ意味が消える（行高が元に戻る）。
+    expect(openingTag).not.toMatch(/\sopen(?:=|\s|>)/);
+  });
+
+  it('🔴 畳んだ 1 行に「最も消化率の高い指標とその率」が出る（上限への張り付きは最大値でしか読めない）', () => {
+    // `AI_UNIT_SHEET_PARSE` を 90% に上げると、その指標が要約に出る。
+    const html = render({
+      view: view({
+        items: [
+          row({
+            tenantId: TENANT_A,
+            aiUnits: {
+              AI_UNIT_SHEET_PARSE: { ...count(162, 180, 'NEARING'), standardCostUsd: '0.033' },
+              AI_UNIT_MATCH_RATIONALE: { ...count(620, 6200), standardCostUsd: '0.004' },
+              AI_UNIT_PROPOSAL_DRAFT: { ...count(9, 180), standardCostUsd: '0.021' },
+              AI_UNIT_RENEWAL_SUMMARY: { ...count(1, 20), standardCostUsd: '0.017' },
+            },
+          }),
+        ],
+      }),
+    });
+    expect(html).toContain(`${t('admin.usage.aiUnits.peak')}: ${t('admin.usage.metric.AI_UNIT_SHEET_PARSE')} 90%`);
+    expect(html).toContain(t('admin.usage.aiUnits.summary'));
+  });
+
+  it('🔴 畳んでも 4 指標の数値・メーター・上限の出所はすべて DOM に在る（隠すのであって消さない）', () => {
+    const html = render({ view: view() });
+    for (const metric of [
+      'AI_UNIT_SHEET_PARSE',
+      'AI_UNIT_MATCH_RATIONALE',
+      'AI_UNIT_PROPOSAL_DRAFT',
+      'AI_UNIT_RENEWAL_SUMMARY',
+    ] as const) {
+      expect(html).toContain(t(`admin.usage.metric.${metric}`));
+    }
+    expect(html).toContain('18 / 180 件');
+    expect(html).toContain('620 / 6,200 件');
+    expect(html).toContain('9 / 180 件');
+    expect(html).toContain('1 / 20 件');
+  });
+});
+
+// ============================================================================
+// 🔴 ✅ 2026-10-03（再監査 ⑤）: 同じ商号の行を運営者が区別できる
+// ============================================================================
+// 実測: 「株式会社サンプルアルファ」が席 2 と席 4 で **2 行**出ており、どちらのクォータを
+// 変えるのかを決める手がかりが行に 1 つも無かった（`A-005` の列に ID も環境も無い）。
+// 🔴 **原因は合成データ側**（`demo` と `isolation` の 2 プリセットがホスト商号を同じ 2 語の
+//    配列から採り、デモ環境には両方が投入されている。`environment` はどちらも `demo`）。
+//    応答は `Tenant` 1 件につき 1 行で正しく、**API は 1 行も変えていない**。
+// 🔴 本番でも同名の法人は実在しうるので、表示側の恒久の手当てとして固定する。
+describe('🔴 同名のテナントが並ぶとき、行を区別できる', () => {
+  it('同じ商号が 2 行あるとき、両方の行に ID が添えられる', () => {
+    const html = render({
+      view: view({
+        items: [
+          row({ tenantId: TENANT_A, name: '株式会社サンプルアルファ', seatsUsed: 2 }),
+          row({ tenantId: TENANT_B, name: '株式会社サンプルアルファ', seatsUsed: 4 }),
+        ],
+      }),
+    });
+    expect(html).toContain(`data-testid="admin-usage-same-name-${TENANT_A}"`);
+    expect(html).toContain(`data-testid="admin-usage-same-name-${TENANT_B}"`);
+    expect(html).toContain(TENANT_A);
+    expect(html).toContain(TENANT_B);
+    expect(html).toContain(t('admin.usage.row.sameName'));
+  });
+
+  it('🔴 商号が重複していなければ ID は出さない（1 行の情報量を無駄に増やさない）', () => {
+    const html = render({ view: view() });
+    expect(html).not.toContain('admin-usage-same-name-');
+    expect(html).not.toContain(t('admin.usage.row.sameName'));
+  });
+});

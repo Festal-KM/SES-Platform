@@ -438,7 +438,7 @@ export function ProposalRequestRespondScreen({ rows, canRespond, denialMessage, 
               </div>
             </Alert>
           ) : phase.kind === 'DECLINING' || (phase.kind === 'SUBMITTING' && phase.action === 'DECLINE') ? (
-            <form className="rounded-md border border-border bg-bg-subtle p-4" onSubmit={decline} data-testid="proposal-request-respond-decline-form">
+            <form method="post" className="rounded-md border border-border bg-bg-subtle p-4" onSubmit={decline} data-testid="proposal-request-respond-decline-form">
               {/* 🔴 理由は任意（`BR-57`）。非開示を入力欄の直下に明記する（`F-018 AC-1`）。 */}
               <Field label={messages.declineReasonLabel} description={messages.declineReasonNote} className="mb-3">
                 <Textarea

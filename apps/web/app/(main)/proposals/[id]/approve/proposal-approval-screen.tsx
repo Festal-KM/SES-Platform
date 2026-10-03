@@ -814,11 +814,26 @@ export function ProposalApprovalScreen(props: ProposalApprovalScreenProps) {
           {messages.previewEnd}
         </p>
 
-        {/* セクション 7: アクション（モバイルでは下部に固定） */}
-        {/* 🔴 §S-021 デバイス別: モバイルではアクションを**下部固定**にする（判断材料を読み切った
-            後に押す順序を保つ）。面は `Card` が持つ。 */}
+        {/* セクション 7: アクション（🔴 **末尾に置く。下部固定にしない**） */}
+        {/* ============================================================================
+            🔴 ✅ 2026-10-03: `sticky bottom-0` を外した（再監査の実測）
+            ============================================================================
+            旧実装は `sticky bottom-0 z-10 lg:static` で、375px では次を**覆っていた**:
+              - `scrollY=900`  … 添付のカード**全体 130px**
+              - `scrollY=1100` … 送信元ドメインのカード**全体 94px**
+              - さらに**下部タブバー（`fixed bottom-0`）が承認カードの下 55px を隠し**、
+                「提案の内容を開く」「ホームへ戻る」が 22px ずつ埋まっていた
+                （`sticky bottom-0` は本体の `pb-24` の外側 ＝ ビューポート下端に貼り付くため）。
+            🔴 **添付の有無と送信元ドメインの状態は承認の判断材料である**（`CLAUDE.md` §13.3
+               「狭い画面を理由に判断材料を隠さない」/ `U-04` 未検証なら送信できない）。
+               固定ボタンのために判断材料を覆うのは、承認ゲートの形骸化そのものである。
+            🔴 **「プレビュー末尾まで読むと承認が有効になる」仕掛けは 1 行も触っていない**
+               （`reachedEnd` / `endRef` / `disabled` の条件はすべてそのまま）。むしろ
+               **末尾の印の直後にアクションが現れる**ので、読む順序はより素直になる。
+            ⚠️ `docs/04` §S-021 デバイス別の「モバイルではアクションを下部固定」は、本実測と
+               §13.3 が衝突する箇所である。**上流の訂正として申し送る**（`CLAUDE.md` §8.7）。
+            面は `Card` が持つ（画面で面を作らない）。 */}
         <Card
-          className="sticky bottom-0 z-10 lg:static"
           data-testid="proposal-approval-actions"
           data-actionable={actionable ? 'true' : 'false'}
         >
@@ -911,7 +926,7 @@ export function ProposalApprovalScreen(props: ProposalApprovalScreenProps) {
               </div>
             ) : null}
             {actionable && phase.kind === 'REJECT_FORM' ? (
-              <form onSubmit={(event) => void reject(event)} data-testid="proposal-approval-reject-form">
+              <form method="post" onSubmit={(event) => void reject(event)} data-testid="proposal-approval-reject-form">
                 <Field label={messages.rejectReasonLabel} className="mb-3">
                   <Textarea
                     name="reason"

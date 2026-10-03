@@ -59,7 +59,9 @@ import {
   Checkbox,
   EmptyState,
   Field,
-  PAGE_BODY_ASIDE_WIDTH_CLASSES_FROM_2XL,
+  PAGE_BODY_ASIDE_WIDTH_CLASSES_WRAP,
+  PAGE_BODY_SPLIT_MAIN_CLASSES_WRAP,
+  PAGE_BODY_SPLIT_ROW_CLASSES_WRAP,
   SECONDARY_LINK_CLASSES,
   Table,
   TableBody,
@@ -363,12 +365,15 @@ export function SendFailureScreen({ rows, summary, canResend, denialMessage, app
 
       {/* 🔴 副カラムの寸法は `@ses/ui` から取る（画面が寸法を決めない。`docs/05` §2.3.4）。
           `PageBody` の `aside` スロットを使えないのは、**パネルが表と同じクライアント状態
-          （選択行・確認ステップ）を共有する**ためである。`lg` 未満では表の下に落ちる（§13.3）。 */}
-      {/* 🔴 ✅ 2026-10-03: **副カラムの並置は `2xl` から**（`S-017` / `S-010` と同じ。
-          上の `TEXT_COLUMN_MIN_WIDTH` の 🔴）。`2xl` 未満ではパネルを表の下に積む。 */}
-      <div className="mt-4 flex flex-col gap-6 2xl:flex-row">
+          （選択行・確認ステップ）を共有する**ためである。並置に入らないときは表の下に落ちる（§13.3）。 */}
+      {/* 🔴 ✅ 2026-10-03（**同日中に差し替え**）: **副カラムの並置は「主カラムが下限（1,320px）を
+          保てるとき」だけ**（`@ses/ui` の `PageBodyAsideFrom` の 🔴）。旧実装の `2xl:flex-row` は
+          **1536px で主カラムを 1,238 → 758px に半減させ、1280px より狭くしていた**（崖を 1280 から
+          1536 へ移しただけだった）。判定は `flex-wrap` が主カラムの `basis` で行うので、
+          **画面幅の境界を 1 つも使わない**。寸法とクラスは `@ses/ui` から取る。 */}
+      <div className={cn('mt-4 gap-6', PAGE_BODY_SPLIT_ROW_CLASSES_WRAP)}>
         {/* セクション 2: テーブル */}
-        <div className="min-w-0 flex-1">
+        <div className={PAGE_BODY_SPLIT_MAIN_CLASSES_WRAP}>
           {rows.length === 0 ? (
             // 🔴 **この一覧が空であることが正常**と分かる文言（`docs/04` §S-022）。
             //    ⚠️ 器の `data-testid` は凍結済みの `send-failure-empty` である（`U-22`）。
@@ -466,7 +471,7 @@ export function SendFailureScreen({ rows, summary, canResend, denialMessage, app
 
         {/* セクション 3: 選択した行の失敗理由と再送（lg 以上は右、未満は一覧の下） */}
         {/* 🔴 面（radius / 枠線 / 地）は `@ses/ui` の `Card` だけが持つ（画面で面を作らない）。 */}
-        <div className={PAGE_BODY_ASIDE_WIDTH_CLASSES_FROM_2XL}>
+        <div className={PAGE_BODY_ASIDE_WIDTH_CLASSES_WRAP}>
           <Card data-testid="send-failure-detail-panel">
             <h2 className="border-b border-border px-4 py-3 text-lg font-semibold text-fg">{messages.detailTitle}</h2>
             <CardContent className="pt-4">
@@ -515,6 +520,7 @@ export function SendFailureScreen({ rows, summary, canResend, denialMessage, app
                     <div className="mt-4">
                       {confirming ? (
                         <form
+                          method="post"
                           onSubmit={(event) => void resend(event)}
                           className="rounded-md border border-warning-border bg-warning-bg px-4 py-3 text-body text-warning"
                           data-testid="send-failure-resend-confirm"

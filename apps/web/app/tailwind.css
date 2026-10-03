@@ -459,3 +459,57 @@
   background-size: 1.5rem 100%, 1.5rem 100%, 1.5rem 100%, 1.5rem 100%;
   background-attachment: local, local, scroll, scroll;
 }
+
+/* ===========================================================================
+ * 🔴 ✅ 2026-10-03（再監査）: 表の下の注記を**印と同じ条件で出す**
+ * ===========================================================================
+ * **何を直したか**: `overflow-indicator-x`（切れ目の印）は横に溢れているときだけ出るのに、
+ * その下の 1 行（「右端が切れているときは横にスクロールできます」）は**どの幅でも出ていた**。
+ * 印が正しく消えている幅でも注記だけが残り、**表が収まっていることを疑わせる**。
+ *
+ * 🔴 **判定は印と同じ「スクロールできるかどうか」であり、画面幅でも列数でもない。**
+ *    したがって幅の境界（`lg:` 等）や列数のしきい値では出し分けられない —— それらは
+ *    文字数・列の実内容・フォントで変わる表の内容幅を知らない。
+ *
+ * 🔴 **実装は名前付きスクロールタイムライン**（JS を 1 行も使わない。`Table` はサーバ
+ *    コンポーネントのままでなければならない。`packages/ui/src/components/table.tsx` の 🔴）。
+ *   - 器（`table-overflow-scroller`）が `--ses-table-overflow-x` という inline 軸のタイムラインを作る
+ *   - 器と注記を囲む器（`table-overflow-scope`）が `timeline-scope` でその名前を兄弟に見せる
+ *   - 注記（`table-overflow-note`）は**既定で畳まれており**、そのタイムラインに結び付いた
+ *     アニメーションが適用されたときだけ現れる
+ *   🔴 **スクロールできない（＝ 溢れていない）ときタイムラインは「非アクティブ」になり、
+ *      アニメーションの効果はいっさい適用されない** —— これが「印と同じ条件」の実体である。
+ *
+ * ⚠️ **`animation-timeline` を解さないブラウザでの壊れ方を「見えなくなる」側に倒さない。**
+ *    その場合 `animation-timeline` の宣言だけが捨てられ、アニメーションは既定の文書
+ *    タイムラインで 1ms 走って `forwards` で止まる ＝ **注記は常に出る（＝ 直す前と同じ）**。
+ *    🔴 逆向き（`@container scroll-state()` 等）だと**未対応ブラウザで注記が消える**ので採らない。
+ *
+ * 🔴 `height: auto` をキーフレームに書かない（補間できない値は実装差が出る）。畳むのは
+ *    `max-height` で行い、`10rem` は 375px で 3 行に折り返しても足りる余裕である。
+ * =========================================================================== */
+@keyframes ses-table-overflow-note {
+  from,
+  to {
+    visibility: visible;
+    max-height: 10rem;
+    margin-top: calc(var(--spacing) * 1);
+  }
+}
+
+@utility table-overflow-scope {
+  timeline-scope: --ses-table-overflow-x;
+}
+
+@utility table-overflow-scroller {
+  scroll-timeline: --ses-table-overflow-x inline;
+}
+
+@utility table-overflow-note {
+  visibility: hidden;
+  max-height: 0;
+  margin-top: 0;
+  overflow: hidden;
+  animation: ses-table-overflow-note 1ms linear forwards;
+  animation-timeline: --ses-table-overflow-x;
+}

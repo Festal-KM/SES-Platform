@@ -326,7 +326,7 @@ export function ProjectVisibilityScreen({
         )}
       </section>
 
-      <form onSubmit={onSubmit} noValidate data-testid="project-visibility-form">
+      <form method="post" onSubmit={onSubmit} noValidate data-testid="project-visibility-form">
         {/* --- 2. 公開先の選択 ------------------------------------------------ */}
         <section className="mb-6" data-testid="project-visibility-select">
           <h2 className="mb-2 text-lg font-bold text-fg">{messages.sectionSelect}</h2>

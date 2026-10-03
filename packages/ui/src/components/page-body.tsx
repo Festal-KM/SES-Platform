@@ -69,49 +69,148 @@ export const PAGE_BODY_PROSE_MAX_WIDTH_CLASS = 'max-w-180';
 export const PAGE_BODY_ASIDE_WIDTH_CLASSES = 'w-full lg:w-90 lg:shrink-0 xl:w-100 2xl:w-120';
 
 /**
- * ✅ 2026-10-03: **副カラムを `2xl` から並置する**ときの固定幅（`2xl` 480px）。
- * 🔴 `asideFrom='2xl'` と**対で使う**（下の `PageBody` の 🔴 を読むこと）。`2xl` 未満では
- *    `w-full` のまま本体の下に積まれる。
+ * 🔴 **主カラムが切ってはいけない下限 = 1,320px**（`basis-330` = 330 × 0.25rem）。
+ *
+ * 値の根拠は**最も広い一覧表の min-content**（`S-010` 案件一覧 = 9 列 **1,313px**。2026-10-03 の
+ * 実測）を Tailwind の spacing 倍数に切り上げたものである。🔴 **「主カラムが表を収められる幅を
+ * 保てるときだけ副カラムを並置する」**という判定をこの 1 つの数で表す（下の `'main-min'` の 🔴）。
  */
-export const PAGE_BODY_ASIDE_WIDTH_CLASSES_FROM_2XL = 'w-full 2xl:w-120 2xl:shrink-0';
+export const PAGE_BODY_SPLIT_MAIN_MIN_PX = 1320;
+/** 🔴 上の px と**対**。クラスと数のどちらかだけを変えると検査が落ちる。 */
+export const PAGE_BODY_SPLIT_MAIN_MIN_CLASS = 'basis-330';
+/** `split` の 2 カラムの間隔（`gap-6` = 24px）。🔴 幅の計算に入るので数でも持つ。 */
+export const PAGE_BODY_SPLIT_GAP_PX = 24;
+/** 副カラムの固定幅の最大値（`w-120` / `max-w-120` = 480px）。🔴 幅の計算に入るので数でも持つ。 */
+export const PAGE_BODY_ASIDE_WIDTH_PX = 480;
 
 /**
- * 🔴 **副カラムを並置し始める境界**（`docs/04` §7.1 の幅クラス B）。
+ * ✅ 2026-10-03（**同日中に差し替え**）: **副カラムを「主カラムが下限を保てるときだけ」並置する**
+ * ときの副カラムの幅（上限 480px）。🔴 `asideFrom='main-min'` と**対で使う**。
+ *
+ * 🔴 **`w-full max-w-120` であり `w-120` ではない。** `flex-wrap` の行分割は各 item の
+ *    *hypothetical main size*（flex-basis を min/max-width で挟んだ値）で決まるため、
+ *    `width:100%` を `max-width:480px` で挟むことで **「並置時は 480px 固定」「下段に落ちた
+ *    ときは行いっぱい（ただし 480px まで）」**を 1 つのクラスで表せる。
+ * ⚠️ 🔴 **下段に落ちたときの幅が「行いっぱい」から「480px 上限」に変わった**（唯一の見た目の
+ *    変化。1264px の表の下に 1264px の薄い帯が伸びるより、480px のカードのほうが読める）。
+ */
+export const PAGE_BODY_ASIDE_WIDTH_CLASSES_WRAP = 'w-full max-w-120';
+
+/**
+ * 🔴 **`'main-min'` の器**。`flex-wrap` だけで並置／下段を決める（**画面幅の境界を 1 つも
+ *    使わない**）。`flex-col` も `*:flex-row` も書かない —— 書くと「幅で決める」に戻る。
+ */
+export const PAGE_BODY_SPLIT_ROW_CLASSES_WRAP = 'flex flex-wrap';
+
+/** 🔴 **`'main-min'` の主カラム**。`basis` が行分割の判定値そのものである（上の 🔴）。 */
+export const PAGE_BODY_SPLIT_MAIN_CLASSES_WRAP = `min-w-0 grow shrink ${PAGE_BODY_SPLIT_MAIN_MIN_CLASS}`;
+
+/**
+ * 🔴 **副カラムを並置する条件**（`docs/04` §7.1 の幅クラス B）。
  *
  * ============================================================================
- * 🔴 なぜ `2xl` という選択肢が要るのか（2026-10-03 の実測）
+ * 🔴 なぜ `'2xl'`（画面幅の境界）を捨てたのか —— **幅を広げると悪化していた**
  * ============================================================================
- * §7.1 の改訂 25 / 26 は **`S-010`（案件一覧）/ `S-017`（提案依頼一覧）/ `S-022`（送信失敗一覧）**
- * をクラス A → B に移し、その副作用を **「`lg`〜`xl` では列 + 固定幅パネルが収まらず、表が器の
- * 内側で横スクロールする」**と明記した。🔴 **その「横スクロール」が実際にどれだけ隠すかを
- * 誰も測っていなかった。** デモ環境の実測（2026-10-03）:
+ * 2026-10-03 の朝、§7.1 改訂 25 / 26 の副作用（1280px で `S-010` の表が **44%** しか見えない）を
+ * 「副カラムの並置を `2xl` まで遅らせる」で直した。🔴 **これは崖を 1280 から 1536 へ移しただけ
+ * だった。** 同日の再監査（実画面 67 枚）の実測:
  *
- * | 画面 | 1280px での表の器 | 表の内容 | 可視率 |
- * |---|---|---|---|
- * | `S-010` 案件一覧 | 582px | 1,313px | **44%**（9 列中 4 列。「円」が切れる） |
- * | `S-017` 提案依頼一覧 | 582px | — | **案件名が 1 文字ずつ 10 行に折り返す**（行高 160〜180px） |
+ * | 幅 | 主カラム | `S-017` 可視率 | 行高 | 折返セル | `S-010` 可視率 |
+ * |---:|---:|---:|---:|---:|---:|
+ * | 1512 | 1,238 | 100% | 42 | 0 | 94% |
+ * | **1536** | **758** | **88%** | **56** | **3** | **58%** |
+ * | 1600 | 822 | 95% | 56 | 3 | 63% |
+ * | 1680 | 902 | 100% | 42 | 0 | 69% |
  *
- * 🔴 **44% は「劣化」の範囲を超えている**（§7.1 が守ろうとしているのは「列を削らないこと」で
- *    あって「列が在りさえすれば見えなくてよい」ではない）。🔴 **列を減らして収めない**（§7.1）
- *    ので、**副カラムの並置を `2xl` まで遅らせる**。1280px では主カラムが 582 → **1,008px** になる。
+ * 🔴 **`2xl`（1536px）で副カラムが並置に入り、主カラムが 1,238 → 758px に半減する。** 表の
+ *    min-content は変わらないので、**1280px のときより狭くなる**。しかも 🔴 **1536 は Windows
+ *    ノートで最も多い論理幅**（1920×1080 の 125% 表示）であり、1512（MacBook Pro 14/16 の既定）
+ *    の**すぐ隣が最悪の幅**になっていた。
+ *
+ * 🔴 **`2xl:flex-row` を使う限りこの崖は不可避である。** 並置に入った瞬間、主カラムは
+ *    必ず `gap(24) + 副カラム(480)` だけ狭くなる。**境界を右にずらしても崖は移動するだけ**で
+ *    消えない（1680 でも `S-010` は 69% にしかならない）。
+ *
+ * ⚠️ **副カラムを縮める案（`clamp`）では解けない。** 1536px で `S-010` の 1,313px を収めるには
+ *    `主カラム = 1536 - 柱224 - gutter48 - gap24 - 副カラム >= 1313` ⇒ **副カラム <= -73px**。
+ *    算数として不可能である（1920px でも 1,144px しか取れず 87%）。
+ *
+ * 🔴 **したがって判定を「幅」から「主カラムが下限を保てるか」に変える**（`'main-min'`）。
+ *    実装は **`flex-wrap` + 主カラムの `flex-basis`** だけで、コンテナクエリも独自境界も
+ *    要らない —— flexbox の行分割がまさにこの判定を行う。
+ *
+ * | 幅 | 器 | 並置 | 主カラム | `S-017` | `S-010` |
+ * |---:|---:|---|---:|---:|---:|
+ * | 1512 | 1,240 | 下段 | 1,240 | 100% | 94% |
+ * | **1536** | 1,264 | 下段 | **1,264** | **100%** | **96%** |
+ * | 1600 | 1,328 | 下段 | 1,328 | 100% | **100%** |
+ * | 1920 | 1,648 | 下段 | 1,648 | 100% | 100% |
+ * | 2096 | 1,824 | **並置** | 1,320 | 100% | 100% |
+ *
+ * 🔴 **どの幅でも「広げると悪化する」が起きない**（主カラムは並置に入る瞬間に 1,824 → 1,320 へ
+ *    縮むが、1,320 >= 1,313 なので**見える量は減らない**）。機械検査は
+ *    `tests/static/split-layout-width-regression.test.ts`（上の 2 つの表がその基準値である）。
+ *
+ * ⚠️ **代償**: 副カラムが横に並ぶのは **2,096px 以上**になった（1536〜1920 では表の下に積まれる）。
+ *    §7.1 の表（`S-010` を「一覧 + 右パネル」と描いたワイヤーフレーム）との差分は上流の訂正として
+ *    申し送る（`CLAUDE.md` §8.7）。🔴 **見える量を削ってまでパネルを横に置かない**が先である。
  *
  * 🔴 **既定は `lg` のままである**（`S-003` の右レール・`S-021` のプレビュー・`S-016` の候補パネル
  *    のように、**本体と同時に見えること自体が判断材料**の画面は 1 つも動かさない）。
- *    **`2xl` を選べるのは「主カラムが広い表で、副カラムが選択行の要約である」画面だけ**である。
+ *    **`'main-min'` を選べるのは「主カラムが広い表で、副カラムが選択行の要約である」画面だけ**である。
  */
-export type PageBodyAsideFrom = 'lg' | '2xl';
+export type PageBodyAsideFrom = 'lg' | 'main-min';
 
-/** 🔴 境界ごとの「副カラムの幅」。**画面で寸法を書かないための 1 箇所**（上の 🔴）。 */
+/** 🔴 条件ごとの「副カラムの幅」。**画面で寸法を書かないための 1 箇所**（上の 🔴）。 */
 export const PAGE_BODY_ASIDE_WIDTH_CLASSES_BY_FROM: Readonly<Record<PageBodyAsideFrom, string>> = {
   lg: PAGE_BODY_ASIDE_WIDTH_CLASSES,
-  '2xl': PAGE_BODY_ASIDE_WIDTH_CLASSES_FROM_2XL,
+  'main-min': PAGE_BODY_ASIDE_WIDTH_CLASSES_WRAP,
 };
 
-/** 🔴 境界ごとの「横に並べ始める」クラス。**Tailwind 既定の境界のみ**（`CLAUDE.md` §13.3）。 */
+/**
+ * 🔴 条件ごとの「2 カラムの器」。
+ * - `lg`: 画面幅の境界で並置する（**Tailwind 既定の境界のみ**。`CLAUDE.md` §13.3）。
+ * - `main-min`: 🔴 **境界を使わない**（`flex-wrap` が主カラムの `basis` で決める）。
+ */
 export const PAGE_BODY_ASIDE_ROW_CLASSES_BY_FROM: Readonly<Record<PageBodyAsideFrom, string>> = {
-  lg: 'lg:flex-row',
-  '2xl': '2xl:flex-row',
+  lg: 'flex flex-col lg:flex-row',
+  'main-min': PAGE_BODY_SPLIT_ROW_CLASSES_WRAP,
 };
+
+/** 🔴 条件ごとの「主カラムの器」。`main-min` は `basis` が行分割の判定値である（上の 🔴）。 */
+export const PAGE_BODY_SPLIT_MAIN_CLASSES_BY_FROM: Readonly<Record<PageBodyAsideFrom, string>> = {
+  lg: 'min-w-0 flex-1',
+  'main-min': PAGE_BODY_SPLIT_MAIN_CLASSES_WRAP,
+};
+
+/**
+ * 🔴 **flexbox の行分割をそのまま写した純関数**（`'main-min'` 用）。
+ *    `tests/static/split-layout-width-regression.test.ts` が**実クラスから取り出した数**を
+ *    この関数に通して、幅ごとの可視率・折り返しを固定する。
+ *
+ * ⚠️ **ここに画面幅（ビューポート）を渡さない。** 受け取るのは `PageBody` の**内容ボックスの幅**
+ *    （= ビューポート − 柱 − gutter）であり、柱の幅を知るのは `AppShell` / `Sidebar` の責務である。
+ */
+export function pageBodySplitGeometry(contentWidthPx: number): {
+  readonly asideBeside: boolean;
+  readonly mainWidthPx: number;
+  readonly asideWidthPx: number;
+} {
+  const besideNeeds = PAGE_BODY_SPLIT_MAIN_MIN_PX + PAGE_BODY_SPLIT_GAP_PX + PAGE_BODY_ASIDE_WIDTH_PX;
+  if (contentWidthPx >= besideNeeds) {
+    return {
+      asideBeside: true,
+      mainWidthPx: contentWidthPx - PAGE_BODY_SPLIT_GAP_PX - PAGE_BODY_ASIDE_WIDTH_PX,
+      asideWidthPx: PAGE_BODY_ASIDE_WIDTH_PX,
+    };
+  }
+  return {
+    asideBeside: false,
+    mainWidthPx: contentWidthPx,
+    // 下段では行いっぱい（ただし 480px 上限。`PAGE_BODY_ASIDE_WIDTH_CLASSES_WRAP` の ⚠️）。
+    asideWidthPx: Math.min(contentWidthPx, PAGE_BODY_ASIDE_WIDTH_PX),
+  };
+}
 
 export type PageBodyProps = {
   /** 🔴 `docs/04` §7.1 の割り当て。**どの画面がどれかは `docs/04` が持つ**（ここは受け取るだけ）。 */
@@ -124,15 +223,12 @@ export type PageBodyProps = {
    */
   readonly aside?: ReactNode;
   /**
-   * 🔴 副カラムを並置し始める境界（既定 `lg`）。`PageBodyAsideFrom` の 🔴 を読むこと。
+   * 🔴 副カラムを並置する条件（既定 `lg` = 画面幅の境界）。`PageBodyAsideFrom` の 🔴 を読むこと。
    * ⚠️ `widthClass` が `split` 以外のときは意味を持たない（副カラム自体が渡せない）。
    */
   readonly asideFrom?: PageBodyAsideFrom;
   readonly className?: string;
 };
-
-/** 主カラム側の器。🔴 `min-w-0` が無いと、テーブルの横溢れが副カラムを押し出す。 */
-const MAIN_COLUMN_CLASSES = 'min-w-0 flex-1';
 
 /**
  * ✅ `T-22-06`: **`data-testid="page-body"` を足した**（3 クラスすべてで同じ値）。
@@ -160,13 +256,13 @@ export function PageBody({ widthClass, children, aside, asideFrom = 'lg', classN
         data-width-class="split"
         data-aside-from={asideFrom}
         className={cn(
-          'flex flex-col gap-6',
+          'gap-6',
           PAGE_BODY_GUTTER_CLASS,
           PAGE_BODY_ASIDE_ROW_CLASSES_BY_FROM[asideFrom],
           className,
         )}
       >
-        <div className={MAIN_COLUMN_CLASSES}>{children}</div>
+        <div className={PAGE_BODY_SPLIT_MAIN_CLASSES_BY_FROM[asideFrom]}>{children}</div>
         {aside === undefined ? null : (
           <aside data-page-body-aside="true" className={PAGE_BODY_ASIDE_WIDTH_CLASSES_BY_FROM[asideFrom]}>
             {aside}
