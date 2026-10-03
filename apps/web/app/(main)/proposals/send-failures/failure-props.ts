@@ -16,6 +16,12 @@ export function sendFailureScreenMessages(): SendFailureScreenMessages {
     columnLastAttemptAt: t('sendFailures.column.lastAttemptAt'),
     columnElapsed: t('sendFailures.column.elapsed'),
     columnAttemptCount: t('sendFailures.column.attemptCount'),
+    // ✅ SP-22 段④: 操作列と件数バーの並び順の説明。
+    columnAction: t('sendFailures.column.action'),
+    panelOpen: t('sendFailures.panel.open'),
+    orderNote: t('sendFailures.orderNote'),
+    // 🔴 母集団の 1 行には件数を入れない（件数は `summary.countLabel` が `note` の側で持つ）。
+    population: t('sendFailures.population'),
     // 🔴 `docs/04` §S-022 空状態: 「空であることが正常」と分かる文言。
     emptyTitle: t('sendFailures.empty'),
     emptyLead: t('sendFailures.empty.lead'),

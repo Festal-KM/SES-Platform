@@ -12,7 +12,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { t } from '@ses/i18n';
-import { SECONDARY_LINK_STACKED_CLASSES } from '@ses/ui';
+import { PageBody, SECONDARY_LINK_STACKED_CLASSES } from '@ses/ui';
 import { NotFoundError } from '../../../../lib/api/errors';
 import { executionDenialMessageKey } from '../../../../lib/api/guards';
 import { resolveTenantCtxOutcome } from '../../../../lib/auth/session';
@@ -32,18 +32,24 @@ export const dynamic = 'force-dynamic';
 /** 🔴 タイトルに案件名・エンジニア名を入れない（ブラウザの履歴・タブに残る。`S-011` と同じ規律）。 */
 export const metadata: Metadata = { title: t('proposals.editor.title.new') };
 
-/** 🔴 対象が指定されていない（`S-016` を経由していない）。存在を探る入力ではないので 404 ではなく案内を出す。 */
+/**
+ * 🔴 対象が指定されていない（`S-016` を経由していない）。存在を探る入力ではないので 404 ではなく案内を出す。
+ *
+ * ✅ SP-22 段④: 🔴 **自前の `<h1>` を持たない**（タイトルは帯 = `PageHeading` が描く。
+ *    `tests/static/page-heading-single.test.ts` ②「画面タイトルが二重に出ない」）。
+ *    器（`<main>` / `PageBody`）も持たない —— **幅クラスは画面に 1 つだけ**であり（検査 (k)）、
+ *    この案内は `page.tsx` の唯一の `PageBody` の中に入る。
+ */
 function TargetMissingNotice() {
   return (
-    <main className="mx-auto max-w-3xl px-4 py-8">
-      <h1 className="mb-4 text-xl font-bold text-slate-900">{t('proposals.editor.title.new')}</h1>
-      <p className="mb-4 text-sm text-slate-700" data-testid="proposal-editor-target-missing">
+    <>
+      <p className="mb-4 text-body text-fg" data-testid="proposal-editor-target-missing">
         {t('proposals.editor.newTargetMissing')}
       </p>
       <Link className={SECONDARY_LINK_STACKED_CLASSES} href="/projects">
         {t('projects.breadcrumb.list')}
       </Link>
-    </main>
+    </>
   );
 }
 
@@ -59,24 +65,26 @@ export default async function NewProposalPage({
   if (!isProposalEditorRole(ctx.role)) redirect(PROPOSAL_EDITOR_HOME_PATH);
 
   const raw = await searchParams;
-  if (raw.projectId === undefined && raw.engineerId === undefined) return <TargetMissingNotice />;
-  // 🔴 API と同じスキーマで検証する（UUID でなければ 404。存在を探らせない）。
-  const parsed = newProposalQuerySchema.safeParse(raw);
-  if (!parsed.success) notFound();
+  // 🔴 ✅ SP-22 段④: **早期 return をやめ、本文だけを切り替える**。
+  //    理由は検査 (k)「画面は `widthClass` をちょうど 1 回渡す」—— 2 つの `<main>` を返すと
+  //    `PageBody` が 2 回現れ、「条件で幅が変わる画面」になる（`U-23` の 1 画面 1 クラスに反する）。
+  //    🔴 **判定の順序とリダイレクト・404 の条件は 1 つも変えていない。**
+  const content = await (async () => {
+    if (raw.projectId === undefined && raw.engineerId === undefined) return <TargetMissingNotice />;
+    // 🔴 API と同じスキーマで検証する（UUID でなければ 404。存在を探らせない）。
+    const parsed = newProposalQuerySchema.safeParse(raw);
+    if (!parsed.success) notFound();
 
-  const target = await readProposalCreationTarget(ctx, parsed.data).catch((error: unknown) => {
-    // 🔴 境界外・不存在のどちらも 404 に畳む（区別すると存在を教えることになる）。
-    if (error instanceof NotFoundError) notFound();
-    throw error;
-  });
+    const target = await readProposalCreationTarget(ctx, parsed.data).catch((error: unknown) => {
+      // 🔴 境界外・不存在のどちらも 404 に畳む（区別すると存在を教えることになる）。
+      if (error instanceof NotFoundError) notFound();
+      throw error;
+    });
 
-  const rows = proposalCreateRows(target);
-  const denialKey = executionDenialMessageKey(ctx.lifecycleState);
-  const sendingDomain = proposalSendingDomainRows(await proposalSendingDomainFact(ctx));
-
-  return (
-    <main className="mx-auto max-w-6xl px-4 py-8">
-      <PageHeading trail={PROPOSAL_NEW_TRAIL} title={t('proposals.editor.title.new')} />
+    const rows = proposalCreateRows(target);
+    const denialKey = executionDenialMessageKey(ctx.lifecycleState);
+    const sendingDomain = proposalSendingDomainRows(await proposalSendingDomainFact(ctx));
+    return (
       <ProposalEditor
         mode="CREATE"
         proposalId={null}
@@ -99,6 +107,16 @@ export default async function NewProposalPage({
         cancelLabel={t('proposals.editor.cancel')}
         messages={proposalEditorMessages()}
       />
+    );
+  })();
+
+  return (
+    // 🔴 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`）。`S-020` は**クラス B = 分割**。
+    <main className="py-6">
+      <PageBody widthClass="split">
+        <PageHeading trail={PROPOSAL_NEW_TRAIL} title={t('proposals.editor.title.new')} />
+        {content}
+      </PageBody>
     </main>
   );
 }

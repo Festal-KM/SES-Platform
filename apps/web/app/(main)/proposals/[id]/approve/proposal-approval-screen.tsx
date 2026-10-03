@@ -46,10 +46,23 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Badge, Button, Field, SECONDARY_LINK_CLASSES, Textarea, type BadgeVariant } from '@ses/ui';
-import type { GateLayerState, GateResultView, ProposalState } from '@ses/domain';
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  Field,
+  PAGE_BODY_ASIDE_WIDTH_CLASSES,
+  SECONDARY_LINK_CLASSES,
+  StatusBadge,
+  Textarea,
+  cn,
+} from '@ses/ui';
+import type { GateResultView, ProposalState } from '@ses/domain';
 import type { ApprovalGateFindingRow, ApprovalHighlight, ProposalApprovalRows } from '../../../../../lib/proposals/approval-rows';
 import type { ProposalSendingDomainRows } from '../../../../../lib/proposals/editor-rows';
+import { gateLayerBadgeAppearance } from '../../../../../lib/proposals/gate-layer-badge';
 import { consumeSubmitRequested } from '../../../../../lib/proposals/submit-intent';
 
 export type ProposalApprovalScreenMessages = {
@@ -132,30 +145,20 @@ export type ProposalApprovalScreenProps = {
   readonly messages: ProposalApprovalScreenMessages;
 };
 
-/** 状態バッジの色。`Record` で 14 状態の漏れをコンパイラに強制させる（`S-020` と同じ）。 */
-const STATE_BADGE_VARIANTS = {
-  DRAFT: 'neutral',
-  GATE_RUNNING: 'warning',
-  GATE_FAILED: 'danger',
-  APPROVAL_PENDING: 'warning',
-  APPROVED: 'success',
-  SUBMITTING: 'warning',
-  SUBMITTED: 'success',
-  SUBMIT_FAILED: 'danger',
-  INTERVIEW_SCHEDULED: 'outline',
-  INTERVIEWED: 'outline',
-  RESULT_PENDING: 'outline',
-  WON: 'success',
-  LOST: 'neutral',
-  WITHDRAWN: 'neutral',
-} as const satisfies Record<ProposalState, BadgeVariant>;
-
-const LAYER_BADGE_VARIANTS = {
-  RUNNING: 'warning',
-  PASS: 'success',
-  FAIL: 'danger',
-  HELD: 'warning',
-} as const satisfies Record<GateLayerState, BadgeVariant>;
+// ============================================================================
+// 🔴 SP-22 段④ で削除した 2 本の色の写像（**どちらも条文と食い違っていた**）
+// ============================================================================
+// ① `STATE_BADGE_VARIANTS`（14 状態 → `BadgeVariant`）:
+//    旧実装は `GATE_FAILED: 'danger'` / `SUBMIT_FAILED: 'danger'` で **2 つが同じ赤**だった。
+//    🔴 `CLAUDE.md` §4.2 は「`GATE_FAILED`（送る前に自ら止めた）・`SUBMIT_FAILED`（送信自体が失敗した）・
+//    `LOST`（届いたが見送られた）は**すべて別の状態**」と定め、`docs/04` §5-1 は
+//    「障害（赤・塗り）= `SUBMIT_FAILED` / `SEND_FAILED` / `SUSPENDED` のみ。ゲート差し戻しは**橙**」
+//    と定めている。**同じ見た目は混同そのものである。** 色は `@ses/ui` の `StatusBadge` が
+//    状態名から決め、**画面は渡せない**（§5-13）。
+// ② `LAYER_BADGE_VARIANTS`（層 → `BadgeVariant`）:
+//    `S-020` / `S-021` / `S-023` の 3 画面が別々に持ち、`RUNNING` の色が食い違っていた
+//    （§5-3「5 種すべてで同じ見せ方を使う」に反する）。出所を
+//    `lib/proposals/gate-layer-badge.ts` の 1 つに寄せた。
 
 /** #40 のポーリング間隔（`S-020` と同じ 5 秒）。 */
 const GATE_POLL_MS = 5_000;
@@ -256,12 +259,20 @@ export function shouldPollSendSettlement(input: {
   return input.awaitingSendSettlement || input.holdReasonKey !== null;
 }
 
+/**
+ * セクションの器。🔴 **面（radius / 枠線 / 地）は `@ses/ui` の `Card` だけが持つ**
+ * （画面で面を作らない。`tests/static/ui-shadow-and-size.test.ts`）。
+ * 🔴 **`<details>` にしない** —— `docs/04` §S-021 / §6.1 は「ゲート結果を折りたたみの中に入れない」
+ *    と定めている（モバイルでも 1 本の縦スクロール）。
+ * ⚠️ `Card` は `div` である（旧実装の `<section>` から要素名が変わる）。`data-testid` は
+ *    凍結済みの `proposal-approval-section-{id}` のままである（`U-22`）。
+ */
 function Section({ id, title, children }: { readonly id: string; readonly title: string; readonly children: ReactNode }) {
   return (
-    <section className="border border-slate-200 bg-white" data-testid={`proposal-approval-section-${id}`}>
-      <h2 className="border-b border-slate-200 px-4 py-3 text-base font-bold text-slate-900">{title}</h2>
-      <div className="px-4 py-4">{children}</div>
-    </section>
+    <Card data-testid={`proposal-approval-section-${id}`}>
+      <h2 className="border-b border-border px-4 py-3 text-lg font-semibold text-fg">{title}</h2>
+      <CardContent className="pt-4">{children}</CardContent>
+    </Card>
   );
 }
 
@@ -286,7 +297,7 @@ function HighlightedText({
     parts.push(
       <mark
         key={`${String(index)}-${String(highlight.start)}`}
-        className={highlight.severity === 'BLOCK' ? 'bg-red-200 text-red-950' : 'bg-amber-200 text-amber-950'}
+        className={highlight.severity === 'BLOCK' ? 'bg-danger-bg text-danger' : 'bg-warning-bg text-warning'}
         data-testid={`proposal-approval-preview-highlight-${highlight.severity === 'BLOCK' ? 'block' : 'warn'}`}
         data-finding-kind={highlight.kind}
         title={highlight.severity === 'BLOCK' ? messages.previewHighlightBlock : messages.previewHighlightWarn}
@@ -316,14 +327,15 @@ function FindingList({
   readonly severityLabel: string | null;
   readonly tone: 'danger' | 'warning';
 }) {
-  const frame = tone === 'danger' ? 'border-red-300 bg-red-50 text-red-950' : 'border-amber-300 bg-amber-50 text-amber-950';
+  // 🔴 不合格（赤）と警告（琥珀）を**同じ色・同じ形で並べない**（§5-3 / §S-021 ③）。
+  const frame = tone === 'danger' ? 'border-danger-border bg-danger-bg text-danger' : 'border-warning-border bg-warning-bg text-warning';
   return (
-    <div className={`mt-3 border px-3 py-2 ${frame}`} data-testid={`proposal-approval-gate-${id}`} data-tone={tone}>
-      <h3 className="mb-1 text-sm font-semibold">{title}</h3>
+    <div className={cn('mt-3 rounded-md border px-3 py-2', frame)} data-testid={`proposal-approval-gate-${id}`} data-tone={tone}>
+      <h3 className="mb-1 text-body font-semibold">{title}</h3>
       {findings.length === 0 ? (
-        <p className="m-0 text-sm">{emptyLabel}</p>
+        <p className="m-0 text-body">{emptyLabel}</p>
       ) : (
-        <ul className="m-0 list-disc pl-5 text-sm">
+        <ul className="m-0 list-disc pl-6 text-body">
           {findings.map((finding) => (
             <li key={finding.key} data-finding-kind={finding.kind}>
               {severityLabel === null ? null : (
@@ -535,7 +547,14 @@ export function ProposalApprovalScreen(props: ProposalApprovalScreenProps) {
 
   return (
     <div
-      className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"
+      // 🔴 **副カラム（プレビュー）の寸法は `@ses/ui` の `PAGE_BODY_ASIDE_WIDTH_CLASSES` から取る**
+      //    （`lg` 360 → `xl` 400 → `2xl` 480px 固定。`docs/04` §7.1 / §5-2）。旧実装は 50 / 50 の
+      //    可変グリッドで、**大画面でプレビューだけが伸びて実際のメールクライアントと違う幅**になっていた
+      //    （§7.1 の 🔴「ゲートの最後の砦であるプレビューが嘘になる」）。
+      //    ⚠️ `PageBody` の `aside` スロットを使えないのは、**末尾到達の観測（`reachedEnd`）と
+      //       `phase` を左右のカラムが共有する**ためである（`page.tsx`〔サーバ〕からクライアント状態で
+      //       組んだ JSX を渡せない）。`page.tsx` は `widthClass="split"` を渡している。
+      className="flex flex-col gap-6 lg:flex-row"
       data-testid="proposal-approval"
       data-proposal-state={rows.state}
       data-can-approve={rows.canApprove ? 'true' : 'false'}
@@ -546,39 +565,44 @@ export function ProposalApprovalScreen(props: ProposalApprovalScreenProps) {
       data-reached-end={reachedEnd ? 'true' : 'false'}
     >
       {/* 左（モバイルでは上）: 判断ヘッダ + ゲート結果 */}
-      <div className="grid grid-cols-1 gap-4">
+      <div className="flex min-w-0 flex-1 flex-col gap-4">
         {/* 🔴 セクション 1: 判断ヘッダ。折りたたまない。モバイルでは上部に固定して常に見える
             （高さは画面の 45% までに抑え、超えた分はヘッダ内でスクロールする —— 判断材料を隠すのではなく、
             プレビューを読む領域を残すため）。 */}
-        <section
-          className="sticky top-0 z-10 max-h-[45vh] overflow-y-auto border border-slate-200 bg-white lg:static lg:max-h-none lg:overflow-visible"
+        <Card
+          className="sticky top-0 z-10 max-h-[45vh] overflow-y-auto lg:static lg:max-h-none lg:overflow-visible"
           data-testid="proposal-approval-header"
         >
-          <div className="flex flex-wrap items-center gap-3 border-b border-slate-200 px-4 py-3">
-            <h2 className="m-0 text-base font-bold text-slate-900">{messages.sectionHeader}</h2>
-            <span className="text-sm text-slate-500">{messages.fieldState}</span>
-            <Badge variant={STATE_BADGE_VARIANTS[rows.state]} data-testid="proposal-approval-state">
-              {rows.stateLabel}
-            </Badge>
+          <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3">
+            <h2 className="m-0 text-lg font-semibold text-fg">{messages.sectionHeader}</h2>
+            <span className="text-body text-fg-muted">{messages.fieldState}</span>
+            {/* 🔴 色は状態名から決まる（`GATE_FAILED` は橙 / `SUBMIT_FAILED` は赤 / `LOST` は無彩色）。
+                画面は色を渡せない（§5-1 / §5-13）。 */}
+            <StatusBadge
+              entity="proposal"
+              state={rows.state}
+              label={rows.stateLabel}
+              data-testid="proposal-approval-state"
+            />
           </div>
-          <dl className="m-0 grid grid-cols-1 gap-x-4 px-4 py-2 text-sm sm:grid-cols-2">
+          <dl className="m-0 grid grid-cols-1 gap-x-4 px-4 py-2 text-body sm:grid-cols-2">
             {rows.header.map((row) => (
               <div
                 key={row.field}
-                className="flex gap-2 border-b border-slate-100 py-1.5 last:border-b-0 sm:last:border-b"
+                className="flex gap-2 border-b border-border py-1 last:border-b-0 sm:last:border-b"
                 data-testid={`proposal-approval-header-row-${row.field}`}
                 data-emphasis={row.emphasis}
               >
-                <dt className="w-28 shrink-0 text-slate-500">{row.label}</dt>
-                <dd className={`m-0 min-w-0 break-words ${row.emphasis === 'ATTENTION' ? 'font-semibold text-amber-900' : 'text-slate-900'}`}>
+                <dt className="w-28 shrink-0 text-fg-muted">{row.label}</dt>
+                <dd className={`m-0 min-w-0 break-words ${row.emphasis === 'ATTENTION' ? 'font-semibold text-warning' : 'text-fg'}`}>
                   {row.value}
                 </dd>
               </div>
             ))}
             {rows.approver === null ? null : (
-              <div className="flex gap-2 py-1.5" data-testid="proposal-approval-approver">
-                <dt className="w-28 shrink-0 text-slate-500">{messages.fieldApprover}</dt>
-                <dd className="m-0 min-w-0 break-words text-slate-900">
+              <div className="flex gap-2 py-1" data-testid="proposal-approval-approver">
+                <dt className="w-28 shrink-0 text-fg-muted">{messages.fieldApprover}</dt>
+                <dd className="m-0 min-w-0 break-words text-fg">
                   {rows.approver}
                   {auditHref === null ? null : (
                     <>
@@ -592,32 +616,32 @@ export function ProposalApprovalScreen(props: ProposalApprovalScreenProps) {
               </div>
             )}
           </dl>
-          <p className="m-0 border-t border-slate-100 px-4 py-2 text-xs text-slate-500" data-testid="proposal-approval-frozen-notice">
+          <p className="m-0 border-t border-border px-4 py-2 text-xs text-fg-muted" data-testid="proposal-approval-frozen-notice">
             {rows.frozenNotice}
           </p>
-        </section>
+        </Card>
 
         {rows.audienceNotice === null ? null : (
-          <p className="m-0 text-sm text-slate-600" data-testid="proposal-approval-partner-notice">
+          <p className="m-0 text-body text-fg-muted" data-testid="proposal-approval-partner-notice">
             {rows.audienceNotice}
           </p>
         )}
         {rows.canApprove || rows.audienceNotice !== null ? null : (
-          <p className="m-0 text-sm text-slate-600" data-testid="proposal-approval-viewer">
+          <p className="m-0 text-body text-fg-muted" data-testid="proposal-approval-viewer">
             {messages.viewerNotice}
           </p>
         )}
         {rows.canApprove && denialMessage !== null ? (
-          <div role="alert" className="border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900" data-testid="proposal-approval-denied">
-            <p className="font-bold">{messages.deniedTitle}</p>
+          <Alert variant="warning" data-testid="proposal-approval-denied">
+            <p className="font-semibold">{messages.deniedTitle}</p>
             <p>{denialMessage}</p>
-          </div>
+          </Alert>
         ) : null}
 
         {/* 🔴 セクション 2: ゲート結果（層ごと。不合格と警告は別物。折りたたみに入れない） */}
         <Section id="gate" title={messages.sectionGate}>
           {rows.disposition.kind === 'DRAFT' ? (
-            <p className="m-0 text-sm text-slate-600" data-testid="proposal-approval-gate-not-requested">
+            <p className="m-0 text-body text-fg-muted" data-testid="proposal-approval-gate-not-requested">
               {messages.gateNotRequested}
             </p>
           ) : (
@@ -626,33 +650,37 @@ export function ProposalApprovalScreen(props: ProposalApprovalScreenProps) {
                 {gate.layers.map((layer) => (
                   <li
                     key={layer.key}
-                    className={`border px-3 py-2 ${layer.state === 'FAIL' ? 'border-red-300 bg-red-50' : 'border-slate-200 bg-slate-50'}`}
+                    className={cn(
+                      'rounded-md border px-3 py-2',
+                      layer.state === 'FAIL' ? 'border-danger-border bg-danger-bg' : 'border-border bg-bg-subtle',
+                    )}
                     data-testid={`proposal-approval-gate-layer-${layer.key}`}
                     data-layer-state={layer.state}
                   >
-                    <p className="mb-1 text-xs text-slate-500">{layer.label}</p>
-                    <Badge variant={LAYER_BADGE_VARIANTS[layer.state]}>{layer.verdictLabel}</Badge>
+                    <p className="mb-1 text-xs text-fg-muted">{layer.label}</p>
+                    {/* 🔴 層の見え方は `lib/proposals/gate-layer-badge.ts` の 1 箇所が決める（§5-3）。 */}
+                    <Badge {...gateLayerBadgeAppearance(layer.state)}>{layer.verdictLabel}</Badge>
                   </li>
                 ))}
               </ul>
               {gate.execution === 'RUNNING' ? (
-                <p role="status" className="mt-3 mb-0 text-sm text-slate-700" data-testid="proposal-approval-gate-running">
+                <p role="status" className="mt-3 mb-0 text-body text-fg" data-testid="proposal-approval-gate-running">
                   {messages.gateRunning}
                 </p>
               ) : null}
               {gate.execution === 'HELD_AI_COST_LIMIT' ? (
-                <p role="status" className="mt-3 mb-0 border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900" data-testid="proposal-approval-gate-held">
+                <Alert role="status" variant="warning" className="mt-3" data-testid="proposal-approval-gate-held">
                   {messages.gateHeld} {messages.gateHeldResetAtPrefix}
                   {gate.heldResetAt}
-                </p>
+                </Alert>
               ) : null}
               {gate.aiFailed ? (
-                <p role="alert" className="mt-3 mb-0 border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900" data-testid="proposal-approval-gate-ai-failed">
+                <Alert variant="danger" className="mt-3" data-testid="proposal-approval-gate-ai-failed">
                   {messages.gateAiFailed}
-                </p>
+                </Alert>
               ) : null}
               {gate.lead === null ? null : (
-                <p className={`mt-3 mb-0 text-sm ${gate.failed ? 'text-red-800' : 'text-emerald-800'}`} data-testid="proposal-approval-gate-lead">
+                <p className={`mt-3 mb-0 text-body ${gate.failed ? 'text-danger' : 'text-success'}`} data-testid="proposal-approval-gate-lead">
                   {gate.lead}
                 </p>
               )}
@@ -676,7 +704,7 @@ export function ProposalApprovalScreen(props: ProposalApprovalScreenProps) {
                     severityLabel={messages.gateWarningLabel}
                     tone="warning"
                   />
-                  <p className="mt-2 mb-0 text-xs text-slate-500" data-testid="proposal-approval-gate-warnings-note">
+                  <p className="mt-2 mb-0 text-xs text-fg-muted" data-testid="proposal-approval-gate-warnings-note">
                     {messages.gateWarningsNote}
                   </p>
                 </>
@@ -686,30 +714,31 @@ export function ProposalApprovalScreen(props: ProposalApprovalScreenProps) {
         </Section>
       </div>
 
-      {/* 右（モバイルでは下）: プレビュー + 添付 + 送信元ドメイン + アクション */}
-      <div className="grid grid-cols-1 gap-4">
+      {/* 右（モバイルでは下）: プレビュー + 添付 + 送信元ドメイン + アクション
+          🔴 **プレビューの幅を固定する**（§5-2 / §7.1。可変だと「送信先での見え方」が嘘になる）。 */}
+      <div className={cn(PAGE_BODY_ASIDE_WIDTH_CLASSES, 'flex flex-col gap-4')}>
         {/* 🔴 セクション 4: 送信先別プレビュー。承認者が実際に相手が見るものを見てから押す順序を作る。 */}
         <Section id="preview" title={messages.sectionPreview}>
           <div data-testid="proposal-approval-preview">
-            <p className="mb-3 text-xs text-slate-500">{messages.previewLead}</p>
-            <p className="mb-1 text-xs text-slate-500">{messages.previewSubject}</p>
-            <p className="mb-3 break-words font-semibold text-slate-900" data-testid="proposal-approval-preview-subject">
+            <p className="mb-3 text-xs text-fg-muted">{messages.previewLead}</p>
+            <p className="mb-1 text-xs text-fg-muted">{messages.previewSubject}</p>
+            <p className="mb-3 break-words font-semibold text-fg" data-testid="proposal-approval-preview-subject">
               {rows.preview.subject === null ? (
-                <span className="font-normal text-slate-500">{messages.previewSubjectEmpty}</span>
+                <span className="font-normal text-fg-muted">{messages.previewSubjectEmpty}</span>
               ) : (
                 <HighlightedText text={rows.preview.subject} highlights={rows.preview.subjectHighlights} messages={messages} />
               )}
             </p>
-            <p className="mb-1 text-xs text-slate-500">{messages.previewBody}</p>
-            <p className="mb-3 whitespace-pre-wrap break-words border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900" data-testid="proposal-approval-preview-body">
+            <p className="mb-1 text-xs text-fg-muted">{messages.previewBody}</p>
+            <p className="mb-3 rounded-md border border-border bg-bg-subtle px-3 py-2 whitespace-pre-wrap break-words text-body text-fg" data-testid="proposal-approval-preview-body">
               {rows.preview.body === null ? (
-                <span className="text-slate-500">{messages.previewBodyEmpty}</span>
+                <span className="text-fg-muted">{messages.previewBodyEmpty}</span>
               ) : (
                 <HighlightedText text={rows.preview.body} highlights={rows.preview.bodyHighlights} messages={messages} />
               )}
             </p>
-            <p className="mb-0 text-sm text-slate-700" data-testid="proposal-approval-preview-attachment">
-              <span className="text-slate-500">{messages.previewAttachmentLabel}: </span>
+            <p className="mb-0 text-body text-fg" data-testid="proposal-approval-preview-attachment">
+              <span className="text-fg-muted">{messages.previewAttachmentLabel}: </span>
               {rows.preview.attachment ?? messages.previewAttachmentNone}
             </p>
           </div>
@@ -717,27 +746,27 @@ export function ProposalApprovalScreen(props: ProposalApprovalScreenProps) {
 
         {/* セクション 5: 添付 */}
         <Section id="attachment" title={messages.sectionAttachment}>
-          <p className="m-0 text-sm text-slate-900" data-testid="proposal-approval-attachment">
+          <p className="m-0 text-body text-fg" data-testid="proposal-approval-attachment">
             {rows.attachmentNotice}
           </p>
-          <p className="mt-2 mb-0 text-xs text-slate-500">{messages.attachmentViewNote}</p>
+          <p className="mt-2 mb-0 text-xs text-fg-muted">{messages.attachmentViewNote}</p>
         </Section>
 
         {/* セクション 6: 送信元ドメインの状態（`U-04`。未検証なら承認はできるが送信できない） */}
         <Section id="sending-domain" title={messages.sectionSendingDomain}>
           {sendingDomain.kind === 'PARTNER' || sendingDomain.kind === 'NOT_REQUIRED' ? (
-            <p className="m-0 text-sm text-slate-600" data-testid="proposal-approval-sending-domain">
+            <p className="m-0 text-body text-fg-muted" data-testid="proposal-approval-sending-domain">
               {sendingDomain.note}
             </p>
           ) : sendingDomain.kind === 'VERIFIED' ? (
-            <p className="m-0 text-sm text-slate-900" data-testid="proposal-approval-sending-domain">
+            <p className="m-0 text-body text-fg" data-testid="proposal-approval-sending-domain">
               {sendingDomain.label}
             </p>
           ) : (
             <div data-testid="proposal-approval-sending-domain">
-              <p role="status" className="mb-2 border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              <Alert role="status" variant="warning" className="mb-2">
                 {sendingDomain.notice} {messages.sendingDomainUnverifiedNote}
-              </p>
+              </Alert>
               <Link className={SECONDARY_LINK_CLASSES} href={sendingDomain.href} data-testid="proposal-approval-sending-domain-open">
                 {sendingDomain.linkLabel}
               </Link>
@@ -746,79 +775,82 @@ export function ProposalApprovalScreen(props: ProposalApprovalScreenProps) {
         </Section>
 
         {/* 🔴 ②: プレビューの末尾の目印。ここが画面に入るまで承認・却下は押せない。 */}
-        <p ref={endRef} className="m-0 text-xs text-slate-400" data-testid="proposal-approval-preview-end">
+        <p ref={endRef} className="m-0 text-xs text-fg-muted" data-testid="proposal-approval-preview-end">
           {messages.previewEnd}
         </p>
 
         {/* セクション 7: アクション（モバイルでは下部に固定） */}
-        <section
-          className="sticky bottom-0 z-10 border border-slate-200 bg-white lg:static"
+        {/* 🔴 §S-021 デバイス別: モバイルではアクションを**下部固定**にする（判断材料を読み切った
+            後に押す順序を保つ）。面は `Card` が持つ。 */}
+        <Card
+          className="sticky bottom-0 z-10 lg:static"
           data-testid="proposal-approval-actions"
           data-actionable={actionable ? 'true' : 'false'}
         >
-          <h2 className="border-b border-slate-200 px-4 py-3 text-base font-bold text-slate-900">{messages.sectionActions}</h2>
-          <div className="px-4 py-4">
+          <h2 className="border-b border-border px-4 py-3 text-lg font-semibold text-fg">{messages.sectionActions}</h2>
+          <CardContent className="pt-4">
             {rows.disposition.kind !== 'PENDING' ? (
-              <p role="status" className="m-0 text-sm text-slate-700" data-testid="proposal-approval-notice" data-disposition={rows.disposition.kind}>
+              <p role="status" className="m-0 text-body text-fg" data-testid="proposal-approval-notice" data-disposition={rows.disposition.kind}>
                 {rows.disposition.notice}
               </p>
             ) : null}
             {/* 🔴 T-09-08: 送信失敗 → `S-022` への導線（再送は `S-022` の確認ステップを経てだけ行う。ここに「再送」ボタンは置かない）。 */}
             {rows.disposition.kind === 'SUBMIT_FAILED' && sendFailuresHref !== null ? (
-              <Link className={`${SECONDARY_LINK_CLASSES} mt-2 inline-block`} href={sendFailuresHref} data-testid="proposal-approval-open-send-failures">
+              <Link className={cn(SECONDARY_LINK_CLASSES, 'mt-2 inline-block')} href={sendFailuresHref} data-testid="proposal-approval-open-send-failures">
                 {messages.openSendFailures}
               </Link>
             ) : null}
             {phase.kind === 'APPROVED' ? (
-              <p role="status" className="m-0 text-sm text-emerald-800" data-testid="proposal-approval-result" data-result="APPROVED">
+              <p role="status" className="m-0 text-body text-success" data-testid="proposal-approval-result" data-result="APPROVED">
                 {messages.approved}
               </p>
             ) : null}
             {phase.kind === 'REJECTED' ? (
-              <p role="status" className="m-0 text-sm text-slate-800" data-testid="proposal-approval-result" data-result="REJECTED">
+              <p role="status" className="m-0 text-body text-fg" data-testid="proposal-approval-result" data-result="REJECTED">
                 {messages.rejected}
               </p>
             ) : null}
             {/* 🔴 ⑧: 送信の保留（理由 × 開始時刻 × 設定導線）。PROVIDER_QUOTA には S-038 の導線を出さない。 */}
             {rows.sendHold === null ? null : (
-              <div
+              <Alert
                 role="status"
-                className="mt-2 mb-3 border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+                variant="warning"
+                className="mt-2 mb-3"
                 data-testid="proposal-approval-send-hold"
                 data-reason-key={rows.sendHold.reasonKey}
                 data-auto-release={rows.sendHold.autoRelease ? 'true' : 'false'}
               >
-                <p className="m-0 font-bold">{rows.sendHold.title}</p>
+                <p className="m-0 font-semibold">{rows.sendHold.title}</p>
                 <p className="mt-1 mb-0">{rows.sendHold.message}</p>
                 <p className="mt-1 mb-0 text-xs">{rows.sendHold.since}</p>
                 {rows.sendHold.settingsLink === null ? null : (
-                  <Link className={`${SECONDARY_LINK_CLASSES} mt-2 inline-block`} href={rows.sendHold.settingsLink.href} data-testid="proposal-approval-send-hold-link">
+                  <Link className={cn(SECONDARY_LINK_CLASSES, 'mt-2 inline-block')} href={rows.sendHold.settingsLink.href} data-testid="proposal-approval-send-hold-link">
                     {rows.sendHold.settingsLink.label}
                   </Link>
                 )}
-              </div>
+              </Alert>
             )}
             {phase.kind === 'SUBMIT_REQUESTED' ? (
-              <p role="status" className="m-0 text-sm text-slate-800" data-testid="proposal-approval-result" data-result="SUBMIT_REQUESTED">
+              <p role="status" className="m-0 text-body text-fg" data-testid="proposal-approval-result" data-result="SUBMIT_REQUESTED">
                 {messages.submitRequested}
               </p>
             ) : null}
             {/* 🔴 ⑨（T-12-13 ⑤）: 読み直して `APPROVED` のまま確定を待っている（試行の末尾が未確定 = `RESERVED`）。「送信する」の代わりに受け付けの枠。 */}
             {phase.kind !== 'SUBMIT_REQUESTED' && rows.disposition.kind === 'APPROVED' && rows.awaitingSendSettlement ? (
-              <p role="status" className="m-0 text-sm text-slate-800" data-testid="proposal-approval-send-pending">
+              <p role="status" className="m-0 text-body text-fg" data-testid="proposal-approval-send-pending">
                 {messages.submitRequested}
               </p>
             ) : null}
             {sendActionable ? (
               <div data-testid="proposal-approval-submit-block">
-                <p className="mt-2 mb-2 text-xs text-slate-600" data-testid="proposal-approval-submit-lead">
+                <p className="mt-2 mb-2 text-xs text-fg-muted" data-testid="proposal-approval-submit-lead">
                   {messages.submitLead}
                 </p>
                 <Button type="button" disabled={!sendButtonEnabled} onClick={() => void submit()} data-testid="proposal-approval-submit">
                   {phase.kind === 'SUBMITTING' && phase.action === 'SUBMIT' ? messages.submitting : messages.submit}
                 </Button>
                 {!reachedEnd ? (
-                  <p role="status" className="mt-2 mb-0 text-sm text-amber-900" data-testid="proposal-approval-submit-scroll-required">
+                  <p role="status" className="mt-2 mb-0 text-body text-warning" data-testid="proposal-approval-submit-scroll-required">
                     {messages.submitScrollRequired}
                   </p>
                 ) : null}
@@ -874,12 +906,12 @@ export function ProposalApprovalScreen(props: ProposalApprovalScreenProps) {
             ) : null}
             {/* 🔴 押せない理由を明示する（無言で disabled にしない）。 */}
             {actionable && !reachedEnd ? (
-              <p role="status" className="mt-2 mb-0 text-sm text-amber-900" data-testid="proposal-approval-scroll-required">
+              <p role="status" className="mt-2 mb-0 text-body text-warning" data-testid="proposal-approval-scroll-required">
                 {messages.scrollRequired}
               </p>
             ) : null}
             {error === null ? null : (
-              <p role="alert" className="mt-2 mb-0 text-sm text-red-700" data-testid="proposal-approval-error">
+              <p role="alert" className="mt-2 mb-0 text-body text-danger" data-testid="proposal-approval-error">
                 {error}
               </p>
             )}
@@ -891,8 +923,8 @@ export function ProposalApprovalScreen(props: ProposalApprovalScreenProps) {
                 {messages.backHome}
               </Link>
             </div>
-          </div>
-        </section>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

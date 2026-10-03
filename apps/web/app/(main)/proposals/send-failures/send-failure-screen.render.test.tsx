@@ -80,6 +80,11 @@ const messages: SendFailureScreenMessages = {
   columnLastAttemptAt: '最終試行日時',
   columnElapsed: '経過時間',
   columnAttemptCount: '試行回数',
+  // ✅ SP-22 段④: 操作列と件数バーの並び順の説明。
+  columnAction: '操作',
+  panelOpen: '内容を見る',
+  orderNote: '最終更新の新しい順に表示しています。',
+  population: '自社が送信した提案',
   emptyTitle: '送信に失敗した提案はありません。',
   emptyLead: 'この一覧が空であることが正常な状態です。',
   detailTitle: '選択した提案',

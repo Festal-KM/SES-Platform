@@ -32,10 +32,29 @@
 import { useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Badge, Button, Field, FoldedList, SECONDARY_LINK_CLASSES, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Textarea, type BadgeVariant } from '@ses/ui';
-import type { GateLayerState } from '@ses/domain';
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  Field,
+  FoldedList,
+  PAGE_BODY_ASIDE_WIDTH_CLASSES,
+  SECONDARY_LINK_CLASSES,
+  StatusBadge,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Textarea,
+  cn,
+} from '@ses/ui';
 import type { ApprovalGateRows } from '../../../../lib/proposals/approval-rows';
-import type { ProposalDetailRows, ProposalGateHistoryRows, ProposalStateTone, ProposalTimelineRow } from '../../../../lib/proposals/detail-rows';
+import type { ProposalDetailRows, ProposalGateHistoryRows, ProposalTimelineRow } from '../../../../lib/proposals/detail-rows';
+import { gateLayerBadgeAppearance } from '../../../../lib/proposals/gate-layer-badge';
 
 export type ProposalDetailScreenMessages = {
   readonly sectionHeader: string;
@@ -103,20 +122,15 @@ export type ProposalDetailScreenProps = {
   readonly messages: ProposalDetailScreenMessages;
 };
 
-const TONE_VARIANTS = {
-  neutral: 'neutral',
-  progress: 'outline',
-  success: 'success',
-  warning: 'warning',
-  danger: 'danger',
-} as const satisfies Record<ProposalStateTone, BadgeVariant>;
-
-const LAYER_VARIANTS = {
-  RUNNING: 'outline',
-  PASS: 'success',
-  FAIL: 'danger',
-  HELD: 'warning',
-} as const satisfies Record<GateLayerState, BadgeVariant>;
+// ============================================================================
+// 🔴 SP-22 段④ で削除した 2 本の色の写像
+// ============================================================================
+// ① `TONE_VARIANTS`（5 値の tone → `BadgeVariant`）: 5 値では `docs/04` §5-1 の 14 状態の
+//    塗り / 枠線 / 点線枠を表現できず、**`GATE_FAILED` と `SUBMIT_FAILED` が同じ赤**になっていた
+//    （`CLAUDE.md` §4.2「すべて別の状態」）。色は `@ses/ui` の `StatusBadge` が状態名から決める。
+// ② `LAYER_VARIANTS`（層 → `BadgeVariant`）: `RUNNING` が `S-020` / `S-021` では `warning`、
+//    ここでは `outline` と**画面ごとに食い違っていた**（§5-3「5 種すべてで同じ見せ方を使う」）。
+//    出所を `lib/proposals/gate-layer-badge.ts` の 1 つに寄せた。
 
 type NotePhase = { readonly kind: 'IDLE' } | { readonly kind: 'SUBMITTING' } | { readonly kind: 'ADDED' };
 
@@ -125,25 +139,25 @@ type ErrorBody = { readonly error?: { readonly code?: string } };
 function TimelineItem({ row }: { readonly row: ProposalTimelineRow }) {
   return (
     <li
-      className="border-l-2 border-slate-200 pl-4"
+      className="border-l-2 border-border pl-4"
       data-testid={`proposal-detail-event-${row.id}`}
       data-event-kind={row.kind}
       data-actor-kind={row.actorKind}
     >
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs text-slate-500">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs text-fg-muted">
         <time>{row.occurredAt}</time>
         <span data-testid={`proposal-detail-event-actor-${row.id}`}>{row.actor}</span>
       </div>
-      <div className="text-sm font-semibold text-slate-900" data-testid={`proposal-detail-event-title-${row.id}`}>
+      <div className="text-body font-semibold text-fg" data-testid={`proposal-detail-event-title-${row.id}`}>
         {row.title}
       </div>
-      {row.transition === null ? null : <div className="text-sm text-slate-700">{row.transition}</div>}
+      {row.transition === null ? null : <div className="text-body text-fg">{row.transition}</div>}
       {row.detail === null ? null : (
-        <p className="whitespace-pre-wrap break-words text-sm text-slate-800" data-testid={`proposal-detail-event-detail-${row.id}`}>
+        <p className="whitespace-pre-wrap break-words text-body text-fg" data-testid={`proposal-detail-event-detail-${row.id}`}>
           {row.detail}
         </p>
       )}
-      {row.attachment === null ? null : <div className="text-xs text-slate-500">{row.attachment}</div>}
+      {row.attachment === null ? null : <div className="text-xs text-fg-muted">{row.attachment}</div>}
     </li>
   );
 }
@@ -171,38 +185,40 @@ function GateResultBlock({ gate, scope, messages }: { readonly gate: ApprovalGat
             data-testid={current ? `proposal-detail-gate-layer-${layer.key}` : `proposal-detail-gate-history-layer-${scope.id}-${layer.key}`}
             data-layer-state={layer.state}
           >
-            <Badge variant={LAYER_VARIANTS[layer.state]}>
+            {/* 🔴 層の見え方は `lib/proposals/gate-layer-badge.ts` の 1 箇所が決める（§5-3）。 */}
+            <Badge {...gateLayerBadgeAppearance(layer.state)}>
               {layer.label}: {layer.verdictLabel}
             </Badge>
           </li>
         ))}
       </ul>
       {gate.execution === 'HELD_AI_COST_LIMIT' ? (
-        <p
+        <Alert
           role="status"
-          className="mb-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+          variant="warning"
+          className="mb-2"
           data-testid={current ? 'proposal-detail-gate-held' : `proposal-detail-gate-history-held-${scope.id}`}
         >
           {messages.gateHeld} {messages.gateHeldResetAtPrefix}
           {gate.heldResetAt}
-        </p>
+        </Alert>
       ) : null}
       {gate.aiFailed ? (
-        <p
-          role="alert"
-          className="mb-2 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900"
+        <Alert
+          variant="danger"
+          className="mb-2"
           data-testid={current ? 'proposal-detail-gate-ai-failed' : `proposal-detail-gate-history-ai-failed-${scope.id}`}
         >
           {current ? messages.gateAiFailed : messages.gateHistoryAiFailed}
-        </p>
+        </Alert>
       ) : null}
-      {gate.lead === null ? null : <p className="mb-2 text-sm text-slate-700">{gate.lead}</p>}
-      <h4 className="text-sm font-semibold text-red-800">{messages.gateFindingsTitle}</h4>
+      {gate.lead === null ? null : <p className="mb-2 text-body text-fg">{gate.lead}</p>}
+      <h4 className="text-body font-semibold text-danger">{messages.gateFindingsTitle}</h4>
       {gate.findings.length === 0 ? (
-        <p className="mb-2 text-sm text-slate-600">{messages.gateFindingsEmpty}</p>
+        <p className="mb-2 text-body text-fg-muted">{messages.gateFindingsEmpty}</p>
       ) : (
         <ul
-          className="mb-2 list-disc pl-5 text-sm text-red-800"
+          className="mb-2 list-disc pl-6 text-body text-danger"
           data-testid={current ? 'proposal-detail-gate-findings' : `proposal-detail-gate-history-findings-${scope.id}`}
         >
           {gate.findings.map((finding) => (
@@ -212,12 +228,12 @@ function GateResultBlock({ gate, scope, messages }: { readonly gate: ApprovalGat
           ))}
         </ul>
       )}
-      <h4 className="text-sm font-semibold text-amber-800">{messages.gateWarningsTitle}</h4>
+      <h4 className="text-body font-semibold text-warning">{messages.gateWarningsTitle}</h4>
       {gate.warnings.length === 0 ? (
-        <p className="text-sm text-slate-600">{messages.gateWarningsEmpty}</p>
+        <p className="text-body text-fg-muted">{messages.gateWarningsEmpty}</p>
       ) : (
         <ul
-          className="list-disc pl-5 text-sm text-amber-800"
+          className="list-disc pl-6 text-body text-warning"
           data-testid={current ? 'proposal-detail-gate-warnings' : `proposal-detail-gate-history-warnings-${scope.id}`}
         >
           {gate.warnings.map((warning) => (
@@ -281,272 +297,301 @@ export function ProposalDetailScreen({ proposalId, rows, gateHistory, isViewer, 
 
   return (
     <div data-testid="proposal-detail" data-proposal-state={rows.state} data-failure-kind={rows.failureKind ?? ''} data-can-add-note={canExecute ? 'true' : 'false'}>
-      {/* ① 固定ヘッダ（状態 + 提案先 + 単価）。折りたたみの外。 */}
-      <div className="sticky top-0 z-10 mb-4 flex flex-wrap items-center gap-3 border-b border-slate-200 bg-white/95 py-2" data-testid="proposal-detail-fixed">
-        <Badge variant={TONE_VARIANTS[rows.tone]} data-testid="proposal-detail-state">
-          {rows.stateLabel}
-        </Badge>
-        <span className="text-sm text-slate-800" data-testid="proposal-detail-fixed-recipient">
+      {/* ① 固定ヘッダ（状態 + 提案先 + 単価）。折りたたみの外。
+          🔴 **状態と単価は折りたたみの外に置き続ける**（`docs/04` §S-023 デバイス別）。
+          ⚠️ 面（`bg-surface`）は画面で作れないので、地はページ地（`--color-bg`）を使う ——
+             スクロール時に下の行が透けないよう不透明にする必要があり、`Card` では
+             「ページ幅の帯」にならない。 */}
+      <div className="sticky top-0 z-10 mb-4 flex flex-wrap items-center gap-3 border-b border-border bg-bg py-2" data-testid="proposal-detail-fixed">
+        {/* 🔴 色は状態名から決まる（§5-1 の 14 状態）。画面は渡せない。 */}
+        <StatusBadge
+          entity="proposal"
+          state={rows.state}
+          label={rows.stateLabel}
+          data-testid="proposal-detail-state"
+        />
+        <span className="text-body text-fg" data-testid="proposal-detail-fixed-recipient">
           {rows.fixed.recipient}
         </span>
-        <span className="text-sm font-semibold text-slate-900" data-testid="proposal-detail-fixed-unit-price">
+        <span className="text-body font-semibold text-fg" data-testid="proposal-detail-fixed-unit-price">
           {rows.fixed.unitPrice}
         </span>
-        <Link className={`${SECONDARY_LINK_CLASSES} ml-auto`} href={listHref} data-testid="proposal-detail-back-to-list">
+        <Link className={cn(SECONDARY_LINK_CLASSES, 'ml-auto')} href={listHref} data-testid="proposal-detail-back-to-list">
           {messages.backToList}
         </Link>
       </div>
 
       {rows.audienceNotice === null ? null : (
-        <p className="mb-4 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700" data-testid="proposal-detail-partner-notice">
+        <Alert role="status" variant="neutral" className="mb-4" data-testid="proposal-detail-partner-notice">
           {rows.audienceNotice}
-        </p>
+        </Alert>
       )}
 
-      {/* ① 概要（判断ヘッダと同じ材料）。 */}
-      <section className="mb-6" data-testid="proposal-detail-section-header">
-        <h2 className="mb-2 text-base font-semibold text-slate-900">{messages.sectionHeader}</h2>
-        <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
-          {rows.header.map((row) => (
-            <div key={row.field} className="flex gap-3" data-testid={`proposal-detail-header-row-${row.field}`} data-emphasis={row.emphasis}>
-              <dt className="w-28 shrink-0 text-slate-500">{row.label}</dt>
-              <dd className={`m-0 break-words ${row.emphasis === 'ATTENTION' ? 'font-semibold text-amber-800' : 'text-slate-900'}`}>{row.value}</dd>
-            </div>
-          ))}
-          <div className="flex gap-3" data-testid="proposal-detail-header-row-state">
-            <dt className="w-28 shrink-0 text-slate-500">{messages.fieldState}</dt>
-            <dd className="m-0 text-slate-900">{rows.stateLabel}</dd>
-          </div>
-          {rows.approver === null ? null : (
-            <div className="flex gap-3" data-testid="proposal-detail-approver">
-              <dt className="w-28 shrink-0 text-slate-500">{messages.fieldApprover}</dt>
-              <dd className="m-0 text-slate-900">{rows.approver}</dd>
-            </div>
-          )}
-          {rows.submittedAt === null ? null : (
-            <div className="flex gap-3" data-testid="proposal-detail-submitted-at">
-              <dt className="w-28 shrink-0 text-slate-500">{messages.fieldSubmittedAt}</dt>
-              <dd className="m-0 text-slate-900">{rows.submittedAt}</dd>
-            </div>
-          )}
-          {rows.sendAttempts === null ? null : (
-            <div className="flex gap-3" data-testid="proposal-detail-send-attempts">
-              <dt className="w-28 shrink-0 text-slate-500">{messages.fieldSendAttempts}</dt>
-              <dd className="m-0 text-slate-900">
-                {rows.sendAttempts.items.length === 0 ? messages.sendAttemptsNone : `${rows.sendAttempts.count} / ${rows.sendAttempts.last ?? ''}`}
-              </dd>
-            </div>
-          )}
-          {rows.lastFailureReason === null ? null : (
-            <div className="flex gap-3" data-testid="proposal-detail-last-failure">
-              <dt className="w-28 shrink-0 text-slate-500">{messages.fieldLastFailure}</dt>
-              <dd className="m-0 text-slate-900">{rows.lastFailureReason}</dd>
-            </div>
-          )}
-        </dl>
-      </section>
+      {/* 🔴 **クラス B（分割）の 2 カラム**（`docs/04` §7.1。`page.tsx` が `widthClass="split"` を渡す）。
+          副カラムの寸法は `@ses/ui` の `PAGE_BODY_ASIDE_WIDTH_CLASSES`（360 / 400 / 480px 固定）から取る。
+          ⚠️ `PageBody` の `aside` スロットを使えないのは、メモ投稿のクライアント状態（`phase` / `error`）が
+             同じコンポーネントに在るためである（サーバからクライアント状態の JSX を渡せない）。
+          🔴 **副カラムに置くのは「ゲート結果の履歴」だけ**である ——
+             ① **判断材料（状態 / 提案先 / 単価 / 概要 / 現在のゲート結果）を 1 つも移さない**（§13.3）
+             ② モバイルでは副カラムが本体の下に落ちるが、**履歴は移行前から最後のセクション**であり
+                **読む順序が 1 行も変わらない**（`CLAUDE.md` §13.3「狭い画面を理由に判断材料を隠さない」）。 */}
+      <div className="flex flex-col gap-6 lg:flex-row">
+        <div className="flex min-w-0 flex-1 flex-col">
 
-      {/* 保留（ホストだけ。`SUBMIT_FAILED` とは別の枠）。 */}
-      {rows.sendHold === null ? null : (
-        <section className="mb-6 rounded-md border border-amber-200 bg-amber-50 p-4" data-testid="proposal-detail-send-hold" data-hold-reason={rows.sendHold.reasonKey}>
-          <h2 className="mb-1 text-base font-semibold text-amber-900">{messages.sectionHold}</h2>
-          <p className="text-sm text-amber-900">{rows.sendHold.message}</p>
-          <p className="text-xs text-amber-800">{rows.sendHold.since}</p>
-          {rows.sendHold.settingsLink === null ? null : (
-            <Link className={`${SECONDARY_LINK_CLASSES} mt-2 inline-block`} href={rows.sendHold.settingsLink.href} data-testid="proposal-detail-send-hold-settings">
-              {rows.sendHold.settingsLink.label}
-            </Link>
-          )}
-        </section>
-      )}
-
-      {/* ④ 状態に応じた導線。 */}
-      <section className="mb-6" data-testid="proposal-detail-section-actions">
-        <h2 className="mb-2 text-base font-semibold text-slate-900">{messages.sectionActions}</h2>
-        {rows.actionsEmpty === null ? null : (
-          <p className="text-sm text-slate-600" data-testid="proposal-detail-actions-empty">
-            {rows.actionsEmpty}
-          </p>
-        )}
-        <ul className="flex flex-col gap-3">
-          {rows.actions.map((action) => (
-            <li key={action.key} data-testid={`proposal-detail-action-${action.key}`}>
-              {action.lead === null ? null : (
-                <p className="mb-1 text-sm text-amber-900" data-testid={`proposal-detail-action-lead-${action.key}`}>
-                  {action.lead}
-                </p>
-              )}
-              <Link className={SECONDARY_LINK_CLASSES} href={action.href} data-testid={`proposal-detail-action-link-${action.key}`}>
-                {action.label}
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      {/* ② 履歴タイムライン（新しい順。11 行以上で直近 10 行 + 「すべて表示」= docs/04 §10.3 の共通規約）。 */}
-      <section className="mb-6" data-testid="proposal-detail-section-timeline">
-        <h2 className="mb-2 text-base font-semibold text-slate-900">{messages.sectionTimeline}</h2>
-        <FoldedList
-          data-testid="proposal-detail-timeline"
-          showAllLabel={messages.showAll}
-          rows={rows.timeline.map((row) => (
-            <TimelineItem key={row.id} row={row} />
-          ))}
-        />
-      </section>
-
-      {/* ⑤ メモ追加（#47）。状態を動かさない。 */}
-      <section className="mb-6" data-testid="proposal-detail-section-note">
-        <h2 className="mb-2 text-base font-semibold text-slate-900">{messages.sectionNote}</h2>
-        {isViewer ? (
-          <p className="text-sm text-slate-600" data-testid="proposal-detail-note-viewer">
-            {messages.noteViewerNotice}
-          </p>
-        ) : !rows.canAddNote ? (
-          <p className="text-sm text-slate-600" data-testid="proposal-detail-note-forbidden">
-            {messages.noteForbiddenNotice}
-          </p>
-        ) : denialMessage !== null ? (
-          <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" data-testid="proposal-detail-note-denied">
-            <p className="font-semibold">{messages.deniedTitle}</p>
-            <p>{denialMessage}</p>
-          </div>
-        ) : (
-          <form onSubmit={(event) => void submitNote(event)} className="flex flex-col gap-3" data-testid="proposal-detail-note-form">
-            <p className="text-xs text-slate-600">{messages.noteLead}</p>
-            <Field label={messages.noteLabel}>
-              <Textarea
-                value={note}
-                onChange={(event) => setNote(event.target.value)}
-                maxLength={noteMaxLength}
-                rows={3}
-                disabled={submitting}
-                data-testid="proposal-detail-note-input"
-              />
-            </Field>
-            <div className="flex flex-wrap items-center gap-3">
-              <Button type="submit" disabled={submitting || note.trim().length === 0} data-testid="proposal-detail-note-submit">
-                {submitting ? messages.noteSubmitting : messages.noteSubmit}
-              </Button>
-              {phase.kind === 'ADDED' ? (
-                <span className="text-sm text-emerald-800" data-testid="proposal-detail-note-added">
-                  {messages.noteAdded}
-                </span>
-              ) : null}
+        {/* ① 概要（判断ヘッダと同じ材料）。 */}
+        <section className="mb-6" data-testid="proposal-detail-section-header">
+          <h2 className="mb-2 text-lg font-semibold text-fg">{messages.sectionHeader}</h2>
+          <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-body sm:grid-cols-2">
+            {rows.header.map((row) => (
+              <div key={row.field} className="flex gap-3" data-testid={`proposal-detail-header-row-${row.field}`} data-emphasis={row.emphasis}>
+                <dt className="w-28 shrink-0 text-fg-muted">{row.label}</dt>
+                <dd className={`m-0 break-words ${row.emphasis === 'ATTENTION' ? 'font-semibold text-warning' : 'text-fg'}`}>{row.value}</dd>
+              </div>
+            ))}
+            <div className="flex gap-3" data-testid="proposal-detail-header-row-state">
+              <dt className="w-28 shrink-0 text-fg-muted">{messages.fieldState}</dt>
+              <dd className="m-0 text-fg">{rows.stateLabel}</dd>
             </div>
-            {error === null ? null : (
-              <p role="alert" className="text-sm font-semibold text-red-700" data-testid="proposal-detail-note-error">
-                {error}
-              </p>
+            {rows.approver === null ? null : (
+              <div className="flex gap-3" data-testid="proposal-detail-approver">
+                <dt className="w-28 shrink-0 text-fg-muted">{messages.fieldApprover}</dt>
+                <dd className="m-0 text-fg">{rows.approver}</dd>
+              </div>
             )}
-          </form>
-        )}
-      </section>
+            {rows.submittedAt === null ? null : (
+              <div className="flex gap-3" data-testid="proposal-detail-submitted-at">
+                <dt className="w-28 shrink-0 text-fg-muted">{messages.fieldSubmittedAt}</dt>
+                <dd className="m-0 text-fg">{rows.submittedAt}</dd>
+              </div>
+            )}
+            {rows.sendAttempts === null ? null : (
+              <div className="flex gap-3" data-testid="proposal-detail-send-attempts">
+                <dt className="w-28 shrink-0 text-fg-muted">{messages.fieldSendAttempts}</dt>
+                <dd className="m-0 text-fg">
+                  {rows.sendAttempts.items.length === 0 ? messages.sendAttemptsNone : `${rows.sendAttempts.count} / ${rows.sendAttempts.last ?? ''}`}
+                </dd>
+              </div>
+            )}
+            {rows.lastFailureReason === null ? null : (
+              <div className="flex gap-3" data-testid="proposal-detail-last-failure">
+                <dt className="w-28 shrink-0 text-fg-muted">{messages.fieldLastFailure}</dt>
+                <dd className="m-0 text-fg">{rows.lastFailureReason}</dd>
+              </div>
+            )}
+          </dl>
+        </section>
 
-      {/* ③ 凍結内容。 */}
-      <section className="mb-6" data-testid="proposal-detail-section-frozen">
-        <h2 className="mb-2 text-base font-semibold text-slate-900">{messages.sectionFrozen}</h2>
-        <p className="mb-3 text-xs text-slate-600" data-testid="proposal-detail-frozen-notice">
-          {rows.frozen.notice}
-        </p>
-        <dl className="mb-4 flex flex-col gap-2 text-sm">
-          <div className="flex gap-3">
-            <dt className="w-28 shrink-0 text-slate-500">{messages.frozenSubject}</dt>
-            <dd className="m-0 break-words text-slate-900" data-testid="proposal-detail-frozen-subject">
-              {rows.frozen.subject}
-            </dd>
-          </div>
-          <div className="flex gap-3">
-            <dt className="w-28 shrink-0 text-slate-500">{messages.frozenBody}</dt>
-            <dd className="m-0 whitespace-pre-wrap break-words text-slate-900" data-testid="proposal-detail-frozen-body">
-              {rows.frozen.body}
-            </dd>
-          </div>
-          <div className="flex gap-3">
-            <dt className="w-28 shrink-0 text-slate-500">{messages.frozenAttachment}</dt>
-            <dd className="m-0 text-slate-900" data-testid="proposal-detail-frozen-attachment">
-              {rows.frozen.attachment}
-            </dd>
-          </div>
-        </dl>
-        <h3 className="mb-2 text-sm font-semibold text-slate-900" data-testid="proposal-detail-frozen-careers-title">
-          {rows.frozen.careersTitle}
-        </h3>
-        {rows.frozen.careersEmpty === null ? (
-          <Table data-testid="proposal-detail-frozen-careers">
-            <TableHeader>
-              <TableRow>
-                <TableHead>{messages.careerColumnPeriod}</TableHead>
-                <TableHead>{messages.careerColumnRole}</TableHead>
-                <TableHead>{messages.careerColumnDescription}</TableHead>
-                <TableHead>{messages.careerColumnTechnologies}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.frozen.careers.map((career) => (
-                <TableRow key={career.key} data-testid={`proposal-detail-frozen-career-${career.key}`}>
-                  <TableCell>{career.period}</TableCell>
-                  <TableCell whitespace="normal">{career.role}</TableCell>
-                  <TableCell whitespace="normal">{career.description}</TableCell>
-                  <TableCell whitespace="normal">{career.technologies}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        ) : (
-          <p className="text-sm text-slate-600" data-testid="proposal-detail-frozen-careers-empty">
-            {rows.frozen.careersEmpty}
-          </p>
+        {/* 保留（ホストだけ。`SUBMIT_FAILED` とは別の枠）。 */}
+        {rows.sendHold === null ? null : (
+          <Alert variant="warning" role="status" className="mb-6" data-testid="proposal-detail-send-hold" data-hold-reason={rows.sendHold.reasonKey}>
+            <h2 className="mb-1 text-lg font-semibold">{messages.sectionHold}</h2>
+            <p className="text-body">{rows.sendHold.message}</p>
+            <p className="text-xs">{rows.sendHold.since}</p>
+            {rows.sendHold.settingsLink === null ? null : (
+              <Link className={cn(SECONDARY_LINK_CLASSES, 'mt-2 inline-block')} href={rows.sendHold.settingsLink.href} data-testid="proposal-detail-send-hold-settings">
+                {rows.sendHold.settingsLink.label}
+              </Link>
+            )}
+          </Alert>
         )}
-      </section>
 
-      {/* ゲート結果（現在の結果。#46 の `gate` = #40 と同じ形。3 値）。 */}
-      <section className="mb-6" data-testid="proposal-detail-section-gate" data-gate-execution={rows.gate.execution}>
-        <h2 className="mb-2 text-base font-semibold text-slate-900">{messages.sectionGate}</h2>
-        {rows.gate.execution === 'RUNNING' && !rows.gate.layers.some((layer) => layer.state !== 'RUNNING') ? (
-          <p className="text-sm text-slate-600" data-testid="proposal-detail-gate-not-requested">
-            {messages.gateNotRequested}
-          </p>
-        ) : (
-          <GateResultBlock gate={rows.gate} scope={{ kind: 'CURRENT' }} messages={messages} />
-        )}
-      </section>
-
-      {/* ④ ゲート結果の履歴（#40b。実行ごと。降順。11 件以上で直近 10 件 + 「すべて表示」）。 */}
-      <section className="mb-6" data-testid="proposal-detail-section-gate-history" data-history-count={gateHistory.items.length}>
-        <h2 className="mb-2 text-base font-semibold text-slate-900">{messages.sectionGateHistory}</h2>
-        <p className="mb-3 text-xs text-slate-600">{messages.gateHistoryLead}</p>
-        {gateHistory.empty !== null ? (
-          <p className="text-sm text-slate-600" data-testid="proposal-detail-gate-history-empty">
-            {gateHistory.empty}
-          </p>
-        ) : (
-          <FoldedList
-            data-testid="proposal-detail-gate-history"
-            showAllLabel={messages.showAll}
-            rows={gateHistory.items.map((item) => (
-              <li
-                key={item.reviewGateId}
-                className="rounded-md border border-slate-200 p-3"
-                data-testid={`proposal-detail-gate-history-item-${item.reviewGateId}`}
-                data-gate-execution={item.execution}
-                data-matches-current-content={item.matchesCurrentContent ? 'true' : 'false'}
-              >
-                <div className="mb-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                  <h3 className="text-sm font-semibold text-slate-900" data-testid={`proposal-detail-gate-history-title-${item.reviewGateId}`}>
-                    {item.title}
-                  </h3>
-                  <Badge variant={item.matchesCurrentContent ? 'success' : 'neutral'} data-testid={`proposal-detail-gate-history-content-note-${item.reviewGateId}`}>
-                    {item.contentNote}
-                  </Badge>
-                </div>
-                <GateResultBlock gate={item.gate} scope={{ kind: 'HISTORY', id: item.reviewGateId }} messages={messages} />
+        {/* ④ 状態に応じた導線。 */}
+        <section className="mb-6" data-testid="proposal-detail-section-actions">
+          <h2 className="mb-2 text-lg font-semibold text-fg">{messages.sectionActions}</h2>
+          {rows.actionsEmpty === null ? null : (
+            <p className="text-body text-fg-muted" data-testid="proposal-detail-actions-empty">
+              {rows.actionsEmpty}
+            </p>
+          )}
+          <ul className="flex flex-col gap-3">
+            {rows.actions.map((action) => (
+              <li key={action.key} data-testid={`proposal-detail-action-${action.key}`}>
+                {action.lead === null ? null : (
+                  <p className="mb-1 text-body text-warning" data-testid={`proposal-detail-action-lead-${action.key}`}>
+                    {action.lead}
+                  </p>
+                )}
+                <Link className={SECONDARY_LINK_CLASSES} href={action.href} data-testid={`proposal-detail-action-link-${action.key}`}>
+                  {action.label}
+                </Link>
               </li>
             ))}
+          </ul>
+        </section>
+
+        {/* ② 履歴タイムライン（新しい順。11 行以上で直近 10 行 + 「すべて表示」= docs/04 §10.3 の共通規約）。 */}
+        <section className="mb-6" data-testid="proposal-detail-section-timeline">
+          <h2 className="mb-2 text-lg font-semibold text-fg">{messages.sectionTimeline}</h2>
+          <FoldedList
+            data-testid="proposal-detail-timeline"
+            showAllLabel={messages.showAll}
+            rows={rows.timeline.map((row) => (
+              <TimelineItem key={row.id} row={row} />
+            ))}
           />
-        )}
-      </section>
+        </section>
+
+        {/* ⑤ メモ追加（#47）。状態を動かさない。 */}
+        <section className="mb-6" data-testid="proposal-detail-section-note">
+          <h2 className="mb-2 text-lg font-semibold text-fg">{messages.sectionNote}</h2>
+          {isViewer ? (
+            <p className="text-body text-fg-muted" data-testid="proposal-detail-note-viewer">
+              {messages.noteViewerNotice}
+            </p>
+          ) : !rows.canAddNote ? (
+            <p className="text-body text-fg-muted" data-testid="proposal-detail-note-forbidden">
+              {messages.noteForbiddenNotice}
+            </p>
+          ) : denialMessage !== null ? (
+            <Alert variant="warning" data-testid="proposal-detail-note-denied">
+              <p className="font-semibold">{messages.deniedTitle}</p>
+              <p>{denialMessage}</p>
+            </Alert>
+          ) : (
+            <form onSubmit={(event) => void submitNote(event)} className="flex flex-col gap-3" data-testid="proposal-detail-note-form">
+              <p className="text-xs text-fg-muted">{messages.noteLead}</p>
+              <Field label={messages.noteLabel}>
+                <Textarea
+                  value={note}
+                  onChange={(event) => setNote(event.target.value)}
+                  maxLength={noteMaxLength}
+                  rows={3}
+                  disabled={submitting}
+                  data-testid="proposal-detail-note-input"
+                />
+              </Field>
+              <div className="flex flex-wrap items-center gap-3">
+                <Button type="submit" disabled={submitting || note.trim().length === 0} data-testid="proposal-detail-note-submit">
+                  {submitting ? messages.noteSubmitting : messages.noteSubmit}
+                </Button>
+                {phase.kind === 'ADDED' ? (
+                  <span className="text-body text-success" data-testid="proposal-detail-note-added">
+                    {messages.noteAdded}
+                  </span>
+                ) : null}
+              </div>
+              {error === null ? null : (
+                <p role="alert" className="text-body font-semibold text-danger" data-testid="proposal-detail-note-error">
+                  {error}
+                </p>
+              )}
+            </form>
+          )}
+        </section>
+
+        {/* ③ 凍結内容。 */}
+        <section className="mb-6" data-testid="proposal-detail-section-frozen">
+          <h2 className="mb-2 text-lg font-semibold text-fg">{messages.sectionFrozen}</h2>
+          <p className="mb-3 text-xs text-fg-muted" data-testid="proposal-detail-frozen-notice">
+            {rows.frozen.notice}
+          </p>
+          <dl className="mb-4 flex flex-col gap-2 text-body">
+            <div className="flex gap-3">
+              <dt className="w-28 shrink-0 text-fg-muted">{messages.frozenSubject}</dt>
+              <dd className="m-0 break-words text-fg" data-testid="proposal-detail-frozen-subject">
+                {rows.frozen.subject}
+              </dd>
+            </div>
+            <div className="flex gap-3">
+              <dt className="w-28 shrink-0 text-fg-muted">{messages.frozenBody}</dt>
+              <dd className="m-0 whitespace-pre-wrap break-words text-fg" data-testid="proposal-detail-frozen-body">
+                {rows.frozen.body}
+              </dd>
+            </div>
+            <div className="flex gap-3">
+              <dt className="w-28 shrink-0 text-fg-muted">{messages.frozenAttachment}</dt>
+              <dd className="m-0 text-fg" data-testid="proposal-detail-frozen-attachment">
+                {rows.frozen.attachment}
+              </dd>
+            </div>
+          </dl>
+          <h3 className="mb-2 text-body font-semibold text-fg" data-testid="proposal-detail-frozen-careers-title">
+            {rows.frozen.careersTitle}
+          </h3>
+          {rows.frozen.careersEmpty === null ? (
+            <Table data-testid="proposal-detail-frozen-careers">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{messages.careerColumnPeriod}</TableHead>
+                  <TableHead>{messages.careerColumnRole}</TableHead>
+                  <TableHead>{messages.careerColumnDescription}</TableHead>
+                  <TableHead>{messages.careerColumnTechnologies}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.frozen.careers.map((career) => (
+                  <TableRow key={career.key} data-testid={`proposal-detail-frozen-career-${career.key}`}>
+                    <TableCell>{career.period}</TableCell>
+                    <TableCell whitespace="normal">{career.role}</TableCell>
+                    <TableCell whitespace="normal">{career.description}</TableCell>
+                    <TableCell whitespace="normal">{career.technologies}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <p className="text-body text-fg-muted" data-testid="proposal-detail-frozen-careers-empty">
+              {rows.frozen.careersEmpty}
+            </p>
+          )}
+        </section>
+
+        {/* ゲート結果（現在の結果。#46 の `gate` = #40 と同じ形。3 値）。 */}
+        <section className="mb-6" data-testid="proposal-detail-section-gate" data-gate-execution={rows.gate.execution}>
+          <h2 className="mb-2 text-lg font-semibold text-fg">{messages.sectionGate}</h2>
+          {rows.gate.execution === 'RUNNING' && !rows.gate.layers.some((layer) => layer.state !== 'RUNNING') ? (
+            <p className="text-body text-fg-muted" data-testid="proposal-detail-gate-not-requested">
+              {messages.gateNotRequested}
+            </p>
+          ) : (
+            <GateResultBlock gate={rows.gate} scope={{ kind: 'CURRENT' }} messages={messages} />
+          )}
+        </section>
+        </div>
+
+        {/* 🔴 副カラム: ④ ゲート結果の履歴（#40b。実行ごと。降順。11 件以上で直近 10 件 + 「すべて表示」）。
+            **現在の結果（上の「ゲート結果」）は主カラムに残している** —— 承認の判断に効くのは現在の結果で
+            あり、履歴は「誰が・いつ・何を検査したか」の説明材料である（`G-10`）。 */}
+        <div className={cn(PAGE_BODY_ASIDE_WIDTH_CLASSES, 'flex flex-col')}>
+        {/* 🔴 面（radius / 枠線 / 地）は `@ses/ui` の `Card` だけが持つ（画面で面を作らない）。
+            副カラムを面で包むのは、`lg` 以上で主カラムと横に並ぶため境界が要るからである。 */}
+        <Card data-testid="proposal-detail-section-gate-history" data-history-count={gateHistory.items.length}>
+          <h2 className="border-b border-border px-4 py-3 text-lg font-semibold text-fg">{messages.sectionGateHistory}</h2>
+          <CardContent className="pt-4">
+            <p className="mb-3 text-xs text-fg-muted">{messages.gateHistoryLead}</p>
+            {gateHistory.empty !== null ? (
+              <p className="text-body text-fg-muted" data-testid="proposal-detail-gate-history-empty">
+                {gateHistory.empty}
+              </p>
+            ) : (
+              <FoldedList
+                data-testid="proposal-detail-gate-history"
+                showAllLabel={messages.showAll}
+                rows={gateHistory.items.map((item) => (
+                  <li
+                    key={item.reviewGateId}
+                    className="rounded-md border border-border p-3"
+                    data-testid={`proposal-detail-gate-history-item-${item.reviewGateId}`}
+                    data-gate-execution={item.execution}
+                    data-matches-current-content={item.matchesCurrentContent ? 'true' : 'false'}
+                  >
+                    <div className="mb-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                      <h3 className="text-body font-semibold text-fg" data-testid={`proposal-detail-gate-history-title-${item.reviewGateId}`}>
+                        {item.title}
+                      </h3>
+                      <Badge variant={item.matchesCurrentContent ? 'success' : 'neutral'} data-testid={`proposal-detail-gate-history-content-note-${item.reviewGateId}`}>
+                        {item.contentNote}
+                      </Badge>
+                    </div>
+                    <GateResultBlock gate={item.gate} scope={{ kind: 'HISTORY', id: item.reviewGateId }} messages={messages} />
+                  </li>
+                ))}
+              />
+            )}
+          </CardContent>
+        </Card>
+        </div>
+      </div>
     </div>
   );
 }

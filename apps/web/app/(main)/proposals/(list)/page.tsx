@@ -19,8 +19,10 @@ import { PROPOSALS_PATH, proposalsHref } from '../../../../lib/proposals/hrefs';
 import { listProposals } from '../../../../lib/proposals/list';
 import {
   hostProposalListRows,
+  isProposalApprovalQueue,
   isProposalListFiltered,
   partnerProposalListRows,
+  proposalListPageSize,
   proposalListSummary,
   proposalRequestStateChips,
   proposalStateChips,
@@ -52,9 +54,22 @@ export default async function ProposalListPage({
   const ctx = outcome.ctx;
 
   // 🔴 API と**同じスキーマ**で検証する。壊れた条件は素の URL へ戻す（`S-017` と同じ判断）。
-  const parsed = proposalListQuerySchema.safeParse(await searchParams);
+  const raw = await searchParams;
+  const parsed = proposalListQuerySchema.safeParse(raw);
   if (!parsed.success) redirect(PROPOSALS_PATH);
-  const query = parsed.data;
+  // 🔴 **承認キューは 25 行**（`docs/04` §7.1「承認キュー（`S-019` の承認待ちフィルタ）は 25 行」。
+  //    理由は同表の「1 行あたりの情報量が多いため減らす」）。これは**表示密度の既定値の選び方**であり、
+  //    `limit` は `proposalListQuerySchema` が元から持つ値である（API は変えていない）。
+  //    🔴 URL に `?limit=` が明示されていればそれを優先する（黙って丸めない）。
+  //    ⚠️ `proposalsHref` は `limit` を URL に載せないので、次ページでも同じ条件から 25 が再導出される。
+  const query = {
+    ...parsed.data,
+    limit: proposalListPageSize({
+      state: parsed.data.state,
+      limitSpecified: raw.limit !== undefined,
+      parsedLimit: parsed.data.limit,
+    }),
+  };
 
   const now = new Date();
   const view = await listProposals(ctx, query);
@@ -73,6 +88,7 @@ export default async function ProposalListPage({
       <PageHeading trail={PROPOSAL_LIST_TRAIL} title={t('proposals.list.title')} />
       <ProposalListScreen
         audience={view.audience}
+        approvalQueue={isProposalApprovalQueue(query.state)}
         rows={rows}
         summary={proposalListSummary(view.audience, view.total, view.byState)}
         stateChips={proposalStateChips(view.byState, query.state)}

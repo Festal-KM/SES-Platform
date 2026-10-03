@@ -12,6 +12,7 @@
 import { notFound, redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { t } from '@ses/i18n';
+import { PageBody } from '@ses/ui';
 import { NotFoundError } from '../../../../../lib/api/errors';
 import { executionDenialMessageKey } from '../../../../../lib/api/guards';
 import { resolveTenantCtxOutcome } from '../../../../../lib/auth/session';
@@ -62,19 +63,27 @@ export default async function ProposalApprovalPage({ params }: { readonly params
       : null;
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-8">
-      <PageHeading trail={proposalApproveTrail(rows.id)} title={t('proposals.approval.title')} />
-      <ProposalApprovalScreen
-        proposalId={rows.id}
-        rows={rows}
-        denialMessage={denialKey === null ? null : t(denialKey)}
-        sendingDomain={sendingDomain}
-        auditHref={auditHref}
-        homeHref={PROPOSAL_APPROVAL_HOME_PATH}
-        // 🔴 T-09-08: `S-022` はホストだけが到達する（取引先には導線を出さない）。描くかは画面が状態で決める。
-        sendFailuresHref={ctx.partnerCompanyId === null ? PROPOSAL_SEND_FAILURES_PATH : null}
-        messages={proposalApprovalScreenMessages()}
-      />
+    // 🔴 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`）。`S-021` は**クラス B = 分割**で
+    //    あり、画面ファイルに `max-w-*` を書かない（検査 (c) / (k)）。
+    //    ⚠️ **副カラムは `PageBody` の `aside` スロットではなく画面の内側に在る** ——
+    //       末尾到達の観測（`reachedEnd`）とフォームの `phase` を左右のカラムが共有するため、
+    //       サーバ（この `page.tsx`）からクライアント状態で組んだ JSX を渡せない。
+    //       寸法は `@ses/ui` の `PAGE_BODY_ASIDE_WIDTH_CLASSES`（360 / 400 / 480px 固定）から取る。
+    <main className="py-6">
+      <PageBody widthClass="split">
+        <PageHeading trail={proposalApproveTrail(rows.id)} title={t('proposals.approval.title')} />
+        <ProposalApprovalScreen
+          proposalId={rows.id}
+          rows={rows}
+          denialMessage={denialKey === null ? null : t(denialKey)}
+          sendingDomain={sendingDomain}
+          auditHref={auditHref}
+          homeHref={PROPOSAL_APPROVAL_HOME_PATH}
+          // 🔴 T-09-08: `S-022` はホストだけが到達する（取引先には導線を出さない）。描くかは画面が状態で決める。
+          sendFailuresHref={ctx.partnerCompanyId === null ? PROPOSAL_SEND_FAILURES_PATH : null}
+          messages={proposalApprovalScreenMessages()}
+        />
+      </PageBody>
     </main>
   );
 }

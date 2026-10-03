@@ -29,7 +29,21 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Badge, Button, Field, Input, SECONDARY_LINK_CLASSES, Select, Textarea, type BadgeVariant } from '@ses/ui';
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  Field,
+  Input,
+  PAGE_BODY_ASIDE_WIDTH_CLASSES,
+  SECONDARY_LINK_CLASSES,
+  Select,
+  StatusBadge,
+  Textarea,
+  cn,
+} from '@ses/ui';
 import type { GateFinding, GateLayerState, GateResultView, ProposalState } from '@ses/domain';
 import type {
   ProposalAttachmentRows,
@@ -38,6 +52,7 @@ import type {
   ProposalFreezeRows,
   ProposalSendingDomainRows,
 } from '../../../../lib/proposals/editor-rows';
+import { gateLayerBadgeAppearance } from '../../../../lib/proposals/gate-layer-badge';
 import { toProposalCreateBody, toProposalPatchBody } from '../../../../lib/proposals/form-body';
 import { buildProposalEditHref } from '../../../../lib/proposals/hrefs';
 import { hasProposalRecipient } from '../../../../lib/proposals/recipient';
@@ -150,30 +165,14 @@ export type ProposalEditorProps = {
   readonly messages: ProposalEditorMessages;
 };
 
-/** 状態バッジの色。`Record` で 14 状態の漏れをコンパイラに強制させる。 */
-const STATE_BADGE_VARIANTS = {
-  DRAFT: 'neutral',
-  GATE_RUNNING: 'warning',
-  GATE_FAILED: 'danger',
-  APPROVAL_PENDING: 'warning',
-  APPROVED: 'success',
-  SUBMITTING: 'warning',
-  SUBMITTED: 'success',
-  SUBMIT_FAILED: 'danger',
-  INTERVIEW_SCHEDULED: 'outline',
-  INTERVIEWED: 'outline',
-  RESULT_PENDING: 'outline',
-  WON: 'success',
-  LOST: 'neutral',
-  WITHDRAWN: 'neutral',
-} as const satisfies Record<ProposalState, BadgeVariant>;
-
-const LAYER_BADGE_VARIANTS = {
-  RUNNING: 'warning',
-  PASS: 'success',
-  FAIL: 'danger',
-  HELD: 'warning',
-} as const satisfies Record<GateLayerState, BadgeVariant>;
+// ============================================================================
+// 🔴 SP-22 段④ で削除した 2 本の色の写像（**どちらも条文と食い違っていた**）
+// ============================================================================
+// ① `STATE_BADGE_VARIANTS`: `GATE_FAILED` と `SUBMIT_FAILED` が**同じ赤**だった
+//    （`CLAUDE.md` §4.2「すべて別の状態」/ `docs/04` §5-1「赤は 3 状態のみ。ゲート差し戻しは橙」）。
+//    色は `@ses/ui` の `StatusBadge` が状態名から決め、**画面は渡せない**（§5-13）。
+// ② `LAYER_BADGE_VARIANTS`: 3 画面が別々に持ち `RUNNING` の色が食い違っていた（§5-3）。
+//    出所を `lib/proposals/gate-layer-badge.ts` の 1 つに寄せた。
 
 /** #40 のポーリング間隔（`docs/04` §S-020「層ごとに確定する進捗」。目標 30 秒以内なので 5 秒で十分）。 */
 const GATE_POLL_MS = 5_000;
@@ -190,20 +189,28 @@ function recipientOf(values: ProposalFormValues) {
   return { recipientCompanyName: values.recipientCompanyName, recipientEmail: values.recipientEmail };
 }
 
+/**
+ * セクションの器。🔴 **面（radius / 枠線 / 地）は `@ses/ui` の `Card` だけが持つ**
+ * （画面で面を作らない。`tests/static/ui-shadow-and-size.test.ts`）。
+ * 🔴 **`<details>` にしない** —— `docs/04` §S-020 は「ゲート結果の確認と修正箇所への遷移は
+ *    モバイルでも完全に提供する」と定めている（差し戻しの確認は移動中に起きる）。
+ * ⚠️ `Card` は `div` である（旧実装の `<section>` から要素名が変わる）。`data-testid` は
+ *    凍結済みの `proposal-editor-section-{id}` のままである（`U-22`）。
+ */
 function Section({ id, title, children }: { readonly id: string; readonly title: string; readonly children: ReactNode }) {
   return (
-    <section className="border border-slate-200 bg-white" data-testid={`proposal-editor-section-${id}`}>
-      <h2 className="border-b border-slate-200 px-4 py-3 text-base font-bold text-slate-900">{title}</h2>
-      <div className="px-4 py-4">{children}</div>
-    </section>
+    <Card data-testid={`proposal-editor-section-${id}`}>
+      <h2 className="border-b border-border px-4 py-3 text-lg font-semibold text-fg">{title}</h2>
+      <CardContent className="pt-4">{children}</CardContent>
+    </Card>
   );
 }
 
 function DetailRow({ label, value, field }: { readonly label: string; readonly value: string; readonly field: string }) {
   return (
-    <div className="flex gap-3 border-b border-slate-100 py-2 last:border-b-0">
-      <dt className="w-32 shrink-0 text-slate-500">{label}</dt>
-      <dd className="m-0 break-words text-slate-900" data-field={field}>
+    <div className="flex gap-3 border-b border-border py-2 last:border-b-0">
+      <dt className="w-32 shrink-0 text-fg-muted">{label}</dt>
+      <dd className="m-0 break-words text-fg" data-field={field}>
         {value}
       </dd>
     </div>
@@ -226,11 +233,11 @@ function FindingList({
 }) {
   return (
     <div className="mt-3" data-testid={`proposal-editor-gate-${id}`}>
-      <h3 className="mb-1 text-sm font-semibold text-slate-900">{title}</h3>
+      <h3 className="mb-1 text-body font-semibold text-fg">{title}</h3>
       {findings.length === 0 ? (
-        <p className="m-0 text-sm text-slate-600">{messages.gateFindingsEmpty}</p>
+        <p className="m-0 text-body text-fg-muted">{messages.gateFindingsEmpty}</p>
       ) : (
-        <ul className="m-0 list-disc pl-5 text-sm text-slate-900">
+        <ul className="m-0 list-disc pl-6 text-body text-fg">
           {findings.map((finding, index) => (
             <li key={`${finding.layer}-${finding.kind}-${String(index)}`} data-finding-kind={finding.kind}>
               {severityLabel === null ? null : (
@@ -238,7 +245,7 @@ function FindingList({
                   {severityLabel}
                 </Badge>
               )}
-              <span className="text-slate-500">{messages.gateField[finding.field]}: </span>
+              <span className="text-fg-muted">{messages.gateField[finding.field]}: </span>
               <span className="break-words">{finding.excerpt}</span>
             </li>
           ))}
@@ -269,29 +276,33 @@ function GateResult({ result, messages }: { readonly result: GateResultView; rea
           return (
             <li
               key={layer.key}
-              className={`border px-3 py-2 ${state === 'FAIL' ? 'border-red-300 bg-red-50' : 'border-slate-200 bg-slate-50'}`}
+              className={cn(
+                'rounded-md border px-3 py-2',
+                state === 'FAIL' ? 'border-danger-border bg-danger-bg' : 'border-border bg-bg-subtle',
+              )}
               data-testid={`proposal-editor-gate-layer-${layer.key}`}
               data-layer-state={state}
             >
-              <p className="mb-1 text-xs text-slate-500">{layer.label}</p>
-              <Badge variant={LAYER_BADGE_VARIANTS[state]}>{messages.gateVerdict[state]}</Badge>
+              <p className="mb-1 text-xs text-fg-muted">{layer.label}</p>
+              {/* 🔴 層の見え方は `lib/proposals/gate-layer-badge.ts` の 1 箇所が決める（§5-3）。 */}
+              <Badge {...gateLayerBadgeAppearance(state)}>{messages.gateVerdict[state]}</Badge>
             </li>
           );
         })}
       </ul>
       {result.execution === 'HELD_AI_COST_LIMIT' && result.held !== undefined ? (
-        <p role="status" className="mt-3 mb-0 border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900" data-testid="proposal-editor-gate-held">
+        <Alert role="status" variant="warning" className="mt-3" data-testid="proposal-editor-gate-held">
           {messages.gateHeld} {messages.gateHeldResetAtPrefix}
           {result.held.resetAt}
-        </p>
+        </Alert>
       ) : null}
       {result.aiFailed ? (
-        <p role="alert" className="mt-3 mb-0 border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900" data-testid="proposal-editor-gate-ai-failed">
+        <Alert variant="danger" className="mt-3" data-testid="proposal-editor-gate-ai-failed">
           {messages.gateAiFailed}
-        </p>
+        </Alert>
       ) : null}
       {result.execution === 'DONE' ? (
-        <p className={`mt-3 mb-0 text-sm ${failed ? 'text-red-800' : 'text-emerald-800'}`} data-testid="proposal-editor-gate-lead">
+        <p className={`mt-3 mb-0 text-body ${failed ? 'text-danger' : 'text-success'}`} data-testid="proposal-editor-gate-lead">
           {failed ? messages.gateFailedLead : allPassed ? messages.gatePassedLead : ''}
         </p>
       ) : null}
@@ -487,49 +498,61 @@ export function ProposalEditor(props: ProposalEditorProps) {
     }
   }
 
+  // 🔴 色は状態名から決まる（§5-1 の 14 状態。`GATE_FAILED` は橙 / `SUBMIT_FAILED` は赤）。画面は渡せない。
   const stateBadge =
     localState === null || props.stateLabel === null ? null : (
-      <Badge variant={STATE_BADGE_VARIANTS[localState]} data-testid="proposal-editor-state">
-        {localState === props.state ? props.stateLabel : messages.gateRunning}
-      </Badge>
+      <StatusBadge
+        entity="proposal"
+        state={localState}
+        label={localState === props.state ? props.stateLabel : messages.gateRunning}
+        data-testid="proposal-editor-state"
+      />
     );
 
   return (
     <form
-      className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]"
+      // 🔴 **副カラム（添付 / ゲート結果 / 送信元ドメイン / 操作）の寸法は `@ses/ui` の
+      //    `PAGE_BODY_ASIDE_WIDTH_CLASSES` から取る**（`lg` 360 → `xl` 400 → `2xl` 480px 固定。
+      //    `docs/04` §7.1 / §S-020「デスクトップ = 左に条件・本文、右に添付・ゲート結果」）。
+      //    旧実装は 3 : 2 の可変グリッドで、画面が幅を決めていた。
+      //    ⚠️ `PageBody` の `aside` スロットを使えないのは、**フォームの状態（`values` / `phase` /
+      //       `gate`）を左右のカラムが共有する**ためである（`page.tsx` は `widthClass="split"` を渡す）。
+      //    🔴 `lg` 未満では副カラムが本文の下に落ちる（遮断しない。§13.3。
+      //       **ゲート結果の確認はモバイルでも完全に提供する** —— 折りたたまない）。
+      className="flex flex-col gap-4 lg:flex-row"
       onSubmit={(event) => void submit(event)}
       data-testid="proposal-editor"
       data-mode={mode}
       data-proposal-state={localState ?? 'NEW'}
     >
-      <div className="grid grid-cols-1 gap-4">
+      <div className="flex min-w-0 flex-1 flex-col gap-4">
         {stateBadge === null ? null : (
           <div className="flex flex-wrap items-center gap-3" data-testid="proposal-editor-header">
-            <span className="text-sm text-slate-500">{messages.fieldState}</span>
+            <span className="text-body text-fg-muted">{messages.fieldState}</span>
             {stateBadge}
           </div>
         )}
 
         {readOnlyNotice === null || localState !== props.state ? null : (
-          <p role="status" className="m-0 border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700" data-testid="proposal-editor-read-only">
+          <Alert role="status" variant="neutral" data-testid="proposal-editor-read-only">
             {readOnlyNotice}
-          </p>
+          </Alert>
         )}
         {canEdit && denialMessage !== null ? (
-          <div role="alert" className="border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900" data-testid="proposal-editor-denied">
-            <p className="font-bold">{messages.deniedTitle}</p>
+          <Alert variant="warning" data-testid="proposal-editor-denied">
+            <p className="font-semibold">{messages.deniedTitle}</p>
             <p>{denialMessage}</p>
-          </div>
+          </Alert>
         ) : null}
         {canEdit ? null : (
-          <p className="m-0 text-sm text-slate-600" data-testid="proposal-editor-viewer">
+          <p className="m-0 text-body text-fg-muted" data-testid="proposal-editor-viewer">
             {messages.viewerNotice}
           </p>
         )}
 
         {/* セクション 1: 対象（案件 / エンジニア / 提案先） */}
         <Section id="target" title={messages.sectionTarget}>
-          <dl className="mb-3 text-sm">
+          <dl className="mb-3 text-body">
             {target.projectName === null ? (
               <DetailRow label={messages.fieldProject} value={messages.projectNotShared} field="project-not-shared" />
             ) : (
@@ -555,22 +578,22 @@ export function ProposalEditor(props: ProposalEditorProps) {
 
           {/* 🔴 凍結の予告 / 凍結情報（`F-019 AC-2`。経験内容の行数とともに明示する） */}
           {freeze.kind === 'PREVIEW' ? (
-            <div className="mt-3 border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900" data-testid="proposal-editor-freeze-preview">
+            <div className="mt-3 rounded-md border border-border bg-bg-subtle px-4 py-3 text-body text-fg" data-testid="proposal-editor-freeze-preview">
               <p className="mb-1">{freeze.lead}</p>
               <p className="mb-0 font-semibold" data-testid="proposal-editor-freeze-careers">
                 {freeze.careers}
               </p>
               {freeze.zeroCareersNotice === null ? null : (
-                <p role="status" className="mt-2 mb-0 border border-amber-300 bg-amber-50 px-3 py-2 text-amber-900" data-testid="proposal-editor-freeze-zero-careers">
+                <Alert role="status" variant="warning" className="mt-2" data-testid="proposal-editor-freeze-zero-careers">
                   {freeze.zeroCareersNotice}{' '}
                   <Link className="underline" href={freeze.engineerEditHref} data-testid="proposal-editor-open-engineer">
                     {messages.openEngineer}
                   </Link>
-                </p>
+                </Alert>
               )}
             </div>
           ) : (
-            <p className="mt-3 mb-0 border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900" data-testid="proposal-editor-freeze-notice">
+            <p className="mt-3 mb-0 rounded-md border border-border bg-bg-subtle px-4 py-3 text-body text-fg" data-testid="proposal-editor-freeze-notice">
               {freeze.notice}
             </p>
           )}
@@ -578,12 +601,12 @@ export function ProposalEditor(props: ProposalEditorProps) {
           {/* 🔴 提案先。未設定なら無言で空にせず理由を出す（`docs/04` §S-020 改訂 10）。 */}
           <div className="mt-4" data-testid="proposal-editor-recipient">
             {recipientMissing ? (
-              <p role="alert" className="mb-2 border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900" data-testid="proposal-editor-recipient-missing">
+              <Alert variant="warning" className="mb-2" data-testid="proposal-editor-recipient-missing">
                 {messages.recipientMissing}
-              </p>
+              </Alert>
             ) : null}
             {originNotice === null ? null : (
-              <p className="mb-2 text-sm text-slate-600" data-testid="proposal-editor-origin-notice">
+              <p className="mb-2 text-body text-fg-muted" data-testid="proposal-editor-origin-notice">
                 {originNotice}
               </p>
             )}
@@ -612,7 +635,7 @@ export function ProposalEditor(props: ProposalEditorProps) {
                 />
               </Field>
             </div>
-            <p className="mt-2 mb-0 text-xs text-slate-500">{messages.recipientNote}</p>
+            <p className="mt-2 mb-0 text-xs text-fg-muted">{messages.recipientNote}</p>
           </div>
         </Section>
 
@@ -657,10 +680,10 @@ export function ProposalEditor(props: ProposalEditorProps) {
 
         {/* セクション 3: 本文（由来を直上に示す） */}
         <Section id="content" title={messages.sectionContent}>
-          <p className="mb-2 text-xs text-slate-500" data-testid="proposal-editor-body-origin">
+          <p className="mb-2 text-xs text-fg-muted" data-testid="proposal-editor-body-origin">
             {messages.bodyOriginLabel}: {messages.bodyOriginManual}
           </p>
-          <p className="mb-3 text-xs text-slate-500 sm:hidden" data-testid="proposal-editor-body-mobile-note">
+          <p className="mb-3 text-xs text-fg-muted sm:hidden" data-testid="proposal-editor-body-mobile-note">
             {messages.bodyMobileNote}
           </p>
           <Field label={messages.fieldSubject} className="mb-3">
@@ -687,22 +710,22 @@ export function ProposalEditor(props: ProposalEditorProps) {
         </Section>
       </div>
 
-      <div className="grid grid-cols-1 gap-4">
+      <div className={cn(PAGE_BODY_ASIDE_WIDTH_CLASSES, 'flex flex-col gap-4')}>
         {/* セクション 4: 添付（`CLEAN` の版だけが選択肢） */}
         <Section id="attachment" title={messages.sectionAttachment}>
           {attachment.options.length === 0 ? (
             <div>
               {attachment.frozenUnknownNotice === null ? (
-                <p className="m-0 text-sm text-slate-700" data-testid="proposal-editor-attachment-empty">
+                <p className="m-0 text-body text-fg" data-testid="proposal-editor-attachment-empty">
                   {attachment.emptyNotice ?? messages.attachmentFrozenNone}
                 </p>
               ) : (
-                <p className="m-0 text-sm text-slate-700" data-testid="proposal-editor-attachment-frozen-unknown">
+                <p className="m-0 text-body text-fg" data-testid="proposal-editor-attachment-frozen-unknown">
                   {attachment.frozenUnknownNotice}
                 </p>
               )}
               {attachment.sheetsHref === null ? null : (
-                <Link className={`${SECONDARY_LINK_CLASSES} mt-2`} href={attachment.sheetsHref} data-testid="proposal-editor-attachment-open-sheets">
+                <Link className={cn(SECONDARY_LINK_CLASSES, 'mt-2 inline-block')} href={attachment.sheetsHref} data-testid="proposal-editor-attachment-open-sheets">
                   {messages.attachmentOpenSheets}
                 </Link>
               )}
@@ -726,7 +749,7 @@ export function ProposalEditor(props: ProposalEditorProps) {
               </Select>
             </Field>
           )}
-          <p className="mt-2 mb-0 text-xs text-slate-500" data-testid="proposal-editor-attachment-clean-note">
+          <p className="mt-2 mb-0 text-xs text-fg-muted" data-testid="proposal-editor-attachment-clean-note">
             {attachment.cleanOnlyNote}
           </p>
         </Section>
@@ -735,11 +758,11 @@ export function ProposalEditor(props: ProposalEditorProps) {
         {mode === 'EDIT' ? (
           <Section id="gate" title={messages.sectionGate}>
             {localState === 'DRAFT' && phase.kind !== 'GATE_REQUESTED' ? (
-              <p className="m-0 text-sm text-slate-600" data-testid="proposal-editor-gate-not-requested">
+              <p className="m-0 text-body text-fg-muted" data-testid="proposal-editor-gate-not-requested">
                 {messages.gateNotRequested}
               </p>
             ) : gate === null ? (
-              <p role="status" className="m-0 text-sm text-slate-700" data-testid="proposal-editor-gate-loading">
+              <p role="status" className="m-0 text-body text-fg" data-testid="proposal-editor-gate-loading">
                 {phase.kind === 'GATE_REQUESTED' ? messages.gateRequested : messages.gateRunning}
               </p>
             ) : (
@@ -751,18 +774,18 @@ export function ProposalEditor(props: ProposalEditorProps) {
         {/* セクション 6: 送信元ドメインの状態（`U-04`） */}
         <Section id="sending-domain" title={messages.sectionSendingDomain}>
           {sendingDomain.kind === 'PARTNER' || sendingDomain.kind === 'NOT_REQUIRED' ? (
-            <p className="m-0 text-sm text-slate-600" data-testid="proposal-editor-sending-domain">
+            <p className="m-0 text-body text-fg-muted" data-testid="proposal-editor-sending-domain">
               {sendingDomain.note}
             </p>
           ) : sendingDomain.kind === 'VERIFIED' ? (
-            <p className="m-0 text-sm text-slate-900" data-testid="proposal-editor-sending-domain">
+            <p className="m-0 text-body text-fg" data-testid="proposal-editor-sending-domain">
               {sendingDomain.label}
             </p>
           ) : (
             <div data-testid="proposal-editor-sending-domain">
-              <p role="status" className="mb-2 border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              <Alert role="status" variant="warning" className="mb-2">
                 {sendingDomain.notice}
-              </p>
+              </Alert>
               <Link className={SECONDARY_LINK_CLASSES} href={sendingDomain.href} data-testid="proposal-editor-sending-domain-open">
                 {sendingDomain.linkLabel}
               </Link>
@@ -809,23 +832,23 @@ export function ProposalEditor(props: ProposalEditorProps) {
           </Link>
         </div>
         {canReopen ? (
-          <p role="status" className="m-0 text-sm text-amber-900" data-testid="proposal-editor-reopen-draft-lead">
+          <p role="status" className="m-0 text-body text-warning" data-testid="proposal-editor-reopen-draft-lead">
             {messages.reopenDraftLead}
           </p>
         ) : null}
         {/* 🔴 押せない理由を明示する（無言で disabled にしない）。 */}
         {mode === 'EDIT' && editable && gateBlockedReason !== null ? (
-          <p role="status" className="m-0 text-sm text-amber-900" data-testid="proposal-editor-request-gate-blocked">
+          <p role="status" className="m-0 text-body text-warning" data-testid="proposal-editor-request-gate-blocked">
             {gateBlockedReason}
           </p>
         ) : null}
         {phase.kind === 'SAVED' ? (
-          <p role="status" className="m-0 text-sm text-emerald-800" data-testid="proposal-editor-saved">
+          <p role="status" className="m-0 text-body text-success" data-testid="proposal-editor-saved">
             {messages.saved}
           </p>
         ) : null}
         {error === null ? null : (
-          <p role="alert" className="m-0 text-sm text-red-700" data-testid="proposal-editor-error">
+          <p role="alert" className="m-0 text-body text-danger" data-testid="proposal-editor-error">
             {error}
           </p>
         )}

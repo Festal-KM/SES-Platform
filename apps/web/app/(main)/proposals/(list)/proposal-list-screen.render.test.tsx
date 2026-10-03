@@ -138,6 +138,7 @@ const messages: ProposalListScreenMessages = {
 function render(overrides: Partial<ProposalListScreenProps> = {}): string {
   const props: ProposalListScreenProps = {
     audience: 'HOST',
+    approvalQueue: false,
     rows,
     summary,
     stateChips,
@@ -310,5 +311,54 @@ describe('🔴 T-22-06: 列の契約（移行前と同一。増減 0）', () => 
     expect(html).not.toContain('data-testid="proposal-list-toolbar-bulk"');
     // 🔴 状態の絞り込みはフィルタであってタブではない（§10.3「多数タブ」）。
     expect(html).not.toContain('role="tablist"');
+  });
+});
+
+// ============================================================================
+// ✅ SP-22 段④（提案まわり。2026-10-03）: 状態バッジを `StatusBadge` に寄せた
+// ============================================================================
+// 🔴 **3 つの「うまくいかなかった」が同じ見た目にならないこと**を固定する。
+//    着手時の実装は `row.tone`（5 値）を `BadgeVariant` に写していたため、
+//    **`GATE_FAILED` と `SUBMIT_FAILED` が同じ赤**だった ——
+//    `CLAUDE.md` §4.2「すべて別の状態」/ `docs/04` §5-1「赤・塗りは `SUBMIT_FAILED` /
+//    `SEND_FAILED` / `SUSPENDED` のみ。ゲート差し戻しは橙」に反する。
+//    色は `@ses/ui` の `StatusBadge`（`STATUS_BADGE_APPEARANCES`）が状態名から決め、画面は渡せない。
+describe('🔴 SP-22 段④: `GATE_FAILED` / `SUBMIT_FAILED` / `LOST` は 3 つ別の見た目である', () => {
+  const GATE_FAILED_ID = '01930000-0000-7000-8000-000000000a04';
+
+  /** その行の状態バッジのタグ（属性文字列）。 */
+  function badgeTag(html: string, id: string): string {
+    return new RegExp(`<[^>]*data-testid="proposal-list-state-${id}"[^>]*>`).exec(html)?.[0] ?? '';
+  }
+
+  const threeRows: readonly ProposalListRowView[] = [
+    row({ id: GATE_FAILED_ID, state: 'GATE_FAILED' }),
+    row({ id: FAILED_ID, state: 'SUBMIT_FAILED' }),
+    row({ id: LOST_ID, state: 'LOST' }),
+  ];
+
+  it('`entity="proposal"` と、それぞれ自分の `data-state` を持つ', () => {
+    const html = render({ rows: threeRows });
+    expect(badgeTag(html, GATE_FAILED_ID)).toContain('data-entity="proposal"');
+    expect(badgeTag(html, GATE_FAILED_ID)).toContain('data-state="GATE_FAILED"');
+    expect(badgeTag(html, FAILED_ID)).toContain('data-state="SUBMIT_FAILED"');
+    expect(badgeTag(html, LOST_ID)).toContain('data-state="LOST"');
+  });
+
+  it('🔴 3 つのバッジのクラス文字列が互いに異なる（= 同じ見た目ではない）', () => {
+    const html = render({ rows: threeRows });
+    const classOf = (id: string): string => /class="([^"]*)"/.exec(badgeTag(html, id))?.[1] ?? '';
+    const classes = [classOf(GATE_FAILED_ID), classOf(FAILED_ID), classOf(LOST_ID)];
+    for (const value of classes) expect(value).not.toBe('');
+    expect(new Set(classes).size).toBe(3);
+  });
+
+  it('🔴 赤（`danger`）は `SUBMIT_FAILED` だけ。`GATE_FAILED` は橙、`LOST` は無彩色（§5-1）', () => {
+    const html = render({ rows: threeRows });
+    expect(badgeTag(html, FAILED_ID)).toContain('danger');
+    expect(badgeTag(html, GATE_FAILED_ID)).not.toContain('danger');
+    expect(badgeTag(html, GATE_FAILED_ID)).toContain('warning');
+    expect(badgeTag(html, LOST_ID)).not.toContain('danger');
+    expect(badgeTag(html, LOST_ID)).not.toContain('warning');
   });
 });

@@ -16,6 +16,10 @@ export function proposalRequestScreenMessages(params: {
   const isHost = audience === 'HOST';
   return {
     lead: isHost ? t('proposalRequests.lead.host') : t('proposalRequests.lead.partner'),
+    // 🔴 SP-22 段④: 件数バーの母集団の 1 行（§3.2-2）。**件数を含めない** ——
+    //    `#32` は総件数を返さず、取引先に件数を見せる必要も無い（`HANDOFF.md` §3.3）。
+    population: isHost ? t('proposalRequests.population.host') : t('proposalRequests.population.partner'),
+    orderNote: t('proposalRequests.orderNote'),
     filterLegend: t('proposalRequests.filter.legend'),
     filterState: t('proposalRequests.column.state'),
     filterApply: t('proposalRequests.filter.apply'),
@@ -25,6 +29,8 @@ export function proposalRequestScreenMessages(params: {
     columnRemaining: t('proposalRequests.column.remaining'),
     columnState: t('proposalRequests.column.state'),
     columnUpdatedAt: t('proposalRequests.column.updatedAt'),
+    columnAction: t('proposalRequests.column.action'),
+    panelOpen: t('proposalRequests.panel.open'),
     // 🔴 `docs/04` §S-017 空状態: ホスト初回空 → `S-016` への導線 / 取引先 → 「0 件が正常」/ 絞込 0 件 → 別文言。
     emptyTitle: filtered
       ? t('proposalRequests.filtered.empty')

@@ -12,6 +12,7 @@ import { notFound, redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { PROPOSAL_STATES, type ProposalState } from '@ses/domain';
 import { t } from '@ses/i18n';
+import { PageBody } from '@ses/ui';
 import { NotFoundError } from '../../../../../lib/api/errors';
 import { executionDenialMessageKey } from '../../../../../lib/api/guards';
 import { resolveTenantCtxOutcome } from '../../../../../lib/auth/session';
@@ -57,18 +58,24 @@ export default async function ProposalInterviewPage({ params }: { readonly param
   const denialKey = executionDenialMessageKey(ctx.lifecycleState);
 
   return (
-    <main className="mx-auto max-w-3xl px-4 py-8">
-      <PageHeading trail={proposalInterviewTrail(rows.id)} title={t('proposals.interview.title')} />
-      <ProposalInterviewScreen
-        proposalId={rows.id}
-        rows={rows}
-        isViewer={ctx.role === 'VIEWER'}
-        denialMessage={denialKey === null ? null : t(denialKey)}
-        noteLabels={proposalInterviewNoteLabels()}
-        memoMaxLength={PROPOSAL_INTERVIEW_MEMO_MAX_LENGTH}
-        stateLabels={stateLabels()}
-        messages={proposalInterviewScreenMessages()}
-      />
+    // 🔴 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`）。`S-024` は**クラス B = 分割**で
+    //    あり、画面ファイルに `max-w-*` を書かない（検査 (c) / (k)）。
+    //    ⚠️ 副カラム（直近の履歴）は**画面の内側**に在る（記録フォームのクライアント状態が
+    //       同じコンポーネントに在るため。`proposal-interview-screen.tsx` の 🔴）。
+    <main className="py-6">
+      <PageBody widthClass="split">
+        <PageHeading trail={proposalInterviewTrail(rows.id)} title={t('proposals.interview.title')} />
+        <ProposalInterviewScreen
+          proposalId={rows.id}
+          rows={rows}
+          isViewer={ctx.role === 'VIEWER'}
+          denialMessage={denialKey === null ? null : t(denialKey)}
+          noteLabels={proposalInterviewNoteLabels()}
+          memoMaxLength={PROPOSAL_INTERVIEW_MEMO_MAX_LENGTH}
+          stateLabels={stateLabels()}
+          messages={proposalInterviewScreenMessages()}
+        />
+      </PageBody>
     </main>
   );
 }

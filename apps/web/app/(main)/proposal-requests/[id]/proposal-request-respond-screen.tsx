@@ -25,8 +25,24 @@
 //    再訪時の表示はサーバの状態（`readPartnerProposalRequestDetail`）だけが正である。
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import Link from 'next/link';
-import { Badge, Button, Field, SECONDARY_LINK_CLASSES, SECONDARY_LINK_STACKED_CLASSES, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Textarea, type BadgeVariant } from '@ses/ui';
-import type { ProposalRequestState } from '@ses/domain';
+import {
+  Alert,
+  Button,
+  Card,
+  CardContent,
+  Field,
+  SECONDARY_LINK_CLASSES,
+  SECONDARY_LINK_STACKED_CLASSES,
+  StatusBadge,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Textarea,
+  cn,
+} from '@ses/ui';
 import type { ProposalRequestDetailRows } from '../../../../lib/proposal-requests/detail-rows';
 import type { ProjectRequirementRow } from '../../../../lib/projects/detail';
 import { PROPOSAL_REQUEST_DECLINE_REASON_MAX_LENGTH } from '../../../../lib/proposal-requests/limits';
@@ -96,14 +112,10 @@ export type ProposalRequestRespondScreenProps = {
   readonly messages: ProposalRequestRespondScreenMessages;
 };
 
-/** 状態バッジの色（`S-017` と同じ割り当て。`Record` で漏れをコンパイラに強制させる）。 */
-const STATE_BADGE_VARIANTS = {
-  REQUESTED: 'warning',
-  ACCEPTED: 'success',
-  DECLINED: 'neutral',
-  WITHDRAWN_BY_HOST: 'outline',
-  EXPIRED: 'danger',
-} as const satisfies Record<ProposalRequestState, BadgeVariant>;
+// 🔴 **SP-22 段④ で `STATE_BADGE_VARIANTS`（画面がローカルに持っていた色の写像）を削除した。**
+//    旧実装は `EXPIRED: 'danger'`（赤）/ `REQUESTED: 'warning'`（橙）で、`docs/04` §5-1 の表と
+//    食い違っていた（§5-1 の 🔴「障害（赤・塗り）= `SUBMIT_FAILED` / `SEND_FAILED` / `SUSPENDED` のみ」）。
+//    色は `@ses/ui` の `StatusBadge`（`STATUS_BADGE_APPEARANCES`）が状態名から決め、**画面は渡せない**。
 
 const REMAINING_TICK_MS = 60_000;
 
@@ -115,20 +127,28 @@ type Phase =
   | { readonly kind: 'ACCEPTED'; readonly proposalId: string }
   | { readonly kind: 'DECLINED' };
 
+/**
+ * セクションの器。🔴 **面（radius / 枠線 / 地）は `@ses/ui` の `Card` だけが持つ**
+ * （画面で面を作らない。`tests/static/ui-shadow-and-size.test.ts`）。
+ * ⚠️ `Card` は `div` である（旧実装の `<section>` から要素名が変わる）。`data-testid` は
+ *    凍結済みの `proposal-request-respond-{id}` のままである（`U-22`）。
+ * 🔴 **`<details>` にしない** —— `S-018` の判断材料は折りたたまない（`docs/04` §S-018 デバイス別。
+ *    render テストが `<details` の不在を固定している）。
+ */
 function Section({ id, title, children }: { readonly id: string; readonly title: string; readonly children: ReactNode }) {
   return (
-    <section className="border border-slate-200 bg-white" data-testid={`proposal-request-respond-${id}`}>
-      <h2 className="border-b border-slate-200 px-4 py-3 text-base font-bold text-slate-900">{title}</h2>
-      <div className="px-4 py-4">{children}</div>
-    </section>
+    <Card data-testid={`proposal-request-respond-${id}`}>
+      <h2 className="border-b border-border px-4 py-3 text-lg font-semibold text-fg">{title}</h2>
+      <CardContent className="pt-4">{children}</CardContent>
+    </Card>
   );
 }
 
 function DetailRow({ label, value, field }: { readonly label: string; readonly value: string; readonly field: string }) {
   return (
-    <div className="flex gap-3 border-b border-slate-100 py-2 last:border-b-0">
-      <dt className="w-32 shrink-0 text-slate-500">{label}</dt>
-      <dd className="m-0 break-words text-slate-900" data-field={field}>
+    <div className="flex gap-3 border-b border-border py-2 last:border-b-0">
+      <dt className="w-32 shrink-0 text-fg-muted">{label}</dt>
+      <dd className="m-0 break-words text-fg" data-field={field}>
         {value}
       </dd>
     </div>
@@ -148,9 +168,9 @@ function RequirementTable({
 }) {
   return (
     <div className="mb-3" data-testid={`proposal-request-respond-requirements-${id}`}>
-      <h3 className="mb-1 text-sm font-semibold text-slate-900">{title}</h3>
+      <h3 className="mb-1 text-body font-semibold text-fg">{title}</h3>
       {rows.length === 0 ? (
-        <p className="m-0 text-sm text-slate-600">{messages.requirementsEmpty}</p>
+        <p className="m-0 text-body text-fg-muted">{messages.requirementsEmpty}</p>
       ) : (
         <Table>
           <TableHeader>
@@ -247,25 +267,29 @@ export function ProposalRequestRespondScreen({ rows, canRespond, denialMessage, 
     <div data-testid="proposal-request-respond-screen" data-request-state={rows.state}>
       {/* 🔴 状態と期限を最初に出す（`docs/04` §9「S-018 で最も強調するのは返答期限」）。 */}
       <div className="mb-4 flex flex-wrap items-center gap-3" data-testid="proposal-request-respond-header">
-        <Badge variant={STATE_BADGE_VARIANTS[rows.state]} data-testid="proposal-request-respond-state">
-          {rows.stateLabel}
-        </Badge>
-        <p className="m-0 text-base font-bold text-slate-900" data-testid="proposal-request-respond-remaining">
+        {/* 🔴 色は `StatusBadge` が状態名から決める（画面は渡せない。§5-1 / §5-13）。 */}
+        <StatusBadge
+          entity="proposalRequest"
+          state={rows.state}
+          label={rows.stateLabel}
+          data-testid="proposal-request-respond-state"
+        />
+        <p className="m-0 text-lg font-semibold text-fg" data-testid="proposal-request-respond-remaining">
           {messages.fieldExpiresAt}: {rows.expiresAt}（{remaining}）
         </p>
       </div>
 
       {rows.closedNotice === null ? null : (
-        <p role="status" className="mb-4 border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700" data-testid="proposal-request-respond-closed">
+        <Alert role="status" variant="neutral" className="mb-4" data-testid="proposal-request-respond-closed">
           {rows.closedNotice}
-        </p>
+        </Alert>
       )}
 
       {canRespond && denialMessage !== null ? (
-        <div role="alert" className="mb-4 border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900" data-testid="proposal-request-respond-denied">
-          <p className="font-bold">{messages.deniedTitle}</p>
+        <Alert variant="warning" className="mb-4" data-testid="proposal-request-respond-denied">
+          <p className="font-semibold">{messages.deniedTitle}</p>
           <p>{denialMessage}</p>
-        </div>
+        </Alert>
       ) : null}
 
       <div className="grid grid-cols-1 gap-4">
@@ -273,20 +297,20 @@ export function ProposalRequestRespondScreen({ rows, canRespond, denialMessage, 
         <Section id="request" title={messages.sectionRequest}>
           {rows.project === null ? (
             <div className="mb-3">
-              <p className="mb-2 text-sm text-slate-900" data-testid="proposal-request-respond-project-name">
+              <p className="mb-2 text-body text-fg" data-testid="proposal-request-respond-project-name">
                 {messages.fieldProject}: {messages.valueNone}
               </p>
               {/* 🔴 案件が公開されていない ＝ 応諾できない事実を明示する（隠さない。辞退は可能）。 */}
-              <p role="status" className="m-0 border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900" data-testid="proposal-request-respond-project-not-shared">
+              <Alert role="status" variant="warning" data-testid="proposal-request-respond-project-not-shared">
                 {messages.projectNotShared}
-              </p>
+              </Alert>
             </div>
           ) : (
             <div className="mb-3" data-testid="proposal-request-respond-project">
-              <p className="mb-2 text-base font-semibold text-slate-900" data-testid="proposal-request-respond-project-name">
+              <p className="mb-2 text-lg font-semibold text-fg" data-testid="proposal-request-respond-project-name">
                 {rows.project.name}
               </p>
-              <dl className="mb-3 text-sm" data-testid="proposal-request-respond-project-headline">
+              <dl className="mb-3 text-body" data-testid="proposal-request-respond-project-headline">
                 {rows.project.headline.map((row) => (
                   <DetailRow key={row.key} label={row.label} value={row.value} field={row.key} />
                 ))}
@@ -302,7 +326,7 @@ export function ProposalRequestRespondScreen({ rows, canRespond, denialMessage, 
               </Link>
             </div>
           )}
-          <dl className="text-sm">
+          <dl className="text-body">
             <DetailRow label={messages.fieldMessage} value={rows.message} field="message" />
             <DetailRow label={messages.fieldExpiresAt} value={`${rows.expiresAt}（${remaining}）`} field="expires-at" />
             <DetailRow label={messages.fieldCreatedAt} value={rows.createdAt} field="created-at" />
@@ -313,12 +337,12 @@ export function ProposalRequestRespondScreen({ rows, canRespond, denialMessage, 
         {/* セクション 2: 対象の自社エンジニア（実名。自社の情報） */}
         <Section id="engineer" title={messages.sectionEngineer}>
           {rows.engineer === null ? (
-            <p className="m-0 text-sm text-slate-700" data-testid="proposal-request-respond-engineer-missing">
+            <p className="m-0 text-body text-fg" data-testid="proposal-request-respond-engineer-missing">
               {messages.engineerMissing}
             </p>
           ) : (
             <div>
-              <p className="mb-2 text-base font-semibold text-slate-900" data-testid="proposal-request-respond-engineer-name">
+              <p className="mb-2 text-lg font-semibold text-fg" data-testid="proposal-request-respond-engineer-name">
                 {rows.engineer.displayName}
               </p>
               <Link className={SECONDARY_LINK_CLASSES} href={rows.engineer.href} data-testid="proposal-request-respond-open-engineer">
@@ -330,10 +354,10 @@ export function ProposalRequestRespondScreen({ rows, canRespond, denialMessage, 
 
         {/* セクション 3: 応諾するとどうなるかの説明（`F-018 AC-3`。モバイルでも省略しない） */}
         <Section id="disclosure" title={messages.sectionDisclosure}>
-          <p className="mb-2 text-sm text-slate-900" data-testid="proposal-request-respond-disclosure-lead">
+          <p className="mb-2 text-body text-fg" data-testid="proposal-request-respond-disclosure-lead">
             {messages.disclosureLead}
           </p>
-          <ul className="m-0 list-disc pl-5 text-sm text-slate-900" data-testid="proposal-request-respond-disclosure-items">
+          <ul className="m-0 list-disc pl-6 text-body text-fg" data-testid="proposal-request-respond-disclosure-items">
             {messages.disclosureItems.map((item) => (
               <li key={item}>{item}</li>
             ))}
@@ -343,8 +367,8 @@ export function ProposalRequestRespondScreen({ rows, canRespond, denialMessage, 
         {/* セクション 4: 応諾 / 辞退の操作 */}
         <Section id="actions" title={messages.sectionActions}>
           {phase.kind === 'ACCEPTED' ? (
-            <div role="status" className="border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900" data-testid="proposal-request-respond-accepted">
-              <p className="mb-1 font-bold">{messages.acceptDone}</p>
+            <Alert role="status" variant="success" data-testid="proposal-request-respond-accepted">
+              <p className="mb-1 font-semibold">{messages.acceptDone}</p>
               <p className="mb-1">
                 {messages.acceptDoneProposalId}: <span data-testid="proposal-request-respond-accepted-proposal-id">{phase.proposalId}</span>
               </p>
@@ -357,26 +381,26 @@ export function ProposalRequestRespondScreen({ rows, canRespond, denialMessage, 
                   {messages.backToList}
                 </Link>
               </div>
-            </div>
+            </Alert>
           ) : phase.kind === 'DECLINED' ? (
-            <div role="status" className="border border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-900" data-testid="proposal-request-respond-declined">
-              <p className="mb-2 font-bold">{messages.declineDone}</p>
+            <Alert role="status" variant="neutral" data-testid="proposal-request-respond-declined">
+              <p className="mb-2 font-semibold">{messages.declineDone}</p>
               <Link className={SECONDARY_LINK_CLASSES} href={rows.listHref} data-testid="proposal-request-respond-back-to-list">
                 {messages.backToList}
               </Link>
-            </div>
+            </Alert>
           ) : rows.state === 'DECLINED' ? (
             // 🔴 辞退済み: 自社の記録として理由を再表示する（ホストには存在しない情報。`F-018 AC-1`）。
             <div data-testid="proposal-request-respond-recorded-reason">
-              <p className="mb-1 text-sm text-slate-500">{messages.declineRecordedReason}</p>
-              <p className="m-0 text-sm text-slate-900 break-words" data-testid="proposal-request-respond-recorded-reason-value">
+              <p className="mb-1 text-body text-fg-muted">{messages.declineRecordedReason}</p>
+              <p className="m-0 text-body text-fg break-words" data-testid="proposal-request-respond-recorded-reason-value">
                 {rows.declineReason ?? messages.declineRecordedReasonNone}
               </p>
             </div>
           ) : rows.state === 'ACCEPTED' ? (
             <div data-testid="proposal-request-respond-accepted-before">
-              <p className="mb-1 text-sm text-slate-500">{messages.acceptDoneProposalId}</p>
-              <p className="m-0 text-sm text-slate-900" data-testid="proposal-request-respond-accepted-proposal-id">
+              <p className="mb-1 text-body text-fg-muted">{messages.acceptDoneProposalId}</p>
+              <p className="m-0 text-body text-fg" data-testid="proposal-request-respond-accepted-proposal-id">
                 {rows.proposalId ?? messages.valueNone}
               </p>
               {rows.proposalId === null ? null : (
@@ -387,18 +411,18 @@ export function ProposalRequestRespondScreen({ rows, canRespond, denialMessage, 
             </div>
           ) : rows.state !== 'REQUESTED' ? (
             // 期限切れ / 取り下げ: 操作なし（専用文言は上部の `closedNotice`）。
-            <p className="m-0 text-sm text-slate-600" data-testid="proposal-request-respond-no-actions">
+            <p className="m-0 text-body text-fg-muted" data-testid="proposal-request-respond-no-actions">
               {messages.remainingNone}
             </p>
           ) : !canRespond ? (
-            <p className="m-0 text-sm text-slate-600" data-testid="proposal-request-respond-viewer">
+            <p className="m-0 text-body text-fg-muted" data-testid="proposal-request-respond-viewer">
               {messages.viewerNotice}
             </p>
           ) : phase.kind === 'CONFIRM_ACCEPT' ? (
             // 🔴 確認ステップ: 開示される項目を列挙してから確定する（`docs/04` §S-018「操作と結果」）。
-            <div className="border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900" data-testid="proposal-request-respond-accept-confirm">
-              <p className="font-bold">{messages.acceptConfirmTitle}</p>
-              <ul className="my-2 list-disc pl-5" data-testid="proposal-request-respond-accept-confirm-items">
+            <Alert variant="warning" data-testid="proposal-request-respond-accept-confirm">
+              <p className="font-semibold">{messages.acceptConfirmTitle}</p>
+              <ul className="my-2 list-disc pl-6" data-testid="proposal-request-respond-accept-confirm-items">
                 {messages.disclosureItems.map((item) => (
                   <li key={item}>{item}</li>
                 ))}
@@ -412,9 +436,9 @@ export function ProposalRequestRespondScreen({ rows, canRespond, denialMessage, 
                   {messages.acceptConfirmCancel}
                 </button>
               </div>
-            </div>
+            </Alert>
           ) : phase.kind === 'DECLINING' || (phase.kind === 'SUBMITTING' && phase.action === 'DECLINE') ? (
-            <form className="border border-slate-200 bg-slate-50 p-3" onSubmit={decline} data-testid="proposal-request-respond-decline-form">
+            <form className="rounded-md border border-border bg-bg-subtle p-4" onSubmit={decline} data-testid="proposal-request-respond-decline-form">
               {/* 🔴 理由は任意（`BR-57`）。非開示を入力欄の直下に明記する（`F-018 AC-1`）。 */}
               <Field label={messages.declineReasonLabel} description={messages.declineReasonNote} className="mb-3">
                 <Textarea
@@ -437,7 +461,7 @@ export function ProposalRequestRespondScreen({ rows, canRespond, denialMessage, 
               </div>
             </form>
           ) : phase.kind === 'SUBMITTING' ? (
-            <p role="status" className="m-0 text-sm text-slate-700" data-testid="proposal-request-respond-submitting">
+            <p role="status" className="m-0 text-body text-fg" data-testid="proposal-request-respond-submitting">
               {messages.acceptSubmitting}
             </p>
           ) : (
@@ -457,14 +481,14 @@ export function ProposalRequestRespondScreen({ rows, canRespond, denialMessage, 
           )}
 
           {error === null ? null : (
-            <p role="alert" className="mt-3 mb-0 text-sm text-red-700" data-testid="proposal-request-respond-error">
+            <p role="alert" className="mt-3 mb-0 text-body text-danger" data-testid="proposal-request-respond-error">
               {error}
             </p>
           )}
         </Section>
       </div>
 
-      <Link className={`${SECONDARY_LINK_CLASSES} mt-4`} href={rows.listHref} data-testid="proposal-request-respond-back">
+      <Link className={cn(SECONDARY_LINK_CLASSES, 'mt-4 inline-block')} href={rows.listHref} data-testid="proposal-request-respond-back">
         {messages.backToList}
       </Link>
     </div>

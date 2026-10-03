@@ -25,9 +25,19 @@
 import { useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Badge, Button, Field, Input, SECONDARY_LINK_CLASSES, Textarea, type BadgeVariant } from '@ses/ui';
+import {
+  Alert,
+  Button,
+  Field,
+  Input,
+  PAGE_BODY_ASIDE_WIDTH_CLASSES,
+  SECONDARY_LINK_CLASSES,
+  StatusBadge,
+  Textarea,
+  cn,
+} from '@ses/ui';
 import type { ProposalState } from '@ses/domain';
-import type { ProposalStateTone, ProposalTimelineRow } from '../../../../../lib/proposals/detail-rows';
+import type { ProposalTimelineRow } from '../../../../../lib/proposals/detail-rows';
 import {
   buildProposalInterviewNote,
   isInterviewInputComplete,
@@ -85,13 +95,10 @@ export type ProposalInterviewScreenProps = {
   readonly messages: ProposalInterviewScreenMessages;
 };
 
-const TONE_VARIANTS = {
-  neutral: 'neutral',
-  progress: 'outline',
-  success: 'success',
-  warning: 'warning',
-  danger: 'danger',
-} as const satisfies Record<ProposalStateTone, BadgeVariant>;
+// 🔴 **SP-22 段④ で `TONE_VARIANTS`（画面がローカルに持っていた色の写像）を削除した。**
+//    5 値の tone では `docs/04` §5-1 の 14 状態の塗り / 枠線 / 点線枠を表現できず、
+//    **`GATE_FAILED` と `SUBMIT_FAILED` が同じ赤**になっていた（`CLAUDE.md` §4.2「すべて別の状態」）。
+//    色は `@ses/ui` の `StatusBadge` が状態名から決め、**画面は渡せない**（§5-13）。
 
 type Phase =
   | { readonly kind: 'IDLE' }
@@ -111,14 +118,14 @@ const TAP_BUTTON_CLASSES = 'min-h-11 w-full sm:w-auto';
 
 function RecentItem({ row }: { readonly row: ProposalTimelineRow }) {
   return (
-    <li className="border-l-2 border-slate-200 pl-3" data-testid={`proposal-interview-recent-event-${row.id}`} data-event-kind={row.kind}>
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs text-slate-500">
+    <li className="border-l-2 border-border pl-3" data-testid={`proposal-interview-recent-event-${row.id}`} data-event-kind={row.kind}>
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs text-fg-muted">
         <time>{row.occurredAt}</time>
         <span>{row.actor}</span>
       </div>
-      <div className="text-sm font-semibold text-slate-900">{row.title}</div>
-      {row.transition === null ? null : <div className="text-sm text-slate-700">{row.transition}</div>}
-      {row.detail === null ? null : <p className="whitespace-pre-wrap break-words text-sm text-slate-800">{row.detail}</p>}
+      <div className="text-body font-semibold text-fg">{row.title}</div>
+      {row.transition === null ? null : <div className="text-body text-fg">{row.transition}</div>}
+      {row.detail === null ? null : <p className="whitespace-pre-wrap break-words text-body text-fg">{row.detail}</p>}
     </li>
   );
 }
@@ -238,225 +245,247 @@ export function ProposalInterviewScreen({
       data-can-record={canRecord ? 'true' : 'false'}
     >
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <Badge variant={TONE_VARIANTS[rows.tone]} data-testid="proposal-interview-state">
-          {rows.stateLabel}
-        </Badge>
-        <Link className={`${SECONDARY_LINK_CLASSES} ml-auto`} href={rows.detailHref} data-testid="proposal-interview-back-to-detail">
+        {/* 🔴 色は状態名から決まる（§5-1 の 14 状態）。画面は渡せない。 */}
+        <StatusBadge
+          entity="proposal"
+          state={rows.state}
+          label={rows.stateLabel}
+          data-testid="proposal-interview-state"
+        />
+        <Link className={cn(SECONDARY_LINK_CLASSES, 'ml-auto')} href={rows.detailHref} data-testid="proposal-interview-back-to-detail">
           {messages.backToDetail}
         </Link>
       </div>
 
       {/* ② 自動確定は無い、を先頭で明示する。 */}
-      <p className="mb-4 text-sm text-slate-700" data-testid="proposal-interview-lead">
+      <p className="mb-4 text-body text-fg" data-testid="proposal-interview-lead">
         {messages.lead}
       </p>
 
       {rows.audienceNotice === null ? null : (
-        <p className="mb-4 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700" data-testid="proposal-interview-partner-notice">
+        <Alert role="status" variant="neutral" className="mb-4" data-testid="proposal-interview-partner-notice">
           {rows.audienceNotice}
-        </p>
+        </Alert>
       )}
 
-      {/* ⑤ 判断材料。折りたたまない。 */}
-      <section className="mb-6" data-testid="proposal-interview-section-summary">
-        <h2 className="mb-2 text-base font-semibold text-slate-900">{messages.sectionSummary}</h2>
-        <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2" data-testid="proposal-interview-header">
-          {rows.header.map((row) => (
-            <div key={row.field} className="flex gap-3" data-testid={`proposal-interview-header-row-${row.field}`} data-emphasis={row.emphasis}>
-              <dt className="w-28 shrink-0 text-slate-500">{row.label}</dt>
-              <dd className={`m-0 break-words ${row.emphasis === 'ATTENTION' ? 'font-semibold text-amber-800' : 'text-slate-900'}`}>{row.value}</dd>
-            </div>
-          ))}
-          <div className="flex gap-3" data-testid="proposal-interview-header-row-state">
-            <dt className="w-28 shrink-0 text-slate-500">{messages.fieldState}</dt>
-            <dd className="m-0 text-slate-900">{rows.stateLabel}</dd>
-          </div>
-        </dl>
-      </section>
+      {/* 🔴 **クラス B（分割）の 2 カラム**（`docs/04` §7.1。`page.tsx` が `widthClass="split"` を渡す）。
+          副カラムの寸法は `@ses/ui` の `PAGE_BODY_ASIDE_WIDTH_CLASSES`（360 / 400 / 480px 固定）から取る。
+          ⚠️ `PageBody` の `aside` スロットを使えないのは、記録フォームのクライアント状態（`phase` / `input`）が
+             同じコンポーネントに在るためである。
+          🔴 **副カラムに置くのは「直近の履歴」だけ**である ——
+             ① **判断材料（提案先 / エンジニア / 案件 / 単価 / 開始日 / 現在の状態）と操作は主カラムに残す**
+                （§13.3 / 本ファイル ⑤。モバイルでも 1 本の縦スクロールで、折りたたみ・タブに入れない）
+             ② 終端の確認ステップは `rows.header` を**再掲**するので、不可逆な操作の直前には
+                必ず判断材料が同じ位置に出る（③）。 */}
+      <div className="flex flex-col gap-6 lg:flex-row">
+        <div className="flex min-w-0 flex-1 flex-col">
 
-      {/* 直近の履歴（全件は S-023）。 */}
-      <section className="mb-6" data-testid="proposal-interview-section-recent">
-        <h2 className="mb-2 text-base font-semibold text-slate-900">{messages.sectionRecent}</h2>
-        {rows.recent.length === 0 ? (
-          <p className="mb-2 text-sm text-slate-600" data-testid="proposal-interview-recent-empty">
-            {messages.recentEmpty}
-          </p>
-        ) : (
-          <ol className="mb-2 flex flex-col gap-3" data-testid="proposal-interview-recent">
-            {rows.recent.map((row) => (
-              <RecentItem key={row.id} row={row} />
-            ))}
-          </ol>
-        )}
-        <Link className={SECONDARY_LINK_CLASSES} href={rows.detailHref} data-testid="proposal-interview-recent-open-detail">
-          {messages.recentOpenDetail}
-        </Link>
-      </section>
-
-      {/* ① 次に記録できる操作。 */}
-      <section className="mb-6" data-testid="proposal-interview-section-operations">
-        <h2 className="mb-2 text-base font-semibold text-slate-900">{messages.sectionOperations}</h2>
-
-        {phase.kind === 'RECORDED' ? (
-          <div role="status" className="mb-3 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900" data-testid="proposal-interview-result" data-result={phase.to}>
-            <p className="font-semibold">{messages.recorded}</p>
-            <p>
-              {messages.recordedStatePrefix}
-              {stateLabelOf(phase.to)}
-            </p>
-          </div>
-        ) : null}
-
-        {rows.closedNotice === null ? null : (
-          <div className="mb-3 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-800" data-testid="proposal-interview-closed" data-closed-state={rows.state}>
-            <p>{rows.closedNotice}</p>
-            {rows.assignmentNote === null ? null : (
-              <p className="mt-1 text-slate-700" data-testid="proposal-interview-won-note">
-                {rows.assignmentNote}
-              </p>
-            )}
-          </div>
-        )}
-
-        {rows.notRecordableNotice === null ? null : (
-          <p className="mb-3 text-sm text-slate-700" data-testid="proposal-interview-not-recordable">
-            {rows.notRecordableNotice}
-          </p>
-        )}
-
-        {rows.phase !== 'RECORDABLE' ? null : isViewer ? (
-          <p className="text-sm text-slate-600" data-testid="proposal-interview-viewer">
-            {messages.viewerNotice}
-          </p>
-        ) : denialMessage !== null ? (
-          <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" data-testid="proposal-interview-denied">
-            <p className="font-semibold">{messages.deniedTitle}</p>
-            <p>{denialMessage}</p>
-          </div>
-        ) : rows.operations.length === 0 ? (
-          <p className="text-sm text-slate-600" data-testid="proposal-interview-operations-empty">
-            {messages.operationsNone}
-          </p>
-        ) : active !== null && showConfirm ? (
-          /* ③ 終端の確認ステップ。判断材料を再掲する。 */
-          <div className="rounded-md border border-amber-300 bg-amber-50 p-4" data-testid="proposal-interview-confirm" data-operation={active.kind}>
-            <p className="mb-1 text-base font-semibold text-amber-900">{messages.confirmTitle}</p>
-            {active.confirmLead === null ? null : <p className="mb-3 text-sm text-amber-900">{active.confirmLead}</p>}
-            <dl className="mb-3 flex flex-col gap-1 text-sm text-slate-900" data-testid="proposal-interview-confirm-recap">
-              {rows.header.map((row) => (
-                <div key={row.field} className="flex gap-3">
-                  <dt className="w-28 shrink-0 text-slate-600">{row.label}</dt>
-                  <dd className="m-0 break-words">{row.value}</dd>
-                </div>
-              ))}
-              <div className="flex gap-3">
-                <dt className="w-28 shrink-0 text-slate-600">{messages.notePreview}</dt>
-                <dd className="m-0 whitespace-pre-wrap break-words" data-testid="proposal-interview-confirm-note">
-                  {confirmNote ?? messages.notePreviewNone}
-                </dd>
+        {/* ⑤ 判断材料。折りたたまない。 */}
+        <section className="mb-6" data-testid="proposal-interview-section-summary">
+          <h2 className="mb-2 text-lg font-semibold text-fg">{messages.sectionSummary}</h2>
+          <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-body sm:grid-cols-2" data-testid="proposal-interview-header">
+            {rows.header.map((row) => (
+              <div key={row.field} className="flex gap-3" data-testid={`proposal-interview-header-row-${row.field}`} data-emphasis={row.emphasis}>
+                <dt className="w-28 shrink-0 text-fg-muted">{row.label}</dt>
+                <dd className={`m-0 break-words ${row.emphasis === 'ATTENTION' ? 'font-semibold text-warning' : 'text-fg'}`}>{row.value}</dd>
               </div>
-            </dl>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-              <Button
-                type="button"
-                className={TAP_BUTTON_CLASSES}
-                disabled={submitting}
-                onClick={() => void record(active, confirmNote)}
-                data-testid="proposal-interview-confirm-submit"
-              >
-                {submitting ? messages.submitting : `${messages.confirmSubmit}: ${active.label}`}
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                className={TAP_BUTTON_CLASSES}
-                disabled={submitting}
-                onClick={() => setPhase({ kind: 'FORM', operation: active })}
-                data-testid="proposal-interview-confirm-cancel"
-              >
-                {messages.confirmCancel}
-              </Button>
+            ))}
+            <div className="flex gap-3" data-testid="proposal-interview-header-row-state">
+              <dt className="w-28 shrink-0 text-fg-muted">{messages.fieldState}</dt>
+              <dd className="m-0 text-fg">{rows.stateLabel}</dd>
             </div>
-          </div>
-        ) : active !== null ? (
-          <form onSubmit={submitForm} className="rounded-md border border-slate-200 bg-slate-50 p-4" data-testid="proposal-interview-form" data-operation={active.kind}>
-            <p className="mb-3 text-base font-semibold text-slate-900">{active.label}</p>
-            {active.inputs.scheduledAt ? (
-              <Field label={messages.inputScheduledAt} className="mb-3">
-                <Input
-                  type="datetime-local"
-                  value={input.scheduledAt}
-                  onChange={(event) => setInput({ ...input, scheduledAt: event.target.value })}
-                  required
-                  disabled={submitting}
-                  data-testid="proposal-interview-scheduled-at"
-                />
-              </Field>
-            ) : null}
-            {active.inputs.interviewedOn ? (
-              <Field label={messages.inputInterviewedOn} className="mb-3">
-                <Input
-                  type="date"
-                  value={input.interviewedOn}
-                  onChange={(event) => setInput({ ...input, interviewedOn: event.target.value })}
-                  required
-                  disabled={submitting}
-                  data-testid="proposal-interview-interviewed-on"
-                />
-              </Field>
-            ) : null}
-            <Field label={active.inputs.memo === 'REASON' ? messages.inputReason : messages.inputMemo} description={messages.inputMemoHint} className="mb-3">
-              <Textarea
-                value={input.memo}
-                onChange={(event) => setInput({ ...input, memo: event.target.value })}
-                maxLength={memoMaxLength}
-                rows={3}
-                disabled={submitting}
-                data-testid="proposal-interview-memo"
-              />
-            </Field>
-            {/* ④ 送る前に、履歴に残る文字列そのものを見せる。 */}
-            <div className="mb-3 text-sm">
-              <div className="text-slate-500">{messages.notePreview}</div>
-              <p className="m-0 whitespace-pre-wrap break-words text-slate-900" data-testid="proposal-interview-note-preview">
-                {previewNote ?? messages.notePreviewNone}
+          </dl>
+        </section>
+
+        {/* ① 次に記録できる操作。 */}
+        <section className="mb-6" data-testid="proposal-interview-section-operations">
+          <h2 className="mb-2 text-lg font-semibold text-fg">{messages.sectionOperations}</h2>
+
+          {phase.kind === 'RECORDED' ? (
+            <Alert role="status" variant="success" className="mb-3" data-testid="proposal-interview-result" data-result={phase.to}>
+              <p className="font-semibold">{messages.recorded}</p>
+              <p>
+                {messages.recordedStatePrefix}
+                {stateLabelOf(phase.to)}
               </p>
-            </div>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-              <Button type="submit" className={TAP_BUTTON_CLASSES} disabled={submitting || !inputComplete} data-testid="proposal-interview-submit">
-                {submitting ? messages.submitting : messages.submit}
-              </Button>
-              <Button type="button" variant="secondary" className={TAP_BUTTON_CLASSES} disabled={submitting} onClick={cancel} data-testid="proposal-interview-cancel">
-                {messages.cancel}
-              </Button>
-            </div>
-          </form>
-        ) : (
-          <ul className="flex flex-col gap-3" data-testid="proposal-interview-operations">
-            {rows.operations.map((operation) => (
-              <li key={operation.kind}>
+            </Alert>
+          ) : null}
+
+          {rows.closedNotice === null ? null : (
+            <Alert role="status" variant="neutral" className="mb-3" data-testid="proposal-interview-closed" data-closed-state={rows.state}>
+              <p>{rows.closedNotice}</p>
+              {rows.assignmentNote === null ? null : (
+                <p className="mt-1" data-testid="proposal-interview-won-note">
+                  {rows.assignmentNote}
+                </p>
+              )}
+            </Alert>
+          )}
+
+          {rows.notRecordableNotice === null ? null : (
+            <p className="mb-3 text-body text-fg" data-testid="proposal-interview-not-recordable">
+              {rows.notRecordableNotice}
+            </p>
+          )}
+
+          {rows.phase !== 'RECORDABLE' ? null : isViewer ? (
+            <p className="text-body text-fg-muted" data-testid="proposal-interview-viewer">
+              {messages.viewerNotice}
+            </p>
+          ) : denialMessage !== null ? (
+            <Alert variant="warning" data-testid="proposal-interview-denied">
+              <p className="font-semibold">{messages.deniedTitle}</p>
+              <p>{denialMessage}</p>
+            </Alert>
+          ) : rows.operations.length === 0 ? (
+            <p className="text-body text-fg-muted" data-testid="proposal-interview-operations-empty">
+              {messages.operationsNone}
+            </p>
+          ) : active !== null && showConfirm ? (
+            /* ③ 終端の確認ステップ。判断材料を再掲する。 */
+            <Alert variant="warning" data-testid="proposal-interview-confirm" data-operation={active.kind}>
+              <p className="mb-1 text-lg font-semibold">{messages.confirmTitle}</p>
+              {active.confirmLead === null ? null : <p className="mb-3 text-body">{active.confirmLead}</p>}
+              <dl className="mb-3 flex flex-col gap-1 text-body text-fg" data-testid="proposal-interview-confirm-recap">
+                {rows.header.map((row) => (
+                  <div key={row.field} className="flex gap-3">
+                    <dt className="w-28 shrink-0 text-fg-muted">{row.label}</dt>
+                    <dd className="m-0 break-words">{row.value}</dd>
+                  </div>
+                ))}
+                <div className="flex gap-3">
+                  <dt className="w-28 shrink-0 text-fg-muted">{messages.notePreview}</dt>
+                  <dd className="m-0 whitespace-pre-wrap break-words" data-testid="proposal-interview-confirm-note">
+                    {confirmNote ?? messages.notePreviewNone}
+                  </dd>
+                </div>
+              </dl>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                 <Button
                   type="button"
-                  variant={operation.emphasis === 'PRIMARY' ? 'primary' : 'secondary'}
                   className={TAP_BUTTON_CLASSES}
-                  onClick={() => open(operation)}
-                  data-testid={`proposal-interview-operation-${operation.kind}`}
-                  data-to={operation.to}
-                  data-terminal={operation.terminal ? 'true' : 'false'}
+                  disabled={submitting}
+                  onClick={() => void record(active, confirmNote)}
+                  data-testid="proposal-interview-confirm-submit"
                 >
-                  {operation.label}
+                  {submitting ? messages.submitting : `${messages.confirmSubmit}: ${active.label}`}
                 </Button>
-              </li>
-            ))}
-          </ul>
-        )}
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className={TAP_BUTTON_CLASSES}
+                  disabled={submitting}
+                  onClick={() => setPhase({ kind: 'FORM', operation: active })}
+                  data-testid="proposal-interview-confirm-cancel"
+                >
+                  {messages.confirmCancel}
+                </Button>
+              </div>
+            </Alert>
+          ) : active !== null ? (
+            <form onSubmit={submitForm} className="rounded-md border border-border bg-bg-subtle p-4" data-testid="proposal-interview-form" data-operation={active.kind}>
+              <p className="mb-3 text-lg font-semibold text-fg">{active.label}</p>
+              {active.inputs.scheduledAt ? (
+                <Field label={messages.inputScheduledAt} className="mb-3">
+                  <Input
+                    type="datetime-local"
+                    value={input.scheduledAt}
+                    onChange={(event) => setInput({ ...input, scheduledAt: event.target.value })}
+                    required
+                    disabled={submitting}
+                    data-testid="proposal-interview-scheduled-at"
+                  />
+                </Field>
+              ) : null}
+              {active.inputs.interviewedOn ? (
+                <Field label={messages.inputInterviewedOn} className="mb-3">
+                  <Input
+                    type="date"
+                    value={input.interviewedOn}
+                    onChange={(event) => setInput({ ...input, interviewedOn: event.target.value })}
+                    required
+                    disabled={submitting}
+                    data-testid="proposal-interview-interviewed-on"
+                  />
+                </Field>
+              ) : null}
+              <Field label={active.inputs.memo === 'REASON' ? messages.inputReason : messages.inputMemo} description={messages.inputMemoHint} className="mb-3">
+                <Textarea
+                  value={input.memo}
+                  onChange={(event) => setInput({ ...input, memo: event.target.value })}
+                  maxLength={memoMaxLength}
+                  rows={3}
+                  disabled={submitting}
+                  data-testid="proposal-interview-memo"
+                />
+              </Field>
+              {/* ④ 送る前に、履歴に残る文字列そのものを見せる。 */}
+              <div className="mb-3 text-body">
+                <div className="text-fg-muted">{messages.notePreview}</div>
+                <p className="m-0 whitespace-pre-wrap break-words text-fg" data-testid="proposal-interview-note-preview">
+                  {previewNote ?? messages.notePreviewNone}
+                </p>
+              </div>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <Button type="submit" className={TAP_BUTTON_CLASSES} disabled={submitting || !inputComplete} data-testid="proposal-interview-submit">
+                  {submitting ? messages.submitting : messages.submit}
+                </Button>
+                <Button type="button" variant="secondary" className={TAP_BUTTON_CLASSES} disabled={submitting} onClick={cancel} data-testid="proposal-interview-cancel">
+                  {messages.cancel}
+                </Button>
+              </div>
+            </form>
+          ) : (
+            <ul className="flex flex-col gap-3" data-testid="proposal-interview-operations">
+              {rows.operations.map((operation) => (
+                <li key={operation.kind}>
+                  <Button
+                    type="button"
+                    variant={operation.emphasis === 'PRIMARY' ? 'primary' : 'secondary'}
+                    className={TAP_BUTTON_CLASSES}
+                    onClick={() => open(operation)}
+                    data-testid={`proposal-interview-operation-${operation.kind}`}
+                    data-to={operation.to}
+                    data-terminal={operation.terminal ? 'true' : 'false'}
+                  >
+                    {operation.label}
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
 
-        {error === null ? null : (
-          <p role="alert" className="mt-3 text-sm font-semibold text-red-700" data-testid="proposal-interview-error">
-            {error}
-          </p>
-        )}
-      </section>
+          {error === null ? null : (
+            <p role="alert" className="mt-3 text-body font-semibold text-danger" data-testid="proposal-interview-error">
+              {error}
+            </p>
+          )}
+        </section>
+        </div>
+
+        {/* 🔴 副カラム: 直近の履歴（全件は `S-023`）。**判断材料ではなく経緯の確認**であり、
+            モバイルでは操作の下に落ちる。🔴 **折りたたみ・タブに入れない**（§13.3 / ⑤）。 */}
+        <div className={cn(PAGE_BODY_ASIDE_WIDTH_CLASSES, 'flex flex-col')}>
+        {/* 直近の履歴（全件は S-023）。 */}
+        <section className="mb-6" data-testid="proposal-interview-section-recent">
+          <h2 className="mb-2 text-lg font-semibold text-fg">{messages.sectionRecent}</h2>
+          {rows.recent.length === 0 ? (
+            <p className="mb-2 text-body text-fg-muted" data-testid="proposal-interview-recent-empty">
+              {messages.recentEmpty}
+            </p>
+          ) : (
+            <ol className="mb-2 flex flex-col gap-3" data-testid="proposal-interview-recent">
+              {rows.recent.map((row) => (
+                <RecentItem key={row.id} row={row} />
+              ))}
+            </ol>
+          )}
+          <Link className={SECONDARY_LINK_CLASSES} href={rows.detailHref} data-testid="proposal-interview-recent-open-detail">
+            {messages.recentOpenDetail}
+          </Link>
+        </section>
+        </div>
+      </div>
     </div>
   );
 }

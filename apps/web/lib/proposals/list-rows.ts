@@ -237,3 +237,41 @@ export function proposalListSummary(
 export function isProposalListFiltered(query: ProposalListQuery): boolean {
   return query.state !== undefined || query.projectId !== undefined || query.engineerId !== undefined || query.q !== undefined;
 }
+
+/**
+ * 🔴 **承認キューの既定表示件数**（`docs/04` §7.1 情報密度の表: 一覧は既定 50 行だが
+ *    「**承認キュー（`S-019` の承認待ちフィルタ）は 25 行**」）。
+ *    根拠は同表の「承認キューは 1 行あたりの情報量が多いため減らす」である。
+ */
+export const PROPOSAL_APPROVAL_QUEUE_PAGE_SIZE = 25;
+
+/**
+ * 🔴 **この一覧が「承認キュー」かどうか**（`docs/04` §7.1 / §S-019）。
+ *
+ * 🔴 **状態フィルタが `APPROVAL_PENDING` だけのときに限る。** `GATE_FAILED` や `SUBMIT_FAILED` を
+ *    併せて選んだ一覧は「うまくいかなかったものを見る一覧」であり、承認キューではない
+ *    （`CLAUDE.md` §4.2「失敗と保留を混同しない」を密度の側でも守る）。
+ */
+export function isProposalApprovalQueue(state: readonly ProposalState[] | undefined): boolean {
+  return state !== undefined && state.length === 1 && state[0] === 'APPROVAL_PENDING';
+}
+
+/**
+ * 🔴 **一覧の表示件数**（`docs/04` §7.1）。承認キューは 25 行、それ以外は既定（50 行）。
+ *
+ * 🔴 **URL で `?limit=` が明示されていたらそれを優先する** —— 明示した値を画面が黙って
+ *    書き換えると、「返ってきた件数が要求と違う」ことの理由が利用者にもログにも残らない
+ *    （`lib/api/pagination.ts` の 🔴「黙って丸めない」と同じ規律）。
+ * 🔴 **API を変えていない。** `limit` は `proposalListQuerySchema` が元から持つ値であり、
+ *    ここは**既定値の選び方**（= 表示密度）だけを決める。
+ */
+export function proposalListPageSize(params: {
+  readonly state: readonly ProposalState[] | undefined;
+  /** URL に `?limit=` が書かれていたか（スキーマの既定値と区別するため、生の searchParams で見る）。 */
+  readonly limitSpecified: boolean;
+  /** スキーマが確定させた値（既定 50 / 明示されていればその値）。 */
+  readonly parsedLimit: number;
+}): number {
+  if (params.limitSpecified) return params.parsedLimit;
+  return isProposalApprovalQueue(params.state) ? PROPOSAL_APPROVAL_QUEUE_PAGE_SIZE : params.parsedLimit;
+}

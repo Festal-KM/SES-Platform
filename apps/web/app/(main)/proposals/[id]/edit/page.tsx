@@ -13,6 +13,7 @@
 import { notFound, redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { t } from '@ses/i18n';
+import { PageBody } from '@ses/ui';
 import { NotFoundError } from '../../../../../lib/api/errors';
 import { executionDenialMessageKey } from '../../../../../lib/api/guards';
 import { resolveTenantCtxOutcome } from '../../../../../lib/auth/session';
@@ -53,30 +54,36 @@ export default async function EditProposalPage({ params }: { readonly params: Pr
   const sendingDomain = proposalSendingDomainRows(await proposalSendingDomainFact(ctx));
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-8">
-      <PageHeading trail={PROPOSAL_EDIT_TRAIL} title={t('proposals.editor.title.edit')} />
-      <ProposalEditor
-        mode="EDIT"
-        proposalId={rows.id}
-        create={null}
-        state={rows.state}
-        stateLabel={rows.stateLabel}
-        target={rows.target}
-        freeze={rows.freeze}
-        attachment={rows.attachment}
-        initial={rows.initial}
-        recipientMissing={rows.recipientMissing}
-        originNotice={rows.originNotice}
-        readOnlyNotice={rows.readOnlyNotice}
-        canEdit={rows.canEdit}
-        denialMessage={denialKey === null ? null : t(denialKey)}
-        sendingDomain={sendingDomain}
-        cancelHref={rows.cancelHref}
-        approveHref={rows.approveHref}
-        approveLabel={t('proposals.editor.openApproval')}
-        cancelLabel={rows.cancelLabel}
-        messages={proposalEditorMessages()}
-      />
+    // 🔴 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`）。`S-020` は**クラス B = 分割**で
+    //    あり、画面ファイルに `max-w-*` を書かない（検査 (c) / (k)）。
+    //    ⚠️ 副カラム（添付 / ゲート結果 / 送信元ドメイン / 操作）は**画面の内側**に在る
+    //       （フォームの状態を左右のカラムが共有するため。`_editor/proposal-editor.tsx` の 🔴）。
+    <main className="py-6">
+      <PageBody widthClass="split">
+        <PageHeading trail={PROPOSAL_EDIT_TRAIL} title={t('proposals.editor.title.edit')} />
+        <ProposalEditor
+          mode="EDIT"
+          proposalId={rows.id}
+          create={null}
+          state={rows.state}
+          stateLabel={rows.stateLabel}
+          target={rows.target}
+          freeze={rows.freeze}
+          attachment={rows.attachment}
+          initial={rows.initial}
+          recipientMissing={rows.recipientMissing}
+          originNotice={rows.originNotice}
+          readOnlyNotice={rows.readOnlyNotice}
+          canEdit={rows.canEdit}
+          denialMessage={denialKey === null ? null : t(denialKey)}
+          sendingDomain={sendingDomain}
+          cancelHref={rows.cancelHref}
+          approveHref={rows.approveHref}
+          approveLabel={t('proposals.editor.openApproval')}
+          cancelLabel={rows.cancelLabel}
+          messages={proposalEditorMessages()}
+        />
+      </PageBody>
     </main>
   );
 }

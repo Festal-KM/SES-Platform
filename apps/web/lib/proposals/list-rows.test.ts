@@ -5,7 +5,10 @@ import { PROPOSAL_REQUEST_STATES, PROPOSAL_STATES, type ProposalRequestState, ty
 import { t } from '@ses/i18n';
 import {
   hostProposalListRows,
+  isProposalApprovalQueue,
   isProposalListFiltered,
+  PROPOSAL_APPROVAL_QUEUE_PAGE_SIZE,
+  proposalListPageSize,
   partnerProposalListRows,
   PROPOSAL_FAILURE_STATES,
   proposalFailureKindOf,
@@ -169,5 +172,39 @@ describe('ヘッダと導線', () => {
     expect(isProposalListFiltered({ ...base, state: ['LOST'] })).toBe(true);
     expect(isProposalListFiltered({ ...base, q: 'x' })).toBe(true);
     expect(isProposalListFiltered({ ...base, projectId: '01930000-0000-7000-8000-0000000000f1' })).toBe(true);
+  });
+});
+
+// ============================================================================
+// ✅ SP-22 段④（提案まわり。2026-10-03）: `docs/04` §7.1 の情報密度
+// ============================================================================
+// 🔴 「一覧は既定 50 行。**承認キュー（`S-019` の承認待ちフィルタ）は 25 行**」。
+//    判定とページサイズの導出は**ここ 1 箇所**であり、画面は根の印（`data-approval-queue`）を描くだけである。
+describe('🔴 docs/04 §7.1: 承認キューは 25 行', () => {
+  it('承認キューの判定は「状態フィルタが `APPROVAL_PENDING` だけ」のときに限る', () => {
+    expect(isProposalApprovalQueue(['APPROVAL_PENDING'])).toBe(true);
+    // 🔴 「うまくいかなかったものを見る一覧」は承認キューではない（§4.2「失敗と保留を混同しない」）。
+    expect(isProposalApprovalQueue(['APPROVAL_PENDING', 'GATE_FAILED'])).toBe(false);
+    expect(isProposalApprovalQueue(['GATE_FAILED'])).toBe(false);
+    expect(isProposalApprovalQueue(['SUBMIT_FAILED'])).toBe(false);
+    expect(isProposalApprovalQueue(['LOST'])).toBe(false);
+    expect(isProposalApprovalQueue(undefined)).toBe(false);
+    expect(isProposalApprovalQueue([])).toBe(false);
+  });
+
+  it('承認待ちだけの一覧は 25 行、それ以外は既定（50 行）のまま', () => {
+    expect(PROPOSAL_APPROVAL_QUEUE_PAGE_SIZE).toBe(25);
+    expect(proposalListPageSize({ state: ['APPROVAL_PENDING'], limitSpecified: false, parsedLimit: 50 })).toBe(25);
+    expect(proposalListPageSize({ state: undefined, limitSpecified: false, parsedLimit: 50 })).toBe(50);
+    expect(proposalListPageSize({ state: ['LOST'], limitSpecified: false, parsedLimit: 50 })).toBe(50);
+    expect(
+      proposalListPageSize({ state: ['APPROVAL_PENDING', 'SUBMIT_FAILED'], limitSpecified: false, parsedLimit: 50 }),
+    ).toBe(50);
+  });
+
+  it('🔴 URL で `?limit=` が明示されていたら黙って書き換えない（承認キューでも優先する）', () => {
+    expect(proposalListPageSize({ state: ['APPROVAL_PENDING'], limitSpecified: true, parsedLimit: 10 })).toBe(10);
+    expect(proposalListPageSize({ state: ['APPROVAL_PENDING'], limitSpecified: true, parsedLimit: 200 })).toBe(200);
+    expect(proposalListPageSize({ state: undefined, limitSpecified: true, parsedLimit: 5 })).toBe(5);
   });
 });

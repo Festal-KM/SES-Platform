@@ -15,6 +15,7 @@
 import { notFound, redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { t } from '@ses/i18n';
+import { PageBody } from '@ses/ui';
 import { NotFoundError } from '../../../../lib/api/errors';
 import { executionDenialMessageKey } from '../../../../lib/api/guards';
 import { resolveTenantCtxOutcome } from '../../../../lib/auth/session';
@@ -58,18 +59,24 @@ export default async function ProposalDetailPage({ params }: { readonly params: 
   const denialKey = executionDenialMessageKey(ctx.lifecycleState);
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-8">
-      <PageHeading trail={PROPOSAL_DETAIL_TRAIL} title={t('proposals.detail.title')} />
-      <ProposalDetailScreen
-        proposalId={rows.id}
-        rows={rows}
-        gateHistory={gateHistory}
-        isViewer={ctx.role === 'VIEWER'}
-        denialMessage={denialKey === null ? null : t(denialKey)}
-        listHref={PROPOSALS_PATH}
-        noteMaxLength={PROPOSAL_NOTE_MAX_LENGTH}
-        messages={proposalDetailScreenMessages()}
-      />
+    // 🔴 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`）。`S-023` は**クラス B = 分割**で
+    //    あり、画面ファイルに `max-w-*` を書かない（検査 (c) / (k)）。
+    //    ⚠️ 副カラム（ゲート結果の履歴）は**画面の内側**に在る（メモ投稿のクライアント状態が
+    //       同じコンポーネントに在るため。`proposal-detail-screen.tsx` の 🔴）。
+    <main className="py-6">
+      <PageBody widthClass="split">
+        <PageHeading trail={PROPOSAL_DETAIL_TRAIL} title={t('proposals.detail.title')} />
+        <ProposalDetailScreen
+          proposalId={rows.id}
+          rows={rows}
+          gateHistory={gateHistory}
+          isViewer={ctx.role === 'VIEWER'}
+          denialMessage={denialKey === null ? null : t(denialKey)}
+          listHref={PROPOSALS_PATH}
+          noteMaxLength={PROPOSAL_NOTE_MAX_LENGTH}
+          messages={proposalDetailScreenMessages()}
+        />
+      </PageBody>
     </main>
   );
 }

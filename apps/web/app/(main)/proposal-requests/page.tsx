@@ -16,6 +16,7 @@
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { t } from '@ses/i18n';
+import { PageBody } from '@ses/ui';
 import { executionDenialMessageKey } from '../../../lib/api/guards';
 import { resolveTenantCtxOutcome } from '../../../lib/auth/session';
 import {
@@ -71,24 +72,32 @@ export default async function ProposalRequestsPage({
   const denialKey = executionDenialMessageKey(ctx.lifecycleState);
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-8">
-      <PageHeading trail={PROPOSAL_REQUEST_LIST_TRAIL} title={t('proposalRequests.title')} />
-      {/* 🔴 応諾の反映（`ACCEPTED`）はホストの一覧を 60 秒ごとに読み直して拾う（選択状態は保つ）。 */}
-      {view.audience === 'HOST' ? <PollingRefresher intervalMs={HOST_POLL_INTERVAL_MS} /> : null}
-      <ProposalRequestScreen
-        rows={rows}
-        stateOptions={proposalRequestStateOptions()}
-        stateValue={query.state ?? ''}
-        filtered={filtered}
-        // 🔴 取り下げの可否はロール（`#35` と同じ定数）。所属の軸は `listProposalRequests` の型分岐が持つ。
-        canAct={view.audience === 'HOST' && isProposalRequestIssuerRole(ctx.role)}
-        denialMessage={denialKey === null ? null : t(denialKey)}
-        nowMs={Date.now()}
-        projectsHref={PROJECTS_HREF}
-        nextPageHref={view.nextCursor === null ? null : proposalRequestsHref(query, view.nextCursor)}
-        firstPageHref={query.cursor === undefined ? null : proposalRequestsHref(query, null)}
-        messages={proposalRequestScreenMessages({ audience: view.audience, filtered })}
-      />
+    // 🔴 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`）。`S-017` は**クラス A = 全幅**で
+    //    あり、画面ファイルに `max-w-*` を書かない（検査 (c) / (k)）。
+    //    ⚠️ 選択した依頼のパネルは**画面の内側**の副カラムである（`PageBody` の `aside` スロットを
+    //       使えない理由は `proposal-request-screen.tsx` 冒頭の 🔴 = 表とパネルが同じクライアント
+    //       状態を共有するため）。寸法は `@ses/ui` の `PAGE_BODY_ASIDE_WIDTH_CLASSES` から取る。
+    <main className="py-6">
+      <PageBody widthClass="full">
+        <PageHeading trail={PROPOSAL_REQUEST_LIST_TRAIL} title={t('proposalRequests.title')} />
+        {/* 🔴 応諾の反映（`ACCEPTED`）はホストの一覧を 60 秒ごとに読み直して拾う（選択状態は保つ）。 */}
+        {view.audience === 'HOST' ? <PollingRefresher intervalMs={HOST_POLL_INTERVAL_MS} /> : null}
+        <ProposalRequestScreen
+          rows={rows}
+          stateOptions={proposalRequestStateOptions()}
+          stateValue={query.state ?? ''}
+          filtered={filtered}
+          // 🔴 取り下げの可否はロール（`#35` と同じ定数）。所属の軸は `listProposalRequests` の型分岐が持つ。
+          canAct={view.audience === 'HOST' && isProposalRequestIssuerRole(ctx.role)}
+          denialMessage={denialKey === null ? null : t(denialKey)}
+          nowMs={Date.now()}
+          projectsHref={PROJECTS_HREF}
+          listHref={PROPOSAL_REQUESTS_PATH}
+          nextPageHref={view.nextCursor === null ? null : proposalRequestsHref(query, view.nextCursor)}
+          firstPageHref={query.cursor === undefined ? null : proposalRequestsHref(query, null)}
+          messages={proposalRequestScreenMessages({ audience: view.audience, filtered })}
+        />
+      </PageBody>
     </main>
   );
 }

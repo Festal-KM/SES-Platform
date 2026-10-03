@@ -57,8 +57,9 @@
 //    （`t()` を画面本体で呼ばない = render テストが文言の実体に依存しない）。
 import Link from 'next/link';
 import {
-  Badge,
   Button,
+  Card,
+  CardContent,
   Checkbox,
   DataTable,
   EmptyState,
@@ -67,10 +68,10 @@ import {
   Input,
   Pagination,
   SECONDARY_LINK_CLASSES,
+  StatusBadge,
   TRANSITION_CLASSES,
   Toolbar,
   cn,
-  type BadgeVariant,
   type DataTableColumn,
   type EmptyStateLinkProps,
   type PaginationLinkProps,
@@ -80,7 +81,6 @@ import type {
   ProposalListSummaryView,
   ProposalRequestStateChip,
   ProposalStateChip,
-  ProposalStateTone,
 } from '../../../../lib/proposals/list-rows';
 
 export type ProposalListScreenMessages = {
@@ -114,6 +114,13 @@ export type ProposalListScreenMessages = {
 
 export type ProposalListScreenProps = {
   readonly audience: 'HOST' | 'PARTNER';
+  /**
+   * 🔴 **この一覧が承認キューか**（状態フィルタが `APPROVAL_PENDING` だけ。`docs/04` §7.1）。
+   *    表示件数は 50 行ではなく **25 行**であり、判定とページサイズの導出は
+   *    `lib/proposals/list-rows.ts`（`isProposalApprovalQueue` / `proposalListPageSize`）が持つ。
+   *    ここは**根の印**（`data-approval-queue`）だけを出す —— 画面が件数を決めない。
+   */
+  readonly approvalQueue: boolean;
   readonly rows: readonly ProposalListRowView[];
   readonly summary: ProposalListSummaryView;
   readonly stateChips: readonly ProposalStateChip[];
@@ -132,15 +139,13 @@ export type ProposalListScreenProps = {
   readonly messages: ProposalListScreenMessages;
 };
 
-/** 色味 → バッジ。🔴 `progress` は進行中（点線枠 = `outline` の枝で描く）。 */
-const TONE_VARIANTS = {
-  neutral: 'neutral',
-  progress: 'outline',
-  success: 'success',
-  warning: 'warning',
-  danger: 'danger',
-} as const satisfies Record<ProposalStateTone, BadgeVariant>;
-
+// 🔴 **SP-22 段④ で `TONE_VARIANTS`（画面がローカルに持っていた色の写像）を削除した。**
+//    `row.tone` は 5 値（`neutral` / `progress` / `success` / `warning` / `danger`）しか持たず、
+//    **`docs/04` §5-1 の 14 状態の塗り / 枠線 / 点線枠の区別を表現できない**（例: `APPROVED` と
+//    `SUBMITTED` が同じ `success`、`GATE_FAILED` と `SUBMIT_FAILED` が同じ `danger` = 赤になり、
+//    「送る前に自ら止めた」と「送信自体が失敗した」が**同じ見た目**になっていた）。
+//    色と形状は `@ses/ui` の `StatusBadge`（`STATUS_BADGE_APPEARANCES`）が状態名から決め、
+//    **画面は色を渡せない**（§5-13）。`row.tone` はこの画面では読まない。
 /**
  * 状態フィルタのチップ（`<label>` + チェックボックス）。
  * 🔴 選択中の見え方は §7.10 の `selected`（**背景 `--color-brand-bg` + 文字 `--color-brand`**）に
@@ -229,9 +234,14 @@ function proposalColumns(
       whitespace: 'normal',
       cell: (row) => (
         <div className="flex flex-col items-start gap-1">
-          <Badge variant={TONE_VARIANTS[row.tone]} data-testid={`proposal-list-state-${row.id}`}>
-            {row.stateLabel}
-          </Badge>
+          {/* 🔴 色は状態名から決まる（§5-1 の 14 状態。`GATE_FAILED` は橙 / `SUBMIT_FAILED` は赤 /
+              `LOST` は無彩色・枠線 —— 3 区分が別の見た目になる）。画面は色を渡せない。 */}
+          <StatusBadge
+            entity="proposal"
+            state={row.state}
+            label={row.stateLabel}
+            data-testid={`proposal-list-state-${row.id}`}
+          />
           {/* 🔴 ② 保留は `SUBMIT_FAILED` と別の印（状態は `承認済み` のまま）。 */}
           {row.hold === null ? null : (
             <span className="text-xs text-warning" data-testid={`proposal-list-hold-${row.id}`} title={row.hold.message}>
@@ -314,6 +324,7 @@ function proposalColumns(
 
 export function ProposalListScreen({
   audience,
+  approvalQueue,
   rows,
   summary,
   stateChips,
@@ -329,7 +340,7 @@ export function ProposalListScreen({
   messages,
 }: ProposalListScreenProps) {
   return (
-    <div data-testid="proposal-list-screen" data-audience={audience}>
+    <div data-testid="proposal-list-screen" data-audience={audience} data-approval-queue={approvalQueue ? 'true' : 'false'}>
       <p className="mb-2 text-body text-fg-muted" data-testid="proposal-list-lead">
         {summary.lead}
       </p>
@@ -343,46 +354,53 @@ export function ProposalListScreen({
           testIdPrefix="proposal-list-"
           population={summary.total}
           filters={
-            /* 🔴 ① 状態フィルタ。14 状態が独立したチップ（**タブにしない**。§10.3「多数タブ」）。 */
-            <form
-              method="get"
-              action={listHref}
-              className="flex w-full flex-col gap-4"
-              data-testid="proposal-list-filters"
-            >
-              <fieldset className="flex flex-col gap-2">
-                <legend className="mb-1 text-body font-semibold text-fg">{messages.filterStates}</legend>
-                <div className="flex flex-wrap gap-2" data-testid="proposal-list-state-chips">
-                  {stateChips.map((chip) => (
-                    <StateChip key={chip.state} chip={chip} messages={messages} />
-                  ))}
-                </div>
-              </fieldset>
-              <div className="grid grid-cols-1 items-end gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                <Field label={messages.filterQ}>
-                  <Input name="q" type="search" defaultValue={qValue} data-testid="proposal-list-q" />
-                </Field>
-                {hiddenFilters.map((filter) => (
-                  <input
-                    key={filter.name}
-                    type="hidden"
-                    name={filter.name}
-                    value={filter.value}
-                    data-testid={`proposal-list-hidden-${filter.name}`}
-                  />
-                ))}
-                <div className="flex flex-wrap items-center gap-4">
-                  <Button type="submit" data-testid="proposal-list-filter-apply">
-                    {messages.filterApply}
-                  </Button>
-                  {filtered ? (
-                    <Link className={SECONDARY_LINK_CLASSES} href={listHref} data-testid="proposal-list-filter-clear">
-                      {messages.filterClear}
-                    </Link>
-                  ) : null}
-                </div>
-              </div>
-            </form>
+            /* 🔴 ① 状態フィルタ。14 状態が独立したチップ（**タブにしない**。§10.3「多数タブ」）。
+               ✅ SP-22 段④: 絞り込みを **`Card`（白い面）**に入れた（段④ の `S-005` / `S-010` /
+                  `S-015` / `S-017` と同じ作法。ページ地は `--color-bg-subtle` なので、面を持たないと
+                  入力欄の群が地に溶ける）。🔴 **条件の集合・`name`・送り先は 1 つも変えていない。** */
+            <Card className="w-full">
+              <CardContent className="pt-4">
+                <form
+                  method="get"
+                  action={listHref}
+                  className="flex w-full flex-col gap-4"
+                  data-testid="proposal-list-filters"
+                >
+                  <fieldset className="flex flex-col gap-2">
+                    <legend className="mb-1 text-body font-semibold text-fg">{messages.filterStates}</legend>
+                    <div className="flex flex-wrap gap-2" data-testid="proposal-list-state-chips">
+                      {stateChips.map((chip) => (
+                        <StateChip key={chip.state} chip={chip} messages={messages} />
+                      ))}
+                    </div>
+                  </fieldset>
+                  <div className="grid grid-cols-1 items-end gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    <Field label={messages.filterQ}>
+                      <Input name="q" type="search" defaultValue={qValue} data-testid="proposal-list-q" />
+                    </Field>
+                    {hiddenFilters.map((filter) => (
+                      <input
+                        key={filter.name}
+                        type="hidden"
+                        name={filter.name}
+                        value={filter.value}
+                        data-testid={`proposal-list-hidden-${filter.name}`}
+                      />
+                    ))}
+                    <div className="flex flex-wrap items-center gap-4">
+                      <Button type="submit" data-testid="proposal-list-filter-apply">
+                        {messages.filterApply}
+                      </Button>
+                      {filtered ? (
+                        <Link className={SECONDARY_LINK_CLASSES} href={listHref} data-testid="proposal-list-filter-clear">
+                          {messages.filterClear}
+                        </Link>
+                      ) : null}
+                    </div>
+                  </div>
+                </form>
+              </CardContent>
+            </Card>
           }
         />
       </div>

@@ -1,7 +1,8 @@
 'use client';
 
 // apps/web/app/(main)/proposals/send-failures/send-failure-screen.tsx
-// `S-022` 送信失敗一覧と再送 — 本体（docs/04 §S-022 / `F-023` / docs/05 §6.5 #44 / §10.6）。T-09-08。
+// `S-022` 送信失敗一覧と再送 — 本体（docs/04 §S-022 / `F-023` / docs/05 §6.5 #44 / §10.6）。T-09-08
+// → **SP-22 段④（提案まわりの刷新。2026-10-03）**。
 //
 // ============================================================================
 // 🔴 この画面が守るもの（`docs/04` §S-022 / `F-023 AC-1` `AC-2` / `BR-22` / `CLAUDE.md` §3.4 / §13.3）
@@ -24,6 +25,24 @@
 //      ⚠️ これは UI の配慮であり、拒否の本体は #44 のガード（`requireRole` / `requireExecutable` / `requireNotViewer`）と
 //      `assertResendable` の 3 段 + CAS である。
 //
+// ============================================================================
+// 🔴 SP-22 段④ で何が変わったか（**見せ方だけ**）
+// ============================================================================
+// | 変えたもの | 一次資料 | 🔴 変えていないもの |
+// |---|---|---|
+// | 実色 → §7.9 の semantic トークン / `text-sm`→`--text-body` / `text-base`→`--text-lg` | §7.9 / 検査 (a)(g) | 🔴 **7 列の集合・並び・間引きの境界**（`hidden sm:` 2 列 / `hidden lg:` 3 列） |
+// | セクション 1（未対応件数 + 最も古い経過）を **`Toolbar` の件数バー**へ | §5-13 / §3.2-2 / 段④ の `S-005` `S-010` `S-017` と同じ作法 | 🔴 **件数と経過の語**（`summary.countLabel` / `summary.oldestElapsed`）と凍結済み testid |
+// | 空状態 → `EmptyState` / パネルの面 → `Card` / 副カラムの寸法 → `PAGE_BODY_ASIDE_WIDTH_CLASSES` | §5-13 / §7.1 / `docs/05` §2.3.4 | 🔴 **「この一覧が空であることが正常」の文言** |
+// | **操作列**（`内容を見る`）を足した | §7.1「既定 8 列 + 操作列」/ §7.8 の統一語 | 🔴 **行クリックでの選択も残す**。🔴 **操作列は再送ではない**（再送は詳細パネルの確認ステップの中だけ） |
+// | 幅 → `page.tsx` の `PageBody widthClass="full"`（クラス A）。旧 `max-w-6xl` を撤去 | §7.1 / `U-23` / 検査 (c)(k) | 🔴 **一括再送・自動再送に相当する導線が 1 つも無いこと** |
+//
+// 🔴 **API / 取得経路 / 権限判定 / URL / ルーティングは 1 つも変えていない。**
+// 🔴 **絞り込みを持たない**（`#44` の一覧は `SUBMIT_FAILED` 専用で query を取らない）。既存 API に無い条件を
+//    描くと「絞れない絞り込み」になる（段④ の第 1 弾・第 2 弾と同じ判断）。
+// 🔴 **失敗理由のバッジは状態バッジ（`StatusBadge`）ではない。** 失敗理由は `docs/04` §5-1 の 36 状態に
+//    含まれず（この一覧の行はすべて `SUBMIT_FAILED` である）、2 色の割り当ては §S-022 ④ が
+//    「応答不明は失敗と別の見た目」と明示している。したがって `Badge` の `variant` を 2 値で使う。
+//
 // 🔴 **T2（モバイル閲覧可）**。モバイルでは補助列（案件 / 最終試行日時 / 試行回数）を間引くが、判断材料は詳細パネルに
 //    すべて出す（`CLAUDE.md` §13.3「狭い画面を理由に判断材料を隠さない」）。ブレークポイントは Tailwind の既定（`sm` / `lg`）のみ。
 // 🔴 `'use client'` は行の選択・確認ステップ・fetch のためだけである。**`@ses/db` に依存するモジュールから値を import しない**
@@ -32,10 +51,15 @@ import { useState, type FormEvent, type KeyboardEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
+  Alert,
   Badge,
   Button,
+  Card,
+  CardContent,
   Checkbox,
+  EmptyState,
   Field,
+  PAGE_BODY_ASIDE_WIDTH_CLASSES,
   SECONDARY_LINK_CLASSES,
   Table,
   TableBody,
@@ -44,6 +68,7 @@ import {
   TableHeader,
   TableRow,
   Textarea,
+  Toolbar,
 } from '@ses/ui';
 import { proposalDetailHref } from '../../../../lib/proposals/hrefs';
 import type { SendFailureAttemptRowView, SendFailureRowView, SendFailureSummaryView } from '../../../../lib/proposals/send-failure-rows';
@@ -58,6 +83,13 @@ export type SendFailureScreenMessages = {
   readonly columnLastAttemptAt: string;
   readonly columnElapsed: string;
   readonly columnAttemptCount: string;
+  /** 操作列の見出しと語（§7.1 / §7.8 の統一語 `内容を見る`）。🔴 **再送の語ではない**。 */
+  readonly columnAction: string;
+  readonly panelOpen: string;
+  /** 🔴 件数バーの母集団の 1 行（§3.2-2）。**件数を含めない**（件数は `note` の側が持つ）。 */
+  readonly population: string;
+  /** 件数バーの右端（並び順の説明）。🔴 選べる形にしない（`?sort=` が無い）。 */
+  readonly orderNote: string;
   readonly emptyTitle: string;
   readonly emptyLead: string;
   readonly detailTitle: string;
@@ -115,9 +147,9 @@ type ErrorBody = { readonly error?: { readonly code?: string } };
 
 function DetailRow({ label, value, field }: { readonly label: string; readonly value: string; readonly field: string }) {
   return (
-    <div className="flex gap-3 border-b border-slate-100 py-2 last:border-b-0">
-      <dt className="w-28 shrink-0 text-slate-500">{label}</dt>
-      <dd className="m-0 break-words text-slate-900" data-field={field}>
+    <div className="flex gap-3 border-b border-border py-2 last:border-b-0">
+      <dt className="w-28 shrink-0 text-fg-muted">{label}</dt>
+      <dd className="m-0 break-words text-fg" data-field={field}>
         {value}
       </dd>
     </div>
@@ -139,18 +171,18 @@ export function SendFailureAttemptList({
   if (attempts.length === 0) return null;
   return (
     <div className="mb-3">
-      <p className="mb-1 text-sm font-semibold text-slate-900">{title}</p>
-      <ul className="m-0 list-none border border-slate-200 p-0 text-sm" data-testid="send-failure-attempt-list">
+      <p className="mb-1 text-body font-semibold text-fg">{title}</p>
+      <ul className="m-0 list-none rounded-md border border-border p-0 text-body" data-testid="send-failure-attempt-list">
         {attempts.map((attempt) => (
           <li
             key={attempt.seq}
-            className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-3 py-2 last:border-b-0"
+            className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2 last:border-b-0"
             data-testid={`send-failure-attempt-${attempt.seq}`}
           >
-            <span className="font-semibold text-slate-900">{attempt.statusLabel}</span>
-            {attempt.failureLabel === null ? null : <span className="text-slate-700">{attempt.failureLabel}</span>}
-            {attempt.settledAt === null ? null : <span className="text-slate-500">{attempt.settledAt}</span>}
-            {attempt.externalId === null ? null : <span className="text-slate-400">{attempt.externalId}</span>}
+            <span className="font-semibold text-fg">{attempt.statusLabel}</span>
+            {attempt.failureLabel === null ? null : <span className="text-fg">{attempt.failureLabel}</span>}
+            {attempt.settledAt === null ? null : <span className="text-fg-muted">{attempt.settledAt}</span>}
+            {attempt.externalId === null ? null : <span className="text-fg-muted">{attempt.externalId}</span>}
           </li>
         ))}
       </ul>
@@ -264,42 +296,68 @@ export function SendFailureScreen({ rows, summary, canResend, denialMessage, app
 
   return (
     <div data-testid="send-failure-screen" data-count={String(summary.count)} data-can-resend={canResend ? 'true' : 'false'}>
-      <p className="mb-4 text-sm text-slate-600" data-testid="send-failure-lead">
+      <p className="mb-4 text-body text-fg-muted" data-testid="send-failure-lead">
         {messages.lead}
       </p>
 
       {/* 🔴 再送の権限は持つがテナント状態で止まっているときだけ理由を出す（`S-017` と同じ形）。 */}
       {canResend && denialMessage !== null ? (
-        <div role="alert" className="mb-4 border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900" data-testid="send-failure-denied">
-          <p className="font-bold">{messages.deniedTitle}</p>
+        <Alert variant="warning" className="mb-4" data-testid="send-failure-denied">
+          <p className="font-semibold">{messages.deniedTitle}</p>
           <p>{denialMessage}</p>
-        </div>
+        </Alert>
       ) : null}
       {!canResend ? (
-        <p className="mb-4 text-sm text-slate-600" data-testid="send-failure-viewer">
+        <p className="mb-4 text-body text-fg-muted" data-testid="send-failure-viewer">
           {messages.viewerNotice}
         </p>
       ) : null}
 
-      {/* セクション 1: 未対応の件数と最も古い経過時間 */}
-      <div className="mb-4 flex flex-wrap items-baseline gap-4 text-sm" data-testid="send-failure-summary">
-        <span className="font-semibold text-slate-900" data-testid="send-failure-summary-count">
-          {summary.countLabel}
-        </span>
-        {summary.oldestElapsed === null ? null : (
-          <span className="text-slate-700" data-testid="send-failure-summary-oldest">
-            {summary.oldestElapsed}
-          </span>
-        )}
+      {/* 🔴 セクション 1「未対応の件数と最も古い経過時間」（`docs/04` §S-022）を
+          **§5-13 の `Toolbar` の件数バー**に載せた（SP-22 段④。置き場所を画面ごとに変えない）。
+          🔴 **絞り込みは持たない**（`#44` の一覧は `SUBMIT_FAILED` 専用で query を取らない。
+             無い条件を描くと「絞れない絞り込み」になる）。
+          ⚠️ 凍結済み testid（`send-failure-summary` / `…-summary-count` / `…-summary-oldest`）は
+             そのまま維持する（`U-22`）。 */}
+      <div data-testid="send-failure-summary">
+        <Toolbar
+          testIdPrefix="send-failure-"
+          population={messages.population}
+          note={
+            /* 🔴 未対応の件数と最も古い経過時間（§S-022 セクション 1）。
+               🔴 `Toolbar` の母集団の 1 行には**件数を入れない** —— 同じ数字を 2 箇所に出すと、
+                  どちらが正かを読み手が確かめなければならなくなる。 */
+            <div className="flex flex-wrap items-baseline gap-4">
+              <span className="text-body font-semibold text-fg" data-testid="send-failure-summary-count">
+                {summary.countLabel}
+              </span>
+              {summary.oldestElapsed === null ? null : (
+                <span className="text-xs text-fg-muted" data-testid="send-failure-summary-oldest">
+                  {summary.oldestElapsed}
+                </span>
+              )}
+              <span className="text-xs text-fg-muted" data-testid="send-failure-order-note">
+                {messages.orderNote}
+              </span>
+            </div>
+          }
+        />
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
+      {/* 🔴 副カラムの寸法は `@ses/ui` から取る（画面が寸法を決めない。`docs/05` §2.3.4）。
+          `PageBody` の `aside` スロットを使えないのは、**パネルが表と同じクライアント状態
+          （選択行・確認ステップ）を共有する**ためである。`lg` 未満では表の下に落ちる（§13.3）。 */}
+      <div className="mt-4 flex flex-col gap-6 lg:flex-row">
         {/* セクション 2: テーブル */}
-        <div>
+        <div className="min-w-0 flex-1">
           {rows.length === 0 ? (
-            <div className="border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700" data-testid="send-failure-empty">
-              <p className="mb-1 font-semibold">{messages.emptyTitle}</p>
-              <p className="m-0">{messages.emptyLead}</p>
+            // 🔴 **この一覧が空であることが正常**と分かる文言（`docs/04` §S-022）。
+            //    ⚠️ 器の `data-testid` は凍結済みの `send-failure-empty` である（`U-22`）。
+            <div data-testid="send-failure-empty">
+              <EmptyState
+                testIdPrefix="send-failure-empty-state-"
+                description={`${messages.emptyTitle}${messages.emptyLead}`}
+              />
             </div>
           ) : (
             <Table data-testid="send-failure-table">
@@ -312,6 +370,8 @@ export function SendFailureScreen({ rows, summary, canResend, denialMessage, app
                   <TableHead className={DESKTOP_ONLY}>{messages.columnLastAttemptAt}</TableHead>
                   <TableHead className={TABLET_UP}>{messages.columnElapsed}</TableHead>
                   <TableHead className={DESKTOP_ONLY}>{messages.columnAttemptCount}</TableHead>
+                  {/* 🔴 操作列はどのブレークポイントでも隠さない（§7.1「既定 8 列 + 操作列」）。 */}
+                  <TableHead>{messages.columnAction}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -340,7 +400,8 @@ export function SendFailureScreen({ rows, summary, canResend, denialMessage, app
                       {row.project}
                     </TableCell>
                     <TableCell whitespace="normal">
-                      {/* 🔴 応答不明は失敗と別の色（琥珀）。届いている可能性が最も高い区分。 */}
+                      {/* 🔴 応答不明は失敗と別の色（琥珀）。届いている可能性が最も高い区分であり、
+                          再送の判断が変わる（§S-022 ④）。**これは状態バッジではない**（ファイル冒頭の 🔴）。 */}
                       <Badge variant={row.deliveryUnknown ? 'warning' : 'danger'} data-testid={`send-failure-kind-${row.id}`}>
                         {row.failureLabel}
                       </Badge>
@@ -350,6 +411,20 @@ export function SendFailureScreen({ rows, summary, canResend, denialMessage, app
                     <TableCell className={DESKTOP_ONLY} data-testid={`send-failure-attempts-${row.id}`}>
                       {row.attemptCountLabel}
                     </TableCell>
+                    {/* 🔴 **これは再送ではない**（再送は §7.6 のとおり確認ステップを伴う別操作であり、
+                        詳細パネルの中にしか無い）。ここは行の内容をパネルに出すだけの導線で、
+                        語は §7.8 の統一語（`内容を見る`）である。 */}
+                    <TableCell>
+                      <button
+                        type="button"
+                        className={SECONDARY_LINK_CLASSES}
+                        onClick={() => select(row.id)}
+                        data-testid={`send-failure-panel-open-${row.id}`}
+                        aria-label={`${messages.panelOpen}: ${row.recipient}`}
+                      >
+                        {messages.panelOpen}
+                      </button>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -358,130 +433,136 @@ export function SendFailureScreen({ rows, summary, canResend, denialMessage, app
         </div>
 
         {/* セクション 3: 選択した行の失敗理由と再送（lg 以上は右、未満は一覧の下） */}
-        <aside className="border border-slate-200 bg-white" data-testid="send-failure-detail-panel">
-          <h2 className="border-b border-slate-200 px-4 py-3 text-base font-bold text-slate-900">{messages.detailTitle}</h2>
-          <div className="px-4 py-4">
-            {selected === null ? (
-              <p className="m-0 text-sm text-slate-600" data-testid="send-failure-detail-empty">
-                {messages.detailSelect}
-              </p>
-            ) : (
-              <div data-testid="send-failure-detail" data-failure-category={selected.failureCategory}>
-                <p className="mb-1 text-base font-semibold text-slate-900" data-testid="send-failure-detail-recipient">
-                  {selected.recipient}
+        {/* 🔴 面（radius / 枠線 / 地）は `@ses/ui` の `Card` だけが持つ（画面で面を作らない）。 */}
+        <div className={PAGE_BODY_ASIDE_WIDTH_CLASSES}>
+          <Card data-testid="send-failure-detail-panel">
+            <h2 className="border-b border-border px-4 py-3 text-lg font-semibold text-fg">{messages.detailTitle}</h2>
+            <CardContent className="pt-4">
+              {selected === null ? (
+                <p className="m-0 text-body text-fg-muted" data-testid="send-failure-detail-empty">
+                  {messages.detailSelect}
                 </p>
-                <p className="mb-2 text-sm text-slate-700" data-testid="send-failure-detail-engineer">
-                  {selected.engineer}
-                </p>
-                <dl className="mb-3 text-sm">
-                  <DetailRow label={messages.detailFailureKind} value={selected.failureLabel} field="failure-kind" />
-                  {selected.failureKindRaw === null ? null : (
-                    <DetailRow label={messages.detailFailureKindRaw} value={selected.failureKindRaw} field="failure-kind-raw" />
-                  )}
-                  <DetailRow label={messages.detailLastAttemptAt} value={selected.lastAttemptAt} field="last-attempt-at" />
-                  <DetailRow label={messages.detailAttemptCount} value={selected.attemptCountLabel} field="attempt-count" />
-                  <DetailRow label={messages.detailUnitPrice} value={selected.unitPrice} field="unit-price" />
-                </dl>
-                <SendFailureAttemptList title={messages.detailAttemptsTitle} attempts={selected.attempts} />
-                {/* 🔴 注記（応答不明 / 競合 / 繰り返し）。応答不明は「失敗」と別物として琥珀で描く。 */}
-                {selected.notes.length === 0 ? null : (
-                  <ul className="mb-3 list-disc border border-amber-300 bg-amber-50 py-2 pr-3 pl-7 text-sm text-amber-900" data-testid="send-failure-detail-notes">
-                    {selected.notes.map((note) => (
-                      <li key={note}>{note}</li>
-                    ))}
-                  </ul>
-                )}
-                <SendFailureDetailLinks
-                  approveHref={selected.approveHref}
-                  detailHref={proposalDetailHref(selected.id)}
-                  sendingDomainHref={selected.sendingDomainHref}
-                  messages={messages}
-                />
-
-                {/* 🔴 再送（ホストの 3 ロール × 実行可）。確認ステップは省略しない（`F-023 AC-2`）。 */}
-                {canExecute ? (
-                  <div className="mt-4">
-                    {confirming ? (
-                      <form
-                        onSubmit={(event) => void resend(event)}
-                        className="border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
-                        data-testid="send-failure-resend-confirm"
-                      >
-                        <p className="font-bold">{messages.resendConfirmTitle}</p>
-                        <p>{messages.resendConfirmLead}</p>
-                        {/* 🔴 提案先・エンジニア・単価・最終試行日時の再掲（`docs/04` §S-022 / §8.3）。 */}
-                        <dl className="my-2 text-sm text-slate-900" data-testid="send-failure-resend-recap">
-                          <DetailRow label={messages.columnRecipient} value={selected.recipient} field="recipient" />
-                          <DetailRow label={messages.columnEngineer} value={selected.engineer} field="engineer" />
-                          <DetailRow label={messages.detailUnitPrice} value={selected.unitPrice} field="unit-price" />
-                          <DetailRow label={messages.detailLastAttemptAt} value={selected.lastAttemptAt} field="last-attempt-at" />
-                        </dl>
-                        <SendFailureAttemptList title={messages.detailAttemptsTitle} attempts={selected.attempts} />
-                        <label className="mb-3 flex items-start gap-2 text-sm text-slate-900">
-                          <Checkbox
-                            name="acknowledged"
-                            checked={acknowledged}
-                            onChange={(event) => setAcknowledged(event.target.checked)}
-                            className="mt-0.5"
-                            data-testid="send-failure-resend-acknowledge"
-                          />
-                          <span>{messages.resendAcknowledge}</span>
-                        </label>
-                        <Field label={messages.resendReasonLabel} className="mb-3">
-                          <Textarea
-                            name="reason"
-                            rows={3}
-                            value={reason}
-                            onChange={(event) => setReason(event.target.value)}
-                            maxLength={RESEND_REASON_MAX_LENGTH}
-                            required
-                            data-testid="send-failure-resend-reason"
-                          />
-                        </Field>
-                        <div className="flex flex-wrap items-center gap-4">
-                          <Button type="submit" disabled={submitting || !confirmReady} data-testid="send-failure-resend-submit">
-                            {submitting ? messages.resendSubmitting : messages.resendConfirmSubmit}
-                          </Button>
-                          <button
-                            type="button"
-                            className={SECONDARY_LINK_CLASSES}
-                            disabled={submitting}
-                            onClick={() => {
-                              setConfirming(false);
-                              setError(null);
-                            }}
-                            data-testid="send-failure-resend-cancel"
-                          >
-                            {messages.resendConfirmCancel}
-                          </button>
-                        </div>
-                      </form>
-                    ) : (
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        disabled={submitting}
-                        onClick={() => {
-                          setError(null);
-                          setConfirming(true);
-                        }}
-                        data-testid="send-failure-resend"
-                      >
-                        {messages.resend}
-                      </Button>
-                    )}
-                  </div>
-                ) : null}
-
-                {error === null ? null : (
-                  <p role="alert" className="mt-3 mb-0 text-sm text-red-700" data-testid="send-failure-resend-error">
-                    {error}
+              ) : (
+                <div data-testid="send-failure-detail" data-failure-category={selected.failureCategory}>
+                  <p className="mb-1 text-lg font-semibold text-fg" data-testid="send-failure-detail-recipient">
+                    {selected.recipient}
                   </p>
-                )}
-              </div>
-            )}
-          </div>
-        </aside>
+                  <p className="mb-2 text-body text-fg" data-testid="send-failure-detail-engineer">
+                    {selected.engineer}
+                  </p>
+                  <dl className="mb-3 text-body">
+                    <DetailRow label={messages.detailFailureKind} value={selected.failureLabel} field="failure-kind" />
+                    {selected.failureKindRaw === null ? null : (
+                      <DetailRow label={messages.detailFailureKindRaw} value={selected.failureKindRaw} field="failure-kind-raw" />
+                    )}
+                    <DetailRow label={messages.detailLastAttemptAt} value={selected.lastAttemptAt} field="last-attempt-at" />
+                    <DetailRow label={messages.detailAttemptCount} value={selected.attemptCountLabel} field="attempt-count" />
+                    <DetailRow label={messages.detailUnitPrice} value={selected.unitPrice} field="unit-price" />
+                  </dl>
+                  <SendFailureAttemptList title={messages.detailAttemptsTitle} attempts={selected.attempts} />
+                  {/* 🔴 注記（応答不明 / 競合 / 繰り返し）。応答不明は「失敗」と別物として琥珀で描く。 */}
+                  {selected.notes.length === 0 ? null : (
+                    <ul
+                      className="mb-3 list-disc rounded-md border border-warning-border bg-warning-bg py-2 pr-3 pl-6 text-body text-warning"
+                      data-testid="send-failure-detail-notes"
+                    >
+                      {selected.notes.map((note) => (
+                        <li key={note}>{note}</li>
+                      ))}
+                    </ul>
+                  )}
+                  <SendFailureDetailLinks
+                    approveHref={selected.approveHref}
+                    detailHref={proposalDetailHref(selected.id)}
+                    sendingDomainHref={selected.sendingDomainHref}
+                    messages={messages}
+                  />
+
+                  {/* 🔴 再送（ホストの 3 ロール × 実行可）。確認ステップは省略しない（`F-023 AC-2`）。 */}
+                  {canExecute ? (
+                    <div className="mt-4">
+                      {confirming ? (
+                        <form
+                          onSubmit={(event) => void resend(event)}
+                          className="rounded-md border border-warning-border bg-warning-bg px-4 py-3 text-body text-warning"
+                          data-testid="send-failure-resend-confirm"
+                        >
+                          <p className="font-semibold">{messages.resendConfirmTitle}</p>
+                          <p>{messages.resendConfirmLead}</p>
+                          {/* 🔴 提案先・エンジニア・単価・最終試行日時の再掲（`docs/04` §S-022 / §8.3）。 */}
+                          <dl className="my-2 text-body text-fg" data-testid="send-failure-resend-recap">
+                            <DetailRow label={messages.columnRecipient} value={selected.recipient} field="recipient" />
+                            <DetailRow label={messages.columnEngineer} value={selected.engineer} field="engineer" />
+                            <DetailRow label={messages.detailUnitPrice} value={selected.unitPrice} field="unit-price" />
+                            <DetailRow label={messages.detailLastAttemptAt} value={selected.lastAttemptAt} field="last-attempt-at" />
+                          </dl>
+                          <SendFailureAttemptList title={messages.detailAttemptsTitle} attempts={selected.attempts} />
+                          <label className="mb-3 flex items-start gap-2 text-body text-fg">
+                            <Checkbox
+                              name="acknowledged"
+                              checked={acknowledged}
+                              onChange={(event) => setAcknowledged(event.target.checked)}
+                              className="mt-1"
+                              data-testid="send-failure-resend-acknowledge"
+                            />
+                            <span>{messages.resendAcknowledge}</span>
+                          </label>
+                          <Field label={messages.resendReasonLabel} className="mb-3">
+                            <Textarea
+                              name="reason"
+                              rows={3}
+                              value={reason}
+                              onChange={(event) => setReason(event.target.value)}
+                              maxLength={RESEND_REASON_MAX_LENGTH}
+                              required
+                              data-testid="send-failure-resend-reason"
+                            />
+                          </Field>
+                          <div className="flex flex-wrap items-center gap-4">
+                            <Button type="submit" disabled={submitting || !confirmReady} data-testid="send-failure-resend-submit">
+                              {submitting ? messages.resendSubmitting : messages.resendConfirmSubmit}
+                            </Button>
+                            <button
+                              type="button"
+                              className={SECONDARY_LINK_CLASSES}
+                              disabled={submitting}
+                              onClick={() => {
+                                setConfirming(false);
+                                setError(null);
+                              }}
+                              data-testid="send-failure-resend-cancel"
+                            >
+                              {messages.resendConfirmCancel}
+                            </button>
+                          </div>
+                        </form>
+                      ) : (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          disabled={submitting}
+                          onClick={() => {
+                            setError(null);
+                            setConfirming(true);
+                          }}
+                          data-testid="send-failure-resend"
+                        >
+                          {messages.resend}
+                        </Button>
+                      )}
+                    </div>
+                  ) : null}
+
+                  {error === null ? null : (
+                    <p role="alert" className="mt-3 mb-0 text-body text-danger" data-testid="send-failure-resend-error">
+                      {error}
+                    </p>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   );

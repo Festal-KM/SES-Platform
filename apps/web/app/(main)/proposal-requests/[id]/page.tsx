@@ -13,6 +13,7 @@
 import { notFound, redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { t } from '@ses/i18n';
+import { PageBody } from '@ses/ui';
 import { NotFoundError } from '../../../../lib/api/errors';
 import { executionDenialMessageKey } from '../../../../lib/api/guards';
 import { readRequestMeta, resolveTenantCtxOutcome } from '../../../../lib/auth/session';
@@ -58,15 +59,21 @@ export default async function ProposalRequestRespondPage({
   const denialKey = executionDenialMessageKey(ctx.lifecycleState);
 
   return (
-    <main className="mx-auto max-w-4xl px-4 py-8">
-      <PageHeading trail={PROPOSAL_REQUEST_RESPOND_TRAIL} title={t('proposalRequests.respond.title')} />
-      <ProposalRequestRespondScreen
-        rows={proposalRequestDetailRows(view)}
-        canRespond={isProposalRequestResponderRole(ctx.role)}
-        denialMessage={denialKey === null ? null : t(denialKey)}
-        nowMs={Date.now()}
-        messages={proposalRequestRespondScreenMessages()}
-      />
+    // 🔴 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`）。`S-018` は**クラス C = 読み幅
+    //    720px・左寄せ**である（§7.1 の 🔴: 1 対象について「応諾 / 辞退」の 2 択を決める画面であり、
+    //    対になる材料〔一覧・プレビュー〕を持たないため副カラムが無い。**Tier 1 とクラス C は両立する** ——
+    //    C は「狭くする」のではなく「横に伸ばさない」規約である）。画面に `max-w-*` を書かない（検査 (c)/(k)）。
+    <main className="py-6">
+      <PageBody widthClass="prose">
+        <PageHeading trail={PROPOSAL_REQUEST_RESPOND_TRAIL} title={t('proposalRequests.respond.title')} />
+        <ProposalRequestRespondScreen
+          rows={proposalRequestDetailRows(view)}
+          canRespond={isProposalRequestResponderRole(ctx.role)}
+          denialMessage={denialKey === null ? null : t(denialKey)}
+          nowMs={Date.now()}
+          messages={proposalRequestRespondScreenMessages()}
+        />
+      </PageBody>
     </main>
   );
 }

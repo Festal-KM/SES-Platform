@@ -3063,6 +3063,17 @@ const ja = {
   'proposalRequests.column.remaining': '期限までの残り',
   'proposalRequests.column.state': '状態',
   'proposalRequests.column.updatedAt': '最終更新',
+  // ✅ SP-22 段④（提案まわり。2026-10-03）: 操作列（`docs/04` §7.1「既定 8 列 + 操作列」/ §7.8 の統一語）。
+  'proposalRequests.column.action': '操作',
+  'proposalRequests.panel.open': '内容を見る',
+  // ✅ SP-22 段④: 件数バーの母集団の 1 行（`docs/04` §3.2 項目 2 / `Toolbar` の `population`）。
+  // 🔴 **件数を入れない。** `GET /api/proposal-requests`（#32）は総件数を返さず、
+  //    かつ取引先に件数を見せる必要が無い（`HANDOFF.md` §3.3「件数は他社情報の示唆になりうる」）。
+  'proposalRequests.population.host': '自社が送った提案依頼',
+  'proposalRequests.population.partner': '御社の人材に届いた提案依頼',
+  // 🔴 並び順は**サーバが確定させている**（`PROPOSAL_REQUEST_ORDER_BY` = `createdAt desc`）。
+  //    選べる形にしない（`?sort=` は既存 API に無い。`HANDOFF.md` §5）。
+  'proposalRequests.orderNote': '依頼日の新しい順に表示しています。',
   // 🔴 ホストの候補列は「共有候補（匿名）」の一語だけ（`docs/04` §S-017。応諾後の実名は `Proposal` 側で読む）。
   'proposalRequests.candidate.anonymous': '共有候補（匿名）',
   // 🔴 取引先で、自社に公開されていない案件（`projects` の C4 で行が消える）。存在は依頼自体が示しているので隠さない。
@@ -3500,6 +3511,15 @@ const ja = {
   'sendFailures.column.lastAttemptAt': '最終試行日時',
   'sendFailures.column.elapsed': '経過時間',
   'sendFailures.column.attemptCount': '試行回数',
+  // ✅ SP-22 段④（提案まわり。2026-10-03）: 操作列（`docs/04` §7.1「既定 8 列 + 操作列」/ §7.8 の統一語）。
+  // 🔴 ここは**失敗の内容を見る**導線であって再送ではない（再送は §7.6 のとおり確認ステップを伴う別操作）。
+  'sendFailures.column.action': '操作',
+  'sendFailures.panel.open': '内容を見る',
+  // 🔴 並び順は**サーバが確定させている**（`listProposals` の `updatedAt desc`）。選べる形にしない。
+  'sendFailures.orderNote': '最終更新の新しい順に表示しています。',
+  // 🔴 件数バーの母集団の 1 行。**件数を入れない**（件数は `sendFailures.summary.count*` が持つ。
+  //    同じ数字を 2 箇所に出すと、どちらが正かを読み手が確かめなければならなくなる）。
+  'sendFailures.population': '自社が送信した提案',
   'sendFailures.attemptCountSuffix': ' 回',
   'sendFailures.valueNone': '—',
   'sendFailures.failureKind.UNKNOWN': '応答不明（到達したか確認できない）',

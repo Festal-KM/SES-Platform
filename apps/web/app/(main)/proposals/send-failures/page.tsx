@@ -13,6 +13,7 @@
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { t } from '@ses/i18n';
+import { PageBody } from '@ses/ui';
 import { executionDenialMessageKey } from '../../../../lib/api/guards';
 import { resolveTenantCtxOutcome } from '../../../../lib/auth/session';
 import { proposalApproveHref } from '../../../../lib/proposals/hrefs';
@@ -50,16 +51,22 @@ export default async function SendFailuresPage() {
   const denialKey = executionDenialMessageKey(ctx.lifecycleState);
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-8">
-      <PageHeading trail={SEND_FAILURE_TRAIL} title={t('sendFailures.title')} />
-      <SendFailureScreen
-        rows={rows}
-        summary={summary}
-        canResend={canResendProposal(ctx)}
-        denialMessage={denialKey === null ? null : t(denialKey)}
-        approveHrefPattern={APPROVE_HREF_PATTERN}
-        messages={sendFailureScreenMessages()}
-      />
+    // 🔴 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`）。`S-022` は**クラス A = 全幅**で
+    //    あり、画面ファイルに `max-w-*` を書かない（検査 (c) / (k)）。
+    //    ⚠️ 選択した行のパネルは**画面の内側**の副カラムである（`PageBody` の `aside` スロットを
+    //       使えない理由は `send-failure-screen.tsx` の 🔴 = 表とパネルが同じクライアント状態を共有するため）。
+    <main className="py-6">
+      <PageBody widthClass="full">
+        <PageHeading trail={SEND_FAILURE_TRAIL} title={t('sendFailures.title')} />
+        <SendFailureScreen
+          rows={rows}
+          summary={summary}
+          canResend={canResendProposal(ctx)}
+          denialMessage={denialKey === null ? null : t(denialKey)}
+          approveHrefPattern={APPROVE_HREF_PATTERN}
+          messages={sendFailureScreenMessages()}
+        />
+      </PageBody>
     </main>
   );
 }

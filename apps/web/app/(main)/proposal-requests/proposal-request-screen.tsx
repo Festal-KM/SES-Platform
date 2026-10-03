@@ -1,7 +1,8 @@
 'use client';
 
 // apps/web/app/(main)/proposal-requests/proposal-request-screen.tsx
-// `S-017` 提案依頼の一覧 — 本体（docs/04 §S-017 / `F-018` / docs/05 §6.5 #32 / #35）。T-08-06。
+// `S-017` 提案依頼の一覧 — 本体（docs/04 §S-017 / `F-018` / docs/05 §6.5 #32 / #35）。T-08-06
+// → **SP-22 段④（提案まわりの刷新。2026-10-03）**。
 //
 // ============================================================================
 // 🔴 この画面が守るもの（`docs/04` §S-017 / `F-018` / `CLAUDE.md` §3.1 経路 4）
@@ -20,8 +21,33 @@
 //      （60 秒）」）。実装は `page.tsx` が置く `PollingRefresher`（`router.refresh()`）であり、本コンポーネントは
 //      選択状態を保ったままサーバの行が差し替わる。
 //
+// ============================================================================
+// 🔴 SP-22 段④ で何が変わったか（**見せ方だけ**）
+// ============================================================================
+// | 変えたもの | 一次資料 | 🔴 変えていないもの |
+// |---|---|---|
+// | 実色 → §7.9 の semantic トークン / `text-sm`→`--text-body` / `text-base`→`--text-lg` | §7.9 / 検査 (a)(g) | 🔴 **6 列の集合・並び・間引きの境界**（`hidden sm:` 2 列 / `hidden lg:` 1 列） |
+// | 状態バッジ → `@ses/ui` の **`StatusBadge`**（`entity="proposalRequest"`） | §5-1 / §5-13 | 🔴 **5 状態が別の見た目であること**（② はむしろ強まった。下の 🔴） |
+// | 絞り込みを **`Card`（白い面）**に入れ、**件数バー**（母集団 + 並び順の説明）を `Toolbar` に持たせた | §5-13 / §3.2-2 / 段④ の `S-005` `S-010` `S-015` と同じ作法 | 🔴 **条件の集合（`state` の 5 値 + すべて）・`name`・送り先・`method="get"`** |
+// | 空状態 → `EmptyState` / ページ送り → `Pagination` / パネルの面 → `Card` | §5-13 / §10.1 | 🔴 **空状態 3 通りの出し分けと文言**（ホスト初回空 / 取引先 / 絞込 0 件） |
+// | **操作列**（`内容を見る`）を足した | §7.1「既定 8 列 + 操作列」/ §7.8 の統一語 | 🔴 **行クリックでの選択も残す**（`role="button"` の行は到達手段として維持） |
+// | 幅 → `page.tsx` の `PageBody widthClass="full"`（クラス A）。旧 `max-w-6xl` を撤去 | §7.1 / `U-23` / 検査 (c)(k) | 🔴 **母集団に件数を入れない**（`HANDOFF.md` §3.3） |
+//
+// 🔴 **API / 取得経路 / 権限判定 / URL / ルーティングは 1 つも変えていない。**
+// 🔴 **`STATE_BADGE_VARIANTS`（画面がローカルに持っていた色の写像）を削除した。** 旧実装は
+//    `EXPIRED: 'danger'`（赤）/ `REQUESTED: 'warning'`（橙）/ `WITHDRAWN_BY_HOST: 'outline'` であり、
+//    **`docs/04` §5-1 の表（`REQUESTED` = ブランド藍 / 塗り・`EXPIRED` = 無彩色 / 点線枠）と食い違っていた。**
+//    §5-1 の 🔴 は「**障害（赤・塗り）= `SUBMIT_FAILED` / `SEND_FAILED` / `SUSPENDED` のみ**」であり、
+//    期限切れ（業務的な終わり）を赤で描くのは意味の取り違えである。`StatusBadge` に寄せたことで
+//    **色は状態名から 1 箇所（`STATUS_BADGE_APPEARANCES`）で決まり、画面は色を渡せない。**
+//
+// 🔴 **副カラム（選択した依頼）の寸法は `@ses/ui` の `PAGE_BODY_ASIDE_WIDTH_CLASSES` から取る**
+//    （画面で `20rem` のような寸法を決めない。`docs/05` §2.3.4）。`PageBody` の `aside` スロットを
+//    使えないのは、**パネルが表と同じクライアント状態（選択行・確認ステップ）を共有する**ためである
+//    （`page.tsx`〔サーバ〕からクライアント状態で組んだ JSX を渡せない）。
+//
 // 🔴 **T1（モバイル完結）**（docs/04 §S-017 デバイス別 / `CLAUDE.md` §13.3）。
-//    モバイル = 案件名 + 状態 + 残り時間の 3 列。**取り下げは詳細パネルにあり、モバイルでも押せる。**
+//    モバイル = 案件名 + 状態 + 残り時間の 3 列 + 操作列。**取り下げは詳細パネルにあり、モバイルでも押せる。**
 //    間引くのは補助列（候補 / 依頼日 / 最終更新）だけで、ブレークポイントは Tailwind の既定（`sm` / `lg`）のみ。
 //
 // 🔴 期限までの残りは**クライアントで毎分再計算する**（`docs/04` §S-017 非同期処理の表現）。初回はサーバの時刻
@@ -33,26 +59,38 @@
 import { useEffect, useState, type KeyboardEvent } from 'react';
 import Link from 'next/link';
 import {
-  Badge,
+  Alert,
   Button,
+  Card,
+  CardContent,
+  EmptyState,
   Field,
+  PAGE_BODY_ASIDE_WIDTH_CLASSES,
+  Pagination,
   SECONDARY_LINK_CLASSES,
   Select,
+  StatusBadge,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
-  type BadgeVariant,
+  Toolbar,
+  cn,
+  type EmptyStateLinkProps,
+  type PaginationLinkProps,
 } from '@ses/ui';
-import type { ProposalRequestState } from '@ses/domain';
 import type { ProposalRequestRowView } from '../../../lib/proposal-requests/list-rows';
 import { formatRemaining, type RemainingLabels } from '../../../lib/proposal-requests/remaining';
 import { FILTER_ACTIONS_CLASSES, FILTER_FORM_CLASSES } from '../_shared/filter-form-classes';
 
 export type ProposalRequestScreenMessages = {
   readonly lead: string;
+  /** 🔴 件数バーの母集団の 1 行（§3.2-2）。**件数を含めない**（`HANDOFF.md` §3.3）。 */
+  readonly population: string;
+  /** 件数バーの右端（並び順の説明）。🔴 選べる形にしない（`?sort=` が無い）。 */
+  readonly orderNote: string;
   readonly filterLegend: string;
   readonly filterState: string;
   readonly filterApply: string;
@@ -62,6 +100,9 @@ export type ProposalRequestScreenMessages = {
   readonly columnRemaining: string;
   readonly columnState: string;
   readonly columnUpdatedAt: string;
+  /** 操作列の見出しと語（§7.1 / §7.8 の統一語 `内容を見る`）。 */
+  readonly columnAction: string;
+  readonly panelOpen: string;
   readonly emptyTitle: string;
   /** ホストの初回空にだけ出す説明と導線（取引先・絞込 0 件は `null`）。 */
   readonly emptyLead: string | null;
@@ -107,19 +148,11 @@ export type ProposalRequestScreenProps = {
   /** サーバのリクエスト時刻（epoch ms）。初回描画の残り時間に使う。 */
   readonly nowMs: number;
   readonly projectsHref: string;
+  readonly listHref: string;
   readonly nextPageHref: string | null;
   readonly firstPageHref: string | null;
   readonly messages: ProposalRequestScreenMessages;
 };
-
-/** 状態バッジの色。🔴 5 値を別々に割り当てる（`Record` で漏れをコンパイラに強制させる）。 */
-const STATE_BADGE_VARIANTS = {
-  REQUESTED: 'warning',
-  ACCEPTED: 'success',
-  DECLINED: 'neutral',
-  WITHDRAWN_BY_HOST: 'outline',
-  EXPIRED: 'danger',
-} as const satisfies Record<ProposalRequestState, BadgeVariant>;
 
 /** モバイルで間引く補助列（判断材料ではない。`docs/04` §S-017 デバイス別）。 */
 const TABLET_UP = 'hidden sm:table-cell';
@@ -127,11 +160,41 @@ const DESKTOP_ONLY = 'hidden lg:table-cell';
 
 const REMAINING_TICK_MS = 60_000;
 
+/**
+ * ページ送りのリンク。🔴 **凍結済み testid の維持**（`docs/04` `U-22`）: `Pagination` は
+ * `proposal-request-pagination-prev` / `…-next` を出すが、凍結されている値は
+ * **`proposal-request-first` / `proposal-request-next`** である（`S-019` と同じ形・同じ理由）。
+ */
+function RequestPagingLink({ href, className, children, 'data-testid': testId }: PaginationLinkProps) {
+  return (
+    <Link
+      href={href}
+      className={className}
+      data-testid={testId === undefined || testId.endsWith('-prev') ? 'proposal-request-first' : 'proposal-request-next'}
+    >
+      {children}
+    </Link>
+  );
+}
+
+/**
+ * 初回空の Secondary（`S-010` へ戻る導線）。🔴 **凍結済み testid の維持**（`U-22`）:
+ * `EmptyState` は `…-empty-state-secondary` を出すが、凍結されている値は
+ * **`proposal-request-empty-open-projects`** である。
+ */
+function RequestEmptyLink({ href, className, children }: EmptyStateLinkProps) {
+  return (
+    <Link href={href} className={className} data-testid="proposal-request-empty-open-projects">
+      {children}
+    </Link>
+  );
+}
+
 function DetailRow({ label, value, field }: { readonly label: string; readonly value: string; readonly field: string }) {
   return (
-    <div className="flex gap-3 border-b border-slate-100 py-2 last:border-b-0">
-      <dt className="w-24 shrink-0 text-slate-500">{label}</dt>
-      <dd className="m-0 break-words text-slate-900" data-field={field}>
+    <div className="flex gap-3 border-b border-border py-2 last:border-b-0">
+      <dt className="w-24 shrink-0 text-fg-muted">{label}</dt>
+      <dd className="m-0 break-words text-fg" data-field={field}>
         {value}
       </dd>
     </div>
@@ -147,6 +210,7 @@ export function ProposalRequestScreen({
   denialMessage,
   nowMs,
   projectsHref,
+  listHref,
   nextPageHref,
   firstPageHref,
   messages,
@@ -209,55 +273,83 @@ export function ProposalRequestScreen({
 
   return (
     <div data-testid="proposal-request-screen">
-      <p className="mb-4 text-sm text-slate-600" data-testid="proposal-request-lead">
+      {/* 🔴 帯の「説明 1 行」（`docs/04` §3.1）。**母集団がホストと取引先で違うので文も違う**（§3.2-2）。 */}
+      <p className="mb-4 text-body text-fg-muted" data-testid="proposal-request-lead">
         {messages.lead}
       </p>
 
       {/* 🔴 取り下げの権限は持つがテナント状態で止まっているときだけ理由を出す（`S-015` と同じ形）。 */}
       {canAct && denialMessage !== null ? (
-        <div
-          role="alert"
-          className="mb-4 border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
-          data-testid="proposal-request-denied"
-        >
-          <p className="font-bold">{messages.deniedTitle}</p>
+        <Alert variant="warning" className="mb-4" data-testid="proposal-request-denied">
+          <p className="font-semibold">{messages.deniedTitle}</p>
           <p>{denialMessage}</p>
-        </div>
+        </Alert>
       ) : null}
 
-      {/* セクション 1: 状態フィルタ（同期の GET。`S-005` と同じ） */}
-      <form className={FILTER_FORM_CLASSES} method="get" action="/proposal-requests" data-testid="proposal-request-filters">
-        <fieldset className="contents">
-          <legend className="sr-only">{messages.filterLegend}</legend>
-          <Field label={messages.filterState}>
-            <Select name="state" defaultValue={stateValue} data-testid="proposal-request-filter-state">
-              {stateOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <div className={FILTER_ACTIONS_CLASSES}>
-            <Button type="submit" data-testid="proposal-request-filter-apply">
-              {messages.filterApply}
-            </Button>
-          </div>
-        </fieldset>
-      </form>
+      {/* 🔴 §5-13 の `Toolbar`: **絞り込みの帯と母集団の 1 行の置き場所をここに固定する**
+          （画面ごとに位置が変わらないことが条文の趣旨である）。
+          ✅ SP-22 段④: 条件を `Card`（白い面）に入れ、件数バーの右端に並び順の説明を置いた。 */}
+      <Toolbar
+        testIdPrefix="proposal-request-"
+        population={messages.population}
+        note={
+          <p className="text-xs text-fg-muted" data-testid="proposal-request-order-note">
+            {messages.orderNote}
+          </p>
+        }
+        filters={
+          // 🔴 面・余白・radius は `Card` の中にしか無い（画面に `rounded-md border …` を書かない）。
+          <Card className="w-full">
+            {/* `CardContent` は `p-4 pt-0`。見出しを持たないカードなので上の余白を戻す。 */}
+            <CardContent className="pt-4">
+              {/* セクション 1: 状態フィルタ（同期の GET。`S-005` と同じ） */}
+              <form
+                className={cn(FILTER_FORM_CLASSES, 'mb-0 w-full')}
+                method="get"
+                action={listHref}
+                data-testid="proposal-request-filters"
+              >
+                <fieldset className="contents">
+                  <legend className="sr-only">{messages.filterLegend}</legend>
+                  <Field label={messages.filterState}>
+                    <Select name="state" defaultValue={stateValue} data-testid="proposal-request-filter-state">
+                      {stateOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                  <div className={cn(FILTER_ACTIONS_CLASSES, 'justify-end')}>
+                    <Button type="submit" data-testid="proposal-request-filter-apply">
+                      {messages.filterApply}
+                    </Button>
+                  </div>
+                </fieldset>
+              </form>
+            </CardContent>
+          </Card>
+        }
+      />
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+      {/* 🔴 副カラムの寸法は `@ses/ui` から取る（画面が寸法を決めない。ファイル冒頭の 🔴）。
+          `lg` 未満では表の下に落ちる（遮断しない。§13.3）。 */}
+      <div className="mt-4 flex flex-col gap-6 lg:flex-row">
         {/* セクション 2: テーブル */}
-        <div>
+        <div className="min-w-0 flex-1">
           {rows.length === 0 ? (
-            <div className="border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700" data-testid="proposal-request-empty">
-              <p className="mb-1 font-semibold">{messages.emptyTitle}</p>
-              {messages.emptyLead === null ? null : <p className="m-0">{messages.emptyLead}</p>}
-              {filtered || messages.emptyOpenProjects === null ? null : (
-                <Link className={`${SECONDARY_LINK_CLASSES} mt-2 inline-block`} href={projectsHref} data-testid="proposal-request-empty-open-projects">
-                  {messages.emptyOpenProjects}
-                </Link>
-              )}
+            // ⚠️ 器の `data-testid` は凍結済みの `proposal-request-empty` である（`U-22`）。
+            <div data-testid="proposal-request-empty">
+              <EmptyState
+                testIdPrefix="proposal-request-empty-state-"
+                description={messages.emptyLead === null ? messages.emptyTitle : `${messages.emptyTitle}${messages.emptyLead}`}
+                secondary={
+                  filtered || messages.emptyOpenProjects === null
+                    ? undefined
+                    : { href: projectsHref, label: messages.emptyOpenProjects }
+                }
+                linkComponent={RequestEmptyLink}
+              />
             </div>
           ) : (
             <Table data-testid="proposal-request-table">
@@ -269,6 +361,8 @@ export function ProposalRequestScreen({
                   <TableHead>{messages.columnRemaining}</TableHead>
                   <TableHead>{messages.columnState}</TableHead>
                   <TableHead className={DESKTOP_ONLY}>{messages.columnUpdatedAt}</TableHead>
+                  {/* 🔴 操作列はどのブレークポイントでも隠さない（§7.1）。 */}
+                  <TableHead>{messages.columnAction}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -294,136 +388,148 @@ export function ProposalRequestScreen({
                     <TableCell className={TABLET_UP}>{row.createdAt}</TableCell>
                     <TableCell data-testid={`proposal-request-remaining-${row.id}`}>{remainingOf(row)}</TableCell>
                     <TableCell>
-                      <Badge variant={STATE_BADGE_VARIANTS[row.state]} data-testid={`proposal-request-state-${row.id}`}>
-                        {row.stateLabel}
-                      </Badge>
+                      {/* 🔴 色は `StatusBadge` が状態名から決める（画面は渡せない。§5-1 / §5-13）。 */}
+                      <StatusBadge
+                        entity="proposalRequest"
+                        state={row.state}
+                        label={row.stateLabel}
+                        data-testid={`proposal-request-state-${row.id}`}
+                      />
                     </TableCell>
                     <TableCell className={DESKTOP_ONLY}>{row.updatedAt}</TableCell>
+                    {/* 🔴 操作列（§7.1「既定 8 列 + 操作列」）。行クリックと同じ「選ぶ」操作であり、
+                        **押せるものが押せると分かる形**にするために置く（`role="button"` の行だけだと
+                        キーボード・読み上げで見つけにくい）。語は §7.8 の統一語（`内容を見る`）。 */}
+                    <TableCell>
+                      <button
+                        type="button"
+                        className={SECONDARY_LINK_CLASSES}
+                        onClick={() => select(row.id)}
+                        data-testid={`proposal-request-panel-open-${row.id}`}
+                        aria-label={`${messages.panelOpen}: ${row.projectName}`}
+                      >
+                        {messages.panelOpen}
+                      </button>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           )}
 
-          {/* 🔴 カーソルページング。「全 N ページ中 M ページ目」を出さない（docs/05 §4.8）。 */}
+          {/* 🔴 カーソルページング。「全 N ページ中 M ページ目」を出さない（docs/05 §4.8）。
+              ⚠️ 器の `data-testid` は凍結済みの `proposal-request-paging` である（`U-22`）。 */}
           {nextPageHref === null && firstPageHref === null ? null : (
-            <nav className="mt-4 flex flex-wrap gap-4" data-testid="proposal-request-paging">
-              {firstPageHref === null ? null : (
-                <Link className={SECONDARY_LINK_CLASSES} href={firstPageHref} data-testid="proposal-request-first">
-                  {messages.firstPage}
-                </Link>
-              )}
-              {nextPageHref === null ? null : (
-                <Link className={SECONDARY_LINK_CLASSES} href={nextPageHref} data-testid="proposal-request-next">
-                  {messages.nextPage}
-                </Link>
-              )}
-            </nav>
+            <div className="mt-4" data-testid="proposal-request-paging">
+              <Pagination
+                testIdPrefix="proposal-request-"
+                nextHref={nextPageHref}
+                nextLabel={messages.nextPage}
+                prevHref={firstPageHref}
+                prevLabel={messages.firstPage}
+                linkComponent={RequestPagingLink}
+              />
+            </div>
           )}
         </div>
 
         {/* セクション 3: 選択した依頼の詳細パネル（lg 以上は右、未満は一覧の下。取り下げはここ） */}
-        <aside className="border border-slate-200 bg-white" data-testid="proposal-request-detail-panel">
-          <h2 className="border-b border-slate-200 px-4 py-3 text-base font-bold text-slate-900">
-            {messages.detailTitle}
-          </h2>
-          <div className="px-4 py-4">
-            {selected === null ? (
-              <p className="m-0 text-sm text-slate-600" data-testid="proposal-request-detail-empty">
-                {messages.detailSelect}
-              </p>
-            ) : (
-              <div data-testid="proposal-request-detail">
-                <p className="mb-1 text-base font-semibold text-slate-900" data-testid="proposal-request-detail-project">
-                  {selected.projectName}
+        <div className={PAGE_BODY_ASIDE_WIDTH_CLASSES}>
+          <Card data-testid="proposal-request-detail-panel">
+            <h2 className="border-b border-border px-4 py-3 text-lg font-semibold text-fg">{messages.detailTitle}</h2>
+            <CardContent className="pt-4">
+              {selected === null ? (
+                <p className="m-0 text-body text-fg-muted" data-testid="proposal-request-detail-empty">
+                  {messages.detailSelect}
                 </p>
-                <p className="mb-2 text-sm text-slate-700" data-testid="proposal-request-detail-candidate">
-                  {selected.candidate}
-                  <Badge className="ml-2" variant={STATE_BADGE_VARIANTS[selected.state]}>
-                    {selected.stateLabel}
-                  </Badge>
-                </p>
-                <dl className="mb-3 text-sm">
-                  <DetailRow label={messages.detailMessage} value={selected.message} field="message" />
-                  <DetailRow label={messages.detailExpiresAt} value={`${selected.expiresAt}（${remainingOf(selected)}）`} field="expires-at" />
-                  <DetailRow label={messages.detailCreatedAt} value={selected.createdAt} field="created-at" />
-                  <DetailRow label={messages.detailUpdatedAt} value={selected.updatedAt} field="updated-at" />
-                </dl>
-                {selected.projectId === null ? null : (
-                  <Link className={SECONDARY_LINK_CLASSES} href={`/projects/${selected.projectId}`} data-testid="proposal-request-detail-open-project">
-                    {messages.detailOpenProject}
-                  </Link>
-                )}
-
-                {/* 🔴 T-08-07: 取引先の行は `S-018`（応諾・辞退）へ進む。ホストの行は `respondHref` が null で描かれない。 */}
-                {selected.respondHref === null ? null : (
-                  <div className="mt-4">
-                    <Link
-                      className="inline-block text-sm font-semibold text-slate-900 underline"
-                      href={selected.respondHref}
-                      data-testid="proposal-request-detail-respond"
-                    >
-                      {messages.partnerRespond}
-                    </Link>
-                  </div>
-                )}
-
-                {/* 🔴 取り下げ（ホスト × REQUESTED × 実行可）。確認は 1 段。 */}
-                {selected.canWithdraw && canExecute ? (
-                  <div className="mt-4">
-                    {confirming ? (
-                      <div
-                        className="border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
-                        data-testid="proposal-request-withdraw-confirm"
-                      >
-                        <p className="font-bold">{messages.withdrawConfirmTitle}</p>
-                        <p>{messages.withdrawConfirmLead}</p>
-                        <div className="mt-3 flex flex-wrap items-center gap-4">
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            disabled={submitting}
-                            onClick={() => withdraw(selected.id)}
-                            data-testid="proposal-request-withdraw-submit"
-                          >
-                            {submitting ? messages.withdrawSubmitting : messages.withdrawConfirmSubmit}
-                          </Button>
-                          <button
-                            type="button"
-                            className={SECONDARY_LINK_CLASSES}
-                            onClick={() => setConfirming(false)}
-                            data-testid="proposal-request-withdraw-cancel"
-                          >
-                            {messages.withdrawConfirmCancel}
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        disabled={submitting}
-                        onClick={() => {
-                          setError(null);
-                          setConfirming(true);
-                        }}
-                        data-testid="proposal-request-withdraw"
-                      >
-                        {messages.withdraw}
-                      </Button>
-                    )}
-                  </div>
-                ) : null}
-
-                {error === null ? null : (
-                  <p role="alert" className="mt-3 mb-0 text-sm text-red-700" data-testid="proposal-request-withdraw-error">
-                    {error}
+              ) : (
+                <div data-testid="proposal-request-detail">
+                  <p className="mb-1 text-lg font-semibold text-fg" data-testid="proposal-request-detail-project">
+                    {selected.projectName}
                   </p>
-                )}
-              </div>
-            )}
-          </div>
-        </aside>
+                  <p className="mb-2 flex flex-wrap items-center gap-2 text-body text-fg" data-testid="proposal-request-detail-candidate">
+                    <span>{selected.candidate}</span>
+                    <StatusBadge entity="proposalRequest" state={selected.state} label={selected.stateLabel} />
+                  </p>
+                  <dl className="mb-3 text-body">
+                    <DetailRow label={messages.detailMessage} value={selected.message} field="message" />
+                    <DetailRow label={messages.detailExpiresAt} value={`${selected.expiresAt}（${remainingOf(selected)}）`} field="expires-at" />
+                    <DetailRow label={messages.detailCreatedAt} value={selected.createdAt} field="created-at" />
+                    <DetailRow label={messages.detailUpdatedAt} value={selected.updatedAt} field="updated-at" />
+                  </dl>
+                  {selected.projectId === null ? null : (
+                    <Link className={SECONDARY_LINK_CLASSES} href={`/projects/${selected.projectId}`} data-testid="proposal-request-detail-open-project">
+                      {messages.detailOpenProject}
+                    </Link>
+                  )}
+
+                  {/* 🔴 T-08-07: 取引先の行は `S-018`（応諾・辞退）へ進む。ホストの行は `respondHref` が null で描かれない。 */}
+                  {selected.respondHref === null ? null : (
+                    <div className="mt-4">
+                      <Link
+                        className={cn(SECONDARY_LINK_CLASSES, 'inline-block font-semibold')}
+                        href={selected.respondHref}
+                        data-testid="proposal-request-detail-respond"
+                      >
+                        {messages.partnerRespond}
+                      </Link>
+                    </div>
+                  )}
+
+                  {/* 🔴 取り下げ（ホスト × REQUESTED × 実行可）。確認は 1 段。 */}
+                  {selected.canWithdraw && canExecute ? (
+                    <div className="mt-4">
+                      {confirming ? (
+                        <Alert variant="warning" data-testid="proposal-request-withdraw-confirm">
+                          <p className="font-semibold">{messages.withdrawConfirmTitle}</p>
+                          <p>{messages.withdrawConfirmLead}</p>
+                          <div className="mt-3 flex flex-wrap items-center gap-4">
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              disabled={submitting}
+                              onClick={() => withdraw(selected.id)}
+                              data-testid="proposal-request-withdraw-submit"
+                            >
+                              {submitting ? messages.withdrawSubmitting : messages.withdrawConfirmSubmit}
+                            </Button>
+                            <button
+                              type="button"
+                              className={SECONDARY_LINK_CLASSES}
+                              onClick={() => setConfirming(false)}
+                              data-testid="proposal-request-withdraw-cancel"
+                            >
+                              {messages.withdrawConfirmCancel}
+                            </button>
+                          </div>
+                        </Alert>
+                      ) : (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          disabled={submitting}
+                          onClick={() => {
+                            setError(null);
+                            setConfirming(true);
+                          }}
+                          data-testid="proposal-request-withdraw"
+                        >
+                          {messages.withdraw}
+                        </Button>
+                      )}
+                    </div>
+                  ) : null}
+
+                  {error === null ? null : (
+                    <p role="alert" className="mt-3 mb-0 text-body text-danger" data-testid="proposal-request-withdraw-error">
+                      {error}
+                    </p>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   );

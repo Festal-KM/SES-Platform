@@ -52,6 +52,9 @@ const rows: readonly ProposalRequestRowView[] = [
 
 const messages: ProposalRequestScreenMessages = {
   lead: '自社が送った提案依頼が表示されます。',
+  // ✅ SP-22 段④: 件数バー（母集団 + 並び順の説明）。🔴 **母集団に件数を入れない**（`HANDOFF.md` §3.3）。
+  population: '自社が送った提案依頼',
+  orderNote: '依頼日の新しい順に表示しています。',
   filterLegend: '状態で絞り込む',
   filterState: '状態',
   filterApply: '絞り込む',
@@ -61,6 +64,8 @@ const messages: ProposalRequestScreenMessages = {
   columnRemaining: '期限までの残り',
   columnState: '状態',
   columnUpdatedAt: '最終更新',
+  columnAction: '操作',
+  panelOpen: '内容を見る',
   emptyTitle: '提案依頼はまだありません。',
   emptyLead: '案件の候補検索で共有候補を選ぶと、提案依頼を送れます。',
   emptyOpenProjects: '案件一覧を開く',
@@ -104,6 +109,7 @@ function render(overrides: Partial<ProposalRequestScreenProps> = {}): string {
     denialMessage: null,
     nowMs: NOW_MS,
     projectsHref: '/projects',
+    listHref: '/proposal-requests',
     nextPageHref: null,
     firstPageHref: null,
     messages,
@@ -211,5 +217,62 @@ describe('取引先視点と空状態', () => {
     expect(html).toContain('data-testid="proposal-request-next"');
     expect(html).toContain('data-testid="proposal-request-first"');
     expect(html).not.toMatch(/ページ目/);
+  });
+});
+
+// ============================================================================
+// ✅ SP-22 段④（提案まわりの刷新。2026-10-03）
+// ============================================================================
+// 🔴 ここで固定するのは「**色を画面が決めていないこと**」と「**母集団に件数が無いこと**」である。
+//    どちらも旧実装で実際に破れていた（`EXPIRED` が障害色の赤 / 母集団の 1 行が無い）。
+describe('🔴 SP-22 段④: 状態バッジは `StatusBadge`（色は状態名から決まる）', () => {
+  /** その testid を持つタグの属性文字列。 */
+  function tagOf(html: string, testId: string): string {
+    return new RegExp(`<[^>]*data-testid="${testId}"[^>]*>`).exec(html)?.[0] ?? '';
+  }
+
+  it('5 状態すべてが `entity="proposalRequest"` + 自分の `data-state` を持つ', () => {
+    const html = render();
+    for (const [id, state] of [
+      [REQUESTED_ID, 'REQUESTED'],
+      [DECLINED_ID, 'DECLINED'],
+      [EXPIRED_ID, 'EXPIRED'],
+      [WITHDRAWN_ID, 'WITHDRAWN_BY_HOST'],
+    ] as const) {
+      const tag = tagOf(html, `proposal-request-state-${id}`);
+      expect(tag, id).toContain('data-entity="proposalRequest"');
+      expect(tag, id).toContain(`data-state="${state}"`);
+    }
+  });
+
+  it('🔴 障害色（赤）を 1 つも使わない —— `docs/04` §5-1「赤・塗りは `SUBMIT_FAILED` / `SEND_FAILED` / `SUSPENDED` のみ」', () => {
+    // 旧実装は `EXPIRED: 'danger'`（赤）だった。期限切れは業務的な終わりであり外部で事故は起きていない。
+    const html = render();
+    for (const id of [REQUESTED_ID, DECLINED_ID, EXPIRED_ID, WITHDRAWN_ID]) {
+      expect(tagOf(html, `proposal-request-state-${id}`), id).not.toMatch(/danger/);
+    }
+  });
+
+  it('🔴 `EXPIRED` は点線枠、`DECLINED` / `WITHDRAWN_BY_HOST` は実線枠（§5-1 の形状で区別する）', () => {
+    const html = render();
+    expect(tagOf(html, `proposal-request-state-${EXPIRED_ID}`)).toContain('border-dashed');
+    expect(tagOf(html, `proposal-request-state-${DECLINED_ID}`)).not.toContain('border-dashed');
+    expect(tagOf(html, `proposal-request-state-${WITHDRAWN_ID}`)).not.toContain('border-dashed');
+  });
+
+  it('🔴 件数バーの母集団に数字が 1 文字も無い（件数は他社情報の示唆になりうる）', () => {
+    const html = render();
+    const population = /<p[^>]*data-testid="proposal-request-toolbar-population"[^>]*>([^<]*)</.exec(html)?.[1] ?? '';
+    expect(population).not.toBe('');
+    expect(population).not.toMatch(/[0-9０-９]/);
+  });
+
+  it('操作列（`内容を見る`）が全行に在り、行クリックの選択も残っている', () => {
+    const html = render();
+    for (const id of [REQUESTED_ID, DECLINED_ID, EXPIRED_ID, WITHDRAWN_ID]) {
+      expect(html).toContain(`data-testid="proposal-request-panel-open-${id}"`);
+    }
+    expect(html).toMatch(new RegExp(`data-testid="proposal-request-row-${REQUESTED_ID}"`));
+    expect(html).toContain('role="button"');
   });
 });

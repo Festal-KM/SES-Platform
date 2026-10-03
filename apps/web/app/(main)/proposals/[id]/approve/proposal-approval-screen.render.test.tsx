@@ -579,3 +579,41 @@ describe('S-021 ⑩（T-12-13 ⑥）: data-can-approve（立場）と data-can-a
     expect(render({ denialMessage: '停止中です。' })).toContain('data-can-approve-now="false"');
   });
 });
+
+// ============================================================================
+// ✅ SP-22 段④（提案まわり。2026-10-03）: 2 カラムを `PageBody` の分割の規約に合わせた
+// ============================================================================
+// 🔴 **DOM の順序 = モバイルの読む順序**である（`lg` 未満では副カラムが本体の下に落ちるだけで、
+//    `display:none` も `<details>` もタブも使わない）。したがって「判断ヘッダ → ゲート結果 →
+//    プレビュー → 末尾の印 → アクション」という順序が DOM で保たれていることが、
+//    `docs/04` §S-021 デバイス別「モバイルは 1 本の縦スクロール」と §6.1 の
+//    「アクションはプレビューの末尾までスクロールするまで有効にならない」の構造的な根拠になる。
+describe('🔴 SP-22 段④: モバイルの読む順序が DOM の順序で保たれている', () => {
+  it('判断ヘッダ → ゲート結果 → プレビュー → 末尾の印 → アクション の順に現れる', () => {
+    const html = render();
+    const at = (testId: string): number => {
+      const index = html.indexOf(`data-testid="${testId}"`);
+      expect(index, testId).toBeGreaterThanOrEqual(0);
+      return index;
+    };
+    const order = [
+      at('proposal-approval-header'),
+      at('proposal-approval-section-gate'),
+      at('proposal-approval-section-preview'),
+      at('proposal-approval-preview-end'),
+      at('proposal-approval-actions'),
+    ];
+    expect(order, '🔴 末尾の印がアクションより後ろに来ると「末尾まで読んでから押す」が成立しない').toEqual(
+      [...order].sort((left, right) => left - right),
+    );
+  });
+
+  it('🔴 どのカラムも `display:none` で畳まれていない（幅で遮断しない。§13.3）', () => {
+    const html = render();
+    // 副カラムの寸法は `PAGE_BODY_ASIDE_WIDTH_CLASSES`（`w-full lg:w-90 …`）であり、
+    // 🔴 **モバイルは `w-full`**（隠さない）。素の `hidden` ユーティリティが無いことを見る。
+    //    ⚠️ `overflow-hidden`（`Badge` の基底）に当たらないよう、クラスの区切りで照合する。
+    expect(html).not.toMatch(/class="(?:[^"]*\s)?hidden(?:\s[^"]*)?"/);
+    expect(html).toContain('w-full lg:w-90');
+  });
+});
