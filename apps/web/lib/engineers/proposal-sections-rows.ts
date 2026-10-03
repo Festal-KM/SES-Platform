@@ -15,7 +15,6 @@ import { formatThousands } from '../format/number';
 import { PREFECTURE_MESSAGE_KEYS } from '../format/prefectures';
 import { proposalStateLabel } from '../proposals/editor-rows';
 import { proposalDetailHref } from '../proposals/hrefs';
-import { proposalStateTone, type ProposalStateTone } from '../proposals/list-rows';
 import {
   careersEqual,
   snapshotFieldEquals,
@@ -48,9 +47,17 @@ export type EngineerProposalHistoryRow = {
   readonly diffHref: string;
   readonly recipient: string;
   readonly project: string;
+  /**
+   * 🔴 **状態は名前だけを渡し、色（`tone`）を持たない。** 状態バッジの色と形状は `@ses/ui` の
+   *    `StatusBadge`（`STATUS_BADGE_APPEARANCES`）が**状態名から**決める（`docs/04` §5-1 / §5-13
+   *    「1 箇所でしか色が決まらないことが §7.4 の意味の対応を守る唯一の方法」）。
+   * ✅ **SP-22 段④ で `tone` を削除した**（2026-10-03 のレビュー指摘 = 実害）—— 5 値の tone では
+   *    §5-1 の 14 状態の塗り / 枠線 / 点線枠を表現できず、**`GATE_FAILED` が赤**（§5-1 の 🔴
+   *    「赤は `SUBMIT_FAILED` / `SEND_FAILED` / `SUSPENDED` の 3 つだけ」に反する）/ **`APPROVED` と
+   *    `SUBMITTED` が同じ緑**になっていた。
+   */
   readonly state: ProposalState;
   readonly stateLabel: string;
-  readonly tone: ProposalStateTone;
   /** JST の暦日（`YYYY-MM-DD`）。 */
   readonly createdOn: string;
   /** セクション 5 に表示中の提案か。 */
@@ -74,7 +81,6 @@ export function engineerProposalHistoryRows(
     project: item.project === null ? t('proposals.list.project.notShared') : item.project.name,
     state: item.state,
     stateLabel: proposalStateLabel(item.state),
-    tone: proposalStateTone(item.state),
     createdOn: toJstIsoDay(new Date(item.createdAt)),
     selected: item.id === selectedProposalId,
   }));

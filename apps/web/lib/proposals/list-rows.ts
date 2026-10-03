@@ -32,30 +32,25 @@ export type ProposalFailureKind = 'GATE_FAILED' | 'SUBMIT_FAILED' | 'LOST';
 
 export const PROPOSAL_FAILURE_STATES = ['GATE_FAILED', 'SUBMIT_FAILED', 'LOST'] as const satisfies readonly ProposalFailureKind[];
 
-/** 状態バッジの色味（画面が `BadgeVariant` に写す。語ではなく区分を渡す）。 */
-export type ProposalStateTone = 'neutral' | 'progress' | 'success' | 'warning' | 'danger';
-
-const STATE_TONES = {
-  DRAFT: 'neutral',
-  GATE_RUNNING: 'progress',
-  GATE_FAILED: 'danger',
-  APPROVAL_PENDING: 'warning',
-  APPROVED: 'success',
-  SUBMITTING: 'progress',
-  SUBMITTED: 'success',
-  SUBMIT_FAILED: 'danger',
-  INTERVIEW_SCHEDULED: 'progress',
-  INTERVIEWED: 'progress',
-  RESULT_PENDING: 'warning',
-  WON: 'success',
-  LOST: 'neutral',
-  WITHDRAWN: 'neutral',
-} as const satisfies Record<ProposalState, ProposalStateTone>;
-
-/** 状態バッジの色味（`S-019` / `S-023` が同じ表を見る）。 */
-export function proposalStateTone(state: ProposalState): ProposalStateTone {
-  return STATE_TONES[state];
-}
+// ============================================================================
+// 🔴 **状態バッジの色味（`tone`）はここに無い**（✅ SP-22 段④ で削除。2026-10-03）
+// ============================================================================
+// 旧実装は `ProposalStateTone`（`neutral` / `progress` / `success` / `warning` / `danger` の 5 値）と
+// `STATE_TONES`（`ProposalState` → tone）を持ち、画面がそれを `BadgeVariant` に写していた。
+// 🔴 **5 値では `docs/04` §5-1 の 14 状態の塗り / 枠線 / 点線枠を表現できない。** 現に次の 2 つが
+//    起きていた（`S-019` / `S-023` / `S-024` / `S-006` の 4 画面で同じ写像が重複していた）:
+//
+//   - **`GATE_FAILED` が `danger`（赤）** —— §5-1 の 🔴「**赤（塗り）は `SUBMIT_FAILED` /
+//     `SEND_FAILED` / `SUSPENDED` の 3 つだけ**」に反する。ゲート差し戻しは外部に何も起きておらず
+//     「直せば進む」ものなので橙（`warning`）である（`CLAUDE.md` §4.2「失敗と保留を混同しない」/
+//     `BR-23`）。**赤にすると品質管理を強めるほど画面が赤くなる**という逆の動機が生まれる。
+//   - **`APPROVED` と `SUBMITTED` が同じ `success`** —— 「送る前」と「届いた後」が同じ見た目になる。
+//
+// 🔴 色と形状は `@ses/ui` の `StatusBadge`（`STATUS_BADGE_APPEARANCES`）が**状態名から**決め、
+//    **画面は色を渡せない**（`docs/04` §5-13「1 箇所でしか色が決まらないことが §7.4 の意味の対応を
+//    守る唯一の方法である」）。本ファイルが渡すのは `state`（名前）と `stateLabel`（語）だけである。
+// 🔴 **`tone` に相当するものを再び足さない。** 機械検査は
+//    `tests/static/proposal-state-color-single-path.test.ts`。
 
 /** 進行中として描く状態（点線枠 + 経過時間。`docs/04` §S-019）。 */
 const IN_PROGRESS_STATES: ReadonlySet<ProposalState> = new Set<ProposalState>(['GATE_RUNNING', 'SUBMITTING']);
@@ -74,7 +69,6 @@ export type ProposalListRowView = {
   readonly projectId: string | null;
   readonly state: ProposalState;
   readonly stateLabel: string;
-  readonly tone: ProposalStateTone;
   /** 🔴 3 区分のいずれか / それ以外は `null`。 */
   readonly failureKind: ProposalFailureKind | null;
   readonly unitPrice: string;
@@ -114,7 +108,6 @@ function sharedRow(item: HostProposalListItem | PartnerProposalListItem, now: Da
     projectId: item.project === null ? null : item.project.id,
     state: item.state,
     stateLabel: proposalStateLabel(item.state),
-    tone: STATE_TONES[item.state],
     failureKind: proposalFailureKindOf(item.state),
     unitPrice: item.offeredUnitPrice === null ? none() : formatThousands(item.offeredUnitPrice),
     createdBy: item.createdByName ?? t('proposals.list.createdBy.unknown'),
@@ -155,7 +148,6 @@ export type ProposalStateChip = {
   /** 指標区分（`GATE_FAILURE` / `DELIVERY_FAILURE` / `CONVERSION` / `IN_PROGRESS`）。`data-indicator` に載せる。 */
   readonly indicator: ProposalIndicator;
   readonly failureKind: ProposalFailureKind | null;
-  readonly tone: ProposalStateTone;
 };
 
 /** 🔴 `docs/04` §S-019 / `CLAUDE.md` §4.2 の順（`PROPOSAL_STATES` の順 = 状態機械の順）。 */
@@ -168,7 +160,6 @@ export function proposalStateChips(byState: ProposalCountByState, selected: read
     checked: checked.has(state),
     indicator: proposalIndicatorOf(state),
     failureKind: proposalFailureKindOf(state),
-    tone: STATE_TONES[state],
   }));
 }
 

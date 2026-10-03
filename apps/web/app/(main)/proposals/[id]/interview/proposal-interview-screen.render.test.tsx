@@ -51,7 +51,6 @@ function rows(overrides: Partial<ProposalInterviewRows> = {}): ProposalInterview
     id: ID,
     state: 'SUBMITTED',
     stateLabel: '送信済み',
-    tone: 'success',
     audience: 'HOST',
     phase: 'RECORDABLE',
     header: [
@@ -159,7 +158,7 @@ describe('① 状態ごとの操作の出し分け（docs/04 §S-024）', () => 
   });
 
   it('RESULT_PENDING（ホスト）: 決定 / 見送り / 辞退の 3 つがすべて終端（確認ステップ付き）', () => {
-    const html = render({ rows: rows({ state: 'RESULT_PENDING', stateLabel: '結果待ち', tone: 'progress', operations: [WON, LOST, WITHDRAWN] }) });
+    const html = render({ rows: rows({ state: 'RESULT_PENDING', stateLabel: '結果待ち', operations: [WON, LOST, WITHDRAWN] }) });
     for (const kind of ['WON', 'LOST', 'WITHDRAWN']) {
       expect(html).toContain(`data-testid="proposal-interview-operation-${kind}" data-to="${kind}" data-terminal="true"`);
     }
@@ -170,7 +169,7 @@ describe('① 状態ごとの操作の出し分け（docs/04 §S-024）', () => 
 describe('② 🔴 取引先には面談日程の確定・決定・見送りのボタンが描かれない', () => {
   it('取引先の rows（辞退だけ）: SCHEDULE / WON / LOST の testid が無く、注記が出る', () => {
     const html = render({
-      rows: rows({ audience: 'PARTNER', state: 'RESULT_PENDING', stateLabel: '結果待ち', tone: 'progress', operations: [WITHDRAWN], audienceNotice: '御社が作成した提案について…' }),
+      rows: rows({ audience: 'PARTNER', state: 'RESULT_PENDING', stateLabel: '結果待ち', operations: [WITHDRAWN], audienceNotice: '御社が作成した提案について…' }),
     });
     const ids = testids(html);
     expect(html).toContain('data-audience="PARTNER"');
@@ -198,7 +197,7 @@ describe('③ VIEWER / 停止中 / 未送信 / 終端', () => {
   });
 
   it('未送信（DRAFT）は注記だけ', () => {
-    const html = render({ rows: rows({ state: 'DRAFT', stateLabel: '下書き', tone: 'neutral', phase: 'NOT_YET_SUBMITTED', operations: [], notRecordableNotice: 'まだ送信されていません。' }) });
+    const html = render({ rows: rows({ state: 'DRAFT', stateLabel: '下書き', phase: 'NOT_YET_SUBMITTED', operations: [], notRecordableNotice: 'まだ送信されていません。' }) });
     const ids = testids(html);
     expect(ids).toContain('proposal-interview-not-recordable');
     expect(ids).not.toContain('proposal-interview-operations');
@@ -207,7 +206,7 @@ describe('③ VIEWER / 停止中 / 未送信 / 終端', () => {
 
   it('🔴 WON は終端の注記 + Phase 2 の注記。稼働を登録する導線・Assignment に相当する testid は無い（F-025 AC-2）', () => {
     const html = render({
-      rows: rows({ state: 'WON', stateLabel: '決定', tone: 'success', phase: 'CLOSED', operations: [], closedNotice: '「決定」として記録されています。', assignmentNote: '稼働の登録は Phase 2 で接続されます。' }),
+      rows: rows({ state: 'WON', stateLabel: '決定', phase: 'CLOSED', operations: [], closedNotice: '「決定」として記録されています。', assignmentNote: '稼働の登録は Phase 2 で接続されます。' }),
     });
     const ids = testids(html);
     expect(html).toContain('data-testid="proposal-interview-closed" data-closed-state="WON"');
@@ -218,7 +217,7 @@ describe('③ VIEWER / 停止中 / 未送信 / 終端', () => {
   });
 
   it('LOST は終端の注記だけ（Phase 2 の注記は無い）', () => {
-    const html = render({ rows: rows({ state: 'LOST', stateLabel: '見送り', tone: 'neutral', phase: 'CLOSED', operations: [], closedNotice: '「見送り」として記録されています。' }) });
+    const html = render({ rows: rows({ state: 'LOST', stateLabel: '見送り', phase: 'CLOSED', operations: [], closedNotice: '「見送り」として記録されています。' }) });
     const ids = testids(html);
     expect(html).toContain('data-closed-state="LOST"');
     expect(ids).not.toContain('proposal-interview-won-note');

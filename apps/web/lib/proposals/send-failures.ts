@@ -19,11 +19,24 @@
 // 🔴 並びは**失敗が古い順**（`updated_at` 昇順 = 放置が長いものを先に。`ProposalListOrder` の `UPDATED_ASC`）。
 import type { AuthenticatedTenantCtx } from '@ses/db';
 import { PAGE_SIZE_MAX } from '@ses/config';
-import { listProposals } from './list';
+import { listProposals, type ProposalListOrder } from './list';
 import type { ProposalSendAttemptView } from './views';
 
 /** 🔴 1 画面で読む上限。`SUBMIT_FAILED` は放置させない前提（`docs/04` §S-022 目的）であり、通常は 0〜数件である。 */
 export const SEND_FAILURE_LIST_LIMIT: number = PAGE_SIZE_MAX;
+
+/**
+ * 🔴 **この一覧の並び**（`docs/05` §6.5 #44 / 本ファイル冒頭の 🔴）: **`updated_at` 昇順 = 失敗が古い順**
+ *    （放置が長いものを先に）。`S-022` の目的は「`SUBMIT_FAILED` を放置させない」であり、
+ *    **最上行が「最も古い = 最も長く放置されていて最も危ない」**ことが唯一の読み方である。
+ *
+ * 🔴 **定数として出す理由**（2026-10-03 のレビュー指摘への対処）: 件数バーの並び順の説明
+ *    （`sendFailures.orderNote`）の**値が「最終更新の新しい順」= 逆向きだった**にもかかわらず、
+ *    どのテストも検出できなかった（render テストのフィクスチャが同じ誤った文字列を持っていた）。
+ *    文言キーの選択を**この定数から導出する**ことで（`send-failure-rows.ts` の
+ *    `SEND_FAILURE_ORDER_NOTE_KEYS`）、並びを変えたときに文言だけが取り残される形を作れなくする。
+ */
+export const SEND_FAILURE_LIST_ORDER = 'UPDATED_ASC' as const satisfies ProposalListOrder;
 
 /** 1 つの試行の要約（`S-022` が要る列 = #45 の `ProposalSendAttemptView` と同じ形）。 */
 export type SendFailureAttemptView = ProposalSendAttemptView;
@@ -59,7 +72,8 @@ export async function listProposalSendFailures(ctx: AuthenticatedTenantCtx): Pro
   const list = await listProposals(
     ctx,
     { state: ['SUBMIT_FAILED'], limit: SEND_FAILURE_LIST_LIMIT, cursor: undefined, projectId: undefined, engineerId: undefined, q: undefined },
-    { order: 'UPDATED_ASC' },
+    // 🔴 リテラルを 2 度書かない（`SEND_FAILURE_ORDER_NOTE_KEYS` が同じ定数を見る）。
+    { order: SEND_FAILURE_LIST_ORDER },
   );
   const items: ProposalSendFailureView[] =
     list.audience === 'HOST'

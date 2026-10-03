@@ -55,7 +55,6 @@ function historyRow(overrides: Partial<EngineerProposalHistoryRow> = {}): Engine
     project: '基幹刷新',
     state: 'APPROVAL_PENDING',
     stateLabel: '承認待ち',
-    tone: 'warning',
     createdOn: '2026-09-15',
     selected: false,
     ...overrides,
@@ -147,7 +146,7 @@ describe('① セクション 4 の空文言と、0 件ではセクション 5 �
 
 describe('② セクション 4 の行', () => {
   it('提案先 / 案件 / 状態バッジ / 作成日 / S-023 への導線 / 差分の導線。選択中の行は「表示中」', () => {
-    const html = render({ history: [historyRow(), historyRow({ id: P2, selected: true, stateLabel: '見送り', tone: 'neutral', state: 'LOST' })] });
+    const html = render({ history: [historyRow(), historyRow({ id: P2, selected: true, stateLabel: '見送り', state: 'LOST' })] });
     expect(html).not.toContain('engineer-detail-proposals-coming-soon');
     const row1 = outerOf(html, `engineer-proposal-row-${P1}`);
     expect(row1).toContain('架空エンド株式会社');
@@ -167,6 +166,40 @@ describe('② セクション 4 の行', () => {
     expect(html).toContain('data-testid="engineer-detail-snapshot-diff"');
     expect(html).toContain('data-testid="engineer-snapshot-diff-lead"');
     expect(html).toContain(MESSAGES.diffLead);
+  });
+
+  // 🔴 2026-10-03 のレビュー指摘（実害）への回帰検出器。**着手時この画面は 5 値の `tone` を
+  //    `BadgeVariant` に写しており、`GATE_FAILED` を赤 / `APPROVED` と `SUBMITTED` を同じ緑で
+  //    描いていた**（`CLAUDE.md` §4.2「失敗と保留を混同しない」/ `docs/04` §5-1 の 🔴「赤は
+  //    `SUBMIT_FAILED` / `SEND_FAILED` / `SUSPENDED` の 3 つだけ」に違反）。
+  // 🔴 **クラス名を書き写さない**（色の値は `@ses/ui` が持つ）。見るのは「**別の状態が別の見た目で
+  //    描かれる**」という関係だけである —— 写像を 1 箇所に戻しただけでは、また別の写像が入ったときに
+  //    同じ取り違えが起こりうるので、取り違えそのものを関係として固定する。
+  it('🔴 状態バッジは `StatusBadge`（色は状態名から）—— `GATE_FAILED` と `SUBMIT_FAILED`・`APPROVED` と `SUBMITTED` が別の見た目', () => {
+    const badgeOf = (state: EngineerProposalHistoryRow['state'], label: string): string => {
+      const html = render({ history: [historyRow({ state, stateLabel: label })] });
+      const row = outerOf(html, `engineer-proposal-row-${P1}`);
+      // 🔴 `StatusBadge` が出す印（画面側の写像では `data-entity` が出ない）。
+      expect(row).toContain('data-entity="proposal"');
+      const at = row.indexOf('data-entity="proposal"');
+      const start = row.lastIndexOf('<', at);
+      return row.slice(start, row.indexOf('</span>', at));
+    };
+
+    const gateFailed = badgeOf('GATE_FAILED', '差し戻し（検査で不合格）');
+    const submitFailed = badgeOf('SUBMIT_FAILED', '送信失敗');
+    const approved = badgeOf('APPROVED', '承認済み');
+    const submitted = badgeOf('SUBMITTED', '送信済み');
+
+    // 🔴 「送る前に自ら止めた」と「送信自体が失敗した」が同じ見た目にならない。
+    expect(gateFailed).not.toBe(submitFailed);
+    // 🔴 「送る前」と「届いた後」が同じ見た目にならない。
+    expect(approved).not.toBe(submitted);
+    // 🔴 赤（`danger`）を持つのは `SUBMIT_FAILED` の側だけである（§5-1 の 🔴）。
+    expect(submitFailed).toContain('danger');
+    expect(gateFailed).not.toContain('danger');
+    expect(approved).not.toContain('danger');
+    expect(submitted).not.toContain('danger');
   });
 });
 

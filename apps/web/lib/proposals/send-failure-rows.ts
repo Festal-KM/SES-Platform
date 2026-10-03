@@ -14,7 +14,32 @@ import { formatDateTimeJst } from '../format/datetime';
 import { formatThousands } from '../format/number';
 import { formatElapsed } from './approval-rows';
 import { proposalApproveHref, SENDING_DOMAIN_SETTINGS_HREF } from './hrefs';
-import type { ProposalSendFailureView, SendFailureAttemptView } from './send-failures';
+import { SEND_FAILURE_LIST_ORDER, type ProposalSendFailureView, type SendFailureAttemptView } from './send-failures';
+
+/**
+ * 🔴 **件数バーの並び順の説明の文言キーは、サーバの並び（`SEND_FAILURE_LIST_ORDER`）から引く。**
+ *
+ * 型が `Record<typeof SEND_FAILURE_LIST_ORDER, MessageKey>` なので、`send-failures.ts` の並びを
+ * 反対向きに変えると**この表がコンパイルエラーになる**（`UPDATED_DESC` のキーが無い）。
+ * つまり「サーバは昇順（失敗が古い順）のまま、文言だけ降順を名乗る」状態を**書けない**。
+ *
+ * 🔴 **なぜこの形にしたか**（2026-10-03 のレビュー指摘 = 実害）: `sendFailures.orderNote` の値が
+ *    「最終更新の新しい順」で実装（`UPDATED_ASC` = 失敗が古い順）と**逆**だった。`S-022` の目的は
+ *    「`SUBMIT_FAILED` を放置させない」であり **最上行が「最も古い = 最も長く放置されていて最も危ない」**
+ *    ことが唯一の読み方なので、逆を書くと**優先順位の読みが反転する**。それでも検出されなかったのは、
+ *    `send-failure-screen.render.test.tsx` のフィクスチャが**同じ誤った文字列**を持っていたためである。
+ * 🔴 したがって検査の対象は「文言の実体」ではなく「**キーの選び方が並びの定数に従属していること**」
+ *    にする（文字列を比較するだけの検査は、同じ誤りが再発しても緑になる）。固定は
+ *    `send-failure-rows.test.ts` の「並び順の説明」の describe。
+ */
+export const SEND_FAILURE_ORDER_NOTE_KEYS = {
+  UPDATED_ASC: 'sendFailures.orderNote',
+} as const satisfies Record<typeof SEND_FAILURE_LIST_ORDER, MessageKey>;
+
+/** 件数バーの並び順の説明のキー。🔴 **画面はキーを選べない**（並びの定数が決める）。 */
+export function sendFailureOrderNoteKey(): MessageKey {
+  return SEND_FAILURE_ORDER_NOTE_KEYS[SEND_FAILURE_LIST_ORDER];
+}
 
 /** 画面の失敗理由の区分（`docs/04` §S-022「失敗理由の語」+ `RESERVATION_CONFLICT` + 記録なし + その他）。 */
 export type SendFailureCategory =

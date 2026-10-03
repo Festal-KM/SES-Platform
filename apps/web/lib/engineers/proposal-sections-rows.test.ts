@@ -104,7 +104,6 @@ describe('① セクション 4: listProposals の行から同じ形に写る', 
       project: '基幹刷新',
       state: 'APPROVAL_PENDING',
       stateLabel: t('proposals.state.APPROVAL_PENDING'),
-      tone: 'warning',
       createdOn: '2026-09-15',
       selected: false,
     });
@@ -120,11 +119,16 @@ describe('① セクション 4: listProposals の行から同じ形に写る', 
     expect(rows[0]?.recipient).toBe(t('proposals.list.recipient.unset'));
     expect(rows[0]?.project).toBe(t('proposals.list.project.notShared'));
     expect(rows.map((row) => row.selected)).toEqual([false, true]);
-    expect(rows[1]?.tone).toBe('neutral');
+    // 🔴 ✅ SP-22 段④（2026-10-03 のレビュー指摘）: 行は状態の**名前**だけを持ち、色（`tone`）を持たない。
+    //    色と形状は `@ses/ui` の `StatusBadge` が状態名から決める（`docs/04` §5-1 / §5-13）。
+    //    旧実装は `tone` を持ち、`S-006` の提案履歴が **`GATE_FAILED` を赤**・**`APPROVED` と
+    //    `SUBMITTED` を同じ緑**で描いていた（`CLAUDE.md` §4.2 / `docs/04` §5-1 の 🔴 に反する）。
+    expect(rows[1]?.state).toBe('LOST');
     for (const row of rows) {
       expect(row).not.toHaveProperty('engineerDisplayName');
       expect(row).not.toHaveProperty('offeredUnitPrice');
       expect(row).not.toHaveProperty('owner');
+      expect(row).not.toHaveProperty('tone');
     }
   });
 

@@ -3515,11 +3515,20 @@ const ja = {
   // 🔴 ここは**失敗の内容を見る**導線であって再送ではない（再送は §7.6 のとおり確認ステップを伴う別操作）。
   'sendFailures.column.action': '操作',
   'sendFailures.panel.open': '内容を見る',
-  // 🔴 並び順は**サーバが確定させている**（`listProposals` の `updatedAt desc`）。選べる形にしない。
-  'sendFailures.orderNote': '最終更新の新しい順に表示しています。',
+  // 🔴 並び順は**サーバが確定させている**（`listProposals` に `order: 'UPDATED_ASC'` を渡す =
+  //    `updated_at` **昇順** = **失敗が古い順**。`apps/web/lib/proposals/send-failures.ts` の
+  //    `SEND_FAILURE_LIST_ORDER` / `docs/05` §6.5 #44）。選べる形にしない。
+  // 🔴 **「新しい順」と書かない**（2026-10-03 のレビュー指摘 = 実害）。`S-022` の目的は
+  //    「`SUBMIT_FAILED` を放置させない」であり、**最上行が「最も古い = 最も長く放置されていて
+  //    最も危ない」**ことが唯一の読み方である。逆を書くと優先順位の読みが反転する。
+  // 🔴 このキーは `send-failure-rows.ts` が `SEND_FAILURE_ORDER_NOTE_KEYS[SEND_FAILURE_LIST_ORDER]`
+  //    で引く。並びを変えるとその表がコンパイルエラーになるので、文言だけが取り残されない。
+  'sendFailures.orderNote': '最終試行の古い順（放置が長い順）に表示しています。',
   // 🔴 件数バーの母集団の 1 行。**件数を入れない**（件数は `sendFailures.summary.count*` が持つ。
   //    同じ数字を 2 箇所に出すと、どちらが正かを読み手が確かめなければならなくなる）。
-  'sendFailures.population': '自社が送信した提案',
+  // 🔴 **母集団を過大に述べない**（2026-10-03 のレビュー指摘）。この表は `state: ['SUBMIT_FAILED']` の
+  //    1 条件であり、`GATE_FAILED` / `LOST` / `DECLINED` / 保留中の `APPROVED` は出ない（`F-024 AC-2`）。
+  'sendFailures.population': '送信に失敗した提案（自社）',
   'sendFailures.attemptCountSuffix': ' 回',
   'sendFailures.valueNone': '—',
   'sendFailures.failureKind.UNKNOWN': '応答不明（到達したか確認できない）',

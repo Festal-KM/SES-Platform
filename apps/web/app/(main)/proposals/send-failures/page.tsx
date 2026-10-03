@@ -51,12 +51,14 @@ export default async function SendFailuresPage() {
   const denialKey = executionDenialMessageKey(ctx.lifecycleState);
 
   return (
-    // 🔴 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`）。`S-022` は**クラス A = 全幅**で
-    //    あり、画面ファイルに `max-w-*` を書かない（検査 (c) / (k)）。
+    // 🔴 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`）。`S-022` は**クラス B = 分割**で
+    //    あり（🔴 **改訂 26（2026-10-03）で A → B に移った** —— 実装が「一覧 + 選択中の 1 件のパネル」で
+    //    あり、§7.1 の定義上クラス B である。§7.1 は「どの画面も 1 つのクラスにしか属さない」）、
+    //    画面ファイルに `max-w-*` を書かない（検査 (c) / (k)）。
     //    ⚠️ 選択した行のパネルは**画面の内側**の副カラムである（`PageBody` の `aside` スロットを
     //       使えない理由は `send-failure-screen.tsx` の 🔴 = 表とパネルが同じクライアント状態を共有するため）。
     <main className="py-6">
-      <PageBody widthClass="full">
+      <PageBody widthClass="split">
         <PageHeading trail={SEND_FAILURE_TRAIL} title={t('sendFailures.title')} />
         <SendFailureScreen
           rows={rows}

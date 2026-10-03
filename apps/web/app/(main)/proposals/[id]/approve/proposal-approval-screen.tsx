@@ -13,8 +13,12 @@
 //   ② 🔴 **アクションはプレビューの末尾まで到達するまで有効にならない**（`docs/04` §S-021 デバイス別 / §6.1）。
 //      末尾の目印（`proposal-approval-preview-end`）が画面に入ったことを `IntersectionObserver` で観測する。
 //      観測前（描画直後・JS 無効・`renderToStaticMarkup`）は**常に無効**であり、押せない理由を隣に明示する。
-//   ③ 🔴 **「不合格」と「警告」を視覚的に別物として描く**（`docs/02` `ui-design` 申し送り 5）。不合格は層のブロック全体を
-//      FAIL 表示 + 赤の指摘リスト、警告は琥珀の**別リスト**に「警告」ラベル付きで併記し、**警告のみでは承認を止めない**。
+//   ③ 🔴 **「不合格」と「警告」を視覚的に別物として描く**（`docs/02` `ui-design` 申し送り 5）。**どちらの色かは
+//      `docs/05` §6.5 の `S-021` の行**（「ゲートの指摘（FAIL = 赤）と整合層の警告（琥珀の**別リスト**）」）が決める ——
+//      不合格は層のブロック全体を FAIL 表示 + **赤**の指摘リスト、警告は**琥珀**の別リストに「警告」ラベル付きで
+//      併記し、**警告のみでは承認を止めない**。⚠️ **`docs/04` §S-020 / §S-021 ③ を出所に書かない**（2026-10-03 の
+//      レビュー指摘。`docs/04` に色の条文は無く、「琥珀」の語は 0 件。§S-021 セクション 2 は「整合層の警告は
+//      『警告』として別扱い」までである）。
 //   ④ 🔴 **`APPROVAL_PENDING` 以外の状態では承認アクションを描画しない**（`docs/04` §S-021「承認ゲートを迂回できない設計」①）。
 //      `GATE_FAILED` では「検査で不合格のため承認できません」+ 指摘の一覧だけ。**ゲート FAIL を無視する操作・設定は無い**（②③）。
 //   ⑤ 🔴 **一括承認に相当する操作を持たない**（本画面は 1 件の承認。一括は `S-019` の範囲で、モバイルでは既定の操作にしない。`BR-50`）。
@@ -327,7 +331,9 @@ function FindingList({
   readonly severityLabel: string | null;
   readonly tone: 'danger' | 'warning';
 }) {
-  // 🔴 不合格（赤）と警告（琥珀）を**同じ色・同じ形で並べない**（§5-3 / §S-021 ③）。
+  // 🔴 不合格（赤）と警告（琥珀）を**同じ色・同じ形で並べない**（`docs/04` §5-3 /
+  //    **`docs/05` §6.5 の `S-021` の行** / `docs/02` `ui-design` 申し送り 5。
+  //    ⚠️ `docs/04` §S-021 ③ ではない —— 2026-10-03 のレビュー指摘）。
   const frame = tone === 'danger' ? 'border-danger-border bg-danger-bg text-danger' : 'border-warning-border bg-warning-bg text-warning';
   return (
     <div className={cn('mt-3 rounded-md border px-3 py-2', frame)} data-testid={`proposal-approval-gate-${id}`} data-tone={tone}>

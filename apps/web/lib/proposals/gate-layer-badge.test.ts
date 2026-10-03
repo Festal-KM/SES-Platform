@@ -1,5 +1,6 @@
 // apps/web/lib/proposals/gate-layer-badge.test.ts
-// 🔴 ゲートの層バッジの見え方（`docs/04` §5-3 / §S-021 ③ / `CLAUDE.md` §3.3 / `F-027 AC-5`）。
+// 🔴 ゲートの層バッジの見え方（`docs/04` §5-3 / **`docs/05` §6.5 の `S-021` の行** /
+//    `docs/02` `ui-design` 申し送り 5 / `CLAUDE.md` §3.3 / `F-027 AC-5`）。
 //    SP-22 段④。**着手時は 3 画面が別々の写像を持ち、`RUNNING` の色が画面によって違っていた。**
 import { describe, expect, it } from 'vitest';
 import type { GateLayerState } from '@ses/domain';
@@ -26,7 +27,8 @@ describe('🔴 docs/04 §5-3: 層バッジの見え方は 1 箇所で決まる',
     const running = gateLayerBadgeAppearance('RUNNING');
     expect(new Set([pass.variant, fail.variant, running.variant]).size).toBe(3);
     expect(pass.variant).toBe('success');
-    // §S-020 / §S-021 ③: 不合格は赤。
+    // 🔴 `docs/05` §6.5 の `S-021` の行: 「ゲートの指摘（**FAIL = 赤**）と整合層の警告（琥珀の別リスト）」。
+    //    ⚠️ **`docs/04` §S-020 / §S-021 ③ ではない**（`docs/04` に色の条文は無い。2026-10-03 のレビュー指摘）。
     expect(fail.variant).toBe('danger');
   });
 

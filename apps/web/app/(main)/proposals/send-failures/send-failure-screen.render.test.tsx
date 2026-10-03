@@ -14,8 +14,15 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
+import { t } from '@ses/i18n';
 import { proposalDetailHref } from '../../../../lib/proposals/hrefs';
-import type { SendFailureAttemptRowView, SendFailureRowView, SendFailureSummaryView } from '../../../../lib/proposals/send-failure-rows';
+import {
+  sendFailureOrderNoteKey,
+  type SendFailureAttemptRowView,
+  type SendFailureRowView,
+  type SendFailureSummaryView,
+} from '../../../../lib/proposals/send-failure-rows';
+import { sendFailureScreenMessages } from './failure-props';
 import {
   SendFailureAttemptList,
   SendFailureDetailLinks,
@@ -83,8 +90,13 @@ const messages: SendFailureScreenMessages = {
   // ✅ SP-22 段④: 操作列と件数バーの並び順の説明。
   columnAction: '操作',
   panelOpen: '内容を見る',
-  orderNote: '最終更新の新しい順に表示しています。',
-  population: '自社が送信した提案',
+  // 🔴 **この 2 つはフィクスチャに文字列を置かず、実カタログから引く**（2026-10-03 のレビュー指摘 = 実害）。
+  //    ここには `'最終更新の新しい順に表示しています。'` が書かれており、実装（`UPDATED_ASC` =
+  //    **失敗が古い順**）と**逆向き**だった。🔴 **同じ誤った文字列を画面側とテスト側の両方に置くと、
+  //    食い違いを検出できる場所がどこにも無くなる。** 並び順の説明は `sendFailureOrderNoteKey()`
+  //    （= サーバの並びの定数から導出）を通して引く。
+  orderNote: t(sendFailureOrderNoteKey()),
+  population: t('sendFailures.population'),
   emptyTitle: '送信に失敗した提案はありません。',
   emptyLead: 'この一覧が空であることが正常な状態です。',
   detailTitle: '選択した提案',
@@ -154,6 +166,16 @@ describe('S-022 送信失敗一覧の描画', () => {
     expect(html).toContain('data-testid="send-failure-summary-count"');
     expect(html).toContain('未対応: 2 件');
     expect(html).toContain('最も古い失敗からの経過: 2 時間');
+  });
+
+  // 🔴 2026-10-03 のレビュー指摘（実害）への回帰検出器。**フィクスチャではなく `page.tsx` が渡す
+  //    実物（`sendFailureScreenMessages()`）で描く。** 件数バーの並び順の説明は、サーバの並びの定数
+  //    （`SEND_FAILURE_LIST_ORDER`）から導出したキーの値でなければならない —— ここをフィクスチャの
+  //    文字列で確かめると、実装と文言が揃って誤っている状態を永久に緑で通す（それが現に起きた）。
+  it('🔴 ⑥ 件数バーの並び順の説明は、実カタログの「並びの定数から導出したキー」の値である', () => {
+    const html = render({ messages: sendFailureScreenMessages() });
+    expect(html).toContain(t(sendFailureOrderNoteKey()));
+    expect(html).toContain(t('sendFailures.population'));
   });
 
   it('⑤ 初期描画では行が選ばれておらず、詳細パネルは案内だけ。確認ダイアログも「再送する」も無い', () => {

@@ -72,13 +72,15 @@ export default async function ProposalRequestsPage({
   const denialKey = executionDenialMessageKey(ctx.lifecycleState);
 
   return (
-    // 🔴 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`）。`S-017` は**クラス A = 全幅**で
-    //    あり、画面ファイルに `max-w-*` を書かない（検査 (c) / (k)）。
+    // 🔴 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`）。`S-017` は**クラス B = 分割**で
+    //    あり（🔴 **改訂 26（2026-10-03）で A → B に移った** —— 実装が「一覧 + 選択中の 1 件のパネル」で
+    //    あり、§7.1 の定義上クラス B である。§7.1 は「どの画面も 1 つのクラスにしか属さない」）、
+    //    画面ファイルに `max-w-*` を書かない（検査 (c) / (k)）。
     //    ⚠️ 選択した依頼のパネルは**画面の内側**の副カラムである（`PageBody` の `aside` スロットを
     //       使えない理由は `proposal-request-screen.tsx` 冒頭の 🔴 = 表とパネルが同じクライアント
     //       状態を共有するため）。寸法は `@ses/ui` の `PAGE_BODY_ASIDE_WIDTH_CLASSES` から取る。
     <main className="py-6">
-      <PageBody widthClass="full">
+      <PageBody widthClass="split">
         <PageHeading trail={PROPOSAL_REQUEST_LIST_TRAIL} title={t('proposalRequests.title')} />
         {/* 🔴 応諾の反映（`ACCEPTED`）はホストの一覧を 60 秒ごとに読み直して拾う（選択状態は保つ）。 */}
         {view.audience === 'HOST' ? <PollingRefresher intervalMs={HOST_POLL_INTERVAL_MS} /> : null}

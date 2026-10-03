@@ -62,7 +62,6 @@ const stateChips: readonly ProposalStateChip[] = PROPOSAL_STATES.map((state) => 
   checked: state === 'SUBMIT_FAILED',
   indicator: state === 'GATE_FAILED' ? 'GATE_FAILURE' : state === 'SUBMIT_FAILED' ? 'DELIVERY_FAILURE' : 'IN_PROGRESS',
   failureKind: failureKindOf(state),
-  tone: 'neutral',
 }));
 
 const requestChips: readonly ProposalRequestStateChip[] = PROPOSAL_REQUEST_STATES.map((state) => ({
@@ -80,8 +79,7 @@ function row(overrides: Partial<ProposalListRowView> & Pick<ProposalListRowView,
     project: '基幹刷新',
     projectId: '01930000-0000-7000-8000-0000000000f1',
     stateLabel: STATE_LABELS[overrides.state] ?? overrides.state,
-    tone: 'neutral',
-    failureKind: failureKindOf(overrides.state),
+      failureKind: failureKindOf(overrides.state),
     unitPrice: '650,000',
     createdBy: '担当 太郎',
     owner: 'Partner A1',

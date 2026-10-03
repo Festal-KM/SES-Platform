@@ -9,17 +9,21 @@
 //   ⑤ 要約（件数 / 最も古い経過）
 //   ⑥ 試行ごとの記録（`attempts`）が `attemptSeq` 昇順で組まれ、`externalId` を持つ
 //   ⑦ 🔴 `RESERVATION_CONFLICT` で既存の試行が `SUCCEEDED` なら `deliveryUnknown` が `true`（競合で負けた側でも「勝った側」が届いている可能性がある）
+//   ⑧ 🔴 **件数バーの並び順の説明のキーが、サーバの並び（`SEND_FAILURE_LIST_ORDER`）から導出されている**
+//      （2026-10-03 のレビュー指摘 = 実害。末尾の describe。**文言の実体は比較しない**）
 import { describe, expect, it } from 'vitest';
 import { t } from '@ses/i18n';
 import {
   classifySendFailureKind,
   REPEATED_FAILURE_THRESHOLD,
+  SEND_FAILURE_ORDER_NOTE_KEYS,
+  sendFailureOrderNoteKey,
   sendFailureRow,
   sendFailureRows,
   sendFailureSummary,
   type SendFailureCategory,
 } from './send-failure-rows';
-import type { ProposalSendFailureView, SendFailureAttemptView } from './send-failures';
+import { SEND_FAILURE_LIST_ORDER, type ProposalSendFailureView, type SendFailureAttemptView } from './send-failures';
 
 const NOW = new Date('2026-09-16T03:00:00.000Z');
 const ID = '01930000-0000-7000-8000-000000000901';
@@ -254,5 +258,44 @@ describe('要約（セクション 1）', () => {
     expect(summary.count).toBe(3);
     expect(summary.oldestElapsed).toBe(`${t('sendFailures.summary.oldestPrefix')}2${t('proposals.approval.elapsed.daysSuffix')}`);
     expect(sendFailureRows(items, NOW).map((row) => row.id)).toEqual(items.map((row) => row.id));
+  });
+});
+
+// ============================================================================
+// 🔴 ⑧ 並び順の説明（`sendFailures.orderNote`）—— **文言の実体に依存しない検査**
+// ============================================================================
+// 2026-10-03 のレビュー指摘（実害）: この文言の値が「最終更新の**新しい順**」で、実装
+// （`listProposals(…, { order: 'UPDATED_ASC' })` = `updated_at` 昇順 = **失敗が古い順**）と
+// 逆向きだった。`S-022` の目的は「`SUBMIT_FAILED` を放置させない」であり、🔴 **最上行が
+// 「最も古い = 最も長く放置されていて最も危ない」**ことが唯一の読み方なので、逆を書くと
+// **優先順位の読みが反転する**。
+//
+// 🔴 **どのテストも検出できなかった理由**: `send-failure-screen.render.test.tsx` のフィクスチャが
+//    同じ誤った文字列を持っていた。**「文字列を比較するだけ」の検査は、実装と文言が揃って
+//    誤っている状態を永久に緑で通す。**
+//
+// 🔴 したがってここでは**値を比較しない**。見るのは「**キーの選び方が並びの定数に従属している**」
+//    という構造だけである（並びの向きそのものは `send-failures.test.ts` が順序として見る）。
+describe('🔴 ⑧ 並び順の説明のキーはサーバの並びから導出される（2026-10-03 のレビュー指摘）', () => {
+  it('キーの表の定義域が `SEND_FAILURE_LIST_ORDER` ちょうどである（並びを変えると表が破れる）', () => {
+    // 🔴 `Record<typeof SEND_FAILURE_LIST_ORDER, MessageKey>` なので、並びを `UPDATED_DESC` に
+    //    変えた瞬間に表は**型エラー**になる（`UPDATED_DESC` のキーが無い）。その型の性質を
+    //    実行時にも観測できる形で固定する —— 表に「使われない向き」の行を増やして
+    //    コンパイルの壁を緩めることも、これで防げる。
+    expect(Object.keys(SEND_FAILURE_ORDER_NOTE_KEYS)).toEqual([SEND_FAILURE_LIST_ORDER]);
+  });
+
+  it('`sendFailureOrderNoteKey()` は表を経由して引く（画面がキーを直書きしていない）', () => {
+    expect(sendFailureOrderNoteKey()).toBe(SEND_FAILURE_ORDER_NOTE_KEYS[SEND_FAILURE_LIST_ORDER]);
+  });
+
+  it('引いたキーがカタログに実在する（`t()` が空やキー名そのものを返さない）', () => {
+    // 🔴 **値の文面は固定しない**（値は変えてよい。`tests/static/i18n-key-freeze.test.ts` と同じ規律）。
+    //    見るのは「キーが解決する」ことだけである。
+    const key = sendFailureOrderNoteKey();
+    const value = t(key);
+    expect(typeof value).toBe('string');
+    expect(value.length).toBeGreaterThan(0);
+    expect(value).not.toBe(key);
   });
 });

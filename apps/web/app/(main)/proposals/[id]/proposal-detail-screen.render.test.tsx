@@ -56,7 +56,6 @@ function rows(overrides: Partial<ProposalDetailRows> = {}): ProposalDetailRows {
     id: ID,
     state: 'APPROVAL_PENDING',
     stateLabel: '承認待ち',
-    tone: 'warning',
     failureKind: null,
     fixed: { recipient: '架空エンド株式会社', unitPrice: '650,000' },
     header: [

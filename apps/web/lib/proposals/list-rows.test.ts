@@ -116,14 +116,21 @@ describe('🔴 docs/05 §10.4: 保留は SUBMIT_FAILED と別の印', () => {
       [host({ state: 'APPROVED', sendHold: { reasonKey: 'DOMAIN_UNVERIFIED', since: '2026-09-16T00:00:00.000Z' } })],
       NOW,
     );
-    expect(row).toMatchObject({ state: 'APPROVED', stateLabel: t('proposals.state.APPROVED'), failureKind: null, tone: 'success' });
+    expect(row).toMatchObject({ state: 'APPROVED', stateLabel: t('proposals.state.APPROVED'), failureKind: null });
+    // 🔴 ✅ SP-22 段④: 行は色（`tone`）を持たない（色は `StatusBadge` が状態名から決める。`docs/04` §5-13）。
+    //    旧実装は `tone: 'success'` を持ち、**`APPROVED` と `SUBMITTED` が同じ緑**になっていた。
+    expect(row).not.toHaveProperty('tone');
     expect(row?.hold).toEqual({ label: t('proposals.list.hold.badge'), message: t('sendHold.DOMAIN_UNVERIFIED') });
     expect(row?.hold?.label).not.toBe(t('proposals.state.SUBMIT_FAILED'));
   });
 
   it('SUBMIT_FAILED の行は failureKind = SUBMIT_FAILED で hold は null。ホストの行は作成会社を持つ', () => {
     const [row] = hostProposalListRows([host({ state: 'SUBMIT_FAILED', lastFailureReason: 'UNKNOWN:TimeoutError' })], NOW);
-    expect(row).toMatchObject({ failureKind: 'SUBMIT_FAILED', hold: null, tone: 'danger', owner: 'Partner A1' });
+    expect(row).toMatchObject({ state: 'SUBMIT_FAILED', failureKind: 'SUBMIT_FAILED', hold: null, owner: 'Partner A1' });
+    // 🔴 旧実装は `GATE_FAILED` も同じ `tone: 'danger'`（赤）だった —— §5-1 の 🔴「赤は `SUBMIT_FAILED` /
+    //    `SEND_FAILED` / `SUSPENDED` の 3 つだけ」に反する。色を持たないことで取り違えが起こせない。
+    expect(row).not.toHaveProperty('tone');
+    expect(hostProposalListRows([host({ state: 'GATE_FAILED' })], NOW)[0]).not.toHaveProperty('tone');
     expect(hostProposalListRows([host({ owner: { kind: 'HOST' } })], NOW)[0]?.owner).toBe(t('proposals.list.owner.host'));
   });
 

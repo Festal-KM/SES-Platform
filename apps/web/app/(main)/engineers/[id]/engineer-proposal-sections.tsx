@@ -19,9 +19,8 @@
 // 🔴 T2（モバイル閲覧可）。表は `Table` の器（`overflow-x-auto`）に閉じ、行数で打ち切らない。経歴の並置は `lg` 未満で縦積み
 //    （2 カラムの縮小ではなく順序を保った縦積み。凍結側 → 現在値）。
 import Link from 'next/link';
-import { Badge, SECONDARY_LINK_CLASSES, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, type BadgeVariant } from '@ses/ui';
+import { Badge, SECONDARY_LINK_CLASSES, StatusBadge, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@ses/ui';
 import type { EngineerProposalHistoryRow, SnapshotDiffRows } from '../../../../lib/engineers/proposal-sections-rows';
-import type { ProposalStateTone } from '../../../../lib/proposals/list-rows';
 import { DetailSection } from './detail-section';
 
 export type EngineerProposalSectionsMessages = {
@@ -63,13 +62,17 @@ export type EngineerProposalSectionsProps = {
   readonly messages: EngineerProposalSectionsMessages;
 };
 
-const TONE_VARIANTS = {
-  neutral: 'neutral',
-  progress: 'outline',
-  success: 'success',
-  warning: 'warning',
-  danger: 'danger',
-} as const satisfies Record<ProposalStateTone, BadgeVariant>;
+// 🔴 **SP-22 段④ で `TONE_VARIANTS`（画面がローカルに持っていた色の写像）を削除した**
+//    （`proposal-list-screen.tsx` / `proposal-detail-screen.tsx` / `proposal-interview-screen.tsx` と同じ措置を
+//    本画面にも及ぼした。2026-10-03 のレビュー指摘 = **実害**）。
+//    旧実装は 5 値の `tone` を `BadgeVariant` に写していたため、**`docs/04` §5-1 の 14 状態の塗り / 枠線 /
+//    点線枠の区別を表現できていなかった**:
+//      - `GATE_FAILED` が **`danger`（赤）** —— §5-1 の 🔴「**赤は `SUBMIT_FAILED` / `SEND_FAILED` /
+//        `SUSPENDED` の 3 つだけ**」に反する。ゲート差し戻しは「直せば進む」ものであり橙（`warning`）である
+//        （`CLAUDE.md` §4.2「失敗と保留を混同しない」。**赤にすると品質管理を強めるほど画面が赤くなる**）。
+//      - `APPROVED` と `SUBMITTED` が同じ `success` —— 「送る前」と「届いた後」が同じ見た目になっていた。
+//    🔴 色と形状は `@ses/ui` の `StatusBadge`（`STATUS_BADGE_APPEARANCES`）が**状態名から**決め、
+//       **画面は色を渡せない**（`docs/04` §5-13）。語だけを `packages/i18n` 由来の props から渡す。
 
 function Lines({ lines }: { readonly lines: readonly string[] }) {
   return (
@@ -259,7 +262,9 @@ export function EngineerProposalSections({ history, diff, messages }: EngineerPr
                   <TableCell whitespace="normal">{row.recipient}</TableCell>
                   <TableCell whitespace="normal">{row.project}</TableCell>
                   <TableCell>
-                    <Badge variant={TONE_VARIANTS[row.tone]}>{row.stateLabel}</Badge>
+                    {/* 🔴 色は状態名から決まる（§5-1 の 14 状態。`GATE_FAILED` は橙 / `SUBMIT_FAILED` は赤 /
+                        `LOST` は無彩色・枠線）。画面は色を渡せない（`proposal-list-screen.tsx` と同じ）。 */}
+                    <StatusBadge entity="proposal" state={row.state} label={row.stateLabel} />
                   </TableCell>
                   <TableCell>{row.createdOn}</TableCell>
                   <TableCell>

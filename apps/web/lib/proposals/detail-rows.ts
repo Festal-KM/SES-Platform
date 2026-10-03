@@ -25,7 +25,7 @@ import {
 import type { ProposalDetailScreenView } from './detail';
 import { proposalStateLabel } from './editor-rows';
 import { PROPOSAL_SEND_FAILURES_PATH, proposalApproveHref, proposalEditHref, proposalInterviewHref } from './hrefs';
-import { PROPOSAL_FAILURE_STATES, proposalFailureKindOf, proposalStateTone, type ProposalFailureKind, type ProposalStateTone } from './list-rows';
+import { PROPOSAL_FAILURE_STATES, proposalFailureKindOf, type ProposalFailureKind } from './list-rows';
 import type { UpdateProposalBody } from './schemas';
 import {
   PROPOSAL_TIMELINE_KIND_MESSAGE_KEYS,
@@ -34,7 +34,7 @@ import {
 } from './timeline-kind';
 import type { ProposalApprovalRecordView, ProposalEventView, ProposalSendAttemptView } from './views';
 
-export type { ProposalFailureKind, ProposalStateTone } from './list-rows';
+export type { ProposalFailureKind } from './list-rows';
 /**
  * 履歴 1 件の表示（`kind` は `entry.kind` + 作成 / 却下の 2 つを足した 9 値。`data-event-kind` に載せる）。
  * 🔴 ✅ T-22-10: **型と分類と語の出所は `./timeline-kind.ts` の 1 箇所**になった（`Drawer` の
@@ -125,7 +125,6 @@ export type ProposalDetailRows = {
   readonly id: string;
   readonly state: ProposalState;
   readonly stateLabel: string;
-  readonly tone: ProposalStateTone;
   readonly failureKind: ProposalFailureKind | null;
   /** 🔴 モバイルの固定ヘッダ（状態 + 提案先 + 単価。折りたたみの外。`docs/04` §S-023 デバイス別）。 */
   readonly fixed: { readonly recipient: string; readonly unitPrice: string };
@@ -372,7 +371,6 @@ export function proposalDetailRows(screen: ProposalDetailScreenView, now: Date):
     id: detail.id,
     state: detail.state,
     stateLabel: proposalStateLabel(detail.state),
-    tone: proposalStateTone(detail.state),
     failureKind: proposalFailureKindOf(detail.state),
     fixed: {
       recipient: detail.recipient === null ? t('proposals.list.recipient.unset') : detail.recipient.companyName,

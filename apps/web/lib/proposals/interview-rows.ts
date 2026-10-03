@@ -28,7 +28,6 @@ import {
   PROPOSAL_INTERVIEW_OPERATION_KINDS,
   type ProposalInterviewOperationKind,
 } from './interview-note';
-import { proposalStateTone, type ProposalStateTone } from './list-rows';
 import type { ProposalTransitionActor, ProposalTransitionSubject } from './policy';
 import { canTransitionProposal } from './policy';
 
@@ -147,7 +146,6 @@ export type ProposalInterviewRows = {
   readonly id: string;
   readonly state: ProposalState;
   readonly stateLabel: string;
-  readonly tone: ProposalStateTone;
   readonly audience: 'HOST' | 'PARTNER';
   readonly phase: ProposalInterviewPhase;
   readonly header: readonly ApprovalHeaderRow[];
@@ -187,7 +185,6 @@ export function proposalInterviewRows(
     id: detail.id,
     state: detail.state,
     stateLabel: proposalStateLabel(detail.state),
-    tone: proposalStateTone(detail.state),
     audience: detail.audience,
     phase,
     header,
