@@ -44,6 +44,7 @@ import type { ReactNode } from 'react';
 import { t } from '@ses/i18n';
 import { AppShell, type AppShellLabels, type TopBarUsage } from '@ses/ui';
 import { ENGINEER_LIST_PATH } from '../../../lib/engineers/list-rows';
+import { displayInitials } from '../../../lib/format/initials';
 import type { NavGroup, NavItem, NavSection } from '../../../lib/shell/nav';
 import { resolveBottomTabs, resolveNavGroups, resolveSectionTabs } from '../../../lib/shell/nav-view';
 import type { ShellUsageIndicator } from '../../../lib/shell/usage-indicator';
@@ -130,27 +131,16 @@ function resolveUsage(usage: ShellUsageIndicator, href: string | null): TopBarUs
 }
 
 /**
- * 🔴 アバターのイニシャル（**1〜2 文字**。`packages/ui` の `Avatar` は切り出しをしない ——
- *    「山田太郎 → 山」の規則は言語と氏名の持ち方に依存するため、呼び出し側が決める）。
+ * 🔴 アバターのイニシャル（**1〜2 文字**）。
  *
- * 🔴 **日本語の氏名は先頭 1 文字**（姓の 1 文字目）。**ASCII の氏名は語頭 2 文字**（`Yamada Taro`
- *    → `YT`）。🔴 **空文字を返さない**（円の中が空のアバターは「壊れている」に見える）。
- * ⚠️ 置き場所がここなのは、`apps/web/app/**` のロジックで**ユニットテストの対象外**だが
- *    `main-shell.render.test.tsx` が描画結果で固定できるためである（`lib/**` に出すほどの分量が無い）。
+ * ✅ **実装は `lib/format/initials.ts` の `displayInitials` へ移した**（`S-031` のチャットの吹き出しが
+ *    `'use client'` の島から同じ規則を呼ぶため。**規則を 2 本に増やさない** —— 増やすとヘッダの
+ *    アバターとチャットのアバターが同じ氏名で別の文字を出す。`lib/format/elapsed.ts` が
+ *    `lib/proposals/approval-rows.ts` から移ったのと同じ理由）。
+ * 🔴 **この名前の export は残す**（`main-shell.render.test.tsx` が掴んでおり、挙動は 1 文字も変えていない）。
  */
 export function accountInitials(userName: string): string {
-  const trimmed = userName.trim();
-  if (trimmed === '') return '?';
-  // 🔴 `[\x20-\x7E]` = 印字可能な ASCII（空白〜`~`）。全角の氏名はここに入らない。
-  const asciiWords = trimmed.split(/\s+/).filter((word) => /^[\x20-\x7E]+$/.test(word));
-  if (asciiWords.length >= 2) {
-    return `${asciiWords[0]?.[0] ?? ''}${asciiWords[1]?.[0] ?? ''}`.toUpperCase();
-  }
-  if (asciiWords.length === 1 && asciiWords[0] === trimmed) {
-    return trimmed.slice(0, 2).toUpperCase();
-  }
-  // 🔴 日本語（全角）は先頭 1 文字（2 文字にすると円の中で潰れる）。サロゲートペアを割らない。
-  return [...trimmed][0] ?? '?';
+  return displayInitials(userName);
 }
 
 /**

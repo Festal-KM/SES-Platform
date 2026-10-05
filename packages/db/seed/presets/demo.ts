@@ -90,6 +90,9 @@ const ENTITY = {
   SEND_ATTEMPT: 0x1c,
   SENDING_DOMAIN: 0x1d,
   AUDIT_LOG: 0x1e,
+  CHAT_THREAD: 0x1f,
+  THREAD_PARTICIPANT: 0x20,
+  MESSAGE: 0x21,
 } as const;
 
 function id(tenantIndex: number, entityCode: number, seq: number): string {
@@ -182,6 +185,16 @@ export type DemoPartnerIds = {
   readonly engineerIds: readonly string[];
   /** 共有可にした `e1` / `e2` の `EngineerShare`（🔴 越境経路 4 の唯一の根拠）。 */
   readonly shareIds: readonly string[];
+  /**
+   * 🔴 **チャット（`S-031`。越境経路 3）。** ホスト × この取引先 1 社の組み合わせに限る
+   *    （`F-038 AC-2`。`chat_threads.partner_company_id` が構造的に 1 社へ縛る）。
+   *    `company` = 企業間スレッド / `project` = PJ2（全取引先に公開）に紐づくスレッド。
+   */
+  readonly threadIds: { readonly company: string; readonly project: string };
+  /** 参加会社の行（🔴 越境経路 3 の唯一の根拠）。スレッド 2 本 × ホスト / 取引先 = 4 行。 */
+  readonly participantIds: readonly string[];
+  /** メッセージ（企業間 3 件 + 案件 2 件）。 */
+  readonly messageIds: readonly string[];
 };
 
 export type DemoProjectIds = {
@@ -249,6 +262,12 @@ function buildPartnerIds(tenantIndex: number, partnerIndex: number): DemoPartner
       id(tenantIndex, ENTITY.ENGINEER, seq(n + 1)),
     ),
     shareIds: [1, 2].map((n) => id(tenantIndex, ENTITY.SHARE, seq(n))),
+    threadIds: {
+      company: id(tenantIndex, ENTITY.CHAT_THREAD, seq(1)),
+      project: id(tenantIndex, ENTITY.CHAT_THREAD, seq(2)),
+    },
+    participantIds: [1, 2, 3, 4].map((n) => id(tenantIndex, ENTITY.THREAD_PARTICIPANT, seq(n))),
+    messageIds: [1, 2, 3, 4, 5].map((n) => id(tenantIndex, ENTITY.MESSAGE, seq(n))),
   };
 }
 
@@ -1497,6 +1516,85 @@ async function seedTenant(ctx: SeedContext, tenantIndex: number, profile: Tenant
       },
     });
     await advanceAssignment(db, ids.assignmentId, [{ to: 'ACTIVE' }]);
+  }
+
+  // --- チャット（`S-031`。🔴 越境経路 3）----------------------------------------------
+  // 🔴 **1 スレッドに複数の取引先を同席させない**（`F-038 AC-2`。`chat_threads.partner_company_id`
+  //    が 1 社へ縛る。`isolation` プリセットと同じ規律）。取引先ごとに 2 本だけ作る:
+  //      - 企業間（`COMPANY`）… 取引先との恒常的なやり取り
+  //      - 案件（`PROJECT`。PJ2 = **全取引先に公開**）… 取引先が案件名を読める組み合わせ
+  //        （未公開の案件に紐づけると `projects` の C4 で名前が出ず、実演で「壊れている」ように見える）
+  // 🔴 **本文は合成の業務文だけ**（`F-053 AC-1` / `BR-47`）。氏名・実在の社名・単価・エンド企業名を
+  //    1 つも含めない —— チャットの本文はテナント外（取引先）に見える面であり、ここに商流を書くと
+  //    実演中に `BR-67` の境界を自分で破ることになる。
+  // 🔴 **添付を 1 件も作らない**（ウイルススキャンの配線が無い。`CLAUDE.md` §3.4）。
+  for (const partner of ids.partners) {
+    const companyMessages = [
+      { body: 'ご連絡ありがとうございます。候補の方の稼働可能時期を確認しました。', fromPartner: true, at: addDays(now, -6) },
+      { body: '承知しました。面談の候補日を3つお送りします。', fromPartner: false, at: addDays(now, -5) },
+      { body: '社内で候補日を確認し、明日までにご返信します。', fromPartner: true, at: addDays(now, -4) },
+    ];
+    const projectMessages = [
+      { body: 'この案件の必須要件について補足です。リモート併用が可能です。', fromPartner: false, at: addDays(now, -3) },
+      { body: '了解しました。条件に合う要員を確認してご提案します。', fromPartner: true, at: addDays(now, -2) },
+    ];
+    await db.chatThread.createMany({
+      data: [
+        {
+          id: partner.threadIds.company,
+          tenantId: ids.tenantId,
+          kind: 'COMPANY',
+          partnerCompanyId: partner.partnerCompanyId,
+          lastMessageAt: companyMessages[companyMessages.length - 1]?.at,
+        },
+        {
+          id: partner.threadIds.project,
+          tenantId: ids.tenantId,
+          kind: 'PROJECT',
+          projectId: ids.projects.publishedAll,
+          partnerCompanyId: partner.partnerCompanyId,
+          lastMessageAt: projectMessages[projectMessages.length - 1]?.at,
+        },
+      ],
+    });
+    await db.threadParticipant.createMany({
+      data: [partner.threadIds.company, partner.threadIds.project].flatMap((threadId, threadOffset) =>
+        // 🔴 ホスト行は `partner_company_id = NULL`（C5 の述語に合致しないため取引先からは見えない。
+        //    それが `docs/05` §4.4 の設計どおりであり、アプリで補わない）。
+        [null, partner.partnerCompanyId].map((partnerCompanyId, sideOffset) => ({
+          id: partner.participantIds[threadOffset * 2 + sideOffset] as string,
+          tenantId: ids.tenantId,
+          threadId,
+          partnerCompanyId,
+          joinedAt: addDays(now, -40),
+        })),
+      ),
+    });
+    await db.message.createMany({
+      data: [
+        ...companyMessages.map((message, index) => ({
+          id: partner.messageIds[index] as string,
+          tenantId: ids.tenantId,
+          // 🔴 継承トリガ（`messages_inherit_owner`）が `chat_threads.partner_company_id` で確定させる。
+          ownerPartnerCompanyId: partner.partnerCompanyId,
+          threadId: partner.threadIds.company,
+          senderUserId: message.fromPartner ? partner.salesUserId : salesUserId,
+          senderPartnerCompanyId: message.fromPartner ? partner.partnerCompanyId : null,
+          body: message.body,
+          sentAt: message.at,
+        })),
+        ...projectMessages.map((message, index) => ({
+          id: partner.messageIds[companyMessages.length + index] as string,
+          tenantId: ids.tenantId,
+          ownerPartnerCompanyId: partner.partnerCompanyId,
+          threadId: partner.threadIds.project,
+          senderUserId: message.fromPartner ? partner.salesUserId : sales2UserId,
+          senderPartnerCompanyId: message.fromPartner ? partner.partnerCompanyId : null,
+          body: message.body,
+          sentAt: message.at,
+        })),
+      ],
+    });
   }
 }
 

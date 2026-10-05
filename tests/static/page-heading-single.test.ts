@@ -65,12 +65,16 @@ const TITLE_OWNED_BY_SCREEN: ReadonlyMap<string, string> = new Map([
   ['apps/web/app/(main)/projects/[id]/visibility/page.tsx', 'project-visibility-name'],
 ]);
 
-/** Phase 2 / 3 の画面（`S-025`〜`S-034` / `S-037` / `S-039` / `S-040` / `S-043`〜`S-045`）の URL。 */
+/**
+ * Phase 2 / 3 の画面（`S-025`〜`S-034` / `S-037` / `S-039` / `S-040` / `S-043`〜`S-045`）の URL。
+ * ✅ **2026-10-05: `/chat`（`S-031`）を外した** —— 画面（`app/(main)/chat/page.tsx`）と API
+ *    （`/api/threads`）を実装したので、**リンクを張ってよい画面**になった。
+ *    🔴 **他の 10 本は外さない**（実装していないものへのリンクは依然として 404 を作る）。
+ */
 const UNIMPLEMENTED_HREFS: readonly string[] = [
   '/contracts',
   '/orders',
   '/assignments',
-  '/chat',
   '/notifications',
   '/tasks',
   '/reports',

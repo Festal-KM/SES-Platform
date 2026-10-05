@@ -28,6 +28,7 @@ import {
   navItems,
   navReachableHrefs,
   navSectionsWithTabs,
+  pendingNavItem,
   SETTINGS_INDEX_PATH,
   type NavGroup,
   type NavItem,
@@ -94,14 +95,15 @@ const PARTNER_ROLES: readonly TenantRole[] = ['PARTNER_ADMIN', 'PARTNER_SALES'];
 const MOCKUP_SIDEBAR = {
   HOST: [
     ['home', 'shell.nav.home', 'home', null],
-    ['chat', 'shell.nav.chat', 'message-square', 'Phase 2'],
+    // ✅ 2026-10-05: `チャット`（`S-031`）を実装したので `Phase 2` の印が外れた（リンクになった）。
+    ['chat', 'shell.nav.chat', 'message-square', null],
     ['engineers', 'shell.nav.host.engineers', 'users', null],
     ['projects', 'shell.nav.host.projects', 'briefcase', null],
     ['settings', 'shell.nav.host.settings', 'settings', null],
   ],
   PARTNER: [
     ['home', 'shell.nav.home', 'home', null],
-    ['chat', 'shell.nav.chat', 'message-square', 'Phase 2'],
+    ['chat', 'shell.nav.chat', 'message-square', null],
     ['engineers', 'shell.nav.partner.engineers', 'users', null],
     ['projects', 'shell.nav.partner.projects', 'briefcase', null],
     ['settings', 'shell.nav.partner.settings', 'settings', null],
@@ -212,23 +214,36 @@ describe('🔴 ① サイドバーがモックアップどおり 5 項目のフ�
     for (const item of navItems(groups)) {
       if (item.phaseKey !== null) expect(item.reach.kind, item.id).toBe('UNAVAILABLE');
     }
+    // ✅ 2026-10-05: 実際に `Phase N` を持つ項目は 0 件になった（上の不変条件は保たれている）。
+    expect(navItems(groups).filter((item) => item.phaseKey !== null)).toEqual([]);
   });
 
-  it('🔴 未実装（`チャット`）だけが `href` を持たない', () => {
+  it('🔴 ✅ 2026-10-05: 未実装の項目は 1 つも無い（`チャット` を実装した）', () => {
     const unavailable = navItems(buildMainNav({ audience: 'HOST', role: 'OWNER' })).filter(
       (item) => item.reach.kind === 'UNAVAILABLE',
     );
-    // ✅ 2026-10-04: `レポート` は項目ごとサイドバーから外れたので、未実装の項目は
-    //    `チャット`（Phase 2）の 1 つだけである。
-    expect(unavailable.map((item) => item.id).sort()).toEqual(['chat']);
+    expect(unavailable.map((item) => item.id)).toEqual([]);
+    // 🔴 `チャット` は `/chat` を指すリンクになった（`Phase N` の印も注記も持たない）。
+    const chat = navItems(buildMainNav({ audience: 'HOST', role: 'OWNER' })).find((item) => item.id === 'chat');
+    expect(chat?.reach).toEqual({ kind: 'LINK', href: '/chat' });
+    expect(chat?.phaseKey).toBeNull();
+    expect(chat?.noteKey).toBeNull();
+  });
+
+  it('🔴 未実装の項目を作る仕掛けは残っている（Phase 3 で `レポート` を戻すときの安全網）', () => {
+    // 🔴 **呼ぶ項目が 0 になっても `pendingNavItem` を消さない**（`nav.ts` の ⚠️）。
+    //    消すと「未実装の項目はリンクにしない」を機械で確かめる手段が無くなり、
+    //    `href` を持った `Phase 3` の項目（押せたのに無い）を作れてしまう。
+    const item = pendingNavItem('reports', 'shell.nav.host.reports', 'bar-chart-3', 'shell.nav.note.phase3');
+    expect(item.reach.kind).toBe('UNAVAILABLE');
     // 🔴 型としても値としても `href` が存在しない。
-    for (const item of unavailable) {
-      expect(Object.keys(item.reach), item.id).toEqual(['kind']);
-      expect('href' in item.reach, item.id).toBe(false);
-      // 🔴 印は `Phase N` であり、注記（別の入口から開く）と混ぜない。
-      expect(item.phaseKey, item.id).not.toBeNull();
-      expect(item.noteKey, item.id).toBeNull();
-    }
+    expect(Object.keys(item.reach)).toEqual(['kind']);
+    expect('href' in item.reach).toBe(false);
+    // 🔴 印は `Phase N` であり、注記（別の入口から開く）と混ぜない。
+    expect(item.phaseKey).toBe('shell.nav.note.phase3');
+    expect(item.noteKey).toBeNull();
+    expect(item.badge).toBeNull();
+    expect(item.sectionPaths).toEqual([]);
   });
 });
 
@@ -452,7 +467,9 @@ describe('🔴 現在地の射程（`sectionPaths`）—— 畳み込みで「�
     }
   });
 
-  it('🔴 未実装の項目（`チャット`）と `ホーム` は射程を持たない', () => {
+  it('🔴 `ホーム` と `チャット` は射程を持たない（第 2 階層が無い）', () => {
+    // 🔴 `チャット` のスレッド選択は `?thread=` のクエリであり、別の URL への遷移ではない ——
+    //    タブにできる遷移先が存在しないため射程は空である（`nav.ts` の `buildMainNav` の 🔴）。
     for (const id of ['home', 'chat']) {
       expect(itemOf('OWNER', id).sectionPaths, id).toEqual([]);
     }
@@ -557,10 +574,12 @@ describe('モバイルのボトムタブ（docs/04 §3.4。2026-10-03 にサイ�
     for (const tab of buildBottomTabs()) expect(ids.has(tab.id), tab.id).toBe(true);
   });
 
-  it('🔴 未実装のタブ（チャット）はリンクにしない（404 を作らない）', () => {
+  it('🔴 ✅ 2026-10-05: チャットのタブはリンクになった（`/chat` が実在する）', () => {
     const chat = buildBottomTabs().find((tab) => tab.id === 'chat');
-    expect(chat?.reach.kind).toBe('UNAVAILABLE');
-    expect(chat?.phaseKey).toBe('shell.nav.note.phase2');
+    expect(chat?.reach).toEqual({ kind: 'LINK', href: '/chat' });
+    expect(chat?.phaseKey).toBeNull();
+    // 🔴 タブはすべてリンクである（押せないタブを置かない）。
+    expect(buildBottomTabs().every((tab) => tab.reach.kind === 'LINK')).toBe(true);
   });
 });
 

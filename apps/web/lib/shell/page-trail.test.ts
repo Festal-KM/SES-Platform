@@ -83,11 +83,11 @@ describe('🔴 ① 404 を作らない（パンくずの遷移先が実在する
 
   it('🔴 Phase 2 / 3 の画面（未実装）への `href` が 1 本も無い', () => {
     // `S-025`〜`S-034` / `S-037` / `S-039` / `S-040` / `S-043`〜`S-045` に相当する URL。
+    // ✅ 2026-10-05: `/chat`（`S-031`）は実装したのでこの列挙から外した（`CHAT_TRAIL` が在る）。
     const unimplemented = [
       '/contracts',
       '/orders',
       '/assignments',
-      '/chat',
       '/notifications',
       '/tasks',
       '/reports',

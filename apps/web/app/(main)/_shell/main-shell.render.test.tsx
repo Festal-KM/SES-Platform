@@ -373,36 +373,36 @@ describe('🔴 サイドバー（モックアップの 5 項目 / §7.5 ③ ア�
     expect(partnerMarkup()).not.toContain('href="/engineer-shares"');
   });
 
-  it('🔴 ③ 未実装の項目は `<span>` で描かれ `href` を持たない（404 を作らない）', () => {
+  it('🔴 ③ ✅ 2026-10-05: 未実装の項目が 1 つも無い（`チャット` を実装した）', () => {
     const html = render();
-    // ✅ 2026-10-04: 未実装の項目は `チャット`（Phase 2）の 1 つだけである（`レポート` は項目ごと外した）。
-    for (const id of ['chat']) {
-      expect(html, id).toMatch(new RegExp(`<span[^>]*aria-disabled="true"[^>]*data-testid="app-nav-${id}"`));
-      expect(html, id).not.toMatch(new RegExp(`<a[^>]*data-testid="app-nav-${id}"`));
-      // 🔴 印は無彩色の `Phase N` Badge（注記テキストを置き換えたもの）。
-      expect(html, id).toContain(`data-testid="app-nav-phase-${id}"`);
-    }
-    expect(html).toContain(t('shell.nav.note.phase2'));
+    const sidebar = sidebarOf(html);
+    // 🔴 `aria-disabled` の項目（押せない項目）が柱に 1 つも無い。
+    expect(sidebar).not.toContain('aria-disabled="true"');
+    // 🔴 `Phase N` Badge の testid も 1 つも出ない（語も出ない）。
+    expect(sidebar).not.toContain('data-testid="app-nav-phase-');
+    expect(sidebar).not.toContain(t('shell.nav.note.phase2'));
+    expect(sidebar).not.toContain(t('shell.nav.note.phase3'));
     // 🔴 サイドバーに注記（`案件から開きます` / `提案から開きます`）を持つ項目は無い ——
     //    `候補` / `面談・結果` は畳み込みで項目ごと無くなり、案件詳細 / 提案詳細から開く。
-    const sidebar = sidebarOf(html);
     expect(sidebar).not.toContain(t('shell.nav.note.fromProject'));
     expect(sidebar).not.toContain(t('shell.nav.note.fromProposal'));
   });
 
-  it('🔴 ③ チャットに件数バッジを出さない（未読の実体が Phase 2 で存在しない）', () => {
+  it('🔴 ③ チャットに件数バッジを出さない（未読の実体が無い。実装後も変わっていない）', () => {
     const sidebar = sidebarOf(render());
     // モックアップは `3` を出しているが、架空の数は「見たのに消えない」を作る。
-    const chat = /<span[^>]*data-testid="app-nav-chat"[\s\S]*?<\/span>\s*<\/li>/.exec(sidebar)?.[0] ?? '';
+    // ✅ 2026-10-05: 項目が `<a>` になったので、掴む形も `<a>` に改めた（**検査は 1 つも緩めていない**）。
+    const chat = /<a[^>]*data-testid="app-nav-chat"[\s\S]*?<\/a>/.exec(sidebar)?.[0] ?? '';
     expect(chat.length).toBeGreaterThan(0);
     expect(chat).not.toMatch(/>\s*\d+\s*</);
-    expect(chat).toContain(t('shell.nav.note.phase2'));
+    expect(chat).toContain('href="/chat"');
   });
 
-  it('実在する画面はリンクになる（人材管理 / 案件管理 / 設定）', () => {
+  it('実在する画面はリンクになる（チャット / 人材管理 / 案件管理 / 設定）', () => {
     const html = render({ nav: buildMainNav({ audience: 'HOST', role: 'OWNER' }) });
     for (const [testId, href] of [
       ['app-nav-home', '/'],
+      ['app-nav-chat', '/chat'],
       ['app-nav-engineers', '/engineers'],
       ['app-nav-projects', '/projects'],
       ['app-nav-settings', '/settings'],
@@ -547,9 +547,13 @@ describe('🔴 モバイル（docs/04 §3.4）', () => {
     const html = render();
     const more = /data-testid="app-tab-more"[\s\S]*?<\/details>/.exec(html)?.[0] ?? '';
     expect(more.length).toBeGreaterThan(0);
-    for (const id of ['chat']) {
-      expect(more, id).toContain(`data-testid="app-more-nav-phase-${id}"`);
-    }
+    // ✅ 2026-10-05: `Phase N` を持つ項目が 0 件になったので、「その他」にも Badge は出ない。
+    //    🔴 **「デスクトップと同じにする」という不変条件は保っている**（どちらにも出ない）。
+    expect(more).not.toContain('data-testid="app-more-nav-phase-');
+    // 🔴 柱（サイドバー）側にも 1 つも出ない（`sidebarOf` はこの describe の外なので、同じ抽出をここで行う）。
+    const sidebar = /data-testid="app-sidebar"[\s\S]*?<\/nav>/.exec(html)?.[0] ?? '';
+    expect(sidebar.length).toBeGreaterThan(0);
+    expect(sidebar).not.toContain('data-testid="app-nav-phase-');
     const items = navItems(buildMainNav({ audience: 'HOST', role: 'SALES' }));
     // 「その他」の一覧にも項目ごとに 1 つのアイコンが在る（+ `<summary>` の 1 つ）。
     expect((more.match(/<svg/g) ?? []).length).toBe(items.length + 1);
@@ -782,12 +786,15 @@ describe('🔴 アイコンのみの形態の点（期限バッジの代替。T-
     expect(t('shell.nav.proposalRequests.due.dot')).not.toMatch(/\d/);
   });
 
-  it('🔴 `Phase N` の項目には点が出ない（「まだ無い」は「対応が要る」ではない）', () => {
+  it('🔴 期限バッジを持たない項目には点が出ない（「まだ無い」は「対応が要る」ではない）', () => {
     const html = dueMarkup();
     // 点は 1 つだけで、それは期限バッジを持つ `案件管理` の行に在る。
     expect((html.match(/app-nav-proposal-requests-due-dot/g) ?? []).length).toBe(1);
-    const phaseItem = tagOf(html, 'app-nav-chat');
-    expect(phaseItem).not.toContain('bg-warning');
+    // ✅ 2026-10-05: `チャット` は `Phase N` ではなくリンクになったが、**点は出さない**
+    //    （期限バッジを持つのは `案件依頼` を預かる `案件管理` の行だけである）。
+    const chatItem = tagOf(html, 'app-nav-chat');
+    expect(chatItem).not.toContain('bg-warning');
+    expect(chatItem).not.toContain('-due-dot');
     // 「その他」（常に語が見える一覧）にも点は出さない。
     expect(html).not.toContain('app-more-nav-proposal-requests-due-dot');
   });

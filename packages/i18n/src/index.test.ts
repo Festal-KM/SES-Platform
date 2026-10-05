@@ -113,6 +113,9 @@ describe('カタログの構造', () => {
         [
           'admin.demo.reset.retry',
           'admin.demo.seed.retry',
+          // ✅ 2026-10-05: `S-031`（チャット）の取得失敗の再試行。**語は他の再試行と同一**である
+          //    （画面ごとに「再読み込み」「リトライ」と言い分けない。§7.8）。
+          'chat.error.retry',
           'engineerShares.loadMore.retry',
           'engineers.list.error.retry',
           // `global-error`（ルートレイアウトごと落ちたときの受け皿）の再試行。画面に紐づかない

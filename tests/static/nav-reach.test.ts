@@ -189,10 +189,20 @@ const PRE_FOLD_REACH: Readonly<Record<TenantRole, readonly string[]>> = {
 };
 
 /**
- * 🔴 畳み込みで**増えた遷移先**（これだけである）。
- *    `/settings` は 7 項目の索引そのものであり、**畳む前の `設定` 群の見出しに相当する**。
+ * 🔴 畳み込み**以後に増えた遷移先**（これだけである）。
+ *
+ * | 遷移先 | いつ・なぜ増えたか |
+ * |---|---|
+ * | `/settings` | 2026-10-03 の畳み込み。7 項目の**索引そのもの**であり、畳む前の `設定` 群の見出しに相当する |
+ * | **`/chat`** | 🔴 **2026-10-05。`S-031`（チャット）を実装した**（画面 `app/(main)/chat/page.tsx` + API `/api/threads`）。畳む前も畳んだ後も `UNAVAILABLE`（`Phase 2` の印つきの非リンク）だったため `PRE_FOLD_REACH` には現れず、**実装によって初めて到達集合に入った** |
+ *
+ * 🔴 **「増える側」は到達範囲の拡大であり、本来は `docs/04` の権限差分の改訂を要する**（下の ② の 🔴）。
+ *    `/chat` が例外にならないのは、`docs/04` §S-031 が**必要ロールを「全ロール」**と定めており
+ *    （§1 の画面一覧）、**ロールによる出し分けが 1 つも無い**ためである。見えるものを決めるのは
+ *    `thread_participants` の行の有無（RLS の C6）であって、ナビの項目集合ではない。
  */
-const FOLD_ADDED_HREFS: readonly string[] = ['/settings'];
+// 🔴 **昇順で持つ**（`reachOf` が昇順を返すため、`added` との比較が並びで落ちないようにする）。
+const FOLD_ADDED_HREFS: readonly string[] = ['/chat', '/settings'];
 
 /** 所属の軸（ロール名で代用しない。`memberships` の CHECK と 1 対 1）。 */
 const AUDIENCE_ROLES: Readonly<Record<NavAudience, readonly TenantRole[]>> = {
@@ -280,6 +290,12 @@ describe('🔴 ① ロール別の到達集合が、畳む前と一致する（�
 
   it.each(ALL_ROLES)('%s: 到達集合が「畳む前 + /settings」と完全一致する（過不足ゼロ）', (role) => {
     expect(reachOf(role)).toEqual([...PRE_FOLD_REACH[role], ...FOLD_ADDED_HREFS].sort());
+  });
+
+  it('🔴 `/chat`（`S-031`）は全ロールが到達できる（ロールで出し分けない。docs/04 §S-031）', () => {
+    // 🔴 **ロールで到達を止めない。** 見えるものを決めるのは `thread_participants` の行の有無
+    //    （RLS の C6）であり、ナビの項目集合ではない（`apps/web/lib/chat/policy.ts` の 🔴）。
+    for (const role of ALL_ROLES) expect(reachOf(role), role).toContain('/chat');
   });
 
   it('🔴 対照: 凍結表はロールで現に違う（全ロール同じ表を比べて緑になっていない）', () => {
@@ -465,15 +481,17 @@ describe('🔴 ⑤ サイドバーはモックアップどおりフラットで�
     ]);
   });
 
-  it('🔴 チャットに件数バッジを出さない（未読の実体が Phase 2 で存在しない）', () => {
+  it('🔴 チャットに件数バッジを出さない（未読の実体が無い。実装後も変わっていない）', () => {
     for (const role of ALL_ROLES) {
       const chat = navItems(buildMainNav({ audience: audienceOf(role), role })).find(
         (item) => item.id === 'chat',
       );
+      // 🔴 **`messages` に既読の列が無い**（`packages/db/prisma/schema.prisma` の `Message`）。
+      //    架空の数は「見たのに消えない」を作るため、**実装後もバッジを出さない。**
       expect(chat?.badge, role).toBeNull();
-      // 🔴 Phase 2 の印は残す（「まだ無い」ことを伝える手段を消さない）。
-      expect(chat?.phaseKey, role).toBe('shell.nav.note.phase2');
-      expect(chat?.reach.kind, role).toBe('UNAVAILABLE');
+      // ✅ 2026-10-05: 画面と API を実装したので `Phase 2` の印は外れ、`/chat` へのリンクになった。
+      expect(chat?.phaseKey, role).toBeNull();
+      expect(chat?.reach, role).toEqual({ kind: 'LINK', href: '/chat' });
     }
   });
 

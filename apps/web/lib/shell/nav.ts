@@ -170,8 +170,17 @@ function link(
   };
 }
 
-/** 🔴 未実装（Phase 2 / 3）。印は**無彩色の `Phase N` Badge**（注記テキストを置き換えたもの）。 */
-function pending(id: string, labelKey: MessageKey, icon: IconName, phaseKey: MessageKey): NavItem {
+/**
+ * 🔴 未実装（Phase 2 / 3）。印は**無彩色の `Phase N` Badge**（注記テキストを置き換えたもの）。
+ *
+ * ⚠️ **2026-10-05 以降、この関数を呼ぶ項目は 1 つも無い**（`チャット` が実装され、`レポート` は
+ *    項目ごとサイドバーから外れた）。🔴 **それでも消さない。** 消すと「未実装の項目はリンクに
+ *    しない」という不変条件を機械で確かめる手段が無くなり、Phase 3 で `レポート` を戻すときに
+ *    **`href` を持った `Phase 3` の項目**（押せたのに無い）を作れてしまう。
+ *    `export` してあるのは、未使用のローカル関数が lint で落ちるのを避けつつ
+ *    **`nav.test.ts` が不変条件を固定し続けられる**ようにするためである。
+ */
+export function pendingNavItem(id: string, labelKey: MessageKey, icon: IconName, phaseKey: MessageKey): NavItem {
   return {
     id,
     labelKey,
@@ -191,6 +200,14 @@ function isTenantAdminRole(role: TenantRole): boolean {
 
 /** `設定` の索引（`/settings`）の URL。🔴 **この 1 箇所が出所である。** */
 export const SETTINGS_INDEX_PATH = '/settings';
+
+/**
+ * `チャット`（`S-031`。越境経路 3）の入口。
+ * ✅ **2026-10-05: `Phase 2` の印つきの非リンクから、到達可能なリンクに変えた**（画面と API を実装した）。
+ * 🔴 **件数バッジは依然として出さない**（`messages` に既読の列が無く、未読の実体が無い。
+ *    ファイル冒頭の 🔴 はそのまま効いている）。
+ */
+const CHAT_SECTION_PATH = '/chat';
 
 /** `人材管理` の入口（サイドバーの項目と第 2 階層の 1 つ目が指す同じ URL）。 */
 const ENGINEER_SECTION_PATH = '/engineers';
@@ -353,7 +370,10 @@ export function buildMainNav(context: NavContext): readonly NavGroup[] {
       items: [
         link('home', 'shell.nav.home', 'home', '/'),
         // S-031 チャット。🔴 件数バッジを出さない（未読の実体が無い。ファイル冒頭の 🔴）。
-        pending('chat', 'shell.nav.chat', 'message-square', 'shell.nav.note.phase2'),
+        //    ✅ 2026-10-05: 画面（`app/(main)/chat/page.tsx`）と API（`/api/threads`）が実装されたので
+        //    `pending` → `link` にした。🔴 **第 2 階層を持たせない**（スレッドの選択は `?thread=` の
+        //    クエリであり、別の URL への遷移ではない = タブにできる遷移先が無い）。
+        link('chat', 'shell.nav.chat', 'message-square', CHAT_SECTION_PATH),
         link(
           'engineers',
           context.audience === 'HOST' ? 'shell.nav.host.engineers' : 'shell.nav.partner.engineers',
@@ -428,7 +448,7 @@ export function buildBottomTabs(): readonly NavItem[] {
     link('home', 'shell.tab.home', 'home', '/'),
     link('engineers', 'shell.tab.engineers', 'users', ENGINEER_SECTION_PATH),
     link('projects', 'shell.tab.projects', 'briefcase', PROJECT_SECTION_PATH),
-    pending('chat', 'shell.tab.chat', 'message-square', 'shell.nav.note.phase2'),
+    link('chat', 'shell.tab.chat', 'message-square', CHAT_SECTION_PATH),
   ];
 }
 

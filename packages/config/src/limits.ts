@@ -125,6 +125,23 @@ export const AUDIT_LOG_EXPORT_MAX_ROWS = 10_000;
 export const ADMIN_MONITORING_PAGE_SIZE = 100;
 
 /**
+ * 🔴 チャット（`S-031` / `F-038`）のメッセージ本文の長さの上限。T-23-01。
+ *
+ * `messages.body` は `text` であり DB 側に上限が無いため、**境界（Zod）で止める**のが唯一の歯止めに
+ * なる。長大な本文は ①一覧・会話の描画を壊す ②`PURGED` / 保持期間削除の対象量が読めなくなる。
+ * 🔴 暫定 4,000 文字（docs に明文が無い。運用で変える判断はこの 1 行で済む）。
+ */
+export const CHAT_MESSAGE_MAX_LENGTH = 4_000;
+
+/**
+ * 🔴 チャットの会話（`GET /api/threads/{id}/messages`）の 1 ページの行数
+ *    （`docs/04` §10.4 `S-031`「メッセージが 1 万件を超えるスレッド → **直近 50 件**を初期表示し、
+ *    上方向にページング」）。
+ * 🔴 `PAGE_SIZE_MAX`（200）を超えない。
+ */
+export const CHAT_MESSAGE_PAGE_SIZE = 50;
+
+/**
  * 🔴 `A-005` 運用監視（T-11-04）の**環境によって変わらない方針値**。
  *
  * - `SCHEDULER_HEARTBEAT_STALE_HOURS` … `SchedulerRun` の最終実行がこの時間以上前なら「スケジューラ停止」
