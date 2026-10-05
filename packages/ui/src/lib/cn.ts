@@ -108,7 +108,8 @@ export const TOKEN_COLOR_SCALE = [
   'sidebar-hover-bg',
   'sidebar-selected-bg',
   'sidebar-selected-fg',
-  'sidebar-selected-bar',
+  // ✅ 2026-10-04: `sidebar-selected-bar` を外した（現在地の左端 2px をやめ、`@theme` の宣言を
+  //    消したため。`apps/web/app/tailwind.css` の ✅ / `design-tokens.test.ts` のミラー検査）。
   'row-hover-bg',
   'table-header-bg',
 ] as const;

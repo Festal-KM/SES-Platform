@@ -140,10 +140,9 @@ const COMPONENT_COLORS: ReadonlyArray<readonly [token: string, value: string]> =
   ['--color-sidebar-hover-bg', 'var(--color-slate-800)'],
   ['--color-sidebar-selected-bg', 'var(--color-indigo-900)'],
   ['--color-sidebar-selected-fg', 'var(--color-white)'],
-  // 🔴 現在地は藍のまま（§7.4 の割り当てを濃色でも変えない）。⚠️ **階調だけ `indigo-400`** である
-  //    —— §7.9 の表は `--color-brand`（`indigo-700`）だが**実測 2.21:1 で `U-25` の 3:1 を満たさない**
-  //    （下の濃色のコントラスト検査が実測で固定する。`tailwind.css` に実測値と経緯がある）。
-  ['--color-sidebar-selected-bar', 'var(--color-indigo-400)'],
+  // ✅ **2026-10-04: `--color-sidebar-selected-bar` を外した**（人間の明示指示で現在地の
+  //    左端 2px をやめ、参照元が 0 になったので `@theme` の宣言ごと消した。`tailwind.css` の ✅）。
+  //    🔴 現在地は **面 + 文字の 2 点**になった（下の濃色のコントラスト検査も 1 組減らしている）。
   ['--color-row-hover-bg', 'var(--color-bg-subtle)'],
   ['--color-table-header-bg', 'var(--color-bg-subtle)'],
 ];
@@ -286,7 +285,7 @@ describe('🔴 §7.9 のトークンが `@theme` に全部ある（欠けたら�
     ).toEqual([]);
   });
 
-  it('🔴 `@theme` の `--color-*` は semantic 28 + component 10 の「列挙したものだけ」である', () => {
+  it('🔴 `@theme` の `--color-*` は semantic 28 + component 9 の「列挙したものだけ」である', () => {
     const declaredColors = [...declared.keys()].filter((token) => /^--color-[a-z0-9-]+$/.test(token));
     expect(
       [...declaredColors].sort(),
@@ -307,7 +306,7 @@ describe('🔴 §7.9 のトークンが `@theme` に全部ある（欠けたら�
     );
     expect(
       wrong,
-      '🔴 濃色サイドバーの 8 色は **primitive を直接参照する唯一の例外**です（semantic は「白地の面の' +
+      '🔴 濃色サイドバーの 7 色は **primitive を直接参照する唯一の例外**です（semantic は「白地の面の' +
         '上の意味」として定義されており、濃色の面に載せると意味と見た目が逆転します。§7.9 の 🔴）。' +
         '一覧の 2 色は **semantic（`--color-bg-subtle`）を参照**し、値を変えていません。' +
         '🔴 **階調を実装側（TSX）で直書きしないこと**（`U-25`）。',
@@ -973,8 +972,10 @@ describe('🔴 semantic の文字色 × 背景色が 4.5:1 以上（docs/05 §17
       // 🔴 期限の点（`SIDEBAR_DOT_CLASSES`）。`--color-warning`（`amber-800`）は濃色の上で 3:1 を
       //    割るため、注意系統の**面の階調**（`--color-warning-bg`）を使っている。その妥当性を固定する。
       ['--color-warning-bg', '--color-sidebar-bg'],
-      // 現在地の左端 2px のバー（ブランド藍。§7.4 の割り当てを変えないことの裏付け）。
-      ['--color-sidebar-selected-bar', '--color-sidebar-bg'],
+      // ✅ 2026-10-04: 現在地の左端 2px のバーの組を外した（トークンごと消えたため。
+      //    🔴 **検査を緩めたのではない** —— 存在しないトークンの組は `resolveColor` が解決できず
+      //    「色を解決できません」で必ず落ちる = 嘘の検査になる。上の `COMPONENT_COLORS` が
+      //    「列挙したものだけ」を固定しているので、戻したらこの組も戻す）。
     ];
     const failures = pairs.flatMap(([foreground, background]) => {
       const ratio = contrastRatio(resolveColor(foreground) ?? '', resolveColor(background) ?? '');

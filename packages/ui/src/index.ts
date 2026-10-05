@@ -88,17 +88,32 @@ export type { AlertProps, AlertVariant } from './components/alert.js';
 // 🔴 T-22-05: 主平面の外枠 4 部品（`docs/05` §2.3.1 の 1〜4）。**いずれもサーバのまま描ける**
 //    （`'use client'` を宣言しない。開閉は `<details>` と `<input type="checkbox">` + CSS）。
 export { AppShell } from './components/app-shell.js';
-export type { AppShellLabels, AppShellProps, BottomTab } from './components/app-shell.js';
+export type {
+  AppShellLabels,
+  AppShellProps,
+  AppShellSection,
+  BottomTab,
+} from './components/app-shell.js';
 export { PageHeader } from './components/page-header.js';
 export type { PageHeaderAction, PageHeaderCrumb, PageHeaderProps } from './components/page-header.js';
-export { Sidebar, SidebarDefaultLink, SidebarNavList, isCurrentNavPath } from './components/sidebar.js';
+export { Sidebar, SidebarDefaultLink, SidebarNavList } from './components/sidebar.js';
+// 🔴 2026-10-04: **現在地の判定の 1 実装**（`lib/current-nav-path.ts` 冒頭に「なぜ切り出したか」
+//    = クライアント遷移で現在地が追随しなかった実測がある）。🔴 **import を 1 本も持たない
+//    純粋関数**なので、サーバの部品と `apps/web` の `'use client'` の島の**両方が同じものを呼ぶ**。
+export {
+  currentNavSectionIndex,
+  isCurrentNavPath,
+  matchesCurrentNavPath,
+  navLinkClassName,
+} from './lib/current-nav-path.js';
 // 🔴 2026-10-03（人間の明示指示 + モックアップ）: サイドバーを 6 項目のフラットに畳んだぶんの
 //    **第 2 階層**（`components/nav-panel.tsx` の冒頭に「なぜ `Tabs` ではないのか」がある）。
 //    🔴 **いずれもサーバのまま描ける**（`'use client'` を宣言しない）。
-export { NavIndex, SectionNav } from './components/nav-panel.js';
+export { NavIndex, SectionNav, SectionNavDefaultGate } from './components/nav-panel.js';
 export type {
   NavIndexItem,
   NavIndexProps,
+  SectionGateProps,
   SectionNavItem,
   SectionNavProps,
 } from './components/nav-panel.js';

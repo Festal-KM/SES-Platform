@@ -1,8 +1,8 @@
 // apps/web/lib/shell/nav.test.ts
-// グローバルナビの項目表（サイドバー 6 項目 / 第 2 階層のタブ / `設定` の索引 / ボトムタブ）の固定。
+// グローバルナビの項目表（サイドバー 5 項目 / 第 2 階層のタブ / `設定` の索引 / ボトムタブ）の固定。
 //
 // 🔴 ここで固定するのは 5 つ:
-//    ① 🔴 **サイドバーがモックアップどおり 6 項目のフラットである**（下の `MOCKUP_SIDEBAR` が
+//    ① 🔴 **サイドバーがモックアップどおりフラットである**（下の `MOCKUP_SIDEBAR` が
 //       **人間が提示した画像の写し**である。群の見出しは無い）
 //    ② **404 を作らない** —— `LINK` の遷移先が `apps/web/app/(main)/**/page.tsx` に実在する
 //       （推測で書かれたリンクをリポジトリの実体と突き合わせる。**未実装の画面はリンクにしない**）
@@ -18,19 +18,20 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { TENANT_ROLES, type TenantRole } from '@ses/db';
-import { ICON_NAMES } from '@ses/ui';
+import { currentNavSectionIndex, ICON_NAMES } from '@ses/ui';
 import {
   buildBottomTabs,
   buildMainNav,
   buildNavSections,
   buildSettingsIndex,
-  currentNavSection,
   navHrefs,
   navItems,
   navReachableHrefs,
+  navSectionsWithTabs,
   SETTINGS_INDEX_PATH,
   type NavGroup,
   type NavItem,
+  type NavSection,
 } from './nav';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -77,8 +78,11 @@ const PARTNER_ROLES: readonly TenantRole[] = ['PARTNER_ADMIN', 'PARTNER_SALES'];
 /**
  * 1 行 = `[項目 id, labelKey, アイコン名, Phase Badge]`。
  *
- * 🔴 **画像は群の見出しを持たない 6 項目である**（`ホーム` / `チャット` / `人材管理` / `案件管理` /
+ * 🔴 **画像は群の見出しを持たない 6 項目だった**（`ホーム` / `チャット` / `人材管理` / `案件管理` /
  *    `レポート` / `設定`）。並びも画像のままである。
+ * ✅ **2026-10-04（人間の明示指示「サイドメニューのレポートは非表示にして」）: `レポート` を外し、
+ *    5 項目になった。** 🔴 **文言キー（`shell.nav.host.reports` / `shell.nav.partner.reports`）は
+ *    消していない**（`U-22` の凍結。Phase 3 で戻すときに同じ語を使う）。
  * ⚠️ この並びは `CLAUDE.md` §1.3 の業務ループの順ではない（`チャット` が ① の手前に来る）。
  *    **ループの順序は第 2 階層（`案件管理` のタブ）が保つ**（下の ⑤）。
  * 🔴 **`docs/04` §3.1 は依然として「群 4 つ + 16 項目」を定めており、設計書の追随は別途行う**
@@ -93,7 +97,6 @@ const MOCKUP_SIDEBAR = {
     ['chat', 'shell.nav.chat', 'message-square', 'Phase 2'],
     ['engineers', 'shell.nav.host.engineers', 'users', null],
     ['projects', 'shell.nav.host.projects', 'briefcase', null],
-    ['reports', 'shell.nav.host.reports', 'bar-chart-3', 'Phase 3'],
     ['settings', 'shell.nav.host.settings', 'settings', null],
   ],
   PARTNER: [
@@ -101,7 +104,6 @@ const MOCKUP_SIDEBAR = {
     ['chat', 'shell.nav.chat', 'message-square', 'Phase 2'],
     ['engineers', 'shell.nav.partner.engineers', 'users', null],
     ['projects', 'shell.nav.partner.projects', 'briefcase', null],
-    ['reports', 'shell.nav.partner.reports', 'bar-chart-3', 'Phase 3'],
     ['settings', 'shell.nav.partner.settings', 'settings', null],
   ],
 } as const satisfies Readonly<
@@ -164,30 +166,29 @@ describe('対照: 走査が空振りしていない', () => {
   });
 });
 
-describe('🔴 ① サイドバーがモックアップどおり 6 項目のフラットである（2026-10-03）', () => {
+describe('🔴 ① サイドバーがモックアップどおり 5 項目のフラットである（2026-10-03 / 10-04）', () => {
   it.each(['HOST', 'PARTNER'] as const)('%s: 群は 1 つで、見出しを持たない', (audience) => {
     const groups = buildMainNav({ audience, role: audience === 'HOST' ? 'OWNER' : 'PARTNER_ADMIN' });
     expect(groups.map((group) => [group.id, group.labelKey])).toEqual([['primary', null]]);
   });
 
   it.each(['HOST', 'PARTNER'] as const)(
-    '%s: 項目の並び・labelKey・アイコン名・Badge の有無が画像どおり（6 項目。足していない / 落としていない）',
+    '%s: 項目の並び・labelKey・アイコン名・Badge の有無が表どおり（5 項目。足していない / 落としていない）',
     (audience) => {
       const groups = buildMainNav({ audience, role: audience === 'HOST' ? 'OWNER' : 'PARTNER_ADMIN' });
       expect(sidebarTableOf(groups)).toEqual(MOCKUP_SIDEBAR[audience].map((row) => [...row]));
     },
   );
 
-  it.each([...HOST_ROLES, ...PARTNER_ROLES])('%s: ロールでサイドバーの 6 項目が増減しない', (role) => {
+  it.each([...HOST_ROLES, ...PARTNER_ROLES])('%s: ロールでサイドバーの 5 項目が増減しない', (role) => {
     const audience = PARTNER_ROLES.includes(role) ? 'PARTNER' : 'HOST';
-    // 🔴 出し分けは**第 2 階層**（タブと索引）が持つ。サイドバーの 6 項目は全ロール共通である
+    // 🔴 出し分けは**第 2 階層**（タブと索引）が持つ。サイドバーの 5 項目は全ロール共通である
     //    （`設定` は全ロールが開ける索引であり、中身がロールで変わる）。
     expect(navItems(buildMainNav({ audience, role })).map((item) => item.id)).toEqual([
       'home',
       'chat',
       'engineers',
       'projects',
-      'reports',
       'settings',
     ]);
   });
@@ -213,11 +214,13 @@ describe('🔴 ① サイドバーがモックアップどおり 6 項目のフ�
     }
   });
 
-  it('🔴 未実装（`チャット` / `レポート`）だけが `href` を持たない', () => {
+  it('🔴 未実装（`チャット`）だけが `href` を持たない', () => {
     const unavailable = navItems(buildMainNav({ audience: 'HOST', role: 'OWNER' })).filter(
       (item) => item.reach.kind === 'UNAVAILABLE',
     );
-    expect(unavailable.map((item) => item.id).sort()).toEqual(['chat', 'reports']);
+    // ✅ 2026-10-04: `レポート` は項目ごとサイドバーから外れたので、未実装の項目は
+    //    `チャット`（Phase 2）の 1 つだけである。
+    expect(unavailable.map((item) => item.id).sort()).toEqual(['chat']);
     // 🔴 型としても値としても `href` が存在しない。
     for (const item of unavailable) {
       expect(Object.keys(item.reach), item.id).toEqual(['kind']);
@@ -260,21 +263,19 @@ describe('🔴 ③ ホストと取引先で項目集合が違う（第二境界�
   it('① ② ⑥ の語が所属で異なる（母集団が違うことを語で示す）', () => {
     const host = labelKeysOf(buildMainNav({ audience: 'HOST', role: 'SALES' }));
     const partner = labelKeysOf(buildMainNav({ audience: 'PARTNER', role: 'PARTNER_SALES' }));
-    for (const key of [
-      'shell.nav.host.engineers',
-      'shell.nav.host.projects',
-      'shell.nav.host.reports',
-    ]) {
+    for (const key of ['shell.nav.host.engineers', 'shell.nav.host.projects']) {
       expect(host).toContain(key);
       expect(partner).not.toContain(key);
     }
-    for (const key of [
-      'shell.nav.partner.engineers',
-      'shell.nav.partner.projects',
-      'shell.nav.partner.reports',
-    ]) {
+    for (const key of ['shell.nav.partner.engineers', 'shell.nav.partner.projects']) {
       expect(partner).toContain(key);
       expect(host).not.toContain(key);
+    }
+    // ✅ 2026-10-04: `レポート` の語は**どちらにも出ない**（項目ごと外した）。
+    //    🔴 キー自体は `packages/i18n` に残っている（`U-22` の凍結）。
+    for (const key of ['shell.nav.host.reports', 'shell.nav.partner.reports']) {
+      expect(host, key).not.toContain(key);
+      expect(partner, key).not.toContain(key);
     }
   });
 
@@ -451,8 +452,8 @@ describe('🔴 現在地の射程（`sectionPaths`）—— 畳み込みで「�
     }
   });
 
-  it('🔴 未実装の項目（`チャット` / `レポート`）と `ホーム` は射程を持たない', () => {
-    for (const id of ['home', 'chat', 'reports']) {
+  it('🔴 未実装の項目（`チャット`）と `ホーム` は射程を持たない', () => {
+    for (const id of ['home', 'chat']) {
       expect(itemOf('OWNER', id).sectionPaths, id).toEqual([]);
     }
   });
@@ -490,17 +491,54 @@ describe('🔴 ⑤ 業務ループ ①〜⑥ の順は第 2 階層に残る（CL
     expect(engineers?.items.map((item) => item.id)).toEqual(['engineers', 'engineer-shares']);
   });
 
+  // 🔴 ✅ 2026-10-04: 帯の決め方が 2 段になった（`navSectionsWithTabs` でパスに依存しない
+  //    絞り込みを行い、**どれを描くかは `@ses/ui` の `currentNavSectionIndex`** が決める。
+  //    理由は「App Router のレイアウトがソフトナビゲーションで再描画されない」ことであり、
+  //    `apps/web/app/(main)/_shell/nav-current.tsx` の島が同じ関数をクライアントでも呼ぶ）。
+  //    🔴 **判定の実装は 1 つのまま**なので、ここでは「組み合わせた結果」を固定する。
+  function sectionIdAt(sections: readonly NavSection[], currentPath: string): string | null {
+    const withTabs = navSectionsWithTabs(sections);
+    const index = currentNavSectionIndex(
+      currentPath,
+      withTabs.map((section) => navHrefs(section.items)),
+    );
+    return index < 0 ? null : (withTabs[index]?.id ?? null);
+  }
+
   it('🔴 現在地のセクション判定（タブが 2 つ以上のときだけ帯を描く）', () => {
     const partner = buildNavSections({ audience: 'PARTNER', role: 'PARTNER_SALES' });
-    expect(currentNavSection(partner, '/proposals/abc/approve')?.id).toBe('projects');
-    expect(currentNavSection(partner, '/engineer-shares')?.id).toBe('engineers');
-    expect(currentNavSection(partner, '/')).toBeNull();
+    expect(sectionIdAt(partner, '/proposals/abc/approve')).toBe('projects');
+    expect(sectionIdAt(partner, '/engineer-shares')).toBe('engineers');
+    expect(sectionIdAt(partner, '/')).toBeNull();
     // ホストの `人材管理` はタブが 1 つなので帯を描かない（サイドバーの項目が入口を持つ）。
-    expect(currentNavSection(buildNavSections({ audience: 'HOST', role: 'SALES' }), '/engineers')).toBeNull();
+    expect(sectionIdAt(buildNavSections({ audience: 'HOST', role: 'SALES' }), '/engineers')).toBeNull();
+  });
+
+  it('🔴 `navSectionsWithTabs` はパスを見ない（タブが 1 つのセクションだけを外す）', () => {
+    // ホスト: `人材管理` は 1 タブなので外れ、`案件管理`（3 タブ）だけが残る。
+    expect(
+      navSectionsWithTabs(buildNavSections({ audience: 'HOST', role: 'SALES' })).map((s) => s.id),
+    ).toEqual(['projects']);
+    // 取引先: `共有の設定` が在るので `人材管理` も 2 タブになり、両方が残る。
+    expect(
+      navSectionsWithTabs(buildNavSections({ audience: 'PARTNER', role: 'PARTNER_SALES' })).map(
+        (s) => s.id,
+      ),
+    ).toEqual(['engineers', 'projects']);
+  });
+
+  it('🔴 セクションの射程は互いに重ならない（帯が 2 本出る状態を作れない）', () => {
+    for (const role of [...HOST_ROLES, ...PARTNER_ROLES]) {
+      const audience = PARTNER_ROLES.includes(role) ? 'PARTNER' : 'HOST';
+      const all = navSectionsWithTabs(buildNavSections({ audience, role })).flatMap((section) =>
+        navHrefs(section.items),
+      );
+      expect(new Set(all).size, role).toBe(all.length);
+    }
   });
 });
 
-describe('モバイルのボトムタブ（docs/04 §3.4。2026-10-03 に 6 項目へ合わせた）', () => {
+describe('モバイルのボトムタブ（docs/04 §3.4。2026-10-03 にサイドバーの項目へ合わせた）', () => {
   it('ホーム / 人材 / 案件 / チャット の 4 つ（5 つ目の「その他」は描画側が持つ）', () => {
     expect(buildBottomTabs().map((tab) => tab.id)).toEqual(['home', 'engineers', 'projects', 'chat']);
   });
@@ -514,7 +552,7 @@ describe('モバイルのボトムタブ（docs/04 §3.4。2026-10-03 に 6 項�
     }
   });
 
-  it('🔴 タブの id はサイドバーの 6 項目の部分集合である（「その他」の中身と食い違わせない）', () => {
+  it('🔴 タブの id はサイドバーの 5 項目の部分集合である（「その他」の中身と食い違わせない）', () => {
     const ids = new Set(navItems(buildMainNav({ audience: 'HOST', role: 'SALES' })).map((item) => item.id));
     for (const tab of buildBottomTabs()) expect(ids.has(tab.id), tab.id).toBe(true);
   });

@@ -26,9 +26,17 @@
 // 🔴 この部品が守るもの
 // ============================================================================
 // 1. 🔴 **`'use client'` を宣言しない**（`../index.ts` の共通規約 4）。状態もフックも持たない。
-//    現在地の判定は `isCurrentNavPath`（`./sidebar.tsx` の 1 実装）に渡された `currentPath` で行う
+//    現在地の判定は `../lib/current-nav-path.ts` の 1 実装に渡された `currentPath` で行う
 //    —— **`usePathname` を使わない**（外枠に `'use client'` が付くと主平面の全画面が
 //    クライアントバンドルへ移る）。
+//    🔴 ✅ **2026-10-04: それでも「クライアント遷移で現在地が追随しない」ことは直した。**
+//    App Router のレイアウトはソフトナビゲーションで再描画されないため、`currentPath` だけでは
+//    **帯もタブも最初に着地した画面のまま固まる**（実測は `../lib/current-nav-path.ts` 冒頭）。
+//    直し方は 2 つの差し替え口であり、**どちらも `apps/web` 側の `'use client'` の島が入る**:
+//      - タブの現在地 … `linkComponent`（`SidebarLinkProps` の `matchPaths` / `currentClassName`）
+//      - 🔴 **帯そのもの** … `SectionGate`（下の `SectionGateProps`）。帯は「いまどのセクションに
+//        居るか」で**出る / 出ない**が変わるので、タブの色だけ直しても `/settings` に
+//        **案件管理のタブが残り続ける**（実測した症状そのもの）。
 // 2. 🔴 **文言を持たない**（共通規約 5）。語は呼び出し側が `packages/i18n` から渡す。
 // 3. 🔴 **`next/*` に依存しない**（`docs/05` §2.3.1）。`linkComponent` を受け取る。
 // 4. 🔴 **ロールで出し分けない。** 渡された項目を描くだけである（出し入れは
@@ -37,22 +45,19 @@
 // 6. 🔴 **アイコンは `../icons.ts` の閉じた写像だけ**（比喩アイコンが構造的に入らない）。
 //    🔴 **タブにはアイコンを付けない** —— 語が 2〜5 文字で横に並ぶため、アイコンは弁別に寄与せず
 //    §7.5 の装飾の禁止に当たる（アイコンが要るのは縦に 6 項目並ぶサイドバーとボトムタブである）。
-import type { ComponentType } from 'react';
+import type { ComponentType, ReactNode } from 'react';
 import { Badge } from './badge.js';
-import { isCurrentNavPath, type SidebarLinkProps } from './sidebar.js';
+import { SidebarDefaultLink, type SidebarLinkProps } from './sidebar.js';
 import { Icon, type IconName } from '../icons.js';
 import { cn } from '../lib/cn.js';
+import { isCurrentNavPath } from '../lib/current-nav-path.js';
 import { CARD_SURFACE_CLASSES } from '../lib/surface-classes.js';
 import { FOCUS_RING_CLASSES, TRANSITION_CLASSES } from '../lib/state-classes.js';
 
-/** 🔴 `linkComponent` 未指定のときの既定（素の `<a>`。`./sidebar.tsx` と同じ形）。 */
-function DefaultLink({ href, children, ...rest }: SidebarLinkProps) {
-  return (
-    <a href={href} {...rest}>
-      {children}
-    </a>
-  );
-}
+// 🔴 `linkComponent` 未指定のときの既定は `SidebarDefaultLink`（`./sidebar.tsx`）である。
+//    ✅ 2026-10-04: ここに在った同形のローカル実装（`DefaultLink`）を落とした ——
+//    あちらは `currentClassName` / `matchPaths` を解釈するようになったので、**2 つ目の素の
+//    `<a>` を残すと、タブだけが現在地のクラスを当てられない**という静かな差が生まれる。
 
 // ============================================================================
 // SectionNav（セクション内のタブ）
@@ -69,7 +74,10 @@ export type SectionNavItem = {
 
 export type SectionNavProps = {
   readonly items: readonly SectionNavItem[];
-  /** 現在地の判定に使うパス（🔴 `next/navigation` を使わない）。 */
+  /**
+   * **初回描画（水和前）の現在地**（🔴 `next/navigation` を使わない）。
+   * 🔴 クライアントでは `linkComponent` の島が `usePathname()` で上書きする（上の 1）。
+   */
   readonly currentPath: string;
   /** `<nav aria-label>`（読み上げで「この帯が何か」が分かる語）。 */
   readonly label: string;
@@ -137,18 +145,21 @@ export function SectionNav({
   items,
   currentPath,
   label,
-  linkComponent = DefaultLink,
+  linkComponent = SidebarDefaultLink,
 }: SectionNavProps) {
   const Link = linkComponent;
   return (
     <nav className={SECTION_NAV_CLASSES} aria-label={label} data-testid="app-section-nav">
       <ul className={SECTION_NAV_LIST_CLASSES}>
         {items.map((item) => {
+          // 🔴 ここで計算するのは**初回描画（水和前）**のぶんだけである（上の 1）。
           const current = isCurrentNavPath(currentPath, item.href);
           return (
             <li key={item.id}>
               <Link
-                className={current ? SECTION_NAV_CURRENT_CLASSES : SECTION_NAV_ITEM_CLASSES}
+                className={SECTION_NAV_ITEM_CLASSES}
+                currentClassName={SECTION_NAV_CURRENT_CLASSES}
+                matchPaths={[item.href]}
                 href={item.href}
                 aria-current={current ? 'page' : undefined}
                 data-testid={`app-section-tab-${item.id}`}
@@ -161,6 +172,39 @@ export function SectionNav({
       </ul>
     </nav>
   );
+}
+
+// ============================================================================
+// SectionGate（🔴 帯を「現在地のセクションのときだけ」描く器。2026-10-04）
+// ============================================================================
+
+export type SectionGateProps = {
+  /**
+   * 候補ごとの射程（**並びは `bands` と 1 対 1**）。出所は第 2 階層の表
+   * （`apps/web/lib/shell/nav.ts` の `buildNavSections`）であり、ここで組み立てない。
+   */
+  readonly candidates: readonly (readonly string[])[];
+  /**
+   * 🔴 **初回描画（水和前）に選ばれた添字**（`-1` = どのセクションにも属さない = 帯を描かない）。
+   *    計算は `../lib/current-nav-path.ts` の `currentNavSectionIndex` が 1 箇所で行う。
+   */
+  readonly initialIndex: number;
+  /** 候補ごとの帯（**並びは `candidates` と 1 対 1**）。 */
+  readonly bands: readonly ReactNode[];
+};
+
+/**
+ * 🔴 既定の器（**サーバのまま**）。初回描画で選ばれた帯をそのまま描く。
+ *
+ * 🔴 **クライアント遷移に追随させるには、`apps/web` の `'use client'` の島を
+ *    `AppShell` の `sectionGate` に渡す**（`usePathname()` で添字を作り直す）。
+ *    **どちらの実装も同じ `candidates` / `bands` を受ける**ので、帯の中身は 1 箇所にしか無い。
+ * 🔴 **描くのは多くとも 1 本**（添字が 1 つしか無い形にしてあるので、帯が 2 本出る状態を
+ *    構造的に作れない）。
+ */
+export function SectionNavDefaultGate({ initialIndex, bands }: SectionGateProps) {
+  if (initialIndex < 0) return null;
+  return <>{bands[initialIndex] ?? null}</>;
 }
 
 // ============================================================================
@@ -222,8 +266,11 @@ const NAV_INDEX_NOTE_CLASSES = 'text-micro text-fg-muted';
  *
  * 🔴 **ここが `S-036` / `S-041` / `S-042` の唯一の入口である**（`apps/web/lib/shell/nav.ts` の
  *    `buildSettingsIndex` の 🔴）。項目を減らすと**機能が消える。**
+ * ⚠️ **索引は現在地を持たない**（`/settings` を開いている人がその索引の中に居ることは自明であり、
+ *    行を選択表示する意味が無い）。したがって `currentClassName` / `matchPaths` を渡さず、
+ *    **2026-10-04 のクライアント遷移の問題もここには無い**（光る対象が 1 つも無い）。
  */
-export function NavIndex({ items, label, linkComponent = DefaultLink }: NavIndexProps) {
+export function NavIndex({ items, label, linkComponent = SidebarDefaultLink }: NavIndexProps) {
   const Link = linkComponent;
   return (
     <nav aria-label={label} data-testid="app-nav-index">

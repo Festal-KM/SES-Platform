@@ -14,10 +14,21 @@
 // 4. 🔴 **全項目に Lucide アイコン**（`./../icons.ts` の閉じた写像）。比喩アイコンは構造的に入らない。
 // 5. 🔴 **未実装の項目はリンクにしない**（`<span>` で描き `href` を持たせない）。**404 を作らない。**
 //    印は**無彩色の `Badge`**（`Phase 2` / `Phase 3`）であり、注記テキストを置き換えたものである。
-// 6. **現在地** = 背景 `--color-sidebar-selected-bg` + 文字 `--color-sidebar-selected-fg` +
-//    **左端 2px**（`--color-sidebar-selected-bar` = ブランド藍。✅ 2026-10-02 の濃色化で
-//    白地用の `SELECTED_CLASSES` から濃色用のトークンに替えた。**3 点という構造は不変**）。
+// 6. **現在地** = 背景 `--color-sidebar-selected-bg` + 文字 `--color-sidebar-selected-fg` の **2 点**。
+//    ✅ **2026-10-04（人間の明示指示「ハイライトの左端に色がついているのはなくして」）: 左端 2px の
+//    色帯をやめた**（旧 `--color-sidebar-selected-bar`。トークンの宣言ごと消した）。
+//    🔴 **背景と文字色は残す**（これが無いと現在地が分からなくなる）。
+//    ⚠️ `docs/04` §3.1 / §7.10 は依然として「背景 + 文字色 + **左端 2px**」の 3 点を定めており、
+//       **本実装が先行する**（設計書の追随はオーケストレーターが行う。`CLAUDE.md` §8.7。
+//       本タスクは `docs/**` を触らない）。
 //    🔴 **太字だけで示さない**（日本語ゴシックは太字の差が弱く、10 項目以上の縦並びでは走査できない）。
+// 6b. 🔴 **現在地は「初回描画の値」と「クライアントの上書き」の 2 段で決まる**（2026-10-04）——
+//    App Router のレイアウトはソフトナビゲーションで再描画されないので、`currentPath`（ヘッダ由来）
+//    だけでは**最初に着地した画面が光り続ける**（`../lib/current-nav-path.ts` 冒頭の実測表）。
+//    そこでこの部品は `SidebarLinkProps` に **`matchPaths` と `currentClassName`** を載せて渡し、
+//    `linkComponent`（`apps/web` の `'use client'` の島）が `usePathname()` で**上書きする**。
+//    🔴 **判定は `../lib/current-nav-path.ts` の 1 実装のまま**であり、この部品は
+//       **初回描画ぶんを計算して `aria-current` に載せる**だけである。
 // 7. 🔴 **hover は 150ms の色変化のみ**（拡大・浮き上がり・影・下線を出さない。§7.10）。
 // 8. 🔴 **`'use client'` を宣言しない。** 状態もイベントハンドラもフックも持たない（下の 🔴）。
 // 9. 🔴 **文言を持たない**（`../index.ts` の共通規約 5）。語は呼び出し側が `packages/i18n` から渡す。
@@ -58,25 +69,62 @@ import { Badge } from './badge.js';
 import { Icon, type IconName } from '../icons.js';
 import { cn } from '../lib/cn.js';
 import { ICON_CONTROL_CLASSES } from './button.js';
+import { matchesCurrentNavPath, navLinkClassName } from '../lib/current-nav-path.js';
 import { FOCUS_RING_CLASSES, TRANSITION_CLASSES } from '../lib/state-classes.js';
 
 /**
  * リンクを描く要素（`docs/05` §2.3.1）。🔴 **`packages/ui` は `next/*` に依存しない**ので、
- * `apps/web` が `next/link` を渡す。未指定なら素の `<a>`。
+ * `apps/web` が `next/link`（を包んだ島）を渡す。未指定なら素の `<a>`。
  */
 export type SidebarLinkProps = {
   readonly href: string;
+  /** 現在地**でない**ときのクラス。 */
   readonly className?: string;
+  /**
+   * 🔴 現在地のときのクラス（2026-10-04）。**未指定なら現在地の表現を持たない**
+   *    （「その他」のパネルとボトムタブが現にそうである）。
+   */
+  readonly currentClassName?: string;
+  /**
+   * 🔴 **この項目が現在地になるパスの全体**（自分の遷移先 + 第 2 階層 / 索引の射程）。
+   *
+   * 🔴 これを渡すのは、`linkComponent` がクライアントで `usePathname()` から**現在地を
+   *    作り直せる**ようにするためである（App Router のレイアウトはソフトナビゲーションで
+   *    再描画されない。`../lib/current-nav-path.ts` 冒頭）。**判定の実装は渡さない**
+   *    （判定は 1 箇所にしかなく、島はそれを呼ぶ）。
+   */
+  readonly matchPaths?: readonly string[];
   readonly children: ReactNode;
   readonly title?: string;
+  /** 🔴 **初回描画（水和前）の現在地**。クライアントはこれを上書きする。 */
   readonly 'aria-current'?: 'page';
   readonly 'data-testid'?: string;
 };
 
-/** 🔴 `linkComponent` 未指定のときの既定（素の `<a>`。`docs/05` §2.3.1）。 */
-export function SidebarDefaultLink({ href, children, ...rest }: SidebarLinkProps) {
+/**
+ * 🔴 `linkComponent` 未指定のときの既定（素の `<a>`。`docs/05` §2.3.1）。
+ *
+ * 🔴 **`usePathname()` を持たない**ので、現在地は渡された `aria-current`（= サーバが計算した
+ *    初回描画の値）をそのまま使う。**ここで判定をやり直さない。**
+ * 🔴 クラスの選び方は `navLinkClassName` の 1 実装で行う（島と同じ関数）。
+ */
+export function SidebarDefaultLink({
+  href,
+  className,
+  currentClassName,
+  matchPaths,
+  children,
+  ...rest
+}: SidebarLinkProps) {
+  // 🔴 `matchPaths` は島のためのものであり、素の `<a>` には属性として出さない
+  //    （DOM に未知の属性を流すと React が警告を出す）。
+  void matchPaths;
   return (
-    <a href={href} {...rest}>
+    <a
+      href={href}
+      className={navLinkClassName(rest['aria-current'] === 'page', className, currentClassName)}
+      {...rest}
+    >
       {children}
     </a>
   );
@@ -131,12 +179,14 @@ export type SidebarItem = {
   /**
    * 🔴 **その項目が「現在地」になる追加のパス**（第 2 階層 / 索引の遷移先）。SP-22（2026-10-03）。
    *
-   * 🔴 サイドバーが 6 項目に畳まれ、`提案`（`/proposals`）/ `提案依頼`（`/proposal-requests`）/
+   * 🔴 サイドバーが畳まれ、`提案`（`/proposals`）/ `提案依頼`（`/proposal-requests`）/
    *    `共有の設定`（`/engineer-shares`）/ `監査ログ`（`/audit-logs`）/ `スキル辞書`（`/skills`）が
    *    第 2 階層と索引へ移った。**`reach.href` の前方一致だけでは、それらの画面を開いている間
-   *    6 項目が 1 つも光らない**（`docs/04` §3.1「現在地 = 背景 + 文字色 + 左端 2px」が成立しない）。
+   *    項目が 1 つも光らない**（`docs/04` §3.1 の現在地の表現が成立しない）。
    * 🔴 **どのパスが射程かは呼び出し側が決める**（`apps/web/lib/shell/nav.ts` の `sectionPaths`）。
-   *    この部品は判定（`isCurrentNavPath`）を適用するだけである。
+   *    この部品は `reach.href` と併せて `matchPaths` に組み、判定（`../lib/current-nav-path.ts`）を
+   *    適用するだけである。✅ 2026-10-04: **同じ `matchPaths` を `linkComponent` にも渡す**
+   *    （クライアントで現在地を作り直せるようにするため。ファイル冒頭の 6b）。
    * ⚠️ 未指定（`undefined`）は「追加の射程なし」である（`reach.href` だけで判定する）。
    */
   readonly sectionPaths?: readonly string[];
@@ -255,12 +305,15 @@ const SIDEBAR_GROUP_LABEL_CLASSES: Readonly<Record<SidebarVariant, string>> = {
  * 1 項目の行。🔴 **密に**（`docs/04` §7.1 の「一覧はファーストビューに 12 行以上」と同じ思想で、
  * 16 項目が縦に走査できる高さにする）。
  *
- * - `border-l-2 border-l-transparent` … 🔴 現在地の左端 2px を**全項目で場所取り**する
- *   （選択で 2px ずれると、現在地が動いたのか項目が動いたのか読めない）。
+ * ✅ **2026-10-04: 左端 2px の場所取り（`border-l-2 border-l-transparent`）をやめた** ——
+ *    現在地の色帯を外した（上の 6）ので、**取る場所が無い**。🔴 帯を外したうえで透明な
+ *    2px を残すと、全項目が 2px だけ右へずれたまま理由の無い余白を持つ。
+ *    🔴 **選択で行がずれないという §7.10 の性質は保たれている**（現在地と既定の差は
+ *    背景色と文字色だけであり、box の寸法を 1px も変えない）。
  * - 🔴 hover は**背景の色変化だけ**（150ms）。拡大・浮き上がり・影・下線を出さない（§7.10）。
  */
 const SIDEBAR_ITEM_BASE_CLASSES = cn(
-  'flex items-center gap-2 rounded-sm border-l-2 border-l-transparent px-2 py-1 text-body',
+  'flex items-center gap-2 rounded-sm px-2 py-1 text-body',
   TRANSITION_CLASSES,
 );
 /**
@@ -285,7 +338,11 @@ const SIDEBAR_UNAVAILABLE_CLASSES: Readonly<Record<SidebarVariant, string>> = {
   more: cn(SIDEBAR_ITEM_BASE_CLASSES, 'text-fg-muted'),
 };
 /**
- * 🔴 現在地 = 背景 + 文字色 + 左端 2px の 3 点（§7.10 の selected）。**太字だけで示さない。**
+ * 🔴 現在地 = 背景 + 文字色の **2 点**（§7.10 の selected）。**太字だけで示さない。**
+ *
+ * ✅ **2026-10-04（人間の明示指示）: 左端 2px の色帯を外した。** 残したのは背景と文字色であり、
+ *    **これが無いと現在地が分からなくなる**ので外さない。⚠️ `docs/04` §3.1 / §7.10 の「3 点」との
+ *    食い違いは完了報告で申し送る（本タスクは `docs/**` を触らない）。
  *
  * 🔴 **`hover:` を selected の色で塗り直す。** `SIDEBAR_LINK_CLASSES.sidebar` が持つ
  *    `hover:bg-sidebar-hover-bg`（特異度 0,2,0）は `bg-sidebar-selected-bg`（0,1,0）より強く、
@@ -302,8 +359,8 @@ const SIDEBAR_CURRENT_CLASSES = cn(
   SIDEBAR_LINK_CLASSES.sidebar,
   // ✅ 2026-10-02: 濃色の面の selected（`SELECTED_CLASSES` の白地版は使えない —— `bg-brand-bg`
   //    （`indigo-50`）は濃色の上では「明るい帯」になり、現在地が**最も強い要素**になってしまう）。
-  //    🔴 **3 点（背景 + 文字 + 左端 2px）という §7.10 の構造は 1 つも変えていない。**
-  'border-l-2 border-l-sidebar-selected-bar bg-sidebar-selected-bg text-sidebar-selected-fg',
+  // ✅ 2026-10-04: 左端 2px（`border-l-sidebar-selected-bar`）を外した（人間の明示指示）。
+  'bg-sidebar-selected-bg text-sidebar-selected-fg',
   'hover:bg-sidebar-selected-bg',
 );
 
@@ -374,30 +431,19 @@ const SIDEBAR_DOT_LABEL_CLASSES = cn('sr-only', SIDEBAR_ICON_ONLY_CLASSES);
 const SIDEBAR_DOT_ANCHOR_CLASSES = 'relative flex shrink-0';
 
 // ============================================================================
-// 現在地の判定（🔴 純粋関数。テストが固定する）
+// 現在地の射程（🔴 判定そのものは `../lib/current-nav-path.ts` の 1 実装）
 // ============================================================================
 /**
- * `currentPath` がその項目の遷移先の中に居るか。
+ * その項目が現在地になるパスの全体（**自分の遷移先 + 第 2 階層 / 索引の射程**）。
  *
- * 🔴 **ホーム（`/`）だけは完全一致**である（前方一致にすると全画面がホームの現在地になる）。
- * 🔴 区切りは `/` を含めて見る —— `/engineers` が `/engineer-shares` を飲み込まないため。
- */
-export function isCurrentNavPath(currentPath: string, href: string): boolean {
-  if (href === '/') return currentPath === '/';
-  return currentPath === href || currentPath.startsWith(`${href}/`);
-}
-
-/**
- * その項目が現在地か（**自分の遷移先 + 第 2 階層 / 索引の射程**）。
- *
- * 🔴 **判定は `isCurrentNavPath` の 1 実装を使う**（射程が増えても規則は同じ ——
- *    `/engineers` が `/engineer-shares` を飲み込まない、ホームは完全一致）。
+ * 🔴 **`variant === 'more'` では空を返す**（「その他」のパネルは現在地を表さない。パネルは
+ *    開いた瞬間だけ出る一覧であり、柱と同じ選択表示を二重に置くと「どちらが現在地か」が
+ *    2 箇所になる）。空を返すことで、**クライアント側の上書きでも現在地にならない。**
  * 🔴 **射程を部品側で推測しない**（`SidebarItem.sectionPaths` の 🔴）。
  */
-function isCurrentNavItem(currentPath: string, item: SidebarItem): boolean {
-  if (item.reach.kind !== 'LINK') return false;
-  if (isCurrentNavPath(currentPath, item.reach.href)) return true;
-  return (item.sectionPaths ?? []).some((candidate) => isCurrentNavPath(currentPath, candidate));
+function navMatchPaths(item: SidebarItem, variant: SidebarVariant): readonly string[] {
+  if (variant !== 'sidebar' || item.reach.kind !== 'LINK') return [];
+  return [item.reach.href, ...(item.sectionPaths ?? [])];
 }
 
 // ============================================================================
@@ -497,12 +543,18 @@ function SidebarEntry({
       </li>
     );
   }
-  const current = variant === 'sidebar' && isCurrentNavItem(currentPath, item);
+  // 🔴 現在地は 2 段で決まる（ファイル冒頭の 6b）: ここで計算するのは**初回描画（水和前）**の
+  //    ぶんだけであり、クライアントでは `linkComponent`（島）が `matchPaths` から作り直す。
+  const matchPaths = navMatchPaths(item, variant);
+  const current = matchesCurrentNavPath(currentPath, matchPaths);
   const Link = linkComponent;
   return (
     <li>
       <Link
-        className={current ? SIDEBAR_CURRENT_CLASSES : SIDEBAR_LINK_CLASSES[variant]}
+        className={SIDEBAR_LINK_CLASSES[variant]}
+        // 🔴 「その他」（`more`）は現在地の表現を持たない（`navMatchPaths` の 🔴）。
+        currentClassName={variant === 'sidebar' ? SIDEBAR_CURRENT_CLASSES : undefined}
+        matchPaths={matchPaths}
         href={item.reach.href}
         title={item.label}
         aria-current={current ? 'page' : undefined}
@@ -566,7 +618,10 @@ export function SidebarNavList({
 
 export type SidebarProps = {
   readonly groups: readonly SidebarGroup[];
-  /** 現在地の判定に使う（🔴 `next/navigation` を使わない。`docs/05` §2.3.1）。 */
+  /**
+   * **初回描画（水和前）の現在地**（🔴 `next/navigation` を使わない。`docs/05` §2.3.1）。
+   * 🔴 クライアントでは `linkComponent` の島が `usePathname()` で上書きする（ファイル冒頭の 6b）。
+   */
   readonly currentPath: string;
   readonly labels: SidebarLabels;
   readonly linkComponent?: ComponentType<SidebarLinkProps>;

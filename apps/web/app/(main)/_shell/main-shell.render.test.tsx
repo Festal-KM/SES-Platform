@@ -29,8 +29,8 @@ import {
   buildMainNav,
   buildNavSections,
   buildSettingsIndex,
-  currentNavSection,
   navItems,
+  navSectionsWithTabs,
 } from '../../../lib/shell/nav';
 import type { ShellUsageIndicator } from '../../../lib/shell/usage-indicator';
 import { findOrganizationSettings, MainShell, type MainShellProps } from './main-shell';
@@ -48,8 +48,8 @@ function render(overrides: Partial<MainShellProps> = {}): string {
     usage: { kind: 'NONE' },
     usageHref: '/settings/usage',
     nav: buildMainNav({ audience: 'HOST', role: 'SALES' }),
-    // 🔴 既定は「第 2 階層の帯を描かない」状態である（ホストの `人材管理` はタブが 1 つなので
-    //    `currentNavSection` が `null` を返す ＝ `/engineers` を開いても帯は出ない）。
+    // 🔴 既定は「第 2 階層の帯を描かない」状態である（`sections` を渡していない ＝ 候補が 0 件。
+    //    ホストの `人材管理` はタブが 1 つなので `navSectionsWithTabs` が外す）。
     settingsIndex: buildSettingsIndex({ audience: 'HOST', role: 'SALES' }),
     tabs: buildBottomTabs(),
     currentPath: '/engineers',
@@ -72,9 +72,12 @@ function partnerMarkup(overrides: Partial<MainShellProps> = {}): string {
 }
 
 /**
- * ✅ 2026-10-03: **第 2 階層の帯が出ている状態**（`currentPath` のセクションのタブを渡す）。
- * 🔴 **どのセクションかの判定は `lib/shell/nav.ts` の `currentNavSection`** であり、
- *    ここで項目を書き写さない（書き写すと、実装と期待値が同時にずれたときに気づけない）。
+ * ✅ 2026-10-03: **第 2 階層の帯が出うる状態**（候補のセクションを渡す）。
+ * 🔴 ✅ **2026-10-04: 候補を全部渡す形に変えた**（どれを描くかは `@ses/ui` の
+ *    `currentNavSectionIndex` が `currentPath` から決める）。理由は「App Router のレイアウトが
+ *    ソフトナビゲーションで再描画されない」ことであり、**帯の選択をサーバで 1 本に絞ると
+ *    移動後も前の画面のタブが残る**（`_shell/nav-current.tsx` 冒頭の実測）。
+ * 🔴 **ここで項目を書き写さない**（書き写すと、実装と期待値が同時にずれたときに気づけない）。
  */
 function sectionMarkup(
   audience: 'HOST' | 'PARTNER',
@@ -82,11 +85,10 @@ function sectionMarkup(
   currentPath: string,
 ): string {
   const context = { audience, role } as const;
-  const section = currentNavSection(buildNavSections(context), currentPath);
   const overrides: Partial<MainShellProps> = {
     nav: buildMainNav(context),
     settingsIndex: buildSettingsIndex(context),
-    sectionTabs: section === null ? null : section.items,
+    sections: navSectionsWithTabs(buildNavSections(context)),
     currentPath,
   };
   return audience === 'HOST' ? render(overrides) : partnerMarkup(overrides);
@@ -278,18 +280,18 @@ describe('🔴 上限インジケータ（F-027 AC-6 / BR-24）', () => {
   });
 });
 
-describe('🔴 サイドバー（モックアップの 6 項目 / §7.5 ③ アイコンの許可）', () => {
+describe('🔴 サイドバー（モックアップの 5 項目 / §7.5 ③ アイコンの許可）', () => {
   /** サイドバーの `<nav>` だけを取り出す（ヘッダ・本文・「その他」と混ぜない）。 */
   function sidebarOf(html: string): string {
     return /data-testid="app-sidebar"[\s\S]*?<\/nav>/.exec(html)?.[0] ?? '';
   }
 
-  it('🔴 ① 6 項目がフラットに並ぶ（群の見出しが 1 つも無い。2026-10-03 のモックアップ）', () => {
+  it('🔴 ① 5 項目がフラットに並ぶ（群の見出しが 1 つも無い。2026-10-03 / 10-04）', () => {
     const html = render();
     const sidebar = sidebarOf(html);
     expect(sidebar.length).toBeGreaterThan(0);
-    // 画像の 6 項目（`ホーム` / `チャット` / `人材管理` / `案件管理` / `レポート` / `設定`）。
-    for (const id of ['home', 'chat', 'engineers', 'projects', 'reports', 'settings']) {
+    // 画像の 6 項目から `レポート` を外した 5 項目（2026-10-04 の人間の明示指示）。
+    for (const id of ['home', 'chat', 'engineers', 'projects', 'settings']) {
       expect(sidebar, id).toContain(`data-testid="app-nav-${id}"`);
     }
     for (const key of [
@@ -297,11 +299,13 @@ describe('🔴 サイドバー（モックアップの 6 項目 / §7.5 ③ ア�
       'shell.nav.chat',
       'shell.nav.host.engineers',
       'shell.nav.host.projects',
-      'shell.nav.host.reports',
       'shell.nav.host.settings',
     ] as const) {
       expect(sidebar, key).toContain(t(key));
     }
+    // 🔴 `レポート` は項目ごと出ない（Phase 3 まで実体が無く、押しても何も無い項目を常設しない）。
+    expect(sidebar).not.toContain('data-testid="app-nav-reports"');
+    expect(sidebar).not.toContain(t('shell.nav.host.reports'));
     // 🔴 群の要素が 1 つも無い（`primary` も含めて群名を描かない）。
     for (const id of ['primary', 'sales', 'comms', 'analytics']) {
       expect(sidebar, id).not.toContain(`data-testid="app-nav-${id}"`);
@@ -358,7 +362,8 @@ describe('🔴 サイドバー（モックアップの 6 項目 / §7.5 ③ ア�
     expect(host).toContain(t('shell.nav.host.engineers'));
     expect(host).not.toContain(t('shell.nav.partner.engineers'));
     expect(partner).toContain(t('shell.nav.partner.engineers'));
-    expect(partner).toContain(t('shell.nav.partner.reports'));
+    // ✅ 2026-10-04: `レポート` の語はどちらの所属にも出ない（項目ごと外した）。
+    expect(partner).not.toContain(t('shell.nav.partner.reports'));
     expect(host).not.toContain(t('shell.nav.partner.reports'));
     // 🔴 見えてはいけない導線は**DOM から取り除かれている**（CSS で隠れているだけにしない）。
     //    🔴 `共有の設定`（経路 4）は第 2 階層へ移ったので、**ホストの外枠には帯ごと出ない**
@@ -370,14 +375,13 @@ describe('🔴 サイドバー（モックアップの 6 項目 / §7.5 ③ ア�
 
   it('🔴 ③ 未実装の項目は `<span>` で描かれ `href` を持たない（404 を作らない）', () => {
     const html = render();
-    // 🔴 畳んだ後に未実装なのは `チャット`（Phase 2）と `レポート`（Phase 3）の 2 つだけである。
-    for (const id of ['chat', 'reports']) {
+    // ✅ 2026-10-04: 未実装の項目は `チャット`（Phase 2）の 1 つだけである（`レポート` は項目ごと外した）。
+    for (const id of ['chat']) {
       expect(html, id).toMatch(new RegExp(`<span[^>]*aria-disabled="true"[^>]*data-testid="app-nav-${id}"`));
       expect(html, id).not.toMatch(new RegExp(`<a[^>]*data-testid="app-nav-${id}"`));
       // 🔴 印は無彩色の `Phase N` Badge（注記テキストを置き換えたもの）。
       expect(html, id).toContain(`data-testid="app-nav-phase-${id}"`);
     }
-    expect(html).toContain(t('shell.nav.note.phase3'));
     expect(html).toContain(t('shell.nav.note.phase2'));
     // 🔴 サイドバーに注記（`案件から開きます` / `提案から開きます`）を持つ項目は無い ——
     //    `候補` / `面談・結果` は畳み込みで項目ごと無くなり、案件詳細 / 提案詳細から開く。
@@ -407,21 +411,23 @@ describe('🔴 サイドバー（モックアップの 6 項目 / §7.5 ③ ア�
     }
   });
 
-  it('🔴 ④ 現在地は 背景 + 文字色 + 左端 2px の 3 点で示される（太字だけで示さない）', () => {
+  it('🔴 ④ 現在地は 背景 + 文字色 の 2 点で示される（太字だけで示さない / 左端の帯は出さない）', () => {
     const html = render({ currentPath: '/engineers/e1' });
     const current = tagOf(html, 'app-nav-engineers');
     expect(current).toContain('aria-current="page"');
-    // 🔴 3 点（`docs/04` §7.9 / §7.10 の selected）。
     // ✅ 2026-10-02: サイドバーが**濃色（濃紺）**になったため、白地用の `SELECTED_CLASSES`
     //    （`bg-brand-bg` = `indigo-50`）から濃色用の component トークンに差し替わった
-    //    （`docs/04` `U-25` / §7.9 改訂 23）。🔴 **「背景 + 文字色 + 左端 2px の 3 点」という
-    //    条文は 1 つも変えていないし、検査の強さも落としていない**（語が替わっただけ）。
-    //    色の値とコントラスト比（ラベル 4.5:1 / 群名・バー 3:1）は
-    //    `tests/static/design-tokens.test.ts` が実測で固定する。
+    //    （`docs/04` `U-25` / §7.9 改訂 23）。
+    // ✅ **2026-10-04（人間の明示指示「ハイライトの左端に色がついているのはなくして」）: 左端
+    //    2px の色帯を外した。** 🔴 **背景と文字色は残す**（これが無いと現在地が分からなくなる）。
+    //    ⚠️ `docs/04` §3.1 / §7.10 の「3 点」とは食い違う（人間の指示が優先。設計書の追随は別途）。
     expect(current).toContain('bg-sidebar-selected-bg');
     expect(current).toContain('text-sidebar-selected-fg');
-    expect(current).toContain('border-l-2');
-    expect(current).toContain('border-l-sidebar-selected-bar');
+    // 🔴 帯が戻ってこないことを固定する（トークンの宣言ごと消してある）。
+    expect(current).not.toContain('border-l-2');
+    expect(current).not.toContain('border-l-sidebar-selected-bar');
+    // 🔴 透明な 2px の場所取りも残っていない（帯が無いので取る場所が無い）。
+    expect(sidebarOf(html)).not.toContain('border-l-transparent');
     // 🔴 太字で示していない（weight を現在地の手がかりにしない）。
     expect(current).not.toContain('font-bold');
     expect(current).not.toContain('font-semibold');
@@ -526,10 +532,10 @@ describe('🔴 モバイル（docs/04 §3.4）', () => {
     expect(/data-testid="app-tab-more-summary"[\s\S]*?<svg/.test(html)).toBe(true);
   });
 
-  it('🔴 「その他」からサイドバーと同じ 6 項目に到達でき、並びを保つ', () => {
+  it('🔴 「その他」からサイドバーと同じ 5 項目に到達でき、並びを保つ', () => {
     const html = render();
     // 同じ項目表から描くので、サイドバーの項目はすべて「その他」にも在る（接頭辞だけが違う）。
-    const ids = ['home', 'chat', 'engineers', 'projects', 'reports', 'settings'];
+    const ids = ['home', 'chat', 'engineers', 'projects', 'settings'];
     for (const id of ids) {
       expect(html, id).toContain(`data-testid="app-more-nav-${id}"`);
     }
@@ -541,7 +547,7 @@ describe('🔴 モバイル（docs/04 §3.4）', () => {
     const html = render();
     const more = /data-testid="app-tab-more"[\s\S]*?<\/details>/.exec(html)?.[0] ?? '';
     expect(more.length).toBeGreaterThan(0);
-    for (const id of ['chat', 'reports']) {
+    for (const id of ['chat']) {
       expect(more, id).toContain(`data-testid="app-more-nav-phase-${id}"`);
     }
     const items = navItems(buildMainNav({ audience: 'HOST', role: 'SALES' }));

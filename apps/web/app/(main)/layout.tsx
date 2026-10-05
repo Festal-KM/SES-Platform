@@ -65,7 +65,7 @@ import {
   buildMainNav,
   buildNavSections,
   buildSettingsIndex,
-  currentNavSection,
+  navSectionsWithTabs,
   type NavAudience,
   type NavContext,
 } from '../../lib/shell/nav';
@@ -108,7 +108,10 @@ export default async function MainPlaneLayout({ children }: { readonly children:
   //    🔴 **ロール条件の出所は `navContext` を受ける 3 つの関数だけ**であり、ここに判定を書かない。
   //    🔴 **DB のトランザクションは 1 本も増えない**（いずれも純粋な組み立てである。上の表は不変）。
   const navContext: NavContext = { audience, role: ctx.role, proposalRequestDueText };
-  const section = currentNavSection(buildNavSections(navContext), currentPath);
+  // 🔴 ✅ 2026-10-04: **帯の候補を全部渡す**（どれを描くかはクライアントでも決まる）——
+  //    レイアウトはソフトナビゲーションで再描画されないため、ここで 1 本に絞ると
+  //    移動後も前の画面のタブが残る（`_shell/nav-current.tsx` 冒頭の実測）。
+  const sections = navSectionsWithTabs(buildNavSections(navContext));
 
   return (
     <MainShell
@@ -122,9 +125,9 @@ export default async function MainPlaneLayout({ children }: { readonly children:
       //    `F-027 AC-1`「取引先には停止の事実と理由だけ」）。
       usageHref={ctx.partnerCompanyId === null ? '/settings/usage' : null}
       nav={buildMainNav(navContext)}
-      // 🔴 いま居るセクションのタブだけを渡す（`null` なら帯を描かない = タブが 1 つしか
-      //    無いセクションと、どのセクションにも属さない画面）。
-      sectionTabs={section === null ? null : section.items}
+      // 🔴 タブが 2 つ以上あるセクションの全体（空なら帯を描かない）。どのセクションに
+      //    居るかの判定は `@ses/ui` の `currentNavSectionIndex` の 1 実装が行う。
+      sections={sections}
       // 🔴 「自分」メニューの `組織設定` の有無は**索引と同じ 1 本の表**から決まる
       //    （`_shell/main-shell.tsx` の 🔴。2 つのロール表を作らない）。
       settingsIndex={buildSettingsIndex(navContext)}

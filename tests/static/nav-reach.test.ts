@@ -25,7 +25,15 @@
 //      こと。到達しないものは**理由つきの許可リスト**に載せる（画面の中の導線から開くもの / 未認証）。
 //   ④ 🔴 **第 2 階層が現に描かれている**配線（`layout.tsx` → `AppShell` → `SectionNav` /
 //      `/settings` → `NavIndex`）。データだけ在って描かれていなければ到達性は 0 である。
-//   ⑤ 🔴 **サイドバーが 6 項目のフラットである**こと（群の見出しを持たない）。
+//   ⑤ 🔴 **サイドバーがフラットである**こと（群の見出しを持たない）。
+//
+// 🔴 ✅ **2026-10-04 の 2 つの変更を織り込んでいる**（どちらも到達集合を 1 件も減らしていない）:
+//   - **`レポート` をサイドバーから外した**（人間の明示指示）。🔴 畳む前も `LINK` ではなかったので
+//     `PRE_FOLD_REACH` は 1 行も動かない（**到達性は変わっていない**）。文言キーは残している。
+//   - **第 2 階層の帯の選び方が 2 段になった**（`navSectionsWithTabs` でパスに依存しない絞り込み +
+//     `@ses/ui` の `currentNavSectionIndex` で現在地の判定）。理由は「App Router のレイアウトが
+//     ソフトナビゲーションで再描画されない」ことであり、**同じ判定をクライアントの島
+//     （`apps/web/app/(main)/_shell/nav-current.tsx`）も呼ぶ。**
 //
 // 🔴 **`tests/static/` に置く理由**: 到達性は「どの画面が入口を持つか」という**リポジトリ全体の
 //    性質**であり、`apps/web` の 1 モジュールの単体性質ではない（③ はルート木の走査を伴う）。
@@ -33,14 +41,19 @@ import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { TenantRole } from '@ses/db';
+// 🔴 現在地の判定は `packages/ui` の**ソース**から読む（`tests/static/**` から `@ses/ui` の
+//    パッケージ名は解決できない。`design-tokens.test.ts` が `lib/cn.js` を同じ形で読んでいる）。
+import { currentNavSectionIndex } from '../../packages/ui/src/lib/current-nav-path.js';
 import {
   buildMainNav,
   buildNavSections,
   buildSettingsIndex,
-  currentNavSection,
+  navHrefs,
   navItems,
   navReachableHrefs,
+  navSectionsWithTabs,
   type NavAudience,
+  type NavSection,
 } from '../../apps/web/lib/shell/nav';
 import { repoRoot, toRepoRelative } from './support/ui-classes.js';
 
@@ -198,6 +211,24 @@ function reachOf(role: TenantRole): readonly string[] {
 
 const ALL_ROLES: readonly TenantRole[] = [...AUDIENCE_ROLES.HOST, ...AUDIENCE_ROLES.PARTNER];
 
+/**
+ * そのパスで帯に出るセクション（`null` = 帯を描かない）。
+ *
+ * 🔴 ✅ **2026-10-04: 実装と同じ 2 段の組み合わせで求める** ——
+ *    ①`navSectionsWithTabs`（パスに依存しない絞り込み。サーバ側）
+ *    ②`@ses/ui` の `currentNavSectionIndex`（現在地の判定。**サーバの初回描画とクライアントの島が
+ *      同じものを呼ぶ 1 実装**）。
+ *    🔴 ここで独自に `find` を書くと、**実装とテストが別々の規則を持つ**ことになる。
+ */
+function sectionAt(sections: readonly NavSection[], currentPath: string): NavSection | null {
+  const withTabs = navSectionsWithTabs(sections);
+  const index = currentNavSectionIndex(
+    currentPath,
+    withTabs.map((section) => navHrefs(section.items)),
+  );
+  return index < 0 ? null : (withTabs[index] ?? null);
+}
+
 describe('対照: 走査が空振りしていない', () => {
   it('主平面の静的ルートが集まっている', () => {
     expect(STATIC_ROUTE_URLS).toContain('/');
@@ -344,16 +375,32 @@ describe('🔴 ③ 主平面の静的ルートに入口がある（到達不能�
 });
 
 describe('🔴 ④ 第 2 階層が現に描かれている（データだけ在って描かれていない状態を作らない）', () => {
-  it('外枠が `SectionNav` に、いま居るセクションのタブを渡している', () => {
+  it('外枠が `SectionNav` に、第 2 階層のタブを渡している', () => {
     const layout = sourceOf('apps/web/app/(main)/layout.tsx');
-    expect(layout).toContain('currentNavSection(');
-    expect(layout).toContain('sectionTabs=');
+    expect(layout).toContain('navSectionsWithTabs(');
+    expect(layout).toContain('sections=');
     expect(layout).toContain('settingsIndex=');
     const mainShell = sourceOf('apps/web/app/(main)/_shell/main-shell.tsx');
     expect(mainShell).toContain('resolveSectionTabs(');
     expect(mainShell).toContain('sectionTabsLabel=');
     const appShell = sourceOf('packages/ui/src/components/app-shell.tsx');
     expect(appShell).toContain('<SectionNav');
+  });
+
+  it('🔴 ✅ 帯の現在地がクライアント遷移に追随する配線が在る（2026-10-04）', () => {
+    // 🔴 **データだけ在って追随しなければ、到達性は「見えているのに違う画面のタブ」になる**
+    //    （`/settings` に案件管理のタブが残り続けた実測症状）。配線は 2 本である。
+    const mainShell = sourceOf('apps/web/app/(main)/_shell/main-shell.tsx');
+    expect(mainShell).toContain('sectionGate={SectionNavGate}');
+    expect(mainShell).toContain('linkComponent={NavLink}');
+    const island = sourceOf('apps/web/app/(main)/_shell/nav-current.tsx');
+    expect(island.trimStart().startsWith("'use client'")).toBe(true);
+    expect(island).toContain('usePathname');
+    // 🔴 判定は `@ses/ui` の 1 実装を呼ぶ（島が 2 つ目の判定を書いていない）。
+    expect(island).toContain('currentNavSectionIndex');
+    expect(island).toContain('matchesCurrentNavPath');
+    const appShell = sourceOf('packages/ui/src/components/app-shell.tsx');
+    expect(appShell).toContain('sectionGate');
   });
 
   it('`設定` の索引が `buildSettingsIndex` の結果を `NavIndex` で描いている', () => {
@@ -369,7 +416,7 @@ describe('🔴 ④ 第 2 階層が現に描かれている（データだけ在�
     // 案件管理（`/projects` 配下）はどの所属でも 3 タブ（案件一覧 / 提案 / 提案依頼）。
     for (const role of ALL_ROLES) {
       const context = { audience: audienceOf(role), role };
-      const section = currentNavSection(buildNavSections(context), '/projects');
+      const section = sectionAt(buildNavSections(context), '/projects');
       expect(section?.id, role).toBe('projects');
       expect(section?.items.map((item) => item.id), role).toEqual([
         'projects',
@@ -378,44 +425,42 @@ describe('🔴 ④ 第 2 階層が現に描かれている（データだけ在�
       ]);
     }
     // 人材管理は取引先（共有の設定を持つロール）だけが 2 タブになる。ホストは 1 つなので
-    // 帯を描かない（`currentNavSection` が `null` を返す）が、サイドバーの項目が入口を持つ。
+    // 帯を描かない（`navSectionsWithTabs` が外す）が、サイドバーの項目が入口を持つ。
     for (const role of AUDIENCE_ROLES.PARTNER) {
-      const section = currentNavSection(buildNavSections({ audience: 'PARTNER', role }), '/engineers');
+      const section = sectionAt(buildNavSections({ audience: 'PARTNER', role }), '/engineers');
       expect(section?.items.map((item) => item.id), role).toEqual(['engineers', 'engineer-shares']);
     }
     for (const role of AUDIENCE_ROLES.HOST) {
-      expect(
-        currentNavSection(buildNavSections({ audience: 'HOST', role }), '/engineers'),
-        role,
-      ).toBeNull();
+      expect(sectionAt(buildNavSections({ audience: 'HOST', role }), '/engineers'), role).toBeNull();
       expect(reachOf(role), role).toContain('/engineers');
     }
   });
 
   it('🔴 `/engineers` のタブ判定が `/engineer-shares` を飲み込まない（前方一致の事故）', () => {
     const sections = buildNavSections({ audience: 'PARTNER', role: 'PARTNER_SALES' });
-    expect(currentNavSection(sections, '/engineer-shares')?.id).toBe('engineers');
-    expect(currentNavSection(sections, '/engineers/00000000-0000-7000-8000-000000000000')?.id).toBe(
+    expect(sectionAt(sections, '/engineer-shares')?.id).toBe('engineers');
+    expect(sectionAt(sections, '/engineers/00000000-0000-7000-8000-000000000000')?.id).toBe(
       'engineers',
     );
     // 🔴 どのセクションにも属さない画面では帯を描かない（ホーム / 設定 / スキル辞書）。
     for (const path of ['/', '/settings', '/skills', '/audit-logs']) {
-      expect(currentNavSection(sections, path), path).toBeNull();
+      expect(sectionAt(sections, path), path).toBeNull();
     }
   });
 });
 
-describe('🔴 ⑤ サイドバーはモックアップどおり 6 項目のフラットである', () => {
-  it.each(ALL_ROLES)('%s: 群は 1 つで見出しを持たず、項目はちょうど 6 つ', (role) => {
+describe('🔴 ⑤ サイドバーはモックアップどおりフラットである', () => {
+  it.each(ALL_ROLES)('%s: 群は 1 つで見出しを持たず、項目はちょうど 5 つ', (role) => {
     const groups = buildMainNav({ audience: audienceOf(role), role });
     expect(groups.length).toBe(1);
     expect(groups[0]?.labelKey).toBeNull();
+    // ✅ 2026-10-04: `レポート` を外した（人間の明示指示）。🔴 **到達集合は 1 件も減っていない**
+    //    （畳む前も `LINK` ではなく、`PRE_FOLD_REACH` に現れない項目だった）。
     expect(navItems(groups).map((item) => item.id)).toEqual([
       'home',
       'chat',
       'engineers',
       'projects',
-      'reports',
       'settings',
     ]);
   });

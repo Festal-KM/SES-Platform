@@ -32,6 +32,12 @@
 //    この外枠に包まれる**主平面の全画面**がクライアントバンドルへ移る
 //    （`tests/static/client-db-boundary.test.ts`）。開閉は `<details>`（「その他」）と
 //    `<input type="checkbox">` + CSS（サイドバーの 2 形態。`./sidebar.tsx` 冒頭の 🔴）で行う。
+//    🔴 ✅ **2026-10-04: クライアントが要る 2 点は「差し替え口」で受ける**（この外枠は
+//    サーバのままである）—— `linkComponent`（現在地のクラスを当てるリンク）と `sectionGate`
+//    （第 2 階層の帯をどれか 1 つだけ描く器）。実装は `apps/web` 側の島
+//    （`app/(main)/_shell/nav-current.tsx`）に在り、**`packages/ui` に `'use client'` を
+//    1 つも増やしていない**（`tests/static/ui-overlay-contract.test.ts` が overlay 6 部品で
+//    凍結している。主バレルから `'use client'` へ辺が伸びると `Button` 1 つの画面まで引き込む）。
 // 2. 🔴 **サイドバーと「その他」は同じ項目表（`groups`）から描く。** 2 本持つと、どちらかにだけ
 //    項目が増えた状態が必ず生まれる（§3.4「業務ループの順序は『その他』の中で保つ」）。
 //    DOM には両方が同時に存在するため、`data-testid` の接頭辞を分ける（`./sidebar.tsx`）。
@@ -46,7 +52,13 @@ import type { ComponentType, ReactNode } from 'react';
 import { Icon, type IconName } from '../icons.js';
 import { cn } from '../lib/cn.js';
 import { FOCUS_RING_CLASSES, TRANSITION_CLASSES } from '../lib/state-classes.js';
-import { SectionNav, type SectionNavItem } from './nav-panel.js';
+import { currentNavSectionIndex } from '../lib/current-nav-path.js';
+import {
+  SectionNav,
+  SectionNavDefaultGate,
+  type SectionGateProps,
+  type SectionNavItem,
+} from './nav-panel.js';
 import {
   Sidebar,
   SidebarNavList,
@@ -80,26 +92,46 @@ export type AppShellProps = {
   readonly header: TopBarProps;
   /** サイドバーと「その他」に出す群と項目（🔴 **同じ 1 本**）。 */
   readonly groups: readonly SidebarGroup[];
-  /** 現在地の判定に使うパス（🔴 `next/navigation` を使わない。`docs/05` §2.3.1）。 */
+  /**
+   * **初回描画（水和前）の現在地**（🔴 `next/navigation` を使わない。`docs/05` §2.3.1）。
+   * 🔴 クライアント遷移への追随は `linkComponent` と `sectionGate` の 2 つの島が行う
+   *    （`./sidebar.tsx` 冒頭の 6b / `./nav-panel.tsx` 冒頭の 1）。
+   */
   readonly currentPath: string;
   readonly navLabels: SidebarLabels;
   readonly tabs: readonly BottomTab[];
   readonly labels: AppShellLabels;
   /**
-   * 🔴 **第 2 階層のタブ**（2026-10-03。サイドバーを 6 項目に畳んだぶんの到達手段。
-   *    `./nav-panel.tsx` の `SectionNav`）。**`null` / 未指定なら帯ごと描かない。**
+   * 🔴 **第 2 階層のタブを持つセクションの全体**（2026-10-03 の畳み込みの到達手段。
+   *    `./nav-panel.tsx` の `SectionNav`）。**空 / 未指定なら帯ごと描かない。**
    *
-   * 🔴 **どのセクションに居るか / 項目が 1 つしか無いか の判断は呼び出し側**
-   *    （`apps/web/lib/shell/nav.ts` の `currentNavSection`）が持つ。この部品は
-   *    「渡されたら描く」だけである（上の 4。判断を 2 箇所に置かない）。
+   * ✅ **2026-10-04: 「いま居るセクションの 1 つ」から「候補の全体」に変えた。**
+   *    🔴 理由: 帯は**どのセクションに居るかで出る / 出ないが変わる**ので、1 つだけ渡す形では
+   *    **クライアント遷移で帯が前の画面のまま残る**（`/settings` に案件管理のタブが残り続ける
+   *    実測症状）。候補を全部渡し、**どれを描くかを `sectionGate` が決める**。
+   * 🔴 **タブが 1 つしか無いセクションを渡さない**のは呼び出し側の責務である
+   *    （`apps/web/lib/shell/nav.ts` の `navSectionsWithTabs`。パスに依存しない判断なので
+   *    サーバ側に置いたままでよい）。この部品は渡されたものを描くだけである（上の 4）。
    * 🔴 **サイドバーと同じ項目表から来る**（`lib/shell/nav.ts` の `buildNavSections`）—— 2 本持つと、
    *    どちらかにだけ項目が増えた状態が必ず生まれる（`groups` と同じ理由）。
    */
-  readonly sectionTabs?: readonly SectionNavItem[] | null;
+  readonly sections?: readonly AppShellSection[];
   /** 第 2 階層の `<nav aria-label>`（🔴 語は呼び出し側が `packages/i18n` から渡す）。 */
   readonly sectionTabsLabel?: string;
+  /**
+   * 🔴 第 2 階層の帯を**どれか 1 つだけ描く器**（既定は `SectionNavDefaultGate` = サーバのまま
+   *    初回描画の添字を使う）。`apps/web` の `'use client'` の島を渡すと、クライアント遷移に
+   *    追随する（`./nav-panel.tsx` の `SectionGateProps`）。
+   */
+  readonly sectionGate?: ComponentType<SectionGateProps>;
   readonly linkComponent?: ComponentType<SidebarLinkProps>;
   readonly children: ReactNode;
+};
+
+/** 第 2 階層のタブを持つセクション 1 つ（🔴 項目の出所は呼び出し側の 1 本の表）。 */
+export type AppShellSection = {
+  readonly id: string;
+  readonly items: readonly SectionNavItem[];
 };
 
 function DefaultLink({ href, children, ...rest }: SidebarLinkProps) {
@@ -197,11 +229,16 @@ export function AppShell({
   navLabels,
   tabs,
   labels,
-  sectionTabs = null,
+  sections = [],
   sectionTabsLabel,
+  sectionGate: SectionGate = SectionNavDefaultGate,
   linkComponent = DefaultLink,
   children,
 }: AppShellProps) {
+  // 🔴 候補の射程は**タブの遷移先から引く**（書き写さない。`./nav-panel.tsx` の `SectionGateProps`）。
+  const sectionCandidates = sections.map((section) => section.items.map((item) => item.href));
+  // 🔴 初回描画（水和前）の添字。判定は `../lib/current-nav-path.ts` の 1 実装である。
+  const initialSectionIndex = currentNavSectionIndex(currentPath, sectionCandidates);
   return (
     <div className={SHELL_CLASSES} data-testid="app-shell">
       {/* 🔴 サイドバー（左固定・画面下端まで）。`md:` 未満ではボトムタブに置き換わる（§3.4）。 */}
@@ -215,13 +252,22 @@ export function AppShell({
         <TopBar {...header} linkComponent={linkComponent} />
         {/* 🔴 第 2 階層のタブ（Top Header の直下 = ヘッダから続く 1 枚の面）。
             🔴 **語が渡されていないときも描かない** —— `aria-label` の無いナビゲーションを
-               作らない（読み上げで「この帯が何か」が分からなくなる）。 */}
-        {sectionTabs === null || sectionTabs === undefined || sectionTabsLabel === undefined ? null : (
-          <SectionNav
-            items={sectionTabs}
-            currentPath={currentPath}
-            label={sectionTabsLabel}
-            linkComponent={linkComponent}
+               作らない（読み上げで「この帯が何か」が分からなくなる）。
+            🔴 **描かれるのは多くとも 1 本**（`SectionGate` が添字で選ぶ）。候補を全部渡すのは
+               クライアント遷移で選び直せるようにするためである（`sections` の ✅）。 */}
+        {sections.length === 0 || sectionTabsLabel === undefined ? null : (
+          <SectionGate
+            candidates={sectionCandidates}
+            initialIndex={initialSectionIndex}
+            bands={sections.map((section) => (
+              <SectionNav
+                key={section.id}
+                items={section.items}
+                currentPath={currentPath}
+                label={sectionTabsLabel}
+                linkComponent={linkComponent}
+              />
+            ))}
           />
         )}
         <div className={BODY_CLASSES}>

@@ -31,6 +31,7 @@
 //   |---|---|---|
 //   | 検索 | `./global-search.tsx` | `⌘K` / `Ctrl+K` の**プラットフォーム判定** |
 //   | 自分 | `./account-menu.tsx` | `DropdownMenu` が Radix（`@ses/ui/client`。検査 (i)⑤） |
+//   | 🔴 **現在地** | `./nav-current.tsx` | **App Router のレイアウトはソフトナビゲーションで再描画されない**（2026-10-04。`usePathname()` が要る。同ファイル冒頭に実測） |
 //
 // 🔴 **ヘルプ（`circle-help`）は置いていない** —— 中身（「この画面でできること / できないこと」）の
 //    出所が 1 つも無く、押して何も出ないアイコンは §3.1 の ③ が禁じた「動かない検索窓」と同じものに
@@ -40,15 +41,15 @@
 //    押せない要素にアイコンだけを足すのは §7.5 の装飾の禁止に当たるため、**語 + `Phase 2` Badge**
 //    のままにした。
 import type { ReactNode } from 'react';
-import Link from 'next/link';
 import { t } from '@ses/i18n';
 import { AppShell, type AppShellLabels, type TopBarUsage } from '@ses/ui';
 import { ENGINEER_LIST_PATH } from '../../../lib/engineers/list-rows';
-import type { NavGroup, NavItem } from '../../../lib/shell/nav';
+import type { NavGroup, NavItem, NavSection } from '../../../lib/shell/nav';
 import { resolveBottomTabs, resolveNavGroups, resolveSectionTabs } from '../../../lib/shell/nav-view';
 import type { ShellUsageIndicator } from '../../../lib/shell/usage-indicator';
 import { AccountMenu } from './account-menu';
 import { GlobalSearch } from './global-search';
+import { NavLink, SectionNavGate } from './nav-current';
 
 export type MainShellProps = {
   /** ワードマーク（`product.name`）。🔴 製品名を表示する唯一の箇所（`U-01`）。 */
@@ -70,11 +71,14 @@ export type MainShellProps = {
   /** サイドバーと「その他」に出す群と項目（🔴 **同じ 1 本**）。 */
   readonly nav: readonly NavGroup[];
   /**
-   * 🔴 **第 2 階層のタブ**（2026-10-03。サイドバーを 6 項目に畳んだぶんの到達手段）。
-   *    **いま開いている画面が属するセクションの項目**を渡す（`null` なら帯を描かない）。
-   *    どのセクションかの判定は `lib/shell/nav.ts` の `currentNavSection` が 1 箇所で行う。
+   * 🔴 **第 2 階層のタブを持つセクションの全体**（2026-10-03 の畳み込みの到達手段）。
+   *
+   * ✅ **2026-10-04: 「いま居るセクションの 1 つ」から「候補の全体」に変えた** ——
+   *    帯はクライアント遷移で出る / 出ないが変わるため（`./nav-current.tsx` の `SectionNavGate`）。
+   *    🔴 **タブが 1 つしか無いセクションを外すのは `lib/shell/nav.ts` の `navSectionsWithTabs`**
+   *       である（パスに依存しない判断なのでサーバ側に残る）。
    */
-  readonly sectionTabs?: readonly NavItem[] | null;
+  readonly sections?: readonly NavSection[];
   /**
    * 🔴 **`設定` の索引（`/settings`）の項目**。この外枠が描くのは索引そのものではなく、
    *    「自分」メニューの `組織設定` の有無だけである（下の 🔴）。
@@ -83,12 +87,14 @@ export type MainShellProps = {
   /** モバイルのボトムタブの手前 4 つ（5 つ目は「その他」）。 */
   readonly tabs: readonly NavItem[];
   /**
-   * 現在地の判定に使うパス（🔴 `docs/04` §3.1「現在地 = 背景 + 文字色 + 左端 2px」）。
+   * **初回描画（水和前）の現在地**（🔴 `docs/04` §3.1「現在地 = 背景 + 文字色」）。
    *
-   * 🔴 **RSC のレイアウトは自分のパスを知らない。** `usePathname` はクライアント専用であり、
-   *    外枠に `'use client'` を付けると主平面の全画面がクライアントへ移る。そこで
-   *    `apps/web/proxy.ts` がリクエストヘッダにパスを添え、`layout.tsx` が読んで渡す
-   *    （`lib/shell/current-path.ts`）。
+   * 🔴 **RSC のレイアウトは自分のパスを知らない。** そこで `apps/web/proxy.ts` がリクエスト
+   *    ヘッダにパスを添え、`layout.tsx` が読んで渡す（`lib/shell/current-path.ts`）。
+   * 🔴 ✅ **2026-10-04: それだけでは足りない。** レイアウトはソフトナビゲーションで再描画されない
+   *    ので、この値は**最初に着地した画面のまま固まる**。クライアント側の追随は
+   *    `./nav-current.tsx` の 2 つの島（`NavLink` / `SectionNavGate`）が `usePathname()` で行い、
+   *    **この値を上書きする**。🔴 値そのものは残す —— JS が効かない環境でも初回は正しく光る。
    */
   readonly currentPath: string;
   readonly children: ReactNode;
@@ -187,7 +193,7 @@ export function MainShell({
   usage,
   usageHref,
   nav,
-  sectionTabs = null,
+  sections = [],
   settingsIndex = [],
   tabs,
   currentPath,
@@ -243,13 +249,21 @@ export function MainShell({
       groups={resolveNavGroups(nav)}
       currentPath={currentPath}
       navLabels={{ nav: t('shell.nav.label'), toggle: t('shell.sidebar.toggle') }}
-      // 🔴 第 2 階層のタブ（`null` のときは帯ごと描かれない。`@ses/ui` の `AppShell` の 🔴）。
-      sectionTabs={sectionTabs === null ? null : resolveSectionTabs(sectionTabs)}
+      // 🔴 第 2 階層のタブの**候補の全体**（空なら帯ごと描かれない。`@ses/ui` の `AppShell` の 🔴）。
+      //    🔴 **語の解決だけを行う**（項目・並び・ロール条件は `lib/shell/nav.ts` が決めている）。
+      sections={sections.map((section) => ({
+        id: section.id,
+        items: resolveSectionTabs(section.items),
+      }))}
       sectionTabsLabel={t('shell.section.label')}
+      // 🔴 どの帯を描くかをクライアント遷移に追随させる島（`./nav-current.tsx` 冒頭の 🔴）。
+      sectionGate={SectionNavGate}
       tabs={resolveBottomTabs(tabs)}
       labels={shellLabels()}
       // 🔴 `packages/ui` は `next/*` に依存しない（`docs/05` §2.3.1）。ここで渡す。
-      linkComponent={Link}
+      // 🔴 `next/link` を直接渡さず島（`NavLink`）を渡す —— 現在地はクライアントで取り直す
+      //    （レイアウトが再描画されないため。`./nav-current.tsx` 冒頭の実測）。
+      linkComponent={NavLink}
     >
       {children}
     </AppShell>
