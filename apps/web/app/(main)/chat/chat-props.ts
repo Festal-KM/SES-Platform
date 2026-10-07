@@ -18,7 +18,6 @@ export type ChatConversationMessages = {
   readonly own: string;
   readonly unknownName: string;
   readonly backToList: string;
-  readonly composeLegend: string;
   readonly composeLabel: string;
   readonly composePlaceholder: string;
   readonly composeHint: string;
@@ -41,7 +40,6 @@ export function chatConversationMessages(): ChatConversationMessages {
     own: t('chat.message.own'),
     unknownName: t('chat.thread.unknownName'),
     backToList: t('chat.backToList'),
-    composeLegend: t('chat.compose.legend'),
     composeLabel: t('chat.compose.label'),
     composePlaceholder: t('chat.compose.placeholder'),
     composeHint: t('chat.compose.hint'),

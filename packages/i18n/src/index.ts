@@ -4168,22 +4168,26 @@ const ja = {
   //    文言を置くと「あるはずの機能」として読まれる（docs/04 §7.8「準備中 / 近日公開を使わない」と
   //    同じ理由で、**無いものは語ごと置かない**）。
   // 🔴 **他社の存在を示唆する語を置かない**（「他の取引先」「全社のやり取り」など）。
+  // 🔴 **描かれない語を置かない**（2026-10-07 に 5 キーを削除: `chat.description` /
+  //    `chat.threads.heading` / `chat.threads.orderNote` / `chat.threads.column.counterparty` /
+  //    `chat.compose.legend`）。母集団の 1 行は `chat.threads.population`、相手の見出しは
+  //    `chat.panel.counterparty`、入力の見出しは `chat.compose.label` が既に持っており、
+  //    2 本目を置くと**どちらが正か分からない重複**になる。並び順の注記（`orderNote`）は
+  //    実装の `ORDER BY` と食い違っても誰も気づけない（`HANDOFF.md` §6-13 の実害）ため、
+  //    **順序は表の並びそのもので示す**。🔴 **死んだ文言は `i18n-key-freeze` のベースラインに
+  //    入ると削除できなくなる**ので、入る前に消す。
   'chat.title': 'チャット',
-  'chat.description': '参加している会社とのやり取りです。',
   'chat.breadcrumb.home': 'ホーム',
   'chat.loading': '読み込んでいます',
   'chat.error.title': 'チャットを取得できませんでした',
   'chat.error.retry': 'もう一度試す',
-  'chat.threads.heading': 'スレッド',
   // 🔴 母集団の 1 行（docs/04 §3.2-2）。**件数を含めない**（件数は他社の示唆になりうる）。
   'chat.threads.population': 'やり取りに参加している会社とのスレッドを表示しています。',
-  'chat.threads.orderNote': '最終更新が新しい順',
   'chat.threads.label': 'スレッド一覧',
   // 🔴 「開始できます」と書かない（スレッドを起こす導線が実装されていない。無い導線を約束しない）。
   'chat.threads.empty': 'やり取りはまだありません。',
   'chat.threads.more': '以前のスレッドを読み込む',
   'chat.threads.column.target': '対象',
-  'chat.threads.column.counterparty': '相手',
   'chat.threads.column.lastMessage': '最終更新',
   'chat.thread.kind.PROJECT': '案件',
   'chat.thread.kind.COMPANY': '企業間',
@@ -4201,7 +4205,6 @@ const ja = {
   'chat.messages.olderFailed': '以前のメッセージを読み込めませんでした。もう一度お試しください。',
   'chat.message.purged': '本文は削除されています',
   'chat.message.own': '自社',
-  'chat.compose.legend': 'メッセージを送る',
   'chat.compose.label': 'メッセージ',
   'chat.compose.placeholder': 'メッセージを入力',
   'chat.compose.hint': 'このスレッドの参加会社にだけ表示されます。',
