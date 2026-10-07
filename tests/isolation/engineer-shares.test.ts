@@ -211,13 +211,26 @@ async function auditRows(action: string) {
 }
 
 /** パートナー A1 が自社エンジニアを 1 件登録する（共有は付けない）。 */
+/**
+ * 🔴 **丸める前の稼働可能日。「今日」と絶対に一致しない日付にする。**
+ *
+ * 🔴 **2026-10-05 に CI が落ちた**（`docs/sprints/SP-22` / `HANDOFF.md` §6）。旧実装はここが
+ *    `'2026-10-05'` 固定で、その日が来たとき **許可されている `更新日`（= 行の更新日 = 今日）**と
+ *    文字列が一致し、「丸める前の値が応答に現れない」の検査が**自分の許可した値で落ちた**。
+ * 🔴 **これは「1 日だけ落ちる」ので最も見つけにくい壊れ方である** —— 翌日には緑に戻るため、
+ *    再実行で消える「たまたまの赤」として片付けられてしまう。
+ * 🔴 **下の `it` が「この定数が今日ではない」ことを先に確かめる**ので、将来また近い日付を
+ *    選んでも、意味の分からない `not.toContain` ではなく明示的な失敗になる。
+ */
+const RAW_AVAILABLE_FROM = '2027-03-17';
+
 async function createOwnEngineer(label: string): Promise<string> {
   const ctx = await ctxOf(PARTNER_USER_1, 'PARTNER_SALES');
   return createdIdOf(
     await postEngineer(ctx, {
       displayName: `${MARKER}${label}`,
       availability: 'STANDBY',
-      availableFrom: '2026-10-05',
+      availableFrom: RAW_AVAILABLE_FROM,
       unitPriceMin: 650000,
       unitPriceMax: 650000,
       prefecture: '13',
@@ -584,9 +597,15 @@ describe('🔴 応答が 5 項目 + 更新日を超えない（`BR-54` / `F-017 
     const body = (await (await putShare(ctx, engineerId, { shared: true })).json()) as ShareUpdateBody;
     const json = JSON.stringify(body.previewedFields);
 
+    // 🔴 **先に「この検査が成立する前提」を確かめる。** 丸める前の日付が「今日」と一致すると、
+    //    許可されている `更新日` と文字列が同じになり、**自分の許可した値でこの検査が落ちる**
+    //    （2026-10-05 に実際に起きた）。
+    const todayInJst = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    expect(RAW_AVAILABLE_FROM, '丸める前の日付が「今日」と一致している').not.toBe(todayInJst);
+
     expect(json).not.toContain('渋谷区');
     expect(json).not.toContain('650000');
-    expect(json).not.toContain('2026-10-05');
+    expect(json).not.toContain(RAW_AVAILABLE_FROM);
     // 代わりに丸めた区分が入る（空振り防止）。
     expect(body.previewedFields['priceBand']).toEqual({
       kind: 'RANGE',
