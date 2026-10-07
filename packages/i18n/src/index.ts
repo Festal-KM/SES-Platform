@@ -2206,6 +2206,53 @@ const ja = {
   //    （`F-008 AC-3` / docs/05 §4.8。区別すると他社に人材が居ることを教えてしまう）。
   'engineers.notFound': 'この人材の情報は見つかりませんでした。',
 
+  // ==========================================================================
+  // --- S-007 の枠（左の縦ステッパー / 登録のポイント / 書類の取り込み / 登録内容の確認）---
+  // ==========================================================================
+  // 🔴 人間提示のワイヤーフレーム「SES Hub 新規人材登録ダッシュボード.png」の 4 段である。
+  //    ⚠️ **第 2 段は「AI による情報抽出」ではない。** `CLAUDE.md` §3.2 は氏名・生年月日・連絡先・
+  //    顔写真・現所属会社名を送信前にマスキングすると定めており、**マスキングした以上 AI は
+  //    それらを返せない**。加えて `sheet-parser`（§12.2）の配線は本タスクの範囲外であり、
+  //    **押して何も起きないボタンを置かない**（UI_GUIDELINES §7）。したがって第 2 段は
+  //    画面に現に在るもの（基本情報・スキル・経歴の入力）を指す語にする。
+  'engineers.form.steps.title': '登録の流れ',
+  'engineers.form.step.documents': '書類の取り込み',
+  'engineers.form.step.profile': '基本情報・スキル・経歴',
+  'engineers.form.step.conditions': '諸条件の入力',
+  'engineers.form.step.review': '登録内容の確認',
+  // 🔴 既存の API は版をエンジニアに紐づけて採番する（`POST /api/engineers/{id}/skill-sheets`）。
+  //    登録前に取り込む経路は存在せず、作れば新しいアップロード API になる（本タスクの禁止事項）。
+  //    **できないことを `disabled` で表さず、いつできるかを書く**（UI_GUIDELINES §7）。
+  'engineers.form.step.note.documents.create': '人材を登録した後に取り込めます。',
+  'engineers.form.step.note.documents.edit': '任意。ウイルス検査が終わるまで外部には渡りません。',
+  'engineers.form.step.note.profile': '氏名だけが必須です。',
+  'engineers.form.step.note.conditions': '任意。分かっている範囲で入れてください。',
+  'engineers.form.step.note.review': '内容を確かめてから登録します。',
+  // 🔴 状態の語は 4 つだけである。**「完了」は必須の入力が埋まったことだけを指す**
+  //    （任意の段に「未完了」と出すと、空のままでよい段が欠陥に見える）。
+  'engineers.form.step.state.done': '入力済み',
+  'engineers.form.step.state.current': 'いま',
+  'engineers.form.step.state.todo': 'このあと',
+  'engineers.form.step.state.optional': '任意',
+  'engineers.form.points.title': '登録のポイント',
+  'engineers.form.points.line1': '氏名以外は後から足せます。分かっているところだけ埋めて登録できます。',
+  'engineers.form.points.line2': 'スキルは辞書から選ぶと検索に効きます。辞書に無い表記は新語候補として起票されます。',
+  'engineers.form.points.line3': '経歴は 1 行 = 1 つの現場です。0 行のままでも登録できます。',
+  'engineers.form.points.line4': '書類はウイルス検査が終わるまで、ダウンロードも外部への添付もできません。',
+  'engineers.form.documents.title': '書類の取り込み',
+  'engineers.form.documents.dropHint': 'ここにファイルをドラッグするか、下のボタンから選んでください。',
+  // 🔴 「このページで取り込んだぶん」であることを明示する（版の一覧は `S-008` が正であり、
+  //    検査の結果もあちらで見る。2 つ目の版一覧を作らない）。
+  'engineers.form.documents.acceptedTitle': 'このページで取り込んだ書類',
+  'engineers.form.documents.versionPrefix': '版 ',
+  'engineers.form.documents.manageLink': '版の一覧と検査の状態を見る',
+  'engineers.form.review.title': '登録内容の確認',
+  'engineers.form.review.displayName': '氏名',
+  'engineers.form.review.skills': 'スキル',
+  'engineers.form.review.careers': '経歴',
+  'engineers.form.review.unit': '件',
+  'engineers.form.review.notEntered': '未入力',
+
   // --- S-006 エンジニア詳細（docs/04 §S-006 / `F-008` / docs/05 §6.4 #17。T-05-02）---
   // 🔴 T2（モバイル閲覧可）。**狭い画面を理由に判断材料を隠さない**（`CLAUDE.md` §13.3）ため、
   //    稼働状況・稼働可能時期・単価レンジは折りたたみの外に出す（`engineers.detail.section.*` の外）。
@@ -3922,6 +3969,12 @@ const ja = {
   'engineerShares.preview.note':
     'ホストに表示されるのは次の 5 項目だけです。値はいずれも丸めた後のものです。',
   'engineerShares.preview.careersNote': '経歴は開示されません。',
+  // 🔴 [Issue #88] **共有していない人材のプレビューを「公開されている」と読める形にしない。**
+  //    同じ器を共有中と未共有の両方に使うため、**どちらであるかを 1 行で言い切る**
+  //    （時制だけが違う 2 文であり、片方を消すと「いま見えているのか」が分からなくなる）。
+  'engineerShares.preview.stateShared': 'ホストにはいま、次のように表示されています。',
+  'engineerShares.preview.stateNotShared':
+    'この人材はまだ共有していません。共有可にすると、ホストには次のように表示されます。',
   // 共有可にする確認ステップ（`docs/04` §S-015「操作と結果」）。
   'engineerShares.share': '共有可にする',
   'engineerShares.share.confirmTitle': 'この内容がホストに表示されます',

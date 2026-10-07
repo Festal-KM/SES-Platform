@@ -20,7 +20,9 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import type { RoundedAnonymousAttributes } from '@ses/domain';
 import {
+  EngineerSharePreviewCard,
   EngineerShareScreen,
   EngineerShareTableRow,
   type EngineerShareRowMark,
@@ -28,6 +30,11 @@ import {
   type EngineerShareScreenMessages,
   type EngineerShareScreenProps,
 } from './engineer-share-screen';
+// 🔴 **公開プレビューの中身を「匿名化の実装」に突き合わせる**ための import（下の最後の describe）。
+//    フィクスチャの手書きではなく、`engineerShareRow`（本番の組み立て）と
+//    `ANONYMIZED_ATTRIBUTE_ROW_KEYS`（丸めの型のキー集合）を通した値で検査する。
+import { ANONYMIZED_ATTRIBUTE_ROW_KEYS } from '../../../lib/anonymize/labels-core';
+import { engineerShareRow } from '../../../lib/engineer-shares/row-view';
 
 const SHARED_ROW: EngineerShareRowView = {
   engineerId: '01930000-0000-7000-8000-0000000000a1',
@@ -101,6 +108,9 @@ const messages: EngineerShareScreenMessages = {
   previewSelect: '人材を選ぶと、ホストに表示される内容をここで確認できます。',
   previewNote: 'ホストに表示されるのは次の 5 項目だけです。',
   previewCareersNote: '経歴は開示されません。',
+  previewStateShared: 'ホストにはいま、次のように表示されています。',
+  previewStateNotShared:
+    'この人材はまだ共有していません。共有可にすると、ホストには次のように表示されます。',
   fieldSkills: 'スキル',
   fieldYears: '経験年数',
   fieldPrice: '単価レンジ',
@@ -664,5 +674,133 @@ describe('🔴 行が持つ開示の形は 5 項目 + 丸めた更新日だけ�
 
   it('🔴 「経歴は開示されません」の文言キーを画面が持っている（`F-008 AC-7`）', () => {
     expect(messages.previewCareersNote).toBe('経歴は開示されません。');
+  });
+});
+
+// ============================================================================
+// 🔴 2026-10-05: **公開プレビューの中身が「実際にホストが見るもの」と一致する**
+//    （[Issue #88] / `CLAUDE.md` §3.1 経路 4 / `docs/04` §5-2 / `BR-54` / `U-06`）
+// ============================================================================
+// 🔴 **フィクスチャの手書きを信用しない。** 上の `SHARED_ROW.preview` は手で書いた値であり、
+//    「6 キーである」ことを手書きの表に対して確かめても、**匿名化の実装が変わったときに
+//    追随しない**（画面だけが古いまま緑になる）。ここでは
+//      ① `RoundedAnonymousAttributes`（丸めの出力の型）から
+//      ② `engineerShareRow`（本番の組み立て。`anonymizedAttributeRowsWith` を通る）で行を作り
+//      ③ `EngineerSharePreviewCard` を描いて
+//      ④ 出た行が `ANONYMIZED_ATTRIBUTE_ROW_KEYS`（= 丸めの型のキー集合）とちょうど一致する
+//    ことを見る。🔴 **丸めにフィールドが増えれば ④ が落ちる。**
+describe('🔴 公開プレビューは匿名 5 項目 + 丸めた更新日とちょうど一致する（[Issue #88]）', () => {
+  /** `F-017 AC-3` の例（経験年数 7 年 / 単価 65 万円 / 東京都渋谷区 / 2026-09-16 稼働開始）を丸めた後の値。 */
+  const ROUNDED: RoundedAnonymousAttributes = {
+    skills: [{ name: 'Java' }, { name: 'AWS' }],
+    yearsBand: 'Y5_10',
+    priceBand: { kind: 'RANGE', fromManYen: 60, toManYen: 70 },
+    availabilityBand: 'NEXT_MONTH',
+    prefecture: '13',
+    remoteMode: 'PARTIAL_REMOTE',
+    updatedOn: '2026-09-08',
+  };
+
+  /** 🔴 文言の表は**キー名をそのまま返す**（`lookupFromCatalog({})` と同じ）。値の出所を見分けるため。 */
+  const LABELS = { catalog: {}, valueNone: '—', countUnit: '件' } as const;
+
+  function previewRow(shared: boolean): EngineerShareRowView {
+    return engineerShareRow(
+      {
+        engineerId: '01930000-0000-7000-8000-0000000000b1',
+        displayName: '合成 三郎',
+        shared,
+        sharedOn: shared ? '2026-09-01' : null,
+        proposalRequestCount: 0,
+        previewedFields: ROUNDED,
+      },
+      LABELS,
+    );
+  }
+
+  function renderPreviewCard(shared: boolean): string {
+    return renderToStaticMarkup(
+      createElement(EngineerSharePreviewCard, { row: previewRow(shared), messages }),
+    );
+  }
+
+  it('🔴 描かれる行は丸めの型のキー集合とちょうど一致する（1 つ多くも少なくもない）', () => {
+    const html = renderPreviewCard(true);
+    const rendered = [...html.matchAll(/data-testid="engineer-share-preview-field-([a-zA-Z]+)"/g)].map(
+      (match) => match[1] as string,
+    );
+    // 🔴 件数が丸めの型のフィールド数と一致する（増えたら落ちる / 減ったら落ちる）。
+    expect(rendered).toHaveLength(ANONYMIZED_ATTRIBUTE_ROW_KEYS.length);
+    // 🔴 testid の接尾辞は凍結済みの値であり、丸めのフィールド名とは別である（改名していない）。
+    expect(rendered).toEqual(['skills', 'years', 'price', 'availability', 'location', 'updatedOn']);
+  });
+
+  it('🔴 値は `row.preview`（匿名化の戻り）からしか来ない —— 全フィールドが行の値と一致する', () => {
+    const row = previewRow(true);
+    const html = renderPreviewCard(true);
+    const expected: readonly [string, string][] = [
+      ['skills', row.preview.skills.join('・')],
+      ['years', row.preview.yearsBand],
+      ['price', row.preview.priceBand],
+      ['availability', row.preview.availabilityBand],
+      ['location', row.preview.location],
+      ['updatedOn', row.preview.updatedOn],
+    ];
+    for (const [testId, value] of expected) {
+      const block = html.slice(html.indexOf(`engineer-share-preview-field-${testId}"`));
+      expect(block.slice(0, block.indexOf('</div>')), `${testId} の値が行と違う`).toContain(value);
+    }
+  });
+
+  it('🔴 丸める前の値がプレビューに 1 つも出ない（`F-017 AC-3`）', () => {
+    const html = renderPreviewCard(true);
+    for (const forbidden of ['7 年', '65 万円', '650,000', '渋谷区', '2026-09-16']) {
+      expect(html, `${forbidden} が出ている`).not.toContain(forbidden);
+    }
+  });
+
+  it('🔴 ワイヤーフレーム右側の 5 項目外（`掲載元` ほか）を 1 つも描かない', () => {
+    for (const shared of [true, false]) {
+      const html = renderPreviewCard(shared);
+      for (const word of [
+        '掲載元',
+        '所属会社',
+        '所属区分',
+        '他社',
+        '性別',
+        '年齢',
+        'PR ポイント',
+        'PRポイント',
+        '並行状況',
+        '最寄',
+        'イニシャル',
+      ]) {
+        expect(html, `${word} が描かれている`).not.toContain(word);
+      }
+    }
+  });
+
+  it('🔴 共有していない人材のプレビューを「公開されている」と読める形にしない（[Issue #88]）', () => {
+    const notShared = renderPreviewCard(false);
+    expect(notShared).toContain(messages.previewStateNotShared);
+    expect(notShared).not.toContain(messages.previewStateShared);
+    // 🔴 「表示されています」（現在形の断定）が未共有の側に出ない。
+    expect(notShared).not.toContain('次のように表示されています');
+
+    const shared = renderPreviewCard(true);
+    expect(shared).toContain(messages.previewStateShared);
+    expect(shared).not.toContain(messages.previewStateNotShared);
+  });
+
+  it('🔴 プレビューの器は実行系を持たない（共有・解除のボタンは呼び出し側に在る）', () => {
+    for (const shared of [true, false]) {
+      const html = renderPreviewCard(shared);
+      expect(html).not.toContain('<button');
+      expect(html).not.toContain('engineer-share-confirm-submit');
+    }
+  });
+
+  it('経歴が開示されないことを本文で明示する（`F-008 AC-7`）', () => {
+    expect(renderPreviewCard(true)).toContain('data-testid="engineer-share-preview-careers-note"');
   });
 });

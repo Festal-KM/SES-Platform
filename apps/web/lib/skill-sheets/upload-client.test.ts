@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   requiresDirectTransfer,
   SKILL_SHEET_TRANSFER_FAILED,
+  skillSheetUploadErrorKind,
   uploadSkillSheet,
 } from './upload-client';
 
@@ -176,5 +177,24 @@ describe('uploadSkillSheet（#18 → S3 → #19）', () => {
       `/api/engineers/${ENGINEER}/skill-sheets/upload-url`,
       `/api/engineers/${ENGINEER}/skill-sheets`,
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 🔴 失敗の分類（`S-008` と `S-007` が同じ 1 実装を使う。2026-10-05）
+// ---------------------------------------------------------------------------
+describe('🔴 `skillSheetUploadErrorKind`（分類は 1 箇所。画面が文言を持つ）', () => {
+  it('上限系は「壊れた」と混ぜない', () => {
+    expect(skillSheetUploadErrorKind('UPLOAD_TOO_LARGE')).toBe('TOO_LARGE');
+    expect(skillSheetUploadErrorKind('STORAGE_LIMIT_EXCEEDED')).toBe('QUOTA');
+  });
+
+  it('🔴 ブラウザ → ストレージの転送の失敗（CORS 未設定・ネットワーク断）を独立した分類にする', () => {
+    expect(skillSheetUploadErrorKind(SKILL_SHEET_TRANSFER_FAILED)).toBe('TRANSFER');
+  });
+
+  it('原因が分からないときだけ `OTHER` に畳む', () => {
+    expect(skillSheetUploadErrorKind(null)).toBe('OTHER');
+    expect(skillSheetUploadErrorKind('SOMETHING_ELSE')).toBe('OTHER');
   });
 });

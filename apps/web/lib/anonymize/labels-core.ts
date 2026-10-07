@@ -144,6 +144,31 @@ export type AnonymizedAttributeRows = {
 };
 
 /**
+ * 🔴 `AnonymizedAttributeRows` のキーの網羅宣言（`candidate-view.ts` の `VIEW_KEY_PRESENCE` と同じ形）。
+ *
+ * **型にフィールドを足したらここも足さないとコンパイルが通らず、ここに無いキーは型にも無い。**
+ * 🔴 これが要るのは、**開示プレビューを描く画面がこの配列を回して行を作る**ためである ——
+ *    画面側が 6 行を手で並べていると、丸めの型にフィールドが増えたときに
+ *    **画面だけが古いまま緑になる**（プレビューに出ていない項目がホストには見えている、という
+ *    最悪のずれ。`docs/04` §5-2「プレビューはホストの候補一覧と同じ体裁」）。
+ * 🔴 **並びが表示順である**（スキル → 経験年数 → 単価レンジ → 稼働可能時期 → 勤務地 → 更新日）。
+ *    `BR-54` の 5 項目 + 丸めた更新日であり、**増やすことは開示項目を増やすことに等しい**
+ *    （`CLAUDE.md` §8.6 = 人間の承認事項）。
+ */
+const ATTRIBUTE_ROW_KEY_PRESENCE: Readonly<Record<keyof AnonymizedAttributeRows, true>> = {
+  skills: true,
+  yearsBand: true,
+  priceBand: true,
+  availabilityBand: true,
+  location: true,
+  updatedOn: true,
+};
+
+/** 開示プレビューに現れてよいキーの全部（**表示順**）。 */
+export const ANONYMIZED_ATTRIBUTE_ROW_KEYS: readonly (keyof AnonymizedAttributeRows)[] =
+  Object.keys(ATTRIBUTE_ROW_KEY_PRESENCE) as (keyof AnonymizedAttributeRows)[];
+
+/**
  * 丸め済みの 5 項目を表示文字列にする。
  * 🔴 引数は `RoundedAnonymousAttributes` だけである ——
  *    **丸める前の値をここへ渡せない**ことが、プレビューに生値が混ざらない最後の 1 枚になる。

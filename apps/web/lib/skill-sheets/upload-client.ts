@@ -143,3 +143,24 @@ export async function uploadSkillSheet(
   const confirmed = (await confirmResponse.json()) as { readonly version: number };
   return { ok: true, version: confirmed.version };
 }
+
+/**
+ * 🔴 アップロードの失敗の**分類**（`S-008` と `S-007` が同じ分類を使うための 1 実装）。
+ *
+ * 🔴 なぜ分類を関数にしたのか: `S-008` の画面に同じ `if` が書かれており、`S-007`（登録・編集）が
+ *    同じ経路（`uploadSkillSheet`）を使うようになった時点で**2 つ目の写しが生まれる**。
+ *    写しがあると、片方だけが `TRANSFER_FAILED` を「アップロードできませんでした」に畳み、
+ *    **バケットの CORS 未設定という構成の問題がアプリのバグに見える**（上の 🔴 がまさに
+ *    防ごうとしている壊れ方）。文言は画面が持ち、**分類だけをここに置く。**
+ *
+ * 🔴 `OTHER` に畳んでよいのは「原因が分からない」ときだけである。上限系（`TOO_LARGE` /
+ *    `QUOTA`）は「壊れた」ではないので必ず分けて出す（`docs/05` §15.2 の `code`）。
+ */
+export type SkillSheetUploadErrorKind = 'TOO_LARGE' | 'QUOTA' | 'TRANSFER' | 'OTHER';
+
+export function skillSheetUploadErrorKind(code: string | null): SkillSheetUploadErrorKind {
+  if (code === 'UPLOAD_TOO_LARGE') return 'TOO_LARGE';
+  if (code === 'STORAGE_LIMIT_EXCEEDED') return 'QUOTA';
+  if (code === SKILL_SHEET_TRANSFER_FAILED) return 'TRANSFER';
+  return 'OTHER';
+}

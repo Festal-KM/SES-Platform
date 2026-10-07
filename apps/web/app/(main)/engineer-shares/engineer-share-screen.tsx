@@ -92,6 +92,14 @@ import {
   FILTER_ACTIONS_CLASSES,
   FILTER_FORM_CLASSES,
 } from '../_shared/filter-form-classes';
+// 🔴 開示プレビューの行は**丸めの型のキー集合そのもの**から作る（`lib/anonymize/labels-core.ts`）。
+//    画面が 6 行を手で並べていると、丸めにフィールドが増えたときに**画面だけが古いまま緑になる** ——
+//    「プレビューに出ていない項目がホストには見えている」という、経路 4 で最も避けたいずれになる。
+//    ⚠️ 値 import だが `labels-core.ts` は `@ses/db` に依存しない（`tests/static/client-db-boundary.test.ts`）。
+import {
+  ANONYMIZED_ATTRIBUTE_ROW_KEYS,
+  type AnonymizedAttributeRows,
+} from '../../../lib/anonymize/labels-core';
 import {
   engineerShareRow,
   redrawEngineerShareRow,
@@ -165,6 +173,10 @@ export type EngineerShareScreenMessages = {
   readonly previewSelect: string;
   readonly previewNote: string;
   readonly previewCareersNote: string;
+  /** 🔴 [Issue #88] 共有中の 1 行（「ホストにはいま、次のように表示されています」）。 */
+  readonly previewStateShared: string;
+  /** 🔴 [Issue #88] 未共有の 1 行（「まだ共有していません。共有可にすると…」）。 */
+  readonly previewStateNotShared: string;
   readonly fieldSkills: string;
   readonly fieldYears: string;
   readonly fieldPrice: string;
@@ -331,6 +343,114 @@ export function EngineerShareTableRow({
   );
 }
 
+/**
+ * 🔴 開示プレビューに出せる項目の**写像 2 本**（キー → 凍結済みの testid 接尾辞 / キー → ラベル）。
+ *
+ * 🔴 どちらも `Record<keyof AnonymizedAttributeRows, …>` である ——
+ *    **丸めの型にフィールドが増えたら、ここが埋まるまでコンパイルが通らない。**
+ *    逆に型に無いキーは書けない（`CLAUDE.md` §3.1 経路 4 の開示項目 = 人間の承認事項）。
+ * ⚠️ testid の接尾辞は `docs/04` `U-22` で凍結されている値（`years` / `price` / `availability`）であり、
+ *    丸めの型のフィールド名（`yearsBand` …）とは**意図的に別**である。改名しない。
+ */
+const PREVIEW_FIELD_TEST_IDS: Readonly<Record<keyof AnonymizedAttributeRows, string>> = {
+  skills: 'skills',
+  yearsBand: 'years',
+  priceBand: 'price',
+  availabilityBand: 'availability',
+  location: 'location',
+  updatedOn: 'updatedOn',
+};
+
+export type EngineerSharePreviewCardProps = {
+  readonly row: EngineerShareRowView;
+  readonly messages: Pick<
+    EngineerShareScreenMessages,
+    | 'fieldSkills'
+    | 'fieldYears'
+    | 'fieldPrice'
+    | 'fieldAvailability'
+    | 'fieldLocation'
+    | 'fieldUpdatedOn'
+    | 'valueNone'
+    | 'previewCareersNote'
+    | 'previewStateShared'
+    | 'previewStateNotShared'
+  >;
+};
+
+/**
+ * 🔴 **公開プレビュー**（ホストに見えているもの / 共有したら見えるもの）。T-08-02 → 2026-10-05。
+ *
+ * ============================================================================
+ * 🔴 この器が守るもの（[Issue #88] / `CLAUDE.md` §3.1 経路 4 / `docs/04` §5-2）
+ * ============================================================================
+ * ① 🔴 **中身は「実際にホストが見るもの」と一致する。** 行は `ANONYMIZED_ATTRIBUTE_ROW_KEYS`
+ *    （= 丸めの型のキー集合）を回して作り、値は `row.preview`（`anonymizedAttributeRowsWith` の
+ *    戻り）からしか取らない。**画面側で項目を組み立て直さない** —— 2 つ目の匿名化の経路を作ると、
+ *    片方だけ直したときに「プレビューには出ていないのにホストには見えている」になる。
+ * ② 🔴 **共有していないのに公開されている、と読める形にしない。** 共有状態で 1 行目の語が
+ *    変わる（時制が違う 2 文。`previewStateShared` / `previewStateNotShared`）。
+ * ③ 🔴 **ワイヤーフレームより項目が少ない。** 氏名のイニシャル / 性別 / PR ポイント / 最寄駅 /
+ *    並行状況 / 区分 / **掲載元**は出さない —— 多く見せると「開示していないものを開示した
+ *    つもり」になり、`掲載元` は他社の存在と人数の露出そのものである（§3.1 の 🔴）。
+ *    ⚠️ 器に出る氏名（`row.displayName`）は**取引先が自社の人材を選んだ結果**であり、
+ *    ホストに出る値ではない（この画面の読み手はその人材の所有者だけである）。
+ * ④ 🔴 **実行系を持たない**（確認ステップのボタンは呼び出し側が置く）。
+ *
+ * 🔴 画面本体から切り出したのは、**描画結果の側で ① をテストで固定するため**である
+ *    （プレビューは選択後にしか出ず、`renderToStaticMarkup` では選択が起こせない）。
+ */
+export function EngineerSharePreviewCard({ row, messages }: EngineerSharePreviewCardProps) {
+  const labelOf: Readonly<Record<keyof AnonymizedAttributeRows, string>> = {
+    skills: messages.fieldSkills,
+    yearsBand: messages.fieldYears,
+    priceBand: messages.fieldPrice,
+    availabilityBand: messages.fieldAvailability,
+    location: messages.fieldLocation,
+    updatedOn: messages.fieldUpdatedOn,
+  };
+  // 🔴 値は `row.preview` からしか取らない（丸める前の値を受け取る引数が無い。`row-view.ts` の 🔴）。
+  const valueOf: Readonly<Record<keyof AnonymizedAttributeRows, string>> = {
+    skills: row.preview.skills.length === 0 ? messages.valueNone : row.preview.skills.join('・'),
+    yearsBand: row.preview.yearsBand,
+    priceBand: row.preview.priceBand,
+    availabilityBand: row.preview.availabilityBand,
+    location: row.preview.location,
+    updatedOn: row.preview.updatedOn,
+  };
+  return (
+    // 🔴 面は `@ses/ui` の `Card` だけが持つ（画面で面を作らない。
+    //    `tests/static/ui-shadow-and-size.test.ts`）。余白は置かれる文脈が決める（`p-4`）。
+    <Card className="p-4" data-testid={`engineer-share-preview-${row.engineerId}`}>
+      <p className="mb-2 text-body font-semibold text-fg">{row.displayName}</p>
+      {/* 🔴 ② いま見えているのか、共有したら見えるのかを言い切る（[Issue #88]）。 */}
+      <p
+        className="mb-3 text-body text-fg-muted"
+        data-testid={`engineer-share-preview-state-${row.engineerId}`}
+      >
+        {row.shared ? messages.previewStateShared : messages.previewStateNotShared}
+      </p>
+      <dl className="text-body">
+        {ANONYMIZED_ATTRIBUTE_ROW_KEYS.map((key) => (
+          <div
+            key={key}
+            className="flex gap-3 border-b border-border py-1 last:border-b-0"
+            data-testid={`engineer-share-preview-field-${PREVIEW_FIELD_TEST_IDS[key]}`}
+          >
+            <dt className="w-40 shrink-0 text-fg-muted">{labelOf[key]}</dt>
+            <dd className="m-0 break-words text-fg">{valueOf[key]}</dd>
+          </div>
+        ))}
+      </dl>
+      {/* 🔴 「経歴は開示されません」を本文で明示する（`F-008 AC-7` / `docs/04` §5-2）。
+          見えていないことを目で確かめられて初めて共有が続く。 */}
+      <p className="mt-2 text-xs text-fg-muted" data-testid="engineer-share-preview-careers-note">
+        {messages.previewCareersNote}
+      </p>
+    </Card>
+  );
+}
+
 export function EngineerShareScreen({
   rows: initialRows,
   nextCursor: initialNextCursor,
@@ -446,45 +566,6 @@ export function EngineerShareScreen({
     } finally {
       setLoadingMore(false);
     }
-  }
-
-  function renderPreview(row: EngineerShareRowView) {
-    const items: readonly { readonly key: string; readonly label: string; readonly value: string }[] = [
-      {
-        key: 'skills',
-        label: messages.fieldSkills,
-        value: row.preview.skills.length === 0 ? messages.valueNone : row.preview.skills.join('・'),
-      },
-      { key: 'years', label: messages.fieldYears, value: row.preview.yearsBand },
-      { key: 'price', label: messages.fieldPrice, value: row.preview.priceBand },
-      { key: 'availability', label: messages.fieldAvailability, value: row.preview.availabilityBand },
-      { key: 'location', label: messages.fieldLocation, value: row.preview.location },
-      { key: 'updatedOn', label: messages.fieldUpdatedOn, value: row.preview.updatedOn },
-    ];
-    return (
-      // 🔴 面は `@ses/ui` の `Card` だけが持つ（画面で面を作らない。
-      //    `tests/static/ui-shadow-and-size.test.ts`）。余白は置かれる文脈が決める（`p-4`）。
-      <Card className="p-4" data-testid={`engineer-share-preview-${row.engineerId}`}>
-        <p className="mb-2 text-body font-semibold text-fg">{row.displayName}</p>
-        <dl className="text-body">
-          {items.map((item) => (
-            <div
-              key={item.key}
-              className="flex gap-3 border-b border-border py-1 last:border-b-0"
-              data-testid={`engineer-share-preview-field-${item.key}`}
-            >
-              <dt className="w-40 shrink-0 text-fg-muted">{item.label}</dt>
-              <dd className="m-0 break-words text-fg">{item.value}</dd>
-            </div>
-          ))}
-        </dl>
-        {/* 🔴 「経歴は開示されません」を本文で明示する（`F-008 AC-7` / `docs/04` §5-2）。
-            見えていないことを目で確かめられて初めて共有が続く。 */}
-        <p className="mt-2 text-xs text-fg-muted" data-testid="engineer-share-preview-careers-note">
-          {messages.previewCareersNote}
-        </p>
-      </Card>
-    );
   }
 
   /**
@@ -799,7 +880,7 @@ export function EngineerShareScreen({
                 </div>
               ) : null}
 
-              {renderPreview(focused)}
+              <EngineerSharePreviewCard row={focused} messages={messages} />
 
               {pending.kind === 'NONE' ? null : (
                 <div className="mt-3 flex flex-wrap items-center gap-4">

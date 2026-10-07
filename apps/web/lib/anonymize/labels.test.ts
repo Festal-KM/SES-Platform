@@ -23,6 +23,7 @@ import {
   formatAnonymizedPriceBand,
 } from './labels';
 import {
+  ANONYMIZED_ATTRIBUTE_ROW_KEYS,
   ANONYMIZED_LABEL_MESSAGE_KEYS,
   anonymizedAttributeRowsWith,
   lookupFromCatalog,
@@ -129,6 +130,26 @@ describe('🔴 表示できる項目が 5 項目 + 更新日から増えてい�
       'skills',
       'updatedOn',
       'yearsBand',
+    ]);
+  });
+
+  /**
+   * 🔴 **開示プレビューを描く画面はこの配列を回して行を作る**（`S-015`）。したがって
+   *    「配列 = 丸めの戻りのキー集合」が崩れた瞬間に、**画面に出ていない項目がホストには
+   *    見えている**という状態になりうる（`docs/04` §5-2）。ここで等号を固定する。
+   */
+  it('🔴 `ANONYMIZED_ATTRIBUTE_ROW_KEYS` は丸めの戻りのキー集合とちょうど一致する', () => {
+    expect([...ANONYMIZED_ATTRIBUTE_ROW_KEYS].sort()).toEqual(
+      Object.keys(anonymizedAttributeRows(ROUNDED)).sort(),
+    );
+    // 並びは表示順（スキル → 経験年数 → 単価レンジ → 稼働可能時期 → 勤務地 → 更新日）。
+    expect(ANONYMIZED_ATTRIBUTE_ROW_KEYS).toEqual([
+      'skills',
+      'yearsBand',
+      'priceBand',
+      'availabilityBand',
+      'location',
+      'updatedOn',
     ]);
   });
 

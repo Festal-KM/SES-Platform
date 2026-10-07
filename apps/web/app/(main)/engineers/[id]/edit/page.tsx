@@ -60,10 +60,13 @@ export default async function EditEngineerPage({
   const skillDictionary = (await listSkills(outcome.ctx, {})).items;
 
   return (
-    // 🔴 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`）。`S-007` は
-    //    **クラス C = 読み幅 720px** である（画面ファイルに `max-w-*` を書かない。検査 (c) / (k)）。
+    // 🔴 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`）。画面ファイルに
+    //    `max-w-*` を書かない（検査 (c) / (k)）。
+    // ⚠️ **2026-10-05: クラス C（読み幅 720px）→ クラス A（全幅）**。理由と、クラス C の根拠を
+    //    どう守っているかは `engineers/new/page.tsx` の同じ位置に書いた（**2 つの入口で同じ
+    //    フォームを描くため、幅クラスも必ず同じにする**）。
     <main className="py-6">
-      <PageBody widthClass="prose">
+      <PageBody widthClass="full">
       {/* 🔴 T-05-09 / T-12-21: 「人材」は `S-005`（一覧）へのリンクである（戻り経路を文字だけにしない）。
           パンくずの表は `lib/shell/page-trail.ts`（保存・キャンセルの戻り先と同じ値）。 */}
       <PageHeading trail={ENGINEER_EDIT_TRAIL} title={t('engineers.edit.title')} />

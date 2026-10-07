@@ -90,6 +90,10 @@ export function engineerShareScreenMessages(params: {
     previewSelect: t('engineerShares.preview.select'),
     previewNote: t('engineerShares.preview.note'),
     previewCareersNote: t('engineerShares.preview.careersNote'),
+    // 🔴 [Issue #88] 共有中と未共有で時制が違う 2 文（「共有していないのに公開されている」と
+    //    読める形にしない）。出し分けは `EngineerSharePreviewCard` が `row.shared` で行う。
+    previewStateShared: t('engineerShares.preview.stateShared'),
+    previewStateNotShared: t('engineerShares.preview.stateNotShared'),
     fieldSkills: t('anonymousCandidate.field.skills'),
     fieldYears: t('anonymousCandidate.field.years'),
     fieldPrice: t('anonymousCandidate.field.price'),

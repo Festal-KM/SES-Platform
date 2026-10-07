@@ -45,7 +45,7 @@ import type {
   SkillSheetVersionView,
 } from '../../../../../lib/skill-sheets/service';
 import {
-  SKILL_SHEET_TRANSFER_FAILED,
+  skillSheetUploadErrorKind,
   uploadSkillSheet,
 } from '../../../../../lib/skill-sheets/upload-client';
 
@@ -118,13 +118,21 @@ type Phase = 'idle' | 'submitting' | 'error' | 'done';
 
 /** 🔴 上限系のエラーは「壊れた」ではないので文言を分ける（docs/05 §15.2 の `code`）。 */
 function uploadErrorMessage(code: string | null, messages: SkillSheetScreenMessages): string {
-  if (code === 'UPLOAD_TOO_LARGE') return messages.uploadErrorTooLarge;
-  if (code === 'STORAGE_LIMIT_EXCEEDED') return messages.uploadErrorQuota;
-  // 🔴 ブラウザ → ストレージの転送だけが失敗した（CORS のプリフライト拒否・ネットワーク断・
-  //    署名の期限切れ）。**サーバ側の失敗と同じ文言に畳まない** —— 畳むと、構成の問題
+  // 🔴 2026-10-05: 分類は `lib/skill-sheets/upload-client.ts` の 1 実装に移した
+  //    （`S-007` が同じ経路でアップロードするようになり、`if` の写しが 2 本になるのを防ぐ）。
+  //    🔴 **判定も文言も 1 つも変えていない。** 文言は画面が持ち、分類だけを共有する。
+  // 🔴 `TRANSFER` を**サーバ側の失敗と同じ文言に畳まない** —— 畳むと、構成の問題
   //    （バケットの CORS 未設定）がアプリのバグに見え、原因に辿り着けない。
-  if (code === SKILL_SHEET_TRANSFER_FAILED) return messages.uploadErrorTransfer;
-  return messages.uploadError;
+  switch (skillSheetUploadErrorKind(code)) {
+    case 'TOO_LARGE':
+      return messages.uploadErrorTooLarge;
+    case 'QUOTA':
+      return messages.uploadErrorQuota;
+    case 'TRANSFER':
+      return messages.uploadErrorTransfer;
+    default:
+      return messages.uploadError;
+  }
 }
 
 export function SkillSheetScreen({

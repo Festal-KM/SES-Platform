@@ -45,10 +45,18 @@ export default async function NewEngineerPage() {
   const skillDictionary = (await listSkills(outcome.ctx, {})).items;
 
   return (
-    // 🔴 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`）。`S-007` は
-    //    **クラス C = 読み幅 720px** である（画面ファイルに `max-w-*` を書かない。検査 (c) / (k)）。
+    // 🔴 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`）。画面ファイルに
+    //    `max-w-*` を書かない（検査 (c) / (k)）。
+    // ⚠️ **2026-10-05: クラス C（読み幅 720px）→ クラス A（全幅）に変えた。** 人間提示の
+    //    ワイヤーフレーム「SES Hub 新規人材登録ダッシュボード.png」が **3 カラム**
+    //    （左: 縦ステッパー + 登録のポイント / 中央: 書類 + 基本情報 / 右: 諸条件 + 確認）であり、
+    //    720px では成立しない。🔴 **クラス C の根拠（入力欄が伸びるとラベルと値の対応が
+    //    追えない）は捨てていない** —— 左 224px / 右 320px を固定幅にして、入力欄が画面幅に
+    //    つれて伸びるのは中央カラムだけにしてある（`engineer-form.tsx` の 🔴）。
+    //    🔴 `docs/04` §7.1 の表は `S-007` を C に割り当てたままであり、**食い違いは完了報告で
+    //    上流へ申し送る**（`CLAUDE.md` §8.7。本タスクは `docs/**` を触らない）。
     <main className="py-6">
-      <PageBody widthClass="prose">
+      <PageBody widthClass="full">
       {/* 🔴 T-05-09 / T-12-21: 「人材」は `S-005`（一覧）へのリンクである（戻り経路を文字だけにしない）。
           パンくずの表は `lib/shell/page-trail.ts`（保存・キャンセルの戻り先と同じ値）。 */}
       <PageHeading trail={ENGINEER_NEW_TRAIL} title={t('engineers.new.title')} />
