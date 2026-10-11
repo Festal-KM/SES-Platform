@@ -733,3 +733,72 @@
 | `docs/04` の追随 | 🔴 **9 点**（左端 2px の撤去 / サイドバー 5 項目 / ボトムタブ / 副カラムの並置幅 / 承認の下部固定の撤去 / `--text-metric` の射程 / 主要スキルの 1 行固定 / 全指標 0 の扱い / トークン表） |
 | 判断待ちの Issue | [#85](https://github.com/Festal-KM/SES-Platform/issues/85)（タブレットの列）/ [#87](https://github.com/Festal-KM/SES-Platform/issues/87)（案件サマリの AI 抽出）/ [#88](https://github.com/Festal-KM/SES-Platform/issues/88)（他社公開用の開示項目）。**いずれも既定値で進行中** |
 | チャット（`S-031`） | 実装中（Phase 2。モデルと RLS は既存） |
+
+## 11. 完了記録 — 段⑥ ホームの作り直し（2026-10-11）
+
+🔴 **人間の仕様書に沿ったホーム（`S-003` / `S-004`）の作り直し。** 2026-10-11 に人間から「SES 営業向け SaaS『SES Hub』のホーム画面を実装してください」という**詳細な仕様書**とモックアップ 1 枚を受けた。`T-22-09`（Dashboard 化）で作った構造の上に、仕様の差分を載せたものである。
+
+### 11.1 実装
+
+| 層 | ファイル | 役割 |
+|---|---|---|
+| **ロジック（新規）** | `apps/web/lib/home/sections.ts` | 🔴 **タスク生成ロジック**（セクションの定義・順・割り当て・`すべて見る` の母集団・タブの件数）。人間の仕様が 🔴 **「タスク生成ロジックと UI を分離する（将来システムが自動で生成するため）」**と定めたため、**純粋関数**にし `t()` も `db` も持たせていない |
+| | `apps/web/lib/home/priority.ts` | 優先度（`高` / `中` / `低`）の導出。期限と放置時間の関数 |
+| | `apps/web/lib/home/hrefs.ts` | ホームの URL とセクションのアンカーの唯一の出所 |
+| **ロジック（追加のみ）** | `types.ts` / `action-queue.ts` / `action-queue-read.ts` / `summary.ts` | `FollowUpHomeBlock`（4 つ目の `HomeBlock`）/ 3 種別 / `RECORD` / KPI の `href` |
+| **UI** | `_home/action-row.tsx` / `action-section.tsx` / `actions-tab.tsx` / `follow-up-section.tsx` / `messages-tab.tsx` | 🔴 **1 ファイルに詰めず 5 分割**。`action-queue-section.tsx` は `今日やること` の器だけに縮小した（凍結 testid は全て据え置き） |
+| **`packages/ui`** | `kpi-card.tsx` / `rail-card.tsx` / `tabs.tsx` | `href` + `linkComponent` / `dismiss` / `flex-wrap` |
+
+### 11.2 検証（🔴 オーケストレーターが自分で回して確認した数である）
+
+| | 結果 | 基準 |
+|---|---|---|
+| `npx vitest run tests/static/` | **1441 passed**（79 files） | 1437 以上 ✅ |
+| `npx vitest run apps/web` | **3038 passed**（190 files） | 2983 以上 ✅ |
+| `npx vitest run packages` | **2418 passed**（124 files） | 2418 以上 ✅ |
+| `env -u NODE_ENV pnpm --filter @ses/web run build` | **exit 0** | exit 0 ✅ |
+| 🔴 ラチェットの許可リスト | **0 件のまま**（`git diff tests/static/support/` が空 = 対照も基準値も触っていない） | 0 件 ✅ |
+
+### 11.3 🔴 仕様に書かれていたが**出さなかったもの**（6 点。消さずに残す）
+
+| 出さなかったもの | 理由 |
+|---|---|
+| **行のチェックボックスによるタスク完了 + Toast**（[Issue #90](https://github.com/Festal-KM/SES-Platform/issues/90)） | 🔴 **`Task` の API が存在しない。** モデル（`schema.prisma` の `Task`）とマイグレーションは在るが、`db.task` を読み書きするコードが `apps/web` / `apps/worker` / `packages/db/src` に **1 行も無い**。**押して何も起きない要素を置かない** |
+| **`…` のその他メニュー** | 項目が `内容を見る` 1 つだけになり、それは既に行の上に在る（空のメニューを出さない） |
+| **`稼働開始が近い人材`（セクション 5）** | `Assignment` は Phase 2。行はエンジニアの氏名を要し、`BR-27`（ホームに氏名を出さない）に当たる |
+| **今日のスケジュールの中身** | `Proposal` に面談日時の列が無い（`F-041` は Phase 2）。🔴 **社内予定も架空の予定も入れない**（`docs/04` §4.1 ① の条文のまま） |
+| **メッセージの未読数 / タブの件数バッジ** | 🔴 **`messages` に既読の列が無く、未読そのものが存在しない**。近似を入れると「見たのに消えない」行を作る |
+| **行の補足を「所属区分 ｜ スキル」にすること** | 所属区分は取引先の社名に解決でき（§3.1 経路 4）、スキルは匿名 5 項目である。補足は **相手 / 期限 / 状態 / 操作** にした |
+
+### 11.4 🔴 この段で見つけた実害
+
+| | 内容 |
+|---|---|
+| **コメントと定数の食い違い** | `_home/home-screen.tsx` の冒頭コメントが `rows.slice(0, 3)` と書いたまま定数が **4** になっていた（人間の仕様が 3 → 4 に変えたため）。🔴 **`S-022` の並び順の注記と同じ形の事故**（2026-10-04。注記は「新しい順」だが実装は更新日の昇順で、**テストの fixture にも同じ誤った文字列が入っていたため誰も気づかなかった**）。**件数を文章に数字で書くのをやめ、定数名で書くように直した** |
+| **`anonymous-share.spec.ts` への影響（調査して解消）** | ホストの `/api/home` 全文に対する禁止マーカー走査の対象に `FOLLOW_UP` の行が増える。🔴 **分離 seed（`packages/db/seed/presets/isolation.ts`）の提案は `state` を指定しておらず既定の `DRAFT` である**ことを確認したため、`FOLLOW_UP` の 4 状態（`SUBMITTED` / `INTERVIEW_SCHEDULED` / `INTERVIEWED` / `RESULT_PENDING`）に 1 件も当たらず、**走査対象に新しい文字列は入らない**。テスト側の変更は不要と判断した |
+
+### 11.5 レビュー（`code-reviewer` 1 回。§8.3）
+
+🔴 **`REQUEST_CHANGES`。越境の観点は OK だが 4 件の NG。すべて反映した**（§8.3 のとおり**再レビューはせず、オーケストレーターが対象テストで機械確認**した）。
+
+| # | 指摘 | 反映 |
+|---|---|---|
+| 1 | 🔴 **KPI カードの遷移先が `scope` を落としていた**（`?scope=all` で押すと `scope=mine` へ飛び、押した数と着地先の行数が食い違う）。🔴 **本変更が「`FOLLOW_UP` を `scope` で絞らない」根拠として挙げた禁止事項そのもの** | `buildSummaryBlock` に `scope` を**必須引数**で追加（既定値を置くと同じ事故が再発する）。指標 → 遷移先を「文字列の表」から「セクション名の表」に変え、`homeHref(scope, …)` で組む。`summary.test.ts` と分離テストに `scope=all` の href を固定する検査を追加 |
+| 2 | 🔴 **分離テストが母集団 0 件で通っていた**（第二境界が RLS だけで止まることを 1 度も実測していない） | A2 所有の `SUBMITTED`（特権接続）+ A1 所有の `SUBMITTED` / `INTERVIEW_SCHEDULED` / `INTERVIEWED` をフィクスチャに追加。🔴 **空振り防止**（`targetIds.length > 0`）を検査の先頭に置き、「A1 に A2 が見えない」と**対になる**「ホストには両社が見える」を併記。`RECORD` の操作と遷移先も実 DB 経路で固定 |
+| 3 | **`docs/05` §6.11 が未更新**（`FOLLOW_UP` の契約が無く、`ActionQueueActionKind` が 4 値のまま） | §6.11.4 を新設（型 / 母集団の列挙 / 差分を持たない理由 / `scope` を適用しない理由 / RLS に依る旨 / 本数と上限）。§6.11.2 を 5 値に更新し、条件④ の射程外である旨を明記 |
+| 4 | **注記が実装と逆のものが 2 件**（タブの件数 = 合計と書いてあった / トランザクション 3 本と書いてあった） | 両方直した（`HANDOFF.md` §6 の 15） |
+
+🔴 **レビューが OK と判定した根拠も記録する**（次に同じ経路を触る人のため）: 母集団は **Prisma 拡張（`Proposal` は `TENANT_SCOPE_EXCLUDED_MODELS` に無い）+ RLS の C5 PARTY**（`tenant_id = app_tenant_id() AND (app_is_host() OR owner_partner_company_id = app_partner_id())`）が閉じる。`owner_partner_company_id` は**作成した会社**（ホストは `NULL`）なので、取引先には自社作成分しか返らず、他社の提案は**存在・件数とも**出ない。`ProposalActionKind` を `Exclude<>` から明示列挙に変えたのは**穴ではなく塞ぎ**である（`Exclude` のままだと `FOLLOW_UP` の 3 種別が黙って入り `undefined` を返す経路ができた）。優先度バッジは `proposal-state-color-single-path.test.ts` を**迂回していない**（鍵が `HIGH`/`MEDIUM`/`LOW` で `ProposalState` を 1 つも含まないため、構造検出器の対象外。`SEVERITY` / `KIND_VARIANTS` と同じ別軸）。
+
+### 11.6 上流への追随（`CLAUDE.md` §8.7）
+
+**`docs/04` 改訂 28** —— 7 点（タブ 4 つ / セクションの順 3 ↔ 4 / `S-004` にも `提案後フォロー` / 右レール 3 → 4 件 / KPI 4 枚すべてが遷移先を持つ / **行の優先度バッジの条文を新設** / §11-28 の件数）。🔴 **§11-33 を新設**（優先度を導出に閉じ、スキーマの列にも並び順にもしなかった理由）。
+
+### 11.7 残り（この段でも解消していないもの）
+
+| | |
+|---|---|
+| `tests/isolation/home-action-queue.test.ts` | `FOLLOW_UP` の 10 ケースを足した。🔴 **実 DB での母集団一致（カードの件数とセクションの行数）は CI で初めて走る**（この開発機では分離テストが回らない。§3.2） |
+| `tests/e2e/home.mobile.spec.ts` | 375px の折り返し検出。タブ 4 つの帯は `flex-wrap` で対処済みだが、**実測は CI** |
+| `apps/web/lib/home/capabilities.ts` | `role !== 'VIEWER'` の既知の食い違い（`HANDOFF.md` §5）は新しい `RECORD` にもそのまま効く。**既存の全操作と同じ挙動**であり、直すと 2 つの UI ロール表の統合になるため触っていない |
+| ⚠️ **レビューの非ブロッキング申し送り 4 件**（`docs/05` §6.11.4 にも `TBD` として記録） | ①🔴 **`FOLLOW_UP` は差分も表示上限も持たない** —— `SUBMITTED` が溜まるテナントでは 1 セクション最大 200 行を 60 秒ごとに全量返す。**`SUBMITTED` の滞留はこのセクションの存在理由そのもので「件数が小さい」前提は崩れやすい**（表示を上位 N + `すべて見る` に寄せる）②`メッセージ` タブは初回描画のみでポーリングに乗らない ③`自分の担当のみ` がセクション 2〜4 に効かないことが画面から読めない（`lead` に 1 文足す）④**ページ描画の 4 本が逐次 `await`** —— Tier 1 の画面なので `Promise.all` の余地があるが、**同時に 4 本のトランザクションを開くことになるため接続プールの実測を伴わずに変えない** |

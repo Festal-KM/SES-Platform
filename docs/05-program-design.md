@@ -3908,7 +3908,8 @@ readonly stateBadge:
 readonly action: { readonly kind: ActionQueueActionKind; readonly href: string } | null;
 
 // ブロック直下に追加（ctx 由来 = 全行に一様な不能条件）
-export type ActionQueueActionKind = 'APPROVE' | 'FIX' | 'RESEND' | 'RESPOND';
+// 🔴 ✅ 2026-10-11（改訂 13）: `RECORD` を足して **5 値**にした（`FOLLOW_UP` の行の操作。§6.11.4）。
+export type ActionQueueActionKind = 'APPROVE' | 'FIX' | 'RESEND' | 'RESPOND' | 'RECORD';
 readonly actionAvailability: Readonly<Record<ActionQueueActionKind,
   { readonly enabled: boolean; readonly reasonKey: MessageKey | null }>>;   // 🔴 enabled=false のとき reasonKey は非 null
 ```
@@ -3924,6 +3925,8 @@ readonly actionAvailability: Readonly<Record<ActionQueueActionKind,
 | `SEND_HELD` | `FIX` | `GATE_STALE` は `S-019`（`APPROVED` フィルタ）/ `DOMAIN_UNVERIFIED` は `S-036`（🔴 `PROVIDER_QUOTA` はキューに載せない。既存の定め） |
 | `PROPOSAL_REQUEST_PENDING`（取引先） | `RESPOND` | `S-018`（`/proposal-requests/{id}`） |
 | `PROPOSAL_REQUEST_PENDING`（**ホスト**） | 🔴 **`action: null`** | 返答するのは取引先であり、ホストにこの行の操作は無い（`href`〔行クリック〕は `S-017` のまま） |
+| `INTERVIEW_COORDINATION` / `PROPOSAL_FOLLOW_UP`（✅ 2026-10-11。`FOLLOW_UP` ブロック） | **`RECORD`** | `S-024`（`/proposals/{id}/interview`）。🔴 **`actionAvailability` の条件④（送信ドメイン未検証）の射程外**である —— 記録は外部送信を伴わない（条件④が縛るのは `RESEND` だけ、という既存の定めのまま） |
+| `AWAITING_REPLY`（✅ 2026-10-11。`FOLLOW_UP` ブロック） | 🔴 **`action: null`** | 🔴 **催促のボタンをホームに置かない** —— 返答するのは相手であり、こちらに次の行動は無い。`deadline` も `null`（提案に期限の列が無いので**架空の期限を作らない**） |
 
 - 🔴 **4 つの不能条件は `actionAvailability` に 1 箇所へ集める**（`docs/04` 申し送り 22 ⑤ の「画面側の条件分岐に散り、どこかで漏れる」を構造で防ぐ）。判定順は §6.2 の `requireExecutable` と**同じ順序**にする:
 
@@ -3932,12 +3935,34 @@ readonly actionAvailability: Readonly<Record<ActionQueueActionKind,
 | 1 | `ctx.lifecycleState ∈ {SUSPENDED, CLOSING, PURGED}` | **全部** | テナント停止（解除は `PLATFORM_OWNER`） |
 | 2 | `ctx.partnerSuspendedAt !== null` | 全部 | 取引先企業の停止（解除は招いたホスト） |
 | 3 | ロール（🔴 **既存の `deriveMainCapabilities(ctx.role)` を再利用する。2 つ目のロール判定表を作らない**） | `approve` → `APPROVE` / `submit` → `RESEND` / `RESPOND` | 権限（`U-10` の理由テキスト） |
-| 4 | 送信ドメイン未検証（§8.3） | **`RESEND` だけ** | `S-036` へ（`F-001 AC-4`。🔴 `APPROVE` / `FIX` / `RESPOND` は対象外） |
+| 4 | 送信ドメイン未検証（§8.3） | **`RESEND` だけ** | `S-036` へ（`F-001 AC-4`。🔴 `APPROVE` / `FIX` / `RESPOND` / **`RECORD`**〔✅ 2026-10-11〕は対象外） |
 
 - 🔴 **なぜ ctx 由来の条件を行に持たせないのか**: `action` を行ごとに ctx 込みで確定させると、**ドメイン検証の完了やロール変更では行の `updated_at` が動かないため差分応答（`rowVersion >= changedSince`）に乗らず、クライアントの `action` が古いまま残る**。`actionAvailability` はブロック直下で**毎回全量返す**（4 エントリ）ので、差分と矛盾しない。🔴 画面の条件は `row.action !== null && actionAvailability[row.action.kind].enabled` の 2 項だけで、**両方がサーバの与えた事実**である（ロールも状態も画面が見ない）。
 - 🔴 **`enabled === false` のとき、画面はボタンを描画せずその位置に `reasonKey` の文言を置く**（`disabled` で表さない。§7.10 / `U-10`）。
 - 🔴 **`action` は 1 行につき 1 つで、配列にしない**（ホームに一括操作を置かない。`docs/04` §S-003 / `F-021 AC-4`）。
 - 🔴 **代理閲覧**: 主平面のセッションに代理閲覧は無い（§5.6）。`/admin/impersonate/**` が同じ表示部品で描くときは `Capabilities.mode='IMPERSONATION'` を**同じ 1 関数に渡して `actionAvailability` を全 `false`** にする（部品側で分岐しない）。
+
+#### 6.11.4 `FOLLOW_UP` ブロック（✅ 2026-10-11。人間の仕様書への追随。`docs/04` 改訂 28）
+
+🔴 **`GET /api/home` の 4 つ目の `HomeBlock`。** `要対応` タブの 2〜4 番目のセクション（`返信待ち` / `面談調整中` / `提案後フォロー`）の行を運ぶ。
+
+```ts
+export type FollowUpHomeBlock = {
+  readonly kind: 'FOLLOW_UP';
+  readonly targetIds: readonly string[];
+  readonly items: readonly ActionQueueRow[];   // 🔴 行の型は要対応キューと同一（キーを 1 つも足さない）
+};
+```
+
+- 🔴 **ブロックの並びは `SUMMARY` → `SCAN_QUARANTINE` → `ACTION_QUEUE` → `FOLLOW_UP`**（`tests/e2e/isolation.spec.ts` と `tests/isolation/home-action-queue.test.ts` が固定する）。🔴 **位置で取らない**（ブロックは追加専用である）。
+- 🔴 **母集団は状態の列挙である**（`apps/web/lib/home/sections.ts` の `FOLLOW_UP_PROPOSAL_STATES`）: `返信待ち` = `SUBMITTED` / `面談調整中` = `INTERVIEW_SCHEDULED` / `提案後フォロー` = `INTERVIEWED` | `RESULT_PENDING`。🔴 **要対応キューの状態と交わらない**（`SUBMIT_FAILED` / `APPROVAL_PENDING` / `GATE_FAILED` / 保留中 `APPROVED`）—— これが「同じ行が 2 セクションに出ない」の担保であり、`sections.test.ts` が `ProposalState` の全値を走査して固定する。🔴 **終端 3 状態（`WON` / `LOST` / `WITHDRAWN`）を 1 つも含まない**（`F-024 AC-2` / `BR-23`）。
+- 🔴 **`actionAvailability` を持たない**（ctx 由来の可否は `ACTION_QUEUE` が全量で返す。二重に持つと 2 箇所で判定が分かれる）。
+- 🔴 **差分（`changedSince`）を持たず、毎回全量を返す。** 理由: セクションごとに独立した並びがあり、差分で消えた行をどのセクションから外すかを画面が決める形になる（判定が画面に移る）。
+- 🔴 **`scope`（自分の担当のみ）を適用しない。** 理由: KPI カード 2（`返信待ち`）と 3（`面談予定`）を `readSummaryCounts` が**担当で絞らずに数えている**ため、ここで絞ると**カードの件数とセクションの行数が食い違う**（§4.1 の非同期処理の表現 / §7.2 ③ が禁じている状態）。🔴 **「自分の担当のみ」は要対応キューだけのトグルである。** ✅ 2026-10-11（レビュー指摘）: **KPI カードの `href` は `scope` を引き継ぐ** —— 落とすと「押した数（`scope` 反映済み）と着地先の行数が食い違う」という、いま述べた禁止事項そのものが起きる。
+- 🔴 **ホストと取引先で同じ `where` である。** 見える行が違うのは **RLS（`proposals` = C5 PARTY。`tenant_id = app_tenant_id() AND (app_is_host() OR owner_partner_company_id = app_partner_id())`）であってアプリの `if` ではない**（`listProposals` と同じ方針・同じ `select`〔`PROPOSAL_LIST_SELECT`〕・同じ写像〔`projectProposalListItems`〕）。`where` に `tenant_id` / `partner_company_id` を書かない。
+- 🔴 **トランザクションを増やさない**（`readActionQueueWithSummary` の同じ `withTenant` の中。`GET /api/home` は **2 本のまま**）。🔴 **`projectProposalListItems` は 1 回だけ通す**（要対応キューの行とまとめて射影する。60 秒ポーリングなので往復の数がそのまま負荷になる）。
+- 🔴 **上限はセクションごとに `ACTION_QUEUE_ROW_LIMIT`（200）**（1 クエリに束ねると、溜まった `返信待ち` に `提案後フォロー` が埋もれて切れる）。⚠️ **申し送り**: `SUBMITTED` が溜まるテナントでは 1 セクション最大 200 行を 60 秒ごとに全量返す。**表示を上位 N + `すべて見る` に寄せることを検討する**（`docs/04` §4.1 6b の「先頭 10 件 + 全件数」に寄せる方向。`TBD` として残す）。
+- 🔴 **ページ描画のトランザクション本数は 4 本**（`readHomeBlocks` 2 + `readShellIdentity` 1 + `readChatScreen` 1）。`OWNER` / `ADMIN` は `readSendingDomainSettings` が加わり **5 本**。⚠️ **逐次 `await` である** —— Tier 1 の画面なので `Promise.all` に寄せる余地がある（**同時に 4 本のトランザクションを開くことになるため、接続プールの実測を伴わずに変えない**。`TBD` として残す）。
 
 #### 6.11.3 `Drawer` の応答（申し送り 22 ⑥）
 
