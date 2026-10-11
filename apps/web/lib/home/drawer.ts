@@ -131,6 +131,13 @@ const PROPOSAL_DRAWER_KINDS: readonly ActionQueueKind[] = [
   'APPROVAL_PENDING',
   'GATE_FAILED',
   'SEND_HELD',
+  // ✅ 2026-10-11: `要対応` タブの 2〜4 番目のセクションの行も**提案の行**である
+  //    （`FOLLOW_UP` ブロック。`./types.ts`）。🔴 **列挙に足す**のは、上の 🔴 のとおり
+  //    「`PROPOSAL_REQUEST_PENDING` 以外」と書かない方針を守るためである。
+  //    🔴 履歴の出所は提案詳細（#46）であり、**台帳には触らない**（検査 (l)）。
+  'AWAITING_REPLY',
+  'INTERVIEW_COORDINATION',
+  'PROPOSAL_FOLLOW_UP',
 ];
 
 export function hasProposalDrawerHistory(kind: ActionQueueKind): boolean {

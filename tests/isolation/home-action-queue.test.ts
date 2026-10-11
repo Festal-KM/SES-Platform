@@ -130,6 +130,16 @@ type SummaryBlock = {
   /** 🔴 初回空（案件も人材も 0 件）。**真偽値 1 つだけ**（台帳の件数を応答に出さない）。 */
   readonly initialEmpty: boolean;
 };
+/**
+ * ✅ 2026-10-11: `要対応` タブの 2〜4 番目のセクション（`返信待ち` / `面談調整中` / `提案後フォロー`）。
+ * 🔴 **行の型は `ACTION_QUEUE` と同一**（キーを 1 つも足していない）。
+ * 🔴 **`actionAvailability` を持たない**（ctx 由来の可否は `ACTION_QUEUE` が全量で返す）。
+ */
+type FollowUpBlock = {
+  readonly kind: 'FOLLOW_UP';
+  readonly targetIds: readonly string[];
+  readonly items: readonly ActionRow[];
+};
 type HomeBody = { readonly audience: string; readonly blocks: readonly { readonly kind: string }[]; readonly changedSince: string };
 
 let database: IsolationDatabase;
@@ -159,6 +169,17 @@ const created = {
   /** 🔴 レビュー指摘 1: 自動承認（`approvedBySystem: true`）の取引先作成 `SUBMIT_FAILED`。担当不問で全ホストの mine に載る。 */
   p1FailedAuto: '',
   p2GateFailed: '',
+  /**
+   * 🔴 ✅ 2026-10-11（レビュー指摘）: `FOLLOW_UP` の母集団。**これを置くまで、下の
+   *    「取引先には自社の行だけが載る」は `followUp.targetIds` が空配列のまま通っていた**
+   *    （= 第二境界が RLS だけで止まることを 1 度も実測していなかった）。
+   * 🔴 `p2Submitted` は**他社（A2）所有**であり、A1 の応答に 1 件も出てはならない。
+   *    ホストの応答には出る（§3.1 経路 2「提案はホストが読む」）。
+   */
+  p1Submitted: '',
+  p1Interview: '',
+  p1Interviewed: '',
+  p2Submitted: '',
 };
 const requests = { r1: '', r2: '', r3: '', r4Declined: '', r5Expired: '', r6Withdrawn: '' };
 
@@ -174,6 +195,16 @@ async function createProposal(ctx: AuthenticatedTenantCtx, body: Record<string, 
 async function homeResponse(ctx: AuthenticatedTenantCtx, query = ''): Promise<Response> {
   requireTenantCtxMock.mockResolvedValue(ctx);
   return homeRoute.GET(new Request(`https://app.test/api/home${query}`));
+}
+
+/**
+ * ✅ 2026-10-11: 同じ応答の `FOLLOW_UP` ブロック（`要対応` タブの 2〜4 番目のセクション）。
+ * 🔴 **別のエンドポイントを作らない**（同じ 60 秒ポーリングに乗る）。
+ */
+function followUpOf(body: HomeBody): FollowUpBlock {
+  const block = body.blocks.find((candidate): candidate is FollowUpBlock => candidate.kind === 'FOLLOW_UP');
+  if (block === undefined) throw new Error('FOLLOW_UP ブロックが無い（0 件でも必ず返る契約）。');
+  return block;
 }
 
 /** ✅ T-22-09: 同じ応答の `SUMMARY` ブロック（**別のエンドポイントを作らない**。docs/05 §6.11.1）。 */
@@ -277,6 +308,10 @@ beforeAll(async () => {
   created.p1Pending = await createProposal(partnerA1, p1Body);
   created.p1Failed = await createProposal(partnerA1, p1Body);
   created.p1FailedAuto = await createProposal(partnerA1, p1Body);
+  // 🔴 ✅ 2026-10-11（レビュー指摘）: `FOLLOW_UP` の 3 セクションの母集団（A1 所有）。
+  created.p1Submitted = await createProposal(partnerA1, p1Body);
+  created.p1Interview = await createProposal(partnerA1, p1Body);
+  created.p1Interviewed = await createProposal(partnerA1, p1Body);
 
   // A2 の提案は #36 を通せない（`PROJECT_A_PUBLISHED` は A1 にだけ公開）ので特権接続で置く。凍結名は A1 の応答に現れてはならない値。
   created.p2GateFailed = randomUUID();
@@ -307,6 +342,40 @@ beforeAll(async () => {
     },
   });
 
+  // 🔴 ✅ 2026-10-11（レビュー指摘）: **他社（A2）所有の `SUBMITTED`。**
+  //    これが無いと「A1 の `返信待ち` に他社の提案が出ない」を実測できない
+  //    （母集団が 0 件だと `not.toContain` が自明に通る）。`p2GateFailed` と同じ理由で特権接続。
+  created.p2Submitted = randomUUID();
+  await admin.proposal.create({
+    data: {
+      id: created.p2Submitted,
+      tenantId: TENANT_A,
+      ownerPartnerCompanyId: PARTNER_A2,
+      projectId: PROJECT_A_PUBLISHED,
+      engineerId: ENGINEER_A_PARTNER2,
+      state: 'SUBMITTED',
+      contentHash: 'v4:t1215',
+      ...RECIPIENT,
+      createdBy: USER_A_PARTNER2,
+      approvedBy: USER_A_HOST,
+      approvedBySystem: false,
+      approvedAt: NOW,
+      submittedAt: NOW,
+      updatedAt: NOW,
+    },
+  });
+  await admin.engineerSnapshot.create({
+    data: {
+      tenantId: TENANT_A,
+      ownerPartnerCompanyId: PARTNER_A2,
+      proposalId: created.p2Submitted,
+      displayName: A2_SECRET_SNAPSHOT_NAME,
+      skills: [],
+      careers: [],
+      frozenAt: NOW,
+    },
+  });
+
   // 状態の材料（送信ジョブ / 承認 CAS が書くのと同じ列）。`updated_at` は放置時間の並びを固定するため明示する（古い順 = 先）。
   const at = (daysAgo: number): Date => new Date(NOW.getTime() - daysAgo * DAY_MS);
   const setState = (id: string, data: Record<string, unknown>, daysAgo: number) =>
@@ -330,6 +399,10 @@ beforeAll(async () => {
   await setState(created.hostHeldQuota, { state: 'APPROVED', ...APPROVED_COLUMNS, sendHoldReasonKey: 'PROVIDER_QUOTA', sendHoldSince: at(1) }, 1);
   await setState(created.hostLost, { state: 'LOST', ...APPROVED_COLUMNS, submittedAt: NOW }, 1);
   await setState(created.hostSubmitted, { state: 'SUBMITTED', ...APPROVED_COLUMNS, submittedAt: NOW }, 1);
+  // 🔴 ✅ 2026-10-11（レビュー指摘）: `FOLLOW_UP` の 3 セクションに実体を置く（A1 所有）。
+  await setState(created.p1Submitted, { state: 'SUBMITTED', ...APPROVED_COLUMNS, submittedAt: NOW }, 2);
+  await setState(created.p1Interview, { state: 'INTERVIEW_SCHEDULED', ...APPROVED_COLUMNS, submittedAt: NOW }, 3);
+  await setState(created.p1Interviewed, { state: 'INTERVIEWED', ...APPROVED_COLUMNS, submittedAt: NOW }, 4);
 
   // 提案依頼（5 状態）。`REQUESTED` は 3 件（A1 宛 2 / A2 宛 1）。期限は R2 < R1 < R3。
   type RequestSeed = {
@@ -430,8 +503,17 @@ describe('🔴 ① ② ホスト scope=all: 5 種別が種別表の並びで載�
     // ✅ T-22-09: `actionAvailability` が増えた（4 エントリ全量。docs/05 §6.11.2）。
     //    🔴 **合計・種別別件数・順位のフィールドは依然として無い。**
     expect(Object.keys(block).sort()).toEqual(['actionAvailability', 'items', 'kind', 'targetIds']);
-    expect(Object.keys(block.actionAvailability).sort()).toEqual(['APPROVE', 'FIX', 'RESEND', 'RESPOND']);
+    // ✅ 2026-10-11: `RECORD`（`結果を記録する` → `S-024`）が増えて **5 エントリ**。
+    // 🔴 **一括操作の kind は依然として無い**（`F-021 AC-4` / `BR-49`）。
+    expect(Object.keys(block.actionAvailability).sort()).toEqual([
+      'APPROVE',
+      'FIX',
+      'RECORD',
+      'RESEND',
+      'RESPOND',
+    ]);
     expect(body.audience).toBe('HOST');
+    // 🔴 **応答の最上位のキーは 3 つのまま**（`FOLLOW_UP` は `blocks` の中に入った）。
     expect(Object.keys(body).sort()).toEqual(['audience', 'blocks', 'changedSince']);
   });
 
@@ -818,5 +900,159 @@ describe('🔴 ⑧ SUMMARY は同じ応答に同梱され、取引先の応答�
     );
     // 🔴 空振り防止: A には `SUBMITTED` の実体がある（B の数に混ざっていないことが意味を持つ）。
     expect(await admin.proposal.count({ where: { tenantId: TENANT_A, state: 'SUBMITTED' } })).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ⑨ ✅ 2026-10-11: `FOLLOW_UP`（`要対応` タブの 2〜4 番目のセクション）
+// ---------------------------------------------------------------------------
+
+describe('🔴 ⑨ FOLLOW_UP は同じ応答に同梱され、母集団は RLS が決める', () => {
+  it('🔴 ブロックの並びは SUMMARY → ACTION_QUEUE → FOLLOW_UP（画面の骨格が日によって変わらない）', async () => {
+    const { body } = await home(hostSales, '?scope=all');
+    // 🔴 **位置で取らない**（`blocks` は追加専用）が、**並びは固定する**（`lib/home/blocks.ts` の 🔴）。
+    expect(body.blocks.map((block) => block.kind)).toEqual(['SUMMARY', 'ACTION_QUEUE', 'FOLLOW_UP']);
+  });
+
+  it('🔴 ブロックは kind / targetIds / items の 3 キーだけ（`actionAvailability` を二重に持たない）', async () => {
+    const { body } = await home(hostSales, '?scope=all');
+    const block = followUpOf(body);
+    expect(Object.keys(block).sort()).toEqual(['items', 'kind', 'targetIds']);
+    expect(block.targetIds).toEqual(block.items.map((row) => row.targetId));
+    // 🔴 行のキーは要対応キューと**同じ 10 個**（優先度・件数・順位のキーが無い）。
+    for (const row of block.items) expect(Object.keys(row).sort()).toEqual(ROW_KEYS);
+  });
+
+  it('🔴 `SUBMITTED` の提案が `返信待ち` に載り、`今日やること` には載らない（行を重複させない）', async () => {
+    const { body, block } = await home(hostSales, '?scope=all');
+    const followUp = followUpOf(body);
+    expect(followUp.targetIds).toContain(created.hostSubmitted);
+    // 🔴 **要対応キューには載らない**（`docs/04` §4.1 の 🔴「重複させない」）。
+    expect(block.targetIds).not.toContain(created.hostSubmitted);
+    expect(followUp.items.find((row) => row.targetId === created.hostSubmitted)?.kind).toBe('AWAITING_REPLY');
+  });
+
+  it('🔴 ホストは取引先が作った提案も読む（§3.1 経路 2。A1 / A2 の両方が載る）', async () => {
+    const followUp = followUpOf((await home(hostSales, '?scope=all')).body);
+    // 🔴 ✅ 2026-10-11（レビュー指摘）: 上の「A1 に A2 が見えない」と**対になる検査**である ——
+    //    片方だけだと「そもそも誰にも見えていない」と区別できない。
+    for (const visible of [created.p1Submitted, created.p2Submitted, created.hostSubmitted]) {
+      expect(followUp.targetIds, visible).toContain(visible);
+    }
+  });
+
+  it('🔴 終端（`LOST`）と下書き（`DRAFT`）は載らない（`F-024 AC-2` / `BR-23`）', async () => {
+    const followUp = followUpOf((await home(hostSales, '?scope=all')).body);
+    for (const absent of [created.hostLost, created.hostDraft, created.hostHeldQuota]) {
+      expect(followUp.targetIds).not.toContain(absent);
+    }
+  });
+
+  it('🔴 `返信待ち` の行は操作を持たない（催促のボタンをホームに置かない）', async () => {
+    const followUp = followUpOf((await home(hostSales, '?scope=all')).body);
+    for (const row of followUp.items.filter((candidate) => candidate.kind === 'AWAITING_REPLY')) {
+      expect(row.action, '返信待ちの行に操作が載りました').toBeNull();
+      expect(row.deadline, '提案に期限の列は無い（架空の期限を作らない）').toBeNull();
+    }
+  });
+
+  it('🔴 載る種別は 3 つだけ（要対応キューの 5 種別が混ざらない）', async () => {
+    const followUp = followUpOf((await home(hostSales, '?scope=all')).body);
+    const allowed = ['AWAITING_REPLY', 'INTERVIEW_COORDINATION', 'PROPOSAL_FOLLOW_UP'];
+    for (const row of followUp.items) expect(allowed).toContain(row.kind);
+  });
+
+  it('🔴 件数が KPI カードと一致する（カードとセクションの数が食い違わない）', async () => {
+    const { body } = await home(hostSales, '?scope=all');
+    const followUp = followUpOf(body);
+    const summary = summaryOf(body);
+    const countOf = (kind: string): number => summary.items.find((item) => item.kind === kind)?.count ?? -1;
+    const rowsOf = (kind: string): number => followUp.items.filter((row) => row.kind === kind).length;
+    // 🔴 `返信待ち` = `SUBMITTED` / `面談予定` = `INTERVIEW_SCHEDULED`。
+    //    🔴 **`scope` で絞っていない**ことがこの一致の条件である（絞ると数が合わなくなる）。
+    expect(rowsOf('AWAITING_REPLY')).toBe(countOf('AWAITING_REPLY'));
+    expect(rowsOf('INTERVIEW_COORDINATION')).toBe(countOf('INTERVIEWS'));
+    // 🔴 空振り防止: `SUBMITTED` の実体がある。
+    expect(countOf('AWAITING_REPLY')).toBeGreaterThan(0);
+    // 🔴 ✅ 2026-10-11（レビュー指摘）: `面談予定` 側も `0 === 0` では一致を確かめていない。
+    expect(countOf('INTERVIEWS'), '面談の母集団が 0 件（一致を確かめていない）').toBeGreaterThan(0);
+    // 🔴 `提案後フォロー`（`INTERVIEWED` / `RESULT_PENDING`）にも実体がある。
+    expect(rowsOf('PROPOSAL_FOLLOW_UP')).toBeGreaterThan(0);
+  });
+
+  it('🔴 `面談調整中` / `提案後フォロー` の行は `S-024` への記録（`RECORD`）を持つ', async () => {
+    const followUp = followUpOf((await home(hostSales, '?scope=all')).body);
+    // 🔴 ✅ 2026-10-11（レビュー指摘）: `RECORD` の操作と遷移先が**実 DB 経路で 1 度も
+    //    生成されていなかった**（母集団が 0 件だったため）。
+    const interview = followUp.items.find((row) => row.targetId === created.p1Interview);
+    expect(interview?.kind).toBe('INTERVIEW_COORDINATION');
+    expect(interview?.action).toEqual({ kind: 'RECORD', href: `/proposals/${created.p1Interview}/interview` });
+    const interviewed = followUp.items.find((row) => row.targetId === created.p1Interviewed);
+    expect(interviewed?.kind).toBe('PROPOSAL_FOLLOW_UP');
+    expect(interviewed?.action).toEqual({ kind: 'RECORD', href: `/proposals/${created.p1Interviewed}/interview` });
+  });
+
+  it('🔴 KPI カードの遷移先が `scope` を引き継ぐ（押した数と着地先の行数が食い違わない）', async () => {
+    // 🔴 ✅ 2026-10-11（レビュー指摘）: `homeHref(DEFAULT_HOME_SCOPE, …)` 固定だったため、
+    //    `?scope=all` で見ている利用者がカードを押すと **`scope=mine` のホーム**へ飛び、
+    //    押した数（`scope` 反映済み）と着地先のセクションの行数が食い違っていた。
+    const hrefOf = (body: HomeBody, kind: string): string | null =>
+      summaryOf(body).items.find((item) => item.kind === kind)?.href ?? null;
+    const all = (await home(hostSales, '?scope=all')).body;
+    expect(hrefOf(all, 'ACTION_QUEUE')).toBe('/?scope=all#home-section-today');
+    expect(hrefOf(all, 'AWAITING_REPLY')).toBe('/?scope=all#home-section-awaiting-reply');
+    expect(hrefOf(all, 'INTERVIEWS')).toBe('/?scope=all#home-section-interview-coordination');
+    // 🔴 既定（`mine`）では `?scope=` を載せない（`lib/home/hrefs.ts` の 🔴）。
+    const mine = (await home(hostSales)).body;
+    expect(hrefOf(mine, 'ACTION_QUEUE')).toBe('/#home-section-today');
+  });
+
+  it('🔴 `scope=mine` でも件数が変わらない（担当トグルは `今日やること` だけに効く）', async () => {
+    const mine = followUpOf((await home(hostSales)).body);
+    const all = followUpOf((await home(hostSales, '?scope=all')).body);
+    expect(mine.targetIds).toEqual(all.targetIds);
+  });
+
+  it('🔴 差分応答（`changedSince`）でも FOLLOW_UP は毎回全量返る', async () => {
+    const first = await home(hostSales, '?scope=all');
+    const delta = await home(hostSales, `?scope=all&changedSince=${encodeURIComponent(first.body.changedSince)}`);
+    // 🔴 要対応キューの `items` は空になる（差分）が、`FOLLOW_UP` は全量である。
+    expect(delta.block.items).toEqual([]);
+    expect(followUpOf(delta.body)).toEqual(followUpOf(first.body));
+  });
+
+  it('🔴 取引先には自社の行だけが載る（他社と他テナントの値が 1 文字も無い）', async () => {
+    const { body, text } = await home(partnerA1, '?scope=all');
+    const followUp = followUpOf(body);
+    // 🔴 ✅ 2026-10-11（レビュー指摘）: **空振り防止を最初に置く。**
+    //    これが無い間、本テストは `followUp.targetIds` が空配列のまま通っていた ——
+    //    つまり「第二境界が RLS（C5 PARTY）だけで止まる」ことを 1 度も実測していなかった。
+    //    🔴 `CLAUDE.md` §7 の「パートナー間の相互参照 0 件」は許容が無いので、
+    //    **0 件で通る検査を残してはならない**。
+    expect(followUp.targetIds.length, '母集団が 0 件（この検査は何も確かめていない）').toBeGreaterThan(0);
+    // 🔴 自社（A1）の行は載る。
+    for (const own of [created.p1Submitted, created.p1Interview, created.p1Interviewed]) {
+      expect(followUp.targetIds, own).toContain(own);
+    }
+    // 🔴 **他社（A2）が作った提案は 1 件も載らない**（`owner_partner_company_id` で RLS が閉じる）。
+    expect(followUp.targetIds, 'A2 の SUBMITTED が A1 に見えた').not.toContain(created.p2Submitted);
+    // 🔴 ホストが作った提案は 1 件も載らない（`proposals` は C5 PARTY）。
+    for (const forbidden of [created.hostSubmitted, created.hostLost, created.hostFailed]) {
+      expect(followUp.targetIds, forbidden).not.toContain(forbidden);
+    }
+    // 🔴 他社（A2）の値が応答全体に 1 文字も無い。
+    const collected = { keys: new Set<string>(), values: [] as string[] };
+    collect(followUp, collected);
+    for (const forbidden of [A2_SECRET_SNAPSHOT_NAME, P2_ENGINEER_NAME, P2_COMPANY_NAME, PARTNER_A2]) {
+      expect(collected.values.some((value) => value.includes(forbidden)), forbidden).toBe(false);
+    }
+    expect(text).not.toMatch(/他\s*[0-9]+\s*件|[0-9]+\s*件中|[0-9]+\s*番目/);
+  });
+
+  it('🔴 他テナント（B）の行が 1 件も混ざらない', async () => {
+    const followUp = followUpOf((await home(hostB, '?scope=all')).body);
+    for (const id of [...Object.values(created), ...Object.values(requests)]) {
+      expect(followUp.targetIds).not.toContain(id);
+    }
   });
 });

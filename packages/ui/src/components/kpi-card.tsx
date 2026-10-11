@@ -25,7 +25,9 @@
 // 🔴 **文言を持たない**（`../index.ts` の共通規約 5）。🔴 **`'use client'` を宣言しない**（規約 4）。
 // 🔴 **`children` / `ReactNode` の prop を持たない**（`./drawer.tsx` と同じ理由 —— 任意の JSX を
 //    入れられる器は、規約がコメントだけになる）。
+import type { ComponentType } from 'react';
 import { cn } from '../lib/cn.js';
+import type { SidebarLinkProps } from './sidebar.js';
 import { CARD_SURFACE_CLASSES } from '../lib/surface-classes.js';
 import { Icon, type IconName } from '../icons.js';
 
@@ -68,11 +70,28 @@ export type KpiCardItem = {
    *    **判断は呼び出し側**（`apps/web/lib/home/summary-view.ts` の 1 箇所）に在る。
    */
   readonly emphasis?: 'primary';
+  /**
+   * ✅ 2026-10-11（人間の仕様: 🔴 **「KPI はクリックでタブ切替やフィルタに遷移できる」**）: 遷移先。
+   *
+   * 🔴 **`null` のカードは「押せる見た目」にならない**（`docs/04` §4.1 改訂 23:
+   *    「遷移先がある枚だけがカーソルと下線を持つ」/ **4 枚すべてを同じ見た目の 4 つの
+   *    ボタンにしない**）。判定はこの 1 箇所だけで、画面側に分岐が無い。
+   * 🔴 **`onClick` の口を作らない** —— これは遷移であって実行系ではない（KPI から状態機械を
+   *    動かせる口が生えると、`CLAUDE.md` §3.3 のゲートを迂回する導線の置き場所になる）。
+   * 🔴 **値の出所は API の応答**（`SummaryMetric.href`）である。画面が遷移先を決めない
+   *    （`docs/05` §6.11.1「数の意味を 2 箇所で決めない」）。
+   */
+  readonly href?: string | null;
 };
 
 export type KpiCardProps = KpiCardItem & {
   /** testid の接頭辞（例 `home-host-kpi-`）。🔴 部品はローカルで値を作らない。 */
   readonly testIdPrefix: string;
+  /**
+   * `href` が非 `null` のときに使う遷移部品（`next/link`）。
+   * 🔴 **`packages/ui` は `next/link` に依存しない**（`CLAUDE.md` §2.1 の依存方向）。
+   */
+  readonly linkComponent?: ComponentType<SidebarLinkProps>;
   readonly className?: string;
 };
 
@@ -112,6 +131,33 @@ const DELTA_CLASSES = 'text-xs text-fg-muted tabular-nums';
  */
 const CARD_COMPACT_PADDING_CLASSES = 'p-3';
 
+/**
+ * ✅ 2026-10-11: 🔴 **遷移先を持つカードだけが持つ見た目**（`docs/04` §4.1 改訂 23:
+ *    「遷移先がある枚だけがカーソルと下線を持つ」）。
+ *
+ * 🔴 **`hover:` / `focus-visible:` を画面側に書かせない**ためにここに置く（§7.10 / 検査 (j)
+ *    `tests/static/ui-state-in-primitives.test.ts` —— 画面が状態の見え方を決めると、
+ *    その画面だけ押し心地が変わる）。
+ * 🔴 **色は足さない**（面の色は変えず、`--color-row-hover-bg` の 1 トークンだけを使う ——
+ *    系統色を装飾に使わない。ファイル冒頭の表 3 行目）。
+ */
+// ⚠️ 🔴 **`display` のクラス（`block` / `inline-block`）を入れない。**
+//    `cn()` は `tailwind-merge` であり、`display` は 1 グループなので**後に来た方が勝つ** ——
+//    `cn(frame, CARD_LINK_CLASSES)` の `frame` 側は `flex flex-col gap-1` を持つため、
+//    ここに `block` を書くと**カードの縦積みと `gap` が黙って消える**（`../lib/cn.ts` の規律 1）。
+const CARD_LINK_CLASSES =
+  'hover:bg-row-hover-bg outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2';
+/** 🔴 遷移できることは**下線**でも示す（色だけに依らせない）。 */
+const VALUE_LINK_CLASSES = 'underline';
+
+function DefaultCardLink({ href, children, ...rest }: SidebarLinkProps) {
+  return (
+    <a href={href} {...rest}>
+      {children}
+    </a>
+  );
+}
+
 export function KpiCard({
   id,
   icon,
@@ -120,20 +166,13 @@ export function KpiCard({
   unit,
   delta,
   emphasis,
+  href = null,
   testIdPrefix,
+  linkComponent: Link = DefaultCardLink,
   className,
 }: KpiCardProps) {
-  return (
-    <div
-      data-testid={`${testIdPrefix}${id}`}
-      data-emphasis={emphasis ?? 'default'}
-      className={cn(
-        CARD_SURFACE_CLASSES,
-        CARD_COMPACT_PADDING_CLASSES,
-        'flex flex-col gap-1',
-        className,
-      )}
-    >
+  const body = (
+    <>
       {/* 🔴 ラベルは**自分の行を 1 行まるごと使う**（上の `ICON_TILE_CLASSES` の実測。
           アイコンと同じ行に置くと、狭い器でラベルだけが潰れて折り返す）。 */}
       <span className={LABEL_CLASSES}>{label}</span>
@@ -142,7 +181,14 @@ export function KpiCard({
         <span className={ICON_TILE_CLASSES}>
           <Icon name={icon} />
         </span>
-        <span className={emphasis === 'primary' ? VALUE_PRIMARY_CLASSES : VALUE_CLASSES}>{value}</span>
+        <span
+          className={cn(
+            emphasis === 'primary' ? VALUE_PRIMARY_CLASSES : VALUE_CLASSES,
+            href === null ? null : VALUE_LINK_CLASSES,
+          )}
+        >
+          {value}
+        </span>
         <span className={UNIT_CLASSES}>{unit}</span>
       </p>
       {/* 🔴 差分は無彩色（良し悪しを決めつけない）。無ければ行ごと描かない。 */}
@@ -151,7 +197,31 @@ export function KpiCard({
           {delta}
         </p>
       )}
-    </div>
+    </>
+  );
+  const frame = cn(
+    CARD_SURFACE_CLASSES,
+    CARD_COMPACT_PADDING_CLASSES,
+    'flex flex-col gap-1',
+    className,
+  );
+  // 🔴 **遷移先が無いカードは `<a>` にしない**（押せる見た目にならない = 上の 🔴）。
+  if (href === null) {
+    return (
+      <div data-testid={`${testIdPrefix}${id}`} data-emphasis={emphasis ?? 'default'} className={frame}>
+        {body}
+      </div>
+    );
+  }
+  return (
+    <Link
+      href={href}
+      className={cn(frame, CARD_LINK_CLASSES)}
+      data-testid={`${testIdPrefix}${id}`}
+      data-emphasis={emphasis ?? 'default'}
+    >
+      {body}
+    </Link>
   );
 }
 
@@ -160,6 +230,8 @@ export type KpiCardRowProps = {
   readonly items: readonly KpiCardItem[];
   /** testid の接頭辞（例 `home-host-kpi-`）。 */
   readonly testIdPrefix: string;
+  /** `href` を持つ項目の遷移部品（`next/link`）。 */
+  readonly linkComponent?: ComponentType<SidebarLinkProps>;
   readonly className?: string;
 };
 
@@ -170,7 +242,7 @@ export type KpiCardRowProps = {
  *    「狭い画面を理由に判断材料を隠さない」）。`sm` でも 2 列のままにする —— 1 列に積むと
  *    ファーストビューが KPI で埋まり、**要対応キューが画面外へ出る**（§7.2 の禁止の本体）。
  */
-export function KpiCardRow({ items, testIdPrefix, className }: KpiCardRowProps) {
+export function KpiCardRow({ items, testIdPrefix, linkComponent, className }: KpiCardRowProps) {
   if (items.length === 0) return null;
   // 🔴 実行時の壁（`./summary-strip.tsx` / `./dropdown-menu.tsx` と同じ形）。
   if (items.length > KPI_CARD_ROW_MAX_ITEMS) {
@@ -190,7 +262,7 @@ export function KpiCardRow({ items, testIdPrefix, className }: KpiCardRowProps) 
       className={cn('grid grid-cols-2 gap-4 md:grid-cols-4', className)}
     >
       {items.map((item) => (
-        <KpiCard key={item.id} {...item} testIdPrefix={testIdPrefix} />
+        <KpiCard key={item.id} {...item} testIdPrefix={testIdPrefix} linkComponent={linkComponent} />
       ))}
     </div>
   );

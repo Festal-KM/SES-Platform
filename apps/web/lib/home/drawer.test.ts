@@ -171,6 +171,11 @@ describe('🔴 Drawer の中身（docs/04 §4.1 / §5-13 / docs/05 §6.11.3）',
     expect(hasProposalDrawerHistory('SEND_FAILED')).toBe(true);
     expect(hasProposalDrawerHistory('SEND_HELD')).toBe(true);
     expect(hasProposalDrawerHistory('PROPOSAL_REQUEST_PENDING')).toBe(false);
+    // ✅ 2026-10-11: `要対応` タブの 2〜4 番目のセクションの行も**提案の行**である
+    //    （履歴の出所は提案詳細〔#46〕であり、🔴 **台帳には触らない**）。
+    expect(hasProposalDrawerHistory('AWAITING_REPLY')).toBe(true);
+    expect(hasProposalDrawerHistory('INTERVIEW_COORDINATION')).toBe(true);
+    expect(hasProposalDrawerHistory('PROPOSAL_FOLLOW_UP')).toBe(true);
     // 🔴 Phase 2 が種別を足したとき、黙って「提案の行」側に倒れない（列挙に無い値は false）。
     expect(hasProposalDrawerHistory('EXTENSION_REVIEW' as ActionQueueKind)).toBe(false);
   });

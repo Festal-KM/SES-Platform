@@ -54,7 +54,16 @@ export type ActionQueueKind =
   | 'APPROVAL_PENDING'
   | 'GATE_FAILED'
   | 'SEND_HELD'
-  | 'PROPOSAL_REQUEST_PENDING';
+  | 'PROPOSAL_REQUEST_PENDING'
+  // ✅ 2026-10-11（人間の仕様: `要対応` タブを**縦に並ぶ複数セクション**にした）。**追加専用**。
+  // 🔴 **この 3 つは `ACTION_QUEUE` ブロックには載らない**（`FOLLOW_UP` ブロックに載る。下の
+  //    `FollowUpHomeBlock` の 🔴）。`HOST_ACTION_QUEUE_KIND_ORDER` /
+  //    `PARTNER_ACTION_QUEUE_KIND_ORDER` に入れていないことがその担保である。
+  // 🔴 **「うまくいかなかった」4 つとは別物である**（`F-024 AC-2` / `BR-23`）——
+  //    `AWAITING_REPLY` は送信が成功して相手の返答を待っている状態であり、失敗ではない。
+  | 'AWAITING_REPLY'
+  | 'INTERVIEW_COORDINATION'
+  | 'PROPOSAL_FOLLOW_UP';
 
 /**
  * 🔴 行に置く「その行に対する 1 つの操作」の種類（docs/05 §6.11.2 の表。T-22-09）。
@@ -63,7 +72,15 @@ export type ActionQueueKind =
  * 🔴 **画面は種別と状態から操作を推測しない** —— `action` はサーバ（`lib/home/action-queue.ts` の
  *    1 関数）が決める。
  */
-export type ActionQueueActionKind = 'APPROVE' | 'FIX' | 'RESEND' | 'RESPOND';
+export type ActionQueueActionKind =
+  | 'APPROVE'
+  | 'FIX'
+  | 'RESEND'
+  | 'RESPOND'
+  // ✅ 2026-10-11: `結果を記録する`（`S-024`）。**追加専用**。
+  // 🔴 **これも「その操作ができる画面への遷移」である**（`docs/04` §4.1 の行の操作の 🔴 ——
+  //    ホーム上で状態機械を動かさない。`CLAUDE.md` §3.3）。
+  | 'RECORD';
 
 /**
  * 🔴 操作が不能な 4 条件の結論（docs/05 §6.11.2。**ブロック直下に置く** = ctx 由来で全行に一様）。
@@ -141,6 +158,40 @@ export type ActionQueueHomeBlock = {
   readonly targetIds: readonly string[];
   readonly items: readonly ActionQueueRow[];
   readonly actionAvailability: Readonly<Record<ActionQueueActionKind, ActionQueueActionAvailability>>;
+};
+
+/**
+ * ✅ 2026-10-11: 🔴 **`要対応` タブの 2〜4 番目のセクション**（人間の仕様「5 セクションを
+ *    縦に並べる」の実装分 = `返信待ち` / `面談調整中` / `提案後フォロー`）。
+ *
+ * ============================================================================
+ * 🔴 なぜ `ACTION_QUEUE` に混ぜず、別のブロックにしたのか
+ * ============================================================================
+ *   ① 🔴 **KPI カード 1（`今日やること`）は要対応キューの行数そのもの**であり
+ *      （`./summary.ts` の `buildSummaryBlock`）、`tests/isolation/home-action-queue.test.ts` が
+ *      `queueCount === block.targetIds.length` で固定している。混ぜると**カードの数と
+ *      セクションの行数が食い違う**（`docs/04` §4.1 の 🔴 の本体）。
+ *   ② 🔴 `docs/04` §4.1 は「`今日やること`（= 自分に次の行動があるもの）と `返信待ち`
+ *      （= 相手の返答を待っているもの）の行を**重複させない**」と定めている。別ブロックで
+ *      あることが、その分離を型で表している。
+ *   ③ 🔴 並びの規律が違う。`ACTION_QUEUE` は「放置時間 × 取り返しのつかなさ」の**種別横断**の
+ *      並びであり、右レールの「先に動くもの」がその先頭から取られる（§4.1 の右レール ②）。
+ *      本ブロックは**セクションごとに閉じた並び**（期限 / 放置の昇順）である。
+ *
+ * 🔴 **行の型は `ActionQueueRow` と同一である**（キーを 1 つも足さない）。したがって
+ *    `tests/isolation` / `tests/e2e` の「行は 10 キーだけ」という検査がそのまま本ブロックにも
+ *    当たる（他社の件数・順位・実名を運ぶ枠が無い）。
+ * 🔴 **`changedSince` の差分を持たない**（毎回全量返る）。理由: 母集団が状態 1 つで閉じており
+ *    件数が小さいうえ、**差分の合成経路を 2 本持つと、片方だけが古い行を描く**
+ *    （`mergeActionQueueDelta` は要対応キュー専用のままにする）。`targetIds` は
+ *    `items` の順そのものだが、**ブロックの形を `ACTION_QUEUE` と揃える**ために持つ。
+ * 🔴 **`actionAvailability` を持たない**（ctx 由来の 4 条件は `ACTION_QUEUE` が全量で返しており、
+ *    **同じ事実を 2 箇所に置かない**。画面は 1 つの可否表を全セクションに適用する）。
+ */
+export type FollowUpHomeBlock = {
+  readonly kind: 'FOLLOW_UP';
+  readonly targetIds: readonly string[];
+  readonly items: readonly ActionQueueRow[];
 };
 
 /**
@@ -235,7 +286,12 @@ export type SummaryHomeBlock =
  * ホームのブロック。**追加専用**（既存メンバーの意味を変えない）。
  * Phase 2 が満了間近などのケースを足す。
  */
-export type HomeBlock = ScanQuarantineHomeBlock | ActionQueueHomeBlock | SummaryHomeBlock;
+export type HomeBlock =
+  | ScanQuarantineHomeBlock
+  | ActionQueueHomeBlock
+  | SummaryHomeBlock
+  // ✅ 2026-10-11: 4 つ目のケース（`要対応` タブの 2〜4 番目のセクション）。**追加専用**。
+  | FollowUpHomeBlock;
 
 export type HostHomeView = {
   readonly audience: 'HOST';

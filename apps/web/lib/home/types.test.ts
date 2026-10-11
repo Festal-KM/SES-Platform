@@ -62,6 +62,16 @@ type ExpectedActionQueueBlock = {
   readonly actionAvailability: Readonly<Record<ActionQueueActionKind, ActionQueueActionAvailability>>;
 };
 
+/**
+ * ✅ 2026-10-11: `要対応` タブの 2〜4 番目のセクション（`返信待ち` / `面談調整中` / `提案後フォロー`）。
+ * 🔴 **行の型は要対応キューと同一**であり、`actionAvailability` も差分も持たない。
+ */
+type ExpectedFollowUpBlock = {
+  readonly kind: 'FOLLOW_UP';
+  readonly targetIds: readonly string[];
+  readonly items: readonly ExpectedActionQueueRow[];
+};
+
 type ExpectedSummaryBlock =
   | {
       readonly kind: 'SUMMARY';
@@ -95,9 +105,9 @@ describe('HomeView の境界（型テスト）', () => {
     }>();
   });
 
-  it('🔴 HomeBlock は隔離ブロック / 要対応キュー / 件数の 3 ケース（追加専用。既存メンバーの意味を変えない）', () => {
+  it('🔴 HomeBlock は隔離ブロック / 要対応キュー / 件数 / ✅ FOLLOW_UP の 4 ケース（追加専用。既存メンバーの意味を変えない）', () => {
     expectTypeOf<HomeBlock>().toEqualTypeOf<
-      ExpectedQuarantineBlock | ExpectedActionQueueBlock | ExpectedSummaryBlock
+      ExpectedQuarantineBlock | ExpectedActionQueueBlock | ExpectedSummaryBlock | ExpectedFollowUpBlock
     >();
   });
 
@@ -116,10 +126,28 @@ describe('HomeView の境界（型テスト）', () => {
     expectTypeOf<ActionQueueHomeBlock>().not.toHaveProperty('countByKind');
   });
 
-  it('🔴 T-12-15: 種別は Phase 1 の 5 つ（LOST / DECLINED / WITHDRAWN / EXPIRED は「対応が要るもの」ではないので種別に無い）', () => {
+  it('🔴 T-12-15 / ✅ 2026-10-11: 種別は 8 つ（LOST / DECLINED / WITHDRAWN / EXPIRED は「対応が要るもの」ではないので種別に無い）', () => {
+    // 🔴 **追加専用**（既存 5 つの意味は 1 つも変えていない）。✅ 2026-10-11 で `要対応` タブの
+    //    2〜4 番目のセクションの 3 種別が増えた（`FOLLOW_UP` ブロックにだけ載る）。
     expectTypeOf<ActionQueueKind>().toEqualTypeOf<
-      'SEND_FAILED' | 'APPROVAL_PENDING' | 'GATE_FAILED' | 'SEND_HELD' | 'PROPOSAL_REQUEST_PENDING'
+      | 'SEND_FAILED'
+      | 'APPROVAL_PENDING'
+      | 'GATE_FAILED'
+      | 'SEND_HELD'
+      | 'PROPOSAL_REQUEST_PENDING'
+      | 'AWAITING_REPLY'
+      | 'INTERVIEW_COORDINATION'
+      | 'PROPOSAL_FOLLOW_UP'
     >();
+  });
+
+  it('🔴 ✅ 2026-10-11: `FOLLOW_UP` の行は要対応キューと**同一の型**（キーを 1 つも足していない）', () => {
+    expectTypeOf<ExpectedFollowUpBlock['items'][number]>().toEqualTypeOf<ExpectedActionQueueRow>();
+    expectTypeOf<Extract<HomeBlock, { kind: 'FOLLOW_UP' }>>().toEqualTypeOf<ExpectedFollowUpBlock>();
+    // 🔴 ctx 由来の可否は `ACTION_QUEUE` が全量で返す（同じ事実を 2 箇所に置かない）。
+    expectTypeOf<ExpectedFollowUpBlock>().not.toHaveProperty('actionAvailability');
+    expectTypeOf<ExpectedFollowUpBlock>().not.toHaveProperty('priority');
+    expectTypeOf<ExpectedFollowUpBlock>().not.toHaveProperty('total');
   });
 
   it('🔴 ホストとパートナーで blocks の型が同じである（周知が片側だけにならない）', () => {
@@ -195,8 +223,12 @@ describe('🔴 SUMMARY ブロックの境界（型テスト）', () => {
 // 🔴 T-22-09: `操作` の可否（docs/05 §6.11.2）
 // ============================================================================
 describe('🔴 actionAvailability の境界（型テスト）', () => {
-  it('操作は 4 kind（一括操作の kind を持たない）', () => {
-    expectTypeOf<ActionQueueActionKind>().toEqualTypeOf<'APPROVE' | 'FIX' | 'RESEND' | 'RESPOND'>();
+  it('操作は 5 kind（一括操作の kind を持たない）', () => {
+    // ✅ 2026-10-11: `RECORD`（`結果を記録する` → `S-024`）が増えた。**追加専用**であり、
+    // 🔴 **一括操作（`APPROVE_ALL` / `SELECTED` 等）の kind は依然として無い**（`F-021 AC-4`）。
+    expectTypeOf<ActionQueueActionKind>().toEqualTypeOf<
+      'APPROVE' | 'FIX' | 'RESEND' | 'RESPOND' | 'RECORD'
+    >();
   });
 
   it('🔴 `enabled === false` のとき `reasonKey` は非 null（理由の無い不能を型で禁じる）', () => {

@@ -265,12 +265,14 @@ function rowOf(kind: ActionQueueRow['kind'], targetId: string, since: string, de
   };
 }
 
-/** 🔴 可否は**ブロック直下に 4 エントリ全量**（`buildActionQueueBlock` の引数。docs/05 §6.11.2）。 */
+/** 🔴 可否は**ブロック直下に全エントリ全量**（`buildActionQueueBlock` の引数。docs/05 §6.11.2）。 */
 const ALLOW_ALL: ActionQueueHomeBlock['actionAvailability'] = {
   APPROVE: { enabled: true, reasonKey: null },
   FIX: { enabled: true, reasonKey: null },
   RESEND: { enabled: true, reasonKey: null },
   RESPOND: { enabled: true, reasonKey: null },
+  // ✅ 2026-10-11: `結果を記録する`（`S-024`）。
+  RECORD: { enabled: true, reasonKey: null },
 };
 
 describe('sortActionQueueRows — 「放置時間 × 取り返しのつかなさ」（docs/04 §S-003）', () => {
@@ -335,9 +337,16 @@ describe('buildActionQueueBlock — changedSince の差分（docs/05 §6.3 #9 �
     ]);
   });
 
-  it('🔴 可否は差分応答でも全量返る（行が 0 件でも 4 エントリ）', () => {
+  it('🔴 可否は差分応答でも全量返る（行が 0 件でも全 kind 分）', () => {
     const block = buildActionQueueBlock([], new Date('2026-09-16T01:00:00.000Z'), ALLOW_ALL);
-    expect(Object.keys(block.actionAvailability).sort()).toEqual(['APPROVE', 'FIX', 'RESEND', 'RESPOND']);
+    // ✅ 2026-10-11: `RECORD` が増えて 5 エントリ。🔴 **並びも固定する**（画面の `Record` の添字）。
+    expect(Object.keys(block.actionAvailability).sort()).toEqual([
+      'APPROVE',
+      'FIX',
+      'RECORD',
+      'RESEND',
+      'RESPOND',
+    ]);
   });
 });
 

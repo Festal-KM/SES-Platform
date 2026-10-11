@@ -165,6 +165,11 @@ export function kpiCardItems(block: SummaryHomeBlock, messages: KpiCardMessages)
     unit: messages.unit,
     delta: formatKpiDelta(item.delta, messages.delta),
     emphasis: isPrimaryMetric(block.audience, item.kind) ? ('primary' as const) : undefined,
+    // 🔴 ✅ 2026-10-11: **遷移先は応答（`SummaryMetric.href`）をそのまま渡す**
+    //    （人間の仕様「KPI はクリックでタブ切替やフィルタに遷移できる」）。
+    //    🔴 **画面が URL を組まない**（`docs/05` §6.11.1「数の意味を 2 箇所で決めない」）。
+    //    🔴 `null` のカードは押せる見た目にならない（判定は `KpiCard` の 1 箇所）。
+    href: item.href,
   }));
 }
 

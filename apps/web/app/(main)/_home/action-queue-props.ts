@@ -16,8 +16,20 @@ import { PROPOSAL_REQUEST_STATE_MESSAGE_KEYS, remainingLabels } from '../../../l
 import { elapsedLabels } from '../../../lib/proposals/approval-rows';
 import { PROPOSAL_STATE_MESSAGE_KEYS } from '../../../lib/proposals/editor-rows';
 import { PROPOSAL_TIMELINE_KIND_MESSAGE_KEYS, PROPOSAL_TIMELINE_KINDS } from '../../../lib/proposals/timeline-kind';
+import { HOME_PRIORITIES, type HomePriority } from '../../../lib/home/priority';
 import type { ActionQueueDrawerMessageBundle } from './action-queue-drawer';
-import type { ActionQueueMessages } from './action-queue-section';
+import type { ActionQueueMessages } from './action-row';
+
+/**
+ * ✅ 2026-10-11: 優先度 → 文言キー。
+ * 🔴 **状態の語（`proposals.state.*`）と混ぜない** —— 優先度は期限と放置時間から導出した値であり、
+ *    状態機械（`CLAUDE.md` §4.2）とは無関係である。
+ */
+const PRIORITY_MESSAGE_KEYS = {
+  HIGH: 'home.priority.label.HIGH',
+  MEDIUM: 'home.priority.label.MEDIUM',
+  LOW: 'home.priority.label.LOW',
+} as const satisfies Record<HomePriority, MessageKey>;
 
 /** 種別 → 文言キー（`labels.ts` の規律。既存の状態ラベルと同じ語）。 */
 export const ACTION_QUEUE_KIND_MESSAGE_KEYS = {
@@ -26,6 +38,10 @@ export const ACTION_QUEUE_KIND_MESSAGE_KEYS = {
   GATE_FAILED: 'home.actionQueue.kind.GATE_FAILED',
   SEND_HELD: 'home.actionQueue.kind.SEND_HELD',
   PROPOSAL_REQUEST_PENDING: 'home.actionQueue.kind.PROPOSAL_REQUEST_PENDING',
+  // ✅ 2026-10-11: `FOLLOW_UP` の 3 種別（`要対応` タブの 2〜4 番目のセクション）。
+  AWAITING_REPLY: 'home.actionQueue.kind.AWAITING_REPLY',
+  INTERVIEW_COORDINATION: 'home.actionQueue.kind.INTERVIEW_COORDINATION',
+  PROPOSAL_FOLLOW_UP: 'home.actionQueue.kind.PROPOSAL_FOLLOW_UP',
 } as const satisfies Record<ActionQueueKind, MessageKey>;
 
 /**
@@ -37,6 +53,8 @@ export const ACTION_QUEUE_ACTION_MESSAGE_KEYS = {
   FIX: 'home.actionQueue.action.FIX',
   RESEND: 'home.actionQueue.action.RESEND',
   RESPOND: 'home.actionQueue.action.RESPOND',
+  // ✅ 2026-10-11: `S-024`（面談日程と結果記録）への**遷移**の語。既存の画面と同じ語である。
+  RECORD: 'home.actionQueue.action.RECORD',
 } as const satisfies Record<ActionQueueActionKind, MessageKey>;
 
 /**
@@ -119,6 +137,9 @@ export function actionQueueMessages(): ActionQueueMessages {
     ),
     openRequestList: t('proposalRequests.open'),
     drawer: actionQueueDrawerMessages(),
+    // ✅ 2026-10-11: 🔴 優先度の語（**状態ではない**。`lib/home/priority.ts` の 🔴）。
+    priorities: resolved(HOME_PRIORITIES.map((priority) => [priority, PRIORITY_MESSAGE_KEYS[priority]] as const)),
+    priorityNote: t('home.priority.note'),
     valueNone: t('home.actionQueue.valueNone'),
     changed: t('home.actionQueue.changed'),
     pollError: t('home.actionQueue.pollError'),

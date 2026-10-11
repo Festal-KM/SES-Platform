@@ -23,6 +23,7 @@
 // | `ACTION_QUEUE` | `readActionQueueWithSummary` | **1 本** | 1 |
 // | `SUMMARY` | 🔴 **同じ `withTenant` に相乗り**（`readSummaryCounts`。✅ 改訂 23 で KPI 4 枚になったが**本数は +0 本のまま**。`今日やること` は要対応キューの行数そのものでクエリ 0 本） | **+0 本** | 1 |
 // | 送信ドメインの事実（`actionAvailability` の条件 ④） | 🔴 **同じ `withTenant` に相乗り** | **+0 本** | 1 |
+// | ✅ `FOLLOW_UP`（`返信待ち` / `面談調整中` / `提案後フォロー`） | 🔴 **同じ `withTenant` に相乗り**（2026-10-11。`proposal.findMany` が 3 本増えるが**トランザクションは +0 本**。射影〔`projectProposalListItems`〕も要対応キューと**まとめて 1 回**） | **+0 本** | 1 |
 // | 合計 | | 🔴 **2 本**（ホスト / 取引先とも） | 1 |
 //
 // 🔴 Phase 2 は **ホスト +0 本**（`ASSIGNMENTS_ACTIVE` はセクション 2〔満了が近い稼働〕の
@@ -30,6 +31,11 @@
 //    docs/05 §6.11.1 の表）。
 // 🔴 `apps/web/app/(main)/layout.tsx` の**外枠**の表（ホスト 4 / 取引先 3）は変わらない ——
 //    ストリップは外枠ではなく**画面**の読み取りである。
+//
+// ⚠️ ✅ 2026-10-11: `メッセージ` タブ（`readChatScreen`）は**この表に入らない。**
+//    あれは `app/(main)/page.tsx` の初回描画だけの読み取りであり、**`GET /api/home` の応答には
+//    含まれない** = 60 秒ポーリングでは増えない（ページを開いたときに +1 本）。
+//    🔴 **ポーリングの口は 1 つのまま**である（`_home/home-screen.tsx` の `fetchHome` だけ）。
 import type { AuthenticatedTenantCtx } from '@ses/db';
 import { readQuarantinedSkillSheets } from '../skill-sheets/service';
 import { readActionQueueWithSummary } from './action-queue-read';
@@ -71,7 +77,7 @@ export async function readHomeBlocks(
   ctx: AuthenticatedTenantCtx,
   options: HomeBlocksOptions,
 ): Promise<readonly HomeBlock[]> {
-  const [quarantined, { actionQueue, summary }] = await Promise.all([
+  const [quarantined, { actionQueue, summary, followUp }] = await Promise.all([
     readQuarantinedSkillSheets(ctx),
     readActionQueueWithSummary(ctx, {
       scope: options.scope ?? DEFAULT_HOME_SCOPE,
@@ -95,5 +101,10 @@ export async function readHomeBlocks(
     });
   }
   blocks.push(actionQueue);
+  // 🔴 ✅ 2026-10-11: `FOLLOW_UP` は**常に**返す（0 件でも空の `items` で返る。`ACTION_QUEUE` と
+  //    同じ理由 —— 「読むのを忘れた」と「0 件」を画面側で区別できるようにする）。
+  // 🔴 **`ACTION_QUEUE` の後ろに置く**（並びは `SUMMARY` → `SCAN_QUARANTINE` → `ACTION_QUEUE`
+  //    → `FOLLOW_UP`。画面の骨格が日によって変わらないよう、位置は固定である）。
+  blocks.push(followUp);
   return blocks;
 }

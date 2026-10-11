@@ -124,8 +124,16 @@ export function Tabs({
 /**
  * タブ帯。
  * 🔴 **下端の 1px で帯を閉じる**（§7.9「階層は border と background の差で表す」。影を使わない）。
+ *
+ * 🔴 ✅ 2026-10-11: **`flex-wrap` を足した。**
+ *    理由（実測の見積り）: ホームのタブが 4 つになり（`メッセージ / 要対応 N / 案件 / 人材`）、
+ *    375px では帯の内容が **約 334px / 可用 343px** になる。件数が 2 桁になると
+ *    **横に溢れる** —— `docs/04` §S-003 デバイス別は 🔴 **「タブは常時表示（`その他` に畳まない）」**
+ *    と 🔴 **「横スクロールさせない」**の両方を定めており、溢れさせない唯一の形が**折り返し**である。
+ * 🔴 **`overflow-x` を書かない**（画面外のタブに気づけないまま「全部見た」と思うため。§5-13）。
+ * ⚠️ 折り返しは**入り切らないときだけ**起きるので、既存の 1〜3 タブの画面の見え方は変わらない。
  */
-export const TABS_LIST_CLASSES = 'flex items-stretch gap-4 border-b border-border';
+export const TABS_LIST_CLASSES = 'flex flex-wrap items-stretch gap-4 border-b border-border';
 
 /**
  * タブ 1 つ。§7.10 の 8 状態のうち **default / hover / active / selected / focus-visible /

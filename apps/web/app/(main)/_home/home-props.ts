@@ -10,6 +10,7 @@
 //    と同じ形）。理由: 件数はポーリングで変わるため、サーバで 1 度組むと更新できない。
 import { t, type MessageKey } from '@ses/i18n';
 import { GREETING_SLOTS, type GreetingSlot } from '@ses/ui';
+import { FOLLOW_UP_KIND_ORDER, type FollowUpKind } from '../../../lib/home/sections';
 import {
   HOST_SUMMARY_METRIC_MESSAGE_KEYS,
   PARTNER_SUMMARY_METRIC_MESSAGE_KEYS,
@@ -46,10 +47,46 @@ export type HomeGreetingMessages = {
 
 export type HomeTabMessages = {
   readonly label: string;
+  /** ✅ 2026-10-11: 4 タブ目（`メッセージ`）。🔴 **未読の件数を持たない**（実体が無い）。 */
+  readonly messages: string;
   readonly actions: string;
   readonly projects: string;
   readonly engineers: string;
 };
+
+/**
+ * ✅ 2026-10-11: `要対応` タブのセクション 2〜4 の語。
+ * 🔴 **見出し / 1 行の説明 / 0 件の文言の 3 つだけ**（件数は描画側が組む ——
+ *    `t()` は差し込みを持たず、件数はポーリングで変わる）。
+ */
+export type HomeSectionMessages = {
+  readonly title: string;
+  readonly lead: string;
+  readonly empty: string;
+};
+
+/**
+ * 🔴 セクション → 文言キー（`Record` なのでセクションを足して語を当て忘れるとコンパイルが落ちる）。
+ * 🔴 **ホストと取引先で同じ語である** —— 母集団は RLS が決めており（自社分だけ）、
+ *    **数の意味は同じ**である（`CLAUDE.md` §1.2「取引先を簡易版にしない」）。
+ */
+const HOME_SECTION_MESSAGE_KEYS = {
+  AWAITING_REPLY: {
+    title: 'home.section.awaitingReply.title',
+    lead: 'home.section.awaitingReply.lead',
+    empty: 'home.section.awaitingReply.empty',
+  },
+  INTERVIEW_COORDINATION: {
+    title: 'home.section.interview.title',
+    lead: 'home.section.interview.lead',
+    empty: 'home.section.interview.empty',
+  },
+  PROPOSAL_FOLLOW_UP: {
+    title: 'home.section.followUp.title',
+    lead: 'home.section.followUp.lead',
+    empty: 'home.section.followUp.empty',
+  },
+} as const satisfies Readonly<Record<FollowUpKind, Readonly<Record<keyof HomeSectionMessages, MessageKey>>>>;
 
 export type HomeRailMessages = {
   readonly scheduleTitle: string;
@@ -59,6 +96,8 @@ export type HomeRailMessages = {
   readonly onePointTitle: string;
   /** 🔴 **静的な文言集**（日替わりで 1 つ選ぶ。AI でも業務データでも生成しない。§4.1 の ③）。 */
   readonly onePointLines: readonly string[];
+  /** ✅ 2026-10-11: 「閉じる」の語（🔴 **当日だけ**。翌日は別の 1 文が出る）。 */
+  readonly onePointDismiss: string;
 };
 
 export type HomeScreenMessages = {
@@ -67,6 +106,8 @@ export type HomeScreenMessages = {
   readonly tabs: HomeTabMessages;
   readonly rail: HomeRailMessages;
   readonly seeAll: string;
+  /** ✅ 2026-10-11: `要対応` タブのセクション 2〜4 の語。 */
+  readonly sections: Readonly<Record<FollowUpKind, HomeSectionMessages>>;
 };
 
 /**
@@ -125,6 +166,7 @@ export function homeScreenMessages(audience: 'HOST' | 'PARTNER'): HomeScreenMess
     kpi: kpiMessages(audience),
     tabs: {
       label: t('home.tab.label'),
+      messages: t('home.tab.messages'),
       actions: t('home.tab.actions'),
       projects: t('home.tab.projects'),
       engineers: t('home.tab.engineers'),
@@ -138,7 +180,19 @@ export function homeScreenMessages(audience: 'HOST' | 'PARTNER'): HomeScreenMess
       onePointLines: (audience === 'HOST' ? HOST_ONE_POINT_KEYS : PARTNER_ONE_POINT_KEYS).map((key) =>
         t(key),
       ),
+      // ✅ 2026-10-11: 当日だけ閉じる（🔴 **永久に消す設定を作らない**。§4.1 の右レール ③）。
+      onePointDismiss: t('home.onePoint.dismiss'),
     },
     seeAll: t('ui.seeAll'),
+    sections: Object.fromEntries(
+      FOLLOW_UP_KIND_ORDER.map((kind) => [
+        kind,
+        {
+          title: t(HOME_SECTION_MESSAGE_KEYS[kind].title),
+          lead: t(HOME_SECTION_MESSAGE_KEYS[kind].lead),
+          empty: t(HOME_SECTION_MESSAGE_KEYS[kind].empty),
+        },
+      ]),
+    ) as Readonly<Record<FollowUpKind, HomeSectionMessages>>,
   };
 }

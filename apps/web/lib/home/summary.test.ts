@@ -66,7 +66,7 @@ describe('🔴 ① where に分離キーを書かない（母集団は RLS が�
 describe('🔴 ② 0 件でも 0 を返し、項目を間引かない', () => {
   it('ホストは 4 指標（すべて 0 でも 4 件）', async () => {
     const counts = await readSummaryCounts(fakeDb({}, []), 'HOST', { now: NOW });
-    const block = buildSummaryBlock(counts, 'HOST', 0);
+    const block = buildSummaryBlock(counts, 'HOST', 0, 'mine');
     expect(block.items).toHaveLength(4);
     expect(block.items.map((item) => item.kind)).toEqual([...HOST_SUMMARY_METRIC_ORDER]);
     expect(block.items.every((item) => item.count === 0)).toBe(true);
@@ -74,14 +74,14 @@ describe('🔴 ② 0 件でも 0 を返し、項目を間引かない', () => {
 
   it('取引先は 4 指標（同じ）', async () => {
     const counts = await readSummaryCounts(fakeDb({}, []), 'PARTNER', { now: NOW });
-    const block = buildSummaryBlock(counts, 'PARTNER', 0);
+    const block = buildSummaryBlock(counts, 'PARTNER', 0, 'mine');
     expect(block.items).toHaveLength(4);
     expect(block.items.map((item) => item.kind)).toEqual([...PARTNER_SUMMARY_METRIC_ORDER]);
   });
 
   it('🔴 1 指標のキーは 4 つだけ（ラベル・色・率・金額を返さない）', async () => {
     const counts = await readSummaryCounts(fakeDb({}, []), 'HOST', { now: NOW });
-    for (const item of buildSummaryBlock(counts, 'HOST', 0).items) {
+    for (const item of buildSummaryBlock(counts, 'HOST', 0, 'mine').items) {
       expect(Object.keys(item).sort()).toEqual(['count', 'delta', 'href', 'kind']);
     }
   });
@@ -90,7 +90,7 @@ describe('🔴 ② 0 件でも 0 を返し、項目を間引かない', () => {
 describe('🔴 ③ `今日やること` は要対応キューの行数そのもの（クエリを撃たない）', () => {
   it('渡された行数がそのまま件数になる', async () => {
     const counts = await readSummaryCounts(fakeDb({}, []), 'HOST', { now: NOW });
-    const block = buildSummaryBlock(counts, 'HOST', 7);
+    const block = buildSummaryBlock(counts, 'HOST', 7, 'mine');
     expect(block.items.find((item) => item.kind === 'ACTION_QUEUE')?.count).toBe(7);
   });
 
@@ -121,7 +121,7 @@ describe('🔴 ③ `今日やること` は要対応キューの行数そのも�
 describe('🔴 ④⑤ 差分は「今週…」の 1 指標だけで、窓は月曜 0:00（JST）起点', () => {
   it('在庫の 3 指標は `delta: null`（嘘の昨日比を作らない）', async () => {
     const counts = await readSummaryCounts(fakeDb({}, []), 'HOST', { now: NOW });
-    const block = buildSummaryBlock(counts, 'HOST', 3);
+    const block = buildSummaryBlock(counts, 'HOST', 3, 'mine');
     const deltas = new Map(block.items.map((item) => [item.kind, item.delta]));
     expect(deltas.get('ACTION_QUEUE')).toBeNull();
     expect(deltas.get('AWAITING_REPLY')).toBeNull();
@@ -141,6 +141,7 @@ describe('🔴 ④⑤ 差分は「今週…」の 1 指標だけで、窓は月�
       },
       'HOST',
       0,
+      'mine',
     );
     expect(block.items.find((item) => item.kind === 'PROPOSALS_THIS_WEEK')?.delta).toEqual({
       basis: 'PREVIOUS_WEEK',
@@ -176,7 +177,7 @@ describe('🔴 ④⑤ 差分は「今週…」の 1 指標だけで、窓は月�
 describe('🔴 ⑥ 取引先の `kind` に他社を示唆するものが無い', () => {
   it('`TOTAL_` / `RANK` / `COMPARISON` / `OTHER_COMPANIES` / `SAME_PROJECT` を含まない', async () => {
     const counts = await readSummaryCounts(fakeDb({}, []), 'PARTNER', { now: NOW });
-    const serialized = JSON.stringify(buildSummaryBlock(counts, 'PARTNER', 0));
+    const serialized = JSON.stringify(buildSummaryBlock(counts, 'PARTNER', 0, 'mine'));
     for (const forbidden of ['TOTAL_', 'RANK', 'COMPARISON', 'OTHER_COMPANIES', 'SAME_PROJECT']) {
       expect(serialized, forbidden).not.toContain(forbidden);
     }
@@ -187,13 +188,13 @@ describe('🔴 ⑦ `initialEmpty` は台帳の有無で決まる', () => {
   it('案件も人材も 0 件なら `true`', async () => {
     const counts = await readSummaryCounts(fakeDb({}, []), 'HOST', { now: NOW });
     expect(counts.ledgerEmpty).toBe(true);
-    expect(buildSummaryBlock(counts, 'HOST', 0).initialEmpty).toBe(true);
+    expect(buildSummaryBlock(counts, 'HOST', 0, 'mine').initialEmpty).toBe(true);
   });
 
   it('🔴 案件が 1 件でもあれば `false`（KPI が全部 0 でも「初回空」にしない）', async () => {
     const counts = await readSummaryCounts(fakeDb({ project: 1 }, []), 'HOST', { now: NOW });
     expect(counts.ledgerEmpty).toBe(false);
-    expect(buildSummaryBlock(counts, 'HOST', 0).initialEmpty).toBe(false);
+    expect(buildSummaryBlock(counts, 'HOST', 0, 'mine').initialEmpty).toBe(false);
   });
 
   it('人材だけでも `false`', async () => {
@@ -215,5 +216,64 @@ describe('🔴 状態の定数は `@ses/domain` の状態名に縛られてい�
       .map((entry) => (entry.where as { state?: string } | null)?.state)
       .filter((state): state is string => state !== undefined);
     expect(states.sort()).toEqual(['INTERVIEW_SCHEDULED', 'SUBMITTED']);
+  });
+});
+
+// ============================================================================
+// ✅ 2026-10-11: 🔴 KPI カードの遷移先（人間の仕様「クリックでタブ切替やフィルタに遷移できる」）
+// ============================================================================
+describe('🔴 指標 → 遷移先（`docs/05` §6.11.1「数の意味を 2 箇所で決めない」）', () => {
+  const counts = {
+    awaitingReply: 1,
+    interviews: 2,
+    thisWeek: 3,
+    lastWeek: 1,
+    requestsToAnswer: 4,
+    ledgerEmpty: false,
+  };
+  const hrefOf = (
+    audience: 'HOST' | 'PARTNER',
+    kind: string,
+    scope: 'mine' | 'all' = 'mine',
+  ): string | null =>
+    buildSummaryBlock(counts, audience, 5, scope).items.find((item) => item.kind === kind)?.href ?? null;
+
+  it('ホスト: 今日やること / 返信待ち / 面談予定 は `要対応` タブの該当セクションへ', () => {
+    // 🔴 既定タブ（`actions`）なので `?tab=` は載らず、フラグメントだけが付く。
+    expect(hrefOf('HOST', 'ACTION_QUEUE')).toBe('/#home-section-today');
+    expect(hrefOf('HOST', 'AWAITING_REPLY')).toBe('/#home-section-awaiting-reply');
+    expect(hrefOf('HOST', 'INTERVIEWS')).toBe('/#home-section-interview-coordination');
+    // 🔴 今週の提案は一覧（`S-019`）へ。
+    expect(hrefOf('HOST', 'PROPOSALS_THIS_WEEK')).toBe('/proposals');
+  });
+
+  it('取引先: 返答待ちの依頼は `今日やること`（返答するのは取引先であり、行に操作が在る）', () => {
+    expect(hrefOf('PARTNER', 'REQUESTS_TO_ANSWER')).toBe('/#home-section-today');
+    expect(hrefOf('PARTNER', 'AWAITING_REPLY')).toBe('/#home-section-awaiting-reply');
+    expect(hrefOf('PARTNER', 'INTERVIEWS')).toBe('/#home-section-interview-coordination');
+    expect(hrefOf('PARTNER', 'PUBLISHED_THIS_WEEK')).toBe('/projects');
+  });
+
+  it('🔴 `scope` を引き継ぐ（押した数と着地先のセクションの行数が食い違わない）', () => {
+    // 🔴 ✅ 2026-10-11（レビュー指摘）: 旧実装は `homeHref(DEFAULT_HOME_SCOPE, …)` 固定で、
+    //    `?scope=all` で見ている利用者がカードを押すと **`scope=mine` のホーム**へ飛んでいた。
+    //    押した数（`actionQueueCount` は `scope` を反映している）と着地先の行数が食い違うのは、
+    //    `./action-queue-read.ts` が `FOLLOW_UP` を `scope` で絞らない根拠として挙げている
+    //    禁止事項そのものである（= 自分の論拠を自分で破っていた）。
+    expect(hrefOf('HOST', 'ACTION_QUEUE', 'all')).toBe('/?scope=all#home-section-today');
+    expect(hrefOf('HOST', 'AWAITING_REPLY', 'all')).toBe('/?scope=all#home-section-awaiting-reply');
+    expect(hrefOf('HOST', 'INTERVIEWS', 'all')).toBe('/?scope=all#home-section-interview-coordination');
+    expect(hrefOf('PARTNER', 'REQUESTS_TO_ANSWER', 'all')).toBe('/?scope=all#home-section-today');
+    // 🔴 ホームの外へ送る指標は `scope` を持たない（別画面の一覧であり、ホームの状態ではない）。
+    expect(hrefOf('HOST', 'PROPOSALS_THIS_WEEK', 'all')).toBe('/proposals');
+    expect(hrefOf('PARTNER', 'PUBLISHED_THIS_WEEK', 'all')).toBe('/projects');
+  });
+
+  it('🔴 `S-024`（提案 1 件ごとの画面）を指さない（件数からは「どの 1 件か」が決まらない）', () => {
+    for (const audience of ['HOST', 'PARTNER'] as const) {
+      for (const item of buildSummaryBlock(counts, audience, 5, 'mine').items) {
+        expect(item.href ?? '', item.kind).not.toMatch(/\/interview$/);
+      }
+    }
   });
 });

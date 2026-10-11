@@ -28,10 +28,31 @@ function availability(overrides: Partial<ActionQueueAvailabilityFacts> = {}) {
   return actionQueueActionAvailability({ ...BASE, ...overrides });
 }
 
-describe('🔴 4 kind の可否を毎回全量返す', () => {
-  it('キーは 4 つ（`APPROVE` / `FIX` / `RESEND` / `RESPOND`）', () => {
-    expect(Object.keys(availability()).sort()).toEqual(['APPROVE', 'FIX', 'RESEND', 'RESPOND']);
-    expect(ACTION_QUEUE_ACTION_KINDS).toEqual(['APPROVE', 'FIX', 'RESEND', 'RESPOND']);
+describe('🔴 全 kind の可否を毎回全量返す', () => {
+  // ✅ 2026-10-11: `RECORD`（`結果を記録する` → `S-024`）が増えて **5 kind** になった。
+  // 🔴 **並びも固定する**（応答のキーの並びは画面の `Record` の添字であり、揺れると
+  //    「可否が解決できない kind」が静かに生まれる）。
+  it('キーは 5 つ（`APPROVE` / `FIX` / `RESEND` / `RESPOND` / `RECORD`）', () => {
+    expect(Object.keys(availability()).sort()).toEqual(
+      ['APPROVE', 'FIX', 'RECORD', 'RESEND', 'RESPOND'],
+    );
+    expect(ACTION_QUEUE_ACTION_KINDS).toEqual(['APPROVE', 'FIX', 'RESEND', 'RESPOND', 'RECORD']);
+  });
+
+  it('🔴 `RECORD` は送信ドメイン未検証では止まらない（取引先へ何も送らない。条件④の射程外）', () => {
+    expect(availability({ sendingDomainUnverified: true }).RECORD).toEqual({
+      enabled: true,
+      reasonKey: null,
+    });
+    // 対照: `RESEND` だけが止まる。
+    expect(availability({ sendingDomainUnverified: true }).RESEND.enabled).toBe(false);
+  });
+
+  it('🔴 `RECORD` は閲覧専用ロールでは不能（`S-024` が `isViewer` で入力を閉じている）', () => {
+    expect(availability({ role: 'VIEWER' }).RECORD).toEqual({
+      enabled: false,
+      reasonKey: 'home.actionQueue.denied.role',
+    });
   });
 
   it('平常時（`ACTIVE` / 実行できるロール / ドメイン検証済み）は全部可で理由が `null`', () => {

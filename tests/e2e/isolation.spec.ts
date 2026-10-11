@@ -535,9 +535,32 @@ test.describe('④ パートナー A1 で、パートナー A2 のものが 1 �
       //    🔴 **並びも固定する**（`docs/04` §S-004 改訂 16 = ストリップは要対応キューの**上**。
       //    画面の骨格が日によって変わると走査の記憶が効かない）。🔴 **`blocks[0]` を要対応キューと決め打ちしない**
       //    —— ブロックは追加専用であり、位置で取ると次の追加で静かに別のブロックを見ることになる。
-      expect(home9.blocks.map((block) => block.kind)).toEqual(['SUMMARY', 'ACTION_QUEUE']);
+      // ✅ 2026-10-11: `FOLLOW_UP`（`要対応` タブの 2〜4 番目のセクション = `返信待ち` /
+      //    `面談調整中` / `提案後フォロー`）が 3 つ目のブロックになった。🔴 **並びも固定する。**
+      expect(home9.blocks.map((block) => block.kind)).toEqual(['SUMMARY', 'ACTION_QUEUE', 'FOLLOW_UP']);
       const queue = home9.blocks.find((block) => block.kind === 'ACTION_QUEUE');
       if (queue === undefined) throw new Error('ACTION_QUEUE ブロックが無い（0 件でも必ず返る契約）。');
+      const followUp = home9.blocks.find((block) => block.kind === 'FOLLOW_UP');
+      if (followUp === undefined) throw new Error('FOLLOW_UP ブロックが無い（0 件でも必ず返る契約）。');
+      // 🔴 ✅ 2026-10-11: `FOLLOW_UP` のブロックは 3 キーだけ（`actionAvailability` を二重に持たない）。
+      expect(Object.keys(followUp).sort()).toEqual(['items', 'kind', 'targetIds']);
+      for (const row of followUp.items ?? []) {
+        // 🔴 載る種別は 3 つだけ（要対応キューの 5 種別が混ざらない）。
+        expect(['AWAITING_REPLY', 'INTERVIEW_COORDINATION', 'PROPOSAL_FOLLOW_UP']).toContain(row['kind']);
+        // 🔴 **行のキーは要対応キューと同じ 10 個**（他社の件数・順位・実名を運ぶ枠が無い）。
+        expect(Object.keys(row).sort()).toEqual([
+          'action',
+          'counterpartyLabel',
+          'deadline',
+          'href',
+          'kind',
+          'rowVersion',
+          'since',
+          'stateBadge',
+          'subjectLabel',
+          'targetId',
+        ]);
+      }
       // 🔴 ✅ T-22-09 が足したのは `actionAvailability`（ctx 由来の 4 条件。**ブロック直下に全量**）だけである。
       expect(Object.keys(queue).sort()).toEqual(['actionAvailability', 'items', 'kind', 'targetIds']);
       for (const row of queue.items ?? []) {

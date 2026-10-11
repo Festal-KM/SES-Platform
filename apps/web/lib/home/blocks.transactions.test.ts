@@ -128,6 +128,24 @@ describe('🔴 ホームが開くトランザクションの本数（docs/05 §6
 
   it('🔴 要対応キューも 0 件でも必ず返る（隔離の周知は 0 件なら出ない）', async () => {
     const blocks = await readHomeBlocks(ctxOf(null), { sendingDomainVerificationRequired: true, now: NOW });
-    expect(blocks.map((block) => block.kind)).toEqual(['SUMMARY', 'ACTION_QUEUE']);
+    // ✅ 2026-10-11: `FOLLOW_UP`（`要対応` タブの 2〜4 番目のセクション）が 4 つ目のブロックになった。
+    // 🔴 **並びも固定する**（画面の骨格が日によって変わらない。`./blocks.ts` の 🔴）。
+    expect(blocks.map((block) => block.kind)).toEqual(['SUMMARY', 'ACTION_QUEUE', 'FOLLOW_UP']);
+  });
+
+  it('🔴 ✅ 2026-10-11: `FOLLOW_UP` を足してもトランザクションは 2 本のまま（相乗りしている）', async () => {
+    await readHomeBlocks(ctxOf(null), { sendingDomainVerificationRequired: true, now: NOW });
+    expect(CALLS.counts.withTenant).toBe(2);
+    const blocks = await readHomeBlocks(ctxOf('p1'), { sendingDomainVerificationRequired: true, now: NOW });
+    // 🔴 取引先でも**同じ形で返る**（`CLAUDE.md` §1.2「取引先を簡易版にしない」）。
+    expect(blocks.map((block) => block.kind)).toEqual(['SUMMARY', 'ACTION_QUEUE', 'FOLLOW_UP']);
+  });
+
+  it('🔴 `FOLLOW_UP` も 0 件でも必ず返る（`items` を省く分岐が無い）', async () => {
+    const blocks = await readHomeBlocks(ctxOf(null), { sendingDomainVerificationRequired: true, now: NOW });
+    const followUp = blocks.find((block) => block.kind === 'FOLLOW_UP');
+    expect(followUp).toBeDefined();
+    expect(followUp?.kind === 'FOLLOW_UP' ? followUp.items : null).toEqual([]);
+    expect(followUp?.kind === 'FOLLOW_UP' ? followUp.targetIds : null).toEqual([]);
   });
 });

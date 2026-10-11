@@ -36,15 +36,24 @@ import { actionQueueActionAvailability } from './action-availability';
 import {
   ACTION_QUEUE_SEND_HOLD_REASONS,
   buildActionQueueBlock,
+  buildFollowUpBlock,
   sortActionQueueRows,
+  sortFollowUpRows,
+  toFollowUpActionRow,
   toHostRequestActionRow,
   toPartnerRequestActionRow,
   toProposalActionRow,
   type ActionQueueAudience,
 } from './action-queue';
 import type { HomeScope } from './schemas';
+import { FOLLOW_UP_KIND_ORDER, FOLLOW_UP_PROPOSAL_STATES } from './sections';
 import { buildSummaryBlock, readSummaryCounts } from './summary';
-import type { ActionQueueHomeBlock, ActionQueueRow, SummaryHomeBlock } from './types';
+import type {
+  ActionQueueHomeBlock,
+  ActionQueueRow,
+  FollowUpHomeBlock,
+  SummaryHomeBlock,
+} from './types';
 
 /**
  * 🔴 1 回の読み取りで拾う行数の上限。docs/05 §6.1 の一覧上限（200）と同じ値。
@@ -86,6 +95,12 @@ export type ActionQueueReadOptions = {
 export type ActionQueueAndSummary = {
   readonly actionQueue: ActionQueueHomeBlock;
   readonly summary: SummaryHomeBlock;
+  /**
+   * ✅ 2026-10-11: `要対応` タブの 2〜4 番目のセクション（`返信待ち` / `面談調整中` /
+   * `提案後フォロー`）。🔴 **同じトランザクションで読む**（別の口を増やさない。
+   * `./blocks.ts` 冒頭のトランザクション本数の表）。
+   */
+  readonly followUp: FollowUpHomeBlock;
 };
 
 /** 🔴 取引先がキューに載せる提案の状態（`GATE_FAILED` だけ。承認・送信はホストの工程）。 */
@@ -152,6 +167,27 @@ function partnerProposalWhere(ctx: AuthenticatedTenantCtx, scope: HomeScope): Pr
 }
 
 /**
+ * ✅ 2026-10-11: 🔴 `FOLLOW_UP` の 3 セクションの絞り込み（**セクションごとに 1 クエリ**）。
+ *
+ * 🔴 **バケットごとに `ACTION_QUEUE_ROW_LIMIT` を効かせる**（T-12-15 指摘 2 と同じ理由 ——
+ *    1 クエリに束ねると、溜まった `返信待ち` に `提案後フォロー` が埋もれて切れる。
+ *    DB 側の並びが `updated_at` 昇順なので、切れるのは後回しにできる側である）。
+ * 🔴 **`scope`（自分の担当のみ）で絞らない。**
+ *    理由: KPI カード 2（`返信待ち`）と 3（`面談予定`）は `./summary.ts` が
+ *    **担当で絞らずに数えている**。ここで絞ると **カードの件数とセクションの行数が
+ *    食い違う**（`docs/04` §4.1 の非同期処理の表現が禁じている状態そのもの）。
+ *    「自分の担当のみ」は要対応キュー（`今日やること`）だけのトグルである
+ *    （`./blocks.ts` の `HomeBlocksOptions.scope` の注記と同じ線引き）。
+ * 🔴 **ホストと取引先で同じ `where` である**（見える行が違うのは RLS（C5 PARTY）であり、
+ *    アプリの `if` ではない）。`CLAUDE.md` §1.2「取引先を簡易版にしない」。
+ */
+function followUpProposalWheres(): readonly ProposalQueueWhere[] {
+  return FOLLOW_UP_KIND_ORDER.map((kind) => ({
+    state: { in: [...FOLLOW_UP_PROPOSAL_STATES[kind]] },
+  }));
+}
+
+/**
  * 要対応キューのブロックを読む（`GET /api/home` / `S-003` / `S-004` の共通経路）。1 トランザクション（`withTenant`）で
  * 提案 → 提案依頼 → 参照の解決を行い、並べて（`sortActionQueueRows`）差分を切る（`buildActionQueueBlock`）。
  * 呼び出し元は無いが契約として残す。使うと `SUMMARY` と送信ドメインまで読む。
@@ -198,9 +234,25 @@ export async function readActionQueueWithSummary(
             orderBy,
             take: ACTION_QUEUE_ROW_LIMIT,
           });
-    const projected = await projectProposalListItems(ctx, db, proposalRows);
+    // ✅ 2026-10-11: 🔴 `FOLLOW_UP` の 3 セクションの行（**同じトランザクション / 同じ射影**）。
+    //    🔴 **`projectProposalListItems` を 1 回だけ通す**ために、要対応キューの行と**まとめて
+    //    射影する** —— 2 回呼ぶと案件名・提案先・凍結名の解決クエリが 2 倍になる
+    //    （60 秒ポーリングなので往復の数がそのまま負荷になる。`CLAUDE.md` §7 の p95）。
+    const followUpSourceRows = (
+      await Promise.all(
+        followUpProposalWheres().map((where) =>
+          db.proposal.findMany({ where, select: PROPOSAL_LIST_SELECT, orderBy, take: ACTION_QUEUE_ROW_LIMIT }),
+        ),
+      )
+    ).flat();
+    const projected = await projectProposalListItems(ctx, db, [...proposalRows, ...followUpSourceRows]);
+    // 🔴 **状態で振り分ける**（`toProposalActionRow` と `toFollowUpActionRow` の載せる状態は
+    //    交わらないので、同じ行が両方に出ることはない。`./action-queue.ts` の 🔴）。
     const proposalActionRows = projected.items
       .map((item) => toProposalActionRow(item))
+      .filter((row): row is ActionQueueRow => row !== null);
+    const followUpRows = projected.items
+      .map((item) => toFollowUpActionRow(item))
       .filter((row): row is ActionQueueRow => row !== null);
 
     const [requestActionRows, summaryCounts, verifiedDomains] = await Promise.all([
@@ -233,8 +285,11 @@ export async function readActionQueueWithSummary(
     //    （`sorted.length` = `actionQueue.targetIds.length`）。別に数えないのは、
     //    **同じ画面の中で「カードの数」と「キューの行数」が食い違う瞬間を作らない**ためである
     //    （`docs/04` §7.2 ③ / §4.1 の非同期処理の表現）。
-    const summary = buildSummaryBlock(summaryCounts, audience, sorted.length);
-    return { actionQueue, summary };
+    // 🔴 ✅ 2026-10-11（レビュー指摘）: **`options.scope` を渡す** —— KPI カードの遷移先が
+    //    `scope` を落とすと、押した数（`sorted.length` は `scope` を反映している）と
+    //    着地先のセクションの行数が食い違う（`./summary.ts` の `buildSummaryBlock` の 🔴）。
+    const summary = buildSummaryBlock(summaryCounts, audience, sorted.length, options.scope);
+    return { actionQueue, summary, followUp: buildFollowUpBlock(sortFollowUpRows(followUpRows)) };
   });
 }
 

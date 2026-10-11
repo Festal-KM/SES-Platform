@@ -162,6 +162,7 @@ export type { GreetingSlot, PageGreetingProps } from './components/page-greeting
 //    （`children` を取る器を作らないため。`components/rail-card.tsx` 冒頭）。
 export { RailCard, RankedList, Timeline } from './components/rail-card.js';
 export type {
+  RailCardDismiss,
   RailCardLink,
   RailCardProps,
   RankedListItem,

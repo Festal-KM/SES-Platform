@@ -25,6 +25,10 @@ import type {
   ActionQueueHomeBlock,
   ActionQueueRow,
 } from '../../../lib/home/types';
+import { HOST_ACTION_QUEUE_KIND_ORDER } from '../../../lib/home/action-queue';
+import { homeRowPriority } from '../../../lib/home/priority';
+import { FOLLOW_UP_KIND_ORDER } from '../../../lib/home/sections';
+import type { HomeSectionRow } from '../../../lib/home/sections';
 import { actionQueueMessages } from './action-queue-props';
 import { ActionQueueSection, type ActionQueueMessages } from './action-queue-section';
 // 🔴 ✅ 2026-10-02（改訂 23）: 差分の合成は `./home-screen.tsx`（ポーリングの持ち主）へ移った。
@@ -51,13 +55,21 @@ const MESSAGES: ActionQueueMessages = {
     GATE_FAILED: 'KIND_GATE_FAILED',
     SEND_HELD: 'KIND_SEND_HELD',
     PROPOSAL_REQUEST_PENDING: 'KIND_REQUEST',
+    // ✅ 2026-10-11: `FOLLOW_UP` の 3 種別。
+    AWAITING_REPLY: 'KIND_AWAITING_REPLY',
+    INTERVIEW_COORDINATION: 'KIND_INTERVIEW',
+    PROPOSAL_FOLLOW_UP: 'KIND_FOLLOW_UP',
   },
   actions: {
     APPROVE: 'ACTION_APPROVE',
     FIX: 'ACTION_FIX',
     RESEND: 'ACTION_RESEND',
     RESPOND: 'ACTION_RESPOND',
+    RECORD: 'ACTION_RECORD',
   },
+  // ✅ 2026-10-11: 優先度の語（🔴 **状態ではない**）。
+  priorities: { HIGH: 'PRIORITY_HIGH', MEDIUM: 'PRIORITY_MEDIUM', LOW: 'PRIORITY_LOW' },
+  priorityNote: 'PRIORITY_NOTE',
   denied: { 'home.actionQueue.denied.role': 'DENIED_ROLE' },
   proposalStates: { APPROVAL_PENDING: 'STATE_APPROVAL_PENDING', GATE_FAILED: 'STATE_GATE_FAILED', SUBMIT_FAILED: 'STATE_SUBMIT_FAILED', APPROVED: 'STATE_APPROVED' },
   proposalRequestStates: { REQUESTED: 'STATE_REQUESTED' },
@@ -154,6 +166,15 @@ function blockOf(
  * `./home-screen.tsx` が持つ）。したがって**行と可否を直接渡す**。
  * 🔴 **検査の内容は 1 つも減らしていない**（渡し方だけが変わった）。
  */
+/**
+ * ✅ 2026-10-11: `ActionQueueSection` は **`HomeSectionRow`（行 + 導出した優先度）**を受け取る。
+ * 🔴 **優先度は導出である**（応答のキーではない）。合成では実装と同じ 1 関数を通す ——
+ *    テスト側で別の規則を書くと、`HANDOFF.md` §6-13 の「テストに同じ誤りを書けば緑になる」になる。
+ */
+function sectionRows(rows: readonly ActionQueueRow[]): readonly HomeSectionRow[] {
+  return rows.map((row) => ({ row, priority: homeRowPriority(row, Date.parse(NOW)) }));
+}
+
 function render(
   rows: readonly ActionQueueRow[],
   scope: 'mine' | 'all' = 'mine',
@@ -164,7 +185,8 @@ function render(
 ): string {
   return renderToStaticMarkup(
     createElement(ActionQueueSection, {
-      rows,
+      rows: sectionRows(rows),
+      anchorId: 'home-section-today',
       availability: options.availability ?? allowAll(),
       changedIds: new Set<string>(),
       pollFailed: false,
@@ -228,10 +250,45 @@ describe('① 並びと種別（サーバの順のまま。SEND_FAILED と SEND_
     expect(html).toContain('href="/proposal-requests"');
   });
 
-  it('🔴 種別バッジは種別ごとの語（5 つが全部出て、送信失敗と送信保留が別の語）', () => {
+  it('🔴 種別バッジは種別ごとの語（`今日やること` の 5 種別が全部出て、送信失敗と送信保留が別の語）', () => {
     const html = render(ROWS);
-    for (const label of Object.values(MESSAGES.kinds)) expect(html).toContain(label);
+    // 🔴 ✅ 2026-10-11: `ActionQueueKind` に `FOLLOW_UP` の 3 種別が増えたが、
+    //    **このセクションに載るのは 5 種別だけ**である（`HOST_ACTION_QUEUE_KIND_ORDER`）。
+    //    したがって `Object.values(MESSAGES.kinds)` の全走査ではなく、
+    //    🔴 **載る 5 種別が出ること**と **載らない 3 種別が出ないこと**の両方を見る
+    //    （「全部の語を含む」で済ませると、どの種別がどのセクションに属するかを固定できない）。
+    for (const kind of HOST_ACTION_QUEUE_KIND_ORDER) expect(html, kind).toContain(MESSAGES.kinds[kind]);
+    for (const kind of FOLLOW_UP_KIND_ORDER) expect(html, kind).not.toContain(MESSAGES.kinds[kind]);
     expect(MESSAGES.kinds.SEND_FAILED).not.toBe(MESSAGES.kinds.SEND_HELD);
+  });
+
+  it('🔴 ✅ 2026-10-11: 全行に優先度バッジが在る（`StatusBadge` ではなく `Badge`。状態ではない）', () => {
+    const html = render(ROWS);
+    for (const targetId of ['s1', 'a1', 'g1', 'h1', 'r1']) {
+      expect(html, targetId).toContain(`data-testid="home-action-queue-priority-${targetId}"`);
+    }
+    // 🔴 **モバイルでも落とさない**（`hidden` の**クラス**が付かない = 判断材料を隠さない）。
+    //    ⚠️ `Badge` の基底は `overflow-hidden` を持つので、**クラスとしての `hidden`** だけを見る。
+    const badge = html.match(/<span[^>]*data-testid="home-action-queue-priority-s1"[^>]*>/)?.[0] ?? '';
+    const badgeClasses = badge.match(/class="([^"]*)"/)?.[1]?.split(/\s+/) ?? [];
+    expect(badgeClasses).not.toContain('hidden');
+    expect(badgeClasses.filter((token) => token.endsWith(':inline'))).toEqual([]);
+    // 🔴 行は導出した優先度を `data-priority` で持つ（並びの読み方の根拠になる）。
+    // r1 は期限まで 2 日（3 日未満）= 中 / それ以外は 1 日放置 = 低。
+    expect(html).toContain('data-priority="MEDIUM"');
+    expect(html).toContain('data-priority="LOW"');
+    expect(html).toContain('PRIORITY_MEDIUM');
+  });
+
+  it('🔴 ✅ 2026-10-11: 期限超過の行は優先度 高（人間の仕様「高 = 赤系」= `danger` の variant）', () => {
+    const html = render([
+      row('PROPOSAL_REQUEST_PENDING', 'r9', { deadline: '2026-09-15T03:00:00.000Z', action: null }),
+    ]);
+    expect(html).toContain('data-priority="HIGH"');
+    expect(html).toContain('PRIORITY_HIGH');
+    const badge = html.match(/<span[^>]*data-testid="home-action-queue-priority-r9"[^>]*>/)?.[0] ?? '';
+    // 🔴 色は `PRIORITY_BADGE_VARIANTS` の 1 箇所が決める（画面は variant を書かない）。
+    expect(badge).toContain('bg-danger-bg');
   });
 
   it('時間の欄は提案の行 = 経過時間、提案依頼の行 = 返答期限までの残り（基準はサーバの応答時刻）', () => {
@@ -559,7 +616,8 @@ describe('🔴 ⑪ 種別と状態が同じ語になる行で、同じバッジ�
   it('🔴 ② 語が一致する行では状態バッジを描かない（種別バッジが同じ語・同じ色で残る）', () => {
     const html = renderToStaticMarkup(
       createElement(ActionQueueSection, {
-        rows: [row('GATE_FAILED', 'g9', { stateBadge: { entity: 'PROPOSAL', state: 'GATE_FAILED' } })],
+        rows: sectionRows([row('GATE_FAILED', 'g9', { stateBadge: { entity: 'PROPOSAL', state: 'GATE_FAILED' } })]),
+        anchorId: 'home-section-today',
         availability: allowAll(),
         changedIds: new Set<string>(),
         pollFailed: false,

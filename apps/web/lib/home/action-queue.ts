@@ -38,13 +38,21 @@ import type { HostProposalRequestView, PartnerProposalRequestView } from '../pro
 import { proposalRequestRespondHref, PROPOSAL_REQUESTS_PATH } from '../proposal-requests/list-rows';
 import {
   proposalApproveHref,
+  proposalDetailHref,
   proposalEditHref,
+  proposalInterviewHref,
   PROPOSAL_SEND_FAILURES_PATH,
   proposalsHref,
   SENDING_DOMAIN_SETTINGS_HREF,
 } from '../proposals/hrefs';
 import type { HostProposalListItem, PartnerProposalListItem } from '../proposals/views';
-import type { ActionQueueHomeBlock, ActionQueueKind, ActionQueueRow } from './types';
+import { FOLLOW_UP_KIND_ORDER, followUpKindOfState } from './sections';
+import type {
+  ActionQueueHomeBlock,
+  ActionQueueKind,
+  ActionQueueRow,
+  FollowUpHomeBlock,
+} from './types';
 
 /** 種別の並び（ホスト。docs/04 §S-003「`送信失敗` を最上位、`承認待ち` を次に」+ SP-12 T-12-15 の種別表）。 */
 export const HOST_ACTION_QUEUE_KIND_ORDER = [
@@ -141,8 +149,17 @@ function proposalActionOf(
   }
 }
 
-/** 提案から生まれる種別（`PROPOSAL_REQUEST_PENDING` は `proposal_requests` の行からしか生まれない）。 */
-type ProposalActionKind = Exclude<ActionQueueKind, 'PROPOSAL_REQUEST_PENDING'>;
+/**
+ * 要対応キュー（`ACTION_QUEUE`）の行のうち、提案から生まれる種別
+ * （`PROPOSAL_REQUEST_PENDING` は `proposal_requests` の行からしか生まれない）。
+ *
+ * 🔴 ✅ 2026-10-11: ~~`Exclude<ActionQueueKind, 'PROPOSAL_REQUEST_PENDING'>`~~ → **列挙に変えた**。
+ *    `ActionQueueKind` に `FOLLOW_UP` の 3 種別が増えたため、`Exclude` だとそれらが
+ *    **要対応キューの種別として黙って入ってくる**（下の `switch` が非網羅になり、
+ *    `proposalActionHref` が `undefined` を返す経路ができる）。
+ *    🔴 **「〜以外」で集合を作らない**（`HANDOFF.md` §6-3 の教訓: 例外は「許す形」を列挙する）。
+ */
+type ProposalActionKind = 'SEND_FAILED' | 'APPROVAL_PENDING' | 'GATE_FAILED' | 'SEND_HELD';
 
 function proposalActionKindOf(item: HostProposalListItem | PartnerProposalListItem): ProposalActionKind | null {
   switch (item.state) {
@@ -225,6 +242,87 @@ export function toPartnerRequestActionRow(item: PartnerProposalRequestView): Act
     stateBadge: { entity: 'PROPOSAL_REQUEST', state: item.state },
     // 🔴 T-22-09: 返答するのは取引先である（`S-018` で応諾・辞退。開示項目の列挙を伴う確認は `S-018` が持つ）。
     action: { kind: 'RESPOND', href: proposalRequestRespondHref(item.id) },
+  };
+}
+
+// ============================================================================
+// ✅ 2026-10-11（人間の仕様: `要対応` タブを縦に並ぶ複数セクションにした）
+// ============================================================================
+// 🔴 **`FOLLOW_UP` ブロックの行**（`返信待ち` / `面談調整中` / `提案後フォロー`）。
+//    行の型は `ActionQueueRow` と同一であり、**キーを 1 つも足していない**
+//    （`./types.ts` の `FollowUpHomeBlock` の 🔴）。
+// 🔴 **`今日やること` と行を重複させない**（`docs/04` §4.1 の 🔴）—— 載せる状態が
+//    `toProposalActionRow`（`SUBMIT_FAILED` / `APPROVAL_PENDING` / `GATE_FAILED` /
+//    保留中 `APPROVED`）と**交わらない**ことがその担保である。
+// 🔴 **終端（`WON` / `LOST` / `WITHDRAWN`）を載せない**（`F-024 AC-2` / `BR-23`）。
+
+/**
+ * 🔴 セクションの定義（種別 / 載せる状態 / 並び）は **`./sections.ts`** に在る。
+ *    理由: `./sections.ts` は **`@ses/i18n` に依存しない**（クライアント部品が値として読むため。
+ *    `./action-queue-urgency.ts` 冒頭の 🔴 と同じ分担 —— 本ファイルは `t()` を使うので、
+ *    ここに置くとカタログがクライアントバンドルへ流れる）。
+ */
+
+/**
+ * 🔴 提案（`S-019` の行）→ `FOLLOW_UP` の行。載らない状態は `null`。
+ *
+ * - `返信待ち` … 🔴 **操作を持たない**（`action: null`）。返答するのは相手であり、**こちらに
+ *   「次の 1 手」は無い**（催促はこの画面の外の電話・チャットで行う。ホームに「催促する」
+ *   ボタンを置くと、押せば何かが送られると読める = `CLAUDE.md` §3.4 の誤送信の入口）。
+ *   行のクリック先は提案詳細（`S-023`）であり、そこに履歴と相手が在る。
+ * - `面談調整中` / `提案後フォロー` … `結果を記録する`（`RECORD` → `S-024`）。
+ *   🔴 **遷移であって、ホーム上で状態機械を動かさない**（`docs/04` §4.1 の行の操作の 🔴）。
+ * 🔴 **期限（`deadline`）を持たない** —— 提案に期限の列が無い（`F-041` は Phase 2）。
+ *    **架空の期限を作らない**（作ると優先度の導出が嘘になる）。
+ */
+export function toFollowUpActionRow(
+  item: HostProposalListItem | PartnerProposalListItem,
+): ActionQueueRow | null {
+  const kind = followUpKindOfState(item.state);
+  if (kind === null) return null;
+  return {
+    kind,
+    targetId: item.id,
+    subjectLabel: subjectOf(
+      item.project === null ? t('proposals.list.project.notShared') : item.project.name,
+      item.engineerDisplayName ?? t('proposals.list.engineer.unknown'),
+    ),
+    counterpartyLabel: item.recipient === null ? null : item.recipient.companyName,
+    since: item.updatedAt,
+    deadline: null,
+    rowVersion: Date.parse(item.updatedAt),
+    href: kind === 'AWAITING_REPLY' ? proposalDetailHref(item.id) : proposalInterviewHref(item.id),
+    stateBadge: { entity: 'PROPOSAL', state: item.state },
+    action:
+      kind === 'AWAITING_REPLY' ? null : { kind: 'RECORD', href: proposalInterviewHref(item.id) },
+  };
+}
+
+/**
+ * 🔴 `FOLLOW_UP` の並び。種別の順（上の `FOLLOW_UP_KIND_ORDER`）→ 種別の中は `since` 昇順
+ *    （放置が長い順 = 優先度の降順。`./priority.ts`）→ `targetId`。
+ * 🔴 **`sortActionQueueRows` と別の関数にする** —— 種別の重みが違う（あちらは
+ *    「取り返しのつかなさ」。こちらはセクションの並びそのもの）。
+ */
+export function sortFollowUpRows(rows: readonly ActionQueueRow[]): readonly ActionQueueRow[] {
+  const rank = new Map<string, number>(FOLLOW_UP_KIND_ORDER.map((kind, index) => [kind, index]));
+  return [...rows].sort((a, b) => {
+    const byKind = (rank.get(a.kind) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b.kind) ?? Number.MAX_SAFE_INTEGER);
+    if (byKind !== 0) return byKind;
+    const byTime = Date.parse(a.since) - Date.parse(b.since);
+    if (byTime !== 0) return byTime;
+    return a.targetId < b.targetId ? -1 : a.targetId > b.targetId ? 1 : 0;
+  });
+}
+
+/**
+ * 🔴 `FOLLOW_UP` ブロックの組み立て。**毎回全量**である（差分を持たない。`./types.ts` の 🔴）。
+ */
+export function buildFollowUpBlock(sortedRows: readonly ActionQueueRow[]): FollowUpHomeBlock {
+  return {
+    kind: 'FOLLOW_UP',
+    targetIds: sortedRows.map((row) => row.targetId),
+    items: sortedRows,
   };
 }
 

@@ -34,7 +34,9 @@ import { t } from '@ses/i18n';
 import { resolveTenantCtxOutcome } from '../../lib/auth/session';
 import { sendingDomainRuntime } from '../../lib/db/bootstrap';
 import { isEngineerShareRole } from '../../lib/engineer-shares/policy';
+import { readChatScreen } from '../../lib/chat/read';
 import { readHomeBlocks } from '../../lib/home/blocks';
+import { homeHref } from '../../lib/home/hrefs';
 import { formatJstDateWithWeekday } from '../../lib/home/periods';
 import {
   DEFAULT_HOME_SCOPE,
@@ -45,7 +47,11 @@ import {
 } from '../../lib/home/schemas';
 import { getHomeView } from '../../lib/home/service';
 import { readShellIdentity } from '../../lib/shell/identity';
-import type { ActionQueueHomeBlock, SummaryHomeBlock } from '../../lib/home/types';
+import type {
+  ActionQueueHomeBlock,
+  FollowUpHomeBlock,
+  SummaryHomeBlock,
+} from '../../lib/home/types';
 import { isProjectEditorRole } from '../../lib/projects/policy';
 import { PROPOSAL_REQUESTS_PATH } from '../../lib/proposal-requests/list-rows';
 import { PROPOSALS_PATH } from '../../lib/proposals/hrefs';
@@ -54,6 +60,7 @@ import { readSendingDomainSettings } from '../../lib/settings/sending-domains';
 import { actionQueueMessages } from './_home/action-queue-props';
 import { homeScreenMessages } from './_home/home-props';
 import { HomeScreen } from './_home/home-screen';
+import { HOME_MESSAGE_THREAD_LIMIT, MessagesTabPanel } from './_home/messages-tab';
 import {
   ENGINEER_NEW_HREF,
   EngineersTabPanel,
@@ -94,14 +101,9 @@ const PARTNER_PRIMARY_ACTION: PagePrimaryAction = {
   kind: 'ACTION',
 };
 
-/** `S-003` / `S-004` の URL（既定値は URL に載せない）。 */
-function homeHref(scope: HomeScope, tab: HomeTab): string {
-  const params = new URLSearchParams();
-  if (scope !== DEFAULT_HOME_SCOPE) params.set('scope', scope);
-  if (tab !== DEFAULT_HOME_TAB) params.set('tab', tab);
-  const query = params.toString();
-  return query === '' ? '/' : `/?${query}`;
-}
+// 🔴 ✅ 2026-10-11: `S-003` / `S-004` の URL の組み立ては **`lib/home/hrefs.ts` に移した**
+//    （KPI カードの遷移先を `lib/home/summary.ts` が組む必要があり、`lib/**` から `app/**` を
+//    参照しないため。`docs/05` §6.11.1「数の意味を 2 箇所で決めない」）。
 
 export default async function HomePage({
   searchParams,
@@ -136,6 +138,9 @@ export default async function HomePage({
   const summary = view.blocks.find((block): block is SummaryHomeBlock => block.kind === 'SUMMARY');
   // 🔴 同じ理由（0 件でも `count: 0` で必ず返る。無いのは「読むのを忘れた」であり、0 件と区別する）。
   if (summary === undefined) throw new Error('readHomeBlocks が SUMMARY を返しませんでした。');
+  const followUp = view.blocks.find((block): block is FollowUpHomeBlock => block.kind === 'FOLLOW_UP');
+  // 🔴 ✅ 2026-10-11: `FOLLOW_UP` も 0 件でも必ず返る（`blocks.ts` の 🔴）。
+  if (followUp === undefined) throw new Error('readHomeBlocks が FOLLOW_UP を返しませんでした。');
 
   // 🔴 パートナー所属・`SALES` / `VIEWER` には判定材料すら取りに行かない（不要な DB 往復を
   //    増やさない。パートナー所属は RLS（C2 HOST_ONLY）でどのみち 0 件になる）。
@@ -148,9 +153,24 @@ export default async function HomePage({
     : false;
   // 🔴 挨拶に差し込むのは**サインインしている本人の氏名**である（エンジニアの氏名ではない。`BR-27`）。
   //    ⚠️ 外枠（`layout.tsx`）と同じ `readShellIdentity` を呼ぶが、`cache()` は掛かっていないため
-  //    **トランザクションが 1 本増える**（ホスト 3 本 / 取引先 3 本）。挨拶に氏名を出すのは
+  //    **トランザクションが 1 本増える**（**この時点で** ホスト 3 本 / 取引先 3 本）。挨拶に氏名を出すのは
   //    改訂 23 の人間の決定であり、氏名はこの経路以外に無い（`GET /api/me` も同じ表を読む）。
   const identity = await readShellIdentity(outcome.ctx);
+  // 🔴 ✅ 2026-10-11: `メッセージ` タブ（4 タブ目）。**API（#50）と同じ関数**（`readChatScreen`）を
+  //    通る（自己 fetch しない。母集団・並び・型が画面と API でずれない）。
+  //    ⚠️ **トランザクションが 1 本増える**（✅ 2026-10-11（レビュー指摘）: **ホーム全体で 4 本**
+  //    —— `readHomeBlocks` 2 本 + `readShellIdentity` 1 本 + 本関数 1 本。`OWNER` / `ADMIN` は
+  //    `readSendingDomainSettings` が加わり **5 本**。旧コメントの「3 本」は chat を足す前の数で
+  //    あり、**足した本人が直し忘れていた**）。**ポーリングには乗らない** ——
+  //    `GET /api/home` の応答にチャットは含まれず、60 秒ごとに増える往復ではない
+  //    （`lib/home/blocks.ts` 冒頭の表は `GET /api/home` の本数であり、そちらは 2 本のまま）。
+  //    🔴 **未読を数えない**ので `Message` 本体は読まない（`ChatThreadListItem` は本文も既読も
+  //    持たない。`_home/messages-tab.tsx` の 🔴）。
+  const chat = await readChatScreen(outcome.ctx, {
+    threadId: null,
+    threadsQuery: { limit: HOME_MESSAGE_THREAD_LIMIT },
+    messagesQuery: { limit: 1 },
+  });
   const canRegisterEngineer = outcome.ctx.role !== 'VIEWER';
   const canManageShares = isEngineerShareRole(outcome.ctx.role);
 
@@ -163,6 +183,7 @@ export default async function HomePage({
         userName={identity.userName}
         dateLabel={formatJstDateWithWeekday(readAt)}
         initialQueue={actionQueue}
+        initialFollowUp={followUp}
         initialSummary={summary}
         initialChangedSince={view.changedSince}
         scope={scope}
@@ -173,6 +194,7 @@ export default async function HomePage({
         queueListHref={PROPOSALS_PATH}
         initialTab={tab}
         tabHrefs={{
+          messages: homeHref(scope, 'messages'),
           actions: homeHref(scope, 'actions'),
           projects: homeHref(scope, 'projects'),
           engineers: homeHref(scope, 'engineers'),
@@ -222,6 +244,7 @@ export default async function HomePage({
         //    `sandbox` でメールがモックになるパートナー（分類 2）にとっては、ここが唯一の気づく場所である。
         //    🔴 位置は **KPI カードの下・タブの上**（どのタブに居ても見える）。
         quarantine={<ScanQuarantineSection blocks={view.blocks} />}
+        messagesPanel={<MessagesTabPanel threads={chat.threads.items} />}
         projectsPanel={<ProjectsTabPanel audience={host ? 'HOST' : 'PARTNER'} />}
         engineersPanel={
           <EngineersTabPanel

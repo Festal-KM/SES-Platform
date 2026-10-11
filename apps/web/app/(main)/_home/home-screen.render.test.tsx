@@ -18,10 +18,17 @@ import { ACTION_QUEUE_ACTION_KINDS } from '../../../lib/home/action-availability
 import type {
   ActionQueueHomeBlock,
   ActionQueueRow,
+  FollowUpHomeBlock,
   SummaryHomeBlock,
 } from '../../../lib/home/types';
 import type { ActionQueueMessages } from './action-queue-section';
-import { asOfLabel, greetingLead, HomeScreen, priorityItems } from './home-screen';
+import {
+  asOfLabel,
+  greetingLead,
+  HOME_PRIORITY_ITEM_COUNT,
+  HomeScreen,
+  priorityItems,
+} from './home-screen';
 import type { HomeScreenMessages } from './home-props';
 
 const NOW = '2026-10-02T03:00:00.000Z';
@@ -53,7 +60,14 @@ const MESSAGES: HomeScreenMessages = {
       basis: { PREVIOUS_DAY: '（昨日比）', PREVIOUS_WEEK: '（先週比）' },
     },
   },
-  tabs: { label: 'TABS', actions: 'TAB_ACTIONS', projects: 'TAB_PROJECTS', engineers: 'TAB_ENGINEERS' },
+  tabs: {
+    label: 'TABS',
+    // ✅ 2026-10-11: 4 タブ目。
+    messages: 'TAB_MESSAGES',
+    actions: 'TAB_ACTIONS',
+    projects: 'TAB_PROJECTS',
+    engineers: 'TAB_ENGINEERS',
+  },
   rail: {
     scheduleTitle: 'RAIL_SCHEDULE',
     scheduleEmpty: 'RAIL_SCHEDULE_EMPTY',
@@ -61,8 +75,19 @@ const MESSAGES: HomeScreenMessages = {
     priorityEmpty: 'RAIL_PRIORITY_EMPTY',
     onePointTitle: 'RAIL_ONE_POINT',
     onePointLines: ['TIP_1', 'TIP_2', 'TIP_3'],
+    onePointDismiss: 'RAIL_ONE_POINT_DISMISS',
   },
   seeAll: 'SEE_ALL',
+  // ✅ 2026-10-11: `要対応` タブのセクション 2〜4 の語。
+  sections: {
+    AWAITING_REPLY: { title: 'SEC_AWAITING', lead: 'SEC_AWAITING_LEAD', empty: 'SEC_AWAITING_EMPTY' },
+    INTERVIEW_COORDINATION: {
+      title: 'SEC_INTERVIEW',
+      lead: 'SEC_INTERVIEW_LEAD',
+      empty: 'SEC_INTERVIEW_EMPTY',
+    },
+    PROPOSAL_FOLLOW_UP: { title: 'SEC_FOLLOW_UP', lead: 'SEC_FOLLOW_UP_LEAD', empty: 'SEC_FOLLOW_UP_EMPTY' },
+  },
 };
 
 const QUEUE_MESSAGES: ActionQueueMessages = {
@@ -85,8 +110,19 @@ const QUEUE_MESSAGES: ActionQueueMessages = {
     GATE_FAILED: 'KIND_GATE_FAILED',
     SEND_HELD: 'KIND_SEND_HELD',
     PROPOSAL_REQUEST_PENDING: 'KIND_REQUEST',
+    AWAITING_REPLY: 'KIND_AWAITING_REPLY',
+    INTERVIEW_COORDINATION: 'KIND_INTERVIEW',
+    PROPOSAL_FOLLOW_UP: 'KIND_FOLLOW_UP',
   },
-  actions: { APPROVE: 'A_APPROVE', FIX: 'A_FIX', RESEND: 'A_RESEND', RESPOND: 'A_RESPOND' },
+  actions: {
+    APPROVE: 'A_APPROVE',
+    FIX: 'A_FIX',
+    RESEND: 'A_RESEND',
+    RESPOND: 'A_RESPOND',
+    RECORD: 'A_RECORD',
+  },
+  priorities: { HIGH: 'PRIORITY_HIGH', MEDIUM: 'PRIORITY_MEDIUM', LOW: 'PRIORITY_LOW' },
+  priorityNote: 'PRIORITY_NOTE',
   denied: { 'home.actionQueue.denied.role': 'DENIED_ROLE' },
   proposalStates: { APPROVAL_PENDING: 'S_APPROVAL_PENDING' },
   proposalRequestStates: { REQUESTED: 'S_REQUESTED' },
@@ -176,8 +212,11 @@ function summaryBlock(options: { readonly initialEmpty?: boolean } = {}): Summar
     audience: 'HOST',
     initialEmpty: options.initialEmpty ?? false,
     items: [
-      { kind: 'ACTION_QUEUE', count: 5, href: null, delta: null },
-      { kind: 'AWAITING_REPLY', count: 12, href: '/proposals', delta: null },
+      // ✅ 2026-10-11: 遷移先は**実装（`lib/home/summary.ts`）と同じ値**にする
+      //    （合成側に別の URL を書くと、クリックの検査が実物と無関係になる）。
+      { kind: 'ACTION_QUEUE', count: 5, href: '/#home-section-today', delta: null },
+      { kind: 'AWAITING_REPLY', count: 12, href: '/#home-section-awaiting-reply', delta: null },
+      // 🔴 遷移先を持たないカードの対照（押せる見た目にならないことを見る）。
       { kind: 'INTERVIEWS', count: 0, href: null, delta: null },
       { kind: 'PROPOSALS_THIS_WEEK', count: 3, href: '/proposals', delta: { basis: 'PREVIOUS_WEEK', count: 2 } },
     ],
@@ -203,12 +242,38 @@ function allZeroSummaryBlock(): SummaryHomeBlock {
   };
 }
 
+/** ✅ 2026-10-11: `FOLLOW_UP` ブロック（`要対応` タブの 2〜4 番目のセクションの行）。 */
+function followUpBlock(rows: readonly ActionQueueRow[]): FollowUpHomeBlock {
+  return { kind: 'FOLLOW_UP', targetIds: rows.map((item) => item.targetId), items: rows };
+}
+
+/** ✅ 2026-10-11: セクション 2〜4 に入る行（`返信待ち` 2 件 / `面談調整中` 1 件 / `提案後フォロー` 1 件）。 */
+const FOLLOW_UP_ROWS: readonly ActionQueueRow[] = [
+  row('AWAITING_REPLY', 'a1', {
+    stateBadge: { entity: 'PROPOSAL', state: 'SUBMITTED' },
+    action: null,
+  }),
+  row('AWAITING_REPLY', 'a2', {
+    stateBadge: { entity: 'PROPOSAL', state: 'SUBMITTED' },
+    action: null,
+  }),
+  row('INTERVIEW_COORDINATION', 'i1', {
+    stateBadge: { entity: 'PROPOSAL', state: 'INTERVIEW_SCHEDULED' },
+    action: { kind: 'RECORD', href: '/proposals/i1/interview' },
+  }),
+  row('PROPOSAL_FOLLOW_UP', 'f1', {
+    stateBadge: { entity: 'PROPOSAL', state: 'INTERVIEWED' },
+    action: { kind: 'RECORD', href: '/proposals/f1/interview' },
+  }),
+];
+
 function render(
   options: {
     readonly rows?: readonly ActionQueueRow[];
+    readonly followUpRows?: readonly ActionQueueRow[];
     readonly initialEmpty?: boolean;
     readonly allZero?: boolean;
-    readonly tab?: 'actions' | 'projects' | 'engineers';
+    readonly tab?: 'messages' | 'actions' | 'projects' | 'engineers';
   } = {},
 ): string {
   const rows = options.rows ?? ROWS;
@@ -219,6 +284,7 @@ function render(
       userName: '山田太郎',
       dateLabel: '2026/10/02（金）',
       initialQueue: queueBlock(rows),
+      initialFollowUp: followUpBlock(options.followUpRows ?? FOLLOW_UP_ROWS),
       initialSummary:
         options.allZero === true
           ? allZeroSummaryBlock()
@@ -229,7 +295,12 @@ function render(
       requestListHref: '/proposal-requests',
       queueListHref: '/proposals',
       initialTab: options.tab ?? 'actions',
-      tabHrefs: { actions: '/', projects: '/?tab=projects', engineers: '/?tab=engineers' },
+      tabHrefs: {
+        messages: '/?tab=messages',
+        actions: '/',
+        projects: '/?tab=projects',
+        engineers: '/?tab=engineers',
+      },
       schedule: [],
       messages: MESSAGES,
       queueMessages: QUEUE_MESSAGES,
@@ -238,6 +309,7 @@ function render(
       heading: createElement('div', { 'data-testid': 'synthetic-heading' }),
       belowKpi: createElement('div', { 'data-testid': 'synthetic-below-kpi' }),
       quarantine: createElement('div', { 'data-testid': 'synthetic-quarantine' }),
+      messagesPanel: createElement('div', { 'data-testid': 'synthetic-messages' }),
       projectsPanel: createElement('div', { 'data-testid': 'synthetic-projects' }),
       engineersPanel: createElement('div', { 'data-testid': 'synthetic-engineers' }),
       emptyState: createElement('div', { 'data-testid': 'synthetic-empty' }),
@@ -292,6 +364,29 @@ describe('🔴 ② KPI カードは 4 枚で横スクロールにしない', () 
     expect(root).not.toContain('overflow-x');
   });
 
+  it('🔴 ✅ 2026-10-11: 遷移先があるカードだけがリンクになる（4 枚を同じボタンにしない）', () => {
+    const html = render();
+    // 🔴 `href` があるカードは `<a>` で、`href` が無いカードは `<a>` にならない。
+    const cardOf = (id: string): string =>
+      html.match(new RegExp(`<(a|div)[^>]*data-testid="home-host-kpi-${id}"[^>]*>`))?.[0] ?? '';
+    expect(cardOf('action-queue')).toMatch(/^<a /);
+    expect(cardOf('action-queue')).toContain('href="/#home-section-today"');
+    expect(cardOf('awaiting-reply')).toContain('href="/#home-section-awaiting-reply"');
+    // 🔴 遷移先を持たないカードは `<div>` のまま（カーソルも下線も付かない）。
+    expect(cardOf('interviews')).toMatch(/^<div /);
+    expect(cardOf('interviews')).not.toContain('href=');
+  });
+
+  it('🔴 ✅ 2026-10-11: `hover:` / `focus-visible:` は画面側に無い（検査 (j) / `packages/ui` が持つ）', () => {
+    // 🔴 器のクラスは `packages/ui` の 1 定数から来る（画面が状態の見え方を決めない）。
+    const html = render();
+    const card = html.match(/<a[^>]*data-testid="home-host-kpi-action-queue"[^>]*>/)?.[0] ?? '';
+    expect(card).toContain('hover:bg-row-hover-bg');
+    // 🔴 `display` が `flex flex-col` のまま（`block` を足すと縦積みと `gap` が黙って消える）。
+    expect(card).toContain('flex flex-col');
+    expect(card).not.toMatch(/class="[^"]* block( |")/);
+  });
+
   it('差分は件数差のみで、持たない指標は欄ごと出さない', () => {
     const html = render();
     expect(html).toContain('↑ +2（先週比）');
@@ -300,32 +395,121 @@ describe('🔴 ② KPI カードは 4 枚で横スクロールにしない', () 
   });
 });
 
-describe('🔴 ③ タブは 3 つ（`メッセージ` を置かない）', () => {
-  it('要対応 / 案件 / 人材 の 3 つだけが出て、件数は要対応にだけ付く', () => {
+describe('🔴 ③ ✅ 2026-10-11: タブは 4 つ（`メッセージ` を足した）', () => {
+  it('メッセージ / 要対応 / 案件 / 人材 の 4 つが出て、件数は要対応にだけ付く', () => {
     const html = render();
+    // 🔴 件数は **`今日やること` の件数だけ**（5）。挨拶行の一文と KPI カード 1 と**同じ数**である
+    //    （`lib/home/sections.ts` の `homeActionsTabCount` の 🔴 —— 性質の違う仕事を
+    //    1 つの合計に丸めない / 同じ画面に矛盾する 2 行を作らない）。
     expect(html).toContain('TAB_ACTIONS 5');
+    expect(html).toContain('LEAD_PREFIX(5)LEAD_SUFFIX');
+    expect(html).toContain('TAB_MESSAGES');
     expect(html).toContain('TAB_PROJECTS');
     expect(html).toContain('TAB_ENGINEERS');
-    expect(html).not.toContain('メッセージ');
-    expect((html.match(/role="tab"/g) ?? []).length).toBe(3);
+    expect((html.match(/role="tab"/g) ?? []).length).toBe(4);
   });
 
-  it('既定タブは `要対応`（キューが描かれる）', () => {
-    expect(render()).toContain('data-testid="home-action-queue"');
+  it('🔴 `メッセージ` タブに件数を付けない（未読の実体が無い。近似を入れない）', () => {
+    const html = render();
+    const tabs = [...html.matchAll(/role="tab"[^>]*>([^<]*)</g)].map((match) => match[1]);
+    expect(tabs).toContain('TAB_MESSAGES');
+    // 🔴 `メッセージ` のラベルに数字が 1 文字も無い。
+    expect(tabs.find((label) => label === 'TAB_MESSAGES')).not.toMatch(/[0-9]/);
+    // 🔴 `案件` / `人材` も同じ（行が入るまで数が無い。`0` は「案件が無い」に読める）。
+    expect(tabs.find((label) => label === 'TAB_PROJECTS')).not.toMatch(/[0-9]/);
+    expect(tabs.find((label) => label === 'TAB_ENGINEERS')).not.toMatch(/[0-9]/);
+  });
+
+  it('🔴 既定タブは `要対応`（並びの先頭が `メッセージ` でも既定は変わらない）', () => {
+    const html = render();
+    expect(html).toContain('data-testid="home-action-queue"');
+    expect(html).toContain('data-testid="home-actions-tab"');
   });
 
   it('`?tab=` で別の面を初期表示できる（戻って同じ面に帰れる）', () => {
-    const html = render({ tab: 'projects' });
-    expect(html).toContain('data-testid="synthetic-projects"');
+    expect(render({ tab: 'projects' })).toContain('data-testid="synthetic-projects"');
+    expect(render({ tab: 'messages' })).toContain('data-testid="synthetic-messages"');
+  });
+});
+
+describe('🔴 ✅ 2026-10-11: `要対応` タブは 4 セクションを縦に並べる', () => {
+  it('`今日やること` → `返信待ち` → `面談調整中` → `提案後フォロー` の順で出る', () => {
+    const html = render();
+    const order = [
+      html.indexOf('data-testid="home-action-queue"'),
+      html.indexOf('data-testid="home-section-awaiting-reply-root"'),
+      html.indexOf('data-testid="home-section-interview-coordination-root"'),
+      html.indexOf('data-testid="home-section-proposal-follow-up-root"'),
+    ];
+    expect(order.every((index) => index >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+  });
+
+  it('🔴 行が 0 件のセクションは見出しごと描かない（`すべて見る` だけが残る空セクションを作らない）', () => {
+    const html = render({ followUpRows: [] });
+    expect(html).not.toContain('data-testid="home-section-awaiting-reply-root"');
+    expect(html).not.toContain('SEC_AWAITING');
+    // 🔴 対照: `今日やること` は 0 件でも残る（§S-003「画面全体を空にしない」）。
+    const emptyHtml = render({ rows: [], followUpRows: [] });
+    expect(emptyHtml).toContain('data-testid="home-action-queue"');
+    expect(emptyHtml).toContain('QUEUE_EMPTY');
+  });
+
+  it('🔴 セクションの件数バッジはそのセクションの行数（合計に丸めない）', () => {
+    const html = render();
+    const countOf = (prefix: string): string =>
+      html.match(new RegExp(`data-testid="${prefix}header-count"[^>]*>([^<]*)<`))?.[1] ?? '';
+    expect(countOf('home-section-awaiting-reply-')).toBe('2件');
+    expect(countOf('home-section-interview-coordination-')).toBe('1件');
+    expect(countOf('home-section-proposal-follow-up-')).toBe('1件');
+  });
+
+  it('🔴 `すべて見る` はセクションの母集団をそのまま開く（状態フィルタ付きの `S-019`）', () => {
+    const html = render();
+    expect(html).toContain('href="/proposals?state=SUBMITTED"');
+    expect(html).toContain('href="/proposals?state=INTERVIEW_SCHEDULED"');
+    expect(html).toContain('href="/proposals?state=INTERVIEWED&amp;state=RESULT_PENDING"');
+  });
+
+  it('🔴 `返信待ち` の行に操作を置かない（催促のボタンをホームに置かない）', () => {
+    const html = render();
+    expect(html).toContain('data-testid="home-action-queue-action-none-a1"');
+    // 🔴 対照: `面談調整中` / `提案後フォロー` は `結果を記録する`（`S-024` への遷移）。
+    expect(html).toContain('data-testid="home-action-queue-action-i1"');
+    expect(html).toContain('href="/proposals/i1/interview"');
+    expect(html).toContain('A_RECORD');
+  });
+
+  it('🔴 🔴 `稼働開始が近い人材` のセクションを作らない（`Assignment` は Phase 2 / 氏名を出さない）', () => {
+    const html = render();
+    expect(html).not.toContain('data-testid="home-section-upcoming-assignment-root"');
   });
 });
 
 describe('🔴 ④⑤ 右レール（先に動くもの / 今日の予定 / ワンポイント）', () => {
-  it('先に動くものは要対応キューの上位 3 件で、順がキューと同一である', () => {
+  it('✅ 2026-10-11: 先に動くものは要対応キューの**上位 4 件**で、順がキューと同一である', () => {
     const items = priorityItems(ROWS, Date.parse(NOW), QUEUE_MESSAGES);
-    expect(items).toHaveLength(3);
-    expect(items.map((item) => item.rank)).toEqual([1, 2, 3]);
-    expect(items.map((item) => item.title)).toEqual(['subject-s1', 'subject-a1', 'subject-g1']);
+    // 🔴 人間の仕様「優先アクション（最大 4 件、順位つき）」。
+    expect(HOME_PRIORITY_ITEM_COUNT).toBe(4);
+    expect(items).toHaveLength(4);
+    expect(items.map((item) => item.rank)).toEqual([1, 2, 3, 4]);
+    expect(items.map((item) => item.title)).toEqual([
+      'subject-s1',
+      'subject-a1',
+      'subject-g1',
+      'subject-h1',
+    ]);
+  });
+
+  it('🔴 「最大」4 件である（行が少なければ少ないまま。足して埋めない）', () => {
+    const items = priorityItems(ROWS.slice(0, 2), Date.parse(NOW), QUEUE_MESSAGES);
+    expect(items).toHaveLength(2);
+  });
+
+  it('🔴 右レールは `今日やること` の行だけから作る（`FOLLOW_UP` の行を混ぜない）', () => {
+    // 🔴 混ぜると「キューの 1 行目と優先アクションの 1 位が違う」状態になる（§4.1 の右レール ②）。
+    const items = priorityItems(ROWS, Date.parse(NOW), QUEUE_MESSAGES);
+    expect(items.map((item) => item.title)).not.toContain('subject-a2');
   });
 
   it('🔴 実行系の導線を持たない（`href` / `onClick` のキーが無い = 型にも無い）', () => {
@@ -412,9 +596,12 @@ describe('🔴 幅クラスは素通しされる（検査 (k) の 1 回）', () 
 describe('🔴 ⑧ 強さの順序: KPI の件数は要対応キューの見出しより強くない', () => {
   it('🔴 `S-003`（ホスト）の KPI の件数は `--text-metric`（24px）を使わない', () => {
     const html = render();
-    const values = [...html.matchAll(/<span class="(text-(?:metric|lg)[^"]*tabular-nums)"/g)].map(
-      (match) => match[1] ?? '',
-    );
+    // ⚠️ ✅ 2026-10-11: 遷移先を持つカードの件数には `underline` が付くため、
+    //    **クラスの並びに依存しない形**にした（検査の内容は 1 つも減らしていない ——
+    //    「4 つ見つかる」「`text-metric` を使わない」「`text-lg` である」の 3 つをそのまま見る）。
+    const values = [...html.matchAll(/<span class="(text-(?:metric|lg)[ "][^"]*)"/g)]
+      .map((match) => match[1] ?? '')
+      .filter((classes) => classes.includes('tabular-nums'));
     expect(values.length, 'KPI の件数が 1 つも見つからない（検出器の空振り）').toBe(4);
     for (const classes of values) {
       expect(classes, `ホームの KPI が 24px で描かれている: ${classes}`).not.toContain('text-metric');
@@ -437,9 +624,13 @@ describe('🔴 ⑧ 強さの順序: KPI の件数は要対応キューの見出�
 
   it('🔴 KPI カードの器は要対応キューより小さい余白である（帯が画面を押し下げない）', () => {
     const html = render();
-    const card = html.match(/<div[^>]*data-testid="home-host-kpi-action-queue"[^>]*>/)?.[0] ?? '';
+    // ⚠️ ✅ 2026-10-11: 遷移先を持つカードは `<a>` で描かれる（`<div>` 決め打ちにしない）。
+    const card = html.match(/<(?:a|div)[^>]*data-testid="home-host-kpi-action-queue"[^>]*>/)?.[0] ?? '';
     expect(card).toContain('p-3');
     expect(card).not.toContain('p-4');
+    // 🔴 遷移先を持たないカードも同じ余白である（押せるかどうかで器の寸法が変わらない）。
+    const plain = html.match(/<(?:a|div)[^>]*data-testid="home-host-kpi-interviews"[^>]*>/)?.[0] ?? '';
+    expect(plain).toContain('p-3');
   });
 
   it('🔴 同じ 1 件が KPI とキュー見出しに二重に出ない（KPI は `data-emphasis` で既定のまま）', () => {

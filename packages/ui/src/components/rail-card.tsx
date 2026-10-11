@@ -18,14 +18,23 @@
 // あり、3 箇所に写していない。
 //
 // ============================================================================
-// 🔴 「閉じる」ボタンを持たない（ブリーフとの差分。**報告対象**）
+// ✅ 2026-10-11: 「閉じる」を `RailCard` **だけ**に足した（人間の仕様「今日のワンポイント
+//    （Dismiss 可）」）
 // ============================================================================
-// ブリーフは「右端のリンク**または閉じるボタン**」を求めている。🔴 **閉じるは実装していない。**
-// 閉じるにはハンドラ（`onDismiss`）を受ける口が要り、その口を作ると部品が `'use client'` になる。
-// 主バレル（`../index.ts`）の部品に `'use client'` を付けると、**それを 1 つ使うだけの
-// サーバコンポーネントがクライアントバンドルへ移る**（`../index.client.ts` 冒頭の 🔴 /
-// `tests/static/ui-overlay-contract.test.ts` が「`'use client'` を宣言するファイル = overlay 6 部品」を
-// 凍結している）。お知らせの既読は Phase 2 の通知（`S-032`）と同じサーバ側の経路で行う。
+// ~~🔴 **閉じるは実装していない。** 閉じるにはハンドラ（`onDismiss`）を受ける口が要り、
+// その口を作ると部品が `'use client'` になる。~~ → 🔴 **これは誤りだった。** ハンドラを
+// **受け取る**だけの部品は `'use client'` を宣言する必要が無い（クライアント境界を作るのは
+// **関数を渡す側**であり、ここでは `apps/web/app/(main)/_home/home-screen.tsx` が既に
+// `'use client'` である）。本ファイルは引き続き `'use client'` を宣言しないので、
+// `tests/static/ui-overlay-contract.test.ts` の凍結（`'use client'` = overlay 6 部品）も、
+// サーバコンポーネントからの素の利用（`dismiss` を渡さない）もそのまま成立する。
+//
+// 🔴 **`Timeline` / `RankedList` には足さない。** 閉じてよいのは「ワンポイント（使い方の案内）」
+//    だけであり、**予定と優先アクションは業務の判断材料なので閉じられてはならない**
+//    （`CLAUDE.md` §13.3「狭い画面を理由に判断材料を隠さない」と同じ理由）。
+// 🔴 **「二度と出ない」設定にしない** —— 当日だけ閉じる（`docs/04` §4.1 の ③「永久に消す設定を
+//    作ると、入れた意味が消える」）。**どこに保持するかは呼び出し側**が決める（部品は時計も
+//    ストレージも持たない）。
 //
 // 🔴 **`'use client'` を宣言しない / 文言を持たない**（`../index.ts` の共通規約 4・5）。
 import type { ComponentType, ReactNode } from 'react';
@@ -57,9 +66,21 @@ const RAIL_BODY_CLASSES = 'm-0 text-body text-fg';
 /** 補助（12px / `--color-fg-muted`）。 */
 const RAIL_META_CLASSES = 'm-0 text-xs text-fg-muted';
 
+/**
+ * ✅ 2026-10-11: 「閉じる」（🔴 **`RailCard` だけ**。ファイル冒頭の 🔴）。
+ *
+ * 🔴 **`href` を持たない**（遷移ではない）。🔴 **語は呼び出し側が持つ**（部品に日本語を書かない）。
+ */
+export type RailCardDismiss = {
+  readonly label: string;
+  readonly onDismiss: () => void;
+};
+
 type RailFrameProps = {
   readonly title: string;
   readonly link: RailCardLink | null;
+  /** 🔴 `null` なら閉じるボタンを描かない（既定）。 */
+  readonly dismiss: RailCardDismiss | null;
   readonly testIdPrefix: string;
   readonly linkComponent: ComponentType<SidebarLinkProps>;
   readonly className: string | undefined;
@@ -73,6 +94,7 @@ type RailFrameProps = {
 function RailFrame({
   title,
   link,
+  dismiss,
   testIdPrefix,
   linkComponent: Link,
   className,
@@ -94,6 +116,18 @@ function RailFrame({
             {link.label}
           </Link>
         )}
+        {dismiss === null ? null : (
+          // 🔴 **`<button>` である**（遷移ではないので `<a>` にしない）。見た目は副次的な導線の
+          //    1 実装から取る（`../lib/link-classes.ts`。閉じるは secondary の操作である）。
+          <button
+            type="button"
+            className={cn('ml-auto shrink-0 rounded-sm underline', SECONDARY_LINK_CLASSES)}
+            onClick={dismiss.onDismiss}
+            data-testid={`${testIdPrefix}dismiss`}
+          >
+            {dismiss.label}
+          </button>
+        )}
       </div>
       {children}
     </section>
@@ -114,6 +148,11 @@ export type RailCardProps = {
   readonly lines: readonly string[];
   /** 右端の導線（`null` なら描かない）。 */
   readonly link?: RailCardLink | null;
+  /**
+   * ✅ 2026-10-11: 「閉じる」（`null` / 未指定なら描かない）。🔴 **`link` と同じ位置に出る**ので、
+   * 両方を同時に渡さない（渡すと右端に 2 つ並び、どちらが主たる操作か読めなくなる）。
+   */
+  readonly dismiss?: RailCardDismiss | null;
   readonly testIdPrefix: string;
   readonly linkComponent?: ComponentType<SidebarLinkProps>;
   readonly className?: string;
@@ -123,6 +162,7 @@ export function RailCard({
   title,
   lines,
   link = null,
+  dismiss = null,
   testIdPrefix,
   linkComponent = DefaultLink,
   className,
@@ -131,6 +171,7 @@ export function RailCard({
     <RailFrame
       title={title}
       link={link}
+      dismiss={dismiss}
       testIdPrefix={testIdPrefix}
       linkComponent={linkComponent}
       className={className}
@@ -196,6 +237,8 @@ export function Timeline({
     <RailFrame
       title={title}
       link={link}
+      // 🔴 予定と優先アクションは閉じられない（ファイル冒頭の 🔴）。
+      dismiss={null}
       testIdPrefix={testIdPrefix}
       linkComponent={linkComponent}
       className={className}
@@ -288,6 +331,8 @@ export function RankedList({
     <RailFrame
       title={title}
       link={link}
+      // 🔴 予定と優先アクションは閉じられない（ファイル冒頭の 🔴）。
+      dismiss={null}
       testIdPrefix={testIdPrefix}
       linkComponent={linkComponent}
       className={className}

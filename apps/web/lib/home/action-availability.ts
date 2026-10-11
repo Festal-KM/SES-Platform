@@ -29,12 +29,20 @@ import { executionDenialMessageKey } from '../api/guards';
 import { deriveMainCapabilities } from './capabilities';
 import type { ActionQueueActionAvailability, ActionQueueActionKind } from './types';
 
-/** 🔴 4 kind の並び（応答は毎回 4 エントリを全量返す。docs/05 §6.11.2）。 */
+/**
+ * 🔴 kind の並び（応答は毎回**全エントリ**を全量返す。docs/05 §6.11.2）。
+ *
+ * ✅ 2026-10-11: `RECORD`（`結果を記録する` → `S-024`）を足して **5 エントリ**になった。
+ * 🔴 **条件①②③ はそのまま全 kind に当たる**（代理閲覧 / ライフサイクル / 取引先の停止 / ロール）。
+ *    条件④（送信ドメイン未検証）は引き続き **`RESEND` だけ**である —— 結果の記録は
+ *    取引先へ何も送らない（`S-024` は Phase 1 では**記録のみ**）。
+ */
 export const ACTION_QUEUE_ACTION_KINDS = [
   'APPROVE',
   'FIX',
   'RESEND',
   'RESPOND',
+  'RECORD',
 ] as const satisfies readonly ActionQueueActionKind[];
 
 /**
@@ -118,6 +126,9 @@ function lifecycleReasonKey(state: TenantLifecycleState): MessageKey | null {
  *    🔴 **`FIX` も `submit` に紐づける** —— 閲覧専用ロールに提案の**編集**（`S-020`）の導線を出すと、
  *    押した先で黙ってホームに戻される（`BR-31` / `F-004 AC-6`）。`deriveMainCapabilities` の 4 つの
  *    boolean はいずれも `role !== 'VIEWER'` なので、**新しい判定表を作ったことにはならない**。
+ * 🔴 ✅ 2026-10-11: **`RECORD` も `submit` に紐づける** —— `S-024`（面談日程と結果記録）は
+ *    `isViewer` で入力を閉じており（`proposals/[id]/interview/page.tsx`）、閲覧専用ロールに
+ *    導線を出すと押した先で何もできない（`U-10`「到達できない導線を出さない」）。
  */
 function roleAllows(kind: ActionQueueActionKind, role: TenantRole): boolean {
   const capabilities = deriveMainCapabilities(role).execute;

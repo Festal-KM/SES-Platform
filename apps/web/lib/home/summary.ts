@@ -54,7 +54,10 @@ import { ENGINEER_LIST_PATH } from '../engineers/list-rows';
 import { PROJECT_LIST_PATH } from '../projects/list-rows';
 import { PROPOSALS_PATH } from '../proposals/hrefs';
 import type { TenantDb } from '../proposals/list';
+import { homeHref } from './hrefs';
 import { deltaWindowOf } from './periods';
+import type { HomeScope } from './schemas';
+import type { HomeSection } from './sections';
 import type {
   HostSummaryMetricKind,
   PartnerSummaryMetricKind,
@@ -182,6 +185,18 @@ export function buildSummaryBlock(
   counts: SummaryCounts,
   audience: 'HOST' | 'PARTNER',
   actionQueueCount: number,
+  /**
+   * 🔴 ✅ 2026-10-11（レビュー指摘）: **いま見ている `scope`**。
+   *
+   * ⚠️ **必須にする。** 既定値（`DEFAULT_HOME_SCOPE`）を置くと、`?scope=all` で見ている
+   *    利用者がカードを押したときに **`scope=mine` のホームへ飛ぶ** ——
+   *    🔴 **押した数（`actionQueueCount` は `scope` を反映している）と、着地先の
+   *    セクションの行数が食い違う。** これは `docs/04` §4.1 の非同期処理の表現と §7.2 ③ が
+   *    禁じている状態そのものであり、**`./action-queue-read.ts` が `FOLLOW_UP` を
+   *    `scope` で絞らない根拠として挙げている禁止事項と同じもの**である
+   *    （= 自分の論拠を自分で破っていた）。
+   */
+  scope: HomeScope,
 ): SummaryHomeBlock {
   const weekDelta: SummaryMetricDelta = {
     basis: 'PREVIOUS_WEEK',
@@ -202,7 +217,7 @@ export function buildSummaryBlock(
         (kind): SummaryMetric<HostSummaryMetricKind> => ({
           kind,
           count: values[kind],
-          href: HOST_METRIC_HREFS[kind],
+          href: hostMetricHref(kind, scope),
           // 🔴 在庫の数には差分を付けない（ファイル冒頭の 🔴）。
           delta: kind === 'PROPOSALS_THIS_WEEK' ? weekDelta : null,
         }),
@@ -223,7 +238,7 @@ export function buildSummaryBlock(
       (kind): SummaryMetric<PartnerSummaryMetricKind> => ({
         kind,
         count: values[kind],
-        href: PARTNER_METRIC_HREFS[kind],
+        href: partnerMetricHref(kind, scope),
         delta: kind === 'PUBLISHED_THIS_WEEK' ? weekDelta : null,
       }),
     ),
@@ -233,25 +248,66 @@ export function buildSummaryBlock(
 /**
  * 🔴 指標 → 遷移先。**既存の URL だけ**を使う（新しいルートを作らない）。
  *
- * ⚠️ **`KpiCard` は `href` を受け取らない**（`packages/ui` の部品が「カード全体をリンクにする」口を
- *    持たない。`docs/04` §4.1 は「カードは数値から遷移してよい」= 任意である）。値は**応答の契約**
- *    として残す —— 画面が遷移先を自分で決めると、§6.11.1 の「数の意味を 2 箇所で決めない」が崩れる。
- * 🔴 `null` = その指標から遷移しない（`面談予定` の `S-024` は未実装であり、404 を作らない）。
+ * ~~⚠️ **`KpiCard` は `href` を受け取らない**~~ → ✅ 2026-10-11: 人間の仕様
+ *    🔴 **「KPI はクリックでタブ切替やフィルタに遷移できる」**を受けて `KpiCard` に `href` を
+ *    足した（`packages/ui`）。したがって**この表が画面の遷移そのものを決める** ——
+ *    §6.11.1 の「数の意味を 2 箇所で決めない」はこれで保たれる（画面は `href` を作らない）。
+ * 🔴 **遷移先は `docs/04` §4.1 の操作表のとおり**: 1 → `要対応` タブ / 2 → `返信待ち`
+ *    セクション / 3 → 面談（本実装では `面談調整中` セクション）/ 4 → `S-019`。
+ * 🔴 **`S-024` を直接指さない** —— `S-024` は提案 1 件ごとの画面であり、指標（件数）からは
+ *    「どの 1 件か」が決まらない。**セクションへ送り、そこから 1 件を選ばせる**。
+ * 🔴 `null` = その指標から遷移しない（押せる見た目にもならない。`KpiCard` の `href` の 🔴）。
  */
-const HOST_METRIC_HREFS: Readonly<Record<HostSummaryMetricKind, string | null>> = {
-  // 🔴 「今日やること」はこの画面の中（要対応タブ）であり、別画面への遷移を持たない。
+/**
+ * 🔴 指標 → `要対応` タブのどのセクションへ送るか（**ここだけが決める**）。
+ *    `null` = ホームの外（別画面の一覧）へ送る指標。
+ * 🔴 ✅ 2026-10-11（レビュー指摘）: **`scope` を URL に引き継ぐため、写像を「文字列の表」から
+ *    「セクション名の表」に変えた** —— 文字列を定数にしておくと `scope` を混ぜる場所が無く、
+ *    既定値で固定するしかなくなる（それが指摘された不具合そのものだった）。
+ */
+const HOST_METRIC_SECTIONS: Readonly<Record<HostSummaryMetricKind, HomeSection | null>> = {
+  // 🔴 「今日やること」はこの画面の中である（`要対応` タブの該当セクションへ)。
+  ACTION_QUEUE: 'TODAY',
+  AWAITING_REPLY: 'AWAITING_REPLY',
+  INTERVIEWS: 'INTERVIEW_COORDINATION',
+  PROPOSALS_THIS_WEEK: null,
+};
+
+const PARTNER_METRIC_SECTIONS: Readonly<Record<PartnerSummaryMetricKind, HomeSection | null>> = {
+  // 🔴 取引先の「返答が必要な依頼」は `今日やること` セクションに載る（返答するのは取引先であり、
+  //    依頼の行は `action: RESPOND` を持つ。`./action-queue.ts` の `toPartnerRequestActionRow`）。
+  REQUESTS_TO_ANSWER: 'TODAY',
+  AWAITING_REPLY: 'AWAITING_REPLY',
+  INTERVIEWS: 'INTERVIEW_COORDINATION',
+  PUBLISHED_THIS_WEEK: null,
+};
+
+/** ホームの外へ送る指標の遷移先（`null` = 遷移しない）。 */
+const HOST_METRIC_EXTERNAL_HREFS: Readonly<Record<HostSummaryMetricKind, string | null>> = {
   ACTION_QUEUE: null,
-  AWAITING_REPLY: PROPOSALS_PATH,
+  AWAITING_REPLY: null,
   INTERVIEWS: null,
   PROPOSALS_THIS_WEEK: PROPOSALS_PATH,
 };
 
-const PARTNER_METRIC_HREFS: Readonly<Record<PartnerSummaryMetricKind, string | null>> = {
+const PARTNER_METRIC_EXTERNAL_HREFS: Readonly<Record<PartnerSummaryMetricKind, string | null>> = {
   REQUESTS_TO_ANSWER: null,
-  AWAITING_REPLY: PROPOSALS_PATH,
+  AWAITING_REPLY: null,
   INTERVIEWS: null,
   PUBLISHED_THIS_WEEK: PROJECT_LIST_PATH,
 };
+
+function hostMetricHref(kind: HostSummaryMetricKind, scope: HomeScope): string | null {
+  const section = HOST_METRIC_SECTIONS[kind];
+  if (section !== null) return homeHref(scope, 'actions', { section });
+  return HOST_METRIC_EXTERNAL_HREFS[kind];
+}
+
+function partnerMetricHref(kind: PartnerSummaryMetricKind, scope: HomeScope): string | null {
+  const section = PARTNER_METRIC_SECTIONS[kind];
+  if (section !== null) return homeHref(scope, 'actions', { section });
+  return PARTNER_METRIC_EXTERNAL_HREFS[kind];
+}
 
 /**
  * ⚠️ 旧 `SummaryStrip` の指標が参照していた `S-005` の URL。

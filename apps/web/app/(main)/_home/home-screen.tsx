@@ -21,7 +21,7 @@
 // 全セクションの行 / 優先アクション』を同じ応答から一括で更新する。別々のタイミングで更新して
 // はならない」**と定めている（§7.2 ③ の条件 ①〜④ も同じ）。
 //
-// 🔴 **右レールの「先に動くもの」は要対応キューと同じ 1 本のデータ**（`rows.slice(0, 3)`）であり、
+// 🔴 **右レールの「先に動くもの」は要対応キューと同じ 1 本のデータ**（`rows.slice(0, HOME_PRIORITY_ITEM_COUNT)`）であり、
 //    別クエリを撃たない。別経路にすると**更新の瞬間に順位と件数が食い違い、どちらも信用されなく
 //    なる**（「1 位とキューの 1 行目が違う」は利用者から見れば画面のバグである）。
 // 🔴 したがって**ポーリングの口はこの 1 ファイルだけ**である（`./action-queue-section.tsx` は
@@ -43,6 +43,7 @@
 //   ④ 🔴 **タブを状態の絞り込みに使わない**（§5-13）。3 つは**面**であり、同じ母集団ではない。
 //   ⑤ 🔴 **語を持たない**（`packages/i18n` は `./home-props.ts` / `./action-queue-props.ts` が解決）。
 //   ⑥ 🔴 `@ses/db` に辿れる値 import を持たない（`client-db-boundary.test.ts`）。型のみ。
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { PageBody, PageGreeting, KpiCardRow, RailCard, RankedList, Timeline, greetingSlotOf } from '@ses/ui';
 import type { PageWidthClass, RankedListItem, TimelineEntry } from '@ses/ui';
@@ -52,18 +53,19 @@ import { isActionQueueRowUrgent } from '../../../lib/home/action-queue-urgency';
 import { formatJstHourMinute, jstDayIndex, jstHour } from '../../../lib/home/periods';
 // 🔴 型だけを読む（`./schemas.ts` は `zod` を持つ。クライアントバンドルに検証器を引き込まない）。
 import type { HomeScope, HomeTab } from '../../../lib/home/schemas';
+// 🔴 **タスク生成ロジック**（セクションの割り当て・順・件数）。UI と分離してある
+//    （人間の仕様 2026-10-11 の 🔴。`lib/home/sections.ts` は `@ses/i18n` に依存しない）。
+import { homeActionsTabCount, toHomeSections } from '../../../lib/home/sections';
 import { isHomeAllMetricsZero, isHomeInitialEmpty, kpiCardItems } from '../../../lib/home/summary-view';
 import type {
   ActionQueueHomeBlock,
   ActionQueueRow,
+  FollowUpHomeBlock,
   HomeBlock,
   SummaryHomeBlock,
 } from '../../../lib/home/types';
-import {
-  ActionQueueSection,
-  actionQueueRowTimeLabel,
-  type ActionQueueMessages,
-} from './action-queue-section';
+import { actionQueueRowTimeLabel, type ActionQueueMessages } from './action-row';
+import { ActionsTab } from './actions-tab';
 import type { HomeScreenMessages } from './home-props';
 
 export type HomeScreenProps = {
@@ -75,6 +77,11 @@ export type HomeScreenProps = {
   /** 日付（`2026/10/02（木）`。🔴 サーバが JST で整形したもの）。 */
   readonly dateLabel: string;
   readonly initialQueue: ActionQueueHomeBlock;
+  /**
+   * ✅ 2026-10-11: `要対応` タブの 2〜4 番目のセクションの行（`返信待ち` / `面談調整中` /
+   * `提案後フォロー`）。🔴 **同じ応答（`GET /api/home`）から来る**（別クエリにしない）。
+   */
+  readonly initialFollowUp: FollowUpHomeBlock;
   readonly initialSummary: SummaryHomeBlock;
   readonly initialChangedSince: string;
   readonly scope: HomeScope;
@@ -104,6 +111,8 @@ export type HomeScreenProps = {
   readonly belowKpi: ReactNode;
   /** ✅ 0 共有できないスキルシート（🔴 **タブより上**。どのタブに居ても見える）。 */
   readonly quarantine: ReactNode;
+  /** ✅ 2026-10-11: `メッセージ` タブの面（サーバ描画）。🔴 **未読の件数を持たない**。 */
+  readonly messagesPanel: ReactNode;
   /** `案件` タブの面（サーバ描画）。 */
   readonly projectsPanel: ReactNode;
   /** `人材` タブの面（サーバ描画）。 */
@@ -114,6 +123,11 @@ export type HomeScreenProps = {
 
 type QueueState = {
   readonly rows: readonly ActionQueueRow[];
+  /**
+   * ✅ 2026-10-11: `FOLLOW_UP` の行。🔴 **毎回全量で差し替える**（差分の合成経路を 2 本
+   * 持たない。`lib/home/types.ts` の `FollowUpHomeBlock` の 🔴）。
+   */
+  readonly followUpRows: readonly ActionQueueRow[];
   readonly availability: ActionQueueHomeBlock['actionAvailability'];
   readonly summary: SummaryHomeBlock;
   readonly changedSince: string;
@@ -126,9 +140,10 @@ type HomeResponseBody = {
   readonly changedSince?: string;
 };
 
-/** 🔴 1 回の応答から**両方**を取り出す（片方だけ更新する経路を作らない。上の 🔴）。 */
+/** 🔴 1 回の応答から**全部**を取り出す（片方だけ更新する経路を作らない。上の 🔴）。 */
 type HomeDelta = {
   readonly queue: ActionQueueHomeBlock;
+  readonly followUp: FollowUpHomeBlock;
   readonly summary: SummaryHomeBlock;
   readonly changedSince: string;
 };
@@ -137,12 +152,24 @@ export function homeDeltaOf(body: HomeResponseBody): HomeDelta | null {
   const queue = body.blocks?.find(
     (candidate): candidate is ActionQueueHomeBlock => candidate.kind === 'ACTION_QUEUE',
   );
+  const followUp = body.blocks?.find(
+    (candidate): candidate is FollowUpHomeBlock => candidate.kind === 'FOLLOW_UP',
+  );
   const summary = body.blocks?.find(
     (candidate): candidate is SummaryHomeBlock => candidate.kind === 'SUMMARY',
   );
-  // 🔴 どちらかが欠けた応答を部分的に適用しない（数と行が別の時点のものになる）。
-  if (queue === undefined || summary === undefined || typeof body.changedSince !== 'string') return null;
-  return { queue, summary, changedSince: body.changedSince };
+  // 🔴 1 つでも欠けた応答を部分的に適用しない（数と行が別の時点のものになる）。
+  //    ✅ 2026-10-11: `FOLLOW_UP` も同じ扱いである —— KPI カード 2 / 3 の件数と
+  //    セクションの行数は同じ応答から来なければ食い違う。
+  if (
+    queue === undefined ||
+    followUp === undefined ||
+    summary === undefined ||
+    typeof body.changedSince !== 'string'
+  ) {
+    return null;
+  }
+  return { queue, followUp, summary, changedSince: body.changedSince };
 }
 
 /**
@@ -176,11 +203,20 @@ async function fetchHome(scope: HomeScope, changedSince: string | null): Promise
   return homeDeltaOf((await response.json()) as HomeResponseBody);
 }
 
-/** 🔴 右レールの「先に動くもの」の件数（`docs/04` §4.1 の右レール ② = **上位 3 件**）。 */
-export const HOME_PRIORITY_ITEM_COUNT = 3;
+/**
+ * 🔴 右レールの「先に動くもの」の件数。
+ *
+ * ✅ 2026-10-11: 人間の仕様「**優先アクション（最大 4 件、順位つき）**」に合わせて **3 → 4**。
+ * ⚠️ `docs/04` §4.1 の右レール ② は「上位 3 件」と書いており、**人間の仕様の方が新しい**
+ *    （`docs/04` 側の訂正は報告対象。`CLAUDE.md` §8.7）。
+ * 🔴 **「最大」である**（行がそれより少なければ少ないまま。足して埋めない）。
+ */
+export const HOME_PRIORITY_ITEM_COUNT = 4;
 
 /**
- * 🔴 要対応キューの**上位 3 件**を順位つきにする（**同じ 1 本のデータ**。別クエリにしない）。
+ * 🔴 要対応キューの**上位 `HOME_PRIORITY_ITEM_COUNT` 件**を順位つきにする（**同じ 1 本のデータ**。別クエリにしない）。
+ * 🔴 **件数を文章に数字で書かない** —— 定数と本文が食い違うコメントは、
+ *    `S-022` の並び順の注記（2026-10-04 に「新しい順」と書いてあったが実装は更新日の昇順）と同じ事故である。
  *
  * 🔴 **並びはキューと同一**（サーバが決めた `targetIds` の順。`放置時間 × 取り返しのつかなさ`）。
  *    ここで並べ替えると、画面の 2 箇所で順位が違うという最悪の形になる。
@@ -236,12 +272,29 @@ export function onePointLine(changedSince: string, lines: readonly string[]): st
   return lines[index] ?? null;
 }
 
+/**
+ * ✅ 2026-10-11: 🔴 **ワンポイントを「当日だけ」閉じるための鍵**（端末に保持する。
+ *    `docs/04` §4.1 の右レール ③「閉じた状態は端末に保持し、その日は再表示しない。
+ *    🔴 **二度と出ない形にしない**」）。
+ *
+ * 🔴 **鍵に日付（JST の通日）を含める**ことがその担保である —— 翌日は鍵が変わるので
+ *    必ず再表示される。「永久に消す」値を保存できる形にしない。
+ * 🔴 **業務データを端末に保存しない**（保存するのは「何日目か」の整数だけ）。
+ */
+export const HOME_ONE_POINT_DISMISS_STORAGE_KEY = 'ses.home.onePoint.dismissedDay';
+
+export function onePointDismissDay(changedSince: string): string {
+  const at = new Date(changedSince);
+  return String(Number.isNaN(at.getTime()) ? 0 : jstDayIndex(at));
+}
+
 export function HomeScreen({
   widthClass,
   audience,
   userName,
   dateLabel,
   initialQueue,
+  initialFollowUp,
   initialSummary,
   initialChangedSince,
   scope,
@@ -258,12 +311,14 @@ export function HomeScreen({
   heading,
   belowKpi,
   quarantine,
+  messagesPanel,
   projectsPanel,
   engineersPanel,
   emptyState,
 }: HomeScreenProps) {
   const [state, setState] = useState<QueueState>({
     rows: initialQueue.items,
+    followUpRows: initialFollowUp.items,
     availability: initialQueue.actionAvailability,
     summary: initialSummary,
     changedSince: initialChangedSince,
@@ -291,6 +346,8 @@ export function HomeScreen({
         let availability = delta.queue.actionAvailability;
         // 🔴 KPI は**毎回全量**来る（差分にしない。`docs/05` §6.11.1）。
         let summary = delta.summary;
+        // 🔴 ✅ 2026-10-11: `FOLLOW_UP` も**毎回全量**来る（差分を持たない）。
+        let followUpRows = delta.followUp.items;
         if (merged === null) {
           // 🔴 手元にも差分にも無い行がある（時計のずれ等）。1 度だけ全行を読み直す。
           const full = await fetchHome(scope, null);
@@ -304,11 +361,13 @@ export function HomeScreen({
           nextSince = full.changedSince;
           availability = full.queue.actionAvailability;
           summary = full.summary;
+          followUpRows = full.followUp.items;
         }
         rows = merged;
         since = nextSince;
         setState({
           rows: merged,
+          followUpRows,
           availability,
           summary,
           changedSince: nextSince,
@@ -330,6 +389,18 @@ export function HomeScreen({
 
   const nowMs = Date.parse(state.changedSince);
   const queueCount = state.rows.length;
+  // 🔴 ✅ 2026-10-11: セクションの組み立ては **`lib/home/sections.ts` の純粋関数 1 本**である
+  //    （人間の仕様「タスク生成ロジックと UI を分離する」）。**この部品は並べ替えも選別もしない。**
+  //    🔴 入力は**同じ 1 応答**から来た 2 本の行（`ACTION_QUEUE` と `FOLLOW_UP`）であり、
+  //    優先度の基準時刻（`nowMs`）も同じ `changedSince` である。
+  const sections = toHomeSections(state.rows, state.followUpRows, nowMs);
+  // 🔴 タブの件数は**`今日やること` の件数だけ**である（KPI カード 1 と挨拶行の一文と**同じ数**）。
+  //    ⚠️ ✅ 2026-10-11（レビュー指摘）: 旧コメントは「**全セクションの合計**（KPI カード 1 とは
+  //    別の数）」と書いていたが、**実装と正反対**だった。合計にしない理由 3 つは
+  //    `lib/home/sections.ts` の `homeActionsTabCount` に在る（①種別ごとの件数を 1 つの合計に
+  //    丸めない ②同じ画面に矛盾する 2 行を作らない ③`返信待ち` は「片付けられるもの」ではない）。
+  //    🔴 **注記が実装と逆になる事故は `HANDOFF.md` §6 の 13 / 15 と同じ形である。**
+  const actionsTabCount = homeActionsTabCount(sections);
   const initialEmpty = isHomeInitialEmpty(state.summary);
   // 🔴 ✅ 2026-10-03: 4 指標がすべて 0 の日は**カードを描かず 1 行に倒す**
   //    （`lib/home/summary-view.ts` の `isHomeAllMetricsZero` の 🔴。§7.2「0 が並ぶ KPI カードを
@@ -347,9 +418,10 @@ export function HomeScreen({
     if (typeof window !== 'undefined') window.history.replaceState(null, '', tabHrefs[value]);
   }
 
-  const queueSection = (
-    <ActionQueueSection
-      rows={state.rows}
+  // ✅ 2026-10-11: `要対応` タブの面（**4 セクションを縦に並べる**。`./actions-tab.tsx`）。
+  const actionsTab = (
+    <ActionsTab
+      sections={sections}
       availability={state.availability}
       changedIds={state.changedIds}
       pollFailed={state.pollFailed}
@@ -358,9 +430,10 @@ export function HomeScreen({
       scope={scope}
       scopeHrefs={scopeHrefs}
       requestListHref={requestListHref}
-      seeAllHref={queueListHref}
+      queueListHref={queueListHref}
       seeAllLabel={messages.seeAll}
-      countLabel={`${String(queueCount)}${messages.kpi.unit}`}
+      countUnit={messages.kpi.unit}
+      sectionMessages={messages.sections}
       messages={queueMessages}
     />
   );
@@ -418,9 +491,16 @@ export function HomeScreen({
                 {messages.kpi.allZero}
               </p>
             ) : (
+              // 🔴 ✅ 2026-10-11: **カードのクリックで該当セクション / 一覧へ遷移する**
+              //    （人間の仕様の中心的な UX）。遷移先は API の応答（`SummaryMetric.href`）が
+              //    持ち、**画面は URL を組まない**（`docs/05` §6.11.1）。
+              //    🔴 `href` が `null` のカードは押せる見た目にならない（`packages/ui` の
+              //    `KpiCard` の 1 箇所が判定する）。
+              //    🔴 遷移は `next/link`（URL に状態を持つ。クライアント側の状態にしない）。
               <KpiCardRow
                 items={kpiCardItems(state.summary, messages.kpi)}
                 testIdPrefix={audience === 'HOST' ? 'home-host-kpi-' : 'home-partner-kpi-'}
+                linkComponent={Link}
               />
             )}
             {belowKpi}
@@ -433,9 +513,19 @@ export function HomeScreen({
             onValueChange={selectTab}
             data-testid="home-tabs"
             items={[
-              // 🔴 件数は `要対応` にだけ付ける（他の 2 面は Phase 2 で行が入るまで数が無い。
-              //    **0 と書くと「案件が無い」に読める**）。
-              { value: 'actions', label: `${messages.tabs.actions} ${String(queueCount)}`, content: queueSection },
+              // 🔴 ✅ 2026-10-11: 並びは人間の仕様の **`メッセージ / 要対応 / 案件 / 人材`**。
+              //    **既定の選択は `要対応`**（`DEFAULT_HOME_TAB`）であり、並びの先頭とは別である。
+              // 🔴 件数は `要対応` にだけ付ける。
+              //    - `メッセージ` … 🔴 **未読の実体が無い**（`Message` に既読の列が無い）。
+              //      スレッドの総数を出すと「未読が N 件」に読める。
+              //    - `案件` / `人材` … 行が Phase 2 で入るまで数が無い（**0 と書くと
+              //      「案件が無い」に読める**）。
+              { value: 'messages', label: messages.tabs.messages, content: messagesPanel },
+              {
+                value: 'actions',
+                label: `${messages.tabs.actions} ${String(actionsTabCount)}`,
+                content: actionsTab,
+              },
               { value: 'projects', label: messages.tabs.projects, content: projectsPanel },
               { value: 'engineers', label: messages.tabs.engineers, content: engineersPanel },
             ]}
@@ -461,9 +551,19 @@ function greetingSlot(changedSince: string): 'MORNING' | 'AFTERNOON' | 'EVENING'
 }
 
 /**
- * 🔴 今日のワンポイント（右レール ③）。**`RailCard` に閉じるボタンの口が無い**ため常設である
- *    （§4.1 は「閉じられる / 当日は再表示しない」と定めるが、口を増やすのは `packages/ui` の
- *    改訂であり本タスクの射程外。**永久に消す設定は作らない**という定めには反していない）。
+ * 🔴 今日のワンポイント（右レール ③）。
+ *
+ * ~~**`RailCard` に閉じるボタンの口が無い**ため常設である~~ → ✅ 2026-10-11: 人間の仕様
+ *    「**今日のワンポイント（Dismiss 可）**」に合わせて `RailCard` に `dismiss` を足した
+ *    （`packages/ui`。🔴 **`'use client'` は増えていない** —— ハンドラを受け取るだけの部品は
+ *    クライアント境界を作らず、境界はこのファイルが既に持っている）。
+ *
+ * 🔴 **当日だけ閉じる**（`docs/04` §4.1 の ③「🔴 **二度と出ない形にしない**。翌日は別の 1 文が
+ *    出る」）。担保は**鍵に JST の通日を含めること**であり、翌日は鍵が変わって必ず再表示される。
+ * 🔴 **`localStorage` は `useEffect` の中でだけ読む** —— サーバ描画時には存在せず、初期描画で
+ *    読むと hydration が食い違う（`HANDOFF.md` §6-2 の「制御された入力に React が空を書き戻す」と
+ *    同じ種類の事故）。したがって**初回は必ず表示され、閉じていた日はその直後に消える**。
+ * 🔴 **業務データを端末に保存しない**（保存するのは「何日目か」の整数だけ）。
  */
 function OnePoint({
   changedSince,
@@ -472,7 +572,38 @@ function OnePoint({
   readonly changedSince: string;
   readonly messages: HomeScreenMessages;
 }) {
+  const day = onePointDismissDay(changedSince);
+  const [dismissedDay, setDismissedDay] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      setDismissedDay(window.localStorage.getItem(HOME_ONE_POINT_DISMISS_STORAGE_KEY));
+    } catch {
+      // ⚠️ `localStorage` が使えない設定（プライベートモード等）では常に表示する。
+      //    **閉じられないほうが、消えたまま戻らないより軽い。**
+      setDismissedDay(null);
+    }
+  }, [changedSince]);
+
   const line = onePointLine(changedSince, messages.rail.onePointLines);
-  if (line === null) return null;
-  return <RailCard title={messages.rail.onePointTitle} lines={[line]} testIdPrefix="home-rail-one-point-" />;
+  if (line === null || dismissedDay === day) return null;
+  return (
+    <RailCard
+      title={messages.rail.onePointTitle}
+      lines={[line]}
+      dismiss={{
+        label: messages.rail.onePointDismiss,
+        onDismiss: () => {
+          setDismissedDay(day);
+          try {
+            window.localStorage.setItem(HOME_ONE_POINT_DISMISS_STORAGE_KEY, day);
+          } catch {
+            // 保存できなくても当日の表示は消す（次に開くと再表示される）。
+          }
+        },
+      }}
+      testIdPrefix="home-rail-one-point-"
+    />
+  );
 }
