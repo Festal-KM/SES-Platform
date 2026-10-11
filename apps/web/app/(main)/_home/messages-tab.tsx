@@ -15,13 +15,24 @@
 //      （`lib/chat/views.ts` の `CHAT_THREAD_LIST_ITEM_KEYS`）。本文を足すには
 //      **スレッドごとに 1 クエリ**が増え、ホームは 60 秒ごとに開かれる画面である
 //      （`CLAUDE.md` §7 の p95）。したがって `docs/04` §S-031 の一覧と同じ 3 項目に揃える。
-//   ③ 🔴 **他社を示唆する値を 1 つも出さない。** 母集団は `thread_participants` の RLS（C6）が
-//      決める（越境経路 3）。社名は**自分が当事者である関係の相手**だけであり、第三者の社名は
-//      型として存在しない（`lib/chat/views.ts`）。
+//   ③ 🔴🔴 **社名を 1 つも出さない**（✅ 2026-10-11。**CI の E2E が実際に捕まえた**）。
+//      母集団は `thread_participants` の RLS（C6）が決めるので第三者の社名は型として存在しない
+//      —— **そこまでは正しかったが、足りなかった**。🔴 **ホームは `提案依頼の返答待ち` の行が
+//      在る唯一の画面である**（経路 4）。`docs/04` §4.1 改訂 23 ④ は 🔴 **その行に所属会社名を
+//      1 つも含めない**と定めており、同じ画面に**別の欄で**取引先の社名を出せば、
+//      ページ全体としては「匿名候補が在る画面に共有元の社名が在る」状態になる。
+//      `tests/e2e/anonymous-share.spec.ts` の `S-003 ホーム（ホスト・依頼直後）` の走査が
+//      **まさにこれを禁じており、実装した当初は落ちていた**（`CLAUDE.md` §7 の
+//      「匿名候補の身元が提案の作成前にホストへ露出した件数 = 0 件」は許容が無い）。
+//      🔴 **したがって相手の社名はこの面に出さず、`S-031` でだけ出す。**
+//      行の識別は**案件名**（自社の案件であり、公開範囲の外に出ない値）で行い、
+//      案件に紐づかない企業単位のスレッドは**中立な語**で出す。
+//      ⚠️ **検査を緩める方向で直していない** —— 走査対象の社名を外せば緑にはなるが、
+//      それは 0 件 KPI の検査を自分の都合で弱めることである。
 //   ④ 🔴 **件数を出さない**（`F-038 AC-1` / `S-031` の 🔴「件数を 1 つも出さない」）。
 //      したがって**タブの件数バッジも付けない**（`./home-screen.tsx`）。
-//   ⑤ 🔴 **読めなかった値を既定値で埋めない**（`counterpartyName` が `null` のときは
-//      専用の語を出す。埋めると「誰との会話か分からない」ことが画面から消える）。
+//   ⑤ 🔴 **読めなかった値を既定値で埋めない**（案件名が `null`（企業単位のスレッド /
+//      公開されていない案件）のときは**中立な語**を出す。🔴 **社名で埋めない**（上の ③）。
 //   ⑥ 🔴 **`AuditLog` を書かない**（`BR-27` の列挙に「チャットの閲覧」は無い。`S-031` と同じ）。
 //   ⑦ 🔴 **行から投稿できない**（遷移だけ。`PARTNER_VIEWER` は投稿不可であり、
 //      投稿の可否は `S-031` が `canPostChatMessage` で決める）。
@@ -80,21 +91,17 @@ export function MessagesTabPanel({ threads }: { readonly threads: readonly ChatT
                   data-testid={`home-messages-row-${thread.id}`}
                   data-thread-kind={thread.kind}
                 >
+                  {/* 🔴 行の識別は**案件名**で行う（上の ③。社名をこの面に出さない）。
+                      案件に紐づかない企業単位のスレッド、および公開されていない案件
+                      （`projects` の RLS〔C4〕が名を返さない）は**中立な語**で出す ——
+                      🔴 **既定値として社名で埋めない。** */}
                   <Link
                     href={chatHref({ thread: thread.id })}
                     className={`${NAME_CELL_LINK_CLASSES} min-w-0 flex-1 basis-full font-medium whitespace-normal break-words sm:basis-auto lg:truncate`}
-                    data-testid={`home-messages-counterparty-${thread.id}`}
-                  >
-                    {thread.counterpartyName ?? t('home.messages.counterparty.unknown')}
-                  </Link>
-                  {/* 🔴 対象（案件名）。**読めないときは出さない**（公開されていない案件の名は
-                      `projects` の RLS〔C4〕が返さない。既定値で埋めない）。 */}
-                  <span
-                    className="min-w-0 text-xs text-fg-muted lg:truncate"
                     data-testid={`home-messages-subject-${thread.id}`}
                   >
-                    {thread.project?.name ?? t('home.actionQueue.valueNone')}
-                  </span>
+                    {thread.project?.name ?? t('home.messages.thread.noProject')}
+                  </Link>
                   {/* 🔴 最終更新。**本文の抜粋は出さない**（上の ②）。 */}
                   <span
                     className="ml-auto shrink-0 whitespace-nowrap text-xs text-fg-muted"
