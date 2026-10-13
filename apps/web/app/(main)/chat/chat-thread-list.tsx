@@ -78,15 +78,13 @@ export function ChatThreadList({ items, selectedThreadId, nextCursor }: ChatThre
                 {/* 🔴 印であって意味ではない（`aria-hidden` は `Avatar` が立てる）。 */}
                 <Avatar size="md" initials={displayInitials(counterparty)} title={counterparty} />
                 <span className="min-w-0 flex-1">
-                  <span className="flex items-baseline gap-2">
+                  {/* 🔴 1 段目は**対象の名前だけ**に全幅を使う。✅ 2026-10-13 の実測で、最終更新を
+                      同じ行の右端に置くと（`2026-10-13 11:00 JST` = 約 140px）、319px の柱では
+                      名前が `金融系 Web 基...` まで詰まった。**時刻の書式が長いのであって、
+                      名前が長いのではない。** 時刻は 2 段目の右端へ移した（情報は減っていない）。 */}
+                  <span className="block truncate text-row font-medium text-fg">
                     <span className="sr-only">{t('chat.threads.column.target')}</span>
-                    <span className="min-w-0 flex-1 truncate text-row font-medium text-fg">{target}</span>
-                    <span className="shrink-0 text-xs text-fg-placeholder">
-                      <span className="sr-only">{t('chat.threads.column.lastMessage')}</span>
-                      {item.lastMessageAt === null
-                        ? t('chat.thread.noMessages')
-                        : formatDateTimeJst(item.lastMessageAt)}
-                    </span>
+                    {target}
                   </span>
                   <span className="flex items-center gap-2">
                     <Badge variant="neutral">{t(KIND_MESSAGE_KEYS[item.kind])}</Badge>
@@ -95,6 +93,12 @@ export function ChatThreadList({ items, selectedThreadId, nextCursor }: ChatThre
                       data-testid={`chat-thread-counterparty-${item.id}`}
                     >
                       {counterparty}
+                    </span>
+                    <span className="shrink-0 text-xs text-fg-placeholder">
+                      <span className="sr-only">{t('chat.threads.column.lastMessage')}</span>
+                      {item.lastMessageAt === null
+                        ? t('chat.thread.noMessages')
+                        : formatDateTimeJst(item.lastMessageAt)}
                     </span>
                   </span>
                 </span>

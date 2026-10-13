@@ -94,7 +94,11 @@ export const TITLE_BLOCK_MIN_HEIGHT_CLASS = 'min-h-16';
 export const ROW_META_WIDTH_CLASS = 'w-30';
 // 🔴 ✅ 2026-10-13 の実測で 240 → **280** にした。1672px の実機で 種別 + 優先度 + 状態 の 3 つが
 //    1 行に収まらず、**行が 45 → 55px に伸びていた**（`docs/design-system.md` §6 ⑥）。
-export const ROW_BADGE_WIDTH_CLASS = 'w-70';
+// 🔴 ✅ 実機の実測で 240 → 280 → **304** と広げた。2026-10-13 の 2 回目の実測で、
+//    `面談調整中` の行（種別 96 + 優先度 74 + 状態 124 + 余白 8 = 302）がまだ 2 行に折り返し、
+//    行が 45 → 55px になっていた。🔴 **仕様書の 180 から広げている理由**は
+//    `docs/design-system.md` §6 ⑥（モックは 1 行に 1 つ、本実装は 2〜3 つ）。
+export const ROW_BADGE_WIDTH_CLASS = 'w-76';
 export const ROW_ACTION_WIDTH_CLASS = 'w-36.5';
 export const ROW_ACTION_HEIGHT_CLASS = 'h-8';
 

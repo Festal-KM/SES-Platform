@@ -356,11 +356,15 @@ describe('🔴 ② KPI カードは 4 枚で横スクロールにしない', () 
     }
   });
 
-  it('🔴 `md` 未満は 2 列のグリッド（`overflow-x` を 1 語も書かない）', () => {
+  it('🔴 `2xl` 未満は 2 列のグリッド（`overflow-x` を 1 語も書かない）', () => {
+    // ✅ **2026-10-13: 4 枚横並びの境界を `md`（768）から `2xl`（1536）に上げた。**
+    // 🔴 1280px の実機の実測で、主カラムが 624px しかなく 1 枚 156px になり、**ラベルが 3 行に
+    //    折り返して器が崩れていた**（4 枚を並べて比べるには 1 枚あたり 200px 程度が要る）。
+    // 🔴 **横スクロールにしない**という条文は 1 文字も変えていない。
     const html = render();
     const root = html.match(/<div[^>]*data-testid="home-host-kpi-root"[^>]*>/)?.[0] ?? '';
     expect(root).toContain('grid-cols-2');
-    expect(root).toContain('md:grid-cols-4');
+    expect(root).toContain('2xl:grid-cols-4');
     expect(root).not.toContain('overflow-x');
   });
 
