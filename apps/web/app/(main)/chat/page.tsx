@@ -73,9 +73,12 @@ export default async function ChatPage({
 
   return (
     <main className={CONTENT_PADDING_Y_CLASS}>
+      {/* 🔴 ✅ **2026-10-13: `main-min` から既定（`lg` で並置）に変えた。** `main-min` は
+          「主カラムが 1320px に届くまで副カラムを下へ落とす」挙動であり、**基準の 1672px でも
+          関連情報が会話の下に回り込んでいた**（実機の実測）。デザインシステム v1.0 §3.12 は
+          `Main 1018 = 一覧 320 + 会話 698` と `Right 388` の**並置**を定めている。 */}
       <PageBody
         widthClass="split"
-        asideFrom="main-min"
         aside={selected === null ? undefined : <ChatThreadPanel thread={selected} />}
       >
         <PageHeading trail={CHAT_TRAIL} title={t('chat.title')} />
