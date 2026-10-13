@@ -1816,6 +1816,9 @@ describe('🔴 `packages/ui` の testid は「リテラル / テンプレート 
     expect(passThrough.map((file) => file.label).sort()).toEqual([
       'packages/ui/src/components/folded-list.tsx',
       'packages/ui/src/components/name-cell.tsx',
+      // ✅ 2026-10-13（Issue #92 = A）: 挨拶行が作成の導線を受け取るようになり、その `testId` を
+      //    呼び出し側から素通しする（`page-header` と同じ形）。
+      'packages/ui/src/components/page-greeting.tsx',
       'packages/ui/src/components/page-header.tsx',
     ]);
   });

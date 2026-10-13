@@ -11,11 +11,26 @@
 //    1 つの語（「失敗」「失効」）にまとめると成約率と障害率の両方の指標が汚れる（docs/01 章 6.4 / `BR-23` / `BR-60`）。
 
 /**
- * 🔴 プロダクト名の唯一のリテラル（CLAUDE.md §9-1。正式名称は Issue #1 で確認中。仮称）。
+ * 🔴 プロダクト名の唯一のリテラル。
+ * ✅ **2026-10-13: `SES Platform`（仮称）→ `BizOrch for Engineering Service`（正式名称）。**
+ *    人間が [Issue #93](https://github.com/Festal-KM/SES-Platform/issues/93) で **B** を選び、
+ *    その後に名称そのものを指定した。`CLAUDE.md` §9-1 /（`docs/03` §9-1）の
+ *    「正式なプロダクト名・ブランド」が決着した（事業判断。§8.6）。
  *    `product.name` と、名称を含む他の文言（`admin.console.issuer` 等）はすべてここから組み立てる。
  *    改称はこの 1 行の差し替えで済む（`tests/static/product-name-single-key.test.ts` が製品コードに直書きが無いことを固定する）。
  */
-export const PRODUCT_NAME = 'SES Platform';
+export const PRODUCT_NAME = 'BizOrch for Engineering Service';
+
+/**
+ * 🔴 **狭い場所で使う短い呼び名**（ロゴのロックアップの 1 段目）。
+ *
+ * 🔴 **`PRODUCT_NAME` と 2 本持つ理由**: 正式名称は 31 文字あり、**208px のサイドバーにも
+ *    上部バーにも入らない**。ロゴ自体が「`BizOrch`（大）+ `for Engineering Service`（小）」の
+ *    2 段で組まれており、画面もそれに合わせる。
+ * ⚠️ **改称のときはこの 2 行を両方直す**（`tests/static/product-name-single-key.test.ts` の
+ *    検出器は**完全な綴り**を見るので、`BizOrch` 単独の直書きは捕まえられない）。
+ */
+export const PRODUCT_SHORT_NAME = 'BizOrch';
 
 /**
  * docs/02 §7.11 の語。**同じ概念を画面ごとに違う語で呼ばない**ための基準語。

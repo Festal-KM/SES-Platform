@@ -79,6 +79,19 @@ export function extractTestIds(source: string, fileName = 'source.tsx'): Extract
   }
 
   function visit(node: ts.Node): void {
+    // 🔴 ✅ **2026-10-13: オブジェクトのプロパティ（`{ testId: '…' }`）も拾う。**
+    //    `PageGreetingAction` / `PageHeaderAction` のように**配列で導線を渡す形**では、
+    //    `data-testid` は JSX 属性ではなくデータとして書かれる。拾わないと、**凍結済みの ID を
+    //    その形に移した瞬間に「消えた」と誤検知する**（実際に `home-host-register-project` で起きた）。
+    //    🔴 検査を緩めるのではなく、**走査の射程を実装の書き方に合わせた**ものである。
+    if (
+      ts.isPropertyAssignment(node) &&
+      ts.isIdentifier(node.name) &&
+      ATTRIBUTE_NAMES.has(node.name.text) &&
+      collectFrom(node.initializer)
+    ) {
+      occurrences += 1;
+    }
     if (ts.isJsxAttribute(node) && ATTRIBUTE_NAMES.has(node.name.getText(sourceFile))) {
       occurrences += 1;
       const initializer = node.initializer;

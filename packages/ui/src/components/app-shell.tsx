@@ -62,6 +62,7 @@ import {
 import {
   Sidebar,
   SidebarNavList,
+  type SidebarBrand,
   type SidebarGroup,
   type SidebarLabels,
   type SidebarLinkProps,
@@ -88,7 +89,12 @@ export type AppShellLabels = {
 };
 
 export type AppShellProps = {
-  /** Top Header の 5 要素（`./top-bar.tsx`）。 */
+  /**
+   * ロゴ（✅ 2026-10-13 / [Issue #93](https://github.com/Festal-KM/SES-Platform/issues/93) = B）。
+   * 🔴 **製品名の置き場所がヘッダからサイドバーの上端へ移った**（`U-01` の「1 箇所だけ」は不変）。
+   */
+  readonly brand?: SidebarBrand | null;
+  /** Top Header の要素（`./top-bar.tsx`）。 */
   readonly header: TopBarProps;
   /** サイドバーと「その他」に出す群と項目（🔴 **同じ 1 本**）。 */
   readonly groups: readonly SidebarGroup[];
@@ -223,6 +229,7 @@ function BottomTabEntry({
 }
 
 export function AppShell({
+  brand = null,
   header,
   groups,
   currentPath,
@@ -243,6 +250,7 @@ export function AppShell({
     <div className={SHELL_CLASSES} data-testid="app-shell">
       {/* 🔴 サイドバー（左固定・画面下端まで）。`md:` 未満ではボトムタブに置き換わる（§3.4）。 */}
       <Sidebar
+        brand={brand}
         groups={groups}
         currentPath={currentPath}
         labels={navLabels}

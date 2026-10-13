@@ -207,6 +207,32 @@ export type SidebarGroup = {
 /** サイドバーと「その他」は**同じ項目表**を描くので、`data-testid` の接頭辞を分ける。 */
 export type SidebarVariant = 'sidebar' | 'more';
 
+/**
+ * ロゴのブロックに出す語（🔴 **文言は呼び出し側が `packages/i18n` から渡す**）。
+ * ✅ 2026-10-13（[Issue #93](https://github.com/Festal-KM/SES-Platform/issues/93) = B）。
+ */
+export type SidebarBrand = {
+  /**
+   * 画面に出す短い呼び名（`product.shortName` = `BizOrch`）。
+   * 🔴 **製品名を表示する唯一の箇所**（`U-01` の置き場所がヘッダからここへ移った）。
+   * 🔴 正式名称（31 文字）はサイドバーにも上部バーにも入らないので、**ロゴと同じ 2 段**に組む
+   *    （1 段目 = この語 / 2 段目 = `tagline`）。
+   */
+  readonly name: string;
+  /** ロゴのマークの画像（`apps/web/public` 配下のパス）。🔴 **受け取った原本を使う**。 */
+  readonly markSrc: string;
+  /** マークの代替テキスト（🔴 正式名称を入れる。読み上げでは略称ではなくサービス名を読む）。 */
+  readonly markAlt: string;
+  /** タグライン（2 行の読みもの）。 */
+  readonly tagline: string;
+  /** 下端のメッセージ。 */
+  readonly note: string;
+  /** 版表記。🔴 **手で書かない**（呼び出し側がビルド時の値を渡す）。 */
+  readonly version: string;
+  /** ロゴを押したときの遷移先（ホーム）。 */
+  readonly homeHref: string;
+};
+
 export type SidebarLabels = {
   /** `<nav aria-label>`。 */
   readonly nav: string;
@@ -226,6 +252,21 @@ const SIDEBAR_TOGGLE_ID = 'ses-sidebar-form';
  * 「サイドバーの中のチェックボックス」に限るため。上の 🔴）。
  * 🔴 `md:` 未満はボトムタブに置き換わる（`docs/04` §3.4。**T-12-20 の境界を変えない**）。
  */
+/**
+ * ロゴのマーク（🔴 **人間から受け取った画像をそのまま使う**。2026-10-13）。
+ *
+ * 🔴 **自前で描き起こさない。** 最初は PNG が黒地・グロー付き・透過なしだったので SVG に
+ *    起こしていたが、**透過の PNG を受け取った**のでそれを正とする（ブランドの図版を
+ *    実装側が再現すると、原本と少しずつ違うものが増える）。
+ * 🔴 **`Icon`（lucide の閉じた写像）には入れない** —— これは図版であってアイコンの段ではない。
+ * 🔴 **`src` は呼び出し側が渡す** —— `packages/ui` は `apps/web` の公開ディレクトリを知らない。
+ */
+function BrandMark({ src, alt }: { readonly src: string; readonly alt: string }) {
+  // 🔴 `packages/ui` は `next/*` に依存しない（`docs/05` §2.3.1）ので `next/image` を使わない。
+  //    28px の固定寸法で 1 枚だけなので、最適化の対象にもならない。
+  return <img className="h-7 w-7 shrink-0" src={src} alt={alt} width={28} height={28} />;
+}
+
 const SIDEBAR_SHELL_CLASSES = 'group hidden shrink-0 md:block';
 
 /**
@@ -268,8 +309,31 @@ const SIDEBAR_CLASSES = cn(
   TRANSITION_CLASSES,
 );
 
-/** 上端（🔴 **開閉トグルだけ**。ワードマークを置かない。§3.1-2）。 */
+/**
+ * 上端の開閉トグルの行。
+ * ✅ **2026-10-13（[Issue #93](https://github.com/Festal-KM/SES-Platform/issues/93) = B）: この下に
+ *    ロゴ（マーク + 製品名 + タグライン）が入った。** 🔴 旧条文「上端にワードマークを置かない
+ *    （製品名は Top Header の 1 箇所のみ = `U-01`）」は**置き場所がヘッダからここへ移った**もので、
+ *    **「製品名を出す箇所は 1 つだけ」という条文自体は変わっていない**（ヘッダからは外した）。
+ */
 const SIDEBAR_TOGGLE_ROW_CLASSES = 'flex items-center px-2 py-2';
+
+/**
+ * ロゴのブロック（デザインシステム v1.0 §3.1 / 人間から渡されたロゴ画像。2026-10-13）。
+ *
+ * 🔴 **マークは SVG で描き起こしている。** 渡された画像は黒地にグロー（発光）の付いた
+ *    1536 × 1024 の PNG であり、**透過が無く 28px の枠に置けない**。グローは影であり、
+ *    デザインシステム §1.3 の「Shadow: なし」にも反する。**形だけを取って SVG にした。**
+ * 🔴 **タイル（`bg-brand` の角丸）を敷かない** —— 渡された画像はマークが地の上に直接載っている。
+ */
+const SIDEBAR_BRAND_ROW_CLASSES = 'flex items-center gap-3 px-3 pb-1';
+const SIDEBAR_BRAND_NAME_CLASSES = 'truncate text-sidebar-fg';
+const SIDEBAR_BRAND_TAGLINE_CLASSES = 'm-0 px-3 pb-2 text-cell text-sidebar-fg-muted';
+/** 下端（メッセージの箱 + 版）。🔴 アイコンのみの形態では畳む。 */
+const SIDEBAR_FOOT_CLASSES = 'mt-auto flex flex-col gap-4 px-3 pt-4';
+const SIDEBAR_FOOT_NOTE_CLASSES =
+  'rounded-md border border-sidebar-border p-3 text-cell text-sidebar-fg';
+const SIDEBAR_FOOT_VERSION_CLASSES = 'm-0 text-cell text-sidebar-fg-muted';
 
 /**
  * 開閉トグルの見た目。
@@ -628,6 +692,11 @@ export function SidebarNavList({
 }
 
 export type SidebarProps = {
+  /**
+   * 🔴 **`null` ならロゴのブロックを描かない。** 管理平面（`/admin`。§10）は主平面とは別の外枠で
+   *    あり、デザインシステム v1.0 の射程外である（運営者の画面に製品のタグラインは要らない）。
+   */
+  readonly brand?: SidebarBrand | null;
   readonly groups: readonly SidebarGroup[];
   /**
    * **初回描画（水和前）の現在地**（🔴 `next/navigation` を使わない。`docs/05` §2.3.1）。
@@ -638,7 +707,13 @@ export type SidebarProps = {
   readonly linkComponent?: ComponentType<SidebarLinkProps>;
 };
 
-export function Sidebar({ groups, currentPath, labels, linkComponent = SidebarDefaultLink }: SidebarProps) {
+export function Sidebar({
+  brand = null,
+  groups,
+  currentPath,
+  labels,
+  linkComponent: BrandLink = SidebarDefaultLink,
+}: SidebarProps) {
   return (
     <div className={SIDEBAR_SHELL_CLASSES}>
       <nav className={SIDEBAR_CLASSES} aria-label={labels.nav} data-testid="app-sidebar">
@@ -659,12 +734,39 @@ export function Sidebar({ groups, currentPath, labels, linkComponent = SidebarDe
             <Icon name="panel-left" />
           </label>
         </div>
+        {brand === null ? null : (
+          <>
+            <BrandLink
+              className={SIDEBAR_BRAND_ROW_CLASSES}
+              href={brand.homeHref}
+              data-testid="app-header-wordmark"
+            >
+              <BrandMark src={brand.markSrc} alt={brand.markAlt} />
+              <span className={cn(SIDEBAR_BRAND_NAME_CLASSES, SIDEBAR_LABEL_CLASSES.sidebar)}>
+                {brand.name}
+              </span>
+            </BrandLink>
+            <p className={cn(SIDEBAR_BRAND_TAGLINE_CLASSES, SIDEBAR_LABEL_CLASSES.sidebar)}>
+              {brand.tagline}
+            </p>
+          </>
+        )}
         <SidebarNavList
           groups={groups}
           variant="sidebar"
           currentPath={currentPath}
-          linkComponent={linkComponent}
+          linkComponent={BrandLink}
         />
+        {/* 🔴 下端（§3.1）。アイコンのみの形態では語ごと畳む（28px の柱に 168px の箱は入らない）。 */}
+        {brand === null ? null : (
+          <div
+            className={cn(SIDEBAR_FOOT_CLASSES, SIDEBAR_LABEL_CLASSES.sidebar)}
+            data-testid="app-sidebar-foot"
+          >
+            <p className={SIDEBAR_FOOT_NOTE_CLASSES}>{brand.note}</p>
+            <p className={SIDEBAR_FOOT_VERSION_CLASSES}>{brand.version}</p>
+          </div>
+        )}
       </nav>
     </div>
   );

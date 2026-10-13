@@ -65,7 +65,6 @@ import { HOME_MESSAGE_THREAD_LIMIT, MessagesTabPanel } from './_home/messages-ta
 import {
   ENGINEER_NEW_HREF,
   EngineersTabPanel,
-  HostHeaderSecondaryAction,
   HostHomeEmptyState,
   HostUsageLine,
   PartnerHomeEmptyState,
@@ -75,32 +74,13 @@ import {
   ScanQuarantineSection,
 } from './_home/home-sections';
 import { SendingDomainGuardBanner } from './_shared/sending-domain-guard-banner';
-import { PageHeading } from './_shell/page-heading';
-import { HOME_TRAIL, isPageActionRole, type PagePrimaryAction } from '../../lib/shell/page-trail';
+import { isPageActionRole } from '../../lib/shell/page-trail';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /** 🔴 要対応キューの再読込間隔（docs/04 §S-003 非同期処理の表現「ポーリングは 60 秒間隔」）。 */
 const ACTION_QUEUE_POLL_INTERVAL_MS = 60_000;
-
-/**
- * 🔴 `PageHeader` の primary（`docs/04` §4.1）。
- *
- * - ホスト = `案件を登録`。理由: **案件が 1 件も無いとマッチング以降が 1 つも動かない**のに対し、
- *   人材はスキルシート取込（`S-008`）という別の入口を持つ。
- * - 取引先 = `人材を登録`。理由: **台帳に人が居ないと提案依頼にも応諾できない**（案件は作れない）。
- */
-const HOST_PRIMARY_ACTION: PagePrimaryAction = {
-  labelKey: 'home.host.empty.registerProject',
-  href: PROJECT_NEW_HREF,
-  kind: 'ACTION',
-};
-const PARTNER_PRIMARY_ACTION: PagePrimaryAction = {
-  labelKey: 'home.host.empty.registerEngineer',
-  href: ENGINEER_NEW_HREF,
-  kind: 'ACTION',
-};
 
 // 🔴 ✅ 2026-10-11: `S-003` / `S-004` の URL の組み立ては **`lib/home/hrefs.ts` に移した**
 //    （KPI カードの遷移先を `lib/home/summary.ts` が組む必要があり、`lib/**` から `app/**` を
@@ -207,6 +187,46 @@ export default async function HomePage({
         messages={homeScreenMessages(host ? 'HOST' : 'PARTNER')}
         queueMessages={actionQueueMessages()}
         pollIntervalMs={ACTION_QUEUE_POLL_INTERVAL_MS}
+        // ✅ **2026-10-13（Issue #92 = A）: `PageHeading` の帯をやめた。**
+        // 🔴 ホームの画面タイトルは**挨拶そのもの**であり、`ホーム` の見出しとパンくずは
+        //    「いまどの画面にいるか」を二重に言っていた（デザインシステム v1.0 §3.3 /
+        //    「画面タイトルは h1 のみ」）。作成の導線は挨拶行の右端へ移した
+        //    （`data-testid` は 1 つも消していない。**移設**である）。
+        actions={
+          host
+            ? [
+                ...(isProjectEditorRole(outcome.ctx.role)
+                  ? [
+                      {
+                        label: t('home.host.empty.registerProject'),
+                        href: PROJECT_NEW_HREF,
+                        variant: 'primary' as const,
+                        testId: 'home-host-register-project',
+                      },
+                    ]
+                  : []),
+                ...(canRegisterEngineer
+                  ? [
+                      {
+                        label: t('home.host.empty.registerEngineer'),
+                        href: ENGINEER_NEW_HREF,
+                        variant: 'secondary' as const,
+                        testId: 'home-host-register-engineer',
+                      },
+                    ]
+                  : []),
+              ]
+            : isPageActionRole(outcome.ctx.role)
+              ? [
+                  {
+                    label: t('home.host.empty.registerEngineer'),
+                    href: ENGINEER_NEW_HREF,
+                    variant: 'primary' as const,
+                    testId: 'home-partner-register-engineer',
+                  },
+                ]
+              : []
+        }
         banner={
           <SendingDomainGuardBanner
             visible={showSendingDomainBanner}
@@ -215,22 +235,6 @@ export default async function HomePage({
               linkLabel: t('settings.sendingDomain.guardBanner.linkLabel'),
             }}
           />
-        }
-        heading={
-          <>
-            <PageHeading
-              trail={HOME_TRAIL}
-              title={t('home.title')}
-              primaryAction={host ? HOST_PRIMARY_ACTION : PARTNER_PRIMARY_ACTION}
-              // 🔴 ホストの primary（`案件を登録`）はホストの 3 ロールだけ（`PROJECT_EDITOR_ROLES`）。
-              //    取引先の primary（`人材を登録`）は閲覧専用でない全ロール（`isPageActionRole`）。
-              canAct={host ? isProjectEditorRole(outcome.ctx.role) : isPageActionRole(outcome.ctx.role)}
-              testId={host ? 'home-host-register-project' : 'home-partner-register-engineer'}
-            />
-            {/* 🔴 `PageHeader` の secondary（ホストのみ = `人材を登録`）。取引先の secondary
-                （`スキルシートを取り込む`）は Phase 2 である（§S-004）。 */}
-            {host ? <HostHeaderSecondaryAction canRegisterEngineer={canRegisterEngineer} /> : null}
-          </>
         }
         // 🔴 KPI カード直下の 1 行（ホスト = 残量〔件数〕/ 取引先 = 見える範囲の説明）。
         belowKpi={

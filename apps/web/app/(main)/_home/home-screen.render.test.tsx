@@ -306,7 +306,15 @@ function render(
       queueMessages: QUEUE_MESSAGES,
       pollIntervalMs: 0,
       banner: null,
-      heading: createElement('div', { 'data-testid': 'synthetic-heading' }),
+      // ✅ 2026-10-13（Issue #92 = A）: 見出し帯をやめ、作成の導線は挨拶行の右端に入った。
+      actions: [
+        {
+          label: 'ACTION_PRIMARY',
+          href: '/projects/new',
+          variant: 'primary' as const,
+          testId: 'home-host-register-project',
+        },
+      ],
       belowKpi: createElement('div', { 'data-testid': 'synthetic-below-kpi' }),
       quarantine: createElement('div', { 'data-testid': 'synthetic-quarantine' }),
       messagesPanel: createElement('div', { 'data-testid': 'synthetic-messages' }),

@@ -46,7 +46,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { PageBody, PageGreeting, KpiCardRow, RailCard, RankedList, Timeline, greetingSlotOf } from '@ses/ui';
-import type { PageWidthClass, RankedListItem, TimelineEntry } from '@ses/ui';
+import type { PageGreetingAction, PageWidthClass, RankedListItem, TimelineEntry } from '@ses/ui';
 import { Tabs } from '@ses/ui/client';
 import type { ReactNode } from 'react';
 import { isActionQueueRowUrgent } from '../../../lib/home/action-queue-urgency';
@@ -106,7 +106,11 @@ export type HomeScreenProps = {
   /** 送信ドメイン未検証の帯（サーバ描画。ホストの `OW` / `AD` のみ）。 */
   readonly banner: ReactNode;
   /** 帯（パンくず / タイトル / アクション）。🔴 **各画面が本文の先頭で描く**（`PageHeading`）。 */
-  readonly heading: ReactNode;
+  /**
+   * ✅ **2026-10-13（Issue #92 = A）: 見出し帯をやめ、作成の導線を挨拶行の右端へ移した。**
+   * 🔴 **画面タイトルは挨拶そのもの**（`PageGreeting` が `<h1>` を持つ）。
+   */
+  readonly actions: readonly PageGreetingAction[];
   /** KPI カードの直下の 1 行（ホスト = 利用量 / 取引先 = 見える範囲の説明）。 */
   readonly belowKpi: ReactNode;
   /** ✅ 0 共有できないスキルシート（🔴 **タブより上**。どのタブに居ても見える）。 */
@@ -308,7 +312,7 @@ export function HomeScreen({
   queueMessages,
   pollIntervalMs,
   banner,
-  heading,
+  actions,
   belowKpi,
   quarantine,
   messagesPanel,
@@ -471,7 +475,6 @@ export function HomeScreen({
       }
     >
       {banner}
-      {heading}
       {/* 挨拶行（§4.1 改訂 23。🔴 **右端は基準時刻**であり、モックアップの企業の標語は置かない ——
           `Tenant` に標語の属性が無く、架空の文言より差分の起点のほうが判断に効く）。 */}
       <PageGreeting
@@ -480,6 +483,8 @@ export function HomeScreen({
         lead={greetingLead(queueCount, messages)}
         motto={asOfLabel(state.changedSince, messages)}
         testIdPrefix={audience === 'HOST' ? 'home-host-greeting-' : 'home-partner-greeting-'}
+        actions={actions}
+        linkComponent={Link}
       />
       {initialEmpty ? (
         emptyState

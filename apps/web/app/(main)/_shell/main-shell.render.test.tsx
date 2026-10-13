@@ -352,8 +352,13 @@ describe('🔴 サイドバー（モックアップの 5 項目 / §7.5 ③ ア�
     const items = navItems(buildMainNav({ audience: 'HOST', role: 'SALES' }));
     // 項目ごとに 1 つ + 開閉トグルの 1 つ。
     expect((sidebar.match(/<svg/g) ?? []).length).toBe(items.length + 1);
-    // 🔴 `<img>` は使わない（セットは `lucide-react` の 1 つに固定。写像が閉じている）。
-    expect(sidebar).not.toContain('<img');
+    // 🔴 **アイコンに `<img>` を使わない**（セットは `lucide-react` の 1 つに固定。写像が閉じている）。
+    // ✅ **2026-10-13: ロゴのマークだけは画像である**（受け取った原本をそのまま使う。ブランドの
+    //    図版を実装側が描き起こすと、原本と少しずつ違うものが増える）。🔴 **1 枚だけ**であり、
+    //    **ロゴの行の中にしか無い**ことをここで固定する（項目に画像が混ざれば落ちる）。
+    expect((sidebar.match(/<img/g) ?? []).length).toBe(1);
+    const navOnly = sidebar.slice(sidebar.indexOf('data-testid="app-nav-home"'));
+    expect(navOnly).not.toContain('<img');
   });
 
   it('🔴 ② ホストと取引先で語が違う（母集団が違うことを語で示す = 第二境界の常時表現）', () => {
@@ -485,9 +490,15 @@ describe('🔴 サイドバー（モックアップの 5 項目 / §7.5 ③ ア�
     const sidebar = /data-testid="app-sidebar"[\s\S]*?<\/nav>/.exec(html)?.[0] ?? '';
     expect(sidebar).toContain('xl:');
     expect(sidebar).not.toMatch(/\b2xl:/);
-    // 🔴 上端にワードマークを置かない（製品名は Top Header の 1 箇所のみ = U-01）。
-    const toggleRow = sidebar.slice(0, sidebar.indexOf('data-testid="app-nav-home"'));
-    expect(toggleRow).not.toContain(t('product.name'));
+    // ✅ **2026-10-13（Issue #93 = B）: 製品名の置き場所が Top Header からサイドバーの上端へ移った。**
+    // 🔴 **「製品名を出す箇所は 1 つだけ」（`U-01`）という条文は不変**なので、
+    //    ①サイドバーの上端に 1 つ在ること ②ヘッダには無いこと の 2 つを見る。
+    const brandRow = sidebar.slice(0, sidebar.indexOf('data-testid="app-nav-home"'));
+    expect(brandRow).toContain(t('product.name'));
+    expect((sidebar.match(new RegExp(t('product.name'), 'g')) ?? []).length).toBe(1);
+    const header = /data-testid="app-header"[\s\S]*?<\/header>/.exec(html)?.[0] ?? '';
+    expect(header.length).toBeGreaterThan(0);
+    expect(header).not.toContain(t('product.name'));
   });
 
   it('🔴 外枠は primary アクション（作成系の導線）を持たない', () => {

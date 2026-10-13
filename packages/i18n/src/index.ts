@@ -11,9 +11,16 @@
 //
 // T-03-01（SP-03）で S-001（サインイン）と §15.1 のうち本タスクで到達しうるエラーの
 // キーを置いた。**後続タスクはキーを追加するだけで、この構造を変えない。**
-import { GLOSSARY, OUTCOME_LABELS, PRODUCT_NAME } from './glossary.js';
+import { GLOSSARY, OUTCOME_LABELS, PRODUCT_NAME, PRODUCT_SHORT_NAME } from './glossary.js';
 
-export { GLOSSARY, OUTCOME_KINDS, OUTCOME_LABELS, PRODUCT_NAME, type OutcomeKind } from './glossary.js';
+export {
+  GLOSSARY,
+  OUTCOME_KINDS,
+  OUTCOME_LABELS,
+  PRODUCT_NAME,
+  PRODUCT_SHORT_NAME,
+  type OutcomeKind,
+} from './glossary.js';
 
 /** 対応ロケール。当面は日本語のみ（追加時はカタログを 1 つ増やす）。 */
 export const LOCALES = ['ja'] as const;
@@ -25,6 +32,8 @@ export const DEFAULT_LOCALE: Locale = 'ja';
 const ja = {
   // --- プロダクト（docs/04 U-01。表示箇所はヘッダとサインイン系の画面に限る）---
   'product.name': PRODUCT_NAME,
+  // 🔴 狭い場所（サイドバーのロゴ）で使う短い呼び名。`glossary.ts` の 🔴 を参照。
+  'product.shortName': PRODUCT_SHORT_NAME,
 
   // --- F-028 非本番環境のバナー（docs/04 §3.5 / docs/05 §13.5 / CLAUDE.md §11.1。T-10-05）---
   // 🔴 `production` のキーは存在しない（バナー自体を描かない。`F-028 AC-3`）。
@@ -58,6 +67,10 @@ const ja = {
   // 🔴 ホストと取引先で語が違う項目は別キーにする（同じ画面でも母集団が違う。docs/04 §3.2）。
   //    語が同じもの（提案 / 提案依頼 / 面談・結果 / チャット / タスク）は 1 キーを共有する。
   'shell.nav.label': 'グローバルナビ',
+  // ✅ 2026-10-13（Issue #93 = B）: サイドバーのロゴのブロックと下端。
+  // 🔴 ロゴのロックアップの 2 段目（`BizOrch` の下に入る語）。**値であって新しいキーではない。**
+  'shell.sidebar.tagline': 'for Engineering Service',
+  'shell.sidebar.note': '可能性を、もっとシンプルに。',
   // ==========================================================================
   // ✅ 2026-10-03（人間の明示指示 + モックアップ 5 枚）: サイドバーを **6 項目のフラット**に畳んだ
   // ==========================================================================

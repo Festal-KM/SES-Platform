@@ -91,12 +91,50 @@ describe('対照: 走査が空振りしていない', () => {
   });
 });
 
+/**
+ * 🔴 **帯を持たない画面**（✅ 2026-10-13 / [Issue #92](https://github.com/Festal-KM/SES-Platform/issues/92) = A）。
+ *
+ * ホームの画面タイトルは **挨拶そのもの**（`PageGreeting` の `<h1>`）であり、`ホーム` の見出しと
+ * パンくずは「いまどの画面にいるか」を二重に言っていた（デザインシステム v1.0 §3.3 /
+ * §4-9「画面タイトルは h1 のみ」）。
+ * 🔴 **例外を増やさない。** 1 件だけであることと、その画面が現に `<h1>` を 1 つ持つことを下で固定する。
+ */
+const PAGES_WITHOUT_HEADING: ReadonlyMap<string, string> = new Map([
+  ['apps/web/app/(main)/page.tsx', 'home-host-greeting-message'],
+]);
+
 describe('🔴 ① 帯は 1 画面に 1 つ（パンくずが二重に出ない）', () => {
-  it('すべての `page.tsx` が `<PageHeading` をちょうど 1 つ描く', () => {
-    const wrong = PAGES.map((page) => ({
-      rel: page.rel,
-      count: (page.text.match(/<PageHeading\b/g) ?? []).length,
-    })).filter((entry) => entry.count !== 1);
+  it('帯を持たない画面はホームの 1 つだけである（例外が増えていない）', () => {
+    expect([...PAGES_WITHOUT_HEADING.keys()]).toEqual(['apps/web/app/(main)/page.tsx']);
+  });
+
+  it('🔴 帯を持たない画面は、代わりに `<h1>` を 1 つ持つ（見出しの無い画面を作らない）', () => {
+    // 🔴 ホームの `<h1>` は `PageGreeting` が持つ（挨拶そのものが画面タイトルである）。
+    const greeting = ALL_FILES.find(
+      (file) => file.rel === 'packages/ui/src/components/page-greeting.tsx',
+    );
+    expect(greeting, 'PageGreeting が見つからない').toBeDefined();
+    // 🔴 `<h1\s` で見る（コメント中の `` `<h1>` `` を数えないため）。
+    expect((greeting?.text.match(/<h1\s/g) ?? []).length, 'PageGreeting の h1').toBe(1);
+    for (const [rel, testId] of PAGES_WITHOUT_HEADING) {
+      const page = PAGES.find((candidate) => candidate.rel === rel);
+      expect(page, rel).toBeDefined();
+      // 🔴 その画面が `PageHeading` を 1 つも描いていないこと（例外が形だけにならないように）。
+      expect((page?.text.match(/<PageHeading\b/g) ?? []).length, rel).toBe(0);
+      // 🔴 その `<h1>` が現に描かれる testid を、部品が持っていること。
+      // 🔴 `testId` はテンプレート（`${testIdPrefix}message`）で組まれるので、**接頭辞**で照合する。
+      const prefix = testId.slice(0, testId.lastIndexOf('-') + 1);
+      expect(ALL_FILES.some((file) => file.text.includes(prefix)), prefix).toBe(true);
+    }
+  });
+
+  it('それ以外のすべての `page.tsx` が `<PageHeading` をちょうど 1 つ描く', () => {
+    const wrong = PAGES.filter((page) => !PAGES_WITHOUT_HEADING.has(page.rel))
+      .map((page) => ({
+        rel: page.rel,
+        count: (page.text.match(/<PageHeading\b/g) ?? []).length,
+      }))
+      .filter((entry) => entry.count !== 1);
     expect(wrong).toEqual([]);
   });
 
@@ -160,6 +198,7 @@ describe('🔴 ② 画面タイトルが二重に出ない', () => {
 
   it('それ以外の画面は帯に `title` を渡す（見出しの無い画面を作らない）', () => {
     const missing = PAGES.filter((page) => !TITLE_OWNED_BY_SCREEN.has(page.rel))
+      .filter((page) => !PAGES_WITHOUT_HEADING.has(page.rel))
       .filter((page) => !(/<PageHeading[\s\S]*?\/>/.exec(page.text)?.[0] ?? '').includes('title='))
       .map((page) => page.rel);
     expect(missing).toEqual([]);

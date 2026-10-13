@@ -48,12 +48,16 @@ import { displayInitials } from '../../../lib/format/initials';
 import type { NavGroup, NavItem, NavSection } from '../../../lib/shell/nav';
 import { resolveBottomTabs, resolveNavGroups, resolveSectionTabs } from '../../../lib/shell/nav-view';
 import type { ShellUsageIndicator } from '../../../lib/shell/usage-indicator';
+import { APP_VERSION_LABEL } from '../../../lib/shell/app-version';
 import { AccountMenu } from './account-menu';
 import { GlobalSearch } from './global-search';
 import { NavLink, SectionNavGate } from './nav-current';
 
 export type MainShellProps = {
-  /** ワードマーク（`product.name`）。🔴 製品名を表示する唯一の箇所（`U-01`）。 */
+  /**
+   * 製品名（`product.name`）。🔴 **製品名を表示する唯一の箇所**（`U-01`）。
+   * ✅ 2026-10-13（Issue #93 = B）: 置き場所が Top Header から**サイドバーの上端**へ移った。
+   */
   readonly wordmark: string;
   /** スコープ表示（`docs/04` §3.2 の #1）。`partnerCompanyName` が非 null なら 2 段。 */
   readonly organizationName: string;
@@ -198,9 +202,17 @@ export function MainShell({
       : { href: organizationSettings.reach.href, label: t(organizationSettings.labelKey) };
   return (
     <AppShell
-      header={{
-        wordmark,
+      // ✅ 2026-10-13（Issue #93 = B）: ロゴ・タグライン・下端はサイドバーが持つ。
+      brand={{
+        name: t('product.shortName'),
+        markSrc: '/brand-mark.png',
+        markAlt: wordmark,
+        tagline: t('shell.sidebar.tagline'),
+        note: t('shell.sidebar.note'),
+        version: APP_VERSION_LABEL,
         homeHref: '/',
+      }}
+      header={{
         // 🔴 検索は**既存の検索画面**（`S-005` = 複合検索を持つ人材一覧）へ遷移する
         //    （横断検索は存在しない。§3.1 の ③「動かない検索窓を置かない」）。
         search: (

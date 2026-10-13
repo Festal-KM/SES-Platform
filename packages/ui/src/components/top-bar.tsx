@@ -46,7 +46,7 @@ import {
   HEADER_HEIGHT_CLASS,
   HEADER_SEARCH_MAX_WIDTH_CLASS,
 } from '../lib/layout-tokens.js';
-import { FOCUS_RING_CLASSES, TRANSITION_CLASSES } from '../lib/state-classes.js';
+import { TRANSITION_CLASSES } from '../lib/state-classes.js';
 
 /** 上限インジケータの状態（`data-usage-state`）。🔴 平常時は `usage === null` で要素ごと出さない。 */
 export type TopBarUsageState = 'NEARING' | 'REACHED' | 'STOPPED';
@@ -78,9 +78,6 @@ export type TopBarScope = {
 };
 
 export type TopBarProps = {
-  readonly wordmark: string;
-  /** ワードマークの遷移先（ホーム）。 */
-  readonly homeHref: string;
   /**
    * ✅ 検索の入口（`GlobalSearchBox`）。🔴 **本体カラムの幅いっぱい**に置く（§3.1 の ③）。
    * 🔴 **要素で受ける**（上の 1b）。`null` を許さない —— 検索は SES 営業の主動作であり、
@@ -122,13 +119,6 @@ const HEADER_ROW_CLASSES = cn(
   'flex flex-wrap items-center gap-x-4 gap-y-1 py-2',
   CONTENT_PADDING_X_CLASSES,
   `md:flex-nowrap md:py-0 ${HEADER_HEIGHT_CLASS}`,
-);
-
-/** ワードマーク（🔴 §7.3 の 2 段目 = 16px / 600。画面タイトルより強くしない）。 */
-const WORDMARK_CLASSES = cn(
-  'shrink-0 rounded-sm text-lg font-semibold text-fg',
-  TRANSITION_CLASSES,
-  FOCUS_RING_CLASSES,
 );
 
 /**
@@ -180,8 +170,6 @@ function UsageIndicator({
 }
 
 export function TopBar({
-  wordmark,
-  homeHref,
   search,
   scope,
   usage,
@@ -189,14 +177,13 @@ export function TopBar({
   account,
   linkComponent = DefaultLink,
 }: TopBarProps) {
-  const Link = linkComponent;
   return (
     <header className={HEADER_CLASSES} data-testid="app-header">
       <div className={HEADER_ROW_CLASSES}>
-        {/* 🔴 製品名を表示する唯一の箇所（`U-01`）。クリックでホーム（`S-003` / `S-004`）。 */}
-        <Link className={WORDMARK_CLASSES} href={homeHref} data-testid="app-header-wordmark">
-          {wordmark}
-        </Link>
+        {/* ✅ **2026-10-13（Issue #93 = B）: 製品名をヘッダから外した。** 置き場所は
+            サイドバーの上端（`./sidebar.tsx` の `BrandMark`）である。🔴 **「製品名を出す箇所は
+            1 つだけ」（`U-01`）という条文は変わっていない** —— 場所が移っただけである。
+            デザインシステム v1.0 §3.2 のヘッダにも製品名は無い。 */}
         {/* ✅ 検索（改訂 23。§3.1 の ③）。🔴 **本体カラムの幅いっぱい**に伸びる。
             🔴 モバイルでは行を分けて全幅にする（`md` 未満）—— 1 段に 6 要素は入らないが、
             **検索を隠さない**（`CLAUDE.md` §13.3「狭い画面を理由に判断材料を隠さない」）。 */}

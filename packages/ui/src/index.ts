@@ -121,6 +121,7 @@ export type {
   SidebarBadge,
   SidebarGroup,
   SidebarItem,
+  SidebarBrand,
   SidebarLabels,
   SidebarLinkProps,
   SidebarNavListProps,
@@ -157,7 +158,7 @@ export type { KpiCardItem, KpiCardProps, KpiCardRowProps } from './components/kp
 // 🔴 挨拶は**時計を持たない**（`greetingSlotOf` で区分だけを決め、語と日付は呼び出し側が
 //    サーバで解決する。`components/page-greeting.tsx` の 🔴）。
 export { GREETING_SLOTS, PageGreeting, greetingSlotOf } from './components/page-greeting.js';
-export type { GreetingSlot, PageGreetingProps } from './components/page-greeting.js';
+export type { GreetingSlot, PageGreetingAction, PageGreetingProps } from './components/page-greeting.js';
 // 🔴 右レールの 3 部品は**同じ面（`RailFrame`）を共有する 1 ファイル**に在る
 //    （`children` を取る器を作らないため。`components/rail-card.tsx` 冒頭）。
 export { RailCard, RankedList, Timeline } from './components/rail-card.js';
