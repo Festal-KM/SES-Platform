@@ -217,7 +217,12 @@ test.describe('✅ T-10-07 / T-10-06: A-012 の投入 → UC-21 の実演 → �
       await host.page.goto('/', { waitUntil: 'domcontentloaded' });
       await expect(host.page.getByTestId('environment-banner')).toBeVisible();
       await expect(host.page.getByTestId('environment-banner')).toContainText(t('env.development'));
-      await expect(host.page.getByRole('heading', { name: t('home.title') })).toBeVisible();
+      // ✅ **2026-10-13（[#92](https://github.com/Festal-KM/SES-Platform/issues/92) = A）:
+      //    ホームの見出し帯（`ホーム`）を外し、**挨拶そのものが `<h1>`** になった。**
+      // 🔴 挨拶の文面は時刻と氏名で変わるので、**語ではなく `data-testid` で掴む**
+      //    （`packages/ui` の `PageGreeting` が `<h1>` を 1 つだけ持つことは
+      //    `tests/static/page-heading-single.test.ts` が固定している）。
+      await expect(host.page.getByTestId('home-host-greeting-message')).toBeVisible();
 
       // --- ① 未公開案件（PJ6）を取引先 1 社目に公開（`S-013` → #28 = ゲートに預ける → worker が公開の行を作る）----------------
       partner = await openTenantSession(browser, demoPartnerSales);

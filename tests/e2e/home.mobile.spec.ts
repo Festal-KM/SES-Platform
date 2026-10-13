@@ -78,7 +78,12 @@ test.describe('モバイルビューポートのスモーク（S-003 / S-004 は
     const session = await openTenantSession(browser, hostOwner(1));
     try {
       await session.page.goto('/', { waitUntil: 'domcontentloaded' });
-      await expect(session.page.getByRole('heading', { name: t('home.title') })).toBeVisible();
+      // ✅ **2026-10-13（[#92](https://github.com/Festal-KM/SES-Platform/issues/92) = A）:
+      //    ホームの見出し帯（`ホーム`）を外し、**挨拶そのものが `<h1>`** になった。**
+      // 🔴 挨拶の文面は時刻と氏名で変わるので、**語ではなく `data-testid` で掴む**
+      //    （`packages/ui` の `PageGreeting` が `<h1>` を 1 つだけ持つことは
+      //    `tests/static/page-heading-single.test.ts` が固定している）。
+      await expect(session.page.getByTestId('home-host-greeting-message')).toBeVisible();
       // ✅ T-22-09: `S-003` の最上部は **`SummaryStrip`（件数）→ ✅ 0 → 要対応キュー**になった
       //    （`docs/04` §S-003 改訂 16）。🔴 **`EmptyState`（「まだ案件と人材が登録されていません」）が出るのは
       //    「全 metric が 0」= 初回空のときだけ**であり、`seed:isolation` のテナントは案件も人材も持つので
@@ -259,7 +264,8 @@ test.describe('モバイルビューポートのスモーク（S-003 / S-004 は
         // 🔴 `S-022` にも到達しない（ホームへ戻される。`docs/04` §S-022 権限差分）。
         await partnerSession.page.goto('/proposals/send-failures', { waitUntil: 'domcontentloaded' });
         await expect(partnerSession.page.getByTestId('send-failure-screen')).toHaveCount(0);
-        await expect(partnerSession.page.getByRole('heading', { name: t('home.title') })).toBeVisible();
+        // ✅ 2026-10-13（#92 = A）: ホームの見出しは挨拶の `<h1>` になった（上と同じ理由で testid で掴む）。
+        await expect(partnerSession.page.getByTestId('home-partner-greeting-message')).toBeVisible();
       } finally {
         await partnerSession.close();
       }
