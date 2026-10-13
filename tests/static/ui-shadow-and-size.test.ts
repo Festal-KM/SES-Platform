@@ -281,6 +281,12 @@ describe('🔴 (j)(h) 濃色と 24px は「それを持つ部品」の外に出�
       uiTokens.filter((finding) => utilityOf(finding.token) === 'bg-surface').map((finding) => finding.file),
     );
     expect([...owners].sort()).toEqual([
+      // ✅ **2026-10-13: サイドバーの上端の帯（ロゴ + 開閉トグル）も白い面である。**
+      // 🔴 **柱そのものは濃紺のままである**（白くなったのは 56px の帯だけ）。白くした理由は
+      //    **受け取ったロゴの文字が濃紺**（実測 `#001040` 付近）で、濃紺の柱（`#0B2447`）の上では
+      //    **1.1:1 で読めない**ことである。🔴 **ロゴを塗り替えて解決しない**（ブランドの図版を
+      //    実装側が作り直すと、原本と少しずつ違うものが増える）。
+      'packages/ui/src/components/sidebar.tsx',
       // ✅ 2026-10-13: Top Header とタブの帯も「白い面」になった（`docs/design-system.md` §4）。
       'packages/ui/src/components/tabs.tsx',
       'packages/ui/src/components/top-bar.tsx',

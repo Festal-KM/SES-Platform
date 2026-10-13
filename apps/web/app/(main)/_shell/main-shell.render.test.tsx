@@ -350,10 +350,14 @@ describe('🔴 サイドバー（モックアップの 5 項目 / §7.5 ③ ア�
     const sidebar = /data-testid="app-sidebar"[\s\S]*?<\/nav>/.exec(html)?.[0] ?? '';
     expect(sidebar.length).toBeGreaterThan(0);
     const items = navItems(buildMainNav({ audience: 'HOST', role: 'SALES' }));
-    // 項目ごとに 1 つ + 開閉トグルの 1 つ。
-    expect((sidebar.match(/<svg/g) ?? []).length).toBe(items.length + 1);
+    // 項目ごとに 1 つ + 開閉トグルの **2 つ**。
+    // ✅ **2026-10-13: トグルが 2 枚持つ**（人間の指示「ハンバーガーで開いたときに右上に×ボタンに
+    //    なるようにしよう」）—— 畳んでいるとき `menu` / 広げているとき `x` で、**CSS がどちらか
+    //    一方だけを描く**（`'use client'` を増やさずに形態を図で返すには、両方を DOM に置いて
+    //    `display` で選ぶしかない。`packages/ui/src/components/sidebar.tsx` 冒頭の 🔴）。
+    expect((sidebar.match(/<svg/g) ?? []).length).toBe(items.length + 2);
     // 🔴 **アイコンに `<img>` を使わない**（セットは `lucide-react` の 1 つに固定。写像が閉じている）。
-    // ✅ **2026-10-13: ロゴのマークだけは画像である**（受け取った原本をそのまま使う。ブランドの
+    // ✅ **2026-10-13: ロゴだけは画像である**（受け取ったロックアップをそのまま使う。ブランドの
     //    図版を実装側が描き起こすと、原本と少しずつ違うものが増える）。🔴 **1 枚だけ**であり、
     //    **ロゴの行の中にしか無い**ことをここで固定する（項目に画像が混ざれば落ちる）。
     expect((sidebar.match(/<img/g) ?? []).length).toBe(1);

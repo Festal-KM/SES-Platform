@@ -26,7 +26,12 @@ export const PRODUCT_NAME = 'BizOrch for Engineering Service';
  *
  * 🔴 **`PRODUCT_NAME` と 2 本持つ理由**: 正式名称は 31 文字あり、**208px のサイドバーにも
  *    上部バーにも入らない**。ロゴ自体が「`BizOrch`（大）+ `for Engineering Service`（小）」の
- *    2 段で組まれており、画面もそれに合わせる。
+ *    2 段で組まれている。
+ * ⚠️ **2026-10-13 時点で、これを文字として描いている画面は無い** —— サイドバーが
+ *    **受け取ったロックアップの画像**を出すようになり、短い呼び名も画像の中に在るためである
+ *    （`packages/ui/src/components/sidebar.tsx` の `BrandLogo`）。🔴 **それでもここに残す**:
+ *    ブランドの語の出所は 1 箇所であるべきで、短い呼び名が要る場所（モバイル・将来の帯）が
+ *    出たときに**各画面が `'BizOrch'` と直書きするのを防ぐのがこの定数の役目**である。
  * ⚠️ **改称のときはこの 2 行を両方直す**（`tests/static/product-name-single-key.test.ts` の
  *    検出器は**完全な綴り**を見るので、`BizOrch` 単独の直書きは捕まえられない）。
  */

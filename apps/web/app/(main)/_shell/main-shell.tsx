@@ -202,13 +202,13 @@ export function MainShell({
       : { href: organizationSettings.reach.href, label: t(organizationSettings.labelKey) };
   return (
     <AppShell
-      // ✅ 2026-10-13（Issue #93 = B）: ロゴ・タグライン・下端はサイドバーが持つ。
+      // ✅ 2026-10-13（Issue #93 = B）: ロゴと版はサイドバーが持つ。
       brand={{
-        name: t('product.shortName'),
-        markSrc: '/brand-mark.png',
-        markAlt: wordmark,
-        tagline: t('shell.sidebar.tagline'),
-        note: t('shell.sidebar.note'),
+        // 🔴 **受け取ったロックアップ（マーク + `BizOrch` + `for Engineering Service`）を
+        //    そのまま使う**（2026-10-13 の人間の指示）。製品名もタグラインも画像の中に在るので、
+        //    **文字としては描かない**（`packages/ui` の `BrandLogo` の 🔴）。
+        logoSrc: '/brand-logo.png',
+        logoAlt: wordmark,
         version: APP_VERSION_LABEL,
         homeHref: '/',
       }}

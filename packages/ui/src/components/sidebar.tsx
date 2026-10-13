@@ -4,8 +4,15 @@
 // ============================================================================
 // 🔴 この部品が守るもの（`docs/04` §3.1 / §7.10 / `SP-22` `T-22-05` の条文 2〜7）
 // ============================================================================
-// 1. 🔴 **上端にワードマークを置かない**（製品名は Top Header の 1 箇所のみ = `U-01`）。
-//    上端に在るのは**開閉トグルだけ**である。
+// 1. ✅ **2026-10-13: 上端は「ロゴ + 開閉トグル」の 1 本の帯である。** 高さは Top Header と
+//    同じ 56px（`HEADER_HEIGHT_CLASS`）なので、**画面の最上段が左右で 1 本に揃う**。
+//    🔴 **「製品名を出す箇所は 1 つだけ」（`U-01`）という条文は不変**であり、場所が Top Header から
+//       ここへ移っただけである（ヘッダからは外した）。
+//    🔴 **帯だけが白い**（`--color-surface`）。理由は**受け取ったロゴの文字が濃紺**
+//       （実測 `#001040` 付近）だからで、濃紺の柱（`--color-sidebar-bg` = `#0B2447`）に
+//       載せると **1.1:1 で読めない**。🔴 **ロゴを塗り替えて解決しない** —— ブランドの図版を
+//       実装側が作り直すと、原本と少しずつ違うものが増える（2026-10-13 の人間の指示
+//       「ロゴはこれにしてって言ったじゃん」はまさにそれを正したものである）。
 // 2. 🔴 **2 形態**（展開 / アイコンのみ）。**境界は Tailwind 既定の `xl` の 1 本だけ**で、
 //    `xl` 未満は既定でアイコンのみ / `xl` 以上は既定で展開（`docs/04` §3.1 / §7.1）。
 //    🔴 **アイコンのみでも項目の順序とグループの区切りを変えない**（順序が業務ループを教える）。
@@ -68,7 +75,7 @@ import type { ComponentType, ReactNode } from 'react';
 import { Badge } from './badge.js';
 import { Icon, type IconName } from '../icons.js';
 import { cn } from '../lib/cn.js';
-import { SIDEBAR_NAV_ITEM_HEIGHT_CLASS } from '../lib/layout-tokens.js';
+import { HEADER_HEIGHT_CLASS, SIDEBAR_NAV_ITEM_HEIGHT_CLASS } from '../lib/layout-tokens.js';
 import { ICON_CONTROL_CLASSES } from './button.js';
 import { matchesCurrentNavPath, navLinkClassName } from '../lib/current-nav-path.js';
 import { FOCUS_RING_CLASSES, TRANSITION_CLASSES } from '../lib/state-classes.js';
@@ -213,20 +220,20 @@ export type SidebarVariant = 'sidebar' | 'more';
  */
 export type SidebarBrand = {
   /**
-   * 画面に出す短い呼び名（`product.shortName` = `BizOrch`）。
+   * ロゴ（ロックアップ）の画像（`apps/web/public` 配下のパス）。
+   * 🔴 **受け取った原本をそのまま使う**（`BrandLogo` の 🔴）。
    * 🔴 **製品名を表示する唯一の箇所**（`U-01` の置き場所がヘッダからここへ移った）。
-   * 🔴 正式名称（31 文字）はサイドバーにも上部バーにも入らないので、**ロゴと同じ 2 段**に組む
-   *    （1 段目 = この語 / 2 段目 = `tagline`）。
+   *    画像の中に `BizOrch` と `for Engineering Service` が組まれているので、
+   *    **製品名もタグラインも文字としては描かない。**
    */
-  readonly name: string;
-  /** ロゴのマークの画像（`apps/web/public` 配下のパス）。🔴 **受け取った原本を使う**。 */
-  readonly markSrc: string;
-  /** マークの代替テキスト（🔴 正式名称を入れる。読み上げでは略称ではなくサービス名を読む）。 */
-  readonly markAlt: string;
-  /** タグライン（2 行の読みもの）。 */
-  readonly tagline: string;
-  /** 下端のメッセージ。 */
-  readonly note: string;
+  readonly logoSrc: string;
+  /**
+   * ロゴの代替テキスト。
+   * 🔴 **正式名称（`product.name`）を入れる** —— 読み上げでは略称ではなくサービス名を読む。
+   *    `U-01` の「1 箇所」を機械で確かめているのもこの文字列である
+   *    （`main-shell.render.test.tsx` の `brandRow` の検査）。
+   */
+  readonly logoAlt: string;
   /** 版表記。🔴 **手で書かない**（呼び出し側がビルド時の値を渡す）。 */
   readonly version: string;
   /** ロゴを押したときの遷移先（ホーム）。 */
@@ -248,25 +255,29 @@ export type SidebarLabels = {
 const SIDEBAR_TOGGLE_ID = 'ses-sidebar-form';
 
 /**
+ * ロゴ（🔴 **人間から受け取ったロックアップをそのまま使う**。2026-10-13）。
+ *
+ * 🔴 **マーク + `BizOrch` + `for Engineering Service` が 1 枚の画像に組まれている。**
+ *    したがって**製品名もタグラインも、別の `<span>` として描かない**（二重になる）。
+ * 🔴 **自前で描き起こさない / 塗り替えない。** 実装側がブランドの図版を再現すると、原本と
+ *    少しずつ違うものが増える。**読めるようにするのは地の側の仕事**であり、それが
+ *    ファイル冒頭の 1 の「帯だけが白い」理由である。
+ * 🔴 **`Icon`（lucide の閉じた写像）には入れない** —— これは図版であってアイコンの段ではない。
+ * 🔴 **`src` は呼び出し側が渡す** —— `packages/ui` は `apps/web` の公開ディレクトリを知らない。
+ * ⚠️ 原寸は 257 × 80（透明部分を切り落とした実寸）。`h-8`（32px）で**幅は 103px** になり、
+ *    展開時の内寸 184px（208 − 左右 12）にトグル 32 + gap 8 と並べても収まる。
+ */
+function BrandLogo({ src, alt }: { readonly src: string; readonly alt: string }) {
+  // 🔴 `packages/ui` は `next/*` に依存しない（`docs/05` §2.3.1）ので `next/image` を使わない。
+  // 🔴 `block` にするのは、インライン画像の行下がり（descender 分の余白）で帯の中心がずれるため。
+  return <img className="block h-8 w-auto" src={src} alt={alt} width={257} height={80} />;
+}
+
+/**
  * サイドバーを包む器。🔴 **`group` はここに付ける**（`:has(*:checked)` の射程を
  * 「サイドバーの中のチェックボックス」に限るため。上の 🔴）。
  * 🔴 `md:` 未満はボトムタブに置き換わる（`docs/04` §3.4。**T-12-20 の境界を変えない**）。
  */
-/**
- * ロゴのマーク（🔴 **人間から受け取った画像をそのまま使う**。2026-10-13）。
- *
- * 🔴 **自前で描き起こさない。** 最初は PNG が黒地・グロー付き・透過なしだったので SVG に
- *    起こしていたが、**透過の PNG を受け取った**のでそれを正とする（ブランドの図版を
- *    実装側が再現すると、原本と少しずつ違うものが増える）。
- * 🔴 **`Icon`（lucide の閉じた写像）には入れない** —— これは図版であってアイコンの段ではない。
- * 🔴 **`src` は呼び出し側が渡す** —— `packages/ui` は `apps/web` の公開ディレクトリを知らない。
- */
-function BrandMark({ src, alt }: { readonly src: string; readonly alt: string }) {
-  // 🔴 `packages/ui` は `next/*` に依存しない（`docs/05` §2.3.1）ので `next/image` を使わない。
-  //    28px の固定寸法で 1 枚だけなので、最適化の対象にもならない。
-  return <img className="h-7 w-7 shrink-0" src={src} alt={alt} width={28} height={28} />;
-}
-
 const SIDEBAR_SHELL_CLASSES = 'group hidden shrink-0 md:block';
 
 /**
@@ -294,45 +305,71 @@ const SIDEBAR_SHELL_CLASSES = 'group hidden shrink-0 md:block';
  *   ⚠️ `<nav>` 自身に `self-start` を書いても**効かない**（`align-self` は flex / grid item に
  *   しか効き、器は `md:block` なので `<nav>` は item ではない）。T-22-05 のレビューで除去した。
  */
+/**
+ * 開閉の動き（✅ **2026-10-13**。人間の指摘「サイドバーの開閉の動きが不自然です」）。
+ *
+ * 🔴 **幅だけを遷移させる。** `docs/04` §7.9 は遷移の対象を background-color / border-color /
+ *    color / opacity に限っているが、あの条文が止めているのは
+ *    **hover で 50 行の一覧が波打つこと**である（`../lib/state-classes.ts` 冒頭の 🔴）。
+ *    **利用者が明示的に 1 回押した開閉**はその射程ではなく、むしろ幅が一瞬で 56 ↔ 208 に飛ぶと
+ *    **本体が横に跳ねたように見えて、何が起きたのかが読めない**（これが「不自然」の正体）。
+ * 🔴 **200ms / `ease-out`。** §7.9 の 150ms より 1 段だけ長い —— 152px を動かすので 150ms では
+ *    跳ねたままに見える。🔴 **300ms 以上にしない**（§7.9: 毎日何百回も見る遷移は短いほどよい）。
+ * 🔴 **`transition-all` にしない**（色・影まで巻き込むと §7.9 の条文が崩れる）。
+ * 🔴 **`motion-reduce` で切る** —— 動きを減らす設定の利用者には最初から最終状態を見せる。
+ * ⚠️ 併せて `overflow-x-hidden` を持たせている: 広がる途中の 1〜2 フレームは**語のほうが先に
+ *    現れる**（`display` は遷移できない）ので、はみ出した語は柱の縁で切る。
+ */
+const SIDEBAR_WIDTH_TRANSITION_CLASSES =
+  'transition-[width] duration-200 ease-out motion-reduce:transition-none';
+
 const SIDEBAR_CLASSES = cn(
   // ✅ **2026-10-13（`docs/design-system.md` §2 / §3.1）: 幅 224 → 208、地を濃紺の
   //    グラデーション（`#0B2447` → `#122E57`）にした。** 🔴 **グラデーションが許されるのは
   //    この 1 面だけである**（`docs/design-system.md` §5-8）。
   // 🔴 枠線を外した —— グラデーションの面と白い本体の境は、面の差だけで十分に読める。
-  'flex flex-col overflow-y-auto bg-linear-to-b from-sidebar-bg to-sidebar-bg-end pb-5',
+  'flex flex-col overflow-x-hidden overflow-y-auto bg-linear-to-b from-sidebar-bg to-sidebar-bg-end pb-5',
   'md:sticky md:top-0 md:h-dvh',
   // 🔴 **変種付きのクラスは文字列リテラルで書く** —— Tailwind の走査は
   //    `group-has-checked:${定数}` のような組み立てを候補として拾えず、**CSS が生成されない**
   //    （テストは緑のまま見た目だけ壊れる）。値は `../lib/layout-tokens.ts` と対であり、
   //    一致は `tests/static/layout-tokens.test.ts` が固定する。
   'w-14 group-has-checked:w-52 xl:w-52 xl:group-has-checked:w-14',
-  TRANSITION_CLASSES,
+  SIDEBAR_WIDTH_TRANSITION_CLASSES,
 );
 
 /**
- * 上端の開閉トグルの行。
- * ✅ **2026-10-13（[Issue #93](https://github.com/Festal-KM/SES-Platform/issues/93) = B）: この下に
- *    ロゴ（マーク + 製品名 + タグライン）が入った。** 🔴 旧条文「上端にワードマークを置かない
- *    （製品名は Top Header の 1 箇所のみ = `U-01`）」は**置き場所がヘッダからここへ移った**もので、
- *    **「製品名を出す箇所は 1 つだけ」という条文自体は変わっていない**（ヘッダからは外した）。
+ * 上端の帯（**ロゴ + 開閉トグル**）。✅ 2026-10-13。詳細はファイル冒頭の 1。
+ *
+ * - 🔴 **高さは Top Header と同じ**（`HEADER_HEIGHT_CLASS` = 56px）。左右で最上段が 1 本に揃う。
+ * - 🔴 **地は白**（ロゴの文字が濃紺なので、濃紺の柱の上では読めない。冒頭の 1）。
+ *   下端の罫線もヘッダのものと同じ `--color-border` で、**1 本の線として continue する**。
+ * - 🔴 **`px-3`（12px）は「畳んだときにトグルがちょうど中央に来る」値**である
+ *   （56 − 12 × 2 = 32 = `IconButton` の寸法）。広げたときは群の左右（`px-3`）とも揃う。
+ * - 🔴 **余白は `mb-4`（margin）で取る。** 柱の `padding-top` にすると**帯そのものが下がって
+ *   Top Header と揃わなくなる**（罫線は帯の下端に残り、本文だけが 16px 下がる）。
  */
-const SIDEBAR_TOGGLE_ROW_CLASSES = 'flex items-center px-2 py-2';
+const SIDEBAR_HEAD_CLASSES = cn(
+  'mb-4 flex shrink-0 items-center gap-2 border-b border-border bg-surface px-3',
+  HEADER_HEIGHT_CLASS,
+);
 
 /**
- * ロゴのブロック（デザインシステム v1.0 §3.1 / 人間から渡されたロゴ画像。2026-10-13）。
- *
- * 🔴 **マークは SVG で描き起こしている。** 渡された画像は黒地にグロー（発光）の付いた
- *    1536 × 1024 の PNG であり、**透過が無く 28px の枠に置けない**。グローは影であり、
- *    デザインシステム §1.3 の「Shadow: なし」にも反する。**形だけを取って SVG にした。**
- * 🔴 **タイル（`bg-brand` の角丸）を敷かない** —— 渡された画像はマークが地の上に直接載っている。
+ * ロゴのリンク（ホームへ）。
+ * 🔴 **畳んだ形態では消す** —— 56px の帯に 103px のロックアップは入らない（`BrandLogo` の ⚠️）。
+ * 🔴 **display は `SIDEBAR_EXPANDED_ONLY_CLASSES` が決める**ので、ここに `flex` / `block` を
+ *    書かない（`cn()` = `tailwind-merge` が同じ群を後勝ちで畳むため、書くと必ずどちらかが死ぬ）。
  */
-const SIDEBAR_BRAND_ROW_CLASSES = 'flex items-center gap-3 px-3 pb-1';
-const SIDEBAR_BRAND_NAME_CLASSES = 'truncate text-sidebar-fg';
-const SIDEBAR_BRAND_TAGLINE_CLASSES = 'm-0 px-3 pb-2 text-cell text-sidebar-fg-muted';
-/** 下端（メッセージの箱 + 版）。🔴 アイコンのみの形態では畳む。 */
-const SIDEBAR_FOOT_CLASSES = 'mt-auto flex flex-col gap-4 px-3 pt-4';
-const SIDEBAR_FOOT_NOTE_CLASSES =
-  'rounded-md border border-sidebar-border p-3 text-cell text-sidebar-fg';
+const SIDEBAR_BRAND_LINK_CLASSES = cn('min-w-0 rounded-sm', FOCUS_RING_CLASSES);
+
+/**
+ * 下端（版表記）。🔴 アイコンのみの形態では畳む。
+ * ✅ **2026-10-13: メッセージの箱（`可能性を、もっとシンプルに。`）を外した**（人間の指示
+ *    「サイドバーの下の『可能性を、もっとシンプルに。』ってパーツはいらない」）。
+ *    ⚠️ 文言キー `shell.sidebar.note` / `shell.sidebar.tagline` は**カタログに残す**
+ *    （`tests/static/i18n-key-freeze.test.ts`: 追加は可、改名と削除は不可）。
+ */
+const SIDEBAR_FOOT_CLASSES = 'mt-auto px-3 pt-4';
 const SIDEBAR_FOOT_VERSION_CLASSES = 'm-0 text-cell text-sidebar-fg-muted';
 
 /**
@@ -347,11 +384,13 @@ const SIDEBAR_FOOT_VERSION_CLASSES = 'm-0 text-cell text-sidebar-fg-muted';
  */
 const SIDEBAR_TOGGLE_CLASSES = cn(
   ICON_CONTROL_CLASSES,
-  // ✅ 2026-10-02: 濃色の面に載るので文字色と hover を濃色側のトークンで**上書きする**
-  //    （`cn()` = `tailwind-merge` が同じ群を後勝ちで畳む）。🔴 上書きしないと
-  //    `ghost` の `text-fg`（`slate-900`）が `--color-sidebar-bg`（`slate-900`）に沈んで**見えない**。
-  'text-sidebar-fg hover:bg-sidebar-hover-bg active:bg-sidebar-hover-bg',
-  'cursor-pointer',
+  // ✅ **2026-10-13: 濃色側のトークンによる上書きを外した。** トグルが載っているのは
+  //    **白い帯**（`SIDEBAR_HEAD_CLASSES`）になったので、`ghost` の既定（`--color-fg` /
+  //    `--color-bg-subtle`）がそのまま正しい。🔴 **上書きを残すと、白地に `slate-100` の
+  //    アイコンが載って見えなくなる**（2026-10-02 とちょうど逆向きの事故）。
+  // 🔴 右端に寄せる（**広げているときの × は右上**。2026-10-13 の人間の指示）。畳んだときは
+  //    自由幅が 0 なので `ml-auto` は効かず、帯の中央に収まる（`SIDEBAR_HEAD_CLASSES` の 🔴）。
+  'ml-auto cursor-pointer',
   'peer-focus-visible:ring-2 peer-focus-visible:ring-brand peer-focus-visible:ring-offset-2',
 );
 
@@ -475,6 +514,16 @@ const NOTE_CLASSES: Readonly<Record<SidebarVariant, string>> = {
  *    ファイル冒頭の 🔴 と同じで、特異度 (0,2,0) 側が (0,1,0) 側に勝つ）。
  */
 const SIDEBAR_ICON_ONLY_CLASSES = 'block group-has-checked:hidden xl:hidden xl:group-has-checked:block';
+
+/**
+ * 🔴 **広げている形態でだけ現れる**（上の裏返し。`SIDEBAR_LABEL_CLASSES.sidebar` と同じ 4 クラス）。
+ *
+ * 🔴 **語を持たない要素のための定数である**（ロゴ / `×` のアイコン）。`SIDEBAR_LABEL_CLASSES` は
+ *    `truncate` を併せ持っており、画像やアイコンに当てると `text-ellipsis` が無意味に付く。
+ * 🔴 **文字列リテラルで書く** —— Tailwind の走査は組み立てたクラス名を拾えない（冒頭の 🔴）。
+ */
+const SIDEBAR_EXPANDED_ONLY_CLASSES =
+  'hidden group-has-checked:block xl:block xl:group-has-checked:hidden';
 
 /**
  * 期限バッジを持つ項目の**点（dot）**。アイコンの右上に出す。
@@ -717,7 +766,7 @@ export function Sidebar({
   return (
     <div className={SIDEBAR_SHELL_CLASSES}>
       <nav className={SIDEBAR_CLASSES} aria-label={labels.nav} data-testid="app-sidebar">
-        <div className={SIDEBAR_TOGGLE_ROW_CLASSES}>
+        <div className={SIDEBAR_HEAD_CLASSES}>
           {/* 🔴 開閉の状態はここ 1 つだけが持つ（JS を使わない。ファイル冒頭の 🔴）。 */}
           <input
             id={SIDEBAR_TOGGLE_ID}
@@ -726,44 +775,43 @@ export function Sidebar({
             aria-label={labels.toggle}
             data-testid="app-sidebar-toggle"
           />
+          {brand === null ? null : (
+            <BrandLink
+              className={cn(SIDEBAR_BRAND_LINK_CLASSES, SIDEBAR_EXPANDED_ONLY_CLASSES)}
+              href={brand.homeHref}
+              data-testid="app-header-wordmark"
+            >
+              <BrandLogo src={brand.logoSrc} alt={brand.logoAlt} />
+            </BrandLink>
+          )}
           <label
             htmlFor={SIDEBAR_TOGGLE_ID}
             className={SIDEBAR_TOGGLE_CLASSES}
             data-testid="app-sidebar-toggle-control"
           >
-            <Icon name="panel-left" />
+            {/* ✅ **2026-10-13（人間の指示）: トグルが形態そのものを図で返す。**
+                畳んでいる = ハンバーガー（押すと開く）/ 広げている = `×`（押すと閉じる）。
+                🔴 **`panel-left` の 1 枚だけにしない** —— 同じ図のままだと「いま押すと開くのか
+                   閉じるのか」が図から読めず、**既定の形態が幅で変わる**ぶん余計に分からない
+                   （ファイル冒頭の「チェックの意味は『既定と逆の形態にする』」）。
+                🔴 **語（`labels.toggle`）は方向を断定しない**ままである（同）—— 読み上げは
+                   `<input>` 側の `aria-label` が持ち、ここの 2 枚は装飾ではなく**状態の図**である。 */}
+            <Icon name="menu" className={SIDEBAR_ICON_ONLY_CLASSES} />
+            <Icon name="x" className={SIDEBAR_EXPANDED_ONLY_CLASSES} />
           </label>
         </div>
-        {brand === null ? null : (
-          <>
-            <BrandLink
-              className={SIDEBAR_BRAND_ROW_CLASSES}
-              href={brand.homeHref}
-              data-testid="app-header-wordmark"
-            >
-              <BrandMark src={brand.markSrc} alt={brand.markAlt} />
-              <span className={cn(SIDEBAR_BRAND_NAME_CLASSES, SIDEBAR_LABEL_CLASSES.sidebar)}>
-                {brand.name}
-              </span>
-            </BrandLink>
-            <p className={cn(SIDEBAR_BRAND_TAGLINE_CLASSES, SIDEBAR_LABEL_CLASSES.sidebar)}>
-              {brand.tagline}
-            </p>
-          </>
-        )}
         <SidebarNavList
           groups={groups}
           variant="sidebar"
           currentPath={currentPath}
           linkComponent={BrandLink}
         />
-        {/* 🔴 下端（§3.1）。アイコンのみの形態では語ごと畳む（28px の柱に 168px の箱は入らない）。 */}
+        {/* 🔴 下端（§3.1）= 版表記だけ。アイコンのみの形態では畳む（56px の柱に版の行は入らない）。 */}
         {brand === null ? null : (
           <div
-            className={cn(SIDEBAR_FOOT_CLASSES, SIDEBAR_LABEL_CLASSES.sidebar)}
+            className={cn(SIDEBAR_FOOT_CLASSES, SIDEBAR_EXPANDED_ONLY_CLASSES)}
             data-testid="app-sidebar-foot"
           >
-            <p className={SIDEBAR_FOOT_NOTE_CLASSES}>{brand.note}</p>
             <p className={SIDEBAR_FOOT_VERSION_CLASSES}>{brand.version}</p>
           </div>
         )}
