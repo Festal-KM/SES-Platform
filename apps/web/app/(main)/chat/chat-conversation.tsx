@@ -45,6 +45,7 @@ import { displayInitials } from '../../../lib/format/initials';
 import { chatHref, chatMessagesApiPath } from '../../../lib/chat/screen-query';
 import type { ChatMessageView } from '../../../lib/chat/views';
 import type { ChatConversationMessages } from './chat-props';
+import { withDaySeparators } from '../../../lib/chat/day-separators';
 
 export type ChatConversationProps = {
   readonly threadId: string;
@@ -181,7 +182,26 @@ export function ChatConversation({
             className="m-0 flex list-none flex-col gap-3 p-0"
             data-testid="chat-messages"
           >
-            {items.map((item) => (
+            {withDaySeparators(items).map((entry) => {
+              // ✅ 2026-10-13: **日付の区切り**（定義書 §3.12「中央・24h の pill・地 `bg-subtle`・12」）。
+              // 🔴 JST の暦日が変わる位置にだけ置く（`lib/chat/day-separators.ts`）。並び順は変えない。
+              // 🔴 radius は `rounded-md` —— `rounded-full` はアバターとカウンタにしか使えない
+              //    （`tests/static/design-tokens.test.ts` / `docs/04` §7.9）。
+              if (entry.kind === 'day') {
+                return (
+                  <li
+                    key={`day-${entry.day}`}
+                    className="flex justify-center"
+                    data-testid={`chat-day-separator-${entry.day}`}
+                  >
+                    <time dateTime={entry.day} className="rounded-md bg-bg-subtle px-3 py-1 text-xs text-fg-muted">
+                      {entry.day}
+                    </time>
+                  </li>
+                );
+              }
+              const item = entry.message;
+              return (
               // 🔴 ✅ **2026-10-13: 全員を左に寄せる**（デザインシステム v1.0 §3.12「全員左寄せ・
               //    Slack 型」）。自社と相手の弁別は**バブルの地の色だけ**である。
               // 🔴 **右寄せにしない** —— 誰の発言かを「位置」で表すと、参加会社が 3 社以上に
@@ -226,7 +246,8 @@ export function ChatConversation({
                   </p>
                 </div>
               </li>
-            ))}
+              );
+            })}
           </ol>
         )}
       </div>

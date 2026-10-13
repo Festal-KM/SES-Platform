@@ -363,3 +363,34 @@ describe('🔴 ⑤: 実体の無い語を 1 つも描かない（添付 / 接続
     expect(renderPanel()).toContain(t('chat.panel.participants'));
   });
 });
+
+describe('⑥: 日付の区切り（定義書 §3.12。2026-10-13 追加）', () => {
+  it('JST の日付ごとに区切りが 1 つ出て、発言の前に来る', () => {
+    const html = renderConversation();
+    // 2 件とも JST 2026-09-30 の発言 → 区切りは 1 つだけ。
+    expect([...html.matchAll(/data-testid="chat-day-separator-/g)]).toHaveLength(1);
+    const separatorAt = html.indexOf('data-testid="chat-day-separator-2026-09-30"');
+    const firstMessageAt = html.indexOf(`data-testid="chat-message-${MESSAGE_OWN.id}"`);
+    expect(separatorAt).toBeGreaterThan(-1);
+    expect(separatorAt).toBeLessThan(firstMessageAt);
+  });
+
+  it('日付が変わる位置に区切りが増える', () => {
+    const nextDay: ChatMessageView = { ...MESSAGE_OTHER, id: '01930000-0000-7000-8000-0000000000d3', sentAt: '2026-10-01T03:00:00.000Z' };
+    const html = renderConversation({ initialMessages: [MESSAGE_OWN, nextDay] });
+    expect(html).toContain('data-testid="chat-day-separator-2026-09-30"');
+    expect(html).toContain('data-testid="chat-day-separator-2026-10-01"');
+  });
+
+  it('🔴 円形（`rounded-full`）を使わない（§7.9: 円はアバターとカウンタのみ）', () => {
+    const html = renderConversation();
+    const separator = /<li[^>]*data-testid="chat-day-separator-[^"]*"[^>]*>(.*?)<\/li>/s.exec(html);
+    expect(separator).not.toBeNull();
+    expect((separator as RegExpExecArray)[1]).not.toContain('rounded-full');
+  });
+
+  it('発言が無ければ区切りも出ない', () => {
+    const html = renderConversation({ initialMessages: [], initialNextCursor: null });
+    expect(html).not.toContain('chat-day-separator-');
+  });
+});
