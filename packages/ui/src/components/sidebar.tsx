@@ -264,13 +264,13 @@ const SIDEBAR_TOGGLE_ID = 'ses-sidebar-form';
  *    ファイル冒頭の 1 の「帯だけが白い」理由である。
  * 🔴 **`Icon`（lucide の閉じた写像）には入れない** —— これは図版であってアイコンの段ではない。
  * 🔴 **`src` は呼び出し側が渡す** —— `packages/ui` は `apps/web` の公開ディレクトリを知らない。
- * ⚠️ 原寸は 257 × 80（透明部分を切り落とした実寸）。`h-8`（32px）で**幅は 103px** になり、
- *    展開時の内寸 184px（208 − 左右 12）にトグル 32 + gap 8 と並べても収まる。
+ * ⚠️ 原寸は 257 × 80（透明部分を切り落とした実寸）。`h-9`（36px）で**幅は 116px** になり、
+ *    展開時の内寸 184px（208 − 左右 12）にトグル 32 + gap 8 と並べても収まる（実測 164px）。
  */
 function BrandLogo({ src, alt }: { readonly src: string; readonly alt: string }) {
   // 🔴 `packages/ui` は `next/*` に依存しない（`docs/05` §2.3.1）ので `next/image` を使わない。
   // 🔴 `block` にするのは、インライン画像の行下がり（descender 分の余白）で帯の中心がずれるため。
-  return <img className="block h-8 w-auto" src={src} alt={alt} width={257} height={80} />;
+  return <img className="block h-9 w-auto" src={src} alt={alt} width={257} height={80} />;
 }
 
 /**
@@ -348,11 +348,14 @@ const SIDEBAR_CLASSES = cn(
  *   （56 − 12 × 2 = 32 = `IconButton` の寸法）。広げたときは群の左右（`px-3`）とも揃う。
  * - 🔴 **余白は `mb-4`（margin）で取る。** 柱の `padding-top` にすると**帯そのものが下がって
  *   Top Header と揃わなくなる**（罫線は帯の下端に残り、本文だけが 16px 下がる）。
+ * - 🔴 **罫線は外側、`h-14` は内側の行に当てる**（`TopBar` と同じ組み方）。
+ *   ⚠️ **1 枚にまとめると 1px ずれる** —— `border-box` では `h-14` の 56px に罫線の 1px が
+ *   **含まれる**ので帯は 56px になるが、Top Header は「56px の行 + 罫線 1px」で **57px** である
+ *   （実測で確かめた: 帯 56 / ヘッダ 57）。**揃えるために帯を置いたのに 1px ずれる**のでは
+ *   本末転倒なので、組み方のほうを合わせる。
  */
-const SIDEBAR_HEAD_CLASSES = cn(
-  'mb-4 flex shrink-0 items-center gap-2 border-b border-border bg-surface px-3',
-  HEADER_HEIGHT_CLASS,
-);
+const SIDEBAR_HEAD_CLASSES = 'mb-4 shrink-0 border-b border-border bg-surface';
+const SIDEBAR_HEAD_ROW_CLASSES = cn('flex items-center gap-2 px-3', HEADER_HEIGHT_CLASS);
 
 /**
  * ロゴのリンク（ホームへ）。
@@ -767,38 +770,40 @@ export function Sidebar({
     <div className={SIDEBAR_SHELL_CLASSES}>
       <nav className={SIDEBAR_CLASSES} aria-label={labels.nav} data-testid="app-sidebar">
         <div className={SIDEBAR_HEAD_CLASSES}>
-          {/* 🔴 開閉の状態はここ 1 つだけが持つ（JS を使わない。ファイル冒頭の 🔴）。 */}
-          <input
-            id={SIDEBAR_TOGGLE_ID}
-            type="checkbox"
-            className="peer sr-only"
-            aria-label={labels.toggle}
-            data-testid="app-sidebar-toggle"
-          />
-          {brand === null ? null : (
-            <BrandLink
-              className={cn(SIDEBAR_BRAND_LINK_CLASSES, SIDEBAR_EXPANDED_ONLY_CLASSES)}
-              href={brand.homeHref}
-              data-testid="app-header-wordmark"
+          <div className={SIDEBAR_HEAD_ROW_CLASSES}>
+            {/* 🔴 開閉の状態はここ 1 つだけが持つ（JS を使わない。ファイル冒頭の 🔴）。 */}
+            <input
+              id={SIDEBAR_TOGGLE_ID}
+              type="checkbox"
+              className="peer sr-only"
+              aria-label={labels.toggle}
+              data-testid="app-sidebar-toggle"
+            />
+            {brand === null ? null : (
+              <BrandLink
+                className={cn(SIDEBAR_BRAND_LINK_CLASSES, SIDEBAR_EXPANDED_ONLY_CLASSES)}
+                href={brand.homeHref}
+                data-testid="app-header-wordmark"
+              >
+                <BrandLogo src={brand.logoSrc} alt={brand.logoAlt} />
+              </BrandLink>
+            )}
+            <label
+              htmlFor={SIDEBAR_TOGGLE_ID}
+              className={SIDEBAR_TOGGLE_CLASSES}
+              data-testid="app-sidebar-toggle-control"
             >
-              <BrandLogo src={brand.logoSrc} alt={brand.logoAlt} />
-            </BrandLink>
-          )}
-          <label
-            htmlFor={SIDEBAR_TOGGLE_ID}
-            className={SIDEBAR_TOGGLE_CLASSES}
-            data-testid="app-sidebar-toggle-control"
-          >
-            {/* ✅ **2026-10-13（人間の指示）: トグルが形態そのものを図で返す。**
+              {/* ✅ **2026-10-13（人間の指示）: トグルが形態そのものを図で返す。**
                 畳んでいる = ハンバーガー（押すと開く）/ 広げている = `×`（押すと閉じる）。
                 🔴 **`panel-left` の 1 枚だけにしない** —— 同じ図のままだと「いま押すと開くのか
                    閉じるのか」が図から読めず、**既定の形態が幅で変わる**ぶん余計に分からない
                    （ファイル冒頭の「チェックの意味は『既定と逆の形態にする』」）。
                 🔴 **語（`labels.toggle`）は方向を断定しない**ままである（同）—— 読み上げは
                    `<input>` 側の `aria-label` が持ち、ここの 2 枚は装飾ではなく**状態の図**である。 */}
-            <Icon name="menu" className={SIDEBAR_ICON_ONLY_CLASSES} />
-            <Icon name="x" className={SIDEBAR_EXPANDED_ONLY_CLASSES} />
-          </label>
+              <Icon name="menu" className={SIDEBAR_ICON_ONLY_CLASSES} />
+              <Icon name="x" className={SIDEBAR_EXPANDED_ONLY_CLASSES} />
+            </label>
+          </div>
         </div>
         <SidebarNavList
           groups={groups}
