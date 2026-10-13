@@ -1,6 +1,6 @@
 // apps/web/lib/chat/layout.test.ts
 import { describe, expect, it } from 'vitest';
-import { conversationLayoutFor, isSendKey } from './layout';
+import { conversationLayoutFor, conversationTitleFor, isSendKey } from './layout';
 
 describe('conversationLayoutFor', () => {
   it('案件スレッドは話題型（全員左寄せ）', () => {
@@ -9,6 +9,38 @@ describe('conversationLayoutFor', () => {
 
   it('企業スレッドは会話型（自分は右）', () => {
     expect(conversationLayoutFor('COMPANY')).toBe('chat');
+  });
+});
+
+describe('conversationTitleFor', () => {
+  const project = { id: '01930000-0000-7000-8000-000000000001', name: '金融系 Web API 改修' };
+
+  it('案件スレッドは「案件名 / 相手の会社名」', () => {
+    expect(conversationTitleFor({ kind: 'PROJECT', project, counterpartyName: '架空パートナー A' })).toEqual({
+      title: '金融系 Web API 改修',
+      subtitle: '架空パートナー A',
+    });
+  });
+
+  it('案件が読めない案件スレッドは、相手の会社名だけ', () => {
+    expect(conversationTitleFor({ kind: 'PROJECT', project: null, counterpartyName: '架空パートナー A' })).toEqual({
+      title: '架空パートナー A',
+      subtitle: null,
+    });
+  });
+
+  it('企業スレッドは相手の会社名だけ', () => {
+    expect(conversationTitleFor({ kind: 'COMPANY', project: null, counterpartyName: '架空パートナー A' })).toEqual({
+      title: '架空パートナー A',
+      subtitle: null,
+    });
+  });
+
+  it('名前が読めなければ null（画面が既定の見出しに戻す）', () => {
+    expect(conversationTitleFor({ kind: 'COMPANY', project: null, counterpartyName: null })).toEqual({
+      title: null,
+      subtitle: null,
+    });
   });
 });
 

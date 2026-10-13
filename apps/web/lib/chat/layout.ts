@@ -9,13 +9,32 @@
 // 🔴 スレッドの参加会社は常にホストと 1 パートナーの 2 社である（`chat_threads.partner_company_id`。
 //    `schema.prisma` の 🔴「ホストと 1 パートナーの組み合わせに限る」）。左右の 2 方向で表しきれる。
 // 🔴 純粋関数に閉じる（クライアントの島から呼ばれるため。`tests/static/client-db-boundary.test.ts`）。
-import type { ChatThreadKind } from './views';
+import type { ChatThreadDetailView, ChatThreadKind } from './views';
 
 /** 会話の並べ方。`topic` = 全員左寄せ（話題型）/ `chat` = 自分は右（会話型）。 */
 export type ChatConversationLayout = 'topic' | 'chat';
 
 export function conversationLayoutFor(kind: ChatThreadKind): ChatConversationLayout {
   return kind === 'PROJECT' ? 'topic' : 'chat';
+}
+
+/** 会話の見出しに出す名前（Lark の会話ヘッダに当たる）。読めなければ `null`（画面が既定の見出しに戻す）。 */
+export type ChatConversationTitle = { readonly title: string | null; readonly subtitle: string | null };
+
+/**
+ * 会話の見出しを決める。
+ *   - 案件スレッド … 見出し = 案件名、補足 = 相手の会社名
+ *   - 企業スレッド … 見出し = 相手の会社名、補足なし
+ * 🔴 **関連情報パネル（`ChatThreadPanel`）と一覧が既に出している名前だけを使う**。新しい情報を
+ *    画面に増やさない（読み手に見えてよい範囲は `lib/chat/read.ts` と RLS が決めている）。
+ */
+export function conversationTitleFor(
+  thread: Pick<ChatThreadDetailView, 'kind' | 'project' | 'counterpartyName'>,
+): ChatConversationTitle {
+  if (thread.kind === 'PROJECT') {
+    return { title: thread.project?.name ?? thread.counterpartyName, subtitle: thread.project === null ? null : thread.counterpartyName };
+  }
+  return { title: thread.counterpartyName, subtitle: null };
 }
 
 /**

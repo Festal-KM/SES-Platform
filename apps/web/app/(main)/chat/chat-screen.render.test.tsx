@@ -427,3 +427,37 @@ describe('⑦: 並べ方の切り替え（2026-10-13、Lark 寄せ。lib/chat/la
     expect(source).toContain('layout={conversationLayoutFor(selected.kind)}');
   });
 });
+
+describe('⑧: 連続した発言のまとめ・時刻・見出し（2026-10-13、Lark 寄せ）', () => {
+  const FOLLOW_UP: ChatMessageView = {
+    ...MESSAGE_OTHER,
+    id: '01930000-0000-7000-8000-0000000000d4',
+    sentAt: '2026-09-30T02:03:00.000Z', // MESSAGE_OTHER の 3 分後、同じ人
+  };
+
+  it('同じ人の 5 分以内の続きは名前を出さず、アバターは見えなくする（幅は残す）', () => {
+    const html = renderConversation({ initialMessages: [MESSAGE_OWN, MESSAGE_OTHER, FOLLOW_UP] });
+    expect(html).toContain(`data-testid="chat-message-sender-${MESSAGE_OTHER.id}"`);
+    expect(html).not.toContain(`data-testid="chat-message-sender-${FOLLOW_UP.id}"`);
+    const li = new RegExp(`<li[^>]*data-testid="chat-message-${FOLLOW_UP.id}"[^>]*>(.*?)</li>`, 's').exec(html);
+    expect((li as RegExpExecArray)[0]).toContain('data-continued="true"');
+    expect((li as RegExpExecArray)[1]).toContain('invisible');
+    // 🔴 読み上げでは誰の発言かを残す。
+    expect((li as RegExpExecArray)[1]).toContain(`sr-only">${String(FOLLOW_UP.senderName)}`);
+  });
+
+  it('時刻は HH:MM だけを出し、日付つきの時刻は title に残す', () => {
+    const html = renderConversation();
+    // MESSAGE_OWN = 2026-09-30T01:00Z = JST 10:00
+    expect(html).toMatch(/<time[^>]*title="2026-09-30 10:00 JST"[^>]*>10:00<\/time>/);
+  });
+
+  it('見出しに会話の相手を出し、名前が無ければ既定の見出しに戻す', () => {
+    const titled = renderConversation({ title: { title: '金融系 Web API 改修', subtitle: '架空パートナー A' } });
+    expect(titled).toContain('金融系 Web API 改修');
+    expect(titled).toContain('data-testid="chat-conversation-subtitle"');
+    const fallback = renderConversation({ title: { title: null, subtitle: null } });
+    expect(fallback).toContain(t('chat.messages.heading'));
+    expect(fallback).not.toContain('data-testid="chat-conversation-subtitle"');
+  });
+});
