@@ -686,10 +686,10 @@ describe('🔴 SP-22 段④: モバイルの読む順序が DOM の順序で保�
 
   it('🔴 どのカラムも `display:none` で畳まれていない（幅で遮断しない。§13.3）', () => {
     const html = render();
-    // 副カラムの寸法は `PAGE_BODY_ASIDE_WIDTH_CLASSES`（`w-full lg:w-90 …`）であり、
+    // 副カラムの寸法は `PAGE_BODY_ASIDE_WIDTH_CLASSES`（`w-full lg:w-97`）であり、
     // 🔴 **モバイルは `w-full`**（隠さない）。素の `hidden` ユーティリティが無いことを見る。
     //    ⚠️ `overflow-hidden`（`Badge` の基底）に当たらないよう、クラスの区切りで照合する。
     expect(html).not.toMatch(/class="(?:[^"]*\s)?hidden(?:\s[^"]*)?"/);
-    expect(html).toContain('w-full lg:w-90');
+    expect(html).toContain('w-full lg:w-97');
   });
 });

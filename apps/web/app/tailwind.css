@@ -150,12 +150,21 @@
 
   /* 無彩色: 本文 / 補助 / 未入力。🔴 終わったもの・確定したものは色を持たない（§7.4） */
   --color-fg: var(--color-slate-900);
-  --color-fg-muted: var(--color-slate-500);
+  /* 🔴 ✅ **2026-10-13: `slate-500` → `slate-600`。**
+   * 仕様書は補助の文字を `--text-2: #4B5563` と `--text-3: #6B7280` の 2 段に分けているが、
+   * **ページの地が `#F1F5F9` になったことで `#6B7280` は 4.20:1 となり AA（4.5:1）を満たさない**
+   * （`design-tokens.test.ts` が実測で落とす）。🔴 **読めない階調を規約に入れない**ので、
+   * 2 段を 1 つにまとめて `slate-600`（地の上で 6.78:1）にした。
+   * ⚠️ 仕様書との差は `docs/design-system.md` §6 に記録してある。 */
+  --color-fg-muted: var(--color-slate-600);
   --color-fg-placeholder: var(--color-slate-400);
 
   /* 面。🔴 階層は border と background の差で表す（shadow を使わない。下の shadow の規約） */
   --color-bg: var(--color-white);
-  --color-bg-subtle: var(--color-slate-50);
+  /* ✅ 2026-10-13: 仕様書 `--bg: #F3F5F9`（ページの地・検索欄の地）= `slate-100`。
+   * 🔴 **行 hover / 列ヘッダはここから切り離した**（下の `--color-row-hover-bg`）—— 同値だと
+   *    地の上に置いた表で hover が見えない（旧実装の申し送りがこれを予告していた）。 */
+  --color-bg-subtle: var(--color-slate-100);
   --color-bg-inset: var(--color-slate-100);
 
   /* カード・パネル・overlay の地（✅ 2026-10-02 の人間のブリーフで追加）。
@@ -179,14 +188,20 @@
    * `APPROVAL_PENDING` `SUBMITTING` `REQUESTED`。
    * 🔴 階調は docs/04 `Q-04-2` の既定 ①（`indigo-700`）。**ブランド確定（Issue #1）に従属**し、
    *    変えるときはこの 1 行だけを差し替える。 */
-  --color-brand: var(--color-indigo-700);
-  --color-brand-hover: var(--color-indigo-800);
-  --color-brand-active: var(--color-indigo-900);
-  --color-brand-bg: var(--color-indigo-50);
+  /* ✅ **2026-10-13（`docs/design-system.md` §3.1）: 藍（`indigo-700`）から青（`blue-600`）に変えた。**
+   * 🔴 人間のデザインシステム定義 v1.0 の `--primary: #2563EB` = `blue-600` の実値そのものである
+   *    （階調を参照したまま一致した。独自 hex を起こしていない）。hover は `#1D4ED8` = `blue-700`。 */
+  --color-brand: var(--color-blue-600);
+  --color-brand-hover: var(--color-blue-700);
+  --color-brand-active: var(--color-blue-800);
+  --color-brand-bg: var(--color-blue-50);
   --color-brand-fg: var(--color-white);
 
   /* 障害（赤）。🔴 `SUBMIT_FAILED` / `SEND_FAILED` / `SUSPENDED` のみ（§7.4）。
    * 赤を乱用すると、本当に危ない 3 状態が埋もれる。 */
+  /* 🔴 **仕様書の `--danger: #DC2626`（`red-600`）は採らない。** `danger-bg` / `bg-subtle` /
+   * `neutral-bg` の上で 4.36:1 となり AA を満たさない（実測）。`red-700` のままにする。
+   * ⚠️ 差は `docs/design-system.md` §6 に記録してある。 */
   --color-danger: var(--color-red-700);
   --color-danger-bg: var(--color-red-50);
   --color-danger-border: var(--color-red-300);
@@ -211,6 +226,9 @@
   /* 終わったもの（`DRAFT` / `LOST` / `DECLINED` / `WITHDRAWN` / `EXPIRED` / `ENDED` /
    * `PURGED`）/ `Phase N` の Badge。 */
   --color-neutral-bg: var(--color-slate-100);
+  /* 🔴 **ワンポイント Card 1 箇所だけ**の地（仕様書 `--tip-bg: #FFFCF2`）。`warning-bg`
+   * （`amber-50`）を転用しない —— ワンポイントは注意喚起ではなく、意味が入れ替わる。 */
+  --color-tip-bg: #fffcf2;
   --color-neutral-border: var(--color-slate-300);
 
   /* ------------------------------------------------------------------------
@@ -243,7 +261,13 @@
    *    `slate-100` on `slate-900` = 15.79:1 / 群名 `slate-400` on `slate-900` = 6.64:1 /
    *    区切り線 `slate-700` on `slate-900` = 2.05:1 → **区切り線は 3:1 を満たさないので
    *    「意味を運ぶ要素」に使わない**（下の 🔴）/ 現在地 `white` on `indigo-900` = 11.25:1）。 */
-  --color-sidebar-bg: var(--color-slate-900);
+  /* ✅ **2026-10-13: 仕様書の濃紺グラデーション**（`linear-gradient(180deg,#0B2447,#122E57)`）。
+   * 🔴 **独自 hex を起こしてよい唯一の箇所である**（`docs/04` §7.9 の `U-21` の例外）。Tailwind の
+   *    階調に #0B2447 / #122E57 に相当する色が無く、**グラデーションは 2 つの端点が揃って初めて
+   *    意味を持つ**ため、片方だけ階調に寄せることができない。グラデーションが許されるのも
+   *    ここだけである（`docs/design-system.md` §5-8）。 */
+  --color-sidebar-bg: #0b2447;
+  --color-sidebar-bg-end: #122e57;
   --color-sidebar-fg: var(--color-slate-100);
   --color-sidebar-fg-muted: var(--color-slate-400);
   /* 🔴 `--color-sidebar-border` は **3:1 を満たさない**（2.05:1）。したがって `docs/04` §7.9 が
@@ -252,7 +276,8 @@
    *    という §3.1-3 の規律が一次であり、線は補助である（階調を上げる＝ §7.9 の改訂が要る）。 */
   --color-sidebar-border: var(--color-slate-700);
   --color-sidebar-hover-bg: var(--color-slate-800);
-  --color-sidebar-selected-bg: var(--color-indigo-900);
+  /* 🔴 仕様書 `--sidebar-active: #1E4A86`（白 100% を載せて 7.0:1）。 */
+  --color-sidebar-selected-bg: #1e4a86;
   --color-sidebar-selected-fg: var(--color-white);
   /* ✅ **2026-10-04: `--color-sidebar-selected-bar`（`indigo-400`）を宣言ごと消した。**
    * 🔴 人間の明示指示「ハイライトの左端に色がついているのはなくして」により、
@@ -270,8 +295,11 @@
    * 名前が付いただけである。名前を与える理由: 行の hover と列ヘッダの地は**同じ `slate-50` でも
    * 別の判断**であり（片方だけ変えたくなる日が来る）、`bg-bg-subtle` を直接書いていると
    * 「どちらを変えたのか」が差分から読めない。 */
-  --color-row-hover-bg: var(--color-bg-subtle);
-  --color-table-header-bg: var(--color-bg-subtle);
+  --color-row-hover-bg: var(--color-slate-50);
+  --color-table-header-bg: var(--color-slate-50);
+  /* 🔴 **行の区切り線だけ**の枠色（仕様書 `--border-row: #EEF1F5`）。カードの枠（`--color-border`）
+   * より薄い —— 45px の行が 1 枚のカードの中に 2〜5 本並ぶので、外枠と同じ濃さだと表が檻に見える。 */
+  --color-border-row: var(--color-slate-100);
 
   /* ------------------------------------------------------------------------
    * spacing — 🔴 **7 段を宣言する**（✅ `docs/04` §7.9 改訂 23 / `U-26`。2026-10-02）
@@ -309,7 +337,9 @@
   --spacing-2: 0.5rem; /* 8px … セルの内側（縦）/ ボタンの内側（縦）/ インライン要素の間 */
   --spacing-3: 0.75rem; /* 12px … セルの内側（横）/ ラベルと入力の間 */
   --spacing-4: 1rem; /* 16px … 部品の間 / カードの内側 / Toolbar の内側 */
+  --spacing-5: 1.25rem; /* 20px … 本文の上下余白 / KPI のアイコン面と文字の間（✅ 2026-10-13） */
   --spacing-6: 1.5rem; /* 24px … セクションの間 / 本体の左右 gutter（§7.1） */
+  --spacing-7: 1.75rem; /* 28px … 本文の左 gutter / 行のチェック列の逃がし（✅ 2026-10-13） */
   --spacing-8: 2rem; /* 32px … 画面の主要ブロックの間 */
   --spacing-12: 3rem; /* 48px … 読み幅のフォームのセクション間 / 空状態の上下 */
 
@@ -352,14 +382,25 @@
    * ⚠️ `--text-lg` / `--text-xs` は **Tailwind の既定を上書きする**（16px / 12px）。
    *    §7.9 が「役割名で参照する」としてこの 2 つの名前を指定しているためであり、
    *    既存画面の `text-lg`（18px → 16px）と `text-xs`（行間のみ）の見え方が変わる。 */
-  --text-title: 1.25rem; /* 20px / 600 … 1 段目（画面タイトル）。🔴 これ以上大きいトークンを作らない */
-  --text-title--line-height: 1.4;
-  --text-lg: 1rem; /* 16px / 600 … 2 段目（セクション見出し） */
-  --text-lg--line-height: 1.4;
+  /* ✅ **2026-10-13（`docs/design-system.md` §3.2）: 20px → 26px。** 人間のデザインシステム定義の
+   * `Page Title (h1) 26 / 700 / 34` である。🔴 **全画面の `PageHeader` の h1 に効く。** */
+  --text-title: 1.625rem; /* 26px / 700 / 34px … 画面タイトル（h1。1 画面に 1 つ） */
+  --text-title--line-height: 2.125rem;
+  /* 🔴 **右レールのカード見出しだけ**（仕様書 `Right Card Title 17 / 700 / 24`）。
+   * 機械検査: `design-tokens.test.ts`（`text-rail` の出現が `rail-card.tsx` の 1 ファイル）。 */
+  --text-rail: 1.0625rem; /* 17px / 700 / 24px … 右レールのカード見出しだけ */
+  --text-rail--line-height: 1.5rem;
+  --text-lg: 1rem; /* 16px / 700 / 24px … カード・セクションの見出し */
+  --text-lg--line-height: 1.5rem;
+  /* ✅ **2026-10-13 追加**（仕様書 `Row Title / Nav Item / Tab 15 / 500 / 20`）。
+   * 🔴 **本文（14px）より 1 段だけ大きい「行の主題」の段である。** 45px の行で、主題（15）と
+   *    サブ（13）の差が 1px しか無いと、走査したときに 2 行が 1 かたまりに見える。 */
+  --text-row: 0.9375rem; /* 15px / 500 / 20px … 一覧の行の主題 / ナビ / タブ */
+  --text-row--line-height: 1.25rem;
   --text-body: 0.875rem; /* 14px … 3 段目（600）+ 本文（400）。サイズのトークンは 1 つ */
   --text-body--line-height: 1.6;
-  --text-cell: 0.8125rem; /* 13px … テーブルのセル。🔴 12px 以下にしない（漢字が潰れる） */
-  --text-cell--line-height: 1.5;
+  --text-cell: 0.8125rem; /* 13px / 18px … 行のサブ / デルタ / リンク / Badge / Button(sm) */
+  --text-cell--line-height: 1.125rem;
   --text-xs: 0.75rem; /* 12px … 列ヘッダ（500）/ 補助テキスト / SummaryStrip の値 */
   --text-xs--line-height: 1.5;
   --text-micro: 0.6875rem; /* 11px / 500 … バッジ内 / Phase N / カウンタ。🔴 本文に使わない */
@@ -372,8 +413,8 @@
    * 🔴 **見出し・本文・セル・バッジに使わない。** 使う場所を増やすには §7.3 / §7.9 の改訂を要する。
    *    機械検査: `tests/static/design-tokens.test.ts`（`text-metric` の出現が
    *    `packages/ui/src/components/kpi-card.tsx` の 1 ファイルに限られること）。 */
-  --text-metric: 1.5rem; /* 24px / 1.2 / 600 … KpiCard の件数だけ */
-  --text-metric--line-height: 1.2;
+  --text-metric: 1.75rem; /* 28px / 32px / 700 … KpiCard の件数だけ（✅ 2026-10-13: 24px → 28px） */
+  --text-metric--line-height: 2rem;
 
   /* ------------------------------------------------------------------------
    * radius — 2 段（§7.9 / `docs/05` §2.3.2）
@@ -388,8 +429,10 @@
    *    起こさない」はこの改訂で置き換わった）。階層は border と background の差で表し、
    *    **カードを浮かせるための shadow を乱用しない**（影が多い画面は「どれが操作可能か」の
    *    手がかりを失う）。`KpiCard` / `RailCard` / `Card` は**影を持たない**。 */
-  --radius-sm: 0.25rem; /* 4px … 入力欄 / ボタン / バッジ / セル */
-  --radius-md: 0.375rem; /* 6px … パネル / Dialog / Drawer / Card */
+  --radius-xs: 0.25rem; /* 4px … Badge */
+  --radius-sm: 0.375rem; /* 6px … Button(sm) / IconButton / 小さい当たり判定 */
+  --radius-md: 0.5rem; /* 8px … Button / Input / Nav item */
+  --radius-lg: 0.625rem; /* 10px … Card / Panel / Dialog / Drawer */
 }
 
 @layer base {

@@ -63,6 +63,7 @@ export const SECONDARY_LINK_CLASSES =
  */
 export const SECONDARY_LINK_STACKED_CLASSES = `mt-4 ${SECONDARY_LINK_CLASSES}`;
 
+
 /**
  * primary な導線（**リンクとして描く primary**）の見た目。SP-22 `T-22-05`。
  *

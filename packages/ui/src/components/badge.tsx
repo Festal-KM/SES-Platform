@@ -54,7 +54,9 @@ import { TRANSITION_CLASSES } from '../lib/state-classes.js';
 
 const badgeVariants = cva(
   cn(
-    'inline-flex w-fit shrink-0 items-center justify-center gap-1 overflow-hidden rounded-sm border px-2 py-1 text-micro font-medium whitespace-nowrap',
+    // ✅ 2026-10-13（`docs/design-system.md` §4.3）: 高さ 24 / padding 0 10 / radius 4 / 13・500。
+    //    🔴 語が 11px だと、45px の行で状態が読み取れないという実測の指摘があった。
+    'inline-flex h-6 w-fit shrink-0 items-center justify-center gap-1 overflow-hidden rounded-xs border px-3 text-cell font-medium whitespace-nowrap',
     TRANSITION_CLASSES,
   ),
   {

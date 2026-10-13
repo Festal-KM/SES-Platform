@@ -52,7 +52,18 @@ import { extendTailwindMerge } from 'tailwind-merge';
  *    既定のサイズ名ではないため、教えないと文字色として扱われ、同じ要素に文字サイズと文字色を
  *    渡したときにどちらかが消える。
  */
-export const TOKEN_TEXT_SCALE = ['title', 'metric', 'lg', 'body', 'cell', 'xs', 'micro'] as const;
+export const TOKEN_TEXT_SCALE = [
+  'title',
+  'metric',
+  // ✅ 2026-10-13（`docs/design-system.md` §3.2）: 右レールの見出し（17px）と行の主題（15px）。
+  'rail',
+  'lg',
+  'row',
+  'body',
+  'cell',
+  'xs',
+  'micro',
+] as const;
 
 /**
  * `docs/04` §7.9 の semantic な色の名前（`@theme` の `--color-*` から接頭辞を除いたもの）。
@@ -77,6 +88,8 @@ export const TOKEN_COLOR_SCALE = [
   'bg-inset',
   'border',
   'border-strong',
+  // ✅ 2026-10-13: 行の区切り線だけ（仕様書 `--border-row`）。カードの枠より薄い。
+  'border-row',
   'brand',
   'brand-hover',
   'brand-active',
@@ -96,12 +109,16 @@ export const TOKEN_COLOR_SCALE = [
   'info-border',
   'neutral-bg',
   'neutral-border',
+  // ✅ 2026-10-13: ワンポイント Card 1 箇所だけの地（仕様書 `--tip-bg`）。
+  'tip-bg',
   // ✅ 2026-10-02（`docs/04` §7.9 改訂 23 / 人間のブリーフ）。**カード・パネル・overlay の地。**
   //    🔴 `bg`（ページの地）と値は同じで役割が違う（`apps/web/app/tailwind.css` の 🔴）。
   'surface',
   // ✅ ③ component 層の色（**部品 1 つのための色**）。🔴 参照してよい部品はそれぞれ 1 つだけで、
   //    `design-tokens.test.ts` が参照元のファイルを固定する。
   'sidebar-bg',
+  // ✅ 2026-10-13: 濃紺グラデーションの下端（`Sidebar` 1 部品だけ）。
+  'sidebar-bg-end',
   'sidebar-fg',
   'sidebar-fg-muted',
   'sidebar-border',

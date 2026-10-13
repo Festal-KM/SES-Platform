@@ -83,12 +83,13 @@ function numberConstOf(source: string, name: string): number {
 // ============================================================================
 // ① 外枠（柱）の幅 —— 実クラスから取る
 // ============================================================================
-const SIDEBAR_CLASS_LINE = /'(w-14 [^']*w-56[^']*)'/.exec(SIDEBAR_SOURCE);
+// ✅ 2026-10-13: 柱の展開幅は 224 → 208（`w-56` → `w-52`。`docs/design-system.md` §2）。
+const SIDEBAR_CLASS_LINE = /'(w-14 [^']*w-52[^']*)'/.exec(SIDEBAR_SOURCE);
 const SIDEBAR_SHELL_CLASSES = /const SIDEBAR_SHELL_CLASSES = '([^']+)'/.exec(SIDEBAR_SOURCE);
 
 /** 柱の幅（px）。`hidden … md:block` なので `md` 未満は 0（下端のタブに替わる）。 */
 function sidebarWidthPx(viewportPx: number): number {
-  expect(SIDEBAR_CLASS_LINE, '柱の幅クラス（`w-14 … xl:w-56`）が見つからない').not.toBeNull();
+  expect(SIDEBAR_CLASS_LINE, '柱の幅クラス（`w-14 … xl:w-52`）が見つからない').not.toBeNull();
   expect(SIDEBAR_SHELL_CLASSES?.[1], '柱の器が `hidden … md:block` でなくなった').toContain('md:block');
   const classes = (SIDEBAR_CLASS_LINE as RegExpExecArray)[1].split(' ');
   const compact = classes.find((token) => /^w-\d+$/.test(token));
@@ -188,9 +189,9 @@ describe('🔴 分割レイアウト: 幅を広げると悪化する挙動が無
     expect(scaleToPx(MAIN_MIN_CLASS), `${MAIN_MIN_CLASS} と PAGE_BODY_SPLIT_MAIN_MIN_PX が食い違う`).toBe(
       MAIN_MIN_PX,
     );
-    // gap は器の `gap-6`（`PageBody` の `cn('gap-6', …)`）。
-    expect(scaleToPx('gap-6')).toBe(SPLIT_GAP_PX);
-    expect(PAGE_BODY_SOURCE).toContain("'gap-6',");
+    // gap は器の `gap-4`（`PageBody` の `cn('gap-4', …)`。✅ 2026-10-13: 24 → 16px）。
+    expect(scaleToPx('gap-4')).toBe(SPLIT_GAP_PX);
+    expect(PAGE_BODY_SOURCE).toContain("'gap-4',");
     // 副カラムは `w-full max-w-<n>`（上限が並置時の固定幅そのものである）。
     const asideMax = ASIDE_WRAP_CLASSES.split(' ').find((token) => /^max-w-\d+$/.test(token));
     expect(asideMax, `${ASIDE_WRAP_CLASSES} に \`max-w-<n>\` が無い`).toBeDefined();
@@ -283,14 +284,18 @@ describe('🔴 分割レイアウト: 幅を広げると悪化する挙動が無
       });
       return `${viewport}: 器${container} ${geometry.beside ? '並置' : '下段'} ${cells.join(' ')}`;
     });
+    // ✅ **2026-10-13 に基準値を取り直した**（`docs/design-system.md`: 柱 224 → 208 /
+    //    副カラム 480 → 388 / gap 24 → 16）。🔴 **7 幅すべてで器が広がり、可視率は下がっていない**
+    //    （1280 で 1006 → 1038 / 77% → 79%、2096 の並置で 1318 → 1450）。**悪化していないことが
+    //    基準値を書き換えてよい条件である。**
     expect(rows).toEqual([
-      '1280: 器1006 下段 S-010=77%/56px S-017=100%/42px',
-      '1512: 器1238 下段 S-010=94%/56px S-017=100%/42px',
-      '1536: 器1262 下段 S-010=96%/56px S-017=100%/42px',
-      '1600: 器1326 下段 S-010=100%/42px S-017=100%/42px',
-      '1680: 器1406 下段 S-010=100%/42px S-017=100%/42px',
-      '1920: 器1646 下段 S-010=100%/42px S-017=100%/42px',
-      '2096: 器1318 並置 S-010=100%/42px S-017=100%/42px',
+      '1280: 器1038 下段 S-010=79%/56px S-017=100%/42px',
+      '1512: 器1270 下段 S-010=97%/56px S-017=100%/42px',
+      '1536: 器1294 下段 S-010=99%/56px S-017=100%/42px',
+      '1600: 器1358 下段 S-010=100%/42px S-017=100%/42px',
+      '1680: 器1438 下段 S-010=100%/42px S-017=100%/42px',
+      '1920: 器1678 下段 S-010=100%/42px S-017=100%/42px',
+      '2096: 器1450 並置 S-010=100%/42px S-017=100%/42px',
     ]);
   });
 
@@ -305,10 +310,10 @@ describe('🔴 分割レイアウト: 幅を広げると悪化する挙動が無
       return `${viewport}: 器${container} ${cells.join(' ')}`;
     });
     expect(legacy).toEqual([
-      '1512: 器1238 S-010=94%/56px S-017=100%/42px',
-      '1536: 器758 S-010=58%/56px S-017=88%/56px',
-      '1600: 器822 S-010=63%/56px S-017=95%/56px',
-      '1680: 器902 S-010=69%/56px S-017=100%/42px',
+      '1512: 器1270 S-010=97%/56px S-017=100%/42px',
+      '1536: 器890 S-010=68%/56px S-017=100%/42px',
+      '1600: 器954 S-010=73%/56px S-017=100%/42px',
+      '1680: 器1034 S-010=79%/56px S-017=100%/42px',
     ]);
 
     // 🔴 そして旧実装では ④ / ⑤ がどちらも落ちる（= ④⑤ は無条件に緑ではない）。
@@ -319,14 +324,29 @@ describe('🔴 分割レイアウト: 幅を広げると悪化する挙動が無
         (table, container) => Math.round(visibleRatio(table.contentPx, container) * 100),
         'lower',
       ).map((line) => line.split(':')[0]),
-    ).toEqual([`/projects 内容幅 ${cliff}px`, `/proposal-requests 内容幅 ${cliff}px`]);
+    // ✅ 2026-10-13: 副カラムが 480 → 388 になったため、旧実装でも `/proposal-requests` は
+    //    崖を越えなくなった（表が狭いほうが先に収まる）。🔴 **`/projects` は依然として落ちる**ので、
+    //    この対照は空振りしていない（下の 2 つ目の検査がそれを数で固定する）。
+    ).toEqual([`/projects 内容幅 ${cliff}px`]);
+    // 🔴 **行高の悪化は、副カラムが 388 になったことで旧実装でも消えた（0 件）。**
+    //    `toEqual([])` を「対照が働いている根拠」にしてはならない —— **0 件で通る検査は何も
+    //    確かめていない**（`HANDOFF.md` §6 の 16 の教訓）。したがって
+    //    ①この 0 件は「悪化が無い」ことを**主張しない**（旧実装が良くなったわけではない）
+    //    ②対照の非空振りは**直前の可視率の 1 件**が担う、という形に分けて書く。
+    const legacyRowHeightRegressions = sweepRegressions(
+      legacyGeometryByContent,
+      (table, container) => rowHeightPx(table.contentPx, container),
+      'higher',
+    );
+    expect(legacyRowHeightRegressions).toEqual([]);
     expect(
       sweepRegressions(
         legacyGeometryByContent,
-        (table, container) => rowHeightPx(table.contentPx, container),
-        'higher',
-      ).map((line) => line.split(':')[0]),
-    ).toEqual([`/proposal-requests 内容幅 ${cliff}px`]);
+        (table, container) => Math.round(visibleRatio(table.contentPx, container) * 100),
+        'lower',
+      ).length,
+      '🔴 旧実装で悪化が 1 件も出ていない = この対照は空振りしている（検出器が壊れていないか確認する）',
+    ).toBeGreaterThan(0);
   });
 
   it('🔴 ⑧ `main-min` を使う画面が実在し、旧実装の語が 1 つも残っていない', () => {

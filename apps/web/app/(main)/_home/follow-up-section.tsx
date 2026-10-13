@@ -76,7 +76,10 @@ export function FollowUpSection({
       <Card>
         {/* 🔴 **器と節見出しは `今日やること` と同一の作法**（面を持つものと持たないものを
             並べない。`docs/04` §7.2 改訂 27 の 🔴 ——「面の有無」でも強さの規約は破れる）。 */}
-        <div className="border-b border-border px-4 pt-4 pb-3">
+        {/* ✅ 2026-10-13: 見出しの帯は `SectionHeader` 自身が高さ 40 / 左右 16 を持つ
+            （`docs/design-system.md` §4）。🔴 **器の側で padding を足さない** —— 足すと
+            行の 45px の刻みが見出しのぶんだけずれる。区切りは行の `border-top` が担う。 */}
+        <div>
           <SectionHeader
             icon={icon}
             title={title}
@@ -88,11 +91,11 @@ export function FollowUpSection({
           {/* 🔴 **「どういう行が出る面か」を 1 行で置く**（`今日やること` との違いが読めないと、
               同じ行が 2 箇所に出ていると誤解される）。段は補助テキスト（12px）であり、
               見出しより強くならない。 */}
-          <p className="m-0 text-xs text-fg-muted" data-testid={`${testIdPrefix}lead`}>
+          <p className="m-0 px-4 pb-2 text-xs text-fg-muted" data-testid={`${testIdPrefix}lead`}>
             {lead}
           </p>
         </div>
-        <CardContent className="pt-4">
+        <CardContent className="p-0">
           <ActionSectionBody
             testIdPrefix={testIdPrefix}
             rows={rows}

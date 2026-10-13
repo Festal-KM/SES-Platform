@@ -35,7 +35,8 @@ import { cn } from './cn.js';
  * 🔴 **radius は 6px（`rounded-md`）**（§7.9 の 2 段のうちパネルの段）。
  * 🔴 **枠線は 1px の `--color-border`**（§7.9 の border は 1px。強調が要る箇所のみ左端 2px）。
  */
-export const CARD_SURFACE_CLASSES = cn('rounded-md border border-border bg-surface');
+// ✅ 2026-10-13: Card の角丸は **10px**（`rounded-lg`。`docs/design-system.md` §3.3）。
+export const CARD_SURFACE_CLASSES = cn('rounded-lg border border-border bg-surface');
 
 /**
  * カードの内側の余白（§7.9 の `--space-4` = 16px。「カードの内側」の段そのもの）。

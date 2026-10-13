@@ -562,7 +562,8 @@ describe('🔴 T-11-12: 表示名セルの規約（docs/04 §10.3 / §S-016 列�
     expect(aside).not.toBeNull();
     const classes = (aside?.[1] ?? '').split(' ');
     // 🔴 `@ses/ui` の `PAGE_BODY_ASIDE_WIDTH_CLASSES` の語そのもの（寸法の出所は 1 箇所）。
-    for (const token of ['w-full', 'lg:w-90', 'lg:shrink-0', 'xl:w-100', '2xl:w-120']) {
+    // ✅ 2026-10-13: 副カラムは 388px 固定（`docs/design-system.md` §2。xl / 2xl で広げない）。
+    for (const token of ['w-full', 'lg:w-97', 'lg:shrink-0']) {
       expect(classes, token).toContain(token);
     }
     // 🔴 画面独自の幅（旧 `lg:w-80` / grid の `20rem`）が残っていない。

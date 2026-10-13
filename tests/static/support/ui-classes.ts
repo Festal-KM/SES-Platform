@@ -164,7 +164,25 @@ export const SPACING_UTILITY =
   /^(?:p|px|py|pt|pb|pl|pr|ps|pe|m|mx|my|mt|mb|ml|mr|ms|me|gap|gap-x|gap-y|space-x|space-y)-(-?(?:\d+(?:\.\d+)?|\[[^\]]+\]|auto|px))$/;
 
 /** §7.9 の 7 段（4 / 8 / 12 / 16 / 24 / 32 / 48px）+ 「段ではなく無し」の 3 語。 */
-export const ALLOWED_SPACING = new Set(['0', '1', '2', '3', '4', '6', '8', '12', 'auto', 'px']);
+// ✅ 2026-10-13（`docs/design-system.md` §3.3）: 4px グリッドの使用値を
+//    `4 / 6 / 8 / 12 / 16 / 20 / 24 / 28`（+ 既存の 32 / 48）にそろえた。`1.5` = 6px / `5` = 20px /
+//    `7` = 28px を足している。🔴 **段を無くしたのではなく、人間のデザインシステム定義の
+//    使用値に合わせて 3 段足しただけである**（任意の値が書けるようになったわけではない）。
+export const ALLOWED_SPACING = new Set([
+  '0',
+  '1',
+  '1.5',
+  '2',
+  '3',
+  '4',
+  '5',
+  '6',
+  '7',
+  '8',
+  '12',
+  'auto',
+  'px',
+]);
 
 /** 違反している spacing ユーティリティなら、その値を返す。 */
 export function offScaleSpacingValue(token: string): string | null {
@@ -238,9 +256,14 @@ export function offScaleTextSizeValue(token: string): string | null {
 // radius — §7.9 の 2 段（`packages/ui` 側でのみ使う）
 // ============================================================================
 
-export const RADIUS_UTILITY = /^rounded(?:-[xytrbleks]{1,2})?(?:-(.+))?$/;
+// 🔴 ✅ 2026-10-13: 方角の綴りを**閉じた列挙**にした。従来の `[xytrbleks]{1,2}` は `xs` を
+//    「方角 x + s」として飲み込み、**`rounded-xs` が「値の無い radius」に見えていた**
+//    （4px の段を足した瞬間に全件が違反になる）。
+export const RADIUS_UTILITY = /^rounded(?:-(?:t|r|b|l|s|e|tl|tr|br|bl|ss|se|es|ee))?(?:-(.+))?$/;
 /** §7.9 の 2 段（`docs/05` §2.3.2 の名前）+ 打ち消しの `none`。 */
-export const ALLOWED_RADIUS = new Set<string>(['sm', 'md', 'none']);
+// ✅ 2026-10-13（`docs/design-system.md` §3.3）: Card 10 / Button・Input・Nav 8 /
+//    Button(sm)・Icon 6 / Badge 4 の 4 段。名前は Tailwind 既定のキーのまま。
+export const ALLOWED_RADIUS = new Set<string>(['xs', 'sm', 'md', 'lg', 'none']);
 
 // ============================================================================
 // (j) 8 状態 — 画面側にバリアントを書かない

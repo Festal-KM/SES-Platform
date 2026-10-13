@@ -52,7 +52,8 @@ export type PageWidthClass = 'full' | 'split' | 'prose';
  * 本体の左右 gutter（`docs/04` §7.9 の `--space-6` = 24px）。3 クラスに共通。
  * 🔴 クラスごとに gutter を変えない（画面を移動するたびに本文の左端が動く）。
  */
-export const PAGE_BODY_GUTTER_CLASS = 'px-6';
+// ✅ 2026-10-13: 本文の gutter は **左 28 / 右 16**（`docs/design-system.md` §2）。
+export const PAGE_BODY_GUTTER_CLASS = 'pl-7 pr-4';
 
 /**
  * クラス C（読み幅）の上限 = **720px**。
@@ -66,7 +67,12 @@ export const PAGE_BODY_PROSE_MAX_WIDTH_CLASS = 'max-w-180';
  * クラス B（分割）の副カラムの固定幅。🔴 **`lg` 360 → `xl` 400 → `2xl` 480px**。
  * 🔴 `shrink-0` と対で使う（これが無いと主カラムに押されて可変になる）。
  */
-export const PAGE_BODY_ASIDE_WIDTH_CLASSES = 'w-full lg:w-90 lg:shrink-0 xl:w-100 2xl:w-120';
+// ✅ **2026-10-13: 副カラムは 388px 固定にした**（従来は lg 360 → xl 400 → 2xl 480 と広がった）。
+// 🔴 デザインシステム v1.0 §2 /「右カラムを 450px 以上にしない」。広い画面ほど副カラムが太ると、
+//    **本体の一覧の列が画面幅によって落ちたり戻ったりする**（同じ画面が端末ごとに別物に見える）。
+// 🔴 **変種付きのクラスは文字列リテラルで書く**（Tailwind の走査が `lg:${定数}` を拾えず、
+//    CSS が生成されない）。値は `RAIL_WIDTH_CLASS` と対であり、一致は静的検査が固定する。
+export const PAGE_BODY_ASIDE_WIDTH_CLASSES = 'w-full lg:w-97 lg:shrink-0';
 
 /**
  * 🔴 **主カラムが切ってはいけない下限 = 1,320px**（`basis-330` = 330 × 0.25rem）。
@@ -79,9 +85,9 @@ export const PAGE_BODY_SPLIT_MAIN_MIN_PX = 1320;
 /** 🔴 上の px と**対**。クラスと数のどちらかだけを変えると検査が落ちる。 */
 export const PAGE_BODY_SPLIT_MAIN_MIN_CLASS = 'basis-330';
 /** `split` の 2 カラムの間隔（`gap-6` = 24px）。🔴 幅の計算に入るので数でも持つ。 */
-export const PAGE_BODY_SPLIT_GAP_PX = 24;
+export const PAGE_BODY_SPLIT_GAP_PX = 16;
 /** 副カラムの固定幅の最大値（`w-120` / `max-w-120` = 480px）。🔴 幅の計算に入るので数でも持つ。 */
-export const PAGE_BODY_ASIDE_WIDTH_PX = 480;
+export const PAGE_BODY_ASIDE_WIDTH_PX = 388;
 
 /**
  * ✅ 2026-10-03（**同日中に差し替え**）: **副カラムを「主カラムが下限を保てるときだけ」並置する**
@@ -94,7 +100,7 @@ export const PAGE_BODY_ASIDE_WIDTH_PX = 480;
  * ⚠️ 🔴 **下段に落ちたときの幅が「行いっぱい」から「480px 上限」に変わった**（唯一の見た目の
  *    変化。1264px の表の下に 1264px の薄い帯が伸びるより、480px のカードのほうが読める）。
  */
-export const PAGE_BODY_ASIDE_WIDTH_CLASSES_WRAP = 'w-full max-w-120';
+export const PAGE_BODY_ASIDE_WIDTH_CLASSES_WRAP = 'w-full max-w-97';
 
 /**
  * 🔴 **`'main-min'` の器**。`flex-wrap` だけで並置／下段を決める（**画面幅の境界を 1 つも
@@ -256,7 +262,7 @@ export function PageBody({ widthClass, children, aside, asideFrom = 'lg', classN
         data-width-class="split"
         data-aside-from={asideFrom}
         className={cn(
-          'gap-6',
+          'gap-4',
           PAGE_BODY_GUTTER_CLASS,
           PAGE_BODY_ASIDE_ROW_CLASSES_BY_FROM[asideFrom],
           className,

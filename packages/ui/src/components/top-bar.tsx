@@ -41,6 +41,11 @@ import type { ComponentType, ReactNode } from 'react';
 import { Badge } from './badge.js';
 import type { SidebarLinkProps } from './sidebar.js';
 import { cn } from '../lib/cn.js';
+import {
+  CONTENT_PADDING_X_CLASSES,
+  HEADER_HEIGHT_CLASS,
+  HEADER_SEARCH_MAX_WIDTH_CLASS,
+} from '../lib/layout-tokens.js';
 import { FOCUS_RING_CLASSES, TRANSITION_CLASSES } from '../lib/state-classes.js';
 
 /** 上限インジケータの状態（`data-usage-state`）。🔴 平常時は `usage === null` で要素ごと出さない。 */
@@ -109,8 +114,15 @@ function DefaultLink({ href, children, ...rest }: SidebarLinkProps) {
  *    視線の起点が 2 つになる。
  * 🔴 **影を足さない**（階層は border と背景の差で表す。§7.9）。
  */
-const HEADER_CLASSES = 'border-b border-border bg-bg';
-const HEADER_ROW_CLASSES = 'flex flex-wrap items-center gap-x-4 gap-y-1 px-6 py-2';
+// ✅ 2026-10-13: 高さ **56**（`docs/design-system.md` §4）。地は Card と同じ白（`surface`）。
+const HEADER_CLASSES = 'border-b border-border bg-surface';
+// 🔴 左 28 / 右 16 は本文の gutter と揃える（`CONTENT_PADDING_X_CLASSES`）—— ヘッダの検索欄の
+//    左端と本文の h1 の左端が 1px でもずれると、縦の通りが崩れて「別の面」に見える。
+const HEADER_ROW_CLASSES = cn(
+  'flex flex-wrap items-center gap-x-4 gap-y-1 py-2',
+  CONTENT_PADDING_X_CLASSES,
+  `md:flex-nowrap md:py-0 ${HEADER_HEIGHT_CLASS}`,
+);
 
 /** ワードマーク（🔴 §7.3 の 2 段目 = 16px / 600。画面タイトルより強くしない）。 */
 const WORDMARK_CLASSES = cn(
@@ -188,7 +200,10 @@ export function TopBar({
         {/* ✅ 検索（改訂 23。§3.1 の ③）。🔴 **本体カラムの幅いっぱい**に伸びる。
             🔴 モバイルでは行を分けて全幅にする（`md` 未満）—— 1 段に 6 要素は入らないが、
             **検索を隠さない**（`CLAUDE.md` §13.3「狭い画面を理由に判断材料を隠さない」）。 */}
-        <div className="order-last w-full min-w-0 md:order-none md:min-w-48 md:flex-1" data-testid="app-header-search-slot">
+        <div
+          className={`order-last w-full min-w-0 md:order-none md:min-w-48 md:flex-1 ${HEADER_SEARCH_MAX_WIDTH_CLASS}`}
+          data-testid="app-header-search-slot"
+        >
           {search}
         </div>
         {/* 🔴 スコープ表示。取引先所属は「組織名 ＞ 自社名」の 2 段（§3.2 の #1）。

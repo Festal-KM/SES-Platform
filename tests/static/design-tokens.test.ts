@@ -86,17 +86,18 @@ const declared = declarations(cssCode);
  */
 const SEMANTIC_COLORS: ReadonlyArray<readonly [token: string, primitive: string]> = [
   ['--color-fg', 'slate-900'],
-  ['--color-fg-muted', 'slate-500'],
+  ['--color-fg-muted', 'slate-600'],
   ['--color-fg-placeholder', 'slate-400'],
   ['--color-bg', 'white'],
-  ['--color-bg-subtle', 'slate-50'],
+  ['--color-bg-subtle', 'slate-100'],
   ['--color-bg-inset', 'slate-100'],
   ['--color-border', 'slate-200'],
   ['--color-border-strong', 'slate-300'],
-  ['--color-brand', 'indigo-700'],
-  ['--color-brand-hover', 'indigo-800'],
-  ['--color-brand-active', 'indigo-900'],
-  ['--color-brand-bg', 'indigo-50'],
+  ['--color-border-row', 'slate-100'],
+  ['--color-brand', 'blue-600'],
+  ['--color-brand-hover', 'blue-700'],
+  ['--color-brand-active', 'blue-800'],
+  ['--color-brand-bg', 'blue-50'],
   ['--color-brand-fg', 'white'],
   ['--color-danger', 'red-700'],
   ['--color-danger-bg', 'red-50'],
@@ -133,18 +134,24 @@ const SEMANTIC_COLORS: ReadonlyArray<readonly [token: string, primitive: string]
  * 🔴 **一覧の 2 色は semantic を参照する**（値は従来と同一の `--color-bg-subtle`）。
  */
 const COMPONENT_COLORS: ReadonlyArray<readonly [token: string, value: string]> = [
-  ['--color-sidebar-bg', 'var(--color-slate-900)'],
+  // 🔴 独自 hex を起こしてよい唯一の箇所（`docs/design-system.md` §3.1。グラデーションの端点は
+  //    Tailwind の階調に無く、片方だけ階調に寄せるとグラデーションが成立しない）。
+  ['--color-sidebar-bg', '#0b2447'],
+  ['--color-sidebar-bg-end', '#122e57'],
   ['--color-sidebar-fg', 'var(--color-slate-100)'],
   ['--color-sidebar-fg-muted', 'var(--color-slate-400)'],
   ['--color-sidebar-border', 'var(--color-slate-700)'],
   ['--color-sidebar-hover-bg', 'var(--color-slate-800)'],
-  ['--color-sidebar-selected-bg', 'var(--color-indigo-900)'],
+  ['--color-sidebar-selected-bg', '#1e4a86'],
   ['--color-sidebar-selected-fg', 'var(--color-white)'],
   // ✅ **2026-10-04: `--color-sidebar-selected-bar` を外した**（人間の明示指示で現在地の
   //    左端 2px をやめ、参照元が 0 になったので `@theme` の宣言ごと消した。`tailwind.css` の ✅）。
   //    🔴 現在地は **面 + 文字の 2 点**になった（下の濃色のコントラスト検査も 1 組減らしている）。
-  ['--color-row-hover-bg', 'var(--color-bg-subtle)'],
-  ['--color-table-header-bg', 'var(--color-bg-subtle)'],
+  // 🔴 ✅ 2026-10-13: **ページの地（`bg-subtle` = `slate-100`）から切り離した。** 同値だと
+  //    淡いグレーの地に直接載る表で hover と列ヘッダが見えない。
+  ['--color-row-hover-bg', 'var(--color-slate-50)'],
+  ['--color-table-header-bg', 'var(--color-slate-50)'],
+  ['--color-tip-bg', '#fffcf2'],
 ];
 
 /**
@@ -159,7 +166,9 @@ const SPACING_TOKENS: ReadonlyArray<readonly [token: string, px: number]> = [
   ['--spacing-2', 8],
   ['--spacing-3', 12],
   ['--spacing-4', 16],
+  ['--spacing-5', 20],
   ['--spacing-6', 24],
+  ['--spacing-7', 28],
   ['--spacing-8', 32],
   ['--spacing-12', 48],
 ];
@@ -178,19 +187,25 @@ const SHADOW_TOKENS: ReadonlyArray<readonly [token: string, tailwindToken: strin
 
 /** 文字サイズ 6 トークン（§7.3 の 6 種に 1 対 1）。`[トークン, px, 行間]`。 */
 const TEXT_TOKENS: ReadonlyArray<readonly [token: string, px: number, lineHeight: string]> = [
-  ['--text-title', 20, '1.4'],
-  ['--text-lg', 16, '1.4'],
+  // ✅ 2026-10-13（`docs/design-system.md` §3.2。人間のデザインシステム定義 v1.0）。
+  ['--text-title', 26, '2.125rem'],
+  ['--text-rail', 17, '1.5rem'],
+  ['--text-lg', 16, '1.5rem'],
+  ['--text-row', 15, '1.25rem'],
   ['--text-body', 14, '1.6'],
-  ['--text-cell', 13, '1.5'],
+  ['--text-cell', 13, '1.125rem'],
   ['--text-xs', 12, '1.5'],
   ['--text-micro', 11, '1.4'],
   // ✅ 2026-10-02（§7.3 / §7.9 改訂 23）: 7 つ目。🔴 **`KpiCard` の件数 1 箇所のみ**であり、
   //    参照元のファイルは下の「参照元の固定」が 1 つに縛る（段を 7 種に増やしたのではない）。
-  ['--text-metric', 24, '1.2'],
+  ['--text-metric', 28, '2rem'],
 ];
 
 /** 🔴 `--text-metric` を書いてよい唯一のファイル（§7.3 改訂 23 の 🔴 / 申し送り 22 ⑨(h)）。 */
 const METRIC_TEXT_OWNER = 'packages/ui/src/components/kpi-card.tsx';
+
+/** 🔴 `--text-rail`（17px）を書いてよい唯一のファイル（`docs/design-system.md` §3.2）。 */
+const RAIL_TEXT_OWNER = 'packages/ui/src/components/rail-card.tsx';
 
 /**
  * 🔴 `--color-sidebar-*` を書いてよい唯一のファイル（§7.9 改訂 23 の 🔴 / 申し送り 22 ⑨(j)）。
@@ -204,8 +219,12 @@ const SIDEBAR_COLOR_OWNER = 'packages/ui/src/components/sidebar.tsx';
  * 明示的に宣言する**。
  */
 const RADIUS_TOKENS: ReadonlyArray<readonly [token: string, px: number]> = [
-  ['--radius-sm', 4],
-  ['--radius-md', 6],
+  // ✅ 2026-10-13（`docs/design-system.md` §3.3）: Badge 4 / Button(sm)・Icon 6 /
+  //    Button・Input・Nav 8 / Card・Panel 10 の 4 段。名前は Tailwind 既定のキーのまま。
+  ['--radius-xs', 4],
+  ['--radius-sm', 6],
+  ['--radius-md', 8],
+  ['--radius-lg', 10],
 ];
 
 /**
@@ -396,14 +415,14 @@ describe('🔴 §7.9 のトークンが `@theme` に全部ある（欠けたら�
     ).toEqual([]);
   });
 
-  it('radius が 2 段（4px / 6px）で、それ以外の radius トークンを宣言していない', () => {
+  it('radius が 4 段（4 / 6 / 8 / 10px）で、それ以外の radius トークンを宣言していない', () => {
     const wrong = RADIUS_TOKENS.filter(([token, px]) => remToPx(declared.get(token) ?? '') !== px).map(
       ([token, px]) => `${token}: ${declared.get(token) ?? '(無し)'} ≠ ${px}px`,
     );
     expect(
       wrong,
-      '🔴 radius は 4px（入力欄 / ボタン / バッジ / セル）と 6px（パネル / Dialog / Drawer / ' +
-        'Card）の **2 段だけ**です（`docs/04` §7.9）。',
+      '🔴 radius は 4px（Badge）/ 6px（Button(sm) / IconButton）/ 8px（Button / Input / Nav）/ ' +
+        '10px（Card / Panel / Dialog / Drawer）の **4 段だけ**です（`docs/design-system.md` §3.3）。',
     ).toEqual([]);
     const declaredRadius = [...declared.keys()].filter((token) => /^--radius-/.test(token));
     expect(
@@ -602,7 +621,7 @@ describe('🔴 `packages/ui` は semantic / component トークンだけを見�
     expect(PERMANENT_SPACING_EXCEPTION.utility).toBe('pb-24');
   });
 
-  it('文字サイズは §7.9 の 6 トークンだけを使う', () => {
+  it('文字サイズは `docs/design-system.md` §3.2 のトークンだけを使う', () => {
     const offenders = uiFiles.flatMap((file) =>
       file.tokens
         .filter((token) => offScaleTextSizeValue(token) !== null)
@@ -610,13 +629,13 @@ describe('🔴 `packages/ui` は semantic / component トークンだけを見�
     );
     expect(
       offenders,
-      '🔴 文字サイズは `text-title` / `text-lg` / `text-body` / `text-cell` / `text-xs` / ' +
-        '`text-micro` の 6 つだけです（`docs/04` §7.3 / §7.9）。`text-sm` / `text-base` / ' +
-        '`text-2xl` / `text-[15px]` を書かないでください（**役割名で参照する**）。',
+      '🔴 文字サイズは `text-title` / `text-rail` / `text-lg` / `text-row` / `text-body` / ' +
+        '`text-cell` / `text-xs` / `text-micro` だけです（`docs/design-system.md` §3.2）。' +
+        '`text-sm` / `text-base` / `text-2xl` / `text-[15px]` を書かないでください。',
     ).toEqual([]);
   });
 
-  it('radius は §7.9 の 2 段だけを使う（円形はアバターとカウンタのみ）', () => {
+  it('radius は `docs/design-system.md` §3.3 の 4 段だけを使う（円形はアバターとカウンタのみ）', () => {
     const offenders = uiFiles.flatMap((file) =>
       file.tokens
         .map((token) => ({ token, match: RADIUS_UTILITY.exec(utilityOf(token)) }))
@@ -629,10 +648,10 @@ describe('🔴 `packages/ui` は semantic / component トークンだけを見�
     );
     expect(
       offenders,
-      '🔴 radius は `rounded-control`（4px = 入力欄 / ボタン / バッジ / セル）と ' +
-        '`rounded-panel`（6px = パネル / Dialog / Drawer / Card）の 2 段だけです（`docs/04` §7.9）。' +
-        '12px 以上の大きな角丸を使わないでください（密度の高い一覧で行の境界が曖昧になります）。' +
-        '`rounded-full` はアバターとカウンタのみです。',
+      '🔴 radius は `rounded-xs`（4px = Badge）/ `rounded-sm`（6px = Button(sm) / IconButton）/ ' +
+        '`rounded-md`（8px = Button / Input / Nav）/ `rounded-lg`（10px = Card / Panel / Dialog / ' +
+        'Drawer）の 4 段だけです（`docs/design-system.md` §3.3）。12px 以上の大きな角丸を' +
+        '使わないでください。`rounded-full` はアバターとカウンタのみです。',
     ).toEqual([]);
     // 🔴 許可が「実在するから許している」ことの対照（未使用の許可が残るのを防ぐ。影と同じ構え）。
     for (const [file, utility] of CIRCLE_ALLOWANCES) {
@@ -686,7 +705,18 @@ describe('🔴 `packages/ui` は semantic / component トークンだけを見�
     ).toEqual(SHADOW_ALLOWANCES.map(([file, utility]) => `${file}: ${utility}`));
   });
 
-  it('🔴 `text-metric`（24px）を書いているのは `KpiCard` の 1 ファイルだけである（改訂 23 の (h)）', () => {
+  it('🔴 `text-rail`（17px）を書いているのは `RailCard` の 1 ファイルだけである', () => {
+    const owners = uiFiles
+      .filter((file) => file.tokens.some((token) => utilityOf(token) === 'text-rail'))
+      .map((file) => file.label);
+    expect(
+      owners,
+      '🔴 `--text-rail` は **右レールのカード見出し 1 箇所のみ**です（`docs/design-system.md` §3.2）。' +
+        '`text-lg`（16px）との差は 1px であり、見分けが付かないまま散ると段の意味が失われます。',
+    ).toEqual([RAIL_TEXT_OWNER]);
+  });
+
+  it('🔴 `text-metric`（28px）を書いているのは `KpiCard` の 1 ファイルだけである（改訂 23 の (h)）', () => {
     const owners = uiFiles
       .filter((file) => file.tokens.some((token) => utilityOf(token) === 'text-metric'))
       .map((file) => file.label);

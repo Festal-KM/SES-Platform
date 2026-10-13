@@ -46,7 +46,12 @@ import {
   Icon,
   IconButton,
   NAME_CELL_LINK_CLASSES,
-  SECONDARY_LINK_CLASSES,
+  ROW_ACTION_LINK_CLASSES,
+  ROW_ACTION_WIDTH_CLASS,
+  ROW_BADGE_WIDTH_CLASS,
+  ROW_HEIGHT_CLASS,
+  ROW_HOVER_CLASSES,
+  ROW_META_WIDTH_CLASS,
   StatusBadge,
   type BadgeVariant,
 } from '@ses/ui';
@@ -158,7 +163,7 @@ export function actionQueueRowTimeLabel(
 }
 
 /** 🔴 `sm` 未満で落ちる列（`相手` / `期限`）。 */
-const COLUMN_SM_CLASSES = 'hidden sm:inline';
+const COLUMN_SM_CLASSES = 'hidden sm:block';
 /** 🔴 `xl` 未満で落ちる列（✅ T-22-09 で足した `状態` / `操作`）。 */
 const COLUMN_XL_CLASSES = 'hidden xl:inline';
 
@@ -193,7 +198,12 @@ export function ActionRow({
   const stateLabel = rowStateLabel(row, messages);
   return (
     <li
-      className={`flex flex-col gap-1 py-2 pl-2 text-cell ${
+      // ✅ **2026-10-13（`docs/design-system.md` §4.1）: 45px の 1 行**にした。
+      // 🔴 列は 全画面で同じ —— 件名 `1fr` / 時刻 120 / バッジ 240 / 操作 146 / 内容を見る 24。
+      // 🔴 **`lg` 未満では件名が自分の行を取る**（`basis-full`）。切り詰めると対象の末尾が読めず、
+      //    触端末ではツールチップを開けない（`CLAUDE.md` §13.3「判断材料を隠さない」）。
+      // 🔴 左端 2px は「期限が近い / 放置が長い」の印である（`data-urgent` と対。残す）。
+      className={`flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border-row px-4 py-2 lg:flex-nowrap lg:py-0 ${ROW_HOVER_CLASSES} ${ROW_HEIGHT_CLASS} ${
         urgent ? 'border-l-2 border-l-warning' : 'border-l-2 border-l-transparent'
       }`}
       data-testid={`home-action-queue-row-${row.targetId}`}
@@ -202,73 +212,57 @@ export function ActionRow({
       data-urgent={urgent ? 'true' : 'false'}
       data-priority={priority}
     >
-      {/* 1 段目: 種別 / 優先度 / 件名 / 時刻 / `内容を見る`。🔴 モバイルでは件名が全幅の 2 行目に回る
-          （`basis-full`）—— 切り詰めると対象の末尾が読めず、触端末ではツールチップを開けない。 */}
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <span className="flex items-center gap-1">
-          <Badge variant={KIND_VARIANTS[row.kind]} data-testid={`home-action-queue-kind-${row.targetId}`}>
-            {messages.kinds[row.kind]}
-          </Badge>
-          {/* 🔴 **優先度は「状態」ではない**（`lib/home/priority.ts` の 🔴。`StatusBadge` を使わず
-              `Badge` の variant を当てる。`S-022` の失敗理由バッジと同じ扱い）。
-              🔴 色の写像は `PRIORITY_BADGE_VARIANTS` の 1 箇所だけが持つ（画面で variant を書かない）。
-              🔴 **モバイルでも落とさない**（判断材料である。ファイル冒頭 ②）。 */}
-          <Badge
-            variant={PRIORITY_BADGE_VARIANTS[priority]}
-            title={messages.priorityNote}
-            data-testid={`home-action-queue-priority-${row.targetId}`}
-          >
-            {messages.priorities[priority]}
-          </Badge>
-          {changed ? (
-            <Badge variant="success" data-testid={`home-action-queue-changed-${row.targetId}`}>
-              {messages.changed}
-            </Badge>
-          ) : null}
-        </span>
+      {/* 件名（1fr）。🔴 **行の主題は 15 / 500、相手は 13**（`docs/design-system.md` §3.2）——
+          45px に 2 段を収めるので、2 つの段の差が 1px しか無いと 1 かたまりに見える。 */}
+      <span className="order-first min-w-0 basis-full lg:order-none lg:flex-1 lg:basis-auto">
         <Link
           href={row.href}
           title={row.subjectLabel}
-          // 🔴 見た目（下線・文字色・フォーカスリング）は `@ses/ui` の 1 実装から取る。
-          className={`${NAME_CELL_LINK_CLASSES} order-last min-w-0 basis-full font-medium whitespace-normal break-words sm:order-none sm:basis-auto sm:flex-1 lg:truncate`}
+          className={`${NAME_CELL_LINK_CLASSES} block truncate text-row font-medium`}
           data-testid={`home-action-queue-subject-${row.targetId}`}
         >
           {row.subjectLabel}
         </Link>
         <span
-          className="ml-auto shrink-0 whitespace-nowrap text-fg sm:ml-0"
-          data-testid={`home-action-queue-time-${row.targetId}`}
-        >
-          {time}
-        </span>
-        {/* ✅ T-22-10: 行の `内容を見る`（`Drawer` を開く）。
-            🔴 **遷移ではない**（押しても URL は変わらず、一覧の位置は保たれる）。
-            🔴 **どのブレークポイントでも落とさない**（Tier 1）。 */}
-        <IconButton
-          variant="ghost"
-          size="sm"
-          icon={<Icon name="eye" />}
-          aria-label={messages.drawer.open}
-          onClick={() => onOpenDrawer(row.targetId)}
-          data-testid={`home-action-queue-drawer-open-${row.targetId}`}
-        />
-      </div>
-      {/* 2 段目（補足）: 相手 / 期限 / 状態 / 操作。🔴 落とす境界は移行前と同じ 2 段である。 */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-        <span
-          className={`min-w-0 whitespace-normal break-words text-fg-muted lg:truncate ${COLUMN_SM_CLASSES}`}
+          className={`block truncate text-cell text-fg-muted ${COLUMN_SM_CLASSES}`}
           title={row.counterpartyLabel ?? undefined}
           data-testid={`home-action-queue-counterparty-${row.targetId}`}
         >
           {row.counterpartyLabel ?? messages.valueNone}
         </span>
-        {/* 🔴 期限超過は**このセルの文字色だけ**で示す（行の背景を塗らない）。🔴 赤ではなく橙。 */}
-        <span
-          className={`whitespace-nowrap ${overdue ? 'text-warning' : 'text-fg-muted'} ${COLUMN_SM_CLASSES}`}
-          data-testid={`home-action-queue-deadline-${row.targetId}`}
+      </span>
+      {/* 時刻（120）。🔴 **期限超過はこのセルの文字色だけ**で示す（行の背景を塗らない）。 */}
+      <span
+        className={`shrink-0 whitespace-nowrap text-row tabular-nums ${ROW_META_WIDTH_CLASS} ${
+          overdue ? 'text-warning' : 'text-fg'
+        }`}
+        data-testid={`home-action-queue-time-${row.targetId}`}
+      >
+        {time}
+      </span>
+      {/* バッジ（240）。🔴 **仕様書の 180 から広げている** —— モックは 1 行に 1 つだが、本実装は
+          種別（何をすべきか）/ 優先度 / 状態（いまどこか）の 2〜3 つを出す（`docs/04` §4.1）。
+          180 のままだと 13px のバッジが 2 行に折り返し、45px の刻みが崩れる。 */}
+      <span className={`flex shrink-0 flex-wrap items-center gap-1 ${ROW_BADGE_WIDTH_CLASS}`}>
+        <Badge variant={KIND_VARIANTS[row.kind]} data-testid={`home-action-queue-kind-${row.targetId}`}>
+          {messages.kinds[row.kind]}
+        </Badge>
+        {/* 🔴 **優先度は「状態」ではない**（`lib/home/priority.ts` の 🔴。`StatusBadge` を使わず
+              `Badge` の variant を当てる。`S-022` の失敗理由バッジと同じ扱い）。
+              🔴 色の写像は `PRIORITY_BADGE_VARIANTS` の 1 箇所だけが持つ（画面で variant を書かない）。
+              🔴 **モバイルでも落とさない**（判断材料である。ファイル冒頭 ②）。 */}
+        <Badge
+          variant={PRIORITY_BADGE_VARIANTS[priority]}
+          title={messages.priorityNote}
+          data-testid={`home-action-queue-priority-${row.targetId}`}
         >
-          {row.deadline === null ? messages.valueNone : formatDateTimeJst(row.deadline)}
-        </span>
+          {messages.priorities[priority]}
+        </Badge>
+        {changed ? (
+          <Badge variant="success" data-testid={`home-action-queue-changed-${row.targetId}`}>
+            {messages.changed}
+          </Badge>
+        ) : null}
         {/* 🔴 状態は `StatusBadge`（`エンティティ + 状態` の組）。**画面側で色を決めない**。
             🔴 **種別バッジと同じ語になる行では描かない**（同じ語・同じ色が 2 回出る）。
             🔴 **語が違う行では必ず両方出す**（種別 = 何をすべきか / 状態 = いまどこか）。 */}
@@ -291,10 +285,31 @@ export function ActionRow({
             )}
           </span>
         )}
-        <span className={COLUMN_XL_CLASSES}>
-          <ActionCell row={row} availability={availability} messages={messages} />
-        </span>
-      </div>
+      </span>
+      {/* 期限。🔴 時刻の列（残り / 経過）と役割が違う（こちらは**いつか**）。狭い画面では畳む。 */}
+      <span
+        className={`shrink-0 whitespace-nowrap text-cell ${overdue ? 'text-warning' : 'text-fg-muted'} ${COLUMN_XL_CLASSES}`}
+        data-testid={`home-action-queue-deadline-${row.targetId}`}
+      >
+        {row.deadline === null ? messages.valueNone : formatDateTimeJst(row.deadline)}
+      </span>
+      {/* 操作（146 × 32）。🔴 **行内の操作は 1 パターンだけ**（`docs/design-system.md` §5-4）。 */}
+      <span className={`flex shrink-0 justify-start ${ROW_ACTION_WIDTH_CLASS}`}>
+        <ActionCell row={row} availability={availability} messages={messages} />
+      </span>
+      {/* ✅ T-22-10: 行の `内容を見る`（`Drawer` を開く）。
+          🔴 **遷移ではない**（押しても URL は変わらず、一覧の位置は保たれる）。
+          🔴 **どのブレークポイントでも落とさない**（Tier 1）。
+          🔴 仕様書の `…`（More）の位置である —— 中身が `内容を見る` 1 つしか無いメニューを
+             作らず、その 1 つを直接置いた（`docs/design-system.md` §6 ④）。 */}
+      <IconButton
+        variant="ghost"
+        size="sm"
+        icon={<Icon name="eye" />}
+        aria-label={messages.drawer.open}
+        onClick={() => onOpenDrawer(row.targetId)}
+        data-testid={`home-action-queue-drawer-open-${row.targetId}`}
+      />
     </li>
   );
 }
@@ -305,8 +320,7 @@ export function ActionRow({
  *    `PROPOSAL_REQUEST_STATE_MESSAGE_KEYS` から解決したものであり、ここで語を作らない。
  */
 export function rowStateLabel(row: ActionQueueRow, messages: ActionQueueMessages): string {
-  const map =
-    row.stateBadge.entity === 'PROPOSAL' ? messages.proposalStates : messages.proposalRequestStates;
+  const map = row.stateBadge.entity === 'PROPOSAL' ? messages.proposalStates : messages.proposalRequestStates;
   return map[row.stateBadge.state] ?? row.stateBadge.state;
 }
 
@@ -341,19 +355,29 @@ function ActionCell({
   readonly messages: ActionQueueMessages;
 }) {
   if (row.action === null) {
-    return <span data-testid={`home-action-queue-action-none-${row.targetId}`}>{messages.valueNone}</span>;
+    return (
+      <span
+        className="text-cell text-fg-placeholder"
+        data-testid={`home-action-queue-action-none-${row.targetId}`}
+      >
+        {messages.valueNone}
+      </span>
+    );
   }
   const entry = availability[row.action.kind];
   if (!entry.enabled) {
     return (
-      <span className="text-fg-muted" data-testid={`home-action-queue-action-denied-${row.targetId}`}>
+      <span
+        className="text-cell text-fg-muted"
+        data-testid={`home-action-queue-action-denied-${row.targetId}`}
+      >
         {messages.denied[entry.reasonKey]}
       </span>
     );
   }
   return (
     <Link
-      className={SECONDARY_LINK_CLASSES}
+      className={ROW_ACTION_LINK_CLASSES}
       href={row.action.href}
       data-testid={`home-action-queue-action-${row.targetId}`}
     >

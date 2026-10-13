@@ -5,6 +5,7 @@
 | | 役割 |
 |---|---|
 | **このファイル** | **「どう作るか」**。トークン・部品・レイアウト・禁止事項・新規画面のテンプレート |
+| [`docs/design-system.md`](./docs/design-system.md) | **「何 px か」**。🔴 **寸法の出所はここだけ**（人間のデザインシステム定義 v1.0。2026-10-13） |
 | [`docs/04-ui-design.md`](./docs/04-ui-design.md) | **「何を作るか」**。画面ごとの仕様（60 画面の目的・項目・権限差分）。🔴 **画面の中身はこちらが正** |
 | [`CLAUDE.md`](./CLAUDE.md) | **一次資料**。情報境界・ハードルール。🔴 **衝突したら `CLAUDE.md` が勝つ** |
 
@@ -13,6 +14,9 @@
 ## 1. デザインコンセプト
 
 **長時間の業務に耐える、情報密度の高い BtoB SaaS。** 参照は Ramp。
+
+🔴 ✅ **2026-10-13: 寸法は人間のデザインシステム定義 v1.0（`docs/design-system.md`）が正である。**
+本ファイルは**名前と使い方**を持ち、**px はあちらが持つ**。食い違ったら `docs/design-system.md` を直す。
 
 | 原則 | 具体 |
 |---|---|
@@ -48,8 +52,19 @@ AppShell                       … 全画面共通の外枠
 | クラス | 用途 | 幅 |
 |---|---|---|
 | `full` | 一覧・ダッシュボード | 全幅（左右 gutter のみ） |
-| `split` | 本体 + 副カラム（候補パネル等） | 副カラムが `lg` 360 → `xl` 400 → `2xl` 480px 固定 |
+| `split` | 本体 + 副カラム（候補パネル等） | 🔴 副カラムは **388px 固定**（✅ 2026-10-13。`lg` 以上。**広い画面でも太らせない**） |
 | `prose` | フォーム・読み物 | 720px・**左寄せ**（中央寄せにしない） |
+
+**外枠の寸法**（🔴 **画面側で上書き禁止**。出所は `docs/design-system.md` §2 と `packages/ui/src/lib/layout-tokens.ts`）
+
+| | px |
+|---|---|
+| サイドバー（展開 / アイコンのみ） | **208** / 56 |
+| Top Header の高さ | **56** |
+| 本文の左右 gutter | **左 28 / 右 16** |
+| 本文の上下 | **20** |
+| 本体 ↔ 副カラム | **16** |
+| セクション Card の間 | **12** |
 
 ```tsx
 <PageBody width="full">…</PageBody>
@@ -67,7 +82,7 @@ AppShell                       … 全画面共通の外枠
 
 | 一般的な呼び名 | このリポジトリ |
 |---|---|
-| Primary | `brand` |
+| Primary（青 `#2563EB`） | `brand` |
 | Background（ページ地） | `bg` |
 | **Surface（カード・パネルの地）** | `surface` |
 | Border | `border` |
@@ -89,8 +104,9 @@ AppShell                       … 全画面共通の外枠
 | 成果（緑） | `success` / `success-bg` / `success-border` |
 | 情報（青） | `info` / `info-bg` / `info-border` |
 | 無彩色 | `neutral-bg` / `neutral-border` |
-| 一覧 | `row-hover-bg` / `table-header-bg` |
-| サイドバー | `sidebar-bg` / `sidebar-fg` / `sidebar-fg-muted` / `sidebar-border` / `sidebar-hover-bg` / `sidebar-selected-bg` / `sidebar-selected-fg` / `sidebar-selected-bar` |
+| 一覧 | `row-hover-bg` / `table-header-bg` / **`border-row`**（🔴 行の区切り線だけ。カードの枠より薄い） |
+| ワンポイント | **`tip-bg`**（🔴 ホームのワンポイント Card 1 箇所だけ） |
+| サイドバー | `sidebar-bg` / **`sidebar-bg-end`**（🔴 グラデーションの下端） / `sidebar-fg` / `sidebar-fg-muted` / `sidebar-border` / `sidebar-hover-bg` / `sidebar-selected-bg` / `sidebar-selected-fg` |
 
 🔴 **`sidebar-*` は `Sidebar` 以外で使わない**（濃色の面を増やさない。CI が落とす）。
 
@@ -111,47 +127,54 @@ AppShell                       … 全画面共通の外枠
 
 ## 4. Typography
 
-🔴 **6 段だけ。これ以外の文字サイズを作らない。**
+🔴 **これ以外の文字サイズを作らない。** 値の出所は `docs/design-system.md` §3.2。
 
-| トークン | px | 用途 |
+| トークン | px / weight / 行間 | 用途 |
 |---|---|---|
-| `text-title` | 20 | Page Title（1 画面に 1 つ） |
-| `text-lg` | 16 | Section Title |
-| `text-body` | 14 | 本文・ラベル・ボタン |
-| `text-cell` | 13 | テーブルのセル |
-| `text-xs` | 12 | Caption・補助文 |
-| `text-micro` | 11 | メタ情報 |
-| `text-metric` | 24 | 🔴 **KPI の数値のみ**（`KpiCard` 以外で使うと CI が落ちる） |
+| `text-title` | **26** / 700 / 34 | Page Title（1 画面に 1 つ） |
+| `text-metric` | **28** / 700 / 32 | 🔴 **KPI の数値のみ**（`KpiCard` 以外で使うと CI が落ちる） |
+| `text-rail` | **17** / 700 / 24 | 🔴 **右レールのカード見出しのみ**（`RailCard` 以外で使うと CI が落ちる） |
+| `text-lg` | 16 / 700 / 24 | Card Title / Section Title |
+| `text-row` | **15** / 500 / 20 | 一覧の行の主題 / ナビ項目 / タブ |
+| `text-body` | 14 / 400 / 20 | 本文・ラベル・ボタン |
+| `text-cell` | 13 / 500 / 18 | 行のサブ / デルタ / リンク / Badge / Button(sm) |
+| `text-xs` | 12 / 400 | Caption・補助文 |
+| `text-micro` | 11 / 500 | メタ情報 |
 
-- **Card Title** は `text-body` + `font-semibold`（専用の段を作らない）
-- フォントは `--font-sans` のみ。🔴 **別のフォントを読み込まない**
+- フォントは `--font-sans`（Noto Sans JP）のみ。🔴 **別のフォントを読み込まない**
+- 🔴 **`text-title` / `text-metric` / `text-rail` は「大きい文字が欲しい」ときの逃げ道ではない。** 使ってよいファイルが固定されている（`tests/static/design-tokens.test.ts`）
 
 ---
 
 ## 5. Spacing
 
-🔴 **7 段だけ。** `p-5` / `gap-7` / `mt-[10px]` は **CI が落とす**。
+🔴 **4px グリッドの決まった値だけ。** `p-9` / `mt-[10px]` は **CI が落とす**。
 
 | クラス | px | 目安 |
 |---|---|---|
 | `1` | 4 | アイコンとラベルの間 |
+| `1.5` | **6** | ナビ項目の間 |
 | `2` | 8 | バッジの内側・密な縦積み |
-| `3` | 12 | セルの内側 |
-| `4` | 16 | 既定の間隔・カードの内側 |
-| `6` | 24 | セクション間 |
-| `8` | 32 | 大きな区切り |
+| `3` | 12 | セルの内側・セクション Card の間 |
+| `4` | 16 | 既定の間隔・カードの内側・本体 ↔ 副カラム |
+| `5` | **20** | 本文の上下・KPI のアイコン面と文字の間 |
+| `6` | 24 | 大きめの区切り |
+| `7` | **28** | 本文の左 gutter |
+| `8` | 32 | 画面の主要ブロックの間 |
 | `12` | 48 | フォームのセクション間・空状態の上下 |
 
 **その他の寸法**
 
 | | 値 | どこで決まるか |
 |---|---|---|
-| Border Radius | `rounded-sm`(4px) / `rounded-md`(6px) | トークン |
+| Border Radius | `rounded-xs`(4px = Badge) / `rounded-sm`(6px = Button(sm)・IconButton) / `rounded-md`(8px = Button・Input・Nav) / `rounded-lg`(10px = Card・Panel・Dialog・Drawer) | トークン |
 | Border | 1px（`border`）。左端の強調のみ 2px | 🔴 全周 2px は CI が落とす |
 | Shadow | `shadow-control`（入力欄の輪郭）/ `shadow-overlay`（Dialog・Drawer・DropdownMenu・Tooltip・Toast） | 🔴 **この 2 つ以外の影は名前が無い** |
 | Icon Size | `<Icon size="sm">`(16px) / `size="md"`(20px) | 🔴 `size-6` は CI が落とす |
-| Button / Input Height | `sm` = 32px / `md` = 40px | `CONTROL_HEIGHT_CLASSES` |
+| Button / Input Height | `sm` = 32px / `md` = **36px** | `CONTROL_HEIGHT_CLASSES` |
 | Table Row Height | 約 36.5px（`py-2` + `text-cell`） | `Table` が決める。固定しない |
+| **Section Card の行** | **45px**（ホームの要対応キュー） | `ROW_HEIGHT_CLASS`（`layout-tokens.ts`） |
+| **行内の操作** | **146 × 32** | `ROW_ACTION_LINK_CLASSES` |
 
 ---
 
@@ -230,6 +253,7 @@ CI（`tests/static/**`）が機械で落とすものには **[CI]** を付けた
 | **[CI]** 段外の余白（`p-5` / `gap-7` / `mt-[10px]`） | §5 の 7 段 |
 | **[CI]** 画面ごとの `max-w-*` | `PageBody` の幅クラス |
 | **[CI]** 独自の影（`shadow-md` / `shadow-lg`） | `shadow-overlay` / `shadow-control` |
+| **[CI]** 外枠の寸法を画面で書き直す（`w-52` / `h-14` / `w-97`） | `packages/ui/src/lib/layout-tokens.ts` の定数 |
 | **[CI]** 任意値の寸法（`h-[32px]` / `size-6`） | `CONTROL_HEIGHT_CLASSES` / `<Icon size>` |
 | **[CI]** `role="dialog"` の自作 | `Dialog` / `Drawer` |
 | **[CI]** `sidebar-*` をサイドバー以外で使う | 使わない |

@@ -296,21 +296,24 @@ describe('🔴 PageBody の幅 3 クラス（docs/04 §7.1 / docs/05 §2.3.4）'
   it('A 全幅（`full`）: 左右 gutter だけで上限を設けない', () => {
     const markup = renderToStaticMarkup(createElement(PageBody, { widthClass: 'full', children: '本体' }));
     expect(markup).toContain('data-width-class="full"');
-    expect(markup).toContain('px-6');
+    expect(markup).toContain('pl-7');
+    expect(markup).toContain('pr-4');
     // 🔴 一覧に最大幅を効かせると、大画面でも列が入りきらない（§7.1）。
     expect(markup).not.toContain('max-w-');
   });
 
-  it('🔴 B 分割（`split`）: 副カラムは `lg` 360 → `xl` 400 → `2xl` 480px の固定（可変にしない）', () => {
+  it('🔴 B 分割（`split`）: 副カラムは 388px 固定（画面幅で広がらない）', () => {
     const markup = renderToStaticMarkup(
       createElement(PageBody, { widthClass: 'split', children: '主カラム', aside: '送信先プレビュー' }),
     );
     expect(markup).toContain('data-width-class="split"');
     expect(markup).toContain('data-page-body-aside="true"');
-    // 🔴 3 つの固定値（`w-90` = 360 / `w-100` = 400 / `w-120` = 480）。
-    expect(markup).toContain('lg:w-90');
-    expect(markup).toContain('xl:w-100');
-    expect(markup).toContain('2xl:w-120');
+    // ✅ **2026-10-13: 1 つの固定値（`w-97` = 388px）にした**（`docs/design-system.md` §2。
+    //    従来は `lg` 360 → `xl` 400 → `2xl` 480 と広がっていた）。
+    // 🔴 広い画面ほど副カラムが太ると、**本体の一覧の列が画面幅によって落ちたり戻ったりする**。
+    expect(markup).toContain('lg:w-97');
+    expect(markup).not.toContain('xl:w-100');
+    expect(markup).not.toContain('2xl:w-120');
     // 🔴 `shrink-0` が無いと主カラムに押されて可変になる（プレビューが嘘になる）。
     expect(markup).toContain('lg:shrink-0');
     expect(PAGE_BODY_ASIDE_WIDTH_CLASSES.split(' ')).toContain('lg:shrink-0');
@@ -346,7 +349,7 @@ describe('🔴 PageBody の幅 3 クラス（docs/04 §7.1 / docs/05 §2.3.4）'
     // 🔴 並置／下段の判定は `flex-wrap` + 主カラムの `basis-330`（= 1,320px）だけで行う。
     expect(markup).toContain('flex-wrap');
     expect(markup).toContain('basis-330');
-    expect(markup).toContain('max-w-120');
+    expect(markup).toContain('max-w-97');
     // 🔴 画面幅のバリアントが 1 つも出ない（これが出た瞬間に「幅で決める」に戻る）。
     expect(markup).not.toMatch(/(?:^|["\s])(?:sm|md|lg|xl|2xl):/);
     expect(markup).not.toContain('flex-col');

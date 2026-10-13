@@ -105,7 +105,7 @@ export function ActionQueueSection({
         {/* 🔴 ✅ 2026-10-03: **節見出しを器の中へ入れた**（`docs/04` §7.2 の「1 画面で最も強調する
             のは要対応キュー」）。見出しだけが面の外に浮いていると、白い器 4 枚のほうが先に
             「まとまり」として読まれる。🔴 見出しの段（16px / 600）は 1px も上げていない。 */}
-        <div className="border-b border-border px-4 pt-4 pb-3">
+        <div>
           <SectionHeader
             icon="list-checks"
             title={messages.title}
@@ -116,7 +116,7 @@ export function ActionQueueSection({
             className="mb-0"
           />
         </div>
-        <CardContent className="pt-4">
+        <CardContent className="p-0">
           {/* 🔴 「自分の担当のみ」トグル（既定オン）と `提案依頼の一覧`（`S-017`）への入口。
               どちらも**このセクションの文脈に紐づく**導線である（ファイル冒頭 ⑤）。
               🔴 **トグルはこのセクションにだけ効く** —— 他の 3 セクションは KPI カードの件数と
@@ -124,7 +124,7 @@ export function ActionQueueSection({
               （`lib/home/action-queue-read.ts` の `followUpProposalWheres` の 🔴）。 */}
           <nav
             aria-label={messages.scopeLegend}
-            className="mb-2 flex flex-wrap items-center gap-2 text-body"
+            className="flex flex-wrap items-center gap-2 px-4 pb-2 text-body"
             data-testid="home-action-queue-scope"
           >
             <ScopeLink target="mine" active={scope === 'mine'} href={scopeHrefs.mine} label={messages.scopeMine} />
@@ -138,7 +138,7 @@ export function ActionQueueSection({
             </Link>
           </nav>
           {pollFailed ? (
-            <p className="mb-2 text-body text-warning" role="status" data-testid="home-action-queue-poll-error">
+            <p className="px-4 pb-2 text-body text-warning" role="status" data-testid="home-action-queue-poll-error">
               {messages.pollError}
             </p>
           ) : null}
@@ -199,8 +199,8 @@ function ScopeLink({
       data-active={active ? 'true' : 'false'}
       className={
         active
-          ? 'inline-block rounded-sm border border-brand bg-brand px-3 py-1 text-body text-brand-fg'
-          : 'inline-block rounded-sm border border-border-strong px-3 py-1 text-body text-fg'
+          ? 'inline-block rounded-md border border-brand bg-brand px-3 py-1 text-cell font-medium text-brand-fg'
+          : 'inline-block rounded-md border border-border-strong px-3 py-1 text-cell font-medium text-fg'
       }
     >
       {label}

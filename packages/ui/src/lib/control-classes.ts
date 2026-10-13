@@ -65,6 +65,7 @@
 // | loading | **持たない**。進行中は送信ボタン側（`components/button.tsx` の `loading`）が表す |
 // | error | `aria-invalid:border-danger-border` + 下のメッセージ（`components/field.tsx` の `FieldError`。文字は `--color-danger`） |
 import { cn } from './cn.js';
+import { ROW_ACTION_HEIGHT_CLASS, ROW_ACTION_WIDTH_CLASS } from './layout-tokens.js';
 import { DISABLED_CLASSES, FOCUS_RING_CLASSES, TRANSITION_CLASSES } from './state-classes.js';
 
 /**
@@ -74,7 +75,8 @@ import { DISABLED_CLASSES, FOCUS_RING_CLASSES, TRANSITION_CLASSES } from './stat
  *    列挙する。`lib/cn.ts` の新しい規律 1）。
  */
 export const CONTROL_BASE_CLASSES = cn(
-  'w-full min-w-0 rounded-sm border border-border-strong bg-transparent px-3 shadow-control',
+  // ✅ 2026-10-13: Input の角丸は **8px**（`rounded-md`。`docs/design-system.md` §3.3）。
+  'w-full min-w-0 rounded-md border border-border-strong bg-transparent px-3 shadow-control',
   'text-lg md:text-body',
   TRANSITION_CLASSES,
   'placeholder:text-fg-placeholder',
@@ -104,8 +106,11 @@ export const CONTROL_BASE_CLASSES = cn(
 export const CONTROL_HEIGHT_CLASSES = {
   /** 32px … テーブル行内のボタン / `IconButton`（`size='sm'`）。 */
   sm: 'h-8',
-  /** 40px … フォームの `Input` / `Select` / primary・secondary ボタン（`size='default'`）。 */
-  md: 'h-10',
+  /**
+   * 36px … フォームの `Input` / `Select` / primary・secondary ボタン（`size='default'`）。
+   * ✅ **2026-10-13: 40px → 36px**（`docs/design-system.md` §4.2。デザインシステム v1.0）。
+   */
+  md: 'h-9',
 } as const;
 
 /**
@@ -119,3 +124,20 @@ export const CONTROL_HEIGHT_CLASSES = {
  *    `py-1` をそのまま残す。段から外れた値を新たに持ち込まない）。
  */
 export const CONTROL_FIELD_SIZE_CLASSES = `${CONTROL_HEIGHT_CLASSES.md} py-1`;
+
+/**
+ * 🔴 **一覧の行の中の操作（146 × 32）の 1 実装**（`docs/design-system.md` §4.2 の `row-action`）。
+ *
+ * 🔴 **画面側で作らない。** 面（`bg-bg` + 枠）と hover は `packages/ui` の部品だけが持つ
+ *    （`tests/static/ui-shadow-and-size.test.ts` / `ui-state-in-primitives.test.ts`）。
+ * 🔴 **幅を固定する** —— 文言の長短で列が動くと、45px の行が並んだときに操作の列が揃わない。
+ */
+export const ROW_ACTION_LINK_CLASSES = cn(
+  `inline-flex items-center justify-center gap-2 truncate rounded-sm border border-border-strong bg-bg px-3 text-cell font-medium text-fg ${ROW_ACTION_WIDTH_CLASS} ${ROW_ACTION_HEIGHT_CLASS}`,
+  TRANSITION_CLASSES,
+  'hover:bg-bg-subtle active:bg-bg-inset',
+  FOCUS_RING_CLASSES,
+);
+
+/** 🔴 一覧の行の hover（面の色だけ。拡大・影・下線を出さない）。 */
+export const ROW_HOVER_CLASSES = 'hover:bg-row-hover-bg';

@@ -28,7 +28,8 @@ import { DISABLED_CLASSES, FOCUS_RING_CLASSES, TRANSITION_CLASSES } from '../lib
 
 const buttonVariants = cva(
   cn(
-    'inline-flex items-center justify-center rounded-sm font-medium',
+    // ✅ 2026-10-13: Button の角丸は **8px**（`rounded-md`）。`sm`（行内の操作）だけ 6px。
+    'inline-flex items-center justify-center rounded-md font-medium',
     // 🔴 `whitespace-nowrap shrink-0` は shadcn/ui の Button の基底クラスにあるものであり、
     //    見た目の好みではなく**当たり判定の前提**である（T-21-01 の回帰調査で実測）。
     //    これを落とすと、狭い flex コンテナ（例: `S-008` の操作列。表のセルの中）で
@@ -69,7 +70,7 @@ const buttonVariants = cva(
        */
       size: {
         default: `${CONTROL_HEIGHT_CLASSES.md} px-4 text-body`,
-        sm: `${CONTROL_HEIGHT_CLASSES.sm} px-3 text-xs`,
+        sm: `${CONTROL_HEIGHT_CLASSES.sm} rounded-sm px-3 text-cell`,
       },
     },
     defaultVariants: { variant: 'primary', size: 'default' },

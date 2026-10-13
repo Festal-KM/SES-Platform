@@ -120,12 +120,16 @@ describe('対照: (g) の検出器', () => {
     ]) {
       expect(offScaleTextSizeValue(token), token).toBeNull();
     }
+    // ✅ 2026-10-13: `rail`（17px = 右レールの見出し）と `row`（15px = 一覧の行の主題 / ナビ /
+    //    タブ）が入った（`docs/design-system.md` §3.2）。
     expect([...ALLOWED_TEXT_SIZES].sort()).toEqual([
       'body',
       'cell',
       'lg',
       'metric',
       'micro',
+      'rail',
+      'row',
       'title',
       'xs',
     ]);

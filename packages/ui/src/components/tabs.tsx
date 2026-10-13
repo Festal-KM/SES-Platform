@@ -39,7 +39,9 @@
 // 🔴 **文言を持たない**（`../index.ts` 規約 5）。`label` は呼び出し側が `packages/i18n` から渡す。
 import * as TabsPrimitive from '@radix-ui/react-tabs';
 import type { ReactNode } from 'react';
+import { Icon, type IconName } from '../icons.js';
 import { cn } from '../lib/cn.js';
+import { TAB_BAR_HEIGHT_CLASS } from '../lib/layout-tokens.js';
 import { DISABLED_CLASSES, FOCUS_RING_CLASSES, TRANSITION_CLASSES } from '../lib/state-classes.js';
 
 /** 🔴 §10.3「タブを 5 つ以上に増やさない」= 上限 4（ファイル冒頭①）。 */
@@ -50,6 +52,12 @@ export type TabsItem = {
   readonly value: string;
   /** タブの語（`packages/i18n`）。 */
   readonly label: string;
+  /**
+   * ✅ 2026-10-13（`docs/design-system.md` §3.5）: タブの印。
+   * 🔴 **印であって意味ではない**（`aria-hidden` は `Icon` が立てる）。語はラベルが担うので
+   *    省略してよい。印があると、目が最初に当たる位置がタブごとに固定される。
+   */
+  readonly icon?: IconName;
   /** その面の中身。 */
   readonly content: ReactNode;
 };
@@ -99,7 +107,8 @@ export function Tabs({
   const first = items[0];
   return (
     <TabsPrimitive.Root
-      className={cn('flex flex-col gap-4', className)}
+      // 🔴 帯と中身の間は 12px（`docs/design-system.md` §4「margin 上 8 / 下 12」）。
+      className={cn('flex flex-col gap-3', className)}
       value={value}
       onValueChange={onValueChange}
       defaultValue={value === undefined ? (defaultValue ?? first.value) : undefined}
@@ -108,6 +117,7 @@ export function Tabs({
       <TabsPrimitive.List className={TABS_LIST_CLASSES} aria-label={label}>
         {items.map((item) => (
           <TabsPrimitive.Trigger key={item.value} value={item.value} className={TABS_TRIGGER_CLASSES}>
+            {item.icon === undefined ? null : <Icon name={item.icon} size="md" />}
             {item.label}
           </TabsPrimitive.Trigger>
         ))}
@@ -133,7 +143,11 @@ export function Tabs({
  * 🔴 **`overflow-x` を書かない**（画面外のタブに気づけないまま「全部見た」と思うため。§5-13）。
  * ⚠️ 折り返しは**入り切らないときだけ**起きるので、既存の 1〜3 タブの画面の見え方は変わらない。
  */
-export const TABS_LIST_CLASSES = 'flex flex-wrap items-stretch gap-4 border-b border-border';
+// ✅ **2026-10-13（`docs/design-system.md` §4）: 白い面の中に項目が並ぶ帯**（高さ 40 /
+//    radius 8 / 左右の内側 4）。🔴 従来の「地の上に下線 1 本」から変えた —— 地が淡いグレーに
+//    なったので、面を持たない帯は**その上下のカードと同じ強さに見えてしまう**。
+// 🔴 `flex-wrap` は残す（375px で 4 つが 1 行に収まらないときに折り返す。高さは `min-h`）。
+export const TABS_LIST_CLASSES = `flex ${TAB_BAR_HEIGHT_CLASS} flex-wrap items-stretch rounded-md bg-surface px-1`;
 
 /**
  * タブ 1 つ。§7.10 の 8 状態のうち **default / hover / active / selected / focus-visible /
@@ -146,7 +160,8 @@ export const TABS_LIST_CLASSES = 'flex flex-wrap items-stretch gap-4 border-b bo
  *    2px 分だけ帯の高さが動き、**50 行の一覧の上でタブが波打つ**（§7.10 の「1px も動かさない」）。
  */
 export const TABS_TRIGGER_CLASSES = cn(
-  'cursor-pointer border-b-2 border-b-transparent px-3 py-2 text-body font-medium text-fg-muted',
+  // 🔴 語は 15px（`text-row`）。タブは「いまどこを見ているか」の 1 行であり、本文より 1 段強い。
+  'flex cursor-pointer items-center gap-2 border-b-2 border-b-transparent px-4 text-row font-medium text-fg-muted',
   TRANSITION_CLASSES,
   'hover:bg-bg-subtle',
   'data-[state=active]:border-b-brand data-[state=active]:text-brand',

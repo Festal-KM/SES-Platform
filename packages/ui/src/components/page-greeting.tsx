@@ -19,6 +19,7 @@
 //
 // 🔴 **`'use client'` を宣言しない**（規約 4）。🔴 **`children` / `ReactNode` の prop を持たない。**
 import { cn } from '../lib/cn.js';
+import { TITLE_BLOCK_MIN_HEIGHT_CLASS } from '../lib/layout-tokens.js';
 
 /**
  * 時間帯の区分（🔴 **3 つだけ**。深夜の 4 区分目を作らない —— 区分を増やすと語の数が増え、
@@ -68,14 +69,17 @@ export type PageGreetingProps = {
 };
 
 /** 🔴 挨拶は §7.3 の 1 段目（20px / 600）。**画面タイトルと同じ段**で、これ以上大きくしない。 */
-const GREETING_CLASSES = 'm-0 text-title font-semibold text-fg';
+// ✅ **2026-10-13: 26px / 700**（`docs/design-system.md` §3.2。`--text-title` の値ごと変えた）。
+const GREETING_CLASSES = 'm-0 text-title font-bold text-fg';
 /** 日付と一文は補助テキスト（12px / `--color-fg-muted`）。 */
-const META_CLASSES = 'm-0 text-xs text-fg-muted';
+// 🔴 日付とメッセージは 15px（`text-row`）。12px では h1 との差が開きすぎて、2 行目が
+//    「読まなくてよいもの」に見える（デザインシステム v1.0 §3.3）。
+const META_CLASSES = 'm-0 text-row text-fg-muted';
 /**
  * 標語。🔴 **右端に寄せるが、狭い画面では下に回り込む**（`CLAUDE.md` §13.3: 狭い画面を理由に
  * 判断材料を隠さない。標語は判断材料ではないが、**隠すために `hidden` を書く習慣を作らない**）。
  */
-const MOTTO_CLASSES = 'm-0 text-xs text-fg-muted md:ml-auto md:text-right';
+const MOTTO_CLASSES = 'm-0 text-row text-fg-muted italic md:ml-auto md:text-right';
 
 export function PageGreeting({
   greeting,
@@ -88,7 +92,11 @@ export function PageGreeting({
   return (
     <div
       data-testid={`${testIdPrefix}root`}
-      className={cn('mb-4 flex flex-wrap items-baseline gap-x-4 gap-y-1', className)}
+      // ✅ 2026-10-13: ブロック高 64 / 下 margin 20（`docs/design-system.md` §4）。
+      className={cn(
+        `mb-5 flex flex-wrap items-start justify-between gap-x-6 gap-y-1 ${TITLE_BLOCK_MIN_HEIGHT_CLASS}`,
+        className,
+      )}
     >
       <div className="min-w-0">
         <p className={GREETING_CLASSES} data-testid={`${testIdPrefix}message`}>

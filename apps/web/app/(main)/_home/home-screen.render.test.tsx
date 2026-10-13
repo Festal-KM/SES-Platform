@@ -382,8 +382,9 @@ describe('🔴 ② KPI カードは 4 枚で横スクロールにしない', () 
     const html = render();
     const card = html.match(/<a[^>]*data-testid="home-host-kpi-action-queue"[^>]*>/)?.[0] ?? '';
     expect(card).toContain('hover:bg-row-hover-bg');
-    // 🔴 `display` が `flex flex-col` のまま（`block` を足すと縦積みと `gap` が黙って消える）。
-    expect(card).toContain('flex flex-col');
+    // 🔴 `display` が `flex items-center` のまま（`block` を足すとアイコン面と文字の横並びと
+    //    `gap` が黙って消える。`cn()` = `twMerge` は `display` の群を後勝ちで畳む）。
+    expect(card).toContain('flex items-center');
     expect(card).not.toMatch(/class="[^"]* block( |")/);
   });
 
@@ -411,7 +412,12 @@ describe('🔴 ③ ✅ 2026-10-11: タブは 4 つ（`メッセージ` を足し
 
   it('🔴 `メッセージ` タブに件数を付けない（未読の実体が無い。近似を入れない）', () => {
     const html = render();
-    const tabs = [...html.matchAll(/role="tab"[^>]*>([^<]*)</g)].map((match) => match[1]);
+    // 🔴 タブの中身はアイコン（`<svg>`）+ 語になったので、**タグを剥がしてから**照合する
+    //    （`[^<]*` のままだと空文字しか取れず、**この検査は何も確かめなくなる**）。
+    const tabs = [...html.matchAll(/role="tab"[^>]*>([\s\S]*?)<\/button>/g)].map((match) =>
+      (match[1] ?? '').replace(/<[^>]*>/g, '').trim(),
+    );
+    expect(tabs.length, 'タブの語が 1 つも取れていない（検査が空振りしている）').toBe(4);
     expect(tabs).toContain('TAB_MESSAGES');
     // 🔴 `メッセージ` のラベルに数字が 1 文字も無い。
     expect(tabs.find((label) => label === 'TAB_MESSAGES')).not.toMatch(/[0-9]/);
@@ -543,9 +549,11 @@ describe('🔴 ④⑤ 右レール（先に動くもの / 今日の予定 / ワ�
     expect(shown).toHaveLength(1);
   });
 
-  it('レールの並びは 先に動くもの → 今日の予定 → ワンポイント（狭い画面でも同じ走査順）', () => {
+  it('レールの並びは 今日の予定 → 先に動くもの → ワンポイント（狭い画面でも同じ走査順）', () => {
+    // ✅ **2026-10-13（人間のデザインシステム定義 v1.0 §3.7）: 予定を先頭にした。**
+    //    時刻の軸を持つものが上に来ると、朝に開いたときの「今日はどう進むか」が 1 枚目で分かる。
     const html = render();
-    const order = ['home-rail-priority-root', 'home-rail-schedule-root', 'home-rail-one-point-root'].map(
+    const order = ['home-rail-schedule-root', 'home-rail-priority-root', 'home-rail-one-point-root'].map(
       (id) => html.indexOf(id),
     );
     expect(order.every((index) => index >= 0)).toBe(true);
@@ -593,20 +601,20 @@ describe('🔴 幅クラスは素通しされる（検査 (k) の 1 回）', () 
 //    `要対応` タブのセクション 1 の行」**と名指ししている。現状はこれに反していた。
 // 🔴 **KPI カード 4 枚という形は人間の決定（[#86](https://github.com/Festal-KM/SES-Platform/issues/86)）
 //    なので無くさない。** 変えたのは**強さの順序だけ**である。
-describe('🔴 ⑧ 強さの順序: KPI の件数は要対応キューの見出しより強くない', () => {
-  it('🔴 `S-003`（ホスト）の KPI の件数は `--text-metric`（24px）を使わない', () => {
+describe('🔴 ⑧ KPI の件数は 4 枚とも同じ段である', () => {
+  it('🔴 KPI の件数は 4 枚とも `--text-metric`（28px）で、1 枚だけ大きいカードが無い', () => {
+    // ✅ **2026-10-13（人間のデザインシステム定義 v1.0 §3.4）: 旧条文「KPI の件数は要対応キューの
+    //    見出しより強くない（`text-lg` に留める）」を置き換えた。** 仕様書は 4 枚を**並べて比べる**
+    //    ものとして定義し、KPI Value を 28 / 700 と指定している。1 枚だけ大きいと、比較ではなく
+    //    「1 つの数字 + 3 つの添え物」に見える。
+    // 🔴 **検査の数は減らしていない** ——「4 つ見つかる」「4 つとも同じ段」の 2 つを見る。
     const html = render();
-    // ⚠️ ✅ 2026-10-11: 遷移先を持つカードの件数には `underline` が付くため、
-    //    **クラスの並びに依存しない形**にした（検査の内容は 1 つも減らしていない ——
-    //    「4 つ見つかる」「`text-metric` を使わない」「`text-lg` である」の 3 つをそのまま見る）。
-    const values = [...html.matchAll(/<span class="(text-(?:metric|lg)[ "][^"]*)"/g)]
+    const values = [...html.matchAll(/<span class="(text-(?:metric|lg|row)[ "][^"]*)"/g)]
       .map((match) => match[1] ?? '')
       .filter((classes) => classes.includes('tabular-nums'));
     expect(values.length, 'KPI の件数が 1 つも見つからない（検出器の空振り）').toBe(4);
     for (const classes of values) {
-      expect(classes, `ホームの KPI が 24px で描かれている: ${classes}`).not.toContain('text-metric');
-      // 🔴 セクション見出し（`SectionHeader` の `text-lg`）と同じ段までに留める。
-      expect(classes).toContain('text-lg');
+      expect(classes, `KPI の件数の段が揃っていない: ${classes}`).toContain('text-metric');
     }
   });
 
@@ -616,21 +624,24 @@ describe('🔴 ⑧ 強さの順序: KPI の件数は要対応キューの見出�
     expect(start).toBeGreaterThan(-1);
     const queue = html.slice(start, start + 2000);
     // 器（`Card` = `CARD_SURFACE_CLASSES`）が節見出しより先に在る。
-    const card = queue.indexOf('rounded-md border border-border bg-surface');
+    const card = queue.indexOf('rounded-lg border border-border bg-surface');
     const header = queue.indexOf('data-testid="home-action-queue-header-root"');
     expect(card, 'キューが器（白い面）を持っていない').toBeGreaterThan(-1);
     expect(header).toBeGreaterThan(card);
   });
 
-  it('🔴 KPI カードの器は要対応キューより小さい余白である（帯が画面を押し下げない）', () => {
+  it('🔴 KPI カードの器は 4 枚とも同じ寸法である（押せるかどうかで変わらない）', () => {
     const html = render();
     // ⚠️ ✅ 2026-10-11: 遷移先を持つカードは `<a>` で描かれる（`<div>` 決め打ちにしない）。
+    // ✅ 2026-10-13: 器の内側は 16px（`p-4`）、高さは 105（`min-h-26.25`）で固定した
+    //    （`docs/design-system.md` §4）。🔴 **4 枚の高さが揃うこと**が器の条件である。
     const card = html.match(/<(?:a|div)[^>]*data-testid="home-host-kpi-action-queue"[^>]*>/)?.[0] ?? '';
-    expect(card).toContain('p-3');
-    expect(card).not.toContain('p-4');
+    expect(card).toContain('p-4');
+    expect(card).toContain('min-h-26.25');
     // 🔴 遷移先を持たないカードも同じ余白である（押せるかどうかで器の寸法が変わらない）。
     const plain = html.match(/<(?:a|div)[^>]*data-testid="home-host-kpi-interviews"[^>]*>/)?.[0] ?? '';
-    expect(plain).toContain('p-3');
+    expect(plain).toContain('p-4');
+    expect(plain).toContain('min-h-26.25');
   });
 
   it('🔴 同じ 1 件が KPI とキュー見出しに二重に出ない（KPI は `data-emphasis` で既定のまま）', () => {

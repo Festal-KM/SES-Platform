@@ -66,14 +66,17 @@ export function ActionSectionBody({
       {rows.length === 0 ? (
         // ⚠️ 器の `data-testid`（`{prefix}empty`）は凍結済みの値であり、`EmptyState` が出す
         //    `{prefix}root` / `{prefix}description` は**追加**である（改名ではない）。
-        <div data-testid={`${testIdPrefix}empty`}>
+        <div className="px-4 pb-4" data-testid={`${testIdPrefix}empty`}>
           {/* 🔴 **0 件は説明のみ**（Primary / Secondary を置かない。§5-13 / §10.4 ——
               0 件は正常であり、行動を促す相手がいない）。 */}
           <EmptyState testIdPrefix={`${testIdPrefix}empty-state-`} description={emptyLabel} />
         </div>
       ) : (
         // ✅ 改訂 23: **列の見出し行を持たない**（行は 2 段の compact な行。`./action-row.tsx` の 🔴）。
-        <ul className="flex flex-col divide-y divide-border" data-testid={`${testIdPrefix}list`}>
+        // 🔴 区切りは**行自身の `border-top`**（`docs/design-system.md` §3.6）。`divide-y` を
+        //    やめたのは、行の左端 2px の印（期限が近い / 放置が長い）と罫線が重なると、印が
+        //    罫線に見えてしまうためである。
+        <ul className="m-0 flex list-none flex-col p-0" data-testid={`${testIdPrefix}list`}>
           {rows.map((entry) => (
             <ActionRow
               key={entry.row.targetId}

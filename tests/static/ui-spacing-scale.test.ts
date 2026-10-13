@@ -169,8 +169,9 @@ describe('🔴 恒久例外（`AppShell` の `pb-24`）が 1 件を超えない'
 // 対照: 検出器が「何を拾い / 何を拾わないか」（合成ソース）
 // ============================================================================
 describe('対照: (f) の検出器', () => {
-  it('段の外の値を拾う（`0.5` / `5` / `7` / `9` / `10` / `16` / `24`）', () => {
-    for (const token of ['py-0.5', 'px-1.5', 'pl-5', 'pl-7', 'mt-10', 'py-16', 'pb-24', 'gap-0.5', 'space-y-5']) {
+  it('段の外の値を拾う（`0.5` / `2.5` / `9` / `10` / `16` / `24`）', () => {
+    // ✅ 2026-10-13: `1.5`（6px）/ `5`（20px）/ `7`（28px）は段に入った（`docs/design-system.md` §3.3）。
+    for (const token of ['py-0.5', 'px-2.5', 'pl-9', 'mt-10', 'py-16', 'pb-24', 'gap-0.5', 'space-y-9']) {
       expect(offScaleSpacingValue(token), token).not.toBeNull();
     }
   });
@@ -181,7 +182,7 @@ describe('対照: (f) の検出器', () => {
     ]) {
       expect(offScaleSpacingValue(token), token).toBeNull();
     }
-    for (const value of ['0', '1', '2', '3', '4', '6', '8', '12', 'auto', 'px']) {
+    for (const value of ['0', '1', '1.5', '2', '3', '4', '5', '6', '7', '8', '12', 'auto', 'px']) {
       expect(ALLOWED_SPACING.has(value), value).toBe(true);
     }
   });
@@ -200,7 +201,7 @@ describe('対照: (f) の検出器', () => {
   });
 
   it('バリアント接頭辞を剥がしてから照合する', () => {
-    expect(offScaleSpacingValue('lg:pl-5')).toBe('5');
+    expect(offScaleSpacingValue('lg:pl-9')).toBe('9');
     expect(offScaleSpacingValue('hover:px-4')).toBeNull();
   });
 });
@@ -209,7 +210,7 @@ describe('対照: fixtures の合成ソースをファイルから走査する�
   const fixtures = scanClassFixtures(offScaleSpacingValue);
 
   it('🔴 違反を仕込んだファイルで検出される（検査が「何も見ていない」状態で緑になっていない）', () => {
-    expect([...fixtures.violationTokens].sort()).toEqual(['mt-10', 'pl-5', 'py-0.5']);
+    expect([...fixtures.violationTokens].sort()).toEqual(['mt-10', 'pl-9', 'py-0.5']);
   });
 
   it('🔴 適合しているファイルでは 0 件である（誤検知しない。誤検知する検査はいずれ緩められる）', () => {

@@ -447,18 +447,23 @@ export function HomeScreen({
         //    デスクトップでも「先に動くもの」を先に置いている** —— 0 件になりがちな予定より
         //    「次の 1 手」が上に在るほうが、どの幅でも同じ走査順になる（§3.4 の趣旨を満たす）。
         initialEmpty ? undefined : (
+          // ✅ **2026-10-13（人間のデザインシステム定義 v1.0 §3.7）: 並びを
+          //    `今日のスケジュール` → `優先アクション` → `今日のワンポイント` にした。**
+          // 🔴 従来は優先アクションが先頭だった。時刻の軸を持つものを上に置くと、**朝に開いた
+          //    ときの「今日はどう進むか」が 1 つ目のカードで分かる**（優先アクションは「何から
+          //    やるか」であり、時間の見通しの後に来るほうが順序として自然である）。
           <div className="flex flex-col gap-4" data-testid="home-rail">
-            <RankedList
-              title={messages.rail.priorityTitle}
-              items={priorityItems(state.rows, nowMs, queueMessages)}
-              emptyLabel={messages.rail.priorityEmpty}
-              testIdPrefix="home-rail-priority-"
-            />
             <Timeline
               title={messages.rail.scheduleTitle}
               entries={schedule}
               emptyLabel={messages.rail.scheduleEmpty}
               testIdPrefix="home-rail-schedule-"
+            />
+            <RankedList
+              title={messages.rail.priorityTitle}
+              items={priorityItems(state.rows, nowMs, queueMessages)}
+              emptyLabel={messages.rail.priorityEmpty}
+              testIdPrefix="home-rail-priority-"
             />
             <OnePoint changedSince={state.changedSince} messages={messages} />
           </div>
@@ -482,7 +487,6 @@ export function HomeScreen({
         <>
           {/* 🔴 KPI カード 4 枚（§7.2 改訂 23 ①）。**`md` 未満は 2×2 に畳む**（部品が持つ）。 */}
           <div
-            className="mb-4"
             data-testid={audience === 'HOST' ? 'home-host-summary' : 'home-partner-summary'}
             data-metrics={allMetricsZero ? 'all-zero' : 'present'}
           >
@@ -520,14 +524,30 @@ export function HomeScreen({
               //      スレッドの総数を出すと「未読が N 件」に読める。
               //    - `案件` / `人材` … 行が Phase 2 で入るまで数が無い（**0 と書くと
               //      「案件が無い」に読める**）。
-              { value: 'messages', label: messages.tabs.messages, content: messagesPanel },
+              {
+                value: 'messages',
+                label: messages.tabs.messages,
+                icon: 'message-square',
+                content: messagesPanel,
+              },
               {
                 value: 'actions',
                 label: `${messages.tabs.actions} ${String(actionsTabCount)}`,
+                icon: 'list-checks',
                 content: actionsTab,
               },
-              { value: 'projects', label: messages.tabs.projects, content: projectsPanel },
-              { value: 'engineers', label: messages.tabs.engineers, content: engineersPanel },
+              {
+                value: 'projects',
+                label: messages.tabs.projects,
+                icon: 'briefcase',
+                content: projectsPanel,
+              },
+              {
+                value: 'engineers',
+                label: messages.tabs.engineers,
+                icon: 'users',
+                content: engineersPanel,
+              },
             ]}
           />
         </>
@@ -592,6 +612,7 @@ function OnePoint({
     <RailCard
       title={messages.rail.onePointTitle}
       lines={[line]}
+      tone="tip"
       dismiss={{
         label: messages.rail.onePointDismiss,
         onDismiss: () => {

@@ -340,7 +340,7 @@ describe('🔴 テキスト列の下限幅（1 文字折り返しの再発防止
     const html = render();
     expect(html).toContain('flex flex-wrap');
     expect(html).toContain('min-w-0 grow shrink basis-330');
-    expect(html).toContain('w-full max-w-120');
+    expect(html).toContain('w-full max-w-97');
     // 🔴 幅の境界で並べ替える語が 1 つも無い（在ると「広げると悪化する」が戻る）。
     expect(html).not.toContain('2xl:flex-row');
     expect(html).not.toContain('lg:flex-row');

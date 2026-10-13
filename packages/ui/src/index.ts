@@ -354,3 +354,31 @@ export {
 //    🔴 **`PageWidthClass` の 4 つ目ではない**（型は 3 値のまま。`lib/fixed-width-classes.ts` 冒頭）。
 //    `apps/web/app/**` に `max-w-*` を書けない（検査 (c)）ため、寸法を持てる唯一の層へ移した。
 export { AUTH_CARD_WIDTH_CLASSES, QR_FIGURE_CLASSES } from './lib/fixed-width-classes.js';
+// 🔴 **外枠の寸法の唯一の出所**（`docs/design-system.md` §4）。画面側はここから取るだけで、
+//    px を書き直さない（`tests/static/layout-tokens.test.ts`）。
+export {
+  COLUMN_GAP_CLASS,
+  COLUMN_GAP_PX,
+  CONTENT_PADDING_X_CLASSES,
+  CONTENT_PADDING_Y_CLASS,
+  HEADER_HEIGHT_CLASS,
+  HEADER_HEIGHT_PX,
+  KPI_CARD_HEIGHT_CLASS,
+  KPI_ICON_TILE_CLASSES,
+  RAIL_WIDTH_CLASS,
+  RAIL_WIDTH_PX,
+  ROW_ACTION_HEIGHT_CLASS,
+  ROW_ACTION_WIDTH_CLASS,
+  ROW_BADGE_WIDTH_CLASS,
+  ROW_HEIGHT_CLASS,
+  ROW_HEIGHT_PX,
+  ROW_META_WIDTH_CLASS,
+  SECTION_GAP_CLASS,
+  SECTION_GAP_PX,
+  SECTION_HEADER_HEIGHT_CLASS,
+  SIDEBAR_WIDTH_CLASS,
+  SIDEBAR_WIDTH_PX,
+  TITLE_BLOCK_MIN_HEIGHT_CLASS,
+} from './lib/layout-tokens.js';
+// 🔴 一覧の行の操作（146 × 32）と行の hover の 1 実装（面と状態は部品側が持つ）。
+export { ROW_ACTION_LINK_CLASSES, ROW_HOVER_CLASSES } from './lib/control-classes.js';

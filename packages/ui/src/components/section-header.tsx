@@ -23,6 +23,7 @@ import type { ComponentType } from 'react';
 import { Badge } from './badge.js';
 import type { SidebarLinkProps } from './sidebar.js';
 import { cn } from '../lib/cn.js';
+import { SECTION_HEADER_HEIGHT_CLASS } from '../lib/layout-tokens.js';
 import { SECONDARY_LINK_CLASSES } from '../lib/link-classes.js';
 import { Icon, type IconName } from '../icons.js';
 
@@ -58,7 +59,8 @@ function DefaultLink({ href, children, ...rest }: SidebarLinkProps) {
 }
 
 /** 🔴 §7.3 の 2 段目（16px / 600）。**これ以上大きくしない。** */
-const TITLE_CLASSES = 'm-0 flex min-w-0 items-center gap-2 text-lg font-semibold text-fg';
+// ✅ 2026-10-13: 見出しは 16 / 700、アイコンとの間は 10（→ 段の 12 = `gap-3`）。
+const TITLE_CLASSES = 'm-0 flex min-w-0 items-center gap-3 text-lg font-bold text-fg';
 
 export function SectionHeader({
   icon,
@@ -72,7 +74,13 @@ export function SectionHeader({
   return (
     <div
       data-testid={`${testIdPrefix}root`}
-      className={cn('mb-2 flex flex-wrap items-center gap-x-4 gap-y-1', className)}
+      // ✅ **2026-10-13: 帯そのものが高さ 40 / 左右の内側 16 を持つ**（`docs/design-system.md`
+      //    §4）。🔴 外側の余白（`mb-*`）を持たない —— Section Card の中では罫線が区切りであり、
+      //    余白で区切ると行の 45px の刻みが崩れる。
+      className={cn(
+        `flex flex-wrap items-center gap-x-4 gap-y-1 px-4 ${SECTION_HEADER_HEIGHT_CLASS}`,
+        className,
+      )}
     >
       <h2 className={TITLE_CLASSES}>
         {/* 🔴 印であって意味ではない（`aria-hidden` は `Icon` が立てる）。語は見出しが持つ。 */}

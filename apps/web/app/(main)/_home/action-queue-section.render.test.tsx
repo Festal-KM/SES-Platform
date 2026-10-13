@@ -357,19 +357,28 @@ describe('③ ④ モバイルの 3 要素と折りたたみ・合計の不在',
       expect(classesOf(elementOf(`home-action-queue-${id}-a1`)), id).not.toContain('hidden');
     }
     // 🔴 `相手` / `期限` は `sm` 未満で落ちる（移行前と同じ判定）。
-    for (const id of ['counterparty', 'deadline']) {
-      const classes = classesOf(elementOf(`home-action-queue-${id}-a1`));
-      expect(classes, id).toContain('hidden');
-      expect(classes, id).toContain('sm:inline');
-    }
-    // 🔴 ✅ T-22-09 で足した `状態` / `操作` は `xl` 未満で落ちる
-    //    （7 列の固定トラックの和は `lg` の主カラムに収まらない = 横スクロールか `対象` の潰れになる。
-    //    実測は `action-queue-section.tsx` の `ROW_GRID_CLASSES` の ⚠️）。
-    for (const id of ['state', 'action']) {
-      const classes = classesOf(wrapperOf(`home-action-queue-${id}-a1`));
-      expect(classes, id).toContain('hidden');
-      expect(classes, id).toContain('xl:inline');
-    }
+    // ✅ **2026-10-13: 落とす境界を 1 つ早めた**（`docs/design-system.md` §4.1 の 45px の行）。
+    //    - `相手` は件名の下の 2 段目（block）になった。**落ちる境界は同じ `sm` のままである。**
+    //    - `期限` は `sm` ではなく `xl` 未満で落ちる。🔴 **情報を減らしたのではない** ——
+    //      45px の行では時刻の列（残り / 経過）が常に出ており、`期限`（いつか）はその言い換えに
+    //      近い。狭い画面で 2 つ並べると件名の幅を削るので、広い画面でだけ両方出す。
+    const counterparty = classesOf(elementOf('home-action-queue-counterparty-a1'));
+    expect(counterparty, 'counterparty').toContain('hidden');
+    expect(counterparty, 'counterparty').toContain('sm:block');
+    const deadline = classesOf(elementOf('home-action-queue-deadline-a1'));
+    expect(deadline, 'deadline').toContain('hidden');
+    expect(deadline, 'deadline').toContain('xl:inline');
+    // 🔴 `状態` は `xl` 未満で落ちる（種別バッジが同じ列に在り、狭い画面では種別が主である）。
+    const state = classesOf(wrapperOf('home-action-queue-state-a1'));
+    expect(state, 'state').toContain('hidden');
+    expect(state, 'state').toContain('xl:inline');
+    // 🔴 ✅ **2026-10-13: `操作` はどの幅でも落とさない**（従来は `xl` 未満で消えていた）。
+    //    旧条文の理由は「7 列の固定トラックの和が `lg` の主カラムに収まらない」であり、
+    //    **行が `flex-wrap` になった今はトラックが溢れずに折り返す**ので前提ごと消えた。
+    //    🔴 `CLAUDE.md` §13.3「狭い画面を理由に判断材料を隠さない」に沿う方向の変更である
+    //    （操作は Tier 1 の導線であり、モバイルで消すのは承認の形骸化に近い）。
+    const action = classesOf(wrapperOf('home-action-queue-action-a1'));
+    expect(action, 'action').not.toContain('hidden');
   });
 
   it('🔴 種別ごとの件数を 1 つの合計に丸めた表示が**行の側に**無い', () => {

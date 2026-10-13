@@ -41,6 +41,11 @@ import type { ComponentType, ReactNode } from 'react';
 import { Badge } from './badge.js';
 import type { SidebarLinkProps } from './sidebar.js';
 import { cn } from '../lib/cn.js';
+import {
+  RAIL_PRIORITY_ROW_HEIGHT_CLASS,
+  RAIL_RANK_CIRCLE_CLASSES,
+  RAIL_SCHEDULE_ROW_HEIGHT_CLASS,
+} from '../lib/layout-tokens.js';
 import { SECONDARY_LINK_CLASSES } from '../lib/link-classes.js';
 import { SELECTED_CLASSES } from '../lib/state-classes.js';
 import { CARD_PADDING_CLASSES, CARD_SURFACE_CLASSES } from '../lib/surface-classes.js';
@@ -60,9 +65,10 @@ function DefaultLink({ href, children, ...rest }: SidebarLinkProps) {
 }
 
 /** 🔴 レールの見出しは §7.3 の 2 段目（16px / 600）。セクション見出しと同じ段である。 */
-const RAIL_TITLE_CLASSES = 'm-0 min-w-0 truncate text-lg font-semibold text-fg';
+// ✅ 2026-10-13: 右レールの見出しは **17 / 700**（`docs/design-system.md` §3.2 の `text-rail`）。
+const RAIL_TITLE_CLASSES = 'm-0 min-w-0 truncate text-rail font-bold text-fg';
 /** 本文（14px / 400）。 */
-const RAIL_BODY_CLASSES = 'm-0 text-body text-fg';
+const RAIL_BODY_CLASSES = 'm-0 text-body text-fg-muted';
 /** 補助（12px / `--color-fg-muted`）。 */
 const RAIL_META_CLASSES = 'm-0 text-xs text-fg-muted';
 
@@ -76,8 +82,12 @@ export type RailCardDismiss = {
   readonly onDismiss: () => void;
 };
 
+/** 🔴 **色ではなく役割**。`tip` = 今日のワンポイント（1 日 1 行の読みもの）。 */
+export type RailCardTone = 'default' | 'tip';
+
 type RailFrameProps = {
   readonly title: string;
+  readonly tone: RailCardTone;
   readonly link: RailCardLink | null;
   /** 🔴 `null` なら閉じるボタンを描かない（既定）。 */
   readonly dismiss: RailCardDismiss | null;
@@ -93,6 +103,7 @@ type RailFrameProps = {
 
 function RailFrame({
   title,
+  tone,
   link,
   dismiss,
   testIdPrefix,
@@ -103,7 +114,15 @@ function RailFrame({
   return (
     <section
       data-testid={`${testIdPrefix}root`}
-      className={cn(CARD_SURFACE_CLASSES, CARD_PADDING_CLASSES, 'flex flex-col gap-2', className)}
+      className={cn(
+        CARD_SURFACE_CLASSES,
+        CARD_PADDING_CLASSES,
+        'flex flex-col gap-2',
+        // 🔴 ワンポイントだけ地が違う（仕様書 `--tip-bg`）。**色ではなく役割を受け取る**
+        //    （`UI_GUIDELINES.md` §8 の「色を渡せる prop を作らない」）。
+        tone === 'tip' ? 'bg-tip-bg' : null,
+        className,
+      )}
     >
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
         <h2 className={RAIL_TITLE_CLASSES}>{title}</h2>
@@ -153,6 +172,7 @@ export type RailCardProps = {
    * 両方を同時に渡さない（渡すと右端に 2 つ並び、どちらが主たる操作か読めなくなる）。
    */
   readonly dismiss?: RailCardDismiss | null;
+  readonly tone?: RailCardTone;
   readonly testIdPrefix: string;
   readonly linkComponent?: ComponentType<SidebarLinkProps>;
   readonly className?: string;
@@ -163,6 +183,7 @@ export function RailCard({
   lines,
   link = null,
   dismiss = null,
+  tone = 'default',
   testIdPrefix,
   linkComponent = DefaultLink,
   className,
@@ -170,6 +191,7 @@ export function RailCard({
   return (
     <RailFrame
       title={title}
+      tone={tone}
       link={link}
       dismiss={dismiss}
       testIdPrefix={testIdPrefix}
@@ -220,9 +242,11 @@ export type TimelineProps = {
  * 1 行の基底。🔴 **全行で左端 2px を場所取りする**（進行中の行だけ色が付く形にすると、
  * 強調が移ったときに行が 2px ずれて「予定が動いた」ように見える。`./sidebar.tsx` と同じ理由）。
  */
-const TIMELINE_ROW_CLASSES = 'flex items-baseline gap-3 border-l-2 border-l-transparent py-1 pl-2';
+// ✅ 2026-10-13: スケジュールの行は **58px**（`docs/design-system.md` §4）。
+const TIMELINE_ROW_CLASSES = `flex items-center gap-3 border-l-2 border-l-transparent pl-3 ${RAIL_SCHEDULE_ROW_HEIGHT_CLASS}`;
 /** 時刻は本文と同じ段で、数字が揃うように `tabular-nums`。 */
-const TIMELINE_TIME_CLASSES = 'shrink-0 text-xs text-fg-muted tabular-nums';
+// 🔴 時刻の列は 64px 固定（行ごとに桁数が違っても、予定の列が左右に動かない）。
+const TIMELINE_TIME_CLASSES = 'w-16 shrink-0 text-cell font-bold text-fg-muted tabular-nums';
 
 export function Timeline({
   title,
@@ -236,6 +260,7 @@ export function Timeline({
   return (
     <RailFrame
       title={title}
+      tone="default"
       link={link}
       // 🔴 予定と優先アクションは閉じられない（ファイル冒頭の 🔴）。
       dismiss={null}
@@ -264,7 +289,7 @@ export function Timeline({
                 {entry.startLabel}–{entry.endLabel}
               </span>
               <span className="min-w-0">
-                <span className="block text-body">{entry.title}</span>
+                <span className="block text-row font-medium text-fg">{entry.title}</span>
                 {entry.subtitle === null ? null : (
                   <span className={cn('block', RAIL_META_CLASSES)}>{entry.subtitle}</span>
                 )}
@@ -315,8 +340,8 @@ export type RankedListProps = {
  * 順位の数字（🔴 **円形はアバターとカウンタのみ**という §7.9 の例外のうちの「カウンタ」である）。
  * 🔴 無彩色（順位そのものに良し悪しは無い。1 位を brand で塗ると「進行中」の意味と衝突する）。
  */
-const RANK_CLASSES =
-  'inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-bg-inset text-micro font-medium text-fg-muted tabular-nums';
+// ✅ 2026-10-13: 番号の円は **28px**（`docs/design-system.md` §4）。
+const RANK_CLASSES = `inline-flex shrink-0 items-center justify-center rounded-full bg-bg-inset text-cell font-semibold text-fg-muted tabular-nums ${RAIL_RANK_CIRCLE_CLASSES}`;
 
 export function RankedList({
   title,
@@ -330,6 +355,7 @@ export function RankedList({
   return (
     <RailFrame
       title={title}
+      tone="default"
       link={link}
       // 🔴 予定と優先アクションは閉じられない（ファイル冒頭の 🔴）。
       dismiss={null}
@@ -342,19 +368,19 @@ export function RankedList({
           {emptyLabel}
         </p>
       ) : (
-        <ol className="m-0 flex list-none flex-col gap-2 p-0" data-testid={`${testIdPrefix}list`}>
+        <ol className="m-0 flex list-none flex-col p-0" data-testid={`${testIdPrefix}list`}>
           {items.map((item, index) => (
             <li
               key={`${String(item.rank)}-${item.title}`}
               data-testid={`${testIdPrefix}item-${index}`}
-              className="flex items-baseline gap-2"
+              className={`flex items-center gap-3 ${RAIL_PRIORITY_ROW_HEIGHT_CLASS}`}
             >
               {/* 🔴 渡された順位をそのまま描く（1 から振り直さない）。 */}
               <span className={RANK_CLASSES} aria-hidden="true">
                 {item.rank}
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block text-body text-fg">{item.title}</span>
+                <span className="block text-row font-medium text-fg">{item.title}</span>
                 {item.subtitle === null ? null : (
                   <span className={cn('block', RAIL_META_CLASSES)}>{item.subtitle}</span>
                 )}

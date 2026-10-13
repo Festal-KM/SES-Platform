@@ -12,7 +12,7 @@ export function Violation(): unknown {
   // (c) 幅: `max-w-*`
   const width = 'max-w-3xl sm:max-w-md';
   // (f) spacing: 段の外
-  const spacing = 'pl-5 py-0.5 mt-10';
+  const spacing = 'pl-9 py-0.5 mt-10';
   // (g) 文字サイズ: 6 トークンの外
   const type = 'text-sm text-2xl text-[13px]';
   // (j) 8 状態: 画面側のバリアント

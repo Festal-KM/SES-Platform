@@ -30,6 +30,7 @@ import {
 } from '../../../lib/home/sections';
 import type { HomeScope } from '../../../lib/home/schemas';
 import type { ActionQueueHomeBlock } from '../../../lib/home/types';
+import { SECTION_GAP_CLASS } from '@ses/ui';
 import { ActionQueueSection } from './action-queue-section';
 import type { ActionQueueMessages } from './action-row';
 import { FollowUpSection } from './follow-up-section';
@@ -82,7 +83,7 @@ export function ActionsTab({
   const countLabel = (rows: readonly HomeSectionRow[]): string => `${String(rows.length)}${countUnit}`;
   return (
     // 🔴 セクション間は `--space-4`（16px）。器（`Card`）が面を持つので、間隔は器の外側で取る。
-    <div className="flex flex-col gap-4" data-testid="home-actions-tab">
+    <div className={`flex flex-col ${SECTION_GAP_CLASS}`} data-testid="home-actions-tab">
       {sections.map((section) => {
         if (section.section === 'TODAY') {
           return (

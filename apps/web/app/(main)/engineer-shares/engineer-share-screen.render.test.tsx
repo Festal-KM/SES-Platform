@@ -551,7 +551,7 @@ describe('🔴 T-12-17 ④: 氏名セルは `NameCell`（`docs/04` §10.3 / §11
 describe('🔴 SP-22 段④: 絞り込みカードと件数バー', () => {
   it('🔴 絞り込みは白い面のカード（`@ses/ui` の `Card`）の中にある（ページ地に溶けない）', () => {
     const html = render();
-    const card = html.indexOf('rounded-md border border-border');
+    const card = html.indexOf('rounded-lg border border-border');
     const form = html.indexOf('data-testid="engineer-share-filters"');
 
     expect(card, '絞り込みカードの面が描かれていない').toBeGreaterThanOrEqual(0);

@@ -30,6 +30,7 @@
 //    ままにし、この帯のためだけに追加で `TenantSendingDomain` を読む（対象はホスト所属の
 //    `OWNER` / `ADMIN` のみ。理由は `_shared/sending-domain-guard-banner.tsx` 冒頭コメント）。
 import { redirect } from 'next/navigation';
+import { CONTENT_PADDING_Y_CLASS } from '@ses/ui';
 import { t } from '@ses/i18n';
 import { resolveTenantCtxOutcome } from '../../lib/auth/session';
 import { sendingDomainRuntime } from '../../lib/db/bootstrap';
@@ -175,7 +176,8 @@ export default async function HomePage({
   const canManageShares = isEngineerShareRole(outcome.ctx.role);
 
   return (
-    <main className="py-6">
+    // 🔴 本文の上下は 20px（`docs/design-system.md` §2 の Content Padding）。
+    <main className={CONTENT_PADDING_Y_CLASS}>
       <HomeScreen
         // 🔴 幅クラス（検査 (k) が見るのはこの 1 回の受け渡しである）。
         widthClass="split"

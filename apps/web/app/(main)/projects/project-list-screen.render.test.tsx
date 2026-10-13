@@ -519,7 +519,7 @@ describe('🔴 SP-22 段④: 絞り込みカードと件数バー', () => {
     // 🔴 面の語（`CARD_SURFACE_CLASSES`）は `packages/ui` にしか無いので、**ここでは
     //    その語を書かない**（書くと `tests/static/ui-shadow-and-size.test.ts` の
     //    「画面が面のクラス定数を再実装していない」に当たる）。radius + 枠線で器を掴む。
-    const card = html.indexOf('rounded-md border border-border');
+    const card = html.indexOf('rounded-lg border border-border');
     const form = html.indexOf('data-testid="project-list-filters"');
 
     expect(card, '絞り込みカードの面が描かれていない').toBeGreaterThanOrEqual(0);

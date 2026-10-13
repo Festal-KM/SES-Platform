@@ -68,6 +68,7 @@ import type { ComponentType, ReactNode } from 'react';
 import { Badge } from './badge.js';
 import { Icon, type IconName } from '../icons.js';
 import { cn } from '../lib/cn.js';
+import { SIDEBAR_NAV_ITEM_HEIGHT_CLASS } from '../lib/layout-tokens.js';
 import { ICON_CONTROL_CLASSES } from './button.js';
 import { matchesCurrentNavPath, navLinkClassName } from '../lib/current-nav-path.js';
 import { FOCUS_RING_CLASSES, TRANSITION_CLASSES } from '../lib/state-classes.js';
@@ -253,9 +254,17 @@ const SIDEBAR_SHELL_CLASSES = 'group hidden shrink-0 md:block';
  *   しか効き、器は `md:block` なので `<nav>` は item ではない）。T-22-05 のレビューで除去した。
  */
 const SIDEBAR_CLASSES = cn(
-  'flex flex-col overflow-y-auto border-r border-sidebar-border bg-sidebar-bg pb-3',
+  // ✅ **2026-10-13（`docs/design-system.md` §2 / §3.1）: 幅 224 → 208、地を濃紺の
+  //    グラデーション（`#0B2447` → `#122E57`）にした。** 🔴 **グラデーションが許されるのは
+  //    この 1 面だけである**（`docs/design-system.md` §5-8）。
+  // 🔴 枠線を外した —— グラデーションの面と白い本体の境は、面の差だけで十分に読める。
+  'flex flex-col overflow-y-auto bg-linear-to-b from-sidebar-bg to-sidebar-bg-end pb-5',
   'md:sticky md:top-0 md:h-dvh',
-  'w-14 group-has-checked:w-56 xl:w-56 xl:group-has-checked:w-14',
+  // 🔴 **変種付きのクラスは文字列リテラルで書く** —— Tailwind の走査は
+  //    `group-has-checked:${定数}` のような組み立てを候補として拾えず、**CSS が生成されない**
+  //    （テストは緑のまま見た目だけ壊れる）。値は `../lib/layout-tokens.ts` と対であり、
+  //    一致は `tests/static/layout-tokens.test.ts` が固定する。
+  'w-14 group-has-checked:w-52 xl:w-52 xl:group-has-checked:w-14',
   TRANSITION_CLASSES,
 );
 
@@ -286,8 +295,8 @@ const SIDEBAR_TOGGLE_CLASSES = cn(
  * 群。🔴 **区切りは線ではなく余白**（`mt-4`）で表す（罫線を増やして画面を分割しない）。
  * 最初の群（ホーム）には余白を付けない。
  */
-const SIDEBAR_GROUP_CLASSES = 'px-2';
-const SIDEBAR_GROUP_SPACED_CLASSES = 'mt-4 px-2';
+const SIDEBAR_GROUP_CLASSES = 'flex flex-col gap-1.5 px-3';
+const SIDEBAR_GROUP_SPACED_CLASSES = 'mt-7 flex flex-col gap-1.5 px-3';
 
 /**
  * 群名。🔴 **`--text-micro` + 補助色**（§7.3 の最小段）。
@@ -313,7 +322,9 @@ const SIDEBAR_GROUP_LABEL_CLASSES: Readonly<Record<SidebarVariant, string>> = {
  * - 🔴 hover は**背景の色変化だけ**（150ms）。拡大・浮き上がり・影・下線を出さない（§7.10）。
  */
 const SIDEBAR_ITEM_BASE_CLASSES = cn(
-  'flex items-center gap-2 rounded-sm px-2 py-1 text-body',
+  // ✅ **2026-10-13（`docs/design-system.md` §4）: 184 × 46 / radius 8 / padding-left 16 /
+  //    アイコン↔語 gap 12 / 語 15・500。** 幅は「サイドバー 208 − 群の左右 margin 12 × 2」。
+  `flex items-center gap-3 rounded-md px-4 text-row font-medium ${SIDEBAR_NAV_ITEM_HEIGHT_CLASS}`,
   TRANSITION_CLASSES,
 );
 /**

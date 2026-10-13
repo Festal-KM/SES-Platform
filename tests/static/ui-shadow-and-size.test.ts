@@ -98,8 +98,9 @@ function isAllowedDirectWrite(file: string, token: string): boolean {
   return DIRECT_WRITE_ALLOWLIST.get(file)?.utilities.includes(token) ?? false;
 }
 
-/** 🔴 アイコン寸法の 2 段（`packages/ui/src/icons.ts` の `ICON_SIZE_CLASSES` と一致させる）。 */
-const ALLOWED_ICON_SIZES = new Set(['4', '5']);
+/** 🔴 アイコン寸法の 3 段（`packages/ui/src/icons.ts` の `ICON_SIZE_CLASSES` と一致させる）。 */
+// ✅ 2026-10-13: 24px（`size-6`）を足した（KPI カードのアイコン面。`docs/design-system.md` §4.4）。
+const ALLOWED_ICON_SIZES = new Set(['4', '5', '6']);
 
 /**
  * 🔴 **`size-*` のうち「アイコンではない正方形」**（2 件だけ）。
@@ -280,6 +281,9 @@ describe('🔴 (j)(h) 濃色と 24px は「それを持つ部品」の外に出�
       uiTokens.filter((finding) => utilityOf(finding.token) === 'bg-surface').map((finding) => finding.file),
     );
     expect([...owners].sort()).toEqual([
+      // ✅ 2026-10-13: Top Header とタブの帯も「白い面」になった（`docs/design-system.md` §4）。
+      'packages/ui/src/components/tabs.tsx',
+      'packages/ui/src/components/top-bar.tsx',
       'packages/ui/src/lib/overlay-classes.ts',
       'packages/ui/src/lib/surface-classes.ts',
     ]);
@@ -297,7 +301,9 @@ describe('対照: (l) の検出器', () => {
     // 🔴 `size-full` / `size-fit` は寸法の段ではない（内容に合わせる構造の指定）。
     expect(SIZE_UTILITY.test('size-full')).toBe(false);
     expect(ALLOWED_ICON_SIZES.has('4')).toBe(true);
-    expect(ALLOWED_ICON_SIZES.has('6')).toBe(false);
+    // ✅ 2026-10-13: 24px は段に入った（KPI のアイコン面）。段の外は `size-7` 以降である。
+    expect(ALLOWED_ICON_SIZES.has('6')).toBe(true);
+    expect(ALLOWED_ICON_SIZES.has('7')).toBe(false);
   });
 
   it('任意値の寸法を拾い、ビューポート基準は拾わない', () => {

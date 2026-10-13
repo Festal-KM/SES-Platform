@@ -30,6 +30,10 @@ import { cn } from '../lib/cn.js';
 import type { SidebarLinkProps } from './sidebar.js';
 import { CARD_SURFACE_CLASSES } from '../lib/surface-classes.js';
 import { Icon, type IconName } from '../icons.js';
+import {
+  KPI_CARD_HEIGHT_CLASS,
+  KPI_ICON_TILE_CLASSES,
+} from '../lib/layout-tokens.js';
 
 /** 🔴 1 行に並べる上限（ブリーフの 4 枚）。5 枚目は実行時に落とす。 */
 export const KPI_CARD_ROW_MAX_ITEMS = 4;
@@ -105,23 +109,27 @@ export type KpiCardProps = KpiCardItem & {
  *    「今日やるこ / と」「今週の提 / 案」が 2 行に折れていた**（B-1）。四角は印であって
  *    判断材料ではないので、**先に縮めるのは四角の側**である。
  */
-const ICON_TILE_CLASSES = 'inline-flex rounded-sm bg-bg-inset p-1 text-fg-muted';
+// ✅ **2026-10-13（`docs/design-system.md` §4）: 48 × 48 の角丸の面に 24px のアイコン。**
+// 🔴 地は `brand-bg`（仕様書 `--primary-soft`）。無彩色（`bg-inset`）に戻さない —— 4 枚の
+//    カードの中で唯一の色であり、「ここが数字の意味を表す印である」という手がかりになっている。
+const ICON_TILE_CLASSES = `inline-grid shrink-0 place-items-center rounded-md bg-brand-bg text-brand ${KPI_ICON_TILE_CLASSES}`;
 
 /**
  * 件数。
  * 🔴 **既定は `--text-lg`（16px / 600）** —— §7.3 の 2 段目（セクション見出し）と同じ段であり、
  *    **要対応キューの見出しより大きくならない**（§7.2 の「件数を最も強調される要素より強くしない」）。
- * 🔴 `--text-metric`（24px / 600）は **`emphasis='primary'` の 1 枚だけ**（`S-004` のカード 1）。
+ * 🔴 ✅ **2026-10-13: `--text-metric`（28px / 700）を 4 枚すべてに使う**（デザインシステム v1.0
+ *    §3.4）。従来は `emphasis='primary'` の 1 枚だけだったが、仕様書は 4 枚を**並べて比べる**
+ *    ものとして定義しており、1 枚だけ大きいと比較ではなく「1 つの数字 + 3 つの添え物」に見える。
  *    **この部品の 1 箇所だけが `text-metric` を書いてよい**（§7.3 改訂 23。機械検査は
  *    `tests/static/design-tokens.test.ts` / `tests/static/ui-shadow-and-size.test.ts`）。
  */
-const VALUE_CLASSES = 'text-lg font-semibold text-fg tabular-nums';
-const VALUE_PRIMARY_CLASSES = 'text-metric font-semibold text-fg tabular-nums';
-/** 単位は本文より小さく、数の隣に置く（数が主役であることを崩さない）。 */
-const UNIT_CLASSES = 'text-xs text-fg-muted';
-/** ラベルと差分は補助テキスト（12px / `--color-fg-muted`。§7.3）。 */
-const LABEL_CLASSES = 'text-xs text-fg-muted';
-const DELTA_CLASSES = 'text-xs text-fg-muted tabular-nums';
+const VALUE_CLASSES = 'text-metric font-bold text-fg tabular-nums';
+/** 単位は数の隣に baseline を揃えて置く（15 / 500。数が主役であることを崩さない）。 */
+const UNIT_CLASSES = 'text-row font-medium text-fg';
+/** ラベルは 14 / `--text-2`、差分は 13 / 500（デザインシステム v1.0 §3.4）。 */
+const LABEL_CLASSES = 'text-body text-fg-muted';
+const DELTA_CLASSES = 'text-cell font-medium text-fg-muted tabular-nums';
 
 /**
  * ✅ 2026-10-03: 器の内側を `--space-4`（16px）→ `--space-3`（12px）に落とした。
@@ -129,7 +137,7 @@ const DELTA_CLASSES = 'text-xs text-fg-muted tabular-nums';
  *    実測（1280px）: カードの高さ 133px → **約 84px**。KPI 帯が要対応キューを 240px 押し下げて
  *    いた状態（S-3）を、**器の高さの側からも**戻す。
  */
-const CARD_COMPACT_PADDING_CLASSES = 'p-3';
+const CARD_COMPACT_PADDING_CLASSES = 'p-4';
 
 /**
  * ✅ 2026-10-11: 🔴 **遷移先を持つカードだけが持つ見た目**（`docs/04` §4.1 改訂 23:
@@ -173,36 +181,35 @@ export function KpiCard({
 }: KpiCardProps) {
   const body = (
     <>
-      {/* 🔴 ラベルは**自分の行を 1 行まるごと使う**（上の `ICON_TILE_CLASSES` の実測。
-          アイコンと同じ行に置くと、狭い器でラベルだけが潰れて折り返す）。 */}
-      <span className={LABEL_CLASSES}>{label}</span>
-      <p className="m-0 flex items-center gap-2">
-        {/* 🔴 アイコンは印にすぎない（`aria-hidden` は `Icon` が立てる）。意味はラベルが担う。 */}
-        <span className={ICON_TILE_CLASSES}>
-          <Icon name={icon} />
+      {/* 🔴 アイコンは印にすぎない（`aria-hidden` は `Icon` が立てる）。意味はラベルが担う。
+          🔴 **左に置く**（デザインシステム v1.0 §3.4）—— 4 枚並んだときに印の列が縦に通り、
+             ラベルと数字の左端も揃う。 */}
+      <span className={ICON_TILE_CLASSES}>
+        <Icon name={icon} size="lg" />
+      </span>
+      <span className="flex min-w-0 flex-col gap-1">
+        <span className={LABEL_CLASSES}>{label}</span>
+        <span className="flex items-baseline gap-1">
+          <span className={cn(VALUE_CLASSES, href === null ? null : VALUE_LINK_CLASSES)}>
+            {value}
+          </span>
+          <span className={UNIT_CLASSES}>{unit}</span>
         </span>
-        <span
-          className={cn(
-            emphasis === 'primary' ? VALUE_PRIMARY_CLASSES : VALUE_CLASSES,
-            href === null ? null : VALUE_LINK_CLASSES,
-          )}
-        >
-          {value}
-        </span>
-        <span className={UNIT_CLASSES}>{unit}</span>
-      </p>
-      {/* 🔴 差分は無彩色（良し悪しを決めつけない）。無ければ行ごと描かない。 */}
-      {delta === null ? null : (
-        <p className={cn('m-0', DELTA_CLASSES)} data-testid={`${testIdPrefix}${id}-delta`}>
-          {delta}
-        </p>
-      )}
+        {/* 🔴 差分は無彩色（良し悪しを決めつけない）。無ければ行ごと描かない。 */}
+        {delta === null ? null : (
+          <span className={DELTA_CLASSES} data-testid={`${testIdPrefix}${id}-delta`}>
+            {delta}
+          </span>
+        )}
+      </span>
     </>
   );
   const frame = cn(
     CARD_SURFACE_CLASSES,
     CARD_COMPACT_PADDING_CLASSES,
-    'flex flex-col gap-1',
+    // 🔴 高さ 105 / 面と文字の間 20（デザインシステム v1.0 §3.4）。`min-h` にするのは、
+    //    デルタが無い枚と在る枚が混ざっても **4 枚の高さが揃う**ようにするためである。
+    `flex items-center gap-5 ${KPI_CARD_HEIGHT_CLASS}`,
     className,
   );
   // 🔴 **遷移先が無いカードは `<a>` にしない**（押せる見た目にならない = 上の 🔴）。
