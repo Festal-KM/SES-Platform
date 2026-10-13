@@ -32,7 +32,7 @@ import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { CHAT_MESSAGE_PAGE_SIZE, PAGE_SIZE_DEFAULT } from '@ses/config';
 import { t } from '@ses/i18n';
-import { Alert, PageBody } from '@ses/ui';
+import { Alert, Card, CONTENT_PADDING_Y_CLASS, PageBody } from '@ses/ui';
 import { resolveTenantCtxOutcome } from '../../../lib/auth/session';
 import { canPostChatMessage } from '../../../lib/chat/policy';
 import { readChatScreen } from '../../../lib/chat/read';
@@ -72,7 +72,7 @@ export default async function ChatPage({
   const selected = data.thread;
 
   return (
-    <main className="py-6">
+    <main className={CONTENT_PADDING_Y_CLASS}>
       <PageBody
         widthClass="split"
         asideFrom="main-min"
@@ -86,19 +86,33 @@ export default async function ChatPage({
             {t('chat.thread.missing')}
           </Alert>
         ) : null}
-        <div className="flex gap-4">
-          {/* 左: スレッド一覧。🔴 `md` 未満で会話を開いているときは畳む（2 画面遷移） */}
-          <div className={selected === null ? 'w-full md:w-80 md:shrink-0' : 'hidden md:block md:w-80 md:shrink-0'}>
+        {/* ✅ **2026-10-13（`docs/design-system.md` §4.5）: 一覧と会話を 1 枚の白い面に収めた。**
+            🔴 従来は 2 つの器が 16px の隙間を挟んで並んでおり、**同じ 1 つの会話が 2 つの面に
+               割れて見えていた**（定義書は Main 1018 を「スレッド一覧 320 + 会話 698」の
+               1 枚として定義している）。区切りは**面の間の隙間ではなく 1px の罫線**である。 */}
+        <Card className="flex min-h-0 flex-1 overflow-hidden p-0">
+          {/* 左: スレッド一覧（320）。🔴 `md` 未満で会話を開いているときは畳む（2 画面遷移） */}
+          <div
+            className={
+              selected === null
+                ? 'w-full md:w-80 md:shrink-0 md:border-r md:border-border'
+                : 'hidden md:block md:w-80 md:shrink-0 md:border-r md:border-border'
+            }
+          >
             <ChatThreadList
               items={data.threads.items}
               selectedThreadId={selected?.id ?? null}
               nextCursor={data.threads.nextCursor}
             />
           </div>
-          {/* 中央: 会話。🔴 選択が無いときは `md` 以上でだけ案内を出す（モバイルは一覧が全幅） */}
-          <div className={selected === null ? 'hidden min-w-0 flex-1 md:block' : 'min-w-0 flex-1'}>
+          {/* 中央: 会話（698）。🔴 選択が無いときは `md` 以上でだけ案内を出す（モバイルは一覧が全幅） */}
+          <div
+            className={
+              selected === null ? 'hidden min-w-0 flex-1 md:flex md:flex-col' : 'flex min-w-0 flex-1 flex-col'
+            }
+          >
             {selected === null ? (
-              <p className="text-body text-fg-muted" data-testid="chat-select-prompt">
+              <p className="m-0 p-5 text-body text-fg-muted" data-testid="chat-select-prompt">
                 {t('chat.select.prompt')}
               </p>
             ) : (
@@ -111,7 +125,7 @@ export default async function ChatPage({
               />
             )}
           </div>
-        </div>
+        </Card>
       </PageBody>
     </main>
   );

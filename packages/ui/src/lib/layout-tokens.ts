@@ -98,6 +98,26 @@ export const ROW_BADGE_WIDTH_CLASS = 'w-70';
 export const ROW_ACTION_WIDTH_CLASS = 'w-36.5';
 export const ROW_ACTION_HEIGHT_CLASS = 'h-8';
 
+/**
+ * チャット（`S-031`。`docs/design-system.md` §4.5）。
+ * 🔴 Main 1018 = スレッド一覧 **320** + 会話 698。Right 388 は共通の副カラムと同じ。
+ */
+export const CHAT_THREAD_LIST_WIDTH_PX = 320;
+export const CHAT_THREAD_LIST_WIDTH_CLASS = 'w-80';
+/** スレッド一覧の 1 行（60）。 */
+export const CHAT_THREAD_ROW_HEIGHT_CLASS = 'min-h-15';
+/** 会話のコンポーザー（64）。 */
+export const CHAT_COMPOSER_HEIGHT_CLASS = 'min-h-16';
+/**
+ * メッセージのバブルの上限幅（560）。
+ * 🔴 **`packages/ui` に置く** —— `max-w-*` は画面側に書けない（`tests/static/ui-screen-width.test.ts`）。
+ *    幅の上限は「読める行長」の規約であり、画面ごとに決め直すものではない。
+ */
+export const CHAT_BUBBLE_MAX_WIDTH_CLASS = 'max-w-140';
+/** 右の関連情報パネルの Key-Value 行（30）とキーの列（124）。 */
+export const PANEL_KV_ROW_HEIGHT_CLASS = 'min-h-7.5';
+export const PANEL_KEY_WIDTH_CLASS = 'w-31';
+
 /** 右レールの行（スケジュール / 優先アクション）。 */
 export const RAIL_SCHEDULE_ROW_HEIGHT_CLASS = 'min-h-14.5';
 export const RAIL_PRIORITY_ROW_HEIGHT_CLASS = 'min-h-12.5';

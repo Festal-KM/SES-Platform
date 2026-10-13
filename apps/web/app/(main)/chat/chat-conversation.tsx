@@ -25,7 +25,19 @@
 //      **本文を URL に載せる**のを塞ぐ（`tests/static/form-method-required.test.ts`。実害が 1 度出ている）。
 import { useState } from 'react';
 import Link from 'next/link';
-import { Alert, Avatar, Button, EmptyState, Field, SECONDARY_LINK_CLASSES, Textarea, cn } from '@ses/ui';
+import {
+  Alert,
+  Avatar,
+  Button,
+  CHAT_BUBBLE_MAX_WIDTH_CLASS,
+  CHAT_COMPOSER_HEIGHT_CLASS,
+  EmptyState,
+  Field,
+  HEADER_HEIGHT_CLASS,
+  SECONDARY_LINK_CLASSES,
+  Textarea,
+  cn,
+} from '@ses/ui';
 import { CHAT_MESSAGE_MAX_LENGTH } from '@ses/config';
 import { createSubmitGuard } from '../../../lib/forms/submit-guard';
 import { formatDateTimeJst } from '../../../lib/format/datetime';
@@ -104,9 +116,12 @@ export function ChatConversation({
     setOlderFailed(false);
     const outcome = await olderGuard.run(async () => {
       try {
-        const response = await fetch(`${chatMessagesApiPath(threadId)}?cursor=${encodeURIComponent(nextCursor)}`, {
-          cache: 'no-store',
-        });
+        const response = await fetch(
+          `${chatMessagesApiPath(threadId)}?cursor=${encodeURIComponent(nextCursor)}`,
+          {
+            cache: 'no-store',
+          },
+        );
         if (!response.ok) return 'FAILED' as const;
         const payload = (await response.json()) as MessagePageBody;
         // 🔴 取得済みの**上**に足す（置き換えない）。同じ行が再び来たら 1 行に畳む。
@@ -125,9 +140,11 @@ export function ChatConversation({
   }
 
   return (
-    <section data-testid="chat-conversation" className="flex flex-col gap-4">
-      <div className="flex items-center gap-4">
-        <h2 className="text-lg font-semibold text-fg">{messages.heading}</h2>
+    // ✅ **2026-10-13（`docs/design-system.md` §4.5）: ヘッダ 56 / 本文 / コンポーザー 64 の
+    //    3 段にした。** 本文だけが伸び縮みし、上下 2 段は動かない。
+    <section data-testid="chat-conversation" className="flex min-h-0 flex-1 flex-col">
+      <div className={`flex shrink-0 items-center gap-4 border-b border-border px-5 ${HEADER_HEIGHT_CLASS}`}>
+        <h2 className="m-0 text-row font-medium text-fg">{messages.heading}</h2>
         {/* 🔴 モバイルは「一覧 → 会話」の 2 画面遷移（`docs/04` §S-031 デバイス別）。戻り道を必ず置く。 */}
         <Link
           href={chatHref({})}
@@ -138,62 +155,83 @@ export function ChatConversation({
         </Link>
       </div>
 
-      {nextCursor === null ? null : (
-        <Button type="button" variant="secondary" size="sm" onClick={() => void loadOlder()} data-testid="chat-messages-older">
-          {loadingOlder ? messages.olderLoading : messages.older}
-        </Button>
-      )}
-      {olderFailed ? (
-        <Alert variant="danger" data-testid="chat-messages-older-error">
-          {messages.olderFailed}
-        </Alert>
-      ) : null}
+      {/* 🔴 本文の面。**下寄せ**（最新の発言がコンポーザーの直上に来る。定義書 §3.12）。 */}
+      <div className="flex min-h-0 flex-1 flex-col justify-end gap-3 overflow-y-auto px-5 py-3">
+        {nextCursor === null ? null : (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => void loadOlder()}
+            data-testid="chat-messages-older"
+          >
+            {loadingOlder ? messages.olderLoading : messages.older}
+          </Button>
+        )}
+        {olderFailed ? (
+          <Alert variant="danger" data-testid="chat-messages-older-error">
+            {messages.olderFailed}
+          </Alert>
+        ) : null}
+        {items.length === 0 ? (
+          <EmptyState description={messages.empty} testIdPrefix="chat-messages-empty-" />
+        ) : (
+          <ol
+            aria-label={messages.listLabel}
+            className="m-0 flex list-none flex-col gap-3 p-0"
+            data-testid="chat-messages"
+          >
+            {items.map((item) => (
+              // 🔴 ✅ **2026-10-13: 全員を左に寄せる**（デザインシステム v1.0 §3.12「全員左寄せ・
+              //    Slack 型」）。自社と相手の弁別は**バブルの地の色だけ**である。
+              // 🔴 **右寄せにしない** —— 誰の発言かを「位置」で表すと、参加会社が 3 社以上に
+              //    なったときに表しようがなくなる。名前と色なら素直に伸びる。
+              // 🔴 **器（カード）をやめた** —— 1 件ずつに枠が付いていると、会話ではなく
+              //    「カードの一覧」に見える（面の数が増えるほど、どこを読めばよいか分からなくなる）。
+              <li
+                key={item.id}
+                data-testid={`chat-message-${item.id}`}
+                data-own={item.own ? 'true' : 'false'}
+                className="flex gap-3"
+              >
+                <Avatar
+                  size="md"
+                  initials={displayInitials(item.senderName ?? item.senderCompanyName ?? '?')}
+                  title={item.senderName ?? messages.unknownName}
+                />
+                <div className="flex min-w-0 flex-1 flex-col gap-1">
+                  <p className="m-0 flex flex-wrap items-baseline gap-2">
+                    <span className="text-body font-bold text-fg" data-testid={`chat-message-sender-${item.id}`}>
+                      {item.senderName ?? messages.unknownName}
+                    </span>
+                    <span className="text-xs text-fg-muted">
+                      {item.senderCompanyName ?? messages.unknownName}
+                    </span>
+                    {item.own ? <span className="text-xs text-fg-muted">{messages.own}</span> : null}
+                    <span className="text-xs text-fg-placeholder">{formatDateTimeJst(item.sentAt)}</span>
+                  </p>
+                  {/* 🔴 本文は `PURGED` / 保持期間削除で消える（`F-064 AC-2`）。空にせず事実を書く。
+                      🔴 上限幅（560）は `packages/ui` の定数から取る —— `max-w-*` は画面に書けない
+                         （`ui-screen-width.test.ts` (c)）。**読める行長の規約**であり、画面ごとに
+                         決め直すものではない。 */}
+                  <p
+                    className={cn(
+                      'm-0 w-fit rounded-lg px-4 py-2 text-body whitespace-pre-wrap text-fg',
+                      CHAT_BUBBLE_MAX_WIDTH_CLASS,
+                      item.own ? 'bg-brand-bg' : 'bg-bg-subtle',
+                    )}
+                    data-testid={`chat-message-body-${item.id}`}
+                  >
+                    {item.body ?? messages.purged}
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ol>
+        )}
+      </div>
 
-      {items.length === 0 ? (
-        <EmptyState description={messages.empty} testIdPrefix="chat-messages-empty-" />
-      ) : (
-        // 🔴 ビューポート基準の高さ（`max-h-[60vh]`）。`ui-shadow-and-size.test.ts` (b) の対象外であり、
-        //    画面ごとの px を書いていない。長い会話でも入力欄が画面外に押し出されない。
-        <ol
-          aria-label={messages.listLabel}
-          className="flex max-h-[60vh] flex-col gap-3 overflow-y-auto"
-          data-testid="chat-messages"
-        >
-          {items.map((item) => (
-            <li
-              key={item.id}
-              data-testid={`chat-message-${item.id}`}
-              data-own={item.own ? 'true' : 'false'}
-              className={cn(
-                'flex gap-3 rounded-md border border-border p-3',
-                // 🔴 自社と相手の弁別は面の色だけ（吹き出しの幅・形で区別しない。幅の指定は
-                //    画面に書けない = `ui-screen-width.test.ts` (c)）。
-                item.own ? 'bg-brand-bg' : 'bg-bg-subtle',
-              )}
-            >
-              <Avatar
-                initials={displayInitials(item.senderName ?? item.senderCompanyName ?? '?')}
-                title={item.senderName ?? messages.unknownName}
-              />
-              <div className="min-w-0 flex-1">
-                <p className="text-micro text-fg-muted">
-                  <span data-testid={`chat-message-sender-${item.id}`}>
-                    {item.senderName ?? messages.unknownName}
-                  </span>
-                  <span className="ml-2">{item.senderCompanyName ?? messages.unknownName}</span>
-                  {item.own ? <span className="ml-2">{messages.own}</span> : null}
-                  <span className="ml-2">{formatDateTimeJst(item.sentAt)}</span>
-                </p>
-                {/* 🔴 本文は `PURGED` / 保持期間削除で消える（`F-064 AC-2`）。空にせず事実を書く。 */}
-                <p className="text-body whitespace-pre-wrap text-fg" data-testid={`chat-message-body-${item.id}`}>
-                  {item.body ?? messages.purged}
-                </p>
-              </div>
-            </li>
-          ))}
-        </ol>
-      )}
-
+      {/* 🔴 コンポーザー（64）。会話の下端に固定され、本文だけがその上で伸び縮みする。 */}
       {canPost ? (
         // 🔴 `method="post"` は水和前の送信を URL に載せないための壁である（上の ⑦）。
         <form
@@ -203,6 +241,7 @@ export function ChatConversation({
             event.preventDefault();
             void submit();
           }}
+          className={`shrink-0 border-t border-border px-5 py-3 ${CHAT_COMPOSER_HEIGHT_CLASS}`}
           data-testid="chat-compose"
         >
           <Field label={messages.composeLabel} description={messages.composeHint}>
@@ -228,7 +267,10 @@ export function ChatConversation({
         </form>
       ) : (
         // 🔴 ボタンを描かず理由を置く（`disabled` にしない）。
-        <p className="text-body text-fg-muted" data-testid="chat-compose-not-allowed">
+        <p
+          className={`m-0 shrink-0 border-t border-border px-5 py-3 text-body text-fg-muted ${CHAT_COMPOSER_HEIGHT_CLASS}`}
+          data-testid="chat-compose-not-allowed"
+        >
           {messages.composeNotAllowed}
         </p>
       )}

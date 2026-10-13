@@ -16,13 +16,27 @@
 // 🔴 サーバコンポーネント（`'use client'` を宣言しない）。
 import Link from 'next/link';
 import { t } from '@ses/i18n';
-import { Card, CardContent, CardHeader, CardTitle, SECONDARY_LINK_CLASSES, cn } from '@ses/ui';
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  PANEL_KEY_WIDTH_CLASS,
+  PANEL_KV_ROW_HEIGHT_CLASS,
+  SECONDARY_LINK_CLASSES,
+  cn,
+} from '@ses/ui';
 import { formatDateTimeJst } from '../../../lib/format/datetime';
 import type { ChatThreadDetailView } from '../../../lib/chat/views';
 
 export type ChatThreadPanelProps = {
   readonly thread: ChatThreadDetailView;
 };
+
+/** Key-Value の 1 行（30px）。🔴 キーの列は 124px 固定（値の左端が縦に通る）。 */
+const ROW_CLASSES = `flex items-center gap-2 border-t border-border-row ${PANEL_KV_ROW_HEIGHT_CLASS}`;
+const KEY_CLASSES = `shrink-0 text-cell text-fg-muted ${PANEL_KEY_WIDTH_CLASS}`;
+const VALUE_CLASSES = 'min-w-0 flex-1 text-body text-fg';
 
 export function ChatThreadPanel({ thread }: ChatThreadPanelProps) {
   return (
@@ -31,10 +45,12 @@ export function ChatThreadPanel({ thread }: ChatThreadPanelProps) {
         <CardTitle>{t('chat.panel.heading')}</CardTitle>
       </CardHeader>
       <CardContent>
-        <dl className="flex flex-col gap-4">
-          <div>
-            <dt className="text-xs text-fg-muted">{t('chat.panel.target')}</dt>
-            <dd className="text-body text-fg" data-testid="chat-panel-target">
+        {/* ✅ 2026-10-13（`docs/design-system.md` §4.5）: Key-Value は 30px の行 /
+            キーの列 124px / 区切りは `border-row`。**項目ごとに高さが変わらない。** */}
+        <dl className="m-0 flex flex-col">
+          <div className={ROW_CLASSES}>
+            <dt className={KEY_CLASSES}>{t('chat.panel.target')}</dt>
+            <dd className={VALUE_CLASSES} data-testid="chat-panel-target">
               {thread.project === null ? (
                 t('chat.panel.noProject')
               ) : (
@@ -53,14 +69,14 @@ export function ChatThreadPanel({ thread }: ChatThreadPanelProps) {
               )}
             </dd>
           </div>
-          <div>
-            <dt className="text-xs text-fg-muted">{t('chat.panel.counterparty')}</dt>
-            <dd className="text-body text-fg" data-testid="chat-panel-counterparty">
+          <div className={ROW_CLASSES}>
+            <dt className={KEY_CLASSES}>{t('chat.panel.counterparty')}</dt>
+            <dd className={VALUE_CLASSES} data-testid="chat-panel-counterparty">
               {thread.counterpartyName ?? t('chat.thread.unknownName')}
             </dd>
           </div>
-          <div>
-            <dt className="text-xs text-fg-muted">{t('chat.panel.participants')}</dt>
+          <div className={ROW_CLASSES}>
+            <dt className={cn(KEY_CLASSES, 'self-start pt-2')}>{t('chat.panel.participants')}</dt>
             <dd>
               <ul className="flex flex-col gap-2" data-testid="chat-panel-participants">
                 {thread.participants.map((participant, index) => (

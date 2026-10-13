@@ -268,7 +268,10 @@ export function KpiCardRow({ items, testIdPrefix, linkComponent, className }: Kp
     <div
       data-testid={`${testIdPrefix}root`}
       data-item-count={items.length}
-      className={cn('grid grid-cols-2 gap-4 md:grid-cols-4', className)}
+      // 🔴 ✅ **2026-10-13: 4 枚横並びは `2xl` から**（従来は `md`）。1280px の実測で、主カラムが
+      //    624px しかなく 1 枚 156px になり、**ラベルが 3 行に折り返して器が崩れていた**。
+      //    4 枚を並べて比べる（§3.4）には 1 枚あたり 200px 程度が要る。
+      className={cn('grid grid-cols-2 gap-4 2xl:grid-cols-4', className)}
     >
       {items.map((item) => (
         <KpiCard key={item.id} {...item} testIdPrefix={testIdPrefix} linkComponent={linkComponent} />

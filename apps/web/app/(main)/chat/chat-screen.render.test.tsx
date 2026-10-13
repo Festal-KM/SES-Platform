@@ -236,17 +236,20 @@ describe('🔴 ③: md 未満は「一覧 → 会話」の切替であって遮�
 
   it('🔴 `page.tsx` で `hidden` を持つ器は必ず `md:block` で戻る（遮断しない）', () => {
     const page = readFileSync(new URL('./page.tsx', import.meta.url), 'utf8');
-    // 🔴 クラスの文字列リテラルを 1 つずつ見る（ファイル全体を 1 つの正規表現で割らない）。
-    const withHidden = [...page.matchAll(/'([^']*\bhidden\b[^']*)'/g)].map((match) => match[1]);
+    // 🔴 ✅ 2026-10-13: `overflow-hidden`（器の角丸で中身を切る指定）は**畳みではない**ので
+    //    除く。`\bhidden\b` は `overflow-hidden` にも当たるため、前が `-` の出現を外す。
+    const withHidden = [...page.matchAll(/'([^']*(?<![-\w])hidden\b[^']*)'/g)].map((match) => match[1]);
     // 走査が空振りしていない（`md` 未満の畳みが現に 2 箇所ある: 一覧の器と会話の器）。
     expect(withHidden).toHaveLength(2);
     for (const classes of withHidden) {
-      expect(classes, `${classes} が md で戻っていません`).toContain('md:block');
+      // 🔴 戻し方は `md:block` でも `md:flex` でもよい（**見えるようになること**が条件であり、
+      //    `display` の値は器の中身が決める）。✅ 2026-10-13: 会話の器は縦 3 段になったので `md:flex`。
+      expect(classes, `${classes} が md で戻っていません`).toMatch(/md:(?:block|flex)\b/);
     }
     // 🔴 一覧の器（選択中）は畳むが `md` で戻る。
-    expect(page).toContain("'hidden md:block md:w-80 md:shrink-0'");
+    expect(page).toContain("'hidden md:block md:w-80 md:shrink-0 md:border-r md:border-border'");
     // 🔴 会話の器（未選択）は `md` 未満では一覧が全幅なので畳む。こちらも `md` で戻る。
-    expect(page).toContain("'hidden min-w-0 flex-1 md:block'");
+    expect(page).toContain("'hidden min-w-0 flex-1 md:flex md:flex-col'");
   });
 
   it('🔴 一覧そのものに `hidden` の表示ユーティリティが無い（部品側で遮断していない）', () => {
@@ -267,26 +270,46 @@ describe('🔴 ③: md 未満は「一覧 → 会話」の切替であって遮�
 
 describe('🔴 ④: 自社 / 相手の弁別は `data-own` と面の色だけ（幅・形で区別しない）', () => {
   it('🔴 2 つの吹き出しのクラスの差が面の色 2 語だけである', () => {
+    // ✅ **2026-10-13: 色が載っている要素が `<li>` から吹き出し（`chat-message-body-*`）に
+    //    移った**（デザインシステム v1.0 §3.12 の Slack 型。行は器を持たず、吹き出しだけが面を持つ）。
+    // 🔴 **見ている内容は 1 つも減らしていない** —— 「差は面の色 1 語ずつだけ」である。
     const html = renderConversation();
-    const own = classTokensOf(html, `chat-message-${MESSAGE_OWN.id}`);
-    const other = classTokensOf(html, `chat-message-${MESSAGE_OTHER.id}`);
+    const own = classTokensOf(html, `chat-message-body-${MESSAGE_OWN.id}`);
+    const other = classTokensOf(html, `chat-message-body-${MESSAGE_OTHER.id}`);
+    expect(own.length, '吹き出しのクラスが 1 つも取れていない（検査の空振り）').toBeGreaterThan(0);
     const onlyOwn = own.filter((token) => !other.includes(token));
     const onlyOther = other.filter((token) => !own.includes(token));
     // 🔴 差は「面の色」1 語ずつ。寸法・角丸・寄せ・余白の差が 1 語でもあれば落ちる。
     expect(onlyOwn).toEqual(['bg-brand-bg']);
     expect(onlyOther).toEqual(['bg-bg-subtle']);
+    // 🔴 行（`<li>`）の側には色が 1 語も無い（面を 2 重に持たない）。
+    for (const id of [MESSAGE_OWN.id, MESSAGE_OTHER.id]) {
+      for (const token of classTokensOf(html, `chat-message-${id}`)) {
+        expect(token, `${id}: 行に面の色が付いている`).not.toMatch(/^bg-/);
+      }
+    }
   });
 
-  it('🔴 どちらの吹き出しにも幅・寄せの語が無い（`ui-screen-width.test.ts` (c) と同じ規律）', () => {
+  it('🔴 吹き出しに寄せの語が無く、幅は自社 / 相手で同じである', () => {
+    // ✅ **2026-10-13: 上限幅（560px）は持つ**（定義書 §3.12）。🔴 **持ってよいのは
+    //    「両方に同じ 1 つ」だけ**であり、差があれば上の検査が落とす。
+    // 🔴 **寄せの語は依然として 1 つも許さない** —— 位置で誰の発言かを表すと、参加会社が
+    //    3 社以上になったときに表しようがなくなる（`chat-conversation.tsx` の 🔴）。
     const html = renderConversation();
     for (const id of [MESSAGE_OWN.id, MESSAGE_OTHER.id]) {
-      const tokens = classTokensOf(html, `chat-message-${id}`);
-      for (const token of tokens) {
-        expect(token, `${id}: ${token} は幅・寄せの指定である`).not.toMatch(
-          /^(w-|max-w-|min-w-\[|ml-auto$|mr-auto$|self-|justify-end$|flex-row-reverse$|text-right$)/,
+      for (const token of classTokensOf(html, `chat-message-body-${id}`)) {
+        expect(token, `${id}: ${token} は寄せの指定である`).not.toMatch(
+          /^(ml-auto$|mr-auto$|self-|justify-end$|flex-row-reverse$|text-right$)/,
         );
       }
     }
+    // 🔴 **画面のソースに `max-w-` のリテラルが無い**（幅の上限は `packages/ui` の定数が持つ。
+    //    `tests/static/ui-screen-width.test.ts` (c) と同じ規律であり、ここでは会話の
+    //    ファイルだけを名指しで見る）。
+    const source = readFileSync(new URL('./chat-conversation.tsx', import.meta.url), 'utf8');
+    // 🔴 クラスとして書かれた `max-w-<値>` が 1 つも無いことを見る（コメント中の `max-w-*` や
+    //    `` `max-w-` `` は値を伴わないので当たらない）。
+    expect(source.match(/max-w-[\w.]+/g) ?? []).toEqual([]);
   });
 
   it('🔴 `data-own` が両方の行に出る（判定を画面が作り直していない）', () => {

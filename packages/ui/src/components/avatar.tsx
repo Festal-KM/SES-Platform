@@ -34,7 +34,21 @@ export type AvatarProps = {
    * ポインタを置いたときの語（氏名）。🔴 **読み上げには出ない**（上の 🔴）。
    */
   readonly title: string;
+  /**
+   * ✅ 2026-10-13（`docs/design-system.md` §4）: 大きさの 3 段。
+   * 🔴 **段の外を作らない。** `sm` = 32（既定。上部バーの 1 段を押し広げない）/
+   *    `md` = 36（チャットのスレッド行・会話・ヘッダ）/ `lg` = 48（関連情報のプロフィール）。
+   */
+  readonly size?: AvatarSize;
   readonly className?: string;
+};
+
+export type AvatarSize = 'sm' | 'md' | 'lg';
+
+const AVATAR_SIZE_CLASSES: Readonly<Record<AvatarSize, string>> = {
+  sm: 'size-8 text-xs',
+  md: 'h-9 w-9 text-body',
+  lg: 'h-12 w-12 text-lg',
 };
 
 /** 🔴 イニシャルの上限（2 文字）。 */
@@ -47,9 +61,9 @@ export const AVATAR_MAX_INITIALS = 2;
  * 🔴 無彩色（§7.4 の 6 系統を人の印に使わない。**brand は「いま進行中」の意味**である）。
  */
 const AVATAR_CLASSES =
-  'inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-bg-inset text-xs font-medium text-fg';
+  'inline-flex shrink-0 items-center justify-center rounded-full bg-brand-bg font-bold text-brand';
 
-export function Avatar({ initials, title, className }: AvatarProps) {
+export function Avatar({ initials, title, size = 'sm', className }: AvatarProps) {
   if (initials.length > AVATAR_MAX_INITIALS) {
     throw new Error(
       `Avatar: initials は ${String(AVATAR_MAX_INITIALS)} 文字までです（渡された値: ${initials}）。氏名からの切り出しは呼び出し側の責務です。`,
@@ -57,7 +71,7 @@ export function Avatar({ initials, title, className }: AvatarProps) {
   }
   return (
     <span
-      className={cn(AVATAR_CLASSES, className)}
+      className={cn(AVATAR_CLASSES, AVATAR_SIZE_CLASSES[size], className)}
       title={title}
       aria-hidden="true"
       data-testid="app-header-avatar"

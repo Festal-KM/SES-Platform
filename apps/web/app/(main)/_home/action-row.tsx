@@ -200,10 +200,13 @@ export function ActionRow({
     <li
       // ✅ **2026-10-13（`docs/design-system.md` §4.1）: 45px の 1 行**にした。
       // 🔴 列は 全画面で同じ —— 件名 `1fr` / 時刻 120 / バッジ 240 / 操作 146 / 内容を見る 24。
-      // 🔴 **`lg` 未満では件名が自分の行を取る**（`basis-full`）。切り詰めると対象の末尾が読めず、
-      //    触端末ではツールチップを開けない（`CLAUDE.md` §13.3「判断材料を隠さない」）。
+      // 🔴 **`2xl` 未満では折り返す**（件名が自分の行を取る）。🔴 ✅ **2026-10-13 に `lg` から
+      //    `2xl` へ上げた** —— 1280px の実測で、固定列（120 + 280 + 146 + 32 + 余白）が主カラム
+      //    （624px）を 158px 超え、**行がカードの外へはみ出して右レールの下に潜っていた**。
+      //    `内容を見る` のボタンがレールに覆われ、E2E の `click()` が 120 秒待って落ちた
+      //    （`HANDOFF.md` §6 の 22）。🔴 **1 行に収めるのは、収まる幅のときだけである。**
       // 🔴 左端 2px は「期限が近い / 放置が長い」の印である（`data-urgent` と対。残す）。
-      className={`flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border-row px-4 py-2 lg:flex-nowrap lg:py-0 ${ROW_HOVER_CLASSES} ${ROW_HEIGHT_CLASS} ${
+      className={`flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border-row px-4 py-2 2xl:flex-nowrap 2xl:py-0 ${ROW_HOVER_CLASSES} ${ROW_HEIGHT_CLASS} ${
         urgent ? 'border-l-2 border-l-warning' : 'border-l-2 border-l-transparent'
       }`}
       data-testid={`home-action-queue-row-${row.targetId}`}
@@ -214,7 +217,7 @@ export function ActionRow({
     >
       {/* 件名（1fr）。🔴 **行の主題は 15 / 500、相手は 13**（`docs/design-system.md` §3.2）——
           45px に 2 段を収めるので、2 つの段の差が 1px しか無いと 1 かたまりに見える。 */}
-      <span className="order-first min-w-0 basis-full lg:order-none lg:flex-1 lg:basis-auto">
+      <span className="order-first min-w-0 basis-full 2xl:order-none 2xl:flex-1 2xl:basis-auto">
         <Link
           href={row.href}
           title={row.subjectLabel}
