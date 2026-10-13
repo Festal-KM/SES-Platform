@@ -73,6 +73,10 @@
 
 **https://web-production-9a8f44.up.railway.app**（`APP_ENV=demo`。🔴 外部 API は 6 つとも全モック）
 
+🔴 **デモの seed にチャットのスレッドが 0 件で、`tests/e2e/` にもチャットの spec が 1 つも無い。**
+したがって **`S-031` とホームの `メッセージ` タブは、実データで 1 度も確かめられていない**。
+画面が壊れても誰も気づかない状態である（`docs/sprints/SP-22-ui-overhaul.md` §12.8 の残り）。
+
 | 用途 | アカウント | 2FA |
 |---|---|---|
 | まず画面を見る | `sales-1@demo-alpha.example` | 不要 |
