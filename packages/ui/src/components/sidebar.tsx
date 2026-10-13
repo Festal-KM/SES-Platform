@@ -505,10 +505,14 @@ const SIDEBAR_ITEM_BASE_CLASSES = cn(
  *    幅を足すと**広げた形態の 184 × 46**（`docs/design-system.md` §4）が動く。
  * 🔴 **4 クラスの規則**（ファイル冒頭の 🔴）で書く。`xl` 以上と未満で**既定の形態が逆**なので、
  *    `justify-*` と `px-*` の両方を 4 状態ぶん書かないと、どちらかの幅で必ず崩れる。
+ * ⚠️ **広げた形態の右の padding は 8px**（`pr-2`）である。`docs/design-system.md` §4 が定めて
+ *    いるのは **`padding-left: 16`** だけであり、右を 16 にすると
+ *    **`Phase 2` Badge を持つ項目（`お知らせ`）で語が `お知...` に切れる**（実測）。
+ *    語はナビの主役なので、**余白のほうを詰める。**
  */
 const SIDEBAR_RAIL_ITEM_CLASSES =
-  'justify-center group-has-checked:justify-start group-has-checked:px-4 ' +
-  'xl:justify-start xl:px-4 xl:group-has-checked:justify-center xl:group-has-checked:px-0';
+  'justify-center group-has-checked:justify-start group-has-checked:pl-4 group-has-checked:pr-2 ' +
+  'xl:justify-start xl:pl-4 xl:pr-2 xl:group-has-checked:justify-center xl:group-has-checked:px-0';
 /**
  * 1 項目のリンク。
  *
@@ -671,6 +675,10 @@ function ItemMarks({ item, variant }: { readonly item: SidebarItem; readonly var
       {item.phase === null ? null : (
         <Badge
           variant="neutral"
+          // 🔴 **柱では左右の余白を詰める**（既定は `px-3`）。柱の 1 行は 184px しか無く、
+          //    既定のままだと `Phase 2` が **`お知らせ` の語を `お知...` に押し潰す**（実測）。
+          //    ⚠️ 変えているのは余白だけで、**色（無彩色）と語は 1 実装のまま**である。
+          className={variant === 'sidebar' ? 'px-2' : undefined}
           data-testid={variant === 'sidebar' ? `app-nav-phase-${item.id}` : `app-more-nav-phase-${item.id}`}
         >
           {item.phase}
