@@ -92,7 +92,9 @@ export const TITLE_BLOCK_MIN_HEIGHT_CLASS = 'min-h-16';
  *    **列ごと詰める**（空の列を空けておくと、再開したときに幅を測り直すことになる）。
  */
 export const ROW_META_WIDTH_CLASS = 'w-30';
-export const ROW_BADGE_WIDTH_CLASS = 'w-45';
+// 🔴 ✅ 2026-10-13 の実測で 240 → **280** にした。1672px の実機で 種別 + 優先度 + 状態 の 3 つが
+//    1 行に収まらず、**行が 45 → 55px に伸びていた**（`docs/design-system.md` §6 ⑥）。
+export const ROW_BADGE_WIDTH_CLASS = 'w-70';
 export const ROW_ACTION_WIDTH_CLASS = 'w-36.5';
 export const ROW_ACTION_HEIGHT_CLASS = 'h-8';
 

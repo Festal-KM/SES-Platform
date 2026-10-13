@@ -128,7 +128,9 @@ const VALUE_CLASSES = 'text-metric font-bold text-fg tabular-nums';
 /** 単位は数の隣に baseline を揃えて置く（15 / 500。数が主役であることを崩さない）。 */
 const UNIT_CLASSES = 'text-row font-medium text-fg';
 /** ラベルは 14 / `--text-2`、差分は 13 / 500（デザインシステム v1.0 §3.4）。 */
-const LABEL_CLASSES = 'text-body text-fg-muted';
+// 🔴 行間は 18px（`leading-4.5`）。本文の既定（1.6 = 22.4px）のままだと器が 114px になり、
+//    仕様の 105px を 9px 超える（2026-10-13 の実機の実測）。
+const LABEL_CLASSES = 'text-body leading-4.5 text-fg-muted';
 const DELTA_CLASSES = 'text-cell font-medium text-fg-muted tabular-nums';
 
 /**

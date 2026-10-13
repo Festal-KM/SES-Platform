@@ -240,6 +240,15 @@ export function ActionRow({
       >
         {time}
       </span>
+      {/* 期限。🔴 時刻の列（残り / 経過）と役割が違う（こちらは**いつか**）。狭い画面では畳む。
+          🔴 ✅ 2026-10-13: **バッジの前に移した** —— 操作の列の `—`（操作が無い行）と横に並び、
+             実機で 2 つの `—` が「壊れている」ように見えた（2026-10-13 の実測）。 */}
+      <span
+        className={`shrink-0 whitespace-nowrap text-cell ${overdue ? 'text-warning' : 'text-fg-muted'} ${COLUMN_XL_CLASSES}`}
+        data-testid={`home-action-queue-deadline-${row.targetId}`}
+      >
+        {row.deadline === null ? messages.valueNone : formatDateTimeJst(row.deadline)}
+      </span>
       {/* バッジ（240）。🔴 **仕様書の 180 から広げている** —— モックは 1 行に 1 つだが、本実装は
           種別（何をすべきか）/ 優先度 / 状態（いまどこか）の 2〜3 つを出す（`docs/04` §4.1）。
           180 のままだと 13px のバッジが 2 行に折り返し、45px の刻みが崩れる。 */}
@@ -285,13 +294,6 @@ export function ActionRow({
             )}
           </span>
         )}
-      </span>
-      {/* 期限。🔴 時刻の列（残り / 経過）と役割が違う（こちらは**いつか**）。狭い画面では畳む。 */}
-      <span
-        className={`shrink-0 whitespace-nowrap text-cell ${overdue ? 'text-warning' : 'text-fg-muted'} ${COLUMN_XL_CLASSES}`}
-        data-testid={`home-action-queue-deadline-${row.targetId}`}
-      >
-        {row.deadline === null ? messages.valueNone : formatDateTimeJst(row.deadline)}
       </span>
       {/* 操作（146 × 32）。🔴 **行内の操作は 1 パターンだけ**（`docs/design-system.md` §5-4）。 */}
       <span className={`flex shrink-0 justify-start ${ROW_ACTION_WIDTH_CLASS}`}>
