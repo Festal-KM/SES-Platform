@@ -3,3 +3,4 @@
 /apps/web/app/(main)/chat/          @akonno-ux
 /apps/web/app/api/(main)/threads/   @akonno-ux
 /apps/web/lib/chat/                 @akonno-ux
+/docs/chat-lane/                    @akonno-ux
