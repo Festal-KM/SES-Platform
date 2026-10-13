@@ -63,6 +63,7 @@
 import { createElement } from 'react';
 import {
   Archive,
+  Bell,
   BookOpen,
   Briefcase,
   Building2,
@@ -120,6 +121,10 @@ export const ICONS = {
   mail: Mail, // S-036 送信ドメインの設定と検証
   archive: Archive, // S-042 データの返却と保持期間
   'scroll-text': ScrollText, // S-041 監査ログ（自テナント）
+  // ✅ 2026-10-13: サイドバーの `その他` 群の `お知らせ`（`F-039` / `S-032`。Phase 2）。
+  // 🔴 **条文 4「全項目に Lucide アイコン」の要請**であって、装飾として足したのではない。
+  // 🔴 **比喩ではない**（ベル = 通知）。🔴 **他の意味で使い回さない**（警告・エラーには使わない）。
+  bell: Bell,
   // ── §7.5 の許可①（テキストなしで意味が通る操作。上の (1)）
   'panel-left': PanelLeft,
   menu: Menu,

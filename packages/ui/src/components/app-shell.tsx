@@ -62,6 +62,7 @@ import {
 import {
   Sidebar,
   SidebarNavList,
+  type SidebarAccount,
   type SidebarBrand,
   type SidebarGroup,
   type SidebarLabels,
@@ -94,6 +95,11 @@ export type AppShellProps = {
    * 🔴 **製品名の置き場所がヘッダからサイドバーの上端へ移った**（`U-01` の「1 箇所だけ」は不変）。
    */
   readonly brand?: SidebarBrand | null;
+  /**
+   * サイドバーの最下部に出す本人（✅ 2026-10-13。人間の指示）。
+   * 🔴 **`null` なら描かない**（管理平面は別の外枠であり、運営者の本人表示はそちらが持つ）。
+   */
+  readonly account?: SidebarAccount | null;
   /** Top Header の要素（`./top-bar.tsx`）。 */
   readonly header: TopBarProps;
   /** サイドバーと「その他」に出す群と項目（🔴 **同じ 1 本**）。 */
@@ -230,6 +236,7 @@ function BottomTabEntry({
 
 export function AppShell({
   brand = null,
+  account = null,
   header,
   groups,
   currentPath,
@@ -251,6 +258,7 @@ export function AppShell({
       {/* 🔴 サイドバー（左固定・画面下端まで）。`md:` 未満ではボトムタブに置き換わる（§3.4）。 */}
       <Sidebar
         brand={brand}
+        account={account}
         groups={groups}
         currentPath={currentPath}
         labels={navLabels}

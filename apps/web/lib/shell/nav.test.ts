@@ -81,6 +81,11 @@ const PARTNER_ROLES: readonly TenantRole[] = ['PARTNER_ADMIN', 'PARTNER_SALES'];
  *
  * 🔴 **画像は群の見出しを持たない 6 項目だった**（`ホーム` / `チャット` / `人材管理` / `案件管理` /
  *    `レポート` / `設定`）。並びも画像のままである。
+ * ✅ **2026-10-13（人間の指示 + 新しいモックアップ）: 2 群になった** —— 上段（群名なし）は
+ *    `ホーム` / `チャット` / `人材管理` / `案件管理`、下段は **`その他`**（上に罫線）で
+ *    `お知らせ` / `設定`。🔴 **`お知らせ` は `Phase 2` の印を持つ `UNAVAILABLE`** である
+ *    （`F-039` / `S-032` の画面がまだ無い）。
+ * ⚠️ **モックアップの `ヘルプ` は置いていない**（中身の出所が 1 つも無い。`nav.ts` の ⚠️）。
  * ✅ **2026-10-04（人間の明示指示「サイドメニューのレポートは非表示にして」）: `レポート` を外し、
  *    5 項目になった。** 🔴 **文言キー（`shell.nav.host.reports` / `shell.nav.partner.reports`）は
  *    消していない**（`U-22` の凍結。Phase 3 で戻すときに同じ語を使う）。
@@ -99,6 +104,8 @@ const MOCKUP_SIDEBAR = {
     ['chat', 'shell.nav.chat', 'message-square', null],
     ['engineers', 'shell.nav.host.engineers', 'users', null],
     ['projects', 'shell.nav.host.projects', 'briefcase', null],
+    // ✅ 2026-10-13: ここから下段（`その他` 群）。
+    ['notifications', 'shell.nav.notifications', 'bell', 'Phase 2'],
     ['settings', 'shell.nav.host.settings', 'settings', null],
   ],
   PARTNER: [
@@ -106,6 +113,8 @@ const MOCKUP_SIDEBAR = {
     ['chat', 'shell.nav.chat', 'message-square', null],
     ['engineers', 'shell.nav.partner.engineers', 'users', null],
     ['projects', 'shell.nav.partner.projects', 'briefcase', null],
+    // ✅ 2026-10-13: ここから下段（`その他` 群）。
+    ['notifications', 'shell.nav.notifications', 'bell', 'Phase 2'],
     ['settings', 'shell.nav.partner.settings', 'settings', null],
   ],
 } as const satisfies Readonly<
@@ -168,29 +177,35 @@ describe('対照: 走査が空振りしていない', () => {
   });
 });
 
-describe('🔴 ① サイドバーがモックアップどおり 5 項目のフラットである（2026-10-03 / 10-04）', () => {
-  it.each(['HOST', 'PARTNER'] as const)('%s: 群は 1 つで、見出しを持たない', (audience) => {
+describe('🔴 ① サイドバーがモックアップどおり 2 群である（2026-10-03 / 10-04 / 10-13）', () => {
+  it.each(['HOST', 'PARTNER'] as const)('%s: 群は 2 つで、下段だけが見出しと罫線を持つ', (audience) => {
     const groups = buildMainNav({ audience, role: audience === 'HOST' ? 'OWNER' : 'PARTNER_ADMIN' });
-    expect(groups.map((group) => [group.id, group.labelKey])).toEqual([['primary', null]]);
+    // 🔴 **罫線を引くのは下段だけ**である（`divided`）。既定は「余白で区切る」のままであり、
+    //    群が増えるたびに線が増えないよう、**線を引く群を呼び出し側が明示する**。
+    expect(groups.map((group) => [group.id, group.labelKey, group.divided ?? false])).toEqual([
+      ['primary', null, false],
+      ['other', 'shell.nav.group.other', true],
+    ]);
   });
 
   it.each(['HOST', 'PARTNER'] as const)(
-    '%s: 項目の並び・labelKey・アイコン名・Badge の有無が表どおり（5 項目。足していない / 落としていない）',
+    '%s: 項目の並び・labelKey・アイコン名・Badge の有無が表どおり（6 項目。足していない / 落としていない）',
     (audience) => {
       const groups = buildMainNav({ audience, role: audience === 'HOST' ? 'OWNER' : 'PARTNER_ADMIN' });
       expect(sidebarTableOf(groups)).toEqual(MOCKUP_SIDEBAR[audience].map((row) => [...row]));
     },
   );
 
-  it.each([...HOST_ROLES, ...PARTNER_ROLES])('%s: ロールでサイドバーの 5 項目が増減しない', (role) => {
+  it.each([...HOST_ROLES, ...PARTNER_ROLES])('%s: ロールでサイドバーの 6 項目が増減しない', (role) => {
     const audience = PARTNER_ROLES.includes(role) ? 'PARTNER' : 'HOST';
-    // 🔴 出し分けは**第 2 階層**（タブと索引）が持つ。サイドバーの 5 項目は全ロール共通である
+    // 🔴 出し分けは**第 2 階層**（タブと索引）が持つ。サイドバーの 6 項目は全ロール共通である
     //    （`設定` は全ロールが開ける索引であり、中身がロールで変わる）。
     expect(navItems(buildMainNav({ audience, role })).map((item) => item.id)).toEqual([
       'home',
       'chat',
       'engineers',
       'projects',
+      'notifications',
       'settings',
     ]);
   });
@@ -214,15 +229,18 @@ describe('🔴 ① サイドバーがモックアップどおり 5 項目のフ�
     for (const item of navItems(groups)) {
       if (item.phaseKey !== null) expect(item.reach.kind, item.id).toBe('UNAVAILABLE');
     }
-    // ✅ 2026-10-05: 実際に `Phase N` を持つ項目は 0 件になった（上の不変条件は保たれている）。
-    expect(navItems(groups).filter((item) => item.phaseKey !== null)).toEqual([]);
+    // ✅ 2026-10-13: `Phase N` を持つのは `お知らせ` の 1 件だけである（上の不変条件のとおり
+    //    それは `UNAVAILABLE` でもある）。
+    expect(navItems(groups).filter((item) => item.phaseKey !== null).map((item) => item.id)).toEqual([
+      'notifications',
+    ]);
   });
 
-  it('🔴 ✅ 2026-10-05: 未実装の項目は 1 つも無い（`チャット` を実装した）', () => {
+  it('🔴 ✅ 2026-10-13: 未実装の項目は `お知らせ` の 1 つだけ（`チャット` は実装済み）', () => {
     const unavailable = navItems(buildMainNav({ audience: 'HOST', role: 'OWNER' })).filter(
       (item) => item.reach.kind === 'UNAVAILABLE',
     );
-    expect(unavailable.map((item) => item.id)).toEqual([]);
+    expect(unavailable.map((item) => item.id)).toEqual(['notifications']);
     // 🔴 `チャット` は `/chat` を指すリンクになった（`Phase N` の印も注記も持たない）。
     const chat = navItems(buildMainNav({ audience: 'HOST', role: 'OWNER' })).find((item) => item.id === 'chat');
     expect(chat?.reach).toEqual({ kind: 'LINK', href: '/chat' });

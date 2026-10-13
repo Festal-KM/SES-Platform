@@ -72,6 +72,7 @@
 //    付ける（`SIDEBAR_SHELL_CLASSES`）。外枠のルートに付けると、**本文のフォームのチェックボックス
 //    1 つでサイドバーの形が変わる**（`S-013` の公開範囲のチェックボックスが実例になる）。
 import type { ComponentType, ReactNode } from 'react';
+import { Avatar } from './avatar.js';
 import { Badge } from './badge.js';
 import { Icon, type IconName } from '../icons.js';
 import { cn } from '../lib/cn.js';
@@ -208,7 +209,37 @@ export type SidebarGroup = {
   readonly id: string;
   /** 群名。🔴 `null` = 群名なし（最上段のホーム）。 */
   readonly label: string | null;
+  /**
+   * 🔴 **この群の上に罫線を引く**（✅ 2026-10-13。人間の指示「区切り線を入れる」）。
+   *
+   * ⚠️ 既定は `false`（= 条文 3 の「区切りは余白」のまま）。**線を引くかどうかを群ごとに
+   *    呼び出し側が明示する**ことで、群が増えるたびに線が増えるのを止めている
+   *    （`SIDEBAR_GROUP_DIVIDED_CLASSES` の ⚠️）。
+   */
+  readonly divided?: boolean;
   readonly items: readonly SidebarItem[];
+};
+
+/**
+ * サイドバーの最下部に出す**サインインしている本人**（✅ 2026-10-13。人間の指示
+ * 「サイドバー最下部にログインアカウントを表示させる」）。
+ *
+ * 🔴 **自分の所属と自分の氏名だけである。** 他社の名前も、他の利用者の名前も出ない
+ *    （`CLAUDE.md` §3.1 の第二境界。ここは「いまどの立場で見ているか」の常時表示であり、
+ *    `docs/04` §3.2 のスコープ表示と同じ役割を柱の側で担う）。
+ * 🔴 **ロール名は持たない** —— 上部バーの「自分」メニューが氏名 + ロールを持っており、
+ *    **同じことを 2 箇所で違う粒度で書かない**（ロールは「なぜこの操作ができないか」の
+ *    一次説明なので、操作の在る側 = ヘッダのメニューに置いたままにする）。
+ * 🔴 **押せない。** サインアウト等の操作は上部バーのメニューが 1 箇所で持つ
+ *    （`Sidebar` は `'use client'` を持てないので、ここにメニューは置けない）。
+ */
+export type SidebarAccount = {
+  /** 所属（組織名）。 */
+  readonly organizationName: string;
+  /** 氏名。 */
+  readonly userName: string;
+  /** 🔴 **解決済みのイニシャル 1〜2 文字**（切り出しは呼び出し側。`./avatar.tsx` の 🔴）。 */
+  readonly initials: string;
 };
 
 /** サイドバーと「その他」は**同じ項目表**を描くので、`data-testid` の接頭辞を分ける。 */
@@ -366,14 +397,25 @@ const SIDEBAR_HEAD_ROW_CLASSES = cn('flex items-center gap-2 px-3', HEADER_HEIGH
 const SIDEBAR_BRAND_LINK_CLASSES = cn('min-w-0 rounded-sm', FOCUS_RING_CLASSES);
 
 /**
- * 下端（版表記）。🔴 アイコンのみの形態では畳む。
+ * 下端（版表記 + 本人）。
  * ✅ **2026-10-13: メッセージの箱（`可能性を、もっとシンプルに。`）を外した**（人間の指示
  *    「サイドバーの下の『可能性を、もっとシンプルに。』ってパーツはいらない」）。
  *    ⚠️ 文言キー `shell.sidebar.note` / `shell.sidebar.tagline` は**カタログに残す**
  *    （`tests/static/i18n-key-freeze.test.ts`: 追加は可、改名と削除は不可）。
+ * 🔴 **器そのものは畳んだ形態でも畳まない**（アバターは 56px の柱にも入る）。畳むのは
+ *    版の行と氏名・所属の語だけである。
  */
-const SIDEBAR_FOOT_CLASSES = 'mt-auto px-3 pt-4';
-const SIDEBAR_FOOT_VERSION_CLASSES = 'm-0 text-cell text-sidebar-fg-muted';
+const SIDEBAR_FOOT_CLASSES = 'mt-auto pt-6';
+const SIDEBAR_FOOT_VERSION_CLASSES = 'm-0 px-3 pb-2 text-cell text-sidebar-fg-muted';
+/**
+ * 本人の箱（`SidebarAccount`）。🔴 **上に罫線**（人間のモックアップ）。
+ * 🔴 `px-3` は群と同じ値なので、**畳んだ柱ではアバター（32px）がちょうど中央に来る**
+ *    （56 − 12 × 2 = 32）。
+ */
+const SIDEBAR_ACCOUNT_CLASSES = 'flex flex-col gap-1 border-t border-sidebar-border px-3 pt-3';
+const SIDEBAR_ACCOUNT_ORG_CLASSES = 'm-0 truncate text-micro text-sidebar-fg-muted';
+const SIDEBAR_ACCOUNT_ROW_CLASSES = 'flex items-center gap-2';
+const SIDEBAR_ACCOUNT_NAME_CLASSES = 'min-w-0 truncate text-row text-sidebar-fg';
 
 /**
  * 開閉トグルの見た目。
@@ -403,6 +445,22 @@ const SIDEBAR_TOGGLE_CLASSES = cn(
  */
 const SIDEBAR_GROUP_CLASSES = 'flex flex-col gap-1.5 px-3';
 const SIDEBAR_GROUP_SPACED_CLASSES = 'mt-7 flex flex-col gap-1.5 px-3';
+/**
+ * 🔴 **罫線で区切る群**（✅ 2026-10-13。人間の指示「区切り線を入れる。その他と入れる」）。
+ *
+ * ⚠️ **この部品の条文 3 は「区切りは線ではなく余白 + 小さな群名で表す」である。** 人間が
+ *    モックアップ付きで線を指示したので**その 1 箇所だけ**例外にする。🔴 **既定を変えたのでは
+ *    ない** —— 群が増えるたびに線を足すと、条文が守ろうとしていた「罫線で画面を分割しない」が
+ *    崩れる。線を引くかどうかは**呼び出し側が群ごとに明示する**（`SidebarGroup.divided`）。
+ * 🔴 **面ごとに色が違う**（濃色の柱 = `--color-sidebar-border` / 白地の「その他」= `--color-border`）。
+ *    濃色側の線を白地に出すと黒い罫線になる。
+ * ⚠️ `--color-sidebar-border` は 3:1 を満たさない（`design-tokens.test.ts` が事実として固定して
+ *    いる）。**区切りは装飾であって情報ではない**（情報は群名が持つ）ので、これでよい。
+ */
+const SIDEBAR_GROUP_DIVIDED_CLASSES: Readonly<Record<SidebarVariant, string>> = {
+  sidebar: 'mt-5 flex flex-col gap-1.5 border-t border-sidebar-border px-3 pt-5',
+  more: 'mt-5 flex flex-col gap-1.5 border-t border-border px-3 pt-5',
+};
 
 /**
  * 群名。🔴 **`--text-micro` + 補助色**（§7.3 の最小段）。
@@ -430,9 +488,27 @@ const SIDEBAR_GROUP_LABEL_CLASSES: Readonly<Record<SidebarVariant, string>> = {
 const SIDEBAR_ITEM_BASE_CLASSES = cn(
   // ✅ **2026-10-13（`docs/design-system.md` §4）: 184 × 46 / radius 8 / padding-left 16 /
   //    アイコン↔語 gap 12 / 語 15・500。** 幅は「サイドバー 208 − 群の左右 margin 12 × 2」。
-  `flex items-center gap-3 rounded-md px-4 text-row font-medium ${SIDEBAR_NAV_ITEM_HEIGHT_CLASS}`,
+  // 🔴 **左右の padding はここに置かない**（下の `SIDEBAR_RAIL_ITEM_CLASSES` / `more` 側が持つ）。
+  `flex items-center gap-3 rounded-md text-row font-medium ${SIDEBAR_NAV_ITEM_HEIGHT_CLASS}`,
   TRANSITION_CLASSES,
 );
+
+/**
+ * 🔴 **畳んだ形態では項目を中央に寄せる**（✅ 2026-10-13。人間の指摘「サイドバーを閉じたときの
+ * ハイライト位置がずれている。ハイライトが左に寄ってるように見える」）。
+ *
+ * 🔴 **原因は `padding-left: 16px` が形態によらず効いていたことである。** 畳んだ柱（56px）では
+ *    群の左右 12px を引いた **32px が項目の幅**になるが、そこに `px-4`（左右 16px）が当たるため
+ *    **アイコン（16px）は項目の右端に押し出され**、ハイライトの箱だけが左に 16px はみ出して
+ *    見えていた（実測: 柱 0–56 / 箱 12–44 / アイコン 28–44 ＝ 柱の中心 28 に対して +8 ずれ）。
+ * 🔴 **直し方は「右に幅を足す」ではなく「畳んだときは padding を外して中央寄せ」**である ——
+ *    幅を足すと**広げた形態の 184 × 46**（`docs/design-system.md` §4）が動く。
+ * 🔴 **4 クラスの規則**（ファイル冒頭の 🔴）で書く。`xl` 以上と未満で**既定の形態が逆**なので、
+ *    `justify-*` と `px-*` の両方を 4 状態ぶん書かないと、どちらかの幅で必ず崩れる。
+ */
+const SIDEBAR_RAIL_ITEM_CLASSES =
+  'justify-center group-has-checked:justify-start group-has-checked:px-4 ' +
+  'xl:justify-start xl:px-4 xl:group-has-checked:justify-center xl:group-has-checked:px-0';
 /**
  * 1 項目のリンク。
  *
@@ -446,13 +522,19 @@ const SIDEBAR_ITEM_BASE_CLASSES = cn(
  *    「押せたかどうか」は遷移そのものが返す。
  */
 const SIDEBAR_LINK_CLASSES: Readonly<Record<SidebarVariant, string>> = {
-  sidebar: cn(SIDEBAR_ITEM_BASE_CLASSES, 'text-sidebar-fg hover:bg-sidebar-hover-bg', FOCUS_RING_CLASSES),
-  more: cn(SIDEBAR_ITEM_BASE_CLASSES, 'text-fg hover:bg-bg-subtle active:bg-bg-inset', FOCUS_RING_CLASSES),
+  sidebar: cn(
+    SIDEBAR_ITEM_BASE_CLASSES,
+    SIDEBAR_RAIL_ITEM_CLASSES,
+    'text-sidebar-fg hover:bg-sidebar-hover-bg',
+    FOCUS_RING_CLASSES,
+  ),
+  // 🔴 「その他」のパネルは**常に広げた形**なので、左右 16px を素のまま持つ。
+  more: cn(SIDEBAR_ITEM_BASE_CLASSES, 'px-4 text-fg hover:bg-bg-subtle active:bg-bg-inset', FOCUS_RING_CLASSES),
 };
 /** 🔴 未実装の項目（`<span>`）。押せないので hover を持たない。 */
 const SIDEBAR_UNAVAILABLE_CLASSES: Readonly<Record<SidebarVariant, string>> = {
-  sidebar: cn(SIDEBAR_ITEM_BASE_CLASSES, 'text-sidebar-fg-muted'),
-  more: cn(SIDEBAR_ITEM_BASE_CLASSES, 'text-fg-muted'),
+  sidebar: cn(SIDEBAR_ITEM_BASE_CLASSES, SIDEBAR_RAIL_ITEM_CLASSES, 'text-sidebar-fg-muted'),
+  more: cn(SIDEBAR_ITEM_BASE_CLASSES, 'px-4 text-fg-muted'),
 };
 /**
  * 🔴 現在地 = 背景 + 文字色の **2 点**（§7.10 の selected）。**太字だけで示さない。**
@@ -715,7 +797,13 @@ export function SidebarNavList({
       {groups.map((group, index) => (
         <div
           key={group.id}
-          className={index === 0 ? SIDEBAR_GROUP_CLASSES : SIDEBAR_GROUP_SPACED_CLASSES}
+          className={
+            index === 0
+              ? SIDEBAR_GROUP_CLASSES
+              : group.divided === true
+                ? SIDEBAR_GROUP_DIVIDED_CLASSES[variant]
+                : SIDEBAR_GROUP_SPACED_CLASSES
+          }
           data-sidebar-group={group.id}
         >
           {group.label === null ? null : (
@@ -749,6 +837,8 @@ export type SidebarProps = {
    *    あり、デザインシステム v1.0 の射程外である（運営者の画面に製品のタグラインは要らない）。
    */
   readonly brand?: SidebarBrand | null;
+  /** 🔴 **`null` なら本人の箱を描かない**（`SidebarAccount` の 🔴）。 */
+  readonly account?: SidebarAccount | null;
   readonly groups: readonly SidebarGroup[];
   /**
    * **初回描画（水和前）の現在地**（🔴 `next/navigation` を使わない。`docs/05` §2.3.1）。
@@ -761,6 +851,7 @@ export type SidebarProps = {
 
 export function Sidebar({
   brand = null,
+  account = null,
   groups,
   currentPath,
   labels,
@@ -811,13 +902,34 @@ export function Sidebar({
           currentPath={currentPath}
           linkComponent={BrandLink}
         />
-        {/* 🔴 下端（§3.1）= 版表記だけ。アイコンのみの形態では畳む（56px の柱に版の行は入らない）。 */}
-        {brand === null ? null : (
-          <div
-            className={cn(SIDEBAR_FOOT_CLASSES, SIDEBAR_EXPANDED_ONLY_CLASSES)}
-            data-testid="app-sidebar-foot"
-          >
-            <p className={SIDEBAR_FOOT_VERSION_CLASSES}>{brand.version}</p>
+        {/* 🔴 下端（§3.1）= 版 + 本人。版と語は畳んだ形態で消え、**アバターだけが残る**。 */}
+        {brand === null && account === null ? null : (
+          <div className={SIDEBAR_FOOT_CLASSES} data-testid="app-sidebar-foot">
+            {brand === null ? null : (
+              <p className={cn(SIDEBAR_FOOT_VERSION_CLASSES, SIDEBAR_EXPANDED_ONLY_CLASSES)}>
+                {brand.version}
+              </p>
+            )}
+            {account === null ? null : (
+              <div className={SIDEBAR_ACCOUNT_CLASSES} data-testid="app-sidebar-account">
+                {/* 🔴 所属は補助色の 1 行（`docs/04` §3.2 のスコープ表示と同じ役割）。 */}
+                <p className={cn(SIDEBAR_ACCOUNT_ORG_CLASSES, SIDEBAR_EXPANDED_ONLY_CLASSES)}>
+                  {account.organizationName}
+                </p>
+                <div className={SIDEBAR_ACCOUNT_ROW_CLASSES}>
+                  {/* 🔴 `Avatar` は `aria-hidden` の装飾である（読み上げは隣の氏名が持つ）。 */}
+                  <Avatar initials={account.initials} title={account.userName} />
+                  <span className={cn(SIDEBAR_ACCOUNT_NAME_CLASSES, SIDEBAR_EXPANDED_ONLY_CLASSES)}>
+                    {account.userName}
+                  </span>
+                  {/* 🔴 畳んだ形態では語が `display:none` になり**読み上げからも消える**ので、
+                      消えない写しを置く（項目のラベルと同じ理由。この部品の 🔴）。 */}
+                  <span className={cn('sr-only', SIDEBAR_ICON_ONLY_CLASSES)}>
+                    {account.organizationName} {account.userName}
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </nav>

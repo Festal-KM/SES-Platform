@@ -212,6 +212,15 @@ export function MainShell({
         version: APP_VERSION_LABEL,
         homeHref: '/',
       }}
+      // ✅ 2026-10-13（人間の指示「サイドバー最下部にログインアカウントを表示させる」）。
+      // 🔴 **自分の所属と自分の氏名だけ**である（`packages/ui` の `SidebarAccount` の 🔴）。
+      // 🔴 **ロール名はここに出さない** —— 上部バーの「自分」メニューが氏名 + ロールを持つ
+      //    （ロールは「なぜこの操作ができないか」の一次説明なので、操作の在る側に置く）。
+      account={{
+        organizationName,
+        userName,
+        initials: accountInitials(userName),
+      }}
       header={{
         // 🔴 検索は**既存の検索画面**（`S-005` = 複合検索を持つ人材一覧）へ遷移する
         //    （横断検索は存在しない。§3.1 の ③「動かない検索窓を置かない」）。

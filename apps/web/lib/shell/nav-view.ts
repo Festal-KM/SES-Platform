@@ -55,6 +55,8 @@ export function resolveNavGroups(groups: readonly NavGroup[]): readonly SidebarG
   return groups.map((group) => ({
     id: group.id,
     label: group.labelKey === null ? null : t(group.labelKey),
+    // 🔴 区切り線を引くかどうかは `./nav.ts` が決める（ここは写すだけ。冒頭の 🔴）。
+    divided: group.divided,
     items: group.items.map(resolveItem),
   }));
 }

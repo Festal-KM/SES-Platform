@@ -382,15 +382,27 @@ describe('🔴 サイドバー（モックアップの 5 項目 / §7.5 ③ ア�
     expect(partnerMarkup()).not.toContain('href="/engineer-shares"');
   });
 
-  it('🔴 ③ ✅ 2026-10-05: 未実装の項目が 1 つも無い（`チャット` を実装した）', () => {
+  it('🔴 ③ ✅ 2026-10-13: 未実装の項目は `お知らせ` の 1 つだけで、押せない形で描かれる', () => {
     const html = render();
     const sidebar = sidebarOf(html);
-    // 🔴 `aria-disabled` の項目（押せない項目）が柱に 1 つも無い。
-    expect(sidebar).not.toContain('aria-disabled="true"');
-    // 🔴 `Phase N` Badge の testid も 1 つも出ない（語も出ない）。
-    expect(sidebar).not.toContain('data-testid="app-nav-phase-');
-    expect(sidebar).not.toContain(t('shell.nav.note.phase2'));
+    // 🔴 **押せない項目は `<a>` にしない**（404 を作らない）。`お知らせ`（`F-039` / `S-032`）は
+    //    Phase 2 で画面が無いので `<span aria-disabled>` + 無彩色の `Phase 2` Badge で描く。
+    expect((sidebar.match(/aria-disabled="true"/g) ?? []).length).toBe(1);
+    // 🔴 **要素そのものを取り出して見る**（`not.toContain('...[^>]*href')` のような
+    //    「正規表現のつもりの文字列」は**必ず真になる**ので、検査になっていない）。
+    const notifications = /<[a-z]+[^>]*data-testid="app-nav-notifications"[^>]*>/.exec(sidebar)?.[0] ?? '';
+    expect(notifications, 'お知らせの要素が柱に無い').not.toBe('');
+    expect(notifications.startsWith('<span ')).toBe(true);
+    expect(notifications).toContain('aria-disabled="true"');
+    expect(notifications).not.toContain('href');
+    // 🔴 `Phase N` Badge もその 1 件だけである。
+    expect((sidebar.match(/data-testid="app-nav-phase-/g) ?? []).length).toBe(1);
+    expect(sidebar).toContain('data-testid="app-nav-phase-notifications"');
+    expect(sidebar).toContain(t('shell.nav.note.phase2'));
     expect(sidebar).not.toContain(t('shell.nav.note.phase3'));
+    // 🔴 **未読の件数バッジ（モックアップの赤い `3`）は出さない** —— 既読の列が無く、
+    //    未読という状態が存在しない（架空の数は「見たのに消えない」を作る）。
+    expect(sidebar).not.toContain('data-testid="app-nav-notifications-unread"');
     // 🔴 サイドバーに注記（`案件から開きます` / `提案から開きます`）を持つ項目は無い ——
     //    `候補` / `面談・結果` は畳み込みで項目ごと無くなり、案件詳細 / 提案詳細から開く。
     expect(sidebar).not.toContain(t('shell.nav.note.fromProject'));
@@ -550,7 +562,7 @@ describe('🔴 モバイル（docs/04 §3.4）', () => {
   it('🔴 「その他」からサイドバーと同じ 5 項目に到達でき、並びを保つ', () => {
     const html = render();
     // 同じ項目表から描くので、サイドバーの項目はすべて「その他」にも在る（接頭辞だけが違う）。
-    const ids = ['home', 'chat', 'engineers', 'projects', 'settings'];
+    const ids = ['home', 'chat', 'engineers', 'projects', 'notifications', 'settings'];
     for (const id of ids) {
       expect(html, id).toContain(`data-testid="app-more-nav-${id}"`);
     }
@@ -562,13 +574,15 @@ describe('🔴 モバイル（docs/04 §3.4）', () => {
     const html = render();
     const more = /data-testid="app-tab-more"[\s\S]*?<\/details>/.exec(html)?.[0] ?? '';
     expect(more.length).toBeGreaterThan(0);
-    // ✅ 2026-10-05: `Phase N` を持つ項目が 0 件になったので、「その他」にも Badge は出ない。
-    //    🔴 **「デスクトップと同じにする」という不変条件は保っている**（どちらにも出ない）。
-    expect(more).not.toContain('data-testid="app-more-nav-phase-');
-    // 🔴 柱（サイドバー）側にも 1 つも出ない（`sidebarOf` はこの describe の外なので、同じ抽出をここで行う）。
+    // ✅ 2026-10-13: `Phase N` を持つ項目は `お知らせ` の 1 件であり、**柱と「その他」の
+    //    両方に同じように出る**（これが「デスクトップと同じにする」の中身である）。
+    expect((more.match(/data-testid="app-more-nav-phase-/g) ?? []).length).toBe(1);
+    expect(more).toContain('data-testid="app-more-nav-phase-notifications"');
+    // 🔴 柱（サイドバー）側にも同じ 1 件が在る（`sidebarOf` はこの describe の外なので、同じ抽出をここで行う）。
     const sidebar = /data-testid="app-sidebar"[\s\S]*?<\/nav>/.exec(html)?.[0] ?? '';
     expect(sidebar.length).toBeGreaterThan(0);
-    expect(sidebar).not.toContain('data-testid="app-nav-phase-');
+    expect((sidebar.match(/data-testid="app-nav-phase-/g) ?? []).length).toBe(1);
+    expect(sidebar).toContain('data-testid="app-nav-phase-notifications"');
     const items = navItems(buildMainNav({ audience: 'HOST', role: 'SALES' }));
     // 「その他」の一覧にも項目ごとに 1 つのアイコンが在る（+ `<summary>` の 1 つ）。
     expect((more.match(/<svg/g) ?? []).length).toBe(items.length + 1);

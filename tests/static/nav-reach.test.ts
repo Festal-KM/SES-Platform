@@ -465,20 +465,39 @@ describe('🔴 ④ 第 2 階層が現に描かれている（データだけ在�
   });
 });
 
-describe('🔴 ⑤ サイドバーはモックアップどおりフラットである', () => {
-  it.each(ALL_ROLES)('%s: 群は 1 つで見出しを持たず、項目はちょうど 5 つ', (role) => {
+describe('🔴 ⑤ サイドバーはモックアップどおりの 2 群である', () => {
+  it.each(ALL_ROLES)('%s: 上段 4 項目 + `その他` 2 項目で、ロールによって増減しない', (role) => {
     const groups = buildMainNav({ audience: audienceOf(role), role });
-    expect(groups.length).toBe(1);
-    expect(groups[0]?.labelKey).toBeNull();
-    // ✅ 2026-10-04: `レポート` を外した（人間の明示指示）。🔴 **到達集合は 1 件も減っていない**
-    //    （畳む前も `LINK` ではなく、`PRE_FOLD_REACH` に現れない項目だった）。
+    // ✅ **2026-10-13（人間の指示 + モックアップ）: `お知らせ` と `設定` を下段の `その他` 群に
+    //    分けた**（上に罫線）。🔴 **到達集合は 1 件も増減していない** —— `設定` は同じ索引を
+    //    指したまま群が変わっただけで、`お知らせ` は `UNAVAILABLE`（押せない = 到達先が無い）。
+    expect(groups.map((group) => [group.id, group.labelKey, group.divided ?? false])).toEqual([
+      ['primary', null, false],
+      ['other', 'shell.nav.group.other', true],
+    ]);
+    // ✅ 2026-10-04: `レポート` を外した（人間の明示指示）。
     expect(navItems(groups).map((item) => item.id)).toEqual([
       'home',
       'chat',
       'engineers',
       'projects',
+      'notifications',
       'settings',
     ]);
+  });
+
+  it.each(ALL_ROLES)('%s: 🔴 `お知らせ` はリンクではない（Phase 2 で画面が無い）', (role) => {
+    const notifications = navItems(buildMainNav({ audience: audienceOf(role), role })).find(
+      (item) => item.id === 'notifications',
+    );
+    // 🔴 `Notification`（`F-039` / `S-032`）は Phase 2 であり、**押しても行き先が無い**。
+    //    `UNAVAILABLE` は `href` を持たない型なので、**404 に飛ぶリンクを構造的に作れない**。
+    expect(notifications?.reach, role).toEqual({ kind: 'UNAVAILABLE' });
+    expect(notifications?.phaseKey, role).toBe('shell.nav.note.phase2');
+    // 🔴 **未読の件数バッジを出さない**（モックアップの赤い `3`）—— `Notification` にも
+    //    `Message` にも既読の列が無く、**未読という状態が存在しない**。架空の数は
+    //    「見たのに消えない」を作る（`チャット` と同じ判断。下の検査）。
+    expect(notifications?.badge, role).toBeNull();
   });
 
   it('🔴 チャットに件数バッジを出さない（未読の実体が無い。実装後も変わっていない）', () => {

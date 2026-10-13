@@ -118,6 +118,7 @@ export type {
   SectionNavProps,
 } from './components/nav-panel.js';
 export type {
+  SidebarAccount,
   SidebarBadge,
   SidebarGroup,
   SidebarItem,

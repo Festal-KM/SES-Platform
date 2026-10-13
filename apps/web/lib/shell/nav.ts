@@ -133,6 +133,12 @@ export type NavGroup = {
   /** `data-testid` の接尾辞（群名の要素に付く）。 */
   readonly id: string;
   readonly labelKey: MessageKey | null;
+  /**
+   * 🔴 **この群の上に罫線を引く**（✅ 2026-10-13。人間の指示「区切り線を入れる」）。
+   * ⚠️ 既定（未指定）は `false` ＝ 従来どおり**余白だけ**で区切る。線を引く群を
+   *    **ここで明示する**ことで、群が増えるたびに線が増えるのを止めている。
+   */
+  readonly divided?: boolean;
   readonly items: readonly NavItem[];
 };
 
@@ -173,12 +179,10 @@ function link(
 /**
  * 🔴 未実装（Phase 2 / 3）。印は**無彩色の `Phase N` Badge**（注記テキストを置き換えたもの）。
  *
- * ⚠️ **2026-10-05 以降、この関数を呼ぶ項目は 1 つも無い**（`チャット` が実装され、`レポート` は
- *    項目ごとサイドバーから外れた）。🔴 **それでも消さない。** 消すと「未実装の項目はリンクに
- *    しない」という不変条件を機械で確かめる手段が無くなり、Phase 3 で `レポート` を戻すときに
- *    **`href` を持った `Phase 3` の項目**（押せたのに無い）を作れてしまう。
- *    `export` してあるのは、未使用のローカル関数が lint で落ちるのを避けつつ
- *    **`nav.test.ts` が不変条件を固定し続けられる**ようにするためである。
+ * ✅ **2026-10-13: 呼び手が戻った**（`その他` 群の `お知らせ` = `F-039` / `S-032`。Phase 2）。
+ *    ⚠️ 2026-10-05 からこの日までは呼び手が 0 だったが**消さずに置いていた** —— 消していたら、
+ *    `お知らせ` を足すときに **`href` を持った `Phase 2` の項目**（押せたのに無い）を
+ *    作ってしまえた。「未実装の項目はリンクにしない」を**型で守る**のがこの関数の役目である。
  */
 export function pendingNavItem(id: string, labelKey: MessageKey, icon: IconName, phaseKey: MessageKey): NavItem {
   return {
@@ -343,14 +347,15 @@ export function navSectionsWithTabs(
 }
 
 // ============================================================================
-// サイドバー（5 項目。2026-10-03 は 6 項目だった）
+// サイドバー（上段 4 項目 + `その他` 2 項目。2026-10-03 は 6 項目のフラットだった）
 // ============================================================================
 
 /**
  * サイドバー（グローバルナビ）の項目。
  *
- * 🔴 **モックアップどおりフラット**（群の見出しを持たない）。並びも画像のままである:
- *    ホーム → チャット → 人材管理 → 案件管理 → 設定
+ * ✅ **2026-10-13（人間の指示 + モックアップ）: 2 群になった。**
+ *    上段（群名なし）: ホーム → チャット → 人材管理 → 案件管理
+ *    下段（`その他`。上に罫線）: お知らせ（Phase 2）→ 設定
  *    （✅ 2026-10-04: 画像の `レポート` は人間の明示指示で外した。下の 🔴）。
  * ⚠️ この並びは `CLAUDE.md` §1.3 の業務ループ（① 集める → ② マッチング → ③ 提案 → …）の順では
  *    ない（`チャット` が ① の手前に来る）。**ループの順序は第 2 階層（`案件管理` のタブ =
@@ -363,6 +368,16 @@ export function buildMainNav(context: NavContext): readonly NavGroup[] {
   const sections = buildNavSections(context);
   const sectionPathsOf = (id: NavSectionId): readonly string[] =>
     navHrefs(sections.find((section) => section.id === id)?.items ?? []);
+  const settings = link(
+    'settings',
+    context.audience === 'HOST' ? 'shell.nav.host.settings' : 'shell.nav.partner.settings',
+    'settings',
+    SETTINGS_INDEX_PATH,
+    null,
+    // 🔴 索引の 7 項目のうち `/audit-logs` / `/skills` は `/settings` 配下に無い URL である
+    //    （前方一致では光らない）。索引の表から引いて射程に入れる。
+    navHrefs(buildSettingsIndex(context)),
+  );
   return [
     {
       id: 'primary',
@@ -409,16 +424,28 @@ export function buildMainNav(context: NavContext): readonly NavGroup[] {
         //    🔴 **文言キー（`shell.nav.host.reports` / `shell.nav.partner.reports`）は
         //    消していない**（`U-22` の凍結。Phase 3 で戻すときに同じ語を使う）。
         //    予告の置き場所は `Q-04-8`（既定 = `S-047` 設定の索引）。
-        link(
-          'settings',
-          context.audience === 'HOST' ? 'shell.nav.host.settings' : 'shell.nav.partner.settings',
-          'settings',
-          SETTINGS_INDEX_PATH,
-          null,
-          // 🔴 索引の 7 項目のうち `/audit-logs` / `/skills` は `/settings` 配下に無い URL である
-          //    （前方一致では光らない）。索引の表から引いて射程に入れる。
-          navHrefs(buildSettingsIndex(context)),
-        ),
+      ],
+    },
+    // ✅ **2026-10-13（人間の指示 + モックアップ）: `お知らせ` と `設定` を下段の `その他` 群に
+    //    分け、上に罫線を引く。**
+    // 🔴 **上段（`primary`）は「毎日使うもの」だけ**になった —— ホーム / チャット / 人材管理 /
+    //    案件管理。設定とお知らせは**頻度が違う**ので、同じ列に混ぜると走査のたびに読み飛ばす
+    //    対象が増える。
+    // 🔴 **`お知らせ` はリンクにしない。** `Notification`（`F-039` / `S-032`）は **Phase 2** で
+    //    あり画面が無い（`pendingNavItem` = `<span>` + 無彩色の `Phase 2` Badge）。
+    //    🔴 **未読の件数バッジ（モックアップの赤い `3`）は出さない** —— `Message` にも
+    //    `Notification` にも**既読の列が無く、未読という状態が存在しない**。架空の数を描くと
+    //    「見たのに消えない」になる（`docs/04` §3.1 の ③ / `app-shell.tsx` 冒頭の 🔴 と同じ判断）。
+    // ⚠️ **モックアップの `ヘルプ` は置いていない** —— 中身（「この画面でできること / できない
+    //    こと」）の出所が 1 つも無く、押して何も出ない項目は §3.1 の ③ が禁じた「動かない検索窓」
+    //    と同じものになる（46 画面ぶんの説明が要るので別タスク）。
+    {
+      id: 'other',
+      labelKey: 'shell.nav.group.other',
+      divided: true,
+      items: [
+        pendingNavItem('notifications', 'shell.nav.notifications', 'bell', 'shell.nav.note.phase2'),
+        settings,
       ],
     },
   ];

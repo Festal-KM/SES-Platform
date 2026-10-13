@@ -86,6 +86,8 @@ const ja = {
   'shell.nav.group.sales': '営業',
   'shell.nav.group.comms': '連絡',
   'shell.nav.group.analytics': '分析',
+  // ✅ 2026-10-13（人間の指示「設定とお知らせはサイドバーの下部にする。区切り線を入れる。その他と入れる」）。
+  'shell.nav.group.other': 'その他',
   'shell.nav.home': 'ホーム',
   'shell.nav.host.engineers': '人材管理',
   'shell.nav.host.projects': '案件管理',
@@ -118,6 +120,9 @@ const ja = {
   //    （群名に括弧書きを持たせると、アイコンのみの形態で語が消えたときに情報が失われる）。
   'shell.nav.partner.settings': '設定',
   'shell.nav.chat': 'チャット',
+  // ✅ 2026-10-13: サイドバーの `その他` 群（🔴 画面は Phase 2 = `F-039` / `S-032` なので
+  //    **リンクにしない**。印は無彩色の `Phase 2` Badge）。
+  'shell.nav.notifications': 'お知らせ',
   'shell.nav.tasks': 'タスク',
   // 🔴 未実装の画面は**リンクにせず**印を添える（404 を作らない）。
   //    🔴 `Phase 2` / `Phase 3` は **無彩色の Badge** として描く（docs/04 §3.1 の改訂 16。
