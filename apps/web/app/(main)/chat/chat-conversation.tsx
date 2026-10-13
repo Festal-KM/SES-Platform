@@ -46,8 +46,14 @@ import { chatHref, chatMessagesApiPath } from '../../../lib/chat/screen-query';
 import type { ChatMessageView } from '../../../lib/chat/views';
 import type { ChatConversationMessages } from './chat-props';
 import { withDaySeparators } from '../../../lib/chat/day-separators';
+import { isSendKey, type ChatConversationLayout } from '../../../lib/chat/layout';
 
 export type ChatConversationProps = {
+  /**
+   * 並べ方（2026-10-13、Lark 寄せ。`lib/chat/layout.ts`）。案件スレッド = `topic`（全員左寄せ）/
+   * 企業スレッド = `chat`（自分は右）。省略時は `topic`（従来の表示）。
+   */
+  readonly layout?: ChatConversationLayout;
   readonly threadId: string;
   /** 直近 50 件（古い順。`lib/chat/read.ts` が並べ替えて渡す）。 */
   readonly initialMessages: readonly ChatMessageView[];
@@ -64,6 +70,7 @@ type SendResponseBody = { readonly message: ChatMessageView };
 type MessagePageBody = { readonly items: readonly ChatMessageView[]; readonly nextCursor: string | null };
 
 export function ChatConversation({
+  layout = 'topic',
   threadId,
   initialMessages,
   initialNextCursor,
@@ -201,6 +208,37 @@ export function ChatConversation({
                 );
               }
               const item = entry.message;
+              // ✅ 2026-10-13（Lark 寄せ。`lib/chat/layout.ts`）: **企業スレッド（会話型）の自分の発言は
+              //    右に置く。** 名前とアバターは出さない（自分であることは位置で分かる）。
+              //    読み上げには「自社」を残す（位置は目でしか分からないため）。
+              // 🔴 参加会社は常に 2 社なので、左右の 2 方向で表しきれる（下の「右寄せにしない」の理由は
+              //    案件スレッド＝話題型にだけ残る）。
+              if (layout === 'chat' && item.own) {
+                return (
+                  <li
+                    key={item.id}
+                    data-testid={`chat-message-${item.id}`}
+                    data-own="true"
+                    data-layout="chat"
+                    className="flex flex-col items-end gap-1"
+                  >
+                    <p className="m-0 flex items-baseline gap-2">
+                      <span className="sr-only">{messages.own}</span>
+                      <span className="text-xs text-fg-placeholder">{formatDateTimeJst(item.sentAt)}</span>
+                    </p>
+                    <p
+                      className={cn(
+                        'm-0 w-fit rounded-lg px-4 py-2 text-body whitespace-pre-wrap text-fg',
+                        CHAT_BUBBLE_MAX_WIDTH_CLASS,
+                        'bg-brand-bg',
+                      )}
+                      data-testid={`chat-message-body-${item.id}`}
+                    >
+                      {item.body ?? messages.purged}
+                    </p>
+                  </li>
+                );
+              }
               return (
               // 🔴 ✅ **2026-10-13: 全員を左に寄せる**（デザインシステム v1.0 §3.12「全員左寄せ・
               //    Slack 型」）。自社と相手の弁別は**バブルの地の色だけ**である。
@@ -272,6 +310,21 @@ export function ChatConversation({
               maxLength={CHAT_MESSAGE_MAX_LENGTH}
               placeholder={messages.composePlaceholder}
               onChange={(event) => setBody(event.target.value)}
+              // ✅ 2026-10-13（Lark 寄せ）: Enter で送信、Shift+Enter で改行。
+              // 🔴 日本語入力の変換確定の Enter では送らない（`lib/chat/layout.ts` の `isSendKey`）。
+              onKeyDown={(event) => {
+                if (
+                  isSendKey({
+                    key: event.key,
+                    shiftKey: event.shiftKey,
+                    isComposing: event.nativeEvent.isComposing,
+                    keyCode: event.keyCode,
+                  })
+                ) {
+                  event.preventDefault();
+                  void submit();
+                }
+              }}
               data-testid="chat-compose-body"
             />
           </Field>

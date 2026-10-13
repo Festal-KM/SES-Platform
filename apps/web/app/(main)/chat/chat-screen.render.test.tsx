@@ -394,3 +394,36 @@ describe('⑥: 日付の区切り（定義書 §3.12。2026-10-13 追加）', ()
     expect(html).not.toContain('chat-day-separator-');
   });
 });
+
+describe('⑦: 並べ方の切り替え（2026-10-13、Lark 寄せ。lib/chat/layout.ts）', () => {
+  it('会話型（企業スレッド）: 自分の発言は右に寄り、名前とアバターを出さない', () => {
+    const html = renderConversation({ layout: 'chat' });
+    const own = new RegExp(`<li[^>]*data-testid="chat-message-${MESSAGE_OWN.id}"[^>]*>(.*?)</li>`, 's').exec(html);
+    expect(own).not.toBeNull();
+    const ownLi = (own as RegExpExecArray)[0];
+    expect(ownLi).toContain('items-end');
+    expect(ownLi).toContain('data-layout="chat"');
+    expect(ownLi).not.toContain(`data-testid="chat-message-sender-${MESSAGE_OWN.id}"`);
+    // 🔴 読み上げには「自社」を残す（位置は目でしか分からない）。
+    expect(ownLi).toContain(t('chat.message.own'));
+  });
+
+  it('会話型（企業スレッド）: 相手の発言は左のまま、名前を出す', () => {
+    const html = renderConversation({ layout: 'chat' });
+    expect(html).toContain(`data-testid="chat-message-sender-${MESSAGE_OTHER.id}"`);
+    const other = new RegExp(`<li[^>]*data-testid="chat-message-${MESSAGE_OTHER.id}"[^>]*>`, 's').exec(html);
+    expect((other as RegExpExecArray)[0]).not.toContain('items-end');
+  });
+
+  it('話題型（案件スレッド・既定）: 自分の発言も左で、名前を出す（従来どおり）', () => {
+    for (const html of [renderConversation(), renderConversation({ layout: 'topic' })]) {
+      expect(html).toContain(`data-testid="chat-message-sender-${MESSAGE_OWN.id}"`);
+      expect(html).not.toContain('data-layout="chat"');
+    }
+  });
+
+  it('page.tsx はスレッドの種類から並べ方を決めて渡す', () => {
+    const source = readFileSync(new URL('./page.tsx', import.meta.url), 'utf8');
+    expect(source).toContain('layout={conversationLayoutFor(selected.kind)}');
+  });
+});
