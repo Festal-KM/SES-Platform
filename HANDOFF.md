@@ -73,9 +73,15 @@
 
 **https://web-production-9a8f44.up.railway.app**（`APP_ENV=demo`。🔴 外部 API は 6 つとも全モック）
 
-🔴 **デモの seed にチャットのスレッドが 0 件で、`tests/e2e/` にもチャットの spec が 1 つも無い。**
-したがって **`S-031` とホームの `メッセージ` タブは、実データで 1 度も確かめられていない**。
-画面が壊れても誰も気づかない状態である（`docs/sprints/SP-22-ui-overhaul.md` §12.8 の残り）。
+🔴 **✅ 2026-10-13: デモ DB を入れ直した**（`railway ssh --service web` の中で
+`SEED_DATABASE_URL="$SES_POSTGRES_SUPERUSER_URL" node packages/db/dist/seed/cli.js --preset=demo --reset`）。
+⚠️ **`postgres.railway.internal` は Railway の中からしか解決できない**ので、`railway run`（ローカル実行）
+では届かない。**コンテナの中で走らせる**こと。
+チャットのスレッド 10 件 / メッセージ 30 件 / 参加会社 24 件が入り、**0 件で何も確かめられない状態は解消した**。
+日付も今日基準になったので、要対応キューの優先度が全行 `高` になる問題も同時に解消している。
+
+🔴 **ただし `tests/e2e/` にはチャットの spec が 1 つも無い。** `S-031` は**自動では守られていない**
+（seed を入れ直しただけで、壊れたときに気づく仕掛けは無い。`docs/sprints/SP-22-ui-overhaul.md` §12.8）。
 
 | 用途 | アカウント | 2FA |
 |---|---|---|
