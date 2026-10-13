@@ -8,6 +8,7 @@
 |---|---|
 | **このファイル** | **「何 px か」**。外枠の寸法・密度・角丸・文字の実寸。🔴 **数値の出所はここだけ** |
 | [`UI_GUIDELINES.md`](../UI_GUIDELINES.md) | **「どう作るか」**。トークン名・共通部品・禁止事項 |
+| [`docs/design-system-engineers.md`](./design-system-engineers.md) | **人材管理タブ（2a〜2e）の寸法**（2026-10-13 に受領。🔴 **未着手**。公開用の列は [#94](https://github.com/Festal-KM/SES-Platform/issues/94) の回答待ち） |
 | [`docs/04-ui-design.md`](./04-ui-design.md) | **「何を作るか」**。画面ごとの中身 |
 | [`CLAUDE.md`](../CLAUDE.md) | **一次資料**。情報境界・ハードルール。🔴 **衝突したら `CLAUDE.md` が勝つ** |
 
