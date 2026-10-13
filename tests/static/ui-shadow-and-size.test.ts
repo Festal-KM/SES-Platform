@@ -249,14 +249,14 @@ describe('🔴 (j)(h) 濃色と 24px は「それを持つ部品」の外に出�
     ).toEqual([]);
   });
 
-  it('🔴 `text-metric`（24px）を書いているのは `KpiCard` だけである', () => {
+  it('🔴 `text-metric`（28px）を書いているのは `KpiCard` だけである', () => {
     const offenders = allTokens
       .filter((finding) => utilityOf(finding.token) === 'text-metric')
       .filter((finding) => finding.file !== 'packages/ui/src/components/kpi-card.tsx')
       .map((finding) => `${finding.file}:${finding.line} ${finding.token}`);
     expect(
       offenders,
-      '🔴 `--text-metric`（24px）は **`KpiCard` の件数 1 箇所のみ**です（§7.3 / §7.9 改訂 23）。' +
+      '🔴 `--text-metric`（28px）は **`KpiCard` の件数 1 箇所のみ**です（§7.3 / §7.9 改訂 23）。' +
         '見出し・本文・セル・バッジに使わないでください（「全画面を組む」のは 6 種のままです）。',
     ).toEqual([]);
   });

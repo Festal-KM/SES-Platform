@@ -8,7 +8,7 @@
 // `packages/ui/src/components/sidebar.tsx` の 2 形態（展開 / アイコンのみ）は **JS を持たない**
 // （`'use client'` を増やせないため `<input type="checkbox">` + CSS で作っている）。その切り替えは
 //
-//   `w-14` / `group-has-checked:w-56` / `xl:w-56` / `xl:group-has-checked:w-14`
+//   `w-14` / `group-has-checked:w-52` / `xl:w-52` / `xl:group-has-checked:w-14`
 //
 // の 4 クラスの勝敗で決まるが、**`group-has-checked:*` と `xl:group-has-checked:*` は同特異度
 // (0,2,0) であり、どちらが勝つかは生成 CSS に出る順序だけが決めている。**
@@ -43,7 +43,8 @@ const repoRoot = path.resolve(here, '..', '..');
 const chunksDir = path.join(repoRoot, 'apps', 'web', '.next', 'static', 'chunks');
 
 /** 🔴 サイドバーの 2 形態が載っている CSS を特定する目印（これが無いチャンクは対象外）。 */
-const SENTINEL = String.raw`.group-has-checked\:w-56`;
+// ✅ 2026-10-13: 柱の展開幅が 224 → 208（`w-56` → `w-52`）になった（`docs/design-system.md` §2）。
+const SENTINEL = String.raw`.group-has-checked\:w-52`;
 
 const BUILD_HINT =
   '🔴 ビルド出力が見つかりません。`env -u NODE_ENV pnpm --filter @ses/web run build` を先に走らせてください' +
@@ -78,8 +79,8 @@ const ORDERED_GROUPS: ReadonlyArray<{
       '（`sidebar.tsx` の「チェックの意味は『既定と逆の形態にする』」が成り立たなくなる）。',
     selectors: [
       '.w-14{',
-      String.raw`.group-has-checked\:w-56`,
-      String.raw`.xl\:w-56`,
+      String.raw`.group-has-checked\:w-52`,
+      String.raw`.xl\:w-52`,
       String.raw`.xl\:group-has-checked\:w-14`,
     ],
   },

@@ -223,6 +223,7 @@ lucide 系 2px stroke。サイズは **24（KPI）/ 20（Nav・Card Header・Tab
 | ⑬ | メッセージの未読数 | **無い** | `Message` に既読の列が無く、未読という状態が存在しない |
 | ⑭ | 仕様書に**無い**「ページ見出しの帯」（パンくず + `案件を登録する`） | **残している** | `data-testid` の凍結（`home-host-register-project`。削除は CI が落とす）と `tests/static/page-heading-single.test.ts` の契約。**そのぶん本文の開始が仕様書より下がる。** 消してよいかは [#92](https://github.com/Festal-KM/SES-Platform/issues/92)（既定 = 残す） |
 | ⑮ | Sidebar の項目は 6 つ（ホーム / チャット / 人材管理 / 案件管理 / レポート / 設定） | **実装の項目表のまま**（群分けあり） | 項目表は `docs/04` §3.1 が正。**寸法（184 × 46 / gap 6 / radius 8）だけ**を本ファイルから取る |
+| ⑯ | Sidebar の上端に **マーク + `SES Hub` + タグライン**、下端に **メッセージの箱 + `Ver 1.0.0`** | **置いていない**（上端は開閉トグルだけ） | 🔴 **`SES Hub` は未確定のプロダクト名である**（`docs/03` §9-1。現在は仮称 `SES Platform`）。`CLAUDE.md` §8.6 が**事業判断**として人間に留保しており、**モックアップに書いてあるという理由で改名しない**。タグラインと `可能性を、もっとシンプルに。` も同じくブランドコピーである。[#93](https://github.com/Festal-KM/SES-Platform/issues/93)（既定 = いまのまま） |
 
 ---
 
