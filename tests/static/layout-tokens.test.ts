@@ -32,6 +32,9 @@ import {
   CONTENT_PADDING_X_CLASSES,
   CONTENT_PADDING_Y_CLASS,
   CONTENT_PADDING_Y_PX,
+  ENV_BANNER_HEIGHT_CLASS,
+  ENV_BANNER_HEIGHT_PX,
+  ENV_BANNER_HEIGHT_VAR,
   HEADER_HEIGHT_CLASS,
   HEADER_HEIGHT_PX,
   KPI_CARD_HEIGHT_CLASS,
@@ -85,6 +88,8 @@ const PAIRS: ReadonlyArray<readonly [name: string, px: number, utility: string]>
   ['SECTION_HEADER_HEIGHT', SECTION_HEADER_HEIGHT_PX, SECTION_HEADER_HEIGHT_CLASS],
   ['TAB_BAR_HEIGHT', TAB_BAR_HEIGHT_PX, TAB_BAR_HEIGHT_CLASS],
   ['KPI_CARD_HEIGHT', KPI_CARD_HEIGHT_PX, KPI_CARD_HEIGHT_CLASS],
+  // 🔴 環境バナーの高さ（`md` 以上で固定。サイドバーが viewport から引く値）。
+  ['ENV_BANNER_HEIGHT', ENV_BANNER_HEIGHT_PX, ENV_BANNER_HEIGHT_CLASS],
 ];
 
 describe('🔴 レイアウトの寸法: px とクラスが一致している', () => {
@@ -135,6 +140,51 @@ const GUARDED = [
   'min-h-26.25',
   'min-h-10',
 ] as const;
+
+describe('🔴 環境バナーの高さが、置く側と引く側で一致している', () => {
+  const read = (rel: string): string => readFileSync(path.join(repoRoot, ...rel.split('/')), 'utf8');
+
+  it('🔴 バナー自身が `md` 以上で固定の高さを持つ（可変だと引く値が決まらない）', () => {
+    const banner = read('packages/ui/src/components/environment-banner.tsx');
+    expect(banner, 'バナーに `md:h-10` が無い').toContain(ENV_BANNER_HEIGHT_CLASS);
+  });
+
+  it('🔴 柱が引いているのは同じ変数である（名前が 1 文字でも違えば `0px` に落ちて黙って戻る）', () => {
+    const sidebar = read('packages/ui/src/components/sidebar.tsx');
+    // 🔴 **変種付きなので柱の側はリテラルで書くしかない**（Tailwind の走査）。だからこそ
+    //    「同じ名前か」を機械で見る —— 名前が違っても `var()` の既定値 `0px` が効くので、
+    //    **画面は壊れず、バナーのぶんだけ柱が長いという元の症状に黙って戻る**。
+    expect(sidebar).toContain(`var(${ENV_BANNER_HEIGHT_VAR},0px)`);
+    expect(sidebar).toContain(`calc(100dvh-var(${ENV_BANNER_HEIGHT_VAR},0px))`);
+  });
+
+  it('🔴 変数を置いているのはルートレイアウトの 1 箇所で、`production` では置かない', () => {
+    const layout = read('apps/web/app/layout.tsx');
+    expect(layout).toContain('ENV_BANNER_HEIGHT_VAR');
+    // 🔴 `production` にはバナーが無いので、変数も置かない（既定の `0px` = 従来の `100dvh`）。
+    expect(layout).toMatch(/env === 'production'\s*\?\s*undefined/);
+  });
+
+  it('対照: 変数名を直書きしている実装ファイルが 2 つだけである（出所は 1 定数）', () => {
+    // 🔴 **コメントを落としてから見る。** 落とさないと「変数名を説明している 🔴 コメント」まで
+    //    数えてしまい、**実装が 1 箇所増えても気づけない**（許可リストが説明文で埋まる）。
+    const withoutComments = (text: string): string =>
+      text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+    const owners = [
+      path.join(repoRoot, 'apps', 'web', 'app'),
+      path.join(repoRoot, 'packages', 'ui', 'src'),
+    ]
+      .flatMap((root) => collectSourceFiles(root, ['.ts', '.tsx']))
+      .filter((absolute) => withoutComments(readSource(absolute)).includes(ENV_BANNER_HEIGHT_VAR))
+      .map((absolute) => toRepoRelative(absolute))
+      .sort();
+    // 🔴 定数の宣言と、**リテラルで書くしかない柱**の 2 つだけ（上の 🔴）。
+    expect(owners).toEqual([
+      'packages/ui/src/components/sidebar.tsx',
+      'packages/ui/src/lib/layout-tokens.ts',
+    ]);
+  });
+});
 
 describe('🔴 レイアウトの寸法を `layout-tokens.ts` の外で書き直していない', () => {
   const roots = [

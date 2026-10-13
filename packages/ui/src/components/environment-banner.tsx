@@ -73,7 +73,12 @@ export type EnvironmentBannerProps = Omit<ComponentProps<'p'>, 'children'> & {
  *    **無彩色 = 内部向けの環境**。上の 🔴 のとおり業務の状態色（注意・障害・成果）を使わない。
  */
 const bannerVariants = cva(
-  'sticky top-0 z-20 w-full border-b px-4 py-2 text-center text-body font-semibold',
+  // 🔴 `md` 以上では**高さを 40px に固定する**（✅ 2026-10-13）。サイドバーが
+  //    `h-dvh − var(--app-banner-h)` で高さを決めており、**可変だと引く値が決まらない**
+  //    （`../lib/layout-tokens.ts` の `ENV_BANNER_HEIGHT_PX`）。`md` 未満にサイドバーは
+  //    存在しない（ボトムタブ）ので、狭い画面では従来どおり折り返してよい。
+  'sticky top-0 z-20 w-full border-b px-4 py-2 text-center text-body font-semibold ' +
+    'md:flex md:h-10 md:items-center md:justify-center md:py-0',
   {
     variants: {
       env: {

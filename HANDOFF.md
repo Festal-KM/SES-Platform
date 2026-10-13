@@ -98,6 +98,8 @@
 
 ### 3.1 ビルドとテスト
 
+- 🔴 **用語・製品名を変えたら `tests/**` も grep する。** `tests/static/product-name-single-key.test.ts` が見ているのは **`apps` / `packages` の実装だけ**であり、**テストの直書きは射程外**である。2026-10-13 の改称（`SES Platform` → `BizOrch for Engineering Service`）で `tests/isolation/platform-auth.test.ts` の 1 行だけが古い名前を抱え、**CI が 4 コミット分赤のままだった**（ローカルでは Testcontainers が要るので回せない）。🔴 **ローカルで回せない層（isolation / E2E）があることを前提に、push したら CI の結論を見る。**
+
 | 罠 | 内容 |
 |---|---|
 | 🔴 **`NODE_ENV` を持つシェルでビルドしない** | `NODE_ENV=development` があると `next build` が `/_global-error` の事前生成で `TypeError: Cannot read properties of null (reading 'useContext')` で落ちる（事前生成のワーカーだけが React の development 版を読み、React が 2 つ同居する）。`apps/web/next.config.ts` の門番が変数名を名指しして止める。**必ず `env -u NODE_ENV pnpm --filter @ses/web run build`** |

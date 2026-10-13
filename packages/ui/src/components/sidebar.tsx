@@ -360,7 +360,14 @@ const SIDEBAR_CLASSES = cn(
   //    この 1 面だけである**（`docs/design-system.md` §5-8）。
   // 🔴 枠線を外した —— グラデーションの面と白い本体の境は、面の差だけで十分に読める。
   'flex flex-col overflow-x-hidden overflow-y-auto bg-linear-to-b from-sidebar-bg to-sidebar-bg-end pb-5',
-  'md:sticky md:top-0 md:h-dvh',
+  // 🔴 **バナーのぶんだけ短くする**（✅ 2026-10-13）。`sticky top-0 h-dvh` のままだと、
+  //    `sticky top-0` のバナーがある環境（`demo` / `sandbox` / `staging` / `development`）で
+  //    **柱が viewport より 40px 長くなり、最下部の本人の箱が切れる**（実測で下 19px 欠けた）。
+  // 🔴 **変種付きなので文字列リテラルで書く**（組み立てると CSS が生成されない。上の 🔴）。
+  //    値は `../lib/layout-tokens.ts` の `ENV_BANNER_HEIGHT_*` と対であり、
+  //    `tests/static/layout-tokens.test.ts` が一致を固定する。
+  // ⚠️ `production` では `<body>` に変数が無く、既定の `0px` が効く（＝ 従来どおり `100dvh`）。
+  'md:sticky md:top-[var(--app-banner-h,0px)] md:h-[calc(100dvh-var(--app-banner-h,0px))]',
   // 🔴 **変種付きのクラスは文字列リテラルで書く** —— Tailwind の走査は
   //    `group-has-checked:${定数}` のような組み立てを候補として拾えず、**CSS が生成されない**
   //    （テストは緑のまま見た目だけ壊れる）。値は `../lib/layout-tokens.ts` と対であり、

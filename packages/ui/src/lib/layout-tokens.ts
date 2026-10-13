@@ -32,6 +32,26 @@ export const SIDEBAR_RAIL_WIDTH_CLASS = 'w-14';
 export const SIDEBAR_NAV_ITEM_HEIGHT_PX = 46;
 export const SIDEBAR_NAV_ITEM_HEIGHT_CLASS = 'h-11.5';
 
+/**
+ * 🔴 **環境バナーが画面上端で占める高さ**（`md` 以上。✅ 2026-10-13）。
+ *
+ * 🔴 **なぜ寸法が要るのか**: バナーは `sticky top-0` で**常に viewport の上端に居座る**。
+ *    一方サイドバーは `sticky top-0 h-dvh` なので、バナーがあると
+ *    **柱が viewport より 40px 長くなり、最下部（本人の箱）がはみ出して切れる**
+ *    （実測: 1672 × 941 で下 19px が欠けた）。柱の高さから**この値を引く**必要がある。
+ * 🔴 **バナーの高さを `md` 以上で固定する理由**: 可変（文言の折り返し）だと引く値が決まらない。
+ *    `md` 未満にサイドバーは存在しない（ボトムタブに置き換わる）ので、**狭い画面では
+ *    従来どおり折り返してよい**。
+ * ⚠️ 引き算の経路は **CSS 変数 `--app-banner-h`**（`apps/web/app/layout.tsx` が `<body>` に
+ *    置き、`production` では置かない = 既定の `0px`）。props で配らないのは、
+ *    **バナーの有無がレイアウトの実行時の値**であり、部品の木の 3 階層を貫通させると
+ *    「渡し忘れた枝だけ 40px ずれる」が起きるためである。
+ */
+export const ENV_BANNER_HEIGHT_PX = 40;
+export const ENV_BANNER_HEIGHT_CLASS = 'md:h-10';
+/** 🔴 `<body>` に置く CSS 変数の名前（置く側と引く側で 1 文字も違ってはならない）。 */
+export const ENV_BANNER_HEIGHT_VAR = '--app-banner-h';
+
 /** Top Header。🔴 全画面で同じ高さ。 */
 export const HEADER_HEIGHT_PX = 56;
 export const HEADER_HEIGHT_CLASS = 'h-14';

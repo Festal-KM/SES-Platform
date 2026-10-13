@@ -11,10 +11,11 @@
 // 🔴 **2 本目の CSS を足さない。** 足した瞬間に「どちらが後勝ちか」を読み手が追う状態が戻る
 //    （それがこのスプリントで 5 タスクかけて外したものである）。新しい見た目は Tailwind の
 //    ユーティリティか `@ses/ui`（`packages/ui`）で作る（CLAUDE.md §2 / §2.1）。
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import type { Metadata } from 'next';
 import { DEFAULT_LOCALE, t } from '@ses/i18n';
 import { currentAppEnv } from '../lib/db/bootstrap';
+import { ENV_BANNER_HEIGHT_PX, ENV_BANNER_HEIGHT_VAR } from '@ses/ui';
 import { AppEnvironmentBanner } from './_components/environment-banner';
 import './tailwind.css';
 
@@ -54,11 +55,31 @@ export const dynamic = 'force-dynamic';
  *   - `production` では `AppEnvironmentBanner` が `null` を返し、DOM に何も残らない
  *     （`F-028 AC-3`。`app/layout.render.test.tsx` が固定する）。
  */
+/**
+ * 🔴 CSS 変数は `CSSProperties` のキーに無いので、**ここで 1 回だけ型を緩める**
+ *    （画面側に `as` を散らさない）。値の出所は `@ses/ui` の 1 定数のままである。
+ */
+const BANNER_HEIGHT_STYLE = {
+  [ENV_BANNER_HEIGHT_VAR]: `${String(ENV_BANNER_HEIGHT_PX)}px`,
+} as CSSProperties;
+
 export default function RootLayout({ children }: { children: ReactNode }) {
+  const env = currentAppEnv();
   return (
     <html lang={DEFAULT_LOCALE}>
-      <body className="min-h-dvh bg-bg">
-        <AppEnvironmentBanner env={currentAppEnv()} />
+      {/* 🔴 **バナーが viewport の上端で占める高さを 1 箇所で宣言する**（✅ 2026-10-13）。
+          サイドバーは `h-dvh − var(--app-banner-h)` で高さを決めており、この変数が無い
+          （= `production`）と既定の `0px` が効いて従来どおり `100dvh` になる。
+          🔴 **props で配らない理由**: バナーの有無は実行時の値であり、部品の木を 3 階層
+             貫通させると「渡し忘れた枝だけ 40px ずれる」が起きる。CSS 変数なら
+             **置かなければ既定値**という 1 本の規則で済む。
+          ⚠️ 置く値（40px）とバナーの実際の高さ（`md:h-10`）の一致は
+             `tests/static/layout-tokens.test.ts` が固定する。 */}
+      <body
+        className="min-h-dvh bg-bg"
+        style={env === 'production' ? undefined : BANNER_HEIGHT_STYLE}
+      >
+        <AppEnvironmentBanner env={env} />
         {children}
       </body>
     </html>

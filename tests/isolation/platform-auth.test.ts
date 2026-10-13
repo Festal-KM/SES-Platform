@@ -12,6 +12,7 @@
 // 🔴 「相互に到達不能」は**両方向**を見る。片方向だけの検証だと、
 //    「運営者が主平面の業務データを読める」経路が残っていても green になる。
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { t } from '../../packages/i18n/src/index.js';
 import {
   configurePlatformWriteDb,
   configureTenantDb,
@@ -293,8 +294,13 @@ describe('🔴 F-055 AC-3: 2FA を設定するまで管理平面のどの画面�
     ownerRecoveryCodes = result.recoveryCodes;
     expect(result.recoveryCodes).toHaveLength(10);
     // 認証アプリのラベルは本人のメールアドレス、発行者は運営者コンソール。
+    // 🔴 **発行者の語を直書きしない**（✅ 2026-10-13 に実際に壊れた）。製品名が
+    //    `SES Platform` → `BizOrch for Engineering Service` に変わったとき、**この 1 行だけが
+    //    古い名前を抱えたまま CI を赤にした**（ローカルでは Testcontainers が要るので回せない）。
+    //    🔴 `tests/static/product-name-single-key.test.ts` は `apps` / `packages` の実装を見る
+    //    検査であり、**`tests/**` の直書きは射程外**である。だから語は実装と同じ 1 箇所から取る。
     expect(result.otpauthUrl).toContain(encodeURIComponent(OWNER_EMAIL));
-    expect(result.otpauthUrl).toContain(encodeURIComponent('SES Platform 運営者コンソール'));
+    expect(result.otpauthUrl).toContain(encodeURIComponent(t('admin.console.issuer')));
 
     const stored = await admin.twoFactorCredential.findFirst({
       where: { subjectId: OWNER_ID, subjectType: 'PLATFORM_USER' },

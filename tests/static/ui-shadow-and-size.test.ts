@@ -130,7 +130,19 @@ const SIZE_UTILITY = /^size-(\d+(?:\.\d+)?|\[[^\]]+\])$/;
  * 🔴 **ビューポート基準（`vh` / `vw` / `dvh` / `svh` / `%`）は対象外**（ファイル冒頭の (b)）。
  */
 const ARBITRARY_SIZE = /^(?:h|w|min-h|min-w|max-h|max-w|size|basis|gap|inset|top|right|bottom|left)-\[([^\]]+)\]$/;
-const VIEWPORT_UNIT = /(?:vh|vw|dvh|dvw|svh|svw|lvh|lvw|%|calc\()/;
+/**
+ * 🔴 **この検査が咎めているのは「マジックな px」であって、`[...]` という書き方ではない。**
+ *
+ * 次の 3 つは段の話ではないので対象外にする:
+ *   - ビューポート基準（`85vh` / `100dvh` / `100%`）… 画面の大きさそのもの
+ *   - `calc(…)` … 上の値から引く計算
+ *   - ✅ **2026-10-13: `var(…)` … 名前のある値への参照**。検査のメッセージ自身が
+ *     「**名前のある段**で書いてください」と言っており、`var(--app-banner-h)` はまさにそれである
+ *     （値の宣言は `packages/ui/src/lib/layout-tokens.ts` の 1 箇所で、変数名の出所が
+ *     2 ファイルだけであることは `tests/static/layout-tokens.test.ts` が固定している）。
+ *     🔴 **`h-[40px]` のような生の px は従来どおり落ちる**（下の対照）。
+ */
+const NAMED_OR_VIEWPORT_VALUE = /(?:vh|vw|dvh|dvw|svh|svw|lvh|lvw|%|calc\(|var\()/;
 
 type Finding = { readonly file: string; readonly line: number; readonly token: string };
 
@@ -223,7 +235,7 @@ describe('🔴 (l) 寸法は名前のある 2 段だけである（任意の px 
   it('🔴 任意値の寸法（`h-[32px]` / `w-[200px]`）が無い（ビューポート基準は対象外）', () => {
     const offenders = allTokens
       .map((finding) => ({ finding, match: ARBITRARY_SIZE.exec(utilityOf(finding.token)) }))
-      .filter(({ match }) => match !== null && !VIEWPORT_UNIT.test(match[1] ?? ''))
+      .filter(({ match }) => match !== null && !NAMED_OR_VIEWPORT_VALUE.test(match[1] ?? ''))
       .filter(({ finding }) => !isAllowedDirectWrite(finding.file, finding.token))
       .map(({ finding }) => `${finding.file}:${finding.line} ${finding.token}`);
     expect(
@@ -312,16 +324,23 @@ describe('対照: (l) の検出器', () => {
     expect(ALLOWED_ICON_SIZES.has('7')).toBe(false);
   });
 
-  it('任意値の寸法を拾い、ビューポート基準は拾わない', () => {
-    for (const token of ['h-[32px]', 'w-[200px]', 'min-w-[10rem]', 'gap-[3px]']) {
+  it('任意値の寸法を拾い、ビューポート基準と名前のある参照は拾わない', () => {
+    for (const token of ['h-[32px]', 'w-[200px]', 'min-w-[10rem]', 'gap-[3px]', 'top-[40px]']) {
       const match = ARBITRARY_SIZE.exec(token);
       expect(match, token).not.toBeNull();
-      expect(VIEWPORT_UNIT.test(match?.[1] ?? ''), token).toBe(false);
+      expect(NAMED_OR_VIEWPORT_VALUE.test(match?.[1] ?? ''), token).toBe(false);
     }
-    for (const token of ['max-h-[85vh]', 'w-[100%]', 'h-[calc(100dvh-4rem)]']) {
+    for (const token of [
+      'max-h-[85vh]',
+      'w-[100%]',
+      'h-[calc(100dvh-4rem)]',
+      // ✅ 2026-10-13: 名前のある値への参照（環境バナーの高さ）。
+      'top-[var(--app-banner-h,0px)]',
+      'h-[calc(100dvh-var(--app-banner-h,0px))]',
+    ]) {
       const match = ARBITRARY_SIZE.exec(token);
       expect(match, token).not.toBeNull();
-      expect(VIEWPORT_UNIT.test(match?.[1] ?? ''), token).toBe(true);
+      expect(NAMED_OR_VIEWPORT_VALUE.test(match?.[1] ?? ''), token).toBe(true);
     }
   });
 

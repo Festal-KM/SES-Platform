@@ -246,13 +246,16 @@ describe('🔴 削除完了の確認を返すルートは API-A12 の 1 本だ�
     expect(referencing).toEqual([DELETION_STATUS_ROUTE]);
   });
 
+  // ⚠️ **既定の 5s では足りないことがある**（2026-10-13 に実測で 2 回落ちた。単独実行 3.3s /
+  //    全体実行の負荷下で 5.8〜7.2s）。この 1 件は **`apps/web` の全ファイルを AST で解析する**
+  //    ので、機械の負荷で素直に伸びる。🔴 **判定は 1 文字も変えていない**（待ち時間だけ）。
   it('① readDeletionStatus の呼び出し元は apps/web 全体で API-A12 のルートと A-010 の画面の 2 本だけ', () => {
     const callers = webFiles
       .filter((file) => identifiersOf(parse(file)).has('readDeletionStatus'))
       .map(toRepoRelative)
       .sort();
     expect(callers).toEqual([DELETION_STATUS_PAGE, DELETION_STATUS_ROUTE].sort());
-  });
+  }, 30_000);
 
   it('② TenantPurgeRun の行を読む呼び出し（tenantPurgeRun.find*）は管理平面で deletion-status.ts の 1 本だけ。他は件数・集計のみ', () => {
     const rowReadFiles = new Set<string>();
