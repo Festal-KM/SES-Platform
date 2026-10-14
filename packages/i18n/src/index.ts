@@ -4275,6 +4275,10 @@ const ja = {
   'chat.thread.missing': '選択したスレッドは表示できません。一覧から選び直してください。',
   'chat.select.prompt': '一覧からスレッドを選んでください。',
   'chat.backToList': 'スレッド一覧へ戻る',
+  // ✅ 2026-10-14（チャットレーン）: 会話を右に並べて開く（最大 3 列。URL の `?pane=`）。
+  'chat.pane.openBeside': '右に並べる',
+  'chat.pane.close': '閉じる',
+  'chat.pane.drop': 'スレッドをここにドラッグすると、右に並べて開きます',
   'chat.messages.heading': 'やり取り',
   'chat.messages.label': 'メッセージ一覧',
   'chat.messages.empty': 'このスレッドにはまだ発言がありません。',

@@ -53,7 +53,35 @@ describe('chatScreenQuerySchema', () => {
   });
 
   it('🔴 分離キーをスキーマが持たない（`tenantId` / `partnerCompanyId` の口が無い）', () => {
-    expect(Object.keys(chatScreenQuerySchema.shape).sort()).toEqual(['thread', 'threads']);
+    expect(Object.keys(chatScreenQuerySchema.shape).sort()).toEqual(['pane', 'thread', 'threads']);
+  });
+});
+
+describe('右に並べる会話（`pane`。2026-10-14）', () => {
+  const PANE_1 = '01930000-0000-7000-8000-000000000131';
+  const PANE_2 = '01930000-0000-7000-8000-000000000132';
+  const PANE_3 = '01930000-0000-7000-8000-000000000133';
+
+  it('1 本は文字列、2 本は配列で届く。どちらも配列に揃える', () => {
+    const one = chatScreenQuerySchema.safeParse({ thread: THREAD, pane: PANE_1 });
+    expect(one.success ? one.data.pane : null).toEqual([PANE_1]);
+    const two = chatScreenQuerySchema.safeParse({ thread: THREAD, pane: [PANE_1, PANE_2] });
+    expect(two.success ? two.data.pane : null).toEqual([PANE_1, PANE_2]);
+  });
+
+  it('🔴 壊れた並びは失敗（= 画面は `/chat` へ戻す）: 上限超え・重複・左端なし・UUID でない', () => {
+    expect(chatScreenQuerySchema.safeParse({ thread: THREAD, pane: [PANE_1, PANE_2, PANE_3] }).success).toBe(false);
+    expect(chatScreenQuerySchema.safeParse({ thread: THREAD, pane: [PANE_1, PANE_1] }).success).toBe(false);
+    expect(chatScreenQuerySchema.safeParse({ thread: THREAD, pane: THREAD }).success).toBe(false);
+    expect(chatScreenQuerySchema.safeParse({ pane: PANE_1 }).success).toBe(false);
+    expect(chatScreenQuerySchema.safeParse({ thread: THREAD, pane: 'not-a-uuid' }).success).toBe(false);
+  });
+
+  it('chatHref は `pane` を左から順に載せ、`thread` が無ければ載せない', () => {
+    const href = chatHref({ thread: THREAD, panes: [PANE_1, PANE_2] });
+    expect(new URL(href, 'https://app.test').searchParams.getAll('pane')).toEqual([PANE_1, PANE_2]);
+    expect(chatHref({ thread: null, panes: [PANE_1] })).toBe(CHAT_PATH);
+    expect(chatHref({ thread: THREAD, panes: [] })).toBe(`/chat?thread=${THREAD}`);
   });
 });
 

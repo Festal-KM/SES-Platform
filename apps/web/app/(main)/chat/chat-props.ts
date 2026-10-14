@@ -26,7 +26,18 @@ export type ChatConversationMessages = {
   readonly composeFailed: string;
   readonly composeThreadMissing: string;
   readonly composeNotAllowed: string;
+  /** ✅ 2026-10-14: 並べて開いた会話を閉じる。 */
+  readonly closePane: string;
 };
+
+/** ✅ 2026-10-14: ドラッグで会話を右に並べる受け口の語。 */
+export type ChatPaneDropMessages = {
+  readonly drop: string;
+};
+
+export function chatPaneDropMessages(): ChatPaneDropMessages {
+  return { drop: t('chat.pane.drop') };
+}
 
 export function chatConversationMessages(): ChatConversationMessages {
   return {
@@ -48,5 +59,6 @@ export function chatConversationMessages(): ChatConversationMessages {
     composeFailed: t('chat.compose.failed'),
     composeThreadMissing: t('chat.compose.threadMissing'),
     composeNotAllowed: t('chat.compose.notAllowed'),
+    closePane: t('chat.pane.close'),
   };
 }

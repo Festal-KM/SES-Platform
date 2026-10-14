@@ -471,6 +471,42 @@ describe('🔴 ⑥ 参加会社は `thread_participants`（C5）が返した行�
     expect(absent.requestedThreadMissing).toBe(true);
     expect(absent.thread).toBeNull();
   });
+
+  it('🔴 ✅ 2026-10-14: 右に並べた会話（`paneIds`）も左端と同じ RLS で読む —— 見えない ID は中身が空', async () => {
+    const { readChatScreen } = await import('../../apps/web/lib/chat/read');
+    // ホストは 2 社のスレッドを並べられる（対照）。
+    const forHost = await readChatScreen(hostSales, {
+      threadId: THREAD_A_P1,
+      threadsQuery: { limit: 50 },
+      messagesQuery: { limit: 50 },
+      paneIds: [THREAD_A_P2],
+    });
+    expect(forHost.panes).toHaveLength(1);
+    expect(forHost.panes[0]?.thread?.id).toBe(THREAD_A_P2);
+    expect(forHost.panes[0]?.messages.items.length).toBeGreaterThan(0);
+    // 🔴 取引先 A1 が他社（A2）・不存在の ID を並べても、どちらも同じ「空」（区別できない）。
+    const forPartner = await readChatScreen(partnerA1, {
+      threadId: THREAD_A_P1,
+      threadsQuery: { limit: 50 },
+      messagesQuery: { limit: 50 },
+      paneIds: [THREAD_A_P2, ABSENT_THREAD],
+    });
+    expect(forPartner.thread?.id).toBe(THREAD_A_P1);
+    expect(forPartner.panes.map((pane) => pane.requestedThreadId)).toEqual([THREAD_A_P2, ABSENT_THREAD]);
+    for (const pane of forPartner.panes) {
+      expect(pane.thread).toBeNull();
+      expect(pane.messages).toEqual({ items: [], nextCursor: null });
+    }
+    // 🔴 左端が見えないときは並びを読まない。
+    const hiddenLeft = await readChatScreen(partnerA1, {
+      threadId: THREAD_A_P2,
+      threadsQuery: { limit: 50 },
+      messagesQuery: { limit: 50 },
+      paneIds: [THREAD_A_P1],
+    });
+    expect(hiddenLeft.requestedThreadMissing).toBe(true);
+    expect(hiddenLeft.panes).toEqual([]);
+  });
 });
 
 describe('🔴 ⑪ スレッド一覧のページング（`last_message_at` が `NULL` の行が落ちない）', () => {

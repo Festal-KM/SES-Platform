@@ -30,9 +30,11 @@ import {
   EmptyState,
   ROW_HOVER_CLASSES,
   SECONDARY_LINK_CLASSES,
+  cn,
 } from '@ses/ui';
 import { formatDateTimeJst } from '../../../lib/format/datetime';
 import { displayInitials } from '../../../lib/format/initials';
+import { canAddPane, openThreadIds, withPaneAdded, withThreadSelected } from '../../../lib/chat/panes';
 import { chatHref } from '../../../lib/chat/screen-query';
 import type { ChatThreadListItem, ChatThreadKind } from '../../../lib/chat/views';
 
@@ -45,12 +47,24 @@ export type ChatThreadListProps = {
   readonly items: readonly ChatThreadListItem[];
   readonly selectedThreadId: string | null;
   readonly nextCursor: string | null;
+  /** ✅ 2026-10-14: 右に並べて開いている会話（左から順。`?pane=`）。 */
+  readonly paneThreadIds?: readonly string[];
+  /** ✅ 2026-10-14: 「右に並べる」の語（`chat.pane.openBeside`）。 */
+  readonly openBesideLabel?: string;
 };
 
 /** 行 1 つ（60px）。🔴 高さが内容量で変わらないよう、2 段とも 1 行に切り詰める。 */
-const ROW_CLASSES = `flex items-center gap-3 border-b border-border-row px-3 ${CHAT_THREAD_ROW_HEIGHT_CLASS}`;
+const ROW_CLASSES = `flex min-w-0 flex-1 items-center gap-3 px-3 ${CHAT_THREAD_ROW_HEIGHT_CLASS}`;
 
-export function ChatThreadList({ items, selectedThreadId, nextCursor }: ChatThreadListProps) {
+export function ChatThreadList({
+  items,
+  selectedThreadId,
+  nextCursor,
+  paneThreadIds = [],
+  openBesideLabel,
+}: ChatThreadListProps) {
+  const paneState = { thread: selectedThreadId, panes: paneThreadIds };
+  const openIds = openThreadIds(paneState);
   if (items.length === 0) {
     return (
       <div className="p-4" data-testid="chat-threads">
@@ -63,16 +77,32 @@ export function ChatThreadList({ items, selectedThreadId, nextCursor }: ChatThre
       <ul className="m-0 flex list-none flex-col overflow-y-auto p-0" aria-label={t('chat.threads.label')}>
         {items.map((item) => {
           const selected = item.id === selectedThreadId;
+          // ✅ 2026-10-14: 開いている会話（左端か右の列）は選択中と同じ面の色で示す。
+          const open = openIds.includes(item.id);
+          // ✅ 2026-10-14: 「右に並べる」は、何かを開いていて・まだ足せて・この会話が開いていないときだけ。
+          //    🔴 押して何も起きない導線を置かない（上限に達したら描かない）。
+          const besideHref =
+            openBesideLabel !== undefined && !open && canAddPane(paneState)
+              ? chatHref(withPaneAdded(paneState, item.id))
+              : null;
+          const rowHref = chatHref(withThreadSelected(paneState, item.id));
           // 🔴 対象の名前。**案件名が読めないときは種別の語**（`null` を「案件が無い」と
           //    書き分けない。`lib/chat/views.ts` の 🔴）。
           const target = item.project === null ? t(KIND_MESSAGE_KEYS[item.kind]) : item.project.name;
           const counterparty = item.counterpartyName ?? t('chat.thread.unknownName');
           return (
-            <li key={item.id} data-testid={`chat-thread-row-${item.id}`} data-selected={selected ? 'true' : 'false'}>
+            <li
+              key={item.id}
+              data-testid={`chat-thread-row-${item.id}`}
+              data-selected={selected ? 'true' : 'false'}
+              className={`flex border-b border-border-row ${open ? 'bg-brand-bg' : ROW_HOVER_CLASSES}`}
+            >
+              {/* 🔴 行のリンクはそのままドラッグできる（ブラウザがリンクの URL を運ぶ）。受け口は
+                  `chat-pane-drop-zone.tsx` で、`lib/chat/panes.ts` の `threadIdFromDroppedUrl` が URL を検める。 */}
               <Link
-                href={chatHref({ thread: item.id })}
+                href={rowHref}
                 aria-current={selected ? 'page' : undefined}
-                className={`${ROW_CLASSES} ${selected ? 'bg-brand-bg' : ROW_HOVER_CLASSES}`}
+                className={ROW_CLASSES}
                 data-testid={`chat-thread-link-${item.id}`}
               >
                 {/* 🔴 印であって意味ではない（`aria-hidden` は `Avatar` が立てる）。 */}
@@ -103,13 +133,26 @@ export function ChatThreadList({ items, selectedThreadId, nextCursor }: ChatThre
                   </span>
                 </span>
               </Link>
+              {/* ✅ 2026-10-14: ドラッグの代わりの導線（キーボード・ドラッグが苦手な人向け）。
+                  🔴 一覧の中で `hidden` を使わない（下の ③ の検査）。`md` 未満では会話を開いている間
+                     一覧ごと畳まれる（`page.tsx`）ので、この導線が出るのは実質 `md` 以上だけになる。 */}
+              {besideHref === null ? null : (
+                <Link
+                  href={besideHref}
+                  // 🔴 `cn` は後勝ち。共通の語の `inline-block` / `text-body` をこちらの指定で上書きする。
+                  className={cn(SECONDARY_LINK_CLASSES, 'flex shrink-0 items-center px-3 text-xs')}
+                  data-testid={`chat-thread-open-beside-${item.id}`}
+                >
+                  {openBesideLabel}
+                </Link>
+              )}
             </li>
           );
         })}
       </ul>
       {nextCursor === null ? null : (
         <Link
-          href={chatHref({ thread: selectedThreadId, threadsCursor: nextCursor })}
+          href={chatHref({ ...paneState, threadsCursor: nextCursor })}
           className={`${SECONDARY_LINK_CLASSES} p-3`}
           data-testid="chat-threads-more"
         >

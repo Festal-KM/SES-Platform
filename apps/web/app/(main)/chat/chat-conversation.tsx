@@ -71,6 +71,11 @@ export type ChatConversationProps = {
   /** 🔴 拒否の本体は API の `requireRole` / `requireNotViewer` であり、ここは導線の出し分けである。 */
   readonly canPost: boolean;
   readonly messages: ChatConversationMessages;
+  /**
+   * ✅ 2026-10-14（チャットレーン）: 会話を並べて開いているときの「閉じる」の行き先
+   * （`lib/chat/panes.ts` の `withPaneClosed` で組んだ URL）。並べていなければ省略（描かない）。
+   */
+  readonly closeHref?: string;
 };
 
 /** 投稿の応答（`docs/05` §6.5 #51 の上位互換。`route.ts` の 🔴）。 */
@@ -86,6 +91,7 @@ export function ChatConversation({
   initialNextCursor,
   canPost,
   messages,
+  closeHref,
 }: ChatConversationProps) {
   // 🔴 ガードは**インスタンスごと**に持つ（モジュール変数にすると、別のスレッドを開いた島が
   //    同じガードを共有し「前の送信が終わるまで送れない」状態になる）。
@@ -160,7 +166,7 @@ export function ChatConversation({
   return (
     // ✅ **2026-10-13（`docs/design-system.md` §4.5）: ヘッダ 56 / 本文 / コンポーザー 64 の
     //    3 段にした。** 本文だけが伸び縮みし、上下 2 段は動かない。
-    <section data-testid="chat-conversation" className="flex min-h-0 flex-1 flex-col">
+    <section data-testid="chat-conversation" data-thread-id={threadId} className="flex min-h-0 flex-1 flex-col">
       <div className={`flex shrink-0 items-center gap-4 border-b border-border px-5 ${HEADER_HEIGHT_CLASS}`}>
         {/* ✅ 2026-10-13（Lark 寄せ）: 見出しに会話の相手（案件スレッドは案件名 + 相手の会社名）を出す。
             🔴 名前が読めなければ既定の見出しに戻す（空の見出しを作らない）。 */}
@@ -182,6 +188,17 @@ export function ChatConversation({
         >
           {messages.backToList}
         </Link>
+        {/* ✅ 2026-10-14: 並べて開いているときだけ「閉じる」を置く（`md` 以上。モバイルは 1 列の切替のまま）。 */}
+        {closeHref === undefined ? null : (
+          <Link
+            href={closeHref}
+            // 🔴 `cn` は後勝ち。共通の語（`inline-block` を含む）を先に置き、`hidden` が消されないようにする。
+            className={cn(SECONDARY_LINK_CLASSES, 'ml-auto hidden shrink-0 md:inline-block')}
+            data-testid={`chat-pane-close-${threadId}`}
+          >
+            {messages.closePane}
+          </Link>
+        )}
       </div>
 
       {/* 🔴 本文の面。**下寄せ**（最新の発言がコンポーザーの直上に来る。定義書 §3.12）。 */}

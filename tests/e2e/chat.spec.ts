@@ -15,7 +15,7 @@
 import { expect, test } from '@playwright/test';
 import { apiRequest } from './support/api';
 import { partnerIds } from './support/population';
-import { openTenantSession, partnerSales } from './support/sessions';
+import { hostOwner, openTenantSession, partnerSales } from './support/sessions';
 
 test.describe('S-031 チャット — 越境経路 3 の境界', () => {
   test('① 取引先は自社のスレッドだけを読め、同じテナントの他の取引先のスレッドは見えない', async ({
@@ -83,6 +83,66 @@ test.describe('S-031 チャット — 並べ方（2026-10-13、Lark 寄せ）', 
       const theirs = session.page.getByTestId(`chat-message-${own.hostMessageId}`);
       await expect(theirs).toHaveAttribute('data-own', 'false');
       await expect(session.page.getByTestId(`chat-message-sender-${own.hostMessageId}`)).toBeVisible();
+
+      session.outbound.assertNone();
+    } finally {
+      await session.close();
+    }
+  });
+});
+
+// ✅ 2026-10-14（チャットレーン）: 会話を右に並べて開く（`?pane=`。`lib/chat/panes.ts`）。
+test.describe('S-031 チャット — 会話を右に並べる（2026-10-14）', () => {
+  test('④ ホストは 2 社の会話を左右に並べて開き、「閉じる」で 1 列に戻せる', async ({ browser }) => {
+    const first = partnerIds(1, 1);
+    const second = partnerIds(1, 2);
+    const session = await openTenantSession(browser, hostOwner(1));
+    try {
+      const { page } = session;
+      await page.goto(`/chat?thread=${first.threadId}`);
+      await expect(page.locator(`[data-testid="chat-conversation"][data-thread-id="${first.threadId}"]`)).toBeVisible();
+
+      // ドラッグの代わりの導線（一覧の「右に並べる」）。
+      await page.getByTestId(`chat-thread-open-beside-${second.threadId}`).click();
+      await expect(page).toHaveURL(new RegExp(`pane=${second.threadId}`));
+      const left = page.locator(`[data-testid="chat-conversation"][data-thread-id="${first.threadId}"]`);
+      const right = page.locator(`[data-testid="chat-conversation"][data-thread-id="${second.threadId}"]`);
+      await expect(left).toBeVisible();
+      await expect(right).toBeVisible();
+      await expect(right.getByTestId(`chat-message-${second.partnerMessageId}`)).toBeVisible();
+      // 並べている間は、どの会話の情報か決まらないので右のスレッド情報を出さない。
+      await expect(page.getByTestId('chat-panel')).toHaveCount(0);
+
+      // 再読込しても同じ並びに戻る（並びは URL が持つ）。
+      await page.reload();
+      await expect(right).toBeVisible();
+
+      await page.getByTestId(`chat-pane-close-${second.threadId}`).click();
+      await expect(right).toHaveCount(0);
+      await expect(left).toBeVisible();
+      await expect(page.getByTestId('chat-panel')).toBeVisible();
+
+      session.outbound.assertNone();
+    } finally {
+      await session.close();
+    }
+  });
+
+  test('⑤ 🔴 取引先が URL に他の取引先のスレッドを並べても、中身は 1 文字も出ない', async ({ browser }) => {
+    const own = partnerIds(1, 1);
+    const other = partnerIds(1, 2);
+    const session = await openTenantSession(browser, partnerSales(1, 1));
+    try {
+      const { page } = session;
+      const response = await page.goto(`/chat?thread=${own.threadId}&pane=${other.threadId}`);
+      const html = (await response?.text()) ?? '';
+      // 不存在と同じ「表示できません」（他社・他テナントを区別しない）。
+      await expect(page.getByTestId(`chat-pane-missing-${other.threadId}`)).toBeVisible();
+      expect(html, '🔴 他の取引先の発言 ID が画面に出ている').not.toContain(other.partnerMessageId);
+      expect(html).not.toContain(other.hostMessageId);
+      expect(html, '🔴 他の取引先の本文が画面に出ている').not.toContain('seed-forbidden-message-body-p2-t1');
+      // 自社の会話は普通に読める（対照）。
+      await expect(page.getByTestId(`chat-message-${own.partnerMessageId}`)).toBeVisible();
 
       session.outbound.assertNone();
     } finally {
