@@ -108,7 +108,17 @@ export function Toolbar({
         {/* 🔴 件数バー: 左に母集団の 1 行、右に `note`（並び順の説明）。
             🔴 母集団は補助テキストの段（§7.3: 12px / `--color-fg-muted`）。 */}
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-          <p data-testid={`${testIdPrefix}toolbar-population`} className="text-xs text-fg-muted">
+          {/* ✅ **2026-10-14: 12px の補助テキストから 15/700 にした**（人間の定義書 2 本が
+              件数行をこう定めている: `docs/design-system-engineers.md` §2.1「件数行 24h
+              〔全 48 件〕15/700」/ `docs/design-system-projects.md` §1.6「件数行 32h:
+              〔全 N 件〕15/700」）。
+              🔴 **母集団は「いま何を見ているか」の 1 行である**（`docs/04` §3.2-2）。地の上の
+                 12px では、絞り込みのカードと表の間で読み飛ばされる。
+              ⚠️ **強くしたのは件数の行だけ**であり、`note`（並び順）と `scopeNote`
+                 （見える範囲）は 12px の補助のままである（§7.2 の「件数を要対応キューより
+                 視覚的に強くしない」は**ホームの KPI の話**であり、一覧の母集団の行は
+                 §3.2-2 が常時表示を定めている別物である）。 */}
+          <p data-testid={`${testIdPrefix}toolbar-population`} className="text-row font-bold text-fg">
             {population}
           </p>
           {note === undefined ? null : (

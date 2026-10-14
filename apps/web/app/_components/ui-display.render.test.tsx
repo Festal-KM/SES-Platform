@@ -28,6 +28,8 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+// 🔴 案件の状態は `@ses/db`（`schema-value-sets.ts`）が持つ値集合である（`@ses/domain` ではない）。
+import { PROJECT_STATUSES } from '@ses/db';
 import {
   ASSIGNMENT_STATES,
   CONTRACT_STATES,
@@ -416,6 +418,26 @@ describe('🔴 StatusBadge（docs/04 §5-1 / §7.4 / §5-13）', () => {
       'RECHECK_HELD',
     ]);
     expect(Object.keys(STATUS_BADGE_APPEARANCES.phase)).toEqual(['PHASE_2', 'PHASE_3']);
+  });
+
+  it('🔴 案件の状態 3 値も表を持つ（`PROJECT_STATUSES` と 1 対 1。✅ 2026-10-14）', () => {
+    // 🔴 **`Project` は状態機械を持たない**（`CLAUDE.md` §4.2 の 5 エンティティに含まれない）。
+    //    ここに在るのは `projectPublication` と同じ「表示のための状態」であり、
+    //    **値集合の出所は `@ses/db` の `PROJECT_STATUSES`** である（画面側で並べ直さない）。
+    expect(Object.keys(STATUS_BADGE_APPEARANCES.project).sort()).toEqual(
+      [...PROJECT_STATUSES].sort(),
+    );
+    // 🔴 色の割り当ては人間の判断事項（§8.6）。[Issue #98] の**既定 A** を固定する ——
+    //    値を変えるときは Issue の決着として変える（実装の都合で動かさない）。
+    expect(STATUS_BADGE_APPEARANCES.project.SUCCESSOR_WANTED).toEqual({
+      variant: 'warning',
+      shape: 'solid',
+    });
+    expect(STATUS_BADGE_APPEARANCES.project.OPEN).toEqual({ variant: 'success', shape: 'outline' });
+    expect(STATUS_BADGE_APPEARANCES.project.FILLED).toEqual({
+      variant: 'neutral',
+      shape: 'outline',
+    });
   });
 
   it('🔴 同じ状態名なら、どのエンティティでも同じ色である（形状だけが違う）', () => {

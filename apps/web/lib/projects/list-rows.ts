@@ -8,6 +8,7 @@
 //    ここは **I/O を持たない純粋関数だけ**で、`@ses/db` にも Prisma にも触れない。
 // 🔴 文言は `packages/i18n` が唯一の出所（`CLAUDE.md` §3.5）。本ファイルは**日本語の語を書かない**。
 import { PAGE_SIZE_DEFAULT } from '@ses/config';
+import type { ProjectStatus } from '@ses/db';
 import type { ProjectPublishListStatus } from '@ses/domain';
 import { t } from '@ses/i18n';
 import { formatThousands } from '../format/number';
@@ -38,6 +39,19 @@ export type ProjectListRowView = {
   readonly id: string;
   readonly name: string;
   readonly status: string;
+  /**
+   * 🔴 **状態の値そのもの**（表示用の語ではない）。✅ 2026-10-14 に足した。
+   *
+   * 🔴 **色を渡すためではなく、色を決めさせないために在る。** 一覧と副カラムは
+   *    `@ses/ui` の `StatusBadge`（`entity="project"`）に**状態名**を渡し、
+   *    色と形状は `STATUS_BADGE_APPEARANCES` の 1 箇所が決める
+   *    （`docs/04` §5-13「状態名から表示を導出し、画面側で色を指定させない」）。
+   *    🔴 したがって**画面に `variant` を渡す口は無い**（渡せる prop が存在しない）。
+   * ⚠️ 語（`status`）は `packages/i18n` 由来のままである。**値と語の 2 本持ちになる**が、
+   *    `packages/ui` は `@ses/i18n` を import できない（`docs/05` §2.3.1）ので、
+   *    「色は部品 / 語は呼び出し側」の分担はこの形にしかならない。
+   */
+  readonly statusState: ProjectStatus;
   /** 必須要件の要約（上位 3 件を `、` で連ねたもの）。0 件なら `—`。 */
   readonly mustRequirements: string;
   /** 🔴 超過件数の表示（`+2`）。0 件なら `null`（`+0` を描かない）。 */
@@ -119,6 +133,8 @@ export function projectListRow(view: ProjectView): ProjectListRowView {
     id: view.id,
     name: view.name,
     status: t(PROJECT_STATUS_MESSAGE_KEYS[view.status]),
+    // 🔴 状態名はそのまま運ぶ（語に畳まない。上の型の 🔴）。
+    statusState: view.status,
     mustRequirements: formatMustRequirementSummary(view.mustRequirements),
     // 🔴 `+N` は語ではなく記号 + 数値である（人材の主要スキルと同じ扱い）。
     moreMustRequirements:

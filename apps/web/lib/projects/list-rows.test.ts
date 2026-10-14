@@ -163,6 +163,10 @@ describe('🔴 F-014 AC-4 / BR-07: 取引先の行に公開先の情報が入ら
       'name',
       'startDate',
       'status',
+      // 🔴 ✅ 2026-10-14: 状態の**値**（`StatusBadge` に渡す状態名）。語（`status`）と 2 本持ちに
+      //    なるが、色を部品の 1 箇所で決めるための形である（`list-rows.ts` の 🔴）。
+      //    **商流情報ではない**（`projects.status` は取引先にも見える列である）。
+      'statusState',
       'unitPrice',
       'updatedOn',
       'visibility',

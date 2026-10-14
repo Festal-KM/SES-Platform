@@ -256,6 +256,33 @@ export const STATUS_BADGE_APPEARANCES = {
     RECHECK_HELD: { variant: 'neutral', shape: 'dashed' },
   },
   /**
+   * `Project.status` の 3 値（`PROJECT_STATUSES`）。✅ **2026-10-14 に足した。**
+   *
+   * 🔴 **人間の定義書（`docs/design-system-projects.md` §1.7）が「ステータスは Badge」と
+   *    定めたので足した。** 着手前は一覧も副カラムも**素のテキスト**で、色が 1 つも無かった
+   *    （旧注記は `apps/web/app/(main)/projects/project-summary-panel.tsx` に在った）。
+   * 🔴 **`docs/04` §5-1 の 36 状態（5 エンティティ）には属さない** —— `Project` は状態機械を
+   *    持たない（`CLAUDE.md` §4.2 の 5 つに `Project` は無い）。ここに在るのは
+   *    `projectPublication` と同じ「**表示のための状態**」である。
+   * 🔴 **色の割り当ては人間の判断事項**（§7.4 / §8.6）。[Issue #98](https://github.com/Festal-KM/SES-Platform/issues/98)
+   *    で確認中であり、**下は既定値 A** である:
+   *    - `SUCCESSOR_WANTED`（後任募集）= **橙・塗り**。稼働が終わる前に後任を立てる期限のある
+   *      状態であり、§7.4 の「橙 = 期限が近い・要注意」そのものである（並び順でも最上位。
+   *      `PROJECT_LIST_ORDER_BY`）。🔴 **赤にしない**（赤は `SUBMIT_FAILED` / `SEND_FAILED` /
+   *      `SUSPENDED` の 3 状態の予約である）。
+   *    - `OPEN`（募集中）= **緑・枠線**。定義書の指定は `ok`（緑）である。🔴 **塗りにしない** ——
+   *      50 行の一覧はほとんどが募集中であり、塗りの緑が一面に並ぶと `WON` / `ACTIVE`
+   *      （成立の緑・塗り）の重みが失われる。`SUBMITTED` / `tenant.ACTIVE` と同じ
+   *      「正常に進行中」の形に合わせた。
+   *    - `FILLED`（充足）= **無彩色・枠線**。§7.4 の「終わったもの・確定したものは色を持たない」。
+   * ⚠️ 並びは `PROJECT_STATUS_LIST_PRIORITY`（一覧の既定の並び）と同じ順にしてある。
+   */
+  project: {
+    SUCCESSOR_WANTED: { variant: 'warning', shape: 'solid' },
+    OPEN: { variant: 'success', shape: 'outline' },
+    FILLED: { variant: 'neutral', shape: 'outline' },
+  },
+  /**
    * サイドバーの未実装項目の `Phase N`（`docs/04` §3.1 / `T-22-05`）。
    * 🔴 **無彩色**（§7.9 の `--color-neutral-bg`）。🔴 **アイコンを付けない**（§7.5）。
    */
@@ -265,7 +292,7 @@ export const STATUS_BADGE_APPEARANCES = {
   },
 } as const satisfies Readonly<Record<string, Readonly<Record<string, StatusBadgeAppearance>>>>;
 
-/** 見え方の表を持つ対象（5 エンティティ + 公開の状態 + `Phase N`）。 */
+/** 見え方の表を持つ対象（5 エンティティ + 公開の状態 + 案件の状態 + `Phase N`）。 */
 export type StatusBadgeEntity = keyof typeof STATUS_BADGE_APPEARANCES;
 /** その対象が取りうる状態名。🔴 表に無い名前は**型エラー**になる。 */
 export type StatusBadgeState<E extends StatusBadgeEntity> = keyof (typeof STATUS_BADGE_APPEARANCES)[E] & string;

@@ -40,6 +40,12 @@
 // | `color: var(--ses-muted)`（`#6b7280`） | `text-fg-muted`（`slate-500` = `#64748b`） | 同上。`--ses-muted` は T-21-07 で撤去済みの変数であり、T-21-04 でパレットを slate に統一、**T-22-01 で `docs/04` §7.9 の semantic トークン（補助 = `--color-fg-muted`。値は同一）に置き換えた** |
 // | 🔴 `margin-top: 1rem` | `mt-4` | **`SECONDARY_LINK_STACKED_CLASSES` だけ**が持つ |
 
+// 🔴 高さ（36px）と状態（hover / focus-visible）の出所は 1 つである（`./control-classes.ts` /
+//    `./state-classes.ts`）。**ここで px や色を書き起こさない。**
+import { cn } from './cn.js';
+import { CONTROL_HEIGHT_CLASSES } from './control-classes.js';
+import { FOCUS_RING_CLASSES, TRANSITION_CLASSES } from './state-classes.js';
+
 /**
  * 副次的な導線の見た目（**間隔を持たない**）。
  *
@@ -63,6 +69,28 @@ export const SECONDARY_LINK_CLASSES =
  */
 export const SECONDARY_LINK_STACKED_CLASSES = `mt-4 ${SECONDARY_LINK_CLASSES}`;
 
+
+/**
+ * **輪郭ボタンとして描く secondary なリンク**（36px）。✅ **2026-10-14 に足した。**
+ *
+ * 🔴 **なぜ `SECONDARY_LINK_CLASSES`（文字リンク）と別に要るのか**: 受領した定義書
+ *    （`docs/design-system-projects.md` §1.8 / `docs/design-system-engineers.md` §2.4）は、
+ *    副カラムの**下端の操作行**を「36px の輪郭ボタンを横に並べ、幅を等分する」形で定めている。
+ *    文字リンクを並べると**押せる領域が語の長さぶんしか無く**、狭い画面で隣のリンクと
+ *    接触する（`docs/04` §7.6 の「操作の的は最低 36px」）。
+ * 🔴 **`Button` では描けない** —— `Button` は `<button>` 専用で `asChild` を持たない
+ *    （`PRIMARY_LINK_CLASSES` が在るのと同じ理由）。**遷移する操作はリンクで描く。**
+ * 🔴 **ここが唯一の実装である。** 面（白地 + 枠 `--color-border-strong`）と hover を画面側で
+ *    組まない（`tests/static/ui-shadow-and-size.test.ts` / `ui-state-in-primitives.test.ts`）。
+ * ⚠️ **幅は持たない**（`flex-1` / `w-full` は置かれる文脈が決める。このファイルの冒頭の
+ *    「間隔を基底に入れない」と同じ理由）。
+ */
+export const SECONDARY_BUTTON_LINK_CLASSES = cn(
+  `inline-flex shrink-0 items-center justify-center gap-2 truncate rounded-md border border-border-strong bg-bg px-4 text-body font-medium whitespace-nowrap text-fg ${CONTROL_HEIGHT_CLASSES.md}`,
+  TRANSITION_CLASSES,
+  'hover:bg-bg-subtle active:bg-bg-inset',
+  FOCUS_RING_CLASSES,
+);
 
 /**
  * primary な導線（**リンクとして描く primary**）の見た目。SP-22 `T-22-05`。

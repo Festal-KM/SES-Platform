@@ -116,7 +116,11 @@ export function projectSummaryPanelMessages(): ProjectSummaryPanelMessages {
     detail: t('projects.list.panel.detail'),
     edit: t('projects.list.panel.edit'),
     candidates: t('projects.list.panel.candidates'),
-    fieldStatus: t('projects.list.column.status'),
+    // 🔴 ✅ 2026-10-14: **状態（`fieldStatus`）はここに無い** —— 案件名の隣の `StatusBadge` が
+    //    出すようになったので、Key-Value から外した（同じ値を 1 つのパネルに 2 回描かない。
+    //    `project-summary-panel.tsx` の `panelFields` の 🔴）。語のキー
+    //    （`projects.list.column.status`）は**一覧の列見出しとして現に使われている**ので、
+    //    キーの凍結（`docs/04` `U-22`）には触れていない。
     fieldMustRequirements: t('projects.list.column.mustRequirements'),
     fieldUnitPrice: t('projects.list.column.unitPrice'),
     fieldStartDate: t('projects.list.column.startDate'),

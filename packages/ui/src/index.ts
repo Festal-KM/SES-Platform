@@ -349,6 +349,8 @@ export {
 } from './lib/state-classes.js';
 export {
   PRIMARY_LINK_CLASSES,
+  // ✅ 2026-10-14: 副カラムの下端の操作行（36px の輪郭ボタンとして描くリンク）。
+  SECONDARY_BUTTON_LINK_CLASSES,
   SECONDARY_LINK_CLASSES,
   SECONDARY_LINK_STACKED_CLASSES,
 } from './lib/link-classes.js';

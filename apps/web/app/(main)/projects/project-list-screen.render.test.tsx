@@ -28,6 +28,8 @@ function row(overrides: Partial<ProjectListRowView> = {}): ProjectListRowView {
     id: PROJECT_A,
     name: '金融系 Web API 改修',
     status: '募集中',
+    // 🔴 ✅ 2026-10-14: 状態の**値**（語ではない）。色は `@ses/ui` が状態名から決める。
+    statusState: 'OPEN',
     mustRequirements: 'Java 5 年以上、Spring',
     moreMustRequirements: null,
     unitPrice: '650,000〜750,000 円',
@@ -587,6 +589,43 @@ describe('🔴 SP-22 段④: 絞り込みカードと件数バー', () => {
     ]) {
       expect(html, `${name} の入力欄が描かれている（API に無い条件）`).not.toContain(name);
     }
+  });
+});
+
+// ============================================================================
+// 🔴 ✅ 2026-10-14: 状態列は `StatusBadge`（受領した定義書 §1.7「ステータス 100 Badge」）
+// ============================================================================
+describe('🔴 状態は Badge で描き、色は画面が決めない（`docs/04` §5-13）', () => {
+  it('状態名が `data-state` に出て、語は `packages/i18n` 由来のまま出る', () => {
+    const html = render();
+
+    expect(html).toContain('data-entity="project"');
+    expect(html).toContain('data-state="OPEN"');
+    expect(html).toContain('募集中');
+  });
+
+  it('🔴 行ごとに状態名が変わる（語ではなく値で描き分けている）', () => {
+    const html = render({
+      rows: [
+        row({ status: '後任募集', statusState: 'SUCCESSOR_WANTED' }),
+        row({ id: PROJECT_B, name: '物流管理システム保守', status: '充足', statusState: 'FILLED' }),
+      ],
+    });
+
+    expect(html).toContain('data-state="SUCCESSOR_WANTED"');
+    expect(html).toContain('data-state="FILLED"');
+  });
+
+  it('🔴 画面が色を渡していない（`variant` / `shape` / 色のクラスを 1 つも書いていない）', () => {
+    // 🔴 **画面側のソースを見る検査ではない** —— 色の語が DOM に出るのは `@ses/ui` の
+    //    `STATUS_BADGE_APPEARANCES` 由来のクラスだけであり、`StatusBadge` は `variant` の
+    //    prop を持たない（型で渡せない）。ここでは**状態名が DOM に出ていること**を根拠に、
+    //    色の出所が部品側の 1 箇所であることを固定する（割り当ての正しさは
+    //    `app/_components/ui-display.render.test.tsx` が見る）。
+    const html = render();
+    expect(html).toContain('data-entity="project"');
+    // 対照: 状態の語が素のテキストとしてセルに残っていない（Badge の中に在る）。
+    expect(html).toMatch(/data-state="OPEN"[^>]*>募集中</);
   });
 });
 

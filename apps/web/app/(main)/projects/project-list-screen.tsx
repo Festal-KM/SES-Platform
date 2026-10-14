@@ -84,6 +84,7 @@ import {
   Pagination,
   SECONDARY_LINK_CLASSES,
   Select,
+  StatusBadge,
   Toolbar,
   cn,
   type DataTableColumn,
@@ -195,7 +196,13 @@ function projectColumns(
       header: messages.columnStatus,
       priority: 'always',
       minWidth: '5rem',
-      cell: (row) => row.status,
+      // ✅ **2026-10-14: 素のテキストから `StatusBadge` にした**（人間の定義書
+      //    `docs/design-system-projects.md` §1.7「ステータス 100 Badge」）。
+      // 🔴 **色は渡していない** —— `entity="project"` と**状態名**だけを渡し、色と形状は
+      //    `@ses/ui` の `STATUS_BADGE_APPEARANCES` が決める（`docs/04` §5-13）。
+      //    割り当ては [Issue #98](https://github.com/Festal-KM/SES-Platform/issues/98)（既定 A）。
+      // 🔴 **語は `packages/i18n` 由来のまま**（`row.status`）。部品に日本語を持たせない。
+      cell: (row) => <StatusBadge entity="project" state={row.statusState} label={row.status} />,
     },
     {
       id: 'mustRequirements',
