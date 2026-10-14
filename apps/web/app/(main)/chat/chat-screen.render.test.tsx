@@ -606,6 +606,9 @@ describe('⑫: 会話の操作の改修（2026-10-14、チャットレーン）'
     expect(renderConversation({ initialMessages: [], initialNextCursor: null, canPost: false })).toContain(
       t('chat.messages.empty'),
     );
+  });
+});
+
 describe('⑪: 会社ごとの木・検索・並べ替え（2026-10-14、チャットレーン）', () => {
   const CHAT_A = '01930000-0000-7000-8000-0000000000e1';
   const TREE_ROWS: readonly ChatThreadListItem[] = [
