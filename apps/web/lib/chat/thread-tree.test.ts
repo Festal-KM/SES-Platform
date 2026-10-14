@@ -104,3 +104,17 @@ describe('buildThreadTree', () => {
     expect(Object.keys(tree[0] ?? {}).sort()).toEqual(['chat', 'counterpartyName', 'fastReply', 'threads']);
   });
 });
+
+describe('messageSnippet（本文の検索の抜粋）', () => {
+  it('当たった箇所の前後だけを切り出し、切ったら「…」を付ける', async () => {
+    const { messageSnippet } = await import('./thread-tree');
+    const body = `${'あ'.repeat(100)}面談の候補${'い'.repeat(100)}`;
+    const snippet = messageSnippet(body, '面談', 10);
+    expect(snippet).toBe(`…${'あ'.repeat(10)}面談${'の候補'}${'い'.repeat(7)}…`);
+  });
+
+  it('改行は空白にし、短い本文は切らない・大文字小文字を区別しない', async () => {
+    const { messageSnippet } = await import('./thread-tree');
+    expect(messageSnippet('Hello\nWorld', 'world')).toBe('Hello World');
+  });
+});

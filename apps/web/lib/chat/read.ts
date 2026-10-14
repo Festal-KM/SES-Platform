@@ -34,7 +34,14 @@ import { withTenant, type AuthenticatedTenantCtx } from '@ses/db';
 import { requireFound, ValidationError } from '../api/errors';
 import { buildCursorPage, takeForCursorPage, type CursorPage } from '../api/pagination';
 import type { ChatMessageListQuery, ChatThreadListQuery } from './schemas';
-import { buildThreadTree, type ChatThreadGroup, type ChatThreadSort } from './thread-tree';
+import {
+  MESSAGE_SEARCH_LIMIT,
+  MESSAGE_SEARCH_MIN_LENGTH,
+  buildThreadTree,
+  messageSnippet,
+  type ChatThreadGroup,
+  type ChatThreadSort,
+} from './thread-tree';
 import { FAST_REPLY_WINDOW_DAYS, fastReplyGroupKeys, isAwaitingReply } from './reply-speed';
 import {
   chatThreadCursorWhere,
@@ -198,10 +205,22 @@ async function readThreadPage(
  */
 export const CHAT_THREAD_TREE_MAX = 1000;
 
+/** 本文の検索で当たった発言 1 件。🔴 読めた発言だけ（RLS の C6）。本文は前後だけの抜粋。 */
+export type ChatMessageHit = {
+  readonly threadId: string;
+  readonly messageId: string;
+  readonly sentAt: string;
+  /** スレッドの名前（案件名、無ければ相手の会社名）。 */
+  readonly threadTitle: string | null;
+  readonly snippet: string;
+};
+
 export type ChatThreadTreeData = {
   readonly groups: readonly ChatThreadGroup[];
   /** ✅ 2026-10-14: 要返信（最後の発言が相手から）のスレッド。 */
   readonly awaitingReplyIds: readonly string[];
+  /** ✅ 2026-10-14: 本文の検索で当たった発言（`q` が 2 文字以上のときだけ。新しい順に最大 20 件）。 */
+  readonly messageHits: readonly ChatMessageHit[];
   /** 上限を超えたので、古いスレッドを読んでいない。 */
   readonly truncated: boolean;
 };
@@ -269,7 +288,30 @@ async function readThreadTree(
     })),
     { ...options, fastReplyKeys },
   );
-  return { groups, truncated, awaitingReplyIds };
+  // ✅ 2026-10-14: 本文の検索（紺野の決定）。🔴 母集団は `messages` の RLS（C6）だけ（`where` は検索語とスレッドだけ）。
+  //    削除済みの本文（`NULL`）は当たらない。短すぎる語（2 文字未満）では走査しない。
+  const needle = options.q?.trim() ?? '';
+  const allTitles = new Map(
+    kept.map((row) => [row.id, projects.get(row.projectId ?? '')?.name ?? counterpartyOf(row.partnerCompanyId)] as const),
+  );
+  const messageHits: ChatMessageHit[] =
+    needle.length < MESSAGE_SEARCH_MIN_LENGTH || threadIds.length === 0
+      ? []
+      : (
+          await db.message.findMany({
+            where: { threadId: { in: threadIds }, body: { contains: needle, mode: 'insensitive' } },
+            select: { id: true, threadId: true, body: true, sentAt: true },
+            orderBy: [{ sentAt: 'desc' }, { id: 'desc' }],
+            take: MESSAGE_SEARCH_LIMIT,
+          })
+        ).map((message) => ({
+          threadId: message.threadId,
+          messageId: message.id,
+          sentAt: message.sentAt.toISOString(),
+          threadTitle: allTitles.get(message.threadId) ?? null,
+          snippet: messageSnippet(message.body ?? '', needle),
+        }));
+  return { groups, truncated, awaitingReplyIds, messageHits };
 }
 
 /**

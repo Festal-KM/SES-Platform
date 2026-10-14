@@ -4317,6 +4317,7 @@ const ja = {
   // ✅ 2026-10-14: 要返信の印と、返信が早い取引先（🔴 ホストにだけ。良いところだけを出す）。
   'chat.thread.awaitingReply': '要返信',
   'chat.tree.fastReply': '返信が早い',
+  'chat.threads.search.messageHits': '本文で見つかった発言',
   'chat.tree.truncated': '古いスレッドは表示していません（新しい順に 1,000 件まで）。',
   'chat.messages.heading': 'やり取り',
   'chat.messages.label': 'メッセージ一覧',

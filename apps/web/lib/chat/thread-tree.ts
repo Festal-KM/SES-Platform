@@ -114,3 +114,20 @@ export function buildThreadTree(
   }
   return groups.sort((a, b) => compareRecent(latestOf(a), latestOf(b)));
 }
+
+/** ✅ 2026-10-14: 本文の検索を始める最短の語の長さ（短すぎる語で全文を走査しない）。 */
+export const MESSAGE_SEARCH_MIN_LENGTH = 2;
+/** 本文の検索で返す最大件数。 */
+export const MESSAGE_SEARCH_LIMIT = 20;
+
+/**
+ * 本文の当たった箇所の前後だけを切り出す（前後 `radius` 文字。切ったら「…」）。改行は空白にする。
+ * 当たらなければ先頭から。
+ */
+export function messageSnippet(body: string, q: string, radius = 40): string {
+  const flat = body.replace(/\s+/g, ' ').trim();
+  const index = flat.toLocaleLowerCase('ja').indexOf(q.trim().toLocaleLowerCase('ja'));
+  const start = Math.max(0, (index < 0 ? 0 : index) - radius);
+  const end = Math.min(flat.length, (index < 0 ? 0 : index + q.trim().length) + radius);
+  return `${start > 0 ? '…' : ''}${flat.slice(start, end)}${end < flat.length ? '…' : ''}`;
+}

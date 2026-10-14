@@ -45,6 +45,7 @@ import {
   type ChatThreadSort,
 } from '../../../lib/chat/thread-tree';
 import type { ChatThreadListItem, ChatThreadKind } from '../../../lib/chat/views';
+import type { ChatMessageHit } from '../../../lib/chat/read';
 
 const KIND_MESSAGE_KEYS = {
   PROJECT: 'chat.thread.kind.PROJECT',
@@ -75,6 +76,8 @@ export type ChatThreadListProps = {
   readonly truncated?: boolean;
   /** ✅ 2026-10-14: 要返信（最後の発言が相手から）のスレッド。 */
   readonly awaitingReplyIds?: readonly string[];
+  /** ✅ 2026-10-14: 本文の検索で当たった発言（`read.ts` の `ChatMessageHit`）。 */
+  readonly messageHits?: readonly ChatMessageHit[];
 };
 
 /** 行 1 つ（60px）。🔴 高さが内容量で変わらないよう、2 段とも 1 行に切り詰める。 */
@@ -183,6 +186,7 @@ export function ChatThreadList({
   sort = CHAT_THREAD_SORT_DEFAULT,
   truncated = false,
   awaitingReplyIds = [],
+  messageHits = [],
 }: ChatThreadListProps) {
   const paneState: ChatPaneState = { thread: selectedThreadId, panes: paneThreadIds };
   const context: RowContext = {
@@ -242,7 +246,7 @@ export function ChatThreadList({
           </Button>
         </div>
       </form>
-      {groups.length === 0 ? (
+      {groups.length === 0 && messageHits.length === 0 ? (
         <div className="flex flex-col gap-2 p-4" data-testid="chat-threads-search-empty">
           <p className="m-0 text-body text-fg-muted">{t('chat.threads.search.empty')}</p>
           <Link
@@ -290,6 +294,31 @@ export function ChatThreadList({
             );
           })}
         </ul>
+      )}
+      {/* ✅ 2026-10-14: 本文の検索で当たった発言（読めた発言だけ。前後の抜粋）。押すとそのスレッドを開く。 */}
+      {messageHits.length === 0 ? null : (
+        <section className="border-t border-border" data-testid="chat-threads-message-hits">
+          <h3 className="m-0 px-3 pt-3 pb-1 text-cell font-medium text-fg-muted">{t('chat.threads.search.messageHits')}</h3>
+          <ul className="m-0 list-none p-0">
+            {messageHits.map((hit) => (
+              <li key={hit.messageId} className={`border-b border-border-row ${ROW_HOVER_CLASSES}`}>
+                <Link
+                  href={chatHref({ ...withThreadSelected(context.paneState, hit.threadId), ...context.listQuery })}
+                  className="flex flex-col gap-1 px-3 py-2"
+                  data-testid={`chat-threads-message-hit-${hit.messageId}`}
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="min-w-0 flex-1 truncate text-cell font-medium text-fg">
+                      {hit.threadTitle ?? t('chat.thread.unknownName')}
+                    </span>
+                    <span className="shrink-0 text-xs text-fg-placeholder">{formatDateTimeJst(hit.sentAt)}</span>
+                  </span>
+                  <span className="text-xs text-fg-muted">{hit.snippet}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
       {truncated ? (
         <p className="m-0 p-3 text-xs text-fg-muted" data-testid="chat-threads-truncated">

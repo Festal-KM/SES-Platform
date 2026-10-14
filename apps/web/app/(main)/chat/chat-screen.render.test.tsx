@@ -640,3 +640,31 @@ describe('⑬: 要返信の印と返信が早い取引先（2026-10-14、チャ�
     expect(html).not.toMatch(/遅い|順位|ランキング/);
   });
 });
+
+describe('⑭: 本文の検索の結果（2026-10-14、チャットレーン）', () => {
+  const groups = buildThreadTree(
+    THREAD_ROWS.map((item) => ({ groupKey: item.counterpartyName ?? item.id, item })),
+    { sort: 'recent', q: null },
+  );
+  const HIT = {
+    threadId: THREAD_COMPANY,
+    messageId: '01930000-0000-7000-8000-0000000000f9',
+    sentAt: '2026-10-01T00:00:00.000Z',
+    threadTitle: '架空パートナー B',
+    snippet: '…面談の候補をお送りします…',
+  };
+
+  it('当たった発言を出し、押すとそのスレッドを開く', () => {
+    const html = renderThreadList({ groups, q: '面談', messageHits: [HIT] });
+    expect(html).toContain('data-testid="chat-threads-message-hits"');
+    expect(html).toContain(HIT.snippet);
+    const tag = new RegExp(`<a [^>]*data-testid="chat-threads-message-hit-${HIT.messageId}"[^>]*>`).exec(html)?.[0] ?? '';
+    expect(tag).toContain(`thread=${THREAD_COMPANY}`);
+  });
+
+  it('会社名・案件名に当たらなくても、本文に当たれば「該当なし」にしない', () => {
+    const html = renderThreadList({ groups: [], q: '面談', messageHits: [HIT] });
+    expect(html).not.toContain('chat-threads-search-empty');
+    expect(html).toContain('chat-threads-message-hits');
+  });
+});
