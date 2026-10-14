@@ -26,6 +26,8 @@ export type ChatThreadGroup = {
   readonly chat: ChatThreadListItem | null;
   /** その会社との案件スレッド（更新があったものが上）。 */
   readonly threads: readonly ChatThreadListItem[];
+  /** ✅ 2026-10-14: 返信が早い取引先（上位 10%。🔴 ホストにだけ真になりうる。`reply-speed.ts`）。 */
+  readonly fastReply: boolean;
 };
 
 export type ChatThreadTreeInput = {
@@ -64,11 +66,24 @@ function matches(value: string | null, needle: string): boolean {
  */
 export function buildThreadTree(
   input: readonly ChatThreadTreeInput[],
-  options: { readonly sort: ChatThreadSort; readonly q: string | null },
+  options: {
+    readonly sort: ChatThreadSort;
+    readonly q: string | null;
+    /** 返信が早い取引先の鍵（`reply-speed.ts`。省略 = 無し）。 */
+    readonly fastReplyKeys?: ReadonlySet<string>;
+  },
 ): readonly ChatThreadGroup[] {
-  const byKey = new Map<string, { counterpartyName: string | null; chat: ChatThreadListItem | null; threads: ChatThreadListItem[] }>();
+  const byKey = new Map<
+    string,
+    { counterpartyName: string | null; chat: ChatThreadListItem | null; threads: ChatThreadListItem[]; fastReply: boolean }
+  >();
   for (const { groupKey, item } of input) {
-    const group = byKey.get(groupKey) ?? { counterpartyName: item.counterpartyName, chat: null, threads: [] };
+    const group = byKey.get(groupKey) ?? {
+      counterpartyName: item.counterpartyName,
+      chat: null,
+      threads: [],
+      fastReply: options.fastReplyKeys?.has(groupKey) ?? false,
+    };
     if (group.counterpartyName === null) group.counterpartyName = item.counterpartyName;
     if (item.kind === 'COMPANY' && group.chat === null) group.chat = item;
     else group.threads.push(item);
@@ -80,11 +95,13 @@ export function buildThreadTree(
   for (const group of byKey.values()) {
     const threads = [...group.threads].sort(compareRecent);
     if (needle === '' || matches(group.counterpartyName, needle)) {
-      groups.push({ counterpartyName: group.counterpartyName, chat: group.chat, threads });
+      groups.push({ counterpartyName: group.counterpartyName, chat: group.chat, threads, fastReply: group.fastReply });
       continue;
     }
     const hits = threads.filter((thread) => matches(thread.project?.name ?? null, needle));
-    if (hits.length > 0) groups.push({ counterpartyName: group.counterpartyName, chat: group.chat, threads: hits });
+    if (hits.length > 0) {
+      groups.push({ counterpartyName: group.counterpartyName, chat: group.chat, threads: hits, fastReply: group.fastReply });
+    }
   }
 
   if (options.sort === 'company') {

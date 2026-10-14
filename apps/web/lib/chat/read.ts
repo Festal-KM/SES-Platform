@@ -35,6 +35,7 @@ import { requireFound, ValidationError } from '../api/errors';
 import { buildCursorPage, takeForCursorPage, type CursorPage } from '../api/pagination';
 import type { ChatMessageListQuery, ChatThreadListQuery } from './schemas';
 import { buildThreadTree, type ChatThreadGroup, type ChatThreadSort } from './thread-tree';
+import { FAST_REPLY_WINDOW_DAYS, fastReplyGroupKeys, isAwaitingReply } from './reply-speed';
 import {
   chatThreadCursorWhere,
   decodeChatThreadCursor,
@@ -199,6 +200,8 @@ export const CHAT_THREAD_TREE_MAX = 1000;
 
 export type ChatThreadTreeData = {
   readonly groups: readonly ChatThreadGroup[];
+  /** ✅ 2026-10-14: 要返信（最後の発言が相手から）のスレッド。 */
+  readonly awaitingReplyIds: readonly string[];
   /** 上限を超えたので、古いスレッドを読んでいない。 */
   readonly truncated: boolean;
 };
@@ -209,7 +212,7 @@ export type ChatThreadTreeData = {
  */
 async function readThreadTree(
   ctx: AuthenticatedTenantCtx,
-  db: Pick<TenantDb, 'chatThread' | 'partnerCompany' | 'tenant' | 'project'>,
+  db: Pick<TenantDb, 'chatThread' | 'partnerCompany' | 'tenant' | 'project' | 'message'>,
   options: { readonly sort: ChatThreadSort; readonly q: string | null },
 ): Promise<ChatThreadTreeData> {
   const rows = (await db.chatThread.findMany({
@@ -221,6 +224,41 @@ async function readThreadTree(
   const kept = truncated ? rows.slice(0, CHAT_THREAD_TREE_MAX) : rows;
   const counterpartyOf = await resolveCounterpartyNames(ctx, db, kept.map((row) => row.partnerCompanyId));
   const projects = await resolveProjectRefs(db, kept.map((row) => row.projectId));
+  // ✅ 2026-10-14: 要返信と返信の速さ（`reply-speed.ts`）。🔴 発言の**時刻と送った側だけ**を読む（本文を読まない）。
+  //    母集団は `messages` の RLS（C6）。`where` は「どのスレッドか」と期間だけで、境界を書き足さない。
+  const threadIds = kept.map((row) => row.id);
+  const host = ctx.partnerCompanyId === null;
+  const lastMessages =
+    threadIds.length === 0
+      ? []
+      : await db.message.findMany({
+          where: { threadId: { in: threadIds } },
+          distinct: ['threadId'],
+          orderBy: [{ threadId: 'asc' }, { sentAt: 'desc' }, { id: 'desc' }],
+          select: { threadId: true, senderPartnerCompanyId: true },
+        });
+  // 読み手から見た「相手」: ホストなら取引先の発言、取引先ならホストの発言。
+  const awaitingReplyIds = lastMessages
+    .filter((message) => isAwaitingReply({ fromCounterparty: host ? message.senderPartnerCompanyId !== null : message.senderPartnerCompanyId === null }))
+    .map((message) => message.threadId);
+  // 🔴 返信が早い取引先は**ホストにだけ**（取引先には他社との比較を出さない）。
+  let fastReplyKeys: ReadonlySet<string> = new Set();
+  if (host && threadIds.length > 0) {
+    const since = new Date(Date.now() - FAST_REPLY_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+    const recent = await db.message.findMany({
+      where: { threadId: { in: threadIds }, sentAt: { gte: since } },
+      select: { threadId: true, senderPartnerCompanyId: true, sentAt: true },
+    });
+    const groupOf = new Map(kept.map((row) => [row.id, row.partnerCompanyId]));
+    fastReplyKeys = fastReplyGroupKeys(
+      recent.map((message) => ({
+        threadId: message.threadId,
+        groupKey: groupOf.get(message.threadId) ?? message.threadId,
+        fromPartner: message.senderPartnerCompanyId !== null,
+        sentAt: message.sentAt,
+      })),
+    );
+  }
   const groups = buildThreadTree(
     kept.map((row) => ({
       groupKey: row.partnerCompanyId,
@@ -229,9 +267,9 @@ async function readThreadTree(
         counterpartyName: counterpartyOf(row.partnerCompanyId),
       }),
     })),
-    options,
+    { ...options, fastReplyKeys },
   );
-  return { groups, truncated };
+  return { groups, truncated, awaitingReplyIds };
 }
 
 /**

@@ -90,7 +90,7 @@ export default async function ChatPage({
   const canPost = canPostChatMessage(ctx.role);
   // ✅ 2026-10-14: 会話を開く・閉じる URL に一覧の検索語と並べ方を引き継ぐ（開くたびに検索が消えない）。
   const listQuery = { q: query.q ?? null, sort: query.sort ?? CHAT_THREAD_SORT_DEFAULT };
-  const tree = data.tree ?? { groups: [], truncated: false };
+  const tree = data.tree ?? { groups: [], truncated: false, awaitingReplyIds: [] };
 
   return (
     <main className={CONTENT_PADDING_Y_CLASS}>
@@ -134,6 +134,7 @@ export default async function ChatPage({
             <ChatThreadList
               groups={tree.groups}
               truncated={tree.truncated}
+              awaitingReplyIds={tree.awaitingReplyIds}
               q={listQuery.q}
               sort={listQuery.sort}
               selectedThreadId={selected?.id ?? null}

@@ -101,6 +101,6 @@ describe('buildThreadTree', () => {
 
   it('🔴 出力に会社の鍵（groupKey）が載らない', () => {
     const tree = buildThreadTree(INPUT, { sort: 'recent', q: null });
-    expect(Object.keys(tree[0] ?? {}).sort()).toEqual(['chat', 'counterpartyName', 'threads']);
+    expect(Object.keys(tree[0] ?? {}).sort()).toEqual(['chat', 'counterpartyName', 'fastReply', 'threads']);
   });
 });

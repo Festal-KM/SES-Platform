@@ -4314,6 +4314,9 @@ const ja = {
   'chat.threads.sort.recent': '更新が新しい順',
   'chat.threads.sort.company': '会社名順',
   'chat.tree.noChat': 'チャットはまだありません',
+  // ✅ 2026-10-14: 要返信の印と、返信が早い取引先（🔴 ホストにだけ。良いところだけを出す）。
+  'chat.thread.awaitingReply': '要返信',
+  'chat.tree.fastReply': '返信が早い',
   'chat.tree.truncated': '古いスレッドは表示していません（新しい順に 1,000 件まで）。',
   'chat.messages.heading': 'やり取り',
   'chat.messages.label': 'メッセージ一覧',

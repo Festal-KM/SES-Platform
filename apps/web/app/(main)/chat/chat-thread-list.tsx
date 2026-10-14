@@ -73,6 +73,8 @@ export type ChatThreadListProps = {
   readonly sort?: ChatThreadSort;
   /** ✅ 2026-10-14: 上限を超えて古いスレッドを読んでいない（`read.ts` の `CHAT_THREAD_TREE_MAX`）。 */
   readonly truncated?: boolean;
+  /** ✅ 2026-10-14: 要返信（最後の発言が相手から）のスレッド。 */
+  readonly awaitingReplyIds?: readonly string[];
 };
 
 /** 行 1 つ（60px）。🔴 高さが内容量で変わらないよう、2 段とも 1 行に切り詰める。 */
@@ -84,13 +86,15 @@ type RowContext = {
   readonly selectedThreadId: string | null;
   readonly openBesideLabel: string | undefined;
   readonly listQuery: { readonly q: string | null; readonly sort: ChatThreadSort };
+  readonly awaitingReplyIds: ReadonlySet<string>;
 };
 
 /**
  * 1 行。`COMPANY` = 会社とのチャット（親）、`PROJECT` = 案件スレッド（子。字下げする）。
  */
 function ThreadRow({ item, context }: { readonly item: ChatThreadListItem; readonly context: RowContext }) {
-  const { paneState, openIds, selectedThreadId, openBesideLabel, listQuery } = context;
+  const { paneState, openIds, selectedThreadId, openBesideLabel, listQuery, awaitingReplyIds } = context;
+  const awaiting = awaitingReplyIds.has(item.id);
   const selected = item.id === selectedThreadId;
   // ✅ 2026-10-14: 開いている会話（左端か右の列）は選択中と同じ面の色で示す。
   const open = openIds.includes(item.id);
@@ -132,6 +136,12 @@ function ThreadRow({ item, context }: { readonly item: ChatThreadListItem; reado
           </span>
           <span className="flex items-center gap-2">
             <Badge variant="neutral">{t(KIND_MESSAGE_KEYS[item.kind])}</Badge>
+            {/* ✅ 2026-10-14: 要返信（最後の発言が相手から）。色は §3.3「次はあなたの番」= brand。 */}
+            {awaiting ? (
+              <Badge variant="brand" data-testid={`chat-thread-awaiting-${item.id}`}>
+                {t('chat.thread.awaitingReply')}
+              </Badge>
+            ) : null}
             {/* ✅ 2026-10-14: スレッドは親の会社の下にあるので、相手の会社名は読み上げにだけ残す。 */}
             <span
               className={isChat ? 'min-w-0 flex-1 truncate text-cell text-fg-muted' : 'sr-only'}
@@ -172,6 +182,7 @@ export function ChatThreadList({
   q = null,
   sort = CHAT_THREAD_SORT_DEFAULT,
   truncated = false,
+  awaitingReplyIds = [],
 }: ChatThreadListProps) {
   const paneState: ChatPaneState = { thread: selectedThreadId, panes: paneThreadIds };
   const context: RowContext = {
@@ -180,6 +191,7 @@ export function ChatThreadList({
     selectedThreadId,
     openBesideLabel,
     listQuery: { q, sort },
+    awaitingReplyIds: new Set(awaitingReplyIds),
   };
   const searching = q !== null && q !== '';
   if (groups.length === 0 && !searching) {
@@ -247,6 +259,13 @@ export function ChatThreadList({
             const name = group.counterpartyName ?? t('chat.thread.unknownName');
             return (
               <li key={group.chat?.id ?? `group-${String(index)}`} data-testid={`chat-thread-group-${String(index)}`}>
+                {/* ✅ 2026-10-14: 返信が早い取引先（上位 10%）。🔴 ホストにだけ真になる（`read.ts`）。良いところだけを出す。 */}
+                {group.fastReply ? (
+                  <p className="m-0 flex items-center gap-2 px-3 pt-2" data-testid={`chat-thread-group-fast-${String(index)}`}>
+                    <Badge variant="success">{t('chat.tree.fastReply')}</Badge>
+                    <span className="truncate text-xs text-fg-muted">{name}</span>
+                  </p>
+                ) : null}
                 <ul className="m-0 list-none p-0" aria-label={name}>
                   {group.chat === null ? (
                     // 🔴 まだチャットが無い会社も、スレッドの親として名前だけを出す（押せない行は作らない）。

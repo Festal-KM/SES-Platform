@@ -530,6 +530,9 @@ describe('🔴 ⑥ 参加会社は `thread_participants`（C5）が返した行�
     expect(a1Json).not.toContain(PARTNER_A2);
     // 木を読むときはページ単位の一覧を読まない（レビュー指摘）。
     expect(forA1.threads).toEqual({ items: [], nextCursor: null });
+    // ✅ 2026-10-14: 要返信は自分が読めるスレッドだけ。🔴 「返信が早い」は取引先には決して付かない（他社との比較を出さない）。
+    expect(forA1.tree?.awaitingReplyIds.every((id) => id !== THREAD_A_P2)).toBe(true);
+    expect(forA1.tree?.groups.every((group) => !group.fastReply)).toBe(true);
 
     // (b) A1 が A2 の社名・未公開案件名で検索しても 0 件（存在を探れない）。
     expect((await read(partnerA1, COMPANY_A2)).tree?.groups).toEqual([]);
