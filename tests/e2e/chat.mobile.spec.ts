@@ -51,16 +51,20 @@ test.describe('S-031 チャット — モバイル（Tier 1）', () => {
       //    右寄せを本文の長さに依らない形で固定する: ①自分の行が右に寄せる指定を持つ ②自分の吹き出しの
       //    右端が行の右端に接する ③相手より左に出ない ④名前は相手にだけ出る。
       await expect(mine).toHaveCSS('align-items', 'flex-end');
-      const mineRow = await mine.boundingBox();
-      const mineBody = await page.getByTestId(`chat-message-body-${own.partnerMessageId}`).boundingBox();
-      const theirsBody = await page.getByTestId(`chat-message-body-${own.hostMessageId}`).boundingBox();
-      expect(mineRow, '自分の行が描かれていません').not.toBeNull();
-      expect(mineBody, '自分の吹き出しが描かれていません').not.toBeNull();
-      expect(theirsBody, '相手の吹き出しが描かれていません').not.toBeNull();
-      if (mineRow !== null && mineBody !== null && theirsBody !== null) {
-        expect(Math.abs(mineBody.x + mineBody.width - (mineRow.x + mineRow.width))).toBeLessThanOrEqual(1);
-        expect(mineBody.x + mineBody.width).toBeGreaterThanOrEqual(theirsBody.x + theirsBody.width);
-      }
+      // 🔴 位置の測定は `toPass` で再試行する —— 描画の入れ替わりの瞬間に測ると `boundingBox()` が
+      //    null を返す（CI で 1 度、表示は正しいまま「自分の行が描かれていません」で落ちた）。
+      await expect(async () => {
+        const mineRow = await mine.boundingBox();
+        const mineBody = await page.getByTestId(`chat-message-body-${own.partnerMessageId}`).boundingBox();
+        const theirsBody = await page.getByTestId(`chat-message-body-${own.hostMessageId}`).boundingBox();
+        expect(mineRow, '自分の行が描かれていません').not.toBeNull();
+        expect(mineBody, '自分の吹き出しが描かれていません').not.toBeNull();
+        expect(theirsBody, '相手の吹き出しが描かれていません').not.toBeNull();
+        if (mineRow !== null && mineBody !== null && theirsBody !== null) {
+          expect(Math.abs(mineBody.x + mineBody.width - (mineRow.x + mineRow.width))).toBeLessThanOrEqual(1);
+          expect(mineBody.x + mineBody.width).toBeGreaterThanOrEqual(theirsBody.x + theirsBody.width);
+        }
+      }).toPass();
       await expect(page.getByTestId(`chat-message-sender-${own.partnerMessageId}`)).toHaveCount(0);
       await expect(page.getByTestId(`chat-message-sender-${own.hostMessageId}`)).toBeVisible();
       await expect(theirs).toHaveAttribute('data-own', 'false');
