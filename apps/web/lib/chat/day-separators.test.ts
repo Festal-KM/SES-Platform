@@ -5,7 +5,7 @@ import type { ChatMessageView } from './views';
 import { formatChatTime, withDaySeparators } from './day-separators';
 
 function message(id: string, sentAt: string): ChatMessageView {
-  return { id, sentAt, senderName: '佐藤', senderCompanyName: '株式会社サンプル', own: false, body: '本文' };
+  return { id, sentAt, senderName: '佐藤', senderCompanyName: '株式会社サンプル', own: false, mine: false, body: '本文' };
 }
 
 describe('withDaySeparators', () => {
@@ -83,7 +83,7 @@ describe('同じ人の連続した発言をまとめる（continued）', () => {
   });
 
   it('別の人の発言をはさんだら続きにしない', () => {
-    const other: ChatMessageView = { ...message('o1', '2026-10-13T01:01:00.000Z'), senderName: '山田', own: true };
+    const other: ChatMessageView = { ...message('o1', '2026-10-13T01:01:00.000Z'), senderName: '山田', own: true, mine: true };
     expect(
       continuedOf([message('m1', '2026-10-13T01:00:00.000Z'), other, message('m2', '2026-10-13T01:02:00.000Z')]),
     ).toEqual([

@@ -69,6 +69,7 @@ const MESSAGE_OWN: ChatMessageView = {
   senderName: '山田 太郎',
   senderCompanyName: '合成ホスト株式会社',
   own: true,
+  mine: true,
   body: '自社の発言（合成データ）',
 };
 
@@ -78,6 +79,7 @@ const MESSAGE_OTHER: ChatMessageView = {
   senderName: '鈴木 花子',
   senderCompanyName: '架空パートナー A',
   own: false,
+  mine: false,
   body: '相手の発言（合成データ）',
 };
 
@@ -459,5 +461,29 @@ describe('⑧: 連続した発言のまとめ・時刻・見出し（2026-10-13�
     const fallback = renderConversation({ title: { title: null, subtitle: null } });
     expect(fallback).toContain(t('chat.messages.heading'));
     expect(fallback).not.toContain('data-testid="chat-conversation-subtitle"');
+  });
+});
+
+describe('⑨: 自分だけ右・同僚は左（2026-10-14、チャット担当の決定）', () => {
+  const COLLEAGUE: ChatMessageView = {
+    ...MESSAGE_OWN,
+    id: '01930000-0000-7000-8000-0000000000d5',
+    senderName: '佐々木 次郎',
+    sentAt: '2026-09-30T03:00:00.000Z',
+    mine: false, // 同じ会社（own）だが本人ではない
+  };
+
+  it('会話型: 同僚の発言は own でも左に置き、名前を出す', () => {
+    const html = renderConversation({ layout: 'chat', initialMessages: [MESSAGE_OWN, COLLEAGUE] });
+    const li = new RegExp(`<li[^>]*data-testid="chat-message-${COLLEAGUE.id}"[^>]*>`, 's').exec(html);
+    expect((li as RegExpExecArray)[0]).toContain('data-own="true"');
+    expect((li as RegExpExecArray)[0]).not.toContain('data-layout="chat"');
+    expect(html).toContain(`data-testid="chat-message-sender-${COLLEAGUE.id}"`);
+  });
+
+  it('会話型: 本人の発言だけが右に寄る', () => {
+    const html = renderConversation({ layout: 'chat', initialMessages: [MESSAGE_OWN, COLLEAGUE] });
+    const own = new RegExp(`<li[^>]*data-testid="chat-message-${MESSAGE_OWN.id}"[^>]*>`, 's').exec(html);
+    expect((own as RegExpExecArray)[0]).toContain('data-layout="chat"');
   });
 });
