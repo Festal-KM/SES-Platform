@@ -45,8 +45,24 @@ import { displayInitials } from '../../../lib/format/initials';
 import { chatHref, chatMessagesApiPath } from '../../../lib/chat/screen-query';
 import type { ChatMessageView } from '../../../lib/chat/views';
 import type { ChatConversationMessages } from './chat-props';
+import { formatChatTime, withDaySeparators } from '../../../lib/chat/day-separators';
+import {
+  isSendKey,
+  type ChatConversationLayout,
+  type ChatConversationTitle,
+} from '../../../lib/chat/layout';
 
 export type ChatConversationProps = {
+  /**
+   * 会話の見出し（Lark の会話ヘッダ。`lib/chat/layout.ts` の `conversationTitleFor`）。
+   * 省略時・名前が読めないときは既定の見出し（`messages.heading`）を出す。
+   */
+  readonly title?: ChatConversationTitle;
+  /**
+   * 並べ方（2026-10-13、Lark 寄せ。`lib/chat/layout.ts`）。案件スレッド = `topic`（全員左寄せ）/
+   * 企業スレッド = `chat`（自分は右）。省略時は `topic`（従来の表示）。
+   */
+  readonly layout?: ChatConversationLayout;
   readonly threadId: string;
   /** 直近 50 件（古い順。`lib/chat/read.ts` が並べ替えて渡す）。 */
   readonly initialMessages: readonly ChatMessageView[];
@@ -63,6 +79,8 @@ type SendResponseBody = { readonly message: ChatMessageView };
 type MessagePageBody = { readonly items: readonly ChatMessageView[]; readonly nextCursor: string | null };
 
 export function ChatConversation({
+  layout = 'topic',
+  title,
   threadId,
   initialMessages,
   initialNextCursor,
@@ -144,7 +162,18 @@ export function ChatConversation({
     //    3 段にした。** 本文だけが伸び縮みし、上下 2 段は動かない。
     <section data-testid="chat-conversation" className="flex min-h-0 flex-1 flex-col">
       <div className={`flex shrink-0 items-center gap-4 border-b border-border px-5 ${HEADER_HEIGHT_CLASS}`}>
-        <h2 className="m-0 text-row font-medium text-fg">{messages.heading}</h2>
+        {/* ✅ 2026-10-13（Lark 寄せ）: 見出しに会話の相手（案件スレッドは案件名 + 相手の会社名）を出す。
+            🔴 名前が読めなければ既定の見出しに戻す（空の見出しを作らない）。 */}
+        <div className="flex min-w-0 items-baseline gap-2">
+          <h2 className="m-0 truncate text-row font-medium text-fg" data-testid="chat-conversation-title">
+            {title?.title ?? messages.heading}
+          </h2>
+          {title?.title != null && title.subtitle !== null ? (
+            <span className="truncate text-xs text-fg-muted" data-testid="chat-conversation-subtitle">
+              {title.subtitle}
+            </span>
+          ) : null}
+        </div>
         {/* 🔴 モバイルは「一覧 → 会話」の 2 画面遷移（`docs/04` §S-031 デバイス別）。戻り道を必ず置く。 */}
         <Link
           href={chatHref({})}
@@ -181,7 +210,78 @@ export function ChatConversation({
             className="m-0 flex list-none flex-col gap-3 p-0"
             data-testid="chat-messages"
           >
-            {items.map((item) => (
+            {withDaySeparators(items).map((entry) => {
+              // ✅ 2026-10-13: **日付の区切り**（定義書 §3.12「中央・24h の pill・地 `bg-subtle`・12」）。
+              // 🔴 JST の暦日が変わる位置にだけ置く（`lib/chat/day-separators.ts`）。並び順は変えない。
+              // 🔴 radius は `rounded-md` —— `rounded-full` はアバターとカウンタにしか使えない
+              //    （`tests/static/design-tokens.test.ts` / `docs/04` §7.9）。
+              if (entry.kind === 'day') {
+                return (
+                  <li
+                    key={`day-${entry.day}`}
+                    className="flex justify-center"
+                    data-testid={`chat-day-separator-${entry.day}`}
+                  >
+                    <time dateTime={entry.day} className="rounded-md bg-bg-subtle px-3 py-1 text-xs text-fg-muted">
+                      {entry.day}
+                    </time>
+                  </li>
+                );
+              }
+              const item = entry.message;
+              // ✅ 2026-10-13（Lark 寄せ）: 時刻は `HH:MM` だけを出し（日付は区切りが受け持つ）、
+              //    日付つきの完全な時刻は `title`（ホバー）と `dateTime` に残す。
+              const time = (
+                <time
+                  dateTime={item.sentAt}
+                  title={formatDateTimeJst(item.sentAt)}
+                  className="text-xs text-fg-placeholder"
+                >
+                  {formatChatTime(item.sentAt)}
+                </time>
+              );
+              // ✅ 2026-10-13（Lark 寄せ）: **同じ人の連続した発言（5 分以内）は名前とアバターを省く**
+              //    （`entry.continued`。`lib/chat/day-separators.ts`）。🔴 名前が読めない発言はまとめない。
+              const continued = entry.continued;
+              // ✅ 2026-10-13（Lark 寄せ。`lib/chat/layout.ts`）: **企業スレッド（会話型）の自分の発言は
+              //    右に置く。** 名前とアバターは出さない（自分であることは位置で分かる）。
+              //    読み上げには「自社」を残す（位置は目でしか分からないため）。
+              // 🔴 参加会社は常に 2 社なので、左右の 2 方向で表しきれる（下の「右寄せにしない」の理由は
+              //    案件スレッド＝話題型にだけ残る）。
+              // ✅ 2026-10-14（チャット担当の決定）: **右に寄せるのは自分の発言だけ**（`item.mine`）。
+              //    同僚（同じ会社の別の人）の発言は `own` でも左に置き、名前を出す（Lark と同じ見え方）。
+              if (layout === 'chat' && item.mine) {
+                return (
+                  <li
+                    key={item.id}
+                    data-testid={`chat-message-${item.id}`}
+                    data-own="true"
+                    data-layout="chat"
+                    data-continued={continued ? 'true' : 'false'}
+                    className="flex flex-col items-end gap-1"
+                  >
+                    {continued ? (
+                      <span className="sr-only">{messages.own}</span>
+                    ) : (
+                      <p className="m-0 flex items-baseline gap-2">
+                        <span className="sr-only">{messages.own}</span>
+                        {time}
+                      </p>
+                    )}
+                    <p
+                      className={cn(
+                        'm-0 w-fit rounded-lg px-4 py-2 text-body whitespace-pre-wrap text-fg',
+                        CHAT_BUBBLE_MAX_WIDTH_CLASS,
+                        'bg-brand-bg',
+                      )}
+                      data-testid={`chat-message-body-${item.id}`}
+                    >
+                      {item.body ?? messages.purged}
+                    </p>
+                  </li>
+                );
+              }
+              return (
               // 🔴 ✅ **2026-10-13: 全員を左に寄せる**（デザインシステム v1.0 §3.12「全員左寄せ・
               //    Slack 型」）。自社と相手の弁別は**バブルの地の色だけ**である。
               // 🔴 **右寄せにしない** —— 誰の発言かを「位置」で表すと、参加会社が 3 社以上に
@@ -192,24 +292,32 @@ export function ChatConversation({
                 key={item.id}
                 data-testid={`chat-message-${item.id}`}
                 data-own={item.own ? 'true' : 'false'}
+                data-continued={continued ? 'true' : 'false'}
                 className="flex gap-3"
               >
+                {/* 🔴 続きの発言はアバターを見えなくするが、幅は残す（本文の左端をそろえる）。 */}
                 <Avatar
                   size="md"
                   initials={displayInitials(item.senderName ?? item.senderCompanyName ?? '?')}
                   title={item.senderName ?? messages.unknownName}
+                  className={continued ? 'invisible' : undefined}
                 />
                 <div className="flex min-w-0 flex-1 flex-col gap-1">
-                  <p className="m-0 flex flex-wrap items-baseline gap-2">
-                    <span className="text-body font-bold text-fg" data-testid={`chat-message-sender-${item.id}`}>
-                      {item.senderName ?? messages.unknownName}
-                    </span>
-                    <span className="text-xs text-fg-muted">
-                      {item.senderCompanyName ?? messages.unknownName}
-                    </span>
-                    {item.own ? <span className="text-xs text-fg-muted">{messages.own}</span> : null}
-                    <span className="text-xs text-fg-placeholder">{formatDateTimeJst(item.sentAt)}</span>
-                  </p>
+                  {continued ? (
+                    // 🔴 読み上げでは誰の発言かを残す（見た目だけ省く）。
+                    <span className="sr-only">{item.senderName ?? messages.unknownName}</span>
+                  ) : (
+                    <p className="m-0 flex flex-wrap items-baseline gap-2">
+                      <span className="text-body font-bold text-fg" data-testid={`chat-message-sender-${item.id}`}>
+                        {item.senderName ?? messages.unknownName}
+                      </span>
+                      <span className="text-xs text-fg-muted">
+                        {item.senderCompanyName ?? messages.unknownName}
+                      </span>
+                      {item.own ? <span className="text-xs text-fg-muted">{messages.own}</span> : null}
+                      {time}
+                    </p>
+                  )}
                   {/* 🔴 本文は `PURGED` / 保持期間削除で消える（`F-064 AC-2`）。空にせず事実を書く。
                       🔴 上限幅（560）は `packages/ui` の定数から取る —— `max-w-*` は画面に書けない
                          （`ui-screen-width.test.ts` (c)）。**読める行長の規約**であり、画面ごとに
@@ -226,7 +334,8 @@ export function ChatConversation({
                   </p>
                 </div>
               </li>
-            ))}
+              );
+            })}
           </ol>
         )}
       </div>
@@ -251,6 +360,21 @@ export function ChatConversation({
               maxLength={CHAT_MESSAGE_MAX_LENGTH}
               placeholder={messages.composePlaceholder}
               onChange={(event) => setBody(event.target.value)}
+              // ✅ 2026-10-13（Lark 寄せ）: Enter で送信、Shift+Enter で改行。
+              // 🔴 日本語入力の変換確定の Enter では送らない（`lib/chat/layout.ts` の `isSendKey`）。
+              onKeyDown={(event) => {
+                if (
+                  isSendKey({
+                    key: event.key,
+                    shiftKey: event.shiftKey,
+                    isComposing: event.nativeEvent.isComposing,
+                    keyCode: event.keyCode,
+                  })
+                ) {
+                  event.preventDefault();
+                  void submit();
+                }
+              }}
               data-testid="chat-compose-body"
             />
           </Field>

@@ -74,6 +74,11 @@ export type ChatMessageView = {
   readonly senderCompanyName: string | null;
   /** 🔴 自社の発言か。**寄せ・色の判定を画面に書かせない**ための値である。 */
   readonly own: boolean;
+  /**
+   * 🔴 読み手本人の発言か（2026-10-14、チャットレーン）。会話型の並べ方で**自分だけを右に寄せる**ための値
+   * （同僚の発言は `own` でも左に置く）。`mine` なら必ず `own` である。
+   */
+  readonly mine: boolean;
   /** 本文。🔴 `PURGED` / 保持期間削除で本文が消えた行は `null`（`F-064 AC-2`）。 */
   readonly body: string | null;
 };
@@ -109,7 +114,7 @@ export type ChatThreadDetailView = {
 
 export const CHAT_THREAD_LIST_ITEM_KEYS = ['id', 'kind', 'project', 'counterpartyName', 'lastMessageAt'] as const;
 
-export const CHAT_MESSAGE_VIEW_KEYS = ['id', 'sentAt', 'senderName', 'senderCompanyName', 'own', 'body'] as const;
+export const CHAT_MESSAGE_VIEW_KEYS = ['id', 'sentAt', 'senderName', 'senderCompanyName', 'own', 'mine', 'body'] as const;
 
 export const CHAT_PARTICIPANT_VIEW_KEYS = ['companyName', 'isHost', 'joinedAt', 'leftAt'] as const;
 
@@ -205,6 +210,11 @@ export type ChatMessageDeps = {
    *    **リクエスト入力から渡してはならない**（`CLAUDE.md` §3.1）。
    */
   readonly viewerPartnerCompanyId: string | null;
+  /**
+   * 🔴 読み手の利用者 ID（`ctx.userId`）。`mine`（自分の発言か）の判定にだけ使う。
+   *    **リクエスト入力から渡してはならない**（`CLAUDE.md` §3.1）。**応答には載せない**（`senderUserId` と同じ）。
+   */
+  readonly viewerUserId: string;
 };
 
 export function chatMessageView(row: ChatMessageRow, deps: ChatMessageDeps): ChatMessageView {
@@ -216,6 +226,10 @@ export function chatMessageView(row: ChatMessageRow, deps: ChatMessageDeps): Cha
     // 🔴 「自社か」は会社で決める（スレッドには 2 社しか居ない。`F-038 AC-2`）。利用者単位にすると
     //    同僚の発言が「相手の発言」として寄せられる。
     own: row.senderPartnerCompanyId === deps.viewerPartnerCompanyId,
+    // ✅ 2026-10-14（チャットレーン）: **自分の発言か**（会話型で自分だけを右に寄せるため）。
+    //    🔴 真偽値だけを返し、送信者の利用者 ID は応答に載せない（`CHAT_FORBIDDEN_RESPONSE_KEYS` の `senderUserId`）。
+    //    `mine` なら必ず `own`（自分は自社に属する）。
+    mine: row.senderUserId === deps.viewerUserId,
     body: row.body,
   };
 }

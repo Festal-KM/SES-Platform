@@ -35,6 +35,7 @@ import { t } from '@ses/i18n';
 import { Alert, Card, CONTENT_PADDING_Y_CLASS, PageBody } from '@ses/ui';
 import { resolveTenantCtxOutcome } from '../../../lib/auth/session';
 import { canPostChatMessage } from '../../../lib/chat/policy';
+import { conversationLayoutFor, conversationTitleFor } from '../../../lib/chat/layout';
 import { readChatScreen } from '../../../lib/chat/read';
 import { CHAT_PATH, chatScreenQuerySchema } from '../../../lib/chat/screen-query';
 import { CHAT_TRAIL } from '../../../lib/shell/page-trail';
@@ -120,6 +121,8 @@ export default async function ChatPage({
               </p>
             ) : (
               <ChatConversation
+                layout={conversationLayoutFor(selected.kind)}
+                title={conversationTitleFor(selected)}
                 threadId={selected.id}
                 initialMessages={data.messages.items}
                 initialNextCursor={data.messages.nextCursor}

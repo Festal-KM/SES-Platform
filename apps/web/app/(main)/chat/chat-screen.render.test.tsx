@@ -69,6 +69,7 @@ const MESSAGE_OWN: ChatMessageView = {
   senderName: '山田 太郎',
   senderCompanyName: '合成ホスト株式会社',
   own: true,
+  mine: true,
   body: '自社の発言（合成データ）',
 };
 
@@ -78,6 +79,7 @@ const MESSAGE_OTHER: ChatMessageView = {
   senderName: '鈴木 花子',
   senderCompanyName: '架空パートナー A',
   own: false,
+  mine: false,
   body: '相手の発言（合成データ）',
 };
 
@@ -361,5 +363,127 @@ describe('🔴 ⑤: 実体の無い語を 1 つも描かない（添付 / 接続
     expect(renderThreadList()).toContain(t('chat.threads.column.target'));
     expect(renderConversation()).toContain(t('chat.message.own'));
     expect(renderPanel()).toContain(t('chat.panel.participants'));
+  });
+});
+
+describe('⑥: 日付の区切り（定義書 §3.12。2026-10-13 追加）', () => {
+  it('JST の日付ごとに区切りが 1 つ出て、発言の前に来る', () => {
+    const html = renderConversation();
+    // 2 件とも JST 2026-09-30 の発言 → 区切りは 1 つだけ。
+    expect([...html.matchAll(/data-testid="chat-day-separator-/g)]).toHaveLength(1);
+    const separatorAt = html.indexOf('data-testid="chat-day-separator-2026-09-30"');
+    const firstMessageAt = html.indexOf(`data-testid="chat-message-${MESSAGE_OWN.id}"`);
+    expect(separatorAt).toBeGreaterThan(-1);
+    expect(separatorAt).toBeLessThan(firstMessageAt);
+  });
+
+  it('日付が変わる位置に区切りが増える', () => {
+    const nextDay: ChatMessageView = { ...MESSAGE_OTHER, id: '01930000-0000-7000-8000-0000000000d3', sentAt: '2026-10-01T03:00:00.000Z' };
+    const html = renderConversation({ initialMessages: [MESSAGE_OWN, nextDay] });
+    expect(html).toContain('data-testid="chat-day-separator-2026-09-30"');
+    expect(html).toContain('data-testid="chat-day-separator-2026-10-01"');
+  });
+
+  it('🔴 円形（`rounded-full`）を使わない（§7.9: 円はアバターとカウンタのみ）', () => {
+    const html = renderConversation();
+    const separator = /<li[^>]*data-testid="chat-day-separator-[^"]*"[^>]*>(.*?)<\/li>/s.exec(html);
+    expect(separator).not.toBeNull();
+    expect((separator as RegExpExecArray)[1]).not.toContain('rounded-full');
+  });
+
+  it('発言が無ければ区切りも出ない', () => {
+    const html = renderConversation({ initialMessages: [], initialNextCursor: null });
+    expect(html).not.toContain('chat-day-separator-');
+  });
+});
+
+describe('⑦: 並べ方の切り替え（2026-10-13、Lark 寄せ。lib/chat/layout.ts）', () => {
+  it('会話型（企業スレッド）: 自分の発言は右に寄り、名前とアバターを出さない', () => {
+    const html = renderConversation({ layout: 'chat' });
+    const own = new RegExp(`<li[^>]*data-testid="chat-message-${MESSAGE_OWN.id}"[^>]*>(.*?)</li>`, 's').exec(html);
+    expect(own).not.toBeNull();
+    const ownLi = (own as RegExpExecArray)[0];
+    expect(ownLi).toContain('items-end');
+    expect(ownLi).toContain('data-layout="chat"');
+    expect(ownLi).not.toContain(`data-testid="chat-message-sender-${MESSAGE_OWN.id}"`);
+    // 🔴 読み上げには「自社」を残す（位置は目でしか分からない）。
+    expect(ownLi).toContain(t('chat.message.own'));
+  });
+
+  it('会話型（企業スレッド）: 相手の発言は左のまま、名前を出す', () => {
+    const html = renderConversation({ layout: 'chat' });
+    expect(html).toContain(`data-testid="chat-message-sender-${MESSAGE_OTHER.id}"`);
+    const other = new RegExp(`<li[^>]*data-testid="chat-message-${MESSAGE_OTHER.id}"[^>]*>`, 's').exec(html);
+    expect((other as RegExpExecArray)[0]).not.toContain('items-end');
+  });
+
+  it('話題型（案件スレッド・既定）: 自分の発言も左で、名前を出す（従来どおり）', () => {
+    for (const html of [renderConversation(), renderConversation({ layout: 'topic' })]) {
+      expect(html).toContain(`data-testid="chat-message-sender-${MESSAGE_OWN.id}"`);
+      expect(html).not.toContain('data-layout="chat"');
+    }
+  });
+
+  it('page.tsx はスレッドの種類から並べ方を決めて渡す', () => {
+    const source = readFileSync(new URL('./page.tsx', import.meta.url), 'utf8');
+    expect(source).toContain('layout={conversationLayoutFor(selected.kind)}');
+  });
+});
+
+describe('⑧: 連続した発言のまとめ・時刻・見出し（2026-10-13、Lark 寄せ）', () => {
+  const FOLLOW_UP: ChatMessageView = {
+    ...MESSAGE_OTHER,
+    id: '01930000-0000-7000-8000-0000000000d4',
+    sentAt: '2026-09-30T02:03:00.000Z', // MESSAGE_OTHER の 3 分後、同じ人
+  };
+
+  it('同じ人の 5 分以内の続きは名前を出さず、アバターは見えなくする（幅は残す）', () => {
+    const html = renderConversation({ initialMessages: [MESSAGE_OWN, MESSAGE_OTHER, FOLLOW_UP] });
+    expect(html).toContain(`data-testid="chat-message-sender-${MESSAGE_OTHER.id}"`);
+    expect(html).not.toContain(`data-testid="chat-message-sender-${FOLLOW_UP.id}"`);
+    const li = new RegExp(`<li[^>]*data-testid="chat-message-${FOLLOW_UP.id}"[^>]*>(.*?)</li>`, 's').exec(html);
+    expect((li as RegExpExecArray)[0]).toContain('data-continued="true"');
+    expect((li as RegExpExecArray)[1]).toContain('invisible');
+    // 🔴 読み上げでは誰の発言かを残す。
+    expect((li as RegExpExecArray)[1]).toContain(`sr-only">${String(FOLLOW_UP.senderName)}`);
+  });
+
+  it('時刻は HH:MM だけを出し、日付つきの時刻は title に残す', () => {
+    const html = renderConversation();
+    // MESSAGE_OWN = 2026-09-30T01:00Z = JST 10:00
+    expect(html).toMatch(/<time[^>]*title="2026-09-30 10:00 JST"[^>]*>10:00<\/time>/);
+  });
+
+  it('見出しに会話の相手を出し、名前が無ければ既定の見出しに戻す', () => {
+    const titled = renderConversation({ title: { title: '金融系 Web API 改修', subtitle: '架空パートナー A' } });
+    expect(titled).toContain('金融系 Web API 改修');
+    expect(titled).toContain('data-testid="chat-conversation-subtitle"');
+    const fallback = renderConversation({ title: { title: null, subtitle: null } });
+    expect(fallback).toContain(t('chat.messages.heading'));
+    expect(fallback).not.toContain('data-testid="chat-conversation-subtitle"');
+  });
+});
+
+describe('⑨: 自分だけ右・同僚は左（2026-10-14、チャット担当の決定）', () => {
+  const COLLEAGUE: ChatMessageView = {
+    ...MESSAGE_OWN,
+    id: '01930000-0000-7000-8000-0000000000d5',
+    senderName: '佐々木 次郎',
+    sentAt: '2026-09-30T03:00:00.000Z',
+    mine: false, // 同じ会社（own）だが本人ではない
+  };
+
+  it('会話型: 同僚の発言は own でも左に置き、名前を出す', () => {
+    const html = renderConversation({ layout: 'chat', initialMessages: [MESSAGE_OWN, COLLEAGUE] });
+    const li = new RegExp(`<li[^>]*data-testid="chat-message-${COLLEAGUE.id}"[^>]*>`, 's').exec(html);
+    expect((li as RegExpExecArray)[0]).toContain('data-own="true"');
+    expect((li as RegExpExecArray)[0]).not.toContain('data-layout="chat"');
+    expect(html).toContain(`data-testid="chat-message-sender-${COLLEAGUE.id}"`);
+  });
+
+  it('会話型: 本人の発言だけが右に寄る', () => {
+    const html = renderConversation({ layout: 'chat', initialMessages: [MESSAGE_OWN, COLLEAGUE] });
+    const own = new RegExp(`<li[^>]*data-testid="chat-message-${MESSAGE_OWN.id}"[^>]*>`, 's').exec(html);
+    expect((own as RegExpExecArray)[0]).toContain('data-layout="chat"');
   });
 });

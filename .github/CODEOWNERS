@@ -1,0 +1,6 @@
+# チャット（S-031）は人間レーン。担当：紺野（2026-10-13、宮田・紺野の合意）。
+# 変更には担当者のレビューが必要になる（ブランチ保護で「Require review from Code Owners」を有効にしたときに効く）。
+/apps/web/app/(main)/chat/          @akonno-ux
+/apps/web/app/api/(main)/threads/   @akonno-ux
+/apps/web/lib/chat/                 @akonno-ux
+/docs/chat-lane/                    @akonno-ux

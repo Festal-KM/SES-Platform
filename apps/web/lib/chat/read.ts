@@ -284,6 +284,7 @@ export async function projectChatMessages(
           ? tenant?.name ?? null
           : partnerNames.get(row.senderPartnerCompanyId) ?? null,
       viewerPartnerCompanyId: ctx.partnerCompanyId,
+      viewerUserId: ctx.userId,
     }),
   );
 }

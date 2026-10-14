@@ -91,6 +91,7 @@ describe('chatMessageView（会話の 1 件）', () => {
       senderName: '仮名 一郎',
       senderCompanyName: '株式会社ダミーアルファ',
       viewerPartnerCompanyId: null,
+      viewerUserId: '01930000-0000-7000-8000-0000000000e9',
     });
     expect(Object.keys(view).sort()).toEqual([...CHAT_MESSAGE_VIEW_KEYS].sort());
     for (const forbidden of CHAT_FORBIDDEN_RESPONSE_KEYS) {
@@ -105,40 +106,56 @@ describe('chatMessageView（会話の 1 件）', () => {
         senderName: null,
         senderCompanyName: null,
         viewerPartnerCompanyId: '01930000-0000-7000-8000-0000000000c1',
+        viewerUserId: '01930000-0000-7000-8000-0000000000e9',
       }).own,
     ).toBe(true);
     // ホストの文脈（`viewerPartnerCompanyId === null`）では、取引先の行は `own` ではない。
     expect(
-      chatMessageView(MESSAGE_ROW, { senderName: null, senderCompanyName: null, viewerPartnerCompanyId: null }).own,
+      chatMessageView(MESSAGE_ROW, { senderName: null, senderCompanyName: null, viewerPartnerCompanyId: null, viewerUserId: '01930000-0000-7000-8000-0000000000e9' }).own,
     ).toBe(false);
     // ホストが送った行（`senderPartnerCompanyId === null`）はホストにとって `own`。
     expect(
       chatMessageView(
         { ...MESSAGE_ROW, senderPartnerCompanyId: null },
-        { senderName: null, senderCompanyName: null, viewerPartnerCompanyId: null },
+        { senderName: null, senderCompanyName: null, viewerPartnerCompanyId: null, viewerUserId: '01930000-0000-7000-8000-0000000000e9' },
       ).own,
     ).toBe(true);
     // 🔴 その行は取引先にとって `own` ではない。
     expect(
       chatMessageView(
         { ...MESSAGE_ROW, senderPartnerCompanyId: null },
-        { senderName: null, senderCompanyName: null, viewerPartnerCompanyId: '01930000-0000-7000-8000-0000000000c1' },
+        { senderName: null, senderCompanyName: null, viewerPartnerCompanyId: '01930000-0000-7000-8000-0000000000c1', viewerUserId: '01930000-0000-7000-8000-0000000000e9' },
       ).own,
     ).toBe(false);
+  });
+
+  it('✅ `mine` は読み手本人の発言だけ true（同僚の発言は own だが mine ではない）', () => {
+    const viewer = '01930000-0000-7000-8000-0000000000c1';
+    const deps = { senderName: null, senderCompanyName: null, viewerPartnerCompanyId: viewer };
+    // 本人の発言。
+    const mine = chatMessageView(MESSAGE_ROW, { ...deps, viewerUserId: MESSAGE_ROW.senderUserId });
+    expect(mine.mine).toBe(true);
+    expect(mine.own).toBe(true);
+    // 同じ会社の同僚の発言。
+    const colleague = chatMessageView(MESSAGE_ROW, { ...deps, viewerUserId: '01930000-0000-7000-8000-0000000000e9' });
+    expect(colleague.own).toBe(true);
+    expect(colleague.mine).toBe(false);
+    // 🔴 応答に送信者の利用者 ID は載らない。
+    expect(Object.keys(mine)).not.toContain('senderUserId');
   });
 
   it('🔴 本文が削除された行（`PURGED`）は `null` のまま返す（空文字で埋めない）', () => {
     expect(
       chatMessageView(
         { ...MESSAGE_ROW, body: null },
-        { senderName: null, senderCompanyName: null, viewerPartnerCompanyId: null },
+        { senderName: null, senderCompanyName: null, viewerPartnerCompanyId: null, viewerUserId: '01930000-0000-7000-8000-0000000000e9' },
       ).body,
     ).toBeNull();
   });
 
   it('送信日時は ISO 8601 である', () => {
     expect(
-      chatMessageView(MESSAGE_ROW, { senderName: null, senderCompanyName: null, viewerPartnerCompanyId: null }).sentAt,
+      chatMessageView(MESSAGE_ROW, { senderName: null, senderCompanyName: null, viewerPartnerCompanyId: null, viewerUserId: '01930000-0000-7000-8000-0000000000e9' }).sentAt,
     ).toBe('2026-10-01T02:30:00.000Z');
   });
 });
