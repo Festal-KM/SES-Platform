@@ -4330,6 +4330,11 @@ const ja = {
   'chat.compose.remainingBefore': '残り',
   'chat.compose.remainingAfter': '文字',
   'chat.compose.retry': 'もう一度送る',
+  // ✅ 2026-10-14: 新着の自動表示と送信の取り消し。
+  'chat.messages.newArrived': '新しいメッセージがあります',
+  'chat.compose.pending': 'まもなく送信します',
+  'chat.compose.undo': '取り消す',
+  'chat.compose.sendNow': '今すぐ送る',
   'chat.compose.template.label': '定型文を入れる',
   'chat.compose.template.placeholder': '定型文を選ぶ',
   'chat.compose.template.interview': '面談日程の候補',

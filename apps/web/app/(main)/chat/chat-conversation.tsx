@@ -55,6 +55,7 @@ import {
   remainingChars,
   splitMessageText,
 } from '../../../lib/chat/message-text';
+import { CHAT_POLL_INTERVAL_MS, CHAT_UNDO_SEND_MS, hasOthersMessage, mergeLatestMessages } from '../../../lib/chat/live';
 import {
   isSendKey,
   type ChatConversationLayout,
@@ -119,6 +120,65 @@ export function ChatConversation({
   const [awayFromLatest, setAwayFromLatest] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const scrollToLatestOnRender = useRef(true);
+  // ✅ 2026-10-14: 新着の自動表示（`lib/chat/live.ts`）と送信の取り消し。
+  const [newArrived, setNewArrived] = useState(false);
+  const [pendingSend, setPendingSend] = useState<string | null>(null);
+  const pendingTimer = useRef<number | null>(null);
+  const itemsRef = useRef(items);
+  const bodyRef = useRef(body);
+  useEffect(() => {
+    bodyRef.current = body;
+  }, [body]);
+  const awayRef = useRef(false);
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
+  useEffect(() => {
+    awayRef.current = awayFromLatest;
+    if (!awayFromLatest) setNewArrived(false);
+  }, [awayFromLatest]);
+
+  // 新着を取りに行く。🔴 既存の API（#50）を呼ぶだけ（境界は API の RLS が決める）。画面が見えているときだけ。
+  //    🔴 手元の行は置き換えない（過去を読み込んだ分・送った分を消さない）。
+  useEffect(() => {
+    let active = true;
+    const poll = async (): Promise<void> => {
+      if (document.visibilityState !== 'visible') return;
+      try {
+        const response = await fetch(chatMessagesApiPath(threadId), { cache: 'no-store' });
+        if (!active || !response.ok) return;
+        const payload = (await response.json()) as MessagePageBody;
+        const merged = mergeLatestMessages(itemsRef.current, payload.items);
+        if (merged.added.length === 0) return;
+        if (awayRef.current) {
+          if (hasOthersMessage(merged.added)) setNewArrived(true);
+        } else {
+          scrollToLatestOnRender.current = true;
+        }
+        setItems(merged.items);
+      } catch {
+        // 取れなければ次の回に任せる（画面は再読込でも最新になる）。
+      }
+    };
+    const timer = window.setInterval(() => void poll(), CHAT_POLL_INTERVAL_MS);
+    const onVisible = (): void => {
+      if (document.visibilityState === 'visible') void poll();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [threadId]);
+
+  // 待っている送信は、画面を離れたら取りやめる（🔴 下書きは送れるまで消さないので、戻れば文章は残っている）。
+  useEffect(
+    () => () => {
+      if (pendingTimer.current !== null) window.clearTimeout(pendingTimer.current);
+    },
+    [],
+  );
   const composeId = `chat-compose-body-${threadId}`;
 
   // 開いたとき・自分が送ったときは一番下（最新）を見せる。🔴 過去を読み込んだとき（上に足す）は動かさない。
@@ -265,9 +325,41 @@ export function ChatConversation({
     );
   }
 
-  async function submit(): Promise<void> {
+  /**
+   * 送信を予約する。✅ 2026-10-14: **押してから `CHAT_UNDO_SEND_MS` 待ってから送る**（その間は取り消せる）。
+   * 🔴 待っている間に下書き（`sessionStorage`）は消さない —— 画面を離れても文章が失われない。
+   */
+  function submit(): void {
     const trimmed = body.trim();
-    if (!canPost || trimmed === '' || sending) return;
+    if (!canPost || trimmed === '' || sending || pendingSend !== null) return;
+    setSendError('NONE');
+    setPendingSend(trimmed);
+    setBody('');
+    pendingTimer.current = window.setTimeout(() => {
+      pendingTimer.current = null;
+      void deliver(trimmed);
+    }, CHAT_UNDO_SEND_MS);
+  }
+
+  /** 送信の取り消し（文章を入力欄に戻す）。 */
+  function undoSend(): void {
+    if (pendingTimer.current !== null) window.clearTimeout(pendingTimer.current);
+    pendingTimer.current = null;
+    if (pendingSend !== null) setBody(pendingSend);
+    setPendingSend(null);
+    document.getElementById(composeId)?.focus();
+  }
+
+  /** 待たずに今すぐ送る。 */
+  function sendNow(): void {
+    if (pendingSend === null) return;
+    if (pendingTimer.current !== null) window.clearTimeout(pendingTimer.current);
+    pendingTimer.current = null;
+    void deliver(pendingSend);
+  }
+
+  async function deliver(trimmed: string): Promise<void> {
+    setPendingSend(null);
     setSending(true);
     setSendError('NONE');
     const outcome = await sendGuard.run(async () => {
@@ -283,14 +375,17 @@ export function ChatConversation({
         const payload = (await response.json()) as SendResponseBody;
         // 🔴 手元で先に書き換える楽観更新をしない（サーバの応答だけが正。`S-015` の ⑦ と同じ規律）。
         scrollToLatestOnRender.current = true;
-        setItems((current) => [...current, payload.message]);
-        updateBody('');
+        setItems((current) => mergeLatestMessages(current, [payload.message]).items);
+        // 下書きは送れた時点で消す（待っている間に次の文章を書き始めていたら、そちらを残す）。
+        if (bodyRef.current === '') updateBody('');
         return 'SENT' as const;
       } catch {
         return 'FAILED' as const;
       }
     });
     setSending(false);
+    // 🔴 送れなかった文章は入力欄に戻す（再送・修正ができるように）。
+    if (outcome !== 'SENT' && bodyRef.current === '') setBody(trimmed);
     if (outcome === 'MISSING') setSendError('MISSING');
     else if (outcome === 'FAILED') setSendError('FAILED');
   }
@@ -510,7 +605,7 @@ export function ChatConversation({
         {awayFromLatest ? (
           <div className="absolute right-5 bottom-3">
             <Button type="button" variant="secondary" size="sm" onClick={scrollToLatest} data-testid="chat-messages-to-latest">
-              {messages.toLatest}
+              {newArrived ? messages.newArrived : messages.toLatest}
             </Button>
           </div>
         ) : null}
@@ -524,7 +619,7 @@ export function ChatConversation({
           action={chatMessagesApiPath(threadId)}
           onSubmit={(event) => {
             event.preventDefault();
-            void submit();
+            submit();
           }}
           className={`shrink-0 border-t border-border px-5 py-3 ${CHAT_COMPOSER_HEIGHT_CLASS}`}
           data-testid="chat-compose"
@@ -556,12 +651,24 @@ export function ChatConversation({
                   })
                 ) {
                   event.preventDefault();
-                  void submit();
+                  submit();
                 }
               }}
               data-testid="chat-compose-body"
             />
           </Field>
+          {/* ✅ 2026-10-14: 送信の取り消し（押してから数秒は送らずに待つ）。 */}
+          {pendingSend === null ? null : (
+            <div className="mb-2 flex flex-wrap items-center gap-2" aria-live="polite" data-testid="chat-compose-pending">
+              <span className="text-body text-fg-muted">{messages.pending}</span>
+              <Button type="button" variant="secondary" size="sm" onClick={undoSend} data-testid="chat-compose-undo">
+                {messages.undo}
+              </Button>
+              <Button type="button" variant="ghost" size="sm" onClick={sendNow} data-testid="chat-compose-send-now">
+                {messages.sendNow}
+              </Button>
+            </div>
+          )}
           {sendError === 'NONE' ? null : (
             <Alert variant="danger" data-testid="chat-compose-error">
               {sendError === 'MISSING' ? messages.composeThreadMissing : messages.composeFailed}
@@ -574,7 +681,7 @@ export function ChatConversation({
             {/* ✅ 2026-10-14: 送信に失敗したら、書いた文章を残したまま、その場で送り直せる
                 （🔴 二重送信の防止は `createSubmitGuard` のまま。見えなくなったスレッドには再送を出さない）。 */}
             {sendError === 'FAILED' && !sending ? (
-              <Button type="button" variant="secondary" onClick={() => void submit()} data-testid="chat-compose-retry">
+              <Button type="button" variant="secondary" onClick={submit} data-testid="chat-compose-retry">
                 {messages.retry}
               </Button>
             ) : null}

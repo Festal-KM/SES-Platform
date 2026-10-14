@@ -39,6 +39,10 @@ export type ChatConversationMessages = {
   readonly remainingBefore: string;
   readonly remainingAfter: string;
   readonly retry: string;
+  readonly newArrived: string;
+  readonly pending: string;
+  readonly undo: string;
+  readonly sendNow: string;
   readonly templateLabel: string;
   readonly templatePlaceholder: string;
   /** 定型文（固定の文面。🔴 個人情報・単価を含めない）。 */
@@ -85,6 +89,10 @@ export function chatConversationMessages(): ChatConversationMessages {
     remainingBefore: t('chat.compose.remainingBefore'),
     remainingAfter: t('chat.compose.remainingAfter'),
     retry: t('chat.compose.retry'),
+    newArrived: t('chat.messages.newArrived'),
+    pending: t('chat.compose.pending'),
+    undo: t('chat.compose.undo'),
+    sendNow: t('chat.compose.sendNow'),
     templateLabel: t('chat.compose.template.label'),
     templatePlaceholder: t('chat.compose.template.placeholder'),
     templates: [
