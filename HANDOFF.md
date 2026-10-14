@@ -56,7 +56,7 @@
 | ⑤ 管理平面 | `T-22-14` `A-001` / `A-003` / `A-004` / `A-010` / `A-012` / `A-014` / `/admin`（レビュー 1 回） | **未着手** |
 | | `T-22-15` 締め（🔴 **許可リストが空 / 全検査が無条件 green / 全数 E2E / 実機確認 / 完了記録**） | **未着手** |
 | ⑦ デザインシステム v1.0 | 🔴 **人間の `SES Hub Design System v1.0`（2026-10-13）に寸法を合わせる** —— 外枠（サイドバー 208 / ヘッダ 56 / gutter 28・16 / 副カラム 388）・文字 9 段・radius 4 段・色・ホームの密度（行 45px）。正は [`docs/design-system.md`](./docs/design-system.md) | ✅ 下記 |
-| ⑧ チャット（`S-031`） | 🔴 仕様書 §3.12（2026-10-13 に追加）に合わせた —— Main を 1 枚の面にして スレッド一覧 320 + 会話、行 60px、Slack 型のバブル（max 560）、関連情報の KV 30px。**出していないもの**（未読 / 既読 / 通話 / `@メンション` / タスク / ファイル / プレビュー / 検索）は `docs/design-system.md` §4.5 の表に理由つき。🔴 **2026-10-13 以降は人間レーン（担当：紺野 / `akonno-ux`。宮田・紺野の合意）。自動運転のエージェントはチャットに着手しない。** 対象: `apps/web/app/(main)/chat/`・`apps/web/app/api/(main)/threads/`・`apps/web/lib/chat/`・`docs/04` §3.12 と `S-031`・`docs/design-system.md` §4.5。変更の要望は Issue に起票する。作業は `feat/chat-lane` から PR 経由で `main` に入れる（持ち主は `.github/CODEOWNERS`） | ✅ 骨格は完了 / **以後は紺野が担当** |
+| ⑧ チャット（`S-031`） | 🔴 仕様書 §3.12（2026-10-13 に追加）に合わせた —— Main を 1 枚の面にして スレッド一覧 320 + 会話、行 60px、Slack 型のバブル（max 560）、関連情報の KV 30px。**出していないもの**（未読 / 既読 / 通話 / `@メンション` / タスク / ファイル / プレビュー / 検索）は `docs/design-system.md` §4.5 の表に理由つき。🔴 **2026-10-13 以降は人間レーン（担当：紺野 / `akonno-ux`。宮田・紺野の合意）。自動運転のエージェントはチャットに着手しない。** 対象: `apps/web/app/(main)/chat/`・`apps/web/app/api/(main)/threads/`・`apps/web/lib/chat/`・`docs/04` §3.12 と `S-031`・`docs/design-system.md` §4.5。変更の要望は Issue に起票する。作業は `feat/chat-lane` から PR 経由で `main` に入れる（持ち主は `.github/CODEOWNERS`）。✅ **2026-10-14: [#96](https://github.com/Festal-KM/SES-Platform/pull/96) をマージ（`df92629`）しデモに反映** —— Lark 寄せ（企業スレッドは**自分の発言だけ右**・同僚と相手は左、日付の区切り、時刻 HH:MM、連投のまとめ、Enter で送信）と、チャットの E2E（境界 2 + 並べ方 1 + モバイル 3。それまで 0 本）。⏳ **[#103](https://github.com/Festal-KM/SES-Platform/pull/103)（会話を右に並べて開く。最大 3 列・`?pane=`）がレビュー待ち。** ⏳ **合意待ち**: [#97](https://github.com/Festal-KM/SES-Platform/issues/97)（返信スレッド・引用・未読ほか。設計案は `docs/chat-lane/reply-threads-proposal.md` / `read-state-proposal.md`）/ [#89](https://github.com/Festal-KM/SES-Platform/issues/89)（本文の送信前の注意。`docs/chat-lane/pre-send-warning-proposal.md`）。🔴 **未読は `CLAUDE.md` §4.1 への概念の追加（`ChatReadState`）が要る** = 人間の承認事項。合意まで「未読の実体が無い」の扱い（U-27 / §S-031）は変えない | ✅ 骨格は完了 / **以後は紺野が担当**（2026-10-14 時点の状況は左） |
 | ⑥ ホームの作り直し | 🔴 **人間の仕様書（2026-10-11）に沿った `S-003` / `S-004`** —— タブ 4 つ / セクション 4 つ / 優先度バッジ / KPI の遷移 / 右レール 4 件（レビュー 1 回。`docs/sprints/SP-22-ui-overhaul.md` §11） | ✅ 下記 |
 | ⑨ 案件管理タブ（`3b` = `S-010`） | 🔴 受領した定義書 [`docs/design-system-projects.md`](./docs/design-system-projects.md) に合わせた —— 状態 Badge / 件数行 15/700 / 副カラムを「帯 → 案件名 + 状態 → KV 30px → 下端の操作行」に。**出していないもの**（タブ帯 / 企業名 / カテゴリ / 稼働形態 Badge / ドット / 行高 45 / 8 行表示）は同ファイル §A に理由つき | ✅ **一部完了（2026-10-14）** |
 | ⑩ 人材管理タブ（`2a`〜`2e`） | 🔴 定義書 [`docs/design-system-engineers.md`](./docs/design-system-engineers.md)。公開用の列は [#94](https://github.com/Festal-KM/SES-Platform/issues/94) の回答待ち | **未着手** |
@@ -94,6 +94,8 @@
 | 運営者コンソール | `platform-owner@seed-isolation.test` | 要 |
 
 パスワードと全 22 アカウントは `docs/DEV-ACCOUNTS.md`。デプロイは `railway up --service web`（`--service worker` も同様）。
+
+✅ **2026-10-14: 紺野（`a.konno@festal-inc.com`）も Railway の `ses-platform-demo` に参加した。** チャットの変更は紺野側からも反映する（🔴 **反映元は必ず `origin/main` と一致した `main`**。作業ブランチや古い `main` から `railway up` すると、他の人の反映を巻き戻す）。反映したら PR か Slack に残す。⚠️ Railway 上の環境名は `production` だが中身は `APP_ENV=demo`（全モック）である。ログイン画面は `/signin`（`/login` は 404）。
 
 ---
 
