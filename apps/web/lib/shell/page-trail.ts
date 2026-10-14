@@ -326,6 +326,36 @@ export const CHAT_TRAIL: readonly PageCrumb[] = [
 ];
 
 // ============================================================================
+// ✅ 2026-10-14（人間の明示指示）: `カレンダー` と `パートナー連携` の 3 画面（いずれも準備中）
+// ============================================================================
+/**
+ * 🔴 **祖先はホームだけ**である（サイドバーの項目が唯一の入口）。
+ * 🔴 **`パートナー連携` を見出しの階層にしない** —— 群は**サイドバーの束ね方**であって
+ *    URL の階層ではなく、押せる画面でもない（`設定` は索引ページが実在するので階層になりうるが、
+ *    `パートナー連携` には対応する画面が無い）。上の規律 3「遷移先を持たない見出し」を
+ *    むやみに増やすと、パンくずが「押せない語」で埋まる。
+ */
+export const CALENDAR_TRAIL: readonly PageCrumb[] = [
+  { labelKey: 'calendar.breadcrumb.home', href: '/' },
+  { labelKey: 'calendar.title', href: null },
+];
+
+export const PARTNER_LIST_TRAIL: readonly PageCrumb[] = [
+  { labelKey: 'partners.breadcrumb.home', href: '/' },
+  { labelKey: 'partners.companies.title', href: null },
+];
+
+export const PARTNER_PROJECTS_TRAIL: readonly PageCrumb[] = [
+  { labelKey: 'partners.breadcrumb.home', href: '/' },
+  { labelKey: 'partners.projects.title', href: null },
+];
+
+export const PARTNER_ENGINEERS_TRAIL: readonly PageCrumb[] = [
+  { labelKey: 'partners.breadcrumb.home', href: '/' },
+  { labelKey: 'partners.engineers.title', href: null },
+];
+
+// ============================================================================
 // ホーム（`S-003` / `S-004`）
 // ============================================================================
 /** 🔴 ホームは祖先を持たない（現在地 1 項目）。`/` 自身へのリンクを作らない。 */
@@ -345,6 +375,10 @@ export const SAMPLE_TRAIL_ID = '00000000-0000-7000-8000-000000000000';
 export const ALL_PAGE_TRAILS: readonly (readonly PageCrumb[])[] = [
   HOME_TRAIL,
   CHAT_TRAIL,
+  CALENDAR_TRAIL,
+  PARTNER_LIST_TRAIL,
+  PARTNER_PROJECTS_TRAIL,
+  PARTNER_ENGINEERS_TRAIL,
   ENGINEER_LIST_TRAIL,
   ENGINEER_NEW_TRAIL,
   ENGINEER_DETAIL_TRAIL,

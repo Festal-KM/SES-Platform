@@ -559,10 +559,24 @@ describe('🔴 モバイル（docs/04 §3.4）', () => {
     expect(/data-testid="app-tab-more-summary"[\s\S]*?<svg/.test(html)).toBe(true);
   });
 
-  it('🔴 「その他」からサイドバーと同じ 5 項目に到達でき、並びを保つ', () => {
+  it('🔴 「その他」からサイドバーと同じ項目に到達でき、並びを保つ', () => {
     const html = render();
     // 同じ項目表から描くので、サイドバーの項目はすべて「その他」にも在る（接頭辞だけが違う）。
-    const ids = ['home', 'chat', 'engineers', 'projects', 'notifications', 'settings'];
+    // ✅ **2026-10-14: `カレンダー` と `パートナー連携` の 3 項目はボトムタブの手前 4 つに無い。**
+    //    🔴 **だからこそ「その他」に在ることを確かめる** —— 手前に出ない項目がここにも無いと、
+    //    モバイルからは到達不能になる（`CLAUDE.md` §13.3「劣化はさせても遮断はしない」）。
+    const ids = [
+      'home',
+      'chat',
+      'calendar',
+      'projects',
+      'engineers',
+      'partners-companies',
+      'partners-projects',
+      'partners-engineers',
+      'notifications',
+      'settings',
+    ];
     for (const id of ids) {
       expect(html, id).toContain(`data-testid="app-more-nav-${id}"`);
     }

@@ -213,10 +213,33 @@ export const SETTINGS_INDEX_PATH = '/settings';
  */
 const CHAT_SECTION_PATH = '/chat';
 
-/** `人材管理` の入口（サイドバーの項目と第 2 階層の 1 つ目が指す同じ URL）。 */
+/** `自社人材管理` の入口（サイドバーの項目と第 2 階層の 1 つ目が指す同じ URL）。 */
 const ENGINEER_SECTION_PATH = '/engineers';
-/** `案件管理` の入口（同上）。 */
+/** `自社案件管理` の入口（同上）。 */
 const PROJECT_SECTION_PATH = '/projects';
+
+/**
+ * ✅ **2026-10-14（人間の明示指示「チャットの下にカレンダーも入れる」）: `カレンダー`。**
+ *
+ * 🔴 **中身は準備中である**（人間の指示「タブ内のコンテンツについては準備中という表記でよいです」）。
+ *    画面は実在するので `pendingNavItem`（押せない `Phase N`）**ではなく** `link` にする ——
+ *    押せて、開いて、「準備中」と書いてある画面である。**この 2 つを混ぜない**（冒頭の 🔴）。
+ * 🔴 **第 2 階層を持たせない**（面の切り替えになる遷移先がまだ 1 つも無い）。
+ */
+const CALENDAR_SECTION_PATH = '/calendar';
+
+/**
+ * ✅ **2026-10-14（人間の明示指示）: `パートナー連携` 群の 3 画面。**
+ *
+ * 🔴 **いずれも準備中である**（上の `CALENDAR_SECTION_PATH` と同じ扱い）。
+ * 🔴 **`/settings/partner-companies`（`S-014` 取引先企業）には寄せていない。** あちらは実在する
+ *    画面であり、`設定` の索引からの到達手段を持つ。ここで同じ URL を指すと、**サイドバーの
+ *    `パートナー一覧` と `設定` の 2 項目が同時に光る**（`settings` の `sectionPaths` が索引の
+ *    7 項目を射程に持つため）。統合するかは人間の判断事項（Issue #102 の既定 = A「分けたまま」）。
+ */
+const PARTNER_COMPANIES_SECTION_PATH = '/partners';
+const PARTNER_PROJECTS_SECTION_PATH = '/partners/projects';
+const PARTNER_ENGINEERS_SECTION_PATH = '/partners/engineers';
 
 /**
  * `設定` の索引（`/settings`）が並べる項目。**畳む前の `設定` 群と 1 対 1 である。**
@@ -356,6 +379,18 @@ export function navSectionsWithTabs(
  * ✅ **2026-10-13（人間の指示 + モックアップ）: 2 群になった。**
  *    上段（群名なし）: ホーム → チャット → 人材管理 → 案件管理
  *    下段（`その他`。上に罫線）: お知らせ（Phase 2）→ 設定
+ *
+ * ✅ **2026-10-14（人間の明示指示）: 3 群になり、`自社` と `パートナー` を語で分けた。**
+ *
+ * | 群 | 項目 | 所属 |
+ * |---|---|---|
+ * | 上段（群名なし） | ホーム → チャット → **カレンダー** → **自社案件管理** → **自社人材管理** | 両方 |
+ * | **`パートナー連携`**（罫線） | パートナー一覧 / 案件一覧 / 人材一覧 | 🔴 **ホストだけ** |
+ * | `その他`（罫線） | お知らせ（Phase 2）→ 設定 | 両方 |
+ *
+ * 🔴 **`カレンダー` と `パートナー連携` の 3 画面は準備中**（押せて、開いて、「準備中」と書いてある）。
+ *    **`Phase N` の押せない項目とは別物である**（ファイル冒頭の 🔴）。
+ * 🔴 **取引先には `パートナー連携` 群を出さない**（下の 🔴。§3.1 のパートナー相互参照の禁止）。
  *    （✅ 2026-10-04: 画像の `レポート` は人間の明示指示で外した。下の 🔴）。
  * ⚠️ この並びは `CLAUDE.md` §1.3 の業務ループ（① 集める → ② マッチング → ③ 提案 → …）の順では
  *    ない（`チャット` が ① の手前に来る）。**ループの順序は第 2 階層（`案件管理` のタブ =
@@ -389,14 +424,10 @@ export function buildMainNav(context: NavContext): readonly NavGroup[] {
         //    `pending` → `link` にした。🔴 **第 2 階層を持たせない**（スレッドの選択は `?thread=` の
         //    クエリであり、別の URL への遷移ではない = タブにできる遷移先が無い）。
         link('chat', 'shell.nav.chat', 'message-square', CHAT_SECTION_PATH),
-        link(
-          'engineers',
-          context.audience === 'HOST' ? 'shell.nav.host.engineers' : 'shell.nav.partner.engineers',
-          'users',
-          ENGINEER_SECTION_PATH,
-          null,
-          sectionPathsOf('engineers'),
-        ),
+        // ✅ 2026-10-14（人間の指示「チャットの下にカレンダーも入れる」）。準備中の画面である
+        //    （上の `CALENDAR_SECTION_PATH` の 🔴）。所属で出し分けない —— 予定（面談 / 契約満了 /
+        //    稼働開始）はどちらの側にも在る面であり、**見える中身を決めるのは RLS** である。
+        link('calendar', 'shell.nav.calendar', 'calendar-clock', CALENDAR_SECTION_PATH),
         link(
           'projects',
           context.audience === 'HOST' ? 'shell.nav.host.projects' : 'shell.nav.partner.projects',
@@ -415,6 +446,18 @@ export function buildMainNav(context: NavContext): readonly NavGroup[] {
                 dotLabelKey: 'shell.nav.proposalRequests.due.dot',
               },
           sectionPathsOf('projects'),
+        ),
+        // ✅ **2026-10-14（人間の指示「案件管理は人材管理の上に配置する」）: `案件` が `人材` の上。**
+        // 🔴 **到達集合も射程も 1 つも変わっていない**（並び替えただけである）。
+        // ⚠️ 畳み込み以降ここは `人材` → `案件` だった（`docs/04` §3.1 の表の順）。人間の明示指示が
+        //    表の順より優先する判断であり、設計書の追随は別途行う（`CLAUDE.md` §8.7）。
+        link(
+          'engineers',
+          context.audience === 'HOST' ? 'shell.nav.host.engineers' : 'shell.nav.partner.engineers',
+          'users',
+          ENGINEER_SECTION_PATH,
+          null,
+          sectionPathsOf('engineers'),
         ),
         // 🔴 S-034 レポート（Phase 3）は**サイドバーに出さない**（2026-10-04。人間の指示
         //    「サイドメニューのレポートは非表示にして」）。実体が Phase 3 まで無く、押しても
@@ -439,6 +482,58 @@ export function buildMainNav(context: NavContext): readonly NavGroup[] {
     // ⚠️ **モックアップの `ヘルプ` は置いていない** —— 中身（「この画面でできること / できない
     //    こと」）の出所が 1 つも無く、押して何も出ない項目は §3.1 の ③ が禁じた「動かない検索窓」
     //    と同じものになる（46 画面ぶんの説明が要るので別タスク）。
+    // ========================================================================
+    // ✅ 2026-10-14（人間の明示指示）: `パートナー連携` 群（`その他` と同じ位置づけ = 罫線つき）
+    // ========================================================================
+    // 🔴 **ホスト所属にだけ出す。** 取引先所属に出すと、`パートナー一覧` は**他社の一覧**、
+    //    `人材一覧` は**他社のエンジニアの一覧**になる ——
+    //    `CLAUDE.md` §3.1「🔴 パートナー同士が相互に参照できる経路を 1 つも作らない。同一案件に
+    //    複数社が提案していても、他社の提案の存在・件数・単価・エンジニア名を知れてはならない」
+    //    の正面からの違反である。**中身が準備中であることは理由にならない** —— 項目を置いた
+    //    時点で「他社の一覧が在る」こと自体を示してしまう（存在・件数の示唆。§3.1 / `F-004 AC-4`）。
+    // 🔴 **出し分けの軸は所属（`audience`）であってロール名ではない**（`memberships` の CHECK と
+    //    1 対 1。このファイルの他の判定と同じ）。
+    // 🔴 **3 画面はまだ中身を持たない。** 実装に入るときは、何を出すかが情報境界そのものである:
+    //      - `パートナー一覧` … `S-014`（取引先企業）と同じ母集団。統合は Issue #102（既定 = A）
+    //      - `案件一覧` … 🔴 **取引先が持ち込んだ案件**を指すなら、越境 5 経路のどれでもない
+    //        （経路 1 は「ホストの案件を取引先に見せる」向きである）。**新しい経路を作ることに
+    //        なるため人間の承認事項**（`CLAUDE.md` §8.6）。Issue #102 の既定 = B（経路 2 の
+    //        `Proposal` に紐づく案件だけを出す = 既存の経路の中に収める）
+    //      - `人材一覧` … 🔴 **経路 4（匿名共有）そのもの**である。出してよいのは匿名 5 項目だけで、
+    //        実名・所属会社名・スキルシートは `Proposal` の作成まで出ない。**項目を増やすのは
+    //        人間の承認事項**（§8.6）
+    //    ⚠️ ここに置いてあるのは**到達手段だけ**であり、読み取り経路は 1 本も足していない。
+    // 🔴 **群ごと出さない**（空の群を置かない）。見出しと罫線だけが残ると、取引先の画面に
+    //    「中身が見えないパートナー連携という領域が在る」ことを示してしまう（§3.1 の示唆の禁止）。
+    ...(context.audience === 'HOST'
+      ? [
+          {
+            id: 'partners',
+            labelKey: 'shell.nav.group.partners' as const,
+            divided: true,
+            items: [
+              link(
+                'partners-companies',
+                'shell.nav.partners.companies',
+                'building-2',
+                PARTNER_COMPANIES_SECTION_PATH,
+              ),
+              link(
+                'partners-projects',
+                'shell.nav.partners.projects',
+                'handshake',
+                PARTNER_PROJECTS_SECTION_PATH,
+              ),
+              link(
+                'partners-engineers',
+                'shell.nav.partners.engineers',
+                'user-search',
+                PARTNER_ENGINEERS_SECTION_PATH,
+              ),
+            ],
+          },
+        ]
+      : []),
     {
       id: 'other',
       labelKey: 'shell.nav.group.other',
@@ -473,9 +568,15 @@ export function buildMainNav(context: NavContext): readonly NavGroup[] {
 export function buildBottomTabs(): readonly NavItem[] {
   return [
     link('home', 'shell.tab.home', 'home', '/'),
-    link('engineers', 'shell.tab.engineers', 'users', ENGINEER_SECTION_PATH),
+    // ✅ **2026-10-14: サイドバーと同じ順にした**（`案件` が `人材` の上 = 手前）。
+    // 🔴 **同じ項目がデバイスで別の順に並ぶと、迷ったときにデスクトップの記憶が使えない**
+    //    （このブロックの 🔴「同じアイコンを使う」と同じ理由）。
     link('projects', 'shell.tab.projects', 'briefcase', PROJECT_SECTION_PATH),
+    link('engineers', 'shell.tab.engineers', 'users', ENGINEER_SECTION_PATH),
     link('chat', 'shell.tab.chat', 'message-square', CHAT_SECTION_PATH),
+    // ⚠️ **`カレンダー` と `パートナー連携` の 3 項目はボトムタブに出さない。** 手前に出せるのは
+    //    4 つまでであり（5 つ目は「その他」）、**到達性は落ちない** —— 「その他」は
+    //    `buildMainNav` の項目をそのまま並べるので、そこから開ける。
   ];
 }
 

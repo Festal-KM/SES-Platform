@@ -102,8 +102,16 @@ const MOCKUP_SIDEBAR = {
     ['home', 'shell.nav.home', 'home', null],
     // ✅ 2026-10-05: `チャット`（`S-031`）を実装したので `Phase 2` の印が外れた（リンクになった）。
     ['chat', 'shell.nav.chat', 'message-square', null],
-    ['engineers', 'shell.nav.host.engineers', 'users', null],
+    // ✅ 2026-10-14: ⑤ `チャット` の下に `カレンダー`。🔴 **準備中の画面であって `Phase N` では
+    //    ない**（押せる = `Phase` 列は `null`）。
+    ['calendar', 'shell.nav.calendar', 'calendar-clock', null],
+    // ✅ 2026-10-14: ④ `案件` が `人材` の上。① ② 語は `自社案件管理` / `自社人材管理`（値だけ変更）。
     ['projects', 'shell.nav.host.projects', 'briefcase', null],
+    ['engineers', 'shell.nav.host.engineers', 'users', null],
+    // ✅ 2026-10-14: ③ ここから `パートナー連携` 群（罫線）。🔴 **ホストにしか無い。**
+    ['partners-companies', 'shell.nav.partners.companies', 'building-2', null],
+    ['partners-projects', 'shell.nav.partners.projects', 'handshake', null],
+    ['partners-engineers', 'shell.nav.partners.engineers', 'user-search', null],
     // ✅ 2026-10-13: ここから下段（`その他` 群）。
     ['notifications', 'shell.nav.notifications', 'bell', 'Phase 2'],
     ['settings', 'shell.nav.host.settings', 'settings', null],
@@ -111,8 +119,11 @@ const MOCKUP_SIDEBAR = {
   PARTNER: [
     ['home', 'shell.nav.home', 'home', null],
     ['chat', 'shell.nav.chat', 'message-square', null],
-    ['engineers', 'shell.nav.partner.engineers', 'users', null],
+    ['calendar', 'shell.nav.calendar', 'calendar-clock', null],
     ['projects', 'shell.nav.partner.projects', 'briefcase', null],
+    ['engineers', 'shell.nav.partner.engineers', 'users', null],
+    // 🔴 **`パートナー連携` 群は 1 項目も無い**（群ごと出さない）。取引先にとっては「他社の一覧」
+    //    であり、`CLAUDE.md` §3.1 の相互参照の禁止そのものである（`nav.ts` の 🔴）。
     // ✅ 2026-10-13: ここから下段（`その他` 群）。
     ['notifications', 'shell.nav.notifications', 'bell', 'Phase 2'],
     ['settings', 'shell.nav.partner.settings', 'settings', null],
@@ -182,10 +193,37 @@ describe('🔴 ① サイドバーがモックアップどおり 2 群である�
     const groups = buildMainNav({ audience, role: audience === 'HOST' ? 'OWNER' : 'PARTNER_ADMIN' });
     // 🔴 **罫線を引くのは下段だけ**である（`divided`）。既定は「余白で区切る」のままであり、
     //    群が増えるたびに線が増えないよう、**線を引く群を呼び出し側が明示する**。
-    expect(groups.map((group) => [group.id, group.labelKey, group.divided ?? false])).toEqual([
-      ['primary', null, false],
-      ['other', 'shell.nav.group.other', true],
-    ]);
+    // ✅ **2026-10-14: ホストは 3 群**（`パートナー連携` が増えた）。🔴 **取引先は 2 群のまま** ——
+    //    空の群を置くと「中身が見えない領域が在る」ことを示してしまう（`nav.ts` の 🔴）。
+    expect(groups.map((group) => [group.id, group.labelKey, group.divided ?? false])).toEqual(
+      audience === 'HOST'
+        ? [
+            ['primary', null, false],
+            ['partners', 'shell.nav.group.partners', true],
+            ['other', 'shell.nav.group.other', true],
+          ]
+        : [
+            ['primary', null, false],
+            ['other', 'shell.nav.group.other', true],
+          ],
+    );
+  });
+
+  it('🔴 取引先には `パートナー連携` 群が 1 つも無い（他社の一覧という示唆を作らない）', () => {
+    for (const role of PARTNER_ROLES) {
+      const groups = buildMainNav({ audience: 'PARTNER', role });
+      // 🔴 **群ごと無い**（空の群として在るのではない）。見出しと罫線が残るだけでも示唆になる。
+      expect(groups.map((group) => group.id), role).not.toContain('partners');
+      expect(
+        navItems(groups).filter((item) => item.id.startsWith('partners-')),
+        role,
+      ).toEqual([]);
+      // 🔴 遷移先そのものが 1 本も現れない（`/partners` 配下へ到達する手段を持たない）。
+      expect(
+        navHrefs(navItems(groups)).filter((href) => href.startsWith('/partners')),
+        role,
+      ).toEqual([]);
+    }
   });
 
   it.each(['HOST', 'PARTNER'] as const)(
@@ -196,18 +234,28 @@ describe('🔴 ① サイドバーがモックアップどおり 2 群である�
     },
   );
 
-  it.each([...HOST_ROLES, ...PARTNER_ROLES])('%s: ロールでサイドバーの 6 項目が増減しない', (role) => {
+  it.each([...HOST_ROLES, ...PARTNER_ROLES])('%s: ロールでサイドバーの項目が増減しない', (role) => {
     const audience = PARTNER_ROLES.includes(role) ? 'PARTNER' : 'HOST';
-    // 🔴 出し分けは**第 2 階層**（タブと索引）が持つ。サイドバーの 6 項目は全ロール共通である
+    // 🔴 **ロールでは増減しない。** 出し分けは**第 2 階層**（タブと索引）が持つ
     //    （`設定` は全ロールが開ける索引であり、中身がロールで変わる）。
-    expect(navItems(buildMainNav({ audience, role })).map((item) => item.id)).toEqual([
-      'home',
-      'chat',
-      'engineers',
-      'projects',
-      'notifications',
-      'settings',
-    ]);
+    // 🔴 ✅ **2026-10-14: 増減する軸は「所属」だけ**になった（`パートナー連携` 群）。所属は
+    //    `memberships` の CHECK と 1 対 1 であり、**ロール名で代用しない**（`nav.ts` の 🔴）。
+    expect(navItems(buildMainNav({ audience, role })).map((item) => item.id)).toEqual(
+      audience === 'HOST'
+        ? [
+            'home',
+            'chat',
+            'calendar',
+            'projects',
+            'engineers',
+            'partners-companies',
+            'partners-projects',
+            'partners-engineers',
+            'notifications',
+            'settings',
+          ]
+        : ['home', 'chat', 'calendar', 'projects', 'engineers', 'notifications', 'settings'],
+    );
   });
 
   it('🔴 アイコン名は `@ses/ui` の閉じた写像の中だけである（写像に無い名前は型エラーにもなる）', () => {
@@ -574,8 +622,10 @@ describe('🔴 ⑤ 業務ループ ①〜⑥ の順は第 2 階層に残る（CL
 });
 
 describe('モバイルのボトムタブ（docs/04 §3.4。2026-10-03 にサイドバーの項目へ合わせた）', () => {
-  it('ホーム / 人材 / 案件 / チャット の 4 つ（5 つ目の「その他」は描画側が持つ）', () => {
-    expect(buildBottomTabs().map((tab) => tab.id)).toEqual(['home', 'engineers', 'projects', 'chat']);
+  it('ホーム / 案件 / 人材 / チャット の 4 つ（5 つ目の「その他」は描画側が持つ）', () => {
+    // ✅ **2026-10-14: サイドバーと同じ順にした**（`案件` が `人材` の手前）。
+    //    🔴 同じ項目がデバイスで別の順に並ぶと、迷ったときにデスクトップの記憶が使えない。
+    expect(buildBottomTabs().map((tab) => tab.id)).toEqual(['home', 'projects', 'engineers', 'chat']);
   });
 
   it('🔴 タブのアイコンはサイドバーの同じ項目と同じである（端末で見え方を変えない。docs/04 §3.4）', () => {
