@@ -16,6 +16,7 @@ import { expect, test } from '@playwright/test';
 import { apiRequest } from './support/api';
 import { partnerIds } from './support/population';
 import { hostOwner, openTenantSession, partnerSales } from './support/sessions';
+import { isolationSeedCompanyNames } from '@ses/db/seed';
 
 test.describe('S-031 チャット — 越境経路 3 の境界', () => {
   test('① 取引先は自社のスレッドだけを読め、同じテナントの他の取引先のスレッドは見えない', async ({
@@ -166,16 +167,18 @@ test.describe('S-031 チャット — 会社ごとの一覧・検索（2026-10-1
       await expect(page.getByTestId(`chat-thread-row-${first.threadId}`)).toBeVisible();
       await expect(page.getByTestId(`chat-thread-row-${second.threadId}`)).toBeVisible();
 
-      await page.getByTestId('chat-threads-q').fill('Partner A1');
+      // 🔴 seed の会社名（`isolationSeedCompanyNames`。架空の社名）で検索する（実在しない語で 0 件を見ても検査にならない）。
+      const firstName = isolationSeedCompanyNames(1).partners[0];
+      await page.getByTestId('chat-threads-q').fill(firstName);
       await page.getByTestId('chat-threads-search-submit').click();
-      await expect(page).toHaveURL(/q=Partner\+A1|q=Partner%20A1/);
+      await expect(page).toHaveURL(/[?&]q=/);
       await expect(page.getByTestId(`chat-thread-row-${first.threadId}`)).toBeVisible();
       await expect(page.getByTestId(`chat-thread-row-${second.threadId}`)).toHaveCount(0);
 
       // 会話を開いても検索語は URL に残る。
       await page.getByTestId(`chat-thread-link-${first.threadId}`).click();
       await expect(page.locator(`[data-testid="chat-conversation"][data-thread-id="${first.threadId}"]`)).toBeVisible();
-      await expect(page.getByTestId('chat-threads-q')).toHaveValue('Partner A1');
+      await expect(page.getByTestId('chat-threads-q')).toHaveValue(firstName);
 
       session.outbound.assertNone();
     } finally {
@@ -188,10 +191,13 @@ test.describe('S-031 チャット — 会社ごとの一覧・検索（2026-10-1
     const session = await openTenantSession(browser, partnerSales(1, 1));
     try {
       const { page } = session;
-      const response = await page.goto('/chat?q=Partner%20A2');
+      // 🔴 他の取引先の**実在する**社名で検索する（ホストからは当たる語であることを対照で確かめる）。
+      const otherName = isolationSeedCompanyNames(1).partners[1];
+      const response = await page.goto(`/chat?q=${encodeURIComponent(otherName)}`);
       const html = (await response?.text()) ?? '';
       await expect(page.getByTestId('chat-threads-search-empty')).toBeVisible();
       expect(html, '🔴 他の取引先のスレッド ID が画面に出ている').not.toContain(other.threadId);
+      expect(html, '🔴 他の取引先の社名が一覧に出ている').not.toContain(`chat-thread-counterparty-${other.threadId}`);
 
       session.outbound.assertNone();
     } finally {
