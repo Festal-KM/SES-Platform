@@ -388,6 +388,7 @@ export async function listChatMessages(
 
 /** 画面（`S-031`）が 1 リクエストで必要とするもの。 */
 export type ChatScreenData = {
+  /** ページ単位の一覧。🔴 `input.tree` を渡したときは読まない（空のページ）。 */
   readonly threads: ChatThreadListView;
   /** 選択したスレッド（`?thread=` が無い / 見えないときは `null`）。 */
   readonly thread: ChatThreadDetailView | null;
@@ -439,8 +440,11 @@ export async function readChatScreen(
   },
 ): Promise<ChatScreenData> {
   return withTenant(ctx, async (db) => {
-    const threads = await readThreadPage(ctx, db, input.threadsQuery);
+    // ✅ 2026-10-14（レビュー指摘）: 木を読むときはページ単位の一覧を読まない（画面は木しか使わず、
+    //    読んでも捨てるだけになる）。`threads` は空のページで返す。
     const tree = input.tree === undefined ? null : await readThreadTree(ctx, db, input.tree);
+    const threads: ChatThreadListView =
+      tree === null ? await readThreadPage(ctx, db, input.threadsQuery) : { items: [], nextCursor: null };
     if (input.threadId === null) {
       return {
         threads,

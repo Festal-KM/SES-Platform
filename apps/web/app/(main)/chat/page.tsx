@@ -71,7 +71,8 @@ export default async function ChatPage({
 
   const data = await readChatScreen(ctx, {
     threadId: query.thread ?? null,
-    threadsQuery: { limit: PAGE_SIZE_DEFAULT, ...(query.threads === undefined ? {} : { cursor: query.threads }) },
+    // ✅ 2026-10-14（レビュー指摘）: 一覧は木で読むので、ページ単位のカーソル（`?threads=`）は使わない。
+    threadsQuery: { limit: PAGE_SIZE_DEFAULT },
     messagesQuery: { limit: CHAT_MESSAGE_PAGE_SIZE },
     paneIds: query.pane ?? [],
     // ✅ 2026-10-14: 一覧は会社ごとの木（検索語と並べ方は URL の `q` / `sort`）。
