@@ -40,6 +40,7 @@ import { conversationLayoutFor, conversationTitleFor } from '../../../lib/chat/l
 import { canAddPane, withPaneClosed, type ChatPaneState } from '../../../lib/chat/panes';
 import { readChatScreen } from '../../../lib/chat/read';
 import { CHAT_PATH, chatHref, chatScreenQuerySchema } from '../../../lib/chat/screen-query';
+import { CHAT_THREAD_SORT_DEFAULT } from '../../../lib/chat/thread-tree';
 import { CHAT_TRAIL } from '../../../lib/shell/page-trail';
 import { PageHeading } from '../_shell/page-heading';
 import { ChatConversation } from './chat-conversation';
@@ -73,6 +74,8 @@ export default async function ChatPage({
     threadsQuery: { limit: PAGE_SIZE_DEFAULT, ...(query.threads === undefined ? {} : { cursor: query.threads }) },
     messagesQuery: { limit: CHAT_MESSAGE_PAGE_SIZE },
     paneIds: query.pane ?? [],
+    // ✅ 2026-10-14: 一覧は会社ごとの木（検索語と並べ方は URL の `q` / `sort`）。
+    tree: { sort: query.sort ?? CHAT_THREAD_SORT_DEFAULT, q: query.q ?? null },
   });
   const selected = data.thread;
   // ✅ 2026-10-14（チャットレーン）: 右に並べて開いた会話（`lib/chat/panes.ts`）。
@@ -84,6 +87,9 @@ export default async function ChatPage({
   const tiled = data.panes.length > 0;
   const conversationMessages = chatConversationMessages();
   const canPost = canPostChatMessage(ctx.role);
+  // ✅ 2026-10-14: 会話を開く・閉じる URL に一覧の検索語と並べ方を引き継ぐ（開くたびに検索が消えない）。
+  const listQuery = { q: query.q ?? null, sort: query.sort ?? CHAT_THREAD_SORT_DEFAULT };
+  const tree = data.tree ?? { groups: [], truncated: false };
 
   return (
     <main className={CONTENT_PADDING_Y_CLASS}>
@@ -125,9 +131,13 @@ export default async function ChatPage({
             }
           >
             <ChatThreadList
-              items={data.threads.items}
+              groups={tree.groups}
+              truncated={tree.truncated}
+              q={listQuery.q}
+              sort={listQuery.sort}
               selectedThreadId={selected?.id ?? null}
-              nextCursor={data.threads.nextCursor}
+              // 🔴 木は全件を読むので、ページ送りは無い（上限を超えたら `truncated` が知らせる）。
+              nextCursor={null}
               paneThreadIds={paneState.panes}
               openBesideLabel={t('chat.pane.openBeside')}
             />
@@ -153,7 +163,7 @@ export default async function ChatPage({
                 initialNextCursor={data.messages.nextCursor}
                 canPost={canPost}
                 messages={conversationMessages}
-                {...(tiled ? { closeHref: chatHref(withPaneClosed(paneState, selected.id)) } : {})}
+                {...(tiled ? { closeHref: chatHref({ ...withPaneClosed(paneState, selected.id), ...listQuery }) } : {})}
               />
             )}
           </div>
@@ -173,7 +183,7 @@ export default async function ChatPage({
                     {t('chat.thread.missing')}
                   </Alert>
                   <Link
-                    href={chatHref(withPaneClosed(paneState, pane.requestedThreadId))}
+                    href={chatHref({ ...withPaneClosed(paneState, pane.requestedThreadId), ...listQuery })}
                     className={SECONDARY_LINK_CLASSES}
                     data-testid={`chat-pane-close-${pane.requestedThreadId}`}
                   >
@@ -189,7 +199,7 @@ export default async function ChatPage({
                   initialNextCursor={pane.messages.nextCursor}
                   canPost={canPost}
                   messages={conversationMessages}
-                  closeHref={chatHref(withPaneClosed(paneState, pane.thread.id))}
+                  closeHref={chatHref({ ...withPaneClosed(paneState, pane.thread.id), ...listQuery })}
                 />
               )}
             </div>
@@ -197,7 +207,7 @@ export default async function ChatPage({
           {/* ✅ 2026-10-14: ドラッグの受け口（ドラッグ中だけ現れる。`md` 以上）。上限に達したら置かない。 */}
           {canAddPane(paneState) ? (
             <div className={'hidden md:flex'}>
-              <ChatPaneDropZone state={paneState} messages={chatPaneDropMessages()} />
+              <ChatPaneDropZone state={paneState} listQuery={listQuery} messages={chatPaneDropMessages()} />
             </div>
           ) : null}
         </Card>

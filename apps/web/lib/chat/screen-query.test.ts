@@ -53,7 +53,7 @@ describe('chatScreenQuerySchema', () => {
   });
 
   it('🔴 分離キーをスキーマが持たない（`tenantId` / `partnerCompanyId` の口が無い）', () => {
-    expect(Object.keys(chatScreenQuerySchema.shape).sort()).toEqual(['pane', 'thread', 'threads']);
+    expect(Object.keys(chatScreenQuerySchema.shape).sort()).toEqual(['pane', 'q', 'sort', 'thread', 'threads']);
   });
 });
 
@@ -88,5 +88,29 @@ describe('右に並べる会話（`pane`。2026-10-14）', () => {
 describe('chatMessagesApiPath', () => {
   it('`docs/05` §6.5 #50 / #51 の URL を 1 箇所で組む（画面に書き写さない）', () => {
     expect(chatMessagesApiPath(THREAD)).toBe(`/api/threads/${THREAD}/messages`);
+  });
+});
+
+describe('一覧の検索語と並べ方（`q` / `sort`。2026-10-14）', () => {
+  it('検索語は前後の空白を落とし、空なら指定なしと同じ', () => {
+    const parsed = chatScreenQuerySchema.safeParse({ q: '  金融  ' });
+    expect(parsed.success ? parsed.data.q : null).toBe('金融');
+    const empty = chatScreenQuerySchema.safeParse({ q: '   ' });
+    expect(empty.success).toBe(true);
+    expect(empty.success ? empty.data.q : 'x').toBeUndefined();
+  });
+
+  it('🔴 長すぎる検索語・知らない並べ方は壊れた値（画面は /chat へ戻す）', () => {
+    expect(chatScreenQuerySchema.safeParse({ q: 'あ'.repeat(101) }).success).toBe(false);
+    expect(chatScreenQuerySchema.safeParse({ sort: 'name' }).success).toBe(false);
+    expect(chatScreenQuerySchema.safeParse({ sort: 'company' }).success).toBe(true);
+  });
+
+  it('chatHref は検索語と並べ方を保ち、既定の並べ方（recent）は載せない', () => {
+    const href = chatHref({ thread: THREAD, q: '金融', sort: 'company' });
+    const url = new URL(href, 'https://app.test');
+    expect(url.searchParams.get('q')).toBe('金融');
+    expect(url.searchParams.get('sort')).toBe('company');
+    expect(chatHref({ thread: THREAD, sort: 'recent', q: '' })).toBe(`/chat?thread=${THREAD}`);
   });
 });

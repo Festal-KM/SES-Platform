@@ -150,3 +150,52 @@ test.describe('S-031 チャット — 会話を右に並べる（2026-10-14）',
     }
   });
 });
+
+// ✅ 2026-10-14（チャットレーン）: 一覧を会社ごとの木にし、検索・並べ替えを足した（`lib/chat/thread-tree.ts`）。
+test.describe('S-031 チャット — 会社ごとの一覧・検索（2026-10-14）', () => {
+  test('⑥ ホストが会社名で検索すると、その会社のチャットだけが残り、会話を開いても検索が保たれる', async ({
+    browser,
+  }) => {
+    const first = partnerIds(1, 1);
+    const second = partnerIds(1, 2);
+    const session = await openTenantSession(browser, hostOwner(1));
+    try {
+      const { page } = session;
+      await page.goto('/chat');
+      // 2 社ぶんのチャットが一覧に出ている（対照）。
+      await expect(page.getByTestId(`chat-thread-row-${first.threadId}`)).toBeVisible();
+      await expect(page.getByTestId(`chat-thread-row-${second.threadId}`)).toBeVisible();
+
+      await page.getByTestId('chat-threads-q').fill('Partner A1');
+      await page.getByTestId('chat-threads-search-submit').click();
+      await expect(page).toHaveURL(/q=Partner\+A1|q=Partner%20A1/);
+      await expect(page.getByTestId(`chat-thread-row-${first.threadId}`)).toBeVisible();
+      await expect(page.getByTestId(`chat-thread-row-${second.threadId}`)).toHaveCount(0);
+
+      // 会話を開いても検索語は URL に残る。
+      await page.getByTestId(`chat-thread-link-${first.threadId}`).click();
+      await expect(page.locator(`[data-testid="chat-conversation"][data-thread-id="${first.threadId}"]`)).toBeVisible();
+      await expect(page.getByTestId('chat-threads-q')).toHaveValue('Partner A1');
+
+      session.outbound.assertNone();
+    } finally {
+      await session.close();
+    }
+  });
+
+  test('⑦ 🔴 取引先が他の取引先の会社名で検索しても、何も出ない（存在を探れない）', async ({ browser }) => {
+    const other = partnerIds(1, 2);
+    const session = await openTenantSession(browser, partnerSales(1, 1));
+    try {
+      const { page } = session;
+      const response = await page.goto('/chat?q=Partner%20A2');
+      const html = (await response?.text()) ?? '';
+      await expect(page.getByTestId('chat-threads-search-empty')).toBeVisible();
+      expect(html, '🔴 他の取引先のスレッド ID が画面に出ている').not.toContain(other.threadId);
+
+      session.outbound.assertNone();
+    } finally {
+      await session.close();
+    }
+  });
+});

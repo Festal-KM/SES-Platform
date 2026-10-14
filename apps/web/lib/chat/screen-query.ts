@@ -10,6 +10,7 @@
 import { PAGE_CURSOR_MAX_LENGTH } from '@ses/config';
 import { z } from 'zod';
 import { isChatThreadCursor } from './thread-cursor';
+import { CHAT_THREAD_SORTS, CHAT_THREAD_SORT_DEFAULT, type ChatThreadSort } from './thread-tree';
 
 export const CHAT_PATH = '/chat';
 
@@ -25,6 +26,12 @@ export const CHAT_THREADS_CURSOR_PARAM = 'threads';
 export const CHAT_PANE_PARAM = 'pane';
 /** 🔴 並べて開ける追加の会話の上限（`thread` と合わせて 3 列）。 */
 export const CHAT_MAX_EXTRA_PANES = 2;
+/** ✅ 2026-10-14: 一覧の検索語（相手の会社名・案件名の部分一致。`thread-tree.ts`）。 */
+export const CHAT_Q_PARAM = 'q';
+/** ✅ 2026-10-14: 一覧の並べ方（`recent` = 更新があったものが上 / `company` = 会社名順）。 */
+export const CHAT_SORT_PARAM = 'sort';
+/** 検索語の上限（会社名・案件名より十分長い）。 */
+export const CHAT_Q_MAX_LENGTH = 100;
 
 /**
  * 🔴 **形だけを受ける**（形が違えば `safeParse` が失敗し、画面は素の `/chat` へ戻す）。
@@ -48,6 +55,14 @@ export const chatScreenQuerySchema = z
       .union([z.uuid(), z.array(z.uuid()).max(CHAT_MAX_EXTRA_PANES)])
       .transform((value) => (typeof value === 'string' ? [value] : value))
       .optional(),
+    // 🔴 空の検索語は「指定なし」と同じ（フォームの送信で `q=` が付いても壊れた値にしない）。
+    [CHAT_Q_PARAM]: z
+      .string()
+      .trim()
+      .max(CHAT_Q_MAX_LENGTH)
+      .transform((value) => (value === '' ? undefined : value))
+      .optional(),
+    [CHAT_SORT_PARAM]: z.enum(CHAT_THREAD_SORTS).optional(),
   })
   .refine((query) => {
     const panes = query.pane ?? [];
@@ -65,6 +80,9 @@ export function chatHref(input: {
   readonly threadsCursor?: string | null;
   /** 右に並べる会話（`thread` があるときだけ載せる）。 */
   readonly panes?: readonly string[];
+  /** ✅ 2026-10-14: 一覧の検索語と並べ方（既定値は載せない）。 */
+  readonly q?: string | null;
+  readonly sort?: ChatThreadSort | null;
 }): string {
   const params = new URLSearchParams();
   if (input.thread !== null && input.thread !== undefined) {
@@ -73,6 +91,10 @@ export function chatHref(input: {
   }
   if (input.threadsCursor !== null && input.threadsCursor !== undefined) {
     params.set(CHAT_THREADS_CURSOR_PARAM, input.threadsCursor);
+  }
+  if (input.q !== null && input.q !== undefined && input.q.trim() !== '') params.set(CHAT_Q_PARAM, input.q.trim());
+  if (input.sort !== null && input.sort !== undefined && input.sort !== CHAT_THREAD_SORT_DEFAULT) {
+    params.set(CHAT_SORT_PARAM, input.sort);
   }
   const query = params.toString();
   return query === '' ? CHAT_PATH : `${CHAT_PATH}?${query}`;

@@ -34,6 +34,7 @@ import { withTenant, type AuthenticatedTenantCtx } from '@ses/db';
 import { requireFound, ValidationError } from '../api/errors';
 import { buildCursorPage, takeForCursorPage, type CursorPage } from '../api/pagination';
 import type { ChatMessageListQuery, ChatThreadListQuery } from './schemas';
+import { buildThreadTree, type ChatThreadGroup, type ChatThreadSort } from './thread-tree';
 import {
   chatThreadCursorWhere,
   decodeChatThreadCursor,
@@ -187,6 +188,50 @@ async function readThreadPage(
     ),
     nextCursor: page.nextCursor,
   };
+}
+
+/**
+ * ✅ 2026-10-14（チャットレーン）: 画面の一覧を**会社ごとの木**にするために読む上限。
+ * 🔴 木は会社ごとにまとめるので、ページ単位では組めない（同じ会社のスレッドがページをまたぐ）。
+ *    上限を超えたら `truncated` を立て、画面は「古いスレッドは表示していません」と書く（黙って落とさない）。
+ */
+export const CHAT_THREAD_TREE_MAX = 1000;
+
+export type ChatThreadTreeData = {
+  readonly groups: readonly ChatThreadGroup[];
+  /** 上限を超えたので、古いスレッドを読んでいない。 */
+  readonly truncated: boolean;
+};
+
+/**
+ * ✅ 2026-10-14: スレッド一覧を会社ごとの木で読む（`lib/chat/thread-tree.ts`）。
+ * 🔴 母集団は `readThreadPage` と同じ（`where` に境界を書かない。RLS の C6 が決める）。並びも同じ。
+ */
+async function readThreadTree(
+  ctx: AuthenticatedTenantCtx,
+  db: Pick<TenantDb, 'chatThread' | 'partnerCompany' | 'tenant' | 'project'>,
+  options: { readonly sort: ChatThreadSort; readonly q: string | null },
+): Promise<ChatThreadTreeData> {
+  const rows = (await db.chatThread.findMany({
+    select: CHAT_THREAD_SELECT,
+    orderBy: [{ lastMessageAt: { sort: 'desc', nulls: 'last' } }, { id: 'desc' }],
+    take: CHAT_THREAD_TREE_MAX + 1,
+  })) as readonly SelectedThreadRow[];
+  const truncated = rows.length > CHAT_THREAD_TREE_MAX;
+  const kept = truncated ? rows.slice(0, CHAT_THREAD_TREE_MAX) : rows;
+  const counterpartyOf = await resolveCounterpartyNames(ctx, db, kept.map((row) => row.partnerCompanyId));
+  const projects = await resolveProjectRefs(db, kept.map((row) => row.projectId));
+  const groups = buildThreadTree(
+    kept.map((row) => ({
+      groupKey: row.partnerCompanyId,
+      item: chatThreadListItem(row, {
+        project: row.projectId === null ? null : projects.get(row.projectId) ?? null,
+        counterpartyName: counterpartyOf(row.partnerCompanyId),
+      }),
+    })),
+    options,
+  );
+  return { groups, truncated };
 }
 
 /**
@@ -360,6 +405,11 @@ export type ChatScreenData = {
    * 🔴 左端（`thread`）が見えないときは読まない（空配列）。
    */
   readonly panes: readonly ChatPaneData[];
+  /**
+   * ✅ 2026-10-14: 会社ごとの木（`input.tree` を渡したときだけ。渡さなければ `null`）。
+   * 🔴 `threads`（ページ単位の一覧）と母集団は同じで、並べ方だけが違う。
+   */
+  readonly tree: ChatThreadTreeData | null;
 };
 
 /** 右に並べた会話 1 本ぶん。 */
@@ -384,10 +434,13 @@ export async function readChatScreen(
     readonly messagesQuery: ChatMessageListQuery;
     /** 右に並べる会話（左から順。省略時は無し）。 */
     readonly paneIds?: readonly string[];
+    /** ✅ 2026-10-14: 一覧を会社ごとの木でも読む（画面だけが使う。API #49 は従来のページ単位のまま）。 */
+    readonly tree?: { readonly sort: ChatThreadSort; readonly q: string | null };
   },
 ): Promise<ChatScreenData> {
   return withTenant(ctx, async (db) => {
     const threads = await readThreadPage(ctx, db, input.threadsQuery);
+    const tree = input.tree === undefined ? null : await readThreadTree(ctx, db, input.tree);
     if (input.threadId === null) {
       return {
         threads,
@@ -395,6 +448,7 @@ export async function readChatScreen(
         messages: { items: [], nextCursor: null },
         requestedThreadMissing: false,
         panes: [],
+        tree,
       };
     }
     const thread = await readThreadDetail(ctx, db, input.threadId);
@@ -405,6 +459,7 @@ export async function readChatScreen(
         messages: { items: [], nextCursor: null },
         requestedThreadMissing: true,
         panes: [],
+        tree,
       };
     }
     const messages = await readMessagePage(ctx, db, input.threadId, input.messagesQuery);
@@ -421,7 +476,7 @@ export async function readChatScreen(
             : await readMessagePage(ctx, db, paneId, input.messagesQuery),
       });
     }
-    return { threads, thread, messages, requestedThreadMissing: false, panes };
+    return { threads, thread, messages, requestedThreadMissing: false, panes, tree };
   });
 }
 
