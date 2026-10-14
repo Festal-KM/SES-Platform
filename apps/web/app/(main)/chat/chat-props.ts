@@ -28,6 +28,21 @@ export type ChatConversationMessages = {
   readonly composeNotAllowed: string;
   /** ✅ 2026-10-14: 並べて開いた会話を閉じる。 */
   readonly closePane: string;
+  /** ✅ 2026-10-14: 会話の操作の改修。 */
+  readonly copy: string;
+  readonly copied: string;
+  readonly readMore: string;
+  readonly readLess: string;
+  readonly messageActions: string;
+  readonly toLatest: string;
+  readonly firstMessage: string;
+  readonly remainingBefore: string;
+  readonly remainingAfter: string;
+  readonly retry: string;
+  readonly templateLabel: string;
+  readonly templatePlaceholder: string;
+  /** 定型文（固定の文面。🔴 個人情報・単価を含めない）。 */
+  readonly templates: readonly { readonly id: string; readonly label: string; readonly body: string }[];
 };
 
 /** ✅ 2026-10-14: ドラッグで会話を右に並べる受け口の語。 */
@@ -60,5 +75,23 @@ export function chatConversationMessages(): ChatConversationMessages {
     composeThreadMissing: t('chat.compose.threadMissing'),
     composeNotAllowed: t('chat.compose.notAllowed'),
     closePane: t('chat.pane.close'),
+    copy: t('chat.message.copy'),
+    copied: t('chat.message.copied'),
+    readMore: t('chat.message.readMore'),
+    readLess: t('chat.message.readLess'),
+    messageActions: t('chat.message.actions'),
+    toLatest: t('chat.messages.toLatest'),
+    firstMessage: t('chat.messages.first'),
+    remainingBefore: t('chat.compose.remainingBefore'),
+    remainingAfter: t('chat.compose.remainingAfter'),
+    retry: t('chat.compose.retry'),
+    templateLabel: t('chat.compose.template.label'),
+    templatePlaceholder: t('chat.compose.template.placeholder'),
+    templates: [
+      { id: 'interview', label: t('chat.compose.template.interview'), body: t('chat.compose.template.interview.body') },
+      { id: 'extension', label: t('chat.compose.template.extension'), body: t('chat.compose.template.extension.body') },
+      { id: 'status', label: t('chat.compose.template.status'), body: t('chat.compose.template.status.body') },
+      { id: 'thanks', label: t('chat.compose.template.thanks'), body: t('chat.compose.template.thanks.body') },
+    ],
   };
 }
