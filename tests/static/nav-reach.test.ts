@@ -202,7 +202,38 @@ const PRE_FOLD_REACH: Readonly<Record<TenantRole, readonly string[]>> = {
  *    `thread_participants` の行の有無（RLS の C6）であって、ナビの項目集合ではない。
  */
 // 🔴 **昇順で持つ**（`reachOf` が昇順を返すため、`added` との比較が並びで落ちないようにする）。
-const FOLD_ADDED_HREFS: readonly string[] = ['/chat', '/settings'];
+const FOLD_ADDED_HREFS: readonly string[] = ['/calendar', '/chat', '/settings'];
+
+/**
+ * 🔴 ✅ **2026-10-14（人間の明示指示）: ホスト所属にだけ増えた遷移先**（`パートナー連携` 群）。
+ *
+ * | 遷移先 | 中身 |
+ * |---|---|
+ * | `/partners` | パートナー一覧。`S-014`（`/settings/partner-companies`）と同じ母集団を指すが**別の画面**であり、統合は Issue #102（既定 = A） |
+ * | `/partners/projects` | パートナーの案件一覧 |
+ * | `/partners/engineers` | パートナーの人材一覧（🔴 **経路 4** そのもの） |
+ *
+ * 🔴🔴 **取引先所属には 1 本も出さない。** 出した瞬間に「他社の一覧」になり、`CLAUDE.md` §3.1 の
+ *    「🔴 パートナー同士が相互に参照できる経路を 1 つも作らない」の違反になる。
+ *    🔴 **3 画面がまだ準備中（中身が無い）であることは理由にならない** —— 到達できること自体が
+ *    「他社の一覧が在る」ことの示唆である（§3.1 / `F-004 AC-4`）。この不変条件は下の ② が
+ *    ロールの集合として固定する。
+ * 🔴 **読み取り経路は 1 本も増えていない**（3 画面とも DB を読まない。各 `page.tsx` 冒頭の 🔴）。
+ *    増えたのは**到達手段だけ**であり、中身を入れるときに §8.6 の人間の承認が要る。
+ */
+const HOST_ONLY_ADDED_HREFS: readonly string[] = [
+  '/partners',
+  '/partners/engineers',
+  '/partners/projects',
+];
+
+/** そのロールに対して「畳み込み以後に増えてよい」遷移先（昇順）。 */
+function addedHrefsFor(role: TenantRole): readonly string[] {
+  return [
+    ...FOLD_ADDED_HREFS,
+    ...(audienceOf(role) === 'HOST' ? HOST_ONLY_ADDED_HREFS : []),
+  ].sort();
+}
 
 /** 所属の軸（ロール名で代用しない。`memberships` の CHECK と 1 対 1）。 */
 const AUDIENCE_ROLES: Readonly<Record<NavAudience, readonly TenantRole[]>> = {
@@ -277,19 +308,20 @@ describe('🔴 ① ロール別の到達集合が、畳む前と一致する（�
     ).toEqual([]);
   });
 
-  it.each(ALL_ROLES)('%s: 増えた遷移先は `/settings`（索引）の 1 件だけ', (role) => {
+  it.each(ALL_ROLES)('%s: 増えた遷移先は、理由を書いた表に在るものだけ', (role) => {
+    const allowed = addedHrefsFor(role);
     const added = reachOf(role).filter((href) => !PRE_FOLD_REACH[role].includes(href));
     expect(
       added,
       `🔴 ${role} に新しい遷移先が増えている: ${added.join(', ')}\n` +
         '畳み込みは到達手段の置き換えであり、ロール別の到達範囲を広げる変更ではない' +
         '（広げるなら `docs/04` の権限差分の改訂 = 人間の判断を要する）。',
-    ).toEqual(FOLD_ADDED_HREFS.filter((href) => added.includes(href)));
-    expect(added.every((href) => FOLD_ADDED_HREFS.includes(href))).toBe(true);
+    ).toEqual(allowed.filter((href) => added.includes(href)));
+    expect(added.every((href) => allowed.includes(href))).toBe(true);
   });
 
-  it.each(ALL_ROLES)('%s: 到達集合が「畳む前 + /settings」と完全一致する（過不足ゼロ）', (role) => {
-    expect(reachOf(role)).toEqual([...PRE_FOLD_REACH[role], ...FOLD_ADDED_HREFS].sort());
+  it.each(ALL_ROLES)('%s: 到達集合が「畳む前 + 増えた表」と完全一致する（過不足ゼロ）', (role) => {
+    expect(reachOf(role)).toEqual([...PRE_FOLD_REACH[role], ...addedHrefsFor(role)].sort());
   });
 
   it('🔴 `/chat`（`S-031`）は全ロールが到達できる（ロールで出し分けない。docs/04 §S-031）', () => {
@@ -322,6 +354,17 @@ describe('🔴 ② ロールによる出し分けの条件が 1 つも変わっ�
         ALL_ROLES.filter((role) => reachOf(role).includes(href)),
         href,
       ).toEqual(['OWNER', 'ADMIN']);
+    }
+  });
+
+  it('🔴🔴 `/partners` 配下（パートナー連携）はホスト所属だけ（§3.1 の相互参照の禁止）', () => {
+    for (const href of HOST_ONLY_ADDED_HREFS) {
+      expect(
+        ALL_ROLES.filter((role) => reachOf(role).includes(href)),
+        `🔴 ${href} に取引先所属が到達できる。取引先にとってこれは「他社の一覧」であり、` +
+          '`CLAUDE.md` §3.1「パートナー同士が相互に参照できる経路を 1 つも作らない」の違反である' +
+          '（中身が準備中であることは理由にならない。到達できること自体が示唆になる）。',
+      ).toEqual(AUDIENCE_ROLES.HOST as TenantRole[]);
     }
   });
 
@@ -465,25 +508,45 @@ describe('🔴 ④ 第 2 階層が現に描かれている（データだけ在�
   });
 });
 
-describe('🔴 ⑤ サイドバーはモックアップどおりの 2 群である', () => {
-  it.each(ALL_ROLES)('%s: 上段 4 項目 + `その他` 2 項目で、ロールによって増減しない', (role) => {
-    const groups = buildMainNav({ audience: audienceOf(role), role });
+describe('🔴 ⑤ サイドバーは、ホスト 3 群 / 取引先 2 群である', () => {
+  it.each(ALL_ROLES)('%s: 群と項目はロールでは増減しない（増減する軸は所属だけ）', (role) => {
+    const audience = audienceOf(role);
+    const groups = buildMainNav({ audience, role });
     // ✅ **2026-10-13（人間の指示 + モックアップ）: `お知らせ` と `設定` を下段の `その他` 群に
     //    分けた**（上に罫線）。🔴 **到達集合は 1 件も増減していない** —— `設定` は同じ索引を
     //    指したまま群が変わっただけで、`お知らせ` は `UNAVAILABLE`（押せない = 到達先が無い）。
-    expect(groups.map((group) => [group.id, group.labelKey, group.divided ?? false])).toEqual([
-      ['primary', null, false],
-      ['other', 'shell.nav.group.other', true],
-    ]);
+    // ✅ **2026-10-14（人間の指示）: ホストに `パートナー連携` 群が増えた**（罫線つき）。
+    //    🔴 **取引先には群ごと出さない**（空の群も置かない。§3.1 の相互参照の禁止）。
+    expect(groups.map((group) => [group.id, group.labelKey, group.divided ?? false])).toEqual(
+      audience === 'HOST'
+        ? [
+            ['primary', null, false],
+            ['partners', 'shell.nav.group.partners', true],
+            ['other', 'shell.nav.group.other', true],
+          ]
+        : [
+            ['primary', null, false],
+            ['other', 'shell.nav.group.other', true],
+          ],
+    );
     // ✅ 2026-10-04: `レポート` を外した（人間の明示指示）。
-    expect(navItems(groups).map((item) => item.id)).toEqual([
-      'home',
-      'chat',
-      'engineers',
-      'projects',
-      'notifications',
-      'settings',
-    ]);
+    // ✅ 2026-10-14: `カレンダー` が `チャット` の下に入り、`案件` が `人材` の上になった。
+    expect(navItems(groups).map((item) => item.id)).toEqual(
+      audience === 'HOST'
+        ? [
+            'home',
+            'chat',
+            'calendar',
+            'projects',
+            'engineers',
+            'partners-companies',
+            'partners-projects',
+            'partners-engineers',
+            'notifications',
+            'settings',
+          ]
+        : ['home', 'chat', 'calendar', 'projects', 'engineers', 'notifications', 'settings'],
+    );
   });
 
   it.each(ALL_ROLES)('%s: 🔴 `お知らせ` はリンクではない（Phase 2 で画面が無い）', (role) => {

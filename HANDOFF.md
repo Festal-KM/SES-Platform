@@ -56,11 +56,12 @@
 | ⑤ 管理平面 | `T-22-14` `A-001` / `A-003` / `A-004` / `A-010` / `A-012` / `A-014` / `/admin`（レビュー 1 回） | **未着手** |
 | | `T-22-15` 締め（🔴 **許可リストが空 / 全検査が無条件 green / 全数 E2E / 実機確認 / 完了記録**） | **未着手** |
 | ⑦ デザインシステム v1.0 | 🔴 **人間の `SES Hub Design System v1.0`（2026-10-13）に寸法を合わせる** —— 外枠（サイドバー 208 / ヘッダ 56 / gutter 28・16 / 副カラム 388）・文字 9 段・radius 4 段・色・ホームの密度（行 45px）。正は [`docs/design-system.md`](./docs/design-system.md) | ✅ 下記 |
-| ⑧ チャット（`S-031`） | 🔴 仕様書 §3.12（2026-10-13 に追加）に合わせた —— Main を 1 枚の面にして スレッド一覧 320 + 会話、行 60px、Slack 型のバブル（max 560）、関連情報の KV 30px。**出していないもの**（未読 / 既読 / 通話 / `@メンション` / タスク / ファイル / プレビュー / 検索）は `docs/design-system.md` §4.5 の表に理由つき。🔴 **2026-10-13 以降は人間レーン（担当：紺野 / `akonno-ux`。宮田・紺野の合意）。自動運転のエージェントはチャットに着手しない。** 対象: `apps/web/app/(main)/chat/`・`apps/web/app/api/(main)/threads/`・`apps/web/lib/chat/`・`docs/04` §3.12 と `S-031`・`docs/design-system.md` §4.5。変更の要望は Issue に起票する。作業は `feat/chat-lane` から PR 経由で `main` に入れる（持ち主は `.github/CODEOWNERS`） | ✅ 骨格は完了 / **以後は紺野が担当** |
+| ⑧ チャット（`S-031`） | 🔴 仕様書 §3.12（2026-10-13 に追加）に合わせた —— Main を 1 枚の面にして スレッド一覧 320 + 会話、行 60px、Slack 型のバブル（max 560）、関連情報の KV 30px。**出していないもの**（未読 / 既読 / 通話 / `@メンション` / タスク / ファイル / プレビュー / 検索）は `docs/design-system.md` §4.5 の表に理由つき。🔴 **2026-10-13 以降は人間レーン（担当：紺野 / `akonno-ux`。宮田・紺野の合意）。自動運転のエージェントはチャットに着手しない。** 対象: `apps/web/app/(main)/chat/`・`apps/web/app/api/(main)/threads/`・`apps/web/lib/chat/`・`docs/04` §3.12 と `S-031`・`docs/design-system.md` §4.5。変更の要望は Issue に起票する。作業は `feat/chat-lane` から PR 経由で `main` に入れる（持ち主は `.github/CODEOWNERS`）。✅ **2026-10-14: [#96](https://github.com/Festal-KM/SES-Platform/pull/96) をマージ（`df92629`）しデモに反映** —— Lark 寄せ（企業スレッドは**自分の発言だけ右**・同僚と相手は左、日付の区切り、時刻 HH:MM、連投のまとめ、Enter で送信）と、チャットの E2E（境界 2 + 並べ方 1 + モバイル 3。それまで 0 本）。⏳ **[#103](https://github.com/Festal-KM/SES-Platform/pull/103)（会話を右に並べて開く。最大 3 列・`?pane=`）がレビュー待ち。** ⏳ **合意待ち**: [#97](https://github.com/Festal-KM/SES-Platform/issues/97)（返信スレッド・引用・未読ほか。設計案は `docs/chat-lane/reply-threads-proposal.md` / `read-state-proposal.md`）/ [#89](https://github.com/Festal-KM/SES-Platform/issues/89)（本文の送信前の注意。`docs/chat-lane/pre-send-warning-proposal.md`）。🔴 **未読は `CLAUDE.md` §4.1 への概念の追加（`ChatReadState`）が要る** = 人間の承認事項。合意まで「未読の実体が無い」の扱い（U-27 / §S-031）は変えない | ✅ 骨格は完了 / **以後は紺野が担当**（2026-10-14 時点の状況は左） |
 | ⑥ ホームの作り直し | 🔴 **人間の仕様書（2026-10-11）に沿った `S-003` / `S-004`** —— タブ 4 つ / セクション 4 つ / 優先度バッジ / KPI の遷移 / 右レール 4 件（レビュー 1 回。`docs/sprints/SP-22-ui-overhaul.md` §11） | ✅ 下記 |
 | ⑨ 案件管理タブ（`3b` = `S-010`） | 🔴 受領した定義書 [`docs/design-system-projects.md`](./docs/design-system-projects.md) に合わせた —— 状態 Badge / 件数行 15/700 / 副カラムを「帯 → 案件名 + 状態 → KV 30px → 下端の操作行」に。**出していないもの**（タブ帯 / 企業名 / カテゴリ / 稼働形態 Badge / ドット / 行高 45 / 8 行表示）は同ファイル §A に理由つき | ✅ **一部完了（2026-10-14）** |
 | ⑩ 人材管理タブ（`2a`〜`2e`） | 🔴 定義書 [`docs/design-system-engineers.md`](./docs/design-system-engineers.md)。公開用の列は [#94](https://github.com/Festal-KM/SES-Platform/issues/94) の回答待ち | **未着手** |
 | ⑪ 新規案件登録（`3a` = `S-012`） | 🔴 中核が「AI で案件情報を抽出」であり、[#87](https://github.com/Festal-KM/SES-Platform/issues/87)（`CLAUDE.md` §3.2 / §12.2 の改訂）の決着が要る。**決まるまでボタンを出さない** | **未着手** |
+| ⑫ サイドバーの「自社 / パートナー」分割 | 🔴 人間の明示指示 5 点（2026-10-14）—— `自社人材管理` / `自社案件管理` への改称・`パートナー連携` 群の新設（3 項目）・`案件` を `人材` の上・`チャット` の下に `カレンダー`。**新設 4 画面（`S-048`〜`S-051`）は「準備中」の 1 行だけ**（人間の指示）。中身は [#102](https://github.com/Festal-KM/SES-Platform/issues/102) の回答待ち | ✅ **完了（2026-10-14）** |
 
 🔴 **✅ 刷新は全段完了（2026-10-03）。ラチェットの許可リストは 6 本すべて空（231 → 0）。** 全画面が共通フレーム（トークン 63 / 共通部品 95 + `Meter`）で描かれている。
 
@@ -94,6 +95,8 @@
 | 運営者コンソール | `platform-owner@seed-isolation.test` | 要 |
 
 パスワードと全 22 アカウントは `docs/DEV-ACCOUNTS.md`。デプロイは `railway up --service web`（`--service worker` も同様）。
+
+✅ **2026-10-14: 紺野（`a.konno@festal-inc.com`）も Railway の `ses-platform-demo` に参加した。** チャットの変更は紺野側からも反映する（🔴 **反映元は必ず `origin/main` と一致した `main`**。作業ブランチや古い `main` から `railway up` すると、他の人の反映を巻き戻す）。反映したら PR か Slack に残す。⚠️ Railway 上の環境名は `production` だが中身は `APP_ENV=demo`（全モック）である。ログイン画面は `/signin`（`/login` は 404）。
 
 ---
 
@@ -165,6 +168,9 @@
 - 🔴 **受け取った定義書は `docs/design-system-*.md` にそのまま保存し、実装との差分を同じファイルの表に理由つきで書く**（[人材管理](./docs/design-system-engineers.md) / [案件管理](./docs/design-system-projects.md)）。🔴 **「モックに在るが実装に無いもの」を黙って落とさない** —— 落とした理由（列が DB に無い / 条文に反する / 押して何も起きない）が残っていないと、次の担当者が同じ検討をやり直す。
 - 🔴 **画面の中に 2 本目のタブ帯を足さない。** `人材管理` / `案件管理` のタブ帯は**外枠（`SectionNav`）が Top Header の直下に持っている**（案件 = `案件一覧` / `提案` / `提案依頼`）。受領したモックは Title の下にタブを描いているが、**6 つのうち実装に対応するものが 1 つも無い**（`自社案件` / `パートナー案件` = 区分が存在しない。`提案済み` / `成約` / `終了` = `Project` ではなく `Proposal` の状態）。状態の 3 値は絞り込み（`?status=`）のままである（`docs/04` §5-13「状態の絞り込みをタブで表現しない」）。
 - 🔴 **一覧の行高 45px / セル 14px は保留中**（[#99](https://github.com/Festal-KM/SES-Platform/issues/99)。既定 = 現状の 36.5px / 13px）。定義書 2 本が 45h を指定しているが、**一覧 20 画面すべての密度が同時に変わる**。変更箇所は `table.tsx` の 2 箇所だけなので、決まってから 1 コミットで入る。
+- 🔴🔴 **サイドバーに「パートナーの〜」を足すときは、取引先所属に出していないかを必ず確かめる。** 2026-10-14 に `パートナー連携` 群（パートナー一覧 / 案件一覧 / 人材一覧）を足したが、**これは取引先にとって「他社の一覧」であり `CLAUDE.md` §3.1 の相互参照の禁止そのもの**である。🔴 **中身が準備中であることは理由にならない** —— 項目が在ること自体が「他社の一覧が在る」ことの示唆になる（件数が示唆になるのと同じ）。🔴 **群ごと出さない**（空の群として見出しと罫線だけ残すのも駄目）。判定の軸は**所属（`partnerCompanyId`）**であってロール名ではない。固定しているのは `tests/static/nav-reach.test.ts` の「`/partners` 配下に到達できるロール = ホスト 4 ロールちょうど」である。
+- 🔴 **「押せない `Phase N` の項目」と「押せる準備中の画面」を混ぜない。** `お知らせ`（`S-032`）は `UNAVAILABLE` でリンクですらない（行き先が無い）。`S-048`〜`S-051` は**押せて、開けて、`EmptyState` 1 行**である。**利用者が取るべき行動が違う**ので印も別にする。🔴 **準備中の文言に Phase も日付も書かない**（守れない約束をしない。`shell.preparing.description` の 1 キーを共有する）。
+- 🔴 **サイドバーに項目を足したら 5 箇所が同時に動く**（2026-10-14 の実測）: ①`apps/web/lib/shell/nav.ts`（項目表）②`apps/web/lib/shell/page-trail.ts`（パンくず + `ALL_PAGE_TRAILS` への登録。**登録を忘れると `page-trail.test.ts` の走査から漏れる**）③`packages/i18n`（キー追加 + **`npx tsc -p packages/i18n/tsconfig.json`**）④`apps/web/lib/shell/nav.test.ts` の `MOCKUP_SIDEBAR` + `tests/static/nav-reach.test.ts` の到達集合 ⑤`main-shell.render.test.tsx` の「その他」の項目列（**ボトムタブの手前 4 つに出ない項目は、ここが唯一のモバイル到達手段である**）。
 - 🔴 **幅の遷移（200ms）はサイドバーの開閉だけの例外**（`SIDEBAR_WIDTH_TRANSITION_CLASSES`）。`docs/04` §7.9 の「遷移は色だけ」は **hover で一覧が波打つのを止める条文**であり、明示操作 1 回の開閉はその射程ではない。🔴 **他の部品に広げない。**
 
 ---
@@ -177,6 +183,7 @@
 
 | # | 内容 | 既定 |
 |---|---|---|
+| [#102](https://github.com/Festal-KM/SES-Platform/issues/102) | 🔴🔴 **`パートナー連携` の 3 画面と `カレンダー` に何を出すか** —— うち **`S-050`（パートナーの案件一覧）は越境経路の追加にあたる**（取引先が持ち込んだ案件をホストが読む向きは §3.1 の 5 経路に無い）。**`CLAUDE.md` §8.6 の人間の承認事項であり、エージェントが決めてはならない** | ① `S-014` と分けたまま / ② **経路 2（`Proposal`）の中に収める**（新経路を作らない）/ ③ カレンダーは面談 + 契約満了 |
 | [#98](https://github.com/Festal-KM/SES-Platform/issues/98) | **案件の状態（募集中 / 充足 / 後任募集）の Badge の色** | 後任募集 橙・塗り / 募集中 緑・枠線 / 充足 無彩色・枠線 |
 | [#99](https://github.com/Festal-KM/SES-Platform/issues/99) | **一覧（`DataTable`）の行高を 45px・セルを 14px に揃えるか**（定義書 2 本が 45h を指定。適用すると一覧 20 画面の密度が変わる） | **現状維持**（36.5px / 13px） |
 | [#100](https://github.com/Festal-KM/SES-Platform/issues/100) | 🔴 **案件一覧に「企業名（エンド企業名）」の列を出すか** —— 商流情報を一覧の読み取り経路に入れる判断（`CLAUDE.md` §3.1 経路 5 / §3.2 / §3.3） | **出さない** |
