@@ -30,7 +30,7 @@
 //
 // 🔴 本モジュールは Next.js / Auth.js に依存しない（分離テストがサーバを立てずに同じ経路を実行できる。
 //    `lib/proposals/list.ts` と同方針）。
-import { withTenant, type AuthenticatedTenantCtx } from '@ses/db';
+import { freeWordFilter, withTenant, type AuthenticatedTenantCtx } from '@ses/db';
 import { requireFound, ValidationError } from '../api/errors';
 import { buildCursorPage, takeForCursorPage, type CursorPage } from '../api/pagination';
 import type { ChatMessageListQuery, ChatThreadListQuery } from './schemas';
@@ -289,6 +289,7 @@ async function readThreadTree(
     { ...options, fastReplyKeys },
   );
   // ✅ 2026-10-14: 本文の検索（紺野の決定）。🔴 母集団は `messages` の RLS（C6）だけ（`where` は検索語とスレッドだけ）。
+  //    照合は `@ses/db` の `freeWordFilter`（検索の実装の唯一の出所。docs/05 TBD-8 / `search-sql-single-path.test.ts`）。
   //    削除済みの本文（`NULL`）は当たらない。短すぎる語（2 文字未満）では走査しない。
   const needle = options.q?.trim() ?? '';
   const allTitles = new Map(
@@ -299,7 +300,7 @@ async function readThreadTree(
       ? []
       : (
           await db.message.findMany({
-            where: { threadId: { in: threadIds }, body: { contains: needle, mode: 'insensitive' } },
+            where: { threadId: { in: threadIds }, body: freeWordFilter(needle) },
             select: { id: true, threadId: true, body: true, sentAt: true },
             orderBy: [{ sentAt: 'desc' }, { id: 'desc' }],
             take: MESSAGE_SEARCH_LIMIT,
