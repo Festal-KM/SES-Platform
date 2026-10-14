@@ -29,6 +29,7 @@ import { readFileSync } from 'node:fs';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import { buildThreadTree } from '../../../lib/chat/thread-tree';
 import { t } from '@ses/i18n';
 import type {
   ChatMessageView,
@@ -98,7 +99,11 @@ const THREAD_DETAIL: ChatThreadDetailView = {
 
 function renderThreadList(overrides: Partial<ChatThreadListProps> = {}): string {
   const props: ChatThreadListProps = {
-    items: THREAD_ROWS,
+    // ✅ 2026-10-14: 一覧は会社ごとの木（`lib/chat/thread-tree.ts`）。鍵はテストでは会社名で足りる。
+    groups: buildThreadTree(
+      THREAD_ROWS.map((item) => ({ groupKey: item.counterpartyName ?? item.id, item })),
+      { sort: 'recent', q: null },
+    ),
     selectedThreadId: THREAD_PROJECT,
     // 🔴 「以前のスレッドを読み込む」が出ている状態で検査する（ページングの導線が
     //    件数つきの `Pagination` に差し替わったら ① が落ちる）。
@@ -355,7 +360,7 @@ describe('🔴 ⑤: 実体の無い語を 1 つも描かない（添付 / 接続
 
   const SURFACES: readonly (readonly [string, () => string])[] = [
     ['ChatThreadList', () => renderThreadList()],
-    ['ChatThreadList（空）', () => renderThreadList({ items: [], nextCursor: null })],
+    ['ChatThreadList（空）', () => renderThreadList({ groups: [], nextCursor: null })],
     ['ChatConversation（投稿可）', () => renderConversation()],
     ['ChatConversation（投稿不可）', () => renderConversation({ canPost: false })],
     ['ChatConversation（空）', () => renderConversation({ initialMessages: [], initialNextCursor: null })],
@@ -601,5 +606,116 @@ describe('⑫: 会話の操作の改修（2026-10-14、チャットレーン）'
     expect(renderConversation({ initialMessages: [], initialNextCursor: null, canPost: false })).toContain(
       t('chat.messages.empty'),
     );
+describe('⑪: 会社ごとの木・検索・並べ替え（2026-10-14、チャットレーン）', () => {
+  const CHAT_A = '01930000-0000-7000-8000-0000000000e1';
+  const TREE_ROWS: readonly ChatThreadListItem[] = [
+    { id: CHAT_A, kind: 'COMPANY', project: null, counterpartyName: '架空パートナー A', lastMessageAt: '2026-09-29T00:00:00.000Z' },
+    ...THREAD_ROWS,
+  ];
+  const groups = buildThreadTree(
+    TREE_ROWS.map((item) => ({ groupKey: item.counterpartyName ?? item.id, item })),
+    { sort: 'recent', q: null },
+  );
+
+  it('会社とのチャットが親、その会社の案件スレッドが子（字下げ）として同じまとまりに並ぶ', () => {
+    const html = renderThreadList({ groups });
+    const groupA = /<li data-testid="chat-thread-group-0">([\s\S]*?)<\/ul><\/li>/.exec(html)?.[1] ?? '';
+    expect(groupA).toContain(`chat-thread-row-${CHAT_A}`);
+    expect(groupA).toContain(`chat-thread-row-${THREAD_PROJECT}`);
+    // 子（スレッド）だけが字下げされる。
+    expect(classTokensOf(html, `chat-thread-row-${THREAD_PROJECT}`)).toContain('pl-6');
+    expect(classTokensOf(html, `chat-thread-row-${CHAT_A}`)).not.toContain('pl-6');
+    // 呼び方: 会社とのやり取り = チャット / 案件ごと = スレッド。
+    expect(html).toContain(t('chat.thread.kind.COMPANY'));
+    expect(html).toContain(t('chat.thread.kind.PROJECT'));
+  });
+
+  it('チャットがまだ無い会社も、スレッドの親として名前だけを出す（押せる行を作らない）', () => {
+    const html = renderThreadList({
+      groups: buildThreadTree([{ groupKey: 'X', item: THREAD_ROWS[0] as ChatThreadListItem }], { sort: 'recent', q: null }),
+    });
+    expect(html).toContain('data-testid="chat-thread-group-header-0"');
+    expect(html).toContain(t('chat.tree.noChat'));
+    expect(html).not.toMatch(/<a [^>]*data-testid="chat-thread-group-header-0"/);
+  });
+
+  it('検索は GET のフォームで、開いている会話（thread / pane）を引き継ぐ', () => {
+    const html = renderThreadList({ groups, paneThreadIds: [CHAT_A], q: '架空', sort: 'company' });
+    const form = /<form[^>]*data-testid="chat-threads-search"[^>]*>([\s\S]*?)<\/form>/.exec(html);
+    expect(form?.[0]).toMatch(/method="get"/);
+    expect(form?.[1]).toContain(`name="thread" value="${THREAD_PROJECT}"`);
+    expect(form?.[1]).toContain(`name="pane" value="${CHAT_A}"`);
+    expect(form?.[1]).toContain('value="架空"');
+  });
+
+  it('行のリンクは検索語と並べ方を保つ', () => {
+    const html = renderThreadList({ groups, q: '架空', sort: 'company' });
+    const tag = new RegExp(`<a [^>]*data-testid="chat-thread-link-${CHAT_A}"[^>]*>`).exec(html)?.[0] ?? '';
+    const href = /href="([^"]*)"/.exec(tag)?.[1] ?? '';
+    const url = new URL(href.replaceAll('&amp;', '&'), 'https://app.test');
+    expect(url.searchParams.get('q')).toBe('架空');
+    expect(url.searchParams.get('sort')).toBe('company');
+  });
+
+  it('検索して 0 件なら「該当なし」と「検索をやめる」（検索欄は残す）', () => {
+    const html = renderThreadList({ groups: [], q: '該当なし' });
+    expect(html).toContain('data-testid="chat-threads-search"');
+    expect(html).toContain('data-testid="chat-threads-search-empty"');
+    expect(html).toContain(t('chat.threads.search.clear'));
+  });
+
+  it('上限を超えたら「古いスレッドは表示していません」と書く（黙って落とさない）', () => {
+    expect(renderThreadList({ groups, truncated: true })).toContain(t('chat.tree.truncated'));
+    expect(renderThreadList({ groups })).not.toContain('chat-threads-truncated');
+  });
+});
+
+describe('⑬: 要返信の印と返信が早い取引先（2026-10-14、チャットレーン）', () => {
+  const groups = buildThreadTree(
+    THREAD_ROWS.map((item) => ({ groupKey: item.counterpartyName ?? item.id, item })),
+    { sort: 'recent', q: null, fastReplyKeys: new Set(['架空パートナー A']) },
+  );
+
+  it('要返信のスレッドにだけ印を付ける', () => {
+    const html = renderThreadList({ groups, awaitingReplyIds: [THREAD_PROJECT] });
+    expect(html).toContain(`data-testid="chat-thread-awaiting-${THREAD_PROJECT}"`);
+    expect(html).not.toContain(`chat-thread-awaiting-${THREAD_COMPANY}`);
+    expect(html).toContain(t('chat.thread.awaitingReply'));
+  });
+
+  it('🔴 返信が早い会社にだけ良い印を付け、他の会社には何も出さない（遅いとは書かない）', () => {
+    const html = renderThreadList({ groups });
+    const fast = groups.findIndex((group) => group.fastReply);
+    expect(html).toContain(`data-testid="chat-thread-group-fast-${String(fast)}"`);
+    expect(html.split(t('chat.tree.fastReply')).length - 1).toBe(1);
+    expect(html).not.toMatch(/遅い|順位|ランキング/);
+  });
+});
+
+describe('⑭: 本文の検索の結果（2026-10-14、チャットレーン）', () => {
+  const groups = buildThreadTree(
+    THREAD_ROWS.map((item) => ({ groupKey: item.counterpartyName ?? item.id, item })),
+    { sort: 'recent', q: null },
+  );
+  const HIT = {
+    threadId: THREAD_COMPANY,
+    messageId: '01930000-0000-7000-8000-0000000000f9',
+    sentAt: '2026-10-01T00:00:00.000Z',
+    threadTitle: '架空パートナー B',
+    snippet: '…面談の候補をお送りします…',
+  };
+
+  it('当たった発言を出し、押すとそのスレッドを開く', () => {
+    const html = renderThreadList({ groups, q: '面談', messageHits: [HIT] });
+    expect(html).toContain('data-testid="chat-threads-message-hits"');
+    expect(html).toContain(HIT.snippet);
+    const tag = new RegExp(`<a [^>]*data-testid="chat-threads-message-hit-${HIT.messageId}"[^>]*>`).exec(html)?.[0] ?? '';
+    expect(tag).toContain(`thread=${THREAD_COMPANY}`);
+  });
+
+  it('会社名・案件名に当たらなくても、本文に当たれば「該当なし」にしない', () => {
+    const html = renderThreadList({ groups: [], q: '面談', messageHits: [HIT] });
+    expect(html).not.toContain('chat-threads-search-empty');
+    expect(html).toContain('chat-threads-message-hits');
   });
 });
