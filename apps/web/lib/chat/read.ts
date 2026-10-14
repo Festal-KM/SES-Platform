@@ -353,6 +353,21 @@ export type ChatScreenData = {
    *    画面は一覧へ戻し、同一の文言を出す（`docs/04` §10.1 `S-031`「スレッドが削除済み → 一覧へ」）。
    */
   readonly requestedThreadMissing: boolean;
+  /**
+   * ✅ 2026-10-14（チャットレーン）: 右に並べて開いた会話（`?pane=`。左から順）。
+   * 🔴 1 本ずつ**左端と同じ関数**（`readThreadDetail` / `readMessagePage`）で読む —— 境界の経路を増やさない。
+   *    見えない ID は `thread: null`（不存在 / 他社 / 他テナントを区別しない。左端と同じ）。
+   * 🔴 左端（`thread`）が見えないときは読まない（空配列）。
+   */
+  readonly panes: readonly ChatPaneData[];
+};
+
+/** 右に並べた会話 1 本ぶん。 */
+export type ChatPaneData = {
+  /** URL に載っていた ID（見えなかったときも閉じる導線のために持つ）。 */
+  readonly requestedThreadId: string;
+  readonly thread: ChatThreadDetailView | null;
+  readonly messages: ChatMessageListView;
 };
 
 /**
@@ -367,19 +382,46 @@ export async function readChatScreen(
     readonly threadId: string | null;
     readonly threadsQuery: ChatThreadListQuery;
     readonly messagesQuery: ChatMessageListQuery;
+    /** 右に並べる会話（左から順。省略時は無し）。 */
+    readonly paneIds?: readonly string[];
   },
 ): Promise<ChatScreenData> {
   return withTenant(ctx, async (db) => {
     const threads = await readThreadPage(ctx, db, input.threadsQuery);
     if (input.threadId === null) {
-      return { threads, thread: null, messages: { items: [], nextCursor: null }, requestedThreadMissing: false };
+      return {
+        threads,
+        thread: null,
+        messages: { items: [], nextCursor: null },
+        requestedThreadMissing: false,
+        panes: [],
+      };
     }
     const thread = await readThreadDetail(ctx, db, input.threadId);
     if (thread === null) {
-      return { threads, thread: null, messages: { items: [], nextCursor: null }, requestedThreadMissing: true };
+      return {
+        threads,
+        thread: null,
+        messages: { items: [], nextCursor: null },
+        requestedThreadMissing: true,
+        panes: [],
+      };
     }
     const messages = await readMessagePage(ctx, db, input.threadId, input.messagesQuery);
-    return { threads, thread, messages, requestedThreadMissing: false };
+    const panes: ChatPaneData[] = [];
+    // 🔴 直列に読む（同じトランザクション上で問い合わせを並行させない）。
+    for (const paneId of input.paneIds ?? []) {
+      const paneThread = await readThreadDetail(ctx, db, paneId);
+      panes.push({
+        requestedThreadId: paneId,
+        thread: paneThread,
+        messages:
+          paneThread === null
+            ? { items: [], nextCursor: null }
+            : await readMessagePage(ctx, db, paneId, input.messagesQuery),
+      });
+    }
+    return { threads, thread, messages, requestedThreadMissing: false, panes };
   });
 }
 

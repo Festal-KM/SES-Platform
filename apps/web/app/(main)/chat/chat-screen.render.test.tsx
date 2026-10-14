@@ -241,8 +241,9 @@ describe('🔴 ③: md 未満は「一覧 → 会話」の切替であって遮�
     // 🔴 ✅ 2026-10-13: `overflow-hidden`（器の角丸で中身を切る指定）は**畳みではない**ので
     //    除く。`\bhidden\b` は `overflow-hidden` にも当たるため、前が `-` の出現を外す。
     const withHidden = [...page.matchAll(/'([^']*(?<![-\w])hidden\b[^']*)'/g)].map((match) => match[1]);
-    // 走査が空振りしていない（`md` 未満の畳みが現に 2 箇所ある: 一覧の器と会話の器）。
-    expect(withHidden).toHaveLength(2);
+    // 走査が空振りしていない（`md` 未満の畳みが現に 4 箇所ある: 一覧の器と会話の器、
+    // ✅ 2026-10-14 から右に並べた会話の器とドラッグの受け口）。
+    expect(withHidden).toHaveLength(4);
     for (const classes of withHidden) {
       // 🔴 戻し方は `md:block` でも `md:flex` でもよい（**見えるようになること**が条件であり、
       //    `display` の値は器の中身が決める）。✅ 2026-10-13: 会話の器は縦 3 段になったので `md:flex`。
@@ -252,6 +253,10 @@ describe('🔴 ③: md 未満は「一覧 → 会話」の切替であって遮�
     expect(page).toContain("'hidden md:block md:w-80 md:shrink-0 md:border-r md:border-border'");
     // 🔴 会話の器（未選択）は `md` 未満では一覧が全幅なので畳む。こちらも `md` で戻る。
     expect(page).toContain("'hidden min-w-0 flex-1 md:flex md:flex-col'");
+    // ✅ 2026-10-14: 右に並べた会話とドラッグの受け口は `md` 未満では出さない（モバイルは 1 列の切替）。
+    //    🔴 どちらも `md` で戻る（遮断ではない）。
+    expect(page).toContain("'hidden min-w-80 flex-1 flex-col border-l border-border md:flex'");
+    expect(page).toContain("'hidden md:flex'");
   });
 
   it('🔴 一覧そのものに `hidden` の表示ユーティリティが無い（部品側で遮断していない）', () => {
@@ -485,5 +490,62 @@ describe('⑨: 自分だけ右・同僚は左（2026-10-14、チャット担当�
     const html = renderConversation({ layout: 'chat', initialMessages: [MESSAGE_OWN, COLLEAGUE] });
     const own = new RegExp(`<li[^>]*data-testid="chat-message-${MESSAGE_OWN.id}"[^>]*>`, 's').exec(html);
     expect((own as RegExpExecArray)[0]).toContain('data-layout="chat"');
+  });
+});
+
+describe('⑩: 会話を右に並べて開く（2026-10-14、チャットレーン）', () => {
+  const OTHER_THREAD = '01930000-0000-7000-8000-0000000000c9';
+  const LABEL = t('chat.pane.openBeside');
+
+  /** testid で `<a>` を探し、href を URL として返す（属性の並び順に依らない）。 */
+  function linkUrl(html: string, testId: string): URL | null {
+    const tag = new RegExp(`<a [^>]*data-testid="${testId}"[^>]*>`).exec(html);
+    if (tag === null) return null;
+    const href = /href="([^"]*)"/.exec(tag[0]);
+    return href === null ? null : new URL(href[1].replaceAll('&amp;', '&'), 'https://app.test');
+  }
+
+  it('会話を開いていれば、開いていない行にだけ「右に並べる」が出る（行き先は `pane` を足した URL）', () => {
+    const html = renderThreadList({ openBesideLabel: LABEL });
+    // 左端に開いている行（THREAD_PROJECT）には出さない。
+    expect(html).not.toContain(`data-testid="chat-thread-open-beside-${THREAD_PROJECT}"`);
+    const url = linkUrl(html, `chat-thread-open-beside-${THREAD_COMPANY}`);
+    expect(url, '「右に並べる」が描かれていない').not.toBeNull();
+    expect(url?.searchParams.get('thread')).toBe(THREAD_PROJECT);
+    expect(url?.searchParams.getAll('pane')).toEqual([THREAD_COMPANY]);
+  });
+
+  it('🔴 何も開いていない・上限（3 列）に達した・語を渡さないときは描かない（押して何も起きない導線を置かない）', () => {
+    expect(renderThreadList({ openBesideLabel: LABEL, selectedThreadId: null })).not.toContain(
+      'chat-thread-open-beside-',
+    );
+    expect(
+      renderThreadList({ openBesideLabel: LABEL, paneThreadIds: [OTHER_THREAD, '01930000-0000-7000-8000-0000000000ca'] }),
+    ).not.toContain('chat-thread-open-beside-');
+    expect(renderThreadList()).not.toContain('chat-thread-open-beside-');
+  });
+
+  it('行をクリックして選び直しても、右に並べた会話は残る', () => {
+    const html = renderThreadList({ openBesideLabel: LABEL, paneThreadIds: [OTHER_THREAD] });
+    const url = linkUrl(html, `chat-thread-link-${THREAD_COMPANY}`);
+    expect(url?.searchParams.get('thread')).toBe(THREAD_COMPANY);
+    expect(url?.searchParams.getAll('pane')).toEqual([OTHER_THREAD]);
+  });
+
+  it('「閉じる」は並べているときだけ描く', () => {
+    expect(renderConversation()).not.toContain(`chat-pane-close-${THREAD_PROJECT}`);
+    const html = renderConversation({ closeHref: `/chat?thread=${OTHER_THREAD}` });
+    const url = linkUrl(html, `chat-pane-close-${THREAD_PROJECT}`);
+    expect(url?.pathname).toBe('/chat');
+    expect(url?.searchParams.get('thread')).toBe(OTHER_THREAD);
+    expect(html).toContain(t('chat.pane.close'));
+  });
+
+  it('🔴 「閉じる」は `md` 未満で畳まれる（共通の語の `inline-block` に `hidden` を消されていない）', () => {
+    const html = renderConversation({ closeHref: `/chat?thread=${OTHER_THREAD}` });
+    const tokens = classTokensOf(html, `chat-pane-close-${THREAD_PROJECT}`);
+    expect(tokens).toContain('hidden');
+    expect(tokens).toContain('md:inline-block');
+    expect(tokens).not.toContain('inline-block');
   });
 });
