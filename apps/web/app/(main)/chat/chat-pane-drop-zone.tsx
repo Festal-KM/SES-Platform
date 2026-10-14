@@ -21,17 +21,20 @@ import { useRouter } from 'next/navigation';
 import { cn } from '@ses/ui';
 import { threadIdFromDroppedUrl, withPaneAdded, type ChatPaneState } from '../../../lib/chat/panes';
 import { chatHref } from '../../../lib/chat/screen-query';
+import type { ChatThreadSort } from '../../../lib/chat/thread-tree';
 import type { ChatPaneDropMessages } from './chat-props';
 
 export type ChatPaneDropZoneProps = {
   readonly state: ChatPaneState;
+  /** ✅ 2026-10-14: 一覧の検索語と並べ方（開いた後も一覧の条件を保つ）。 */
+  readonly listQuery?: { readonly q: string | null; readonly sort: ChatThreadSort };
   readonly messages: ChatPaneDropMessages;
 };
 
 /** ドラッグで運ばれる URL の型（`text/uri-list` が無いブラウザは `text/plain` に載せる）。 */
 const URL_TYPES = ['text/uri-list', 'text/plain'] as const;
 
-export function ChatPaneDropZone({ state, messages }: ChatPaneDropZoneProps) {
+export function ChatPaneDropZone({ state, listQuery, messages }: ChatPaneDropZoneProps) {
   const router = useRouter();
   const [dragging, setDragging] = useState(false);
   const [over, setOver] = useState(false);
@@ -78,7 +81,7 @@ export function ChatPaneDropZone({ state, messages }: ChatPaneDropZoneProps) {
         if (threadId === null) return;
         const next = withPaneAdded(state, threadId);
         if (next === state) return;
-        router.push(chatHref(next));
+        router.push(chatHref({ ...next, ...listQuery }));
       }}
     >
       {messages.drop}

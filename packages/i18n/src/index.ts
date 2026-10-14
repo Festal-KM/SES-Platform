@@ -4267,8 +4267,10 @@ const ja = {
   'chat.threads.more': '以前のスレッドを読み込む',
   'chat.threads.column.target': '対象',
   'chat.threads.column.lastMessage': '最終更新',
-  'chat.thread.kind.PROJECT': '案件',
-  'chat.thread.kind.COMPANY': '企業間',
+  // ✅ 2026-10-14（チャットレーン）: 一覧を会社ごとの木にし、会社とのやり取りを「チャット」、
+  //    案件ごとのやり取りを「スレッド」と呼ぶ（キーは凍結。値だけを変えた）。
+  'chat.thread.kind.PROJECT': 'スレッド',
+  'chat.thread.kind.COMPANY': 'チャット',
   'chat.thread.noMessages': 'まだ発言がありません',
   'chat.thread.unknownName': '（表示できません）',
   // 🔴 不存在・他社・他テナントで**同じ文言**（docs/05 §4.8「見えない ＝ 存在しない」）。
@@ -4279,6 +4281,17 @@ const ja = {
   'chat.pane.openBeside': '右に並べる',
   'chat.pane.close': '閉じる',
   'chat.pane.drop': 'スレッドをここにドラッグすると、右に並べて開きます',
+  // ✅ 2026-10-14（チャットレーン）: 一覧の検索・並べ替えと、会社ごとの木。
+  'chat.threads.search.label': 'スレッドを検索',
+  'chat.threads.search.placeholder': '会社名・案件名で検索',
+  'chat.threads.search.submit': '表示',
+  'chat.threads.search.empty': '条件に合うチャット・スレッドはありません。',
+  'chat.threads.search.clear': '検索をやめる',
+  'chat.threads.sort.label': '並べ替え',
+  'chat.threads.sort.recent': '更新が新しい順',
+  'chat.threads.sort.company': '会社名順',
+  'chat.tree.noChat': 'チャットはまだありません',
+  'chat.tree.truncated': '古いスレッドは表示していません（新しい順に 1,000 件まで）。',
   'chat.messages.heading': 'やり取り',
   'chat.messages.label': 'メッセージ一覧',
   'chat.messages.empty': 'このスレッドにはまだ発言がありません。',
