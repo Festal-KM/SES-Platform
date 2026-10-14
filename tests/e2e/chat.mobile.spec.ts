@@ -46,14 +46,23 @@ test.describe('S-031 チャット — モバイル（Tier 1）', () => {
       const theirs = page.getByTestId(`chat-message-${own.hostMessageId}`);
       await expect(mine).toHaveAttribute('data-layout', 'chat');
 
-      // 自分の吹き出しの右端が、相手の吹き出しの右端より右に在る（位置で見分けられる）。
+      // 🔴 2026-10-14: 「自分の右端 > 相手の右端」では判定しない —— 狭い画面では長い本文の吹き出しが
+      //    どちらも右端まで伸び、右端が一致する（CI の Pixel 5 で 356 = 356。表示は正しかった）。
+      //    右寄せを本文の長さに依らない形で固定する: ①自分の行が右に寄せる指定を持つ ②自分の吹き出しの
+      //    右端が行の右端に接する ③相手より左に出ない ④名前は相手にだけ出る。
+      await expect(mine).toHaveCSS('align-items', 'flex-end');
+      const mineRow = await mine.boundingBox();
       const mineBody = await page.getByTestId(`chat-message-body-${own.partnerMessageId}`).boundingBox();
       const theirsBody = await page.getByTestId(`chat-message-body-${own.hostMessageId}`).boundingBox();
+      expect(mineRow, '自分の行が描かれていません').not.toBeNull();
       expect(mineBody, '自分の吹き出しが描かれていません').not.toBeNull();
       expect(theirsBody, '相手の吹き出しが描かれていません').not.toBeNull();
-      if (mineBody !== null && theirsBody !== null) {
-        expect(mineBody.x + mineBody.width).toBeGreaterThan(theirsBody.x + theirsBody.width);
+      if (mineRow !== null && mineBody !== null && theirsBody !== null) {
+        expect(Math.abs(mineBody.x + mineBody.width - (mineRow.x + mineRow.width))).toBeLessThanOrEqual(1);
+        expect(mineBody.x + mineBody.width).toBeGreaterThanOrEqual(theirsBody.x + theirsBody.width);
       }
+      await expect(page.getByTestId(`chat-message-sender-${own.partnerMessageId}`)).toHaveCount(0);
+      await expect(page.getByTestId(`chat-message-sender-${own.hostMessageId}`)).toBeVisible();
       await expect(theirs).toHaveAttribute('data-own', 'false');
 
       session.outbound.assertNone();
