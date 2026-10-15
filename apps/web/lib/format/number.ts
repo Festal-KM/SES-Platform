@@ -47,10 +47,61 @@ export function formatUnitPriceRange(
   max: number | null,
   labels: UnitPriceRangeLabels,
 ): string {
+  return formatRange(min, max, labels, formatThousands);
+}
+
+/** 片側の扱いを 1 本にするための内部関数（円 / 万円で条件分岐を 2 つ持たない）。 */
+function formatRange(
+  min: number | null,
+  max: number | null,
+  labels: UnitPriceRangeLabels,
+  format: (value: number) => string,
+): string {
   if (min !== null && max !== null) {
-    return `${formatThousands(min)}〜${formatThousands(max)} ${labels.unit}`;
+    return `${format(min)}〜${format(max)} ${labels.unit}`;
   }
-  if (min !== null) return `${formatThousands(min)} ${labels.orMore}`;
-  if (max !== null) return `${formatThousands(max)} ${labels.orLess}`;
+  if (min !== null) return `${format(min)} ${labels.orMore}`;
+  if (max !== null) return `${format(max)} ${labels.orLess}`;
   return labels.none;
 }
+
+/**
+ * ✅ **2026-10-15: 万円に丸める**（[Issue #101](https://github.com/Festal-KM/SES-Platform/issues/101) の
+ * 回答 **C「値の表記を短くする」**）。`660,000 円` は **9 文字**あり、レンジにすると
+ * 1 列で 160px を占める —— これが案件一覧の幅を決めていた（`#101` の実測）。
+ *
+ * 🔴 **単位の語はここに書かない**（このモジュールの冒頭の 🔴）。返すのは数字だけである。
+ * 🔴 **1,000 円未満は丸まる（小数第 1 位まで）。** 入力の刻みが 10,000 円（`step`）なので
+ *    実務の値は整数の万になるが、丸める以上 **これを使ってよいのは「走査のための面」だけ**である
+ *    （一覧の表とその要点パネル）。🔴 **金額を確定させる面（`S-011` 詳細 / 提案の承認 /
+ *    提案の編集 / 凍結スナップショット）では円表記の `formatUnitPriceRange` を使う** ——
+ *    単価交渉の根拠になる数字を丸めない（`#101` の C 自身が「金額の読み違いが単価交渉に
+ *    直結する」と書いている）。
+ */
+export function formatManYen(value: number): string {
+  // 🔴 浮動小数点を経由しない（`66.50000000000001` のような表示を作らない）。
+  //    1,000 円 = 0.1 万円 なので、整数の「0.1 万円単位」に丸めてから組み立てる。
+  const tenths = Math.round(value / 1000);
+  const sign = tenths < 0 ? '-' : '';
+  const abs = Math.abs(tenths);
+  const whole = Math.trunc(abs / 10);
+  const frac = abs % 10;
+  return `${sign}${formatThousands(whole)}${frac === 0 ? '' : `.${String(frac)}`}`;
+}
+
+/**
+ * ✅ **2026-10-15: 万円表記の単価レンジ**（`#101` の C）。
+ *
+ * 🔴 **判断（片側だけを未設定に畳まない / 0 を未設定にしない）は `formatUnitPriceRange` と
+ *    1 文字も違わない。** 違うのは数値の丸め方だけであり、**条件分岐を 2 つ持たない**ために
+ *    共通の内部関数に書式を渡す形にしてある（片側の扱いが 2 本に分かれると、どちらかだけが
+ *    「—」に畳まる差分が忍び込む）。
+ */
+export function formatUnitPriceRangeManYen(
+  min: number | null,
+  max: number | null,
+  labels: UnitPriceRangeLabels,
+): string {
+  return formatRange(min, max, labels, formatManYen);
+}
+

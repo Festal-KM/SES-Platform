@@ -74,6 +74,7 @@
 //    場所（`projectListHref`）に置く。
 import Link from 'next/link';
 import {
+  Badge,
   Button,
   Card,
   CardContent,
@@ -155,6 +156,8 @@ export type ProjectListScreenMessages = {
   readonly columnUnitPrice: string;
   readonly columnStartDate: string;
   readonly columnLocation: string;
+  /** ✅ 2026-10-15: 稼働形態（`#101` の C で `勤務地・リモート` を 2 列に分けた）。 */
+  readonly columnRemoteMode: string;
   readonly columnHeadcount: string;
   readonly columnUpdatedOn: string;
   readonly columnVisibility: string;
@@ -257,8 +260,9 @@ function projectColumns(
       id: 'unitPrice',
       header: messages.columnUnitPrice,
       priority: 'always',
-      // 🔴 単価は円単位・3 桁区切り（§10.3「大きい数値」）。値は `list-rows` が組む。
-      minWidth: '10rem',
+      // ✅ **2026-10-15: 一覧の表だけ万円表記にした**（`#101` の C。`660,000〜750,000 円`
+      //    160px → `66〜75 万円` 約 80px）。値は `list-rows` が組む。
+      minWidth: '6rem',
       cell: (row) => row.unitPrice,
     },
     {
@@ -274,8 +278,22 @@ function projectColumns(
       id: 'location',
       header: messages.columnLocation,
       priority: 'sm',
-      minWidth: '9rem',
+      // ✅ **2026-10-15: リモート可否を別の列に出したので下限を詰めた**
+      //    （`神奈川県` は約 60px。[Issue #101](https://github.com/Festal-KM/SES-Platform/issues/101) の C）。
+      minWidth: '5rem',
       cell: (row) => row.location,
+    },
+    {
+      // ✅ **2026-10-15: 稼働形態（`#101` の C「勤務地と稼働形態を分けて `埼玉` + Badge」）**。
+      // 🔴 **無彩色の Badge である**（`variant` を渡さない = 既定の `neutral`）—— §7.4 の
+      //    6 系統は**業務上の意味**に割り当てており、稼働形態は状態ではない。
+      //    色を付けると「この案件は赤い」のような誤読を生む（受領画像は色付きだが採らない）。
+      // 🔴 **未設定は何も描かない**（空の Badge を置かない。`formatProjectRemoteMode` が `null`）。
+      id: 'remoteMode',
+      header: messages.columnRemoteMode,
+      priority: 'sm',
+      minWidth: '6rem',
+      cell: (row) => (row.remoteMode === null ? null : <Badge>{row.remoteMode}</Badge>),
     },
     {
       id: 'headcount',

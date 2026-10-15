@@ -121,14 +121,14 @@ const HEAD_PADDING_CLASSES: Readonly<Record<TableCellPadding, string>> = {
  *    固定することではない**（高さを決めているのは余白と文字サイズの段の組み合わせである）。
  */
 const CELL_PADDING_CLASSES: Readonly<Record<TableCellPadding, string>> = {
-  // ✅ **2026-10-15: `py-2`（8px）→ `py-3`（12px）**（人間の決定。[Issue #99](https://github.com/Festal-KM/SES-Platform/issues/99)
-  //    の既定「現状維持」を覆す判断であり、受領した定義書 2 本〔人材管理 / 案件管理〕が
-  //    **どちらも行 45h / セル 14px** を指定していることが根拠である）。
-  //    🔴 **行の高さはここと文字サイズから「結果として」決まる**（上の 🔴 のまま）:
-  //    `py-3`（12px）× 2 + `--text-body`（14px）× 行間 1.6 = 22.4px → 46.4px、`border-b` を
-  //    含めて **約 47px**（定義書の 45h に最も近い段。`py-2.5` では 43px で下に離れる）。
-  //    🔴 **一覧 20 画面すべての密度が同時に変わる**（共有の部品である。これが #99 の論点だった）。
-  normal: 'px-3 py-3',
+  // ✅✅ **2026-10-15（同日の 2 回目）: `py-3` → `py-2` に戻した。**
+  //    🔴 **[Issue #99](https://github.com/Festal-KM/SES-Platform/issues/99) への人間の回答が
+  //    「36.5px / 13px でいいんじゃない。それで見にくかったら改訂しようか」だった**ためである。
+  //    同日午前にチャットで「定義書に合わせる（45px）」を選んで一度入れたが、**Issue の回答のほうが
+  //    後であり、本人に確認して「36.5px に戻す」と決めた**（2026-10-15）。
+  //    ⚠️ 定義書 2 本（人材管理 / 案件管理）は行 45h を指定しているが、**密度は人間の好みであり
+  //    定義書より本人の指示が優先する**（見にくければ再度改訂する、という合意である）。
+  normal: 'px-3 py-2',
   compact: 'px-2 py-2',
 };
 
@@ -277,10 +277,10 @@ export function Table({ className, containerClassName, overflowNote, ...props }:
         containerClassName,
       )}
     >
-      {/* ✅ 2026-10-15: セルの文字を `--text-cell`（13px）→ `--text-body`（14px）にした
-          （定義書 2 本の「セル 14px」。🔴 **Badge / Button(sm) / リンクの 13px は動かしていない** ——
-          変えたのは**表のセルが継ぐ既定**だけである）。 */}
-      <table className={cn('w-full caption-bottom text-body', className)} {...props} />
+      {/* ✅✅ 2026-10-15（同日の 2 回目）: `--text-body`（14px）→ `--text-cell`（13px）に戻した
+          （上の `CELL_PADDING_CLASSES` の ✅✅ と同じ判断。[Issue #99](https://github.com/Festal-KM/SES-Platform/issues/99)
+          の人間の回答「36.5px / 13px でいい」）。 */}
+      <table className={cn('w-full caption-bottom text-cell', className)} {...props} />
     </div>
   );
   if (overflowNote === undefined) return container;

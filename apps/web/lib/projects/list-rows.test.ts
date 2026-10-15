@@ -10,6 +10,7 @@ import {
   formatMustRequirement,
   formatMustRequirementSummary,
   formatProjectLocation,
+  formatProjectRemoteMode,
   formatVisibilityStatus,
   hasProjectListFilters,
   parseHiddenProjectColumns,
@@ -98,18 +99,20 @@ describe('必須要件の要約（docs/04 §S-010 の「必須要件の要約」
   });
 });
 
-describe('勤務地・リモート（docs/04 §S-010 の 1 列）', () => {
-  it('両方あれば `・` で連ねる', () => {
-    expect(formatProjectLocation('13', 'PARTIAL_REMOTE')).toBe('東京都・一部リモート可');
+// ✅ **2026-10-15: 1 列 → 2 列に分けた**（[Issue #101](https://github.com/Festal-KM/SES-Platform/issues/101)
+//    の回答 C「勤務地と稼働形態を分けて `埼玉` + Badge」）。
+describe('勤務地 / 稼働形態（docs/04 §S-010 の 2 列）', () => {
+  it('勤務地は都道府県だけである', () => {
+    expect(formatProjectLocation('13')).toBe('東京都');
   });
 
-  it('🔴 片方しか無い行を `—` に畳まない', () => {
-    expect(formatProjectLocation('13', null)).toBe('東京都');
-    expect(formatProjectLocation(null, 'FULL_REMOTE')).toBe('フルリモート可');
+  it('勤務地が未設定なら `—`（空欄にしない）', () => {
+    expect(formatProjectLocation(null)).toBe('—');
   });
 
-  it('両方とも未設定なら `—`', () => {
-    expect(formatProjectLocation(null, null)).toBe('—');
+  it('🔴 稼働形態の未設定は `null`（`—` ではない = 空の Badge を描かない）', () => {
+    expect(formatProjectRemoteMode('FULL_REMOTE')).toBe('フルリモート可');
+    expect(formatProjectRemoteMode(null)).toBeNull();
   });
 });
 
@@ -162,6 +165,9 @@ describe('🔴 F-014 AC-4 / BR-07: 取引先の行に公開先の情報が入ら
       'moreMustRequirements',
       'mustRequirements',
       'name',
+      // ✅ 2026-10-15: `稼働形態` を `勤務地` から分けた（`#101` の C）。**値は元から出ていたもの**であり、
+      //    取引先に新しく見えるものは 1 つも無い（商流情報ではない）。
+      'remoteMode',
       'startDate',
       'status',
       // 🔴 ✅ 2026-10-14: 状態の**値**（`StatusBadge` に渡す状態名）。語（`status`）と 2 本持ちに
@@ -182,7 +188,8 @@ describe('1 行の表示値', () => {
     const row = projectListRow(hostView());
 
     expect(row.status).toBe('募集中');
-    expect(row.unitPrice).toBe('650,000〜750,000 円');
+    // ✅ 2026-10-15: 一覧の表は万円表記（`#101` の C）。詳細・承認は円のままである。
+    expect(row.unitPrice).toBe('65〜75 万円');
     expect(row.startDate).toBe('2026-10-01');
     expect(row.headcount).toBe('2 名');
     expect(row.updatedOn).toBe('2026-09-05');
@@ -319,14 +326,16 @@ describe('🔴 列表示切替の対象（格納できる列）', () => {
     expect(PROJECT_HIDEABLE_COLUMN_IDS).toEqual(['mustRequirements', 'visibility']);
   });
 
-  it('🔴 この 2 列は**既定で格納**されている（人間の決定。右の案件詳細パネルを横に並べるため）', () => {
-    expect(PROJECT_DEFAULT_HIDDEN_COLUMN_IDS).toEqual(['mustRequirements', 'visibility']);
+  // ✅✅ **2026-10-15（同日の 2 回目）: 既定で格納する列は無くなった**—— [Issue #101](https://github.com/Festal-KM/SES-Platform/issues/101)
+  //    の回答が **C「値の表記を短くする」**だったので、幅を値側で作り、列を格納しなくても入るようになった。
+  it('🔴 既定で格納する列は 1 つも無い（格納の仕組み自体は残っている）', () => {
+    expect(PROJECT_DEFAULT_HIDDEN_COLUMN_IDS).toEqual([]);
   });
 
   it('🔴 URL の値を読む（許可リスト外は捨てる）', () => {
-    // 🔴 **キーが無い ＝ 既定**（空ではない）。
-    expect(parseHiddenProjectColumns(undefined)).toEqual(['mustRequirements', 'visibility']);
-    // 🔴 **空文字 ＝ 利用者が全部表示に戻した**（既定と区別する。区別しないと二度と出せない）。
+    // 🔴 **キーが無い ＝ 既定**（いまの既定は「1 つも隠さない」）。
+    expect(parseHiddenProjectColumns(undefined)).toEqual([]);
+    // 🔴 **空文字 ＝ 利用者が全部表示に戻した**（既定と区別する仕組みは残す。次に既定を置くときに要る）。
     expect(parseHiddenProjectColumns('')).toEqual([]);
     expect(parseHiddenProjectColumns('visibility')).toEqual(['visibility']);
     // 列として実在しない id（`unitPrice` は `hideable` ではない）は効かない。
@@ -340,8 +349,8 @@ describe('🔴 列表示切替のリンク（条件とページの位置を保�
     expect(projectListHref(query(), null, PROJECT_DEFAULT_HIDDEN_COLUMN_IDS)).toBe(PROJECT_LIST_PATH);
   });
 
-  it('🔴 ✅ 2026-10-15: 全部表示に戻すと `?hide=`（空）が載る（既定と区別できる唯一の形）', () => {
-    expect(projectListHref(query(), null, [])).toBe('/projects?hide=');
+  it('✅✅ 2026-10-15（同日の 2 回目）: 既定が空に戻ったので、全部表示は素のパスである', () => {
+    expect(projectListHref(query(), null, [])).toBe(PROJECT_LIST_PATH);
   });
 
   it('隠す列は最後に載る（`hide=` は条件・カーソルの後ろ）', () => {
@@ -357,14 +366,14 @@ describe('🔴 列表示切替のリンク（条件とページの位置を保�
   });
 
   it('🔴 隠している列を押すと「戻す」URL になる（その列が `hide` から消える）', () => {
-    // ✅ 2026-10-15: 既定が 2 列なので、`visibility` だけを戻すと `mustRequirements` が残る。
-    expect(
-      projectColumnToggleHref(query({ q: '基幹' }), null, PROJECT_DEFAULT_HIDDEN_COLUMN_IDS, 'visibility'),
-    ).toBe('/projects?q=%E5%9F%BA%E5%B9%B9&hide=mustRequirements');
-    // 2 列とも戻すと空になる（＝ 全部表示。既定と違うので URL に載る）。
+    // ✅✅ 2026-10-15（同日の 2 回目）: 既定が空なので、最後の 1 列を戻すと素のパスに戻る。
     expect(projectColumnToggleHref(query({ q: '基幹' }), null, ['visibility'], 'visibility')).toBe(
-      '/projects?q=%E5%9F%BA%E5%B9%B9&hide=',
+      '/projects?q=%E5%9F%BA%E5%B9%B9',
     );
+    // 2 列隠している状態から 1 列だけ戻すと、もう片方は残る。
+    expect(
+      projectColumnToggleHref(query({ q: '基幹' }), null, PROJECT_HIDEABLE_COLUMN_IDS, 'visibility'),
+    ).toBe('/projects?q=%E5%9F%BA%E5%B9%B9&hide=mustRequirements');
   });
 
   it('🔴 ページングのリンクでも列の表示状態が落ちない', () => {
@@ -440,9 +449,9 @@ describe('🔴 副カラムで開く行（`?selected=`。SP-22 段④）', () =>
 
   it('🔴 `selected` を渡さなければ URL に 1 文字も足さない（既定の URL を汚さない）', () => {
     expect(projectListHref(query(), null, PROJECT_DEFAULT_HIDDEN_COLUMN_IDS)).toBe(PROJECT_LIST_PATH);
-    // ✅ 2026-10-15: 既定の 2 列から `visibility` だけ戻した URL（`selected` は 1 文字も足さない）。
+    // ✅✅ 2026-10-15（同日の 2 回目）: 既定（空）から `visibility` を押すと「隠す」側になる。
     expect(
       projectColumnToggleHref(query(), null, PROJECT_DEFAULT_HIDDEN_COLUMN_IDS, 'visibility'),
-    ).toBe('/projects?hide=mustRequirements');
+    ).toBe('/projects?hide=visibility');
   });
 });

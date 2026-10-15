@@ -2957,7 +2957,11 @@ const ja = {
   'projects.list.column.mustRequirements': '必須要件の要約',
   'projects.list.column.unitPrice': '単価レンジ',
   'projects.list.column.startDate': '開始日',
-  'projects.list.column.location': '勤務地・リモート',
+  // ✅ **2026-10-15: `勤務地・リモート` → 2 列に分けた**（[Issue #101](https://github.com/Festal-KM/SES-Platform/issues/101)
+  //    の回答 C「値の表記を短くする（勤務地と稼働形態を分けて `埼玉` + Badge）」）。
+  //    🔴 **キーは動かしていない**（`U-22` の凍結。値だけを短くし、列を 1 つ足した）。
+  'projects.list.column.location': '勤務地',
+  'projects.list.column.remoteMode': '稼働形態',
   'projects.list.column.headcount': '募集人数',
   'projects.list.column.updatedOn': '更新日',
   // 🔴 ホストのみの 9 列目（`docs/04` §S-010「🔴 取引先にはこの列を出さない」）。
@@ -3018,6 +3022,12 @@ const ja = {
   'projects.list.search.priceMaxPlaceholder': '上限なし',
   'projects.list.search.priceRangeSeparator': '〜',
   'projects.list.search.priceUnit': '円',
+  // ✅ **2026-10-15: 一覧の表だけの万円表記**（`#101` の C）。
+  //    🔴 **円表記の語（`projects.unitPrice.unit` ほか）は残してある** —— 金額を確定させる
+  //    面（詳細 / 承認 / 提案）と**入力欄は円のまま**である（[#115](https://github.com/Festal-KM/SES-Platform/issues/115) の回答）。
+  'projects.list.unitPrice.manYen': '万円',
+  'projects.list.unitPrice.orMore': '万円以上',
+  'projects.list.unitPrice.orLess': '万円以下',
   'projects.list.search.submit': '検索',
   'projects.list.search.clear': '条件をクリア',
   // 🔴 `docs/04` §10.1 `S-010`: **初回空と絞込 0 を別文言にする。**

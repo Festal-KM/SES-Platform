@@ -82,6 +82,8 @@ export function projectListScreenMessages(params: {
     columnUnitPrice: t('projects.list.column.unitPrice'),
     columnStartDate: t('projects.list.column.startDate'),
     columnLocation: t('projects.list.column.location'),
+    // ✅ 2026-10-15: 稼働形態（`#101` の C）。
+    columnRemoteMode: t('projects.list.column.remoteMode'),
     columnHeadcount: t('projects.list.column.headcount'),
     columnUpdatedOn: t('projects.list.column.updatedOn'),
     columnVisibility: t('projects.list.column.visibility'),
@@ -136,6 +138,7 @@ export function projectSummaryPanelMessages(): ProjectSummaryPanelMessages {
     fieldUnitPrice: t('projects.list.column.unitPrice'),
     fieldStartDate: t('projects.list.column.startDate'),
     fieldLocation: t('projects.list.column.location'),
+    fieldRemoteMode: t('projects.list.column.remoteMode'),
     fieldHeadcount: t('projects.list.column.headcount'),
     fieldUpdatedOn: t('projects.list.column.updatedOn'),
     fieldVisibility: t('projects.list.column.visibility'),
