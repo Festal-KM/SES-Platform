@@ -40,6 +40,8 @@ function row(overrides: Partial<EngineerListRowView> = {}): EngineerListRowView 
     availableFrom: '2026-11-01',
     location: '東京都・一部リモート可',
     availability: '稼働中',
+    // ✅ 2026-10-15: 稼働状況は `StatusBadge` で描く（語と状態名の 2 つを渡す）。
+    availabilityState: 'STANDBY',
     updatedOn: '2026-09-05',
     ...overrides,
   };

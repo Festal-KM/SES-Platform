@@ -283,6 +283,28 @@ export const STATUS_BADGE_APPEARANCES = {
     FILLED: { variant: 'neutral', shape: 'outline' },
   },
   /**
+   * ✅ **2026-10-15: `Engineer.availability`（稼働状況。4 値）**。人間が提示した人材一覧の
+   * 画像が**ステータスを Badge で描いている**ため、素のテキストから寄せた。
+   *
+   * 🔴 **これは `CLAUDE.md` §4.2 の状態機械ではない**（`Project.status` と同じく「表示のための
+   *    状態」である）。したがって §5-1 の「5 エンティティ・全 36 状態」の数には入らない。
+   * 🔴 **割り当ての軸は「営業がいま出せるか」**である（`docs/01` §1.1-2「見えていない候補が
+   *    増える」）—— 出せる状態を最も強く、出せない状態を無彩色にする:
+   *      `待機中` = いま出せる（success 塗り） / `待機予定` = もうすぐ出せる（success 枠線）
+   *      `稼働中` = 進行中で出せない（brand 枠線） / `非稼働` = 対象外（neutral 枠線）
+   *    ⚠️ 割り当ては [Issue #111](https://github.com/Festal-KM/SES-Platform/issues/111) で確認中
+   *    （既定 = この表。`Project` の割り当てが [#98](https://github.com/Festal-KM/SES-Platform/issues/98)
+   *    であるのと同じ扱い）。
+   * 🔴 **緑を「待機中」に使うのは §7.4 の意味（成立・完了）と矛盾しない** —— 台帳の目的は
+   *    「出せる人を見つける」ことであり、待機中はその成立である。
+   */
+  engineer: {
+    STANDBY: { variant: 'success', shape: 'solid' },
+    STANDBY_SCHEDULED: { variant: 'success', shape: 'outline' },
+    WORKING: { variant: 'brand', shape: 'outline' },
+    INACTIVE: { variant: 'neutral', shape: 'outline' },
+  },
+  /**
    * サイドバーの未実装項目の `Phase N`（`docs/04` §3.1 / `T-22-05`）。
    * 🔴 **無彩色**（§7.9 の `--color-neutral-bg`）。🔴 **アイコンを付けない**（§7.5）。
    */

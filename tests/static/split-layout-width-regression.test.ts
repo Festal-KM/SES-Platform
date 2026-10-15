@@ -26,7 +26,7 @@
 //    誤りを書けば緑になる）に落ちる。したがって:
 //   ① `packages/ui/src/components/sidebar.tsx` の**実クラス**から柱の幅（`w-14` / `xl:w-56`）を取る
 //   ② `packages/ui/src/components/page-body.tsx` の**実クラスと実定数**から
-//      gutter（`px-6`）/ gap（`gap-6`）/ 主カラムの下限（`basis-330`）/ 副カラム（`max-w-120`）を取り、
+//      gutter（`px-6`）/ gap（`gap-6`）/ 主カラムの下限（`basis-250`）/ 副カラム（`max-w-120`）を取り、
 //      **クラスと px 定数が一致していること**も併せて検査する（片方だけ変えられないようにする）
 //   ③ flexbox の行分割の規則（`PAGE_BODY_SPLIT_*` と同じ算数）で幅ごとの主カラム幅を出す
 //
@@ -53,7 +53,7 @@ const PAGE_BODY_SOURCE = readFileSync(
 /** Tailwind の spacing は既定の `0.25rem`（`HANDOFF.md` §3.5「spacing は宣言しない」）。 */
 const SPACING_PX = 4;
 
-/** `w-56` / `basis-330` / `max-w-120` → px。🔴 単位付き・任意値は受け取らない（既定スケールのみ）。 */
+/** `w-56` / `basis-250` / `max-w-97` → px。🔴 単位付き・任意値は受け取らない（既定スケールのみ）。 */
 function scaleToPx(utility: string): number {
   const match = /-(\d+)$/.exec(utility);
   expect(match, `${utility}: 既定スケールの数値が読めない`).not.toBeNull();

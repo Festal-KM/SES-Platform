@@ -91,6 +91,7 @@ import {
   Input,
   Pagination,
   SECONDARY_LINK_CLASSES,
+  StatusBadge,
   Select,
   Toolbar,
   cn,
@@ -291,7 +292,13 @@ function engineerColumns(
       header: messages.columnAvailability,
       priority: 'sm',
       minWidth: '6rem',
-      cell: (row) => row.availability,
+      // ✅ **2026-10-15: 素のテキストから `StatusBadge` にした**（人間が提示した人材一覧の画像）。
+      // 🔴 **色は渡していない** —— `entity="engineer"` と**状態名**だけを渡し、色と形状は
+      //    `@ses/ui` の `STATUS_BADGE_APPEARANCES` が決める（`docs/04` §5-13）。
+      //    割り当ては [Issue #111](https://github.com/Festal-KM/SES-Platform/issues/111)（既定 = 待機中が緑の塗り）。
+      cell: (row) => (
+        <StatusBadge entity="engineer" state={row.availabilityState} label={row.availability} />
+      ),
     },
     {
       id: 'updatedOn',
