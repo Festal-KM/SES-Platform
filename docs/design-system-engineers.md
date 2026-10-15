@@ -16,6 +16,31 @@
 
 ---
 
+## B. ✅ 2026-10-15 に受領した追加資材（`人材管理画面開発用プロンプト.docx` + モック 4 枚）
+
+**受領物**: 開発用プロンプト（1,755 行）と画像 4 枚（新規人材登録 / 人材詳細 / 社内用と公開用の対比 ×2）。
+🔴 **公開用ビューの構成は §2.2 と同じ**であり、判断は [Issue #94](https://github.com/Festal-KM/SES-Platform/issues/94) のまま（**既定 = 5 項目のまま実装しない**）。新しく増えている開示項目（性別 / 年齢 / PR ポイント / 公開メモ / 対応可能業務 / AI サマリ）は同 Issue にコメントで追記した。
+
+### B.1 実装したもの
+
+| 資材 | 実装 |
+|---|---|
+| 一覧のステータスを **Badge** で描く | ✅ **`StatusBadge entity="engineer"`** にした（素のテキストから）。🔴 **色は `packages/ui` の 1 箇所（`STATUS_BADGE_APPEARANCES`）が状態名から決め、画面は渡せない**。割り当ては [#111](https://github.com/Festal-KM/SES-Platform/issues/111)（既定 = 待機中が緑の塗り / 待機予定が緑の枠線 / 稼働中が青の枠線 / 非稼働が無彩色。**軸は「営業がいま出せるか」**） |
+| Body 行 45h / セル 14px | ✅ **2026-10-15 に適用**（`docs/design-system-projects.md` §A.1 と同じ 1 箇所の変更。[#99](https://github.com/Festal-KM/SES-Platform/issues/99) の既定を人間が覆した）。**一覧 20 画面すべてに効く** |
+
+### B.2 実装していないもの（理由つき。既定 = 出さない）
+
+| 資材 | 理由 |
+|---|---|
+| **他社公開用（マスキングあり）のビュー** | 🔴🔴 **越境経路 4 の匿名 5 項目を超える**（[#94](https://github.com/Festal-KM/SES-Platform/issues/94)。§8.6 の人間承認事項）。とくに **掲載元 = 共有元の会社名**は §3.1「パートナー同士が相互に参照できる経路を 1 つも作らない」の正面からの違反 |
+| カテゴリ / 性別 / 年齢 / 最寄駅 / 並行状況 / 区分 / PR ポイント / 得意領域 / 対応可能フェーズ / 資格 の列・欄 | 🔴 **DB に列が無い**（[#113](https://github.com/Festal-KM/SES-Platform/issues/113) の 1）。足すのは `docs/05` §3 + migration + `S-007` のフォーム + ゲートの照合まで波及する |
+| **AI による情報抽出**（スキルシート → 自動入力）/ **AI 生成の人材サマリ** / **マッチ度 92%** | 🔴 AI ロールは 6 つに固定（`CLAUDE.md` §12.2。[#87](https://github.com/Festal-KM/SES-Platform/issues/87) と同じ筋）。🔴 **マッチ度を LLM に決めさせない**（§12.3。スコアは `packages/domain` の決定的な純粋関数 = `F-029`、Phase 2） |
+| **スキルレーダー**（チャート） | 🔴 `docs/04` §7.2 の図表の方針と `F-029` のスコアの定義が先。**市場需要の軸はデータの出所が無い** |
+| タレントプール / 対応履歴 / スキル分析 のタブ | 🔴 エンティティが無い（[#113](https://github.com/Festal-KM/SES-Platform/issues/113) の 3） |
+| チェックボックスによる一括操作 / エクスポート / 表示件数 / ソート | 🔴 Phase 1 に一括操作が無い（`U-18`）/ `?sort=` が API に無い（[#113](https://github.com/Festal-KM/SES-Platform/issues/113) の 4） |
+
+---
+
 # SES Hub Design System — 人材管理タブ 仕様 v1.0
 
 前提: `DESIGN_SYSTEM.md`（共通基盤）を継承。Sidebar 208 / Header 56 / Content padding 20-16-20-28 / Main 1018 / gap 16 / Right 388 は**変更しない**。
