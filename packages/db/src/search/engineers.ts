@@ -39,6 +39,7 @@ import type { PrefectureCode } from '@ses/domain';
 import { toDateOnly } from '../date-only.js';
 import type { EngineerAvailability, RemoteMode } from '../schema-value-sets.js';
 import { freeWordOr, type FreeWordFilter } from './free-word.js';
+import { unitPriceOverlapConditions } from './unit-price-range.js';
 import type { SearchPlan, SoftCondition } from './plan.js';
 
 /**
@@ -225,37 +226,17 @@ export function engineerSkillConditions(
 /**
  * 単価レンジの**重なり**（`docs/04` §S-005 / §S-010 の「単価レンジ」条件）。
  *
- * 🔴 **この定義は `#25`（案件検索）と共有する**（T-06-03 が「人材側と同じ定義を 2 か所で
- *    別々に決めない」として先送りした申し送り。docs/05 §6.4「#25 の実装の決着」）。
- *
- * 検索レンジ `[priceMin, priceMax]`（指定しなかった端は無限）と、台帳のレンジ
- * `[unitPriceMin, unitPriceMax]` が**重なる**ことを、独立した 2 つの述語の AND で表す:
- *   - `priceMax` 指定 … 台帳の**下限**がそれ以下（下限が高すぎる人材を外す）
- *   - `priceMin` 指定 … 台帳の**上限**がそれ以上（上限が低すぎる人材を外す）
- *
- * 🔴 **レンジの端の NULL は「制約なし（無限）」として扱う**（＝ 一致する側に倒す）。
- *    `unit_price_min IS NULL` は「下限の希望が無い」であって「該当しない」ではない。
- *    NULL を不一致に倒すと、**単価未登録の人材が単価で絞った瞬間に全員消える** ——
- *    `docs/01` §1.1-2「見えていない候補が増える」の再発であり、`docs/04` §S-005
- *    「なぜこの構成か」（フィルタで候補を消さない）にも反する。
- *    ⚠️ 稼働可能時期の NULL（`inTimeCondition`）を**不適合**に倒すのと向きが逆に見えるが、
- *    意味が違う: あちらは**値そのものが不明**、こちらは**レンジの端が無い ＝ 制約が無い**である。
- * 🔴 **`priceMin` と `priceMax` の大小関係を検証しない。** 片方だけの指定が正当な検索であり
- *    （「70 万円以下で探す」）、2 つは独立した述語として意味を持つ。加えて項目をまたぐ検証を
- *    トップレベルの `.refine()` で書くと `withApiRoute` の `assertBoundarySchema` が `.shape` を
- *    読めなくなる（`engineers/schemas.ts` 冒頭の制約）。
+ * ✅ **2026-10-15: 述語の本体を [`./unit-price-range.ts`](./unit-price-range.ts) へ移した。**
+ *    T-06-03 が「人材側と同じ定義を 2 か所で別々に決めない」として先送りした申し送り
+ *    （docs/05 §6.4「#25 の実装の決着」）であり、**案件検索（`#25`）に同じ条件が入った時点で
+ *    2 人目の呼び手が現れた**ためである。🔴 **ここに同じ述語を書き戻さない** —— 重なりの定義が
+ *    人材と案件でずれると、利用者には説明できない差になる。
+ * 🔴 **関数名と引数の形は変えていない**（人材側の呼び出し 3 箇所はそのまま）。
  */
 export function engineerPriceConditions(
   criteria: EngineerSearchCriteria,
 ): EngineerWhereFragment[] {
-  const conditions: EngineerWhereFragment[] = [];
-  if (criteria.priceMax !== undefined) {
-    conditions.push({ OR: [{ unitPriceMin: null }, { unitPriceMin: { lte: criteria.priceMax } }] });
-  }
-  if (criteria.priceMin !== undefined) {
-    conditions.push({ OR: [{ unitPriceMax: null }, { unitPriceMax: { gte: criteria.priceMin } }] });
-  }
-  return conditions;
+  return unitPriceOverlapConditions(criteria);
 }
 
 /**

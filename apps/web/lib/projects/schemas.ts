@@ -175,19 +175,21 @@ const FREE_WORD_MAX_LENGTH = 200;
 /**
  * `GET /api/projects`（#25。`F-015` / `S-010`）の query。T-06-03。
  *
- * 🔴 **docs/05 §6.4 #25 の `?q=&status=&startFrom=&prefecture=&cursor=` と 1 対 1 である。**
- *    `docs/04` §S-010 の検索条件はこれに加えて「スキル要件」「単価レンジ」「リモート可否」を
- *    挙げているが、**本タスクでは受け取らない**（docs/05 §6.4「#25 の実装の決着（T-06-03）」）:
+ * 🔴 **docs/05 §6.4 #25 の query と 1 対 1 である**（キーを片方にだけ足さない）。
+ *    `docs/04` §S-010 の検索条件のうち、**まだ受け取らないもの**は次の 2 つである
+ *    （docs/05 §6.4「#25 の実装の決着」）:
  *      - スキル要件 … `project_requirements` への結合と AND / OR の評価が要り、
  *        検索の実装を `packages/db/src/search/**` に閉じる **T-06-05**（docs/05 TBD-8）の射程
- *      - 単価レンジ … 案件は**レンジ列 2 本**であり、検索条件のレンジとの「重なり」の定義
- *        （NULL の扱いを含む）が必要になる。同じ定義を人材側（`#15` の `priceMin` /
- *        `priceMax`。**T-06-04**）でも決めるため、**2 か所で別々に決めない**
- *      - リモート可否 … 上の 2 つと同じフィルタ帯に並ぶ項目であり、単独で先に入れると
- *        画面が「効く条件と効かない条件が混在する帯」になる
+ *      - リモート可否 … 単独で先に入れると、画面が「効く条件と効かない条件が混在する帯」になる
+ *    ✅ **2026-10-15: 単価レンジは受け取るようになった**（下の `priceMin` / `priceMax`）。
+ *    ~~単価レンジ … 案件は**レンジ列 2 本**であり、検索条件のレンジとの「重なり」の定義
+ *    （NULL の扱いを含む）が必要になる。同じ定義を人材側（`#15`。**T-06-04**）でも決めるため、
+ *    **2 か所で別々に決めない**~~ → 🔴 **先送りの理由がそのまま決着の手順になった** ——
+ *    重なりの定義を**人材側と共有する 1 本の関数**（`packages/db/src/search/unit-price-range.ts`
+ *    の `unitPriceOverlapConditions`）に切り出したうえで足しており、2 か所で決めていない。
  *    🔴 **受け取って捨てるキーを置かない**（`#19` / `#15` と同じ判断）。宣言だけしておくと、
  *    指定しても効かない条件が「効いているように見える」状態になり、利用者からは絞り込みの
- *    不具合と区別できない。画面（`S-010`）は「この 3 条件は後続のリリース」と明示する。
+ *    不具合と区別できない。画面（`S-010`）は残りを「後続のリリース」と明示する。
  * 🔴 `cursor` は**行の ID**（`uuid(7)`）である（`idCursorPageQuerySchema` の注記）。
  * 🔴 分離キーを持たない（`AssertNoIsolationKeys`）。母集団は RLS の C4 が決める。
  */
@@ -199,6 +201,18 @@ export const projectListQuerySchema = idCursorPageQuerySchema.extend({
   /** 開始日が**この日以降**の案件に絞る（`YYYY-MM-DD`）。 */
   startFrom: optionalFilter(z.iso.date()),
   prefecture: optionalFilter(z.enum(PREFECTURE_CODES)),
+  /**
+   * ✅ **2026-10-15: 単価レンジ（月額・円）。** `docs/04` §S-010 の検索条件にあり、
+   * 定義書（`docs/design-system-projects.md` §1.6）が Filter Panel の 1 行として挙げている。
+   *
+   * 🔴 **名前・型・上限は人材一覧（`#15` の `engineerListQuerySchema`）と同じである** ——
+   *    重なりの述語そのものを共有しており（`packages/db/src/search/unit-price-range.ts` の
+   *    `unitPriceOverlapConditions`。人材側の `engineerPriceConditions` もこれを呼ぶ）、
+   *    **2 画面で単価の意味を別々に決めない**（T-06-03 の申し送りの決着）。
+   * 🔴 **大小関係を検証しない**（片方だけの指定が正当な検索である。同関数の 🔴）。
+   */
+  priceMin: optionalFilter(z.coerce.number().int().min(0).max(UNIT_PRICE_MAX)),
+  priceMax: optionalFilter(z.coerce.number().int().min(0).max(UNIT_PRICE_MAX)),
 });
 
 export type ProjectListQuery = z.infer<typeof projectListQuerySchema>;

@@ -232,14 +232,33 @@ const CALENDAR_SECTION_PATH = '/calendar';
  * ✅ **2026-10-14（人間の明示指示）: `パートナー連携` 群の 3 画面。**
  *
  * 🔴 **いずれも準備中である**（上の `CALENDAR_SECTION_PATH` と同じ扱い）。
+ *
+ * 🔴🔴 **3 本は兄弟の URL である（`/partners/...` と入れ子にしない）。** ✅ 2026-10-15 の修正。
+ *    人間の報告「`案件一覧`『人材一覧』を選択すると `パートナー一覧` もハイライトされてしまう」が
+ *    これである。現在地の判定は **完全一致 または `${href}/` の前方一致**（`@ses/ui` の
+ *    `isCurrentNavPath`）なので、**ある項目の遷移先が別の項目の遷移先の祖先になっていると
+ *    2 項目とも現在地になる** —— 当初の `/partners` + `/partners/projects` +
+ *    `/partners/engineers` がまさにその形だった。
+ *    🔴 **判定の側を増やして直さない。** あの前方一致は詳細画面（`/projects/{id}` /
+ *    `/engineers/{id}`）で親の項目を光らせるために要る規則であり、ここで例外を足すと
+ *    「現在地の判定が 2 つ」になる（`packages/ui/src/lib/current-nav-path.ts` 冒頭の 🔴）。
+ *    🔴 直し方は **サイドバーの兄弟を URL でも兄弟にする**ことである —— 畳み込みの時点から
+ *    `/engineers` と `/engineer-shares`、`/proposals` と `/proposal-requests`、`/audit-logs` /
+ *    `/skills` が同じ形であり、ここもそれに揃えた。**入れ子にしてよいのは 1 つの項目が射程に
+ *    持つ配下だけ**（`設定` と `/settings/*`）である。
+ *    ⚠️ 副産物として、将来 `パートナー一覧` に詳細画面（`/partners/{id}`）を足したときも
+ *    前方一致がそのまま効く（配下に別の項目が居ないため）。
+ *    🔴 この不変条件（**どのパスでも光る項目は 1 つ以下**）は `nav.test.ts` が全ロール ×
+ *    主平面の全ルートで機械的に固定する。入れ子を作った瞬間に落ちる。
+ *
  * 🔴 **`/settings/partner-companies`（`S-014` 取引先企業）には寄せていない。** あちらは実在する
  *    画面であり、`設定` の索引からの到達手段を持つ。ここで同じ URL を指すと、**サイドバーの
  *    `パートナー一覧` と `設定` の 2 項目が同時に光る**（`settings` の `sectionPaths` が索引の
  *    7 項目を射程に持つため）。統合するかは人間の判断事項（Issue #102 の既定 = A「分けたまま」）。
  */
 const PARTNER_COMPANIES_SECTION_PATH = '/partners';
-const PARTNER_PROJECTS_SECTION_PATH = '/partners/projects';
-const PARTNER_ENGINEERS_SECTION_PATH = '/partners/engineers';
+const PARTNER_PROJECTS_SECTION_PATH = '/partner-projects';
+const PARTNER_ENGINEERS_SECTION_PATH = '/partner-engineers';
 
 /**
  * `設定` の索引（`/settings`）が並べる項目。**畳む前の `設定` 群と 1 対 1 である。**

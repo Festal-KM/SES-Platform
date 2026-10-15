@@ -24,6 +24,7 @@ import type { PrefectureCode } from '@ses/domain';
 import { toDateOnly } from '../date-only.js';
 import { PROJECT_STATUSES, type ProjectStatus } from '../schema-value-sets.js';
 import { freeWordOr, type FreeWordFilter } from './free-word.js';
+import { unitPriceOverlapConditions } from './unit-price-range.js';
 
 /**
  * 本モジュールが組み立てる述語の形（Prisma の `ProjectWhereInput` の部分集合）。
@@ -37,7 +38,19 @@ export type ProjectWhereFragment = {
   prefecture?: PrefectureCode;
   name?: FreeWordFilter;
   publicSummary?: FreeWordFilter;
+  /**
+   * ✅ 2026-10-15: 単価レンジ（**外部公開用**の `unit_price_min` / `unit_price_max`）。
+   * 🔴 **`internalUnitPrice`（内部限定の販売単価）はこの型に無い**（上の 🔴）。
+   */
+  unitPriceMin?: null | { lte: number };
+  unitPriceMax?: null | { gte: number };
   OR?: ProjectWhereFragment[];
+  /**
+   * 🔴 **単価レンジの 2 条件はここに入る**（`OR` ではなく `AND`）。フリーワードが
+   *    トップレベルの `OR` を使っており、畳むと**フリーワードが静かに消える**
+   *    （`unit-price-range.ts` の 🔴）。
+   */
+  AND?: ProjectWhereFragment[];
 };
 
 /**
@@ -52,6 +65,12 @@ export type ProjectSearchCriteria = {
   readonly startFrom?: string;
   readonly prefecture?: PrefectureCode;
   readonly q?: string;
+  /**
+   * ✅ 2026-10-15: 単価レンジ（月額・円）。**人材検索（`#15`）と同じ名前・同じ意味**である
+   * （`unitPriceOverlapConditions`）。🔴 **2 画面で重なりの定義を別々に決めない。**
+   */
+  readonly priceMin?: number;
+  readonly priceMax?: number;
 };
 
 /**
@@ -146,7 +165,12 @@ const PROJECT_FREE_WORD_COLUMNS = ['name', 'publicSummary'] as const;
  *    したがって `#25` は `SearchPlan` の形を採らず、単一の述語を返す（`plan.ts` の 🔴）。
  */
 export function projectSearchWhere(criteria: ProjectSearchCriteria): ProjectWhereFragment {
+  // ✅ 2026-10-15: 単価レンジ。🔴 **述語の定義は `unit-price-range.ts` の 1 本**であり、
+  //    人材検索（`#15`）と同じものを通る（T-06-03 の申し送りの決着）。
+  //    🔴 `AND` に置く —— フリーワードが `OR` を使っているため（同ファイルの 🔴）。
+  const priceConditions = unitPriceOverlapConditions(criteria);
   return {
+    ...(priceConditions.length === 0 ? {} : { AND: priceConditions }),
     ...(criteria.status === undefined ? {} : { status: criteria.status }),
     // 🔴 `start_date` が未設定の案件は「開始日 X 以降」に一致しない（NULL は比較で偽）。
     //    絞り込みを掛けたときだけ落ちる挙動であり、既定（未指定）では全件が出る。

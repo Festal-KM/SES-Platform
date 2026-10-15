@@ -149,6 +149,8 @@ describe('engineerListRow（1 行分の表示値）', () => {
   it('🔴 連絡先・生年月日に相当するキーを持たない（画面が出さない PII を型に持たない）', () => {
     expect(Object.keys(engineerListRow(view())).sort()).toEqual([
       'availability',
+      // ✅ 2026-10-15: 稼働状況の**状態名**（`StatusBadge` に渡す。PII ではない）。
+      'availabilityState',
       'availableFrom',
       'displayName',
       'id',

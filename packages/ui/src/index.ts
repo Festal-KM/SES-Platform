@@ -174,7 +174,7 @@ export type {
 } from './components/rail-card.js';
 export { SectionHeader } from './components/section-header.js';
 export type { SectionHeaderLink, SectionHeaderProps } from './components/section-header.js';
-export { Badge, STATUS_BADGE_APPEARANCES, StatusBadge } from './components/badge.js';
+export { Badge, STATUS_BADGE_APPEARANCES, StatusBadge, StatusDot } from './components/badge.js';
 export type {
   BadgeProps,
   BadgeShape,

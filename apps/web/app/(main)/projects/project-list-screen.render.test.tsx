@@ -47,12 +47,14 @@ const messages: ProjectListScreenMessages = {
   partnerScopeNotice: null,
   orderNote: '後任募集 → 募集中 → 充足 の順に、同じ状態のなかでは更新日の新しい順に表示しています。',
   overflowNote: '右端が切れているときは、表を横にスクロールすると残りの列が見られます。',
-  searchComingSoon: 'スキル要件・単価レンジ・リモート可否での絞り込みは、後続のリリースで行えます。',
+  searchComingSoon: 'スキル要件・リモート可否での絞り込みは、後続のリリースで行えます。',
   searchLegend: '検索条件',
   searchQ: 'フリーワード',
   searchStatus: '案件の状態',
   searchStartFrom: '開始日（この日以降）',
   searchPrefecture: '勤務地（都道府県）',
+  searchPriceMin: '単価（下限）',
+  searchPriceMax: '単価（上限）',
   searchSubmit: '検索',
   searchClear: '条件をクリア',
   register: '案件を登録',
@@ -87,7 +89,7 @@ const prefectureOptions = [
   { value: '13', label: '東京都' },
 ] as const;
 
-const emptyFilters = { q: '', status: '', startFrom: '', prefecture: '' } as const;
+const emptyFilters = { q: '', status: '', startFrom: '', prefecture: '', priceMin: '', priceMax: '' } as const;
 
 /**
  * 🔴 列表示切替の項目（`T-22-06`）。**組み立てはサーバ側**（`list-props.ts` の
@@ -270,11 +272,21 @@ describe('検索条件（docs/04 §S-010 セクション 1）', () => {
 
   it('現在の条件がフォームに戻る（検索してもフォームが空にならない）', () => {
     const html = render({
-      filters: { q: '基幹', status: 'OPEN', startFrom: '2026-10-01', prefecture: '13' },
+      filters: {
+        q: '基幹',
+        status: 'OPEN',
+        startFrom: '2026-10-01',
+        prefecture: '13',
+        // ✅ 2026-10-15: 単価レンジも戻る（条件が 1 つでも落ちると「検索したのに消えた」になる）。
+        priceMin: '600000',
+        priceMax: '800000',
+      },
     });
 
     expect(html).toContain('value="基幹"');
     expect(html).toContain('value="2026-10-01"');
+    expect(html).toContain('value="600000"');
+    expect(html).toContain('value="800000"');
     // `select` の既定値は `option` の `selected` として描かれる。
     expect(html).toContain('<option value="OPEN" selected=""');
     expect(html).toContain('<option value="13" selected=""');
@@ -288,10 +300,21 @@ describe('検索条件（docs/04 §S-010 セクション 1）', () => {
   it('効かない条件は入力欄を描かず、できないことを書く', () => {
     const html = render();
 
-    expect(html).toContain('スキル要件・単価レンジ・リモート可否');
+    // ✅ **2026-10-15: 単価レンジは「効かない条件」から外れた**（`#25` に `priceMin` /
+    //    `priceMax` を足し、述語は人材検索と同じ `unitPriceOverlapConditions` を通る）。
+    //    🔴 **残り 2 つ（スキル要件 / リモート可否）は依然として描かない。**
+    expect(html).toContain('スキル要件・リモート可否');
     expect(html).not.toContain('name="skills"');
-    expect(html).not.toContain('name="priceMin"');
     expect(html).not.toContain('name="remote"');
+  });
+
+  it('✅ 2026-10-15: 単価レンジは入力欄を描く（人材一覧と同じ名前・同じ単位）', () => {
+    const html = render();
+
+    expect(html).toContain('name="priceMin"');
+    expect(html).toContain('name="priceMax"');
+    // 🔴 単位は円（人材一覧と同じ `step`）。万円に変えるなら 2 画面を同時に変える。
+    expect(html).toContain('step="10000"');
   });
 });
 
@@ -317,7 +340,13 @@ describe('🔴 T-11-12: 案件名セルが docs/04 §10.3「長い名称」の�
     const html = render({ rows: [row({ name: '金融系 Web API 改修' })] });
     // ⚠️ **T-22-06: `<td>` の属性が増えたぶんだけ正規表現を緩めた（判定は 1 つも緩めていない）**。
     //    `DataTable` は列定義由来の `style="min-width:…"` と `data-column-id` をセルに付ける。
-    const cell = /<td class="([^"]*)"[^>]*>(<span class="[^"]*" title="金融系 Web API 改修">.*?<[/]span>)<[/]td>/.exec(html);
+    // ⚠️ ✅ **2026-10-15: 名称の前に状態の点（`StatusDot`）が入った**ぶん、`<td>` の直後に
+    //    1 つ `<span>` が増える（`NameCell.leading`）。**判定は 1 つも緩めていない** ——
+    //    名称の `<span>`（`title` 付き）の中身は下で同じだけ検査している。
+    const cell =
+      /<td class="([^"]*)"[^>]*>(?:<span class="mr-2[^"]*">.*?<[/]span>)?(<span class="[^"]*" title="金融系 Web API 改修">.*?<[/]span>)<[/]td>/.exec(
+        html,
+      );
     expect(cell).not.toBeNull();
     const classes = (cell?.[1] ?? '').split(' ');
     expect(classes).toContain('whitespace-normal');
@@ -332,6 +361,15 @@ describe('🔴 T-11-12: 案件名セルが docs/04 §10.3「長い名称」の�
     expect(link?.[1]).toContain(`href="/projects/${PROJECT_A}"`);
     expect(link?.[1]).toContain(`data-testid="project-list-link-${PROJECT_A}"`);
     expect(link?.[1]).not.toContain('truncate');
+  });
+
+  it('🔴 ✅ 2026-10-15: 名称の前に状態の点が出る（色は `StatusBadge` と同じ表から決まる）', () => {
+    const html = render({ rows: [row({ name: '金融系 Web API 改修' })] });
+
+    // 🔴 点は**状態を持つ**（`data-state`）。色クラスを画面が選べないことは `StatusDot` の型が守る。
+    expect(html).toContain('<span aria-hidden="true" data-entity="project" data-state="OPEN"');
+    // 🔴 点に語を持たせない（読み上げでは同じ行の Badge が語を出す）。
+    expect(html).toContain('aria-hidden="true"');
   });
 });
 
@@ -528,15 +566,19 @@ describe('🔴 SP-22 段④: 絞り込みカードと件数バー', () => {
     expect(form, '検索フォームがカードの外にある').toBeGreaterThan(card);
   });
 
-  it('🔴 フリーワードは全幅である（他の 3 条件と同じ幅に並べない）', () => {
+  it('🔴 フリーワードは他の条件より広い（同じ幅に並べない）', () => {
     const html = render();
     const label = /<label class="([^"]*)"[^>]*>\s*<span[^>]*>フリーワード/.exec(html);
 
     expect(label, 'フリーワードの欄が見つからない').not.toBeNull();
     const classes = (label?.[1] ?? '').split(' ');
+    // ✅ **2026-10-15: 全幅（4 列ぶん）→ 2 列ぶん**（定義書 §1.6 の「検索 Input 420×36」+
+    //    受領した画像）。🔴 **帯が 1 行ぶん縮む**（行を 45px に上げたぶんをここで取り戻す。
+    //    `docs/04` §7.1「一覧はファーストビューに 12 行以上」）。
+    // 🔴 **他の条件（1 列）より広いことは変えていない** —— 入力できる語数が画面幅で
+    //    変わらないための幅である。
     expect(classes).toContain('sm:col-span-2');
-    expect(classes).toContain('lg:col-span-3');
-    expect(classes).toContain('xl:col-span-4');
+    expect(classes).not.toContain('xl:col-span-4');
   });
 
   it('🔴 「効かない条件」の 1 行は絞り込みカードの中にある（条件の群の隣で読む）', () => {
@@ -576,10 +618,10 @@ describe('🔴 SP-22 段④: 絞り込みカードと件数バー', () => {
   it('🔴 既存 API（#25）に無い条件の入力欄を 1 つも描かない', () => {
     const html = render();
 
+    // ✅ 2026-10-15: `priceMin` / `priceMax` はこの一覧から外した（API に入ったため）。
+    //    🔴 **残りは 1 つも描かない**（押しても効かない入力欄を作らない）。
     for (const name of [
       'name="skills"',
-      'name="priceMin"',
-      'name="priceMax"',
       'name="remote"',
       'name="category"',
       'name="kind"',

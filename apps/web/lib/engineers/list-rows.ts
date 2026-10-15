@@ -6,6 +6,7 @@
 //    「上位 3 件の選び方」「`+N` の数え方」「未設定の見せ方」を固定できる場所が要る。
 //    ここは **I/O を持たない純粋関数だけ**で、`@ses/db` にも Prisma にも触れない。
 // 🔴 文言は `packages/i18n` が唯一の出所（`CLAUDE.md` §3.5）。本ファイルは**日本語の語を書かない**。
+import type { EngineerAvailability } from '@ses/db';
 import { PAGE_SIZE_DEFAULT } from '@ses/config';
 import { t } from '@ses/i18n';
 // 🔴 T-06-02: 3 桁区切りは機能に属さない共通語彙（`lib/format/number.ts`）。
@@ -79,6 +80,12 @@ export type EngineerListRowView = {
   /** 勤務地・リモート可否（`docs/04` §S-005 の 1 列）。 */
   readonly location: string;
   readonly availability: string;
+  /**
+   * ✅ **2026-10-15: 稼働状況の状態名**（`StatusBadge` に渡す。語は上の `availability`）。
+   * 🔴 **色は画面が選べない** —— `@ses/ui` の `STATUS_BADGE_APPEARANCES.engineer` が決める
+   *    （`docs/04` §5-13「1 箇所でしか色が決まらない」）。
+   */
+  readonly availabilityState: EngineerAvailability;
   readonly updatedOn: string;
 };
 
@@ -115,6 +122,7 @@ export function engineerListRow(view: OwnEngineerView): EngineerListRowView {
     availableFrom: view.availableFrom ?? none(),
     location: formatLocation(view.prefecture, view.remoteMode),
     availability: t(ENGINEER_AVAILABILITY_MESSAGE_KEYS[view.availability]),
+    availabilityState: view.availability,
     updatedOn: view.updatedOn,
   };
 }

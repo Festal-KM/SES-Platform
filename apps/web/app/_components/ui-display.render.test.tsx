@@ -348,9 +348,10 @@ describe('🔴 PageBody の幅 3 クラス（docs/04 §7.1 / docs/05 §2.3.4）'
       }),
     );
     expect(markup).toContain('data-aside-from="main-min"');
-    // 🔴 並置／下段の判定は `flex-wrap` + 主カラムの `basis-330`（= 1,320px）だけで行う。
+    // 🔴 並置／下段の判定は `flex-wrap` + 主カラムの `basis-250`（= 1,000px）だけで行う。
+    //    ✅ 2026-10-15: 1,320 → 1,000（`S-010` の表を細くしたうえで下げた。`page-body.tsx` の 🔴）。
     expect(markup).toContain('flex-wrap');
-    expect(markup).toContain('basis-330');
+    expect(markup).toContain('basis-250');
     expect(markup).toContain('max-w-97');
     // 🔴 画面幅のバリアントが 1 つも出ない（これが出た瞬間に「幅で決める」に戻る）。
     expect(markup).not.toMatch(/(?:^|["\s])(?:sm|md|lg|xl|2xl):/);

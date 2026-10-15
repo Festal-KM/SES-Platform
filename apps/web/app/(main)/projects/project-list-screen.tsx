@@ -85,6 +85,7 @@ import {
   SECONDARY_LINK_CLASSES,
   Select,
   StatusBadge,
+  StatusDot,
   Toolbar,
   cn,
   type DataTableColumn,
@@ -112,6 +113,9 @@ export type ProjectListFilterValues = {
   readonly status: string;
   readonly startFrom: string;
   readonly prefecture: string;
+  /** ✅ 2026-10-15: 単価レンジ（月額・円）。人材一覧（`S-005`）と**同じ名前・同じ単位**である。 */
+  readonly priceMin: string;
+  readonly priceMax: string;
 };
 
 export type ProjectListScreenMessages = {
@@ -127,6 +131,8 @@ export type ProjectListScreenMessages = {
   readonly searchStatus: string;
   readonly searchStartFrom: string;
   readonly searchPrefecture: string;
+  readonly searchPriceMin: string;
+  readonly searchPriceMax: string;
   readonly searchSubmit: string;
   readonly searchClear: string;
   readonly register: string;
@@ -189,6 +195,12 @@ function projectColumns(
       nameCell: {
         name: (row) => row.name,
         href: (row) => `/projects/${row.id}`,
+        // ✅ **2026-10-15: 状態の点**（人間が提示した案件一覧の画像。案件名の左）。
+        // 🔴 **色は `StatusBadge` と同じ 1 つの表から決まる**（`StatusDot` は `entity` /
+        //    `state` しか受け取らない。`docs/04` §5-13）。画面は色を選べない。
+        // 🔴 **点に語を持たせない** —— 同じ行の Badge が語を出しており、読み上げでは
+        //    `aria-hidden` で重複を避けている。
+        leading: (row) => <StatusDot entity="project" state={row.statusState} />,
       },
     },
     {
@@ -211,6 +223,9 @@ function projectColumns(
       minWidth: '10rem',
       // 🔴 余りはこの列に配分する（§7.1 の `2xl`「要件の要約」）。
       grow: true,
+      // ✅ **2026-10-15: 切替に格納できる列にした**（既定は非表示。人間の決定）。
+      //    🔴 **列を消していない** —— 1 クリックで戻せる（`PROJECT_DEFAULT_HIDDEN_COLUMN_IDS` の 🔴）。
+      hideable: true,
       whitespace: 'normal',
       cell: (row) => (
         <>
@@ -238,7 +253,9 @@ function projectColumns(
       id: 'startDate',
       header: messages.columnStartDate,
       priority: 'always',
-      minWidth: '8rem',
+      // ✅ 2026-10-15: 下限を実測に合わせて詰めた（`2026-11-11` は約 86px。右の案件詳細パネルを
+      //    横に並べるため、表の min-content を 1,059 → 約 995px にする）。
+      minWidth: '6rem',
       cell: (row) => row.startDate,
     },
     {
@@ -252,14 +269,18 @@ function projectColumns(
       id: 'headcount',
       header: messages.columnHeadcount,
       priority: 'lg',
-      minWidth: '5rem',
+      // ✅ 2026-10-15: 下限を実測に合わせて詰めた（`1 名` は約 40px。右の案件詳細パネルを
+      //    横に並べるため、表の min-content を 1,059 → 約 995px にする）。
+      minWidth: '4rem',
       cell: (row) => row.headcount,
     },
     {
       id: 'updatedOn',
       header: messages.columnUpdatedOn,
       priority: 'sm',
-      minWidth: '7rem',
+      // ✅ 2026-10-15: 下限を実測に合わせて詰めた（同上。右の案件詳細パネルを
+      //    横に並べるため、表の min-content を 1,059 → 約 995px にする）。
+      minWidth: '6rem',
       cell: (row) => row.updatedOn,
     },
     // 🔴 取引先には公開先の列を出さない（`F-014 AC-4` / `BR-07`）。**DOM から取り除く**。
@@ -370,9 +391,12 @@ export function ProjectListScreen({
               <CardContent className="pt-4">
                 {/* 🔴 検索条件（docs/04 §S-010 セクション 1）。`method="get"` なので、実行した検索が
                    そのまま URL になり、共有・再読込・戻るのいずれでも同じ結果に戻る。
-                   🔴 **既存 API（`#25`）に在る 4 条件だけを描く**（`q` / `status` / `startFrom` /
-                      `prefecture`）。スキル要件・単価レンジ・リモート可否は query に無いので
-                      **入力欄を描かず**、下の 1 行で「できないこと」を書く。
+                   🔴 **既存 API（`#25`）に在る条件だけを描く**（`q` / `status` / `startFrom` /
+                      `prefecture` / ✅ 2026-10-15 で足した `priceMin` / `priceMax`）。
+                      **スキル要件とリモート可否**は query に無いので**入力欄を描かず**、
+                      下の 1 行で「できないこと」を書く。
+                   🔴 **条件の個数を文章に数字で書かない**（増減のたびに文章が古くなる。
+                      `HANDOFF.md` §6-15）。
                    ⚠️ `mb-0` / `w-full` は帯の中に置いたための余白・幅の調整である（`cn()` の規律 1）。 */}
                 <form
                   className={cn(FILTER_FORM_CLASSES, 'mb-0 w-full')}
@@ -385,10 +409,11 @@ export function ProjectListScreen({
                     {/* 🔴 フリーワードは**全幅**（ワイヤーフレームの検索欄）。最も使う条件を
                         1 行目に単独で置く —— 他の 3 条件と同じ幅に並べると、入力できる語数が
                         画面幅で変わる。 */}
-                    <Field
-                      className="sm:col-span-2 lg:col-span-3 xl:col-span-4"
-                      label={messages.searchQ}
-                    >
+                    {/* ✅ **2026-10-15: 全幅 → 2 列ぶん**（定義書 §1.6 の「検索 Input 420×36」+
+                        受領した画像）。🔴 **帯が 1 行ぶん縮む** —— 行の高さを 45px に上げた
+                        ぶん、一覧の「ファーストビューに 12 行以上」（`docs/04` §7.1）を
+                        ここで取り戻す。**条件は 1 つも減っていない。** */}
+                    <Field className="sm:col-span-2" label={messages.searchQ}>
                       <Input type="search" name="q" defaultValue={filters.q} data-testid="project-list-filter-q" />
                     </Field>
                     <Field label={messages.searchStatus}>
@@ -421,43 +446,81 @@ export function ProjectListScreen({
                         ))}
                       </Select>
                     </Field>
+                    {/* ✅ **2026-10-15: 単価レンジ**（定義書 §1.6 の Filter Panel の 1 行。人間の
+                        指示「自社案件管理ページはこれを参照してアップデートして」）。
+                        🔴 **人材一覧（`S-005`）と同じ形にした** —— `type="number"` / `step=10000` /
+                           `名前は priceMin / priceMax` / 単位は円。定義書 §1.4 自身が
+                           「人材管理 §2.10 を継承」と定めており、**2 画面で単価の入れ方を変えない**。
+                           ⚠️ 定義書 §1.6 は「下限 ＋ 〜 ＋ 上限 ＋ 単位」を 1 つの欄に組む形だが、
+                           それは人材一覧にも同じ改修が要る話であり、**片方だけ別の形にしない**。
+                        🔴 **述語（レンジの重なり）は `packages/db/src/search/unit-price-range.ts` の
+                           1 本**である（人材検索と共有。T-06-03 の申し送りの決着）。 */}
+                    {/* 🔴 **下限と上限を 1 つの塊にする**（列の折り返しで 2 欄が別の行に分かれると、
+                        `単価（上限）` が単独の条件に見える）。定義書 §1.6 も単価レンジを
+                        **独立した 1 行**として組んでいる。⚠️ 2 列に割るだけの器であり、
+                        **欄そのものは人材一覧と同じ 2 つの `Field`** のままである。 */}
+                    <div className="grid grid-cols-2 items-end gap-4 sm:col-span-2">
+                      <Field label={messages.searchPriceMin}>
+                        <Input
+                          type="number"
+                          name="priceMin"
+                          min={0}
+                          step={10000}
+                          defaultValue={filters.priceMin}
+                          data-testid="project-list-filter-price-min"
+                        />
+                      </Field>
+                      <Field label={messages.searchPriceMax}>
+                        <Input
+                          type="number"
+                          name="priceMax"
+                          min={0}
+                          step={10000}
+                          defaultValue={filters.priceMax}
+                          data-testid="project-list-filter-price-max"
+                        />
+                      </Field>
+                    </div>
                     {/* 🔴 送信と「条件をクリア」は必ず 1 行を占める（列の途中に紛れると
                         押せる場所が毎回変わる）。`justify-end` はカードの中で右に寄せるための
                         配置の調整であり、共有定数（`FILTER_ACTIONS_CLASSES`）は変えていない。 */}
-                    <div className={cn(FILTER_ACTIONS_CLASSES, 'justify-end')}>
-                      {showClearFilters ? (
-                        <Link className={SECONDARY_LINK_CLASSES} href="/projects" data-testid="project-list-clear">
-                          {messages.searchClear}
-                        </Link>
-                      ) : null}
-                      <Button type="submit" data-testid="project-list-search">
-                        {messages.searchSubmit}
-                      </Button>
+                    {/* ✅ **2026-10-15: フッタ 1 行にまとめた**（人間が提示した画像 + 定義書 §1.6
+                        「フッタ行（Checkbox 左 / Secondary + Primary 右）」）。**左に「できないこと」
+                        と「表示する列」、右に クリア / 検索**。
+                        🔴 **一覧は「ファーストビューに 12 行以上」**（`docs/04` §7.1）であり、
+                           絞り込みの帯が縦に伸びるほど表が押し下げられる —— 実測で帯は 286px
+                           あり、3 行ぶんの行を食っていた。行の高さを定義書の 45h に上げる
+                           ぶん、**ここで取り戻す**。 */}
+                    <div className={cn(FILTER_ACTIONS_CLASSES, 'justify-between gap-y-2')}>
+                      <div className="flex flex-wrap items-center gap-3">
+                        {/* 🔴 まだ効かない条件を黙って描かない（`engineers.list.searchComingSoon` と同じ規律）。 */}
+                        <p className="text-xs text-fg-muted" data-testid="project-list-search-coming-soon">
+                          {messages.searchComingSoon}
+                        </p>
+                        {/* 🔴 **列表示切替の置き場所は帯である**（`docs/04` §5-13 / §7.1。`T-22-06`）。
+                            ✅ 2026-10-15: 既定で 2 列を格納したので、**ここが「戻す」唯一の入口**になった。 */}
+                        {columnToggleItems.length === 0 ? null : (
+                          <ColumnToggle
+                            columns={columnToggleItems}
+                            triggerLabel={messages.columnToggleTrigger}
+                            testIdPrefix="project-list-column-toggle-"
+                          />
+                        )}
+                      </div>
+                      <div className="flex items-center gap-4">
+                        {showClearFilters ? (
+                          <Link className={SECONDARY_LINK_CLASSES} href="/projects" data-testid="project-list-clear">
+                            {messages.searchClear}
+                          </Link>
+                        ) : null}
+                        <Button type="submit" data-testid="project-list-search">
+                          {messages.searchSubmit}
+                        </Button>
+                      </div>
                     </div>
                   </fieldset>
                 </form>
 
-                {/* 🔴 まだ効かない条件を黙って描かない（`engineers.list.searchComingSoon` と同じ規律）。
-                    ✅ SP-22 段④: 場所を絞り込みカードの中へ移した（**どの条件が無いのか**は
-                       条件の群の隣で読むものであり、一覧の上の独立した 1 行ではない）。 */}
-                <p className="mt-3 text-xs text-fg-muted" data-testid="project-list-search-coming-soon">
-                  {messages.searchComingSoon}
-                </p>
-
-                {/* 🔴 **列表示切替の置き場所は `Toolbar` である**（`docs/04` §5-13 / §7.1。`T-22-06`）。
-                    §5-13 の `Toolbar` は「検索 + フィルタ + 一括操作」の**置き場所を固定する**部品であり、
-                    列の出し入れも一覧の上の帯に属する —— **画面ごとに位置が変わらないこと**が条文の趣旨で
-                    あるため、検索の帯と同じ段（`filters`）に並べる。
-                    🔴 9 列目が無い取引先には `columnToggleItems` が空で届き、**何も描かない**。 */}
-                {columnToggleItems.length === 0 ? null : (
-                  <div className="mt-3">
-                    <ColumnToggle
-                      columns={columnToggleItems}
-                      triggerLabel={messages.columnToggleTrigger}
-                      testIdPrefix="project-list-column-toggle-"
-                    />
-                  </div>
-                )}
               </CardContent>
             </Card>
           }

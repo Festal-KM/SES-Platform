@@ -92,6 +92,8 @@ export type DataTableNameCell<Row> = {
   readonly name: (row: Row) => string;
   /** 全文へ到達する導線。🔴 `null` ならリンクを描かず、どの境界でも切り詰めない（`NameCell` の規約）。 */
   readonly href: (row: Row) => string | null;
+  /** ✅ 2026-10-15: 名称の前の小さな印（`StatusDot`）。🔴 語を持たせない（`NameCell.leading` の 🔴）。 */
+  readonly leading?: (row: Row) => ReactNode;
 };
 
 type DataTableColumnBase = {
@@ -399,6 +401,7 @@ export function DataTable<Row>({
                         key={column.id}
                         name={column.nameCell.name(row)}
                         href={column.nameCell.href(row)}
+                        leading={column.nameCell.leading?.(row)}
                         linkComponent={linkComponent}
                         linkTestId={`${testIdPrefix}link-${key}`}
                         style={columnStyle(column)}
