@@ -62,8 +62,16 @@ export function projectListScreenMessages(params: {
     searchStartFrom: t('projects.list.search.startFrom'),
     searchPrefecture: t('projects.list.search.prefecture'),
     // ✅ 2026-10-15: 単価レンジ（人材一覧と同じ語。`engineers.list.search.price*` と同じ文言）。
+    //    🔴 この 2 つは**欄ごとの読み上げの語**になった（見えるラベルは `searchPrice` の 1 つ）。
     searchPriceMin: t('projects.list.search.priceMin'),
     searchPriceMax: t('projects.list.search.priceMax'),
+    // ✅ 2026-10-15（受領画像「自社案件管理_案件一覧.png」の絞り込みカード）。
+    searchQPlaceholder: t('projects.list.search.qPlaceholder'),
+    searchPrice: t('projects.list.search.price'),
+    searchPriceMinPlaceholder: t('projects.list.search.priceMinPlaceholder'),
+    searchPriceMaxPlaceholder: t('projects.list.search.priceMaxPlaceholder'),
+    searchPriceRangeSeparator: t('projects.list.search.priceRangeSeparator'),
+    searchPriceUnit: t('projects.list.search.priceUnit'),
     searchSubmit: t('projects.list.search.submit'),
     searchClear: t('projects.list.search.clear'),
     register: t('projects.list.register'),

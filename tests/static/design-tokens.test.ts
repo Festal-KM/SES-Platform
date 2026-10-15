@@ -94,9 +94,8 @@ const SEMANTIC_COLORS: ReadonlyArray<readonly [token: string, primitive: string]
   ['--color-border', 'slate-200'],
   ['--color-border-strong', 'slate-300'],
   ['--color-border-row', 'slate-100'],
-  ['--color-brand', 'blue-600'],
-  ['--color-brand-hover', 'blue-700'],
-  ['--color-brand-active', 'blue-800'],
+  // 🔴 `--color-brand` / `-hover` / `-active` は**階調ではなく仕様書の hex** である（下の
+  //    `BRAND_COLORS`）。🔴 面の階調（`-bg`）はここに残る。
   ['--color-brand-bg', 'blue-50'],
   ['--color-brand-fg', 'white'],
   ['--color-danger', 'red-700'],
@@ -116,6 +115,28 @@ const SEMANTIC_COLORS: ReadonlyArray<readonly [token: string, primitive: string]
   // ✅ 2026-10-02（人間のブリーフ）: カード・パネル・overlay の地。
   //    🔴 `--color-bg`（ページの地）と**値は同じで役割が違う**（`tailwind.css` の 🔴）。
   ['--color-surface', 'white'],
+];
+
+/**
+ * 🔴🔴 **ブランド色だけは「階調」ではなく「人間が確定した hex」が仕様である**
+ * （✅ 2026-10-15。`docs/design-system.md` §3.1 の `--primary` / hover）。
+ *
+ * **なぜ `U-21`（独自の hex を起こさない）の例外にしたか**: `U-21` の根拠は「Tailwind の階調は
+ * 明度が検証済みでコントラスト比の担保が予測できる」ことであって、「階調であること」自体では
+ * ない。ところが **Tailwind v4 でパレットが oklch に差し替わり、`blue-600` は v3 の `#2563EB`
+ * から `#155DFC`（彩度 0.215 → 0.245）に変わっている** —— 階調を参照し続けると、
+ * **人間が確定したブランド色とは別の色が primary ボタンに載る**（実測。人間の報告
+ * 「案件を登録ボタンの色が明るすぎて目がちかちかする」がこれである）。
+ *
+ * 🔴 **ブランドは人間の判断事項**（`CLAUDE.md` §8.6）なので、**仕様の値をそのまま置く側**に寄せ、
+ *    `U-21` が担保したかったコントラスト比は**下の実測の検査**（`CONTRAST_PAIRS`）が受け持つ。
+ * 🔴 **この例外を 2 系統目に広げない。** 他の 5 系統（danger / warning / success / info / 無彩色）は
+ *    「意味に割り当てた階調」であって人間が hex で確定したものではない（§7.4）。
+ */
+const BRAND_COLORS: ReadonlyArray<readonly [token: string, value: string]> = [
+  ['--color-brand', '#2563eb'],
+  ['--color-brand-hover', '#1d4ed8'],
+  ['--color-brand-active', '#1e40af'],
 ];
 
 /**
@@ -286,7 +307,7 @@ describe('🔴 §7.9 のトークンが `@theme` に全部ある（欠けたら�
     ).toBe(true);
   });
 
-  it('semantic の色 27 トークンが在り、値が §7.9 の階調（primitive）を参照している', () => {
+  it('semantic の色が在り、値が §7.9 の階調（primitive）を参照している（ブランド 3 色を除く）', () => {
     const missing = SEMANTIC_COLORS.filter(([token]) => !declared.has(token)).map(([t]) => t);
     expect(
       missing,
@@ -304,7 +325,7 @@ describe('🔴 §7.9 のトークンが `@theme` に全部ある（欠けたら�
     ).toEqual([]);
   });
 
-  it('🔴 `@theme` の `--color-*` は semantic 28 + component 9 の「列挙したものだけ」である', () => {
+  it('🔴 `@theme` の `--color-*` は semantic + ブランド 3 + component の「列挙したものだけ」である', () => {
     const declaredColors = [...declared.keys()].filter((token) => /^--color-[a-z0-9-]+$/.test(token));
     expect(
       [...declaredColors].sort(),
@@ -315,8 +336,25 @@ describe('🔴 §7.9 のトークンが `@theme` に全部ある（欠けたら�
         '「部品ごと」という縛りが消えます（`docs/05` §2.3.2 の判断の射程はそこでした）。' +
         '🔴 **画面ごとの component トークンを作らないこと**（部品ごとに作る。§7.9）。',
     ).toEqual(
-      [...SEMANTIC_COLORS.map(([token]) => token), ...COMPONENT_COLORS.map(([token]) => token)].sort(),
+      [
+        ...SEMANTIC_COLORS.map(([token]) => token),
+        ...BRAND_COLORS.map(([token]) => token),
+        ...COMPONENT_COLORS.map(([token]) => token),
+      ].sort(),
     );
+  });
+
+  it('🔴 ブランド色が人間の仕様書の hex そのものである（階調に戻していない）', () => {
+    const wrong = BRAND_COLORS.filter(([token, value]) => declared.get(token) !== value).map(
+      ([token, value]) => `${token}: ${declared.get(token) ?? '(無し)'} ≠ ${value}`,
+    );
+    expect(
+      wrong,
+      '🔴 ブランド色は `docs/design-system.md` §3.1 の hex そのものです（`#2563EB` / `#1D4ED8`）。' +
+        '🔴 **Tailwind の階調（`var(--color-blue-600)`）に戻さないこと** —— v4 のパレットは oklch で' +
+        'あり、`blue-600` は `#155DFC`（彩度が 1 段高い別の青）です。大面積の primary ボタンに' +
+        '載せると「明るすぎて目がちかちかする」と報告された色に戻ります（2026-10-15）。',
+    ).toEqual([]);
   });
 
   it('🔴 component 層の色が「部品 1 つのため」であり、値が §7.9 改訂 23 のとおりである', () => {

@@ -2994,7 +2994,12 @@ const ja = {
   'projects.list.requirements.yearsOrMore': '年以上',
   // --- 検索条件（`docs/04` §S-010 セクション 1）---
   'projects.list.search.legend': '検索条件',
-  'projects.list.search.q': 'フリーワード（案件名・外部公開用の記載）',
+  // ✅ **2026-10-15（人間の指示 + 受領画像「自社案件管理_案件一覧.png」）: 語を短くし、
+  //    何を探せるかはプレースホルダに移した**（画像の検索欄は虫眼鏡 + プレースホルダだけである）。
+  //    🔴 **キーは動かしていない**（`U-22` の凍結。値だけを変えた）。
+  //    🔴 **画像の「企業名」は書かない** —— `#25` の `q` は案件名と外部公開用の記載しか見ない。
+  'projects.list.search.q': 'フリーワード',
+  'projects.list.search.qPlaceholder': '案件名・外部公開用の記載から探す',
   'projects.list.search.status': '案件の状態',
   'projects.list.search.statusAll': 'すべて',
   'projects.list.search.startFrom': '開始日（この日以降）',
@@ -3004,6 +3009,15 @@ const ja = {
   //    —— 同じ条件が画面ごとに別の名前で出ると、同じものだと分からない（`docs/04` §7.8）。
   'projects.list.search.priceMin': '単価（下限）',
   'projects.list.search.priceMax': '単価（上限）',
+  // ✅ **2026-10-15: 受領画像どおり「下限 〜 上限 + 単位」の 1 つの欄に組んだ**（上の 2 つは
+  //    **欄ごとの読み上げの語**として残る —— 塊のラベルは 1 つしか無いため）。
+  //    🔴 **単位は「円」である**（画像は「万円」だが、送信値は `#25` の query と同じ円である。
+  //    [Issue #115](https://github.com/Festal-KM/SES-Platform/issues/115)）。
+  'projects.list.search.price': '単価（月額）',
+  'projects.list.search.priceMinPlaceholder': '下限なし',
+  'projects.list.search.priceMaxPlaceholder': '上限なし',
+  'projects.list.search.priceRangeSeparator': '〜',
+  'projects.list.search.priceUnit': '円',
   'projects.list.search.submit': '検索',
   'projects.list.search.clear': '条件をクリア',
   // 🔴 `docs/04` §10.1 `S-010`: **初回空と絞込 0 を別文言にする。**

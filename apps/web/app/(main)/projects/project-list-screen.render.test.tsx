@@ -55,6 +55,13 @@ const messages: ProjectListScreenMessages = {
   searchPrefecture: '勤務地（都道府県）',
   searchPriceMin: '単価（下限）',
   searchPriceMax: '単価（上限）',
+  // ✅ 2026-10-15: 受領画像の絞り込みカード（虫眼鏡 + プレースホルダ / 単価の 1 つの欄）。
+  searchQPlaceholder: '案件名・外部公開用の記載から探す',
+  searchPrice: '単価（月額）',
+  searchPriceMinPlaceholder: '下限なし',
+  searchPriceMaxPlaceholder: '上限なし',
+  searchPriceRangeSeparator: '〜',
+  searchPriceUnit: '円',
   searchSubmit: '検索',
   searchClear: '条件をクリア',
   register: '案件を登録',

@@ -188,12 +188,35 @@
    * `APPROVAL_PENDING` `SUBMITTING` `REQUESTED`。
    * 🔴 階調は docs/04 `Q-04-2` の既定 ①（`indigo-700`）。**ブランド確定（Issue #1）に従属**し、
    *    変えるときはこの 1 行だけを差し替える。 */
-  /* ✅ **2026-10-13（`docs/design-system.md` §3.1）: 藍（`indigo-700`）から青（`blue-600`）に変えた。**
-   * 🔴 人間のデザインシステム定義 v1.0 の `--primary: #2563EB` = `blue-600` の実値そのものである
-   *    （階調を参照したまま一致した。独自 hex を起こしていない）。hover は `#1D4ED8` = `blue-700`。 */
-  --color-brand: var(--color-blue-600);
-  --color-brand-hover: var(--color-blue-700);
-  --color-brand-active: var(--color-blue-800);
+  /* ✅ **2026-10-13（`docs/design-system.md` §3.1）: 藍（`indigo-700`）から青（`blue-600`）に変えた。** */
+  /* 🔴🔴 **2026-10-15: 階調の参照をやめ、仕様書の hex をそのまま置いた**（人間の報告
+   *    「案件を登録ボタンの色が明るすぎて目がちかちかする」）。
+   *
+   *    原因は **Tailwind v4 のパレットが oklch に変わっていること**である。v3 の `blue-600` は
+   *    `#2563EB`（= 人間のデザインシステム定義 v1.0 の `--primary`）だったが、
+   *    **v4 の `blue-600` は `oklch(54.6% 0.245 262.881)` = `#155DFC`** であり、明度はほぼ同じまま
+   *    **彩度だけが 0.215 → 0.245 に上がっている**（実測。`node` で oklch → sRGB 変換）。
+   *    大面積の primary ボタンに載るとこの差がそのまま「目に刺さる青」になる。
+   *    上の ✅ の「階調を参照したまま一致した」は **v3 の値での照合であり、誤りだった**。
+   *
+   *    | トークン | 仕様書 v1.0 | v4 の階調（これまでの実値） |
+   *    |---|---|---|
+   *    | `--color-brand` | `#2563EB` | `blue-600` = `#155DFC` |
+   *    | `--color-brand-hover` | `#1D4ED8` | `blue-700` = `#1447E6` |
+   *    | `--color-brand-active` | （規定なし。同じ族の 1 段下 = v3 `blue-800`）`#1E40AF` | `blue-800` = `#193CB8` |
+   *
+   * 🔴 **`U-21`（独自の hex を起こさない）の例外である。** 例外にする理由は「好みの色を作る」
+   *    ためではなく、**ブランド色だけは人間が確定した値そのものが仕様だから**である
+   *    （`docs/design-system.md` §3.1 / `CLAUDE.md` §8.6 のブランドは人間の判断事項）。
+   *    `U-21` の根拠（階調は明度が検証済みでコントラストが予測できる）は、**仕様の hex に対して
+   *    実測で担保する**（白文字 5.15:1 / 白地 5.15:1 / `bg-subtle` 4.70:1。
+   *    `tests/static/design-tokens.test.ts` が測る）。
+   * 🔴 **`brand-bg` は階調のまま**（`blue-50` = `#EFF6FF`。仕様書の `--primary-soft` `#E8F1FF` との
+   *    差は `docs/design-system.md` §6 に記録済みであり、**淡い面であって「明るすぎる」の原因ではない**）。
+   * 🔴 **意味の割り当て（§7.4）は 1 文字も変えていない。** 変えたのは同じ青の彩度だけである。 */
+  --color-brand: #2563eb;
+  --color-brand-hover: #1d4ed8;
+  --color-brand-active: #1e40af;
   --color-brand-bg: var(--color-blue-50);
   --color-brand-fg: var(--color-white);
 

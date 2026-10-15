@@ -329,15 +329,27 @@ export type NavSection = {
 /**
  * `人材管理` / `案件管理` の第 2 階層（タブ）。
  *
- * 🔴 **ここが畳み込みで消えた項目の到達手段である。** `共有の設定`（`S-015`）/ `提案`（`S-019`）/
- *    `提案依頼`（`S-017`）はサイドバーから消えたが、**同じロール条件のまま**ここに在る。
  * 🔴 **`共有の設定` は取引先所属かつ `isEngineerShareRole` のときだけ**（経路 4 の opt-in を
  *    動かせるのは自社の人材を持つ側だけであり、ホストは他社の共有設定に触れない。docs/04 §3.2）。
- * 🔴 **並びは業務ループ（`CLAUDE.md` §1.3）のまま**: 案件 → 提案 → 提案依頼。
  * ⚠️ `候補`（`S-016`）/ `面談・結果`（`S-024`）/ `契約` / `稼働` をタブにしていない ——
  *    前 2 つは単独の URL を持たず（案件・提案から開く）、後 2 つは Phase 2 / 3 で画面が無い。
  *    **タブは「別の URL へ遷移するもの」だけが載る**（押せないタブは `docs/04` §10.3 の
  *    「タブは同一対象の面の切替」にも反する）。
+ *
+ * ============================================================================
+ * 🔴🔴 **2026-10-15（人間の明示指示「案件一覧、提案、提案依頼のタブは不要です」）**
+ * ============================================================================
+ * `案件管理` の第 2 階層を **`案件一覧` の 1 枚だけ**にした。タブが 1 枚の帯は
+ * `navSectionsWithTabs` が外すので、**案件管理の上のタブの帯はどのロールでも描かれなくなる**。
+ *
+ * 🔴 **`提案`（`S-019`）/ `提案依頼`（`S-017`）はサイドバーへ移した**（`buildMainNav`）——
+ *    **消していない。** この 2 画面はこの帯が唯一の入口であり、ただ外すと
+ *    **画面は在るのに誰も開けない**（`tests/static/nav-reach.test.ts` 冒頭の「最悪の壊れ方」）。
+ *    とくに `提案依頼` は取引先（1 日 4〜5 時間の主利用者。`CLAUDE.md` §1.2）の返答期限の
+ *    入口であり、ここが消えると**期限に気づけない**。
+ * 🔴 **到達集合・ロール条件は 1 つも変えていない**（置き場所だけが帯 → サイドバーに移った。
+ *    `nav-reach.test.ts` ① が機械的に固定する）。
+ * ⚠️ 置き場所は**人間の判断事項**として [Issue #114] に既定つきで起票した（既定 = サイドバー）。
  */
 export function buildNavSections(context: NavContext): readonly NavSection[] {
   const engineers: NavItem[] = [
@@ -357,10 +369,9 @@ export function buildNavSections(context: NavContext): readonly NavSection[] {
     {
       id: 'projects',
       labelKey: context.audience === 'HOST' ? 'shell.nav.host.projects' : 'shell.nav.partner.projects',
+      // 🔴 1 枚だけ（上の 🔴）。`navSectionsWithTabs` がこのセクションを帯から外す。
       items: [
         link('projects', 'shell.section.projects.list', 'briefcase', PROJECT_SECTION_PATH), // S-010
-        link('proposals', 'shell.nav.proposals', 'send', '/proposals'), // S-019
-        link('proposal-requests', 'shell.nav.proposalRequests', 'inbox', '/proposal-requests'), // S-017
       ],
     },
   ];
@@ -452,8 +463,22 @@ export function buildMainNav(context: NavContext): readonly NavGroup[] {
           context.audience === 'HOST' ? 'shell.nav.host.projects' : 'shell.nav.partner.projects',
           'briefcase',
           PROJECT_SECTION_PATH,
-          // 🔴 S-017 の返答期限（docs/04 §3.1 の取引先列）。畳み込みで `提案依頼` が第 2 階層へ
-          //    移ったので、**その親である `案件管理` の行**が期限を預かる（`NavContext` の 🔴）。
+          null,
+          sectionPathsOf('projects'),
+        ),
+        // ✅ **2026-10-15（人間の明示指示「案件一覧、提案、提案依頼のタブは不要です」）: 第 2 階層の
+        //    タブから、サイドバーの項目に戻した 2 つ**（`buildNavSections` の 🔴🔴）。
+        // 🔴 **到達集合もロール条件も 1 つも変わっていない。** 畳み込み（2026-10-03）以前も
+        //    この 2 つはサイドバーの項目であり、置き場所が 2 往復しただけである。
+        // 🔴 **並びは業務ループ（`CLAUDE.md` §1.3）のまま**: 案件 → 提案 → 提案依頼。
+        link('proposals', 'shell.nav.proposals', 'send', '/proposals'), // S-019
+        link(
+          'proposal-requests',
+          'shell.nav.proposalRequests',
+          'inbox',
+          '/proposal-requests', // S-017
+          // 🔴 S-017 の返答期限（docs/04 §3.1 の取引先列）。**期限はその画面の項目が持つ**
+          //    （タブへ畳んでいた間だけ、親の `案件管理` が預かっていた。`NavContext` の 🔴）。
           //    ホストに出さないのは docs/04 の表が取引先列にしか書いていないからである
           //    （ホスト側の期限の見張りは `S-003` の要対応キューが持つ）。
           proposalRequestDue === null || context.audience !== 'PARTNER'
@@ -464,7 +489,6 @@ export function buildMainNav(context: NavContext): readonly NavGroup[] {
                 // 🔴 アイコンのみの形態で点に添える語（期限も件数も含まない。`NavBadge` の 🔴）。
                 dotLabelKey: 'shell.nav.proposalRequests.due.dot',
               },
-          sectionPathsOf('projects'),
         ),
         // ✅ **2026-10-14（人間の指示「案件管理は人材管理の上に配置する」）: `案件` が `人材` の上。**
         // 🔴 **到達集合も射程も 1 つも変わっていない**（並び替えただけである）。
