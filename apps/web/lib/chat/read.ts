@@ -30,10 +30,19 @@
 //
 // 🔴 本モジュールは Next.js / Auth.js に依存しない（分離テストがサーバを立てずに同じ経路を実行できる。
 //    `lib/proposals/list.ts` と同方針）。
-import { withTenant, type AuthenticatedTenantCtx } from '@ses/db';
+import { freeWordFilter, withTenant, type AuthenticatedTenantCtx } from '@ses/db';
 import { requireFound, ValidationError } from '../api/errors';
 import { buildCursorPage, takeForCursorPage, type CursorPage } from '../api/pagination';
 import type { ChatMessageListQuery, ChatThreadListQuery } from './schemas';
+import {
+  MESSAGE_SEARCH_LIMIT,
+  MESSAGE_SEARCH_MIN_LENGTH,
+  buildThreadTree,
+  messageSnippet,
+  type ChatThreadGroup,
+  type ChatThreadSort,
+} from './thread-tree';
+import { FAST_REPLY_WINDOW_DAYS, fastReplyGroupKeys, isAwaitingReply } from './reply-speed';
 import {
   chatThreadCursorWhere,
   decodeChatThreadCursor,
@@ -190,6 +199,123 @@ async function readThreadPage(
 }
 
 /**
+ * ✅ 2026-10-14（チャットレーン）: 画面の一覧を**会社ごとの木**にするために読む上限。
+ * 🔴 木は会社ごとにまとめるので、ページ単位では組めない（同じ会社のスレッドがページをまたぐ）。
+ *    上限を超えたら `truncated` を立て、画面は「古いスレッドは表示していません」と書く（黙って落とさない）。
+ */
+export const CHAT_THREAD_TREE_MAX = 1000;
+
+/** 本文の検索で当たった発言 1 件。🔴 読めた発言だけ（RLS の C6）。本文は前後だけの抜粋。 */
+export type ChatMessageHit = {
+  readonly threadId: string;
+  readonly messageId: string;
+  readonly sentAt: string;
+  /** スレッドの名前（案件名、無ければ相手の会社名）。 */
+  readonly threadTitle: string | null;
+  readonly snippet: string;
+};
+
+export type ChatThreadTreeData = {
+  readonly groups: readonly ChatThreadGroup[];
+  /** ✅ 2026-10-14: 要返信（最後の発言が相手から）のスレッド。 */
+  readonly awaitingReplyIds: readonly string[];
+  /** ✅ 2026-10-14: 本文の検索で当たった発言（`q` が 2 文字以上のときだけ。新しい順に最大 20 件）。 */
+  readonly messageHits: readonly ChatMessageHit[];
+  /** 上限を超えたので、古いスレッドを読んでいない。 */
+  readonly truncated: boolean;
+};
+
+/**
+ * ✅ 2026-10-14: スレッド一覧を会社ごとの木で読む（`lib/chat/thread-tree.ts`）。
+ * 🔴 母集団は `readThreadPage` と同じ（`where` に境界を書かない。RLS の C6 が決める）。並びも同じ。
+ */
+async function readThreadTree(
+  ctx: AuthenticatedTenantCtx,
+  db: Pick<TenantDb, 'chatThread' | 'partnerCompany' | 'tenant' | 'project' | 'message'>,
+  options: { readonly sort: ChatThreadSort; readonly q: string | null },
+): Promise<ChatThreadTreeData> {
+  const rows = (await db.chatThread.findMany({
+    select: CHAT_THREAD_SELECT,
+    orderBy: [{ lastMessageAt: { sort: 'desc', nulls: 'last' } }, { id: 'desc' }],
+    take: CHAT_THREAD_TREE_MAX + 1,
+  })) as readonly SelectedThreadRow[];
+  const truncated = rows.length > CHAT_THREAD_TREE_MAX;
+  const kept = truncated ? rows.slice(0, CHAT_THREAD_TREE_MAX) : rows;
+  const counterpartyOf = await resolveCounterpartyNames(ctx, db, kept.map((row) => row.partnerCompanyId));
+  const projects = await resolveProjectRefs(db, kept.map((row) => row.projectId));
+  // ✅ 2026-10-14: 要返信と返信の速さ（`reply-speed.ts`）。🔴 発言の**時刻と送った側だけ**を読む（本文を読まない）。
+  //    母集団は `messages` の RLS（C6）。`where` は「どのスレッドか」と期間だけで、境界を書き足さない。
+  const threadIds = kept.map((row) => row.id);
+  const host = ctx.partnerCompanyId === null;
+  const lastMessages =
+    threadIds.length === 0
+      ? []
+      : await db.message.findMany({
+          where: { threadId: { in: threadIds } },
+          distinct: ['threadId'],
+          orderBy: [{ threadId: 'asc' }, { sentAt: 'desc' }, { id: 'desc' }],
+          select: { threadId: true, senderPartnerCompanyId: true },
+        });
+  // 読み手から見た「相手」: ホストなら取引先の発言、取引先ならホストの発言。
+  const awaitingReplyIds = lastMessages
+    .filter((message) => isAwaitingReply({ fromCounterparty: host ? message.senderPartnerCompanyId !== null : message.senderPartnerCompanyId === null }))
+    .map((message) => message.threadId);
+  // 🔴 返信が早い取引先は**ホストにだけ**（取引先には他社との比較を出さない）。
+  let fastReplyKeys: ReadonlySet<string> = new Set();
+  if (host && threadIds.length > 0) {
+    const since = new Date(Date.now() - FAST_REPLY_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+    const recent = await db.message.findMany({
+      where: { threadId: { in: threadIds }, sentAt: { gte: since } },
+      select: { threadId: true, senderPartnerCompanyId: true, sentAt: true },
+    });
+    const groupOf = new Map(kept.map((row) => [row.id, row.partnerCompanyId]));
+    fastReplyKeys = fastReplyGroupKeys(
+      recent.map((message) => ({
+        threadId: message.threadId,
+        groupKey: groupOf.get(message.threadId) ?? message.threadId,
+        fromPartner: message.senderPartnerCompanyId !== null,
+        sentAt: message.sentAt,
+      })),
+    );
+  }
+  const groups = buildThreadTree(
+    kept.map((row) => ({
+      groupKey: row.partnerCompanyId,
+      item: chatThreadListItem(row, {
+        project: row.projectId === null ? null : projects.get(row.projectId) ?? null,
+        counterpartyName: counterpartyOf(row.partnerCompanyId),
+      }),
+    })),
+    { ...options, fastReplyKeys },
+  );
+  // ✅ 2026-10-14: 本文の検索（紺野の決定）。🔴 母集団は `messages` の RLS（C6）だけ（`where` は検索語とスレッドだけ）。
+  //    照合は `@ses/db` の `freeWordFilter`（検索の実装の唯一の出所。docs/05 TBD-8 / `search-sql-single-path.test.ts`）。
+  //    削除済みの本文（`NULL`）は当たらない。短すぎる語（2 文字未満）では走査しない。
+  const needle = options.q?.trim() ?? '';
+  const allTitles = new Map(
+    kept.map((row) => [row.id, projects.get(row.projectId ?? '')?.name ?? counterpartyOf(row.partnerCompanyId)] as const),
+  );
+  const messageHits: ChatMessageHit[] =
+    needle.length < MESSAGE_SEARCH_MIN_LENGTH || threadIds.length === 0
+      ? []
+      : (
+          await db.message.findMany({
+            where: { threadId: { in: threadIds }, body: freeWordFilter(needle) },
+            select: { id: true, threadId: true, body: true, sentAt: true },
+            orderBy: [{ sentAt: 'desc' }, { id: 'desc' }],
+            take: MESSAGE_SEARCH_LIMIT,
+          })
+        ).map((message) => ({
+          threadId: message.threadId,
+          messageId: message.id,
+          sentAt: message.sentAt.toISOString(),
+          threadTitle: allTitles.get(message.threadId) ?? null,
+          snippet: messageSnippet(message.body ?? '', needle),
+        }));
+  return { groups, truncated, awaitingReplyIds, messageHits };
+}
+
+/**
  * 1 スレッドの行（🔴 見えなければ `null`。呼び出し側が 404 に畳む）。
  *
  * 🔴 **投稿（`service.ts`）もこの 1 実装を通る。** 「投稿先として指定されたスレッドが見えるか」を
@@ -343,6 +469,7 @@ export async function listChatMessages(
 
 /** 画面（`S-031`）が 1 リクエストで必要とするもの。 */
 export type ChatScreenData = {
+  /** ページ単位の一覧。🔴 `input.tree` を渡したときは読まない（空のページ）。 */
   readonly threads: ChatThreadListView;
   /** 選択したスレッド（`?thread=` が無い / 見えないときは `null`）。 */
   readonly thread: ChatThreadDetailView | null;
@@ -360,6 +487,11 @@ export type ChatScreenData = {
    * 🔴 左端（`thread`）が見えないときは読まない（空配列）。
    */
   readonly panes: readonly ChatPaneData[];
+  /**
+   * ✅ 2026-10-14: 会社ごとの木（`input.tree` を渡したときだけ。渡さなければ `null`）。
+   * 🔴 `threads`（ページ単位の一覧）と母集団は同じで、並べ方だけが違う。
+   */
+  readonly tree: ChatThreadTreeData | null;
 };
 
 /** 右に並べた会話 1 本ぶん。 */
@@ -384,10 +516,16 @@ export async function readChatScreen(
     readonly messagesQuery: ChatMessageListQuery;
     /** 右に並べる会話（左から順。省略時は無し）。 */
     readonly paneIds?: readonly string[];
+    /** ✅ 2026-10-14: 一覧を会社ごとの木でも読む（画面だけが使う。API #49 は従来のページ単位のまま）。 */
+    readonly tree?: { readonly sort: ChatThreadSort; readonly q: string | null };
   },
 ): Promise<ChatScreenData> {
   return withTenant(ctx, async (db) => {
-    const threads = await readThreadPage(ctx, db, input.threadsQuery);
+    // ✅ 2026-10-14（レビュー指摘）: 木を読むときはページ単位の一覧を読まない（画面は木しか使わず、
+    //    読んでも捨てるだけになる）。`threads` は空のページで返す。
+    const tree = input.tree === undefined ? null : await readThreadTree(ctx, db, input.tree);
+    const threads: ChatThreadListView =
+      tree === null ? await readThreadPage(ctx, db, input.threadsQuery) : { items: [], nextCursor: null };
     if (input.threadId === null) {
       return {
         threads,
@@ -395,6 +533,7 @@ export async function readChatScreen(
         messages: { items: [], nextCursor: null },
         requestedThreadMissing: false,
         panes: [],
+        tree,
       };
     }
     const thread = await readThreadDetail(ctx, db, input.threadId);
@@ -405,6 +544,7 @@ export async function readChatScreen(
         messages: { items: [], nextCursor: null },
         requestedThreadMissing: true,
         panes: [],
+        tree,
       };
     }
     const messages = await readMessagePage(ctx, db, input.threadId, input.messagesQuery);
@@ -421,7 +561,7 @@ export async function readChatScreen(
             : await readMessagePage(ctx, db, paneId, input.messagesQuery),
       });
     }
-    return { threads, thread, messages, requestedThreadMissing: false, panes };
+    return { threads, thread, messages, requestedThreadMissing: false, panes, tree };
   });
 }
 

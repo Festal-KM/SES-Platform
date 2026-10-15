@@ -507,6 +507,52 @@ describe('🔴 ⑥ 参加会社は `thread_participants`（C5）が返した行�
     expect(hiddenLeft.requestedThreadMissing).toBe(true);
     expect(hiddenLeft.panes).toEqual([]);
   });
+
+  it('🔴 ✅ 2026-10-14: 会社ごとの木（`tree`）も RLS の母集団だけ —— 他社の行・ID・会社の鍵が出ず、検索で存在を探れない', async () => {
+    const { readChatScreen } = await import('../../apps/web/lib/chat/read');
+    const read = (ctx: AuthenticatedTenantCtx, q: string | null) =>
+      readChatScreen(ctx, {
+        threadId: null,
+        threadsQuery: { limit: 50 },
+        messagesQuery: { limit: 50 },
+        tree: { sort: 'recent', q },
+      });
+
+    // (a) 取引先 A1 の木には A1 のスレッドだけ。A2 のスレッド ID は結果のどこにも無い。
+    const forA1 = await read(partnerA1, null);
+    const a1Json = JSON.stringify(forA1.tree);
+    expect(a1Json).toContain(THREAD_A_P1);
+    expect(a1Json).not.toContain(THREAD_A_P2);
+    // 🔴 未公開案件のスレッド（参加はしている）は出ても、案件名は読めない（`project: null`）。
+    expect(a1Json).not.toContain('Project A Private');
+    // (d) 会社の鍵（`partner_company_id`）は出力に載らない。
+    expect(a1Json).not.toContain(PARTNER_A1);
+    expect(a1Json).not.toContain(PARTNER_A2);
+    // 木を読むときはページ単位の一覧を読まない（レビュー指摘）。
+    expect(forA1.threads).toEqual({ items: [], nextCursor: null });
+    // ✅ 2026-10-14: 要返信は自分が読めるスレッドだけ。🔴 「返信が早い」は取引先には決して付かない（他社との比較を出さない）。
+    expect(forA1.tree?.awaitingReplyIds.every((id) => id !== THREAD_A_P2)).toBe(true);
+    expect(forA1.tree?.groups.every((group) => !group.fastReply)).toBe(true);
+    // ✅ 2026-10-14: 本文の検索も RLS の母集団だけ。🔴 A1 が A2 の本文で検索しても 0 件（自社の本文は当たる = 対照）。
+    expect((await read(partnerA1, BODY_P2)).tree?.messageHits).toEqual([]);
+    const ownHits = (await read(partnerA1, BODY_P1)).tree?.messageHits ?? [];
+    expect(ownHits.length).toBeGreaterThan(0);
+    expect(ownHits.every((hit) => hit.threadId !== THREAD_A_P2)).toBe(true);
+    // 1 文字では走査しない。
+    expect((await read(partnerA1, 'p')).tree?.messageHits).toEqual([]);
+
+    // (b) A1 が A2 の社名・未公開案件名で検索しても 0 件（存在を探れない）。
+    expect((await read(partnerA1, COMPANY_A2)).tree?.groups).toEqual([]);
+    expect((await read(partnerA1, 'Project A Private')).tree?.groups).toEqual([]);
+
+    // (c) ホストには 2 社が別々のまとまりとして出る（対照）。ホストの検索は A2 の社名で当たる。
+    const forHost = await read(hostSales, null);
+    const names = (forHost.tree?.groups ?? []).map((group) => group.counterpartyName);
+    expect(names).toEqual(expect.arrayContaining([COMPANY_A1, COMPANY_A2]));
+    expect(JSON.stringify(forHost.tree)).not.toContain(PARTNER_A1);
+    const hostSearch = await read(hostSales, COMPANY_A2);
+    expect(hostSearch.tree?.groups.map((group) => group.counterpartyName)).toEqual([COMPANY_A2]);
+  });
 });
 
 describe('🔴 ⑪ スレッド一覧のページング（`last_message_at` が `NULL` の行が落ちない）', () => {
