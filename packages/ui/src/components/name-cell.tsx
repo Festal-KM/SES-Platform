@@ -96,6 +96,14 @@ export type NameCellProps = Omit<TableCellProps, 'whitespace' | 'children' | 'ti
   readonly nameComponent?: ComponentType<NameCellNameProps>;
   /** 導線（`<a>`）または行内操作（`nameComponent`）に付ける `data-testid`。セル自身の testid は `data-testid` で渡す。 */
   readonly linkTestId?: string;
+  /**
+   * ✅ **2026-10-15: 名称の前に置く小さな印**（人間が提示した案件一覧の画像: 状態の色の点）。
+   *
+   * 🔴 **語を持たせない。** ここに入るのは `StatusDot` のような**同じ行の語の補助**であり、
+   *    ここにしか無い情報を置くと、切り詰めた名称の前に読めない記号が増えるだけになる。
+   * 🔴 **折り返しの外に置く**（名称の `span` の外）—— 中に入れると 2 行目の行頭に点が回り込む。
+   */
+  readonly leading?: ReactNode;
 };
 
 export function NameCell({
@@ -104,6 +112,7 @@ export function NameCell({
   linkComponent: LinkComponent = DefaultLink,
   nameComponent: NameComponent,
   linkTestId,
+  leading,
   className,
   ...props
 }: NameCellProps) {
@@ -113,6 +122,7 @@ export function NameCell({
       className={cn(NAME_CELL_MIN_WIDTH_CLASS, href === null ? null : NAME_CELL_MAX_WIDTH_CLASS, className)}
       {...props}
     >
+      {leading === undefined ? null : <span className="mr-2 inline-flex align-middle">{leading}</span>}
       <span className={href === null ? NAME_CELL_TEXT_WRAP_CLASSES : NAME_CELL_TEXT_CLASSES} title={name}>
         {href === null ? (
           NameComponent === undefined ? (

@@ -109,6 +109,7 @@ const ALLOWED_ICON_SIZES = new Set(['4', '5', '6']);
  * |---|---|---|
  * | `components/avatar.tsx` | `size-8` | **アバターの円**（32px = `--control-h-sm` と同じ段。上部バーの 1 段を押し広げない） |
  * | `components/sidebar.tsx` | `size-2` | **期限の点**（8px。アイコンではなく印であり、`--space-2` の段） |
+ * | `components/badge.tsx` | `size-2` | ✅ **2026-10-15: 状態の点**（`StatusDot`。8px。同上。人間が提示した案件一覧の画像） |
  *
  * 🔴 **ファイル単位で許さず、語単位で固定する** —— `sidebar.tsx` を丸ごと除外すると、
  *    あのファイルに `size-6` が入っても気づけない。
@@ -116,6 +117,7 @@ const ALLOWED_ICON_SIZES = new Set(['4', '5', '6']);
 const NON_ICON_SQUARES: ReadonlyArray<readonly [file: string, utility: string]> = [
   ['packages/ui/src/components/avatar.tsx', 'size-8'],
   ['packages/ui/src/components/sidebar.tsx', 'size-2'],
+  ['packages/ui/src/components/badge.tsx', 'size-2'],
 ];
 
 function isNonIconSquare(file: string, utility: string): boolean {

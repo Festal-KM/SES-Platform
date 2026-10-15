@@ -324,6 +324,63 @@ export type StatusBadgeProps<E extends StatusBadgeEntity> = Omit<
  *
  *   <StatusBadge entity="proposal" state="GATE_FAILED" label={t('proposal.state.GATE_FAILED')} />
  */
+/**
+ * 🔴 **状態の点**（✅ 2026-10-15。人間が提示した案件一覧の画像: 案件名の左に状態の色の点）。
+ *
+ * 🔴 **色は `StatusBadge` と同じ 1 つの表（`STATUS_BADGE_APPEARANCES`）からしか決まらない。**
+ *    画面が色を選べる口を作らない —— 作った瞬間に「状態 → 色」の写像が 2 本になり、
+ *    `docs/04` §5-13「1 箇所でしか色が決まらないことが §7.4 を守る唯一の方法」が壊れる。
+ * 🔴 **点は語を持たない。** 同じ行の `StatusBadge` が語を出しているので、読み上げでは
+ *    二重になる（`aria-hidden`）。**点だけの行を作らない**（点は語の補助である）。
+ * ⚠️ `rounded-sm`（4px）は 8px の箱では真円になる（§7.9 の radius は 2 段で `rounded-full` は
+ *    アバターとカウンタに限る。`sidebar.tsx` の点と同じ扱い）。
+ */
+export function StatusDot<E extends StatusBadgeEntity>({
+  entity,
+  state,
+  className,
+}: {
+  readonly entity: E;
+  readonly state: StatusBadgeState<E>;
+  readonly className?: string;
+}) {
+  const appearance = APPEARANCE_LOOKUP[entity]?.[state];
+  if (appearance === undefined) {
+    throw new Error(
+      `StatusDot: ${entity} に状態 ${state} の見え方が定義されていません（docs/04 §5-1 の表に足してください）。`,
+    );
+  }
+  return (
+    <span
+      aria-hidden="true"
+      data-entity={entity}
+      data-state={state}
+      className={cn(
+        'inline-block size-2 shrink-0 rounded-sm',
+        STATUS_DOT_CLASSES[appearance.variant],
+        className,
+      )}
+    />
+  );
+}
+
+/**
+ * 点の色（🔴 **`badgeVariants` の `variant` と 1 対 1**。新しい系統を足さない）。
+ * ⚠️ Badge の塗りは面の色（`*-bg`）＋文字色だが、**点は面しか無い**ので文字色の側を使う ——
+ *    `*-bg`（`emerald-50` など）は 8px の点では地と区別できない（`sidebar.tsx` の点の 🔴 と
+ *    同じ実測）。
+ */
+const STATUS_DOT_CLASSES: Readonly<Record<BadgeVariant, string>> = {
+  neutral: 'bg-fg-muted',
+  brand: 'bg-brand',
+  info: 'bg-info',
+  success: 'bg-success',
+  warning: 'bg-warning',
+  // 🔴 枠線だけの Badge（`outline`）に対応する点は**無彩色**である（枠線色は点にすると見えない）。
+  outline: 'bg-fg-muted',
+  danger: 'bg-danger',
+};
+
 export function StatusBadge<E extends StatusBadgeEntity>({
   entity,
   state,

@@ -121,7 +121,14 @@ const HEAD_PADDING_CLASSES: Readonly<Record<TableCellPadding, string>> = {
  *    固定することではない**（高さを決めているのは余白と文字サイズの段の組み合わせである）。
  */
 const CELL_PADDING_CLASSES: Readonly<Record<TableCellPadding, string>> = {
-  normal: 'px-3 py-2',
+  // ✅ **2026-10-15: `py-2`（8px）→ `py-3`（12px）**（人間の決定。[Issue #99](https://github.com/Festal-KM/SES-Platform/issues/99)
+  //    の既定「現状維持」を覆す判断であり、受領した定義書 2 本〔人材管理 / 案件管理〕が
+  //    **どちらも行 45h / セル 14px** を指定していることが根拠である）。
+  //    🔴 **行の高さはここと文字サイズから「結果として」決まる**（上の 🔴 のまま）:
+  //    `py-3`（12px）× 2 + `--text-body`（14px）× 行間 1.6 = 22.4px → 46.4px、`border-b` を
+  //    含めて **約 47px**（定義書の 45h に最も近い段。`py-2.5` では 43px で下に離れる）。
+  //    🔴 **一覧 20 画面すべての密度が同時に変わる**（共有の部品である。これが #99 の論点だった）。
+  normal: 'px-3 py-3',
   compact: 'px-2 py-2',
 };
 
@@ -270,7 +277,10 @@ export function Table({ className, containerClassName, overflowNote, ...props }:
         containerClassName,
       )}
     >
-      <table className={cn('w-full caption-bottom text-cell', className)} {...props} />
+      {/* ✅ 2026-10-15: セルの文字を `--text-cell`（13px）→ `--text-body`（14px）にした
+          （定義書 2 本の「セル 14px」。🔴 **Badge / Button(sm) / リンクの 13px は動かしていない** ——
+          変えたのは**表のセルが継ぐ既定**だけである）。 */}
+      <table className={cn('w-full caption-bottom text-body', className)} {...props} />
     </div>
   );
   if (overflowNote === undefined) return container;

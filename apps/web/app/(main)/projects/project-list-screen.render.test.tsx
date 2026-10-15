@@ -340,7 +340,13 @@ describe('🔴 T-11-12: 案件名セルが docs/04 §10.3「長い名称」の�
     const html = render({ rows: [row({ name: '金融系 Web API 改修' })] });
     // ⚠️ **T-22-06: `<td>` の属性が増えたぶんだけ正規表現を緩めた（判定は 1 つも緩めていない）**。
     //    `DataTable` は列定義由来の `style="min-width:…"` と `data-column-id` をセルに付ける。
-    const cell = /<td class="([^"]*)"[^>]*>(<span class="[^"]*" title="金融系 Web API 改修">.*?<[/]span>)<[/]td>/.exec(html);
+    // ⚠️ ✅ **2026-10-15: 名称の前に状態の点（`StatusDot`）が入った**ぶん、`<td>` の直後に
+    //    1 つ `<span>` が増える（`NameCell.leading`）。**判定は 1 つも緩めていない** ——
+    //    名称の `<span>`（`title` 付き）の中身は下で同じだけ検査している。
+    const cell =
+      /<td class="([^"]*)"[^>]*>(?:<span class="mr-2[^"]*">.*?<[/]span>)?(<span class="[^"]*" title="金融系 Web API 改修">.*?<[/]span>)<[/]td>/.exec(
+        html,
+      );
     expect(cell).not.toBeNull();
     const classes = (cell?.[1] ?? '').split(' ');
     expect(classes).toContain('whitespace-normal');
@@ -355,6 +361,15 @@ describe('🔴 T-11-12: 案件名セルが docs/04 §10.3「長い名称」の�
     expect(link?.[1]).toContain(`href="/projects/${PROJECT_A}"`);
     expect(link?.[1]).toContain(`data-testid="project-list-link-${PROJECT_A}"`);
     expect(link?.[1]).not.toContain('truncate');
+  });
+
+  it('🔴 ✅ 2026-10-15: 名称の前に状態の点が出る（色は `StatusBadge` と同じ表から決まる）', () => {
+    const html = render({ rows: [row({ name: '金融系 Web API 改修' })] });
+
+    // 🔴 点は**状態を持つ**（`data-state`）。色クラスを画面が選べないことは `StatusDot` の型が守る。
+    expect(html).toContain('<span aria-hidden="true" data-entity="project" data-state="OPEN"');
+    // 🔴 点に語を持たせない（読み上げでは同じ行の Badge が語を出す）。
+    expect(html).toContain('aria-hidden="true"');
   });
 });
 

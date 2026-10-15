@@ -146,6 +146,11 @@ export function projectSummaryPanelMessages(): ProjectSummaryPanelMessages {
 const PROJECT_COLUMN_TOGGLE_MESSAGE_KEYS: Readonly<
   Record<ProjectHideableColumnId, { readonly hide: MessageKey; readonly show: MessageKey }>
 > = {
+  // ✅ 2026-10-15: 既定で格納する（`PROJECT_DEFAULT_HIDDEN_COLUMN_IDS`）。
+  mustRequirements: {
+    hide: 'projects.list.columnToggle.hide.mustRequirements',
+    show: 'projects.list.columnToggle.show.mustRequirements',
+  },
   visibility: {
     hide: 'projects.list.columnToggle.hide.visibility',
     show: 'projects.list.columnToggle.show.visibility',
@@ -157,10 +162,18 @@ export function projectColumnToggleItems(params: {
   readonly hidden: readonly ProjectHideableColumnId[];
   /** その列の表示 / 非表示を反転した URL（`projectColumnToggleHref`）。 */
   readonly hrefOf: (columnId: ProjectHideableColumnId) => string;
+  /**
+   * ✅ **2026-10-15: その利用者が実際に持っている列**（既定は全部）。
+   *
+   * 🔴 **取引先には `visibility` の行そのものが無い**（列が存在しない。`F-014 AC-4`）。一方で
+   *    `mustRequirements` は**両方が持つ**ので、🔴 **取引先にも切替を渡さないと、既定で
+   *    格納した列を戻す手段が無くなる**（到達性を落とさないことが格納の前提である）。
+   */
+  readonly ids?: readonly ProjectHideableColumnId[];
 }): readonly ColumnToggleItem[] {
-  const { hidden, hrefOf } = params;
+  const { hidden, hrefOf, ids = PROJECT_HIDEABLE_COLUMN_IDS } = params;
   // 🔴 並びは `PROJECT_HIDEABLE_COLUMN_IDS`（= 列の並び）で固定する（メニューの順序が動かない）。
-  return PROJECT_HIDEABLE_COLUMN_IDS.map((id) => {
+  return PROJECT_HIDEABLE_COLUMN_IDS.filter((id) => ids.includes(id)).map((id) => {
     const isHidden = hidden.includes(id);
     const keys = PROJECT_COLUMN_TOGGLE_MESSAGE_KEYS[id];
     return {

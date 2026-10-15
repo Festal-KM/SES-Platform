@@ -2979,6 +2979,9 @@ const ja = {
   // 🔴 **項目の語は「いまの状態に対する操作」で書く** —— メニューの項目はチェックの印を持たない
   //    （§5-13）ため、`公開先の設定状況` とだけ書くと開いても表示中か非表示中か分からない。
   'projects.list.columnToggle.trigger': '表示する列',
+  // ✅ 2026-10-15: 既定で格納する 2 列（人間の決定）。🔴 **1 クリックで戻せる**。
+  'projects.list.columnToggle.hide.mustRequirements': '「必須要件の要約」の列を隠す',
+  'projects.list.columnToggle.show.mustRequirements': '「必須要件の要約」の列を表示する',
   'projects.list.columnToggle.hide.visibility': '「公開先の設定状況」の列を隠す',
   'projects.list.columnToggle.show.visibility': '「公開先の設定状況」の列を表示する',
   // 🔴 0 件は「0 社に公開中」ではなく**状態の語**で出す（`F-014 AC-2` の既定に気づかせる）。

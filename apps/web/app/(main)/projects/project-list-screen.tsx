@@ -85,6 +85,7 @@ import {
   SECONDARY_LINK_CLASSES,
   Select,
   StatusBadge,
+  StatusDot,
   Toolbar,
   cn,
   type DataTableColumn,
@@ -194,6 +195,12 @@ function projectColumns(
       nameCell: {
         name: (row) => row.name,
         href: (row) => `/projects/${row.id}`,
+        // ✅ **2026-10-15: 状態の点**（人間が提示した案件一覧の画像。案件名の左）。
+        // 🔴 **色は `StatusBadge` と同じ 1 つの表から決まる**（`StatusDot` は `entity` /
+        //    `state` しか受け取らない。`docs/04` §5-13）。画面は色を選べない。
+        // 🔴 **点に語を持たせない** —— 同じ行の Badge が語を出しており、読み上げでは
+        //    `aria-hidden` で重複を避けている。
+        leading: (row) => <StatusDot entity="project" state={row.statusState} />,
       },
     },
     {
@@ -216,6 +223,9 @@ function projectColumns(
       minWidth: '10rem',
       // 🔴 余りはこの列に配分する（§7.1 の `2xl`「要件の要約」）。
       grow: true,
+      // ✅ **2026-10-15: 切替に格納できる列にした**（既定は非表示。人間の決定）。
+      //    🔴 **列を消していない** —— 1 クリックで戻せる（`PROJECT_DEFAULT_HIDDEN_COLUMN_IDS` の 🔴）。
+      hideable: true,
       whitespace: 'normal',
       cell: (row) => (
         <>
@@ -467,40 +477,43 @@ export function ProjectListScreen({
                     {/* 🔴 送信と「条件をクリア」は必ず 1 行を占める（列の途中に紛れると
                         押せる場所が毎回変わる）。`justify-end` はカードの中で右に寄せるための
                         配置の調整であり、共有定数（`FILTER_ACTIONS_CLASSES`）は変えていない。 */}
-                    <div className={cn(FILTER_ACTIONS_CLASSES, 'justify-end')}>
-                      {showClearFilters ? (
-                        <Link className={SECONDARY_LINK_CLASSES} href="/projects" data-testid="project-list-clear">
-                          {messages.searchClear}
-                        </Link>
-                      ) : null}
-                      <Button type="submit" data-testid="project-list-search">
-                        {messages.searchSubmit}
-                      </Button>
+                    {/* ✅ **2026-10-15: フッタ 1 行にまとめた**（人間が提示した画像 + 定義書 §1.6
+                        「フッタ行（Checkbox 左 / Secondary + Primary 右）」）。**左に「できないこと」
+                        と「表示する列」、右に クリア / 検索**。
+                        🔴 **一覧は「ファーストビューに 12 行以上」**（`docs/04` §7.1）であり、
+                           絞り込みの帯が縦に伸びるほど表が押し下げられる —— 実測で帯は 286px
+                           あり、3 行ぶんの行を食っていた。行の高さを定義書の 45h に上げる
+                           ぶん、**ここで取り戻す**。 */}
+                    <div className={cn(FILTER_ACTIONS_CLASSES, 'justify-between gap-y-2')}>
+                      <div className="flex flex-wrap items-center gap-3">
+                        {/* 🔴 まだ効かない条件を黙って描かない（`engineers.list.searchComingSoon` と同じ規律）。 */}
+                        <p className="text-xs text-fg-muted" data-testid="project-list-search-coming-soon">
+                          {messages.searchComingSoon}
+                        </p>
+                        {/* 🔴 **列表示切替の置き場所は帯である**（`docs/04` §5-13 / §7.1。`T-22-06`）。
+                            ✅ 2026-10-15: 既定で 2 列を格納したので、**ここが「戻す」唯一の入口**になった。 */}
+                        {columnToggleItems.length === 0 ? null : (
+                          <ColumnToggle
+                            columns={columnToggleItems}
+                            triggerLabel={messages.columnToggleTrigger}
+                            testIdPrefix="project-list-column-toggle-"
+                          />
+                        )}
+                      </div>
+                      <div className="flex items-center gap-4">
+                        {showClearFilters ? (
+                          <Link className={SECONDARY_LINK_CLASSES} href="/projects" data-testid="project-list-clear">
+                            {messages.searchClear}
+                          </Link>
+                        ) : null}
+                        <Button type="submit" data-testid="project-list-search">
+                          {messages.searchSubmit}
+                        </Button>
+                      </div>
                     </div>
                   </fieldset>
                 </form>
 
-                {/* 🔴 まだ効かない条件を黙って描かない（`engineers.list.searchComingSoon` と同じ規律）。
-                    ✅ SP-22 段④: 場所を絞り込みカードの中へ移した（**どの条件が無いのか**は
-                       条件の群の隣で読むものであり、一覧の上の独立した 1 行ではない）。 */}
-                <p className="mt-3 text-xs text-fg-muted" data-testid="project-list-search-coming-soon">
-                  {messages.searchComingSoon}
-                </p>
-
-                {/* 🔴 **列表示切替の置き場所は `Toolbar` である**（`docs/04` §5-13 / §7.1。`T-22-06`）。
-                    §5-13 の `Toolbar` は「検索 + フィルタ + 一括操作」の**置き場所を固定する**部品であり、
-                    列の出し入れも一覧の上の帯に属する —— **画面ごとに位置が変わらないこと**が条文の趣旨で
-                    あるため、検索の帯と同じ段（`filters`）に並べる。
-                    🔴 9 列目が無い取引先には `columnToggleItems` が空で届き、**何も描かない**。 */}
-                {columnToggleItems.length === 0 ? null : (
-                  <div className="mt-3">
-                    <ColumnToggle
-                      columns={columnToggleItems}
-                      triggerLabel={messages.columnToggleTrigger}
-                      testIdPrefix="project-list-column-toggle-"
-                    />
-                  </div>
-                )}
               </CardContent>
             </Card>
           }

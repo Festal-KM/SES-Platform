@@ -19,6 +19,7 @@ import { listProjects } from '../../../../lib/projects/list';
 import {
   hasProjectListFilters,
   parseHiddenProjectColumns,
+  PROJECT_HIDEABLE_COLUMN_IDS,
   projectColumnToggleHref,
   projectListHref,
   projectListPrimaryAction,
@@ -86,22 +87,17 @@ export default async function ProjectListPage({
   const selectedId = selectedProjectId(raw[PROJECT_SELECTED_PARAM], rows);
   const selectedRow = rows.find((row) => row.id === selectedId) ?? null;
   const canRegister = isProjectEditorRole(ctx.role);
-  // 🔴 9 列目（公開先の設定状況）そのものが無い取引先には**切替を渡さない**（`F-014 AC-4` / `BR-07`）。
-  const columnToggleItems = isPartner
-    ? []
-    : projectColumnToggleItems({
-        hidden: hiddenColumns,
-        // 🔴 検索条件と**いま見ているページ**（`cursor`）、**開いている行**を保つ
-        //    （列を外して行を見失わない / パネルが閉じない）。
-        hrefOf: (columnId) =>
-          projectColumnToggleHref(
-            query,
-            query.cursor ?? null,
-            hiddenColumns,
-            columnId,
-            selectedId,
-          ),
-      });
+  // 🔴 9 列目（公開先の設定状況）そのものが無い取引先には**その行を渡さない**（`F-014 AC-4` / `BR-07`）。
+  // ✅ **2026-10-15: 取引先にも切替そのものは渡す** —— `必須要件の要約` を既定で格納したため、
+  //    渡さないと**戻す手段が無くなる**（格納は「1 クリックで戻せる」ことが前提である）。
+  const columnToggleItems = projectColumnToggleItems({
+    ids: isPartner ? (['mustRequirements'] as const) : PROJECT_HIDEABLE_COLUMN_IDS,
+    hidden: hiddenColumns,
+    // 🔴 検索条件と**いま見ているページ**（`cursor`）、**開いている行**を保つ
+    //    （列を外して行を見失わない / パネルが閉じない）。
+    hrefOf: (columnId) =>
+      projectColumnToggleHref(query, query.cursor ?? null, hiddenColumns, columnId, selectedId),
+  });
 
   return (
     // 🔴 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`）。画面ファイルに
