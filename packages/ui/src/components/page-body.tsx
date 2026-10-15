@@ -75,15 +75,24 @@ export const PAGE_BODY_PROSE_MAX_WIDTH_CLASS = 'max-w-180';
 export const PAGE_BODY_ASIDE_WIDTH_CLASSES = 'w-full lg:w-97 lg:shrink-0';
 
 /**
- * 🔴 **主カラムが切ってはいけない下限 = 1,320px**（`basis-330` = 330 × 0.25rem）。
+ * 🔴 **主カラムが切ってはいけない下限 = 1,000px**（`basis-250` = 250 × 0.25rem）。
  *
- * 値の根拠は**最も広い一覧表の min-content**（`S-010` 案件一覧 = 9 列 **1,313px**。2026-10-03 の
- * 実測）を Tailwind の spacing 倍数に切り上げたものである。🔴 **「主カラムが表を収められる幅を
- * 保てるときだけ副カラムを並置する」**という判定をこの 1 つの数で表す（下の `'main-min'` の 🔴）。
+ * 値の根拠は**最も広い一覧表の min-content を Tailwind の spacing 倍数に切り上げたもの**である。
+ * 🔴 **「主カラムが表を収められる幅を保てるときだけ副カラムを並置する」**という判定を、この
+ * 1 つの数で表す（下の `'main-min'` の 🔴）。
+ *
+ * ✅ **2026-10-15: 1,320 → 1,000**（人間の決定。受領した画像のとおり**右の案件詳細パネルを
+ *    表の横に並べる**ため）。🔴 **下げたのは「表を狭くしたから」であって、表を切ってよいと
+ *    判断したからではない** —— `S-010` の既定の列を 9 → 7（+ 操作）にし、min-content を
+ *    **1,313 → 約 995px** に落としたうえで下限を引き下げている（`list-rows.ts` の
+ *    `PROJECT_DEFAULT_HIDDEN_COLUMN_IDS` の 🔴 / `tests/static/split-layout-width-regression.test.ts`
+ *    の `MEASURED_TABLES`）。
+ * 🔴 **この数と表の実測が離れたら、並置に入った瞬間に列が隠れる**（同テストの ③ が落ちる）。
+ *    表の列を増やすときは、ここを上げるか、増やした列を既定で格納するかの**どちらかが要る**。
  */
-export const PAGE_BODY_SPLIT_MAIN_MIN_PX = 1320;
+export const PAGE_BODY_SPLIT_MAIN_MIN_PX = 1000;
 /** 🔴 上の px と**対**。クラスと数のどちらかだけを変えると検査が落ちる。 */
-export const PAGE_BODY_SPLIT_MAIN_MIN_CLASS = 'basis-330';
+export const PAGE_BODY_SPLIT_MAIN_MIN_CLASS = 'basis-250';
 /** `split` の 2 カラムの間隔（`gap-6` = 24px）。🔴 幅の計算に入るので数でも持つ。 */
 export const PAGE_BODY_SPLIT_GAP_PX = 16;
 /** 副カラムの固定幅の最大値（`w-120` / `max-w-120` = 480px）。🔴 幅の計算に入るので数でも持つ。 */

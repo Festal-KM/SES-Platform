@@ -122,8 +122,14 @@ export function NameCell({
       className={cn(NAME_CELL_MIN_WIDTH_CLASS, href === null ? null : NAME_CELL_MAX_WIDTH_CLASS, className)}
       {...props}
     >
-      {leading === undefined ? null : <span className="mr-2 inline-flex align-middle">{leading}</span>}
       <span className={href === null ? NAME_CELL_TEXT_WRAP_CLASSES : NAME_CELL_TEXT_CLASSES} title={name}>
+        {/* 🔴 **印は名称の器の「中」に置く。** 器は `block`（`lg:truncate` のため）なので、
+            外に素の兄弟として置くと**行が分かれて行高が 2 倍になる**（2026-10-15 の実測:
+            47 → 70px）。中に置けば同じ行に流れ、切り詰めも効いたままである。
+            🔴 **リンク（`<a>`）の中には入れない** —— 印は名称の一部ではない。 */}
+        {leading === undefined ? null : (
+          <span className="mr-2 inline-block align-middle">{leading}</span>
+        )}
         {href === null ? (
           NameComponent === undefined ? (
             name

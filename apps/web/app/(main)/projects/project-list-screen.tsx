@@ -253,7 +253,9 @@ function projectColumns(
       id: 'startDate',
       header: messages.columnStartDate,
       priority: 'always',
-      minWidth: '8rem',
+      // ✅ 2026-10-15: 下限を実測に合わせて詰めた（`2026-11-11` は約 86px。右の案件詳細パネルを
+      //    横に並べるため、表の min-content を 1,059 → 約 995px にする）。
+      minWidth: '6rem',
       cell: (row) => row.startDate,
     },
     {
@@ -267,14 +269,18 @@ function projectColumns(
       id: 'headcount',
       header: messages.columnHeadcount,
       priority: 'lg',
-      minWidth: '5rem',
+      // ✅ 2026-10-15: 下限を実測に合わせて詰めた（`1 名` は約 40px。右の案件詳細パネルを
+      //    横に並べるため、表の min-content を 1,059 → 約 995px にする）。
+      minWidth: '4rem',
       cell: (row) => row.headcount,
     },
     {
       id: 'updatedOn',
       header: messages.columnUpdatedOn,
       priority: 'sm',
-      minWidth: '7rem',
+      // ✅ 2026-10-15: 下限を実測に合わせて詰めた（同上。右の案件詳細パネルを
+      //    横に並べるため、表の min-content を 1,059 → 約 995px にする）。
+      minWidth: '6rem',
       cell: (row) => row.updatedOn,
     },
     // 🔴 取引先には公開先の列を出さない（`F-014 AC-4` / `BR-07`）。**DOM から取り除く**。
@@ -403,10 +409,11 @@ export function ProjectListScreen({
                     {/* 🔴 フリーワードは**全幅**（ワイヤーフレームの検索欄）。最も使う条件を
                         1 行目に単独で置く —— 他の 3 条件と同じ幅に並べると、入力できる語数が
                         画面幅で変わる。 */}
-                    <Field
-                      className="sm:col-span-2 lg:col-span-3 xl:col-span-4"
-                      label={messages.searchQ}
-                    >
+                    {/* ✅ **2026-10-15: 全幅 → 2 列ぶん**（定義書 §1.6 の「検索 Input 420×36」+
+                        受領した画像）。🔴 **帯が 1 行ぶん縮む** —— 行の高さを 45px に上げた
+                        ぶん、一覧の「ファーストビューに 12 行以上」（`docs/04` §7.1）を
+                        ここで取り戻す。**条件は 1 つも減っていない。** */}
+                    <Field className="sm:col-span-2" label={messages.searchQ}>
                       <Input type="search" name="q" defaultValue={filters.q} data-testid="project-list-filter-q" />
                     </Field>
                     <Field label={messages.searchStatus}>

@@ -566,15 +566,19 @@ describe('🔴 SP-22 段④: 絞り込みカードと件数バー', () => {
     expect(form, '検索フォームがカードの外にある').toBeGreaterThan(card);
   });
 
-  it('🔴 フリーワードは全幅である（他の 3 条件と同じ幅に並べない）', () => {
+  it('🔴 フリーワードは他の条件より広い（同じ幅に並べない）', () => {
     const html = render();
     const label = /<label class="([^"]*)"[^>]*>\s*<span[^>]*>フリーワード/.exec(html);
 
     expect(label, 'フリーワードの欄が見つからない').not.toBeNull();
     const classes = (label?.[1] ?? '').split(' ');
+    // ✅ **2026-10-15: 全幅（4 列ぶん）→ 2 列ぶん**（定義書 §1.6 の「検索 Input 420×36」+
+    //    受領した画像）。🔴 **帯が 1 行ぶん縮む**（行を 45px に上げたぶんをここで取り戻す。
+    //    `docs/04` §7.1「一覧はファーストビューに 12 行以上」）。
+    // 🔴 **他の条件（1 列）より広いことは変えていない** —— 入力できる語数が画面幅で
+    //    変わらないための幅である。
     expect(classes).toContain('sm:col-span-2');
-    expect(classes).toContain('lg:col-span-3');
-    expect(classes).toContain('xl:col-span-4');
+    expect(classes).not.toContain('xl:col-span-4');
   });
 
   it('🔴 「効かない条件」の 1 行は絞り込みカードの中にある（条件の群の隣で読む）', () => {
