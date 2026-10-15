@@ -438,26 +438,32 @@ export function ProjectListScreen({
                            それは人材一覧にも同じ改修が要る話であり、**片方だけ別の形にしない**。
                         🔴 **述語（レンジの重なり）は `packages/db/src/search/unit-price-range.ts` の
                            1 本**である（人材検索と共有。T-06-03 の申し送りの決着）。 */}
-                    <Field label={messages.searchPriceMin}>
-                      <Input
-                        type="number"
-                        name="priceMin"
-                        min={0}
-                        step={10000}
-                        defaultValue={filters.priceMin}
-                        data-testid="project-list-filter-price-min"
-                      />
-                    </Field>
-                    <Field label={messages.searchPriceMax}>
-                      <Input
-                        type="number"
-                        name="priceMax"
-                        min={0}
-                        step={10000}
-                        defaultValue={filters.priceMax}
-                        data-testid="project-list-filter-price-max"
-                      />
-                    </Field>
+                    {/* 🔴 **下限と上限を 1 つの塊にする**（列の折り返しで 2 欄が別の行に分かれると、
+                        `単価（上限）` が単独の条件に見える）。定義書 §1.6 も単価レンジを
+                        **独立した 1 行**として組んでいる。⚠️ 2 列に割るだけの器であり、
+                        **欄そのものは人材一覧と同じ 2 つの `Field`** のままである。 */}
+                    <div className="grid grid-cols-2 items-end gap-4 sm:col-span-2">
+                      <Field label={messages.searchPriceMin}>
+                        <Input
+                          type="number"
+                          name="priceMin"
+                          min={0}
+                          step={10000}
+                          defaultValue={filters.priceMin}
+                          data-testid="project-list-filter-price-min"
+                        />
+                      </Field>
+                      <Field label={messages.searchPriceMax}>
+                        <Input
+                          type="number"
+                          name="priceMax"
+                          min={0}
+                          step={10000}
+                          defaultValue={filters.priceMax}
+                          data-testid="project-list-filter-price-max"
+                        />
+                      </Field>
+                    </div>
                     {/* 🔴 送信と「条件をクリア」は必ず 1 行を占める（列の途中に紛れると
                         押せる場所が毎回変わる）。`justify-end` はカードの中で右に寄せるための
                         配置の調整であり、共有定数（`FILTER_ACTIONS_CLASSES`）は変えていない。 */}
