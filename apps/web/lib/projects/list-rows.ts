@@ -197,6 +197,9 @@ export function projectListHref(
   if (query.status !== undefined) params.set('status', query.status);
   if (query.startFrom !== undefined) params.set('startFrom', query.startFrom);
   if (query.prefecture !== undefined) params.set('prefecture', query.prefecture);
+  // ✅ 2026-10-15: 単価レンジ（人材一覧と同じ名前）。🔴 ページングでも条件が落ちない。
+  if (query.priceMin !== undefined) params.set('priceMin', String(query.priceMin));
+  if (query.priceMax !== undefined) params.set('priceMax', String(query.priceMax));
   if (query.limit !== PAGE_SIZE_DEFAULT) params.set('limit', String(query.limit));
   if (cursor !== null) params.set('cursor', cursor);
   const hide = hiddenColumnsParamValue(hiddenColumns);
@@ -321,6 +324,8 @@ export function hasProjectListFilters(query: ProjectListQuery): boolean {
     query.q !== undefined ||
     query.status !== undefined ||
     query.startFrom !== undefined ||
-    query.prefecture !== undefined
+    query.prefecture !== undefined ||
+    query.priceMin !== undefined ||
+    query.priceMax !== undefined
   );
 }

@@ -112,6 +112,9 @@ export type ProjectListFilterValues = {
   readonly status: string;
   readonly startFrom: string;
   readonly prefecture: string;
+  /** ✅ 2026-10-15: 単価レンジ（月額・円）。人材一覧（`S-005`）と**同じ名前・同じ単位**である。 */
+  readonly priceMin: string;
+  readonly priceMax: string;
 };
 
 export type ProjectListScreenMessages = {
@@ -127,6 +130,8 @@ export type ProjectListScreenMessages = {
   readonly searchStatus: string;
   readonly searchStartFrom: string;
   readonly searchPrefecture: string;
+  readonly searchPriceMin: string;
+  readonly searchPriceMax: string;
   readonly searchSubmit: string;
   readonly searchClear: string;
   readonly register: string;
@@ -370,9 +375,12 @@ export function ProjectListScreen({
               <CardContent className="pt-4">
                 {/* 🔴 検索条件（docs/04 §S-010 セクション 1）。`method="get"` なので、実行した検索が
                    そのまま URL になり、共有・再読込・戻るのいずれでも同じ結果に戻る。
-                   🔴 **既存 API（`#25`）に在る 4 条件だけを描く**（`q` / `status` / `startFrom` /
-                      `prefecture`）。スキル要件・単価レンジ・リモート可否は query に無いので
-                      **入力欄を描かず**、下の 1 行で「できないこと」を書く。
+                   🔴 **既存 API（`#25`）に在る条件だけを描く**（`q` / `status` / `startFrom` /
+                      `prefecture` / ✅ 2026-10-15 で足した `priceMin` / `priceMax`）。
+                      **スキル要件とリモート可否**は query に無いので**入力欄を描かず**、
+                      下の 1 行で「できないこと」を書く。
+                   🔴 **条件の個数を文章に数字で書かない**（増減のたびに文章が古くなる。
+                      `HANDOFF.md` §6-15）。
                    ⚠️ `mb-0` / `w-full` は帯の中に置いたための余白・幅の調整である（`cn()` の規律 1）。 */}
                 <form
                   className={cn(FILTER_FORM_CLASSES, 'mb-0 w-full')}
@@ -420,6 +428,35 @@ export function ProjectListScreen({
                           </option>
                         ))}
                       </Select>
+                    </Field>
+                    {/* ✅ **2026-10-15: 単価レンジ**（定義書 §1.6 の Filter Panel の 1 行。人間の
+                        指示「自社案件管理ページはこれを参照してアップデートして」）。
+                        🔴 **人材一覧（`S-005`）と同じ形にした** —— `type="number"` / `step=10000` /
+                           `名前は priceMin / priceMax` / 単位は円。定義書 §1.4 自身が
+                           「人材管理 §2.10 を継承」と定めており、**2 画面で単価の入れ方を変えない**。
+                           ⚠️ 定義書 §1.6 は「下限 ＋ 〜 ＋ 上限 ＋ 単位」を 1 つの欄に組む形だが、
+                           それは人材一覧にも同じ改修が要る話であり、**片方だけ別の形にしない**。
+                        🔴 **述語（レンジの重なり）は `packages/db/src/search/unit-price-range.ts` の
+                           1 本**である（人材検索と共有。T-06-03 の申し送りの決着）。 */}
+                    <Field label={messages.searchPriceMin}>
+                      <Input
+                        type="number"
+                        name="priceMin"
+                        min={0}
+                        step={10000}
+                        defaultValue={filters.priceMin}
+                        data-testid="project-list-filter-price-min"
+                      />
+                    </Field>
+                    <Field label={messages.searchPriceMax}>
+                      <Input
+                        type="number"
+                        name="priceMax"
+                        min={0}
+                        step={10000}
+                        defaultValue={filters.priceMax}
+                        data-testid="project-list-filter-price-max"
+                      />
                     </Field>
                     {/* 🔴 送信と「条件をクリア」は必ず 1 行を占める（列の途中に紛れると
                         押せる場所が毎回変わる）。`justify-end` はカードの中で右に寄せるための

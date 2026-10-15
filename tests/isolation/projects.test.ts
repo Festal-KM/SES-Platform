@@ -1324,6 +1324,59 @@ describe('検索条件（docs/05 §6.4 #25 / `F-015` の入力）', () => {
     expect(idsOf(body)).toEqual([soon]);
   });
 
+  // ✅ 2026-10-15: 単価レンジ（`#25` に足した条件）。🔴 **述語は人材側と同じ 1 本**
+  //    （`unitPriceOverlapConditions`）だが、**実 DB の `Decimal(12,2)` と NULL の挙動**は
+  //    ここでしか確かめられない（人材側の先例は `engineers.test.ts` の同名のテスト）。
+  it('🔴 単価は「レンジの重なり」で判定する（下限だけの指定。未設定の案件は消えない）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+    const low = await createdIdOf(
+      await postProject(ctx, {
+        name: `${MARKER}低いレンジ`,
+        unitPriceMin: 400_000,
+        unitPriceMax: 500_000,
+      }),
+    );
+    const high = await createdIdOf(
+      await postProject(ctx, {
+        name: `${MARKER}高いレンジ`,
+        unitPriceMin: 800_000,
+        unitPriceMax: 900_000,
+      }),
+    );
+    const unset = await createdIdOf(await postProject(ctx, { name: `${MARKER}単価なし` }));
+
+    const ids = idsOf(await listBodyOf(await getProjects(ctx, '?priceMin=850000')));
+
+    expect(ids).toContain(high);
+    expect(ids).not.toContain(low);
+    // 🔴 **単価未設定の案件は消えない**（NULL ＝ 制約なし。`docs/01` §1.1-2「見えていない
+    //    候補が増える」の再発を避ける。人材側と同じ向きである）。
+    expect(ids).toContain(unset);
+  });
+
+  it('🔴 単価は「レンジの重なり」で判定する（上限だけの指定）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+    const low = await createdIdOf(
+      await postProject(ctx, {
+        name: `${MARKER}上限で残る`,
+        unitPriceMin: 400_000,
+        unitPriceMax: 500_000,
+      }),
+    );
+    const high = await createdIdOf(
+      await postProject(ctx, {
+        name: `${MARKER}上限で外れる`,
+        unitPriceMin: 800_000,
+        unitPriceMax: 900_000,
+      }),
+    );
+
+    const ids = idsOf(await listBodyOf(await getProjects(ctx, '?priceMax=550000')));
+
+    expect(ids).toContain(low);
+    expect(ids).not.toContain(high);
+  });
+
   it('勤務地で絞れる', async () => {
     const ctx = await ctxOf(HOST_1, 'SALES');
     const id = await createdIdOf(
@@ -1351,7 +1404,12 @@ describe('検索条件（docs/05 §6.4 #25 / `F-015` の入力）', () => {
   it('🔴 検索条件を空で送っても 400 にならない（素の `<form method="get">` の送信）', async () => {
     const ctx = await ctxOf(HOST_1, 'SALES');
 
-    const response = await getProjects(ctx, '?q=&status=&startFrom=&prefecture=');
+    // ✅ 2026-10-15: フォームの欄が増えたら**ここも増やす**（題が「フォームが実際に送る形」で
+    //    あり、古いままだと「空文字を『指定なし』に畳めているか」を新しい欄で確かめていない）。
+    const response = await getProjects(
+      ctx,
+      '?q=&status=&startFrom=&prefecture=&priceMin=&priceMax=',
+    );
 
     expect(response.status).toBe(200);
     expect((await listBodyOf(response)).total).toBe(2);

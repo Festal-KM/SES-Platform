@@ -2946,8 +2946,10 @@ const ja = {
     '後任募集 → 募集中 → 充足 の順に、同じ状態のなかでは更新日の新しい順に表示しています。',
   // ⚠️ `docs/04` §S-010 の検索条件のうち、本リリースで効かないもの（docs/05 §6.4「#25 の
   //    実装の決着」）。**押しても効かない入力欄を描くより、いま何ができないのかを書く。**
+  // ✅ 2026-10-15: **単価レンジを外した**（実装したため。`#25` に `priceMin` / `priceMax` が入った）。
+  //    🔴 **キーは動かしていない**（`U-22` の凍結。値だけを変えた）。
   'projects.list.searchComingSoon':
-    'スキル要件・単価レンジ・リモート可否での絞り込みは、後続のリリースで行えます。',
+    'スキル要件・リモート可否での絞り込みは、後続のリリースで行えます。',
   'projects.list.register': '案件を登録',
   'projects.list.readOnlyNote': '案件の登録は、閲覧のみの権限では行えません。',
   'projects.list.column.name': '案件名',
@@ -2995,6 +2997,10 @@ const ja = {
   'projects.list.search.startFrom': '開始日（この日以降）',
   'projects.list.search.prefecture': '勤務地（都道府県）',
   'projects.list.search.prefectureAll': 'すべて',
+  // ✅ 2026-10-15: 単価レンジ。🔴 **人材一覧（`engineers.list.search.price*`）と同じ語である**
+  //    —— 同じ条件が画面ごとに別の名前で出ると、同じものだと分からない（`docs/04` §7.8）。
+  'projects.list.search.priceMin': '単価（下限）',
+  'projects.list.search.priceMax': '単価（上限）',
   'projects.list.search.submit': '検索',
   'projects.list.search.clear': '条件をクリア',
   // 🔴 `docs/04` §10.1 `S-010`: **初回空と絞込 0 を別文言にする。**

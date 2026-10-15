@@ -61,6 +61,9 @@ export function projectListScreenMessages(params: {
     searchStatus: t('projects.list.search.status'),
     searchStartFrom: t('projects.list.search.startFrom'),
     searchPrefecture: t('projects.list.search.prefecture'),
+    // ✅ 2026-10-15: 単価レンジ（人材一覧と同じ語。`engineers.list.search.price*` と同じ文言）。
+    searchPriceMin: t('projects.list.search.priceMin'),
+    searchPriceMax: t('projects.list.search.priceMax'),
     searchSubmit: t('projects.list.search.submit'),
     searchClear: t('projects.list.search.clear'),
     register: t('projects.list.register'),

@@ -156,6 +156,9 @@ export default async function ProjectListPage({
           status: query.status ?? '',
           startFrom: query.startFrom ?? '',
           prefecture: query.prefecture ?? '',
+          // ✅ 2026-10-15: 単価レンジ（未指定は空文字 ＝ 入力欄が空）。人材一覧と同じ形である。
+          priceMin: query.priceMin === undefined ? '' : String(query.priceMin),
+          priceMax: query.priceMax === undefined ? '' : String(query.priceMax),
         }}
         statusOptions={projectStatusFilterOptions}
         prefectureOptions={projectPrefectureFilterOptions}

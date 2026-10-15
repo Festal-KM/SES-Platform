@@ -54,3 +54,6 @@ export {
   projectSearchWhere,
 } from './projects.js';
 export type { ProjectSearchCriteria, ProjectWhereFragment } from './projects.js';
+// ✅ 2026-10-15: 単価レンジの重なり（人材検索と案件検索で**同じ述語**を通す。T-06-03 の申し送り）。
+export { unitPriceOverlapConditions } from './unit-price-range.js';
+export type { UnitPriceRangeCriteria, UnitPriceRangeFragment } from './unit-price-range.js';

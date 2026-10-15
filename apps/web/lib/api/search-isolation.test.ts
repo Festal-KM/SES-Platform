@@ -38,7 +38,17 @@ const FULLY_SPECIFIED_ENGINEER_CRITERIA: EngineerSearchCriteria = {
 
 const engineerPlanJson = JSON.stringify(engineerSearchPlan(FULLY_SPECIFIED_ENGINEER_CRITERIA));
 const projectWhereJson = JSON.stringify(
-  projectSearchWhere({ q: '基幹', status: 'OPEN', startFrom: '2026-10-01', prefecture: '13' }),
+  // 🔴 人材側と同じく**条件を「全部」指定する**（キーが 1 つでも増えたら述語に出うる、の最大集合）。
+  //    ✅ 2026-10-15: `priceMin` / `priceMax` を足した。**ここが最大集合でなくなると、
+  //    新しい条件が境界キーを連れてきても検出できない。**
+  projectSearchWhere({
+    q: '基幹',
+    status: 'OPEN',
+    startFrom: '2026-10-01',
+    prefecture: '13',
+    priceMin: 600_000,
+    priceMax: 800_000,
+  }),
 );
 
 describe('🔴 F-009 AC-3: エンジニア検索の述語に境界の条件が 1 つも無い（母集団は C3 が決める）', () => {

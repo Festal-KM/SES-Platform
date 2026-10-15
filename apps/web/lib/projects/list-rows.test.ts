@@ -235,10 +235,29 @@ describe('🔴 検索条件を保ったリンク（ページングで条件が�
   it('条件は固定の順序で載る（同じ条件からは必ず同じ URL）', () => {
     expect(
       projectListHref(
-        query({ q: '基幹', status: 'OPEN', startFrom: '2026-10-01', prefecture: '13' }),
+        query({
+          q: '基幹',
+          status: 'OPEN',
+          startFrom: '2026-10-01',
+          prefecture: '13',
+          // ✅ 2026-10-15: 単価レンジも**位置が決まっている**（ページング・列切替・行選択の
+          //    リンクはすべてこの 1 関数を通るので、ここが崩れると URL が揺れる）。
+          priceMin: 600_000,
+          priceMax: 800_000,
+        }),
         null,
       ),
-    ).toBe('/projects?q=%E5%9F%BA%E5%B9%B9&status=OPEN&startFrom=2026-10-01&prefecture=13');
+    ).toBe(
+      '/projects?q=%E5%9F%BA%E5%B9%B9&status=OPEN&startFrom=2026-10-01&prefecture=13' +
+        '&priceMin=600000&priceMax=800000',
+    );
+  });
+
+  it('✅ 2026-10-15: 単価レンジは次ページでも落ちない（片側だけの指定も保つ）', () => {
+    expect(projectListHref(query({ priceMin: 700_000 }), PROJECT_ID)).toBe(
+      `/projects?priceMin=700000&cursor=${PROJECT_ID}`,
+    );
+    expect(projectListHref(query({ priceMax: 900_000 }), null)).toBe('/projects?priceMax=900000');
   });
 
   it('次ページのリンクは条件を保ったままカーソルを足す', () => {
@@ -268,7 +287,10 @@ describe('🔴 絞込 0 と初回空の判定（docs/04 §10.1 `S-010`）', () =
     expect(hasProjectListFilters(query({ cursor: PROJECT_ID, limit: 25 }))).toBe(false);
   });
 
-  it.each(['q', 'status', 'startFrom', 'prefecture'] as const)(
+  // ✅ 2026-10-15: `priceMin` / `priceMax` を足した。🔴 **絞り込みの軸が増えたらここも増やす**
+  //    —— 漏れると「条件に一致する案件はありません」と「まだ 1 件も登録されていません」が
+  //    入れ替わる（`docs/04` §10.1 `S-010`）。
+  it.each(['q', 'status', 'startFrom', 'prefecture', 'priceMin', 'priceMax'] as const)(
     '%s が指定されていれば「絞り込んでいる」',
     (key) => {
       const values = {
@@ -276,6 +298,8 @@ describe('🔴 絞込 0 と初回空の判定（docs/04 §10.1 `S-010`）', () =
         status: 'OPEN',
         startFrom: '2026-10-01',
         prefecture: '13',
+        priceMin: 600_000,
+        priceMax: 800_000,
       } as const;
       expect(hasProjectListFilters(query({ [key]: values[key] }))).toBe(true);
     },
