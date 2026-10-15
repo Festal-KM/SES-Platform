@@ -74,14 +74,17 @@
 //    場所（`projectListHref`）に置く。
 import Link from 'next/link';
 import {
+  Badge,
   Button,
   Card,
   CardContent,
   DataTable,
   EmptyState,
   Field,
+  Icon,
   Input,
   Pagination,
+  SECONDARY_BUTTON_LINK_CLASSES,
   SECONDARY_LINK_CLASSES,
   Select,
   StatusBadge,
@@ -133,6 +136,16 @@ export type ProjectListScreenMessages = {
   readonly searchPrefecture: string;
   readonly searchPriceMin: string;
   readonly searchPriceMax: string;
+  /** ✅ 2026-10-15: 受領画像の検索欄のプレースホルダ。 */
+  readonly searchQPlaceholder: string;
+  /** ✅ 2026-10-15: 単価レンジの**塊**のラベル（`単価（月額）`）。 */
+  readonly searchPrice: string;
+  readonly searchPriceMinPlaceholder: string;
+  readonly searchPriceMaxPlaceholder: string;
+  /** 下限と上限の間の記号（`〜`）。🔴 画面で文字を組まない（`CLAUDE.md` §3.5）。 */
+  readonly searchPriceRangeSeparator: string;
+  /** 単価の単位（**円**。画像の `万円` にしていない理由は本体の 🔴）。 */
+  readonly searchPriceUnit: string;
   readonly searchSubmit: string;
   readonly searchClear: string;
   readonly register: string;
@@ -143,6 +156,8 @@ export type ProjectListScreenMessages = {
   readonly columnUnitPrice: string;
   readonly columnStartDate: string;
   readonly columnLocation: string;
+  /** ✅ 2026-10-15: 稼働形態（`#101` の C で `勤務地・リモート` を 2 列に分けた）。 */
+  readonly columnRemoteMode: string;
   readonly columnHeadcount: string;
   readonly columnUpdatedOn: string;
   readonly columnVisibility: string;
@@ -245,8 +260,9 @@ function projectColumns(
       id: 'unitPrice',
       header: messages.columnUnitPrice,
       priority: 'always',
-      // 🔴 単価は円単位・3 桁区切り（§10.3「大きい数値」）。値は `list-rows` が組む。
-      minWidth: '10rem',
+      // ✅ **2026-10-15: 一覧の表だけ万円表記にした**（`#101` の C。`660,000〜750,000 円`
+      //    160px → `66〜75 万円` 約 80px）。値は `list-rows` が組む。
+      minWidth: '6rem',
       cell: (row) => row.unitPrice,
     },
     {
@@ -262,8 +278,22 @@ function projectColumns(
       id: 'location',
       header: messages.columnLocation,
       priority: 'sm',
-      minWidth: '9rem',
+      // ✅ **2026-10-15: リモート可否を別の列に出したので下限を詰めた**
+      //    （`神奈川県` は約 60px。[Issue #101](https://github.com/Festal-KM/SES-Platform/issues/101) の C）。
+      minWidth: '5rem',
       cell: (row) => row.location,
+    },
+    {
+      // ✅ **2026-10-15: 稼働形態（`#101` の C「勤務地と稼働形態を分けて `埼玉` + Badge」）**。
+      // 🔴 **無彩色の Badge である**（`variant` を渡さない = 既定の `neutral`）—— §7.4 の
+      //    6 系統は**業務上の意味**に割り当てており、稼働形態は状態ではない。
+      //    色を付けると「この案件は赤い」のような誤読を生む（受領画像は色付きだが採らない）。
+      // 🔴 **未設定は何も描かない**（空の Badge を置かない。`formatProjectRemoteMode` が `null`）。
+      id: 'remoteMode',
+      header: messages.columnRemoteMode,
+      priority: 'sm',
+      minWidth: '6rem',
+      cell: (row) => (row.remoteMode === null ? null : <Badge>{row.remoteMode}</Badge>),
     },
     {
       id: 'headcount',
@@ -413,12 +443,53 @@ export function ProjectListScreen({
                         受領した画像）。🔴 **帯が 1 行ぶん縮む** —— 行の高さを 45px に上げた
                         ぶん、一覧の「ファーストビューに 12 行以上」（`docs/04` §7.1）を
                         ここで取り戻す。**条件は 1 つも減っていない。** */}
+                    {/* ✅ **2026-10-15（2 回目。人間の指示「この画像ファイルをよく確認して、検索
+                        フィルター部分を修正してください」）: 虫眼鏡 + プレースホルダ**（受領画像の
+                        1 行目「案件名・企業名・キーワードで検索」）。
+                        🔴 **プレースホルダに「企業名」と書かない** —— `#25` の `q` が見るのは
+                           案件名と外部公開用の記載であり、**できないことを書くと嘘になる**
+                           （同じカードの中で「スキル要件・リモート可否は後続」と断っているのと
+                           同じ規律）。
+                        🔴 **ラベルは消さない。** 画像にはラベルが無いが、読み上げで欄の用途が
+                           消える（`CLAUDE.md` §13.3 の「劣化はさせても遮断しない」と同じ判断）。
+                           語だけ短くして、詳しい説明はプレースホルダに移した。
+                        ⚠️ `pl-8` は左の虫眼鏡（`left-3` + 16px）を避けるための内側の余白であり、
+                           §7.9 の 7 段の中の値である（`ui-spacing-scale` の許容段）。 */}
                     <Field className="sm:col-span-2" label={messages.searchQ}>
-                      <Input type="search" name="q" defaultValue={filters.q} data-testid="project-list-filter-q" />
+                      <div className="relative">
+                        <Icon
+                          name="search"
+                          className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-fg-muted"
+                        />
+                        <Input
+                          type="search"
+                          name="q"
+                          className="pl-8"
+                          placeholder={messages.searchQPlaceholder}
+                          defaultValue={filters.q}
+                          data-testid="project-list-filter-q"
+                        />
+                      </div>
                     </Field>
                     <Field label={messages.searchStatus}>
                       <Select name="status" defaultValue={filters.status} data-testid="project-list-filter-status">
                         {statusOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                    {/* ✅ 2026-10-15: 画像の並び（選択肢の欄をまとめ、単価と日付を次の行に置く）に
+                        合わせて `勤務地` を `開始日` の前に出した。🔴 **条件の集合・`name`・
+                        送り先は 1 つも変えていない**（並べ替えだけである）。 */}
+                    <Field label={messages.searchPrefecture}>
+                      <Select
+                        name="prefecture"
+                        defaultValue={filters.prefecture}
+                        data-testid="project-list-filter-prefecture"
+                      >
+                        {prefectureOptions.map((option) => (
                           <option key={option.value} value={option.value}>
                             {option.label}
                           </option>
@@ -433,54 +504,51 @@ export function ProjectListScreen({
                         data-testid="project-list-filter-start-from"
                       />
                     </Field>
-                    <Field label={messages.searchPrefecture}>
-                      <Select
-                        name="prefecture"
-                        defaultValue={filters.prefecture}
-                        data-testid="project-list-filter-prefecture"
-                      >
-                        {prefectureOptions.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </Select>
-                    </Field>
                     {/* ✅ **2026-10-15: 単価レンジ**（定義書 §1.6 の Filter Panel の 1 行。人間の
                         指示「自社案件管理ページはこれを参照してアップデートして」）。
-                        🔴 **人材一覧（`S-005`）と同じ形にした** —— `type="number"` / `step=10000` /
-                           `名前は priceMin / priceMax` / 単位は円。定義書 §1.4 自身が
-                           「人材管理 §2.10 を継承」と定めており、**2 画面で単価の入れ方を変えない**。
-                           ⚠️ 定義書 §1.6 は「下限 ＋ 〜 ＋ 上限 ＋ 単位」を 1 つの欄に組む形だが、
-                           それは人材一覧にも同じ改修が要る話であり、**片方だけ別の形にしない**。
                         🔴 **述語（レンジの重なり）は `packages/db/src/search/unit-price-range.ts` の
-                           1 本**である（人材検索と共有。T-06-03 の申し送りの決着）。 */}
-                    {/* 🔴 **下限と上限を 1 つの塊にする**（列の折り返しで 2 欄が別の行に分かれると、
-                        `単価（上限）` が単独の条件に見える）。定義書 §1.6 も単価レンジを
-                        **独立した 1 行**として組んでいる。⚠️ 2 列に割るだけの器であり、
-                        **欄そのものは人材一覧と同じ 2 つの `Field`** のままである。 */}
-                    <div className="grid grid-cols-2 items-end gap-4 sm:col-span-2">
-                      <Field label={messages.searchPriceMin}>
+                           1 本**である（人材検索と共有。T-06-03 の申し送りの決着）。
+                        ✅ **2026-10-15（2 回目）: 受領画像どおり「`単価（月額）` ＋ 下限 ＋ 〜 ＋ 上限
+                           ＋ 単位」の 1 つの欄に組み直した**（旧: `単価（下限）` / `単価（上限）` の
+                           2 ラベル）。🔴 **`name` も `step` も値の単位も変えていない** ——
+                           送るのは従来どおり `priceMin` / `priceMax`（**円**）である。
+                        🔴 **単位は「円」である（画像の「万円」にしていない）。** 入力を万円にすると
+                           送信値も万円になり、`#25` の query（円）と `S-005` 人材一覧の同名の条件と
+                           食い違う。**画面だけで単位を変えられない**ので、万円にするなら
+                           query の仕様から直す（[Issue #115](https://github.com/Festal-KM/SES-Platform/issues/115)）。
+                        ⚠️ 人材一覧（`S-005`）はまだ 2 ラベルの形である（人間の指示が
+                           「案件管理から修正していきましょう」であり、順に直す）。 */}
+                    <Field as="div" className="sm:col-span-2" label={messages.searchPrice}>
+                      <div className="flex items-center gap-2">
                         <Input
                           type="number"
                           name="priceMin"
                           min={0}
                           step={10000}
+                          placeholder={messages.searchPriceMinPlaceholder}
                           defaultValue={filters.priceMin}
+                          // 🔴 欄ごとの読み上げの語（ラベルは塊に 1 つしか無い）。
+                          aria-label={messages.searchPriceMin}
                           data-testid="project-list-filter-price-min"
                         />
-                      </Field>
-                      <Field label={messages.searchPriceMax}>
+                        <span aria-hidden="true" className="shrink-0 text-body text-fg-muted">
+                          {messages.searchPriceRangeSeparator}
+                        </span>
                         <Input
                           type="number"
                           name="priceMax"
                           min={0}
                           step={10000}
+                          placeholder={messages.searchPriceMaxPlaceholder}
                           defaultValue={filters.priceMax}
+                          aria-label={messages.searchPriceMax}
                           data-testid="project-list-filter-price-max"
                         />
-                      </Field>
-                    </div>
+                        <span className="shrink-0 text-body text-fg-muted">
+                          {messages.searchPriceUnit}
+                        </span>
+                      </div>
+                    </Field>
                     {/* 🔴 送信と「条件をクリア」は必ず 1 行を占める（列の途中に紛れると
                         押せる場所が毎回変わる）。`justify-end` はカードの中で右に寄せるための
                         配置の調整であり、共有定数（`FILTER_ACTIONS_CLASSES`）は変えていない。 */}
@@ -508,8 +576,18 @@ export function ProjectListScreen({
                         )}
                       </div>
                       <div className="flex items-center gap-4">
+                        {/* ✅ **2026-10-15: 文字リンク → 輪郭ボタン**（受領画像のフッタは
+                            `条件をクリア`（白地 + 枠）と `検索`（primary）の 2 つのボタンである）。
+                            🔴 **`Button` では描けない**（遷移なのでリンクである）。面と hover を
+                               画面側で組まず、`@ses/ui` の `SECONDARY_BUTTON_LINK_CLASSES` を使う。
+                            🔴 **出す条件は変えていない**（絞り込みが 1 つでも効いているときだけ。
+                               押しても何も起きないボタンを常設しない）。 */}
                         {showClearFilters ? (
-                          <Link className={SECONDARY_LINK_CLASSES} href="/projects" data-testid="project-list-clear">
+                          <Link
+                            className={SECONDARY_BUTTON_LINK_CLASSES}
+                            href="/projects"
+                            data-testid="project-list-clear"
+                          >
                             {messages.searchClear}
                           </Link>
                         ) : null}

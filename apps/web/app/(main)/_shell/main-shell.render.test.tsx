@@ -462,9 +462,11 @@ describe('🔴 サイドバー（モックアップの 5 項目 / §7.5 ③ ア�
     // 🔴 `提案` / `提案依頼` / `共有の設定` / `監査ログ` / `スキル辞書` は**親と別のパス**である。
     //    `NavItem.sectionPaths` が無いと、これらの画面で 6 項目が 1 つも光らない。
     for (const [currentPath, testId] of [
-      ['/proposals', 'app-nav-projects'],
-      ['/proposals/abc/approve', 'app-nav-projects'],
-      ['/proposal-requests', 'app-nav-projects'],
+      // ✅ **2026-10-15: `提案` / `提案依頼` はサイドバーの項目そのものになった**（人間の明示
+      //    指示でタブの帯を外したため）。🔴 **光る項目は 1 つ**という不変条件は変わらない。
+      ['/proposals', 'app-nav-proposals'],
+      ['/proposals/abc/approve', 'app-nav-proposals'],
+      ['/proposal-requests', 'app-nav-proposal-requests'],
       ['/skills', 'app-nav-settings'],
       ['/audit-logs', 'app-nav-settings'],
       ['/settings/organization', 'app-nav-settings'],
@@ -614,24 +616,26 @@ describe('🔴 モバイル（docs/04 §3.4）', () => {
 //    `S-019` 提案 / `S-017` 提案依頼 / `S-015` 共有の設定 に到達できない
 //    （ロール別の到達集合の一致は `tests/static/nav-reach.test.ts` が別に証明する）。
 describe('🔴 第 2 階層の帯（`SectionNav`）', () => {
-  it('🔴 `案件管理` の配下では 案件一覧 / 提案 / 提案依頼 のタブが出る（業務ループの順）', () => {
-    const html = sectionMarkup('HOST', 'SALES', '/proposals');
-    expect(html).toContain('data-testid="app-section-nav"');
-    for (const [id, href] of [
-      ['projects', '/projects'],
-      ['proposals', '/proposals'],
-      ['proposal-requests', '/proposal-requests'],
-    ] as const) {
-      expect(html, id).toMatch(
-        new RegExp(`<a[^>]*data-testid="app-section-tab-${id}"[^>]*href="${href}"`),
-      );
+  // ✅✅ **2026-10-15（人間の明示指示「案件一覧、提案、提案依頼のタブは不要です」）**
+  //    `案件管理` のタブは 1 枚（案件一覧）になり、**帯ごと描かれなくなった**。
+  //    🔴 `提案` / `提案依頼` は**サイドバーの項目**になった（到達性は上の ④ が固定する）。
+  it('🔴 `案件管理` の配下では帯を描かない（タブが 1 枚のセクションは外す）', () => {
+    for (const currentPath of ['/projects', '/proposals', '/proposal-requests']) {
+      const html = sectionMarkup('HOST', 'SALES', currentPath);
+      expect(html, currentPath).not.toContain('data-testid="app-section-nav"');
+      expect(html, currentPath).not.toContain('data-testid="app-section-tab-proposals"');
     }
-    const order = ['projects', 'proposals', 'proposal-requests'].map((id) =>
+  });
+
+  it('🔴 残った帯（取引先の `人材管理`）の現在地の見た目が §7.10 のとおりである', () => {
+    const html = sectionMarkup('PARTNER', 'PARTNER_SALES', '/engineer-shares');
+    expect(html).toContain('data-testid="app-section-nav"');
+    const order = ['engineers', 'engineer-shares'].map((id) =>
       html.indexOf(`data-testid="app-section-tab-${id}"`),
     );
     expect(order).toEqual([...order].sort((a, b) => a - b));
     // 🔴 いま開いているタブが現在地として示される（§7.10 の selected = 下端 2px + ブランド色）。
-    const current = tagOf(html, 'app-section-tab-proposals');
+    const current = tagOf(html, 'app-section-tab-engineer-shares');
     expect(current).toContain('aria-current="page"');
     expect(current).toContain('border-b-brand');
     expect(current).toContain('text-brand');
@@ -642,8 +646,8 @@ describe('🔴 第 2 階層の帯（`SectionNav`）', () => {
     expect(current).not.toMatch(/hover:text-fg\s/);
     // 🔴 太字だけで示していない（weight を現在地の手がかりにしない）。
     expect(current).not.toContain('font-bold');
-    expect(tagOf(html, 'app-section-tab-projects')).not.toContain('aria-current');
-    expect(tagOf(html, 'app-section-tab-projects')).toContain('border-b-transparent');
+    expect(tagOf(html, 'app-section-tab-engineers')).not.toContain('aria-current');
+    expect(tagOf(html, 'app-section-tab-engineers')).toContain('border-b-transparent');
   });
 
   it('🔴 取引先の `人材管理` の配下にだけ `共有の設定` のタブが出る（経路 4 / 第二境界）', () => {
@@ -668,7 +672,7 @@ describe('🔴 第 2 階層の帯（`SectionNav`）', () => {
   });
 
   it('🔴 帯は Top Header の直下・本文の手前に在る（ヘッダから続く 1 枚の面）', () => {
-    const html = sectionMarkup('HOST', 'SALES', '/proposals');
+    const html = sectionMarkup('PARTNER', 'PARTNER_SALES', '/engineer-shares');
     const header = html.indexOf('data-testid="app-header"');
     const section = html.indexOf('data-testid="app-section-nav"');
     const slot = html.indexOf('data-testid="app-page-heading-slot"');
@@ -678,12 +682,12 @@ describe('🔴 第 2 階層の帯（`SectionNav`）', () => {
   });
 
   it('🔴 帯はアイコンを持たず（§7.5 の装飾の禁止）、タブは折り返さない語で出る', () => {
-    const html = sectionMarkup('HOST', 'SALES', '/proposals');
+    const html = sectionMarkup('PARTNER', 'PARTNER_SALES', '/engineer-shares');
     const nav = /data-testid="app-section-nav"[\s\S]*?<\/nav>/.exec(html)?.[0] ?? '';
     expect(nav.length).toBeGreaterThan(0);
     expect(nav).not.toContain('<svg');
     // 🔴 和文は文字単位で折り返せるため、`whitespace-nowrap` が無いと 1 文字ずつ割れる。
-    expect(tagOf(html, 'app-section-tab-proposal-requests')).toContain('whitespace-nowrap');
+    expect(tagOf(html, 'app-section-tab-engineer-shares')).toContain('whitespace-nowrap');
     // 🔴 影を足さない / 独自ブレークポイントを使わない。
     expect(nav).not.toMatch(/\bshadow-/);
     expect(nav).not.toMatch(/(?:min|max)-\[/);

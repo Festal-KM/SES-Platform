@@ -76,6 +76,8 @@ export type ProjectSummaryPanelMessages = {
   readonly fieldUnitPrice: string;
   readonly fieldStartDate: string;
   readonly fieldLocation: string;
+  /** ✅ 2026-10-15: 稼働形態（一覧で `勤務地` と 2 列に分けたので、パネルも 2 行に分ける）。 */
+  readonly fieldRemoteMode: string;
   readonly fieldHeadcount: string;
   readonly fieldUpdatedOn: string;
   readonly fieldVisibility: string;
@@ -123,6 +125,10 @@ function panelFields(
     { key: 'unitPrice', label: messages.fieldUnitPrice, value: row.unitPrice },
     { key: 'startDate', label: messages.fieldStartDate, value: row.startDate },
     { key: 'location', label: messages.fieldLocation, value: row.location },
+    // 🔴 未設定のときは行ごと出さない（一覧の Badge と同じ判断。空の値を並べない）。
+    ...(row.remoteMode === null
+      ? []
+      : [{ key: 'remoteMode', label: messages.fieldRemoteMode, value: row.remoteMode }]),
     { key: 'headcount', label: messages.fieldHeadcount, value: row.headcount },
     { key: 'updatedOn', label: messages.fieldUpdatedOn, value: row.updatedOn },
   ];
