@@ -19,6 +19,9 @@ import {
   projectSearchWhere,
   type ProjectSearchCriteria,
 } from './projects.js';
+// ✅ 2026-10-15: 単価レンジの述語は人材検索と共有している（T-06-03 の申し送りの決着）。
+import { engineerPriceConditions } from './engineers.js';
+import { unitPriceOverlapConditions } from './unit-price-range.js';
 
 /** `where` を素の JSON にして「何が入っているか」を文字列として数える。 */
 function whereJson(criteria: ProjectSearchCriteria = {}): string {
@@ -60,6 +63,42 @@ describe('検索条件 → 述語（`F-015` の入力）', () => {
       'prefecture',
       'status',
     ]);
+  });
+
+  // ✅ 2026-10-15: 単価レンジ（`unitPriceOverlapConditions` を人材検索と共有する）。
+  it('単価の下限を指定すると、案件の**上限**がそれ以上のものに絞る（NULL は制約なし）', () => {
+    expect(projectSearchWhere({ priceMin: 700_000 })).toEqual({
+      AND: [{ OR: [{ unitPriceMax: null }, { unitPriceMax: { gte: 700_000 } }] }],
+    });
+  });
+
+  it('単価の上限を指定すると、案件の**下限**がそれ以下のものに絞る（NULL は制約なし）', () => {
+    expect(projectSearchWhere({ priceMax: 800_000 })).toEqual({
+      AND: [{ OR: [{ unitPriceMin: null }, { unitPriceMin: { lte: 800_000 } }] }],
+    });
+  });
+
+  it('🔴 人材検索（`#15`）と同じ述語を返す（2 画面で重なりの定義を分けない）', () => {
+    const criteria = { priceMin: 600_000, priceMax: 900_000 } as const;
+    expect(projectSearchWhere(criteria).AND).toEqual(unitPriceOverlapConditions(criteria));
+    // 🔴 人材側の条件は**必須キーを持つ**（`skillMode` / `onlyInTime` / `onlyCommutable`）。
+    //    単価に関係しないキーを埋めて呼ぶ —— **型をねじ伏せない**（`as any` を書くと、
+    //    人材側の条件が変わったときにこの対照が静かに意味を失う）。
+    expect(
+      engineerPriceConditions({
+        ...criteria,
+        skillMode: 'AND',
+        onlyInTime: false,
+        onlyCommutable: false,
+      }),
+    ).toEqual(unitPriceOverlapConditions(criteria));
+  });
+
+  it('🔴 単価レンジはフリーワードを消さない（`OR` を奪わず `AND` に入る）', () => {
+    const where = projectSearchWhere({ q: '基幹', priceMin: 700_000 });
+    // 🔴 フリーワードの 2 列が残っていること（`AND` に畳んだら消える）。
+    expect(where.OR).toHaveLength(2);
+    expect(where.AND).toHaveLength(1);
   });
 
   it('🔴 商流情報の列を検索対象にしない（ホストだけ一致する述語を作らない）', () => {

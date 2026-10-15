@@ -210,8 +210,13 @@ const FOLD_ADDED_HREFS: readonly string[] = ['/calendar', '/chat', '/settings'];
  * | 遷移先 | 中身 |
  * |---|---|
  * | `/partners` | パートナー一覧。`S-014`（`/settings/partner-companies`）と同じ母集団を指すが**別の画面**であり、統合は Issue #102（既定 = A） |
- * | `/partners/projects` | パートナーの案件一覧 |
- * | `/partners/engineers` | パートナーの人材一覧（🔴 **経路 4** そのもの） |
+ * | `/partner-projects` | パートナーの案件一覧 |
+ * | `/partner-engineers` | パートナーの人材一覧（🔴 **経路 4** そのもの） |
+ *
+ * 🔴 **3 本は兄弟の URL である**（✅ 2026-10-15。当初は `/partners/projects` /
+ *    `/partners/engineers` と入れ子にしていたが、**`パートナー一覧` が同時に光る**不具合に
+ *    なった。理由と直し方は `apps/web/lib/shell/nav.ts` の `PARTNER_*_SECTION_PATH` の 🔴🔴。
+ *    到達集合は 1 件も変わっていない —— 変えたのは 3 本のうち 2 本の綴りだけである）。
  *
  * 🔴🔴 **取引先所属には 1 本も出さない。** 出した瞬間に「他社の一覧」になり、`CLAUDE.md` §3.1 の
  *    「🔴 パートナー同士が相互に参照できる経路を 1 つも作らない」の違反になる。
@@ -222,9 +227,9 @@ const FOLD_ADDED_HREFS: readonly string[] = ['/calendar', '/chat', '/settings'];
  *    増えたのは**到達手段だけ**であり、中身を入れるときに §8.6 の人間の承認が要る。
  */
 const HOST_ONLY_ADDED_HREFS: readonly string[] = [
+  '/partner-engineers',
+  '/partner-projects',
   '/partners',
-  '/partners/engineers',
-  '/partners/projects',
 ];
 
 /** そのロールに対して「畳み込み以後に増えてよい」遷移先（昇順）。 */
@@ -357,7 +362,7 @@ describe('🔴 ② ロールによる出し分けの条件が 1 つも変わっ�
     }
   });
 
-  it('🔴🔴 `/partners` 配下（パートナー連携）はホスト所属だけ（§3.1 の相互参照の禁止）', () => {
+  it('🔴🔴 `パートナー連携` の 3 画面はホスト所属だけ（§3.1 の相互参照の禁止）', () => {
     for (const href of HOST_ONLY_ADDED_HREFS) {
       expect(
         ALL_ROLES.filter((role) => reachOf(role).includes(href)),

@@ -13,6 +13,7 @@ import {
   formatVisibilityStatus,
   hasProjectListFilters,
   parseHiddenProjectColumns,
+  PROJECT_DEFAULT_HIDDEN_COLUMN_IDS,
   projectColumnToggleHref,
   projectListHref,
   projectListPrimaryAction,
@@ -235,10 +236,29 @@ describe('🔴 検索条件を保ったリンク（ページングで条件が�
   it('条件は固定の順序で載る（同じ条件からは必ず同じ URL）', () => {
     expect(
       projectListHref(
-        query({ q: '基幹', status: 'OPEN', startFrom: '2026-10-01', prefecture: '13' }),
+        query({
+          q: '基幹',
+          status: 'OPEN',
+          startFrom: '2026-10-01',
+          prefecture: '13',
+          // ✅ 2026-10-15: 単価レンジも**位置が決まっている**（ページング・列切替・行選択の
+          //    リンクはすべてこの 1 関数を通るので、ここが崩れると URL が揺れる）。
+          priceMin: 600_000,
+          priceMax: 800_000,
+        }),
         null,
       ),
-    ).toBe('/projects?q=%E5%9F%BA%E5%B9%B9&status=OPEN&startFrom=2026-10-01&prefecture=13');
+    ).toBe(
+      '/projects?q=%E5%9F%BA%E5%B9%B9&status=OPEN&startFrom=2026-10-01&prefecture=13' +
+        '&priceMin=600000&priceMax=800000',
+    );
+  });
+
+  it('✅ 2026-10-15: 単価レンジは次ページでも落ちない（片側だけの指定も保つ）', () => {
+    expect(projectListHref(query({ priceMin: 700_000 }), PROJECT_ID)).toBe(
+      `/projects?priceMin=700000&cursor=${PROJECT_ID}`,
+    );
+    expect(projectListHref(query({ priceMax: 900_000 }), null)).toBe('/projects?priceMax=900000');
   });
 
   it('次ページのリンクは条件を保ったままカーソルを足す', () => {
@@ -268,7 +288,10 @@ describe('🔴 絞込 0 と初回空の判定（docs/04 §10.1 `S-010`）', () =
     expect(hasProjectListFilters(query({ cursor: PROJECT_ID, limit: 25 }))).toBe(false);
   });
 
-  it.each(['q', 'status', 'startFrom', 'prefecture'] as const)(
+  // ✅ 2026-10-15: `priceMin` / `priceMax` を足した。🔴 **絞り込みの軸が増えたらここも増やす**
+  //    —— 漏れると「条件に一致する案件はありません」と「まだ 1 件も登録されていません」が
+  //    入れ替わる（`docs/04` §10.1 `S-010`）。
+  it.each(['q', 'status', 'startFrom', 'prefecture', 'priceMin', 'priceMax'] as const)(
     '%s が指定されていれば「絞り込んでいる」',
     (key) => {
       const values = {
@@ -276,6 +299,8 @@ describe('🔴 絞込 0 と初回空の判定（docs/04 §10.1 `S-010`）', () =
         status: 'OPEN',
         startFrom: '2026-10-01',
         prefecture: '13',
+        priceMin: 600_000,
+        priceMax: 800_000,
       } as const;
       expect(hasProjectListFilters(query({ [key]: values[key] }))).toBe(true);
     },
@@ -289,13 +314,20 @@ describe('🔴 絞込 0 と初回空の判定（docs/04 §10.1 `S-010`）', () =
 //    ①既定（何も隠していない）では URL に痕跡が 1 文字も増えない
 //    ②切替のリンクは**検索条件といま見ているページ（`cursor`）を保つ**
 //    ③許可リスト外の値は効かない（URL 直打ちで壊れない）
-describe('🔴 列表示切替の対象（9 列目）', () => {
-  it('`S-010` で外せるのは公開先の設定状況（9 列目）だけである', () => {
-    expect(PROJECT_HIDEABLE_COLUMN_IDS).toEqual(['visibility']);
+describe('🔴 列表示切替の対象（格納できる列）', () => {
+  it('✅ 2026-10-15: 外せるのは `必須要件の要約` と `公開先の設定状況` の 2 列である', () => {
+    expect(PROJECT_HIDEABLE_COLUMN_IDS).toEqual(['mustRequirements', 'visibility']);
+  });
+
+  it('🔴 この 2 列は**既定で格納**されている（人間の決定。右の案件詳細パネルを横に並べるため）', () => {
+    expect(PROJECT_DEFAULT_HIDDEN_COLUMN_IDS).toEqual(['mustRequirements', 'visibility']);
   });
 
   it('🔴 URL の値を読む（許可リスト外は捨てる）', () => {
-    expect(parseHiddenProjectColumns(undefined)).toEqual([]);
+    // 🔴 **キーが無い ＝ 既定**（空ではない）。
+    expect(parseHiddenProjectColumns(undefined)).toEqual(['mustRequirements', 'visibility']);
+    // 🔴 **空文字 ＝ 利用者が全部表示に戻した**（既定と区別する。区別しないと二度と出せない）。
+    expect(parseHiddenProjectColumns('')).toEqual([]);
     expect(parseHiddenProjectColumns('visibility')).toEqual(['visibility']);
     // 列として実在しない id（`unitPrice` は `hideable` ではない）は効かない。
     expect(parseHiddenProjectColumns('unitPrice')).toEqual([]);
@@ -303,9 +335,13 @@ describe('🔴 列表示切替の対象（9 列目）', () => {
 });
 
 describe('🔴 列表示切替のリンク（条件とページの位置を保つ）', () => {
-  it('既定（何も隠していない）の URL は移行前と 1 文字も変わらない', () => {
+  it('🔴 既定の見え方の URL は素のパスである（既定からの差分だけが載る）', () => {
     expect(projectListHref(query(), null)).toBe(PROJECT_LIST_PATH);
-    expect(projectListHref(query(), null, [])).toBe(PROJECT_LIST_PATH);
+    expect(projectListHref(query(), null, PROJECT_DEFAULT_HIDDEN_COLUMN_IDS)).toBe(PROJECT_LIST_PATH);
+  });
+
+  it('🔴 ✅ 2026-10-15: 全部表示に戻すと `?hide=`（空）が載る（既定と区別できる唯一の形）', () => {
+    expect(projectListHref(query(), null, [])).toBe('/projects?hide=');
   });
 
   it('隠す列は最後に載る（`hide=` は条件・カーソルの後ろ）', () => {
@@ -320,10 +356,15 @@ describe('🔴 列表示切替のリンク（条件とページの位置を保�
     ).toBe(`/projects?q=%E5%9F%BA%E5%B9%B9&cursor=${PROJECT_ID}&hide=visibility`);
   });
 
-  it('🔴 隠している列を押すと「戻す」URL になる（`hide` が消える）', () => {
+  it('🔴 隠している列を押すと「戻す」URL になる（その列が `hide` から消える）', () => {
+    // ✅ 2026-10-15: 既定が 2 列なので、`visibility` だけを戻すと `mustRequirements` が残る。
     expect(
-      projectColumnToggleHref(query({ q: '基幹' }), null, ['visibility'], 'visibility'),
-    ).toBe('/projects?q=%E5%9F%BA%E5%B9%B9');
+      projectColumnToggleHref(query({ q: '基幹' }), null, PROJECT_DEFAULT_HIDDEN_COLUMN_IDS, 'visibility'),
+    ).toBe('/projects?q=%E5%9F%BA%E5%B9%B9&hide=mustRequirements');
+    // 2 列とも戻すと空になる（＝ 全部表示。既定と違うので URL に載る）。
+    expect(projectColumnToggleHref(query({ q: '基幹' }), null, ['visibility'], 'visibility')).toBe(
+      '/projects?q=%E5%9F%BA%E5%B9%B9&hide=',
+    );
   });
 
   it('🔴 ページングのリンクでも列の表示状態が落ちない', () => {
@@ -398,9 +439,10 @@ describe('🔴 副カラムで開く行（`?selected=`。SP-22 段④）', () =>
   });
 
   it('🔴 `selected` を渡さなければ URL に 1 文字も足さない（既定の URL を汚さない）', () => {
-    expect(projectListHref(query(), null, [])).toBe(PROJECT_LIST_PATH);
-    expect(projectColumnToggleHref(query(), null, ['visibility'], 'visibility')).toBe(
-      PROJECT_LIST_PATH,
-    );
+    expect(projectListHref(query(), null, PROJECT_DEFAULT_HIDDEN_COLUMN_IDS)).toBe(PROJECT_LIST_PATH);
+    // ✅ 2026-10-15: 既定の 2 列から `visibility` だけ戻した URL（`selected` は 1 文字も足さない）。
+    expect(
+      projectColumnToggleHref(query(), null, PROJECT_DEFAULT_HIDDEN_COLUMN_IDS, 'visibility'),
+    ).toBe('/projects?hide=mustRequirements');
   });
 });

@@ -40,8 +40,17 @@ const SEPARATOR = ',';
 export function parseHiddenColumns<Id extends string>(
   raw: string | readonly string[] | undefined,
   allowed: readonly Id[],
+  /**
+   * ✅ **2026-10-15: 既定で隠しておく列**（省略すると従来どおり「既定は全列表示」）。
+   *
+   * 🔴 **既定が空でなくなると、`?hide=` の空値が意味を持つ** —— 「キーが無い ＝ 既定」と
+   *    「`?hide=` が空 ＝ **利用者が全部表示に戻した**」を区別する必要がある（区別しないと、
+   *    既定で隠した列を**二度と出せない**）。したがって `raw === undefined` だけが既定であり、
+   *    空文字は「1 つも隠していない」である。
+   */
+  defaults: readonly Id[] = [],
 ): readonly Id[] {
-  if (raw === undefined) return [];
+  if (raw === undefined) return allowed.filter((id) => defaults.includes(id));
   const values = new Set(
     (typeof raw === 'string' ? [raw] : raw)
       .flatMap((value) => value.split(SEPARATOR))
@@ -71,9 +80,19 @@ export function toggleHiddenColumn<Id extends string>(
 }
 
 /**
- * クエリに載せる値（隠す列が無ければ `null` = キーそのものを載せない）。
- * 🔴 **`?hide=` の空値を作らない**（「何も隠していない」は既定であり、URL に痕跡を残さない）。
+ * クエリに載せる値（**既定と同じならキーそのものを載せない** = `null`）。
+ *
+ * 🔴 **URL の正規形は「既定からの差分だけが載る」である** —— 既定の見え方は常に素の URL になる。
+ * ✅ **2026-10-15: 既定が空でないときだけ `?hide=` の空値を作る**（「利用者が全部表示に戻した」を
+ *    表す唯一の形。`parseHiddenColumns` の `defaults` の 🔴）。🔴 既定が空のまま（従来の画面）では
+ *    空値は生まれない —— 空 ＝ 既定なので `null` を返す。
  */
-export function hiddenColumnsParamValue<Id extends string>(hidden: readonly Id[]): string | null {
-  return hidden.length === 0 ? null : hidden.join(SEPARATOR);
+export function hiddenColumnsParamValue<Id extends string>(
+  hidden: readonly Id[],
+  defaults: readonly Id[] = [],
+): string | null {
+  const isDefault =
+    hidden.length === defaults.length && hidden.every((id, index) => id === defaults[index]);
+  if (isDefault) return null;
+  return hidden.join(SEPARATOR);
 }

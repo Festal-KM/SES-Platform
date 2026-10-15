@@ -173,6 +173,23 @@ export function projectPopulationLabel(partnerCompanyId: string | null, total: n
 }
 
 /**
+ * ✅ **2026-10-15: 既定で格納しておく列**（人間の決定。受領した画像と定義書 §1.7 の表に
+ * この 2 列が無く、**右の案件詳細パネルを表の横に並べるため**でもある）。
+ *
+ * 🔴 **理由は幅の算数である。** 1672px のとき本体の内容幅は 1,408px で、副カラム（388）と
+ *    間隔（16）を引くと表に使えるのは **1,004px** しかない。9 列 + 操作の表は **1,313px** あり、
+ *    どう詰めても入らない（単価「660,000〜750,000 円」など値そのものが幅を決めている）。
+ *    この 2 列を格納すると表は約 1,000px に収まり、**ノート PC の幅でパネルが横に並ぶ**。
+ * 🔴 **到達性は落ちていない** —— 2 列とも「表示する列」から 1 クリックで戻せる
+ *    （`docs/04` §7.1「9 列目以降は列表示切替に**格納する**」）。公開先は `S-011` でも読める。
+ * 🔴 **列を消したのではない**（`DataTable` の列定義は 9 列のままで、既定の `hidden` が 2 つ）。
+ */
+export const PROJECT_DEFAULT_HIDDEN_COLUMN_IDS: readonly ProjectHideableColumnId[] = [
+  'mustRequirements',
+  'visibility',
+];
+
+/**
  * 検索条件を保ったままの `S-010` へのリンクを作る。
  *
  * 🔴 **ページングで条件が落ちない**ことが目的である（`docs/04` §10.1 `S-010` Err
@@ -189,7 +206,9 @@ export function projectPopulationLabel(partnerCompanyId: string | null, total: n
 export function projectListHref(
   query: ProjectListQuery,
   cursor: string | null,
-  hiddenColumns: readonly ProjectHideableColumnId[] = [],
+  // ✅ **2026-10-15: 既定は「この画面の既定」である**（空配列ではない）。🔴 省略が
+  //    「1 つも隠していない」を意味すると、呼び手が黙って `?hide=` を生やしてしまう。
+  hiddenColumns: readonly ProjectHideableColumnId[] = PROJECT_DEFAULT_HIDDEN_COLUMN_IDS,
   selectedId: string | null = null,
 ): string {
   const params = new URLSearchParams();
@@ -197,9 +216,14 @@ export function projectListHref(
   if (query.status !== undefined) params.set('status', query.status);
   if (query.startFrom !== undefined) params.set('startFrom', query.startFrom);
   if (query.prefecture !== undefined) params.set('prefecture', query.prefecture);
+  // ✅ 2026-10-15: 単価レンジ（人材一覧と同じ名前）。🔴 ページングでも条件が落ちない。
+  if (query.priceMin !== undefined) params.set('priceMin', String(query.priceMin));
+  if (query.priceMax !== undefined) params.set('priceMax', String(query.priceMax));
   if (query.limit !== PAGE_SIZE_DEFAULT) params.set('limit', String(query.limit));
   if (cursor !== null) params.set('cursor', cursor);
-  const hide = hiddenColumnsParamValue(hiddenColumns);
+  // ✅ 2026-10-15: 既定（2 列を格納）と同じなら URL に痕跡を残さない。既定から戻したときだけ
+  //    `?hide=` が載る（空値 ＝ 1 つも隠していない）。
+  const hide = hiddenColumnsParamValue(hiddenColumns, PROJECT_DEFAULT_HIDDEN_COLUMN_IDS);
   if (hide !== null) params.set(HIDDEN_COLUMNS_PARAM, hide);
   if (selectedId !== null) params.set(PROJECT_SELECTED_PARAM, selectedId);
   const search = params.toString();
@@ -260,15 +284,16 @@ export function projectSelectHref(
  * 🔴 **並びが URL の正規形を決める**（`hidden-columns.ts`）。
  * 🔴 列を増やすときは `docs/04` §10.3 / §S-010 の列の定めが先である（画面の都合で足さない）。
  */
-export const PROJECT_HIDEABLE_COLUMN_IDS = ['visibility'] as const;
+export const PROJECT_HIDEABLE_COLUMN_IDS = ['mustRequirements', 'visibility'] as const;
 
 export type ProjectHideableColumnId = (typeof PROJECT_HIDEABLE_COLUMN_IDS)[number];
+
 
 /** URL のクエリ（`?hide=`）→ いま隠れている列。許可リスト外は捨てる。 */
 export function parseHiddenProjectColumns(
   raw: string | readonly string[] | undefined,
 ): readonly ProjectHideableColumnId[] {
-  return parseHiddenColumns(raw, PROJECT_HIDEABLE_COLUMN_IDS);
+  return parseHiddenColumns(raw, PROJECT_HIDEABLE_COLUMN_IDS, PROJECT_DEFAULT_HIDDEN_COLUMN_IDS);
 }
 
 /**
@@ -321,6 +346,8 @@ export function hasProjectListFilters(query: ProjectListQuery): boolean {
     query.q !== undefined ||
     query.status !== undefined ||
     query.startFrom !== undefined ||
-    query.prefecture !== undefined
+    query.prefecture !== undefined ||
+    query.priceMin !== undefined ||
+    query.priceMax !== undefined
   );
 }

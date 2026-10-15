@@ -18,7 +18,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { TENANT_ROLES, type TenantRole } from '@ses/db';
-import { currentNavSectionIndex, ICON_NAMES } from '@ses/ui';
+import { currentNavSectionIndex, ICON_NAMES, matchesCurrentNavPath } from '@ses/ui';
 import {
   buildBottomTabs,
   buildMainNav,
@@ -218,9 +218,11 @@ describe('🔴 ① サイドバーがモックアップどおり 2 群である�
         navItems(groups).filter((item) => item.id.startsWith('partners-')),
         role,
       ).toEqual([]);
-      // 🔴 遷移先そのものが 1 本も現れない（`/partners` 配下へ到達する手段を持たない）。
+      // 🔴 遷移先そのものが 1 本も現れない（`パートナー連携` の 3 画面へ到達する手段を持たない）。
+      // ⚠️ 3 本は**兄弟の URL** である（`/partners` / `/partner-projects` / `/partner-engineers`。
+      //    入れ子にしない理由は `nav.ts` の 🔴🔴）。接頭辞 `/partner` でまとめて拾う。
       expect(
-        navHrefs(navItems(groups)).filter((href) => href.startsWith('/partners')),
+        navHrefs(navItems(groups)).filter((href) => href.startsWith('/partner')),
         role,
       ).toEqual([]);
     }
@@ -550,6 +552,84 @@ describe('🔴 現在地の射程（`sectionPaths`）—— 畳み込みで「�
         }
       }
     }
+  });
+});
+
+// ============================================================================
+// 🔴 現在地は 2 つ同時に光らない（✅ 2026-10-15 の不具合の再発防止）
+// ============================================================================
+/**
+ * 人間の報告: 「`パートナー連携` 群の `案件一覧` / `人材一覧` を選択すると `パートナー一覧` も
+ * ハイライトされてしまう」。原因は URL の形であり、判定ではない ——
+ * `@ses/ui` の `isCurrentNavPath` は **完全一致 または `${href}/` の前方一致**であり、
+ * **ある項目の遷移先が別の項目の遷移先の祖先になっていると 2 項目とも現在地になる**
+ * （当時は `/partners` + `/partners/projects` + `/partners/engineers`）。
+ *
+ * 🔴 **直したのは URL（兄弟にした）であって判定ではない。** 前方一致は詳細画面
+ *    （`/projects/{id}`）で親を光らせるために要る（`nav.ts` の `PARTNER_*_SECTION_PATH` の 🔴🔴）。
+ * 🔴 **ここで固定するのは「どのパスでも光る項目は 1 つ以下」という不変条件そのもの**である。
+ *    サイドバーの項目の下に別の項目を入れ子にした瞬間に落ちる。
+ * ⚠️ 射程の作り方（`reach.href` + `sectionPaths`）は `packages/ui` の `navMatchPaths` の写しだが、
+ *    **判定そのものは `matchesCurrentNavPath` を呼ぶ**（判定を 2 つ書かない）。
+ */
+describe('🔴 現在地は 2 つ同時に光らない（2026-10-15 の報告の再発防止）', () => {
+  /** その項目が現在地になるパスの全体（`packages/ui` の `navMatchPaths` と同じ組み立て）。 */
+  function matchPathsOf(item: NavItem): readonly string[] {
+    return item.reach.kind === 'LINK' ? [item.reach.href, ...item.sectionPaths] : [];
+  }
+
+  function currentIdsAt(groups: readonly NavGroup[], currentPath: string): readonly string[] {
+    return navItems(groups)
+      .filter((item) => matchesCurrentNavPath(currentPath, matchPathsOf(item)))
+      .map((item) => item.id);
+  }
+
+  it.each([...HOST_ROLES, ...PARTNER_ROLES])(
+    '%s: サイドバーの遷移先・射程のどれを開いても、光る項目はちょうど 1 つ',
+    (role) => {
+      const audience = PARTNER_ROLES.includes(role) ? 'PARTNER' : 'HOST';
+      const groups = buildMainNav({ audience, role });
+      const paths = [...new Set(navItems(groups).flatMap(matchPathsOf))];
+      expect(paths.length).toBeGreaterThan(5);
+      for (const currentPath of paths) {
+        expect(currentIdsAt(groups, currentPath), `${role}: ${currentPath}`).toHaveLength(1);
+      }
+    },
+  );
+
+  it.each([...HOST_ROLES, ...PARTNER_ROLES])(
+    '%s: 主平面の実在ルート（詳細・新規を含む）でも、光る項目は 1 つ以下',
+    (role) => {
+      const audience = PARTNER_ROLES.includes(role) ? 'PARTNER' : 'HOST';
+      const groups = buildMainNav({ audience, role });
+      for (const currentPath of ROUTE_URLS) {
+        // 🔴 0 件は許す（`/signin` のような外枠の外や、ナビの射程に無い画面が在りうる）。
+        //    許さないのは **2 件以上**である。
+        expect(
+          currentIdsAt(groups, currentPath).length,
+          `${role}: ${currentPath} で ${currentIdsAt(groups, currentPath).join(' / ')} が同時に光る`,
+        ).toBeLessThanOrEqual(1);
+      }
+    },
+  );
+
+  it('🔴 対照: 入れ子にすると落ちる（この不変条件が実際に効いていること）', () => {
+    // 🔴 2026-10-15 に直した形そのもの。**判定ではなく URL の形が原因**であることの対照である。
+    const nested: readonly NavItem[] = [
+      pendingNavItem('x', 'shell.nav.home', 'home', 'shell.nav.note.phase2'),
+    ];
+    expect(nested).toHaveLength(1); // 型の都合（下の組み立てが `NavItem` の形であることの担保）
+    const groups: readonly NavGroup[] = [
+      {
+        id: 'primary',
+        labelKey: null,
+        items: [
+          { ...nested[0]!, id: 'parent', reach: { kind: 'LINK', href: '/partners' } },
+          { ...nested[0]!, id: 'child', reach: { kind: 'LINK', href: '/partners/projects' } },
+        ],
+      },
+    ];
+    expect(currentIdsAt(groups, '/partners/projects')).toEqual(['parent', 'child']);
   });
 });
 
