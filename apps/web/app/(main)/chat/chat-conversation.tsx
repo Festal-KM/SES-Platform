@@ -945,7 +945,7 @@ export function ChatConversation({
           }}
           // ✅ 2026-10-16（提案 I）: スマホでは画面ごとスクロールするので、入力欄を下端に貼り付ける（読み進めても書ける）。
           //    `md` 以上は器の高さが決まっているので、貼り付けても位置は変わらない。地の色は重なりの下を隠すため。
-          className={`sticky bottom-0 shrink-0 border-t border-border bg-surface px-5 py-3 ${CHAT_COMPOSER_HEIGHT_CLASS}`}
+          className={`sticky bottom-0 shrink-0 border-t border-border bg-bg px-5 py-3 ${CHAT_COMPOSER_HEIGHT_CLASS}`}
           data-testid="chat-compose"
         >
           <Field label={messages.composeLabel} description={messages.composeHint}>
