@@ -77,6 +77,12 @@
 
 ## 5. 画面（Lark のイメージに寄せる）
 
+**画面イメージ（2026-10-16）**: [people-chat-mockup.png](./people-chat-mockup.png)（元の HTML は [people-chat-mockup.html](./people-chat-mockup.html)。色・文字の大きさは実際のトークンの値。名前はすべて架空）
+
+![人単位チャットの画面イメージ](./people-chat-mockup.png)
+
+下の図は骨組みだけを示す。
+
 ```
 ┌──────────── 一覧（薄いグレー）───────────┬──────── 会話（白）────────┬─ 情報 ─┐
 │ [検索…]                         [＋新規] │  田中 一郎（A社）           │ メンバー│
