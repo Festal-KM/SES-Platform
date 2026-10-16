@@ -44,8 +44,25 @@ export const PRODUCT_SHORT_NAME = 'BizOrch';
 export const GLOSSARY = {
   /** `Proposal`。案件 × エンジニア × 提案先。 */
   proposal: '提案',
-  /** `ProposalRequest`。匿名候補への依頼（§3.1 経路 4）。応諾で `Proposal` になるまで「提案」ではない。 */
-  proposalRequest: '提案依頼',
+  /**
+   * `ProposalRequest`。**人材に対して「このような案件はどうか」という提案**（§3.1 経路 4）。
+   *
+   * ✅✅ 🔴 **2026-10-16（人間の明示指示「案件提案と人材提案でタブを分けましょうか」+ 定義）:
+   *    `提案依頼` → `案件提案` に改称した。** 旧語は *レコードを誰が作ったか* の名であり、
+   *    営業の語ではなかった —— とくに取引先からは「依頼を受けた」としか読めず、
+   *    **何が送られてきたのか（案件）が語に出ていなかった**。
+   * 🔴 **`Proposal`（人材提案）と対になる**: どちらも `提案` で終わり、**頭が「何を提案するか」**である。
+   *    `案件提案` … 人材に対して「このような案件はどうか」を受領・送付する（`S-017`）
+   *    `人材提案` … 案件に対して「このような人材はどうか」を受領・送付する（`S-019`）
+   * 🔴 **語の上では対等になったが、`ProposalRequest` は `Proposal` ではない** ——
+   *    応諾されて `Proposal` が作られるまで実名は開示されず（§3.1 経路 4）、
+   *    `DECLINED` は成約率の分母に入らない（`CLAUDE.md` §4.2）。
+   *    🔴 **その規律は語ではなく検査が守る**（`tests/static/proposal-request-outcome-separation.test.ts`）——
+   *    旧語は「提案依頼は提案を語幹に持つ」で関係を語に埋め込んでいたが、
+   *    **改称でその支えが外れた**ので、下の `OUTCOME_LABELS.DECLINED` を「案件提案を辞退」にして
+   *    `Proposal.WITHDRAWN`（辞退）との弁別を語の側でも保つ。
+   */
+  proposalRequest: '案件提案',
   /** `ProjectVisibility`。案件を取引先に見せること。 */
   publish: '公開',
   /** `EngineerShare`。パートナーが自社エンジニアを匿名で見せること。 */
@@ -71,13 +88,14 @@ export const GLOSSARY = {
 /**
  * 🔴 4 つの「うまくいかなかった」の表示語（docs/04 §10.1 の状態設計マトリクスの語をそのまま採る）。
  *    `Proposal` の状態 3 つと `ProposalRequest` の状態 1 つであり、一覧・フィルタ・集計・通知のどこでも別の語で出す。
- *    `DECLINED` は `Proposal.WITHDRAWN`（= `GLOSSARY.decline`）と並ぶ画面（`S-019`）があるため「依頼を」を冠する。
+ *    `DECLINED` は `Proposal.WITHDRAWN`（= `GLOSSARY.decline`）と並ぶ画面（`S-019`）があるため
+ *    **何を辞退したのか**を冠する（✅ 2026-10-16: `依頼を辞退` → `案件提案を辞退`。改称に追随した）。
  */
 export const OUTCOME_LABELS = {
   GATE_FAILED: `${GLOSSARY.sendBack}（${GLOSSARY.inspect}で不合格）`,
   SUBMIT_FAILED: `${GLOSSARY.submit}${GLOSSARY.failure}`,
   LOST: GLOSSARY.lost,
-  DECLINED: `依頼を${GLOSSARY.decline}`,
+  DECLINED: `${GLOSSARY.proposalRequest}を${GLOSSARY.decline}`,
 } as const;
 
 export type OutcomeKind = keyof typeof OUTCOME_LABELS;

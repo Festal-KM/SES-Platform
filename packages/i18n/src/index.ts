@@ -6,7 +6,7 @@
 // 🔴 プロダクト名は `product.name` の 1 トークンだけを出所にする（docs/04 U-01）。
 //    リテラルは `glossary.ts` の `PRODUCT_NAME` の 1 行だけにあり、名称を含む他の文言もそこから組み立てる。
 //    改称はその 1 行の差し替えで済む（T-10-01。`tests/static/product-name-single-key.test.ts`）。
-// 🔴 境界と責任に関わる語（提案 / 提案依頼 / 公開 / 共有 / 承認 / 送信 / 見送り / 辞退 …）と
+// 🔴 境界と責任に関わる語（提案 / 案件提案 / 公開 / 共有 / 承認 / 送信 / 見送り / 辞退 …）と
 //    4 つの「うまくいかなかった」の表示語は `glossary.ts` を参照する（docs/02 §7.11 / T-10-01）。
 //
 // T-03-01（SP-03）で S-001（サインイン）と §15.1 のうち本タスクで到達しうるエラーの
@@ -65,7 +65,7 @@ const ja = {
   //    日本語の本文中で 1 文字ぶんの重さを持つため、**8 項目のラベルの先頭 2 文字を毎回潰していた**。
   //    群の見出しと余白が、番号と同じ「まとまりと順序」をラベルの文字を奪わずに表す。
   // 🔴 ホストと取引先で語が違う項目は別キーにする（同じ画面でも母集団が違う。docs/04 §3.2）。
-  //    語が同じもの（提案 / 提案依頼 / 面談・結果 / チャット / タスク）は 1 キーを共有する。
+  //    語が同じもの（提案 / 案件提案 / 面談・結果 / チャット / タスク）は 1 キーを共有する。
   'shell.nav.label': 'グローバルナビ',
   // ✅ 2026-10-13（Issue #93 = B）: サイドバーのロゴのブロックと下端。
   // 🔴 ロゴのロックアップの 2 段目（`BizOrch` の下に入る語）。**値であって新しいキーではない。**
@@ -116,7 +116,7 @@ const ja = {
   'shell.nav.host.projects': '自社案件管理',
   'shell.nav.host.candidates': '候補を探す',
   'shell.nav.proposals': '提案',
-  'shell.nav.proposalRequests': '提案依頼',
+  'shell.nav.proposalRequests': '案件提案',
   'shell.nav.interviews': '面談・結果',
   'shell.nav.host.contracts': '契約',
   'shell.nav.host.assignments': '稼働',
@@ -160,12 +160,12 @@ const ja = {
   // 🔴 サイドバーを 6 項目に畳んだぶんの**到達手段**である（`lib/shell/nav.ts` の
   //    `buildNavSections`）。語は**セクションの中で何の一覧か**を答えるものにする
   //    （`人材管理` の中に `人材` があっても何も伝わらない）。
-  // 🔴 `共有の設定` / `提案` / `提案依頼` は**既存のキーを共有する**（同じ画面に 2 つの語を作らない）。
+  // 🔴 `共有の設定` / `提案` / `案件提案` は**既存のキーを共有する**（同じ画面に 2 つの語を作らない）。
   'shell.section.label': 'セクション内の切替',
   'shell.section.engineers.list': '候補者一覧',
   'shell.section.projects.list': '案件一覧',
   // ✅ 2026-10-16（人間の明示指示「案件提案と人材提案でタブを分けましょうか」）: `提案` セクションの
-  //    2 つの面。🔴 **語は「何を提案するか」で分ける**（`提案` / `提案依頼` は
+  //    2 つの面。🔴 **語は「何を提案するか」で分ける**（`提案` / `案件提案` は
   //    *レコードを誰が作ったか* の名であり、営業の語ではなかった）。上の
   //    `shell.nav.partners.projects` / `.engineers`（案件一覧 / 人材一覧）と並びが揃う。
   //    🔴 **キーは消していない**（`shell.nav.proposals` / `.proposalRequests` は
@@ -223,7 +223,7 @@ const ja = {
   // --- 帯（パンくず / 画面タイトル / primary アクション）。docs/04 §3.1 / §3.4。T-12-21 ---
   // 🔴 読み上げで「この一覧が何なのか」が分かる語にする（画面上は `/` 区切りの列にしか見えない）。
   'shell.breadcrumb.label': '現在の位置',
-  // 🔴 サイドバーの ③ 提案依頼（`S-017`）の期限バッジ（docs/04 §3.1 取引先列）。
+  // 🔴 サイドバーの ③ 案件提案（`S-017`）の期限バッジ（docs/04 §3.1 取引先列）。
   //    🔴 **件数ではなく期限を出す**（件数は他社情報の示唆になりうる。CLAUDE.md §3.1）。
   'shell.nav.proposalRequests.due.label': '最も近い返答期限',
   // 🔴 サイドバーがアイコンのみの形態のとき、期限バッジの代わりに出る**点**に添える読み上げの語
@@ -560,9 +560,9 @@ const ja = {
   'admin.demo.scenario.a.step3': '③ 不合格を確認し、本文から氏名を消して再度レビューに出す → 合格',
   'admin.demo.scenario.a.step4': '④ ホストの営業で承認し、送信する（送信はモック。実在の宛先には届かない）',
   'admin.demo.scenario.a.step5': '⑤ 面談日程と結果を記録する',
-  'admin.demo.scenario.b.title': 'B. 匿名候補の検索結果への混在 → 提案依頼',
+  'admin.demo.scenario.b.title': 'B. 匿名候補の検索結果への混在 → 案件提案',
   'admin.demo.scenario.b.step1': '① ホストの営業で「データ分析基盤の構築」の候補一覧を開く。取引先が共有可にした候補が匿名 5 項目で混在している',
-  'admin.demo.scenario.b.step2': '② 匿名候補に提案依頼を送る。取引先の営業でサインインすると提案依頼の一覧に届いている',
+  'admin.demo.scenario.b.step2': '② 匿名候補に案件提案を送る。取引先の営業でサインインすると案件提案の一覧に届いている',
   'admin.demo.scenario.start': '開始地点',
   'admin.demo.accounts.title': '実演用のサインイン情報（合成）',
   'admin.demo.accounts.lead': 'いずれも架空の利用者です。パスワードは全員共通で、demo / development 以外の環境には存在しません。',
@@ -1220,12 +1220,12 @@ const ja = {
     'この提案のレビュー依頼は、提案の作成者と自社の営業担当・管理者のみが行えます。',
   'error.gate.alreadyCompleted':
     'この内容の検査はすでに完了しています。指摘を解消するには提案の内容を修正してください。修正すると、あらためて検査できます。',
-  // 🔴 T-08-06: 提案依頼（`F-018` / docs/05 §6.5 #31 / #35）。
+  // 🔴 T-08-06: 案件提案（`F-018` / docs/05 §6.5 #31 / #35）。
   //    **単価の交渉を匿名候補の段階でさせない**（`BR-58`）。「無視して送る」余地を文言でも作らない。
   'error.proposalRequest.messageCommerce':
     '依頼メッセージに単価またはエンド企業名と読める記述が含まれています。単価は提案の作成後に扱えます。該当の記述を除いてから送ってください。',
   'error.proposalRequest.alreadyExists':
-    'この候補には既にこの案件の提案依頼があります。状況は提案依頼の一覧で確認できます。',
+    'この候補には既にこの案件の案件提案があります。状況は案件提案の一覧で確認できます。',
   // 🔴 T-08-07: 自社に公開されていない案件への依頼は応諾できない（docs/05 §6.5「T-08-07 の決着」）。
   //    辞退は可能であることを文言でも伝える（`BR-57`）。
   'error.proposalRequest.projectNotShared':
@@ -1543,7 +1543,7 @@ const ja = {
   'auditLogs.detail.enum.gateVerdict.PASS': '合格',
   'auditLogs.detail.enum.gateVerdict.FAIL': '不合格',
   'auditLogs.detail.enum.entity.Proposal': '提案',
-  'auditLogs.detail.enum.entity.ProposalRequest': '提案依頼',
+  'auditLogs.detail.enum.entity.ProposalRequest': '案件提案',
   'auditLogs.detail.enum.entity.Assignment': '稼働',
   'auditLogs.detail.enum.entity.Contract': '契約書',
   'auditLogs.detail.enum.entity.Tenant': 'テナント契約',
@@ -1556,7 +1556,7 @@ const ja = {
   'auditLogs.detail.enum.via.SKILL_SHEETS': '版一覧',
   'auditLogs.detail.enum.via.VISIBILITY': '公開範囲',
   'auditLogs.detail.enum.via.CANDIDATES': '候補一覧',
-  'auditLogs.detail.enum.via.PROPOSAL_REQUEST': '提案依頼',
+  'auditLogs.detail.enum.via.PROPOSAL_REQUEST': '案件提案',
   // T-12-16: #46b（`S-006` セクション 5。凍結情報との差分で台帳の現在値を読み直した閲覧）。
   'auditLogs.detail.enum.via.SNAPSHOT_DIFF': '凍結情報との差分',
   'auditLogs.detail.enum.reason.ALL_LAYERS_PASS': 'ゲート全層 PASS（自動承認）',
@@ -1621,7 +1621,7 @@ const ja = {
   'home.actionQueue.column.kind': '種別',
   'home.actionQueue.column.subject': '対象',
   'home.actionQueue.column.counterparty': '相手',
-  // 🔴 提案の行は経過時間（放置時間）、提案依頼の行は返答期限までの残り（docs/04 §S-004 セクション 1「返答期限までの残り」）。
+  // 🔴 提案の行は経過時間（放置時間）、案件提案の行は返答期限までの残り（docs/04 §S-004 セクション 1「返答期限までの残り」）。
   'home.actionQueue.column.time': '経過時間 / 残り時間',
   'home.actionQueue.column.deadline': '期限',
   'home.actionQueue.kind.SEND_FAILED': OUTCOME_LABELS.SUBMIT_FAILED,
@@ -1824,7 +1824,7 @@ const ja = {
   'home.onePoint.host.2': '案件は公開範囲を設定するまで、どの取引先にも見えていません。',
   'home.onePoint.host.3': '提案は品質ゲートを通ってから承認に進みます。差し戻しは元データを直して再実行します。',
   'home.onePoint.partner.1': '共有の設定は既定でオフです。共有した人材は、匿名のままホストの検索結果に出ます。',
-  'home.onePoint.partner.2': '提案依頼は返答期限を過ぎると失効します。辞退の理由はホストに伝わりません。',
+  'home.onePoint.partner.2': '案件提案は返答期限を過ぎると失効します。辞退の理由はホストに伝わりません。',
   'home.onePoint.partner.3': '実名とスキルシートは、提案を作成して初めてホストに開示されます。',
 
   // ==========================================================================
@@ -3250,11 +3250,11 @@ const ja = {
   'candidates.detail.field.availabilityStatus': '稼働状況',
   'candidates.nextPage': '次のページ',
   'candidates.firstPage': '最初のページに戻る',
-  // --- S-016 右パネルの提案依頼フォーム（docs/04 §S-016「匿名候補で『提案依頼を送る』」/ `F-018` / docs/05 §6.5 #31。T-08-06）---
+  // --- S-016 右パネルの案件提案フォーム（docs/04 §S-016「匿名候補で『案件提案を送る』」/ `F-018` / docs/05 §6.5 #31。T-08-06）---
   // 🔴 **単価・見積・値引きに相当する入力欄の語を置かない**（`F-017 AC-4` / `BR-58`）。入力はメッセージと期限の 2 つだけ。
   // 🔴 「依頼を送ると実名が分かる」に相当する語を置かない —— 開示は取引先の応諾で初めて起きる（`F-018 AC-3`）。
-  'candidates.request.open': '提案依頼を送る',
-  'candidates.request.title': '提案依頼',
+  'candidates.request.open': '案件提案を送る',
+  'candidates.request.title': '案件提案',
   'candidates.request.lead':
     'この共有候補の所属先に、この案件への提案を依頼します。取引先が応諾すると提案（下書き）が作成され、その時点で実名・所属会社名・スキルシートが開示されます。取引先には断る自由があり、辞退の理由は開示されません。',
   'candidates.request.message.label': '依頼メッセージ',
@@ -3266,29 +3266,29 @@ const ja = {
   'candidates.request.submit': '依頼を送る',
   'candidates.request.submitting': '送信しています…',
   'candidates.request.cancel': 'キャンセル',
-  'candidates.request.sent': '提案依頼を送りました。返答は提案依頼の一覧で確認できます。',
-  'candidates.request.openList': '提案依頼の一覧を開く',
+  'candidates.request.sent': '案件提案を送りました。返答は案件提案の一覧で確認できます。',
+  'candidates.request.openList': '案件提案の一覧を開く',
   'candidates.request.error.notFound':
     'この候補には依頼を送れませんでした。共有が解除されたか、一覧が古くなっています。候補一覧を再読込してください。',
   'candidates.request.error.expiresAt': '返答期限は現在より後、かつ 30 日以内の日付にしてください。',
-  'candidates.request.error.generic': '提案依頼を送れませんでした。依頼は作成されていません。もう一度お試しください。',
+  'candidates.request.error.generic': '案件提案を送れませんでした。依頼は作成されていません。もう一度お試しください。',
   // 🔴 `VIEWER` / 停止中のテナントには導線そのものが無い（`docs/04` §S-016 権限差分）。理由の表示だけを置く。
-  'candidates.request.unavailable.viewer': '提案依頼の送信は、営業担当・管理者のみが行えます。',
+  'candidates.request.unavailable.viewer': '案件提案の送信は、営業担当・管理者のみが行えます。',
   // ✅ T-11-12: `lg` 以上 `xl` 未満で右パネルがテーブルに重なるドロワーになる（docs/04 §S-016 列幅配分）。閉じる操作を明示的に置く。
   'candidates.detail.close': '閉じる',
 
-  // --- S-017 提案依頼の一覧（docs/04 §S-017 / `F-018` / docs/05 §6.5 #32 / #35。T-08-06）---
+  // --- S-017 案件提案の一覧（docs/04 §S-017 / `F-018` / docs/05 §6.5 #32 / #35。T-08-06）---
   // 🔴 T1（モバイル完結）。取り下げはモバイルで押せる。判断材料（案件名・状態・期限）を隠さない（`CLAUDE.md` §13.3）。
   // 🔴 `DECLINED` / `EXPIRED` / `WITHDRAWN_BY_HOST` は別の語（`F-018 AC-5`。「失効」にまとめない）。
   // 🔴 **辞退の理由に相当する語をホスト側に置かない**（`F-018 AC-1`）。
   // 🔴 **煽らない。** 空状態は事実だけを述べる（`S-015` と同じ規律）。
-  'proposalRequests.title': '提案依頼',
-  'proposalRequests.open': '提案依頼の一覧を開く',
+  'proposalRequests.title': '案件提案',
+  'proposalRequests.open': '案件提案の一覧を開く',
   'proposalRequests.breadcrumb.home': 'ホーム',
-  'proposalRequests.breadcrumb.current': '提案依頼',
+  'proposalRequests.breadcrumb.current': '案件提案',
   // 🔴 `docs/04` §3.2 項目 2「一覧の母集団を 1 行で明示」。
-  'proposalRequests.lead.host': 'この一覧には、自社が送った提案依頼が表示されます。取引先の社名は、応諾されて提案が作成された時点で開示されます。',
-  'proposalRequests.lead.partner': 'この一覧には、御社の人材に届いた提案依頼のみが表示されます。',
+  'proposalRequests.lead.host': 'この一覧には、自社が送った案件提案が表示されます。取引先の社名は、応諾されて提案が作成された時点で開示されます。',
+  'proposalRequests.lead.partner': 'この一覧には、御社の人材に届いた案件提案のみが表示されます。',
   'proposalRequests.filter.legend': '状態で絞り込む',
   'proposalRequests.filter.all': 'すべて',
   'proposalRequests.filter.apply': '絞り込む',
@@ -3311,8 +3311,8 @@ const ja = {
   // ✅ SP-22 段④: 件数バーの母集団の 1 行（`docs/04` §3.2 項目 2 / `Toolbar` の `population`）。
   // 🔴 **件数を入れない。** `GET /api/proposal-requests`（#32）は総件数を返さず、
   //    かつ取引先に件数を見せる必要が無い（`HANDOFF.md` §3.3「件数は他社情報の示唆になりうる」）。
-  'proposalRequests.population.host': '自社が送った提案依頼',
-  'proposalRequests.population.partner': '御社の人材に届いた提案依頼',
+  'proposalRequests.population.host': '自社が送った案件提案',
+  'proposalRequests.population.partner': '御社の人材に届いた案件提案',
   // 🔴 並び順は**サーバが確定させている**（`PROPOSAL_REQUEST_ORDER_BY` = `createdAt desc`）。
   //    選べる形にしない（`?sort=` は既存 API に無い。`HANDOFF.md` §5）。
   'proposalRequests.orderNote': '依頼日の新しい順に表示しています。',
@@ -3328,10 +3328,10 @@ const ja = {
   'proposalRequests.remaining.expired': '期限を過ぎました',
   // 🔴 終端状態（応諾・辞退・取り下げ・期限切れ）では残り時間を出さない（意味が無い）。
   'proposalRequests.remaining.none': '—',
-  'proposalRequests.empty.host': '提案依頼はまだありません。',
-  'proposalRequests.empty.hostLead': '案件の候補検索で共有候補を選ぶと、提案依頼を送れます。',
+  'proposalRequests.empty.host': '案件提案はまだありません。',
+  'proposalRequests.empty.hostLead': '案件の候補検索で共有候補を選ぶと、案件提案を送れます。',
   'proposalRequests.empty.openProjects': '案件一覧を開く',
-  'proposalRequests.empty.partner': '返答が必要な提案依頼はありません。',
+  'proposalRequests.empty.partner': '返答が必要な案件提案はありません。',
   'proposalRequests.filtered.empty': '条件に一致する依頼はありません。',
   'proposalRequests.detail.select': '行を選ぶと、ここに依頼の内容を表示します。',
   'proposalRequests.detail.title': '選択した依頼',
@@ -3341,7 +3341,7 @@ const ja = {
   // 🔴 T-08-07: 取引先の行から `S-018`（応諾・辞退）へ進む導線。
   'proposalRequests.detail.partnerRespond': 'この依頼に返答する',
   'proposalRequests.withdraw': '取り下げる',
-  'proposalRequests.withdraw.confirmTitle': 'この提案依頼を取り下げますか',
+  'proposalRequests.withdraw.confirmTitle': 'この案件提案を取り下げますか',
   'proposalRequests.withdraw.confirmLead': '取り下げると、取引先はこの依頼に応諾できなくなります。同じ候補に同じ案件で再度依頼を送ることはできません。',
   'proposalRequests.withdraw.confirmSubmit': '取り下げる',
   'proposalRequests.withdraw.confirmCancel': 'キャンセル',
@@ -3349,19 +3349,19 @@ const ja = {
   'proposalRequests.withdraw.error': '取り下げられませんでした。依頼の状態は変わっていません。',
   // 🔴 422（`REQUESTED` 以外からの取り下げ）。状態が動いたことを伝え、画面の再読込を促す。
   'proposalRequests.withdraw.error.state': 'この依頼は既に返答待ちではありません。一覧を再読込して現在の状態をご確認ください。',
-  'proposalRequests.deniedTitle': '提案依頼の操作を行えません。',
+  'proposalRequests.deniedTitle': '案件提案の操作を行えません。',
   'proposalRequests.nextPage': '次のページ',
   'proposalRequests.firstPage': '最初のページに戻る',
 
-  // --- S-018 提案依頼の詳細と応諾・辞退（取引先）（docs/04 §S-018 / `F-018` `F-019` / docs/05 §6.5 #33 / #34。T-08-07）---
+  // --- S-018 案件提案の詳細と応諾・辞退（取引先）（docs/04 §S-018 / `F-018` `F-019` / docs/05 §6.5 #33 / #34。T-08-07）---
   // 🔴 T1（モバイル完結）。判断材料（案件の要件・単価レンジ・開始日・依頼メッセージ・返答期限・開示される項目）を隠さない
   //    （`CLAUDE.md` §13.3 / `docs/04` §S-018 デバイス別）。
   // 🔴 **辞退を躊躇させる語を置かない**（`BR-57`「断る自由」）。理由は任意で、非開示を入力欄の直下に明記する。
   // 🔴 **開示が起きる瞬間を明示する**（`F-018 AC-3`）。応諾の確認ステップは開示される 3 項目を列挙する。
-  'proposalRequests.respond.title': '提案依頼の詳細',
-  'proposalRequests.respond.breadcrumb.list': '提案依頼',
-  'proposalRequests.respond.backToList': '提案依頼の一覧に戻る',
-  'proposalRequests.respond.notFound': '指定された提案依頼は見つかりません。',
+  'proposalRequests.respond.title': '案件提案の詳細',
+  'proposalRequests.respond.breadcrumb.list': '案件提案',
+  'proposalRequests.respond.backToList': '案件提案の一覧に戻る',
+  'proposalRequests.respond.notFound': '指定された案件提案は見つかりません。',
   'proposalRequests.respond.section.request': '依頼の内容',
   'proposalRequests.respond.section.engineer': '対象の自社エンジニア',
   'proposalRequests.respond.section.disclosure': '応諾するとどうなるか',
@@ -3411,10 +3411,10 @@ const ja = {
   'proposalRequests.respond.decline.recordedReason': '記録した理由（社内限定）',
   'proposalRequests.respond.decline.recordedReasonNone': '（理由は記録されていません）',
   // 状態別の専用文言（`docs/04` §10.1 `S-018`「期限切れ / 取り下げ済みの専用文言」）。
-  'proposalRequests.respond.closed.ACCEPTED': 'この提案依頼は応諾済みです。提案の下書きが作成されています。',
-  'proposalRequests.respond.closed.DECLINED': 'この提案依頼は辞退済みです。',
-  'proposalRequests.respond.closed.EXPIRED': 'この提案依頼は期限が切れました。応諾・辞退はできません。',
-  'proposalRequests.respond.closed.WITHDRAWN_BY_HOST': 'この提案依頼はホストにより取り下げられました。',
+  'proposalRequests.respond.closed.ACCEPTED': 'この案件提案は応諾済みです。提案の下書きが作成されています。',
+  'proposalRequests.respond.closed.DECLINED': 'この案件提案は辞退済みです。',
+  'proposalRequests.respond.closed.EXPIRED': 'この案件提案は期限が切れました。応諾・辞退はできません。',
+  'proposalRequests.respond.closed.WITHDRAWN_BY_HOST': 'この案件提案はホストにより取り下げられました。',
   // 🔴 422（`REQUESTED` 以外からの応諾・辞退）。競合（同時に取り下げ・期限切れ）を伝え、再読込を促す。
   'proposalRequests.respond.error.state': 'この依頼は既に返答待ちではありません。応諾・辞退は成立していません。再読込して現在の状態をご確認ください。',
   'proposalRequests.respond.error.projectNotShared': 'この案件は御社に公開されていないため、応諾できません。',
@@ -3474,7 +3474,7 @@ const ja = {
   // 🔴 `docs/04` §S-020 改訂 10: 経路 4 由来の `DRAFT` は提案先が未設定の状態で開く。
   'proposals.editor.recipient.missing': '提案先が未設定です。ゲート実行の前に設定してください。',
   'proposals.editor.recipient.originRequest':
-    'この提案は提案依頼の応諾で作成されました。依頼の時点では提案先が決まっていないため、ここで設定します。',
+    'この提案は案件提案の応諾で作成されました。依頼の時点では提案先が決まっていないため、ここで設定します。',
   'proposals.editor.recipient.note': '提案先は下書きの間だけ設定・変更できます。',
   'proposals.editor.body.origin.manual': '手入力',
   'proposals.editor.body.originLabel': '本文の由来',
@@ -3503,7 +3503,7 @@ const ja = {
   'proposals.editor.reopenDraftLead':
     '検査で不合格のため差し戻されています。下書きに戻して元データを修正し、あらためてレビューに出してください。不合格のまま承認・送信へ進む操作はありません。',
   'proposals.editor.cancel': '候補検索に戻る',
-  'proposals.editor.backToRequests': '提案依頼の一覧に戻る',
+  'proposals.editor.backToRequests': '案件提案の一覧に戻る',
   // 🔴 T-09-03: レビューに出した後の判断材料は `S-021` で見る（`docs/04` §S-020「レビュー依頼 → S-021」）。
   'proposals.editor.openApproval': '承認画面を開く',
   'proposals.editor.unsavedNote': '保存していない変更があります。レビューに出す前に保存してください。',
@@ -3827,17 +3827,17 @@ const ja = {
 
   // --- S-019 提案一覧（docs/04 §S-019 / `F-024 AC-2` `AC-3` / docs/05 §6.5 #45。T-09-09）---
   // 🔴 T2（モバイル閲覧可）。**4 つの「うまくいかなかった」は別の語・別の区分**（`GATE_FAILED` = 差し戻し（検査で不合格）/
-  //    `SUBMIT_FAILED` = 送信失敗 / `LOST` = 見送り / 提案依頼の `DECLINED` = 依頼を辞退。`BR-23` / `BR-60`）。いずれか 2 つを
+  //    `SUBMIT_FAILED` = 送信失敗 / `LOST` = 見送り / 案件提案の `DECLINED` = 依頼を辞退。`BR-23` / `BR-60`）。いずれか 2 つを
   //    1 つの語にまとめた文言（「失敗」「失効」）は存在しない。状態の語そのものは `proposals.state.*`（S-020 と共通）。
-  // 🔴 提案依頼の 5 状態は**別のブロック**の語（`proposals.list.requestState.*`）。`DECLINED` を `Proposal` の `WITHDRAWN`（辞退）と
+  // 🔴 案件提案の 5 状態は**別のブロック**の語（`proposals.list.requestState.*`）。`DECLINED` を `Proposal` の `WITHDRAWN`（辞退）と
   //    同じ語にしない（`docs/04` §S-019「区分名も別の語にする」）。
   // 🔴 保留（`APPROVED` + 保留理由）は `SUBMIT_FAILED` と別の語（docs/05 §10.4「失敗率の指標に混入させない」）。
   // 🔴 一括承認・一括送信・自動再送に相当する語を持たない（`BR-50`。一括承認は本タスクでは置かない）。
-  'proposals.list.title': '提案一覧',
+  'proposals.list.title': '人材提案一覧',
   // ⚠️ T-22-09: 同上（入口は `SummaryStrip` の `進行中の提案` の値）。🔴 キーは消さない（`U-22`）。
   'proposals.list.open': '提案の一覧を開く',
   'proposals.list.breadcrumb.home': 'ホーム',
-  'proposals.list.breadcrumb.current': '提案一覧',
+  'proposals.list.breadcrumb.current': '人材提案一覧',
   // 🔴 `docs/04` §3.2 項目 2「一覧の母集団を 1 行で明示」。件数は境界適用後（自社スコープ内。`F-004 AC-4`）。
   'proposals.list.lead.host': 'この一覧には、自社と取引先が作成したすべての提案が表示されます。',
   'proposals.list.lead.partner': 'この一覧には、御社が作成した提案のみが表示されます。',
@@ -3850,10 +3850,10 @@ const ja = {
   'proposals.list.filter.clear': '条件を解除する',
   'proposals.list.filter.countPrefix': '（',
   'proposals.list.filter.countSuffix': '）',
-  // 🔴 提案依頼（`ProposalRequest`）の件数は提案と別のブロック。導線は `S-017`（提案依頼の一覧）へ。
-  'proposals.list.requests.title': '提案依頼（提案とは別の区分）',
-  'proposals.list.requests.lead': '提案依頼は、応諾されて提案が作成されるまで提案ではありません。内訳は提案依頼の一覧で確認できます。',
-  'proposals.list.requests.open': '提案依頼の一覧を開く',
+  // 🔴 案件提案（`ProposalRequest`）の件数は提案と別のブロック。導線は `S-017`（案件提案の一覧）へ。
+  'proposals.list.requests.title': '案件提案（提案とは別の区分）',
+  'proposals.list.requests.lead': '案件提案は、応諾されて提案が作成されるまで提案ではありません。内訳は案件提案の一覧で確認できます。',
+  'proposals.list.requests.open': '案件提案の一覧を開く',
   'proposals.list.requestState.REQUESTED': '返答待ち',
   'proposals.list.requestState.ACCEPTED': '応諾',
   'proposals.list.requestState.DECLINED': OUTCOME_LABELS.DECLINED,
@@ -3898,7 +3898,7 @@ const ja = {
   // 🔴 取引先には承認者・送信試行・作成会社の語を出さない（型に無いので描く枝が書けない）。
   'proposals.detail.title': '提案の詳細と履歴',
   'proposals.detail.breadcrumb.home': 'ホーム',
-  'proposals.detail.breadcrumb.list': '提案一覧',
+  'proposals.detail.breadcrumb.list': '人材提案一覧',
   'proposals.detail.breadcrumb.current': '詳細',
   'proposals.detail.notFound': 'この提案は見つかりません。URL をご確認ください。',
   'proposals.detail.partnerNotice': 'この画面には、御社が作成した提案の内容と履歴が表示されます。',
@@ -3997,7 +3997,7 @@ const ja = {
   //    （接頭辞ではない。`events.ts` の分類の印〔`REVIEW_GATE:` 等〕と衝突しない日本語の語にする）。
   'proposals.interview.title': '商談結果の記録',
   'proposals.interview.breadcrumb.home': 'ホーム',
-  'proposals.interview.breadcrumb.list': '提案一覧',
+  'proposals.interview.breadcrumb.list': '人材提案一覧',
   'proposals.interview.breadcrumb.detail': '提案の詳細',
   'proposals.interview.breadcrumb.current': '商談結果の記録',
   'proposals.interview.notFound': 'この提案は見つかりません。URL をご確認ください。',
@@ -4097,7 +4097,7 @@ const ja = {
   'engineerShares.column.name': '氏名（貴社内の表示）',
   'engineerShares.column.state': '共有状態',
   'engineerShares.column.sharedOn': '共有開始日',
-  'engineerShares.column.proposalRequestCount': '受け取った提案依頼',
+  'engineerShares.column.proposalRequestCount': '受け取った案件提案',
   'engineerShares.column.availability': '稼働可能時期',
   'engineerShares.column.action': '操作',
   'engineerShares.countUnit': '件',
@@ -4269,7 +4269,7 @@ const ja = {
   'retention.schedule.kind.engineer_snapshots': '提案時点のエンジニア情報（氏名・現所属・経歴）',
   'retention.schedule.kind.proposals': '提案先のメールアドレス・件名・本文・下書き',
   'retention.schedule.kind.proposal_events': '提案履歴のメモ・添付',
-  'retention.schedule.kind.proposal_requests': '提案依頼の本文・辞退理由',
+  'retention.schedule.kind.proposal_requests': '案件提案の本文・辞退理由',
   'retention.schedule.kind.review_gates': '品質ゲートの指摘（抜粋）',
   'retention.schedule.kind.match_candidates': 'マッチングの根拠文',
   'retention.schedule.kind.messages': 'チャットの本文・添付',

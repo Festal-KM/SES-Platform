@@ -1,5 +1,5 @@
 // packages/i18n/src/glossary.test.ts
-// 🔴 docs/02 §7.11 の受け入れ基準: 「ゲートで止まった」「送信に失敗した」「見送られた」「提案依頼を断られた」の 4 つが
+// 🔴 docs/02 §7.11 の受け入れ基準: 「ゲートで止まった」「送信に失敗した」「見送られた」「案件提案を断られた」の 4 つが
 //    **別の語**で表示される（`BR-23` / `BR-60` / CLAUDE.md §4.2「失敗と保留を混同しない」）。T-10-01。
 import { describe, expect, it } from 'vitest';
 
@@ -54,9 +54,20 @@ describe('GLOSSARY — 境界と責任に関わる語', () => {
     for (const word of words) expect(JAPANESE_LETTER.test(word)).toBe(true);
   });
 
-  it('「提案依頼」は「提案」を語幹に持つ（応諾で提案になるまで提案ではない、という関係が語に現れている）', () => {
-    expect(GLOSSARY.proposalRequest.startsWith(GLOSSARY.proposal)).toBe(true);
+  // ✅✅ 🔴 **2026-10-16（人間の明示指示「案件提案と人材提案でタブを分けましょうか」）: 語の関係が
+  //    「語幹 + 接尾」から「接頭 + 共通の語尾」に変わった。**
+  //    旧: `提案依頼`.startsWith(`提案`) —— **応諾で提案になるまで提案ではない**を語に埋め込んでいた
+  //    新: `案件提案`.endsWith(`提案`) —— **何を提案するか**が頭に付く（`人材提案` と対等）
+  // 🔴 **「ProposalRequest は Proposal ではない」という規律そのものは消えていない** ——
+  //    語の支えが外れたので、**検査が受け持つ**:
+  //      `tests/static/proposal-request-outcome-separation.test.ts` … `DECLINED` が成約率の分母に入らない
+  //      下の `DECLINED` の検査 … `Proposal.WITHDRAWN`（辞退）と別の語である
+  //    （`CLAUDE.md` §4.2「`DECLINED` を `LOST` や `GATE_FAILED` と混同しない」）。
+  it('🔴 `案件提案` と `人材提案` は共通の語尾「提案」を持ち、頭で何を提案するかを分ける', () => {
+    expect(GLOSSARY.proposalRequest.endsWith(GLOSSARY.proposal)).toBe(true);
     expect(GLOSSARY.proposalRequest).not.toBe(GLOSSARY.proposal);
+    // 🔴 **頭が付いている**（語尾だけの語にしない = `提案` と見分けが付く）。
+    expect(GLOSSARY.proposalRequest.length).toBeGreaterThan(GLOSSARY.proposal.length);
   });
 
   it('「保留」は「失敗」「見送り」のどちらとも別の語（CLAUDE.md §4.2「失敗と保留を混同しない」）', () => {

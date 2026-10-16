@@ -124,7 +124,7 @@ const messages: CandidateScreenMessages = {
   detailCreateProposal: '提案を作成',
   detailAnonymousNote: '共有候補は丸めた 5 項目のみが開示されています。',
   requestOpen: '提案依頼を送る',
-  requestTitle: '提案依頼',
+  requestTitle: '案件提案', // ✅ 2026-10-16: 改称（人間の明示指示）
   requestLead: '取引先が応諾すると提案（下書き）が作成されます。',
   requestMessageLabel: '依頼メッセージ',
   requestMessageHint: '単価・エンド企業名は書けません。',
@@ -326,7 +326,7 @@ describe('右パネル・空状態・導線', () => {
     const html = render();
     expect(html).toContain('data-testid="candidate-detail-empty"');
     expect(html).not.toContain('candidate-detail-anonymous');
-    expect(html).not.toContain('提案依頼を送る');
+    expect(html).not.toContain('案件提案を送る');
     expect(html).not.toContain('提案を作成');
   });
 
@@ -418,7 +418,7 @@ describe('🔴 T-08-06: 共有候補の右パネルと提案依頼の導線（F-
   it('🔴 canRequest=false（VIEWER / 停止中）では導線そのものが無く、理由だけが描かれる', () => {
     const html = renderAnonymousDetail({ canRequest: false, unavailableMessage: '営業担当・管理者のみ。' });
     expect(html).not.toContain('candidate-request-open');
-    expect(html).not.toContain('提案依頼を送る');
+    expect(html).not.toContain('案件提案を送る');
     expect(html).toContain('data-testid="candidate-request-unavailable"');
     expect(html).toContain('営業担当・管理者のみ。');
   });
