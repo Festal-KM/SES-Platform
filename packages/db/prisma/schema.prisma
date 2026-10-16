@@ -186,6 +186,9 @@ model User {
   ownerPartnerCompanyId  String?   @map("owner_partner_company_id") @db.Uuid
   email                  String
   displayName            String    @map("display_name")
+  /// ✅ 2026-10-16（Issue #95）: 役職。本人が `S-048` で編集する自由入力。null = 未設定。
+  ///    🔴 自分の 1 行に絞るのはアプリ層の責務（users_c3_update は所属スコープ全体を許す）。
+  jobTitle               String?   @map("job_title")
   passwordHash           String    @map("password_hash") // Argon2id
   passwordResetTokenHash String?   @map("password_reset_token_hash") // SHA-256
   passwordResetExpiresAt DateTime? @map("password_reset_expires_at") @db.Timestamptz(3)

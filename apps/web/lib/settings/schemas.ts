@@ -9,7 +9,13 @@
 //    #64 の body に無い。**先回りして書けるようにしない。**
 // 🔴 分離キー（`tenantId`）も当然持たない（`assertNoIsolationKeys` が構造として固定する）。
 import { z } from 'zod';
-import { SENDING_DOMAIN_MAX_LENGTH, TENANT_NAME_MAX_LENGTH } from '@ses/config';
+import {
+  DISPLAY_NAME_MAX_LENGTH,
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+  SENDING_DOMAIN_MAX_LENGTH,
+  TENANT_NAME_MAX_LENGTH,
+} from '@ses/config';
 import { assertNoIsolationKeys, type AssertNoIsolationKeys } from '../api/isolation-keys';
 
 /**
@@ -88,3 +94,58 @@ export const sendingDomainParamsSchema = z.object({ id: z.string().uuid() });
 export type SendingDomainParams = z.infer<typeof sendingDomainParamsSchema>;
 
 assertNoIsolationKeys(Object.keys(sendingDomainParamsSchema.shape), 'sendingDomainParamsSchema');
+
+// ============================================================================
+// ✅ `S-048` アカウント設定（2026-10-16。Issue #95）
+// ============================================================================
+/**
+ * 役職の長さの上限。🔴 **自由入力なので DB に CHECK を置かず、ここが唯一の上限である**
+ *    （migration `20261016020000_user_job_title` の 🔴）。値は「営業部 シニアマネージャー」程度が
+ *    収まる長さであり、サイドバー下部（208px）に出すことを前提にしている。
+ */
+export const ACCOUNT_JOB_TITLE_MAX_LENGTH = 60;
+
+/**
+ * `PATCH /api/settings/account` の body（`S-048`）。
+ *
+ * 🔴 **`email` のキーを持たない。** サインインの識別子であり、変更には新しいアドレスの
+ *    到達確認（確認メール）が要る（`lib/settings/account.ts` の `AccountSettingsView.email` の 🔴）。
+ *    キーが無いので送られてきても `strip` で黙って捨てられる（`strict()` にして 400 を返すと
+ *    「その項目は存在する」ことを教えてしまう。`updateOrganizationBodySchema` と同じ判断）。
+ * 🔴 **`role` も持たない**（権限の変更は `membership.role_change` の経路であり、本人の設定ではない）。
+ * 🔴 **利用者 ID も持たない** —— 対象は常に「自分」である（`account.ts` 冒頭の 🔴🔴）。
+ * 🔴 `jobTitle` は `null` を受ける（**未設定に戻す**。空文字も `account.ts` が `null` に畳む）。
+ */
+export const updateAccountBodySchema = z.object({
+  displayName: z.string().trim().min(1).max(DISPLAY_NAME_MAX_LENGTH).optional(),
+  jobTitle: z.string().max(ACCOUNT_JOB_TITLE_MAX_LENGTH).nullable().optional(),
+});
+
+export type UpdateAccountBody = z.infer<typeof updateAccountBodySchema>;
+
+export type UpdateAccountBodyIsolationGuard = AssertNoIsolationKeys<UpdateAccountBody>;
+
+assertNoIsolationKeys(Object.keys(updateAccountBodySchema.shape), 'updateAccountBodySchema');
+
+/**
+ * `POST /api/settings/account/password` の body（`S-048`）。
+ *
+ * 🔴 **現在のパスワードを必須にする**（`account.ts` の `changeAccountPassword` の 🔴）。
+ * 🔴 **現在のパスワードには最低長を課さない** —— 既存のパスワードがポリシーより短い可能性があり、
+ *    ここで弾くと「変更したいのに変更できない」になる（`signInBodySchema` と同じ判断）。
+ *    新しいパスワードにだけ `PASSWORD_MIN_LENGTH` を課す。
+ */
+export const changeAccountPasswordBodySchema = z.object({
+  currentPassword: z.string().min(1).max(PASSWORD_MAX_LENGTH),
+  newPassword: z.string().min(PASSWORD_MIN_LENGTH).max(PASSWORD_MAX_LENGTH),
+});
+
+export type ChangeAccountPasswordBody = z.infer<typeof changeAccountPasswordBodySchema>;
+
+export type ChangeAccountPasswordBodyIsolationGuard =
+  AssertNoIsolationKeys<ChangeAccountPasswordBody>;
+
+assertNoIsolationKeys(
+  Object.keys(changeAccountPasswordBodySchema.shape),
+  'changeAccountPasswordBodySchema',
+);

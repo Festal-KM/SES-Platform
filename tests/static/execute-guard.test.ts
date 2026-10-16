@@ -56,6 +56,16 @@ const EXEMPT_ROUTES: Readonly<Record<string, string>> = {
     'ピン留め・ミュート（自分の表示の設定）。閲覧の一部として止めない（read と同じ）。業務データを変えない。',
   'apps/web/app/api/(main)/threads/[id]/unread/route.ts':
     '既読位置を戻す（自分の表示の状態）。閲覧の一部として止めない（read と同じ）。業務データを変えない。',
+  // ✅ 2026-10-16（Issue #95）: `S-048` アカウント設定。**本人が自分の表示名・役職・パスワードを
+  //    管理する経路であり、業務データを 1 行も変えない。**
+  //    🔴 `CLOSING`（解約手続き中）でも止めない —— あの状態で許されるのは「閲覧と返却」であり
+  //    （`F-004 AC-8` / `F-064 AC-5`）、**本人の資格情報を管理できなくすると返却作業そのものが
+  //    できなくなる**（パスワードを変えられない / 表示名を直せない）。`SUSPENDED` も同じで、
+  //    止めるべきは提案の送信・承認・契約書の送付である（`CLAUDE.md` §4.2 `Tenant` の規則）。
+  'apps/web/app/api/(main)/settings/account/route.ts':
+    '本人の表示名・役職の変更（S-048）。業務データを変えない。CLOSING でも本人の情報は直せなければ返却作業ができない。',
+  'apps/web/app/api/(main)/settings/account/password/route.ts':
+    '本人のパスワード変更（S-048）。業務データを変えない。CLOSING / SUSPENDED でも資格情報の管理は止めない（サインアウトを止めないのと同じ理由）。',
   'apps/web/app/api/(main)/auth/signin/route.ts':
     '未認証経路（docs/05 §6.3 #1）。ctx を作る前の資格情報照合であり、テナントが確定していない。',
   'apps/web/app/api/(main)/auth/signout/route.ts':

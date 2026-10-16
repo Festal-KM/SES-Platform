@@ -175,6 +175,9 @@ const CREDENTIAL_FORM_FILES: readonly string[] = [
   'apps/web/app/(main)/(auth)/password-reset/request-form.tsx',
   'apps/web/app/(main)/(auth)/password-reset/confirm/confirm-form.tsx',
   'apps/web/app/admin/signin/admin-signin-form.tsx',
+  // ✅ 2026-10-16（Issue #95）: `S-048` アカウント設定。**現在のパスワードと新しいパスワード**を
+  //    入力する（同じファイルに表示名のフォームも在り、そちらも `method="post"` になる）。
+  'apps/web/app/(main)/settings/account/account-form.tsx',
 ];
 
 function fixture(name: string): string {
