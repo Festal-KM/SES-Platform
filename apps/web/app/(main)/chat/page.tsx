@@ -76,7 +76,7 @@ export default async function ChatPage({
     messagesQuery: { limit: CHAT_MESSAGE_PAGE_SIZE },
     paneIds: query.pane ?? [],
     // ✅ 2026-10-14: 一覧は会社ごとの木（検索語と並べ方は URL の `q` / `sort`）。
-    tree: { sort: query.sort ?? CHAT_THREAD_SORT_DEFAULT, q: query.q ?? null },
+    tree: { sort: query.sort ?? CHAT_THREAD_SORT_DEFAULT, q: query.q ?? null, unreadOnly: query.unread === '1' },
   });
   const selected = data.thread;
   // ✅ 2026-10-14（チャットレーン）: 右に並べて開いた会話（`lib/chat/panes.ts`）。
@@ -89,8 +89,8 @@ export default async function ChatPage({
   const conversationMessages = chatConversationMessages();
   const canPost = canPostChatMessage(ctx.role);
   // ✅ 2026-10-14: 会話を開く・閉じる URL に一覧の検索語と並べ方を引き継ぐ（開くたびに検索が消えない）。
-  const listQuery = { q: query.q ?? null, sort: query.sort ?? CHAT_THREAD_SORT_DEFAULT };
-  const tree = data.tree ?? { groups: [], truncated: false, awaitingReplyIds: [], messageHits: [] };
+  const listQuery = { q: query.q ?? null, sort: query.sort ?? CHAT_THREAD_SORT_DEFAULT, unread: query.unread === '1' };
+  const tree = data.tree ?? { groups: [], truncated: false, awaitingReplyIds: [], messageHits: [], unreadCounts: {} };
 
   return (
     <main className={CONTENT_PADDING_Y_CLASS}>
@@ -136,6 +136,8 @@ export default async function ChatPage({
               truncated={tree.truncated}
               awaitingReplyIds={tree.awaitingReplyIds}
               messageHits={tree.messageHits}
+              unreadCounts={tree.unreadCounts}
+              unreadOnly={listQuery.unread}
               q={listQuery.q}
               sort={listQuery.sort}
               selectedThreadId={selected?.id ?? null}
@@ -164,6 +166,7 @@ export default async function ChatPage({
                 threadId={selected.id}
                 initialMessages={data.messages.items}
                 initialNextCursor={data.messages.nextCursor}
+                lastReadMessageId={data.lastReadMessageIds[selected.id] ?? null}
                 canPost={canPost}
                 messages={conversationMessages}
                 {...(tiled ? { closeHref: chatHref({ ...withPaneClosed(paneState, selected.id), ...listQuery }) } : {})}
@@ -200,6 +203,7 @@ export default async function ChatPage({
                   threadId={pane.thread.id}
                   initialMessages={pane.messages.items}
                   initialNextCursor={pane.messages.nextCursor}
+                  lastReadMessageId={data.lastReadMessageIds[pane.thread.id] ?? null}
                   canPost={canPost}
                   messages={conversationMessages}
                   closeHref={chatHref({ ...withPaneClosed(paneState, pane.thread.id), ...listQuery })}

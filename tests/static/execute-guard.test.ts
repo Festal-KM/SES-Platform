@@ -49,6 +49,11 @@ const EXECUTE_GUARD = 'requireExecutable';
  *    `F-064 AC-5`「返却は `CLOSING` でも実行できる」）を足すときは、その旨を書く。
  */
 const EXEMPT_ROUTES: Readonly<Record<string, string>> = {
+  // ✅ 2026-10-16 チャットレーン: 既読・未読は「閲覧」の一部（自分の表示の状態を変えるだけ）。
+  'apps/web/app/api/(main)/threads/[id]/read/route.ts':
+    '既読位置の記録（自分の表示の状態）。SUSPENDED / CLOSING でも閲覧はできる（CLAUDE.md §4.2）ため、閲覧の一部として止めない。業務データを変えない。',
+  'apps/web/app/api/(main)/threads/[id]/unread/route.ts':
+    '既読位置を戻す（自分の表示の状態）。閲覧の一部として止めない（read と同じ）。業務データを変えない。',
   'apps/web/app/api/(main)/auth/signin/route.ts':
     '未認証経路（docs/05 §6.3 #1）。ctx を作る前の資格情報照合であり、テナントが確定していない。',
   'apps/web/app/api/(main)/auth/signout/route.ts':

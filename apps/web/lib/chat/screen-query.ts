@@ -30,6 +30,8 @@ export const CHAT_MAX_EXTRA_PANES = 2;
 export const CHAT_Q_PARAM = 'q';
 /** ✅ 2026-10-14: 一覧の並べ方（`recent` = 更新があったものが上 / `company` = 会社名順）。 */
 export const CHAT_SORT_PARAM = 'sort';
+/** ✅ 2026-10-16: 一覧を未読のスレッドだけにする（`unread=1`）。 */
+export const CHAT_UNREAD_PARAM = 'unread';
 /** 検索語の上限（会社名・案件名より十分長い）。 */
 export const CHAT_Q_MAX_LENGTH = 100;
 
@@ -63,6 +65,7 @@ export const chatScreenQuerySchema = z
       .transform((value) => (value === '' ? undefined : value))
       .optional(),
     [CHAT_SORT_PARAM]: z.enum(CHAT_THREAD_SORTS).optional(),
+    [CHAT_UNREAD_PARAM]: z.literal('1').optional(),
   })
   .refine((query) => {
     const panes = query.pane ?? [];
@@ -83,6 +86,8 @@ export function chatHref(input: {
   /** ✅ 2026-10-14: 一覧の検索語と並べ方（既定値は載せない）。 */
   readonly q?: string | null;
   readonly sort?: ChatThreadSort | null;
+  /** ✅ 2026-10-16: 未読のスレッドだけ。 */
+  readonly unread?: boolean;
 }): string {
   const params = new URLSearchParams();
   if (input.thread !== null && input.thread !== undefined) {
@@ -96,6 +101,7 @@ export function chatHref(input: {
   if (input.sort !== null && input.sort !== undefined && input.sort !== CHAT_THREAD_SORT_DEFAULT) {
     params.set(CHAT_SORT_PARAM, input.sort);
   }
+  if (input.unread === true) params.set(CHAT_UNREAD_PARAM, '1');
   const query = params.toString();
   return query === '' ? CHAT_PATH : `${CHAT_PATH}?${query}`;
 }
@@ -103,4 +109,13 @@ export function chatHref(input: {
 /** 会話の取得・投稿先（`docs/05` §6.5 #50 / #51）。🔴 画面に URL を書き写さない。 */
 export function chatMessagesApiPath(threadId: string): string {
   return `/api/threads/${threadId}/messages`;
+}
+
+/** ✅ 2026-10-16: 既読・未読の API（`PUT`）。🔴 画面に URL を書き写さない。 */
+export function chatReadApiPath(threadId: string): string {
+  return `/api/threads/${threadId}/read`;
+}
+
+export function chatUnreadApiPath(threadId: string): string {
+  return `/api/threads/${threadId}/unread`;
 }

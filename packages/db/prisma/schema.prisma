@@ -135,6 +135,7 @@ model Tenant {
   chatThreads             ChatThread[]
   threadParticipants      ThreadParticipant[]
   messages                Message[]
+  chatReadStates          ChatReadState[] // 2026-10-15 チャットレーン（既読位置。migration 20261016000000）
   contracts               Contract[]
   contractDocuments       ContractDocument[]
   contractTemplates       ContractTemplate[]
@@ -1109,6 +1110,7 @@ model ChatThread {
   partnerCompany     PartnerCompany      @relation(fields: [tenantId, partnerCompanyId], references: [tenantId, id], onDelete: Restrict)
   threadParticipants ThreadParticipant[]
   messages           Message[]
+  readStates         ChatReadState[] // 2026-10-15 チャットレーン
 
   @@unique([tenantId, kind, projectId, partnerCompanyId])
   @@index([tenantId, partnerCompanyId, lastMessageAt])
@@ -1162,6 +1164,26 @@ model Message {
 
   @@index([tenantId, threadId, sentAt])
   @@map("messages")
+}
+
+/// ✅ 2026-10-15 チャットレーン: 利用者ごとのスレッドの既読位置（CLAUDE.md §4.1 `ChatReadState`。docs/chat-lane/read-state-proposal.md）。
+/// RLS のポリシークラスは C7 SELF（本人の行だけ。docs/05 §4.4）。INSERT / UPDATE はスレッドが読めることも条件にする。
+/// 🔴 運営者（app_platform）に GRANT しない。user_id に FK を張らない（migration の判断事項 4）。
+model ChatReadState {
+  id                String    @id @default(uuid(7)) @db.Uuid
+  tenantId          String    @map("tenant_id") @db.Uuid
+  userId            String    @map("user_id") @db.Uuid
+  threadId          String    @map("thread_id") @db.Uuid
+  /// ここまで読んだ発言（並びは (sent_at, id)）。NULL = まだ 1 件も読んでいない
+  lastReadSentAt    DateTime? @map("last_read_sent_at") @db.Timestamptz(3)
+  lastReadMessageId String?   @map("last_read_message_id") @db.Uuid
+  updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  thread ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId, threadId])
+  @@map("chat_read_states")
 }
 
 /// RLS のポリシークラスは C2 HOST_ONLY（書込 + ホストの SELECT）/ C9 COUNTERPARTY_READ

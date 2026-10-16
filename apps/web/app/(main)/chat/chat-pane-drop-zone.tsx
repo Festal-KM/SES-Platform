@@ -27,7 +27,7 @@ import type { ChatPaneDropMessages } from './chat-props';
 export type ChatPaneDropZoneProps = {
   readonly state: ChatPaneState;
   /** ✅ 2026-10-14: 一覧の検索語と並べ方（開いた後も一覧の条件を保つ）。 */
-  readonly listQuery?: { readonly q: string | null; readonly sort: ChatThreadSort };
+  readonly listQuery?: { readonly q: string | null; readonly sort: ChatThreadSort; readonly unread?: boolean };
   readonly messages: ChatPaneDropMessages;
 };
 

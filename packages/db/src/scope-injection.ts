@@ -262,6 +262,7 @@ const TENANT_KEY_MOVING_RELATION_OVERRIDES: Readonly<Record<string, readonly str
     'chatThreads',
     'threadParticipants',
     'messages',
+    'chatReadStates', // 2026-10-16 チャットレーン（既読位置。C7 SELF。migration 20261016000000）
     'contracts',
     'contractDocuments',
     'contractTemplates',

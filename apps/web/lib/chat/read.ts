@@ -43,6 +43,7 @@ import {
   type ChatThreadSort,
 } from './thread-tree';
 import { FAST_REPLY_WINDOW_DAYS, fastReplyGroupKeys, isAwaitingReply } from './reply-speed';
+import { countUnread, readPositions } from './read-state';
 import {
   chatThreadCursorWhere,
   decodeChatThreadCursor,
@@ -221,6 +222,8 @@ export type ChatThreadTreeData = {
   readonly awaitingReplyIds: readonly string[];
   /** ✅ 2026-10-14: 本文の検索で当たった発言（`q` が 2 文字以上のときだけ。新しい順に最大 20 件）。 */
   readonly messageHits: readonly ChatMessageHit[];
+  /** ✅ 2026-10-16: スレッドごとの未読の件数（自分以外の発言で既読位置より後ろ。0 は載せない）。 */
+  readonly unreadCounts: Readonly<Record<string, number>>;
   /** 上限を超えたので、古いスレッドを読んでいない。 */
   readonly truncated: boolean;
 };
@@ -231,8 +234,8 @@ export type ChatThreadTreeData = {
  */
 async function readThreadTree(
   ctx: AuthenticatedTenantCtx,
-  db: Pick<TenantDb, 'chatThread' | 'partnerCompany' | 'tenant' | 'project' | 'message'>,
-  options: { readonly sort: ChatThreadSort; readonly q: string | null },
+  db: Pick<TenantDb, 'chatThread' | 'partnerCompany' | 'tenant' | 'project' | 'message' | 'chatReadState'>,
+  options: { readonly sort: ChatThreadSort; readonly q: string | null; readonly unreadOnly?: boolean },
 ): Promise<ChatThreadTreeData> {
   const rows = (await db.chatThread.findMany({
     select: CHAT_THREAD_SELECT,
@@ -278,6 +281,8 @@ async function readThreadTree(
       })),
     );
   }
+  // ✅ 2026-10-16: 未読の件数（`read-state.ts`）。🔴 既読位置は C7（本人の行だけ）、数えるのは C6 越し。
+  const unread = await countUnread(ctx, db, threadIds);
   const groups = buildThreadTree(
     kept.map((row) => ({
       groupKey: row.partnerCompanyId,
@@ -286,7 +291,12 @@ async function readThreadTree(
         counterpartyName: counterpartyOf(row.partnerCompanyId),
       }),
     })),
-    { ...options, fastReplyKeys },
+    {
+      sort: options.sort,
+      q: options.q,
+      fastReplyKeys,
+      ...(options.unreadOnly === true ? { onlyThreadIds: new Set(unread.keys()) } : {}),
+    },
   );
   // ✅ 2026-10-14: 本文の検索（紺野の決定）。🔴 母集団は `messages` の RLS（C6）だけ（`where` は検索語とスレッドだけ）。
   //    照合は `@ses/db` の `freeWordFilter`（検索の実装の唯一の出所。docs/05 TBD-8 / `search-sql-single-path.test.ts`）。
@@ -312,7 +322,7 @@ async function readThreadTree(
           threadTitle: allTitles.get(message.threadId) ?? null,
           snippet: messageSnippet(message.body ?? '', needle),
         }));
-  return { groups, truncated, awaitingReplyIds, messageHits };
+  return { groups, truncated, awaitingReplyIds, messageHits, unreadCounts: Object.fromEntries(unread) };
 }
 
 /**
@@ -492,6 +502,11 @@ export type ChatScreenData = {
    * 🔴 `threads`（ページ単位の一覧）と母集団は同じで、並べ方だけが違う。
    */
   readonly tree: ChatThreadTreeData | null;
+  /**
+   * ✅ 2026-10-16: 開いている会話（左端と右の列）の既読位置（開いた時点。「ここから未読」の線を引く）。
+   * 🔴 RLS（C7）が本人の行だけを返す。行が無い / 1 件も読んでいないスレッドは `null`。
+   */
+  readonly lastReadMessageIds: Readonly<Record<string, string | null>>;
 };
 
 /** 右に並べた会話 1 本ぶん。 */
@@ -517,7 +532,7 @@ export async function readChatScreen(
     /** 右に並べる会話（左から順。省略時は無し）。 */
     readonly paneIds?: readonly string[];
     /** ✅ 2026-10-14: 一覧を会社ごとの木でも読む（画面だけが使う。API #49 は従来のページ単位のまま）。 */
-    readonly tree?: { readonly sort: ChatThreadSort; readonly q: string | null };
+    readonly tree?: { readonly sort: ChatThreadSort; readonly q: string | null; readonly unreadOnly?: boolean };
   },
 ): Promise<ChatScreenData> {
   return withTenant(ctx, async (db) => {
@@ -534,6 +549,7 @@ export async function readChatScreen(
         requestedThreadMissing: false,
         panes: [],
         tree,
+        lastReadMessageIds: {},
       };
     }
     const thread = await readThreadDetail(ctx, db, input.threadId);
@@ -545,6 +561,7 @@ export async function readChatScreen(
         requestedThreadMissing: true,
         panes: [],
         tree,
+        lastReadMessageIds: {},
       };
     }
     const messages = await readMessagePage(ctx, db, input.threadId, input.messagesQuery);
@@ -561,7 +578,10 @@ export async function readChatScreen(
             : await readMessagePage(ctx, db, paneId, input.messagesQuery),
       });
     }
-    return { threads, thread, messages, requestedThreadMissing: false, panes, tree };
+    const openIds = [thread.id, ...panes.filter((pane) => pane.thread !== null).map((pane) => pane.requestedThreadId)];
+    const positions = await readPositions(db, openIds);
+    const lastReadMessageIds = Object.fromEntries(openIds.map((id) => [id, positions.get(id)?.id ?? null]));
+    return { threads, thread, messages, requestedThreadMissing: false, panes, tree, lastReadMessageIds };
   });
 }
 

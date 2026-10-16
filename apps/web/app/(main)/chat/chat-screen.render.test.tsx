@@ -159,9 +159,14 @@ describe('🔴 ①: 未読の実体が無いので、未読らしきものを 1 
     expect([...'<span class="x">12</span>'.matchAll(/>\s*\d+\s*</g)]).toHaveLength(1);
   });
 
-  it('🔴 `unread` の語が markup に 1 つも無い（属性名・クラス名・testid を含む）', () => {
+  // ✅ 2026-10-16: 未読の実体（`chat_read_states`）ができたので、「未読を 1 つも描かない」から
+  //    「**未読の件数は実データがあるときだけ描く**」に改めた（架空の数を出さない、という意図は同じ）。
+  it('🔴 未読の件数は実データ（`unreadCounts`）があるときだけ描く（架空の数を出さない）', () => {
     const html = renderThreadList();
-    expect(html.toLowerCase()).not.toContain('unread');
+    expect(html).not.toContain('chat-thread-unread-');
+    const withUnread = renderThreadList({ unreadCounts: { [THREAD_PROJECT]: 3 } });
+    expect(withUnread).toContain(`data-testid="chat-thread-unread-${THREAD_PROJECT}"`);
+    expect(withUnread).not.toContain(`chat-thread-unread-${THREAD_COMPANY}`);
     // 一覧に現に行が出ている状態で見ている（空の markup を見て真になっていない）。
     expect(html).toContain(`data-testid="chat-thread-row-${THREAD_PROJECT}"`);
     expect(html).toContain(`data-testid="chat-thread-row-${THREAD_COMPANY}"`);
@@ -220,11 +225,12 @@ describe('🔴 ②: 投稿できないロールにボタンを描かない（BR-
     // 🔴 ② の本体は「不能を描かない」である。会話の口（送信）と過去の読み込みが共に無い状態で、
     //    押せない何かが残っていないことを見る。
     const html = renderConversation({ canPost: false, initialNextCursor: null });
-    // ✅ 2026-10-14: 発言の操作（コピー・続きを読む）は閲覧専用でも**押せて働く**ので在ってよい。
+    // ✅ 2026-10-14: 発言の操作（コピー・続きを読む・2026-10-16 から「ここから未読にする」）は閲覧専用でも**押せて働く**
+    //    （自分の表示の状態を変えるだけ）ので在ってよい。
     //    🔴 それ以外の `<button>`（送信・再送・定型文・過去の読み込み）は 1 つも無い。
     const buttons = [...html.matchAll(/<button[^>]*>/g)].map((match) => match[0]);
     for (const button of buttons) {
-      expect(button, `発言の操作ではないボタンがあります: ${button}`).toMatch(/data-testid="chat-message-(copy|expand)-/);
+      expect(button, `発言の操作ではないボタンがあります: ${button}`).toMatch(/data-testid="chat-message-(copy|expand|mark-unread)-/);
     }
     expect(html).not.toContain('chat-compose-submit');
     expect(html).not.toContain('chat-compose-template');
@@ -348,15 +354,16 @@ describe('🔴 ④: 自社 / 相手の弁別は `data-own` と面の色だけ（
 // ⑤ 実体の無い語を 1 つも描かない
 // ---------------------------------------------------------------------------
 
-describe('🔴 ⑤: 実体の無い語を 1 つも描かない（添付 / 接続中 / 未読 / 件数）', () => {
+describe('🔴 ⑤: 実体の無い語を 1 つも描かない（添付 / 接続中 / 件数。未読は 2026-10-16 に実体ができた）', () => {
   /**
    * 🔴 いずれも配線が無い:
    *   - `添付` … ウイルススキャンの配線が無い（`CLAUDE.md` §3.4。スキャン前の URL を出せない）
    *   - `接続中` … `GET /api/realtime/threads/{id}`（`docs/05` §6.5 #52）が未実装
-   *   - `未読` … `messages` に既読の列が無い
+   *   - ~~`未読` … `messages` に既読の列が無い~~ → ✅ 2026-10-16 に実体（`chat_read_states`）ができたので外した
+   *     （件数は実データがあるときだけ描く。上の ①）
    *   - `件数` … 他社の示唆になりうる（`F-038 AC-1` / `HANDOFF.md` §3.3）
    */
-  const FORBIDDEN_WORDS = ['添付', '接続中', '未読', '件数'] as const;
+  const FORBIDDEN_WORDS = ['添付', '接続中', '件数'] as const;
 
   const SURFACES: readonly (readonly [string, () => string])[] = [
     ['ChatThreadList', () => renderThreadList()],
@@ -720,5 +727,24 @@ describe('⑭: 本文の検索の結果（2026-10-14、チャットレーン）'
     const html = renderThreadList({ groups: [], q: '面談', messageHits: [HIT] });
     expect(html).not.toContain('chat-threads-search-empty');
     expect(html).toContain('chat-threads-message-hits');
+  });
+});
+
+describe('⑮: 既読・未読（2026-10-16、チャットレーン）', () => {
+  it('既読位置の後ろの、相手の最初の発言の直前に「ここから未読」の線を引く', () => {
+    const html = renderConversation({ initialMessages: [MESSAGE_OWN, MESSAGE_OTHER], lastReadMessageId: MESSAGE_OWN.id });
+    expect(html).toContain('data-testid="chat-unread-marker"');
+    expect(html.indexOf('chat-unread-marker')).toBeLessThan(html.indexOf(`chat-message-${MESSAGE_OTHER.id}`));
+  });
+
+  it('最後まで読んでいれば線を引かない', () => {
+    const html = renderConversation({ initialMessages: [MESSAGE_OWN, MESSAGE_OTHER], lastReadMessageId: MESSAGE_OTHER.id });
+    expect(html).not.toContain('chat-unread-marker');
+  });
+
+  it('相手の発言にだけ「ここから未読にする」を出す', () => {
+    const html = renderConversation({ initialMessages: [MESSAGE_OWN, MESSAGE_OTHER] });
+    expect(html).toContain(`data-testid="chat-message-mark-unread-${MESSAGE_OTHER.id}"`);
+    expect(html).not.toContain(`chat-message-mark-unread-${MESSAGE_OWN.id}`);
   });
 });

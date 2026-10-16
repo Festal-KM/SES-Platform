@@ -43,6 +43,9 @@ export type ChatConversationMessages = {
   readonly pending: string;
   readonly undo: string;
   readonly sendNow: string;
+  /** ✅ 2026-10-16: 既読・未読。 */
+  readonly unreadFrom: string;
+  readonly markUnread: string;
   readonly templateLabel: string;
   readonly templatePlaceholder: string;
   /** 定型文（固定の文面。🔴 個人情報・単価を含めない）。 */
@@ -93,6 +96,8 @@ export function chatConversationMessages(): ChatConversationMessages {
     pending: t('chat.compose.pending'),
     undo: t('chat.compose.undo'),
     sendNow: t('chat.compose.sendNow'),
+    unreadFrom: t('chat.messages.unreadFrom'),
+    markUnread: t('chat.message.markUnread'),
     templateLabel: t('chat.compose.template.label'),
     templatePlaceholder: t('chat.compose.template.placeholder'),
     templates: [

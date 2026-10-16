@@ -778,3 +778,98 @@ describe('🔴 ⑧ 投稿の認可', () => {
     expect(((await response.json()) as ErrorBody).error.code).toBe('VALIDATION');
   });
 });
+
+// ---------------------------------------------------------------------------
+// ⑮ 既読・未読（2026-10-16、チャットレーン。`chat_read_states` = C7 SELF）
+// ---------------------------------------------------------------------------
+
+describe('🔴 ⑮ 既読位置は本人だけが読み書きでき、読めないスレッドには作れない（C7 SELF）', () => {
+  const PARTNER_REPLY = '01930000-0000-7000-8000-0000000009c1';
+
+  // 🔴 ファイル全体の afterEach が「材料以外の発言」を毎回消すので、各テストの前に作り直す。
+  beforeEach(async () => {
+    // 取引先 A1 からホストへの返信（ホストから見て未読になる材料）。
+    await admin.message.upsert({
+      where: { id: PARTNER_REPLY },
+      update: {},
+      create: {
+        id: PARTNER_REPLY,
+        tenantId: TENANT_A,
+        ownerPartnerCompanyId: PARTNER_A1,
+        threadId: THREAD_A_P1,
+        senderUserId: USER_A_PARTNER,
+        senderPartnerCompanyId: PARTNER_A1,
+        body: 't-read-state partner reply',
+        sentAt: new Date('2026-10-10T00:00:00.000Z'),
+      },
+    });
+  });
+
+  afterAll(async () => {
+    await admin.chatReadState.deleteMany({});
+    await admin.message.deleteMany({ where: { id: PARTNER_REPLY } });
+  });
+
+  async function treeOf(ctx: AuthenticatedTenantCtx) {
+    const { readChatScreen } = await import('../../apps/web/lib/chat/read');
+    const screen = await readChatScreen(ctx, {
+      threadId: null,
+      threadsQuery: { limit: 50 },
+      messagesQuery: { limit: 50 },
+      tree: { sort: 'recent', q: null },
+    });
+    return screen.tree;
+  }
+
+  it('ホストは取引先の返信を未読として数え、最新まで読むと 0 になる。既読は戻らない', async () => {
+    const { markChatRead } = await import('../../apps/web/lib/chat/read-state');
+    const before = await treeOf(hostSales);
+    expect(before?.unreadCounts[THREAD_A_P1] ?? 0).toBeGreaterThan(0);
+
+    // スレッドの最新の発言まで読む（並びは (sent_at, id)）。
+    const ordered = await admin.message.findMany({
+      where: { threadId: THREAD_A_P1 },
+      orderBy: [{ sentAt: 'asc' }, { id: 'asc' }],
+      select: { id: true },
+    });
+    const latest = ordered.at(-1)?.id as string;
+    const oldest = ordered[0]?.id as string;
+    await markChatRead(hostSales, THREAD_A_P1, latest);
+    const after = await treeOf(hostSales);
+    expect(after?.unreadCounts[THREAD_A_P1] ?? 0).toBe(0);
+
+    // 🔴 古い発言を指しても既読は戻らない。
+    const back = await markChatRead(hostSales, THREAD_A_P1, oldest);
+    expect(back.lastReadMessageId).toBe(latest);
+  });
+
+  it('🔴 ホストの既読位置は取引先から 1 行も見えない（同じスレッドの参加者でも）', async () => {
+    const { readPositions } = await import('../../apps/web/lib/chat/read-state');
+    const { withTenant } = await import('@ses/db');
+    const seenByPartner = await withTenant(partnerA1, (db) => readPositions(db, [THREAD_A_P1]));
+    expect(seenByPartner.size).toBe(0);
+    // 対照: ホスト本人には見える。
+    const seenByHost = await withTenant(hostSales, (db) => readPositions(db, [THREAD_A_P1]));
+    expect(seenByHost.get(THREAD_A_P1)).not.toBeUndefined();
+  });
+
+  it('🔴 取引先 A1 は A2 のスレッドの既読位置を作れない（見えないスレッドは 404 と同じ扱い）', async () => {
+    const { markChatRead, markChatUnread } = await import('../../apps/web/lib/chat/read-state');
+    await expect(markChatRead(partnerA1, THREAD_A_P2, MESSAGE_A_P2)).rejects.toThrow();
+    await expect(markChatUnread(partnerA1, THREAD_A_P2, MESSAGE_A_P2)).rejects.toThrow();
+    // 🔴 別スレッドの発言を指しても作れない。
+    await expect(markChatRead(partnerA1, THREAD_A_P1, MESSAGE_A_P2)).rejects.toThrow();
+    const rows = await admin.chatReadState.findMany({ where: { userId: USER_A_PARTNER } });
+    expect(rows.filter((row) => row.threadId === THREAD_A_P2)).toEqual([]);
+  });
+
+  it('🔴 未読の数は読める発言だけ（A1 の木に A2 のスレッドの未読は出ない）', async () => {
+    const tree = await treeOf(partnerA1);
+    expect(Object.keys(tree?.unreadCounts ?? {})).not.toContain(THREAD_A_P2);
+    // 自分の発言は自分の未読にならない（A1 が送った返信は A1 の未読に数えない）。
+    const { markChatUnread } = await import('../../apps/web/lib/chat/read-state');
+    await markChatUnread(partnerA1, THREAD_A_P1, PARTNER_REPLY);
+    const afterUnread = await treeOf(partnerA1);
+    expect(afterUnread?.unreadCounts[THREAD_A_P1] ?? 0).toBe(0);
+  });
+});
