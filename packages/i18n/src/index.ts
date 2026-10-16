@@ -4425,6 +4425,8 @@ const ja = {
   //    案件ごとのやり取りを「スレッド」と呼ぶ（キーは凍結。値だけを変えた）。
   'chat.thread.kind.PROJECT': 'スレッド',
   'chat.thread.kind.COMPANY': 'チャット',
+  'chat.thread.kind.DM': 'DM',
+  'chat.thread.kind.GROUP': 'グループ',
   'chat.thread.noMessages': 'まだ発言がありません',
   'chat.thread.unknownName': '（表示できません）',
   // 🔴 不存在・他社・他テナントで**同じ文言**（docs/05 §4.8「見えない ＝ 存在しない」）。

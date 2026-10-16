@@ -132,6 +132,17 @@ SELECT 'CREATE ROLE app_purge_probe NOLOGIN NOBYPASSRLS'
 WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_purge_probe')
 \gexec
 
+-- app_thread_probe: NOLOGIN。chat_threads の 4 列（tenant_id / id / kind / member_user_ids）の SELECT のみ
+-- （2026-10-16・#128。人単位の部屋の「人の段」。app_share_probe と同じパターン）。
+-- 🔴 なぜ要るか: messages / thread_participants のポリシーが「この部屋のメンバーか」を問うには
+-- chat_threads を読む必要があるが、chat_threads のポリシーは thread_participants を参照しているため、
+-- 直接参照するとポリシーの無限再帰になる。専用ロールの SECURITY DEFINER 関数（app_thread_member_ok）で
+-- 真偽だけを答える。パスワード不要。GRANT・ポリシー・関数は
+-- packages/db/prisma/migrations/20261016050000_chat_people_rooms/migration.sql。
+SELECT 'CREATE ROLE app_thread_probe NOLOGIN NOBYPASSRLS'
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_thread_probe')
+\gexec
+
 -- 🔴 `ALTER FUNCTION ... OWNER TO app_assignment_owner_probe`（migration 20260903070000）は
 -- app_migrator が app_assignment_owner_probe に対して SET ROLE できることを要求する
 -- （PostgreSQL の所有者変更の仕様。実行者は新旧いずれの所有者ロールにもなれる必要がある）。
@@ -148,6 +159,8 @@ GRANT app_scheduler_probe TO app_migrator;
 GRANT app_gate_probe TO app_migrator;
 -- 同上（T-10-09。migration 20260927000000 の ALTER FUNCTION ... OWNER TO app_purge_probe）。
 GRANT app_purge_probe TO app_migrator;
+-- 同上（2026-10-16・#128。migration 20261016050000 の ALTER FUNCTION ... OWNER TO app_thread_probe）。
+GRANT app_thread_probe TO app_migrator;
 
 -- public スキーマの所有者を app_migrator にする（PostgreSQL 15 以降は既定で PUBLIC に
 -- CREATE 権限が無いため、これが無いとマイグレーションがテーブルを作れない。docs/05 §4.2）。

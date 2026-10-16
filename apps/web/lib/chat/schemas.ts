@@ -111,3 +111,18 @@ export const chatThreadPrefsBodySchema = z
 export type ChatThreadPrefsBody = z.infer<typeof chatThreadPrefsBodySchema>;
 export type ChatThreadPrefsBodyIsolationGuard = AssertNoIsolationKeys<ChatThreadPrefsBody>;
 assertNoIsolationKeys(['pinned', 'muted'], 'chatThreadPrefsBodySchema');
+
+// ✅ 2026-10-16（#128）: 人単位の部屋（`docs/05` §6.5 #51f / #51g）。
+// 🔴 部屋の取引先・テナントは受け取らない（メンバーの所属と認証コンテキストから決める。`rooms.ts` ②）。
+/** `POST /api/threads/dm` — その人との DM を開く（無ければ作る）。 */
+export const chatDirectMessageBodySchema = z.object({ userId: z.uuid() }).strict();
+assertNoIsolationKeys(Object.keys(chatDirectMessageBodySchema.shape), 'chatDirectMessageBodySchema');
+
+/** `POST /api/threads/groups` — グループを作る（作成者は自動で入る）。 */
+export const chatGroupBodySchema = z
+  .object({
+    title: z.string().trim().min(1).max(100),
+    userIds: z.array(z.uuid()).min(1).max(49),
+  })
+  .strict();
+assertNoIsolationKeys(Object.keys(chatGroupBodySchema.shape), 'chatGroupBodySchema');

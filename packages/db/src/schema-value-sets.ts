@@ -222,7 +222,8 @@ export type ProposalEventKind = (typeof PROPOSAL_EVENT_KINDS)[number];
 // contract_templates.scan_status で共有する（新規定義しない）。
 
 /** docs/05 §3.7 `ChatThread.kind`（TEXT + CHECK）。 */
-export const CHAT_THREAD_KINDS = ['PROJECT', 'COMPANY'] as const;
+// ✅ 2026-10-16（#128）: DM（1 対 1）と GROUP（選んだ人）を足した（migration 20261016050000）。
+export const CHAT_THREAD_KINDS = ['PROJECT', 'COMPANY', 'DM', 'GROUP'] as const;
 
 export type ChatThreadKind = (typeof CHAT_THREAD_KINDS)[number];
 
