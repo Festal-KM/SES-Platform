@@ -365,10 +365,10 @@ function toSharedView(row: ProjectListRow, summary: MustSummary | undefined): Pr
 export function withStartWindow(query: ProjectListQuery, now: Date): ProjectListQuery {
   if (query.startWithin === undefined) return query;
   const range = resolveStartWindow(query.startWithin, new Date(`${toJstIsoDay(now)}T00:00:00.000Z`));
-  const { startFrom: _legacyStartFrom, ...rest } = query;
+  // 🔴 旧 `startFrom` は区分の範囲で上書きする（区分が無い範囲の端は `undefined` で消す）。
   return {
-    ...rest,
-    ...(range.startFrom === undefined ? {} : { startFrom: range.startFrom }),
+    ...query,
+    startFrom: range.startFrom,
     ...(range.startTo === undefined ? {} : { startTo: range.startTo }),
   } as ProjectListQuery;
 }
