@@ -90,7 +90,15 @@ export default async function ChatPage({
   const canPost = canPostChatMessage(ctx.role);
   // ✅ 2026-10-14: 会話を開く・閉じる URL に一覧の検索語と並べ方を引き継ぐ（開くたびに検索が消えない）。
   const listQuery = { q: query.q ?? null, sort: query.sort ?? CHAT_THREAD_SORT_DEFAULT, unread: query.unread === '1' };
-  const tree = data.tree ?? { groups: [], truncated: false, awaitingReplyIds: [], messageHits: [], unreadCounts: {} };
+  const tree = data.tree ?? {
+    groups: [],
+    truncated: false,
+    awaitingReplyIds: [],
+    messageHits: [],
+    unreadCounts: {},
+    pinnedIds: [],
+    mutedIds: [],
+  };
 
   return (
     <main className={CONTENT_PADDING_Y_CLASS}>
@@ -137,6 +145,8 @@ export default async function ChatPage({
               awaitingReplyIds={tree.awaitingReplyIds}
               messageHits={tree.messageHits}
               unreadCounts={tree.unreadCounts}
+              pinnedIds={tree.pinnedIds}
+              mutedIds={tree.mutedIds}
               unreadOnly={listQuery.unread}
               q={listQuery.q}
               sort={listQuery.sort}
@@ -167,6 +177,7 @@ export default async function ChatPage({
                 initialMessages={data.messages.items}
                 initialNextCursor={data.messages.nextCursor}
                 lastReadMessageId={data.lastReadMessageIds[selected.id] ?? null}
+                prefs={data.threadPrefs[selected.id] ?? { pinned: false, muted: false }}
                 canPost={canPost}
                 messages={conversationMessages}
                 {...(tiled ? { closeHref: chatHref({ ...withPaneClosed(paneState, selected.id), ...listQuery }) } : {})}
@@ -204,6 +215,7 @@ export default async function ChatPage({
                   initialMessages={pane.messages.items}
                   initialNextCursor={pane.messages.nextCursor}
                   lastReadMessageId={data.lastReadMessageIds[pane.thread.id] ?? null}
+                  prefs={data.threadPrefs[pane.thread.id] ?? { pinned: false, muted: false }}
                   canPost={canPost}
                   messages={conversationMessages}
                   closeHref={chatHref({ ...withPaneClosed(paneState, pane.thread.id), ...listQuery })}

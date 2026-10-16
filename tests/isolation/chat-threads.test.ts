@@ -974,3 +974,19 @@ describe('🔴 ⑰ 発言を編集・削除できるのは送った本人だけ�
     await expect(editChatMessage(partnerA1, THREAD_A_P1, OWN, { body: 'y' }, DEPS)).rejects.toThrow();
   });
 });
+
+describe('🔴 ⑱ ピン留め・ミュートは本人だけの設定（C7）', () => {
+  afterAll(async () => {
+    await admin.chatReadState.deleteMany({});
+  });
+
+  it('ホストのピン留めは取引先から見えず、見えないスレッドには設定できない', async () => {
+    const { readThreadPrefs, setChatThreadPrefs } = await import('../../apps/web/lib/chat/read-state');
+    const { withTenant } = await import('@ses/db');
+    expect(await setChatThreadPrefs(hostSales, THREAD_A_P1, { pinned: true })).toEqual({ pinned: true, muted: false });
+    const seenByPartner = await withTenant(partnerA1, (db) => readThreadPrefs(db, [THREAD_A_P1]));
+    expect(seenByPartner.size).toBe(0);
+    await expect(setChatThreadPrefs(partnerA1, THREAD_A_P2, { muted: true })).rejects.toThrow();
+    expect(await admin.chatReadState.count({ where: { threadId: THREAD_A_P2, userId: USER_A_PARTNER } })).toBe(0);
+  });
+});

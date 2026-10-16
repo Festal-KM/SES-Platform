@@ -129,3 +129,8 @@ export function chatReactionApiPath(threadId: string, messageId: string): string
 export function chatMessageApiPath(threadId: string, messageId: string): string {
   return `/api/threads/${threadId}/messages/${messageId}`;
 }
+
+/** ✅ 2026-10-16: ピン留め・ミュートの API（`PUT`）。 */
+export function chatThreadPrefsApiPath(threadId: string): string {
+  return `/api/threads/${threadId}/prefs`;
+}

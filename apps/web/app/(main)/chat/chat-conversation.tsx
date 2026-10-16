@@ -58,6 +58,7 @@ import {
   type ChatReactionSummary,
 } from '../../../lib/chat/views';
 import type { ChatConversationMessages } from './chat-props';
+import { ChatThreadPrefsToggle } from './chat-thread-prefs-toggle';
 import { formatChatTime, withDaySeparators } from '../../../lib/chat/day-separators';
 import {
   CHAT_DRAFT_EVENT,
@@ -111,6 +112,8 @@ export type ChatConversationProps = {
    * 「ここから未読」の線をこの後ろの最初の相手の発言に引く。線は開いている間は動かさない（Slack と同じ）。
    */
   readonly lastReadMessageId?: string | null;
+  /** ✅ 2026-10-16: 自分のピン留め・ミュート（見出しの切り替えボタン）。省略時は出さない。 */
+  readonly prefs?: { readonly pinned: boolean; readonly muted: boolean };
 };
 
 /** 投稿の応答（`docs/05` §6.5 #51 の上位互換。`route.ts` の 🔴）。 */
@@ -128,6 +131,7 @@ export function ChatConversation({
   messages,
   closeHref,
   lastReadMessageId = null,
+  prefs,
 }: ChatConversationProps) {
   // 🔴 ガードは**インスタンスごと**に持つ（モジュール変数にすると、別のスレッドを開いた島が
   //    同じガードを共有し「前の送信が終わるまで送れない」状態になる）。
@@ -684,6 +688,14 @@ export function ChatConversation({
         >
           {messages.backToList}
         </Link>
+        {/* ✅ 2026-10-16: ピン留め・ミュート（自分の表示の設定）。 */}
+        {prefs === undefined ? null : (
+          <ChatThreadPrefsToggle
+            threadId={threadId}
+            prefs={prefs}
+            labels={{ pin: messages.pin, unpin: messages.unpin, mute: messages.mute, unmute: messages.unmute }}
+          />
+        )}
         {/* ✅ 2026-10-14: 並べて開いているときだけ「閉じる」を置く（`md` 以上。モバイルは 1 列の切替のまま）。 */}
         {closeHref === undefined ? null : (
           <Link

@@ -43,7 +43,7 @@ import {
   type ChatThreadSort,
 } from './thread-tree';
 import { FAST_REPLY_WINDOW_DAYS, fastReplyGroupKeys, isAwaitingReply } from './reply-speed';
-import { countUnread, readPositions } from './read-state';
+import { countUnread, readPositions, readThreadPrefs, type ChatThreadPrefs } from './read-state';
 import {
   chatThreadCursorWhere,
   decodeChatThreadCursor,
@@ -227,6 +227,9 @@ export type ChatThreadTreeData = {
   readonly messageHits: readonly ChatMessageHit[];
   /** ✅ 2026-10-16: スレッドごとの未読の件数（自分以外の発言で既読位置より後ろ。0 は載せない）。 */
   readonly unreadCounts: Readonly<Record<string, number>>;
+  /** ✅ 2026-10-16: 自分がピン留め・ミュートしているスレッド（C7。本人の設定だけ）。 */
+  readonly pinnedIds: readonly string[];
+  readonly mutedIds: readonly string[];
   /** 上限を超えたので、古いスレッドを読んでいない。 */
   readonly truncated: boolean;
 };
@@ -286,6 +289,7 @@ async function readThreadTree(
   }
   // ✅ 2026-10-16: 未読の件数（`read-state.ts`）。🔴 既読位置は C7（本人の行だけ）、数えるのは C6 越し。
   const unread = await countUnread(ctx, db, threadIds);
+  const prefs = await readThreadPrefs(db, threadIds);
   const groups = buildThreadTree(
     kept.map((row) => ({
       groupKey: row.partnerCompanyId,
@@ -325,7 +329,15 @@ async function readThreadTree(
           threadTitle: allTitles.get(message.threadId) ?? null,
           snippet: messageSnippet(message.body ?? '', needle),
         }));
-  return { groups, truncated, awaitingReplyIds, messageHits, unreadCounts: Object.fromEntries(unread) };
+  return {
+    groups,
+    truncated,
+    awaitingReplyIds,
+    messageHits,
+    unreadCounts: Object.fromEntries(unread),
+    pinnedIds: [...prefs.entries()].filter(([, value]) => value.pinned).map(([id]) => id),
+    mutedIds: [...prefs.entries()].filter(([, value]) => value.muted).map(([id]) => id),
+  };
 }
 
 /**
@@ -517,6 +529,8 @@ export type ChatScreenData = {
    * 🔴 RLS（C7）が本人の行だけを返す。行が無い / 1 件も読んでいないスレッドは `null`。
    */
   readonly lastReadMessageIds: Readonly<Record<string, string | null>>;
+  /** ✅ 2026-10-16: 開いている会話のピン留め・ミュート（見出しの切り替えボタン用）。 */
+  readonly threadPrefs: Readonly<Record<string, ChatThreadPrefs>>;
 };
 
 /** 右に並べた会話 1 本ぶん。 */
@@ -560,6 +574,7 @@ export async function readChatScreen(
         panes: [],
         tree,
         lastReadMessageIds: {},
+        threadPrefs: {},
       };
     }
     const thread = await readThreadDetail(ctx, db, input.threadId);
@@ -572,6 +587,7 @@ export async function readChatScreen(
         panes: [],
         tree,
         lastReadMessageIds: {},
+        threadPrefs: {},
       };
     }
     const messages = await readMessagePage(ctx, db, input.threadId, input.messagesQuery);
@@ -591,7 +607,9 @@ export async function readChatScreen(
     const openIds = [thread.id, ...panes.filter((pane) => pane.thread !== null).map((pane) => pane.requestedThreadId)];
     const positions = await readPositions(db, openIds);
     const lastReadMessageIds = Object.fromEntries(openIds.map((id) => [id, positions.get(id)?.id ?? null]));
-    return { threads, thread, messages, requestedThreadMissing: false, panes, tree, lastReadMessageIds };
+    const prefs = await readThreadPrefs(db, openIds);
+    const threadPrefs = Object.fromEntries(openIds.map((id) => [id, prefs.get(id) ?? { pinned: false, muted: false }]));
+    return { threads, thread, messages, requestedThreadMissing: false, panes, tree, lastReadMessageIds, threadPrefs };
   });
 }
 

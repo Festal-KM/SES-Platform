@@ -1201,6 +1201,9 @@ model ChatReadState {
   /// ここまで読んだ発言（並びは (sent_at, id)）。NULL = まだ 1 件も読んでいない
   lastReadSentAt    DateTime? @map("last_read_sent_at") @db.Timestamptz(3)
   lastReadMessageId String?   @map("last_read_message_id") @db.Uuid
+  /// ✅ 2026-10-16: 自分の表示の設定（ピン留め = 一覧の上 / ミュート = 未読を強調しない）。migration 20261016030000
+  pinned            Boolean   @default(false)
+  muted             Boolean   @default(false)
   updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   tenant Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
