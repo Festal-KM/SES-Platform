@@ -3019,10 +3019,13 @@ const ja = {
   //    🔴 **画像の「企業名」は書かない** —— `#25` の `q` は案件名と外部公開用の記載しか見ない。
   'projects.list.search.q': 'フリーワード',
   'projects.list.search.qPlaceholder': '案件名・外部公開用の記載から探す',
-  'projects.list.search.status': '案件の状態',
+  // ✅ 2026-10-16: 受領モックの語に合わせた（旧「案件の状態」）。🔴 キーは動かしていない。
+  'projects.list.search.status': 'ステータス',
   'projects.list.search.statusAll': 'すべて',
   'projects.list.search.startFrom': '開始日（この日以降）',
-  'projects.list.search.prefecture': '勤務地（都道府県）',
+  // ✅ 2026-10-16: 受領モックの語に合わせた（旧「勤務地（都道府県）」）。選択肢が都道府県
+  //    であることは中を開けば分かる（ラベルに書くと 4 列の帯で折り返す）。
+  'projects.list.search.prefecture': '勤務地',
   'projects.list.search.prefectureAll': 'すべて',
   // ✅ 2026-10-15: 単価レンジ。🔴 **人材一覧（`engineers.list.search.price*`）と同じ語である**
   //    —— 同じ条件が画面ごとに別の名前で出ると、同じものだと分からない（`docs/04` §7.8）。
