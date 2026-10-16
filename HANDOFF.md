@@ -9,6 +9,30 @@
 
 ## 1. 🔴 いま最優先で直すもの
 
+### ✅ 2026-10-16 の作業（すべてデモに反映済み）
+
+| | 内容 |
+|---|---|
+| **案件一覧の絞り込み** | 受領モック `デザインモック/自社案件管理_案件一覧.png` の形に作り直した（`docs/04` 改訂 38）。カテゴリ / 案件区分 / 並行可否の **3 列を追加**（migration `20261016030000`。Issue #113 の「設計から改訂して」が承認）。開始時期を日付入力 → 選択に。キーワードを**複数語 AND** に |
+| **案件の状態** | 3 値 → **2 値**（募集中 / 終了。Issue #98） |
+| **提案メニュー** | `提案` / `提案依頼` を 1 つに畳み、**案件提案 / 人材提案**のタブに。置き場所は `パートナー連携` の `人材一覧` の下 |
+| **画面の語** | `提案依頼` → **`案件提案`**（カタログ 59 箇所）、`提案一覧` → `人材提案一覧` |
+| **デモの 2FA** | 🔴 **`demo` だけ丸ごと止めた**（§2.3） |
+| **アカウント設定** | 下地（`users.job_title` + サービス + API）。**画面は未着手**（Issue #95 に 2 つ確認中） |
+
+### 🔴 人間の判断を待っているもの（着手できない）
+
+| Issue | 何を待っているか |
+|---|---|
+| [#91](https://github.com/Festal-KM/SES-Platform/issues/91) | ホームに取引先の社名を出す件。**共有元 1 社の社名**だけが §7 の 0 件 KPI に当たる。🅐 その 1 社だけ伏せて出す（推奨・改訂不要）/ 🅑 KPI を緩める / 🅒 現状維持 |
+| [#82](https://github.com/Festal-KM/SES-Platform/issues/82) | 「利用量と上限」を外すと `/settings/usage` が到達不能になり、消すと §3.4 違反。**#56 / #70 と同じ 1 つの決定**なので `CLAUDE.md` 改訂案に束ねる |
+| [#100](https://github.com/Festal-KM/SES-Platform/issues/100) | `パートナー連携 > 人材一覧` が「取引先から共有された人材」なら、会社名は経路 4 の開示項目追加（§8.6） |
+| [#114](https://github.com/Festal-KM/SES-Platform/issues/114) | 提案の仕組みごと廃止するか（🅐 UI だけ / 🅑 仕組みごと）。**回答まで提案まわりのコードは触らない** |
+| [#95](https://github.com/Festal-KM/SES-Platform/issues/95) | メールアドレスの変更（確認メールを作るか）/ アイコン画像（ストレージ + スキャンを作るか） |
+| [#113](https://github.com/Festal-KM/SES-Platform/issues/113) | 稼働形態 4 値（`engineers` と共有する値集合）/ ステータス 5 値（モックは `Proposal` の状態を案件に描いている） |
+| [#102](https://github.com/Festal-KM/SES-Platform/issues/102) | パートナー連携 3 画面とカレンダーの要件 |
+
+
 | # | 内容 | 状態 |
 |---|---|---|
 | 1 | ✅ **完了（2026-10-02。`1d5e079`）** —— **CI が赤。`GET /api/home` が実 DB で 500 を返していた**（`tests/isolation/home-action-queue.test.ts` の 25 件中 **23 件が `expected 500 to be 200`**）。🔴 **当初の見立て（`summary.ts` の `db.engineerShare.count` が RLS / `shared_scope` と衝突）は外れだった。** 真因は `T-22-09` が `GET /api/home` に**起動時 DI の参照**（`sendingDomainRuntime()` = `操作` 列の不能条件 ④）を足したこと。分離テストには `apps/web/instrumentation.ts` が無いため `ensureDbConfigured()` → `initializeRuntimeConfig(process.env)` が走り、`APP_ENV` 不在の `EnvValidationError` で 500 になっていた —— **DB も RLS も `count` も無関係で、ハンドラ本体に 1 行も入っていなかった**。直し方は `vi.mock` で起動時 DI をテスト側が注入する（既存 16 ファイルと同じ作法）。🔴 **環境変数を設定して通す直し方は採れない** —— `ensureDbConfigured()` が `configureTenantDb()` も行うため、`beforeAll` が指した Testcontainers の接続が別 URL に差し替わり、**検証対象の母集団が静かに入れ替わる**（今回より悪い壊れ方）。プロダクションコードは 1 行も触っていない | **✅ 完了** |
@@ -112,6 +136,7 @@
 |---|---|
 | 🔴🔴 **既存行を書き換える migration は `FORCE ROW LEVEL SECURITY` を一時解除し、「残存 0 件」を FORCE を戻す前に検査する** | **2026-10-16 にこれでデモを落とした**（web が Crashed。復旧まで約 1 時間）。`app_migrator` は `NOBYPASSRLS` で、業務表は ENABLE + FORCE であり**所有者にも適用ポリシーが 1 つも無い** → 素の `UPDATE` は **0 件で「成功」**する（docs/05 §4.4）。`20261016010000_project_status_two_values` はそれで移送されず、続く `ADD CONSTRAINT` が旧値の行に当たって失敗した。🔴 **さらに悪いのは次である**: 失敗した migration は Prisma に記録され、以後 **P3009** で**新しい migration が 1 本も当たらなくなる**（`railway-start.mjs` が「当たっていない DB でアプリを上げない」と判断して起動しない）。🔴 **手順は `20260911000000` / `20260929000000` / `20261016010000` の 3 本が同じ形で持っている**: FORCE 解除 → UPDATE → **残存 0 件の検査**（🔴 戻す前。戻した後では所有者にも 0 件に見えて検査にならない）→ FORCE 復帰 → カタログ検査（RLS 有効なのに FORCE でない表が無いこと）。🔴 **`CHECK` を張り替えるなら、旧 CHECK を外してから移送する**（旧 CHECK が新しい値を許さない）。🔴 **CI では気づけない** —— CI は空の DB に当てるので 0 件 UPDATE が成功してしまう |
 | 🔴 **P3009 からの回復**（`migrate found failed migrations`） | DB は Railway の内部ホストにしか無く、**外から `prisma migrate resolve` を打てない**。`scripts/railway-predeploy.mjs` に 1 段用意してある: 環境変数 **`SES_MIGRATION_RESOLVE_ROLLED_BACK`** に migration 名を入れてデプロイすると `--rolled-back` を打ってから `migrate deploy` が走る。🔴 **既定では何もしない**（常時実行にすると、直っていない migration を毎回「巻き戻した」ことにして失敗が見えなくなる）。🔴 **使ったら変数を必ず外す** |
+| 🔴 **起動時の設定を読む関数を、判定の問い合わせから呼ばない** | 2026-10-16 の実例: `twoFactorPolicy()` が `ensureDbConfigured()` を呼んでいたため、**環境変数の一式が揃っていない分離テストのハーネス**で `EnvValidationError` が飛び、**2 要素認証とは無関係の失敗に化けた**（`two-factor.test.ts` が 「`TwoFactorRequiredError` のはずが `EnvValidationError`」で落ち、同じジョブの `projects` 系も巻き添え）。🔴 **方針の問い合わせが設定の初期化を強制してはならない。** 解決済みの値を返し、**未解決なら厳しい側の既定に倒す**。🔴 **ローカルのユニットは全部緑のまま通る** —— この層は CI でしか分からない |
 | 🔴 **`railway up` はローカルの作業ディレクトリを上げる**（Git ではない） | したがって**コミットしていない変更もデプロイされる**。「Git から pull すれば直る」ではない。🔴 **デプロイ前に作業ツリーを緑にする**（未完成の機能が混ざる） |
 | 🔴 **`NODE_ENV` を持つシェルでビルドしない** | `NODE_ENV=development` があると `next build` が `/_global-error` の事前生成で `TypeError: Cannot read properties of null (reading 'useContext')` で落ちる（事前生成のワーカーだけが React の development 版を読み、React が 2 つ同居する）。`apps/web/next.config.ts` の門番が変数名を名指しして止める。**必ず `env -u NODE_ENV pnpm --filter @ses/web run build`** |
 | 🔴 **`packages/ui` を変えたら `pnpm --filter @ses/ui run build`** | `apps/web` は `dist` を参照する。忘れると変更が反映されない |

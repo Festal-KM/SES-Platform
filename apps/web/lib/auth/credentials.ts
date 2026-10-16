@@ -17,6 +17,8 @@ import {
   type DeviceKind,
   type TenantIdentity,
 } from '@ses/db';
+// ✅ 2026-10-16: 2FA の方針（起動時に 1 回解決。`lib/db/bootstrap.ts` の 🔴）。
+import { twoFactorPolicy } from '../db/bootstrap';
 import { DUMMY_PASSWORD_HASH, verifyPassword } from './password';
 import type { TenantSessionClaims } from './claims';
 import { loadAuthFacts } from './tenant-context';
@@ -165,8 +167,16 @@ export async function resolveSignInNext(email: string): Promise<SignInNext> {
     userId: user.userId,
   });
   if (facts === null) return 'home';
+  // ✅✅ **2026-10-16（人間の明示指示「デモ環境の方は二要素認証は一旦外しといて」）。**
+  // 🔴 **ここは `resolveTenantCtx` とは別の判定である**（サインイン直後にどの画面へ送るか）。
+  //    方針を見ないと、**ゲートは通るのに画面だけ 2FA の入力を求める**状態になる ——
+  //    実際 2026-10-16 に、ゲートだけ緩めてここを直し忘れ、デモで TOTP を求められ続けた。
+  // 🔴 **判定の出所は 1 つ**（`twoFactorPolicy()` = 起動時に `APP_ENV` から解決した値）。
+  //    ここで `APP_ENV` を読まない（`CLAUDE.md` §11.1）。
+  const policy = twoFactorPolicy();
+  if (policy === 'RELAXED') return 'home';
   if (facts.twoFactorEnrolled) return '2fa';
-  return requiresTwoFactor(facts.role) ? '2fa' : 'home';
+  return requiresTwoFactor(facts.role, policy) ? '2fa' : 'home';
 }
 
 /** サインアウトを監査ログに記録する（docs/05 §6.3 #4 / §16.1 / F-003 AC-3）。 */

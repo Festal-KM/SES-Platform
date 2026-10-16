@@ -308,7 +308,15 @@ export function buildSettingsIndex(context: NavContext): readonly NavItem[] {
   //    ⚠️ パートナー所属が `OWNER` / `ADMIN` になることは DB の CHECK（`memberships`）で
   //    起こりえないが、条件に所属を明示しておく（判定の根拠をロール名の知識に委ねない）。
   const isTenantAdmin = context.audience === 'HOST' && isTenantAdminRole(context.role);
-  const items: NavItem[] = [];
+  const items: NavItem[] = [
+    // ✅✅ **2026-10-16（人間の明示指示。[Issue #95](https://github.com/Festal-KM/SES-Platform/issues/95)）:
+    //    `S-048` アカウント設定。**
+    // 🔴 **全ロールが到達する**（自分の表示名・役職・パスワードはどのロールにも在る。
+    //    `VIEWER` が禁じられているのは承認・送信・ダウンロードであって、自分の資格情報ではない）。
+    // 🔴 **先頭に置く**（索引の中で唯一「自分のもの」であり、他は組織のものである）。
+    // 🔴 アイコンは `users`（`user` は写像に無い。索引の中では未使用なので衝突しない）。
+    link('settings-account', 'account.title', 'users', '/settings/account'),
+  ];
   if (isTenantAdmin) {
     // S-035 組織設定とメンバー管理。
     items.push(link('settings-organization', 'orgSettings.title', 'settings', '/settings/organization'));

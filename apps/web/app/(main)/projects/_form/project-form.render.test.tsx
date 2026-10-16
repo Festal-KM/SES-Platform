@@ -73,6 +73,9 @@ const messages: ProjectFormMessages = {
   unitPriceUnit: '円',
   prefectureLabel: '勤務地（都道府県）',
   remoteModeLabel: 'リモート可否',
+  categoryLabel: 'カテゴリ',
+  sourceKindLabel: '案件区分',
+  parallelOkLabel: '並行可否',
   valueUnset: '指定しない',
 
   commerceNotice: COMMERCE_NOTICE,
@@ -109,6 +112,9 @@ const EMPTY_VALUES: ProjectFormValues = {
   unitPriceMax: '',
   prefecture: '',
   remoteMode: '',
+  category: '',
+  sourceKind: 'OWN',
+  parallelOk: '',
   endClientName: '',
   internalUnitPrice: '',
   publicSummary: '',
@@ -127,6 +133,16 @@ function render(overrides: Partial<ProjectFormProps> = {}): string {
       { value: 'CLOSED', label: '終了' },
     ],
     remoteModeOptions: [{ value: 'FULL_REMOTE', label: 'フルリモート可' }],
+    // ✅ 2026-10-16（受領モック + Issue #113）。
+    categoryOptions: [{ value: 'BACKEND', label: 'バックエンド' }],
+    sourceKindOptions: [
+      { value: 'OWN', label: '自社案件' },
+      { value: 'PARTNER', label: 'パートナー案件' },
+    ],
+    parallelOkOptions: [
+      { value: '1', label: '可' },
+      { value: '0', label: '不可' },
+    ],
     prefectureOptions: [{ value: '13', label: '東京都' }],
     requirementKinds: ['MUST', 'NICE'],
     cancelHref: '/',
