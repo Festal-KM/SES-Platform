@@ -61,6 +61,7 @@ import {
   type ChatThreadDetailView,
   type ChatThreadListItem,
   type ChatThreadRow,
+  summarizeReactions,
 } from './views';
 
 /** `withTenant` が `fn` に渡すクライアント。 */
@@ -402,10 +403,16 @@ async function resolveSenderNames(
  */
 export async function projectChatMessages(
   ctx: AuthenticatedTenantCtx,
-  db: Pick<TenantDb, 'user' | 'partnerCompany' | 'tenant'>,
+  db: Pick<TenantDb, 'user' | 'partnerCompany' | 'tenant' | 'chatMessageReaction'>,
   rows: readonly ChatMessageRow[],
 ): Promise<readonly ChatMessageView[]> {
   if (rows.length === 0) return [];
+  // ✅ 2026-10-16: リアクション。🔴 RLS が「発言が読める」ときだけ行を返す（migration 20261016010000）。
+  const reactionRows = await db.chatMessageReaction.findMany({
+    where: { messageId: { in: rows.map((row) => row.id) } },
+    select: { messageId: true, userId: true, reaction: true },
+  });
+  const reactions = summarizeReactions(reactionRows, ctx.userId);
   const senderNames = await resolveSenderNames(db, rows.map((row) => row.senderUserId));
   // 🔴 **送信者の会社名は `partner_companies` から直接引く**（`resolveCounterpartyNames` を使わない。
   //    上の ⚠️ —— 取引先が自分の発言に相手の商号を見ることになる）。
@@ -421,6 +428,7 @@ export async function projectChatMessages(
           : partnerNames.get(row.senderPartnerCompanyId) ?? null,
       viewerPartnerCompanyId: ctx.partnerCompanyId,
       viewerUserId: ctx.userId,
+      reactions: reactions.get(row.id) ?? [],
     }),
   );
 }
@@ -434,7 +442,7 @@ export async function projectChatMessages(
  */
 async function readMessagePage(
   ctx: AuthenticatedTenantCtx,
-  db: Pick<TenantDb, 'chatThread' | 'message' | 'user' | 'partnerCompany' | 'tenant'>,
+  db: Pick<TenantDb, 'chatThread' | 'message' | 'user' | 'partnerCompany' | 'tenant' | 'chatMessageReaction'>,
   threadId: string,
   query: ChatMessageListQuery,
 ): Promise<ChatMessageListView> {

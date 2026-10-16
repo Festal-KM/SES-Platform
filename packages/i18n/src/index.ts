@@ -4352,6 +4352,12 @@ const ja = {
   // ✅ 2026-10-16: 既読・未読。
   'chat.thread.unread': '未読',
   'chat.thread.draft': '下書き',
+  // ✅ 2026-10-16: リアクション（業務の短い語。絵文字は使わない）。
+  'chat.reaction.OK': '了解',
+  'chat.reaction.THANKS': 'ありがとう',
+  'chat.reaction.CHECKING': '確認します',
+  'chat.reaction.DONE': '対応済み',
+  'chat.reaction.add': 'リアクション',
   'chat.threads.filter.unread': '未読のみ',
   'chat.messages.unreadFrom': 'ここから未読',
   'chat.message.markUnread': 'ここから未読にする',

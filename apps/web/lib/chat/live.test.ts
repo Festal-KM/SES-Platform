@@ -43,3 +43,15 @@ describe('hasOthersMessage', () => {
     expect(hasOthersMessage([])).toBe(false);
   });
 });
+
+describe('withLatestReactions（2026-10-16）', () => {
+  it('同じ発言のリアクションだけを取り直した値に揃え、変わらなければ同じ配列', async () => {
+    const { withLatestReactions } = await import('./live');
+    const current = [A, B];
+    const fresh = { ...A, reactions: [{ reaction: 'OK' as const, count: 1, mine: false }] };
+    const next = withLatestReactions(current, [fresh, C]);
+    expect(next[0]?.reactions).toEqual(fresh.reactions);
+    expect(next).toHaveLength(2);
+    expect(withLatestReactions(current, [A, B])).toBe(current);
+  });
+});

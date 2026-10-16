@@ -873,3 +873,45 @@ describe('🔴 ⑮ 既読位置は本人だけが読み書きでき、読めな�
     expect(afterUnread?.unreadCounts[THREAD_A_P1] ?? 0).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// ⑯ リアクション（2026-10-16、チャットレーン。`chat_message_reactions`）
+// ---------------------------------------------------------------------------
+
+describe('🔴 ⑯ リアクションは発言が読める相手にだけ見え、付け外しは本人だけ', () => {
+  afterAll(async () => {
+    await admin.chatMessageReaction.deleteMany({});
+  });
+
+  it('ホストが付けたリアクションは、同じスレッドの取引先 A1 に件数として見える（誰が付けたかは出ない）', async () => {
+    const { toggleChatReaction } = await import('../../apps/web/lib/chat/service');
+    const { listChatMessages } = await import('../../apps/web/lib/chat/read');
+    const afterToggle = await toggleChatReaction(hostSales, THREAD_A_P1, MESSAGE_A_P1, 'THANKS');
+    expect(afterToggle).toEqual([{ reaction: 'THANKS', count: 1, mine: true }]);
+
+    const forPartner = await listChatMessages(partnerA1, THREAD_A_P1, { limit: 50 });
+    const message = forPartner.items.find((item) => item.id === MESSAGE_A_P1);
+    expect(message?.reactions).toEqual([{ reaction: 'THANKS', count: 1, mine: false }]);
+    expect(JSON.stringify(forPartner)).not.toContain(USER_A_HOST);
+
+    // もう一度押すと外れる。
+    expect(await toggleChatReaction(hostSales, THREAD_A_P1, MESSAGE_A_P1, 'THANKS')).toEqual([]);
+  });
+
+  it('🔴 取引先 A1 は A2 のスレッドの発言にリアクションを付けられない（404 と同じ扱い）・別スレッドの発言も不可', async () => {
+    const { toggleChatReaction } = await import('../../apps/web/lib/chat/service');
+    await expect(toggleChatReaction(partnerA1, THREAD_A_P2, MESSAGE_A_P2, 'OK')).rejects.toThrow();
+    await expect(toggleChatReaction(partnerA1, THREAD_A_P1, MESSAGE_A_P2, 'OK')).rejects.toThrow();
+    expect(await admin.chatMessageReaction.count({ where: { messageId: MESSAGE_A_P2 } })).toBe(0);
+  });
+
+  it('🔴 A2 のスレッドに付いたリアクションは A1 から 1 行も見えない', async () => {
+    const { toggleChatReaction } = await import('../../apps/web/lib/chat/service');
+    await toggleChatReaction(hostSales, THREAD_A_P2, MESSAGE_A_P2, 'OK');
+    const { withTenant } = await import('@ses/db');
+    const seenByA1 = await withTenant(partnerA1, (db) => db.chatMessageReaction.findMany({ where: { messageId: MESSAGE_A_P2 } }));
+    expect(seenByA1).toEqual([]);
+    const seenByHost = await withTenant(hostSales, (db) => db.chatMessageReaction.findMany({ where: { messageId: MESSAGE_A_P2 } }));
+    expect(seenByHost).toHaveLength(1);
+  });
+});

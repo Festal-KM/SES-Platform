@@ -136,6 +136,7 @@ model Tenant {
   threadParticipants      ThreadParticipant[]
   messages                Message[]
   chatReadStates          ChatReadState[] // 2026-10-15 チャットレーン（既読位置。migration 20261016000000）
+  chatMessageReactions    ChatMessageReaction[] // 2026-10-16 チャットレーン（リアクション。migration 20261016010000）
   contracts               Contract[]
   contractDocuments       ContractDocument[]
   contractTemplates       ContractTemplate[]
@@ -1157,6 +1158,7 @@ model Message {
 
   tenant               Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   thread               ChatThread      @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  reactions            ChatMessageReaction[] // 2026-10-16 チャットレーン
   // 🔴 Issue #33 / docs/05 §3.3.1（A-11）: 複合 FK。owner_partner_company_id は B 群（継承の子）で
   //    あり FK を張らない（継承トリガが同一テナントの親からのみ値を取るため推移的に正しい）。
   senderPartnerCompany PartnerCompany? @relation(fields: [tenantId, senderPartnerCompanyId], references: [tenantId, id], onDelete: Restrict)
@@ -1164,6 +1166,26 @@ model Message {
 
   @@index([tenantId, threadId, sentAt])
   @@map("messages")
+}
+
+/// ✅ 2026-10-16 チャットレーン: 発言へのリアクション（「了解」「ありがとう」「確認します」「対応済み」の 4 つ。絵文字は使わない = UI_GUIDELINES §1）。
+/// RLS: 読みは「その発言が読める」（messages の C6 を EXISTS で通す）。書き（INSERT / DELETE）は本人の行だけ。UPDATE は無い。
+/// 🔴 応答に利用者 ID を載せない（件数と「自分が付けたか」だけ）。運営者に GRANT しない。
+model ChatMessageReaction {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  messageId String   @map("message_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  /// ChatReactionKind（'OK'|'THANKS'|'CHECKING'|'DONE'。CHECK）
+  reaction  String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, messageId, userId, reaction])
+  @@index([tenantId, messageId])
+  @@map("chat_message_reactions")
 }
 
 /// ✅ 2026-10-15 チャットレーン: 利用者ごとのスレッドの既読位置（CLAUDE.md §4.1 `ChatReadState`。docs/chat-lane/read-state-proposal.md）。

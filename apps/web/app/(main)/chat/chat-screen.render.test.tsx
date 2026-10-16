@@ -748,3 +748,21 @@ describe('⑮: 既読・未読（2026-10-16、チャットレーン）', () => {
     expect(html).not.toContain(`chat-message-mark-unread-${MESSAGE_OWN.id}`);
   });
 });
+
+describe('⑯: リアクション（2026-10-16、チャットレーン）', () => {
+  const WITH_REACTIONS = { ...MESSAGE_OTHER, reactions: [{ reaction: 'OK' as const, count: 2, mine: true }] };
+
+  it('投稿できる人には押せるリアクションと「リアクション」の選択欄を出す（絵文字ではなく語）', () => {
+    const html = renderConversation({ initialMessages: [WITH_REACTIONS] });
+    const tag = new RegExp(`<button [^>]*data-testid="chat-message-reaction-${MESSAGE_OTHER.id}-OK"[^>]*>`).exec(html)?.[0] ?? '';
+    expect(tag).toContain('aria-pressed="true"');
+    expect(html).toContain(`${t('chat.reaction.OK')} 2`);
+    expect(html).toContain(`data-testid="chat-message-reaction-add-${MESSAGE_OTHER.id}"`);
+  });
+
+  it('🔴 閲覧専用には件数を文字で出すだけ（押せないボタン・選択欄を描かない）', () => {
+    const html = renderConversation({ initialMessages: [WITH_REACTIONS], canPost: false });
+    expect(html).toMatch(new RegExp(`<span [^>]*data-testid="chat-message-reaction-${MESSAGE_OTHER.id}-OK"`));
+    expect(html).not.toContain('chat-message-reaction-add-');
+  });
+});
