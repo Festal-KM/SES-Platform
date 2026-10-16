@@ -32,9 +32,10 @@ function row(overrides: Partial<ProjectListRowView> = {}): ProjectListRowView {
     statusState: 'OPEN',
     mustRequirements: 'Java 5 年以上、Spring',
     moreMustRequirements: null,
-    unitPrice: '650,000〜750,000 円',
+    unitPrice: '65〜75 万円',
     startDate: '2026-10-01',
-    location: '東京都・一部リモート可',
+    location: '東京都',
+    remoteMode: '一部リモート可',
     headcount: '2 名',
     updatedOn: '2026-09-05',
     visibility: '3 社に公開中',
@@ -55,6 +56,13 @@ const messages: ProjectListScreenMessages = {
   searchPrefecture: '勤務地（都道府県）',
   searchPriceMin: '単価（下限）',
   searchPriceMax: '単価（上限）',
+  // ✅ 2026-10-15: 受領画像の絞り込みカード（虫眼鏡 + プレースホルダ / 単価の 1 つの欄）。
+  searchQPlaceholder: '案件名・外部公開用の記載から探す',
+  searchPrice: '単価（月額）',
+  searchPriceMinPlaceholder: '下限なし',
+  searchPriceMaxPlaceholder: '上限なし',
+  searchPriceRangeSeparator: '〜',
+  searchPriceUnit: '円',
   searchSubmit: '検索',
   searchClear: '条件をクリア',
   register: '案件を登録',
@@ -64,7 +72,8 @@ const messages: ProjectListScreenMessages = {
   columnMustRequirements: '必須要件の要約',
   columnUnitPrice: '単価レンジ',
   columnStartDate: '開始日',
-  columnLocation: '勤務地・リモート',
+  columnLocation: '勤務地',
+  columnRemoteMode: '稼働形態',
   columnHeadcount: '募集人数',
   columnUpdatedOn: '更新日',
   columnVisibility: '公開先の設定状況',
@@ -421,7 +430,9 @@ describe('🔴 T-22-06: 列の契約（移行前と同一。増減 0）', () => 
     expect(all - headerColumns(render()).length).toBe(1);
   });
 
-  it('ホスト = 9 列（9 列目は公開先の設定状況）。並びと境界が移行前と一致する', () => {
+  // ✅ **2026-10-15: 10 列になった**（[Issue #101](https://github.com/Festal-KM/SES-Platform/issues/101) の回答 C で
+  //    `勤務地・リモート` を 2 列に分けた）。🔴 **出ている情報は 1 つも増えていない。**
+  it('ホスト = 10 列（10 列目は公開先の設定状況）。並びと境界が表どおりである', () => {
     expect(headerColumns(render())).toEqual([
       { id: 'name', breakpoint: 'always' },
       { id: 'status', breakpoint: 'always' },
@@ -429,13 +440,14 @@ describe('🔴 T-22-06: 列の契約（移行前と同一。増減 0）', () => 
       { id: 'unitPrice', breakpoint: 'always' },
       { id: 'startDate', breakpoint: 'always' },
       { id: 'location', breakpoint: 'sm' },
+      { id: 'remoteMode', breakpoint: 'sm' },
       { id: 'headcount', breakpoint: 'lg' },
       { id: 'updatedOn', breakpoint: 'sm' },
       { id: 'visibility', breakpoint: 'lg' },
     ]);
   });
 
-  it('🔴 取引先 = 8 列（公開先の列そのものが無い。CSS で隠すのではない）', () => {
+  it('🔴 取引先 = 9 列（公開先の列そのものが無い。CSS で隠すのではない）', () => {
     const columns = headerColumns(render({ showVisibilityColumn: false }));
     expect(columns.map((column) => column.id)).toEqual([
       'name',
@@ -444,6 +456,7 @@ describe('🔴 T-22-06: 列の契約（移行前と同一。増減 0）', () => 
       'unitPrice',
       'startDate',
       'location',
+      'remoteMode',
       'headcount',
       'updatedOn',
     ]);
@@ -499,7 +512,7 @@ describe('🔴 T-22-06: 列表示切替（§7.1「9 列目以降は列表示切�
     expect(html).toContain('表示する列');
   });
 
-  it('🔴 既定では 9 列すべてが出る（切替を置いても見え方は変わらない。受け入れ基準 2）', () => {
+  it('🔴 既定では 10 列すべてが出る（切替を置いても見え方は変わらない）', () => {
     const html = render();
     const head = /<thead[^>]*>(.*?)<[/]thead>/s.exec(html)?.[1] ?? '';
 
@@ -510,6 +523,7 @@ describe('🔴 T-22-06: 列表示切替（§7.1「9 列目以降は列表示切�
       'unitPrice',
       'startDate',
       'location',
+      'remoteMode',
       'headcount',
       'updatedOn',
       'visibility',
@@ -529,6 +543,7 @@ describe('🔴 T-22-06: 列表示切替（§7.1「9 列目以降は列表示切�
       'unitPrice',
       'startDate',
       'location',
+      'remoteMode',
       'headcount',
       'updatedOn',
     ]);

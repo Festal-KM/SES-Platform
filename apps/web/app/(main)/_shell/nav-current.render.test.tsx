@@ -47,28 +47,41 @@ vi.mock('next/navigation', () => ({
 const HOST = { audience: 'HOST', role: 'OWNER' } as const;
 
 /**
+ * ✅ **2026-10-15: 帯（第 2 階層）を見るには取引先が要る。** 人間の明示指示
+ * 「案件一覧、提案、提案依頼のタブは不要です」で `案件管理` のタブが 1 枚になり、
+ * **ホストにはタブの帯が 1 本も残っていない**（`人材管理` も 1 枚）。帯そのものの追随を
+ * 見るテストは、`共有の設定` を持つ取引先（経路 4）で行う。
+ */
+const PARTNER = { audience: 'PARTNER', role: 'PARTNER_SALES' } as const;
+
+/**
  * 外枠を描く。`currentPath` は **`proxy.ts` のヘッダ由来の「初回描画の現在地」**であり、
  * `nav.pathname` は**クライアントが知っている現在地**である。
  * 🔴 **この 2 つを別の値にできることが本ファイルの要点である**（レイアウトが再描画されない =
  *    `currentPath` が最初に着地した画面のまま固まる、という実際の状態を作る）。
  */
-function render(currentPath: string): string {
+function render(currentPath: string, context: typeof HOST | typeof PARTNER = HOST): string {
   const props: MainShellProps = {
     wordmark: t('product.name'),
     organizationName: 'テスト商事株式会社',
-    partnerCompanyName: null,
+    partnerCompanyName: context === HOST ? null : '株式会社パートナー',
     userName: '山田太郎',
-    roleLabel: t('members.role.OWNER'),
+    roleLabel: t(context === HOST ? 'members.role.OWNER' : 'members.role.PARTNER_SALES'),
     usage: { kind: 'NONE' },
     usageHref: '/settings/usage',
-    nav: buildMainNav(HOST),
-    sections: navSectionsWithTabs(buildNavSections(HOST)),
-    settingsIndex: buildSettingsIndex(HOST),
+    nav: buildMainNav(context),
+    sections: navSectionsWithTabs(buildNavSections(context)),
+    settingsIndex: buildSettingsIndex(context),
     tabs: buildBottomTabs(),
     currentPath,
     children: createElement('main', { 'data-testid': 'shell-probe' }),
   };
   return renderToStaticMarkup(createElement(MainShell, props));
+}
+
+/** 取引先所属で描く（帯が残っている唯一の所属）。 */
+function renderPartner(currentPath: string): string {
+  return render(currentPath, PARTNER);
 }
 
 /** `data-testid="x"` の付いた開始タグ（属性の並び順に依存しない照合のため）。 */
@@ -117,11 +130,12 @@ describe('🔴 サイドバーの現在地がクライアント遷移に追随�
     expect(observed).toEqual([['engineers'], ['projects'], ['settings'], ['home']]);
   });
 
-  it('🔴 第 2 階層・索引の射程もクライアント側で効く（`/proposals` で `案件管理` が光る）', () => {
+  it('🔴 第 2 階層・索引の射程もクライアント側で効く（`/skills` で `設定` が光る）', () => {
     for (const [pathname, id] of [
-      ['/proposals', 'projects'],
-      ['/proposals/abc/approve', 'projects'],
-      ['/proposal-requests', 'projects'],
+      // ✅ 2026-10-15: `提案` / `提案依頼` はサイドバーの項目になった（タブの帯を外したため）。
+      ['/proposals', 'proposals'],
+      ['/proposals/abc/approve', 'proposals'],
+      ['/proposal-requests', 'proposal-requests'],
       ['/skills', 'settings'],
       ['/audit-logs', 'settings'],
       ['/settings/organization', 'settings'],
@@ -161,13 +175,21 @@ describe('🔴 サイドバーの現在地がクライアント遷移に追随�
 });
 
 describe('🔴 第 2 階層の帯がクライアント遷移に追随する（帯ごと出る / 出ないが変わる）', () => {
-  it('🔴 ヘッダが `/` のままでも、クライアントが `/proposals` に居れば帯が出て `提案` が光る', () => {
-    nav.pathname = '/proposals';
-    const html = render('/');
+  it('🔴 ヘッダが `/` のままでも、クライアントが `/engineer-shares` に居れば帯が出て光る', () => {
+    nav.pathname = '/engineer-shares';
+    const html = renderPartner('/');
     expect(html).toContain('data-testid="app-section-nav"');
-    expect(tagOf(html, 'app-section-tab-proposals')).toContain('aria-current="page"');
-    expect(tagOf(html, 'app-section-tab-proposals')).toContain('border-b-brand');
-    expect(tagOf(html, 'app-section-tab-projects')).not.toContain('aria-current');
+    expect(tagOf(html, 'app-section-tab-engineer-shares')).toContain('aria-current="page"');
+    expect(tagOf(html, 'app-section-tab-engineer-shares')).toContain('border-b-brand');
+    expect(tagOf(html, 'app-section-tab-engineers')).not.toContain('aria-current');
+  });
+
+  // ✅ **2026-10-15: ホストには帯が 1 本も無い**（`案件管理` / `人材管理` とも 1 タブ）。
+  it('🔴 ホスト所属では、案件・提案のどこに居ても帯が出ない', () => {
+    for (const pathname of ['/projects', '/proposals', '/proposal-requests']) {
+      nav.pathname = pathname;
+      expect(render('/'), pathname).not.toContain('data-testid="app-section-nav"');
+    }
   });
 
   it('🔴 セクションの外へ移動したら帯ごと消える（`/settings` に案件管理のタブが残らない）', () => {
@@ -195,7 +217,7 @@ describe('🔴 第 2 階層の帯がクライアント遷移に追随する（�
 
   it('🔴 `usePathname()` が取れないときはサーバが選んだ帯をそのまま描く', () => {
     nav.pathname = null;
-    expect(render('/proposals')).toContain('data-testid="app-section-nav"');
-    expect(render('/settings')).not.toContain('data-testid="app-section-nav"');
+    expect(renderPartner('/engineer-shares')).toContain('data-testid="app-section-nav"');
+    expect(renderPartner('/settings')).not.toContain('data-testid="app-section-nav"');
   });
 });

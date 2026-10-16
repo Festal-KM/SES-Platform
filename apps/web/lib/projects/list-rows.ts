@@ -21,7 +21,7 @@ import {
   parseHiddenColumns,
   toggleHiddenColumn,
 } from '../ui/hidden-columns';
-import { formatProjectUnitPriceRange } from './detail';
+import { formatUnitPriceRangeManYen } from '../format/number';
 import { PROJECT_REMOTE_MODE_MESSAGE_KEYS, PROJECT_STATUS_MESSAGE_KEYS } from './labels';
 import type { ProjectMustRequirementView, ProjectView } from './list';
 import type { ProjectListQuery } from './schemas';
@@ -58,8 +58,15 @@ export type ProjectListRowView = {
   readonly moreMustRequirements: string | null;
   readonly unitPrice: string;
   readonly startDate: string;
-  /** 勤務地・リモート可否（`docs/04` §S-010 の 1 列）。 */
+  /**
+   * 勤務地（都道府県）。
+   * ✅ **2026-10-15: リモート可否を別の列に分けた**（[Issue #101](https://github.com/Festal-KM/SES-Platform/issues/101)
+   *    の回答 C「勤務地と稼働形態を分けて `埼玉` + Badge」）。**1 列に畳んでいた頃は
+   *    `東京都・一部リモート可` で 144px あり、表の幅を決めていた**（`#101` の実測）。
+   */
   readonly location: string;
+  /** 稼働形態（リモート可否）。未設定は `null`（Badge を描かない）。 */
+  readonly remoteMode: string | null;
   readonly headcount: string;
   readonly updatedOn: string;
   /**
@@ -92,19 +99,42 @@ export function formatMustRequirementSummary(
 }
 
 /**
- * 勤務地とリモート可否を 1 列に畳む（`docs/04` §S-010 の「勤務地・リモート」列）。
- * 🔴 片方しか無い行を `—` にしない（`formatLocation`（人材側）と同じ判断。片側でも判断に使える）。
+ * 勤務地（都道府県）。
+ * ✅ **2026-10-15: リモート可否をここから外した**（`#101` の C。下の
+ *    `formatProjectRemoteMode` が別の列として持つ）。
+ * 🔴 未設定は `—`（空欄にしない）。
+ */
+export function formatProjectLocation(prefecture: ProjectView['prefecture']): string {
+  return prefecture === null ? none() : t(PREFECTURE_MESSAGE_KEYS[prefecture]);
+}
+
+/**
+ * 稼働形態（リモート可否）。
+ * 🔴 **未設定は `null` を返す（`—` ではない）** —— この列は Badge で描くので、
+ *    語が無いときは**空の Badge を置かずに何も描かない**（器だけが並ぶと「空の状態」に見える）。
  * 🔴 案件の語彙（`projects.remoteMode.*`）を使う。人材のキーを共有しない（`labels.ts` 冒頭）。
  */
-export function formatProjectLocation(
-  prefecture: ProjectView['prefecture'],
-  remoteMode: ProjectView['remoteMode'],
-): string {
-  const parts = [
-    prefecture === null ? null : t(PREFECTURE_MESSAGE_KEYS[prefecture]),
-    remoteMode === null ? null : t(PROJECT_REMOTE_MODE_MESSAGE_KEYS[remoteMode]),
-  ].filter((part): part is string => part !== null);
-  return parts.length === 0 ? none() : parts.join('・');
+export function formatProjectRemoteMode(remoteMode: ProjectView['remoteMode']): string | null {
+  return remoteMode === null ? null : t(PROJECT_REMOTE_MODE_MESSAGE_KEYS[remoteMode]);
+}
+
+/**
+ * ✅ **2026-10-15: 一覧の表の単価レンジ（万円）**。[Issue #101](https://github.com/Festal-KM/SES-Platform/issues/101)
+ * の回答 C「値の表記を短くする」。
+ *
+ * 🔴 **詳細（`S-011`）の `formatProjectUnitPriceRange`（円）とは別の関数である。**
+ *    一覧は走査のための面であり、詳細・承認・提案は**金額を確定させる面**である。
+ *    万円は 1,000 円未満を丸めるので、後者で使わない（`lib/format/number.ts` の 🔴）。
+ * 🔴 **語は一覧専用のキーである**（`projects.list.unitPrice.*`）—— 円の語
+ *    （`projects.unitPrice.unit` ほか）は**登録フォームの単位と詳細画面**が使い続ける。
+ */
+export function formatProjectListUnitPriceRange(min: number | null, max: number | null): string {
+  return formatUnitPriceRangeManYen(min, max, {
+    unit: t('projects.list.unitPrice.manYen'),
+    orMore: t('projects.list.unitPrice.orMore'),
+    orLess: t('projects.list.unitPrice.orLess'),
+    none: none(),
+  });
 }
 
 /**
@@ -139,9 +169,13 @@ export function projectListRow(view: ProjectView): ProjectListRowView {
     // 🔴 `+N` は語ではなく記号 + 数値である（人材の主要スキルと同じ扱い）。
     moreMustRequirements:
       view.moreMustRequirementCount === 0 ? null : `+${String(view.moreMustRequirementCount)}`,
-    unitPrice: formatProjectUnitPriceRange(view.unitPriceMin, view.unitPriceMax),
+    // ✅ **2026-10-15: 一覧の表だけ万円表記**（`#101` の C）。
+    //    🔴 **詳細（`S-011`）・承認・提案は円のまま**である —— 金額を確定させる面では
+    //    丸めない（`lib/format/number.ts` の `formatManYen` の 🔴）。
+    unitPrice: formatProjectListUnitPriceRange(view.unitPriceMin, view.unitPriceMax),
     startDate: view.startDate ?? none(),
-    location: formatProjectLocation(view.prefecture, view.remoteMode),
+    location: formatProjectLocation(view.prefecture),
+    remoteMode: formatProjectRemoteMode(view.remoteMode),
     headcount: `${formatThousands(view.headcount)} ${t('projects.headcount.unit')}`,
     updatedOn: view.updatedOn,
     // 🔴 判別子で絞り込んだ枝でしか `visibleToCount` に到達できない（型で保証されている）。
@@ -173,21 +207,20 @@ export function projectPopulationLabel(partnerCompanyId: string | null, total: n
 }
 
 /**
- * ✅ **2026-10-15: 既定で格納しておく列**（人間の決定。受領した画像と定義書 §1.7 の表に
- * この 2 列が無く、**右の案件詳細パネルを表の横に並べるため**でもある）。
+ * ✅✅ **2026-10-15（同日の 2 回目）: 空に戻した = 既定で格納する列は 1 つも無い。**
  *
- * 🔴 **理由は幅の算数である。** 1672px のとき本体の内容幅は 1,408px で、副カラム（388）と
- *    間隔（16）を引くと表に使えるのは **1,004px** しかない。9 列 + 操作の表は **1,313px** あり、
- *    どう詰めても入らない（単価「660,000〜750,000 円」など値そのものが幅を決めている）。
- *    この 2 列を格納すると表は約 1,000px に収まり、**ノート PC の幅でパネルが横に並ぶ**。
- * 🔴 **到達性は落ちていない** —— 2 列とも「表示する列」から 1 クリックで戻せる
- *    （`docs/04` §7.1「9 列目以降は列表示切替に**格納する**」）。公開先は `S-011` でも読める。
- * 🔴 **列を消したのではない**（`DataTable` の列定義は 9 列のままで、既定の `hidden` が 2 つ）。
+ * 🔴 経緯: 同日午前に `必須要件の要約` / `公開先の設定状況` を既定オフにしたのは、
+ *    **右の案件詳細パネルを表の横に並べる幅を作る**ためだった（表の min-content が 1,313px あり、
+ *    1672px では入らなかった）。その後 [Issue #101](https://github.com/Festal-KM/SES-Platform/issues/101) への
+ *    人間の回答が **C「値の表記を短くする」** だったので、**幅を値側で作り直した**:
+ *    単価を万円表記（`660,000〜750,000 円` 160px → `66〜75 万円` 約 80px）にし、
+ *    勤務地と稼働形態を分けた。**列を格納しなくても入る**ので、格納をやめた。
+ * 🔴 **格納の仕組み（`hideable`）は残してある** —— 利用者が自分で隠せることは変わらない。
+ *    変わったのは**既定値**だけである（`?hide=` が無い = 全部表示に戻った）。
+ * ⚠️ `apps/web/lib/ui/hidden-columns.ts` の「キーが無い = 既定 / `?hide=` が空 = 全部表示」の
+ *    区別は**そのまま残す**（既定が空に戻っただけで、仕組みは次に既定を置くときにまた要る）。
  */
-export const PROJECT_DEFAULT_HIDDEN_COLUMN_IDS: readonly ProjectHideableColumnId[] = [
-  'mustRequirements',
-  'visibility',
-];
+export const PROJECT_DEFAULT_HIDDEN_COLUMN_IDS: readonly ProjectHideableColumnId[] = [];
 
 /**
  * 検索条件を保ったままの `S-010` へのリンクを作る。

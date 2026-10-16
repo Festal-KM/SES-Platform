@@ -271,6 +271,9 @@ describe('🔴 (m) DataTable の列定義の契約（docs/05 §17.7.1 (m) / §2.
       'unitPrice:always',
       'startDate:always',
       'location:sm',
+      // ✅ **2026-10-15: `稼働形態` を `勤務地` から分けた**（[Issue #101](https://github.com/Festal-KM/SES-Platform/issues/101)
+      //    の回答 C。🔴 **列は減っていない —— 1 列に畳んでいた 2 つの値を元に戻した**）。
+      'remoteMode:sm',
       'headcount:lg',
       'updatedOn:sm',
       // 🔴 9 列目（ホストのみ）。§7.1「9 列目以降は列表示切替に格納する」。

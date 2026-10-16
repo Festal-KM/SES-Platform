@@ -477,16 +477,23 @@ describe('🔴 ④ 第 2 階層が現に描かれている（データだけ在�
   });
 
   it('🔴 第 2 階層が成立するセクションで、現にタブが 2 つ以上描かれる', () => {
-    // 案件管理（`/projects` 配下）はどの所属でも 3 タブ（案件一覧 / 提案 / 提案依頼）。
+    // ✅ **2026-10-15（人間の明示指示「案件一覧、提案、提案依頼のタブは不要です」）: 案件管理は
+    //    1 タブになったので帯を描かない。** 🔴 **`提案` / `提案依頼` はサイドバーの項目に移した**
+    //    ので、到達集合（上の ①）は 1 件も減っていない —— それをここで併せて固定する
+    //    （**帯を外した代わりに入口が消えていないこと**が、この検査の本体である）。
     for (const role of ALL_ROLES) {
       const context = { audience: audienceOf(role), role };
-      const section = sectionAt(buildNavSections(context), '/projects');
-      expect(section?.id, role).toBe('projects');
-      expect(section?.items.map((item) => item.id), role).toEqual([
+      const projects = buildNavSections(context).find((section) => section.id === 'projects');
+      expect(projects?.items.map((item) => item.id), role).toEqual(['projects']);
+      // 🔴 1 タブなので帯から外れる（`/projects` を開いても帯が無い）。
+      expect(navSectionsWithTabs(buildNavSections(context)).map((s) => s.id), role).not.toContain(
         'projects',
-        'proposals',
-        'proposal-requests',
-      ]);
+      );
+      expect(sectionAt(buildNavSections(context), '/projects'), role).toBeNull();
+      // 🔴 **入口は消えていない**（サイドバーの項目に移った）。
+      expect(reachOf(role), role).toContain('/projects');
+      expect(reachOf(role), role).toContain('/proposals');
+      expect(reachOf(role), role).toContain('/proposal-requests');
     }
     // 人材管理は取引先（共有の設定を持つロール）だけが 2 タブになる。ホストは 1 つなので
     // 帯を描かない（`navSectionsWithTabs` が外す）が、サイドバーの項目が入口を持つ。
@@ -543,6 +550,9 @@ describe('🔴 ⑤ サイドバーは、ホスト 3 群 / 取引先 2 群であ�
             'chat',
             'calendar',
             'projects',
+            // ✅ 2026-10-15: `案件管理` のタブを外したので、`提案` / `提案依頼` はここへ戻った。
+            'proposals',
+            'proposal-requests',
             'engineers',
             'partners-companies',
             'partners-projects',
@@ -550,7 +560,17 @@ describe('🔴 ⑤ サイドバーは、ホスト 3 群 / 取引先 2 群であ�
             'notifications',
             'settings',
           ]
-        : ['home', 'chat', 'calendar', 'projects', 'engineers', 'notifications', 'settings'],
+        : [
+            'home',
+            'chat',
+            'calendar',
+            'projects',
+            'proposals',
+            'proposal-requests',
+            'engineers',
+            'notifications',
+            'settings',
+          ],
     );
   });
 
