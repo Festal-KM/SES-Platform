@@ -805,3 +805,10 @@ describe('⑱: ピン留め・ミュート（2026-10-16、チャットレーン�
     expect(classTokensOf(loud, `chat-thread-unread-${THREAD_PROJECT}`)).toContain('bg-brand-bg');
   });
 });
+
+describe('⑲: 会話の書き出し（2026-10-16、チャットレーン）', () => {
+  it('投稿できる人には「書き出す」を出し、閲覧専用には出さない（ダウンロード不可）', () => {
+    expect(renderConversation()).toContain(`data-testid="chat-thread-export-${THREAD_PROJECT}"`);
+    expect(renderConversation({ canPost: false })).not.toContain('chat-thread-export-');
+  });
+});

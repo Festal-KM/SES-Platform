@@ -44,6 +44,7 @@ import { createSubmitGuard } from '../../../lib/forms/submit-guard';
 import { formatDateTimeJst } from '../../../lib/format/datetime';
 import { displayInitials } from '../../../lib/format/initials';
 import {
+  chatExportApiPath,
   chatHref,
   chatMessageApiPath,
   chatMessagesApiPath,
@@ -689,6 +690,17 @@ export function ChatConversation({
           {messages.backToList}
         </Link>
         {/* ✅ 2026-10-16: ピン留め・ミュート（自分の表示の設定）。 */}
+        {/* ✅ 2026-10-16: 会話の書き出し（CSV）。🔴 閲覧専用には出さない（ダウンロード不可。API も 403）。 */}
+        {canPost ? (
+          <a
+            href={chatExportApiPath(threadId)}
+            download
+            className={cn(SECONDARY_LINK_CLASSES, 'shrink-0 text-xs')}
+            data-testid={`chat-thread-export-${threadId}`}
+          >
+            {messages.exportLink}
+          </a>
+        ) : null}
         {prefs === undefined ? null : (
           <ChatThreadPrefsToggle
             threadId={threadId}

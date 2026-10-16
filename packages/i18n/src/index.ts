@@ -4362,6 +4362,12 @@ const ja = {
   'chat.thread.draft': '下書き',
   // ✅ 2026-10-16: ピン留め・ミュート（自分の表示の設定）。
   'chat.threads.pinned': 'ピン留め',
+  // ✅ 2026-10-16: 会話の書き出し（CSV）。
+  'chat.export.link': '書き出す（CSV）',
+  'chat.export.sentAt': '日時',
+  'chat.export.sender': '送信者',
+  'chat.export.company': '会社',
+  'chat.export.body': '本文',
   'chat.thread.pin': 'ピン留め',
   'chat.thread.unpin': 'ピン留めを外す',
   'chat.thread.mute': 'ミュート',

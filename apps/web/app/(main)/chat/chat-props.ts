@@ -65,6 +65,8 @@ export type ChatConversationMessages = {
   readonly unpin: string;
   readonly mute: string;
   readonly unmute: string;
+  /** ✅ 2026-10-16: 会話の書き出し。 */
+  readonly exportLink: string;
   readonly templateLabel: string;
   readonly templatePlaceholder: string;
   /** 定型文（固定の文面。🔴 個人情報・単価を含めない）。 */
@@ -137,6 +139,7 @@ export function chatConversationMessages(): ChatConversationMessages {
     unpin: t('chat.thread.unpin'),
     mute: t('chat.thread.mute'),
     unmute: t('chat.thread.unmute'),
+    exportLink: t('chat.export.link'),
     templateLabel: t('chat.compose.template.label'),
     templatePlaceholder: t('chat.compose.template.placeholder'),
     templates: [

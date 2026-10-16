@@ -990,3 +990,27 @@ describe('🔴 ⑱ ピン留め・ミュートは本人だけの設定（C7）',
     expect(await admin.chatReadState.count({ where: { threadId: THREAD_A_P2, userId: USER_A_PARTNER } })).toBe(0);
   });
 });
+
+describe('🔴 ⑲ 会話の書き出しは読める発言だけ・監査ログに残る・閲覧専用は不可', () => {
+  afterAll(async () => {
+    await admin.auditLog.deleteMany({ where: { action: 'thread.export' } });
+  });
+
+  it('取引先 A1 は自社のスレッドを書き出せ、監査ログに件数だけが残る。A2 のスレッドは 404', async () => {
+    const { readChatThreadForExport } = await import('../../apps/web/lib/chat/service');
+    const deps = { now: () => new Date(), meta: { ipAddress: null } };
+    const messages = await readChatThreadForExport(partnerA1, THREAD_A_P1, deps);
+    expect(messages.length).toBeGreaterThan(0);
+    const audit = await admin.auditLog.findFirst({ where: { action: 'thread.export', targetId: THREAD_A_P1 } });
+    expect(audit).not.toBeNull();
+    expect(JSON.stringify(audit?.summary)).not.toContain(BODY_P1);
+    await expect(readChatThreadForExport(partnerA1, THREAD_A_P2, deps)).rejects.toThrow();
+  });
+
+  it('🔴 閲覧専用（VIEWER）はルートで 403（ダウンロード不可）', async () => {
+    const exportRoute = await import('../../apps/web/app/api/(main)/threads/[id]/export/route');
+    requireTenantCtxMock.mockResolvedValue(hostViewer);
+    const response = await exportRoute.GET(new Request(`https://app.test/api/threads/${THREAD_A_P1}/export`), segment(THREAD_A_P1));
+    expect(response.status).toBe(403);
+  });
+});
