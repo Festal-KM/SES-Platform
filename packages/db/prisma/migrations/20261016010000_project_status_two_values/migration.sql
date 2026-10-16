@@ -24,19 +24,38 @@
 --    その `assertStatusPriority` が TS 側で照合する）。
 
 -- ----------------------------------------------------------------------------
--- ① 既存データの移送（CHECK の張り替えより先に行う）
+-- 🔴 2026-10-16 修正（デモ環境で失敗した原因と直し方）
+--    ① `app_migrator` は NOBYPASSRLS かつ `projects` は FORCE ROW LEVEL SECURITY のため、テナント文脈の無い
+--       マイグレーションでは UPDATE が **0 行** にしか当たらない（CI は空の DB に適用するので気づけない）。
+--       旧値の行が移送されないまま ADD CONSTRAINT が走り、`projects_status_check ... violated by some row` で失敗した。
+--       → FORCE を一時的に外す（`20260911000000_partner_composite_fk` の手順 0 / 5 と同じ作法。ENABLE は外さない）。
+--    ② 旧 CHECK（OPEN / FILLED / SUCCESSOR_WANTED）が残ったまま `CLOSED` に UPDATE すると、旧 CHECK に反して失敗する。
+--       → 旧 CHECK を先に外し、移送してから新 CHECK を張る。
+--    いずれの手順も冪等（DROP IF EXISTS / 0 行の UPDATE は成功する）なので、途中で失敗した DB にもう一度流してよい。
+-- ----------------------------------------------------------------------------
+ALTER TABLE projects NO FORCE ROW LEVEL SECURITY;
+
+-- ----------------------------------------------------------------------------
+-- ① 旧 CHECK を外す（移送の前に。旧 CHECK は `CLOSED` を許さない）
+--    🔴 同名 CHECK の再定義であり、`tests/static/schema-enum-drift.test.ts` の
+--       `REDEFINED_CHECK_CONSTRAINTS` に件数と理由を登録してある（最後の定義を採る）。
+-- ----------------------------------------------------------------------------
+ALTER TABLE projects DROP CONSTRAINT IF EXISTS "projects_status_check";
+
+-- ----------------------------------------------------------------------------
+-- ② 既存データの移送
 -- ----------------------------------------------------------------------------
 UPDATE projects SET status = 'OPEN' WHERE status = 'SUCCESSOR_WANTED';
 UPDATE projects SET status = 'CLOSED' WHERE status = 'FILLED';
 
 -- ----------------------------------------------------------------------------
--- ② CHECK を 2 値に再定義
---    🔴 同名 CHECK の再定義であり、`tests/static/schema-enum-drift.test.ts` の
---       `REDEFINED_CHECK_CONSTRAINTS` に件数と理由を登録してある（最後の定義を採る）。
+-- ③ CHECK を 2 値に再定義
 -- ----------------------------------------------------------------------------
-ALTER TABLE projects DROP CONSTRAINT IF EXISTS "projects_status_check";
 ALTER TABLE projects
   ADD CONSTRAINT "projects_status_check" CHECK ("status" IN ('OPEN', 'CLOSED'));
+
+-- ④ FORCE を戻す（必ず。ここを外すと所有者の接続から RLS が効かなくなる）
+ALTER TABLE projects FORCE ROW LEVEL SECURITY;
 
 COMMENT ON COLUMN projects.status IS
   '案件の状態。OPEN（募集中）/ CLOSED（終了）の 2 値（2026-10-16。Issue #98 の回答「募集中と終了の二つだけでよい」）。単一の出所は packages/db/src/schema-value-sets.ts の PROJECT_STATUSES。旧 3 値（FILLED / SUCCESSOR_WANTED）は本 migration で移送済み。後任募集であるという事実は origin_assignment_id に残る';
