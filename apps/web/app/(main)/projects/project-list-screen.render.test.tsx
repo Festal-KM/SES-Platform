@@ -63,6 +63,10 @@ const messages: ProjectListScreenMessages = {
   searchPriceMaxPlaceholder: '上限なし',
   searchPriceRangeSeparator: '〜',
   searchPriceUnit: '円',
+  // ✅ 2026-10-16（人間の明示指示。案件一覧の検索機能）。
+  searchRemoteMode: '稼働形態',
+  searchRecruitingOnly: '募集中のみ',
+  searchPriceInverted: '単価の下限が上限を上回っています。どちらかを直してください。',
   searchSubmit: '検索',
   searchClear: '条件をクリア',
   register: '案件を登録',
@@ -98,7 +102,25 @@ const prefectureOptions = [
   { value: '13', label: '東京都' },
 ] as const;
 
-const emptyFilters = { q: '', status: '', startFrom: '', prefecture: '', priceMin: '', priceMax: '' } as const;
+const emptyFilters = {
+  q: '',
+  status: '',
+  startFrom: '',
+  prefecture: '',
+  priceMin: '',
+  priceMax: '',
+  // ✅ 2026-10-16: 稼働形態 / 募集中のみ。
+  remoteMode: '',
+  recruitingOnly: '',
+} as const;
+
+/** ✅ 2026-10-16: 稼働形態の選択肢（値の出所は `REMOTE_MODES`。語は一覧の列と同じ）。 */
+const remoteModeOptions = [
+  { value: '', label: 'すべて' },
+  { value: 'FULL_REMOTE', label: 'フルリモート可' },
+  { value: 'PARTIAL_REMOTE', label: '一部リモート可' },
+  { value: 'ONSITE_ONLY', label: '常駐' },
+] as const;
 
 /**
  * 🔴 列表示切替の項目（`T-22-06`）。**組み立てはサーバ側**（`list-props.ts` の
@@ -135,6 +157,8 @@ function render(
       filters: emptyFilters,
       statusOptions,
       prefectureOptions,
+      remoteModeOptions,
+      priceInverted: false,
       showVisibilityColumn,
       canRegister: true,
       showClearFilters: false,
@@ -289,6 +313,9 @@ describe('検索条件（docs/04 §S-010 セクション 1）', () => {
         // ✅ 2026-10-15: 単価レンジも戻る（条件が 1 つでも落ちると「検索したのに消えた」になる）。
         priceMin: '600000',
         priceMax: '800000',
+        // ✅ 2026-10-16: 稼働形態と「募集中のみ」も戻る。
+        remoteMode: 'FULL_REMOTE',
+        recruitingOnly: '1',
       },
     });
 
@@ -723,9 +750,19 @@ describe('🔴 SP-22 段④: 操作列から副カラム（案件の要点パネ
     );
 
     expect(selected?.[1]).toBe(PROJECT_B);
-    // 🔴 チェックボックスは置かない（Phase 1 に一括操作は 1 つも無い）。
+    // 🔴 **行にチェックボックスは置かない**（Phase 1 に一括操作は 1 つも無い）。
     expect(html).not.toContain('data-testid="project-list-select-');
-    expect(html).not.toContain('type="checkbox"');
+    // ✅✅ **2026-10-16: 検査の射程を「表の中」に絞った。**
+    // 🔴 **緩めたのではない。** 以前は画面全体に `type="checkbox"` が 1 つも無いことを
+    //    見ていたが、人間の明示指示で**絞り込みの帯に「募集中のみ」のチェックボックスが
+    //    入った**（それは行の選択ではなく検索条件である）。画面全体で見続けると、
+    //    **検索条件のチェックボックスを足すだけで落ちる**ので、守りたい性質
+    //    （**表の行に選択の UI が無い**）を直接見る形に書き換えた。
+    // 🔴 帯のチェックボックスが表の中に混入したらここで落ちる（射程は `<tbody>` 以降である）。
+    const tableBody = html.slice(html.indexOf('<tbody'));
+    expect(tableBody).not.toContain('type="checkbox"');
+    // 🔴 「募集中のみ」は**帯の側に在る**（表に無いことと、画面に在ることを両方固定する）。
+    expect(html).toContain('data-testid="project-list-filter-recruiting-only"');
   });
 
   it('🔴 どの行も選ばれていないときは印が 1 つも付かない', () => {

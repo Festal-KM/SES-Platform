@@ -86,3 +86,55 @@ export function freeWordOr<K extends string>(
     ),
   };
 }
+
+// ============================================================================
+// ✅ 複数語の AND（2026-10-16。人間の明示指示「半角・全角スペース区切りで複数語 → AND 条件」）
+// ============================================================================
+/**
+ * 🔴 **区切りは「空白」全般である**（半角 / 全角 / タブ / 改行）。全角空白（U+3000）を
+ *    忘れると、日本語入力のまま打った利用者だけ 1 語扱いになる（最も起きる取りこぼし）。
+ * 🔴 `\s` は全角空白を含まないので**明示する**（JavaScript の `\s` は U+3000 を含むが、
+ *    実装依存に見える形を残さない）。
+ */
+const FREE_WORD_SEPARATOR = /[\s\u3000]+/u;
+
+/**
+ * 入力を語に割る。
+ *
+ * 🔴 **空語を落とす**（連続した空白・前後の空白で空文字が生まれる）。空文字の `contains` は
+ *    **全件に一致する**ので、1 つ混ざると絞り込みが黙って無効になる。
+ * 🔴 **語の順序を保つ**（述語の形が入力で決まることをテストで固定できる）。
+ * 🔴 **重複を畳む** —— 同じ語を 2 回書いても述語が増えるだけで結果は変わらず、走査量が増える
+ *    （索引が効かない検索である。ファイル冒頭の 🔴）。
+ */
+export function freeWordTerms(input: string): readonly string[] {
+  const seen = new Set<string>();
+  const terms: string[] = [];
+  for (const raw of input.split(FREE_WORD_SEPARATOR)) {
+    const term = raw.trim();
+    if (term === '' || seen.has(term)) continue;
+    seen.add(term);
+    terms.push(term);
+  }
+  return terms;
+}
+
+/**
+ * 🔴 **複数語 × 複数列**の述語（語は `AND`、列は `OR`）。
+ *
+ *   `Java 東京` → 「（案件名 or 記載）に `Java` を含み」**かつ**「（案件名 or 記載）に `東京` を含む」
+ *
+ * 🔴 **語をまたいで同じ列であることを要求しない** —— `Java` が案件名に、`東京` が記載に在る
+ *    案件は一致する。1 列に両方を要求すると、入力した語の置かれ方を利用者が当てる必要が出る。
+ * 🔴 **語が 0 個なら `null` を返す**（`{ AND: [] }` を返すと「条件が在るのに全件」になり、
+ *    呼び出し側が「絞り込みが効いている」と誤って扱う）。
+ * 🔴 1 語のときも `AND` の配列 1 本で返す（語数で述語の形を変えない = 結合テストが形で固定できる）。
+ */
+export function freeWordAllOf<K extends string>(
+  input: string,
+  columns: readonly [K, ...K[]],
+): { AND: { OR: { [P in K]?: FreeWordFilter }[] }[] } | null {
+  const terms = freeWordTerms(input);
+  if (terms.length === 0) return null;
+  return { AND: terms.map((term) => freeWordOr(term, columns)) };
+}

@@ -22,8 +22,12 @@
 // 1 度も現れない（`projects.test.ts` が文字列として数える）。
 import type { PrefectureCode } from '@ses/domain';
 import { toDateOnly } from '../date-only.js';
-import { PROJECT_STATUSES, type ProjectStatus } from '../schema-value-sets.js';
-import { freeWordOr, type FreeWordFilter } from './free-word.js';
+import {
+  PROJECT_STATUSES,
+  type ProjectStatus,
+  type RemoteMode,
+} from '../schema-value-sets.js';
+import { freeWordAllOf, type FreeWordFilter } from './free-word.js';
 import { unitPriceOverlapConditions } from './unit-price-range.js';
 
 /**
@@ -36,6 +40,8 @@ export type ProjectWhereFragment = {
   status?: ProjectStatus;
   startDate?: { gte: Date };
   prefecture?: PrefectureCode;
+  /** ✅ 2026-10-16: 稼働形態（`RemoteMode` の 3 値）。🔴 **未設定（null）の案件は一致しない** */
+  remoteMode?: RemoteMode;
   name?: FreeWordFilter;
   publicSummary?: FreeWordFilter;
   /**
@@ -71,6 +77,26 @@ export type ProjectSearchCriteria = {
    */
   readonly priceMin?: number;
   readonly priceMax?: number;
+  /**
+   * ✅ **2026-10-16（人間の明示指示「稼働形態」）: `RemoteMode` の 3 値。**
+   *
+   * 🔴 **値集合は `@ses/db` の `REMOTE_MODES` を再利用する**（人間の指示は 4 値
+   *    〔フルリモート / リモート中心 / ハイブリッド / 常駐〕だったが、**列の値集合は 3 値**で
+   *    あり、4 値に割るのは DB の値集合の変更にあたる = [Issue #113](https://github.com/Festal-KM/SES-Platform/issues/113)
+   *    「設計から改訂して」の範囲である。**画面に無い選択肢を作らない**ほうを採った）。
+   * 🔴 **未設定（`remote_mode IS NULL`）の案件は一致しない** —— 等値の述語であり、
+   *    絞り込みを掛けたときだけ落ちる（`prefecture` と同じ挙動。既定では全件が出る）。
+   */
+  readonly remoteMode?: RemoteMode;
+  /**
+   * ✅ **2026-10-16（人間の明示指示「チェックボックス『募集中のみ』。ON で ステータス = 募集中に
+   *    絞る（ステータスセレクトと併用時は AND）」）。**
+   *
+   * 🔴 **`status` と独立した述語として `AND` に積む。** 併用して矛盾したとき
+   *    （`status=CLOSED` かつ `recruitingOnly`）は**0 件になるのが正しい** ——
+   *    どちらかを黙って優先すると、利用者が指定した条件と違う結果が出る。
+   */
+  readonly recruitingOnly?: boolean;
 };
 
 /**
@@ -160,6 +186,17 @@ assertStatusPriority(PROJECT_STATUS_LIST_PRIORITY);
 const PROJECT_FREE_WORD_COLUMNS = ['name', 'publicSummary'] as const;
 
 /**
+ * ✅ **2026-10-16: 「募集中のみ」が指す状態**（人間の明示指示のチェックボックス）。
+ *
+ * 🔴 **`'OPEN'` を直書きしない。** 状態の値集合は 2026-10-16 に 3 値から 2 値へ変わった
+ *    （[Issue #98](https://github.com/Festal-KM/SES-Platform/issues/98)）。綴りを散らすと、
+ *    次に値集合が動いたときに**ここだけ古いまま静かに 0 件を返す**。
+ * 🔴 `PROJECT_STATUSES` の**先頭が募集中である**ことに依存しない —— 綴りで引き、
+ *    値集合に無くなったら**その場で型エラーになる**形にしておく。
+ */
+const RECRUITING_STATUS: ProjectStatus = 'OPEN';
+
+/**
  * 🔴 **検索条件 → 述語（`F-015` の入力）。これが一覧と `COUNT` の唯一の `where` である。**
  *
  * 🔴 ここに境界の条件を書かない（本ファイル冒頭）。返す述語はすべて**業務上の絞り込み**であり、
@@ -169,12 +206,33 @@ const PROJECT_FREE_WORD_COLUMNS = ['name', 'publicSummary'] as const;
  *    したがって `#25` は `SearchPlan` の形を採らず、単一の述語を返す（`plan.ts` の 🔴）。
  */
 export function projectSearchWhere(criteria: ProjectSearchCriteria): ProjectWhereFragment {
-  // ✅ 2026-10-15: 単価レンジ。🔴 **述語の定義は `unit-price-range.ts` の 1 本**であり、
-  //    人材検索（`#15`）と同じものを通る（T-06-03 の申し送りの決着）。
-  //    🔴 `AND` に置く —— フリーワードが `OR` を使っているため（同ファイルの 🔴）。
-  const priceConditions = unitPriceOverlapConditions(criteria);
+  // ============================================================================
+  // ✅ **2026-10-16: `AND` の配列 1 本に集約した**（人間の明示指示で条件が 3 つ増えたため）
+  // ============================================================================
+  // 🔴 **トップレベルに `OR` を置くのをやめた。** 以前はフリーワードが `{ OR: [...] }` を
+  //    トップレベルに広げており、**`OR` を使う条件が 2 つ目になった瞬間に片方が静かに消える**
+  //    形だった（オブジェクトの同じキーは後から書いたほうが勝つ）。複数語の AND
+  //    （`freeWordAllOf`）は語ごとに `OR` を作るので、**まさにその 2 つ目が現れた。**
+  // 🔴 したがって **`OR` を作る条件はすべて `AND` の要素として積む**。等値の条件
+  //    （`status` / `prefecture` / `remoteMode`）はキーが衝突しないのでトップレベルに置く。
+  const and: ProjectWhereFragment[] = [
+    // ✅ 2026-10-15: 単価レンジ。🔴 **述語の定義は `unit-price-range.ts` の 1 本**であり、
+    //    人材検索（`#15`）と同じものを通る（T-06-03 の申し送りの決着）。
+    ...unitPriceOverlapConditions(criteria),
+  ];
+  if (criteria.q !== undefined) {
+    // ✅ **2026-10-16: 複数語 AND**（語は AND、列は OR。`freeWordAllOf` の 🔴）。
+    //    🔴 空白だけの入力は `null`（条件なし）になる —— 空語の `contains` は全件に一致するので、
+    //    「絞り込んだのに全件」を作らない。
+    const freeWord = freeWordAllOf(criteria.q, PROJECT_FREE_WORD_COLUMNS);
+    if (freeWord !== null) and.push(...freeWord.AND);
+  }
+  if (criteria.recruitingOnly === true) {
+    // 🔴 `status` と独立に積む（併用して矛盾したら 0 件が正しい。`recruitingOnly` の 🔴）。
+    and.push({ status: RECRUITING_STATUS });
+  }
   return {
-    ...(priceConditions.length === 0 ? {} : { AND: priceConditions }),
+    ...(and.length === 0 ? {} : { AND: and }),
     ...(criteria.status === undefined ? {} : { status: criteria.status }),
     // 🔴 `start_date` が未設定の案件は「開始日 X 以降」に一致しない（NULL は比較で偽）。
     //    絞り込みを掛けたときだけ落ちる挙動であり、既定（未指定）では全件が出る。
@@ -182,6 +240,6 @@ export function projectSearchWhere(criteria: ProjectSearchCriteria): ProjectWher
       ? {}
       : { startDate: { gte: toDateOnly(criteria.startFrom) } }),
     ...(criteria.prefecture === undefined ? {} : { prefecture: criteria.prefecture }),
-    ...(criteria.q === undefined ? {} : freeWordOr(criteria.q, PROJECT_FREE_WORD_COLUMNS)),
+    ...(criteria.remoteMode === undefined ? {} : { remoteMode: criteria.remoteMode }),
   };
 }

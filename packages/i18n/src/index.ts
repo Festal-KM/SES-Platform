@@ -3041,6 +3041,20 @@ const ja = {
   'projects.list.unitPrice.manYen': '万円',
   'projects.list.unitPrice.orMore': '万円以上',
   'projects.list.unitPrice.orLess': '万円以下',
+  // ============================================================================
+  // ✅ 2026-10-16（人間の明示指示。案件一覧の検索機能）
+  // ============================================================================
+  // 🔴 **稼働形態の語は一覧の `稼働形態` 列と同じ `projects.remoteMode.*` を使う**（絞り込みと
+  //    列で語が違うと、選んだ値がどの列に効いたのか分からない）。ここに置くのは「すべて」と
+  //    ラベルだけである。
+  'projects.list.search.remoteMode': '稼働形態',
+  'projects.list.search.remoteModeAll': 'すべて',
+  // 🔴 **「募集中」は `projects.status.OPEN` と同じ語である**（2026-10-16 に状態が 2 値に
+  //    なったので、チェックボックスは「終了を除く」と同義になった。Issue #98）。
+  'projects.list.search.recruitingOnly': '募集中のみ',
+  // 🔴 **次の行動を書く**（`docs/04` §S-010「0 件のときに次の行動を示す」と同じ規律）——
+  //    「エラーです」だけでは、どちらを直せばよいか分からない。
+  'projects.list.search.priceInverted': '単価の下限が上限を上回っています。どちらかを直してください。',
   'projects.list.search.submit': '検索',
   'projects.list.search.clear': '条件をクリア',
   // 🔴 `docs/04` §10.1 `S-010`: **初回空と絞込 0 を別文言にする。**

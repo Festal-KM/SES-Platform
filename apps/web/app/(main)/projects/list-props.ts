@@ -6,11 +6,14 @@
 // 🔴 **母集団はホストと取引先で違う**（`docs/04` §3.2 項目 2 / §10.1 `S-010`）。空文言も
 //    「案件が未登録」/「まだ公開されていない」で書き分ける —— 取引先に「案件が無い」と
 //    伝えると、ホストに案件があるかどうかを推測させる材料になる（`F-014 AC-4` / `BR-07`）。
-import { PROJECT_STATUSES } from '@ses/db';
+import { PROJECT_STATUSES, REMOTE_MODES } from '@ses/db';
 import { PREFECTURE_CODES } from '@ses/domain';
 import { t, type MessageKey } from '@ses/i18n';
 import { PREFECTURE_MESSAGE_KEYS } from '../../../lib/format/prefectures';
-import { PROJECT_STATUS_MESSAGE_KEYS } from '../../../lib/projects/labels';
+import {
+  PROJECT_REMOTE_MODE_MESSAGE_KEYS,
+  PROJECT_STATUS_MESSAGE_KEYS,
+} from '../../../lib/projects/labels';
 import {
   PROJECT_HIDEABLE_COLUMN_IDS,
   type ProjectHideableColumnId,
@@ -40,6 +43,25 @@ export const projectStatusFilterOptions: readonly ProjectFilterOption[] = [
 export const projectPrefectureFilterOptions: readonly ProjectFilterOption[] = [
   { value: FILTER_ALL_VALUE, label: t('projects.list.search.prefectureAll') },
   ...PREFECTURE_CODES.map((value) => ({ value, label: t(PREFECTURE_MESSAGE_KEYS[value]) })),
+];
+
+/**
+ * ✅ **稼働形態（先頭は「すべて」）。2026-10-16（人間の明示指示「稼働形態」）。**
+ *
+ * 🔴 **値の出所は `@ses/db` の `REMOTE_MODES`（3 値）であり、語は一覧の `稼働形態` 列と
+ *    同じ `PROJECT_REMOTE_MODE_MESSAGE_KEYS` である** —— 絞り込みと列で語が違うと、
+ *    選んだ値がどの列に効いたのか分からない。
+ * ⚠️ 人間の指示は 4 値（フルリモート / リモート中心 / ハイブリッド / 常駐）だったが、
+ *    列の値集合は 3 値である。4 値に割るのは DB の値集合の変更にあたり、
+ *    [Issue #113](https://github.com/Festal-KM/SES-Platform/issues/113)「設計から改訂して」の
+ *    範囲である。**押しても絞れない選択肢を先に並べない**ほうを採った。
+ */
+export const projectRemoteModeFilterOptions: readonly ProjectFilterOption[] = [
+  { value: FILTER_ALL_VALUE, label: t('projects.list.search.remoteModeAll') },
+  ...REMOTE_MODES.map((value) => ({
+    value,
+    label: t(PROJECT_REMOTE_MODE_MESSAGE_KEYS[value]),
+  })),
 ];
 
 export function projectListScreenMessages(params: {
@@ -72,6 +94,10 @@ export function projectListScreenMessages(params: {
     searchPriceMaxPlaceholder: t('projects.list.search.priceMaxPlaceholder'),
     searchPriceRangeSeparator: t('projects.list.search.priceRangeSeparator'),
     searchPriceUnit: t('projects.list.search.priceUnit'),
+    // ✅ 2026-10-16（人間の明示指示）: 稼働形態 / 募集中のみ / 単価の逆転。
+    searchRemoteMode: t('projects.list.search.remoteMode'),
+    searchRecruitingOnly: t('projects.list.search.recruitingOnly'),
+    searchPriceInverted: t('projects.list.search.priceInverted'),
     searchSubmit: t('projects.list.search.submit'),
     searchClear: t('projects.list.search.clear'),
     register: t('projects.list.register'),

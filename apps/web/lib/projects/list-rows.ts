@@ -252,6 +252,12 @@ export function projectListHref(
   // ✅ 2026-10-15: 単価レンジ（人材一覧と同じ名前）。🔴 ページングでも条件が落ちない。
   if (query.priceMin !== undefined) params.set('priceMin', String(query.priceMin));
   if (query.priceMax !== undefined) params.set('priceMax', String(query.priceMax));
+  // ✅ 2026-10-16（人間の明示指示）: 稼働形態 / 募集中のみ。
+  // 🔴 **ここに足し忘れると、ページを送った瞬間に条件が落ちる**（この 1 関数が
+  //    ページング・列の表示切替・行の選択のすべての URL を作っている）。
+  if (query.remoteMode !== undefined) params.set('remoteMode', query.remoteMode);
+  // 🔴 `'1'` を載せる（`schemas.ts` が `z.literal('1')` で受ける唯一の形）。
+  if (query.recruitingOnly === true) params.set('recruitingOnly', '1');
   if (query.limit !== PAGE_SIZE_DEFAULT) params.set('limit', String(query.limit));
   if (cursor !== null) params.set('cursor', cursor);
   // ✅ 2026-10-15: 既定（2 列を格納）と同じなら URL に痕跡を残さない。既定から戻したときだけ
@@ -381,6 +387,11 @@ export function hasProjectListFilters(query: ProjectListQuery): boolean {
     query.startFrom !== undefined ||
     query.prefecture !== undefined ||
     query.priceMin !== undefined ||
-    query.priceMax !== undefined
+    query.priceMax !== undefined ||
+    // ✅ 2026-10-16（人間の明示指示）: 稼働形態 / 募集中のみ。
+    // 🔴 **ここに足し忘れると「条件をクリア」が出ない**（この 1 関数が、絞り込みが効いているか
+    //    の唯一の判定であり、空状態の文言の出し分けにも使われる）。
+    query.remoteMode !== undefined ||
+    query.recruitingOnly !== undefined
   );
 }

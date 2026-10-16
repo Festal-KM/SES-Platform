@@ -19,7 +19,8 @@
 //    ここから読み始めること。
 //    🔴 段階 4（RLS を経由しない検索エンジン）へ移す場合は、`docs/03` §5.3 の指示どおり
 //    **「検索は ID のリストだけを返し、本体は必ず RLS 越しに取り直す」**構造にすること。
-export { freeWordFilter, freeWordOr } from './free-word.js';
+// ✅ 2026-10-16: 複数語の AND（人間の明示指示「半角・全角スペース区切りで複数語 → AND 条件」）。
+export { freeWordAllOf, freeWordFilter, freeWordOr, freeWordTerms } from './free-word.js';
 export type { FreeWordFilter } from './free-word.js';
 export type { SearchPlan, SoftCondition } from './plan.js';
 export {
@@ -55,5 +56,6 @@ export {
 } from './projects.js';
 export type { ProjectSearchCriteria, ProjectWhereFragment } from './projects.js';
 // ✅ 2026-10-15: 単価レンジの重なり（人材検索と案件検索で**同じ述語**を通す。T-06-03 の申し送り）。
-export { unitPriceOverlapConditions } from './unit-price-range.js';
+// ✅ 2026-10-16: 下限 > 上限 の検知（述語ではなく入力の検査。同ファイルの 🔴）。
+export { isUnitPriceRangeInverted, unitPriceOverlapConditions } from './unit-price-range.js';
 export type { UnitPriceRangeCriteria, UnitPriceRangeFragment } from './unit-price-range.js';

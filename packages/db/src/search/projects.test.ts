@@ -50,12 +50,75 @@ describe('検索条件 → 述語（`F-015` の入力）', () => {
     expect(projectSearchWhere({ prefecture: '13' })).toEqual({ prefecture: '13' });
   });
 
-  it('フリーワードは案件名と外部公開用の記載の 2 列だけを見る', () => {
+  // ✅✅ **2026-10-16（人間の明示指示「半角・全角スペース区切りで複数語 → AND 条件」）:
+  //    フリーワードが `AND` の中に入った。**
+  // 🔴 **トップレベルの `OR` をやめた理由**: 語ごとに `OR`（列の集合）を作るので、
+  //    `OR` を使う条件が 2 つ以上になる。オブジェクトの同じキーは後から書いたほうが勝つため、
+  //    以前の形のままだと **2 語目以降が静かに消えていた**。
+  it('フリーワード 1 語は案件名と外部公開用の記載の 2 列だけを見る', () => {
     expect(projectSearchWhere({ q: '基幹' })).toEqual({
-      OR: [
-        { name: { contains: '基幹', mode: 'insensitive' } },
-        { publicSummary: { contains: '基幹', mode: 'insensitive' } },
+      AND: [
+        {
+          OR: [
+            { name: { contains: '基幹', mode: 'insensitive' } },
+            { publicSummary: { contains: '基幹', mode: 'insensitive' } },
+          ],
+        },
       ],
+    });
+  });
+
+  it('🔴 複数語は AND で重なる（語ごとに「2 列のどちらか」を要求する）', () => {
+    expect(projectSearchWhere({ q: '基幹 刷新' })).toEqual({
+      AND: [
+        {
+          OR: [
+            { name: { contains: '基幹', mode: 'insensitive' } },
+            { publicSummary: { contains: '基幹', mode: 'insensitive' } },
+          ],
+        },
+        {
+          OR: [
+            { name: { contains: '刷新', mode: 'insensitive' } },
+            { publicSummary: { contains: '刷新', mode: 'insensitive' } },
+          ],
+        },
+      ],
+    });
+  });
+
+  it('🔴 全角の空白でも区切る（日本語入力のまま打った利用者だけ 1 語扱いにしない）', () => {
+    expect(projectSearchWhere({ q: '基幹　刷新' }).AND).toHaveLength(2);
+  });
+
+  it('🔴 空白だけのフリーワードは条件にならない（空語の部分一致は全件に一致する）', () => {
+    expect(projectSearchWhere({ q: '   ' })).toEqual({});
+  });
+
+  it('🔴 同じ語を 2 回書いても述語は増えない（走査量だけが増える）', () => {
+    expect(projectSearchWhere({ q: '基幹 基幹' }).AND).toHaveLength(1);
+  });
+
+  // ✅ 2026-10-16（人間の明示指示「ON で ステータス = 募集中 に絞る（ステータスセレクトと
+  //    併用時は AND）」）。
+  it('🔴 「募集中のみ」は `status` と独立した条件として `AND` に積む', () => {
+    expect(projectSearchWhere({ recruitingOnly: true })).toEqual({ AND: [{ status: 'OPEN' }] });
+  });
+
+  it('🔴 ステータスと併用して矛盾したら 0 件になる形である（どちらも黙って捨てない）', () => {
+    const where = projectSearchWhere({ status: 'CLOSED', recruitingOnly: true });
+    expect(where.status).toBe('CLOSED');
+    expect(where.AND).toEqual([{ status: 'OPEN' }]);
+  });
+
+  it('🔴 「募集中のみ」が false のときは条件を足さない', () => {
+    expect(projectSearchWhere({ recruitingOnly: false })).toEqual({});
+  });
+
+  // ✅ 2026-10-16（人間の明示指示「稼働形態」）。
+  it('稼働形態は等値で絞る（値集合は `REMOTE_MODES` の 3 値）', () => {
+    expect(projectSearchWhere({ remoteMode: 'FULL_REMOTE' })).toEqual({
+      remoteMode: 'FULL_REMOTE',
     });
   });
 
@@ -95,11 +158,35 @@ describe('検索条件 → 述語（`F-015` の入力）', () => {
     ).toEqual(unitPriceOverlapConditions(criteria));
   });
 
-  it('🔴 単価レンジはフリーワードを消さない（`OR` を奪わず `AND` に入る）', () => {
+  // ✅ **2026-10-16: 形が変わった**（フリーワードも `AND` の要素になった。上の 🔴）。
+  // 🔴 **守っている性質は同じである**: 単価レンジとフリーワードが**両方とも残ること**。
+  it('🔴 単価レンジはフリーワードを消さない（どちらも `AND` の要素として残る）', () => {
     const where = projectSearchWhere({ q: '基幹', priceMin: 700_000 });
-    // 🔴 フリーワードの 2 列が残っていること（`AND` に畳んだら消える）。
-    expect(where.OR).toHaveLength(2);
-    expect(where.AND).toHaveLength(1);
+    // 単価の 1 条件 + フリーワード 1 語 = 2 要素。
+    expect(where.AND).toHaveLength(2);
+    expect(JSON.stringify(where)).toContain('publicSummary');
+    expect(JSON.stringify(where)).toContain('unitPriceMax');
+    // 🔴 トップレベルに `OR` を残さない（残すと 2 つ目の `OR` が上書きで消える形に戻る）。
+    expect(where.OR).toBeUndefined();
+  });
+
+  it('🔴 条件を全部重ねても 1 つも落ちない（`AND` の要素数で数える）', () => {
+    const where = projectSearchWhere({
+      q: '基幹 刷新',
+      priceMin: 700_000,
+      priceMax: 900_000,
+      recruitingOnly: true,
+      status: 'OPEN',
+      prefecture: '13',
+      remoteMode: 'FULL_REMOTE',
+      startFrom: '2026-11-01',
+    });
+    // 単価 2 + フリーワード 2 語 + 募集中のみ 1 = 5 要素。
+    expect(where.AND).toHaveLength(5);
+    expect(where.status).toBe('OPEN');
+    expect(where.prefecture).toBe('13');
+    expect(where.remoteMode).toBe('FULL_REMOTE');
+    expect(where.startDate).toBeDefined();
   });
 
   it('🔴 商流情報の列を検索対象にしない（ホストだけ一致する述語を作らない）', () => {

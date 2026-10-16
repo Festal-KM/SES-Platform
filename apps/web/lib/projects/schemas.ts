@@ -218,6 +218,30 @@ export const projectListQuerySchema = idCursorPageQuerySchema.extend({
    */
   priceMin: optionalFilter(z.coerce.number().int().min(0).max(UNIT_PRICE_MAX)),
   priceMax: optionalFilter(z.coerce.number().int().min(0).max(UNIT_PRICE_MAX)),
+  /**
+   * ✅ **2026-10-16（人間の明示指示「稼働形態」）。**
+   * 🔴 **値集合は `REMOTE_MODES`（3 値）を再利用する** —— 指示は 4 値だったが、列の値集合は
+   *    3 値であり、4 値に割るのは DB の値集合の変更（[Issue #113](https://github.com/Festal-KM/SES-Platform/issues/113)）。
+   *    **画面に無い選択肢を query だけ受け取る形にしない。**
+   */
+  remoteMode: optionalFilter(z.enum(REMOTE_MODES)),
+  /**
+   * ✅ **2026-10-16（人間の明示指示「チェックボックス『募集中のみ』」）。**
+   *
+   * 🔴 **チェックボックスは「チェックされたときだけ」送られる**（HTML の仕様）。したがって
+   *    値は 1 種類でよく、`'1'` の等値で受ける —— `z.coerce.boolean()` は**空文字以外を
+   *    すべて true にする**ので（`'0'` も `'false'` も true）、URL を手で編集したときに
+   *    意図と逆の結果になる。
+   * 🔴 **`optionalFilter` に載せる**（未指定・空文字を `undefined` に畳む。他の条件と同じ）。
+   *    `ProjectSearchCriteria.recruitingOnly` は `boolean` なので、`transform` で変換する。
+   */
+  recruitingOnly: optionalFilter(z.literal('1'))
+    .transform((value) => (value === undefined ? undefined : true))
+    // 🔴 **最後に `.optional()` を付ける。** `transform` の出力は `true | undefined` だが、
+    //    付けないと**キー自体が必須**になり（`recruitingOnly: true | undefined`）、
+    //    `ProjectSearchCriteria`（`readonly recruitingOnly?: boolean`）への構造的な適合が崩れる
+    //    （`ProjectListQueryIsolationGuard` と同じく、この契約は型で固定している）。
+    .optional(),
 });
 
 export type ProjectListQuery = z.infer<typeof projectListQuerySchema>;

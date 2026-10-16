@@ -12,6 +12,8 @@
 //    （理由は `lib/projects/list.ts` 冒頭 / docs/05 §6.4「#25 の実装の決着」）。
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
+// ✅ 2026-10-16: 単価の逆転の判定（述語〔重なり〕と同じファイルの 1 本。人間の明示指示）。
+import { isUnitPriceRangeInverted } from '@ses/db';
 import { t } from '@ses/i18n';
 import { PageBody } from '@ses/ui';
 import { resolveTenantCtxOutcome } from '../../../../lib/auth/session';
@@ -38,6 +40,7 @@ import {
   projectListDescription,
   projectListScreenMessages,
   projectPrefectureFilterOptions,
+  projectRemoteModeFilterOptions,
   projectStatusFilterOptions,
   projectSummaryPanelMessages,
 } from '../list-props';
@@ -69,7 +72,20 @@ export default async function ProjectListPage({
   if (!parsed.success) redirect(PROJECT_LIST_PATH);
 
   const query = parsed.data;
-  const view = await listProjects(ctx, query);
+  // ============================================================================
+  // ✅ **2026-10-16（人間の明示指示「下限 > 上限 の場合はバリデーションエラーを表示し
+  //    検索を実行しない」）**
+  // ============================================================================
+  // 🔴 **判定は `@ses/db` の `isUnitPriceRangeInverted` の 1 本**である（重なりの述語と同じ
+  //    ファイル。人材一覧〔`S-005`〕も同じ関数を使える）。
+  // 🔴 **「検索を実行しない」を字義どおりに実装する** —— 逆転したレンジは重なりが空であり、
+  //    述語としては素通りして 0 件になる。0 件は「条件に合う案件が無い」と**見分けが付かない**
+  //    ので、**問い合わせ自体を行わず**、単価の欄にエラーを出す（`docs/04` §S-010）。
+  // 🔴 **`redirect` しない**（URL に残った条件を消すと、直すべき値が画面から消える）。
+  const priceInverted = isUnitPriceRangeInverted(query);
+  const view = priceInverted
+    ? { items: [] as Awaited<ReturnType<typeof listProjects>>['items'], total: 0, nextCursor: null }
+    : await listProjects(ctx, query);
   const isPartner = ctx.partnerCompanyId !== null;
   const filtered = hasProjectListFilters(query);
   // 🔴 **列表示切替の状態は URL のクエリ（`?hide=`）だけが持つ**（`T-22-06`。`docs/04` §7.1）。
@@ -155,9 +171,14 @@ export default async function ProjectListPage({
           // ✅ 2026-10-15: 単価レンジ（未指定は空文字 ＝ 入力欄が空）。人材一覧と同じ形である。
           priceMin: query.priceMin === undefined ? '' : String(query.priceMin),
           priceMax: query.priceMax === undefined ? '' : String(query.priceMax),
+          // ✅ 2026-10-16（人間の明示指示）: 稼働形態 / 募集中のみ。
+          remoteMode: query.remoteMode ?? '',
+          recruitingOnly: query.recruitingOnly === true ? '1' : '',
         }}
         statusOptions={projectStatusFilterOptions}
         prefectureOptions={projectPrefectureFilterOptions}
+        remoteModeOptions={projectRemoteModeFilterOptions}
+        priceInverted={priceInverted}
         // 🔴 取引先には公開先の列を出さない（docs/04 §S-010 / `F-014 AC-4`）。出所は ctx である。
         showVisibilityColumn={!isPartner}
         // 🔴 `S-012` に到達できるのはホストの 3 ロールだけである（`PROJECT_EDITOR_ROLES`）。

@@ -78,6 +78,7 @@ import {
   Button,
   Card,
   CardContent,
+  Checkbox,
   DataTable,
   EmptyState,
   Field,
@@ -119,6 +120,10 @@ export type ProjectListFilterValues = {
   /** ✅ 2026-10-15: 単価レンジ（月額・円）。人材一覧（`S-005`）と**同じ名前・同じ単位**である。 */
   readonly priceMin: string;
   readonly priceMax: string;
+  /** ✅ 2026-10-16: 稼働形態（`RemoteMode` の 3 値。空文字 = すべて）。 */
+  readonly remoteMode: string;
+  /** ✅ 2026-10-16: 「募集中のみ」。`'1'` のときだけチェック済みで描く。 */
+  readonly recruitingOnly: string;
 };
 
 export type ProjectListScreenMessages = {
@@ -146,6 +151,10 @@ export type ProjectListScreenMessages = {
   readonly searchPriceRangeSeparator: string;
   /** 単価の単位（**円**。画像の `万円` にしていない理由は本体の 🔴）。 */
   readonly searchPriceUnit: string;
+  /** ✅ 2026-10-16: 稼働形態 / 募集中のみ / 単価の逆転エラー（人間の明示指示）。 */
+  readonly searchRemoteMode: string;
+  readonly searchRecruitingOnly: string;
+  readonly searchPriceInverted: string;
   readonly searchSubmit: string;
   readonly searchClear: string;
   readonly register: string;
@@ -337,6 +346,8 @@ export function ProjectListScreen({
   filters,
   statusOptions,
   prefectureOptions,
+  remoteModeOptions,
+  priceInverted,
   showVisibilityColumn,
   canRegister,
   showClearFilters,
@@ -351,6 +362,20 @@ export function ProjectListScreen({
   readonly filters: ProjectListFilterValues;
   readonly statusOptions: readonly ProjectFilterOption[];
   readonly prefectureOptions: readonly ProjectFilterOption[];
+  /**
+   * ✅ **2026-10-16（人間の明示指示「稼働形態」）。**
+   * 🔴 **選択肢の出所は `@ses/db` の `REMOTE_MODES`（3 値）である**（ページが語を解決して渡す）。
+   *    指示は 4 値だったが、列の値集合は 3 値であり、4 値に割るのは DB の値集合の変更
+   *    （[Issue #113](https://github.com/Festal-KM/SES-Platform/issues/113)）。
+   *    **画面に無い選択肢を作らない**ほうを採った。
+   */
+  readonly remoteModeOptions: readonly ProjectFilterOption[];
+  /**
+   * ✅ **2026-10-16: 単価の下限 > 上限**（人間の明示指示）。`true` のとき、単価の欄に
+   * エラーを出し、**表の領域は検索を実行していないことを示す空状態**にする（`page.tsx` が
+   * 問い合わせ自体を行わない）。判定は `@ses/db` の `isUnitPriceRangeInverted` の 1 本である。
+   */
+  readonly priceInverted: boolean;
   /**
    * 🔴 取引先には公開先の列を出さない（docs/04 §S-010 / `F-014 AC-4`）。
    *    出所は `ctx.partnerCompanyId` であり、行の値ではない。
@@ -496,6 +521,27 @@ export function ProjectListScreen({
                         ))}
                       </Select>
                     </Field>
+                    {/* ✅ **2026-10-16（人間の明示指示「稼働形態」）。**
+                        🔴 **選択肢は `REMOTE_MODES`（3 値）の再利用である** —— 指示の 4 値
+                           （フルリモート / リモート中心 / ハイブリッド / 常駐）に割るには列の
+                           値集合を変える必要があり、それは [Issue #113] の範囲である。
+                           **押しても絞れない選択肢を先に並べない。**
+                        🔴 **一覧の `稼働形態` 列と同じ語を使う**（`columnRemoteMode` と同じ
+                           `projects.remoteMode.*`）—— 絞り込みと列で語が違うと、選んだ値が
+                           どの列に効いたのか分からない。 */}
+                    <Field label={messages.searchRemoteMode}>
+                      <Select
+                        name="remoteMode"
+                        defaultValue={filters.remoteMode}
+                        data-testid="project-list-filter-remote-mode"
+                      >
+                        {remoteModeOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
                     <Field label={messages.searchStartFrom}>
                       <Input
                         type="date"
@@ -518,7 +564,20 @@ export function ProjectListScreen({
                            query の仕様から直す（[Issue #115](https://github.com/Festal-KM/SES-Platform/issues/115)）。
                         ⚠️ 人材一覧（`S-005`）はまだ 2 ラベルの形である（人間の指示が
                            「案件管理から修正していきましょう」であり、順に直す）。 */}
-                    <Field as="div" className="sm:col-span-2" label={messages.searchPrice}>
+                    {/* ✅ **2026-10-16（人間の明示指示「下限 > 上限 の場合はバリデーション
+                        エラーを表示し検索を実行しない」）。**
+                        🔴 **判定は `@ses/db` の `isUnitPriceRangeInverted` の 1 本**である
+                           （述語〔重なり〕と同じファイルに置いた。人材一覧も同じ関数を使える）。
+                        🔴 **検索そのものを実行していない**のはページ側である（`page.tsx`）——
+                           逆転したレンジは重なりが空で、述語としては素通りして 0 件になる。
+                           0 件は「条件に合う案件が無い」と**見分けが付かない**ので、
+                           入力の誤りとしてその場で言う（`docs/04` §S-010）。 */}
+                    <Field
+                      as="div"
+                      className="sm:col-span-2"
+                      label={messages.searchPrice}
+                      error={priceInverted ? messages.searchPriceInverted : undefined}
+                    >
                       <div className="flex items-center gap-2">
                         <Input
                           type="number"
@@ -561,6 +620,23 @@ export function ProjectListScreen({
                            ぶん、**ここで取り戻す**。 */}
                     <div className={cn(FILTER_ACTIONS_CLASSES, 'justify-between gap-y-2')}>
                       <div className="flex flex-wrap items-center gap-3">
+                        {/* ✅ **2026-10-16（人間の明示指示「チェックボックス『募集中のみ』。ON で
+                            ステータス = 募集中に絞る（ステータスセレクトと併用時は AND）」）。**
+                            🔴 **置き場所は定義書 §1.6 の「フッタ行（Checkbox 左）」そのものである。**
+                            🔴 **値は `'1'` を送る**（チェックされたときだけ送られる。`'on'` を
+                               受けない理由は `schemas.ts` の 🔴）。
+                            🔴 **ステータスの選択と独立した条件である** —— 併用して矛盾したとき
+                               （`終了` かつ `募集中のみ`）は **0 件になるのが正しい**。どちらかを
+                               黙って優先すると、指定した条件と違う結果が出る。 */}
+                        <label className="flex items-center gap-2 text-cell text-fg">
+                          <Checkbox
+                            name="recruitingOnly"
+                            value="1"
+                            defaultChecked={filters.recruitingOnly === '1'}
+                            data-testid="project-list-filter-recruiting-only"
+                          />
+                          {messages.searchRecruitingOnly}
+                        </label>
                         {/* 🔴 まだ効かない条件を黙って描かない（`engineers.list.searchComingSoon` と同じ規律）。 */}
                         <p className="text-xs text-fg-muted" data-testid="project-list-search-coming-soon">
                           {messages.searchComingSoon}

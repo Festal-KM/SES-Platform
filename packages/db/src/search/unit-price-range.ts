@@ -61,3 +61,26 @@ export function unitPriceOverlapConditions(
   return conditions;
 }
 
+
+// ============================================================================
+// ✅ 下限 > 上限 の検知（2026-10-16。人間の明示指示「下限 > 上限 の場合はバリデーション
+//    エラーを表示し検索を実行しない」）
+// ============================================================================
+/**
+ * 🔴 **述語ではなく「入力の検査」である。** `unitPriceOverlapConditions` は大小関係を
+ *    見ない（上の 🔴。片方だけの指定が正当であり、2 つは独立した述語である）—— これは
+ *    その方針と矛盾しない: **両方が指定され、かつ逆転している**ときだけ真になる。
+ *
+ * 🔴 **検索を実行する前に呼ぶ。** 逆転したレンジは重なりが空であり、述語としては素通りして
+ *    0 件になる。0 件は「条件に合う案件が無い」と見分けが付かないので、**入力の誤りとして
+ *    その場で言う**（`docs/04` §S-010「0 件のときに次の行動を示す」）。
+ * 🔴 **スキーマの `.refine()` にしない** —— トップレベルの `.refine()` を足すと
+ *    `withApiRoute` の `assertBoundarySchema` が `.shape` を読めなくなる（上の 🔴 と同じ制約）。
+ *    したがって**純粋関数**として置き、画面と API の双方がこれを呼ぶ。
+ * 🔴 **等しいときは逆転ではない**（`70〜70 万円` は 1 点のレンジとして正当である）。
+ */
+export function isUnitPriceRangeInverted(criteria: UnitPriceRangeCriteria): boolean {
+  const { priceMin, priceMax } = criteria;
+  if (priceMin === undefined || priceMax === undefined) return false;
+  return priceMin > priceMax;
+}
