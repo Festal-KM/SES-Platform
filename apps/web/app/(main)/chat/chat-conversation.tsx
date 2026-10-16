@@ -45,6 +45,7 @@ import { formatDateTimeJst } from '../../../lib/format/datetime';
 import { displayInitials } from '../../../lib/format/initials';
 import {
   chatHref,
+  chatMessageApiPath,
   chatMessagesApiPath,
   chatReactionApiPath,
   chatReadApiPath,
@@ -307,6 +308,47 @@ export function ChatConversation({
     }
   }
 
+  // ✅ 2026-10-16: 自分の発言の編集・削除（送った本人だけ。API も本人以外は 404）。
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editText, setEditText] = useState('');
+  const [editFailed, setEditFailed] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  function replaceItem(next: ChatMessageView): void {
+    setItems((current) => current.map((entry) => (entry.id === next.id ? next : entry)));
+  }
+
+  async function saveEdit(item: ChatMessageView): Promise<void> {
+    const trimmed = editText.trim();
+    if (trimmed === '') return;
+    setEditFailed(false);
+    try {
+      const response = await fetch(chatMessageApiPath(threadId, item.id), {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ body: trimmed }),
+      });
+      if (!response.ok) {
+        setEditFailed(true);
+        return;
+      }
+      replaceItem(((await response.json()) as SendResponseBody).message);
+      setEditingId(null);
+    } catch {
+      setEditFailed(true);
+    }
+  }
+
+  async function removeMessage(item: ChatMessageView): Promise<void> {
+    setConfirmDeleteId(null);
+    try {
+      const response = await fetch(chatMessageApiPath(threadId, item.id), { method: 'DELETE' });
+      if (response.ok) replaceItem(((await response.json()) as SendResponseBody).message);
+    } catch {
+      // 消せなければ何も変えない（次の新着の取得で正しい状態に揃う）。
+    }
+  }
+
   async function markUnread(item: ChatMessageView): Promise<void> {
     suppressAutoReadRef.current = true;
     setMarkerId(item.id);
@@ -344,6 +386,31 @@ export function ChatConversation({
     const long = text !== null && isLongMessage(text);
     const open = expanded.has(item.id);
     const shown = text === null ? null : long && !open ? collapsedMessageText(text) : text;
+    if (editingId === item.id) {
+      return (
+        <div className="flex w-full flex-col gap-2" data-testid={`chat-message-editing-${item.id}`}>
+          <label className="sr-only" htmlFor={`chat-edit-${item.id}`}>
+            {messages.edit}
+          </label>
+          <Textarea
+            id={`chat-edit-${item.id}`}
+            value={editText}
+            maxLength={CHAT_MESSAGE_MAX_LENGTH}
+            className="min-h-12 max-h-40 overflow-y-auto"
+            onChange={(event) => setEditText(event.target.value)}
+          />
+          {editFailed ? <Alert variant="danger">{messages.editFailed}</Alert> : null}
+          <div className="flex gap-2">
+            <Button type="button" variant="primary" size="sm" onClick={() => void saveEdit(item)} data-testid={`chat-message-save-${item.id}`}>
+              {messages.save}
+            </Button>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setEditingId(null)}>
+              {messages.cancel}
+            </Button>
+          </div>
+        </div>
+      );
+    }
     return (
       <>
         <p
@@ -355,7 +422,9 @@ export function ChatConversation({
           data-testid={`chat-message-body-${item.id}`}
         >
           {shown === null
-            ? messages.purged
+            ? item.deleted === true
+              ? messages.deleted
+              : messages.purged
             : splitMessageText(shown).map((segment, index) =>
                 segment.kind === 'url' ? (
                   // 🔴 新しいタブで開き、開いた先にこの画面を触らせない（`noopener`）・参照元を渡さない（`noreferrer`）。
@@ -395,6 +464,34 @@ export function ChatConversation({
               >
                 {open ? messages.readLess : messages.readMore}
               </Button>
+            ) : null}
+            {item.edited === true ? <span className="text-xs text-fg-placeholder">{messages.edited}</span> : null}
+            {/* ✅ 2026-10-16: 自分の発言の編集・削除（投稿できる人だけ）。削除はその場で確かめる（重なりの画面を出さない）。 */}
+            {canPost && item.mine ? (
+              confirmDeleteId === item.id ? (
+                <span className="flex items-center gap-2" data-testid={`chat-message-delete-confirm-${item.id}`}>
+                  <span className="text-xs text-fg-muted">{messages.deleteConfirm}</span>
+                  <Button type="button" variant="secondary" size="sm" onClick={() => void removeMessage(item)} data-testid={`chat-message-delete-yes-${item.id}`}>
+                    {messages.deleteConfirmYes}
+                  </Button>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setConfirmDeleteId(null)}>
+                    {messages.cancel}
+                  </Button>
+                </span>
+              ) : (
+                <>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => {
+                    setEditingId(item.id);
+                    setEditText(item.body ?? '');
+                    setEditFailed(false);
+                  }} data-testid={`chat-message-edit-${item.id}`}>
+                    {messages.edit}
+                  </Button>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setConfirmDeleteId(item.id)} data-testid={`chat-message-delete-${item.id}`}>
+                    {messages.remove}
+                  </Button>
+                </>
+              )
             ) : null}
             {/* ✅ 2026-10-16: リアクション（件数と自分が付けたか）。投稿できる人は押して付け外しでき、
                 閲覧専用には件数だけを文字で出す（押せないボタンを描かない）。 */}

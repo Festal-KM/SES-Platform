@@ -1155,6 +1155,8 @@ model Message {
   reviewGateId           String?   @map("review_gate_id") @db.Uuid // 添付があるときのみ
   sentAt                 DateTime  @default(now()) @map("sent_at") @db.Timestamptz(3)
   purgedAt               DateTime? @map("purged_at") @db.Timestamptz(3) // PURGED で本文を削除（F-064 AC-2）
+  editedAt               DateTime? @map("edited_at") @db.Timestamptz(3) // ✅ 2026-10-16 チャットレーン: 送った本人が編集した日時
+  deletedAt              DateTime? @map("deleted_at") @db.Timestamptz(3) // ✅ 2026-10-16 チャットレーン: 送った本人が削除した日時（本文は NULL になる）
 
   tenant               Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   thread               ChatThread      @relation(fields: [threadId], references: [id], onDelete: Cascade)

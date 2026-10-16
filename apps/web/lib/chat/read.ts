@@ -86,6 +86,8 @@ export const CHAT_MESSAGE_SELECT = {
   senderPartnerCompanyId: true,
   body: true,
   sentAt: true,
+  editedAt: true,
+  deletedAt: true,
 } as const;
 
 export type SelectedChatThreadRow = ChatThreadRow & { readonly partnerCompanyId: string };

@@ -97,3 +97,9 @@ export type ChatReactionParamsIsolationGuard = AssertNoIsolationKeys<ChatReactio
 export type ChatReactionBodyIsolationGuard = AssertNoIsolationKeys<ChatReactionBody>;
 assertNoIsolationKeys(Object.keys(chatReactionParamsSchema.shape), 'chatReactionParamsSchema');
 assertNoIsolationKeys(Object.keys(chatReactionBodySchema.shape), 'chatReactionBodySchema');
+
+/** ✅ 2026-10-16: `PATCH` / `DELETE /api/threads/{id}/messages/{messageId}`（自分の発言の編集・削除）。 */
+export const chatMessageParamsSchema = z.object({ id: z.uuid(), messageId: z.uuid() });
+export type ChatMessageParams = z.infer<typeof chatMessageParamsSchema>;
+export type ChatMessageParamsIsolationGuard = AssertNoIsolationKeys<ChatMessageParams>;
+assertNoIsolationKeys(Object.keys(chatMessageParamsSchema.shape), 'chatMessageParamsSchema');

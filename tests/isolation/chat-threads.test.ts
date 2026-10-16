@@ -915,3 +915,62 @@ describe('🔴 ⑯ リアクションは発言が読める相手にだけ見え�
     expect(seenByHost).toHaveLength(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// ⑰ 自分の発言の編集・削除（2026-10-16、チャットレーン）
+// ---------------------------------------------------------------------------
+
+describe('🔴 ⑰ 発言を編集・削除できるのは送った本人だけ（他人・他社・別スレッドは 404）', () => {
+  const OWN = '01930000-0000-7000-8000-0000000009d1';
+  const DEPS = { now: () => new Date('2026-10-16T09:00:00.000Z'), meta: { ipAddress: null } };
+
+  beforeEach(async () => {
+    await admin.message.upsert({
+      where: { id: OWN },
+      update: {},
+      create: {
+        id: OWN,
+        tenantId: TENANT_A,
+        ownerPartnerCompanyId: PARTNER_A1,
+        threadId: THREAD_A_P1,
+        senderUserId: USER_A_PARTNER,
+        senderPartnerCompanyId: PARTNER_A1,
+        body: 't-edit original',
+        sentAt: new Date('2026-10-11T00:00:00.000Z'),
+      },
+    });
+  });
+
+  afterAll(async () => {
+    await admin.auditLog.deleteMany({ where: { action: { in: ['message.update', 'message.delete'] } } });
+  });
+
+  it('本人は編集でき、「編集済み」になり、監査ログに長さだけが残る（本文は載らない）', async () => {
+    const { editChatMessage } = await import('../../apps/web/lib/chat/service');
+    const result = await editChatMessage(partnerA1, THREAD_A_P1, OWN, { body: 't-edit changed' }, DEPS);
+    expect(result.message.body).toBe('t-edit changed');
+    expect(result.message.edited).toBe(true);
+    const audit = await admin.auditLog.findFirst({ where: { action: 'message.update', targetId: OWN } });
+    expect(audit).not.toBeNull();
+    expect(JSON.stringify(audit?.summary)).not.toContain('t-edit');
+  });
+
+  it('🔴 ホスト（同じスレッドの相手）も、取引先 A2 も、他人の発言は編集・削除できない', async () => {
+    const { deleteChatMessage, editChatMessage } = await import('../../apps/web/lib/chat/service');
+    await expect(editChatMessage(hostSales, THREAD_A_P1, OWN, { body: 'x' }, DEPS)).rejects.toThrow();
+    await expect(deleteChatMessage(hostSales, THREAD_A_P1, OWN, DEPS)).rejects.toThrow();
+    await expect(editChatMessage(partnerA2, THREAD_A_P1, OWN, { body: 'x' }, DEPS)).rejects.toThrow();
+    const row = await admin.message.findUnique({ where: { id: OWN } });
+    expect(row?.body).not.toBe('x');
+    expect(row?.deletedAt).toBeNull();
+  });
+
+  it('本人は削除でき、本文が消えて「削除された」になり、監査ログに残る。消した発言はもう編集できない', async () => {
+    const { deleteChatMessage, editChatMessage } = await import('../../apps/web/lib/chat/service');
+    const result = await deleteChatMessage(partnerA1, THREAD_A_P1, OWN, DEPS);
+    expect(result.message.body).toBeNull();
+    expect(result.message.deleted).toBe(true);
+    expect(await admin.auditLog.count({ where: { action: 'message.delete', targetId: OWN } })).toBe(1);
+    await expect(editChatMessage(partnerA1, THREAD_A_P1, OWN, { body: 'y' }, DEPS)).rejects.toThrow();
+  });
+});

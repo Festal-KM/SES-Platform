@@ -766,3 +766,25 @@ describe('⑯: リアクション（2026-10-16、チャットレーン）', () =
     expect(html).not.toContain('chat-message-reaction-add-');
   });
 });
+
+describe('⑰: 自分の発言の編集・削除（2026-10-16、チャットレーン）', () => {
+  it('投稿できる人の自分の発言にだけ「編集」「削除」を出す（相手の発言・閲覧専用には出さない）', () => {
+    const html = renderConversation();
+    expect(html).toContain(`data-testid="chat-message-edit-${MESSAGE_OWN.id}"`);
+    expect(html).toContain(`data-testid="chat-message-delete-${MESSAGE_OWN.id}"`);
+    expect(html).not.toContain(`chat-message-edit-${MESSAGE_OTHER.id}`);
+    expect(renderConversation({ canPost: false })).not.toContain('chat-message-edit-');
+  });
+
+  it('編集済みの印と、本人が削除した発言の文言（保持期限の削除とは書き分ける）', () => {
+    const html = renderConversation({
+      initialMessages: [
+        { ...MESSAGE_OTHER, edited: true },
+        { ...MESSAGE_OWN, body: null, deleted: true },
+      ],
+    });
+    expect(html).toContain(t('chat.message.edited'));
+    expect(html).toContain(t('chat.message.deleted'));
+    expect(html).not.toContain(`chat-message-edit-${MESSAGE_OWN.id}`);
+  });
+});
