@@ -975,6 +975,41 @@ const ja = {
   'admin.tenantDetail.deletionStatus.link': '削除完了の確認を開く（契約管理）',
 
   // --- S-035 組織設定（docs/04 §S-035 / F-001 / F-021。T-03-10）---
+  // ============================================================================
+  // ✅✅ `S-048` アカウント設定（2026-10-16。人間の明示指示。Issue #95）
+  // ============================================================================
+  'account.title': 'アカウント設定',
+  'account.breadcrumb.home': 'ホーム',
+  'account.lead': '自分の表示名・役職と、サインインに使うパスワードを管理します。',
+  'account.section.profile': 'プロフィール',
+  'account.displayName.label': '表示名',
+  'account.jobTitle.label': '役職',
+  'account.jobTitle.placeholder': '例: 営業部 シニアマネージャー',
+  'account.jobTitle.unset': '未設定',
+  'account.email.label': 'メールアドレス',
+  // 🔴 **変えられない理由を書く**（`orgSettings` の `lifecycleReadOnlyNote` と同じ作法）。
+  'account.email.readOnlyNote':
+    'サインインに使うアドレスです。変更するには新しいアドレスの確認が必要なため、いまは変更できません。',
+  'account.role.label': '権限',
+  'account.avatar.label': 'アイコン',
+  'account.avatar.note':
+    '画像のアップロードは、後続のリリースで行えます。いまは表示名の頭文字で表示されます。',
+  'account.save': '変更を保存',
+  'account.saving': '保存しています…',
+  'account.saved': '保存しました。',
+  'account.saveFailed': '保存できませんでした。入力を確かめて、もう一度お試しください。',
+  'account.section.password': 'パスワードの変更',
+  'account.password.note':
+    '本人確認のため、いまのパスワードもあわせて入力してください。変更しても、このままの操作を続けられます。',
+  'account.password.current': '現在のパスワード',
+  'account.password.new': '新しいパスワード',
+  'account.password.newNote': '12 文字以上で設定してください。',
+  'account.password.submit': 'パスワードを変更',
+  'account.password.submitting': '変更しています…',
+  'account.password.changed': 'パスワードを変更しました。',
+  // 🔴 **失敗の理由を区別しない**（`docs/04` §S-001 と同じ規律。サーバも区別しない）。
+  'account.password.failed':
+    'パスワードを変更できませんでした。現在のパスワードと、新しいパスワードの長さを確かめてください。',
   'orgSettings.title': '組織設定',
   'orgSettings.breadcrumb.home': 'ホーム',
   'orgSettings.section.organization': '組織情報',
