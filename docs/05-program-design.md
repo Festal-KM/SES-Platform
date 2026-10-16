@@ -1368,6 +1368,48 @@ model ExtensionReview {
   @@map("extension_reviews")
 }
 ```
+
+#### 3.7.1 人単位の部屋（DM・グループ）— 2026-10-16 追加（[#128](https://github.com/Festal-KM/SES-Platform/pull/128) で紺野・宮田が合意。`F-038` 改訂 8 / `S-031` 改訂 39）
+
+🔴 **境界は会社の段（`thread_participants`・C6）のまま、その内側に人の段（`thread_members`）を足して絞る。** 人の段は会社の段より広げられない。
+
+```prisma
+// ChatThread の変更
+//   kind: 'PROJECT'|'COMPANY'|'DM'|'GROUP'（CHECK を広げる）
+//   partnerCompanyId: String? —— 🔴 NULL = 社内だけの部屋（取引先を持たない）。DM / GROUP でだけ NULL を許す（CHECK）。
+//                     NULL の部屋は C6 の取引先側の条件（= app_partner_id()）に当たらないので、取引先からは構造的に見えない
+//   title:     String? —— GROUP の名前（DM は相手の名前を出すので持たない）
+//   dmKey:     String? —— DM の 2 人の user_id を小さい順に ':' で連結。@@unique([tenantId, dmKey]) で「同じ 2 人の DM は 1 つ」
+//   createdByUserId: String? @db.Uuid —— DM / GROUP を作った人（監査の補助）
+// Message.ownerPartnerCompanyId も String? にする（chat_threads.partner_company_id を継承。社内の部屋は NULL）
+model ThreadMember {                                             // 🔴 DM / GROUP の読み手（人の段）
+  id        String    @id @default(uuid(7)) @db.Uuid
+  tenantId  String    @db.Uuid
+  threadId  String    @db.Uuid
+  userId    String    @db.Uuid
+  partnerCompanyId String? @db.Uuid                              // 🔴 その人の所属（NULL = ホスト）。参加会社の行と一致すること（トリガで検査）
+  joinedAt  DateTime  @default(now()) @db.Timestamptz(3)
+  leftAt    DateTime? @db.Timestamptz(3)                         // 辞めた・外れた。履歴は残す（引き継がない）
+  @@unique([tenantId, threadId, userId])
+  @@index([tenantId, userId, leftAt])
+  @@map("thread_members")
+}
+```
+
+| 規則 | 中身 |
+|---|---|
+| 🔴 **読める条件（RLS）** | `app_thread_member_ok(thread_id)`（`SECURITY DEFINER`・`STABLE`・`tenant_id` を明示）= **部屋の `kind` が `DM` / `GROUP` でない、または自分が `left_at IS NULL` のメンバー**。これを **C6 の式に AND で足す**（`chat_threads` / `messages` / `chat_read_states` の INSERT・UPDATE / `chat_message_reactions` / 添付）。🔴 **ホスト（`app_is_host()`）にも掛ける** —— 管理者でも、メンバーでない DM・グループは読めない（`CLAUDE.md` §3.1 経路 3）。🔴 判定は**メンバーの有無ではなく `kind`** で行う（メンバーが 0 人になった DM が会社全員に開く壊れ方を作らない） |
+| 🔴 **メンバーの所属** | `thread_members.partner_company_id` は、その部屋の参加会社（`thread_participants`）のどれかと一致する。社内の部屋はホストだけ。トリガ `thread_members_party_check` で検査し、外れたら INSERT を拒否する（アプリの検査と二重） |
+| 🔴 **取引先は 1 社まで** | `chat_threads.partner_company_id` が 1 列であることで構造的に保証（今と同じ） |
+| 取引先どうしの DM | 作らない（同じ会社の取引先の人どうしも。`F-038` 改訂 8）。API で拒否 |
+| `thread_members` の RLS | **C10 MEMBER**: `SELECT` = 同じ部屋のメンバー（`app_thread_member_ok`）。`INSERT` = 作成者が部屋のメンバーで、追加される人が参加会社の所属者。`UPDATE`（`left_at`）= 本人またはテナントの `ADMIN`（退職時） |
+| 監査ログ | `thread.create`（DM / GROUP。対象の user_id の一覧だけ。本文なし）/ `thread.member_add` / `thread.member_leave` |
+| 既読を相手に見せる | DM に限り、相手の `chat_read_states.last_read_message_id` を読む関数 `app_dm_peer_read(thread_id)`（`SECURITY DEFINER`。DM のメンバーにだけ、相手の既読位置 1 つを返す）。🔴 `chat_read_states` の C7 SELF は変えない（表を相手に開かない） |
+| 会社グループの自動作成 | 取引先の招待の受け入れ時に `kind = 'COMPANY'` の部屋と参加会社 2 行を作る（既にあれば何もしない）。🔴 **組み込み先は宮田さんの領域**（招待の受け入れ）。呼ぶ関数はチャット側が `apps/web/lib/chat/service.ts` に用意する |
+| 案件カード | 発言に `cardKind`（`'PROJECT'`）と `cardTargetId` を持つ。**中身は持たない**。表示のたびに見る人の権限（C4 VISIBILITY）で案件を読み、読めなければ「表示できません」。取引先との部屋では、貼る時点でその取引先に公開済みかを検査する。人材のカードは社内の部屋だけ |
+| 分離テスト | `tests/isolation/chat-threads.test.ts` に追加: ①同じ会社の非メンバー（管理者を含む）が DM・グループの存在・本文・件数を読めない ②取引先 A の人を取引先 B との部屋のメンバーにできない ③取引先から社内の部屋が見えない ④DM の既読は相手にだけ・グループでは誰にも見えない ⑤読めない案件のカードは「表示できません」 |
+
+
 ```ts
 // packages/domain/src/contract/merge.ts — 🔴 純粋関数。同一入力に同一出力（F-048 AC-1）。LLM を使わない（BR-12）
 export type MergeMapping = { placeholder: string; required: boolean;
@@ -1941,6 +1983,7 @@ CREATE FUNCTION app_actor_user_id() RETURNS uuid LANGUAGE sql STABLE AS
 | **C7 SELF** | `<T> = app_tenant_id() AND <A> = app_actor_user_id()` | `notifications`(`recipient_user_id`。🔴 `INSERT` の `WITH CHECK` のみ **C1 式** — ジョブもチャット相手も他人宛に作るため。**読みは本人だけ**)、`two_factor_credentials`(`subject_id`。+ `subject_type = 'USER'`。`PLATFORM_USER` 行は `tenant_id IS NULL` で不可視)、`chat_read_states`(`user_id`。✅ 2026-10-16 チャットレーン。🔴 `INSERT` / `UPDATE` の `WITH CHECK` に「スレッドが読める〔`chat_threads` の C6 を通る〕」を AND する。運営者に GRANT しない。migration 20261016000000) |
 | **C8 DIRECTORY** | `<T> = app_tenant_id() AND ( app_is_host() OR <O> IS NULL OR <O> = app_partner_id() )` | `users`(`SELECT`。`owner_partner_company_id`)。🔴 **ホスト所属の行だけが全員に見える**（チャットの送信者名・`ProposalEvent` の実行者名に要る）。**他パートナーの利用者は 1 行も見えない**。パートナー向けシリアライザは `email` を返さない。🔴 **書込（`INSERT` / `UPDATE`）は C3 式**（自分の所属としてしか書けない）。**書き手は §4.4.2 の行由来コンテキスト 3 関数だけ**であり、所属は招待行 / 本人行から取る。🔴 **`ProposalEvent` の実行者名（ホスト担当者の表示名。承認者を含む）が取引先の `S-023` 履歴に出るのは C8 DIRECTORY の意図された開示である**（T-12-14 ④。2026-09-18。**暫定。[Issue #73](https://github.com/Festal-KM/SES-Platform/issues/73) で確認中**。既定 = 現状維持）。`approval`（承認記録の構造）は取引先向けの型に無いまま（#46）。「伏せる」に決まった場合の変更点は **`apps/web/lib/proposals/events.ts` の主体名の解決 1 箇所**（取引先向け view で実行者名を `ホスト担当者` に丸める）であり、**C8 のポリシーは動かさない**（ポリシーを狭めるとチャットの送信者名〔経路 3〕まで消える） |
 | **C9 COUNTERPARTY_READ**（**経路 5**。`CLAUDE.md` §3.1-5 / `BR-65`〜`BR-69`。Issue #8） | 🔴 **`SELECT` のみ**: `<T> = app_tenant_id() AND NOT app_is_host() AND <C> = app_partner_id()`。🔴 **`INSERT` / `UPDATE` / `DELETE` のパートナー向けポリシーは書かない**（C2 の書込ポリシーは `app_is_host()` で偽になり 0 件更新。`BR-68`） | `assignments`(`counterparty_partner_company_id`・継承)、`contracts`(同・根)、`contract_documents`(同・継承。🔴 **`AND signed_at IS NOT NULL` を AND する** = 署名済み最終版のみ。ドラフト版は行として存在しない。`F-066 AC-2` / `F-047 AC-8`)、`orders`(同・継承)。🔴 **行が読めても列は読めてはならない** — パートナー文脈で 4 表に到達できるのは **§4.9 の射影ビューだけ**（列は DB のビュー定義で絞る）。基底表のデリゲートは `TenantDb` の型に無く、Prisma 拡張がパートナー文脈の操作を throw する（§4.3-6。RLS が行を通しても止まる）。`EXISTS` を使わず列の等値比較だけで判定するため経路 1〜4 より速い（`docs/03` §4.3.2）。**`COUNT` はこのポリシー越しの自社分のみ**になる |
+| **C10 MEMBER**（**経路 3 の人の段**。2026-10-16 追加。#128） | `<T> = app_tenant_id() AND app_thread_member_ok(thread_id)`（`kind` が `DM` / `GROUP` でない、または自分が在籍中のメンバー）。🔴 **C6 に AND で重ねる**ので、会社の段より広くならない | `thread_members`（SELECT / INSERT）。併せて `chat_threads` / `messages` / `chat_read_states` / `chat_message_reactions` の C6 式に `app_thread_member_ok` を AND で足す（§3.7.1） |
 
 **射程外の 4 表**: `skills` / `platform_users` / `plans` / `subscriptions`（`CLAUDE.md` §3.1）。**これで 54 + 4 = 58 表すべてが片付いている。**
 
@@ -3423,6 +3466,12 @@ T-08-02 の実装（`apps/web/lib/engineer-shares/service.ts` の `listEngineerS
 | 51c | `PUT /api/threads/{id}/read` / `PUT /api/threads/{id}/unread` | `F-038` ⑥ | `{ upToMessageId }` / `{ fromMessageId }` | `{ lastReadMessageId }` | `chat_read_states`（C7 SELF）。既読は戻らない。閲覧の一部として `requireExecutable` を掛けない |
 | 51d | `PUT /api/threads/{id}/prefs` | `F-038` ⑥ | `{ pinned?, muted? }` | `{ pinned, muted }` | 自分の表示の設定（`chat_read_states` の列）。閲覧の一部 |
 | 51e | `GET /api/threads/{id}/export` | `F-038` ⑥ | — | `text/csv` | 🔴 閲覧専用は 403（§10.1）。CSV インジェクション対策。監査 `thread.export`（件数だけ） |
+| 51f | `POST /api/threads/dm` | `F-038` ⑦ | `{ userId }` | `{ id }` | その人との DM を開く（無ければ作る）。🔴 相手が見える人（C8 DIRECTORY）で、取引先どうしでないこと。社内どうしは取引先なしの部屋。監査 `thread.create` |
+| 51g | `POST /api/threads/groups` | `F-038` ⑦ | `{ title, userIds[] }` | `{ id }` | グループを作る。🔴 取引先の人が入るなら 1 社まで。監査 `thread.create` |
+| 51h | `POST` / `DELETE /api/threads/{id}/members` | `F-038` ⑦ | `{ userId }` | `{ members }` | メンバーの追加・外す（GROUP のみ。DM は 2 人固定）。監査 `thread.member_add` / `thread.member_leave` |
+| 51i | `GET /api/chat/contacts` | `F-038` ⑦ | `q?` | `{ recent[], companies[] }` | 連絡先（最近やり取りした 5 人＋会社ごとの人）。🔴 取引先の人には自社（ホスト）の人だけを返す |
+| 51j | `PUT /api/chat/status` | `F-038` ⑦ ① | `{ text }` | `{ text }` | ひとこと状態（本人のみ。60 文字まで） |
+| 51k | `PUT /api/chat/favorites` | `F-038` ⑦ | `{ threadIds[] }` | `{ threadIds }` | お気に入り（今の `pinned` を並び順つきで使う。本人のみ） |
 | 52 | `GET /api/realtime/threads/{id}` | `F-038` / Phase 2 | SSE | `event: message-updated` | 🔴 **接続中も毎イベントで参加会社を再判定**（`docs/03` §3.9.5-1） |
 
 🔴 **#40b と `S-023` セクション 4 の設計（T-12-14 ②。2026-09-18。SP-09 T-09-09 ③-③ の申し送りの回収。`F-020 AC-7` / `docs/02` `ui-design` 申し送り 5 / `docs/04` §S-023 セクション 4〔`ui-design` が「現在の結果」→「実行ごとの履歴」に並行改訂中。同じ既定〕）**:
