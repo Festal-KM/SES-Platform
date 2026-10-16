@@ -131,12 +131,13 @@ export default async function ChatPage({
             tiled ? 'overflow-x-auto overflow-y-hidden' : 'overflow-hidden',
           )}
         >
+          {/* ✅ 2026-10-16（紺野）: 一覧は薄いグレーの面、会話は白。境の罫線はやめ、面の色の違いで分ける。 */}
           {/* 左: スレッド一覧（320）。🔴 `md` 未満で会話を開いているときは畳む（2 画面遷移） */}
           <div
             className={
               selected === null
-                ? 'w-full md:w-80 md:shrink-0 md:border-r md:border-border'
-                : 'hidden md:block md:w-80 md:shrink-0 md:border-r md:border-border'
+                ? 'w-full bg-bg-subtle md:w-80 md:shrink-0'
+                : 'hidden bg-bg-subtle md:block md:w-80 md:shrink-0'
             }
           >
             <ChatThreadList

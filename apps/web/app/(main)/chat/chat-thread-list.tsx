@@ -139,8 +139,9 @@ function ThreadRow({ item, context }: { readonly item: ChatThreadListItem; reado
       data-testid={`chat-thread-row-${item.id}`}
       data-selected={selected ? 'true' : 'false'}
       data-kind={item.kind}
+      // ✅ 2026-10-16（紺野）: 罫線を引かない。行の区切りは余白と、選んだ行・ホバーの面の色だけ。
       // ✅ 2026-10-14: スレッド（子）は字下げして、どの会社のチャットに含まれるかを位置で示す。
-      className={cn('flex border-b border-border-row', isChat ? null : 'pl-6', open ? 'bg-brand-bg' : ROW_HOVER_CLASSES)}
+      className={cn('flex', isChat ? null : 'pl-6', open ? 'bg-brand-bg' : ROW_HOVER_CLASSES)}
     >
       {/* 🔴 行のリンクはそのままドラッグできる（ブラウザがリンクの URL を運ぶ）。受け口は
           `chat-pane-drop-zone.tsx` で、`lib/chat/panes.ts` の `threadIdFromDroppedUrl` が URL を検める。 */}
@@ -154,7 +155,7 @@ function ThreadRow({ item, context }: { readonly item: ChatThreadListItem; reado
         <Avatar size="md" initials={displayInitials(isChat ? counterparty : target)} title={target} />
         <span className="min-w-0 flex-1">
           {/* 🔴 1 段目は**対象の名前だけ**に全幅を使う（時刻は 2 段目の右端。2026-10-13 の実測）。 */}
-          <span className={cn('block truncate text-row text-fg', unread > 0 && !muted ? 'font-bold' : 'font-medium')}>
+          <span className={cn('block truncate text-row text-fg', unread > 0 && !muted ? 'font-bold' : 'font-normal')}>
             <span className="sr-only">{t('chat.threads.column.target')}</span>
             {target}
           </span>
@@ -248,7 +249,7 @@ export function ChatThreadList({
       <form
         method="get"
         action={CHAT_PATH}
-        className="flex flex-col gap-2 border-b border-border p-3"
+        className="flex flex-col gap-2 p-3"
         data-testid="chat-threads-search"
       >
         {paneState.thread === null ? null : <input type="hidden" name={CHAT_THREAD_PARAM} value={paneState.thread} />}
@@ -307,18 +308,18 @@ export function ChatThreadList({
           const pinned = all.filter((item) => pinnedIds.includes(item.id));
           if (pinned.length === 0) return null;
           return (
-            <section className="border-b border-border" data-testid="chat-threads-pinned">
+            <section data-testid="chat-threads-pinned">
               <h3 className="m-0 px-3 pt-3 pb-1 text-cell font-medium text-fg-muted">{t('chat.threads.pinned')}</h3>
               <ul className="m-0 list-none p-0">
                 {pinned.map((item) => (
-                  <li key={item.id} className={`border-b border-border-row ${ROW_HOVER_CLASSES}`}>
+                  <li key={item.id} className={ROW_HOVER_CLASSES}>
                     <Link
                       href={chatHref({ ...withThreadSelected(context.paneState, item.id), ...context.listQuery })}
                       className="flex items-center gap-2 px-3 py-2"
                       data-testid={`chat-thread-pinned-${item.id}`}
                     >
                       <Badge variant="neutral">{t(KIND_MESSAGE_KEYS[item.kind])}</Badge>
-                      <span className="min-w-0 flex-1 truncate text-cell font-medium text-fg">
+                      <span className="min-w-0 flex-1 truncate text-cell font-normal text-fg">
                         {item.kind === 'COMPANY' ? item.counterpartyName ?? t('chat.thread.unknownName') : item.project?.name ?? t(KIND_MESSAGE_KEYS[item.kind])}
                       </span>
                     </Link>
@@ -344,12 +345,12 @@ export function ChatThreadList({
                   {group.chat === null ? (
                     // 🔴 まだチャットが無い会社も、スレッドの親として名前だけを出す（押せない行は作らない）。
                     <li
-                      className={`flex items-center gap-3 border-b border-border-row px-3 ${CHAT_THREAD_ROW_HEIGHT_CLASS}`}
+                      className={`flex items-center gap-3 px-3 ${CHAT_THREAD_ROW_HEIGHT_CLASS}`}
                       data-testid={`chat-thread-group-header-${String(index)}`}
                     >
                       <Avatar size="md" initials={displayInitials(name)} title={name} />
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-row font-medium text-fg">{name}</span>
+                        <span className="block truncate text-row font-normal text-fg">{name}</span>
                         <span className="block truncate text-xs text-fg-placeholder">{t('chat.tree.noChat')}</span>
                       </span>
                     </li>
@@ -368,18 +369,18 @@ export function ChatThreadList({
       )}
       {/* ✅ 2026-10-14: 本文の検索で当たった発言（読めた発言だけ。前後の抜粋）。押すとそのスレッドを開く。 */}
       {messageHits.length === 0 ? null : (
-        <section className="border-t border-border" data-testid="chat-threads-message-hits">
+        <section data-testid="chat-threads-message-hits">
           <h3 className="m-0 px-3 pt-3 pb-1 text-cell font-medium text-fg-muted">{t('chat.threads.search.messageHits')}</h3>
           <ul className="m-0 list-none p-0">
             {messageHits.map((hit) => (
-              <li key={hit.messageId} className={`border-b border-border-row ${ROW_HOVER_CLASSES}`}>
+              <li key={hit.messageId} className={ROW_HOVER_CLASSES}>
                 <Link
                   href={chatHref({ ...withThreadSelected(context.paneState, hit.threadId), ...context.listQuery })}
                   className="flex flex-col gap-1 px-3 py-2"
                   data-testid={`chat-threads-message-hit-${hit.messageId}`}
                 >
                   <span className="flex items-center gap-2">
-                    <span className="min-w-0 flex-1 truncate text-cell font-medium text-fg">
+                    <span className="min-w-0 flex-1 truncate text-cell font-normal text-fg">
                       {hit.threadTitle ?? t('chat.thread.unknownName')}
                     </span>
                     <span className="shrink-0 text-xs text-fg-placeholder">{formatDateTimeJst(hit.sentAt)}</span>
