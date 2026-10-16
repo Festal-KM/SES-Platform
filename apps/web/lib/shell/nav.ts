@@ -219,6 +219,35 @@ const ENGINEER_SECTION_PATH = '/engineers';
 const PROJECT_SECTION_PATH = '/projects';
 
 /**
+ * ✅ **2026-10-16（人間の明示指示）: `提案` セクションの 2 つの面。**
+ *
+ * 🔴 **既存の 2 画面の URL をそのまま使う**（`S-017` / `S-019`。画面も API も 1 本も足していない）——
+ *    変えたのは**語と置き場所だけ**である。
+ *
+ * 🔴 **語の定義は人間の言葉そのままである**（2026-10-16）:
+ *
+ * | タブ | 画面 | 何の提案か |
+ * |---|---|---|
+ * | `案件提案` | `S-017`（`ProposalRequest`） | **人材に対して「このような案件はどうか」**という提案を受領・送付する |
+ * | `人材提案` | `S-019`（`Proposal`） | **案件に対して「このような人材はどうか」**という提案を受領・送付する |
+ *
+ * 🔴 **1 枚のタブが受領と送付の両向きを持つ**（`受け取った` / `送った` でタブを割らない）——
+ *    同じ案件 × 人材の往復が 2 枚に分かれると、どちらが先行していたかを追えなくなる。
+ *    向きは画面の中の列（相手の会社 / 状態）で示し、見える母集団は所属（`audience`）と RLS が決める。
+ *
+ * 🔴 **`提案` / `提案依頼` という語をやめた理由**: あれは *レコードを誰が作ったか* の名であり、
+ *    営業の語ではない。とくに取引先からは `提案依頼` が「依頼を受けた」としか読めず、
+ *    **何が送られてきたのか（案件）が語に出ていなかった**。
+ * 🔴 **エンティティ名は 1 文字も変えていない**（`Proposal` / `ProposalRequest`。状態機械も
+ *    越境経路も `CLAUDE.md` §3.1 / §4.2 のままである）。**UI の語の差し替えに閉じた変更**であり、
+ *    [Issue #114](https://github.com/Festal-KM/SES-Platform/issues/114) の 🅐🅑 の判断を先取りしない。
+ * 🔴 **並びは上の `案件一覧` / `人材一覧` と揃える**（案件 → 人材）。`パートナー連携` 群の中で
+ *    「案件の面 → 人材の面」が 2 度繰り返される形になり、走査の向きが 1 つで済む。
+ */
+const PROPOSAL_PROJECTS_SECTION_PATH = '/proposal-requests';
+const PROPOSAL_ENGINEERS_SECTION_PATH = '/proposals';
+
+/**
  * ✅ **2026-10-14（人間の明示指示「チャットの下にカレンダーも入れる」）: `カレンダー`。**
  *
  * 🔴 **中身は準備中である**（人間の指示「タブ内のコンテンツについては準備中という表記でよいです」）。
@@ -313,8 +342,14 @@ export function buildSettingsIndex(context: NavContext): readonly NavItem[] {
 // 第 2 階層（セクション内のタブ）
 // ============================================================================
 
-/** 第 2 階層を持つセクション（🔴 サイドバーの項目のうちこの 2 つだけ）。 */
-export type NavSectionId = 'engineers' | 'projects';
+/**
+ * 第 2 階層を持つセクション（🔴 サイドバーの項目のうちこの 3 つだけ）。
+ *
+ * ✅ **2026-10-16（人間の明示指示「提案と提案依頼はメニューを一つにして」+「案件提案と人材提案で
+ *    タブを分けましょうか」）: `proposals` が増えた。** サイドバーは `提案` の 1 項目で、
+ *    その先が `案件提案`（`S-017`）/ `人材提案`（`S-019`）の 2 枚のタブである。
+ */
+export type NavSectionId = 'engineers' | 'projects' | 'proposals';
 
 export type NavSection = {
   readonly id: NavSectionId;
@@ -372,6 +407,36 @@ export function buildNavSections(context: NavContext): readonly NavSection[] {
       // 🔴 1 枚だけ（上の 🔴）。`navSectionsWithTabs` がこのセクションを帯から外す。
       items: [
         link('projects', 'shell.section.projects.list', 'briefcase', PROJECT_SECTION_PATH), // S-010
+      ],
+    },
+    // ========================================================================
+    // ✅ **2026-10-16（人間の明示指示「提案と提案依頼はメニューを一つにして」+「案件提案と
+    //    人材提案でタブを分けましょうか」）: `提案` セクション**
+    // ========================================================================
+    // 🔴 **サイドバーの項目は 1 つ**（`buildMainNav` の `proposals`）で、面の切り替えはここが持つ。
+    //    2 枚あるので `navSectionsWithTabs` を通り、**帯が描かれる**（`案件管理` と違う点）。
+    // 🔴 **項目 id は据え置きである**（`proposal-requests` / `proposals`）—— `data-testid` は
+    //    E2E と `*.render.test.tsx` が掴んでいる凍結対象であり、語の変更で動かさない
+    //    （`tests/static/testid-inventory.test.ts`）。
+    // 🔴 **アイコンは上の `案件一覧` / `人材一覧` と対にする**（`briefcase` / `users`）——
+    //    タブの弁別はラベルが主役だが、群の中で同じ対象が同じ形で現れるようにする。
+    {
+      id: 'proposals',
+      // 🔴 セクションの語はサイドバーの同じ項目と同じキーである（このファイルの規約）。
+      labelKey: 'shell.nav.proposals',
+      items: [
+        link(
+          'proposal-requests',
+          'shell.section.proposals.projects',
+          'briefcase',
+          PROPOSAL_PROJECTS_SECTION_PATH, // S-017
+        ),
+        link(
+          'proposals',
+          'shell.section.proposals.engineers',
+          'users',
+          PROPOSAL_ENGINEERS_SECTION_PATH, // S-019
+        ),
       ],
     },
   ];
@@ -433,6 +498,41 @@ export function buildMainNav(context: NavContext): readonly NavGroup[] {
   const sections = buildNavSections(context);
   const sectionPathsOf = (id: NavSectionId): readonly string[] =>
     navHrefs(sections.find((section) => section.id === id)?.items ?? []);
+  // ========================================================================
+  // ✅ **2026-10-16（人間の明示指示「提案と提案依頼はメニューを一つにして」/「パートナー連携の
+  //    ところに人材一覧の下に提案タブがあるのが自然じゃない？」）: `提案` の 1 項目**
+  // ========================================================================
+  // 🔴 **到達集合は 1 件も変わっていない。** `S-017` / `S-019` は第 2 階層のタブになり、
+  //    `navReachableHrefs` はセクションの項目も数えるので `nav-reach.test.ts` ① はそのまま通る。
+  // 🔴 **置き場所は `パートナー連携` 群の `人材一覧` の下**（ホスト所属）。提案は**取引先との
+  //    やりとりそのもの**であり、`パートナー一覧` → `案件一覧` → `人材一覧` → `提案` で
+  //    「相手を選ぶ → 何を出すか見る → 出した結果を見る」が 1 列に並ぶ。
+  //    ⚠️ **2026-10-15 に `案件管理` の直下へ置いたのは誤りだった** —— 人間の指示は
+  //    「案件管理は人材管理の上」（2026-10-14）だけであり、`案件 → 提案 → 提案依頼` の並びは
+  //    `CLAUDE.md` §1.3 の業務ループを根拠に**こちらが勝手に足したものである**
+  //    （人間の指摘「この順番にしてって指示は出してないと思う」）。並びは元に戻した。
+  // 🔴 **取引先所属では `パートナー連携` 群が無い**（§3.1 の相互参照の禁止。下の 🔴）ので、
+  //    上段の最後に置く。**群ごと出さない規則を曲げて空の群を作らない。**
+  const proposals = link(
+    'proposals',
+    'shell.nav.proposals',
+    'send',
+    // 🔴 遷移先はタブの 1 枚目（`案件提案`）である。取引先にとってはここが**返答期限のある面**
+    //    であり、下のバッジを押して 1 クリックで着く（`CLAUDE.md` §1.2 / §13.1）。
+    PROPOSAL_PROJECTS_SECTION_PATH,
+    // 🔴 S-017 の返答期限（docs/04 §3.1 の取引先列）。**畳んだので期限はこの統合項目が持つ。**
+    //    ホストに出さないのは docs/04 の表が取引先列にしか書いていないからである
+    //    （ホスト側の期限の見張りは `S-003` の要対応キューが持つ）。
+    proposalRequestDue === null || context.audience !== 'PARTNER'
+      ? null
+      : {
+          labelKey: 'shell.nav.proposalRequests.due.label',
+          text: proposalRequestDue,
+          // 🔴 アイコンのみの形態で点に添える語（期限も件数も含まない。`NavBadge` の 🔴）。
+          dotLabelKey: 'shell.nav.proposalRequests.due.dot',
+        },
+    sectionPathsOf('proposals'),
+  );
   const settings = link(
     'settings',
     context.audience === 'HOST' ? 'shell.nav.host.settings' : 'shell.nav.partner.settings',
@@ -466,30 +566,6 @@ export function buildMainNav(context: NavContext): readonly NavGroup[] {
           null,
           sectionPathsOf('projects'),
         ),
-        // ✅ **2026-10-15（人間の明示指示「案件一覧、提案、提案依頼のタブは不要です」）: 第 2 階層の
-        //    タブから、サイドバーの項目に戻した 2 つ**（`buildNavSections` の 🔴🔴）。
-        // 🔴 **到達集合もロール条件も 1 つも変わっていない。** 畳み込み（2026-10-03）以前も
-        //    この 2 つはサイドバーの項目であり、置き場所が 2 往復しただけである。
-        // 🔴 **並びは業務ループ（`CLAUDE.md` §1.3）のまま**: 案件 → 提案 → 提案依頼。
-        link('proposals', 'shell.nav.proposals', 'send', '/proposals'), // S-019
-        link(
-          'proposal-requests',
-          'shell.nav.proposalRequests',
-          'inbox',
-          '/proposal-requests', // S-017
-          // 🔴 S-017 の返答期限（docs/04 §3.1 の取引先列）。**期限はその画面の項目が持つ**
-          //    （タブへ畳んでいた間だけ、親の `案件管理` が預かっていた。`NavContext` の 🔴）。
-          //    ホストに出さないのは docs/04 の表が取引先列にしか書いていないからである
-          //    （ホスト側の期限の見張りは `S-003` の要対応キューが持つ）。
-          proposalRequestDue === null || context.audience !== 'PARTNER'
-            ? null
-            : {
-                labelKey: 'shell.nav.proposalRequests.due.label',
-                text: proposalRequestDue,
-                // 🔴 アイコンのみの形態で点に添える語（期限も件数も含まない。`NavBadge` の 🔴）。
-                dotLabelKey: 'shell.nav.proposalRequests.due.dot',
-              },
-        ),
         // ✅ **2026-10-14（人間の指示「案件管理は人材管理の上に配置する」）: `案件` が `人材` の上。**
         // 🔴 **到達集合も射程も 1 つも変わっていない**（並び替えただけである）。
         // ⚠️ 畳み込み以降ここは `人材` → `案件` だった（`docs/04` §3.1 の表の順）。人間の明示指示が
@@ -510,6 +586,10 @@ export function buildMainNav(context: NavContext): readonly NavGroup[] {
         //    🔴 **文言キー（`shell.nav.host.reports` / `shell.nav.partner.reports`）は
         //    消していない**（`U-22` の凍結。Phase 3 で戻すときに同じ語を使う）。
         //    予告の置き場所は `Q-04-8`（既定 = `S-047` 設定の索引）。
+        // ✅ **2026-10-16: 取引先所属だけ、`提案` をここ（上段の最後）に置く。**
+        // 🔴 ホスト所属では下の `パートナー連携` 群に入る（上の `proposals` の 🔴）。
+        //    **取引先にあの群は無い**ので、置き場所が所属で変わる唯一の項目である。
+        ...(context.audience === 'PARTNER' ? [proposals] : []),
       ],
     },
     // ✅ **2026-10-13（人間の指示 + モックアップ）: `お知らせ` と `設定` を下段の `その他` 群に
@@ -573,6 +653,8 @@ export function buildMainNav(context: NavContext): readonly NavGroup[] {
                 'user-search',
                 PARTNER_ENGINEERS_SECTION_PATH,
               ),
+              // ✅ **2026-10-16（人間の明示指示）: `人材一覧` の下が `提案` である**（上の 🔴）。
+              proposals,
             ],
           },
         ]

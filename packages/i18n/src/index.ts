@@ -164,6 +164,14 @@ const ja = {
   'shell.section.label': 'セクション内の切替',
   'shell.section.engineers.list': '候補者一覧',
   'shell.section.projects.list': '案件一覧',
+  // ✅ 2026-10-16（人間の明示指示「案件提案と人材提案でタブを分けましょうか」）: `提案` セクションの
+  //    2 つの面。🔴 **語は「何を提案するか」で分ける**（`提案` / `提案依頼` は
+  //    *レコードを誰が作ったか* の名であり、営業の語ではなかった）。上の
+  //    `shell.nav.partners.projects` / `.engineers`（案件一覧 / 人材一覧）と並びが揃う。
+  //    🔴 **キーは消していない**（`shell.nav.proposals` / `.proposalRequests` は
+  //    サイドバーの項目名と期限バッジが使い続ける。`U-22` の凍結）。
+  'shell.section.proposals.projects': '案件提案',
+  'shell.section.proposals.engineers': '人材提案',
   // --- ヘッダ（docs/04 §3.1 の 5 要素）---
   // 🔴 スコープ表示はパートナー所属で「組織名 ＞ 自社名」の 2 段（第二境界の常時表現。§3.2）。
   'shell.header.scope.organizationLabel': '所属組織',

@@ -462,11 +462,12 @@ describe('🔴 サイドバー（モックアップの 5 項目 / §7.5 ③ ア�
     // 🔴 `提案` / `提案依頼` / `共有の設定` / `監査ログ` / `スキル辞書` は**親と別のパス**である。
     //    `NavItem.sectionPaths` が無いと、これらの画面で 6 項目が 1 つも光らない。
     for (const [currentPath, testId] of [
-      // ✅ **2026-10-15: `提案` / `提案依頼` はサイドバーの項目そのものになった**（人間の明示
-      //    指示でタブの帯を外したため）。🔴 **光る項目は 1 つ**という不変条件は変わらない。
+      // ✅ **2026-10-16（人間の明示指示「提案と提案依頼はメニューを一つにして」）: 2 つの面は
+      //    `提案` の 1 項目に畳まれた。** 🔴 **どちらの面に居ても光るのは `提案` の 1 項目**であり、
+      //    「光る項目は 1 つ」という不変条件はそのままである（`NavItem.sectionPaths` が 2 枚を射程に持つ）。
       ['/proposals', 'app-nav-proposals'],
       ['/proposals/abc/approve', 'app-nav-proposals'],
-      ['/proposal-requests', 'app-nav-proposal-requests'],
+      ['/proposal-requests', 'app-nav-proposals'],
       ['/skills', 'app-nav-settings'],
       ['/audit-logs', 'app-nav-settings'],
       ['/settings/organization', 'app-nav-settings'],
@@ -618,12 +619,27 @@ describe('🔴 モバイル（docs/04 §3.4）', () => {
 describe('🔴 第 2 階層の帯（`SectionNav`）', () => {
   // ✅✅ **2026-10-15（人間の明示指示「案件一覧、提案、提案依頼のタブは不要です」）**
   //    `案件管理` のタブは 1 枚（案件一覧）になり、**帯ごと描かれなくなった**。
-  //    🔴 `提案` / `提案依頼` は**サイドバーの項目**になった（到達性は上の ④ が固定する）。
   it('🔴 `案件管理` の配下では帯を描かない（タブが 1 枚のセクションは外す）', () => {
-    for (const currentPath of ['/projects', '/proposals', '/proposal-requests']) {
+    const html = sectionMarkup('HOST', 'SALES', '/projects');
+    expect(html).not.toContain('data-testid="app-section-nav"');
+    expect(html).not.toContain('data-testid="app-section-tab-proposals"');
+  });
+
+  // ✅✅ **2026-10-16（人間の明示指示「提案と提案依頼はメニューを一つにして」+「案件提案と
+  //    人材提案でタブを分けましょうか」）: `提案` の配下に帯が戻った。**
+  // 🔴 **帯はサイドバーを 1 項目に畳んだぶんの到達手段である** —— `S-017` / `S-019` の入口は
+  //    もうサイドバーに無いので、**ここが唯一の入口**になった（この検査が消えると
+  //    「画面は在るのに誰も開けない」が静かに起きる。`nav-reach.test.ts` 冒頭）。
+  it('🔴 `提案` の配下では 案件提案 / 人材提案 の帯を描く', () => {
+    for (const currentPath of ['/proposal-requests', '/proposals', '/proposals/abc/approve']) {
       const html = sectionMarkup('HOST', 'SALES', currentPath);
-      expect(html, currentPath).not.toContain('data-testid="app-section-nav"');
-      expect(html, currentPath).not.toContain('data-testid="app-section-tab-proposals"');
+      expect(html, currentPath).toContain('data-testid="app-section-nav"');
+      // 🔴 並びは 案件提案 → 人材提案（上の `案件一覧` / `人材一覧` と同じ向き）。
+      const order = ['proposal-requests', 'proposals'].map((id) =>
+        html.indexOf(`data-testid="app-section-tab-${id}"`),
+      );
+      expect(order.every((at) => at >= 0), currentPath).toBe(true);
+      expect(order[0]! < order[1]!, currentPath).toBe(true);
     }
   });
 

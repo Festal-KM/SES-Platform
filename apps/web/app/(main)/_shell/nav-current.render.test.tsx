@@ -132,10 +132,11 @@ describe('🔴 サイドバーの現在地がクライアント遷移に追随�
 
   it('🔴 第 2 階層・索引の射程もクライアント側で効く（`/skills` で `設定` が光る）', () => {
     for (const [pathname, id] of [
-      // ✅ 2026-10-15: `提案` / `提案依頼` はサイドバーの項目になった（タブの帯を外したため）。
+      // ✅ **2026-10-16: 2 つの面は `提案` の 1 項目に畳まれた**（人間の明示指示）。
+      //    🔴 どちらの面に居ても光るのは `提案` だけである。
       ['/proposals', 'proposals'],
       ['/proposals/abc/approve', 'proposals'],
-      ['/proposal-requests', 'proposal-requests'],
+      ['/proposal-requests', 'proposals'],
       ['/skills', 'settings'],
       ['/audit-logs', 'settings'],
       ['/settings/organization', 'settings'],
@@ -184,12 +185,22 @@ describe('🔴 第 2 階層の帯がクライアント遷移に追随する（�
     expect(tagOf(html, 'app-section-tab-engineers')).not.toContain('aria-current');
   });
 
-  // ✅ **2026-10-15: ホストには帯が 1 本も無い**（`案件管理` / `人材管理` とも 1 タブ）。
-  it('🔴 ホスト所属では、案件・提案のどこに居ても帯が出ない', () => {
-    for (const pathname of ['/projects', '/proposals', '/proposal-requests']) {
+  // ✅ **2026-10-16: ホストの帯は `提案` の 1 本だけである**（`案件管理` / `人材管理` は 1 タブ）。
+  it('🔴 ホスト所属では、案件管理の配下に帯が出ない', () => {
+    nav.pathname = '/projects';
+    expect(render('/')).not.toContain('data-testid="app-section-nav"');
+  });
+
+  // 🔴 **クライアント遷移でも帯が追随する**（2026-10-04 の実バグの再発検知。レイアウトは
+  //    ソフトナビゲーションで再描画されないため、島が `usePathname` で選び直す）。
+  it('🔴 ホスト所属でも `提案` の配下では帯が出る（クライアント遷移に追随する）', () => {
+    for (const pathname of ['/proposal-requests', '/proposals', '/proposals/abc/approve']) {
       nav.pathname = pathname;
-      expect(render('/'), pathname).not.toContain('data-testid="app-section-nav"');
+      expect(render('/'), pathname).toContain('data-testid="app-section-nav"');
     }
+    // 🔴 **そこから外へ出たら帯ごと消える**（残り続けたのが 2026-10-04 の症状である）。
+    nav.pathname = '/projects';
+    expect(render('/proposals')).not.toContain('data-testid="app-section-nav"');
   });
 
   it('🔴 セクションの外へ移動したら帯ごと消える（`/settings` に案件管理のタブが残らない）', () => {

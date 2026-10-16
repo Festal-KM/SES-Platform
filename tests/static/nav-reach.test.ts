@@ -550,13 +550,15 @@ describe('🔴 ⑤ サイドバーは、ホスト 3 群 / 取引先 2 群であ�
             'chat',
             'calendar',
             'projects',
-            // ✅ 2026-10-15: `案件管理` のタブを外したので、`提案` / `提案依頼` はここへ戻った。
-            'proposals',
-            'proposal-requests',
             'engineers',
             'partners-companies',
             'partners-projects',
             'partners-engineers',
+            // ✅ **2026-10-16（人間の明示指示）: `提案` と `提案依頼` を 1 項目に畳み、
+            //    `パートナー連携` 群の `人材一覧` の下に置いた。**
+            // 🔴 **到達集合は 1 件も変わっていない** —— `S-017` / `S-019` は第 2 階層のタブになり、
+            //    `navReachableHrefs` はセクションの項目も数える（下の ① が固定する）。
+            'proposals',
             'notifications',
             'settings',
           ]
@@ -565,9 +567,9 @@ describe('🔴 ⑤ サイドバーは、ホスト 3 群 / 取引先 2 群であ�
             'chat',
             'calendar',
             'projects',
-            'proposals',
-            'proposal-requests',
             'engineers',
+            // ✅ 2026-10-16: 取引先は `パートナー連携` 群が無いので上段の最後。
+            'proposals',
             'notifications',
             'settings',
           ],

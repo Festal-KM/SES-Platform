@@ -107,16 +107,17 @@ const MOCKUP_SIDEBAR = {
     ['calendar', 'shell.nav.calendar', 'calendar-clock', null],
     // ✅ 2026-10-14: ④ `案件` が `人材` の上。① ② 語は `自社案件管理` / `自社人材管理`（値だけ変更）。
     ['projects', 'shell.nav.host.projects', 'briefcase', null],
-    // ✅ **2026-10-15（人間の明示指示「案件一覧、提案、提案依頼のタブは不要です」）: 第 2 階層の
-    //    タブから戻した 2 つ。** 🔴 **到達集合は 1 件も変わっていない**（置き場所だけが移った。
-    //    消すと `S-019` / `S-017` が到達不能になる。`nav-reach.test.ts` ① が固定する）。
-    ['proposals', 'shell.nav.proposals', 'send', null],
-    ['proposal-requests', 'shell.nav.proposalRequests', 'inbox', null],
     ['engineers', 'shell.nav.host.engineers', 'users', null],
     // ✅ 2026-10-14: ③ ここから `パートナー連携` 群（罫線）。🔴 **ホストにしか無い。**
     ['partners-companies', 'shell.nav.partners.companies', 'building-2', null],
     ['partners-projects', 'shell.nav.partners.projects', 'handshake', null],
     ['partners-engineers', 'shell.nav.partners.engineers', 'user-search', null],
+    // ✅ **2026-10-16（人間の明示指示「提案と提案依頼はメニューを一つにして」+「パートナー連携の
+    //    ところに人材一覧の下に提案タブがあるのが自然じゃない？」）: `人材一覧` の下が `提案`。**
+    // 🔴 **1 項目である**（`提案` / `提案依頼` の 2 項目をやめた）。面の切り替えは第 2 階層の
+    //    `案件提案` / `人材提案` が持つ（下の `MOCKUP_SECTIONS`）。
+    // 🔴 **到達集合は 1 件も変わっていない**（`nav-reach.test.ts` ① が固定する）。
+    ['proposals', 'shell.nav.proposals', 'send', null],
     // ✅ 2026-10-13: ここから下段（`その他` 群）。
     ['notifications', 'shell.nav.notifications', 'bell', 'Phase 2'],
     ['settings', 'shell.nav.host.settings', 'settings', null],
@@ -126,10 +127,10 @@ const MOCKUP_SIDEBAR = {
     ['chat', 'shell.nav.chat', 'message-square', null],
     ['calendar', 'shell.nav.calendar', 'calendar-clock', null],
     ['projects', 'shell.nav.partner.projects', 'briefcase', null],
-    // ✅ 2026-10-15: 同上。🔴 **返答期限のバッジはこの `提案依頼` の行が持つ**（下の「期限バッジ」）。
-    ['proposals', 'shell.nav.proposals', 'send', null],
-    ['proposal-requests', 'shell.nav.proposalRequests', 'inbox', null],
     ['engineers', 'shell.nav.partner.engineers', 'users', null],
+    // ✅ **2026-10-16: 取引先では `提案` が上段の最後である** —— `パートナー連携` 群が無いため
+    //    （空の群を置かない。`nav.ts` の 🔴）。🔴 **返答期限のバッジはこの行が持つ**（下の「期限バッジ」）。
+    ['proposals', 'shell.nav.proposals', 'send', null],
     // 🔴 **`パートナー連携` 群は 1 項目も無い**（群ごと出さない）。取引先にとっては「他社の一覧」
     //    であり、`CLAUDE.md` §3.1 の相互参照の禁止そのものである（`nav.ts` の 🔴）。
     // ✅ 2026-10-13: ここから下段（`その他` 群）。
@@ -151,6 +152,13 @@ const MOCKUP_SECTIONS = {
     //    1 枚のセクションは `navSectionsWithTabs` が外すので、**帯そのものが描かれない**。
     //    🔴 `提案` / `提案依頼` は**サイドバーへ移した**（上の `MOCKUP_SIDEBAR`）。
     ['projects', 'projects', 'shell.section.projects.list', '/projects'],
+    // ✅ **2026-10-16（人間の明示指示「案件提案と人材提案でタブを分けましょうか」）: `提案` の 2 枚。**
+    // 🔴 **語は「何を提案するか」である**（人間の定義。`nav.ts` の表）:
+    //      `案件提案` … **人材に対して**「このような案件はどうか」を受領・送付する（`S-017`）
+    //      `人材提案` … **案件に対して**「このような人材はどうか」を受領・送付する（`S-019`）
+    // 🔴 **項目 id は据え置き**（`data-testid` の凍結。E2E と render テストが掴んでいる）。
+    ['proposals', 'proposal-requests', 'shell.section.proposals.projects', '/proposal-requests'],
+    ['proposals', 'proposals', 'shell.section.proposals.engineers', '/proposals'],
   ],
   PARTNER: [
     ['engineers', 'engineers', 'shell.section.engineers.list', '/engineers'],
@@ -158,6 +166,9 @@ const MOCKUP_SECTIONS = {
     //    （母集団が同じ台帳であり、稼働が決まった人材の共有解除は時間勝負である。§11-13）。
     ['engineers', 'engineer-shares', 'shell.nav.partner.shares', '/engineer-shares'],
     ['projects', 'projects', 'shell.section.projects.list', '/projects'],
+    // 🔴 **所属で 2 枚とも同じである**（向きは画面の中で示す。`nav.ts` の 🔴）。
+    ['proposals', 'proposal-requests', 'shell.section.proposals.projects', '/proposal-requests'],
+    ['proposals', 'proposals', 'shell.section.proposals.engineers', '/proposals'],
   ],
 } as const satisfies Readonly<
   Record<'HOST' | 'PARTNER', ReadonlyArray<readonly [string, string, string, string]>>
@@ -256,13 +267,12 @@ describe('🔴 ① サイドバーがモックアップどおり 2 群である�
             'chat',
             'calendar',
             'projects',
-            // ✅ 2026-10-15: タブから戻した 2 つ（人間の明示指示）。
-            'proposals',
-            'proposal-requests',
             'engineers',
             'partners-companies',
             'partners-projects',
             'partners-engineers',
+            // ✅ 2026-10-16: `人材一覧` の下が `提案`（統合した 1 項目）。
+            'proposals',
             'notifications',
             'settings',
           ]
@@ -271,9 +281,9 @@ describe('🔴 ① サイドバーがモックアップどおり 2 群である�
             'chat',
             'calendar',
             'projects',
-            'proposals',
-            'proposal-requests',
             'engineers',
+            // ✅ 2026-10-16: 取引先は `パートナー連携` 群が無いので上段の最後。
+            'proposals',
             'notifications',
             'settings',
           ],
@@ -504,16 +514,27 @@ describe('🔴 現在地の射程（`sectionPaths`）—— 畳み込みで「�
   }
 
   // ✅ **2026-10-15（人間の明示指示）: `案件管理` の射程は `/projects` だけになった。**
-  //    🔴 `提案` / `提案依頼` は**サイドバーの独立した項目**になったので、親の射程に入れると
-  //       **2 項目が同時に光る**（下の「現在地は 2 つ同時に光らない」が落ちる）。
-  it('🔴 `案件管理` の射程は自分の遷移先だけである（`提案` / `提案依頼` は独立した項目）', () => {
+  // ✅ **2026-10-16: `提案` は 1 項目になり、2 枚の面を射程に持つ。**
+  //    🔴 **`案件管理` の射程に `提案` の面を入れない** —— 入れると 2 項目が同時に光る
+  //       （下の「現在地は 2 つ同時に光らない」が落ちる）。
+  it('🔴 `案件管理` の射程は `/projects` だけで、`提案` が 2 枚の面を射程に持つ', () => {
     for (const role of [...HOST_ROLES, ...PARTNER_ROLES]) {
+      const audience = PARTNER_ROLES.includes(role) ? 'PARTNER' : 'HOST';
       expect(itemOf(role, 'projects').sectionPaths, role).toEqual(['/projects']);
-      expect(itemOf(role, 'proposals').reach, role).toEqual({ kind: 'LINK', href: '/proposals' });
-      expect(itemOf(role, 'proposal-requests').reach, role).toEqual({
+      // 🔴 遷移先はタブの 1 枚目（`案件提案`）である（取引先の返答期限がある面。`nav.ts` の 🔴）。
+      expect(itemOf(role, 'proposals').reach, role).toEqual({
         kind: 'LINK',
         href: '/proposal-requests',
       });
+      expect(itemOf(role, 'proposals').sectionPaths, role).toEqual([
+        '/proposal-requests',
+        '/proposals',
+      ]);
+      // 🔴 **`提案依頼` はサイドバーの項目ではない**（第 2 階層のタブへ移った）。
+      expect(
+        navItems(buildMainNav({ audience, role })).map((item) => item.id),
+        role,
+      ).not.toContain('proposal-requests');
     }
   });
 
@@ -658,14 +679,55 @@ describe('🔴 現在地は 2 つ同時に光らない（2026-10-15 の報告の
 });
 
 describe('🔴 ⑤ 業務ループ ①〜⑥ の順（CLAUDE.md §1.3 / docs/04 §3.1）', () => {
-  // ✅ **2026-10-15（人間の明示指示「案件一覧、提案、提案依頼のタブは不要です」）: 順序の置き場所が
-  //    第 2 階層からサイドバーに戻った。** 🔴 **順序そのものは変えていない**（案件 → 提案 → 提案依頼）。
-  it.each(['HOST', 'PARTNER'] as const)('%s: サイドバーが 案件 → 提案 → 提案依頼 の順', (audience) => {
-    const ids = navItems(
-      buildMainNav({ audience, role: audience === 'HOST' ? 'OWNER' : 'PARTNER_ADMIN' }),
-    ).map((item) => item.id);
-    const loop = ids.filter((id) => ['projects', 'proposals', 'proposal-requests'].includes(id));
-    expect(loop).toEqual(['projects', 'proposals', 'proposal-requests']);
+  // ============================================================================
+  // ✅ **2026-10-16（人間の指摘「この順番にしてって指示は出してないと思う」）: 上段を
+  //    `案件管理` → `人材管理` に戻した。**
+  // ============================================================================
+  // 🔴 **`案件 → 提案 → 提案依頼` は人間の指示ではなかった** —— `CLAUDE.md` §1.3 の業務ループを
+  //    根拠に**こちらが勝手に足した並び**である（2026-10-15）。人間の明示指示は
+  //    「案件管理は人材管理の上に配置する」（2026-10-14）の 1 つだけであり、**その並びに戻した。**
+  // 🔴 **教訓**: 指示に無い並びを「上流資料に書いてあるから」で足すと、**人間からは自分の指示との
+  //    区別がつかない**。資料を根拠にした判断は、指示そのものと分けて申し送る。
+  it.each(['HOST', 'PARTNER'] as const)('%s: 上段は 案件管理 → 人材管理 で、間に何も挟まない', (audience) => {
+    const primary = buildMainNav({
+      audience,
+      role: audience === 'HOST' ? 'OWNER' : 'PARTNER_ADMIN',
+    }).find((group) => group.id === 'primary');
+    const ids = (primary?.items ?? []).map((item) => item.id);
+    expect(ids.indexOf('engineers')).toBe(ids.indexOf('projects') + 1);
+  });
+
+  it('🔴 ホストの `提案` は `パートナー連携` 群の `人材一覧` の下である（人間の明示指示）', () => {
+    const partners = buildMainNav({ audience: 'HOST', role: 'OWNER' }).find(
+      (group) => group.id === 'partners',
+    );
+    expect(partners?.items.map((item) => item.id)).toEqual([
+      'partners-companies',
+      'partners-projects',
+      'partners-engineers',
+      'proposals',
+    ]);
+  });
+
+  it('🔴 取引先の `提案` は上段の最後である（`パートナー連携` 群を作らないため）', () => {
+    const groups = buildMainNav({ audience: 'PARTNER', role: 'PARTNER_ADMIN' });
+    expect(groups.map((group) => group.id)).toEqual(['primary', 'other']);
+    expect(groups.find((group) => group.id === 'primary')?.items.at(-1)?.id).toBe('proposals');
+  });
+
+  it.each(['HOST', 'PARTNER'] as const)('%s: `提案` のタブは 案件提案 → 人材提案 の 2 枚', (audience) => {
+    const section = buildNavSections({
+      audience,
+      role: audience === 'HOST' ? 'OWNER' : 'PARTNER_ADMIN',
+    }).find((candidate) => candidate.id === 'proposals');
+    if (section === undefined) throw new Error('`提案` セクションが無い');
+    // 🔴 並びは上の `案件一覧` / `人材一覧` と同じ向き（案件 → 人材）である。
+    expect(section.items.map((item) => [item.id, item.labelKey])).toEqual([
+      ['proposal-requests', 'shell.section.proposals.projects'],
+      ['proposals', 'shell.section.proposals.engineers'],
+    ]);
+    // 🔴 **2 枚あるので帯が描かれる**（`案件管理` は 1 枚なので描かれない。すぐ下の検査と対）。
+    expect(navSectionsWithTabs([section]).length).toBe(1);
   });
 
   it.each(['HOST', 'PARTNER'] as const)('%s: `案件管理` のタブは 1 枚だけ（帯を描かない）', (audience) => {
@@ -702,23 +764,28 @@ describe('🔴 ⑤ 業務ループ ①〜⑥ の順（CLAUDE.md §1.3 / docs/04 
     const partner = buildNavSections({ audience: 'PARTNER', role: 'PARTNER_SALES' });
     expect(sectionIdAt(partner, '/engineer-shares')).toBe('engineers');
     expect(sectionIdAt(partner, '/')).toBeNull();
-    // ✅ 2026-10-15: `案件管理` は 1 タブになったので、**提案の画面でも帯を描かない**。
-    expect(sectionIdAt(partner, '/proposals/abc/approve')).toBeNull();
+    // ✅ **2026-10-16: `提案` が 2 タブのセクションになったので、提案の画面では帯を描く**
+    //    （2026-10-15 の 1 日だけ、`案件管理` が 1 タブで `提案` がサイドバー直行だったため
+    //    どこにも帯が無かった）。🔴 **射程は詳細画面にも及ぶ**（`/proposals/{id}/approve` は
+    //    `@ses/ui` の前方一致で `人材提案` の面として扱われる）。
+    expect(sectionIdAt(partner, '/proposals/abc/approve')).toBe('proposals');
+    expect(sectionIdAt(partner, '/proposal-requests')).toBe('proposals');
     // ホストの `人材管理` はタブが 1 つなので帯を描かない（サイドバーの項目が入口を持つ）。
     expect(sectionIdAt(buildNavSections({ audience: 'HOST', role: 'SALES' }), '/engineers')).toBeNull();
   });
 
   it('🔴 `navSectionsWithTabs` はパスを見ない（タブが 1 つのセクションだけを外す）', () => {
-    // ✅ 2026-10-15: ホストは `人材管理`（1 タブ）も `案件管理`（1 タブ）も外れる = **帯が 1 本も無い**。
+    // ✅ **2026-10-16: ホストに帯が 1 本戻った**（`提案` = `案件提案` / `人材提案` の 2 枚）。
+    //    🔴 `人材管理`（1 タブ）と `案件管理`（1 タブ）は**外れたままである**。
     expect(
       navSectionsWithTabs(buildNavSections({ audience: 'HOST', role: 'SALES' })).map((s) => s.id),
-    ).toEqual([]);
-    // 取引先: `共有の設定` が在るので `人材管理` だけが 2 タブとして残る。
+    ).toEqual(['proposals']);
+    // 取引先: `共有の設定` が在るので `人材管理` も 2 タブとして残る（帯は 2 本のセクションに在る）。
     expect(
       navSectionsWithTabs(buildNavSections({ audience: 'PARTNER', role: 'PARTNER_SALES' })).map(
         (s) => s.id,
       ),
-    ).toEqual(['engineers']);
+    ).toEqual(['engineers', 'proposals']);
   });
 
   it('🔴 セクションの射程は互いに重ならない（帯が 2 本出る状態を作れない）', () => {
@@ -762,15 +829,17 @@ describe('モバイルのボトムタブ（docs/04 §3.4。2026-10-03 にサイ�
   });
 });
 
-describe('🔴 提案依頼（`S-017`）の期限バッジ（docs/04 §3.1 取引先列。T-12-21）', () => {
+describe('🔴 案件提案（`S-017`）の返答期限バッジ（docs/04 §3.1 取引先列。T-12-21）', () => {
   /**
-   * ✅ **2026-10-15: `提案依頼` がサイドバーの項目に戻ったので、期限はその行自身が持つ**
-   *    （畳み込みの間だけ親の `案件管理` が預かっていた。`NavContext.proposalRequestDueText` の 🔴）。
-   *    サイドバーはどの画面でも見えている唯一の面であり、ここから期限が消えると取引先が
-   *    返答期限に気づけない —— **その条件は満たしたままである。**
+   * ✅ **2026-10-16: `提案` の 1 項目に畳んだので、期限はその行が持つ**（タブには複製しない。
+   *    下の検査）。サイドバーはどの画面でも見えている唯一の面であり、ここから期限が消えると
+   *    取引先（1 日 4〜5 時間の主利用者。`CLAUDE.md` §1.2）が返答期限に気づけない ——
+   *    **その条件は満たしたままである。**
+   * 🔴 **バッジを押して着く先が `案件提案` である**（統合した項目の `href` がタブの 1 枚目。
+   *    `nav.ts` の 🔴）。期限のある面に 1 クリックで着く。
    */
   function badgeOf(groups: readonly NavGroup[]): NavItem['badge'] {
-    return navItems(groups).find((item) => item.id === 'proposal-requests')?.badge ?? null;
+    return navItems(groups).find((item) => item.id === 'proposals')?.badge ?? null;
   }
 
   it('取引先所属で残り時間が渡されたときだけ付く', () => {
@@ -807,7 +876,7 @@ describe('🔴 提案依頼（`S-017`）の期限バッジ（docs/04 §3.1 取�
       }),
     );
     expect(items.filter((item) => item.badge !== null).map((item) => item.id)).toEqual([
-      'proposal-requests',
+      'proposals',
     ]);
   });
 
