@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>人単位チャットの画面イメージ</title>
+<!-- 設計案 docs/chat-lane/people-chat-proposal.md の画面イメージ（2026-10-16）。実装ではない。
+     色・文字の大きさは apps/web/app/tailwind.css のトークンの値をそのまま使っている。名前はすべて架空。 -->
+<style>
+  :root {
+    --fg: #0f172a; --fg-muted: #475569; --fg-ph: #94a3b8;
+    --bg: #fff; --bg-subtle: #f1f5f9; --row-hover: #f8fafc; --border: #e2e8f0;
+    --brand: #2563eb; --brand-bg: #eff6ff; --nav: #10254a; --success: #047857; --warning: #92400e;
+    --row: 15px; --body: 14px; --cell: 13px; --xs: 12px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, 'Segoe UI', 'Hiragino Sans', 'Noto Sans JP', sans-serif; color: var(--fg); background: var(--bg-subtle); font-size: var(--body); }
+  .app { display: grid; grid-template-columns: 200px 320px 1fr 300px; height: 940px; }
+  .nav { background: var(--nav); color: #cbd5e1; padding: 16px 12px; font-size: var(--row); }
+  .nav .logo { color: #fff; font-weight: 700; font-size: 18px; margin-bottom: 24px; }
+  .nav div.item { padding: 10px 12px; border-radius: 8px; margin-bottom: 4px; }
+  .nav div.item.on { background: #1e3a8a; color: #fff; }
+  .list { background: var(--bg-subtle); overflow: hidden; display: flex; flex-direction: column; }
+  .conv { background: var(--bg); display: flex; flex-direction: column; }
+  .side { background: var(--bg); border-left: 1px solid var(--border); padding: 20px; overflow: hidden; }
+  .search { display: flex; gap: 8px; padding: 14px 12px 8px; }
+  .search input { flex: 1; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font: inherit; background: #fff; }
+  .btn { border: 1px solid var(--border); background: #fff; border-radius: 8px; padding: 7px 12px; font: inherit; font-size: var(--cell); color: var(--fg); white-space: nowrap; }
+  .btn.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+  .label { font-size: var(--xs); color: var(--fg-muted); padding: 10px 14px 6px; display: flex; justify-content: space-between; }
+  .favs { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px 4px; padding: 0 10px 8px; }
+  .fav { text-align: center; font-size: 11px; color: var(--fg-muted); position: relative; }
+  .av { width: 40px; height: 40px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; font-size: 14px; color: #fff; position: relative; }
+  .av.sm { width: 32px; height: 32px; font-size: 12px; }
+  .av.lg { width: 56px; height: 56px; font-size: 20px; }
+  .a1 { background: #2563eb; } .a2 { background: #0f766e; } .a3 { background: #b45309; } .a4 { background: #7c3aed; } .a5 { background: #be123c; } .a6 { background: #475569; }
+  .grp { border-radius: 10px; }
+  .dot { position: absolute; right: -1px; bottom: -1px; width: 11px; height: 11px; border-radius: 999px; border: 2px solid var(--bg-subtle); background: #22c55e; }
+  .dot.away { background: #f59e0b; }
+  .cnt { position: absolute; top: -4px; right: 4px; background: var(--brand); color: #fff; font-size: 10px; border-radius: 999px; padding: 0 5px; line-height: 16px; }
+  .contacts { margin: 0 8px 4px; background: #fff; border-radius: 10px; padding: 4px 0; }
+  .co { font-size: var(--xs); color: var(--fg-muted); padding: 8px 12px 2px; }
+  .person { display: flex; align-items: center; gap: 10px; padding: 6px 12px; }
+  .person .n { font-size: var(--cell); }
+  .person .s { font-size: 11px; color: var(--fg-muted); }
+  .rows { overflow: hidden; }
+  .row { display: flex; gap: 10px; padding: 10px 12px; margin: 0 6px; border-radius: 8px; }
+  .row.on { background: var(--brand-bg); }
+  .row .main { flex: 1; min-width: 0; }
+  .row .t { display: flex; justify-content: space-between; gap: 8px; font-size: var(--row); }
+  .row .t .time { font-size: var(--xs); color: var(--fg-ph); flex-shrink: 0; }
+  .row .p { font-size: var(--cell); color: var(--fg-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; gap: 6px; align-items: center; }
+  .row .p span.txt { overflow: hidden; text-overflow: ellipsis; }
+  .b { font-weight: 700; }
+  .pill { font-size: 11px; border-radius: 999px; padding: 0 7px; line-height: 18px; background: var(--brand); color: #fff; flex-shrink: 0; }
+  .pill.at { background: #fff; color: var(--brand); border: 1px solid var(--brand); }
+  .tag { font-size: 11px; color: var(--fg-muted); }
+  .head { padding: 14px 20px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--border); }
+  .head .name { font-size: var(--row); font-weight: 600; }
+  .head .sub { font-size: var(--xs); color: var(--fg-muted); }
+  .status { font-size: var(--xs); background: #fef3c7; color: var(--warning); border-radius: 6px; padding: 2px 8px; }
+  .msgs { flex: 1; padding: 16px 20px; display: flex; flex-direction: column; gap: 14px; overflow: hidden; }
+  .day { align-self: center; font-size: var(--xs); color: var(--fg-muted); background: var(--bg-subtle); border-radius: 6px; padding: 2px 10px; }
+  .m { display: flex; gap: 10px; position: relative; }
+  .m .who { font-size: var(--cell); }
+  .m .who b { font-weight: 600; } .m .who span { color: var(--fg-ph); font-size: var(--xs); margin-left: 6px; }
+  .bubble { background: var(--bg-subtle); border-radius: 10px; padding: 8px 14px; max-width: 520px; margin-top: 4px; line-height: 1.6; }
+  .mine { flex-direction: column; align-items: flex-end; }
+  .mine .bubble { background: var(--brand-bg); }
+  .meta { font-size: var(--xs); color: var(--fg-ph); display: flex; gap: 8px; align-items: center; margin-top: 4px; }
+  .reacts { display: flex; gap: 6px; margin-top: 6px; }
+  .react { font-size: var(--xs); border: 1px solid var(--border); border-radius: 999px; padding: 1px 9px; background: #fff; }
+  .react.mine2 { border-color: var(--brand); color: var(--brand); background: var(--brand-bg); }
+  .toolbar { position: absolute; right: 0; top: -12px; background: #fff; border: 1px solid var(--border); border-radius: 8px; display: flex; gap: 2px; padding: 2px; font-size: var(--xs); box-shadow: 0 1px 3px rgba(15,23,42,.08); }
+  .toolbar span { padding: 3px 8px; border-radius: 6px; color: var(--fg-muted); }
+  .card { margin-top: 6px; border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; max-width: 420px; background: #fff; }
+  .card .k { font-size: var(--xs); color: var(--fg-muted); }
+  .card .v { font-size: var(--body); font-weight: 600; margin: 2px 0 6px; }
+  .card .row2 { font-size: var(--cell); color: var(--fg-muted); display: flex; gap: 14px; }
+  .card.deny { color: var(--fg-muted); font-size: var(--cell); background: var(--bg-subtle); border-style: dashed; }
+  .compose { border-top: 1px solid var(--border); padding: 12px 20px; }
+  .compose .box { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; color: var(--fg-ph); min-height: 56px; }
+  .compose .tools { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; font-size: var(--xs); color: var(--fg-muted); }
+  .compose .tools .l span { margin-right: 14px; }
+  .h3 { font-size: var(--xs); color: var(--fg-muted); margin: 18px 0 8px; }
+  .prof { text-align: center; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+  .prof .nm { font-size: 16px; font-weight: 600; margin-top: 8px; }
+  .prof .cp { font-size: var(--cell); color: var(--fg-muted); }
+  .kv { display: grid; grid-template-columns: 76px 1fr; gap: 6px 8px; font-size: var(--cell); margin-top: 12px; }
+  .kv dt { color: var(--fg-muted); } .kv dd { margin: 0; }
+  .ev { background: var(--brand-bg); border-radius: 8px; padding: 8px 10px; font-size: var(--cell); margin-bottom: 6px; }
+  .ev .tm { color: var(--brand); font-size: var(--xs); }
+  .num { display: inline-flex; width: 20px; height: 20px; border-radius: 999px; background: #dc2626; color: #fff; font-size: 11px; font-weight: 700; align-items: center; justify-content: center; vertical-align: middle; margin-left: 4px; }
+  .legend { margin: 16px; background: #fff; border-radius: 12px; padding: 16px 20px; font-size: var(--cell); line-height: 1.8; }
+  .legend h2 { font-size: 15px; margin: 0 0 8px; }
+  .legend ol { margin: 0; padding-left: 0; list-style: none; columns: 2; column-gap: 32px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- アプリの左メニュー（今と同じ） -->
+  <nav class="nav">
+    <div class="logo">BizOrch</div>
+    <div class="item">ホーム</div>
+    <div class="item on">チャット</div>
+    <div class="item">カレンダー</div>
+    <div class="item">自社案件管理</div>
+    <div class="item">自社人材管理</div>
+    <div class="item">パートナー一覧</div>
+    <div class="item">案件一覧</div>
+    <div class="item">提案</div>
+  </nav>
+
+  <!-- 一覧（薄いグレー） -->
+  <section class="list">
+    <div class="search"><input placeholder="人・グループ・発言を検索"><button class="btn primary">＋ 新規</button></div>
+
+    <div class="label"><span>お気に入り</span><span>編集</span></div>
+    <div class="favs">
+      <div class="fav"><span class="av a1">例<i class="dot"></i></span><div>例示 七海</div></div>
+      <div class="fav"><span class="av a2">試<i class="dot away"></i></span><div>試験 一郎</div></div>
+      <div class="fav"><span class="av a3 grp">デ</span><span class="cnt">2</span><div>デルタ</div></div>
+      <div class="fav"><span class="av a4 grp">金</span><div>金融Web</div></div>
+      <div class="fav"><span class="av a6">模<i class="dot"></i></span><div>模擬 三郎</div></div>
+    </div>
+
+    <div class="label"><span>▾ 連絡先</span><span>すべて表示</span></div>
+    <div class="contacts">
+      <div class="co">最近やり取りした人 <span class="num">3</span></div>
+      <div class="person"><span class="av sm a1">例</span><div><div class="n">例示 七海 <span class="tag">ダミーデルタ</span></div><div class="s">商談中・16時以降に返信 <span class="num">1</span></div></div></div>
+      <div class="person"><span class="av sm a2">試</span><div><div class="n">試験 一郎 <span class="tag">ダミーフォックス</span></div><div class="s">在席</div></div></div>
+      <div class="co">株式会社ダミーゴルフ</div>
+      <div class="person"><span class="av sm a5">仮</span><div><div class="n">仮名 花子 <span class="tag">営業</span></div><div class="s">移動中</div></div></div>
+    </div>
+
+    <div class="label"><span>会話（新しい順）</span><span>未読のみ</span></div>
+    <div class="rows">
+      <div class="row on"><span class="av a1">例<i class="dot"></i></span><div class="main"><div class="t"><span class="b">例示 七海</span><span class="time">14:08</span></div><div class="p"><span class="txt">候補日を3つお送りします。</span><span class="pill">2</span></div></div></div>
+      <div class="row"><span class="av a3 grp">デ</span><div class="main"><div class="t"><span class="b">ダミーデルタ 全員</span><span class="time">13:47</span></div><div class="p"><span class="txt">見本: 稼働開始日の件、承知しました</span><span class="pill at">@</span><span class="pill">3</span></div></div></div>
+      <div class="row"><span class="av a4 grp">金</span><div class="main"><div class="t"><span>金融系 Web 基盤（スレッド）</span><span class="time">昨日</span></div><div class="p"><span class="txt">面談の結果を共有します</span></div></div></div>
+      <div class="row"><span class="av a6">模</span><div class="main"><div class="t"><span>模擬 三郎</span><span class="time">昨日</span></div><div class="p"><span class="txt">（社内）明日の朝会で相談させてください</span></div></div></div>
+      <div class="row"><span class="av a2">試</span><div class="main"><div class="t"><span>試験 一郎</span><span class="time">10/14</span></div><div class="p"><span class="txt">ありがとうございます！</span></div></div></div>
+    </div>
+  </section>
+
+  <!-- 会話（白） -->
+  <section class="conv">
+    <div class="head">
+      <span class="av a1">例</span>
+      <div style="flex:1"><div class="name">例示 七海 <span class="status">商談中・16時以降に返信</span> <span class="num">1</span></div><div class="sub">株式会社ダミーデルタ・営業 ／ DM（2 人だけが読めます）</div></div>
+      <button class="btn">ピン留め</button><button class="btn">ミュート</button>
+    </div>
+    <div class="msgs">
+      <div class="day">2026-10-16</div>
+      <div class="m">
+        <span class="av sm a1">例</span>
+        <div><div class="who"><b>例示 七海</b><span>ダミーデルタ 10:02</span></div>
+          <div class="bubble">先日の案件、候補の方の稼働可能時期を確認しました。11月からいけます。</div>
+          <div class="reacts"><span class="react mine2">了解 1</span></div>
+        </div>
+        <div class="toolbar"><span>リアクション</span><span>返信</span><span>ここから未読</span><span>コピー</span></div>
+      </div>
+      <div class="m mine">
+        <div class="meta">10:15</div>
+        <div class="bubble">ありがとうございます。こちらの案件でご提案いただけますか？</div>
+        <div class="card"><div class="k">案件 <span class="num">7</span></div><div class="v">金融系 Web 基盤の追加開発</div><div class="row2"><span>単価 70〜80万</span><span>11月〜</span><span>一部リモート</span></div></div>
+        <div class="meta">既読 <span class="num">6</span></div>
+      </div>
+      <div class="m">
+        <span class="av sm a1">例</span>
+        <div><div class="who"><b>例示 七海</b><span>ダミーデルタ 14:08</span></div>
+          <div class="bubble">承知しました。面談の候補日を3つお送りします。</div>
+        </div>
+      </div>
+      <div class="m mine">
+        <div class="card deny">この案件は表示できません（公開範囲の外になりました） <span class="num">7</span></div>
+      </div>
+    </div>
+    <div class="compose">
+      <div class="box">例示 七海さんへメッセージ（この 2 人だけに届きます）</div>
+      <div class="tools"><div class="l"><span>@ メンション <span class="num">4</span></span><span>案件を貼る <span class="num">7</span></span><span>定型文</span></div><button class="btn primary">送信</button></div>
+    </div>
+  </section>
+
+  <!-- 右: プロフィールと今日の予定 -->
+  <aside class="side">
+    <div class="prof">
+      <span class="av lg a1">例</span>
+      <div class="nm">例示 七海 <span class="num">2</span></div>
+      <div class="cp">株式会社ダミーデルタ ／ 営業</div>
+      <div style="margin-top:10px"><span class="status">商談中・16時以降に返信</span></div>
+    </div>
+    <dl class="kv">
+      <dt>担当案件</dt><dd>金融系 Web 基盤の追加開発<br><span class="tag">（この相手に公開済みの案件だけ）</span></dd>
+      <dt>最終連絡</dt><dd>今日 14:08</dd>
+    </dl>
+    <div style="display:flex; gap:8px; margin-top:12px"><button class="btn primary">DM を開く</button><button class="btn">お気に入りに追加</button></div>
+
+    <div class="h3">今日の予定 <span class="num">5</span></div>
+    <div class="ev"><div class="tm">15:00 - 16:00</div>面談: 金融系 Web 基盤（候補 1 名）</div>
+    <div class="ev"><div class="tm">17:30 - 18:00</div>延長確認: 稼働 12/31 満了の件</div>
+
+    <div class="h3">ダミーデルタ（会社グループ）のメンバー</div>
+    <div class="person" style="padding-left:0"><span class="av sm a1">例</span><div><div class="n">例示 七海</div><div class="s">押すと DM <span class="num">2</span></div></div></div>
+    <div class="person" style="padding-left:0"><span class="av sm a5">見</span><div><div class="n">見本 太郎</div><div class="s">PARTNER_ADMIN</div></div></div>
+    <div class="person" style="padding-left:0"><span class="av sm a6">模</span><div><div class="n">模擬 四葉（自社）</div><div class="s">営業</div></div></div>
+  </aside>
+</div>
+
+<div class="legend">
+  <h2>画面イメージの見方（赤い番号）</h2>
+  <ol>
+    <li><span class="num">1</span> ひとこと状態（商談中・移動中など）。名前の横とプロフィールに出る</li>
+    <li><span class="num">2</span> プロフィールカード。担当案件は「この相手に公開済み」のものだけ。ここから DM・お気に入り</li>
+    <li><span class="num">3</span> 最近やり取りした人（連絡先の一番上）</li>
+    <li><span class="num">4</span> @メンション。呼ばれた会話には「@」の印</li>
+    <li><span class="num">5</span> 今日の予定（面談・延長確認）</li>
+    <li><span class="num">6</span> 既読（DM だけ。出すかは宮田さんと決める）</li>
+    <li><span class="num">7</span> 案件カード。見る人の権限で中身を出す。見てはいけない人には「表示できません」</li>
+    <li>一覧は薄いグレー・会話は白／罫線なし／太字は未読だけ／発言の操作はカーソルを当てたときだけ（上の 1 件目が当てたときの見え方）</li>
+    <li>連絡先は開閉式。取引先の人の連絡先には、自社（ホスト）の人しか出ない</li>
+    <li>お気に入りは人・グループを丸いアイコンで。未読の数が付く</li>
+  </ol>
+</div>
+</body>
+</html>
