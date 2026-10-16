@@ -243,6 +243,9 @@ export function projectListHref(
   //    「1 つも隠していない」を意味すると、呼び手が黙って `?hide=` を生やしてしまう。
   hiddenColumns: readonly ProjectHideableColumnId[] = PROJECT_DEFAULT_HIDDEN_COLUMN_IDS,
   selectedId: string | null = null,
+  // ✅✅ **2026-10-16: 案件サマリのタブ**（人間の明示指示「タイル内にタブを設置して」）。
+  // 🔴 **既定（`BASIC`）は URL に痕跡を残さない**（`?hide=` と同じ扱い）。
+  panelTab: ProjectPanelTab = PROJECT_PANEL_TAB_DEFAULT,
 ): string {
   const params = new URLSearchParams();
   if (query.q !== undefined) params.set('q', query.q);
@@ -264,6 +267,12 @@ export function projectListHref(
   // 🔴 `'1'` / `'0'` の 2 値（`false` を落とすと「不可」で絞った条件がページ送りで消える）。
   if (query.parallelOk !== undefined) params.set('parallelOk', query.parallelOk ? '1' : '0');
   if (query.startWithin !== undefined) params.set('startWithin', query.startWithin);
+  // ✅✅ 2026-10-16（人間の明示指示「スキル（リストから複数選択できる、or 検索）」）。
+  // 🔴 **`append` である**（`set` だと最後の 1 つしか残らず、ページを送った瞬間に
+  //    選んだスキルが 1 件に減る）。`<select multiple>` が送るのと同じ形に戻す。
+  if (query.skills !== undefined) {
+    for (const skillId of query.skills) params.append('skills', skillId);
+  }
   if (query.limit !== PAGE_SIZE_DEFAULT) params.set('limit', String(query.limit));
   if (cursor !== null) params.set('cursor', cursor);
   // ✅ 2026-10-15: 既定（2 列を格納）と同じなら URL に痕跡を残さない。既定から戻したときだけ
@@ -271,6 +280,8 @@ export function projectListHref(
   const hide = hiddenColumnsParamValue(hiddenColumns, PROJECT_DEFAULT_HIDDEN_COLUMN_IDS);
   if (hide !== null) params.set(HIDDEN_COLUMNS_PARAM, hide);
   if (selectedId !== null) params.set(PROJECT_SELECTED_PARAM, selectedId);
+  // ✅✅ 2026-10-16: 案件サマリのタブ。🔴 **既定は載せない**（URL を素のままに保つ）。
+  if (panelTab !== PROJECT_PANEL_TAB_DEFAULT) params.set(PROJECT_PANEL_TAB_PARAM, panelTab);
   const search = params.toString();
   return search === '' ? PROJECT_LIST_PATH : `${PROJECT_LIST_PATH}?${search}`;
 }
@@ -283,6 +294,58 @@ export function projectListHref(
  * 🔴 **状態を画面側に持たない** —— 持つと再読込・共有・戻るで消え、`'use client'` が要る。
  */
 export const PROJECT_SELECTED_PARAM = 'selected';
+
+// ============================================================================
+// ✅✅ 2026-10-16: 案件サマリのタブ（人間の明示指示「タイル内にタブを設置して、
+//     基本情報とコピペ用サマリ（添付を参考）」）
+// ============================================================================
+/**
+ * 🔴 **タブの状態も URL が持つ**（`?selected=` と同じ扱い）。
+ *
+ * 🔴 **`'use client'` を増やさない。** この画面はサーバだけで描かれており（水和の前から
+ *    操作できる）、タブのために状態を画面側へ持ち込むと**再読込・共有・戻るで消える**。
+ *    タブはリンク 2 本であり、押すとサーバが選ばれた面を描く。
+ * 🔴 **API には渡さない** —— 表示の状態であり、取得する項目は変わらない
+ *    （`projectListQuerySchema` はこのキーを持たず、Zod の既定〔strip〕で落ちる）。
+ */
+export const PROJECT_PANEL_TAB_PARAM = 'panelTab';
+
+/** 🔴 **値集合がクエリの許可リストである**（ここに無い値が来ても既定に落ちる）。 */
+export const PROJECT_PANEL_TABS = ['BASIC', 'COPY'] as const;
+
+export type ProjectPanelTab = (typeof PROJECT_PANEL_TABS)[number];
+
+/**
+ * 🔴 **既定は `基本情報`**（人間の指示の並びの 1 つ目であり、添付の形でもある）。
+ *    既定を URL に載せないので、素の `/projects` は基本情報で開く。
+ */
+export const PROJECT_PANEL_TAB_DEFAULT: ProjectPanelTab = 'BASIC';
+
+/**
+ * `?panelTab=` → タブ。
+ *
+ * 🔴 **未知の値は既定に落とす**（URL 直打ちで壊れない。`parseHiddenProjectColumns` と同じ構え）。
+ *    🔴 **`redirect` しない** —— タブは表示の状態であり、検索条件を巻き戻す理由にならない。
+ */
+export function projectPanelTab(raw: string | readonly string[] | undefined): ProjectPanelTab {
+  const requested = Array.isArray(raw) ? raw[0] : (raw as string | undefined);
+  return PROJECT_PANEL_TABS.find((tab) => tab === requested) ?? PROJECT_PANEL_TAB_DEFAULT;
+}
+
+/**
+ * そのタブを開く `S-010` の URL。
+ * 🔴 **検索条件・ページの位置・列の表示状態・開いている行を保つ**（タブを変えたせいで
+ *    1 ページ目に戻ったり、パネルが閉じたりしない。`projectSelectHref` と同じ理由）。
+ */
+export function projectPanelTabHref(
+  query: ProjectListQuery,
+  cursor: string | null,
+  hiddenColumns: readonly ProjectHideableColumnId[],
+  selectedId: string | null,
+  panelTab: ProjectPanelTab,
+): string {
+  return projectListHref(query, cursor, hiddenColumns, selectedId, panelTab);
+}
 
 /**
  * 🔴 `?selected=` → **いまのページに実在する行の ID**（無ければ先頭行、行が無ければ `null`）。
@@ -317,8 +380,11 @@ export function projectSelectHref(
   cursor: string | null,
   hiddenColumns: readonly ProjectHideableColumnId[],
   projectId: string,
+  // ✅✅ 2026-10-16: 🔴 **開いているタブを保つ** —— 別の行を開いたときにタブが
+  //    基本情報へ戻ると、コピペ用サマリを続けて何件も取るときに毎回押し直すことになる。
+  panelTab: ProjectPanelTab = PROJECT_PANEL_TAB_DEFAULT,
 ): string {
-  return projectListHref(query, cursor, hiddenColumns, projectId);
+  return projectListHref(query, cursor, hiddenColumns, projectId, panelTab);
 }
 
 /**
@@ -409,6 +475,9 @@ export function hasProjectListFilters(query: ProjectListQuery): boolean {
     query.category !== undefined ||
     query.sourceKind !== undefined ||
     query.parallelOk !== undefined ||
-    query.startWithin !== undefined
+    query.startWithin !== undefined ||
+    // ✅✅ 2026-10-16: スキル（複数選択 / OR）。🔴 **空配列は `schemas.ts` が `undefined` に
+    //    畳んでいる**ので、ここで長さを見なくても「1 つも選んでいない」は偽になる。
+    query.skills !== undefined
   );
 }

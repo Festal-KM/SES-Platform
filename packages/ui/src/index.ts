@@ -109,7 +109,16 @@ export {
 // 🔴 2026-10-03（人間の明示指示 + モックアップ）: サイドバーを 6 項目のフラットに畳んだぶんの
 //    **第 2 階層**（`components/nav-panel.tsx` の冒頭に「なぜ `Tabs` ではないのか」がある）。
 //    🔴 **いずれもサーバのまま描ける**（`'use client'` を宣言しない）。
-export { NavIndex, SectionNav, SectionNavDefaultGate } from './components/nav-panel.js';
+// ✅✅ 2026-10-16: `NAV_TAB_CLASSES` / `NAV_TAB_CURRENT_CLASSES` は**横並びタブ（遷移する側）の
+//    見え方の 1 定義**である（`nav-panel.tsx` の同名の JSDoc）。`S-010` の案件サマリのタブが
+//    同じ見え方を使う —— 🔴 **画面側で下端 2px とブランド色を組み直さない。**
+export {
+  NAV_TAB_CLASSES,
+  NAV_TAB_CURRENT_CLASSES,
+  NavIndex,
+  SectionNav,
+  SectionNavDefaultGate,
+} from './components/nav-panel.js';
 export type {
   NavIndexItem,
   NavIndexProps,
@@ -396,4 +405,18 @@ export {
   TITLE_BLOCK_MIN_HEIGHT_CLASS,
 } from './lib/layout-tokens.js';
 // 🔴 一覧の行の操作（146 × 32）と行の hover の 1 実装（面と状態は部品側が持つ）。
-export { ROW_ACTION_LINK_CLASSES, ROW_HOVER_CLASSES } from './lib/control-classes.js';
+// ✅✅ 2026-10-16: 複数選択を**ポップアップで選び、選んだものはバッジで見せる**ための 3 定数
+//    （人間の明示指示。`S-010` のスキル条件が使う）。🔴 **画面側で面・高さ・重なりを組まない。**
+export {
+  MULTI_SELECT_OPTION_CLASSES,
+  MULTI_SELECT_TRIGGER_CLASSES,
+  ROW_ACTION_LINK_CLASSES,
+  ROW_HOVER_CLASSES,
+} from './lib/control-classes.js';
+// 🔴 **`MULTI_SELECT_PANEL_CLASSES` は `./lib/overlay-classes.js` に在る**（重なる面の影
+//    `shadow-overlay` を書いてよいのはあのファイルだけである。`docs/04` §7.9）。
+// 🔴 **主バレル（サーバ側）から出す。** `./lib/overlay-classes.ts` は**定数だけのモジュール**で
+//    あり（React の値を 1 つも持たない。`import type { ReactNode }` は型である）、
+//    Radix を引き込まない。使う側の `S-010` は `'use client'` を 1 つも宣言しない画面なので、
+//    `@ses/ui/client` からは取れない（`tests/static/ui-dependency-single-path.test.ts` (i)⑤）。
+export { MULTI_SELECT_PANEL_CLASSES } from './lib/overlay-classes.js';

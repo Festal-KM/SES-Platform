@@ -564,7 +564,14 @@ export const TESTID_BASELINE_EXACT: readonly string[] = [
   'project-list-clear',
   'project-list-empty',
   'project-list-error',
-  'project-list-filter-prefecture',
+  // ✅✅ 🔴 **2026-10-16: `project-list-filter-prefecture` を外した**（人間の明示指示
+  //    「検索項目については下記 ・フリーテキスト ・ステータス ・カテゴリ ・スキル
+  //     ・稼働形態 ・単価（上下限で）にしてください」—— **勤務地はこの 6 項目に無い**）。
+  //    🔴 **query（`prefecture`）と述語、一覧の `勤務地` 列は残してある** ——
+  //       消えたのは検索パネルの欄だけであり、共有済みの URL は従来どおり効く。
+  //    🔴 **凍結を「落ちたから消す」で外していない** —— この testid を使っていた
+  //       `project-list-screen.render.test.tsx` の検査を**同じ変更で**書き換えてある。
+  //    ⚠️ **E2E は掴んでいなかった**（`tests/e2e` に出現 0 件。確認済み）。
   'project-list-filter-q',
   // ✅✅ 🔴 **2026-10-16: `project-list-filter-start-from` を外した**（人間の明示指示
   //    「これちゃんと参考にして、検索部分修正してよ」+ 受領モック。`開始日（この日以降）` の
@@ -591,7 +598,16 @@ export const TESTID_BASELINE_EXACT: readonly string[] = [
   'project-list-retry',
   'project-list-screen',
   'project-list-search',
-  'project-list-search-coming-soon',
+  // ✅✅ 🔴 **2026-10-16: `project-list-search-coming-soon` を外した**（人間の明示指示で
+  //    **スキル要件での絞り込みを実装した**ため）。この 1 行の中身は「まだ効かない条件」の
+  //    告知だけであり、残っていた最後の 1 つ（スキル要件）が効くようになった時点で
+  //    **書くことが無くなった** —— 🔴 **できるようになったものを「できない」と書き続けると
+  //    画面が嘘をつく。**
+  //    🔴 **同じ位置には `project-list-search-skill-hint`（複数選択と OR の説明）を置いた**
+  //       ので、フッタ左の 1 行が空になってレイアウトが動くことはない。
+  //    ⚠️ **E2E は掴んでいなかった**（`tests/e2e` に出現 0 件。確認済み）。
+  //    ⚠️ 文言キー（`projects.list.searchComingSoon`）は `i18n-key-baseline.ts` の
+  //       「追加は可、改名と削除は不可」に従い**カタログに残してある**（描いていない）。
   'project-list-skeleton',
   'project-list-table',
   'project-name',

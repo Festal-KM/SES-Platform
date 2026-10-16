@@ -40,7 +40,9 @@ import { assertNoIsolationKeys, type AssertNoIsolationKeys } from '../api/isolat
 import { idCursorPageQuerySchema } from '../api/pagination';
 // 🔴 T-06-04: `optionalFilter` は `lib/api/query-filters.ts` に移した（`S-005` の検索フォームが
 //    同じ前処理を必要とし、2 本になると片方だけが空文字を畳まなくなるため）。
-import { optionalFilter } from '../api/query-filters';
+// ✅ 2026-10-16: スキルの複数選択（`<select multiple>`）は `optionalListFilter` で均す
+//    （人材一覧〔`#15`〕と同じ 1 本。`query-filters.ts` の 🔴）。
+import { optionalFilter, optionalListFilter } from '../api/query-filters';
 
 /** 案件名。DB は TEXT。過大な入力を境界で止める。 */
 const NAME_MAX_LENGTH = 200;
@@ -205,6 +207,17 @@ export type ProjectMutationView = {
 const FREE_WORD_MAX_LENGTH = 200;
 
 /**
+ * ✅ **2026-10-16: 1 回の検索で選べるスキルの上限**（人間の明示指示の複数選択）。
+ *
+ * 🔴 **値は人材一覧（`engineers/schemas.ts` の `SKILL_FILTER_MAX`）と同じ 20 である** ——
+ *    同じ辞書から同じ形で選ぶ条件であり、片方だけ緩い上限にしない。
+ * 🔴 **辞書の件数ではなく「1 リクエストの大きさ」の上限である** —— 述語は
+ *    `skill_id IN (…)` の 1 本であり、辞書が増えてもここは増やさなくてよい。
+ *    URL を手で編集して 1,000 件を並べられる経路を境界で止める（`REQUIREMENTS_MAX` と同じ趣旨）。
+ */
+const SKILL_FILTER_MAX = 20;
+
+/**
  * `GET /api/projects`（#25。`F-015` / `S-010`）の query。T-06-03。
  *
  * 🔴 **docs/05 §6.4 #25 の query と 1 対 1 である**（キーを片方にだけ足さない）。
@@ -252,6 +265,23 @@ export const projectListQuerySchema = idCursorPageQuerySchema.extend({
    *    **画面に無い選択肢を query だけ受け取る形にしない。**
    */
   remoteMode: optionalFilter(z.enum(REMOTE_MODES)),
+  /**
+   * ✅✅ **2026-10-16（人間の明示指示「スキル（リストから複数選択できる、or 検索）」）。**
+   *
+   * 🔴 **キー・前処理・上限は人材一覧（`#15` の `engineerListQuerySchema.skills`）と同じである。**
+   *    あちらも `<select multiple name="skills">` + `optionalListFilter` +
+   *    `z.array(z.uuid()).min(1).max(20)` であり、**2 画面でスキル条件の形を別々に決めない**
+   *    （単価レンジで `unitPriceOverlapConditions` を共有したのと同じ判断）。
+   * 🔴 **`optionalFilter` ではなく `optionalListFilter`** —— `searchParamsToObject` は
+   *    **1 個なら文字列・2 個以上なら配列**を返すので、ここで必ず配列に均す。均さないと
+   *    「1 件だけ選んだ検索」と「2 件以上選んだ検索」でスキーマが変わる。
+   * 🔴 **空は `undefined` に畳む**（`optionalListFilter` が行う）。`[]` を通すと述語が
+   *    `{ in: [] }` になり、**常に偽 = 全件 0 件**になる（`ProjectSearchCriteria.skills` の 🔴）。
+   * 🔴 **`skillMode`（AND / OR）を持たない。** 人間の明示指示が「or 検索」の 1 通りだからであり、
+   *    **選べない選択肢を query に作らない**（人材一覧は `docs/02` `F-009` が AND / OR の
+   *    両方を要求しているので `skillMode` を持つ —— 要求が違うので形も違う）。
+   */
+  skills: optionalListFilter(z.array(z.uuid()).min(1).max(SKILL_FILTER_MAX)),
   /**
    * ✅✅ **2026-10-16（受領モックの絞り込み。[Issue #113](https://github.com/Festal-KM/SES-Platform/issues/113)
    *    「設計から改訂して」が列を足す承認である）: カテゴリ / 案件区分 / 並行可否 / 開始時期。**

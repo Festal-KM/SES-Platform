@@ -24,6 +24,10 @@ import {
   PROJECT_HIDEABLE_COLUMN_IDS,
   projectColumnToggleHref,
   projectListHref,
+  // ✅✅ 2026-10-16: 案件サマリのタブ（`?panelTab=`。人間の明示指示）。
+  projectPanelTab,
+  projectPanelTabHref,
+  PROJECT_PANEL_TAB_PARAM,
   projectListPrimaryAction,
   projectListRows,
   projectPopulationLabel,
@@ -34,16 +38,22 @@ import {
 } from '../../../../lib/projects/list-rows';
 import { isProjectEditorRole } from '../../../../lib/projects/policy';
 import { projectListQuerySchema } from '../../../../lib/projects/schemas';
+// ✅✅ 2026-10-16: スキルの選択肢（人間の明示指示「スキル（リストから複数選択できる、or 検索）」）。
+// 🔴 **`GET /api/skills`（#23）と同じ関数を通る**（`listSkills`）—— 辞書の並び
+//    （`sortKey` 昇順 → `id`）と母集団を画面側で決め直さない。
+// 🔴 `skills` は `CLAUDE.md` §3.1 の射程外の 4 表の 1 つ（グローバルなマスタ）であり、
+//    誰が見ても同じ辞書である（テナントの境界に触れない）。
+import { listSkills } from '../../../../lib/skills/service';
 import { HIDDEN_COLUMNS_PARAM } from '../../../../lib/ui/hidden-columns';
+// ✅✅ 2026-10-16: 検索項目は 6 つになった（人間の明示指示）。🔴 **外した 4 つ
+//    （案件区分 / 勤務地 / 開始時期 / 並行可否）の選択肢は import ごと外す** ——
+//    受け取って使わない props を残さない（query と述語は残してある）。
 import {
   projectColumnToggleItems,
   projectListScreenMessages,
-  projectPrefectureFilterOptions,
   projectCategoryFilterOptions,
-  projectParallelOkFilterOptions,
   projectRemoteModeFilterOptions,
-  projectSourceKindFilterOptions,
-  projectStartWithinFilterOptions,
+  projectSkillFilterOptions,
   projectStatusFilterOptions,
   projectSummaryPanelMessages,
 } from '../list-props';
@@ -89,9 +99,21 @@ export default async function ProjectListPage({
   // 🔴 **開始時期の区分 → 日付の範囲の変換は `listProjects` が行う**（2026-10-16 に移した）。
   //    画面だけで変換していたときは、**API が同じ条件を黙って捨てていた** —— 読み取りの
   //    経路は 1 本であり、変換もその 1 本に置く（`lib/projects/list.ts` の 🔴🔴）。
-  const view = priceInverted
-    ? { items: [] as Awaited<ReturnType<typeof listProjects>>['items'], total: 0, nextCursor: null }
-    : await listProjects(ctx, query);
+  // ✅✅ **2026-10-16: 一覧とスキル辞書を 1 度に取る**（人間の明示指示のスキル絞り込み）。
+  // 🔴 **`Promise.all` にする** —— 辞書は約 40 行の小さな問い合わせだが、直列にすると
+  //    一覧の p95（`F-015 AC-2`）にその往復がそのまま足される。
+  // 🔴 **単価が逆転しているときも辞書は読む** —— 読まないと**選択肢が消えた検索フォーム**が
+  //    返り、利用者は「スキルの欄が壊れた」と読む（直すべきは単価の欄である）。
+  const [view, skills] = await Promise.all([
+    priceInverted
+      ? Promise.resolve({
+          items: [] as Awaited<ReturnType<typeof listProjects>>['items'],
+          total: 0,
+          nextCursor: null,
+        })
+      : listProjects(ctx, query),
+    listSkills(ctx, {}),
+  ]);
   const isPartner = ctx.partnerCompanyId !== null;
   const filtered = hasProjectListFilters(query);
   // 🔴 **列表示切替の状態は URL のクエリ（`?hide=`）だけが持つ**（`T-22-06`。`docs/04` §7.1）。
@@ -107,6 +129,12 @@ export default async function ProjectListPage({
   // 🔴 **いまのページの行に照合してから使う** —— URL 直打ちで「このページに無い ID」を
   //    指されても、先頭行に落ちる（`selectedProjectId`）。**DB を引き直さない。**
   const selectedId = selectedProjectId(raw[PROJECT_SELECTED_PARAM], rows);
+  // ✅✅ **2026-10-16: 案件サマリのタブ**（人間の明示指示「タイル内にタブを設置して、
+  //    基本情報とコピペ用サマリ」）。🔴 `?selected=` / `?hide=` と同じ**表示の状態**であり、
+  //    API には渡さない（`projectListQuerySchema` はこのキーを持たず、Zod の既定〔strip〕で
+  //    落ちるので上の `safeParse` は成功し、URL も書き換わらない）。
+  //    🔴 未知の値は既定（基本情報）に落ちる（`redirect` しない）。
+  const panelTab = projectPanelTab(raw[PROJECT_PANEL_TAB_PARAM]);
   const selectedRow = rows.find((row) => row.id === selectedId) ?? null;
   const canRegister = isProjectEditorRole(ctx.role);
   // 🔴 9 列目（公開先の設定状況）そのものが無い取引先には**その行を渡さない**（`F-014 AC-4` / `BR-07`）。
@@ -145,8 +173,15 @@ export default async function ProjectListPage({
         aside={
           <ProjectSummaryPanel
             row={selectedRow}
-            // 🔴 `S-012`（編集）に到達できるのはホストの 3 ロールだけ（`PROJECT_EDITOR_ROLES`）。
-            canEdit={canRegister}
+            // ✅✅ 2026-10-16: 開いているタブ（人間の明示指示「タイル内にタブを設置して、
+            //    基本情報とコピペ用サマリ」）。🔴 出所は URL（`?panelTab=`）であり、
+            //    画面は状態を持たない。未知の値は既定（基本情報）に落ちる。
+            // ⚠️ `canEdit` は渡さなくなった（人間の明示指示「案件サマリのボタンは、
+            //    詳細を開くだけでよい」で `編集する` を画面から外したため）。
+            tab={panelTab}
+            tabHrefOf={(tab) =>
+              projectPanelTabHref(query, query.cursor ?? null, hiddenColumns, selectedId, tab)
+            }
             messages={projectSummaryPanelMessages()}
           />
         }
@@ -185,14 +220,18 @@ export default async function ProjectListPage({
           sourceKind: query.sourceKind ?? '',
           parallelOk: query.parallelOk === undefined ? '' : query.parallelOk ? '1' : '0',
           startWithin: query.startWithin ?? '',
+          // ✅✅ 2026-10-16（人間の明示指示「スキル（リストから複数選択できる、or 検索）」）。
+          // 🔴 **これだけが配列である**（`<select multiple>` の選択状態）。未指定は空配列
+          //    = 何も選ばれていない = すべて（番兵を置かない）。
+          skills: query.skills ?? [],
         }}
         statusOptions={projectStatusFilterOptions}
-        prefectureOptions={projectPrefectureFilterOptions}
         remoteModeOptions={projectRemoteModeFilterOptions}
         categoryOptions={projectCategoryFilterOptions}
-        sourceKindOptions={projectSourceKindFilterOptions}
-        parallelOkOptions={projectParallelOkFilterOptions}
-        startWithinOptions={projectStartWithinFilterOptions}
+        // ✅✅ 2026-10-16: スキルの選択肢はグローバル辞書（`Skill`）である。
+        // 🔴 **語は辞書の `name`** であり `packages/i18n` に無い（辞書はデータであって文言ではない）。
+        // 🔴 **並びは `listSkills` が決めた決定的な順**（`sortKey` 昇順 → `id`）をそのまま使う。
+        skillOptions={projectSkillFilterOptions(skills.items)}
         priceInverted={priceInverted}
         // 🔴 取引先には公開先の列を出さない（docs/04 §S-010 / `F-014 AC-4`）。出所は ctx である。
         // 🔴 `S-012` に到達できるのはホストの 3 ロールだけである（`PROJECT_EDITOR_ROLES`）。
@@ -212,8 +251,10 @@ export default async function ProjectListPage({
         columnToggleItems={columnToggleItems}
         selectedId={selectedId}
         // 🔴 行から副カラムを開く URL（検索条件・ページの位置・列の表示状態を保つ）。
+        // ✅✅ 2026-10-16: 🔴 **開いているタブも保つ** —— 行を次々に開いてコピペ用サマリを
+        //    取るときに、毎回タブを押し直すことにならない。
         selectHrefOf={(projectId) =>
-          projectSelectHref(query, query.cursor ?? null, hiddenColumns, projectId)
+          projectSelectHref(query, query.cursor ?? null, hiddenColumns, projectId, panelTab)
         }
         messages={projectListScreenMessages({
           populationLabel: projectPopulationLabel(ctx.partnerCompanyId, view.total),

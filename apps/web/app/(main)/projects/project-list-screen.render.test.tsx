@@ -49,12 +49,9 @@ const messages: ProjectListScreenMessages = {
   orderNote: '後任募集 → 募集中 → 充足 の順に、同じ状態のなかでは更新日の新しい順に表示しています。',
   overflowNote: '右端が切れているときは、表を横にスクロールすると残りの列が見られます。',
   // ✅ 2026-10-16: 「リモート可否」を外した（稼働形態の絞り込みを実装したため）。
-  searchComingSoon: 'スキル要件での絞り込みは、後続のリリースで行えます。',
   searchLegend: '検索条件',
   searchQ: 'フリーワード',
-  searchStatus: '案件の状態',
-  searchStartFrom: '開始日（この日以降）',
-  searchPrefecture: '勤務地（都道府県）',
+  searchStatus: 'ステータス',
   searchPriceMin: '単価（下限）',
   searchPriceMax: '単価（上限）',
   // ✅ 2026-10-15: 受領画像の絞り込みカード（虫眼鏡 + プレースホルダ / 単価の 1 つの欄）。
@@ -67,10 +64,11 @@ const messages: ProjectListScreenMessages = {
   // ✅ 2026-10-16（人間の明示指示。案件一覧の検索機能）。
   searchRemoteMode: '稼働形態',
   searchCategory: 'カテゴリ',
-  searchSourceKind: '案件区分',
-  searchParallelOk: '並行可否',
-  searchStartWithin: '開始時期',
-  searchRecruitingOnly: '募集中のみ',
+  // ✅✅ 2026-10-16: スキル（複数選択 / OR）。
+  searchSkill: 'スキル',
+  searchSkillAll: 'すべて',
+  searchSkillHint:'スキルは複数選べます（選んだいずれかを要件に持つ案件が出ます）。',
+  searchSkillEmpty: 'スキル辞書に登録がありません。',
   searchPriceInverted: '単価の下限が上限を上回っています。どちらかを直してください。',
   searchSubmit: '検索',
   searchClear: '条件をクリア',
@@ -102,10 +100,6 @@ const statusOptions = [
   { value: 'CLOSED', label: '終了' },
 ] as const;
 
-const prefectureOptions = [
-  { value: '', label: 'すべて' },
-  { value: '13', label: '東京都' },
-] as const;
 
 const emptyFilters = {
   q: '',
@@ -121,6 +115,8 @@ const emptyFilters = {
   sourceKind: '',
   parallelOk: '',
   startWithin: '',
+  // ✅✅ 2026-10-16: スキルは配列である（`<select multiple>` の選択状態）。
+  skills: [] as readonly string[],
 } as const;
 
 /** ✅ 2026-10-16（受領モック）: カテゴリ / 案件区分 / 並行可否 / 開始時期の選択肢。 */
@@ -129,22 +125,13 @@ const categoryOptions = [
   { value: 'BACKEND', label: 'バックエンド' },
   { value: 'FRONTEND', label: 'フロントエンド' },
 ] as const;
-const sourceKindOptions = [
-  { value: '', label: 'すべて' },
-  { value: 'OWN', label: '自社案件' },
-  { value: 'PARTNER', label: 'パートナー案件' },
-] as const;
-const parallelOkOptions = [
-  { value: '', label: 'すべて' },
-  { value: '1', label: '可' },
-  { value: '0', label: '不可' },
-] as const;
-const startWithinOptions = [
-  { value: '', label: 'すべて' },
-  { value: 'IMMEDIATE', label: '即日' },
-  { value: 'THIS_MONTH', label: '今月' },
-  { value: 'NEXT_MONTH', label: '来月' },
-  { value: 'LATER', label: '再来月以降' },
+/**
+ * ✅✅ 2026-10-16: スキルの選択肢（辞書の ID と `name`）。
+ * 🔴 **「すべて」を含まない** —— `<select multiple>` では**何も選んでいない状態が「すべて」**である。
+ */
+const skillOptions = [
+  { value: '11111111-1111-7111-8111-111111111111', label: 'Java' },
+  { value: '22222222-2222-7222-8222-222222222222', label: 'TypeScript' },
 ] as const;
 
 /** ✅ 2026-10-16: 稼働形態の選択肢（値の出所は `REMOTE_MODES`。語は一覧の列と同じ）。 */
@@ -169,15 +156,10 @@ const COLUMN_TOGGLE_SHOWN = [
   },
 ] as const;
 
-/** 🔴 隠している状態（URL に `?hide=visibility` が載っている状態）で届く形。 */
-const COLUMN_TOGGLE_HIDDEN = [
-  {
-    id: 'visibility',
-    label: '「公開先の設定状況」の列を表示する',
-    hidden: true,
-    href: '/projects',
-  },
-] as const;
+// ⚠️ **2026-10-16: 「隠している状態」の形は外した** —— `表示する列` のボタンを画面から
+//    外した時点（人間の明示指示）で、この形を描く経路が 1 つも無くなったためである。
+//    🔴 **`?hide=` の query を受け取れる状態は保っている**（`page.tsx` が `columnToggleItems` を
+//    組み立て続けている）ので、共有された URL は壊れていない。
 
 function render(
   overrides: Partial<Parameters<typeof ProjectListScreen>[0]> = {},
@@ -188,12 +170,9 @@ function render(
       rows: [row()],
       filters: emptyFilters,
       statusOptions,
-      prefectureOptions,
       remoteModeOptions,
       categoryOptions,
-      sourceKindOptions,
-      parallelOkOptions,
-      startWithinOptions,
+      skillOptions,
       priceInverted: false,
       canRegister: true,
       nextPageHref: null,
@@ -338,18 +317,31 @@ describe('検索条件（docs/04 §S-010 セクション 1）', () => {
         sourceKind: 'OWN',
         parallelOk: '1',
         startWithin: 'THIS_MONTH',
+        // ✅✅ 2026-10-16: スキル（複数選択）も戻る。
+        skills: ['22222222-2222-7222-8222-222222222222'],
       },
     });
 
     expect(html).toContain('value="基幹"');
-    // ✅ 2026-10-16: `開始日` の日付入力は `開始時期` の選択になった（受領モック）。
-    //    🔴 **「選んだ区分が選択状態で戻る」ことを見る**（`<option selected>`）。
-    expect(html).toContain('value="THIS_MONTH" selected=""');
     expect(html).toContain('value="600000"');
     expect(html).toContain('value="800000"');
     // `select` の既定値は `option` の `selected` として描かれる。
     expect(html).toContain('<option value="OPEN" selected=""');
-    expect(html).toContain('<option value="13" selected=""');
+    expect(html).toContain('<option value="BACKEND" selected=""');
+    expect(html).toContain('<option value="FULL_REMOTE" selected=""');
+    // ✅✅ **2026-10-16（同日の 2 回目。人間の明示指示「スキルの部分はポップアップや Tip で
+    //    選択肢を表示して…表示させるのはバッチ風の表示にするのがいい」）: 複数選択は
+    //    `<select multiple>` から**チェックボックスのポップアップ**に替わった。**
+    //    🔴 送る形は 1 文字も変えていない（`skills=A&skills=B`）。戻り方は `checked` で見る。
+    expect(html).toContain('checked="" value="22222222-2222-7222-8222-222222222222"');
+    expect(html).not.toContain('checked="" value="11111111-1111-7111-8111-111111111111"');
+    // 🔴 **選んだものはバッジで見える**（引き金に出る）。
+    expect(html).toContain('TypeScript');
+    // ⚠️ **2026-10-16: 画面から外した 4 条件（案件区分 / 勤務地 / 開始時期 / 並行可否）は
+    //    欄ごと無いので「戻る」こと自体が無い。** 🔴 **query と述語は残してある**ので、
+    //    共有済みの URL は従来どおり効く（`lib/projects/list-rows.test.ts` が URL 側を固定する）。
+    expect(html).not.toContain('name="startWithin"');
+    expect(html).not.toContain('name="prefecture"');
   });
 
   // ✅✅ **2026-10-16: 常時表示に変えた**（受領モックのフッタは「条件をクリア」と「検索」が
@@ -365,18 +357,44 @@ describe('検索条件（docs/04 §S-010 セクション 1）', () => {
     expect(render()).toContain('data-testid="project-list-clear"');
   });
 
-  it('効かない条件は入力欄を描かず、できないことを書く', () => {
+  // ✅✅ **2026-10-16: 「効かない条件」が 1 つも無くなった**（人間の明示指示の 6 項目を
+  //    すべて実装した）。旧題は「効かない条件は入力欄を描かず、できないことを書く」であり、
+  //    🔴 **できるようになったものを「できない」と書き続けると画面が嘘をつく**ので、
+  //    検査も「スキルの欄が在り、操作の仕方と OR であることを書いている」に置き換えた。
+  it('🔴 スキルは複数選択の欄を描き、「複数選べる」と「いずれかに一致」を書く', () => {
     const html = render();
 
-    // ✅ **2026-10-15: 単価レンジは「効かない条件」から外れた**（`#25` に `priceMin` /
-    //    `priceMax` を足し、述語は人材検索と同じ `unitPriceOverlapConditions` を通る）。
-    // ✅✅ **2026-10-16: 「リモート可否」も外れた**（稼働形態の絞り込みを実装したため）。
-    //    🔴 **残るのはスキル要件だけである。** できるようになったものを注記に残すと、
-    //       画面が嘘をつく（`projects.list.searchComingSoon` の 🔴）。
-    expect(html).toContain('スキル要件');
-    expect(html).not.toContain('リモート可否での絞り込み');
+    // ✅✅ **2026-10-16（同日の 2 回目。人間の明示指示）: ポップアップ + バッジ。**
+    // 🔴 **`<select multiple>` をやめた** —— `size={3}` でもリストボックスは 3 行ぶんの高さを
+    //    占め、同じ行の `Select`（36px）の 2 倍以上になって帯の縦幅を崩していた。
+    // 🔴 **実体は同じ `name` のチェックボックス**（送る形は `skills=A&skills=B` のまま）。
+    expect(html).toContain('name="skills"');
+    expect(html).toContain('type="checkbox"');
+    expect(html).not.toContain('multiple=""');
+    // 🔴 **ポップアップは `<details>` である**（クライアントの島を使っていない）。
+    expect(html).toContain('data-testid="project-list-filter-skills-panel"');
+    // 🔴 **開いても帯の高さが変わらない**（重ねて出す）。
+    expect(html).toContain('absolute');
+    // 🔴 1 つも選んでいないときの引き金の語（空の引き金を置かない）。
+    expect(html).toContain('すべて');
+    // 🔴 **操作の仕方と OR であることを書く** —— `<select multiple>` はどちらも見た目から
+    //    分からず、書かないと「選んだのに 0 件」を不具合と区別できない。
+    expect(html).toContain('data-testid="project-list-search-skill-hint"');
+    expect(html).toContain('複数選べます');
+    expect(html).toContain('いずれか');
+    // 🔴 **「後続のリリースで行えます」は消えている**（実装したので嘘になる）。
+    expect(html).not.toContain('後続のリリース');
+    expect(html).not.toContain('data-testid="project-list-search-coming-soon"');
+    // 🔴 「すべて」の番兵を選択肢に作らない（未選択がすべてである）。
+    expect(html).not.toMatch(/name="skills"[^>]*>\s*<option value=""/);
+  });
+
+  it('🔴 スキル辞書が空なら `<select>` を描かず、その旨を書く', () => {
+    const html = render({ skillOptions: [] });
+
     expect(html).not.toContain('name="skills"');
-    expect(html).not.toContain('name="remote"');
+    expect(html).toContain('data-testid="project-list-filter-skills-empty"');
+    expect(html).toContain('スキル辞書に登録がありません。');
   });
 
   it('✅ 2026-10-15: 単価レンジは入力欄を描く（人材一覧と同じ名前・同じ単位）', () => {
@@ -437,13 +455,15 @@ describe('🔴 T-11-12: 案件名セルが docs/04 §10.3「長い名称」の�
     expect(link?.[1]).not.toContain('truncate');
   });
 
-  it('🔴 ✅ 2026-10-15: 名称の前に状態の点が出る（色は `StatusBadge` と同じ表から決まる）', () => {
+  // ✅✅ **2026-10-16: 状態の点（`StatusDot`）を外した**（人間の明示指示「案件名の左に
+  //    〇があるけどこれはいらないね」）。🔴 **状態は隣の列の `StatusBadge` が語で出している**
+  //    ので、読み取れる情報は 1 つも減っていない（案件名の左端が揃うぶん読みやすくなる）。
+  it('🔴 名称の前に状態の点を出さない（状態は隣の列の Badge が語で出す）', () => {
     const html = render({ rows: [row({ name: '金融系 Web API 改修' })] });
 
-    // 🔴 点は**状態を持つ**（`data-state`）。色クラスを画面が選べないことは `StatusDot` の型が守る。
-    expect(html).toContain('<span aria-hidden="true" data-entity="project" data-state="OPEN"');
-    // 🔴 点に語を持たせない（読み上げでは同じ行の Badge が語を出す）。
-    expect(html).toContain('aria-hidden="true"');
+    expect(html).not.toContain('data-entity="project" data-state="OPEN" aria-hidden');
+    // 🔴 状態そのものは消えていない（Badge が語で出す）。
+    expect(html).toContain('募集中');
   });
 });
 
@@ -562,9 +582,12 @@ describe('🔴 SP-22 段④: 絞り込みカードと件数バー', () => {
     expect(classes).not.toContain('xl:col-span-4');
   });
 
-  it('🔴 「効かない条件」の 1 行は絞り込みカードの中にある（条件の群の隣で読む）', () => {
+  // ✅✅ **2026-10-16: 対象を「効かない条件の 1 行」から「スキル欄の説明の 1 行」に替えた**
+  //    （実装したので前者が無くなった）。🔴 **守りたい性質は同じ** —— 注記は絞り込みカードの
+  //    中に在り、条件の群の隣で読める。
+  it('🔴 スキル欄の説明の 1 行は絞り込みカードの中にある（条件の群の隣で読む）', () => {
     const html = render();
-    const comingSoon = html.indexOf('data-testid="project-list-search-coming-soon"');
+    const comingSoon = html.indexOf('data-testid="project-list-search-skill-hint"');
     const form = html.indexOf('data-testid="project-list-filters"');
     const table = html.indexOf('data-testid="project-list-table"');
 
@@ -594,8 +617,13 @@ describe('🔴 SP-22 段④: 絞り込みカードと件数バー', () => {
     //     `20261016030000`、承認は [Issue #113](https://github.com/Festal-KM/SES-Platform/issues/113)）。
     //    🔴 **この検査が守っているのは「押しても効かない入力欄を作らない」である。** 実装した
     //       条件を一覧に残すと、**実装したことを検査が禁じる**状態になり、意味が反転する。
-    //    🔴 **残りは 1 つも描かない**（スキル要件・表示件数は API に無い）。
-    for (const name of ['name="skills"', 'name="remote"', 'name="limit"']) {
+    //    ✅✅ **2026-10-16（同日の 2 回目）: `skills` もこの一覧から外した** ——
+    //       人間の明示指示「スキル（リストから複数選択できる、or 検索）」を実装し、
+    //       **`#25` の query に入った**（`projectListQuerySchema.skills`。述語は
+    //       `project_requirements` への `some` + `skillId IN (…)`）。
+    //    🔴 **残りは 1 つも描かない**（表示件数は API に無い。`name="remote"` は
+    //       `remoteMode` の綴り間違いを拾うための番兵である）。
+    for (const name of ['name="remote"', 'name="limit"']) {
       expect(html, `${name} の入力欄が描かれている（API に無い条件）`).not.toContain(name);
     }
   });

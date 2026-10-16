@@ -761,12 +761,17 @@ const FROZEN_EXACT: readonly string[] = [
   'project-list-clear',
   'project-list-empty',
   'project-list-error',
-  'project-list-filter-prefecture',
+  // ✅✅ 🔴 **2026-10-16: `project-list-filter-prefecture` を外した**（人間の明示指示の検索 6 項目に**勤務地が無い**）。
+  //    🔴 **query（`prefecture`）と述語、一覧の `勤務地` 列は残してある**。
+  //    ⚠️ **E2E は掛んでいなかった**（`tests/e2e` に出現 0 件。確認済み）。
   'project-list-filter-q',
-  // ✅ 2026-10-16: `開始日` の日付入力 → `開始時期` の選択（受領モック）。足した testid は
-  //    `project-list-filter-start-within` / `-category` / `-source-kind` / `-parallel-ok`。
-  //    🔴 **追加は通る**（凍結が守るのは「減らないこと」だけである）。
-  'project-list-filter-start-within',
+  // ✅✅ 🔴 **2026-10-16（同日の 2 回目）: `project-list-filter-start-within` を外した** —— 人間の明示指示の
+  //    検索 6 項目（フリーテキスト / ステータス / カテゴリ / スキル / 稼働形態 / 単価）に
+  //    **開始時期が無い**。同じ日の午前に追加した testid を、同じ日の午後に外している。
+  //    🔴 **query（`startWithin` / 旧 `startFrom`）と述語、一覧の `開始日` 列は残してある**。
+  //    ⚠️ **E2E は掛んでいなかった**（確認済み）。
+  //    ⚠️ `-category` は残っている（検索 6 項目の 1 つ）。
+  //    `-source-kind` / `-parallel-ok` は**凍結前に外した**のでこの表に無い。
   'project-list-filter-status',
   'project-list-filters',
   'project-list-first',
@@ -784,7 +789,12 @@ const FROZEN_EXACT: readonly string[] = [
   'project-list-retry',
   'project-list-screen',
   'project-list-search',
-  'project-list-search-coming-soon',
+  // ✅✅ 🔴 **2026-10-16: `project-list-search-coming-soon` を外した** ——
+  //    人間の明示指示で**スキル要件の絞り込みを実装した**ため、
+  //    この 1 行に**書くことが無くなった**。
+  //    🔴 **できるようになったものを「できない」と書き続けると画面が嘘をつく。**
+  //    🔴 同じ位置に `project-list-search-skill-hint`（複数選択と OR の説明）を置いた。
+  //    ⚠️ **E2E は掛んでいなかった**（確認済み）。
   'project-list-skeleton',
   'project-list-table',
   'project-name',

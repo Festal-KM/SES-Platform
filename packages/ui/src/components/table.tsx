@@ -301,7 +301,18 @@ export function Table({ className, containerClassName, overflowNote, ...props }:
 }
 
 export function TableHeader({ className, ...props }: ComponentProps<'thead'>) {
-  return <thead className={cn('[&_tr]:border-b', className)} {...props} />;
+  // ✅✅ **2026-10-16（人間の明示指示「案件リストのヘッダー行の下の黒い罫線はもっと
+  //    薄くして」）: 色を明示し、行の区切り線の色（`--color-border-row`）に揃えた。**
+  // 🔴🔴 **黒く見えていたのは実装の抜けである。** upstream の `[&_tr]:border-b` は**色を
+  //    書いていない**（自分の `globals.css` で `* { @apply border-border }` を当てている）。
+  //    本リポジトリでは色を `TableRow` の `border-b border-border` が供給していたので、
+  //    同日に罫線を最小限にする指示で `TableRow` からそれを外した瞬間、**ヘッダの下線だけが
+  //    色の無い `border-b` として残り、v4 の既定（`currentColor` = 文字色）で描かれた**
+  //    （本ファイル冒頭の差分表「色を書かなければ文字色の濃い罫線が出る」がまさにこれである）。
+  // 🔴 **`border-border`（slate-200）ではなく `border-border-row`（slate-100）にする** ——
+  //    行の罫線を外した表で、ヘッダの下だけが濃いと**そこだけが線として目立つ**。
+  //    カードの枠（`--color-border`）より 1 段薄い、区切りのための色を使う。
+  return <thead className={cn('[&_tr]:border-b [&_tr]:border-border-row', className)} {...props} />;
 }
 
 export function TableBody({ className, ...props }: ComponentProps<'tbody'>) {

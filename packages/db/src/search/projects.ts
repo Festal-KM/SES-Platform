@@ -57,6 +57,20 @@ export type ProjectWhereFragment = {
    */
   unitPriceMin?: null | { lte: number };
   unitPriceMax?: null | { gte: number };
+  /**
+   * ✅✅ **2026-10-16（人間の明示指示「スキル（リストから複数選択できる、or 検索）」）。**
+   *
+   * 🔴 **`project_requirements` への `some` である**（1 件でも一致すれば案件が残る = **OR**）。
+   *    `every` / `none` を置かない —— AND で絞りたくなった実装がここに現れないよう、
+   *    **型として `some` しか持たない**。
+   * 🔴 **`kind` を見ない** —— 必須（`MUST`）と尚可（`NICE`）の**どちらで一致してもよい**。
+   *    営業が「Java の案件」を探すとき、Java が尚可要件の案件を落とすのは期待と違う
+   *    （区分は一覧の `必須要件の要約` 列と詳細で読む）。
+   * 🔴 **境界の条件ではない。** `project_requirements` にも `projects` と同じ C4 が効く
+   *    （migration 20260903050000 の `project_requirements_c4_select`）ので、
+   *    パートナー文脈では**自社に公開された案件の要件しか結合されない**。
+   */
+  requirements?: { some: { skillId: { in: string[] } } };
   OR?: ProjectWhereFragment[];
   /**
    * 🔴 **単価レンジの 2 条件はここに入る**（`OR` ではなく `AND`）。フリーワードが
@@ -112,6 +126,17 @@ export type ProjectSearchCriteria = {
   readonly category?: ProjectCategory;
   readonly sourceKind?: ProjectSourceKind;
   readonly parallelOk?: boolean;
+  /**
+   * ✅✅ **2026-10-16（人間の明示指示「スキル（リストから複数選択できる、or 検索）」）。**
+   *
+   * 🔴 **OR である** —— 指定したスキルの**いずれか**を要件に持つ案件が残る。選んだ全部を
+   *    満たす案件（AND）に絞ると、2 つ選んだ瞬間にほぼ 0 件になり、使えない絞り込みになる。
+   * 🔴 **グローバル辞書（`Skill`）の ID** である（`F-010`）。ここで名前を照合しない ——
+   *    表記ゆれの吸収は `SkillAlias` の仕事であり、検索の述語に 2 本目の正規化を作らない。
+   * 🔴 **空配列を渡さない**（呼び出し側が `undefined` に畳む）。`{ in: [] }` は**常に偽**なので、
+   *    「スキルを 1 つも選んでいない」が**全件 0 件**になる。
+   */
+  readonly skills?: readonly string[];
   /**
    * ✅ **2026-10-16（人間の明示指示「チェックボックス『募集中のみ』。ON で ステータス = 募集中に
    *    絞る（ステータスセレクトと併用時は AND）」）。**
@@ -254,6 +279,17 @@ export function projectSearchWhere(criteria: ProjectSearchCriteria): ProjectWher
   if (criteria.recruitingOnly === true) {
     // 🔴 `status` と独立に積む（併用して矛盾したら 0 件が正しい。`recruitingOnly` の 🔴）。
     and.push({ status: RECRUITING_STATUS });
+  }
+  // ✅✅ **2026-10-16: スキル（複数選択 / OR）。**
+  // 🔴 **空配列は述語を積まない。** `{ in: [] }` は常に偽であり、1 つも選んでいない状態が
+  //    **全件 0 件**になる（`ProjectSearchCriteria.skills` の 🔴）。境界側（Zod）でも
+  //    空を `undefined` に畳んでいるが、**述語の側でも落ちないようにしておく**
+  //    （この関数は API 以外の呼び手からも使われる）。
+  if (criteria.skills !== undefined && criteria.skills.length > 0) {
+    // 🔴 `AND` に積む（トップレベルに置くとフリーワードの `AND` と同じキーで衝突する
+    //    …… ことは無いが、**`OR` を内包する条件はすべて `AND` の要素として積む**という
+    //    この関数の規律に合わせる。`some` + `in` は 1 つの要素で OR を表せる）。
+    and.push({ requirements: { some: { skillId: { in: [...criteria.skills] } } } });
   }
   return {
     ...(and.length === 0 ? {} : { AND: and }),
