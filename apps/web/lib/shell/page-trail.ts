@@ -271,6 +271,16 @@ export const SETTINGS_INDEX_TRAIL: readonly PageCrumb[] = [
 ];
 
 /** `S-035` 組織設定とメンバー管理。 */
+/**
+ * ✅ `S-048` アカウント設定（2026-10-16。Issue #95）。
+ * 🔴 **`設定` を挟まない** —— サイドバー下部からも開く画面であり、`設定` の索引を経由しない
+ *    経路が在る（経由を前提にしたパンくずは「来ていない場所」を指す）。
+ */
+export const ACCOUNT_SETTINGS_TRAIL: readonly PageCrumb[] = [
+  { labelKey: 'account.breadcrumb.home', href: '/' },
+  { labelKey: 'account.title', href: null },
+];
+
 export const ORG_SETTINGS_TRAIL: readonly PageCrumb[] = [
   { labelKey: 'orgSettings.breadcrumb.home', href: '/' },
   { labelKey: 'orgSettings.title', href: null },
@@ -402,6 +412,7 @@ export const ALL_PAGE_TRAILS: readonly (readonly PageCrumb[])[] = [
   PROPOSAL_REQUEST_RESPOND_TRAIL,
   ENGINEER_SHARE_TRAIL,
   SETTINGS_INDEX_TRAIL,
+  ACCOUNT_SETTINGS_TRAIL,
   ORG_SETTINGS_TRAIL,
   PARTNER_COMPANIES_TRAIL,
   SENDING_DOMAIN_TRAIL,

@@ -1301,6 +1301,100 @@ describe('🔴 F-015 AC-3: 並び順が決定的である', () => {
 });
 
 describe('検索条件（docs/05 §6.4 #25 / `F-015` の入力）', () => {
+  // ============================================================================
+  // ✅✅ 2026-10-16（受領モック `デザインモック/自社案件管理_案件一覧.png` の絞り込み。
+  //    [Issue #113](https://github.com/Festal-KM/SES-Platform/issues/113)「設計から改訂して」）
+  // ============================================================================
+  // 🔴 **ユニットは述語の「形」しか見ていない。** 実 DB で**本当に絞れるか**（列が在り、
+  //    CHECK を通り、RLS 越しに一致するか）はこの層でしか分からない。
+  it('🔴 カテゴリで絞れる（列・CHECK・述語が揃っている）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+    const target = await createdIdOf(
+      await postProject(ctx, { name: `${MARKER}カテゴリ`, category: 'BACKEND' }),
+    );
+    await postProject(ctx, { name: `${MARKER}カテゴリ別`, category: 'INFRA' });
+
+    const body = await listBodyOf(await getProjects(ctx, '?category=BACKEND'));
+
+    expect(idsOf(body)).toEqual([target]);
+    expect(body.total).toBe(1);
+  });
+
+  it('🔴 値集合に無いカテゴリは 400（CHECK より手前で落ちる）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+    expect((await postProject(ctx, { name: `${MARKER}不正`, category: 'UNKNOWN' })).status).toBe(400);
+  });
+
+  it('案件区分で絞れる（既定は自社案件）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+    const partner = await createdIdOf(
+      await postProject(ctx, { name: `${MARKER}パートナー案件`, sourceKind: 'PARTNER' }),
+    );
+    // 🔴 区分を指定しない案件は `OWN`（列の既定値）になる。
+    const own = await createdIdOf(await postProject(ctx, { name: `${MARKER}自社案件` }));
+
+    expect(idsOf(await listBodyOf(await getProjects(ctx, '?sourceKind=PARTNER')))).toEqual([partner]);
+    expect(idsOf(await listBodyOf(await getProjects(ctx, '?sourceKind=OWN')))).toContain(own);
+  });
+
+  it('🔴 並行可否は「不可」でも絞れる（false を「指定なし」に畳まない）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+    const no = await createdIdOf(await postProject(ctx, { name: `${MARKER}並行不可`, parallelOk: false }));
+    const yes = await createdIdOf(await postProject(ctx, { name: `${MARKER}並行可`, parallelOk: true }));
+
+    // 🔴 `false` を畳むと、ここで**両方**が返る（＝「不可」で絞った瞬間に全件が出る）。
+    expect(idsOf(await listBodyOf(await getProjects(ctx, '?parallelOk=0')))).toEqual([no]);
+    expect(idsOf(await listBodyOf(await getProjects(ctx, '?parallelOk=1')))).toEqual([yes]);
+  });
+
+  it('🔴 開始時期の区分で絞れる（即日 / 来月 が重ならない）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+    const today = new Date();
+    const nextMonth = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 1, 10));
+    const past = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 1, 1));
+    const immediate = await createdIdOf(
+      await postProject(ctx, { name: `${MARKER}即日`, startDate: past.toISOString().slice(0, 10) }),
+    );
+    const later = await createdIdOf(
+      await postProject(ctx, {
+        name: `${MARKER}来月`,
+        startDate: nextMonth.toISOString().slice(0, 10),
+      }),
+    );
+
+    const immediateIds = idsOf(await listBodyOf(await getProjects(ctx, '?startWithin=IMMEDIATE')));
+    const nextIds = idsOf(await listBodyOf(await getProjects(ctx, '?startWithin=NEXT_MONTH')));
+
+    expect(immediateIds).toContain(immediate);
+    expect(immediateIds).not.toContain(later);
+    expect(nextIds).toContain(later);
+    expect(nextIds).not.toContain(immediate);
+  });
+
+  it('🔴 フリーワードは複数語 AND である（片方しか含まない案件は出ない）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+    const both = await createdIdOf(await postProject(ctx, { name: `${MARKER}基幹 刷新 案件` }));
+    await postProject(ctx, { name: `${MARKER}基幹 だけの案件` });
+
+    const query = `?q=${encodeURIComponent('基幹 刷新')}`;
+    const body = await listBodyOf(await getProjects(ctx, query));
+
+    expect(idsOf(body)).toEqual([both]);
+    expect(body.total).toBe(1);
+  });
+
+  it('🔴 「募集中のみ」は状態と独立に効く（矛盾したら 0 件）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+    const open = await createdIdOf(await postProject(ctx, { name: `${MARKER}募集中の案件` }));
+    await postProject(ctx, { name: `${MARKER}終了の案件`, status: 'CLOSED' });
+
+    expect(idsOf(await listBodyOf(await getProjects(ctx, '?recruitingOnly=1')))).toEqual([open]);
+    // 🔴 `終了` かつ `募集中のみ` は 0 件が正しい（どちらかを黙って優先しない）。
+    const contradiction = await listBodyOf(await getProjects(ctx, '?status=CLOSED&recruitingOnly=1'));
+    expect(idsOf(contradiction)).toEqual([]);
+    expect(contradiction.total).toBe(0);
+  });
+
   it('状態で絞れる（`total` も絞り込み後の母集団）', async () => {
     const ctx = await ctxOf(HOST_1, 'SALES');
     const id = await createdIdOf(

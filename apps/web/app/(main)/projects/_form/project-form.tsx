@@ -84,6 +84,15 @@ export type ProjectFormValues = {
   readonly unitPriceMax: string;
   readonly prefecture: string;
   readonly remoteMode: string;
+  /**
+   * ✅✅ **2026-10-16（受領モック + [Issue #113](https://github.com/Festal-KM/SES-Platform/issues/113)）:
+   *    カテゴリ / 案件区分 / 並行可否。**
+   * 🔴 **絞り込みに使う列は、ここで書けなければ永久に空のままである。**
+   */
+  readonly category: string;
+  readonly sourceKind: string;
+  /** `'1'`（可） / `'0'`（不可） / 空文字（未設定）。 */
+  readonly parallelOk: string;
   /** 🔴 内部限定（`F-013 AC-2`）。 */
   readonly endClientName: string;
   /** 🔴 内部限定（同上）。 */
@@ -128,6 +137,10 @@ export type ProjectFormMessages = {
   readonly unitPriceUnit: string;
   readonly prefectureLabel: string;
   readonly remoteModeLabel: string;
+  // ✅ 2026-10-16（受領モック）。
+  readonly categoryLabel: string;
+  readonly sourceKindLabel: string;
+  readonly parallelOkLabel: string;
   readonly valueUnset: string;
 
   readonly commerceNotice: string;
@@ -171,6 +184,10 @@ export type ProjectFormProps = {
   readonly skillDictionary: readonly SkillDictionaryOption[];
   readonly statusOptions: readonly SelectOption[];
   readonly remoteModeOptions: readonly SelectOption[];
+  // ✅ 2026-10-16（受領モック）。並行可否は `'1'` / `'0'` の 2 値である。
+  readonly categoryOptions: readonly SelectOption[];
+  readonly sourceKindOptions: readonly SelectOption[];
+  readonly parallelOkOptions: readonly SelectOption[];
   readonly prefectureOptions: readonly SelectOption[];
   /** 要件の 2 区分（`'MUST'` / `'NICE'`）。順序がそのままブロックの並びになる。 */
   readonly requirementKinds: readonly string[];
@@ -229,6 +246,12 @@ export function toRequestBody(values: ProjectFormValues) {
     unitPriceMax: numberOrNull(values.unitPriceMax),
     prefecture: emptyToNull(values.prefecture),
     remoteMode: emptyToNull(values.remoteMode),
+    // ✅ 2026-10-16（受領モック + Issue #113）。
+    category: emptyToNull(values.category),
+    // 🔴 案件区分は必ずどちらかに決まる（空文字は既定の `OWN` に倒す）。
+    sourceKind: values.sourceKind === '' ? 'OWN' : values.sourceKind,
+    // 🔴 空文字は「未設定」（`null`）。`'0'` を `false` として送る（`Boolean('0')` は `true`）。
+    parallelOk: values.parallelOk === '' ? null : values.parallelOk === '1',
     endClientName: emptyToNull(values.endClientName),
     internalUnitPrice: numberOrNull(values.internalUnitPrice),
     publicSummary: emptyToNull(values.publicSummary),
@@ -248,6 +271,9 @@ export function ProjectForm({
   skillDictionary,
   statusOptions,
   remoteModeOptions,
+  categoryOptions,
+  sourceKindOptions,
+  parallelOkOptions,
   prefectureOptions,
   requirementKinds,
   cancelHref,
@@ -715,6 +741,58 @@ export function ProjectForm({
           >
             <option value="">{messages.valueUnset}</option>
             {remoteModeOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        {/* ✅✅ **2026-10-16（受領モック + Issue #113）: カテゴリ / 案件区分 / 並行可否。**
+            🔴 **一覧の絞り込みと同じ値集合・同じ語である**（`@ses/db` の値集合と
+               `lib/projects/labels.ts` の写像）。選べる値と絞れる値が違うと、
+               **登録した案件が自分の絞り込みに出てこない**。 */}
+        <Field className="mb-4" label={messages.categoryLabel}>
+          <Select
+            name="category"
+            value={values.category}
+            onChange={(event) => update({ category: event.target.value })}
+            disabled={phase === 'submitting'}
+            data-testid="project-category"
+          >
+            <option value="">{messages.valueUnset}</option>
+            {categoryOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field className="mb-4" label={messages.sourceKindLabel}>
+          <Select
+            name="sourceKind"
+            value={values.sourceKind}
+            onChange={(event) => update({ sourceKind: event.target.value })}
+            disabled={phase === 'submitting'}
+            data-testid="project-source-kind"
+          >
+            {/* 🔴 「未設定」を置かない —— 案件区分は必ずどちらかに決まる（DB も `NOT NULL`）。 */}
+            {sourceKindOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field className="mb-4" label={messages.parallelOkLabel}>
+          <Select
+            name="parallelOk"
+            value={values.parallelOk}
+            onChange={(event) => update({ parallelOk: event.target.value })}
+            disabled={phase === 'submitting'}
+            data-testid="project-parallel-ok"
+          >
+            <option value="">{messages.valueUnset}</option>
+            {parallelOkOptions.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
               </option>

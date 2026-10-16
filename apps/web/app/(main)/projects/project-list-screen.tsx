@@ -508,7 +508,11 @@ export function ProjectListScreen({
                         修正してよ」+ 受領モック）: 1 行目を全幅にした。** モックのキーワード欄は
                         帯の幅いっぱいで、2 行目から 4 列の選択肢が始まる。
                         🔴 **`col-span-full` にする**（`sm:col-span-2` は 4 列のうち 2 列だった）。 */}
-                    <Field className="col-span-full" label={messages.searchQ}>
+                    {/* 🔴 **ラベルは読み上げのために残す**（モックには文字が無いが、消すと欄の
+                        用途がスクリーンリーダから失われる）。**見た目だけ隠す**ので、
+                        画面はモックと同じ「虫眼鏡 + プレースホルダだけ」になる
+                        （`CLAUDE.md` §13.3「劣化はさせても遮断しない」と同じ判断）。 */}
+                    <Field className="col-span-full" label={messages.searchQ} labelClassName="sr-only">
                       <div className="relative">
                         <Icon
                           name="search"
@@ -613,9 +617,12 @@ export function ProjectListScreen({
                            逆転したレンジは重なりが空で、述語としては素通りして 0 件になる。
                            0 件は「条件に合う案件が無い」と**見分けが付かない**ので、
                            入力の誤りとしてその場で言う（`docs/04` §S-010）。 */}
+                    {/* ✅✅ **2026-10-16: 2 列ぶん → 1 列にした**（受領モックの 3 行目は
+                        `単価 / 勤務地 / 開始時期 / 並行可否` の 4 つが 1 行に収まっている）。
+                        🔴 **中身は変えていない**（下限 / 〜 / 上限 / 単位の 4 つ）。欄が狭くなるが、
+                           入るのは 6〜7 桁の数値であり、モックの欄も同じ幅である。 */}
                     <Field
                       as="div"
-                      className="sm:col-span-2"
                       label={messages.searchPrice}
                       error={priceInverted ? messages.searchPriceInverted : undefined}
                     >
