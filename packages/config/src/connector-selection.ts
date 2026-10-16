@@ -174,10 +174,10 @@ export function isAllMockEmailEnv(appEnv: AppEnvKind): boolean {
  *    実在する企業の情報が入る。`staging` / `production` は言うまでもない。
  * 🔴 **運営者（`PlatformUser`）には効かない。** 管理平面は別テーブル・別認証であり（§10.5）、
  *    本関数を呼ぶ経路を持たない。運営者の 2FA は環境を問わず必須のままである。
- * 🔴 **「このセッションで第 2 要素を提示したか」の判定（`ENROLLED_UNVERIFIED`）には触らない。**
- *    既に設定してある利用者は、どの環境でも提示が要る —— 外すと「一度設定したら以後は
- *    パスワードだけ」になり、2 要素目が実質消える（`assertTwoFactorSatisfied` の ②）。
- *    本関数が外すのは **①「未設定なら設定を強制する」ほうだけ**である。
+ * 🔴 **`demo` ではテナント利用者の 2 要素認証を丸ごと止める**（設定の強制も、設定済みの
+ *    利用者への提示の要求も）。⚠️ **当初は「設定の強制だけ」を外したが、それでは指示を
+ *    満たさなかった** —— デモの seed は `OWNER` を**設定済み**にしているため、実測すると
+ *    結局 TOTP を求められた（2026-10-16 の実機確認）。**半分だけ緩めても不便は消えない。**
  */
 export function isTwoFactorRelaxedEnv(appEnv: AppEnvKind): boolean {
   return appEnv === 'demo';

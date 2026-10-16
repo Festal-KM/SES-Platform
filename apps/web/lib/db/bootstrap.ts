@@ -310,9 +310,9 @@ export function ensureDbConfigured(): void {
   // 🔴 **分岐はここ 1 箇所**である（`cachedSendingDomainRuntime` と同じ形。`CLAUDE.md` §11.1）——
   //    リクエストごとに `APP_ENV` を見ない。判定式そのものは `@ses/config` の
   //    `isTwoFactorRelaxedEnv`（`demo` だけ true。同関数の 🔴 に理由と射程がある）。
-  // 🔴 **緩むのは「未設定なら設定を強制する」ほうだけ**であり、設定済みの利用者が
-  //    このセッションで第 2 要素を提示したかの判定は**どの環境でも効く**。
-  cachedTwoFactorPolicy = isTwoFactorRelaxedEnv(env.APP_ENV) ? 'SETUP_RELAXED' : 'ENFORCED';
+  // 🔴 **`demo` ではテナント利用者の 2 要素認証を丸ごと止める**（設定の強制も提示の要求も）。
+  //    運営者（`PlatformUser`）は別経路であり、環境を問わず必須のままである（§10.5）。
+  cachedTwoFactorPolicy = isTwoFactorRelaxedEnv(env.APP_ENV) ? 'RELAXED' : 'ENFORCED';
   // 🔴 T-05-04: ストレージ（docs/05 §14.1 / §14.2 / docs/03 §4.5）。値の出所は `packages/config`
   //    だけであり、ルートも画面も `process.env` を読まない（`CLAUDE.md` §3.5）。
   //    🔴 実装種別（`connectors.objectStore`）もここで確定させる。**リクエストごとに
