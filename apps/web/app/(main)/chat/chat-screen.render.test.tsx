@@ -270,7 +270,7 @@ describe('🔴 ③: md 未満は「一覧 → 会話」の切替であって遮�
       expect(classes, `${classes} が md で戻っていません`).toMatch(/md:(?:block|flex)\b/);
     }
     // 🔴 一覧の器（選択中）は畳むが `md` で戻る。
-    expect(page).toContain("'hidden md:block md:w-80 md:shrink-0 md:border-r md:border-border'");
+    expect(page).toContain("'hidden bg-bg-subtle md:block md:w-80 md:shrink-0'");
     // 🔴 会話の器（未選択）は `md` 未満では一覧が全幅なので畳む。こちらも `md` で戻る。
     expect(page).toContain("'hidden min-w-0 flex-1 md:flex md:flex-col'");
     // ✅ 2026-10-14: 右に並べた会話とドラッグの受け口は `md` 未満では出さない（モバイルは 1 列の切替）。

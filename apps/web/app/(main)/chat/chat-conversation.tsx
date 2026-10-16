@@ -448,14 +448,48 @@ export function ChatConversation({
                 ),
               )}
         </p>
+        {text === null ? null : (item.reactions ?? []).length > 0 || item.edited === true ? (
+          // ✅ 2026-10-16: 付いているリアクションの数と「編集済み」は**常に見せる**（中身の一部なので隠さない）。
+          <div className="flex flex-wrap items-center gap-2" data-testid={`chat-message-info-${item.id}`}>
+            {item.edited === true ? <span className="text-xs text-fg-placeholder">{messages.edited}</span> : null}
+            {/* ✅ 2026-10-16: リアクション（件数と自分が付けたか）。投稿できる人は押して付け外しでき、
+                閲覧専用には件数だけを文字で出す（押せないボタンを描かない）。 */}
+            {(item.reactions ?? []).map((summary) =>
+              canPost ? (
+                <Button
+                  key={summary.reaction}
+                  type="button"
+                  variant={summary.mine ? 'secondary' : 'ghost'}
+                  size="sm"
+                  aria-pressed={summary.mine}
+                  onClick={() => void toggleReaction(item, summary.reaction)}
+                  data-testid={`chat-message-reaction-${item.id}-${summary.reaction}`}
+                >
+                  {`${messages.reactions[summary.reaction]} ${String(summary.count)}`}
+                </Button>
+              ) : (
+                <span key={summary.reaction} className="text-xs text-fg-muted" data-testid={`chat-message-reaction-${item.id}-${summary.reaction}`}>
+                  {`${messages.reactions[summary.reaction]} ${String(summary.count)}`}
+                </span>
+              ),
+            )}
+          </div>
+        ) : null}
         {text === null ? null : (
-          // ✅ 2026-10-14: 発言の操作（コピー・続きを読む）。🔴 **常に見せる**（小さく・控えめに）。
-          //    カーソルを合わせたときだけ出す形は `opacity` で隠すことになり、「押せないように見せない」の
-          //    検査（render テストの ②）に反し、スマホでは見つけられない。
+          // ✅ 2026-10-16（紺野）: 発言の操作は**カーソルを当てたときだけ**出す（常に出ていて煩雑だった）。
+          //    🔴 マウスの機器（`pointer-fine`）だけで隠す。スマホ（指）にはカーソルが無いので**常に出す**。
+          //    🔴 キーボードで発言の中に移ったとき（`group-focus-within`）と、削除の確認中も出す。
+          //    🔴 `opacity` で隠さない（render テストの ②）。`invisible` は場所を取ったまま見えなくするだけで、
+          //       カーソルを当てても行がずれない。
           <div
             role="group"
             aria-label={messages.messageActions}
-            className="flex items-center gap-2"
+            className={cn(
+              'flex flex-wrap items-center gap-2',
+              confirmDeleteId === item.id
+                ? null
+                : 'pointer-fine:invisible pointer-fine:group-hover:visible pointer-fine:group-focus-within:visible',
+            )}
             data-testid={`chat-message-actions-${item.id}`}
           >
             {long ? (
@@ -470,7 +504,6 @@ export function ChatConversation({
                 {open ? messages.readLess : messages.readMore}
               </Button>
             ) : null}
-            {item.edited === true ? <span className="text-xs text-fg-placeholder">{messages.edited}</span> : null}
             {/* ✅ 2026-10-16: 自分の発言の編集・削除（投稿できる人だけ）。削除はその場で確かめる（重なりの画面を出さない）。 */}
             {canPost && item.mine ? (
               confirmDeleteId === item.id ? (
@@ -498,27 +531,6 @@ export function ChatConversation({
                 </>
               )
             ) : null}
-            {/* ✅ 2026-10-16: リアクション（件数と自分が付けたか）。投稿できる人は押して付け外しでき、
-                閲覧専用には件数だけを文字で出す（押せないボタンを描かない）。 */}
-            {(item.reactions ?? []).map((summary) =>
-              canPost ? (
-                <Button
-                  key={summary.reaction}
-                  type="button"
-                  variant={summary.mine ? 'secondary' : 'ghost'}
-                  size="sm"
-                  aria-pressed={summary.mine}
-                  onClick={() => void toggleReaction(item, summary.reaction)}
-                  data-testid={`chat-message-reaction-${item.id}-${summary.reaction}`}
-                >
-                  {`${messages.reactions[summary.reaction]} ${String(summary.count)}`}
-                </Button>
-              ) : (
-                <span key={summary.reaction} className="text-xs text-fg-muted" data-testid={`chat-message-reaction-${item.id}-${summary.reaction}`}>
-                  {`${messages.reactions[summary.reaction]} ${String(summary.count)}`}
-                </span>
-              ),
-            )}
             {canPost ? (
               <>
                 <label className="sr-only" htmlFor={`chat-reaction-${item.id}`}>
@@ -813,7 +825,7 @@ export function ChatConversation({
                     data-own="true"
                     data-layout="chat"
                     data-continued={continued ? 'true' : 'false'}
-                    className="flex flex-col items-end gap-1"
+                    className="group flex flex-col items-end gap-1"
                   >
                     {continued ? (
                       <span className="sr-only">{messages.own}</span>
@@ -839,7 +851,7 @@ export function ChatConversation({
                 data-testid={`chat-message-${item.id}`}
                 data-own={item.own ? 'true' : 'false'}
                 data-continued={continued ? 'true' : 'false'}
-                className="flex gap-3"
+                className="group flex gap-3"
               >
                 {/* 🔴 続きの発言はアバターを見えなくするが、幅は残す（本文の左端をそろえる）。 */}
                 <Avatar
