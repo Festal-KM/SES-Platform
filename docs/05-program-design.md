@@ -3413,6 +3413,11 @@ T-08-02 の実装（`apps/web/lib/engineer-shares/service.ts` の `listEngineerS
 | 49 | `POST /api/proposals/{id}/interview-invite` | `F-041` / `S-024` / Phase 2 | `{ candidateSlots[], templateKey }` | `{ attemptSeq, jobId }` | §10 と同じ規律 |
 | 50 | `GET /api/threads` / `GET /api/threads/{id}/messages` | `F-038` / `S-031` / Phase 2 | `?cursor=` | `{ items }` | 🔴 `ThreadParticipant` に基づく（C6） |
 | 51 | `POST /api/threads/{id}/messages` | `F-038` | `{ body, attachmentKey? }` | `{ id }` | 添付は `CLEAN` のみ |
+| 51a | `PATCH` / `DELETE /api/threads/{id}/messages/{messageId}` | `F-038` ⑥（2026-10-16 チャットレーン） | `{ body }` / なし | `{ message }` | 🔴 **送った本人の、まだ消えていない発言だけ**（他は 404）。削除は論理削除（`deleted_at`）。監査 `message.update` / `message.delete`（本文なし）。権限は #51 と同じ |
+| 51b | `POST /api/threads/{id}/messages/{messageId}/reactions` | `F-038` ⑥ | `{ reaction: 'OK'\|'THANKS'\|'CHECKING'\|'DONE' }` | `{ reactions }` | 付ける / 外す（同じ種類で外れる）。`chat_message_reactions`（読み = 発言が読める・書き = 本人）。🔴 誰が付けたかを返さない |
+| 51c | `PUT /api/threads/{id}/read` / `PUT /api/threads/{id}/unread` | `F-038` ⑥ | `{ upToMessageId }` / `{ fromMessageId }` | `{ lastReadMessageId }` | `chat_read_states`（C7 SELF）。既読は戻らない。閲覧の一部として `requireExecutable` を掛けない |
+| 51d | `PUT /api/threads/{id}/prefs` | `F-038` ⑥ | `{ pinned?, muted? }` | `{ pinned, muted }` | 自分の表示の設定（`chat_read_states` の列）。閲覧の一部 |
+| 51e | `GET /api/threads/{id}/export` | `F-038` ⑥ | — | `text/csv` | 🔴 閲覧専用は 403（§10.1）。CSV インジェクション対策。監査 `thread.export`（件数だけ） |
 | 52 | `GET /api/realtime/threads/{id}` | `F-038` / Phase 2 | SSE | `event: message-updated` | 🔴 **接続中も毎イベントで参加会社を再判定**（`docs/03` §3.9.5-1） |
 
 🔴 **#40b と `S-023` セクション 4 の設計（T-12-14 ②。2026-09-18。SP-09 T-09-09 ③-③ の申し送りの回収。`F-020 AC-7` / `docs/02` `ui-design` 申し送り 5 / `docs/04` §S-023 セクション 4〔`ui-design` が「現在の結果」→「実行ごとの履歴」に並行改訂中。同じ既定〕）**:
