@@ -53,9 +53,11 @@ export function withLatestReactions(
   let changed = false;
   const next = current.map((item) => {
     const fresh = byId.get(item.id);
-    if (fresh === undefined || JSON.stringify(fresh.reactions ?? []) === JSON.stringify(item.reactions ?? [])) return item;
+    // ✅ 2026-10-16: 編集・削除（本文・印）も取り直した値に揃える。並び（sentAt / id）は変えない。
+    const pick = (m: ChatMessageView) => JSON.stringify([m.reactions ?? [], m.body, m.edited ?? false, m.deleted ?? false]);
+    if (fresh === undefined || pick(fresh) === pick(item)) return item;
     changed = true;
-    return { ...item, reactions: fresh.reactions ?? [] };
+    return { ...item, reactions: fresh.reactions ?? [], body: fresh.body, edited: fresh.edited ?? false, deleted: fresh.deleted ?? false };
   });
   return changed ? next : current;
 }

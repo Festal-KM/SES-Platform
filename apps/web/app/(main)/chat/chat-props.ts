@@ -50,6 +50,16 @@ export type ChatConversationMessages = {
   /** ✅ 2026-10-16: リアクションの語（4 つ）と「リアクション」。 */
   readonly reactions: Readonly<Record<ChatReactionKind, string>>;
   readonly reactionAdd: string;
+  /** ✅ 2026-10-16: 編集・削除。 */
+  readonly edit: string;
+  readonly remove: string;
+  readonly edited: string;
+  readonly deleted: string;
+  readonly save: string;
+  readonly cancel: string;
+  readonly deleteConfirm: string;
+  readonly deleteConfirmYes: string;
+  readonly editFailed: string;
   readonly templateLabel: string;
   readonly templatePlaceholder: string;
   /** 定型文（固定の文面。🔴 個人情報・単価を含めない）。 */
@@ -109,6 +119,15 @@ export function chatConversationMessages(): ChatConversationMessages {
       DONE: t('chat.reaction.DONE'),
     },
     reactionAdd: t('chat.reaction.add'),
+    edit: t('chat.message.edit'),
+    remove: t('chat.message.delete'),
+    edited: t('chat.message.edited'),
+    deleted: t('chat.message.deleted'),
+    save: t('chat.message.save'),
+    cancel: t('chat.message.cancel'),
+    deleteConfirm: t('chat.message.deleteConfirm'),
+    deleteConfirmYes: t('chat.message.deleteConfirmYes'),
+    editFailed: t('chat.message.editFailed'),
     templateLabel: t('chat.compose.template.label'),
     templatePlaceholder: t('chat.compose.template.placeholder'),
     templates: [

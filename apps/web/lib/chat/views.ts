@@ -84,6 +84,10 @@ export type ChatMessageView = {
    * 付いていなければ空配列（読みの経路は必ず埋める。省略可なのは手で組むテスト用の値のため）。
    */
   readonly reactions?: readonly ChatReactionSummary[];
+  /** ✅ 2026-10-16: 送った本人が編集したか（「編集済み」の印）。 */
+  readonly edited?: boolean;
+  /** ✅ 2026-10-16: 送った本人が削除したか（本文は `null`。保持期限による削除〔`purged`〕とは書き分ける）。 */
+  readonly deleted?: boolean;
   /** 本文。🔴 `PURGED` / 保持期間削除で本文が消えた行は `null`（`F-064 AC-2`）。 */
   readonly body: string | null;
 };
@@ -128,6 +132,8 @@ export const CHAT_MESSAGE_VIEW_KEYS = [
   'mine',
   'body',
   'reactions',
+  'edited',
+  'deleted',
 ] as const;
 
 /** ✅ 2026-10-16: リアクションの種類（業務の短い語 4 つ。絵文字は使わない = UI_GUIDELINES §1。DB の CHECK と同じ）。 */
@@ -251,6 +257,9 @@ export type ChatMessageRow = {
   readonly senderPartnerCompanyId: string | null;
   readonly body: string | null;
   readonly sentAt: Date;
+  /** ✅ 2026-10-16: 編集・削除の日時（読みの経路は必ず埋める。手で組むテスト用に省略可）。 */
+  readonly editedAt?: Date | null;
+  readonly deletedAt?: Date | null;
 };
 
 export type ChatMessageDeps = {
@@ -287,5 +296,7 @@ export function chatMessageView(row: ChatMessageRow, deps: ChatMessageDeps): Cha
     mine: row.senderUserId === deps.viewerUserId,
     body: row.body,
     reactions: deps.reactions ?? [],
+    edited: row.editedAt != null && row.deletedAt == null,
+    deleted: row.deletedAt != null,
   };
 }

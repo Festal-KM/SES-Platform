@@ -124,3 +124,8 @@ export function chatUnreadApiPath(threadId: string): string {
 export function chatReactionApiPath(threadId: string, messageId: string): string {
   return `/api/threads/${threadId}/messages/${messageId}/reactions`;
 }
+
+/** ✅ 2026-10-16: 自分の発言の編集（`PATCH`）・削除（`DELETE`）の API。 */
+export function chatMessageApiPath(threadId: string, messageId: string): string {
+  return `/api/threads/${threadId}/messages/${messageId}`;
+}

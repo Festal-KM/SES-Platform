@@ -136,3 +136,86 @@ export async function toggleChatReaction(
     return summarizeReactions(rows, ctx.userId).get(messageId) ?? [];
   });
 }
+
+/** ✅ 2026-10-16: 編集・削除の監査 action（CLAUDE.md §3.5「作成・更新・削除」。本文は載せない）。 */
+export const CHAT_MESSAGE_AUDIT_ACTION_UPDATE = 'message.update';
+export const CHAT_MESSAGE_AUDIT_ACTION_DELETE = 'message.delete';
+
+/**
+ * ✅ 2026-10-16（チャットレーン）: 自分の発言を探す（編集・削除の対象）。
+ * 🔴 **送った本人の、まだ消えていない発言**だけ。他人の発言・別スレッド・見えない発言・削除済みは
+ *    すべて 404（区別しない）。`senderUserId` の条件は「誰が編集できるか」の決まりであり、境界（誰が読めるか）は RLS。
+ */
+async function requireOwnLiveMessage(
+  ctx: AuthenticatedTenantCtx,
+  db: Parameters<Parameters<typeof withTenant<void>>[1]>[0],
+  threadId: string,
+  messageId: string,
+) {
+  requireFound(await findChatThreadRow(db, threadId));
+  return requireFound(
+    await db.message.findFirst({
+      where: { id: messageId, threadId, senderUserId: ctx.userId, deletedAt: null, purgedAt: null },
+      select: { id: true, body: true },
+    }),
+  );
+}
+
+/** ✅ 2026-10-16: 自分の発言を編集する（「編集済み」の印が付く）。監査ログに長さだけを残す。 */
+export async function editChatMessage(
+  ctx: AuthenticatedTenantCtx,
+  threadId: string,
+  messageId: string,
+  input: ChatMessageBody,
+  deps: SendChatMessageDeps,
+): Promise<SendChatMessageResult> {
+  return withTenant(ctx, async (db) => {
+    await requireOwnLiveMessage(ctx, db, threadId, messageId);
+    const updated = (await db.message.update({
+      where: { id: messageId },
+      data: { body: input.body, editedAt: deps.now() },
+      select: CHAT_MESSAGE_SELECT,
+    })) as ChatMessageRow;
+    await writeAuditLog(db, {
+      action: CHAT_MESSAGE_AUDIT_ACTION_UPDATE,
+      actorKind: 'USER',
+      actorId: ctx.userId,
+      targetType: CHAT_MESSAGE_AUDIT_TARGET_TYPE,
+      targetId: messageId,
+      summary: { threadId, bodyLength: input.body.length },
+      ipAddress: deps.meta.ipAddress,
+      deviceKind: ctx.deviceKind,
+    });
+    const [message] = await projectChatMessages(ctx, db, [updated]);
+    return { message: message as ChatMessageView };
+  });
+}
+
+/** ✅ 2026-10-16: 自分の発言を削除する（論理削除。本文を消し「削除されました」と出す）。監査ログに残す。 */
+export async function deleteChatMessage(
+  ctx: AuthenticatedTenantCtx,
+  threadId: string,
+  messageId: string,
+  deps: SendChatMessageDeps,
+): Promise<SendChatMessageResult> {
+  return withTenant(ctx, async (db) => {
+    const before = await requireOwnLiveMessage(ctx, db, threadId, messageId);
+    const updated = (await db.message.update({
+      where: { id: messageId },
+      data: { body: null, deletedAt: deps.now() },
+      select: CHAT_MESSAGE_SELECT,
+    })) as ChatMessageRow;
+    await writeAuditLog(db, {
+      action: CHAT_MESSAGE_AUDIT_ACTION_DELETE,
+      actorKind: 'USER',
+      actorId: ctx.userId,
+      targetType: CHAT_MESSAGE_AUDIT_TARGET_TYPE,
+      targetId: messageId,
+      summary: { threadId, bodyLength: before.body?.length ?? 0 },
+      ipAddress: deps.meta.ipAddress,
+      deviceKind: ctx.deviceKind,
+    });
+    const [message] = await projectChatMessages(ctx, db, [updated]);
+    return { message: message as ChatMessageView };
+  });
+}
