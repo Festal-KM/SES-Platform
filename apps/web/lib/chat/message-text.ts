@@ -80,3 +80,19 @@ export const SCROLL_TO_LATEST_THRESHOLD_PX = 240;
 export function isAwayFromLatest(scroll: { readonly scrollTop: number; readonly scrollHeight: number; readonly clientHeight: number }): boolean {
   return scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight > SCROLL_TO_LATEST_THRESHOLD_PX;
 }
+
+/**
+ * ✅ 2026-10-16: 下書きが変わったことを同じタブの一覧に知らせるイベント名
+ * （`sessionStorage` の `storage` イベントは同じタブには届かないため）。
+ */
+export const CHAT_DRAFT_EVENT = 'ses:chat-draft';
+
+/** 下書きがあるか（保存領域が使えない環境では「無い」）。 */
+export function hasChatDraft(threadId: string): boolean {
+  try {
+    const value = window.sessionStorage.getItem(chatDraftKey(threadId));
+    return value !== null && value.trim() !== '';
+  } catch {
+    return false;
+  }
+}

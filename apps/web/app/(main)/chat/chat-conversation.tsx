@@ -48,6 +48,7 @@ import type { ChatMessageView } from '../../../lib/chat/views';
 import type { ChatConversationMessages } from './chat-props';
 import { formatChatTime, withDaySeparators } from '../../../lib/chat/day-separators';
 import {
+  CHAT_DRAFT_EVENT,
   chatDraftKey,
   collapsedMessageText,
   isAwayFromLatest,
@@ -214,6 +215,8 @@ export function ChatConversation({
     } catch {
       // 同上。
     }
+    // ✅ 2026-10-16: 一覧の「下書き」の印に知らせる（同じタブには `storage` イベントが届かない）。
+    window.dispatchEvent(new Event(CHAT_DRAFT_EVENT));
   }
 
   // キーボードの近道: Cmd / Ctrl + K でスレッド一覧の検索欄へ（一覧に検索欄があるときだけ）。
