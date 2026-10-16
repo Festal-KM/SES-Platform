@@ -215,3 +215,156 @@ describe('⑦ 監査ログには誰と誰かだけ', () => {
     expect(text).not.toContain('取引先A1二人目');
   });
 });
+
+// ---------------------------------------------------------------------------
+// ✅ 2026-10-16（#129 レビューの指摘 4）: 書き込み・生 SQL・GROUP・参加会社の行・部屋の形の凍結
+// ---------------------------------------------------------------------------
+
+/**
+ * 🔴 アプリの経路（Prisma 拡張）を通さず、app_tenant の接続で GUC だけを立てて生 SQL を打つ。
+ *    RLS（第 1 防御）だけで止まることを確かめるため。
+ */
+async function rawAs<T>(
+  who: { readonly partnerCompanyId: string | null; readonly userId: string },
+  run: (tx: UnextendedClient) => Promise<T>,
+): Promise<T> {
+  const client = createUnextendedClient(database.tenantUrl);
+  try {
+    return await client.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(`SELECT set_config('app.tenant_id', '${TENANT_A}', true)`);
+      await tx.$executeRawUnsafe(`SELECT set_config('app.partner_company_id', '${who.partnerCompanyId ?? ''}', true)`);
+      await tx.$executeRawUnsafe(`SELECT set_config('app.actor_user_id', '${who.userId}', true)`);
+      return run(tx as unknown as UnextendedClient);
+    });
+  } finally {
+    await client.$disconnect();
+  }
+}
+
+const AS_HOST2 = { partnerCompanyId: null, userId: USER_A_HOST2 } as const;
+const AS_HOST_ADMIN = { partnerCompanyId: null, userId: USER_A_HOST_ADMIN } as const;
+const AS_A1 = { partnerCompanyId: PARTNER_A1, userId: USER_A_PARTNER } as const;
+const AS_A1B = { partnerCompanyId: PARTNER_A1, userId: USER_A_PARTNER_B } as const;
+const AS_A2 = { partnerCompanyId: PARTNER_A2, userId: USER_A_PARTNER2 } as const;
+
+/** ホスト ↔ 取引先 A1 の DM（①で作ったもの）。 */
+async function hostA1Dm(): Promise<string> {
+  return idOf(await openDm(host, USER_A_PARTNER), 200);
+}
+
+describe('🔴 (a)(b) 非メンバーは DM に書けず、生 SQL でも読めない', () => {
+  it('非メンバーの発言の INSERT は拒否され、UPDATE / DELETE は 0 行', async () => {
+    const threadId = await hostA1Dm();
+    for (const [label, who] of [
+      ['ホストの別の営業', AS_HOST2],
+      ['ホストの管理者', AS_HOST_ADMIN],
+      ['同じ取引先 A1 の別の人', AS_A1B],
+      ['別の取引先 A2', AS_A2],
+    ] as const) {
+      await expect(
+        rawAs(who, (tx) =>
+          tx.$executeRawUnsafe(
+            `INSERT INTO messages (id, tenant_id, owner_partner_company_id, thread_id, sender_user_id, sender_partner_company_id, body)
+             VALUES (gen_random_uuid(), '${TENANT_A}', ${who.partnerCompanyId === null ? `'${PARTNER_A1}'` : `'${who.partnerCompanyId}'`}, '${threadId}', '${who.userId}', ${who.partnerCompanyId === null ? 'NULL' : `'${who.partnerCompanyId}'`}, 'x')`,
+          ),
+        ),
+        label,
+      ).rejects.toThrow();
+      const updated = await rawAs(who, (tx) => tx.$executeRawUnsafe(`UPDATE messages SET body = 'x' WHERE thread_id = '${threadId}'`));
+      const deleted = await rawAs(who, (tx) => tx.$executeRawUnsafe(`DELETE FROM messages WHERE thread_id = '${threadId}'`));
+      expect([updated, deleted], label).toEqual([0, 0]);
+      const read = await rawAs(who, (tx) =>
+        tx.$queryRawUnsafe<Array<{ n: bigint }>>(`SELECT count(*) AS n FROM messages WHERE thread_id = '${threadId}'`),
+      );
+      expect(Number(read[0]?.n), label).toBe(0);
+      const rooms = await rawAs(who, (tx) =>
+        tx.$queryRawUnsafe<Array<{ n: bigint }>>(`SELECT count(*) AS n FROM chat_threads WHERE id = '${threadId}'`),
+      );
+      expect(Number(rooms[0]?.n), label).toBe(0);
+    }
+    // 対照: メンバーは生 SQL でも読める（検査の空振りでない）。
+    const own = await rawAs(AS_A1, (tx) =>
+      tx.$queryRawUnsafe<Array<{ n: bigint }>>(`SELECT count(*) AS n FROM messages WHERE thread_id = '${threadId}'`),
+    );
+    expect(Number(own[0]?.n)).toBeGreaterThan(0);
+  });
+});
+
+describe('🔴 (c) GROUP でも非メンバーは読めない', () => {
+  it('ホスト + 取引先 A1 のグループは、メンバー以外（管理者・A1 の別の人）に 0 件', async () => {
+    const threadId = await idOf(
+      await post(groupsRoute, host, '/api/threads/groups', { title: '案件の相談', userIds: [USER_A_PARTNER] }),
+      201,
+    );
+    await withTenant(host, async (db) => {
+      await db.message.create({
+        data: { tenantId: TENANT_A, threadId, ownerPartnerCompanyId: PARTNER_A1, senderUserId: USER_A_HOST, senderPartnerCompanyId: null, body: BODY_DM },
+      });
+    });
+    expect((await visibleCounts(partnerA1, threadId)).messages).toBe(1);
+    for (const [label, ctx] of [
+      ['ホストの別の営業', host2],
+      ['ホストの管理者', hostAdmin],
+      ['同じ取引先 A1 の別の人', partnerA1b],
+      ['別の取引先 A2', partnerA2],
+    ] as const) {
+      expect(await visibleCounts(ctx, threadId), label).toEqual({ threads: 0, messages: 0, participants: 0 });
+    }
+  });
+});
+
+describe('🔴 (d)(e) 参加会社の行を勝手に作れない', () => {
+  it('A1 のメンバーが自分の DM に A2 の行を作ろうとすると拒否', async () => {
+    const threadId = await hostA1Dm();
+    await expect(
+      rawAs(AS_A1, (tx) =>
+        tx.$executeRawUnsafe(
+          `INSERT INTO thread_participants (id, tenant_id, thread_id, partner_company_id, joined_at) VALUES (gen_random_uuid(), '${TENANT_A}', '${threadId}', '${PARTNER_A2}', now())`,
+        ),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('A1 の非メンバーが他人の DM にホストの行（NULL）を作ろうとすると拒否', async () => {
+    const threadId = await hostA1Dm();
+    await expect(
+      rawAs(AS_A1B, (tx) =>
+        tx.$executeRawUnsafe(
+          `INSERT INTO thread_participants (id, tenant_id, thread_id, partner_company_id, joined_at) VALUES (gen_random_uuid(), '${TENANT_A}', '${threadId}', NULL, now())`,
+        ),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('A2 が A1 の DM に自社の行を作ろうとすると拒否', async () => {
+    const threadId = await hostA1Dm();
+    await expect(
+      rawAs(AS_A2, (tx) =>
+        tx.$executeRawUnsafe(
+          `INSERT INTO thread_participants (id, tenant_id, thread_id, partner_company_id, joined_at) VALUES (gen_random_uuid(), '${TENANT_A}', '${threadId}', '${PARTNER_A2}', now())`,
+        ),
+      ),
+    ).rejects.toThrow();
+  });
+});
+
+describe('🔴 (f) 部屋の形は後から変えられない（レビュー NG-2）', () => {
+  it('取引先 A1 のメンバーが DM を COMPANY に書き換えようとすると拒否され、部屋は DM のまま', async () => {
+    const threadId = await hostA1Dm();
+    await expect(
+      rawAs(AS_A1, (tx) =>
+        tx.$executeRawUnsafe(`UPDATE chat_threads SET kind = 'COMPANY', member_user_ids = '{}', dm_key = NULL WHERE id = '${threadId}'`),
+      ),
+    ).rejects.toThrow();
+    await expect(
+      rawAs(AS_A1, (tx) =>
+        tx.$executeRawUnsafe(`UPDATE chat_threads SET member_user_ids = ARRAY['${USER_A_HOST}'::uuid, '${USER_A_PARTNER_B}'::uuid] WHERE id = '${threadId}'`),
+      ),
+    ).rejects.toThrow();
+    const row = await admin.chatThread.findUnique({ where: { id: threadId }, select: { kind: true } });
+    expect(row?.kind).toBe('DM');
+    // 対照: 部屋の形以外（最終更新）は変えられる。
+    const touched = await rawAs(AS_A1, (tx) => tx.$executeRawUnsafe(`UPDATE chat_threads SET last_message_at = now() WHERE id = '${threadId}'`));
+    expect(touched).toBe(1);
+  });
+});

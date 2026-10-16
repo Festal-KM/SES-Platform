@@ -91,7 +91,9 @@ BEGIN
   IF member_count <> (SELECT count(DISTINCT m) FROM unnest(NEW.member_user_ids) AS m) THEN
     RAISE EXCEPTION 'chat_threads_check_members: メンバーに重複があります';
   END IF;
-  IF TG_OP = 'INSERT' AND NOT (app_actor_user_id() = ANY (NEW.member_user_ids)) THEN
+  -- 🔴 利用者の文脈（app_tenant）では RLS の INSERT も同じことを要求する。利用者の無い文脈（合成データの投入・
+  --    superuser）では作成者が居ないので問わない。
+  IF TG_OP = 'INSERT' AND app_actor_user_id() IS NOT NULL AND NOT (app_actor_user_id() = ANY (NEW.member_user_ids)) THEN
     RAISE EXCEPTION 'chat_threads_check_members: 作成者がメンバーに含まれていません';
   END IF;
   SELECT count(*), count(*) FILTER (WHERE u.owner_partner_company_id IS NULL)
@@ -269,3 +271,39 @@ $do$;
 
 -- chat_read_states / chat_message_reactions は chat_threads / messages の可視性に連動している
 -- （EXISTS で親を読む。20261016000000 / 20261016010000）ので、ここで変えなくても人の段が効く。
+
+-- ----------------------------------------------------------------------------
+-- 5. 部屋の形を後から変えさせない（レビュー NG-2）
+-- ----------------------------------------------------------------------------
+-- 🔴 メンバーが UPDATE で `kind` を DM → COMPANY に変え、配列を空にすると、人の段がまるごと外れて
+--    会社の全員（管理者を含む）に履歴が開く。RLS は「片方が静かに無効化されても止める」側の防御なので、
+--    アプリに UPDATE の経路が無くても DB で止める。
+-- 🔴 メンバーの追加・外す（GROUP）は次の段で専用の関数として設計する。それまでは `member_user_ids` も凍結する。
+CREATE FUNCTION chat_threads_freeze_room() RETURNS trigger
+LANGUAGE plpgsql AS $BODY$
+BEGIN
+  IF NEW."kind" IS DISTINCT FROM OLD."kind"
+     OR NEW.member_user_ids IS DISTINCT FROM OLD.member_user_ids
+     OR NEW.dm_key IS DISTINCT FROM OLD.dm_key
+     OR NEW.created_by_user_id IS DISTINCT FROM OLD.created_by_user_id
+     OR NEW.partner_company_id IS DISTINCT FROM OLD.partner_company_id THEN
+    RAISE EXCEPTION 'chat_threads_freeze_room: 部屋の種類・メンバー・取引先は後から変えられません（id=%）', OLD.id;
+  END IF;
+  RETURN NEW;
+END;
+$BODY$;
+
+CREATE TRIGGER chat_threads_freeze_room BEFORE UPDATE ON chat_threads
+  FOR EACH ROW EXECUTE FUNCTION chat_threads_freeze_room();
+
+-- ----------------------------------------------------------------------------
+-- 6. 解約時の削除（tenant.purge）が DM / GROUP の発言を消せるようにする（レビュー NG-1）
+-- ----------------------------------------------------------------------------
+-- 🔴 削除スコープ（`app_purge_scope_on()`）の文脈は利用者を持たない（`app.actor_user_id` が空）ので、
+--    DM / GROUP の部屋は C6 では見えない。発言の UPDATE で継承トリガ（`messages_inherit_owner`）が親の部屋を
+--    読めずに RAISE し、テナントの削除が丸ごと巻き戻る。**部屋を読むだけ**のポリシーを足す（部屋は消さない表）。
+-- 🔴 名前は `_purge_scope_parent_read`（`PURGE_SPEC.delete` の表の `_purge_scope_select` / `_update` と 1 対 1 の
+--    検査 `tenant-purge.test.ts` ⑨ の対象外であることを名前で示す。同テストが別に固定する）。
+DROP POLICY IF EXISTS chat_threads_purge_scope_parent_read ON chat_threads;
+CREATE POLICY chat_threads_purge_scope_parent_read ON chat_threads FOR SELECT TO app_tenant
+  USING (tenant_id = app_tenant_id() AND app_is_host() AND app_purge_scope_on());
