@@ -158,7 +158,9 @@ function ThreadRow({ item, context }: { readonly item: ChatThreadListItem; reado
             <span className="sr-only">{t('chat.threads.column.target')}</span>
             {target}
           </span>
-          <span className="flex items-center gap-2">
+          {/* ✅ 2026-10-16: 印が増えると幅に収まらず、日時が「右に並べる」の下へはみ出して重なった（デモの実測）。
+              🔴 折り返す（`flex-wrap`）。行の高さは `min-h` なので、2 段になっても崩れない。 */}
+          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <Badge variant="neutral">{t(KIND_MESSAGE_KEYS[item.kind])}</Badge>
             {/* ✅ 2026-10-14: 要返信（最後の発言が相手から）。色は §3.3「次はあなたの番」= brand。 */}
             {/* ✅ 2026-10-16: 書きかけ（下書き）がある会話。印はクライアントでだけ決まる。 */}
@@ -194,7 +196,7 @@ function ThreadRow({ item, context }: { readonly item: ChatThreadListItem; reado
         <Link
           href={besideHref}
           // 🔴 `cn` は後勝ち。共通の語の `inline-block` / `text-body` をこちらの指定で上書きする。
-          className={cn(SECONDARY_LINK_CLASSES, 'flex shrink-0 items-center px-3 text-xs')}
+          className={cn(SECONDARY_LINK_CLASSES, 'flex shrink-0 items-center whitespace-nowrap px-3 text-xs')}
           data-testid={`chat-thread-open-beside-${item.id}`}
         >
           {openBesideLabel}
