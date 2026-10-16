@@ -54,6 +54,7 @@ import {
 } from '../../../lib/chat/thread-tree';
 import type { ChatThreadListItem, ChatThreadKind } from '../../../lib/chat/views';
 import type { ChatMessageHit } from '../../../lib/chat/read';
+import { ChatDraftMark } from './chat-draft-mark';
 
 const KIND_MESSAGE_KEYS = {
   PROJECT: 'chat.thread.kind.PROJECT',
@@ -154,6 +155,8 @@ function ThreadRow({ item, context }: { readonly item: ChatThreadListItem; reado
           <span className="flex items-center gap-2">
             <Badge variant="neutral">{t(KIND_MESSAGE_KEYS[item.kind])}</Badge>
             {/* ✅ 2026-10-14: 要返信（最後の発言が相手から）。色は §3.3「次はあなたの番」= brand。 */}
+            {/* ✅ 2026-10-16: 書きかけ（下書き）がある会話。印はクライアントでだけ決まる。 */}
+            <ChatDraftMark threadId={item.id} label={t('chat.thread.draft')} />
             {unread > 0 ? (
               <Badge variant="brand" data-testid={`chat-thread-unread-${item.id}`}>
                 {`${t('chat.thread.unread')} ${String(unread)}`}

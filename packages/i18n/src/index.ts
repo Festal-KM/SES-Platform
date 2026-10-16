@@ -4351,6 +4351,7 @@ const ja = {
   'chat.thread.awaitingReply': '要返信',
   // ✅ 2026-10-16: 既読・未読。
   'chat.thread.unread': '未読',
+  'chat.thread.draft': '下書き',
   'chat.threads.filter.unread': '未読のみ',
   'chat.messages.unreadFrom': 'ここから未読',
   'chat.message.markUnread': 'ここから未読にする',
