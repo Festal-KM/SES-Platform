@@ -323,6 +323,58 @@ Claude-Session: https://claude.ai/code/session_017gd8pEqXToQcMoFrnqRr7H
 
 ---
 
+## 7.5 ローカルで画面を確認する（2026-10-16 に実際に通した手順）
+
+🔴 **デモ環境へデプロイしなくても、ローカルで画面を見ながら直せる。** 2026-10-16 に初めて通した
+ので、踏んだ罠ごと残す。
+
+### 起動
+
+```bash
+# ① Docker Desktop を起動してから（Windows は手動起動が要る）
+#    🔴 ポート 5432 は他プロダクトのコンテナが使っていることがある。**止めずに別ポートで上げる**
+POSTGRES_PORT=15432 docker compose up -d postgres
+
+# ② マイグレーションとシード（接続先は app_migrator / 投入は superuser）
+DATABASE_URL='postgresql://app_migrator:app_migrator_dev_password@127.0.0.1:15432/ses_platform?sslmode=require' \
+  pnpm --filter @ses/db run migrate:deploy
+SEED_DATABASE_URL='postgresql://ses:ses_dev_password@127.0.0.1:15432/ses_platform?sslmode=require' \
+  pnpm --filter @ses/db run seed --preset=demo
+
+# ③ 起動（🔴 NODE_ENV を外す。`.env.example` の値をそのまま環境変数にして渡す）
+env -u NODE_ENV pnpm --filter @ses/web run dev
+```
+
+### サインイン（合成データ。**すべて架空**）
+
+| 用途 | メールアドレス | ロール |
+|---|---|---|
+| **ホストの営業（まずこれ）** | `sales-1@demo-alpha.example` | `SALES` |
+| ホストのオーナー | `owner@demo-alpha.example` | `OWNER` |
+| ホストの管理者 | `admin@demo-alpha.example` | `ADMIN` |
+| 取引先の営業 | `partner-1-sales@demo-alpha.example` | `PARTNER_SALES` |
+| 取引先の管理者 | `partner-1-admin@demo-alpha.example` | `PARTNER_ADMIN` |
+| 別テナント（越境の確認用） | `owner@demo-beta.example` | `OWNER` |
+
+**パスワードは全員共通で `seed-demo-password-1`**（`packages/db/seed/presets/demo.ts` の
+`DEMO_SEED_PASSWORD`。合成データ専用であり、どの実環境にも存在しない）。
+
+⚠️ **ローカルは `APP_ENV=development` なので 2 要素認証が効く**（外しているのは `demo` だけ。§2.3）。
+`OWNER` / `ADMIN` は TOTP の設定を求められるので、**`sales-1@demo-alpha.example` が一番早い**。
+
+### 🔴 踏んだ罠（4 つ）
+
+| 罠 | 内容 |
+|---|---|
+| 🔴🔴🔴 **`next dev` は画面を開く URL の `Origin` を見る**（= 2026-10-16 の「サインインできない」の正体） | `http://127.0.0.1:3000` で開くと、`/_next/hmr` の WebSocket が**応答なしで切られる**（条件は要求の `Origin` ただ 1 つ。`Origin` を `http://localhost:3000` にすると 101 が返る、と実測）。開発時の React は **flight の残りの行（owner stack 等のデバッグ情報）をこの WebSocket 経由で受け取る**ため、繋がらないと `next/dist/client/app-index` の `await initialServerResponse` が永久に解決せず、🔴 **hydration が一度も走らない**。⚠️ **例外もコンソール出力も一切出ない**（`unhandledrejection` も空）—— 唯一の外形的な徴候は「WebSocket handshake ... ERR_INVALID_HTTP_RESPONSE」の 5 回再試行である。結果 `onSubmit` が付かず、`<form method="post">`（`signin-form.tsx` の 🔴 のとおり**意図して**付けている）がブラウザ既定の送信に落ちて `POST /signin` → 200 で再描画 = **入力値が消えるだけ**になる。🔴 サインインに限らず**全画面の操作が死ぬ**。**対処は `apps/web/next.config.ts` の `allowedDevOrigins: ['127.0.0.1', 'localhost']`**（済）。切り分けに使った道具は「HTML の flight（`self.__next_f.push([1,…])`）の行参照と行定義を突き合わせて**未定義の参照が残っていないか**を見る」こと —— 本番は 0 件、壊れた dev は 118 件だった |
+| 🔴🔴 **接続先は `localhost` ではなく `127.0.0.1`** | `localhost` だと **最初の 1 クエリに 2.2 秒**かかる（Windows の IPv6 解決待ち）。Prisma の `$transaction` の `maxWait` は既定 2 秒なので、**毎リクエスト `P2028`（Unable to start a transaction）で 500 になる**。`127.0.0.1` にすると 102ms。実測した値である |
+| 🔴 **環境変数を `.env` 形式のファイルから `source` するなら値を引用符で囲む** | `DATABASE_URL=...?sslmode=require&connection_limit=10` の **`&` が bash のバックグラウンド演算子**として解釈され、URL が途中で切れる（切れたことに気づけない） |
+| 🔴 **ポート 5432 の取り合い** | 他プロダクトのコンテナが使っていることがある。**止めずに `POSTGRES_PORT=15432`** で上げ、URL も合わせる（`.env.example` の 76 行目が同じことを書いている） |
+
+🔴 **上の 2 つを混同しないこと。** どちらも「`localhost` か `127.0.0.1` か」の話に見えるが**向きが逆**である ——
+**DB の接続先（`DATABASE_URL` の host）は `127.0.0.1` にする**（`localhost` だと Prisma が `P2028`）。
+**ブラウザで開く URL は `localhost` でも `127.0.0.1` でもよい**（`allowedDevOrigins` を入れた後。入れる前は `127.0.0.1` で開くと hydration が死ぬ）。
+
 ## 8. よく使うコマンド
 
 ```bash
