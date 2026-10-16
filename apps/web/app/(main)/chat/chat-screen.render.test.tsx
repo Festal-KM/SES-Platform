@@ -788,3 +788,20 @@ describe('⑰: 自分の発言の編集・削除（2026-10-16、チャットレ�
     expect(html).not.toContain(`chat-message-edit-${MESSAGE_OWN.id}`);
   });
 });
+
+describe('⑱: ピン留め・ミュート（2026-10-16、チャットレーン）', () => {
+  it('ピン留めした会話を一番上の「ピン留め」に出す（木にもそのまま残る）', () => {
+    const html = renderThreadList({ pinnedIds: [THREAD_COMPANY] });
+    expect(html).toContain('data-testid="chat-threads-pinned"');
+    expect(html).toContain(`data-testid="chat-thread-pinned-${THREAD_COMPANY}"`);
+    expect(html).toContain(`data-testid="chat-thread-row-${THREAD_COMPANY}"`);
+    expect(renderThreadList()).not.toContain('chat-threads-pinned');
+  });
+
+  it('ミュートした会話は未読を強調しない（件数は無彩色・名前は太字にしない）', () => {
+    const muted = renderThreadList({ unreadCounts: { [THREAD_PROJECT]: 2 }, mutedIds: [THREAD_PROJECT] });
+    expect(classTokensOf(muted, `chat-thread-unread-${THREAD_PROJECT}`)).toContain('bg-neutral-bg');
+    const loud = renderThreadList({ unreadCounts: { [THREAD_PROJECT]: 2 } });
+    expect(classTokensOf(loud, `chat-thread-unread-${THREAD_PROJECT}`)).toContain('bg-brand-bg');
+  });
+});

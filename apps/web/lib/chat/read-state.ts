@@ -152,3 +152,44 @@ export async function countUnread(
   });
   return new Map(groups.map((group) => [group.threadId, group._count._all]));
 }
+
+/** ✅ 2026-10-16: 自分の表示の設定（ピン留め・ミュート）。行が無ければどちらも偽。 */
+export type ChatThreadPrefs = { readonly pinned: boolean; readonly muted: boolean };
+
+/** 読み手のピン留め・ミュート（スレッドごと）。🔴 RLS（C7）が本人の行だけを返す。 */
+export async function readThreadPrefs(
+  db: Pick<TenantDb, 'chatReadState'>,
+  threadIds: readonly string[],
+): Promise<ReadonlyMap<string, ChatThreadPrefs>> {
+  if (threadIds.length === 0) return new Map();
+  const rows = await db.chatReadState.findMany({
+    where: { threadId: { in: [...threadIds] } },
+    select: { threadId: true, pinned: true, muted: true },
+  });
+  return new Map(rows.map((row) => [row.threadId, { pinned: row.pinned, muted: row.muted }]));
+}
+
+/**
+ * ✅ 2026-10-16: ピン留め・ミュートを変える（`PUT /api/threads/{id}/prefs`）。既読位置は変えない。
+ * 🔴 スレッドが見えなければ 404。誰の行かは RLS（C7）が決め、利用者 ID は認証コンテキストから。
+ */
+export async function setChatThreadPrefs(
+  ctx: AuthenticatedTenantCtx,
+  threadId: string,
+  input: { readonly pinned?: boolean | undefined; readonly muted?: boolean | undefined },
+): Promise<ChatThreadPrefs> {
+  return withTenant(ctx, async (db) => {
+    requireFound(await findChatThreadRow(db, threadId));
+    const data = {
+      ...(input.pinned === undefined ? {} : { pinned: input.pinned }),
+      ...(input.muted === undefined ? {} : { muted: input.muted }),
+    };
+    const row = await db.chatReadState.upsert({
+      where: { tenantId_userId_threadId: { tenantId: ctx.tenantId, userId: ctx.userId, threadId } },
+      create: { tenantId: ctx.tenantId, userId: ctx.userId, threadId, ...data },
+      update: data,
+      select: { pinned: true, muted: true },
+    });
+    return { pinned: row.pinned, muted: row.muted };
+  });
+}

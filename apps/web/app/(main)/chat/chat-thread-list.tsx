@@ -87,6 +87,9 @@ export type ChatThreadListProps = {
   readonly awaitingReplyIds?: readonly string[];
   /** ✅ 2026-10-14: 本文の検索で当たった発言（`read.ts` の `ChatMessageHit`）。 */
   readonly messageHits?: readonly ChatMessageHit[];
+  /** ✅ 2026-10-16: 自分がピン留め・ミュートしているスレッド。 */
+  readonly pinnedIds?: readonly string[];
+  readonly mutedIds?: readonly string[];
   /** ✅ 2026-10-16: スレッドごとの未読の件数と、「未読のみ」の状態。 */
   readonly unreadCounts?: Readonly<Record<string, number>>;
   readonly unreadOnly?: boolean;
@@ -103,6 +106,7 @@ type RowContext = {
   readonly listQuery: { readonly q: string | null; readonly sort: ChatThreadSort; readonly unread: boolean };
   readonly awaitingReplyIds: ReadonlySet<string>;
   readonly unreadCounts: Readonly<Record<string, number>>;
+  readonly mutedIds: ReadonlySet<string>;
 };
 
 /**
@@ -113,6 +117,8 @@ function ThreadRow({ item, context }: { readonly item: ChatThreadListItem; reado
   const awaiting = awaitingReplyIds.has(item.id);
   // ✅ 2026-10-16: 未読の件数（自分以外の発言で既読位置より後ろ）。未読があれば名前を太くする。
   const unread = unreadCounts[item.id] ?? 0;
+  // ✅ 2026-10-16: ミュートした会話は未読を強調しない（太字にせず、件数は無彩色）。
+  const muted = context.mutedIds.has(item.id);
   const selected = item.id === selectedThreadId;
   // ✅ 2026-10-14: 開いている会話（左端か右の列）は選択中と同じ面の色で示す。
   const open = openIds.includes(item.id);
@@ -148,7 +154,7 @@ function ThreadRow({ item, context }: { readonly item: ChatThreadListItem; reado
         <Avatar size="md" initials={displayInitials(isChat ? counterparty : target)} title={target} />
         <span className="min-w-0 flex-1">
           {/* 🔴 1 段目は**対象の名前だけ**に全幅を使う（時刻は 2 段目の右端。2026-10-13 の実測）。 */}
-          <span className={cn('block truncate text-row text-fg', unread > 0 ? 'font-bold' : 'font-medium')}>
+          <span className={cn('block truncate text-row text-fg', unread > 0 && !muted ? 'font-bold' : 'font-medium')}>
             <span className="sr-only">{t('chat.threads.column.target')}</span>
             {target}
           </span>
@@ -158,7 +164,7 @@ function ThreadRow({ item, context }: { readonly item: ChatThreadListItem; reado
             {/* ✅ 2026-10-16: 書きかけ（下書き）がある会話。印はクライアントでだけ決まる。 */}
             <ChatDraftMark threadId={item.id} label={t('chat.thread.draft')} />
             {unread > 0 ? (
-              <Badge variant="brand" data-testid={`chat-thread-unread-${item.id}`}>
+              <Badge variant={muted ? 'neutral' : 'brand'} data-testid={`chat-thread-unread-${item.id}`}>
                 {`${t('chat.thread.unread')} ${String(unread)}`}
               </Badge>
             ) : null}
@@ -211,6 +217,8 @@ export function ChatThreadList({
   messageHits = [],
   unreadCounts = {},
   unreadOnly = false,
+  pinnedIds = [],
+  mutedIds = [],
 }: ChatThreadListProps) {
   const paneState: ChatPaneState = { thread: selectedThreadId, panes: paneThreadIds };
   const context: RowContext = {
@@ -221,6 +229,7 @@ export function ChatThreadList({
     listQuery: { q, sort, unread: unreadOnly },
     awaitingReplyIds: new Set(awaitingReplyIds),
     unreadCounts,
+    mutedIds: new Set(mutedIds),
   };
   const searching = (q !== null && q !== '') || unreadOnly;
   if (groups.length === 0 && !searching) {
@@ -289,7 +298,35 @@ export function ChatThreadList({
           </Link>
         </div>
       ) : (
-        <ul className="m-0 flex list-none flex-col overflow-y-auto p-0" aria-label={t('chat.threads.label')}>
+        <div className="flex min-h-0 flex-col overflow-y-auto">
+        {/* ✅ 2026-10-16: 自分がピン留めした会話を一番上に（下の会社ごとの木にも、そのまま残る）。 */}
+        {(() => {
+          const all = groups.flatMap((group) => (group.chat === null ? group.threads : [group.chat, ...group.threads]));
+          const pinned = all.filter((item) => pinnedIds.includes(item.id));
+          if (pinned.length === 0) return null;
+          return (
+            <section className="border-b border-border" data-testid="chat-threads-pinned">
+              <h3 className="m-0 px-3 pt-3 pb-1 text-cell font-medium text-fg-muted">{t('chat.threads.pinned')}</h3>
+              <ul className="m-0 list-none p-0">
+                {pinned.map((item) => (
+                  <li key={item.id} className={`border-b border-border-row ${ROW_HOVER_CLASSES}`}>
+                    <Link
+                      href={chatHref({ ...withThreadSelected(context.paneState, item.id), ...context.listQuery })}
+                      className="flex items-center gap-2 px-3 py-2"
+                      data-testid={`chat-thread-pinned-${item.id}`}
+                    >
+                      <Badge variant="neutral">{t(KIND_MESSAGE_KEYS[item.kind])}</Badge>
+                      <span className="min-w-0 flex-1 truncate text-cell font-medium text-fg">
+                        {item.kind === 'COMPANY' ? item.counterpartyName ?? t('chat.thread.unknownName') : item.project?.name ?? t(KIND_MESSAGE_KEYS[item.kind])}
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          );
+        })()}
+        <ul className="m-0 flex list-none flex-col p-0" aria-label={t('chat.threads.label')}>
           {groups.map((group, index) => {
             const name = group.counterpartyName ?? t('chat.thread.unknownName');
             return (
@@ -325,6 +362,7 @@ export function ChatThreadList({
             );
           })}
         </ul>
+        </div>
       )}
       {/* ✅ 2026-10-14: 本文の検索で当たった発言（読めた発言だけ。前後の抜粋）。押すとそのスレッドを開く。 */}
       {messageHits.length === 0 ? null : (

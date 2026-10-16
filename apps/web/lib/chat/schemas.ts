@@ -103,3 +103,11 @@ export const chatMessageParamsSchema = z.object({ id: z.uuid(), messageId: z.uui
 export type ChatMessageParams = z.infer<typeof chatMessageParamsSchema>;
 export type ChatMessageParamsIsolationGuard = AssertNoIsolationKeys<ChatMessageParams>;
 assertNoIsolationKeys(Object.keys(chatMessageParamsSchema.shape), 'chatMessageParamsSchema');
+
+/** ✅ 2026-10-16: `PUT /api/threads/{id}/prefs`（ピン留め・ミュート。少なくとも 1 つ）。 */
+export const chatThreadPrefsBodySchema = z
+  .object({ pinned: z.boolean().optional(), muted: z.boolean().optional() })
+  .refine((body) => body.pinned !== undefined || body.muted !== undefined);
+export type ChatThreadPrefsBody = z.infer<typeof chatThreadPrefsBodySchema>;
+export type ChatThreadPrefsBodyIsolationGuard = AssertNoIsolationKeys<ChatThreadPrefsBody>;
+assertNoIsolationKeys(['pinned', 'muted'], 'chatThreadPrefsBodySchema');

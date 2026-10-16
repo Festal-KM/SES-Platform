@@ -60,6 +60,11 @@ export type ChatConversationMessages = {
   readonly deleteConfirm: string;
   readonly deleteConfirmYes: string;
   readonly editFailed: string;
+  /** ✅ 2026-10-16: ピン留め・ミュート。 */
+  readonly pin: string;
+  readonly unpin: string;
+  readonly mute: string;
+  readonly unmute: string;
   readonly templateLabel: string;
   readonly templatePlaceholder: string;
   /** 定型文（固定の文面。🔴 個人情報・単価を含めない）。 */
@@ -128,6 +133,10 @@ export function chatConversationMessages(): ChatConversationMessages {
     deleteConfirm: t('chat.message.deleteConfirm'),
     deleteConfirmYes: t('chat.message.deleteConfirmYes'),
     editFailed: t('chat.message.editFailed'),
+    pin: t('chat.thread.pin'),
+    unpin: t('chat.thread.unpin'),
+    mute: t('chat.thread.mute'),
+    unmute: t('chat.thread.unmute'),
     templateLabel: t('chat.compose.template.label'),
     templatePlaceholder: t('chat.compose.template.placeholder'),
     templates: [
