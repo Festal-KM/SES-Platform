@@ -97,6 +97,8 @@ vi.mock('../../apps/web/lib/auth/session', () => ({
 /** 🔴 起動時 DI の値（`production` / `staging` 相当 = 検証必須）。#43 / #44 の判定は本番と同じ `evaluateSendingDomain` を通す。 */
 const sendingDomainRuntime = { region: 'ap-northeast-1', verificationRequired: true };
 vi.mock('../../apps/web/lib/db/bootstrap', () => ({
+  // ✅ 2026-10-16: `lib/auth/tenant-context.ts` が ctx を組むときに読む（2 要素認証の方針）。テストは本番と同じ厳しい側。
+  twoFactorPolicy: () => 'ENFORCED' as const,
   sendingDomainRuntime: () => sendingDomainRuntime,
 }));
 
