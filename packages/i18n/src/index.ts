@@ -4349,6 +4349,11 @@ const ja = {
   'chat.tree.noChat': 'チャットはまだありません',
   // ✅ 2026-10-14: 要返信の印と、返信が早い取引先（🔴 ホストにだけ。良いところだけを出す）。
   'chat.thread.awaitingReply': '要返信',
+  // ✅ 2026-10-16: 既読・未読。
+  'chat.thread.unread': '未読',
+  'chat.threads.filter.unread': '未読のみ',
+  'chat.messages.unreadFrom': 'ここから未読',
+  'chat.message.markUnread': 'ここから未読にする',
   'chat.tree.fastReply': '返信が早い',
   'chat.threads.search.messageHits': '本文で見つかった発言',
   'chat.tree.truncated': '古いスレッドは表示していません（新しい順に 1,000 件まで）。',

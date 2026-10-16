@@ -53,7 +53,7 @@ describe('chatScreenQuerySchema', () => {
   });
 
   it('🔴 分離キーをスキーマが持たない（`tenantId` / `partnerCompanyId` の口が無い）', () => {
-    expect(Object.keys(chatScreenQuerySchema.shape).sort()).toEqual(['pane', 'q', 'sort', 'thread', 'threads']);
+    expect(Object.keys(chatScreenQuerySchema.shape).sort()).toEqual(['pane', 'q', 'sort', 'thread', 'threads', 'unread']);
   });
 });
 
@@ -112,5 +112,14 @@ describe('一覧の検索語と並べ方（`q` / `sort`。2026-10-14）', () => 
     expect(url.searchParams.get('q')).toBe('金融');
     expect(url.searchParams.get('sort')).toBe('company');
     expect(chatHref({ thread: THREAD, sort: 'recent', q: '' })).toBe(`/chat?thread=${THREAD}`);
+  });
+});
+
+describe('未読のみ（`unread`。2026-10-16）', () => {
+  it('unread=1 だけを受け、chatHref は真のときだけ載せる', () => {
+    expect(chatScreenQuerySchema.safeParse({ unread: '1' }).success).toBe(true);
+    expect(chatScreenQuerySchema.safeParse({ unread: 'yes' }).success).toBe(false);
+    expect(new URL(chatHref({ thread: THREAD, unread: true }), 'https://app.test').searchParams.get('unread')).toBe('1');
+    expect(chatHref({ thread: THREAD, unread: false })).toBe(`/chat?thread=${THREAD}`);
   });
 });

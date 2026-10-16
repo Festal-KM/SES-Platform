@@ -73,3 +73,16 @@ assertNoIsolationKeys(Object.keys(chatThreadListQuerySchema.shape), 'chatThreadL
 assertNoIsolationKeys(Object.keys(chatMessageListQuerySchema.shape), 'chatMessageListQuerySchema');
 assertNoIsolationKeys(Object.keys(chatThreadParamsSchema.shape), 'chatThreadParamsSchema');
 assertNoIsolationKeys(Object.keys(chatMessageBodySchema.shape), 'chatMessageBodySchema');
+
+/** ✅ 2026-10-16: `PUT /api/threads/{id}/read`（ここまで読んだ）。 */
+export const chatReadBodySchema = z.object({ upToMessageId: z.uuid() });
+export type ChatReadBody = z.infer<typeof chatReadBodySchema>;
+
+/** ✅ 2026-10-16: `PUT /api/threads/{id}/unread`（この発言から未読にする）。 */
+export const chatUnreadBodySchema = z.object({ fromMessageId: z.uuid() });
+export type ChatUnreadBody = z.infer<typeof chatUnreadBodySchema>;
+
+export type ChatReadBodyIsolationGuard = AssertNoIsolationKeys<ChatReadBody>;
+export type ChatUnreadBodyIsolationGuard = AssertNoIsolationKeys<ChatUnreadBody>;
+assertNoIsolationKeys(Object.keys(chatReadBodySchema.shape), 'chatReadBodySchema');
+assertNoIsolationKeys(Object.keys(chatUnreadBodySchema.shape), 'chatUnreadBodySchema');

@@ -38,7 +38,15 @@ import {
 import { formatDateTimeJst } from '../../../lib/format/datetime';
 import { displayInitials } from '../../../lib/format/initials';
 import { canAddPane, openThreadIds, withPaneAdded, withThreadSelected, type ChatPaneState } from '../../../lib/chat/panes';
-import { CHAT_PANE_PARAM, CHAT_PATH, CHAT_Q_PARAM, CHAT_SORT_PARAM, CHAT_THREAD_PARAM, chatHref } from '../../../lib/chat/screen-query';
+import {
+  CHAT_PANE_PARAM,
+  CHAT_PATH,
+  CHAT_Q_PARAM,
+  CHAT_SORT_PARAM,
+  CHAT_THREAD_PARAM,
+  CHAT_UNREAD_PARAM,
+  chatHref,
+} from '../../../lib/chat/screen-query';
 import {
   CHAT_THREAD_SORT_DEFAULT,
   type ChatThreadGroup,
@@ -78,6 +86,9 @@ export type ChatThreadListProps = {
   readonly awaitingReplyIds?: readonly string[];
   /** ✅ 2026-10-14: 本文の検索で当たった発言（`read.ts` の `ChatMessageHit`）。 */
   readonly messageHits?: readonly ChatMessageHit[];
+  /** ✅ 2026-10-16: スレッドごとの未読の件数と、「未読のみ」の状態。 */
+  readonly unreadCounts?: Readonly<Record<string, number>>;
+  readonly unreadOnly?: boolean;
 };
 
 /** 行 1 つ（60px）。🔴 高さが内容量で変わらないよう、2 段とも 1 行に切り詰める。 */
@@ -88,16 +99,19 @@ type RowContext = {
   readonly openIds: readonly string[];
   readonly selectedThreadId: string | null;
   readonly openBesideLabel: string | undefined;
-  readonly listQuery: { readonly q: string | null; readonly sort: ChatThreadSort };
+  readonly listQuery: { readonly q: string | null; readonly sort: ChatThreadSort; readonly unread: boolean };
   readonly awaitingReplyIds: ReadonlySet<string>;
+  readonly unreadCounts: Readonly<Record<string, number>>;
 };
 
 /**
  * 1 行。`COMPANY` = 会社とのチャット（親）、`PROJECT` = 案件スレッド（子。字下げする）。
  */
 function ThreadRow({ item, context }: { readonly item: ChatThreadListItem; readonly context: RowContext }) {
-  const { paneState, openIds, selectedThreadId, openBesideLabel, listQuery, awaitingReplyIds } = context;
+  const { paneState, openIds, selectedThreadId, openBesideLabel, listQuery, awaitingReplyIds, unreadCounts } = context;
   const awaiting = awaitingReplyIds.has(item.id);
+  // ✅ 2026-10-16: 未読の件数（自分以外の発言で既読位置より後ろ）。未読があれば名前を太くする。
+  const unread = unreadCounts[item.id] ?? 0;
   const selected = item.id === selectedThreadId;
   // ✅ 2026-10-14: 開いている会話（左端か右の列）は選択中と同じ面の色で示す。
   const open = openIds.includes(item.id);
@@ -133,13 +147,18 @@ function ThreadRow({ item, context }: { readonly item: ChatThreadListItem; reado
         <Avatar size="md" initials={displayInitials(isChat ? counterparty : target)} title={target} />
         <span className="min-w-0 flex-1">
           {/* 🔴 1 段目は**対象の名前だけ**に全幅を使う（時刻は 2 段目の右端。2026-10-13 の実測）。 */}
-          <span className="block truncate text-row font-medium text-fg">
+          <span className={cn('block truncate text-row text-fg', unread > 0 ? 'font-bold' : 'font-medium')}>
             <span className="sr-only">{t('chat.threads.column.target')}</span>
             {target}
           </span>
           <span className="flex items-center gap-2">
             <Badge variant="neutral">{t(KIND_MESSAGE_KEYS[item.kind])}</Badge>
             {/* ✅ 2026-10-14: 要返信（最後の発言が相手から）。色は §3.3「次はあなたの番」= brand。 */}
+            {unread > 0 ? (
+              <Badge variant="brand" data-testid={`chat-thread-unread-${item.id}`}>
+                {`${t('chat.thread.unread')} ${String(unread)}`}
+              </Badge>
+            ) : null}
             {awaiting ? (
               <Badge variant="brand" data-testid={`chat-thread-awaiting-${item.id}`}>
                 {t('chat.thread.awaitingReply')}
@@ -187,6 +206,8 @@ export function ChatThreadList({
   truncated = false,
   awaitingReplyIds = [],
   messageHits = [],
+  unreadCounts = {},
+  unreadOnly = false,
 }: ChatThreadListProps) {
   const paneState: ChatPaneState = { thread: selectedThreadId, panes: paneThreadIds };
   const context: RowContext = {
@@ -194,10 +215,11 @@ export function ChatThreadList({
     openIds: openThreadIds(paneState),
     selectedThreadId,
     openBesideLabel,
-    listQuery: { q, sort },
+    listQuery: { q, sort, unread: unreadOnly },
     awaitingReplyIds: new Set(awaitingReplyIds),
+    unreadCounts,
   };
-  const searching = q !== null && q !== '';
+  const searching = (q !== null && q !== '') || unreadOnly;
   if (groups.length === 0 && !searching) {
     return (
       <div className="p-4" data-testid="chat-threads">
@@ -241,6 +263,11 @@ export function ChatThreadList({
               </option>
             ))}
           </Select>
+          {/* ✅ 2026-10-16: 未読のスレッドだけにする。 */}
+          <label className="flex shrink-0 items-center gap-1 text-cell text-fg-muted">
+            <input type="checkbox" name={CHAT_UNREAD_PARAM} value="1" defaultChecked={unreadOnly} data-testid="chat-threads-unread" />
+            {t('chat.threads.filter.unread')}
+          </label>
           <Button type="submit" variant="secondary" size="sm" data-testid="chat-threads-search-submit">
             {t('chat.threads.search.submit')}
           </Button>
@@ -251,6 +278,7 @@ export function ChatThreadList({
           <p className="m-0 text-body text-fg-muted">{t('chat.threads.search.empty')}</p>
           <Link
             href={chatHref({ ...paneState, sort })}
+            // 未読のみ・検索語の両方を外す（「該当なし」から全件に戻る）。
             className={SECONDARY_LINK_CLASSES}
             data-testid="chat-threads-search-clear"
           >

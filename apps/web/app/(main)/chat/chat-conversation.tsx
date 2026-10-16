@@ -43,7 +43,7 @@ import { CHAT_MESSAGE_MAX_LENGTH } from '@ses/config';
 import { createSubmitGuard } from '../../../lib/forms/submit-guard';
 import { formatDateTimeJst } from '../../../lib/format/datetime';
 import { displayInitials } from '../../../lib/format/initials';
-import { chatHref, chatMessagesApiPath } from '../../../lib/chat/screen-query';
+import { chatHref, chatMessagesApiPath, chatReadApiPath, chatUnreadApiPath } from '../../../lib/chat/screen-query';
 import type { ChatMessageView } from '../../../lib/chat/views';
 import type { ChatConversationMessages } from './chat-props';
 import { formatChatTime, withDaySeparators } from '../../../lib/chat/day-separators';
@@ -56,6 +56,7 @@ import {
   splitMessageText,
 } from '../../../lib/chat/message-text';
 import { CHAT_POLL_INTERVAL_MS, CHAT_UNDO_SEND_MS, hasOthersMessage, mergeLatestMessages } from '../../../lib/chat/live';
+import { unreadMarkerId, withUnreadMarker } from '../../../lib/chat/unread-marker';
 import {
   isSendKey,
   type ChatConversationLayout,
@@ -86,6 +87,11 @@ export type ChatConversationProps = {
    * （`lib/chat/panes.ts` の `withPaneClosed` で組んだ URL）。並べていなければ省略（描かない）。
    */
   readonly closeHref?: string;
+  /**
+   * ✅ 2026-10-16: 開いた時点の既読位置（`chat_read_states`。無ければ `null`）。
+   * 「ここから未読」の線をこの後ろの最初の相手の発言に引く。線は開いている間は動かさない（Slack と同じ）。
+   */
+  readonly lastReadMessageId?: string | null;
 };
 
 /** 投稿の応答（`docs/05` §6.5 #51 の上位互換。`route.ts` の 🔴）。 */
@@ -102,6 +108,7 @@ export function ChatConversation({
   canPost,
   messages,
   closeHref,
+  lastReadMessageId = null,
 }: ChatConversationProps) {
   // 🔴 ガードは**インスタンスごと**に持つ（モジュール変数にすると、別のスレッドを開いた島が
   //    同じガードを共有し「前の送信が終わるまで送れない」状態になる）。
@@ -235,6 +242,44 @@ export function ChatConversation({
     }
   }
 
+  // ✅ 2026-10-16: 既読・未読（`lib/chat/read-state.ts` / `unread-marker.ts`）。
+  //    線は開いた時点で決め、読んでも動かさない。「ここから未読にする」を押したらその発言へ動かす。
+  const [markerId, setMarkerId] = useState<string | null>(() => unreadMarkerId(initialMessages, lastReadMessageId));
+  const lastMarkedRef = useRef<string | null>(lastReadMessageId);
+  // 「未読にする」を押した会話では、自動で既読に戻さない（押した意味が消えるため）。
+  const suppressAutoReadRef = useRef(false);
+
+  // 一番下（最新）が見えていて、画面が見えているときは、最新の発言まで既読にする。
+  // 🔴 既読は戻す方向に動かない（API 側でも守る）。送れなくても次の機会に任せる（画面は壊さない）。
+  useEffect(() => {
+    const latest = items.at(-1);
+    if (latest === undefined || awayFromLatest || suppressAutoReadRef.current) return;
+    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+    if (lastMarkedRef.current === latest.id) return;
+    lastMarkedRef.current = latest.id;
+    void fetch(chatReadApiPath(threadId), {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ upToMessageId: latest.id }),
+    }).catch(() => {
+      lastMarkedRef.current = null;
+    });
+  }, [items, awayFromLatest, threadId]);
+
+  async function markUnread(item: ChatMessageView): Promise<void> {
+    suppressAutoReadRef.current = true;
+    setMarkerId(item.id);
+    try {
+      await fetch(chatUnreadApiPath(threadId), {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ fromMessageId: item.id }),
+      });
+    } catch {
+      // 送れなければ次の再読込で元の状態に戻る（画面の線は押した位置のまま）。
+    }
+  }
+
   function toggleExpanded(id: string): void {
     setExpanded((current) => {
       const next = new Set(current);
@@ -310,6 +355,18 @@ export function ChatConversation({
                 {open ? messages.readLess : messages.readMore}
               </Button>
             ) : null}
+            {/* ✅ 2026-10-16: 相手の発言から未読にする（自分の発言は未読にならない）。 */}
+            {item.mine ? null : (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => void markUnread(item)}
+                data-testid={`chat-message-mark-unread-${item.id}`}
+              >
+                {messages.markUnread}
+              </Button>
+            )}
             <Button
               type="button"
               variant="ghost"
@@ -490,7 +547,17 @@ export function ChatConversation({
             className="m-0 flex list-none flex-col gap-3 p-0"
             data-testid="chat-messages"
           >
-            {withDaySeparators(items).map((entry) => {
+            {withUnreadMarker(withDaySeparators(items), markerId).map((entry) => {
+              // ✅ 2026-10-16: 「ここから未読」の線。
+              if (entry.kind === 'unread') {
+                return (
+                  <li key="unread-marker" className="flex items-center gap-3" data-testid="chat-unread-marker">
+                    <span aria-hidden="true" className="h-px flex-1 bg-brand" />
+                    <span className="text-xs font-medium text-brand">{messages.unreadFrom}</span>
+                    <span aria-hidden="true" className="h-px flex-1 bg-brand" />
+                  </li>
+                );
+              }
               // ✅ 2026-10-13: **日付の区切り**（定義書 §3.12「中央・24h の pill・地 `bg-subtle`・12」）。
               // 🔴 JST の暦日が変わる位置にだけ置く（`lib/chat/day-separators.ts`）。並び順は変えない。
               // 🔴 radius は `rounded-md` —— `rounded-full` はアバターとカウンタにしか使えない

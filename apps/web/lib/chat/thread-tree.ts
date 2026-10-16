@@ -71,6 +71,8 @@ export function buildThreadTree(
     readonly q: string | null;
     /** 返信が早い取引先の鍵（`reply-speed.ts`。省略 = 無し）。 */
     readonly fastReplyKeys?: ReadonlySet<string>;
+    /** ✅ 2026-10-16: この ID のスレッドだけを残す（「未読のみ」）。親のチャットは文脈として残す（検索と同じ）。 */
+    readonly onlyThreadIds?: ReadonlySet<string>;
   },
 ): readonly ChatThreadGroup[] {
   const byKey = new Map<
@@ -92,7 +94,14 @@ export function buildThreadTree(
 
   const needle = options.q === null ? '' : options.q.trim().toLocaleLowerCase('ja');
   const groups: ChatThreadGroup[] = [];
+  const only = options.onlyThreadIds;
   for (const group of byKey.values()) {
+    if (only !== undefined) {
+      const chatHit = group.chat !== null && only.has(group.chat.id);
+      const threadHits = group.threads.filter((thread) => only.has(thread.id));
+      if (!chatHit && threadHits.length === 0) continue;
+      group.threads = threadHits;
+    }
     const threads = [...group.threads].sort(compareRecent);
     if (needle === '' || matches(group.counterpartyName, needle)) {
       groups.push({ counterpartyName: group.counterpartyName, chat: group.chat, threads, fastReply: group.fastReply });
