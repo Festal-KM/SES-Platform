@@ -4370,7 +4370,7 @@ const ja = {
   'chat.message.edited': '編集済み',
   'chat.message.deleted': 'この発言は削除されました',
   'chat.message.save': '保存',
-  'chat.message.cancel': 'やめる',
+  'chat.message.cancel': 'キャンセル', // docs/04 §7.8: 取消は「キャンセル」1 語
   'chat.message.deleteConfirm': 'この発言を削除しますか？',
   'chat.message.deleteConfirmYes': '削除する',
   'chat.message.editFailed': '保存できませんでした。もう一度お試しください。',
