@@ -88,6 +88,7 @@ describe('カタログの構造', () => {
           'admin.demo.reset.confirm.back',
           'admin.demo.seed.confirm.back',
           'candidates.request.cancel',
+          'chat.message.cancel', // ✅ 2026-10-16 チャットレーン（発言の編集・削除の取消）
           'engineerShares.revoke.confirmCancel',
           'engineerShares.share.confirmCancel',
           'engineers.cancel',
