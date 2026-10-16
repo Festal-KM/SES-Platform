@@ -219,3 +219,41 @@ export async function deleteChatMessage(
     return { message: message as ChatMessageView };
   });
 }
+
+/** ✅ 2026-10-16: 会話の書き出しの監査（誰がどの会話を持ち出したか）。 */
+export const CHAT_THREAD_AUDIT_ACTION_EXPORT = 'thread.export';
+export const CHAT_THREAD_AUDIT_TARGET_TYPE = 'ChatThread';
+/** 書き出す発言の上限（それを超えたら新しい方から上限まで。行数は監査に残す）。 */
+export const CHAT_EXPORT_MAX_MESSAGES = 10_000;
+
+/**
+ * ✅ 2026-10-16（チャットレーン）: 会話をすべて読み（古い順）、監査ログに残す。CSV にするのは呼び出し側（`export.ts`）。
+ * 🔴 スレッドが見えなければ 404。読めるのは RLS（C6）を通った発言だけ。監査に本文は載せない（件数だけ）。
+ */
+export async function readChatThreadForExport(
+  ctx: AuthenticatedTenantCtx,
+  threadId: string,
+  deps: SendChatMessageDeps,
+): Promise<readonly ChatMessageView[]> {
+  return withTenant(ctx, async (db) => {
+    requireFound(await findChatThreadRow(db, threadId));
+    const newest = (await db.message.findMany({
+      where: { threadId },
+      select: CHAT_MESSAGE_SELECT,
+      orderBy: [{ sentAt: 'desc' }, { id: 'desc' }],
+      take: CHAT_EXPORT_MAX_MESSAGES,
+    })) as readonly ChatMessageRow[];
+    const messages = await projectChatMessages(ctx, db, [...newest].reverse());
+    await writeAuditLog(db, {
+      action: CHAT_THREAD_AUDIT_ACTION_EXPORT,
+      actorKind: 'USER',
+      actorId: ctx.userId,
+      targetType: CHAT_THREAD_AUDIT_TARGET_TYPE,
+      targetId: threadId,
+      summary: { messageCount: messages.length, truncated: newest.length === CHAT_EXPORT_MAX_MESSAGES },
+      ipAddress: deps.meta.ipAddress,
+      deviceKind: ctx.deviceKind,
+    });
+    return messages;
+  });
+}

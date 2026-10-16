@@ -134,3 +134,8 @@ export function chatMessageApiPath(threadId: string, messageId: string): string 
 export function chatThreadPrefsApiPath(threadId: string): string {
   return `/api/threads/${threadId}/prefs`;
 }
+
+/** ✅ 2026-10-16: 会話の書き出し（CSV。`GET`）。 */
+export function chatExportApiPath(threadId: string): string {
+  return `/api/threads/${threadId}/export`;
+}
