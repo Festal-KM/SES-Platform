@@ -13,7 +13,7 @@
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 // ✅ 2026-10-16: 単価の逆転の判定（述語〔重なり〕と同じファイルの 1 本。人間の明示指示）。
-import { isUnitPriceRangeInverted, resolveStartWindow } from '@ses/db';
+import { isUnitPriceRangeInverted } from '@ses/db';
 import { t } from '@ses/i18n';
 import { PageBody } from '@ses/ui';
 import { resolveTenantCtxOutcome } from '../../../../lib/auth/session';
@@ -37,7 +37,6 @@ import { projectListQuerySchema } from '../../../../lib/projects/schemas';
 import { HIDDEN_COLUMNS_PARAM } from '../../../../lib/ui/hidden-columns';
 import {
   projectColumnToggleItems,
-  projectListDescription,
   projectListScreenMessages,
   projectPrefectureFilterOptions,
   projectCategoryFilterOptions,
@@ -87,20 +86,12 @@ export default async function ProjectListPage({
   //    ので、**問い合わせ自体を行わず**、単価の欄にエラーを出す（`docs/04` §S-010）。
   // 🔴 **`redirect` しない**（URL に残った条件を消すと、直すべき値が画面から消える）。
   const priceInverted = isUnitPriceRangeInverted(query);
-  // ============================================================================
-  // ✅✅ **2026-10-16: 開始時期の区分 → 開始日の範囲**（受領モックの「開始時期」）
-  // ============================================================================
-  // 🔴 **現在時刻をここで 1 回だけ読む。** `resolveStartWindow` は純粋関数であり、
-  //    一覧と `COUNT` が**同じ日付**で動くことをこの 1 行が保証する
-  //    （1 リクエストの中で `new Date()` を 2 回呼ぶと、日付の境目で件数と行がずれうる）。
-  // 🔴 **旧 `startFrom`（日付の直接指定）と併用されたら、区分のほうを採る** ——
-  //    画面に出ているのは区分だけであり、見えていない条件が結果を変える状態を作らない。
-  const startRange =
-    query.startWithin === undefined ? null : resolveStartWindow(query.startWithin, new Date());
-  const searchQuery = startRange === null ? query : { ...query, ...startRange };
+  // 🔴 **開始時期の区分 → 日付の範囲の変換は `listProjects` が行う**（2026-10-16 に移した）。
+  //    画面だけで変換していたときは、**API が同じ条件を黙って捨てていた** —— 読み取りの
+  //    経路は 1 本であり、変換もその 1 本に置く（`lib/projects/list.ts` の 🔴🔴）。
   const view = priceInverted
     ? { items: [] as Awaited<ReturnType<typeof listProjects>>['items'], total: 0, nextCursor: null }
-    : await listProjects(ctx, searchQuery);
+    : await listProjects(ctx, query);
   const isPartner = ctx.partnerCompanyId !== null;
   const filtered = hasProjectListFilters(query);
   // 🔴 **列表示切替の状態は URL のクエリ（`?hide=`）だけが持つ**（`T-22-06`。`docs/04` §7.1）。
@@ -171,11 +162,11 @@ export default async function ProjectListPage({
         canAct={isPageActionRole(ctx.role)}
         testId="project-list-register"
       />
-      {/* 🔴 帯の「説明 1 行」（`docs/04` §3.1）。`settings/page.tsx` と同じ形で帯の直下に置く
-          （`PageHeader` は説明の prop を持たない）。母集団が違うので文も違う。 */}
-      <p className="mb-4 text-body text-fg-muted" data-testid="project-list-description">
-        {projectListDescription(isPartner)}
-      </p>
+      {/* ✅✅ **2026-10-16: 説明の 1 行を外した**（人間の明示指示「タイトル下の説明文はいらない」）。
+          🔴 **母集団の説明は失っていない** —— 表の上の件数行（`自社案件 6 件` /
+             取引先では「公開された案件」）が母集団そのものを出しており、取引先向けの
+             `partnerScopeNotice` も残っている。消したのは**重複していた 1 行**である。
+          ⚠️ 文言キー（`projects.list.description*`）は消していない（`U-22` の凍結）。 */}
       <ProjectListScreen
         rows={rows}
         filters={{
@@ -204,7 +195,6 @@ export default async function ProjectListPage({
         startWithinOptions={projectStartWithinFilterOptions}
         priceInverted={priceInverted}
         // 🔴 取引先には公開先の列を出さない（docs/04 §S-010 / `F-014 AC-4`）。出所は ctx である。
-        showVisibilityColumn={!isPartner}
         // 🔴 `S-012` に到達できるのはホストの 3 ロールだけである（`PROJECT_EDITOR_ROLES`）。
         //    押しても戻されるだけの導線を描かない。拒否の本体は `#26` のガードと
         //    `S-012` のリダイレクトである。

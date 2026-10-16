@@ -78,15 +78,15 @@ import {
   Button,
   Card,
   CardContent,
-  Checkbox,
   DataTable,
+  DISCLOSURE_SUMMARY_CLASSES,
   EmptyState,
+  FOCUS_RING_CLASSES,
   Field,
   Icon,
   Input,
   Pagination,
   SECONDARY_BUTTON_LINK_CLASSES,
-  SECONDARY_LINK_CLASSES,
   Select,
   StatusBadge,
   StatusDot,
@@ -102,7 +102,10 @@ import {
 // 🔴 列表示切替はクライアント境界の内側にある（`@ses/ui/client` の `DropdownMenu`）。
 //    **この画面は `'use client'` を宣言しない** —— 境界は `ColumnToggle` の 1 ファイルに閉じており、
 //    行の描画（50 行 × 9 列）はサーバに残る（`_components/column-toggle.tsx` 冒頭）。
-import { ColumnToggle, type ColumnToggleItem } from '../../_components/column-toggle';
+// ✅ 2026-10-16: `ColumnToggle` の描画はやめた（人間の明示指示）。型だけ残る ——
+//    `columnToggleItems` の prop そのものは `page.tsx` が組み立てており、`?hide=` の
+//    query を受け取れる状態は保っている（共有された URL を壊さない）。
+import type { ColumnToggleItem } from '../../_components/column-toggle';
 import type { ProjectListRowView } from '../../../lib/projects/list-rows';
 
 /** 検索条件の選択肢 1 件（`value` は API の query に載る値そのもの）。 */
@@ -216,7 +219,12 @@ function ProjectPagingLink({ href, className, children, 'data-testid': testId }:
  */
 function projectColumns(
   messages: ProjectListScreenMessages,
-  showVisibilityColumn: boolean,
+  /**
+   * ✅✅ **2026-10-16: 行を開く URL**（人間の明示指示「列をクリックしたら右側エリアに
+   * 表示されるようにする」）。🔴 **`showVisibilityColumn` と入れ替わった** ——
+   * 公開先の列が無くなり、代わりに行全体の遷移先が要るようになった。
+   */
+  selectHrefOf: (projectId: string) => string,
 ): readonly DataTableColumn<ProjectListRowView>[] {
   return [
     {
@@ -228,8 +236,18 @@ function projectColumns(
       // 🔴 案件名セルは `NameCell` に委譲する（`lg` 以上 = 切り詰め + `title` + 同じ行に `S-011` への
       //    導線 / `lg` 未満 = 折り返し）。**閲覧の監査記録は遷移先が書く**（`BR-27`）。
       nameCell: {
+        // ✅✅ **2026-10-16（人間の明示指示「操作列もいらない。列をクリックしたら右側エリアに
+        //    表示されるようにする。案件タイトルもリンクにしない。列クリック→右側で詳細を
+        //    クリックで詳細画面に行く動線」）。**
+        // 🔴 **遷移先が `S-011` から「右パネルを開く URL」に変わった。** 詳細画面へは右パネルの
+        //    `詳細` から行く（**閲覧の監査記録はその遷移先が書く**。`F-013 AC-3`）。
+        // 🔴 **行いっぱいの当たり判定にする**（`stretch`）—— `<a>` は行に 1 つだけで、
+        //    クライアント JS は 0 行である（`@ses/ui` の `NAME_CELL_ROW_LINK_CLASSES` の 🔴）。
+        // 🔴 **下線を引かない**（指示「案件タイトルもリンクにしない」）。見た目は素の文字で、
+        //    実体は行を開くリンクである。
         name: (row) => row.name,
-        href: (row) => `/projects/${row.id}`,
+        href: (row) => selectHrefOf(row.id),
+        stretch: true,
         // ✅ **2026-10-15: 状態の点**（人間が提示した案件一覧の画像。案件名の左）。
         // 🔴 **色は `StatusBadge` と同じ 1 つの表から決まる**（`StatusDot` は `entity` /
         //    `state` しか受け取らない。`docs/04` §5-13）。画面は色を選べない。
@@ -333,22 +351,11 @@ function projectColumns(
       minWidth: '6rem',
       cell: (row) => row.updatedOn,
     },
-    // 🔴 取引先には公開先の列を出さない（`F-014 AC-4` / `BR-07`）。**DOM から取り除く**。
-    ...(showVisibilityColumn
-      ? [
-          {
-            id: 'visibility',
-            header: messages.columnVisibility,
-            priority: 'lg',
-            minWidth: '8rem',
-            // 🔴 9 列目は列表示切替に格納する列である（§7.1「既定 8 列 + 操作列」）。
-            hideable: true,
-            cell: (row: ProjectListRowView) => (
-              <span data-testid={`project-list-visibility-${row.id}`}>{row.visibility}</span>
-            ),
-          } satisfies DataTableColumn<ProjectListRowView>,
-        ]
-      : []),
+    // ✅✅ **2026-10-16: `公開先の設定状況` の列を外した**（人間の明示指示
+    //    「案件リストの『公開先の設定状況』列はいらない」）。
+    // 🔴 **情報そのものは失っていない** —— 右の案件の要点パネルが公開先を出す。
+    //    表から外したのは**横スクロールを無くすため**でもある（人間の明示指示
+    //    「案件一覧のリストは横スクロールなしで表示できるようにしてください」）。
   ];
 }
 
@@ -363,7 +370,6 @@ export function ProjectListScreen({
   parallelOkOptions,
   startWithinOptions,
   priceInverted,
-  showVisibilityColumn,
   canRegister,
   nextPageHref,
   firstPageHref,
@@ -403,7 +409,8 @@ export function ProjectListScreen({
    * 🔴 取引先には公開先の列を出さない（docs/04 §S-010 / `F-014 AC-4`）。
    *    出所は `ctx.partnerCompanyId` であり、行の値ではない。
    */
-  readonly showVisibilityColumn: boolean;
+  // ✅ 2026-10-16: `公開先の設定状況` の列ごと外したので prop も外した（人間の明示指示）。
+  //    🔴 **取引先に出さない判断は消えていない** —— 列そのものが無い。
   readonly canRegister: boolean;
   /** 絞り込みが 1 つでも効いているとき（`docs/04` §10.1 `S-010` 絞込 0 の条件解除導線）。 */
   // ✅ 2026-10-16: `showClearFilters` を外した（「条件をクリア」は常時表示になった）。
@@ -449,17 +456,16 @@ export function ProjectListScreen({
       <div data-testid="project-list-population">
         <Toolbar
           testIdPrefix="project-list-"
-          population={messages.populationLabel}
-          note={
-            // 🔴 並び順の説明（docs/04 §S-010「並び順の説明は 1 行で常時出す」）。
-            //    スコア・順位・重みの語を含めない。
-            // 🔴 **選べる形にしない** —— 既存 API に `?sort=` が無い（`HANDOFF.md` §5）。
-            //    動かないセレクトを置かず、サーバが確定させた並びを文で述べる。
-            //    ⚠️ 器の `data-testid` は凍結済みの `project-list-order-note` である（`U-22`）。
-            <p className="text-xs text-fg-muted" data-testid="project-list-order-note">
-              {messages.orderNote}
-            </p>
-          }
+          // ✅✅ **2026-10-16（人間の明示指示「『自社案件 6 件』と『後任募集 → 募集中 → 充足 の順に、
+          //    同じ状態のなかでは更新日の新しい順に表示しています。』はいらない」）。**
+          // 🔴 **母集団の説明は取引先にだけ残す**（`partnerScopeNotice`）—— あちらは
+          //    「なぜこの件数なのか」が公開範囲で決まる側であり、消すと**見えない理由が消える**
+          //    （`F-006 AC-2`）。ホストは自社の全件なので説明が要らない。
+          // ⚠️ **並び順の注記も外した。** `docs/04` §S-010 は「並び順の説明は 1 行で常時出す」と
+          //    定めているが、人間の明示指示が優先する（設計書の追随は別途）。
+          //    🔴 **並び自体は変えていない**（`PROJECT_LIST_ORDER_BY`。決定的なまま）。
+          population={messages.partnerScopeNotice ?? ''}
+          note={null}
           filters={
             // 🔴 絞り込みは**白い面のカード**に入れる（ページ地は `--color-bg-subtle` なので、
             //    面を持たないと入力欄の群が地に溶ける。`Table` の器と同じ判断）。
@@ -467,7 +473,27 @@ export function ProjectListScreen({
             <Card className="w-full">
               {/* `CardContent` は `p-4 pt-0`。見出しを持たないカードなので上の余白を戻す
                   （`cn()` = `tailwind-merge` が `pt-0` を落とす）。 */}
-              <CardContent className="pt-4">
+              {/* ✅✅ **2026-10-16（人間の明示指示「検索エリアはアコーディオンにして閉じることも
+                  できるようにして（案件リストを大きく見れるようにしたいときに使う）」）。**
+                  🔴 **`<details>` / `<summary>` の素の HTML で作る** —— この画面は
+                     `'use client'` を 1 つも宣言しておらず（サーバで描く）、**開閉のために
+                     JS を持ち込まない**。水和の前から開閉でき、キーボードでも操作できる。
+                  🔴 **既定は開いている**（`open`）—— 条件が見えない状態で開くと、
+                     いま何で絞られているのかが分からない。
+                  ⚠️ **開閉の状態は保存していない**（URL にもセッションにも持たない）。
+                     保存するなら query か保存済み条件の機能に載せる話であり、
+                     「閉じられる」という指示の範囲を越える。 */}
+              <CardContent className="pt-0 pb-3">
+                <details open className="group">
+                  {/* 🔴 **見出しそのものが開閉の当たり判定である**（別にボタンを置かない）。
+                      🔴 **太字にしない**（人間の明示指示「ボールドが多すぎる」）。 */}
+                  <summary className={cn(DISCLOSURE_SUMMARY_CLASSES, FOCUS_RING_CLASSES)}>
+                    <Icon
+                      name="search"
+                      className="shrink-0 text-fg-muted transition-transform group-open:rotate-0"
+                    />
+                    {messages.searchLegend}
+                  </summary>
                 {/* 🔴 検索条件（docs/04 §S-010 セクション 1）。`method="get"` なので、実行した検索が
                    そのまま URL になり、共有・再読込・戻るのいずれでも同じ結果に戻る。
                    🔴 **既存 API（`#25`）に在る条件だけを描く**（`q` / `status` / `startFrom` /
@@ -478,7 +504,10 @@ export function ProjectListScreen({
                       `HANDOFF.md` §6-15）。
                    ⚠️ `mb-0` / `w-full` は帯の中に置いたための余白・幅の調整である（`cn()` の規律 1）。 */}
                 <form
-                  className={cn(FILTER_FORM_CLASSES, 'mb-0 w-full')}
+                  // ✅ 2026-10-16（人間の明示指示「エリア自体の縦幅を小さくしたい」）:
+                  //    行間を `gap-4`（16px）→ `gap-x-4 gap-y-3`（縦 12px）に詰める。
+                  //    🔴 **横の間隔は詰めない**（4 列が窮屈になると読み違えが増える）。
+                  className={cn(FILTER_FORM_CLASSES, 'mb-0 w-full gap-y-3')}
                   method="get"
                   action="/projects"
                   data-testid="project-list-filters"
@@ -717,36 +746,21 @@ export function ProjectListScreen({
                            ぶん、**ここで取り戻す**。 */}
                     <div className={cn(FILTER_ACTIONS_CLASSES, 'justify-between gap-y-2')}>
                       <div className="flex flex-wrap items-center gap-3">
-                        {/* ✅ **2026-10-16（人間の明示指示「チェックボックス『募集中のみ』。ON で
-                            ステータス = 募集中に絞る（ステータスセレクトと併用時は AND）」）。**
-                            🔴 **置き場所は定義書 §1.6 の「フッタ行（Checkbox 左）」そのものである。**
-                            🔴 **値は `'1'` を送る**（チェックされたときだけ送られる。`'on'` を
-                               受けない理由は `schemas.ts` の 🔴）。
-                            🔴 **ステータスの選択と独立した条件である** —— 併用して矛盾したとき
-                               （`終了` かつ `募集中のみ`）は **0 件になるのが正しい**。どちらかを
-                               黙って優先すると、指定した条件と違う結果が出る。 */}
-                        <label className="flex items-center gap-2 text-cell text-fg">
-                          <Checkbox
-                            name="recruitingOnly"
-                            value="1"
-                            defaultChecked={filters.recruitingOnly === '1'}
-                            data-testid="project-list-filter-recruiting-only"
-                          />
-                          {messages.searchRecruitingOnly}
-                        </label>
+                        {/* ✅✅ **2026-10-16: 「募集中のみ」のチェックボックスを外した**
+                            （人間の明示指示「募集中のみのチェックボックスと表示する列ボタンは無くす」）。
+                            🔴 **`recruitingOnly` の query と述語は残してある** —— URL を共有した人が
+                               居る可能性があり、受け取れなくなると「共有したリンクが別の結果を出す」
+                               になる。画面から外しただけであり、`ステータス = 募集中` で同じ絞り込みができる。 */}
                         {/* 🔴 まだ効かない条件を黙って描かない（`engineers.list.searchComingSoon` と同じ規律）。 */}
                         <p className="text-xs text-fg-muted" data-testid="project-list-search-coming-soon">
                           {messages.searchComingSoon}
                         </p>
-                        {/* 🔴 **列表示切替の置き場所は帯である**（`docs/04` §5-13 / §7.1。`T-22-06`）。
-                            ✅ 2026-10-15: 既定で 2 列を格納したので、**ここが「戻す」唯一の入口**になった。 */}
-                        {columnToggleItems.length === 0 ? null : (
-                          <ColumnToggle
-                            columns={columnToggleItems}
-                            triggerLabel={messages.columnToggleTrigger}
-                            testIdPrefix="project-list-column-toggle-"
-                          />
-                        )}
+                        {/* ✅✅ **2026-10-16: 「表示する列」のボタンを外した**（人間の明示指示）。
+                            🔴 **既定で隠している列が 1 つも無くなった**ので、戻す入口も要らない
+                               （`PROJECT_DEFAULT_HIDDEN_COLUMN_IDS` は空である）。
+                            🔴 **`?hide=` の query は受け取れるまま残す**（共有された URL を壊さない）。
+                            ⚠️ **この画面はこれで `'use client'` の島を 1 つも持たなくなった**
+                               （`ColumnToggle` が唯一の境界だった）。 */}
                       </div>
                       <div className="flex items-center gap-4">
                         {/* ✅ **2026-10-15: 文字リンク → 輪郭ボタン**（受領画像のフッタは
@@ -777,7 +791,7 @@ export function ProjectListScreen({
                     </div>
                   </fieldset>
                 </form>
-
+                </details>
               </CardContent>
             </Card>
           }
@@ -810,7 +824,7 @@ export function ProjectListScreen({
         //    器の側の印（`overflow-indicator-x`）は `Table` が常に持つ（CSS で、
         //    スクロールできるときにだけ出る）。
         overflowNote={messages.overflowNote}
-        columns={projectColumns(messages, showVisibilityColumn)}
+        columns={projectColumns(messages, selectHrefOf)}
         rows={rows}
         rowKey={(row) => row.id}
         linkComponent={Link}
@@ -820,22 +834,6 @@ export function ProjectListScreen({
         // 🔴 副カラムで開いている行の印（`data-selected`）。**選択（一括操作）ではない**ので
         //    `selection`（チェックボックス）は渡さない —— Phase 1 に一括操作は 1 つも無い。
         rowAttributes={(row) => ({ 'data-selected': row.id === selectedId ? 'true' : undefined })}
-        // 🔴 操作列（1 行につき 1 つ。`docs/04` §7.1「既定 8 列 + 操作列」）。
-        //    行の名称セルは `S-011` へ遷移する（`docs/04` §S-010「行クリック → `S-011`」。
-        //    **閲覧の監査記録は遷移先が書く**）。ここは**副カラムを開くだけ**の導線であり、
-        //    語は §7.8 の統一語（`内容を見る`）である。
-        rowActionHeader={messages.columnAction}
-        rowAction={(row) => (
-          <Link
-            className={SECONDARY_LINK_CLASSES}
-            href={selectHrefOf(row.id)}
-            data-testid={`project-list-panel-open-${row.id}`}
-            // 🔴 同じ語のリンクが 50 行に並ぶので、読み上げでは案件名で区別できるようにする。
-            aria-label={`${messages.panelOpen}: ${row.name}`}
-          >
-            {messages.panelOpen}
-          </Link>
-        )}
         empty={
           // 🔴 docs/04 §10.1 `S-010`: **初回空と絞込 0 で文言が違う**（呼び出し側が選ぶ）。
           //    取引先の初回空は「案件が無い」ではなく「公開されていない」である。

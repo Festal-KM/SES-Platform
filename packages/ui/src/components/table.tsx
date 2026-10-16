@@ -336,7 +336,14 @@ export function TableRow({ className, align = 'inherit', ...props }: TableRowPro
   return (
     <tr
       className={cn(
-        'border-b border-border',
+        // ✅✅ **2026-10-16: 罫線を外し、`relative` を足した。**
+        // 🔴 **罫線を外した理由**（人間の明示指示「UI 上の罫線は最小限にしたミニマルデザインに
+        //    してください」）: 50 行の表では**行ごとの罫線が画面で最も数の多い線**であり、
+        //    ここを外すのがミニマル化の効き目が一番大きい。行の区切りは **hover の背景**と
+        //    **セルの余白**が受け持つ（§7.10 の 8 状態はそのまま）。
+        // 🔴 **`relative` は行いっぱいのリンクの土台である**（`NAME_CELL_ROW_LINK_CLASSES` の
+        //    `::after` が `inset-0` で広がる先）。これが無いと当たり判定が行を覆わない。
+        'relative',
         TRANSITION_CLASSES,
         // hover（transient）: 背景を 1 段暗く。🔴 **文字色は変えない**（docs/04 §7.10）。
         // ✅ 2026-10-02: `bg-bg-subtle` → `bg-row-hover-bg`（**値は同一の `slate-50`**）。

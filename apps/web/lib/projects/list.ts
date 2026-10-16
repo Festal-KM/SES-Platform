@@ -42,6 +42,8 @@
 import {
   PROJECT_LIST_ORDER_BY,
   projectSearchWhere,
+  // ✅ 2026-10-16: 開始時期の区分 → 日付の範囲（現在時刻は引数で受け取る純粋関数）。
+  resolveStartWindow,
   withTenant,
   type AuthenticatedTenantCtx,
   type ProjectStatus,
@@ -358,9 +360,22 @@ export async function listProjects(
   ctx: AuthenticatedTenantCtx,
   query: ProjectListQuery,
 ): Promise<ProjectListView> {
+  // ============================================================================
+  // ✅✅ **2026-10-16: 開始時期の区分 → 開始日の範囲は、ここで変換する**
+  // ============================================================================
+  // 🔴🔴 **当初は画面（`(list)/page.tsx`）だけで変換していた。CI の結合テストが捕まえた** ——
+  //    `GET /api/projects?startWithin=IMMEDIATE` は**条件を受け取って黙って捨て**、
+  //    絞り込まれていない一覧を返していた（`docs/05` §6.4「受け取って捨てるキーを置かない」）。
+  //    画面は正しく動いていたので、**ユニットでも画面の実測でも見つからなかった。**
+  // 🔴 **読み取りの経路はこの 1 本である**（API も画面もここを通る）。変換をここに置けば、
+  //    呼び手が増えても落ちない。
+  // 🔴 **現在時刻をこの 1 行でだけ読む** —— 一覧と `COUNT` が同じ `where` を使うので、
+  //    日付の境目で件数と行がずれない（`resolveStartWindow` は純粋関数である）。
+  const startRange =
+    query.startWithin === undefined ? null : resolveStartWindow(query.startWithin, new Date());
   // 🔴 `where` を 1 つの値にしておくのは、一覧と `COUNT` で書き分けられないようにするためである。
   //    🔴 述語の出所は `projectSearchWhere`（`@ses/db` の `search/projects.ts`）の 1 本だけである。
-  const where = projectSearchWhere(query);
+  const where = projectSearchWhere(startRange === null ? query : { ...query, ...startRange });
   const isHost = ctx.partnerCompanyId === null;
 
   return withTenant(ctx, async (db) => {

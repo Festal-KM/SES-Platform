@@ -377,7 +377,13 @@ export function projectColumnToggleHref(
  */
 export function projectListPrimaryAction(canRegister: boolean): PagePrimaryAction | null {
   return canRegister
-    ? { labelKey: 'projects.list.register', href: `${PROJECT_LIST_PATH}/new`, kind: 'ACTION' }
+    ? {
+        labelKey: 'projects.list.register',
+        href: `${PROJECT_LIST_PATH}/new`,
+        kind: 'ACTION' as const,
+        // ✅ 2026-10-16: 人間の明示指示「＋アイコンもつけて」。
+        icon: 'plus' as const,
+      }
     : null;
 }
 

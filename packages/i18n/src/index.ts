@@ -2972,7 +2972,9 @@ const ja = {
   // 🔴 `F-014 AC-4` / `BR-07`: 取引先向けの文言に**他社の存在を示す語を 1 つも置かない**
   //    （「他 N 社にも公開されています」「全 N 件中」に相当する語彙を作らない）。
   // 🔴 `F-009 AC-2` と同じ Phase 1 の規律: **スコア・順位・重みの語を使わない。**
-  'projects.list.title': '案件一覧',
+  // ✅ 2026-10-16: 人間の明示指示「タイトルの『案件一覧』は『自社案件管理』にして」。
+  //    🔴 サイドバーの項目名（`shell.nav.host.projects`）と同じ語になった。
+  'projects.list.title': '自社案件管理',
   // ⚠️ T-22-09: 同上（入口は `SummaryStrip` の `案件` の値）。🔴 キーは消さない（`U-22`）。
   'projects.list.open': '案件一覧を開く',
   // --- ✅ SP-22 段④: 帯の説明 1 行（`docs/04` §3.1 のレイアウト図「説明 1 行」）---
@@ -3000,7 +3002,8 @@ const ja = {
   //    🔴 **できないことだけを書く**（できるようになったものを残すと、画面が嘘をつく）。
   'projects.list.searchComingSoon':
     'スキル要件での絞り込みは、後続のリリースで行えます。',
-  'projects.list.register': '案件を登録',
+  // ✅ 2026-10-16: 人間の明示指示「『案件を登録』ボタンは『新規案件登録』にして」。
+  'projects.list.register': '新規案件登録',
   'projects.list.readOnlyNote': '案件の登録は、閲覧のみの権限では行えません。',
   'projects.list.column.name': '案件名',
   'projects.list.column.status': '状態',

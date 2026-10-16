@@ -342,6 +342,8 @@ export { cn } from './lib/cn.js';
 export {
   DISABLED_CLASSES,
   DISABLED_TOGGLE_CLASSES,
+  // ✅ 2026-10-16: 開閉できるブロックの見出し（`<summary>`）。
+  DISCLOSURE_SUMMARY_CLASSES,
   FOCUS_RING_CLASSES,
   SELECTED_CLASSES,
   SELECTED_ROW_CLASSES,

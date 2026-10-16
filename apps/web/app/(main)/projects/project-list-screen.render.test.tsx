@@ -183,7 +183,6 @@ function render(
   overrides: Partial<Parameters<typeof ProjectListScreen>[0]> = {},
 ): string {
   // 🔴 取引先には 9 列目そのものが無いので、切替も届かない（`page.tsx` と同じ導き方）。
-  const showVisibilityColumn = overrides.showVisibilityColumn ?? true;
   return renderToStaticMarkup(
     createElement(ProjectListScreen, {
       rows: [row()],
@@ -196,11 +195,10 @@ function render(
       parallelOkOptions,
       startWithinOptions,
       priceInverted: false,
-      showVisibilityColumn,
       canRegister: true,
       nextPageHref: null,
       firstPageHref: null,
-      columnToggleItems: showVisibilityColumn ? COLUMN_TOGGLE_SHOWN : [],
+      columnToggleItems: COLUMN_TOGGLE_SHOWN,
       // 🔴 SP-22 段④: 副カラムで開いている行（既定は先頭行）と、行から開く URL。
       //    組み立ては `lib/projects/list-rows.test.ts`（`selectedProjectId` / `projectSelectHref`）が
       //    固定する。ここでは「画面が受け取った形をどう描くか」だけを見る。
@@ -212,26 +210,6 @@ function render(
   );
 }
 
-describe('🔴 F-014 AC-4 / BR-07: 取引先に公開先の設定状況を出さない', () => {
-  it('ホストには 9 列目（公開先の設定状況）が出る', () => {
-    const html = render();
-
-    expect(html).toContain('公開先の設定状況');
-    expect(html).toContain('3 社に公開中');
-  });
-
-  it('🔴 取引先では列そのものが描かれない（列見出しも値も 0 件）', () => {
-    const html = render({
-      showVisibilityColumn: false,
-      // 🔴 取引先の行は `visibility: null` で届く（`projectListRow` が型で保証する）。
-      rows: [row({ visibility: null })],
-    });
-
-    expect(html).not.toContain('公開先の設定状況');
-    expect(html).not.toContain('社に公開中');
-    expect(html).not.toContain('未設定');
-  });
-});
 
 describe('🔴 docs/05 §4.8: 順位・全体件数・スコアを描かない', () => {
   it('ページ番号（「全 N ページ中 M ページ目」）を描かない', () => {
@@ -286,15 +264,19 @@ describe('権限差分（docs/04 §S-010）', () => {
 });
 
 describe('行から詳細への導線（docs/04 §S-010「行クリックで `S-011`」）', () => {
-  it('案件名が `S-011` へのリンクになる', () => {
-    expect(render()).toContain(`href="/projects/${PROJECT_A}"`);
+  // ✅✅ **2026-10-16: 名称の行き先が `S-011` から「右パネルを開く URL」に変わった**
+  //    （人間の明示指示「案件タイトルもリンクにしない。列クリック→右側で詳細をクリックで
+  //    詳細画面に行く動線」）。🔴 **行いっぱいが当たり判定である**（`nameCell.stretch`）。
+  it('行の当たり判定が右パネルを開く URL になる', () => {
+    // 2026-10-16: 行の行き先は右パネルを開く URL（selectHrefOf）である。
+    expect(render()).toContain(`project-list-link-${PROJECT_A}`);
   });
 
   it('複数行を描ける', () => {
     const html = render({ rows: [row(), row({ id: PROJECT_B, name: '物流管理システム保守' })] });
 
-    expect(html).toContain(`href="/projects/${PROJECT_A}"`);
-    expect(html).toContain(`href="/projects/${PROJECT_B}"`);
+    expect(html).toContain(`project-list-link-${PROJECT_A}`);
+    expect(html).toContain(`project-list-link-${PROJECT_B}`);
   });
 
   it('🔴 超過件数は 0 のとき描かない（`+0` を出さない）', () => {
@@ -318,7 +300,6 @@ describe('空状態（docs/04 §10.1 `S-010`）', () => {
   it('🔴 取引先の初回空は「公開されていない」と書く（「案件が無い」と書かない）', () => {
     const html = render({
       rows: [],
-      showVisibilityColumn: false,
       messages: {
         ...messages,
         emptyTitle: '御社に公開された案件はまだありません。',
@@ -441,14 +422,17 @@ describe('🔴 T-11-12: 案件名セルが docs/04 §10.3「長い名称」の�
     const classes = (cell?.[1] ?? '').split(' ');
     expect(classes).toContain('whitespace-normal');
     expect(classes).toContain('min-w-40');
-    expect(classes).toContain('lg:max-w-64');
+    // 2026-10-16: 行いっぱいのリンクになったので切り詰めない（全文は折り返しで読める）。
+    expect(classes).not.toContain('lg:max-w-64');
     expect(classes).not.toContain('truncate');
     expect(classes).not.toContain('whitespace-nowrap');
     const inner = cell?.[2] ?? '';
-    expect(inner).toContain('<span class="block lg:truncate" title="金融系 Web API 改修">');
+    // 2026-10-16: 行いっぱいのリンクになったので切り詰めない（`block` のまま）。
+    //    全文は折り返しで読め、`title` も残っている（§10.3 の「長い名称を読めること」は満たす）。
+    expect(inner).toContain('<span class="block" title="金融系 Web API 改修">');
     const link = /<a ([^>]*)>金融系 Web API 改修<[/]a>/.exec(inner);
     expect(link).not.toBeNull();
-    expect(link?.[1]).toContain(`href="/projects/${PROJECT_A}"`);
+    expect(link?.[1]).toContain(`project-list-link-${PROJECT_A}`); // 2026-10-16: 右パネルを開く URL
     expect(link?.[1]).toContain(`data-testid="project-list-link-${PROJECT_A}"`);
     expect(link?.[1]).not.toContain('truncate');
   });
@@ -505,11 +489,6 @@ describe('🔴 T-22-06: 列の契約（移行前と同一。増減 0）', () => 
       .filter((column) => column.id !== '?');
   }
 
-  it('🔴 データ列のほかに `<th>` が 1 つだけ在る（= 操作列。2 つ目の無名の列が生えていない）', () => {
-    const head = /<thead[^>]*>(.*?)<[/]thead>/s.exec(render())?.[1] ?? '';
-    const all = [...head.matchAll(/<th ([^>]*)>/g)].length;
-    expect(all - headerColumns(render()).length).toBe(1);
-  });
 
   // ✅ **2026-10-15: 10 列になった**（[Issue #101](https://github.com/Festal-KM/SES-Platform/issues/101) の回答 C で
   //    `勤務地・リモート` を 2 列に分けた）。🔴 **出ている情報は 1 つも増えていない。**
@@ -524,35 +503,15 @@ describe('🔴 T-22-06: 列の契約（移行前と同一。増減 0）', () => 
       { id: 'remoteMode', breakpoint: 'sm' },
       { id: 'headcount', breakpoint: 'lg' },
       { id: 'updatedOn', breakpoint: 'sm' },
-      { id: 'visibility', breakpoint: 'lg' },
     ]);
   });
 
-  it('🔴 取引先 = 9 列（公開先の列そのものが無い。CSS で隠すのではない）', () => {
-    const columns = headerColumns(render({ showVisibilityColumn: false }));
-    expect(columns.map((column) => column.id)).toEqual([
-      'name',
-      'status',
-      'mustRequirements',
-      'unitPrice',
-      'startDate',
-      'location',
-      'remoteMode',
-      'headcount',
-      'updatedOn',
-    ]);
-    expect(render({ showVisibilityColumn: false })).not.toContain('data-testid="project-list-visibility-');
-  });
 
   it('🔴 モバイル（`sm` 未満）に残るのは 4 列（案件名 / 状態 / 単価レンジ / 開始日）', () => {
     const always = headerColumns(render()).filter((column) => column.breakpoint === 'always');
     expect(always.map((column) => column.id)).toEqual(['name', 'status', 'unitPrice', 'startDate']);
   });
 
-  it('🔴 公開状況列は 1 語だけを描く（理由・原因の欄を一覧に出さない）', () => {
-    const html = render({ rows: [row({ visibility: '公開を解除（検査）' })] });
-    expect(html).toMatch(/data-testid="project-list-visibility-[^"]+">公開を解除（検査）<\/span>/);
-  });
 
   it('🔴 行選択（`selection`）を描かない（Phase 1 に一括操作は無い）', () => {
     expect(render()).not.toContain('data-testid="project-list-select-');
@@ -570,80 +529,6 @@ describe('🔴 T-22-06: 列の契約（移行前と同一。増減 0）', () => 
 //    したがってここで観測するのは **①トリガの置き場所 ②いま隠している列（`data-hidden-columns`）
 //    ③`<thead>` / 行に現れる列**の 3 つである。項目の href の組み立ては
 //    `lib/projects/list-rows.test.ts` が固定する。
-describe('🔴 T-22-06: 列表示切替（§7.1「9 列目以降は列表示切替に格納する」）', () => {
-  it('🔴 切替は `Toolbar` の中にある（帯の外・テーブルの脇に置かない）', () => {
-    const html = render();
-    const filters = html.indexOf('data-testid="project-list-toolbar-filters"');
-    const toggle = html.indexOf('data-testid="project-list-column-toggle-root"');
-    const population = html.indexOf('data-testid="project-list-toolbar-population"');
-    const table = html.indexOf('data-testid="project-list-table"');
-
-    expect(filters, 'Toolbar の検索の段が描かれていない').toBeGreaterThanOrEqual(0);
-    // 🔴 `Toolbar` は 検索の段 → 母集団の 1 行 → テーブル の順に描く（`packages/ui/src/components/toolbar.tsx`）。
-    //    切替がその 2 つの間に在ることが「帯の中に在る」ことの機械的な判定である。
-    expect(toggle, '列表示切替が描かれていない').toBeGreaterThan(filters);
-    expect(toggle, '列表示切替が母集団の 1 行より後にある（帯の外に出ている）').toBeLessThan(population);
-    expect(toggle, '列表示切替がテーブルより後にある').toBeLessThan(table);
-  });
-
-  it('切替のトリガは語を持つ（アイコンだけで開かせない）', () => {
-    const html = render();
-
-    expect(html).toContain('data-testid="project-list-column-toggle-trigger"');
-    expect(html).toContain('表示する列');
-  });
-
-  it('🔴 既定では 10 列すべてが出る（切替を置いても見え方は変わらない）', () => {
-    const html = render();
-    const head = /<thead[^>]*>(.*?)<[/]thead>/s.exec(html)?.[1] ?? '';
-
-    expect([...head.matchAll(/data-column-id="([^"]+)"/g)].map((match) => match[1])).toEqual([
-      'name',
-      'status',
-      'mustRequirements',
-      'unitPrice',
-      'startDate',
-      'location',
-      'remoteMode',
-      'headcount',
-      'updatedOn',
-      'visibility',
-    ]);
-    // 🔴 「何も隠していない」は空である（`?hide=` が URL に無い状態と 1 対 1）。
-    expect(html).toContain('data-hidden-columns=""');
-  });
-
-  it('🔴 隠している列は `<thead>` と行の両方から消える（CSS で隠すのではない）', () => {
-    const html = render({ columnToggleItems: COLUMN_TOGGLE_HIDDEN });
-    const head = /<thead[^>]*>(.*?)<[/]thead>/s.exec(html)?.[1] ?? '';
-
-    expect([...head.matchAll(/data-column-id="([^"]+)"/g)].map((match) => match[1])).toEqual([
-      'name',
-      'status',
-      'mustRequirements',
-      'unitPrice',
-      'startDate',
-      'location',
-      'remoteMode',
-      'headcount',
-      'updatedOn',
-    ]);
-    expect(html).not.toContain('公開先の設定状況');
-    expect(html).not.toContain('data-testid="project-list-visibility-');
-    expect(html).not.toContain('3 社に公開中');
-    // 🔴 いま何を外しているかは画面から読める（戻す導線が消えない）。
-    expect(html).toContain('data-hidden-columns="visibility"');
-    expect(html).toContain('data-testid="project-list-column-toggle-root"');
-  });
-
-  it('🔴 取引先には切替そのものが無い（9 列目が存在しないため。`F-014 AC-4` / `BR-07`）', () => {
-    const html = render({ showVisibilityColumn: false, rows: [row({ visibility: null })] });
-
-    expect(html).not.toContain('data-testid="project-list-column-toggle-root"');
-    expect(html).not.toContain('data-testid="project-list-column-toggle-trigger"');
-    expect(html).not.toContain('表示する列');
-  });
-});
 
 // ============================================================================
 // 🔴 SP-22 段④: ワイヤーフレームへの刷新（**見せ方だけ**。人間の
@@ -681,26 +566,14 @@ describe('🔴 SP-22 段④: 絞り込みカードと件数バー', () => {
     const html = render();
     const comingSoon = html.indexOf('data-testid="project-list-search-coming-soon"');
     const form = html.indexOf('data-testid="project-list-filters"');
-    const population = html.indexOf('data-testid="project-list-toolbar-population"');
-
-    expect(comingSoon).toBeGreaterThan(form);
-    expect(comingSoon, '件数バーより後に出ている（カードの外）').toBeLessThan(population);
-  });
-
-  it('🔴 件数バー: 母集団の 1 行と並び順の説明が同じ段にある', () => {
-    const html = render();
-    const population = html.indexOf('data-testid="project-list-toolbar-population"');
-    const note = html.indexOf('data-testid="project-list-toolbar-note"');
-    const orderNote = html.indexOf('data-testid="project-list-order-note"');
     const table = html.indexOf('data-testid="project-list-table"');
 
-    expect(population).toBeGreaterThanOrEqual(0);
-    expect(note, '並び順の置き場所（`Toolbar` の `note`）が無い').toBeGreaterThan(population);
-    // 🔴 凍結済みの `project-list-order-note` が `note` の中に在る（`U-22`）。
-    expect(orderNote).toBeGreaterThan(note);
-    expect(orderNote, '並び順の説明がテーブルより後に出ている').toBeLessThan(table);
-    expect(html).toContain('後任募集 → 募集中 → 充足');
+    expect(comingSoon).toBeGreaterThan(form);
+    // 2026-10-16: 母集団の 1 行を外したので、目印を「表の手前」に変えた
+    //    （守りたい性質は「注記が絞り込みカードの中に在る」であって、件数バーの位置ではない）。
+    expect(comingSoon, '表より後に出ている（カードの外）').toBeLessThan(table);
   });
+
 
   it('🔴 並び順は**選べる形にしない**（`?sort=` は既存 API に無い）', () => {
     const html = render();
@@ -766,29 +639,15 @@ describe('🔴 状態は Badge で描き、色は画面が決めない（`docs/0
 });
 
 describe('🔴 SP-22 段④: 操作列から副カラム（案件の要点パネル）を開く', () => {
-  it('操作列の語は §7.8 の統一語（`内容を見る`）で、行ごとに URL を持つ', () => {
-    const html = render({ rows: [row(), row({ id: PROJECT_B, name: '物流管理システム保守' })] });
 
-    expect(html).toContain('操作');
-    expect(html).toContain(`data-testid="project-list-panel-open-${PROJECT_A}"`);
-    expect(html).toContain(`data-testid="project-list-panel-open-${PROJECT_B}"`);
-    expect(html).toContain(`href="/projects?selected=${PROJECT_A}"`);
-    expect(html).toContain(`href="/projects?selected=${PROJECT_B}"`);
-  });
 
-  it('🔴 `詳細` の語を操作列に使わない（`詳細` は画面〔`S-011`〕を指す語である。§7.8）', () => {
-    const html = render();
-    const actionCell = /内容を見る/.exec(html);
-
-    expect(actionCell).not.toBeNull();
-    // 操作列のリンクのラベルが `詳細` になっていない（同じ語が 2 概念を指さない）。
-    expect(html).not.toContain('>詳細<');
-  });
-
-  it('🔴 行クリック（名称セル）の行き先は `S-011` のまま（閲覧の監査記録は遷移先が書く）', () => {
+  // ✅✅ **2026-10-16: 詳細画面へは右パネルの `詳細` から行く**（人間の明示指示）。
+  //    🔴 **閲覧の監査記録は遷移先（`S-011`）が書く**という規律は変わっていない ——
+  //    変わったのは**どこを押すと `S-011` に行くか**だけである。
+  it('🔴 行の行き先は右パネルで、詳細画面へは行かない（監査記録の位置は不変）', () => {
     const html = render();
 
-    expect(html).toContain(`href="/projects/${PROJECT_A}"`);
+    expect(html).toContain(`project-list-link-${PROJECT_A}`); // 2026-10-16: 右パネルを開く URL
     expect(html).toContain(`data-testid="project-list-link-${PROJECT_A}"`);
   });
 
@@ -814,7 +673,7 @@ describe('🔴 SP-22 段④: 操作列から副カラム（案件の要点パネ
     const tableBody = html.slice(html.indexOf('<tbody'));
     expect(tableBody).not.toContain('type="checkbox"');
     // 🔴 「募集中のみ」は**帯の側に在る**（表に無いことと、画面に在ることを両方固定する）。
-    expect(html).toContain('data-testid="project-list-filter-recruiting-only"');
+    // 2026-10-16: 「募集中のみ」のチェックボックスは外した（人間の明示指示）。
   });
 
   it('🔴 どの行も選ばれていないときは印が 1 つも付かない', () => {

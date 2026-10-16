@@ -134,9 +134,12 @@ const SEMANTIC_COLORS: ReadonlyArray<readonly [token: string, primitive: string]
  *    「意味に割り当てた階調」であって人間が hex で確定したものではない（§7.4）。
  */
 const BRAND_COLORS: ReadonlyArray<readonly [token: string, value: string]> = [
-  ['--color-brand', '#2563eb'],
-  ['--color-brand-hover', '#1d4ed8'],
-  ['--color-brand-active', '#1e40af'],
+  // ✅✅ 2026-10-16: 人間の指摘「青が明るすぎて目がちかちかする」が **2 度目**だったので、
+  //    族の中で 1 段ずつ暗くした（v3 の blue-700 / 800 / 900）。
+  // 🔴 **3 段の関係を保つ**（同じ色にすると押した手応えが消える）。
+  ['--color-brand', '#1d4ed8'],
+  ['--color-brand-hover', '#1e40af'],
+  ['--color-brand-active', '#1e3a8a'],
 ];
 
 /**

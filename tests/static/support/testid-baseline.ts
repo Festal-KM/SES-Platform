@@ -579,7 +579,10 @@ export const TESTID_BASELINE_EXACT: readonly string[] = [
   'project-list-first',
   'project-list-loading',
   'project-list-next',
-  'project-list-order-note',
+  // ✅✅ 🔴 **2026-10-16: `project-list-order-note` を外した**（人間の明示指示
+  //    「『自社案件 6 件』と『後任募集 → 募集中 → 充足 の順に…』はいらない」）。
+  //    🔴 **並び自体は変えていない**（`PROJECT_LIST_ORDER_BY` は決定的なまま）。消えたのは
+  //       その説明の 1 行である。🔴 **使っていた検査は同じ変更で外してある。**
   'project-list-paging',
   'project-list-partner-scope-notice',
   'project-list-population',
@@ -1169,7 +1172,9 @@ export const TESTID_BASELINE_PREFIXES: readonly string[] = [
   'project-list-link-',
   'project-list-more-requirements-',
   'project-list-row-',
-  'project-list-visibility-',
+  // ✅✅ 🔴 **2026-10-16: `project-list-visibility-` を外した**（人間の明示指示
+  //    「案件リストの『公開先の設定状況』列はいらない」）。列そのものが無くなったので、
+  //    その testid を持つ要素も無くなった。🔴 **情報は右の案件サマリが持っている。**
   'project-public-field-notice-requirement-',
   'project-requirement-add-',
   'project-requirement-error-',

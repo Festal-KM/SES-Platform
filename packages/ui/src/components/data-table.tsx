@@ -94,6 +94,17 @@ export type DataTableNameCell<Row> = {
   readonly href: (row: Row) => string | null;
   /** ✅ 2026-10-15: 名称の前の小さな印（`StatusDot`）。🔴 語を持たせない（`NameCell.leading` の 🔴）。 */
   readonly leading?: (row: Row) => ReactNode;
+  /**
+   * ✅✅ **2026-10-16: 行全体をこのリンクの当たり判定にする**（人間の明示指示
+   * 「列をクリックしたら右側エリアに表示されるようにする」）。
+   *
+   * 🔴 **冒頭の差分 ① の但し書きがこれである。** `rowHref` を持たない理由は「`<tr>` に
+   *    リンクを張れない / 全セルを `<a>` にすると 400 個になる」だったが、**第 3 の形**が在る ——
+   *    **名称セルの `<a>` 1 つを疑似要素で行いっぱいに広げる**（`NAME_CELL_ROW_LINK_CLASSES`）。
+   *    行あたり `<a>` は 1 つ、クライアント JS は 0 行、キーボードでも到達できる。
+   * ⚠️ **`rowAction` と併用しない** —— 広げたリンクが操作列を覆って押せなくなる。
+   */
+  readonly stretch?: true;
 };
 
 type DataTableColumnBase = {
@@ -270,6 +281,13 @@ export function DataTable<Row>({
       `DataTable: sortKey を持つ列があるのに sortHref が渡されていません（並び順はサーバが確定させます。docs/05 §2.3.5）。対象: ${sortableWithoutHref.join(', ')}`,
     );
   }
+  // 🔴 ✅ 2026-10-16: 行いっぱいのリンクと操作列は併用できない（リンクが操作を覆う）。
+  //    **描いてから気づけない壊れ方**なので、組み立ての時点で止める。
+  if (rowAction !== undefined && columns.some((column) => column.nameCell?.stretch === true)) {
+    throw new Error(
+      'DataTable: 行いっぱいのリンク（nameCell.stretch）と操作列（rowAction）は併用できません（リンクが操作を覆って押せなくなります）。',
+    );
+  }
   if (rowAction !== undefined && rowActionHeader === undefined) {
     throw new Error('DataTable: rowAction を渡すときは rowActionHeader（操作列の語）も渡してください（packages/ui は文言を持ちません）。');
   }
@@ -402,6 +420,7 @@ export function DataTable<Row>({
                         name={column.nameCell.name(row)}
                         href={column.nameCell.href(row)}
                         leading={column.nameCell.leading?.(row)}
+                        stretch={column.nameCell.stretch}
                         linkComponent={linkComponent}
                         linkTestId={`${testIdPrefix}link-${key}`}
                         style={columnStyle(column)}
