@@ -261,6 +261,21 @@ export function ChatConversation({
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
   }, []);
+  // ✅ 2026-10-16（提案 H）: 開いた後に届いた発言（新着・送信・過去の読み込み）を、ふわっと出す。
+  //    🔴 動きは opacity だけ・既定の 150ms（`docs/04` §7.9）。最初から在る発言には付けない
+  //       （サーバで描く markup に opacity が混ざらない。render テスト ②）。動きを減らす設定の人には動かさない。
+  const initialIds = useRef(new Set(initialMessages.map((message) => message.id)));
+  const [arrivedIds, setArrivedIds] = useState<ReadonlySet<string>>(() => new Set());
+  useEffect(() => {
+    const entering = items.filter((item) => !initialIds.current.has(item.id) && !arrivedIds.has(item.id)).map((item) => item.id);
+    if (entering.length === 0) return;
+    const frame = window.requestAnimationFrame(() => setArrivedIds((current) => new Set([...current, ...entering])));
+    return () => window.cancelAnimationFrame(frame);
+  }, [items, arrivedIds]);
+  function fadeClass(id: string): string | null {
+    if (initialIds.current.has(id)) return null;
+    return arrivedIds.has(id) ? 'opacity-100 transition-opacity motion-reduce:transition-none' : 'opacity-0 transition-opacity motion-reduce:transition-none';
+  }
 
   async function copyBody(item: ChatMessageView): Promise<void> {
     if (item.body === null) return;
@@ -844,7 +859,7 @@ export function ChatConversation({
                     data-own="true"
                     data-layout="chat"
                     data-continued={continued ? 'true' : 'false'}
-                    className="flex flex-col items-end gap-1"
+                    className={cn('flex flex-col items-end gap-1', fadeClass(item.id))}
                     onMouseEnter={() => setHoveredId(item.id)}
                   >
                     {continued ? (
@@ -871,7 +886,7 @@ export function ChatConversation({
                 data-testid={`chat-message-${item.id}`}
                 data-own={item.own ? 'true' : 'false'}
                 data-continued={continued ? 'true' : 'false'}
-                className="flex gap-3"
+                className={cn('flex gap-3', fadeClass(item.id))}
                 onMouseEnter={() => setHoveredId(item.id)}
               >
                 {/* 🔴 続きの発言はアバターを見えなくするが、幅は残す（本文の左端をそろえる）。 */}
@@ -928,7 +943,9 @@ export function ChatConversation({
             event.preventDefault();
             submit();
           }}
-          className={`shrink-0 border-t border-border px-5 py-3 ${CHAT_COMPOSER_HEIGHT_CLASS}`}
+          // ✅ 2026-10-16（提案 I）: スマホでは画面ごとスクロールするので、入力欄を下端に貼り付ける（読み進めても書ける）。
+          //    `md` 以上は器の高さが決まっているので、貼り付けても位置は変わらない。地の色は重なりの下を隠すため。
+          className={`sticky bottom-0 shrink-0 border-t border-border bg-surface px-5 py-3 ${CHAT_COMPOSER_HEIGHT_CLASS}`}
           data-testid="chat-compose"
         >
           <Field label={messages.composeLabel} description={messages.composeHint}>
