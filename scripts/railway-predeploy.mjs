@@ -38,6 +38,26 @@ const BOOTSTRAP_VAR = 'SES_DB_BOOTSTRAP';
 const SUPERUSER_URL_VAR = 'SES_POSTGRES_SUPERUSER_URL';
 const MIGRATION_URL_VAR = 'SES_MIGRATION_DATABASE_URL';
 const SEED_PRESETS_VAR = 'SES_SEED_PRESETS';
+/**
+ * 🔴 **失敗したマイグレーションを「巻き戻した」と記録してから `migrate deploy` を流す**
+ *    （Prisma の P3009 からの復帰手順。公式が本番環境の回復手順として定めているもの）。
+ *
+ * ✅ **2026-10-16 に実際に必要になった。** `20261016010000_project_status_two_values` が
+ *    FORCE ROW LEVEL SECURITY の一時解除を忘れたまま流れて失敗し、以後 **P3009** で
+ *    **新しいマイグレーションが 1 本も当たらなくなった**（predeploy が落ちてアプリが起動しない）。
+ *    DB は Railway の内部ホストにしか無く、**外から `prisma migrate resolve` を打てない**ため、
+ *    この 1 段をコンテナの中に置く。
+ *
+ * 🔴 **既定では何もしない。** 環境変数にマイグレーション名が入っているときだけ動く ——
+ *    常時 `--rolled-back` を打つ形にすると、**本当に直っていないマイグレーションを毎回
+ *    「巻き戻した」ことにして再試行し続ける**（失敗が失敗として見えなくなる）。
+ * 🔴 **使ったら必ず変数を外す**（1 回限りの回復手段である。外し忘れると上の危険が残る）。
+ * 🔴 **`--rolled-back` を名乗れるのは、DB に部分適用が残っていないときだけである。**
+ *    `prisma migrate deploy` は 1 本を 1 トランザクションで流すので、途中で失敗した
+ *    マイグレーションはロールバックされている（= この前提が成り立つ）。トランザクションに
+ *    できない DDL を書いた場合はこの限りではないので、**その場合は手で DB を確かめる**。
+ */
+const MIGRATION_RESOLVE_ROLLED_BACK_VAR = 'SES_MIGRATION_RESOLVE_ROLLED_BACK';
 
 /** 🔴 `MIGRATION_DATABASE_URL` という名前は使えない（`packages/config` が実行時環境での設定を禁止している。docs/05 §13.4 規則 3）。 */
 const DEFAULT_SEED_PRESETS = 'demo,isolation';
@@ -251,9 +271,44 @@ function applyDatabaseRoles(pgEnv) {
  * 🔴 `DATABASE_URL` はこの子プロセスにだけ上書きする（`app_migrator`）。サービスの
  *    `DATABASE_URL`（`app_tenant`）はマイグレーションを実行できない（テーブル所有者ではない）。
  */
+/**
+ * 🔴 P3009 からの回復（上の `MIGRATION_RESOLVE_ROLLED_BACK_VAR` の 🔴）。**変数が無ければ何もしない。**
+ *
+ * 🔴 マイグレーション名を検証する（`prisma migrate deploy` と同じディレクトリに実在すること）——
+ *    打ち間違いで存在しない名前を渡すと `migrate resolve` はエラーになるが、**そのエラーは
+ *    「回復に失敗した」と見分けが付きにくい**。先に実在を確かめて、違えば理由を名指しで落とす。
+ */
+function resolveRolledBackMigration(url) {
+  const name = process.env[MIGRATION_RESOLVE_ROLLED_BACK_VAR];
+  if (name === undefined || name.trim() === '') return;
+  const migrationName = name.trim();
+  const dir = path.join(PROJECT_ROOT, 'packages', 'db', 'prisma', 'migrations', migrationName);
+  if (!fs.existsSync(dir)) {
+    throw new PredeployError(
+      `${MIGRATION_RESOLVE_ROLLED_BACK_VAR} に指定されたマイグレーション「${migrationName}」が ` +
+        'packages/db/prisma/migrations に実在しません（名前を確かめてください）。',
+    );
+  }
+  log(
+    `3/4 マイグレーション: 失敗記録の解消（prisma migrate resolve --rolled-back ${migrationName}）。` +
+      `🔴 1 回限りの回復手段です。成功したら ${MIGRATION_RESOLVE_ROLLED_BACK_VAR} を必ず外してください。`,
+  );
+  runCommand(
+    'pnpm',
+    ['--filter', '@ses/db', 'exec', 'prisma', 'migrate', 'resolve', '--rolled-back', migrationName],
+    {
+      env: { DATABASE_URL: url },
+      label: `3/4 マイグレーション（migrate resolve --rolled-back ${migrationName}）`,
+    },
+  );
+  log('3/4 マイグレーション: 失敗記録を解消しました（この後 migrate deploy が再実行します）。');
+}
+
 function migrateDeploy() {
   const raw = requireEnv(MIGRATION_URL_VAR);
   const url = withSslModeRequire(raw, MIGRATION_URL_VAR);
+  // 🔴 **`migrate deploy` より前**に行う（P3009 は deploy 側で出るため、先に解消しないと進めない）。
+  resolveRolledBackMigration(url);
   log(`3/4 マイグレーション: 開始（prisma migrate deploy / role=${roleNameOf(raw, MIGRATION_URL_VAR)}）`);
   runCommand('pnpm', ['--filter', '@ses/db', 'run', 'migrate:deploy'], {
     env: { DATABASE_URL: url },
