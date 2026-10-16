@@ -220,8 +220,17 @@ describe('🔴 ②: 投稿できないロールにボタンを描かない（BR-
     // 🔴 ② の本体は「不能を描かない」である。会話の口（送信）と過去の読み込みが共に無い状態で、
     //    押せない何かが残っていないことを見る。
     const html = renderConversation({ canPost: false, initialNextCursor: null });
-    expect(html).not.toContain('<button');
-    expect(html).not.toContain('disabled');
+    // ✅ 2026-10-14: 発言の操作（コピー・続きを読む）は閲覧専用でも**押せて働く**ので在ってよい。
+    //    🔴 それ以外の `<button>`（送信・再送・定型文・過去の読み込み）は 1 つも無い。
+    const buttons = [...html.matchAll(/<button[^>]*>/g)].map((match) => match[0]);
+    for (const button of buttons) {
+      expect(button, `発言の操作ではないボタンがあります: ${button}`).toMatch(/data-testid="chat-message-(copy|expand)-/);
+    }
+    expect(html).not.toContain('chat-compose-submit');
+    expect(html).not.toContain('chat-compose-template');
+    // 🔴 `disabled` の**属性**が無い（`Button` のクラスの `disabled:` バリアントは見え方の定義なので除く。上の検査と同じ）。
+    expect(html).not.toMatch(/\sdisabled(=|\s|\/?>)/);
+    expect(html).not.toContain('aria-disabled');
     expect(html).toContain('data-testid="chat-compose-not-allowed"');
   });
 });
@@ -552,6 +561,51 @@ describe('⑩: 会話を右に並べて開く（2026-10-14、チャットレー�
     expect(tokens).toContain('hidden');
     expect(tokens).toContain('md:inline-block');
     expect(tokens).not.toContain('inline-block');
+  });
+});
+
+describe('⑫: 会話の操作の改修（2026-10-14、チャットレーン）', () => {
+  it('🔴 本文の URL は新しいタブで開くリンクにし、開いた先に画面を触らせない（noopener / noreferrer）', () => {
+    const html = renderConversation({
+      initialMessages: [{ ...MESSAGE_OTHER, body: '資料: https://example.com/doc?x=1 です' }],
+    });
+    const link = new RegExp(`<a [^>]*data-testid="chat-message-link-${MESSAGE_OTHER.id}"[^>]*>`).exec(html)?.[0] ?? '';
+    expect(link).toContain('href="https://example.com/doc?x=1"');
+    expect(link).toContain('target="_blank"');
+    expect(link).toContain('rel="noopener noreferrer nofollow"');
+  });
+
+  it('🔴 javascript: はリンクにしない', () => {
+    const html = renderConversation({ initialMessages: [{ ...MESSAGE_OTHER, body: 'javascript:alert(1)' }] });
+    expect(html).not.toContain(`chat-message-link-${MESSAGE_OTHER.id}`);
+  });
+
+  it('長い本文は畳み、「続きを読む」を出す（短い本文には出さない）', () => {
+    const long = renderConversation({ initialMessages: [{ ...MESSAGE_OTHER, body: 'あ'.repeat(700) }] });
+    expect(long).toContain(`data-testid="chat-message-expand-${MESSAGE_OTHER.id}"`);
+    expect(long).toContain(t('chat.message.readMore'));
+    expect(long).not.toContain('あ'.repeat(500));
+    expect(renderConversation()).not.toContain('chat-message-expand-');
+  });
+
+  it('発言ごとにコピーを出す（本文が削除された発言には出さない）', () => {
+    expect(renderConversation()).toContain(`data-testid="chat-message-copy-${MESSAGE_OTHER.id}"`);
+    const purged = renderConversation({ initialMessages: [{ ...MESSAGE_OTHER, body: null }] });
+    expect(purged).not.toContain('chat-message-copy-');
+  });
+
+  it('投稿できるときは定型文の選択欄を出す。残り文字数は空のうちは出さない', () => {
+    const html = renderConversation();
+    expect(html).toContain('data-testid="chat-compose-template"');
+    expect(html).toContain(t('chat.compose.template.interview'));
+    expect(html).not.toContain('chat-compose-remaining');
+  });
+
+  it('発言が無い会話では、投稿できる人には最初の一言を促す', () => {
+    expect(renderConversation({ initialMessages: [], initialNextCursor: null })).toContain(t('chat.messages.first'));
+    expect(renderConversation({ initialMessages: [], initialNextCursor: null, canPost: false })).toContain(
+      t('chat.messages.empty'),
+    );
   });
 });
 
