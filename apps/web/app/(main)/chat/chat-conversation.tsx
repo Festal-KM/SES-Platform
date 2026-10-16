@@ -318,6 +318,26 @@ export function ChatConversation({
   const [editText, setEditText] = useState('');
   const [editFailed, setEditFailed] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  // ✅ 2026-10-16（紺野）: 発言の操作は、マウスが乗っている発言にだけ出す。
+  //    🔴 `group-hover:` は画面に書けない（`tests/static/ui-state-in-primitives.test.ts` (j)。押し心地の 8 状態は
+  //       `packages/ui` が持つ）。ここで決めているのは「どの発言の操作を出すか」であって、押し心地ではない。
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  // 🔴 キーボードで操作している間は全部の発言の操作を出す（見えない操作にはキーボードで移れないため）。
+  //    Tab を押したら入り、マウスを押したら抜ける。
+  const [keyboardNav, setKeyboardNav] = useState(false);
+  useEffect(() => {
+    // 🔴 画面のどこから Tab で入ってきても効くよう、window で聞く。
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Tab') setKeyboardNav(true);
+    };
+    const onPointer = () => setKeyboardNav(false);
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('pointerdown', onPointer);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('pointerdown', onPointer);
+    };
+  }, []);
 
   function replaceItem(next: ChatMessageView): void {
     setItems((current) => current.map((entry) => (entry.id === next.id ? next : entry)));
@@ -478,7 +498,7 @@ export function ChatConversation({
         {text === null ? null : (
           // ✅ 2026-10-16（紺野）: 発言の操作は**カーソルを当てたときだけ**出す（常に出ていて煩雑だった）。
           //    🔴 マウスの機器（`pointer-fine`）だけで隠す。スマホ（指）にはカーソルが無いので**常に出す**。
-          //    🔴 キーボードで発言の中に移ったとき（`group-focus-within`）と、削除の確認中も出す。
+          //    🔴 キーボードで操作している間（`keyboardNav`）と、削除の確認中も出す。
           //    🔴 `opacity` で隠さない（render テストの ②）。`invisible` は場所を取ったまま見えなくするだけで、
           //       カーソルを当てても行がずれない。
           <div
@@ -486,9 +506,7 @@ export function ChatConversation({
             aria-label={messages.messageActions}
             className={cn(
               'flex flex-wrap items-center gap-2',
-              confirmDeleteId === item.id
-                ? null
-                : 'pointer-fine:invisible pointer-fine:group-hover:visible pointer-fine:group-focus-within:visible',
+              keyboardNav || hoveredId === item.id || confirmDeleteId === item.id ? null : 'pointer-fine:invisible',
             )}
             data-testid={`chat-message-actions-${item.id}`}
           >
@@ -765,6 +783,7 @@ export function ChatConversation({
             aria-label={messages.listLabel}
             className="m-0 flex list-none flex-col gap-3 p-0"
             data-testid="chat-messages"
+            onMouseLeave={() => setHoveredId(null)}
           >
             {withUnreadMarker(withDaySeparators(items), markerId).map((entry) => {
               // ✅ 2026-10-16: 「ここから未読」の線。
@@ -825,7 +844,8 @@ export function ChatConversation({
                     data-own="true"
                     data-layout="chat"
                     data-continued={continued ? 'true' : 'false'}
-                    className="group flex flex-col items-end gap-1"
+                    className="flex flex-col items-end gap-1"
+                    onMouseEnter={() => setHoveredId(item.id)}
                   >
                     {continued ? (
                       <span className="sr-only">{messages.own}</span>
@@ -851,7 +871,8 @@ export function ChatConversation({
                 data-testid={`chat-message-${item.id}`}
                 data-own={item.own ? 'true' : 'false'}
                 data-continued={continued ? 'true' : 'false'}
-                className="group flex gap-3"
+                className="flex gap-3"
+                onMouseEnter={() => setHoveredId(item.id)}
               >
                 {/* 🔴 続きの発言はアバターを見えなくするが、幅は残す（本文の左端をそろえる）。 */}
                 <Avatar
