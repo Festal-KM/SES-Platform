@@ -101,9 +101,9 @@ describe('案件の要点パネル（`docs/04` §7.1 の幅クラス B の副カ
   });
 
   it('🔴 状態名で描き分ける（語ではなく値を使っている）', () => {
-    const html = render({ row: row({ status: '後任募集', statusState: 'SUCCESSOR_WANTED' }) });
+    const html = render({ row: row({ status: '終了', statusState: 'CLOSED' }) });
 
-    expect(html).toContain('data-state="SUCCESSOR_WANTED"');
+    expect(html).toContain('data-state="CLOSED"');
   });
 
   it('下端の操作行は 3 本すべてが同じ輪郭ボタンで、幅を等分する', () => {

@@ -1057,7 +1057,7 @@ describe('🔴 T-12-10 (h): 走らない 3 ケース + 公開先の増減（AC-6
     const saved = await patchProject(host, projectId, {
       headcount: 3,
       startDate: '2026-11-01',
-      status: 'FILLED',
+      status: 'CLOSED',
       endClientName: END_CLIENT,
       internalUnitPrice: 900000,
       unitPriceMin: 600000,

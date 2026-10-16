@@ -88,9 +88,13 @@ export type ProjectSearchCriteria = {
  *    `tests/isolation/projects.test.ts` が実データで固定する。
  */
 export const PROJECT_STATUS_LIST_PRIORITY: readonly ProjectStatus[] = [
-  'SUCCESSOR_WANTED',
+  // ✅✅ **2026-10-16（[Issue #98](https://github.com/Festal-KM/SES-Platform/issues/98) の回答
+  //    「募集中と終了の二つだけでよい」）: 3 値 → 2 値。**
+  // 🔴 **`ORDER BY status DESC` に依存した形はそのまま成立する** —— 降順に並べると
+  //    `'OPEN' > 'CLOSED'` であり、**募集中が先・終了が後**という欲しい順になる
+  //    （下の `assertStatusPriority` が読み込み時に照合する）。
   'OPEN',
-  'FILLED',
+  'CLOSED',
 ];
 
 /**

@@ -265,7 +265,8 @@ describe('③ 検索が当たる分布（F-009 / F-015）と、transition() を�
     expect(published).toBeGreaterThan(1_000);
     expect(published).toBeLessThan(2_000);
     const statuses = await admin.project.groupBy({ by: ['status'], where });
-    expect(statuses.map((row) => row.status).sort()).toEqual(['FILLED', 'OPEN', 'SUCCESSOR_WANTED']);
+    // ✅ 2026-10-16: 2 値になった（Issue #98）。
+    expect(statuses.map((row) => row.status).sort()).toEqual(['CLOSED', 'OPEN']);
     expect(await admin.project.count({ where: { ...where, startDate: { gte: new Date(NOW.getTime()) } } })).toBeGreaterThan(1_000);
     const projectNames = await admin.project.findMany({ where, select: { name: true } });
     expect(projectNames.filter((row) => row.name.includes('受発注')).length).toBeGreaterThan(100);

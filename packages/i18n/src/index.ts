@@ -2749,12 +2749,17 @@ const ja = {
   'projects.startDate.label': '稼働開始日',
   'projects.status.label': '案件の状態',
   'projects.status.OPEN': '募集中',
+  // ✅✅ 🔴 **2026-10-16（[Issue #98](https://github.com/Festal-KM/SES-Platform/issues/98) の回答
+  //    「募集中と終了の二つだけでよい」）: `終了` を足し、`充足` / `後任募集` は使わなくなった。**
+  'projects.status.CLOSED': '終了',
+  // 🔴 **キーは消していない**（`U-22` の凍結。値も残す）—— 旧データの表示に要るわけではないが
+  //    （migration で移送済み）、**監査ログの過去の記録に綴りが残る**ため、語を引ける状態にしておく。
+  //    `PROJECT_STATUS_MESSAGE_KEYS` はもう参照しない。
   'projects.status.FILLED': '充足',
-  // 🔴 `F-045` の還流でも自動生成される状態である（`docs/04` §S-010 の状態バッジ）。
-  //    手動でも選べるが、「自動で付くことがある」ことを説明に書く。
   'projects.status.SUCCESSOR_WANTED': '後任募集',
+  // ✅ 2026-10-16: `後任募集` が無くなったので、説明も 2 値のものに差し替えた（キーは同じ）。
   'projects.status.note':
-    '「後任募集」は、稼働が終了した案件に対して自動で設定されることがあります（後続のリリース）。',
+    '募集を続けているあいだは「募集中」、募集を終えたら「終了」にします。',
 
   // --- 要件エディタ（必須 / 尚可で同じ部品を使い、見出しと説明だけを変える）---
   'projects.requirements.must.note':

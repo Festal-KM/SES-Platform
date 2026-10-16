@@ -630,7 +630,7 @@ const PROJECT_NICE = {
 
 const PROJECT_TEXTS: Record<
   keyof DemoProjectIds,
-  { readonly name: string; readonly publicSummary: string | null; readonly status: 'OPEN' | 'FILLED' }
+  { readonly name: string; readonly publicSummary: string | null; readonly status: 'OPEN' | 'CLOSED' }
 > = {
   published3: {
     name: 'EC サイト再構築（バックエンド）',
@@ -657,7 +657,7 @@ const PROJECT_TEXTS: Record<
   filled: {
     name: '社内ポータル刷新',
     publicSummary: 'TypeScript / React による社内ポータルのフロントエンド刷新（充足済み）。',
-    status: 'FILLED',
+    status: 'CLOSED', // ✅ 2026-10-16: `FILLED` を畳んだ（Issue #98）
   },
   unpublishedReady: {
     name: 'モバイルアプリの新規開発（API 側）',

@@ -9,9 +9,11 @@ import type { ProjectPublicField } from '@ses/domain';
 import type { MessageKey } from '@ses/i18n';
 
 export const PROJECT_STATUS_MESSAGE_KEYS: Readonly<Record<ProjectStatus, MessageKey>> = {
+  // ✅✅ **2026-10-16（[Issue #98](https://github.com/Festal-KM/SES-Platform/issues/98)）: 2 値。**
+  //    🔴 `Record<ProjectStatus, …>` なので、値集合を増やすと**ここが型エラーになる**
+  //    （文言の無い状態を画面に出せない）。
   OPEN: 'projects.status.OPEN',
-  FILLED: 'projects.status.FILLED',
-  SUCCESSOR_WANTED: 'projects.status.SUCCESSOR_WANTED',
+  CLOSED: 'projects.status.CLOSED',
 };
 
 /**

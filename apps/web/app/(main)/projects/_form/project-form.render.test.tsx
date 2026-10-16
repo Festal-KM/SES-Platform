@@ -122,9 +122,9 @@ function render(overrides: Partial<ProjectFormProps> = {}): string {
     initial: EMPTY_VALUES,
     skillDictionary: DICTIONARY,
     statusOptions: [
+      // ✅ 2026-10-16: 2 値になった（Issue #98）。
       { value: 'OPEN', label: '募集中' },
-      { value: 'FILLED', label: '充足' },
-      { value: 'SUCCESSOR_WANTED', label: '後任募集' },
+      { value: 'CLOSED', label: '終了' },
     ],
     remoteModeOptions: [{ value: 'FULL_REMOTE', label: 'フルリモート可' }],
     prefectureOptions: [{ value: '13', label: '東京都' }],

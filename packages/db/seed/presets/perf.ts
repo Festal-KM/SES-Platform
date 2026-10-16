@@ -497,7 +497,7 @@ export type PerfProjectPlan = {
   readonly publicSummary: string;
   readonly unitPriceMin: number;
   readonly unitPriceMax: number;
-  readonly status: 'OPEN' | 'FILLED' | 'SUCCESSOR_WANTED';
+  readonly status: 'OPEN' | 'CLOSED';
   readonly startDate: Date;
   readonly prefecture: string;
   readonly remoteMode: RemoteMode;
@@ -644,7 +644,9 @@ function buildProject(rng: SeedRng, now: Date, profile: PerfTenantProfile, seq: 
   const statusRoll = rng.next();
   // 🔴 案件 1 = 充足済み（`WON` → 稼働）、案件 2 = 募集中（提案の対象）。それ以外は 70 / 25 / 5 の分布。
   const status: PerfProjectPlan['status'] =
-    seq === 1 ? 'FILLED' : seq === 2 ? 'OPEN' : statusRoll < 0.7 ? 'OPEN' : statusRoll < 0.95 ? 'FILLED' : 'SUCCESSOR_WANTED';
+    // ✅ 2026-10-16: 2 値になった（Issue #98）。🔴 **件数の配分は変えていない** ——
+    //    旧 `FILLED` + 旧 `SUCCESSOR_WANTED` が `CLOSED` に合流するだけである。
+    seq === 1 ? 'CLOSED' : seq === 2 ? 'OPEN' : statusRoll < 0.7 ? 'OPEN' : 'CLOSED';
   const createdDaysAgo = rng.int(10, 400);
   const updatedDaysAgo = rng.int(0, createdDaysAgo);
   const remoteMode = pickRemoteMode(rng);

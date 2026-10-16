@@ -301,11 +301,13 @@ describe('✅ T-12-01: seed:perf の計画は決定的（固定シード ses-per
     expect(count((e) => e.preferenceNote.includes('フルリモート'))).toBeGreaterThan(200);
     // 都道府県は 47 通りすべてが現れる（`F-009` の都道府県条件がどの値でも空にならない）。
     expect(new Set(largest.engineers.map((e) => e.prefecture)).size).toBe(47);
-    // 案件: 公開済み（経路 1）が半数程度、状態は 3 値すべて。
+    // 案件: 公開済み（経路 1）が半数程度、状態は 2 値すべて
+    //       （✅ 2026-10-16: 3 値 → 2 値。Issue #98。🔴 **件数の配分は変えていない** ——
+    //        旧 `FILLED` + 旧 `SUCCESSOR_WANTED` が `CLOSED` に合流しただけである）。
     const published = largest.projects.filter((p) => p.publishedAt !== null).length;
     expect(published).toBeGreaterThan(1000);
     expect(published).toBeLessThan(2000);
-    expect(new Set(largest.projects.map((p) => p.status))).toEqual(new Set(['OPEN', 'FILLED', 'SUCCESSOR_WANTED']));
+    expect(new Set(largest.projects.map((p) => p.status))).toEqual(new Set(['OPEN', 'CLOSED']));
   }, HEAVY_TIMEOUT_MS);
 });
 

@@ -209,8 +209,11 @@ describe('1 行の表示値', () => {
     );
   });
 
-  it('後任募集の状態バッジが出る（`F-045` の還流が一覧で見える）', () => {
-    expect(projectListRow(hostView({ status: 'SUCCESSOR_WANTED' })).status).toBe('後任募集');
+  // ✅ **2026-10-16（[Issue #98](https://github.com/Festal-KM/SES-Platform/issues/98)）: 2 値。**
+  // 🔴 `F-045` の還流で起こした案件は `OPEN`（募集中）で生まれる —— **後任募集であるという
+  //    事実は `originAssignmentId` に残る**（状態からは読めなくなった）。
+  it('終了の状態バッジが出る（値ではなく語で描いている）', () => {
+    expect(projectListRow(hostView({ status: 'CLOSED' })).status).toBe('終了');
   });
 
   it('複数行をまとめて変換できる', () => {
@@ -269,8 +272,8 @@ describe('🔴 検索条件を保ったリンク（ページングで条件が�
   });
 
   it('次ページのリンクは条件を保ったままカーソルを足す', () => {
-    expect(projectListHref(query({ status: 'FILLED' }), PROJECT_ID)).toBe(
-      `/projects?status=FILLED&cursor=${PROJECT_ID}`,
+    expect(projectListHref(query({ status: 'CLOSED' }), PROJECT_ID)).toBe(
+      `/projects?status=CLOSED&cursor=${PROJECT_ID}`,
     );
   });
 

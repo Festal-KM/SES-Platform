@@ -5,7 +5,8 @@
 //
 // 🔴 ここで固定するのは 2 点である:
 //   ①検索条件が指定されたときだけ述語が増えること（`F-015` の入力）
-//   ②既定の並びが `後任募集 → 募集中 → 充足` → 更新日時 → 開始日 → id であること
+//   ②既定の並びが `募集中 → 終了` → 更新日時 → 開始日 → id であること
+//     （✅ 2026-10-16: 状態が 2 値になった。Issue #98）
 //     （`docs/04` §S-010 / `F-015 AC-3`）
 // 🔴 「述語に境界の条件（`tenantId` / `partnerCompanyId` / 公開範囲）が 1 つも無い」は
 //    `apps/web/lib/api/search-isolation.test.ts` が固定する。
@@ -34,8 +35,8 @@ describe('検索条件 → 述語（`F-015` の入力）', () => {
   });
 
   it('状態は等値で絞る', () => {
-    expect(projectSearchWhere({ status: 'SUCCESSOR_WANTED' })).toEqual({
-      status: 'SUCCESSOR_WANTED',
+    expect(projectSearchWhere({ status: 'CLOSED' })).toEqual({
+      status: 'CLOSED',
     });
   });
 
@@ -125,13 +126,19 @@ describe('🔴 F-015 AC-3: 既定の並びが決定的である', () => {
     expect(json).not.toContain('rank');
   });
 
-  it('🔴 後任募集が既定の並びで上位に来る（`docs/04` §S-010。`F-045` の還流）', () => {
-    expect(PROJECT_STATUS_LIST_PRIORITY[0]).toBe('SUCCESSOR_WANTED');
+  // ✅✅ **2026-10-16（[Issue #98](https://github.com/Festal-KM/SES-Platform/issues/98) の回答
+  //    「募集中と終了の二つだけでよい」）: 旧 `後任募集` は `OPEN` に合流した。**
+  // 🔴 **上位に来るべきものは変わっていない** —— 営業が最初に見たいのは**まだ出せる案件**であり、
+  //    2 値ではそれが `OPEN` である。
+  it('🔴 募集中が既定の並びで上位に来る（`docs/04` §S-010）', () => {
+    expect(PROJECT_STATUS_LIST_PRIORITY[0]).toBe('OPEN');
+    expect(PROJECT_STATUS_LIST_PRIORITY.at(-1)).toBe('CLOSED');
   });
 
   it('🔴 状態の優先順位が `status` の降順と一致する（一致しなければ import 時に落ちる）', () => {
     // `PROJECT_LIST_ORDER_BY` の第 1 キーは `status: 'desc'` であり、DB は値の綴りで並べる。
-    // 綴りの降順が優先順位と一致することが、後任募集を上位に置く実装の前提である。
+    // 綴りの降順が優先順位と一致することが、募集中を上位に置く実装の前提である
+    // （`'OPEN' > 'CLOSED'`。2 値になっても成立している）。
     expect([...PROJECT_STATUSES].sort().reverse()).toEqual([...PROJECT_STATUS_LIST_PRIORITY]);
   });
 
@@ -149,21 +156,21 @@ describe('🔴 F-015 AC-3: 既定の並びが決定的である', () => {
       }).not.toThrow();
     });
 
-    it('🔴 状態が増えたのに優先順位が古いままなら落ちる（欠けている ＝ 順位が未定の状態がある）', () => {
+    it('🔴 状態が欠けていたら落ちる（＝ 順位が未定の状態がある）', () => {
       expect(() => {
-        assertStatusPriority(['SUCCESSOR_WANTED', 'OPEN']);
+        assertStatusPriority(['OPEN']);
       }).toThrow(/PROJECT_STATUS_LIST_PRIORITY/);
     });
 
-    it('🔴 綴りの降順と違う並びを宣言したら落ちる（後任募集が静かに沈まない）', () => {
+    it('🔴 綴りの降順と違う並びを宣言したら落ちる（募集中が静かに沈まない）', () => {
       expect(() => {
-        assertStatusPriority(['OPEN', 'SUCCESSOR_WANTED', 'FILLED']);
+        assertStatusPriority(['CLOSED', 'OPEN']);
       }).toThrow(/PROJECT_STATUS_LIST_PRIORITY/);
     });
 
     it('値集合に無い状態を宣言したら落ちる', () => {
       expect(() => {
-        assertStatusPriority(['SUCCESSOR_WANTED', 'OPEN', 'FILLED', 'ARCHIVED' as ProjectStatus]);
+        assertStatusPriority(['OPEN', 'CLOSED', 'ARCHIVED' as ProjectStatus]);
       }).toThrow(/PROJECT_STATUS_LIST_PRIORITY/);
     });
   });

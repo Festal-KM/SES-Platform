@@ -125,6 +125,9 @@ function readAllMigrationSql(): string {
 const REDEFINED_CHECK_CONSTRAINTS: Readonly<Record<string, { readonly definitions: number; readonly reason: string }>> = {
   // T-11-02（20260924000000。AI 4 単位）→ T-12-12（20260928000000。+ EMAIL_COUNT / STORAGE_BYTES = 6 計測）
   tenant_quota_overrides_metric_check: { definitions: 2, reason: 'T-12-12 で執行点を配線し EMAIL_COUNT / STORAGE_BYTES を戻した' },
+  // ✅ 2026-10-16（Issue #98 の回答「募集中と終了の二つだけでよい」）: 20260903010000（3 値）→
+  //    20261016010000（2 値。SUCCESSOR_WANTED→OPEN / FILLED→CLOSED に移送してから張り替えた）
+  projects_status_check: { definitions: 2, reason: 'Issue #98 の回答で案件の状態を 2 値（OPEN / CLOSED）にした' },
 };
 
 /**

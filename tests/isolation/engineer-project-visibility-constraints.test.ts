@@ -457,9 +457,9 @@ describe('T-02-02: docs/05 §3.4 / §3.5 の新 10 表 + engineers 拡張', () =
 
       it('対照: 許容値の組み合わせは成立する', async () => {
         const project = await owner.project.create({
-          data: { tenantId: TENANT_A, name: 'X', status: 'SUCCESSOR_WANTED', remoteMode: 'ONSITE_ONLY' },
+          data: { tenantId: TENANT_A, name: 'X', status: 'CLOSED', remoteMode: 'ONSITE_ONLY' },
         });
-        expect(project.status).toBe('SUCCESSOR_WANTED');
+        expect(project.status).toBe('CLOSED');
       });
     });
 

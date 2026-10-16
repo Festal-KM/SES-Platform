@@ -88,9 +88,9 @@ const messages: ProjectListScreenMessages = {
 
 const statusOptions = [
   { value: '', label: 'すべて' },
+  // ✅ 2026-10-16: 2 値になった（Issue #98 の回答「募集中と終了の二つだけでよい」）。
   { value: 'OPEN', label: '募集中' },
-  { value: 'FILLED', label: '充足' },
-  { value: 'SUCCESSOR_WANTED', label: '後任募集' },
+  { value: 'CLOSED', label: '終了' },
 ] as const;
 
 const prefectureOptions = [
@@ -664,13 +664,13 @@ describe('🔴 状態は Badge で描き、色は画面が決めない（`docs/0
   it('🔴 行ごとに状態名が変わる（語ではなく値で描き分けている）', () => {
     const html = render({
       rows: [
-        row({ status: '後任募集', statusState: 'SUCCESSOR_WANTED' }),
-        row({ id: PROJECT_B, name: '物流管理システム保守', status: '充足', statusState: 'FILLED' }),
+        row({ status: '募集中', statusState: 'OPEN' }),
+        row({ id: PROJECT_B, name: '物流管理システム保守', status: '終了', statusState: 'CLOSED' }),
       ],
     });
 
-    expect(html).toContain('data-state="SUCCESSOR_WANTED"');
-    expect(html).toContain('data-state="FILLED"');
+    expect(html).toContain('data-state="OPEN"');
+    expect(html).toContain('data-state="CLOSED"');
   });
 
   it('🔴 画面が色を渡していない（`variant` / `shape` / 色のクラスを 1 つも書いていない）', () => {

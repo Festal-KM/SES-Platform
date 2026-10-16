@@ -80,8 +80,26 @@ export const SKILL_SHEET_EXTRACTION_STATUSES = [
 
 export type SkillSheetExtractionStatus = (typeof SKILL_SHEET_EXTRACTION_STATUSES)[number];
 
-/** docs/05 §3.5 `Project.status`（TEXT + CHECK）。募集中/充足/後任募集。 */
-export const PROJECT_STATUSES = ['OPEN', 'FILLED', 'SUCCESSOR_WANTED'] as const;
+/**
+ * docs/05 §3.5 `Project.status`（TEXT + CHECK）。**募集中 / 終了の 2 値**。
+ *
+ * ✅✅ 🔴 **2026-10-16（人間の明示指示。[Issue #98](https://github.com/Festal-KM/SES-Platform/issues/98)
+ *    の回答「募集中と終了の二つだけでよい」）: 3 値（`OPEN` / `FILLED` / `SUCCESSOR_WANTED`）から
+ *    2 値にした。** 既存データの移送は migration `20261016000000_project_status_two_values`:
+ *
+ *      `SUCCESSOR_WANTED`（後任募集） → `OPEN`   … **まだ募集している**ので募集中に入る
+ *      `FILLED`（充足）               → `CLOSED` … **もう募集していない**
+ *
+ * 🔴 **`後任募集` という区分が画面から消えるが、`F-045` の還流（`CLAUDE.md` §1.3 の ⑥ → ①）は
+ *    1 行も壊れていない** —— 還流で起こした案件は `originAssignmentId`（生成元の `Assignment`）を
+ *    持ち続け、**その案件が後任募集であるという事実は列に残る**。消えたのは「状態として区別して
+ *    色を付けること」だけである。🔴 **区別が要る日が来たら `originAssignmentId` から導出する**
+ *    （状態を 3 つ目に増やして戻さない。増やすのは人間の判断事項である）。
+ * ⚠️ `充足` を `終了` に畳むのは、2 値では「もう募集していない」が 1 つしか無いためである
+ *    （`充足`（枠は埋まった）と `終了`（案件そのものが終わった）は本来別の事実だが、
+ *    人間の指示が「二つだけでよい」であり、営業の判断に要るのは**出せるか出せないか**である）。
+ */
+export const PROJECT_STATUSES = ['OPEN', 'CLOSED'] as const;
 
 export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
 

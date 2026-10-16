@@ -412,15 +412,29 @@ describe('🔴 F-013 AC-1: 必須要件と尚可要件が別区分として保�
   });
 });
 
-describe('🔴 案件の状態（募集中 / 充足 / 後任募集）と F-045 の生成元', () => {
-  it('後任募集（SUCCESSOR_WANTED）を登録できる', async () => {
+// ✅✅ **2026-10-16（[Issue #98](https://github.com/Festal-KM/SES-Platform/issues/98) の回答
+//    「募集中と終了の二つだけでよい」）: 状態は `OPEN` / `CLOSED` の 2 値になった。**
+// 🔴 **`F-045` の生成元（`origin_assignment_id`）の検査はそのまま残す** —— 還流で起こした案件が
+//    `OPEN` で生まれるようになっただけで、**後任募集であるという事実はこの列に残る**
+//    （`@ses/db` の `PROJECT_STATUSES` の 🔴）。ここが消えると還流の痕跡を守る検査が無くなる。
+describe('🔴 案件の状態（募集中 / 終了）と F-045 の生成元', () => {
+  it('終了（CLOSED）を登録できる', async () => {
     const ctx = await ctxOf(HOST_1, 'SALES');
 
     const id = await createdIdOf(
-      await postProject(ctx, { name: `${MARKER}後任募集`, status: 'SUCCESSOR_WANTED' }),
+      await postProject(ctx, { name: `${MARKER}終了`, status: 'CLOSED' }),
     );
 
-    expect((await projectRow(id)).status).toBe('SUCCESSOR_WANTED');
+    expect((await projectRow(id)).status).toBe('CLOSED');
+  });
+
+  it('🔴 旧 3 値（SUCCESSOR_WANTED / FILLED）は 400 になる（CHECK より手前で落ちる）', async () => {
+    const ctx = await ctxOf(HOST_1, 'SALES');
+
+    for (const status of ['SUCCESSOR_WANTED', 'FILLED']) {
+      const response = await postProject(ctx, { name: `${MARKER}旧値${status}`, status });
+      expect(response.status, status).toBe(400);
+    }
   });
 
   it('🔴 PATCH は `origin_assignment_id` を書かない（還流が付けた生成元が人手の編集で消えない）', async () => {
@@ -429,7 +443,7 @@ describe('🔴 案件の状態（募集中 / 充足 / 後任募集）と F-045 �
     // 🔴 `F-045` の還流ジョブ（SP-16）が書くのと同じ形を、特権接続で先に作る。
     await admin.project.update({
       where: { id },
-      data: { status: 'SUCCESSOR_WANTED', originAssignmentId: TENANT_1.hostAssignmentId },
+      data: { status: 'OPEN', originAssignmentId: TENANT_1.hostAssignmentId },
     });
 
     // 入力に混ぜても届かない（Zod の strip）。かつ他の列の更新でも消えない。
@@ -609,7 +623,7 @@ describe('🔴 F-013 AC-3 / BR-27: 監査ログ', () => {
     const id = await createdIdOf(await postProject(ctx, { name: `${MARKER}更新監査` }));
 
     expect(
-      (await patchProject(ctx, id, { endClientName: '架空エンド株式会社', status: 'FILLED' }))
+      (await patchProject(ctx, id, { endClientName: '架空エンド株式会社', status: 'CLOSED' }))
         .status,
     ).toBe(200);
 
@@ -1191,30 +1205,38 @@ describe('🔴 F-015 AC-3: 並び順が決定的である', () => {
     }
   });
 
-  it('🔴 後任募集が先頭に来る（`docs/04` §S-010。`F-045` の還流を埋もれさせない）', async () => {
+  // ✅✅ **2026-10-16（Issue #98）: 2 値になったので、検査の向きを反転させた。**
+  // 🔴 **証明したいことは変わっていない**（状態が更新日より**先に**効くこと）。旧版は
+  //    「最も古い行を最優先の状態にすると先頭に来る」で示したが、2 値では最優先が `OPEN` =
+  //    **既定値**であり、設定しても何も変わらない（検査が空振りする）。そこで
+  //    **最も新しい行を `CLOSED` にして、それでも先頭に来ない**ことで示す。
+  it('🔴 終了は更新日が最も新しくても先頭に来ない（状態が第 1 キーである）', async () => {
     const ctx = await ctxOf(HOST_1, 'SALES');
-    // 🔴 **最初に作った行**（＝ 更新日順では母集団の最後尾）を後任募集にする。状態が第 1 キーで
-    //    なければ先頭に来ない ＝ この 1 本で「状態が更新日より優先される」ことが証明できる。
-    const target = created[0] ?? '';
+    const target = created.at(-1) ?? '';
+    // 対照: いま（`OPEN` のまま）は更新日が最も新しいので先頭である。
+    expect(idsOf(await listBodyOf(await getProjects(ctx)))[0]).toBe(target);
+
     await admin.project.update({
       where: { id: target },
-      data: { status: 'SUCCESSOR_WANTED', updatedAt: new Date('2020-01-01T00:00:00.000Z') },
+      data: { status: 'CLOSED', updatedAt: new Date('2099-01-01T00:00:00.000Z') },
     });
 
     const body = await listBodyOf(await getProjects(ctx));
 
-    expect(body.items[0]?.id).toBe(target);
-    expect(body.items[0]?.['status']).toBe('SUCCESSOR_WANTED');
+    // 🔴 更新日が母集団で最も新しいのに、**最後尾**に落ちる。
+    expect(body.items[0]?.id).not.toBe(target);
+    expect(idsOf(body).at(-1)).toBe(target);
+    expect(body.items.at(-1)?.['status']).toBe('CLOSED');
   });
 
-  it('🔴 充足は同じ更新日でも募集中より後に来る（状態の優先順位が DB の照合順序と一致する）', async () => {
+  it('🔴 終了は同じ更新日でも募集中より後に来る（状態の優先順位が DB の照合順序と一致する）', async () => {
     const ctx = await ctxOf(HOST_1, 'SALES');
     const sameMoment = new Date('2026-09-06T12:00:00.000Z');
     const filled = created[0] ?? '';
     const open = created[1] ?? '';
     await admin.project.update({
       where: { id: filled },
-      data: { status: 'FILLED', updatedAt: sameMoment },
+      data: { status: 'CLOSED', updatedAt: sameMoment },
     });
     await admin.project.update({
       where: { id: open },
@@ -1282,10 +1304,10 @@ describe('検索条件（docs/05 §6.4 #25 / `F-015` の入力）', () => {
   it('状態で絞れる（`total` も絞り込み後の母集団）', async () => {
     const ctx = await ctxOf(HOST_1, 'SALES');
     const id = await createdIdOf(
-      await postProject(ctx, { name: `${MARKER}後任`, status: 'SUCCESSOR_WANTED' }),
+      await postProject(ctx, { name: `${MARKER}終了`, status: 'CLOSED' }),
     );
 
-    const body = await listBodyOf(await getProjects(ctx, '?status=SUCCESSOR_WANTED'));
+    const body = await listBodyOf(await getProjects(ctx, '?status=CLOSED'));
 
     expect(idsOf(body)).toEqual([id]);
     expect(body.total).toBe(1);

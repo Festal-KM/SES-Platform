@@ -256,7 +256,14 @@ export const STATUS_BADGE_APPEARANCES = {
     RECHECK_HELD: { variant: 'neutral', shape: 'dashed' },
   },
   /**
-   * `Project.status` の 3 値（`PROJECT_STATUSES`）。✅ **2026-10-14 に足した。**
+   * `Project.status` の 2 値（`PROJECT_STATUSES`）。✅ **2026-10-14 に足した。**
+   *
+   * ✅✅ 🔴 **2026-10-16（[Issue #98](https://github.com/Festal-KM/SES-Platform/issues/98) への
+   *    人間の回答「募集中と終了の二つだけでよい」）: 3 値 → 2 値。** 下の既定値 A のうち
+   *    **`OPEN` の割り当て（緑・枠線）はそのまま残り**、`FILLED`（無彩色・枠線）が `CLOSED` に
+   *    引き継がれ、`SUCCESSOR_WANTED`（橙・塗り）は**状態ごと無くなった**。
+   *    🔴 **橙を他の状態に付け替えていない** —— §7.4 の「橙 = 期限が近い・要注意」に当たる
+   *    `Project` の状態は、2 値のどちらでもない（`終了` は期限ではなく結果である）。
    *
    * 🔴 **人間の定義書（`docs/design-system-projects.md` §1.7）が「ステータスは Badge」と
    *    定めたので足した。** 着手前は一覧も副カラムも**素のテキスト**で、色が 1 つも無かった
@@ -278,9 +285,9 @@ export const STATUS_BADGE_APPEARANCES = {
    * ⚠️ 並びは `PROJECT_STATUS_LIST_PRIORITY`（一覧の既定の並び）と同じ順にしてある。
    */
   project: {
-    SUCCESSOR_WANTED: { variant: 'warning', shape: 'solid' },
     OPEN: { variant: 'success', shape: 'outline' },
-    FILLED: { variant: 'neutral', shape: 'outline' },
+    // 🔴 §7.4「終わったもの・確定したものは色を持たない」（旧 `FILLED` の割り当てを引き継ぐ）。
+    CLOSED: { variant: 'neutral', shape: 'outline' },
   },
   /**
    * ✅ **2026-10-15: `Engineer.availability`（稼働状況。4 値）**。人間が提示した人材一覧の

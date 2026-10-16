@@ -19,7 +19,7 @@
 //    「受け取って捨てるキーを書かない」（#19 / #15 と同じ判断）に従い、キー自体を置かない。
 //    🔴 SP-16 が還流で書けるようにするために本タスクが担保するのは次の 2 点であり、
 //    どちらも `service.ts` / 結合テストで固定してある:
-//      ①`status` の値集合に `SUCCESSOR_WANTED`（後任募集）が含まれること
+//      ①`status` の値集合（✅ 2026-10-16 に `OPEN` / `CLOSED` の 2 値になった。Issue #98）
 //      ②`PATCH` が `origin_assignment_id` を**書かない**こと（人手の編集で生成元が消えない）
 //
 // 🔴 `.refine()` をトップレベルに使わない（`withApiRoute` の `assertBoundarySchema` が `.shape` を
@@ -77,7 +77,12 @@ export type ProjectRequirementInput = z.infer<typeof projectRequirementInputSche
  */
 const projectFields = {
   name: z.string().trim().min(1).max(NAME_MAX_LENGTH),
-  /** 募集中 / 充足 / **後任募集**（`SUCCESSOR_WANTED` は `F-045` の還流でも設定される）。 */
+  /**
+   * ✅✅ **募集中 / 終了の 2 値**（2026-10-16。[Issue #98](https://github.com/Festal-KM/SES-Platform/issues/98)
+   * の回答「募集中と終了の二つだけでよい」）。
+   * 🔴 **`F-045` の還流で起こした案件は `OPEN` で生まれる**（旧 `SUCCESSOR_WANTED`）。
+   *    後任募集であるという事実は `originAssignmentId` に残る（`@ses/db` の `PROJECT_STATUSES` の 🔴）。
+   */
   status: z.enum(PROJECT_STATUSES),
   headcount: z.number().int().min(HEADCOUNT_MIN).max(HEADCOUNT_MAX),
   /** 稼働開始日（`@db.Date`）。`YYYY-MM-DD`。 */

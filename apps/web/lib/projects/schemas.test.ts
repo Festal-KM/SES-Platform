@@ -84,18 +84,26 @@ describe('案件の既定値（docs/04 §S-012「新規は空フォーム」/ DB
     expect(parsed.publicSummary).toBeNull();
   });
 
-  it('🔴 「後任募集」（SUCCESSOR_WANTED）を受け付ける（F-045 の還流と同じ値集合）', () => {
+  // ✅✅ **2026-10-16（[Issue #98](https://github.com/Festal-KM/SES-Platform/issues/98) の回答
+  //    「募集中と終了の二つだけでよい」）: 値集合が `OPEN` / `CLOSED` の 2 値になった。**
+  // 🔴 **旧 `SUCCESSOR_WANTED` / `FILLED` は API で 400 になる** —— 値集合の出所は
+  //    `@ses/db` の `PROJECT_STATUSES` 1 箇所であり、migration で DB 側も 2 値に移送済みである。
+  it('🔴 「終了」（CLOSED）を受け付ける（`@ses/db` の値集合と同じ）', () => {
     const parsed = createProjectBodySchema.parse({
       name: '架空案件',
-      status: 'SUCCESSOR_WANTED',
+      status: 'CLOSED',
     });
-    expect(parsed.status).toBe('SUCCESSOR_WANTED');
+    expect(parsed.status).toBe('CLOSED');
   });
 
   it('値集合に無い状態は 400（スキーマで落ちる）', () => {
-    expect(createProjectBodySchema.safeParse({ name: '架空案件', status: 'CLOSED' }).success).toBe(
-      false,
-    );
+    // 🔴 旧 3 値の綴りもここで落ちる（移送後に API が受け付けたら CHECK 違反になる）。
+    for (const status of ['SUCCESSOR_WANTED', 'FILLED', 'ARCHIVED']) {
+      expect(
+        createProjectBodySchema.safeParse({ name: '架空案件', status }).success,
+        status,
+      ).toBe(false);
+    }
   });
 
   it('募集人数 0 は受け付けない（0 人の募集は案件ではない）', () => {

@@ -665,7 +665,7 @@ describe('🔴 F-015 AC-1: 検索経由でも母集団は変わらない（条�
     const searches = [
       '',
       '?status=OPEN',
-      '?status=SUCCESSOR_WANTED',
+      '?status=CLOSED',
       `?q=${encodeURIComponent('案件')}`,
       `?q=${encodeURIComponent(MARKER)}`,
       '?prefecture=13',

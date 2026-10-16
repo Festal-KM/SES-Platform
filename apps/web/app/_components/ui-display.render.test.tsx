@@ -421,7 +421,12 @@ describe('🔴 StatusBadge（docs/04 §5-1 / §7.4 / §5-13）', () => {
     expect(Object.keys(STATUS_BADGE_APPEARANCES.phase)).toEqual(['PHASE_2', 'PHASE_3']);
   });
 
-  it('🔴 案件の状態 3 値も表を持つ（`PROJECT_STATUSES` と 1 対 1。✅ 2026-10-14）', () => {
+  // ✅✅ **2026-10-16（[Issue #98](https://github.com/Festal-KM/SES-Platform/issues/98) の回答
+  //    「募集中と終了の二つだけでよい」）: 3 値 → 2 値。** 🔴 **`OPEN` の割り当ては動かしていない**
+  //    （緑・枠線）。旧 `FILLED`（無彩色・枠線）が `CLOSED` に引き継がれ、
+  //    旧 `SUCCESSOR_WANTED`（橙・塗り）は**状態ごと無くなった** —— 🔴 **橙を他の状態に
+  //    付け替えていない**（§7.4 の「橙 = 期限が近い」に当たる状態が 2 値のどちらにも無い）。
+  it('🔴 案件の状態 2 値も表を持つ（`PROJECT_STATUSES` と 1 対 1。✅ 2026-10-16）', () => {
     // 🔴 **`Project` は状態機械を持たない**（`CLAUDE.md` §4.2 の 5 エンティティに含まれない）。
     //    ここに在るのは `projectPublication` と同じ「表示のための状態」であり、
     //    **値集合の出所は `@ses/db` の `PROJECT_STATUSES`** である（画面側で並べ直さない）。
@@ -430,12 +435,8 @@ describe('🔴 StatusBadge（docs/04 §5-1 / §7.4 / §5-13）', () => {
     );
     // 🔴 色の割り当ては人間の判断事項（§8.6）。[Issue #98] の**既定 A** を固定する ——
     //    値を変えるときは Issue の決着として変える（実装の都合で動かさない）。
-    expect(STATUS_BADGE_APPEARANCES.project.SUCCESSOR_WANTED).toEqual({
-      variant: 'warning',
-      shape: 'solid',
-    });
     expect(STATUS_BADGE_APPEARANCES.project.OPEN).toEqual({ variant: 'success', shape: 'outline' });
-    expect(STATUS_BADGE_APPEARANCES.project.FILLED).toEqual({
+    expect(STATUS_BADGE_APPEARANCES.project.CLOSED).toEqual({
       variant: 'neutral',
       shape: 'outline',
     });
