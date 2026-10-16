@@ -625,11 +625,16 @@ export function inviteUrlRuntime(): InviteUrlRuntime {
  *    ここを他から呼んで 2FA を回避する経路を作らない。
  */
 export function twoFactorPolicy(): TwoFactorPolicy {
-  ensureDbConfigured();
-  if (cachedTwoFactorPolicy === null) {
-    throw new Error('2 要素認証の方針が解決されていません（bootstrap の不変条件違反）。');
-  }
-  return cachedTwoFactorPolicy;
+  // 🔴🔴 **ここで `ensureDbConfigured()` を呼ばない。**（2026-10-16。CI が落ちて分かった）
+  //    呼ぶと**環境変数の一式が揃っていない経路**（分離テストのハーネスなど）で
+  //    `EnvValidationError` が飛び、**2 要素認証とは無関係の失敗に化ける** ——
+  //    実際 `tests/isolation/two-factor.test.ts` が「`TwoFactorRequiredError` のはずが
+  //    `EnvValidationError`」で落ちた。方針の問い合わせが、設定の初期化を強制してはならない。
+  // 🔴 **未解決なら `ENFORCED`（厳しい側）に倒す。** 緩い側に倒すと、初期化の順序が崩れた
+  //    経路で 2FA が黙って無効になる。
+  // ⚠️ 実アプリでは必ず解決済みである —— 呼び手（`resolveSignInNext` / `buildTenantCtx`）は
+  //    いずれも**先に DB を読んでおり**、その時点で `ensureDbConfigured()` を通っている。
+  return cachedTwoFactorPolicy ?? 'ENFORCED';
 }
 
 /**
