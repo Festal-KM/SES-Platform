@@ -27,6 +27,8 @@ import {
   type ProjectStatus,
   type RemoteMode,
   type RequirementKind,
+  type ProjectCategory,
+  type ProjectSourceKind,
 } from '@ses/db';
 import {
   projectPublicFieldsChanged,
@@ -146,6 +148,15 @@ export type ProjectEditView = {
   readonly unitPriceMax: number | null;
   readonly prefecture: PrefectureCode | null;
   readonly remoteMode: RemoteMode | null;
+  /**
+   * ✅✅ **2026-10-16（受領モック + [Issue #113](https://github.com/Festal-KM/SES-Platform/issues/113)）:
+   *    カテゴリ / 案件区分 / 並行可否。**
+   * 🔴 **絞り込みを足したら、同じ項目を書ける経路も足す**（`schemas.ts` の 🔴）。
+   * 🔴 **内部限定ではない**（`endClientName` / `internalUnitPrice` と違い、公開しても商流は漏れない）。
+   */
+  readonly category: ProjectCategory | null;
+  readonly sourceKind: ProjectSourceKind;
+  readonly parallelOk: boolean | null;
   /** 🔴 内部限定（`F-013 AC-2`）。 */
   readonly endClientName: string | null;
   /** 🔴 内部限定（同上）。 */
@@ -189,6 +200,14 @@ export type ProjectDetailShared = {
   readonly unitPriceMax: number | null;
   readonly prefecture: PrefectureCode | null;
   readonly remoteMode: RemoteMode | null;
+  /**
+   * ⚠️ **2026-10-16: カテゴリ / 案件区分 / 並行可否はこの型に入れていない。**
+   *    受領モックの**案件詳細パネル**には出ているが、今回の指示は「検索部分」であり、
+   *    **画面が描かないものを型に持たせない**（詳細への追加は別タスク。
+   *    [Issue #113](https://github.com/Festal-KM/SES-Platform/issues/113)）。
+   *    編集フォーム（`ProjectEditView`）には入っている —— 絞り込みに使う列を**書ける経路**が
+   *    1 本も無いと、画面からは永久に空のままになるためである。
+   */
   /** 🔴 公開時に外へ出るのはこの列だけである（`docs/05` §3.5）。 */
   readonly publicSummary: string | null;
   readonly requirements: readonly ProjectRequirementView[];
@@ -367,6 +386,10 @@ export async function createProject(
         unitPriceMax: input.unitPriceMax,
         prefecture: input.prefecture,
         remoteMode: input.remoteMode,
+        // ✅ 2026-10-16（受領モック + Issue #113）。
+        category: input.category,
+        sourceKind: input.sourceKind,
+        parallelOk: input.parallelOk,
         endClientName: input.endClientName,
         internalUnitPrice: input.internalUnitPrice,
         publicSummary: input.publicSummary,
@@ -479,6 +502,10 @@ export async function updateProject(
       ...(patch.unitPriceMax === undefined ? {} : { unitPriceMax: patch.unitPriceMax }),
       ...(patch.prefecture === undefined ? {} : { prefecture: patch.prefecture }),
       ...(patch.remoteMode === undefined ? {} : { remoteMode: patch.remoteMode }),
+      // ✅ 2026-10-16: 未指定 = 変更しない（`null` 指定 = 値を消す、と区別する）。
+      ...(patch.category === undefined ? {} : { category: patch.category }),
+      ...(patch.sourceKind === undefined ? {} : { sourceKind: patch.sourceKind }),
+      ...(patch.parallelOk === undefined ? {} : { parallelOk: patch.parallelOk }),
       ...(patch.endClientName === undefined ? {} : { endClientName: patch.endClientName }),
       ...(patch.internalUnitPrice === undefined
         ? {}
@@ -647,6 +674,10 @@ export async function readProjectForEdit(
         unitPriceMax: true,
         prefecture: true,
         remoteMode: true,
+        // ✅ 2026-10-16（受領モック + Issue #113）。
+        category: true,
+        sourceKind: true,
+        parallelOk: true,
         endClientName: true,
         internalUnitPrice: true,
         publicSummary: true,
@@ -666,6 +697,10 @@ export async function readProjectForEdit(
       unitPriceMax: decimalToNumber(row.unitPriceMax),
       prefecture: row.prefecture as PrefectureCode | null,
       remoteMode: row.remoteMode as RemoteMode | null,
+      // ✅ 2026-10-16（受領モック + Issue #113）: 編集フォームが初期値として受け取る。
+      category: row.category as ProjectCategory | null,
+      sourceKind: row.sourceKind as ProjectSourceKind,
+      parallelOk: row.parallelOk,
       endClientName: row.endClientName,
       internalUnitPrice: decimalToNumber(row.internalUnitPrice),
       publicSummary: row.publicSummary,

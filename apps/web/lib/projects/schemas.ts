@@ -98,6 +98,18 @@ const projectFields = {
   unitPriceMax: z.number().int().min(0).max(UNIT_PRICE_MAX).nullable(),
   prefecture: z.enum(PREFECTURE_CODES).nullable(),
   remoteMode: z.enum(REMOTE_MODES).nullable(),
+  /**
+   * ✅✅ **2026-10-16（受領モック + [Issue #113](https://github.com/Festal-KM/SES-Platform/issues/113)）:
+   *    カテゴリ / 案件区分 / 並行可否。**
+   *
+   * 🔴 **絞り込みを足したら、同じ項目を書ける経路も足す。** 検索条件にだけ現れて登録・編集で
+   *    設定できない列は、**画面からは永久に空のまま**であり、絞り込みが飾りになる
+   *    （実際 2026-10-16 に絞り込みだけ先に入れて、この穴に気づいた）。
+   * 🔴 `category` / `parallelOk` は `null` を許す（未設定）。`sourceKind` は必ずどちらかに決まる。
+   */
+  category: z.enum(PROJECT_CATEGORIES).nullable(),
+  sourceKind: z.enum(PROJECT_SOURCE_KINDS),
+  parallelOk: z.boolean().nullable(),
   /** 🔴 内部限定（`F-013` 処理② / `AC-2`）。公開範囲の相手の画面・エクスポート・通知に出さない。 */
   endClientName: z.string().trim().min(1).max(END_CLIENT_NAME_MAX_LENGTH).nullable(),
   /** 🔴 内部限定（同上）。`unitPriceMin` / `unitPriceMax`（公開用のレンジ）とは別の列である。 */
@@ -118,6 +130,10 @@ export const createProjectBodySchema = z.object({
   unitPriceMax: projectFields.unitPriceMax.default(null),
   prefecture: projectFields.prefecture.default(null),
   remoteMode: projectFields.remoteMode.default(null),
+  // ✅ 2026-10-16: 既定は「未設定」/「自社案件」（DB の既定と一致させる）。
+  category: projectFields.category.default(null),
+  sourceKind: projectFields.sourceKind.default('OWN'),
+  parallelOk: projectFields.parallelOk.default(null),
   endClientName: projectFields.endClientName.default(null),
   internalUnitPrice: projectFields.internalUnitPrice.default(null),
   publicSummary: projectFields.publicSummary.default(null),
@@ -146,6 +162,10 @@ export const updateProjectBodySchema = z.object({
   unitPriceMax: projectFields.unitPriceMax.optional(),
   prefecture: projectFields.prefecture.optional(),
   remoteMode: projectFields.remoteMode.optional(),
+  // ✅ 2026-10-16: 未指定 = 変更しない（`null` 指定 = 値を消す、と区別する）。
+  category: projectFields.category.optional(),
+  sourceKind: projectFields.sourceKind.optional(),
+  parallelOk: projectFields.parallelOk.optional(),
   endClientName: projectFields.endClientName.optional(),
   internalUnitPrice: projectFields.internalUnitPrice.optional(),
   publicSummary: projectFields.publicSummary.optional(),

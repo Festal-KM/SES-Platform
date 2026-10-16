@@ -113,7 +113,7 @@ export class TwoFactorRequiredError extends Error {
  *    `isTwoFactorRelaxedEnv` の 1 本であり（`CLAUDE.md` §11.1「分岐は起動時の 1 箇所」）、
  *    ここは渡された結果を使うだけである。
  */
-export const TWO_FACTOR_POLICIES = ['ENFORCED', 'SETUP_RELAXED'] as const;
+export const TWO_FACTOR_POLICIES = ['ENFORCED', 'RELAXED'] as const;
 
 export type TwoFactorPolicy = (typeof TWO_FACTOR_POLICIES)[number];
 
@@ -121,16 +121,18 @@ export type TwoFactorPolicy = (typeof TWO_FACTOR_POLICIES)[number];
  * ロールが 2 要素認証を必須とするか（`BR-30`）。
  *
  * ✅ **2026-10-16: `policy` を受け取るようになった**（既定 `ENFORCED` = 従来どおり）。
- * 🔴 **`SETUP_RELAXED` が外すのは「未設定なら設定を強制する」ほうだけである。**
- *    設定済みの利用者がこのセッションで第 2 要素を提示したか（`ENROLLED_UNVERIFIED`）は
- *    **どの環境でも要求する** —— 外すと「一度設定すれば以後はパスワードだけ」になり、
- *    2 要素目が実質消える（下の `assertTwoFactorSatisfied` の ②）。
+ * 🔴 **`RELAXED` では、テナント利用者の 2 要素認証を丸ごと止める**（設定の強制も、
+ *    設定済みの利用者への提示の要求も）。人間の明示指示「デモ環境の方は二要素認証は一旦
+ *    外しといて」であり、**`demo` にだけ適用される**（`@ses/config` の `isTwoFactorRelaxedEnv`）。
+ *    ⚠️ **当初は「設定の強制だけ」を外す設計にしたが、それでは指示を満たさなかった** ——
+ *    デモの seed は `OWNER` を**設定済み**にしているため、実測すると結局 TOTP を求められた
+ *    （2026-10-16 の実機確認）。**半分だけ緩めても、求められた不便は消えない。**
  */
 export function requiresTwoFactor(
   role: TenantRole,
   policy: TwoFactorPolicy = 'ENFORCED',
 ): boolean {
-  if (policy === 'SETUP_RELAXED') return false;
+  if (policy === 'RELAXED') return false;
   return (TWO_FACTOR_REQUIRED_ROLES as readonly TenantRole[]).includes(role);
 }
 
@@ -148,6 +150,15 @@ function assertTwoFactorSatisfied(
   state: TwoFactorSessionState,
   policy: TwoFactorPolicy,
 ): void {
+  // ✅✅ **2026-10-16（人間の明示指示「デモ環境の方は二要素認証は一旦外しといて」）。**
+  // 🔴 **`RELAXED` はゲートごと通す**（①設定の強制も ②提示の要求も行わない）。
+  //    適用されるのは **`demo` だけ**であり（`@ses/config` の `isTwoFactorRelaxedEnv`）、
+  //    あそこは**合成データのみ・外部送信は全モック**の実演用環境である（`CLAUDE.md` §11）。
+  // 🔴 **`sandbox` / `staging` / `production` には効かない。** `sandbox` は見込み客が
+  //    **自分の実データ**で試す場であり、守るべき実アカウントが在る。
+  // 🔴 **運営者（`PlatformUser`）には効かない**（別テーブル・別認証。§10.5）。
+  // 🔴 **既定は `ENFORCED`** なので、方針を渡し忘れた経路は厳しい側に倒れる。
+  if (policy === 'RELAXED') return;
   if (state === 'NOT_ENROLLED') {
     if (requiresTwoFactor(role, policy)) throw new TwoFactorRequiredError('SETUP_REQUIRED');
     return;

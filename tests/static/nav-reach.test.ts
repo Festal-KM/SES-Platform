@@ -194,6 +194,7 @@ const PRE_FOLD_REACH: Readonly<Record<TenantRole, readonly string[]>> = {
  * | 遷移先 | いつ・なぜ増えたか |
  * |---|---|
  * | `/settings` | 2026-10-03 の畳み込み。7 項目の**索引そのもの**であり、畳む前の `設定` 群の見出しに相当する |
+ * | **`/settings/account`** | ✅✅ **2026-10-16。`S-048`（アカウント設定）を実装した**（人間の明示指示。[Issue #95](https://github.com/Festal-KM/SES-Platform/issues/95)）。🔴 **全ロールが到達する** —— 自分の表示名・役職・パスワードはどのロールにも在り、`VIEWER` が禁じられているのは承認・送信・ダウンロードであって自分の資格情報ではない（`CLAUDE.md` §10.1）。🔴 **見えるのは自分の 1 行だけ**であり（`lib/settings/account.ts` の 🔴🔴）、ロールによる出し分けも第二境界への影響も無い |
  * | **`/chat`** | 🔴 **2026-10-05。`S-031`（チャット）を実装した**（画面 `app/(main)/chat/page.tsx` + API `/api/threads`）。畳む前も畳んだ後も `UNAVAILABLE`（`Phase 2` の印つきの非リンク）だったため `PRE_FOLD_REACH` には現れず、**実装によって初めて到達集合に入った** |
  *
  * 🔴 **「増える側」は到達範囲の拡大であり、本来は `docs/04` の権限差分の改訂を要する**（下の ② の 🔴）。
@@ -202,7 +203,13 @@ const PRE_FOLD_REACH: Readonly<Record<TenantRole, readonly string[]>> = {
  *    `thread_participants` の行の有無（RLS の C6）であって、ナビの項目集合ではない。
  */
 // 🔴 **昇順で持つ**（`reachOf` が昇順を返すため、`added` との比較が並びで落ちないようにする）。
-const FOLD_ADDED_HREFS: readonly string[] = ['/calendar', '/chat', '/settings'];
+const FOLD_ADDED_HREFS: readonly string[] = [
+  '/calendar',
+  '/chat',
+  '/settings',
+  // ✅ 2026-10-16: `S-048` アカウント設定（全ロール。上の表）。
+  '/settings/account',
+];
 
 /**
  * 🔴 ✅ **2026-10-14（人間の明示指示）: ホスト所属にだけ増えた遷移先**（`パートナー連携` 群）。

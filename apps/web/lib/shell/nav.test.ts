@@ -475,9 +475,12 @@ describe('🔴 ④ 第 2 階層（タブ / 索引）が畳む前のロール条�
     }
   });
 
-  it('🔴 `設定` の索引は 7 画面すべてを持ちうる（`S-036` / `S-041` / `S-042` の唯一の入口）', () => {
+  // ✅✅ **2026-10-16: 8 画面になった**（`S-048` アカウント設定。人間の明示指示。Issue #95）。
+  //    🔴 **先頭に置く** —— 索引の中で唯一「自分のもの」であり、他は組織のものである。
+  it('🔴 `設定` の索引は 8 画面すべてを持ちうる（`S-036` / `S-041` / `S-042` の唯一の入口）', () => {
     const owner = buildSettingsIndex({ audience: 'HOST', role: 'OWNER' });
     expect(owner.map((item) => item.id)).toEqual([
+      'settings-account',
       'settings-organization',
       'settings-partner-companies',
       'settings-sending-domains',
@@ -487,6 +490,7 @@ describe('🔴 ④ 第 2 階層（タブ / 索引）が畳む前のロール条�
       'settings-skills',
     ]);
     expect(navHrefs(owner)).toEqual([
+      '/settings/account',
       '/settings/organization',
       '/settings/partner-companies',
       '/settings/sending-domains',
@@ -547,9 +551,10 @@ describe('🔴 現在地の射程（`sectionPaths`）—— 畳み込みで「�
     }
   });
 
-  it('🔴 `設定` は索引の 7 項目（`/audit-logs` / `/skills` を含む）を射程に持つ', () => {
+  it('🔴 `設定` は索引の 8 項目（`/audit-logs` / `/skills` を含む）を射程に持つ', () => {
     // 🔴 この 2 つは `/settings` 配下に無い URL であり、前方一致では光らない。
     expect(itemOf('OWNER', 'settings').sectionPaths).toEqual([
+      '/settings/account',
       '/settings/organization',
       '/settings/partner-companies',
       '/settings/sending-domains',
@@ -558,7 +563,10 @@ describe('🔴 現在地の射程（`sectionPaths`）—— 畳み込みで「�
       '/audit-logs',
       '/skills',
     ]);
+    // 🔴 取引先所属も **`S-048` には到達する**（自分の表示名・役職・パスワードは
+    //    どの所属にも在る。見えるのは自分の 1 行だけで、第二境界には触れない）。
     expect(itemOf('PARTNER_SALES', 'settings').sectionPaths).toEqual([
+      '/settings/account',
       '/settings/partner-companies',
       '/skills',
     ]);

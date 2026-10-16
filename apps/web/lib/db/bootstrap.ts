@@ -310,9 +310,9 @@ export function ensureDbConfigured(): void {
   // 🔴 **分岐はここ 1 箇所**である（`cachedSendingDomainRuntime` と同じ形。`CLAUDE.md` §11.1）——
   //    リクエストごとに `APP_ENV` を見ない。判定式そのものは `@ses/config` の
   //    `isTwoFactorRelaxedEnv`（`demo` だけ true。同関数の 🔴 に理由と射程がある）。
-  // 🔴 **緩むのは「未設定なら設定を強制する」ほうだけ**であり、設定済みの利用者が
-  //    このセッションで第 2 要素を提示したかの判定は**どの環境でも効く**。
-  cachedTwoFactorPolicy = isTwoFactorRelaxedEnv(env.APP_ENV) ? 'SETUP_RELAXED' : 'ENFORCED';
+  // 🔴 **`demo` ではテナント利用者の 2 要素認証を丸ごと止める**（設定の強制も提示の要求も）。
+  //    運営者（`PlatformUser`）は別経路であり、環境を問わず必須のままである（§10.5）。
+  cachedTwoFactorPolicy = isTwoFactorRelaxedEnv(env.APP_ENV) ? 'RELAXED' : 'ENFORCED';
   // 🔴 T-05-04: ストレージ（docs/05 §14.1 / §14.2 / docs/03 §4.5）。値の出所は `packages/config`
   //    だけであり、ルートも画面も `process.env` を読まない（`CLAUDE.md` §3.5）。
   //    🔴 実装種別（`connectors.objectStore`）もここで確定させる。**リクエストごとに
@@ -625,11 +625,16 @@ export function inviteUrlRuntime(): InviteUrlRuntime {
  *    ここを他から呼んで 2FA を回避する経路を作らない。
  */
 export function twoFactorPolicy(): TwoFactorPolicy {
-  ensureDbConfigured();
-  if (cachedTwoFactorPolicy === null) {
-    throw new Error('2 要素認証の方針が解決されていません（bootstrap の不変条件違反）。');
-  }
-  return cachedTwoFactorPolicy;
+  // 🔴🔴 **ここで `ensureDbConfigured()` を呼ばない。**（2026-10-16。CI が落ちて分かった）
+  //    呼ぶと**環境変数の一式が揃っていない経路**（分離テストのハーネスなど）で
+  //    `EnvValidationError` が飛び、**2 要素認証とは無関係の失敗に化ける** ——
+  //    実際 `tests/isolation/two-factor.test.ts` が「`TwoFactorRequiredError` のはずが
+  //    `EnvValidationError`」で落ちた。方針の問い合わせが、設定の初期化を強制してはならない。
+  // 🔴 **未解決なら `ENFORCED`（厳しい側）に倒す。** 緩い側に倒すと、初期化の順序が崩れた
+  //    経路で 2FA が黙って無効になる。
+  // ⚠️ 実アプリでは必ず解決済みである —— 呼び手（`resolveSignInNext` / `buildTenantCtx`）は
+  //    いずれも**先に DB を読んでおり**、その時点で `ensureDbConfigured()` を通っている。
+  return cachedTwoFactorPolicy ?? 'ENFORCED';
 }
 
 /**

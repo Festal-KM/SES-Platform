@@ -89,9 +89,12 @@ describe('🔴 `設定` の索引（7 画面の唯一の入口）', () => {
     expect(sales).toContain('data-testid="app-nav-index-settings-skills"');
   });
 
-  it('🔴 取引先には 2 項目だけ（組織設定 / 送信ドメイン / 監査ログ / 利用量 / 返却が無い）', () => {
+  it('🔴 取引先には 3 項目だけ（組織設定 / 送信ドメイン / 監査ログ / 利用量 / 返却が無い）', () => {
     const partner = render('PARTNER', 'PARTNER_SALES');
-    expect((partner.match(/data-testid="app-nav-index-/g) ?? []).length).toBe(2);
+    // ✅ 2026-10-16: `S-048` アカウント設定が増えて 3 項目になった（Issue #95）。
+    //    🔴 **取引先も自分の表示名・役職・パスワードは管理できる**（見えるのは自分の 1 行だけ）。
+    expect((partner.match(/data-testid="app-nav-index-/g) ?? []).length).toBe(3);
+    expect(partner).toContain('data-testid="app-nav-index-settings-account"');
     expect(partner).toContain('data-testid="app-nav-index-settings-partner-companies"');
     expect(partner).toContain('data-testid="app-nav-index-settings-skills"');
     for (const key of ['orgSettings.title', 'settings.sendingDomain.title', 'auditLogs.title', 'usage.title'] as const) {
@@ -115,9 +118,9 @@ describe('🔴 `設定` の索引（7 画面の唯一の入口）', () => {
     expect(html).not.toContain(t('shell.nav.note.phase3'));
   });
 
-  it('🔴 項目ごとにアイコンが 1 つ付く（縦に並ぶ 7 項目の走査性。§7.5 ③）', () => {
+  it('🔴 項目ごとにアイコンが 1 つ付く（縦に並ぶ 8 項目の走査性。§7.5 ③）', () => {
     const html = render('HOST', 'OWNER');
-    expect((html.match(/<svg/g) ?? []).length).toBe(7);
+    expect((html.match(/<svg/g) ?? []).length).toBe(8);
     // 🔴 `<img>` は使わない（セットは `lucide-react` の 1 つに固定。写像が閉じている）。
     expect(html).not.toContain('<img');
   });
