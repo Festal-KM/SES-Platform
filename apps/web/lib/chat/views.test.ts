@@ -40,11 +40,12 @@ describe('asChatThreadKind（CHECK を信じず未知の値で落とす）', () 
   });
 
   it('🔴 未知の値は握り潰さず RangeError にする', () => {
-    expect(() => asChatThreadKind('GROUP')).toThrow(RangeError);
+    expect(() => asChatThreadKind('BROADCAST')).toThrow(RangeError);
   });
 
-  it('種別は 2 値だけである（勝手に増やさない）', () => {
-    expect([...CHAT_THREAD_KINDS]).toEqual(['PROJECT', 'COMPANY']);
+  // ✅ 2026-10-16（#128）: DM / GROUP を足した（人単位の部屋）。
+  it('種別は 4 値だけである（勝手に増やさない）', () => {
+    expect([...CHAT_THREAD_KINDS]).toEqual(['PROJECT', 'COMPANY', 'DM', 'GROUP']);
   });
 });
 

@@ -127,6 +127,7 @@ const REDEFINED_CHECK_CONSTRAINTS: Readonly<Record<string, { readonly definition
   tenant_quota_overrides_metric_check: { definitions: 2, reason: 'T-12-12 で執行点を配線し EMAIL_COUNT / STORAGE_BYTES を戻した' },
   // ✅ 2026-10-16（Issue #98 の回答「募集中と終了の二つだけでよい」）: 20260903010000（3 値）→
   //    20261016010000（2 値。SUCCESSOR_WANTED→OPEN / FILLED→CLOSED に移送してから張り替えた）
+  chat_threads_kind_check: { definitions: 2, reason: '#128 で人単位の部屋（DM / GROUP）を足した' },
   projects_status_check: { definitions: 2, reason: 'Issue #98 の回答で案件の状態を 2 値（OPEN / CLOSED）にした' },
 };
 

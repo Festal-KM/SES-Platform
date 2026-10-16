@@ -1112,22 +1112,31 @@ model ReviewGate {
 model ChatThread {
   id               String    @id @default(uuid(7)) @db.Uuid
   tenantId         String    @map("tenant_id") @db.Uuid
-  /// ChatThreadKind（'PROJECT'|'COMPANY'。CHECK）
+  /// ChatThreadKind（'PROJECT'|'COMPANY'|'DM'|'GROUP'。CHECK。DM / GROUP は 2026-10-16・#128）
   kind             String
   projectId        String?   @map("project_id") @db.Uuid
-  partnerCompanyId String    @map("partner_company_id") @db.Uuid // 🔴 ホストと 1 パートナーの組み合わせに限る
+  /// 🔴 ホストと 1 パートナーの組み合わせに限る。NULL = 社内だけの部屋（DM / GROUP のみ。CHECK）
+  partnerCompanyId String?   @map("partner_company_id") @db.Uuid
+  /// 🔴 人の段（CLAUDE.md §3.1 経路 3）。DM / GROUP の読み手。会社グループ・スレッドは空の配列（CHECK）
+  memberUserIds    String[]  @default([]) @map("member_user_ids") @db.Uuid
+  /// GROUP の名前（DM は持たない）
+  title            String?
+  /// DM の 2 人の user_id を小さい順に ':' で連結（同じ 2 人の DM は 1 つ）
+  dmKey            String?   @map("dm_key")
+  createdByUserId  String?   @map("created_by_user_id") @db.Uuid
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   lastMessageAt    DateTime? @map("last_message_at") @db.Timestamptz(3)
 
   tenant             Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   project            Project?            @relation(fields: [projectId], references: [id], onDelete: Restrict)
   // 🔴 Issue #33 / docs/05 §3.3.1（A-9）: 複合 FK。
-  partnerCompany     PartnerCompany      @relation(fields: [tenantId, partnerCompanyId], references: [tenantId, id], onDelete: Restrict)
+  partnerCompany     PartnerCompany?     @relation(fields: [tenantId, partnerCompanyId], references: [tenantId, id], onDelete: Restrict)
   threadParticipants ThreadParticipant[]
   messages           Message[]
   readStates         ChatReadState[] // 2026-10-15 チャットレーン
 
   @@unique([tenantId, kind, projectId, partnerCompanyId])
+  @@unique([tenantId, dmKey])
   @@index([tenantId, partnerCompanyId, lastMessageAt])
   @@map("chat_threads")
 }
@@ -1158,7 +1167,7 @@ model Message {
   tenantId               String    @map("tenant_id") @db.Uuid
   /// chat_threads.partner_company_id から継承（§4.4.1）。NOT NULL（継承元の当該列自体が
   /// NOT NULL のため）。owner-column: child of chat_threads(thread_id)。継承トリガは T-02-08。
-  ownerPartnerCompanyId  String    @map("owner_partner_company_id") @db.Uuid
+  ownerPartnerCompanyId  String?   @map("owner_partner_company_id") @db.Uuid // NULL = 社内だけの部屋（2026-10-16・#128）
   threadId               String    @map("thread_id") @db.Uuid
   senderUserId           String    @map("sender_user_id") @db.Uuid
   senderPartnerCompanyId String?   @map("sender_partner_company_id") @db.Uuid
