@@ -43,8 +43,19 @@ import { CHAT_MESSAGE_MAX_LENGTH } from '@ses/config';
 import { createSubmitGuard } from '../../../lib/forms/submit-guard';
 import { formatDateTimeJst } from '../../../lib/format/datetime';
 import { displayInitials } from '../../../lib/format/initials';
-import { chatHref, chatMessagesApiPath, chatReadApiPath, chatUnreadApiPath } from '../../../lib/chat/screen-query';
-import type { ChatMessageView } from '../../../lib/chat/views';
+import {
+  chatHref,
+  chatMessagesApiPath,
+  chatReactionApiPath,
+  chatReadApiPath,
+  chatUnreadApiPath,
+} from '../../../lib/chat/screen-query';
+import {
+  CHAT_REACTIONS,
+  type ChatMessageView,
+  type ChatReactionKind,
+  type ChatReactionSummary,
+} from '../../../lib/chat/views';
 import type { ChatConversationMessages } from './chat-props';
 import { formatChatTime, withDaySeparators } from '../../../lib/chat/day-separators';
 import {
@@ -56,7 +67,13 @@ import {
   remainingChars,
   splitMessageText,
 } from '../../../lib/chat/message-text';
-import { CHAT_POLL_INTERVAL_MS, CHAT_UNDO_SEND_MS, hasOthersMessage, mergeLatestMessages } from '../../../lib/chat/live';
+import {
+  CHAT_POLL_INTERVAL_MS,
+  CHAT_UNDO_SEND_MS,
+  hasOthersMessage,
+  mergeLatestMessages,
+  withLatestReactions,
+} from '../../../lib/chat/live';
 import { unreadMarkerId, withUnreadMarker } from '../../../lib/chat/unread-marker';
 import {
   isSendKey,
@@ -156,8 +173,13 @@ export function ChatConversation({
         const response = await fetch(chatMessagesApiPath(threadId), { cache: 'no-store' });
         if (!active || !response.ok) return;
         const payload = (await response.json()) as MessagePageBody;
-        const merged = mergeLatestMessages(itemsRef.current, payload.items);
-        if (merged.added.length === 0) return;
+        // ✅ 2026-10-16: 手元の発言のリアクションも取り直した値に揃える。
+        const refreshed = withLatestReactions(itemsRef.current, payload.items);
+        const merged = mergeLatestMessages(refreshed, payload.items);
+        if (merged.added.length === 0) {
+          if (refreshed !== itemsRef.current) setItems(refreshed);
+          return;
+        }
         if (awayRef.current) {
           if (hasOthersMessage(merged.added)) setNewArrived(true);
         } else {
@@ -269,6 +291,22 @@ export function ChatConversation({
     });
   }, [items, awayFromLatest, threadId]);
 
+  // ✅ 2026-10-16: リアクションを付ける / 外す。🔴 手元で先に書き換えない（サーバの応答だけが正）。
+  async function toggleReaction(item: ChatMessageView, reaction: ChatReactionKind): Promise<void> {
+    try {
+      const response = await fetch(chatReactionApiPath(threadId, item.id), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ reaction }),
+      });
+      if (!response.ok) return;
+      const payload = (await response.json()) as { readonly reactions: readonly ChatReactionSummary[] };
+      setItems((current) => current.map((entry) => (entry.id === item.id ? { ...entry, reactions: payload.reactions } : entry)));
+    } catch {
+      // 付けられなければ何も変えない（次の新着の取得で正しい状態に揃う）。
+    }
+  }
+
   async function markUnread(item: ChatMessageView): Promise<void> {
     suppressAutoReadRef.current = true;
     setMarkerId(item.id);
@@ -357,6 +395,51 @@ export function ChatConversation({
               >
                 {open ? messages.readLess : messages.readMore}
               </Button>
+            ) : null}
+            {/* ✅ 2026-10-16: リアクション（件数と自分が付けたか）。投稿できる人は押して付け外しでき、
+                閲覧専用には件数だけを文字で出す（押せないボタンを描かない）。 */}
+            {(item.reactions ?? []).map((summary) =>
+              canPost ? (
+                <Button
+                  key={summary.reaction}
+                  type="button"
+                  variant={summary.mine ? 'secondary' : 'ghost'}
+                  size="sm"
+                  aria-pressed={summary.mine}
+                  onClick={() => void toggleReaction(item, summary.reaction)}
+                  data-testid={`chat-message-reaction-${item.id}-${summary.reaction}`}
+                >
+                  {`${messages.reactions[summary.reaction]} ${String(summary.count)}`}
+                </Button>
+              ) : (
+                <span key={summary.reaction} className="text-xs text-fg-muted" data-testid={`chat-message-reaction-${item.id}-${summary.reaction}`}>
+                  {`${messages.reactions[summary.reaction]} ${String(summary.count)}`}
+                </span>
+              ),
+            )}
+            {canPost ? (
+              <>
+                <label className="sr-only" htmlFor={`chat-reaction-${item.id}`}>
+                  {messages.reactionAdd}
+                </label>
+                <Select
+                  id={`chat-reaction-${item.id}`}
+                  value=""
+                  className="w-auto"
+                  onChange={(event) => {
+                    const kind = CHAT_REACTIONS.find((entry) => entry === event.target.value);
+                    if (kind !== undefined) void toggleReaction(item, kind);
+                  }}
+                  data-testid={`chat-message-reaction-add-${item.id}`}
+                >
+                  <option value="">{messages.reactionAdd}</option>
+                  {CHAT_REACTIONS.map((kind) => (
+                    <option key={kind} value={kind}>
+                      {messages.reactions[kind]}
+                    </option>
+                  ))}
+                </Select>
+              </>
             ) : null}
             {/* ✅ 2026-10-16: 相手の発言から未読にする（自分の発言は未読にならない）。 */}
             {item.mine ? null : (

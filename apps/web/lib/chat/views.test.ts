@@ -201,3 +201,30 @@ describe('🔴 禁止キーの一覧そのものの対照（検査が空振り�
     expect([...CHAT_FORBIDDEN_RESPONSE_KEYS].filter((key) => allowed.has(key))).toEqual([]);
   });
 });
+
+describe('summarizeReactions（2026-10-16）', () => {
+  it('発言ごと・種類ごとに数え、自分が付けたかを立てる。並びは CHAT_REACTIONS の順', async () => {
+    const { summarizeReactions } = await import('./views');
+    const map = summarizeReactions(
+      [
+        { messageId: 'm1', userId: 'u1', reaction: 'THANKS' },
+        { messageId: 'm1', userId: 'u2', reaction: 'OK' },
+        { messageId: 'm1', userId: 'me', reaction: 'OK' },
+        { messageId: 'm2', userId: 'u1', reaction: 'DONE' },
+        { messageId: 'm2', userId: 'u1', reaction: 'UNKNOWN' },
+      ],
+      'me',
+    );
+    expect(map.get('m1')).toEqual([
+      { reaction: 'OK', count: 2, mine: true },
+      { reaction: 'THANKS', count: 1, mine: false },
+    ]);
+    expect(map.get('m2')).toEqual([{ reaction: 'DONE', count: 1, mine: false }]);
+  });
+
+  it('🔴 出力に利用者 ID が載らない', async () => {
+    const { summarizeReactions } = await import('./views');
+    const json = JSON.stringify([...summarizeReactions([{ messageId: 'm', userId: 'secret-user', reaction: 'OK' }], 'me')]);
+    expect(json).not.toContain('secret-user');
+  });
+});

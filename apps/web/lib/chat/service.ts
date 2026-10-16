@@ -29,6 +29,7 @@
 import { withTenant, writeAuditLog, type AuthenticatedTenantCtx } from '@ses/db';
 import { requireFound } from '../api/errors';
 import { CHAT_MESSAGE_SELECT, findChatThreadRow, projectChatMessages } from './read';
+import { summarizeReactions, type ChatReactionKind, type ChatReactionSummary } from './views';
 import type { ChatMessageBody } from './schemas';
 import type { ChatMessageRow, ChatMessageView } from './views';
 
@@ -96,5 +97,42 @@ export async function sendChatMessage(
     const [message] = await projectChatMessages(ctx, db, [created]);
     // 🔴 1 行入れて 1 行写せないことは起こりえない（起きたら不変条件が壊れている）。黙って空を返さない。
     return { message: requireFound(message ?? null) };
+  });
+}
+
+/**
+ * ✅ 2026-10-16（チャットレーン）: 発言へのリアクションを付ける / 外す（同じ種類をもう一度押すと外れる）。
+ *
+ * 🔴 発言は「このスレッドの、読める発言」でなければ 404（不存在・他社・別スレッドを区別しない）。
+ * 🔴 付け外しは本人の行だけ（RLS の INSERT / DELETE が `user_id = app_actor_user_id()` を課す）。
+ *    利用者 ID は認証コンテキストから取る。応答は件数と「自分が付けたか」だけ（`summarizeReactions`）。
+ * 🔴 監査ログに書かない（投稿ではなく、本文も増えない。チャットの閲覧と同じく記録の対象外）。
+ */
+export async function toggleChatReaction(
+  ctx: AuthenticatedTenantCtx,
+  threadId: string,
+  messageId: string,
+  reaction: ChatReactionKind,
+): Promise<readonly ChatReactionSummary[]> {
+  return withTenant(ctx, async (db) => {
+    requireFound(await findChatThreadRow(db, threadId));
+    requireFound(await db.message.findFirst({ where: { id: messageId, threadId }, select: { id: true } }));
+    const existing = await db.chatMessageReaction.findFirst({
+      // 自分が付けた同じ種類（選ぶための条件であり、境界ではない。他人の行は DELETE ポリシーが消させない）。
+      where: { messageId, reaction, userId: ctx.userId },
+      select: { id: true },
+    });
+    if (existing === null) {
+      await db.chatMessageReaction.create({
+        data: { tenantId: ctx.tenantId, messageId, userId: ctx.userId, reaction },
+      });
+    } else {
+      await db.chatMessageReaction.delete({ where: { id: existing.id } });
+    }
+    const rows = await db.chatMessageReaction.findMany({
+      where: { messageId },
+      select: { messageId: true, userId: true, reaction: true },
+    });
+    return summarizeReactions(rows, ctx.userId).get(messageId) ?? [];
   });
 }

@@ -5,6 +5,7 @@
 //    `S-015` の `EngineerShareScreenMessages` と同じ作法）。
 // 🔴 **文言をコンポーネントにベタ書きしない**（`CLAUDE.md` §3.5 / `BR-32`）。
 import { t } from '@ses/i18n';
+import type { ChatReactionKind } from '../../../lib/chat/views';
 
 /** 会話（中央）の島が使う語。 */
 export type ChatConversationMessages = {
@@ -46,6 +47,9 @@ export type ChatConversationMessages = {
   /** ✅ 2026-10-16: 既読・未読。 */
   readonly unreadFrom: string;
   readonly markUnread: string;
+  /** ✅ 2026-10-16: リアクションの語（4 つ）と「リアクション」。 */
+  readonly reactions: Readonly<Record<ChatReactionKind, string>>;
+  readonly reactionAdd: string;
   readonly templateLabel: string;
   readonly templatePlaceholder: string;
   /** 定型文（固定の文面。🔴 個人情報・単価を含めない）。 */
@@ -98,6 +102,13 @@ export function chatConversationMessages(): ChatConversationMessages {
     sendNow: t('chat.compose.sendNow'),
     unreadFrom: t('chat.messages.unreadFrom'),
     markUnread: t('chat.message.markUnread'),
+    reactions: {
+      OK: t('chat.reaction.OK'),
+      THANKS: t('chat.reaction.THANKS'),
+      CHECKING: t('chat.reaction.CHECKING'),
+      DONE: t('chat.reaction.DONE'),
+    },
+    reactionAdd: t('chat.reaction.add'),
     templateLabel: t('chat.compose.template.label'),
     templatePlaceholder: t('chat.compose.template.placeholder'),
     templates: [

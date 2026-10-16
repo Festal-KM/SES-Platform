@@ -119,3 +119,8 @@ export function chatReadApiPath(threadId: string): string {
 export function chatUnreadApiPath(threadId: string): string {
   return `/api/threads/${threadId}/unread`;
 }
+
+/** ✅ 2026-10-16: リアクションの API（`POST`）。 */
+export function chatReactionApiPath(threadId: string, messageId: string): string {
+  return `/api/threads/${threadId}/messages/${messageId}/reactions`;
+}

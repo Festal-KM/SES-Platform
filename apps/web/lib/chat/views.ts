@@ -79,6 +79,11 @@ export type ChatMessageView = {
    * （同僚の発言は `own` でも左に置く）。`mine` なら必ず `own` である。
    */
   readonly mine: boolean;
+  /**
+   * ✅ 2026-10-16: リアクション（種類ごとの件数と「自分が付けたか」）。🔴 **誰が付けたか（利用者 ID）は載せない**。
+   * 付いていなければ空配列（読みの経路は必ず埋める。省略可なのは手で組むテスト用の値のため）。
+   */
+  readonly reactions?: readonly ChatReactionSummary[];
   /** 本文。🔴 `PURGED` / 保持期間削除で本文が消えた行は `null`（`F-064 AC-2`）。 */
   readonly body: string | null;
 };
@@ -114,7 +119,55 @@ export type ChatThreadDetailView = {
 
 export const CHAT_THREAD_LIST_ITEM_KEYS = ['id', 'kind', 'project', 'counterpartyName', 'lastMessageAt'] as const;
 
-export const CHAT_MESSAGE_VIEW_KEYS = ['id', 'sentAt', 'senderName', 'senderCompanyName', 'own', 'mine', 'body'] as const;
+export const CHAT_MESSAGE_VIEW_KEYS = [
+  'id',
+  'sentAt',
+  'senderName',
+  'senderCompanyName',
+  'own',
+  'mine',
+  'body',
+  'reactions',
+] as const;
+
+/** ✅ 2026-10-16: リアクションの種類（業務の短い語 4 つ。絵文字は使わない = UI_GUIDELINES §1。DB の CHECK と同じ）。 */
+export const CHAT_REACTIONS = ['OK', 'THANKS', 'CHECKING', 'DONE'] as const;
+export type ChatReactionKind = (typeof CHAT_REACTIONS)[number];
+
+/** リアクション 1 種類ぶん。 */
+export type ChatReactionSummary = {
+  readonly reaction: ChatReactionKind;
+  readonly count: number;
+  /** 読み手が付けたか。 */
+  readonly mine: boolean;
+};
+
+/**
+ * リアクションの行を、発言ごと・種類ごとの件数にまとめる（種類の並びは `CHAT_REACTIONS` の順）。
+ * 🔴 利用者 ID は「自分が付けたか」の判定にだけ使い、出力に載せない。
+ */
+export function summarizeReactions(
+  rows: readonly { readonly messageId: string; readonly userId: string; readonly reaction: string }[],
+  viewerUserId: string,
+): ReadonlyMap<string, readonly ChatReactionSummary[]> {
+  const byMessage = new Map<string, Map<ChatReactionKind, { count: number; mine: boolean }>>();
+  for (const row of rows) {
+    if (!(CHAT_REACTIONS as readonly string[]).includes(row.reaction)) continue;
+    const kind = row.reaction as ChatReactionKind;
+    const kinds = byMessage.get(row.messageId) ?? new Map<ChatReactionKind, { count: number; mine: boolean }>();
+    const entry = kinds.get(kind) ?? { count: 0, mine: false };
+    entry.count += 1;
+    if (row.userId === viewerUserId) entry.mine = true;
+    kinds.set(kind, entry);
+    byMessage.set(row.messageId, kinds);
+  }
+  return new Map(
+    [...byMessage.entries()].map(([messageId, kinds]) => [
+      messageId,
+      CHAT_REACTIONS.filter((kind) => kinds.has(kind)).map((kind) => ({ reaction: kind, ...(kinds.get(kind) as { count: number; mine: boolean }) })),
+    ]),
+  );
+}
 
 export const CHAT_PARTICIPANT_VIEW_KEYS = ['companyName', 'isHost', 'joinedAt', 'leftAt'] as const;
 
@@ -215,6 +268,8 @@ export type ChatMessageDeps = {
    *    **リクエスト入力から渡してはならない**（`CLAUDE.md` §3.1）。**応答には載せない**（`senderUserId` と同じ）。
    */
   readonly viewerUserId: string;
+  /** ✅ 2026-10-16: この発言のリアクション（`summarizeReactions`。無ければ空）。 */
+  readonly reactions?: readonly ChatReactionSummary[];
 };
 
 export function chatMessageView(row: ChatMessageRow, deps: ChatMessageDeps): ChatMessageView {
@@ -231,5 +286,6 @@ export function chatMessageView(row: ChatMessageRow, deps: ChatMessageDeps): Cha
     //    `mine` なら必ず `own`（自分は自社に属する）。
     mine: row.senderUserId === deps.viewerUserId,
     body: row.body,
+    reactions: deps.reactions ?? [],
   };
 }

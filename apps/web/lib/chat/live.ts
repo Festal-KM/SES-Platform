@@ -40,3 +40,22 @@ export function mergeLatestMessages(
 export function hasOthersMessage(added: readonly ChatMessageView[]): boolean {
   return added.some((item) => !item.mine);
 }
+
+/**
+ * ✅ 2026-10-16: 取り直した行のリアクションを、手元の同じ発言に写す（本文・並びは変えない）。
+ * 何も変わらなければ同じ配列を返す。
+ */
+export function withLatestReactions(
+  current: readonly ChatMessageView[],
+  latest: readonly ChatMessageView[],
+): readonly ChatMessageView[] {
+  const byId = new Map(latest.map((item) => [item.id, item]));
+  let changed = false;
+  const next = current.map((item) => {
+    const fresh = byId.get(item.id);
+    if (fresh === undefined || JSON.stringify(fresh.reactions ?? []) === JSON.stringify(item.reactions ?? [])) return item;
+    changed = true;
+    return { ...item, reactions: fresh.reactions ?? [] };
+  });
+  return changed ? next : current;
+}

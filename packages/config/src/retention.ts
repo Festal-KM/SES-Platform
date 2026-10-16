@@ -190,6 +190,7 @@ export const PURGE_SPEC = {
     { table: 'project_requirements', reason: '案件の要件', policy: 'RETAIN_ALL' },
     // ✅ 2026-10-16 チャットレーン: 既読位置は ID と時刻だけで個人情報を含まない（本文は messages 側で消す）。
     { table: 'chat_read_states', reason: 'チャットの既読位置（ID と時刻だけ。個人情報を含まない）', policy: 'RETAIN_ALL' },
+    { table: 'chat_message_reactions', reason: 'チャットのリアクション（決まった 4 語と ID だけ。個人情報を含まない）', policy: 'RETAIN_ALL' },
     { table: 'project_visibilities', reason: '公開範囲の記録（越境経路 1 の根拠）', policy: 'RETAIN_ALL' },
     { table: 'project_publish_requests', reason: '公開要求の記録', policy: 'RETAIN_ALL' },
     { table: 'engineer_shares', reason: '匿名共有の設定履歴（経路 4 の根拠）', policy: 'RETAIN_ALL' },

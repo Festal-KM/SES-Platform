@@ -11,6 +11,7 @@ import { z } from 'zod';
 import { assertNoIsolationKeys, type AssertNoIsolationKeys } from '../api/isolation-keys';
 import { cursorPageQuerySchema, idCursorPageQuerySchema } from '../api/pagination';
 import { isChatThreadCursor } from './thread-cursor';
+import { CHAT_REACTIONS } from './views';
 
 /**
  * `GET /api/threads`（#50）。
@@ -86,3 +87,13 @@ export type ChatReadBodyIsolationGuard = AssertNoIsolationKeys<ChatReadBody>;
 export type ChatUnreadBodyIsolationGuard = AssertNoIsolationKeys<ChatUnreadBody>;
 assertNoIsolationKeys(Object.keys(chatReadBodySchema.shape), 'chatReadBodySchema');
 assertNoIsolationKeys(Object.keys(chatUnreadBodySchema.shape), 'chatUnreadBodySchema');
+
+/** ✅ 2026-10-16: `POST /api/threads/{id}/messages/{messageId}/reactions`（付ける / 外す）。 */
+export const chatReactionParamsSchema = z.object({ id: z.uuid(), messageId: z.uuid() });
+export type ChatReactionParams = z.infer<typeof chatReactionParamsSchema>;
+export const chatReactionBodySchema = z.object({ reaction: z.enum(CHAT_REACTIONS) });
+export type ChatReactionBody = z.infer<typeof chatReactionBodySchema>;
+export type ChatReactionParamsIsolationGuard = AssertNoIsolationKeys<ChatReactionParams>;
+export type ChatReactionBodyIsolationGuard = AssertNoIsolationKeys<ChatReactionBody>;
+assertNoIsolationKeys(Object.keys(chatReactionParamsSchema.shape), 'chatReactionParamsSchema');
+assertNoIsolationKeys(Object.keys(chatReactionBodySchema.shape), 'chatReactionBodySchema');
