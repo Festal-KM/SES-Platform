@@ -54,6 +54,8 @@ import {
   type ProposalRequestState,
   type ProposalState,
 } from '@ses/domain';
+// ✅ 2026-10-16（Issue #113 + 受領モック）: カテゴリ / 案件区分。
+import type { ProjectCategory, ProjectSourceKind } from '../../src/schema-value-sets.js';
 import { auditLogRowValues, type AuditLogEntry } from '../../src/audit.js';
 import { PROPOSAL_AUDIT_TARGET_TYPE } from '../../src/proposal-draft.js';
 import { computeProposalContentHash, gateContentHash } from '../../src/gate-content-hash.js';
@@ -630,40 +632,69 @@ const PROJECT_NICE = {
 
 const PROJECT_TEXTS: Record<
   keyof DemoProjectIds,
-  { readonly name: string; readonly publicSummary: string | null; readonly status: 'OPEN' | 'CLOSED' }
+  {
+    readonly name: string;
+    readonly publicSummary: string | null;
+    readonly status: 'OPEN' | 'CLOSED';
+    // ✅ 2026-10-16（Issue #113 + 受領モック）: カテゴリ / 案件区分 / 並行可否。
+    // 🔴 **デモで絞り込みが空振りしないよう、全件に値を入れる** —— `null` のままだと
+    //    カテゴリで絞った瞬間に 0 件になり、「実装されていない」ように見える。
+    // 🔴 **値を散らす**（同じカテゴリばかりだと絞り込みの実演にならない）。
+    readonly category: ProjectCategory;
+    readonly sourceKind: ProjectSourceKind;
+    readonly parallelOk: boolean;
+  }
 > = {
   published3: {
     name: 'EC サイト再構築（バックエンド）',
     publicSummary:
       'EC サイトのバックエンドを Java / Spring Boot で再構築します。要件定義から結合テストまで一貫して参画いただきます。リモート併用可。',
     status: 'OPEN',
+    category: 'BACKEND',
+    sourceKind: 'OWN',
+    parallelOk: true,
   },
   publishedAll: {
     name: '金融系 Web 基盤の保守運用',
     publicSummary:
       '既存の Web 基盤の保守運用と機能改善。Java での開発経験 3 年以上が必須です。長期の稼働を想定しています。',
     status: 'OPEN',
+    category: 'INFRA',
+    sourceKind: 'OWN',
+    parallelOk: false,
   },
   publishedOne: {
     name: '業務システムのクラウド移行',
     publicSummary: 'オンプレミスの業務システムを AWS へ移行する案件です。移行設計と構築を担当いただきます。',
     status: 'OPEN',
+    category: 'INFRA',
+    sourceKind: 'PARTNER',
+    parallelOk: true,
   },
   unpublishedCandidates: {
     name: 'データ分析基盤の構築',
     publicSummary: 'Python でのデータ処理パイプラインと PostgreSQL による分析基盤の構築。',
     status: 'OPEN',
+    category: 'DATA',
+    sourceKind: 'OWN',
+    parallelOk: true,
   },
   filled: {
     name: '社内ポータル刷新',
     publicSummary: 'TypeScript / React による社内ポータルのフロントエンド刷新（充足済み）。',
     status: 'CLOSED', // ✅ 2026-10-16: `FILLED` を畳んだ（Issue #98）
+    category: 'FRONTEND',
+    sourceKind: 'OWN',
+    parallelOk: false,
   },
   unpublishedReady: {
     name: 'モバイルアプリの新規開発（API 側）',
     publicSummary:
       'モバイルアプリ向けの API を TypeScript / Next.js で新規開発します。設計から参画できる方を募集しています。',
     status: 'OPEN',
+    category: 'FRONTEND',
+    sourceKind: 'PARTNER',
+    parallelOk: true,
   },
 };
 
@@ -1006,6 +1037,10 @@ async function seedTenant(ctx: SeedContext, tenantIndex: number, profile: Tenant
         unitPriceMin: internalUnitPrice - 250_000,
         unitPriceMax: internalUnitPrice - 150_000,
         status: PROJECT_TEXTS[key].status,
+        // ✅ 2026-10-16（Issue #113 + 受領モック）。
+        category: PROJECT_TEXTS[key].category,
+        sourceKind: PROJECT_TEXTS[key].sourceKind,
+        parallelOk: PROJECT_TEXTS[key].parallelOk,
         startDate: dateOnly(addDays(now, key === 'filled' ? -35 : rng.int(20, 60))),
         prefecture: rng.pick(PREFECTURES),
         remoteMode: rng.pick(REMOTE_MODES),

@@ -103,8 +103,34 @@ export class TwoFactorRequiredError extends Error {
   }
 }
 
-/** ロールが 2 要素認証を必須とするか（`BR-30`）。 */
-export function requiresTwoFactor(role: TenantRole): boolean {
+/**
+ * ✅✅ **2 要素認証の方針**（2026-10-16。人間の明示指示「デモ環境の方は二要素認証は一旦
+ * 外しといて」）。
+ *
+ * 🔴 **既定は `ENFORCED` である。** 渡し忘れた呼び出しは**必ず厳しい側**に倒れる
+ *    （緩める側を既定にすると、新しい経路が黙って 2FA を素通りする）。
+ * 🔴 **環境の判定をこのパッケージに書かない。** 「どの環境で緩めるか」は `@ses/config` の
+ *    `isTwoFactorRelaxedEnv` の 1 本であり（`CLAUDE.md` §11.1「分岐は起動時の 1 箇所」）、
+ *    ここは渡された結果を使うだけである。
+ */
+export const TWO_FACTOR_POLICIES = ['ENFORCED', 'SETUP_RELAXED'] as const;
+
+export type TwoFactorPolicy = (typeof TWO_FACTOR_POLICIES)[number];
+
+/**
+ * ロールが 2 要素認証を必須とするか（`BR-30`）。
+ *
+ * ✅ **2026-10-16: `policy` を受け取るようになった**（既定 `ENFORCED` = 従来どおり）。
+ * 🔴 **`SETUP_RELAXED` が外すのは「未設定なら設定を強制する」ほうだけである。**
+ *    設定済みの利用者がこのセッションで第 2 要素を提示したか（`ENROLLED_UNVERIFIED`）は
+ *    **どの環境でも要求する** —— 外すと「一度設定すれば以後はパスワードだけ」になり、
+ *    2 要素目が実質消える（下の `assertTwoFactorSatisfied` の ②）。
+ */
+export function requiresTwoFactor(
+  role: TenantRole,
+  policy: TwoFactorPolicy = 'ENFORCED',
+): boolean {
+  if (policy === 'SETUP_RELAXED') return false;
   return (TWO_FACTOR_REQUIRED_ROLES as readonly TenantRole[]).includes(role);
 }
 
@@ -117,9 +143,13 @@ export function requiresTwoFactor(role: TenantRole): boolean {
  *      （②が無いと「一度設定すれば以後はパスワードだけで入れる」ことになり、
  *        2 要素目が実質存在しなくなる。ロールを問わず適用する）
  */
-function assertTwoFactorSatisfied(role: TenantRole, state: TwoFactorSessionState): void {
+function assertTwoFactorSatisfied(
+  role: TenantRole,
+  state: TwoFactorSessionState,
+  policy: TwoFactorPolicy,
+): void {
   if (state === 'NOT_ENROLLED') {
-    if (requiresTwoFactor(role)) throw new TwoFactorRequiredError('SETUP_REQUIRED');
+    if (requiresTwoFactor(role, policy)) throw new TwoFactorRequiredError('SETUP_REQUIRED');
     return;
   }
   if (state === 'ENROLLED_UNVERIFIED') throw new TwoFactorRequiredError('VERIFICATION_REQUIRED');
@@ -194,8 +224,10 @@ export type RequestMeta = {
 export async function resolveTenantCtx(
   session: MainSession,
   req: RequestMeta,
+  // 🔴 **既定は `ENFORCED`**（渡し忘れは厳しい側に倒れる。`TWO_FACTOR_POLICIES` の 🔴）。
+  twoFactorPolicy: TwoFactorPolicy = 'ENFORCED',
 ): Promise<AuthenticatedTenantCtx> {
-  assertTwoFactorSatisfied(session.role, session.twoFactor);
+  assertTwoFactorSatisfied(session.role, session.twoFactor, twoFactorPolicy);
   // 🔴 T-04-07: 「ホスト所属なのに取引先の停止時刻がある」は不変条件の破れである。
   //    静かに `null` へ丸めない —— 丸めると、組み立て側のバグが「停止が効かない」形で
   //    本番まで生き延びる（0 件で隠すのと同じ壊れ方。docs/05 §4.7 #9）。

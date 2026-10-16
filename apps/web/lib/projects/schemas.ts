@@ -27,7 +27,14 @@
 //    重複、要件の実体の有無）は `service.ts` 側で行う —— PATCH は既存値と合成しないと
 //    判定できないため、そもそも境界では判定しきれない。
 import { z } from 'zod';
-import { PROJECT_STATUSES, REMOTE_MODES, REQUIREMENT_KINDS } from '@ses/db';
+import {
+  PROJECT_CATEGORIES,
+  PROJECT_SOURCE_KINDS,
+  PROJECT_START_WINDOWS,
+  PROJECT_STATUSES,
+  REMOTE_MODES,
+  REQUIREMENT_KINDS,
+} from '@ses/db';
 import { PREFECTURE_CODES } from '@ses/domain';
 import { assertNoIsolationKeys, type AssertNoIsolationKeys } from '../api/isolation-keys';
 import { idCursorPageQuerySchema } from '../api/pagination';
@@ -225,6 +232,26 @@ export const projectListQuerySchema = idCursorPageQuerySchema.extend({
    *    **画面に無い選択肢を query だけ受け取る形にしない。**
    */
   remoteMode: optionalFilter(z.enum(REMOTE_MODES)),
+  /**
+   * ✅✅ **2026-10-16（受領モックの絞り込み。[Issue #113](https://github.com/Festal-KM/SES-Platform/issues/113)
+   *    「設計から改訂して」が列を足す承認である）: カテゴリ / 案件区分 / 並行可否 / 開始時期。**
+   */
+  category: optionalFilter(z.enum(PROJECT_CATEGORIES)),
+  sourceKind: optionalFilter(z.enum(PROJECT_SOURCE_KINDS)),
+  /**
+   * 🔴 **`'1'` / `'0'` で受ける**（`z.coerce.boolean()` は空文字以外をすべて true にするので、
+   *    「不可」を選んだのに「可」で絞られる）。`recruitingOnly` と同じ判断である。
+   */
+  parallelOk: optionalFilter(z.enum(['1', '0']))
+    .transform((value) => (value === undefined ? undefined : value === '1'))
+    .optional(),
+  /**
+   * 🔴 **開始時期は「区分」である**（即日 / 今月 / 来月 / 再来月以降）。日付の範囲への変換は
+   *    `@ses/db` の `resolveStartWindow`（現在時刻は引数で受け取る純粋関数）が 1 本で行う。
+   * ⚠️ 旧 `startFrom`（`<input type="date">`）は**キーを残す** —— URL を共有した人が居る可能性が
+   *    あり、受け取れなくなると「共有したリンクが開かない」になる（画面には出さない）。
+   */
+  startWithin: optionalFilter(z.enum(PROJECT_START_WINDOWS)),
   /**
    * ✅ **2026-10-16（人間の明示指示「チェックボックス『募集中のみ』」）。**
    *

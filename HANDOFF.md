@@ -71,6 +71,8 @@
 
 ### 2.3 デモ環境
 
+🔴🔴 **✅ 2026-10-16: デモだけ 2 要素認証の「設定の強制」を外した**（人間の明示指示「デモ環境の方は二要素認証は一旦外しといて」）。判定は `@ses/config` の **`isTwoFactorRelaxedEnv`（`demo` だけ true）** の 1 本で、起動時に 1 回だけ解決して `twoFactorPolicy()` が配る（`CLAUDE.md` §11.1「分岐は起動時の 1 箇所」）。🔴 **緩むのは「未設定の `OWNER` / `ADMIN` に設定を強制する」ほうだけ**であり、**設定済みの利用者がそのセッションで第 2 要素を提示したかの判定はどの環境でも効く**（外すと「一度設定すれば以後はパスワードだけ」になり 2 要素目が実質消える）。🔴 **`sandbox` は含めない**（見込み客が自分の実データで試す場である。§11）。🔴 **運営者（`PlatformUser`）には効かない**（別テーブル・別認証。§10.5）。🔴 **`resolveTenantCtx` の既定は `ENFORCED`** なので、渡し忘れた新しい経路は厳しい側に倒れる。
+
 🔴 **✅ 2026-10-13: デザインシステム v1.0 に合わせた**（`docs/design-system.md`）。🔴 **外枠が変わったので全画面に効く** —— 画面タイトル 20 → 26px / サイドバー 224 → 208 / 副カラム 480 → 388 固定 / Card の角丸 6 → 10 / Button 40 → 36 / ブランド色 藍 → 青 / ページの地が淡いグレーになった。**行 hover と列ヘッダを地から切り離した**ので、淡い地に直接載る表でも hover が見える（旧実装の申し送りが予告していた問題の解消）。
 
 🔴 **✅ 2026-10-11: `980a49b` をデプロイ済み**（ホームの作り直し + レビュー指摘 4 件の修正 + 匿名共有元の社名の実害修正）。実機確認は `docs/sprints/SP-22-ui-overhaul.md` §11.8。⚠️ **`メッセージ` タブはデモの seed にスレッドが 0 件**なので空状態で出る（不具合ではない）。⚠️ **デモの要対応キューは放置 18〜22 日のため、優先度が全行 `高`** になる（規則どおりだが、バッジが情報を持たない。seed の日付の相対化は別タスク）。
@@ -108,6 +110,9 @@
 
 | 罠 | 内容 |
 |---|---|
+| 🔴🔴 **既存行を書き換える migration は `FORCE ROW LEVEL SECURITY` を一時解除し、「残存 0 件」を FORCE を戻す前に検査する** | **2026-10-16 にこれでデモを落とした**（web が Crashed。復旧まで約 1 時間）。`app_migrator` は `NOBYPASSRLS` で、業務表は ENABLE + FORCE であり**所有者にも適用ポリシーが 1 つも無い** → 素の `UPDATE` は **0 件で「成功」**する（docs/05 §4.4）。`20261016010000_project_status_two_values` はそれで移送されず、続く `ADD CONSTRAINT` が旧値の行に当たって失敗した。🔴 **さらに悪いのは次である**: 失敗した migration は Prisma に記録され、以後 **P3009** で**新しい migration が 1 本も当たらなくなる**（`railway-start.mjs` が「当たっていない DB でアプリを上げない」と判断して起動しない）。🔴 **手順は `20260911000000` / `20260929000000` / `20261016010000` の 3 本が同じ形で持っている**: FORCE 解除 → UPDATE → **残存 0 件の検査**（🔴 戻す前。戻した後では所有者にも 0 件に見えて検査にならない）→ FORCE 復帰 → カタログ検査（RLS 有効なのに FORCE でない表が無いこと）。🔴 **`CHECK` を張り替えるなら、旧 CHECK を外してから移送する**（旧 CHECK が新しい値を許さない）。🔴 **CI では気づけない** —— CI は空の DB に当てるので 0 件 UPDATE が成功してしまう |
+| 🔴 **P3009 からの回復**（`migrate found failed migrations`） | DB は Railway の内部ホストにしか無く、**外から `prisma migrate resolve` を打てない**。`scripts/railway-predeploy.mjs` に 1 段用意してある: 環境変数 **`SES_MIGRATION_RESOLVE_ROLLED_BACK`** に migration 名を入れてデプロイすると `--rolled-back` を打ってから `migrate deploy` が走る。🔴 **既定では何もしない**（常時実行にすると、直っていない migration を毎回「巻き戻した」ことにして失敗が見えなくなる）。🔴 **使ったら変数を必ず外す** |
+| 🔴 **`railway up` はローカルの作業ディレクトリを上げる**（Git ではない） | したがって**コミットしていない変更もデプロイされる**。「Git から pull すれば直る」ではない。🔴 **デプロイ前に作業ツリーを緑にする**（未完成の機能が混ざる） |
 | 🔴 **`NODE_ENV` を持つシェルでビルドしない** | `NODE_ENV=development` があると `next build` が `/_global-error` の事前生成で `TypeError: Cannot read properties of null (reading 'useContext')` で落ちる（事前生成のワーカーだけが React の development 版を読み、React が 2 つ同居する）。`apps/web/next.config.ts` の門番が変数名を名指しして止める。**必ず `env -u NODE_ENV pnpm --filter @ses/web run build`** |
 | 🔴 **`packages/ui` を変えたら `pnpm --filter @ses/ui run build`** | `apps/web` は `dist` を参照する。忘れると変更が反映されない |
 | 🔴 **`packages/i18n` にキーを足したら `npx tsc -p packages/i18n/tsconfig.json`** | 忘れると `t()` が `undefined` を返してテストが落ちる |

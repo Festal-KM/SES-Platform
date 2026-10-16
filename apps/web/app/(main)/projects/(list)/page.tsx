@@ -13,7 +13,7 @@
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 // ✅ 2026-10-16: 単価の逆転の判定（述語〔重なり〕と同じファイルの 1 本。人間の明示指示）。
-import { isUnitPriceRangeInverted } from '@ses/db';
+import { isUnitPriceRangeInverted, resolveStartWindow } from '@ses/db';
 import { t } from '@ses/i18n';
 import { PageBody } from '@ses/ui';
 import { resolveTenantCtxOutcome } from '../../../../lib/auth/session';
@@ -40,7 +40,11 @@ import {
   projectListDescription,
   projectListScreenMessages,
   projectPrefectureFilterOptions,
+  projectCategoryFilterOptions,
+  projectParallelOkFilterOptions,
   projectRemoteModeFilterOptions,
+  projectSourceKindFilterOptions,
+  projectStartWithinFilterOptions,
   projectStatusFilterOptions,
   projectSummaryPanelMessages,
 } from '../list-props';
@@ -83,9 +87,20 @@ export default async function ProjectListPage({
   //    ので、**問い合わせ自体を行わず**、単価の欄にエラーを出す（`docs/04` §S-010）。
   // 🔴 **`redirect` しない**（URL に残った条件を消すと、直すべき値が画面から消える）。
   const priceInverted = isUnitPriceRangeInverted(query);
+  // ============================================================================
+  // ✅✅ **2026-10-16: 開始時期の区分 → 開始日の範囲**（受領モックの「開始時期」）
+  // ============================================================================
+  // 🔴 **現在時刻をここで 1 回だけ読む。** `resolveStartWindow` は純粋関数であり、
+  //    一覧と `COUNT` が**同じ日付**で動くことをこの 1 行が保証する
+  //    （1 リクエストの中で `new Date()` を 2 回呼ぶと、日付の境目で件数と行がずれうる）。
+  // 🔴 **旧 `startFrom`（日付の直接指定）と併用されたら、区分のほうを採る** ——
+  //    画面に出ているのは区分だけであり、見えていない条件が結果を変える状態を作らない。
+  const startRange =
+    query.startWithin === undefined ? null : resolveStartWindow(query.startWithin, new Date());
+  const searchQuery = startRange === null ? query : { ...query, ...startRange };
   const view = priceInverted
     ? { items: [] as Awaited<ReturnType<typeof listProjects>>['items'], total: 0, nextCursor: null }
-    : await listProjects(ctx, query);
+    : await listProjects(ctx, searchQuery);
   const isPartner = ctx.partnerCompanyId !== null;
   const filtered = hasProjectListFilters(query);
   // 🔴 **列表示切替の状態は URL のクエリ（`?hide=`）だけが持つ**（`T-22-06`。`docs/04` §7.1）。
@@ -174,10 +189,19 @@ export default async function ProjectListPage({
           // ✅ 2026-10-16（人間の明示指示）: 稼働形態 / 募集中のみ。
           remoteMode: query.remoteMode ?? '',
           recruitingOnly: query.recruitingOnly === true ? '1' : '',
+          // ✅ 2026-10-16（受領モック）: カテゴリ / 案件区分 / 並行可否 / 開始時期。
+          category: query.category ?? '',
+          sourceKind: query.sourceKind ?? '',
+          parallelOk: query.parallelOk === undefined ? '' : query.parallelOk ? '1' : '0',
+          startWithin: query.startWithin ?? '',
         }}
         statusOptions={projectStatusFilterOptions}
         prefectureOptions={projectPrefectureFilterOptions}
         remoteModeOptions={projectRemoteModeFilterOptions}
+        categoryOptions={projectCategoryFilterOptions}
+        sourceKindOptions={projectSourceKindFilterOptions}
+        parallelOkOptions={projectParallelOkFilterOptions}
+        startWithinOptions={projectStartWithinFilterOptions}
         priceInverted={priceInverted}
         // 🔴 取引先には公開先の列を出さない（docs/04 §S-010 / `F-014 AC-4`）。出所は ctx である。
         showVisibilityColumn={!isPartner}
@@ -185,7 +209,6 @@ export default async function ProjectListPage({
         //    押しても戻されるだけの導線を描かない。拒否の本体は `#26` のガードと
         //    `S-012` のリダイレクトである。
         canRegister={canRegister}
-        showClearFilters={filtered}
         // 🔴 ページングのリンクは**検索条件と列の表示状態を保つ**（`projectListHref`）——
         //    次ページで隠した列が復活すると、利用者は何が起きたか説明できない。
         // 🔴 **`?selected=` は引き継がない** —— 開いていた行は次のページに居ないので、

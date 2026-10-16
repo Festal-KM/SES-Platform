@@ -122,6 +122,12 @@ export type ProjectListFilterValues = {
   readonly priceMax: string;
   /** ✅ 2026-10-16: 稼働形態（`RemoteMode` の 3 値。空文字 = すべて）。 */
   readonly remoteMode: string;
+  /** ✅ 2026-10-16（受領モック + Issue #113）: カテゴリ / 案件区分 / 並行可否 / 開始時期。 */
+  readonly category: string;
+  readonly sourceKind: string;
+  /** `'1'`（可） / `'0'`（不可） / 空文字（すべて）。 */
+  readonly parallelOk: string;
+  readonly startWithin: string;
   /** ✅ 2026-10-16: 「募集中のみ」。`'1'` のときだけチェック済みで描く。 */
   readonly recruitingOnly: string;
 };
@@ -153,6 +159,11 @@ export type ProjectListScreenMessages = {
   readonly searchPriceUnit: string;
   /** ✅ 2026-10-16: 稼働形態 / 募集中のみ / 単価の逆転エラー（人間の明示指示）。 */
   readonly searchRemoteMode: string;
+  /** ✅ 2026-10-16（受領モック）: カテゴリ / 案件区分 / 並行可否 / 開始時期。 */
+  readonly searchCategory: string;
+  readonly searchSourceKind: string;
+  readonly searchParallelOk: string;
+  readonly searchStartWithin: string;
   readonly searchRecruitingOnly: string;
   readonly searchPriceInverted: string;
   readonly searchSubmit: string;
@@ -347,10 +358,13 @@ export function ProjectListScreen({
   statusOptions,
   prefectureOptions,
   remoteModeOptions,
+  categoryOptions,
+  sourceKindOptions,
+  parallelOkOptions,
+  startWithinOptions,
   priceInverted,
   showVisibilityColumn,
   canRegister,
-  showClearFilters,
   nextPageHref,
   firstPageHref,
   columnToggleItems,
@@ -371,6 +385,15 @@ export function ProjectListScreen({
    */
   readonly remoteModeOptions: readonly ProjectFilterOption[];
   /**
+   * ✅ **2026-10-16（受領モックの絞り込み）: カテゴリ / 案件区分 / 並行可否 / 開始時期。**
+   * 🔴 **値の出所は `@ses/db` の値集合である**（カテゴリ 7 値 / 案件区分 2 値）。並行可否は
+   *    `'1'` / `'0'`、開始時期は `PROJECT_START_WINDOWS` の 4 値であり、いずれもページが語を解決して渡す。
+   */
+  readonly categoryOptions: readonly ProjectFilterOption[];
+  readonly sourceKindOptions: readonly ProjectFilterOption[];
+  readonly parallelOkOptions: readonly ProjectFilterOption[];
+  readonly startWithinOptions: readonly ProjectFilterOption[];
+  /**
    * ✅ **2026-10-16: 単価の下限 > 上限**（人間の明示指示）。`true` のとき、単価の欄に
    * エラーを出し、**表の領域は検索を実行していないことを示す空状態**にする（`page.tsx` が
    * 問い合わせ自体を行わない）。判定は `@ses/db` の `isUnitPriceRangeInverted` の 1 本である。
@@ -383,7 +406,8 @@ export function ProjectListScreen({
   readonly showVisibilityColumn: boolean;
   readonly canRegister: boolean;
   /** 絞り込みが 1 つでも効いているとき（`docs/04` §10.1 `S-010` 絞込 0 の条件解除導線）。 */
-  readonly showClearFilters: boolean;
+  // ✅ 2026-10-16: `showClearFilters` を外した（「条件をクリア」は常時表示になった）。
+  //    🔴 **受け取って使わない props を残さない** —— 呼び手が「渡せば効く」と誤解する。
   /** 次ページ（無ければ `null`）。検索条件を保った URL である。 */
   readonly nextPageHref: string | null;
   /** 2 ページ目以降でだけ「最初のページに戻る」を出す（無ければ `null`）。 */
@@ -480,7 +504,11 @@ export function ProjectListScreen({
                            語だけ短くして、詳しい説明はプレースホルダに移した。
                         ⚠️ `pl-8` は左の虫眼鏡（`left-3` + 16px）を避けるための内側の余白であり、
                            §7.9 の 7 段の中の値である（`ui-spacing-scale` の許容段）。 */}
-                    <Field className="sm:col-span-2" label={messages.searchQ}>
+                    {/* ✅✅ **2026-10-16（人間の明示指示「これちゃんと参考にして、検索部分
+                        修正してよ」+ 受領モック）: 1 行目を全幅にした。** モックのキーワード欄は
+                        帯の幅いっぱいで、2 行目から 4 列の選択肢が始まる。
+                        🔴 **`col-span-full` にする**（`sm:col-span-2` は 4 列のうち 2 列だった）。 */}
+                    <Field className="col-span-full" label={messages.searchQ}>
                       <div className="relative">
                         <Icon
                           name="search"
@@ -496,6 +524,18 @@ export function ProjectListScreen({
                         />
                       </div>
                     </Field>
+                    {/* ========================================================================
+                        ✅✅ **2026-10-16: 受領モックの並びに作り直した**
+                        （人間の明示指示「これちゃんと参考にして、検索部分修正してよ」。
+                         一次資料 `デザインモック/自社案件管理_案件一覧.png`）
+                        ========================================================================
+                        モックの 2 行目 = ステータス / 案件区分 / カテゴリ / 稼働形態
+                        モックの 3 行目 = 単価（月額）/ 勤務地 / 開始時期 / 並行可否
+                        🔴 **カテゴリ / 案件区分 / 並行可否は列ごと足した**
+                           （[Issue #113](https://github.com/Festal-KM/SES-Platform/issues/113)
+                            「設計から改訂して」が承認である。migration 20261016030000）。
+                           **押しても絞れない選択肢を先に並べない**という規律は守っている ——
+                           足したのは「実際に絞れる条件」だけである。 */}
                     <Field label={messages.searchStatus}>
                       <Select name="status" defaultValue={filters.status} data-testid="project-list-filter-status">
                         {statusOptions.map((option) => (
@@ -505,30 +545,39 @@ export function ProjectListScreen({
                         ))}
                       </Select>
                     </Field>
-                    {/* ✅ 2026-10-15: 画像の並び（選択肢の欄をまとめ、単価と日付を次の行に置く）に
-                        合わせて `勤務地` を `開始日` の前に出した。🔴 **条件の集合・`name`・
-                        送り先は 1 つも変えていない**（並べ替えだけである）。 */}
-                    <Field label={messages.searchPrefecture}>
+                    <Field label={messages.searchSourceKind}>
                       <Select
-                        name="prefecture"
-                        defaultValue={filters.prefecture}
-                        data-testid="project-list-filter-prefecture"
+                        name="sourceKind"
+                        defaultValue={filters.sourceKind}
+                        data-testid="project-list-filter-source-kind"
                       >
-                        {prefectureOptions.map((option) => (
+                        {sourceKindOptions.map((option) => (
                           <option key={option.value} value={option.value}>
                             {option.label}
                           </option>
                         ))}
                       </Select>
                     </Field>
-                    {/* ✅ **2026-10-16（人間の明示指示「稼働形態」）。**
-                        🔴 **選択肢は `REMOTE_MODES`（3 値）の再利用である** —— 指示の 4 値
-                           （フルリモート / リモート中心 / ハイブリッド / 常駐）に割るには列の
-                           値集合を変える必要があり、それは [Issue #113] の範囲である。
-                           **押しても絞れない選択肢を先に並べない。**
-                        🔴 **一覧の `稼働形態` 列と同じ語を使う**（`columnRemoteMode` と同じ
-                           `projects.remoteMode.*`）—— 絞り込みと列で語が違うと、選んだ値が
-                           どの列に効いたのか分からない。 */}
+                    <Field label={messages.searchCategory}>
+                      <Select
+                        name="category"
+                        defaultValue={filters.category}
+                        data-testid="project-list-filter-category"
+                      >
+                        {categoryOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                    {/* 🔴 **一覧の `稼働形態` 列と同じ語を使う**（`columnRemoteMode` と同じ
+                        `projects.remoteMode.*`）—— 絞り込みと列で語が違うと、選んだ値がどの列に
+                        効いたのか分からない。
+                        ⚠️ モックの選択肢は 4 つ（フルリモート / リモート中心 / ハイブリッド / 常駐）
+                        だが、列の値集合は 3 値である。4 値に割るのは `engineers.remote_mode` と
+                        共有している値集合の変更であり、人材側の画面・検索・Badge に同時に波及する
+                        （[Issue #113] の続きとして別に行う）。 */}
                     <Field label={messages.searchRemoteMode}>
                       <Select
                         name="remoteMode"
@@ -541,14 +590,6 @@ export function ProjectListScreen({
                           </option>
                         ))}
                       </Select>
-                    </Field>
-                    <Field label={messages.searchStartFrom}>
-                      <Input
-                        type="date"
-                        name="startFrom"
-                        defaultValue={filters.startFrom}
-                        data-testid="project-list-filter-start-from"
-                      />
                     </Field>
                     {/* ✅ **2026-10-15: 単価レンジ**（定義書 §1.6 の Filter Panel の 1 行。人間の
                         指示「自社案件管理ページはこれを参照してアップデートして」）。
@@ -608,6 +649,55 @@ export function ProjectListScreen({
                         </span>
                       </div>
                     </Field>
+                    {/* 🔴 モックの 3 行目の残り（勤務地 / 開始時期 / 並行可否）。 */}
+                    <Field label={messages.searchPrefecture}>
+                      <Select
+                        name="prefecture"
+                        defaultValue={filters.prefecture}
+                        data-testid="project-list-filter-prefecture"
+                      >
+                        {prefectureOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                    {/* ✅✅ **2026-10-16: `開始日（この日以降）` の日付入力をやめ、モックどおり
+                        `開始時期` の選択にした。**
+                        🔴 **営業が知りたいのは「いま出せるか / 来月までに出せるか」であって、
+                           「2026-11-13 以降か」ではない** —— 日付を打たせると、その月の初日を
+                           利用者に計算させることになる。
+                        🔴 区分 → 日付の範囲の変換は `@ses/db` の `resolveStartWindow` の 1 本で
+                           行う（**現在時刻は引数で受け取る純粋関数**。同ファイル冒頭の 🔴）。
+                        ⚠️ 旧 `startFrom` の query のキーは**受け取れる状態のまま残してある**
+                           （共有された URL が開かなくなるのを避ける。`schemas.ts` の ⚠️）。 */}
+                    <Field label={messages.searchStartWithin}>
+                      <Select
+                        name="startWithin"
+                        defaultValue={filters.startWithin}
+                        data-testid="project-list-filter-start-within"
+                      >
+                        {startWithinOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                    <Field label={messages.searchParallelOk}>
+                      <Select
+                        name="parallelOk"
+                        defaultValue={filters.parallelOk}
+                        data-testid="project-list-filter-parallel-ok"
+                      >
+                        {parallelOkOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
                     {/* 🔴 送信と「条件をクリア」は必ず 1 行を占める（列の途中に紛れると
                         押せる場所が毎回変わる）。`justify-end` はカードの中で右に寄せるための
                         配置の調整であり、共有定数（`FILTER_ACTIONS_CLASSES`）は変えていない。 */}
@@ -658,15 +748,21 @@ export function ProjectListScreen({
                                画面側で組まず、`@ses/ui` の `SECONDARY_BUTTON_LINK_CLASSES` を使う。
                             🔴 **出す条件は変えていない**（絞り込みが 1 つでも効いているときだけ。
                                押しても何も起きないボタンを常設しない）。 */}
-                        {showClearFilters ? (
-                          <Link
-                            className={SECONDARY_BUTTON_LINK_CLASSES}
-                            href="/projects"
-                            data-testid="project-list-clear"
-                          >
-                            {messages.searchClear}
-                          </Link>
-                        ) : null}
+                        {/* ✅✅ **2026-10-16: 常時出すようにした**（受領モックのフッタは
+                            `条件をクリア` と `検索` が常に並んでいる）。
+                            ⚠️ **以前は「絞り込みが 1 つでも効いているときだけ」だった** ——
+                            「押しても何も起きないボタンを常設しない」という規律による。
+                            🔴 **その規律を曲げた理由**: 絞り込みの帯が 3 行になり、
+                            **どこまでが条件なのかが一目で分からなくなった**。クリアが常に
+                            同じ位置に在ることのほうが、空振りの 1 クリックより価値が高い
+                            （押した結果は「条件なしの一覧」であり、壊れる操作ではない）。 */}
+                        <Link
+                          className={SECONDARY_BUTTON_LINK_CLASSES}
+                          href="/projects"
+                          data-testid="project-list-clear"
+                        >
+                          {messages.searchClear}
+                        </Link>
                         <Button type="submit" data-testid="project-list-search">
                           {messages.searchSubmit}
                         </Button>

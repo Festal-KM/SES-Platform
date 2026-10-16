@@ -10,6 +10,8 @@
 //    リクエストの body / query / path は 1 バイトも参照しない（CLAUDE.md §3.1 / BR-03）。
 import type { AuthenticatedTenantCtx, DeviceKind, TenantMembershipFacts } from '@ses/db';
 import { loadTenantMembership, resolveTenantCtx, twoFactorSessionState } from '@ses/db';
+// ✅ 2026-10-16: 2FA の方針（起動時に 1 回決まる。`lib/db/bootstrap.ts` の 🔴）。
+import { twoFactorPolicy } from '../db/bootstrap';
 import type { TenantSessionClaims } from './claims';
 
 /** ctx に載せてよいリクエスト由来の情報。🔴 分離キーを含めない。 */
@@ -52,6 +54,9 @@ export async function buildTenantCtx(
       }),
     },
     { deviceKind: meta.deviceKind },
+    // 🔴 **渡さないと `ENFORCED`（従来どおり）に倒れる**（`resolveTenantCtx` の既定）。
+    //    緩める判断は起動時の 1 箇所が持ち、ここは結果を運ぶだけである。
+    twoFactorPolicy(),
   );
 }
 

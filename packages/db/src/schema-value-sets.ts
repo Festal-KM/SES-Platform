@@ -101,6 +101,41 @@ export type SkillSheetExtractionStatus = (typeof SKILL_SHEET_EXTRACTION_STATUSES
  */
 export const PROJECT_STATUSES = ['OPEN', 'CLOSED'] as const;
 
+/**
+ * ✅✅ **案件のカテゴリ**（2026-10-16。人間の明示指示「これちゃんと参考にして、検索部分修正してよ」
+ * + 受領モック `デザインモック/自社案件管理_案件一覧.png` の絞り込み 2 行目）。
+ *
+ * 🔴 **[Issue #113](https://github.com/Festal-KM/SES-Platform/issues/113)「設計から改訂して」が
+ *    列を足す承認である**（モックの 4 つのうち、カテゴリ / 案件区分 / 並行可否は DB 列が無く、
+ *    「設計から改訂して」との回答を得ていた）。
+ * 🔴 **値はモックの 7 つそのものである**（バックエンド / フロントエンド / インフラ / AI開発 /
+ *    データ / PM・PMO / ヘルプデスク）。**勝手に増やさない**（増やすと一覧の Badge の色も増える）。
+ * 🔴 **`null` を許す**（未分類の案件が既に在る）。画面は「未設定」と出し、空文字で埋めない。
+ */
+export const PROJECT_CATEGORIES = [
+  'BACKEND',
+  'FRONTEND',
+  'INFRA',
+  'AI',
+  'DATA',
+  'PM_PMO',
+  'HELPDESK',
+] as const;
+
+export type ProjectCategory = (typeof PROJECT_CATEGORIES)[number];
+
+/**
+ * ✅✅ **案件区分**（2026-10-16。受領モックの絞り込み「案件区分: 自社案件 / パートナー案件」）。
+ *
+ * 🔴 **これは「どこから来た案件か」の分類であって、所有者ではない。** 行は従来どおり
+ *    テナント（ホスト）のものであり、**RLS も越境経路も 1 つも変わらない**
+ *    （`CLAUDE.md` §3.1。パートナーが持ち込んだ案件を別の経路で読ませる話ではない）。
+ * 🔴 **既定は `OWN`** —— 既存の行はすべて自社案件である（移送で埋める）。
+ */
+export const PROJECT_SOURCE_KINDS = ['OWN', 'PARTNER'] as const;
+
+export type ProjectSourceKind = (typeof PROJECT_SOURCE_KINDS)[number];
+
 export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
 
 /**

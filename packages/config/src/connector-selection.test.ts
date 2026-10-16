@@ -4,7 +4,14 @@
 
 import { describe, expect, it } from 'vitest';
 import type { ConnectorSelection } from './connector-selection.js';
-import { assertNoMockInProduction, isAllMockEmailEnv, resolveConnectorSelection } from './connector-selection.js';
+import {
+  assertNoMockInProduction,
+  isAllMockEmailEnv,
+  // ✅ 2026-10-16（人間の明示指示）: demo だけ 2FA の設定強制を外す。
+  isTwoFactorRelaxedEnv,
+  resolveConnectorSelection,
+} from './connector-selection.js';
+import { APP_ENV_KINDS } from './app-env.js';
 import { ProductionMockConnectorError } from './errors.js';
 import { loadAppEnv } from './load-env.js';
 import { allAppEnvKinds, buildValidEnv } from './testing/fixtures.js';
@@ -143,5 +150,25 @@ describe('assertNoMockInProduction — 実行時の二重防御', () => {
         { email: 'mock', objectStore: 'real', malwareScanner: 'real', esign: 'mock', billing: 'mock', ai: 'mock' },
       ),
     ).not.toThrow();
+  });
+});
+
+describe('🔴 2 要素認証の緩和は demo だけである（2026-10-16。人間の明示指示）', () => {
+  it('demo だけ true（sandbox / staging / production は false）', () => {
+    expect(isTwoFactorRelaxedEnv('demo')).toBe(true);
+    // 🔴 `sandbox` は**見込み客が自分の実データで試す場**である（CLAUDE.md §11）。
+    expect(isTwoFactorRelaxedEnv('sandbox')).toBe(false);
+    expect(isTwoFactorRelaxedEnv('staging')).toBe(false);
+    expect(isTwoFactorRelaxedEnv('production')).toBe(false);
+  });
+
+  it('🔴 development も緩めない（ローカルの挙動を本番と揃えておく）', () => {
+    // 緩めると「手元では通るのに staging で弾かれる」が起きる。
+    expect(isTwoFactorRelaxedEnv('development')).toBe(false);
+  });
+
+  it('🔴 値集合の全環境を見ている（環境が増えたら落ちる）', () => {
+    const relaxed = APP_ENV_KINDS.filter((kind) => isTwoFactorRelaxedEnv(kind));
+    expect(relaxed).toEqual(['demo']);
   });
 });

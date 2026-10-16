@@ -122,6 +122,34 @@ describe('検索条件 → 述語（`F-015` の入力）', () => {
     });
   });
 
+  // ✅✅ 2026-10-16（受領モック `デザインモック/自社案件管理_案件一覧.png` の絞り込み。
+  //    [Issue #113](https://github.com/Festal-KM/SES-Platform/issues/113)「設計から改訂して」）。
+  it('カテゴリは等値で絞る', () => {
+    expect(projectSearchWhere({ category: 'BACKEND' })).toEqual({ category: 'BACKEND' });
+  });
+
+  it('案件区分は等値で絞る', () => {
+    expect(projectSearchWhere({ sourceKind: 'PARTNER' })).toEqual({ sourceKind: 'PARTNER' });
+  });
+
+  it('🔴 並行可否は `false` でも条件になる（「不可で絞る」が落ちない）', () => {
+    expect(projectSearchWhere({ parallelOk: true })).toEqual({ parallelOk: true });
+    // 🔴 `false` を「指定なし」に畳むと、**「不可」で絞った瞬間に全件が出る**。
+    expect(projectSearchWhere({ parallelOk: false })).toEqual({ parallelOk: false });
+  });
+
+  it('🔴 開始時期は下端と上端を 1 つの `startDate` に畳む（区分は両端を持つ）', () => {
+    const where = projectSearchWhere({ startFrom: '2026-11-01', startTo: '2026-12-01' });
+    expect(where.startDate?.gte?.toISOString()).toBe('2026-11-01T00:00:00.000Z');
+    expect(where.startDate?.lt?.toISOString()).toBe('2026-12-01T00:00:00.000Z');
+  });
+
+  it('🔴 上端だけでも条件になる（「即日」は下端を持たない）', () => {
+    const where = projectSearchWhere({ startTo: '2026-10-17' });
+    expect(where.startDate?.gte).toBeUndefined();
+    expect(where.startDate?.lt?.toISOString()).toBe('2026-10-17T00:00:00.000Z');
+  });
+
   it('複数条件は AND として重なる（キーが並ぶ）', () => {
     expect(Object.keys(projectSearchWhere({ status: 'OPEN', prefecture: '13' })).sort()).toEqual([
       'prefecture',
@@ -187,6 +215,34 @@ describe('検索条件 → 述語（`F-015` の入力）', () => {
     expect(where.prefecture).toBe('13');
     expect(where.remoteMode).toBe('FULL_REMOTE');
     expect(where.startDate).toBeDefined();
+  });
+
+  // ✅✅ 2026-10-16: 受領モックの 9 条件を全部重ねても 1 つも落ちないこと。
+  it('🔴 モックの絞り込みを全部指定しても、条件が 1 つも落ちない', () => {
+    const where = projectSearchWhere({
+      q: '基幹',
+      status: 'OPEN',
+      sourceKind: 'OWN',
+      category: 'BACKEND',
+      remoteMode: 'FULL_REMOTE',
+      priceMin: 700_000,
+      priceMax: 900_000,
+      prefecture: '13',
+      startFrom: '2026-11-01',
+      startTo: '2026-12-01',
+      parallelOk: true,
+      recruitingOnly: true,
+    });
+    expect(where.status).toBe('OPEN');
+    expect(where.sourceKind).toBe('OWN');
+    expect(where.category).toBe('BACKEND');
+    expect(where.remoteMode).toBe('FULL_REMOTE');
+    expect(where.prefecture).toBe('13');
+    expect(where.parallelOk).toBe(true);
+    expect(where.startDate?.gte).toBeDefined();
+    expect(where.startDate?.lt).toBeDefined();
+    // 単価 2 + フリーワード 1 語 + 募集中のみ 1 = 4 要素。
+    expect(where.AND).toHaveLength(4);
   });
 
   it('🔴 商流情報の列を検索対象にしない（ホストだけ一致する述語を作らない）', () => {

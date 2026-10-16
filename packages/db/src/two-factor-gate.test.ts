@@ -110,3 +110,51 @@ describe('🔴 resolveTenantCtx の 2FA ゲート（F-003 AC-2）', () => {
     expect(ctx.partnerCompanyId).toBe('p1');
   });
 });
+
+// ============================================================================
+// ✅✅ 2026-10-16（人間の明示指示「デモ環境の方は二要素認証は一旦外しといて」）
+// ============================================================================
+// 🔴 **ここで固定するのは「何が緩み、何が緩まないか」である。**
+//    緩むのは ①「未設定なら設定を強制する」だけ。②「設定済みならこのセッションで提示する」は
+//    **どの環境でも効く** —— 外すと「一度設定すれば以後はパスワードだけ」になり、
+//    2 要素目が実質消える（`context.ts` の `assertTwoFactorSatisfied` の ②）。
+describe('🔴 2 要素認証の方針（`SETUP_RELAXED` は demo だけ。人間の明示指示 2026-10-16）', () => {
+  it('既定（省略）は従来どおり `OWNER` / `ADMIN` に必須である', () => {
+    for (const role of TENANT_ROLES) {
+      const expected = (TWO_FACTOR_REQUIRED_ROLES as readonly TenantRole[]).includes(role);
+      expect(requiresTwoFactor(role), role).toBe(expected);
+      // 🔴 **明示しても同じ**（既定値が `ENFORCED` であることの対照）。
+      expect(requiresTwoFactor(role, 'ENFORCED'), role).toBe(expected);
+    }
+  });
+
+  it('🔴 `SETUP_RELAXED` ではどのロールも設定を強制されない', () => {
+    for (const role of TENANT_ROLES) {
+      expect(requiresTwoFactor(role, 'SETUP_RELAXED'), role).toBe(false);
+    }
+  });
+
+  it('🔴 `SETUP_RELAXED` でも「設定済みなのに未提示」は通さない（2 要素目が消えない）', async () => {
+    await expect(
+      resolveTenantCtx(session('OWNER', 'ENROLLED_UNVERIFIED'), { deviceKind: 'api' }, 'SETUP_RELAXED'),
+    ).rejects.toBeInstanceOf(TwoFactorRequiredError);
+    await expect(
+      resolveTenantCtx(session('SALES', 'ENROLLED_UNVERIFIED'), { deviceKind: 'api' }, 'SETUP_RELAXED'),
+    ).rejects.toBeInstanceOf(TwoFactorRequiredError);
+  });
+
+  it('🔴 `SETUP_RELAXED` では未設定の `OWNER` が通る（これが緩めたかったもの）', async () => {
+    const ctx = await resolveTenantCtx(
+      session('OWNER', 'NOT_ENROLLED'),
+      { deviceKind: 'api' },
+      'SETUP_RELAXED',
+    );
+    expect(ctx.role).toBe('OWNER');
+  });
+
+  it('🔴 渡し忘れは厳しい側に倒れる（未設定の `OWNER` は既定で弾かれる）', async () => {
+    await expect(
+      resolveTenantCtx(session('OWNER', 'NOT_ENROLLED'), { deviceKind: 'api' }),
+    ).rejects.toBeInstanceOf(TwoFactorRequiredError);
+  });
+});

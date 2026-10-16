@@ -23,6 +23,8 @@ export {
   assertNoMockInProduction,
   // 🔴 T-10-12: `EmailDispatch.status='MOCKED'` を配送済みとみなせる環境か（docs/05 §9.7）。選択表と同じ出所。
   isAllMockEmailEnv,
+  // ✅ 2026-10-16（人間の明示指示）: demo でだけ 2FA の設定強制を外す。
+  isTwoFactorRelaxedEnv,
   type ConnectorCategory,
   type ConnectorImplementationKind,
   type ConnectorSelection,

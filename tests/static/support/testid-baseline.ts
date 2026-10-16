@@ -566,7 +566,14 @@ export const TESTID_BASELINE_EXACT: readonly string[] = [
   'project-list-error',
   'project-list-filter-prefecture',
   'project-list-filter-q',
-  'project-list-filter-start-from',
+  // ✅✅ 🔴 **2026-10-16: `project-list-filter-start-from` を外した**（人間の明示指示
+  //    「これちゃんと参考にして、検索部分修正してよ」+ 受領モック。`開始日（この日以降）` の
+  //    `<input type="date">` を `開始時期` の `<select>`（`project-list-filter-start-within`）に
+  //    置き換えたため、**その testid を持つ要素そのものが画面から無くなった**）。
+  //    🔴 **凍結を「落ちたから消す」で外していない** —— この testid を使っていた箇所
+  //       （`project-list-screen.render.test.tsx` の条件復元の検査）を**同じ変更で**
+  //       新しい欄に書き換えてある（`testid-inventory.test.ts` 冒頭の作法）。
+  //    ⚠️ **E2E は掴んでいなかった**（`tests/e2e` に出現 0 件。確認済み）。
   'project-list-filter-status',
   'project-list-filters',
   'project-list-first',

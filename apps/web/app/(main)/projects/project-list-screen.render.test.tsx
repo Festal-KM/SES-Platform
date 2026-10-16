@@ -48,7 +48,8 @@ const messages: ProjectListScreenMessages = {
   partnerScopeNotice: null,
   orderNote: '後任募集 → 募集中 → 充足 の順に、同じ状態のなかでは更新日の新しい順に表示しています。',
   overflowNote: '右端が切れているときは、表を横にスクロールすると残りの列が見られます。',
-  searchComingSoon: 'スキル要件・リモート可否での絞り込みは、後続のリリースで行えます。',
+  // ✅ 2026-10-16: 「リモート可否」を外した（稼働形態の絞り込みを実装したため）。
+  searchComingSoon: 'スキル要件での絞り込みは、後続のリリースで行えます。',
   searchLegend: '検索条件',
   searchQ: 'フリーワード',
   searchStatus: '案件の状態',
@@ -65,6 +66,10 @@ const messages: ProjectListScreenMessages = {
   searchPriceUnit: '円',
   // ✅ 2026-10-16（人間の明示指示。案件一覧の検索機能）。
   searchRemoteMode: '稼働形態',
+  searchCategory: 'カテゴリ',
+  searchSourceKind: '案件区分',
+  searchParallelOk: '並行可否',
+  searchStartWithin: '開始時期',
   searchRecruitingOnly: '募集中のみ',
   searchPriceInverted: '単価の下限が上限を上回っています。どちらかを直してください。',
   searchSubmit: '検索',
@@ -109,10 +114,38 @@ const emptyFilters = {
   prefecture: '',
   priceMin: '',
   priceMax: '',
-  // ✅ 2026-10-16: 稼働形態 / 募集中のみ。
+  // ✅ 2026-10-16: 稼働形態 / 募集中のみ / カテゴリ / 案件区分 / 並行可否 / 開始時期。
   remoteMode: '',
   recruitingOnly: '',
+  category: '',
+  sourceKind: '',
+  parallelOk: '',
+  startWithin: '',
 } as const;
+
+/** ✅ 2026-10-16（受領モック）: カテゴリ / 案件区分 / 並行可否 / 開始時期の選択肢。 */
+const categoryOptions = [
+  { value: '', label: 'すべて' },
+  { value: 'BACKEND', label: 'バックエンド' },
+  { value: 'FRONTEND', label: 'フロントエンド' },
+] as const;
+const sourceKindOptions = [
+  { value: '', label: 'すべて' },
+  { value: 'OWN', label: '自社案件' },
+  { value: 'PARTNER', label: 'パートナー案件' },
+] as const;
+const parallelOkOptions = [
+  { value: '', label: 'すべて' },
+  { value: '1', label: '可' },
+  { value: '0', label: '不可' },
+] as const;
+const startWithinOptions = [
+  { value: '', label: 'すべて' },
+  { value: 'IMMEDIATE', label: '即日' },
+  { value: 'THIS_MONTH', label: '今月' },
+  { value: 'NEXT_MONTH', label: '来月' },
+  { value: 'LATER', label: '再来月以降' },
+] as const;
 
 /** ✅ 2026-10-16: 稼働形態の選択肢（値の出所は `REMOTE_MODES`。語は一覧の列と同じ）。 */
 const remoteModeOptions = [
@@ -158,10 +191,13 @@ function render(
       statusOptions,
       prefectureOptions,
       remoteModeOptions,
+      categoryOptions,
+      sourceKindOptions,
+      parallelOkOptions,
+      startWithinOptions,
       priceInverted: false,
       showVisibilityColumn,
       canRegister: true,
-      showClearFilters: false,
       nextPageHref: null,
       firstPageHref: null,
       columnToggleItems: showVisibilityColumn ? COLUMN_TOGGLE_SHOWN : [],
@@ -316,11 +352,18 @@ describe('検索条件（docs/04 §S-010 セクション 1）', () => {
         // ✅ 2026-10-16: 稼働形態と「募集中のみ」も戻る。
         remoteMode: 'FULL_REMOTE',
         recruitingOnly: '1',
+        // ✅ 2026-10-16（受領モック）: 足した 4 条件も戻る。
+        category: 'BACKEND',
+        sourceKind: 'OWN',
+        parallelOk: '1',
+        startWithin: 'THIS_MONTH',
       },
     });
 
     expect(html).toContain('value="基幹"');
-    expect(html).toContain('value="2026-10-01"');
+    // ✅ 2026-10-16: `開始日` の日付入力は `開始時期` の選択になった（受領モック）。
+    //    🔴 **「選んだ区分が選択状態で戻る」ことを見る**（`<option selected>`）。
+    expect(html).toContain('value="THIS_MONTH" selected=""');
     expect(html).toContain('value="600000"');
     expect(html).toContain('value="800000"');
     // `select` の既定値は `option` の `selected` として描かれる。
@@ -328,9 +371,17 @@ describe('検索条件（docs/04 §S-010 セクション 1）', () => {
     expect(html).toContain('<option value="13" selected=""');
   });
 
-  it('🔴 絞り込みが効いているときだけ「条件をクリア」を出す', () => {
-    expect(render()).not.toContain('条件をクリア');
-    expect(render({ showClearFilters: true })).toContain('条件をクリア');
+  // ✅✅ **2026-10-16: 常時表示に変えた**（受領モックのフッタは「条件をクリア」と「検索」が
+  //    常に並んでいる）。⚠️ **以前は「絞り込みが効いているときだけ」だった** ——
+  //    「押しても何も起きないボタンを常設しない」という規律による。
+  // 🔴 **規律を曲げた理由**: 絞り込みの帯が 3 行になり、どこまでが条件なのかが一目で
+  //    分からなくなった。クリアが常に同じ位置に在ることのほうが、空振りの 1 クリックより
+  //    価値が高い（押した結果は「条件なしの一覧」であり、壊れる操作ではない）。
+  it('🔴 「条件をクリア」は常に出る（絞り込みの有無によらない）', () => {
+    // 🔴 **絞り込みが 1 つも無くても出る**（これが変えた点である）。
+    expect(render()).toContain('条件をクリア');
+    // 🔴 行き先は条件なしの一覧である（押しても壊れない）。
+    expect(render()).toContain('data-testid="project-list-clear"');
   });
 
   it('効かない条件は入力欄を描かず、できないことを書く', () => {
@@ -338,8 +389,11 @@ describe('検索条件（docs/04 §S-010 セクション 1）', () => {
 
     // ✅ **2026-10-15: 単価レンジは「効かない条件」から外れた**（`#25` に `priceMin` /
     //    `priceMax` を足し、述語は人材検索と同じ `unitPriceOverlapConditions` を通る）。
-    //    🔴 **残り 2 つ（スキル要件 / リモート可否）は依然として描かない。**
-    expect(html).toContain('スキル要件・リモート可否');
+    // ✅✅ **2026-10-16: 「リモート可否」も外れた**（稼働形態の絞り込みを実装したため）。
+    //    🔴 **残るのはスキル要件だけである。** できるようになったものを注記に残すと、
+    //       画面が嘘をつく（`projects.list.searchComingSoon` の 🔴）。
+    expect(html).toContain('スキル要件');
+    expect(html).not.toContain('リモート可否での絞り込み');
     expect(html).not.toContain('name="skills"');
     expect(html).not.toContain('name="remote"');
   });
@@ -619,7 +673,7 @@ describe('🔴 SP-22 段④: 絞り込みカードと件数バー', () => {
     //    `docs/04` §7.1「一覧はファーストビューに 12 行以上」）。
     // 🔴 **他の条件（1 列）より広いことは変えていない** —— 入力できる語数が画面幅で
     //    変わらないための幅である。
-    expect(classes).toContain('sm:col-span-2');
+    expect(classes).toContain('col-span-full'); // ✅ 2026-10-16: 受領モックは帯の幅いっぱい
     expect(classes).not.toContain('xl:col-span-4');
   });
 
@@ -661,16 +715,14 @@ describe('🔴 SP-22 段④: 絞り込みカードと件数バー', () => {
     const html = render();
 
     // ✅ 2026-10-15: `priceMin` / `priceMax` はこの一覧から外した（API に入ったため）。
-    //    🔴 **残りは 1 つも描かない**（押しても効かない入力欄を作らない）。
-    for (const name of [
-      'name="skills"',
-      'name="remote"',
-      'name="category"',
-      'name="kind"',
-      'name="parallel"',
-      'name="openOnly"',
-      'name="limit"',
-    ]) {
+    // ✅✅ **2026-10-16: `category` / `kind` / `parallel` / `openOnly` もこの一覧から外した** ——
+    //    受領モックの絞り込みを実装し、**API（`#25`）の query に入った**ためである
+    //    （`category` / `sourceKind` / `parallelOk` / `recruitingOnly`。列は migration
+    //     `20261016030000`、承認は [Issue #113](https://github.com/Festal-KM/SES-Platform/issues/113)）。
+    //    🔴 **この検査が守っているのは「押しても効かない入力欄を作らない」である。** 実装した
+    //       条件を一覧に残すと、**実装したことを検査が禁じる**状態になり、意味が反転する。
+    //    🔴 **残りは 1 つも描かない**（スキル要件・表示件数は API に無い）。
+    for (const name of ['name="skills"', 'name="remote"', 'name="limit"']) {
       expect(html, `${name} の入力欄が描かれている（API に無い条件）`).not.toContain(name);
     }
   });

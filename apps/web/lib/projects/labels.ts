@@ -4,7 +4,14 @@
 // 🔴 文言そのものは `packages/i18n` が唯一の出所（`CLAUDE.md` §3.5）。ここは写像だけを持つ。
 // 🔴 テンプレートリテラルでキーを組み立てない（`lib/engineers/labels.ts` と同じ規律）。
 //    `Record<値集合, MessageKey>` にすることで、**値が増えたら文言の割り当てをコンパイラが強制する**。
-import type { ProjectStatus, RemoteMode, RequirementKind } from '@ses/db';
+import type {
+  ProjectCategory,
+  ProjectSourceKind,
+  ProjectStartWindow,
+  ProjectStatus,
+  RemoteMode,
+  RequirementKind,
+} from '@ses/db';
 import type { ProjectPublicField } from '@ses/domain';
 import type { MessageKey } from '@ses/i18n';
 
@@ -21,6 +28,37 @@ export const PROJECT_STATUS_MESSAGE_KEYS: Readonly<Record<ProjectStatus, Message
  *    人材の「リモート可否」と案件の「リモート可否」は同じ語彙でも文脈が違い、片方だけを
  *    言い換えたくなったときにキーが共有されていると両方が動く（`docs/04` の画面別文言の原則）。
  */
+/**
+ * ✅✅ **2026-10-16（受領モック + [Issue #113](https://github.com/Festal-KM/SES-Platform/issues/113)）:
+ *    カテゴリ / 案件区分 / 開始時期の語。**
+ *
+ * 🔴 `Record<値集合, MessageKey>` なので、**値を増やすとここが型エラーになる**
+ *    （語の無い値を画面に出せない）。`PROJECT_STATUS_MESSAGE_KEYS` と同じ形である。
+ */
+export const PROJECT_CATEGORY_MESSAGE_KEYS: Readonly<Record<ProjectCategory, MessageKey>> = {
+  BACKEND: 'projects.category.BACKEND',
+  FRONTEND: 'projects.category.FRONTEND',
+  INFRA: 'projects.category.INFRA',
+  AI: 'projects.category.AI',
+  DATA: 'projects.category.DATA',
+  PM_PMO: 'projects.category.PM_PMO',
+  HELPDESK: 'projects.category.HELPDESK',
+};
+
+export const PROJECT_SOURCE_KIND_MESSAGE_KEYS: Readonly<Record<ProjectSourceKind, MessageKey>> = {
+  OWN: 'projects.sourceKind.OWN',
+  PARTNER: 'projects.sourceKind.PARTNER',
+};
+
+export const PROJECT_START_WINDOW_MESSAGE_KEYS: Readonly<
+  Record<ProjectStartWindow, MessageKey>
+> = {
+  IMMEDIATE: 'projects.startWithin.IMMEDIATE',
+  THIS_MONTH: 'projects.startWithin.THIS_MONTH',
+  NEXT_MONTH: 'projects.startWithin.NEXT_MONTH',
+  LATER: 'projects.startWithin.LATER',
+};
+
 export const PROJECT_REMOTE_MODE_MESSAGE_KEYS: Readonly<Record<RemoteMode, MessageKey>> = {
   FULL_REMOTE: 'projects.remoteMode.FULL_REMOTE',
   PARTIAL_REMOTE: 'projects.remoteMode.PARTIAL_REMOTE',

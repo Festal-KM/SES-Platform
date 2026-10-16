@@ -641,6 +641,8 @@ model EngineerCareer {
 // 🔴 列挙は §3.1 規約どおり Prisma の `enum` を使わず `String` + 許容値コメントで宣言する。
 //    単一の出所は packages/db/src/schema-value-sets.ts（PROJECT_STATUSES / REQUIREMENT_KINDS）。
 //    ProjectStatus: 'OPEN'|'CLOSED'（募集中/終了）
+//    ProjectCategory: 'BACKEND'|'FRONTEND'|'INFRA'|'AI'|'DATA'|'PM_PMO'|'HELPDESK'（2026-10-16。Issue #113）
+//    ProjectSourceKind: 'OWN'|'PARTNER'（案件区分。同上）
 //      ✅ 2026-10-16: 3 値から 2 値にした（Issue #98 の回答「募集中と終了の二つだけでよい」）。
 //      移送は migration 20261016000000_project_status_two_values（SUCCESSOR_WANTED→OPEN / FILLED→CLOSED）。
 //    RequirementKind: 'MUST'|'NICE'
@@ -661,6 +663,13 @@ model Project {
   headcount          Int       @default(1)
   /// ProjectStatus（上記参照。CHECK）
   status             String    @default("OPEN")
+  /// ✅ 2026-10-16（Issue #113 + 受領モック）: カテゴリ。ProjectCategory（CHECK）。null = 未設定。
+  category           String?
+  /// ✅ 2026-10-16: 案件区分。ProjectSourceKind（CHECK）。🔴 **どこから来たかの分類であって
+  ///    所有者ではない**（行はテナントのもの。RLS も §3.1 の越境経路も変わらない）。
+  sourceKind         String    @default("OWN") @map("source_kind")
+  /// ✅ 2026-10-16: 並行可否（他案件との並行提案を許すか）。null = 未設定。
+  parallelOk         Boolean?  @map("parallel_ok")
   originAssignmentId String?   @map("origin_assignment_id") @db.Uuid // F-045 の後任募集の生成元。docs/05 §3.5 は relation を定義していないため FK を張らない（意図的）
   createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt          DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)

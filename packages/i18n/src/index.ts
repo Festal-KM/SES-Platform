@@ -2961,8 +2961,10 @@ const ja = {
   //    実装の決着」）。**押しても効かない入力欄を描くより、いま何ができないのかを書く。**
   // ✅ 2026-10-15: **単価レンジを外した**（実装したため。`#25` に `priceMin` / `priceMax` が入った）。
   //    🔴 **キーは動かしていない**（`U-22` の凍結。値だけを変えた）。
+  // ✅ **2026-10-16: 「リモート可否」を外した**（稼働形態の絞り込みを実装したため）。
+  //    🔴 **できないことだけを書く**（できるようになったものを残すと、画面が嘘をつく）。
   'projects.list.searchComingSoon':
-    'スキル要件・リモート可否での絞り込みは、後続のリリースで行えます。',
+    'スキル要件での絞り込みは、後続のリリースで行えます。',
   'projects.list.register': '案件を登録',
   'projects.list.readOnlyNote': '案件の登録は、閲覧のみの権限では行えません。',
   'projects.list.column.name': '案件名',
@@ -3048,6 +3050,37 @@ const ja = {
   //    列で語が違うと、選んだ値がどの列に効いたのか分からない）。ここに置くのは「すべて」と
   //    ラベルだけである。
   'projects.list.search.remoteMode': '稼働形態',
+  // ============================================================================
+  // ✅✅ 2026-10-16（受領モック `デザインモック/自社案件管理_案件一覧.png` の絞り込み。
+  //     Issue #113「設計から改訂して」が列を足す承認）
+  // ============================================================================
+  // 🔴 **語はモックそのものである。** 勝手に言い換えない（モックが一次資料である）。
+  'projects.list.search.category': 'カテゴリ',
+  'projects.list.search.categoryAll': 'すべて',
+  'projects.list.search.sourceKind': '案件区分',
+  'projects.list.search.sourceKindAll': 'すべて',
+  'projects.list.search.parallelOk': '並行可否',
+  'projects.list.search.parallelOkAll': 'すべて',
+  'projects.list.search.startWithin': '開始時期',
+  'projects.list.search.startWithinAll': 'すべて',
+  // 🔴 カテゴリの 7 つ（`PROJECT_CATEGORIES` と 1 対 1。写像は `lib/projects/labels.ts`）。
+  'projects.category.BACKEND': 'バックエンド',
+  'projects.category.FRONTEND': 'フロントエンド',
+  'projects.category.INFRA': 'インフラ',
+  'projects.category.AI': 'AI開発',
+  'projects.category.DATA': 'データ',
+  'projects.category.PM_PMO': 'PM・PMO',
+  'projects.category.HELPDESK': 'ヘルプデスク',
+  // 🔴 案件区分。**どこから来た案件かの分類であって所有者ではない**（`schema-value-sets.ts` の 🔴）。
+  'projects.sourceKind.OWN': '自社案件',
+  'projects.sourceKind.PARTNER': 'パートナー案件',
+  'projects.parallelOk.true': '可',
+  'projects.parallelOk.false': '不可',
+  // 🔴 開始時期の区分（`PROJECT_START_WINDOWS`）。日付の範囲への変換は `resolveStartWindow` の 1 本。
+  'projects.startWithin.IMMEDIATE': '即日',
+  'projects.startWithin.THIS_MONTH': '今月',
+  'projects.startWithin.NEXT_MONTH': '来月',
+  'projects.startWithin.LATER': '再来月以降',
   'projects.list.search.remoteModeAll': 'すべて',
   // 🔴 **「募集中」は `projects.status.OPEN` と同じ語である**（2026-10-16 に状態が 2 値に
   //    なったので、チェックボックスは「終了を除く」と同義になった。Issue #98）。

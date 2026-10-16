@@ -763,7 +763,10 @@ const FROZEN_EXACT: readonly string[] = [
   'project-list-error',
   'project-list-filter-prefecture',
   'project-list-filter-q',
-  'project-list-filter-start-from',
+  // ✅ 2026-10-16: `開始日` の日付入力 → `開始時期` の選択（受領モック）。足した testid は
+  //    `project-list-filter-start-within` / `-category` / `-source-kind` / `-parallel-ok`。
+  //    🔴 **追加は通る**（凍結が守るのは「減らないこと」だけである）。
+  'project-list-filter-start-within',
   'project-list-filter-status',
   'project-list-filters',
   'project-list-first',

@@ -19,6 +19,8 @@ import {
   GATE_FAIL_RATE_BASELINE_DAYS,
   GATE_FAIL_RATE_WINDOW_HOURS,
   initializeRuntimeConfig,
+  // ✅ 2026-10-16: demo でだけ 2FA の設定強制を外す（判定式は @ses/config の 1 本）。
+  isTwoFactorRelaxedEnv,
   SCHEDULER_HEARTBEAT_STALE_HOURS,
   type AppEnvKind,
 } from '@ses/config';
@@ -58,6 +60,8 @@ import {
   configureTenantDb,
   configureTokenEncryption,
   type TenantQuotaDefaults,
+  // ✅ 2026-10-16: 2FA の方針（既定 ENFORCED）。
+  type TwoFactorPolicy,
 } from '@ses/db';
 import type {
   MonitoringRuntime,
@@ -117,6 +121,10 @@ let cachedGuardDutyWebhookSecrets: readonly string[] | null = null;
  * 🔴 T-04-04: 送信ドメイン設定（#71 / #72）が要る起動時解決済みの値（docs/05 §8.3 / docs/03 §3.2.7）。
  *    ルートが `process.env` を読まない（`CLAUDE.md` §3.5）ための唯一の経路。
  */
+// ✅ 2026-10-16（人間の明示指示「デモ環境の方は二要素認証は一旦外しといて」）。
+// 🔴 **`null` が「まだ決めていない」である**（`ENFORCED` を初期値にすると、起動が未完了でも
+//    「厳しいほうで動いている」と読めてしまい、不変条件の破れが隠れる）。
+let cachedTwoFactorPolicy: TwoFactorPolicy | null = null;
 let cachedSendingDomainRuntime: { readonly region: string; readonly verificationRequired: boolean } | null =
   null;
 /**
@@ -298,6 +306,13 @@ export function ensureDbConfigured(): void {
   //    結合テストが `buildValidEnv('sandbox')` から**同じ関数**で runtime を作れるようにするため
   //    （テスト専用のフックも、テスト側での判定の書き写しも作らない）。
   cachedInviteUrlRuntime = resolveInviteUrlRuntime(env);
+  // ✅✅ **2026-10-16（人間の明示指示「デモ環境の方は二要素認証は一旦外しといて」）。**
+  // 🔴 **分岐はここ 1 箇所**である（`cachedSendingDomainRuntime` と同じ形。`CLAUDE.md` §11.1）——
+  //    リクエストごとに `APP_ENV` を見ない。判定式そのものは `@ses/config` の
+  //    `isTwoFactorRelaxedEnv`（`demo` だけ true。同関数の 🔴 に理由と射程がある）。
+  // 🔴 **緩むのは「未設定なら設定を強制する」ほうだけ**であり、設定済みの利用者が
+  //    このセッションで第 2 要素を提示したかの判定は**どの環境でも効く**。
+  cachedTwoFactorPolicy = isTwoFactorRelaxedEnv(env.APP_ENV) ? 'SETUP_RELAXED' : 'ENFORCED';
   // 🔴 T-05-04: ストレージ（docs/05 §14.1 / §14.2 / docs/03 §4.5）。値の出所は `packages/config`
   //    だけであり、ルートも画面も `process.env` を読まない（`CLAUDE.md` §3.5）。
   //    🔴 実装種別（`connectors.objectStore`）もここで確定させる。**リクエストごとに
@@ -598,6 +613,23 @@ export function inviteUrlRuntime(): InviteUrlRuntime {
     throw new Error('招待リンクの実行時設定が解決されていません（bootstrap の不変条件違反）。');
   }
   return cachedInviteUrlRuntime;
+}
+
+/**
+ * ✅✅ **2 要素認証の方針**（2026-10-16。人間の明示指示「デモ環境の方は二要素認証は一旦
+ * 外しといて」）。起動時に 1 回だけ決まる（`ensureDbConfigured`）。
+ *
+ * 🔴 **`APP_ENV` を読むのは起動時の 1 箇所だけ**であり、リクエストごとに分岐しない
+ *    （`CLAUDE.md` §11.1）。判定式は `@ses/config` の `isTwoFactorRelaxedEnv`（`demo` だけ true）。
+ * 🔴 **呼び手は `lib/auth/tenant-context.ts` の 1 箇所**である（ctx を組む唯一の経路）。
+ *    ここを他から呼んで 2FA を回避する経路を作らない。
+ */
+export function twoFactorPolicy(): TwoFactorPolicy {
+  ensureDbConfigured();
+  if (cachedTwoFactorPolicy === null) {
+    throw new Error('2 要素認証の方針が解決されていません（bootstrap の不変条件違反）。');
+  }
+  return cachedTwoFactorPolicy;
 }
 
 /**

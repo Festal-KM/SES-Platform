@@ -56,6 +56,9 @@ export {
 } from './projects.js';
 export type { ProjectSearchCriteria, ProjectWhereFragment } from './projects.js';
 // ✅ 2026-10-15: 単価レンジの重なり（人材検索と案件検索で**同じ述語**を通す。T-06-03 の申し送り）。
+// ✅ 2026-10-16: 開始時期の区分 → 日付の範囲（現在時刻は引数で受け取る。同ファイルの 🔴）。
+export { PROJECT_START_WINDOWS, resolveStartWindow, startWindowDates } from './start-window.js';
+export type { ProjectStartWindow, StartWindowRange } from './start-window.js';
 // ✅ 2026-10-16: 下限 > 上限 の検知（述語ではなく入力の検査。同ファイルの 🔴）。
 export { isUnitPriceRangeInverted, unitPriceOverlapConditions } from './unit-price-range.js';
 export type { UnitPriceRangeCriteria, UnitPriceRangeFragment } from './unit-price-range.js';

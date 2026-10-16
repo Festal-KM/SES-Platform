@@ -258,6 +258,12 @@ export function projectListHref(
   if (query.remoteMode !== undefined) params.set('remoteMode', query.remoteMode);
   // 🔴 `'1'` を載せる（`schemas.ts` が `z.literal('1')` で受ける唯一の形）。
   if (query.recruitingOnly === true) params.set('recruitingOnly', '1');
+  // ✅ 2026-10-16（受領モック）: カテゴリ / 案件区分 / 並行可否 / 開始時期。
+  if (query.category !== undefined) params.set('category', query.category);
+  if (query.sourceKind !== undefined) params.set('sourceKind', query.sourceKind);
+  // 🔴 `'1'` / `'0'` の 2 値（`false` を落とすと「不可」で絞った条件がページ送りで消える）。
+  if (query.parallelOk !== undefined) params.set('parallelOk', query.parallelOk ? '1' : '0');
+  if (query.startWithin !== undefined) params.set('startWithin', query.startWithin);
   if (query.limit !== PAGE_SIZE_DEFAULT) params.set('limit', String(query.limit));
   if (cursor !== null) params.set('cursor', cursor);
   // ✅ 2026-10-15: 既定（2 列を格納）と同じなら URL に痕跡を残さない。既定から戻したときだけ
@@ -392,6 +398,11 @@ export function hasProjectListFilters(query: ProjectListQuery): boolean {
     // 🔴 **ここに足し忘れると「条件をクリア」が出ない**（この 1 関数が、絞り込みが効いているか
     //    の唯一の判定であり、空状態の文言の出し分けにも使われる）。
     query.remoteMode !== undefined ||
-    query.recruitingOnly !== undefined
+    query.recruitingOnly !== undefined ||
+    // ✅ 2026-10-16（受領モック）: カテゴリ / 案件区分 / 並行可否 / 開始時期。
+    query.category !== undefined ||
+    query.sourceKind !== undefined ||
+    query.parallelOk !== undefined ||
+    query.startWithin !== undefined
   );
 }

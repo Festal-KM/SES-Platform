@@ -68,6 +68,8 @@ export {
   systemTenantCtx,
   TENANT_ROLES,
   // 🔴 T-03-02: 2 要素認証のゲート（docs/05 §6.2 / F-003 AC-2 / BR-30）。
+  // ✅ 2026-10-16（人間の明示指示）: 2FA の方針（既定 ENFORCED）。
+  TWO_FACTOR_POLICIES,
   TWO_FACTOR_REQUIRED_ROLES,
   TWO_FACTOR_REQUIREMENT_REASONS,
   TWO_FACTOR_SESSION_STATES,
@@ -93,6 +95,8 @@ export type {
   SystemTenantCtx,
   TenantLifecycleState,
   TenantRole,
+  // ✅ 2026-10-16: 2FA の方針（既定 ENFORCED。demo だけ SETUP_RELAXED）。
+  TwoFactorPolicy,
   TwoFactorRequiredRole,
   TwoFactorRequirementReason,
   TwoFactorSessionState,
@@ -144,8 +148,11 @@ export {
   ORDER_PAYMENT_STATES,
   PLATFORM_ROLES,
   // 🔴 T-12-10: 公開後の再検査と自動解除の値集合（docs/05 §3.5 / §3.6。宣言は `packages/domain`）。
+  // ✅ 2026-10-16（Issue #113 の「設計から改訂して」+ 受領モック）: カテゴリ / 案件区分。
+  PROJECT_CATEGORIES,
   PROJECT_PUBLISH_REQUEST_KINDS,
   PROJECT_PUBLISH_RUN_TRIGGERS,
+  PROJECT_SOURCE_KINDS,
   PROJECT_STATUSES,
   PROJECT_VISIBILITY_REVOKE_REASONS,
   PROPOSAL_EVENT_KINDS,
@@ -205,6 +212,8 @@ export type {
   // 🔴 T-12-10。
   ProjectPublishRequestKind,
   ProjectPublishRunTrigger,
+  ProjectCategory,
+  ProjectSourceKind,
   ProjectStatus,
   ProjectVisibilityRevokeReason,
   ProposalEventKind,
@@ -666,11 +675,16 @@ export {
   freeWordTerms,
   isUnitPriceRangeInverted,
   ordersByFit,
+  PROJECT_START_WINDOWS,
+  resolveStartWindow,
   PROJECT_LIST_ORDER_BY,
   PROJECT_STATUS_LIST_PRIORITY,
   projectSearchWhere,
 } from './search/index.js';
 export type {
+  // ✅ 2026-10-16: 開始時期の区分（宣言は `search/start-window.ts`）。
+  ProjectStartWindow,
+  StartWindowRange,
   AnonymousCandidateSearchDeps,
   AnonymousCandidateSearchPlan,
   EngineerSearchCriteria,

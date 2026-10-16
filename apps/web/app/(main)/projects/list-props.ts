@@ -6,12 +6,21 @@
 // 🔴 **母集団はホストと取引先で違う**（`docs/04` §3.2 項目 2 / §10.1 `S-010`）。空文言も
 //    「案件が未登録」/「まだ公開されていない」で書き分ける —— 取引先に「案件が無い」と
 //    伝えると、ホストに案件があるかどうかを推測させる材料になる（`F-014 AC-4` / `BR-07`）。
-import { PROJECT_STATUSES, REMOTE_MODES } from '@ses/db';
+import {
+  PROJECT_CATEGORIES,
+  PROJECT_SOURCE_KINDS,
+  PROJECT_START_WINDOWS,
+  PROJECT_STATUSES,
+  REMOTE_MODES,
+} from '@ses/db';
 import { PREFECTURE_CODES } from '@ses/domain';
 import { t, type MessageKey } from '@ses/i18n';
 import { PREFECTURE_MESSAGE_KEYS } from '../../../lib/format/prefectures';
 import {
+  PROJECT_CATEGORY_MESSAGE_KEYS,
   PROJECT_REMOTE_MODE_MESSAGE_KEYS,
+  PROJECT_SOURCE_KIND_MESSAGE_KEYS,
+  PROJECT_START_WINDOW_MESSAGE_KEYS,
   PROJECT_STATUS_MESSAGE_KEYS,
 } from '../../../lib/projects/labels';
 import {
@@ -56,6 +65,47 @@ export const projectPrefectureFilterOptions: readonly ProjectFilterOption[] = [
  *    [Issue #113](https://github.com/Festal-KM/SES-Platform/issues/113)「設計から改訂して」の
  *    範囲である。**押しても絞れない選択肢を先に並べない**ほうを採った。
  */
+/**
+ * ✅✅ **カテゴリ / 案件区分 / 並行可否 / 開始時期（先頭は「すべて」）。2026-10-16。**
+ *
+ * 🔴 **値の出所は `@ses/db` の値集合である**（`PROJECT_CATEGORIES` / `PROJECT_SOURCE_KINDS` /
+ *    `PROJECT_START_WINDOWS`）。受領モック `デザインモック/自社案件管理_案件一覧.png` の
+ *    絞り込みをそのまま実装したものであり、列は migration `20261016030000` で足した
+ *    （[Issue #113](https://github.com/Festal-KM/SES-Platform/issues/113)「設計から改訂して」が承認）。
+ * 🔴 **並行可否だけ値集合が DB に無い**（`boolean` の列である）。`'1'` / `'0'` を送る ——
+ *    `z.coerce.boolean()` は空文字以外をすべて true にするので、「不可」を選んだのに
+ *    「可」で絞られる（`schemas.ts` の 🔴）。
+ */
+export const projectCategoryFilterOptions: readonly ProjectFilterOption[] = [
+  { value: FILTER_ALL_VALUE, label: t('projects.list.search.categoryAll') },
+  ...PROJECT_CATEGORIES.map((value) => ({
+    value,
+    label: t(PROJECT_CATEGORY_MESSAGE_KEYS[value]),
+  })),
+];
+
+export const projectSourceKindFilterOptions: readonly ProjectFilterOption[] = [
+  { value: FILTER_ALL_VALUE, label: t('projects.list.search.sourceKindAll') },
+  ...PROJECT_SOURCE_KINDS.map((value) => ({
+    value,
+    label: t(PROJECT_SOURCE_KIND_MESSAGE_KEYS[value]),
+  })),
+];
+
+export const projectParallelOkFilterOptions: readonly ProjectFilterOption[] = [
+  { value: FILTER_ALL_VALUE, label: t('projects.list.search.parallelOkAll') },
+  { value: '1', label: t('projects.parallelOk.true') },
+  { value: '0', label: t('projects.parallelOk.false') },
+];
+
+export const projectStartWithinFilterOptions: readonly ProjectFilterOption[] = [
+  { value: FILTER_ALL_VALUE, label: t('projects.list.search.startWithinAll') },
+  ...PROJECT_START_WINDOWS.map((value) => ({
+    value,
+    label: t(PROJECT_START_WINDOW_MESSAGE_KEYS[value]),
+  })),
+];
+
 export const projectRemoteModeFilterOptions: readonly ProjectFilterOption[] = [
   { value: FILTER_ALL_VALUE, label: t('projects.list.search.remoteModeAll') },
   ...REMOTE_MODES.map((value) => ({
@@ -96,6 +146,11 @@ export function projectListScreenMessages(params: {
     searchPriceUnit: t('projects.list.search.priceUnit'),
     // ✅ 2026-10-16（人間の明示指示）: 稼働形態 / 募集中のみ / 単価の逆転。
     searchRemoteMode: t('projects.list.search.remoteMode'),
+    // ✅ 2026-10-16（受領モック）: カテゴリ / 案件区分 / 並行可否 / 開始時期。
+    searchCategory: t('projects.list.search.category'),
+    searchSourceKind: t('projects.list.search.sourceKind'),
+    searchParallelOk: t('projects.list.search.parallelOk'),
+    searchStartWithin: t('projects.list.search.startWithin'),
     searchRecruitingOnly: t('projects.list.search.recruitingOnly'),
     searchPriceInverted: t('projects.list.search.priceInverted'),
     searchSubmit: t('projects.list.search.submit'),

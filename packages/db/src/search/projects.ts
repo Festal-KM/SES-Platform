@@ -24,6 +24,8 @@ import type { PrefectureCode } from '@ses/domain';
 import { toDateOnly } from '../date-only.js';
 import {
   PROJECT_STATUSES,
+  type ProjectCategory,
+  type ProjectSourceKind,
   type ProjectStatus,
   type RemoteMode,
 } from '../schema-value-sets.js';
@@ -38,10 +40,15 @@ import { unitPriceOverlapConditions } from './unit-price-range.js';
  */
 export type ProjectWhereFragment = {
   status?: ProjectStatus;
-  startDate?: { gte: Date };
+  /** ✅ 2026-10-16: 上端（`lt`。開始時期の区分で使う。`start-window.ts`）。 */
+  startDate?: { gte?: Date; lt?: Date };
   prefecture?: PrefectureCode;
   /** ✅ 2026-10-16: 稼働形態（`RemoteMode` の 3 値）。🔴 **未設定（null）の案件は一致しない** */
   remoteMode?: RemoteMode;
+  /** ✅ 2026-10-16（Issue #113 + 受領モック）: カテゴリ / 案件区分 / 並行可否。 */
+  category?: ProjectCategory;
+  sourceKind?: ProjectSourceKind;
+  parallelOk?: boolean;
   name?: FreeWordFilter;
   publicSummary?: FreeWordFilter;
   /**
@@ -69,6 +76,11 @@ export type ProjectSearchCriteria = {
   readonly status?: ProjectStatus;
   /** 開始日が**この日以降**（`YYYY-MM-DD`）。 */
   readonly startFrom?: string;
+  /**
+   * ✅ 2026-10-16: 開始日が**この日より前**（`YYYY-MM-DD`。🔴 **この日を含まない**）。
+   * 区分（即日 / 今月 / 来月 / 再来月以降）から `resolveStartWindow` が組み立てる。
+   */
+  readonly startTo?: string;
   readonly prefecture?: PrefectureCode;
   readonly q?: string;
   /**
@@ -88,6 +100,18 @@ export type ProjectSearchCriteria = {
    *    絞り込みを掛けたときだけ落ちる（`prefecture` と同じ挙動。既定では全件が出る）。
    */
   readonly remoteMode?: RemoteMode;
+  /**
+   * ✅✅ **2026-10-16（受領モックの絞り込み 2〜3 行目。[Issue #113](https://github.com/Festal-KM/SES-Platform/issues/113)
+   *    「設計から改訂して」が列を足す承認である）: カテゴリ / 案件区分 / 並行可否。**
+   *
+   * 🔴 **いずれも等値で絞る。** `category` / `parallelOk` は `null` を許す列であり、
+   *    **絞り込みを掛けると未設定の案件は落ちる**（`prefecture` / `remoteMode` と同じ挙動）。
+   * 🔴 **`sourceKind` は「どこから来た案件か」の分類であって所有者ではない** ——
+   *    述語は母集団の中を絞るだけで、`CLAUDE.md` §3.1 の境界には 1 ミリも触れない。
+   */
+  readonly category?: ProjectCategory;
+  readonly sourceKind?: ProjectSourceKind;
+  readonly parallelOk?: boolean;
   /**
    * ✅ **2026-10-16（人間の明示指示「チェックボックス『募集中のみ』。ON で ステータス = 募集中に
    *    絞る（ステータスセレクトと併用時は AND）」）。**
@@ -236,10 +260,20 @@ export function projectSearchWhere(criteria: ProjectSearchCriteria): ProjectWher
     ...(criteria.status === undefined ? {} : { status: criteria.status }),
     // 🔴 `start_date` が未設定の案件は「開始日 X 以降」に一致しない（NULL は比較で偽）。
     //    絞り込みを掛けたときだけ落ちる挙動であり、既定（未指定）では全件が出る。
-    ...(criteria.startFrom === undefined
+    // ✅ 2026-10-16: 下端と上端を 1 つの `startDate` に畳む（両方が来るのが「今月」「来月」）。
+    ...(criteria.startFrom === undefined && criteria.startTo === undefined
       ? {}
-      : { startDate: { gte: toDateOnly(criteria.startFrom) } }),
+      : {
+          startDate: {
+            ...(criteria.startFrom === undefined ? {} : { gte: toDateOnly(criteria.startFrom) }),
+            ...(criteria.startTo === undefined ? {} : { lt: toDateOnly(criteria.startTo) }),
+          },
+        }),
     ...(criteria.prefecture === undefined ? {} : { prefecture: criteria.prefecture }),
     ...(criteria.remoteMode === undefined ? {} : { remoteMode: criteria.remoteMode }),
+    // ✅ 2026-10-16（Issue #113 + 受領モック）。🔴 等値のキーなので衝突しない（トップレベルでよい）。
+    ...(criteria.category === undefined ? {} : { category: criteria.category }),
+    ...(criteria.sourceKind === undefined ? {} : { sourceKind: criteria.sourceKind }),
+    ...(criteria.parallelOk === undefined ? {} : { parallelOk: criteria.parallelOk }),
   };
 }
