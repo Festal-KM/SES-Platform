@@ -66,7 +66,14 @@ const totalOccurrences = scanned.reduce((sum, file) => sum + file.extraction.occ
  *    文字列として読み出せば足りる。
  */
 function frozenListFromSource(name: string): string[] {
-  const source = readFileSync(path.join(repoRoot, 'tests', 'static', 'testid-inventory.test.ts'), 'utf8');
+  // 🔴 **改行を LF に正規化してから解析する**（2026-10-16）。この開発機は
+  //    `core.autocrlf=true` で、**git が触ったファイルだけ CRLF になる** ——
+  //    正規化しないと「凍結リストが 1 行も読めない」で落ち、**凍結が空になった**のか
+  //    **解析に失敗した**のかが区別できない（実際に 2026-10-16 にこれで落ちた）。
+  const source = readFileSync(
+    path.join(repoRoot, 'tests', 'static', 'testid-inventory.test.ts'),
+    'utf8',
+  ).split('\r\n').join('\n');
   const head = `const ${name}: readonly string[] = [\n`;
   const start = source.indexOf(head);
   if (start < 0) throw new Error(`${name} の宣言が testid-inventory.test.ts に見つかりません`);

@@ -7,7 +7,13 @@
 //    バンドルへ入る経路を作らない（`tests/static/client-db-boundary.test.ts`）。
 // 🔴 文言は `packages/i18n` の 1 か所から引く（`CLAUDE.md` §3.5）。2 ページに書き写さない
 //    —— 書き写すと、新規と編集で文言がずれる。
-import { PROJECT_STATUSES, REMOTE_MODES, REQUIREMENT_KINDS } from '@ses/db';
+import {
+  PROJECT_CATEGORIES,
+  PROJECT_SOURCE_KINDS,
+  PROJECT_STATUSES,
+  REMOTE_MODES,
+  REQUIREMENT_KINDS,
+} from '@ses/db';
 import { PREFECTURE_CODES } from '@ses/domain';
 import { t } from '@ses/i18n';
 // 🔴 都道府県は機能に属さない共通語彙（`lib/format/prefectures.ts`）。
@@ -16,7 +22,9 @@ import { PREFECTURE_MESSAGE_KEYS } from '../../../../lib/format/prefectures';
 // 🔴 `S-010` の入口は 1 か所（`lib/projects/list-rows.ts`）から取る。パスを書き写さない。
 import { PROJECT_LIST_PATH } from '../../../../lib/projects/list-rows';
 import {
+  PROJECT_CATEGORY_MESSAGE_KEYS,
   PROJECT_REMOTE_MODE_MESSAGE_KEYS,
+  PROJECT_SOURCE_KIND_MESSAGE_KEYS,
   PROJECT_STATUS_MESSAGE_KEYS,
   REQUIREMENT_KIND_EMPTY_KEYS,
   REQUIREMENT_KIND_HEADING_KEYS,
@@ -58,6 +66,30 @@ export const projectRemoteModeOptions: readonly SelectOption[] = REMOTE_MODES.ma
   label: t(PROJECT_REMOTE_MODE_MESSAGE_KEYS[value]),
 }));
 
+/**
+ * ✅✅ **2026-10-16（受領モック + [Issue #113](https://github.com/Festal-KM/SES-Platform/issues/113)）:
+ *    カテゴリ / 案件区分 / 並行可否。**
+ *
+ * 🔴 **一覧の絞り込みと同じ値集合・同じ語である**（`list-props.ts` の `project*FilterOptions`）。
+ *    選べる値と絞れる値が違うと、**登録した案件が自分の絞り込みに出てこない**。
+ * 🔴 **ここには「すべて」を入れない** —— 絞り込みの先頭の「すべて」は*条件なし*の意味であり、
+ *    登録フォームには当たらない（未設定は `valueUnset` が描く）。
+ */
+export const projectCategoryOptions: readonly SelectOption[] = PROJECT_CATEGORIES.map((value) => ({
+  value,
+  label: t(PROJECT_CATEGORY_MESSAGE_KEYS[value]),
+}));
+
+export const projectSourceKindOptions: readonly SelectOption[] = PROJECT_SOURCE_KINDS.map(
+  (value) => ({ value, label: t(PROJECT_SOURCE_KIND_MESSAGE_KEYS[value]) }),
+);
+
+/** 🔴 `'1'` / `'0'`（`Boolean('0')` は `true` なので、真偽値に直すのは送信側が行う）。 */
+export const projectParallelOkOptions: readonly SelectOption[] = [
+  { value: '1', label: t('projects.parallelOk.true') },
+  { value: '0', label: t('projects.parallelOk.false') },
+];
+
 export const projectPrefectureOptions: readonly SelectOption[] = PREFECTURE_CODES.map((value) => ({
   value,
   label: t(PREFECTURE_MESSAGE_KEYS[value]),
@@ -80,6 +112,10 @@ export const EMPTY_PROJECT_FORM_VALUES: ProjectFormValues = {
   unitPriceMax: '',
   prefecture: '',
   remoteMode: '',
+  // ✅ 2026-10-16: 既定は「未設定」/「自社案件」（DB と API の既定に合わせる）。
+  category: '',
+  sourceKind: 'OWN',
+  parallelOk: '',
   endClientName: '',
   internalUnitPrice: '',
   publicSummary: '',
@@ -97,6 +133,10 @@ export function toProjectFormValues(view: ProjectEditView): ProjectFormValues {
     unitPriceMax: view.unitPriceMax === null ? '' : String(view.unitPriceMax),
     prefecture: view.prefecture ?? '',
     remoteMode: view.remoteMode ?? '',
+    // ✅ 2026-10-16: 既存の値をフォームに戻す（`'0'` を落とすと「不可」が未設定に化ける）。
+    category: view.category ?? '',
+    sourceKind: view.sourceKind,
+    parallelOk: view.parallelOk === null ? '' : view.parallelOk ? '1' : '0',
     endClientName: view.endClientName ?? '',
     internalUnitPrice: view.internalUnitPrice === null ? '' : String(view.internalUnitPrice),
     publicSummary: view.publicSummary ?? '',
@@ -155,6 +195,10 @@ export function projectFormMessages(): ProjectFormMessages {
     unitPriceUnit: t('projects.unitPrice.unit'),
     prefectureLabel: t('projects.prefecture.label'),
     remoteModeLabel: t('projects.remoteMode.label'),
+    // ✅ 2026-10-16（受領モック）: 一覧の絞り込みと同じ語を使う。
+    categoryLabel: t('projects.list.search.category'),
+    sourceKindLabel: t('projects.list.search.sourceKind'),
+    parallelOkLabel: t('projects.list.search.parallelOk'),
     valueUnset: t('projects.value.unset'),
 
     commerceNotice: t('projects.commerce.notice'),

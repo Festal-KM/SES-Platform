@@ -118,7 +118,7 @@ describe('🔴 resolveTenantCtx の 2FA ゲート（F-003 AC-2）', () => {
 //    緩むのは ①「未設定なら設定を強制する」だけ。②「設定済みならこのセッションで提示する」は
 //    **どの環境でも効く** —— 外すと「一度設定すれば以後はパスワードだけ」になり、
 //    2 要素目が実質消える（`context.ts` の `assertTwoFactorSatisfied` の ②）。
-describe('🔴 2 要素認証の方針（`SETUP_RELAXED` は demo だけ。人間の明示指示 2026-10-16）', () => {
+describe('🔴 2 要素認証の方針（`RELAXED` は demo だけ。人間の明示指示 2026-10-16）', () => {
   it('既定（省略）は従来どおり `OWNER` / `ADMIN` に必須である', () => {
     for (const role of TENANT_ROLES) {
       const expected = (TWO_FACTOR_REQUIRED_ROLES as readonly TenantRole[]).includes(role);
@@ -128,28 +128,42 @@ describe('🔴 2 要素認証の方針（`SETUP_RELAXED` は demo だけ。人�
     }
   });
 
-  it('🔴 `SETUP_RELAXED` ではどのロールも設定を強制されない', () => {
+  it('🔴 `RELAXED` ではどのロールも設定を強制されない', () => {
     for (const role of TENANT_ROLES) {
-      expect(requiresTwoFactor(role, 'SETUP_RELAXED'), role).toBe(false);
+      expect(requiresTwoFactor(role, 'RELAXED'), role).toBe(false);
     }
   });
 
-  it('🔴 `SETUP_RELAXED` でも「設定済みなのに未提示」は通さない（2 要素目が消えない）', async () => {
-    await expect(
-      resolveTenantCtx(session('OWNER', 'ENROLLED_UNVERIFIED'), { deviceKind: 'api' }, 'SETUP_RELAXED'),
-    ).rejects.toBeInstanceOf(TwoFactorRequiredError);
-    await expect(
-      resolveTenantCtx(session('SALES', 'ENROLLED_UNVERIFIED'), { deviceKind: 'api' }, 'SETUP_RELAXED'),
-    ).rejects.toBeInstanceOf(TwoFactorRequiredError);
+  // ⚠️ **当初は「設定の強制だけ」を外す設計にしたが、それでは指示を満たさなかった** ——
+  //    デモの seed は `OWNER` を**設定済み**にしているため、実測すると結局 TOTP を求められた
+  //    （2026-10-16 の実機確認）。**半分だけ緩めても、求められた不便は消えない。**
+  it('🔴 `RELAXED` では「設定済みなのに未提示」も通る（デモで TOTP を求めない）', async () => {
+    for (const role of ['OWNER', 'SALES'] as const) {
+      const ctx = await resolveTenantCtx(
+        session(role, 'ENROLLED_UNVERIFIED'),
+        { deviceKind: 'api' },
+        'RELAXED',
+      );
+      expect(ctx.role, role).toBe(role);
+    }
   });
 
-  it('🔴 `SETUP_RELAXED` では未設定の `OWNER` が通る（これが緩めたかったもの）', async () => {
+  it('🔴 `RELAXED` では未設定の `OWNER` も通る', async () => {
     const ctx = await resolveTenantCtx(
       session('OWNER', 'NOT_ENROLLED'),
       { deviceKind: 'api' },
-      'SETUP_RELAXED',
+      'RELAXED',
     );
     expect(ctx.role).toBe('OWNER');
+  });
+
+  it('🔴 `ENFORCED`（既定）では両方とも弾かれる（緩和が demo に閉じている対照）', async () => {
+    await expect(
+      resolveTenantCtx(session('OWNER', 'NOT_ENROLLED'), { deviceKind: 'api' }, 'ENFORCED'),
+    ).rejects.toBeInstanceOf(TwoFactorRequiredError);
+    await expect(
+      resolveTenantCtx(session('SALES', 'ENROLLED_UNVERIFIED'), { deviceKind: 'api' }, 'ENFORCED'),
+    ).rejects.toBeInstanceOf(TwoFactorRequiredError);
   });
 
   it('🔴 渡し忘れは厳しい側に倒れる（未設定の `OWNER` は既定で弾かれる）', async () => {

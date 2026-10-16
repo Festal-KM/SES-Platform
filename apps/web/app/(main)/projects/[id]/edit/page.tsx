@@ -23,7 +23,10 @@ import {
   PROJECT_FORM_CANCEL_HREF,
   projectFormMessages,
   projectPrefectureOptions,
+  projectCategoryOptions,
+  projectParallelOkOptions,
   projectRemoteModeOptions,
+  projectSourceKindOptions,
   projectRequirementKinds,
   projectStatusOptions,
   toProjectFormValues,
@@ -74,6 +77,9 @@ export default async function EditProjectPage({
         skillDictionary={skillDictionary}
         statusOptions={projectStatusOptions}
         remoteModeOptions={projectRemoteModeOptions}
+        categoryOptions={projectCategoryOptions}
+        sourceKindOptions={projectSourceKindOptions}
+        parallelOkOptions={projectParallelOkOptions}
         prefectureOptions={projectPrefectureOptions}
         requirementKinds={projectRequirementKinds}
         cancelHref={PROJECT_FORM_CANCEL_HREF}

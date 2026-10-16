@@ -975,6 +975,41 @@ const ja = {
   'admin.tenantDetail.deletionStatus.link': '削除完了の確認を開く（契約管理）',
 
   // --- S-035 組織設定（docs/04 §S-035 / F-001 / F-021。T-03-10）---
+  // ============================================================================
+  // ✅✅ `S-048` アカウント設定（2026-10-16。人間の明示指示。Issue #95）
+  // ============================================================================
+  'account.title': 'アカウント設定',
+  'account.breadcrumb.home': 'ホーム',
+  'account.lead': '自分の表示名・役職と、サインインに使うパスワードを管理します。',
+  'account.section.profile': 'プロフィール',
+  'account.displayName.label': '表示名',
+  'account.jobTitle.label': '役職',
+  'account.jobTitle.placeholder': '例: 営業部 シニアマネージャー',
+  'account.jobTitle.unset': '未設定',
+  'account.email.label': 'メールアドレス',
+  // 🔴 **変えられない理由を書く**（`orgSettings` の `lifecycleReadOnlyNote` と同じ作法）。
+  'account.email.readOnlyNote':
+    'サインインに使うアドレスです。変更するには新しいアドレスの確認が必要なため、いまは変更できません。',
+  'account.role.label': '権限',
+  'account.avatar.label': 'アイコン',
+  'account.avatar.note':
+    '画像のアップロードは、後続のリリースで行えます。いまは表示名の頭文字で表示されます。',
+  'account.save': '変更を保存',
+  'account.saving': '保存しています…',
+  'account.saved': '保存しました。',
+  'account.saveFailed': '保存できませんでした。入力を確かめて、もう一度お試しください。',
+  'account.section.password': 'パスワードの変更',
+  'account.password.note':
+    '本人確認のため、いまのパスワードもあわせて入力してください。変更しても、このままの操作を続けられます。',
+  'account.password.current': '現在のパスワード',
+  'account.password.new': '新しいパスワード',
+  'account.password.newNote': '12 文字以上で設定してください。',
+  'account.password.submit': 'パスワードを変更',
+  'account.password.submitting': '変更しています…',
+  'account.password.changed': 'パスワードを変更しました。',
+  // 🔴 **失敗の理由を区別しない**（`docs/04` §S-001 と同じ規律。サーバも区別しない）。
+  'account.password.failed':
+    'パスワードを変更できませんでした。現在のパスワードと、新しいパスワードの長さを確かめてください。',
   'orgSettings.title': '組織設定',
   'orgSettings.breadcrumb.home': 'ホーム',
   'orgSettings.section.organization': '組織情報',
@@ -3019,10 +3054,13 @@ const ja = {
   //    🔴 **画像の「企業名」は書かない** —— `#25` の `q` は案件名と外部公開用の記載しか見ない。
   'projects.list.search.q': 'フリーワード',
   'projects.list.search.qPlaceholder': '案件名・外部公開用の記載から探す',
-  'projects.list.search.status': '案件の状態',
+  // ✅ 2026-10-16: 受領モックの語に合わせた（旧「案件の状態」）。🔴 キーは動かしていない。
+  'projects.list.search.status': 'ステータス',
   'projects.list.search.statusAll': 'すべて',
   'projects.list.search.startFrom': '開始日（この日以降）',
-  'projects.list.search.prefecture': '勤務地（都道府県）',
+  // ✅ 2026-10-16: 受領モックの語に合わせた（旧「勤務地（都道府県）」）。選択肢が都道府県
+  //    であることは中を開けば分かる（ラベルに書くと 4 列の帯で折り返す）。
+  'projects.list.search.prefecture': '勤務地',
   'projects.list.search.prefectureAll': 'すべて',
   // ✅ 2026-10-15: 単価レンジ。🔴 **人材一覧（`engineers.list.search.price*`）と同じ語である**
   //    —— 同じ条件が画面ごとに別の名前で出ると、同じものだと分からない（`docs/04` §7.8）。
