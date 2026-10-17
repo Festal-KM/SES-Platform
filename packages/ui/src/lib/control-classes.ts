@@ -169,6 +169,24 @@ export const MULTI_SELECT_TRIGGER_CLASSES = cn(
 //    理由: 重なる面の影（`shadow-overlay`）を書いてよいのは `./overlay-classes.ts` だけであり
 //    （`docs/04` §7.9 / `tests/static/design-tokens.test.ts`）、影の置き場所を 2 つにしない。
 
+/**
+ * ✅✅ **選んだものを表すバッジの `×`**（2026-10-18。人間の明示指示「選択したらバッジで
+ * 表示するようにして」+ 受領画像）。
+ *
+ * 🔴 **画面側に `hover:` を書かせないための定数である**（`tests/static/ui-state-in-primitives.test.ts`
+ *    の (j)。8 状態は `packages/ui` のプリミティブが持つ —— 画面に書くと、その画面だけ
+ *    押し心地と focus リングが違う状態になる）。
+ * 🔴 **既定は控えめ、hover で濃く。** `×` はバッジの中の小さな的であり、常に濃いと
+ *    「バッジそのものより `×` が目立つ」状態になる（語が主で、外す操作は従である）。
+ * 🔴 **`shrink-0`** —— バッジが折り返しても `×` が潰れない。
+ */
+export const MULTI_SELECT_BADGE_REMOVE_CLASSES = cn(
+  'shrink-0 rounded-sm text-fg-muted',
+  TRANSITION_CLASSES,
+  'hover:text-fg',
+  FOCUS_RING_CLASSES,
+);
+
 /** ポップアップの中の 1 行（チェックボックス + 語）。🔴 行ごと押せる（当たり判定を広く取る）。 */
 export const MULTI_SELECT_OPTION_CLASSES = cn(
   'flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 text-body text-fg',

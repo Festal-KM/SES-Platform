@@ -287,6 +287,54 @@ function assertUnitPriceRange(min: number | null, max: number | null): void {
   }
 }
 
+// ============================================================================
+// ✅✅ 2026-10-16: 案件サマリの「基本情報」に足した項目の、項目をまたぐ検証
+//     （migration 20261016040000。人間の明示指示の 19 項目）
+// ============================================================================
+/**
+ * 🔴 **精算幅の大小関係**（`140〜180h` の 2 値入力）。
+ *    理由は `assertUnitPriceRange` と同じ 2 点（`.refine()` をトップレベルに使えない /
+ *    PATCH は既存値と合成しないと判定できない）。
+ */
+function assertSettlementRange(min: number | null, max: number | null): void {
+  if (min !== null && max !== null && min > max) {
+    throw new ValidationError(['body.settlementMaxHours']);
+  }
+}
+
+/**
+ * 🔴 **終了時期は開始時期より前にできない。**
+ *    ⚠️ **同じ日は許す**（1 日だけの稼働は業務上ありうる）。
+ *    🔴 どちらかが未設定なら判定しない（「開始は決まっているが終わりは未定」が正常である）。
+ */
+function assertProjectPeriod(startDate: string | null, endDate: string | null): void {
+  if (startDate !== null && endDate !== null && endDate < startDate) {
+    throw new ValidationError(['body.endDate']);
+  }
+}
+
+/**
+ * 🔴 **担当者はそのテナントに実在する利用者でなければならない**（docs/05 §6.4 #14 の条件②
+ *    「指定された ID を `withTenant` の内側で母集団に照合してから使う」）。
+ *
+ * 🔴 **母集団は `users` の RLS が決める** —— ここに `tenantId` の条件を書かない。
+ *    他テナントの利用者 ID を指定しても、この `findFirst` が 0 件になって 400 になる
+ *    （FK 違反の 500 にしない。`assertRequirementSkillsExist` と同じ形）。
+ * 🔴 **パートナー所属の利用者も弾く。** 担当者は「自社（ホスト）の営業」であり、
+ *    取引先の担当者を自社案件の担当にはできない（`owner_partner_company_id IS NULL`）。
+ */
+async function assertAssigneeExists(
+  db: Parameters<Parameters<typeof withTenant<void>>[1]>[0],
+  assigneeUserId: string | null,
+): Promise<void> {
+  if (assigneeUserId === null) return;
+  const found = await db.user.findFirst({
+    where: { id: assigneeUserId, ownerPartnerCompanyId: null, disabledAt: null },
+    select: { id: true },
+  });
+  if (found === null) throw new ValidationError(['body.assigneeUserId']);
+}
+
 /**
  * 入力の要件集合を検証して返す。
  *
@@ -370,10 +418,15 @@ export async function createProject(
   input: CreateProjectBody,
 ): Promise<ProjectMutationView> {
   assertUnitPriceRange(input.unitPriceMin, input.unitPriceMax);
+  // ✅✅ 2026-10-16: 足した項目の、項目をまたぐ検証（精算幅の逆転 / 終了 < 開始）。
+  assertSettlementRange(input.settlementMinHours, input.settlementMaxHours);
+  assertProjectPeriod(input.startDate, input.endDate);
   const requirements = normalizeRequirements(input.requirements);
 
   return withTenant(ctx, async (db) => {
     await assertRequirementSkillsExist(db, requirements);
+    // 🔴 担当者は母集団（`users` の RLS）に照合してから使う（他テナント・取引先所属は 400）。
+    await assertAssigneeExists(db, input.assigneeUserId);
 
     const created = await db.project.create({
       data: {
@@ -390,6 +443,19 @@ export async function createProject(
         category: input.category,
         sourceKind: input.sourceKind,
         parallelOk: input.parallelOk,
+        // ✅✅ 2026-10-16: 案件サマリの「基本情報」の 9 項目（migration 20261016040000）。
+        // 🔴 **`copySummary` を書かない。** 人間の指示は「案件登録時に生成される」だが、
+        //    **生成した文面を行に焼き付けない** —— 焼き付けると、案件を直してもサマリだけ
+        //    古いまま残り、どちらが正しいか誰も判断できなくなる。画面は値から毎回組み、
+        //    **人が書き換えたときだけ**この列に入る（`copy-summary.ts` の 🔴 / migration ⑦）。
+        upperCompanyName: input.upperCompanyName,
+        endDate: toDateOnly(input.endDate),
+        settlementMinHours: input.settlementMinHours,
+        settlementMaxHours: input.settlementMaxHours,
+        paymentSiteDays: input.paymentSiteDays,
+        distribution: input.distribution,
+        distributionLimit: input.distributionLimit,
+        assigneeUserId: input.assigneeUserId,
         endClientName: input.endClientName,
         internalUnitPrice: input.internalUnitPrice,
         publicSummary: input.publicSummary,
@@ -473,6 +539,12 @@ export async function updateProject(
         unitPriceMax: true,
         name: true,
         publicSummary: true,
+        // ✅✅ 2026-10-16: 項目をまたぐ検証のために既存値を読む
+        //    （精算幅の逆転 / 終了 < 開始。片方だけ更新できるため合成する）。
+        startDate: true,
+        endDate: true,
+        settlementMinHours: true,
+        settlementMaxHours: true,
       },
     });
     if (current === null) throw new NotFoundError();
@@ -489,7 +561,24 @@ export async function updateProject(
       patch.unitPriceMin === undefined ? decimalToNumber(current.unitPriceMin) : patch.unitPriceMin,
       patch.unitPriceMax === undefined ? decimalToNumber(current.unitPriceMax) : patch.unitPriceMax,
     );
+    // ✅✅ 2026-10-16: 精算幅と期間も**更新後の値**で判定する（単価レンジと同じ形）。
+    assertSettlementRange(
+      patch.settlementMinHours === undefined
+        ? current.settlementMinHours
+        : patch.settlementMinHours,
+      patch.settlementMaxHours === undefined
+        ? current.settlementMaxHours
+        : patch.settlementMaxHours,
+    );
+    assertProjectPeriod(
+      patch.startDate === undefined ? toDateOnlyString(current.startDate) : patch.startDate,
+      patch.endDate === undefined ? toDateOnlyString(current.endDate) : patch.endDate,
+    );
     if (requirements !== undefined) await assertRequirementSkillsExist(db, requirements);
+    // 🔴 担当者は母集団（`users` の RLS）に照合してから使う。
+    if (patch.assigneeUserId !== undefined) {
+      await assertAssigneeExists(db, patch.assigneeUserId);
+    }
 
     // 🔴 `data` に載せてよい列の**唯一の一覧**。`tenantId` / `originAssignmentId` は
     //    ここに現れない（現れないことをレビューで数えられる形にしておく）。
@@ -506,6 +595,26 @@ export async function updateProject(
       ...(patch.category === undefined ? {} : { category: patch.category }),
       ...(patch.sourceKind === undefined ? {} : { sourceKind: patch.sourceKind }),
       ...(patch.parallelOk === undefined ? {} : { parallelOk: patch.parallelOk }),
+      // ✅✅ 2026-10-16: 案件サマリの「基本情報」の 9 項目。
+      // 🔴 **`copySummary` はここに無い**（`#26` の body に混ぜない。
+      //    混ぜると「案件を直したらサマリの手直しが消えた」が起きる。
+      //    保存は `updateProjectCopySummary` が行う）。
+      ...(patch.upperCompanyName === undefined
+        ? {}
+        : { upperCompanyName: patch.upperCompanyName }),
+      ...(patch.endDate === undefined ? {} : { endDate: toDateOnly(patch.endDate) }),
+      ...(patch.settlementMinHours === undefined
+        ? {}
+        : { settlementMinHours: patch.settlementMinHours }),
+      ...(patch.settlementMaxHours === undefined
+        ? {}
+        : { settlementMaxHours: patch.settlementMaxHours }),
+      ...(patch.paymentSiteDays === undefined ? {} : { paymentSiteDays: patch.paymentSiteDays }),
+      ...(patch.distribution === undefined ? {} : { distribution: patch.distribution }),
+      ...(patch.distributionLimit === undefined
+        ? {}
+        : { distributionLimit: patch.distributionLimit }),
+      ...(patch.assigneeUserId === undefined ? {} : { assigneeUserId: patch.assigneeUserId }),
       ...(patch.endClientName === undefined ? {} : { endClientName: patch.endClientName }),
       ...(patch.internalUnitPrice === undefined
         ? {}
@@ -737,6 +846,18 @@ const PROJECT_DETAIL_SHARED_SELECT = {
   prefecture: true,
   remoteMode: true,
   publicSummary: true,
+  // ✅✅ **2026-10-16: 案件サマリの「基本情報」のうち、**取引先にも出す 5 列**。
+    // 🔴🔴 **ここに列を足すことは、公開範囲の相手へ出す項目を増やすことと同義である**
+    //    （`CLAUDE.md` §3.1 経路 1 / `F-013 AC-2` / `BR-07`）。
+    // 🔴 この 5 つを選んだ理由: いずれも**取引先が「提案してよいか」を
+    //    判断するための条件そのもの**であり、隠すと判断できない。
+    //    （終了時期 / 精算幅 / 支払いサイト / 商流制限）
+    // 🔴 **商流そのもの（`distribution`）・上位会社・担当者・コピペ用サマリはここに無い。**
+  endDate: true,
+  settlementMinHours: true,
+  settlementMaxHours: true,
+  paymentSiteDays: true,
+  distributionLimit: true,
 } as const;
 
 /**
@@ -750,6 +871,17 @@ const HOST_PROJECT_DETAIL_SELECT = {
   ...PROJECT_DETAIL_SHARED_SELECT,
   endClientName: true,
   internalUnitPrice: true,
+  // ✅✅ **2026-10-16: ホスト限定の 4 項目**（migration 20261016040000）。
+  // 🔴 `upperCompanyName` / `distribution` は**商流そのもの**であり、
+  //    出すと上流の構造が割れる（§3.1 経路 5 の 🔴 と同じ理由）。
+  // 🔴 `assignee` は**ホスト社員の氏名**に繋がる。
+  // 🔴 `copySummary` は**ホストの作文**であり、商流情報を含みうる。
+  upperCompanyName: true,
+  distribution: true,
+  assigneeUserId: true,
+  copySummary: true,
+  // 🔴 表示のための氏名だけをネストで読む（`users` にも RLS が効く）。
+  assignee: { select: { id: true, displayName: true } },
 } as const;
 
 /** 🔴 レビューが「増えていないこと」を数えられるように、両定数の列を export する。 */

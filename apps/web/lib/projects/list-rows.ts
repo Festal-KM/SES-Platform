@@ -333,6 +333,34 @@ export function projectPanelTab(raw: string | readonly string[] | undefined): Pr
 }
 
 /**
+ * ✅✅ **選んだスキルを 1 つ外す URL**（2026-10-16。人間の明示指示「選択したらバッジで表示する
+ *    ようにして」の `×`）。
+ *
+ * 🔴 **`×` はリンクである**（クライアントの島を持ち込まない）。押すと、そのスキルだけを
+ *    外した検索結果へ遷移する —— **バッジが表すのは「いま効いている条件」**であり、
+ *    ポップアップのチェックは「これから送る条件」である（押すまで一致しないのが正しい）。
+ * 🔴 **ページの位置（`cursor`）は捨てる。** 条件が変わると母集団が変わるので、同じカーソルは
+ *    別の結果集合の途中を指す（`docs/05` §4.8 のカーソルの意味）。1 ページ目に戻す。
+ * 🔴 **最後の 1 つを外したら、キーごと URL から消える**（`skills` が空配列にならない）。
+ */
+export function projectSkillRemoveHref(
+  query: ProjectListQuery,
+  hiddenColumns: readonly ProjectHideableColumnId[],
+  selectedId: string | null,
+  panelTab: ProjectPanelTab,
+  skillId: string,
+): string {
+  const remaining = (query.skills ?? []).filter((id) => id !== skillId);
+  return projectListHref(
+    { ...query, skills: remaining.length === 0 ? undefined : remaining },
+    null,
+    hiddenColumns,
+    selectedId,
+    panelTab,
+  );
+}
+
+/**
  * そのタブを開く `S-010` の URL。
  * 🔴 **検索条件・ページの位置・列の表示状態・開いている行を保つ**（タブを変えたせいで
  *    1 ページ目に戻ったり、パネルが閉じたりしない。`projectSelectHref` と同じ理由）。

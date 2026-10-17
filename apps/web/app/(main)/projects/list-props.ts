@@ -182,6 +182,7 @@ export function projectListScreenMessages(params: {
     //    `searchComingSoon` の**語は渡さない**（描く場所が無いものを運ばない）。
     searchSkill: t('projects.list.search.skill'),
     searchSkillAll: t('projects.list.search.skillAll'),
+    searchSkillRemove: t('projects.list.search.skillRemove'),
     searchSkillHint: t('projects.list.search.skillHint'),
     searchSkillEmpty: t('projects.list.search.skillEmpty'),
     searchPriceInverted: t('projects.list.search.priceInverted'),

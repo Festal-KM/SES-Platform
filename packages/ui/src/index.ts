@@ -408,6 +408,7 @@ export {
 // ✅✅ 2026-10-16: 複数選択を**ポップアップで選び、選んだものはバッジで見せる**ための 3 定数
 //    （人間の明示指示。`S-010` のスキル条件が使う）。🔴 **画面側で面・高さ・重なりを組まない。**
 export {
+  MULTI_SELECT_BADGE_REMOVE_CLASSES,
   MULTI_SELECT_OPTION_CLASSES,
   MULTI_SELECT_TRIGGER_CLASSES,
   ROW_ACTION_LINK_CLASSES,

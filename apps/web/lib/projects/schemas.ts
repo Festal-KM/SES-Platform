@@ -61,6 +61,25 @@ const HEADCOUNT_MIN = 1;
 const HEADCOUNT_MAX = 999;
 /** 1 案件あたりの要件数の上限（1 リクエストの大きさを境界で抑える）。 */
 const REQUIREMENTS_MAX = 100;
+/**
+ * ✅✅ **2026-10-16: 案件サマリの「基本情報」に足した項目の境界**（migration 20261016040000）。
+ *
+ * 🔴 **`upperCompanyName` は内部限定**（商流の一部）。長さは `endClientName` と揃える ——
+ *    同じ性質の値に違う上限を作らない。
+ * 🔴 **精算幅の上限は 744**（31 日 × 24h）= 1 か月の物理的な上限。DB の CHECK と同じ値である。
+ * 🔴 **支払いサイトの上限は 365 日。** 「サイト」は日数であり、年を跨ぐ条件は業務上存在しない。
+ */
+const UPPER_COMPANY_NAME_MAX_LENGTH = END_CLIENT_NAME_MAX_LENGTH;
+const SETTLEMENT_HOURS_MAX = 744;
+const PAYMENT_SITE_DAYS_MAX = 365;
+/** 商流 / 商流制限のフリーテキスト（`エンド → 元請 → 当社` / `2 次請けまで`）。 */
+const DISTRIBUTION_MAX_LENGTH = 200;
+/**
+ * コピペ用サマリの本文（人が書き換えたときだけ入る）。
+ * 🔴 **`publicSummary` と同じ上限**にする —— どちらも「人が書く案件の説明文」であり、
+ *    片方だけ短いと貼り付けた文面が途中で切れる。
+ */
+const COPY_SUMMARY_MAX_LENGTH = PUBLIC_SUMMARY_MAX_LENGTH;
 
 /**
  * 要件 1 件（`ProjectRequirement`）。
@@ -112,6 +131,31 @@ const projectFields = {
   category: z.enum(PROJECT_CATEGORIES).nullable(),
   sourceKind: z.enum(PROJECT_SOURCE_KINDS),
   parallelOk: z.boolean().nullable(),
+  /**
+   * ✅✅ **2026-10-16（人間の明示指示の「基本情報 19 項目」。migration 20261016040000）:
+   *    案件サマリに描くために足した 9 項目。**
+   *
+   * 🔴 **すべて `nullable`**（既存の案件には値が無い。既定値を入れない）。
+   * 🔴 **`copySummary` はここに無い**（下の 🔴 を参照）。人が書き換えて保存する経路は
+   *    `#26` の本体とは別の操作であり、同じ body に混ぜると「案件を直したら
+   *    サマリの手直しが消えた」が起きる。
+   * 🔴 **項目をまたぐ検証（終了日 < 開始日、精算幅の逆転）は `service.ts` が行う**
+   *    —— `PATCH` は既存値と合成しないと判定できない（本ファイル冒頭の 🔴）。
+   */
+  upperCompanyName: z.string().trim().min(1).max(UPPER_COMPANY_NAME_MAX_LENGTH).nullable(),
+  endDate: z.iso.date().nullable(),
+  settlementMinHours: z.number().int().min(0).max(SETTLEMENT_HOURS_MAX).nullable(),
+  settlementMaxHours: z.number().int().min(0).max(SETTLEMENT_HOURS_MAX).nullable(),
+  paymentSiteDays: z.number().int().min(0).max(PAYMENT_SITE_DAYS_MAX).nullable(),
+  distribution: z.string().trim().min(1).max(DISTRIBUTION_MAX_LENGTH).nullable(),
+  distributionLimit: z.string().trim().min(1).max(DISTRIBUTION_MAX_LENGTH).nullable(),
+  /**
+   * 担当者（自社の営業）。
+   * 🔴 **`uuid` としてだけ検証する。** 「そのテナントに実在する利用者か」は境界では分からない
+   *    （母集団は RLS が決める）。`service.ts` が `withTenant` の内側で照合する
+   *    （docs/05 §6.4 #14 の条件②）。
+   */
+  assigneeUserId: z.uuid().nullable(),
   /** 🔴 内部限定（`F-013` 処理② / `AC-2`）。公開範囲の相手の画面・エクスポート・通知に出さない。 */
   endClientName: z.string().trim().min(1).max(END_CLIENT_NAME_MAX_LENGTH).nullable(),
   /** 🔴 内部限定（同上）。`unitPriceMin` / `unitPriceMax`（公開用のレンジ）とは別の列である。 */
@@ -136,6 +180,15 @@ export const createProjectBodySchema = z.object({
   category: projectFields.category.default(null),
   sourceKind: projectFields.sourceKind.default('OWN'),
   parallelOk: projectFields.parallelOk.default(null),
+  // ✅✅ 2026-10-16: 基本情報の 9 項目。🔴 既定はすべて「未設定」（DB の既定と一致させる）。
+  upperCompanyName: projectFields.upperCompanyName.default(null),
+  endDate: projectFields.endDate.default(null),
+  settlementMinHours: projectFields.settlementMinHours.default(null),
+  settlementMaxHours: projectFields.settlementMaxHours.default(null),
+  paymentSiteDays: projectFields.paymentSiteDays.default(null),
+  distribution: projectFields.distribution.default(null),
+  distributionLimit: projectFields.distributionLimit.default(null),
+  assigneeUserId: projectFields.assigneeUserId.default(null),
   endClientName: projectFields.endClientName.default(null),
   internalUnitPrice: projectFields.internalUnitPrice.default(null),
   publicSummary: projectFields.publicSummary.default(null),
@@ -168,6 +221,15 @@ export const updateProjectBodySchema = z.object({
   category: projectFields.category.optional(),
   sourceKind: projectFields.sourceKind.optional(),
   parallelOk: projectFields.parallelOk.optional(),
+  // ✅✅ 2026-10-16: 基本情報の 9 項目。🔴 未指定 = 変更しない（`null` 指定 = 値を消す）。
+  upperCompanyName: projectFields.upperCompanyName.optional(),
+  endDate: projectFields.endDate.optional(),
+  settlementMinHours: projectFields.settlementMinHours.optional(),
+  settlementMaxHours: projectFields.settlementMaxHours.optional(),
+  paymentSiteDays: projectFields.paymentSiteDays.optional(),
+  distribution: projectFields.distribution.optional(),
+  distributionLimit: projectFields.distributionLimit.optional(),
+  assigneeUserId: projectFields.assigneeUserId.optional(),
   endClientName: projectFields.endClientName.optional(),
   internalUnitPrice: projectFields.internalUnitPrice.optional(),
   publicSummary: projectFields.publicSummary.optional(),
@@ -180,6 +242,30 @@ export type UpdateProjectBody = z.infer<typeof updateProjectBodySchema>;
 export type UpdateProjectBodyIsolationGuard = AssertNoIsolationKeys<UpdateProjectBody>;
 
 assertNoIsolationKeys(Object.keys(updateProjectBodySchema.shape), 'updateProjectBodySchema');
+
+/**
+ * ✅✅ **コピペ用サマリの本文の保存**（2026-10-16。人間の明示指示「人が書き換えて保存も可能」）。
+ *
+ * 🔴 **`#26` の body に混ぜない。** 混ぜると「案件を直したらサマリの手直しが消えた」/
+ *    「サマリを直したら案件の編集フォームの古い値で上書きされた」が起きる ——
+ *    どちらも**別の画面から別のタイミングで**行う操作である（案件の編集は `S-012`、
+ *    サマリの手直しは `S-010` の副カラム）。
+ * 🔴 **`null` を許す = 「人の手直しを取り消して、案件の値から組み直す」**である。
+ *    空文字との区別がここでの意味そのものなので、`.min(1)` と `nullable()` を併せる。
+ * 🔴 分離キーを持たない（`AssertNoIsolationKeys`）。`tenant_id` は ctx からしか決まらない。
+ */
+export const projectCopySummaryBodySchema = z.object({
+  copySummary: z.string().trim().min(1).max(COPY_SUMMARY_MAX_LENGTH).nullable(),
+});
+
+export type ProjectCopySummaryBody = z.infer<typeof projectCopySummaryBodySchema>;
+
+export type ProjectCopySummaryBodyIsolationGuard = AssertNoIsolationKeys<ProjectCopySummaryBody>;
+
+assertNoIsolationKeys(
+  Object.keys(projectCopySummaryBodySchema.shape),
+  'projectCopySummaryBodySchema',
+);
 
 /**
  * 🔴 `#26` の応答の `recheck`（T-12-10。docs/05 §6.4 #26 / §11.11「T-12-10 の実装の決着」③。

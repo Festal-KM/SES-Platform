@@ -67,6 +67,7 @@ const messages: ProjectListScreenMessages = {
   // ✅✅ 2026-10-16: スキル（複数選択 / OR）。
   searchSkill: 'スキル',
   searchSkillAll: 'すべて',
+  searchSkillRemove: 'を外す',
   searchSkillHint:'スキルは複数選べます（選んだいずれかを要件に持つ案件が出ます）。',
   searchSkillEmpty: 'スキル辞書に登録がありません。',
   searchPriceInverted: '単価の下限が上限を上回っています。どちらかを直してください。',
@@ -173,6 +174,7 @@ function render(
       remoteModeOptions,
       categoryOptions,
       skillOptions,
+      skillRemoveHrefOf: (skillId: string) => `/projects?removed=${skillId}`,
       priceInverted: false,
       canRegister: true,
       nextPageHref: null,
