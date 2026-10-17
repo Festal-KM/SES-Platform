@@ -399,6 +399,8 @@ describe('🔴 帯の primary（docs/04 §S-010「案件を登録（primary、�
       labelKey: 'projects.list.register',
       href: '/projects/new',
       kind: 'ACTION',
+      // 2026-10-16: 人間の明示指示「＋アイコンもつけて」。
+      icon: 'plus',
     });
   });
 

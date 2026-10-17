@@ -95,7 +95,21 @@ const SECTION_NAV_CLASSES = 'border-b border-border bg-bg px-6';
 const SECTION_NAV_LIST_CLASSES = 'flex flex-wrap items-stretch gap-6';
 
 /**
- * タブ 1 つ。§7.10 の 8 状態のうち **default / hover / selected / focus-visible** を取る。
+ * **横並びタブ（遷移する側）の 1 つ**。§7.10 の 8 状態のうち
+ * **default / hover / selected / focus-visible** を取る。
+ *
+ * ✅✅ **2026-10-16: `SECTION_NAV_ITEM_CLASSES` から改名して export した。**
+ * 🔴 **この見え方（下端 2px + 文字 `--color-brand`）の定義を 3 つにしないため**である ——
+ *    `./tabs.tsx`（Radix / URL が動かない面の切替）とは別に、**URL が動くタブ**が
+ *    2 か所になった:
+ *      ①セクション内のタブ（この `SectionNav`）
+ *      ②`S-010` の案件サマリのタブ（`基本情報` / `コピペ用サマリ`。
+ *        `apps/web/app/(main)/projects/project-summary-panel.tsx`）
+ *    ②は `Card` の中の小さな帯であり `SectionNav` そのものは使えない（置き場所と余白が違う）。
+ *    **見え方の決定だけを共有する**（§7.10 の条文が変わったらここ 1 か所を直す）。
+ * ⚠️ ファイル冒頭の 🔴 のとおり、`./tabs.tsx` との 2 実装は依然として残る（`'use client'` の
+ *    境界をまたげないため）。「遷移するタブ」を `docs/04` §5-13 の部品として条文化するかは
+ *    人間の判断事項であり、申し送り済みである。
  *
  * 🔴 **`whitespace-nowrap`** —— 和文は文字単位で折り返せるため、無いと狭い幅で
  *    「案 / 件 / 一 / 覧」と 1 文字ずつ割れる（`tests/e2e/support/assertions.ts` の
@@ -105,7 +119,7 @@ const SECTION_NAV_LIST_CLASSES = 'flex flex-wrap items-stretch gap-6';
  * 🔴 **hover と selected を同じ見え方にしない**（§7.10）: hover は文字を濃く、selected は
  *    ブランド色 + 下端 2px である。
  */
-const SECTION_NAV_ITEM_CLASSES = cn(
+export const NAV_TAB_CLASSES = cn(
   'inline-flex items-center border-b-2 border-b-transparent py-2 text-body font-medium whitespace-nowrap',
   'text-fg-muted hover:text-fg',
   TRANSITION_CLASSES,
@@ -119,7 +133,7 @@ const SECTION_NAV_ITEM_CLASSES = cn(
  *    「1 つ目のタブの左だけに線がある」形になって意味が読めないからである（`./tabs.tsx` と同じ理由）。
  * 🔴 **太字だけで示さない**（日本語ゴシックは太字の差が弱い）。
  *
- * 🔴 **`hover:` を selected の色で塗り直す。** `SECTION_NAV_ITEM_CLASSES` が持つ
+ * 🔴 **`hover:` を selected の色で塗り直す。** `NAV_TAB_CLASSES` が持つ
  *    `hover:text-fg`（特異度 0,2,0）は `text-brand`（0,1,0）より強く、そのままでは
  *    **現在地のタブにポインタが乗った瞬間に文字色が hover 色に置き換わる**（§7.10 の
  *    組み合わせ優先順は `selected > active > hover`）。`./sidebar.tsx` の
@@ -129,8 +143,8 @@ const SECTION_NAV_ITEM_CLASSES = cn(
  *    （`tests/static/design-tokens.test.ts` が `cn('hover:bg-bg-subtle','hover:bg-sidebar-hover-bg')`
  *    で同じ畳み込みを固定している）。したがって class 属性には `hover:text-brand` だけが出る。
  */
-const SECTION_NAV_CURRENT_CLASSES = cn(
-  SECTION_NAV_ITEM_CLASSES,
+export const NAV_TAB_CURRENT_CLASSES = cn(
+  NAV_TAB_CLASSES,
   'border-b-brand text-brand hover:text-brand',
 );
 
@@ -157,8 +171,8 @@ export function SectionNav({
           return (
             <li key={item.id}>
               <Link
-                className={SECTION_NAV_ITEM_CLASSES}
-                currentClassName={SECTION_NAV_CURRENT_CLASSES}
+                className={NAV_TAB_CLASSES}
+                currentClassName={NAV_TAB_CURRENT_CLASSES}
                 matchPaths={[item.href]}
                 href={item.href}
                 aria-current={current ? 'page' : undefined}

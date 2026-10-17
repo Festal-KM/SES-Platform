@@ -16,6 +16,19 @@ const nextConfig: NextConfig = {
   //    本リポジトリの `CLAUDE.md`（ルート）は全エージェントの一次資料であり、`apps/web` に同名の
   //    別ファイルが生えると、そこで作業するエージェントが二次的な指示を読んでしまう。生成を止める。
   agentRules: false,
+  // 🔴 2026-10-16: **`next dev` を `127.0.0.1` で開けるようにする。**
+  //    既定の許可元は `localhost` 系だけで、`http://127.0.0.1:3000` から来た
+  //    `/_next/hmr` の WebSocket は**応答なしで切られる**（要求の `Origin` だけが条件。実測）。
+  //    🔴 **これが「サインインできない」の正体だった**（2026-10-16 に実測。§7.5 の罠）:
+  //    開発時の React は flight の残りの行（owner stack 等のデバッグ情報）を**この WebSocket
+  //    経由で受け取る**ため、繋がらないと `app-index` の `await initialServerResponse` が
+  //    永久に解決せず、**hydration が一度も走らない**。例外もコンソールの出力も出ない。
+  //    結果 `onSubmit` が付かず、`<form method="post">` がブラウザ既定の送信に落ちて
+  //    **入力値が消えるだけ**になる（サインインに限らず全画面の操作が死ぬ）。
+  //    🔴 **本番には一切効かない**（`next dev` 専用の設定であり、`next build` /
+  //    `next start` は読まない）。接続先 DB の host を `127.0.0.1` にする話（§7.5 の
+  //    Prisma `P2028`）とは**別件**なので混同しないこと。
+  allowedDevOrigins: ['127.0.0.1', 'localhost'],
 };
 
 /**

@@ -141,3 +141,55 @@ export const ROW_ACTION_LINK_CLASSES = cn(
 
 /** 🔴 一覧の行の hover（面の色だけ。拡大・影・下線を出さない）。 */
 export const ROW_HOVER_CLASSES = 'hover:bg-row-hover-bg';
+
+// ============================================================================
+// ✅✅ 2026-10-16: 複数選択を**ポップアップ**で選び、選んだものを**バッジ**で見せる
+//     （人間の明示指示「スキルの部分が縦幅を増やしており、バランスを崩しています。
+//      スキルの部分はポップアップや Tip で選択肢を表示して、選択させるような形で、
+//      表示させるのはバッチ風の表示にするのがいいでしょうね。」）
+// ============================================================================
+/**
+ * 複数選択の**引き金**（`<summary>`）。
+ *
+ * 🔴 **`<select multiple>` をやめた理由**: `size` を 3 まで詰めてもリストボックスは
+ *    **3 行ぶんの高さ**を占め、同じ行に並ぶ `Select`（`h-9` = 36px）の 2 倍以上になる。
+ *    絞り込みの帯の縦幅を小さくするという人間の指示（同日）と正面から衝突していた。
+ * 🔴 **見え方は他の入力欄と同じ**（`CONTROL_BASE_CLASSES`）—— 枠・角丸・影・フォーカスリングを
+ *    画面側で組み直さない。並んだときに 1 つだけ違う形の欄にしない。
+ * 🔴 **`h-9` ではなく `min-h-9`** —— 選んだバッジが増えたときだけ伸びる（既定は他の欄と同じ高さ）。
+ * 🔴 **`marker:content-none` + `list-none`** で `<summary>` の既定の三角を消す
+ *    （印は呼び出し側が `Icon` で置く。Safari は `list-none` だけでは消えない）。
+ */
+export const MULTI_SELECT_TRIGGER_CLASSES = cn(
+  CONTROL_BASE_CLASSES,
+  'flex min-h-9 cursor-pointer list-none flex-wrap items-center gap-1 py-1 marker:content-none',
+);
+
+// 🔴 **ポップアップの面（`MULTI_SELECT_PANEL_CLASSES`）は `./overlay-classes.ts` に在る。**
+//    理由: 重なる面の影（`shadow-overlay`）を書いてよいのは `./overlay-classes.ts` だけであり
+//    （`docs/04` §7.9 / `tests/static/design-tokens.test.ts`）、影の置き場所を 2 つにしない。
+
+/**
+ * ✅✅ **選んだものを表すバッジの `×`**（2026-10-18。人間の明示指示「選択したらバッジで
+ * 表示するようにして」+ 受領画像）。
+ *
+ * 🔴 **画面側に `hover:` を書かせないための定数である**（`tests/static/ui-state-in-primitives.test.ts`
+ *    の (j)。8 状態は `packages/ui` のプリミティブが持つ —— 画面に書くと、その画面だけ
+ *    押し心地と focus リングが違う状態になる）。
+ * 🔴 **既定は控えめ、hover で濃く。** `×` はバッジの中の小さな的であり、常に濃いと
+ *    「バッジそのものより `×` が目立つ」状態になる（語が主で、外す操作は従である）。
+ * 🔴 **`shrink-0`** —— バッジが折り返しても `×` が潰れない。
+ */
+export const MULTI_SELECT_BADGE_REMOVE_CLASSES = cn(
+  'shrink-0 rounded-sm text-fg-muted',
+  TRANSITION_CLASSES,
+  'hover:text-fg',
+  FOCUS_RING_CLASSES,
+);
+
+/** ポップアップの中の 1 行（チェックボックス + 語）。🔴 行ごと押せる（当たり判定を広く取る）。 */
+export const MULTI_SELECT_OPTION_CLASSES = cn(
+  'flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 text-body text-fg',
+  TRANSITION_CLASSES,
+  'hover:bg-bg-subtle',
+);

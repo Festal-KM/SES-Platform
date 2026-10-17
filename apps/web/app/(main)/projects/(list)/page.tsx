@@ -13,7 +13,7 @@
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 // ✅ 2026-10-16: 単価の逆転の判定（述語〔重なり〕と同じファイルの 1 本。人間の明示指示）。
-import { isUnitPriceRangeInverted, resolveStartWindow } from '@ses/db';
+import { isUnitPriceRangeInverted } from '@ses/db';
 import { t } from '@ses/i18n';
 import { PageBody } from '@ses/ui';
 import { resolveTenantCtxOutcome } from '../../../../lib/auth/session';
@@ -24,6 +24,12 @@ import {
   PROJECT_HIDEABLE_COLUMN_IDS,
   projectColumnToggleHref,
   projectListHref,
+  // ✅✅ 2026-10-16: 案件サマリのタブ（`?panelTab=`。人間の明示指示）。
+  projectPanelTab,
+  projectPanelTabHref,
+  // ✅✅ 2026-10-18: バッジの `×`（選んだスキルを 1 つ外す URL）。
+  projectSkillRemoveHref,
+  PROJECT_PANEL_TAB_PARAM,
   projectListPrimaryAction,
   projectListRows,
   projectPopulationLabel,
@@ -34,17 +40,22 @@ import {
 } from '../../../../lib/projects/list-rows';
 import { isProjectEditorRole } from '../../../../lib/projects/policy';
 import { projectListQuerySchema } from '../../../../lib/projects/schemas';
+// ✅✅ 2026-10-16: スキルの選択肢（人間の明示指示「スキル（リストから複数選択できる、or 検索）」）。
+// 🔴 **`GET /api/skills`（#23）と同じ関数を通る**（`listSkills`）—— 辞書の並び
+//    （`sortKey` 昇順 → `id`）と母集団を画面側で決め直さない。
+// 🔴 `skills` は `CLAUDE.md` §3.1 の射程外の 4 表の 1 つ（グローバルなマスタ）であり、
+//    誰が見ても同じ辞書である（テナントの境界に触れない）。
+import { listSkills } from '../../../../lib/skills/service';
 import { HIDDEN_COLUMNS_PARAM } from '../../../../lib/ui/hidden-columns';
+// ✅✅ 2026-10-16: 検索項目は 6 つになった（人間の明示指示）。🔴 **外した 4 つ
+//    （案件区分 / 勤務地 / 開始時期 / 並行可否）の選択肢は import ごと外す** ——
+//    受け取って使わない props を残さない（query と述語は残してある）。
 import {
   projectColumnToggleItems,
-  projectListDescription,
   projectListScreenMessages,
-  projectPrefectureFilterOptions,
   projectCategoryFilterOptions,
-  projectParallelOkFilterOptions,
   projectRemoteModeFilterOptions,
-  projectSourceKindFilterOptions,
-  projectStartWithinFilterOptions,
+  projectSkillFilterOptions,
   projectStatusFilterOptions,
   projectSummaryPanelMessages,
 } from '../list-props';
@@ -87,20 +98,24 @@ export default async function ProjectListPage({
   //    ので、**問い合わせ自体を行わず**、単価の欄にエラーを出す（`docs/04` §S-010）。
   // 🔴 **`redirect` しない**（URL に残った条件を消すと、直すべき値が画面から消える）。
   const priceInverted = isUnitPriceRangeInverted(query);
-  // ============================================================================
-  // ✅✅ **2026-10-16: 開始時期の区分 → 開始日の範囲**（受領モックの「開始時期」）
-  // ============================================================================
-  // 🔴 **現在時刻をここで 1 回だけ読む。** `resolveStartWindow` は純粋関数であり、
-  //    一覧と `COUNT` が**同じ日付**で動くことをこの 1 行が保証する
-  //    （1 リクエストの中で `new Date()` を 2 回呼ぶと、日付の境目で件数と行がずれうる）。
-  // 🔴 **旧 `startFrom`（日付の直接指定）と併用されたら、区分のほうを採る** ——
-  //    画面に出ているのは区分だけであり、見えていない条件が結果を変える状態を作らない。
-  const startRange =
-    query.startWithin === undefined ? null : resolveStartWindow(query.startWithin, new Date());
-  const searchQuery = startRange === null ? query : { ...query, ...startRange };
-  const view = priceInverted
-    ? { items: [] as Awaited<ReturnType<typeof listProjects>>['items'], total: 0, nextCursor: null }
-    : await listProjects(ctx, searchQuery);
+  // 🔴 **開始時期の区分 → 日付の範囲の変換は `listProjects` が行う**（2026-10-16 に移した）。
+  //    画面だけで変換していたときは、**API が同じ条件を黙って捨てていた** —— 読み取りの
+  //    経路は 1 本であり、変換もその 1 本に置く（`lib/projects/list.ts` の 🔴🔴）。
+  // ✅✅ **2026-10-16: 一覧とスキル辞書を 1 度に取る**（人間の明示指示のスキル絞り込み）。
+  // 🔴 **`Promise.all` にする** —— 辞書は約 40 行の小さな問い合わせだが、直列にすると
+  //    一覧の p95（`F-015 AC-2`）にその往復がそのまま足される。
+  // 🔴 **単価が逆転しているときも辞書は読む** —— 読まないと**選択肢が消えた検索フォーム**が
+  //    返り、利用者は「スキルの欄が壊れた」と読む（直すべきは単価の欄である）。
+  const [view, skills] = await Promise.all([
+    priceInverted
+      ? Promise.resolve({
+          items: [] as Awaited<ReturnType<typeof listProjects>>['items'],
+          total: 0,
+          nextCursor: null,
+        })
+      : listProjects(ctx, query),
+    listSkills(ctx, {}),
+  ]);
   const isPartner = ctx.partnerCompanyId !== null;
   const filtered = hasProjectListFilters(query);
   // 🔴 **列表示切替の状態は URL のクエリ（`?hide=`）だけが持つ**（`T-22-06`。`docs/04` §7.1）。
@@ -116,6 +131,12 @@ export default async function ProjectListPage({
   // 🔴 **いまのページの行に照合してから使う** —— URL 直打ちで「このページに無い ID」を
   //    指されても、先頭行に落ちる（`selectedProjectId`）。**DB を引き直さない。**
   const selectedId = selectedProjectId(raw[PROJECT_SELECTED_PARAM], rows);
+  // ✅✅ **2026-10-16: 案件サマリのタブ**（人間の明示指示「タイル内にタブを設置して、
+  //    基本情報とコピペ用サマリ」）。🔴 `?selected=` / `?hide=` と同じ**表示の状態**であり、
+  //    API には渡さない（`projectListQuerySchema` はこのキーを持たず、Zod の既定〔strip〕で
+  //    落ちるので上の `safeParse` は成功し、URL も書き換わらない）。
+  //    🔴 未知の値は既定（基本情報）に落ちる（`redirect` しない）。
+  const panelTab = projectPanelTab(raw[PROJECT_PANEL_TAB_PARAM]);
   const selectedRow = rows.find((row) => row.id === selectedId) ?? null;
   const canRegister = isProjectEditorRole(ctx.role);
   // 🔴 9 列目（公開先の設定状況）そのものが無い取引先には**その行を渡さない**（`F-014 AC-4` / `BR-07`）。
@@ -154,8 +175,15 @@ export default async function ProjectListPage({
         aside={
           <ProjectSummaryPanel
             row={selectedRow}
-            // 🔴 `S-012`（編集）に到達できるのはホストの 3 ロールだけ（`PROJECT_EDITOR_ROLES`）。
-            canEdit={canRegister}
+            // ✅✅ 2026-10-16: 開いているタブ（人間の明示指示「タイル内にタブを設置して、
+            //    基本情報とコピペ用サマリ」）。🔴 出所は URL（`?panelTab=`）であり、
+            //    画面は状態を持たない。未知の値は既定（基本情報）に落ちる。
+            // ⚠️ `canEdit` は渡さなくなった（人間の明示指示「案件サマリのボタンは、
+            //    詳細を開くだけでよい」で `編集する` を画面から外したため）。
+            tab={panelTab}
+            tabHrefOf={(tab) =>
+              projectPanelTabHref(query, query.cursor ?? null, hiddenColumns, selectedId, tab)
+            }
             messages={projectSummaryPanelMessages()}
           />
         }
@@ -171,11 +199,11 @@ export default async function ProjectListPage({
         canAct={isPageActionRole(ctx.role)}
         testId="project-list-register"
       />
-      {/* 🔴 帯の「説明 1 行」（`docs/04` §3.1）。`settings/page.tsx` と同じ形で帯の直下に置く
-          （`PageHeader` は説明の prop を持たない）。母集団が違うので文も違う。 */}
-      <p className="mb-4 text-body text-fg-muted" data-testid="project-list-description">
-        {projectListDescription(isPartner)}
-      </p>
+      {/* ✅✅ **2026-10-16: 説明の 1 行を外した**（人間の明示指示「タイトル下の説明文はいらない」）。
+          🔴 **母集団の説明は失っていない** —— 表の上の件数行（`自社案件 6 件` /
+             取引先では「公開された案件」）が母集団そのものを出しており、取引先向けの
+             `partnerScopeNotice` も残っている。消したのは**重複していた 1 行**である。
+          ⚠️ 文言キー（`projects.list.description*`）は消していない（`U-22` の凍結）。 */}
       <ProjectListScreen
         rows={rows}
         filters={{
@@ -194,17 +222,25 @@ export default async function ProjectListPage({
           sourceKind: query.sourceKind ?? '',
           parallelOk: query.parallelOk === undefined ? '' : query.parallelOk ? '1' : '0',
           startWithin: query.startWithin ?? '',
+          // ✅✅ 2026-10-16（人間の明示指示「スキル（リストから複数選択できる、or 検索）」）。
+          // 🔴 **これだけが配列である**（`<select multiple>` の選択状態）。未指定は空配列
+          //    = 何も選ばれていない = すべて（番兵を置かない）。
+          skills: query.skills ?? [],
         }}
         statusOptions={projectStatusFilterOptions}
-        prefectureOptions={projectPrefectureFilterOptions}
         remoteModeOptions={projectRemoteModeFilterOptions}
         categoryOptions={projectCategoryFilterOptions}
-        sourceKindOptions={projectSourceKindFilterOptions}
-        parallelOkOptions={projectParallelOkFilterOptions}
-        startWithinOptions={projectStartWithinFilterOptions}
+        // ✅✅ 2026-10-16: スキルの選択肢はグローバル辞書（`Skill`）である。
+        // 🔴 **語は辞書の `name`** であり `packages/i18n` に無い（辞書はデータであって文言ではない）。
+        // 🔴 **並びは `listSkills` が決めた決定的な順**（`sortKey` 昇順 → `id`）をそのまま使う。
+        skillOptions={projectSkillFilterOptions(skills.items)}
+        // ✅✅ 2026-10-18: バッジの `×`（人間の明示指示）。🔴 **ページの位置は捨てる**
+        //    （条件が変われば母集団が変わり、同じカーソルは別の結果集合の途中を指す）。
+        skillRemoveHrefOf={(skillId) =>
+          projectSkillRemoveHref(query, hiddenColumns, selectedId, panelTab, skillId)
+        }
         priceInverted={priceInverted}
         // 🔴 取引先には公開先の列を出さない（docs/04 §S-010 / `F-014 AC-4`）。出所は ctx である。
-        showVisibilityColumn={!isPartner}
         // 🔴 `S-012` に到達できるのはホストの 3 ロールだけである（`PROJECT_EDITOR_ROLES`）。
         //    押しても戻されるだけの導線を描かない。拒否の本体は `#26` のガードと
         //    `S-012` のリダイレクトである。
@@ -222,8 +258,10 @@ export default async function ProjectListPage({
         columnToggleItems={columnToggleItems}
         selectedId={selectedId}
         // 🔴 行から副カラムを開く URL（検索条件・ページの位置・列の表示状態を保つ）。
+        // ✅✅ 2026-10-16: 🔴 **開いているタブも保つ** —— 行を次々に開いてコピペ用サマリを
+        //    取るときに、毎回タブを押し直すことにならない。
         selectHrefOf={(projectId) =>
-          projectSelectHref(query, query.cursor ?? null, hiddenColumns, projectId)
+          projectSelectHref(query, query.cursor ?? null, hiddenColumns, projectId, panelTab)
         }
         messages={projectListScreenMessages({
           populationLabel: projectPopulationLabel(ctx.partnerCompanyId, view.total),

@@ -276,8 +276,10 @@ describe('🔴 (m) DataTable の列定義の契約（docs/05 §17.7.1 (m) / §2.
       'remoteMode:sm',
       'headcount:lg',
       'updatedOn:sm',
-      // 🔴 9 列目（ホストのみ）。§7.1「9 列目以降は列表示切替に格納する」。
-      'visibility:lg:hideable',
+      // ✅✅ **2026-10-16: `visibility`（公開先の設定状況）を外した**（人間の明示指示
+      //    「案件リストの『公開先の設定状況』列はいらない」）。
+      // 🔴 **情報は右の案件サマリが持っている**（表から消えただけで、見られなくなっていない）。
+      // 🔴 **操作列も外した**（同じ指示。行そのものがリンクになり、クリックで右に出る）。
     ]);
     expect(columnsOf('apps/web/app/(main)/proposals/(list)/proposal-list-screen.tsx')).toEqual([
       'state:always',

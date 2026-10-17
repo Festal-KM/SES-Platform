@@ -122,6 +122,32 @@ export const DRAWER_PANEL_CLASSES = cn(
   'fixed inset-y-0 right-0 z-50 flex w-full flex-col gap-4 overflow-y-auto p-6 sm:w-100 sm:rounded-l-md',
 );
 
+/**
+ * ✅✅ **複数選択（`<details>` + チェックボックス）のポップアップの面**（2026-10-16。人間の
+ * 明示指示「スキルの部分はポップアップや Tip で選択肢を表示して、選択させるような形で、
+ * 表示させるのはバッチ風の表示にするのがいいでしょうね。」）。
+ *
+ * 🔴 **重ねる**（`absolute`）—— 押したときに下の条件や表を押し下げると、選んでいる間に
+ *    画面が動いて別のものを押すことになる。**絞り込みの帯の高さは開いても変わらない。**
+ * 🔴 **面と影は `OVERLAY_SURFACE_CLASSES` の 1 定義**である（`DropdownMenu` と同じ）——
+ *    画面側で枠・背景・影を組み直さない。**ここに置くのは、重なる面の影（`shadow-overlay`）を
+ *    書いてよいのがこのファイルだけだからである**（`docs/04` §7.9 /
+ *    `tests/static/design-tokens.test.ts`）。
+ * 🔴 **`z-20`**（`DropdownMenu` の `z-50` より下）—— Radix の overlay は画面に固定で重なるが、
+ *    こちらは**絞り込みカードの中**に収まる。同じ高さにすると、`Dialog` が開いているときに
+ *    下の絞り込みのポップアップが前に出る。
+ * 🔴 **縦に伸びすぎない**（`max-h-56` ＝ 224px で内側スクロール）。辞書が増えても帯は変わらない。
+ * ⚠️ **外側をクリックしても閉じない**（`<details>` の素の挙動）。閉じるには引き金をもう一度
+ *    押す —— クライアントの島を持ち込まないための意図的な割り切りであり、絞り込みの
+ *    アコーディオン（`DISCLOSURE_SUMMARY_CLASSES`）と同じ考え方である。
+ *    🔴 **だから `Dialog` / `DropdownMenu` の代わりに使ってよい場所は限られる** ——
+ *    画面に固定で重なる overlay（`OVERLAY_BACKDROP_CLASSES` を伴うもの）には使わない。
+ */
+export const MULTI_SELECT_PANEL_CLASSES = cn(
+  OVERLAY_SURFACE_CLASSES,
+  'absolute top-full right-0 left-0 z-20 mt-1 flex max-h-56 flex-col overflow-y-auto rounded-md p-2',
+);
+
 /** `DropdownMenu` の面。 */
 export const DROPDOWN_MENU_CONTENT_CLASSES = cn(
   OVERLAY_SURFACE_CLASSES,

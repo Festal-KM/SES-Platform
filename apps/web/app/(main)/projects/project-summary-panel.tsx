@@ -55,22 +55,45 @@ import Link from 'next/link';
 import {
   Card,
   Icon,
+  NAV_TAB_CLASSES,
+  NAV_TAB_CURRENT_CLASSES,
   PANEL_KEY_WIDTH_CLASS,
   PANEL_KV_ROW_HEIGHT_CLASS,
   SECONDARY_BUTTON_LINK_CLASSES,
   SECTION_HEADER_HEIGHT_CLASS,
   StatusBadge,
+  Textarea,
   cn,
 } from '@ses/ui';
-import type { ProjectListRowView } from '../../../lib/projects/list-rows';
+import { projectCopySummary } from '../../../lib/projects/copy-summary';
+import {
+  PROJECT_PANEL_TABS,
+  type ProjectListRowView,
+  type ProjectPanelTab,
+} from '../../../lib/projects/list-rows';
 
 export type ProjectSummaryPanelMessages = {
-  /** 帯の語（`案件の要点`）。🔴 行が 1 件も無いときの見出しも兼ねる。 */
+  /**
+   * 帯の語（✅✅ **2026-10-16: `案件の要点` → `案件サマリ`**。人間の明示指示
+   * 「右側の案件の要点は案件サマリに文言を変更して」）。🔴 行が 1 件も無いときの見出しも兼ねる。
+   */
   readonly title: string;
   readonly empty: string;
+  /**
+   * ✅✅ **2026-10-16: 下端の操作は 1 つだけになった**（人間の明示指示「案件サマリの
+   * ボタンは、詳細を開くだけでよい」）。🔴 `編集する` / `この案件に合う人材を探す` は
+   * **画面から外した**（行き先は `S-011` からそのまま辿れる）。
+   */
   readonly detail: string;
-  readonly edit: string;
-  readonly candidates: string;
+  /**
+   * ✅✅ **2026-10-16: タイル内のタブ**（人間の明示指示「タイル内にタブを設置して、
+   * 基本情報とコピペ用サマリ（添付を参考）」）。
+   */
+  readonly tabBasic: string;
+  readonly tabCopy: string;
+  /** コピペ用サマリの面の 2 行（用途と、まだ保存できないこと）。 */
+  readonly copyHint: string;
+  readonly copyGeneratedNote: string;
   /** キーバリューのラベル（🔴 **一覧の列見出しと同じ語を使う** —— 同じ値に 2 つの名前を作らない）。 */
   readonly fieldMustRequirements: string;
   readonly fieldUnitPrice: string;
@@ -139,6 +162,28 @@ function panelFields(
   return fields;
 }
 
+// ============================================================================
+// ✅✅ 2026-10-16: タイル内のタブ（人間の明示指示「タイル内にタブを設置して、
+//     基本情報とコピペ用サマリ（添付を参考）」）
+// ============================================================================
+/**
+ * 🔴 **`@ses/ui` の `Tabs`（Radix）を使っていない。** あれは `'use client'` であり、
+ *    import する側も `'use client'` を宣言しなければならない
+ *    （`tests/static/ui-dependency-single-path.test.ts` の検査 ⑤）。この画面は
+ *    **クライアントの島を 1 つも持たない**状態になっており（`project-list-screen.tsx` の ⚠️）、
+ *    タブのために島を 1 つ戻すと、水和の前に押せないタブが生まれる。
+ * 🔴 したがってタブは**リンク 2 本**である（`?panelTab=`。`nav-panel.tsx` が「遷移するタブ」に
+ *    ついて書いているのと同じ判断）。選ばれた面はサーバが描く。
+ * 🔴 **見え方は `@ses/ui` の 1 定義**（`NAV_TAB_CLASSES` / `NAV_TAB_CURRENT_CLASSES`）——
+ *    下端 2px とブランド色を画面側で組み直さない（§7.10）。
+ * 🔴 `role="tablist"` を自作しない —— リンクの並びは**ナビゲーション**であり、
+ *    `tablist` を名乗ると矢印キーで動く約束をしたことになる（Radix 版だけがそれを果たせる）。
+ */
+const PANEL_TAB_BAR_CLASSES = 'flex items-stretch gap-4 border-b border-border px-4';
+
+/** コピペ用サマリの面。🔴 等幅にしない（貼る先は LINE やメールであり、整形はしない）。 */
+const PANEL_COPY_NOTE_CLASSES = 'm-0 text-xs text-fg-muted';
+
 /** 帯（行の有無で位置が動かないよう、両方の状態で出す）。 */
 function PanelHead({ label }: { readonly label: string }) {
   return (
@@ -152,17 +197,19 @@ function PanelHead({ label }: { readonly label: string }) {
 
 export function ProjectSummaryPanel({
   row,
-  canEdit,
+  tab,
+  tabHrefOf,
   messages,
 }: {
   /** 副カラムで開いている行（1 件も無いページでは `null`）。 */
   readonly row: ProjectListRowView | null;
   /**
-   * 🔴 `S-012`（編集）へ到達できるのはホストの 3 ロールだけである（`PROJECT_EDITOR_ROLES`）。
-   *    ⚠️ UI の配慮であり拒否の本体ではない（`#26` の `requireRole` / `S-012` の `redirect` /
-   *    `projects` の RLS = C2）。
+   * ✅✅ **2026-10-16: 開いているタブ**（`?panelTab=`。`projectPanelTab` が決める）。
+   * 🔴 **画面が状態を持たない** —— 再読込・共有・戻るで同じ面が開く。
    */
-  readonly canEdit: boolean;
+  readonly tab: ProjectPanelTab;
+  /** そのタブを開く URL（`projectPanelTabHref`。検索条件・ページ・開いている行を保つ）。 */
+  readonly tabHrefOf: (tab: ProjectPanelTab) => string;
   readonly messages: ProjectSummaryPanelMessages;
 }) {
   if (row === null) {
@@ -178,11 +225,23 @@ export function ProjectSummaryPanel({
     );
   }
 
+  // 🔴 **タブの語と面の対応はこの 1 つの配列で決まる**（語だけ足して面が無いタブを作れない）。
+  const tabs: readonly { readonly value: ProjectPanelTab; readonly label: string }[] = [
+    { value: 'BASIC', label: messages.tabBasic },
+    { value: 'COPY', label: messages.tabCopy },
+  ];
+  // 🔴 値集合の出所は `PROJECT_PANEL_TABS` の 1 本である（タブを足したらここで落ちる）。
+  if (tabs.length !== PROJECT_PANEL_TABS.length) {
+    throw new Error('案件サマリのタブの語が PROJECT_PANEL_TABS と一致しません');
+  }
+
   return (
     <Card className="flex flex-col" data-testid="project-list-panel" data-project-id={row.id}>
       <PanelHead label={messages.title} />
       {/* 案件名 + 状態。🔴 `h1` にしない —— 画面の `h1` は帯（`PageHeading`）が持つ
-          （1 画面 1 つ。`tests/static/page-heading-single.test.ts`）。 */}
+          （1 画面 1 つ。`tests/static/page-heading-single.test.ts`）。
+          🔴 **タブより上に置く** —— どのタブに居ても「どの案件か」が見えていなければならない
+             （ホームの要対応の 0 件をタブより上に置いたのと同じ理由）。 */}
       <div className="flex flex-col gap-2 p-4">
         <h2 className="m-0 min-w-0 text-lg font-bold text-fg" data-testid="project-list-panel-name">
           {row.name}
@@ -192,45 +251,70 @@ export function ProjectSummaryPanel({
           <StatusBadge entity="project" state={row.statusState} label={row.status} />
         </div>
       </div>
-      <dl className="m-0 flex flex-col px-4">
-        {panelFields(row, messages).map((field) => (
-          <div key={field.key} className={KV_ROW_CLASSES}>
-            <dt className={KV_KEY_CLASSES}>{field.label}</dt>
-            <dd className={KV_VALUE_CLASSES} data-testid={`project-list-panel-field-${field.key}`}>
-              {field.value}
-            </dd>
-          </div>
-        ))}
-      </dl>
-      {/* 下端の操作行（定義書 §1.8 のフッタ）。🔴 いずれも secondary である —— primary は
-          1 画面に 1 つで、この画面では帯の `案件を登録` が持つ（§7.6）。
-          🔴 `案件詳細を開く` が最初である（`docs/04` §S-010「行クリック → `S-011`」と同じ
-             行き先であり、新しい遷移ではない）。 */}
-      <div className="mt-auto flex flex-col gap-2 border-t border-border p-4">
-        <div className="flex gap-2">
+      {/* ✅✅ 2026-10-16: タイル内のタブ。 */}
+      <div className={PANEL_TAB_BAR_CLASSES} data-testid="project-list-panel-tabs">
+        {/* 🔴 **現在のタブも押せる**（押すと同じ URL に戻るだけであり、`aria-current="page"` が
+            「いまここ」を読み上げに伝える）。
+            🔴 **`data-testid` はテンプレートリテラルで書く** —— 変数をそのまま渡すと
+               `tests/static/testid-inventory.test.ts` が値を静的に解決できず、凍結の穴になる。 */}
+        {tabs.map((item) => (
           <Link
-            className={cn(SECONDARY_BUTTON_LINK_CLASSES, 'flex-1')}
-            href={`/projects/${row.id}`}
-            data-testid="project-list-panel-detail"
+            key={item.value}
+            className={item.value === tab ? NAV_TAB_CURRENT_CLASSES : NAV_TAB_CLASSES}
+            href={tabHrefOf(item.value)}
+            aria-current={item.value === tab ? 'page' : undefined}
+            data-testid={`project-list-panel-tab-${item.value.toLowerCase()}`}
           >
-            {messages.detail}
+            {item.label}
           </Link>
-          {canEdit ? (
-            <Link
-              className={cn(SECONDARY_BUTTON_LINK_CLASSES, 'flex-1')}
-              href={`/projects/${row.id}/edit`}
-              data-testid="project-list-panel-edit"
-            >
-              {messages.edit}
-            </Link>
-          ) : null}
+        ))}
+      </div>
+      {tab === 'BASIC' ? (
+        <dl className="m-0 flex flex-col px-4" data-testid="project-list-panel-basic">
+          {panelFields(row, messages).map((field) => (
+            <div key={field.key} className={KV_ROW_CLASSES}>
+              <dt className={KV_KEY_CLASSES}>{field.label}</dt>
+              <dd className={KV_VALUE_CLASSES} data-testid={`project-list-panel-field-${field.key}`}>
+                {field.value}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      ) : (
+        /* 🔴 **コピペ用サマリ**（人間の指示「LINE やメールとかにそのままコピペできる形式の
+            テキストにする」）。
+            🔴 **`<textarea readOnly>` である** —— 面をクリックして `Ctrl+A` → `Ctrl+C` で
+               全文が取れる（`<pre>` だと範囲選択が要る）。**ワンクリックのコピーボタンは
+               置いていない** —— クリップボードに書くには `'use client'` の島が必要であり、
+               この画面は島を 1 つも持たない状態で保っている。
+            🔴 **`readOnly` にする理由**: 書き換えても保存先が無い（`projects.copy_summary` の
+               列がまだ無い）。**保存できない編集をさせない**（`generatedNote` で明示する）。
+            ⚠️ 保存できるようになったら、この `<textarea>` をそのまま `method="post"` の
+               `<form>` に包むのが次の形である（`name` を付けるだけで済む）。 */
+        <div className="flex flex-col gap-2 p-4" data-testid="project-list-panel-copy">
+          <p className={PANEL_COPY_NOTE_CLASSES}>{messages.copyHint}</p>
+          <Textarea
+            readOnly
+            rows={10}
+            value={projectCopySummary(row)}
+            aria-label={messages.tabCopy}
+            data-testid="project-list-panel-copy-text"
+          />
+          <p className={PANEL_COPY_NOTE_CLASSES}>{messages.copyGeneratedNote}</p>
         </div>
+      )}
+      {/* 下端の操作行。
+          ✅✅ **2026-10-16: 1 つだけにした**（人間の明示指示「案件サマリのボタンは、
+             詳細を開くだけでよい」）。🔴 secondary である —— primary は 1 画面に 1 つで、
+             この画面では帯の `新規案件登録` が持つ（§7.6）。
+          🔴 行き先は `S-011` であり、**新しい画面を足していない**（一覧の行クリックと同じ）。 */}
+      <div className="mt-auto flex flex-col gap-2 border-t border-border p-4">
         <Link
           className={cn(SECONDARY_BUTTON_LINK_CLASSES, 'w-full')}
-          href={`/projects/${row.id}/candidates`}
-          data-testid="project-list-panel-candidates"
+          href={`/projects/${row.id}`}
+          data-testid="project-list-panel-detail"
         >
-          {messages.candidates}
+          {messages.detail}
         </Link>
       </div>
     </Card>

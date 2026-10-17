@@ -48,11 +48,35 @@ export const projectStatusFilterOptions: readonly ProjectFilterOption[] = [
   ...PROJECT_STATUSES.map((value) => ({ value, label: t(PROJECT_STATUS_MESSAGE_KEYS[value]) })),
 ];
 
-/** 勤務地（先頭は「すべて」）。 */
+/**
+ * 勤務地（先頭は「すべて」）。
+ * ⚠️ **2026-10-16: 検索パネルからは外した**（人間の明示指示の 6 項目に無い）。query と述語は
+ *    残しているので、共有済みの URL は従来どおり効く。選択肢の定義も**消さない**
+ *    —— 戻すときにここを作り直すことになる（`PROJECT_HIDEABLE_COLUMN_IDS` と同じ扱い）。
+ */
 export const projectPrefectureFilterOptions: readonly ProjectFilterOption[] = [
   { value: FILTER_ALL_VALUE, label: t('projects.list.search.prefectureAll') },
   ...PREFECTURE_CODES.map((value) => ({ value, label: t(PREFECTURE_MESSAGE_KEYS[value]) })),
 ];
+
+/**
+ * ✅✅ **スキル（2026-10-16。人間の明示指示「スキル（リストから複数選択できる、or 検索）」）。**
+ *
+ * 🔴 **「すべて」の選択肢を持たない。** これは `<select multiple>` であり、**何も選ばない
+ *    状態が「すべて」**である（番兵を置くと「すべて」を選んだまま 1 つ足した状態が作れてしまう）。
+ * 🔴 **値はグローバル辞書（`Skill`）の ID** である（`F-010`）。語は辞書の `name` であり、
+ *    `packages/i18n` には無い —— **辞書はデータであって文言ではない**
+ *    （テナントが足した別名も含め、`t()` の対象にできない）。
+ * 🔴 **並びは呼び出し側（`listSkills`）が決めた順をそのまま使う**（`sortKey` 昇順 → `id`。
+ *    決定的である）。ここで並べ替えない。
+ * 🔴 **テナントの境界に触れない。** `skills` は `CLAUDE.md` §3.1 の射程外の 4 表の 1 つ
+ *    （グローバルなマスタ）であり、誰が見ても同じ辞書である。
+ */
+export function projectSkillFilterOptions(
+  skills: readonly { readonly id: string; readonly name: string }[],
+): readonly ProjectFilterOption[] {
+  return skills.map((skill) => ({ value: skill.id, label: skill.name }));
+}
 
 /**
  * ✅ **稼働形態（先頭は「すべて」）。2026-10-16（人間の明示指示「稼働形態」）。**
@@ -127,12 +151,9 @@ export function projectListScreenMessages(params: {
     orderNote: t('projects.list.orderNote'),
     // 🔴 ✅ 2026-10-03: 表が器に収まらない幅での 1 行（語は全画面で同じ 1 キー）。
     overflowNote: t('ui.tableOverflowNote'),
-    searchComingSoon: t('projects.list.searchComingSoon'),
     searchLegend: t('projects.list.search.legend'),
     searchQ: t('projects.list.search.q'),
     searchStatus: t('projects.list.search.status'),
-    searchStartFrom: t('projects.list.search.startFrom'),
-    searchPrefecture: t('projects.list.search.prefecture'),
     // ✅ 2026-10-15: 単価レンジ（人材一覧と同じ語。`engineers.list.search.price*` と同じ文言）。
     //    🔴 この 2 つは**欄ごとの読み上げの語**になった（見えるラベルは `searchPrice` の 1 つ）。
     searchPriceMin: t('projects.list.search.priceMin'),
@@ -144,14 +165,26 @@ export function projectListScreenMessages(params: {
     searchPriceMaxPlaceholder: t('projects.list.search.priceMaxPlaceholder'),
     searchPriceRangeSeparator: t('projects.list.search.priceRangeSeparator'),
     searchPriceUnit: t('projects.list.search.priceUnit'),
-    // ✅ 2026-10-16（人間の明示指示）: 稼働形態 / 募集中のみ / 単価の逆転。
+    // ✅ 2026-10-16（人間の明示指示）: 稼働形態 / 単価の逆転。
     searchRemoteMode: t('projects.list.search.remoteMode'),
-    // ✅ 2026-10-16（受領モック）: カテゴリ / 案件区分 / 並行可否 / 開始時期。
     searchCategory: t('projects.list.search.category'),
-    searchSourceKind: t('projects.list.search.sourceKind'),
-    searchParallelOk: t('projects.list.search.parallelOk'),
-    searchStartWithin: t('projects.list.search.startWithin'),
-    searchRecruitingOnly: t('projects.list.search.recruitingOnly'),
+    // ============================================================================
+    // ✅✅ **2026-10-16: 検索項目を 6 つに絞った**（人間の明示指示「検索項目については下記
+    //     ・フリーテキスト（プレースホルダーは「案件名・キーワードで検索」、曖昧検索が
+    //     できるようにする）・ステータス ・カテゴリ ・スキル（リストから複数選択できる、
+    //     or 検索）・稼働形態 ・単価（上下限で）にしてください」）
+    // ============================================================================
+    // 🔴 **画面から外したのは 4 つ**（案件区分 / 勤務地 / 開始時期 / 並行可否）。
+    //    **query と述語は残してある** —— URL を共有した人が居る可能性があり、受け取れなく
+    //    なると「共有したリンクが別の結果を出す」になる（`recruitingOnly` と同じ判断）。
+    //    したがって `searchSourceKind` / `searchPrefecture` / `searchStartWithin` /
+    //    `searchParallelOk` / `searchStartFrom` / `searchRecruitingOnly` /
+    //    `searchComingSoon` の**語は渡さない**（描く場所が無いものを運ばない）。
+    searchSkill: t('projects.list.search.skill'),
+    searchSkillAll: t('projects.list.search.skillAll'),
+    searchSkillRemove: t('projects.list.search.skillRemove'),
+    searchSkillHint: t('projects.list.search.skillHint'),
+    searchSkillEmpty: t('projects.list.search.skillEmpty'),
     searchPriceInverted: t('projects.list.search.priceInverted'),
     searchSubmit: t('projects.list.search.submit'),
     searchClear: t('projects.list.search.clear'),
@@ -208,8 +241,14 @@ export function projectSummaryPanelMessages(): ProjectSummaryPanelMessages {
     title: t('projects.list.panel.title'),
     empty: t('projects.list.panel.empty'),
     detail: t('projects.list.panel.detail'),
-    edit: t('projects.list.panel.edit'),
-    candidates: t('projects.list.panel.candidates'),
+    // ✅✅ **2026-10-16: タブの語**（人間の明示指示「タイル内にタブを設置して、
+    //    基本情報とコピペ用サマリ」）。
+    tabBasic: t('projects.list.panel.tab.basic'),
+    tabCopy: t('projects.list.panel.tab.copy'),
+    copyHint: t('projects.list.panel.copy.hint'),
+    copyGeneratedNote: t('projects.list.panel.copy.generatedNote'),
+    // ⚠️ `edit` / `candidates` は**渡さない**（人間の明示指示「案件サマリのボタンは、
+    //    詳細を開くだけでよい」で画面から外した。キーは `U-22` の凍結なので残っている）。
     // 🔴 ✅ 2026-10-14: **状態（`fieldStatus`）はここに無い** —— 案件名の隣の `StatusBadge` が
     //    出すようになったので、Key-Value から外した（同じ値を 1 つのパネルに 2 回描かない。
     //    `project-summary-panel.tsx` の `panelFields` の 🔴）。語のキー
