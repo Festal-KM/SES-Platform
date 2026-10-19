@@ -107,8 +107,10 @@ export async function readPeople(
     take: CHAT_ROOMS_MAX,
   })) as readonly RoomRow[];
   // ① 母集団は C8 DIRECTORY。
+  // ✅ 2026-10-19（#137 レビュー）: 取引先の文脈では最初から自社（ホスト）の人だけを読む（同僚が多いとホストの人が
+  //    上限の外に押し出される）。🔴 これは表示の絞り込みで、境界は C8 のまま（② の フィルタも残す）。
   const people = (await db.user.findMany({
-    where: { disabledAt: null, id: { not: ctx.userId } },
+    where: { disabledAt: null, id: { not: ctx.userId }, ...(ctx.partnerCompanyId === null ? {} : { ownerPartnerCompanyId: null }) },
     select: { id: true, displayName: true, ownerPartnerCompanyId: true },
     orderBy: [{ displayName: 'asc' }, { id: 'asc' }],
     take: CHAT_CONTACTS_MAX,
