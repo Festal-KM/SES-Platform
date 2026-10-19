@@ -15,8 +15,15 @@ import type { ChatThreadDetailView } from '../../../lib/chat/views';
 // 🔴 `useRouter` はアプリのルーターの中でしか動かない。押した後の遷移はここでは確かめない（E2E の範囲）。
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: () => undefined, refresh: () => undefined }) }));
 
-const { ChatPeopleSection } = await import('./chat-people-section');
 const { ChatThreadPanel } = await import('./chat-thread-panel');
+const { ChatThreadList } = await import('./chat-thread-list');
+
+/** 一覧ごと（DM・グループの行は一覧に混ざる）。 */
+function renderList(canPost: boolean, people: ChatPeopleData = PEOPLE): string {
+  return renderToStaticMarkup(
+    createElement(ChatThreadList, { groups: [], selectedThreadId: null, nextCursor: null, people, canPost, now: new Date('2026-10-19T03:00:00.000Z') }),
+  );
+}
 
 const ROOM_DM = '01930000-0000-7000-8000-00000000e001';
 const ROOM_GROUP = '01930000-0000-7000-8000-00000000e002';
@@ -39,10 +46,11 @@ const PEOPLE: ChatPeopleData = {
   unreadCounts: { [ROOM_DM]: 2 },
   pinnedIds: [ROOM_DM],
   mutedIds: [],
+  lastSnippets: { [ROOM_DM]: 'よろしくお願いします' },
 };
 
 function renderSection(canPost: boolean): string {
-  return renderToStaticMarkup(createElement(ChatPeopleSection, { people: PEOPLE, selectedThreadId: null, canPost }));
+  return renderList(canPost);
 }
 
 function classTokens(html: string): string[] {
@@ -54,7 +62,8 @@ describe('🔴 ① 閲覧専用には「DM を開く」を描かない', () => {
     const html = renderSection(false);
     expect(html).not.toContain('data-testid="chat-contacts"');
     expect(html).not.toContain('chat-open-dm-');
-    expect(html).not.toContain('disabled');
+    // 🔴 属性として（検索欄の部品のクラスに `disabled:` の見た目の指定はあるが、属性は無い）。
+    expect(html).not.toMatch(/\sdisabled(=|\s|>)/);
     expect(html).not.toContain('aria-disabled');
     expect(html).not.toContain('opacity');
     // 対照: DM・グループの一覧は見える（読むことはできる）。
@@ -78,18 +87,19 @@ describe('🔴 ② 一覧の中に hidden を使わない', () => {
 });
 
 describe('③ お気に入り・未読・メンバー', () => {
-  it('お気に入りはピン留めした部屋だけ。未読の数が出る', () => {
+  it('お気に入りはピン留めした部屋だけ。DM・グループは一覧に混ざり、未読の数と最後の発言の冒頭が出る', () => {
     const html = renderSection(true);
+    expect(html).toContain('よろしくお願いします');
+    expect(html).toContain(`data-testid="chat-room-${ROOM_GROUP}"`);
     expect(html).toContain(`data-testid="chat-favorite-${ROOM_DM}"`);
     expect(html).not.toContain(`data-testid="chat-favorite-${ROOM_GROUP}"`);
     expect(html).toContain(`data-testid="chat-room-unread-${ROOM_DM}"`);
   });
 
-  it('部屋が無いときは始め方の案内を出す', () => {
-    const html = renderToStaticMarkup(
-      createElement(ChatPeopleSection, { people: { ...PEOPLE, rooms: [], pinnedIds: [] }, selectedThreadId: null, canPost: true }),
-    );
-    expect(html).toContain('data-testid="chat-rooms-empty"');
+  it('お気に入りが無いときは案内を出し、「＋ 新しい会話」は常にある', () => {
+    const html = renderList(true, { ...PEOPLE, rooms: [], pinnedIds: [] });
+    expect(html).toContain('data-testid="chat-favorites-empty"');
+    expect(html).toContain('data-testid="chat-new-conversation"');
   });
 
   it('右の欄はメンバーを出し、自分には「DM を開く」を出さない。閲覧専用には 1 つも出さない', () => {
