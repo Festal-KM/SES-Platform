@@ -4497,6 +4497,8 @@ const ja = {
   'chat.threads.filter.unread': '未読のみ',
   'chat.messages.unreadFrom': 'ここから未読',
   'chat.message.markUnread': 'ここから未読にする',
+  // ✅ 2026-10-19（#128）: DM の既読表示（相手が最後に読んだ位置の自分の発言の下だけ。グループ等には出さない）。
+  'chat.message.read': '既読',
   'chat.tree.fastReply': '返信が早い',
   'chat.threads.search.messageHits': '本文で見つかった発言',
   'chat.tree.truncated': '古いスレッドは表示していません（新しい順に 1,000 件まで）。',
