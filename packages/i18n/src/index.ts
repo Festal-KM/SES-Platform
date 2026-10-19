@@ -4414,7 +4414,7 @@ const ja = {
   'chat.error.title': 'チャットを取得できませんでした',
   'chat.error.retry': 'もう一度試す',
   // 🔴 母集団の 1 行（docs/04 §3.2-2）。**件数を含めない**（件数は他社の示唆になりうる）。
-  'chat.threads.population': 'やり取りに参加している会社とのスレッドを表示しています。',
+  'chat.threads.population': 'DM・グループと、取引先とのチャットを新しい順に表示しています。',
   'chat.threads.label': 'スレッド一覧',
   // 🔴 「開始できます」と書かない（スレッドを起こす導線が実装されていない。無い導線を約束しない）。
   'chat.threads.empty': 'やり取りはまだありません。',
@@ -4456,6 +4456,8 @@ const ja = {
   'chat.threads.pinned': 'ピン留め',
   // ✅ 2026-10-19（#128）: 人単位の部屋（DM・グループ）と連絡先。
   'chat.people.favorites': 'お気に入り',
+  'chat.people.favoritesEmpty': '会話の見出しの「ピン留め」で、よく話す相手をここに並べられます',
+  'chat.people.newConversation': '＋ 新しい会話',
   'chat.people.contacts': '連絡先',
   'chat.people.recent': '最近やり取りした人',
   'chat.people.rooms': 'DM・グループ',

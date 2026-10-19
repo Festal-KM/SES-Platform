@@ -52,7 +52,10 @@ import {
   type ChatThreadGroup,
   type ChatThreadSort,
 } from '../../../lib/chat/thread-tree';
-import type { ChatThreadListItem, ChatThreadKind } from '../../../lib/chat/views';
+import type { ChatRoomListItem, ChatThreadListItem, ChatThreadKind } from '../../../lib/chat/views';
+import type { ChatPeopleData } from '../../../lib/chat/people';
+import { formatListTime } from '../../../lib/chat/day-separators';
+import { ChatPeopleSection } from './chat-people-section';
 import type { ChatMessageHit } from '../../../lib/chat/read';
 import { ChatDraftMark } from './chat-draft-mark';
 
@@ -95,6 +98,14 @@ export type ChatThreadListProps = {
   /** ✅ 2026-10-16: スレッドごとの未読の件数と、「未読のみ」の状態。 */
   readonly unreadCounts?: Readonly<Record<string, number>>;
   readonly unreadOnly?: boolean;
+  /** ✅ 2026-10-19（#128）: DM・グループと連絡先。渡すと一覧に混ぜ、上にお気に入り・新しい会話を出す。 */
+  readonly people?: ChatPeopleData | null;
+  /** 投稿できる人か（閲覧専用には「新しい会話」を描かない）。 */
+  readonly canPost?: boolean;
+  /** ✅ 2026-10-19: 会社の部屋の最後の発言の冒頭。 */
+  readonly lastSnippets?: Readonly<Record<string, string>>;
+  /** 時刻の基準（テストで固定する）。 */
+  readonly now?: Date;
 };
 
 /** 行 1 つ（60px）。🔴 高さが内容量で変わらないよう、2 段とも 1 行に切り詰める。 */
@@ -109,104 +120,197 @@ type RowContext = {
   readonly awaitingReplyIds: ReadonlySet<string>;
   readonly unreadCounts: Readonly<Record<string, number>>;
   readonly mutedIds: ReadonlySet<string>;
+  /** ✅ 2026-10-19: 一覧の 2 段目（最後の発言の冒頭）と、時刻の基準。 */
+  readonly lastSnippets: Readonly<Record<string, string>>;
+  readonly now: Date;
 };
 
 /**
- * 1 行。`COMPANY` = 会社とのチャット（親）、`PROJECT` = 案件スレッド（子。字下げする）。
+ * ✅ 2026-10-19（紺野「何も進んでなくね？」→ 見た目の作り直し）: 一覧の 1 行の形を 1 つにする。
+ *   1 段目 = 名前 + 時刻（右端）、2 段目 = 最後の発言の冒頭 + 未読の数（右端）。🔴 印を 2 段目に積まない。
+ *   「チャット / スレッド」の文字は出さない（スレッドは字下げで分かる）。「要返信」は名前の前の小さな点。
  */
-function ThreadRow({ item, context }: { readonly item: ChatThreadListItem; readonly context: RowContext }) {
-  const { paneState, openIds, selectedThreadId, openBesideLabel, listQuery, awaitingReplyIds, unreadCounts } = context;
-  const awaiting = awaitingReplyIds.has(item.id);
-  // ✅ 2026-10-16: 未読の件数（自分以外の発言で既読位置より後ろ）。未読があれば名前を太くする。
-  const unread = unreadCounts[item.id] ?? 0;
-  // ✅ 2026-10-16: ミュートした会話は未読を強調しない（太字にせず、件数は無彩色）。
-  const muted = context.mutedIds.has(item.id);
-  const selected = item.id === selectedThreadId;
-  // ✅ 2026-10-14: 開いている会話（左端か右の列）は選択中と同じ面の色で示す。
-  const open = openIds.includes(item.id);
-  // ✅ 2026-10-14: 「右に並べる」は、何かを開いていて・まだ足せて・この会話が開いていないときだけ。
-  //    🔴 押して何も起きない導線を置かない（上限に達したら描かない）。
-  const besideHref =
-    openBesideLabel !== undefined && !open && canAddPane(paneState)
-      ? chatHref({ ...withPaneAdded(paneState, item.id), ...listQuery })
-      : null;
-  const rowHref = chatHref({ ...withThreadSelected(paneState, item.id), ...listQuery });
-  const counterparty = item.counterpartyName ?? t('chat.thread.unknownName');
-  const isChat = item.kind === 'COMPANY';
-  // 🔴 対象の名前。チャットは相手の会社名、スレッドは案件名。**案件名が読めないときは種別の語**
-  //    （`null` を「案件が無い」と書き分けない。`lib/chat/views.ts` の 🔴）。
-  const target = isChat ? counterparty : item.project === null ? t(KIND_MESSAGE_KEYS[item.kind]) : item.project.name;
+type RowView = {
+  readonly id: string;
+  readonly href: string;
+  readonly name: string;
+  readonly time: string | null;
+  readonly snippet: string;
+  readonly unread: number;
+  readonly muted: boolean;
+  readonly awaiting: boolean;
+  readonly open: boolean;
+  readonly selected: boolean;
+  readonly indent: boolean;
+  readonly besideHref: string | null;
+  readonly besideLabel: string | undefined;
+  /** 🔴 目印は種類で書き分ける（`data-testid` は静的に読めるテンプレートで書く。`testid-inventory.test.ts`）。 */
+  readonly room: boolean;
+  /** 会社の部屋の相手の会社名（読み上げ用）。 */
+  readonly counterpartyName?: string;
+  readonly kind: string;
+};
+
+function Row({ view }: { readonly view: RowView }) {
+  const strong = view.unread > 0 && !view.muted;
   return (
     <li
-      data-testid={`chat-thread-row-${item.id}`}
-      data-selected={selected ? 'true' : 'false'}
-      data-kind={item.kind}
-      // ✅ 2026-10-16（紺野）: 罫線を引かない。行の区切りは余白と、選んだ行・ホバーの面の色だけ。
-      // ✅ 2026-10-14: スレッド（子）は字下げして、どの会社のチャットに含まれるかを位置で示す。
-      className={cn('flex', isChat ? null : 'pl-6', open ? 'bg-brand-bg' : ROW_HOVER_CLASSES)}
+      data-testid={view.room ? `chat-room-${view.id}` : `chat-thread-row-${view.id}`}
+      data-selected={view.selected ? 'true' : 'false'}
+      data-kind={view.kind}
+      className={cn('flex rounded-md', view.indent ? 'pl-6' : null, view.open ? 'bg-brand-bg' : ROW_HOVER_CLASSES)}
     >
-      {/* 🔴 行のリンクはそのままドラッグできる（ブラウザがリンクの URL を運ぶ）。受け口は
-          `chat-pane-drop-zone.tsx` で、`lib/chat/panes.ts` の `threadIdFromDroppedUrl` が URL を検める。 */}
       <Link
-        href={rowHref}
-        aria-current={selected ? 'page' : undefined}
+        href={view.href}
+        aria-current={view.selected ? 'page' : undefined}
         className={ROW_CLASSES}
-        data-testid={`chat-thread-link-${item.id}`}
+        data-testid={view.room ? `chat-room-link-${view.id}` : `chat-thread-link-${view.id}`}
       >
-        {/* 🔴 印であって意味ではない（`aria-hidden` は `Avatar` が立てる）。 */}
-        <Avatar size="md" initials={displayInitials(isChat ? counterparty : target)} title={target} />
+        <Avatar size="md" initials={displayInitials(view.name)} title={view.name} />
         <span className="min-w-0 flex-1">
-          {/* 🔴 1 段目は**対象の名前だけ**に全幅を使う（時刻は 2 段目の右端。2026-10-13 の実測）。 */}
-          <span className={cn('block truncate text-row text-fg', unread > 0 && !muted ? 'font-bold' : 'font-normal')}>
-            <span className="sr-only">{t('chat.threads.column.target')}</span>
-            {target}
-          </span>
-          {/* ✅ 2026-10-16: 印が増えると幅に収まらず、日時が「右に並べる」の下へはみ出して重なった（デモの実測）。
-              🔴 折り返す（`flex-wrap`）。行の高さは `min-h` なので、2 段になっても崩れない。 */}
-          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <Badge variant="neutral">{t(KIND_MESSAGE_KEYS[item.kind])}</Badge>
-            {/* ✅ 2026-10-14: 要返信（最後の発言が相手から）。色は §3.3「次はあなたの番」= brand。 */}
-            {/* ✅ 2026-10-16: 書きかけ（下書き）がある会話。印はクライアントでだけ決まる。 */}
-            <ChatDraftMark threadId={item.id} label={t('chat.thread.draft')} />
-            {unread > 0 ? (
-              <Badge variant={muted ? 'neutral' : 'brand'} data-testid={`chat-thread-unread-${item.id}`}>
-                {`${t('chat.thread.unread')} ${String(unread)}`}
-              </Badge>
-            ) : null}
-            {awaiting ? (
-              <Badge variant="brand" data-testid={`chat-thread-awaiting-${item.id}`}>
+          <span className="flex items-center gap-2">
+            {view.awaiting ? (
+              <span className="shrink-0 text-xs text-brand" data-testid={`chat-thread-awaiting-${view.id}`}>
                 {t('chat.thread.awaitingReply')}
+              </span>
+            ) : null}
+            <span className={cn('min-w-0 flex-1 truncate text-row text-fg', strong ? 'font-bold' : 'font-normal')}>
+              <span className="sr-only">{t('chat.threads.column.target')}</span>
+              {view.name}
+            </span>
+            <span className="shrink-0 text-xs text-fg-placeholder">
+              <span className="sr-only">{t('chat.threads.column.lastMessage')}</span>
+              {view.time ?? ''}
+            </span>
+          </span>
+          <span className="flex items-center gap-2">
+            <span className="min-w-0 flex-1 truncate text-xs text-fg-muted">{view.snippet === '' ? '\u00a0' : view.snippet}</span>
+            {view.counterpartyName === undefined ? null : (
+              <span className="sr-only" data-testid={`chat-thread-counterparty-${view.id}`}>
+                {view.counterpartyName}
+              </span>
+            )}
+            <ChatDraftMark threadId={view.id} label={t('chat.thread.draft')} />
+            {view.unread > 0 ? (
+              <Badge
+                variant={view.muted ? 'neutral' : 'brand'}
+                data-testid={view.room ? `chat-room-unread-${view.id}` : `chat-thread-unread-${view.id}`}
+              >
+                {String(view.unread)}
               </Badge>
             ) : null}
-            {/* ✅ 2026-10-14: スレッドは親の会社の下にあるので、相手の会社名は読み上げにだけ残す。 */}
-            <span
-              className={isChat ? 'min-w-0 flex-1 truncate text-cell text-fg-muted' : 'sr-only'}
-              data-testid={`chat-thread-counterparty-${item.id}`}
-            >
-              {counterparty}
-            </span>
-            <span className={cn('shrink-0 text-xs text-fg-placeholder', isChat ? null : 'ml-auto')}>
-              <span className="sr-only">{t('chat.threads.column.lastMessage')}</span>
-              {item.lastMessageAt === null ? t('chat.thread.noMessages') : formatDateTimeJst(item.lastMessageAt)}
-            </span>
           </span>
         </span>
       </Link>
-      {/* ✅ 2026-10-14: ドラッグの代わりの導線（キーボード・ドラッグが苦手な人向け）。
-          🔴 一覧の中で `hidden` を使わない（render テストの ③）。`md` 未満では会話を開いている間
-             一覧ごと畳まれる（`page.tsx`）ので、この導線が出るのは実質 `md` 以上だけになる。 */}
-      {besideHref === null ? null : (
+      {view.besideHref === null || view.besideLabel === undefined ? null : (
         <Link
-          href={besideHref}
+          href={view.besideHref}
           // 🔴 `cn` は後勝ち。共通の語の `inline-block` / `text-body` をこちらの指定で上書きする。
-          className={cn(SECONDARY_LINK_CLASSES, 'flex shrink-0 items-center whitespace-nowrap px-3 text-xs')}
-          data-testid={`chat-thread-open-beside-${item.id}`}
+          className={cn(SECONDARY_LINK_CLASSES, 'flex shrink-0 items-center whitespace-nowrap px-2 text-xs')}
+          data-testid={`chat-thread-open-beside-${view.id}`}
         >
-          {openBesideLabel}
+          {view.besideLabel}
         </Link>
       )}
     </li>
   );
+}
+
+/** 会社の部屋（会社チャット・スレッド）の 1 行の表示値。 */
+function threadRowView(item: ChatThreadListItem, context: RowContext): RowView {
+  const { paneState, openIds, selectedThreadId, openBesideLabel, listQuery } = context;
+  const open = openIds.includes(item.id);
+  const isChat = item.kind === 'COMPANY';
+  const counterparty = item.counterpartyName ?? t('chat.thread.unknownName');
+  // 🔴 チャットは相手の会社名、スレッドは案件名。**案件名が読めないときは種別の語**（`views.ts` の 🔴）。
+  const name = isChat ? counterparty : item.project === null ? t(KIND_MESSAGE_KEYS[item.kind]) : item.project.name;
+  return {
+    id: item.id,
+    href: chatHref({ ...withThreadSelected(paneState, item.id), ...listQuery }),
+    name,
+    time: item.lastMessageAt === null ? t('chat.thread.noMessages') : formatListTime(item.lastMessageAt, context.now),
+    snippet: context.lastSnippets[item.id] ?? '',
+    unread: context.unreadCounts[item.id] ?? 0,
+    muted: context.mutedIds.has(item.id),
+    awaiting: context.awaitingReplyIds.has(item.id),
+    open,
+    selected: item.id === selectedThreadId,
+    indent: !isChat,
+    // ✅ 2026-10-14: 「右に並べる」は、何かを開いていて・まだ足せて・この会話が開いていないときだけ（押して何も起きない導線を置かない）。
+    besideHref:
+      openBesideLabel !== undefined && !open && canAddPane(paneState)
+        ? chatHref({ ...withPaneAdded(paneState, item.id), ...listQuery })
+        : null,
+    besideLabel: openBesideLabel,
+    room: false,
+    // ✅ 2026-10-14: 相手の会社名は読み上げにだけ残す（見た目は名前の欄が受け持つ）。
+    counterpartyName: counterparty,
+    kind: item.kind,
+  };
+}
+
+/** DM・グループを読まない画面（テストなど）でも、お気に入りの欄は同じ部品で出す。 */
+const EMPTY_PEOPLE: ChatPeopleData = {
+  rooms: [],
+  contacts: { recent: [], companies: [] },
+  unreadCounts: {},
+  pinnedIds: [],
+  mutedIds: [],
+  lastSnippets: {},
+};
+
+type ListEntry =
+  | { readonly type: 'room'; readonly room: ChatRoomListItem; readonly at: string | null }
+  | { readonly type: 'group'; readonly group: ChatThreadGroup; readonly index: number; readonly at: string | null };
+
+/** 部屋（DM・グループ）と会社のまとまりを 1 本に並べる。更新順のときは新しい順、それ以外は部屋を先に。 */
+function mergeEntries(groups: readonly ChatThreadGroup[], rooms: readonly ChatRoomListItem[], sort: ChatThreadSort): ListEntry[] {
+  const latest = (values: readonly (string | null)[]) =>
+    values.reduce<string | null>((max, value) => (value !== null && (max === null || value > max) ? value : max), null);
+  const roomEntries: ListEntry[] = rooms.map((room) => ({ type: 'room', room, at: room.lastMessageAt }));
+  const groupEntries: ListEntry[] = groups.map((group, index) => ({
+    type: 'group',
+    group,
+    index,
+    at: latest([group.chat?.lastMessageAt ?? null, ...group.threads.map((item) => item.lastMessageAt)]),
+  }));
+  if (sort !== 'recent') return [...roomEntries, ...groupEntries];
+  // 🔴 安定な並べ替え（同時刻・発言なしは元の順）。発言の無いものは最後。
+  return [...roomEntries, ...groupEntries]
+    .map((entry, order) => ({ entry, order }))
+    .sort((x, y) => {
+      if (x.entry.at === y.entry.at) return x.order - y.order;
+      if (x.entry.at === null) return 1;
+      if (y.entry.at === null) return -1;
+      return x.entry.at < y.entry.at ? 1 : -1;
+    })
+    .map(({ entry }) => entry);
+}
+
+/** DM・グループの 1 行の表示値。 */
+function roomRowView(room: ChatRoomListItem, context: RowContext, people: ChatPeopleData | null): RowView {
+  const open = context.openIds.includes(room.id);
+  const name = room.name ?? t('chat.thread.unknownName');
+  return {
+    id: room.id,
+    href: chatHref({ ...withThreadSelected(context.paneState, room.id), ...context.listQuery }),
+    name: room.kind === 'GROUP' ? `${name}（${String(room.memberCount)}${t('chat.people.memberUnit')}）` : name,
+    time: room.lastMessageAt === null ? t('chat.thread.noMessages') : formatListTime(room.lastMessageAt, context.now),
+    snippet: context.lastSnippets[room.id] ?? '',
+    unread: people?.unreadCounts[room.id] ?? 0,
+    muted: context.mutedIds.has(room.id),
+    awaiting: false,
+    open,
+    selected: room.id === context.selectedThreadId,
+    indent: false,
+    besideHref:
+      context.openBesideLabel !== undefined && !open && canAddPane(context.paneState)
+        ? chatHref({ ...withPaneAdded(context.paneState, room.id), ...context.listQuery })
+        : null,
+    besideLabel: context.openBesideLabel,
+    room: true,
+    kind: room.kind,
+  };
 }
 
 export function ChatThreadList({
@@ -224,6 +328,10 @@ export function ChatThreadList({
   unreadOnly = false,
   pinnedIds = [],
   mutedIds = [],
+  people = null,
+  canPost = false,
+  lastSnippets = {},
+  now = new Date(),
 }: ChatThreadListProps) {
   const paneState: ChatPaneState = { thread: selectedThreadId, panes: paneThreadIds };
   const context: RowContext = {
@@ -234,10 +342,13 @@ export function ChatThreadList({
     listQuery: { q, sort, unread: unreadOnly },
     awaitingReplyIds: new Set(awaitingReplyIds),
     unreadCounts,
-    mutedIds: new Set(mutedIds),
+    mutedIds: new Set([...mutedIds, ...(people?.mutedIds ?? [])]),
+    lastSnippets: { ...lastSnippets, ...(people?.lastSnippets ?? {}) },
+    now,
   };
+  const rooms = people?.rooms ?? [];
   const searching = (q !== null && q !== '') || unreadOnly;
-  if (groups.length === 0 && !searching) {
+  if (groups.length === 0 && rooms.length === 0 && !searching && people === null) {
     return (
       <div className="p-4" data-testid="chat-threads">
         <EmptyState description={t('chat.threads.empty')} testIdPrefix="chat-threads-empty-" />
@@ -290,7 +401,7 @@ export function ChatThreadList({
           </Button>
         </div>
       </form>
-      {groups.length === 0 && messageHits.length === 0 ? (
+      {groups.length === 0 && rooms.length === 0 && messageHits.length === 0 && searching ? (
         <div className="flex flex-col gap-2 p-4" data-testid="chat-threads-search-empty">
           <p className="m-0 text-body text-fg-muted">{t('chat.threads.search.empty')}</p>
           <Link
@@ -304,68 +415,64 @@ export function ChatThreadList({
         </div>
       ) : (
         <div className="flex min-h-0 flex-col overflow-y-auto">
-        {/* ✅ 2026-10-16: 自分がピン留めした会話を一番上に（下の会社ごとの木にも、そのまま残る）。 */}
-        {(() => {
-          const all = groups.flatMap((group) => (group.chat === null ? group.threads : [group.chat, ...group.threads]));
-          const pinned = all.filter((item) => pinnedIds.includes(item.id));
-          if (pinned.length === 0) return null;
-          return (
-            <section data-testid="chat-threads-pinned">
-              <h3 className="m-0 px-3 pt-3 pb-1 text-cell font-medium text-fg-muted">{t('chat.threads.pinned')}</h3>
-              <ul className="m-0 list-none p-0">
-                {pinned.map((item) => (
-                  <li key={item.id} className={ROW_HOVER_CLASSES}>
-                    <Link
-                      href={chatHref({ ...withThreadSelected(context.paneState, item.id), ...context.listQuery })}
-                      className="flex items-center gap-2 px-3 py-2"
-                      data-testid={`chat-thread-pinned-${item.id}`}
-                    >
-                      <Badge variant="neutral">{t(KIND_MESSAGE_KEYS[item.kind])}</Badge>
-                      <span className="min-w-0 flex-1 truncate text-cell font-normal text-fg">
-                        {item.kind === 'COMPANY' ? item.counterpartyName ?? t('chat.thread.unknownName') : item.project?.name ?? t(KIND_MESSAGE_KEYS[item.kind])}
-                      </span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          );
-        })()}
-        <ul className="m-0 flex list-none flex-col p-0" aria-label={t('chat.threads.label')}>
-          {groups.map((group, index) => {
-            const name = group.counterpartyName ?? t('chat.thread.unknownName');
-            return (
-              <li key={group.chat?.id ?? `group-${String(index)}`} data-testid={`chat-thread-group-${String(index)}`}>
+        {/* ✅ 2026-10-19: お気に入り（ピン留めした会話を丸いアイコンで）と「＋ 新しい会話」（連絡先）。 */}
+        {(
+          <ChatPeopleSection
+            people={people ?? EMPTY_PEOPLE}
+            selectedThreadId={selectedThreadId}
+            canPost={canPost}
+            favorites={[
+              ...rooms.filter((room) => (people?.pinnedIds ?? []).includes(room.id)).map((room) => ({ id: room.id, name: room.name })),
+              ...groups
+                .flatMap((group) => (group.chat === null ? group.threads : [group.chat, ...group.threads]))
+                .filter((item) => pinnedIds.includes(item.id))
+                .map((item) => ({ id: item.id, name: threadRowView(item, context).name })),
+            ]}
+            unreadCounts={{ ...unreadCounts, ...(people?.unreadCounts ?? {}) }}
+          />
+        )}
+        {/* ✅ 2026-10-19: DM・グループと会社の会話を**1 本の一覧**にする（新しい順）。スレッドは親の会社チャットの下に字下げ。 */}
+        <ul className="m-0 flex list-none flex-col  p-1" aria-label={t('chat.threads.label')}>
+          {mergeEntries(groups, rooms, sort).map((entry, index) =>
+            entry.type === 'room' ? (
+              <Row key={entry.room.id} view={roomRowView(entry.room, context, people)} />
+            ) : (
+              <li key={entry.group.chat?.id ?? `group-${String(index)}`} data-testid={`chat-thread-group-${String(entry.index)}`}>
                 {/* ✅ 2026-10-14: 返信が早い取引先（上位 10%）。🔴 ホストにだけ真になる（`read.ts`）。良いところだけを出す。 */}
-                {group.fastReply ? (
-                  <p className="m-0 flex items-center gap-2 px-3 pt-2" data-testid={`chat-thread-group-fast-${String(index)}`}>
+                {entry.group.fastReply ? (
+                  <p className="m-0 flex items-center gap-2 px-3 pt-2" data-testid={`chat-thread-group-fast-${String(entry.index)}`}>
                     <Badge variant="success">{t('chat.tree.fastReply')}</Badge>
-                    <span className="truncate text-xs text-fg-muted">{name}</span>
                   </p>
                 ) : null}
-                <ul className="m-0 list-none p-0" aria-label={name}>
-                  {group.chat === null ? (
+                <ul className="m-0 flex list-none flex-col  p-0" aria-label={entry.group.counterpartyName ?? t('chat.thread.unknownName')}>
+                  {entry.group.chat === null ? (
                     // 🔴 まだチャットが無い会社も、スレッドの親として名前だけを出す（押せない行は作らない）。
                     <li
                       className={`flex items-center gap-3 px-3 ${CHAT_THREAD_ROW_HEIGHT_CLASS}`}
-                      data-testid={`chat-thread-group-header-${String(index)}`}
+                      data-testid={`chat-thread-group-header-${String(entry.index)}`}
                     >
-                      <Avatar size="md" initials={displayInitials(name)} title={name} />
+                      <Avatar
+                        size="md"
+                        initials={displayInitials(entry.group.counterpartyName ?? t('chat.thread.unknownName'))}
+                        title={entry.group.counterpartyName ?? t('chat.thread.unknownName')}
+                      />
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-row font-normal text-fg">{name}</span>
+                        <span className="block truncate text-row font-normal text-fg">
+                          {entry.group.counterpartyName ?? t('chat.thread.unknownName')}
+                        </span>
                         <span className="block truncate text-xs text-fg-placeholder">{t('chat.tree.noChat')}</span>
                       </span>
                     </li>
                   ) : (
-                    <ThreadRow item={group.chat} context={context} />
+                    <Row view={threadRowView(entry.group.chat, context)} />
                   )}
-                  {group.threads.map((item) => (
-                    <ThreadRow key={item.id} item={item} context={context} />
+                  {entry.group.threads.map((item) => (
+                    <Row key={item.id} view={threadRowView(item, context)} />
                   ))}
                 </ul>
               </li>
-            );
-          })}
+            ),
+          )}
         </ul>
         </div>
       )}
