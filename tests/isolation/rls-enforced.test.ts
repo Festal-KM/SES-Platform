@@ -110,7 +110,8 @@ describe('#2 全表にポリシーが 1 つ以上ある（docs/05 §4.7 #2）', 
     // 🔴 T-11-02 で `tenant_quota_overrides` を 1 表足した（docs/02 F-057 / docs/05 §6.9 API-A6 / migration 20260924000000）。
     // 🔴 2026-10-16 チャットレーンで `chat_read_states` を 1 表足した（CLAUDE.md §4.1 `ChatReadState` / C7 SELF / migration 20261016000000）。
     // 🔴 2026-10-16 チャットレーンで `chat_message_reactions` を 1 表足した（migration 20261016010000）。
-    expect(tables).toHaveLength(59);
+    // 🔴 2026-10-19 チャットレーンで `chat_user_statuses` を 1 表足した（ひとこと状態。書き = 本人 / 読み = users の C8 に連動 / migration 20261019020000）。
+    expect(tables).toHaveLength(60);
 
     const policies = await readPolicies(db);
     const withPolicy = new Set(policies.map((policy) => policy.table));

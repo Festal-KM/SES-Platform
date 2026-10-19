@@ -71,7 +71,15 @@ function ContactRow({ contact }: { readonly contact: ChatContact }) {
         data-testid={`chat-contact-link-${contact.userId}`}
       >
         <Avatar size="sm" initials={displayInitials(name)} title={name} />
-        <span className="min-w-0 flex-1 truncate text-cell text-fg">{name}</span>
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate text-cell text-fg">{name}</span>
+          {/* ✅ 2026-10-19（#140）: ひとこと状態（RLS で読めた人の、空でないものだけ）。 */}
+          {contact.status == null || contact.status === '' ? null : (
+            <span className="truncate text-xs text-fg-placeholder" data-testid={`chat-contact-status-${contact.userId}`}>
+              {contact.status}
+            </span>
+          )}
+        </span>
         {contact.isHost ? null : <span className="shrink-0 rounded-xs bg-info-bg px-1 text-xs text-info">{t('chat.tag.external')}</span>}
         <span className="shrink-0 truncate text-xs text-fg-muted">{contact.companyName ?? ''}</span>
       </Link>

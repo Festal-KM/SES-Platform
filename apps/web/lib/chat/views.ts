@@ -137,6 +137,8 @@ export type ChatMemberView = {
   readonly isHost: boolean;
   /** 読み手本人か（自分には「DM を開く」を出さない）。 */
   readonly self: boolean;
+  /** ✅ 2026-10-19: ひとこと状態（読めた人の、空でないものだけ）。無ければ `null` / 省略。 */
+  readonly status?: string | null;
 };
 
 /** ✅ 2026-10-19（#128）: 一覧の「DM・グループ」の 1 行。 */

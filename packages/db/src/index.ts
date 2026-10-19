@@ -807,3 +807,6 @@ export type {
 //    `summary` の組み立てをここに閉じ、CSV を生成する側（`apps/web/lib/audit-logs/**` / route）に `summary` の識別子を置かない。
 export { AUDIT_LOG_EXPORT_AUDIT_ACTION, recordAuditLogExport } from './audit-log-export.js';
 export type { AuditLogExportMeta, AuditLogExportOutcome } from './audit-log-export.js';
+// ✅ 2026-10-19（#128）: DM の既読表示。相手の既読位置を SECURITY DEFINER 関数 `app_dm_peer_read` で 1 値だけ読む
+//    （`chat_read_states` の C7 SELF は変えない）。
+export { readDmPeerReadMessageIds } from './chat-dm-peer-read.js';

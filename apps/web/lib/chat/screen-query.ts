@@ -188,3 +188,6 @@ export const CHAT_OPEN_DM_API_PATH = '/api/threads/dm';
 
 /** ✅ 2026-10-19（#128）: `POST /api/threads/groups`（グループを作る。作成者は自動で入る）。 */
 export const CHAT_CREATE_GROUP_API_PATH = '/api/threads/groups';
+
+/** ✅ 2026-10-19: 自分のひとこと状態（`PUT`。`docs/05` §6.5 #51j）。 */
+export const CHAT_USER_STATUS_API_PATH = '/api/chat/status';

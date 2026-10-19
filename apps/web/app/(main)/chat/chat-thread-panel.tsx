@@ -41,6 +41,16 @@ const ROW_CLASSES = `flex items-center gap-2 border-t border-border-row ${PANEL_
 const KEY_CLASSES = `shrink-0 text-cell text-fg-muted ${PANEL_KEY_WIDTH_CLASS}`;
 const VALUE_CLASSES = 'min-w-0 flex-1 text-body text-fg';
 
+/** ✅ 2026-10-19（#128 §7.1 ①）: メンバーの名前の下に出すひとこと状態。無ければ描かない。 */
+function statusLine(userId: string, status: string | null | undefined) {
+  if (status == null || status === '') return null;
+  return (
+    <span className="truncate text-xs text-fg-placeholder" data-testid={`chat-panel-member-status-${userId}`}>
+      {status}
+    </span>
+  );
+}
+
 export function ChatThreadPanel({ thread, canPost = false }: ChatThreadPanelProps) {
   // ✅ 2026-10-19（#128）: DM・グループは「誰が読めるか」（メンバー）を出す。会社の段（参加会社）は出さない。
   if (thread.members !== undefined) {
@@ -64,12 +74,14 @@ export function ChatThreadPanel({ thread, canPost = false }: ChatThreadPanelProp
                       <span className="flex min-w-0 flex-col items-start">
                         <span className="truncate text-body text-fg">{name}</span>
                         <span className="truncate text-xs text-fg-muted">{member.companyName ?? ''}</span>
+                        {statusLine(member.userId, member.status)}
                       </span>
                     </ChatOpenDmButton>
                   ) : (
                     <span className="flex flex-col px-3 py-1">
                       <span className="text-body text-fg">{member.self ? `${name}（${t('chat.people.self')}）` : name}</span>
                       <span className="text-xs text-fg-muted">{member.companyName ?? ''}</span>
+                      {statusLine(member.userId, member.status)}
                     </span>
                   )}
                 </li>

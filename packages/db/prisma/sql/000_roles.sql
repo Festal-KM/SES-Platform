@@ -139,6 +139,11 @@ WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_purge_probe')
 -- 直接参照するとポリシーの無限再帰になる。専用ロールの SECURITY DEFINER 関数（app_thread_member_ok）で
 -- 真偽だけを答える。パスワード不要。GRANT・ポリシー・関数は
 -- packages/db/prisma/migrations/20261016050000_chat_people_rooms/migration.sql。
+-- ✅ 2026-10-19（#128）: DM の既読表示のため、chat_read_states の 4 列（tenant_id / user_id / thread_id /
+-- last_read_message_id）の SELECT と、そのロール向けポリシーを足した。所有する関数 app_dm_peer_read は
+-- 「DM で呼び出し元がメンバー」のときだけ相手の既読位置 1 つを返す（それ以外は NULL。chat_read_states の
+-- C7 SELF は変えない）。GRANT・ポリシー・関数は
+-- packages/db/prisma/migrations/20261019010000_chat_dm_peer_read/migration.sql。
 SELECT 'CREATE ROLE app_thread_probe NOLOGIN NOBYPASSRLS'
 WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_thread_probe')
 \gexec

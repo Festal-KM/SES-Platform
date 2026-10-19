@@ -47,6 +47,8 @@ export type ChatConversationMessages = {
   /** ✅ 2026-10-16: 既読・未読。 */
   readonly unreadFrom: string;
   readonly markUnread: string;
+  /** ✅ 2026-10-19（#128）: DM の既読表示。 */
+  readonly read: string;
   /** ✅ 2026-10-16: リアクションの語（4 つ）と「リアクション」。 */
   readonly reactions: Readonly<Record<ChatReactionKind, string>>;
   readonly reactionAdd: string;
@@ -119,6 +121,7 @@ export function chatConversationMessages(): ChatConversationMessages {
     sendNow: t('chat.compose.sendNow'),
     unreadFrom: t('chat.messages.unreadFrom'),
     markUnread: t('chat.message.markUnread'),
+    read: t('chat.message.read'),
     reactions: {
       OK: t('chat.reaction.OK'),
       THANKS: t('chat.reaction.THANKS'),

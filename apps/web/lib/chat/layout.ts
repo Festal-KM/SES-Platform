@@ -19,7 +19,12 @@ export function conversationLayoutFor(kind: ChatThreadKind): ChatConversationLay
 }
 
 /** 会話の見出しに出す名前（Lark の会話ヘッダに当たる）。読めなければ `null`（画面が既定の見出しに戻す）。 */
-export type ChatConversationTitle = { readonly title: string | null; readonly subtitle: string | null };
+export type ChatConversationTitle = {
+  readonly title: string | null;
+  readonly subtitle: string | null;
+  /** ✅ 2026-10-19: DM の相手のひとこと状態（名前の横に出す）。DM 以外・状態が無ければ `null` / 省略。 */
+  readonly status?: string | null;
+};
 
 /**
  * 会話の見出しを決める。
@@ -29,10 +34,15 @@ export type ChatConversationTitle = { readonly title: string | null; readonly su
  *    画面に増やさない（読み手に見えてよい範囲は `lib/chat/read.ts` と RLS が決めている）。
  */
 export function conversationTitleFor(
-  thread: Pick<ChatThreadDetailView, 'kind' | 'project' | 'counterpartyName'>,
+  thread: Pick<ChatThreadDetailView, 'kind' | 'project' | 'counterpartyName'> & Partial<Pick<ChatThreadDetailView, 'members'>>,
 ): ChatConversationTitle {
   if (thread.kind === 'PROJECT') {
     return { title: thread.project?.name ?? thread.counterpartyName, subtitle: thread.project === null ? null : thread.counterpartyName };
+  }
+  if (thread.kind === 'DM') {
+    // 🔴 右の欄（メンバー）に既に出ている相手の状態だけを使う（新しい情報を足さない）。
+    const peer = thread.members?.find((member) => !member.self);
+    return { title: thread.counterpartyName, subtitle: null, status: peer?.status ?? null };
   }
   return { title: thread.counterpartyName, subtitle: null };
 }

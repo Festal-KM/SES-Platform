@@ -42,8 +42,10 @@ import { readChatScreen } from '../../../lib/chat/read';
 import { CHAT_PATH, chatHref, chatScreenQuerySchema, parseChatFilter } from '../../../lib/chat/screen-query';
 import { ChatRail } from './chat-rail';
 import { CHAT_THREAD_SORT_DEFAULT } from '../../../lib/chat/thread-tree';
+import { readMyChatUserStatus } from '../../../lib/chat/user-status';
 import { CHAT_TRAIL } from '../../../lib/shell/page-trail';
 import { PageHeading } from '../_shell/page-heading';
+import { ChatStatusSection } from './chat-status-section';
 import { ChatConversation } from './chat-conversation';
 import { ChatPaneDropZone } from './chat-pane-drop-zone';
 import { chatConversationMessages, chatPaneDropMessages } from './chat-props';
@@ -89,6 +91,8 @@ export default async function ChatPage({
   const tiled = data.panes.length > 0;
   const conversationMessages = chatConversationMessages();
   const canPost = canPostChatMessage(ctx.role);
+  // ✅ 2026-10-19（#128 §7.1 ①）: 自分のひとこと状態（入口の初期値）。閲覧専用には入口を描かないので読まない。
+  const myStatus = canPost ? await readMyChatUserStatus(ctx) : '';
   // ✅ 2026-10-14: 会話を開く・閉じる URL に一覧の検索語と並べ方を引き継ぐ（開くたびに検索が消えない）。
   // ✅ 2026-10-19（v2）: 左の列の絞り込み（`f=`）。旧「未読のみ」（`unread=1`）は「未読」の絞り込みとして読む。
   const filter = query.f === undefined && query.unread === '1' ? parseChatFilter('unread') : parseChatFilter(query.f);
@@ -121,6 +125,7 @@ export default async function ChatPage({
       >
         <PageHeading trail={CHAT_TRAIL} title={t('chat.title')} />
         <p className="mb-4 text-body text-fg-muted">{t('chat.threads.population')}</p>
+        <ChatStatusSection canPost={canPost} text={myStatus} />
         {/* 🔴 不存在・他社・他テナントで同じ文言（`docs/05` §4.8） */}
         {data.requestedThreadMissing ? (
           <Alert variant="warning" className="mb-4" data-testid="chat-thread-missing">
@@ -206,6 +211,8 @@ export default async function ChatPage({
                 initialNextCursor={data.messages.nextCursor}
                 lastReadMessageId={data.lastReadMessageIds[selected.id] ?? null}
                 prefs={data.threadPrefs[selected.id] ?? { pinned: false, muted: false }}
+                // ✅ 2026-10-19（#128）: 相手の既読は DM だけ（グループ・会社グループ・スレッドには渡さない）。
+                {...(selected.kind === 'DM' ? { peerReadMessageId: data.peerReadMessageIds[selected.id] ?? null } : {})}
                 canPost={canPost}
                 messages={conversationMessages}
                 {...(tiled ? { closeHref: chatHref({ ...withPaneClosed(paneState, selected.id), ...listQuery }) } : {})}
@@ -250,6 +257,7 @@ export default async function ChatPage({
                   initialNextCursor={pane.messages.nextCursor}
                   lastReadMessageId={data.lastReadMessageIds[pane.thread.id] ?? null}
                   prefs={data.threadPrefs[pane.thread.id] ?? { pinned: false, muted: false }}
+                  {...(pane.thread.kind === 'DM' ? { peerReadMessageId: data.peerReadMessageIds[pane.thread.id] ?? null } : {})}
                   canPost={canPost}
                   messages={conversationMessages}
                   closeHref={chatHref({ ...withPaneClosed(paneState, pane.thread.id), ...listQuery })}
