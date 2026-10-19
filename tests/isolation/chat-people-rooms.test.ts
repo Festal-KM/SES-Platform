@@ -11,7 +11,7 @@
 //   ⑥ 取引先の人からも、自社（ホスト）の人との DM を開ける（作った直後の部屋が本人に見える）
 //   ⑦ 監査ログに本文・名前が載らない（誰と誰かの ID だけ）
 //   ⑧ ✅ 2026-10-19: DM の既読表示 —— 相手の既読位置（`app_dm_peer_read`）は DM のメンバーにだけ返り、
-//      非メンバー・グループ・会社グループには NULL。関数の EXECUTE は app_tenant だけ
+//      非メンバー・別テナント・グループ・会社グループ・案件スレッド・GUC 未設定には NULL。関数の EXECUTE は app_tenant だけ
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   configureTenantDb,
@@ -26,11 +26,14 @@ import {
   MESSAGE_A_P1,
   PARTNER_A1,
   PARTNER_A2,
+  PROJECT_A_PUBLISHED,
   TENANT_A,
+  TENANT_B,
   THREAD_A_P1,
   USER_A_HOST,
   USER_A_PARTNER,
   USER_A_PARTNER2,
+  USER_B_HOST,
 } from './support/fixtures.js';
 import { startIsolationDatabase, type IsolationDatabase } from './support/postgres.js';
 
@@ -651,6 +654,75 @@ describe('🔴 DM の既読表示: 相手の既読位置は DM のメンバー�
       expect(screen.thread?.id).toBe(group.id);
       expect(screen.peerReadMessageIds).toEqual({});
     }
+  });
+
+  /** GUC を任意の値で立てて（空文字 = 未設定）、app_tenant の接続で関数を生 SQL で呼ぶ。 */
+  async function peerReadWithGuc(guc: { readonly tenantId: string; readonly partnerCompanyId: string; readonly userId: string }, threadId: string) {
+    const client = createUnextendedClient(database.tenantUrl);
+    try {
+      return await client.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(`SELECT set_config('app.tenant_id', '${guc.tenantId}', true)`);
+        await tx.$executeRawUnsafe(`SELECT set_config('app.partner_company_id', '${guc.partnerCompanyId}', true)`);
+        await tx.$executeRawUnsafe(`SELECT set_config('app.actor_user_id', '${guc.userId}', true)`);
+        const rows = await tx.$queryRawUnsafe<Array<{ peer: string | null }>>(
+          `SELECT app_dm_peer_read('${threadId}'::uuid)::text AS peer`,
+        );
+        return rows[0]?.peer ?? null;
+      });
+    } finally {
+      await client.$disconnect();
+    }
+  }
+
+  it('🔴 別テナント（テナント B）の文脈から、テナント A の DM の ID を指定しても NULL（生 SQL・アプリの経路とも）', async () => {
+    const threadId = await hostA1Dm();
+    expect(await peerReadAs(AS_HOST, threadId), '対照: テナント A のメンバーには値がある').not.toBeNull();
+    expect(await peerReadWithGuc({ tenantId: TENANT_B, partnerCompanyId: '', userId: USER_B_HOST }, threadId)).toBeNull();
+    // 🔴 テナント B の利用者がテナント A のメンバー ID を名乗っても、テナントが違えば NULL。
+    expect(await peerReadWithGuc({ tenantId: TENANT_B, partnerCompanyId: '', userId: USER_A_HOST }, threadId)).toBeNull();
+    const hostB = await resolveTenantCtx(
+      { tenantId: TENANT_B, lifecycleState: 'ACTIVE', partnerSuspendedAt: null, twoFactor: 'NOT_ENROLLED', partnerCompanyId: null, userId: USER_B_HOST, role: 'SALES' },
+      DEVICE,
+    );
+    expect(await readDmPeerReadMessageIds(hostB, [threadId])).toEqual({ [threadId]: null });
+  });
+
+  it('🔴 GUC 未設定（app.tenant_id / app.actor_user_id が空）の呼び出しは NULL（fail-closed）', async () => {
+    const threadId = await hostA1Dm();
+    expect(await peerReadAs(AS_HOST, threadId), '対照: GUC を立てれば値がある').not.toBeNull();
+    expect(await peerReadWithGuc({ tenantId: '', partnerCompanyId: '', userId: '' }, threadId)).toBeNull();
+    expect(await peerReadWithGuc({ tenantId: TENANT_A, partnerCompanyId: '', userId: '' }, threadId), '利用者だけ空').toBeNull();
+    expect(await peerReadWithGuc({ tenantId: '', partnerCompanyId: '', userId: USER_A_HOST }, threadId), 'テナントだけ空').toBeNull();
+    // GUC を 1 つも立てない接続でも NULL。
+    const client = createUnextendedClient(database.tenantUrl);
+    try {
+      const rows = await client.$queryRawUnsafe<Array<{ peer: string | null }>>(`SELECT app_dm_peer_read('${threadId}'::uuid)::text AS peer`);
+      expect(rows[0]?.peer ?? null).toBeNull();
+    } finally {
+      await client.$disconnect();
+    }
+  });
+
+  it('🔴 案件スレッド（kind = PROJECT）では、参加会社の人にも NULL', async () => {
+    const thread = await admin.chatThread.create({
+      data: { tenantId: TENANT_A, kind: 'PROJECT', projectId: PROJECT_A_PUBLISHED, partnerCompanyId: PARTNER_A1 },
+      select: { id: true },
+    });
+    await admin.threadParticipant.createMany({
+      data: [
+        { tenantId: TENANT_A, threadId: thread.id, partnerCompanyId: null, joinedAt: new Date() },
+        { tenantId: TENANT_A, threadId: thread.id, partnerCompanyId: PARTNER_A1, joinedAt: new Date() },
+      ],
+    });
+    const messageId = await seedMessage(host, thread.id);
+    await markRead(host, thread.id, messageId);
+    await markRead(partnerA1, thread.id, messageId);
+    // 対照: 2 人とも既読位置を持っている（行が在るのに返さない、を確かめる）。
+    expect(await admin.chatReadState.count({ where: { threadId: thread.id } })).toBe(2);
+    expect(await peerReadAs(AS_HOST, thread.id)).toBeNull();
+    expect(await peerReadAs(AS_A1, thread.id)).toBeNull();
+    expect(await readDmPeerReadMessageIds(host, [thread.id])).toEqual({ [thread.id]: null });
+    expect(await readDmPeerReadMessageIds(partnerA1, [thread.id])).toEqual({ [thread.id]: null });
   });
 
   it('④ 関数の EXECUTE は app_tenant だけ。所有者は app_thread_probe・SECURITY DEFINER・search_path 固定', async () => {
