@@ -20,6 +20,12 @@ export const CHAT_THREAD_SORT_DEFAULT: ChatThreadSort = 'recent';
 
 /** 会社 1 社ぶん。 */
 export type ChatThreadGroup = {
+  /**
+   * ✅ 2026-10-19（v2）: この会社のまとまりの鍵（左の列の「会社から」の `f=co.<鍵>`）。
+   * 🔴 取引先の ID ではなく、**その会社の会話の行の ID**（会社チャットがあればその ID、無ければ最も古いスレッドの ID）。
+   *    検索・未読で行が減っても変わらない（絞る前の全行から決める）。
+   */
+  readonly key: string;
   /** 相手の会社名（読めなければ `null`。画面は「表示できません」を出す）。 */
   readonly counterpartyName: string | null;
   /** その会社とのチャット（企業スレッド）。まだ無ければ `null`。 */
@@ -79,6 +85,7 @@ export function buildThreadTree(
     string,
     { counterpartyName: string | null; chat: ChatThreadListItem | null; threads: ChatThreadListItem[]; fastReply: boolean }
   >();
+  const keys = companyKeysOf(input);
   for (const { groupKey, item } of input) {
     const group = byKey.get(groupKey) ?? {
       counterpartyName: item.counterpartyName,
@@ -92,6 +99,12 @@ export function buildThreadTree(
     byKey.set(groupKey, group);
   }
 
+  // 絞る前の全行から決めた鍵を、まとまりの最初の行から引く（`companyKeysOf` と同じ規則）。
+  const keyOf = (group: { chat: ChatThreadListItem | null; threads: ChatThreadListItem[] }) => {
+    const first = group.chat ?? group.threads[0];
+    const groupKey = first === undefined ? undefined : input.find((entry) => entry.item.id === first.id)?.groupKey;
+    return (groupKey === undefined ? undefined : keys.get(groupKey)) ?? first?.id ?? '';
+  };
   const needle = options.q === null ? '' : options.q.trim().toLocaleLowerCase('ja');
   const groups: ChatThreadGroup[] = [];
   const only = options.onlyThreadIds;
@@ -104,12 +117,12 @@ export function buildThreadTree(
     }
     const threads = [...group.threads].sort(compareRecent);
     if (needle === '' || matches(group.counterpartyName, needle)) {
-      groups.push({ counterpartyName: group.counterpartyName, chat: group.chat, threads, fastReply: group.fastReply });
+      groups.push({ key: keyOf(group), counterpartyName: group.counterpartyName, chat: group.chat, threads, fastReply: group.fastReply });
       continue;
     }
     const hits = threads.filter((thread) => matches(thread.project?.name ?? null, needle));
     if (hits.length > 0) {
-      groups.push({ counterpartyName: group.counterpartyName, chat: group.chat, threads: hits, fastReply: group.fastReply });
+      groups.push({ key: keyOf(group), counterpartyName: group.counterpartyName, chat: group.chat, threads: hits, fastReply: group.fastReply });
     }
   }
 
@@ -122,6 +135,21 @@ export function buildThreadTree(
     });
   }
   return groups.sort((a, b) => compareRecent(latestOf(a), latestOf(b)));
+}
+
+/**
+ * ✅ 2026-10-19（v2）: 会社ごとのまとまりの鍵（`groupKey` → 会社チャットの ID、無ければ最も古いスレッドの ID）。
+ * 🔴 `read.ts` が DM・グループの「どの会社の会話か」を引くのにも使う（同じ 1 実装）。
+ */
+export function companyKeysOf(input: readonly ChatThreadTreeInput[]): ReadonlyMap<string, string> {
+  const chats = new Map<string, string>();
+  const oldest = new Map<string, string>();
+  for (const { groupKey, item } of input) {
+    if (item.kind === 'COMPANY' && !chats.has(groupKey)) chats.set(groupKey, item.id);
+    const current = oldest.get(groupKey);
+    if (current === undefined || item.id < current) oldest.set(groupKey, item.id);
+  }
+  return new Map([...oldest.entries()].map(([groupKey, id]) => [groupKey, chats.get(groupKey) ?? id]));
 }
 
 /** ✅ 2026-10-14: 本文の検索を始める最短の語の長さ（短すぎる語で全文を走査しない）。 */

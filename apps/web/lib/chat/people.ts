@@ -53,9 +53,11 @@ export const CHAT_CONTACTS_MAX = 500;
 /** 一覧に読む DM・グループの上限。 */
 export const CHAT_ROOMS_MAX = 300;
 
-const ROOM_SELECT = { id: true, kind: true, title: true, memberUserIds: true, lastMessageAt: true } as const;
+const ROOM_SELECT = { id: true, kind: true, title: true, memberUserIds: true, lastMessageAt: true, partnerCompanyId: true } as const;
 type RoomRow = {
   readonly id: string;
+  /** 🔴 読み出しの中でだけ使う（会社のまとまりの鍵を引く）。画面データに載せない。 */
+  readonly partnerCompanyId: string | null;
   readonly kind: string;
   readonly title: string | null;
   readonly memberUserIds: readonly string[];
@@ -101,6 +103,8 @@ function roomName(row: RoomRow, viewerId: string, users: ReadonlyMap<string, Use
 export async function readPeople(
   ctx: AuthenticatedTenantCtx,
   db: Pick<TenantDb, 'chatThread' | 'user' | 'partnerCompany' | 'tenant' | 'message' | 'chatReadState'>,
+  /** ✅ 2026-10-19（v2）: 取引先 → 会社のまとまりの鍵（`read.ts`）。省略時は会社から辿れない。 */
+  companyKeyOf: (partnerCompanyId: string | null) => string | null = () => null,
 ): Promise<ChatPeopleData> {
   // ① 母集団は C10 MEMBER（自分がメンバーの部屋だけ）。`where` は種類だけ。
   const rows = (await db.chatThread.findMany({
@@ -176,6 +180,9 @@ export async function readPeople(
       name: roomName(row, ctx.userId, users),
       memberCount: row.memberUserIds.length,
       lastMessageAt: row.lastMessageAt?.toISOString() ?? null,
+      memberUserIds: [...row.memberUserIds],
+      external: row.partnerCompanyId !== null,
+      companyKey: companyKeyOf(row.partnerCompanyId),
     })),
     contacts: { recent, companies },
     unreadCounts: Object.fromEntries(unread),

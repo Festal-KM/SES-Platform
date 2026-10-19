@@ -38,6 +38,7 @@ import {
   MESSAGE_SEARCH_LIMIT,
   MESSAGE_SEARCH_MIN_LENGTH,
   buildThreadTree,
+  companyKeysOf,
   messageSnippet,
   type ChatThreadGroup,
   type ChatThreadSort,
@@ -248,7 +249,7 @@ async function readThreadTree(
   ctx: AuthenticatedTenantCtx,
   db: Pick<TenantDb, 'chatThread' | 'partnerCompany' | 'tenant' | 'project' | 'message' | 'chatReadState'>,
   options: { readonly sort: ChatThreadSort; readonly q: string | null; readonly unreadOnly?: boolean },
-): Promise<ChatThreadTreeData> {
+): Promise<{ readonly tree: ChatThreadTreeData; readonly companyKeyOf: (partnerCompanyId: string | null) => string | null }> {
   const rows = (await db.chatThread.findMany({
     where: { kind: { in: [...COMPANY_ROOM_KINDS] } },
     select: CHAT_THREAD_SELECT,
@@ -340,7 +341,10 @@ async function readThreadTree(
           threadTitle: allTitles.get(message.threadId) ?? null,
           snippet: messageSnippet(message.body ?? '', needle),
         }));
-  return {
+  // ✅ 2026-10-19（v2）: 取引先 → 会社のまとまりの鍵（DM・グループを「会社から」辿るため。🔴 取引先の ID は画面データに出さない）。
+  const keyByPartner = companyKeysOf(kept.map((row) => ({ groupKey: row.partnerCompanyId, item: { id: row.id, kind: row.kind } as ChatThreadListItem })));
+  const companyKeyOf = (partnerCompanyId: string | null) => (partnerCompanyId === null ? null : keyByPartner.get(partnerCompanyId) ?? null);
+  const tree: ChatThreadTreeData = {
     groups,
     truncated,
     lastSnippets,
@@ -350,6 +354,7 @@ async function readThreadTree(
     pinnedIds: [...prefs.entries()].filter(([, value]) => value.pinned).map(([id]) => id),
     mutedIds: [...prefs.entries()].filter(([, value]) => value.muted).map(([id]) => id),
   };
+  return { tree, companyKeyOf };
 }
 
 /**
@@ -580,8 +585,9 @@ export async function readChatScreen(
   return withTenant(ctx, async (db) => {
     // ✅ 2026-10-14（レビュー指摘）: 木を読むときはページ単位の一覧を読まない（画面は木しか使わず、
     //    読んでも捨てるだけになる）。`threads` は空のページで返す。
-    const tree = input.tree === undefined ? null : await readThreadTree(ctx, db, input.tree);
-    const people = input.tree === undefined ? null : await readPeople(ctx, db);
+    const treeRead = input.tree === undefined ? null : await readThreadTree(ctx, db, input.tree);
+    const tree = treeRead?.tree ?? null;
+    const people = treeRead === null ? null : await readPeople(ctx, db, treeRead.companyKeyOf);
     const threads: ChatThreadListView =
       tree === null ? await readThreadPage(ctx, db, input.threadsQuery) : { items: [], nextCursor: null };
     if (input.threadId === null) {

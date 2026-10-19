@@ -53,7 +53,7 @@ describe('chatScreenQuerySchema', () => {
   });
 
   it('🔴 分離キーをスキーマが持たない（`tenantId` / `partnerCompanyId` の口が無い）', () => {
-    expect(Object.keys(chatScreenQuerySchema.shape).sort()).toEqual(['pane', 'q', 'sort', 'thread', 'threads', 'unread']);
+    expect(Object.keys(chatScreenQuerySchema.shape).sort()).toEqual(['f', 'info', 'pane', 'q', 'sort', 'thread', 'threads', 'unread']);
   });
 });
 

@@ -115,6 +115,9 @@ export type ChatConversationProps = {
   readonly lastReadMessageId?: string | null;
   /** ✅ 2026-10-16: 自分のピン留め・ミュート（見出しの切り替えボタン）。省略時は出さない。 */
   readonly prefs?: { readonly pinned: boolean; readonly muted: boolean };
+  /** ✅ 2026-10-19（v2）: 右の情報欄を開く・閉じる行き先と語。省略時は出さない。 */
+  readonly infoHref?: string;
+  readonly infoLabel?: string;
 };
 
 /** 投稿の応答（`docs/05` §6.5 #51 の上位互換。`route.ts` の 🔴）。 */
@@ -131,6 +134,8 @@ export function ChatConversation({
   canPost,
   messages,
   closeHref,
+  infoHref,
+  infoLabel,
   lastReadMessageId = null,
   prefs,
 }: ChatConversationProps) {
@@ -752,6 +757,11 @@ export function ChatConversation({
             prefs={prefs}
             labels={{ pin: messages.pin, unpin: messages.unpin, mute: messages.mute, unmute: messages.unmute }}
           />
+        )}
+        {infoHref === undefined || infoLabel === undefined ? null : (
+          <Link href={infoHref} className={cn(SECONDARY_LINK_CLASSES, 'shrink-0 text-xs')} data-testid={`chat-thread-info-${threadId}`}>
+            {infoLabel}
+          </Link>
         )}
         {/* ✅ 2026-10-14: 並べて開いているときだけ「閉じる」を置く（`md` 以上。モバイルは 1 列の切替のまま）。 */}
         {closeHref === undefined ? null : (
