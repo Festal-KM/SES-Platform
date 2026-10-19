@@ -58,6 +58,8 @@ const { createCandidateReference } = await import('../../apps/web/lib/anonymize/
 const candidateRef = createCandidateReference(TEST_SECRET);
 
 vi.mock('../../apps/web/lib/db/bootstrap', () => ({
+  // ✅ 2026-10-16: `lib/auth/tenant-context.ts` が ctx を組むときに読む（2 要素認証の方針）。テストは本番と同じ厳しい側。
+  twoFactorPolicy: () => 'ENFORCED' as const,
   candidateReference: () => candidateRef,
 }));
 
