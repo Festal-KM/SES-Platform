@@ -24,9 +24,15 @@
 // 🔴 純粋関数のみ（`@ses/db` / `@ses/i18n` / 現在時刻に依存しない）。クライアントの島が
 //    **型だけ**を読めるようにするためである（`tests/static/client-db-boundary.test.ts`）。
 
-/** `chat_threads.kind`（CHECK の 2 値）。 */
-export const CHAT_THREAD_KINDS = ['PROJECT', 'COMPANY'] as const;
+/** `chat_threads.kind`（CHECK の 4 値。DM / GROUP は 2026-10-16・#128）。 */
+export const CHAT_THREAD_KINDS = ['PROJECT', 'COMPANY', 'DM', 'GROUP'] as const;
 export type ChatThreadKind = (typeof CHAT_THREAD_KINDS)[number];
+/**
+ * 今の一覧・会話の画面が扱う部屋の種類（会社グループ・スレッド）。
+ * ✅ 2026-10-16（#128）: DM / GROUP は DB に足したが、画面は次の段で作る。それまで一覧・会話の読み出しは
+ *    この 2 種類に絞る（DM / GROUP は取引先を持たないことがあり、会社ごとの木に載せられないため）。
+ */
+export const COMPANY_ROOM_KINDS = ['PROJECT', 'COMPANY'] as const satisfies readonly ChatThreadKind[];
 
 /** 対象案件の参照（名前が読めなければ `null` を入れる。下の 🔴）。 */
 export type ChatProjectRef = {

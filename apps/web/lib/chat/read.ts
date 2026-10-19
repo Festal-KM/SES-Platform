@@ -52,6 +52,7 @@ import {
 } from './thread-cursor';
 import {
   chatMessageView,
+  COMPANY_ROOM_KINDS,
   chatThreadDetailView,
   chatThreadListItem,
   type ChatMessageRow,
@@ -179,7 +180,7 @@ async function readThreadPage(
     cursor === null ? {} : chatThreadCursorWhere(cursor);
 
   const rows = (await db.chatThread.findMany({
-    where,
+    where: { ...where, kind: { in: [...COMPANY_ROOM_KINDS] } },
     select: CHAT_THREAD_SELECT,
     // 🔴 最終更新の新しい順。**メッセージが 1 件も無いスレッド（`NULL`）は最後**に置く
     //    （Postgres の `DESC` の既定は NULLS FIRST であり、放置されたスレッドが先頭に来てしまう）。
@@ -244,6 +245,7 @@ async function readThreadTree(
   options: { readonly sort: ChatThreadSort; readonly q: string | null; readonly unreadOnly?: boolean },
 ): Promise<ChatThreadTreeData> {
   const rows = (await db.chatThread.findMany({
+    where: { kind: { in: [...COMPANY_ROOM_KINDS] } },
     select: CHAT_THREAD_SELECT,
     orderBy: [{ lastMessageAt: { sort: 'desc', nulls: 'last' } }, { id: 'desc' }],
     take: CHAT_THREAD_TREE_MAX + 1,
@@ -351,7 +353,10 @@ export async function findChatThreadRow(
   threadId: string,
 ): Promise<SelectedThreadRow | null> {
   // 🔴 `where` は「どのスレッドか」の業務上の指定だけ。参加会社の条件を書き足さない（C6 が決める）。
-  const row = await db.chatThread.findFirst({ where: { id: threadId }, select: CHAT_THREAD_SELECT });
+  const row = await db.chatThread.findFirst({
+    where: { id: threadId, kind: { in: [...COMPANY_ROOM_KINDS] } },
+    select: CHAT_THREAD_SELECT,
+  });
   return row === null ? null : (row as SelectedThreadRow);
 }
 

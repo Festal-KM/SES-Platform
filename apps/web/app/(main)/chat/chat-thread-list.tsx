@@ -59,7 +59,9 @@ import { ChatDraftMark } from './chat-draft-mark';
 const KIND_MESSAGE_KEYS = {
   PROJECT: 'chat.thread.kind.PROJECT',
   COMPANY: 'chat.thread.kind.COMPANY',
-} as const satisfies Readonly<Record<ChatThreadKind, 'chat.thread.kind.PROJECT' | 'chat.thread.kind.COMPANY'>>;
+  DM: 'chat.thread.kind.DM',
+  GROUP: 'chat.thread.kind.GROUP',
+} as const satisfies Readonly<Record<ChatThreadKind, `chat.thread.kind.${ChatThreadKind}`>>;
 
 const SORT_MESSAGE_KEYS = {
   recent: 'chat.threads.sort.recent',

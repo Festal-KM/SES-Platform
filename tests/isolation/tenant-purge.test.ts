@@ -67,6 +67,7 @@ import {
   TENANT_A,
   TENANT_B,
   USER_A_HOST,
+  USER_A_PARTNER,
   USER_B_HOST,
 } from './support/fixtures.js';
 import { startIsolationDatabase, type IsolationDatabase } from './support/postgres.js';
@@ -74,6 +75,10 @@ import { startIsolationRedis, type IsolationRedis } from './support/redis.js';
 
 const SETUP_TIMEOUT_MS = 600_000;
 const PURGE_GRACE_DAYS = 30;
+/** ✅ 2026-10-16（#129）: 人単位の部屋（DM・社内のグループ）とグループの 2 人目のホスト。 */
+const PURGE_DM_THREAD = '01930000-0000-7000-8000-00000000d201';
+const PURGE_GROUP_THREAD = '01930000-0000-7000-8000-00000000d202';
+const PURGE_HOST2 = '01930000-0000-7000-8000-00000000d203';
 const META = { deviceKind: 'desktop', ipAddress: '203.0.113.42' } as const;
 const DEVICE = { deviceKind: META.deviceKind } as const;
 /** `CLOSING` に入った時刻。UTC 00:00 = JST 09:00 → 暦日 2026-09-01。削除予定日 = 2026-10-01。 */
@@ -328,6 +333,22 @@ beforeAll(async () => {
     VALUES (gen_random_uuid(), ${TENANT_A}::uuid, ${PARTNER_A1}::uuid, ${PROPOSAL_A_P1}::uuid, ${PARTNER_ENGINEER_NAME}, 'Partner A1',
             '[{"skillId":"00000000-0000-0000-0000-000000000000","name":"Go","years":2,"level":3}]'::jsonb,
             '[{"periodFrom":"2019-04","periodTo":"2021-03","role":"PG","description":"取引先の経歴","technologies":"Go"}]'::jsonb, now())`;
+
+  // ✅ 2026-10-16（#129 レビュー NG-1）: 人単位の部屋（ホスト ↔ 取引先の DM・社内だけのグループ）の発言。
+  //    削除スコープは利用者を持たないので、DM / GROUP の部屋が C6 で見えず、発言の継承トリガが落ちていた。
+  await admin.$executeRaw`
+    INSERT INTO users (id, tenant_id, owner_partner_company_id, email, display_name, password_hash)
+    VALUES (${PURGE_HOST2}::uuid, ${TENANT_A}::uuid, NULL, 'purge-host2@example.test', 'ホスト二人目', 'x')`;
+  await admin.$executeRaw`
+    INSERT INTO chat_threads (id, tenant_id, kind, partner_company_id, member_user_ids, dm_key)
+    VALUES (${PURGE_DM_THREAD}::uuid, ${TENANT_A}::uuid, 'DM', ${PARTNER_A1}::uuid,
+            ARRAY[${USER_A_HOST}::uuid, ${USER_A_PARTNER}::uuid], ${[USER_A_HOST, USER_A_PARTNER].sort().join(':')}),
+           (${PURGE_GROUP_THREAD}::uuid, ${TENANT_A}::uuid, 'GROUP', NULL,
+            ARRAY[${USER_A_HOST}::uuid, ${PURGE_HOST2}::uuid], NULL)`;
+  await admin.$executeRaw`
+    INSERT INTO messages (id, tenant_id, owner_partner_company_id, thread_id, sender_user_id, sender_partner_company_id, body)
+    VALUES (gen_random_uuid(), ${TENANT_A}::uuid, ${PARTNER_A1}::uuid, ${PURGE_DM_THREAD}::uuid, ${USER_A_HOST}::uuid, NULL, 'DM の本文'),
+           (gen_random_uuid(), ${TENANT_A}::uuid, NULL, ${PURGE_GROUP_THREAD}::uuid, ${USER_A_HOST}::uuid, NULL, 'グループの本文')`;
 
   const base = { partnerSuspendedAt: null, twoFactor: 'VERIFIED' as const, partnerCompanyId: null };
   hostOwnerA = await resolveTenantCtx({ ...base, tenantId: TENANT_A, lifecycleState: 'CLOSING', userId: USER_A_HOST, role: 'OWNER' }, DEVICE);
@@ -594,7 +615,8 @@ describe('AC-2 / AC-3 / AC-8 ④⑤⑦ PURGED 後の状態', () => {
     expect(counts.engineers).toBe(3);
     expect(counts.skill_sheets).toBe(2);
     expect(counts.engineer_careers).toBe(2);
-    expect(counts.messages).toBe(2);
+    // ✅ 2026-10-16（#129）: 会社チャット 2 + DM 1 + 社内のグループ 1。
+    expect(counts.messages).toBe(4);
 
     const audits = await auditRows('tenant.purge');
     expect(audits).toHaveLength(1);
@@ -663,5 +685,7 @@ describe('AC-7 ⑧ 運営者の DB ロールは返却データに到達できな
     expect(rows.filter((r) => r.policyname.endsWith('_purge_scope_select')).map((r) => r.tablename).sort()).toEqual(tables);
     expect(rows.filter((r) => r.policyname.endsWith('_purge_scope_update')).map((r) => r.tablename).sort()).toEqual(tables);
     expect(rows.filter((r) => r.policyname.endsWith('_purge_scope_delete')).map((r) => r.tablename)).toEqual(['engineer_careers']);
+    // ✅ 2026-10-16（#129）: 消さない表を「読むだけ」のポリシー。発言の継承トリガが DM / GROUP の部屋を読むため。
+    expect(rows.filter((r) => r.policyname.endsWith('_purge_scope_parent_read')).map((r) => r.tablename)).toEqual(['chat_threads']);
   });
 });
