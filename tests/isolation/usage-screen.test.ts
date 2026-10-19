@@ -70,6 +70,8 @@ vi.mock('../../apps/web/lib/auth/session', () => ({
 }));
 
 vi.mock('../../apps/web/lib/db/bootstrap', () => ({
+  // ✅ 2026-10-16: `lib/auth/tenant-context.ts` が ctx を組むときに読む（2 要素認証の方針）。テストは本番と同じ厳しい側。
+  twoFactorPolicy: () => 'ENFORCED' as const,
   usageLimitsRuntime: () => ({
     warnPercent: LIMITS.warnPercent,
     aiUnitQuotas: LIMITS.aiUnitQuotas,
