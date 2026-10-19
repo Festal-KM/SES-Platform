@@ -44,6 +44,7 @@ import {
 } from './thread-tree';
 import { FAST_REPLY_WINDOW_DAYS, fastReplyGroupKeys, isAwaitingReply } from './reply-speed';
 import { countUnread, readPositions, readThreadPrefs, type ChatThreadPrefs } from './read-state';
+import { readPeople, readRoomDetail, type ChatPeopleData } from './people';
 import {
   chatThreadCursorWhere,
   decodeChatThreadCursor,
@@ -92,6 +93,8 @@ export const CHAT_MESSAGE_SELECT = {
 } as const;
 
 export type SelectedChatThreadRow = ChatThreadRow & { readonly partnerCompanyId: string };
+/** ✅ 2026-10-19（#128）: 1 部屋を引いた行。DM・グループの社内の部屋は取引先を持たない（`null`）。 */
+export type FoundChatThreadRow = ChatThreadRow & { readonly partnerCompanyId: string | null };
 type SelectedThreadRow = SelectedChatThreadRow;
 
 export type ChatThreadListView = CursorPage<ChatThreadListItem>;
@@ -351,13 +354,11 @@ async function readThreadTree(
 export async function findChatThreadRow(
   db: Pick<TenantDb, 'chatThread'>,
   threadId: string,
-): Promise<SelectedThreadRow | null> {
-  // 🔴 `where` は「どのスレッドか」の業務上の指定だけ。参加会社の条件を書き足さない（C6 が決める）。
-  const row = await db.chatThread.findFirst({
-    where: { id: threadId, kind: { in: [...COMPANY_ROOM_KINDS] } },
-    select: CHAT_THREAD_SELECT,
-  });
-  return row === null ? null : (row as SelectedThreadRow);
+): Promise<FoundChatThreadRow | null> {
+  // 🔴 `where` は「どのスレッドか」の業務上の指定だけ。参加会社・メンバーの条件を書き足さない
+  //    （C6 / C10 MEMBER が決める）。✅ 2026-10-19（#128）: DM・グループも引く（投稿・既読・リアクションが同じ 1 実装を通る）。
+  const row = await db.chatThread.findFirst({ where: { id: threadId }, select: CHAT_THREAD_SELECT });
+  return row === null ? null : (row as FoundChatThreadRow);
 }
 
 /**
@@ -389,11 +390,14 @@ async function readParticipants(
 
 async function readThreadDetail(
   ctx: AuthenticatedTenantCtx,
-  db: Pick<TenantDb, 'chatThread' | 'threadParticipant' | 'partnerCompany' | 'tenant' | 'project'>,
+  db: Pick<TenantDb, 'chatThread' | 'threadParticipant' | 'partnerCompany' | 'tenant' | 'project' | 'user'>,
   threadId: string,
 ): Promise<ChatThreadDetailView | null> {
-  const row = await findChatThreadRow(db, threadId);
-  if (row === null) return null;
+  const found = await findChatThreadRow(db, threadId);
+  if (found === null) return null;
+  // ✅ 2026-10-19（#128）: DM・グループは右の欄にメンバーを出す（参加会社ではなく人の段）。
+  if (found.kind === 'DM' || found.kind === 'GROUP') return readRoomDetail(ctx, db, threadId);
+  const row = found as SelectedThreadRow;
   const counterpartyOf = await resolveCounterpartyNames(ctx, db, [row.partnerCompanyId]);
   const projects = await resolveProjectRefs(db, [row.projectId]);
   const participants = await readParticipants(db, threadId);
@@ -536,6 +540,8 @@ export type ChatScreenData = {
   readonly lastReadMessageIds: Readonly<Record<string, string | null>>;
   /** ✅ 2026-10-16: 開いている会話のピン留め・ミュート（見出しの切り替えボタン用）。 */
   readonly threadPrefs: Readonly<Record<string, ChatThreadPrefs>>;
+  /** ✅ 2026-10-19（#128）: DM・グループと連絡先（`input.tree` を渡したときだけ。渡さなければ `null`）。 */
+  readonly people: ChatPeopleData | null;
 };
 
 /** 右に並べた会話 1 本ぶん。 */
@@ -568,6 +574,7 @@ export async function readChatScreen(
     // ✅ 2026-10-14（レビュー指摘）: 木を読むときはページ単位の一覧を読まない（画面は木しか使わず、
     //    読んでも捨てるだけになる）。`threads` は空のページで返す。
     const tree = input.tree === undefined ? null : await readThreadTree(ctx, db, input.tree);
+    const people = input.tree === undefined ? null : await readPeople(ctx, db);
     const threads: ChatThreadListView =
       tree === null ? await readThreadPage(ctx, db, input.threadsQuery) : { items: [], nextCursor: null };
     if (input.threadId === null) {
@@ -580,6 +587,7 @@ export async function readChatScreen(
         tree,
         lastReadMessageIds: {},
         threadPrefs: {},
+        people,
       };
     }
     const thread = await readThreadDetail(ctx, db, input.threadId);
@@ -593,6 +601,7 @@ export async function readChatScreen(
         tree,
         lastReadMessageIds: {},
         threadPrefs: {},
+        people,
       };
     }
     const messages = await readMessagePage(ctx, db, input.threadId, input.messagesQuery);
@@ -614,7 +623,7 @@ export async function readChatScreen(
     const lastReadMessageIds = Object.fromEntries(openIds.map((id) => [id, positions.get(id)?.id ?? null]));
     const prefs = await readThreadPrefs(db, openIds);
     const threadPrefs = Object.fromEntries(openIds.map((id) => [id, prefs.get(id) ?? { pinned: false, muted: false }]));
-    return { threads, thread, messages, requestedThreadMissing: false, panes, tree, lastReadMessageIds, threadPrefs };
+    return { threads, thread, messages, requestedThreadMissing: false, panes, tree, lastReadMessageIds, threadPrefs, people };
   });
 }
 

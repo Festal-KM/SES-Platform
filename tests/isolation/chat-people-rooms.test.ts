@@ -368,3 +368,173 @@ describe('🔴 (f) 部屋の形は後から変えられない（レビュー NG-
     expect(touched).toBe(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// ✅ 2026-10-19（画面の段）: 連絡先と部屋の一覧・詳細の境界（`lib/chat/people.ts`）
+// ---------------------------------------------------------------------------
+describe('🔴 連絡先・部屋の一覧・詳細（画面の読み出し）', () => {
+  it('取引先の人の連絡先には自社（ホスト）の人だけが出る。同じ取引先の同僚・別の取引先の人は出ない', async () => {
+    const { readPeople } = await import('../../apps/web/lib/chat/people');
+    const people = await withTenant(partnerA1, (db) => readPeople(partnerA1, db));
+    const all = people.contacts.companies.flatMap((company) => company.people);
+    expect(all.length).toBeGreaterThan(0);
+    expect(all.every((contact) => contact.isHost)).toBe(true);
+    const ids = all.map((contact) => contact.userId);
+    expect(ids).not.toContain(USER_A_PARTNER_B);
+    expect(ids).not.toContain(USER_A_PARTNER2);
+    expect(JSON.stringify(people)).not.toContain('Partner A2');
+  });
+
+  it('ホストの連絡先には取引先の人も出る（自分は出ない）', async () => {
+    const { readPeople } = await import('../../apps/web/lib/chat/people');
+    const people = await withTenant(host, (db) => readPeople(host, db));
+    const ids = people.contacts.companies.flatMap((company) => company.people.map((contact) => contact.userId));
+    expect(ids).toContain(USER_A_PARTNER);
+    expect(ids).not.toContain(USER_A_HOST);
+  });
+
+  it('部屋の一覧はメンバーの部屋だけ。メンバーでない人には詳細が null（管理者も）', async () => {
+    const { readPeople, readRoomDetail } = await import('../../apps/web/lib/chat/people');
+    const threadId = await hostA1Dm();
+    const mine = await withTenant(partnerA1, (db) => readPeople(partnerA1, db));
+    expect(mine.rooms.map((room) => room.id)).toContain(threadId);
+    for (const ctx of [hostAdmin, host2, partnerA1b, partnerA2]) {
+      const others = await withTenant(ctx, (db) => readPeople(ctx, db));
+      expect(others.rooms.map((room) => room.id)).not.toContain(threadId);
+      expect(await withTenant(ctx, (db) => readRoomDetail(ctx, db, threadId))).toBeNull();
+    }
+    const detail = await withTenant(host, (db) => readRoomDetail(host, db, threadId));
+    expect(detail?.members?.map((member) => member.userId).sort()).toEqual([USER_A_HOST, USER_A_PARTNER].sort());
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ✅ 2026-10-19（#137 レビュー）: 広げた `findChatThreadRow` を通る 9 つの操作と、画面データ全体の禁止キー
+// ---------------------------------------------------------------------------
+const DEPS = { now: () => new Date(), meta: { ipAddress: null } } as const;
+
+/** 9 つの操作。非メンバーはすべて 404、メンバーはすべて成功する。 */
+async function runNine(ctx: AuthenticatedTenantCtx, threadId: string, messageId: string) {
+  const service = await import('../../apps/web/lib/chat/service');
+  const readState = await import('../../apps/web/lib/chat/read-state');
+  const read = await import('../../apps/web/lib/chat/read');
+  return {
+    send: () => service.sendChatMessage(ctx, threadId, { body: '九つの確認' }, DEPS),
+    list: () => read.listChatMessages(ctx, threadId, { limit: 20 } as never),
+    read: () => readState.markChatRead(ctx, threadId, messageId),
+    unread: () => readState.markChatUnread(ctx, threadId, messageId),
+    prefs: () => readState.setChatThreadPrefs(ctx, threadId, { pinned: true }),
+    reaction: () => service.toggleChatReaction(ctx, threadId, messageId, 'OK'),
+    edit: () => service.editChatMessage(ctx, threadId, messageId, { body: '編集' }, DEPS),
+    remove: () => service.deleteChatMessage(ctx, threadId, messageId, DEPS),
+    exportCsv: () => service.readChatThreadForExport(ctx, threadId, DEPS),
+  };
+}
+
+/** 部屋に 1 件発言を置き、その ID を返す（メンバーの文脈で）。 */
+async function seedMessage(ctx: AuthenticatedTenantCtx, threadId: string): Promise<string> {
+  const service = await import('../../apps/web/lib/chat/service');
+  return (await service.sendChatMessage(ctx, threadId, { body: '準備の発言' }, DEPS)).message.id;
+}
+
+describe('🔴 広げた findChatThreadRow: 非メンバーは 9 つすべて 404、メンバーはすべて成功', () => {
+  it('ホスト ↔ 取引先 A1 の DM（非メンバー = ホストの管理者・A1 の別の人・A2）', async () => {
+    const threadId = await hostA1Dm();
+    const messageId = await seedMessage(host, threadId);
+    for (const [label, ctx] of [['ホストの管理者', hostAdmin], ['A1 の別の人', partnerA1b], ['A2', partnerA2]] as const) {
+      for (const [name, run] of Object.entries(await runNine(ctx, threadId, messageId))) {
+        await expect(run(), `${label}: ${name}`).rejects.toMatchObject({ code: 'NOT_FOUND' });
+      }
+    }
+  });
+
+  it('社内だけの DM（非メンバー = ホストの管理者・取引先 A1）', async () => {
+    const threadId = await idOf(await openDm(host, USER_A_HOST2), 200);
+    const messageId = await seedMessage(host2, threadId);
+    for (const [label, ctx] of [['ホストの管理者', hostAdmin], ['取引先 A1', partnerA1]] as const) {
+      for (const [name, run] of Object.entries(await runNine(ctx, threadId, messageId))) {
+        await expect(run(), `${label}: ${name}`).rejects.toMatchObject({ code: 'NOT_FOUND' });
+      }
+    }
+  });
+
+  it('メンバーは 9 つすべて成功する（取引先の文脈・社内 DM の投稿を含む）。書き出しは監査が 1 件増える', async () => {
+    const audits = async () => admin.auditLog.count({ where: { action: 'thread.export' } });
+    for (const [label, ctx, threadId] of [
+      ['取引先 A1（ホストとの DM）', partnerA1, await hostA1Dm()],
+      ['ホスト（社内 DM）', host, await idOf(await openDm(host, USER_A_HOST2), 200)],
+    ] as const) {
+      // 編集・削除は自分の発言にだけできる。
+      const messageId = await seedMessage(ctx, threadId);
+      const nine = await runNine(ctx, threadId, messageId);
+      const before = await audits();
+      for (const name of ['send', 'list', 'read', 'unread', 'prefs', 'reaction', 'edit', 'exportCsv', 'remove'] as const) {
+        await expect(nine[name](), `${label}: ${name}`).resolves.toBeDefined();
+      }
+      expect(await audits(), label).toBe(before + 1);
+    }
+    // 社内 DM の発言は取引先を持たない（継承トリガが NULL を通す）。
+    const internal = await admin.message.findFirst({
+      where: { body: '九つの確認', thread: { kind: 'DM', partnerCompanyId: null } },
+      select: { ownerPartnerCompanyId: true },
+    });
+    expect(internal?.ownerPartnerCompanyId).toBeNull();
+  });
+});
+
+describe('🔴 画面データ全体（readChatScreen）', () => {
+  /** 応答 JSON を深さ優先で走査してキーを集める（`chat-threads.test.ts` と同じ）。 */
+  function collectKeys(value: unknown, into: Set<string>): void {
+    if (Array.isArray(value)) {
+      for (const item of value) collectKeys(item, into);
+      return;
+    }
+    if (typeof value === 'object' && value !== null) {
+      for (const [key, nested] of Object.entries(value)) {
+        into.add(key);
+        collectKeys(nested, into);
+      }
+    }
+  }
+
+  it('DM を開いた画面データに禁止キーが 1 つも無く、詳細のキーは CHAT_ROOM_DETAIL_VIEW_KEYS', async () => {
+    const { readChatScreen } = await import('../../apps/web/lib/chat/read');
+    const { CHAT_FORBIDDEN_RESPONSE_KEYS, CHAT_ROOM_DETAIL_VIEW_KEYS } = await import('../../apps/web/lib/chat/views');
+    const threadId = await hostA1Dm();
+    for (const ctx of [partnerA1, host]) {
+      const screen = await readChatScreen(ctx, {
+        threadId,
+        threadsQuery: { limit: 20 } as never,
+        messagesQuery: { limit: 20 } as never,
+        tree: { sort: 'recent', q: null },
+      });
+      expect(screen.thread?.id).toBe(threadId);
+      expect(Object.keys(screen.thread ?? {}).sort()).toEqual([...CHAT_ROOM_DETAIL_VIEW_KEYS].sort());
+      for (const member of screen.thread?.members ?? []) {
+        expect(Object.keys(member).sort()).toEqual(['companyName', 'isHost', 'name', 'self', 'userId']);
+      }
+      const keys = new Set<string>();
+      collectKeys(screen, keys);
+      for (const forbidden of CHAT_FORBIDDEN_RESPONSE_KEYS) {
+        expect([...keys], forbidden).not.toContain(forbidden);
+      }
+    }
+  });
+
+  it('メンバーでない管理者は、左端でも右に並べても読めない（requestedThreadMissing・一覧にも出ない）', async () => {
+    const { readChatScreen } = await import('../../apps/web/lib/chat/read');
+    const threadId = await hostA1Dm();
+    const screen = await readChatScreen(hostAdmin, {
+      threadId,
+      threadsQuery: { limit: 20 } as never,
+      messagesQuery: { limit: 20 } as never,
+      paneIds: [threadId],
+      tree: { sort: 'recent', q: null },
+    });
+    expect(screen.requestedThreadMissing).toBe(true);
+    expect(screen.thread).toBeNull();
+    expect(screen.panes).toEqual([]);
+    expect(screen.people?.rooms.map((room) => room.id)).not.toContain(threadId);
+    expect(JSON.stringify(screen)).not.toContain(BODY_DM);
+  });
+});

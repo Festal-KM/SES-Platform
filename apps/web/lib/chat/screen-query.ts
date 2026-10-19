@@ -139,3 +139,6 @@ export function chatThreadPrefsApiPath(threadId: string): string {
 export function chatExportApiPath(threadId: string): string {
   return `/api/threads/${threadId}/export`;
 }
+
+/** ✅ 2026-10-19（#128）: `POST /api/threads/dm`（その人との DM を開く。無ければ作る）。 */
+export const CHAT_OPEN_DM_API_PATH = '/api/threads/dm';

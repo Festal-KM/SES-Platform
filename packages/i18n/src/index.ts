@@ -4454,6 +4454,18 @@ const ja = {
   'chat.thread.draft': '下書き',
   // ✅ 2026-10-16: ピン留め・ミュート（自分の表示の設定）。
   'chat.threads.pinned': 'ピン留め',
+  // ✅ 2026-10-19（#128）: 人単位の部屋（DM・グループ）と連絡先。
+  'chat.people.favorites': 'お気に入り',
+  'chat.people.contacts': '連絡先',
+  'chat.people.recent': '最近やり取りした人',
+  'chat.people.rooms': 'DM・グループ',
+  'chat.people.roomsEmpty': 'DM・グループはまだありません。連絡先から相手を選ぶと始められます',
+  'chat.people.openDm': 'DM を開く',
+  'chat.people.openDmFailed': 'DM を開けませんでした',
+  'chat.people.memberUnit': '人',
+  'chat.people.self': '自分',
+  'chat.panel.members': 'メンバー',
+  'chat.panel.roomNote': 'この部屋はメンバーだけが読めます',
   // ✅ 2026-10-16: 会話の書き出し（CSV）。
   'chat.export.link': '書き出す（CSV）',
   'chat.export.sentAt': '日時',

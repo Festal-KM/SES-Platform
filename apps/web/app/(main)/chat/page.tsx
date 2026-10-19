@@ -46,6 +46,7 @@ import { PageHeading } from '../_shell/page-heading';
 import { ChatConversation } from './chat-conversation';
 import { ChatPaneDropZone } from './chat-pane-drop-zone';
 import { chatConversationMessages, chatPaneDropMessages } from './chat-props';
+import { ChatPeopleSection } from './chat-people-section';
 import { ChatThreadList } from './chat-thread-list';
 import { ChatThreadPanel } from './chat-thread-panel';
 
@@ -110,7 +111,7 @@ export default async function ChatPage({
           決まらず、会話の幅も足りなくなる）。対象と相手は各会話の見出しに出ている。 */}
       <PageBody
         widthClass="split"
-        aside={selected === null || tiled ? undefined : <ChatThreadPanel thread={selected} />}
+        aside={selected === null || tiled ? undefined : <ChatThreadPanel thread={selected} canPost={canPost} />}
       >
         <PageHeading trail={CHAT_TRAIL} title={t('chat.title')} />
         <p className="mb-4 text-body text-fg-muted">{t('chat.threads.population')}</p>
@@ -140,6 +141,10 @@ export default async function ChatPage({
                 : 'hidden bg-bg-subtle md:block md:w-80 md:shrink-0'
             }
           >
+            {/* ✅ 2026-10-19（#128）: 一覧の上に お気に入り・連絡先・DM・グループ。会社ごとの一覧はその下。 */}
+            {data.people === null ? null : (
+              <ChatPeopleSection people={data.people} selectedThreadId={selected?.id ?? null} canPost={canPost} />
+            )}
             <ChatThreadList
               groups={tree.groups}
               truncated={tree.truncated}

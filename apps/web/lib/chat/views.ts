@@ -121,6 +121,32 @@ export type ChatThreadDetailView = {
    *    🔴 **見えない行を補わない**（補うと「アプリが越境の判断をしている」ことになる）。
    */
   readonly participants: readonly ChatParticipantView[];
+  /**
+   * ✅ 2026-10-19（#128）: DM・グループのメンバー（人の段）。会社グループ・スレッドでは無い。
+   * 🔴 RLS（C10 MEMBER）で見えている部屋のメンバーだけ。名前は C8 で読めた人だけ（読めなければ `null`）。
+   */
+  readonly members?: readonly ChatMemberView[];
+};
+
+/** ✅ 2026-10-19（#128）: DM・グループのメンバー 1 人。 */
+export type ChatMemberView = {
+  /** 🔴 DM を開く導線（`POST /api/threads/dm`）のための ID。同じ部屋のメンバーにしか返さない。 */
+  readonly userId: string;
+  readonly name: string | null;
+  readonly companyName: string | null;
+  readonly isHost: boolean;
+  /** 読み手本人か（自分には「DM を開く」を出さない）。 */
+  readonly self: boolean;
+};
+
+/** ✅ 2026-10-19（#128）: 一覧の「DM・グループ」の 1 行。 */
+export type ChatRoomListItem = {
+  readonly id: string;
+  readonly kind: 'DM' | 'GROUP';
+  /** DM は相手の名前、グループはその名前。読めなければ `null`。 */
+  readonly name: string | null;
+  readonly memberCount: number;
+  readonly lastMessageAt: string | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -184,6 +210,8 @@ export function summarizeReactions(
 export const CHAT_PARTICIPANT_VIEW_KEYS = ['companyName', 'isHost', 'joinedAt', 'leftAt'] as const;
 
 export const CHAT_THREAD_DETAIL_VIEW_KEYS = ['id', 'kind', 'project', 'counterpartyName', 'participants'] as const;
+/** ✅ 2026-10-19（#128）: DM・グループの詳細は、会社の部屋の詳細に `members` を足したもの。 */
+export const CHAT_ROOM_DETAIL_VIEW_KEYS = [...CHAT_THREAD_DETAIL_VIEW_KEYS, 'members'] as const;
 
 /**
  * 🔴 **チャットの応答に 1 度も現れてはならないキー**（分離テストが応答 JSON を深さ優先で走査する）。
