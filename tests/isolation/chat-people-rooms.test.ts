@@ -368,3 +368,42 @@ describe('🔴 (f) 部屋の形は後から変えられない（レビュー NG-
     expect(touched).toBe(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// ✅ 2026-10-19（画面の段）: 連絡先と部屋の一覧・詳細の境界（`lib/chat/people.ts`）
+// ---------------------------------------------------------------------------
+describe('🔴 連絡先・部屋の一覧・詳細（画面の読み出し）', () => {
+  it('取引先の人の連絡先には自社（ホスト）の人だけが出る。同じ取引先の同僚・別の取引先の人は出ない', async () => {
+    const { readPeople } = await import('../../apps/web/lib/chat/people');
+    const people = await withTenant(partnerA1, (db) => readPeople(partnerA1, db));
+    const all = people.contacts.companies.flatMap((company) => company.people);
+    expect(all.length).toBeGreaterThan(0);
+    expect(all.every((contact) => contact.isHost)).toBe(true);
+    const ids = all.map((contact) => contact.userId);
+    expect(ids).not.toContain(USER_A_PARTNER_B);
+    expect(ids).not.toContain(USER_A_PARTNER2);
+    expect(JSON.stringify(people)).not.toContain('Partner A2');
+  });
+
+  it('ホストの連絡先には取引先の人も出る（自分は出ない）', async () => {
+    const { readPeople } = await import('../../apps/web/lib/chat/people');
+    const people = await withTenant(host, (db) => readPeople(host, db));
+    const ids = people.contacts.companies.flatMap((company) => company.people.map((contact) => contact.userId));
+    expect(ids).toContain(USER_A_PARTNER);
+    expect(ids).not.toContain(USER_A_HOST);
+  });
+
+  it('部屋の一覧はメンバーの部屋だけ。メンバーでない人には詳細が null（管理者も）', async () => {
+    const { readPeople, readRoomDetail } = await import('../../apps/web/lib/chat/people');
+    const threadId = await hostA1Dm();
+    const mine = await withTenant(partnerA1, (db) => readPeople(partnerA1, db));
+    expect(mine.rooms.map((room) => room.id)).toContain(threadId);
+    for (const ctx of [hostAdmin, host2, partnerA1b, partnerA2]) {
+      const others = await withTenant(ctx, (db) => readPeople(ctx, db));
+      expect(others.rooms.map((room) => room.id)).not.toContain(threadId);
+      expect(await withTenant(ctx, (db) => readRoomDetail(ctx, db, threadId))).toBeNull();
+    }
+    const detail = await withTenant(host, (db) => readRoomDetail(host, db, threadId));
+    expect(detail?.members?.map((member) => member.userId).sort()).toEqual([USER_A_HOST, USER_A_PARTNER].sort());
+  });
+});
