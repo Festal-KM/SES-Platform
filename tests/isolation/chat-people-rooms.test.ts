@@ -526,7 +526,8 @@ describe('🔴 画面データ全体（readChatScreen）', () => {
       expect(screen.thread?.id).toBe(threadId);
       expect(Object.keys(screen.thread ?? {}).sort()).toEqual([...CHAT_ROOM_DETAIL_VIEW_KEYS].sort());
       for (const member of screen.thread?.members ?? []) {
-        expect(Object.keys(member).sort()).toEqual(['companyName', 'isHost', 'name', 'self', 'userId']);
+        // ✅ 2026-10-19（#128 §7.1 ①）: `status`（ひとこと状態。RLS で読めた人の分だけ）を足した。
+        expect(Object.keys(member).sort()).toEqual(['companyName', 'isHost', 'name', 'self', 'status', 'userId']);
       }
       const keys = new Set<string>();
       collectKeys(screen, keys);

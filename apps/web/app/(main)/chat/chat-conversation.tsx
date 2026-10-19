@@ -735,6 +735,12 @@ export function ChatConversation({
               {title.subtitle}
             </span>
           ) : null}
+          {/* ✅ 2026-10-19（#128 §7.1 ①）: DM の相手のひとこと状態（名前の横）。 */}
+          {title?.title != null && title.status != null && title.status !== '' ? (
+            <span className="truncate text-xs text-fg-muted" data-testid="chat-conversation-status">
+              {title.status}
+            </span>
+          ) : null}
         </div>
         {/* 🔴 モバイルは「一覧 → 会話」の 2 画面遷移（`docs/04` §S-031 デバイス別）。戻り道を必ず置く。 */}
         <Link

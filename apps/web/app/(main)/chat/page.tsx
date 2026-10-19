@@ -41,8 +41,10 @@ import { canAddPane, withPaneClosed, type ChatPaneState } from '../../../lib/cha
 import { readChatScreen } from '../../../lib/chat/read';
 import { CHAT_PATH, chatHref, chatScreenQuerySchema } from '../../../lib/chat/screen-query';
 import { CHAT_THREAD_SORT_DEFAULT } from '../../../lib/chat/thread-tree';
+import { readMyChatUserStatus } from '../../../lib/chat/user-status';
 import { CHAT_TRAIL } from '../../../lib/shell/page-trail';
 import { PageHeading } from '../_shell/page-heading';
+import { ChatStatusSection } from './chat-status-section';
 import { ChatConversation } from './chat-conversation';
 import { ChatPaneDropZone } from './chat-pane-drop-zone';
 import { chatConversationMessages, chatPaneDropMessages } from './chat-props';
@@ -88,6 +90,8 @@ export default async function ChatPage({
   const tiled = data.panes.length > 0;
   const conversationMessages = chatConversationMessages();
   const canPost = canPostChatMessage(ctx.role);
+  // ✅ 2026-10-19（#128 §7.1 ①）: 自分のひとこと状態（入口の初期値）。閲覧専用には入口を描かないので読まない。
+  const myStatus = canPost ? await readMyChatUserStatus(ctx) : '';
   // ✅ 2026-10-14: 会話を開く・閉じる URL に一覧の検索語と並べ方を引き継ぐ（開くたびに検索が消えない）。
   const listQuery = { q: query.q ?? null, sort: query.sort ?? CHAT_THREAD_SORT_DEFAULT, unread: query.unread === '1' };
   const tree = data.tree ?? {
@@ -115,6 +119,7 @@ export default async function ChatPage({
       >
         <PageHeading trail={CHAT_TRAIL} title={t('chat.title')} />
         <p className="mb-4 text-body text-fg-muted">{t('chat.threads.population')}</p>
+        <ChatStatusSection canPost={canPost} text={myStatus} />
         {/* 🔴 不存在・他社・他テナントで同じ文言（`docs/05` §4.8） */}
         {data.requestedThreadMissing ? (
           <Alert variant="warning" className="mb-4" data-testid="chat-thread-missing">

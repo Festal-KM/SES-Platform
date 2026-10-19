@@ -142,3 +142,5 @@ export function chatExportApiPath(threadId: string): string {
 
 /** ✅ 2026-10-19（#128）: `POST /api/threads/dm`（その人との DM を開く。無ければ作る）。 */
 export const CHAT_OPEN_DM_API_PATH = '/api/threads/dm';
+/** ✅ 2026-10-19: 自分のひとこと状態（`PUT`。`docs/05` §6.5 #51j）。 */
+export const CHAT_USER_STATUS_API_PATH = '/api/chat/status';

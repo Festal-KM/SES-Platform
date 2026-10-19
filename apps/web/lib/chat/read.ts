@@ -397,7 +397,7 @@ async function readParticipants(
 
 async function readThreadDetail(
   ctx: AuthenticatedTenantCtx,
-  db: Pick<TenantDb, 'chatThread' | 'threadParticipant' | 'partnerCompany' | 'tenant' | 'project' | 'user'>,
+  db: Pick<TenantDb, 'chatThread' | 'threadParticipant' | 'partnerCompany' | 'tenant' | 'project' | 'user' | 'chatUserStatus'>,
   threadId: string,
 ): Promise<ChatThreadDetailView | null> {
   const found = await findChatThreadRow(db, threadId);

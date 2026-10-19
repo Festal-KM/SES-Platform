@@ -137,6 +137,7 @@ model Tenant {
   messages                Message[]
   chatReadStates          ChatReadState[] // 2026-10-15 チャットレーン（既読位置。migration 20261016000000）
   chatMessageReactions    ChatMessageReaction[] // 2026-10-16 チャットレーン（リアクション。migration 20261016010000）
+  chatUserStatuses        ChatUserStatus[] // 2026-10-19 チャットレーン（ひとこと状態。migration 20261019020000）
   contracts               Contract[]
   contractDocuments       ContractDocument[]
   contractTemplates       ContractTemplate[]
@@ -1234,6 +1235,23 @@ model ChatReadState {
 
   @@unique([tenantId, userId, threadId])
   @@map("chat_read_states")
+}
+
+/// ✅ 2026-10-19 チャットレーン: チャットのひとこと状態（docs/chat-lane/people-chat-proposal.md §7.1 ①。#128 で合意）。
+/// 1 人 1 行・60 文字まで。空にしたら行を消す。🔴 `users` に列を足さない（共有の表のため）。
+/// RLS: 書き込みは本人の行だけ（C7 SELF の式）/ 読み取りは「その利用者が自分から見えるとき」（users の C8 DIRECTORY に連動）。
+/// 🔴 運営者（app_platform）に GRANT しない。user_id に FK を張らない（ChatReadState と同じ）。migration 20261019020000
+model ChatUserStatus {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  text      String
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId])
+  @@map("chat_user_statuses")
 }
 
 /// RLS のポリシークラスは C2 HOST_ONLY（書込 + ホストの SELECT）/ C9 COUNTERPARTY_READ

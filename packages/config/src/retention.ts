@@ -146,6 +146,9 @@ export const PURGE_SPEC = {
     { table: 'match_candidates', columns: ['rationale'], provisional: 'ISSUE-67' },
     // --- チャット ---------------------------------------------------------------------------
     { table: 'messages', columns: ['body', 'attachment_key'], objectKeyColumns: ['attachment_key'], purgedAtColumn: 'purged_at' },
+    // ✅ 2026-10-19 チャットレーン: ひとこと状態は本人が書く自由文で、個人の事情（「通院のため」等）が書かれうる。
+    //    発言の本文（messages.body）と同じく〔削除〕に置く。行は残しても空文字なので画面には出ない（読む側が空を「無し」と扱う）。
+    { table: 'chat_user_statuses', columns: [{ name: 'text', erase: 'EMPTY_TEXT' }] },
     // --- ⑤ 契約 / ⑥ 稼働 ------------------------------------------------------------------
     { table: 'contract_documents', columns: ['object_key', 'merge_result', 'signers'], objectKeyColumns: ['object_key'] },
     { table: 'contract_templates', columns: ['object_key'], objectKeyColumns: ['object_key'] },

@@ -126,3 +126,21 @@ export const chatGroupBodySchema = z
   })
   .strict();
 assertNoIsolationKeys(Object.keys(chatGroupBodySchema.shape), 'chatGroupBodySchema');
+
+// ✅ 2026-10-19（#128 §7.1 ①）: ひとこと状態（`docs/05` §6.5 #51j）。🔴 誰の状態かは受け取らない（認証コンテキストの本人だけ）。
+/** 🔴 migration 20261019020000 の CHECK（`char_length(text) <= 60`）と同じ値。 */
+export const CHAT_USER_STATUS_MAX_LENGTH = 60;
+
+/** `PUT /api/chat/status` — 自分の状態を設定する（空文字で消す）。1 行・60 文字まで。 */
+export const chatUserStatusBodySchema = z
+  .object({
+    text: z
+      .string()
+      .trim()
+      .max(CHAT_USER_STATUS_MAX_LENGTH)
+      .refine((value) => !/[\r\n]/.test(value)),
+  })
+  .strict();
+export type ChatUserStatusBody = z.infer<typeof chatUserStatusBodySchema>;
+export type ChatUserStatusBodyIsolationGuard = AssertNoIsolationKeys<ChatUserStatusBody>;
+assertNoIsolationKeys(Object.keys(chatUserStatusBodySchema.shape), 'chatUserStatusBodySchema');
