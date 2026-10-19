@@ -99,9 +99,12 @@ describe('buildThreadTree', () => {
     expect(tree).toEqual([]);
   });
 
-  it('🔴 出力に会社の鍵（groupKey）が載らない', () => {
+  it('🔴 出力に会社の鍵（groupKey）が載らない（`key` は会社の会話の行の ID であり、取引先の ID ではない）', () => {
     const tree = buildThreadTree(INPUT, { sort: 'recent', q: null });
-    expect(Object.keys(tree[0] ?? {}).sort()).toEqual(['chat', 'counterpartyName', 'fastReply', 'threads']);
+    expect(Object.keys(tree[0] ?? {}).sort()).toEqual(['chat', 'counterpartyName', 'fastReply', 'key', 'threads']);
+    const ids = new Set(INPUT.map((entry) => entry.item.id));
+    for (const group of tree) expect(ids.has(group.key), group.key).toBe(true);
+    for (const entry of INPUT) expect(tree.map((group) => group.key)).not.toContain(entry.groupKey);
   });
 });
 

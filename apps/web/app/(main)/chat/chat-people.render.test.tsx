@@ -9,6 +9,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
+import { t } from '@ses/i18n';
 import type { ChatPeopleData } from '../../../lib/chat/people';
 import type { ChatThreadDetailView } from '../../../lib/chat/views';
 
@@ -30,11 +31,12 @@ const ROOM_GROUP = '01930000-0000-7000-8000-00000000e002';
 const HOST_PERSON = '01930000-0000-7000-8000-00000000e101';
 const PARTNER_PERSON = '01930000-0000-7000-8000-00000000e102';
 const SELF = '01930000-0000-7000-8000-00000000e103';
+const COMPANY_KEY = '01930000-0000-7000-8000-00000000e201';
 
 const PEOPLE: ChatPeopleData = {
   rooms: [
-    { id: ROOM_DM, kind: 'DM', name: '見本 太郎', memberCount: 2, lastMessageAt: '2026-10-19T01:00:00.000Z' },
-    { id: ROOM_GROUP, kind: 'GROUP', name: '案件の相談', memberCount: 3, lastMessageAt: null },
+    { id: ROOM_DM, kind: 'DM', name: '見本 太郎', memberCount: 2, lastMessageAt: '2026-10-19T01:00:00.000Z', memberUserIds: [SELF, HOST_PERSON], external: false, companyKey: null },
+    { id: ROOM_GROUP, kind: 'GROUP', name: '案件の相談', memberCount: 3, lastMessageAt: null, memberUserIds: [SELF, HOST_PERSON, PARTNER_PERSON], external: true, companyKey: COMPANY_KEY },
   ],
   contacts: {
     recent: [{ userId: HOST_PERSON, name: '見本 太郎', companyName: '自社', isHost: true }],
@@ -70,12 +72,17 @@ describe('🔴 ① 閲覧専用には「DM を開く」を描かない', () => {
     expect(html).toContain(`data-testid="chat-room-${ROOM_DM}"`);
   });
 
-  it('canPost: true では連絡先に 1 人ずつ「DM を開く」がある（最近 + 会社ごと）', () => {
-    const html = renderSection(true);
-    expect(html).toContain('data-testid="chat-contacts"');
-    expect(html).toContain(`data-testid="chat-open-dm-${HOST_PERSON}"`);
-    expect(html).toContain(`data-testid="chat-open-dm-${PARTNER_PERSON}"`);
-    expect(html).toContain('data-testid="chat-contacts-recent"');
+  it('canPost: true では「＋ 新規」から連絡先（f=contacts）に行け、連絡先の人を押すと「その人との会話」へ行く', () => {
+    const list = renderSection(true);
+    expect(list).toContain('data-testid="chat-new-conversation"');
+    const contacts = renderToStaticMarkup(
+      createElement(ChatThreadList, { groups: [], selectedThreadId: null, nextCursor: null, people: PEOPLE, canPost: true, filter: { kind: 'contacts' } }),
+    );
+    expect(contacts).toContain('data-testid="chat-contacts"');
+    expect(contacts).toContain(`data-testid="chat-contact-link-${HOST_PERSON}"`);
+    expect(contacts).toContain(`data-testid="chat-contact-link-${PARTNER_PERSON}"`);
+    expect(contacts).toContain(`f=person.${PARTNER_PERSON}`);
+    expect(contacts).toContain('data-testid="chat-contacts-recent"');
   });
 });
 
@@ -121,5 +128,48 @@ describe('③ お気に入り・未読・メンバー', () => {
     expect(html).not.toContain('data-testid="chat-panel-participants"');
     const viewer = renderToStaticMarkup(createElement(ChatThreadPanel, { thread, canPost: false }));
     expect(viewer).not.toContain('chat-open-dm-');
+  });
+});
+
+describe('✅ v2: 左の列から「会社から＞」「人から＞」辿る', () => {
+  function renderWith(filter: Parameters<typeof ChatThreadList>[0]['filter']) {
+    return renderToStaticMarkup(
+      createElement(ChatThreadList, { groups: [], selectedThreadId: null, nextCursor: null, people: PEOPLE, canPost: true, filter }),
+    );
+  }
+  it('人から: その人が入っている会話だけが並び、見出しに「DM を開く」と「すべてに戻る」', () => {
+    const html = renderWith({ kind: 'person', userId: PARTNER_PERSON });
+    expect(html).toContain(`data-testid="chat-room-${ROOM_GROUP}"`);
+    expect(html).not.toContain(`data-testid="chat-room-${ROOM_DM}"`);
+    expect(html).toContain('data-testid="chat-scope"');
+    expect(html).toContain(`data-testid="chat-open-dm-${PARTNER_PERSON}"`);
+    expect(html).toContain('data-testid="chat-scope-clear"');
+  });
+  it('会社から: その会社の鍵を持つ DM・グループが並ぶ（社内の部屋は出ない）', () => {
+    const html = renderWith({ kind: 'company', key: COMPANY_KEY });
+    expect(html).toContain(`data-testid="chat-room-${ROOM_GROUP}"`);
+    expect(html).not.toContain(`data-testid="chat-room-${ROOM_DM}"`);
+  });
+  it('グループ: グループだけ／DM: DM だけ', () => {
+    expect(renderWith({ kind: 'group' })).not.toContain(`data-testid="chat-room-${ROOM_DM}"`);
+    expect(renderWith({ kind: 'dm' })).not.toContain(`data-testid="chat-room-${ROOM_GROUP}"`);
+  });
+  it('種類はアバターの形と色で分ける（グループは緑、取引先との部屋には「外部」）', () => {
+    const html = renderWith({ kind: 'all' });
+    const group = new RegExp(`<li data-testid="chat-room-${ROOM_GROUP}"[\\s\\S]*?</li>`).exec(html)?.[0] ?? '';
+    expect(group).toContain('bg-success-bg');
+    expect(group).toContain(t('chat.tag.external'));
+  });
+});
+
+describe('✅ グループを作る（連絡先の画面の中）', () => {
+  it('投稿できる人には連絡先の人を候補にした「グループを作る」が出る。閲覧専用には出ない', () => {
+    const view = (canPost: boolean) =>
+      renderToStaticMarkup(
+        createElement(ChatThreadList, { groups: [], selectedThreadId: null, nextCursor: null, people: PEOPLE, canPost, filter: { kind: 'contacts' } }),
+      );
+    expect(view(true)).toContain('data-testid="chat-new-group"');
+    expect(view(true)).toContain(`data-testid="chat-new-group-member-${PARTNER_PERSON}"`);
+    expect(view(false)).not.toContain('chat-new-group');
   });
 });

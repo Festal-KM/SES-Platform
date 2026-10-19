@@ -18,7 +18,8 @@ import { chatConversationMessages } from './chat-props';
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: () => undefined, refresh: () => undefined }) }));
 
 const { ChatStatusSection } = await import('./chat-status-section');
-const { ChatPeopleSection } = await import('./chat-people-section');
+// ✅ 2026-10-19（v2）: 連絡先は一覧の列の「連絡先」（`f=contacts`）の画面に移った。
+const { ChatContactsView } = await import('./chat-people-section');
 const { ChatThreadPanel } = await import('./chat-thread-panel');
 const { ChatConversation } = await import('./chat-conversation');
 
@@ -138,7 +139,7 @@ describe('③ 状態の表示', () => {
       mutedIds: [],
       lastSnippets: {},
     } as ChatPeopleData;
-    const html = renderToStaticMarkup(createElement(ChatPeopleSection, { people, selectedThreadId: null, canPost: true }));
+    const html = renderToStaticMarkup(createElement(ChatContactsView, { people }));
     expect(html).toContain(`data-testid="chat-contact-status-${PEER}"`);
     expect(html).toContain(STATUS);
     expect(html).not.toContain(`data-testid="chat-contact-status-${QUIET}"`);

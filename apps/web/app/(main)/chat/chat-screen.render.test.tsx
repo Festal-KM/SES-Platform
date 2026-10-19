@@ -261,9 +261,9 @@ describe('🔴 ③: md 未満は「一覧 → 会話」の切替であって遮�
     // 🔴 ✅ 2026-10-13: `overflow-hidden`（器の角丸で中身を切る指定）は**畳みではない**ので
     //    除く。`\bhidden\b` は `overflow-hidden` にも当たるため、前が `-` の出現を外す。
     const withHidden = [...page.matchAll(/'([^']*(?<![-\w])hidden\b[^']*)'/g)].map((match) => match[1]);
-    // 走査が空振りしていない（`md` 未満の畳みが現に 4 箇所ある: 一覧の器と会話の器、
-    // ✅ 2026-10-14 から右に並べた会話の器とドラッグの受け口）。
-    expect(withHidden).toHaveLength(4);
+    // 走査が空振りしていない（`md` 未満の畳みが現に 5 箇所ある: 一覧の器と会話の器、
+    // ✅ 2026-10-14 から右に並べた会話の器とドラッグの受け口、✅ 2026-10-19 から左の絞り込みの列）。
+    expect(withHidden).toHaveLength(5);
     for (const classes of withHidden) {
       // 🔴 戻し方は `md:block` でも `md:flex` でもよい（**見えるようになること**が条件であり、
       //    `display` の値は器の中身が決める）。✅ 2026-10-13: 会話の器は縦 3 段になったので `md:flex`。
@@ -277,6 +277,8 @@ describe('🔴 ③: md 未満は「一覧 → 会話」の切替であって遮�
     //    🔴 どちらも `md` で戻る（遮断ではない）。
     expect(page).toContain("'hidden min-w-80 flex-1 flex-col border-l border-border md:flex'");
     expect(page).toContain("'hidden md:flex'");
+    // ✅ 2026-10-19（v2）: 左の絞り込みの列も、会話を開いたときだけ畳み、`md` で戻る。
+    expect(page).toContain("'hidden shrink-0 bg-bg-inset md:block md:w-44'");
   });
 
   it('🔴 一覧そのものに `hidden` の表示ユーティリティが無い（部品側で遮断していない）', () => {
@@ -627,26 +629,28 @@ describe('⑪: 会社ごとの木・検索・並べ替え（2026-10-14、チャ�
     { sort: 'recent', q: null },
   );
 
-  it('会社とのチャットが親、その会社の案件スレッドが子（字下げ）として同じまとまりに並ぶ', () => {
+  // ✅ 2026-10-19（v2・紺野「くっそ醜い」）: 字下げをやめ、1 行 = 1 会話。種類はアバターの形と色・小さな札で分ける。
+  it('会社チャットと案件スレッドは字下げせず平らに並び、形と札で見分けられる', () => {
     const html = renderThreadList({ groups });
-    const groupA = /<li data-testid="chat-thread-group-0">([\s\S]*?)<\/ul><\/li>/.exec(html)?.[1] ?? '';
-    expect(groupA).toContain(`chat-thread-row-${CHAT_A}`);
-    expect(groupA).toContain(`chat-thread-row-${THREAD_PROJECT}`);
-    // 子（スレッド）だけが字下げされる。
-    expect(classTokensOf(html, `chat-thread-row-${THREAD_PROJECT}`)).toContain('pl-6');
-    expect(classTokensOf(html, `chat-thread-row-${CHAT_A}`)).not.toContain('pl-6');
-    // 呼び方: 会社とのやり取り = チャット / 案件ごと = スレッド。
-    expect(html).toContain(t('chat.thread.kind.COMPANY'));
-    expect(html).toContain(t('chat.thread.kind.PROJECT'));
+    expect(html).toContain(`chat-thread-row-${CHAT_A}`);
+    expect(html).toContain(`chat-thread-row-${THREAD_PROJECT}`);
+    expect(classTokensOf(html, `chat-thread-row-${THREAD_PROJECT}`)).not.toContain('pl-6');
+    // 案件スレッドには「案件」、取引先が相手なら「外部」の札。会社チャットには「案件」が付かない。
+    const projectRow = new RegExp(`<li data-testid="chat-thread-row-${THREAD_PROJECT}"[\\s\\S]*?</li>`).exec(html)?.[0] ?? '';
+    const companyRow = new RegExp(`<li data-testid="chat-thread-row-${CHAT_A}"[\\s\\S]*?</li>`).exec(html)?.[0] ?? '';
+    expect(projectRow).toContain(t('chat.tag.project'));
+    expect(projectRow).toContain(t('chat.tag.external'));
+    expect(companyRow).not.toContain(t('chat.tag.project'));
+    // 「チャット / スレッド」の文字は出さない（見た目で分ける）。
+    expect(html).not.toContain(`>${t('chat.thread.kind.COMPANY')}<`);
   });
 
-  it('チャットがまだ無い会社も、スレッドの親として名前だけを出す（押せる行を作らない）', () => {
+  it('チャットがまだ無い会社のスレッドも、そのまま 1 行で出る（親の見出しを作らない）', () => {
     const html = renderThreadList({
       groups: buildThreadTree([{ groupKey: 'X', item: THREAD_ROWS[0] as ChatThreadListItem }], { sort: 'recent', q: null }),
     });
-    expect(html).toContain('data-testid="chat-thread-group-header-0"');
-    expect(html).toContain(t('chat.tree.noChat'));
-    expect(html).not.toMatch(/<a [^>]*data-testid="chat-thread-group-header-0"/);
+    expect(html).toContain(`chat-thread-row-${(THREAD_ROWS[0] as ChatThreadListItem).id}`);
+    expect(html).not.toContain('chat-thread-group-header-');
   });
 
   it('検索は GET のフォームで、開いている会話（thread / pane）を引き継ぐ', () => {
@@ -695,8 +699,9 @@ describe('⑬: 要返信の印と返信が早い取引先（2026-10-14、チャ�
 
   it('🔴 返信が早い会社にだけ良い印を付け、他の会社には何も出さない（遅いとは書かない）', () => {
     const html = renderThreadList({ groups });
-    const fast = groups.findIndex((group) => group.fastReply);
-    expect(html).toContain(`data-testid="chat-thread-group-fast-${String(fast)}"`);
+    const fast = groups.find((group) => group.fastReply);
+    const representative = (fast?.chat ?? fast?.threads[0])?.id ?? '';
+    expect(html).toContain(`data-testid="chat-thread-fast-${representative}"`);
     expect(html.split(t('chat.tree.fastReply')).length - 1).toBe(1);
     expect(html).not.toMatch(/遅い|順位|ランキング/);
   });

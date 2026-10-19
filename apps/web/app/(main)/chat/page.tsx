@@ -39,7 +39,8 @@ import { canPostChatMessage } from '../../../lib/chat/policy';
 import { conversationLayoutFor, conversationTitleFor } from '../../../lib/chat/layout';
 import { canAddPane, withPaneClosed, type ChatPaneState } from '../../../lib/chat/panes';
 import { readChatScreen } from '../../../lib/chat/read';
-import { CHAT_PATH, chatHref, chatScreenQuerySchema } from '../../../lib/chat/screen-query';
+import { CHAT_PATH, chatHref, chatScreenQuerySchema, parseChatFilter } from '../../../lib/chat/screen-query';
+import { ChatRail } from './chat-rail';
 import { CHAT_THREAD_SORT_DEFAULT } from '../../../lib/chat/thread-tree';
 import { readMyChatUserStatus } from '../../../lib/chat/user-status';
 import { CHAT_TRAIL } from '../../../lib/shell/page-trail';
@@ -93,7 +94,10 @@ export default async function ChatPage({
   // ✅ 2026-10-19（#128 §7.1 ①）: 自分のひとこと状態（入口の初期値）。閲覧専用には入口を描かないので読まない。
   const myStatus = canPost ? await readMyChatUserStatus(ctx) : '';
   // ✅ 2026-10-14: 会話を開く・閉じる URL に一覧の検索語と並べ方を引き継ぐ（開くたびに検索が消えない）。
-  const listQuery = { q: query.q ?? null, sort: query.sort ?? CHAT_THREAD_SORT_DEFAULT, unread: query.unread === '1' };
+  // ✅ 2026-10-19（v2）: 左の列の絞り込み（`f=`）。旧「未読のみ」（`unread=1`）は「未読」の絞り込みとして読む。
+  const filter = query.f === undefined && query.unread === '1' ? parseChatFilter('unread') : parseChatFilter(query.f);
+  const infoOpen = query.info === '1';
+  const listQuery = { q: query.q ?? null, sort: query.sort ?? CHAT_THREAD_SORT_DEFAULT, filter };
   const tree = data.tree ?? {
     groups: [],
     truncated: false,
@@ -115,7 +119,9 @@ export default async function ChatPage({
           決まらず、会話の幅も足りなくなる）。対象と相手は各会話の見出しに出ている。 */}
       <PageBody
         widthClass="split"
-        aside={selected === null || tiled ? undefined : <ChatThreadPanel thread={selected} canPost={canPost} />}
+        // ✅ 2026-10-19（v2）: 右の情報欄は既定で閉じる（左に絞り込みの列が増えたので、会話の幅を確保する）。
+        //    会話の見出しの「情報」で開く（`info=1`）。
+        aside={selected === null || tiled || !infoOpen ? undefined : <ChatThreadPanel thread={selected} canPost={canPost} />}
       >
         <PageHeading trail={CHAT_TRAIL} title={t('chat.title')} />
         <p className="mb-4 text-body text-fg-muted">{t('chat.threads.population')}</p>
@@ -133,10 +139,27 @@ export default async function ChatPage({
         {/* ✅ 2026-10-14: 会話を並べているときは、幅が足りない分を**器の中で横に送る**（会話を潰さない）。 */}
         <Card
           className={cn(
-            'flex min-h-0 flex-1 p-0',
+            'flex min-h-0 flex-1 flex-col p-0 md:flex-row',
             tiled ? 'overflow-x-auto overflow-y-hidden' : 'overflow-hidden',
           )}
         >
+          {/* ✅ 2026-10-19（v2）: 左の絞り込みの列（会社から・人から）。🔴 `md` 未満で会話を開いているときは一覧と一緒に畳む。 */}
+          <div
+            className={
+              selected === null
+                ? 'w-full shrink-0 bg-bg-inset md:w-44'
+                : 'hidden shrink-0 bg-bg-inset md:block md:w-44'
+            }
+          >
+            <ChatRail
+              groups={tree.groups}
+              rooms={data.people?.rooms ?? []}
+              unreadCounts={{ ...tree.unreadCounts, ...(data.people?.unreadCounts ?? {}) }}
+              awaitingReplyIds={tree.awaitingReplyIds}
+              filter={filter}
+              showContacts={data.people !== null}
+            />
+          </div>
           {/* ✅ 2026-10-16（紺野）: 一覧は薄いグレーの面、会話は白。境の罫線はやめ、面の色の違いで分ける。 */}
           {/* 左: スレッド一覧（320）。🔴 `md` 未満で会話を開いているときは畳む（2 画面遷移） */}
           <div
@@ -157,7 +180,7 @@ export default async function ChatPage({
               people={data.people}
               canPost={canPost}
               lastSnippets={tree.lastSnippets}
-              unreadOnly={listQuery.unread}
+              filter={filter}
               q={listQuery.q}
               sort={listQuery.sort}
               selectedThreadId={selected?.id ?? null}
@@ -193,6 +216,12 @@ export default async function ChatPage({
                 canPost={canPost}
                 messages={conversationMessages}
                 {...(tiled ? { closeHref: chatHref({ ...withPaneClosed(paneState, selected.id), ...listQuery }) } : {})}
+                {...(tiled
+                  ? {}
+                  : {
+                      infoHref: chatHref({ ...paneState, ...listQuery, info: !infoOpen }),
+                      infoLabel: infoOpen ? t('chat.panel.close') : t('chat.panel.open'),
+                    })}
               />
             )}
           </div>

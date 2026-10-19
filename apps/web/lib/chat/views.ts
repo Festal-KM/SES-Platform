@@ -149,6 +149,12 @@ export type ChatRoomListItem = {
   readonly name: string | null;
   readonly memberCount: number;
   readonly lastMessageAt: string | null;
+  /** ✅ 2026-10-19（v2）: メンバー（「人から」辿る）。🔴 自分が入っている部屋のメンバーだけ（C10）。 */
+  readonly memberUserIds: readonly string[];
+  /** 取引先との部屋か（「外部」の札）。 */
+  readonly external: boolean;
+  /** その取引先の会社のまとまりの鍵（「会社から」辿る）。社内の部屋・まとまりが無いときは `null`。 */
+  readonly companyKey: string | null;
 };
 
 // ---------------------------------------------------------------------------
