@@ -14,7 +14,7 @@
 //      `delete` にあり、`retain` の表には含まれない（`F-064 AC-2` / `CLAUDE.md` §3.5）
 //   ④ 削除スコープの追加ポリシー（migration 20260927000000 ④）が並べる表の集合と `PURGE_SPEC.delete` の表の集合が一致する
 //      （spec に表を足したのにポリシーを足し忘れると、その表の取引先所有行に削除が届かない）
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -39,6 +39,15 @@ const PURGE_MIGRATION_PATH = path.join(
   '20260927000000_tenant_purge',
   'migration.sql',
 );
+
+/** 削除スコープの migration（20260927000000）より後の migration の SQL（表を後から足した分を拾う）。 */
+const MIGRATIONS_DIR = path.dirname(path.dirname(PURGE_MIGRATION_PATH));
+const LATER_MIGRATION_SQLS: readonly string[] = readdirSync(MIGRATIONS_DIR)
+  .filter((name) => /^\d{14}_/.test(name) && name > '20260927000000_tenant_purge')
+  .sort()
+  .map((name) => path.join(MIGRATIONS_DIR, name, 'migration.sql'))
+  .filter((file) => existsSync(file))
+  .map((file) => readFileSync(file, 'utf8'));
 
 type ColumnInfo = { readonly nullable: boolean };
 type TableInfo = { readonly model: string; readonly isView: boolean; readonly columns: ReadonlyMap<string, ColumnInfo> };
@@ -99,6 +108,7 @@ const PII_COLUMNS: ReadonlyArray<readonly [table: string, column: string]> = [
   ['engineer_snapshots', 'display_name'],
   ['engineer_snapshots', 'careers'],
   ['messages', 'body'],
+  ['chat_user_statuses', 'text'],
   ['messages', 'attachment_key'],
   ['proposal_events', 'attachment_key'],
   ['invitations', 'email'],
@@ -209,10 +219,16 @@ describe('🔴 docs/05 §17.2 #12: 全業務テーブルが PURGE_SPEC.delete / 
     const sql = readFileSync(PURGE_MIGRATION_PATH, 'utf8');
     const array = /FOREACH t IN ARRAY ARRAY\[([\s\S]*?)\]\s+LOOP/.exec(sql);
     expect(array, 'FOREACH の表配列が見つからない').not.toBeNull();
-    const policyTables = [...(array?.[1] ?? '').matchAll(/'([a-z_]+)'/g)].map((m) => m[1]!).sort();
+    // ✅ 2026-10-19: 後から足した表は、その表の migration が `{table}_purge_scope_select` を名指しで作る
+    //    （既存の migration は書き換えない。例: 20261019020000_chat_user_statuses）。両方を合わせて突合する。
+    const later = LATER_MIGRATION_SQLS.join('\n');
+    const laterTables = [...later.matchAll(/CREATE POLICY (\w+)_purge_scope_select ON (\w+)/g)].map((m) => m[2]!);
+    const policyTables = [...[...(array?.[1] ?? '').matchAll(/'([a-z_]+)'/g)].map((m) => m[1]!), ...laterTables].sort();
     expect(policyTables).toEqual(deleteTables);
+    const laterUpdates = [...later.matchAll(/CREATE POLICY (\w+)_purge_scope_update ON (\w+)/g)].map((m) => m[2]!).sort();
+    expect(laterUpdates).toEqual([...laterTables].sort());
     // DELETE のポリシーは rows: 'ALL' の表だけ。
-    const deletePolicies = [...sql.matchAll(/CREATE POLICY (\w+)_purge_scope_delete ON (\w+)/g)].map((m) => m[2]!).sort();
+    const deletePolicies = [...`${sql}\n${later}`.matchAll(/CREATE POLICY (\w+)_purge_scope_delete ON (\w+)/g)].map((m) => m[2]!).sort();
     expect(deletePolicies).toEqual(PURGE_SPEC.delete.filter(isPurgeRowsSpec).map((spec) => spec.table).sort());
   });
 });

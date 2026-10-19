@@ -22,6 +22,7 @@ export const PURGE_TARGET_MESSAGE_KEYS = {
   review_gates: 'retention.schedule.kind.review_gates',
   match_candidates: 'retention.schedule.kind.match_candidates',
   messages: 'retention.schedule.kind.messages',
+  chat_user_statuses: 'retention.schedule.kind.chat_user_statuses',
   contract_documents: 'retention.schedule.kind.contract_documents',
   contract_templates: 'retention.schedule.kind.contract_templates',
   contracts: 'retention.schedule.kind.contracts',

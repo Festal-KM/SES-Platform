@@ -14,6 +14,7 @@
 import type { AuthenticatedTenantCtx } from '@ses/db';
 import { withTenant } from '@ses/db';
 import { countUnread, readThreadPrefs } from './read-state';
+import { readChatUserStatuses } from './user-status';
 import type { ChatMemberView, ChatRoomListItem, ChatThreadDetailView } from './views';
 
 type TenantDb = Parameters<Parameters<typeof withTenant<void>>[1]>[0];
@@ -24,6 +25,8 @@ export type ChatContact = {
   readonly name: string | null;
   readonly companyName: string | null;
   readonly isHost: boolean;
+  /** ✅ 2026-10-19: ひとこと状態（`chat_user_statuses`。RLS で読めた人の、空でないものだけ）。 */
+  readonly status?: string | null;
 };
 
 /** 連絡先（開閉式の欄）。 */
@@ -97,7 +100,7 @@ function roomName(row: RoomRow, viewerId: string, users: ReadonlyMap<string, Use
 /** DM・グループと連絡先を読む（画面の一覧の欄）。🔴 呼び出し側の `withTenant` の中で呼ぶ。 */
 export async function readPeople(
   ctx: AuthenticatedTenantCtx,
-  db: Pick<TenantDb, 'chatThread' | 'user' | 'partnerCompany' | 'tenant' | 'message' | 'chatReadState'>,
+  db: Pick<TenantDb, 'chatThread' | 'user' | 'partnerCompany' | 'tenant' | 'message' | 'chatReadState' | 'chatUserStatus'>,
 ): Promise<ChatPeopleData> {
   // ① 母集団は C10 MEMBER（自分がメンバーの部屋だけ）。`where` は種類だけ。
   const rows = (await db.chatThread.findMany({
@@ -121,11 +124,14 @@ export async function readPeople(
   // ② 取引先の人の連絡先は自社（ホスト）の人だけ。
   const isHostViewer = ctx.partnerCompanyId === null;
   const contactable = people.filter((person) => isHostViewer || person.ownerPartnerCompanyId === null);
+  // ✅ 2026-10-19: 連絡先に出す人のひとこと状態（RLS 任せ。見えない人の状態は返らない）。
+  const statuses = await readChatUserStatuses(db, contactable.map((person) => person.id));
   const toContact = (person: UserRow): ChatContact => ({
     userId: person.id,
     name: person.displayName,
     companyName: nameOfCompany(person.ownerPartnerCompanyId),
     isHost: person.ownerPartnerCompanyId === null,
+    status: statuses.get(person.id) ?? null,
   });
 
   const byCompany = new Map<string, UserRow[]>();
@@ -178,7 +184,7 @@ export async function readPeople(
  */
 export async function readRoomDetail(
   ctx: AuthenticatedTenantCtx,
-  db: Pick<TenantDb, 'chatThread' | 'user' | 'partnerCompany' | 'tenant'>,
+  db: Pick<TenantDb, 'chatThread' | 'user' | 'partnerCompany' | 'tenant' | 'chatUserStatus'>,
   threadId: string,
 ): Promise<ChatThreadDetailView | null> {
   const row = (await db.chatThread.findFirst({
@@ -187,6 +193,7 @@ export async function readRoomDetail(
   })) as RoomRow | null;
   if (row === null) return null;
   const users = await readUsers(db, row.memberUserIds);
+  const statuses = await readChatUserStatuses(db, row.memberUserIds);
   const nameOfCompany = await companyNamesOf(
     db,
     row.memberUserIds.map((id) => users.get(id)?.ownerPartnerCompanyId ?? null),
@@ -199,6 +206,7 @@ export async function readRoomDetail(
       companyName: user === undefined ? null : nameOfCompany(user.ownerPartnerCompanyId),
       isHost: user === undefined ? false : user.ownerPartnerCompanyId === null,
       self: id === ctx.userId,
+      status: statuses.get(id) ?? null,
     };
   });
   return {

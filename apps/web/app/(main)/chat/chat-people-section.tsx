@@ -33,6 +33,11 @@ function ContactRow({ contact }: { readonly contact: ChatContact }) {
           <Avatar size="sm" initials={displayInitials(name)} title={name} />
           <span className="min-w-0 truncate text-cell text-fg">{name}</span>
           <span className="shrink-0 truncate text-xs text-fg-muted">{contact.companyName ?? ''}</span>
+          {contact.status == null || contact.status === '' ? null : (
+            <span className="min-w-0 truncate text-xs text-fg-placeholder" data-testid={`chat-contact-status-${contact.userId}`}>
+              {contact.status}
+            </span>
+          )}
         </span>
       </ChatOpenDmButton>
     </li>

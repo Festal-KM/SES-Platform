@@ -4358,6 +4358,7 @@ const ja = {
   'retention.schedule.kind.review_gates': '品質ゲートの指摘（抜粋）',
   'retention.schedule.kind.match_candidates': 'マッチングの根拠文',
   'retention.schedule.kind.messages': 'チャットの本文・添付',
+  'retention.schedule.kind.chat_user_statuses': 'チャットのひとこと状態',
   'retention.schedule.kind.contract_documents': '契約書のファイル・差し込み結果・署名者',
   'retention.schedule.kind.contract_templates': '契約テンプレートのファイル',
   'retention.schedule.kind.contracts': '契約書送付の失敗本文',
@@ -4552,6 +4553,15 @@ const ja = {
   'chat.panel.participant.joined': '参加',
   'chat.panel.participant.left': '退出',
   'chat.panel.participant.active': '参加中',
+  // ✅ 2026-10-19（#128 §7.1 ①）: ひとこと状態。🔴 自由文が商流情報の通り道にならないよう、入力欄の下に注意書きを常に出す。
+  'chat.status.open': '状態を設定',
+  'chat.status.label': 'ひとこと状態',
+  'chat.status.placeholder': '例: 商談中 / 移動中・16 時以降に返信',
+  'chat.status.note': '単価・エンド企業名などは書かないでください',
+  'chat.status.save': '保存',
+  'chat.status.clear': '消す',
+  'chat.status.failed': '状態を保存できませんでした',
+  'chat.status.current': '自分の状態',
   // ==========================================================================
   // ✅ 2026-10-14（人間の明示指示）: `カレンダー` と `パートナー連携` の 4 画面（いずれも準備中）
   // ==========================================================================
