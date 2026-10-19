@@ -78,7 +78,6 @@ import {
   Button,
   Card,
   CardContent,
-  Checkbox,
   DataTable,
   DISCLOSURE_SUMMARY_CLASSES,
   EmptyState,
@@ -86,12 +85,9 @@ import {
   Field,
   Icon,
   Input,
-  // ✅✅ 2026-10-16 / 10-18: 複数選択をポップアップで選び、選んだものをバッジ（+ `×`）で
-  //    見せるための 4 定数（人間の明示指示。見た目の決定は `@ses/ui` に 1 つだけ置く）。
-  MULTI_SELECT_BADGE_REMOVE_CLASSES,
-  MULTI_SELECT_OPTION_CLASSES,
-  MULTI_SELECT_PANEL_CLASSES,
-  MULTI_SELECT_TRIGGER_CLASSES,
+  // ⚠️ **2026-10-19: 複数選択の 4 定数の import はここから消えた。** 引き金・面・行・`×` を
+  //    組むのは `./skill-filter-select.tsx`（クライアントの島）に移っており、
+  //    **見た目の決定は従来どおり `@ses/ui` の 1 箇所にある**（定数そのものは増えた）。
   Pagination,
   SECONDARY_BUTTON_LINK_CLASSES,
   Select,
@@ -113,6 +109,11 @@ import {
 //    query を受け取れる状態は保っている（共有された URL を壊さない）。
 import type { ColumnToggleItem } from '../../_components/column-toggle';
 import type { ProjectListRowView } from '../../../lib/projects/list-rows';
+// ✅✅ **2026-10-19: スキル条件（複数選択）だけがクライアント境界の内側にある。**
+// 🔴 **この画面は `'use client'` を宣言しない** —— 境界は `SkillFilterSelect` の 1 ファイルに
+//    閉じており、行の描画（50 行 × 9 列）も他の 5 条件もサーバに残る
+//    （`_components/column-toggle.tsx` が担っていたのと同じ形）。
+import { SkillFilterSelect } from './skill-filter-select';
 
 /** 検索条件の選択肢 1 件（`value` は API の query に載る値そのもの）。 */
 export type ProjectFilterOption = {
@@ -192,6 +193,14 @@ export type ProjectListScreenMessages = {
   readonly searchSkillRemove: string;
   readonly searchSkillHint: string;
   readonly searchSkillEmpty: string;
+  /**
+   * ✅✅ **2026-10-19: ポップアップの中の検索欄**（人間の明示指示 + 受領モック
+   * 「スキルを検索…」）。🔴 **語で候補を絞るのは `skill-filter-select.tsx`（クライアントの島）**
+   * であり、そこに渡す 3 語をここで受ける（画面が文言の唯一の入口であることを崩さない）。
+   */
+  readonly searchSkillSearchLabel: string;
+  readonly searchSkillSearchPlaceholder: string;
+  readonly searchSkillNoMatch: string;
   readonly searchPriceInverted: string;
   readonly searchSubmit: string;
   readonly searchClear: string;
@@ -403,7 +412,6 @@ export function ProjectListScreen({
   remoteModeOptions,
   categoryOptions,
   skillOptions,
-  skillRemoveHrefOf,
   priceInverted,
   canRegister,
   nextPageHref,
@@ -443,12 +451,9 @@ export function ProjectListScreen({
    *    黙って置かない）。
    */
   readonly skillOptions: readonly ProjectFilterOption[];
-  /**
-   * ✅✅ **2026-10-18: そのスキルだけを外した検索結果の URL**（人間の明示指示のバッジの `×`）。
-   * 🔴 **組み立ては呼び出し側**（`projectSkillRemoveHref`）である —— 画面は URL を組まない
-   *    （`selectHrefOf` と同じ分担）。
-   */
-  readonly skillRemoveHrefOf: (skillId: string) => string;
+  // ⚠️ **2026-10-19: `skillRemoveHrefOf` を外した。** バッジの `×` は URL への遷移ではなく
+  //    **チェックを外す操作**になった（受領モックの「チェック = バッジ」に揃えたため。
+  //    `skill-filter-select.tsx` 冒頭の 🔴）。**受け取って使わない props を残さない。**
   /**
    * ✅ **2026-10-16: 単価の下限 > 上限**（人間の明示指示）。`true` のとき、単価の欄に
    * エラーを出し、**表の領域は検索を実行していないことを示す空状態**にする（`page.tsx` が
@@ -494,11 +499,6 @@ export function ProjectListScreen({
 }) {
   // 🔴 隠す列は props の `hidden` から導く（画面に 2 つ目の出所を作らない）。
   const hiddenColumnIds = columnToggleItems.filter((item) => item.hidden).map((item) => item.id);
-  // ✅✅ 2026-10-16: 選ばれているスキル（バッジで見せる分）。
-  // 🔴 **並びは選択肢の順（辞書の `sortKey`）である** —— URL に並んだ順にすると、
-  //    同じ条件でもバッジの並びが変わる（`PROJECT_LIST_ORDER_BY` と同じ「決定的に」の規律）。
-  // 🔴 **選択肢に無い ID は描かない**（URL 直打ちで未知の ID を指されても、バッジが増えない）。
-  const selectedSkills = skillOptions.filter((option) => filters.skills.includes(option.value));
   return (
     <div data-testid="project-list-screen">
       {/* 🔴 §5-13 の `Toolbar`: **母集団の 1 行（§3.2-2 の #2）と検索の帯の置き場所をここに固定する。**
@@ -541,13 +541,22 @@ export function ProjectListScreen({
               <CardContent className="pt-0 pb-3">
                 <details open className="group">
                   {/* 🔴 **見出しそのものが開閉の当たり判定である**（別にボタンを置かない）。
-                      🔴 **太字にしない**（人間の明示指示「ボールドが多すぎる」）。 */}
+                      🔴 **太字にしない**（人間の明示指示「ボールドが多すぎる」）。
+                      ✅✅ **2026-10-19（人間の明示指示「アコーディオンでたたむことが
+                         できるようにする」）: 右端に開閉の印（`chevron-down`）を置いた。**
+                      ⚠️ **たためること自体は 2026-10-16 から動いていた**（`<details>`）。
+                         足りなかったのは**印**である —— 虫眼鏡しか出ておらず、
+                         押せば閉じると分かる手がかりが画面に 1 つも無かった
+                         （`cursor: pointer` はポインタを乗せるまで見えない）。
+                      🔴 **印は `ml-auto` で右端に置く** —— 見出しの語の直後に置くと、
+                         語の長さで印の位置が動き、毎回違う場所を狙うことになる。 */}
                   <summary className={cn(DISCLOSURE_SUMMARY_CLASSES, FOCUS_RING_CLASSES)}>
-                    <Icon
-                      name="search"
-                      className="shrink-0 text-fg-muted transition-transform group-open:rotate-0"
-                    />
+                    <Icon name="search" className="shrink-0 text-fg-muted" />
                     {messages.searchLegend}
+                    <Icon
+                      name="chevron-down"
+                      className="ml-auto shrink-0 text-fg-muted transition-transform group-open:rotate-180"
+                    />
                   </summary>
                 {/* 🔴 検索条件（docs/04 §S-010 セクション 1）。`method="get"` なので、実行した検索が
                    そのまま URL になり、共有・再読込・戻るのいずれでも同じ結果に戻る。
@@ -771,7 +780,17 @@ export function ProjectListScreen({
                         🔴 **クライアントの島を 1 つも持ち込んでいない**（`<details>` +
                            チェックボックス + リンク）。水和の前から選べて、外せる。
                         🔴 **語は辞書の `name`** であり `packages/i18n` に無い（辞書はデータである）。 */}
-                    <Field as="div" label={messages.searchSkill}>
+                    {/* ✅✅ **2026-10-19（人間の明示指示「スキル選択の横幅をもっと長くする」）:
+                        単価の右の**残り全部**を取る。**
+                        🔴 **段ごとに書く**（`FILTER_FORM_CLASSES` は 1 / 2 / 3 / 4 列）——
+                           `col-span-3` を 1 つ書くと、2 列の幅では欄が行からはみ出す。
+                           `単価` が `col-start-1` に固定されているので、ここが取るのは
+                           **その行の残り**（4 列なら 3 つぶん、3 列なら 2 つぶん）である。 */}
+                    <Field
+                      as="div"
+                      className="lg:col-span-2 xl:col-span-3"
+                      label={messages.searchSkill}
+                    >
                       {skillOptions.length === 0 ? (
                         <p
                           className="m-0 text-body text-fg-muted"
@@ -780,74 +799,23 @@ export function ProjectListScreen({
                           {messages.searchSkillEmpty}
                         </p>
                       ) : (
-                        // 🔴 `relative` はポップアップ（`absolute`）の基準点である。
-                        <details className="group/skills relative">
-                          <summary
-                            className={cn(MULTI_SELECT_TRIGGER_CLASSES, FOCUS_RING_CLASSES)}
-                            data-testid="project-list-filter-skills"
-                          >
-                            {/* 🔴 **選んだものはバッジで見せ、`×` で 1 つずつ外せる**（受領画像）。
-                                🔴 **バッジが表すのは「いま効いている条件」**（URL）であり、
-                                   ポップアップのチェックは「これから送る条件」である ——
-                                   `検索` を押すまで一致しないのが**正しい**（押さずに
-                                   バッジが変わると、何で絞られているのか分からなくなる）。
-                                🔴 1 つも選んでいないときは「すべて」と書く —— 空の引き金は
-                                   「壊れている」と「何も選んでいない」の区別が付かない。 */}
-                            {selectedSkills.length === 0 ? (
-                              <span className="text-fg-placeholder">{messages.searchSkillAll}</span>
-                            ) : (
-                              selectedSkills.map((option) => (
-                                // 🔴 色は意味を持たない（選んだ事実を示すだけ）。状態の色
-                                //    （`StatusBadge`）と取り違えないよう `neutral` に固定する。
-                                <Badge key={option.value} variant="neutral" className="gap-1">
-                                  {option.label}
-                                  {/* 🔴 **`×` はリンクである**（クライアントの島を作らない）。
-                                      押すとそのスキルだけを外した検索結果へ遷移する。
-                                      ⚠️ `<summary>` の中のリンクを押すと開閉も起きるが、
-                                         そのまま遷移するので見た目に影響しない（遷移先では
-                                         `<details>` は既定の閉じた状態で描かれる）。 */}
-                                  <Link
-                                    className={MULTI_SELECT_BADGE_REMOVE_CLASSES}
-                                    href={skillRemoveHrefOf(option.value)}
-                                    aria-label={`${option.label}${messages.searchSkillRemove}`}
-                                    data-testid={`project-list-filter-skill-remove-${option.value}`}
-                                  >
-                                    <Icon name="x" size="sm" />
-                                  </Link>
-                                </Badge>
-                              ))
-                            )}
-                            {/* 🔴 印であって意味ではない（開閉は `<details>` が持つ）。 */}
-                            <Icon
-                              name="chevron-down"
-                              className="ml-auto shrink-0 text-fg-muted transition-transform group-open/skills:rotate-180"
-                            />
-                          </summary>
-                          {/* 🔴 **ポップアップは重ねる**（`absolute`）—— 開いても帯の高さが
-                              変わらないので、選んでいる間に下の条件や表が動かない。
-                              🔴 **中身はチェックボックスである** —— 同じ `name` の
-                                 チェックボックスは選んだぶんだけ `skills=A&skills=B` を送る
-                                 （`<select multiple>` と**まったく同じ形**で届くので、
-                                 query も述語も 1 文字も変えていない）。
-                              ⚠️ 受領画像にある「スキルを検索…」の欄は**置いていない** ——
-                                 絞り込むには JS が要る（置くと押しても何も起きない欄になる）。
-                                 辞書は数十件でスクロールで足りる。 */}
-                          <div
-                            className={MULTI_SELECT_PANEL_CLASSES}
-                            data-testid="project-list-filter-skills-panel"
-                          >
-                            {skillOptions.map((option) => (
-                              <label key={option.value} className={MULTI_SELECT_OPTION_CLASSES}>
-                                <Checkbox
-                                  name="skills"
-                                  value={option.value}
-                                  defaultChecked={filters.skills.includes(option.value)}
-                                />
-                                {option.label}
-                              </label>
-                            ))}
-                          </div>
-                        </details>
+                        // ✅✅ **2026-10-19: 本体を `skill-filter-select.tsx` へ出した。**
+                        // 🔴 **この画面で唯一の `'use client'` の島である**（境界の理由は
+                        //    あちらのファイル冒頭に書いた。要点は「受領モックの『スキルを
+                        //    検索…』は CSS だけでは書けない」）。
+                        // 🔴 **送る形は 1 文字も変えていない** —— 中身は同じ `name="skills"` の
+                        //    チェックボックスであり、`skills=A&skills=B` で届く。
+                        <SkillFilterSelect
+                          options={skillOptions}
+                          defaultValues={filters.skills}
+                          messages={{
+                            all: messages.searchSkillAll,
+                            remove: messages.searchSkillRemove,
+                            searchLabel: messages.searchSkillSearchLabel,
+                            searchPlaceholder: messages.searchSkillSearchPlaceholder,
+                            noMatch: messages.searchSkillNoMatch,
+                          }}
+                        />
                       )}
                     </Field>
                     {/* ⚠️ **2026-10-16: `勤務地` の欄を外した**（人間の明示指示の 6 項目に無い）。

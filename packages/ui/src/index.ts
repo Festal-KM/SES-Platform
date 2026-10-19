@@ -409,7 +409,11 @@ export {
 //    （人間の明示指示。`S-010` のスキル条件が使う）。🔴 **画面側で面・高さ・重なりを組まない。**
 export {
   MULTI_SELECT_BADGE_REMOVE_CLASSES,
+  MULTI_SELECT_BADGE_ROW_CLASSES,
+  MULTI_SELECT_EMPTY_CLASSES,
   MULTI_SELECT_OPTION_CLASSES,
+  MULTI_SELECT_OPTION_SELECTED_CLASSES,
+  MULTI_SELECT_SEARCH_CLASSES,
   MULTI_SELECT_TRIGGER_CLASSES,
   ROW_ACTION_LINK_CLASSES,
   ROW_HOVER_CLASSES,
@@ -420,4 +424,4 @@ export {
 //    あり（React の値を 1 つも持たない。`import type { ReactNode }` は型である）、
 //    Radix を引き込まない。使う側の `S-010` は `'use client'` を 1 つも宣言しない画面なので、
 //    `@ses/ui/client` からは取れない（`tests/static/ui-dependency-single-path.test.ts` (i)⑤）。
-export { MULTI_SELECT_PANEL_CLASSES } from './lib/overlay-classes.js';
+export { MULTI_SELECT_LIST_CLASSES, MULTI_SELECT_PANEL_CLASSES } from './lib/overlay-classes.js';

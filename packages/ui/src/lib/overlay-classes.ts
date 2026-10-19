@@ -136,7 +136,11 @@ export const DRAWER_PANEL_CLASSES = cn(
  * 🔴 **`z-20`**（`DropdownMenu` の `z-50` より下）—— Radix の overlay は画面に固定で重なるが、
  *    こちらは**絞り込みカードの中**に収まる。同じ高さにすると、`Dialog` が開いているときに
  *    下の絞り込みのポップアップが前に出る。
- * 🔴 **縦に伸びすぎない**（`max-h-56` ＝ 224px で内側スクロール）。辞書が増えても帯は変わらない。
+ * 🔴 **縦に伸びすぎない**（`MULTI_SELECT_LIST_CLASSES` の `max-h-56` ＝ 224px で内側スクロール）。
+ *    辞書が増えても帯は変わらない。
+ * ✅✅ **2026-10-19: スクロールを一覧の層へ下ろした**（受領モックの検索欄は常に見えている）。
+ *    🔴 **この面は `overflow-hidden`** —— 面自体が流れると、絞り込みの語を打ちながら
+ *       候補を見ることができない（検索欄が上に流れて消える）。
  * ⚠️ **外側をクリックしても閉じない**（`<details>` の素の挙動）。閉じるには引き金をもう一度
  *    押す —— クライアントの島を持ち込まないための意図的な割り切りであり、絞り込みの
  *    アコーディオン（`DISCLOSURE_SUMMARY_CLASSES`）と同じ考え方である。
@@ -145,8 +149,16 @@ export const DRAWER_PANEL_CLASSES = cn(
  */
 export const MULTI_SELECT_PANEL_CLASSES = cn(
   OVERLAY_SURFACE_CLASSES,
-  'absolute top-full right-0 left-0 z-20 mt-1 flex max-h-56 flex-col overflow-y-auto rounded-md p-2',
+  'absolute top-full right-0 left-0 z-20 mt-1 flex flex-col overflow-hidden rounded-md p-2',
 );
+
+/**
+ * ✅✅ **ポップアップの中の選択肢の一覧**（2026-10-19）。**スクロールするのはここだけである。**
+ *
+ * 🔴 **`max-h-56`（224px）** —— 面の高さの上限をここが持つ（旧実装は面そのものが持っていた）。
+ *    辞書が何件に増えても、絞り込みの帯の下に出る塊の高さは変わらない。
+ */
+export const MULTI_SELECT_LIST_CLASSES = 'flex max-h-56 flex-col overflow-y-auto';
 
 /** `DropdownMenu` の面。 */
 export const DROPDOWN_MENU_CONTENT_CLASSES = cn(

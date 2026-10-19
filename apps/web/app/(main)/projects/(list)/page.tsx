@@ -27,8 +27,6 @@ import {
   // ✅✅ 2026-10-16: 案件サマリのタブ（`?panelTab=`。人間の明示指示）。
   projectPanelTab,
   projectPanelTabHref,
-  // ✅✅ 2026-10-18: バッジの `×`（選んだスキルを 1 つ外す URL）。
-  projectSkillRemoveHref,
   PROJECT_PANEL_TAB_PARAM,
   projectListPrimaryAction,
   projectListRows,
@@ -234,11 +232,9 @@ export default async function ProjectListPage({
         // 🔴 **語は辞書の `name`** であり `packages/i18n` に無い（辞書はデータであって文言ではない）。
         // 🔴 **並びは `listSkills` が決めた決定的な順**（`sortKey` 昇順 → `id`）をそのまま使う。
         skillOptions={projectSkillFilterOptions(skills.items)}
-        // ✅✅ 2026-10-18: バッジの `×`（人間の明示指示）。🔴 **ページの位置は捨てる**
-        //    （条件が変われば母集団が変わり、同じカーソルは別の結果集合の途中を指す）。
-        skillRemoveHrefOf={(skillId) =>
-          projectSkillRemoveHref(query, hiddenColumns, selectedId, panelTab, skillId)
-        }
+        // ⚠️ **2026-10-19: `skillRemoveHrefOf` を渡さなくなった。** バッジの `×` は
+        //    URL への遷移ではなく**チェックを外す操作**になった（受領モックの
+        //    「チェック = バッジ」に揃えたため。`skill-filter-select.tsx` 冒頭の 🔴）。
         priceInverted={priceInverted}
         // 🔴 取引先には公開先の列を出さない（docs/04 §S-010 / `F-014 AC-4`）。出所は ctx である。
         // 🔴 `S-012` に到達できるのはホストの 3 ロールだけである（`PROJECT_EDITOR_ROLES`）。

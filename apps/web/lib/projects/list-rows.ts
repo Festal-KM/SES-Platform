@@ -332,33 +332,12 @@ export function projectPanelTab(raw: string | readonly string[] | undefined): Pr
   return PROJECT_PANEL_TABS.find((tab) => tab === requested) ?? PROJECT_PANEL_TAB_DEFAULT;
 }
 
-/**
- * ✅✅ **選んだスキルを 1 つ外す URL**（2026-10-16。人間の明示指示「選択したらバッジで表示する
- *    ようにして」の `×`）。
- *
- * 🔴 **`×` はリンクである**（クライアントの島を持ち込まない）。押すと、そのスキルだけを
- *    外した検索結果へ遷移する —— **バッジが表すのは「いま効いている条件」**であり、
- *    ポップアップのチェックは「これから送る条件」である（押すまで一致しないのが正しい）。
- * 🔴 **ページの位置（`cursor`）は捨てる。** 条件が変わると母集団が変わるので、同じカーソルは
- *    別の結果集合の途中を指す（`docs/05` §4.8 のカーソルの意味）。1 ページ目に戻す。
- * 🔴 **最後の 1 つを外したら、キーごと URL から消える**（`skills` が空配列にならない）。
- */
-export function projectSkillRemoveHref(
-  query: ProjectListQuery,
-  hiddenColumns: readonly ProjectHideableColumnId[],
-  selectedId: string | null,
-  panelTab: ProjectPanelTab,
-  skillId: string,
-): string {
-  const remaining = (query.skills ?? []).filter((id) => id !== skillId);
-  return projectListHref(
-    { ...query, skills: remaining.length === 0 ? undefined : remaining },
-    null,
-    hiddenColumns,
-    selectedId,
-    panelTab,
-  );
-}
+// ⚠️ **2026-10-19: `projectSkillRemoveHref` を削除した。** バッジの `×` が
+//    **URL への遷移をやめ、チェックを外す操作**になったためである
+//    （受領モックの「チェック = バッジ」に揃えた。
+//    `app/(main)/projects/skill-filter-select.tsx` 冒頭の 🔴）。
+// 🔴 **使われない組み立てを残さない** —— 残すと「おそらくこっちが正」と読める
+//    経路が 2 つになる。`skills` の query 自体は 1 文字も変えていない。
 
 /**
  * そのタブを開く `S-010` の URL。

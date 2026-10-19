@@ -185,6 +185,10 @@ export function projectListScreenMessages(params: {
     searchSkillRemove: t('projects.list.search.skillRemove'),
     searchSkillHint: t('projects.list.search.skillHint'),
     searchSkillEmpty: t('projects.list.search.skillEmpty'),
+    // ✅✅ 2026-10-19: ポップアップの中の検索欄（人間の明示指示 + 受領モック）。
+    searchSkillSearchLabel: t('projects.list.search.skillSearchLabel'),
+    searchSkillSearchPlaceholder: t('projects.list.search.skillSearchPlaceholder'),
+    searchSkillNoMatch: t('projects.list.search.skillNoMatch'),
     searchPriceInverted: t('projects.list.search.priceInverted'),
     searchSubmit: t('projects.list.search.submit'),
     searchClear: t('projects.list.search.clear'),

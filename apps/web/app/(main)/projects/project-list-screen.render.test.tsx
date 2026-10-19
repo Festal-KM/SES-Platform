@@ -70,6 +70,10 @@ const messages: ProjectListScreenMessages = {
   searchSkillRemove: 'を外す',
   searchSkillHint:'スキルは複数選べます（選んだいずれかを要件に持つ案件が出ます）。',
   searchSkillEmpty: 'スキル辞書に登録がありません。',
+  // ✅✅ 2026-10-19: ポップアップの中の検索欄（人間の明示指示 + 受領モック）。
+  searchSkillSearchLabel: 'スキルを名前で絞り込む',
+  searchSkillSearchPlaceholder: 'スキルを検索…',
+  searchSkillNoMatch: '該当するスキルがありません。',
   searchPriceInverted: '単価の下限が上限を上回っています。どちらかを直してください。',
   searchSubmit: '検索',
   searchClear: '条件をクリア',
@@ -174,7 +178,6 @@ function render(
       remoteModeOptions,
       categoryOptions,
       skillOptions,
-      skillRemoveHrefOf: (skillId: string) => `/projects?removed=${skillId}`,
       priceInverted: false,
       canRegister: true,
       nextPageHref: null,
@@ -373,7 +376,11 @@ describe('検索条件（docs/04 §S-010 セクション 1）', () => {
     expect(html).toContain('name="skills"');
     expect(html).toContain('type="checkbox"');
     expect(html).not.toContain('multiple=""');
-    // 🔴 **ポップアップは `<details>` である**（クライアントの島を使っていない）。
+    // ⚠️ **2026-10-19: 開閉は引き続き `<details>` であるが、中身は
+    //    `skill-filter-select.tsx`（クライアントの島）に移った。**
+    // 🔴 **JS が無くても絞り込みは死なない** —— 開閉は素の `<details>`、
+    //    選択肢は素の `<input type="checkbox" name="skills">`、送信は親の
+    //    `<form method="get">` である（効かなくなるのは検索欄と即時反映だけ）。
     expect(html).toContain('data-testid="project-list-filter-skills-panel"');
     // 🔴 **開いても帯の高さが変わらない**（重ねて出す）。
     expect(html).toContain('absolute');
@@ -389,6 +396,50 @@ describe('検索条件（docs/04 §S-010 セクション 1）', () => {
     expect(html).not.toContain('data-testid="project-list-search-coming-soon"');
     // 🔴 「すべて」の番兵を選択肢に作らない（未選択がすべてである）。
     expect(html).not.toMatch(/name="skills"[^>]*>\s*<option value=""/);
+  });
+
+  // ✅✅ **2026-10-19（人間の明示指示「スキル選択部分は添付のようなデザインにして」+ 受領モック）。**
+  it('🔴 ポップアップに「スキルを検索…」の欄が在り、URL には乗らない', () => {
+    const html = render();
+
+    expect(html).toContain('data-testid="project-list-filter-skills-search"');
+    expect(html).toContain('スキルを検索');
+    // 🔴 **読み上げの語を持つ**（見えるラベルが無い欄であり、プレースホルダは代わりにならない）。
+    expect(html).toContain('スキルを名前で絞り込む');
+    // 🔴🔴 **`name` を持たせない** —— 持たせると絞り込みの語が URL に乗り、`#25` の query に
+    //    無い条件を送ることになる（`<form>` は name のある欄だけを送る）。
+    expect(html).not.toMatch(/data-testid="project-list-filter-skills-search"[^>]*\sname=/);
+    expect(html).not.toMatch(/\sname="[^"]*"[^>]*data-testid="project-list-filter-skills-search"/);
+  });
+
+  // ✅✅ **2026-10-19（人間の明示指示「幅以上に選択されたとしても行間が高くなることが
+  //    ないようにする」）。** 🔴 **この検査がその指示そのものである。**
+  it('🔴🔴 スキルの引き金は高さが固定で、バッジが増えても折り返さない', () => {
+    const html = render({
+      filters: {
+        ...emptyFilters,
+        skills: skillOptions.map((option) => option.value),
+      },
+    });
+
+    const trigger = /<summary[^>]*data-testid="project-list-filter-skills"[^>]*>/.exec(html)?.[0] ?? '';
+    expect(trigger).not.toBe('');
+    // 🔴 **他の入力欄と同じ 36px に固定**（`min-h-*` ではない）。
+    expect(trigger).toContain('h-9');
+    expect(trigger).not.toContain('min-h-');
+    // 🔴 **折り返さない**（折り返すと欄ごと背が高くなり、同じ行の `単価` と下の行が動く）。
+    expect(trigger).not.toContain('flex-wrap');
+  });
+
+  // ✅✅ **2026-10-19（人間の明示指示「スキル選択の横幅をもっと長くする」）。**
+  it('🔴 スキルの欄は単価の右の残り全部を取る', () => {
+    const html = render();
+
+    // 🔴 **段ごとに書く**（器は 1 / 2 / 3 / 4 列。1 つだけ書くと狭い幅で行からはみ出す）。
+    expect(html).toContain('lg:col-span-2');
+    expect(html).toContain('xl:col-span-3');
+    // 🔴 **`単価` は行の先頭に固定されたまま**（スキルが必ずその右隣に来る前提である）。
+    expect(html).toContain('sm:col-start-1');
   });
 
   it('🔴 スキル辞書が空なら `<select>` を描かず、その旨を書く', () => {

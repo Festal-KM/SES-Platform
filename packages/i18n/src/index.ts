@@ -3172,6 +3172,16 @@ const ja = {
     'スキルは複数選べます（選んだいずれかを要件に持つ案件が出ます）。',
   // 🔴 辞書に 1 件も無いときの語（選択肢が空の `<select>` を黙って置かない）。
   'projects.list.search.skillEmpty': 'スキル辞書に登録がありません。',
+  // ✅✅ **2026-10-19（人間の明示指示「スキル選択部分は添付のようなデザインにして」+ 受領モック）:
+  //    ポップアップの中の検索欄。**
+  // 🔴 **読み上げの語（`skillSearchLabel`）を別に持つ** —— 見えるラベルを持たない欄であり、
+  //    プレースホルダは読み上げのラベルの代わりにならない（`CLAUDE.md` §13.3 の
+  //    「劣化はさせても遮断しない」と同じ判断。フリーワード欄が `sr-only` のラベルを
+  //    残しているのと揃える）。
+  'projects.list.search.skillSearchLabel': 'スキルを名前で絞り込む',
+  'projects.list.search.skillSearchPlaceholder': 'スキルを検索…',
+  // 🔴 空のパネルを出さない（絞り込んだ結果が 0 件なのか、壊れたのか分からない）。
+  'projects.list.search.skillNoMatch': '該当するスキルがありません。',
   // 🔴 カテゴリの 7 つ（`PROJECT_CATEGORIES` と 1 対 1。写像は `lib/projects/labels.ts`）。
   'projects.category.BACKEND': 'バックエンド',
   'projects.category.FRONTEND': 'フロントエンド',

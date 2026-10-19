@@ -156,14 +156,44 @@ export const ROW_HOVER_CLASSES = 'hover:bg-row-hover-bg';
  *    絞り込みの帯の縦幅を小さくするという人間の指示（同日）と正面から衝突していた。
  * 🔴 **見え方は他の入力欄と同じ**（`CONTROL_BASE_CLASSES`）—— 枠・角丸・影・フォーカスリングを
  *    画面側で組み直さない。並んだときに 1 つだけ違う形の欄にしない。
- * 🔴 **`h-9` ではなく `min-h-9`** —— 選んだバッジが増えたときだけ伸びる（既定は他の欄と同じ高さ）。
  * 🔴 **`marker:content-none` + `list-none`** で `<summary>` の既定の三角を消す
  *    （印は呼び出し側が `Icon` で置く。Safari は `list-none` だけでは消えない）。
+ *
+ * ✅✅ **2026-10-19: `min-h-9` → `h-9`（固定）**（人間の明示指示「幅以上に選択されたとしても
+ *    行間が高くなることがないようにする」）。
+ * 🔴 **伸びる余地を 1 つも残さない。** 旧実装は `min-h-9` + `flex-wrap` で、選んだバッジが
+ *    欄の幅を超えると 2 行目に折り返して**欄ごと背が高くなり**、同じ行の `単価` と
+ *    その下の行の位置が動いていた。折り返しをやめ（`MULTI_SELECT_BADGE_ROW_CLASSES` が
+ *    `flex-nowrap` + `overflow-hidden` を持つ）、高さを他の入力欄と同じ 36px に固定する。
+ * 🔴 **溢れたバッジは「+N」で数える**（呼び出し側）—— 単に切り落とすと、
+ *    「選んだはずのものが消えた」と見分けが付かない。
+ * 🔴 **開いているときは枠をブランド色にする**（`group-open/skills:` ではなく
+ *    `aria-expanded` でも効くよう `group-open` と両方は持たない）。`<details>` の
+ *    `open` に連動させるため、呼び出し側が `group-open/…` の接頭辞を足す形は取らず、
+ *    ここでは**枠の色だけ**を持ち、開閉の表現は呼び出し側の `Icon` の回転に任せる。
  */
 export const MULTI_SELECT_TRIGGER_CLASSES = cn(
   CONTROL_BASE_CLASSES,
-  'flex min-h-9 cursor-pointer list-none flex-wrap items-center gap-1 py-1 marker:content-none',
+  'flex h-9 cursor-pointer list-none items-center gap-2 py-1 marker:content-none',
 );
+
+/**
+ * ✅✅ **引き金の中のバッジの列**（2026-10-19。人間の明示指示「幅以上に選択されたとしても
+ * 行間が高くなることがないようにする」）。
+ *
+ * 🔴 **折り返さない**（`flex` の既定は `nowrap`）—— ここが「縦に伸びない」ことの本体である。
+ *    いくつ選んでも欄の高さは `h-9` のまま変わらない。
+ * 🔴 **`min-w-0`** —— flex の子は既定で `min-width:auto`（= 中身の min-content 幅）を持ち、
+ *    これが無いと**バッジが欄そのものを押し広げる**（溢れの指定が効かない）。
+ * 🔴 **`flex-1`** —— 右端の印（`Icon`）を欄の右端に固定するため、残りの幅をすべて取る。
+ * 🔴 **`overflow-hidden` ではなく `overflow-x-auto`** —— 切り落とすと「選んだはずのものが
+ *    消えた」と見分けが付かない。横に流せるので**何も失われない**。
+ * 🔴 **スクロールバーは出さない**（`scrollbar-width:none` + WebKit の擬似要素）——
+ *    古典的なスクロールバーは 15px を占め、**36px の欄の中でバッジを潰す**
+ *    （＝ 高さを固定した意味が無くなる）。選んだものの全体は常にポップアップ側で読める。
+ */
+export const MULTI_SELECT_BADGE_ROW_CLASSES =
+  'flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden';
 
 // 🔴 **ポップアップの面（`MULTI_SELECT_PANEL_CLASSES`）は `./overlay-classes.ts` に在る。**
 //    理由: 重なる面の影（`shadow-overlay`）を書いてよいのは `./overlay-classes.ts` だけであり
@@ -193,3 +223,28 @@ export const MULTI_SELECT_OPTION_CLASSES = cn(
   TRANSITION_CLASSES,
   'hover:bg-bg-subtle',
 );
+
+/**
+ * ✅✅ **選んである行**（2026-10-19。受領モックはチェック済みの行に面が付いている）。
+ *
+ * 🔴 **hover（`--color-bg-subtle`）と別の色にする**（`./state-classes.ts` の `SELECTED_CLASSES`
+ *    と同じ規律）—— 同じ色だと「いま選んである行」と「いまポインタが乗っている行」が
+ *    区別できない。
+ * 🔴 **左端 2px の縦棒（`SELECTED_CLASSES`）は持たせない** —— あれは一覧の行・現在地・タブの
+ *    印であり、2px の内側余白しか無いポップアップの行に付けると入れ子の線に見える。
+ *    ここは**チェックボックスそのものが選択の印**であり、面は補助である。
+ */
+export const MULTI_SELECT_OPTION_SELECTED_CLASSES = 'bg-brand-bg';
+
+/**
+ * ✅✅ **ポップアップの中の検索欄の器**（2026-10-19。人間の明示指示 + 受領モック
+ * 「スキルを検索…」）。
+ *
+ * 🔴 **`relative`** は左の虫眼鏡（`absolute`）の基準点である。
+ * 🔴 **一覧とは別の層に置く**（`MULTI_SELECT_LIST_CLASSES` だけがスクロールする）——
+ *    検索欄が一緒に流れると、絞り込んだ語を確かめながらスクロールできない。
+ */
+export const MULTI_SELECT_SEARCH_CLASSES = 'relative mb-2 shrink-0';
+
+/** ポップアップの中の「該当なし」の 1 行。🔴 空のパネルを出さない（壊れて見える）。 */
+export const MULTI_SELECT_EMPTY_CLASSES = 'px-2 py-3 text-body text-fg-muted';
