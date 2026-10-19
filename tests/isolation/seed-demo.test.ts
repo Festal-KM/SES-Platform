@@ -89,6 +89,8 @@ vi.mock('../../apps/web/lib/auth/platform-session', () => ({
 /** 🔴 起動時 DI の値（`SEED_DATABASE_URL` と `APP_ENV`）。テストが環境を切り替える唯一の口。 */
 const demoSeedRuntimeMock = vi.fn<() => { appEnv: string; databaseUrl: string | null }>();
 vi.mock('../../apps/web/lib/db/bootstrap', () => ({
+  // ✅ 2026-10-16: `lib/auth/tenant-context.ts` が ctx を組むときに読む（2 要素認証の方針）。テストは本番と同じ厳しい側。
+  twoFactorPolicy: () => 'ENFORCED' as const,
   demoSeedRuntime: () => demoSeedRuntimeMock(),
 }));
 
