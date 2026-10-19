@@ -13,6 +13,7 @@ import { Avatar, Badge, ROW_HOVER_CLASSES, cn } from '@ses/ui';
 import { displayInitials } from '../../../lib/format/initials';
 import type { ChatContact, ChatPeopleData } from '../../../lib/chat/people';
 import { chatHref } from '../../../lib/chat/screen-query';
+import { ChatNewGroupForm } from './chat-new-group-form';
 import { ChatOpenDmButton } from './chat-open-dm-button';
 
 export type ChatPeopleSectionProps = {
@@ -91,6 +92,29 @@ export function ChatPeopleSection({ people, selectedThreadId, canPost, favorites
           >
             {t('chat.people.newConversation')}
           </summary>
+          {/* ✅ 2026-10-19（#128）: グループを作る（名前 + 連絡先から選ぶ）。候補は連絡先と同じ母集団（自分は入らない）。 */}
+          {people.contacts.companies.length === 0 ? null : (
+            <ChatNewGroupForm
+              people={people.contacts.companies.flatMap((company) =>
+                company.people.map((contact) => ({
+                  userId: contact.userId,
+                  name: contact.name ?? t('chat.thread.unknownName'),
+                  companyName: contact.companyName,
+                })),
+              )}
+              labels={{
+                heading: t('chat.group.heading'),
+                name: t('chat.group.name'),
+                namePlaceholder: t('chat.group.namePlaceholder'),
+                members: t('chat.group.members'),
+                submit: t('chat.group.submit'),
+                needName: t('chat.group.needName'),
+                needMembers: t('chat.group.needMembers'),
+                failed: t('chat.group.failed'),
+              }}
+            />
+          )}
+          <h4 className={SECTION_LABEL_CLASSES}>{t('chat.people.openDm')}</h4>
           {people.contacts.recent.length === 0 ? null : (
             <section data-testid="chat-contacts-recent">
               <h4 className={SECTION_LABEL_CLASSES}>{t('chat.people.recent')}</h4>

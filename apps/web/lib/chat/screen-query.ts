@@ -142,3 +142,6 @@ export function chatExportApiPath(threadId: string): string {
 
 /** ✅ 2026-10-19（#128）: `POST /api/threads/dm`（その人との DM を開く。無ければ作る）。 */
 export const CHAT_OPEN_DM_API_PATH = '/api/threads/dm';
+
+/** ✅ 2026-10-19（#128）: `POST /api/threads/groups`（グループを作る。作成者は自動で入る）。 */
+export const CHAT_CREATE_GROUP_API_PATH = '/api/threads/groups';

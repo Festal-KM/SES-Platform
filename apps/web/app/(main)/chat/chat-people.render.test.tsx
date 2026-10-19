@@ -123,3 +123,13 @@ describe('③ お気に入り・未読・メンバー', () => {
     expect(viewer).not.toContain('chat-open-dm-');
   });
 });
+
+describe('✅ グループを作る（＋ 新しい会話の中）', () => {
+  it('投稿できる人には連絡先の人を候補にした「グループを作る」が出る。閲覧専用には出ない', () => {
+    const html = renderSection(true);
+    expect(html).toContain('data-testid="chat-new-group"');
+    expect(html).toContain(`data-testid="chat-new-group-member-${HOST_PERSON}"`);
+    expect(html).toContain(`data-testid="chat-new-group-member-${PARTNER_PERSON}"`);
+    expect(renderSection(false)).not.toContain('chat-new-group');
+  });
+});
