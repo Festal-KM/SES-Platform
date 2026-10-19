@@ -10,7 +10,6 @@
 import Link from 'next/link';
 import { t } from '@ses/i18n';
 import { Avatar, Badge, ROW_HOVER_CLASSES, cn } from '@ses/ui';
-import { formatDateTimeJst } from '../../../lib/format/datetime';
 import { displayInitials } from '../../../lib/format/initials';
 import type { ChatContact, ChatPeopleData } from '../../../lib/chat/people';
 import { chatHref } from '../../../lib/chat/screen-query';
@@ -20,6 +19,9 @@ export type ChatPeopleSectionProps = {
   readonly people: ChatPeopleData;
   readonly selectedThreadId: string | null;
   readonly canPost: boolean;
+  /** ✅ 2026-10-19: お気に入り（ピン留めした DM・グループと会社の会話）。一覧が組んで渡す。 */
+  readonly favorites?: readonly { readonly id: string; readonly name: string | null }[];
+  readonly unreadCounts?: Readonly<Record<string, number>>;
 };
 
 const SECTION_LABEL_CLASSES = 'm-0 px-3 pt-3 pb-1 text-xs font-normal text-fg-muted';
@@ -44,42 +46,56 @@ function ContactRow({ contact }: { readonly contact: ChatContact }) {
   );
 }
 
-export function ChatPeopleSection({ people, selectedThreadId, canPost }: ChatPeopleSectionProps) {
-  const pinned = new Set(people.pinnedIds);
+/**
+ * 一覧の上の欄。✅ 2026-10-19: DM・グループの行は一覧（`chat-thread-list.tsx`）に混ぜたので、ここは
+ * **お気に入り**（常に出す。無ければ案内）と **＋ 新しい会話**（連絡先）だけ。
+ */
+export function ChatPeopleSection({ people, selectedThreadId, canPost, favorites, unreadCounts }: ChatPeopleSectionProps) {
   const muted = new Set(people.mutedIds);
-  const favorites = people.rooms.filter((room) => pinned.has(room.id));
+  const counts = unreadCounts ?? people.unreadCounts;
+  const items =
+    favorites ?? people.rooms.filter((room) => people.pinnedIds.includes(room.id)).map((room) => ({ id: room.id, name: room.name }));
   const nameOf = (name: string | null) => name ?? t('chat.thread.unknownName');
 
   return (
     <div className="flex flex-col" data-testid="chat-people">
-      {favorites.length === 0 ? null : (
-        <section data-testid="chat-favorites">
-          <h3 className={SECTION_LABEL_CLASSES}>{t('chat.people.favorites')}</h3>
-          <ul className="m-0 grid list-none grid-cols-5 gap-1 px-2 pb-2">
-            {favorites.map((room) => {
-              const unread = people.unreadCounts[room.id] ?? 0;
+      <section data-testid="chat-favorites">
+        <h3 className={SECTION_LABEL_CLASSES}>{t('chat.people.favorites')}</h3>
+        {items.length === 0 ? (
+          <p className="m-0 px-3 pb-2 text-xs text-fg-placeholder" data-testid="chat-favorites-empty">
+            {t('chat.people.favoritesEmpty')}
+          </p>
+        ) : (
+          <ul className="m-0 grid list-none grid-cols-5 gap-1 px-2 pb-2" data-testid="chat-threads-pinned">
+            {items.map((item) => {
+              const unread = counts[item.id] ?? 0;
               return (
-                <li key={room.id} className="min-w-0">
+                <li key={item.id} className="min-w-0" data-testid={`chat-favorite-${item.id}`}>
                   <Link
-                    href={chatHref({ thread: room.id })}
-                    aria-current={room.id === selectedThreadId ? 'page' : undefined}
-                    className={cn('flex flex-col items-center gap-1 rounded-md py-1', ROW_HOVER_CLASSES)}
-                    data-testid={`chat-favorite-${room.id}`}
+                    href={chatHref({ thread: item.id })}
+                    aria-current={item.id === selectedThreadId ? 'page' : undefined}
+                    className={cn('relative flex flex-col items-center gap-1 rounded-md py-1', ROW_HOVER_CLASSES)}
+                    data-testid={`chat-thread-pinned-${item.id}`}
                   >
-                    <Avatar size="md" initials={displayInitials(nameOf(room.name))} title={nameOf(room.name)} />
-                    <span className="w-full truncate text-center text-xs text-fg-muted">{nameOf(room.name)}</span>
-                    {unread > 0 && !muted.has(room.id) ? <Badge variant="brand">{String(unread)}</Badge> : null}
+                    <Avatar size="md" initials={displayInitials(nameOf(item.name))} title={nameOf(item.name)} />
+                    <span className="w-full truncate text-center text-xs text-fg-muted">{nameOf(item.name)}</span>
+                    {unread > 0 && !muted.has(item.id) ? <Badge variant="brand">{String(unread)}</Badge> : null}
                   </Link>
                 </li>
               );
             })}
           </ul>
-        </section>
-      )}
+        )}
+      </section>
 
       {canPost ? (
-        <details className="px-1" data-testid="chat-contacts">
-          <summary className="cursor-pointer px-2 py-2 text-xs text-fg-muted">{t('chat.people.contacts')}</summary>
+        <details className="px-2 pb-1" data-testid="chat-contacts">
+          <summary
+            className="cursor-pointer list-none rounded-md border border-border bg-bg px-3 py-2 text-center text-cell text-fg"
+            data-testid="chat-new-conversation"
+          >
+            {t('chat.people.newConversation')}
+          </summary>
           {people.contacts.recent.length === 0 ? null : (
             <section data-testid="chat-contacts-recent">
               <h4 className={SECTION_LABEL_CLASSES}>{t('chat.people.recent')}</h4>
@@ -102,54 +118,6 @@ export function ChatPeopleSection({ people, selectedThreadId, canPost }: ChatPeo
           ))}
         </details>
       ) : null}
-
-      <section data-testid="chat-rooms">
-        <h3 className={SECTION_LABEL_CLASSES}>{t('chat.people.rooms')}</h3>
-        {people.rooms.length === 0 ? (
-          <p className="m-0 px-3 pb-2 text-xs text-fg-muted" data-testid="chat-rooms-empty">
-            {t('chat.people.roomsEmpty')}
-          </p>
-        ) : (
-          <ul className="m-0 list-none p-0">
-            {people.rooms.map((room) => {
-              const unread = people.unreadCounts[room.id] ?? 0;
-              const name = nameOf(room.name);
-              const open = room.id === selectedThreadId;
-              return (
-                <li key={room.id} data-testid={`chat-room-${room.id}`} data-kind={room.kind}>
-                  <Link
-                    href={chatHref({ thread: room.id })}
-                    aria-current={open ? 'page' : undefined}
-                    className={cn('flex items-center gap-3 px-3 py-2', open ? 'bg-brand-bg' : ROW_HOVER_CLASSES)}
-                  >
-                    <Avatar size="md" initials={displayInitials(name)} title={name} />
-                    <span className="min-w-0 flex-1">
-                      <span className={cn('block truncate text-row text-fg', unread > 0 && !muted.has(room.id) ? 'font-bold' : 'font-normal')}>
-                        {name}
-                      </span>
-                      <span className="flex items-center gap-2 text-xs text-fg-placeholder">
-                        {room.kind === 'GROUP' ? (
-                          <span>{`${t('chat.thread.kind.GROUP')} ${String(room.memberCount)}${t('chat.people.memberUnit')}`}</span>
-                        ) : (
-                          <span>{t('chat.thread.kind.DM')}</span>
-                        )}
-                        <span className="ml-auto shrink-0">
-                          {room.lastMessageAt === null ? t('chat.thread.noMessages') : formatDateTimeJst(room.lastMessageAt)}
-                        </span>
-                      </span>
-                    </span>
-                    {unread > 0 ? (
-                      <Badge variant={muted.has(room.id) ? 'neutral' : 'brand'} data-testid={`chat-room-unread-${room.id}`}>
-                        {String(unread)}
-                      </Badge>
-                    ) : null}
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
     </div>
   );
 }

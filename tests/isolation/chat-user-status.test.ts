@@ -8,6 +8,7 @@
 //   ③ ホストからは取引先の人の状態が見える / 取引先からはホストの人の状態が見える
 //   ④ 他テナントから 0 件
 //   ⑤ 閲覧専用（VIEWER）は API で書けない / 空で消える / 61 文字・改行・分離キーは 400
+//   ⑥ 設定・消去のたびに監査ログが 1 行（本文を含まない。文字数だけ）
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   configureTenantDb,
@@ -40,7 +41,9 @@ vi.mock('../../apps/web/lib/auth/session', () => ({
 }));
 
 const statusRoute = await import('../../apps/web/app/api/(main)/chat/status/route');
-const { readChatUserStatuses } = await import('../../apps/web/lib/chat/user-status');
+const { readChatUserStatuses, CHAT_STATUS_AUDIT_ACTION_UPDATE, CHAT_STATUS_AUDIT_ACTION_CLEAR } = await import(
+  '../../apps/web/lib/chat/user-status'
+);
 
 const STATUS_HOST = '商談中';
 const STATUS_A1 = '移動中・16 時以降に返信';
@@ -107,6 +110,7 @@ beforeAll(async () => {
 }, SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
+  await admin?.auditLog.deleteMany({ where: { action: { in: [CHAT_STATUS_AUDIT_ACTION_UPDATE, CHAT_STATUS_AUDIT_ACTION_CLEAR] } } });
   await admin?.chatUserStatus.deleteMany({});
   await disconnectTenantDb();
   await admin?.$disconnect();
@@ -186,5 +190,38 @@ describe('⑤ API の入口', () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ text: '' });
     expect(await admin.chatUserStatus.count({ where: { userId: USER_B_HOST } })).toBe(0);
+  });
+});
+
+describe('🔴 ⑥ 監査ログ', () => {
+  async function auditRows(userId: string) {
+    return admin.auditLog.findMany({
+      where: { actorId: userId, action: { in: [CHAT_STATUS_AUDIT_ACTION_UPDATE, CHAT_STATUS_AUDIT_ACTION_CLEAR] } },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    });
+  }
+
+  it('設定・消去のたびに 1 行ずつ増え、本文を含まない（文字数だけ）。失敗した書き込み（400 / 403）では増えない', async () => {
+    const text = '監査に本文が出てはならない状態';
+    const before = (await auditRows(USER_A_PARTNER)).length;
+    expect((await putStatus(partnerA1, { text })).status).toBe(200);
+    expect((await putStatus(partnerA1, { text: 'あ'.repeat(61) })).status).toBe(400);
+    expect((await putStatus(partnerA1, { text: '' })).status).toBe(200);
+    const rows = (await auditRows(USER_A_PARTNER)).slice(before);
+    expect(rows.map((row) => row.action)).toEqual([CHAT_STATUS_AUDIT_ACTION_UPDATE, CHAT_STATUS_AUDIT_ACTION_CLEAR]);
+    for (const row of rows) {
+      expect(row.tenantId).toBe(TENANT_A);
+      expect(row.targetType).toBe('User');
+      expect(row.targetId).toBe(USER_A_PARTNER);
+      expect(JSON.stringify(row)).not.toContain(text);
+    }
+    expect(rows[0]?.summary).toEqual({ textLength: text.length });
+    expect(rows[1]?.summary).toEqual({ textLength: 0 });
+
+    const viewerBefore = (await auditRows(USER_A_HOST)).length;
+    expect((await putStatus(hostViewer, { text: '閲覧専用' })).status).toBe(403);
+    expect((await auditRows(USER_A_HOST)).length).toBe(viewerBefore);
+    // 元に戻す（他の検査の前提を壊さない）。
+    expect((await putStatus(partnerA1, { text: STATUS_A1 })).status).toBe(200);
   });
 });

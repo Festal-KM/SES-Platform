@@ -100,3 +100,20 @@ function withinWindow(earlier: string, later: string): boolean {
   const gap = b.getTime() - a.getTime();
   return gap >= 0 && gap <= CONTINUATION_WINDOW_MS;
 }
+
+/**
+ * ✅ 2026-10-19（一覧の行を揃える）: 一覧の時刻。今日なら `HH:MM`、今年なら `M/D`、それより前は `YYYY/M/D`（日本時間）。
+ * 🔴 `now` は引数で受ける（呼び出し側が時刻を決める。テストで固定できる）。
+ */
+export function formatListTime(at: string, now: Date): string {
+  const date = new Date(at);
+  if (Number.isNaN(date.getTime())) return at;
+  const jst = (value: Date) => new Date(value.getTime() + 9 * 60 * 60 * 1000);
+  const a = jst(date);
+  const b = jst(now);
+  if (a.getUTCFullYear() === b.getUTCFullYear() && a.getUTCMonth() === b.getUTCMonth() && a.getUTCDate() === b.getUTCDate()) {
+    return formatChatTime(at);
+  }
+  const md = `${String(a.getUTCMonth() + 1)}/${String(a.getUTCDate())}`;
+  return a.getUTCFullYear() === b.getUTCFullYear() ? md : `${String(a.getUTCFullYear())}/${md}`;
+}

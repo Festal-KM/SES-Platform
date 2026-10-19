@@ -197,6 +197,16 @@ async function purgeRuns() {
   return admin.tenantPurgeRun.findMany({ where: { tenantId: TENANT_A }, orderBy: { startedAt: 'asc' } });
 }
 
+const HOST_CHAT_STATUS = 'ホストの状態（PURGED で消える）';
+const PARTNER_CHAT_STATUS = '取引先の状態（PURGED で消える）';
+const TENANT_B_CHAT_STATUS = 'テナント B の状態（消えてはならない）';
+
+async function chatStatusTexts(tenantId: string): Promise<Record<string, string>> {
+  const rows = await admin.$queryRaw<{ user_id: string; text: string }[]>`
+    SELECT user_id::text AS user_id, text FROM chat_user_statuses WHERE tenant_id = ${tenantId}::uuid`;
+  return Object.fromEntries(rows.map((row) => [row.user_id, row.text]));
+}
+
 async function piiSnapshot() {
   const engineers = await admin.$queryRaw<{ id: string; contact_email: string | null; display_name: string; pii_purged_at: Date | null }[]>`
     SELECT id::text AS id, contact_email, display_name, pii_purged_at FROM engineers WHERE tenant_id = ${TENANT_A}::uuid ORDER BY id`;
@@ -349,6 +359,14 @@ beforeAll(async () => {
     INSERT INTO messages (id, tenant_id, owner_partner_company_id, thread_id, sender_user_id, sender_partner_company_id, body)
     VALUES (gen_random_uuid(), ${TENANT_A}::uuid, ${PARTNER_A1}::uuid, ${PURGE_DM_THREAD}::uuid, ${USER_A_HOST}::uuid, NULL, 'DM の本文'),
            (gen_random_uuid(), ${TENANT_A}::uuid, NULL, ${PURGE_GROUP_THREAD}::uuid, ${USER_A_HOST}::uuid, NULL, 'グループの本文')`;
+  // ✅ 2026-10-19（#140）: ひとこと状態（ホストの人 + 取引先 A1 の人）。🔴 取引先の人の行は C7 / C8 のどちらでも
+  //    ホスト文脈のジョブからは書けないので、削除スコープのポリシー（migration 20261019020000 ②）が届くことを確かめる。
+  //    対照としてテナント B にも 1 行置く（A の削除が届かないこと）。
+  await admin.$executeRaw`
+    INSERT INTO chat_user_statuses (id, tenant_id, user_id, text)
+    VALUES (gen_random_uuid(), ${TENANT_A}::uuid, ${USER_A_HOST}::uuid, ${HOST_CHAT_STATUS}),
+           (gen_random_uuid(), ${TENANT_A}::uuid, ${USER_A_PARTNER}::uuid, ${PARTNER_CHAT_STATUS}),
+           (gen_random_uuid(), ${TENANT_B}::uuid, ${USER_B_HOST}::uuid, ${TENANT_B_CHAT_STATUS})`;
 
   const base = { partnerSuspendedAt: null, twoFactor: 'VERIFIED' as const, partnerCompanyId: null };
   hostOwnerA = await resolveTenantCtx({ ...base, tenantId: TENANT_A, lifecycleState: 'CLOSING', userId: USER_A_HOST, role: 'OWNER' }, DEVICE);
@@ -386,6 +404,7 @@ describe('AC-10 ① 予告が配送済みでない間は積まず、tenant.purge
     expect(pii.sheets.every((s) => s.object_key !== null && s.purged_at === null)).toBe(true);
     expect(pii.messages.every((m) => m.body !== null)).toBe(true);
     expect(pii.careers).toBe(2);
+    expect(await chatStatusTexts(TENANT_A)).toEqual({ [USER_A_HOST]: HOST_CHAT_STATUS, [USER_A_PARTNER]: PARTNER_CHAT_STATUS });
     expect((await tenantState()).lifecycle_state).toBe('CLOSING');
     expect(store.deletedKeys()).toEqual([]);
   });
@@ -566,6 +585,9 @@ describe('AC-2 / AC-3 / AC-8 ④⑤⑦ PURGED 後の状態', () => {
     expect(pii.careers).toBe(0);
     expect(pii.users.every((u) => u.email === `purged:${u.id}` && u.display_name === '')).toBe(true);
     expect(pii.snapshots.every((s) => s.display_name === '' && JSON.stringify(s.careers) === '[]')).toBe(true);
+    // ✅ 2026-10-19（#140）: ひとこと状態は空文字になる。🔴 取引先 A1 の人の行にも届いている。テナント B は残る。
+    expect(await chatStatusTexts(TENANT_A)).toEqual({ [USER_A_HOST]: '', [USER_A_PARTNER]: '' });
+    expect(await chatStatusTexts(TENANT_B)).toEqual({ [USER_B_HOST]: TENANT_B_CHAT_STATUS });
     const row = await admin.dataExportRequest.findFirstOrThrow({ where: { tenantId: TENANT_A } });
     expect(row.objectKey).toBeNull();
     // 🔴 `proposal_events.attachment_key`（Phase 1 は `skill_sheets.id`）は列として NULL 化されている（S3 は `skill_sheets` 側で消した）。
@@ -617,6 +639,7 @@ describe('AC-2 / AC-3 / AC-8 ④⑤⑦ PURGED 後の状態', () => {
     expect(counts.engineer_careers).toBe(2);
     // ✅ 2026-10-16（#129）: 会社チャット 2 + DM 1 + 社内のグループ 1。
     expect(counts.messages).toBe(4);
+    expect(counts.chat_user_statuses).toBe(2);
 
     const audits = await auditRows('tenant.purge');
     expect(audits).toHaveLength(1);

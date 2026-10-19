@@ -227,6 +227,19 @@ describe('🔴 docs/05 §17.2 #12: 全業務テーブルが PURGE_SPEC.delete / 
     expect(policyTables).toEqual(deleteTables);
     const laterUpdates = [...later.matchAll(/CREATE POLICY (\w+)_purge_scope_update ON (\w+)/g)].map((m) => m[2]!).sort();
     expect(laterUpdates).toEqual([...laterTables].sort());
+    // 🔴 名前だけでなく本体も 20260927000000 と同じ式であること（名前を合わせただけの緩いポリシーを通さない）。
+    //    SELECT は `FOR SELECT TO app_tenant USING (<式>)`、UPDATE は `USING (<式>) WITH CHECK (<式>)`。
+    const scope = 'tenant_id = app_tenant_id\\(\\) AND app_is_host\\(\\) AND app_purge_scope_on\\(\\)';
+    for (const table of laterTables) {
+      expect(later, `${table}_purge_scope_select の本体`).toMatch(
+        new RegExp(`CREATE POLICY ${table}_purge_scope_select ON ${table} FOR SELECT TO app_tenant\\s+USING \\(${scope}\\);`),
+      );
+      expect(later, `${table}_purge_scope_update の本体`).toMatch(
+        new RegExp(
+          `CREATE POLICY ${table}_purge_scope_update ON ${table} FOR UPDATE TO app_tenant\\s+USING \\(${scope}\\)\\s+WITH CHECK \\(${scope}\\);`,
+        ),
+      );
+    }
     // DELETE のポリシーは rows: 'ALL' の表だけ。
     const deletePolicies = [...`${sql}\n${later}`.matchAll(/CREATE POLICY (\w+)_purge_scope_delete ON (\w+)/g)].map((m) => m[2]!).sort();
     expect(deletePolicies).toEqual(PURGE_SPEC.delete.filter(isPurgeRowsSpec).map((spec) => spec.table).sort());

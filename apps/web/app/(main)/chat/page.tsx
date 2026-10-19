@@ -48,7 +48,6 @@ import { ChatStatusSection } from './chat-status-section';
 import { ChatConversation } from './chat-conversation';
 import { ChatPaneDropZone } from './chat-pane-drop-zone';
 import { chatConversationMessages, chatPaneDropMessages } from './chat-props';
-import { ChatPeopleSection } from './chat-people-section';
 import { ChatThreadList } from './chat-thread-list';
 import { ChatThreadPanel } from './chat-thread-panel';
 
@@ -103,6 +102,7 @@ export default async function ChatPage({
     unreadCounts: {},
     pinnedIds: [],
     mutedIds: [],
+    lastSnippets: {},
   };
 
   return (
@@ -146,10 +146,6 @@ export default async function ChatPage({
                 : 'hidden bg-bg-subtle md:block md:w-80 md:shrink-0'
             }
           >
-            {/* ✅ 2026-10-19（#128）: 一覧の上に お気に入り・連絡先・DM・グループ。会社ごとの一覧はその下。 */}
-            {data.people === null ? null : (
-              <ChatPeopleSection people={data.people} selectedThreadId={selected?.id ?? null} canPost={canPost} />
-            )}
             <ChatThreadList
               groups={tree.groups}
               truncated={tree.truncated}
@@ -158,6 +154,9 @@ export default async function ChatPage({
               unreadCounts={tree.unreadCounts}
               pinnedIds={tree.pinnedIds}
               mutedIds={tree.mutedIds}
+              people={data.people}
+              canPost={canPost}
+              lastSnippets={tree.lastSnippets}
               unreadOnly={listQuery.unread}
               q={listQuery.q}
               sort={listQuery.sort}
