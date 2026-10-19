@@ -30,7 +30,7 @@
 //
 // 🔴 本モジュールは Next.js / Auth.js に依存しない（分離テストがサーバを立てずに同じ経路を実行できる。
 //    `lib/proposals/list.ts` と同方針）。
-import { freeWordFilter, withTenant, type AuthenticatedTenantCtx } from '@ses/db';
+import { freeWordFilter, readDmPeerReadMessageIds, withTenant, type AuthenticatedTenantCtx } from '@ses/db';
 import { requireFound, ValidationError } from '../api/errors';
 import { buildCursorPage, takeForCursorPage, type CursorPage } from '../api/pagination';
 import type { ChatMessageListQuery, ChatThreadListQuery } from './schemas';
@@ -542,6 +542,12 @@ export type ChatScreenData = {
   readonly threadPrefs: Readonly<Record<string, ChatThreadPrefs>>;
   /** ✅ 2026-10-19（#128）: DM・グループと連絡先（`input.tree` を渡したときだけ。渡さなければ `null`）。 */
   readonly people: ChatPeopleData | null;
+  /**
+   * ✅ 2026-10-19（#128）: 開いている **DM だけ**の、相手が最後に読んだ発言の ID（相手がまだ読んでいなければ `null`）。
+   * 🔴 グループ・会社グループ・スレッドのキーは入れない（誰がどこまで読んだかを他人に見せない）。
+   *    DB 側も `app_dm_peer_read` が DM 以外・非メンバーに NULL を返す（二重）。
+   */
+  readonly peerReadMessageIds: Readonly<Record<string, string | null>>;
 };
 
 /** 右に並べた会話 1 本ぶん。 */
@@ -570,6 +576,19 @@ export async function readChatScreen(
     readonly tree?: { readonly sort: ChatThreadSort; readonly q: string | null; readonly unreadOnly?: boolean };
   },
 ): Promise<ChatScreenData> {
+  const screen = await readChatScreenInTenant(ctx, input);
+  // 🔴 DM の判定は画面データの `kind` で行い、DB 側の関数も DM 以外に NULL を返す（二重）。
+  const dmIds = [screen.thread, ...screen.panes.map((pane) => pane.thread)]
+    .filter((thread): thread is ChatThreadDetailView => thread !== null && thread.kind === 'DM')
+    .map((thread) => thread.id);
+  if (dmIds.length === 0) return screen;
+  return { ...screen, peerReadMessageIds: await readDmPeerReadMessageIds(ctx, dmIds) };
+}
+
+async function readChatScreenInTenant(
+  ctx: AuthenticatedTenantCtx,
+  input: Parameters<typeof readChatScreen>[1],
+): Promise<ChatScreenData> {
   return withTenant(ctx, async (db) => {
     // ✅ 2026-10-14（レビュー指摘）: 木を読むときはページ単位の一覧を読まない（画面は木しか使わず、
     //    読んでも捨てるだけになる）。`threads` は空のページで返す。
@@ -588,6 +607,7 @@ export async function readChatScreen(
         lastReadMessageIds: {},
         threadPrefs: {},
         people,
+        peerReadMessageIds: {},
       };
     }
     const thread = await readThreadDetail(ctx, db, input.threadId);
@@ -602,6 +622,7 @@ export async function readChatScreen(
         lastReadMessageIds: {},
         threadPrefs: {},
         people,
+        peerReadMessageIds: {},
       };
     }
     const messages = await readMessagePage(ctx, db, input.threadId, input.messagesQuery);
@@ -623,7 +644,7 @@ export async function readChatScreen(
     const lastReadMessageIds = Object.fromEntries(openIds.map((id) => [id, positions.get(id)?.id ?? null]));
     const prefs = await readThreadPrefs(db, openIds);
     const threadPrefs = Object.fromEntries(openIds.map((id) => [id, prefs.get(id) ?? { pinned: false, muted: false }]));
-    return { threads, thread, messages, requestedThreadMissing: false, panes, tree, lastReadMessageIds, threadPrefs, people };
+    return { threads, thread, messages, requestedThreadMissing: false, panes, tree, lastReadMessageIds, threadPrefs, people, peerReadMessageIds: {} };
   });
 }
 

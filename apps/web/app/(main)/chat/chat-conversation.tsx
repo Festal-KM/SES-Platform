@@ -13,7 +13,8 @@
 //      `disabled` で残すのは分離・権限の後退である）。
 //   ③ 🔴 **二重送信を作らない** —— `createSubmitGuard` で実行を 1 回に畳み、送信中はボタンを
 //      送信中表示に置き換える（`docs/04` の共通規律）。
-//   ④ 🔴 **既読・未読を描かない**（`messages` に列が無い。`lib/chat/views.ts` の ④）。
+//   ④ ~~既読・未読を描かない~~ → ✅ 2026-10-16 に自分の既読位置（`chat_read_states`）、2026-10-19（#128）に
+//      DM の相手の既読（`peerReadMessageId`）ができた。🔴 相手の既読は **DM だけ**（グループ等には渡さない）。
 //   ⑤ 🔴 **接続状態インジケータ（SSE の `接続中` / `再接続中`）を描かない。** `docs/04` §S-031 は
 //      これを求めているが、**`GET /api/realtime/threads/{id}`（`docs/05` §6.5 #52）が未実装**である。
 //      実体の無い「接続中」を常時表示すると、**切れていないのに切れていない振りをする**ことになり、
@@ -78,6 +79,7 @@ import {
   withLatestReactions,
 } from '../../../lib/chat/live';
 import { unreadMarkerId, withUnreadMarker } from '../../../lib/chat/unread-marker';
+import { readReceiptMessageId } from '../../../lib/chat/read-receipt';
 import {
   isSendKey,
   type ChatConversationLayout,
@@ -115,6 +117,11 @@ export type ChatConversationProps = {
   readonly lastReadMessageId?: string | null;
   /** ✅ 2026-10-16: 自分のピン留め・ミュート（見出しの切り替えボタン）。省略時は出さない。 */
   readonly prefs?: { readonly pinned: boolean; readonly muted: boolean };
+  /**
+   * ✅ 2026-10-19（#128）: DM の相手が最後に読んだ発言（`readChatScreen` の `peerReadMessageIds`）。
+   * 🔴 **DM のときだけ渡す**（グループ・会社グループ・スレッドでは省略する = 「既読」を出さない）。
+   */
+  readonly peerReadMessageId?: string | null;
 };
 
 /** 投稿の応答（`docs/05` §6.5 #51 の上位互換。`route.ts` の 🔴）。 */
@@ -133,6 +140,7 @@ export function ChatConversation({
   closeHref,
   lastReadMessageId = null,
   prefs,
+  peerReadMessageId = null,
 }: ChatConversationProps) {
   // 🔴 ガードは**インスタンスごと**に持つ（モジュール変数にすると、別のスレッドを開いた島が
   //    同じガードを共有し「前の送信が終わるまで送れない」状態になる）。
@@ -292,6 +300,8 @@ export function ChatConversation({
   //    線は開いた時点で決め、読んでも動かさない。「ここから未読にする」を押したらその発言へ動かす。
   const [markerId, setMarkerId] = useState<string | null>(() => unreadMarkerId(initialMessages, lastReadMessageId));
   const lastMarkedRef = useRef<string | null>(lastReadMessageId);
+  // ✅ 2026-10-19（#128）: DM の「既読」は、相手が最後に読んだ位置にある自分の発言 1 件の下だけ。
+  const readReceiptId = readReceiptMessageId(items, peerReadMessageId);
   // 「未読にする」を押した会話では、自動で既読に戻さない（押した意味が消えるため）。
   const suppressAutoReadRef = useRef(false);
 
@@ -871,6 +881,11 @@ export function ChatConversation({
                       </p>
                     )}
                     {renderBody(item, 'bg-brand-bg')}
+                    {readReceiptId === item.id ? (
+                      <span className="text-xs text-fg-muted" data-testid={`chat-message-read-${item.id}`}>
+                        {messages.read}
+                      </span>
+                    ) : null}
                   </li>
                 );
               }
@@ -917,6 +932,11 @@ export function ChatConversation({
                          （`ui-screen-width.test.ts` (c)）。**読める行長の規約**であり、画面ごとに
                          決め直すものではない。 */}
                   {renderBody(item, item.own ? 'bg-brand-bg' : 'bg-bg-subtle')}
+                  {readReceiptId === item.id ? (
+                    <span className="text-xs text-fg-muted" data-testid={`chat-message-read-${item.id}`}>
+                      {messages.read}
+                    </span>
+                  ) : null}
                 </div>
               </li>
               );

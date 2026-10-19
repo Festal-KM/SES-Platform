@@ -184,6 +184,8 @@ export default async function ChatPage({
                 initialNextCursor={data.messages.nextCursor}
                 lastReadMessageId={data.lastReadMessageIds[selected.id] ?? null}
                 prefs={data.threadPrefs[selected.id] ?? { pinned: false, muted: false }}
+                // ✅ 2026-10-19（#128）: 相手の既読は DM だけ（グループ・会社グループ・スレッドには渡さない）。
+                {...(selected.kind === 'DM' ? { peerReadMessageId: data.peerReadMessageIds[selected.id] ?? null } : {})}
                 canPost={canPost}
                 messages={conversationMessages}
                 {...(tiled ? { closeHref: chatHref({ ...withPaneClosed(paneState, selected.id), ...listQuery }) } : {})}
@@ -222,6 +224,7 @@ export default async function ChatPage({
                   initialNextCursor={pane.messages.nextCursor}
                   lastReadMessageId={data.lastReadMessageIds[pane.thread.id] ?? null}
                   prefs={data.threadPrefs[pane.thread.id] ?? { pinned: false, muted: false }}
+                  {...(pane.thread.kind === 'DM' ? { peerReadMessageId: data.peerReadMessageIds[pane.thread.id] ?? null } : {})}
                   canPost={canPost}
                   messages={conversationMessages}
                   closeHref={chatHref({ ...withPaneClosed(paneState, pane.thread.id), ...listQuery })}
