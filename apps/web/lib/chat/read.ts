@@ -236,6 +236,8 @@ export type ChatThreadTreeData = {
   readonly mutedIds: readonly string[];
   /** 上限を超えたので、古いスレッドを読んでいない。 */
   readonly truncated: boolean;
+  /** ✅ 2026-10-19: スレッドごとの最後の発言の冒頭（一覧の 2 段目）。 */
+  readonly lastSnippets: Readonly<Record<string, string>>;
 };
 
 /**
@@ -268,8 +270,12 @@ async function readThreadTree(
           where: { threadId: { in: threadIds } },
           distinct: ['threadId'],
           orderBy: [{ threadId: 'asc' }, { sentAt: 'desc' }, { id: 'desc' }],
-          select: { threadId: true, senderPartnerCompanyId: true },
+          select: { threadId: true, senderPartnerCompanyId: true, body: true },
         });
+  // ✅ 2026-10-19: 一覧の 2 段目（最後の発言の冒頭）。🔴 読めた発言だけ（C6）。削除・保持期限で本文が無いものは空。
+  const lastSnippets: Record<string, string> = Object.fromEntries(
+    lastMessages.map((message) => [message.threadId, messageSnippet(message.body ?? '', '', 60)]),
+  );
   // 読み手から見た「相手」: ホストなら取引先の発言、取引先ならホストの発言。
   const awaitingReplyIds = lastMessages
     .filter((message) => isAwaitingReply({ fromCounterparty: host ? message.senderPartnerCompanyId !== null : message.senderPartnerCompanyId === null }))
@@ -337,6 +343,7 @@ async function readThreadTree(
   return {
     groups,
     truncated,
+    lastSnippets,
     awaitingReplyIds,
     messageHits,
     unreadCounts: Object.fromEntries(unread),
