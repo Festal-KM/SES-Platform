@@ -165,8 +165,8 @@ export default async function ChatPage({
           <div
             className={
               selected === null
-                ? 'w-full bg-bg-subtle md:w-80 md:shrink-0'
-                : 'hidden bg-bg-subtle md:block md:w-80 md:shrink-0'
+                ? 'w-full bg-bg-subtle md:w-96 md:shrink-0'
+                : 'hidden bg-bg-subtle md:block md:w-96 md:shrink-0'
             }
           >
             <ChatThreadList

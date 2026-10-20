@@ -24,15 +24,16 @@ export type ChatRailProps = {
 
 /** 種類の印（アバターと同じ形・色の小さな四角）。 */
 type MarkKind = 'all' | 'unread' | 'awaiting' | 'dm' | 'group' | 'company' | 'project' | 'contacts';
+// ✅ 2026-10-20: 一覧のアバターと同じ塗りつぶし（`chat-thread-list.tsx` の AVATAR_KIND_CLASSES）。
 const MARK_CLASSES: Readonly<Record<MarkKind, string>> = {
-  all: 'rounded-md bg-brand-bg text-brand',
-  unread: 'rounded-md bg-neutral-bg text-fg-muted',
-  awaiting: 'rounded-md bg-danger-bg text-danger',
-  dm: 'rounded-full bg-brand-bg text-brand',
-  group: 'rounded-full bg-success-bg text-success',
-  company: 'rounded-md bg-neutral-bg text-fg',
-  project: 'rounded-md bg-warning-bg text-warning',
-  contacts: 'rounded-full bg-success-bg text-success',
+  all: 'rounded-md bg-fg-muted text-bg',
+  unread: 'rounded-md bg-info text-bg',
+  awaiting: 'rounded-md bg-danger text-bg',
+  dm: 'rounded-full bg-brand text-brand-fg',
+  group: 'rounded-full bg-success text-bg',
+  company: 'rounded-md bg-fg text-bg',
+  project: 'rounded-md bg-warning text-bg',
+  contacts: 'rounded-full bg-success text-bg',
 };
 
 function Mark({ kind, text }: { readonly kind: MarkKind; readonly text: string }) {
@@ -51,6 +52,7 @@ function RailLink({
   label,
   count,
   testKey,
+  title,
 }: {
   readonly href: string;
   readonly active: boolean;
@@ -60,6 +62,8 @@ function RailLink({
   readonly count?: number;
   /** 目印の後半（`chat-rail-<ここ>`）。 */
   readonly testKey: string;
+  /** 省略していない正式な名前（ポインタを置いたときに出す）。 */
+  readonly title?: string;
 }) {
   return (
     <li className="shrink-0">
@@ -71,6 +75,7 @@ function RailLink({
           active ? 'bg-bg text-brand' : cn('text-fg', ROW_HOVER_CLASSES),
         )}
         data-testid={`chat-rail-${testKey}`}
+        title={title}
       >
         <Mark kind={mark} text={markText} />
         <span className="min-w-0 flex-1 truncate">{label}</span>
@@ -112,7 +117,9 @@ export function ChatRail({ groups, rooms, unreadCounts, awaitingReplyIds, filter
                   active={filter.kind === 'company' && filter.key === group.key}
                   mark="company"
                   markText={name.replace(/^株式会社/, '').slice(0, 1)}
-                  label={name}
+                  // ✅ 2026-10-20: 「株式会社」を省く（狭い列で全社が「株式会社ダミ…」になって区別できない）。正式名は title に残す。
+                  label={name.replace(/^株式会社/, '').replace(/株式会社$/, '') || name}
+                  title={name}
                   count={unread}
                   testKey={`company-${group.key}`}
                 />

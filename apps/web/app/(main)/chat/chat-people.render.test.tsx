@@ -157,7 +157,7 @@ describe('✅ v2: 左の列から「会社から＞」「人から＞」辿る',
   it('種類はアバターの形と色で分ける（グループは緑、取引先との部屋には「外部」）', () => {
     const html = renderWith({ kind: 'all' });
     const group = new RegExp(`<li data-testid="chat-room-${ROOM_GROUP}"[\\s\\S]*?</li>`).exec(html)?.[0] ?? '';
-    expect(group).toContain('bg-success-bg');
+    expect(group).toContain('bg-success');
     expect(group).toContain(t('chat.tag.external'));
   });
 });
