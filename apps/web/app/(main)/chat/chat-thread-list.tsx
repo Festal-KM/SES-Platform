@@ -467,6 +467,8 @@ export function ChatThreadList({
                   needName: t('chat.group.needName'),
                   needMembers: t('chat.group.needMembers'),
                   failed: t('chat.group.failed'),
+                  createdToast: t('chat.toast.groupCreated'),
+                  openGroup: t('chat.toast.openGroup'),
                 }}
               />
             ) : null}
