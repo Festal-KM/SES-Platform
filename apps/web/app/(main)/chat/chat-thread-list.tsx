@@ -59,12 +59,17 @@ const KIND_MESSAGE_KEYS = {
   GROUP: 'chat.thread.kind.GROUP',
 } as const satisfies Readonly<Record<ChatThreadKind, `chat.thread.kind.${ChatThreadKind}`>>;
 
-/** 🔴 種類ごとのアバターの形と色（意味の色のトークンだけを使う）。お気に入り・左の列も同じ。 */
+/**
+ * 🔴 種類ごとのアバターの形と色。お気に入り・左の列も同じ。
+ * ✅ 2026-10-20（紺野「色もなんか一緒」）: 薄い地（`*-bg`）だと一覧の灰色に溶けるので、**塗りつぶし**にした。
+ *    人 = 青の丸 / グループ = 緑の丸 / 取引先の会社 = 墨色の角丸（🔴 サイドバーの紺はサイドバー専用。`ui-shadow-and-size.test.ts`）/ 案件 = 橙の角丸に「#」。
+ *    使う色は既存のトークンだけ（新しい色を足さない）。
+ */
 export const AVATAR_KIND_CLASSES: Readonly<Record<ChatThreadKind, string>> = {
-  DM: '',
-  GROUP: 'bg-success-bg text-success',
-  COMPANY: 'rounded-md bg-neutral-bg text-fg',
-  PROJECT: 'rounded-md bg-warning-bg text-warning',
+  DM: 'bg-brand text-brand-fg',
+  GROUP: 'bg-success text-bg',
+  COMPANY: 'rounded-md bg-fg text-bg',
+  PROJECT: 'rounded-md bg-warning text-bg',
 };
 
 const TAG_CLASSES = 'shrink-0 rounded-xs px-1 text-xs';
@@ -222,7 +227,6 @@ function Row({ view, context }: { readonly view: RowView; readonly context: RowC
               {view.name}
             </span>
             {view.external ? <span className={cn(TAG_CLASSES, 'bg-info-bg text-info')}>{t('chat.tag.external')}</span> : null}
-            {view.kind === 'PROJECT' ? <span className={cn(TAG_CLASSES, 'bg-warning-bg text-warning')}>{t('chat.tag.project')}</span> : null}
             {/* ✅ 2026-10-14: 返信が早い取引先（上位 10%）。🔴 ホストにだけ真になる（`read.ts`）。良いところだけを出す。 */}
             {view.fastReply ? (
               <span className={cn(TAG_CLASSES, 'bg-success-bg text-success')} data-testid={`chat-thread-fast-${view.id}`}>
@@ -236,7 +240,7 @@ function Row({ view, context }: { readonly view: RowView; readonly context: RowC
           </span>
           <span className="flex items-center gap-1">
             {awaiting ? (
-              <span className={cn(TAG_CLASSES, 'bg-danger-bg text-danger')} data-testid={`chat-thread-awaiting-${view.id}`}>
+              <span className="shrink-0 text-xs text-danger" data-testid={`chat-thread-awaiting-${view.id}`}>
                 {t('chat.thread.awaitingReply')}
               </span>
             ) : null}
@@ -291,7 +295,8 @@ function viewOf(entry: Entry): RowView {
       name: counterparty,
       initials: displayInitials(counterparty.replace(/^株式会社/, '') || counterparty),
       subtitlePrefix: null,
-      external: true,
+      // ✅ 2026-10-20: 会社・案件の行は相手が必ず取引先なので「外部」の札を付けない（形で分かる。札は DM・グループだけ）。
+      external: false,
       fastReply: group.fastReply && representative,
       counterpartyName: counterparty,
       at: item.lastMessageAt,
@@ -305,7 +310,7 @@ function viewOf(entry: Entry): RowView {
     name,
     initials: '#',
     subtitlePrefix: counterparty,
-    external: true,
+    external: false,
     fastReply: group.fastReply && representative,
     counterpartyName: counterparty,
     at: item.lastMessageAt,
@@ -450,6 +455,11 @@ export function ChatThreadList({
           <ChatContactsView people={people}>
             {/* ✅ 2026-10-19（#128）: グループを作る（名前 + 連絡先から選ぶ）。🔴 閲覧専用には出さない。候補は連絡先と同じ母集団。 */}
             {canPost && people.contacts.companies.length > 0 ? (
+              // ✅ 2026-10-20: 人を探しに来た画面なので、グループを作る欄は畳んでおく（押すと開く）。
+              <details className="px-2 pt-2" data-testid="chat-new-group-toggle">
+                <summary className="cursor-pointer rounded-md border border-border bg-bg px-3 py-2 text-cell text-fg">
+                  {t('chat.group.heading')}
+                </summary>
               <ChatNewGroupForm
                 people={people.contacts.companies.flatMap((company) =>
                   company.people.map((contact) => ({
@@ -469,6 +479,7 @@ export function ChatThreadList({
                   failed: t('chat.group.failed'),
                 }}
               />
+              </details>
             ) : null}
           </ChatContactsView>
         </div>

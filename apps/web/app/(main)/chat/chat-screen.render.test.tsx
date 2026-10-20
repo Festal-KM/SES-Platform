@@ -270,7 +270,7 @@ describe('🔴 ③: md 未満は「一覧 → 会話」の切替であって遮�
       expect(classes, `${classes} が md で戻っていません`).toMatch(/md:(?:block|flex)\b/);
     }
     // 🔴 一覧の器（選択中）は畳むが `md` で戻る。
-    expect(page).toContain("'hidden bg-bg-subtle md:block md:w-80 md:shrink-0'");
+    expect(page).toContain("'hidden bg-bg-subtle md:block md:w-96 md:shrink-0'");
     // 🔴 会話の器（未選択）は `md` 未満では一覧が全幅なので畳む。こちらも `md` で戻る。
     expect(page).toContain("'hidden min-w-0 flex-1 md:flex md:flex-col'");
     // ✅ 2026-10-14: 右に並べた会話とドラッグの受け口は `md` 未満では出さない（モバイルは 1 列の切替）。
@@ -635,12 +635,14 @@ describe('⑪: 会社ごとの木・検索・並べ替え（2026-10-14、チャ�
     expect(html).toContain(`chat-thread-row-${CHAT_A}`);
     expect(html).toContain(`chat-thread-row-${THREAD_PROJECT}`);
     expect(classTokensOf(html, `chat-thread-row-${THREAD_PROJECT}`)).not.toContain('pl-6');
-    // 案件スレッドには「案件」、取引先が相手なら「外部」の札。会社チャットには「案件」が付かない。
+    // ✅ 2026-10-20: 種類はアバターの塗り（案件 = 橙の「#」、会社 = 墨色の角丸）で分ける。会社・案件の行に札を付けない。
     const projectRow = new RegExp(`<li data-testid="chat-thread-row-${THREAD_PROJECT}"[\\s\\S]*?</li>`).exec(html)?.[0] ?? '';
     const companyRow = new RegExp(`<li data-testid="chat-thread-row-${CHAT_A}"[\\s\\S]*?</li>`).exec(html)?.[0] ?? '';
-    expect(projectRow).toContain(t('chat.tag.project'));
-    expect(projectRow).toContain(t('chat.tag.external'));
-    expect(companyRow).not.toContain(t('chat.tag.project'));
+    expect(projectRow).toContain('bg-warning');
+    expect(projectRow).toContain('>#<');
+    expect(companyRow).toContain('bg-fg');
+    expect(projectRow).not.toContain(t('chat.tag.external'));
+    expect(companyRow).not.toContain(t('chat.tag.external'));
     // 「チャット / スレッド」の文字は出さない（見た目で分ける）。
     expect(html).not.toContain(`>${t('chat.thread.kind.COMPANY')}<`);
   });
