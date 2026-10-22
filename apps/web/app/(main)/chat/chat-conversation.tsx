@@ -196,7 +196,12 @@ export function ChatConversation({
   const [pendingSend, setPendingSend] = useState<string | null>(null);
   // ✅ 2026-10-22: 「書く／プレビュー」と @ の候補の開閉。
   const [composeTab, setComposeTab] = useState<'write' | 'preview'>('write');
+  // ✅ 2026-10-22: スマホの見出しの「…」（書き出し・ピン留め・ミュート・情報をしまう）の開閉。
+  const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
+  const headerMenuUsed = canPost || prefs !== undefined;
   const [mentionOpen, setMentionOpen] = useState(false);
+  // ✅ 2026-10-22: 書式ボタンの帯の開閉（既定は閉じる = 入力欄は細い 1 行）。
+  const [formatOpen, setFormatOpen] = useState(false);
   const pendingTimer = useRef<number | null>(null);
   const itemsRef = useRef(items);
   const bodyRef = useRef(body);
@@ -446,6 +451,15 @@ export function ChatConversation({
   //    🔴 `group-hover:` は画面に書けない（`tests/static/ui-state-in-primitives.test.ts` (j)。押し心地の 8 状態は
   //       `packages/ui` が持つ）。ここで決めているのは「どの発言の操作を出すか」であって、押し心地ではない。
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  /**
+   * ✅ 2026-10-22（紺野「スマホ版おわってる」）: 指で発言を押したら、その発言の操作を出す（もう一度押すと閉じる）。
+   * 🔴 マウスの機器では何もしない（カーソルを当てれば出る）。リンク・ボタンなどを押したときも何もしない。
+   */
+  function selectOnTouch(event: { readonly target: EventTarget | null }, id: string): void {
+    if (typeof window === 'undefined' || !window.matchMedia('(pointer: coarse)').matches) return;
+    if (event.target instanceof Element && event.target.closest('a,button,select,textarea,input,label') !== null) return;
+    setHoveredId((current) => (current === id ? null : id));
+  }
   // 🔴 キーボードで操作している間は全部の発言の操作を出す（見えない操作にはキーボードで移れないため）。
   //    Tab を押したら入り、マウスを押したら抜ける。
   const [keyboardNav, setKeyboardNav] = useState(false);
@@ -614,8 +628,24 @@ export function ChatConversation({
             )}
           </div>
         ) : null}
+        {/* ✅ 2026-10-22: 「続きを読む」は操作の並びから出して常に見せる（スマホでは操作の並びを隠すため）。 */}
+        {text !== null && long ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="w-fit"
+            onClick={() => toggleExpanded(item.id)}
+            aria-expanded={open}
+            data-testid={`chat-message-expand-${item.id}`}
+          >
+            {open ? messages.readLess : messages.readMore}
+          </Button>
+        ) : null}
         {text === null ? null : (
           // ✅ 2026-10-16（紺野）: 発言の操作は**カーソルを当てたときだけ**出す（常に出ていて煩雑だった）。
+          // ✅ 2026-10-22（紺野「スマホ版おわってる」）: スマホ（指）では**発言を押した（長押しした）ときだけ**出す
+          //    （LINE と同じ）。押していない発言の操作は場所も取らない（`pointer-coarse:hidden`）。
           //    🔴 マウスの機器（`pointer-fine`）だけで隠す。スマホ（指）にはカーソルが無いので**常に出す**。
           //    🔴 キーボードで操作している間（`keyboardNav`）と、削除の確認中も出す。
           //    🔴 `opacity` で隠さない（render テストの ②）。`invisible` は場所を取ったまま見えなくするだけで、
@@ -625,22 +655,10 @@ export function ChatConversation({
             aria-label={messages.messageActions}
             className={cn(
               'flex flex-wrap items-center gap-2',
-              keyboardNav || hoveredId === item.id || confirmDeleteId === item.id ? null : 'pointer-fine:invisible',
+              keyboardNav || hoveredId === item.id || confirmDeleteId === item.id ? null : 'pointer-fine:invisible pointer-coarse:hidden',
             )}
             data-testid={`chat-message-actions-${item.id}`}
           >
-            {long ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => toggleExpanded(item.id)}
-                aria-expanded={open}
-                data-testid={`chat-message-expand-${item.id}`}
-              >
-                {open ? messages.readLess : messages.readMore}
-              </Button>
-            ) : null}
             {/* ✅ 2026-10-16: 自分の発言の編集・削除（投稿できる人だけ）。
                 ✅ 2026-10-20（紺野「モーダル」）: 削除の確認はモーダル（`Dialog`）で出す（下の `ChatDeleteDialog`）。 */}
             {canPost && item.mine ? (
@@ -819,15 +837,27 @@ export function ChatConversation({
     // ✅ **2026-10-13（`docs/design-system.md` §4.5）: ヘッダ 56 / 本文 / コンポーザー 64 の
     //    3 段にした。** 本文だけが伸び縮みし、上下 2 段は動かない。
     <section data-testid="chat-conversation" data-thread-id={threadId} className="flex min-h-0 flex-1 flex-col">
-      <div className={`flex shrink-0 items-center gap-4 border-b border-border px-5 ${HEADER_HEIGHT_CLASS}`}>
+      {/* ✅ 2026-10-22（紺野「スマホ版おわってる」）: スマホでは「‹ 戻る」と名前だけを出し、書き出し・ピン留め・ミュート・情報は
+          「…」の中にしまう（横幅を取り合って「一覧へ戻る」が縦 1 文字ずつに潰れていた）。`md` 以上は従来どおり横に並べる。
+          🔴 操作は 1 つずつしか描かない（スマホとパソコンで 2 回描くと目印が重複する）。並べ方だけをクラスで変える。 */}
+      <div className={`relative flex shrink-0 items-center gap-3 border-b border-border px-3 md:gap-4 md:px-5 ${HEADER_HEIGHT_CLASS}`}>
+        {/* 🔴 モバイルは「一覧 → 会話」の 2 画面遷移（`docs/04` §S-031 デバイス別）。戻り道を必ず置く。 */}
+        <Link
+          href={chatHref({})}
+          aria-label={messages.backToList}
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-title text-fg md:hidden"
+          data-testid="chat-back-to-list"
+        >
+          <span aria-hidden="true">‹</span>
+        </Link>
         {/* ✅ 2026-10-13（Lark 寄せ）: 見出しに会話の相手（案件スレッドは案件名 + 相手の会社名）を出す。
             🔴 名前が読めなければ既定の見出しに戻す（空の見出しを作らない）。 */}
-        <div className="flex min-w-0 items-baseline gap-2">
+        <div className="flex min-w-0 flex-1 items-baseline gap-2">
           <h2 className="m-0 truncate text-row font-medium text-fg" data-testid="chat-conversation-title">
             {title?.title ?? messages.heading}
           </h2>
           {title?.title != null && title.subtitle !== null ? (
-            <span className="truncate text-xs text-fg-muted" data-testid="chat-conversation-subtitle">
+            <span className="hidden truncate text-xs text-fg-muted md:inline" data-testid="chat-conversation-subtitle">
               {title.subtitle}
             </span>
           ) : null}
@@ -838,49 +868,72 @@ export function ChatConversation({
             </span>
           ) : null}
         </div>
-        {/* 🔴 モバイルは「一覧 → 会話」の 2 画面遷移（`docs/04` §S-031 デバイス別）。戻り道を必ず置く。 */}
-        <Link
-          href={chatHref({})}
-          className={cn('md:hidden', SECONDARY_LINK_CLASSES)}
-          data-testid="chat-back-to-list"
+        {/* スマホだけの「…」。押すと下の操作の並びが縦に開く。
+            🔴 閲覧専用（書き出し・ピン留めが無い）には「…」を出さず、残る操作（情報）をそのまま並べる。 */}
+        {headerMenuUsed ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="min-h-11 shrink-0 md:hidden"
+          aria-label={messages.headerMenu}
+          aria-expanded={headerMenuOpen}
+          aria-controls={`chat-header-actions-${threadId}`}
+          onClick={() => setHeaderMenuOpen((open) => !open)}
+          data-testid={`chat-header-menu-${threadId}`}
         >
-          {messages.backToList}
-        </Link>
-        {/* ✅ 2026-10-16: ピン留め・ミュート（自分の表示の設定）。 */}
-        {/* ✅ 2026-10-16: 会話の書き出し（CSV）。🔴 閲覧専用には出さない（ダウンロード不可。API も 403）。 */}
-        {canPost ? (
-          <a
-            href={chatExportApiPath(threadId)}
-            download
-            className={cn(SECONDARY_LINK_CLASSES, 'shrink-0 text-xs')}
-            data-testid={`chat-thread-export-${threadId}`}
-          >
-            {messages.exportLink}
-          </a>
+          <span aria-hidden="true">…</span>
+        </Button>
         ) : null}
-        {prefs === undefined ? null : (
-          <ChatThreadPrefsToggle
-            threadId={threadId}
-            prefs={prefs}
-            labels={{ pin: messages.pin, unpin: messages.unpin, mute: messages.mute, unmute: messages.unmute }}
-          />
-        )}
-        {infoHref === undefined || infoLabel === undefined ? null : (
-          <Link href={infoHref} className={cn(SECONDARY_LINK_CLASSES, 'shrink-0 text-xs')} data-testid={`chat-thread-info-${threadId}`}>
-            {infoLabel}
-          </Link>
-        )}
-        {/* ✅ 2026-10-14: 並べて開いているときだけ「閉じる」を置く（`md` 以上。モバイルは 1 列の切替のまま）。 */}
-        {closeHref === undefined ? null : (
-          <Link
-            href={closeHref}
-            // 🔴 `cn` は後勝ち。共通の語（`inline-block` を含む）を先に置き、`hidden` が消されないようにする。
-            className={cn(SECONDARY_LINK_CLASSES, 'ml-auto hidden shrink-0 md:inline-block')}
-            data-testid={`chat-pane-close-${threadId}`}
-          >
-            {messages.closePane}
-          </Link>
-        )}
+        <div
+          id={`chat-header-actions-${threadId}`}
+          className={cn(
+            !headerMenuUsed ? 'flex items-center' : headerMenuOpen ? 'flex' : 'hidden',
+            'absolute top-full right-2 z-10 flex-col items-stretch gap-1 rounded-md border border-border-strong bg-bg p-2',
+            'md:static md:z-auto md:flex md:flex-1 md:flex-row md:items-center md:justify-end md:gap-4 md:border-0 md:bg-transparent md:p-0',
+          )}
+          data-testid={`chat-header-actions-${threadId}`}
+        >
+          {/* ✅ 2026-10-16: 会話の書き出し（CSV）。🔴 閲覧専用には出さない（ダウンロード不可。API も 403）。 */}
+          {canPost ? (
+            <a
+              href={chatExportApiPath(threadId)}
+              download
+              className={cn(SECONDARY_LINK_CLASSES, 'shrink-0 px-2 py-2 text-xs md:px-0 md:py-0')}
+              data-testid={`chat-thread-export-${threadId}`}
+            >
+              {messages.exportLink}
+            </a>
+          ) : null}
+          {/* ✅ 2026-10-16: ピン留め・ミュート（自分の表示の設定）。 */}
+          {prefs === undefined ? null : (
+            <ChatThreadPrefsToggle
+              threadId={threadId}
+              prefs={prefs}
+              labels={{ pin: messages.pin, unpin: messages.unpin, mute: messages.mute, unmute: messages.unmute }}
+            />
+          )}
+          {infoHref === undefined || infoLabel === undefined ? null : (
+            <Link
+              href={infoHref}
+              className={cn(SECONDARY_LINK_CLASSES, 'shrink-0 px-2 py-2 text-xs md:px-0 md:py-0')}
+              data-testid={`chat-thread-info-${threadId}`}
+            >
+              {infoLabel}
+            </Link>
+          )}
+          {/* ✅ 2026-10-14: 並べて開いているときだけ「閉じる」を置く（`md` 以上。モバイルは 1 列の切替のまま）。 */}
+          {closeHref === undefined ? null : (
+            <Link
+              href={closeHref}
+              // 🔴 `cn` は後勝ち。共通の語（`inline-block` を含む）を先に置き、`hidden` が消されないようにする。
+              className={cn(SECONDARY_LINK_CLASSES, 'hidden shrink-0 md:inline-block')}
+              data-testid={`chat-pane-close-${threadId}`}
+            >
+              {messages.closePane}
+            </Link>
+          )}
+        </div>
       </div>
 
       {/* 🔴 本文の面。**下寄せ**（最新の発言がコンポーザーの直上に来る。定義書 §3.12）。
@@ -981,6 +1034,7 @@ export function ChatConversation({
                     data-continued={continued ? 'true' : 'false'}
                     className={cn('flex flex-col items-end gap-1', fadeClass(item.id))}
                     onMouseEnter={() => setHoveredId(item.id)}
+                    onClick={(event) => selectOnTouch(event, item.id)}
                   >
                     {continued ? (
                       <span className="sr-only">{messages.own}</span>
@@ -1013,6 +1067,7 @@ export function ChatConversation({
                 data-continued={continued ? 'true' : 'false'}
                 className={cn('flex gap-3', fadeClass(item.id))}
                 onMouseEnter={() => setHoveredId(item.id)}
+                onClick={(event) => selectOnTouch(event, item.id)}
               >
                 {/* 🔴 続きの発言はアバターを見えなくするが、幅は残す（本文の左端をそろえる）。 */}
                 <Avatar
@@ -1089,8 +1144,11 @@ export function ChatConversation({
               上に「書く／プレビュー」と書式ボタン、下に入力欄。1 つの枠で囲み、右下をつまんで高さを伸ばせる。
               🔴 書式は Markdown の一部だけ（`lib/chat/markdown.ts`）。HTML は通さない。 */}
           {/* 🔴 `as="div"`: 枠の中にボタンがあるので `<label>` で包まない（ラベルが最初のボタンに結び付く）。入力欄は `aria-label` で名付ける。 */}
-          <Field as="div" label={messages.composeLabel} description={messages.composeHint}>
+          {/* ✅ 2026-10-22（紺野「スマホ版おわってる」・Teams の参考）: 入力欄は**普段は細い 1 行**。書式ボタンと「書く／プレビュー」は
+              下の「書式」を押したときだけ出す（スマホで入力欄が画面の半分を占めていた）。見出し「メッセージ」は読み上げ用だけにした。 */}
+          <Field as="div" label={messages.composeLabel} labelClassName="sr-only">
             <div className="flex flex-col rounded-md border border-border-strong bg-bg" data-testid="chat-compose-box">
+              {formatOpen ? (
               <div className="flex flex-wrap items-center gap-1 border-b border-border bg-bg-subtle px-2 py-1">
                 <Button
                   type="button"
@@ -1147,7 +1205,8 @@ export function ChatConversation({
                   </div>
                 ) : null}
               </div>
-              {mentionOpen && composeTab === 'write' ? (
+              ) : null}
+              {mentionOpen && formatOpen && composeTab === 'write' ? (
                 <div className="flex flex-wrap gap-1 border-b border-border px-2 py-2" data-testid="chat-compose-mention-list">
                   {mentionCandidates.length === 0 ? (
                     <span className="text-xs text-fg-muted">{messages.composeMentionEmpty}</span>
@@ -1176,7 +1235,10 @@ export function ChatConversation({
                   maxLength={CHAT_MESSAGE_MAX_LENGTH}
                   placeholder={messages.composePlaceholder}
                   // ✅ 2026-10-14: 文章に合わせて伸び（`field-sizing-content`）、約 6 行で止めて欄の中でスクロールする。
-                  className="min-h-20 max-h-72 resize-y overflow-y-auto rounded-none border-0"
+                  className={cn(
+                    'overflow-y-auto rounded-none border-0',
+                    formatOpen ? 'min-h-20 max-h-72 resize-y' : 'min-h-11 max-h-40',
+                  )}
                   onChange={(event) => updateBody(event.target.value)}
                   // ✅ 2026-10-13（Lark 寄せ）: Enter で送信、Shift+Enter で改行。
                   // 🔴 日本語入力の変換確定の Enter では送らない（`lib/chat/layout.ts` の `isSendKey`）。
@@ -1215,9 +1277,13 @@ export function ChatConversation({
                   )}
                 </div>
               )}
-              <p className="m-0 border-t border-border px-3 py-1 text-xs text-fg-muted">{messages.composeMarkdownHint}</p>
+              {formatOpen ? (
+                <p className="m-0 border-t border-border px-3 py-1 text-xs text-fg-muted">{messages.composeMarkdownHint}</p>
+              ) : null}
             </div>
           </Field>
+          {/* 誰に見えるか（取引先との部屋では大事な情報なので、小さく常に出す）。 */}
+          <p className="m-0 mt-1 text-xs text-fg-muted">{messages.composeHint}</p>
           {/* ✅ 2026-10-14: 送信の取り消し（押してから数秒は送らずに待つ）。 */}
           {pendingSend === null ? null : (
             <div className="mb-2 flex flex-wrap items-center gap-2" aria-live="polite" data-testid="chat-compose-pending">
@@ -1235,9 +1301,23 @@ export function ChatConversation({
               {sendError === 'MISSING' ? messages.composeThreadMissing : messages.composeFailed}
             </Alert>
           )}
-          <div className="mt-4 flex flex-wrap items-center gap-3">
+          <div className="mt-2 flex flex-wrap items-center gap-2">
             <Button type="submit" variant="primary" data-testid="chat-compose-submit">
               {sending ? messages.composeSubmitting : messages.composeSubmit}
+            </Button>
+            {/* ✅ 2026-10-22: 書式ボタン・プレビュー・@ 名前の帯を開く（普段は閉じて入力欄を細くする）。 */}
+            <Button
+              type="button"
+              variant={formatOpen ? 'secondary' : 'ghost'}
+              aria-pressed={formatOpen}
+              onClick={() => {
+                setFormatOpen((value) => !value);
+                setMentionOpen(false);
+                setComposeTab('write');
+              }}
+              data-testid="chat-compose-format-toggle"
+            >
+              {messages.composeToolbar}
             </Button>
             {/* ✅ 2026-10-14: 送信に失敗したら、書いた文章を残したまま、その場で送り直せる
                 （🔴 二重送信の防止は `createSubmitGuard` のまま。見えなくなったスレッドには再送を出さない）。 */}

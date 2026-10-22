@@ -38,11 +38,12 @@ export function ChatFavorites({
           {t('chat.people.favoritesEmpty')}
         </p>
       ) : (
-        <ul className="m-0 grid list-none grid-cols-5 gap-1 px-2 pb-2" data-testid="chat-threads-pinned">
+        // ✅ 2026-10-22（Lark の参考）: スマホでは横 1 列にして、多いときは横に送る（縦に場所を取らない）。`md` 以上は 5 列のまま。
+        <ul className="m-0 flex list-none gap-1 overflow-x-auto px-2 pb-2 md:grid md:grid-cols-5 md:overflow-visible" data-testid="chat-threads-pinned">
           {favorites.map((item) => {
             const unread = unreadCounts[item.id] ?? 0;
             return (
-              <li key={item.id} className="min-w-0" data-testid={`chat-favorite-${item.id}`}>
+              <li key={item.id} className="w-16 min-w-0 shrink-0 md:w-auto" data-testid={`chat-favorite-${item.id}`}>
                 <Link
                   href={chatHref({ thread: item.id })}
                   aria-current={item.id === selectedThreadId ? 'page' : undefined}
