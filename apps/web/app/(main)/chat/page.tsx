@@ -160,8 +160,8 @@ export default async function ChatPage({
           <div
             className={
               selected === null
-                ? 'w-full shrink-0 bg-bg-inset md:w-44 md:overflow-y-auto'
-                : 'hidden shrink-0 bg-bg-inset md:block md:w-44 md:overflow-y-auto'
+                ? 'w-full shrink-0 bg-bg-subtle md:w-44 md:overflow-y-auto'
+                : 'hidden shrink-0 bg-bg-subtle md:block md:w-44 md:overflow-y-auto'
             }
           >
             <ChatRail
@@ -173,13 +173,15 @@ export default async function ChatPage({
               showContacts={data.people !== null}
             />
           </div>
-          {/* ✅ 2026-10-16（紺野）: 一覧は薄いグレーの面、会話は白。境の罫線はやめ、面の色の違いで分ける。 */}
+          {/* ✅ 2026-10-16（紺野）: 一覧は薄いグレーの面、会話は白。
+              ✅ 2026-10-22（紺野「周りの色を軽く（白）でもいいかも」）: 一覧も白にし、左の列は薄い灰色に。一覧と会話は白どうしなので
+              細い線 1 本で区切る（開いている会話の青がはっきり見える）。 */}
           {/* 左: スレッド一覧（320）。🔴 `md` 未満で会話を開いているときは畳む（2 画面遷移） */}
           <div
             className={
               selected === null
-                ? 'w-full bg-bg-subtle md:w-96 md:shrink-0 md:overflow-y-auto'
-                : 'hidden bg-bg-subtle md:block md:w-96 md:shrink-0 md:overflow-y-auto'
+                ? 'w-full bg-bg md:w-96 md:shrink-0 md:overflow-y-auto md:border-r md:border-border'
+                : 'hidden bg-bg md:block md:w-96 md:shrink-0 md:overflow-y-auto md:border-r md:border-border'
             }
           >
             <ChatThreadList

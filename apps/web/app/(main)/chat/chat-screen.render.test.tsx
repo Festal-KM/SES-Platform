@@ -271,7 +271,7 @@ describe('🔴 ③: md 未満は「一覧 → 会話」の切替であって遮�
     }
     // 🔴 一覧の器（選択中）は畳むが `md` で戻る。
     // ✅ 2026-10-22: `md` 以上は器の中だけでスクロールする（`md:overflow-y-auto`）。
-    expect(page).toContain("'hidden bg-bg-subtle md:block md:w-96 md:shrink-0 md:overflow-y-auto'");
+    expect(page).toContain("'hidden bg-bg md:block md:w-96 md:shrink-0 md:overflow-y-auto md:border-r md:border-border'");
     // 🔴 会話の器（未選択）は `md` 未満では一覧が全幅なので畳む。こちらも `md` で戻る。
     expect(page).toContain("'hidden min-h-0 min-w-0 flex-1 md:flex md:flex-col'");
     // ✅ 2026-10-14: 右に並べた会話とドラッグの受け口は `md` 未満では出さない（モバイルは 1 列の切替）。
@@ -279,7 +279,7 @@ describe('🔴 ③: md 未満は「一覧 → 会話」の切替であって遮�
     expect(page).toContain("'hidden min-w-80 flex-1 flex-col border-l border-border md:flex'");
     expect(page).toContain("'hidden md:flex'");
     // ✅ 2026-10-19（v2）: 左の絞り込みの列も、会話を開いたときだけ畳み、`md` で戻る。
-    expect(page).toContain("'hidden shrink-0 bg-bg-inset md:block md:w-44 md:overflow-y-auto'");
+    expect(page).toContain("'hidden shrink-0 bg-bg-subtle md:block md:w-44 md:overflow-y-auto'");
   });
 
   it('🔴 一覧そのものに `hidden` の表示ユーティリティが無い（部品側で遮断していない）', () => {
