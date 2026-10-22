@@ -170,7 +170,7 @@ export function ChatNewGroupForm({ companies, labels }: ChatNewGroupFormProps) {
             <span className="ml-1 text-fg">{String(selected.length + 1)}</span>
           </p>
           <ul className="m-0 flex list-none flex-wrap gap-1 p-0">
-            <li className="flex items-center gap-1 rounded-full bg-bg p-1 pr-3 text-cell text-fg-muted">
+            <li className="flex items-center gap-1 rounded-md bg-bg p-1 pr-3 text-cell text-fg-muted">
               <Avatar initials={displayInitials(labels.self)} title={labels.self} className="h-6 w-6 text-xs" />
               {labels.self}
             </li>
@@ -183,7 +183,7 @@ export function ChatNewGroupForm({ companies, labels }: ChatNewGroupFormProps) {
                     type="button"
                     onClick={() => toggle(id)}
                     aria-label={`${entry.person.name}${labels.remove}`}
-                    className="flex items-center gap-1 rounded-full bg-brand-bg p-1 pr-2 text-cell text-fg"
+                    className="flex items-center gap-1 rounded-md bg-brand-bg p-1 pr-2 text-cell text-fg"
                     data-testid={`chat-new-group-chip-${id}`}
                   >
                     <Avatar initials={displayInitials(entry.person.name)} title={entry.person.name} className="h-6 w-6 text-xs" />
@@ -242,11 +242,11 @@ export function ChatNewGroupForm({ companies, labels }: ChatNewGroupFormProps) {
                             <span className="truncate text-xs text-fg-placeholder">{person.status}</span>
                           )}
                         </span>
-                        {/* 選んだかどうか（丸の中の ✓）。色だけに頼らず形でも分ける。 */}
+                        {/* 選んだかどうか（四角の中の ✓。チェックボックスと同じ形）。色だけに頼らず形でも分ける。 */}
                         <span
                           aria-hidden="true"
                           className={cn(
-                            'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-xs',
+                            'flex h-5 w-5 shrink-0 items-center justify-center rounded-xs border text-xs',
                             on ? 'border-brand bg-brand text-brand-fg' : 'border-border-strong bg-bg text-bg',
                           )}
                         >
