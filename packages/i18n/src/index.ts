@@ -4633,6 +4633,13 @@ const ja = {
   'chat.status.clear': '消す',
   'chat.status.failed': '状態を保存できませんでした',
   'chat.status.current': '自分の状態',
+  // ✅ 2026-10-22（紺野「ステータスなんかおかしくね」）: 左の列のいちばん上に移し、よく使う言い回しを押すだけで入れられるようにした。
+  'chat.status.presets': 'よく使う',
+  'chat.status.preset.meeting': '商談中',
+  'chat.status.preset.moving': '移動中',
+  'chat.status.preset.conference': '会議中',
+  'chat.status.preset.remote': '在宅勤務',
+  'chat.status.preset.off': '本日休み',
   // ==========================================================================
   // ✅ 2026-10-14（人間の明示指示）: `カレンダー` と `パートナー連携` の 4 画面（いずれも準備中）
   // ==========================================================================

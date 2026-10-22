@@ -88,6 +88,12 @@ import {
   type ChatConversationTitle,
 } from '../../../lib/chat/layout';
 
+/**
+ * ✅ 2026-10-22: ひとこと状態の札（名前の続きに見えないよう、薄い面の札にする（角は Badge と同じ `rounded-xs`。円はアバターとカウンタだけ））。
+ * 🔴 どの部屋でも同じ形（会話の見出し・発言の名前の横）。長い状態は 1 行で切る。
+ */
+const STATUS_CHIP_CLASSES = 'truncate rounded-xs bg-bg-inset px-1 text-xs text-fg-muted';
+
 /** 開いたときに「ここから未読」の線を会話の上端からどれだけ下に置くか（直前の発言が少し見える）。 */
 const UNREAD_MARKER_TOP_GAP_PX = 48;
 
@@ -786,7 +792,7 @@ export function ChatConversation({
           ) : null}
           {/* ✅ 2026-10-19（#128 §7.1 ①）: DM の相手のひとこと状態（名前の横）。 */}
           {title?.title != null && title.status != null && title.status !== '' ? (
-            <span className="truncate text-xs text-fg-muted" data-testid="chat-conversation-status">
+            <span className={STATUS_CHIP_CLASSES} data-testid="chat-conversation-status">
               {title.status}
             </span>
           ) : null}
@@ -987,6 +993,13 @@ export function ChatConversation({
                         {item.senderCompanyName ?? messages.unknownName}
                       </span>
                       {item.own ? <span className="text-xs text-fg-muted">{messages.own}</span> : null}
+                      {/* ✅ 2026-10-22（紺野「自分が入ってるチャットにも共通で表示しないと」）: 送信者の今のひとこと状態。
+                          🔴 どの部屋でも同じ札（DM の見出し・会社グループ・スレッド・グループ）。読めるかは RLS が決める。 */}
+                      {item.senderStatus == null || item.senderStatus === '' ? null : (
+                        <span className={STATUS_CHIP_CLASSES} data-testid={`chat-message-status-${item.id}`}>
+                          {item.senderStatus}
+                        </span>
+                      )}
                       {time}
                     </p>
                   )}
