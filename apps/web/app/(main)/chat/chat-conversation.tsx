@@ -88,6 +88,9 @@ import {
   type ChatConversationTitle,
 } from '../../../lib/chat/layout';
 
+/** 開いたときに「ここから未読」の線を会話の上端からどれだけ下に置くか（直前の発言が少し見える）。 */
+const UNREAD_MARKER_TOP_GAP_PX = 48;
+
 export type ChatConversationProps = {
   /**
    * 会話の見出し（Lark の会話ヘッダ。`lib/chat/layout.ts` の `conversationTitleFor`）。
@@ -242,11 +245,23 @@ export function ChatConversation({
   const composeId = `chat-compose-body-${threadId}`;
 
   // 開いたとき・自分が送ったときは一番下（最新）を見せる。🔴 過去を読み込んだとき（上に足す）は動かさない。
+  // ✅ 2026-10-22（紺野「会話の途中から表示されるようにしないと」）: **開いたときに未読があれば「ここから未読」の線を
+  //    会話の上の方に出す**（読んでいない最初の発言から読める）。未読が無ければ従来どおり最新。
+  const openedOnce = useRef(false);
   useEffect(() => {
     if (!scrollToLatestOnRender.current) return;
     scrollToLatestOnRender.current = false;
     const element = scrollRef.current;
-    if (element !== null) element.scrollTop = element.scrollHeight;
+    if (element === null) return;
+    const first = !openedOnce.current;
+    openedOnce.current = true;
+    const marker = first ? element.querySelector('[data-testid="chat-unread-marker"]') : null;
+    if (marker !== null) {
+      const offset = marker.getBoundingClientRect().top - element.getBoundingClientRect().top;
+      element.scrollTop += offset - UNREAD_MARKER_TOP_GAP_PX;
+      return;
+    }
+    element.scrollTop = element.scrollHeight;
   }, [items]);
 
   // 下書き（🔴 `sessionStorage` = タブを閉じたら消える。`lib/chat/message-text.ts` の `chatDraftKey`）。
@@ -827,9 +842,12 @@ export function ChatConversation({
       <div
         ref={scrollRef}
         onScroll={(event) => setAwayFromLatest(isAwayFromLatest(event.currentTarget))}
-        className="flex min-h-0 flex-1 flex-col justify-end gap-3 overflow-y-auto px-5 py-3"
+        className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 py-3"
         data-testid="chat-messages-scroll"
       >
+        {/* ✅ 2026-10-22: 発言が少ないときに下へ寄せる詰め物。🔴 `justify-end` を使わない —— 中身が枠からあふれると
+            上側がスクロールで届かなくなる（flexbox の既知の挙動）。会話の枠の中だけでスクロールするようにしたので効いてくる。 */}
+        <div aria-hidden="true" className="mt-auto" />
         {nextCursor === null ? null : (
           <Button
             type="button"

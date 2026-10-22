@@ -24,7 +24,7 @@ export default function ChatLoading() {
         </p>
         <Card className="flex min-h-0 flex-1 flex-col p-0 md:flex-row" data-testid="chat-skeleton">
           {/* 左の絞り込みの列 */}
-          <div className="flex flex-col gap-3 bg-bg-inset p-3 md:w-44">
+          <div className="flex flex-col gap-3 bg-bg-subtle p-3 md:w-44">
             {Array.from({ length: RAIL_ROWS }, (_, index) => (
               <div key={`rail-${String(index)}`} className="flex items-center gap-2">
                 <Skeleton className="size-6 shrink-0" />
@@ -33,7 +33,7 @@ export default function ChatLoading() {
             ))}
           </div>
           {/* 会話の一覧（アバター + 2 段） */}
-          <div className="flex flex-col gap-4 bg-bg-subtle p-3 md:w-96">
+          <div className="flex flex-col gap-4 bg-bg p-3 md:w-96 md:border-r md:border-border">
             <Skeleton height="title" />
             {Array.from({ length: LIST_ROWS }, (_, index) => (
               <div key={`row-${String(index)}`} className="flex items-center gap-3">
