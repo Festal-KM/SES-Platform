@@ -33,7 +33,7 @@ import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { CHAT_MESSAGE_PAGE_SIZE, PAGE_SIZE_DEFAULT } from '@ses/config';
 import { t } from '@ses/i18n';
-import { Alert, Card, CONTENT_PADDING_Y_CLASS, PageBody, SECONDARY_LINK_CLASSES, cn } from '@ses/ui';
+import { Alert, Card, CHAT_SCREEN_HEIGHT_CLASS, PageBody, SECONDARY_LINK_CLASSES, cn } from '@ses/ui';
 import { resolveTenantCtxOutcome } from '../../../lib/auth/session';
 import { canPostChatMessage } from '../../../lib/chat/policy';
 import { conversationLayoutFor, conversationTitleFor } from '../../../lib/chat/layout';
@@ -111,7 +111,10 @@ export default async function ChatPage({
   };
 
   return (
-    <main className={CONTENT_PADDING_Y_CLASS}>
+    // ✅ 2026-10-22（紺野「全部スクロールじゃなくて、ウィンドウ内だけスクロールできるように」）: `md` 以上は画面の高さに収め、
+    //    一覧・会話・左の列が**それぞれの枠の中だけで**スクロールする（`CHAT_SCREEN_HEIGHT_CLASS`）。`md` 未満は従来どおり。
+    //    ✅ 同日（紺野「上に無駄なスペース使いすぎ」）: 上下の余白を 20px → 12px に詰める（会話に高さを回す）。
+    <main className={cn('py-3 md:flex md:flex-col', CHAT_SCREEN_HEIGHT_CLASS)}>
       {/* 🔴 ✅ **2026-10-13: `main-min` から既定（`lg` で並置）に変えた。** `main-min` は
           「主カラムが 1320px に届くまで副カラムを下へ落とす」挙動であり、**基準の 1672px でも
           関連情報が会話の下に回り込んでいた**（実機の実測）。デザインシステム v1.0 §3.12 は
@@ -120,12 +123,19 @@ export default async function ChatPage({
           決まらず、会話の幅も足りなくなる）。対象と相手は各会話の見出しに出ている。 */}
       <PageBody
         widthClass="split"
+        className="md:min-h-0 md:flex-1"
         // ✅ 2026-10-19（v2）: 右の情報欄は既定で閉じる（左に絞り込みの列が増えたので、会話の幅を確保する）。
         //    会話の見出しの「情報」で開く（`info=1`）。
         aside={selected === null || tiled || !infoOpen ? undefined : <ChatThreadPanel thread={selected} canPost={canPost} />}
       >
-        <PageHeading trail={CHAT_TRAIL} title={t('chat.title')} />
-        <p className="mb-4 text-body text-fg-muted">{t('chat.threads.population')}</p>
+        {/* 見出し・説明・器を縦に積み、器（Card）が残りの高さを全部使う。 */}
+        <div className="flex h-full min-h-0 flex-col">
+        {/* ✅ 2026-10-22（紺野「これいらない」）: 見出しの帯（パンくず・タイトル）と説明文を画面から消し、器を上まで使う
+            （Teams と同じく会話に高さを回す）。🔴 帯そのものは全画面に 1 つ置く決まり（`tests/static/page-heading-single.test.ts`）
+            なので、**読み上げ用にだけ残す**（`sr-only`）。説明文は消した。 */}
+        <div className="sr-only">
+          <PageHeading trail={CHAT_TRAIL} title={t('chat.title')} />
+        </div>
         <ChatStatusSection canPost={canPost} text={myStatus} />
         {/* ✅ 2026-10-20（紺野「トースト」）: 操作の結果を右下に出す（行き先つき・自動で消えない）。 */}
         <ChatToastHost kindLabel={t('chat.toast.kind')} dismissLabel={t('chat.toast.dismiss')} />
@@ -150,8 +160,8 @@ export default async function ChatPage({
           <div
             className={
               selected === null
-                ? 'w-full shrink-0 bg-bg-inset md:w-44'
-                : 'hidden shrink-0 bg-bg-inset md:block md:w-44'
+                ? 'w-full shrink-0 bg-bg-inset md:w-44 md:overflow-y-auto'
+                : 'hidden shrink-0 bg-bg-inset md:block md:w-44 md:overflow-y-auto'
             }
           >
             <ChatRail
@@ -168,8 +178,8 @@ export default async function ChatPage({
           <div
             className={
               selected === null
-                ? 'w-full bg-bg-subtle md:w-96 md:shrink-0'
-                : 'hidden bg-bg-subtle md:block md:w-96 md:shrink-0'
+                ? 'w-full bg-bg-subtle md:w-96 md:shrink-0 md:overflow-y-auto'
+                : 'hidden bg-bg-subtle md:block md:w-96 md:shrink-0 md:overflow-y-auto'
             }
           >
             <ChatThreadList
@@ -196,7 +206,7 @@ export default async function ChatPage({
           {/* 中央: 会話（698）。🔴 選択が無いときは `md` 以上でだけ案内を出す（モバイルは一覧が全幅） */}
           <div
             className={cn(
-              selected === null ? 'hidden min-w-0 flex-1 md:flex md:flex-col' : 'flex min-w-0 flex-1 flex-col',
+              selected === null ? 'hidden min-h-0 min-w-0 flex-1 md:flex md:flex-col' : 'flex min-h-0 min-w-0 flex-1 flex-col',
               // ✅ 2026-10-14: 並べているときは右の列と同じ下限（320px。`md` 以上だけ）。
               tiled ? 'md:min-w-80' : null,
             )}
@@ -275,6 +285,7 @@ export default async function ChatPage({
             </div>
           ) : null}
         </Card>
+        </div>
       </PageBody>
     </main>
   );

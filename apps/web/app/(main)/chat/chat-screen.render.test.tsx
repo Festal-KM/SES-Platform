@@ -270,15 +270,16 @@ describe('🔴 ③: md 未満は「一覧 → 会話」の切替であって遮�
       expect(classes, `${classes} が md で戻っていません`).toMatch(/md:(?:block|flex)\b/);
     }
     // 🔴 一覧の器（選択中）は畳むが `md` で戻る。
-    expect(page).toContain("'hidden bg-bg-subtle md:block md:w-96 md:shrink-0'");
+    // ✅ 2026-10-22: `md` 以上は器の中だけでスクロールする（`md:overflow-y-auto`）。
+    expect(page).toContain("'hidden bg-bg-subtle md:block md:w-96 md:shrink-0 md:overflow-y-auto'");
     // 🔴 会話の器（未選択）は `md` 未満では一覧が全幅なので畳む。こちらも `md` で戻る。
-    expect(page).toContain("'hidden min-w-0 flex-1 md:flex md:flex-col'");
+    expect(page).toContain("'hidden min-h-0 min-w-0 flex-1 md:flex md:flex-col'");
     // ✅ 2026-10-14: 右に並べた会話とドラッグの受け口は `md` 未満では出さない（モバイルは 1 列の切替）。
     //    🔴 どちらも `md` で戻る（遮断ではない）。
     expect(page).toContain("'hidden min-w-80 flex-1 flex-col border-l border-border md:flex'");
     expect(page).toContain("'hidden md:flex'");
     // ✅ 2026-10-19（v2）: 左の絞り込みの列も、会話を開いたときだけ畳み、`md` で戻る。
-    expect(page).toContain("'hidden shrink-0 bg-bg-inset md:block md:w-44'");
+    expect(page).toContain("'hidden shrink-0 bg-bg-inset md:block md:w-44 md:overflow-y-auto'");
   });
 
   it('🔴 一覧そのものに `hidden` の表示ユーティリティが無い（部品側で遮断していない）', () => {
@@ -806,10 +807,12 @@ describe('⑱: ピン留め・ミュート（2026-10-16、チャットレーン�
   });
 
   it('ミュートした会話は未読を強調しない（件数は無彩色・名前は太字にしない）', () => {
+    // ✅ 2026-10-22（紺野「未読はアイコン横に赤丸」）: 未読はアバターの右上の赤丸。ミュート中は灰色。
     const muted = renderThreadList({ unreadCounts: { [THREAD_PROJECT]: 2 }, mutedIds: [THREAD_PROJECT] });
-    expect(classTokensOf(muted, `chat-thread-unread-${THREAD_PROJECT}`)).toContain('bg-neutral-bg');
+    expect(classTokensOf(muted, `chat-thread-unread-${THREAD_PROJECT}`)).toContain('bg-fg-muted');
+    expect(classTokensOf(muted, `chat-thread-unread-${THREAD_PROJECT}`)).not.toContain('bg-danger');
     const loud = renderThreadList({ unreadCounts: { [THREAD_PROJECT]: 2 } });
-    expect(classTokensOf(loud, `chat-thread-unread-${THREAD_PROJECT}`)).toContain('bg-brand-bg');
+    expect(classTokensOf(loud, `chat-thread-unread-${THREAD_PROJECT}`)).toContain('bg-danger');
   });
 });
 
