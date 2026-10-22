@@ -190,7 +190,27 @@ export default async function ChatPage({
                 <ChatStatusSection canPost={canPost} text={myStatus} />
               </div>
             ) : null}
-            <ChatRailToggle label={`${t('chat.rail.menu')}：${filterLabel}`} closeLabel={t('chat.rail.menuClose')}>
+            {/* ✅ 2026-10-22（Lark の参考）: スマホの上部は「すべて／未読 N／保存済み」の切り替え + 「≡ 絞り込み」。
+                ≡ の文字は、今の絞り込みが 3 つ以外（取引先・グループなど）のときだけその名前を出す。 */}
+            <ChatRailToggle
+              label={filter.kind === 'all' || filter.kind === 'unread' || filter.kind === 'saved' ? t('chat.rail.menu') : filterLabel}
+              closeLabel={t('chat.rail.menuClose')}
+              tabs={[
+                { key: 'all', href: chatHref({}), label: t('chat.rail.all'), active: filter.kind === 'all' },
+                {
+                  key: 'unread',
+                  href: chatHref({ filter: { kind: 'unread' } }),
+                  label: t('chat.rail.unread'),
+                  active: filter.kind === 'unread',
+                  count: Object.entries({ ...tree.unreadCounts, ...(data.people?.unreadCounts ?? {}) })
+                    .filter(([id]) => !tree.mutedIds.includes(id))
+                    .reduce((sum, [, count]) => sum + count, 0),
+                },
+                ...(canPost
+                  ? [{ key: 'saved' as const, href: chatHref({ filter: { kind: 'saved' } }), label: t('chat.rail.saved'), active: filter.kind === 'saved' }]
+                  : []),
+              ]}
+            >
             <ChatRail
               groups={tree.groups}
               rooms={data.people?.rooms ?? []}

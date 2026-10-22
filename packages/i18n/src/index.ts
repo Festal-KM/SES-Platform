@@ -4608,6 +4608,8 @@ const ja = {
   'chat.compose.hint': 'このスレッドの参加会社にだけ表示されます。',
   // ✅ 2026-10-22（紺野「こういうチャット枠が必要だよね」= GitHub のコメント欄）: 書式ボタン・書く／プレビュー・@。
   'chat.compose.toolbar': '書式',
+  // ✅ 2026-10-22（紺野「スマホ版おわってる」）: スマホの会話の見出しの「…」。
+  'chat.header.menu': 'その他の操作',
   'chat.compose.format.bold': '太字',
   'chat.compose.format.italic': '斜体',
   'chat.compose.format.code': 'コード',

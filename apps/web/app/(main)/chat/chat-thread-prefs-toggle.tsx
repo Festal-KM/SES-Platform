@@ -36,7 +36,7 @@ export function ChatThreadPrefsToggle({ threadId, prefs, labels }: ChatThreadPre
   }
 
   return (
-    <span className="ml-auto flex shrink-0 items-center gap-1">
+    <span className="flex shrink-0 flex-col items-stretch gap-1 md:ml-auto md:flex-row md:items-center">
       <Button
         type="button"
         variant="ghost"

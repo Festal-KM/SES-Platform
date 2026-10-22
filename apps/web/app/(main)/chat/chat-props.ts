@@ -25,6 +25,8 @@ export type ChatConversationMessages = {
   readonly composeHint: string;
   /** ✅ 2026-10-22: 書式ボタン・書く／プレビュー・@（GitHub のコメント欄に寄せた）。 */
   readonly composeToolbar: string;
+  /** ✅ 2026-10-22: スマホの会話の見出しの「…」（その他の操作）。 */
+  readonly headerMenu: string;
   readonly composeFormats: Readonly<Record<ChatFormat, string>>;
   readonly composeMention: string;
   readonly composeMentionEmpty: string;
@@ -119,6 +121,7 @@ export function chatConversationMessages(): ChatConversationMessages {
     composePlaceholder: t('chat.compose.placeholder'),
     composeHint: t('chat.compose.hint'),
     composeToolbar: t('chat.compose.toolbar'),
+    headerMenu: t('chat.header.menu'),
     composeFormats: {
       bold: t('chat.compose.format.bold'),
       italic: t('chat.compose.format.italic'),
