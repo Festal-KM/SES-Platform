@@ -51,6 +51,7 @@ import {
   chatMessagesApiPath,
   chatReactionApiPath,
   chatReadApiPath,
+  chatSaveApiPath,
   chatUnreadApiPath,
 } from '../../../lib/chat/screen-query';
 import {
@@ -137,11 +138,19 @@ export type ChatConversationProps = {
    */
   readonly peerReadMessageId?: string | null;
   /**
+   * ✅ 2026-10-22（紺野「自分だけ」）: 自分の定型文（`chat_message_templates`。本人の行だけ）。入力欄の「定型文を選ぶ」に固定の文面と並べる。
+   */
+  readonly ownTemplates?: readonly { readonly id: string; readonly label: string; readonly body: string }[];
+  /**
    * ✅ 2026-10-22: `@名前` の候補（DM・グループのメンバー）。会話に出てきた送信者の名前は部品の中で足す。
    * 🔴 名前だけ（利用者 ID を島に渡さない）。
    */
   readonly mentionNames?: readonly string[];
 };
+
+/** ✅ 2026-10-22: 定型文の選択肢の値。自分の定型文と固定の文面の ID がぶつからないよう頭を分ける。 */
+const OWN_TEMPLATE_PREFIX = 'own:';
+const MANAGE_TEMPLATES_VALUE = 'manage';
 
 /** 投稿の応答（`docs/05` §6.5 #51 の上位互換。`route.ts` の 🔴）。 */
 type SendResponseBody = { readonly message: ChatMessageView };
@@ -162,6 +171,7 @@ export function ChatConversation({
   lastReadMessageId = null,
   prefs,
   peerReadMessageId = null,
+  ownTemplates = [],
   mentionNames = [],
 }: ChatConversationProps) {
   // 🔴 ガードは**インスタンスごと**に持つ（モジュール変数にすると、別のスレッドを開いた島が
@@ -415,6 +425,18 @@ export function ChatConversation({
     }
   }
 
+  // ✅ 2026-10-22: 発言を保存する / 保存を外す（本人だけの栞）。🔴 手元で先に書き換えない（サーバの応答だけが正）。
+  async function toggleSaved(item: ChatMessageView): Promise<void> {
+    try {
+      const response = await fetch(chatSaveApiPath(threadId, item.id), { method: item.saved === true ? 'DELETE' : 'PUT' });
+      if (!response.ok) return;
+      const payload = (await response.json()) as { readonly saved: boolean };
+      setItems((current) => current.map((entry) => (entry.id === item.id ? { ...entry, saved: payload.saved } : entry)));
+    } catch {
+      // 保存できなければ何も変えない（次の新着の取得で正しい状態に揃う）。
+    }
+  }
+
   // ✅ 2026-10-16: 自分の発言の編集・削除（送った本人だけ。API も本人以外は 404）。
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
@@ -559,10 +581,16 @@ export function ChatConversation({
             <ChatMessageMarkdown text={shown} messageId={item.id} mentionNames={mentionCandidates} />
           )}
         </div>
-        {text === null ? null : (item.reactions ?? []).length > 0 || item.edited === true ? (
+        {text === null ? null : (item.reactions ?? []).length > 0 || item.edited === true || item.saved === true ? (
           // ✅ 2026-10-16: 付いているリアクションの数と「編集済み」は**常に見せる**（中身の一部なので隠さない）。
           <div className="flex flex-wrap items-center gap-2" data-testid={`chat-message-info-${item.id}`}>
             {item.edited === true ? <span className="text-xs text-fg-placeholder">{messages.edited}</span> : null}
+            {/* ✅ 2026-10-22: 自分が保存した発言の印（本人にだけ見える）。 */}
+            {item.saved === true ? (
+              <span className="text-xs text-fg-muted" data-testid={`chat-message-saved-${item.id}`}>
+                {messages.bookmarked}
+              </span>
+            ) : null}
             {/* ✅ 2026-10-16: リアクション（件数と自分が付けたか）。投稿できる人は押して付け外しでき、
                 閲覧専用には件数だけを文字で出す（押せないボタンを描かない）。 */}
             {(item.reactions ?? []).map((summary) =>
@@ -652,6 +680,19 @@ export function ChatConversation({
                   ))}
                 </Select>
               </>
+            ) : null}
+            {/* ✅ 2026-10-22（紺野）: 保存 / 保存を外す（本人だけの栞。左の列の「保存済み」に集まる）。 */}
+            {canPost ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                aria-pressed={item.saved === true}
+                onClick={() => void toggleSaved(item)}
+                data-testid={`chat-message-bookmark-${item.id}`}
+              >
+                {item.saved === true ? messages.unbookmark : messages.bookmark}
+              </Button>
             ) : null}
             {/* ✅ 2026-10-16: 相手の発言から未読にする（自分の発言は未読にならない）。 */}
             {item.mine ? null : (
@@ -1213,7 +1254,17 @@ export function ChatConversation({
               id={`chat-compose-template-${threadId}`}
               value=""
               onChange={(event) => {
-                const template = messages.templates.find((entry) => entry.id === event.target.value);
+                const value = event.target.value;
+                // ✅ 2026-10-22: 末尾の「定型文を編集…」は一覧の列を管理画面に切り替える。
+                //    幅のある画面では開いている会話を残し、スマホ（一覧と会話を切り替える）では一覧に戻る。
+                if (value === MANAGE_TEMPLATES_VALUE) {
+                  const wide = window.matchMedia('(min-width: 768px)').matches;
+                  window.location.assign(chatHref(wide ? { thread: threadId, filter: { kind: 'templates' } } : { filter: { kind: 'templates' } }));
+                  return;
+                }
+                const template = value.startsWith(OWN_TEMPLATE_PREFIX)
+                  ? ownTemplates.find((entry) => OWN_TEMPLATE_PREFIX + entry.id === value)
+                  : messages.templates.find((entry) => entry.id === value);
                 if (template === undefined) return;
                 updateBody(body === '' ? template.body : `${body}\n${template.body}`);
                 document.getElementById(composeId)?.focus();
@@ -1222,11 +1273,23 @@ export function ChatConversation({
               data-testid="chat-compose-template"
             >
               <option value="">{messages.templatePlaceholder}</option>
-              {messages.templates.map((template) => (
-                <option key={template.id} value={template.id}>
-                  {template.label}
-                </option>
-              ))}
+              {ownTemplates.length === 0 ? null : (
+                <optgroup label={messages.templateOwnGroup} data-testid="chat-compose-template-own">
+                  {ownTemplates.map((template) => (
+                    <option key={template.id} value={OWN_TEMPLATE_PREFIX + template.id}>
+                      {template.label}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              <optgroup label={messages.templateFixedGroup}>
+                {messages.templates.map((template) => (
+                  <option key={template.id} value={template.id}>
+                    {template.label}
+                  </option>
+                ))}
+              </optgroup>
+              <option value={MANAGE_TEMPLATES_VALUE}>{messages.templateManage}</option>
             </Select>
             {/* ✅ 2026-10-14: 残り文字数（残り 200 文字を切ったら出す）。 */}
             {(() => {

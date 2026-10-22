@@ -339,6 +339,8 @@ describe('🔴 update 系 data のテナントキー検査（行の移動を止�
         'chatReadStates', // 2026-10-16 チャットレーン（既読位置。C7 SELF。migration 20261016000000）
         'chatMessageReactions', // 2026-10-16 チャットレーン（リアクション。migration 20261016010000）
         'chatUserStatuses', // 2026-10-19 チャットレーン（ひとこと状態。本人だけが書く。migration 20261019020000）
+        'chatSavedMessages', // 2026-10-22 チャットレーン（保存済み。本人だけ・発言が読めるときだけ。migration 20261022010000）
+        'chatMessageTemplates', // 2026-10-22 チャットレーン（自分の定型文。本人だけ。migration 20261022020000）
         'contracts',
         'contractDocuments',
         'contractTemplates',

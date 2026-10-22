@@ -530,8 +530,9 @@ describe('🔴 ⑥ 参加会社は `thread_participants`（C5）が返した行�
     expect(a1Json).not.toContain(PARTNER_A2);
     // 木を読むときはページ単位の一覧を読まない（レビュー指摘）。
     expect(forA1.threads).toEqual({ items: [], nextCursor: null });
-    // ✅ 2026-10-14: 要返信は自分が読めるスレッドだけ。🔴 「返信が早い」は取引先には決して付かない（他社との比較を出さない）。
-    expect(forA1.tree?.awaitingReplyIds.every((id) => id !== THREAD_A_P2)).toBe(true);
+    // ✅ 2026-10-14: 🔴 「返信が早い」は取引先には決して付かない（他社との比較を出さない）。
+    //    ✅ 2026-10-22: 要返信は撤去した（「保存済み」に置き換え。読み出しの結果にも載らない）。
+    expect(forA1.tree).not.toHaveProperty('awaitingReplyIds');
     expect(forA1.tree?.groups.every((group) => !group.fastReply)).toBe(true);
     // ✅ 2026-10-14: 本文の検索も RLS の母集団だけ。🔴 A1 が A2 の本文で検索しても 0 件（自社の本文は当たる = 対照）。
     expect((await read(partnerA1, BODY_P2)).tree?.messageHits).toEqual([]);

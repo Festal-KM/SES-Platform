@@ -84,6 +84,14 @@ export type ChatConversationMessages = {
   readonly templatePlaceholder: string;
   /** 定型文（固定の文面。🔴 個人情報・単価を含めない）。 */
   readonly templates: readonly { readonly id: string; readonly label: string; readonly body: string }[];
+  /** ✅ 2026-10-22: 自分の定型文の見出し・固定の文面の見出し・管理画面へ（選択肢の末尾）。 */
+  readonly templateOwnGroup: string;
+  readonly templateFixedGroup: string;
+  readonly templateManage: string;
+  /** ✅ 2026-10-22: 発言の保存（本人だけの栞）。 */
+  readonly bookmark: string;
+  readonly unbookmark: string;
+  readonly bookmarked: string;
 };
 
 /** ✅ 2026-10-14: ドラッグで会話を右に並べる受け口の語。 */
@@ -179,5 +187,11 @@ export function chatConversationMessages(): ChatConversationMessages {
       { id: 'status', label: t('chat.compose.template.status'), body: t('chat.compose.template.status.body') },
       { id: 'thanks', label: t('chat.compose.template.thanks'), body: t('chat.compose.template.thanks.body') },
     ],
+    templateOwnGroup: t('chat.compose.template.own'),
+    templateFixedGroup: t('chat.compose.template.fixed'),
+    templateManage: t('chat.compose.template.manage'),
+    bookmark: t('chat.message.bookmark'),
+    unbookmark: t('chat.message.unbookmark'),
+    bookmarked: t('chat.message.bookmarked'),
   };
 }

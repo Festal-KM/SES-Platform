@@ -1,6 +1,7 @@
 // apps/web/app/(main)/chat/chat-rail.tsx
 // ✅ 2026-10-19（v2・紺野「左に割り込む」「会社から＞ 人から＞」）: 左の絞り込みの列（Lark の「フィルタ」）。
-//   すべて / 未読 / 要返信 / DM / グループ / 取引先ごと（会社から）/ 案件スレッド / 連絡先（人から）。
+//   すべて / 未読 / DM / グループ / 保存済み / 取引先ごと（会社から）/ 案件スレッド / 連絡先（人から）。
+// ✅ 2026-10-22（紺野）: 「要返信」を外し、「保存済み」（本人だけの栞。`f=saved`）を足した。
 //
 // 🔴 ここが守るもの
 //   ① 並べる会社・案件・件数は、一覧と同じ読み出し（RLS が決めた母集団）から数えるだけ。ここで足さない。
@@ -17,20 +18,21 @@ export type ChatRailProps = {
   readonly groups: readonly ChatThreadGroup[];
   readonly rooms: readonly ChatRoomListItem[];
   readonly unreadCounts: Readonly<Record<string, number>>;
-  readonly awaitingReplyIds: readonly string[];
   readonly filter: ChatListFilter;
   readonly showContacts: boolean;
+  /** ✅ 2026-10-22: 「保存済み」を出すか（保存できる人 = 投稿できる人だけ。閲覧専用には出さない）。 */
+  readonly showSaved?: boolean;
 };
 
 /** 種類の印（アバターと同じ形・色の小さな四角）。 */
-type MarkKind = 'all' | 'unread' | 'awaiting' | 'dm' | 'group' | 'company' | 'project' | 'contacts';
+type MarkKind = 'all' | 'unread' | 'dm' | 'group' | 'saved' | 'company' | 'project' | 'contacts';
 // ✅ 2026-10-20: 一覧のアバターと同じ塗りつぶし（`chat-thread-list.tsx` の AVATAR_KIND_CLASSES）。
 const MARK_CLASSES: Readonly<Record<MarkKind, string>> = {
   all: 'rounded-md bg-fg-muted text-bg',
   unread: 'rounded-md bg-info text-bg',
-  awaiting: 'rounded-md bg-danger text-bg',
   dm: 'rounded-full bg-brand text-brand-fg',
   group: 'rounded-full bg-success text-bg',
+  saved: 'rounded-md bg-brand text-brand-fg',
   company: 'rounded-md bg-fg text-bg',
   project: 'rounded-md bg-warning text-bg',
   contacts: 'rounded-full bg-success text-bg',
@@ -87,7 +89,7 @@ function RailLink({
 
 const HEADING_CLASSES = 'm-0 shrink-0 px-2 pt-3 pb-1 text-xs font-normal text-fg-muted';
 
-export function ChatRail({ groups, rooms, unreadCounts, awaitingReplyIds, filter, showContacts }: ChatRailProps) {
+export function ChatRail({ groups, rooms, unreadCounts, filter, showContacts, showSaved = false }: ChatRailProps) {
   const unreadOf = (id: string) => unreadCounts[id] ?? 0;
   const items = groups.flatMap((group) => (group.chat === null ? group.threads : [group.chat, ...group.threads]));
   const unreadTotal = [...items.map((item) => item.id), ...rooms.map((room) => room.id)].filter((id) => unreadOf(id) > 0).length;
@@ -98,9 +100,11 @@ export function ChatRail({ groups, rooms, unreadCounts, awaitingReplyIds, filter
       <ul className="m-0 flex list-none gap-1 overflow-x-auto p-0 md:flex-col md:overflow-visible">
         <RailLink href={chatHref({})} active={is('all')} mark="all" markText={t('chat.rail.mark.all')} label={t('chat.rail.all')} count={unreadTotal} testKey="all" />
         <RailLink href={chatHref({ filter: { kind: 'unread' } })} active={is('unread')} mark="unread" markText={t('chat.rail.mark.unread')} label={t('chat.rail.unread')} count={unreadTotal} testKey="unread" />
-        <RailLink href={chatHref({ filter: { kind: 'awaiting' } })} active={is('awaiting')} mark="awaiting" markText={t('chat.rail.mark.awaiting')} label={t('chat.rail.awaiting')} count={awaitingReplyIds.length} testKey="awaiting" />
         <RailLink href={chatHref({ filter: { kind: 'dm' } })} active={is('dm')} mark="dm" markText={t('chat.rail.mark.dm')} label={t('chat.rail.dm')} testKey="dm" />
         <RailLink href={chatHref({ filter: { kind: 'group' } })} active={is('group')} mark="group" markText={t('chat.rail.mark.group')} label={t('chat.rail.group')} testKey="group" />
+        {showSaved ? (
+          <RailLink href={chatHref({ filter: { kind: 'saved' } })} active={is('saved')} mark="saved" markText={t('chat.rail.mark.saved')} label={t('chat.rail.saved')} testKey="saved" />
+        ) : null}
       </ul>
       {groups.length === 0 ? null : (
         <>

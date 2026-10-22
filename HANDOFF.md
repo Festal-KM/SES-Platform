@@ -20,6 +20,13 @@
 | **デモの 2FA** | 🔴 **`demo` だけ丸ごと止めた**（§2.3） |
 | **アカウント設定** | 下地（`users.job_title` + サービス + API）。**画面は未着手**（Issue #95 に 2 つ確認中） |
 
+### ⏳ 2026-10-22 チャット: 要返信を外す・保存済み・自分の定型文（PR `chat/saved-templates`）
+
+- 表を 2 つ足した: `chat_saved_messages`（読み = 本人の行 かつ 発言が今も読める）/ `chat_message_templates`（C7 SELF）。どちらも運営者に GRANT しない・`PURGED` で消す（保存済みは `rows: 'ALL'`、定型文は列の消去）。
+- 🔴 **`CLAUDE.md` §4.1 に 2 行足した = 人間の承認事項**（紺野・宮田の承認待ち。PR 本文の先頭に明記）。
+- 🔴 `PURGE_SPEC` の `rows: 'ALL'` は `engineer_careers` に続いて 2 表目（`packages/config/src/retention.test.ts` の期待値も直した）。
+- 分離テスト `tests/isolation/chat-saved-templates.test.ts`（16 件）と `tenant-purge` / `rls-enforced`（表の数 60 → 62）をローカルで回して緑。
+
 ### 🔴 人間の判断を待っているもの（着手できない）
 
 | Issue | 何を待っているか |

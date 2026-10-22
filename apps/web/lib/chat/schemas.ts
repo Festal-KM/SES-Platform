@@ -144,3 +144,38 @@ export const chatUserStatusBodySchema = z
 export type ChatUserStatusBody = z.infer<typeof chatUserStatusBodySchema>;
 export type ChatUserStatusBodyIsolationGuard = AssertNoIsolationKeys<ChatUserStatusBody>;
 assertNoIsolationKeys(Object.keys(chatUserStatusBodySchema.shape), 'chatUserStatusBodySchema');
+
+// ✅ 2026-10-22（チャットレーン・紺野）: 保存済み（`docs/05` §6.5 #51l）。
+// `PUT` / `DELETE /api/threads/{id}/messages/{messageId}/save` は body を持たない（params は `chatMessageParamsSchema`）。
+// 🔴 誰の栞かは受け取らない（認証コンテキストの本人だけ。RLS も本人の行しか書かせない）。
+
+// ✅ 2026-10-22（チャットレーン・紺野「自分だけ」）: 自分の定型文（`docs/05` §6.5 #51m）。
+// 🔴 誰の定型文かは受け取らない（認証コンテキストの本人だけ）。
+/** 🔴 migration 20261022020000 の CHECK（`char_length(label) <= 30`）と同じ値。 */
+export const CHAT_TEMPLATE_LABEL_MAX_LENGTH = 30;
+/** 🔴 migration 20261022020000 の CHECK（`char_length(body) <= 1000`）と同じ値。 */
+export const CHAT_TEMPLATE_BODY_MAX_LENGTH = 1000;
+/** 1 人が持てる定型文の数（アプリで数えて止める）。 */
+export const CHAT_TEMPLATE_MAX_PER_USER = 50;
+
+/** `POST /api/chat/templates` / `PATCH /api/chat/templates/{templateId}` — 見出しは 1 行。本文は改行してよい。 */
+export const chatTemplateBodySchema = z
+  .object({
+    label: z
+      .string()
+      .trim()
+      .min(1)
+      .max(CHAT_TEMPLATE_LABEL_MAX_LENGTH)
+      .refine((value) => !/[\r\n]/.test(value)),
+    body: z.string().trim().min(1).max(CHAT_TEMPLATE_BODY_MAX_LENGTH),
+  })
+  .strict();
+export type ChatTemplateBody = z.infer<typeof chatTemplateBodySchema>;
+export type ChatTemplateBodyIsolationGuard = AssertNoIsolationKeys<ChatTemplateBody>;
+assertNoIsolationKeys(Object.keys(chatTemplateBodySchema.shape), 'chatTemplateBodySchema');
+
+/** 定型文を指す path param（`/api/chat/templates/[templateId]`）。 */
+export const chatTemplateParamsSchema = z.object({ templateId: z.uuid() });
+export type ChatTemplateParams = z.infer<typeof chatTemplateParamsSchema>;
+export type ChatTemplateParamsIsolationGuard = AssertNoIsolationKeys<ChatTemplateParams>;
+assertNoIsolationKeys(Object.keys(chatTemplateParamsSchema.shape), 'chatTemplateParamsSchema');

@@ -45,6 +45,8 @@ import { ChatRailToggle } from './chat-rail-toggle';
 import { ChatToastHost } from './chat-toast-host';
 import { CHAT_THREAD_SORT_DEFAULT } from '../../../lib/chat/thread-tree';
 import { readMyChatUserStatus } from '../../../lib/chat/user-status';
+import { readMySavedList } from '../../../lib/chat/saved';
+import { readMyChatTemplates } from '../../../lib/chat/templates';
 import { CHAT_TRAIL } from '../../../lib/shell/page-trail';
 import { PageHeading } from '../_shell/page-heading';
 import { ChatStatusSection } from './chat-status-section';
@@ -104,18 +106,23 @@ export default async function ChatPage({
   // ✅ 2026-10-19（v2）: 左の列の絞り込み（`f=`）。旧「未読のみ」（`unread=1`）は「未読」の絞り込みとして読む。
   const filter = query.f === undefined && query.unread === '1' ? parseChatFilter('unread') : parseChatFilter(query.f);
   const infoOpen = query.info === '1';
+  // ✅ 2026-10-22（紺野）: 自分の定型文（入力欄の選択肢と管理画面）と、保存済み（左の列で選んだときだけ読む）。
+  //    閲覧専用は書けないので読まない。🔴 どちらも本人の行だけ（RLS）。
+  const ownTemplates = canPost ? await readMyChatTemplates(ctx) : [];
+  const saved = filter.kind === 'saved' ? await readMySavedList(ctx) : null;
   // ✅ 2026-10-20: スマホの「絞り込み」ボタンに、いまの絞り込みの名前を出す。
   const filterLabel =
     filter.kind === 'company'
       ? (data.tree?.groups.find((group) => group.key === filter.key)?.counterpartyName ?? t('chat.thread.unknownName'))
       : filter.kind === 'person' || filter.kind === 'contacts' || filter.kind === 'newgroup'
         ? t('chat.people.contacts')
-        : t(`chat.rail.${filter.kind}`);
+        : filter.kind === 'templates'
+          ? t('chat.template.title')
+          : t(`chat.rail.${filter.kind}`);
   const listQuery = { q: query.q ?? null, sort: query.sort ?? CHAT_THREAD_SORT_DEFAULT, filter };
   const tree = data.tree ?? {
     groups: [],
     truncated: false,
-    awaitingReplyIds: [],
     messageHits: [],
     unreadCounts: {},
     pinnedIds: [],
@@ -188,9 +195,9 @@ export default async function ChatPage({
               groups={tree.groups}
               rooms={data.people?.rooms ?? []}
               unreadCounts={{ ...tree.unreadCounts, ...(data.people?.unreadCounts ?? {}) }}
-              awaitingReplyIds={tree.awaitingReplyIds}
               filter={filter}
               showContacts={data.people !== null}
+              showSaved={canPost}
             />
             </ChatRailToggle>
           </div>
@@ -208,8 +215,9 @@ export default async function ChatPage({
             <ChatThreadList
               groups={tree.groups}
               truncated={tree.truncated}
-              awaitingReplyIds={tree.awaitingReplyIds}
               messageHits={tree.messageHits}
+              saved={saved}
+              templates={ownTemplates}
               unreadCounts={tree.unreadCounts}
               pinnedIds={tree.pinnedIds}
               mutedIds={tree.mutedIds}
@@ -245,6 +253,7 @@ export default async function ChatPage({
                 threadId={selected.id}
                 initialMessages={data.messages.items}
                 initialNextCursor={data.messages.nextCursor}
+                ownTemplates={ownTemplates}
                 lastReadMessageId={data.lastReadMessageIds[selected.id] ?? null}
                 prefs={data.threadPrefs[selected.id] ?? { pinned: false, muted: false }}
                 // ✅ 2026-10-19（#128）: 相手の既読は DM だけ（グループ・会社グループ・スレッドには渡さない）。
@@ -292,6 +301,7 @@ export default async function ChatPage({
                   threadId={pane.thread.id}
                   initialMessages={pane.messages.items}
                   initialNextCursor={pane.messages.nextCursor}
+                  ownTemplates={ownTemplates}
                   lastReadMessageId={data.lastReadMessageIds[pane.thread.id] ?? null}
                   prefs={data.threadPrefs[pane.thread.id] ?? { pinned: false, muted: false }}
                   {...(pane.thread.kind === 'DM' ? { peerReadMessageId: data.peerReadMessageIds[pane.thread.id] ?? null } : {})}
