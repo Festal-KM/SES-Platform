@@ -34,7 +34,7 @@ export const CHAT_SORT_PARAM = 'sort';
 export const CHAT_UNREAD_PARAM = 'unread';
 /**
  * ✅ 2026-10-19（v2・紺野「会社から＞ 人から＞ 行けるならOK」）: 左の絞り込みの列の選択（`f=`）。
- *   `unread` / `awaiting` / `dm` / `group` / `contacts`（連絡先）/ `co.<会社の鍵>` / `person.<利用者の ID>`。
+ *   `unread` / `awaiting` / `dm` / `group` / `contacts`（連絡先）/ `newgroup`（新しいグループ。2026-10-22）/ `co.<会社の鍵>` / `person.<利用者の ID>`。
  * 🔴 会社の鍵は**その会社の会話の行の ID**（取引先の ID を URL に出さない）。値は読み出しの母集団の中でだけ効く。
  */
 export const CHAT_FILTER_PARAM = 'f';
@@ -42,11 +42,11 @@ export const CHAT_FILTER_PARAM = 'f';
 export const CHAT_INFO_PARAM = 'info';
 const UUID_PATTERN = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 export const CHAT_FILTER_PATTERN = new RegExp(
-  '^(unread|awaiting|dm|group|contacts|co\\.' + UUID_PATTERN + '|person\\.' + UUID_PATTERN + ')$',
+  '^(unread|awaiting|dm|group|contacts|newgroup|co\\.' + UUID_PATTERN + '|person\\.' + UUID_PATTERN + ')$',
 );
 export type ChatListFilter =
   | { readonly kind: 'all' }
-  | { readonly kind: 'unread' | 'awaiting' | 'dm' | 'group' | 'contacts' }
+  | { readonly kind: 'unread' | 'awaiting' | 'dm' | 'group' | 'contacts' | 'newgroup' }
   | { readonly kind: 'company'; readonly key: string }
   | { readonly kind: 'person'; readonly userId: string };
 
@@ -55,7 +55,7 @@ export function parseChatFilter(value: string | undefined): ChatListFilter {
   if (value === undefined || !CHAT_FILTER_PATTERN.test(value)) return { kind: 'all' };
   if (value.startsWith('co.')) return { kind: 'company', key: value.slice(3) };
   if (value.startsWith('person.')) return { kind: 'person', userId: value.slice(7) };
-  return { kind: value as 'unread' | 'awaiting' | 'dm' | 'group' | 'contacts' };
+  return { kind: value as 'unread' | 'awaiting' | 'dm' | 'group' | 'contacts' | 'newgroup' };
 }
 
 /** `f=` の値に戻す（「すべて」は付けない）。 */

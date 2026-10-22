@@ -153,7 +153,7 @@ export function ChatRail({ groups, rooms, unreadCounts, awaitingReplyIds, filter
           <ul className="m-0 flex list-none gap-1 p-0 md:flex-col">
             <RailLink
               href={chatHref({ filter: { kind: 'contacts' } })}
-              active={is('contacts') || is('person')}
+              active={is('contacts') || is('person') || is('newgroup')}
               mark="contacts"
               markText={t('chat.rail.mark.contacts')}
               label={t('chat.rail.openContacts')}

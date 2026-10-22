@@ -135,6 +135,7 @@ function applyFilter(entries: readonly Entry[], filter: ChatListFilter, unread: 
   switch (filter.kind) {
     case 'all':
     case 'contacts':
+    case 'newgroup':
       return [...entries];
     case 'unread':
       return entries.filter((entry) => unread(idOf(entry)) > 0);
@@ -276,7 +277,8 @@ function viewOf(entry: Entry): RowView {
       id: entry.room.id,
       kind: entry.room.kind,
       name: entry.room.kind === 'GROUP' ? `${name}（${String(entry.room.memberCount)}${t('chat.people.memberUnit')}）` : name,
-      initials: displayInitials(name),
+      // ✅ 2026-10-22: 数字・記号で始まるグループ名（「11月の要員調整」）は 1 文字目が「1」になるので「G」にする。
+      initials: entry.room.kind === 'GROUP' && !/^[\p{L}]/u.test(name) ? 'G' : displayInitials(name),
       subtitlePrefix: null,
       external: entry.room.external,
       fastReply: false,
@@ -450,38 +452,59 @@ export function ChatThreadList({
         ) : null}
       </form>
 
-      {filter.kind === 'contacts' && people !== null ? (
+      {filter.kind === 'newgroup' && people !== null && canPost ? (
+        // ✅ 2026-10-22（紺野「グループ作るがダサい」）: 一覧の列がまるごと「新しいグループ」に切り替わる（連絡先と同じ「左に割り込む」形）。
+        //    🔴 閲覧専用には出さない。候補は連絡先と同じ母集団（`lib/chat/people.ts` が RLS で決めたものだけ）。
+        <ChatNewGroupForm
+          companies={people.contacts.companies.map((company) => ({
+            companyName: company.companyName ?? t('chat.thread.unknownName'),
+            isHost: company.people.some((contact) => contact.isHost),
+            people: company.people.map((contact) => ({
+              userId: contact.userId,
+              name: contact.name ?? t('chat.thread.unknownName'),
+              status: contact.status ?? null,
+            })),
+          }))}
+          labels={{
+            title: t('chat.group.title'),
+            back: t('chat.group.back'),
+            name: t('chat.group.name'),
+            namePlaceholder: t('chat.group.namePlaceholder'),
+            search: t('chat.group.search'),
+            selected: t('chat.group.selected'),
+            selectedNone: t('chat.group.selectedNone'),
+            self: t('chat.people.self'),
+            remove: t('chat.group.remove'),
+            partnerLimit: t('chat.group.partnerLimit'),
+            noMatch: t('chat.group.noMatch'),
+            external: t('chat.tag.external'),
+            submit: t('chat.group.submit'),
+            needName: t('chat.group.needName'),
+            needMembers: t('chat.group.needMembers'),
+            failed: t('chat.group.failed'),
+            createdToast: t('chat.toast.groupCreated'),
+            openGroup: t('chat.toast.openGroup'),
+          }}
+        />
+      ) : (filter.kind === 'contacts' || filter.kind === 'newgroup') && people !== null ? (
         <div className="flex min-h-0 flex-col overflow-y-auto">
           <ChatContactsView people={people}>
-            {/* ✅ 2026-10-19（#128）: グループを作る（名前 + 連絡先から選ぶ）。🔴 閲覧専用には出さない。候補は連絡先と同じ母集団。 */}
+            {/* ✅ 2026-10-22: グループを作る入口は 1 行の導線（押すと「新しいグループ」画面へ）。🔴 閲覧専用には出さない。 */}
             {canPost && people.contacts.companies.length > 0 ? (
-              // ✅ 2026-10-20: 人を探しに来た画面なので、グループを作る欄は畳んでおく（押すと開く）。
-              <details className="px-2 pt-2" data-testid="chat-new-group-toggle">
-                <summary className="cursor-pointer rounded-md border border-border bg-bg px-3 py-2 text-cell text-fg">
-                  {t('chat.group.heading')}
-                </summary>
-              <ChatNewGroupForm
-                people={people.contacts.companies.flatMap((company) =>
-                  company.people.map((contact) => ({
-                    userId: contact.userId,
-                    name: contact.name ?? t('chat.thread.unknownName'),
-                    companyName: contact.companyName,
-                  })),
-                )}
-                labels={{
-                  heading: t('chat.group.heading'),
-                  name: t('chat.group.name'),
-                  namePlaceholder: t('chat.group.namePlaceholder'),
-                  members: t('chat.group.members'),
-                  submit: t('chat.group.submit'),
-                  needName: t('chat.group.needName'),
-                  needMembers: t('chat.group.needMembers'),
-                  failed: t('chat.group.failed'),
-                  createdToast: t('chat.toast.groupCreated'),
-                  openGroup: t('chat.toast.openGroup'),
-                }}
-              />
-              </details>
+              <Link
+                href={chatHref({ filter: { kind: 'newgroup' } })}
+                className={cn('mx-2 mt-2 flex items-center gap-3 rounded-md px-2 py-2', ROW_HOVER_CLASSES)}
+                data-testid="chat-new-group-toggle"
+              >
+                <Avatar size="md" initials="G" title={t('chat.group.heading')} className={AVATAR_KIND_CLASSES.GROUP} />
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate text-cell text-fg">{t('chat.group.heading')}</span>
+                  <span className="truncate text-xs text-fg-muted">{t('chat.group.entry')}</span>
+                </span>
+                <span aria-hidden="true" className="text-fg-muted">
+                  ›
+                </span>
+              </Link>
             ) : null}
           </ChatContactsView>
         </div>
