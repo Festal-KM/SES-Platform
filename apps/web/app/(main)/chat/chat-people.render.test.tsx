@@ -162,14 +162,19 @@ describe('✅ v2: 左の列から「会社から＞」「人から＞」辿る',
   });
 });
 
-describe('✅ グループを作る（連絡先の画面の中）', () => {
-  it('投稿できる人には連絡先の人を候補にした「グループを作る」が出る。閲覧専用には出ない', () => {
-    const view = (canPost: boolean) =>
-      renderToStaticMarkup(
-        createElement(ChatThreadList, { groups: [], selectedThreadId: null, nextCursor: null, people: PEOPLE, canPost, filter: { kind: 'contacts' } }),
-      );
-    expect(view(true)).toContain('data-testid="chat-new-group"');
-    expect(view(true)).toContain(`data-testid="chat-new-group-member-${PARTNER_PERSON}"`);
-    expect(view(false)).not.toContain('chat-new-group');
+describe('✅ グループを作る（連絡先の入口 → 「新しいグループ」画面）', () => {
+  const view = (canPost: boolean, kind: 'contacts' | 'newgroup') =>
+    renderToStaticMarkup(
+      createElement(ChatThreadList, { groups: [], selectedThreadId: null, nextCursor: null, people: PEOPLE, canPost, filter: { kind } }),
+    );
+  it('連絡先には入口の 1 行だけが出る（フォームは出さない）。閲覧専用には入口も出ない', () => {
+    expect(view(true, 'contacts')).toContain('data-testid="chat-new-group-toggle"');
+    expect(view(true, 'contacts')).not.toContain('data-testid="chat-new-group"');
+    expect(view(false, 'contacts')).not.toContain('chat-new-group');
+  });
+  it('「新しいグループ」画面には連絡先の人が候補に出る。閲覧専用にはフォームを出さない', () => {
+    expect(view(true, 'newgroup')).toContain('data-testid="chat-new-group"');
+    expect(view(true, 'newgroup')).toContain(`data-testid="chat-new-group-member-${PARTNER_PERSON}"`);
+    expect(view(false, 'newgroup')).not.toContain('chat-new-group');
   });
 });
