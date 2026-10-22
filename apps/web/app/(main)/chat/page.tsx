@@ -103,7 +103,7 @@ export default async function ChatPage({
   const filterLabel =
     filter.kind === 'company'
       ? (data.tree?.groups.find((group) => group.key === filter.key)?.counterpartyName ?? t('chat.thread.unknownName'))
-      : filter.kind === 'person' || filter.kind === 'contacts'
+      : filter.kind === 'person' || filter.kind === 'contacts' || filter.kind === 'newgroup'
         ? t('chat.people.contacts')
         : t(`chat.rail.${filter.kind}`);
   const listQuery = { q: query.q ?? null, sort: query.sort ?? CHAT_THREAD_SORT_DEFAULT, filter };
