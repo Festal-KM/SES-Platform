@@ -41,6 +41,7 @@ import { canAddPane, withPaneClosed, type ChatPaneState } from '../../../lib/cha
 import { readChatScreen } from '../../../lib/chat/read';
 import { CHAT_PATH, chatHref, chatScreenQuerySchema, parseChatFilter } from '../../../lib/chat/screen-query';
 import { ChatRail } from './chat-rail';
+import { ChatRailToggle } from './chat-rail-toggle';
 import { ChatToastHost } from './chat-toast-host';
 import { CHAT_THREAD_SORT_DEFAULT } from '../../../lib/chat/thread-tree';
 import { readMyChatUserStatus } from '../../../lib/chat/user-status';
@@ -98,6 +99,13 @@ export default async function ChatPage({
   // ✅ 2026-10-19（v2）: 左の列の絞り込み（`f=`）。旧「未読のみ」（`unread=1`）は「未読」の絞り込みとして読む。
   const filter = query.f === undefined && query.unread === '1' ? parseChatFilter('unread') : parseChatFilter(query.f);
   const infoOpen = query.info === '1';
+  // ✅ 2026-10-20: スマホの「絞り込み」ボタンに、いまの絞り込みの名前を出す。
+  const filterLabel =
+    filter.kind === 'company'
+      ? (data.tree?.groups.find((group) => group.key === filter.key)?.counterpartyName ?? t('chat.thread.unknownName'))
+      : filter.kind === 'person' || filter.kind === 'contacts' || filter.kind === 'newgroup'
+        ? t('chat.people.contacts')
+        : t(`chat.rail.${filter.kind}`);
   const listQuery = { q: query.q ?? null, sort: query.sort ?? CHAT_THREAD_SORT_DEFAULT, filter };
   const tree = data.tree ?? {
     groups: [],
@@ -154,6 +162,7 @@ export default async function ChatPage({
                 : 'hidden shrink-0 bg-bg-inset md:block md:w-44'
             }
           >
+            <ChatRailToggle label={`${t('chat.rail.menu')}：${filterLabel}`} closeLabel={t('chat.rail.menuClose')}>
             <ChatRail
               groups={tree.groups}
               rooms={data.people?.rooms ?? []}
@@ -162,6 +171,7 @@ export default async function ChatPage({
               filter={filter}
               showContacts={data.people !== null}
             />
+            </ChatRailToggle>
           </div>
           {/* ✅ 2026-10-16（紺野）: 一覧は薄いグレーの面、会話は白。境の罫線はやめ、面の色の違いで分ける。 */}
           {/* 左: スレッド一覧（320）。🔴 `md` 未満で会話を開いているときは畳む（2 画面遷移） */}

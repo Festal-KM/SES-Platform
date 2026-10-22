@@ -4462,6 +4462,8 @@ const ja = {
   'chat.people.newConversationShort': '＋ 新規',
   // ✅ 2026-10-19（v2）: 左の絞り込みの列と、種類の札。
   'chat.rail.label': '会話の絞り込み',
+  'chat.rail.menu': '絞り込み',
+  'chat.rail.menuClose': '絞り込みを閉じる',
   'chat.rail.mark.all': '全',
   'chat.rail.mark.unread': '未',
   'chat.rail.mark.awaiting': '返',
