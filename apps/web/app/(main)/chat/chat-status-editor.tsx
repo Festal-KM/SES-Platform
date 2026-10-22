@@ -9,7 +9,8 @@
 import { useId, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button, Input } from '@ses/ui';
-import { CHAT_USER_STATUS_API_PATH } from '../../../lib/chat/screen-query';
+import { CHAT_PATH, CHAT_USER_STATUS_API_PATH } from '../../../lib/chat/screen-query';
+import { showChatToast } from '../../../lib/chat/toast';
 
 export type ChatStatusEditorLabels = {
   readonly open: string;
@@ -20,6 +21,10 @@ export type ChatStatusEditorLabels = {
   readonly save: string;
   readonly clear: string;
   readonly failed: string;
+  /** ✅ 2026-10-20: 保存したときのトースト（`lib/chat/toast.ts`）。 */
+  readonly savedToast: string;
+  readonly clearedToast: string;
+  readonly toastLink: string;
 };
 
 export type ChatStatusEditorProps = {
@@ -53,6 +58,7 @@ export function ChatStatusEditor({ initialText, maxLength, labels }: ChatStatusE
       const result = (await response.json()) as { readonly text: string };
       setSaved(result.text);
       setDraft(result.text);
+      showChatToast({ message: result.text === '' ? labels.clearedToast : labels.savedToast, href: CHAT_PATH, linkLabel: labels.toastLink });
       router.refresh();
     } catch {
       setFailed(true);

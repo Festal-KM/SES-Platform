@@ -61,6 +61,7 @@ import {
 } from '../../../lib/chat/views';
 import type { ChatConversationMessages } from './chat-props';
 import { ChatThreadPrefsToggle } from './chat-thread-prefs-toggle';
+import { Dialog } from '@ses/ui/client';
 import { formatChatTime, withDaySeparators } from '../../../lib/chat/day-separators';
 import {
   CHAT_DRAFT_EVENT,
@@ -552,19 +553,9 @@ export function ChatConversation({
                 {open ? messages.readLess : messages.readMore}
               </Button>
             ) : null}
-            {/* ✅ 2026-10-16: 自分の発言の編集・削除（投稿できる人だけ）。削除はその場で確かめる（重なりの画面を出さない）。 */}
+            {/* ✅ 2026-10-16: 自分の発言の編集・削除（投稿できる人だけ）。
+                ✅ 2026-10-20（紺野「モーダル」）: 削除の確認はモーダル（`Dialog`）で出す（下の `ChatDeleteDialog`）。 */}
             {canPost && item.mine ? (
-              confirmDeleteId === item.id ? (
-                <span className="flex items-center gap-2" data-testid={`chat-message-delete-confirm-${item.id}`}>
-                  <span className="text-xs text-fg-muted">{messages.deleteConfirm}</span>
-                  <Button type="button" variant="secondary" size="sm" onClick={() => void removeMessage(item)} data-testid={`chat-message-delete-yes-${item.id}`}>
-                    {messages.deleteConfirmYes}
-                  </Button>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => setConfirmDeleteId(null)}>
-                    {messages.cancel}
-                  </Button>
-                </span>
-              ) : (
                 <>
                   <Button type="button" variant="ghost" size="sm" onClick={() => {
                     setEditingId(item.id);
@@ -577,7 +568,6 @@ export function ChatConversation({
                     {messages.remove}
                   </Button>
                 </>
-              )
             ) : null}
             {canPost ? (
               <>
@@ -1088,6 +1078,33 @@ export function ChatConversation({
           {messages.composeNotAllowed}
         </p>
       )}
+      {/* ✅ 2026-10-20（紺野「モーダル」）: 自分の発言の削除の確認。🔴 確認文は 1 文だけ（`Dialog` の body は string）。
+          確定の操作は 1 つ。`Dialog` 自身は何も実行しない（実行は `removeMessage`）。 */}
+      {canPost ? (
+        <Dialog
+          open={confirmDeleteId !== null}
+          onOpenChange={(next) => {
+            if (!next) setConfirmDeleteId(null);
+          }}
+          title={messages.deleteTitle}
+          body={messages.deleteConfirm}
+          cancelLabel={messages.cancel}
+          confirm={
+            <Button
+              type="button"
+              variant="primary"
+              onClick={() => {
+                const target = items.find((entry) => entry.id === confirmDeleteId);
+                setConfirmDeleteId(null);
+                if (target !== undefined) void removeMessage(target);
+              }}
+              data-testid={`chat-message-delete-yes-${confirmDeleteId ?? 'none'}`}
+            >
+              {messages.deleteConfirmYes}
+            </Button>
+          }
+        />
+      ) : null}
     </section>
   );
 }

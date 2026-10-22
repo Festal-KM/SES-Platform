@@ -4523,6 +4523,15 @@ const ja = {
   'chat.message.deleted': 'この発言は削除されました',
   'chat.message.save': '保存',
   'chat.message.cancel': 'キャンセル', // docs/04 §7.8: 取消は「キャンセル」1 語
+  'chat.message.deleteTitle': '発言を削除',
+  // ✅ 2026-10-20: 操作の結果のトースト。
+  'chat.toast.kind': '完了',
+  'chat.toast.dismiss': '閉じる',
+  'chat.toast.groupCreated': 'グループを作りました',
+  'chat.toast.openGroup': 'グループを開く',
+  'chat.toast.statusSaved': 'ひとこと状態を更新しました',
+  'chat.toast.statusCleared': 'ひとこと状態を消しました',
+  'chat.toast.backToChat': 'チャットへ',
   'chat.message.deleteConfirm': 'この発言を削除しますか？',
   'chat.message.deleteConfirmYes': '削除する',
   'chat.message.editFailed': '保存できませんでした。もう一度お試しください。',

@@ -28,6 +28,9 @@ export function ChatStatusSection({ canPost, text }: ChatStatusSectionProps) {
         save: t('chat.status.save'),
         clear: t('chat.status.clear'),
         failed: t('chat.status.failed'),
+        savedToast: t('chat.toast.statusSaved'),
+        clearedToast: t('chat.toast.statusCleared'),
+        toastLink: t('chat.toast.backToChat'),
       }}
     />
   );
