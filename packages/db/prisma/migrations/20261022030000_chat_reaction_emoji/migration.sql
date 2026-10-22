@@ -9,10 +9,7 @@
 -- 🔴 判断事項 3: 既存の行を書き換えない（制約を張り替えるだけ）—— FORCE RLS の解除は要らない
 --    （HANDOFF §3 の「既存行を書き換える migration」には当たらない。CHECK の検証は RLS を通らない）。
 -- 🔴 判断事項 4: UI_GUIDELINES §1「絵文字を使わない」の**例外**になる（チャットのリアクションだけ）。宮田の確認を PR で求める。
+-- 🔴 判断事項 5: 制約は引用符つきの 1 行で書く（`tests/static/schema-enum-drift.test.ts` が値の集合を
+--    `CHAT_REACTIONS`（apps/web/lib/chat/views.ts）と機械で突き合わせる書式）。
 ALTER TABLE chat_message_reactions DROP CONSTRAINT IF EXISTS chat_message_reactions_reaction_check;
-ALTER TABLE chat_message_reactions ADD CONSTRAINT chat_message_reactions_reaction_check CHECK (
-  reaction IN (
-    'OK', 'THANKS', 'CHECKING', 'DONE',
-    'THUMBS_UP', 'PRAY', 'TADA', 'SMILE', 'JOY', 'EYES', 'BOW', 'SWEAT', 'CHECK', 'HEART', 'FIRE', 'CLAP'
-  )
-);
+ALTER TABLE chat_message_reactions ADD CONSTRAINT "chat_message_reactions_reaction_check" CHECK ("reaction" IN ('THUMBS_UP', 'PRAY', 'TADA', 'SMILE', 'JOY', 'EYES', 'BOW', 'SWEAT', 'CHECK', 'HEART', 'FIRE', 'CLAP', 'OK', 'THANKS', 'CHECKING', 'DONE'));

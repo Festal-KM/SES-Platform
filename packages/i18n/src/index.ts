@@ -4580,7 +4580,6 @@ const ja = {
   'chat.reaction.HEART': 'ハート',
   'chat.reaction.FIRE': '炎',
   'chat.reaction.CLAP': '拍手',
-  'chat.reaction.words': 'ことば',
   'chat.reaction.add': 'リアクション',
   // ✅ 2026-10-16: 自分の発言の編集・削除。
   'chat.message.edit': '編集',

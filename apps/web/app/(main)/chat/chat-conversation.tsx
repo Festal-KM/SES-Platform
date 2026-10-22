@@ -36,7 +36,7 @@ import {
   Field,
   HEADER_HEIGHT_CLASS,
   SECONDARY_LINK_CLASSES,
-  ROW_HOVER_CLASSES,
+  IconButton,
   Select,
   Textarea,
   cn,
@@ -709,20 +709,19 @@ export function ChatConversation({
                 data-testid={`chat-message-reaction-picker-${item.id}`}
               >
                 {CHAT_REACTION_EMOJI_KINDS.map((kind) => (
-                  <button
+                  <IconButton
                     key={kind}
                     type="button"
+                    variant="ghost"
+                    icon={<span className="text-lg">{CHAT_REACTION_EMOJI[kind]}</span>}
                     aria-label={messages.reactions[kind]}
                     title={messages.reactions[kind]}
                     onClick={() => {
                       setReactionPickerId(null);
                       void toggleReaction(item, kind);
                     }}
-                    className={cn('flex h-9 w-9 items-center justify-center rounded-md text-lg', ROW_HOVER_CLASSES)}
                     data-testid={`chat-message-reaction-pick-${item.id}-${kind}`}
-                  >
-                    {CHAT_REACTION_EMOJI[kind]}
-                  </button>
+                  />
                 ))}
                 {CHAT_REACTION_WORD_KINDS.map((kind) => (
                   <Button
