@@ -46,6 +46,7 @@ import {
 import { FAST_REPLY_WINDOW_DAYS, fastReplyGroupKeys, isAwaitingReply } from './reply-speed';
 import { countUnread, readPositions, readThreadPrefs, type ChatThreadPrefs } from './read-state';
 import { readPeople, readRoomDetail, type ChatPeopleData } from './people';
+import { readChatUserStatuses } from './user-status';
 import {
   chatThreadCursorWhere,
   decodeChatThreadCursor,
@@ -438,7 +439,7 @@ async function resolveSenderNames(
  */
 export async function projectChatMessages(
   ctx: AuthenticatedTenantCtx,
-  db: Pick<TenantDb, 'user' | 'partnerCompany' | 'tenant' | 'chatMessageReaction'>,
+  db: Pick<TenantDb, 'user' | 'partnerCompany' | 'tenant' | 'chatMessageReaction' | 'chatUserStatus'>,
   rows: readonly ChatMessageRow[],
 ): Promise<readonly ChatMessageView[]> {
   if (rows.length === 0) return [];
@@ -453,6 +454,8 @@ export async function projectChatMessages(
   //    上の ⚠️ —— 取引先が自分の発言に相手の商号を見ることになる）。
   const partnerNames = await resolvePartnerCompanyNames(db, rows.map((row) => row.senderPartnerCompanyId));
   const tenant = await db.tenant.findFirst({ select: { name: true } });
+  // ✅ 2026-10-22: 送信者の今のひとこと状態。🔴 境界は RLS が決める（`user-status.ts` ①。`where` に書き足さない）。
+  const statuses = await readChatUserStatuses(db, rows.map((row) => row.senderUserId));
   return rows.map((row) =>
     chatMessageView(row, {
       senderName: senderNames.get(row.senderUserId) ?? null,
@@ -461,6 +464,7 @@ export async function projectChatMessages(
         row.senderPartnerCompanyId === null
           ? tenant?.name ?? null
           : partnerNames.get(row.senderPartnerCompanyId) ?? null,
+      senderStatus: statuses.get(row.senderUserId) ?? null,
       viewerPartnerCompanyId: ctx.partnerCompanyId,
       viewerUserId: ctx.userId,
       reactions: reactions.get(row.id) ?? [],
@@ -477,7 +481,7 @@ export async function projectChatMessages(
  */
 async function readMessagePage(
   ctx: AuthenticatedTenantCtx,
-  db: Pick<TenantDb, 'chatThread' | 'message' | 'user' | 'partnerCompany' | 'tenant' | 'chatMessageReaction'>,
+  db: Pick<TenantDb, 'chatThread' | 'message' | 'user' | 'partnerCompany' | 'tenant' | 'chatMessageReaction' | 'chatUserStatus'>,
   threadId: string,
   query: ChatMessageListQuery,
 ): Promise<ChatMessageListView> {

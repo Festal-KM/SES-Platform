@@ -126,7 +126,6 @@ export default async function ChatPage({
       >
         <PageHeading trail={CHAT_TRAIL} title={t('chat.title')} />
         <p className="mb-4 text-body text-fg-muted">{t('chat.threads.population')}</p>
-        <ChatStatusSection canPost={canPost} text={myStatus} />
         {/* ✅ 2026-10-20（紺野「トースト」）: 操作の結果を右下に出す（行き先つき・自動で消えない）。 */}
         <ChatToastHost kindLabel={t('chat.toast.kind')} dismissLabel={t('chat.toast.dismiss')} />
         {/* 🔴 不存在・他社・他テナントで同じ文言（`docs/05` §4.8） */}
@@ -154,6 +153,12 @@ export default async function ChatPage({
                 : 'hidden shrink-0 bg-bg-inset md:block md:w-44'
             }
           >
+            {/* ✅ 2026-10-22: 自分のひとこと状態は左の列のいちばん上（ページ見出しの下から移した）。 */}
+            {canPost ? (
+              <div className="p-2 pb-0">
+                <ChatStatusSection canPost={canPost} text={myStatus} />
+              </div>
+            ) : null}
             <ChatRail
               groups={tree.groups}
               rooms={data.people?.rooms ?? []}
