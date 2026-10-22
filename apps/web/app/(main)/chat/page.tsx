@@ -108,7 +108,6 @@ export default async function ChatPage({
   const tree = data.tree ?? {
     groups: [],
     truncated: false,
-    awaitingReplyIds: [],
     messageHits: [],
     unreadCounts: {},
     pinnedIds: [],

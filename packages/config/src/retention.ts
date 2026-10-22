@@ -50,8 +50,9 @@ export type PurgeColumnsSpec = {
 };
 
 /**
- * 🔴 行の物理削除。`role` / `description` / `technologies` が NOT NULL で、空文字の行を残しても
- *    意味が無い表（`engineer_careers`）だけに使う。
+ * 🔴 行の物理削除。次の 2 種類の表だけに使う。
+ *   - `role` / `description` / `technologies` が NOT NULL で、空文字の行を残しても意味が無い表（`engineer_careers`）
+ *   - ✅ 2026-10-22: 消す列が無く、どこからも参照されない末端の表（`chat_saved_messages`。本人の栞の行そのものが対象）
  */
 export type PurgeRowsSpec = {
   readonly table: string;

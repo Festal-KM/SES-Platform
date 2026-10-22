@@ -43,7 +43,7 @@ import {
   type ChatThreadGroup,
   type ChatThreadSort,
 } from './thread-tree';
-import { FAST_REPLY_WINDOW_DAYS, fastReplyGroupKeys, isAwaitingReply } from './reply-speed';
+import { FAST_REPLY_WINDOW_DAYS, fastReplyGroupKeys } from './reply-speed';
 import { countUnread, readPositions, readThreadPrefs, type ChatThreadPrefs } from './read-state';
 import { readPeople, readRoomDetail, type ChatPeopleData } from './people';
 import {
@@ -226,8 +226,6 @@ export type ChatMessageHit = {
 
 export type ChatThreadTreeData = {
   readonly groups: readonly ChatThreadGroup[];
-  /** ✅ 2026-10-14: 要返信（最後の発言が相手から）のスレッド。 */
-  readonly awaitingReplyIds: readonly string[];
   /** ✅ 2026-10-14: 本文の検索で当たった発言（`q` が 2 文字以上のときだけ。新しい順に最大 20 件）。 */
   readonly messageHits: readonly ChatMessageHit[];
   /** ✅ 2026-10-16: スレッドごとの未読の件数（自分以外の発言で既読位置より後ろ。0 は載せない）。 */
@@ -277,10 +275,7 @@ async function readThreadTree(
   const lastSnippets: Record<string, string> = Object.fromEntries(
     lastMessages.map((message) => [message.threadId, messageSnippet(message.body ?? '', '', 60)]),
   );
-  // 読み手から見た「相手」: ホストなら取引先の発言、取引先ならホストの発言。
-  const awaitingReplyIds = lastMessages
-    .filter((message) => isAwaitingReply({ fromCounterparty: host ? message.senderPartnerCompanyId !== null : message.senderPartnerCompanyId === null }))
-    .map((message) => message.threadId);
+  // ✅ 2026-10-22（紺野「要返信はいらない」）: 要返信（最後の発言が相手から）の計算をやめた。「保存済み」に置き換え。
   // 🔴 返信が早い取引先は**ホストにだけ**（取引先には他社との比較を出さない）。
   let fastReplyKeys: ReadonlySet<string> = new Set();
   if (host && threadIds.length > 0) {
@@ -348,7 +343,6 @@ async function readThreadTree(
     groups,
     truncated,
     lastSnippets,
-    awaitingReplyIds,
     messageHits,
     unreadCounts: Object.fromEntries(unread),
     pinnedIds: [...prefs.entries()].filter(([, value]) => value.pinned).map(([id]) => id),
