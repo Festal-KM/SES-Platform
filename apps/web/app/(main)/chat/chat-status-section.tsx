@@ -31,7 +31,15 @@ export function ChatStatusSection({ canPost, text }: ChatStatusSectionProps) {
         savedToast: t('chat.toast.statusSaved'),
         clearedToast: t('chat.toast.statusCleared'),
         toastLink: t('chat.toast.backToChat'),
+        presets: t('chat.status.presets'),
       }}
+      presets={[
+        t('chat.status.preset.meeting'),
+        t('chat.status.preset.moving'),
+        t('chat.status.preset.conference'),
+        t('chat.status.preset.remote'),
+        t('chat.status.preset.off'),
+      ]}
     />
   );
 }

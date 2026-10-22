@@ -33,7 +33,7 @@ import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { CHAT_MESSAGE_PAGE_SIZE, PAGE_SIZE_DEFAULT } from '@ses/config';
 import { t } from '@ses/i18n';
-import { Alert, Card, CONTENT_PADDING_Y_CLASS, PageBody, SECONDARY_LINK_CLASSES, cn } from '@ses/ui';
+import { Alert, Card, CHAT_SCREEN_HEIGHT_CLASS, PageBody, SECONDARY_LINK_CLASSES, cn } from '@ses/ui';
 import { resolveTenantCtxOutcome } from '../../../lib/auth/session';
 import { canPostChatMessage } from '../../../lib/chat/policy';
 import { conversationLayoutFor, conversationTitleFor } from '../../../lib/chat/layout';
@@ -41,6 +41,7 @@ import { canAddPane, withPaneClosed, type ChatPaneState } from '../../../lib/cha
 import { readChatScreen } from '../../../lib/chat/read';
 import { CHAT_PATH, chatHref, chatScreenQuerySchema, parseChatFilter } from '../../../lib/chat/screen-query';
 import { ChatRail } from './chat-rail';
+import { ChatRailToggle } from './chat-rail-toggle';
 import { ChatToastHost } from './chat-toast-host';
 import { CHAT_THREAD_SORT_DEFAULT } from '../../../lib/chat/thread-tree';
 import { readMyChatUserStatus } from '../../../lib/chat/user-status';
@@ -59,6 +60,11 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = { title: t('chat.title') };
+
+/** ✅ 2026-10-22: `@名前` の候補（DM・グループのメンバーから自分を除いた名前。会社グループ・スレッドは会話の送信者から部品が足す）。 */
+function mentionNamesOf(thread: { readonly members?: readonly { readonly name: string | null; readonly self: boolean }[] }): readonly string[] {
+  return (thread.members ?? []).filter((member) => !member.self && member.name !== null).map((member) => member.name as string);
+}
 
 export default async function ChatPage({
   searchParams,
@@ -104,6 +110,15 @@ export default async function ChatPage({
   //    閲覧専用は書けないので読まない。🔴 どちらも本人の行だけ（RLS）。
   const ownTemplates = canPost ? await readMyChatTemplates(ctx) : [];
   const saved = filter.kind === 'saved' ? await readMySavedList(ctx) : null;
+  // ✅ 2026-10-20: スマホの「絞り込み」ボタンに、いまの絞り込みの名前を出す。
+  const filterLabel =
+    filter.kind === 'company'
+      ? (data.tree?.groups.find((group) => group.key === filter.key)?.counterpartyName ?? t('chat.thread.unknownName'))
+      : filter.kind === 'person' || filter.kind === 'contacts' || filter.kind === 'newgroup'
+        ? t('chat.people.contacts')
+        : filter.kind === 'templates'
+          ? t('chat.template.title')
+          : t(`chat.rail.${filter.kind}`);
   const listQuery = { q: query.q ?? null, sort: query.sort ?? CHAT_THREAD_SORT_DEFAULT, filter };
   const tree = data.tree ?? {
     groups: [],
@@ -116,7 +131,10 @@ export default async function ChatPage({
   };
 
   return (
-    <main className={CONTENT_PADDING_Y_CLASS}>
+    // ✅ 2026-10-22（紺野「全部スクロールじゃなくて、ウィンドウ内だけスクロールできるように」）: `md` 以上は画面の高さに収め、
+    //    一覧・会話・左の列が**それぞれの枠の中だけで**スクロールする（`CHAT_SCREEN_HEIGHT_CLASS`）。`md` 未満は従来どおり。
+    //    ✅ 同日（紺野「上に無駄なスペース使いすぎ」）: 上下の余白を 20px → 12px に詰める（会話に高さを回す）。
+    <main className={cn('py-3 md:flex md:flex-col', CHAT_SCREEN_HEIGHT_CLASS)}>
       {/* 🔴 ✅ **2026-10-13: `main-min` から既定（`lg` で並置）に変えた。** `main-min` は
           「主カラムが 1320px に届くまで副カラムを下へ落とす」挙動であり、**基準の 1672px でも
           関連情報が会話の下に回り込んでいた**（実機の実測）。デザインシステム v1.0 §3.12 は
@@ -125,13 +143,19 @@ export default async function ChatPage({
           決まらず、会話の幅も足りなくなる）。対象と相手は各会話の見出しに出ている。 */}
       <PageBody
         widthClass="split"
+        className="md:min-h-0 md:flex-1"
         // ✅ 2026-10-19（v2）: 右の情報欄は既定で閉じる（左に絞り込みの列が増えたので、会話の幅を確保する）。
         //    会話の見出しの「情報」で開く（`info=1`）。
         aside={selected === null || tiled || !infoOpen ? undefined : <ChatThreadPanel thread={selected} canPost={canPost} />}
       >
-        <PageHeading trail={CHAT_TRAIL} title={t('chat.title')} />
-        <p className="mb-4 text-body text-fg-muted">{t('chat.threads.population')}</p>
-        <ChatStatusSection canPost={canPost} text={myStatus} />
+        {/* 見出し・説明・器を縦に積み、器（Card）が残りの高さを全部使う。 */}
+        <div className="flex h-full min-h-0 flex-col">
+        {/* ✅ 2026-10-22（紺野「これいらない」）: 見出しの帯（パンくず・タイトル）と説明文を画面から消し、器を上まで使う
+            （Teams と同じく会話に高さを回す）。🔴 帯そのものは全画面に 1 つ置く決まり（`tests/static/page-heading-single.test.ts`）
+            なので、**読み上げ用にだけ残す**（`sr-only`）。説明文は消した。 */}
+        <div className="sr-only">
+          <PageHeading trail={CHAT_TRAIL} title={t('chat.title')} />
+        </div>
         {/* ✅ 2026-10-20（紺野「トースト」）: 操作の結果を右下に出す（行き先つき・自動で消えない）。 */}
         <ChatToastHost kindLabel={t('chat.toast.kind')} dismissLabel={t('chat.toast.dismiss')} />
         {/* 🔴 不存在・他社・他テナントで同じ文言（`docs/05` §4.8） */}
@@ -155,10 +179,18 @@ export default async function ChatPage({
           <div
             className={
               selected === null
-                ? 'w-full shrink-0 bg-bg-inset md:w-44'
-                : 'hidden shrink-0 bg-bg-inset md:block md:w-44'
+                ? 'w-full shrink-0 bg-bg-subtle md:w-44 md:overflow-y-auto'
+                : 'hidden shrink-0 bg-bg-subtle md:block md:w-44 md:overflow-y-auto'
             }
           >
+            {/* ✅ 2026-10-22: 自分のひとこと状態は左の列のいちばん上（ページ見出しの下から移した）。
+                🔴 スマホの「絞り込み」ボタン（畳む部分）の外に置く —— 閉じていても状態を変えられるように。 */}
+            {canPost ? (
+              <div className="p-2 pb-0">
+                <ChatStatusSection canPost={canPost} text={myStatus} />
+              </div>
+            ) : null}
+            <ChatRailToggle label={`${t('chat.rail.menu')}：${filterLabel}`} closeLabel={t('chat.rail.menuClose')}>
             <ChatRail
               groups={tree.groups}
               rooms={data.people?.rooms ?? []}
@@ -167,14 +199,17 @@ export default async function ChatPage({
               showContacts={data.people !== null}
               showSaved={canPost}
             />
+            </ChatRailToggle>
           </div>
-          {/* ✅ 2026-10-16（紺野）: 一覧は薄いグレーの面、会話は白。境の罫線はやめ、面の色の違いで分ける。 */}
+          {/* ✅ 2026-10-16（紺野）: 一覧は薄いグレーの面、会話は白。
+              ✅ 2026-10-22（紺野「周りの色を軽く（白）でもいいかも」）: 一覧も白にし、左の列は薄い灰色に。一覧と会話は白どうしなので
+              細い線 1 本で区切る（開いている会話の青がはっきり見える）。 */}
           {/* 左: スレッド一覧（320）。🔴 `md` 未満で会話を開いているときは畳む（2 画面遷移） */}
           <div
             className={
               selected === null
-                ? 'w-full bg-bg-subtle md:w-96 md:shrink-0'
-                : 'hidden bg-bg-subtle md:block md:w-96 md:shrink-0'
+                ? 'w-full bg-bg md:w-96 md:shrink-0 md:overflow-y-auto md:border-r md:border-border'
+                : 'hidden bg-bg md:block md:w-96 md:shrink-0 md:overflow-y-auto md:border-r md:border-border'
             }
           >
             <ChatThreadList
@@ -202,7 +237,7 @@ export default async function ChatPage({
           {/* 中央: 会話（698）。🔴 選択が無いときは `md` 以上でだけ案内を出す（モバイルは一覧が全幅） */}
           <div
             className={cn(
-              selected === null ? 'hidden min-w-0 flex-1 md:flex md:flex-col' : 'flex min-w-0 flex-1 flex-col',
+              selected === null ? 'hidden min-h-0 min-w-0 flex-1 md:flex md:flex-col' : 'flex min-h-0 min-w-0 flex-1 flex-col',
               // ✅ 2026-10-14: 並べているときは右の列と同じ下限（320px。`md` 以上だけ）。
               tiled ? 'md:min-w-80' : null,
             )}
@@ -223,6 +258,7 @@ export default async function ChatPage({
                 prefs={data.threadPrefs[selected.id] ?? { pinned: false, muted: false }}
                 // ✅ 2026-10-19（#128）: 相手の既読は DM だけ（グループ・会社グループ・スレッドには渡さない）。
                 {...(selected.kind === 'DM' ? { peerReadMessageId: data.peerReadMessageIds[selected.id] ?? null } : {})}
+                mentionNames={mentionNamesOf(selected)}
                 canPost={canPost}
                 messages={conversationMessages}
                 {...(tiled ? { closeHref: chatHref({ ...withPaneClosed(paneState, selected.id), ...listQuery }) } : {})}
@@ -269,6 +305,7 @@ export default async function ChatPage({
                   lastReadMessageId={data.lastReadMessageIds[pane.thread.id] ?? null}
                   prefs={data.threadPrefs[pane.thread.id] ?? { pinned: false, muted: false }}
                   {...(pane.thread.kind === 'DM' ? { peerReadMessageId: data.peerReadMessageIds[pane.thread.id] ?? null } : {})}
+                  mentionNames={mentionNamesOf(pane.thread)}
                   canPost={canPost}
                   messages={conversationMessages}
                   closeHref={chatHref({ ...withPaneClosed(paneState, pane.thread.id), ...listQuery })}
@@ -283,6 +320,7 @@ export default async function ChatPage({
             </div>
           ) : null}
         </Card>
+        </div>
       </PageBody>
     </main>
   );

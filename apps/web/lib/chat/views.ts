@@ -78,6 +78,12 @@ export type ChatMessageView = {
   readonly senderName: string | null;
   /** 送信者の会社名（自社 / 相手のどちらか。スレッドには 2 社しか居ない。`F-038 AC-2`）。読めなければ `null`。 */
   readonly senderCompanyName: string | null;
+  /**
+   * ✅ 2026-10-22（紺野「自分が入ってるチャットにも共通で表示しないと」）: 送信者の**今の**ひとこと状態。
+   * 🔴 読めるかは RLS（`chat_user_statuses` の読み = users の C8 DIRECTORY）が決める。読めない・無ければ `null`。
+   * 送った時点の状態ではない（発言に凍結しない）—— 「いま連絡してよいか」の判断材料だから。
+   */
+  readonly senderStatus?: string | null;
   /** 🔴 自社の発言か。**寄せ・色の判定を画面に書かせない**ための値である。 */
   readonly own: boolean;
   /**
@@ -173,6 +179,7 @@ export const CHAT_MESSAGE_VIEW_KEYS = [
   'sentAt',
   'senderName',
   'senderCompanyName',
+  'senderStatus',
   'own',
   'mine',
   'body',
@@ -315,6 +322,8 @@ export type ChatMessageDeps = {
   readonly senderName: string | null;
   /** 送信者の会社名（読めなければ `null`）。 */
   readonly senderCompanyName: string | null;
+  /** ✅ 2026-10-22: 送信者の今のひとこと状態（RLS で読めたものだけ。無ければ `null`）。 */
+  readonly senderStatus?: string | null;
   /**
    * 🔴 読み手の所属（`ctx.partnerCompanyId`。ホストは `null`）。
    *    **リクエスト入力から渡してはならない**（`CLAUDE.md` §3.1）。
@@ -337,6 +346,7 @@ export function chatMessageView(row: ChatMessageRow, deps: ChatMessageDeps): Cha
     sentAt: row.sentAt.toISOString(),
     senderName: deps.senderName,
     senderCompanyName: deps.senderCompanyName,
+    senderStatus: deps.senderStatus ?? null,
     // 🔴 「自社か」は会社で決める（スレッドには 2 社しか居ない。`F-038 AC-2`）。利用者単位にすると
     //    同僚の発言が「相手の発言」として寄せられる。
     own: row.senderPartnerCompanyId === deps.viewerPartnerCompanyId,

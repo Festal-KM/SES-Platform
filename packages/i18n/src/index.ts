@@ -4464,6 +4464,8 @@ const ja = {
   'chat.people.newConversationShort': '＋ 新規',
   // ✅ 2026-10-19（v2）: 左の絞り込みの列と、種類の札。
   'chat.rail.label': '会話の絞り込み',
+  'chat.rail.menu': '絞り込み',
+  'chat.rail.menuClose': '絞り込みを閉じる',
   'chat.rail.mark.all': '全',
   'chat.rail.mark.unread': '未',
   'chat.rail.mark.awaiting': '返',
@@ -4604,6 +4606,21 @@ const ja = {
   'chat.compose.label': 'メッセージ',
   'chat.compose.placeholder': 'メッセージを入力',
   'chat.compose.hint': 'このスレッドの参加会社にだけ表示されます。',
+  // ✅ 2026-10-22（紺野「こういうチャット枠が必要だよね」= GitHub のコメント欄）: 書式ボタン・書く／プレビュー・@。
+  'chat.compose.toolbar': '書式',
+  'chat.compose.format.bold': '太字',
+  'chat.compose.format.italic': '斜体',
+  'chat.compose.format.code': 'コード',
+  'chat.compose.format.link': 'リンク',
+  'chat.compose.format.bullet': '箇条書き',
+  'chat.compose.format.ordered': '番号',
+  'chat.compose.format.quote': '引用',
+  'chat.compose.mention': '@ 名前',
+  'chat.compose.mentionEmpty': 'この会話で名前を出せる人がいません',
+  'chat.compose.write': '書く',
+  'chat.compose.preview': 'プレビュー',
+  'chat.compose.previewEmpty': 'プレビューする内容がありません',
+  'chat.compose.markdownHint': '**太字** や - 箇条書き などの書き方が使えます',
   'chat.compose.submit': '送信',
   'chat.compose.submitting': '送信しています',
   'chat.compose.failed': '送信できませんでした。もう一度お試しください。',
@@ -4656,6 +4673,13 @@ const ja = {
   'chat.status.clear': '消す',
   'chat.status.failed': '状態を保存できませんでした',
   'chat.status.current': '自分の状態',
+  // ✅ 2026-10-22（紺野「ステータスなんかおかしくね」）: 左の列のいちばん上に移し、よく使う言い回しを押すだけで入れられるようにした。
+  'chat.status.presets': 'よく使う',
+  'chat.status.preset.meeting': '商談中',
+  'chat.status.preset.moving': '移動中',
+  'chat.status.preset.conference': '会議中',
+  'chat.status.preset.remote': '在宅勤務',
+  'chat.status.preset.off': '本日休み',
   // ==========================================================================
   // ✅ 2026-10-14（人間の明示指示）: `カレンダー` と `パートナー連携` の 4 画面（いずれも準備中）
   // ==========================================================================

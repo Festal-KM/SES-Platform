@@ -20,7 +20,6 @@ import Link from 'next/link';
 import { t } from '@ses/i18n';
 import {
   Avatar,
-  Badge,
   Button,
   CHAT_THREAD_ROW_HEIGHT_CLASS,
   EmptyState,
@@ -53,6 +52,7 @@ import { formatListTime } from '../../../lib/chat/day-separators';
 import { ChatContactsView, ChatFavorites, type ChatFavorite } from './chat-people-section';
 import { ChatDraftMark } from './chat-draft-mark';
 import { ChatNewGroupForm } from './chat-new-group-form';
+import { UNREAD_DOT_CLASSES, UNREAD_DOT_MAX } from './chat-unread-dot';
 import { ChatOpenDmButton } from './chat-open-dm-button';
 import { ChatRowShell } from './chat-row-shell';
 import { ChatTemplateManager, type ChatTemplateItem } from './chat-template-manager';
@@ -170,6 +170,8 @@ type RowContext = {
   readonly listQuery: { readonly q: string | null; readonly sort: ChatThreadSort; readonly filter: ChatListFilter };
   readonly unreadCounts: Readonly<Record<string, number>>;
   readonly mutedIds: ReadonlySet<string>;
+  /** ✅ 2026-10-20: スワイプで出すピン留めの今の状態。 */
+  readonly pinnedIds: ReadonlySet<string>;
   readonly lastSnippets: Readonly<Record<string, string>>;
   readonly now: Date;
 };
@@ -205,9 +207,15 @@ function Row({ view, context }: { readonly view: RowView; readonly context: RowC
     <ChatRowShell
       id={view.id}
       room={room}
+      swipe={{
+        pinned: context.pinnedIds.has(view.id),
+        muted,
+        labels: { pin: t('chat.thread.pin'), unpin: t('chat.thread.unpin'), mute: t('chat.thread.mute'), unmute: t('chat.thread.unmute') },
+      }}
       selected={selected}
       kind={view.kind}
-      className={cn('flex rounded-md', open ? 'bg-brand-bg' : ROW_HOVER_CLASSES)}
+      // ✅ 2026-10-22（紺野「どの会話開いているかもわかるように！！」）: 開いている会話は青い面 + 青い縁で、灰色の一覧の中ではっきり分かるようにする。
+      className={cn('flex rounded-md', open ? 'bg-brand-bg ring-1 ring-brand' : ROW_HOVER_CLASSES)}
       reveal={
         besideHref === null || openBesideLabel === undefined ? null : (
           <Link
@@ -226,7 +234,18 @@ function Row({ view, context }: { readonly view: RowView; readonly context: RowC
         className={ROW_CLASSES}
         data-testid={room ? `chat-room-link-${view.id}` : `chat-thread-link-${view.id}`}
       >
-        <Avatar size="md" initials={view.initials} title={view.name} className={AVATAR_KIND_CLASSES[view.kind]} />
+        {/* ✅ 2026-10-22（紺野「未読はアイコン横に赤丸（数字入り）で強調」）: 未読の数はアバターの右上の赤丸。ミュート中は灰色。 */}
+        <span className="relative shrink-0">
+          <Avatar size="md" initials={view.initials} title={view.name} className={AVATAR_KIND_CLASSES[view.kind]} />
+          {unread > 0 ? (
+            <span
+              className={cn(UNREAD_DOT_CLASSES, muted ? 'bg-fg-muted' : 'bg-danger')}
+              data-testid={room ? `chat-room-unread-${view.id}` : `chat-thread-unread-${view.id}`}
+            >
+              {unread > UNREAD_DOT_MAX ? `${String(UNREAD_DOT_MAX)}+` : String(unread)}
+            </span>
+          ) : null}
+        </span>
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-1">
             <span className={cn('min-w-0 truncate text-row text-fg', strong ? 'font-bold' : 'font-normal')}>
@@ -256,14 +275,6 @@ function Row({ view, context }: { readonly view: RowView; readonly context: RowC
               </span>
             )}
             <ChatDraftMark threadId={view.id} label={t('chat.thread.draft')} />
-            {unread > 0 ? (
-              <Badge
-                variant={muted ? 'neutral' : 'brand'}
-                data-testid={room ? `chat-room-unread-${view.id}` : `chat-thread-unread-${view.id}`}
-              >
-                {String(unread)}
-              </Badge>
-            ) : null}
           </span>
         </span>
       </Link>
@@ -459,6 +470,7 @@ export function ChatThreadList({
     listQuery: { q, sort, filter },
     unreadCounts: allUnread,
     mutedIds: allMuted,
+    pinnedIds: new Set([...pinnedIds, ...(people?.pinnedIds ?? [])]),
     lastSnippets: { ...lastSnippets, ...(people?.lastSnippets ?? {}) },
     now,
   };

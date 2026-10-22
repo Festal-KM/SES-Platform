@@ -5,6 +5,7 @@
 //    `S-015` の `EngineerShareScreenMessages` と同じ作法）。
 // 🔴 **文言をコンポーネントにベタ書きしない**（`CLAUDE.md` §3.5 / `BR-32`）。
 import { t } from '@ses/i18n';
+import type { ChatFormat } from '../../../lib/chat/markdown';
 import type { ChatReactionKind } from '../../../lib/chat/views';
 
 /** 会話（中央）の島が使う語。 */
@@ -22,6 +23,15 @@ export type ChatConversationMessages = {
   readonly composeLabel: string;
   readonly composePlaceholder: string;
   readonly composeHint: string;
+  /** ✅ 2026-10-22: 書式ボタン・書く／プレビュー・@（GitHub のコメント欄に寄せた）。 */
+  readonly composeToolbar: string;
+  readonly composeFormats: Readonly<Record<ChatFormat, string>>;
+  readonly composeMention: string;
+  readonly composeMentionEmpty: string;
+  readonly composeWrite: string;
+  readonly composePreview: string;
+  readonly composePreviewEmpty: string;
+  readonly composeMarkdownHint: string;
   readonly composeSubmit: string;
   readonly composeSubmitting: string;
   readonly composeFailed: string;
@@ -108,6 +118,22 @@ export function chatConversationMessages(): ChatConversationMessages {
     composeLabel: t('chat.compose.label'),
     composePlaceholder: t('chat.compose.placeholder'),
     composeHint: t('chat.compose.hint'),
+    composeToolbar: t('chat.compose.toolbar'),
+    composeFormats: {
+      bold: t('chat.compose.format.bold'),
+      italic: t('chat.compose.format.italic'),
+      code: t('chat.compose.format.code'),
+      link: t('chat.compose.format.link'),
+      bullet: t('chat.compose.format.bullet'),
+      ordered: t('chat.compose.format.ordered'),
+      quote: t('chat.compose.format.quote'),
+    },
+    composeMention: t('chat.compose.mention'),
+    composeMentionEmpty: t('chat.compose.mentionEmpty'),
+    composeWrite: t('chat.compose.write'),
+    composePreview: t('chat.compose.preview'),
+    composePreviewEmpty: t('chat.compose.previewEmpty'),
+    composeMarkdownHint: t('chat.compose.markdownHint'),
     composeSubmit: t('chat.compose.submit'),
     composeSubmitting: t('chat.compose.submitting'),
     composeFailed: t('chat.compose.failed'),

@@ -7,7 +7,8 @@
 //   ③ 罫線を引かない・太字は未読だけ。一覧の中で `hidden` を使わない（render テスト ③）。
 import Link from 'next/link';
 import { t } from '@ses/i18n';
-import { Avatar, Badge, ROW_HOVER_CLASSES, cn } from '@ses/ui';
+import { Avatar, ROW_HOVER_CLASSES, cn } from '@ses/ui';
+import { UNREAD_DOT_CLASSES, UNREAD_DOT_MAX } from './chat-unread-dot';
 import { displayInitials } from '../../../lib/format/initials';
 import type { ChatContact, ChatPeopleData } from '../../../lib/chat/people';
 import { chatHref } from '../../../lib/chat/screen-query';
@@ -48,9 +49,14 @@ export function ChatFavorites({
                   className={cn('flex flex-col items-center gap-1 rounded-md py-1', ROW_HOVER_CLASSES)}
                   data-testid={`chat-thread-pinned-${item.id}`}
                 >
-                  <Avatar size="md" initials={item.initials} title={nameOf(item.name)} className={item.avatarClass} />
+                  {/* ✅ 2026-10-22: 未読は一覧の行と同じ、アバターの右上の赤丸。 */}
+                  <span className="relative">
+                    <Avatar size="md" initials={item.initials} title={nameOf(item.name)} className={item.avatarClass} />
+                    {unread > 0 && !mutedIds.has(item.id) ? (
+                      <span className={cn(UNREAD_DOT_CLASSES, 'bg-danger')}>{unread > UNREAD_DOT_MAX ? `${String(UNREAD_DOT_MAX)}+` : String(unread)}</span>
+                    ) : null}
+                  </span>
                   <span className="w-full truncate text-center text-xs text-fg-muted">{nameOf(item.name)}</span>
-                  {unread > 0 && !mutedIds.has(item.id) ? <Badge variant="brand">{String(unread)}</Badge> : null}
                 </Link>
               </li>
             );

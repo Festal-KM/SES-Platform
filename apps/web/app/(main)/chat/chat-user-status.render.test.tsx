@@ -145,3 +145,46 @@ describe('③ 状態の表示', () => {
     expect(html).not.toContain(`data-testid="chat-contact-status-${QUIET}"`);
   });
 });
+
+// ✅ 2026-10-22（紺野「自分が入ってるチャットにも共通で表示しないと」）: どの部屋でも、発言の名前の横に送信者の状態を出す。
+describe('④ 発言の名前の横の状態（どの部屋でも）', () => {
+  const COMPANY_THREAD = '01930000-0000-7000-8000-00000000f201';
+  const message = (id: string, senderStatus: string | null) => ({
+    id,
+    sentAt: '2026-10-22T01:00:00.000Z',
+    senderName: '見本 太郎',
+    senderCompanyName: '株式会社ダミー',
+    senderStatus,
+    own: false,
+    mine: false,
+    body: 'こんにちは',
+    reactions: [],
+  });
+  const WITH = '01930000-0000-7000-8000-00000000f301';
+  const WITHOUT = '01930000-0000-7000-8000-00000000f302';
+
+  it('会社グループでも、状態のある送信者には札を出し、無い送信者には何も描かない', () => {
+    const html = renderToStaticMarkup(
+      createElement(ChatConversation, {
+        threadId: COMPANY_THREAD,
+        title: { title: 'A 社', subtitle: null },
+        initialMessages: [message(WITH, STATUS), { ...message(WITHOUT, null), senderName: '状態なし' }],
+        initialNextCursor: null,
+        canPost: true,
+        messages: chatConversationMessages(),
+      }),
+    );
+    expect(html).toContain(`data-testid="chat-message-status-${WITH}"`);
+    expect(html).toContain(STATUS);
+    expect(html).not.toContain(`data-testid="chat-message-status-${WITHOUT}"`);
+  });
+});
+
+describe('⑤ 入口のよく使う言い回し', () => {
+  it('定型文が並び、押すと入力欄に入る（保存は「保存」で）', () => {
+    const html = renderToStaticMarkup(createElement(ChatStatusSection, { canPost: true, text: '' }));
+    expect(html).toContain('data-testid="chat-status-presets"');
+    expect(html).toContain(t('chat.status.preset.meeting'));
+    expect(html).toContain(t('chat.status.preset.moving'));
+  });
+});
