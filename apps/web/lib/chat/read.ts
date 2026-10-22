@@ -438,7 +438,7 @@ async function resolveSenderNames(
  */
 export async function projectChatMessages(
   ctx: AuthenticatedTenantCtx,
-  db: Pick<TenantDb, 'user' | 'partnerCompany' | 'tenant' | 'chatMessageReaction'>,
+  db: Pick<TenantDb, 'user' | 'partnerCompany' | 'tenant' | 'chatMessageReaction' | 'chatSavedMessage'>,
   rows: readonly ChatMessageRow[],
 ): Promise<readonly ChatMessageView[]> {
   if (rows.length === 0) return [];
@@ -448,6 +448,12 @@ export async function projectChatMessages(
     select: { messageId: true, userId: true, reaction: true },
   });
   const reactions = summarizeReactions(reactionRows, ctx.userId);
+  // ✅ 2026-10-22: 自分が保存した発言（「保存 / 保存を外す」の出し分け）。🔴 本人の行だけが返る（RLS。migration 20261022010000）。
+  const savedRows = await db.chatSavedMessage.findMany({
+    where: { messageId: { in: rows.map((row) => row.id) } },
+    select: { messageId: true },
+  });
+  const savedIds = new Set(savedRows.map((row) => row.messageId));
   const senderNames = await resolveSenderNames(db, rows.map((row) => row.senderUserId));
   // 🔴 **送信者の会社名は `partner_companies` から直接引く**（`resolveCounterpartyNames` を使わない。
   //    上の ⚠️ —— 取引先が自分の発言に相手の商号を見ることになる）。
@@ -464,6 +470,7 @@ export async function projectChatMessages(
       viewerPartnerCompanyId: ctx.partnerCompanyId,
       viewerUserId: ctx.userId,
       reactions: reactions.get(row.id) ?? [],
+      saved: savedIds.has(row.id),
     }),
   );
 }
@@ -477,7 +484,7 @@ export async function projectChatMessages(
  */
 async function readMessagePage(
   ctx: AuthenticatedTenantCtx,
-  db: Pick<TenantDb, 'chatThread' | 'message' | 'user' | 'partnerCompany' | 'tenant' | 'chatMessageReaction'>,
+  db: Pick<TenantDb, 'chatThread' | 'message' | 'user' | 'partnerCompany' | 'tenant' | 'chatMessageReaction' | 'chatSavedMessage'>,
   threadId: string,
   query: ChatMessageListQuery,
 ): Promise<ChatMessageListView> {

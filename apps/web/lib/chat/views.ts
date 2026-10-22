@@ -94,6 +94,11 @@ export type ChatMessageView = {
   readonly edited?: boolean;
   /** ✅ 2026-10-16: 送った本人が削除したか（本文は `null`。保持期限による削除〔`purged`〕とは書き分ける）。 */
   readonly deleted?: boolean;
+  /**
+   * ✅ 2026-10-22: 読み手本人がこの発言を保存しているか（`chat_saved_messages`）。🔴 本人の栞だけ（誰が保存したかは載せない）。
+   * 読みの経路は必ず埋める。省略可なのは手で組むテスト用の値のため。
+   */
+  readonly saved?: boolean;
   /** 本文。🔴 `PURGED` / 保持期間削除で本文が消えた行は `null`（`F-064 AC-2`）。 */
   readonly body: string | null;
 };
@@ -174,6 +179,7 @@ export const CHAT_MESSAGE_VIEW_KEYS = [
   'reactions',
   'edited',
   'deleted',
+  'saved',
 ] as const;
 
 /** ✅ 2026-10-16: リアクションの種類（業務の短い語 4 つ。絵文字は使わない = UI_GUIDELINES §1。DB の CHECK と同じ）。 */
@@ -321,6 +327,8 @@ export type ChatMessageDeps = {
   readonly viewerUserId: string;
   /** ✅ 2026-10-16: この発言のリアクション（`summarizeReactions`。無ければ空）。 */
   readonly reactions?: readonly ChatReactionSummary[];
+  /** ✅ 2026-10-22: 読み手本人が保存しているか（省略時は保存していない）。 */
+  readonly saved?: boolean;
 };
 
 export function chatMessageView(row: ChatMessageRow, deps: ChatMessageDeps): ChatMessageView {
@@ -340,5 +348,6 @@ export function chatMessageView(row: ChatMessageRow, deps: ChatMessageDeps): Cha
     reactions: deps.reactions ?? [],
     edited: row.editedAt != null && row.deletedAt == null,
     deleted: row.deletedAt != null,
+    saved: deps.saved ?? false,
   };
 }

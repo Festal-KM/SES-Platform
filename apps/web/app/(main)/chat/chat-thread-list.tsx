@@ -11,6 +11,8 @@
 // 3. 絞り込みは左の列（`chat-rail.tsx`）の `f=`。会社 → その会社の会話（会社チャット・スレッド・その会社の人との DM・グループ）、
 //    人 → その人との会話（DM・その人が入っているグループ）、連絡先 → 人の一覧。
 // 4. 「右に並べる」は行にマウスを当てたときだけ（`chat-row-shell.tsx`）。
+// 5. ✅ 2026-10-22（紺野）: 赤い「要返信」の札をやめた。左の列の「保存済み」（`f=saved`）で保存した発言の一覧、
+//    入力欄の「定型文を編集…」（`f=templates`）で自分の定型文の管理画面に、一覧の列が切り替わる。
 //
 // 🔴 母集団は読みの関数（`lib/chat/read.ts` / `people.ts`）が RLS で決めたものだけ。ここで足さない。
 // 🔴 一覧の中で `hidden` を使わない（render テスト ③）。閲覧専用に押せない導線を置かない（②）。
@@ -45,12 +47,15 @@ import { CHAT_THREAD_SORT_DEFAULT, type ChatThreadGroup, type ChatThreadSort } f
 import type { ChatRoomListItem, ChatThreadListItem, ChatThreadKind } from '../../../lib/chat/views';
 import type { ChatPeopleData } from '../../../lib/chat/people';
 import type { ChatMessageHit } from '../../../lib/chat/read';
+import type { ChatSavedList } from '../../../lib/chat/saved';
+import { CHAT_TEMPLATE_BODY_MAX_LENGTH, CHAT_TEMPLATE_LABEL_MAX_LENGTH, CHAT_TEMPLATE_MAX_PER_USER } from '../../../lib/chat/schemas';
 import { formatListTime } from '../../../lib/chat/day-separators';
 import { ChatContactsView, ChatFavorites, type ChatFavorite } from './chat-people-section';
 import { ChatDraftMark } from './chat-draft-mark';
 import { ChatNewGroupForm } from './chat-new-group-form';
 import { ChatOpenDmButton } from './chat-open-dm-button';
 import { ChatRowShell } from './chat-row-shell';
+import { ChatTemplateManager, type ChatTemplateItem } from './chat-template-manager';
 
 const KIND_MESSAGE_KEYS = {
   PROJECT: 'chat.thread.kind.PROJECT',
@@ -84,7 +89,6 @@ export type ChatThreadListProps = {
   readonly q?: string | null;
   readonly sort?: ChatThreadSort;
   readonly truncated?: boolean;
-  readonly awaitingReplyIds?: readonly string[];
   readonly messageHits?: readonly ChatMessageHit[];
   readonly pinnedIds?: readonly string[];
   readonly mutedIds?: readonly string[];
@@ -97,6 +101,10 @@ export type ChatThreadListProps = {
   readonly now?: Date;
   /** ✅ 2026-10-19（v2）: 左の列の絞り込み。 */
   readonly filter?: ChatListFilter;
+  /** ✅ 2026-10-22: 保存した発言（`f=saved` のときだけ読む。それ以外は `null`）。 */
+  readonly saved?: ChatSavedList | null;
+  /** ✅ 2026-10-22: 自分の定型文（`f=templates` の管理画面）。 */
+  readonly templates?: readonly ChatTemplateItem[];
 };
 
 const ROW_CLASSES = `flex min-w-0 flex-1 items-center gap-3 px-3 ${CHAT_THREAD_ROW_HEIGHT_CLASS}`;
@@ -131,16 +139,16 @@ function flatten(groups: readonly ChatThreadGroup[], rooms: readonly ChatRoomLis
 }
 
 /** 左の列の絞り込みを当てる。 */
-function applyFilter(entries: readonly Entry[], filter: ChatListFilter, unread: (id: string) => number, awaiting: ReadonlySet<string>): Entry[] {
+function applyFilter(entries: readonly Entry[], filter: ChatListFilter, unread: (id: string) => number): Entry[] {
   switch (filter.kind) {
     case 'all':
     case 'contacts':
     case 'newgroup':
+    case 'saved':
+    case 'templates':
       return [...entries];
     case 'unread':
       return entries.filter((entry) => unread(idOf(entry)) > 0);
-    case 'awaiting':
-      return entries.filter((entry) => awaiting.has(idOf(entry)));
     case 'dm':
       return entries.filter((entry) => entry.type === 'room' && entry.room.kind === 'DM');
     case 'group':
@@ -160,7 +168,6 @@ type RowContext = {
   readonly selectedThreadId: string | null;
   readonly openBesideLabel: string | undefined;
   readonly listQuery: { readonly q: string | null; readonly sort: ChatThreadSort; readonly filter: ChatListFilter };
-  readonly awaitingReplyIds: ReadonlySet<string>;
   readonly unreadCounts: Readonly<Record<string, number>>;
   readonly mutedIds: ReadonlySet<string>;
   readonly lastSnippets: Readonly<Record<string, string>>;
@@ -186,7 +193,6 @@ function Row({ view, context }: { readonly view: RowView; readonly context: RowC
   const room = view.kind === 'DM' || view.kind === 'GROUP';
   const unread = context.unreadCounts[view.id] ?? 0;
   const muted = context.mutedIds.has(view.id);
-  const awaiting = context.awaitingReplyIds.has(view.id);
   const open = openIds.includes(view.id);
   const selected = view.id === selectedThreadId;
   const strong = unread > 0 && !muted;
@@ -240,11 +246,6 @@ function Row({ view, context }: { readonly view: RowView; readonly context: RowC
             </span>
           </span>
           <span className="flex items-center gap-1">
-            {awaiting ? (
-              <span className="shrink-0 text-xs text-danger" data-testid={`chat-thread-awaiting-${view.id}`}>
-                {t('chat.thread.awaitingReply')}
-              </span>
-            ) : null}
             <span className="min-w-0 flex-1 truncate text-xs text-fg-muted">
               {view.subtitlePrefix === null ? null : `${view.subtitlePrefix} ・ `}
               {snippet === '' ? (view.subtitlePrefix === null ? ' ' : '') : snippet}
@@ -319,6 +320,69 @@ function viewOf(entry: Entry): RowView {
   };
 }
 
+/**
+ * ✅ 2026-10-22（紺野）: 保存した発言の一覧（新しく保存した順）。押すとその会話を開く（一覧は保存済みのまま）。
+ * 🔴 母集団は `lib/chat/saved.ts`（RLS = 本人の栞 かつ 今も読める発言）だけ。部屋の名前は一覧の母集団（RLS 済み）から引き、
+ *    引けないときは「（名前を表示できません）」の語にする（ここで別の経路から名前を探さない）。
+ */
+function ChatSavedView({
+  saved,
+  entries,
+  context,
+}: {
+  readonly saved: ChatSavedList | null;
+  readonly entries: readonly Entry[];
+  readonly context: RowContext;
+}) {
+  const names = new Map(entries.map((entry) => [idOf(entry), viewOf(entry).name] as const));
+  const items = saved?.items ?? [];
+  return (
+    <div className="flex min-h-0 flex-col overflow-y-auto" data-testid="chat-saved">
+      <div className="flex items-center gap-2 px-3 pt-2 pb-1">
+        <span className="min-w-0 flex-1 truncate text-cell font-bold text-fg" data-testid="chat-saved-title">
+          {t('chat.saved.title')}
+        </span>
+        <Link href={chatHref({})} className={cn(SECONDARY_LINK_CLASSES, 'shrink-0 text-xs')} data-testid="chat-saved-clear">
+          {t('chat.rail.backToAll')}
+        </Link>
+      </div>
+      <p className="m-0 px-3 pb-2 text-xs text-fg-muted">{t('chat.saved.description')}</p>
+      {items.length === 0 ? (
+        <p className="m-0 p-4 text-body text-fg-muted" data-testid="chat-saved-empty">
+          {t('chat.saved.empty')}
+        </p>
+      ) : (
+        <ul className="m-0 list-none p-0" aria-label={t('chat.saved.title')}>
+          {items.map((item) => (
+            <li key={item.messageId} className={ROW_HOVER_CLASSES}>
+              <Link
+                href={chatHref({ ...withThreadSelected(context.paneState, item.threadId), ...context.listQuery })}
+                aria-current={item.threadId === context.selectedThreadId ? 'page' : undefined}
+                className="flex flex-col gap-1 px-3 py-2"
+                data-testid={`chat-saved-item-${item.messageId}`}
+              >
+                <span className="flex items-center gap-2">
+                  <span className="min-w-0 flex-1 truncate text-cell font-normal text-fg">
+                    <span className="sr-only">{t('chat.saved.open')}</span>
+                    {names.get(item.threadId) ?? t('chat.thread.unknownName')}
+                  </span>
+                  <span className="shrink-0 text-xs text-fg-placeholder">{formatDateTimeJst(item.sentAt)}</span>
+                </span>
+                <span className="text-xs text-fg-muted">{item.snippet ?? t('chat.saved.removedBody')}</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+      {saved?.truncated === true ? (
+        <p className="m-0 p-3 text-xs text-fg-muted" data-testid="chat-saved-truncated">
+          {t('chat.saved.truncated')}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 /** 左の列で選んだ会社・人の見出し（「すべてに戻る」と、人なら DM を開く）。 */
 function ScopeHeader({
   filter,
@@ -369,7 +433,6 @@ export function ChatThreadList({
   q = null,
   sort = CHAT_THREAD_SORT_DEFAULT,
   truncated = false,
-  awaitingReplyIds = [],
   messageHits = [],
   unreadCounts = {},
   unreadOnly = false,
@@ -380,6 +443,8 @@ export function ChatThreadList({
   lastSnippets = {},
   now = new Date(),
   filter: filterProp,
+  saved = null,
+  templates = [],
 }: ChatThreadListProps) {
   const filter: ChatListFilter = filterProp ?? (unreadOnly ? { kind: 'unread' } : { kind: 'all' });
   const paneState: ChatPaneState = { thread: selectedThreadId, panes: paneThreadIds };
@@ -392,14 +457,13 @@ export function ChatThreadList({
     selectedThreadId,
     openBesideLabel,
     listQuery: { q, sort, filter },
-    awaitingReplyIds: new Set(awaitingReplyIds),
     unreadCounts: allUnread,
     mutedIds: allMuted,
     lastSnippets: { ...lastSnippets, ...(people?.lastSnippets ?? {}) },
     now,
   };
   const all = flatten(groups, rooms, sort);
-  const shown = applyFilter(all, filter, (id) => allUnread[id] ?? 0, context.awaitingReplyIds);
+  const shown = applyFilter(all, filter, (id) => allUnread[id] ?? 0);
   const searching = (q !== null && q !== '') || filter.kind !== 'all';
 
   const pinned = new Set([...pinnedIds, ...(people?.pinnedIds ?? [])]);
@@ -452,7 +516,45 @@ export function ChatThreadList({
         ) : null}
       </form>
 
-      {filter.kind === 'newgroup' && people !== null && canPost ? (
+      {filter.kind === 'templates' && canPost ? (
+        // ✅ 2026-10-22（紺野「自分だけ」）: 自分の定型文の管理画面（一覧の列がまるごと切り替わる。「新しいグループ」と同じ作り）。
+        <ChatTemplateManager
+          templates={templates}
+          backHref={chatHref({ ...paneState, q, sort })}
+          limits={{ label: CHAT_TEMPLATE_LABEL_MAX_LENGTH, body: CHAT_TEMPLATE_BODY_MAX_LENGTH, count: CHAT_TEMPLATE_MAX_PER_USER }}
+          labels={{
+            back: t('chat.rail.backToAll'),
+            title: t('chat.template.title'),
+            description: t('chat.template.description'),
+            countUnit: t('chat.template.countUnit'),
+            empty: t('chat.template.empty'),
+            newHeading: t('chat.template.newHeading'),
+            editHeading: t('chat.template.editHeading'),
+            label: t('chat.template.label'),
+            labelPlaceholder: t('chat.template.labelPlaceholder'),
+            body: t('chat.template.body'),
+            bodyPlaceholder: t('chat.template.bodyPlaceholder'),
+            note: t('chat.template.note'),
+            create: t('chat.template.create'),
+            update: t('chat.template.update'),
+            cancel: t('chat.message.cancel'),
+            edit: t('chat.template.edit'),
+            remove: t('chat.template.delete'),
+            deleteTitle: t('chat.template.deleteTitle'),
+            deleteConfirm: t('chat.template.deleteConfirm'),
+            deleteYes: t('chat.message.deleteConfirmYes'),
+            needLabel: t('chat.template.needLabel'),
+            needBody: t('chat.template.needBody'),
+            limit: t('chat.template.limit'),
+            failed: t('chat.template.failed'),
+            savedToast: t('chat.toast.templateSaved'),
+            deletedToast: t('chat.toast.templateDeleted'),
+            toastLink: t('chat.toast.backToChat'),
+          }}
+        />
+      ) : filter.kind === 'saved' ? (
+        <ChatSavedView saved={saved} entries={all} context={context} />
+      ) : filter.kind === 'newgroup' && people !== null && canPost ? (
         // ✅ 2026-10-22（紺野「グループ作るがダサい」）: 一覧の列がまるごと「新しいグループ」に切り替わる（連絡先と同じ「左に割り込む」形）。
         //    🔴 閲覧専用には出さない。候補は連絡先と同じ母集団（`lib/chat/people.ts` が RLS で決めたものだけ）。
         <ChatNewGroupForm

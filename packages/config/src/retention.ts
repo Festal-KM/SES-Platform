@@ -149,6 +149,18 @@ export const PURGE_SPEC = {
     // ✅ 2026-10-19 チャットレーン: ひとこと状態は本人が書く自由文で、個人の事情（「通院のため」等）が書かれうる。
     //    発言の本文（messages.body）と同じく〔削除〕に置く。行は残しても空文字なので画面には出ない（読む側が空を「無し」と扱う）。
     { table: 'chat_user_statuses', columns: [{ name: 'text', erase: 'EMPTY_TEXT' }] },
+    // ✅ 2026-10-22 チャットレーン（紺野の決定）: 保存済み（本人だけの栞）を〔削除〕に置く。消す列が無い（ID と時刻だけ）ので
+    //    行ごと消す。🔴 この表を参照する表は無い（末端）ので、行削除で FK の連鎖は起きない（上の 🔴 の懸念に当たらない）。
+    { table: 'chat_saved_messages', rows: 'ALL' },
+    // ✅ 2026-10-22 チャットレーン: 自分の定型文は本人が書く自由文（取引先の担当者名・個人の事情が書かれうる）。
+    //    ひとこと状態と同じく列を空文字にする（行は残っても空なので選択肢に出ない。読む側が空を「無し」と扱う）。
+    {
+      table: 'chat_message_templates',
+      columns: [
+        { name: 'label', erase: 'EMPTY_TEXT' },
+        { name: 'body', erase: 'EMPTY_TEXT' },
+      ],
+    },
     // --- ⑤ 契約 / ⑥ 稼働 ------------------------------------------------------------------
     { table: 'contract_documents', columns: ['object_key', 'merge_result', 'signers'], objectKeyColumns: ['object_key'] },
     { table: 'contract_templates', columns: ['object_key'], objectKeyColumns: ['object_key'] },

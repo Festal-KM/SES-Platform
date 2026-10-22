@@ -686,17 +686,16 @@ describe('⑪: 会社ごとの木・検索・並べ替え（2026-10-14、チャ�
   });
 });
 
-describe('⑬: 要返信の印と返信が早い取引先（2026-10-14、チャットレーン）', () => {
+describe('⑬: 返信が早い取引先（2026-10-14、チャットレーン）。要返信の印は 2026-10-22 に外した', () => {
   const groups = buildThreadTree(
     THREAD_ROWS.map((item) => ({ groupKey: item.counterpartyName ?? item.id, item })),
     { sort: 'recent', q: null, fastReplyKeys: new Set(['架空パートナー A']) },
   );
 
-  it('要返信のスレッドにだけ印を付ける', () => {
-    const html = renderThreadList({ groups, awaitingReplyIds: [THREAD_PROJECT] });
-    expect(html).toContain(`data-testid="chat-thread-awaiting-${THREAD_PROJECT}"`);
-    expect(html).not.toContain(`chat-thread-awaiting-${THREAD_COMPANY}`);
-    expect(html).toContain(t('chat.thread.awaitingReply'));
+  it('✅ 2026-10-22（紺野）: 赤い「要返信」の札をどの行にも出さない', () => {
+    const html = renderThreadList({ groups });
+    expect(html).not.toContain('chat-thread-awaiting-');
+    expect(html).not.toContain(t('chat.thread.awaitingReply'));
   });
 
   it('🔴 返信が早い会社にだけ良い印を付け、他の会社には何も出さない（遅いとは書かない）', () => {
