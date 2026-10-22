@@ -36,6 +36,7 @@ import {
   Field,
   HEADER_HEIGHT_CLASS,
   SECONDARY_LINK_CLASSES,
+  ROW_HOVER_CLASSES,
   Select,
   Textarea,
   cn,
@@ -55,7 +56,8 @@ import {
   chatUnreadApiPath,
 } from '../../../lib/chat/screen-query';
 import {
-  CHAT_REACTIONS,
+  CHAT_REACTION_EMOJI_KINDS,
+  CHAT_REACTION_WORD_KINDS,
   type ChatMessageView,
   type ChatReactionKind,
   type ChatReactionSummary,
@@ -74,6 +76,7 @@ import {
 } from '../../../lib/chat/message-text';
 import { CHAT_FORMATS, applyChatFormat, insertChatMention, type ChatEdit, type ChatFormat } from '../../../lib/chat/markdown';
 import { ChatMessageMarkdown } from './chat-message-markdown';
+import { CHAT_REACTION_EMOJI, chatReactionEmoji } from '../../../lib/chat/reactions';
 import {
   CHAT_POLL_INTERVAL_MS,
   CHAT_UNDO_SEND_MS,
@@ -451,6 +454,12 @@ export function ChatConversation({
   //    🔴 `group-hover:` は画面に書けない（`tests/static/ui-state-in-primitives.test.ts` (j)。押し心地の 8 状態は
   //       `packages/ui` が持つ）。ここで決めているのは「どの発言の操作を出すか」であって、押し心地ではない。
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  // ✅ 2026-10-22: リアクションの選択（絵文字 12 種 + 語 4 種）を開いている発言。
+  const [reactionPickerId, setReactionPickerId] = useState<string | null>(null);
+  /** 付いたリアクションの表示（絵文字は絵文字で、語は語で）。 */
+  function reactionText(kind: ChatReactionKind, count: number): string {
+    return `${chatReactionEmoji(kind) ?? messages.reactions[kind]} ${String(count)}`;
+  }
   /**
    * ✅ 2026-10-22（紺野「スマホ版おわってる」）: 指で発言を押したら、その発言の操作を出す（もう一度押すと閉じる）。
    * 🔴 マウスの機器では何もしない（カーソルを当てれば出る）。リンク・ボタンなどを押したときも何もしない。
@@ -615,14 +624,15 @@ export function ChatConversation({
                   variant={summary.mine ? 'secondary' : 'ghost'}
                   size="sm"
                   aria-pressed={summary.mine}
+                  aria-label={`${messages.reactions[summary.reaction]} ${String(summary.count)}`}
                   onClick={() => void toggleReaction(item, summary.reaction)}
                   data-testid={`chat-message-reaction-${item.id}-${summary.reaction}`}
                 >
-                  {`${messages.reactions[summary.reaction]} ${String(summary.count)}`}
+                  {reactionText(summary.reaction, summary.count)}
                 </Button>
               ) : (
                 <span key={summary.reaction} className="text-xs text-fg-muted" data-testid={`chat-message-reaction-${item.id}-${summary.reaction}`}>
-                  {`${messages.reactions[summary.reaction]} ${String(summary.count)}`}
+                  {reactionText(summary.reaction, summary.count)}
                 </span>
               ),
             )}
@@ -655,7 +665,7 @@ export function ChatConversation({
             aria-label={messages.messageActions}
             className={cn(
               'flex flex-wrap items-center gap-2',
-              keyboardNav || hoveredId === item.id || confirmDeleteId === item.id ? null : 'pointer-fine:invisible pointer-coarse:hidden',
+              keyboardNav || hoveredId === item.id || confirmDeleteId === item.id || reactionPickerId === item.id ? null : 'pointer-fine:invisible pointer-coarse:hidden',
             )}
             data-testid={`chat-message-actions-${item.id}`}
           >
@@ -675,29 +685,61 @@ export function ChatConversation({
                   </Button>
                 </>
             ) : null}
+            {/* ✅ 2026-10-22（紺野「リアクションのスタンプとかもちゃんと入れて」）: 選択欄をやめ、押すと絵文字 12 種と語 4 種が並ぶ。
+                絵文字は読み上げ名（`aria-label`）を持つ。 */}
             {canPost ? (
-              <>
-                <label className="sr-only" htmlFor={`chat-reaction-${item.id}`}>
-                  {messages.reactionAdd}
-                </label>
-                <Select
-                  id={`chat-reaction-${item.id}`}
-                  value=""
-                  className="w-auto"
-                  onChange={(event) => {
-                    const kind = CHAT_REACTIONS.find((entry) => entry === event.target.value);
-                    if (kind !== undefined) void toggleReaction(item, kind);
-                  }}
-                  data-testid={`chat-message-reaction-add-${item.id}`}
-                >
-                  <option value="">{messages.reactionAdd}</option>
-                  {CHAT_REACTIONS.map((kind) => (
-                    <option key={kind} value={kind}>
-                      {messages.reactions[kind]}
-                    </option>
-                  ))}
-                </Select>
-              </>
+              <Button
+                type="button"
+                variant={reactionPickerId === item.id ? 'secondary' : 'ghost'}
+                size="sm"
+                aria-expanded={reactionPickerId === item.id}
+                aria-controls={`chat-reaction-picker-${item.id}`}
+                onClick={() => setReactionPickerId((current) => (current === item.id ? null : item.id))}
+                data-testid={`chat-message-reaction-add-${item.id}`}
+              >
+                {messages.reactionAdd}
+              </Button>
+            ) : null}
+            {canPost && reactionPickerId === item.id ? (
+              <div
+                id={`chat-reaction-picker-${item.id}`}
+                role="group"
+                aria-label={messages.reactionAdd}
+                className="flex w-full flex-wrap items-center gap-1 rounded-md border border-border bg-bg p-1"
+                data-testid={`chat-message-reaction-picker-${item.id}`}
+              >
+                {CHAT_REACTION_EMOJI_KINDS.map((kind) => (
+                  <button
+                    key={kind}
+                    type="button"
+                    aria-label={messages.reactions[kind]}
+                    title={messages.reactions[kind]}
+                    onClick={() => {
+                      setReactionPickerId(null);
+                      void toggleReaction(item, kind);
+                    }}
+                    className={cn('flex h-9 w-9 items-center justify-center rounded-md text-lg', ROW_HOVER_CLASSES)}
+                    data-testid={`chat-message-reaction-pick-${item.id}-${kind}`}
+                  >
+                    {CHAT_REACTION_EMOJI[kind]}
+                  </button>
+                ))}
+                {CHAT_REACTION_WORD_KINDS.map((kind) => (
+                  <Button
+                    key={kind}
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setReactionPickerId(null);
+                      void toggleReaction(item, kind);
+                    }}
+                    data-testid={`chat-message-reaction-pick-${item.id}-${kind}`}
+                  >
+                    {messages.reactions[kind]}
+                  </Button>
+                ))}
+              </div>
             ) : null}
             {/* ✅ 2026-10-22（紺野）: 保存 / 保存を外す（本人だけの栞。左の列の「保存済み」に集まる）。 */}
             {canPost ? (

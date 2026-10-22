@@ -899,6 +899,21 @@ describe('🔴 ⑯ リアクションは発言が読める相手にだけ見え�
     expect(await toggleChatReaction(hostSales, THREAD_A_P1, MESSAGE_A_P1, 'THANKS')).toEqual([]);
   });
 
+  it('✅ 2026-10-22: 絵文字のリアクション（英字の名前で入る）も付け外しでき、並びは絵文字 → 語', async () => {
+    const { toggleChatReaction } = await import('../../apps/web/lib/chat/service');
+    await toggleChatReaction(hostSales, THREAD_A_P1, MESSAGE_A_P1, 'OK');
+    const both = await toggleChatReaction(hostSales, THREAD_A_P1, MESSAGE_A_P1, 'THUMBS_UP');
+    expect(both).toEqual([
+      { reaction: 'THUMBS_UP', count: 1, mine: true },
+      { reaction: 'OK', count: 1, mine: true },
+    ]);
+    // 🔴 DB には絵文字そのものではなく名前が入る（CHECK も名前だけを許す）。
+    const rows = await admin.chatMessageReaction.findMany({ where: { messageId: MESSAGE_A_P1 }, select: { reaction: true } });
+    expect(rows.map((row) => row.reaction).sort()).toEqual(['OK', 'THUMBS_UP']);
+    await toggleChatReaction(hostSales, THREAD_A_P1, MESSAGE_A_P1, 'OK');
+    expect(await toggleChatReaction(hostSales, THREAD_A_P1, MESSAGE_A_P1, 'THUMBS_UP')).toEqual([]);
+  });
+
   it('🔴 取引先 A1 は A2 のスレッドの発言にリアクションを付けられない（404 と同じ扱い）・別スレッドの発言も不可', async () => {
     const { toggleChatReaction } = await import('../../apps/web/lib/chat/service');
     await expect(toggleChatReaction(partnerA1, THREAD_A_P2, MESSAGE_A_P2, 'OK')).rejects.toThrow();
