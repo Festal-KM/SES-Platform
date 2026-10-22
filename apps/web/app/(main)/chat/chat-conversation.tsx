@@ -70,8 +70,9 @@ import {
   isAwayFromLatest,
   isLongMessage,
   remainingChars,
-  splitMessageText,
 } from '../../../lib/chat/message-text';
+import { CHAT_FORMATS, applyChatFormat, insertChatMention, type ChatEdit, type ChatFormat } from '../../../lib/chat/markdown';
+import { ChatMessageMarkdown } from './chat-message-markdown';
 import {
   CHAT_POLL_INTERVAL_MS,
   CHAT_UNDO_SEND_MS,
@@ -126,6 +127,11 @@ export type ChatConversationProps = {
    * 🔴 **DM のときだけ渡す**（グループ・会社グループ・スレッドでは省略する = 「既読」を出さない）。
    */
   readonly peerReadMessageId?: string | null;
+  /**
+   * ✅ 2026-10-22: `@名前` の候補（DM・グループのメンバー）。会話に出てきた送信者の名前は部品の中で足す。
+   * 🔴 名前だけ（利用者 ID を島に渡さない）。
+   */
+  readonly mentionNames?: readonly string[];
 };
 
 /** 投稿の応答（`docs/05` §6.5 #51 の上位互換。`route.ts` の 🔴）。 */
@@ -147,6 +153,7 @@ export function ChatConversation({
   lastReadMessageId = null,
   prefs,
   peerReadMessageId = null,
+  mentionNames = [],
 }: ChatConversationProps) {
   // 🔴 ガードは**インスタンスごと**に持つ（モジュール変数にすると、別のスレッドを開いた島が
   //    同じガードを共有し「前の送信が終わるまで送れない」状態になる）。
@@ -168,6 +175,9 @@ export function ChatConversation({
   // ✅ 2026-10-14: 新着の自動表示（`lib/chat/live.ts`）と送信の取り消し。
   const [newArrived, setNewArrived] = useState(false);
   const [pendingSend, setPendingSend] = useState<string | null>(null);
+  // ✅ 2026-10-22: 「書く／プレビュー」と @ の候補の開閉。
+  const [composeTab, setComposeTab] = useState<'write' | 'preview'>('write');
+  const [mentionOpen, setMentionOpen] = useState(false);
   const pendingTimer = useRef<number | null>(null);
   const itemsRef = useRef(items);
   const bodyRef = useRef(body);
@@ -248,6 +258,46 @@ export function ChatConversation({
       // 保存領域が使えない環境（プライベートブラウズ等）では下書きを持たない。
     }
   }, [threadId]);
+
+  // ✅ 2026-10-22: `@名前` の候補 = 渡された部屋のメンバー + この会話に出てきた送信者（自分は除く）。
+  const mentionCandidates = [
+    ...new Set([
+      ...mentionNames,
+      ...items.filter((item) => !item.mine && item.senderName !== null).map((item) => item.senderName as string),
+    ]),
+  ];
+
+  function composeTextarea(): HTMLTextAreaElement | null {
+    const element = document.getElementById(composeId);
+    return element instanceof HTMLTextAreaElement ? element : null;
+  }
+
+  /** 書式ボタン・@ の結果を入力欄に戻し、選択位置を置き直す。 */
+  function applyComposeEdit(edit: ChatEdit): void {
+    updateBody(edit.text.slice(0, CHAT_MESSAGE_MAX_LENGTH));
+    setComposeTab('write');
+    window.requestAnimationFrame(() => {
+      const element = composeTextarea();
+      if (element === null) return;
+      element.focus();
+      element.setSelectionRange(edit.selectionStart, edit.selectionEnd);
+    });
+  }
+
+  function formatCompose(format: ChatFormat): void {
+    const element = composeTextarea();
+    const start = element?.selectionStart ?? body.length;
+    const end = element?.selectionEnd ?? body.length;
+    applyComposeEdit(applyChatFormat(body, start, end, format));
+  }
+
+  function mentionCompose(name: string): void {
+    const element = composeTextarea();
+    const start = element?.selectionStart ?? body.length;
+    const end = element?.selectionEnd ?? body.length;
+    setMentionOpen(false);
+    applyComposeEdit(insertChatMention(body, start, end, name));
+  }
 
   function updateBody(value: string): void {
     setBody(value);
@@ -469,36 +519,25 @@ export function ChatConversation({
     }
     return (
       <>
-        <p
+        {/* ✅ 2026-10-22: 本文は書式つきで描く（`chat-message-markdown.tsx`。HTML は通さない）。段落・箇条書きを入れるので `div`。 */}
+        <div
           className={cn(
-            'm-0 w-fit rounded-lg px-4 py-2 text-body whitespace-pre-wrap text-fg',
+            'm-0 flex w-fit flex-col gap-2 rounded-lg px-4 py-2 text-body break-words text-fg',
             CHAT_BUBBLE_MAX_WIDTH_CLASS,
             surfaceClass,
           )}
           data-testid={`chat-message-body-${item.id}`}
         >
-          {shown === null
-            ? item.deleted === true
-              ? messages.deleted
-              : messages.purged
-            : splitMessageText(shown).map((segment, index) =>
-                segment.kind === 'url' ? (
-                  // 🔴 新しいタブで開き、開いた先にこの画面を触らせない（`noopener`）・参照元を渡さない（`noreferrer`）。
-                  <a
-                    key={index}
-                    href={segment.value}
-                    target="_blank"
-                    rel="noopener noreferrer nofollow"
-                    className="break-all text-brand underline"
-                    data-testid={`chat-message-link-${item.id}`}
-                  >
-                    {segment.value}
-                  </a>
-                ) : (
-                  <span key={index}>{segment.value}</span>
-                ),
-              )}
-        </p>
+          {shown === null ? (
+            item.deleted === true ? (
+              messages.deleted
+            ) : (
+              messages.purged
+            )
+          ) : (
+            <ChatMessageMarkdown text={shown} messageId={item.id} mentionNames={mentionCandidates} />
+          )}
+        </div>
         {text === null ? null : (item.reactions ?? []).length > 0 || item.edited === true ? (
           // ✅ 2026-10-16: 付いているリアクションの数と「編集済み」は**常に見せる**（中身の一部なので隠さない）。
           <div className="flex flex-wrap items-center gap-2" data-testid={`chat-message-info-${item.id}`}>
@@ -974,38 +1013,138 @@ export function ChatConversation({
           className={`sticky bottom-0 shrink-0 border-t border-border bg-bg px-5 py-3 ${CHAT_COMPOSER_HEIGHT_CLASS}`}
           data-testid="chat-compose"
         >
-          <Field label={messages.composeLabel} description={messages.composeHint}>
-            <Textarea
-              id={composeId}
-              name="body"
-              value={body}
-              maxLength={CHAT_MESSAGE_MAX_LENGTH}
-              placeholder={messages.composePlaceholder}
-              // ✅ 2026-10-14: 文章に合わせて伸び（`field-sizing-content`）、約 6 行で止めて欄の中でスクロールする。
-              className="min-h-12 max-h-40 overflow-y-auto"
-              onChange={(event) => updateBody(event.target.value)}
-              // ✅ 2026-10-13（Lark 寄せ）: Enter で送信、Shift+Enter で改行。
-              // 🔴 日本語入力の変換確定の Enter では送らない（`lib/chat/layout.ts` の `isSendKey`）。
-              onKeyDown={(event) => {
-                // ✅ 2026-10-14: Esc で入力欄を離れる。
-                if (event.key === 'Escape') {
-                  event.currentTarget.blur();
-                  return;
-                }
-                if (
-                  isSendKey({
-                    key: event.key,
-                    shiftKey: event.shiftKey,
-                    isComposing: event.nativeEvent.isComposing,
-                    keyCode: event.keyCode,
-                  })
-                ) {
-                  event.preventDefault();
-                  submit();
-                }
-              }}
-              data-testid="chat-compose-body"
-            />
+          {/* ✅ 2026-10-22（紺野「こういうチャット枠が必要だよね」= GitHub のコメント欄）:
+              上に「書く／プレビュー」と書式ボタン、下に入力欄。1 つの枠で囲み、右下をつまんで高さを伸ばせる。
+              🔴 書式は Markdown の一部だけ（`lib/chat/markdown.ts`）。HTML は通さない。 */}
+          {/* 🔴 `as="div"`: 枠の中にボタンがあるので `<label>` で包まない（ラベルが最初のボタンに結び付く）。入力欄は `aria-label` で名付ける。 */}
+          <Field as="div" label={messages.composeLabel} description={messages.composeHint}>
+            <div className="flex flex-col rounded-md border border-border-strong bg-bg" data-testid="chat-compose-box">
+              <div className="flex flex-wrap items-center gap-1 border-b border-border bg-bg-subtle px-2 py-1">
+                <Button
+                  type="button"
+                  // 開いている方を塗る（どちらを見ているかを形で分ける）。
+                  variant={composeTab === 'write' ? 'secondary' : 'ghost'}
+                  size="sm"
+                  aria-pressed={composeTab === 'write'}
+                  onClick={() => setComposeTab('write')}
+                  data-testid="chat-compose-tab-write"
+                >
+                  {messages.composeWrite}
+                </Button>
+                <Button
+                  type="button"
+                  // 開いている方を塗る（どちらを見ているかを形で分ける）。
+                  variant={composeTab === 'preview' ? 'secondary' : 'ghost'}
+                  size="sm"
+                  aria-pressed={composeTab === 'preview'}
+                  onClick={() => {
+                    setMentionOpen(false);
+                    setComposeTab('preview');
+                  }}
+                  data-testid="chat-compose-tab-preview"
+                >
+                  {messages.composePreview}
+                </Button>
+                {composeTab === 'write' ? (
+                  <div role="toolbar" aria-label={messages.composeToolbar} className="ml-auto flex flex-wrap items-center gap-1" data-testid="chat-compose-toolbar">
+                    {CHAT_FORMATS.map((format) => (
+                      <Button
+                        key={format}
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        // 🔴 押しても入力欄の選択を失わない（ボタンにフォーカスを移さない）。
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => formatCompose(format)}
+                        data-testid={`chat-compose-format-${format}`}
+                      >
+                        {messages.composeFormats[format]}
+                      </Button>
+                    ))}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      aria-expanded={mentionOpen}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => setMentionOpen((open) => !open)}
+                      data-testid="chat-compose-mention"
+                    >
+                      {messages.composeMention}
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
+              {mentionOpen && composeTab === 'write' ? (
+                <div className="flex flex-wrap gap-1 border-b border-border px-2 py-2" data-testid="chat-compose-mention-list">
+                  {mentionCandidates.length === 0 ? (
+                    <span className="text-xs text-fg-muted">{messages.composeMentionEmpty}</span>
+                  ) : (
+                    mentionCandidates.map((name) => (
+                      <Button
+                        key={name}
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => mentionCompose(name)}
+                      >
+                        {`@${name}`}
+                      </Button>
+                    ))
+                  )}
+                </div>
+              ) : null}
+              {composeTab === 'write' ? (
+                <Textarea
+                  id={composeId}
+                  aria-label={messages.composeLabel}
+                  name="body"
+                  value={body}
+                  maxLength={CHAT_MESSAGE_MAX_LENGTH}
+                  placeholder={messages.composePlaceholder}
+                  // ✅ 2026-10-14: 文章に合わせて伸び（`field-sizing-content`）、約 6 行で止めて欄の中でスクロールする。
+                  className="min-h-20 max-h-72 resize-y overflow-y-auto rounded-none border-0"
+                  onChange={(event) => updateBody(event.target.value)}
+                  // ✅ 2026-10-13（Lark 寄せ）: Enter で送信、Shift+Enter で改行。
+                  // 🔴 日本語入力の変換確定の Enter では送らない（`lib/chat/layout.ts` の `isSendKey`）。
+                  onKeyDown={(event) => {
+                    // ✅ 2026-10-22: ⌘B / ⌘I（Ctrl も）で太字・斜体（GitHub と同じ）。
+                    if ((event.metaKey || event.ctrlKey) && (event.key === 'b' || event.key === 'i')) {
+                      event.preventDefault();
+                      formatCompose(event.key === 'b' ? 'bold' : 'italic');
+                      return;
+                    }
+                    // ✅ 2026-10-14: Esc で入力欄を離れる。
+                    if (event.key === 'Escape') {
+                      event.currentTarget.blur();
+                      return;
+                    }
+                    if (
+                      isSendKey({
+                        key: event.key,
+                        shiftKey: event.shiftKey,
+                        isComposing: event.nativeEvent.isComposing,
+                        keyCode: event.keyCode,
+                      })
+                    ) {
+                      event.preventDefault();
+                      submit();
+                    }
+                  }}
+                  data-testid="chat-compose-body"
+                />
+              ) : (
+                <div className="flex min-h-20 flex-col gap-2 px-3 py-2 text-body text-fg" data-testid="chat-compose-preview">
+                  {body.trim() === '' ? (
+                    <span className="text-fg-muted">{messages.composePreviewEmpty}</span>
+                  ) : (
+                    <ChatMessageMarkdown text={body} messageId={null} mentionNames={mentionCandidates} />
+                  )}
+                </div>
+              )}
+              <p className="m-0 border-t border-border px-3 py-1 text-xs text-fg-muted">{messages.composeMarkdownHint}</p>
+            </div>
           </Field>
           {/* ✅ 2026-10-14: 送信の取り消し（押してから数秒は送らずに待つ）。 */}
           {pendingSend === null ? null : (

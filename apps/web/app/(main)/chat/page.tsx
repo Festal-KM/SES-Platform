@@ -58,6 +58,11 @@ export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = { title: t('chat.title') };
 
+/** ✅ 2026-10-22: `@名前` の候補（DM・グループのメンバーから自分を除いた名前。会社グループ・スレッドは会話の送信者から部品が足す）。 */
+function mentionNamesOf(thread: { readonly members?: readonly { readonly name: string | null; readonly self: boolean }[] }): readonly string[] {
+  return (thread.members ?? []).filter((member) => !member.self && member.name !== null).map((member) => member.name as string);
+}
+
 export default async function ChatPage({
   searchParams,
 }: {
@@ -216,6 +221,7 @@ export default async function ChatPage({
                 prefs={data.threadPrefs[selected.id] ?? { pinned: false, muted: false }}
                 // ✅ 2026-10-19（#128）: 相手の既読は DM だけ（グループ・会社グループ・スレッドには渡さない）。
                 {...(selected.kind === 'DM' ? { peerReadMessageId: data.peerReadMessageIds[selected.id] ?? null } : {})}
+                mentionNames={mentionNamesOf(selected)}
                 canPost={canPost}
                 messages={conversationMessages}
                 {...(tiled ? { closeHref: chatHref({ ...withPaneClosed(paneState, selected.id), ...listQuery }) } : {})}
@@ -261,6 +267,7 @@ export default async function ChatPage({
                   lastReadMessageId={data.lastReadMessageIds[pane.thread.id] ?? null}
                   prefs={data.threadPrefs[pane.thread.id] ?? { pinned: false, muted: false }}
                   {...(pane.thread.kind === 'DM' ? { peerReadMessageId: data.peerReadMessageIds[pane.thread.id] ?? null } : {})}
+                  mentionNames={mentionNamesOf(pane.thread)}
                   canPost={canPost}
                   messages={conversationMessages}
                   closeHref={chatHref({ ...withPaneClosed(paneState, pane.thread.id), ...listQuery })}
