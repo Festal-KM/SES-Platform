@@ -87,12 +87,11 @@ import {
   type ChatConversationTitle,
 } from '../../../lib/chat/layout';
 
-
 /**
- * ✅ 2026-10-22: ひとこと状態の札（名前の続きに見えないよう、薄い面の丸い札にする）。
+ * ✅ 2026-10-22: ひとこと状態の札（名前の続きに見えないよう、薄い面の札にする（角は Badge と同じ `rounded-xs`。円はアバターとカウンタだけ））。
  * 🔴 どの部屋でも同じ形（会話の見出し・発言の名前の横）。長い状態は 1 行で切る。
  */
-const STATUS_CHIP_CLASSES = 'truncate rounded-full bg-bg-inset px-2 text-xs text-fg-muted';
+const STATUS_CHIP_CLASSES = 'truncate rounded-xs bg-bg-inset px-1 text-xs text-fg-muted';
 
 export type ChatConversationProps = {
   /**

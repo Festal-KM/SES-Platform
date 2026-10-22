@@ -8,7 +8,7 @@
 // 🔴 `@ses/db` / `@ses/i18n` を値 import しない。語は props から。
 import { useId, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Button, Input, cn } from '@ses/ui';
+import { Button, Input } from '@ses/ui';
 import { CHAT_PATH, CHAT_USER_STATUS_API_PATH } from '../../../lib/chat/screen-query';
 import { showChatToast } from '../../../lib/chat/toast';
 
@@ -73,14 +73,14 @@ export function ChatStatusEditor({ initialText, maxLength, labels, presets }: Ch
 
   return (
     // ✅ 2026-10-22（紺野「ステータスなんかおかしくね」）: ページ見出しの下の文字だけの入口をやめ、**左の列のいちばん上**に置いた
-    //    （開いても会話が下へ押されない）。今の状態は丸い札で見せ、よく使う言い回しは押すだけで入る。
+    //    （開いても会話が下へ押されない）。今の状態は札で見せ、よく使う言い回しは押すだけで入る。
     <details className="rounded-md bg-bg p-2" data-testid="chat-status">
       <summary className="flex cursor-pointer list-none flex-col gap-1" data-testid="chat-status-open">
         <span className="text-xs text-fg-muted">{labels.current}</span>
         {saved === '' ? (
           <span className="text-cell text-brand">{labels.open}</span>
         ) : (
-          <span className="truncate rounded-full bg-bg-inset px-2 text-xs text-fg">{saved}</span>
+          <span className="truncate rounded-xs bg-bg-inset px-1 text-xs text-fg">{saved}</span>
         )}
       </summary>
       {/* 🔴 `method="post"`: 水和前の送信が既定の GET で入力値を URL に載せるのを塞ぐ（tests/static/form-method-required.test.ts）。 */}
@@ -108,13 +108,9 @@ export function ChatStatusEditor({ initialText, maxLength, labels, presets }: Ch
         <ul className="m-0 flex list-none flex-wrap gap-1 p-0" aria-label={labels.presets} data-testid="chat-status-presets">
           {presets.map((preset) => (
             <li key={preset}>
-              <button
-                type="button"
-                onClick={() => setDraft(preset)}
-                className={cn('rounded-full px-2 py-1 text-xs', draft === preset ? 'bg-brand-bg text-brand' : 'bg-bg-inset text-fg-muted')}
-              >
+              <Button type="button" variant="secondary" size="sm" aria-pressed={draft === preset} onClick={() => setDraft(preset)}>
                 {preset}
-              </button>
+              </Button>
             </li>
           ))}
         </ul>
