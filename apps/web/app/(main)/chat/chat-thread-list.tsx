@@ -201,7 +201,8 @@ function Row({ view, context }: { readonly view: RowView; readonly context: RowC
       room={room}
       selected={selected}
       kind={view.kind}
-      className={cn('flex rounded-md', open ? 'bg-brand-bg' : ROW_HOVER_CLASSES)}
+      // ✅ 2026-10-22（紺野「どの会話開いているかもわかるように！！」）: 開いている会話は青い面 + 青い縁で、灰色の一覧の中ではっきり分かるようにする。
+      className={cn('flex rounded-md', open ? 'bg-brand-bg ring-1 ring-brand' : ROW_HOVER_CLASSES)}
       reveal={
         besideHref === null || openBesideLabel === undefined ? null : (
           <Link
