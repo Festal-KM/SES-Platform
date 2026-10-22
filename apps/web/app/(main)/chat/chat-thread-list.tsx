@@ -162,6 +162,8 @@ type RowContext = {
   readonly awaitingReplyIds: ReadonlySet<string>;
   readonly unreadCounts: Readonly<Record<string, number>>;
   readonly mutedIds: ReadonlySet<string>;
+  /** ✅ 2026-10-20: スワイプで出すピン留めの今の状態。 */
+  readonly pinnedIds: ReadonlySet<string>;
   readonly lastSnippets: Readonly<Record<string, string>>;
   readonly now: Date;
 };
@@ -198,6 +200,11 @@ function Row({ view, context }: { readonly view: RowView; readonly context: RowC
     <ChatRowShell
       id={view.id}
       room={room}
+      swipe={{
+        pinned: context.pinnedIds.has(view.id),
+        muted,
+        labels: { pin: t('chat.thread.pin'), unpin: t('chat.thread.unpin'), mute: t('chat.thread.mute'), unmute: t('chat.thread.unmute') },
+      }}
       selected={selected}
       kind={view.kind}
       className={cn('flex rounded-md', open ? 'bg-brand-bg' : ROW_HOVER_CLASSES)}
@@ -393,6 +400,7 @@ export function ChatThreadList({
     awaitingReplyIds: new Set(awaitingReplyIds),
     unreadCounts: allUnread,
     mutedIds: allMuted,
+    pinnedIds: new Set([...pinnedIds, ...(people?.pinnedIds ?? [])]),
     lastSnippets: { ...lastSnippets, ...(people?.lastSnippets ?? {}) },
     now,
   };
