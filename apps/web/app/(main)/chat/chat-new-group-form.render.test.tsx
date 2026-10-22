@@ -18,6 +18,8 @@ const LABELS = {
   needName: '名前',
   needMembers: 'メンバー',
   failed: '失敗',
+  createdToast: '作りました',
+  openGroup: '開く',
 } as const;
 
 describe('グループを作る', () => {

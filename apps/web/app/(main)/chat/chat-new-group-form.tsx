@@ -8,6 +8,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button, Checkbox, Input } from '@ses/ui';
 import { CHAT_CREATE_GROUP_API_PATH, chatHref } from '../../../lib/chat/screen-query';
+import { showChatToast } from '../../../lib/chat/toast';
 
 export type ChatNewGroupFormProps = {
   readonly people: readonly { readonly userId: string; readonly name: string; readonly companyName: string | null }[];
@@ -20,6 +21,9 @@ export type ChatNewGroupFormProps = {
     readonly needName: string;
     readonly needMembers: string;
     readonly failed: string;
+    /** ✅ 2026-10-20: 作ったときのトースト（`lib/chat/toast.ts`）。 */
+    readonly createdToast: string;
+    readonly openGroup: string;
   };
 };
 
@@ -63,6 +67,7 @@ export function ChatNewGroupForm({ people, labels }: ChatNewGroupFormProps) {
       const { id } = (await response.json()) as { readonly id: string };
       setTitle('');
       setSelected([]);
+      showChatToast({ message: labels.createdToast, href: chatHref({ thread: id }), linkLabel: labels.openGroup });
       router.push(chatHref({ thread: id }));
       router.refresh();
     } catch {

@@ -59,6 +59,7 @@ export type ChatConversationMessages = {
   readonly deleted: string;
   readonly save: string;
   readonly cancel: string;
+  readonly deleteTitle: string;
   readonly deleteConfirm: string;
   readonly deleteConfirmYes: string;
   readonly editFailed: string;
@@ -135,6 +136,7 @@ export function chatConversationMessages(): ChatConversationMessages {
     deleted: t('chat.message.deleted'),
     save: t('chat.message.save'),
     cancel: t('chat.message.cancel'),
+    deleteTitle: t('chat.message.deleteTitle'),
     deleteConfirm: t('chat.message.deleteConfirm'),
     deleteConfirmYes: t('chat.message.deleteConfirmYes'),
     editFailed: t('chat.message.editFailed'),

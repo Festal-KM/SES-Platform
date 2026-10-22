@@ -42,6 +42,7 @@ import { readChatScreen } from '../../../lib/chat/read';
 import { CHAT_PATH, chatHref, chatScreenQuerySchema, parseChatFilter } from '../../../lib/chat/screen-query';
 import { ChatRail } from './chat-rail';
 import { ChatRailToggle } from './chat-rail-toggle';
+import { ChatToastHost } from './chat-toast-host';
 import { CHAT_THREAD_SORT_DEFAULT } from '../../../lib/chat/thread-tree';
 import { readMyChatUserStatus } from '../../../lib/chat/user-status';
 import { CHAT_TRAIL } from '../../../lib/shell/page-trail';
@@ -134,6 +135,8 @@ export default async function ChatPage({
         <PageHeading trail={CHAT_TRAIL} title={t('chat.title')} />
         <p className="mb-4 text-body text-fg-muted">{t('chat.threads.population')}</p>
         <ChatStatusSection canPost={canPost} text={myStatus} />
+        {/* ✅ 2026-10-20（紺野「トースト」）: 操作の結果を右下に出す（行き先つき・自動で消えない）。 */}
+        <ChatToastHost kindLabel={t('chat.toast.kind')} dismissLabel={t('chat.toast.dismiss')} />
         {/* 🔴 不存在・他社・他テナントで同じ文言（`docs/05` §4.8） */}
         {data.requestedThreadMissing ? (
           <Alert variant="warning" className="mb-4" data-testid="chat-thread-missing">
