@@ -466,13 +466,15 @@ describe('⑧: 連続した発言のまとめ・時刻・見出し（2026-10-13�
     sentAt: '2026-09-30T02:03:00.000Z', // MESSAGE_OTHER の 3 分後、同じ人
   };
 
-  it('同じ人の 5 分以内の続きは名前を出さず、アバターは見えなくする（幅は残す）', () => {
+  it('同じ人の 5 分以内の続きは名前を出さず、アバターは出さない（幅は残す）', () => {
     const html = renderConversation({ initialMessages: [MESSAGE_OWN, MESSAGE_OTHER, FOLLOW_UP] });
     expect(html).toContain(`data-testid="chat-message-sender-${MESSAGE_OTHER.id}"`);
     expect(html).not.toContain(`data-testid="chat-message-sender-${FOLLOW_UP.id}"`);
     const li = new RegExp(`<li[^>]*data-testid="chat-message-${FOLLOW_UP.id}"[^>]*>(.*?)</li>`, 's').exec(html);
     expect((li as RegExpExecArray)[0]).toContain('data-continued="true"');
-    expect((li as RegExpExecArray)[1]).toContain('invisible');
+    // ✅ 2026-10-22: 見えないアバター（高さも取る）をやめ、幅だけの詰め物にした（続きの行を詰める）。
+    expect((li as RegExpExecArray)[1]).toContain('w-9 shrink-0');
+    expect((li as RegExpExecArray)[1]).not.toContain('app-header-avatar');
     // 🔴 読み上げでは誰の発言かを残す。
     expect((li as RegExpExecArray)[1]).toContain(`sr-only">${String(FOLLOW_UP.senderName)}`);
   });

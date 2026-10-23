@@ -75,6 +75,17 @@ export const GLOBAL_SKILLS: readonly GlobalSkillSeed[] = [
   { name: '基本設計', category: 'PROCESS' },
   { name: 'テスト設計', category: 'PROCESS' },
   { name: '運用保守', category: 'PROCESS' },
+  // ✅ 2026-10-22（紺野の依頼）: AI の活用と、セキュリティ・運用の経験を探せるようにする。
+  //    AI で単純な作り込みが減り、「AI を使いこなして速く回せる人」「事故対応・鍵の管理・監視ができる人」の
+  //    需要が上がる見込みのため。🔴 末尾に足す（途中に挿し込むと既存の匿名候補の表示順が変わる）。
+  { name: '生成AI活用', category: 'AI' },
+  { name: 'プロンプト設計', category: 'AI' },
+  { name: 'LLMアプリ開発', category: 'AI' },
+  { name: '機械学習', category: 'AI' },
+  { name: 'セキュリティ設計', category: 'SECURITY' },
+  { name: '脆弱性診断', category: 'SECURITY' },
+  { name: 'インシデント対応', category: 'SECURITY' },
+  { name: 'SRE・監視運用', category: 'INFRA' },
 ];
 
 /** 決定的な ID（`seedUuid` と同じ形。再実行で同じ ID になる）。 */
