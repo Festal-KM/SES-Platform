@@ -159,6 +159,12 @@ export function chatMessagesApiPath(threadId: string): string {
 }
 
 /** ✅ 2026-10-16: 既読・未読の API（`PUT`）。🔴 画面に URL を書き写さない。 */
+/** ✅ 2026-10-23: この部屋に貼れる案件の候補（#51n）。絞り込み語が空なら付けない。 */
+export function chatProjectCandidatesApiPath(threadId: string, q: string): string {
+  const trimmed = q.trim();
+  return trimmed === '' ? `/api/threads/${threadId}/projects` : `/api/threads/${threadId}/projects?q=${encodeURIComponent(trimmed)}`;
+}
+
 export function chatReadApiPath(threadId: string): string {
   return `/api/threads/${threadId}/read`;
 }

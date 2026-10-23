@@ -30,6 +30,7 @@
 //
 // 🔴 本モジュールは Next.js / Auth.js に依存しない（分離テストがサーバを立てずに同じ経路を実行できる。
 //    `lib/proposals/list.ts` と同方針）。
+import { t } from '@ses/i18n';
 import { freeWordFilter, readDmPeerReadMessageIds, withTenant, type AuthenticatedTenantCtx } from '@ses/db';
 import { requireFound, ValidationError } from '../api/errors';
 import { buildCursorPage, takeForCursorPage, type CursorPage } from '../api/pagination';
@@ -39,6 +40,7 @@ import {
   MESSAGE_SEARCH_MIN_LENGTH,
   buildThreadTree,
   companyKeysOf,
+  lastMessageSnippet,
   messageSnippet,
   type ChatThreadGroup,
   type ChatThreadSort,
@@ -67,6 +69,7 @@ import {
   type ChatThreadRow,
   summarizeReactions,
 } from './views';
+import { readAttachedProjectCards } from './project-cards';
 
 /** `withTenant` が `fn` に渡すクライアント。 */
 type TenantDb = Parameters<Parameters<typeof withTenant<void>>[1]>[0];
@@ -92,6 +95,8 @@ export const CHAT_MESSAGE_SELECT = {
   sentAt: true,
   editedAt: true,
   deletedAt: true,
+  // ✅ 2026-10-23: 貼った案件の ID（カードは読む人の RLS で読み直す。応答には ID を直接載せない）。
+  attachedProjectId: true,
 } as const;
 
 export type SelectedChatThreadRow = ChatThreadRow & { readonly partnerCompanyId: string };
@@ -270,11 +275,11 @@ async function readThreadTree(
           where: { threadId: { in: threadIds } },
           distinct: ['threadId'],
           orderBy: [{ threadId: 'asc' }, { sentAt: 'desc' }, { id: 'desc' }],
-          select: { threadId: true, senderPartnerCompanyId: true, body: true },
+          select: { threadId: true, senderPartnerCompanyId: true, body: true, attachedProjectId: true },
         });
   // ✅ 2026-10-19: 一覧の 2 段目（最後の発言の冒頭）。🔴 読めた発言だけ（C6）。削除・保持期限で本文が無いものは空。
   const lastSnippets: Record<string, string> = Object.fromEntries(
-    lastMessages.map((message) => [message.threadId, messageSnippet(message.body ?? '', '', 60)]),
+    lastMessages.map((message) => [message.threadId, lastMessageSnippet(message, t('chat.snippet.projectShared'))]),
   );
   // ✅ 2026-10-22（紺野「要返信はいらない」）: 要返信（最後の発言が相手から）の計算をやめた。「保存済み」に置き換え。
   // 🔴 返信が早い取引先は**ホストにだけ**（取引先には他社との比較を出さない）。
@@ -433,7 +438,10 @@ async function resolveSenderNames(
  */
 export async function projectChatMessages(
   ctx: AuthenticatedTenantCtx,
-  db: Pick<TenantDb, 'user' | 'partnerCompany' | 'tenant' | 'chatMessageReaction' | 'chatSavedMessage' | 'chatUserStatus'>,
+  db: Pick<
+    TenantDb,
+    'user' | 'partnerCompany' | 'tenant' | 'chatMessageReaction' | 'chatSavedMessage' | 'chatUserStatus' | 'project' | 'projectRequirement'
+  >,
   rows: readonly ChatMessageRow[],
 ): Promise<readonly ChatMessageView[]> {
   if (rows.length === 0) return [];
@@ -456,6 +464,12 @@ export async function projectChatMessages(
   const tenant = await db.tenant.findFirst({ select: { name: true } });
   // ✅ 2026-10-22: 送信者の今のひとこと状態。🔴 境界は RLS が決める（`user-status.ts` ①。`where` に書き足さない）。
   const statuses = await readChatUserStatuses(db, rows.map((row) => row.senderUserId));
+  // ✅ 2026-10-23: 案件カード。🔴 **読む人の RLS で** projects（C4）を読み直す（貼った人の権限で描かない）。
+  //    消えた発言（削除・保持期限）の案件は読みに行かない（カードも出さない）。
+  const cards = await readAttachedProjectCards(
+    db,
+    rows.filter((row) => row.body !== null && row.deletedAt == null).map((row) => row.attachedProjectId ?? null),
+  );
   return rows.map((row) =>
     chatMessageView(row, {
       senderName: senderNames.get(row.senderUserId) ?? null,
@@ -469,6 +483,7 @@ export async function projectChatMessages(
       viewerUserId: ctx.userId,
       reactions: reactions.get(row.id) ?? [],
       saved: savedIds.has(row.id),
+      ...(row.attachedProjectId == null ? {} : { attachedProject: cards.get(row.attachedProjectId) }),
     }),
   );
 }
@@ -482,7 +497,10 @@ export async function projectChatMessages(
  */
 async function readMessagePage(
   ctx: AuthenticatedTenantCtx,
-  db: Pick<TenantDb, 'chatThread' | 'message' | 'user' | 'partnerCompany' | 'tenant' | 'chatMessageReaction' | 'chatSavedMessage' | 'chatUserStatus'>,
+  db: Pick<
+    TenantDb,
+    'chatThread' | 'message' | 'user' | 'partnerCompany' | 'tenant' | 'chatMessageReaction' | 'chatSavedMessage' | 'chatUserStatus' | 'project' | 'projectRequirement'
+  >,
   threadId: string,
   query: ChatMessageListQuery,
 ): Promise<ChatMessageListView> {

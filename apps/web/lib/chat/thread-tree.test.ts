@@ -1,7 +1,7 @@
 // apps/web/lib/chat/thread-tree.test.ts
 // `S-031` のスレッド一覧を会社ごとの木にする（`lib/chat/thread-tree.ts`）。
 import { describe, expect, it } from 'vitest';
-import { buildThreadTree, type ChatThreadTreeInput } from './thread-tree';
+import { buildThreadTree, lastMessageSnippet, type ChatThreadTreeInput } from './thread-tree';
 import type { ChatThreadListItem } from './views';
 
 function item(
@@ -119,5 +119,16 @@ describe('messageSnippet（本文の検索の抜粋）', () => {
   it('改行は空白にし、短い本文は切らない・大文字小文字を区別しない', async () => {
     const { messageSnippet } = await import('./thread-tree');
     expect(messageSnippet('Hello\nWorld', 'world')).toBe('Hello World');
+  });
+});
+
+// ✅ 2026-10-23: 案件だけを貼った発言の一覧の 2 段目。🔴 案件名は入れない。
+describe('lastMessageSnippet', () => {
+  it('本文が空で案件を貼った発言は、渡された語を出す', () => {
+    expect(lastMessageSnippet({ body: '', attachedProjectId: 'p1' }, '案件を共有しました')).toBe('案件を共有しました');
+  });
+  it('本文があれば本文の冒頭（案件を貼っていても）', () => {
+    expect(lastMessageSnippet({ body: 'こちらです', attachedProjectId: 'p1' }, '案件を共有しました')).toBe('こちらです');
+    expect(lastMessageSnippet({ body: null }, '案件を共有しました')).toBe('');
   });
 });

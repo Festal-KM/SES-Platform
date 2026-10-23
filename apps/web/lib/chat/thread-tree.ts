@@ -161,6 +161,18 @@ export const MESSAGE_SEARCH_LIMIT = 20;
  * 本文の当たった箇所の前後だけを切り出す（前後 `radius` 文字。切ったら「…」）。改行は空白にする。
  * 当たらなければ先頭から。
  */
+/**
+ * ✅ 2026-10-23: 一覧の 2 段目（最後の発言の冒頭）。本文が空で案件だけを貼った発言は、渡された語（「案件を共有しました」）を出す。
+ * 🔴 案件名は入れない（一覧は案件を読める人かどうかを見ずに出すため。カードは見る人の権限で会話の中にだけ描く）。
+ */
+export function lastMessageSnippet(
+  message: { readonly body: string | null; readonly attachedProjectId?: string | null },
+  projectSharedLabel: string,
+): string {
+  if ((message.body ?? '').trim() === '' && message.attachedProjectId != null) return projectSharedLabel;
+  return messageSnippet(message.body ?? '', '', 60);
+}
+
 export function messageSnippet(body: string, q: string, radius = 40): string {
   const flat = body.replace(/\s+/g, ' ').trim();
   const index = flat.toLocaleLowerCase('ja').indexOf(q.trim().toLocaleLowerCase('ja'));

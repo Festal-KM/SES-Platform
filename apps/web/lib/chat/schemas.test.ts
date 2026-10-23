@@ -5,6 +5,8 @@ import { CHAT_MESSAGE_MAX_LENGTH, CHAT_MESSAGE_PAGE_SIZE, PAGE_SIZE_MAX } from '
 import { ISOLATION_KEYS } from '../api/isolation-keys';
 import {
   chatMessageBodySchema,
+  chatMessagePostBodySchema,
+  chatProjectCandidateQuerySchema,
   chatMessageListQuerySchema,
   chatThreadListQuerySchema,
   chatThreadParamsSchema,
@@ -34,6 +36,56 @@ describe('chatMessageBodySchema（投稿。#51）', () => {
     const parsed = chatMessageBodySchema.safeParse({ body: 'x', attachmentKey: 't/abc/def.pdf' });
     expect(parsed.success).toBe(true);
     expect(Object.keys(parsed.success ? parsed.data : {})).toEqual(['body']);
+  });
+});
+
+describe('✅ 2026-10-23 chatMessagePostBodySchema（投稿 + 案件を貼る。#51）', () => {
+  const PROJECT = '01930000-0000-7000-8000-0000000000f1';
+
+  it('本文だけの投稿は従来どおり通る（前後の空白を落とす）', () => {
+    const parsed = chatMessagePostBodySchema.safeParse({ body: '  候補日をお送りします  ' });
+    expect(parsed.success && parsed.data).toEqual({ body: '候補日をお送りします' });
+  });
+
+  it('案件を貼るときは本文を省略できる（カードだけの発言）', () => {
+    const parsed = chatMessagePostBodySchema.safeParse({ projectId: PROJECT });
+    expect(parsed.success && parsed.data).toEqual({ body: '', projectId: PROJECT });
+    expect(chatMessagePostBodySchema.safeParse({ body: '   ', projectId: PROJECT }).success).toBe(true);
+  });
+
+  it('🔴 本文も案件も無い・本文が空白だけで案件も無いなら 400', () => {
+    expect(chatMessagePostBodySchema.safeParse({}).success).toBe(false);
+    expect(chatMessagePostBodySchema.safeParse({ body: '   ' }).success).toBe(false);
+    expect(chatMessagePostBodySchema.safeParse(null).success).toBe(false);
+  });
+
+  it('🔴 案件の ID は UUID の形だけ', () => {
+    expect(chatMessagePostBodySchema.safeParse({ body: 'x', projectId: 'project-1' }).success).toBe(false);
+  });
+
+  it('🔴 本文の上限は従来と同じ', () => {
+    expect(chatMessagePostBodySchema.safeParse({ body: 'あ'.repeat(CHAT_MESSAGE_MAX_LENGTH + 1), projectId: PROJECT }).success).toBe(false);
+  });
+
+  it('🔴 取引先・テナントのキーや添付を渡しても検証後の値に残らない', () => {
+    const parsed = chatMessagePostBodySchema.safeParse({
+      body: 'x',
+      projectId: PROJECT,
+      partnerCompanyId: '01930000-0000-7000-8000-0000000000c2',
+      tenantId: '01930000-0000-7000-8000-0000000000b1',
+      attachmentKey: 't/abc/def.pdf',
+    });
+    expect(parsed.success).toBe(true);
+    expect(Object.keys(parsed.success ? parsed.data : {}).sort()).toEqual(['body', 'projectId']);
+  });
+
+  it('貼る案件の候補（#51n）は絞り込み語だけを受け、空の語は無いのと同じ', () => {
+    expect(Object.keys(chatProjectCandidateQuerySchema.shape)).toEqual(['q']);
+    const blank = chatProjectCandidateQuerySchema.safeParse({ q: '  ' });
+    expect(blank.success && blank.data.q).toBeUndefined();
+    const parsed = chatProjectCandidateQuerySchema.safeParse({ q: ' 基幹 ' });
+    expect(parsed.success && parsed.data.q).toBe('基幹');
+    expect(chatProjectCandidateQuerySchema.safeParse({ q: 'あ'.repeat(201) }).success).toBe(false);
   });
 });
 
@@ -82,6 +134,8 @@ describe('🔴 分離キーが 1 つも入っていない（`CLAUDE.md` §3.1 / 
     ['chatMessageListQuerySchema', Object.keys(chatMessageListQuerySchema.shape)],
     ['chatThreadParamsSchema', Object.keys(chatThreadParamsSchema.shape)],
     ['chatMessageBodySchema', Object.keys(chatMessageBodySchema.shape)],
+    ['chatMessagePostBodySchema', Object.keys(chatMessagePostBodySchema.shape)],
+    ['chatProjectCandidateQuerySchema', Object.keys(chatProjectCandidateQuerySchema.shape)],
   ])('%s', (_label, keys) => {
     for (const forbidden of ISOLATION_KEYS) {
       expect(keys, forbidden).not.toContain(forbidden);
