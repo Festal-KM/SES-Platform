@@ -7,12 +7,14 @@
 //   ① 並べる会社・案件・件数は、一覧と同じ読み出し（RLS が決めた母集団）から数えるだけ。ここで足さない。
 //   ② 会社の鍵は会社の会話の行の ID（`ChatThreadGroup.key`）。取引先の ID を URL に出さない。
 //   ③ スマホでは横に流れる帯、`md` 以上では縦の列（隠さない。`CLAUDE.md` §13.3）。
+//   ④ ✅ 2026-10-22: 「取引先」「案件スレッド」「連絡先」は見出しで開閉できる（`chat-rail-section.tsx`。閉じても未読の件数は出す）。
 import Link from 'next/link';
 import { t } from '@ses/i18n';
 import { ROW_HOVER_CLASSES, cn } from '@ses/ui';
 import type { ChatThreadGroup } from '../../../lib/chat/thread-tree';
 import type { ChatRoomListItem } from '../../../lib/chat/views';
 import { chatHref, type ChatListFilter } from '../../../lib/chat/screen-query';
+import { ChatRailSection } from './chat-rail-section';
 
 export type ChatRailProps = {
   readonly groups: readonly ChatThreadGroup[];
@@ -87,7 +89,6 @@ function RailLink({
   );
 }
 
-const HEADING_CLASSES = 'm-0 shrink-0 px-2 pt-3 pb-1 text-xs font-normal text-fg-muted';
 
 export function ChatRail({ groups, rooms, unreadCounts, filter, showContacts, showSaved = false }: ChatRailProps) {
   const unreadOf = (id: string) => unreadCounts[id] ?? 0;
@@ -95,6 +96,11 @@ export function ChatRail({ groups, rooms, unreadCounts, filter, showContacts, sh
   const unreadTotal = [...items.map((item) => item.id), ...rooms.map((room) => room.id)].filter((id) => unreadOf(id) > 0).length;
   const projects = items.filter((item) => item.kind === 'PROJECT');
   const is = (kind: ChatListFilter['kind']) => filter.kind === kind;
+  // ✅ 2026-10-22: 見出しを閉じたときに出す未読の件数（会話の数）。
+  const companiesUnread =
+    groups.flatMap((group) => [...(group.chat === null ? [] : [group.chat.id]), ...group.threads.map((item) => item.id)]).filter((id) => unreadOf(id) > 0).length +
+    rooms.filter((room) => room.companyKey !== null && unreadOf(room.id) > 0).length;
+  const projectsUnread = projects.filter((item) => unreadOf(item.id) > 0).length;
   return (
     <nav aria-label={t('chat.rail.label')} className="flex flex-col p-2" data-testid="chat-rail">
       <ul className="m-0 flex list-none gap-1 overflow-x-auto p-0 md:flex-col md:overflow-visible">
@@ -107,8 +113,7 @@ export function ChatRail({ groups, rooms, unreadCounts, filter, showContacts, sh
         ) : null}
       </ul>
       {groups.length === 0 ? null : (
-        <>
-          <h3 className={HEADING_CLASSES}>{t('chat.rail.companies')}</h3>
+        <ChatRailSection sectionKey="companies" heading={t('chat.rail.companies')} unread={companiesUnread}>
           <ul className="m-0 flex list-none gap-1 overflow-x-auto p-0 md:flex-col md:overflow-visible" data-testid="chat-rail-companies">
             {groups.map((group) => {
               const name = group.counterpartyName ?? t('chat.thread.unknownName');
@@ -130,11 +135,10 @@ export function ChatRail({ groups, rooms, unreadCounts, filter, showContacts, sh
               );
             })}
           </ul>
-        </>
+        </ChatRailSection>
       )}
       {projects.length === 0 ? null : (
-        <>
-          <h3 className={HEADING_CLASSES}>{t('chat.rail.projects')}</h3>
+        <ChatRailSection sectionKey="projects" heading={t('chat.rail.projects')} unread={projectsUnread}>
           <ul className="m-0 flex list-none gap-1 overflow-x-auto p-0 md:flex-col md:overflow-visible" data-testid="chat-rail-projects">
             {projects.map((item) => (
               <RailLink
@@ -149,11 +153,10 @@ export function ChatRail({ groups, rooms, unreadCounts, filter, showContacts, sh
               />
             ))}
           </ul>
-        </>
+        </ChatRailSection>
       )}
       {showContacts ? (
-        <>
-          <h3 className={HEADING_CLASSES}>{t('chat.people.contacts')}</h3>
+        <ChatRailSection sectionKey="contacts" heading={t('chat.people.contacts')} unread={0}>
           <ul className="m-0 flex list-none gap-1 p-0 md:flex-col">
             <RailLink
               href={chatHref({ filter: { kind: 'contacts' } })}
@@ -164,7 +167,7 @@ export function ChatRail({ groups, rooms, unreadCounts, filter, showContacts, sh
               testKey="contacts"
             />
           </ul>
-        </>
+        </ChatRailSection>
       ) : null}
     </nav>
   );
