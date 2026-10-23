@@ -35,6 +35,8 @@ import {
   EmptyState,
   Field,
   HEADER_HEIGHT_CLASS,
+  Icon,
+  IconButton,
   SECONDARY_LINK_CLASSES,
   Select,
   Textarea,
@@ -74,6 +76,9 @@ import {
 } from '../../../lib/chat/message-text';
 import { CHAT_FORMATS, applyChatFormat, insertChatMention, type ChatEdit, type ChatFormat } from '../../../lib/chat/markdown';
 import { ChatMessageMarkdown } from './chat-message-markdown';
+import { ChatProjectCard } from './chat-project-card';
+import { ChatProjectPicker, type ChatPickedProject } from './chat-project-picker';
+import { appendQuote, slashCommandRange } from '../../../lib/chat/project-card-text';
 import {
   CHAT_POLL_INTERVAL_MS,
   CHAT_UNDO_SEND_MS,
@@ -152,6 +157,9 @@ export type ChatConversationProps = {
 const OWN_TEMPLATE_PREFIX = 'own:';
 const MANAGE_TEMPLATES_VALUE = 'manage';
 
+/** ✅ 2026-10-23: 送信待ちの中身（本文と、貼る案件）。 */
+type PendingSend = { readonly body: string; readonly project: ChatPickedProject | null };
+
 /** 投稿の応答（`docs/05` §6.5 #51 の上位互換。`route.ts` の 🔴）。 */
 type SendResponseBody = { readonly message: ChatMessageView };
 /** 会話の取得（#50）。 */
@@ -176,13 +184,13 @@ export function ChatConversation({
 }: ChatConversationProps) {
   // 🔴 ガードは**インスタンスごと**に持つ（モジュール変数にすると、別のスレッドを開いた島が
   //    同じガードを共有し「前の送信が終わるまで送れない」状態になる）。
-  const [sendGuard] = useState(() => createSubmitGuard<'SENT' | 'MISSING' | 'FAILED'>());
+  const [sendGuard] = useState(() => createSubmitGuard<'SENT' | 'MISSING' | 'FAILED' | 'PROJECT'>());
   const [olderGuard] = useState(() => createSubmitGuard<'LOADED' | 'FAILED'>());
   const [items, setItems] = useState<readonly ChatMessageView[]>(initialMessages);
   const [nextCursor, setNextCursor] = useState<string | null>(initialNextCursor);
   const [body, setBody] = useState('');
   const [sending, setSending] = useState(false);
-  const [sendError, setSendError] = useState<'NONE' | 'FAILED' | 'MISSING'>('NONE');
+  const [sendError, setSendError] = useState<'NONE' | 'FAILED' | 'MISSING' | 'PROJECT'>('NONE');
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [olderFailed, setOlderFailed] = useState(false);
   // ✅ 2026-10-14（チャットレーン）: 会話の操作の改修。
@@ -193,7 +201,12 @@ export function ChatConversation({
   const scrollToLatestOnRender = useRef(true);
   // ✅ 2026-10-14: 新着の自動表示（`lib/chat/live.ts`）と送信の取り消し。
   const [newArrived, setNewArrived] = useState(false);
-  const [pendingSend, setPendingSend] = useState<string | null>(null);
+  const [pendingSend, setPendingSend] = useState<PendingSend | null>(null);
+  // ✅ 2026-10-23（紺野）: 案件を貼る。行頭の「/」で出るメニュー・案件を選ぶ小窓・貼る案件。
+  const [slashRange, setSlashRange] = useState<{ readonly start: number; readonly end: number } | null>(null);
+  const [slashTemplatesOpen, setSlashTemplatesOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [attachedProject, setAttachedProject] = useState<ChatPickedProject | null>(null);
   // ✅ 2026-10-22: 「書く／プレビュー」と @ の候補の開閉。
   const [composeTab, setComposeTab] = useState<'write' | 'preview'>('write');
   // ✅ 2026-10-22: スマホの見出しの「…」（書き出し・ピン留め・ミュート・情報をしまう）の開閉。
@@ -333,6 +346,37 @@ export function ChatConversation({
     const end = element?.selectionEnd ?? body.length;
     setMentionOpen(false);
     applyComposeEdit(insertChatMention(body, start, end, name));
+  }
+
+  /** ✅ 2026-10-23: 入力が変わるたびに、行頭の「/」のメニューを出すかを決める。 */
+  function trackSlash(value: string, caret: number): void {
+    const range = slashCommandRange(value, caret);
+    setSlashRange(range);
+    if (range === null) setSlashTemplatesOpen(false);
+  }
+
+  /** 行頭の「/…」を取り除いて、メニューを閉じる。 */
+  function consumeSlash(): string {
+    const range = slashRange;
+    setSlashRange(null);
+    setSlashTemplatesOpen(false);
+    if (range === null) return body;
+    const next = body.slice(0, range.start) + body.slice(range.end);
+    updateBody(next);
+    return next;
+  }
+
+  /** 「/」→「定型文」で選んだ文面を入れる（行頭の「/」を消してから）。 */
+  function insertTemplateFromSlash(text: string): void {
+    const rest = consumeSlash();
+    updateBody(rest === '' ? text : `${rest.trimEnd()}\n${text}`);
+    composeTextarea()?.focus();
+  }
+
+  /** ✅ 2026-10-23: 案件カードの「条件を引用」。入力欄の末尾に引用を足す。 */
+  function quoteIntoCompose(quote: string): void {
+    const next = appendQuote(bodyRef.current, quote).slice(0, CHAT_MESSAGE_MAX_LENGTH);
+    applyComposeEdit({ text: next, selectionStart: next.length, selectionEnd: next.length });
   }
 
   function updateBody(value: string): void {
@@ -576,7 +620,9 @@ export function ChatConversation({
     }
     return (
       <>
-        {/* ✅ 2026-10-22: 本文は書式つきで描く（`chat-message-markdown.tsx`。HTML は通さない）。段落・箇条書きを入れるので `div`。 */}
+        {/* ✅ 2026-10-22: 本文は書式つきで描く（`chat-message-markdown.tsx`。HTML は通さない）。段落・箇条書きを入れるので `div`。
+            ✅ 2026-10-23: 案件カードだけの発言（本文が空）は吹き出しを描かない。 */}
+        {text === '' ? null : (
         <div
           className={cn(
             'm-0 flex w-fit flex-col gap-2 rounded-lg px-4 py-2 text-body break-words text-fg',
@@ -595,6 +641,16 @@ export function ChatConversation({
             <ChatMessageMarkdown text={shown} messageId={item.id} mentionNames={mentionCandidates} />
           )}
         </div>
+        )}
+        {/* ✅ 2026-10-23（紺野）: 貼られた案件のカード。🔴 見る人の権限で読み直した値（読めなければ「表示できません」だけ）。 */}
+        {item.attachedProject == null ? null : (
+          <ChatProjectCard
+            messageId={item.id}
+            project={item.attachedProject}
+            labels={messages.projectCard}
+            {...(canPost ? { onQuote: quoteIntoCompose } : {})}
+          />
+        )}
         {text === null ? null : (item.reactions ?? []).length > 0 || item.edited === true || item.saved === true ? (
           // ✅ 2026-10-16: 付いているリアクションの数と「編集済み」は**常に見せる**（中身の一部なので隠さない）。
           <div className="flex flex-wrap items-center gap-2" data-testid={`chat-message-info-${item.id}`}>
@@ -724,15 +780,17 @@ export function ChatConversation({
                 {messages.markUnread}
               </Button>
             )}
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => void copyBody(item)}
-              data-testid={`chat-message-copy-${item.id}`}
-            >
-              {copiedId === item.id ? messages.copied : messages.copy}
-            </Button>
+            {text === '' ? null : (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => void copyBody(item)}
+                data-testid={`chat-message-copy-${item.id}`}
+              >
+                {copiedId === item.id ? messages.copied : messages.copy}
+              </Button>
+            )}
           </div>
         )}
       </>
@@ -745,13 +803,18 @@ export function ChatConversation({
    */
   function submit(): void {
     const trimmed = body.trim();
-    if (!canPost || trimmed === '' || sending || pendingSend !== null) return;
+    // ✅ 2026-10-23: 案件を貼っていれば本文は空でも送れる（カードだけの発言）。
+    if (!canPost || (trimmed === '' && attachedProject === null) || sending || pendingSend !== null) return;
+    const next: PendingSend = { body: trimmed, project: attachedProject };
     setSendError('NONE');
-    setPendingSend(trimmed);
+    setPendingSend(next);
     setBody('');
+    setAttachedProject(null);
+    setSlashRange(null);
+    setPickerOpen(false);
     pendingTimer.current = window.setTimeout(() => {
       pendingTimer.current = null;
-      void deliver(trimmed);
+      void deliver(next);
     }, CHAT_UNDO_SEND_MS);
   }
 
@@ -759,7 +822,10 @@ export function ChatConversation({
   function undoSend(): void {
     if (pendingTimer.current !== null) window.clearTimeout(pendingTimer.current);
     pendingTimer.current = null;
-    if (pendingSend !== null) setBody(pendingSend);
+    if (pendingSend !== null) {
+      setBody(pendingSend.body);
+      setAttachedProject(pendingSend.project);
+    }
     setPendingSend(null);
     document.getElementById(composeId)?.focus();
   }
@@ -772,7 +838,8 @@ export function ChatConversation({
     void deliver(pendingSend);
   }
 
-  async function deliver(trimmed: string): Promise<void> {
+  async function deliver(pending: PendingSend): Promise<void> {
+    const trimmed = pending.body;
     setPendingSend(null);
     setSending(true);
     setSendError('NONE');
@@ -781,10 +848,15 @@ export function ChatConversation({
         const response = await fetch(chatMessagesApiPath(threadId), {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ body: trimmed }),
+          body: JSON.stringify(pending.project === null ? { body: trimmed } : { body: trimmed, projectId: pending.project.id }),
         });
         // 🔴 404 = スレッドが見えなくなった（不存在・退出・他社化を区別しない。`docs/05` §4.8）。
         if (response.status === 404) return 'MISSING' as const;
+        // ✅ 2026-10-23: 400 で `body.projectId` = この部屋に貼れない案件（理由はサーバが書き分けない）。
+        if (response.status === 400 && pending.project !== null) {
+          const failure = (await response.json().catch(() => null)) as { readonly error?: { readonly details?: readonly string[] } } | null;
+          if (failure?.error?.details?.includes('body.projectId') === true) return 'PROJECT' as const;
+        }
         if (!response.ok) return 'FAILED' as const;
         const payload = (await response.json()) as SendResponseBody;
         // 🔴 手元で先に書き換える楽観更新をしない（サーバの応答だけが正。`S-015` の ⑦ と同じ規律）。
@@ -800,8 +872,11 @@ export function ChatConversation({
     setSending(false);
     // 🔴 送れなかった文章は入力欄に戻す（再送・修正ができるように）。
     if (outcome !== 'SENT' && bodyRef.current === '') setBody(trimmed);
+    // ✅ 2026-10-23: 貼る案件も戻す。🔴 「貼れない案件」だったときだけは戻さない（同じ失敗を繰り返さない）。
+    if (outcome !== 'SENT' && outcome !== 'PROJECT' && pending.project !== null) setAttachedProject((current) => current ?? pending.project);
     if (outcome === 'MISSING') setSendError('MISSING');
     else if (outcome === 'FAILED') setSendError('FAILED');
+    else if (outcome === 'PROJECT') setSendError('PROJECT');
   }
 
   async function loadOlder(): Promise<void> {
@@ -1226,6 +1301,92 @@ export function ChatConversation({
                   )}
                 </div>
               ) : null}
+              {/* ✅ 2026-10-23（紺野）: 行頭で「/」を打つと出る小さなメニュー（案件を貼る / 定型文）。 */}
+              {slashRange !== null && composeTab === 'write' ? (
+                <div
+                  role="group"
+                  aria-label={messages.slash.label}
+                  className="flex flex-col gap-1 border-b border-border px-2 py-2"
+                  data-testid="chat-compose-slash-menu"
+                >
+                  {slashTemplatesOpen ? (
+                    <div className="flex flex-wrap gap-1" data-testid="chat-compose-slash-templates">
+                      {[...ownTemplates, ...messages.templates].map((template) => (
+                        <Button
+                          key={`${template.id}-${template.label}`}
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => insertTemplateFromSlash(template.body)}
+                        >
+                          {template.label}
+                        </Button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap gap-1">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => {
+                          consumeSlash();
+                          setPickerOpen(true);
+                        }}
+                        data-testid="chat-compose-slash-project"
+                      >
+                        <Icon name="briefcase" />
+                        {messages.slash.project}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => setSlashTemplatesOpen(true)}
+                        data-testid="chat-compose-slash-template"
+                      >
+                        {messages.slash.template}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              ) : null}
+              {/* ✅ 2026-10-23: 貼る案件を選ぶ小窓（候補は #51n。最終の判定は投稿のサーバ側）。 */}
+              {pickerOpen ? (
+                <ChatProjectPicker
+                  threadId={threadId}
+                  labels={messages.pasteProject}
+                  statuses={messages.projectCard.statuses}
+                  onPick={(project) => {
+                    setAttachedProject(project);
+                    setPickerOpen(false);
+                    if (sendError === 'PROJECT') setSendError('NONE');
+                    composeTextarea()?.focus();
+                  }}
+                  onClose={() => setPickerOpen(false)}
+                />
+              ) : null}
+              {/* ✅ 2026-10-23: 送信で一緒に送る案件（外せる）。 */}
+              {attachedProject === null ? null : (
+                <div className="flex items-center gap-2 border-b border-border px-3 py-1" data-testid="chat-compose-attached-project">
+                  <Icon name="briefcase" className="text-fg-muted" />
+                  <span className="shrink-0 text-xs text-fg-muted">{messages.pasteProject.attached}</span>
+                  <span className="min-w-0 truncate text-xs font-medium text-fg">{attachedProject.name}</span>
+                  <IconButton
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="ml-auto"
+                    icon={<Icon name="x" />}
+                    aria-label={messages.pasteProject.remove}
+                    onClick={() => setAttachedProject(null)}
+                    data-testid="chat-compose-attached-project-remove"
+                  />
+                </div>
+              )}
               {composeTab === 'write' ? (
                 <Textarea
                   id={composeId}
@@ -1239,7 +1400,10 @@ export function ChatConversation({
                     'overflow-y-auto rounded-none border-0',
                     formatOpen ? 'min-h-20 max-h-72 resize-y' : 'min-h-11 max-h-40',
                   )}
-                  onChange={(event) => updateBody(event.target.value)}
+                  onChange={(event) => {
+                    updateBody(event.target.value);
+                    trackSlash(event.target.value, event.target.selectionStart);
+                  }}
                   // ✅ 2026-10-13（Lark 寄せ）: Enter で送信、Shift+Enter で改行。
                   // 🔴 日本語入力の変換確定の Enter では送らない（`lib/chat/layout.ts` の `isSendKey`）。
                   onKeyDown={(event) => {
@@ -1247,6 +1411,13 @@ export function ChatConversation({
                     if ((event.metaKey || event.ctrlKey) && (event.key === 'b' || event.key === 'i')) {
                       event.preventDefault();
                       formatCompose(event.key === 'b' ? 'bold' : 'italic');
+                      return;
+                    }
+                    // ✅ 2026-10-23: 「/」のメニューが出ていれば、Esc はメニューを閉じるだけ。
+                    if (event.key === 'Escape' && slashRange !== null) {
+                      event.preventDefault();
+                      setSlashRange(null);
+                      setSlashTemplatesOpen(false);
                       return;
                     }
                     // ✅ 2026-10-14: Esc で入力欄を離れる。
@@ -1298,7 +1469,11 @@ export function ChatConversation({
           )}
           {sendError === 'NONE' ? null : (
             <Alert variant="danger" data-testid="chat-compose-error">
-              {sendError === 'MISSING' ? messages.composeThreadMissing : messages.composeFailed}
+              {sendError === 'MISSING'
+                ? messages.composeThreadMissing
+                : sendError === 'PROJECT'
+                  ? messages.pasteProject.notPastable
+                  : messages.composeFailed}
             </Alert>
           )}
           <div className="mt-2 flex flex-wrap items-center gap-2">

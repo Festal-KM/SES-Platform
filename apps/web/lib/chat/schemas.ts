@@ -10,6 +10,7 @@ import { CHAT_MESSAGE_MAX_LENGTH, CHAT_MESSAGE_PAGE_SIZE, PAGE_CURSOR_MAX_LENGTH
 import { z } from 'zod';
 import { assertNoIsolationKeys, type AssertNoIsolationKeys } from '../api/isolation-keys';
 import { cursorPageQuerySchema, idCursorPageQuerySchema } from '../api/pagination';
+import { optionalFilter } from '../api/query-filters';
 import { isChatThreadCursor } from './thread-cursor';
 import { CHAT_REACTIONS } from './views';
 
@@ -63,6 +64,36 @@ export const chatMessageBodySchema = z.object({
 });
 
 export type ChatMessageBody = z.infer<typeof chatMessageBodySchema>;
+
+/**
+ * ✅ 2026-10-23（紺野）: `POST /api/threads/{id}/messages`（#51）の body。本文に加えて、**貼る案件の ID を 1 つ**受ける。
+ *
+ * 🔴 **案件を貼るときは本文を省略できる**（カードだけの発言）。どちらも無い・本文が空白だけでカードも無いなら 400。
+ * 🔴 `projectId` は「どの案件か」の指定だけ。**貼れるかどうかはサーバが決める**（送る人が RLS で読めるか・部屋の取引先に
+ *    公開中か。`project-cards.ts` の `requirePastableProject`）。分離キー（取引先・テナント）は受け取らない。
+ * 🔴 編集（`PATCH`）は従来の `chatMessageBodySchema`（本文だけ）のまま —— 貼った案件を後から差し替える口は作らない。
+ */
+export const chatMessagePostBodySchema = z
+  .object({
+    body: z.string().trim().max(CHAT_MESSAGE_MAX_LENGTH).default(''),
+    projectId: z.uuid().optional(),
+  })
+  .refine((value) => value.body.length > 0 || value.projectId !== undefined, { path: ['body'] });
+
+export type ChatMessagePostBody = z.infer<typeof chatMessagePostBodySchema>;
+export type ChatMessagePostBodyIsolationGuard = AssertNoIsolationKeys<ChatMessagePostBody>;
+assertNoIsolationKeys(['body', 'projectId'], 'chatMessagePostBodySchema');
+
+/** 案件名の絞り込み語の上限（案件一覧のフリーワードと同じ 200 文字）。 */
+const CHAT_PROJECT_CANDIDATE_Q_MAX_LENGTH = 200;
+
+/** ✅ 2026-10-23: `GET /api/threads/{id}/projects`（#51n。貼る案件の候補）。案件名で絞り込む語だけを受ける。 */
+export const chatProjectCandidateQuerySchema = z.object({
+  q: optionalFilter(z.string().trim().min(1).max(CHAT_PROJECT_CANDIDATE_Q_MAX_LENGTH)),
+});
+export type ChatProjectCandidateQuery = z.infer<typeof chatProjectCandidateQuerySchema>;
+export type ChatProjectCandidateQueryIsolationGuard = AssertNoIsolationKeys<ChatProjectCandidateQuery>;
+assertNoIsolationKeys(Object.keys(chatProjectCandidateQuerySchema.shape), 'chatProjectCandidateQuerySchema');
 
 /** 🔴 分離キーが混入したらコンパイルエラーになる。 */
 export type ChatThreadListQueryIsolationGuard = AssertNoIsolationKeys<ChatThreadListQuery>;

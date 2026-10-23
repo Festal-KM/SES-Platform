@@ -27,6 +27,10 @@
 - 🔴 `PURGE_SPEC` の `rows: 'ALL'` は `engineer_careers` に続いて 2 表目（`packages/config/src/retention.test.ts` の期待値も直した）。
 - 分離テスト `tests/isolation/chat-saved-templates.test.ts`（16 件）と `tenant-purge` / `rls-enforced`（表の数 60 → 62）をローカルで回して緑。
 
+### ⏳ 2026-10-23 チャット: 案件をチャットに貼る（PR `chat/project-card`）
+
+- `messages.attached_project_id` を 1 列足した（複合 FK → `projects(tenant_id, id)`、`ON DELETE SET NULL (attached_project_id)`。migration `20261023010000` は既存行を書き換えない）。カードは**見る人の RLS で読み直す**。貼れる条件はサーバ（`apps/web/lib/chat/project-cards.ts`）。新 API `GET /api/threads/{id}/projects`（#51n）。分離テスト `tests/isolation/chat-project-card.test.ts`（19 件）をローカルで緑。宮田さんへの確認（列を足す・貼れる条件）は PR 本文。
+
 ### 🔴 人間の判断を待っているもの（着手できない）
 
 | Issue | 何を待っているか |

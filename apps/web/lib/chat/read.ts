@@ -67,6 +67,7 @@ import {
   type ChatThreadRow,
   summarizeReactions,
 } from './views';
+import { readAttachedProjectCards } from './project-cards';
 
 /** `withTenant` が `fn` に渡すクライアント。 */
 type TenantDb = Parameters<Parameters<typeof withTenant<void>>[1]>[0];
@@ -92,6 +93,8 @@ export const CHAT_MESSAGE_SELECT = {
   sentAt: true,
   editedAt: true,
   deletedAt: true,
+  // ✅ 2026-10-23: 貼った案件の ID（カードは読む人の RLS で読み直す。応答には ID を直接載せない）。
+  attachedProjectId: true,
 } as const;
 
 export type SelectedChatThreadRow = ChatThreadRow & { readonly partnerCompanyId: string };
@@ -433,7 +436,10 @@ async function resolveSenderNames(
  */
 export async function projectChatMessages(
   ctx: AuthenticatedTenantCtx,
-  db: Pick<TenantDb, 'user' | 'partnerCompany' | 'tenant' | 'chatMessageReaction' | 'chatSavedMessage' | 'chatUserStatus'>,
+  db: Pick<
+    TenantDb,
+    'user' | 'partnerCompany' | 'tenant' | 'chatMessageReaction' | 'chatSavedMessage' | 'chatUserStatus' | 'project' | 'projectRequirement'
+  >,
   rows: readonly ChatMessageRow[],
 ): Promise<readonly ChatMessageView[]> {
   if (rows.length === 0) return [];
@@ -456,6 +462,12 @@ export async function projectChatMessages(
   const tenant = await db.tenant.findFirst({ select: { name: true } });
   // ✅ 2026-10-22: 送信者の今のひとこと状態。🔴 境界は RLS が決める（`user-status.ts` ①。`where` に書き足さない）。
   const statuses = await readChatUserStatuses(db, rows.map((row) => row.senderUserId));
+  // ✅ 2026-10-23: 案件カード。🔴 **読む人の RLS で** projects（C4）を読み直す（貼った人の権限で描かない）。
+  //    消えた発言（削除・保持期限）の案件は読みに行かない（カードも出さない）。
+  const cards = await readAttachedProjectCards(
+    db,
+    rows.filter((row) => row.body !== null && row.deletedAt == null).map((row) => row.attachedProjectId ?? null),
+  );
   return rows.map((row) =>
     chatMessageView(row, {
       senderName: senderNames.get(row.senderUserId) ?? null,
@@ -469,6 +481,7 @@ export async function projectChatMessages(
       viewerUserId: ctx.userId,
       reactions: reactions.get(row.id) ?? [],
       saved: savedIds.has(row.id),
+      ...(row.attachedProjectId == null ? {} : { attachedProject: cards.get(row.attachedProjectId) }),
     }),
   );
 }
@@ -482,7 +495,10 @@ export async function projectChatMessages(
  */
 async function readMessagePage(
   ctx: AuthenticatedTenantCtx,
-  db: Pick<TenantDb, 'chatThread' | 'message' | 'user' | 'partnerCompany' | 'tenant' | 'chatMessageReaction' | 'chatSavedMessage' | 'chatUserStatus'>,
+  db: Pick<
+    TenantDb,
+    'chatThread' | 'message' | 'user' | 'partnerCompany' | 'tenant' | 'chatMessageReaction' | 'chatSavedMessage' | 'chatUserStatus' | 'project' | 'projectRequirement'
+  >,
   threadId: string,
   query: ChatMessageListQuery,
 ): Promise<ChatMessageListView> {
