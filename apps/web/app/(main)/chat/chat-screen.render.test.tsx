@@ -769,6 +769,15 @@ describe('⑯: リアクション（2026-10-16、チャットレーン）', () =
     expect(html).toContain(`data-testid="chat-message-reaction-add-${MESSAGE_OTHER.id}"`);
   });
 
+  it('✅ 2026-10-22: 絵文字のリアクションは絵文字 + 件数で出し、読み上げ名を aria-label に持つ（閲覧専用も絵文字で出す）', () => {
+    const withEmoji = { ...MESSAGE_OTHER, reactions: [{ reaction: 'THUMBS_UP' as const, count: 2, mine: true }] };
+    const html = renderConversation({ initialMessages: [withEmoji] });
+    const tag = new RegExp(`<button [^>]*data-testid="chat-message-reaction-${MESSAGE_OTHER.id}-THUMBS_UP"[^>]*>(.*?)</button>`, 's').exec(html);
+    expect(tag?.[0] ?? '').toContain(`aria-label="${t('chat.reaction.THUMBS_UP')} 2"`);
+    expect(tag?.[1] ?? '').toContain('👍 2');
+    expect(renderConversation({ initialMessages: [withEmoji], canPost: false })).toContain('👍 2');
+  });
+
   it('🔴 閲覧専用には件数を文字で出すだけ（押せないボタン・選択欄を描かない）', () => {
     const html = renderConversation({ initialMessages: [WITH_REACTIONS], canPost: false });
     expect(html).toMatch(new RegExp(`<span [^>]*data-testid="chat-message-reaction-${MESSAGE_OTHER.id}-OK"`));

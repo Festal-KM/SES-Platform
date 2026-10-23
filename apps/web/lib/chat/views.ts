@@ -189,8 +189,15 @@ export const CHAT_MESSAGE_VIEW_KEYS = [
   'saved',
 ] as const;
 
-/** ✅ 2026-10-16: リアクションの種類（業務の短い語 4 つ。絵文字は使わない = UI_GUIDELINES §1。DB の CHECK と同じ）。 */
-export const CHAT_REACTIONS = ['OK', 'THANKS', 'CHECKING', 'DONE'] as const;
+/**
+ * ✅ 2026-10-16: リアクションの種類（業務の短い語 4 つ）。
+ * ✅ 2026-10-22（紺野「スタンプとかもちゃんと入れて」）: 絵文字 12 種を足した（UI_GUIDELINES §1 の例外。チャットのリアクションだけ）。
+ * 🔴 DB の CHECK（migration 20261022030000）と同じ並び。値は英字の名前で、絵文字への置き換えは `reactions.ts`。
+ * 🔴 並びは「絵文字 → 語」の表示順でもある（件数のまとめもこの順）。
+ */
+export const CHAT_REACTION_EMOJI_KINDS = ['THUMBS_UP', 'PRAY', 'TADA', 'SMILE', 'JOY', 'EYES', 'BOW', 'SWEAT', 'CHECK', 'HEART', 'FIRE', 'CLAP'] as const;
+export const CHAT_REACTION_WORD_KINDS = ['OK', 'THANKS', 'CHECKING', 'DONE'] as const;
+export const CHAT_REACTIONS = [...CHAT_REACTION_EMOJI_KINDS, ...CHAT_REACTION_WORD_KINDS] as const;
 export type ChatReactionKind = (typeof CHAT_REACTIONS)[number];
 
 /** リアクション 1 種類ぶん。 */
