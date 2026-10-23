@@ -30,6 +30,7 @@
 //
 // 🔴 本モジュールは Next.js / Auth.js に依存しない（分離テストがサーバを立てずに同じ経路を実行できる。
 //    `lib/proposals/list.ts` と同方針）。
+import { t } from '@ses/i18n';
 import { freeWordFilter, readDmPeerReadMessageIds, withTenant, type AuthenticatedTenantCtx } from '@ses/db';
 import { requireFound, ValidationError } from '../api/errors';
 import { buildCursorPage, takeForCursorPage, type CursorPage } from '../api/pagination';
@@ -39,6 +40,7 @@ import {
   MESSAGE_SEARCH_MIN_LENGTH,
   buildThreadTree,
   companyKeysOf,
+  lastMessageSnippet,
   messageSnippet,
   type ChatThreadGroup,
   type ChatThreadSort,
@@ -273,11 +275,11 @@ async function readThreadTree(
           where: { threadId: { in: threadIds } },
           distinct: ['threadId'],
           orderBy: [{ threadId: 'asc' }, { sentAt: 'desc' }, { id: 'desc' }],
-          select: { threadId: true, senderPartnerCompanyId: true, body: true },
+          select: { threadId: true, senderPartnerCompanyId: true, body: true, attachedProjectId: true },
         });
   // ✅ 2026-10-19: 一覧の 2 段目（最後の発言の冒頭）。🔴 読めた発言だけ（C6）。削除・保持期限で本文が無いものは空。
   const lastSnippets: Record<string, string> = Object.fromEntries(
-    lastMessages.map((message) => [message.threadId, messageSnippet(message.body ?? '', '', 60)]),
+    lastMessages.map((message) => [message.threadId, lastMessageSnippet(message, t('chat.snippet.projectShared'))]),
   );
   // ✅ 2026-10-22（紺野「要返信はいらない」）: 要返信（最後の発言が相手から）の計算をやめた。「保存済み」に置き換え。
   // 🔴 返信が早い取引先は**ホストにだけ**（取引先には他社との比較を出さない）。
