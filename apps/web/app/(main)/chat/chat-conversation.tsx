@@ -655,7 +655,13 @@ export function ChatConversation({
             aria-label={messages.messageActions}
             className={cn(
               'flex flex-wrap items-center gap-2',
-              keyboardNav || hoveredId === item.id || confirmDeleteId === item.id ? null : 'pointer-fine:invisible pointer-coarse:hidden',
+              keyboardNav
+                ? null
+                : hoveredId === item.id || confirmDeleteId === item.id
+                  ? // ✅ 2026-10-22（Teams・Slack の参考）: マウスの機器では発言の右上に浮かべる（場所を取らない = 発言の間が空かない）。
+                    //    指の機器では従来どおり発言の下に並べる。
+                    'pointer-fine:absolute pointer-fine:-top-4 pointer-fine:right-0 pointer-fine:z-10 pointer-fine:gap-1 pointer-fine:rounded-md pointer-fine:border pointer-fine:border-border pointer-fine:bg-bg pointer-fine:px-1'
+                  : 'hidden',
             )}
             data-testid={`chat-message-actions-${item.id}`}
           >
@@ -969,7 +975,8 @@ export function ChatConversation({
         ) : (
           <ol
             aria-label={messages.listLabel}
-            className="m-0 flex list-none flex-col gap-3 p-0"
+            // ✅ 2026-10-22（Teams の参考）: 発言どうしの間隔を詰める。同じ人の続きは 4px、別の人の発言の前だけ 12px 空ける（li の mt）。
+            className="m-0 flex list-none flex-col gap-1 p-0"
             data-testid="chat-messages"
             onMouseLeave={() => setHoveredId(null)}
           >
@@ -1032,7 +1039,7 @@ export function ChatConversation({
                     data-own="true"
                     data-layout="chat"
                     data-continued={continued ? 'true' : 'false'}
-                    className={cn('flex flex-col items-end gap-1', fadeClass(item.id))}
+                    className={cn('relative flex flex-col items-end gap-1', continued ? null : 'mt-3', fadeClass(item.id))}
                     onMouseEnter={() => setHoveredId(item.id)}
                     onClick={(event) => selectOnTouch(event, item.id)}
                   >
@@ -1065,17 +1072,21 @@ export function ChatConversation({
                 data-testid={`chat-message-${item.id}`}
                 data-own={item.own ? 'true' : 'false'}
                 data-continued={continued ? 'true' : 'false'}
-                className={cn('flex gap-3', fadeClass(item.id))}
+                className={cn('relative flex gap-3', continued ? null : 'mt-3', fadeClass(item.id))}
                 onMouseEnter={() => setHoveredId(item.id)}
                 onClick={(event) => selectOnTouch(event, item.id)}
               >
-                {/* 🔴 続きの発言はアバターを見えなくするが、幅は残す（本文の左端をそろえる）。 */}
-                <Avatar
-                  size="md"
-                  initials={displayInitials(item.senderName ?? item.senderCompanyName ?? '?')}
-                  title={item.senderName ?? messages.unknownName}
-                  className={continued ? 'invisible' : undefined}
-                />
+                {/* 🔴 続きの発言はアバターを出さず、幅だけ残す（本文の左端をそろえる）。
+                    ✅ 2026-10-22: 見えないアバターで高さまで取っていたので、幅だけの詰め物にした（続きの行が詰まる）。 */}
+                {continued ? (
+                  <span aria-hidden="true" className="w-9 shrink-0" />
+                ) : (
+                  <Avatar
+                    size="md"
+                    initials={displayInitials(item.senderName ?? item.senderCompanyName ?? '?')}
+                    title={item.senderName ?? messages.unknownName}
+                  />
+                )}
                 <div className="flex min-w-0 flex-1 flex-col gap-1">
                   {continued ? (
                     // 🔴 読み上げでは誰の発言かを残す（見た目だけ省く）。
