@@ -10,7 +10,7 @@
 // 🔴 たたんでも中身は消さない（`hidden` は `md:block` で戻す。`CLAUDE.md` §13.3）。
 import Link from 'next/link';
 import { useEffect, useState, type ReactNode } from 'react';
-import { Button, cn } from '@ses/ui';
+import { Button, Icon, IconButton, cn } from '@ses/ui';
 
 export type ChatRailTab = {
   readonly key: 'all' | 'unread' | 'saved';
@@ -46,12 +46,12 @@ export function ChatRailToggle({ label, closeLabel, collapseLabel, tabs, childre
   }, []);
   return (
     <div data-testid="chat-rail-toggle">
-      <Button variant="ghost" className="hidden min-h-11 w-full md:flex" aria-expanded={!collapsed} aria-label={collapseLabel} onClick={() => {
+      <IconButton icon={<Icon name={collapsed ? 'chat-rail-open' : 'chat-rail-close'} />} title={collapseLabel} variant="ghost" className="hidden min-h-11 w-full md:flex" aria-expanded={!collapsed} aria-label={collapseLabel} onClick={() => {
         const next = !collapsed;
         setCollapsed(next);
         document.querySelector('[data-chat-rail-container]')?.setAttribute('data-collapsed', String(next));
         try { localStorage.setItem('ses.chat.rail.collapsed', next ? '1' : '0'); } catch { /* 開閉は続ける。 */ }
-      }} data-testid="chat-rail-desktop-toggle"><span aria-hidden="true">{collapsed ? '»' : '«'}</span></Button>
+      }} data-testid="chat-rail-desktop-toggle" />
       <div className="flex items-center gap-2 p-2 md:hidden">
         <nav className="flex min-w-0 flex-1 rounded-md bg-bg-inset p-1" data-testid="chat-rail-tabs">
           {tabs.map((tab) => (

@@ -24,6 +24,7 @@ import {
   CHAT_THREAD_ROW_HEIGHT_CLASS,
   EmptyState,
   Input,
+  Icon,
   PRIMARY_LINK_CLASSES,
   ROW_HOVER_CLASSES,
   SECONDARY_LINK_CLASSES,
@@ -220,10 +221,12 @@ function Row({ view, context }: { readonly view: RowView; readonly context: RowC
         besideHref === null || openBesideLabel === undefined ? null : (
           <Link
             href={besideHref}
-            className={cn(SECONDARY_LINK_CLASSES, 'flex shrink-0 items-center whitespace-nowrap px-2 text-xs')}
+            aria-label={openBesideLabel}
+            title={openBesideLabel}
+            className={cn(SECONDARY_LINK_CLASSES, 'flex min-h-11 min-w-11 shrink-0 items-center justify-center px-2 text-xs')}
             data-testid={`chat-thread-open-beside-${view.id}`}
           >
-            {openBesideLabel}
+            <Icon name="chat-open-beside" /><span className="sr-only">{openBesideLabel}</span>
           </Link>
         )
       }

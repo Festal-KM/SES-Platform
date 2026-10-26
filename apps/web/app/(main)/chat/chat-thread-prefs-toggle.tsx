@@ -7,7 +7,7 @@
 // 🔴 `@ses/db` / `@ses/i18n` を値 import しない。語は props から。
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Button } from '@ses/ui';
+import { Icon, IconButton } from '@ses/ui';
 import { chatThreadPrefsApiPath } from '../../../lib/chat/screen-query';
 
 export type ChatThreadPrefsToggleProps = {
@@ -37,26 +37,28 @@ export function ChatThreadPrefsToggle({ threadId, prefs, labels }: ChatThreadPre
 
   return (
     <span className="flex shrink-0 flex-col items-stretch gap-1 md:ml-auto md:flex-row md:items-center">
-      <Button
+      <IconButton
         type="button"
-        variant="ghost"
-        size="sm"
+        variant={current.pinned ? 'secondary' : 'ghost'}
+        className="h-11 w-11"
+        icon={<Icon name="chat-pin" />}
+        aria-label={current.pinned ? labels.unpin : labels.pin}
+        title={current.pinned ? labels.unpin : labels.pin}
         aria-pressed={current.pinned}
         onClick={() => void toggle('pinned')}
         data-testid={`chat-thread-pin-${threadId}`}
-      >
-        {current.pinned ? labels.unpin : labels.pin}
-      </Button>
-      <Button
+      />
+      <IconButton
         type="button"
-        variant="ghost"
-        size="sm"
+        variant={current.muted ? 'secondary' : 'ghost'}
+        className="h-11 w-11"
+        icon={<Icon name="chat-mute" />}
+        aria-label={current.muted ? labels.unmute : labels.mute}
+        title={current.muted ? labels.unmute : labels.mute}
         aria-pressed={current.muted}
         onClick={() => void toggle('muted')}
         data-testid={`chat-thread-mute-${threadId}`}
-      >
-        {current.muted ? labels.unmute : labels.mute}
-      </Button>
+      />
     </span>
   );
 }

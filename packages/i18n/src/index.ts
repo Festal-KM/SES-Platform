@@ -4619,6 +4619,7 @@ const ja = {
   'chat.message.purged': '本文は削除されています',
   'chat.message.own': '自社',
   'chat.compose.label': 'メッセージ',
+  'chat.compose.placeholderSuffix': ' へのメッセージ',
   'chat.compose.placeholder': 'メッセージを入力',
   'chat.compose.hint': 'このスレッドの参加会社にだけ表示されます。',
   // ✅ 2026-10-22（紺野「こういうチャット枠が必要だよね」= GitHub のコメント欄）: 書式ボタン・書く／プレビュー・@。

@@ -25,6 +25,7 @@ export type ChatConversationMessages = {
   readonly backToList: string;
   readonly composeLabel: string;
   readonly composePlaceholder: string;
+  readonly composePlaceholderSuffix: string;
   readonly composeHint: string;
   /** ✅ 2026-10-22: 書式ボタン・書く／プレビュー・@（GitHub のコメント欄に寄せた）。 */
   readonly composeToolbar: string;
@@ -151,6 +152,7 @@ export function chatConversationMessages(): ChatConversationMessages {
     backToList: t('chat.backToList'),
     composeLabel: t('chat.compose.label'),
     composePlaceholder: t('chat.compose.placeholder'),
+    composePlaceholderSuffix: t('chat.compose.placeholderSuffix'),
     composeHint: t('chat.compose.hint'),
     composeToolbar: t('chat.compose.toolbar'),
     headerMenu: t('chat.header.menu'),
