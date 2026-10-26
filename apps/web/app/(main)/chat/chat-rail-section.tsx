@@ -44,7 +44,7 @@ export function ChatRailSection({ sectionKey, heading, unread, children }: ChatR
   const panelId = `chat-rail-section-${sectionKey}`;
   return (
     <section data-testid={`chat-rail-section-${sectionKey}`}>
-      <h3 className="m-0">
+      <h3 className="m-0 md:in-[[data-collapsed=true]]:hidden">
         <button
           type="button"
           aria-label={heading}
@@ -57,7 +57,7 @@ export function ChatRailSection({ sectionKey, heading, unread, children }: ChatR
           <span aria-hidden="true" className="w-3 shrink-0">
             {closed ? '▸' : '▾'}
           </span>
-          <span className="min-w-0 flex-1 truncate"><span className="md:in-[[data-collapsed=true]]:hidden">{heading}</span><span aria-hidden="true" className="hidden md:in-[[data-collapsed=true]]:inline">{heading.slice(0, 1)}</span></span>
+          <span className="min-w-0 flex-1 truncate">{heading}</span>
           {closed && unread > 0 ? (
             <span className="shrink-0 rounded-full bg-danger px-1 text-xs font-semibold text-bg" data-testid={`chat-rail-section-unread-${sectionKey}`}>
               {String(unread)}
@@ -65,7 +65,8 @@ export function ChatRailSection({ sectionKey, heading, unread, children }: ChatR
           ) : null}
         </button>
       </h3>
-      <div id={panelId} className={cn(closed ? 'hidden' : 'block')}>
+      {/* 列を畳んだ間は節の開閉を適用せず、印と未読を残す。 */}
+      <div id={panelId} className={cn(closed ? 'hidden' : 'block', 'md:in-[[data-collapsed=true]]:block')}>
         {children}
       </div>
     </section>

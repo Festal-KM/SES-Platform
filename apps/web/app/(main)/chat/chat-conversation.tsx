@@ -1215,21 +1215,20 @@ export function ChatConversation({
                     // 🔴 読み上げでは誰の発言かを残す（見た目だけ省く）。
                     <span className="sr-only">{item.senderName ?? messages.unknownName}</span>
                   ) : (
-                    <p className="m-0 flex flex-wrap items-baseline gap-2">
+                    <p className="m-0 flex flex-wrap items-baseline gap-x-2 gap-y-1">
                       <span className="text-body font-bold text-fg" data-testid={`chat-message-sender-${item.id}`}>
                         {item.senderName ?? messages.unknownName}
                       </span>
-                      <span className="text-xs text-fg-muted">
-                        {item.senderCompanyName ?? messages.unknownName}
+                      <span className="min-w-0 text-xs text-fg-muted">
+                        <span>{item.senderCompanyName ?? messages.unknownName}</span>
+                        {item.own ? <span className="ml-2">{messages.own}</span> : null}
+                        {/* 会社と状態を同じ行に流し、狭い画面でも補助情報の段を増やさない。 */}
+                        {item.senderStatus == null || item.senderStatus === '' ? null : (
+                          <span className="ml-2 text-xs text-fg-muted" data-testid={`chat-message-status-${item.id}`}>
+                            {item.senderStatus}
+                          </span>
+                        )}
                       </span>
-                      {item.own ? <span className="text-xs text-fg-muted">{messages.own}</span> : null}
-                      {/* ✅ 2026-10-22（紺野「自分が入ってるチャットにも共通で表示しないと」）: 送信者の今のひとこと状態。
-                          🔴 どの部屋でも同じ札（DM の見出し・会社グループ・スレッド・グループ）。読めるかは RLS が決める。 */}
-                      {item.senderStatus == null || item.senderStatus === '' ? null : (
-                        <span className={STATUS_CHIP_CLASSES} data-testid={`chat-message-status-${item.id}`}>
-                          {item.senderStatus}
-                        </span>
-                      )}
                       {time}
                     </p>
                   )}

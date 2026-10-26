@@ -163,7 +163,7 @@ describe('④ 発言の名前の横の状態（どの部屋でも）', () => {
   const WITH = '01930000-0000-7000-8000-00000000f301';
   const WITHOUT = '01930000-0000-7000-8000-00000000f302';
 
-  it('会社グループでも、状態のある送信者には札を出し、無い送信者には何も描かない', () => {
+  it('会社グループでも、状態のある送信者には背景のない補助文字を出し、無い送信者には何も描かない', () => {
     const html = renderToStaticMarkup(
       createElement(ChatConversation, {
         threadId: COMPANY_THREAD,
@@ -175,6 +175,8 @@ describe('④ 発言の名前の横の状態（どの部屋でも）', () => {
       }),
     );
     expect(html).toContain(`data-testid="chat-message-status-${WITH}"`);
+    expect(html).toContain(`class="ml-2 text-xs text-fg-muted" data-testid="chat-message-status-${WITH}"`);
+    expect(html).toContain('flex-wrap items-baseline gap-x-2 gap-y-1');
     expect(html).toContain(STATUS);
     expect(html).not.toContain(`data-testid="chat-message-status-${WITHOUT}"`);
   });
