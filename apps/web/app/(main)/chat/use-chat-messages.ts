@@ -18,13 +18,25 @@ type ChatMessagesOptions = {
   readonly setItems: Dispatch<SetStateAction<readonly ChatMessageView[]>>;
   readonly setNewArrived: Dispatch<SetStateAction<boolean>>;
   readonly initialAnnouncement: ChatAnnouncementView | null;
+  /**
+   * ✅ 2026-10-26（#164 の 2 / #166 の 3）: 取得してよいか（実際に画面に見えていて、読めなくなっていない）。
+   * 🔴 スマホで隠れている列・横スクロールの外の列は取りに行かない。
+   */
+  readonly active: boolean;
+  /** ✅ 2026-10-26（#164 の 2）: 取得が 404（部屋から外れた・見えなくなった）だったときに呼ぶ。 */
+  readonly onUnavailable: () => void;
 };
 
 // 発言とアナウンスの定期取得は、従来と同じタイマーと破棄条件を共有する。
 export function useChatMessages({
   threadId, initialNextCursor, itemsRef, awayRef, scrollToLatestOnRender,
-  setItems, setNewArrived, initialAnnouncement,
+  setItems, setNewArrived, initialAnnouncement, active, onUnavailable,
 }: ChatMessagesOptions) {
+  // タイマーを張り直さずに最新の値を読むため（張り直すと 15 秒の間隔がずれる）。
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  const onUnavailableRef = useRef(onUnavailable);
+  onUnavailableRef.current = onUnavailable;
   // ✅ 2026-10-26: アナウンス（帯）。🔴 手元で先に書き換えない（サーバの応答だけが正）。
   const [announcement, setAnnouncement] = useState<ChatAnnouncementView | null>(initialAnnouncement);
   /** ✅ 2026-10-26（Codex のレビュー）: アナウンスの操作の世代（古い読み直しの応答を捨てるため）。 */
@@ -40,7 +52,7 @@ export function useChatMessages({
   useEffect(() => {
     let active = true;
     const poll = async (): Promise<void> => {
-      if (document.visibilityState !== 'visible') return;
+      if (document.visibilityState !== 'visible' || !activeRef.current) return;
       try {
         // ✅ 2026-10-26（Codex のレビュー）: アナウンスは発言の取得とは切り離して読み直す。
         //    🔴 404（部屋から外れた・見えなくなった）なら帯を消す —— 前に見えていた本文を画面に残さない。
@@ -60,7 +72,13 @@ export function useChatMessages({
           })
           .catch(() => undefined);
         const response = await fetch(chatMessagesApiPath(threadId), { cache: 'no-store' });
-        if (!active || !response.ok) return;
+        if (!active || !activeRef.current) return;
+        // ✅ 2026-10-26（#164 の 2）: 🔴 404 = 部屋から外れた・見えなくなった。手元の本文を残さない。
+        if (response.status === 404) {
+          onUnavailableRef.current();
+          return;
+        }
+        if (!response.ok) return;
         const payload = (await response.json()) as MessagePageBody;
         // ✅ 2026-10-16: 手元の発言のリアクションも取り直した値に揃える。
         const refreshed = withLatestReactions(itemsRef.current, payload.items);
@@ -103,8 +121,13 @@ export function useChatMessages({
             cache: 'no-store',
           },
         );
+        if (response.status === 404) {
+          onUnavailableRef.current();
+          return 'LOADED' as const;
+        }
         if (!response.ok) return 'FAILED' as const;
         const payload = (await response.json()) as MessagePageBody;
+        if (!activeRef.current) return 'LOADED' as const;
         // 🔴 取得済みの**上**に足す（置き換えない）。同じ行が再び来たら 1 行に畳む。
         setItems((current) => {
           const seen = new Set(current.map((item) => item.id));

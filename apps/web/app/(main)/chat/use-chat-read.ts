@@ -13,10 +13,12 @@ type ChatReadOptions = {
   readonly peerReadMessageId: string | null;
   readonly awayFromLatest: boolean;
   readonly threadId: string;
+  /** ✅ 2026-10-26（#166 の 3）: 実際に画面に見えていて、読めなくなっていないときだけ既読にする。 */
+  readonly active: boolean;
 };
 
 export function useChatRead({
-  initialMessages, lastReadMessageId, items, peerReadMessageId, awayFromLatest, threadId,
+  initialMessages, lastReadMessageId, items, peerReadMessageId, awayFromLatest, threadId, active,
 }: ChatReadOptions) {
   // ✅ 2026-10-16: 既読・未読（`lib/chat/read-state.ts` / `unread-marker.ts`）。
   //    線は開いた時点で決め、読んでも動かさない。「ここから未読にする」を押したらその発言へ動かす。
@@ -31,7 +33,8 @@ export function useChatRead({
   // 🔴 既読は戻す方向に動かない（API 側でも守る）。送れなくても次の機会に任せる（画面は壊さない）。
   useEffect(() => {
     const latest = items.at(-1);
-    if (latest === undefined || awayFromLatest || suppressAutoReadRef.current) return;
+    // 🔴 スマホで隠れている列・横スクロールの外の列は、読んでいないので既読にしない（#166 の 3）。
+    if (!active || latest === undefined || awayFromLatest || suppressAutoReadRef.current) return;
     if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
     if (lastMarkedRef.current === latest.id) return;
     lastMarkedRef.current = latest.id;
@@ -42,7 +45,7 @@ export function useChatRead({
     }).catch(() => {
       lastMarkedRef.current = null;
     });
-  }, [items, awayFromLatest, threadId]);
+  }, [items, awayFromLatest, threadId, active]);
 
   async function markUnread(item: ChatMessageView): Promise<void> {
     suppressAutoReadRef.current = true;
