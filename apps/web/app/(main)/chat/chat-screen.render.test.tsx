@@ -832,3 +832,21 @@ describe('⑲: 会話の書き出し（2026-10-16、チャットレーン）', (
     expect(renderConversation({ canPost: false })).not.toContain('chat-thread-export-');
   });
 });
+
+// ✅ 2026-10-26（Codex のレビュー・#162）: 🔴 画面に古いアナウンスを残さない。
+//    状態の移り変わりは静的な描画では確かめられないので、作りの要（部屋ごとの作り直し・404 で消す・世代の番号）をソースで固定する。
+describe('🔴 アナウンスの帯を古いまま残さない（2026-10-26）', () => {
+  it('会話は部屋ごとに作り直す（前の部屋の帯を次の部屋に持ち越さない）', () => {
+    const page = readFileSync(new URL('./page.tsx', import.meta.url), 'utf8');
+    expect(page).toMatch(/<ChatConversation\s+(?:\/\/[^\n]*\n\s*)*key=\{selected\.id\}/);
+    expect(page).toMatch(/<ChatConversation\s+key=\{pane\.thread\.id\}/);
+  });
+
+  it('読み直しで 404 なら帯を消し、操作より前に始まった読み直しの応答は捨てる', () => {
+    const source = readFileSync(new URL('./chat-conversation.tsx', import.meta.url), 'utf8');
+    expect(source).toContain('next.status === 404');
+    expect(source).toMatch(/if \(next\.status === 404\) \{\s*setAnnouncement\(null\)/);
+    expect(source).toContain('announcementGeneration.current += 1');
+    expect(source).toContain('generation !== announcementGeneration.current');
+  });
+});

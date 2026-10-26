@@ -220,6 +220,8 @@ export function ChatConversation({
   const pendingTimer = useRef<number | null>(null);
   // ✅ 2026-10-26: アナウンス（帯）。🔴 手元で先に書き換えない（サーバの応答だけが正）。
   const [announcement, setAnnouncement] = useState<ChatAnnouncementView | null>(initialAnnouncement);
+  /** ✅ 2026-10-26（Codex のレビュー）: アナウンスの操作の世代（古い読み直しの応答を捨てるため）。 */
+  const announcementGeneration = useRef(0);
   const [announcementNotLoaded, setAnnouncementNotLoaded] = useState(false);
   const [announcementFailed, setAnnouncementFailed] = useState(false);
   const itemsRef = useRef(items);
@@ -243,15 +245,26 @@ export function ChatConversation({
     const poll = async (): Promise<void> => {
       if (document.visibilityState !== 'visible') return;
       try {
+        // ✅ 2026-10-26（Codex のレビュー）: アナウンスは発言の取得とは切り離して読み直す。
+        //    🔴 404（部屋から外れた・見えなくなった）なら帯を消す —— 前に見えていた本文を画面に残さない。
+        //    🔴 読み直しを始めた後に自分が設定・外した場合は、その古い応答を捨てる（世代の番号で見分ける）。
+        const generation = announcementGeneration.current;
+        void fetch(chatAnnouncementApiPath(threadId), { cache: 'no-store' })
+          .then(async (next) => {
+            if (!active || generation !== announcementGeneration.current) return;
+            if (next.status === 404) {
+              setAnnouncement(null);
+              return;
+            }
+            if (next.ok) {
+              const fresh = ((await next.json()) as AnnouncementBody).announcement;
+              if (active && generation === announcementGeneration.current) setAnnouncement(fresh);
+            }
+          })
+          .catch(() => undefined);
         const response = await fetch(chatMessagesApiPath(threadId), { cache: 'no-store' });
         if (!active || !response.ok) return;
         const payload = (await response.json()) as MessagePageBody;
-        // ✅ 2026-10-26: アナウンスも読み直す（ほかの人が設定・外した結果に揃える）。読めなければ今の表示のまま。
-        void fetch(chatAnnouncementApiPath(threadId), { cache: 'no-store' })
-          .then(async (next) => {
-            if (active && next.ok) setAnnouncement(((await next.json()) as AnnouncementBody).announcement);
-          })
-          .catch(() => undefined);
         // ✅ 2026-10-16: 手元の発言のリアクションも取り直した値に揃える。
         const refreshed = withLatestReactions(itemsRef.current, payload.items);
         const merged = mergeLatestMessages(refreshed, payload.items);
@@ -521,6 +534,8 @@ export function ChatConversation({
   /** ✅ 2026-10-26: この発言をアナウンスにする（`PUT`）/ 外す（`DELETE`）。 */
   async function changeAnnouncement(method: 'PUT' | 'DELETE', messageId: string): Promise<void> {
     setAnnouncementFailed(false);
+    // 🔴 これより前に始まった読み直しの応答は使わない（遅れて届いて、外した帯が戻るのを防ぐ）。
+    announcementGeneration.current += 1;
     try {
       const response = await fetch(chatAnnouncementApiPath(threadId), {
         method,
@@ -531,7 +546,10 @@ export function ChatConversation({
         setAnnouncementFailed(true);
         return;
       }
-      setAnnouncement(((await response.json()) as AnnouncementBody).announcement);
+      // 自分の操作の応答も、さらに後の操作があれば使わない。
+      const settled = announcementGeneration.current;
+      const result = ((await response.json()) as AnnouncementBody).announcement;
+      if (settled === announcementGeneration.current) setAnnouncement(result);
       setAnnouncementNotLoaded(false);
     } catch {
       setAnnouncementFailed(true);

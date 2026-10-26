@@ -268,6 +268,9 @@ export default async function ChatPage({
               </p>
             ) : (
               <ChatConversation
+                // ✅ 2026-10-26（Codex のレビュー）: 🔴 部屋ごとに作り直す。同じ部品を使い回すと、前の部屋のアナウンス・発言・
+                //    入力の状態が、新しい部屋の取得が終わるまで残る（他の部屋のものを一瞬でも見せない）。
+                key={selected.id}
                 layout={conversationLayoutFor(selected.kind)}
                 title={conversationTitleFor(selected)}
                 threadId={selected.id}
@@ -317,6 +320,7 @@ export default async function ChatPage({
                 </div>
               ) : (
                 <ChatConversation
+                  key={pane.thread.id}
                   layout={conversationLayoutFor(pane.thread.kind)}
                   title={conversationTitleFor(pane.thread)}
                   threadId={pane.thread.id}
