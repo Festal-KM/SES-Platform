@@ -7,6 +7,7 @@ import {
   isAwayFromLatest,
   isLongMessage,
   remainingChars,
+  restoreUnsentText,
   splitMessageText,
 } from './message-text';
 
@@ -77,5 +78,20 @@ describe('入力欄の補助', () => {
   it('一番下から 240px より上にいたら「最新へ」を出す', () => {
     expect(isAwayFromLatest({ scrollTop: 0, scrollHeight: 2000, clientHeight: 600 })).toBe(true);
     expect(isAwayFromLatest({ scrollTop: 1300, scrollHeight: 2000, clientHeight: 600 })).toBe(false);
+  });
+});
+
+describe('✅ 2026-10-26（#166 の 6）restoreUnsentText: 戻す文章と書きかけを両方残す', () => {
+  it('書きかけが無ければ、戻す文章だけ', () => {
+    expect(restoreUnsentText('最初の文章', '')).toBe('最初の文章');
+  });
+  it('書きかけがあれば、戻す文章を先に、空行で区切って並べる（どちらも消さない）', () => {
+    expect(restoreUnsentText('最初の文章', '次の文章')).toBe('最初の文章\n\n次の文章');
+  });
+  it('戻す文章が空（案件カードだけの発言）なら、書きかけはそのまま', () => {
+    expect(restoreUnsentText('', '次の文章')).toBe('次の文章');
+  });
+  it('同じ文章なら重ねない', () => {
+    expect(restoreUnsentText('同じ', '同じ')).toBe('同じ');
   });
 });

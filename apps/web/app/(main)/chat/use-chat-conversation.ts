@@ -28,7 +28,7 @@ import { CHAT_MESSAGE_MAX_LENGTH } from '@ses/config';
 import { useEffect, useRef, useState } from 'react';
 import { CHAT_UNDO_SEND_MS, mergeLatestMessages } from '../../../lib/chat/live';
 import { applyChatFormat, insertChatMention, type ChatEdit, type ChatFormat } from '../../../lib/chat/markdown';
-import { CHAT_DRAFT_EVENT, chatDraftKey } from '../../../lib/chat/message-text';
+import { CHAT_DRAFT_EVENT, chatDraftKey, restoreUnsentText } from '../../../lib/chat/message-text';
 import { appendQuote, slashCommandRange } from '../../../lib/chat/project-card-text';
 import { chatReactionEmoji } from '../../../lib/chat/reactions';
 import { chatMessageApiPath, chatMessagesApiPath, chatReactionApiPath, chatSaveApiPath } from '../../../lib/chat/screen-query';
@@ -503,8 +503,9 @@ export function useChatConversation({
     if (pendingTimer.current !== null) window.clearTimeout(pendingTimer.current);
     pendingTimer.current = null;
     if (pendingSend !== null) {
-      setBody(pendingSend.body);
-      setAttachedProject(pendingSend.project);
+      // ✅ 2026-10-26（#166 の 6）: 🔴 待っている間に書いた次の文章を上書きしない（両方残す）。
+      updateBody(restoreUnsentText(pendingSend.body, bodyRef.current));
+      setAttachedProject((current) => current ?? pendingSend.project);
     }
     setPendingSend(null);
     document.getElementById(composeId)?.focus();
@@ -551,7 +552,8 @@ export function useChatConversation({
     });
     setSending(false);
     // 🔴 送れなかった文章は入力欄に戻す（再送・修正ができるように）。
-    if (outcome !== 'SENT' && bodyRef.current === '') setBody(trimmed);
+    // ✅ 2026-10-26（#166 の 6）: 🔴 待っている間に次の文章を書いていても、送れなかった文章を捨てない（両方残す）。
+    if (outcome !== 'SENT' && outcome !== 'MISSING') updateBody(restoreUnsentText(trimmed, bodyRef.current));
     // ✅ 2026-10-23: 貼る案件も戻す。🔴 「貼れない案件」だったときだけは戻さない（同じ失敗を繰り返さない）。
     if (outcome !== 'SENT' && outcome !== 'PROJECT' && pending.project !== null) setAttachedProject((current) => current ?? pending.project);
     // ✅ 2026-10-26（#164 の 2）: 🔴 送ろうとして 404 = 読めなくなった。戻した文章も含めて画面から消す。
