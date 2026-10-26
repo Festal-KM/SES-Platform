@@ -26,6 +26,7 @@ test('🔴 自分の定型文を作成・挿入・削除でき、同じ会社の
     await expect(page.getByTestId(`chat-template-${id}`)).toBeVisible();
     const thread = partnerIds(1, 1).threadId;
     await page.goto(`/chat?thread=${thread}`);
+    await page.getByTestId('chat-compose-template-toggle').click();
     const select = page.getByTestId('chat-compose-template');
     await expect(select.locator(`option[value="own:${id}"]`)).toHaveCount(1);
     await select.selectOption(`own:${id}`);
@@ -34,6 +35,7 @@ test('🔴 自分の定型文を作成・挿入・削除でき、同じ会社の
     await expect(colleague.page.getByTestId('chat-templates')).toBeVisible();
     await expect(colleague.page.getByTestId(`chat-template-${id}`)).toHaveCount(0);
     await colleague.page.goto(`/chat?thread=${thread}`);
+    await colleague.page.getByTestId('chat-compose-template-toggle').click();
     await expect(colleague.page.getByTestId('chat-compose-template')).toBeVisible();
     await expect(colleague.page.getByTestId('chat-compose-template').locator(`option[value="own:${id}"]`)).toHaveCount(0);
     // 一覧 GET は存在しないため、ID を知っていても更新・削除できないことを直叩きで確かめる。
@@ -49,6 +51,7 @@ test('🔴 自分の定型文を作成・挿入・削除でき、同じ会社の
     await page.getByTestId(`chat-template-delete-yes-${id}`).click();
     await expect(page.getByTestId(`chat-template-${id}`)).toHaveCount(0);
     await page.goto(`/chat?thread=${thread}`);
+    await page.getByTestId('chat-compose-template-toggle').click();
     await expect(page.getByTestId('chat-compose-template')).toBeVisible();
     await expect(page.getByTestId('chat-compose-template').locator(`option[value="own:${id}"]`)).toHaveCount(0);
   } finally {

@@ -640,12 +640,13 @@ describe('⑪: 会社ごとの木・検索・並べ替え（2026-10-14、チャ�
     expect(html).toContain(`chat-thread-row-${CHAT_A}`);
     expect(html).toContain(`chat-thread-row-${THREAD_PROJECT}`);
     expect(classTokensOf(html, `chat-thread-row-${THREAD_PROJECT}`)).not.toContain('pl-6');
-    // ✅ 2026-10-20: 種類はアバターの塗り（案件 = 橙の「#」、会社 = 墨色の角丸）で分ける。会社・案件の行に札を付けない。
+    // ✅ 2026-10-20: 種類は無彩色のアバター（案件 = 「#」、会社 = 頭文字）で分ける。会社・案件の行に札を付けない。
     const projectRow = new RegExp(`<li data-testid="chat-thread-row-${THREAD_PROJECT}"[\\s\\S]*?</li>`).exec(html)?.[0] ?? '';
     const companyRow = new RegExp(`<li data-testid="chat-thread-row-${CHAT_A}"[\\s\\S]*?</li>`).exec(html)?.[0] ?? '';
-    expect(projectRow).toContain('bg-warning');
+    expect(projectRow).toContain('bg-neutral-bg');
+    expect(projectRow).not.toContain('bg-warning');
     expect(projectRow).toContain('>#<');
-    expect(companyRow).toContain('bg-fg');
+    expect(companyRow).toContain('bg-neutral-bg');
     expect(projectRow).not.toContain(t('chat.tag.external'));
     expect(companyRow).not.toContain(t('chat.tag.external'));
     // 「チャット / スレッド」の文字は出さない（見た目で分ける）。
@@ -872,5 +873,26 @@ describe('会話の幅の調節', () => {
     expect(html).toContain('aria-valuemin="320"');
     expect(html).toContain('aria-valuemax="1600"');
     expect(renderToStaticMarkup(<ChatResizablePane enabled={false} storageKey="primary" resizeLabel={t('chat.pane.resize')} className="flex">{null}</ChatResizablePane>)).not.toContain('role="separator"');
+  });
+});
+
+
+describe('入力枠の操作（改訂 43）', () => {
+  it('入力・下段の印・送信を同じ枠に収め、表示範囲の説明を枠の下に残す', () => {
+    const html = renderConversation();
+    const box = html.slice(html.indexOf('data-testid="chat-compose-box"'), html.indexOf(t('chat.compose.hint')));
+    for (const id of ['body', 'format-toggle', 'mention', 'slash-toggle', 'template-toggle', 'submit']) {
+      expect(box).toContain(`data-testid="chat-compose-${id}"`);
+    }
+    expect(box).toContain('rows="1"');
+    expect(box).not.toContain('data-testid="chat-compose-tab-write"');
+    expect(box).toContain('h-11 w-11');
+  });
+
+  it('会話名があるときだけ、名前を含む入力案内を出す', () => {
+    expect(renderConversation({ title: { title: '架空の会話', subtitle: null } })).toContain(
+      `placeholder="架空の会話${t('chat.compose.placeholderSuffix')}"`,
+    );
+    expect(renderConversation()).toContain(`placeholder="${t('chat.compose.placeholder')}"`);
   });
 });

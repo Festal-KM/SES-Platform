@@ -260,7 +260,7 @@ export function ChatTemplateManager({ templates, backHref, limits, labels }: Cha
         confirm={
           <Button
             type="button"
-            variant="primary"
+            variant="secondary"
             onClick={() => {
               if (confirmDeleteId !== null) void remove(confirmDeleteId);
             }}

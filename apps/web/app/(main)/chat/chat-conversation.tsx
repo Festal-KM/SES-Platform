@@ -120,6 +120,7 @@ export type ChatConversationProps = {
    * 企業スレッド = `chat`（自分は右）。省略時は `topic`（従来の表示）。
    */
   readonly layout?: ChatConversationLayout;
+  readonly threadKind?: 'DM' | 'GROUP' | 'COMPANY' | 'PROJECT';
   readonly threadId: string;
   /** 直近 50 件（古い順。`lib/chat/read.ts` が並べ替えて渡す）。 */
   readonly initialMessages: readonly ChatMessageView[];
@@ -180,6 +181,7 @@ type AnnouncementBody = { readonly announcement: ChatAnnouncementView | null };
 
 export function ChatConversation({
   layout = 'topic',
+  threadKind,
   title,
   threadId,
   initialMessages,
@@ -229,6 +231,7 @@ export function ChatConversation({
   const [mentionOpen, setMentionOpen] = useState(false);
   // ✅ 2026-10-22: 書式ボタンの帯の開閉（既定は閉じる = 入力欄は細い 1 行）。
   const [formatOpen, setFormatOpen] = useState(false);
+  const [templateOpen, setTemplateOpen] = useState(false);
   const pendingTimer = useRef<number | null>(null);
   // ✅ 2026-10-26: アナウンス（帯）。🔴 手元で先に書き換えない（サーバの応答だけが正）。
   const [announcement, setAnnouncement] = useState<ChatAnnouncementView | null>(initialAnnouncement);
@@ -816,32 +819,33 @@ export function ChatConversation({
                 ✅ 2026-10-20（紺野「モーダル」）: 削除の確認はモーダル（`Dialog`）で出す（下の `ChatDeleteDialog`）。 */}
             {canPost && item.mine ? (
                 <>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => {
+                  <IconButton type="button" variant="ghost" onClick={() => {
                     setEditingId(item.id);
                     setEditText(item.body ?? '');
                     setEditFailed(false);
-                  }} data-testid={`chat-message-edit-${item.id}`}>
-                    {messages.edit}
-                  </Button>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => setConfirmDeleteId(item.id)} data-testid={`chat-message-delete-${item.id}`}>
-                    {messages.remove}
-                  </Button>
+                  }} data-testid={`chat-message-edit-${item.id}`}
+                    aria-label={messages.edit}
+                    className="h-11 w-11"
+                    title={messages.edit} icon={<Icon name="chat-edit" />} />
+                  <IconButton type="button" variant="ghost" onClick={() => setConfirmDeleteId(item.id)} data-testid={`chat-message-delete-${item.id}`}
+                    aria-label={messages.remove}
+                    className="h-11 w-11"
+                    title={messages.remove} icon={<Icon name="chat-delete" />} />
                 </>
             ) : null}
             {/* ✅ 2026-10-22（紺野「リアクションのスタンプとかもちゃんと入れて」）: 選択欄をやめ、押すと絵文字 12 種と語 4 種が並ぶ。
                 絵文字は読み上げ名（`aria-label`）を持つ。 */}
             {canPost ? (
-              <Button
+              <IconButton
                 type="button"
                 variant={reactionPickerId === item.id ? 'secondary' : 'ghost'}
-                size="sm"
                 aria-expanded={reactionPickerId === item.id}
                 aria-controls={`chat-reaction-picker-${item.id}`}
                 onClick={() => setReactionPickerId((current) => (current === item.id ? null : item.id))}
                 data-testid={`chat-message-reaction-add-${item.id}`}
-              >
-                {messages.reactionAdd}
-              </Button>
+                aria-label={messages.reactionAdd}
+                className="h-11 w-11"
+                title={messages.reactionAdd} icon={<Icon name="chat-reaction" />} />
             ) : null}
             {canPost && reactionPickerId === item.id ? (
               <div
@@ -885,16 +889,15 @@ export function ChatConversation({
             ) : null}
             {/* ✅ 2026-10-22（紺野）: 保存 / 保存を外す（本人だけの栞。左の列の「保存済み」に集まる）。 */}
             {canPost ? (
-              <Button
+              <IconButton
                 type="button"
-                variant="ghost"
-                size="sm"
+                variant={item.saved === true ? 'secondary' : 'ghost'}
                 aria-pressed={item.saved === true}
                 onClick={() => void toggleSaved(item)}
                 data-testid={`chat-message-bookmark-${item.id}`}
-              >
-                {item.saved === true ? messages.unbookmark : messages.bookmark}
-              </Button>
+                aria-label={item.saved === true ? messages.unbookmark : messages.bookmark}
+                className="h-11 w-11"
+                title={item.saved === true ? messages.unbookmark : messages.bookmark} icon={<Icon name="chat-bookmark" />} />
             ) : null}
             {/* ✅ 2026-10-26（紺野の決定 2026-10-22）: アナウンスにする / 外す（部屋のメンバーなら誰でも。閲覧専用には出さない）。
                 🔴 消えた発言はアナウンスにできない（API も 404）ので、外す以外は出さない。 */}
@@ -916,6 +919,7 @@ export function ChatConversation({
                 type="button"
                 variant="ghost"
                 size="sm"
+                className="min-h-11"
                 onClick={() => void markUnread(item)}
                 data-testid={`chat-message-mark-unread-${item.id}`}
               >
@@ -923,15 +927,14 @@ export function ChatConversation({
               </Button>
             )}
             {text === '' ? null : (
-              <Button
+              <IconButton
                 type="button"
                 variant="ghost"
-                size="sm"
                 onClick={() => void copyBody(item)}
                 data-testid={`chat-message-copy-${item.id}`}
-              >
-                {copiedId === item.id ? messages.copied : messages.copy}
-              </Button>
+                aria-label={copiedId === item.id ? messages.copied : messages.copy}
+                className="h-11 w-11"
+                title={copiedId === item.id ? messages.copied : messages.copy} icon={<Icon name="chat-copy" />} />
             )}
           </div>
         )}
@@ -1062,10 +1065,11 @@ export function ChatConversation({
         <Link
           href={chatHref({})}
           aria-label={messages.backToList}
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-title text-fg md:hidden"
+          title={messages.backToList}
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-fg md:hidden"
           data-testid="chat-back-to-list"
         >
-          <span aria-hidden="true">‹</span>
+          <Icon name="chat-back" />
         </Link>
         {/* ✅ 2026-10-13（Lark 寄せ）: 見出しに会話の相手（案件スレッドは案件名 + 相手の会社名）を出す。
             🔴 名前が読めなければ既定の見出しに戻す（空の見出しを作らない）。 */}
@@ -1100,19 +1104,17 @@ export function ChatConversation({
         {/* スマホだけの「…」。押すと下の操作の並びが縦に開く。
             🔴 閲覧専用（書き出し・ピン留めが無い）には「…」を出さず、残る操作（情報）をそのまま並べる。 */}
         {headerMenuUsed ? (
-        <Button
+        <IconButton
           type="button"
           variant="ghost"
-          size="sm"
           className={cn("min-h-11 min-w-11 shrink-0", closeHref === undefined ? "md:hidden" : null)}
           aria-label={messages.headerMenu}
           aria-expanded={headerMenuOpen}
           aria-controls={`chat-header-actions-${threadId}`}
           onClick={() => setHeaderMenuOpen((open) => !open)}
           data-testid={`chat-header-menu-${threadId}`}
-        >
-          <span aria-hidden="true">…</span>
-        </Button>
+
+          title={messages.headerMenu} icon={<Icon name="chat-more" />} />
         ) : null}
         <div
           id={`chat-header-actions-${threadId}`}
@@ -1128,10 +1130,12 @@ export function ChatConversation({
             <a
               href={chatExportApiPath(threadId)}
               download
-              className={cn(SECONDARY_LINK_CLASSES, 'shrink-0 px-2 py-2 text-xs md:px-0 md:py-0')}
+              aria-label={messages.exportLink}
+              title={messages.exportLink}
+              className={cn(SECONDARY_LINK_CLASSES, 'inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2')}
               data-testid={`chat-thread-export-${threadId}`}
             >
-              {messages.exportLink}
+              <Icon name="chat-export" /><span className={closeHref === undefined ? "md:sr-only" : undefined}>{messages.exportLink}</span>
             </a>
           ) : null}
           {/* ✅ 2026-10-16: ピン留め・ミュート（自分の表示の設定）。 */}
@@ -1139,16 +1143,19 @@ export function ChatConversation({
             <ChatThreadPrefsToggle
               threadId={threadId}
               prefs={prefs}
+              labelDisplay={closeHref === undefined ? 'responsive' : 'menu'}
               labels={{ pin: messages.pin, unpin: messages.unpin, mute: messages.mute, unmute: messages.unmute }}
             />
           )}
           {infoHref === undefined || infoLabel === undefined ? null : (
             <Link
               href={infoHref}
-              className={cn(SECONDARY_LINK_CLASSES, 'shrink-0 px-2 py-2 text-xs md:px-0 md:py-0')}
+              aria-label={infoLabel}
+              title={infoLabel}
+              className={cn(SECONDARY_LINK_CLASSES, 'inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2')}
               data-testid={`chat-thread-info-${threadId}`}
             >
-              {infoLabel}
+              <Icon name="chat-info" /><span className={closeHref === undefined ? "md:sr-only" : undefined}>{infoLabel}</span>
             </Link>
           )}
         </div>
@@ -1324,21 +1331,20 @@ export function ChatConversation({
                     // 🔴 読み上げでは誰の発言かを残す（見た目だけ省く）。
                     <span className="sr-only">{item.senderName ?? messages.unknownName}</span>
                   ) : (
-                    <p className="m-0 flex flex-wrap items-baseline gap-2">
+                    <p className="m-0 flex flex-wrap items-baseline gap-x-2 gap-y-1">
                       <span className="text-body font-bold text-fg" data-testid={`chat-message-sender-${item.id}`}>
                         {item.senderName ?? messages.unknownName}
                       </span>
-                      <span className="text-xs text-fg-muted">
-                        {item.senderCompanyName ?? messages.unknownName}
+                      <span className="min-w-0 text-xs text-fg-muted">
+                        <span>{item.senderCompanyName ?? messages.unknownName}</span>
+                        {item.own ? <span className="ml-2">{messages.own}</span> : null}
+                        {/* 会社と状態を同じ行に流し、狭い画面でも補助情報の段を増やさない。 */}
+                        {item.senderStatus == null || item.senderStatus === '' ? null : (
+                          <span className="ml-2 text-xs text-fg-muted" data-testid={`chat-message-status-${item.id}`}>
+                            {item.senderStatus}
+                          </span>
+                        )}
                       </span>
-                      {item.own ? <span className="text-xs text-fg-muted">{messages.own}</span> : null}
-                      {/* ✅ 2026-10-22（紺野「自分が入ってるチャットにも共通で表示しないと」）: 送信者の今のひとこと状態。
-                          🔴 どの部屋でも同じ札（DM の見出し・会社グループ・スレッド・グループ）。読めるかは RLS が決める。 */}
-                      {item.senderStatus == null || item.senderStatus === '' ? null : (
-                        <span className={STATUS_CHIP_CLASSES} data-testid={`chat-message-status-${item.id}`}>
-                          {item.senderStatus}
-                        </span>
-                      )}
                       {time}
                     </p>
                   )}
@@ -1384,7 +1390,8 @@ export function ChatConversation({
           data-testid="chat-compose"
         >
           {/* ✅ 2026-10-22（紺野「こういうチャット枠が必要だよね」= GitHub のコメント欄）:
-              上に「書く／プレビュー」と書式ボタン、下に入力欄。1 つの枠で囲み、右下をつまんで高さを伸ばせる。
+              上に「書く／プレビュー」と書式ボタン、下に入力欄。
+              ✅ 2026-10-26（改訂 43）: 下段の印と送信も同じ枠に収め、入力に合わせて高さを伸ばす。
               🔴 書式は Markdown の一部だけ（`lib/chat/markdown.ts`）。HTML は通さない。 */}
           {/* 🔴 `as="div"`: 枠の中にボタンがあるので `<label>` で包まない（ラベルが最初のボタンに結び付く）。入力欄は `aria-label` で名付ける。 */}
           {/* ✅ 2026-10-22（紺野「スマホ版おわってる」・Teams の参考）: 入力欄は**普段は細い 1 行**。書式ボタンと「書く／プレビュー」は
@@ -1434,22 +1441,12 @@ export function ChatConversation({
                         {messages.composeFormats[format]}
                       </Button>
                     ))}
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      aria-expanded={mentionOpen}
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => setMentionOpen((open) => !open)}
-                      data-testid="chat-compose-mention"
-                    >
-                      {messages.composeMention}
-                    </Button>
+
                   </div>
                 ) : null}
               </div>
               ) : null}
-              {mentionOpen && formatOpen && composeTab === 'write' ? (
+              {mentionOpen && composeTab === 'write' ? (
                 <div className="flex flex-wrap gap-1 border-b border-border px-2 py-2" data-testid="chat-compose-mention-list">
                   {mentionCandidates.length === 0 ? (
                     <span className="text-xs text-fg-muted">{messages.composeMentionEmpty}</span>
@@ -1560,14 +1557,17 @@ export function ChatConversation({
                 <Textarea
                   id={composeId}
                   aria-label={messages.composeLabel}
+                  rows={1}
                   name="body"
                   value={body}
                   maxLength={CHAT_MESSAGE_MAX_LENGTH}
-                  placeholder={messages.composePlaceholder}
-                  // ✅ 2026-10-14: 文章に合わせて伸び（`field-sizing-content`）、約 6 行で止めて欄の中でスクロールする。
+                  placeholder={title?.title ? `${title.title}${messages.composePlaceholderSuffix}` : messages.composePlaceholder}
+                  // 書式を開いたときは、自動で伸びないブラウザでも複数行を見渡せる高さを確保する。
+                  // 自動で伸びる場合も max-h-40 で止め、以降は欄の中でスクロールする。
                   className={cn(
                     'overflow-y-auto overscroll-contain rounded-none border-0',
-                    formatOpen ? 'min-h-20 max-h-72 resize-y' : 'min-h-11 max-h-40',
+                    'max-h-40 resize-none',
+                    formatOpen ? 'min-h-20' : 'min-h-11',
                   )}
                   onChange={(event) => {
                     updateBody(event.target.value);
@@ -1620,10 +1620,104 @@ export function ChatConversation({
               {formatOpen ? (
                 <p className="m-0 border-t border-border px-3 py-1 text-xs text-fg-muted">{messages.composeMarkdownHint}</p>
               ) : null}
+              <div className="flex flex-wrap items-center gap-1 border-t border-border p-1">
+                {/* ✅ 2026-10-22: 書式ボタン・プレビュー・@ 名前の帯を開く（普段は閉じて入力欄を細くする）。 */}
+                <IconButton
+                  icon={<Icon name="chat-format" />}
+                  aria-label={messages.composeToolbar}
+                  title={messages.composeToolbar}
+                  className="h-11 w-11"
+                  type="button"
+                  variant={formatOpen ? 'secondary' : 'ghost'}
+                  aria-pressed={formatOpen}
+                  onClick={() => {
+                    setFormatOpen((value) => !value);
+                    setMentionOpen(false);
+                    setComposeTab('write');
+                  }}
+                  data-testid="chat-compose-format-toggle"
+                />
+                <IconButton type="button" variant={mentionOpen ? 'secondary' : 'ghost'} className="h-11 w-11" icon={<Icon name="chat-mention" />} aria-label={messages.composeMention} title={messages.composeMention} aria-expanded={mentionOpen} onMouseDown={(event) => event.preventDefault()} onClick={() => { setComposeTab('write'); setMentionOpen((open) => !open); }} data-testid="chat-compose-mention" />
+                <IconButton type="button" variant="ghost" className="h-11 w-11" icon={<Icon name="chat-slash" />} aria-label={messages.slash.label} title={messages.slash.label} aria-expanded={slashRange !== null} onClick={() => {
+                  setComposeTab('write');
+                  if (slashRange !== null) { setSlashRange(null); setSlashTemplatesOpen(false); return; }
+                  const next = body === '' ? '/' : `${body}\n/`;
+                  updateBody(next);
+                  trackSlash(next, next.length);
+                  composeTextarea()?.focus();
+                }} data-testid="chat-compose-slash-toggle" />
+                <IconButton type="button" variant={templateOpen ? 'secondary' : 'ghost'} className="h-11 w-11" icon={<Icon name="chat-template" />} aria-label={messages.templateLabel} title={messages.templateLabel} aria-expanded={templateOpen} aria-controls={`chat-compose-template-${threadId}`} onClick={() => setTemplateOpen((open) => !open)} data-testid="chat-compose-template-toggle" />
+                {/* ✅ 2026-10-14: 送信に失敗したら、書いた文章を残したまま、その場で送り直せる
+                    （🔴 二重送信の防止は `createSubmitGuard` のまま。見えなくなったスレッドには再送を出さない）。 */}
+                {sendError === 'FAILED' && !sending ? (
+                  <Button type="button" variant="secondary" onClick={submit} data-testid="chat-compose-retry">
+                    {messages.retry}
+                  </Button>
+                ) : null}
+                <Button type="submit" variant="primary" className="ml-auto min-h-11 shrink-0 gap-1" data-testid="chat-compose-submit">
+                  <Icon name="chat-send" />
+                  {sending ? messages.composeSubmitting : messages.composeSubmit}
+                </Button>
+                {/* ✅ 2026-10-14: 定型文（固定の文面）を入力欄の末尾に入れる。 */}
+                <label className="sr-only" htmlFor={`chat-compose-template-${threadId}`}>
+                  {messages.templateLabel}
+                </label>
+                <Select
+                  id={`chat-compose-template-${threadId}`}
+                  value=""
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setTemplateOpen(false);
+                    // ✅ 2026-10-22: 末尾の「定型文を編集…」は一覧の列を管理画面に切り替える。
+                    //    幅のある画面では開いている会話を残し、スマホ（一覧と会話を切り替える）では一覧に戻る。
+                    if (value === MANAGE_TEMPLATES_VALUE) {
+                      const wide = window.matchMedia('(min-width: 768px)').matches;
+                      window.location.assign(chatHref(wide ? { thread: threadId, filter: { kind: 'templates' } } : { filter: { kind: 'templates' } }));
+                      return;
+                    }
+                    const template = value.startsWith(OWN_TEMPLATE_PREFIX)
+                      ? ownTemplates.find((entry) => OWN_TEMPLATE_PREFIX + entry.id === value)
+                      : messages.templates.find((entry) => entry.id === value);
+                    if (template === undefined) return;
+                    updateBody(body === '' ? template.body : `${body}\n${template.body}`);
+                    document.getElementById(composeId)?.focus();
+                  }}
+                  className={cn("w-full", templateOpen ? null : "hidden")}
+                  data-testid="chat-compose-template"
+                >
+                  <option value="">{messages.templatePlaceholder}</option>
+                  {ownTemplates.length === 0 ? null : (
+                    <optgroup label={messages.templateOwnGroup} data-testid="chat-compose-template-own">
+                      {ownTemplates.map((template) => (
+                        <option key={template.id} value={OWN_TEMPLATE_PREFIX + template.id}>
+                          {template.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  <optgroup label={messages.templateFixedGroup}>
+                    {messages.templates.map((template) => (
+                      <option key={template.id} value={template.id}>
+                        {template.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <option value={MANAGE_TEMPLATES_VALUE}>{messages.templateManage}</option>
+                </Select>
+                {/* ✅ 2026-10-14: 残り文字数（残り 200 文字を切ったら出す）。 */}
+                {(() => {
+                  const remaining = remainingChars(body, CHAT_MESSAGE_MAX_LENGTH);
+                  return remaining === null ? null : (
+                    <span className="ml-auto text-xs text-fg-muted" aria-live="polite" data-testid="chat-compose-remaining">
+                      {`${messages.remainingBefore} ${String(remaining)} ${messages.remainingAfter}`}
+                    </span>
+                  );
+                })()}
+              </div>
             </div>
           </Field>
           {/* 誰に見えるか（取引先との部屋では大事な情報なので、小さく常に出す）。 */}
-          <p className="m-0 mt-1 text-xs text-fg-muted">{messages.composeHint}</p>
+          <p className="m-0 mt-1 text-xs text-fg-muted">{threadKind === 'DM' || threadKind === 'GROUP' ? messages.composeMemberHint : messages.composeHint}</p>
           {/* ✅ 2026-10-14: 送信の取り消し（押してから数秒は送らずに待つ）。 */}
           {pendingSend === null ? null : (
             <div className="mb-2 flex flex-wrap items-center gap-2" aria-live="polite" data-testid="chat-compose-pending">
@@ -1645,86 +1739,7 @@ export function ChatConversation({
                   : messages.composeFailed}
             </Alert>
           )}
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <Button type="submit" variant="primary" data-testid="chat-compose-submit">
-              {sending ? messages.composeSubmitting : messages.composeSubmit}
-            </Button>
-            {/* ✅ 2026-10-22: 書式ボタン・プレビュー・@ 名前の帯を開く（普段は閉じて入力欄を細くする）。 */}
-            <Button
-              type="button"
-              variant={formatOpen ? 'secondary' : 'ghost'}
-              aria-pressed={formatOpen}
-              onClick={() => {
-                setFormatOpen((value) => !value);
-                setMentionOpen(false);
-                setComposeTab('write');
-              }}
-              data-testid="chat-compose-format-toggle"
-            >
-              {messages.composeToolbar}
-            </Button>
-            {/* ✅ 2026-10-14: 送信に失敗したら、書いた文章を残したまま、その場で送り直せる
-                （🔴 二重送信の防止は `createSubmitGuard` のまま。見えなくなったスレッドには再送を出さない）。 */}
-            {sendError === 'FAILED' && !sending ? (
-              <Button type="button" variant="secondary" onClick={submit} data-testid="chat-compose-retry">
-                {messages.retry}
-              </Button>
-            ) : null}
-            {/* ✅ 2026-10-14: 定型文（固定の文面）を入力欄の末尾に入れる。 */}
-            <label className="sr-only" htmlFor={`chat-compose-template-${threadId}`}>
-              {messages.templateLabel}
-            </label>
-            <Select
-              id={`chat-compose-template-${threadId}`}
-              value=""
-              onChange={(event) => {
-                const value = event.target.value;
-                // ✅ 2026-10-22: 末尾の「定型文を編集…」は一覧の列を管理画面に切り替える。
-                //    幅のある画面では開いている会話を残し、スマホ（一覧と会話を切り替える）では一覧に戻る。
-                if (value === MANAGE_TEMPLATES_VALUE) {
-                  const wide = window.matchMedia('(min-width: 768px)').matches;
-                  window.location.assign(chatHref(wide ? { thread: threadId, filter: { kind: 'templates' } } : { filter: { kind: 'templates' } }));
-                  return;
-                }
-                const template = value.startsWith(OWN_TEMPLATE_PREFIX)
-                  ? ownTemplates.find((entry) => OWN_TEMPLATE_PREFIX + entry.id === value)
-                  : messages.templates.find((entry) => entry.id === value);
-                if (template === undefined) return;
-                updateBody(body === '' ? template.body : `${body}\n${template.body}`);
-                document.getElementById(composeId)?.focus();
-              }}
-              className="w-auto"
-              data-testid="chat-compose-template"
-            >
-              <option value="">{messages.templatePlaceholder}</option>
-              {ownTemplates.length === 0 ? null : (
-                <optgroup label={messages.templateOwnGroup} data-testid="chat-compose-template-own">
-                  {ownTemplates.map((template) => (
-                    <option key={template.id} value={OWN_TEMPLATE_PREFIX + template.id}>
-                      {template.label}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-              <optgroup label={messages.templateFixedGroup}>
-                {messages.templates.map((template) => (
-                  <option key={template.id} value={template.id}>
-                    {template.label}
-                  </option>
-                ))}
-              </optgroup>
-              <option value={MANAGE_TEMPLATES_VALUE}>{messages.templateManage}</option>
-            </Select>
-            {/* ✅ 2026-10-14: 残り文字数（残り 200 文字を切ったら出す）。 */}
-            {(() => {
-              const remaining = remainingChars(body, CHAT_MESSAGE_MAX_LENGTH);
-              return remaining === null ? null : (
-                <span className="ml-auto text-xs text-fg-muted" aria-live="polite" data-testid="chat-compose-remaining">
-                  {`${messages.remainingBefore} ${String(remaining)} ${messages.remainingAfter}`}
-                </span>
-              );
-            })()}
-          </div>
+
         </form>
       ) : (
         // 🔴 ボタンを描かず理由を置く（`disabled` にしない）。
@@ -1749,13 +1764,16 @@ export function ChatConversation({
           confirm={
             <Button
               type="button"
-              variant="primary"
+              variant="secondary"
               onClick={() => {
                 const target = items.find((entry) => entry.id === confirmDeleteId);
                 setConfirmDeleteId(null);
                 if (target !== undefined) void removeMessage(target);
               }}
               data-testid={`chat-message-delete-yes-${confirmDeleteId ?? 'none'}`}
+
+              aria-label={messages.deleteConfirmYes}
+              className="min-h-11"
             >
               {messages.deleteConfirmYes}
             </Button>

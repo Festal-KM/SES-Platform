@@ -27,23 +27,22 @@ export type ChatRailProps = {
   readonly showSaved?: boolean;
 };
 
-/** 種類の印（アバターと同じ形・色の小さな四角）。 */
+/** 会社と案件だけに無彩色の印を置く。固定フィルタは文字で見分ける。 */
 type MarkKind = 'all' | 'unread' | 'dm' | 'group' | 'saved' | 'company' | 'project' | 'contacts';
-// ✅ 2026-10-20: 一覧のアバターと同じ塗りつぶし（`chat-thread-list.tsx` の AVATAR_KIND_CLASSES）。
 const MARK_CLASSES: Readonly<Record<MarkKind, string>> = {
-  all: 'rounded-md bg-fg-muted text-bg',
-  unread: 'rounded-md bg-info text-bg',
-  dm: 'rounded-full bg-brand text-brand-fg',
-  group: 'rounded-full bg-success text-bg',
-  saved: 'rounded-md bg-brand text-brand-fg',
-  company: 'rounded-md bg-fg text-bg',
-  project: 'rounded-md bg-warning text-bg',
-  contacts: 'rounded-full bg-success text-bg',
+  all: 'hidden md:in-[[data-collapsed=true]]:inline-flex',
+  unread: 'hidden md:in-[[data-collapsed=true]]:inline-flex',
+  dm: 'hidden md:in-[[data-collapsed=true]]:inline-flex',
+  group: 'hidden md:in-[[data-collapsed=true]]:inline-flex',
+  saved: 'hidden md:in-[[data-collapsed=true]]:inline-flex',
+  company: 'inline-flex rounded-md bg-neutral-bg text-fg-muted',
+  project: 'inline-flex rounded-md bg-neutral-bg text-fg-muted',
+  contacts: 'hidden md:in-[[data-collapsed=true]]:inline-flex',
 };
 
 function Mark({ kind, text }: { readonly kind: MarkKind; readonly text: string }) {
   return (
-    <span aria-hidden="true" className={cn('inline-flex size-6 shrink-0 items-center justify-center text-xs font-bold', MARK_CLASSES[kind])}>
+    <span aria-hidden="true" className={cn('h-6 w-6 shrink-0 items-center justify-center text-xs font-bold', MARK_CLASSES[kind])}>
       {text}
     </span>
   );

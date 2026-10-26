@@ -24,7 +24,7 @@ import {
   CHAT_THREAD_ROW_HEIGHT_CLASS,
   EmptyState,
   Input,
-  PRIMARY_LINK_CLASSES,
+  Icon,
   ROW_HOVER_CLASSES,
   SECONDARY_LINK_CLASSES,
   cn,
@@ -64,17 +64,12 @@ const KIND_MESSAGE_KEYS = {
   GROUP: 'chat.thread.kind.GROUP',
 } as const satisfies Readonly<Record<ChatThreadKind, `chat.thread.kind.${ChatThreadKind}`>>;
 
-/**
- * 🔴 種類ごとのアバターの形と色。お気に入り・左の列も同じ。
- * ✅ 2026-10-20（紺野「色もなんか一緒」）: 薄い地（`*-bg`）だと一覧の灰色に溶けるので、**塗りつぶし**にした。
- *    人 = 青の丸 / グループ = 緑の丸 / 取引先の会社 = 墨色の角丸（🔴 サイドバーの紺はサイドバー専用。`ui-shadow-and-size.test.ts`）/ 案件 = 橙の角丸に「#」。
- *    使う色は既存のトークンだけ（新しい色を足さない）。
- */
+/** 種類は形と文字で見分け、現在地・未読に色の強調を残す。 */
 export const AVATAR_KIND_CLASSES: Readonly<Record<ChatThreadKind, string>> = {
-  DM: 'bg-brand text-brand-fg',
-  GROUP: 'bg-success text-bg',
-  COMPANY: 'rounded-md bg-fg text-bg',
-  PROJECT: 'rounded-md bg-warning text-bg',
+  DM: 'bg-neutral-bg text-fg',
+  GROUP: 'bg-neutral-bg text-fg',
+  COMPANY: 'rounded-md bg-neutral-bg text-fg',
+  PROJECT: 'rounded-md bg-neutral-bg text-fg',
 };
 
 const TAG_CLASSES = 'shrink-0 rounded-xs px-1 text-xs';
@@ -220,10 +215,12 @@ function Row({ view, context }: { readonly view: RowView; readonly context: RowC
         besideHref === null || openBesideLabel === undefined ? null : (
           <Link
             href={besideHref}
-            className={cn(SECONDARY_LINK_CLASSES, 'flex shrink-0 items-center whitespace-nowrap px-2 text-xs')}
+            aria-label={openBesideLabel}
+            title={openBesideLabel}
+            className={cn(SECONDARY_LINK_CLASSES, 'flex min-h-11 min-w-11 shrink-0 items-center justify-center px-2 text-xs')}
             data-testid={`chat-thread-open-beside-${view.id}`}
           >
-            {openBesideLabel}
+            <Icon name="chat-open-beside" /><span className="sr-only">{openBesideLabel}</span>
           </Link>
         )
       }
@@ -520,7 +517,7 @@ export function ChatThreadList({
         {canPost && people !== null ? (
           <Link
             href={chatHref({ filter: { kind: 'contacts' } })}
-            className={cn(PRIMARY_LINK_CLASSES, 'h-8 px-3 text-cell')}
+            className={cn(SECONDARY_LINK_CLASSES, 'min-h-11 px-3 text-cell md:min-h-8')}
             data-testid="chat-new-conversation"
           >
             {t('chat.people.newConversationShort')}
