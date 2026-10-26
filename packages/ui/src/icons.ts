@@ -63,29 +63,49 @@
 import { createElement } from 'react';
 import {
   Archive,
+  AtSign,
   Bell,
+  BellOff,
   BookOpen,
+  Bookmark,
   Briefcase,
   Building2,
   CalendarClock,
   ChartColumn,
+  ChevronLeft,
   Clock,
+  Columns2,
+  Copy,
+  Download,
+  Ellipsis,
   Eye,
   FilePenLine,
+  FileText,
   Gauge,
   Handshake,
   House,
   Inbox,
+  Info,
   ListChecks,
   Mail,
+  Megaphone,
   Menu,
   MessageSquare,
   PanelLeft,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Pencil,
+  Pin,
   ScrollText,
   Search,
   Send,
+  SendHorizontal,
   Settings,
   Share2,
+  SmilePlus,
+  SquareSlash,
+  Trash2,
+  Type,
   UserSearch,
   Users,
   X,
@@ -145,6 +165,32 @@ export const ICONS = {
   //    新しい用途の区分を作ったのではなく、**条文が挙げた名前にアイコンを与えただけ**である。
   // 🔴 **比喩ではない**（時計 = 時間が経っていること）。🔴 **他の意味で使い回していない。**
   clock: Clock,
+  // ── ✅ 2026-10-26（紺野「チャットは拡張して」）: **チャット（S-031）専用**のアイコン。
+  // 🔴 `docs/04` §7.5「ボタン・見出しにアイコンを付けない」の**例外はチャットの画面だけ**である
+  //    （Slack・Teams・LINE と同じく、入力欄・会話の見出し・発言の操作を印で素早く押せるようにする）。
+  //    `chat-` で始まる名前は `apps/web/app/(main)/chat/` の外で使えない（`tests/static/chat-icon-scope.test.ts`）。
+  // 🔴 **語は消さない**: 印だけのボタンは `IconButton`（`aria-label` 必須）で、見た目の名前は `title` でも出す。
+  // 🔴 **比喩アイコンを使わない**（きらめき / 稲妻 / ロケット / 脳 / 電球。§7.5）。1 つの印 = 1 つの操作（使い回さない）。
+  'chat-send': SendHorizontal, // 送信
+  'chat-format': Type, // 書式（太字・箇条書きなど）の段を開く
+  'chat-mention': AtSign, // @名前を入れる
+  'chat-slash': SquareSlash, // 「/」メニュー（案件を貼る・定型文）
+  'chat-template': FileText, // 定型文
+  'chat-reaction': SmilePlus, // リアクションを付ける
+  'chat-bookmark': Bookmark, // 保存 / 保存を外す
+  'chat-pin': Pin, // ピン留め
+  'chat-mute': BellOff, // ミュート
+  'chat-more': Ellipsis, // その他の操作（…）
+  'chat-copy': Copy, // 本文をコピー
+  'chat-edit': Pencil, // 自分の発言を編集
+  'chat-delete': Trash2, // 自分の発言を削除
+  'chat-announce': Megaphone, // アナウンスにする / 外す
+  'chat-info': Info, // 右の情報欄
+  'chat-export': Download, // 会話の書き出し（CSV）
+  'chat-back': ChevronLeft, // 一覧へ戻る（スマホ）
+  'chat-open-beside': Columns2, // 右に並べて開く
+  'chat-rail-close': PanelLeftClose, // 左の絞り込みの列を畳む
+  'chat-rail-open': PanelLeftOpen, // 左の絞り込みの列を開く
 } as const;
 
 /** 🔴 写像に無い名前は**型エラー**になる（`docs/05` §17.7.1 (i)①）。 */
