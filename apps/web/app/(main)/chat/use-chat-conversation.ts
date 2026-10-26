@@ -154,7 +154,7 @@ export function useChatConversation({
   }
 
   const active = onScreen && !unavailable;
-  const { nextCursor, loadingOlder, olderFailed, loadOlder, announcement, setAnnouncement,
+  const { nextCursor, loadingOlder, olderFailed, loadOlder, loadOlderUntil, announcement, setAnnouncement,
     announcementNotLoaded, setAnnouncementNotLoaded, announcementFailed, changeAnnouncement } = useChatMessages({
     threadId, initialNextCursor, itemsRef, awayRef, scrollToLatestOnRender,
     setItems, setNewArrived, initialAnnouncement, active, onUnavailable: markUnavailable,
@@ -410,13 +410,23 @@ export function useChatConversation({
    * ✅ 2026-10-26: 帯を押したら、その発言へ移る。🔴 読み込み済みのときだけ動かし、読み込んでいなければ「いつの発言か」を出す
    * （過去を勝手に読み込み続けない。読み込みは「以前のメッセージを読み込む」に任せる）。
    */
-  function jumpToAnnouncement(): void {
+  async function jumpToAnnouncement(): Promise<void> {
     if (announcement === null) return;
-    const loaded = items.some((item) => item.id === announcement.messageId);
-    const element = loaded ? scrollRef.current?.querySelector(`[data-testid="chat-message-${announcement.messageId}"]`) : null;
-    if (element instanceof HTMLElement) {
+    const targetId = announcement.messageId;
+    const scrollToTarget = (): boolean => {
+      const element = scrollRef.current?.querySelector(`[data-testid="chat-message-${targetId}"]`);
+      if (!(element instanceof HTMLElement)) return false;
       setAnnouncementNotLoaded(false);
       element.scrollIntoView({ block: 'center' });
+      return true;
+    };
+    if (items.some((item) => item.id === targetId) && scrollToTarget()) return;
+    // ✅ 2026-10-26（#166 の 8）: 読み込んでいない古い発言なら、そこまで過去を続けて読んでから移る。
+    if (await loadOlderUntil(targetId)) {
+      // 足した行が描かれてから移る。
+      window.requestAnimationFrame(() => {
+        if (!scrollToTarget()) setAnnouncementNotLoaded(true);
+      });
       return;
     }
     setAnnouncementNotLoaded(true);

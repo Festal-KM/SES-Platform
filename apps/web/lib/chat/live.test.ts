@@ -1,7 +1,7 @@
 // apps/web/lib/chat/live.test.ts
 // `S-031` の新着の自動表示（`lib/chat/live.ts`）。
 import { describe, expect, it } from 'vitest';
-import { hasOthersMessage, mergeLatestMessages } from './live';
+import { hasGapBefore, hasOthersMessage, mergeLatestMessages } from './live';
 import type { ChatMessageView } from './views';
 
 function message(id: string, sentAt: string, mine = false): ChatMessageView {
@@ -64,5 +64,25 @@ describe('withLatestReactions（2026-10-16）', () => {
     expect(next[0]?.attachedProject).toEqual({ visible: false });
     expect(JSON.stringify(next)).not.toContain('金融系 Web 基盤');
     expect(JSON.stringify(next)).not.toContain('"p1"');
+  });
+});
+
+describe('✅ 2026-10-26（#166 の 4）hasGapBefore: 直近のページが手元とつながっていないか', () => {
+  const D = message('d', '2026-10-14T04:00:00.000Z');
+  const E = message('e', '2026-10-14T05:00:00.000Z');
+  it('満杯で、1 件も重ならず、全部が手元より新しい → 取りこぼしあり', () => {
+    expect(hasGapBefore([A, B], [D, E], 2)).toBe(true);
+  });
+  it('重なりがあればつながっている（取りこぼし無し）', () => {
+    expect(hasGapBefore([A, B], [B, C], 2)).toBe(false);
+  });
+  it('満杯でなければ、全部取れている', () => {
+    expect(hasGapBefore([A, B], [D], 2)).toBe(false);
+  });
+  it('手元が空なら何も足さない（初回の読み込みは直近のページで足りる）', () => {
+    expect(hasGapBefore([], [D, E], 2)).toBe(false);
+  });
+  it('直近のページが手元より古い（並べ替え中の一時的な順序）なら取りこぼし扱いしない', () => {
+    expect(hasGapBefore([D, E], [A, C], 2)).toBe(false);
   });
 });

@@ -36,6 +36,25 @@ export function mergeLatestMessages(
   return { items: [...current, ...added].sort(compareOldest), added };
 }
 
+/**
+ * ✅ 2026-10-26（#166 の 4）: 直近のページが手元の最後の発言と**つながっていない**か。
+ * 直近のページが満杯（`pageSize` 件）で、手元の発言と 1 件も重ならず、しかも全部が手元の最後より新しいなら、
+ * その間に取りこぼしがある（バックグラウンド中に `pageSize` 件を超えて届いた）。
+ * 🔴 そのまま足すと会話の途中が黙って抜ける。呼び出し側は手元の最後から `after` で読み足す。
+ */
+export function hasGapBefore(
+  current: readonly ChatMessageView[],
+  latest: readonly ChatMessageView[],
+  pageSize: number,
+): boolean {
+  const last = current.at(-1);
+  const oldest = latest[0];
+  if (last === undefined || oldest === undefined || latest.length < pageSize) return false;
+  const seen = new Set(current.map((item) => item.id));
+  if (latest.some((item) => seen.has(item.id))) return false;
+  return compareOldest(oldest, last) > 0;
+}
+
 /** 足した行のうち、相手（自分以外）の発言があるか。（「新しいメッセージがあります」を出すかどうか） */
 export function hasOthersMessage(added: readonly ChatMessageView[]): boolean {
   return added.some((item) => !item.mine);
