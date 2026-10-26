@@ -257,6 +257,10 @@ export function projectSummaryPanelMessages(): ProjectSummaryPanelMessages {
 const PROJECT_COLUMN_TOGGLE_MESSAGE_KEYS: Readonly<
   Record<ProjectHideableColumnId, { readonly hide: MessageKey; readonly show: MessageKey }>
 > = {
+  purchaseUnitPrice: {
+    hide: 'projects.list.columnToggle.hide.purchaseUnitPrice',
+    show: 'projects.list.columnToggle.show.purchaseUnitPrice',
+  },
   // ✅ 2026-10-15: 既定で格納する（`PROJECT_DEFAULT_HIDDEN_COLUMN_IDS`）。
   mustRequirements: {
     hide: 'projects.list.columnToggle.hide.mustRequirements',

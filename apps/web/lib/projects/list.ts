@@ -40,10 +40,6 @@
 import {
   PROJECT_LIST_ORDER_BY,
   projectSearchWhere,
-<<<<<<< HEAD
-  // ✅ 2026-10-16: 開始時期の区分 → 日付の範囲（現在時刻は引数で受け取る純粋関数）。
-=======
->>>>>>> origin/main
   resolveStartWindow,
   withTenant,
   type AuthenticatedTenantCtx,

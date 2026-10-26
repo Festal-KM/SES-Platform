@@ -414,7 +414,7 @@ export function projectSelectHref(
  * 🔴 **並びが URL の正規形を決める**（`hidden-columns.ts`）。
  * 🔴 列を増やすときは `docs/04` §10.3 / §S-010 の列の定めが先である（画面の都合で足さない）。
  */
-export const PROJECT_HIDEABLE_COLUMN_IDS = ['mustRequirements', 'visibility'] as const;
+export const PROJECT_HIDEABLE_COLUMN_IDS = ['mustRequirements', 'visibility', 'purchaseUnitPrice'] as const;
 
 export type ProjectHideableColumnId = (typeof PROJECT_HIDEABLE_COLUMN_IDS)[number];
 

@@ -342,8 +342,8 @@ describe('🔴 絞込 0 と初回空の判定（docs/04 §10.1 `S-010`）', () =
 //    ②切替のリンクは**検索条件といま見ているページ（`cursor`）を保つ**
 //    ③許可リスト外の値は効かない（URL 直打ちで壊れない）
 describe('🔴 列表示切替の対象（格納できる列）', () => {
-  it('✅ 2026-10-15: 外せるのは `必須要件の要約` と `公開先の設定状況` の 2 列である', () => {
-    expect(PROJECT_HIDEABLE_COLUMN_IDS).toEqual(['mustRequirements', 'visibility']);
+  it('必須要件の要約・公開先の設定状況・想定仕入単価の表示を切り替えられる', () => {
+    expect(PROJECT_HIDEABLE_COLUMN_IDS).toEqual(['mustRequirements', 'visibility', 'purchaseUnitPrice']);
   });
 
   // ✅✅ **2026-10-15（同日の 2 回目）: 既定で格納する列は無くなった**—— [Issue #101](https://github.com/Festal-KM/SES-Platform/issues/101)
@@ -393,7 +393,7 @@ describe('🔴 列表示切替のリンク（条件とページの位置を保�
     // 2 列隠している状態から 1 列だけ戻すと、もう片方は残る。
     expect(
       projectColumnToggleHref(query({ q: '基幹' }), null, PROJECT_HIDEABLE_COLUMN_IDS, 'visibility'),
-    ).toBe('/projects?q=%E5%9F%BA%E5%B9%B9&hide=mustRequirements');
+    ).toBe('/projects?q=%E5%9F%BA%E5%B9%B9&hide=mustRequirements%2CpurchaseUnitPrice');
   });
 
   it('🔴 ページングのリンクでも列の表示状態が落ちない', () => {

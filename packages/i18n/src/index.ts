@@ -3017,6 +3017,8 @@ const ja = {
   'projects.list.column.mustRequirements': '必須要件の要約',
   'projects.list.column.unitPrice': '単価レンジ',
   'projects.list.column.purchaseUnitPrice': '想定仕入単価',
+  'projects.list.columnToggle.hide.purchaseUnitPrice': '想定仕入単価を隠す',
+  'projects.list.columnToggle.show.purchaseUnitPrice': '想定仕入単価を表示',
   'projects.basic.endClientName': 'エンドクライアント',
   'projects.basic.upperCompanyName': '上位会社',
   'projects.basic.category': 'カテゴリ',
