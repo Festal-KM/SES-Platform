@@ -338,7 +338,7 @@ describe('🔴 ④: 自社 / 相手の弁別は `data-own` と面の色だけ（
     // 🔴 **画面のソースに `max-w-` のリテラルが無い**（幅の上限は `packages/ui` の定数が持つ。
     //    `tests/static/ui-screen-width.test.ts` (c) と同じ規律であり、ここでは会話の
     //    ファイルだけを名指しで見る）。
-    const source = readFileSync(new URL('./chat-conversation.tsx', import.meta.url), 'utf8');
+    const source = readFileSync(new URL('./chat-message-item.tsx', import.meta.url), 'utf8');
     // 🔴 クラスとして書かれた `max-w-<値>` が 1 つも無いことを見る（コメント中の `max-w-*` や
     //    `` `max-w-` `` は値を伴わないので当たらない）。
     expect(source.match(/max-w-[\w.]+/g) ?? []).toEqual([]);
@@ -846,7 +846,7 @@ describe('🔴 アナウンスの帯を古いまま残さない（2026-10-26）'
   });
 
   it('読み直しで 404 なら帯を消し、操作より前に始まった読み直しの応答は捨てる', () => {
-    const source = readFileSync(new URL('./chat-conversation.tsx', import.meta.url), 'utf8');
+    const source = readFileSync(new URL('./use-chat-messages.ts', import.meta.url), 'utf8');
     expect(source).toContain('next.status === 404');
     expect(source).toMatch(/if \(next\.status === 404\) \{\s*setAnnouncement\(null\)/);
     expect(source).toContain('announcementGeneration.current += 1');
