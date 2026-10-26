@@ -1,3 +1,4 @@
+import { ChatResizablePane } from './chat-resizable-pane';
 // apps/web/app/(main)/chat/chat-screen.render.test.tsx
 // `S-031` チャットの 3 コンポーネント（`ChatThreadList` / `ChatConversation` / `ChatThreadPanel`）の
 // 描画テスト（`docs/04` §S-031 / `F-038` / `BR-44` / `U-10` / `CLAUDE.md` §13.3）。
@@ -269,17 +270,18 @@ describe('🔴 ③: md 未満は「一覧 → 会話」の切替であって遮�
       //    `display` の値は器の中身が決める）。✅ 2026-10-13: 会話の器は縦 3 段になったので `md:flex`。
       expect(classes, `${classes} が md で戻っていません`).toMatch(/md:(?:block|flex)\b/);
     }
+    // スクロールの連鎖を止め、左の列の開閉幅を追加したためクラスの期待値も更新する。
     // 🔴 一覧の器（選択中）は畳むが `md` で戻る。
     // ✅ 2026-10-22: `md` 以上は器の中だけでスクロールする（`md:overflow-y-auto`）。
-    expect(page).toContain("'hidden bg-bg md:block md:w-96 md:shrink-0 md:overflow-y-auto md:border-r md:border-border'");
+    expect(page).toContain("'hidden bg-bg md:block md:w-96 md:shrink-0 md:overflow-y-auto overscroll-contain md:border-r md:border-border'");
     // 🔴 会話の器（未選択）は `md` 未満では一覧が全幅なので畳む。こちらも `md` で戻る。
     expect(page).toContain("'hidden min-h-0 min-w-0 flex-1 md:flex md:flex-col'");
     // ✅ 2026-10-14: 右に並べた会話とドラッグの受け口は `md` 未満では出さない（モバイルは 1 列の切替）。
     //    🔴 どちらも `md` で戻る（遮断ではない）。
-    expect(page).toContain("'hidden min-w-80 flex-1 flex-col border-l border-border md:flex'");
+    expect(page).toContain("'hidden min-h-0 min-w-0 flex-1 flex-col overscroll-contain border-l border-border md:flex'");
     expect(page).toContain("'hidden md:flex'");
     // ✅ 2026-10-19（v2）: 左の絞り込みの列も、会話を開いたときだけ畳み、`md` で戻る。
-    expect(page).toContain("'hidden shrink-0 bg-bg-subtle md:block md:w-44 md:overflow-y-auto'");
+    expect(page).toContain("'hidden shrink-0 bg-bg-subtle md:block md:w-44 md:data-[collapsed=true]:w-16 md:overflow-y-auto overscroll-contain'");
   });
 
   it('🔴 一覧そのものに `hidden` の表示ユーティリティが無い（部品側で遮断していない）', () => {
@@ -848,5 +850,27 @@ describe('🔴 アナウンスの帯を古いまま残さない（2026-10-26）'
     expect(source).toMatch(/if \(next\.status === 404\) \{\s*setAnnouncement\(null\)/);
     expect(source).toContain('announcementGeneration.current += 1');
     expect(source).toContain('generation !== announcementGeneration.current');
+  });
+});
+
+// 並べた会話では PC でも操作を畳み、名前に幅を残す。
+describe('並べた会話の見出しとスクロール', () => {
+  it('並べたときの操作は md でも自動展開しない', () => {
+    const html = renderConversation({ closeHref: '/chat' });
+    expect(classTokensOf(html, `chat-header-actions-${THREAD_PROJECT}`)).not.toContain('md:flex');
+    expect(classTokensOf(html, `chat-header-menu-${THREAD_PROJECT}`)).not.toContain('md:hidden');
+    expect(classTokensOf(html, 'chat-messages-scroll')).toContain('overscroll-contain');
+  });
+});
+
+describe('会話の幅の調節', () => {
+  it('並べた会話にだけキーボード操作できる境目を描く', () => {
+    const html = renderToStaticMarkup(<ChatResizablePane enabled storageKey="primary" resizeLabel={t('chat.pane.resize')} className="flex">{null}</ChatResizablePane>);
+    expect(html).toContain('role="separator"');
+    expect(html).toContain('tabindex="0"');
+    expect(html).toContain('aria-orientation="vertical"');
+    expect(html).toContain('aria-valuemin="320"');
+    expect(html).toContain('aria-valuemax="1600"');
+    expect(renderToStaticMarkup(<ChatResizablePane enabled={false} storageKey="primary" resizeLabel={t('chat.pane.resize')} className="flex">{null}</ChatResizablePane>)).not.toContain('role="separator"');
   });
 });

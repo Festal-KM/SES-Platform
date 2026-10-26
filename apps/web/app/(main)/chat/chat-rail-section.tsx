@@ -47,6 +47,7 @@ export function ChatRailSection({ sectionKey, heading, unread, children }: ChatR
       <h3 className="m-0">
         <button
           type="button"
+          aria-label={heading}
           aria-expanded={!closed}
           aria-controls={panelId}
           onClick={toggle}
@@ -56,7 +57,7 @@ export function ChatRailSection({ sectionKey, heading, unread, children }: ChatR
           <span aria-hidden="true" className="w-3 shrink-0">
             {closed ? '▸' : '▾'}
           </span>
-          <span className="min-w-0 flex-1 truncate">{heading}</span>
+          <span className="min-w-0 flex-1 truncate"><span className="md:in-[[data-collapsed=true]]:hidden">{heading}</span><span aria-hidden="true" className="hidden md:in-[[data-collapsed=true]]:inline">{heading.slice(0, 1)}</span></span>
           {closed && unread > 0 ? (
             <span className="shrink-0 rounded-full bg-danger px-1 text-xs font-semibold text-bg" data-testid={`chat-rail-section-unread-${sectionKey}`}>
               {String(unread)}

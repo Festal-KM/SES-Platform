@@ -225,7 +225,7 @@ export function ChatConversation({
   const [composeTab, setComposeTab] = useState<'write' | 'preview'>('write');
   // ✅ 2026-10-22: スマホの見出しの「…」（書き出し・ピン留め・ミュート・情報をしまう）の開閉。
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
-  const headerMenuUsed = canPost || prefs !== undefined;
+  const headerMenuUsed = closeHref !== undefined || canPost || prefs !== undefined;
   const [mentionOpen, setMentionOpen] = useState(false);
   // ✅ 2026-10-22: 書式ボタンの帯の開閉（既定は閉じる = 入力欄は細い 1 行）。
   const [formatOpen, setFormatOpen] = useState(false);
@@ -693,7 +693,7 @@ export function ChatConversation({
             id={`chat-edit-${item.id}`}
             value={editText}
             maxLength={CHAT_MESSAGE_MAX_LENGTH}
-            className="min-h-12 max-h-40 overflow-y-auto"
+            className="min-h-12 max-h-40 overflow-y-auto overscroll-contain"
             onChange={(event) => setEditText(event.target.value)}
           />
           {editFailed ? <Alert variant="danger">{messages.editFailed}</Alert> : null}
@@ -1085,6 +1085,18 @@ export function ChatConversation({
             </span>
           ) : null}
         </div>
+        {/* ✅ 2026-10-14: 並べて開いているときだけ「閉じる」を置く（`md` 以上。モバイルは 1 列の切替のまま）。
+            ✅ 2026-10-26: 並べているときに操作を「…」にしまっても、「閉じる」だけは外に出したままにする（すぐ押せるように）。 */}
+        {closeHref === undefined ? null : (
+          <Link
+            href={closeHref}
+            // 🔴 `cn` は後勝ち。共通の語（`inline-block` を含む）を先に置き、`hidden` が消されないようにする。
+            className={cn(SECONDARY_LINK_CLASSES, 'hidden shrink-0 text-xs md:inline-block')}
+            data-testid={`chat-pane-close-${threadId}`}
+          >
+            {messages.closePane}
+          </Link>
+        )}
         {/* スマホだけの「…」。押すと下の操作の並びが縦に開く。
             🔴 閲覧専用（書き出し・ピン留めが無い）には「…」を出さず、残る操作（情報）をそのまま並べる。 */}
         {headerMenuUsed ? (
@@ -1092,7 +1104,7 @@ export function ChatConversation({
           type="button"
           variant="ghost"
           size="sm"
-          className="min-h-11 shrink-0 md:hidden"
+          className={cn("min-h-11 min-w-11 shrink-0", closeHref === undefined ? "md:hidden" : null)}
           aria-label={messages.headerMenu}
           aria-expanded={headerMenuOpen}
           aria-controls={`chat-header-actions-${threadId}`}
@@ -1107,7 +1119,7 @@ export function ChatConversation({
           className={cn(
             !headerMenuUsed ? 'flex items-center' : headerMenuOpen ? 'flex' : 'hidden',
             'absolute top-full right-2 z-10 flex-col items-stretch gap-1 rounded-md border border-border-strong bg-bg p-2',
-            'md:static md:z-auto md:flex md:flex-1 md:flex-row md:items-center md:justify-end md:gap-4 md:border-0 md:bg-transparent md:p-0',
+            closeHref === undefined ? 'md:static md:z-auto md:flex md:flex-row md:items-center md:justify-end md:gap-4 md:border-0 md:bg-transparent md:p-0' : null,
           )}
           data-testid={`chat-header-actions-${threadId}`}
         >
@@ -1139,17 +1151,6 @@ export function ChatConversation({
               {infoLabel}
             </Link>
           )}
-          {/* ✅ 2026-10-14: 並べて開いているときだけ「閉じる」を置く（`md` 以上。モバイルは 1 列の切替のまま）。 */}
-          {closeHref === undefined ? null : (
-            <Link
-              href={closeHref}
-              // 🔴 `cn` は後勝ち。共通の語（`inline-block` を含む）を先に置き、`hidden` が消されないようにする。
-              className={cn(SECONDARY_LINK_CLASSES, 'hidden shrink-0 md:inline-block')}
-              data-testid={`chat-pane-close-${threadId}`}
-            >
-              {messages.closePane}
-            </Link>
-          )}
         </div>
       </div>
 
@@ -1179,7 +1180,7 @@ export function ChatConversation({
       <div
         ref={scrollRef}
         onScroll={(event) => setAwayFromLatest(isAwayFromLatest(event.currentTarget))}
-        className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 py-3"
+        className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain px-5 py-3"
         data-testid="chat-messages-scroll"
       >
         {/* ✅ 2026-10-22: 発言が少ないときに下へ寄せる詰め物。🔴 `justify-end` を使わない —— 中身が枠からあふれると
@@ -1565,7 +1566,7 @@ export function ChatConversation({
                   placeholder={messages.composePlaceholder}
                   // ✅ 2026-10-14: 文章に合わせて伸び（`field-sizing-content`）、約 6 行で止めて欄の中でスクロールする。
                   className={cn(
-                    'overflow-y-auto rounded-none border-0',
+                    'overflow-y-auto overscroll-contain rounded-none border-0',
                     formatOpen ? 'min-h-20 max-h-72 resize-y' : 'min-h-11 max-h-40',
                   )}
                   onChange={(event) => {
