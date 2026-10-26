@@ -18,44 +18,46 @@ export default function ChatLoading() {
   return (
     <main className={cn('py-3 md:flex md:flex-col', CHAT_SCREEN_HEIGHT_CLASS)} aria-busy="true">
       <PageBody widthClass="split" className="md:min-h-0 md:flex-1">
-        <h1 className="sr-only">{t('chat.title')}</h1>
-        <p role="status" className="sr-only" data-testid="chat-loading">
-          {t('chat.loading')}
-        </p>
-        <Card className="flex min-h-0 flex-1 flex-col p-0 md:flex-row" data-testid="chat-skeleton">
-          {/* 左の絞り込みの列 */}
-          <div className="flex flex-col gap-3 bg-bg-subtle p-3 md:w-44">
-            {Array.from({ length: RAIL_ROWS }, (_, index) => (
-              <div key={`rail-${String(index)}`} className="flex items-center gap-2">
-                <Skeleton className="size-6 shrink-0" />
-                <Skeleton width="half" />
-              </div>
-            ))}
-          </div>
-          {/* 会話の一覧（アバター + 2 段） */}
-          <div className="flex flex-col gap-4 bg-bg p-3 md:w-96 md:border-r md:border-border">
-            <Skeleton height="title" />
-            {Array.from({ length: LIST_ROWS }, (_, index) => (
-              <div key={`row-${String(index)}`} className="flex items-center gap-3">
-                <Skeleton className="h-9 w-9 shrink-0 rounded-full" />
-                <div className="flex min-w-0 flex-1 flex-col gap-2">
+        <div className="flex h-full min-h-0 flex-col">
+          <h1 className="sr-only">{t('chat.title')}</h1>
+          <p role="status" className="sr-only" data-testid="chat-loading">
+            {t('chat.loading')}
+          </p>
+          <Card className="flex min-h-0 flex-1 flex-col p-0 md:flex-row" data-testid="chat-skeleton">
+            {/* 左の絞り込みの列 */}
+            <div className="flex flex-col gap-3 bg-bg-subtle p-3 md:w-44">
+              {Array.from({ length: RAIL_ROWS }, (_, index) => (
+                <div key={`rail-${String(index)}`} className="flex items-center gap-2">
+                  <Skeleton className="size-6 shrink-0" />
                   <Skeleton width="half" />
-                  <Skeleton height="cell" />
                 </div>
-              </div>
-            ))}
-          </div>
-          {/* 会話（吹き出し） */}
-          <div className="flex min-w-0 flex-1 flex-col gap-4 p-6">
-            <Skeleton height="title" width="quarter" />
-            {BUBBLES.map((width, index) => (
-              <div key={`bubble-${String(index)}`} className="flex items-start gap-3">
-                <Skeleton className="h-9 w-9 shrink-0 rounded-full" />
-                <Skeleton height="body" width={width} />
-              </div>
-            ))}
-          </div>
-        </Card>
+              ))}
+            </div>
+            {/* 会話の一覧（アバター + 2 段） */}
+            <div className="flex flex-col gap-4 bg-bg p-3 md:w-96 md:border-r md:border-border">
+              <Skeleton height="title" />
+              {Array.from({ length: LIST_ROWS }, (_, index) => (
+                <div key={`row-${String(index)}`} className="flex items-center gap-3">
+                  <Skeleton className="h-9 w-9 shrink-0 rounded-full" />
+                  <div className="flex min-w-0 flex-1 flex-col gap-2">
+                    <Skeleton width="half" />
+                    <Skeleton height="cell" />
+                  </div>
+                </div>
+              ))}
+            </div>
+            {/* 会話（吹き出し） */}
+            <div className="flex min-w-0 flex-1 flex-col gap-4 p-6">
+              <Skeleton height="title" width="quarter" />
+              {BUBBLES.map((width, index) => (
+                <div key={`bubble-${String(index)}`} className="flex items-start gap-3">
+                  <Skeleton className="h-9 w-9 shrink-0 rounded-full" />
+                  <Skeleton height="body" width={width} />
+                </div>
+              ))}
+            </div>
+          </Card>
+        </div>
       </PageBody>
     </main>
   );

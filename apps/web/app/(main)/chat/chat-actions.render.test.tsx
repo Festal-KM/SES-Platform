@@ -5,6 +5,8 @@ import { t } from '@ses/i18n';
 import { ChatConversation } from './chat-conversation';
 import { chatConversationMessages } from './chat-props';
 import ChatLoading from './loading';
+import { ChatThreadList } from './chat-thread-list';
+import { CHAT_SCREEN_HEIGHT_CLASS } from '@ses/ui';
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: () => undefined }) }));
 // 閉じている確認画面の確定ボタンも描き、表示する文字を検査する。
@@ -49,10 +51,26 @@ describe('会話の操作と公開範囲の文言', () => {
     expect(html).not.toContain(t(members ? 'chat.compose.hint' : 'chat.compose.memberHint'));
   });
 
+  it('新規会話は送信より弱い文字の操作にする', () => {
+    const html = renderToStaticMarkup(createElement(ChatThreadList, {
+      groups: [], selectedThreadId: null, nextCursor: null, canPost: true,
+      people: {
+        rooms: [], contacts: { recent: [], companies: [] }, unreadCounts: {},
+        pinnedIds: [], mutedIds: [], lastSnippets: {},
+      },
+    }));
+    const link = html.match(/<a[^>]*data-testid="chat-new-conversation"[^>]*>/)?.[0];
+    expect(link).toBeDefined();
+    expect(link).toContain('text-fg-muted');
+    expect(link).not.toContain('bg-brand');
+  });
+
   it('読み込み中も見出しは読み上げ用で通常と同じ上余白にする', () => {
     const html = renderToStaticMarkup(createElement(ChatLoading));
     expect(html).toContain(`<h1 class="sr-only">${t('chat.title')}</h1>`);
     expect(html).toContain('py-3 md:flex md:flex-col');
+    expect(html).toContain(CHAT_SCREEN_HEIGHT_CLASS);
+    expect(html).toContain('flex h-full min-h-0 flex-col');
     expect(html).toContain('md:w-44');
   });
 });
