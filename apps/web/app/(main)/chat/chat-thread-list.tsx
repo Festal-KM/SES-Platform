@@ -25,7 +25,6 @@ import {
   EmptyState,
   Input,
   Icon,
-  PRIMARY_LINK_CLASSES,
   ROW_HOVER_CLASSES,
   SECONDARY_LINK_CLASSES,
   cn,
@@ -523,7 +522,7 @@ export function ChatThreadList({
         {canPost && people !== null ? (
           <Link
             href={chatHref({ filter: { kind: 'contacts' } })}
-            className={cn(PRIMARY_LINK_CLASSES, 'h-8 px-3 text-cell')}
+            className={cn(SECONDARY_LINK_CLASSES, 'h-8 px-3 text-cell')}
             data-testid="chat-new-conversation"
           >
             {t('chat.people.newConversationShort')}

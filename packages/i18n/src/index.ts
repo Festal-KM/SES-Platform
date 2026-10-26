@@ -4621,6 +4621,7 @@ const ja = {
   'chat.compose.label': 'メッセージ',
   'chat.compose.placeholderSuffix': ' へのメッセージ',
   'chat.compose.placeholder': 'メッセージを入力',
+  'chat.compose.memberHint': 'この部屋のメンバーにだけ表示されます。',
   'chat.compose.hint': 'このスレッドの参加会社にだけ表示されます。',
   // ✅ 2026-10-22（紺野「こういうチャット枠が必要だよね」= GitHub のコメント欄）: 書式ボタン・書く／プレビュー・@。
   'chat.compose.toolbar': '書式',

@@ -274,6 +274,7 @@ export default async function ChatPage({
                 layout={conversationLayoutFor(selected.kind)}
                 title={conversationTitleFor(selected)}
                 threadId={selected.id}
+                threadKind={selected.kind}
                 initialMessages={data.messages.items}
                 initialNextCursor={data.messages.nextCursor}
                 ownTemplates={ownTemplates}
@@ -322,6 +323,7 @@ export default async function ChatPage({
                   layout={conversationLayoutFor(pane.thread.kind)}
                   title={conversationTitleFor(pane.thread)}
                   threadId={pane.thread.id}
+                  threadKind={pane.thread.kind}
                   initialMessages={pane.messages.items}
                   initialNextCursor={pane.messages.nextCursor}
                   ownTemplates={ownTemplates}

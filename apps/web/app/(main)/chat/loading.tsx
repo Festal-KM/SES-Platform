@@ -8,7 +8,7 @@
 //    （`tests/static/route-boundaries.test.ts`。スレッドの選択は `?thread=` であり `[id]` ではない）。
 // 🔴 スマホでは左の列と会話を出さない形にしない（隠さない）—— `md` 未満は一覧だけの縦 1 列で、骨格もそれに合わせる。
 import { t } from '@ses/i18n';
-import { Card, PageBody, Skeleton } from '@ses/ui';
+import { Card, CHAT_SCREEN_HEIGHT_CLASS, PageBody, Skeleton, cn } from '@ses/ui';
 
 const RAIL_ROWS = 7;
 const LIST_ROWS = 8;
@@ -16,9 +16,9 @@ const BUBBLES = ['half', 'quarter', 'half'] as const;
 
 export default function ChatLoading() {
   return (
-    <main className="py-6" aria-busy="true">
-      <PageBody widthClass="split">
-        <h1 className="mb-6 text-title font-semibold text-fg">{t('chat.title')}</h1>
+    <main className={cn('py-3 md:flex md:flex-col', CHAT_SCREEN_HEIGHT_CLASS)} aria-busy="true">
+      <PageBody widthClass="split" className="md:min-h-0 md:flex-1">
+        <h1 className="sr-only">{t('chat.title')}</h1>
         <p role="status" className="sr-only" data-testid="chat-loading">
           {t('chat.loading')}
         </p>

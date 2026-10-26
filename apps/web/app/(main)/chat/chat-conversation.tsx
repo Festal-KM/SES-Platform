@@ -116,6 +116,7 @@ export type ChatConversationProps = {
    * 企業スレッド = `chat`（自分は右）。省略時は `topic`（従来の表示）。
    */
   readonly layout?: ChatConversationLayout;
+  readonly threadKind?: 'DM' | 'GROUP' | 'COMPANY' | 'PROJECT';
   readonly threadId: string;
   /** 直近 50 件（古い順。`lib/chat/read.ts` が並べ替えて渡す）。 */
   readonly initialMessages: readonly ChatMessageView[];
@@ -169,6 +170,7 @@ type MessagePageBody = { readonly items: readonly ChatMessageView[]; readonly ne
 
 export function ChatConversation({
   layout = 'topic',
+  threadKind,
   title,
   threadId,
   initialMessages,
@@ -1034,10 +1036,10 @@ export function ChatConversation({
               download
               aria-label={messages.exportLink}
               title={messages.exportLink}
-              className={cn(SECONDARY_LINK_CLASSES, 'inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center')}
+              className={cn(SECONDARY_LINK_CLASSES, 'inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2')}
               data-testid={`chat-thread-export-${threadId}`}
             >
-              <Icon name="chat-export" /><span className="sr-only">{messages.exportLink}</span>
+              <Icon name="chat-export" /><span className={closeHref === undefined ? "md:sr-only" : undefined}>{messages.exportLink}</span>
             </a>
           ) : null}
           {/* ✅ 2026-10-16: ピン留め・ミュート（自分の表示の設定）。 */}
@@ -1045,6 +1047,7 @@ export function ChatConversation({
             <ChatThreadPrefsToggle
               threadId={threadId}
               prefs={prefs}
+              labelDisplay={closeHref === undefined ? 'responsive' : 'menu'}
               labels={{ pin: messages.pin, unpin: messages.unpin, mute: messages.mute, unmute: messages.unmute }}
             />
           )}
@@ -1053,10 +1056,10 @@ export function ChatConversation({
               href={infoHref}
               aria-label={infoLabel}
               title={infoLabel}
-              className={cn(SECONDARY_LINK_CLASSES, 'inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center')}
+              className={cn(SECONDARY_LINK_CLASSES, 'inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2')}
               data-testid={`chat-thread-info-${threadId}`}
             >
-              <Icon name="chat-info" /><span className="sr-only">{infoLabel}</span>
+              <Icon name="chat-info" /><span className={closeHref === undefined ? "md:sr-only" : undefined}>{infoLabel}</span>
             </Link>
           )}
         </div>
@@ -1597,7 +1600,7 @@ export function ChatConversation({
             </div>
           </Field>
           {/* 誰に見えるか（取引先との部屋では大事な情報なので、小さく常に出す）。 */}
-          <p className="m-0 mt-1 text-xs text-fg-muted">{messages.composeHint}</p>
+          <p className="m-0 mt-1 text-xs text-fg-muted">{threadKind === 'DM' || threadKind === 'GROUP' ? messages.composeMemberHint : messages.composeHint}</p>
           {/* ✅ 2026-10-14: 送信の取り消し（押してから数秒は送らずに待つ）。 */}
           {pendingSend === null ? null : (
             <div className="mb-2 flex flex-wrap items-center gap-2" aria-live="polite" data-testid="chat-compose-pending">
@@ -1642,7 +1645,7 @@ export function ChatConversation({
           body={messages.deleteConfirm}
           cancelLabel={messages.cancel}
           confirm={
-            <IconButton
+            <Button
               type="button"
               variant="primary"
               onClick={() => {
@@ -1653,8 +1656,10 @@ export function ChatConversation({
               data-testid={`chat-message-delete-yes-${confirmDeleteId ?? 'none'}`}
 
               aria-label={messages.deleteConfirmYes}
-              className="h-11 w-11"
-              title={messages.deleteConfirmYes} icon={<Icon name="chat-delete" />} />
+              className="min-h-11"
+            >
+              {messages.deleteConfirmYes}
+            </Button>
           }
         />
       ) : null}
