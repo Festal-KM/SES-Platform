@@ -4361,6 +4361,7 @@ const ja = {
   'retention.schedule.kind.chat_user_statuses': 'チャットのひとこと状態',
   'retention.schedule.kind.chat_saved_messages': 'チャットの保存済み（行ごと）',
   'retention.schedule.kind.chat_message_templates': 'チャットの自分の定型文',
+  'retention.schedule.kind.chat_threads': 'チャットのグループ名',
   'retention.schedule.kind.contract_documents': '契約書のファイル・差し込み結果・署名者',
   'retention.schedule.kind.contract_templates': '契約テンプレートのファイル',
   'retention.schedule.kind.contracts': '契約書送付の失敗本文',

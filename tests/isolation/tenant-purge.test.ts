@@ -80,6 +80,10 @@ const PURGE_GRACE_DAYS = 30;
 const PURGE_DM_THREAD = '01930000-0000-7000-8000-00000000d201';
 const PURGE_GROUP_THREAD = '01930000-0000-7000-8000-00000000d202';
 const PURGE_HOST2 = '01930000-0000-7000-8000-00000000d203';
+/** ✅ 2026-10-26（#166 の 2）: 取引先 A1 を含むグループと、対照のテナント B のグループ（と B の 2 人目）。 */
+const PURGE_PARTNER_GROUP_THREAD = '01930000-0000-7000-8000-00000000d204';
+const PURGE_TENANT_B_GROUP_THREAD = '01930000-0000-7000-8000-00000000d205';
+const PURGE_TENANT_B_HOST2 = '01930000-0000-7000-8000-00000000d206';
 const META = { deviceKind: 'desktop', ipAddress: '203.0.113.42' } as const;
 const DEVICE = { deviceKind: META.deviceKind } as const;
 /** `CLOSING` に入った時刻。UTC 00:00 = JST 09:00 → 暦日 2026-09-01。削除予定日 = 2026-10-01。 */
@@ -217,6 +221,18 @@ async function chatTemplateTexts(tenantId: string): Promise<Record<string, strin
   const rows = await admin.$queryRaw<{ user_id: string; label: string; body: string }[]>`
     SELECT user_id::text AS user_id, label, body FROM chat_message_templates WHERE tenant_id = ${tenantId}::uuid`;
   return Object.fromEntries(rows.map((row) => [row.user_id, `${row.label}/${row.body}`]));
+}
+
+/** ✅ 2026-10-26（#166 の 2）: グループ名（自由文。個人の事情が書ける）。 */
+const HOST_GROUP_TITLE = '山田さんの休職相談（PURGED で消える）';
+const PARTNER_GROUP_TITLE = '取引先と佐藤さんの件（PURGED で消える）';
+const TENANT_B_GROUP_TITLE = 'テナント B のグループ（消えてはならない）';
+
+/** DM・グループの名前（部屋 ID → 名前）。部屋の行そのものは消えないことも、この形で確かめる。 */
+async function chatRoomTitles(tenantId: string): Promise<Record<string, string | null>> {
+  const rows = await admin.$queryRaw<{ id: string; title: string | null }[]>`
+    SELECT id::text AS id, title FROM chat_threads WHERE tenant_id = ${tenantId}::uuid AND kind IN ('DM', 'GROUP')`;
+  return Object.fromEntries(rows.map((row) => [row.id, row.title]));
 }
 
 async function chatSavedCount(tenantId: string): Promise<number> {
@@ -373,6 +389,19 @@ beforeAll(async () => {
             ARRAY[${USER_A_HOST}::uuid, ${USER_A_PARTNER}::uuid], ${[USER_A_HOST, USER_A_PARTNER].sort().join(':')}),
            (${PURGE_GROUP_THREAD}::uuid, ${TENANT_A}::uuid, 'GROUP', NULL,
             ARRAY[${USER_A_HOST}::uuid, ${PURGE_HOST2}::uuid], NULL)`;
+  // ✅ 2026-10-26（#166 の 2）: グループ名。社内のグループと取引先 A1 を含むグループの両方に付ける。テナント B は対照。
+  await admin.$executeRaw`UPDATE chat_threads SET title = ${HOST_GROUP_TITLE} WHERE id = ${PURGE_GROUP_THREAD}::uuid`;
+  await admin.$executeRaw`
+    INSERT INTO chat_threads (id, tenant_id, kind, partner_company_id, member_user_ids, dm_key, title)
+    VALUES (${PURGE_PARTNER_GROUP_THREAD}::uuid, ${TENANT_A}::uuid, 'GROUP', ${PARTNER_A1}::uuid,
+            ARRAY[${USER_A_HOST}::uuid, ${USER_A_PARTNER}::uuid], NULL, ${PARTNER_GROUP_TITLE})`;
+  await admin.$executeRaw`
+    INSERT INTO users (id, tenant_id, owner_partner_company_id, email, display_name, password_hash)
+    VALUES (${PURGE_TENANT_B_HOST2}::uuid, ${TENANT_B}::uuid, NULL, 'purge-b-host2@example.test', 'B のホスト二人目', 'x')`;
+  await admin.$executeRaw`
+    INSERT INTO chat_threads (id, tenant_id, kind, partner_company_id, member_user_ids, dm_key, title)
+    VALUES (${PURGE_TENANT_B_GROUP_THREAD}::uuid, ${TENANT_B}::uuid, 'GROUP', NULL,
+            ARRAY[${USER_B_HOST}::uuid, ${PURGE_TENANT_B_HOST2}::uuid], NULL, ${TENANT_B_GROUP_TITLE})`;
   await admin.$executeRaw`
     INSERT INTO messages (id, tenant_id, owner_partner_company_id, thread_id, sender_user_id, sender_partner_company_id, body)
     VALUES (gen_random_uuid(), ${TENANT_A}::uuid, ${PARTNER_A1}::uuid, ${PURGE_DM_THREAD}::uuid, ${USER_A_HOST}::uuid, NULL, 'DM の本文'),
@@ -434,6 +463,11 @@ describe('AC-10 ① 予告が配送済みでない間は積まず、tenant.purge
     expect(pii.messages.every((m) => m.body !== null)).toBe(true);
     expect(pii.careers).toBe(2);
     expect(await chatStatusTexts(TENANT_A)).toEqual({ [USER_A_HOST]: HOST_CHAT_STATUS, [USER_A_PARTNER]: PARTNER_CHAT_STATUS });
+    expect(await chatRoomTitles(TENANT_A)).toEqual({
+      [PURGE_DM_THREAD]: null,
+      [PURGE_GROUP_THREAD]: HOST_GROUP_TITLE,
+      [PURGE_PARTNER_GROUP_THREAD]: PARTNER_GROUP_TITLE,
+    });
     expect((await tenantState()).lifecycle_state).toBe('CLOSING');
     expect(store.deletedKeys()).toEqual([]);
   });
@@ -621,6 +655,13 @@ describe('AC-2 / AC-3 / AC-8 ④⑤⑦ PURGED 後の状態', () => {
     expect(await chatSavedCount(TENANT_A)).toBe(0);
     expect(await chatTemplateTexts(TENANT_A)).toEqual({ [USER_A_HOST]: '/', [USER_A_PARTNER]: '/' });
     expect(await chatTemplateTexts(TENANT_B)).toEqual({ [USER_B_HOST]: `B/${TENANT_B_TEMPLATE_BODY}` });
+    // ✅ 2026-10-26（#166 の 2）: グループ名は消え、部屋の行（DM・社内のグループ・取引先を含むグループ）は残る。テナント B は残る。
+    expect(await chatRoomTitles(TENANT_A)).toEqual({
+      [PURGE_DM_THREAD]: null,
+      [PURGE_GROUP_THREAD]: null,
+      [PURGE_PARTNER_GROUP_THREAD]: null,
+    });
+    expect(await chatRoomTitles(TENANT_B)).toEqual({ [PURGE_TENANT_B_GROUP_THREAD]: TENANT_B_GROUP_TITLE });
     const row = await admin.dataExportRequest.findFirstOrThrow({ where: { tenantId: TENANT_A } });
     expect(row.objectKey).toBeNull();
     // 🔴 `proposal_events.attachment_key`（Phase 1 は `skill_sheets.id`）は列として NULL 化されている（S3 は `skill_sheets` 側で消した）。
@@ -675,6 +716,8 @@ describe('AC-2 / AC-3 / AC-8 ④⑤⑦ PURGED 後の状態', () => {
     expect(counts.chat_user_statuses).toBe(2);
     expect(counts.chat_saved_messages).toBe(2);
     expect(counts.chat_message_templates).toBe(2);
+    // ✅ 2026-10-26（#166 の 2）: 名前を持つ部屋（グループ 2 つ）だけが数に入る（DM・会社グループ・スレッドは名前が無い）。
+    expect(counts.chat_threads).toBe(2);
 
     const audits = await auditRows('tenant.purge');
     expect(audits).toHaveLength(1);
@@ -746,7 +789,8 @@ describe('AC-7 ⑧ 運営者の DB ロールは返却データに到達できな
       'chat_saved_messages',
       'engineer_careers',
     ]);
-    // ✅ 2026-10-16（#129）: 消さない表を「読むだけ」のポリシー。発言の継承トリガが DM / GROUP の部屋を読むため。
-    expect(rows.filter((r) => r.policyname.endsWith('_purge_scope_parent_read')).map((r) => r.tablename)).toEqual(['chat_threads']);
+    // ✅ 2026-10-16（#129）: 消さない表を「読むだけ」のポリシー（chat_threads）を置いていた。
+    //    ✅ 2026-10-26（#166 の 2）: chat_threads が PURGE_SPEC.delete に入り `_purge_scope_select` を持ったので外した（同じ式を 2 つ持たない）。
+    expect(rows.filter((r) => r.policyname.endsWith('_purge_scope_parent_read')).map((r) => r.tablename)).toEqual([]);
   });
 });

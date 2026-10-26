@@ -30,7 +30,7 @@
 //      （送る人が RLS で読める・部屋に取引先がいればその取引先に公開中。`project-cards.ts` の ②）。
 //      満たさなければ理由を書き分けずに 400。部屋の取引先は RLS で読めた部屋の行から取る（リクエストから受けない）。
 import { withTenant, writeAuditLog, type AuthenticatedTenantCtx } from '@ses/db';
-import { requireFound } from '../api/errors';
+import { NotFoundError, requireFound } from '../api/errors';
 import { CHAT_MESSAGE_SELECT, findChatThreadRow, projectChatMessages } from './read';
 import { summarizeReactions, type ChatReactionKind, type ChatReactionSummary } from './views';
 import { requirePastableProject } from './project-cards';
@@ -155,6 +155,15 @@ export const CHAT_MESSAGE_AUDIT_ACTION_UPDATE = 'message.update';
 export const CHAT_MESSAGE_AUDIT_ACTION_DELETE = 'message.delete';
 
 /**
+ * ✅ 2026-10-26（#166 の 1）: 編集・削除の更新に掛ける条件（送った本人の、まだ消えていない、この部屋の発言）。
+ * 🔴 確かめた後に別の要求が削除を確定させても、更新そのものがこの条件で 0 件になる（消した本文を書き戻さない）。
+ *    同じ行を同時に更新すると PostgreSQL は後の側を待たせ、確定後の行で条件を測り直すので、条件付きの更新だけで足りる。
+ */
+function ownLiveMessageWhere(ctx: AuthenticatedTenantCtx, threadId: string, messageId: string) {
+  return { id: messageId, threadId, senderUserId: ctx.userId, deletedAt: null, purgedAt: null };
+}
+
+/**
  * ✅ 2026-10-16（チャットレーン）: 自分の発言を探す（編集・削除の対象）。
  * 🔴 **送った本人の、まだ消えていない発言**だけ。他人の発言・別スレッド・見えない発言・削除済みは
  *    すべて 404（区別しない）。`senderUserId` の条件は「誰が編集できるか」の決まりであり、境界（誰が読めるか）は RLS。
@@ -168,7 +177,7 @@ async function requireOwnLiveMessage(
   requireFound(await findChatThreadRow(db, threadId));
   return requireFound(
     await db.message.findFirst({
-      where: { id: messageId, threadId, senderUserId: ctx.userId, deletedAt: null, purgedAt: null },
+      where: ownLiveMessageWhere(ctx, threadId, messageId),
       select: { id: true, body: true },
     }),
   );
@@ -184,9 +193,14 @@ export async function editChatMessage(
 ): Promise<SendChatMessageResult> {
   return withTenant(ctx, async (db) => {
     await requireOwnLiveMessage(ctx, db, threadId, messageId);
-    const updated = (await db.message.update({
-      where: { id: messageId },
+    // 🔴 ID だけで更新しない（#166 の 1）。0 件 = 確かめた後に消された → 404（削除済みと同じ扱い）。
+    const changed = await db.message.updateMany({
+      where: ownLiveMessageWhere(ctx, threadId, messageId),
       data: { body: input.body, editedAt: deps.now() },
+    });
+    if (changed.count === 0) throw new NotFoundError();
+    const updated = (await db.message.findFirstOrThrow({
+      where: { id: messageId, threadId },
       select: CHAT_MESSAGE_SELECT,
     })) as ChatMessageRow;
     await writeAuditLog(db, {
@@ -213,10 +227,15 @@ export async function deleteChatMessage(
 ): Promise<SendChatMessageResult> {
   return withTenant(ctx, async (db) => {
     const before = await requireOwnLiveMessage(ctx, db, threadId, messageId);
-    const updated = (await db.message.update({
-      where: { id: messageId },
+    // 🔴 削除も条件付き（#166 の 1）。同時に 2 回削除しても、監査ログは確定した 1 回だけに残る。
+    const changed = await db.message.updateMany({
+      where: ownLiveMessageWhere(ctx, threadId, messageId),
       // ✅ 2026-10-23: 貼った案件も外す（消した発言にカードを残さない。何を貼ったかは作成時の監査ログに残っている）。
       data: { body: null, deletedAt: deps.now(), attachedProjectId: null },
+    });
+    if (changed.count === 0) throw new NotFoundError();
+    const updated = (await db.message.findFirstOrThrow({
+      where: { id: messageId, threadId },
       select: CHAT_MESSAGE_SELECT,
     })) as ChatMessageRow;
     await writeAuditLog(db, {

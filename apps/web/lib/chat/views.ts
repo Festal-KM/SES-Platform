@@ -389,6 +389,8 @@ export type ChatMessageRow = {
   /** ✅ 2026-10-16: 編集・削除の日時（読みの経路は必ず埋める。手で組むテスト用に省略可）。 */
   readonly editedAt?: Date | null;
   readonly deletedAt?: Date | null;
+  /** ✅ 2026-10-26: 解約で本文を消した日時（読みの経路は必ず埋める。手で組むテスト用に省略可）。 */
+  readonly purgedAt?: Date | null;
   /** ✅ 2026-10-23: 貼った案件の ID（読みの経路は必ず埋める）。🔴 応答には載せない（カードの可否は `deps` が決める）。 */
   readonly attachedProjectId?: string | null;
 };
@@ -449,7 +451,8 @@ export function chatMessageView(row: ChatMessageRow, deps: ChatMessageDeps): Cha
     //    🔴 真偽値だけを返し、送信者の利用者 ID は応答に載せない（`CHAT_FORBIDDEN_RESPONSE_KEYS` の `senderUserId`）。
     //    `mine` なら必ず `own`（自分は自社に属する）。
     mine: row.senderUserId === deps.viewerUserId,
-    body: row.body,
+    // 🔴 削除済み・消去済みの発言は、行に何が残っていても本文を返さない（#166 の 1。書き戻しが起きても届けない二重の守り）。
+    body: row.deletedAt != null || row.purgedAt != null ? null : row.body,
     reactions: deps.reactions ?? [],
     edited: row.editedAt != null && row.deletedAt == null,
     deleted: row.deletedAt != null,

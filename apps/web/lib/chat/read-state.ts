@@ -55,6 +55,10 @@ async function writePosition(
 /**
  * ここまで読んだ（`PUT /api/threads/{id}/read`）。
  * 🔴 **戻す方向には動かさない**（古い画面からの送信で既読が巻き戻らないように）。
+ * ✅ 2026-10-26（#166 の 5）: 比べてから書くと、同時の 2 要求（PC とスマホ）で「新 → 旧」の順に書かれて後退していた。
+ *    いまは **DB の更新条件で比べる**（今の位置より後ろのときだけ進める）。同じ行を同時に更新すると PostgreSQL は後の側を
+ *    待たせ、確定後の行で条件を測り直すので、古い位置の要求は 0 件になる。行がまだ無いときの同時作成は
+ *    `ON CONFLICT DO NOTHING`（`createMany` の `skipDuplicates`）で一意制約の競合を吸収してから、同じ条件付き更新に合流する。
  */
 export async function markChatRead(
   ctx: AuthenticatedTenantCtx,
@@ -64,19 +68,27 @@ export async function markChatRead(
   return withTenant(ctx, async (db) => {
     requireFound(await findChatThreadRow(db, threadId));
     const target = await requireMessagePosition(db, threadId, upToMessageId);
-    const current = await db.chatReadState.findFirst({
-      where: { threadId },
-      select: { lastReadSentAt: true, lastReadMessageId: true },
+    // 行が無ければ「まだ何も読んでいない」で作る（ピン留め・ミュートは既定のまま）。既にあれば何もしない。
+    await db.chatReadState.createMany({
+      data: [{ tenantId: ctx.tenantId, userId: ctx.userId, threadId, lastReadSentAt: null, lastReadMessageId: null }],
+      skipDuplicates: true,
     });
-    const currentPosition =
-      current?.lastReadSentAt != null && current.lastReadMessageId != null
-        ? { sentAt: current.lastReadSentAt, id: current.lastReadMessageId }
-        : null;
-    if (!isAfterPosition(target, currentPosition)) {
-      return { lastReadMessageId: currentPosition?.id ?? null };
-    }
-    await writePosition(ctx, db, threadId, target);
-    return { lastReadMessageId: target.id };
+    // 🔴 誰の行かは RLS（C7）が決める（`where` に利用者 ID を書き足さない。冒頭の 🔴）。
+    await db.chatReadState.updateMany({
+      where: {
+        threadId,
+        OR: [
+          { lastReadSentAt: null },
+          { lastReadMessageId: null },
+          { lastReadSentAt: { lt: target.sentAt } },
+          { lastReadSentAt: target.sentAt, lastReadMessageId: { lt: target.id } },
+        ],
+      },
+      data: { lastReadSentAt: target.sentAt, lastReadMessageId: target.id },
+    });
+    // 進めた・進めなかった（もっと先まで読んでいた）のどちらでも、確定した今の位置を返す。
+    const current = await db.chatReadState.findFirst({ where: { threadId }, select: { lastReadMessageId: true } });
+    return { lastReadMessageId: current?.lastReadMessageId ?? null };
   });
 }
 
