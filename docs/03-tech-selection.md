@@ -405,6 +405,8 @@
 
 #### 3.2.8 🔴 `sandbox` 環境での二重防御と、宛先の判定基準（決定済み（2026-09-01）、[Issue #9](https://github.com/Festal-KM/SES-Platform/issues/9) / [#10](https://github.com/Festal-KM/SES-Platform/issues/10)）
 
+**2026-10-26 追補（宮田の明示指示）:** AWSの開発・営業デモ・本番は同一アカウント内の別環境とする。この3環境に限り `AWS_ISOLATION_MODE=resource` を明示指定できる。開発・デモはSESサンドボックスのアカウント単位制限に依存せず、環境別アプリロールの `Deny ses:* / sns:Publish`、モックへの切替、環境別リソースの起動時照合で実送信と本番資源へのアクセスを拒否する。既定の `account` モードと `sandbox`／`staging` のアカウント分離は維持する。既存の本番ID・ARNの一律拒否に関する記載は、`account` モードの規律として引き続き適用する。具体的な命名と運用手順は [DEPLOY-AWS.md](./DEPLOY-AWS.md)。
+
 🔴 **`sandbox` のモックの射程は「宛先が誰か」で分ける**（`CLAUDE.md` §11.1）。**判定基準は次の 2 段で確定している。**
 
 | # | 判定 | 結果 |

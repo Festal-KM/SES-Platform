@@ -15,9 +15,9 @@
 
 `infra/aws/foundation.mjs` と `scripts/aws-foundation.mjs` で、環境別のVPC・公開／非公開サブネット・S3・KMS・ECR・ログ・空のECSクラスター・アプリ／起動用IAMロールを定義。3つの `ses-platform-<環境>-foundation` スタックを作成した。保存先と鍵は削除／置換でも保持し、スタックの削除保護も有効。既存のSNS等の別プロジェクトには触れていない。NAT・ALB・DB・Redis・Web／workerはまだ作っていない。KMSキー等の基盤維持費は発生する。
 
-**同一アカウントという新しい人間の判断は既存の設計との差分である。** `packages/config/src/schema.ts` には非本番と本番のアカウントID一致を拒否する検査があり、そのままでは同一アカウントで非本番アプリを起動できない。偽の本番IDを設定して回避しない。環境別リソースの起動時照合とIAM拒否の検証を揃えてから、関連設計・起動検査・テストを同時に改訂する。現時点では起動検査を緩和していない。基盤作成をもってアプリのデプロイ完了と報告しない。
+**同一アカウントという新しい人間の判断は既存の設計との差分である。** `packages/config/src/schema.ts` に明示指定の `AWS_ISOLATION_MODE=resource` を追加。既定の `account` は従来の本番ID／ARN拒否を維持する。resourceは承認された3環境だけで、共通アカウント・環境別S3/KMS/SNS/SES設定・DBのホストとロール・TLS Redisを照合する。開発だけループバック接続を認め、デモ／本番のS3固定キーと独自endpoint、アプリのseed特権接続を拒否する。本番のモック禁止・非本番の本番APIキー拒否は共通。configの7ファイル188件とパッケージビルド通過。docs/03・05にも承認された差分を記録。偽の本番IDで回避しない。実際のDB／Redisと秘密値の設定、起動確認はまだで、基盤作成をもってアプリのデプロイ完了と報告しない。
 
-手順・後続の構成案は `docs/DEPLOY-AWS.md`。基盤定義の検査はNode標準の6テスト（外部依存なし）。作成済みIAMの検査は `node scripts/aws-verify-isolation.mjs`（ポリシーシミュレーター。実データや秘密値を取得しない）。AWS向けのCIは `.github/workflows/aws-foundation.yml` で認証情報なしに構文・定義・環境分離を検査する。AWSへの自動デプロイは追加していない。
+手順・後続の構成案は `docs/DEPLOY-AWS.md`。基盤定義の検査はNode標準の6テストが通過（外部依存なし）。作成済みIAMの検査は `node scripts/aws-verify-isolation.mjs` の23件が通過（ポリシーシミュレーター。実データや秘密値を取得しない）。3スタックはUPDATE_COMPLETE・削除保護あり。静的1490件を検証（初回2件が時間切れとなり、その2ファイル17件を再実行して通過）。AWS向けのCIは `.github/workflows/aws-foundation.yml` で認証情報なしに構文・定義・環境分離を検査する。AWSへの自動デプロイは追加していない。
 
 案件管理の改修は別ブランチ `feat/projects-management-refresh`、PR #172。AWS作業は最新origin/mainから切った別ブランチ `feat/aws-environments` に置く。PR #172は558c520時点でCIのNextビルドが既存usageのrenderテストのTS2859で失敗しており、まだmainに反映していない。今回のAWS作業では案件・チャット・DBのアプリ実装を変更していない。
 

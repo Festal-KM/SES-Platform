@@ -7052,6 +7052,8 @@ export class MockEmailSender implements EmailSender {
 
 ### 13.4 環境変数の検証（`packages/config`。NFR-ENV-3 / NFR-ENV-4）
 
+**2026-10-26 追補:** 人間が同一AWSアカウントで開発・営業デモ・本番を作る方針を承認したため、`AWS_ISOLATION_MODE=resource` を追加した。未指定時の `account` モードには以下の従来のID／ARN検査をそのまま適用する。`resource` は開発・デモ・本番だけを認め、共通アカウントIDの一致、環境別S3・KMSエイリアス・SNSトピック・SES設定セット、環境別RDS／TLS Redisのホスト名、DBの用途別ロールを照合する。開発のループバック接続以外の代替ホスト、デモ・本番のS3独自エンドポイントと固定アクセスキー、seed用の特権接続をアプリに載せる設定は拒否する。本番のモック禁止・非本番の本番APIキー拒否などは両モード共通。AWS側のIAM拒否は [DEPLOY-AWS.md](./DEPLOY-AWS.md) を参照。実装は `packages/config/src/schema.ts`、回帰検査は `resource-isolation.test.ts`。
+
 ```ts
 // packages/config/src/schema.ts
 const mailQuota = z.coerce.number().int().positive();  const base = z.object({ /* §6 の共通項目 */ MAIL_PROVIDER_DAILY_QUOTA: mailQuota, MAIL_PROVIDER_QUOTA_WARN_RATIO: z.coerce.number().min(0).max(1).default(0.8) });   // 🔴 MAIL_PROVIDER_DAILY_QUOTA = 送信基盤全体の 24h 枠（§8.3-Q）。staging / production は既定なし = 未設定なら起動失敗
