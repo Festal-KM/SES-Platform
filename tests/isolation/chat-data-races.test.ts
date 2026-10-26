@@ -10,7 +10,7 @@
 //   ② 🔴 **既読位置が同時の要求で後退しない**（#166 の 5）。
 //      以前は「今の位置を読む → 比べる → 書く」が別々で、新 → 旧の順に書かれると既読が戻っていた。
 //      - 決まった順で再現する: 行をつかんだまま古い位置への既読を走らせ、その間に新しい位置を確定させる → 新しい位置が残る。
-//      - Promise.all で新しい位置と古い位置を同時に送り（行が無い状態からも）、新しい方が残る。
+//      - 初回 INSERT を未確定で保持し、新旧両方の INSERT が一意制約で待つことを確かめてから解放し、新しい方が残る。
 //   ③ 「ここから未読にする」（意図して戻す操作）は従来どおり戻せる。
 //
 // 🔴 モックは `requireTenantCtx` / `readRequestMeta` だけ（chat-threads.test.ts と同じ）。
@@ -101,6 +101,21 @@ function settle<T>(promise: Promise<T>): Promise<Settled<T>> {
     (value) => ({ ok: true as const, value }),
     (error: unknown) => ({ ok: false as const, error }),
   );
+}
+
+/** 既読行の初回 INSERT の確定を待つ要求だけを数える。他の行ロックでは待ち合わせを通さない。 */
+async function waitForReadStateInsertWaiters(blockerPid: number, count: number): Promise<void> {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    const rows = await admin.$queryRaw<{ count: number }[]>`
+      SELECT count(*)::int AS count FROM pg_stat_activity
+       WHERE datname = current_database()
+         AND wait_event_type = 'Lock' AND wait_event = 'transactionid'
+         AND query LIKE '%INSERT INTO%chat_read_states%'
+         AND ${blockerPid}::int = ANY(pg_blocking_pids(pid))`;
+    if ((rows[0]?.count ?? 0) === count) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`既読行の初回 INSERT の確定を待つ要求が ${String(count)} 件にならなかった`);
 }
 
 describe('🔴 ① #166 の 1: 削除と編集が重なっても、消した本文が DB に戻らない', () => {
@@ -227,15 +242,36 @@ describe('🔴 ② #166 の 5: 既読位置は同時の要求で後退しない'
     expect(await storedPosition()).toBe(newer);
   });
 
-  it(`Promise.all で新しい位置と古い位置を同時に ${String(ROUNDS)} 回（行が無い状態から）: 新しい方が残る`, async () => {
+  it(`初回 INSERT と新旧の既読要求を競合させて ${String(ROUNDS)} 回: 両方成功し、1 行だけで新しい方が残る`, async () => {
     const { markChatRead } = await import('../../apps/web/lib/chat/read-state');
     for (let index = 0; index < ROUNDS; index += 1) {
       await admin.chatReadState.deleteMany({ where: { userId: USER_A_HOST, threadId: THREAD_A_P1 } });
       const pair = [
-        settle(markChatRead(hostSales, THREAD_A_P1, newer)),
-        settle(markChatRead(hostSales, THREAD_A_P1, older)),
+        () => settle(markChatRead(hostSales, THREAD_A_P1, newer)),
+        () => settle(markChatRead(hostSales, THREAD_A_P1, older)),
       ];
-      const results = await Promise.all(index % 2 === 0 ? pair : [...pair].reverse());
+      const ordered = index % 2 === 0 ? pair : [...pair].reverse();
+      const pending: ReturnType<(typeof pair)[number]>[] = [];
+      try {
+        await locker.$transaction(async (tx) => {
+          const [connection] = await tx.$queryRaw<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+          if (!connection) throw new Error('初回 INSERT を保持する接続が見つからない');
+          // 行が無いところから初回 INSERT を行い、確定を止めておく。
+          // 両要求の INSERT がこの未確定行と競合するので、単なる同時実行の成否に依存しない。
+          await tx.chatReadState.create({
+            data: { tenantId: TENANT_A, userId: USER_A_HOST, threadId: THREAD_A_P1 },
+          });
+          for (const start of ordered) {
+            pending.push(start());
+            await waitForReadStateInsertWaiters(connection.pid, pending.length);
+          }
+          // 両方が一意制約で待った後にだけ確定する。ここで要求を await すると行き詰まる。
+        }, { timeout: 30_000 });
+      } finally {
+        // 待ち合わせが失敗しても、ロックの解放後に開始済みの要求を回収する。
+        await Promise.all(pending);
+      }
+      const results = await Promise.all(pending);
       // 🔴 初回作成の一意制約の競合で落ちない。
       expect(results.every((result) => result.ok), `round ${String(index)}`).toBe(true);
       expect(await storedPosition(), `round ${String(index)}`).toBe(newer);
