@@ -97,6 +97,8 @@ export const CHAT_MESSAGE_SELECT = {
   sentAt: true,
   editedAt: true,
   deletedAt: true,
+  // ✅ 2026-10-26: 消去済みの印（本文を返さない判定に使う。応答には載せない）。
+  purgedAt: true,
   // ✅ 2026-10-23: 貼った案件の ID（カードは読む人の RLS で読み直す。応答には ID を直接載せない）。
   attachedProjectId: true,
 } as const;

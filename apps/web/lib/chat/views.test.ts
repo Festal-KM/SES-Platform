@@ -109,6 +109,14 @@ describe('chatMessageView（会話の 1 件）', () => {
     }
   });
 
+  it('🔴 #166 の 1: 削除済み・消去済みの行は、本文が残っていても `body` を返さない', () => {
+    const deps = { senderName: null, senderCompanyName: null, viewerPartnerCompanyId: null, viewerUserId: '01930000-0000-7000-8000-0000000000e9' };
+    const at = new Date('2026-10-26T00:00:00.000Z');
+    expect(chatMessageView({ ...MESSAGE_ROW, body: '書き戻された本文', deletedAt: at }, deps).body).toBeNull();
+    expect(chatMessageView({ ...MESSAGE_ROW, body: '書き戻された本文', purgedAt: at }, deps).body).toBeNull();
+    expect(chatMessageView({ ...MESSAGE_ROW, body: '生きている本文' }, deps).body).toBe('生きている本文');
+  });
+
   it('🔴 `own` は会社で決まる（利用者単位にしない。スレッドには 2 社しか居ない）', () => {
     // 取引先の文脈: 自社が送った行は `own`。
     expect(
