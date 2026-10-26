@@ -62,7 +62,7 @@ test('基盤作成では課金の大きいアプリ・DB・ロードバランサ
 test('非公開側も環境内S3へ接続でき、ECRのAWS所有レイヤーだけは読み取り可能', () => {
   const r = foundationTemplate('demo').Resources;
   assert.deepEqual(r.PrivateSubnetARoutes.Properties.RouteTableId, { Ref: 'PrivateRoutes' });
-  assert.deepEqual(r.S3Endpoint.Properties.RouteTableIds, [{ Ref: 'PublicRoutes' }, { Ref: 'PrivateRoutes' }]);
+  assert.deepEqual(r.S3Endpoint.Properties.RouteTableIds, [{ Ref: 'PrivateRoutes' }]);
   const ecr = r.S3Endpoint.Properties.PolicyDocument.Statement[1];
   assert.equal(ecr.Action, 's3:GetObject');
   assert.ok(JSON.stringify(ecr.Resource).includes('starport-layer-bucket/*'));

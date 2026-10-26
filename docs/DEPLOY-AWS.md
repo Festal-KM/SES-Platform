@@ -10,7 +10,7 @@
 | 営業デモ | demo | すぐ実演できるよう常時稼働 | 合成データのみ。全外部連携はモック |
 | 本番 | production | 常時稼働。監視・バックアップを設定 | 実顧客データ。他環境への持ち出し禁止 |
 
-今回作成するのは**基盤**であり、3つのアプリが利用できる状態を意味しない。Web、worker、DB、Redis、HTTPS、通知先、アプリの秘密値は後続の構築対象。空の ECS クラスターにタスクは起動しない。
+今回作成するのは**基盤と開発用の作業サーバー**であり、3つのアプリが利用できる状態を意味しない。Web、worker、DB、Redis、HTTPS、通知先、アプリの秘密値は後続の構築対象。空の ECS クラスターにタスクは起動しない。
 
 アカウントを共有する判断は、これまでのアカウント分離の設計からの変更である。`packages/config/src/schema.ts` に明示指定の `AWS_ISOLATION_MODE=resource` を追加した。未指定時は従来の `account` モードを維持し、非本番と本番のID一致を拒否する。本番IDを偽の値にして回避しない。モック禁止・本番APIキーの拒否・SSL・暗号鍵の検査も維持する。
 
@@ -41,11 +41,32 @@ node scripts/aws-verify-isolation.mjs
 
 スタックには削除保護を有効にする。既存のSNSなど、別プロジェクトの資源・VPC・権限・DNSは変更しない。
 
+## 開発用の作業サーバー
+
+`infra/aws/development.mjs` が `ses-platform-development-workspace` スタックを定義する。Amazon Linux 2023、t3.large（2 vCPU／8 GiB）、暗号化gp3ディスク80 GiB。DockerとGitを初期化する。アプリ・DB・Redis・ソースの配備はまだ行わない。
+
+SSHを含め、インターネットからの着信ポートは開けない。AWS Systems ManagerのSession Managerで接続する。作業用IAMロールは実送信・秘密値の取得・ロールの引受・IAM変更を拒否し、ソース搬入用の自環境S3 `bootstrap/` だけを読み取れる。作業サーバーは公開サブネットからHTTP／HTTPSでOS・コンテナ等の公開パッケージを取得する。S3 Gateway Endpointは非公開サブネットだけに付け、公開OSリポジトリの取得を妨げない。
+
+```powershell
+# init は初回構築／意図した更新時だけ。既存VMのAMIを維持し、ネットワーク変更は拒否する。
+node scripts/aws-development.mjs init
+# 日々の操作はこちら。環境名は受け付けず、開発の1台だけを操作する。
+node scripts/aws-development.mjs start
+node scripts/aws-development.mjs status
+node scripts/aws-development.mjs stop
+```
+
+起動から8時間後以降、最初の15分ごとの検査で自動停止する。稼働中に `start` を再実行すると期限を延長する。自動停止用Lambdaの停止権限は、この1台の識別子かつ開発・プロジェクトのタグが一致する場合だけに限定する。別環境・他プロジェクトのサーバーを停止しない。
+
+停止・再開ではディスクを保持する。インスタンス自体にも削除保護を付け、スタック削除／置換時にもインスタンスを保持し、ディスクを自動削除しない。停止中はコンピュート課金が止まるが、80 GiBのディスク保存費は残る。作業終了後は停止し、`status` の `stopped` を確認する。
+
+接続はAWSコンソールのSession Managerでも可能。`status` に表示する `aws ssm start-session` をローカルで使うにはSession Manager pluginが必要。このWindows端末ではまだ導入していない。プラグインの導入前でもAWS CLIのRun CommandでDocker疎通・ファイル保持を検査できる。
+
 `aws-verify-isolation.mjs` は作成済みのIAMロールに対して23件のポリシーシミュレーションを実行する。自環境S3の許可、他環境S3・自環境以外のKMS鍵の拒否、別ロールの引受の拒否、アプリからの秘密値取得の拒否、起動用ロールの秘密値取得範囲、非本番の実メール送信拒否を照合する。実データの読み書きやメール送信はしない。これはDBの接続・テナント分離・アプリの起動を検証するテストではない。
 
 ## 続く構築
 
-1. 開発は停止可能な専用EC2上でWeb・worker・PostgreSQL・Redisを動かす案を先に検証する。EBSにデータを保持し、SSM接続を使う。起動・停止は開発環境だけを対象とし、停止忘れ防止を設ける。本番と同じイメージ・migrationを使えるようにする。
+1. 開発用EC2・保存ディスク・SSM接続・自動停止は構築済み。次にWeb・worker・PostgreSQL・Redisを配備し、環境別の秘密値をサーバー内で生成する。本番と同じmigrationを使えるようにする。アプリ未配備の状態を開発画面が利用可能と報告しない。
 2. デモ・本番はECS FargateのWeb／workerと、環境別RDS PostgreSQL／Redisを使う案を検証する。本番はDBの複数AZ・復元手順・アラームも含める。基盤だけを本番稼働済みとは扱わない。
 3. 同一アカウント向けの起動時検査は追加済み。実際のDB／Redisの接続先と環境別の秘密値を設定し、起動と拒否の両方を確認する。RLS用ロールの作成は既存の `000_roles.sql` を唯一の定義とし、RDSで実行可能かを先に検証する。
 4. ドメイン決定後、証明書・HTTPS・環境別URLを設定する。Secure Cookieを使うため、営業用URLをHTTPで公開して仮運用しない。S3のCORSはその環境のHTTPS originだけに限定する。

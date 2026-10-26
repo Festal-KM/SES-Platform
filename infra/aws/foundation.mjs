@@ -115,7 +115,7 @@ export function foundationTemplate(environment) {
   }
   resources.S3Endpoint = { Type: 'AWS::EC2::VPCEndpoint', Properties: {
     VpcId: ref('Vpc'), VpcEndpointType: 'Gateway', ServiceName: sub('com.amazonaws.${AWS::Region}.s3'),
-    RouteTableIds: [ref('PublicRoutes'), ref('PrivateRoutes')],
+    RouteTableIds: [ref('PrivateRoutes')],
     PolicyDocument: { Version: '2012-10-17', Statement: [
       { Effect: 'Allow', Principal: '*', Action: 's3:*', Resource: [attr('Files', 'Arn'), sub('${Files.Arn}/*')] },
       // ECR のイメージ本体はAWS所有のS3から取得される。自環境の業務データとは別に読み取りだけを許可する。
