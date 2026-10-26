@@ -110,6 +110,13 @@ type SelectedThreadRow = SelectedChatThreadRow;
 
 export type ChatThreadListView = CursorPage<ChatThreadListItem>;
 export type ChatMessageListView = CursorPage<ChatMessageView>;
+/**
+ * ✅ 2026-10-26（#166 の 4・8）: `after` / `around` で読んだ窓。
+ * `nextCursor` は通常のページと同じ意味（古い方へ辿るときに `cursor` へ渡す。`around` のときだけ値を持つ）。
+ * `hasMoreAfter` は「この窓の最後より新しい発言がまだある」（`after` に最後の ID を渡して続きを読む）。
+ * 🔴 件数（残り何件か）は返さない（§4.8）。
+ */
+export type ChatMessageWindowView = ChatMessageListView & { readonly hasMoreAfter: boolean };
 
 /**
  * 相手の社名を引く。
@@ -508,6 +515,10 @@ async function readMessagePage(
   threadId: string,
   query: ChatMessageListQuery,
 ): Promise<ChatMessageListView> {
+  if (query.after !== undefined || query.around !== undefined) {
+    // 🔴 窓の読みは `listChatMessages`（API）だけが使う。画面の初回読みは従来どおり直近のページ。
+    throw new Error('readMessagePage は after / around を扱わない（readMessageWindow を使う）');
+  }
   const rows = (await db.message.findMany({
     // 🔴 「どのスレッドの会話か」だけ。`ownerPartnerCompanyId` の条件を書き足さない（C6 が決める）。
     where: { threadId },
@@ -538,13 +549,69 @@ export async function listChatMessages(
   ctx: AuthenticatedTenantCtx,
   threadId: string,
   query: ChatMessageListQuery,
-): Promise<ChatMessageListView> {
+): Promise<ChatMessageListView | ChatMessageWindowView> {
   return withTenant(ctx, async (db) => {
     // 🔴 スレッドが見えなければ会話を 0 件で返さず 404 にする ——「空の会話」と「見えない」を
     //    画面と API で区別させない（区別できると参加していないスレッドの存在が分かる）。
     requireFound(await findChatThreadRow(db, threadId));
+    if (query.after !== undefined || query.around !== undefined) {
+      return readMessageWindow(ctx, db, threadId, query);
+    }
     return readMessagePage(ctx, db, threadId, query);
   });
+}
+
+/**
+ * ✅ 2026-10-26（#166 の 4・8）: 基準の発言より後ろ（`after`）/ 前後（`around`）を読む。
+ * 🔴 基準の発言は**このスレッドの、自分から読める発言**でなければ 404（`messages` の RLS 越しに引く。
+ *    別スレッド・他社・不存在を区別しない）。並びは会話と同じ `(sent_at, id)`。
+ */
+async function readMessageWindow(
+  ctx: AuthenticatedTenantCtx,
+  db: Parameters<typeof readMessagePage>[1],
+  threadId: string,
+  query: ChatMessageListQuery,
+): Promise<ChatMessageWindowView> {
+  const anchorId = query.after ?? query.around;
+  if (anchorId === undefined) throw new Error('readMessageWindow には after か around が要る');
+  const anchor = requireFound(
+    (await db.message.findFirst({ where: { id: anchorId, threadId }, select: CHAT_MESSAGE_SELECT })) as ChatMessageRow | null,
+  );
+  const newer = { OR: [{ sentAt: { gt: anchor.sentAt } }, { sentAt: anchor.sentAt, id: { gt: anchor.id } }] };
+  const older = { OR: [{ sentAt: { lt: anchor.sentAt } }, { sentAt: anchor.sentAt, id: { lt: anchor.id } }] };
+  if (query.after !== undefined) {
+    const rows = (await db.message.findMany({
+      where: { threadId, ...newer },
+      select: CHAT_MESSAGE_SELECT,
+      orderBy: [{ sentAt: 'asc' }, { id: 'asc' }],
+      take: takeForCursorPage(query.limit),
+    })) as readonly ChatMessageRow[];
+    const page = rows.slice(0, query.limit);
+    return { items: await projectChatMessages(ctx, db, page), nextCursor: null, hasMoreAfter: rows.length > query.limit };
+  }
+  // `around`: 基準の前に半分、後ろに半分（基準を含めて最大 limit + 1 件）。
+  const half = Math.max(1, Math.floor(query.limit / 2));
+  const [before, after] = await Promise.all([
+    db.message.findMany({
+      where: { threadId, ...older },
+      select: CHAT_MESSAGE_SELECT,
+      orderBy: [{ sentAt: 'desc' }, { id: 'desc' }],
+      take: takeForCursorPage(half),
+    }) as Promise<readonly ChatMessageRow[]>,
+    db.message.findMany({
+      where: { threadId, ...newer },
+      select: CHAT_MESSAGE_SELECT,
+      orderBy: [{ sentAt: 'asc' }, { id: 'asc' }],
+      take: takeForCursorPage(half),
+    }) as Promise<readonly ChatMessageRow[]>,
+  ]);
+  const beforePage = buildCursorPage(before, half, (row) => row.id);
+  const rows = [...[...beforePage.items].reverse(), anchor, ...after.slice(0, half)];
+  return {
+    items: await projectChatMessages(ctx, db, rows),
+    nextCursor: beforePage.nextCursor,
+    hasMoreAfter: after.length > half,
+  };
 }
 
 /** 画面（`S-031`）が 1 リクエストで必要とするもの。 */

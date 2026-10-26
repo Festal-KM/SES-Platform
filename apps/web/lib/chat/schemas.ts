@@ -40,9 +40,19 @@ export type ChatThreadListQuery = z.infer<typeof chatThreadListQuerySchema>;
  *    `idCursorPageQuerySchema` の既定（`PAGE_SIZE_DEFAULT` = 50）と同値だが、**この画面の根拠は
  *    §10.4 であり、ページサイズの共通既定が変わっても会話の既定は 50 のままにする**。
  */
-export const chatMessageListQuerySchema = idCursorPageQuerySchema.extend({
-  limit: z.coerce.number().int().min(1).max(PAGE_SIZE_MAX).default(CHAT_MESSAGE_PAGE_SIZE),
-});
+export const chatMessageListQuerySchema = idCursorPageQuerySchema
+  .extend({
+    limit: z.coerce.number().int().min(1).max(PAGE_SIZE_MAX).default(CHAT_MESSAGE_PAGE_SIZE),
+    // ✅ 2026-10-26（#166 の 4）: この発言より**後ろ**を古い順に読む（復帰後に 50 件を超えた新着を欠落なく追う）。
+    after: z.uuid().optional(),
+    // ✅ 2026-10-26（#166 の 8）: この発言の**前後**を読む（古いアナウンスへ 1 操作で移る）。
+    around: z.uuid().optional(),
+  })
+  // 🔴 読み方は 1 つだけ（`cursor` = 古い方へ / `after` = 新しい方へ / `around` = 前後）。組み合わせは 400。
+  .refine(
+    (query) => [query.cursor, query.after, query.around].filter((value) => value !== undefined).length <= 1,
+    { message: 'cursor / after / around は 1 つだけ指定できます' },
+  );
 
 export type ChatMessageListQuery = z.infer<typeof chatMessageListQuerySchema>;
 

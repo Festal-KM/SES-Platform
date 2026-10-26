@@ -424,6 +424,70 @@ describe('⑩ 会話のページング（直近 N 件 → 上方向）', () => {
   });
 });
 
+describe('✅ 2026-10-26（#166 の 4・8）⑩b 基準の発言の後ろ（after）・前後（around）を読む', () => {
+  type WindowBody = MessageListBody & { readonly hasMoreAfter: boolean };
+  /** 今のスレッドの全発言（古い順）。他のテストが足した発言も含めた実際の並びを基準にする。 */
+  async function allIds(): Promise<readonly string[]> {
+    const body = await okJson<MessageListBody>(await listMessages(hostSales, THREAD_A_P1, '?limit=200'));
+    return idsOf(body);
+  }
+
+  it('after: 基準より新しい発言を古い順に、欠落も重複も無く辿れる（limit を超えたら hasMoreAfter）', async () => {
+    const ids = await allIds();
+    expect(ids.length).toBeGreaterThanOrEqual(4);
+    const seen: string[] = [];
+    let after = ids[0];
+    for (let guard = 0; guard < 20 && after !== undefined; guard += 1) {
+      const body = await okJson<WindowBody>(await listMessages(hostSales, THREAD_A_P1, `?limit=1&after=${after}`));
+      // 🔴 応答のキーは凍結（件数を返さない）。
+      expect(Object.keys(body).sort()).toEqual(['hasMoreAfter', 'items', 'nextCursor']);
+      seen.push(...idsOf(body));
+      if (!body.hasMoreAfter) break;
+      after = idsOf(body).at(-1);
+    }
+    expect(seen).toEqual(ids.slice(1));
+  });
+
+  it('around: 基準を真ん中に、前後を古い順で返す。古い方の続きは nextCursor で辿れる', async () => {
+    const ids = await allIds();
+    const middle = ids[Math.floor(ids.length / 2)];
+    const body = await okJson<WindowBody>(await listMessages(hostSales, THREAD_A_P1, `?limit=2&around=${String(middle)}`));
+    const got = idsOf(body);
+    const at = ids.indexOf(String(middle));
+    expect(got).toEqual(ids.slice(Math.max(0, at - 1), at + 2));
+    expect(body.hasMoreAfter).toBe(at + 2 < ids.length);
+    expect(body.nextCursor === null).toBe(at - 1 <= 0);
+  });
+
+  it('🔴 基準が他社のスレッドの発言・不存在・他テナントなら 404 で、本文も社名も出ない（区別できない）', async () => {
+    const otherThreadMessage = await listMessages(partnerA1, THREAD_A_P1, `?after=${MESSAGE_A_P2}`);
+    const absent = await listMessages(partnerA1, THREAD_A_P1, `?around=${ABSENT_THREAD}`);
+    const otherThread = await listMessages(partnerA1, THREAD_A_P2, `?around=${MESSAGE_A_P2}`);
+    const crossTenant = await listMessages(hostB, THREAD_A_P1, `?after=${MESSAGE_A_P1}`);
+    const responses = [otherThreadMessage, absent, otherThread, crossTenant];
+    expect(responses.map((response) => response.status)).toEqual([404, 404, 404, 404]);
+    const texts = await Promise.all(responses.map((response) => response.text()));
+    expect(new Set(texts).size).toBe(1);
+    for (const text of texts) {
+      expect(text).not.toContain(BODY_P2);
+      expect(text).not.toContain(COMPANY_A2);
+    }
+  });
+
+  it('🔴 ホストでも、別のスレッドの発言を基準にはできない（スレッドをまたいで読ませない）', async () => {
+    const response = await listMessages(hostSales, THREAD_A_P1, `?around=${MESSAGE_A_P2}`);
+    expect(response.status).toBe(404);
+    expect(await response.text()).not.toContain(BODY_P2);
+  });
+
+  it('cursor / after / around の組み合わせと形の違う ID は 400', async () => {
+    const both = await listMessages(hostSales, THREAD_A_P1, `?after=${MESSAGE_A_P1}&around=${MESSAGE_A_P1}`);
+    const withCursor = await listMessages(hostSales, THREAD_A_P1, `?cursor=${MESSAGE_A_P1}&after=${MESSAGE_A_P1}`);
+    const malformed = await listMessages(hostSales, THREAD_A_P1, '?after=not-a-uuid');
+    expect([both.status, withCursor.status, malformed.status]).toEqual([400, 400, 400]);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // ⑥ ⑦ 参加会社と案件名（RLS が決める）
 // ---------------------------------------------------------------------------
