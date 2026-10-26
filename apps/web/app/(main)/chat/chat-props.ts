@@ -6,7 +6,10 @@
 // 🔴 **文言をコンポーネントにベタ書きしない**（`CLAUDE.md` §3.5 / `BR-32`）。
 import { t } from '@ses/i18n';
 import type { ChatFormat } from '../../../lib/chat/markdown';
+import type { ChatProjectCardLabels } from '../../../lib/chat/project-card-text';
 import type { ChatReactionKind } from '../../../lib/chat/views';
+import { PREFECTURE_MESSAGE_KEYS } from '../../../lib/format/prefectures';
+import { PROJECT_REMOTE_MODE_MESSAGE_KEYS, PROJECT_STATUS_MESSAGE_KEYS } from '../../../lib/projects/labels';
 
 /** 会話（中央）の島が使う語。 */
 export type ChatConversationMessages = {
@@ -94,7 +97,36 @@ export type ChatConversationMessages = {
   readonly bookmark: string;
   readonly unbookmark: string;
   readonly bookmarked: string;
+  /** ✅ 2026-10-23: 行頭の「/」のメニューと、案件を貼る小窓。 */
+  readonly slash: { readonly label: string; readonly project: string; readonly template: string };
+  readonly pasteProject: {
+    readonly title: string;
+    readonly search: string;
+    readonly hint: string;
+    readonly loading: string;
+    readonly empty: string;
+    readonly failed: string;
+    readonly attached: string;
+    readonly remove: string;
+    readonly close: string;
+    readonly notPastable: string;
+  };
+  /** ✅ 2026-10-23: 発言の中の案件カード。 */
+  readonly projectCard: ChatProjectCardLabels & {
+    readonly label: string;
+    readonly hidden: string;
+    readonly start: string;
+    readonly location: string;
+    readonly countUnit: string;
+    readonly open: string;
+    readonly quote: string;
+  };
 };
+
+/** ✅ 2026-10-23: 値 → 語の写像を、島に渡せる素の記録にする（島は `t()` を呼ばない）。 */
+function resolvedLabels(keys: Readonly<Record<string, Parameters<typeof t>[0]>>): Readonly<Record<string, string>> {
+  return Object.fromEntries(Object.entries(keys).map(([value, key]) => [value, t(key)]));
+}
 
 /** ✅ 2026-10-14: ドラッグで会話を右に並べる受け口の語。 */
 export type ChatPaneDropMessages = {
@@ -209,5 +241,38 @@ export function chatConversationMessages(): ChatConversationMessages {
     bookmark: t('chat.message.bookmark'),
     unbookmark: t('chat.message.unbookmark'),
     bookmarked: t('chat.message.bookmarked'),
+    slash: {
+      label: t('chat.compose.slash.label'),
+      project: t('chat.compose.slash.project'),
+      template: t('chat.compose.slash.template'),
+    },
+    pasteProject: {
+      title: t('chat.compose.project.title'),
+      search: t('chat.compose.project.search'),
+      hint: t('chat.compose.project.hint'),
+      loading: t('chat.compose.project.loading'),
+      empty: t('chat.compose.project.empty'),
+      failed: t('chat.compose.project.failed'),
+      attached: t('chat.compose.project.attached'),
+      remove: t('chat.compose.project.remove'),
+      close: t('chat.compose.project.close'),
+      notPastable: t('chat.compose.project.notPastable'),
+    },
+    projectCard: {
+      label: t('chat.projectCard.label'),
+      hidden: t('chat.projectCard.hidden'),
+      start: t('chat.projectCard.start'),
+      location: t('chat.projectCard.location'),
+      must: t('chat.projectCard.must'),
+      nice: t('chat.projectCard.nice'),
+      countUnit: t('chat.projectCard.countUnit'),
+      open: t('chat.projectCard.open'),
+      quote: t('chat.projectCard.quote'),
+      statuses: resolvedLabels(PROJECT_STATUS_MESSAGE_KEYS),
+      remoteModes: resolvedLabels(PROJECT_REMOTE_MODE_MESSAGE_KEYS),
+      prefectures: resolvedLabels(PREFECTURE_MESSAGE_KEYS),
+      none: t('projects.detail.valueNone'),
+      yearsOrMore: t('projects.list.requirements.yearsOrMore'),
+    },
   };
 }

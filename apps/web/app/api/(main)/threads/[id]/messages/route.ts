@@ -16,15 +16,16 @@
 //     `requireNotViewer()`（二重の網）。
 //   - 🔴 **`audit` オプションを使わない** —— 記録は `sendChatMessage` の業務トランザクション内で
 //     書く（404 では残さない。`service.ts` の ⑤）。
-//   - 🔴 **添付の口が無い**（`chatMessageBodySchema` は `{ body }` だけ）。理由は `schemas.ts` の 🔴。
+//   - 🔴 **添付の口が無い**（`chatMessagePostBodySchema` は `{ body, projectId? }` だけ）。理由は `schemas.ts` の 🔴。
+//   - ✅ 2026-10-23: 🔴 **`projectId`（案件を貼る）は貼れるかをサーバが決める**（`service.ts` の ⑦）。貼れなければ 400。
 import { requireExecutable, requireNotViewer, requireRole } from '../../../../../../lib/api/guards';
 import { withApiRoute } from '../../../../../../lib/api/withApiRoute';
 import { readRequestMeta } from '../../../../../../lib/auth/session';
 import { listChatMessages } from '../../../../../../lib/chat/read';
 import { CHAT_POST_ROLES } from '../../../../../../lib/chat/policy';
 import {
-  chatMessageBodySchema,
   chatMessageListQuerySchema,
+  chatMessagePostBodySchema,
   chatThreadParamsSchema,
 } from '../../../../../../lib/chat/schemas';
 import { sendChatMessage } from '../../../../../../lib/chat/service';
@@ -51,7 +52,7 @@ export const POST = withApiRoute(
     label: 'POST /api/threads/{id}/messages',
     guards: [requireRole([...CHAT_POST_ROLES]), requireExecutable(), requireNotViewer()],
     params: chatThreadParamsSchema,
-    body: chatMessageBodySchema,
+    body: chatMessagePostBodySchema,
   },
   async ({ ctx, params, body }) => {
     const meta = await readRequestMeta();

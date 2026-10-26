@@ -14,7 +14,8 @@
 import type { AuthenticatedTenantCtx } from '@ses/db';
 import { withTenant } from '@ses/db';
 import { countUnread, readThreadPrefs } from './read-state';
-import { messageSnippet } from './thread-tree';
+import { t } from '@ses/i18n';
+import { lastMessageSnippet } from './thread-tree';
 import { readChatUserStatuses } from './user-status';
 import type { ChatMemberView, ChatRoomListItem, ChatThreadDetailView } from './views';
 
@@ -175,7 +176,7 @@ export async function readPeople(
           where: { threadId: { in: roomIds } },
           distinct: ['threadId'],
           orderBy: [{ threadId: 'asc' }, { sentAt: 'desc' }, { id: 'desc' }],
-          select: { threadId: true, body: true },
+          select: { threadId: true, body: true, attachedProjectId: true },
         });
   const unread = await countUnread(ctx, db, roomIds);
   const prefs = await readThreadPrefs(db, roomIds);
@@ -194,7 +195,7 @@ export async function readPeople(
     unreadCounts: Object.fromEntries(unread),
     pinnedIds: [...prefs.entries()].filter(([, value]) => value.pinned).map(([id]) => id),
     mutedIds: [...prefs.entries()].filter(([, value]) => value.muted).map(([id]) => id),
-    lastSnippets: Object.fromEntries(lastMessages.map((message) => [message.threadId, messageSnippet(message.body ?? '', '', 60)])),
+    lastSnippets: Object.fromEntries(lastMessages.map((message) => [message.threadId, lastMessageSnippet(message, t('chat.snippet.projectShared'))])),
   };
 }
 

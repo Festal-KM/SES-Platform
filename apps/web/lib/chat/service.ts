@@ -26,11 +26,15 @@
 //   ⑥ 🔴 **二重送信を作らない。** 本操作は外部送信ではなく自テナント DB への 1 行の INSERT であり、
 //      §3.4 の `idempotency_key` + CAS の射程（外部 API を呼ぶジョブ）には当たらない。
 //      連打の抑止は画面側の `createSubmitGuard` が行う。
+//   ⑦ ✅ 2026-10-23（紺野）: 🔴 **案件を貼る（`projectId`）ときは、貼れるかを同じトランザクションで確かめる**
+//      （送る人が RLS で読める・部屋に取引先がいればその取引先に公開中。`project-cards.ts` の ②）。
+//      満たさなければ理由を書き分けずに 400。部屋の取引先は RLS で読めた部屋の行から取る（リクエストから受けない）。
 import { withTenant, writeAuditLog, type AuthenticatedTenantCtx } from '@ses/db';
 import { requireFound } from '../api/errors';
 import { CHAT_MESSAGE_SELECT, findChatThreadRow, projectChatMessages } from './read';
 import { summarizeReactions, type ChatReactionKind, type ChatReactionSummary } from './views';
-import type { ChatMessageBody } from './schemas';
+import { requirePastableProject } from './project-cards';
+import type { ChatMessageBody, ChatMessagePostBody } from './schemas';
 import type { ChatMessageRow, ChatMessageView } from './views';
 
 /** 🔴 `docs/05` §16.1 の `*.create`（`S-041` の操作種別フィルタは接尾辞一致）。独自 action を作らない。 */
@@ -52,13 +56,16 @@ export type SendChatMessageResult = {
 export async function sendChatMessage(
   ctx: AuthenticatedTenantCtx,
   threadId: string,
-  input: ChatMessageBody,
+  input: ChatMessagePostBody,
   deps: SendChatMessageDeps,
 ): Promise<SendChatMessageResult> {
   const sentAt = deps.now();
   return withTenant(ctx, async (db) => {
     // ① 投稿先が見えるか（見えなければ 404。読みと同じ 1 実装）。
     const thread = requireFound(await findChatThreadRow(db, threadId));
+    // ⑦ 貼る案件があれば、この部屋に貼れるか（貼れなければ 400。部屋が見えないときは上の 404 が先に返る）。
+    const attachedProjectId = input.projectId ?? null;
+    if (attachedProjectId !== null) await requirePastableProject(db, thread.partnerCompanyId, attachedProjectId);
 
     const created = (await db.message.create({
       data: {
@@ -73,6 +80,7 @@ export async function sendChatMessage(
         senderUserId: ctx.userId,
         senderPartnerCompanyId: ctx.partnerCompanyId,
         body: input.body,
+        attachedProjectId,
         sentAt,
       },
       select: CHAT_MESSAGE_SELECT,
@@ -89,7 +97,12 @@ export async function sendChatMessage(
       actorId: ctx.userId,
       targetType: CHAT_MESSAGE_AUDIT_TARGET_TYPE,
       targetId: created.id,
-      summary: { threadId: thread.id, bodyLength: input.body.length },
+      // ✅ 2026-10-23: 案件を貼ったときだけ、どの案件か（ID だけ。名前・本文は載せない）。貼らない投稿の形は従来のまま。
+      summary: {
+        threadId: thread.id,
+        bodyLength: input.body.length,
+        ...(attachedProjectId === null ? {} : { attachedProjectId }),
+      },
       ipAddress: deps.meta.ipAddress,
       deviceKind: ctx.deviceKind,
     });
@@ -202,7 +215,8 @@ export async function deleteChatMessage(
     const before = await requireOwnLiveMessage(ctx, db, threadId, messageId);
     const updated = (await db.message.update({
       where: { id: messageId },
-      data: { body: null, deletedAt: deps.now() },
+      // ✅ 2026-10-23: 貼った案件も外す（消した発言にカードを残さない。何を貼ったかは作成時の監査ログに残っている）。
+      data: { body: null, deletedAt: deps.now(), attachedProjectId: null },
       select: CHAT_MESSAGE_SELECT,
     })) as ChatMessageRow;
     await writeAuditLog(db, {
