@@ -1,0 +1,42 @@
+name: AWS foundation
+
+on:
+  pull_request:
+    paths:
+      - 'infra/aws/**'
+      - 'scripts/aws-*.mjs'
+      - '.github/workflows/aws-foundation.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'infra/aws/**'
+      - 'scripts/aws-*.mjs'
+      - '.github/workflows/aws-foundation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: AWS foundation policy checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: 構文と環境分離の検査
+        run: |
+          node --check infra/aws/foundation.mjs
+          node --check scripts/aws-foundation.mjs
+          node --check scripts/aws-verify-isolation.mjs
+          node --test infra/aws/foundation.test.mjs
+      # AWS 認証情報をPRに渡さず、検査とデプロイを分ける。
+      - name: 3環境の定義を生成
+        run: |
+          node scripts/aws-foundation.mjs render development > /tmp/ses-development.json
+          node scripts/aws-foundation.mjs render demo > /tmp/ses-demo.json
+          node scripts/aws-foundation.mjs render production > /tmp/ses-production.json
