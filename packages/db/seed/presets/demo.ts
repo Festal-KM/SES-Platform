@@ -1030,9 +1030,9 @@ async function seedTenant(ctx: SeedContext, tenantIndex: number, profile: Tenant
       const startDate = dateOnly(addDays(now, key === 'filled' ? -35 : rng.int(20, 60)));
       const prefecture = rng.pick(PREFECTURES);
       const stations: Readonly<Record<string, string>> = {
-        '13': '神田駅 徒歩5分', '14': '横浜駅 徒歩5分', '27': '梅田駅 徒歩5分',
-        '11': '大宮駅 徒歩5分', '12': '千葉駅 徒歩5分', '23': '名古屋駅 徒歩5分',
-        '40': '博多駅 徒歩5分',
+        '13': '神田駅（徒歩5分）', '14': '横浜駅（徒歩5分）', '27': '梅田駅（徒歩5分）',
+        '11': '大宮駅（徒歩5分）', '12': '千葉駅（徒歩5分）', '23': '名古屋駅（徒歩5分）',
+        '40': '博多駅（徒歩5分）',
       };
       const locationDetail = stations[prefecture] ?? '最寄駅は面談時にご案内';
       const publicMemo = '勤務時間 9:00〜18:00。初日は出社して環境設定を行います。';
@@ -1670,9 +1670,9 @@ export function buildDemoProjectSamples(tenantIndex: number, now: Date) {
   ] as const;
   const industries = ['金融', '流通', '製造', '物流', '通信', '医療'];
   const locations = [
-    { prefecture: '13', station: '神田駅 徒歩5分' },
-    { prefecture: '14', station: '横浜駅 徒歩5分' },
-    { prefecture: '27', station: '梅田駅 徒歩5分' },
+    { prefecture: '13', station: '神田駅（徒歩5分）' },
+    { prefecture: '14', station: '横浜駅（徒歩5分）' },
+    { prefecture: '27', station: '梅田駅（徒歩5分）' },
   ];
   const projects = Array.from({ length: DEMO_ADDITIONAL_PROJECT_COUNT }, (_, index) => {
     const template = templates[index % templates.length] ?? templates[0];

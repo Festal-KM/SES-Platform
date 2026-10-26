@@ -268,6 +268,7 @@ describe('🔴 (m) DataTable の列定義の契約（docs/05 §17.7.1 (m) / §2.
       // ✅ **2026-10-15: `hideable` を付けた**（人間の決定。既定では格納され、「表示する列」から
       //    1 クリックで戻せる）。🔴 **列は 1 つも減っていない** —— 既定の見え方が変わっただけである。
       'mustRequirements:lg:hideable',
+      'purchaseUnitPrice:always:hideable',
       'unitPrice:always',
       'startDate:always',
       'location:sm',

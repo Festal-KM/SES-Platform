@@ -55,6 +55,8 @@ export const ENV_BANNER_HEIGHT_VAR = '--app-banner-h';
 /** Top Header。🔴 全画面で同じ高さ。 */
 export const HEADER_HEIGHT_PX = 56;
 export const HEADER_HEIGHT_CLASS = 'h-14';
+/** 環境バナー直下に固定する共通ヘッダー。 */
+export const HEADER_STICKY_CLASSES = 'sticky top-[var(--app-banner-h,0px)] z-10 shrink-0';
 
 /** Top Header のグローバル検索。基準幅（1672）で 726px。狭い画面では縮む。 */
 export const HEADER_SEARCH_MAX_WIDTH_CLASS = 'max-w-181.5';

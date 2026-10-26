@@ -277,7 +277,7 @@ function projectColumns(
       id: 'purchaseUnitPrice',
       header: messages.columnPurchaseUnitPrice,
       hideable: true,
-      priority: 'always' as const,
+      priority: 'always',
       minWidth: '6rem',
       cell: (row: ProjectListRowView) => row.purchaseUnitPrice,
     }] satisfies readonly DataTableColumn<ProjectListRowView>[] : []),

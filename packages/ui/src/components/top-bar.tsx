@@ -44,6 +44,7 @@ import { cn } from '../lib/cn.js';
 import {
   CONTENT_PADDING_X_CLASSES,
   HEADER_HEIGHT_CLASS,
+  HEADER_STICKY_CLASSES,
   HEADER_SEARCH_MAX_WIDTH_CLASS,
 } from '../lib/layout-tokens.js';
 import { TRANSITION_CLASSES } from '../lib/state-classes.js';
@@ -113,8 +114,7 @@ function DefaultLink({ href, children, ...rest }: SidebarLinkProps) {
  */
 // ✅ 2026-10-13: 高さ **56**（`docs/design-system.md` §4）。地は Card と同じ白（`surface`）。
 // 環境バナーの直下に留め、本文のスクロール中も検索・アカウント操作を使えるようにする。
-const HEADER_CLASSES =
-  'sticky top-[var(--app-banner-h,0px)] z-10 shrink-0 border-b border-border bg-surface';
+const HEADER_CLASSES = cn(HEADER_STICKY_CLASSES, 'border-b border-border bg-surface');
 // 🔴 左 28 / 右 16 は本文の gutter と揃える（`CONTENT_PADDING_X_CLASSES`）—— ヘッダの検索欄の
 //    左端と本文の h1 の左端が 1px でもずれると、縦の通りが崩れて「別の面」に見える。
 const HEADER_ROW_CLASSES = cn(
