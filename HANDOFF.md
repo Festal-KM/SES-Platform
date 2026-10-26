@@ -9,6 +9,20 @@
 
 ## 1. 🔴 いま最優先で直すもの
 
+### 2026-10-26：AWSの3環境への移行（基盤作成、アプリ公開は未完）
+
+人間の指示で開発（開発時だけ起動、停止中もデータ保持）／営業デモ（常時利用可能、合成データのみ）／本番（常時稼働）の3環境を作る。追加の明示回答により、3環境ともAWSアカウント117425831827、東京リージョンを使用する。ドメインは未定。Railwayの更新は省略する。
+
+`infra/aws/foundation.mjs` と `scripts/aws-foundation.mjs` で、環境別のVPC・公開／非公開サブネット・S3・KMS・ECR・ログ・空のECSクラスター・アプリ／起動用IAMロールを定義。3つの `ses-platform-<環境>-foundation` スタックを作成した。保存先と鍵は削除／置換でも保持し、スタックの削除保護も有効。既存のSNS等の別プロジェクトには触れていない。NAT・ALB・DB・Redis・Web／workerはまだ作っていない。KMSキー等の基盤維持費は発生する。
+
+開発の作業用VMも `ses-platform-development-workspace` で作成（i-0bc41c9e860ebe14c）。t3.large・暗号化gp3 80GiB・Amazon Linux 2023・Docker/Git、着信ポートなし、SSM Online確認。`scripts/aws-development.mjs start|stop|status` はこの1台だけを照合して操作する。startで8時間の期限を設定し、15分周期のLambdaが期限到来時にこの1台だけを停止する。停止Lambdaの実機呼出でstopped=true、CLIで再起動後に作業フォルダの検証ファイル保持とDocker activeを確認。initは既存VMのAMIを維持して自動置換を避け、ネットワーク変更も拒否する。アプリ・DB・ソースは未配備。Session Manager pluginはローカル未導入（AWSコンソールなら接続可能）。停止中もディスク保存費は残る。
+
+**同一アカウントという新しい人間の判断は既存の設計との差分である。** `packages/config/src/schema.ts` に明示指定の `AWS_ISOLATION_MODE=resource` を追加。既定の `account` は従来の本番ID／ARN拒否を維持する。resourceは承認された3環境だけで、共通アカウント・環境別S3/KMS/SNS/SES設定・DBのホストとロール・TLS Redisを照合する。開発だけループバック接続を認め、デモ／本番のS3固定キーと独自endpoint、アプリのseed特権接続を拒否する。本番のモック禁止・非本番の本番APIキー拒否は共通。configの7ファイル188件とパッケージビルド通過。docs/03・05にも承認された差分を記録。偽の本番IDで回避しない。実際のDB／Redisと秘密値の設定、起動確認はまだで、基盤作成をもってアプリのデプロイ完了と報告しない。
+
+手順・後続の構成案は `docs/DEPLOY-AWS.md`。基盤・開発VMの定義はNode標準の9テストが通過（外部依存なし）。作成済みIAMの検査は `node scripts/aws-verify-isolation.mjs` の23件が通過（ポリシーシミュレーター。実データや秘密値を取得しない）。3基盤スタックはUPDATE_COMPLETE・削除保護あり。静的1490件を検証（初回2件が時間切れとなり、その2ファイル17件を再実行して通過）。AWS向けのCIは `.github/workflows/aws-foundation.yml` で認証情報なしに構文・定義・環境分離を検査する。AWSへの自動デプロイは追加していない。
+
+案件管理の改修は別ブランチ `feat/projects-management-refresh`、PR #172。AWS作業は最新origin/mainから切った別ブランチ `feat/aws-environments` に置く。PR #172は558c520時点でCIのNextビルドが既存usageのrenderテストのTS2859で失敗しており、まだmainに反映していない。今回のAWS作業では案件・チャット・DBのアプリ実装を変更していない。
+
 ### ✅ 2026-10-16 の作業（すべてデモに反映済み）
 
 | | 内容 |
