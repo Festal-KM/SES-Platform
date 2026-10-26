@@ -33,6 +33,10 @@
 | 後で | ひとこと状態のカレンダー連動（カレンダーに予定のデータが入ってから。予定の中身は出さず時間だけ）/ ファイル添付（#108）/ アプリ化（ホーム画面に追加する PWA が第一候補）/ スレッド返信・リアクションした人の名前・状態の期限 |
 | 🔴 教訓 | ① 見た目は**部品を一時テストで HTML に描き出し、本物の CSS（`@tailwindcss/postcss`）を当てて Playwright で撮る**と、デモに出す前に確かめられる ② 使わなくなった値を消すときは `tests/isolation` も grep する（#151 で CI の型エラーを出した）③ 同じファイルを触る PR を並べると、マージのたびにぶつかる —— 1 本ずつ入れて、そのつど main を取り込む |
 
+### ⏳ 2026-10-23 チャット: 案件をチャットに貼る（PR `chat/project-card`）
+
+- `messages.attached_project_id` を 1 列足した（複合 FK → `projects(tenant_id, id)`、`ON DELETE SET NULL (attached_project_id)`。migration `20261023010000` は既存行を書き換えない）。カードは**見る人の RLS で読み直す**。貼れる条件はサーバ（`apps/web/lib/chat/project-cards.ts`）。新 API `GET /api/threads/{id}/projects`（#51n）。分離テスト `tests/isolation/chat-project-card.test.ts`（19 件）をローカルで緑。宮田さんへの確認（列を足す・貼れる条件）は PR 本文。
+
 ### 🔴 人間の判断を待っているもの（着手できない）
 
 | Issue | 何を待っているか |
@@ -148,6 +152,7 @@
 | 罠 | 内容 |
 |---|---|
 | 🔴🔴 **既存行を書き換える migration は `FORCE ROW LEVEL SECURITY` を一時解除し、「残存 0 件」を FORCE を戻す前に検査する** | **2026-10-16 にこれでデモを落とした**（web が Crashed。復旧まで約 1 時間）。`app_migrator` は `NOBYPASSRLS` で、業務表は ENABLE + FORCE であり**所有者にも適用ポリシーが 1 つも無い** → 素の `UPDATE` は **0 件で「成功」**する（docs/05 §4.4）。`20261016010000_project_status_two_values` はそれで移送されず、続く `ADD CONSTRAINT` が旧値の行に当たって失敗した。🔴 **さらに悪いのは次である**: 失敗した migration は Prisma に記録され、以後 **P3009** で**新しい migration が 1 本も当たらなくなる**（`railway-start.mjs` が「当たっていない DB でアプリを上げない」と判断して起動しない）。🔴 **手順は `20260911000000` / `20260929000000` / `20261016010000` の 3 本が同じ形で持っている**: FORCE 解除 → UPDATE → **残存 0 件の検査**（🔴 戻す前。戻した後では所有者にも 0 件に見えて検査にならない）→ FORCE 復帰 → カタログ検査（RLS 有効なのに FORCE でない表が無いこと）。🔴 **`CHECK` を張り替えるなら、旧 CHECK を外してから移送する**（旧 CHECK が新しい値を許さない）。🔴 **CI では気づけない** —— CI は空の DB に当てるので 0 件 UPDATE が成功してしまう |
+| 🔴 **`messages.attached_project_id` の複合 FK は `schema.prisma` に宣言していない**（2026-10-23、#158） | 削除時に列だけを NULL にする書き方（PostgreSQL 15+）を Prisma が表せないため。🔴 **`prisma migrate dev` で差分を作ると、この FK を消す差分が出ることがある —— 手で取り除く**（`docs/05` §3.3.1 の B 群と同じ扱い） |
 | 🔴 **P3009 からの回復**（`migrate found failed migrations`） | DB は Railway の内部ホストにしか無く、**外から `prisma migrate resolve` を打てない**。`scripts/railway-predeploy.mjs` に 1 段用意してある: 環境変数 **`SES_MIGRATION_RESOLVE_ROLLED_BACK`** に migration 名を入れてデプロイすると `--rolled-back` を打ってから `migrate deploy` が走る。🔴 **既定では何もしない**（常時実行にすると、直っていない migration を毎回「巻き戻した」ことにして失敗が見えなくなる）。🔴 **使ったら変数を必ず外す** |
 | 🔴 **起動時の設定を読む関数を、判定の問い合わせから呼ばない** | 2026-10-16 の実例: `twoFactorPolicy()` が `ensureDbConfigured()` を呼んでいたため、**環境変数の一式が揃っていない分離テストのハーネス**で `EnvValidationError` が飛び、**2 要素認証とは無関係の失敗に化けた**（`two-factor.test.ts` が 「`TwoFactorRequiredError` のはずが `EnvValidationError`」で落ち、同じジョブの `projects` 系も巻き添え）。🔴 **方針の問い合わせが設定の初期化を強制してはならない。** 解決済みの値を返し、**未解決なら厳しい側の既定に倒す**。🔴 **ローカルのユニットは全部緑のまま通る** —— この層は CI でしか分からない |
 | 🔴 **`railway up` はローカルの作業ディレクトリを上げる**（Git ではない） | したがって**コミットしていない変更もデプロイされる**。「Git から pull すれば直る」ではない。🔴 **デプロイ前に作業ツリーを緑にする**（未完成の機能が混ざる） |

@@ -694,6 +694,10 @@ model Project {
   //    先頭 2 列が旧 `@@index([tenantId, status, updatedAt])` を覆うので、旧索引は落とす。
   @@index([tenantId, status(sort: Desc), updatedAt(sort: Desc), startDate, id(sort: Desc)])
   @@index([tenantId, startDate])
+  // ✅ 2026-10-23（チャットレーン・紺野）: `messages.attached_project_id` の複合 FK
+  //    `(tenant_id, attached_project_id) REFERENCES projects(tenant_id, id)` の参照先（別テナントの案件を指す行を DB が拒む）。
+  //    `id` 単独の @id は残す（`Engineer` / `PartnerCompany` と同型）。
+  @@unique([tenantId, id])
   // 🔴 T-06-05: フリーワード用の trigram GIN 索引は置かない（`engineers` と同じ理由）。
   @@map("projects")
 }
@@ -1185,6 +1189,11 @@ model Message {
   purgedAt               DateTime? @map("purged_at") @db.Timestamptz(3) // PURGED で本文を削除（F-064 AC-2）
   editedAt               DateTime? @map("edited_at") @db.Timestamptz(3) // ✅ 2026-10-16 チャットレーン: 送った本人が編集した日時
   deletedAt              DateTime? @map("deleted_at") @db.Timestamptz(3) // ✅ 2026-10-16 チャットレーン: 送った本人が削除した日時（本文は NULL になる）
+  /// ✅ 2026-10-23 チャットレーン（紺野）: 発言に貼った案件（案件カード）。NULL = 貼っていない。
+  /// 🔴 FK は migration 20261023010000 に手書きした複合 FK `(tenant_id, attached_project_id) → projects(tenant_id, id)`
+  ///    `ON DELETE SET NULL (attached_project_id)`。Prisma は「列を指定した SET NULL」を書けない（tenant_id まで NULL にしようとする）ため、
+  ///    ここでは relation を宣言しない。🔴 カードは**見る人の RLS で**読む（読めなければ名前も ID も出さない）。運営者に GRANT しない。
+  attachedProjectId      String?   @map("attached_project_id") @db.Uuid
 
   tenant               Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   thread               ChatThread      @relation(fields: [threadId], references: [id], onDelete: Cascade)

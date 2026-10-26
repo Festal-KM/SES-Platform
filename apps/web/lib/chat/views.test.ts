@@ -11,6 +11,10 @@ import {
   chatMessageView,
   CHAT_ANNOUNCEMENT_SNIPPET_LENGTH,
   CHAT_ANNOUNCEMENT_VIEW_KEYS,
+  chatAttachedProjectView,
+  CHAT_HIDDEN_PROJECT_CARD_KEYS,
+  CHAT_PROJECT_REQUIREMENT_KEYS,
+  CHAT_VISIBLE_PROJECT_CARD_KEYS,
   chatThreadDetailView,
   chatThreadListItem,
   CHAT_FORBIDDEN_RESPONSE_KEYS,
@@ -21,6 +25,7 @@ import {
   CHAT_THREAD_LIST_ITEM_KEYS,
   type ChatMessageRow,
   type ChatThreadRow,
+  type ChatVisibleProjectCard,
 } from './views';
 
 const THREAD_ROW: ChatThreadRow = {
@@ -165,6 +170,62 @@ describe('chatMessageView（会話の 1 件）', () => {
   });
 });
 
+describe('✅ 2026-10-23 案件カード（chatAttachedProjectView）', () => {
+  const PROJECT = '01930000-0000-7000-8000-0000000000f1';
+  const CARD: ChatVisibleProjectCard = {
+    visible: true,
+    id: PROJECT,
+    name: '基幹刷新',
+    status: 'OPEN',
+    startDate: '2026-11-01',
+    prefecture: '13',
+    remoteMode: 'PARTIAL_REMOTE',
+    mustRequirements: [{ skillName: 'TypeScript', freeText: null, requiredYears: 3 }],
+    niceRequirements: [{ skillName: null, freeText: '金融の経験', requiredYears: null }],
+  };
+  const deps = { senderName: null, senderCompanyName: null, viewerPartnerCompanyId: null, viewerUserId: '01930000-0000-7000-8000-0000000000e9' };
+
+  it('貼っていない発言は null（キーは在る）', () => {
+    const view = chatMessageView(MESSAGE_ROW, deps);
+    expect(view.attachedProject).toBeNull();
+    expect(Object.keys(view)).toContain('attachedProject');
+  });
+
+  it('読めた案件はカードになり、キー集合が凍結どおり（単価・エンド企業名・公開先を持たない）', () => {
+    const view = chatMessageView({ ...MESSAGE_ROW, attachedProjectId: PROJECT }, { ...deps, attachedProject: CARD });
+    expect(view.attachedProject).toEqual(CARD);
+    expect(Object.keys(view.attachedProject ?? {}).sort()).toEqual([...CHAT_VISIBLE_PROJECT_CARD_KEYS].sort());
+    expect(Object.keys(CARD.mustRequirements[0] ?? {}).sort()).toEqual([...CHAT_PROJECT_REQUIREMENT_KEYS].sort());
+    for (const forbidden of CHAT_FORBIDDEN_RESPONSE_KEYS) {
+      expect(JSON.stringify(view), forbidden).not.toContain(`"${forbidden}"`);
+    }
+  });
+
+  it('🔴 読めなければ { visible: false } だけ（案件名も ID も載せない）= 既定で隠す', () => {
+    const view = chatMessageView({ ...MESSAGE_ROW, attachedProjectId: PROJECT }, deps);
+    expect(view.attachedProject).toEqual({ visible: false });
+    expect(Object.keys(view.attachedProject ?? {})).toEqual([...CHAT_HIDDEN_PROJECT_CARD_KEYS]);
+    expect(JSON.stringify(view)).not.toContain(PROJECT);
+  });
+
+  it('🔴 別の案件のカードを渡されても出さない（ID が合わなければ隠す）', () => {
+    expect(chatAttachedProjectView({ body: 'x', attachedProjectId: '01930000-0000-7000-8000-0000000000f2', deletedAt: null }, CARD)).toEqual({
+      visible: false,
+    });
+  });
+
+  it('🔴 消えた発言（本人の削除・保持期限の削除）にはカードを出さない', () => {
+    expect(chatAttachedProjectView({ body: null, attachedProjectId: PROJECT, deletedAt: null }, CARD)).toBeNull();
+    expect(chatAttachedProjectView({ body: null, attachedProjectId: PROJECT, deletedAt: new Date() }, CARD)).toBeNull();
+  });
+
+  it('🔴 禁止キーに単価の 3 列が入っている', () => {
+    for (const key of ['unitPriceMin', 'unitPriceMax', 'internalUnitPrice', 'endClientName']) {
+      expect([...CHAT_FORBIDDEN_RESPONSE_KEYS]).toContain(key);
+    }
+  });
+});
+
 describe('chatThreadDetailView（右の関連情報）', () => {
   it('キー集合が凍結どおりで、参加会社の行も凍結どおりである', () => {
     const view = chatThreadDetailView(THREAD_ROW, {
@@ -200,6 +261,8 @@ describe('🔴 禁止キーの一覧そのものの対照（検査が空振り�
     const allowed = new Set<string>([
       ...CHAT_THREAD_LIST_ITEM_KEYS,
       ...CHAT_MESSAGE_VIEW_KEYS,
+      ...CHAT_VISIBLE_PROJECT_CARD_KEYS,
+      ...CHAT_PROJECT_REQUIREMENT_KEYS,
       ...CHAT_PARTICIPANT_VIEW_KEYS,
       ...CHAT_THREAD_DETAIL_VIEW_KEYS,
       ...CHAT_ANNOUNCEMENT_VIEW_KEYS,

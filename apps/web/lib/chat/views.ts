@@ -106,8 +106,14 @@ export type ChatMessageView = {
    * 読みの経路は必ず埋める。省略可なのは手で組むテスト用の値のため。
    */
   readonly saved?: boolean;
-  /** 本文。🔴 `PURGED` / 保持期間削除で本文が消えた行は `null`（`F-064 AC-2`）。 */
+  /** 本文。🔴 `PURGED` / 保持期間削除で本文が消えた行は `null`（`F-064 AC-2`）。案件カードだけの発言は空文字。 */
   readonly body: string | null;
+  /**
+   * ✅ 2026-10-23（紺野）: 発言に貼った案件（案件カード）。貼っていない・発言が消えた（削除・保持期限）なら `null`。
+   * 🔴 **読む人の RLS で読み直した結果**である。読めなければ `{ visible: false }` だけ（案件名も ID も載せない）。
+   * 読みの経路は必ず埋める。省略可なのは手で組むテスト用の値のため。
+   */
+  readonly attachedProject?: ChatAttachedProjectView | null;
 };
 
 /**
@@ -156,6 +162,43 @@ export function chatAnnouncementView(
     setAt: row.setAt.toISOString(),
   };
 }
+
+/**
+ * ✅ 2026-10-23: 案件カードの要件 1 件（`project_requirements`。読む人の RLS で読めたものだけ）。
+ * 🔴 単価・エンド企業名を持たない（相手が誰でも出さない）。
+ */
+export type ChatProjectRequirementView = {
+  /** 辞書名（`skillId` が無ければ `null`）。 */
+  readonly skillName: string | null;
+  readonly freeText: string | null;
+  readonly requiredYears: number | null;
+};
+
+/**
+ * ✅ 2026-10-23: 案件カード（見る人が読めたとき）。
+ * 🔴 **単価（`unitPriceMin` / `unitPriceMax` / `internalUnitPrice`）・エンド企業名・公開先を持たない。**
+ *    出すのは 案件名・状態・開始時期・勤務地 / リモート・必須の要件・尚可の要件（画面は件数に畳む）だけ。
+ */
+export type ChatVisibleProjectCard = {
+  readonly visible: true;
+  readonly id: string;
+  readonly name: string;
+  /** `projects.status`（`OPEN` / `CLOSED`）。🔴 語は画面が文言の束から引く（ここは値だけ）。 */
+  readonly status: string;
+  /** `YYYY-MM-DD` または `null`。 */
+  readonly startDate: string | null;
+  /** 都道府県のコード または `null`。 */
+  readonly prefecture: string | null;
+  /** `RemoteMode` または `null`。 */
+  readonly remoteMode: string | null;
+  readonly mustRequirements: readonly ChatProjectRequirementView[];
+  readonly niceRequirements: readonly ChatProjectRequirementView[];
+};
+
+/** ✅ 2026-10-23: 案件カード（見る人が読めないとき）。🔴 `visible: false` 以外のキーを持たない（名前も ID も出さない）。 */
+export type ChatHiddenProjectCard = { readonly visible: false };
+
+export type ChatAttachedProjectView = ChatVisibleProjectCard | ChatHiddenProjectCard;
 
 /** 参加会社の 1 行（`thread_participants`。越境経路 3 の唯一の根拠）。 */
 export type ChatParticipantView = {
@@ -235,7 +278,27 @@ export const CHAT_MESSAGE_VIEW_KEYS = [
   'edited',
   'deleted',
   'saved',
+  'attachedProject',
 ] as const;
+
+/** ✅ 2026-10-23: 案件カード（読めたとき）のキー集合。🔴 分離テストが応答と突き合わせる。 */
+export const CHAT_VISIBLE_PROJECT_CARD_KEYS = [
+  'visible',
+  'id',
+  'name',
+  'status',
+  'startDate',
+  'prefecture',
+  'remoteMode',
+  'mustRequirements',
+  'niceRequirements',
+] as const;
+
+/** ✅ 2026-10-23: 案件カード（読めないとき）のキー集合。🔴 これ以外を 1 つも持たない。 */
+export const CHAT_HIDDEN_PROJECT_CARD_KEYS = ['visible'] as const;
+
+/** ✅ 2026-10-23: 案件カードの要件 1 件のキー集合。 */
+export const CHAT_PROJECT_REQUIREMENT_KEYS = ['skillName', 'freeText', 'requiredYears'] as const;
 
 /**
  * ✅ 2026-10-16: リアクションの種類（業務の短い語 4 つ）。
@@ -297,6 +360,10 @@ export const CHAT_FORBIDDEN_RESPONSE_KEYS = [
   'unitPrice',
   'offeredUnitPrice',
   'endClientName',
+  // ✅ 2026-10-23: 案件カードに単価を出さない（外部公開用のレンジも、内部限定の販売単価も）。
+  'unitPriceMin',
+  'unitPriceMax',
+  'internalUnitPrice',
   'margin',
   'unread',
   'unreadCount',
@@ -372,6 +439,8 @@ export type ChatMessageRow = {
   /** ✅ 2026-10-16: 編集・削除の日時（読みの経路は必ず埋める。手で組むテスト用に省略可）。 */
   readonly editedAt?: Date | null;
   readonly deletedAt?: Date | null;
+  /** ✅ 2026-10-23: 貼った案件の ID（読みの経路は必ず埋める）。🔴 応答には載せない（カードの可否は `deps` が決める）。 */
+  readonly attachedProjectId?: string | null;
 };
 
 export type ChatMessageDeps = {
@@ -395,7 +464,26 @@ export type ChatMessageDeps = {
   readonly reactions?: readonly ChatReactionSummary[];
   /** ✅ 2026-10-22: 読み手本人が保存しているか（省略時は保存していない）。 */
   readonly saved?: boolean;
+  /**
+   * ✅ 2026-10-23: 貼った案件を**読み手の RLS で**読めたときのカード。読めなければ省略（`undefined`）。
+   * 🔴 省略は「読めない」として扱う（既定で隠す側に倒す。`chatMessageView` の 🔴）。
+   */
+  readonly attachedProject?: ChatVisibleProjectCard;
 };
+
+/**
+ * ✅ 2026-10-23: 発言の案件カードを決める（純粋関数）。
+ * 🔴 貼っていない・本文が消えた（本人の削除・保持期限の削除）発言は `null`（カードも出さない）。
+ * 🔴 貼ってあるのに読めた結果が無ければ `{ visible: false }` だけを返す（**既定で隠す**。名前も ID も載せない）。
+ */
+export function chatAttachedProjectView(
+  row: Pick<ChatMessageRow, 'body' | 'attachedProjectId' | 'deletedAt'>,
+  readable: ChatVisibleProjectCard | undefined,
+): ChatAttachedProjectView | null {
+  if (row.attachedProjectId == null || row.body === null || row.deletedAt != null) return null;
+  if (readable === undefined || readable.id !== row.attachedProjectId) return { visible: false };
+  return readable;
+}
 
 export function chatMessageView(row: ChatMessageRow, deps: ChatMessageDeps): ChatMessageView {
   return {
@@ -416,5 +504,6 @@ export function chatMessageView(row: ChatMessageRow, deps: ChatMessageDeps): Cha
     edited: row.editedAt != null && row.deletedAt == null,
     deleted: row.deletedAt != null,
     saved: deps.saved ?? false,
+    attachedProject: chatAttachedProjectView(row, deps.attachedProject),
   };
 }

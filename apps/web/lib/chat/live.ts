@@ -54,10 +54,26 @@ export function withLatestReactions(
   const next = current.map((item) => {
     const fresh = byId.get(item.id);
     // ✅ 2026-10-16: 編集・削除（本文・印）も取り直した値に揃える。並び（sentAt / id）は変えない。
-    const pick = (m: ChatMessageView) => JSON.stringify([m.reactions ?? [], m.body, m.edited ?? false, m.deleted ?? false]);
+    // ✅ 2026-10-26（Codex のレビュー）: 貼られた案件のカード（`attachedProject`）も取り直した値に揃える。
+    //    🔴 公開を取り消されたら、開いたままの画面からも案件名・リンク・引用を消す（サーバは `{ visible: false }` を返している）。
+    const pick = (m: ChatMessageView) =>
+      JSON.stringify([m.reactions ?? [], m.body, m.edited ?? false, m.deleted ?? false, m.attachedProject ?? null]);
     if (fresh === undefined || pick(fresh) === pick(item)) return item;
     changed = true;
-    return { ...item, reactions: fresh.reactions ?? [], body: fresh.body, edited: fresh.edited ?? false, deleted: fresh.deleted ?? false };
+    const next: ChatMessageView = {
+      ...item,
+      reactions: fresh.reactions ?? [],
+      body: fresh.body,
+      edited: fresh.edited ?? false,
+      deleted: fresh.deleted ?? false,
+    };
+    // 取り直した値にカードが無ければ、手元のカードも外す（前の名前・ID を残さない）。
+    if (fresh.attachedProject === undefined) {
+      const { attachedProject, ...withoutCard } = next;
+      void attachedProject;
+      return withoutCard;
+    }
+    return { ...next, attachedProject: fresh.attachedProject };
   });
   return changed ? next : current;
 }
