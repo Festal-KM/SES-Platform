@@ -175,8 +175,8 @@ describe('④ 発言の名前の横の状態（どの部屋でも）', () => {
       }),
     );
     expect(html).toContain(`data-testid="chat-message-status-${WITH}"`);
-    expect(html).toContain(`class="ml-2 text-xs text-fg-muted" data-testid="chat-message-status-${WITH}"`);
-    expect(html).toContain('flex-wrap items-baseline gap-x-2 gap-y-1');
+    expect(html).toContain(`class="text-xs text-fg-muted" data-testid="chat-message-status-${WITH}"`);
+    expect(html).toContain('flex-wrap items-baseline gap-x-3 gap-y-1');
     expect(html).toContain(STATUS);
     expect(html).not.toContain(`data-testid="chat-message-status-${WITHOUT}"`);
   });

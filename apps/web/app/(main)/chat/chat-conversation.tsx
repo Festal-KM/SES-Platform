@@ -247,7 +247,7 @@ return (
       <div
         ref={scrollRef}
         onScroll={(event) => setAwayFromLatest(isAwayFromLatest(event.currentTarget))}
-        className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain px-5 py-3"
+        className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain px-4 py-3 md:px-5"
         data-testid="chat-messages-scroll"
       >
         {/* ✅ 2026-10-22: 発言が少ないときに下へ寄せる詰め物。🔴 `justify-end` を使わない —— 中身が枠からあふれると
@@ -283,7 +283,7 @@ return (
               // ✅ 2026-10-16: 「ここから未読」の線。
               if (entry.kind === 'unread') {
                 return (
-                  <li key="unread-marker" className="flex items-center gap-3" data-testid="chat-unread-marker">
+                  <li key="unread-marker" className="mt-1 flex items-center gap-3" data-testid="chat-unread-marker">
                     <span aria-hidden="true" className="h-px flex-1 bg-brand" />
                     <span className="text-xs font-medium text-brand">{messages.unreadFrom}</span>
                     <span aria-hidden="true" className="h-px flex-1 bg-brand" />
@@ -308,7 +308,7 @@ return (
                   </li>
                 );
               }
-              return <ChatMessageItem key={entry.message.id} item={entry.message} continued={entry.continued} conversation={conversation} />;
+              return <ChatMessageItem key={entry.message.id} item={entry.message} continued={entry.continued && entry.message.id !== markerId} conversation={conversation} />;
             })}
           </ol>
         )}

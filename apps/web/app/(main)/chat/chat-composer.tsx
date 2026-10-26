@@ -111,7 +111,7 @@ export function ChatComposer({ conversation }: { readonly conversation: ChatComp
           }}
           // ✅ 2026-10-16（提案 I）: スマホでは画面ごとスクロールするので、入力欄を下端に貼り付ける（読み進めても書ける）。
           //    `md` 以上は器の高さが決まっているので、貼り付けても位置は変わらない。地の色は重なりの下を隠すため。
-          className={`sticky bottom-0 shrink-0 border-t border-border bg-bg px-5 py-3 ${CHAT_COMPOSER_HEIGHT_CLASS}`}
+          className={`sticky bottom-0 shrink-0 border-t border-border bg-bg px-4 py-3 md:px-5 ${CHAT_COMPOSER_HEIGHT_CLASS}`}
           data-testid="chat-compose"
         >
           {/* ✅ 2026-10-22（紺野「こういうチャット枠が必要だよね」= GitHub のコメント欄）:
@@ -343,9 +343,9 @@ export function ChatComposer({ conversation }: { readonly conversation: ChatComp
                 </div>
               )}
               {formatOpen ? (
-                <p className="m-0 border-t border-border px-3 py-1 text-xs text-fg-muted">{messages.composeMarkdownHint}</p>
+                <p className="m-0 px-3 py-1 text-xs text-fg-muted">{messages.composeMarkdownHint}</p>
               ) : null}
-              <div className="flex flex-wrap items-center gap-1 border-t border-border p-1">
+              <div className="flex flex-wrap items-center gap-1 p-1">
                 {/* ✅ 2026-10-22: 書式ボタン・プレビュー・@ 名前の帯を開く（普段は閉じて入力欄を細くする）。 */}
                 <IconButton
                   icon={<Icon name="chat-format" />}
@@ -363,7 +363,7 @@ export function ChatComposer({ conversation }: { readonly conversation: ChatComp
                   data-testid="chat-compose-format-toggle"
                 />
                 <IconButton type="button" variant={mentionOpen ? 'secondary' : 'ghost'} className="h-11 w-11" icon={<Icon name="chat-mention" />} aria-label={messages.composeMention} title={messages.composeMention} aria-expanded={mentionOpen} onMouseDown={(event) => event.preventDefault()} onClick={() => { setComposeTab('write'); setMentionOpen((open) => !open); }} data-testid="chat-compose-mention" />
-                <IconButton type="button" variant="ghost" className="h-11 w-11" icon={<Icon name="chat-slash" />} aria-label={messages.slash.label} title={messages.slash.label} aria-expanded={slashRange !== null} onClick={() => {
+                <IconButton type="button" variant="ghost" className="ml-3 h-11 w-11" icon={<Icon name="chat-slash" />} aria-label={messages.slash.label} title={messages.slash.label} aria-expanded={slashRange !== null} onClick={() => {
                   setComposeTab('write');
                   if (slashRange !== null) { setSlashRange(null); setSlashTemplatesOpen(false); return; }
                   const next = body === '' ? '/' : `${body}\n/`;
