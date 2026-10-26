@@ -47,6 +47,7 @@ import { createSubmitGuard } from '../../../lib/forms/submit-guard';
 import { formatDateTimeJst } from '../../../lib/format/datetime';
 import { displayInitials } from '../../../lib/format/initials';
 import {
+  chatAnnouncementApiPath,
   chatExportApiPath,
   chatHref,
   chatMessageApiPath,
@@ -59,12 +60,15 @@ import {
 import {
   CHAT_REACTION_EMOJI_KINDS,
   CHAT_REACTION_WORD_KINDS,
+  chatAnnouncementSnippet,
+  type ChatAnnouncementView,
   type ChatMessageView,
   type ChatReactionKind,
   type ChatReactionSummary,
 } from '../../../lib/chat/views';
 import type { ChatConversationMessages } from './chat-props';
 import { ChatThreadPrefsToggle } from './chat-thread-prefs-toggle';
+import { ChatAnnouncementBar } from './chat-announcement-bar';
 import { Dialog } from '@ses/ui/client';
 import { formatChatTime, withDaySeparators } from '../../../lib/chat/day-separators';
 import {
@@ -154,6 +158,11 @@ export type ChatConversationProps = {
    * 🔴 名前だけ（利用者 ID を島に渡さない）。
    */
   readonly mentionNames?: readonly string[];
+  /**
+   * ✅ 2026-10-26（紺野の決定 2026-10-22）: 部屋のアナウンス（1 部屋 1 件。`readChatScreen` の `announcements`）。無ければ `null` / 省略。
+   * 🔴 読めるかは RLS（その部屋が読める人だけ）が決める。開いている間は新着と同じ間隔で読み直す。
+   */
+  readonly announcement?: ChatAnnouncementView | null;
 };
 
 /** ✅ 2026-10-22: 定型文の選択肢の値。自分の定型文と固定の文面の ID がぶつからないよう頭を分ける。 */
@@ -167,6 +176,8 @@ type PendingSend = { readonly body: string; readonly project: ChatPickedProject 
 type SendResponseBody = { readonly message: ChatMessageView };
 /** 会話の取得（#50）。 */
 type MessagePageBody = { readonly items: readonly ChatMessageView[]; readonly nextCursor: string | null };
+/** アナウンスの読む・設定する・外すの応答（#51o）。 */
+type AnnouncementBody = { readonly announcement: ChatAnnouncementView | null };
 
 export function ChatConversation({
   layout = 'topic',
@@ -185,6 +196,7 @@ export function ChatConversation({
   peerReadMessageId = null,
   ownTemplates = [],
   mentionNames = [],
+  announcement: initialAnnouncement = null,
 }: ChatConversationProps) {
   // 🔴 ガードは**インスタンスごと**に持つ（モジュール変数にすると、別のスレッドを開いた島が
   //    同じガードを共有し「前の送信が終わるまで送れない」状態になる）。
@@ -221,6 +233,12 @@ export function ChatConversation({
   const [formatOpen, setFormatOpen] = useState(false);
   const [templateOpen, setTemplateOpen] = useState(false);
   const pendingTimer = useRef<number | null>(null);
+  // ✅ 2026-10-26: アナウンス（帯）。🔴 手元で先に書き換えない（サーバの応答だけが正）。
+  const [announcement, setAnnouncement] = useState<ChatAnnouncementView | null>(initialAnnouncement);
+  /** ✅ 2026-10-26（Codex のレビュー）: アナウンスの操作の世代（古い読み直しの応答を捨てるため）。 */
+  const announcementGeneration = useRef(0);
+  const [announcementNotLoaded, setAnnouncementNotLoaded] = useState(false);
+  const [announcementFailed, setAnnouncementFailed] = useState(false);
   const itemsRef = useRef(items);
   const bodyRef = useRef(body);
   useEffect(() => {
@@ -242,6 +260,23 @@ export function ChatConversation({
     const poll = async (): Promise<void> => {
       if (document.visibilityState !== 'visible') return;
       try {
+        // ✅ 2026-10-26（Codex のレビュー）: アナウンスは発言の取得とは切り離して読み直す。
+        //    🔴 404（部屋から外れた・見えなくなった）なら帯を消す —— 前に見えていた本文を画面に残さない。
+        //    🔴 読み直しを始めた後に自分が設定・外した場合は、その古い応答を捨てる（世代の番号で見分ける）。
+        const generation = announcementGeneration.current;
+        void fetch(chatAnnouncementApiPath(threadId), { cache: 'no-store' })
+          .then(async (next) => {
+            if (!active || generation !== announcementGeneration.current) return;
+            if (next.status === 404) {
+              setAnnouncement(null);
+              return;
+            }
+            if (next.ok) {
+              const fresh = ((await next.json()) as AnnouncementBody).announcement;
+              if (active && generation === announcementGeneration.current) setAnnouncement(fresh);
+            }
+          })
+          .catch(() => undefined);
         const response = await fetch(chatMessagesApiPath(threadId), { cache: 'no-store' });
         if (!active || !response.ok) return;
         const payload = (await response.json()) as MessagePageBody;
@@ -534,6 +569,53 @@ export function ChatConversation({
 
   function replaceItem(next: ChatMessageView): void {
     setItems((current) => current.map((entry) => (entry.id === next.id ? next : entry)));
+    // ✅ 2026-10-26: アナウンスにしている発言を直した・消したら、帯の本文も揃える（消したら本文を出さない）。
+    setAnnouncement((current) =>
+      current === null || current.messageId !== next.id
+        ? current
+        : { ...current, snippet: next.deleted === true ? null : chatAnnouncementSnippet(next.body) },
+    );
+  }
+
+  /** ✅ 2026-10-26: この発言をアナウンスにする（`PUT`）/ 外す（`DELETE`）。 */
+  async function changeAnnouncement(method: 'PUT' | 'DELETE', messageId: string): Promise<void> {
+    setAnnouncementFailed(false);
+    // 🔴 これより前に始まった読み直しの応答は使わない（遅れて届いて、外した帯が戻るのを防ぐ）。
+    announcementGeneration.current += 1;
+    try {
+      const response = await fetch(chatAnnouncementApiPath(threadId), {
+        method,
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ messageId }),
+      });
+      if (!response.ok) {
+        setAnnouncementFailed(true);
+        return;
+      }
+      // 自分の操作の応答も、さらに後の操作があれば使わない。
+      const settled = announcementGeneration.current;
+      const result = ((await response.json()) as AnnouncementBody).announcement;
+      if (settled === announcementGeneration.current) setAnnouncement(result);
+      setAnnouncementNotLoaded(false);
+    } catch {
+      setAnnouncementFailed(true);
+    }
+  }
+
+  /**
+   * ✅ 2026-10-26: 帯を押したら、その発言へ移る。🔴 読み込み済みのときだけ動かし、読み込んでいなければ「いつの発言か」を出す
+   * （過去を勝手に読み込み続けない。読み込みは「以前のメッセージを読み込む」に任せる）。
+   */
+  function jumpToAnnouncement(): void {
+    if (announcement === null) return;
+    const loaded = items.some((item) => item.id === announcement.messageId);
+    const element = loaded ? scrollRef.current?.querySelector(`[data-testid="chat-message-${announcement.messageId}"]`) : null;
+    if (element instanceof HTMLElement) {
+      setAnnouncementNotLoaded(false);
+      element.scrollIntoView({ block: 'center' });
+      return;
+    }
+    setAnnouncementNotLoaded(true);
   }
 
   async function saveEdit(item: ChatMessageView): Promise<void> {
@@ -817,6 +899,20 @@ export function ChatConversation({
                 className="h-11 w-11"
                 title={item.saved === true ? messages.unbookmark : messages.bookmark} icon={<Icon name="chat-bookmark" />} />
             ) : null}
+            {/* ✅ 2026-10-26（紺野の決定 2026-10-22）: アナウンスにする / 外す（部屋のメンバーなら誰でも。閲覧専用には出さない）。
+                🔴 消えた発言はアナウンスにできない（API も 404）ので、外す以外は出さない。 */}
+            {canPost && (announcement?.messageId === item.id || (item.body !== null && item.deleted !== true)) ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                aria-pressed={announcement?.messageId === item.id}
+                onClick={() => void changeAnnouncement(announcement?.messageId === item.id ? 'DELETE' : 'PUT', item.id)}
+                data-testid={`chat-message-announce-${item.id}`}
+              >
+                {announcement?.messageId === item.id ? messages.announcementUnset : messages.announcementSet}
+              </Button>
+            ) : null}
             {/* ✅ 2026-10-16: 相手の発言から未読にする（自分の発言は未読にならない）。 */}
             {item.mine ? null : (
               <Button
@@ -1064,6 +1160,26 @@ export function ChatConversation({
           )}
         </div>
       </div>
+
+      {/* ✅ 2026-10-26（紺野の決定 2026-10-22）: アナウンスの帯（会話の見出しの下）。🔴 スマホでも同じ帯を出す（隠さない）。 */}
+      {announcement === null ? null : (
+        <ChatAnnouncementBar
+          threadId={threadId}
+          announcement={announcement}
+          canPost={canPost}
+          notLoaded={announcementNotLoaded}
+          onJump={jumpToAnnouncement}
+          onClear={() => void changeAnnouncement('DELETE', announcement.messageId)}
+          messages={messages}
+        />
+      )}
+      {announcementFailed ? (
+        <div className="shrink-0 px-3 py-2 md:px-5">
+          <Alert variant="danger" data-testid={`chat-announcement-failed-${threadId}`}>
+            {messages.announcementFailed}
+          </Alert>
+        </div>
+      ) : null}
 
       {/* 🔴 本文の面。**下寄せ**（最新の発言がコンポーザーの直上に来る。定義書 §3.12）。
           ✅ 2026-10-14: 上へ読み進めたら右下に「最新のメッセージへ」を出す。 */}

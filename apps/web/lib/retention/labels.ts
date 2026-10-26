@@ -24,6 +24,7 @@ export const PURGE_TARGET_MESSAGE_KEYS = {
   messages: 'retention.schedule.kind.messages',
   chat_user_statuses: 'retention.schedule.kind.chat_user_statuses',
   chat_saved_messages: 'retention.schedule.kind.chat_saved_messages',
+  chat_thread_announcements: 'retention.schedule.kind.chat_thread_announcements',
   chat_message_templates: 'retention.schedule.kind.chat_message_templates',
   contract_documents: 'retention.schedule.kind.contract_documents',
   contract_templates: 'retention.schedule.kind.contract_templates',

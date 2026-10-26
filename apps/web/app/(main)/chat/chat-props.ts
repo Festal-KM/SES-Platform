@@ -99,6 +99,15 @@ export type ChatConversationMessages = {
   readonly bookmark: string;
   readonly unbookmark: string;
   readonly bookmarked: string;
+  /** ✅ 2026-10-26: アナウンス（部屋の上部に固定する発言。1 部屋 1 件）。 */
+  readonly announcementLabel: string;
+  readonly announcementSet: string;
+  readonly announcementUnset: string;
+  readonly announcementClear: string;
+  readonly announcementJump: string;
+  readonly announcementSetBySuffix: string;
+  readonly announcementNotLoadedSuffix: string;
+  readonly announcementFailed: string;
   /** ✅ 2026-10-23: 行頭の「/」のメニューと、案件を貼る小窓。 */
   readonly slash: { readonly label: string; readonly project: string; readonly template: string };
   readonly pasteProject: {
@@ -245,6 +254,14 @@ export function chatConversationMessages(): ChatConversationMessages {
     bookmark: t('chat.message.bookmark'),
     unbookmark: t('chat.message.unbookmark'),
     bookmarked: t('chat.message.bookmarked'),
+    announcementLabel: t('chat.announcement.label'),
+    announcementSet: t('chat.announcement.set'),
+    announcementUnset: t('chat.announcement.unset'),
+    announcementClear: t('chat.announcement.clear'),
+    announcementJump: t('chat.announcement.jump'),
+    announcementSetBySuffix: t('chat.announcement.setBySuffix'),
+    announcementNotLoadedSuffix: t('chat.announcement.notLoadedSuffix'),
+    announcementFailed: t('chat.announcement.failed'),
     slash: {
       label: t('chat.compose.slash.label'),
       project: t('chat.compose.slash.project'),

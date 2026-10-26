@@ -113,7 +113,8 @@ describe('#2 全表にポリシーが 1 つ以上ある（docs/05 §4.7 #2）', 
     // 🔴 2026-10-19 チャットレーンで `chat_user_statuses` を 1 表足した（ひとこと状態。書き = 本人 / 読み = users の C8 に連動 / migration 20261019020000）。
     // 🔴 2026-10-22 チャットレーンで `chat_saved_messages`（保存済み。読み = 本人の行 かつ 発言が読める / migration 20261022010000）と
     //    `chat_message_templates`（自分の定型文。C7 SELF / migration 20261022020000）の 2 表を足した。
-    expect(tables).toHaveLength(62);
+    // 🔴 2026-10-26 チャットレーンで `chat_thread_announcements`（部屋のアナウンス。読み = 部屋が読める / migration 20261026010000）を足した。
+    expect(tables).toHaveLength(63);
 
     const policies = await readPolicies(db);
     const withPolicy = new Set(policies.map((policy) => policy.table));
