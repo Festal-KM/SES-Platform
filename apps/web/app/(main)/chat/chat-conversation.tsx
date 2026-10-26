@@ -1562,10 +1562,12 @@ export function ChatConversation({
                   value={body}
                   maxLength={CHAT_MESSAGE_MAX_LENGTH}
                   placeholder={title?.title ? `${title.title}${messages.composePlaceholderSuffix}` : messages.composePlaceholder}
-                  // ✅ 2026-10-14: 文章に合わせて伸び（`field-sizing-content`）、約 6 行で止めて欄の中でスクロールする。
+                  // 書式を開いたときは、自動で伸びないブラウザでも複数行を見渡せる高さを確保する。
+                  // 自動で伸びる場合も max-h-40 で止め、以降は欄の中でスクロールする。
                   className={cn(
                     'overflow-y-auto overscroll-contain rounded-none border-0',
-                    'min-h-11 max-h-40 resize-none',
+                    'max-h-40 resize-none',
+                    formatOpen ? 'min-h-20' : 'min-h-11',
                   )}
                   onChange={(event) => {
                     updateBody(event.target.value);
@@ -1762,7 +1764,7 @@ export function ChatConversation({
           confirm={
             <Button
               type="button"
-              variant="primary"
+              variant="secondary"
               onClick={() => {
                 const target = items.find((entry) => entry.id === confirmDeleteId);
                 setConfirmDeleteId(null);

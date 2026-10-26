@@ -517,7 +517,7 @@ export function ChatThreadList({
         {canPost && people !== null ? (
           <Link
             href={chatHref({ filter: { kind: 'contacts' } })}
-            className={cn(SECONDARY_LINK_CLASSES, 'h-8 px-3 text-cell')}
+            className={cn(SECONDARY_LINK_CLASSES, 'min-h-11 px-3 text-cell md:min-h-8')}
             data-testid="chat-new-conversation"
           >
             {t('chat.people.newConversationShort')}
