@@ -107,6 +107,8 @@ export function ChatProjectCard({ messageId, project, labels, onQuote }: ChatPro
             type="button"
             variant="ghost"
             size="sm"
+            // ✅ 2026-10-26（Codex のレビュー）: スマホでは押せる大きさを 44px にする。
+            className="h-11 md:h-8"
             onClick={() => onQuote(quote)}
             data-testid={`chat-message-project-quote-${messageId}`}
           >

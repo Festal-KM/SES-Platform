@@ -61,7 +61,8 @@ export function ChatProjectPicker({ threadId, labels, statuses, onPick, onClose 
           type="button"
           variant="ghost"
           size="sm"
-          className="ml-auto"
+          // ✅ 2026-10-26（Codex のレビュー）: スマホでは押せる大きさを 44px にする（`md` 以上は 32px のまま）。
+          className="ml-auto h-11 w-11 md:h-8 md:w-8"
           icon={<Icon name="x" />}
           aria-label={labels.close}
           onClick={onClose}
@@ -96,7 +97,8 @@ export function ChatProjectPicker({ threadId, labels, statuses, onPick, onClose 
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="min-w-0 flex-1 justify-start"
+                // ✅ 2026-10-26（Codex のレビュー）: スマホでは 44px（隣の案件を押し間違えないように）。
+                className="h-11 min-w-0 flex-1 justify-start md:h-8"
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => onPick({ id: item.id, name: item.name })}
                 data-testid={`chat-compose-project-option-${item.id}`}

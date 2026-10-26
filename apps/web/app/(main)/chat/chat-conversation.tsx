@@ -1390,7 +1390,8 @@ export function ChatConversation({
                     type="button"
                     variant="ghost"
                     size="sm"
-                    className="ml-auto"
+                    // ✅ 2026-10-26（Codex のレビュー）: スマホでは押せる大きさを 44px にする。
+                    className="ml-auto h-11 w-11 md:h-8 md:w-8"
                     icon={<Icon name="x" />}
                     aria-label={messages.pasteProject.remove}
                     onClick={() => setAttachedProject(null)}
