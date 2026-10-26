@@ -123,7 +123,7 @@ export function ChatMessageItem({ item, continued, conversation }: { readonly it
         {text === '' ? null : (
         <div
           className={cn(
-            'm-0 flex w-fit flex-col gap-2 rounded-lg px-4 py-2 text-body break-words text-fg',
+            'm-0 flex w-fit flex-col gap-2 rounded-lg px-3 py-3 md:px-4 md:py-2 text-body break-words text-fg',
             CHAT_BUBBLE_MAX_WIDTH_CLASS,
             surfaceClass,
           )}
@@ -166,7 +166,11 @@ export function ChatMessageItem({ item, continued, conversation }: { readonly it
                 <Button
                   key={summary.reaction}
                   type="button"
-                  variant={summary.mine ? 'secondary' : 'ghost'}
+                  variant="secondary"
+                  className={cn(
+                    'min-h-11 min-w-11 rounded-sm px-3 py-2 md:min-h-8',
+                    summary.mine ? 'border-brand bg-brand-bg' : 'border-border bg-bg',
+                  )}
                   size="sm"
                   aria-pressed={summary.mine}
                   aria-label={`${messages.reactions[summary.reaction]} ${String(summary.count)}`}
@@ -176,7 +180,7 @@ export function ChatMessageItem({ item, continued, conversation }: { readonly it
                   {reactionText(summary.reaction, summary.count)}
                 </Button>
               ) : (
-                <span key={summary.reaction} className="text-xs text-fg-muted" data-testid={`chat-message-reaction-${item.id}-${summary.reaction}`}>
+                <span key={summary.reaction} className="inline-flex items-center rounded-sm border border-border bg-bg px-3 py-2 text-cell text-fg-muted" data-testid={`chat-message-reaction-${item.id}-${summary.reaction}`}>
                   {reactionText(summary.reaction, summary.count)}
                 </span>
               ),
@@ -354,7 +358,7 @@ export function ChatMessageItem({ item, continued, conversation }: { readonly it
                 <time
                   dateTime={item.sentAt}
                   title={formatDateTimeJst(item.sentAt)}
-                  className="text-xs text-fg-placeholder"
+                  className="order-2 shrink-0 text-xs text-fg-placeholder md:order-3"
                 >
                   {formatChatTime(item.sentAt)}
                 </time>
@@ -430,16 +434,16 @@ export function ChatMessageItem({ item, continued, conversation }: { readonly it
                     // 🔴 読み上げでは誰の発言かを残す（見た目だけ省く）。
                     <span className="sr-only">{item.senderName ?? messages.unknownName}</span>
                   ) : (
-                    <p className="m-0 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                      <span className="text-body font-bold text-fg" data-testid={`chat-message-sender-${item.id}`}>
+                    <p className="m-0 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                      <span className="order-1 min-w-0 break-words text-body font-bold text-fg" data-testid={`chat-message-sender-${item.id}`}>
                         {item.senderName ?? messages.unknownName}
                       </span>
-                      <span className="min-w-0 text-xs text-fg-muted">
+                      <span className="order-3 flex w-full min-w-0 flex-wrap gap-x-2 gap-y-1 break-words text-xs text-fg-muted md:order-2 md:w-auto">
                         <span>{item.senderCompanyName ?? messages.unknownName}</span>
-                        {item.own ? <span className="ml-2">{messages.own}</span> : null}
-                        {/* 会社と状態を同じ行に流し、狭い画面でも補助情報の段を増やさない。 */}
+                        {item.own ? <span>{messages.own}</span> : null}
+                        {/* スマホでは補足情報を下段に揃え、長い会社名と状態も折り返す。 */}
                         {item.senderStatus == null || item.senderStatus === '' ? null : (
-                          <span className="ml-2 text-xs text-fg-muted" data-testid={`chat-message-status-${item.id}`}>
+                          <span className="text-xs text-fg-muted" data-testid={`chat-message-status-${item.id}`}>
                             {item.senderStatus}
                           </span>
                         )}
