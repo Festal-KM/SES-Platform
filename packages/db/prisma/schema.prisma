@@ -140,6 +140,7 @@ model Tenant {
   chatUserStatuses        ChatUserStatus[] // 2026-10-19 チャットレーン（ひとこと状態。migration 20261019020000）
   chatSavedMessages       ChatSavedMessage[] // 2026-10-22 チャットレーン（保存済み。migration 20261022010000）
   chatMessageTemplates    ChatMessageTemplate[] // 2026-10-22 チャットレーン（自分の定型文。migration 20261022020000）
+  chatThreadAnnouncements ChatThreadAnnouncement[] // 2026-10-26 チャットレーン（アナウンス。1 部屋 1 件。migration 20261026010000）
   contracts               Contract[]
   contractDocuments       ContractDocument[]
   contractTemplates       ContractTemplate[]
@@ -1137,6 +1138,7 @@ model ChatThread {
   threadParticipants ThreadParticipant[]
   messages           Message[]
   readStates         ChatReadState[] // 2026-10-15 チャットレーン
+  announcements      ChatThreadAnnouncement[] // 2026-10-26 チャットレーン（アナウンス。1 部屋 1 件 = @@unique([tenantId, threadId])）
 
   @@unique([tenantId, kind, projectId, partnerCompanyId])
   @@unique([tenantId, dmKey])
@@ -1188,6 +1190,7 @@ model Message {
   thread               ChatThread      @relation(fields: [threadId], references: [id], onDelete: Cascade)
   reactions            ChatMessageReaction[] // 2026-10-16 チャットレーン
   savedBy              ChatSavedMessage[] // 2026-10-22 チャットレーン（保存済み）
+  announcedIn          ChatThreadAnnouncement[] // 2026-10-26 チャットレーン（アナウンス）
   // 🔴 Issue #33 / docs/05 §3.3.1（A-11）: 複合 FK。owner_partner_company_id は B 群（継承の子）で
   //    あり FK を張らない（継承トリガが同一テナントの親からのみ値を取るため推移的に正しい）。
   senderPartnerCompany PartnerCompany? @relation(fields: [tenantId, senderPartnerCompanyId], references: [tenantId, id], onDelete: Restrict)
@@ -1274,6 +1277,26 @@ model ChatSavedMessage {
   @@unique([tenantId, userId, messageId])
   @@index([tenantId, userId, createdAt])
   @@map("chat_saved_messages")
+}
+
+/// ✅ 2026-10-26 チャットレーン: 部屋のアナウンス（LINE のアナウンス。部屋の上部に大事な発言を 1 件固定して出す。紺野の決定 2026-10-22）。
+/// 1 部屋 = 1 行（置き換えは UPDATE、外したら行を消す）。🔴 `chat_threads` に列を足さない（凍結のトリガ chat_threads_freeze_room がある）。
+/// RLS: 読み・外す = その部屋が読める（chat_threads の C6 / C10 を EXISTS で通す）。設定 = 部屋が読めて、発言が「その部屋の、消えていない発言」で、
+/// 設定者が本人。🔴 運営者（app_platform）に GRANT しない。set_by_user_id に FK を張らない（ChatReadState と同じ）。migration 20261026010000
+model ChatThreadAnnouncement {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  threadId    String   @map("thread_id") @db.Uuid
+  messageId   String   @map("message_id") @db.Uuid
+  setByUserId String   @map("set_by_user_id") @db.Uuid
+  setAt       DateTime @default(now()) @map("set_at") @db.Timestamptz(3)
+
+  tenant  Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  thread  ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  message Message    @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, threadId])
+  @@map("chat_thread_announcements")
 }
 
 /// ✅ 2026-10-22 チャットレーン: 自分の定型文（紺野の決定: 自分だけ。会社共通は作らない）。

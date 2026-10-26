@@ -23,6 +23,7 @@
 //
 // 🔴 純粋関数のみ（`@ses/db` / `@ses/i18n` / 現在時刻に依存しない）。クライアントの島が
 //    **型だけ**を読めるようにするためである（`tests/static/client-db-boundary.test.ts`）。
+import { messageSnippet } from './thread-tree';
 
 /** `chat_threads.kind`（CHECK の 4 値。DM / GROUP は 2026-10-16・#128）。 */
 export const CHAT_THREAD_KINDS = ['PROJECT', 'COMPANY', 'DM', 'GROUP'] as const;
@@ -108,6 +109,53 @@ export type ChatMessageView = {
   /** 本文。🔴 `PURGED` / 保持期間削除で本文が消えた行は `null`（`F-064 AC-2`）。 */
   readonly body: string | null;
 };
+
+/**
+ * ✅ 2026-10-26（紺野の決定 2026-10-22）: 部屋のアナウンス（LINE のアナウンス。1 部屋 1 件。`chat_thread_announcements`）。
+ * 🔴 **読めるかは RLS が決める**（その部屋が読める人だけ。`lib/chat/announcement.ts` ①）。
+ * 🔴 **設定した人の利用者 ID を載せない**（名前だけ。`senderUserId` と同じ）。
+ */
+export type ChatAnnouncementView = {
+  /** 固定した発言（この部屋の発言。読み込み済みならその位置へ移る）。 */
+  readonly messageId: string;
+  /** 固定した発言の日時（ISO。読み込んでいないときに「いつの発言か」を示す）。 */
+  readonly messageSentAt: string;
+  /** 発言の冒頭。🔴 送った本人が消した・保持期限で本文が消えた発言は `null`（本文を出さない）。 */
+  readonly snippet: string | null;
+  /** 設定した人の表示名（`users` の C8。読めなければ `null`）。 */
+  readonly setByName: string | null;
+  /** 設定した日時（ISO）。 */
+  readonly setAt: string;
+};
+
+export const CHAT_ANNOUNCEMENT_VIEW_KEYS = ['messageId', 'messageSentAt', 'snippet', 'setByName', 'setAt'] as const;
+
+/** アナウンスの帯に出す本文の冒頭の長さ（文字数。1〜2 行に収まる程度）。 */
+export const CHAT_ANNOUNCEMENT_SNIPPET_LENGTH = 60;
+
+/** アナウンスの帯に出す本文の冒頭（改行・連続した空白は 1 つの空白にする）。🔴 本文が無ければ `null`。 */
+export function chatAnnouncementSnippet(body: string | null): string | null {
+  if (body === null) return null;
+  return messageSnippet(body, '', CHAT_ANNOUNCEMENT_SNIPPET_LENGTH);
+}
+
+/** `chat_thread_announcements` の行と、固定した発言の行（RLS 越しに読めたもの）を写す。 */
+export function chatAnnouncementView(
+  row: { readonly messageId: string; readonly setAt: Date },
+  deps: {
+    readonly message: { readonly sentAt: Date; readonly body: string | null; readonly deletedAt: Date | null; readonly purgedAt: Date | null };
+    readonly setByName: string | null;
+  },
+): ChatAnnouncementView {
+  const removed = deps.message.deletedAt !== null || deps.message.purgedAt !== null;
+  return {
+    messageId: row.messageId,
+    messageSentAt: deps.message.sentAt.toISOString(),
+    snippet: removed ? null : chatAnnouncementSnippet(deps.message.body),
+    setByName: deps.setByName,
+    setAt: row.setAt.toISOString(),
+  };
+}
 
 /** 参加会社の 1 行（`thread_participants`。越境経路 3 の唯一の根拠）。 */
 export type ChatParticipantView = {
@@ -260,6 +308,8 @@ export const CHAT_FORBIDDEN_RESPONSE_KEYS = [
   'ownerPartnerCompanyId',
   'senderPartnerCompanyId',
   'senderUserId',
+  // ✅ 2026-10-26: アナウンスを設定した人の利用者 ID（名前だけを返す）。
+  'setByUserId',
   'total',
 ] as const;
 

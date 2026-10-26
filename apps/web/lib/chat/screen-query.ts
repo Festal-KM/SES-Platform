@@ -208,3 +208,8 @@ export const CHAT_TEMPLATES_API_PATH = '/api/chat/templates';
 export function chatTemplateApiPath(templateId: string): string {
   return `/api/chat/templates/${templateId}`;
 }
+
+/** ✅ 2026-10-26: 部屋のアナウンスを読む（`GET`）/ 設定する（`PUT`）/ 外す（`DELETE`）。`docs/05` §6.5 #51n。 */
+export function chatAnnouncementApiPath(threadId: string): string {
+  return `/api/threads/${threadId}/announcement`;
+}

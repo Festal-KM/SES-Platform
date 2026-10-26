@@ -179,3 +179,12 @@ export const chatTemplateParamsSchema = z.object({ templateId: z.uuid() });
 export type ChatTemplateParams = z.infer<typeof chatTemplateParamsSchema>;
 export type ChatTemplateParamsIsolationGuard = AssertNoIsolationKeys<ChatTemplateParams>;
 assertNoIsolationKeys(Object.keys(chatTemplateParamsSchema.shape), 'chatTemplateParamsSchema');
+
+// ✅ 2026-10-26（チャットレーン・紺野の決定 2026-10-22）: アナウンス（`docs/05` §6.5 #51n）。
+// 🔴 指せるのは発言の ID だけ（部屋は path の `id`、テナント・取引先は認証コンテキストから）。発言がその部屋のものかは
+//    アプリ（`lib/chat/announcement.ts` ②）と RLS（migration 20261026010000 の WITH CHECK）の二重で見る。
+/** `PUT /api/threads/{id}/announcement`（この発言をアナウンスにする。あれば置き換える）/ `DELETE`（この発言のアナウンスを外す）。 */
+export const chatAnnouncementBodySchema = z.object({ messageId: z.uuid() }).strict();
+export type ChatAnnouncementBody = z.infer<typeof chatAnnouncementBodySchema>;
+export type ChatAnnouncementBodyIsolationGuard = AssertNoIsolationKeys<ChatAnnouncementBody>;
+assertNoIsolationKeys(Object.keys(chatAnnouncementBodySchema.shape), 'chatAnnouncementBodySchema');

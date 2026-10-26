@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { CHAT_MESSAGE_MAX_LENGTH, CHAT_MESSAGE_PAGE_SIZE, PAGE_SIZE_MAX } from '@ses/config';
 import { ISOLATION_KEYS } from '../api/isolation-keys';
 import {
+  chatAnnouncementBodySchema,
   chatMessageBodySchema,
   chatMessageListQuerySchema,
   chatThreadListQuerySchema,
@@ -82,9 +83,25 @@ describe('🔴 分離キーが 1 つも入っていない（`CLAUDE.md` §3.1 / 
     ['chatMessageListQuerySchema', Object.keys(chatMessageListQuerySchema.shape)],
     ['chatThreadParamsSchema', Object.keys(chatThreadParamsSchema.shape)],
     ['chatMessageBodySchema', Object.keys(chatMessageBodySchema.shape)],
+    ['chatAnnouncementBodySchema', Object.keys(chatAnnouncementBodySchema.shape)],
   ])('%s', (_label, keys) => {
     for (const forbidden of ISOLATION_KEYS) {
       expect(keys, forbidden).not.toContain(forbidden);
+    }
+  });
+});
+
+// ✅ 2026-10-26: アナウンス（`PUT` / `DELETE /api/threads/{id}/announcement`）。
+describe('chatAnnouncementBodySchema', () => {
+  it('発言の ID（UUID）だけを受ける', () => {
+    expect(chatAnnouncementBodySchema.safeParse({ messageId: UUID }).success).toBe(true);
+    expect(chatAnnouncementBodySchema.safeParse({ messageId: 'x' }).success).toBe(false);
+    expect(chatAnnouncementBodySchema.safeParse({}).success).toBe(false);
+  });
+
+  it('🔴 ほかのキー（部屋・テナント・取引先・設定した人）を受けない（`.strict()`）', () => {
+    for (const extra of ['threadId', 'tenantId', 'partnerCompanyId', 'setByUserId']) {
+      expect(chatAnnouncementBodySchema.safeParse({ messageId: UUID, [extra]: UUID }).success, extra).toBe(false);
     }
   });
 });
