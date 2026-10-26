@@ -1123,13 +1123,14 @@ describe('🔴 F-013 AC-2: 一覧にも商流情報が現れない', () => {
     expect(raw).not.toContain('internalUnitPrice');
   });
 
-  it('🔴 ホストの一覧にも商流情報が出ない（一覧は 2 列を取得しない）', async () => {
+  it('ホストの一覧は仕入単価を持ち、エンド企業名は返さない', async () => {
     const ctx = await ctxOf(HOST_1, 'SALES');
 
     const raw = await (await getProjects(ctx)).text();
 
     expect(raw).not.toContain(ISOLATION_FORBIDDEN_MARKERS.endClientName);
     expect(raw).not.toContain('endClientName');
+    expect(raw).toContain('internalUnitPrice');
   });
 
   it('🔴 フリーワードでエンド企業名を検索しても当たらない（検索対象が 2 列だけ）', async () => {

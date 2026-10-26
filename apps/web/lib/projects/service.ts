@@ -18,6 +18,7 @@
 import {
   // 🔴 T-12-10: 未消費の `RECHECK` 要求の有無（`#26` の積み直し。docs/05 §11.11 ③ 5-②）。
   hasPendingProjectRecheck,
+  projectPublicContent,
   // 🔴 T-12-10: 要件のフリーテキストの**唯一の読み取り順序**（ハッシュ側と同じ 1 実装）。
   readProjectRequirementTexts,
   requireHost,
@@ -138,6 +139,13 @@ export type ProjectRequirementView = {
  *    `PartnerProjectDetailView`（商流フィールドを**型として持たない**。本ファイル下部）だけである。
  */
 export type ProjectEditView = {
+  readonly upperCompanyName: string | null;
+  readonly endDate: string | null;
+  readonly distributionLimit: string | null;
+  readonly assigneeUserId: string | null;
+  readonly locationDetail: string | null;
+  readonly publicMemo: string | null;
+  readonly remarks: string | null;
   readonly id: string;
   readonly name: string;
   readonly status: ProjectStatus;
@@ -459,6 +467,9 @@ export async function createProject(
         endClientName: input.endClientName,
         internalUnitPrice: input.internalUnitPrice,
         publicSummary: input.publicSummary,
+        locationDetail: input.locationDetail,
+        publicMemo: input.publicMemo,
+        remarks: input.remarks,
       },
       select: { id: true },
     });
@@ -539,6 +550,8 @@ export async function updateProject(
         unitPriceMax: true,
         name: true,
         publicSummary: true,
+        publicMemo: true,
+        locationDetail: true,
         // ✅✅ 2026-10-16: 項目をまたぐ検証のために既存値を読む
         //    （精算幅の逆転 / 終了 < 開始。片方だけ更新できるため合成する）。
         startDate: true,
@@ -552,7 +565,7 @@ export async function updateProject(
     // 🔴 手順 1 の残り。ハッシュ側（`readProjectPublishGateHashInput`）と**同じ 1 実装・同じ順序**。
     const before: ProjectPublicFieldValues = {
       name: current.name,
-      publicSummary: current.publicSummary,
+      publicSummary: projectPublicContent(current),
       requirementFreeTexts: await readProjectRequirementTexts(db, id),
     };
 
@@ -620,6 +633,9 @@ export async function updateProject(
         ? {}
         : { internalUnitPrice: patch.internalUnitPrice }),
       ...(patch.publicSummary === undefined ? {} : { publicSummary: patch.publicSummary }),
+      ...(patch.locationDetail === undefined ? {} : { locationDetail: patch.locationDetail }),
+      ...(patch.publicMemo === undefined ? {} : { publicMemo: patch.publicMemo }),
+      ...(patch.remarks === undefined ? {} : { remarks: patch.remarks }),
     };
 
     if (Object.keys(data).length > 0) {
@@ -640,13 +656,13 @@ export async function updateProject(
     // ------------------------------------------------------------------
     const saved = await db.project.findFirst({
       where: { id },
-      select: { name: true, publicSummary: true },
+      select: { name: true, publicSummary: true, publicMemo: true, locationDetail: true },
     });
     // 直前に更新した行が消えている（並行削除）＝ 不変条件違反。0 件を成功にしない。
     if (saved === null) throw new NotFoundError();
     const after: ProjectPublicFieldValues = {
       name: saved.name,
-      publicSummary: saved.publicSummary,
+      publicSummary: projectPublicContent(saved),
       requirementFreeTexts: await readProjectRequirementTexts(db, id),
     };
 
@@ -790,6 +806,13 @@ export async function readProjectForEdit(
         endClientName: true,
         internalUnitPrice: true,
         publicSummary: true,
+        upperCompanyName: true,
+        endDate: true,
+        distributionLimit: true,
+        assigneeUserId: true,
+        locationDetail: true,
+        publicMemo: true,
+        remarks: true,
       },
     });
     if (row === null) throw new NotFoundError();
@@ -814,11 +837,31 @@ export async function readProjectForEdit(
       internalUnitPrice: decimalToNumber(row.internalUnitPrice),
       publicSummary: row.publicSummary,
       requirements: await readProjectRequirements(db, row.id),
+      upperCompanyName: row.upperCompanyName,
+      endDate: toDateOnlyString(row.endDate),
+      distributionLimit: row.distributionLimit,
+      assigneeUserId: row.assigneeUserId,
+      locationDetail: row.locationDetail,
+      publicMemo: row.publicMemo,
+      remarks: row.remarks,
       // 🔴 T-12-10: `revoked_at IS NULL` が「現在の公開先」の定義である（C4 の述語と鏡写し）。
       publishedToCount: await db.projectVisibility.count({
         where: { projectId: row.id, revokedAt: null },
       }),
     };
+  });
+}
+
+/** 担当者の選択肢。ホスト社員だけを同じテナントのRLS内で読む。 */
+export async function projectAssigneeOptions(ctx: AuthenticatedTenantCtx) {
+  requireHost(ctx);
+  return withTenant(ctx, async (db) => {
+    const users = await db.user.findMany({
+      where: { ownerPartnerCompanyId: null, disabledAt: null },
+      select: { id: true, displayName: true },
+      orderBy: [{ displayName: 'asc' }, { id: 'asc' }],
+    });
+    return users.map((user) => ({ value: user.id, label: user.displayName }));
   });
 }
 

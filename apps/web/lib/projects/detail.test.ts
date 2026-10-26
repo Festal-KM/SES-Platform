@@ -76,7 +76,8 @@ describe('formatProjectUnitPriceRange（🔴 片側だけの登録を畳まな�
 
   it('未設定は記号（0 と混同しない）', () => {
     expect(formatProjectUnitPriceRange(null, null)).toBe(NONE);
-    expect(formatProjectUnitPriceRange(0, 0)).toBe(`0〜0 ${t('projects.unitPrice.unit')}`);
+    expect(formatProjectUnitPriceRange(0, 0)).toBe(`0 ${t('projects.unitPrice.unit')}`);
+    expect(formatProjectUnitPriceRange(700_000, 700_000)).toBe(`700,000 ${t('projects.unitPrice.unit')}`);
   });
 
   // ⚠️ 「人材（`engineers.*`）の語を使っていない」は**現時点では表示文字列で区別できない**

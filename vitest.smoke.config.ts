@@ -1,5 +1,7 @@
 import { defineConfig } from 'vitest/config';
 
+const isCi = process.env.CI === 'true' || process.env.CI === '1';
+
 // tests/smoke/** 専用の Vitest 設定（`pnpm test:smoke`）。
 // docker-compose の 5 サービスへの疎通確認であり、`docker compose up -d` 済みの
 // ローカル環境でのみ意味を持つ。CI の既定 `pnpm test:unit`（vitest.config.ts）から
@@ -7,6 +9,9 @@ import { defineConfig } from 'vitest/config';
 // （code-reviewer 指摘 #1 / SP-01 T-01-02）。
 export default defineConfig({
   test: {
+    // 16GB開発機のページングを抑える。CIの並列実行は維持する。
+    fileParallelism: isCi,
+    maxWorkers: isCi ? undefined : 1,
     include: ['tests/smoke/**/*.test.ts'],
     exclude: ['**/node_modules/**', '**/dist/**'],
   },

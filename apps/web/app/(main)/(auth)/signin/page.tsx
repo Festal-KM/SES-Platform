@@ -58,7 +58,7 @@ export default async function SignInPage({
     //    **クラス C = 読み幅**である（画面ファイルに `max-w-*` を書かない。検査 (c) / (k)）。
     // 🔴 **中央寄せは `AuthShell` が持つ**（`AppShell` の外側で柱が無く、§7.1 が
     //    「中央寄せにしない」とした理由が当てはまらない。`app/_components/auth-shell.tsx` 冒頭）。
-    <AuthShell wordmark={t('product.name')} widthClass="prose">
+    <AuthShell wordmark={t('product.name')} logoAlt={t('product.name')} widthClass="prose">
       <h1 className="mb-4 text-title font-bold text-fg">{t('auth.signin.title')}</h1>
       <SignInForm messages={messages} initialStage={initialStageOf(step)} />
     </AuthShell>

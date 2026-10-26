@@ -11,7 +11,7 @@ import { PAGE_SIZE_DEFAULT } from '@ses/config';
 import type { ProjectStatus } from '@ses/db';
 import type { ProjectPublishListStatus } from '@ses/domain';
 import { t } from '@ses/i18n';
-import { formatThousands } from '../format/number';
+import { formatManYen, formatThousands } from '../format/number';
 import { PREFECTURE_MESSAGE_KEYS } from '../format/prefectures';
 // 🔴 型だけを import する（帯の primary の形は `lib/shell/page-trail.ts` が持つ 1 箇所である）。
 import type { PagePrimaryAction } from '../shell/page-trail';
@@ -36,6 +36,8 @@ function none(): string {
 
 /** 1 行分の表示値（すべて文字列。画面は組み立てをせず、そのまま描く）。 */
 export type ProjectListRowView = {
+  /** nullは取引先（非表示）。ホストの未設定値は「—」。 */
+  readonly purchaseUnitPrice: string | null;
   readonly id: string;
   readonly name: string;
   readonly status: string;
@@ -160,6 +162,12 @@ export function formatVisibilityStatus(
 
 export function projectListRow(view: ProjectView): ProjectListRowView {
   return {
+    purchaseUnitPrice:
+      view.audience !== 'HOST'
+        ? null
+        : view.internalUnitPrice === null
+          ? none()
+          : `${formatManYen(view.internalUnitPrice)} ${t('projects.list.unitPrice.manYen')}`,
     id: view.id,
     name: view.name,
     status: t(PROJECT_STATUS_MESSAGE_KEYS[view.status]),
@@ -172,7 +180,9 @@ export function projectListRow(view: ProjectView): ProjectListRowView {
     // ✅ **2026-10-15: 一覧の表だけ万円表記**（`#101` の C）。
     //    🔴 **詳細（`S-011`）・承認・提案は円のまま**である —— 金額を確定させる面では
     //    丸めない（`lib/format/number.ts` の `formatManYen` の 🔴）。
-    unitPrice: formatProjectListUnitPriceRange(view.unitPriceMin, view.unitPriceMax),
+    unitPrice: view.unitPriceMin === null && view.unitPriceMax === null
+      ? none()
+      : `${formatManYen(view.unitPriceMin ?? view.unitPriceMax ?? 0)} ${t('projects.list.unitPrice.manYen')}`,
     startDate: view.startDate ?? none(),
     location: formatProjectLocation(view.prefecture),
     remoteMode: formatProjectRemoteMode(view.remoteMode),
@@ -335,7 +345,9 @@ export function projectPanelTab(raw: string | readonly string[] | undefined): Pr
 // ⚠️ **2026-10-19: `projectSkillRemoveHref` を削除した。** バッジの `×` が
 //    **URL への遷移をやめ、チェックを外す操作**になったためである
 //    （受領モックの「チェック = バッジ」に揃えた。
-//    `app/(main)/projects/skill-filter-select.tsx` 冒頭の 🔴）。
+//    `app/(main)/projects/_search/skill-multi-select.tsx` 冒頭の 🔴。
+//    ⚠️ 旧 `skill-filter-select.tsx` は 2026-10-19 の検索エリア改修で
+//       `_search/` に吸収されて消えた）。
 // 🔴 **使われない組み立てを残さない** —— 残すと「おそらくこっちが正」と読める
 //    経路が 2 つになる。`skills` の query 自体は 1 文字も変えていない。
 

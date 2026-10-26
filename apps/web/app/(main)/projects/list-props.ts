@@ -32,6 +32,9 @@ import type {
   ProjectFilterOption,
   ProjectListScreenMessages,
 } from './project-list-screen';
+import type { SearchPanelMessages } from './_search/search-panel';
+import type { SearchFilterFormOptions } from './_search/search-filter-form';
+import type { ProjectSearchDraft } from './_search/filters';
 import type { ProjectSummaryPanelMessages } from './project-summary-panel';
 
 /**
@@ -151,53 +154,17 @@ export function projectListScreenMessages(params: {
     orderNote: t('projects.list.orderNote'),
     // 🔴 ✅ 2026-10-03: 表が器に収まらない幅での 1 行（語は全画面で同じ 1 キー）。
     overflowNote: t('ui.tableOverflowNote'),
-    searchLegend: t('projects.list.search.legend'),
-    searchQ: t('projects.list.search.q'),
-    searchStatus: t('projects.list.search.status'),
-    // ✅ 2026-10-15: 単価レンジ（人材一覧と同じ語。`engineers.list.search.price*` と同じ文言）。
-    //    🔴 この 2 つは**欄ごとの読み上げの語**になった（見えるラベルは `searchPrice` の 1 つ）。
-    searchPriceMin: t('projects.list.search.priceMin'),
-    searchPriceMax: t('projects.list.search.priceMax'),
-    // ✅ 2026-10-15（受領画像「自社案件管理_案件一覧.png」の絞り込みカード）。
-    searchQPlaceholder: t('projects.list.search.qPlaceholder'),
-    searchPrice: t('projects.list.search.price'),
-    searchPriceMinPlaceholder: t('projects.list.search.priceMinPlaceholder'),
-    searchPriceMaxPlaceholder: t('projects.list.search.priceMaxPlaceholder'),
-    searchPriceRangeSeparator: t('projects.list.search.priceRangeSeparator'),
-    searchPriceUnit: t('projects.list.search.priceUnit'),
-    // ✅ 2026-10-16（人間の明示指示）: 稼働形態 / 単価の逆転。
-    searchRemoteMode: t('projects.list.search.remoteMode'),
-    searchCategory: t('projects.list.search.category'),
-    // ============================================================================
-    // ✅✅ **2026-10-16: 検索項目を 6 つに絞った**（人間の明示指示「検索項目については下記
-    //     ・フリーテキスト（プレースホルダーは「案件名・キーワードで検索」、曖昧検索が
-    //     できるようにする）・ステータス ・カテゴリ ・スキル（リストから複数選択できる、
-    //     or 検索）・稼働形態 ・単価（上下限で）にしてください」）
-    // ============================================================================
-    // 🔴 **画面から外したのは 4 つ**（案件区分 / 勤務地 / 開始時期 / 並行可否）。
-    //    **query と述語は残してある** —— URL を共有した人が居る可能性があり、受け取れなく
-    //    なると「共有したリンクが別の結果を出す」になる（`recruitingOnly` と同じ判断）。
-    //    したがって `searchSourceKind` / `searchPrefecture` / `searchStartWithin` /
-    //    `searchParallelOk` / `searchStartFrom` / `searchRecruitingOnly` /
-    //    `searchComingSoon` の**語は渡さない**（描く場所が無いものを運ばない）。
-    searchSkill: t('projects.list.search.skill'),
-    searchSkillAll: t('projects.list.search.skillAll'),
-    searchSkillRemove: t('projects.list.search.skillRemove'),
-    searchSkillHint: t('projects.list.search.skillHint'),
-    searchSkillEmpty: t('projects.list.search.skillEmpty'),
-    // ✅✅ 2026-10-19: ポップアップの中の検索欄（人間の明示指示 + 受領モック）。
-    searchSkillSearchLabel: t('projects.list.search.skillSearchLabel'),
-    searchSkillSearchPlaceholder: t('projects.list.search.skillSearchPlaceholder'),
-    searchSkillNoMatch: t('projects.list.search.skillNoMatch'),
-    searchPriceInverted: t('projects.list.search.priceInverted'),
-    searchSubmit: t('projects.list.search.submit'),
-    searchClear: t('projects.list.search.clear'),
+    // ⚠️ **2026-10-19: 検索条件の語はここに無い。**下の
+    //    `projectSearchPanelMessages()` が組み立てる（検索エリアが
+    //    `_search/search-panel.tsx` の島に移ったため）。
+    // 🔴 **文言キーは 1 つも消していない**（`U-22` の凍結）。
     register: t('projects.list.register'),
     readOnlyNote: t('projects.list.readOnlyNote'),
     columnName: t('projects.list.column.name'),
     columnStatus: t('projects.list.column.status'),
     columnMustRequirements: t('projects.list.column.mustRequirements'),
-    columnUnitPrice: t('projects.list.column.unitPrice'),
+    columnUnitPrice: t('projects.list.column.wholesaleUnitPrice'),
+    columnPurchaseUnitPrice: t('projects.list.column.purchaseUnitPrice'),
     columnStartDate: t('projects.list.column.startDate'),
     columnLocation: t('projects.list.column.location'),
     // ✅ 2026-10-15: 稼働形態（`#101` の C）。
@@ -250,6 +217,15 @@ export function projectSummaryPanelMessages(): ProjectSummaryPanelMessages {
     tabBasic: t('projects.list.panel.tab.basic'),
     tabCopy: t('projects.list.panel.tab.copy'),
     copyHint: t('projects.list.panel.copy.hint'),
+    copyAction: t('projects.list.panel.copy.action'),
+    copyCopied: t('projects.list.panel.copy.copied'),
+    copyFailed: t('projects.list.panel.copy.failed'),
+    statusControl: {
+      open: t('projects.status.OPEN'), closed: t('projects.status.CLOSED'),
+      changeToOpen: t('projects.list.panel.status.changeToOpen'),
+      changeToClosed: t('projects.list.panel.status.changeToClosed'),
+      saved: t('projects.list.panel.status.saved'), failed: t('projects.list.panel.status.failed'),
+    },
     copyGeneratedNote: t('projects.list.panel.copy.generatedNote'),
     // ⚠️ `edit` / `candidates` は**渡さない**（人間の明示指示「案件サマリのボタンは、
     //    詳細を開くだけでよい」で画面から外した。キーは `U-22` の凍結なので残っている）。
@@ -318,4 +294,205 @@ export function projectColumnToggleItems(params: {
       href: hrefOf(id),
     };
   });
+}
+
+// ============================================================================
+// ✅✅ 2026-10-19: 検索エリア（`_search/`）の語と選択肢
+//     （人間の改修指示書 `BizOrch_SearchArea_ClaudeCode.md`）
+// ============================================================================
+/**
+ * 🔴 **選択肢は既存のものをそのまま束ねるだけである**（指示書 §3）。
+ *    「選択肢、初期値、ID、単価の入力・保存単位は既存実装に合わせてください」。
+ * 🔴 **「並行可否」（`projectParallelOkFilterOptions`）は渡さない**（指示書 §3 で除外）。
+ *    ⚠️ **現在は未使用である**（`projectSourceKindFilterOptions` も同じ）。
+ *    `S-012`（登録・編集）が使っているのは `_form/form-props.ts` の別定義
+ *    （`projectParallelOkOptions`）であり、ここの 2 つではない。
+ *    残してあるのは**欄を戻すときに語を組み直さないため**である。
+ */
+export function projectSearchFilterOptions(
+  skills: Parameters<typeof projectSkillFilterOptions>[0],
+): SearchFilterFormOptions {
+  return {
+    statusOptions: projectStatusFilterOptions,
+    categoryOptions: projectCategoryFilterOptions,
+    remoteModeOptions: projectRemoteModeFilterOptions,
+    prefectureOptions: projectPrefectureFilterOptions,
+    startWithinOptions: projectStartWithinFilterOptions,
+    skillOptions: projectSkillFilterOptions(skills),
+  };
+}
+
+/**
+ * 検索エリアの語。
+ *
+ * 🔴 **文言を組み立てるのはここだけである**（島の中で `t()` を呼ばない。
+ *    `CLAUDE.md` §3.5 / `tests/static/no-hardcoded-copy.test.ts`）。
+ * 🔴 **数を含む語は関数で渡す** —— `t()` は差し込みを持たないので
+ *    （`docs/05` §15.2 の `params` は未導入）、連結はここで行う。
+ */
+export function projectSearchPanelMessages(): SearchPanelMessages {
+  const separator = t('projects.list.search.fieldSeparator');
+  const quote = t('projects.list.search.quoteOpen');
+  return {
+    selectedSavedLabel: t('projects.list.search.selectedSavedLabel'),
+    selectedSavedModified: t('projects.list.search.selectedSavedModified'),
+    tabsLabel: t('projects.list.search.tabsLabel'),
+    tabSearch: t('projects.list.search.tabSearch'),
+    tabSaved: t('projects.list.search.tabSaved'),
+    save: t('projects.list.search.save'),
+    collapse: t('projects.list.search.collapse'),
+    expand: t('projects.list.search.expand'),
+    saveDialogTitle: t('projects.list.search.saveDialogTitle'),
+    saveDialogNameLabel: t('projects.list.search.saveDialogNameLabel'),
+    saveDialogNamePlaceholder: t('projects.list.search.saveDialogNamePlaceholder'),
+    saveDialogConfirm: t('projects.list.search.saveDialogConfirm'),
+    renameDialogTitle: t('projects.list.search.renameDialogTitle'),
+    overwriteDialogTitle: t('projects.list.search.overwriteDialogTitle'),
+    overwriteCurrent: t('projects.list.search.overwriteCurrent'),
+    overwriteDialogConfirm: t('projects.list.search.overwriteDialogConfirm'),
+    removeDialogTitle: t('projects.list.search.removeDialogTitle'),
+    removeDialogConfirm: t('projects.list.search.removeDialogConfirm'),
+    cancel: t('projects.cancel'),
+    nameError: t('projects.list.search.nameError'),
+    limitError: t('projects.list.search.limitError'),
+    writeError: t('projects.list.search.writeError'),
+    saved: t('projects.list.search.savedDone'),
+    renamed: t('projects.list.search.renamedDone'),
+    overwritten: t('projects.list.search.overwrittenDone'),
+    removed: t('projects.list.search.removedDone'),
+    summaryJoiner: t('projects.list.search.summaryJoiner'),
+    // 🔴 **対象名が分かる確認**（指示書 §5）。連結は島の中で行う。
+    quoteOpen: quote,
+    overwriteDialogBodySuffix: t('projects.list.search.overwriteDialogBodySuffix'),
+    removeDialogBodySuffix: t('projects.list.search.removeDialogBodySuffix'),
+    saveDialogBodyPrefix: t('projects.list.search.saveDialogBodyPrefix'),
+    saveDialogBodyEmpty: t('projects.list.search.saveDialogBodyEmpty'),
+    form: {
+      q: t('projects.list.search.q'),
+      qPlaceholder: t('projects.list.search.qPlaceholder'),
+      status: t('projects.list.search.status'),
+      category: t('projects.list.search.category'),
+      skill: t('projects.list.search.skill'),
+      remoteMode: t('projects.list.search.remoteMode'),
+      price: t('projects.list.search.price'),
+      priceMin: t('projects.list.search.priceMin'),
+      priceMax: t('projects.list.search.priceMax'),
+      priceMinPlaceholder: t('projects.list.search.priceMinPlaceholder'),
+      priceMaxPlaceholder: t('projects.list.search.priceMaxPlaceholder'),
+      priceSeparator: t('projects.list.search.priceRangeSeparator'),
+      priceUnit: t('projects.list.search.priceUnit'),
+      priceInverted: t('projects.list.search.priceInverted'),
+      prefecture: t('projects.list.search.prefecture'),
+      startWithin: t('projects.list.search.startWithin'),
+      skillMessages: {
+        placeholder: t('projects.list.search.skillPlaceholder'),
+        remove: t('projects.list.search.chipRemove'),
+        overflowLabel: t('projects.list.search.skillOverflow'),
+        selectedCountSuffix: t('projects.list.search.skillSelectedCount'),
+        searchLabel: t('projects.list.search.skillSearchLabel'),
+        searchPlaceholder: t('projects.list.search.skillSearchPlaceholder'),
+        modeAll: t('projects.list.search.skillModeAll'),
+        modeSelected: t('projects.list.search.skillModeSelected'),
+        noMatch: t('projects.list.search.skillNoMatch'),
+        selectedSummarySuffix: t('projects.list.search.skillSelectedSummary'),
+        clearSelection: t('projects.list.search.skillClearSelection'),
+        triggerLabel: t('projects.list.search.skill'),
+      },
+      // ✅✅ 2026-10-19: 単一選択のプルダウン 5 欄で**共通**の語
+      //    （`filter-select.tsx`。欄の名前は `Field` のラベルが持つので、ここには入らない）。
+      selectMessages: {
+        searchLabel: t('projects.list.search.selectSearchLabel'),
+        searchPlaceholder: t('projects.list.search.selectSearchPlaceholder'),
+        noMatch: t('projects.list.search.selectNoMatch'),
+      },
+    },
+    bar: {
+      label: t('projects.list.search.selectedLabel'),
+      empty: t('projects.list.search.selectedEmpty'),
+      remove: t('projects.list.search.chipRemove'),
+      overflowLabel: t('projects.list.search.chipOverflow'),
+      clear: t('projects.list.search.clear'),
+      submit: t('projects.list.search.submit'),
+      pending: t('projects.list.search.pending'),
+      pendingHint: t('projects.list.search.pendingHint'),
+    },
+    savedList: {
+      search: t('projects.list.search.savedTable.search'),
+      sort: t('projects.list.search.savedTable.sort'),
+      sortRecent: t('projects.list.search.savedTable.sortRecent'),
+      sortUpdated: t('projects.list.search.savedTable.sortUpdated'),
+      sortName: t('projects.list.search.savedTable.sortName'),
+      columnName: t('projects.list.search.savedTable.columnName'),
+      columnFilters: t('projects.list.search.savedTable.columnFilters'),
+      columnActions: t('projects.list.search.savedTable.columnActions'),
+      countSuffix: t('projects.list.search.savedTable.countSuffix'),
+      range: t('projects.list.search.savedTable.range'),
+      noResults: t('projects.list.search.savedTable.noResults'),
+      previous: t('projects.list.search.savedTable.previous'),
+      next: t('projects.list.search.savedTable.next'),
+
+      apply: t('projects.list.search.savedApply'),
+      menuLabel: t('projects.list.search.savedMenu'),
+      rename: t('projects.list.search.savedRename'),
+      overwrite: t('projects.list.search.savedOverwrite'),
+      remove: t('projects.list.search.savedRemove'),
+      emptyTitle: t('projects.list.search.savedEmpty'),
+      emptyAction: t('projects.list.search.savedEmptyAction'),
+      brokenNote: t('projects.list.search.savedBroken'),
+      storageNote: t('projects.list.search.savedStorageNote'),
+      noCondition: t('projects.list.search.savedNoCondition'),
+      activeLabel: t('projects.list.search.savedActive'),
+    },
+    chipLabels: {
+      statusOptions: projectStatusFilterOptions,
+      categoryOptions: projectCategoryFilterOptions,
+      remoteModeOptions: projectRemoteModeFilterOptions,
+      prefectureOptions: projectPrefectureFilterOptions,
+      startWithinOptions: projectStartWithinFilterOptions,
+      // 🔴 スキルの語は**辞書のデータ**であり `packages/i18n` に無いので、
+      //    呼び出し側（`page.tsx`）が差し替える。
+      skillOptions: [],
+      fieldLabels: {
+        q: t('projects.list.search.q'),
+        category: t('projects.list.search.category'),
+        prefecture: t('projects.list.search.prefecture'),
+        startWithin: t('projects.list.search.startWithin'),
+        price: t('projects.list.search.price'),
+      },
+      fieldSeparator: separator,
+      // 🔴 **単位は円のまま**（指示書 §3）。上下限をまとめて 1 バッジ（§4）。
+      priceRangeSeparator: t('projects.list.search.priceRangeSeparator'),
+      priceUnit: t('projects.list.search.priceUnit'),
+    },
+  };
+}
+
+/**
+ * 🔴 **URL から「いま効いている条件」を組む**（`appliedFilters`。指示書 §6）。
+ *
+ * 🔴 **`parallelOk` を読まない** —— ここが「古い URL に並行可否があっても
+ *    検索に影響しない」（指示書 §3 / §8）の入口側である。
+ */
+export function projectAppliedSearchDraft(query: {
+  readonly q?: string;
+  readonly status?: string;
+  readonly category?: string;
+  readonly remoteMode?: string;
+  readonly priceMin?: number;
+  readonly priceMax?: number;
+  readonly prefecture?: string;
+  readonly startWithin?: string;
+  readonly skills?: readonly string[];
+}): ProjectSearchDraft {
+  return {
+    q: query.q ?? '',
+    status: query.status ?? '',
+    category: query.category ?? '',
+    remoteMode: query.remoteMode ?? '',
+    priceMin: query.priceMin === undefined ? '' : String(query.priceMin),
+    priceMax: query.priceMax === undefined ? '' : String(query.priceMax),
+    prefecture: query.prefecture ?? '',
+    startWithin: query.startWithin ?? '',
+    skills: query.skills ?? [],
+  };
 }

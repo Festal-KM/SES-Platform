@@ -108,6 +108,14 @@ export const DIALOG_PANEL_CLASSES = cn(
 );
 
 /**
+ * ✅✅ **2026-10-19: 1 項目の入力だけの `Dialog` の幅**（400px。`S-010` の条件の保存）。
+ *
+ * 🔴 **画面側に `max-w-*` を書かせないための定数である**
+ *    （`tests/static/ui-screen-width.test.ts` (c)。幅の決定を `packages/ui` に残す）。
+ */
+export const DIALOG_PANEL_NARROW_CLASSES = 'max-w-100';
+
+/**
  * `Drawer` のパネル（右から出る側面パネル）。
  *
  * 🔴 **モバイル（`sm` 未満）は全画面オーバーレイ**（`docs/04` §3.4 の 🔴。下からのシートに
@@ -159,6 +167,71 @@ export const MULTI_SELECT_PANEL_CLASSES = cn(
  *    辞書が何件に増えても、絞り込みの帯の下に出る塊の高さは変わらない。
  */
 export const MULTI_SELECT_LIST_CLASSES = 'flex max-h-56 flex-col overflow-y-auto';
+
+// ============================================================================
+// ✅✅ 2026-10-19: 検索エリアの**ポップオーバー**（`S-010` の改修指示書 §3 / §4）
+// ============================================================================
+// 🔴 **`role="dialog"` を持たない**。モーダルではなく、引き金の真下に開く面である
+//    （`tests/static/ui-primitive-single-impl.test.ts` ① が `role="dialog"` を `packages/ui` の
+//    `components/**` に限っている —— ここはクラス定数だけを置く）。
+/**
+ * ポップオーバーの面（スキルの複数選択 / 条件バーの「＋N」）。
+ *
+ * 🔴 **幅は引き金以上**（`min-w-full`）**かつ 360px を目安**（`w-90`。指示書の 320〜380px）。
+ * 🔴 **画面端から 16px 離す**（`max-w-[calc(100vw-2rem)]`。ビューポート基準の値は
+ *    寸法の段の話ではないので `ui-shadow-and-size.test.ts` (b) の対象外である）。
+ * 🔴 **`z-30`** —— `MULTI_SELECT_PANEL_CLASSES`（`z-20`）より上、Radix の overlay（`z-50`）より下。
+ */
+export const POPOVER_PANEL_CLASSES = cn(
+  OVERLAY_SURFACE_CLASSES,
+  'absolute top-full left-0 z-30 mt-1 flex w-90 min-w-full max-w-[calc(100vw-2rem)] flex-col gap-2 overflow-hidden rounded-lg p-2',
+);
+
+/** 右端に寄せるポップオーバー（条件バーの「＋N」。左に出すと画面外に出る）。 */
+export const POPOVER_PANEL_END_CLASSES = cn(POPOVER_PANEL_CLASSES, 'right-0 left-auto');
+
+/** ポップオーバー上部の検索欄（**32px**。指示書 §3）。🔴 高さの指定を画面側に書かせない。 */
+export const POPOVER_SEARCH_INPUT_CLASSES = 'h-8 pl-8';
+
+/**
+ * 選択肢の一覧。🔴 **ここだけが縦に流れる**（指示書「一覧部分のみ最大 240px」= `max-h-60`）。
+ * 🔴 上の検索欄と下の件数行は流れない（絞り込みながら件数を見られる）。
+ */
+export const POPOVER_LIST_CLASSES = 'flex max-h-60 flex-col overflow-y-auto';
+
+/**
+ * 選択肢 1 行（**36px**。指示書 §3）。
+ * 🔴 **未選択の行に大きな空のチェックボックスを置かない**（指示書）——
+ *    選んである印は**右端の小さなチェック**と淡い面である。
+ * 🔴 hover（`--color-bg-subtle`）と selected（`--color-brand-bg`）を別の色にする（§7.10）。
+ */
+export const POPOVER_OPTION_CLASSES = cn(
+  'flex h-9 w-full shrink-0 cursor-pointer items-center gap-2 rounded-md px-2 text-left text-body text-fg',
+  TRANSITION_CLASSES,
+  'hover:bg-bg-subtle',
+  FOCUS_RING_CLASSES,
+);
+
+/** 選んである行。 */
+export const POPOVER_OPTION_SELECTED_CLASSES = 'bg-brand-bg text-brand';
+
+/** ポップオーバーの下部（「N 件選択中」と「選択をクリア」）。 */
+export const POPOVER_FOOTER_CLASSES =
+  'flex shrink-0 items-center justify-between gap-2 border-t border-border px-2 pt-2 text-xs text-fg-muted';
+
+/** 「すべて」「選択中 N」の小さな切り替えの器。 */
+export const POPOVER_SEGMENT_CLASSES = 'flex shrink-0 items-center gap-1 px-1';
+
+/** 切り替えの 1 つ。🔴 selected は§7.10 と同じ 2 色の組で表す。 */
+export const POPOVER_SEGMENT_ITEM_CLASSES = cn(
+  'cursor-pointer rounded-sm px-2 py-1 text-xs font-medium text-fg-muted',
+  TRANSITION_CLASSES,
+  'hover:bg-bg-subtle',
+  FOCUS_RING_CLASSES,
+);
+
+/** 選ばれている切り替え。 */
+export const POPOVER_SEGMENT_ITEM_SELECTED_CLASSES = 'bg-brand-bg text-brand';
 
 /** `DropdownMenu` の面。 */
 export const DROPDOWN_MENU_CONTENT_CLASSES = cn(

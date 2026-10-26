@@ -146,3 +146,11 @@ export const PANEL_KEY_WIDTH_CLASS = 'w-31';
 export const RAIL_SCHEDULE_ROW_HEIGHT_CLASS = 'min-h-14.5';
 export const RAIL_PRIORITY_ROW_HEIGHT_CLASS = 'min-h-12.5';
 export const RAIL_RANK_CIRCLE_CLASSES = 'h-7 w-7';
+
+/**
+ * 一覧に常設する詳細ペイン。デスクトップは検索の上端から画面下の余白までを使う。
+ * 11rem = header 56px + 本文上余白24px + ページ見出し72px + 下余白24px。
+ * 環境バナーの有無は共通の CSS 変数で引く。モバイルは自然な文書フローに戻す。
+ */
+export const DETAIL_PANE_VIEWPORT_CLASSES =
+  'lg:sticky lg:top-[calc(var(--app-banner-h,0px)+4.5rem)] lg:h-[calc(100dvh-var(--app-banner-h,0px)-11rem)] lg:min-h-80';

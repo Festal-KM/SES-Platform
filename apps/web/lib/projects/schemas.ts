@@ -104,6 +104,9 @@ export type ProjectRequirementInput = z.infer<typeof projectRequirementInputSche
  *    2 つのスキーマに同じ制約を書き写すと、片方だけが緩む。
  */
 const projectFields = {
+  locationDetail: z.string().trim().min(1).max(500).nullable(),
+  publicMemo: z.string().trim().min(1).max(PUBLIC_SUMMARY_MAX_LENGTH).nullable(),
+  remarks: z.string().trim().min(1).max(PUBLIC_SUMMARY_MAX_LENGTH).nullable(),
   name: z.string().trim().min(1).max(NAME_MAX_LENGTH),
   /**
    * ✅✅ **募集中 / 終了の 2 値**（2026-10-16。[Issue #98](https://github.com/Festal-KM/SES-Platform/issues/98)
@@ -167,6 +170,9 @@ const projectFields = {
 
 /** `POST /api/projects`（#26）の body。 */
 export const createProjectBodySchema = z.object({
+  locationDetail: projectFields.locationDetail.default(null),
+  publicMemo: projectFields.publicMemo.default(null),
+  remarks: projectFields.remarks.default(null),
   name: projectFields.name,
   // 🔴 既定は「募集中」（DB の `@default("OPEN")` と一致させる）。
   status: projectFields.status.default('OPEN'),
@@ -209,6 +215,9 @@ assertNoIsolationKeys(Object.keys(createProjectBodySchema.shape), 'createProject
  *    載せる列を「指定された項目だけ」に絞るため、両者を混同させない。
  */
 export const updateProjectBodySchema = z.object({
+  locationDetail: projectFields.locationDetail.optional(),
+  publicMemo: projectFields.publicMemo.optional(),
+  remarks: projectFields.remarks.optional(),
   name: projectFields.name.optional(),
   status: projectFields.status.optional(),
   headcount: projectFields.headcount.optional(),

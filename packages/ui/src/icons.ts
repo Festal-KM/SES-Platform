@@ -69,6 +69,8 @@ import {
   Building2,
   CalendarClock,
   ChartColumn,
+  Check,
+  Copy,
   Clock,
   Eye,
   FilePenLine,
@@ -77,14 +79,19 @@ import {
   House,
   Inbox,
   ListChecks,
+  ListPlus,
   Mail,
   Menu,
   MessageSquare,
+  MoreHorizontal,
   PanelLeft,
   ChevronDown,
   Plus,
   ScrollText,
   Search,
+  Save,
+  SaveAll,
+  FilterX,
   Send,
   Settings,
   Share2,
@@ -114,6 +121,7 @@ export const ICONS = {
   'calendar-clock': CalendarClock,
   'message-square': MessageSquare,
   'list-checks': ListChecks,
+  'list-plus': ListPlus,
   'bar-chart-3': ChartColumn,
   'building-2': Building2,
   gauge: Gauge,
@@ -142,11 +150,21 @@ export const ICONS = {
   //    許可されている操作にアイコンを与えただけ**である（`eye` を足したときと同じ扱い）。
   // 🔴 **比喩ではない**（虫めがね = 検索そのもの）。🔴 **他の意味で使い回していない。**
   search: Search,
+  save: Save,
+  'save-all': SaveAll,
+  'filter-x': FilterX,
   // ✅ 2026-10-02（`docs/04` 改訂 23 / §7.5 の許可④）: ホームのセクション見出しと KPI カードの印。
   // 🔴 **§7.5 ④ が `clock` を名指しで列挙している**（`S-003` / `S-004` の `返信待ち`）。
   //    新しい用途の区分を作ったのではなく、**条文が挙げた名前にアイコンを与えただけ**である。
   // 🔴 **比喩ではない**（時計 = 時間が経っていること）。🔴 **他の意味で使い回していない。**
   clock: Clock,
+  // ✅✅ 2026-10-19（人間の明示指示「装飾アイコンは禁止ですが、検索、開閉矢印、チェック、×、
+  //    三点メニューなどの操作に必要なアイコンは使用できます」= `S-010` の検索エリアの改修指示）。
+  // 🔴 **比喩ではない**（チェック = 選んである / 三点 = その行の操作がまとめてある）。
+  // 🔴 **他の意味で使い回さない**（`check` を「完了」や「成功」の印に使わない —— それは `StatusBadge` の語が担う）。
+  check: Check,
+  copy: Copy,
+  'more-horizontal': MoreHorizontal,
   // ✅ 2026-10-16（人間の明示指示「『案件を登録』ボタンは『新規案件登録』にして、＋アイコンも
   //    つけて」）: 作成の primary の語の前に置く印。
   // 🔴 **§7.5 の許可①（テキストなしで意味が通る操作）に当たる**が、**語は消していない** ——

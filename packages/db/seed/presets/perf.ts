@@ -664,8 +664,8 @@ function buildProject(rng: SeedRng, now: Date, profile: PerfTenantProfile, seq: 
     publicSummary: `${must.skillName} を用いた${topic}。${industry}業界向けで、${must.skillName} の経験 ${must.requiredYears ?? 1} 年以上を想定。${
       remoteMode === 'ONSITE_ONLY' ? '常駐' : remoteMode === 'FULL_REMOTE' ? 'フルリモート' : 'リモート併用'
     }。`,
-    unitPriceMin: internalUnitPrice - 250_000,
-    unitPriceMax: internalUnitPrice - 150_000,
+    unitPriceMin: internalUnitPrice + 100_000,
+    unitPriceMax: internalUnitPrice + 100_000,
     status,
     startDate: dateOnly(addDays(now, seq === 1 ? -35 : rng.int(-60, 120))),
     prefecture: rng.pick(WEIGHTED_PREFECTURES),

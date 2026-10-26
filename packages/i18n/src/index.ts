@@ -2870,7 +2870,7 @@ const ja = {
   'projects.recheckNotice.publishedToPrefix': 'この案件は ',
   'projects.recheckNotice.publishedToSuffix': ' 社に公開中です。',
   'projects.recheckNotice.willRun':
-    '案件名 / 外部公開用の記載 / 要件の自由記述 のいずれかを変更して保存すると、保存後に再検査が実行されます。検査で問題が見つかると、この案件の公開は解除され、取引先の画面から見えなくなります。',
+    '案件名 / 業務概要 / 勤務地の詳細 / 公開メモ / 要件の自由記述 のいずれかを変更して保存すると、保存後に再検査が実行されます。検査で問題が見つかると、この案件の公開は解除され、取引先の画面から見えなくなります。',
   // 🔴 **走らない条件も同じ帯に書く。** 書かないと「保存のたびに公開が消えるかもしれない」と
   //    読まれて編集が避けられ、台帳が更新されなくなる（`docs/01` 章 1.1-1 の再発）。
   'projects.recheckNotice.willNotRun':
@@ -3006,9 +3006,36 @@ const ja = {
   'projects.list.register': '新規案件登録',
   'projects.list.readOnlyNote': '案件の登録は、閲覧のみの権限では行えません。',
   'projects.list.column.name': '案件名',
-  'projects.list.column.status': '状態',
+  'projects.list.column.status': 'ステータス',
+  'projects.list.panel.status.changeToOpen': 'ステータスを募集中に変更',
+  'projects.list.panel.status.changeToClosed': 'ステータスを終了に変更',
+  'projects.list.panel.status.saved': '変更しました',
+  'projects.list.panel.status.failed': '変更できませんでした。もう一度お試しください。',
+  'projects.list.panel.copy.action': 'サマリをコピー',
+  'projects.list.panel.copy.copied': 'コピーしました',
+  'projects.list.panel.copy.failed': 'コピーできませんでした。本文を選択してコピーしてください。',
   'projects.list.column.mustRequirements': '必須要件の要約',
   'projects.list.column.unitPrice': '単価レンジ',
+  'projects.list.column.purchaseUnitPrice': '想定仕入単価',
+  'projects.basic.endClientName': 'エンドクライアント',
+  'projects.basic.upperCompanyName': '上位会社',
+  'projects.basic.category': 'カテゴリ',
+  'projects.basic.businessOverview': '業務概要',
+  'projects.basic.remoteMode': '稼働形態',
+  'projects.basic.unitPrice': '卸単価',
+  'projects.basic.purchaseUnitPrice': '想定仕入単価',
+  'projects.basic.location': '勤務地/最寄駅',
+  'projects.basic.startDate': '開始時期',
+  'projects.basic.endDate': '終了時期',
+  'projects.basic.headcount': '募集人数',
+  'projects.basic.distributionLimit': '商流制限',
+  'projects.basic.publicMemo': '公開メモ',
+  'projects.basic.remarks': '備考',
+  'projects.basic.assignee': '担当者',
+  'projects.basic.updatedOn': '更新日',
+  'projects.basic.legacyPriceRange': '卸単価の補足（従来のレンジ）',
+  'projects.basic.remarksNote': '内部用の備考です。単価の幅や交渉条件の補足を記載してください。',
+  'projects.list.column.wholesaleUnitPrice': '卸単価',
   'projects.list.column.startDate': '開始日',
   // ✅ **2026-10-15: `勤務地・リモート` → 2 列に分けた**（[Issue #101](https://github.com/Festal-KM/SES-Platform/issues/101)
   //    の回答 C「値の表記を短くする（勤務地と稼働形態を分けて `埼玉` + Badge）」）。
@@ -3182,6 +3209,103 @@ const ja = {
   'projects.list.search.skillSearchPlaceholder': 'スキルを検索…',
   // 🔴 空のパネルを出さない（絞り込んだ結果が 0 件なのか、壊れたのか分からない）。
   'projects.list.search.skillNoMatch': '該当するスキルがありません。',
+  // ==========================================================================
+  // ✅✅ 2026-10-19: 検索エリアの改修（人間の指示書 `BizOrch_SearchArea_ClaudeCode.md`）
+  // ==========================================================================
+  // 🔴 指示書 §2 の 3 層（ヘッダ / 本文 / 条件バー）の語。
+  // 🔴 **既存のキーを 1 つも改名・削除していない**（`U-22` の凍結。追加のみ）。
+  'projects.list.search.tabsLabel': '検索エリアの切り替え',
+  'projects.list.search.tabSearch': '検索条件',
+  'projects.list.search.tabSaved': '保存した条件',
+  'projects.list.search.save': '条件を保存',
+  'projects.list.search.collapse': '折りたたむ',
+  'projects.list.search.expand': '展開する',
+  // 🔴 条件バー（指示書 §4）。
+  'projects.list.search.selectedLabel': '選択中の条件',
+  'projects.list.search.selectedEmpty': '条件は指定されていません',
+  // 🔴 **「未適用」は「検索結果がまだ以前の条件のまま」という意味である**（指示書 §6）。
+  'projects.list.search.pending': '未適用',
+  'projects.list.search.pendingHint':
+    '一覧はまだ以前の条件の結果です。「検索」を押すとこの条件が適用されます。',
+  // 🔴 読み上げは「Python を解除」になる（対象の語 + これ）。
+  'projects.list.search.chipRemove': 'を解除',
+  'projects.list.search.chipOverflow': '表示しきれない条件を開く',
+  'projects.list.search.fieldSeparator': '：',
+  // 🔴 スキルの複数選択（指示書 §3）。
+  'projects.list.search.skillPlaceholder': 'スキルを選択',
+  'projects.list.search.skillOverflow': '選んだスキルをすべて見る',
+  'projects.list.search.skillSelectedCount': '件選択',
+  'projects.list.search.skillModeAll': 'すべて',
+  'projects.list.search.skillModeSelected': '選択中',
+  'projects.list.search.skillSelectedSummary': '件選択中',
+  'projects.list.search.skillClearSelection': '選択をクリア',
+  // 🔴 単一選択のプルダウン（2026-10-19 の人間の指示「プルダウンの UI が要素によって
+  //    異なるから、スキルのプルダウンと同じ UI にして」）。
+  //    🔴 語は**項目に依らない共通**である（欄の名前は `Field` のラベルが持つ）。
+  'projects.list.search.selectSearchLabel': '選択肢を名前で絞り込む',
+  'projects.list.search.selectSearchPlaceholder': '絞り込む…',
+  'projects.list.search.selectNoMatch': '該当する選択肢がありません。',
+  // 🔴 適用中の保存条件をその場で上書きする（2026-10-19 の人間の指示）。
+  'projects.list.search.overwriteCurrent': '条件を上書きする',
+  // 🔴 保存した条件（指示書 §5）。
+  'projects.list.search.savedTable.search': '保存条件名・スキルで絞り込み',
+  'projects.list.search.savedTable.sort': '並び順',
+  'projects.list.search.savedTable.sortRecent': '最近使った順',
+  'projects.list.search.savedTable.sortUpdated': '更新が新しい順',
+  'projects.list.search.savedTable.sortName': '名前順',
+  'projects.list.search.savedTable.columnName': '条件名',
+  'projects.list.search.savedTable.columnFilters': '保存した検索条件',
+  'projects.list.search.savedTable.columnActions': '操作',
+  'projects.list.search.savedTable.countSuffix': '件',
+  'projects.list.search.savedTable.range': '{total}件中 {from}–{to}件を表示',
+  'projects.list.search.savedTable.noResults': '該当する保存条件がありません。',
+  'projects.list.search.savedTable.previous': '前へ',
+  'projects.list.search.savedTable.next': '次へ',
+  'projects.list.search.selectedSavedLabel': '選択中の保存条件',
+  'projects.list.search.selectedSavedModified': '変更あり',
+  'projects.list.search.savedApply': '適用',
+  'projects.list.search.savedActive': '適用中',
+  'projects.list.search.savedMenu': 'の操作メニュー',
+  'projects.list.search.savedRename': '名前を変更',
+  'projects.list.search.savedOverwrite': '現在の条件で上書き',
+  'projects.list.search.savedRemove': '削除',
+  'projects.list.search.savedEmpty': '保存した条件はまだありません。',
+  'projects.list.search.savedEmptyAction': '現在の条件を保存',
+  'projects.list.search.savedBroken':
+    '保存した条件を読み込めませんでした（保存されていたデータが壊れています）。',
+  // 🔴🔴 **ブラウザー保存であることを画面に明示する**（指示書 §5）——
+  //    サーバ保存が完成したかのような UI にしない。
+  'projects.list.search.savedStorageNote':
+    '保存した条件はこのブラウザーに保存しています（他の端末とは同期されません）。',
+  'projects.list.search.savedNoCondition': '条件なし',
+  // 🔴 保存・名前変更・上書き・削除の確認（指示書 §5）。
+  'projects.list.search.saveDialogTitle': '条件を保存',
+  'projects.list.search.saveDialogNameLabel': '保存名',
+  'projects.list.search.saveDialogNamePlaceholder': '例：Python 案件（リモート）',
+  'projects.list.search.saveDialogConfirm': '保存',
+  'projects.list.search.saveDialogBodyPrefix': '次の条件をこのブラウザーに保存します：',
+  'projects.list.search.saveDialogBodyEmpty': '条件を 1 つも指定していません。',
+  'projects.list.search.renameDialogTitle': '名前を変更',
+  'projects.list.search.overwriteDialogTitle': '現在の条件で上書き',
+  'projects.list.search.overwriteDialogConfirm': '上書き',
+  'projects.list.search.overwriteDialogBodySuffix':
+    '」を現在の条件で上書きします。元の条件には戻せません。',
+  'projects.list.search.removeDialogTitle': '保存した条件を削除',
+  'projects.list.search.removeDialogConfirm': '削除',
+  'projects.list.search.removeDialogBodySuffix': '」を削除します。元には戻せません。',
+  'projects.list.search.quoteOpen': '「',
+  'projects.list.search.nameError': '保存名は 1〜40 文字で入力してください。',
+  'projects.list.search.limitError': '保存できる条件は 30 件までです。',
+  // 🔴 **失敗しているのに「保存しました」と表示しない**（指示書 §5）。
+  'projects.list.search.writeError':
+    'このブラウザーに保存できませんでした（保存領域の上限か、サイトデータが遮断されています）。',
+  // 🔴 **操作ごとに語を分ける** —— 削除したのに「保存しました」と出ると、
+  //    何が起きたのかが画面から読めない。
+  'projects.list.search.savedDone': '保存しました。',
+  'projects.list.search.renamedDone': '名前を変更しました。',
+  'projects.list.search.overwrittenDone': '現在の条件で上書きしました。',
+  'projects.list.search.removedDone': '削除しました。',
+  'projects.list.search.summaryJoiner': '、',
   // 🔴 カテゴリの 7 つ（`PROJECT_CATEGORIES` と 1 対 1。写像は `lib/projects/labels.ts`）。
   'projects.category.BACKEND': 'バックエンド',
   'projects.category.FRONTEND': 'フロントエンド',

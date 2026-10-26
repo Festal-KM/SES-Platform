@@ -11,6 +11,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { ProjectListRowView } from '../../../lib/projects/list-rows';
+import { projectBasicInfoFields } from '../../../lib/projects/basic-info';
 import {
   ProjectSummaryPanel,
   type ProjectSummaryPanelMessages,
@@ -28,6 +29,7 @@ function row(overrides: Partial<ProjectListRowView> = {}): ProjectListRowView {
     mustRequirements: 'Java 5 年以上、Spring',
     moreMustRequirements: null,
     unitPrice: '65〜75 万円',
+    purchaseUnitPrice: '90 万円',
     startDate: '2026-10-01',
     location: '東京都',
     remoteMode: '一部リモート可',
@@ -41,6 +43,9 @@ function row(overrides: Partial<ProjectListRowView> = {}): ProjectListRowView {
 // ✅✅ **2026-10-16（人間の明示指示）**: 帯の語は `案件サマリ`、ボタンは `詳細を開く` だけ、
 //    タイル内に `基本情報` / `コピペ用サマリ` のタブ。
 const messages: ProjectSummaryPanelMessages = {
+  copyAction: 'サマリをコピー', copyCopied: 'コピーしました', copyFailed: 'コピーできませんでした',
+  statusControl: { open: '募集中', closed: '終了', changeToOpen: 'ステータスを募集中に変更',
+    changeToClosed: 'ステータスを終了に変更', saved: '変更しました', failed: '変更できませんでした' },
   title: '案件サマリ',
   empty: '行をクリックすると、ここに案件サマリが出ます。',
   detail: '詳細を開く',
@@ -60,9 +65,21 @@ const messages: ProjectSummaryPanelMessages = {
 };
 
 function render(overrides: Partial<Parameters<typeof ProjectSummaryPanel>[0]> = {}): string {
+  const selectedRow = overrides.row ?? row();
+  const fields = projectBasicInfoFields({
+    category: 'BACKEND', publicSummary: '業務APIの開発', remoteMode: selectedRow.remoteMode,
+    unitPriceMin: 700_000, unitPriceMax: 700_000, location: '東京都 / 神田駅 徒歩5分',
+    startDate: selectedRow.startDate, endDate: '2027-03-31', headcount: 2,
+    distributionLimit: '貴社所属まで', publicMemo: '週2回出社', updatedOn: selectedRow.updatedOn,
+    host: selectedRow.visibility === null ? null : {
+      endClientName: '架空エンド会社', upperCompanyName: '架空上位会社',
+      internalUnitPrice: 600_000, remarks: '内部の価格調整メモ', assignee: 'サンプル担当者',
+    },
+  });
   return renderToStaticMarkup(
     createElement(ProjectSummaryPanel, {
       row: row(),
+      basicInfo: fields,
       // ✅✅ 2026-10-16: 既定は `基本情報`（`PROJECT_PANEL_TAB_DEFAULT`）。
       // 🔴 **タブの URL は呼び出し側（`page.tsx` の `projectPanelTabHref`）が組む** ——
       //    組み立ては `lib/projects/list-rows.test.ts` が固定する。ここでは
@@ -76,26 +93,34 @@ function render(overrides: Partial<Parameters<typeof ProjectSummaryPanel>[0]> = 
 }
 
 describe('案件の要点パネル（`docs/04` §7.1 の幅クラス B の副カラム）', () => {
-  it('帯・案件名・状態 Badge・キーバリューを描く', () => {
+  it('案件名・状態 Badge・キーバリューを描き、重複するタイトルは描かない', () => {
     const html = render();
 
     expect(html).toContain('data-testid="project-list-panel"');
     expect(html).toContain(`data-project-id="${PROJECT_A}"`);
-    // ✅✅ **2026-10-16: 帯の語は `案件サマリ`**（人間の明示指示「右側の案件の要点は
-    //    案件サマリに文言を変更して」）。⚠️ §7.8 の統一語より人間の明示指示が優先する。
-    expect(html).toContain('案件サマリ');
+    // 2026-10-23: パネルは案件名から始め、器の見出しを重複させない。
+    expect(html).not.toContain('案件サマリ');
     expect(html).toContain('data-testid="project-list-panel-name"');
     expect(html).toContain('金融系 Web API 改修');
     expect(html).toContain('data-testid="project-list-panel-status"');
     expect(html).toContain('募集中');
     for (const key of [
-      'mustRequirements',
+      'endClientName',
+      'upperCompanyName',
+      'category',
+      'businessOverview',
+      'remoteMode',
       'unitPrice',
+      'purchaseUnitPrice',
       'startDate',
       'location',
       'headcount',
       'updatedOn',
-      'visibility',
+      'endDate',
+      'distributionLimit',
+      'publicMemo',
+      'remarks',
+      'assignee',
     ]) {
       expect(html, `${key} が描かれていない`).toContain(
         `data-testid="project-list-panel-field-${key}"`,
@@ -148,7 +173,7 @@ describe('案件の要点パネル（`docs/04` §7.1 の幅クラス B の副カ
     //    「タイル内にタブを設置して、基本情報とコピペ用サマリ」で**実際にタブを置いた**。
     //    🔴 **定義書の均等 5 タブを落としたままである**ことは下の 4 語で担保している
     //       （`提案状況` / `関連ファイル` / `メモ` は中身が無いので置いていない）。
-    for (const word of ['案件を複製', 'チャット', '関連ファイル', 'メモ', '提案状況']) {
+    for (const word of ['案件を複製', 'チャット', '関連ファイル', '提案状況']) {
       expect(html, `${word} が描かれている`).not.toContain(word);
     }
     // 🔴 閉じる操作は URL に状態が無いので置かない（押しても何も起きないボタンを作らない）。
@@ -195,8 +220,9 @@ describe('案件の要点パネル（`docs/04` §7.1 の幅クラス B の副カ
       //    ⚠️ React の静的描画は `readOnly=""` の綴りで出す（HTML の属性名は大文字小文字を
       //       区別しないのでブラウザでは `readonly` として働く）。
       expect(html).toContain('readOnly=""');
-      // 🔴 **できないことを書く**（登録時の生成と書き換え保存は後続）。
-      expect(html).toContain('後続です');
+      expect(html).toContain('data-testid="project-list-panel-copy-button"');
+      expect(html).toContain('【想定仕入単価】60 万円');
+      expect(html).not.toContain('【卸単価】');
       // 🔴 貼られる形（`【案件名】…`）。
       expect(html).toContain('【案件名】金融系 Web API 改修');
     });
@@ -215,9 +241,10 @@ describe('案件の要点パネル（`docs/04` §7.1 の幅クラス B の副カ
     expect(render()).not.toContain('<h1');
   });
 
-  it('超過件数は `+N` で添え、0 件のときは添えない', () => {
-    expect(render()).not.toContain('+0');
-    expect(render({ row: row({ moreMustRequirements: '+2' }) })).toContain('+2');
+  it('必須要件の要約は指定の基本情報に含めない', () => {
+    const html = render({ row: row({ moreMustRequirements: '+2' }) });
+    expect(html).not.toContain('data-testid="project-list-panel-field-mustRequirements"');
+    expect(html).not.toContain('+2');
   });
 
   // ✅✅ **2026-10-16: 導線は `S-011` の 1 本だけになった**（人間の明示指示）。
@@ -244,10 +271,10 @@ describe('案件の要点パネル（`docs/04` §7.1 の幅クラス B の副カ
     expect(html).not.toContain('社に公開中');
   });
 
-  it('🔴 商流情報・担当者・他社の提案を描く欄が無い（`F-013 AC-2` / `BR-07`）', () => {
-    const html = render();
+  it('取引先には商流情報・担当者・内部備考を描かない', () => {
+    const html = render({ row: row({ visibility: null }) });
 
-    for (const word of ['エンド', '商流', '自社単価', '内部単価', '担当者', '他社', '提案数']) {
+    for (const word of ['架空エンド会社', '架空上位会社', '想定仕入単価', '内部の価格調整メモ', 'サンプル担当者', '他社', '提案数']) {
       expect(html, `${word} が描かれている`).not.toContain(word);
     }
   });
@@ -260,12 +287,11 @@ describe('案件の要点パネル（`docs/04` §7.1 の幅クラス B の副カ
     }
   });
 
-  it('行が 1 件も無いページでは空状態になる（帯は残し、導線を描かない）', () => {
+  it('行が 1 件も無いページでは空状態だけを描き、導線を描かない', () => {
     const html = render({ row: null });
 
     expect(html).toContain('data-testid="project-list-panel-empty"');
-    // 🔴 帯は両方の状態で出す（行の有無でパネルの器の位置が動かない）。
-    expect(html).toContain('案件サマリ');
+    expect(html).toContain(messages.empty);
     // ✅✅ 2026-10-16: 🔴 **タブも描かない** —— 押しても何も出ないタブを置かない。
     expect(html).not.toContain('data-testid="project-list-panel-tabs"');
     expect(html).not.toContain('data-entity="project"');

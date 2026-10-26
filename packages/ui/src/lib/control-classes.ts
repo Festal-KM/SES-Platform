@@ -66,6 +66,7 @@
 // | error | `aria-invalid:border-danger-border` + 下のメッセージ（`components/field.tsx` の `FieldError`。文字は `--color-danger`） |
 import { cn } from './cn.js';
 import { ROW_ACTION_HEIGHT_CLASS, ROW_ACTION_WIDTH_CLASS } from './layout-tokens.js';
+import { CARD_SURFACE_CLASSES } from './surface-classes.js';
 import { DISABLED_CLASSES, FOCUS_RING_CLASSES, TRANSITION_CLASSES } from './state-classes.js';
 
 /**
@@ -139,6 +140,105 @@ export const ROW_ACTION_LINK_CLASSES = cn(
   FOCUS_RING_CLASSES,
 );
 
+// ============================================================================
+// ✅✅ 2026-10-19: 検索エリア（`S-010`）の 3 層と格子（改修指示書 §2）
+// ============================================================================
+/**
+ * 検索エリアの**条件バー**（常時表示。本文を閉じても残る 1 行）。
+ *
+ * 🔴 **本文との間に藄い境界線**（指示書）。ヘッダの下線（`TABS_HEADER_ROW_CLASSES`）と
+ *    合わせて、検索エリアは**ヘッダ / 本文 / 条件バーの 3 層**に見える。
+ * 🔴 **高さを固定しない**（`min-h-11` = 44px）—— 狭い幅では操作が折り返すことを
+ *    指示書が認めている（「狭い幅では…段組みを許容します」）。
+ */
+export const FILTER_SUMMARY_BAR_CLASSES =
+  'flex min-h-11 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t border-border px-4 py-2';
+
+/**
+ * 条件バッジの列。🔴 **1 行固定で折り返さない**（入りきらない分は「＋N」）。
+ * 🔴 **横スクロールを出さない**（指示書「ページ全体や条件バーに横スクロールを出さない」）。
+ */
+export const FILTER_SUMMARY_CHIPS_CLASSES = 'flex min-w-0 flex-1 items-center gap-2 overflow-hidden';
+
+/** 本文（折りたためる部分）。🔴 padding 16 / 行間 12（指示書 §2）。 */
+export const FILTER_BODY_CLASSES = 'flex flex-col gap-3 p-4';
+
+/**
+ * 🔴 **開閉の遷移**（指示書「150〜180ms 程度。動きを減らす設定では抑制」）。
+ *
+ * 🔴 **`grid-template-rows` を遷移させる**（`0fr` ↔ `1fr`）—— 中身の高さを
+ *    測らずに滑らかに開閉できる唯一の CSS の書き方である。
+ * ⚠️ 遷移中は中身を `overflow-hidden` にする必要があるが、**開いた後は外す**
+ *    （指示書「アニメーション用の overflow: hidden で、展開後のプルダウンが途中で
+ *    切れないように」）。その切り替えは呼び出し側が行う。
+ */
+export const FILTER_BODY_COLLAPSE_CLASSES =
+  'grid transition-[grid-template-rows] duration-150 ease-out motion-reduce:transition-none';
+
+/** 開いているときの行の寸法。 */
+export const FILTER_BODY_COLLAPSE_OPEN_CLASSES = 'grid-rows-[1fr]';
+/** 閉じているときの行の寸法。 */
+export const FILTER_BODY_COLLAPSE_CLOSED_CLASSES = 'grid-rows-[0fr]';
+
+/**
+ * 検索項目の格子。
+ *
+ * 🔴 **列数はビューポート幅ではなく「検索エリア自身の幅」で決める**（指示書 §2）。
+ *    したがって**ブレークポイントの接頭辞（`lg:` 等）を使わない** —— 列数は
+ *    呼び出し側が `ResizeObserver` で測って渡す（`CLAUDE.md` §13.3 の「独自のブレーク
+ *    ポイントを定義しない」を破らずに、器の幅で段組みを変える唯一の方法）。
+ * 🔴 **子に `min-w-0`**（指示書）—— grid の子は既定 `min-width:auto` で、置かないと
+ *    バッジの列が器を押し広げる。
+ */
+export const FILTER_GRID_CLASSES = 'grid items-end gap-3 [&>*]:min-w-0';
+
+/** 列数（1 / 2 / 4）。🔴 **文字列を組み立てない**（Tailwind はソースの文字列を走査する）。 */
+export const FILTER_GRID_COLUMN_CLASSES = {
+  1: 'grid-cols-1',
+  2: 'grid-cols-2',
+  3: 'grid-cols-3',
+  4: 'grid-cols-4',
+} as const;
+
+/** 4 列のときだけ単価が 2 列分を占める（指示書 §2）。 */
+export const FILTER_GRID_SPAN_2_CLASSES = 'col-span-2';
+
+// ============================================================================
+// ✅✅ 2026-10-19: 「保存した条件」の一覧（改修指示書 §5）
+// ============================================================================
+/**
+ * 保存条件の一覧の器。
+ * 🔴 **検索エリアが無制限に伸びないよう 280px でスクロール**（指示書 §5）。
+ */
+export const FILTER_SAVED_LIST_CLASSES = 'grid max-h-70 gap-2 overflow-y-auto';
+
+/** 保存条件の列数（広い 3 / 狭い 2 または 1。指示書 §5）。 */
+export const FILTER_SAVED_COLUMN_CLASSES = {
+  1: 'grid-cols-1',
+  2: 'grid-cols-2',
+  3: 'grid-cols-3',
+} as const;
+
+/**
+ * 保存条件のカード。🔴 **コンパクトに**（大きなアイコンやイラストは置かない。指示書 §5）。
+ */
+export const FILTER_SAVED_CARD_CLASSES = cn(
+  // 🔴 **面は `CARD_SURFACE_CLASSES` の 1 定義から取る**（`Card` / `KpiCard` と同じ面）。
+  //    カードの面を 2 箰所で書くと「どれがカードか」が画面ごとに変わる。
+  CARD_SURFACE_CLASSES,
+  'flex min-w-0 flex-col gap-1 rounded-md p-3',
+);
+
+/** 適用中のカードだけ。🔴 **藄いアクセント背景と枠**（指示書 §5）。 */
+export const FILTER_SAVED_CARD_ACTIVE_CLASSES = 'border-brand bg-brand-bg';
+
+/** 行全体を占める（キーワード欄）。🔴 **列数ごとに literal で持つ**（文字列を組み立てない）。 */
+export const FILTER_GRID_FULL_SPAN_CLASSES = {
+  1: 'col-span-1',
+  2: 'col-span-2',
+  4: 'col-span-4',
+} as const;
+
 /** 🔴 一覧の行の hover（面の色だけ。拡大・影・下線を出さない）。 */
 export const ROW_HOVER_CLASSES = 'hover:bg-row-hover-bg';
 
@@ -186,14 +286,13 @@ export const MULTI_SELECT_TRIGGER_CLASSES = cn(
  * 🔴 **`min-w-0`** —— flex の子は既定で `min-width:auto`（= 中身の min-content 幅）を持ち、
  *    これが無いと**バッジが欄そのものを押し広げる**（溢れの指定が効かない）。
  * 🔴 **`flex-1`** —— 右端の印（`Icon`）を欄の右端に固定するため、残りの幅をすべて取る。
- * 🔴 **`overflow-hidden` ではなく `overflow-x-auto`** —— 切り落とすと「選んだはずのものが
- *    消えた」と見分けが付かない。横に流せるので**何も失われない**。
- * 🔴 **スクロールバーは出さない**（`scrollbar-width:none` + WebKit の擬似要素）——
- *    古典的なスクロールバーは 15px を占め、**36px の欄の中でバッジを潰す**
- *    （＝ 高さを固定した意味が無くなる）。選んだものの全体は常にポップアップ側で読める。
+ * ✅✅ **2026-10-19: 横スクロール → `overflow-hidden` + 「＋N」**（改修指示書 §3）。
+ * 🔴 **切り落としっ本しにしない** —— 指示書は「単に overflow: hidden で隠して、選択された
+ *    項目が見えなくなる実装は禁止」と書いている。入りきらない分は**呼び出し側が
+ *    「＋N」にまとめ、そこから確認・解除できる**（`_search/skill-multi-select.tsx`）。
+ *    横スクロールをやめたのは、**流せることが見た目から分からない**からである。
  */
-export const MULTI_SELECT_BADGE_ROW_CLASSES =
-  'flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden';
+export const MULTI_SELECT_BADGE_ROW_CLASSES = 'flex min-w-0 flex-1 items-center gap-1 overflow-hidden';
 
 // 🔴 **ポップアップの面（`MULTI_SELECT_PANEL_CLASSES`）は `./overlay-classes.ts` に在る。**
 //    理由: 重なる面の影（`shadow-overlay`）を書いてよいのは `./overlay-classes.ts` だけであり
@@ -214,6 +313,40 @@ export const MULTI_SELECT_BADGE_REMOVE_CLASSES = cn(
   'shrink-0 rounded-sm text-fg-muted',
   TRANSITION_CLASSES,
   'hover:text-fg',
+  FOCUS_RING_CLASSES,
+);
+
+/**
+ * 引き金が**開いている**ときの枠。🔴 指示書のアクセント色（ブランド藍）。
+ * 🔴 **画面側に `border-brand` を書かせない**（色の決定を `packages/ui` に残す）。
+ */
+export const MULTI_SELECT_TRIGGER_OPEN_CLASSES = 'border-brand';
+
+/**
+ * 引き金の中のバッジ 1 つ。
+ *
+ * 🔴 **幅を止める**（`max-w-32` = 128px）—— 指示書「長いスキル名はバッジ内で省略し」。
+ *    止めないと 1 つの長い語で欄が埋まり、「＋N」の場所が残らない。
+ */
+export const MULTI_SELECT_BADGE_CLASSES = 'max-w-32 shrink-0 gap-1';
+
+/**
+ * ポップオーバーの中に出すときのバッジ（幅を止めない）。
+ * 🔴 **画面側に `max-w-*` を書かせないための定数である**（`ui-screen-width.test.ts` (c)）。
+ */
+export const MULTI_SELECT_BADGE_WIDE_CLASSES = 'max-w-full';
+
+/** バッジの中の語。🔴 **省略する**（全文は `title` と読み上げの語で確認できる）。 */
+export const MULTI_SELECT_BADGE_LABEL_CLASSES = 'truncate';
+
+/**
+ * 「＋N」。🔴 **バッジに見えるが押せる**（指示書「＋N から省略された項目を
+ * 確認・解除できる」）。単なる文字にすると「見えない条件」が残る。
+ */
+export const MULTI_SELECT_OVERFLOW_CLASSES = cn(
+  'inline-flex h-6 shrink-0 cursor-pointer items-center rounded-xs border border-border-strong bg-bg px-2 text-cell font-medium text-fg-muted',
+  TRANSITION_CLASSES,
+  'hover:bg-bg-subtle',
   FOCUS_RING_CLASSES,
 );
 

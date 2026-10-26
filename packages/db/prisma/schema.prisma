@@ -657,7 +657,10 @@ model Project {
   name               String
   endClientName      String?   @map("end_client_name") // 🔴 内部限定。公開表示・LLM・運営者に出さない
   internalUnitPrice  Decimal?  @map("internal_unit_price") @db.Decimal(12, 2) // 🔴 内部限定（同上）
-  publicSummary      String?   @map("public_summary") // 外部公開用の記載（公開時に使うのはこれだけ）
+  publicSummary      String?   @map("public_summary") // 外部公開用の業務概要。勤務地の詳細・公開メモとともに検査する
+  locationDetail     String?   @map("location_detail") // 勤務地・最寄駅（公開用）
+  publicMemo         String?   @map("public_memo") // 公開メモ（公開検査の対象）
+  remarks            String?   // 内部備考。単価の補足など。取引先には出さない
   unitPriceMin       Decimal?  @map("unit_price_min") @db.Decimal(12, 2)
   unitPriceMax       Decimal?  @map("unit_price_max") @db.Decimal(12, 2)
   startDate          DateTime? @map("start_date") @db.Date
@@ -1273,7 +1276,7 @@ model Contract {
   projectId                    String?   @map("project_id") @db.Uuid
   engineerId                   String?   @map("engineer_id") @db.Uuid
   assignmentId                 String?   @map("assignment_id") @db.Uuid
-  // 🔴 自社とパートナーの間の契約単価。ホストの販売単価は Project.internalUnitPrice（経路 5 に出ない）
+  // 🔴 自社とパートナーの間の契約単価。案件の想定仕入単価はProject.internalUnitPrice（経路5に出ない）
   unitPrice                    Decimal?  @map("unit_price") @db.Decimal(12, 2)
   periodStart                  DateTime? @map("period_start") @db.Date
   periodEnd                    DateTime? @map("period_end") @db.Date

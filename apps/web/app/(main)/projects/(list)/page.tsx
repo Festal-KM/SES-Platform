@@ -7,20 +7,24 @@
 // 🔴 **一覧はサーバコンポーネントから `listProjects` を直接読む**（自己 fetch しない。
 //    `S-005` / `S-011` と同じ方針）。`GET /api/projects`（#25）と**同じ関数**を通るので、
 //    画面と API で母集団・並び順・件数がずれない。
-// 🔴 **監査ログを書かない。** `BR-27` / `F-013 AC-3` の記録対象は「案件**詳細**の閲覧」であり、
+// 一覧だけの取得では監査しない。基本情報タブは詳細内容を1件読み、閲覧を監査する。
+// `BR-27` / `F-013 AC-3` の記録対象は「案件**詳細**の閲覧」であり、
 //    docs/04 §S-010 も記録を行クリック（→ `S-011`）に置いている
 //    （理由は `lib/projects/list.ts` 冒頭 / docs/05 §6.4「#25 の実装の決着」）。
+import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 // ✅ 2026-10-16: 単価の逆転の判定（述語〔重なり〕と同じファイルの 1 本。人間の明示指示）。
 import { isUnitPriceRangeInverted } from '@ses/db';
 import { t } from '@ses/i18n';
 import { PageBody } from '@ses/ui';
-import { resolveTenantCtxOutcome } from '../../../../lib/auth/session';
+import { resolveTenantCtxOutcome, readRequestMeta } from '../../../../lib/auth/session';
+import { readProjectBasicInfo } from '../../../../lib/projects/basic-info';
 import { listProjects } from '../../../../lib/projects/list';
 import {
   hasProjectListFilters,
   parseHiddenProjectColumns,
+  PROJECT_DEFAULT_HIDDEN_COLUMN_IDS,
   PROJECT_HIDEABLE_COLUMN_IDS,
   projectColumnToggleHref,
   projectListHref,
@@ -44,19 +48,22 @@ import { projectListQuerySchema } from '../../../../lib/projects/schemas';
 // 🔴 `skills` は `CLAUDE.md` §3.1 の射程外の 4 表の 1 つ（グローバルなマスタ）であり、
 //    誰が見ても同じ辞書である（テナントの境界に触れない）。
 import { listSkills } from '../../../../lib/skills/service';
-import { HIDDEN_COLUMNS_PARAM } from '../../../../lib/ui/hidden-columns';
+import { HIDDEN_COLUMNS_PARAM, hiddenColumnsParamValue } from '../../../../lib/ui/hidden-columns';
 // ✅✅ 2026-10-16: 検索項目は 6 つになった（人間の明示指示）。🔴 **外した 4 つ
 //    （案件区分 / 勤務地 / 開始時期 / 並行可否）の選択肢は import ごと外す** ——
 //    受け取って使わない props を残さない（query と述語は残してある）。
 import {
+  projectAppliedSearchDraft,
   projectColumnToggleItems,
   projectListScreenMessages,
-  projectCategoryFilterOptions,
-  projectRemoteModeFilterOptions,
-  projectSkillFilterOptions,
-  projectStatusFilterOptions,
+  projectSearchFilterOptions,
+  projectSearchPanelMessages,
   projectSummaryPanelMessages,
 } from '../list-props';
+// ✅✅ 2026-10-19: 折りたたみの復元（改修指示書 §4）。
+// 🔴 **`'use client'` を持たないモジュールから取る** —— 島の中の export を
+//    サーバから呼ぶと Next.js が落とす（「client の関数を server から呼んだ」）。
+import { searchExpandedCookieName } from '../_search/saved-searches';
 import { ProjectListScreen } from '../project-list-screen';
 import { ProjectSummaryPanel } from '../project-summary-panel';
 import { PageHeading } from '../../_shell/page-heading';
@@ -84,7 +91,20 @@ export default async function ProjectListPage({
   const parsed = projectListQuerySchema.safeParse(raw);
   if (!parsed.success) redirect(PROJECT_LIST_PATH);
 
-  const query = parsed.data;
+  // ==========================================================================
+  // 🔴🔴 **2026-10-19: 「並行可否」をこの画面の検索から外す**（人間の改修指示書 §3）
+  // ==========================================================================
+  // 指示書: 「ラベルと入力欄だけでなく、この画面の**検索状態・送信条件・保存対象**からも
+  //        除外します。古い URL や保存条件に同項目が含まれていても、
+  //        読み込み時に正規化して検索に影響させないでください。」
+  //
+  // 🔴 **この 1 行がその「正規化」である。** 以降のすべて
+  //    （`listProjects` の述語 / `projectListHref` が組むすべての URL / 画面の条件）が
+  //    `query` を見るので、ここで落とせば**検索に到達する経路が 1 つも無い**。
+  // 🔴 **`safeParse` はそのまま通す**（`?parallelOk=1` 付きの共有 URL を 400 にしない）。
+  // ⚠️ **DB の列も `packages/db` の述語も消していない**（指示書「DB の列削除や
+  //    他画面の項目削除は不要」）—— `S-012`（登録・編集）は引き続き扱う。
+  const query = { ...parsed.data, parallelOk: undefined };
   // ============================================================================
   // ✅ **2026-10-16（人間の明示指示「下限 > 上限 の場合はバリデーションエラーを表示し
   //    検索を実行しない」）**
@@ -127,7 +147,7 @@ export default async function ProjectListPage({
   //    （`?hide=` と同じ扱い。`projectListQuerySchema` はこのキーを持たず、Zod の既定〔strip〕で
   //    落ちるので上の `safeParse` は成功し、URL も書き換わらない）。
   // 🔴 **いまのページの行に照合してから使う** —— URL 直打ちで「このページに無い ID」を
-  //    指されても、先頭行に落ちる（`selectedProjectId`）。**DB を引き直さない。**
+  //    指されても、先頭行に落ちる（`selectedProjectId`）。基本情報は後段でこの1件だけ読む。
   const selectedId = selectedProjectId(raw[PROJECT_SELECTED_PARAM], rows);
   // ✅✅ **2026-10-16: 案件サマリのタブ**（人間の明示指示「タイル内にタブを設置して、
   //    基本情報とコピペ用サマリ」）。🔴 `?selected=` / `?hide=` と同じ**表示の状態**であり、
@@ -136,6 +156,9 @@ export default async function ProjectListPage({
   //    🔴 未知の値は既定（基本情報）に落ちる（`redirect` しない）。
   const panelTab = projectPanelTab(raw[PROJECT_PANEL_TAB_PARAM]);
   const selectedRow = rows.find((row) => row.id === selectedId) ?? null;
+  const basicInfo = selectedRow !== null
+    ? await readProjectBasicInfo(ctx, selectedRow.id, await readRequestMeta())
+    : [];
   const canRegister = isProjectEditorRole(ctx.role);
   // 🔴 9 列目（公開先の設定状況）そのものが無い取引先には**その行を渡さない**（`F-014 AC-4` / `BR-07`）。
   // ✅ **2026-10-15: 取引先にも切替そのものは渡す** —— `必須要件の要約` を既定で格納したため、
@@ -149,43 +172,49 @@ export default async function ProjectListPage({
       projectColumnToggleHref(query, query.cursor ?? null, hiddenColumns, columnId, selectedId),
   });
 
+  // ==========================================================================
+  // ✅✅ 2026-10-19: 検索エリア（`_search/`）に渡すもの
+  // ==========================================================================
+  const searchOptions = projectSearchFilterOptions(skills.items);
+  // 🔴 スキルの語は**辞書のデータ**であり `packages/i18n` に無いので、
+  //    バッジの語彙にここで差し込む（`list-props.ts` は空で返す）。
+  const panelMessages = projectSearchPanelMessages();
+  const searchMessages = {
+    ...panelMessages,
+    chipLabels: { ...panelMessages.chipLabels, skillOptions: searchOptions.skillOptions },
+  };
+  // 🔴 **画面に欄が無いが URL には在る値**と**表示の状態**。
+  //    🔴 **かつての `parallelOk` は入れない**（指示書 §3）。
+  const passThroughParams: { readonly name: string; readonly value: string }[] = [];
+  if (query.sourceKind !== undefined) {
+    passThroughParams.push({ name: 'sourceKind', value: query.sourceKind });
+  }
+  if (query.recruitingOnly === true) passThroughParams.push({ name: 'recruitingOnly', value: '1' });
+  if (query.startFrom !== undefined) {
+    passThroughParams.push({ name: 'startFrom', value: query.startFrom });
+  }
+  // 🔴🔴 **生値（`raw`）を読まない。** `?hide=a&hide=b`（配列形）を受け取るのが
+  //    `parseHiddenProjectColumns` の仕様であり（`lib/ui/hidden-columns.ts`）、
+  //    生値を `typeof === 'string'` で見ると**配列形のときだけ列の表示状態が黙って消える**。
+  // 🔴 **URL を組む経路を 1 本に戻す** —— `projectListHref` が使っているのと同じ関数である。
+  //    既定と同じなら `null`（URL に痕跡を残さない）、既定から戻したときの空値も落ちない。
+  const hideValue = hiddenColumnsParamValue(hiddenColumns, PROJECT_DEFAULT_HIDDEN_COLUMN_IDS);
+  if (hideValue !== null) passThroughParams.push({ name: HIDDEN_COLUMNS_PARAM, value: hideValue });
+  // ⚠️ **`selectedId` は未指定のとき先頭行に倒れる**（`selectedProjectId`）ので、
+  //    検索を押すと**元々 URL に無かった `selected=` が付く**。表示は壊れない
+  //    （新しい結果に無ければ新しい先頭行に倒れる = 古い案件を出し続けない）。
+  // 🔴 **ページングが `selected` を引き継がないのとは判断が違う** —— あちらは
+  //    「次のページにその行が居ない」が確定しているが、検索は**残る可能性がある**。
+  if (selectedId !== null) passThroughParams.push({ name: PROJECT_SELECTED_PARAM, value: selectedId });
+  if (panelTab !== 'BASIC') passThroughParams.push({ name: PROJECT_PANEL_TAB_PARAM, value: panelTab });
+  // 🔴 **既定は「開いている」**（cookie が無い = 初回）。`'0'` のときだけ閉じる。
+  const expandedCookie = (await cookies()).get(searchExpandedCookieName(ctx.userId))?.value;
+  const defaultExpanded = expandedCookie !== '0';
+
   return (
-    // 🔴 幅は `PageBody` の 3 クラスが決める（`docs/04` §7.1 / `U-23`）。画面ファイルに
-    //    `max-w-*` を書かない（検査 (c) / (k)）。
-    // 🔴 ✅ **SP-22 段④ で `full`（クラス A）→ `split`（クラス B）に変えた**（人間のワイヤー
-    //    フレーム「SES Hub案件管理ダッシュボード.png」= 一覧 + 右の案件詳細パネル）。
-    //    ⚠️ **`docs/04` §7.1 の表はまだ `S-010` をクラス A に置いている**（完了報告で
-    //    上流の訂正として申し送る。`CLAUDE.md` §8.7）。
-    //    🔴 副カラムは **`lg` 未満では `PageBody` が本体の下に積む**（遮断しない。§13.3）。
-    //    🔴 **`Drawer` ではない**（`Drawer` は `S-003` / `S-004` の要対応キュー専用。§11-25）。
-    <main className="py-6">
-      <PageBody
-        widthClass="split"
-        // 🔴 ✅ 2026-10-03（**同日中に差し替え**）: **副カラムの並置は「主カラムが下限（1,320px
-        //    = この表の min-content 1,313px）を保てるとき」だけ**（`@ses/ui` の
-        //    `PageBodyAsideFrom` の 🔴）。
-        //    ⚠️ 直前の実装（`asideFrom="2xl"`）は **1536px で主カラムを 1,238 → 758px に半減**させ、
-        //    この表の可視率を **94% → 58%** に落としていた（＝ **幅を広げると悪化する**）。
-        //    崖を 1280 から 1536 へ移しただけであり、1536 は Windows ノートで最も多い論理幅である。
-        //    判定は `flex-wrap` が主カラムの `basis` で行うので、**画面幅の境界を 1 つも使わない**。
-        //    🔴 列は 1 つも減らしていない（§7.1「列を削らないことが先」）。
-        asideFrom="main-min"
-        aside={
-          <ProjectSummaryPanel
-            row={selectedRow}
-            // ✅✅ 2026-10-16: 開いているタブ（人間の明示指示「タイル内にタブを設置して、
-            //    基本情報とコピペ用サマリ」）。🔴 出所は URL（`?panelTab=`）であり、
-            //    画面は状態を持たない。未知の値は既定（基本情報）に落ちる。
-            // ⚠️ `canEdit` は渡さなくなった（人間の明示指示「案件サマリのボタンは、
-            //    詳細を開くだけでよい」で `編集する` を画面から外したため）。
-            tab={panelTab}
-            tabHrefOf={(tab) =>
-              projectPanelTabHref(query, query.cursor ?? null, hiddenColumns, selectedId, tab)
-            }
-            messages={projectSummaryPanelMessages()}
-          />
-        }
-      >
+    // ページ見出しの下に、検索＋一覧と右側の詳細を並べる（狭幅では縦積み）。
+    <main className="min-h-full bg-bg py-6">
+      <PageBody widthClass="full">
       {/* 🔴 primary は帯の 1 つだけ（§7.6）。`ACTION` なので `canAct` が偽のロールには
           描かれない（`PageHeading`）。**判定の出所は `canRegister` の 1 つ**であり、
           `projectListPrimaryAction` が `null` を返す側と二重の壁になっている。
@@ -203,39 +232,40 @@ export default async function ProjectListPage({
              `partnerScopeNotice` も残っている。消したのは**重複していた 1 行**である。
           ⚠️ 文言キー（`projects.list.description*`）は消していない（`U-22` の凍結）。 */}
       <ProjectListScreen
+        summaryPanel={
+          <ProjectSummaryPanel
+            row={selectedRow}
+            basicInfo={basicInfo}
+            canEdit={canRegister}
+            // ✅✅ 2026-10-16: 開いているタブ（人間の明示指示「タイル内にタブを設置して、
+            //    基本情報とコピペ用サマリ」）。🔴 出所は URL（`?panelTab=`）であり、
+            //    画面は状態を持たない。未知の値は既定（基本情報）に落ちる。
+            // ⚠️ `canEdit` は渡さなくなった（人間の明示指示「案件サマリのボタンは、
+            //    詳細を開くだけでよい」で `編集する` を画面から外したため）。
+            tab={panelTab}
+            tabHrefOf={(tab) =>
+              projectPanelTabHref(query, query.cursor ?? null, hiddenColumns, selectedId, tab)
+            }
+            messages={projectSummaryPanelMessages()}
+          />
+        }
         rows={rows}
-        filters={{
-          q: query.q ?? '',
-          status: query.status ?? '',
-          startFrom: query.startFrom ?? '',
-          prefecture: query.prefecture ?? '',
-          // ✅ 2026-10-15: 単価レンジ（未指定は空文字 ＝ 入力欄が空）。人材一覧と同じ形である。
-          priceMin: query.priceMin === undefined ? '' : String(query.priceMin),
-          priceMax: query.priceMax === undefined ? '' : String(query.priceMax),
-          // ✅ 2026-10-16（人間の明示指示）: 稼働形態 / 募集中のみ。
-          remoteMode: query.remoteMode ?? '',
-          recruitingOnly: query.recruitingOnly === true ? '1' : '',
-          // ✅ 2026-10-16（受領モック）: カテゴリ / 案件区分 / 並行可否 / 開始時期。
-          category: query.category ?? '',
-          sourceKind: query.sourceKind ?? '',
-          parallelOk: query.parallelOk === undefined ? '' : query.parallelOk ? '1' : '0',
-          startWithin: query.startWithin ?? '',
-          // ✅✅ 2026-10-16（人間の明示指示「スキル（リストから複数選択できる、or 検索）」）。
-          // 🔴 **これだけが配列である**（`<select multiple>` の選択状態）。未指定は空配列
-          //    = 何も選ばれていない = すべて（番兵を置かない）。
-          skills: query.skills ?? [],
-        }}
-        statusOptions={projectStatusFilterOptions}
-        remoteModeOptions={projectRemoteModeFilterOptions}
-        categoryOptions={projectCategoryFilterOptions}
-        // ✅✅ 2026-10-16: スキルの選択肢はグローバル辞書（`Skill`）である。
-        // 🔴 **語は辞書の `name`** であり `packages/i18n` に無い（辞書はデータであって文言ではない）。
-        // 🔴 **並びは `listSkills` が決めた決定的な順**（`sortKey` 昇順 → `id`）をそのまま使う。
-        skillOptions={projectSkillFilterOptions(skills.items)}
-        // ⚠️ **2026-10-19: `skillRemoveHrefOf` を渡さなくなった。** バッジの `×` は
-        //    URL への遷移ではなく**チェックを外す操作**になった（受領モックの
-        //    「チェック = バッジ」に揃えたため。`skill-filter-select.tsx` 冒頭の 🔴）。
-        priceInverted={priceInverted}
+        // 🔴 **いま一覧に効いている条件**（`appliedFilters`。指示書 §6）。
+        //    🔴 `parallelOk` は上で落としてあるので、ここに届く余地が無い。
+        applied={projectAppliedSearchDraft(query)}
+        searchOptions={searchOptions}
+        // 🔴 **画面に欄を持たないが URL には在る値を素通しする**——
+        //    検索を 1 回押しただけで、開いていた行も隠していた列も黙って消えない。
+        //    ⚠️ **`parallelOk` は入らない**（指示書 §3 で除外した）。
+        passThroughParams={passThroughParams}
+        // 🔴 保存条件の置き場所を**会社×ユーザー**で分ける（指示書 §5）。
+        storageTenantId={ctx.tenantId}
+        storageUserId={ctx.userId}
+        // 🔴 **再訪時に折りたたみを復元する**（指示書 §4）。
+        //    🔴 **cookie で持つ**理由: サーバがその状態で描けるので、
+        //       水合の後に閉じる「ちらつき」が出ない（`localStorage` だと出る）。
+        defaultExpanded={defaultExpanded}
+        searchMessages={searchMessages}
         // 🔴 取引先には公開先の列を出さない（docs/04 §S-010 / `F-014 AC-4`）。出所は ctx である。
         // 🔴 `S-012` に到達できるのはホストの 3 ロールだけである（`PROJECT_EDITOR_ROLES`）。
         //    押しても戻されるだけの導線を描かない。拒否の本体は `#26` のガードと
