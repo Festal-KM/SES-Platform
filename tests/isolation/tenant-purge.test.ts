@@ -62,13 +62,17 @@ import {
   ENGINEER_A_PARTNER,
   ENGINEER_B_HOST,
   MESSAGE_A_P1,
+  MESSAGE_A_P2,
   PARTNER_A1,
   PROPOSAL_A_HOST,
   PROPOSAL_A_P1,
   TENANT_A,
   TENANT_B,
+  THREAD_A_P1,
+  THREAD_A_P2,
   USER_A_HOST,
   USER_A_PARTNER,
+  USER_A_PARTNER2,
   USER_B_HOST,
 } from './support/fixtures.js';
 import { startIsolationDatabase, type IsolationDatabase } from './support/postgres.js';
@@ -233,6 +237,13 @@ async function chatRoomTitles(tenantId: string): Promise<Record<string, string |
   const rows = await admin.$queryRaw<{ id: string; title: string | null }[]>`
     SELECT id::text AS id, title FROM chat_threads WHERE tenant_id = ${tenantId}::uuid AND kind IN ('DM', 'GROUP')`;
   return Object.fromEntries(rows.map((row) => [row.id, row.title]));
+}
+
+/** ✅ 2026-10-26: 部屋のアナウンス（行ごと消える）。 */
+async function chatAnnouncementCount(tenantId: string): Promise<number> {
+  const rows = await admin.$queryRaw<{ count: number }[]>`
+    SELECT count(*)::int AS count FROM chat_thread_announcements WHERE tenant_id = ${tenantId}::uuid`;
+  return rows[0]?.count ?? 0;
 }
 
 async function chatSavedCount(tenantId: string): Promise<number> {
@@ -420,6 +431,12 @@ beforeAll(async () => {
     INSERT INTO chat_saved_messages (id, tenant_id, user_id, message_id)
     VALUES (gen_random_uuid(), ${TENANT_A}::uuid, ${USER_A_HOST}::uuid, ${MESSAGE_A_P1}::uuid),
            (gen_random_uuid(), ${TENANT_A}::uuid, ${USER_A_PARTNER}::uuid, ${MESSAGE_A_P1}::uuid)`;
+  // ✅ 2026-10-26: 部屋のアナウンス（取引先 A1 の部屋・取引先 A2 の部屋に 1 件ずつ）。
+  //    🔴 取引先の部屋の行にも削除スコープのポリシーが届くことを確かめる。
+  await admin.$executeRaw`
+    INSERT INTO chat_thread_announcements (id, tenant_id, thread_id, message_id, set_by_user_id)
+    VALUES (gen_random_uuid(), ${TENANT_A}::uuid, ${THREAD_A_P1}::uuid, ${MESSAGE_A_P1}::uuid, ${USER_A_PARTNER}::uuid),
+           (gen_random_uuid(), ${TENANT_A}::uuid, ${THREAD_A_P2}::uuid, ${MESSAGE_A_P2}::uuid, ${USER_A_PARTNER2}::uuid)`;
   await admin.$executeRaw`
     INSERT INTO chat_message_templates (id, tenant_id, user_id, label, body)
     VALUES (gen_random_uuid(), ${TENANT_A}::uuid, ${USER_A_HOST}::uuid, 'ホスト', ${HOST_TEMPLATE_BODY}),
@@ -653,6 +670,8 @@ describe('AC-2 / AC-3 / AC-8 ④⑤⑦ PURGED 後の状態', () => {
     expect(await chatStatusTexts(TENANT_B)).toEqual({ [USER_B_HOST]: TENANT_B_CHAT_STATUS });
     // ✅ 2026-10-22: 保存済みは行ごと消える。自分の定型文は見出しも本文も空になる（取引先 A1 の人の行にも届く）。テナント B は残る。
     expect(await chatSavedCount(TENANT_A)).toBe(0);
+    // ✅ 2026-10-26: 部屋のアナウンスも行ごと消える。
+    expect(await chatAnnouncementCount(TENANT_A)).toBe(0);
     expect(await chatTemplateTexts(TENANT_A)).toEqual({ [USER_A_HOST]: '/', [USER_A_PARTNER]: '/' });
     expect(await chatTemplateTexts(TENANT_B)).toEqual({ [USER_B_HOST]: `B/${TENANT_B_TEMPLATE_BODY}` });
     // ✅ 2026-10-26（#166 の 2）: グループ名は消え、部屋の行（DM・社内のグループ・取引先を含むグループ）は残る。テナント B は残る。
@@ -715,6 +734,7 @@ describe('AC-2 / AC-3 / AC-8 ④⑤⑦ PURGED 後の状態', () => {
     expect(counts.messages).toBe(4);
     expect(counts.chat_user_statuses).toBe(2);
     expect(counts.chat_saved_messages).toBe(2);
+    expect(counts.chat_thread_announcements).toBe(2);
     expect(counts.chat_message_templates).toBe(2);
     // ✅ 2026-10-26（#166 の 2）: 名前を持つ部屋（グループ 2 つ）だけが数に入る（DM・会社グループ・スレッドは名前が無い）。
     expect(counts.chat_threads).toBe(2);
@@ -779,7 +799,7 @@ describe('AC-7 ⑧ 運営者の DB ロールは返却データに到達できな
     expect(rows[0]).toEqual({ read_key: false, write: false, read_status: true });
   });
 
-  it('pg_policy: {table}_purge_scope_select / _update が PURGE_SPEC.delete の各表にあり、_delete は行ごと消す表（engineer_careers / chat_saved_messages）だけ', async () => {
+  it('pg_policy: {table}_purge_scope_select / _update が PURGE_SPEC.delete の各表にあり、_delete は行ごと消す表（engineer_careers / chat_saved_messages / chat_thread_announcements）だけ', async () => {
     const rows = await admin.$queryRaw<{ tablename: string; policyname: string }[]>`
       SELECT tablename, policyname FROM pg_policies WHERE schemaname = 'public' AND policyname LIKE '%_purge_scope_%'`;
     const tables = PURGE_SPEC.delete.map((spec) => spec.table).sort();
@@ -787,6 +807,7 @@ describe('AC-7 ⑧ 運営者の DB ロールは返却データに到達できな
     expect(rows.filter((r) => r.policyname.endsWith('_purge_scope_update')).map((r) => r.tablename).sort()).toEqual(tables);
     expect(rows.filter((r) => r.policyname.endsWith('_purge_scope_delete')).map((r) => r.tablename).sort()).toEqual([
       'chat_saved_messages',
+      'chat_thread_announcements',
       'engineer_careers',
     ]);
     // ✅ 2026-10-16（#129）: 消さない表を「読むだけ」のポリシー（chat_threads）を置いていた。

@@ -53,6 +53,7 @@ export type PurgeColumnsSpec = {
  * 🔴 行の物理削除。次の 2 種類の表だけに使う。
  *   - `role` / `description` / `technologies` が NOT NULL で、空文字の行を残しても意味が無い表（`engineer_careers`）
  *   - ✅ 2026-10-22: 消す列が無く、どこからも参照されない末端の表（`chat_saved_messages`。本人の栞の行そのものが対象）
+ *   - ✅ 2026-10-26: 同じく末端の表（`chat_thread_announcements`。部屋のアナウンス = どの発言を固定したかの行そのものが対象）
  */
 export type PurgeRowsSpec = {
   readonly table: string;
@@ -166,6 +167,9 @@ export const PURGE_SPEC = {
         { name: 'body', erase: 'EMPTY_TEXT' },
       ],
     },
+    // ✅ 2026-10-26 チャットレーン（紺野の決定）: 部屋のアナウンス（どの発言を固定したか）を〔削除〕に置く。消す列が無い
+    //    （ID と時刻だけ）ので行ごと消す。🔴 この表を参照する表は無い（末端）ので、行削除で FK の連鎖は起きない。
+    { table: 'chat_thread_announcements', rows: 'ALL' },
     // --- ⑤ 契約 / ⑥ 稼働 ------------------------------------------------------------------
     { table: 'contract_documents', columns: ['object_key', 'merge_result', 'signers'], objectKeyColumns: ['object_key'] },
     { table: 'contract_templates', columns: ['object_key'], objectKeyColumns: ['object_key'] },

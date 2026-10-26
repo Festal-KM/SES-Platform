@@ -6,8 +6,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   asChatThreadKind,
-  chatAttachedProjectView,
+  chatAnnouncementSnippet,
+  chatAnnouncementView,
   chatMessageView,
+  CHAT_ANNOUNCEMENT_SNIPPET_LENGTH,
+  CHAT_ANNOUNCEMENT_VIEW_KEYS,
+  chatAttachedProjectView,
   CHAT_HIDDEN_PROJECT_CARD_KEYS,
   CHAT_PROJECT_REQUIREMENT_KEYS,
   CHAT_VISIBLE_PROJECT_CARD_KEYS,
@@ -269,6 +273,7 @@ describe('🔴 禁止キーの一覧そのものの対照（検査が空振り�
       ...CHAT_PROJECT_REQUIREMENT_KEYS,
       ...CHAT_PARTICIPANT_VIEW_KEYS,
       ...CHAT_THREAD_DETAIL_VIEW_KEYS,
+      ...CHAT_ANNOUNCEMENT_VIEW_KEYS,
     ]);
     expect([...CHAT_FORBIDDEN_RESPONSE_KEYS].filter((key) => allowed.has(key))).toEqual([]);
   });
@@ -298,5 +303,45 @@ describe('summarizeReactions（2026-10-16）', () => {
     const { summarizeReactions } = await import('./views');
     const json = JSON.stringify([...summarizeReactions([{ messageId: 'm', userId: 'secret-user', reaction: 'OK' }], 'me')]);
     expect(json).not.toContain('secret-user');
+  });
+});
+
+// ✅ 2026-10-26（紺野の決定 2026-10-22）: 部屋のアナウンス（1 部屋 1 件）。
+describe('chatAnnouncementView（アナウンスの帯）', () => {
+  const ROW = { messageId: MESSAGE_ROW.id, setAt: new Date('2026-10-26T01:00:00.000Z') };
+  const LIVE = { sentAt: MESSAGE_ROW.sentAt, body: MESSAGE_ROW.body, deletedAt: null, purgedAt: null };
+
+  it('キー集合が凍結どおりで、設定した人の利用者 ID・禁止キーを持たない', () => {
+    const view = chatAnnouncementView(ROW, { message: LIVE, setByName: '鈴木 花子' });
+    expect(Object.keys(view).sort()).toEqual([...CHAT_ANNOUNCEMENT_VIEW_KEYS].sort());
+    for (const forbidden of CHAT_FORBIDDEN_RESPONSE_KEYS) {
+      expect(Object.keys(view), forbidden).not.toContain(forbidden);
+    }
+    expect(view).toEqual({
+      messageId: MESSAGE_ROW.id,
+      messageSentAt: '2026-10-01T02:30:00.000Z',
+      snippet: '来週の面談の候補日をお送りします。',
+      setByName: '鈴木 花子',
+      setAt: '2026-10-26T01:00:00.000Z',
+    });
+  });
+
+  it('🔴 送った本人が消した・保持期限で消えた発言は本文を出さない（snippet は null）', () => {
+    const deleted = chatAnnouncementView(ROW, { message: { ...LIVE, body: null, deletedAt: new Date() }, setByName: null });
+    expect(deleted.snippet).toBeNull();
+    // 本文が残っていても、消えた印が立っていれば出さない（二重）。
+    expect(chatAnnouncementView(ROW, { message: { ...LIVE, purgedAt: new Date() }, setByName: null }).snippet).toBeNull();
+    expect(chatAnnouncementView(ROW, { message: { ...LIVE, deletedAt: new Date() }, setByName: null }).snippet).toBeNull();
+  });
+
+  it('設定した人の名前が読めなければ null のまま（既定値で埋めない）', () => {
+    expect(chatAnnouncementView(ROW, { message: LIVE, setByName: null }).setByName).toBeNull();
+  });
+
+  it('本文の冒頭は改行をつぶし、長ければ切って「…」を付ける', () => {
+    expect(chatAnnouncementSnippet('1 行目\n\n2 行目')).toBe('1 行目 2 行目');
+    const long = 'あ'.repeat(CHAT_ANNOUNCEMENT_SNIPPET_LENGTH + 10);
+    expect(chatAnnouncementSnippet(long)).toBe(`${'あ'.repeat(CHAT_ANNOUNCEMENT_SNIPPET_LENGTH)}…`);
+    expect(chatAnnouncementSnippet(null)).toBeNull();
   });
 });

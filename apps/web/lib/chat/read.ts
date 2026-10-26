@@ -49,6 +49,7 @@ import { FAST_REPLY_WINDOW_DAYS, fastReplyGroupKeys } from './reply-speed';
 import { countUnread, readPositions, readThreadPrefs, type ChatThreadPrefs } from './read-state';
 import { readPeople, readRoomDetail, type ChatPeopleData } from './people';
 import { readChatUserStatuses } from './user-status';
+import { readThreadAnnouncements } from './announcement-read';
 import {
   chatThreadCursorWhere,
   decodeChatThreadCursor,
@@ -61,6 +62,7 @@ import {
   chatThreadDetailView,
   chatThreadListItem,
   type ChatMessageRow,
+  type ChatAnnouncementView,
   type ChatMessageView,
   type ChatParticipantView,
   type ChatProjectRef,
@@ -585,6 +587,11 @@ export type ChatScreenData = {
    *    DB 側も `app_dm_peer_read` が DM 以外・非メンバーに NULL を返す（二重）。
    */
   readonly peerReadMessageIds: Readonly<Record<string, string | null>>;
+  /**
+   * ✅ 2026-10-26: 開いている会話（左端と右の列）のアナウンス（1 部屋 1 件。無ければ `null`）。
+   * 🔴 RLS（その部屋が読める）だけが決める（`lib/chat/announcement-read.ts` ①）。開いていない部屋のキーは入れない。
+   */
+  readonly announcements: Readonly<Record<string, ChatAnnouncementView | null>>;
 };
 
 /** 右に並べた会話 1 本ぶん。 */
@@ -646,6 +653,7 @@ async function readChatScreenInTenant(
         threadPrefs: {},
         people,
         peerReadMessageIds: {},
+        announcements: {},
       };
     }
     const thread = await readThreadDetail(ctx, db, input.threadId);
@@ -661,6 +669,7 @@ async function readChatScreenInTenant(
         threadPrefs: {},
         people,
         peerReadMessageIds: {},
+        announcements: {},
       };
     }
     const messages = await readMessagePage(ctx, db, input.threadId, input.messagesQuery);
@@ -682,7 +691,22 @@ async function readChatScreenInTenant(
     const lastReadMessageIds = Object.fromEntries(openIds.map((id) => [id, positions.get(id)?.id ?? null]));
     const prefs = await readThreadPrefs(db, openIds);
     const threadPrefs = Object.fromEntries(openIds.map((id) => [id, prefs.get(id) ?? { pinned: false, muted: false }]));
-    return { threads, thread, messages, requestedThreadMissing: false, panes, tree, lastReadMessageIds, threadPrefs, people, peerReadMessageIds: {} };
+    // ✅ 2026-10-26: アナウンス。🔴 同じトランザクション（同じ RLS 文脈）で読む。
+    const announcementByThread = await readThreadAnnouncements(db, openIds);
+    const announcements = Object.fromEntries(openIds.map((id) => [id, announcementByThread.get(id) ?? null]));
+    return {
+      threads,
+      thread,
+      messages,
+      requestedThreadMissing: false,
+      panes,
+      tree,
+      lastReadMessageIds,
+      threadPrefs,
+      people,
+      peerReadMessageIds: {},
+      announcements,
+    };
   });
 }
 

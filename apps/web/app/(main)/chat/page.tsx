@@ -271,6 +271,9 @@ export default async function ChatPage({
               </p>
             ) : (
               <ChatConversation
+                // ✅ 2026-10-26（Codex のレビュー）: 🔴 部屋ごとに作り直す。同じ部品を使い回すと、前の部屋のアナウンス・発言・
+                //    入力の状態が、新しい部屋の取得が終わるまで残る（他の部屋のものを一瞬でも見せない）。
+                key={selected.id}
                 layout={conversationLayoutFor(selected.kind)}
                 title={conversationTitleFor(selected)}
                 threadId={selected.id}
@@ -282,6 +285,7 @@ export default async function ChatPage({
                 // ✅ 2026-10-19（#128）: 相手の既読は DM だけ（グループ・会社グループ・スレッドには渡さない）。
                 {...(selected.kind === 'DM' ? { peerReadMessageId: data.peerReadMessageIds[selected.id] ?? null } : {})}
                 mentionNames={mentionNamesOf(selected)}
+                announcement={data.announcements[selected.id] ?? null}
                 canPost={canPost}
                 messages={conversationMessages}
                 {...(tiled ? { closeHref: chatHref({ ...withPaneClosed(paneState, selected.id), ...listQuery }) } : {})}
@@ -319,6 +323,7 @@ export default async function ChatPage({
                 </div>
               ) : (
                 <ChatConversation
+                  key={pane.thread.id}
                   layout={conversationLayoutFor(pane.thread.kind)}
                   title={conversationTitleFor(pane.thread)}
                   threadId={pane.thread.id}
@@ -329,6 +334,7 @@ export default async function ChatPage({
                   prefs={data.threadPrefs[pane.thread.id] ?? { pinned: false, muted: false }}
                   {...(pane.thread.kind === 'DM' ? { peerReadMessageId: data.peerReadMessageIds[pane.thread.id] ?? null } : {})}
                   mentionNames={mentionNamesOf(pane.thread)}
+                  announcement={data.announcements[pane.thread.id] ?? null}
                   canPost={canPost}
                   messages={conversationMessages}
                   closeHref={chatHref({ ...withPaneClosed(paneState, pane.thread.id), ...listQuery })}
