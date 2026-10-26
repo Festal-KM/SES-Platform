@@ -201,7 +201,7 @@ export function ChatConversation({
   const [composeTab, setComposeTab] = useState<'write' | 'preview'>('write');
   // ✅ 2026-10-22: スマホの見出しの「…」（書き出し・ピン留め・ミュート・情報をしまう）の開閉。
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
-  const headerMenuUsed = canPost || prefs !== undefined;
+  const headerMenuUsed = closeHref !== undefined || canPost || prefs !== undefined;
   const [mentionOpen, setMentionOpen] = useState(false);
   // ✅ 2026-10-22: 書式ボタンの帯の開閉（既定は閉じる = 入力欄は細い 1 行）。
   const [formatOpen, setFormatOpen] = useState(false);
@@ -568,7 +568,7 @@ export function ChatConversation({
             id={`chat-edit-${item.id}`}
             value={editText}
             maxLength={CHAT_MESSAGE_MAX_LENGTH}
-            className="min-h-12 max-h-40 overflow-y-auto"
+            className="min-h-12 max-h-40 overflow-y-auto overscroll-contain"
             onChange={(event) => setEditText(event.target.value)}
           />
           {editFailed ? <Alert variant="danger">{messages.editFailed}</Alert> : null}
@@ -922,7 +922,7 @@ export function ChatConversation({
           type="button"
           variant="ghost"
           size="sm"
-          className="min-h-11 shrink-0 md:hidden"
+          className={cn("min-h-11 min-w-11 shrink-0", closeHref === undefined ? "md:hidden" : null)}
           aria-label={messages.headerMenu}
           aria-expanded={headerMenuOpen}
           aria-controls={`chat-header-actions-${threadId}`}
@@ -937,7 +937,7 @@ export function ChatConversation({
           className={cn(
             !headerMenuUsed ? 'flex items-center' : headerMenuOpen ? 'flex' : 'hidden',
             'absolute top-full right-2 z-10 flex-col items-stretch gap-1 rounded-md border border-border-strong bg-bg p-2',
-            'md:static md:z-auto md:flex md:flex-1 md:flex-row md:items-center md:justify-end md:gap-4 md:border-0 md:bg-transparent md:p-0',
+            closeHref === undefined ? 'md:static md:z-auto md:flex md:flex-row md:items-center md:justify-end md:gap-4 md:border-0 md:bg-transparent md:p-0' : null,
           )}
           data-testid={`chat-header-actions-${threadId}`}
         >
@@ -989,7 +989,7 @@ export function ChatConversation({
       <div
         ref={scrollRef}
         onScroll={(event) => setAwayFromLatest(isAwayFromLatest(event.currentTarget))}
-        className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 py-3"
+        className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain px-5 py-3"
         data-testid="chat-messages-scroll"
       >
         {/* ✅ 2026-10-22: 発言が少ないときに下へ寄せる詰め物。🔴 `justify-end` を使わない —— 中身が枠からあふれると
@@ -1288,7 +1288,7 @@ export function ChatConversation({
                   placeholder={messages.composePlaceholder}
                   // ✅ 2026-10-14: 文章に合わせて伸び（`field-sizing-content`）、約 6 行で止めて欄の中でスクロールする。
                   className={cn(
-                    'overflow-y-auto rounded-none border-0',
+                    'overflow-y-auto overscroll-contain rounded-none border-0',
                     formatOpen ? 'min-h-20 max-h-72 resize-y' : 'min-h-11 max-h-40',
                   )}
                   onChange={(event) => updateBody(event.target.value)}

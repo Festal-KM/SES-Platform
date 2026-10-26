@@ -40,6 +40,7 @@ import { conversationLayoutFor, conversationTitleFor } from '../../../lib/chat/l
 import { canAddPane, withPaneClosed, type ChatPaneState } from '../../../lib/chat/panes';
 import { readChatScreen } from '../../../lib/chat/read';
 import { CHAT_PATH, chatHref, chatScreenQuerySchema, parseChatFilter } from '../../../lib/chat/screen-query';
+import { ChatResizablePane } from './chat-resizable-pane';
 import { ChatRail } from './chat-rail';
 import { ChatRailToggle } from './chat-rail-toggle';
 import { ChatToastHost } from './chat-toast-host';
@@ -171,28 +172,30 @@ export default async function ChatPage({
         {/* ✅ 2026-10-14: 会話を並べているときは、幅が足りない分を**器の中で横に送る**（会話を潰さない）。 */}
         <Card
           className={cn(
-            'flex min-h-0 flex-1 flex-col p-0 md:flex-row',
+            'flex min-h-0 flex-1 flex-col overscroll-contain p-0 md:flex-row',
             tiled ? 'overflow-x-auto overflow-y-hidden' : 'overflow-hidden',
           )}
         >
           {/* ✅ 2026-10-19（v2）: 左の絞り込みの列（会社から・人から）。🔴 `md` 未満で会話を開いているときは一覧と一緒に畳む。 */}
           <div
+            data-chat-rail-container
             className={
               selected === null
-                ? 'w-full shrink-0 bg-bg-subtle md:w-44 md:overflow-y-auto'
-                : 'hidden shrink-0 bg-bg-subtle md:block md:w-44 md:overflow-y-auto'
+                ? 'w-full shrink-0 bg-bg-subtle md:w-44 md:data-[collapsed=true]:w-16 md:overflow-y-auto overscroll-contain'
+                : 'hidden shrink-0 bg-bg-subtle md:block md:w-44 md:data-[collapsed=true]:w-16 md:overflow-y-auto overscroll-contain'
             }
           >
             {/* ✅ 2026-10-22: 自分のひとこと状態は左の列のいちばん上（ページ見出しの下から移した）。
                 🔴 スマホの「絞り込み」ボタン（畳む部分）の外に置く —— 閉じていても状態を変えられるように。 */}
             {canPost ? (
-              <div className="p-2 pb-0">
+              <div className="p-2 pb-0 md:in-[[data-collapsed=true]]:hidden">
                 <ChatStatusSection canPost={canPost} text={myStatus} />
               </div>
             ) : null}
             {/* ✅ 2026-10-22（Lark の参考）: スマホの上部は「すべて／未読 N／保存済み」の切り替え + 「≡ 絞り込み」。
                 ≡ の文字は、今の絞り込みが 3 つ以外（取引先・グループなど）のときだけその名前を出す。 */}
             <ChatRailToggle
+              collapseLabel={t('chat.rail.collapseToggle')}
               label={filter.kind === 'all' || filter.kind === 'unread' || filter.kind === 'saved' ? t('chat.rail.menu') : filterLabel}
               closeLabel={t('chat.rail.menuClose')}
               tabs={[
@@ -228,8 +231,8 @@ export default async function ChatPage({
           <div
             className={
               selected === null
-                ? 'w-full bg-bg md:w-96 md:shrink-0 md:overflow-y-auto md:border-r md:border-border'
-                : 'hidden bg-bg md:block md:w-96 md:shrink-0 md:overflow-y-auto md:border-r md:border-border'
+                ? 'w-full bg-bg md:w-96 md:shrink-0 md:overflow-y-auto overscroll-contain md:border-r md:border-border'
+                : 'hidden bg-bg md:block md:w-96 md:shrink-0 md:overflow-y-auto overscroll-contain md:border-r md:border-border'
             }
           >
             <ChatThreadList
@@ -255,7 +258,7 @@ export default async function ChatPage({
             />
           </div>
           {/* 中央: 会話（698）。🔴 選択が無いときは `md` 以上でだけ案内を出す（モバイルは一覧が全幅） */}
-          <div
+          <ChatResizablePane enabled={tiled} storageKey="primary" resizeLabel={t('chat.pane.resize')}
             className={cn(
               selected === null ? 'hidden min-h-0 min-w-0 flex-1 md:flex md:flex-col' : 'flex min-h-0 min-w-0 flex-1 flex-col',
               // ✅ 2026-10-14: 並べているときは右の列と同じ下限（320px。`md` 以上だけ）。
@@ -290,14 +293,14 @@ export default async function ChatPage({
                     })}
               />
             )}
-          </div>
+          </ChatResizablePane>
           {/* ✅ 2026-10-14: 右に並べた会話（最大 2 本）。🔴 `md` 未満では出さない —— モバイルは
               「一覧 → 会話」の 1 列の切替のまま（左端の会話は上で出ている。`docs/04` §S-031 デバイス別）。
               1 列の下限は 320px。足りない幅では器の中で横に送る（ページ全体は横に送らない）。 */}
           {data.panes.map((pane) => (
-            <div
+            <ChatResizablePane enabled storageKey={`pane-${data.panes.indexOf(pane)}`} resizeLabel={t('chat.pane.resize')}
               key={pane.requestedThreadId}
-              className={'hidden min-w-80 flex-1 flex-col border-l border-border md:flex'}
+              className={'hidden min-h-0 min-w-0 flex-1 flex-col overscroll-contain border-l border-border md:flex'}
               data-testid={`chat-pane-${pane.requestedThreadId}`}
             >
               {pane.thread === null ? (
@@ -331,7 +334,7 @@ export default async function ChatPage({
                   closeHref={chatHref({ ...withPaneClosed(paneState, pane.thread.id), ...listQuery })}
                 />
               )}
-            </div>
+            </ChatResizablePane>
           ))}
           {/* ✅ 2026-10-14: ドラッグの受け口（ドラッグ中だけ現れる。`md` 以上）。上限に達したら置かない。 */}
           {canAddPane(paneState) ? (
