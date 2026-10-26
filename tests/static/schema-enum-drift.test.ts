@@ -80,6 +80,7 @@ import {
   USAGE_MEASUREMENT_FINDING_KINDS,
   WEBHOOK_PROVIDERS,
 } from '../../packages/db/src/schema-value-sets.js';
+import { CHAT_REACTIONS } from '../../apps/web/lib/chat/views.js';
 import { USAGE_LIMIT_LEVELS } from '../../packages/domain/src/quota/limit-level.js';
 import { USAGE_LIMIT_METRICS } from '../../packages/domain/src/quota/limits.js';
 import { QUOTA_OVERRIDE_METRICS } from '../../packages/domain/src/quota/override.js';
@@ -415,6 +416,13 @@ describe('CHECK 制約と TS 単一出所の drift 検査（docs/05 §3.1「列�
   // AssignmentState / ContractState の単一の出所は既存の @ses/domain（ASSIGNMENT_STATES /
   // CONTRACT_STATES。T-01-07 から既存。新しい配列を作らずここと突合する）。
   describe('T-02-04: 新 migration の CHECK 制約', () => {
+    // ✅ 2026-10-22（チャットレーン）: リアクションの 16 種。🔴 元の migration（20261016010000）は引用符の無い書式なので
+    //    抽出に掛からず、ここで拾うのは張り替えた 20261022030000 の 1 本だけ（＝ 今の DB の値集合）。
+    it('chat_message_reactions_reaction_check ⇔ apps/web CHAT_REACTIONS', () => {
+      const values = extractCheckInValues(migrationSql, 'chat_message_reactions_reaction_check');
+      expectSameValueSet(values, CHAT_REACTIONS);
+    });
+
     it('chat_threads_kind_check ⇔ packages/db CHAT_THREAD_KINDS', () => {
       const values = extractCheckInValues(migrationSql, 'chat_threads_kind_check');
       expectSameValueSet(values, CHAT_THREAD_KINDS);
