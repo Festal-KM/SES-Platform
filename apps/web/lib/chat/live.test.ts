@@ -67,6 +67,18 @@ describe('withLatestReactions（2026-10-16）', () => {
   });
 });
 
+describe('✅ 2026-10-26（#164 の 5）保存済みの印と送信者の状態も取り直した値に揃える', () => {
+  it('別のタブで保存を外した・状態を消したら、開いたままの画面からも消える', async () => {
+    const { withLatestReactions } = await import('./live');
+    const shown = { ...A, saved: true, senderStatus: '商談中' };
+    const fresh = { ...A, saved: false, senderStatus: null };
+    const next = withLatestReactions([shown], [fresh]);
+    expect(next[0]?.saved).toBe(false);
+    expect(next[0]?.senderStatus).toBeNull();
+    expect(JSON.stringify(next)).not.toContain('商談中');
+  });
+});
+
 describe('✅ 2026-10-26（#166 の 4）hasGapBefore: 直近のページが手元とつながっていないか', () => {
   const D = message('d', '2026-10-14T04:00:00.000Z');
   const E = message('e', '2026-10-14T05:00:00.000Z');

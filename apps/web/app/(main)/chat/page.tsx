@@ -44,6 +44,7 @@ import { ChatResizablePane } from './chat-resizable-pane';
 import { ChatRail } from './chat-rail';
 import { ChatRailToggle } from './chat-rail-toggle';
 import { ChatToastHost } from './chat-toast-host';
+import { ChatAutoRefresh } from './chat-auto-refresh';
 import { CHAT_THREAD_SORT_DEFAULT } from '../../../lib/chat/thread-tree';
 import { readMyChatUserStatus } from '../../../lib/chat/user-status';
 import { readMySavedList } from '../../../lib/chat/saved';
@@ -159,6 +160,8 @@ export default async function ChatPage({
         </div>
         {/* ✅ 2026-10-20（紺野「トースト」）: 操作の結果を右下に出す（行き先つき・自動で消えない）。 */}
         <ChatToastHost kindLabel={t('chat.toast.kind')} dismissLabel={t('chat.toast.dismiss')} />
+        {/* ✅ 2026-10-26（#164 の 3）: 一覧・左の列・右の欄を 60 秒ごとに描き直す（読めなくなったものを残さない）。 */}
+        <ChatAutoRefresh />
         {/* 🔴 不存在・他社・他テナントで同じ文言（`docs/05` §4.8） */}
         {data.requestedThreadMissing ? (
           <Alert variant="warning" className="mb-4" data-testid="chat-thread-missing">
