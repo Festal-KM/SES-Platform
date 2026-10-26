@@ -18,13 +18,6 @@ type TenantDb = Parameters<Parameters<typeof withTenant<void>>[1]>[0];
 /** 並びの中の位置（会話の並び `(sent_at, id)` と同じ）。 */
 export type ReadPosition = { readonly sentAt: Date; readonly id: string };
 
-/** `a` が `b` より後ろか。 */
-export function isAfterPosition(a: ReadPosition, b: ReadPosition | null): boolean {
-  if (b === null) return true;
-  if (a.sentAt.getTime() !== b.sentAt.getTime()) return a.sentAt.getTime() > b.sentAt.getTime();
-  return a.id > b.id;
-}
-
 type Db = Pick<TenantDb, 'chatThread' | 'message' | 'chatReadState'>;
 
 /** このスレッドの、読める発言の位置（無ければ 404）。 */
