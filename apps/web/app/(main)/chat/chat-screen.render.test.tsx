@@ -896,3 +896,24 @@ describe('入力枠の操作（改訂 43）', () => {
     expect(renderConversation()).toContain(`placeholder="${t('chat.compose.placeholder')}"`);
   });
 });
+
+
+describe('一覧の会社名と本文の抜粋', () => {
+  it('会社名と抜粋が両方ある案件だけ区切りを出す', () => {
+    const withoutSnippet = renderThreadList();
+    expect(withoutSnippet).not.toContain(' ・ ');
+    expect(withoutSnippet).toContain('架空パートナー A');
+    const withSnippet = renderThreadList({ lastSnippets: { [THREAD_PROJECT]: '面談の候補日です' } });
+    expect(withSnippet).toContain('架空パートナー A ・ 面談の候補日です');
+  });
+
+  it('会社の行は抜粋が無ければ空白で高さを足さず、名前を中央に置く', () => {
+    const html = renderThreadList();
+    expect(html).not.toContain(' ');
+    expect(classTokensOf(html, `chat-thread-link-${THREAD_COMPANY}`)).toContain('items-center');
+    const withSnippet = renderThreadList({ lastSnippets: { [THREAD_COMPANY]: '候補者をご紹介します' } });
+    expect(withSnippet).toContain('候補者をご紹介します');
+    expect(withSnippet).not.toContain(' ・ ');
+    expect(html).toContain(`data-testid="chat-thread-counterparty-${THREAD_COMPANY}"`);
+  });
+});
