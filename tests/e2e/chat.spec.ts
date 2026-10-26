@@ -104,6 +104,8 @@ test.describe('S-031 チャット — 会話を右に並べる（2026-10-14）',
       await expect(page.locator(`[data-testid="chat-conversation"][data-thread-id="${first.threadId}"]`)).toBeVisible();
 
       // ドラッグの代わりの導線（一覧の「右に並べる」）。
+      // ✅ 2026-10-19（v2）: 「右に並べる」は行にマウスを当てたときだけ出る（`chat-row-shell.tsx`）。
+      await page.getByTestId(`chat-thread-row-${second.threadId}`).hover();
       await page.getByTestId(`chat-thread-open-beside-${second.threadId}`).click();
       await expect(page).toHaveURL(new RegExp(`pane=${second.threadId}`));
       const left = page.locator(`[data-testid="chat-conversation"][data-thread-id="${first.threadId}"]`);
@@ -121,6 +123,9 @@ test.describe('S-031 チャット — 会話を右に並べる（2026-10-14）',
       await page.getByTestId(`chat-pane-close-${second.threadId}`).click();
       await expect(right).toHaveCount(0);
       await expect(left).toBeVisible();
+      // ✅ 2026-10-19（v2）: 右の情報欄は既定で閉じる。1 列に戻ったら、会話の見出しの「情報」で開ける。
+      await expect(page.getByTestId('chat-panel')).toHaveCount(0);
+      await page.getByTestId(`chat-thread-info-${first.threadId}`).click();
       await expect(page.getByTestId('chat-panel')).toBeVisible();
 
       session.outbound.assertNone();

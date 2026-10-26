@@ -5,7 +5,10 @@ import {
   CHAT_PATH,
   chatHref,
   chatMessagesApiPath,
+  chatSaveApiPath,
   chatScreenQuerySchema,
+  chatTemplateApiPath,
+  parseChatFilter,
 } from './screen-query';
 
 const THREAD = '01930000-0000-7000-8000-000000000121';
@@ -53,7 +56,7 @@ describe('chatScreenQuerySchema', () => {
   });
 
   it('🔴 分離キーをスキーマが持たない（`tenantId` / `partnerCompanyId` の口が無い）', () => {
-    expect(Object.keys(chatScreenQuerySchema.shape).sort()).toEqual(['pane', 'q', 'sort', 'thread', 'threads', 'unread']);
+    expect(Object.keys(chatScreenQuerySchema.shape).sort()).toEqual(['f', 'info', 'pane', 'q', 'sort', 'thread', 'threads', 'unread']);
   });
 });
 
@@ -121,5 +124,32 @@ describe('未読のみ（`unread`。2026-10-16）', () => {
     expect(chatScreenQuerySchema.safeParse({ unread: 'yes' }).success).toBe(false);
     expect(new URL(chatHref({ thread: THREAD, unread: true }), 'https://app.test').searchParams.get('unread')).toBe('1');
     expect(chatHref({ thread: THREAD, unread: false })).toBe(`/chat?thread=${THREAD}`);
+  });
+});
+
+describe('左の列の絞り込み（`f=`。2026-10-22）', () => {
+  it('保存済み（saved）と定型文の管理（templates）を読み、URL に戻せる', () => {
+    expect(parseChatFilter('saved')).toEqual({ kind: 'saved' });
+    expect(parseChatFilter('templates')).toEqual({ kind: 'templates' });
+    expect(chatHref({ filter: { kind: 'saved' } })).toBe(`${CHAT_PATH}?f=saved`);
+    expect(chatHref({ filter: { kind: 'templates' } })).toBe(`${CHAT_PATH}?f=templates`);
+  });
+
+  it('🔴 旧「要返信」（awaiting）は古いリンクのために受け付け、「すべて」として読む（壊れた値にしない）', () => {
+    expect(chatScreenQuerySchema.safeParse({ f: 'awaiting' }).success).toBe(true);
+    expect(parseChatFilter('awaiting')).toEqual({ kind: 'all' });
+    expect(chatHref({ filter: parseChatFilter('awaiting') })).toBe(CHAT_PATH);
+  });
+
+  it('知らない値は「すべて」', () => {
+    expect(chatScreenQuerySchema.safeParse({ f: 'saved-x' }).success).toBe(false);
+    expect(parseChatFilter('saved-x')).toEqual({ kind: 'all' });
+  });
+
+  it('保存・定型文の API の URL を 1 箇所で組む', () => {
+    expect(chatSaveApiPath(THREAD, '01930000-0000-7000-8000-000000000123')).toBe(
+      `/api/threads/${THREAD}/messages/01930000-0000-7000-8000-000000000123/save`,
+    );
+    expect(chatTemplateApiPath('01930000-0000-7000-8000-000000000124')).toBe('/api/chat/templates/01930000-0000-7000-8000-000000000124');
   });
 });

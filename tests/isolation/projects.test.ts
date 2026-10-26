@@ -1386,12 +1386,15 @@ describe('検索条件（docs/05 §6.4 #25 / `F-015` の入力）', () => {
 
   it('🔴 「募集中のみ」は状態と独立に効く（矛盾したら 0 件）', async () => {
     const ctx = await ctxOf(HOST_1, 'SALES');
-    const open = await createdIdOf(await postProject(ctx, { name: `${MARKER}募集中の案件` }));
-    await postProject(ctx, { name: `${MARKER}終了の案件`, status: 'CLOSED' });
+    // ✅ 2026-10-16: 母集団をこのテストの 2 件に絞る（他のテスト・seed の募集中の案件が混ざって [open] と一致しなかった）。
+    const own = `${MARKER}募集中のみ-`;
+    const scope = `q=${encodeURIComponent(own)}`;
+    const open = await createdIdOf(await postProject(ctx, { name: `${own}募集中の案件` }));
+    await postProject(ctx, { name: `${own}終了の案件`, status: 'CLOSED' });
 
-    expect(idsOf(await listBodyOf(await getProjects(ctx, '?recruitingOnly=1')))).toEqual([open]);
+    expect(idsOf(await listBodyOf(await getProjects(ctx, `?${scope}&recruitingOnly=1`)))).toEqual([open]);
     // 🔴 `終了` かつ `募集中のみ` は 0 件が正しい（どちらかを黙って優先しない）。
-    const contradiction = await listBodyOf(await getProjects(ctx, '?status=CLOSED&recruitingOnly=1'));
+    const contradiction = await listBodyOf(await getProjects(ctx, `?${scope}&status=CLOSED&recruitingOnly=1`));
     expect(idsOf(contradiction)).toEqual([]);
     expect(contradiction.total).toBe(0);
   });

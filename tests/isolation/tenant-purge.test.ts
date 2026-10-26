@@ -61,12 +61,14 @@ import {
   ENGINEER_A_HOST,
   ENGINEER_A_PARTNER,
   ENGINEER_B_HOST,
+  MESSAGE_A_P1,
   PARTNER_A1,
   PROPOSAL_A_HOST,
   PROPOSAL_A_P1,
   TENANT_A,
   TENANT_B,
   USER_A_HOST,
+  USER_A_PARTNER,
   USER_B_HOST,
 } from './support/fixtures.js';
 import { startIsolationDatabase, type IsolationDatabase } from './support/postgres.js';
@@ -74,6 +76,10 @@ import { startIsolationRedis, type IsolationRedis } from './support/redis.js';
 
 const SETUP_TIMEOUT_MS = 600_000;
 const PURGE_GRACE_DAYS = 30;
+/** ✅ 2026-10-16（#129）: 人単位の部屋（DM・社内のグループ）とグループの 2 人目のホスト。 */
+const PURGE_DM_THREAD = '01930000-0000-7000-8000-00000000d201';
+const PURGE_GROUP_THREAD = '01930000-0000-7000-8000-00000000d202';
+const PURGE_HOST2 = '01930000-0000-7000-8000-00000000d203';
 const META = { deviceKind: 'desktop', ipAddress: '203.0.113.42' } as const;
 const DEVICE = { deviceKind: META.deviceKind } as const;
 /** `CLOSING` に入った時刻。UTC 00:00 = JST 09:00 → 暦日 2026-09-01。削除予定日 = 2026-10-01。 */
@@ -110,6 +116,8 @@ vi.mock('../../apps/web/lib/auth/session', () => ({
 
 /** 🔴 起動時 DI の代わり: `objectStore()` はモック（`demo` / E2E と同一実装）。`purgeGraceDays()` は既定 30。 */
 vi.mock('../../apps/web/lib/db/bootstrap', () => ({
+  // ✅ 2026-10-16: `lib/auth/tenant-context.ts` が ctx を組むときに読む（2 要素認証の方針）。テストは本番と同じ厳しい側。
+  twoFactorPolicy: () => 'ENFORCED' as const,
   objectStore: () => store,
   purgeGraceDays: () => PURGE_GRACE_DAYS,
   ensureDbConfigured: () => undefined,
@@ -188,6 +196,33 @@ async function tenantState(): Promise<{ lifecycle_state: string; closing_entered
 
 async function purgeRuns() {
   return admin.tenantPurgeRun.findMany({ where: { tenantId: TENANT_A }, orderBy: { startedAt: 'asc' } });
+}
+
+const HOST_CHAT_STATUS = 'ホストの状態（PURGED で消える）';
+const PARTNER_CHAT_STATUS = '取引先の状態（PURGED で消える）';
+const TENANT_B_CHAT_STATUS = 'テナント B の状態（消えてはならない）';
+
+async function chatStatusTexts(tenantId: string): Promise<Record<string, string>> {
+  const rows = await admin.$queryRaw<{ user_id: string; text: string }[]>`
+    SELECT user_id::text AS user_id, text FROM chat_user_statuses WHERE tenant_id = ${tenantId}::uuid`;
+  return Object.fromEntries(rows.map((row) => [row.user_id, row.text]));
+}
+
+/** ✅ 2026-10-22: 自分の定型文（見出しと本文）。 */
+const HOST_TEMPLATE_BODY = 'ホストの定型文（PURGED で消える）';
+const PARTNER_TEMPLATE_BODY = '取引先の定型文（PURGED で消える）';
+const TENANT_B_TEMPLATE_BODY = 'テナント B の定型文（消えてはならない）';
+
+async function chatTemplateTexts(tenantId: string): Promise<Record<string, string>> {
+  const rows = await admin.$queryRaw<{ user_id: string; label: string; body: string }[]>`
+    SELECT user_id::text AS user_id, label, body FROM chat_message_templates WHERE tenant_id = ${tenantId}::uuid`;
+  return Object.fromEntries(rows.map((row) => [row.user_id, `${row.label}/${row.body}`]));
+}
+
+async function chatSavedCount(tenantId: string): Promise<number> {
+  const rows = await admin.$queryRaw<{ count: number }[]>`
+    SELECT count(*)::int AS count FROM chat_saved_messages WHERE tenant_id = ${tenantId}::uuid`;
+  return rows[0]?.count ?? 0;
 }
 
 async function piiSnapshot() {
@@ -327,6 +362,41 @@ beforeAll(async () => {
             '[{"skillId":"00000000-0000-0000-0000-000000000000","name":"Go","years":2,"level":3}]'::jsonb,
             '[{"periodFrom":"2019-04","periodTo":"2021-03","role":"PG","description":"取引先の経歴","technologies":"Go"}]'::jsonb, now())`;
 
+  // ✅ 2026-10-16（#129 レビュー NG-1）: 人単位の部屋（ホスト ↔ 取引先の DM・社内だけのグループ）の発言。
+  //    削除スコープは利用者を持たないので、DM / GROUP の部屋が C6 で見えず、発言の継承トリガが落ちていた。
+  await admin.$executeRaw`
+    INSERT INTO users (id, tenant_id, owner_partner_company_id, email, display_name, password_hash)
+    VALUES (${PURGE_HOST2}::uuid, ${TENANT_A}::uuid, NULL, 'purge-host2@example.test', 'ホスト二人目', 'x')`;
+  await admin.$executeRaw`
+    INSERT INTO chat_threads (id, tenant_id, kind, partner_company_id, member_user_ids, dm_key)
+    VALUES (${PURGE_DM_THREAD}::uuid, ${TENANT_A}::uuid, 'DM', ${PARTNER_A1}::uuid,
+            ARRAY[${USER_A_HOST}::uuid, ${USER_A_PARTNER}::uuid], ${[USER_A_HOST, USER_A_PARTNER].sort().join(':')}),
+           (${PURGE_GROUP_THREAD}::uuid, ${TENANT_A}::uuid, 'GROUP', NULL,
+            ARRAY[${USER_A_HOST}::uuid, ${PURGE_HOST2}::uuid], NULL)`;
+  await admin.$executeRaw`
+    INSERT INTO messages (id, tenant_id, owner_partner_company_id, thread_id, sender_user_id, sender_partner_company_id, body)
+    VALUES (gen_random_uuid(), ${TENANT_A}::uuid, ${PARTNER_A1}::uuid, ${PURGE_DM_THREAD}::uuid, ${USER_A_HOST}::uuid, NULL, 'DM の本文'),
+           (gen_random_uuid(), ${TENANT_A}::uuid, NULL, ${PURGE_GROUP_THREAD}::uuid, ${USER_A_HOST}::uuid, NULL, 'グループの本文')`;
+  // ✅ 2026-10-19（#140）: ひとこと状態（ホストの人 + 取引先 A1 の人）。🔴 取引先の人の行は C7 / C8 のどちらでも
+  //    ホスト文脈のジョブからは書けないので、削除スコープのポリシー（migration 20261019020000 ②）が届くことを確かめる。
+  //    対照としてテナント B にも 1 行置く（A の削除が届かないこと）。
+  await admin.$executeRaw`
+    INSERT INTO chat_user_statuses (id, tenant_id, user_id, text)
+    VALUES (gen_random_uuid(), ${TENANT_A}::uuid, ${USER_A_HOST}::uuid, ${HOST_CHAT_STATUS}),
+           (gen_random_uuid(), ${TENANT_A}::uuid, ${USER_A_PARTNER}::uuid, ${PARTNER_CHAT_STATUS}),
+           (gen_random_uuid(), ${TENANT_B}::uuid, ${USER_B_HOST}::uuid, ${TENANT_B_CHAT_STATUS})`;
+  // ✅ 2026-10-22: 保存済み（ホストの人 + 取引先 A1 の人。どちらも MESSAGE_A_P1 を保存）と自分の定型文。
+  //    🔴 取引先の人の行は本人以外から書けない（C7）ので、削除スコープのポリシーが届くことを確かめる。テナント B は対照。
+  await admin.$executeRaw`
+    INSERT INTO chat_saved_messages (id, tenant_id, user_id, message_id)
+    VALUES (gen_random_uuid(), ${TENANT_A}::uuid, ${USER_A_HOST}::uuid, ${MESSAGE_A_P1}::uuid),
+           (gen_random_uuid(), ${TENANT_A}::uuid, ${USER_A_PARTNER}::uuid, ${MESSAGE_A_P1}::uuid)`;
+  await admin.$executeRaw`
+    INSERT INTO chat_message_templates (id, tenant_id, user_id, label, body)
+    VALUES (gen_random_uuid(), ${TENANT_A}::uuid, ${USER_A_HOST}::uuid, 'ホスト', ${HOST_TEMPLATE_BODY}),
+           (gen_random_uuid(), ${TENANT_A}::uuid, ${USER_A_PARTNER}::uuid, '取引先', ${PARTNER_TEMPLATE_BODY}),
+           (gen_random_uuid(), ${TENANT_B}::uuid, ${USER_B_HOST}::uuid, 'B', ${TENANT_B_TEMPLATE_BODY})`;
+
   const base = { partnerSuspendedAt: null, twoFactor: 'VERIFIED' as const, partnerCompanyId: null };
   hostOwnerA = await resolveTenantCtx({ ...base, tenantId: TENANT_A, lifecycleState: 'CLOSING', userId: USER_A_HOST, role: 'OWNER' }, DEVICE);
   hostOwnerB = await resolveTenantCtx({ ...base, tenantId: TENANT_B, lifecycleState: 'ACTIVE', userId: USER_B_HOST, role: 'OWNER' }, DEVICE);
@@ -363,6 +433,7 @@ describe('AC-10 ① 予告が配送済みでない間は積まず、tenant.purge
     expect(pii.sheets.every((s) => s.object_key !== null && s.purged_at === null)).toBe(true);
     expect(pii.messages.every((m) => m.body !== null)).toBe(true);
     expect(pii.careers).toBe(2);
+    expect(await chatStatusTexts(TENANT_A)).toEqual({ [USER_A_HOST]: HOST_CHAT_STATUS, [USER_A_PARTNER]: PARTNER_CHAT_STATUS });
     expect((await tenantState()).lifecycle_state).toBe('CLOSING');
     expect(store.deletedKeys()).toEqual([]);
   });
@@ -543,6 +614,13 @@ describe('AC-2 / AC-3 / AC-8 ④⑤⑦ PURGED 後の状態', () => {
     expect(pii.careers).toBe(0);
     expect(pii.users.every((u) => u.email === `purged:${u.id}` && u.display_name === '')).toBe(true);
     expect(pii.snapshots.every((s) => s.display_name === '' && JSON.stringify(s.careers) === '[]')).toBe(true);
+    // ✅ 2026-10-19（#140）: ひとこと状態は空文字になる。🔴 取引先 A1 の人の行にも届いている。テナント B は残る。
+    expect(await chatStatusTexts(TENANT_A)).toEqual({ [USER_A_HOST]: '', [USER_A_PARTNER]: '' });
+    expect(await chatStatusTexts(TENANT_B)).toEqual({ [USER_B_HOST]: TENANT_B_CHAT_STATUS });
+    // ✅ 2026-10-22: 保存済みは行ごと消える。自分の定型文は見出しも本文も空になる（取引先 A1 の人の行にも届く）。テナント B は残る。
+    expect(await chatSavedCount(TENANT_A)).toBe(0);
+    expect(await chatTemplateTexts(TENANT_A)).toEqual({ [USER_A_HOST]: '/', [USER_A_PARTNER]: '/' });
+    expect(await chatTemplateTexts(TENANT_B)).toEqual({ [USER_B_HOST]: `B/${TENANT_B_TEMPLATE_BODY}` });
     const row = await admin.dataExportRequest.findFirstOrThrow({ where: { tenantId: TENANT_A } });
     expect(row.objectKey).toBeNull();
     // 🔴 `proposal_events.attachment_key`（Phase 1 は `skill_sheets.id`）は列として NULL 化されている（S3 は `skill_sheets` 側で消した）。
@@ -592,7 +670,11 @@ describe('AC-2 / AC-3 / AC-8 ④⑤⑦ PURGED 後の状態', () => {
     expect(counts.engineers).toBe(3);
     expect(counts.skill_sheets).toBe(2);
     expect(counts.engineer_careers).toBe(2);
-    expect(counts.messages).toBe(2);
+    // ✅ 2026-10-16（#129）: 会社チャット 2 + DM 1 + 社内のグループ 1。
+    expect(counts.messages).toBe(4);
+    expect(counts.chat_user_statuses).toBe(2);
+    expect(counts.chat_saved_messages).toBe(2);
+    expect(counts.chat_message_templates).toBe(2);
 
     const audits = await auditRows('tenant.purge');
     expect(audits).toHaveLength(1);
@@ -654,12 +736,17 @@ describe('AC-7 ⑧ 運営者の DB ロールは返却データに到達できな
     expect(rows[0]).toEqual({ read_key: false, write: false, read_status: true });
   });
 
-  it('pg_policy: {table}_purge_scope_select / _update が PURGE_SPEC.delete の各表にあり、_delete は engineer_careers だけ', async () => {
+  it('pg_policy: {table}_purge_scope_select / _update が PURGE_SPEC.delete の各表にあり、_delete は行ごと消す表（engineer_careers / chat_saved_messages）だけ', async () => {
     const rows = await admin.$queryRaw<{ tablename: string; policyname: string }[]>`
       SELECT tablename, policyname FROM pg_policies WHERE schemaname = 'public' AND policyname LIKE '%_purge_scope_%'`;
     const tables = PURGE_SPEC.delete.map((spec) => spec.table).sort();
     expect(rows.filter((r) => r.policyname.endsWith('_purge_scope_select')).map((r) => r.tablename).sort()).toEqual(tables);
     expect(rows.filter((r) => r.policyname.endsWith('_purge_scope_update')).map((r) => r.tablename).sort()).toEqual(tables);
-    expect(rows.filter((r) => r.policyname.endsWith('_purge_scope_delete')).map((r) => r.tablename)).toEqual(['engineer_careers']);
+    expect(rows.filter((r) => r.policyname.endsWith('_purge_scope_delete')).map((r) => r.tablename).sort()).toEqual([
+      'chat_saved_messages',
+      'engineer_careers',
+    ]);
+    // ✅ 2026-10-16（#129）: 消さない表を「読むだけ」のポリシー。発言の継承トリガが DM / GROUP の部屋を読むため。
+    expect(rows.filter((r) => r.policyname.endsWith('_purge_scope_parent_read')).map((r) => r.tablename)).toEqual(['chat_threads']);
   });
 });

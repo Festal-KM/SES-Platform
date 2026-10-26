@@ -10,6 +10,7 @@ import { CHAT_MESSAGE_MAX_LENGTH, CHAT_MESSAGE_PAGE_SIZE, PAGE_CURSOR_MAX_LENGTH
 import { z } from 'zod';
 import { assertNoIsolationKeys, type AssertNoIsolationKeys } from '../api/isolation-keys';
 import { cursorPageQuerySchema, idCursorPageQuerySchema } from '../api/pagination';
+import { optionalFilter } from '../api/query-filters';
 import { isChatThreadCursor } from './thread-cursor';
 import { CHAT_REACTIONS } from './views';
 
@@ -64,6 +65,36 @@ export const chatMessageBodySchema = z.object({
 
 export type ChatMessageBody = z.infer<typeof chatMessageBodySchema>;
 
+/**
+ * ✅ 2026-10-23（紺野）: `POST /api/threads/{id}/messages`（#51）の body。本文に加えて、**貼る案件の ID を 1 つ**受ける。
+ *
+ * 🔴 **案件を貼るときは本文を省略できる**（カードだけの発言）。どちらも無い・本文が空白だけでカードも無いなら 400。
+ * 🔴 `projectId` は「どの案件か」の指定だけ。**貼れるかどうかはサーバが決める**（送る人が RLS で読めるか・部屋の取引先に
+ *    公開中か。`project-cards.ts` の `requirePastableProject`）。分離キー（取引先・テナント）は受け取らない。
+ * 🔴 編集（`PATCH`）は従来の `chatMessageBodySchema`（本文だけ）のまま —— 貼った案件を後から差し替える口は作らない。
+ */
+export const chatMessagePostBodySchema = z
+  .object({
+    body: z.string().trim().max(CHAT_MESSAGE_MAX_LENGTH).default(''),
+    projectId: z.uuid().optional(),
+  })
+  .refine((value) => value.body.length > 0 || value.projectId !== undefined, { path: ['body'] });
+
+export type ChatMessagePostBody = z.infer<typeof chatMessagePostBodySchema>;
+export type ChatMessagePostBodyIsolationGuard = AssertNoIsolationKeys<ChatMessagePostBody>;
+assertNoIsolationKeys(['body', 'projectId'], 'chatMessagePostBodySchema');
+
+/** 案件名の絞り込み語の上限（案件一覧のフリーワードと同じ 200 文字）。 */
+const CHAT_PROJECT_CANDIDATE_Q_MAX_LENGTH = 200;
+
+/** ✅ 2026-10-23: `GET /api/threads/{id}/projects`（#51n。貼る案件の候補）。案件名で絞り込む語だけを受ける。 */
+export const chatProjectCandidateQuerySchema = z.object({
+  q: optionalFilter(z.string().trim().min(1).max(CHAT_PROJECT_CANDIDATE_Q_MAX_LENGTH)),
+});
+export type ChatProjectCandidateQuery = z.infer<typeof chatProjectCandidateQuerySchema>;
+export type ChatProjectCandidateQueryIsolationGuard = AssertNoIsolationKeys<ChatProjectCandidateQuery>;
+assertNoIsolationKeys(Object.keys(chatProjectCandidateQuerySchema.shape), 'chatProjectCandidateQuerySchema');
+
 /** 🔴 分離キーが混入したらコンパイルエラーになる。 */
 export type ChatThreadListQueryIsolationGuard = AssertNoIsolationKeys<ChatThreadListQuery>;
 export type ChatMessageListQueryIsolationGuard = AssertNoIsolationKeys<ChatMessageListQuery>;
@@ -111,3 +142,71 @@ export const chatThreadPrefsBodySchema = z
 export type ChatThreadPrefsBody = z.infer<typeof chatThreadPrefsBodySchema>;
 export type ChatThreadPrefsBodyIsolationGuard = AssertNoIsolationKeys<ChatThreadPrefsBody>;
 assertNoIsolationKeys(['pinned', 'muted'], 'chatThreadPrefsBodySchema');
+
+// ✅ 2026-10-16（#128）: 人単位の部屋（`docs/05` §6.5 #51f / #51g）。
+// 🔴 部屋の取引先・テナントは受け取らない（メンバーの所属と認証コンテキストから決める。`rooms.ts` ②）。
+/** `POST /api/threads/dm` — その人との DM を開く（無ければ作る）。 */
+export const chatDirectMessageBodySchema = z.object({ userId: z.uuid() }).strict();
+assertNoIsolationKeys(Object.keys(chatDirectMessageBodySchema.shape), 'chatDirectMessageBodySchema');
+
+/** `POST /api/threads/groups` — グループを作る（作成者は自動で入る）。 */
+export const chatGroupBodySchema = z
+  .object({
+    title: z.string().trim().min(1).max(100),
+    userIds: z.array(z.uuid()).min(1).max(49),
+  })
+  .strict();
+assertNoIsolationKeys(Object.keys(chatGroupBodySchema.shape), 'chatGroupBodySchema');
+
+// ✅ 2026-10-19（#128 §7.1 ①）: ひとこと状態（`docs/05` §6.5 #51j）。🔴 誰の状態かは受け取らない（認証コンテキストの本人だけ）。
+/** 🔴 migration 20261019020000 の CHECK（`char_length(text) <= 60`）と同じ値。 */
+export const CHAT_USER_STATUS_MAX_LENGTH = 60;
+
+/** `PUT /api/chat/status` — 自分の状態を設定する（空文字で消す）。1 行・60 文字まで。 */
+export const chatUserStatusBodySchema = z
+  .object({
+    text: z
+      .string()
+      .trim()
+      .max(CHAT_USER_STATUS_MAX_LENGTH)
+      .refine((value) => !/[\r\n]/.test(value)),
+  })
+  .strict();
+export type ChatUserStatusBody = z.infer<typeof chatUserStatusBodySchema>;
+export type ChatUserStatusBodyIsolationGuard = AssertNoIsolationKeys<ChatUserStatusBody>;
+assertNoIsolationKeys(Object.keys(chatUserStatusBodySchema.shape), 'chatUserStatusBodySchema');
+
+// ✅ 2026-10-22（チャットレーン・紺野）: 保存済み（`docs/05` §6.5 #51l）。
+// `PUT` / `DELETE /api/threads/{id}/messages/{messageId}/save` は body を持たない（params は `chatMessageParamsSchema`）。
+// 🔴 誰の栞かは受け取らない（認証コンテキストの本人だけ。RLS も本人の行しか書かせない）。
+
+// ✅ 2026-10-22（チャットレーン・紺野「自分だけ」）: 自分の定型文（`docs/05` §6.5 #51m）。
+// 🔴 誰の定型文かは受け取らない（認証コンテキストの本人だけ）。
+/** 🔴 migration 20261022020000 の CHECK（`char_length(label) <= 30`）と同じ値。 */
+export const CHAT_TEMPLATE_LABEL_MAX_LENGTH = 30;
+/** 🔴 migration 20261022020000 の CHECK（`char_length(body) <= 1000`）と同じ値。 */
+export const CHAT_TEMPLATE_BODY_MAX_LENGTH = 1000;
+/** 1 人が持てる定型文の数（アプリで数えて止める）。 */
+export const CHAT_TEMPLATE_MAX_PER_USER = 50;
+
+/** `POST /api/chat/templates` / `PATCH /api/chat/templates/{templateId}` — 見出しは 1 行。本文は改行してよい。 */
+export const chatTemplateBodySchema = z
+  .object({
+    label: z
+      .string()
+      .trim()
+      .min(1)
+      .max(CHAT_TEMPLATE_LABEL_MAX_LENGTH)
+      .refine((value) => !/[\r\n]/.test(value)),
+    body: z.string().trim().min(1).max(CHAT_TEMPLATE_BODY_MAX_LENGTH),
+  })
+  .strict();
+export type ChatTemplateBody = z.infer<typeof chatTemplateBodySchema>;
+export type ChatTemplateBodyIsolationGuard = AssertNoIsolationKeys<ChatTemplateBody>;
+assertNoIsolationKeys(Object.keys(chatTemplateBodySchema.shape), 'chatTemplateBodySchema');
+
+/** 定型文を指す path param（`/api/chat/templates/[templateId]`）。 */
+export const chatTemplateParamsSchema = z.object({ templateId: z.uuid() });
+export type ChatTemplateParams = z.infer<typeof chatTemplateParamsSchema>;
+export type ChatTemplateParamsIsolationGuard = AssertNoIsolationKeys<ChatTemplateParams>;
+assertNoIsolationKeys(Object.keys(chatTemplateParamsSchema.shape), 'chatTemplateParamsSchema');

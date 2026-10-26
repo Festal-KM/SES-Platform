@@ -241,6 +241,22 @@ OneDriveは追加の人間指示で既定OFFへ変更済み：HKCU RunのOneDriv
 | **デモの 2FA** | 🔴 **`demo` だけ丸ごと止めた**（§2.3） |
 | **アカウント設定** | 下地（`users.job_title` + サービス + API）。**画面は未着手**（Issue #95 に 2 つ確認中） |
 
+### ⏳ 2026-10-22 チャット（担当：紺野）—— main には入った・**デモには未反映**
+
+| | 内容 |
+|---|---|
+| ✅ main に入った | #144 スケルトン・削除の確認・トースト / #145 スマホのスワイプ・絞り込み / #146 グループ作成の作り直し / #147 ひとこと状態を全部の会話で名前の横に / #148 vite 8.2.4（全ブランチの Security audit が落ちていた）/ #149 入力欄を GitHub のコメント欄の形に（書式・プレビュー・@名前。Markdown は自前の `lib/chat/markdown.ts`、HTML を通さない）/ #150 会話は枠の中だけでスクロール・未読の位置から開く・未読は赤丸・見出しを読み上げ用だけに / #151 **要返信を外し「保存済み」と「自分の定型文」**（表 2 つ） |
+| ⏳ PR | #154 スマホ版の作り直し（Lark 寄せ）・入力欄を普段は細く / 左の列の見出しの開閉（この節を足した PR）/ #153 スキル辞書に AI・セキュリティ 8 項目（**折笠さんの判断待ち**） |
+| 🔴 **デモに未反映** | このデモは**マージしても自動では反映されない**（§2.3 の `railway up`）。さらに **2026-10-21 に Railway でセキュリティ事故**（環境変数が盗まれた可能性）があり、ビルドが止まっていた。**鍵の入れ替えと反映は [#152](https://github.com/Festal-KM/SES-Platform/issues/152) で判断待ち**。反映すると #151 の migration 2 本（表を足すだけ）が `railway-predeploy.mjs` で当たる。⚠️ この開発機には `railway` が入っていない —— `npx -y @railway/cli login` → `link` → `up --service web` / `--service worker` |
+| 🔴 `CLAUDE.md` §4.1 | #151 で `ChatSavedMessage` / `ChatMessageTemplate` の 2 行を足した。紺野は承認済み（#151 のコメント）。**宮田さんの事後確認が要る**（#151 は宮田さんの OK の前にマージされた） |
+| 決まったこと（作る予定） | 案件は**チャットに投げ入れる**（「/」メニュー・送り先を選ぶ。案件スレッドは残して上に概要カード）/ LINE のアナウンス（メンバーなら誰でも・1 部屋 1 件）/ リアクションに**絵文字 12 種 + 既存の言葉 4 種**（🔴 UI_GUIDELINES §1「絵文字を使わない」の例外になる = 宮田さんと合意が要る。DB の CHECK も広げる）/ 名前は「保存済み」 |
+| 後で | ひとこと状態のカレンダー連動（カレンダーに予定のデータが入ってから。予定の中身は出さず時間だけ）/ ファイル添付（#108）/ アプリ化（ホーム画面に追加する PWA が第一候補）/ スレッド返信・リアクションした人の名前・状態の期限 |
+| 🔴 教訓 | ① 見た目は**部品を一時テストで HTML に描き出し、本物の CSS（`@tailwindcss/postcss`）を当てて Playwright で撮る**と、デモに出す前に確かめられる ② 使わなくなった値を消すときは `tests/isolation` も grep する（#151 で CI の型エラーを出した）③ 同じファイルを触る PR を並べると、マージのたびにぶつかる —— 1 本ずつ入れて、そのつど main を取り込む |
+
+### ⏳ 2026-10-23 チャット: 案件をチャットに貼る（PR `chat/project-card`）
+
+- `messages.attached_project_id` を 1 列足した（複合 FK → `projects(tenant_id, id)`、`ON DELETE SET NULL (attached_project_id)`。migration `20261023010000` は既存行を書き換えない）。カードは**見る人の RLS で読み直す**。貼れる条件はサーバ（`apps/web/lib/chat/project-cards.ts`）。新 API `GET /api/threads/{id}/projects`（#51n）。分離テスト `tests/isolation/chat-project-card.test.ts`（19 件）をローカルで緑。宮田さんへの確認（列を足す・貼れる条件）は PR 本文。
+
 ### 🔴 人間の判断を待っているもの（着手できない）
 
 | Issue | 何を待っているか |
@@ -356,6 +372,7 @@ OneDriveは追加の人間指示で既定OFFへ変更済み：HKCU RunのOneDriv
 | 罠 | 内容 |
 |---|---|
 | 🔴🔴 **既存行を書き換える migration は `FORCE ROW LEVEL SECURITY` を一時解除し、「残存 0 件」を FORCE を戻す前に検査する** | **2026-10-16 にこれでデモを落とした**（web が Crashed。復旧まで約 1 時間）。`app_migrator` は `NOBYPASSRLS` で、業務表は ENABLE + FORCE であり**所有者にも適用ポリシーが 1 つも無い** → 素の `UPDATE` は **0 件で「成功」**する（docs/05 §4.4）。`20261016010000_project_status_two_values` はそれで移送されず、続く `ADD CONSTRAINT` が旧値の行に当たって失敗した。🔴 **さらに悪いのは次である**: 失敗した migration は Prisma に記録され、以後 **P3009** で**新しい migration が 1 本も当たらなくなる**（`railway-start.mjs` が「当たっていない DB でアプリを上げない」と判断して起動しない）。🔴 **手順は `20260911000000` / `20260929000000` / `20261016010000` の 3 本が同じ形で持っている**: FORCE 解除 → UPDATE → **残存 0 件の検査**（🔴 戻す前。戻した後では所有者にも 0 件に見えて検査にならない）→ FORCE 復帰 → カタログ検査（RLS 有効なのに FORCE でない表が無いこと）。🔴 **`CHECK` を張り替えるなら、旧 CHECK を外してから移送する**（旧 CHECK が新しい値を許さない）。🔴 **CI では気づけない** —— CI は空の DB に当てるので 0 件 UPDATE が成功してしまう |
+| 🔴 **`messages.attached_project_id` の複合 FK は `schema.prisma` に宣言していない**（2026-10-23、#158） | 削除時に列だけを NULL にする書き方（PostgreSQL 15+）を Prisma が表せないため。🔴 **`prisma migrate dev` で差分を作ると、この FK を消す差分が出ることがある —— 手で取り除く**（`docs/05` §3.3.1 の B 群と同じ扱い） |
 | 🔴 **P3009 からの回復**（`migrate found failed migrations`） | DB は Railway の内部ホストにしか無く、**外から `prisma migrate resolve` を打てない**。`scripts/railway-predeploy.mjs` に 1 段用意してある: 環境変数 **`SES_MIGRATION_RESOLVE_ROLLED_BACK`** に migration 名を入れてデプロイすると `--rolled-back` を打ってから `migrate deploy` が走る。🔴 **既定では何もしない**（常時実行にすると、直っていない migration を毎回「巻き戻した」ことにして失敗が見えなくなる）。🔴 **使ったら変数を必ず外す** |
 | 🔴 **起動時の設定を読む関数を、判定の問い合わせから呼ばない** | 2026-10-16 の実例: `twoFactorPolicy()` が `ensureDbConfigured()` を呼んでいたため、**環境変数の一式が揃っていない分離テストのハーネス**で `EnvValidationError` が飛び、**2 要素認証とは無関係の失敗に化けた**（`two-factor.test.ts` が 「`TwoFactorRequiredError` のはずが `EnvValidationError`」で落ち、同じジョブの `projects` 系も巻き添え）。🔴 **方針の問い合わせが設定の初期化を強制してはならない。** 解決済みの値を返し、**未解決なら厳しい側の既定に倒す**。🔴 **ローカルのユニットは全部緑のまま通る** —— この層は CI でしか分からない |
 | 🔴 **`railway up` はローカルの作業ディレクトリを上げる**（Git ではない） | したがって**コミットしていない変更もデプロイされる**。「Git から pull すれば直る」ではない。🔴 **デプロイ前に作業ツリーを緑にする**（未完成の機能が混ざる） |

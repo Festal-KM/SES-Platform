@@ -24,9 +24,15 @@
 // 🔴 純粋関数のみ（`@ses/db` / `@ses/i18n` / 現在時刻に依存しない）。クライアントの島が
 //    **型だけ**を読めるようにするためである（`tests/static/client-db-boundary.test.ts`）。
 
-/** `chat_threads.kind`（CHECK の 2 値）。 */
-export const CHAT_THREAD_KINDS = ['PROJECT', 'COMPANY'] as const;
+/** `chat_threads.kind`（CHECK の 4 値。DM / GROUP は 2026-10-16・#128）。 */
+export const CHAT_THREAD_KINDS = ['PROJECT', 'COMPANY', 'DM', 'GROUP'] as const;
 export type ChatThreadKind = (typeof CHAT_THREAD_KINDS)[number];
+/**
+ * 今の一覧・会話の画面が扱う部屋の種類（会社グループ・スレッド）。
+ * ✅ 2026-10-16（#128）: DM / GROUP は DB に足したが、画面は次の段で作る。それまで一覧・会話の読み出しは
+ *    この 2 種類に絞る（DM / GROUP は取引先を持たないことがあり、会社ごとの木に載せられないため）。
+ */
+export const COMPANY_ROOM_KINDS = ['PROJECT', 'COMPANY'] as const satisfies readonly ChatThreadKind[];
 
 /** 対象案件の参照（名前が読めなければ `null` を入れる。下の 🔴）。 */
 export type ChatProjectRef = {
@@ -72,6 +78,12 @@ export type ChatMessageView = {
   readonly senderName: string | null;
   /** 送信者の会社名（自社 / 相手のどちらか。スレッドには 2 社しか居ない。`F-038 AC-2`）。読めなければ `null`。 */
   readonly senderCompanyName: string | null;
+  /**
+   * ✅ 2026-10-22（紺野「自分が入ってるチャットにも共通で表示しないと」）: 送信者の**今の**ひとこと状態。
+   * 🔴 読めるかは RLS（`chat_user_statuses` の読み = users の C8 DIRECTORY）が決める。読めない・無ければ `null`。
+   * 送った時点の状態ではない（発言に凍結しない）—— 「いま連絡してよいか」の判断材料だから。
+   */
+  readonly senderStatus?: string | null;
   /** 🔴 自社の発言か。**寄せ・色の判定を画面に書かせない**ための値である。 */
   readonly own: boolean;
   /**
@@ -88,9 +100,57 @@ export type ChatMessageView = {
   readonly edited?: boolean;
   /** ✅ 2026-10-16: 送った本人が削除したか（本文は `null`。保持期限による削除〔`purged`〕とは書き分ける）。 */
   readonly deleted?: boolean;
-  /** 本文。🔴 `PURGED` / 保持期間削除で本文が消えた行は `null`（`F-064 AC-2`）。 */
+  /**
+   * ✅ 2026-10-22: 読み手本人がこの発言を保存しているか（`chat_saved_messages`）。🔴 本人の栞だけ（誰が保存したかは載せない）。
+   * 読みの経路は必ず埋める。省略可なのは手で組むテスト用の値のため。
+   */
+  readonly saved?: boolean;
+  /** 本文。🔴 `PURGED` / 保持期間削除で本文が消えた行は `null`（`F-064 AC-2`）。案件カードだけの発言は空文字。 */
   readonly body: string | null;
+  /**
+   * ✅ 2026-10-23（紺野）: 発言に貼った案件（案件カード）。貼っていない・発言が消えた（削除・保持期限）なら `null`。
+   * 🔴 **読む人の RLS で読み直した結果**である。読めなければ `{ visible: false }` だけ（案件名も ID も載せない）。
+   * 読みの経路は必ず埋める。省略可なのは手で組むテスト用の値のため。
+   */
+  readonly attachedProject?: ChatAttachedProjectView | null;
 };
+
+/**
+ * ✅ 2026-10-23: 案件カードの要件 1 件（`project_requirements`。読む人の RLS で読めたものだけ）。
+ * 🔴 単価・エンド企業名を持たない（相手が誰でも出さない）。
+ */
+export type ChatProjectRequirementView = {
+  /** 辞書名（`skillId` が無ければ `null`）。 */
+  readonly skillName: string | null;
+  readonly freeText: string | null;
+  readonly requiredYears: number | null;
+};
+
+/**
+ * ✅ 2026-10-23: 案件カード（見る人が読めたとき）。
+ * 🔴 **単価（`unitPriceMin` / `unitPriceMax` / `internalUnitPrice`）・エンド企業名・公開先を持たない。**
+ *    出すのは 案件名・状態・開始時期・勤務地 / リモート・必須の要件・尚可の要件（画面は件数に畳む）だけ。
+ */
+export type ChatVisibleProjectCard = {
+  readonly visible: true;
+  readonly id: string;
+  readonly name: string;
+  /** `projects.status`（`OPEN` / `CLOSED`）。🔴 語は画面が文言の束から引く（ここは値だけ）。 */
+  readonly status: string;
+  /** `YYYY-MM-DD` または `null`。 */
+  readonly startDate: string | null;
+  /** 都道府県のコード または `null`。 */
+  readonly prefecture: string | null;
+  /** `RemoteMode` または `null`。 */
+  readonly remoteMode: string | null;
+  readonly mustRequirements: readonly ChatProjectRequirementView[];
+  readonly niceRequirements: readonly ChatProjectRequirementView[];
+};
+
+/** ✅ 2026-10-23: 案件カード（見る人が読めないとき）。🔴 `visible: false` 以外のキーを持たない（名前も ID も出さない）。 */
+export type ChatHiddenProjectCard = { readonly visible: false };
+
+export type ChatAttachedProjectView = ChatVisibleProjectCard | ChatHiddenProjectCard;
 
 /** 参加会社の 1 行（`thread_participants`。越境経路 3 の唯一の根拠）。 */
 export type ChatParticipantView = {
@@ -115,6 +175,40 @@ export type ChatThreadDetailView = {
    *    🔴 **見えない行を補わない**（補うと「アプリが越境の判断をしている」ことになる）。
    */
   readonly participants: readonly ChatParticipantView[];
+  /**
+   * ✅ 2026-10-19（#128）: DM・グループのメンバー（人の段）。会社グループ・スレッドでは無い。
+   * 🔴 RLS（C10 MEMBER）で見えている部屋のメンバーだけ。名前は C8 で読めた人だけ（読めなければ `null`）。
+   */
+  readonly members?: readonly ChatMemberView[];
+};
+
+/** ✅ 2026-10-19（#128）: DM・グループのメンバー 1 人。 */
+export type ChatMemberView = {
+  /** 🔴 DM を開く導線（`POST /api/threads/dm`）のための ID。同じ部屋のメンバーにしか返さない。 */
+  readonly userId: string;
+  readonly name: string | null;
+  readonly companyName: string | null;
+  readonly isHost: boolean;
+  /** 読み手本人か（自分には「DM を開く」を出さない）。 */
+  readonly self: boolean;
+  /** ✅ 2026-10-19: ひとこと状態（読めた人の、空でないものだけ）。無ければ `null` / 省略。 */
+  readonly status?: string | null;
+};
+
+/** ✅ 2026-10-19（#128）: 一覧の「DM・グループ」の 1 行。 */
+export type ChatRoomListItem = {
+  readonly id: string;
+  readonly kind: 'DM' | 'GROUP';
+  /** DM は相手の名前、グループはその名前。読めなければ `null`。 */
+  readonly name: string | null;
+  readonly memberCount: number;
+  readonly lastMessageAt: string | null;
+  /** ✅ 2026-10-19（v2）: メンバー（「人から」辿る）。🔴 自分が入っている部屋のメンバーだけ（C10）。 */
+  readonly memberUserIds: readonly string[];
+  /** 取引先との部屋か（「外部」の札）。 */
+  readonly external: boolean;
+  /** その取引先の会社のまとまりの鍵（「会社から」辿る）。社内の部屋・まとまりが無いときは `null`。 */
+  readonly companyKey: string | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -128,16 +222,45 @@ export const CHAT_MESSAGE_VIEW_KEYS = [
   'sentAt',
   'senderName',
   'senderCompanyName',
+  'senderStatus',
   'own',
   'mine',
   'body',
   'reactions',
   'edited',
   'deleted',
+  'saved',
+  'attachedProject',
 ] as const;
 
-/** ✅ 2026-10-16: リアクションの種類（業務の短い語 4 つ。絵文字は使わない = UI_GUIDELINES §1。DB の CHECK と同じ）。 */
-export const CHAT_REACTIONS = ['OK', 'THANKS', 'CHECKING', 'DONE'] as const;
+/** ✅ 2026-10-23: 案件カード（読めたとき）のキー集合。🔴 分離テストが応答と突き合わせる。 */
+export const CHAT_VISIBLE_PROJECT_CARD_KEYS = [
+  'visible',
+  'id',
+  'name',
+  'status',
+  'startDate',
+  'prefecture',
+  'remoteMode',
+  'mustRequirements',
+  'niceRequirements',
+] as const;
+
+/** ✅ 2026-10-23: 案件カード（読めないとき）のキー集合。🔴 これ以外を 1 つも持たない。 */
+export const CHAT_HIDDEN_PROJECT_CARD_KEYS = ['visible'] as const;
+
+/** ✅ 2026-10-23: 案件カードの要件 1 件のキー集合。 */
+export const CHAT_PROJECT_REQUIREMENT_KEYS = ['skillName', 'freeText', 'requiredYears'] as const;
+
+/**
+ * ✅ 2026-10-16: リアクションの種類（業務の短い語 4 つ）。
+ * ✅ 2026-10-22（紺野「スタンプとかもちゃんと入れて」）: 絵文字 12 種を足した（UI_GUIDELINES §1 の例外。チャットのリアクションだけ）。
+ * 🔴 DB の CHECK（migration 20261022030000）と同じ並び。値は英字の名前で、絵文字への置き換えは `reactions.ts`。
+ * 🔴 並びは「絵文字 → 語」の表示順でもある（件数のまとめもこの順）。
+ */
+export const CHAT_REACTION_EMOJI_KINDS = ['THUMBS_UP', 'PRAY', 'TADA', 'SMILE', 'JOY', 'EYES', 'BOW', 'SWEAT', 'CHECK', 'HEART', 'FIRE', 'CLAP'] as const;
+export const CHAT_REACTION_WORD_KINDS = ['OK', 'THANKS', 'CHECKING', 'DONE'] as const;
+export const CHAT_REACTIONS = [...CHAT_REACTION_EMOJI_KINDS, ...CHAT_REACTION_WORD_KINDS] as const;
 export type ChatReactionKind = (typeof CHAT_REACTIONS)[number];
 
 /** リアクション 1 種類ぶん。 */
@@ -178,6 +301,8 @@ export function summarizeReactions(
 export const CHAT_PARTICIPANT_VIEW_KEYS = ['companyName', 'isHost', 'joinedAt', 'leftAt'] as const;
 
 export const CHAT_THREAD_DETAIL_VIEW_KEYS = ['id', 'kind', 'project', 'counterpartyName', 'participants'] as const;
+/** ✅ 2026-10-19（#128）: DM・グループの詳細は、会社の部屋の詳細に `members` を足したもの。 */
+export const CHAT_ROOM_DETAIL_VIEW_KEYS = [...CHAT_THREAD_DETAIL_VIEW_KEYS, 'members'] as const;
 
 /**
  * 🔴 **チャットの応答に 1 度も現れてはならないキー**（分離テストが応答 JSON を深さ優先で走査する）。
@@ -187,6 +312,10 @@ export const CHAT_FORBIDDEN_RESPONSE_KEYS = [
   'unitPrice',
   'offeredUnitPrice',
   'endClientName',
+  // ✅ 2026-10-23: 案件カードに単価を出さない（外部公開用のレンジも、内部限定の販売単価も）。
+  'unitPriceMin',
+  'unitPriceMax',
+  'internalUnitPrice',
   'margin',
   'unread',
   'unreadCount',
@@ -260,6 +389,8 @@ export type ChatMessageRow = {
   /** ✅ 2026-10-16: 編集・削除の日時（読みの経路は必ず埋める。手で組むテスト用に省略可）。 */
   readonly editedAt?: Date | null;
   readonly deletedAt?: Date | null;
+  /** ✅ 2026-10-23: 貼った案件の ID（読みの経路は必ず埋める）。🔴 応答には載せない（カードの可否は `deps` が決める）。 */
+  readonly attachedProjectId?: string | null;
 };
 
 export type ChatMessageDeps = {
@@ -267,6 +398,8 @@ export type ChatMessageDeps = {
   readonly senderName: string | null;
   /** 送信者の会社名（読めなければ `null`）。 */
   readonly senderCompanyName: string | null;
+  /** ✅ 2026-10-22: 送信者の今のひとこと状態（RLS で読めたものだけ。無ければ `null`）。 */
+  readonly senderStatus?: string | null;
   /**
    * 🔴 読み手の所属（`ctx.partnerCompanyId`。ホストは `null`）。
    *    **リクエスト入力から渡してはならない**（`CLAUDE.md` §3.1）。
@@ -279,7 +412,28 @@ export type ChatMessageDeps = {
   readonly viewerUserId: string;
   /** ✅ 2026-10-16: この発言のリアクション（`summarizeReactions`。無ければ空）。 */
   readonly reactions?: readonly ChatReactionSummary[];
+  /** ✅ 2026-10-22: 読み手本人が保存しているか（省略時は保存していない）。 */
+  readonly saved?: boolean;
+  /**
+   * ✅ 2026-10-23: 貼った案件を**読み手の RLS で**読めたときのカード。読めなければ省略（`undefined`）。
+   * 🔴 省略は「読めない」として扱う（既定で隠す側に倒す。`chatMessageView` の 🔴）。
+   */
+  readonly attachedProject?: ChatVisibleProjectCard;
 };
+
+/**
+ * ✅ 2026-10-23: 発言の案件カードを決める（純粋関数）。
+ * 🔴 貼っていない・本文が消えた（本人の削除・保持期限の削除）発言は `null`（カードも出さない）。
+ * 🔴 貼ってあるのに読めた結果が無ければ `{ visible: false }` だけを返す（**既定で隠す**。名前も ID も載せない）。
+ */
+export function chatAttachedProjectView(
+  row: Pick<ChatMessageRow, 'body' | 'attachedProjectId' | 'deletedAt'>,
+  readable: ChatVisibleProjectCard | undefined,
+): ChatAttachedProjectView | null {
+  if (row.attachedProjectId == null || row.body === null || row.deletedAt != null) return null;
+  if (readable === undefined || readable.id !== row.attachedProjectId) return { visible: false };
+  return readable;
+}
 
 export function chatMessageView(row: ChatMessageRow, deps: ChatMessageDeps): ChatMessageView {
   return {
@@ -287,6 +441,7 @@ export function chatMessageView(row: ChatMessageRow, deps: ChatMessageDeps): Cha
     sentAt: row.sentAt.toISOString(),
     senderName: deps.senderName,
     senderCompanyName: deps.senderCompanyName,
+    senderStatus: deps.senderStatus ?? null,
     // 🔴 「自社か」は会社で決める（スレッドには 2 社しか居ない。`F-038 AC-2`）。利用者単位にすると
     //    同僚の発言が「相手の発言」として寄せられる。
     own: row.senderPartnerCompanyId === deps.viewerPartnerCompanyId,
@@ -298,5 +453,7 @@ export function chatMessageView(row: ChatMessageRow, deps: ChatMessageDeps): Cha
     reactions: deps.reactions ?? [],
     edited: row.editedAt != null && row.deletedAt == null,
     deleted: row.deletedAt != null,
+    saved: deps.saved ?? false,
+    attachedProject: chatAttachedProjectView(row, deps.attachedProject),
   };
 }

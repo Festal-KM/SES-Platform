@@ -30,7 +30,8 @@
 //
 // 🔴 本モジュールは Next.js / Auth.js に依存しない（分離テストがサーバを立てずに同じ経路を実行できる。
 //    `lib/proposals/list.ts` と同方針）。
-import { freeWordFilter, withTenant, type AuthenticatedTenantCtx } from '@ses/db';
+import { t } from '@ses/i18n';
+import { freeWordFilter, readDmPeerReadMessageIds, withTenant, type AuthenticatedTenantCtx } from '@ses/db';
 import { requireFound, ValidationError } from '../api/errors';
 import { buildCursorPage, takeForCursorPage, type CursorPage } from '../api/pagination';
 import type { ChatMessageListQuery, ChatThreadListQuery } from './schemas';
@@ -38,12 +39,16 @@ import {
   MESSAGE_SEARCH_LIMIT,
   MESSAGE_SEARCH_MIN_LENGTH,
   buildThreadTree,
+  companyKeysOf,
+  lastMessageSnippet,
   messageSnippet,
   type ChatThreadGroup,
   type ChatThreadSort,
 } from './thread-tree';
-import { FAST_REPLY_WINDOW_DAYS, fastReplyGroupKeys, isAwaitingReply } from './reply-speed';
+import { FAST_REPLY_WINDOW_DAYS, fastReplyGroupKeys } from './reply-speed';
 import { countUnread, readPositions, readThreadPrefs, type ChatThreadPrefs } from './read-state';
+import { readPeople, readRoomDetail, type ChatPeopleData } from './people';
+import { readChatUserStatuses } from './user-status';
 import {
   chatThreadCursorWhere,
   decodeChatThreadCursor,
@@ -52,6 +57,7 @@ import {
 } from './thread-cursor';
 import {
   chatMessageView,
+  COMPANY_ROOM_KINDS,
   chatThreadDetailView,
   chatThreadListItem,
   type ChatMessageRow,
@@ -63,6 +69,7 @@ import {
   type ChatThreadRow,
   summarizeReactions,
 } from './views';
+import { readAttachedProjectCards } from './project-cards';
 
 /** `withTenant` が `fn` に渡すクライアント。 */
 type TenantDb = Parameters<Parameters<typeof withTenant<void>>[1]>[0];
@@ -88,9 +95,13 @@ export const CHAT_MESSAGE_SELECT = {
   sentAt: true,
   editedAt: true,
   deletedAt: true,
+  // ✅ 2026-10-23: 貼った案件の ID（カードは読む人の RLS で読み直す。応答には ID を直接載せない）。
+  attachedProjectId: true,
 } as const;
 
 export type SelectedChatThreadRow = ChatThreadRow & { readonly partnerCompanyId: string };
+/** ✅ 2026-10-19（#128）: 1 部屋を引いた行。DM・グループの社内の部屋は取引先を持たない（`null`）。 */
+export type FoundChatThreadRow = ChatThreadRow & { readonly partnerCompanyId: string | null };
 type SelectedThreadRow = SelectedChatThreadRow;
 
 export type ChatThreadListView = CursorPage<ChatThreadListItem>;
@@ -179,7 +190,7 @@ async function readThreadPage(
     cursor === null ? {} : chatThreadCursorWhere(cursor);
 
   const rows = (await db.chatThread.findMany({
-    where,
+    where: { ...where, kind: { in: [...COMPANY_ROOM_KINDS] } },
     select: CHAT_THREAD_SELECT,
     // 🔴 最終更新の新しい順。**メッセージが 1 件も無いスレッド（`NULL`）は最後**に置く
     //    （Postgres の `DESC` の既定は NULLS FIRST であり、放置されたスレッドが先頭に来てしまう）。
@@ -221,8 +232,6 @@ export type ChatMessageHit = {
 
 export type ChatThreadTreeData = {
   readonly groups: readonly ChatThreadGroup[];
-  /** ✅ 2026-10-14: 要返信（最後の発言が相手から）のスレッド。 */
-  readonly awaitingReplyIds: readonly string[];
   /** ✅ 2026-10-14: 本文の検索で当たった発言（`q` が 2 文字以上のときだけ。新しい順に最大 20 件）。 */
   readonly messageHits: readonly ChatMessageHit[];
   /** ✅ 2026-10-16: スレッドごとの未読の件数（自分以外の発言で既読位置より後ろ。0 は載せない）。 */
@@ -232,6 +241,8 @@ export type ChatThreadTreeData = {
   readonly mutedIds: readonly string[];
   /** 上限を超えたので、古いスレッドを読んでいない。 */
   readonly truncated: boolean;
+  /** ✅ 2026-10-19: スレッドごとの最後の発言の冒頭（一覧の 2 段目）。 */
+  readonly lastSnippets: Readonly<Record<string, string>>;
 };
 
 /**
@@ -242,8 +253,9 @@ async function readThreadTree(
   ctx: AuthenticatedTenantCtx,
   db: Pick<TenantDb, 'chatThread' | 'partnerCompany' | 'tenant' | 'project' | 'message' | 'chatReadState'>,
   options: { readonly sort: ChatThreadSort; readonly q: string | null; readonly unreadOnly?: boolean },
-): Promise<ChatThreadTreeData> {
+): Promise<{ readonly tree: ChatThreadTreeData; readonly companyKeyOf: (partnerCompanyId: string | null) => string | null }> {
   const rows = (await db.chatThread.findMany({
+    where: { kind: { in: [...COMPANY_ROOM_KINDS] } },
     select: CHAT_THREAD_SELECT,
     orderBy: [{ lastMessageAt: { sort: 'desc', nulls: 'last' } }, { id: 'desc' }],
     take: CHAT_THREAD_TREE_MAX + 1,
@@ -263,12 +275,13 @@ async function readThreadTree(
           where: { threadId: { in: threadIds } },
           distinct: ['threadId'],
           orderBy: [{ threadId: 'asc' }, { sentAt: 'desc' }, { id: 'desc' }],
-          select: { threadId: true, senderPartnerCompanyId: true },
+          select: { threadId: true, senderPartnerCompanyId: true, body: true, attachedProjectId: true },
         });
-  // 読み手から見た「相手」: ホストなら取引先の発言、取引先ならホストの発言。
-  const awaitingReplyIds = lastMessages
-    .filter((message) => isAwaitingReply({ fromCounterparty: host ? message.senderPartnerCompanyId !== null : message.senderPartnerCompanyId === null }))
-    .map((message) => message.threadId);
+  // ✅ 2026-10-19: 一覧の 2 段目（最後の発言の冒頭）。🔴 読めた発言だけ（C6）。削除・保持期限で本文が無いものは空。
+  const lastSnippets: Record<string, string> = Object.fromEntries(
+    lastMessages.map((message) => [message.threadId, lastMessageSnippet(message, t('chat.snippet.projectShared'))]),
+  );
+  // ✅ 2026-10-22（紺野「要返信はいらない」）: 要返信（最後の発言が相手から）の計算をやめた。「保存済み」に置き換え。
   // 🔴 返信が早い取引先は**ホストにだけ**（取引先には他社との比較を出さない）。
   let fastReplyKeys: ReadonlySet<string> = new Set();
   if (host && threadIds.length > 0) {
@@ -329,15 +342,19 @@ async function readThreadTree(
           threadTitle: allTitles.get(message.threadId) ?? null,
           snippet: messageSnippet(message.body ?? '', needle),
         }));
-  return {
+  // ✅ 2026-10-19（v2）: 取引先 → 会社のまとまりの鍵（DM・グループを「会社から」辿るため。🔴 取引先の ID は画面データに出さない）。
+  const keyByPartner = companyKeysOf(kept.map((row) => ({ groupKey: row.partnerCompanyId, item: { id: row.id, kind: row.kind } as ChatThreadListItem })));
+  const companyKeyOf = (partnerCompanyId: string | null) => (partnerCompanyId === null ? null : keyByPartner.get(partnerCompanyId) ?? null);
+  const tree: ChatThreadTreeData = {
     groups,
     truncated,
-    awaitingReplyIds,
+    lastSnippets,
     messageHits,
     unreadCounts: Object.fromEntries(unread),
     pinnedIds: [...prefs.entries()].filter(([, value]) => value.pinned).map(([id]) => id),
     mutedIds: [...prefs.entries()].filter(([, value]) => value.muted).map(([id]) => id),
   };
+  return { tree, companyKeyOf };
 }
 
 /**
@@ -349,10 +366,11 @@ async function readThreadTree(
 export async function findChatThreadRow(
   db: Pick<TenantDb, 'chatThread'>,
   threadId: string,
-): Promise<SelectedThreadRow | null> {
-  // 🔴 `where` は「どのスレッドか」の業務上の指定だけ。参加会社の条件を書き足さない（C6 が決める）。
+): Promise<FoundChatThreadRow | null> {
+  // 🔴 `where` は「どのスレッドか」の業務上の指定だけ。参加会社・メンバーの条件を書き足さない
+  //    （C6 / C10 MEMBER が決める）。✅ 2026-10-19（#128）: DM・グループも引く（投稿・既読・リアクションが同じ 1 実装を通る）。
   const row = await db.chatThread.findFirst({ where: { id: threadId }, select: CHAT_THREAD_SELECT });
-  return row === null ? null : (row as SelectedThreadRow);
+  return row === null ? null : (row as FoundChatThreadRow);
 }
 
 /**
@@ -384,11 +402,14 @@ async function readParticipants(
 
 async function readThreadDetail(
   ctx: AuthenticatedTenantCtx,
-  db: Pick<TenantDb, 'chatThread' | 'threadParticipant' | 'partnerCompany' | 'tenant' | 'project'>,
+  db: Pick<TenantDb, 'chatThread' | 'threadParticipant' | 'partnerCompany' | 'tenant' | 'project' | 'user' | 'chatUserStatus'>,
   threadId: string,
 ): Promise<ChatThreadDetailView | null> {
-  const row = await findChatThreadRow(db, threadId);
-  if (row === null) return null;
+  const found = await findChatThreadRow(db, threadId);
+  if (found === null) return null;
+  // ✅ 2026-10-19（#128）: DM・グループは右の欄にメンバーを出す（参加会社ではなく人の段）。
+  if (found.kind === 'DM' || found.kind === 'GROUP') return readRoomDetail(ctx, db, threadId);
+  const row = found as SelectedThreadRow;
   const counterpartyOf = await resolveCounterpartyNames(ctx, db, [row.partnerCompanyId]);
   const projects = await resolveProjectRefs(db, [row.projectId]);
   const participants = await readParticipants(db, threadId);
@@ -417,7 +438,10 @@ async function resolveSenderNames(
  */
 export async function projectChatMessages(
   ctx: AuthenticatedTenantCtx,
-  db: Pick<TenantDb, 'user' | 'partnerCompany' | 'tenant' | 'chatMessageReaction'>,
+  db: Pick<
+    TenantDb,
+    'user' | 'partnerCompany' | 'tenant' | 'chatMessageReaction' | 'chatSavedMessage' | 'chatUserStatus' | 'project' | 'projectRequirement'
+  >,
   rows: readonly ChatMessageRow[],
 ): Promise<readonly ChatMessageView[]> {
   if (rows.length === 0) return [];
@@ -427,11 +451,25 @@ export async function projectChatMessages(
     select: { messageId: true, userId: true, reaction: true },
   });
   const reactions = summarizeReactions(reactionRows, ctx.userId);
+  // ✅ 2026-10-22: 自分が保存した発言（「保存 / 保存を外す」の出し分け）。🔴 本人の行だけが返る（RLS。migration 20261022010000）。
+  const savedRows = await db.chatSavedMessage.findMany({
+    where: { messageId: { in: rows.map((row) => row.id) } },
+    select: { messageId: true },
+  });
+  const savedIds = new Set(savedRows.map((row) => row.messageId));
   const senderNames = await resolveSenderNames(db, rows.map((row) => row.senderUserId));
   // 🔴 **送信者の会社名は `partner_companies` から直接引く**（`resolveCounterpartyNames` を使わない。
   //    上の ⚠️ —— 取引先が自分の発言に相手の商号を見ることになる）。
   const partnerNames = await resolvePartnerCompanyNames(db, rows.map((row) => row.senderPartnerCompanyId));
   const tenant = await db.tenant.findFirst({ select: { name: true } });
+  // ✅ 2026-10-22: 送信者の今のひとこと状態。🔴 境界は RLS が決める（`user-status.ts` ①。`where` に書き足さない）。
+  const statuses = await readChatUserStatuses(db, rows.map((row) => row.senderUserId));
+  // ✅ 2026-10-23: 案件カード。🔴 **読む人の RLS で** projects（C4）を読み直す（貼った人の権限で描かない）。
+  //    消えた発言（削除・保持期限）の案件は読みに行かない（カードも出さない）。
+  const cards = await readAttachedProjectCards(
+    db,
+    rows.filter((row) => row.body !== null && row.deletedAt == null).map((row) => row.attachedProjectId ?? null),
+  );
   return rows.map((row) =>
     chatMessageView(row, {
       senderName: senderNames.get(row.senderUserId) ?? null,
@@ -440,9 +478,12 @@ export async function projectChatMessages(
         row.senderPartnerCompanyId === null
           ? tenant?.name ?? null
           : partnerNames.get(row.senderPartnerCompanyId) ?? null,
+      senderStatus: statuses.get(row.senderUserId) ?? null,
       viewerPartnerCompanyId: ctx.partnerCompanyId,
       viewerUserId: ctx.userId,
       reactions: reactions.get(row.id) ?? [],
+      saved: savedIds.has(row.id),
+      ...(row.attachedProjectId == null ? {} : { attachedProject: cards.get(row.attachedProjectId) }),
     }),
   );
 }
@@ -456,7 +497,10 @@ export async function projectChatMessages(
  */
 async function readMessagePage(
   ctx: AuthenticatedTenantCtx,
-  db: Pick<TenantDb, 'chatThread' | 'message' | 'user' | 'partnerCompany' | 'tenant' | 'chatMessageReaction'>,
+  db: Pick<
+    TenantDb,
+    'chatThread' | 'message' | 'user' | 'partnerCompany' | 'tenant' | 'chatMessageReaction' | 'chatSavedMessage' | 'chatUserStatus' | 'project' | 'projectRequirement'
+  >,
   threadId: string,
   query: ChatMessageListQuery,
 ): Promise<ChatMessageListView> {
@@ -531,6 +575,14 @@ export type ChatScreenData = {
   readonly lastReadMessageIds: Readonly<Record<string, string | null>>;
   /** ✅ 2026-10-16: 開いている会話のピン留め・ミュート（見出しの切り替えボタン用）。 */
   readonly threadPrefs: Readonly<Record<string, ChatThreadPrefs>>;
+  /** ✅ 2026-10-19（#128）: DM・グループと連絡先（`input.tree` を渡したときだけ。渡さなければ `null`）。 */
+  readonly people: ChatPeopleData | null;
+  /**
+   * ✅ 2026-10-19（#128）: 開いている **DM だけ**の、相手が最後に読んだ発言の ID（相手がまだ読んでいなければ `null`）。
+   * 🔴 グループ・会社グループ・スレッドのキーは入れない（誰がどこまで読んだかを他人に見せない）。
+   *    DB 側も `app_dm_peer_read` が DM 以外・非メンバーに NULL を返す（二重）。
+   */
+  readonly peerReadMessageIds: Readonly<Record<string, string | null>>;
 };
 
 /** 右に並べた会話 1 本ぶん。 */
@@ -559,10 +611,25 @@ export async function readChatScreen(
     readonly tree?: { readonly sort: ChatThreadSort; readonly q: string | null; readonly unreadOnly?: boolean };
   },
 ): Promise<ChatScreenData> {
+  const screen = await readChatScreenInTenant(ctx, input);
+  // 🔴 DM の判定は画面データの `kind` で行い、DB 側の関数も DM 以外に NULL を返す（二重）。
+  const dmIds = [screen.thread, ...screen.panes.map((pane) => pane.thread)]
+    .filter((thread): thread is ChatThreadDetailView => thread !== null && thread.kind === 'DM')
+    .map((thread) => thread.id);
+  if (dmIds.length === 0) return screen;
+  return { ...screen, peerReadMessageIds: await readDmPeerReadMessageIds(ctx, dmIds) };
+}
+
+async function readChatScreenInTenant(
+  ctx: AuthenticatedTenantCtx,
+  input: Parameters<typeof readChatScreen>[1],
+): Promise<ChatScreenData> {
   return withTenant(ctx, async (db) => {
     // ✅ 2026-10-14（レビュー指摘）: 木を読むときはページ単位の一覧を読まない（画面は木しか使わず、
     //    読んでも捨てるだけになる）。`threads` は空のページで返す。
-    const tree = input.tree === undefined ? null : await readThreadTree(ctx, db, input.tree);
+    const treeRead = input.tree === undefined ? null : await readThreadTree(ctx, db, input.tree);
+    const tree = treeRead?.tree ?? null;
+    const people = treeRead === null ? null : await readPeople(ctx, db, treeRead.companyKeyOf);
     const threads: ChatThreadListView =
       tree === null ? await readThreadPage(ctx, db, input.threadsQuery) : { items: [], nextCursor: null };
     if (input.threadId === null) {
@@ -575,6 +642,8 @@ export async function readChatScreen(
         tree,
         lastReadMessageIds: {},
         threadPrefs: {},
+        people,
+        peerReadMessageIds: {},
       };
     }
     const thread = await readThreadDetail(ctx, db, input.threadId);
@@ -588,6 +657,8 @@ export async function readChatScreen(
         tree,
         lastReadMessageIds: {},
         threadPrefs: {},
+        people,
+        peerReadMessageIds: {},
       };
     }
     const messages = await readMessagePage(ctx, db, input.threadId, input.messagesQuery);
@@ -609,7 +680,7 @@ export async function readChatScreen(
     const lastReadMessageIds = Object.fromEntries(openIds.map((id) => [id, positions.get(id)?.id ?? null]));
     const prefs = await readThreadPrefs(db, openIds);
     const threadPrefs = Object.fromEntries(openIds.map((id) => [id, prefs.get(id) ?? { pinned: false, muted: false }]));
-    return { threads, thread, messages, requestedThreadMissing: false, panes, tree, lastReadMessageIds, threadPrefs };
+    return { threads, thread, messages, requestedThreadMissing: false, panes, tree, lastReadMessageIds, threadPrefs, people, peerReadMessageIds: {} };
   });
 }
 

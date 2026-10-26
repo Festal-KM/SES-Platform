@@ -1,3 +1,4 @@
+import { ChatResizablePane } from './chat-resizable-pane';
 // apps/web/app/(main)/chat/chat-screen.render.test.tsx
 // `S-031` チャットの 3 コンポーネント（`ChatThreadList` / `ChatConversation` / `ChatThreadPanel`）の
 // 描画テスト（`docs/04` §S-031 / `F-038` / `BR-44` / `U-10` / `CLAUDE.md` §13.3）。
@@ -261,22 +262,26 @@ describe('🔴 ③: md 未満は「一覧 → 会話」の切替であって遮�
     // 🔴 ✅ 2026-10-13: `overflow-hidden`（器の角丸で中身を切る指定）は**畳みではない**ので
     //    除く。`\bhidden\b` は `overflow-hidden` にも当たるため、前が `-` の出現を外す。
     const withHidden = [...page.matchAll(/'([^']*(?<![-\w])hidden\b[^']*)'/g)].map((match) => match[1]);
-    // 走査が空振りしていない（`md` 未満の畳みが現に 4 箇所ある: 一覧の器と会話の器、
-    // ✅ 2026-10-14 から右に並べた会話の器とドラッグの受け口）。
-    expect(withHidden).toHaveLength(4);
+    // 走査が空振りしていない（`md` 未満の畳みが現に 5 箇所ある: 一覧の器と会話の器、
+    // ✅ 2026-10-14 から右に並べた会話の器とドラッグの受け口、✅ 2026-10-19 から左の絞り込みの列）。
+    expect(withHidden).toHaveLength(5);
     for (const classes of withHidden) {
       // 🔴 戻し方は `md:block` でも `md:flex` でもよい（**見えるようになること**が条件であり、
       //    `display` の値は器の中身が決める）。✅ 2026-10-13: 会話の器は縦 3 段になったので `md:flex`。
       expect(classes, `${classes} が md で戻っていません`).toMatch(/md:(?:block|flex)\b/);
     }
+    // スクロールの連鎖を止め、左の列の開閉幅を追加したためクラスの期待値も更新する。
     // 🔴 一覧の器（選択中）は畳むが `md` で戻る。
-    expect(page).toContain("'hidden md:block md:w-80 md:shrink-0 md:border-r md:border-border'");
+    // ✅ 2026-10-22: `md` 以上は器の中だけでスクロールする（`md:overflow-y-auto`）。
+    expect(page).toContain("'hidden bg-bg md:block md:w-96 md:shrink-0 md:overflow-y-auto overscroll-contain md:border-r md:border-border'");
     // 🔴 会話の器（未選択）は `md` 未満では一覧が全幅なので畳む。こちらも `md` で戻る。
-    expect(page).toContain("'hidden min-w-0 flex-1 md:flex md:flex-col'");
+    expect(page).toContain("'hidden min-h-0 min-w-0 flex-1 md:flex md:flex-col'");
     // ✅ 2026-10-14: 右に並べた会話とドラッグの受け口は `md` 未満では出さない（モバイルは 1 列の切替）。
     //    🔴 どちらも `md` で戻る（遮断ではない）。
-    expect(page).toContain("'hidden min-w-80 flex-1 flex-col border-l border-border md:flex'");
+    expect(page).toContain("'hidden min-h-0 min-w-0 flex-1 flex-col overscroll-contain border-l border-border md:flex'");
     expect(page).toContain("'hidden md:flex'");
+    // ✅ 2026-10-19（v2）: 左の絞り込みの列も、会話を開いたときだけ畳み、`md` で戻る。
+    expect(page).toContain("'hidden shrink-0 bg-bg-subtle md:block md:w-44 md:data-[collapsed=true]:w-16 md:overflow-y-auto overscroll-contain'");
   });
 
   it('🔴 一覧そのものに `hidden` の表示ユーティリティが無い（部品側で遮断していない）', () => {
@@ -463,13 +468,15 @@ describe('⑧: 連続した発言のまとめ・時刻・見出し（2026-10-13�
     sentAt: '2026-09-30T02:03:00.000Z', // MESSAGE_OTHER の 3 分後、同じ人
   };
 
-  it('同じ人の 5 分以内の続きは名前を出さず、アバターは見えなくする（幅は残す）', () => {
+  it('同じ人の 5 分以内の続きは名前を出さず、アバターは出さない（幅は残す）', () => {
     const html = renderConversation({ initialMessages: [MESSAGE_OWN, MESSAGE_OTHER, FOLLOW_UP] });
     expect(html).toContain(`data-testid="chat-message-sender-${MESSAGE_OTHER.id}"`);
     expect(html).not.toContain(`data-testid="chat-message-sender-${FOLLOW_UP.id}"`);
     const li = new RegExp(`<li[^>]*data-testid="chat-message-${FOLLOW_UP.id}"[^>]*>(.*?)</li>`, 's').exec(html);
     expect((li as RegExpExecArray)[0]).toContain('data-continued="true"');
-    expect((li as RegExpExecArray)[1]).toContain('invisible');
+    // ✅ 2026-10-22: 見えないアバター（高さも取る）をやめ、幅だけの詰め物にした（続きの行を詰める）。
+    expect((li as RegExpExecArray)[1]).toContain('w-9 shrink-0');
+    expect((li as RegExpExecArray)[1]).not.toContain('app-header-avatar');
     // 🔴 読み上げでは誰の発言かを残す。
     expect((li as RegExpExecArray)[1]).toContain(`sr-only">${String(FOLLOW_UP.senderName)}`);
   });
@@ -627,26 +634,30 @@ describe('⑪: 会社ごとの木・検索・並べ替え（2026-10-14、チャ�
     { sort: 'recent', q: null },
   );
 
-  it('会社とのチャットが親、その会社の案件スレッドが子（字下げ）として同じまとまりに並ぶ', () => {
+  // ✅ 2026-10-19（v2・紺野「くっそ醜い」）: 字下げをやめ、1 行 = 1 会話。種類はアバターの形と色・小さな札で分ける。
+  it('会社チャットと案件スレッドは字下げせず平らに並び、形と札で見分けられる', () => {
     const html = renderThreadList({ groups });
-    const groupA = /<li data-testid="chat-thread-group-0">([\s\S]*?)<\/ul><\/li>/.exec(html)?.[1] ?? '';
-    expect(groupA).toContain(`chat-thread-row-${CHAT_A}`);
-    expect(groupA).toContain(`chat-thread-row-${THREAD_PROJECT}`);
-    // 子（スレッド）だけが字下げされる。
-    expect(classTokensOf(html, `chat-thread-row-${THREAD_PROJECT}`)).toContain('pl-6');
-    expect(classTokensOf(html, `chat-thread-row-${CHAT_A}`)).not.toContain('pl-6');
-    // 呼び方: 会社とのやり取り = チャット / 案件ごと = スレッド。
-    expect(html).toContain(t('chat.thread.kind.COMPANY'));
-    expect(html).toContain(t('chat.thread.kind.PROJECT'));
+    expect(html).toContain(`chat-thread-row-${CHAT_A}`);
+    expect(html).toContain(`chat-thread-row-${THREAD_PROJECT}`);
+    expect(classTokensOf(html, `chat-thread-row-${THREAD_PROJECT}`)).not.toContain('pl-6');
+    // ✅ 2026-10-20: 種類はアバターの塗り（案件 = 橙の「#」、会社 = 墨色の角丸）で分ける。会社・案件の行に札を付けない。
+    const projectRow = new RegExp(`<li data-testid="chat-thread-row-${THREAD_PROJECT}"[\\s\\S]*?</li>`).exec(html)?.[0] ?? '';
+    const companyRow = new RegExp(`<li data-testid="chat-thread-row-${CHAT_A}"[\\s\\S]*?</li>`).exec(html)?.[0] ?? '';
+    expect(projectRow).toContain('bg-warning');
+    expect(projectRow).toContain('>#<');
+    expect(companyRow).toContain('bg-fg');
+    expect(projectRow).not.toContain(t('chat.tag.external'));
+    expect(companyRow).not.toContain(t('chat.tag.external'));
+    // 「チャット / スレッド」の文字は出さない（見た目で分ける）。
+    expect(html).not.toContain(`>${t('chat.thread.kind.COMPANY')}<`);
   });
 
-  it('チャットがまだ無い会社も、スレッドの親として名前だけを出す（押せる行を作らない）', () => {
+  it('チャットがまだ無い会社のスレッドも、そのまま 1 行で出る（親の見出しを作らない）', () => {
     const html = renderThreadList({
       groups: buildThreadTree([{ groupKey: 'X', item: THREAD_ROWS[0] as ChatThreadListItem }], { sort: 'recent', q: null }),
     });
-    expect(html).toContain('data-testid="chat-thread-group-header-0"');
-    expect(html).toContain(t('chat.tree.noChat'));
-    expect(html).not.toMatch(/<a [^>]*data-testid="chat-thread-group-header-0"/);
+    expect(html).toContain(`chat-thread-row-${(THREAD_ROWS[0] as ChatThreadListItem).id}`);
+    expect(html).not.toContain('chat-thread-group-header-');
   });
 
   it('検索は GET のフォームで、開いている会話（thread / pane）を引き継ぐ', () => {
@@ -680,23 +691,23 @@ describe('⑪: 会社ごとの木・検索・並べ替え（2026-10-14、チャ�
   });
 });
 
-describe('⑬: 要返信の印と返信が早い取引先（2026-10-14、チャットレーン）', () => {
+describe('⑬: 返信が早い取引先（2026-10-14、チャットレーン）。要返信の印は 2026-10-22 に外した', () => {
   const groups = buildThreadTree(
     THREAD_ROWS.map((item) => ({ groupKey: item.counterpartyName ?? item.id, item })),
     { sort: 'recent', q: null, fastReplyKeys: new Set(['架空パートナー A']) },
   );
 
-  it('要返信のスレッドにだけ印を付ける', () => {
-    const html = renderThreadList({ groups, awaitingReplyIds: [THREAD_PROJECT] });
-    expect(html).toContain(`data-testid="chat-thread-awaiting-${THREAD_PROJECT}"`);
-    expect(html).not.toContain(`chat-thread-awaiting-${THREAD_COMPANY}`);
-    expect(html).toContain(t('chat.thread.awaitingReply'));
+  it('✅ 2026-10-22（紺野）: 赤い「要返信」の札をどの行にも出さない', () => {
+    const html = renderThreadList({ groups });
+    expect(html).not.toContain('chat-thread-awaiting-');
+    expect(html).not.toContain(t('chat.thread.awaitingReply'));
   });
 
   it('🔴 返信が早い会社にだけ良い印を付け、他の会社には何も出さない（遅いとは書かない）', () => {
     const html = renderThreadList({ groups });
-    const fast = groups.findIndex((group) => group.fastReply);
-    expect(html).toContain(`data-testid="chat-thread-group-fast-${String(fast)}"`);
+    const fast = groups.find((group) => group.fastReply);
+    const representative = (fast?.chat ?? fast?.threads[0])?.id ?? '';
+    expect(html).toContain(`data-testid="chat-thread-fast-${representative}"`);
     expect(html.split(t('chat.tree.fastReply')).length - 1).toBe(1);
     expect(html).not.toMatch(/遅い|順位|ランキング/);
   });
@@ -760,6 +771,15 @@ describe('⑯: リアクション（2026-10-16、チャットレーン）', () =
     expect(html).toContain(`data-testid="chat-message-reaction-add-${MESSAGE_OTHER.id}"`);
   });
 
+  it('✅ 2026-10-22: 絵文字のリアクションは絵文字 + 件数で出し、読み上げ名を aria-label に持つ（閲覧専用も絵文字で出す）', () => {
+    const withEmoji = { ...MESSAGE_OTHER, reactions: [{ reaction: 'THUMBS_UP' as const, count: 2, mine: true }] };
+    const html = renderConversation({ initialMessages: [withEmoji] });
+    const tag = new RegExp(`<button [^>]*data-testid="chat-message-reaction-${MESSAGE_OTHER.id}-THUMBS_UP"[^>]*>(.*?)</button>`, 's').exec(html);
+    expect(tag?.[0] ?? '').toContain(`aria-label="${t('chat.reaction.THUMBS_UP')} 2"`);
+    expect(tag?.[1] ?? '').toContain('👍 2');
+    expect(renderConversation({ initialMessages: [withEmoji], canPost: false })).toContain('👍 2');
+  });
+
   it('🔴 閲覧専用には件数を文字で出すだけ（押せないボタン・選択欄を描かない）', () => {
     const html = renderConversation({ initialMessages: [WITH_REACTIONS], canPost: false });
     expect(html).toMatch(new RegExp(`<span [^>]*data-testid="chat-message-reaction-${MESSAGE_OTHER.id}-OK"`));
@@ -799,10 +819,12 @@ describe('⑱: ピン留め・ミュート（2026-10-16、チャットレーン�
   });
 
   it('ミュートした会話は未読を強調しない（件数は無彩色・名前は太字にしない）', () => {
+    // ✅ 2026-10-22（紺野「未読はアイコン横に赤丸」）: 未読はアバターの右上の赤丸。ミュート中は灰色。
     const muted = renderThreadList({ unreadCounts: { [THREAD_PROJECT]: 2 }, mutedIds: [THREAD_PROJECT] });
-    expect(classTokensOf(muted, `chat-thread-unread-${THREAD_PROJECT}`)).toContain('bg-neutral-bg');
+    expect(classTokensOf(muted, `chat-thread-unread-${THREAD_PROJECT}`)).toContain('bg-fg-muted');
+    expect(classTokensOf(muted, `chat-thread-unread-${THREAD_PROJECT}`)).not.toContain('bg-danger');
     const loud = renderThreadList({ unreadCounts: { [THREAD_PROJECT]: 2 } });
-    expect(classTokensOf(loud, `chat-thread-unread-${THREAD_PROJECT}`)).toContain('bg-brand-bg');
+    expect(classTokensOf(loud, `chat-thread-unread-${THREAD_PROJECT}`)).toContain('bg-danger');
   });
 });
 
@@ -810,5 +832,27 @@ describe('⑲: 会話の書き出し（2026-10-16、チャットレーン）', (
   it('投稿できる人には「書き出す」を出し、閲覧専用には出さない（ダウンロード不可）', () => {
     expect(renderConversation()).toContain(`data-testid="chat-thread-export-${THREAD_PROJECT}"`);
     expect(renderConversation({ canPost: false })).not.toContain('chat-thread-export-');
+  });
+});
+
+// 並べた会話では PC でも操作を畳み、名前に幅を残す。
+describe('並べた会話の見出しとスクロール', () => {
+  it('並べたときの操作は md でも自動展開しない', () => {
+    const html = renderConversation({ closeHref: '/chat' });
+    expect(classTokensOf(html, `chat-header-actions-${THREAD_PROJECT}`)).not.toContain('md:flex');
+    expect(classTokensOf(html, `chat-header-menu-${THREAD_PROJECT}`)).not.toContain('md:hidden');
+    expect(classTokensOf(html, 'chat-messages-scroll')).toContain('overscroll-contain');
+  });
+});
+
+describe('会話の幅の調節', () => {
+  it('並べた会話にだけキーボード操作できる境目を描く', () => {
+    const html = renderToStaticMarkup(<ChatResizablePane enabled storageKey="primary" resizeLabel={t('chat.pane.resize')} className="flex">{null}</ChatResizablePane>);
+    expect(html).toContain('role="separator"');
+    expect(html).toContain('tabindex="0"');
+    expect(html).toContain('aria-orientation="vertical"');
+    expect(html).toContain('aria-valuemin="320"');
+    expect(html).toContain('aria-valuemax="1600"');
+    expect(renderToStaticMarkup(<ChatResizablePane enabled={false} storageKey="primary" resizeLabel={t('chat.pane.resize')} className="flex">{null}</ChatResizablePane>)).not.toContain('role="separator"');
   });
 });

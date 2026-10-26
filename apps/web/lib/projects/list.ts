@@ -40,7 +40,10 @@
 import {
   PROJECT_LIST_ORDER_BY,
   projectSearchWhere,
+<<<<<<< HEAD
   // ✅ 2026-10-16: 開始時期の区分 → 日付の範囲（現在時刻は引数で受け取る純粋関数）。
+=======
+>>>>>>> origin/main
   resolveStartWindow,
   withTenant,
   type AuthenticatedTenantCtx,
@@ -351,6 +354,24 @@ function toSharedView(row: ProjectListRow, summary: MustSummary | undefined): Pr
  * 🔴 **並び順は決定的**（`PROJECT_LIST_ORDER_BY`。`F-015 AC-3`）。
  * 🔴 応答の型は `ctx.partnerCompanyId`（🔴 認証コンテキスト）だけで決まる。リクエスト入力は見ない。
  */
+/**
+ * ✅ 2026-10-16（CI の分離テスト `projects.test.ts`「開始時期の区分で絞れる」で発覚）: 開始時期の区分
+ * （`startWithin`）を日付の範囲（`startFrom` / `startTo`）に直してから述語に渡す。
+ * 🔴 これが無いと、区分を選んでも**絞り込みが黙って効かない**（`resolveStartWindow` がどこからも呼ばれていなかった）。
+ * 🔴 「今日」は日本時間の日付で決める（`resolveStartWindow` は UTC の年月日として読むので、JST の日付を UTC の 0 時で渡す）。
+ * 🔴 区分が指定されたときは区分が勝つ（旧 `startFrom` の URL は区分が無いときだけ効く）。
+ */
+export function withStartWindow(query: ProjectListQuery, now: Date): ProjectListQuery {
+  if (query.startWithin === undefined) return query;
+  const range = resolveStartWindow(query.startWithin, new Date(`${toJstIsoDay(now)}T00:00:00.000Z`));
+  // 🔴 旧 `startFrom` は区分の範囲で上書きする（区分が無い範囲の端は `undefined` で消す）。
+  return {
+    ...query,
+    startFrom: range.startFrom,
+    ...(range.startTo === undefined ? {} : { startTo: range.startTo }),
+  } as ProjectListQuery;
+}
+
 export async function listProjects(
   ctx: AuthenticatedTenantCtx,
   query: ProjectListQuery,
@@ -366,11 +387,9 @@ export async function listProjects(
   //    呼び手が増えても落ちない。
   // 🔴 **現在時刻をこの 1 行でだけ読む** —— 一覧と `COUNT` が同じ `where` を使うので、
   //    日付の境目で件数と行がずれない（`resolveStartWindow` は純粋関数である）。
-  const startRange =
-    query.startWithin === undefined ? null : resolveStartWindow(query.startWithin, new Date());
   // 🔴 `where` を 1 つの値にしておくのは、一覧と `COUNT` で書き分けられないようにするためである。
   //    🔴 述語の出所は `projectSearchWhere`（`@ses/db` の `search/projects.ts`）の 1 本だけである。
-  const where = projectSearchWhere(startRange === null ? query : { ...query, ...startRange });
+  const where = projectSearchWhere(withStartWindow(query, new Date()));
   const isHost = ctx.partnerCompanyId === null;
 
   return withTenant(ctx, async (db) => {

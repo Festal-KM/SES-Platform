@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>チャット画面 v2 イメージ</title>
+<!-- 2026-10-19 紺野の指摘（一覧が醜い・チャット/スレッドを見た目で分けたい・連絡先は左に割り込む・直感的でない）を受けた案。実装ではない。名前は架空。 -->
+<style>
+  :root { --fg:#0f172a; --muted:#475569; --ph:#94a3b8; --subtle:#f1f5f9; --border:#e2e8f0; --brand:#2563eb; --brandbg:#eff6ff; --nav:#10254a; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui,-apple-system,'Hiragino Sans','Noto Sans JP',sans-serif; color:var(--fg); background:var(--subtle); font-size:14px; }
+  .app { display:grid; grid-template-columns: 180px 190px 330px 1fr; height: 900px; }
+  .nav { background:var(--nav); color:#cbd5e1; padding:16px 12px; font-size:15px; }
+  .nav .logo { color:#fff; font-weight:700; font-size:18px; margin-bottom:22px; }
+  .nav div.i { padding:9px 12px; border-radius:8px; margin-bottom:2px; }
+  .nav div.on { background:#1e3a8a; color:#fff; }
+  /* ① 左の絞り込み列（Lark の「フィルタ」） */
+  .rail { background:#e8edf3; padding:12px 8px; font-size:13px; }
+  .rail .h { font-size:11px; color:var(--muted); padding:10px 8px 4px; }
+  .rail .r { display:flex; align-items:center; gap:8px; padding:7px 8px; border-radius:8px; color:var(--fg); }
+  .rail .r.on { background:#fff; color:var(--brand); }
+  .rail .r .c { margin-left:auto; font-size:11px; color:var(--muted); }
+  .rail .r .c.b { color:#fff; background:var(--brand); border-radius:999px; padding:0 6px; }
+  .ico { width:18px; height:18px; display:inline-flex; align-items:center; justify-content:center; font-size:11px; border-radius:5px; color:#fff; flex-shrink:0; }
+  /* ② 会話の一覧 */
+  .list { background:var(--subtle); border-left:1px solid var(--border); display:flex; flex-direction:column; }
+  .search { padding:12px; display:flex; gap:8px; }
+  .search input { flex:1; border:1px solid var(--border); border-radius:8px; padding:8px 10px; font:inherit; background:#fff; }
+  .newbtn { border:none; background:var(--brand); color:#fff; border-radius:8px; padding:0 12px; font:inherit; font-size:13px; }
+  .fav { display:grid; grid-template-columns:repeat(5,1fr); gap:6px 2px; padding:0 10px 10px; }
+  .fav div { text-align:center; font-size:10px; color:var(--muted); }
+  .row { display:flex; gap:10px; padding:9px 10px; margin:0 6px; border-radius:8px; }
+  .row.on { background:var(--brandbg); }
+  .row .m { flex:1; min-width:0; }
+  .row .t { display:flex; gap:6px; align-items:center; }
+  .row .n { font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .row .n.b { font-weight:700; }
+  .row .time { margin-left:auto; font-size:11px; color:var(--ph); flex-shrink:0; }
+  .row .s { display:flex; gap:6px; align-items:center; font-size:12px; color:var(--muted); margin-top:2px; }
+  .row .s .x { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1; }
+  .pill { background:var(--brand); color:#fff; border-radius:999px; font-size:10px; padding:0 6px; line-height:16px; flex-shrink:0; }
+  .tag { font-size:10px; border-radius:4px; padding:0 5px; line-height:16px; flex-shrink:0; }
+  .tag.ext { background:#dbeafe; color:#1d4ed8; }
+  .tag.topic { background:#fef3c7; color:#92400e; }
+  .tag.wait { background:#fee2e2; color:#b91c1c; }
+  /* アバターの形で種類を分ける */
+  .av { width:38px; height:38px; display:inline-flex; align-items:center; justify-content:center; color:#fff; font-size:14px; flex-shrink:0; position:relative; }
+  .person { border-radius:999px; }
+  .group { border-radius:999px; background:#16a34a !important; }
+  .company { border-radius:9px; background:#334155 !important; }
+  .topic { border-radius:9px; background:#d97706 !important; font-weight:700; }
+  .a1{background:#2563eb}.a2{background:#0f766e}.a3{background:#be123c}.a4{background:#7c3aed}
+  .online { position:absolute; right:-1px; bottom:-1px; width:10px; height:10px; border-radius:999px; background:#22c55e; border:2px solid var(--subtle); }
+  /* ③ 会話 */
+  .conv { background:#fff; border-left:1px solid var(--border); display:flex; flex-direction:column; }
+  .head { padding:14px 20px; border-bottom:1px solid var(--border); display:flex; gap:10px; align-items:center; }
+  .head .nm { font-weight:600; font-size:15px; }
+  .head .sub { font-size:12px; color:var(--muted); }
+  .msgs { padding:20px; display:flex; flex-direction:column; gap:14px; }
+  .b { background:var(--subtle); border-radius:10px; padding:8px 14px; max-width:460px; }
+  .mine { align-self:flex-end; background:var(--brandbg); }
+  .num { display:inline-flex; width:20px; height:20px; border-radius:999px; background:#dc2626; color:#fff; font-size:11px; font-weight:700; align-items:center; justify-content:center; margin-left:4px; vertical-align:middle; }
+  .legend { margin:14px; background:#fff; border-radius:12px; padding:14px 18px; font-size:13px; line-height:1.9; }
+  .legend h2 { font-size:15px; margin:0 0 6px; }
+  .legend .k { display:inline-flex; gap:6px; align-items:center; margin-right:18px; }
+  .legend .k .av { width:22px; height:22px; font-size:10px; }
+  .contacts { background:#fff; border-left:1px solid var(--border); }
+</style>
+</head>
+<body>
+<div class="app">
+  <nav class="nav">
+    <div class="logo">BizOrch</div>
+    <div class="i">ホーム</div><div class="i on">チャット</div><div class="i">カレンダー</div><div class="i">自社案件管理</div><div class="i">自社人材管理</div><div class="i">パートナー一覧</div><div class="i">提案</div>
+  </nav>
+
+  <!-- ① 左の絞り込み列 -->
+  <aside class="rail">
+    <div class="r on"><span class="ico" style="background:#2563eb">全</span>すべて<span class="c b">5</span></div>
+    <div class="r"><span class="ico" style="background:#64748b">未</span>未読<span class="c">5</span></div>
+    <div class="r"><span class="ico" style="background:#dc2626">返</span>要返信<span class="c">3</span></div>
+    <div class="r"><span class="ico" style="background:#2563eb;border-radius:999px">人</span>DM</div>
+    <div class="r"><span class="ico" style="background:#16a34a;border-radius:999px">G</span>グループ</div>
+    <div class="h">取引先 <span class="num">2</span></div>
+    <div class="r"><span class="ico" style="background:#334155">株</span>ダミーデルタ<span class="c b">2</span></div>
+    <div class="r"><span class="ico" style="background:#334155">株</span>ダミーフォックス</div>
+    <div class="r"><span class="ico" style="background:#334155">株</span>ダミーゴルフ</div>
+    <div class="h">案件スレッド <span class="num">3</span></div>
+    <div class="r"><span class="ico" style="background:#d97706">#</span>金融系 Web 基盤</div>
+    <div class="r"><span class="ico" style="background:#d97706">#</span>物流システム刷新</div>
+    <div class="h">連絡先 <span class="num">4</span></div>
+    <div class="r"><span class="ico" style="background:#0f766e;border-radius:999px">＋</span>連絡先を開く</div>
+  </aside>
+
+  <!-- ② 会話の一覧（字下げしない・1 行 1 会話） -->
+  <section class="list">
+    <div class="search"><input placeholder="人・会社・案件・発言を検索"><button class="newbtn">＋ 新規</button></div>
+    <div style="font-size:11px;color:var(--muted);padding:0 14px 6px">お気に入り</div>
+    <div class="fav">
+      <div><span class="av person a1">例<i class="online"></i></span><br>例示 七海</div>
+      <div><span class="av company">デ</span><br>デルタ</div>
+      <div><span class="av topic">#</span><br>金融Web</div>
+      <div><span class="av group">G</span><br>相談</div>
+      <div><span class="av person a3">仮</span><br>仮名 花子</div>
+    </div>
+
+    <div class="row on"><span class="av person a1">例<i class="online"></i></span><div class="m"><div class="t"><span class="n b">例示 七海</span><span class="tag ext">外部</span><span class="time">14:19</span></div><div class="s"><span class="x">候補日を3つお送りします</span><span class="pill">2</span></div></div></div>
+    <div class="row"><span class="av company">株</span><div class="m"><div class="t"><span class="n b">株式会社ダミーデルタ</span><span class="tag ext">外部</span><span class="time">10/16</span></div><div class="s"><span class="x">稼働開始日の件、承知しました</span><span class="pill">1</span></div></div></div>
+    <div class="row"><span class="av topic">#</span><div class="m"><div class="t"><span class="n">金融系 Web 基盤</span><span class="tag topic">案件</span><span class="time">10/15</span></div><div class="s"><span class="x">ダミーデルタ ・ 面談の結果を共有します</span></div></div></div>
+    <div class="row"><span class="av group">G</span><div class="m"><div class="t"><span class="n">案件の相談（3人）</span><span class="time">10/15</span></div><div class="s"><span class="x">模擬 三郎: 明日の朝会で相談させてください</span></div></div></div>
+    <div class="row"><span class="av company">株</span><div class="m"><div class="t"><span class="tag wait">要返信</span><span class="n">株式会社ダミーフォックス</span><span class="time">10/9</span></div><div class="s"><span class="x">社内で候補日を確認し、明日までに</span></div></div></div>
+    <div class="row"><span class="av topic">#</span><div class="m"><div class="t"><span class="n">物流システム刷新</span><span class="tag topic">案件</span><span class="time">10/9</span></div><div class="s"><span class="x">ダミーフォックス ・ 了解しました</span><span class="pill">2</span></div></div></div>
+  </section>
+
+  <!-- ③ 会話 -->
+  <section class="conv">
+    <div class="head"><span class="av person a1">例</span><div><div class="nm">例示 七海 <span class="tag ext">外部</span></div><div class="sub">株式会社ダミーデルタ・営業 ／ DM（2 人だけが読めます）</div></div></div>
+    <div class="msgs">
+      <div class="b">先日の案件、候補の方の稼働可能時期を確認しました。11月からいけます。</div>
+      <div class="b mine">ありがとうございます。面談の候補日をお送りします。</div>
+      <div class="b">承知しました。候補日を3つお送りします。</div>
+    </div>
+  </section>
+</div>
+
+<div class="legend">
+  <h2>この案のポイント</h2>
+  <div><b>見た目で種類が分かる（アイコンの形と色）</b>：
+    <span class="k"><span class="av person a1">例</span>人（DM）= 丸・顔の色</span>
+    <span class="k"><span class="av group">G</span>グループ = 丸・緑</span>
+    <span class="k"><span class="av company">株</span>取引先の会社 = 角丸・紺</span>
+    <span class="k"><span class="av topic">#</span>案件スレッド = 角丸・橙「#」</span>
+    ＋ 取引先が相手なら「外部」、案件スレッドなら「案件」の小さな札</div>
+  <div><b>一覧は字下げしない</b>：1 行 = 1 会話。スレッドは 2 段目に「ダミーデルタ ・ …」と親の会社名を出す。会社でまとめたいときは左の列で会社を押す</div>
+  <div><b>① 左の絞り込み列（Lark の「フィルタ」）</b>：すべて／未読／要返信／DM／グループ／取引先ごと／案件ごと。<b>連絡先</b>もここ。押すと一覧の列が連絡先に入れ替わる（左に割り込む）</div>
+  <div><b>「＋ 新規」</b>：検索欄の横。押すと「DM を始める／グループを作る」</div>
+  <div>「右に並べる」は一覧から消し、行を右へドラッグするか、会話の見出しのボタンで並べる</div>
+</div>
+</body>
+</html>

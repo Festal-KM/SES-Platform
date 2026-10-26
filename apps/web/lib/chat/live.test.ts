@@ -54,4 +54,15 @@ describe('withLatestReactions（2026-10-16）', () => {
     expect(next).toHaveLength(2);
     expect(withLatestReactions(current, [A, B])).toBe(current);
   });
+
+  it('🔴 2026-10-26（Codex のレビュー）: 公開を取り消された案件のカードは、開いたままの画面でも消える（名前も ID も残さない）', async () => {
+    const { withLatestReactions } = await import('./live');
+    const card = { visible: true, id: 'p1', name: '金融系 Web 基盤', status: 'OPEN' } as unknown as NonNullable<typeof A.attachedProject>;
+    const shown = { ...A, attachedProject: card };
+    const hidden = { ...A, attachedProject: { visible: false } as NonNullable<typeof A.attachedProject> };
+    const next = withLatestReactions([shown], [hidden]);
+    expect(next[0]?.attachedProject).toEqual({ visible: false });
+    expect(JSON.stringify(next)).not.toContain('金融系 Web 基盤');
+    expect(JSON.stringify(next)).not.toContain('"p1"');
+  });
 });

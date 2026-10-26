@@ -110,7 +110,10 @@ describe('#2 全表にポリシーが 1 つ以上ある（docs/05 §4.7 #2）', 
     // 🔴 T-11-02 で `tenant_quota_overrides` を 1 表足した（docs/02 F-057 / docs/05 §6.9 API-A6 / migration 20260924000000）。
     // 🔴 2026-10-16 チャットレーンで `chat_read_states` を 1 表足した（CLAUDE.md §4.1 `ChatReadState` / C7 SELF / migration 20261016000000）。
     // 🔴 2026-10-16 チャットレーンで `chat_message_reactions` を 1 表足した（migration 20261016010000）。
-    expect(tables).toHaveLength(59);
+    // 🔴 2026-10-19 チャットレーンで `chat_user_statuses` を 1 表足した（ひとこと状態。書き = 本人 / 読み = users の C8 に連動 / migration 20261019020000）。
+    // 🔴 2026-10-22 チャットレーンで `chat_saved_messages`（保存済み。読み = 本人の行 かつ 発言が読める / migration 20261022010000）と
+    //    `chat_message_templates`（自分の定型文。C7 SELF / migration 20261022020000）の 2 表を足した。
+    expect(tables).toHaveLength(62);
 
     const policies = await readPolicies(db);
     const withPolicy = new Set(policies.map((policy) => policy.table));
@@ -367,7 +370,7 @@ describe('#10 probe ロールの最小権限（docs/05 §4.7 #10 / §4.4.1 / §8
   it('probe ロールはいずれもテーブル単位の GRANT を持たない（列単位だけを持つ）', async () => {
     const rows = await migrator.$queryRaw<Array<{ grantee: string; table_name: string }>>`
       SELECT grantee, table_name FROM information_schema.role_table_grants
-      WHERE grantee IN ('app_share_probe', 'app_assignment_owner_probe', 'app_scan_probe', 'app_scheduler_probe', 'app_gate_probe', 'app_purge_probe')`;
+      WHERE grantee IN ('app_share_probe', 'app_assignment_owner_probe', 'app_scan_probe', 'app_scheduler_probe', 'app_gate_probe', 'app_purge_probe', 'app_thread_probe')`;
     expect(rows).toEqual([]);
   });
 

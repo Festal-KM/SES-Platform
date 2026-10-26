@@ -28,9 +28,12 @@ import {
 } from '@ses/ui';
 import { formatDateTimeJst } from '../../../lib/format/datetime';
 import type { ChatThreadDetailView } from '../../../lib/chat/views';
+import { ChatOpenDmButton } from './chat-open-dm-button';
 
 export type ChatThreadPanelProps = {
   readonly thread: ChatThreadDetailView;
+  /** ✅ 2026-10-19（#128）: 投稿できる人にだけ「DM を開く」を出す（閲覧専用には描かない）。 */
+  readonly canPost?: boolean;
 };
 
 /** Key-Value の 1 行（30px）。🔴 キーの列は 124px 固定（値の左端が縦に通る）。 */
@@ -38,7 +41,57 @@ const ROW_CLASSES = `flex items-center gap-2 border-t border-border-row ${PANEL_
 const KEY_CLASSES = `shrink-0 text-cell text-fg-muted ${PANEL_KEY_WIDTH_CLASS}`;
 const VALUE_CLASSES = 'min-w-0 flex-1 text-body text-fg';
 
-export function ChatThreadPanel({ thread }: ChatThreadPanelProps) {
+/** ✅ 2026-10-19（#128 §7.1 ①）: メンバーの名前の下に出すひとこと状態。無ければ描かない。 */
+function statusLine(userId: string, status: string | null | undefined) {
+  if (status == null || status === '') return null;
+  return (
+    <span className="truncate text-xs text-fg-placeholder" data-testid={`chat-panel-member-status-${userId}`}>
+      {status}
+    </span>
+  );
+}
+
+export function ChatThreadPanel({ thread, canPost = false }: ChatThreadPanelProps) {
+  // ✅ 2026-10-19（#128）: DM・グループは「誰が読めるか」（メンバー）を出す。会社の段（参加会社）は出さない。
+  if (thread.members !== undefined) {
+    return (
+      <Card data-testid="chat-panel">
+        <CardHeader>
+          <CardTitle>{t('chat.panel.heading')}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="m-0 pb-2 text-xs text-fg-muted" data-testid="chat-panel-room-note">
+            {t('chat.panel.roomNote')}
+          </p>
+          <h3 className="m-0 pb-1 text-cell font-normal text-fg-muted">{t('chat.panel.members')}</h3>
+          <ul className="m-0 flex list-none flex-col gap-1 p-0" data-testid="chat-panel-members">
+            {thread.members.map((member) => {
+              const name = member.name ?? t('chat.thread.unknownName');
+              return (
+                <li key={member.userId} data-testid={`chat-panel-member-${member.userId}`}>
+                  {canPost && !member.self ? (
+                    <ChatOpenDmButton userId={member.userId} label={`${name} ${t('chat.people.openDm')}`} failedLabel={t('chat.people.openDmFailed')}>
+                      <span className="flex min-w-0 flex-col items-start">
+                        <span className="truncate text-body text-fg">{name}</span>
+                        <span className="truncate text-xs text-fg-muted">{member.companyName ?? ''}</span>
+                        {statusLine(member.userId, member.status)}
+                      </span>
+                    </ChatOpenDmButton>
+                  ) : (
+                    <span className="flex flex-col px-3 py-1">
+                      <span className="text-body text-fg">{member.self ? `${name}（${t('chat.people.self')}）` : name}</span>
+                      <span className="text-xs text-fg-muted">{member.companyName ?? ''}</span>
+                      {statusLine(member.userId, member.status)}
+                    </span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </CardContent>
+      </Card>
+    );
+  }
   return (
     <Card data-testid="chat-panel">
       <CardHeader>

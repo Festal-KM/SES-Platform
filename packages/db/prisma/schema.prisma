@@ -137,6 +137,9 @@ model Tenant {
   messages                Message[]
   chatReadStates          ChatReadState[] // 2026-10-15 チャットレーン（既読位置。migration 20261016000000）
   chatMessageReactions    ChatMessageReaction[] // 2026-10-16 チャットレーン（リアクション。migration 20261016010000）
+  chatUserStatuses        ChatUserStatus[] // 2026-10-19 チャットレーン（ひとこと状態。migration 20261019020000）
+  chatSavedMessages       ChatSavedMessage[] // 2026-10-22 チャットレーン（保存済み。migration 20261022010000）
+  chatMessageTemplates    ChatMessageTemplate[] // 2026-10-22 チャットレーン（自分の定型文。migration 20261022020000）
   contracts               Contract[]
   contractDocuments       ContractDocument[]
   contractTemplates       ContractTemplate[]
@@ -723,6 +726,10 @@ model Project {
   //    先頭 2 列が旧 `@@index([tenantId, status, updatedAt])` を覆うので、旧索引は落とす。
   @@index([tenantId, status(sort: Desc), updatedAt(sort: Desc), startDate, id(sort: Desc)])
   @@index([tenantId, startDate])
+  // ✅ 2026-10-23（チャットレーン・紺野）: `messages.attached_project_id` の複合 FK
+  //    `(tenant_id, attached_project_id) REFERENCES projects(tenant_id, id)` の参照先（別テナントの案件を指す行を DB が拒む）。
+  //    `id` 単独の @id は残す（`Engineer` / `PartnerCompany` と同型）。
+  @@unique([tenantId, id])
   // 🔴 T-06-05: フリーワード用の trigram GIN 索引は置かない（`engineers` と同じ理由）。
   @@map("projects")
 }
@@ -1145,22 +1152,31 @@ model ReviewGate {
 model ChatThread {
   id               String    @id @default(uuid(7)) @db.Uuid
   tenantId         String    @map("tenant_id") @db.Uuid
-  /// ChatThreadKind（'PROJECT'|'COMPANY'。CHECK）
+  /// ChatThreadKind（'PROJECT'|'COMPANY'|'DM'|'GROUP'。CHECK。DM / GROUP は 2026-10-16・#128）
   kind             String
   projectId        String?   @map("project_id") @db.Uuid
-  partnerCompanyId String    @map("partner_company_id") @db.Uuid // 🔴 ホストと 1 パートナーの組み合わせに限る
+  /// 🔴 ホストと 1 パートナーの組み合わせに限る。NULL = 社内だけの部屋（DM / GROUP のみ。CHECK）
+  partnerCompanyId String?   @map("partner_company_id") @db.Uuid
+  /// 🔴 人の段（CLAUDE.md §3.1 経路 3）。DM / GROUP の読み手。会社グループ・スレッドは空の配列（CHECK）
+  memberUserIds    String[]  @default([]) @map("member_user_ids") @db.Uuid
+  /// GROUP の名前（DM は持たない）
+  title            String?
+  /// DM の 2 人の user_id を小さい順に ':' で連結（同じ 2 人の DM は 1 つ）
+  dmKey            String?   @map("dm_key")
+  createdByUserId  String?   @map("created_by_user_id") @db.Uuid
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   lastMessageAt    DateTime? @map("last_message_at") @db.Timestamptz(3)
 
   tenant             Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   project            Project?            @relation(fields: [projectId], references: [id], onDelete: Restrict)
   // 🔴 Issue #33 / docs/05 §3.3.1（A-9）: 複合 FK。
-  partnerCompany     PartnerCompany      @relation(fields: [tenantId, partnerCompanyId], references: [tenantId, id], onDelete: Restrict)
+  partnerCompany     PartnerCompany?     @relation(fields: [tenantId, partnerCompanyId], references: [tenantId, id], onDelete: Restrict)
   threadParticipants ThreadParticipant[]
   messages           Message[]
   readStates         ChatReadState[] // 2026-10-15 チャットレーン
 
   @@unique([tenantId, kind, projectId, partnerCompanyId])
+  @@unique([tenantId, dmKey])
   @@index([tenantId, partnerCompanyId, lastMessageAt])
   @@map("chat_threads")
 }
@@ -1191,7 +1207,7 @@ model Message {
   tenantId               String    @map("tenant_id") @db.Uuid
   /// chat_threads.partner_company_id から継承（§4.4.1）。NOT NULL（継承元の当該列自体が
   /// NOT NULL のため）。owner-column: child of chat_threads(thread_id)。継承トリガは T-02-08。
-  ownerPartnerCompanyId  String    @map("owner_partner_company_id") @db.Uuid
+  ownerPartnerCompanyId  String?   @map("owner_partner_company_id") @db.Uuid // NULL = 社内だけの部屋（2026-10-16・#128）
   threadId               String    @map("thread_id") @db.Uuid
   senderUserId           String    @map("sender_user_id") @db.Uuid
   senderPartnerCompanyId String?   @map("sender_partner_company_id") @db.Uuid
@@ -1204,10 +1220,16 @@ model Message {
   purgedAt               DateTime? @map("purged_at") @db.Timestamptz(3) // PURGED で本文を削除（F-064 AC-2）
   editedAt               DateTime? @map("edited_at") @db.Timestamptz(3) // ✅ 2026-10-16 チャットレーン: 送った本人が編集した日時
   deletedAt              DateTime? @map("deleted_at") @db.Timestamptz(3) // ✅ 2026-10-16 チャットレーン: 送った本人が削除した日時（本文は NULL になる）
+  /// ✅ 2026-10-23 チャットレーン（紺野）: 発言に貼った案件（案件カード）。NULL = 貼っていない。
+  /// 🔴 FK は migration 20261023010000 に手書きした複合 FK `(tenant_id, attached_project_id) → projects(tenant_id, id)`
+  ///    `ON DELETE SET NULL (attached_project_id)`。Prisma は「列を指定した SET NULL」を書けない（tenant_id まで NULL にしようとする）ため、
+  ///    ここでは relation を宣言しない。🔴 カードは**見る人の RLS で**読む（読めなければ名前も ID も出さない）。運営者に GRANT しない。
+  attachedProjectId      String?   @map("attached_project_id") @db.Uuid
 
   tenant               Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   thread               ChatThread      @relation(fields: [threadId], references: [id], onDelete: Cascade)
   reactions            ChatMessageReaction[] // 2026-10-16 チャットレーン
+  savedBy              ChatSavedMessage[] // 2026-10-22 チャットレーン（保存済み）
   // 🔴 Issue #33 / docs/05 §3.3.1（A-11）: 複合 FK。owner_partner_company_id は B 群（継承の子）で
   //    あり FK を張らない（継承トリガが同一テナントの親からのみ値を取るため推移的に正しい）。
   senderPartnerCompany PartnerCompany? @relation(fields: [tenantId, senderPartnerCompanyId], references: [tenantId, id], onDelete: Restrict)
@@ -1258,6 +1280,61 @@ model ChatReadState {
 
   @@unique([tenantId, userId, threadId])
   @@map("chat_read_states")
+}
+
+/// ✅ 2026-10-19 チャットレーン: チャットのひとこと状態（docs/chat-lane/people-chat-proposal.md §7.1 ①。#128 で合意）。
+/// 1 人 1 行・60 文字まで。空にしたら行を消す。🔴 `users` に列を足さない（共有の表のため）。
+/// RLS: 書き込みは本人の行だけ（C7 SELF の式）/ 読み取りは「その利用者が自分から見えるとき」（users の C8 DIRECTORY に連動）。
+/// 🔴 運営者（app_platform）に GRANT しない。user_id に FK を張らない（ChatReadState と同じ）。migration 20261019020000
+model ChatUserStatus {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  text      String
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId])
+  @@map("chat_user_statuses")
+}
+
+/// ✅ 2026-10-22 チャットレーン: 発言の「保存済み」（Teams の保存済み / Slack の「後で」）。本人だけの栞。
+/// RLS: 読みは「本人の行」かつ「その発言が今も自分から読める」（messages の C6 / 人の段を EXISTS で通す）。
+/// 書き（INSERT / DELETE）は本人の行だけ（INSERT は発言が読めることも要る）。UPDATE は無い（付け外しで表す）。
+/// 🔴 運営者（app_platform）に GRANT しない。user_id に FK を張らない（ChatReadState と同じ）。migration 20261022010000
+model ChatSavedMessage {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  messageId String   @map("message_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId, messageId])
+  @@index([tenantId, userId, createdAt])
+  @@map("chat_saved_messages")
+}
+
+/// ✅ 2026-10-22 チャットレーン: 自分の定型文（紺野の決定: 自分だけ。会社共通は作らない）。
+/// 見出し 30 文字・本文 1000 文字まで（Zod と CHECK の二重）。1 人 50 件まで（アプリで制限）。
+/// RLS: SELECT / INSERT / UPDATE / DELETE すべて本人の行だけ（C7 SELF）。
+/// 🔴 運営者（app_platform）に GRANT しない。解約（PURGED）で見出しと本文を空文字にする。migration 20261022020000
+model ChatMessageTemplate {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  label     String
+  body      String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, userId, createdAt])
+  @@map("chat_message_templates")
 }
 
 /// RLS のポリシークラスは C2 HOST_ONLY（書込 + ホストの SELECT）/ C9 COUNTERPARTY_READ

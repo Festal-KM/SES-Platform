@@ -1,208 +1,437 @@
 // apps/web/app/(main)/chat/chat-thread-list.tsx
-// `S-031` のスレッド一覧（左の 320px の柱）。
+// `S-031` の会話の一覧（左の絞り込みの列の右）。
 //
 // ============================================================================
-// 🔴 この画面が守るもの
+// ✅ 2026-10-19（v2・紺野「くっそ醜い」「ビジュアルで変えて」「会社から＞ 人から＞」）
 // ============================================================================
-// 1. 🔴 **✅ 2026-10-13: 表（`DataTable`）をやめ、60px の行の一覧にした**
-//    （`docs/design-system.md` §4.5。人間のデザインシステム定義 v1.0 §3.12）。
-//    理由: **320px の柱に 2 列の表を置くと、列ヘッダ 2 行ぶんの高さが毎回失われ、
-//    長い案件名が折り返して行の高さが行ごとに変わる**（高さが内容量で変わるのは
-//    `HANDOFF.md` §3.3 の 🔴 と同じ性質の問題である）。行は**固定 60px**にして、
-//    溢れるものは切り詰める。
-// 2. 🔴 **列の名前を捨てない。** 表をやめても「何の値か」は要る。`chat.threads.column.*`
-//    を `sr-only` で各行に残した —— 読み上げでは列名が消えず、文言キーも生き続ける
-//    （未使用キーの検査が落ちる＝キーは凍結されていて消せない）。
-// 3. 🔴 **未読を出さない。** `Message` に既読の列が無く、**未読という状態が存在しない**
-//    （`docs/design-system.md` §6 ⑬）。定義書の「未読カウント」「未読タブ」は実体が
-//    できるまで置かない —— **近似を入れない。**
-// 4. 🔴 **プレビュー（最後の発言の抜粋）も出さない。** `ChatThreadListItem` に本文が無く、
-//    足すには読み取り経路（RLS を通る問い合わせ）を変える必要がある。**UI の段で
-//    境界の経路を広げない**（`CLAUDE.md` §8.3 の上段に当たる変更になる）。
-//    代わりに 2 段目には**相手の会社名**を置く（既に出している値であり、増やしていない）。
-// 5. 🔴 **選択中の行は面の色で示す**（`--color-brand-bg`）。枠線や太字で示さない。
+// 1. **1 行 = 1 会話。字下げしない。** 種類はアバターの**形と色**で分ける —— 人（DM）= 丸、グループ = 丸・緑、
+//    取引先の会社 = 角丸、案件スレッド = 角丸・橙の「#」。取引先が相手なら「外部」、案件なら「案件」の小さな札。
+//    案件スレッドの 2 段目は「相手の会社 ・ 最後の発言」（親の会社が分かる）。
+// 2. 行の形は 1 つ: 1 段目 = 名前 + 時刻、2 段目 = 最後の発言の冒頭 + 未読の数。高さは固定（60px）。
+// 3. 絞り込みは左の列（`chat-rail.tsx`）の `f=`。会社 → その会社の会話（会社チャット・スレッド・その会社の人との DM・グループ）、
+//    人 → その人との会話（DM・その人が入っているグループ）、連絡先 → 人の一覧。
+// 4. 「右に並べる」は行にマウスを当てたときだけ（`chat-row-shell.tsx`）。
+// 5. ✅ 2026-10-22（紺野）: 赤い「要返信」の札をやめた。左の列の「保存済み」（`f=saved`）で保存した発言の一覧、
+//    入力欄の「定型文を編集…」（`f=templates`）で自分の定型文の管理画面に、一覧の列が切り替わる。
+//
+// 🔴 母集団は読みの関数（`lib/chat/read.ts` / `people.ts`）が RLS で決めたものだけ。ここで足さない。
+// 🔴 一覧の中で `hidden` を使わない（render テスト ③）。閲覧専用に押せない導線を置かない（②）。
 import Link from 'next/link';
 import { t } from '@ses/i18n';
 import {
   Avatar,
-  Badge,
   Button,
   CHAT_THREAD_ROW_HEIGHT_CLASS,
   EmptyState,
   Input,
+  PRIMARY_LINK_CLASSES,
   ROW_HOVER_CLASSES,
   SECONDARY_LINK_CLASSES,
-  Select,
   cn,
 } from '@ses/ui';
 import { formatDateTimeJst } from '../../../lib/format/datetime';
 import { displayInitials } from '../../../lib/format/initials';
 import { canAddPane, openThreadIds, withPaneAdded, withThreadSelected, type ChatPaneState } from '../../../lib/chat/panes';
 import {
+  CHAT_FILTER_PARAM,
   CHAT_PANE_PARAM,
   CHAT_PATH,
   CHAT_Q_PARAM,
-  CHAT_SORT_PARAM,
   CHAT_THREAD_PARAM,
-  CHAT_UNREAD_PARAM,
+  chatFilterValue,
   chatHref,
+  type ChatListFilter,
 } from '../../../lib/chat/screen-query';
-import {
-  CHAT_THREAD_SORT_DEFAULT,
-  type ChatThreadGroup,
-  type ChatThreadSort,
-} from '../../../lib/chat/thread-tree';
-import type { ChatThreadListItem, ChatThreadKind } from '../../../lib/chat/views';
+import { CHAT_THREAD_SORT_DEFAULT, type ChatThreadGroup, type ChatThreadSort } from '../../../lib/chat/thread-tree';
+import type { ChatRoomListItem, ChatThreadListItem, ChatThreadKind } from '../../../lib/chat/views';
+import type { ChatPeopleData } from '../../../lib/chat/people';
 import type { ChatMessageHit } from '../../../lib/chat/read';
+import type { ChatSavedList } from '../../../lib/chat/saved';
+import { CHAT_TEMPLATE_BODY_MAX_LENGTH, CHAT_TEMPLATE_LABEL_MAX_LENGTH, CHAT_TEMPLATE_MAX_PER_USER } from '../../../lib/chat/schemas';
+import { formatListTime } from '../../../lib/chat/day-separators';
+import { ChatContactsView, ChatFavorites, type ChatFavorite } from './chat-people-section';
 import { ChatDraftMark } from './chat-draft-mark';
+import { ChatNewGroupForm } from './chat-new-group-form';
+import { UNREAD_DOT_CLASSES, UNREAD_DOT_MAX } from './chat-unread-dot';
+import { ChatOpenDmButton } from './chat-open-dm-button';
+import { ChatRowShell } from './chat-row-shell';
+import { ChatTemplateManager, type ChatTemplateItem } from './chat-template-manager';
 
 const KIND_MESSAGE_KEYS = {
   PROJECT: 'chat.thread.kind.PROJECT',
   COMPANY: 'chat.thread.kind.COMPANY',
-} as const satisfies Readonly<Record<ChatThreadKind, 'chat.thread.kind.PROJECT' | 'chat.thread.kind.COMPANY'>>;
+  DM: 'chat.thread.kind.DM',
+  GROUP: 'chat.thread.kind.GROUP',
+} as const satisfies Readonly<Record<ChatThreadKind, `chat.thread.kind.${ChatThreadKind}`>>;
 
-const SORT_MESSAGE_KEYS = {
-  recent: 'chat.threads.sort.recent',
-  company: 'chat.threads.sort.company',
-} as const satisfies Readonly<Record<ChatThreadSort, 'chat.threads.sort.recent' | 'chat.threads.sort.company'>>;
+/**
+ * 🔴 種類ごとのアバターの形と色。お気に入り・左の列も同じ。
+ * ✅ 2026-10-20（紺野「色もなんか一緒」）: 薄い地（`*-bg`）だと一覧の灰色に溶けるので、**塗りつぶし**にした。
+ *    人 = 青の丸 / グループ = 緑の丸 / 取引先の会社 = 墨色の角丸（🔴 サイドバーの紺はサイドバー専用。`ui-shadow-and-size.test.ts`）/ 案件 = 橙の角丸に「#」。
+ *    使う色は既存のトークンだけ（新しい色を足さない）。
+ */
+export const AVATAR_KIND_CLASSES: Readonly<Record<ChatThreadKind, string>> = {
+  DM: 'bg-brand text-brand-fg',
+  GROUP: 'bg-success text-bg',
+  COMPANY: 'rounded-md bg-fg text-bg',
+  PROJECT: 'rounded-md bg-warning text-bg',
+};
+
+const TAG_CLASSES = 'shrink-0 rounded-xs px-1 text-xs';
 
 export type ChatThreadListProps = {
-  /**
-   * ✅ 2026-10-14（チャットレーン）: **会社ごとの木**（`lib/chat/thread-tree.ts`）。
-   * 会社とのチャット（企業スレッド）が親、その会社との案件スレッドが子。更新があったものが上。
-   */
+  /** 会社ごとのまとまり（`lib/chat/thread-tree.ts`）。一覧では平らに並べる。 */
   readonly groups: readonly ChatThreadGroup[];
   readonly selectedThreadId: string | null;
   readonly nextCursor: string | null;
-  /** ✅ 2026-10-14: 右に並べて開いている会話（左から順。`?pane=`）。 */
   readonly paneThreadIds?: readonly string[];
-  /** ✅ 2026-10-14: 「右に並べる」の語（`chat.pane.openBeside`）。 */
   readonly openBesideLabel?: string;
-  /** ✅ 2026-10-14: 一覧の検索語と並べ方（URL の `q` / `sort`）。 */
   readonly q?: string | null;
   readonly sort?: ChatThreadSort;
-  /** ✅ 2026-10-14: 上限を超えて古いスレッドを読んでいない（`read.ts` の `CHAT_THREAD_TREE_MAX`）。 */
   readonly truncated?: boolean;
-  /** ✅ 2026-10-14: 要返信（最後の発言が相手から）のスレッド。 */
-  readonly awaitingReplyIds?: readonly string[];
-  /** ✅ 2026-10-14: 本文の検索で当たった発言（`read.ts` の `ChatMessageHit`）。 */
   readonly messageHits?: readonly ChatMessageHit[];
-  /** ✅ 2026-10-16: 自分がピン留め・ミュートしているスレッド。 */
   readonly pinnedIds?: readonly string[];
   readonly mutedIds?: readonly string[];
-  /** ✅ 2026-10-16: スレッドごとの未読の件数と、「未読のみ」の状態。 */
   readonly unreadCounts?: Readonly<Record<string, number>>;
+  /** 旧「未読のみ」（`unread=1`）。v2 では左の列の「未読」（`f=unread`）と同じ扱い。 */
   readonly unreadOnly?: boolean;
+  readonly people?: ChatPeopleData | null;
+  readonly canPost?: boolean;
+  readonly lastSnippets?: Readonly<Record<string, string>>;
+  readonly now?: Date;
+  /** ✅ 2026-10-19（v2）: 左の列の絞り込み。 */
+  readonly filter?: ChatListFilter;
+  /** ✅ 2026-10-22: 保存した発言（`f=saved` のときだけ読む。それ以外は `null`）。 */
+  readonly saved?: ChatSavedList | null;
+  /** ✅ 2026-10-22: 自分の定型文（`f=templates` の管理画面）。 */
+  readonly templates?: readonly ChatTemplateItem[];
 };
 
-/** 行 1 つ（60px）。🔴 高さが内容量で変わらないよう、2 段とも 1 行に切り詰める。 */
 const ROW_CLASSES = `flex min-w-0 flex-1 items-center gap-3 px-3 ${CHAT_THREAD_ROW_HEIGHT_CLASS}`;
+
+type Entry =
+  | { readonly type: 'thread'; readonly item: ChatThreadListItem; readonly group: ChatThreadGroup }
+  | { readonly type: 'room'; readonly room: ChatRoomListItem };
+
+const atOf = (entry: Entry) => (entry.type === 'thread' ? entry.item.lastMessageAt : entry.room.lastMessageAt);
+const idOf = (entry: Entry) => (entry.type === 'thread' ? entry.item.id : entry.room.id);
+
+/** 全部の会話を平らに並べる（新しい順・発言の無いものは最後・同時刻は元の順）。 */
+function flatten(groups: readonly ChatThreadGroup[], rooms: readonly ChatRoomListItem[], sort: ChatThreadSort): Entry[] {
+  const entries: Entry[] = [
+    ...rooms.map((room): Entry => ({ type: 'room', room })),
+    ...groups.flatMap((group) =>
+      [...(group.chat === null ? [] : [group.chat]), ...group.threads].map((item): Entry => ({ type: 'thread', item, group })),
+    ),
+  ];
+  if (sort !== 'recent') return entries;
+  return entries
+    .map((entry, order) => ({ entry, order }))
+    .sort((x, y) => {
+      const a = atOf(x.entry);
+      const b = atOf(y.entry);
+      if (a === b) return x.order - y.order;
+      if (a === null) return 1;
+      if (b === null) return -1;
+      return a < b ? 1 : -1;
+    })
+    .map(({ entry }) => entry);
+}
+
+/** 左の列の絞り込みを当てる。 */
+function applyFilter(entries: readonly Entry[], filter: ChatListFilter, unread: (id: string) => number): Entry[] {
+  switch (filter.kind) {
+    case 'all':
+    case 'contacts':
+    case 'newgroup':
+    case 'saved':
+    case 'templates':
+      return [...entries];
+    case 'unread':
+      return entries.filter((entry) => unread(idOf(entry)) > 0);
+    case 'dm':
+      return entries.filter((entry) => entry.type === 'room' && entry.room.kind === 'DM');
+    case 'group':
+      return entries.filter((entry) => entry.type === 'room' && entry.room.kind === 'GROUP');
+    case 'company':
+      return entries.filter((entry) =>
+        entry.type === 'thread' ? entry.group.key === filter.key : entry.room.companyKey === filter.key,
+      );
+    case 'person':
+      return entries.filter((entry) => entry.type === 'room' && entry.room.memberUserIds.includes(filter.userId));
+  }
+}
 
 type RowContext = {
   readonly paneState: ChatPaneState;
   readonly openIds: readonly string[];
   readonly selectedThreadId: string | null;
   readonly openBesideLabel: string | undefined;
-  readonly listQuery: { readonly q: string | null; readonly sort: ChatThreadSort; readonly unread: boolean };
-  readonly awaitingReplyIds: ReadonlySet<string>;
+  readonly listQuery: { readonly q: string | null; readonly sort: ChatThreadSort; readonly filter: ChatListFilter };
   readonly unreadCounts: Readonly<Record<string, number>>;
   readonly mutedIds: ReadonlySet<string>;
+  /** ✅ 2026-10-20: スワイプで出すピン留めの今の状態。 */
+  readonly pinnedIds: ReadonlySet<string>;
+  readonly lastSnippets: Readonly<Record<string, string>>;
+  readonly now: Date;
 };
 
-/**
- * 1 行。`COMPANY` = 会社とのチャット（親）、`PROJECT` = 案件スレッド（子。字下げする）。
- */
-function ThreadRow({ item, context }: { readonly item: ChatThreadListItem; readonly context: RowContext }) {
-  const { paneState, openIds, selectedThreadId, openBesideLabel, listQuery, awaitingReplyIds, unreadCounts } = context;
-  const awaiting = awaitingReplyIds.has(item.id);
-  // ✅ 2026-10-16: 未読の件数（自分以外の発言で既読位置より後ろ）。未読があれば名前を太くする。
-  const unread = unreadCounts[item.id] ?? 0;
-  // ✅ 2026-10-16: ミュートした会話は未読を強調しない（太字にせず、件数は無彩色）。
-  const muted = context.mutedIds.has(item.id);
-  const selected = item.id === selectedThreadId;
-  // ✅ 2026-10-14: 開いている会話（左端か右の列）は選択中と同じ面の色で示す。
-  const open = openIds.includes(item.id);
-  // ✅ 2026-10-14: 「右に並べる」は、何かを開いていて・まだ足せて・この会話が開いていないときだけ。
-  //    🔴 押して何も起きない導線を置かない（上限に達したら描かない）。
+type RowView = {
+  readonly id: string;
+  readonly kind: ChatThreadKind;
+  readonly name: string;
+  readonly initials: string;
+  readonly subtitlePrefix: string | null;
+  readonly external: boolean;
+  readonly fastReply: boolean;
+  /** 会社の部屋の相手の会社名（読み上げ用）。 */
+  readonly counterpartyName: string | null;
+  /** 最後の発言の時刻（ISO）。発言なしは `null`。 */
+  readonly at: string | null;
+};
+
+function Row({ view, context }: { readonly view: RowView; readonly context: RowContext }) {
+  const { paneState, openIds, selectedThreadId, openBesideLabel, listQuery } = context;
+  const room = view.kind === 'DM' || view.kind === 'GROUP';
+  const unread = context.unreadCounts[view.id] ?? 0;
+  const muted = context.mutedIds.has(view.id);
+  const open = openIds.includes(view.id);
+  const selected = view.id === selectedThreadId;
+  const strong = unread > 0 && !muted;
+  const snippet = context.lastSnippets[view.id] ?? '';
   const besideHref =
     openBesideLabel !== undefined && !open && canAddPane(paneState)
-      ? chatHref({ ...withPaneAdded(paneState, item.id), ...listQuery })
+      ? chatHref({ ...withPaneAdded(paneState, view.id), ...listQuery })
       : null;
-  const rowHref = chatHref({ ...withThreadSelected(paneState, item.id), ...listQuery });
-  const counterparty = item.counterpartyName ?? t('chat.thread.unknownName');
-  const isChat = item.kind === 'COMPANY';
-  // 🔴 対象の名前。チャットは相手の会社名、スレッドは案件名。**案件名が読めないときは種別の語**
-  //    （`null` を「案件が無い」と書き分けない。`lib/chat/views.ts` の 🔴）。
-  const target = isChat ? counterparty : item.project === null ? t(KIND_MESSAGE_KEYS[item.kind]) : item.project.name;
   return (
-    <li
-      data-testid={`chat-thread-row-${item.id}`}
-      data-selected={selected ? 'true' : 'false'}
-      data-kind={item.kind}
-      // ✅ 2026-10-14: スレッド（子）は字下げして、どの会社のチャットに含まれるかを位置で示す。
-      className={cn('flex border-b border-border-row', isChat ? null : 'pl-6', open ? 'bg-brand-bg' : ROW_HOVER_CLASSES)}
+    <ChatRowShell
+      id={view.id}
+      room={room}
+      swipe={{
+        pinned: context.pinnedIds.has(view.id),
+        muted,
+        labels: { pin: t('chat.thread.pin'), unpin: t('chat.thread.unpin'), mute: t('chat.thread.mute'), unmute: t('chat.thread.unmute') },
+      }}
+      selected={selected}
+      kind={view.kind}
+      // ✅ 2026-10-22（紺野「どの会話開いているかもわかるように！！」）: 開いている会話は青い面 + 青い縁で、灰色の一覧の中ではっきり分かるようにする。
+      className={cn('flex rounded-md', open ? 'bg-brand-bg ring-1 ring-brand' : ROW_HOVER_CLASSES)}
+      reveal={
+        besideHref === null || openBesideLabel === undefined ? null : (
+          <Link
+            href={besideHref}
+            className={cn(SECONDARY_LINK_CLASSES, 'flex shrink-0 items-center whitespace-nowrap px-2 text-xs')}
+            data-testid={`chat-thread-open-beside-${view.id}`}
+          >
+            {openBesideLabel}
+          </Link>
+        )
+      }
     >
-      {/* 🔴 行のリンクはそのままドラッグできる（ブラウザがリンクの URL を運ぶ）。受け口は
-          `chat-pane-drop-zone.tsx` で、`lib/chat/panes.ts` の `threadIdFromDroppedUrl` が URL を検める。 */}
       <Link
-        href={rowHref}
+        href={chatHref({ ...withThreadSelected(paneState, view.id), ...listQuery })}
         aria-current={selected ? 'page' : undefined}
         className={ROW_CLASSES}
-        data-testid={`chat-thread-link-${item.id}`}
+        data-testid={room ? `chat-room-link-${view.id}` : `chat-thread-link-${view.id}`}
       >
-        {/* 🔴 印であって意味ではない（`aria-hidden` は `Avatar` が立てる）。 */}
-        <Avatar size="md" initials={displayInitials(isChat ? counterparty : target)} title={target} />
-        <span className="min-w-0 flex-1">
-          {/* 🔴 1 段目は**対象の名前だけ**に全幅を使う（時刻は 2 段目の右端。2026-10-13 の実測）。 */}
-          <span className={cn('block truncate text-row text-fg', unread > 0 && !muted ? 'font-bold' : 'font-medium')}>
-            <span className="sr-only">{t('chat.threads.column.target')}</span>
-            {target}
-          </span>
-          {/* ✅ 2026-10-16: 印が増えると幅に収まらず、日時が「右に並べる」の下へはみ出して重なった（デモの実測）。
-              🔴 折り返す（`flex-wrap`）。行の高さは `min-h` なので、2 段になっても崩れない。 */}
-          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <Badge variant="neutral">{t(KIND_MESSAGE_KEYS[item.kind])}</Badge>
-            {/* ✅ 2026-10-14: 要返信（最後の発言が相手から）。色は §3.3「次はあなたの番」= brand。 */}
-            {/* ✅ 2026-10-16: 書きかけ（下書き）がある会話。印はクライアントでだけ決まる。 */}
-            <ChatDraftMark threadId={item.id} label={t('chat.thread.draft')} />
-            {unread > 0 ? (
-              <Badge variant={muted ? 'neutral' : 'brand'} data-testid={`chat-thread-unread-${item.id}`}>
-                {`${t('chat.thread.unread')} ${String(unread)}`}
-              </Badge>
-            ) : null}
-            {awaiting ? (
-              <Badge variant="brand" data-testid={`chat-thread-awaiting-${item.id}`}>
-                {t('chat.thread.awaitingReply')}
-              </Badge>
-            ) : null}
-            {/* ✅ 2026-10-14: スレッドは親の会社の下にあるので、相手の会社名は読み上げにだけ残す。 */}
+        {/* ✅ 2026-10-22（紺野「未読はアイコン横に赤丸（数字入り）で強調」）: 未読の数はアバターの右上の赤丸。ミュート中は灰色。 */}
+        <span className="relative shrink-0">
+          <Avatar size="md" initials={view.initials} title={view.name} className={AVATAR_KIND_CLASSES[view.kind]} />
+          {unread > 0 ? (
             <span
-              className={isChat ? 'min-w-0 flex-1 truncate text-cell text-fg-muted' : 'sr-only'}
-              data-testid={`chat-thread-counterparty-${item.id}`}
+              className={cn(UNREAD_DOT_CLASSES, muted ? 'bg-fg-muted' : 'bg-danger')}
+              data-testid={room ? `chat-room-unread-${view.id}` : `chat-thread-unread-${view.id}`}
             >
-              {counterparty}
+              {unread > UNREAD_DOT_MAX ? `${String(UNREAD_DOT_MAX)}+` : String(unread)}
             </span>
-            <span className={cn('shrink-0 text-xs text-fg-placeholder', isChat ? null : 'ml-auto')}>
+          ) : null}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="flex items-center gap-1">
+            <span className={cn('min-w-0 truncate text-row text-fg', strong ? 'font-bold' : 'font-normal')}>
+              <span className="sr-only">{t('chat.threads.column.target')}</span>
+              {view.name}
+            </span>
+            {view.external ? <span className={cn(TAG_CLASSES, 'bg-info-bg text-info')}>{t('chat.tag.external')}</span> : null}
+            {/* ✅ 2026-10-14: 返信が早い取引先（上位 10%）。🔴 ホストにだけ真になる（`read.ts`）。良いところだけを出す。 */}
+            {view.fastReply ? (
+              <span className={cn(TAG_CLASSES, 'bg-success-bg text-success')} data-testid={`chat-thread-fast-${view.id}`}>
+                {t('chat.tree.fastReply')}
+              </span>
+            ) : null}
+            <span className="ml-auto shrink-0 text-xs text-fg-placeholder">
               <span className="sr-only">{t('chat.threads.column.lastMessage')}</span>
-              {item.lastMessageAt === null ? t('chat.thread.noMessages') : formatDateTimeJst(item.lastMessageAt)}
+              {view.at === null ? t('chat.thread.noMessages') : formatListTime(view.at, context.now)}
             </span>
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="min-w-0 flex-1 truncate text-xs text-fg-muted">
+              {view.subtitlePrefix === null ? null : `${view.subtitlePrefix} ・ `}
+              {snippet === '' ? (view.subtitlePrefix === null ? ' ' : '') : snippet}
+            </span>
+            {view.counterpartyName === null ? null : (
+              <span className="sr-only" data-testid={`chat-thread-counterparty-${view.id}`}>
+                {view.counterpartyName}
+              </span>
+            )}
+            <ChatDraftMark threadId={view.id} label={t('chat.thread.draft')} />
           </span>
         </span>
       </Link>
-      {/* ✅ 2026-10-14: ドラッグの代わりの導線（キーボード・ドラッグが苦手な人向け）。
-          🔴 一覧の中で `hidden` を使わない（render テストの ③）。`md` 未満では会話を開いている間
-             一覧ごと畳まれる（`page.tsx`）ので、この導線が出るのは実質 `md` 以上だけになる。 */}
-      {besideHref === null ? null : (
-        <Link
-          href={besideHref}
-          // 🔴 `cn` は後勝ち。共通の語の `inline-block` / `text-body` をこちらの指定で上書きする。
-          className={cn(SECONDARY_LINK_CLASSES, 'flex shrink-0 items-center whitespace-nowrap px-3 text-xs')}
-          data-testid={`chat-thread-open-beside-${item.id}`}
-        >
-          {openBesideLabel}
+    </ChatRowShell>
+  );
+}
+
+function viewOf(entry: Entry): RowView {
+  if (entry.type === 'room') {
+    const name = entry.room.name ?? t('chat.thread.unknownName');
+    return {
+      id: entry.room.id,
+      kind: entry.room.kind,
+      name: entry.room.kind === 'GROUP' ? `${name}（${String(entry.room.memberCount)}${t('chat.people.memberUnit')}）` : name,
+      // ✅ 2026-10-22: 数字・記号で始まるグループ名（「11月の要員調整」）は 1 文字目が「1」になるので「G」にする。
+      initials: entry.room.kind === 'GROUP' && !/^[\p{L}]/u.test(name) ? 'G' : displayInitials(name),
+      subtitlePrefix: null,
+      external: entry.room.external,
+      fastReply: false,
+      counterpartyName: null,
+      at: entry.room.lastMessageAt,
+    };
+  }
+  const { item, group } = entry;
+  // 🔴 返信が早い印は、その会社の会話の代表の 1 行（会社チャット、無ければ最初のスレッド）にだけ付ける。
+  const representative = (group.chat ?? group.threads[0])?.id === item.id;
+  const counterparty = item.counterpartyName ?? t('chat.thread.unknownName');
+  if (item.kind === 'COMPANY') {
+    return {
+      id: item.id,
+      kind: 'COMPANY',
+      name: counterparty,
+      initials: displayInitials(counterparty.replace(/^株式会社/, '') || counterparty),
+      subtitlePrefix: null,
+      // ✅ 2026-10-20: 会社・案件の行は相手が必ず取引先なので「外部」の札を付けない（形で分かる。札は DM・グループだけ）。
+      external: false,
+      fastReply: group.fastReply && representative,
+      counterpartyName: counterparty,
+      at: item.lastMessageAt,
+    };
+  }
+  // 🔴 案件名が読めないときは種別の語（`null` を「案件が無い」と書き分けない。`views.ts` の 🔴）。
+  const name = item.project === null ? t(KIND_MESSAGE_KEYS[item.kind]) : item.project.name;
+  return {
+    id: item.id,
+    kind: item.kind,
+    name,
+    initials: '#',
+    subtitlePrefix: counterparty,
+    external: false,
+    fastReply: group.fastReply && representative,
+    counterpartyName: counterparty,
+    at: item.lastMessageAt,
+  };
+}
+
+/**
+ * ✅ 2026-10-22（紺野）: 保存した発言の一覧（新しく保存した順）。押すとその会話を開く（一覧は保存済みのまま）。
+ * 🔴 母集団は `lib/chat/saved.ts`（RLS = 本人の栞 かつ 今も読める発言）だけ。部屋の名前は一覧の母集団（RLS 済み）から引き、
+ *    引けないときは「（名前を表示できません）」の語にする（ここで別の経路から名前を探さない）。
+ */
+function ChatSavedView({
+  saved,
+  entries,
+  context,
+}: {
+  readonly saved: ChatSavedList | null;
+  readonly entries: readonly Entry[];
+  readonly context: RowContext;
+}) {
+  const names = new Map(entries.map((entry) => [idOf(entry), viewOf(entry).name] as const));
+  const items = saved?.items ?? [];
+  return (
+    <div className="flex min-h-0 flex-col overflow-y-auto" data-testid="chat-saved">
+      <div className="flex items-center gap-2 px-3 pt-2 pb-1">
+        <span className="min-w-0 flex-1 truncate text-cell font-bold text-fg" data-testid="chat-saved-title">
+          {t('chat.saved.title')}
+        </span>
+        <Link href={chatHref({})} className={cn(SECONDARY_LINK_CLASSES, 'shrink-0 text-xs')} data-testid="chat-saved-clear">
+          {t('chat.rail.backToAll')}
         </Link>
+      </div>
+      <p className="m-0 px-3 pb-2 text-xs text-fg-muted">{t('chat.saved.description')}</p>
+      {items.length === 0 ? (
+        <p className="m-0 p-4 text-body text-fg-muted" data-testid="chat-saved-empty">
+          {t('chat.saved.empty')}
+        </p>
+      ) : (
+        <ul className="m-0 list-none p-0" aria-label={t('chat.saved.title')}>
+          {items.map((item) => (
+            <li key={item.messageId} className={ROW_HOVER_CLASSES}>
+              <Link
+                href={chatHref({ ...withThreadSelected(context.paneState, item.threadId), ...context.listQuery })}
+                aria-current={item.threadId === context.selectedThreadId ? 'page' : undefined}
+                className="flex flex-col gap-1 px-3 py-2"
+                data-testid={`chat-saved-item-${item.messageId}`}
+              >
+                <span className="flex items-center gap-2">
+                  <span className="min-w-0 flex-1 truncate text-cell font-normal text-fg">
+                    <span className="sr-only">{t('chat.saved.open')}</span>
+                    {names.get(item.threadId) ?? t('chat.thread.unknownName')}
+                  </span>
+                  <span className="shrink-0 text-xs text-fg-placeholder">{formatDateTimeJst(item.sentAt)}</span>
+                </span>
+                <span className="text-xs text-fg-muted">{item.snippet ?? t('chat.saved.removedBody')}</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
       )}
-    </li>
+      {saved?.truncated === true ? (
+        <p className="m-0 p-3 text-xs text-fg-muted" data-testid="chat-saved-truncated">
+          {t('chat.saved.truncated')}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/** 左の列で選んだ会社・人の見出し（「すべてに戻る」と、人なら DM を開く）。 */
+function ScopeHeader({
+  filter,
+  groups,
+  people,
+  canPost,
+}: {
+  readonly filter: ChatListFilter;
+  readonly groups: readonly ChatThreadGroup[];
+  readonly people: ChatPeopleData | null;
+  readonly canPost: boolean;
+}) {
+  if (filter.kind !== 'company' && filter.kind !== 'person') return null;
+  let title: string;
+  let action: React.ReactNode = null;
+  if (filter.kind === 'company') {
+    title = groups.find((group) => group.key === filter.key)?.counterpartyName ?? t('chat.thread.unknownName');
+  } else {
+    const contact = people?.contacts.companies.flatMap((company) => company.people).find((person) => person.userId === filter.userId);
+    title = contact?.name ?? t('chat.thread.unknownName');
+    if (canPost && contact !== undefined) {
+      action = (
+        <ChatOpenDmButton userId={contact.userId} label={`${title} ${t('chat.people.openDm')}`} failedLabel={t('chat.people.openDmFailed')}>
+          {t('chat.people.openDm')}
+        </ChatOpenDmButton>
+      );
+    }
+  }
+  return (
+    <div className="flex items-center gap-2 px-3 pt-2 pb-1" data-testid="chat-scope">
+      <span className="min-w-0 flex-1 truncate text-cell font-bold text-fg" data-testid="chat-scope-title">
+        {title}
+      </span>
+      {action}
+      <Link href={chatHref({})} className={cn(SECONDARY_LINK_CLASSES, 'shrink-0 text-xs')} data-testid="chat-scope-clear">
+        {t('chat.rail.backToAll')}
+      </Link>
+    </div>
   );
 }
 
@@ -215,46 +444,65 @@ export function ChatThreadList({
   q = null,
   sort = CHAT_THREAD_SORT_DEFAULT,
   truncated = false,
-  awaitingReplyIds = [],
   messageHits = [],
   unreadCounts = {},
   unreadOnly = false,
   pinnedIds = [],
   mutedIds = [],
+  people = null,
+  canPost = false,
+  lastSnippets = {},
+  now = new Date(),
+  filter: filterProp,
+  saved = null,
+  templates = [],
 }: ChatThreadListProps) {
+  const filter: ChatListFilter = filterProp ?? (unreadOnly ? { kind: 'unread' } : { kind: 'all' });
   const paneState: ChatPaneState = { thread: selectedThreadId, panes: paneThreadIds };
+  const rooms = people?.rooms ?? [];
+  const allUnread = { ...unreadCounts, ...(people?.unreadCounts ?? {}) };
+  const allMuted = new Set([...mutedIds, ...(people?.mutedIds ?? [])]);
   const context: RowContext = {
     paneState,
     openIds: openThreadIds(paneState),
     selectedThreadId,
     openBesideLabel,
-    listQuery: { q, sort, unread: unreadOnly },
-    awaitingReplyIds: new Set(awaitingReplyIds),
-    unreadCounts,
-    mutedIds: new Set(mutedIds),
+    listQuery: { q, sort, filter },
+    unreadCounts: allUnread,
+    mutedIds: allMuted,
+    pinnedIds: new Set([...pinnedIds, ...(people?.pinnedIds ?? [])]),
+    lastSnippets: { ...lastSnippets, ...(people?.lastSnippets ?? {}) },
+    now,
   };
-  const searching = (q !== null && q !== '') || unreadOnly;
-  if (groups.length === 0 && !searching) {
+  const all = flatten(groups, rooms, sort);
+  const shown = applyFilter(all, filter, (id) => allUnread[id] ?? 0);
+  const searching = (q !== null && q !== '') || filter.kind !== 'all';
+
+  const pinned = new Set([...pinnedIds, ...(people?.pinnedIds ?? [])]);
+  const favorites: ChatFavorite[] = all
+    .filter((entry) => pinned.has(idOf(entry)))
+    .map((entry) => {
+      const view = viewOf(entry);
+      return { id: view.id, name: view.name, avatarClass: AVATAR_KIND_CLASSES[view.kind], initials: view.initials };
+    });
+
+  if (all.length === 0 && !searching && people === null) {
     return (
       <div className="p-4" data-testid="chat-threads">
         <EmptyState description={t('chat.threads.empty')} testIdPrefix="chat-threads-empty-" />
       </div>
     );
   }
+  const filterValue = chatFilterValue(filter);
   return (
     <div className="flex min-h-0 flex-col" data-testid="chat-threads">
-      {/* ✅ 2026-10-14: 検索と並べ替え。🔴 `method="get"` —— 条件が URL になり、再読込・戻るで同じ一覧に戻る。
-          開いている会話（`thread` / `pane`）は hidden で引き継ぐ（検索しても会話が閉じない）。 */}
-      <form
-        method="get"
-        action={CHAT_PATH}
-        className="flex flex-col gap-2 border-b border-border p-3"
-        data-testid="chat-threads-search"
-      >
+      {/* 🔴 `method="get"` —— 条件が URL になり、再読込・戻るで同じ一覧に戻る。開いている会話と絞り込みは引き継ぐ。 */}
+      <form method="get" action={CHAT_PATH} className="flex items-center gap-2 p-3" data-testid="chat-threads-search">
         {paneState.thread === null ? null : <input type="hidden" name={CHAT_THREAD_PARAM} value={paneState.thread} />}
         {paneState.thread === null
           ? null
           : paneState.panes.map((pane) => <input key={pane} type="hidden" name={CHAT_PANE_PARAM} value={pane} />)}
+        {filterValue === null ? null : <input type="hidden" name={CHAT_FILTER_PARAM} value={filterValue} />}
         <label className="sr-only" htmlFor="chat-threads-q">
           {t('chat.threads.search.label')}
         </label>
@@ -266,144 +514,178 @@ export function ChatThreadList({
           placeholder={t('chat.threads.search.placeholder')}
           data-testid="chat-threads-q"
         />
-        <div className="flex items-center gap-2">
-          <label className="sr-only" htmlFor="chat-threads-sort">
-            {t('chat.threads.sort.label')}
-          </label>
-          <Select id="chat-threads-sort" name={CHAT_SORT_PARAM} defaultValue={sort} data-testid="chat-threads-sort">
-            {(Object.keys(SORT_MESSAGE_KEYS) as ChatThreadSort[]).map((value) => (
-              <option key={value} value={value}>
-                {t(SORT_MESSAGE_KEYS[value])}
-              </option>
-            ))}
-          </Select>
-          {/* ✅ 2026-10-16: 未読のスレッドだけにする。 */}
-          <label className="flex shrink-0 items-center gap-1 text-cell text-fg-muted">
-            <input type="checkbox" name={CHAT_UNREAD_PARAM} value="1" defaultChecked={unreadOnly} data-testid="chat-threads-unread" />
-            {t('chat.threads.filter.unread')}
-          </label>
-          <Button type="submit" variant="secondary" size="sm" data-testid="chat-threads-search-submit">
-            {t('chat.threads.search.submit')}
-          </Button>
-        </div>
-      </form>
-      {groups.length === 0 && messageHits.length === 0 ? (
-        <div className="flex flex-col gap-2 p-4" data-testid="chat-threads-search-empty">
-          <p className="m-0 text-body text-fg-muted">{t('chat.threads.search.empty')}</p>
+        <Button type="submit" variant="secondary" size="sm" data-testid="chat-threads-search-submit">
+          {t('chat.threads.search.submit')}
+        </Button>
+        {canPost && people !== null ? (
           <Link
-            href={chatHref({ ...paneState, sort })}
-            // 未読のみ・検索語の両方を外す（「該当なし」から全件に戻る）。
-            className={SECONDARY_LINK_CLASSES}
-            data-testid="chat-threads-search-clear"
+            href={chatHref({ filter: { kind: 'contacts' } })}
+            className={cn(PRIMARY_LINK_CLASSES, 'h-8 px-3 text-cell')}
+            data-testid="chat-new-conversation"
           >
-            {t('chat.threads.search.clear')}
+            {t('chat.people.newConversationShort')}
           </Link>
+        ) : null}
+      </form>
+
+      {filter.kind === 'templates' && canPost ? (
+        // ✅ 2026-10-22（紺野「自分だけ」）: 自分の定型文の管理画面（一覧の列がまるごと切り替わる。「新しいグループ」と同じ作り）。
+        <ChatTemplateManager
+          templates={templates}
+          backHref={chatHref({ ...paneState, q, sort })}
+          limits={{ label: CHAT_TEMPLATE_LABEL_MAX_LENGTH, body: CHAT_TEMPLATE_BODY_MAX_LENGTH, count: CHAT_TEMPLATE_MAX_PER_USER }}
+          labels={{
+            back: t('chat.rail.backToAll'),
+            title: t('chat.template.title'),
+            description: t('chat.template.description'),
+            countUnit: t('chat.template.countUnit'),
+            empty: t('chat.template.empty'),
+            newHeading: t('chat.template.newHeading'),
+            editHeading: t('chat.template.editHeading'),
+            label: t('chat.template.label'),
+            labelPlaceholder: t('chat.template.labelPlaceholder'),
+            body: t('chat.template.body'),
+            bodyPlaceholder: t('chat.template.bodyPlaceholder'),
+            note: t('chat.template.note'),
+            create: t('chat.template.create'),
+            update: t('chat.template.update'),
+            cancel: t('chat.message.cancel'),
+            edit: t('chat.template.edit'),
+            remove: t('chat.template.delete'),
+            deleteTitle: t('chat.template.deleteTitle'),
+            deleteConfirm: t('chat.template.deleteConfirm'),
+            deleteYes: t('chat.message.deleteConfirmYes'),
+            needLabel: t('chat.template.needLabel'),
+            needBody: t('chat.template.needBody'),
+            limit: t('chat.template.limit'),
+            failed: t('chat.template.failed'),
+            savedToast: t('chat.toast.templateSaved'),
+            deletedToast: t('chat.toast.templateDeleted'),
+            toastLink: t('chat.toast.backToChat'),
+          }}
+        />
+      ) : filter.kind === 'saved' ? (
+        <ChatSavedView saved={saved} entries={all} context={context} />
+      ) : filter.kind === 'newgroup' && people !== null && canPost ? (
+        // ✅ 2026-10-22（紺野「グループ作るがダサい」）: 一覧の列がまるごと「新しいグループ」に切り替わる（連絡先と同じ「左に割り込む」形）。
+        //    🔴 閲覧専用には出さない。候補は連絡先と同じ母集団（`lib/chat/people.ts` が RLS で決めたものだけ）。
+        <ChatNewGroupForm
+          companies={people.contacts.companies.map((company) => ({
+            companyName: company.companyName ?? t('chat.thread.unknownName'),
+            isHost: company.people.some((contact) => contact.isHost),
+            people: company.people.map((contact) => ({
+              userId: contact.userId,
+              name: contact.name ?? t('chat.thread.unknownName'),
+              status: contact.status ?? null,
+            })),
+          }))}
+          labels={{
+            title: t('chat.group.title'),
+            back: t('chat.group.back'),
+            name: t('chat.group.name'),
+            namePlaceholder: t('chat.group.namePlaceholder'),
+            search: t('chat.group.search'),
+            selected: t('chat.group.selected'),
+            selectedNone: t('chat.group.selectedNone'),
+            self: t('chat.people.self'),
+            remove: t('chat.group.remove'),
+            partnerLimit: t('chat.group.partnerLimit'),
+            noMatch: t('chat.group.noMatch'),
+            external: t('chat.tag.external'),
+            submit: t('chat.group.submit'),
+            needName: t('chat.group.needName'),
+            needMembers: t('chat.group.needMembers'),
+            failed: t('chat.group.failed'),
+            createdToast: t('chat.toast.groupCreated'),
+            openGroup: t('chat.toast.openGroup'),
+          }}
+        />
+      ) : (filter.kind === 'contacts' || filter.kind === 'newgroup') && people !== null ? (
+        <div className="flex min-h-0 flex-col overflow-y-auto">
+          <ChatContactsView people={people}>
+            {/* ✅ 2026-10-22: グループを作る入口は 1 行の導線（押すと「新しいグループ」画面へ）。🔴 閲覧専用には出さない。 */}
+            {canPost && people.contacts.companies.length > 0 ? (
+              <Link
+                href={chatHref({ filter: { kind: 'newgroup' } })}
+                className={cn('mx-2 mt-2 flex items-center gap-3 rounded-md px-2 py-2', ROW_HOVER_CLASSES)}
+                data-testid="chat-new-group-toggle"
+              >
+                <Avatar size="md" initials="G" title={t('chat.group.heading')} className={AVATAR_KIND_CLASSES.GROUP} />
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate text-cell text-fg">{t('chat.group.heading')}</span>
+                  <span className="truncate text-xs text-fg-muted">{t('chat.group.entry')}</span>
+                </span>
+                <span aria-hidden="true" className="text-fg-muted">
+                  ›
+                </span>
+              </Link>
+            ) : null}
+          </ChatContactsView>
         </div>
       ) : (
         <div className="flex min-h-0 flex-col overflow-y-auto">
-        {/* ✅ 2026-10-16: 自分がピン留めした会話を一番上に（下の会社ごとの木にも、そのまま残る）。 */}
-        {(() => {
-          const all = groups.flatMap((group) => (group.chat === null ? group.threads : [group.chat, ...group.threads]));
-          const pinned = all.filter((item) => pinnedIds.includes(item.id));
-          if (pinned.length === 0) return null;
-          return (
-            <section className="border-b border-border" data-testid="chat-threads-pinned">
-              <h3 className="m-0 px-3 pt-3 pb-1 text-cell font-medium text-fg-muted">{t('chat.threads.pinned')}</h3>
+          {filter.kind === 'all' ? (
+            <ChatFavorites favorites={favorites} unreadCounts={allUnread} mutedIds={allMuted} selectedThreadId={selectedThreadId} />
+          ) : null}
+          <ScopeHeader filter={filter} groups={groups} people={people} canPost={canPost} />
+          {shown.length === 0 && messageHits.length === 0 ? (
+            searching ? (
+              <div className="flex flex-col gap-2 p-4" data-testid="chat-threads-search-empty">
+                <p className="m-0 text-body text-fg-muted">
+                  {filter.kind === 'person' ? t('chat.rail.personEmpty') : t('chat.threads.search.empty')}
+                </p>
+                <Link href={chatHref({ ...paneState, sort })} className={SECONDARY_LINK_CLASSES} data-testid="chat-threads-search-clear">
+                  {t('chat.threads.search.clear')}
+                </Link>
+              </div>
+            ) : (
+              <p className="m-0 p-4 text-xs text-fg-muted" data-testid="chat-rooms-empty">
+                {t('chat.people.roomsEmpty')}
+              </p>
+            )
+          ) : (
+            <ul className="m-0 flex list-none flex-col p-1" aria-label={t('chat.threads.label')}>
+              {shown.map((entry) => (
+                <Row key={idOf(entry)} view={viewOf(entry)} context={context} />
+              ))}
+            </ul>
+          )}
+          {/* ✅ 2026-10-14: 本文の検索で当たった発言（読めた発言だけ。前後の抜粋）。押すとその会話を開く。 */}
+          {messageHits.length === 0 ? null : (
+            <section data-testid="chat-threads-message-hits">
+              <h3 className="m-0 px-3 pt-3 pb-1 text-cell font-normal text-fg-muted">{t('chat.threads.search.messageHits')}</h3>
               <ul className="m-0 list-none p-0">
-                {pinned.map((item) => (
-                  <li key={item.id} className={`border-b border-border-row ${ROW_HOVER_CLASSES}`}>
+                {messageHits.map((hit) => (
+                  <li key={hit.messageId} className={ROW_HOVER_CLASSES}>
                     <Link
-                      href={chatHref({ ...withThreadSelected(context.paneState, item.id), ...context.listQuery })}
-                      className="flex items-center gap-2 px-3 py-2"
-                      data-testid={`chat-thread-pinned-${item.id}`}
+                      href={chatHref({ ...withThreadSelected(context.paneState, hit.threadId), ...context.listQuery })}
+                      className="flex flex-col gap-1 px-3 py-2"
+                      data-testid={`chat-threads-message-hit-${hit.messageId}`}
                     >
-                      <Badge variant="neutral">{t(KIND_MESSAGE_KEYS[item.kind])}</Badge>
-                      <span className="min-w-0 flex-1 truncate text-cell font-medium text-fg">
-                        {item.kind === 'COMPANY' ? item.counterpartyName ?? t('chat.thread.unknownName') : item.project?.name ?? t(KIND_MESSAGE_KEYS[item.kind])}
+                      <span className="flex items-center gap-2">
+                        <span className="min-w-0 flex-1 truncate text-cell font-normal text-fg">
+                          {hit.threadTitle ?? t('chat.thread.unknownName')}
+                        </span>
+                        <span className="shrink-0 text-xs text-fg-placeholder">{formatDateTimeJst(hit.sentAt)}</span>
                       </span>
+                      <span className="text-xs text-fg-muted">{hit.snippet}</span>
                     </Link>
                   </li>
                 ))}
               </ul>
             </section>
-          );
-        })()}
-        <ul className="m-0 flex list-none flex-col p-0" aria-label={t('chat.threads.label')}>
-          {groups.map((group, index) => {
-            const name = group.counterpartyName ?? t('chat.thread.unknownName');
-            return (
-              <li key={group.chat?.id ?? `group-${String(index)}`} data-testid={`chat-thread-group-${String(index)}`}>
-                {/* ✅ 2026-10-14: 返信が早い取引先（上位 10%）。🔴 ホストにだけ真になる（`read.ts`）。良いところだけを出す。 */}
-                {group.fastReply ? (
-                  <p className="m-0 flex items-center gap-2 px-3 pt-2" data-testid={`chat-thread-group-fast-${String(index)}`}>
-                    <Badge variant="success">{t('chat.tree.fastReply')}</Badge>
-                    <span className="truncate text-xs text-fg-muted">{name}</span>
-                  </p>
-                ) : null}
-                <ul className="m-0 list-none p-0" aria-label={name}>
-                  {group.chat === null ? (
-                    // 🔴 まだチャットが無い会社も、スレッドの親として名前だけを出す（押せない行は作らない）。
-                    <li
-                      className={`flex items-center gap-3 border-b border-border-row px-3 ${CHAT_THREAD_ROW_HEIGHT_CLASS}`}
-                      data-testid={`chat-thread-group-header-${String(index)}`}
-                    >
-                      <Avatar size="md" initials={displayInitials(name)} title={name} />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-row font-medium text-fg">{name}</span>
-                        <span className="block truncate text-xs text-fg-placeholder">{t('chat.tree.noChat')}</span>
-                      </span>
-                    </li>
-                  ) : (
-                    <ThreadRow item={group.chat} context={context} />
-                  )}
-                  {group.threads.map((item) => (
-                    <ThreadRow key={item.id} item={item} context={context} />
-                  ))}
-                </ul>
-              </li>
-            );
-          })}
-        </ul>
+          )}
+          {truncated ? (
+            <p className="m-0 p-3 text-xs text-fg-muted" data-testid="chat-threads-truncated">
+              {t('chat.tree.truncated')}
+            </p>
+          ) : null}
+          {nextCursor === null ? null : (
+            <Link href={chatHref({ ...paneState, threadsCursor: nextCursor })} className={`${SECONDARY_LINK_CLASSES} p-3`} data-testid="chat-threads-more">
+              {t('chat.threads.more')}
+            </Link>
+          )}
         </div>
-      )}
-      {/* ✅ 2026-10-14: 本文の検索で当たった発言（読めた発言だけ。前後の抜粋）。押すとそのスレッドを開く。 */}
-      {messageHits.length === 0 ? null : (
-        <section className="border-t border-border" data-testid="chat-threads-message-hits">
-          <h3 className="m-0 px-3 pt-3 pb-1 text-cell font-medium text-fg-muted">{t('chat.threads.search.messageHits')}</h3>
-          <ul className="m-0 list-none p-0">
-            {messageHits.map((hit) => (
-              <li key={hit.messageId} className={`border-b border-border-row ${ROW_HOVER_CLASSES}`}>
-                <Link
-                  href={chatHref({ ...withThreadSelected(context.paneState, hit.threadId), ...context.listQuery })}
-                  className="flex flex-col gap-1 px-3 py-2"
-                  data-testid={`chat-threads-message-hit-${hit.messageId}`}
-                >
-                  <span className="flex items-center gap-2">
-                    <span className="min-w-0 flex-1 truncate text-cell font-medium text-fg">
-                      {hit.threadTitle ?? t('chat.thread.unknownName')}
-                    </span>
-                    <span className="shrink-0 text-xs text-fg-placeholder">{formatDateTimeJst(hit.sentAt)}</span>
-                  </span>
-                  <span className="text-xs text-fg-muted">{hit.snippet}</span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-      {truncated ? (
-        <p className="m-0 p-3 text-xs text-fg-muted" data-testid="chat-threads-truncated">
-          {t('chat.tree.truncated')}
-        </p>
-      ) : null}
-      {nextCursor === null ? null : (
-        <Link
-          href={chatHref({ ...paneState, threadsCursor: nextCursor })}
-          className={`${SECONDARY_LINK_CLASSES} p-3`}
-          data-testid="chat-threads-more"
-        >
-          {t('chat.threads.more')}
-        </Link>
       )}
     </div>
   );

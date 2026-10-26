@@ -33,16 +33,24 @@ import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { CHAT_MESSAGE_PAGE_SIZE, PAGE_SIZE_DEFAULT } from '@ses/config';
 import { t } from '@ses/i18n';
-import { Alert, Card, CONTENT_PADDING_Y_CLASS, PageBody, SECONDARY_LINK_CLASSES, cn } from '@ses/ui';
+import { Alert, Card, CHAT_SCREEN_HEIGHT_CLASS, PageBody, SECONDARY_LINK_CLASSES, cn } from '@ses/ui';
 import { resolveTenantCtxOutcome } from '../../../lib/auth/session';
 import { canPostChatMessage } from '../../../lib/chat/policy';
 import { conversationLayoutFor, conversationTitleFor } from '../../../lib/chat/layout';
 import { canAddPane, withPaneClosed, type ChatPaneState } from '../../../lib/chat/panes';
 import { readChatScreen } from '../../../lib/chat/read';
-import { CHAT_PATH, chatHref, chatScreenQuerySchema } from '../../../lib/chat/screen-query';
+import { CHAT_PATH, chatHref, chatScreenQuerySchema, parseChatFilter } from '../../../lib/chat/screen-query';
+import { ChatResizablePane } from './chat-resizable-pane';
+import { ChatRail } from './chat-rail';
+import { ChatRailToggle } from './chat-rail-toggle';
+import { ChatToastHost } from './chat-toast-host';
 import { CHAT_THREAD_SORT_DEFAULT } from '../../../lib/chat/thread-tree';
+import { readMyChatUserStatus } from '../../../lib/chat/user-status';
+import { readMySavedList } from '../../../lib/chat/saved';
+import { readMyChatTemplates } from '../../../lib/chat/templates';
 import { CHAT_TRAIL } from '../../../lib/shell/page-trail';
 import { PageHeading } from '../_shell/page-heading';
+import { ChatStatusSection } from './chat-status-section';
 import { ChatConversation } from './chat-conversation';
 import { ChatPaneDropZone } from './chat-pane-drop-zone';
 import { chatConversationMessages, chatPaneDropMessages } from './chat-props';
@@ -53,6 +61,11 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = { title: t('chat.title') };
+
+/** ✅ 2026-10-22: `@名前` の候補（DM・グループのメンバーから自分を除いた名前。会社グループ・スレッドは会話の送信者から部品が足す）。 */
+function mentionNamesOf(thread: { readonly members?: readonly { readonly name: string | null; readonly self: boolean }[] }): readonly string[] {
+  return (thread.members ?? []).filter((member) => !member.self && member.name !== null).map((member) => member.name as string);
+}
 
 export default async function ChatPage({
   searchParams,
@@ -88,20 +101,41 @@ export default async function ChatPage({
   const tiled = data.panes.length > 0;
   const conversationMessages = chatConversationMessages();
   const canPost = canPostChatMessage(ctx.role);
+  // ✅ 2026-10-19（#128 §7.1 ①）: 自分のひとこと状態（入口の初期値）。閲覧専用には入口を描かないので読まない。
+  const myStatus = canPost ? await readMyChatUserStatus(ctx) : '';
   // ✅ 2026-10-14: 会話を開く・閉じる URL に一覧の検索語と並べ方を引き継ぐ（開くたびに検索が消えない）。
-  const listQuery = { q: query.q ?? null, sort: query.sort ?? CHAT_THREAD_SORT_DEFAULT, unread: query.unread === '1' };
+  // ✅ 2026-10-19（v2）: 左の列の絞り込み（`f=`）。旧「未読のみ」（`unread=1`）は「未読」の絞り込みとして読む。
+  const filter = query.f === undefined && query.unread === '1' ? parseChatFilter('unread') : parseChatFilter(query.f);
+  const infoOpen = query.info === '1';
+  // ✅ 2026-10-22（紺野）: 自分の定型文（入力欄の選択肢と管理画面）と、保存済み（左の列で選んだときだけ読む）。
+  //    閲覧専用は書けないので読まない。🔴 どちらも本人の行だけ（RLS）。
+  const ownTemplates = canPost ? await readMyChatTemplates(ctx) : [];
+  const saved = filter.kind === 'saved' ? await readMySavedList(ctx) : null;
+  // ✅ 2026-10-20: スマホの「絞り込み」ボタンに、いまの絞り込みの名前を出す。
+  const filterLabel =
+    filter.kind === 'company'
+      ? (data.tree?.groups.find((group) => group.key === filter.key)?.counterpartyName ?? t('chat.thread.unknownName'))
+      : filter.kind === 'person' || filter.kind === 'contacts' || filter.kind === 'newgroup'
+        ? t('chat.people.contacts')
+        : filter.kind === 'templates'
+          ? t('chat.template.title')
+          : t(`chat.rail.${filter.kind}`);
+  const listQuery = { q: query.q ?? null, sort: query.sort ?? CHAT_THREAD_SORT_DEFAULT, filter };
   const tree = data.tree ?? {
     groups: [],
     truncated: false,
-    awaitingReplyIds: [],
     messageHits: [],
     unreadCounts: {},
     pinnedIds: [],
     mutedIds: [],
+    lastSnippets: {},
   };
 
   return (
-    <main className={CONTENT_PADDING_Y_CLASS}>
+    // ✅ 2026-10-22（紺野「全部スクロールじゃなくて、ウィンドウ内だけスクロールできるように」）: `md` 以上は画面の高さに収め、
+    //    一覧・会話・左の列が**それぞれの枠の中だけで**スクロールする（`CHAT_SCREEN_HEIGHT_CLASS`）。`md` 未満は従来どおり。
+    //    ✅ 同日（紺野「上に無駄なスペース使いすぎ」）: 上下の余白を 20px → 12px に詰める（会話に高さを回す）。
+    <main className={cn('py-3 md:flex md:flex-col', CHAT_SCREEN_HEIGHT_CLASS)}>
       {/* 🔴 ✅ **2026-10-13: `main-min` から既定（`lg` で並置）に変えた。** `main-min` は
           「主カラムが 1320px に届くまで副カラムを下へ落とす」挙動であり、**基準の 1672px でも
           関連情報が会話の下に回り込んでいた**（実機の実測）。デザインシステム v1.0 §3.12 は
@@ -110,10 +144,21 @@ export default async function ChatPage({
           決まらず、会話の幅も足りなくなる）。対象と相手は各会話の見出しに出ている。 */}
       <PageBody
         widthClass="split"
-        aside={selected === null || tiled ? undefined : <ChatThreadPanel thread={selected} />}
+        className="md:min-h-0 md:flex-1"
+        // ✅ 2026-10-19（v2）: 右の情報欄は既定で閉じる（左に絞り込みの列が増えたので、会話の幅を確保する）。
+        //    会話の見出しの「情報」で開く（`info=1`）。
+        aside={selected === null || tiled || !infoOpen ? undefined : <ChatThreadPanel thread={selected} canPost={canPost} />}
       >
-        <PageHeading trail={CHAT_TRAIL} title={t('chat.title')} />
-        <p className="mb-4 text-body text-fg-muted">{t('chat.threads.population')}</p>
+        {/* 見出し・説明・器を縦に積み、器（Card）が残りの高さを全部使う。 */}
+        <div className="flex h-full min-h-0 flex-col">
+        {/* ✅ 2026-10-22（紺野「これいらない」）: 見出しの帯（パンくず・タイトル）と説明文を画面から消し、器を上まで使う
+            （Teams と同じく会話に高さを回す）。🔴 帯そのものは全画面に 1 つ置く決まり（`tests/static/page-heading-single.test.ts`）
+            なので、**読み上げ用にだけ残す**（`sr-only`）。説明文は消した。 */}
+        <div className="sr-only">
+          <PageHeading trail={CHAT_TRAIL} title={t('chat.title')} />
+        </div>
+        {/* ✅ 2026-10-20（紺野「トースト」）: 操作の結果を右下に出す（行き先つき・自動で消えない）。 */}
+        <ChatToastHost kindLabel={t('chat.toast.kind')} dismissLabel={t('chat.toast.dismiss')} />
         {/* 🔴 不存在・他社・他テナントで同じ文言（`docs/05` §4.8） */}
         {data.requestedThreadMissing ? (
           <Alert variant="warning" className="mb-4" data-testid="chat-thread-missing">
@@ -127,27 +172,82 @@ export default async function ChatPage({
         {/* ✅ 2026-10-14: 会話を並べているときは、幅が足りない分を**器の中で横に送る**（会話を潰さない）。 */}
         <Card
           className={cn(
-            'flex min-h-0 flex-1 p-0',
+            'flex min-h-0 flex-1 flex-col overscroll-contain p-0 md:flex-row',
             tiled ? 'overflow-x-auto overflow-y-hidden' : 'overflow-hidden',
           )}
         >
+          {/* ✅ 2026-10-19（v2）: 左の絞り込みの列（会社から・人から）。🔴 `md` 未満で会話を開いているときは一覧と一緒に畳む。 */}
+          <div
+            data-chat-rail-container
+            className={
+              selected === null
+                ? 'w-full shrink-0 bg-bg-subtle md:w-44 md:data-[collapsed=true]:w-16 md:overflow-y-auto overscroll-contain'
+                : 'hidden shrink-0 bg-bg-subtle md:block md:w-44 md:data-[collapsed=true]:w-16 md:overflow-y-auto overscroll-contain'
+            }
+          >
+            {/* ✅ 2026-10-22: 自分のひとこと状態は左の列のいちばん上（ページ見出しの下から移した）。
+                🔴 スマホの「絞り込み」ボタン（畳む部分）の外に置く —— 閉じていても状態を変えられるように。 */}
+            {canPost ? (
+              <div className="p-2 pb-0 md:in-[[data-collapsed=true]]:hidden">
+                <ChatStatusSection canPost={canPost} text={myStatus} />
+              </div>
+            ) : null}
+            {/* ✅ 2026-10-22（Lark の参考）: スマホの上部は「すべて／未読 N／保存済み」の切り替え + 「≡ 絞り込み」。
+                ≡ の文字は、今の絞り込みが 3 つ以外（取引先・グループなど）のときだけその名前を出す。 */}
+            <ChatRailToggle
+              collapseLabel={t('chat.rail.collapseToggle')}
+              label={filter.kind === 'all' || filter.kind === 'unread' || filter.kind === 'saved' ? t('chat.rail.menu') : filterLabel}
+              closeLabel={t('chat.rail.menuClose')}
+              tabs={[
+                { key: 'all', href: chatHref({}), label: t('chat.rail.all'), active: filter.kind === 'all' },
+                {
+                  key: 'unread',
+                  href: chatHref({ filter: { kind: 'unread' } }),
+                  label: t('chat.rail.unread'),
+                  active: filter.kind === 'unread',
+                  count: Object.entries({ ...tree.unreadCounts, ...(data.people?.unreadCounts ?? {}) })
+                    .filter(([id]) => !tree.mutedIds.includes(id))
+                    .reduce((sum, [, count]) => sum + count, 0),
+                },
+                ...(canPost
+                  ? [{ key: 'saved' as const, href: chatHref({ filter: { kind: 'saved' } }), label: t('chat.rail.saved'), active: filter.kind === 'saved' }]
+                  : []),
+              ]}
+            >
+            <ChatRail
+              groups={tree.groups}
+              rooms={data.people?.rooms ?? []}
+              unreadCounts={{ ...tree.unreadCounts, ...(data.people?.unreadCounts ?? {}) }}
+              filter={filter}
+              showContacts={data.people !== null}
+              showSaved={canPost}
+            />
+            </ChatRailToggle>
+          </div>
+          {/* ✅ 2026-10-16（紺野）: 一覧は薄いグレーの面、会話は白。
+              ✅ 2026-10-22（紺野「周りの色を軽く（白）でもいいかも」）: 一覧も白にし、左の列は薄い灰色に。一覧と会話は白どうしなので
+              細い線 1 本で区切る（開いている会話の青がはっきり見える）。 */}
           {/* 左: スレッド一覧（320）。🔴 `md` 未満で会話を開いているときは畳む（2 画面遷移） */}
           <div
             className={
               selected === null
-                ? 'w-full md:w-80 md:shrink-0 md:border-r md:border-border'
-                : 'hidden md:block md:w-80 md:shrink-0 md:border-r md:border-border'
+                ? 'w-full bg-bg md:w-96 md:shrink-0 md:overflow-y-auto overscroll-contain md:border-r md:border-border'
+                : 'hidden bg-bg md:block md:w-96 md:shrink-0 md:overflow-y-auto overscroll-contain md:border-r md:border-border'
             }
           >
             <ChatThreadList
               groups={tree.groups}
               truncated={tree.truncated}
-              awaitingReplyIds={tree.awaitingReplyIds}
               messageHits={tree.messageHits}
+              saved={saved}
+              templates={ownTemplates}
               unreadCounts={tree.unreadCounts}
               pinnedIds={tree.pinnedIds}
               mutedIds={tree.mutedIds}
-              unreadOnly={listQuery.unread}
+              people={data.people}
+              canPost={canPost}
+              lastSnippets={tree.lastSnippets}
+              filter={filter}
               q={listQuery.q}
               sort={listQuery.sort}
               selectedThreadId={selected?.id ?? null}
@@ -158,9 +258,9 @@ export default async function ChatPage({
             />
           </div>
           {/* 中央: 会話（698）。🔴 選択が無いときは `md` 以上でだけ案内を出す（モバイルは一覧が全幅） */}
-          <div
+          <ChatResizablePane enabled={tiled} storageKey="primary" resizeLabel={t('chat.pane.resize')}
             className={cn(
-              selected === null ? 'hidden min-w-0 flex-1 md:flex md:flex-col' : 'flex min-w-0 flex-1 flex-col',
+              selected === null ? 'hidden min-h-0 min-w-0 flex-1 md:flex md:flex-col' : 'flex min-h-0 min-w-0 flex-1 flex-col',
               // ✅ 2026-10-14: 並べているときは右の列と同じ下限（320px。`md` 以上だけ）。
               tiled ? 'md:min-w-80' : null,
             )}
@@ -176,21 +276,31 @@ export default async function ChatPage({
                 threadId={selected.id}
                 initialMessages={data.messages.items}
                 initialNextCursor={data.messages.nextCursor}
+                ownTemplates={ownTemplates}
                 lastReadMessageId={data.lastReadMessageIds[selected.id] ?? null}
                 prefs={data.threadPrefs[selected.id] ?? { pinned: false, muted: false }}
+                // ✅ 2026-10-19（#128）: 相手の既読は DM だけ（グループ・会社グループ・スレッドには渡さない）。
+                {...(selected.kind === 'DM' ? { peerReadMessageId: data.peerReadMessageIds[selected.id] ?? null } : {})}
+                mentionNames={mentionNamesOf(selected)}
                 canPost={canPost}
                 messages={conversationMessages}
                 {...(tiled ? { closeHref: chatHref({ ...withPaneClosed(paneState, selected.id), ...listQuery }) } : {})}
+                {...(tiled
+                  ? {}
+                  : {
+                      infoHref: chatHref({ ...paneState, ...listQuery, info: !infoOpen }),
+                      infoLabel: infoOpen ? t('chat.panel.close') : t('chat.panel.open'),
+                    })}
               />
             )}
-          </div>
+          </ChatResizablePane>
           {/* ✅ 2026-10-14: 右に並べた会話（最大 2 本）。🔴 `md` 未満では出さない —— モバイルは
               「一覧 → 会話」の 1 列の切替のまま（左端の会話は上で出ている。`docs/04` §S-031 デバイス別）。
               1 列の下限は 320px。足りない幅では器の中で横に送る（ページ全体は横に送らない）。 */}
           {data.panes.map((pane) => (
-            <div
+            <ChatResizablePane enabled storageKey={`pane-${data.panes.indexOf(pane)}`} resizeLabel={t('chat.pane.resize')}
               key={pane.requestedThreadId}
-              className={'hidden min-w-80 flex-1 flex-col border-l border-border md:flex'}
+              className={'hidden min-h-0 min-w-0 flex-1 flex-col overscroll-contain border-l border-border md:flex'}
               data-testid={`chat-pane-${pane.requestedThreadId}`}
             >
               {pane.thread === null ? (
@@ -214,14 +324,17 @@ export default async function ChatPage({
                   threadId={pane.thread.id}
                   initialMessages={pane.messages.items}
                   initialNextCursor={pane.messages.nextCursor}
+                  ownTemplates={ownTemplates}
                   lastReadMessageId={data.lastReadMessageIds[pane.thread.id] ?? null}
                   prefs={data.threadPrefs[pane.thread.id] ?? { pinned: false, muted: false }}
+                  {...(pane.thread.kind === 'DM' ? { peerReadMessageId: data.peerReadMessageIds[pane.thread.id] ?? null } : {})}
+                  mentionNames={mentionNamesOf(pane.thread)}
                   canPost={canPost}
                   messages={conversationMessages}
                   closeHref={chatHref({ ...withPaneClosed(paneState, pane.thread.id), ...listQuery })}
                 />
               )}
-            </div>
+            </ChatResizablePane>
           ))}
           {/* ✅ 2026-10-14: ドラッグの受け口（ドラッグ中だけ現れる。`md` 以上）。上限に達したら置かない。 */}
           {canAddPane(paneState) ? (
@@ -230,6 +343,7 @@ export default async function ChatPage({
             </div>
           ) : null}
         </Card>
+        </div>
       </PageBody>
     </main>
   );

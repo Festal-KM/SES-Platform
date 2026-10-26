@@ -133,6 +133,13 @@ export const CHAT_THREAD_ROW_HEIGHT_CLASS = 'min-h-15';
 /** 会話のコンポーザー（64）。 */
 export const CHAT_COMPOSER_HEIGHT_CLASS = 'min-h-16';
 /**
+ * ✅ 2026-10-22（紺野「全部スクロールじゃなくて、ウィンドウ内だけスクロールできるように」）: チャット画面の本文の高さ（`md` 以上）。
+ * 画面の高さ − 環境バナー − Top Header（56）。この中で一覧・会話・左の列が**それぞれの枠の中だけで**スクロールする。
+ * 🔴 `md` 未満は従来どおり画面ごとスクロールする（入力欄は下に貼り付く）。
+ * 🔴 引き算はサイドバーと同じ CSS 変数 `--app-banner-h`（`production` では既定の `0px`）。
+ */
+export const CHAT_SCREEN_HEIGHT_CLASS = 'md:h-[calc(100dvh-var(--app-banner-h,0px)-3.5rem)]';
+/**
  * メッセージのバブルの上限幅（560）。
  * 🔴 **`packages/ui` に置く** —— `max-w-*` は画面側に書けない（`tests/static/ui-screen-width.test.ts`）。
  *    幅の上限は「読める行長」の規約であり、画面ごとに決め直すものではない。

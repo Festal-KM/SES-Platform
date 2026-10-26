@@ -530,8 +530,9 @@ describe('🔴 ⑥ 参加会社は `thread_participants`（C5）が返した行�
     expect(a1Json).not.toContain(PARTNER_A2);
     // 木を読むときはページ単位の一覧を読まない（レビュー指摘）。
     expect(forA1.threads).toEqual({ items: [], nextCursor: null });
-    // ✅ 2026-10-14: 要返信は自分が読めるスレッドだけ。🔴 「返信が早い」は取引先には決して付かない（他社との比較を出さない）。
-    expect(forA1.tree?.awaitingReplyIds.every((id) => id !== THREAD_A_P2)).toBe(true);
+    // ✅ 2026-10-14: 🔴 「返信が早い」は取引先には決して付かない（他社との比較を出さない）。
+    //    ✅ 2026-10-22: 要返信は撤去した（「保存済み」に置き換え。読み出しの結果にも載らない）。
+    expect(forA1.tree).not.toHaveProperty('awaitingReplyIds');
     expect(forA1.tree?.groups.every((group) => !group.fastReply)).toBe(true);
     // ✅ 2026-10-14: 本文の検索も RLS の母集団だけ。🔴 A1 が A2 の本文で検索しても 0 件（自社の本文は当たる = 対照）。
     expect((await read(partnerA1, BODY_P2)).tree?.messageHits).toEqual([]);
@@ -896,6 +897,21 @@ describe('🔴 ⑯ リアクションは発言が読める相手にだけ見え�
 
     // もう一度押すと外れる。
     expect(await toggleChatReaction(hostSales, THREAD_A_P1, MESSAGE_A_P1, 'THANKS')).toEqual([]);
+  });
+
+  it('✅ 2026-10-22: 絵文字のリアクション（英字の名前で入る）も付け外しでき、並びは絵文字 → 語', async () => {
+    const { toggleChatReaction } = await import('../../apps/web/lib/chat/service');
+    await toggleChatReaction(hostSales, THREAD_A_P1, MESSAGE_A_P1, 'OK');
+    const both = await toggleChatReaction(hostSales, THREAD_A_P1, MESSAGE_A_P1, 'THUMBS_UP');
+    expect(both).toEqual([
+      { reaction: 'THUMBS_UP', count: 1, mine: true },
+      { reaction: 'OK', count: 1, mine: true },
+    ]);
+    // 🔴 DB には絵文字そのものではなく名前が入る（CHECK も名前だけを許す）。
+    const rows = await admin.chatMessageReaction.findMany({ where: { messageId: MESSAGE_A_P1 }, select: { reaction: true } });
+    expect(rows.map((row) => row.reaction).sort()).toEqual(['OK', 'THUMBS_UP']);
+    await toggleChatReaction(hostSales, THREAD_A_P1, MESSAGE_A_P1, 'OK');
+    expect(await toggleChatReaction(hostSales, THREAD_A_P1, MESSAGE_A_P1, 'THUMBS_UP')).toEqual([]);
   });
 
   it('🔴 取引先 A1 は A2 のスレッドの発言にリアクションを付けられない（404 と同じ扱い）・別スレッドの発言も不可', async () => {

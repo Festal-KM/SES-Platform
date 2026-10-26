@@ -50,8 +50,9 @@ export type PurgeColumnsSpec = {
 };
 
 /**
- * 🔴 行の物理削除。`role` / `description` / `technologies` が NOT NULL で、空文字の行を残しても
- *    意味が無い表（`engineer_careers`）だけに使う。
+ * 🔴 行の物理削除。次の 2 種類の表だけに使う。
+ *   - `role` / `description` / `technologies` が NOT NULL で、空文字の行を残しても意味が無い表（`engineer_careers`）
+ *   - ✅ 2026-10-22: 消す列が無く、どこからも参照されない末端の表（`chat_saved_messages`。本人の栞の行そのものが対象）
  */
 export type PurgeRowsSpec = {
   readonly table: string;
@@ -146,6 +147,21 @@ export const PURGE_SPEC = {
     { table: 'match_candidates', columns: ['rationale'], provisional: 'ISSUE-67' },
     // --- チャット ---------------------------------------------------------------------------
     { table: 'messages', columns: ['body', 'attachment_key'], objectKeyColumns: ['attachment_key'], purgedAtColumn: 'purged_at' },
+    // ✅ 2026-10-19 チャットレーン: ひとこと状態は本人が書く自由文で、個人の事情（「通院のため」等）が書かれうる。
+    //    発言の本文（messages.body）と同じく〔削除〕に置く。行は残しても空文字なので画面には出ない（読む側が空を「無し」と扱う）。
+    { table: 'chat_user_statuses', columns: [{ name: 'text', erase: 'EMPTY_TEXT' }] },
+    // ✅ 2026-10-22 チャットレーン（紺野の決定）: 保存済み（本人だけの栞）を〔削除〕に置く。消す列が無い（ID と時刻だけ）ので
+    //    行ごと消す。🔴 この表を参照する表は無い（末端）ので、行削除で FK の連鎖は起きない（上の 🔴 の懸念に当たらない）。
+    { table: 'chat_saved_messages', rows: 'ALL' },
+    // ✅ 2026-10-22 チャットレーン: 自分の定型文は本人が書く自由文（取引先の担当者名・個人の事情が書かれうる）。
+    //    ひとこと状態と同じく列を空文字にする（行は残っても空なので選択肢に出ない。読む側が空を「無し」と扱う）。
+    {
+      table: 'chat_message_templates',
+      columns: [
+        { name: 'label', erase: 'EMPTY_TEXT' },
+        { name: 'body', erase: 'EMPTY_TEXT' },
+      ],
+    },
     // --- ⑤ 契約 / ⑥ 稼働 ------------------------------------------------------------------
     { table: 'contract_documents', columns: ['object_key', 'merge_result', 'signers'], objectKeyColumns: ['object_key'] },
     { table: 'contract_templates', columns: ['object_key'], objectKeyColumns: ['object_key'] },
