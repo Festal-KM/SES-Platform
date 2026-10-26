@@ -31,10 +31,10 @@ export function ChatFavorites({
 }) {
   const nameOf = (name: string | null) => name ?? t('chat.thread.unknownName');
   return (
-    <section data-testid="chat-favorites">
-      <h3 className={SECTION_LABEL_CLASSES}>{t('chat.people.favorites')}</h3>
+    <section className={favorites.length === 0 ? 'flex items-baseline gap-2 px-3 py-2' : undefined} data-testid="chat-favorites">
+      <h3 className={favorites.length === 0 ? 'm-0 shrink-0 text-xs font-normal text-fg-muted' : SECTION_LABEL_CLASSES}>{t('chat.people.favorites')}</h3>
       {favorites.length === 0 ? (
-        <p className="m-0 px-3 pb-2 text-xs text-fg-placeholder" data-testid="chat-favorites-empty">
+        <p className="m-0 text-xs text-fg-placeholder" data-testid="chat-favorites-empty">
           {t('chat.people.favoritesEmpty')}
         </p>
       ) : (

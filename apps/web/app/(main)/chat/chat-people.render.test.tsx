@@ -99,6 +99,7 @@ describe('③ お気に入り・未読・メンバー', () => {
     expect(html).toContain('よろしくお願いします');
     expect(html).toContain(`data-testid="chat-room-${ROOM_GROUP}"`);
     expect(html).toContain(`data-testid="chat-favorite-${ROOM_DM}"`);
+    expect(html).toContain('<section data-testid="chat-favorites">');
     expect(html).not.toContain(`data-testid="chat-favorite-${ROOM_GROUP}"`);
     expect(html).toContain(`data-testid="chat-room-unread-${ROOM_DM}"`);
   });
@@ -106,6 +107,8 @@ describe('③ お気に入り・未読・メンバー', () => {
   it('お気に入りが無いときは案内を出し、「＋ 新しい会話」は常にある', () => {
     const html = renderList(true, { ...PEOPLE, rooms: [], pinnedIds: [] });
     expect(html).toContain('data-testid="chat-favorites-empty"');
+    expect(html).toMatch(/<section class="flex items-baseline gap-2 px-3 py-2" data-testid="chat-favorites">/);
+    expect(html).not.toContain('data-testid="chat-threads-pinned"');
     expect(html).toContain('data-testid="chat-new-conversation"');
   });
 

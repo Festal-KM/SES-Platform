@@ -263,8 +263,9 @@ function Row({ view, context }: { readonly view: RowView; readonly context: RowC
           </span>
           <span className="flex items-center gap-1">
             <span className="min-w-0 flex-1 truncate text-xs text-fg-muted">
-              {view.subtitlePrefix === null ? null : `${view.subtitlePrefix} ・ `}
-              {snippet === '' ? (view.subtitlePrefix === null ? ' ' : '') : snippet}
+              {view.subtitlePrefix}
+              {view.subtitlePrefix && snippet ? ' ・ ' : null}
+              {snippet}
             </span>
             {view.counterpartyName === null ? null : (
               <span className="sr-only" data-testid={`chat-thread-counterparty-${view.id}`}>
