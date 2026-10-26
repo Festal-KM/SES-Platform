@@ -112,6 +112,7 @@ const PII_COLUMNS: ReadonlyArray<readonly [table: string, column: string]> = [
   ['chat_message_templates', 'label'],
   ['chat_message_templates', 'body'],
   ['chat_saved_messages', 'message_id'],
+  ['chat_threads', 'title'],
   ['chat_thread_announcements', 'message_id'],
   ['messages', 'attachment_key'],
   ['proposal_events', 'attachment_key'],

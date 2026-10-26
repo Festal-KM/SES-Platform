@@ -154,6 +154,10 @@ export const PURGE_SPEC = {
     // ✅ 2026-10-22 チャットレーン（紺野の決定）: 保存済み（本人だけの栞）を〔削除〕に置く。消す列が無い（ID と時刻だけ）ので
     //    行ごと消す。🔴 この表を参照する表は無い（末端）ので、行削除で FK の連鎖は起きない（上の 🔴 の懸念に当たらない）。
     { table: 'chat_saved_messages', rows: 'ALL' },
+    // ✅ 2026-10-26 チャットレーン（Issue #166 の 2）: 部屋の構造（種類・メンバー・取引先）は残し、グループ名だけを消す。
+    //    グループ名は自由文で「山田さんの休職相談」のような個人の事情が書ける。DM・会社グループ・スレッドは名前を持たない。
+    //    削除スコープの SELECT / UPDATE は migration 20261026010000。
+    { table: 'chat_threads', columns: ['title'] },
     // ✅ 2026-10-22 チャットレーン: 自分の定型文は本人が書く自由文（取引先の担当者名・個人の事情が書かれうる）。
     //    ひとこと状態と同じく列を空文字にする（行は残っても空なので選択肢に出ない。読む側が空を「無し」と扱う）。
     {
@@ -214,7 +218,6 @@ export const PURGE_SPEC = {
     { table: 'project_visibilities', reason: '公開範囲の記録（越境経路 1 の根拠）', policy: 'RETAIN_ALL' },
     { table: 'project_publish_requests', reason: '公開要求の記録', policy: 'RETAIN_ALL' },
     { table: 'engineer_shares', reason: '匿名共有の設定履歴（経路 4 の根拠）', policy: 'RETAIN_ALL' },
-    { table: 'chat_threads', reason: 'スレッドの構造。本文は messages 側で消す', policy: 'RETAIN_ALL' },
     { table: 'thread_participants', reason: '参加会社の記録（越境経路 3 の根拠）', policy: 'RETAIN_ALL' },
     { table: 'orders', reason: '発注・請求の記録', policy: 'RETAIN_ALL' },
     { table: 'assignments', reason: '稼働の記録（期間・状態）', policy: 'RETAIN_ALL' },
