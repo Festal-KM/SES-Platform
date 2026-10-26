@@ -648,6 +648,12 @@ export function ChatThreadList({
               ))}
             </ul>
           )}
+          {/* ✅ 2026-10-26（#166 の 7）: DM・グループを上限で読み切れなかったら、その旨を出す（黙って消さない）。 */}
+          {people?.roomsTruncated === true && (filter.kind === 'dm' || filter.kind === 'group' || filter.kind === 'person') ? (
+            <p className="m-0 px-3 py-2 text-xs text-fg-muted" data-testid="chat-rooms-truncated">
+              {t('chat.people.roomsTruncated')}
+            </p>
+          ) : null}
           {/* ✅ 2026-10-14: 本文の検索で当たった発言（読めた発言だけ。前後の抜粋）。押すとその会話を開く。 */}
           {messageHits.length === 0 ? null : (
             <section data-testid="chat-threads-message-hits">

@@ -182,3 +182,22 @@ describe('✅ グループを作る（連絡先の入口 → 「新しいグル�
     expect(view(false, 'newgroup')).not.toContain('chat-new-group');
   });
 });
+
+describe('✅ 2026-10-26（#166 の 7）上限で読み切れなかった DM・グループと連絡先は、黙って消さず案内を出す', () => {
+  function render(filter: Parameters<typeof ChatThreadList>[0]['filter'], people: ChatPeopleData): string {
+    return renderToStaticMarkup(
+      createElement(ChatThreadList, { groups: [], selectedThreadId: null, nextCursor: null, people, canPost: true, filter }),
+    );
+  }
+
+  it('DM・グループの絞り込みで、切れていれば案内を出し、切れていなければ出さない', () => {
+    expect(render({ kind: 'dm' }, { ...PEOPLE, roomsTruncated: true })).toContain('data-testid="chat-rooms-truncated"');
+    expect(render({ kind: 'group' }, { ...PEOPLE, roomsTruncated: true })).toContain(t('chat.people.roomsTruncated'));
+    expect(render({ kind: 'dm' }, PEOPLE)).not.toContain('chat-rooms-truncated');
+  });
+
+  it('連絡先は、切れていれば案内を出す', () => {
+    expect(render({ kind: 'contacts' }, { ...PEOPLE, contactsTruncated: true })).toContain('data-testid="chat-contacts-truncated"');
+    expect(render({ kind: 'contacts' }, PEOPLE)).not.toContain('chat-contacts-truncated');
+  });
+});

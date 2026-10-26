@@ -119,6 +119,12 @@ export function ChatContactsView({ people, children }: { readonly people: ChatPe
           </ul>
         </section>
       ))}
+      {/* ✅ 2026-10-26（#166 の 7）: 上限で読み切れなかったら、その旨を出す（黙って消さない）。 */}
+      {people.contactsTruncated === true ? (
+        <p className="m-0 px-3 py-2 text-xs text-fg-muted" data-testid="chat-contacts-truncated">
+          {t('chat.people.contactsTruncated')}
+        </p>
+      ) : null}
     </div>
   );
 }
