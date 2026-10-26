@@ -915,6 +915,18 @@ export function ChatConversation({
             </span>
           ) : null}
         </div>
+        {/* ✅ 2026-10-14: 並べて開いているときだけ「閉じる」を置く（`md` 以上。モバイルは 1 列の切替のまま）。
+            ✅ 2026-10-26: 並べているときに操作を「…」にしまっても、「閉じる」だけは外に出したままにする（すぐ押せるように）。 */}
+        {closeHref === undefined ? null : (
+          <Link
+            href={closeHref}
+            // 🔴 `cn` は後勝ち。共通の語（`inline-block` を含む）を先に置き、`hidden` が消されないようにする。
+            className={cn(SECONDARY_LINK_CLASSES, 'hidden shrink-0 text-xs md:inline-block')}
+            data-testid={`chat-pane-close-${threadId}`}
+          >
+            {messages.closePane}
+          </Link>
+        )}
         {/* スマホだけの「…」。押すと下の操作の並びが縦に開く。
             🔴 閲覧専用（書き出し・ピン留めが無い）には「…」を出さず、残る操作（情報）をそのまま並べる。 */}
         {headerMenuUsed ? (
@@ -967,17 +979,6 @@ export function ChatConversation({
               data-testid={`chat-thread-info-${threadId}`}
             >
               {infoLabel}
-            </Link>
-          )}
-          {/* ✅ 2026-10-14: 並べて開いているときだけ「閉じる」を置く（`md` 以上。モバイルは 1 列の切替のまま）。 */}
-          {closeHref === undefined ? null : (
-            <Link
-              href={closeHref}
-              // 🔴 `cn` は後勝ち。共通の語（`inline-block` を含む）を先に置き、`hidden` が消されないようにする。
-              className={cn(SECONDARY_LINK_CLASSES, 'hidden shrink-0 md:inline-block')}
-              data-testid={`chat-pane-close-${threadId}`}
-            >
-              {messages.closePane}
             </Link>
           )}
         </div>
