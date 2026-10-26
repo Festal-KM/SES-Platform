@@ -8,6 +8,7 @@
 //   ② 会社の鍵は会社の会話の行の ID（`ChatThreadGroup.key`）。取引先の ID を URL に出さない。
 //   ③ スマホでは横に流れる帯、`md` 以上では縦の列（隠さない。`CLAUDE.md` §13.3）。
 //   ④ ✅ 2026-10-22: 「取引先」「案件スレッド」「連絡先」は見出しで開閉できる（`chat-rail-section.tsx`。閉じても未読の件数は出す）。
+import { UNREAD_DOT_CLASSES } from './chat-unread-dot';
 import Link from 'next/link';
 import { t } from '@ses/i18n';
 import { ROW_HOVER_CLASSES, cn } from '@ses/ui';
@@ -75,15 +76,22 @@ function RailLink({
         href={href}
         aria-current={active ? 'page' : undefined}
         className={cn(
-          'flex items-center gap-2 rounded-md px-2 py-1 text-cell',
+          'relative flex min-h-11 items-center gap-2 rounded-md px-2 py-1 text-cell',
           active ? 'bg-bg text-brand' : cn('text-fg', ROW_HOVER_CLASSES),
         )}
         data-testid={`chat-rail-${testKey}`}
-        title={title}
+        aria-label={label}
+        title={title ?? label}
       >
         <Mark kind={mark} text={markText} />
-        <span className="min-w-0 flex-1 truncate">{label}</span>
-        {count === undefined || count === 0 ? null : <span className="shrink-0 text-xs text-fg-muted">{String(count)}</span>}
+        <span className="min-w-0 flex-1 truncate md:in-[[data-collapsed=true]]:sr-only">{label}</span>
+        {/* ✅ 2026-10-26: 開いている列では横に数字、畳んだ列（印だけ）では印の右上に赤丸で出す（見落とさせない）。 */}
+        {count === undefined || count === 0 ? null : (
+          <>
+            <span className="shrink-0 text-xs text-fg-muted md:in-[[data-collapsed=true]]:hidden">{String(count)}</span>
+            <span className={cn(UNREAD_DOT_CLASSES, 'hidden bg-danger md:in-[[data-collapsed=true]]:flex')}>{String(count)}</span>
+          </>
+        )}
       </Link>
     </li>
   );
