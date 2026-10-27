@@ -22,7 +22,7 @@ function compareOldest(a: ChatMessageView, b: ChatMessageView): number {
 
 /**
  * 手元の一覧に、取り直した最新の行を足す。
- * - 🔴 **手元にある行は置き換えない**（過去を読み込んだ分・自分が送った分を消さない）
+ * - 🔴 **手元にある行は置き換えない**（過去を読み込んだ分・自分が送った分を消さない）。✅ 2026-10-27: 位置（sentAt）だけは揃えて並べ直す
  * - 足すのは手元に無い行だけ。並びは古い順に揃える
  * - 何も足さなければ**同じ配列**を返す（再描画を起こさない）
  */
@@ -30,10 +30,20 @@ export function mergeLatestMessages(
   current: readonly ChatMessageView[],
   latest: readonly ChatMessageView[],
 ): { readonly items: readonly ChatMessageView[]; readonly added: readonly ChatMessageView[] } {
+  // ✅ 2026-10-27: 手元にある行でも、位置（sentAt）が動いていれば取り直した値に揃える（検査が CLEAN になった添付の発言）。
+  //    本文などの中身は置き換えない（`withLatestReactions` の役目）。
+  const byId = new Map(latest.map((item) => [item.id, item]));
+  let moved = false;
+  const base = current.map((item) => {
+    const fresh = byId.get(item.id);
+    if (fresh === undefined || fresh.sentAt === item.sentAt) return item;
+    moved = true;
+    return { ...item, sentAt: fresh.sentAt };
+  });
   const seen = new Set(current.map((item) => item.id));
   const added = latest.filter((item) => !seen.has(item.id));
-  if (added.length === 0) return { items: current, added };
-  return { items: [...current, ...added].sort(compareOldest), added };
+  if (added.length === 0) return { items: moved ? [...base].sort(compareOldest) : current, added };
+  return { items: [...base, ...added].sort(compareOldest), added };
 }
 
 /**
@@ -70,6 +80,7 @@ export function withLatestReactions(
 ): readonly ChatMessageView[] {
   const byId = new Map(latest.map((item) => [item.id, item]));
   let changed = false;
+  let moved = false;
   const next = current.map((item) => {
     const fresh = byId.get(item.id);
     // ✅ 2026-10-16: 編集・削除（本文・印）も取り直した値に揃える。並び（sentAt / id）は変えない。
@@ -77,11 +88,14 @@ export function withLatestReactions(
     //    🔴 公開を取り消されたら、開いたままの画面からも案件名・リンク・引用を消す（サーバは `{ visible: false }` を返している）。
     // ✅ 2026-10-26（#164 の 5）: 保存済みの印と送信者のひとこと状態も揃える（別のタブで外した・状態を消した）。
     const pick = (m: ChatMessageView) =>
-      JSON.stringify([m.reactions ?? [], m.body, m.edited ?? false, m.deleted ?? false, m.attachedProject ?? null, m.saved ?? false, m.senderStatus ?? null, m.attachment ?? null]);
+      JSON.stringify([m.sentAt, m.reactions ?? [], m.body, m.edited ?? false, m.deleted ?? false, m.attachedProject ?? null, m.saved ?? false, m.senderStatus ?? null, m.attachment ?? null]);
     if (fresh === undefined || pick(fresh) === pick(item)) return item;
     changed = true;
+    if (fresh.sentAt !== item.sentAt) moved = true;
     const next: ChatMessageView = {
       ...item,
+      // ✅ 2026-10-27: 検査が CLEAN になった添付の発言は、公開した時点の位置へ移る（サーバが sent_at を進める）。
+      sentAt: fresh.sentAt,
       reactions: fresh.reactions ?? [],
       body: fresh.body,
       edited: fresh.edited ?? false,
@@ -99,7 +113,9 @@ export function withLatestReactions(
     }
     return { ...next, attachedProject: fresh.attachedProject };
   });
-  return changed ? next : current;
+  if (!changed) return current;
+  // 🔴 位置が動いた行があれば (sentAt, id) で並べ直す（行は落とさない。最後の行も並べ直した後のものになる）。
+  return moved ? [...next].sort(compareOldest) : next;
 }
 
 /** ✅ 2026-10-26（#166 の 4）: 読み足しの 1 回ぶんの結果。 */

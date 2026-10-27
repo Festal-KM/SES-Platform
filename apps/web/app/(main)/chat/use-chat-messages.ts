@@ -99,8 +99,11 @@ export function useChatMessages({
         // ✅ 2026-10-26（#166 の 4）: 直近のページが手元とつながっていなければ、手元の最後から後ろを読み足す。
         //    🔴 そのまま足すと会話の途中が黙って抜ける（過去の読み込みでも埋められない）。
         let latest = payload.items;
-        const last = itemsRef.current.at(-1)?.id;
-        if (last !== undefined && hasGapBefore(itemsRef.current, payload.items, CHAT_MESSAGE_PAGE_SIZE)) {
+        // ✅ 2026-10-27: 先に手元の行を取り直した値に揃える（位置が動いた行があれば並べ直す）。
+        //    🔴 取りこぼしの判定と「手元の最後」は、並べ直した後の行で行う。
+        const base = withLatestReactions(itemsRef.current, payload.items);
+        const last = base.at(-1)?.id;
+        if (last !== undefined && hasGapBefore(base, payload.items, CHAT_MESSAGE_PAGE_SIZE)) {
           let missing = false;
           const gap = await readGapAfter(
             last,
@@ -126,7 +129,7 @@ export function useChatMessages({
         }
         if (!isLive()) return;
         // ✅ 2026-10-16: 手元の発言のリアクションも取り直した値に揃える。
-        const refreshed = withLatestReactions(itemsRef.current, latest);
+        const refreshed = withLatestReactions(base, latest);
         const merged = mergeLatestMessages(refreshed, latest);
         if (merged.added.length === 0) {
           if (refreshed !== itemsRef.current) setItems(refreshed);

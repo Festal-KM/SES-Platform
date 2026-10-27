@@ -95,7 +95,9 @@ let tenantB: AuthenticatedTenantCtx;
 let roomId: string;
 let store: ObjectStore;
 const tokens = createChatAttachmentTokenCodec(SECRET);
-let clock = new Date('2026-10-27T01:00:00.000Z');
+// ✅ 2026-10-27: 実時刻より 2 時間前から進める（CLEAN の適用は DB の実時刻〔clock_timestamp()〕で位置を決めるため、
+//    送った時刻は実時刻より前でなければ「公開した時点の位置へ移る」ことを確かめられない）。
+let clock = new Date(Date.now() - 2 * 60 * 60 * 1000);
 const now = () => clock;
 
 async function upload(ctx: AuthenticatedTenantCtx, threadId: string, contentType: 'application/pdf' | 'image/png' | 'text/plain' = 'application/pdf', byteSize = 1234) {
@@ -125,13 +127,13 @@ async function listedIds(ctx: AuthenticatedTenantCtx, threadId: string): Promise
   return page.items.map((item) => item.id);
 }
 
-async function applyScan(objectKey: string, status: 'CLEAN' | 'INFECTED') {
+async function applyScan(objectKey: string, status: 'CLEAN' | 'INFECTED', occurredAt: Date = clock) {
   return applyFileScanResult(systemTenantCtx(TENANT_A, JOB), {
     objectKey,
     objectVersionId: `v-${status}`,
     status,
     rawStatus: status === 'CLEAN' ? 'NO_THREATS_FOUND' : 'THREATS_FOUND',
-    occurredAt: clock,
+    occurredAt,
     receivedAt: clock,
   });
 }
@@ -280,13 +282,15 @@ describe('② ③ ④ 検査中は本人だけ → CLEAN で全員に', () => {
     expect(stalled.map((target) => target.objectKey)).toContain(objectKey);
   });
 
-  it('⑦ 検査の結果（CLEAN）が発言に適用され、部屋の最終更新が送った時刻まで進む', async () => {
+  it('⑦ 検査の結果（CLEAN）が発言に適用され、発言は公開した時点の位置へ移り、部屋の最終更新もそこまで進む', async () => {
     const applied = await applyScan(objectKey, 'CLEAN');
     expect(applied.target).toBe('APPLIED');
     expect(applied.previousStatus).toBe('SCANNING');
     expect((await admin.message.findUniqueOrThrow({ where: { id: messageId } })).attachmentScanStatus).toBe('CLEAN');
     const thread = await admin.chatThread.findUniqueOrThrow({ where: { id: roomId }, select: { lastMessageAt: true } });
-    expect(thread.lastMessageAt?.toISOString()).toBe(sentAt);
+    const moved = (await admin.message.findUniqueOrThrow({ where: { id: messageId } })).sentAt;
+    expect(moved.getTime()).toBeGreaterThan(new Date(sentAt).getTime());
+    expect(thread.lastMessageAt?.toISOString()).toBe(moved.toISOString());
     // 🔴 CLEAN から戻さない（2 回目は KEPT）。
     expect((await applyScan(objectKey, 'CLEAN')).target).toBe('KEPT');
   });
@@ -482,16 +486,52 @@ describe('🔴 ⑬ Codex レビューの 4 点', () => {
     const ticket = await upload(host, roomId, 'application/pdf', 25);
     const a = (await send(host, roomId, ticket.uploadToken, '遅れて届く資料')).message;
     const b = (await sendText(host, roomId, '後ろの発言')).message;
-    await markChatRead(host2, roomId, b.id);
+    // 相手は、自分から見える最後の発言まで読む（前の検査で公開位置へ移った発言が B より後ろにあることがある）。
+    const lastSeen = (await listChatMessages(host2, roomId, { limit: 50 })).items.at(-1);
+    expect(lastSeen).toBeDefined();
+    await markChatRead(host2, roomId, lastSeen?.id ?? b.id);
     expect(await unreadOf(host2, roomId)).toBe(0);
-    clock = new Date(clock.getTime() + 60_000);
-    expect((await applyScan(keyOf(ticket.uploadToken), 'CLEAN')).target).toBe('APPLIED');
+    // 🔴 検査の発生時刻は既読より前（遅れて届いた）。それでも位置は適用した実時刻で決まる。
+    expect((await applyScan(keyOf(ticket.uploadToken), 'CLEAN', new Date(a.sentAt))).target).toBe('APPLIED');
     const row = await admin.message.findUniqueOrThrow({ where: { id: a.id } });
-    expect(row.sentAt.toISOString()).toBe(clock.toISOString());
-    expect((await admin.chatThread.findUniqueOrThrow({ where: { id: roomId } })).lastMessageAt?.toISOString()).toBe(clock.toISOString());
+    expect(row.sentAt.getTime()).toBeGreaterThan(new Date(b.sentAt).getTime());
+    expect((await admin.chatThread.findUniqueOrThrow({ where: { id: roomId } })).lastMessageAt?.toISOString()).toBe(row.sentAt.toISOString());
     expect(await unreadOf(host2, roomId)).toBe(1);
-    const after = await listChatMessages(host2, roomId, { limit: 50, after: b.id });
+    const after = await listChatMessages(host2, roomId, { limit: 50, after: lastSeen?.id ?? b.id });
     expect(after.items.map((item) => item.id)).toEqual([a.id]);
+  });
+
+  it('🔴 ③ 別々の札を同時に送っても、上限に 1 つ分しか余地が無ければ 1 つだけ通り、カウンタはその 1 つ分', async () => {
+    const used = await readStorageBytesUsed(host, clock);
+    const tight = quotaDefaultsWith({ storageLimitBytes: used + 150n });
+    const t1 = await upload(host, roomId, 'application/pdf', 100);
+    const t2 = await upload(host, roomId, 'application/pdf', 100);
+    const results = await Promise.allSettled([send(host, roomId, t1.uploadToken, '', tight), send(host, roomId, t2.uploadToken, '', tight)]);
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    const rejected = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]?.reason).toMatchObject({ httpStatus: 429 });
+    expect(await readStorageBytesUsed(host, clock)).toBe(used + 100n);
+    // 断られた側の実体だけが消えている。
+    const heads = await Promise.all([store.head(keyOf(t1.uploadToken)), store.head(keyOf(t2.uploadToken))]);
+    expect(heads.filter((head) => head === null)).toHaveLength(1);
+  });
+
+  it('🔴 ③ 同じ札を同時に送っても 1 行・1 回分だけ数え、実体は消さない（先に確定した側を後の側が壊さない）', async () => {
+    const used = await readStorageBytesUsed(host, clock);
+    // 余地はちょうど 1 つ分。2 回目が上限を数え直すと 429 になって実体を消してしまう形にしておく。
+    const tight = quotaDefaultsWith({ storageLimitBytes: used + 100n });
+    const ticket = await upload(host, roomId, 'application/pdf', 100);
+    const results = await Promise.all([send(host, roomId, ticket.uploadToken, '', tight), send(host, roomId, ticket.uploadToken, '', tight)]);
+    expect(results[0].message.id).toBe(results[1].message.id);
+    expect(await admin.message.count({ where: { id: results[0].message.id } })).toBe(1);
+    expect(await readStorageBytesUsed(host, clock)).toBe(used + 100n);
+    expect(await store.head(keyOf(ticket.uploadToken))).not.toBeNull();
+    // 確定した後にもう一度送っても同じ（上限を数え直さない・実体を消さない）。
+    const again = await send(host, roomId, ticket.uploadToken, '', tight);
+    expect(again.message.id).toBe(results[0].message.id);
+    expect(await store.head(keyOf(ticket.uploadToken))).not.toBeNull();
+    expect(await readStorageBytesUsed(host, clock)).toBe(used + 100n);
   });
 
   it('③ 札を何枚も先に取っても、送信の時点の上限で 429 にし、置かれた実体を消す', async () => {
@@ -531,6 +571,8 @@ describe('🔴 ⑬ Codex レビューの 4 点', () => {
   });
 
   it('④ 検査中の他人の添付は、一覧の冒頭（DM・グループ）と未読の数に現れない', async () => {
+    // 前の検査で公開位置（実時刻）へ移った発言より後ろに送る。
+    clock = new Date(Date.now() + 60_000);
     const before = await readChatScreen(host2, {
       threadId: null,
       threadsQuery: { limit: 50 },

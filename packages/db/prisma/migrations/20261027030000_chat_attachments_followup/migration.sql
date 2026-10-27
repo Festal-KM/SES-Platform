@@ -6,7 +6,7 @@
 -- 🔴 この migration は既存の行を書き換えない（関数の差し替え・GRANT の追加・関数の追加だけ）。FORCE RLS は外さない。
 --
 -- 2. 遅れて CLEAN になった発言の位置（Codex レビュー）
---    app_apply_scan_status が CLEAN にした発言の sent_at を公開した時点まで進める（部屋の最終更新も揃える）。
+--    app_apply_scan_status が CLEAN にした発言の sent_at を公開した時点（適用した実時刻）まで進める（部屋の最終更新も揃える）。
 --    そのために app_scan_probe に messages.sent_at の UPDATE を与える（列単位。本文・送った人・取引先には届かない）。
 --    CREATE OR REPLACE なので所有者（app_scan_probe）と EXECUTE（app_tenant だけ）はそのまま残る。
 -- 3. 放置されたアップロードの片付け（Codex レビュー）
@@ -104,13 +104,15 @@ BEGIN
     RETURN;
   END IF;
 
-  -- ✅ 2026-10-27（レビュー）: 🔴 CLEAN になった発言は**公開した時点の位置**に置き直す（sent_at を検査の時刻まで進める）。
+  -- ✅ 2026-10-27（レビュー）: 🔴 CLEAN になった発言は**公開した時点の位置**に置き直す（sent_at を適用した時刻まで進める）。
+  --    🔴 検査の発生時刻（p_observed_at）ではなく**適用した実時刻**（clock_timestamp()）を使う。発生時刻は遅れて届くことがあり、
+  --    その間に相手が読み進めていると、また既読より前に置かれてしまう。p_observed_at は検査の記録（skill_sheets.scan_updated_at 等）にだけ使う。
   --    送った時点の位置のままだと、検査中に相手が後ろの発言まで読んでいた場合に「既読より前」に現れ、未読にも数えられず、
   --    定期取得（after）でも拾われない。並び（sent_at, id）は会話・既読・未読で共通なので、ここを動かせば全部が揃う。
   --    送った本人の画面では自分の発言が下へ移る（受け入れる）。
   UPDATE messages
      SET attachment_scan_status = p_status,
-         sent_at = CASE WHEN p_status = 'CLEAN' THEN GREATEST(sent_at, p_observed_at) ELSE sent_at END
+         sent_at = CASE WHEN p_status = 'CLEAN' THEN GREATEST(sent_at, clock_timestamp()) ELSE sent_at END
    WHERE id = v_id
      AND tenant_id = app_tenant_id()
      AND attachment_scan_status = ANY(p_replaceable)
@@ -152,6 +154,11 @@ GRANT CREATE ON SCHEMA public TO app_scan_probe;
 ALTER FUNCTION app_chat_attachment_keys_in_use(text[]) OWNER TO app_scan_probe;
 REVOKE CREATE ON SCHEMA public FROM app_scan_probe;
 REVOKE ALL ON FUNCTION app_chat_attachment_keys_in_use(text[]) FROM PUBLIC;
+-- 🔴 EXECUTE は app_tenant にだけ与える。ジョブ（apps/worker）も主平面と同じ app_tenant で接続する（LOGIN のロールは
+--    app_migrator / app_tenant / app_platform / app_platform_write の 4 つだけで、ジョブ専用のロールは無い。app_scan_probe は
+--    NOLOGIN の所有者）。app_apply_scan_status と同じ扱い。apps/** の業務コードからは呼べない（TenantDb に生 SQL が無く、
+--    呼び出し元は packages/db/src/file-scan.ts の listChatAttachmentKeysInUse だけ。tests/static/auth-db-callers.test.ts）。
+--    返すのは渡したキーのうち指されているものだけで、テナント文脈が無ければ拒む。
 GRANT EXECUTE ON FUNCTION app_chat_attachment_keys_in_use(text[]) TO app_tenant;
 COMMENT ON FUNCTION app_chat_attachment_keys_in_use(text[]) IS
   '2026-10-27: 放置されたチャットの添付の片付け（usage.storage-reconcile）。呼び出し元は packages/db/src/file-scan.ts のみ。';

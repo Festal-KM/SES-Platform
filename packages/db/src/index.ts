@@ -533,8 +533,10 @@ export {
   accountSkillSheetStorage,
   readStorageBytesUsed,
   releaseSkillSheetStorage,
-  // ✅ 2026-10-27: チャットの添付の加算（#51 の送信の確定後。CAS）。減算は解約の削除（tenant-purge.ts）が内部で行う。
-  accountChatAttachmentStorage,
+  // ✅ 2026-10-27: チャットの添付の送信（#51）の中で、テナントのストレージを直列にして読み・加算する（同じトランザクション）。
+  //    減算は本人の削除（下）と解約の削除（tenant-purge.ts の内部）。
+  lockTenantStorageForChatSend,
+  accountChatAttachmentStorageInSend,
   // ✅ 2026-10-27（決定 A）: 本人の発言の削除で添付と計上を外す（論理削除と同じトランザクション）。
   releaseChatAttachmentOnDelete,
   type ReleasedChatAttachment,

@@ -163,11 +163,15 @@ export type ResolvedChatAttachment = {
   readonly objectKey: string;
   readonly contentType: string;
   readonly byteSize: number;
+  /** 今日効いているストレージ上限（上書きを含む）。判定は送信のトランザクションの中。 */
+  readonly storageLimitBytes: bigint;
 };
 
 /**
  * 🔴 札を確かめ、実体がストレージに置かれていることを確かめる（トランザクションの外で呼ぶ。ネットワーク I/O があるため）。
- * 部屋が添えられる部屋かは、送信のトランザクションの中で `chatRoomAcceptsAttachments` を通す（`service.ts`）。
+ * ✅ 2026-10-27（Codex レビュー 2 回目）: 上限の**判定はここでしない**。送信のトランザクションの中で、テナントのストレージを
+ *    直列にしてから「二重送信か → 上限 → 発言の作成 → 加算」を 1 回で行う（`service.ts` の `sendWithAttachment`）。
+ *    ここで解くのは上限の値（設定）だけ。
  */
 export async function resolveChatAttachmentForSend(
   ctx: AuthenticatedTenantCtx,
@@ -178,17 +182,6 @@ export async function resolveChatAttachmentForSend(
 ): Promise<ResolvedChatAttachment> {
   const claims = deps.tokens.verify(token, now);
   if (claims === null || !claimsMatch(claims, ctx, threadId)) throw new ValidationError([CHAT_ATTACHMENT_TOKEN_DETAIL]);
-  const resolved = {
-    messageId: claims.messageId,
-    objectKey: claims.objectKey,
-    contentType: claims.contentType,
-    byteSize: claims.byteSize,
-  };
-  // 同じ札の二重送信（行が既にある）は確かめ直さない（上限をもう一度数えると、既にある添付の実体を消してしまう）。
-  const alreadySent = await withTenant(ctx, async (db) =>
-    db.message.findFirst({ where: { id: claims.messageId, senderUserId: ctx.userId }, select: { id: true } }),
-  );
-  if (alreadySent !== null) return resolved;
   const head = await deps.objectStore.head(claims.objectKey);
   // 🔴 署名に大きさと種類を焼き込んであるので一致するはず。違えば受け取らない（実体と行をずらさない）。
   //    中身の差し替えは作るだけの書き込み（`If-None-Match: *`）が止める。ETag / 版を行に持たないのはそのため
@@ -196,25 +189,21 @@ export async function resolveChatAttachmentForSend(
   if (head === null || head.byteSize !== claims.byteSize || head.contentType !== claims.contentType) {
     throw new ChatAttachmentObjectMissingError();
   }
-  // 🔴 ストレージ上限を送信の時点でも確かめる（#51p の判定は札ごとなので、札を何枚も先に取ると全部が通る）。
-  //    超えるなら置かれた実体を消して 429（数えない実体を残さない）。
   const { storageLimitBytes } = await resolveTenantStorageQuota(ctx, { now, defaults: deps.quotaDefaults });
-  const usedBytes = await readStorageBytesUsed(ctx, now);
-  const decision = decideStorageUpload({ limitBytes: storageLimitBytes, usedBytes, requestedBytes: BigInt(claims.byteSize) });
-  if (decision.kind === 'BLOCK') {
-    try {
-      await deps.objectStore.delete(claims.objectKey);
-    } catch {
-      // 消せなくても 429 は返す（残った実体は日次の片付け `cleanupAbandonedChatUploads` が拾う）。
-    }
-    throw new StorageLimitExceededError();
-  }
   return {
     messageId: claims.messageId,
     objectKey: claims.objectKey,
     contentType: claims.contentType,
     byteSize: claims.byteSize,
+    storageLimitBytes,
   };
+}
+
+/**
+ * ✅ 2026-10-27: 送信のトランザクションの中の上限の判定（純粋）。🔴 呼ぶ前にテナントのストレージを直列にしてあること。
+ */
+export function chatAttachmentFitsStorage(input: { readonly usedBytes: bigint; readonly byteSize: number; readonly storageLimitBytes: bigint }): boolean {
+  return decideStorageUpload({ limitBytes: input.storageLimitBytes, usedBytes: input.usedBytes, requestedBytes: BigInt(input.byteSize) }).kind === 'ALLOW';
 }
 
 /** 札が「この人が、このテナントの、この部屋に」出したものか（キーの形も同じ値を指すこと）。 */

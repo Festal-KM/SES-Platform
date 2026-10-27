@@ -1,7 +1,7 @@
 // apps/web/lib/chat/live.test.ts
 // `S-031` の新着の自動表示（`lib/chat/live.ts`）。
 import { describe, expect, it } from 'vitest';
-import { hasGapBefore, hasOthersMessage, mergeLatestMessages, readGapAfter } from './live';
+import { hasGapBefore, hasOthersMessage, mergeLatestMessages, readGapAfter, withLatestReactions } from './live';
 import type { ChatMessageView } from './views';
 
 function message(id: string, sentAt: string, mine = false): ChatMessageView {
@@ -132,5 +132,40 @@ describe('✅ 2026-10-26（#166 の 4・レビュー）readGapAfter: 最新ま�
       return pages.shift() ?? null;
     }, 10);
     expect(seen).toEqual(['c', 'e']);
+  });
+});
+
+// ✅ 2026-10-27（Codex レビュー 2 回目）: 検査が CLEAN になった添付の発言は、公開した時点の位置へ移る。
+describe('位置（sentAt）が動いた行', () => {
+  const MOVED_A = { ...A, sentAt: '2026-10-14T04:00:00.000Z' };
+
+  it('withLatestReactions は手元の行の sentAt を揃え、(sentAt, id) で並べ直す（行は落とさない）', () => {
+    const next = withLatestReactions([A, B, C], [MOVED_A, B, C]);
+    expect(next.map((item) => item.id)).toEqual(['b', 'c', 'a']);
+    expect(next.find((item) => item.id === 'a')?.sentAt).toBe(MOVED_A.sentAt);
+    expect(next.at(-1)?.id).toBe('a');
+  });
+
+  it('mergeLatestMessages も手元の行の位置を揃えて並べ直す（新着が無くても）', () => {
+    const merged = mergeLatestMessages([A, B, C], [MOVED_A, B, C]);
+    expect(merged.items.map((item) => item.id)).toEqual(['b', 'c', 'a']);
+    expect(merged.added).toEqual([]);
+    const withNew = mergeLatestMessages([A, B], [MOVED_A, B, C]);
+    expect(withNew.items.map((item) => item.id)).toEqual(['b', 'c', 'a']);
+    expect(withNew.added.map((item) => item.id)).toEqual(['c']);
+  });
+
+  it('並べ直した後の最後の行で取りこぼしを判定する（動いた行が最後になる）', () => {
+    const base = withLatestReactions([A, B, C], [MOVED_A]);
+    expect(base.at(-1)?.id).toBe('a');
+    const newer = message('d', '2026-10-14T05:00:00.000Z');
+    expect(hasGapBefore(base, [newer], 1)).toBe(true);
+    expect(hasGapBefore(base, [MOVED_A], 1)).toBe(false);
+  });
+
+  it('位置が変わらなければ同じ配列を返す（再描画を起こさない）', () => {
+    const current = [A, B];
+    expect(withLatestReactions(current, [A, B])).toBe(current);
+    expect(mergeLatestMessages(current, [A, B]).items).toBe(current);
   });
 });

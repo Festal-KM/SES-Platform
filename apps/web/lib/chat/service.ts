@@ -35,12 +35,20 @@
 //      🔴 部屋の「最終更新」を進めない（進めると相手の一覧の並びで「何か送られた」と分かる。`CLEAN` になったときに
 //      検査の関数が進める）。監査は `message.create` に加えて `chat_attachment.upload`（種類と大きさだけ）。
 //      🔴 同じ札の二重送信は 1 行に収束する（発言 ID が同じ）。
-import { accountChatAttachmentStorage, releaseChatAttachmentOnDelete, withTenant, writeAuditLog, type AuthenticatedTenantCtx } from '@ses/db';
+import {
+  accountChatAttachmentStorageInSend,
+  lockTenantStorageForChatSend,
+  releaseChatAttachmentOnDelete,
+  withTenant,
+  writeAuditLog,
+  type AuthenticatedTenantCtx,
+} from '@ses/db';
 import type { ObjectStore } from '@ses/connectors';
-import { InternalError, NotFoundError, requireFound, ValidationError } from '../api/errors';
+import { InternalError, NotFoundError, requireFound, StorageLimitExceededError, ValidationError } from '../api/errors';
 import {
   CHAT_ATTACHMENT_AUDIT_ACTION_UPLOAD,
   CHAT_ATTACHMENT_ROOM_DETAIL,
+  chatAttachmentFitsStorage,
   resolveChatAttachmentForSend,
   type ChatAttachmentSendDeps,
   type ResolvedChatAttachment,
@@ -91,7 +99,8 @@ export async function sendChatMessage(
     if (attachedProjectId !== null) await requirePastableProject(db, thread.partnerCompanyId, attachedProjectId);
     if (attachment !== null) {
       if (!chatRoomAcceptsAttachments(thread)) throw new ValidationError([CHAT_ATTACHMENT_ROOM_DETAIL]);
-      return sendWithAttachment(ctx, db, thread.id, input, attachment, attachedProjectId, sentAt, deps);
+      if (deps.attachments === undefined) throw new InternalError('添付の確認に要る依存が渡されていません。');
+      return sendWithAttachment(ctx, db, thread.id, input, attachment, attachedProjectId, sentAt, deps, deps.attachments);
     }
 
     const created = (await db.message.create({
@@ -138,20 +147,18 @@ export async function sendChatMessage(
     // 🔴 1 行入れて 1 行写せないことは起こりえない（起きたら不変条件が壊れている）。黙って空を返さない。
     return { message: requireFound(message ?? null) };
   });
-  // ⑧ ✅ 2026-10-27: 添付のバイト数を `UsageCounter(STORAGE_BYTES)` に加算する（CLAUDE.md §10.6）。
-  //    スキルシートの確定（`settleStorage`）と同じ形: 行の確定の**後**に、CAS（`attachment_storage_counted_at IS NULL`）が
-  //    成立したときだけ加算する。同じ札の二重送信は `ALREADY_SETTLED`（2 回目は数えない）、前回が加算の前に落ちていれば
-  //    やり直しで回収される。
-  if (attachment !== null) {
-    const outcome = await accountChatAttachmentStorage(ctx, { messageId: attachment.messageId, observedAt: sentAt });
-    if (outcome.kind === 'NOT_FOUND') throw new InternalError();
-  }
   return result;
 }
 
 type ServiceDb = Parameters<Parameters<typeof withTenant<void>>[1]>[0];
 
-/** ⑧ 添付つきの発言を作る（同じトランザクションの中）。 */
+/**
+ * ⑧ 添付つきの発言を作る（同じトランザクションの中）。✅ 2026-10-27（Codex レビュー 2 回目）で 1 トランザクションに揃えた:
+ *   1. 🔴 テナントのストレージを直列にする（`pg_advisory_xact_lock`。同じテナントの別の送信はここで待つ）と同時に使用量を読む
+ *   2. 🔴 同じ札の二重送信（この ID の発言が既にある）なら、その発言を返す。**上限を数え直さず、実体も消さない**
+ *   3. 上限を超えるなら、🔴 **鍵を持ったまま**実体を消して 429（この時点でこのキーを指す発言は無く、鍵を離すまで作られない）
+ *   4. 発言を作り、同じトランザクションで加算する（CAS。`accountChatAttachmentStorageInSend`）と監査
+ */
 async function sendWithAttachment(
   ctx: AuthenticatedTenantCtx,
   db: ServiceDb,
@@ -161,8 +168,26 @@ async function sendWithAttachment(
   attachedProjectId: string | null,
   sentAt: Date,
   deps: SendChatMessageDeps,
+  attachmentDeps: NonNullable<SendChatMessageDeps['attachments']>,
 ): Promise<SendChatMessageResult> {
-  // 🔴 `createMany`（ON CONFLICT DO NOTHING）: 同じ札の二重送信は発言 ID がぶつかって 0 件になる（例外でトランザクションを壊さない）。
+  const usedBytes = await lockTenantStorageForChatSend(db, { tenantId: ctx.tenantId, observedAt: sentAt });
+  const existing = (await db.message.findFirst({
+    where: { id: attachment.messageId, threadId, senderUserId: ctx.userId },
+    select: CHAT_MESSAGE_SELECT,
+  })) as ChatMessageRow | null;
+  if (existing !== null) {
+    const [replayed] = await projectChatMessages(ctx, db, [existing]);
+    return { message: requireFound(replayed ?? null) };
+  }
+  if (!chatAttachmentFitsStorage({ usedBytes, byteSize: attachment.byteSize, storageLimitBytes: attachment.storageLimitBytes })) {
+    try {
+      await attachmentDeps.objectStore.delete(attachment.objectKey);
+    } catch {
+      // 消せなくても 429 は返す（残った実体は日次の片付け `cleanupAbandonedChatUploads` が拾う）。
+    }
+    throw new StorageLimitExceededError();
+  }
+  // 🔴 `createMany`（ON CONFLICT DO NOTHING）: 別の人の行と ID がぶつかっても例外でトランザクションを壊さない（下で 400）。
   const inserted = await db.message.createMany({
     data: [
       {
@@ -190,6 +215,8 @@ async function sendWithAttachment(
   })) as ChatMessageRow | null;
   if (row === null) throw new ValidationError(['body.attachmentUploadToken']);
   if (inserted.count === 1) {
+    // 🔴 加算は同じトランザクション（直列にした鍵の内側）。CAS なので二重には数えない。
+    await accountChatAttachmentStorageInSend(db, { tenantId: ctx.tenantId, messageId: row.id, observedAt: sentAt });
     await writeAuditLog(db, {
       action: CHAT_MESSAGE_AUDIT_ACTION_CREATE,
       actorKind: 'USER',

@@ -253,49 +253,6 @@ async function settleSkillSheetStorage(
 // ✅ 2026-10-27（チャットのファイル。docs/05 §3.7.1 / CLAUDE.md §10.6）: チャットの添付の計上。
 // ===========================================================================
 
-export type ChatAttachmentStorageInput = {
-  readonly messageId: string;
-  readonly observedAt: Date;
-};
-
-/**
- * 🔴 チャットの添付の**加算**（`POST /api/threads/{id}/messages` #51 の添付つきの送信の確定後）。
- *
- * 形は `accountSkillSheetStorage` と同じ: CAS（`attachment_storage_counted_at IS NULL`）が成立したときだけ、同じ
- * トランザクションでカウンタを動かす。同じ札の二重送信・確定後に落ちた送信のやり直しは 2 回目が `ALREADY_SETTLED`
- * （加算は 1 回だけ。落ちていた場合はやり直しで回収される）。
- * 🔴 母集団は `messages` の RLS（送った本人には検査中の自分の発言が見える）。見えなければ `NOT_FOUND`。
- */
-export async function accountChatAttachmentStorage(
-  ctx: AuthenticatedTenantCtx,
-  input: ChatAttachmentStorageInput,
-): Promise<StorageAccountingOutcome> {
-  return runInTenantTransaction(
-    { tenantId: ctx.tenantId, partnerCompanyId: ctx.partnerCompanyId, actorUserId: ctx.userId },
-    async (tx) => {
-      const claimed = await tx.$queryRaw<ByteSizeRow[]>(Prisma.sql`
-        UPDATE messages
-           SET attachment_storage_counted_at = ${input.observedAt}::timestamptz
-         WHERE id = ${input.messageId}::uuid
-           AND tenant_id = ${ctx.tenantId}::uuid
-           AND attachment_key IS NOT NULL
-           AND attachment_storage_counted_at IS NULL
-        RETURNING attachment_byte_size::text AS byte_size`);
-      const row = claimed[0];
-      if (row === undefined) {
-        const exists = await tx.message.findFirst({
-          where: { id: input.messageId, attachmentKey: { not: null } },
-          select: { id: true },
-        });
-        return exists === null ? ({ kind: 'NOT_FOUND' } as const) : ({ kind: 'ALREADY_SETTLED' } as const);
-      }
-      const deltaBytes = BigInt(row.byte_size);
-      const usedBytes = await applyStorageDelta(tx, ctx.tenantId, deltaBytes, input.observedAt);
-      return { kind: 'APPLIED', deltaBytes, usedBytes } as const;
-    },
-  );
-}
-
 /**
  * 🔴 解約の削除（`tenant.purge`）がチャットの添付の実体を**消した後**に呼ぶ**減算**（`tenant-purge.ts` の `applyPurgeSpec`）。
  *
@@ -344,10 +301,7 @@ export async function releaseChatAttachmentOnDelete(
   db: WithTenantDb,
   input: { readonly tenantId: string; readonly messageId: string; readonly senderUserId: string; readonly observedAt: Date },
 ): Promise<ReleasedChatAttachment | null> {
-  const tx = db as unknown as TenantTransactionClient;
-  if (typeof tx.$queryRaw !== 'function') {
-    throw new Error('releaseChatAttachmentOnDelete: トランザクションのクライアントではありません。');
-  }
+  const tx = asTransaction(db);
   const rows = await tx.$queryRaw<{ key: string; byte_size: string; counted: boolean }[]>(Prisma.sql`
     WITH target AS (
       SELECT id, attachment_key, attachment_byte_size, attachment_storage_counted_at
@@ -374,4 +328,66 @@ export async function releaseChatAttachmentOnDelete(
   const byteSize = BigInt(row.byte_size);
   if (row.counted) await applyStorageDelta(tx, input.tenantId, -byteSize, input.observedAt);
   return { objectKey: row.key, byteSize, decremented: row.counted };
+}
+
+/**
+ * ✅ 2026-10-27（Codex レビュー 2 回目）: チャットの添付の**送信（#51）のトランザクションの中で**、テナントのストレージを直列にして
+ * いまの使用量を読む。🔴 `pg_advisory_xact_lock`（テナント + 'storage'）はトランザクションの終わりまで持つので、
+ * 「上限の判定 → 発言の作成 → 加算」が同じテナントの別の送信と重ならない（同時に送っても上限を超えない）。
+ *
+ * 🔴 呼べるのは `apps/web/lib/chat/service.ts` の送信だけ（`tests/static/auth-db-callers.test.ts`）。生 SQL はここの固定文だけで、
+ *    型を戻すのは業務のトランザクションと同じトランザクションで読むため（`releaseChatAttachmentOnDelete` と同じ形）。
+ * ⚠️ スキルシートの加算（`accountSkillSheetStorage`）はこの鍵を取らない。チャットどうしは直列になるが、スキルシートとの同時には
+ *    従来どおりわずかな超過がありうる（スキルシートの側は従来の形のまま）。
+ */
+export async function lockTenantStorageForChatSend(
+  db: WithTenantDb,
+  input: { readonly tenantId: string; readonly observedAt: Date },
+): Promise<bigint> {
+  const tx = asTransaction(db);
+  // `$executeRaw`: 戻り値（void）を読まない（Prisma は void の列を読めない）。
+  await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${input.tenantId} || ':storage'))`);
+  const periodKey = usagePeriodKey(STORAGE_PERIOD_KIND, input.observedAt);
+  const rows = await tx.$queryRaw<ValueRow[]>(Prisma.sql`
+    SELECT trunc(value)::text AS value
+      FROM usage_counters
+     WHERE tenant_id = ${input.tenantId}::uuid
+       AND period_kind = ${STORAGE_PERIOD_KIND}
+       AND metric = ${STORAGE_METRIC}
+       AND period_key <= ${periodKey}
+     ORDER BY period_key DESC
+     LIMIT 1`);
+  const row = rows[0];
+  return row === undefined ? 0n : toBytes(row.value);
+}
+
+/**
+ * ✅ 2026-10-27: 送信のトランザクションの中で、作ったばかりの添付のバイト数を加算する（CAS: `attachment_storage_counted_at IS NULL`）。
+ * 🔴 `lockTenantStorageForChatSend` の後でだけ呼ぶ（同じトランザクション）。既に数えてあれば `false`（二重に数えない）。
+ */
+export async function accountChatAttachmentStorageInSend(
+  db: WithTenantDb,
+  input: { readonly tenantId: string; readonly messageId: string; readonly observedAt: Date },
+): Promise<boolean> {
+  const tx = asTransaction(db);
+  const claimed = await tx.$queryRaw<ByteSizeRow[]>(Prisma.sql`
+    UPDATE messages
+       SET attachment_storage_counted_at = ${input.observedAt}::timestamptz
+     WHERE id = ${input.messageId}::uuid
+       AND tenant_id = ${input.tenantId}::uuid
+       AND attachment_key IS NOT NULL
+       AND attachment_storage_counted_at IS NULL
+    RETURNING attachment_byte_size::text AS byte_size`);
+  const row = claimed[0];
+  if (row === undefined) return false;
+  await applyStorageDelta(tx, input.tenantId, BigInt(row.byte_size), input.observedAt);
+  return true;
+}
+
+function asTransaction(db: WithTenantDb): TenantTransactionClient {
+  const tx = db as unknown as TenantTransactionClient;
+  if (typeof tx.$queryRaw !== 'function') {
+    throw new Error('storage-usage: トランザクションのクライアントではありません。');
+  }
+  return tx;
 }

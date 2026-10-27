@@ -38,6 +38,8 @@ export type S3PresignPutRequest = {
   /**
    * ✅ 2026-10-27（チャットのファイル）: 🔴 **作るだけの書き込み**（S3 の条件付き書き込み `If-None-Match: *`）。
    *    署名に含めるので、同じ URL でもう一度 PUT して中身を差し替えることができない（既にあれば 412）。
+   *    🔴 ブラウザから PUT するので、実 S3 のバケットの CORS（`PutBucketCors`）の `AllowedHeader` に `if-none-match` が要る
+   *    （`docs/05` §14.2 の CORS の表。無いとプリフライトで落ちる。MinIO は既定で全部許可）。
    */
   readonly IfNoneMatch?: '*';
 };
