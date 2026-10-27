@@ -246,3 +246,41 @@ describe('🔴 T-10-02: measureTenantUsage（docs/05 §9.8 usage.storage-reconci
     expect(await store(stubApi()).measureTenantUsage(TENANT)).toEqual({ byteSize: 0n, objectCount: 0 });
   });
 });
+
+// ✅ 2026-10-27（Codex レビュー）: チャットの添付は作るだけの書き込み（`If-None-Match: *`）。
+describe('S3ObjectStore.presignPut（createOnly）', () => {
+  it('🔴 IfNoneMatch: * を署名に渡し、クライアントが付けるヘッダとして返す（無ければ 403 / 既にあれば 412）', async () => {
+    const api = stubApi();
+    const put = await store(api).presignPut(KEY, 'application/pdf', 1024, { createOnly: true });
+    expect(api.presignPut).toHaveBeenCalledWith(expect.objectContaining({ IfNoneMatch: '*' }));
+    expect(put.headers['if-none-match']).toBe('*');
+  });
+
+  it('指定しなければ従来どおり（スキルシートの #18 は変わらない）', async () => {
+    const api = stubApi();
+    const put = await store(api).presignPut(KEY, 'application/pdf', 1024);
+    expect(api.presignPut).toHaveBeenCalledWith(expect.not.objectContaining({ IfNoneMatch: '*' }));
+    expect(put.headers['if-none-match']).toBeUndefined();
+  });
+});
+
+describe('S3ObjectStore.listTenantObjects（放置されたチャットの添付の片付け）', () => {
+  it('t/{tenant}/{用途}/ の配下だけを返し、最終更新が無ければ null', async () => {
+    const at = new Date('2026-10-27T00:00:00.000Z');
+    const api = stubApi({
+      listObjects: vi.fn(async () => ({
+        Contents: [
+          { Key: `t/${TENANT}/chat/a.pdf`, Size: 3, LastModified: at },
+          { Key: `t/${TENANT}/chat/b.pdf`, Size: 4 },
+          { Key: `t/${TENANT}/skill-sheets/x.pdf`, Size: 5 },
+        ],
+      })),
+    });
+    const listed = await store(api).listTenantObjects(TENANT, 'chat');
+    expect(api.listObjects).toHaveBeenCalledWith(expect.objectContaining({ Prefix: `t/${TENANT}/chat/` }));
+    expect(listed).toEqual([
+      { key: `t/${TENANT}/chat/a.pdf`, byteSize: 3, lastModified: at },
+      { key: `t/${TENANT}/chat/b.pdf`, byteSize: 4, lastModified: null },
+    ]);
+  });
+});

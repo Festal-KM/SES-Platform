@@ -645,7 +645,7 @@ export { GateFactsUnavailableError, loadGateInput, UnsupportedGateTargetError } 
 export type { GateTargetLookup } from './gate-target.js';
 // 🔴 T-05-05: ウイルススキャン結果の記録と適用（docs/05 §8.5 / §9.6 / `BR-26`）。
 //    `CLEAN` へ戻す遷移が存在しない経路であり、呼び出し元は `apps/worker` のジョブだけである。
-export { applyFileScanResult, listStalledScanTargets } from './file-scan.js';
+export { applyFileScanResult, listChatAttachmentKeysInUse, listStalledScanTargets } from './file-scan.js';
 export type { FileScanResultInput, ScanApplyOutcome, StalledScanTarget } from './file-scan.js';
 // 🔴 T-05-08: 隔離の周知先の引き当て（`docs/02` `F-011` 処理④）。所有側（分類 1 / 2）を
 //    間違えると `sandbox` で取引先へ実メールが飛ぶため、呼び出し元をジョブ 1 ファイルに固定する。

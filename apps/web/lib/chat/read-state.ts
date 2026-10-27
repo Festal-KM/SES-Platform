@@ -11,6 +11,7 @@
 import { withTenant, type AuthenticatedTenantCtx } from '@ses/db';
 import { requireFound } from '../api/errors';
 import { findChatThreadRow } from './read';
+import { chatMessageVisibleWhere } from './views';
 
 /** トランザクションの中の DB（`read.ts` と同じ取り出し方）。 */
 type TenantDb = Parameters<Parameters<typeof withTenant<void>>[1]>[0];
@@ -152,7 +153,8 @@ export async function countUnread(
   });
   const groups = await db.message.groupBy({
     by: ['threadId'],
-    where: { senderUserId: { not: ctx.userId }, OR: branches },
+    // ✅ 2026-10-27: 🔴 検査中の他人の添付の発言を数えない（`chatMessageVisibleWhere`。RLS の二重）。
+    where: { senderUserId: { not: ctx.userId }, OR: branches, AND: [chatMessageVisibleWhere(ctx.userId)] },
     _count: { _all: true },
   });
   return new Map(groups.map((group) => [group.threadId, group._count._all]));

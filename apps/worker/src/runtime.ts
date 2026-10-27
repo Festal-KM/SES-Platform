@@ -402,7 +402,7 @@ export function startWorkerRuntime(config: RuntimeConfig, options: WorkerRuntime
     enqueueGateRun: (job) => gateRunQueue.enqueue(job),
     // 🔴 T-10-02: usage.gap-check / usage.storage-reconcile / cost.monthly-rollup（docs/05 §9.8）
     gapCheckLookbackDays: USAGE_GAP_CHECK_LOOKBACK_DAYS,
-    get objectStore(): Pick<ObjectStore, 'measureTenantUsage'> {
+    get objectStore(): Pick<ObjectStore, 'measureTenantUsage' | 'listTenantObjects' | 'delete'> {
       return resolveObjectStore();
     },
     // 🔴 契約条件は Phase 3（`A-010` / `planAccess.ts`）まで記録されない = 売上 0（seam。`cost-monthly-rollup.ts`）。

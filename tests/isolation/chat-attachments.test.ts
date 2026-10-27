@@ -15,6 +15,9 @@
 //      解約の削除で減る（再実行では動かない）
 //   ⑩ 🔴 検査の状態は検査の関数だけが変えられ、添付のキー・種類・大きさは作った後に変えられない（DB のトリガ）
 //   ⑪ 🔴 CLEAN でない添付の発言はアナウンスにできない（送った本人からでも 404）
+//   ⑬ 🔴 Codex レビュー: 作るだけの書き込み（2 回目の PUT は拒まれる）/ 置かれた後に変わった実体では送れない /
+//      検査中に相手が後ろまで読んでも、CLEAN になった発言は未読に数えられ after で拾われる / 送信の時点の上限で 429 にし
+//      実体を消す / 放置された実体を片付ける / 検査中の他人の添付は一覧の冒頭・未読の数・検索に現れない
 //   ⑫ ✅ 決定 A: 本人が発言を削除したら添付も消える（実体の削除・列を外す・カウンタを 1 度だけ減らす・URL / 一覧から消える）。
 //      二重削除は何もしない。他人は削除も、削除済みの発言の添付を外すこともできない
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -76,6 +79,10 @@ const { CHAT_ATTACHMENT_LIST_ITEM_KEYS, CHAT_ATTACHMENT_VIEW_KEYS, CHAT_FORBIDDE
 );
 const { chatMessagePostBodySchema } = await import('../../apps/web/lib/chat/schemas');
 const { setChatAnnouncement } = await import('../../apps/web/lib/chat/announcement');
+const { countUnread, markChatRead } = await import('../../apps/web/lib/chat/read-state');
+const { readChatScreen } = await import('../../apps/web/lib/chat/read');
+const { CHAT_THREAD_SORT_DEFAULT } = await import('../../apps/web/lib/chat/thread-tree');
+const { cleanupAbandonedChatUploads } = await import('../../apps/worker/src/jobs/usage-storage-reconcile');
 const QUOTA = quotaDefaultsWith({ storageLimitBytes: 10n * 1024n * 1024n * 1024n });
 
 let database: IsolationDatabase;
@@ -95,9 +102,18 @@ async function upload(ctx: AuthenticatedTenantCtx, threadId: string, contentType
   return issueChatAttachmentUploadUrl(ctx, threadId, { contentType, byteSize }, { objectStore: store, tokens, uploadMaxBytes: 20 * 1024 * 1024, quotaDefaults: QUOTA, now });
 }
 
-async function send(ctx: AuthenticatedTenantCtx, threadId: string, token: string, body = '') {
+async function send(ctx: AuthenticatedTenantCtx, threadId: string, token: string, body = '', quotaDefaults = QUOTA) {
   clock = new Date(clock.getTime() + 1000);
-  return sendChatMessage(ctx, threadId, { body, attachmentUploadToken: token }, { now, meta: { ipAddress: META.ipAddress }, attachments: { objectStore: store, tokens } });
+  return sendChatMessage(ctx, threadId, { body, attachmentUploadToken: token }, { now, meta: { ipAddress: META.ipAddress }, attachments: { objectStore: store, tokens, quotaDefaults } });
+}
+
+async function sendText(ctx: AuthenticatedTenantCtx, threadId: string, body: string) {
+  clock = new Date(clock.getTime() + 1000);
+  return sendChatMessage(ctx, threadId, { body }, { now, meta: { ipAddress: META.ipAddress } });
+}
+
+async function unreadOf(ctx: AuthenticatedTenantCtx, threadId: string): Promise<number> {
+  return withTenant(ctx, async (db) => (await countUnread(ctx, db, [threadId])).get(threadId) ?? 0);
 }
 
 async function rawVisible(ctx: AuthenticatedTenantCtx, messageId: string): Promise<number> {
@@ -442,6 +458,105 @@ describe('🔴 ⑩ 添付の列は DB で守られる', () => {
       setChatAnnouncement(host, roomId, messageId, { now, meta: { ipAddress: META.ipAddress } }),
     ).rejects.toMatchObject({ httpStatus: 404 });
     expect(await admin.chatThreadAnnouncement.count({ where: { threadId: roomId } })).toBe(0);
+  });
+});
+
+describe('🔴 ⑬ Codex レビューの 4 点', () => {
+  it('① 署名は作るだけの書き込み（if-none-match: *）。同じキーへの 2 回目の PUT は拒まれる', async () => {
+    const ticket = await upload(host, roomId, 'application/pdf', 20);
+    expect(ticket.requiredHeaders['if-none-match']).toBe('*');
+    const mock = store as unknown as { simulatePut(key: string, body: Uint8Array, contentType: string, options?: { createOnly?: boolean }): void };
+    expect(() => mock.simulatePut(keyOf(ticket.uploadToken), new Uint8Array(20), 'application/pdf', { createOnly: true })).toThrow(/上書きできません/);
+  });
+
+  it('① 置かれた後に実体が変わっていたら送れない（409。行は作らない）', async () => {
+    const ticket = await upload(host, roomId, 'application/pdf', 40);
+    const key = keyOf(ticket.uploadToken);
+    await store.put(key, new Uint8Array(41), 'application/pdf');
+    await expect(send(host, roomId, ticket.uploadToken)).rejects.toMatchObject({ httpStatus: 409 });
+    const claims = tokens.verify(ticket.uploadToken, clock);
+    expect(await admin.message.count({ where: { id: claims?.messageId ?? ABSENT_ID } })).toBe(0);
+  });
+
+  it('② 検査中に相手が後ろの発言まで読んでいても、CLEAN になった発言は未読に数えられ、after で拾われる', async () => {
+    const ticket = await upload(host, roomId, 'application/pdf', 25);
+    const a = (await send(host, roomId, ticket.uploadToken, '遅れて届く資料')).message;
+    const b = (await sendText(host, roomId, '後ろの発言')).message;
+    await markChatRead(host2, roomId, b.id);
+    expect(await unreadOf(host2, roomId)).toBe(0);
+    clock = new Date(clock.getTime() + 60_000);
+    expect((await applyScan(keyOf(ticket.uploadToken), 'CLEAN')).target).toBe('APPLIED');
+    const row = await admin.message.findUniqueOrThrow({ where: { id: a.id } });
+    expect(row.sentAt.toISOString()).toBe(clock.toISOString());
+    expect((await admin.chatThread.findUniqueOrThrow({ where: { id: roomId } })).lastMessageAt?.toISOString()).toBe(clock.toISOString());
+    expect(await unreadOf(host2, roomId)).toBe(1);
+    const after = await listChatMessages(host2, roomId, { limit: 50, after: b.id });
+    expect(after.items.map((item) => item.id)).toEqual([a.id]);
+  });
+
+  it('③ 札を何枚も先に取っても、送信の時点の上限で 429 にし、置かれた実体を消す', async () => {
+    const used = await readStorageBytesUsed(host, clock);
+    const tight = quotaDefaultsWith({ storageLimitBytes: used + 150n });
+    const issue = (size: number) =>
+      issueChatAttachmentUploadUrl(host, roomId, { contentType: 'application/pdf', byteSize: size }, {
+        objectStore: store,
+        tokens,
+        uploadMaxBytes: 20 * 1024 * 1024,
+        quotaDefaults: tight,
+        now,
+      });
+    const first = await issue(100);
+    const second = await issue(100);
+    await send(host, roomId, first.uploadToken, '', tight);
+    await expect(send(host, roomId, second.uploadToken, '', tight)).rejects.toMatchObject({ httpStatus: 429 });
+    expect(await store.head(keyOf(second.uploadToken))).toBeNull();
+    expect(await readStorageBytesUsed(host, clock)).toBe(used + 100n);
+  });
+
+  it('③ 放置された実体（送らなかったもの）は日次の片付けで消え、送ったものは残る', async () => {
+    const abandoned = await upload(host, roomId, 'text/plain', 5);
+    const kept = await upload(host, roomId, 'text/plain', 6);
+    await send(host, roomId, kept.uploadToken);
+    const deletedCount = await cleanupAbandonedChatUploads(systemTenantCtx(TENANT_A, JOB), {
+      now: () => new Date(Date.now() + 3 * 60 * 60 * 1000),
+      objectStore: store,
+    });
+    expect(deletedCount).toBeGreaterThanOrEqual(1);
+    expect(await store.head(keyOf(abandoned.uploadToken))).toBeNull();
+    expect(await store.head(keyOf(kept.uploadToken))).not.toBeNull();
+    // 札が生きている間（新しいもの）は消さない。
+    const fresh = await upload(host, roomId, 'text/plain', 7);
+    await cleanupAbandonedChatUploads(systemTenantCtx(TENANT_A, JOB), { now: () => new Date(), objectStore: store });
+    expect(await store.head(keyOf(fresh.uploadToken))).not.toBeNull();
+  });
+
+  it('④ 検査中の他人の添付は、一覧の冒頭（DM・グループ）と未読の数に現れない', async () => {
+    const before = await readChatScreen(host2, {
+      threadId: null,
+      threadsQuery: { limit: 50 },
+      messagesQuery: { limit: 50 },
+      tree: { sort: CHAT_THREAD_SORT_DEFAULT, q: null },
+    });
+    const unreadBefore = await unreadOf(host2, roomId);
+    const ticket = await upload(host, roomId, 'application/pdf', 15);
+    await send(host, roomId, ticket.uploadToken, '検査中の本文はまだ見せない');
+    const after = await readChatScreen(host2, {
+      threadId: null,
+      threadsQuery: { limit: 50 },
+      messagesQuery: { limit: 50 },
+      tree: { sort: CHAT_THREAD_SORT_DEFAULT, q: null },
+    });
+    expect(after.people?.lastSnippets[roomId]).toBe(before.people?.lastSnippets[roomId]);
+    expect(JSON.stringify(after)).not.toContain('検査中の本文はまだ見せない');
+    expect(await unreadOf(host2, roomId)).toBe(unreadBefore);
+    // 送った本人には冒頭に出る。
+    const mine = await readChatScreen(host, {
+      threadId: null,
+      threadsQuery: { limit: 50 },
+      messagesQuery: { limit: 50 },
+      tree: { sort: CHAT_THREAD_SORT_DEFAULT, q: null },
+    });
+    expect(mine.people?.lastSnippets[roomId]).toContain('検査中の本文はまだ見せない');
   });
 });
 

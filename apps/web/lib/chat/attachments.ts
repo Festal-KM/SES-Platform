@@ -124,7 +124,9 @@ export async function issueChatAttachmentUploadUrl(
     objectId: newId(),
     extension,
   });
-  const presigned = await deps.objectStore.presignPut(objectKey, input.contentType, input.byteSize);
+  // 🔴 作るだけの書き込み（`If-None-Match: *` を署名に含める）。同じ URL でもう一度 PUT して、検査が CLEAN になった後に
+  //    中身を差し替えることができない（S3 が 412）。署名の有効期限も短い（`S3_PRESIGNED_URL_TTL_SECONDS`。既定 5 分）。
+  const presigned = await deps.objectStore.presignPut(objectKey, input.contentType, input.byteSize, { createOnly: true });
   const expiresAt = now.getTime() + CHAT_ATTACHMENT_TOKEN_TTL_MS;
   const uploadToken = deps.tokens.sign({
     tenantId: ctx.tenantId,
@@ -151,6 +153,8 @@ export async function issueChatAttachmentUploadUrl(
 export type ChatAttachmentSendDeps = {
   readonly objectStore: ObjectStore;
   readonly tokens: ChatAttachmentTokenCodec;
+  /** ✅ 2026-10-27（レビュー）: 送信の時点でもストレージ上限を確かめ直す（札を何枚も先に取って一度に送る抜け道を塞ぐ）。 */
+  readonly quotaDefaults: TenantQuotaDefaults;
 };
 
 /** 発言の行に書く添付（すべて札に焼き込んだ値）。 */
@@ -174,10 +178,36 @@ export async function resolveChatAttachmentForSend(
 ): Promise<ResolvedChatAttachment> {
   const claims = deps.tokens.verify(token, now);
   if (claims === null || !claimsMatch(claims, ctx, threadId)) throw new ValidationError([CHAT_ATTACHMENT_TOKEN_DETAIL]);
+  const resolved = {
+    messageId: claims.messageId,
+    objectKey: claims.objectKey,
+    contentType: claims.contentType,
+    byteSize: claims.byteSize,
+  };
+  // 同じ札の二重送信（行が既にある）は確かめ直さない（上限をもう一度数えると、既にある添付の実体を消してしまう）。
+  const alreadySent = await withTenant(ctx, async (db) =>
+    db.message.findFirst({ where: { id: claims.messageId, senderUserId: ctx.userId }, select: { id: true } }),
+  );
+  if (alreadySent !== null) return resolved;
   const head = await deps.objectStore.head(claims.objectKey);
   // 🔴 署名に大きさと種類を焼き込んであるので一致するはず。違えば受け取らない（実体と行をずらさない）。
+  //    中身の差し替えは作るだけの書き込み（`If-None-Match: *`）が止める。ETag / 版を行に持たないのはそのため
+  //    （置かれた後に別の中身へ変わる経路が無い = 検査した中身と配る中身が同じ）。
   if (head === null || head.byteSize !== claims.byteSize || head.contentType !== claims.contentType) {
     throw new ChatAttachmentObjectMissingError();
+  }
+  // 🔴 ストレージ上限を送信の時点でも確かめる（#51p の判定は札ごとなので、札を何枚も先に取ると全部が通る）。
+  //    超えるなら置かれた実体を消して 429（数えない実体を残さない）。
+  const { storageLimitBytes } = await resolveTenantStorageQuota(ctx, { now, defaults: deps.quotaDefaults });
+  const usedBytes = await readStorageBytesUsed(ctx, now);
+  const decision = decideStorageUpload({ limitBytes: storageLimitBytes, usedBytes, requestedBytes: BigInt(claims.byteSize) });
+  if (decision.kind === 'BLOCK') {
+    try {
+      await deps.objectStore.delete(claims.objectKey);
+    } catch {
+      // 消せなくても 429 は返す（残った実体は日次の片付け `cleanupAbandonedChatUploads` が拾う）。
+    }
+    throw new StorageLimitExceededError();
   }
   return {
     messageId: claims.messageId,

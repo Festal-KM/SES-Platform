@@ -9,6 +9,8 @@ import {
   type ObjectHead,
   type ObjectStore,
   type PresignGetOptions,
+  type PresignPutOptions,
+  type StoredObjectSummary,
   type TenantStorageMeasurement,
 } from '../interfaces.js';
 import { ObjectKeyOutOfTenantScopeError } from '../storage/s3.js';
@@ -17,7 +19,15 @@ import type { PresignedUrl } from '../types.js';
 /** 署名付き URL のスキーム。🔴 実在しないスキームにして、誤って外部へ渡っても到達しないようにする。 */
 const MOCK_URL_SCHEME = 'mock-object-store:';
 
-type MockObject = { byteSize: number; versionId: string; contentType: string; body?: Uint8Array };
+/** ✅ 2026-10-27: 作るだけの書き込みで、既にあるキーへ置こうとした（実装では S3 の 412 Precondition Failed）。 */
+export class ObjectAlreadyExistsError extends Error {
+  constructor() {
+    super('オブジェクトは既にあります（作るだけの書き込みでは上書きできません）。');
+    this.name = 'ObjectAlreadyExistsError';
+  }
+}
+
+type MockObject = { byteSize: number; versionId: string; contentType: string; body?: Uint8Array; lastModified: Date };
 
 export type MockObjectStoreOptions = {
   readonly now?: () => Date;
@@ -50,17 +60,20 @@ export class MockObjectStore implements ObjectStore {
    *    （`UsageCounter(STORAGE_BYTES)`）が常に 0 バイトになる —— 「動いているのに数字が増えない」
    *    という、実装のバグと見分けのつかない状態になる。
    */
-  async presignPut(key: string, contentType: string, maxBytes: number): Promise<PresignedUrl> {
+  async presignPut(key: string, contentType: string, maxBytes: number, options?: PresignPutOptions): Promise<PresignedUrl> {
     this.assertKey(key);
+    const createOnly = options?.createOnly === true;
+    // ✅ 2026-10-27: 作るだけの書き込み（実装の `If-None-Match: *` と同じ結果）。既にあるキーへは置かない。
+    if (createOnly && this.objects.has(key)) throw new ObjectAlreadyExistsError();
     this.calls += 1;
-    this.objects.set(key, { byteSize: maxBytes, versionId: randomUUID(), contentType });
+    this.objects.set(key, { byteSize: maxBytes, versionId: randomUUID(), contentType, lastModified: this.now() });
     return {
       url: `${MOCK_URL_SCHEME}//put/${encodeURIComponent(key)}`,
       expiresAt: new Date(this.now().getTime() + 15 * 60 * 1000),
       // 🔴 T-05-04: 返すヘッダの**キーは実装（`S3ObjectStore`）と同じ**にする。画面は
       //    `requiredHeaders` をそのまま PUT に付けるため、ここだけ別のキーにすると
       //    「`demo` では通るのに `production` では 403」という差が生まれる（docs/05 §13.2）。
-      headers: { 'content-type': contentType, 'content-length': String(maxBytes) },
+      headers: { 'content-type': contentType, 'content-length': String(maxBytes), ...(createOnly ? { 'if-none-match': '*' } : {}) },
     };
   }
 
@@ -98,7 +111,7 @@ export class MockObjectStore implements ObjectStore {
   async put(key: string, body: Uint8Array, contentType: string): Promise<void> {
     this.assertKey(key);
     this.calls += 1;
-    this.objects.set(key, { byteSize: body.byteLength, versionId: randomUUID(), contentType, body });
+    this.objects.set(key, { byteSize: body.byteLength, versionId: randomUUID(), contentType, body, lastModified: this.now() });
   }
 
   async delete(key: string): Promise<void> {
@@ -154,6 +167,23 @@ export class MockObjectStore implements ObjectStore {
       objectCount += 1;
     }
     return { byteSize, objectCount };
+  }
+
+  async listTenantObjects(tenantId: string, kindSegment: string): Promise<readonly StoredObjectSummary[]> {
+    this.calls += 1;
+    const prefix = `${buildTenantObjectPrefix(tenantId)}${kindSegment}/`;
+    return [...this.objects.entries()]
+      .filter(([key]) => key.startsWith(prefix))
+      .map(([key, object]) => ({ key, byteSize: object.byteSize, lastModified: object.lastModified }));
+  }
+
+  /**
+   * 検証用: 作るだけの書き込みで 2 回目の PUT を模す（実装では S3 が 412 を返す）。`createOnly` でなければ上書きする。
+   */
+  simulatePut(key: string, body: Uint8Array, contentType: string, options?: PresignPutOptions): void {
+    this.assertKey(key);
+    if (options?.createOnly === true && this.objects.has(key)) throw new ObjectAlreadyExistsError();
+    this.objects.set(key, { byteSize: body.byteLength, versionId: randomUUID(), contentType, body, lastModified: this.now() });
   }
 
   callCount(): number {

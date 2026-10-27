@@ -61,6 +61,7 @@ import {
   COMPANY_ROOM_KINDS,
   chatThreadDetailView,
   chatThreadListItem,
+  chatMessageVisibleWhere,
   isChatMessageVisibleToViewer,
   type ChatMessageRow,
   type ChatAnnouncementView,
@@ -290,7 +291,8 @@ async function readThreadTree(
     threadIds.length === 0
       ? []
       : await db.message.findMany({
-          where: { threadId: { in: threadIds } },
+          // ✅ 2026-10-27: 🔴 検査中の他人の添付の発言を冒頭に出さない（`chatMessageVisibleWhere`。RLS の二重）。
+          where: { threadId: { in: threadIds }, AND: [chatMessageVisibleWhere(ctx.userId)] },
           distinct: ['threadId'],
           orderBy: [{ threadId: 'asc' }, { sentAt: 'desc' }, { id: 'desc' }],
           select: { threadId: true, senderPartnerCompanyId: true, body: true, attachedProjectId: true },
@@ -348,7 +350,7 @@ async function readThreadTree(
       ? []
       : (
           await db.message.findMany({
-            where: { threadId: { in: threadIds }, body: freeWordFilter(needle) },
+            where: { threadId: { in: threadIds }, body: freeWordFilter(needle), AND: [chatMessageVisibleWhere(ctx.userId)] },
             select: { id: true, threadId: true, body: true, sentAt: true },
             orderBy: [{ sentAt: 'desc' }, { id: 'desc' }],
             take: MESSAGE_SEARCH_LIMIT,

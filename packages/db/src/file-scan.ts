@@ -177,3 +177,23 @@ export async function listStalledScanTargets(
     },
   );
 }
+
+/**
+ * ✅ 2026-10-27（レビュー）: 渡したチャットの添付のキーのうち、**発言が指しているもの**（放置されたアップロードの片付け）。
+ * 🔴 ジョブのホスト文脈からは DM / グループ・検査中の他人の発言が RLS で見えないため、`app_chat_attachment_keys_in_use`
+ *    （app_scan_probe 所有・テナント境界のみ）を通す。返すのはキーだけ。
+ */
+export async function listChatAttachmentKeysInUse(
+  ctx: SystemTenantCtx,
+  keys: readonly string[],
+): Promise<ReadonlySet<string>> {
+  if (keys.length === 0) return new Set();
+  return runInTenantTransaction(
+    { tenantId: ctx.tenantId, partnerCompanyId: null, actorUserId: ctx.userId },
+    async (tx) => {
+      const rows = await tx.$queryRaw<{ object_key: string }[]>(Prisma.sql`
+        SELECT object_key FROM app_chat_attachment_keys_in_use(${[...keys]}::text[])`);
+      return new Set(rows.map((row) => row.object_key));
+    },
+  );
+}

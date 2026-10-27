@@ -29,7 +29,7 @@ import {
   chatThreadParamsSchema,
 } from '../../../../../../lib/chat/schemas';
 import { sendChatMessage } from '../../../../../../lib/chat/service';
-import { chatAttachmentTokens, objectStore } from '../../../../../../lib/db/bootstrap';
+import { chatAttachmentTokens, objectStore, tenantQuotaDefaults } from '../../../../../../lib/db/bootstrap';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -65,7 +65,7 @@ export const POST = withApiRoute(
       now: () => new Date(),
       meta: { ipAddress: meta.ipAddress },
       // ✅ 2026-10-27: 札を受けたときだけ使う（本文だけの投稿ではストレージに触れない）。
-      ...(body.attachmentUploadToken === undefined ? {} : { attachments: { objectStore: objectStore(), tokens: chatAttachmentTokens() } }),
+      ...(body.attachmentUploadToken === undefined ? {} : { attachments: { objectStore: objectStore(), tokens: chatAttachmentTokens(), quotaDefaults: tenantQuotaDefaults() } }),
     });
     // 🔴 `docs/05` §6.5 #51 の `{ id }` の上位互換。画面が吹き出しを 1 つ足すために、
     //    **投稿した 1 件の写しだけ**を返す（会話全体を返さない = 再取得で 1 ページ目に戻らない）。

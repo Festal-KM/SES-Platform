@@ -35,6 +35,11 @@ export type S3PresignPutRequest = {
   /** SSE-KMS の鍵（`S3_KMS_KEY_ID`）。未設定の環境（MinIO）では `undefined`。 */
   readonly SSEKMSKeyId?: string;
   readonly ExpiresInSeconds: number;
+  /**
+   * ✅ 2026-10-27（チャットのファイル）: 🔴 **作るだけの書き込み**（S3 の条件付き書き込み `If-None-Match: *`）。
+   *    署名に含めるので、同じ URL でもう一度 PUT して中身を差し替えることができない（既にあれば 412）。
+   */
+  readonly IfNoneMatch?: '*';
 };
 
 export type S3PresignGetRequest = {
@@ -75,7 +80,8 @@ export type S3ListObjectsRequest = {
 
 /** `ListObjectsV2` の応答のうち本プロダクトが読む部分。 */
 export type S3ListObjectsResponse = {
-  readonly Contents: readonly { readonly Key: string; readonly Size: number }[];
+  /** ✅ 2026-10-27: `LastModified` は放置されたアップロードの片付け（チャット）が「古いか」を見るために読む。 */
+  readonly Contents: readonly { readonly Key: string; readonly Size: number; readonly LastModified?: Date }[];
   /** 続きがあれば次ページのトークン。無ければ `undefined`。 */
   readonly NextContinuationToken?: string;
 };

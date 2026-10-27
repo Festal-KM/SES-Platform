@@ -498,6 +498,16 @@ export function isChatMessageVisibleToViewer(
   return row.attachmentScanStatus === 'CLEAN' || row.senderUserId === viewerUserId;
 }
 
+/**
+ * ✅ 2026-10-27（レビュー）: `isChatMessageVisibleToViewer` と**同じ条件**を、発言を数える・冒頭を出す問い合わせの `where` に
+ * 足すための形（一覧の冒頭・未読の数・本文の検索）。後から行を落とすのではなく、数える前に除く（件数が漏れない）。
+ * 🔴 本体は RLS の RESTRICTIVE ポリシー（migration 20261027010000）であり、これはアプリ側の二重の守り。
+ *    添付の 4 列は「全部ある」か「全部ない」か（CHECK）なので、`attachmentKey` の有無は種類・状態の有無と同じ。
+ */
+export function chatMessageVisibleWhere(viewerUserId: string) {
+  return { OR: [{ attachmentKey: null }, { attachmentScanStatus: 'CLEAN' }, { senderUserId: viewerUserId }] };
+}
+
 /** ✅ 2026-10-27: 添えたファイルの写し（無い・発言が消えたなら `null`）。 */
 export function chatAttachmentView(
   row: Pick<ChatMessageRow, 'body' | 'deletedAt' | 'purgedAt' | 'attachmentContentType' | 'attachmentByteSize' | 'attachmentScanStatus'>,

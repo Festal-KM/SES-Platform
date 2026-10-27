@@ -10,11 +10,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const reconcileTenantStorage = vi.fn();
 const incrementUsageCounter = vi.fn();
 const recordUsageCounterSnapshot = vi.fn();
+const listChatAttachmentKeysInUse = vi.fn(async () => new Set<string>());
 
 vi.mock('@ses/db', () => ({
   reconcileTenantStorage,
   incrementUsageCounter,
   recordUsageCounterSnapshot,
+  listChatAttachmentKeysInUse,
   systemTenantCtx: (tenantId: string, job: { queue: string; jobId: string }) => ({
     tenantId,
     partnerCompanyId: null,
@@ -68,7 +70,7 @@ describe('🔴 usage.storage-reconcile: 宣言とキュー定義', () => {
 describe('🔴 ハンドラ', () => {
   it('① 実測を payload の tenantId で取り、② カウンタを書かずに packages/db へ渡す', async () => {
     const measureTenantUsage = vi.fn(async () => ({ byteSize: 120n, objectCount: 2 }));
-    const handler = createUsageStorageReconcileHandler({ now: () => NOW, objectStore: { measureTenantUsage } });
+    const handler = createUsageStorageReconcileHandler({ now: () => NOW, objectStore: { measureTenantUsage, listTenantObjects: async () => [], delete: async () => undefined } });
     const outcome = await handler({ tenantId: TENANT_ID }, 'repeat:usage.storage-reconcile:1');
 
     expect(measureTenantUsage).toHaveBeenCalledWith(TENANT_ID);
@@ -89,10 +91,39 @@ describe('🔴 ハンドラ', () => {
     ['tenantId が UUID でない', { tenantId: '../..' }],
   ])('🔴 ③ payload が不正（%s）なら実測もしない', async (_label, payload) => {
     const measureTenantUsage = vi.fn(async () => ({ byteSize: 0n, objectCount: 0 }));
-    const handler = createUsageStorageReconcileHandler({ now: () => NOW, objectStore: { measureTenantUsage } });
+    const handler = createUsageStorageReconcileHandler({ now: () => NOW, objectStore: { measureTenantUsage, listTenantObjects: async () => [], delete: async () => undefined } });
     await expect(handler(payload, 'repeat:usage.storage-reconcile:2')).rejects.toBeInstanceOf(InvalidJobPayloadError);
     expect(() => parseUsageStorageReconcilePayload(payload)).toThrow(InvalidJobPayloadError);
     expect(measureTenantUsage).not.toHaveBeenCalled();
     expect(reconcileTenantStorage).not.toHaveBeenCalled();
+  });
+});
+
+describe('✅ 2026-10-27 放置されたチャットの添付の片付け', () => {
+  it('古く・どの発言も指していないものだけを消す（新しいもの・指されているもの・最終更新が分からないものは消さない）', async () => {
+    const OLD = new Date(NOW.getTime() - 3 * 60 * 60 * 1000);
+    const FRESH = new Date(NOW.getTime() - 10 * 60 * 1000);
+    const prefix = `t/${TENANT_ID}/chat/`;
+    listChatAttachmentKeysInUse.mockResolvedValueOnce(new Set([`${prefix}used.pdf`]));
+    const deleted: string[] = [];
+    const handler = createUsageStorageReconcileHandler({
+      now: () => NOW,
+      objectStore: {
+        measureTenantUsage: async () => ({ byteSize: 0n, objectCount: 0 }),
+        listTenantObjects: async () => [
+          { key: `${prefix}abandoned.pdf`, byteSize: 10, lastModified: OLD },
+          { key: `${prefix}used.pdf`, byteSize: 10, lastModified: OLD },
+          { key: `${prefix}fresh.pdf`, byteSize: 10, lastModified: FRESH },
+          { key: `${prefix}unknown.pdf`, byteSize: 10, lastModified: null },
+        ],
+        delete: async (key: string) => {
+          deleted.push(key);
+        },
+      },
+    });
+    const outcome = await handler({ tenantId: TENANT_ID }, 'job-1');
+    expect(deleted).toEqual([`${prefix}abandoned.pdf`]);
+    expect(outcome.abandonedChatUploadsDeleted).toBe(1);
+    expect(listChatAttachmentKeysInUse).toHaveBeenCalledWith(expect.anything(), [`${prefix}abandoned.pdf`, `${prefix}used.pdf`]);
   });
 });

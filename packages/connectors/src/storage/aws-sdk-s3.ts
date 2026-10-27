@@ -185,10 +185,12 @@ export function createS3Api(options: S3ApiOptions): S3Api {
         ...(request.SSEKMSKeyId === undefined
           ? {}
           : { ServerSideEncryption: 'aws:kms' as const, SSEKMSKeyId: request.SSEKMSKeyId }),
+        ...(request.IfNoneMatch === undefined ? {} : { IfNoneMatch: request.IfNoneMatch }),
       });
       return getSignedUrl(client, command, {
         expiresIn: request.ExpiresInSeconds,
-        signableHeaders: new Set(PUT_SIGNABLE_HEADERS),
+        // ✅ 2026-10-27: 作るだけの書き込みは `if-none-match` も署名に含める（外すと 403 = 付け忘れ・差し替えで通らない）。
+        signableHeaders: new Set(request.IfNoneMatch === undefined ? PUT_SIGNABLE_HEADERS : [...PUT_SIGNABLE_HEADERS, 'if-none-match']),
         unhoistableHeaders: new Set(UNHOISTABLE_HEADERS),
       });
     },
@@ -254,7 +256,7 @@ export function createS3Api(options: S3ApiOptions): S3Api {
         if (typeof item.Key !== 'string' || typeof item.Size !== 'number') {
           throw new Error('S3 の ListObjectsV2 が Key / Size を返さない要素を含みます（検算できません）。');
         }
-        return { Key: item.Key, Size: item.Size };
+        return { Key: item.Key, Size: item.Size, ...(item.LastModified instanceof Date ? { LastModified: item.LastModified } : {}) };
       });
       return {
         Contents: contents,

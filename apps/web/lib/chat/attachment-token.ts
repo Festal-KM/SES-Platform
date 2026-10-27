@@ -10,6 +10,7 @@
 //    鍵そのものを返すアクセサを作らない（`anonymize/reference.ts` と同じ規律）。注入は起動時 1 回（`lib/db/bootstrap.ts`）。
 // 🔴 例外メッセージ・戻り値に鍵を載せない。検証の失敗は理由を書き分けず `null`（呼び出し側が 400 にする）。
 import { createHmac, hkdfSync, timingSafeEqual } from 'node:crypto';
+import { CHAT_ATTACHMENT_UPLOAD_TOKEN_TTL_MS } from '@ses/domain';
 import { CHAT_ATTACHMENT_TOKEN_MAX_LENGTH } from './schemas';
 
 /** 札に焼き込む値（すべてサーバが決めた値）。 */
@@ -32,8 +33,8 @@ export type ChatAttachmentTokenCodec = {
   readonly verify: (token: string, now: Date) => ChatAttachmentUploadClaims | null;
 };
 
-/** 札の有効期間（ミリ秒）。アップロードして、送信の取り消し待ち（5 秒）を経て送るまでに足りる長さ。 */
-export const CHAT_ATTACHMENT_TOKEN_TTL_MS = 60 * 60 * 1000;
+/** 札の有効期間（ミリ秒）。🔴 値の出所は domain（放置されたアップロードの片付けの古さと対で決める）。 */
+export const CHAT_ATTACHMENT_TOKEN_TTL_MS = CHAT_ATTACHMENT_UPLOAD_TOKEN_TTL_MS;
 
 const VERSION = 'v1';
 const HKDF_INFO = 'ses/chat-attachment-upload-token/v1';
