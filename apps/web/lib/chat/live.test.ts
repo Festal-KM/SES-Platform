@@ -1,7 +1,7 @@
 // apps/web/lib/chat/live.test.ts
 // `S-031` の新着の自動表示（`lib/chat/live.ts`）。
 import { describe, expect, it } from 'vitest';
-import { hasGapBefore, hasOthersMessage, mergeLatestMessages, readGapAfter } from './live';
+import { applyLatestMessages, gapAnchor, hasGapBefore, hasOthersMessage, mergeLatestMessages, mustReplaceWithLatest, readGapAfter, withLatestReactions } from './live';
 import type { ChatMessageView } from './views';
 
 function message(id: string, sentAt: string, mine = false): ChatMessageView {
@@ -132,5 +132,102 @@ describe('✅ 2026-10-26（#166 の 4・レビュー）readGapAfter: 最新ま�
       return pages.shift() ?? null;
     }, 10);
     expect(seen).toEqual(['c', 'e']);
+  });
+});
+
+// ✅ 2026-10-27（Codex レビュー 2 回目）: 検査が CLEAN になった添付の発言は、公開した時点の位置へ移る。
+describe('位置（sentAt）が動いた行', () => {
+  const MOVED_A = { ...A, sentAt: '2026-10-14T04:00:00.000Z' };
+
+  it('withLatestReactions は手元の行の sentAt を揃え、(sentAt, id) で並べ直す（行は落とさない）', () => {
+    const next = withLatestReactions([A, B, C], [MOVED_A, B, C]);
+    expect(next.map((item) => item.id)).toEqual(['b', 'c', 'a']);
+    expect(next.find((item) => item.id === 'a')?.sentAt).toBe(MOVED_A.sentAt);
+    expect(next.at(-1)?.id).toBe('a');
+  });
+
+  it('mergeLatestMessages も手元の行の位置を揃えて並べ直す（新着が無くても）', () => {
+    const merged = mergeLatestMessages([A, B, C], [MOVED_A, B, C]);
+    expect(merged.items.map((item) => item.id)).toEqual(['b', 'c', 'a']);
+    expect(merged.added).toEqual([]);
+    const withNew = mergeLatestMessages([A, B], [MOVED_A, B, C]);
+    expect(withNew.items.map((item) => item.id)).toEqual(['b', 'c', 'a']);
+    expect(withNew.added.map((item) => item.id)).toEqual(['c']);
+  });
+
+  it('位置が変わらなければ同じ配列を返す（再描画を起こさない）', () => {
+    const current = [A, B];
+    expect(withLatestReactions(current, [A, B])).toBe(current);
+    expect(mergeLatestMessages(current, [A, B]).items).toBe(current);
+  });
+});
+
+// ✅ 2026-10-27（Codex レビュー 3 回目）: 動いた行があるときの取りこぼし。
+describe('🔴 位置が動いた行があっても取りこぼさない', () => {
+  // 手元 [A(添付・検査中), B]。その後 C, D が届き、A が CLEAN になって最後尾へ移った。直近のページ（2 件）は [D, A']。
+  const LOCAL_A = message('a', '2026-10-27T01:00:00.000Z', true);
+  const LOCAL_B = message('b', '2026-10-27T02:00:00.000Z');
+  const NEW_C = message('c', '2026-10-27T03:00:00.000Z');
+  const NEW_D = message('d', '2026-10-27T04:00:00.000Z');
+  const MOVED = { ...LOCAL_A, sentAt: '2026-10-27T05:00:00.000Z' };
+
+  it('直近のページに手元の行（動いたもの）が含まれていても、つながっていないと判定し、起点は動いていない手元の最後（B）', () => {
+    expect(hasGapBefore([LOCAL_A, LOCAL_B], [NEW_D, MOVED], 2)).toBe(true);
+    expect(gapAnchor([LOCAL_A, LOCAL_B], [NEW_D, MOVED])).toBe('b');
+  });
+
+  it('B から読み足した行と直近のページを当てると、C を落とさず (sentAt, id) の順に並ぶ', async () => {
+    const gap = await readGapAfter(
+      'b',
+      async (after) => {
+        expect(after).toBe('b');
+        return { items: [NEW_C, NEW_D, MOVED], hasMoreAfter: false };
+      },
+      10,
+    );
+    expect(gap?.complete).toBe(true);
+    const latest = [...(gap?.items ?? []), NEW_D, MOVED];
+    const applied = applyLatestMessages([LOCAL_A, LOCAL_B], latest);
+    expect(applied.items.map((item) => item.id)).toEqual(['b', 'c', 'd', 'a']);
+    expect(applied.added.map((item) => item.id)).toEqual(['c', 'd']);
+  });
+
+  it('動いた行が無く重なっていれば、従来どおりつながっている', () => {
+    expect(hasGapBefore([LOCAL_A, LOCAL_B], [LOCAL_B, NEW_C], 2)).toBe(false);
+  });
+
+  it('🔴 読み足しを待つ間に「以前のメッセージ」が読み込まれても、当てる時点の手元に当てるので古い行を落とさない', () => {
+    const older = message('o', '2026-10-26T00:00:00.000Z');
+    // 読み足しを始めた時点の手元は [A, B]。当てる時点の手元は [O, A, B]（過去を読み込んだ）。
+    const atApply = [older, LOCAL_A, LOCAL_B];
+    const applied = applyLatestMessages(atApply, [NEW_C, NEW_D, MOVED]);
+    expect(applied.items.map((item) => item.id)).toEqual(['o', 'b', 'c', 'd', 'a']);
+  });
+});
+
+// ✅ 2026-10-27（Codex レビュー 4 回目）: 手元の行がすべて位置を動かしたとき。
+describe('🔴 手元の行がすべて動いたら、足し合わせずに置き換える', () => {
+  const ONLY_A = message('a', '2026-10-27T01:00:00.000Z', true);
+  const MOVED_A = { ...ONLY_A, sentAt: '2026-10-27T09:00:00.000Z' };
+  const page = [message('x', '2026-10-27T08:00:00.000Z'), MOVED_A];
+
+  it('手元が検査中の添付 1 件だけで、それが多くの新着の後に CLEAN になった → つながりも起点も無いので置き換える', () => {
+    expect(hasGapBefore([ONLY_A], page, 2)).toBe(false);
+    expect(gapAnchor([ONLY_A], page)).toBeUndefined();
+    expect(mustReplaceWithLatest([ONLY_A], page, 2)).toBe(true);
+  });
+
+  it('直近のページが満杯でなければ（会話の全部が入っている）置き換えない', () => {
+    expect(mustReplaceWithLatest([ONLY_A], [MOVED_A], 2)).toBe(false);
+  });
+
+  it('位置が動いていない手元の行が 1 つでもあれば置き換えない（読み足しで埋める）', () => {
+    const local = [ONLY_A, message('b', '2026-10-27T02:00:00.000Z')];
+    expect(mustReplaceWithLatest(local, page, 2)).toBe(false);
+    expect(gapAnchor(local, page)).toBe('b');
+  });
+
+  it('手元が空なら置き換えの対象ではない（ふつうに足す）', () => {
+    expect(mustReplaceWithLatest([], page, 2)).toBe(false);
   });
 });

@@ -442,8 +442,8 @@ describe('#10 probe ロールの最小権限（docs/05 §4.7 #10 / §4.4.1 / §8
    */
   it('🔴 app_scan_probe の権限は skill_sheets のスキャン関連の列 + engineers の 3 列だけである', () => {
     // 実測は下の it（非同期）で行う。ここは期待値の宣言そのものをレビュー可能にするための対照。
-    // ✅ 2026-10-27: 13 → 25（チャットの添付。chat_threads 5 行 + messages 7 行）。
-    expect(SCAN_PROBE_EXPECTED_GRANTS).toHaveLength(25);
+    // ✅ 2026-10-27: 13 → 26（チャットの添付。chat_threads 5 行 + messages 8 行）。
+    expect(SCAN_PROBE_EXPECTED_GRANTS).toHaveLength(26);
   });
 
   it('🔴 app_scan_probe の列単位 GRANT が期待どおり（増えたら必ず落ちる）', async () => {
@@ -586,6 +586,8 @@ const SCAN_PROBE_EXPECTED_GRANTS = [
   { table_name: 'messages', column_name: 'attachment_scan_status', privilege_type: 'UPDATE' },
   { table_name: 'messages', column_name: 'id', privilege_type: 'SELECT' },
   { table_name: 'messages', column_name: 'sent_at', privilege_type: 'SELECT' },
+  // ✅ 2026-10-27（レビュー。migration 20261027030000）: CLEAN になった発言を公開した時点の位置へ置き直す（app_apply_scan_status）。
+  { table_name: 'messages', column_name: 'sent_at', privilege_type: 'UPDATE' },
   { table_name: 'messages', column_name: 'tenant_id', privilege_type: 'SELECT' },
   { table_name: 'messages', column_name: 'thread_id', privilege_type: 'SELECT' },
   { table_name: 'skill_sheets', column_name: 'id', privilege_type: 'SELECT' },

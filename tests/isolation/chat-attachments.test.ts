@@ -1,6 +1,6 @@
 // tests/isolation/chat-attachments.test.ts
 // ✅ 2026-10-27（チャットレーン・紺野の決定）: ファイル（社内だけの部屋から）の分離。`docs/02` `F-038` 改訂 12 ⑫ / AC-14 /
-// `docs/05` §3.7.1「ファイル（社内だけの部屋）」/ §6.5 #51 #51p #51q #51r。migration 20261027010000。
+// `docs/05` §3.7.1「ファイル（社内だけの部屋）」/ §6.5 #51 #51p #51q #51r。migration 20261027010000（+ 追補 20261027030000）。
 //
 // 🔴 ここで固定すること:
 //   ① キーはサーバが組む（札に焼き込む）。札を別の部屋・別の人で使えない。キーを入力で渡しても使われない
@@ -15,8 +15,14 @@
 //      解約の削除で減る（再実行では動かない）
 //   ⑩ 🔴 検査の状態は検査の関数だけが変えられ、添付のキー・種類・大きさは作った後に変えられない（DB のトリガ）
 //   ⑪ 🔴 CLEAN でない添付の発言はアナウンスにできない（送った本人からでも 404）
+//   ⑬ 🔴 Codex レビュー: 作るだけの書き込み（2 回目の PUT は拒まれる）/ 置かれた後に変わった実体では送れない /
+//      検査中に相手が後ろまで読んでも、CLEAN になった発言は未読に数えられ after で拾われる / 送信の時点の上限で 429 にし
+//      実体を消す / 放置された実体を片付ける / 検査中の他人の添付は一覧の冒頭・未読の数・検索に現れない
+//   ⑫ ✅ 決定 A: 本人が発言を削除したら添付も消える（実体の削除・列を外す・カウンタを 1 度だけ減らす・URL / 一覧から消える）。
+//      二重削除は何もしない。他人は削除も、削除済みの発言の添付を外すこともできない
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
+  accountChatAttachmentStorageInSend,
   applyFileScanResult,
   applyPurgeSpec,
   readStorageBytesUsed,
@@ -60,7 +66,7 @@ vi.mock('../../apps/web/lib/auth/session', () => ({
 
 const groupsRoute = await import('../../apps/web/app/api/(main)/threads/groups/route');
 const { listChatMessages } = await import('../../apps/web/lib/chat/read');
-const { sendChatMessage } = await import('../../apps/web/lib/chat/service');
+const { deleteChatMessage, sendChatMessage } = await import('../../apps/web/lib/chat/service');
 const {
   CHAT_ATTACHMENT_AUDIT_ACTION_DOWNLOAD,
   CHAT_ATTACHMENT_AUDIT_ACTION_UPLOAD,
@@ -74,6 +80,10 @@ const { CHAT_ATTACHMENT_LIST_ITEM_KEYS, CHAT_ATTACHMENT_VIEW_KEYS, CHAT_FORBIDDE
 );
 const { chatMessagePostBodySchema } = await import('../../apps/web/lib/chat/schemas');
 const { setChatAnnouncement } = await import('../../apps/web/lib/chat/announcement');
+const { countUnread, markChatRead } = await import('../../apps/web/lib/chat/read-state');
+const { readChatScreen } = await import('../../apps/web/lib/chat/read');
+const { CHAT_THREAD_SORT_DEFAULT } = await import('../../apps/web/lib/chat/thread-tree');
+const { cleanupAbandonedChatUploads } = await import('../../apps/worker/src/jobs/usage-storage-reconcile');
 const QUOTA = quotaDefaultsWith({ storageLimitBytes: 10n * 1024n * 1024n * 1024n });
 
 let database: IsolationDatabase;
@@ -86,16 +96,46 @@ let tenantB: AuthenticatedTenantCtx;
 let roomId: string;
 let store: ObjectStore;
 const tokens = createChatAttachmentTokenCodec(SECRET);
-let clock = new Date('2026-10-27T01:00:00.000Z');
+// ✅ 2026-10-27: 実時刻より 2 時間前から進める（CLEAN の適用は DB の実時刻〔clock_timestamp()〕で位置を決めるため、
+//    送った時刻は実時刻より前でなければ「公開した時点の位置へ移る」ことを確かめられない）。
+let clock = new Date(Date.now() - 2 * 60 * 60 * 1000);
 const now = () => clock;
 
 async function upload(ctx: AuthenticatedTenantCtx, threadId: string, contentType: 'application/pdf' | 'image/png' | 'text/plain' = 'application/pdf', byteSize = 1234) {
   return issueChatAttachmentUploadUrl(ctx, threadId, { contentType, byteSize }, { objectStore: store, tokens, uploadMaxBytes: 20 * 1024 * 1024, quotaDefaults: QUOTA, now });
 }
 
-async function send(ctx: AuthenticatedTenantCtx, threadId: string, token: string, body = '') {
+async function send(ctx: AuthenticatedTenantCtx, threadId: string, token: string, body = '', quotaDefaults = QUOTA) {
   clock = new Date(clock.getTime() + 1000);
-  return sendChatMessage(ctx, threadId, { body, attachmentUploadToken: token }, { now, meta: { ipAddress: META.ipAddress }, attachments: { objectStore: store, tokens } });
+  return sendChatMessage(ctx, threadId, { body, attachmentUploadToken: token }, { now, meta: { ipAddress: META.ipAddress }, attachments: { objectStore: store, tokens, quotaDefaults } });
+}
+
+/** モックのストレージを包んで、`head` だけを差し替える（クラスのメソッドは展開で写らないので 1 つずつ渡す）。 */
+function storeWithHead(headImpl: ObjectStore['head']): ObjectStore {
+  return {
+    presignPut: (...args) => store.presignPut(...args),
+    presignGet: (...args) => store.presignGet(...args),
+    put: (...args) => store.put(...args),
+    head: headImpl,
+    measureTenantUsage: (tenantId) => store.measureTenantUsage(tenantId),
+    listTenantObjects: (tenantId, kind) => store.listTenantObjects(tenantId, kind),
+    callCount: () => store.callCount(),
+    delete: (key) => store.delete(key),
+  };
+}
+
+async function sendWithStore(ctx: AuthenticatedTenantCtx, token: string, quotaDefaults: typeof QUOTA, objectStore: ObjectStore) {
+  clock = new Date(clock.getTime() + 1000);
+  return sendChatMessage(ctx, roomId, { body: '', attachmentUploadToken: token }, { now, meta: { ipAddress: META.ipAddress }, attachments: { objectStore, tokens, quotaDefaults } });
+}
+
+async function sendText(ctx: AuthenticatedTenantCtx, threadId: string, body: string) {
+  clock = new Date(clock.getTime() + 1000);
+  return sendChatMessage(ctx, threadId, { body }, { now, meta: { ipAddress: META.ipAddress } });
+}
+
+async function unreadOf(ctx: AuthenticatedTenantCtx, threadId: string): Promise<number> {
+  return withTenant(ctx, async (db) => (await countUnread(ctx, db, [threadId])).get(threadId) ?? 0);
 }
 
 async function rawVisible(ctx: AuthenticatedTenantCtx, messageId: string): Promise<number> {
@@ -107,13 +147,13 @@ async function listedIds(ctx: AuthenticatedTenantCtx, threadId: string): Promise
   return page.items.map((item) => item.id);
 }
 
-async function applyScan(objectKey: string, status: 'CLEAN' | 'INFECTED') {
+async function applyScan(objectKey: string, status: 'CLEAN' | 'INFECTED', occurredAt: Date = clock) {
   return applyFileScanResult(systemTenantCtx(TENANT_A, JOB), {
     objectKey,
     objectVersionId: `v-${status}`,
     status,
     rawStatus: status === 'CLEAN' ? 'NO_THREATS_FOUND' : 'THREATS_FOUND',
-    occurredAt: clock,
+    occurredAt,
     receivedAt: clock,
   });
 }
@@ -262,13 +302,15 @@ describe('② ③ ④ 検査中は本人だけ → CLEAN で全員に', () => {
     expect(stalled.map((target) => target.objectKey)).toContain(objectKey);
   });
 
-  it('⑦ 検査の結果（CLEAN）が発言に適用され、部屋の最終更新が送った時刻まで進む', async () => {
+  it('⑦ 検査の結果（CLEAN）が発言に適用され、発言は公開した時点の位置へ移り、部屋の最終更新もそこまで進む', async () => {
     const applied = await applyScan(objectKey, 'CLEAN');
     expect(applied.target).toBe('APPLIED');
     expect(applied.previousStatus).toBe('SCANNING');
     expect((await admin.message.findUniqueOrThrow({ where: { id: messageId } })).attachmentScanStatus).toBe('CLEAN');
     const thread = await admin.chatThread.findUniqueOrThrow({ where: { id: roomId }, select: { lastMessageAt: true } });
-    expect(thread.lastMessageAt?.toISOString()).toBe(sentAt);
+    const moved = (await admin.message.findUniqueOrThrow({ where: { id: messageId } })).sentAt;
+    expect(moved.getTime()).toBeGreaterThan(new Date(sentAt).getTime());
+    expect(thread.lastMessageAt?.toISOString()).toBe(moved.toISOString());
     // 🔴 CLEAN から戻さない（2 回目は KEPT）。
     expect((await applyScan(objectKey, 'CLEAN')).target).toBe('KEPT');
   });
@@ -440,6 +482,317 @@ describe('🔴 ⑩ 添付の列は DB で守られる', () => {
       setChatAnnouncement(host, roomId, messageId, { now, meta: { ipAddress: META.ipAddress } }),
     ).rejects.toMatchObject({ httpStatus: 404 });
     expect(await admin.chatThreadAnnouncement.count({ where: { threadId: roomId } })).toBe(0);
+  });
+});
+
+describe('🔴 ⑬ Codex レビューの 4 点', () => {
+  it('① 署名は作るだけの書き込み（if-none-match: *）。同じキーへの 2 回目の PUT は拒まれる', async () => {
+    const ticket = await upload(host, roomId, 'application/pdf', 20);
+    expect(ticket.requiredHeaders['if-none-match']).toBe('*');
+    const mock = store as unknown as { simulatePut(key: string, body: Uint8Array, contentType: string, options?: { createOnly?: boolean }): void };
+    expect(() => mock.simulatePut(keyOf(ticket.uploadToken), new Uint8Array(20), 'application/pdf', { createOnly: true })).toThrow(/上書きできません/);
+  });
+
+  it('① 置かれた後に実体が変わっていたら送れない（409。行は作らない）', async () => {
+    const ticket = await upload(host, roomId, 'application/pdf', 40);
+    const key = keyOf(ticket.uploadToken);
+    await store.put(key, new Uint8Array(41), 'application/pdf');
+    await expect(send(host, roomId, ticket.uploadToken)).rejects.toMatchObject({ httpStatus: 409 });
+    const claims = tokens.verify(ticket.uploadToken, clock);
+    expect(await admin.message.count({ where: { id: claims?.messageId ?? ABSENT_ID } })).toBe(0);
+  });
+
+  it('② 検査中に相手が後ろの発言まで読んでいても、CLEAN になった発言は未読に数えられ、after で拾われる', async () => {
+    const ticket = await upload(host, roomId, 'application/pdf', 25);
+    const a = (await send(host, roomId, ticket.uploadToken, '遅れて届く資料')).message;
+    const b = (await sendText(host, roomId, '後ろの発言')).message;
+    // 相手は、自分から見える最後の発言まで読む（前の検査で公開位置へ移った発言が B より後ろにあることがある）。
+    const lastSeen = (await listChatMessages(host2, roomId, { limit: 50 })).items.at(-1);
+    expect(lastSeen).toBeDefined();
+    await markChatRead(host2, roomId, lastSeen?.id ?? b.id);
+    expect(await unreadOf(host2, roomId)).toBe(0);
+    // 🔴 検査の発生時刻は既読より前（遅れて届いた）。それでも位置は適用した実時刻で決まる。
+    expect((await applyScan(keyOf(ticket.uploadToken), 'CLEAN', new Date(a.sentAt))).target).toBe('APPLIED');
+    const row = await admin.message.findUniqueOrThrow({ where: { id: a.id } });
+    expect(row.sentAt.getTime()).toBeGreaterThan(new Date(b.sentAt).getTime());
+    expect((await admin.chatThread.findUniqueOrThrow({ where: { id: roomId } })).lastMessageAt?.toISOString()).toBe(row.sentAt.toISOString());
+    expect(await unreadOf(host2, roomId)).toBe(1);
+    const after = await listChatMessages(host2, roomId, { limit: 50, after: lastSeen?.id ?? b.id });
+    expect(after.items.map((item) => item.id)).toEqual([a.id]);
+  });
+
+  it('🔴 ③ 別々の札を同時に送っても、上限に 1 つ分しか余地が無ければ 1 つだけ通り、カウンタはその 1 つ分', async () => {
+    const used = await readStorageBytesUsed(host, clock);
+    const tight = quotaDefaultsWith({ storageLimitBytes: used + 150n });
+    const t1 = await upload(host, roomId, 'application/pdf', 100);
+    const t2 = await upload(host, roomId, 'application/pdf', 100);
+    const results = await Promise.allSettled([send(host, roomId, t1.uploadToken, '', tight), send(host, roomId, t2.uploadToken, '', tight)]);
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    const rejected = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]?.reason).toMatchObject({ httpStatus: 429 });
+    expect(await readStorageBytesUsed(host, clock)).toBe(used + 100n);
+    // ✅ 2026-10-27（Codex 4 回目）: 断られた側の実体も消さない（日次の片付けが消す）。
+    const heads = await Promise.all([store.head(keyOf(t1.uploadToken)), store.head(keyOf(t2.uploadToken))]);
+    expect(heads.filter((head) => head === null)).toHaveLength(0);
+  });
+
+  it('🔴 ③ 同じ札を同時に送っても 1 行・1 回分だけ数え、実体は消さない（先に確定した側を後の側が壊さない）', async () => {
+    const used = await readStorageBytesUsed(host, clock);
+    // 余地はちょうど 1 つ分。2 回目が上限を数え直すと 429 になって実体を消してしまう形にしておく。
+    const tight = quotaDefaultsWith({ storageLimitBytes: used + 100n });
+    const ticket = await upload(host, roomId, 'application/pdf', 100);
+    const results = await Promise.all([send(host, roomId, ticket.uploadToken, '', tight), send(host, roomId, ticket.uploadToken, '', tight)]);
+    expect(results[0].message.id).toBe(results[1].message.id);
+    expect(await admin.message.count({ where: { id: results[0].message.id } })).toBe(1);
+    expect(await readStorageBytesUsed(host, clock)).toBe(used + 100n);
+    expect(await store.head(keyOf(ticket.uploadToken))).not.toBeNull();
+    // 確定した後にもう一度送っても同じ（上限を数え直さない・実体を消さない）。
+    const again = await send(host, roomId, ticket.uploadToken, '', tight);
+    expect(again.message.id).toBe(results[0].message.id);
+    expect(await store.head(keyOf(ticket.uploadToken))).not.toBeNull();
+    expect(await readStorageBytesUsed(host, clock)).toBe(used + 100n);
+  });
+
+  it('③ 札を何枚も先に取っても、送信の時点の上限で 429 にする（置かれた実体は消さない）', async () => {
+    const used = await readStorageBytesUsed(host, clock);
+    const tight = quotaDefaultsWith({ storageLimitBytes: used + 150n });
+    const issue = (size: number) =>
+      issueChatAttachmentUploadUrl(host, roomId, { contentType: 'application/pdf', byteSize: size }, {
+        objectStore: store,
+        tokens,
+        uploadMaxBytes: 20 * 1024 * 1024,
+        quotaDefaults: tight,
+        now,
+      });
+    const first = await issue(100);
+    const second = await issue(100);
+    await send(host, roomId, first.uploadToken, '', tight);
+    await expect(send(host, roomId, second.uploadToken, '', tight)).rejects.toMatchObject({ httpStatus: 429 });
+    expect(await store.head(keyOf(second.uploadToken))).not.toBeNull();
+    expect(await readStorageBytesUsed(host, clock)).toBe(used + 100n);
+  });
+
+  it('③ 放置された実体（送らなかったもの）は日次の片付けで消え、送ったものは残る', async () => {
+    const abandoned = await upload(host, roomId, 'text/plain', 5);
+    const kept = await upload(host, roomId, 'text/plain', 6);
+    await send(host, roomId, kept.uploadToken);
+    const deletedCount = await cleanupAbandonedChatUploads(systemTenantCtx(TENANT_A, JOB), {
+      now: () => new Date(Date.now() + 3 * 60 * 60 * 1000),
+      objectStore: store,
+    });
+    expect(deletedCount).toBeGreaterThanOrEqual(1);
+    expect(await store.head(keyOf(abandoned.uploadToken))).toBeNull();
+    expect(await store.head(keyOf(kept.uploadToken))).not.toBeNull();
+    // 札が生きている間（新しいもの）は消さない。
+    const fresh = await upload(host, roomId, 'text/plain', 7);
+    await cleanupAbandonedChatUploads(systemTenantCtx(TENANT_A, JOB), { now: () => new Date(), objectStore: store });
+    expect(await store.head(keyOf(fresh.uploadToken))).not.toBeNull();
+  });
+
+  it('④ 検査中の他人の添付は、一覧の冒頭（DM・グループ）と未読の数に現れない', async () => {
+    // 前の検査で公開位置（実時刻）へ移った発言より後ろに送る。
+    clock = new Date(Date.now() + 60_000);
+    const before = await readChatScreen(host2, {
+      threadId: null,
+      threadsQuery: { limit: 50 },
+      messagesQuery: { limit: 50 },
+      tree: { sort: CHAT_THREAD_SORT_DEFAULT, q: null },
+    });
+    const unreadBefore = await unreadOf(host2, roomId);
+    const ticket = await upload(host, roomId, 'application/pdf', 15);
+    await send(host, roomId, ticket.uploadToken, '検査中の本文はまだ見せない');
+    const after = await readChatScreen(host2, {
+      threadId: null,
+      threadsQuery: { limit: 50 },
+      messagesQuery: { limit: 50 },
+      tree: { sort: CHAT_THREAD_SORT_DEFAULT, q: null },
+    });
+    expect(after.people?.lastSnippets[roomId]).toBe(before.people?.lastSnippets[roomId]);
+    expect(JSON.stringify(after)).not.toContain('検査中の本文はまだ見せない');
+    expect(await unreadOf(host2, roomId)).toBe(unreadBefore);
+    // 送った本人には冒頭に出る。
+    const mine = await readChatScreen(host, {
+      threadId: null,
+      threadsQuery: { limit: 50 },
+      messagesQuery: { limit: 50 },
+      tree: { sort: CHAT_THREAD_SORT_DEFAULT, q: null },
+    });
+    expect(mine.people?.lastSnippets[roomId]).toContain('検査中の本文はまだ見せない');
+  });
+});
+
+describe('🔴 ⑭ 同じ札と上限の断り（Codex レビュー 3・4 回目）', () => {
+  const messageIdOf = (token: string) => tokens.verify(token, clock)?.messageId ?? ABSENT_ID;
+
+  it('上限で断っても実体は消さない。実体がある間は同じキーへ置き直せない。後で上限が空けば同じ札で送れて、検査した実体を指す', async () => {
+    const used = await readStorageBytesUsed(host, clock);
+    const ticket = await upload(host, roomId, 'application/pdf', 100);
+    const key = keyOf(ticket.uploadToken);
+    await expect(send(host, roomId, ticket.uploadToken, '', quotaDefaultsWith({ storageLimitBytes: used + 50n }))).rejects.toMatchObject({ httpStatus: 429 });
+    expect(await store.head(key)).not.toBeNull();
+    expect(await admin.message.count({ where: { id: messageIdOf(ticket.uploadToken) } })).toBe(0);
+    expect(await readStorageBytesUsed(host, clock)).toBe(used);
+    // 🔴 作るだけの書き込み: 実体がある間は同じキーへ別の中身を置けない（実装では S3 が 412）。
+    const mock = store as unknown as { simulatePut(key: string, body: Uint8Array, contentType: string, options?: { createOnly?: boolean }): void };
+    expect(() => mock.simulatePut(key, new Uint8Array(100), 'application/pdf', { createOnly: true })).toThrow(/上書きできません/);
+    const sent = await send(host, roomId, ticket.uploadToken);
+    expect(sent.message.id).toBe(messageIdOf(ticket.uploadToken));
+    expect((await admin.message.findUniqueOrThrow({ where: { id: sent.message.id } })).attachmentKey).toBe(key);
+    expect(await readStorageBytesUsed(host, clock)).toBe(used + 100n);
+  });
+
+  it('上限で断られたまま送られなかった実体は、日次の片付けが消す（札の有効期間 + 1 時間の後）', async () => {
+    const used = await readStorageBytesUsed(host, clock);
+    const ticket = await upload(host, roomId, 'application/pdf', 100);
+    await expect(send(host, roomId, ticket.uploadToken, '', quotaDefaultsWith({ storageLimitBytes: used + 50n }))).rejects.toMatchObject({ httpStatus: 429 });
+    await cleanupAbandonedChatUploads(systemTenantCtx(TENANT_A, JOB), { now: () => new Date(), objectStore: store });
+    expect(await store.head(keyOf(ticket.uploadToken))).not.toBeNull();
+    await cleanupAbandonedChatUploads(systemTenantCtx(TENANT_A, JOB), { now: () => new Date(Date.now() + 3 * 60 * 60 * 1000), objectStore: store });
+    expect(await store.head(keyOf(ticket.uploadToken))).toBeNull();
+  });
+
+  it('鍵の内側で実体を確かめ直す: 実体が無くなっていたら 409（発言を作らない・数えない）', async () => {
+    const used = await readStorageBytesUsed(host, clock);
+    const ticket = await upload(host, roomId, 'application/pdf', 100);
+    // 送信の外側の確認は通り、鍵の内側では無い（外側の確認の後に消えた）形を作る。
+    let heads = 0;
+    const vanishing = storeWithHead(async (key) => {
+      heads += 1;
+      return heads === 1 ? store.head(key) : null;
+    });
+    await expect(sendWithStore(host, ticket.uploadToken, QUOTA, vanishing)).rejects.toMatchObject({ httpStatus: 409 });
+    expect(heads).toBe(2);
+    expect(await admin.message.count({ where: { id: messageIdOf(ticket.uploadToken) } })).toBe(0);
+    expect(await readStorageBytesUsed(host, clock)).toBe(used);
+  });
+
+  it('同じ札を「上限で断られる要求」と「通る要求」で同時に送っても、発言は 1 つまでで、実体は残り、数え方も一致する', async () => {
+    const used = await readStorageBytesUsed(host, clock);
+    const ticket = await upload(host, roomId, 'application/pdf', 100);
+    await Promise.allSettled([
+      send(host, roomId, ticket.uploadToken, '', quotaDefaultsWith({ storageLimitBytes: used + 50n })),
+      send(host, roomId, ticket.uploadToken),
+    ]);
+    const created = await admin.message.count({ where: { id: messageIdOf(ticket.uploadToken) } });
+    expect(created).toBeLessThanOrEqual(1);
+    expect(await store.head(keyOf(ticket.uploadToken))).not.toBeNull();
+    expect(await readStorageBytesUsed(host, clock)).toBe(used + (created === 1 ? 100n : 0n));
+  });
+
+  it('加算は送った本人の発言だけ（別の人の発言 ID を渡しても数えない）', async () => {
+    const id = '01930000-0000-7000-8000-0000000009f1';
+    await admin.message.create({
+      data: {
+        id,
+        tenantId: TENANT_A,
+        threadId: roomId,
+        ownerPartnerCompanyId: null,
+        senderUserId: USER_A_HOST,
+        senderPartnerCompanyId: null,
+        body: 'x',
+        attachmentKey: `t/${TENANT_A}/chat/${roomId}/${id}/01930000-0000-7000-8000-0000000009f2.pdf`,
+        attachmentScanStatus: 'CLEAN',
+        attachmentContentType: 'application/pdf',
+        attachmentByteSize: 33n,
+        sentAt: clock,
+      },
+    });
+    const used = await readStorageBytesUsed(host, clock);
+    expect(await withTenant(host2, async (db) => accountChatAttachmentStorageInSend(db, { tenantId: TENANT_A, messageId: id, observedAt: clock }))).toBe(false);
+    expect(await readStorageBytesUsed(host, clock)).toBe(used);
+    expect((await admin.message.findUniqueOrThrow({ where: { id } })).attachmentStorageCountedAt).toBeNull();
+    expect(await withTenant(host, async (db) => accountChatAttachmentStorageInSend(db, { tenantId: TENANT_A, messageId: id, observedAt: clock }))).toBe(true);
+    expect(await readStorageBytesUsed(host, clock)).toBe(used + 33n);
+  });
+});
+
+describe('⑫ 本人が発言を削除したら添付も消える（決定 A）', () => {
+  let messageId: string;
+  let objectKey: string;
+  const deletedKeys: string[] = [];
+  const spyStore = {
+    delete: async (key: string) => {
+      deletedKeys.push(key);
+      await store.delete(key);
+    },
+  };
+  const deleteDeps = () => ({ now, meta: { ipAddress: META.ipAddress }, objectStore: spyStore });
+
+  beforeAll(async () => {
+    const ticket = await upload(host, roomId, 'application/pdf', 70);
+    objectKey = keyOf(ticket.uploadToken);
+    messageId = (await send(host, roomId, ticket.uploadToken, '消す予定')).message.id;
+    expect((await applyScan(objectKey, 'CLEAN')).target).toBe('APPLIED');
+  });
+
+  it('🔴 他人（同じ部屋のメンバー）は削除できない（404）。何も動かない', async () => {
+    const before = await readStorageBytesUsed(host, clock);
+    await expect(deleteChatMessage(host2, roomId, messageId, deleteDeps())).rejects.toMatchObject({ httpStatus: 404 });
+    expect(deletedKeys).toEqual([]);
+    expect(await readStorageBytesUsed(host, clock)).toBe(before);
+    expect((await admin.message.findUniqueOrThrow({ where: { id: messageId } })).attachmentKey).toBe(objectKey);
+  });
+
+  it('🔴 削除していない発言の添付は、本人でも外せない（DB のトリガ）', async () => {
+    await expect(
+      withTenant(host, async (db) =>
+        db.message.updateMany({
+          where: { id: messageId },
+          data: { attachmentKey: null, attachmentScanStatus: null, attachmentContentType: null, attachmentByteSize: null, attachmentStorageCountedAt: null },
+        }),
+      ),
+    ).rejects.toThrow(/添付のキー・種類・大きさは後から変えられません/);
+  });
+
+  it('削除すると実体を消し、列と計上の印を外し、カウンタをちょうど大きさだけ減らす。監査は「あった」と大きさだけ', async () => {
+    const before = await readStorageBytesUsed(host, clock);
+    const result = await deleteChatMessage(host, roomId, messageId, deleteDeps());
+    expect(result.message.deleted).toBe(true);
+    expect(result.message.attachment ?? null).toBeNull();
+    expect(deletedKeys).toEqual([objectKey]);
+    expect(await readStorageBytesUsed(host, clock)).toBe(before - 70n);
+    const row = await admin.message.findUniqueOrThrow({ where: { id: messageId } });
+    expect([row.attachmentKey, row.attachmentScanStatus, row.attachmentContentType, row.attachmentByteSize, row.attachmentStorageCountedAt]).toEqual([
+      null,
+      null,
+      null,
+      null,
+      null,
+    ]);
+    const audit = await admin.auditLog.findFirstOrThrow({ where: { action: 'message.delete', targetId: messageId } });
+    expect(audit.summary).toEqual({ threadId: roomId, bodyLength: '消す予定'.length, hadAttachment: true, byteSize: 70 });
+    expect(JSON.stringify(audit)).not.toContain(objectKey);
+  });
+
+  it('削除後は共有 URL も一覧も出ない（404 / 載らない）', async () => {
+    const deps = { objectStore: store, ipAddress: META.ipAddress, now };
+    await expect(issueChatAttachmentDownloadUrl(host, roomId, messageId, 'inline', deps)).rejects.toMatchObject({ httpStatus: 404 });
+    await expect(issueChatAttachmentDownloadUrl(host2, roomId, messageId, 'inline', deps)).rejects.toMatchObject({ httpStatus: 404 });
+    expect((await listChatAttachments(host2, roomId, {})).items.map((item) => item.messageId)).not.toContain(messageId);
+  });
+
+  it('二重削除は何もしない（404。実体の削除もカウンタも動かない）', async () => {
+    const before = await readStorageBytesUsed(host, clock);
+    await expect(deleteChatMessage(host, roomId, messageId, deleteDeps())).rejects.toMatchObject({ httpStatus: 404 });
+    expect(deletedKeys).toEqual([objectKey]);
+    expect(await readStorageBytesUsed(host, clock)).toBe(before);
+  });
+
+  it('🔴 削除済みの発言でも、送った本人以外は添付を外せない（DB のトリガ）', async () => {
+    const ticket = await upload(host, roomId, 'image/png', 30);
+    const other = (await send(host, roomId, ticket.uploadToken)).message.id;
+    expect((await applyScan(keyOf(ticket.uploadToken), 'CLEAN')).target).toBe('APPLIED');
+    await admin.message.update({ where: { id: other }, data: { deletedAt: clock, body: null } });
+    await expect(
+      withTenant(host2, async (db) =>
+        db.message.updateMany({
+          where: { id: other },
+          data: { attachmentKey: null, attachmentScanStatus: null, attachmentContentType: null, attachmentByteSize: null, attachmentStorageCountedAt: null },
+        }),
+      ),
+    ).rejects.toThrow(/添付のキー・種類・大きさは後から変えられません|検査の状態は検査の関数だけ/);
+    expect((await admin.message.findUniqueOrThrow({ where: { id: other } })).attachmentKey).not.toBeNull();
   });
 });
 

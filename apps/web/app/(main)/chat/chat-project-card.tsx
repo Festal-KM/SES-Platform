@@ -52,7 +52,8 @@ export function ChatProjectCard({ messageId, project, labels, onQuote }: ChatPro
   return (
     <article
       aria-label={`${labels.label} ${project.name}`}
-      className={cn('flex w-full flex-col gap-2 rounded-lg border border-border bg-bg p-3', CHAT_BUBBLE_MAX_WIDTH_CLASS)}
+      // ✅ 2026-10-27（紺野「区別しにくい」）: 案件カードは薄い灰色の面にする（白い吹き出しと見間違えない）。
+      className={cn('flex w-full flex-col gap-2 rounded-lg border border-border bg-bg-subtle p-3', CHAT_BUBBLE_MAX_WIDTH_CLASS)}
       data-testid={`chat-message-project-${messageId}`}
     >
       <div className="flex flex-wrap items-center gap-2">

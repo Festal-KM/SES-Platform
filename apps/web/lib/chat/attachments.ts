@@ -124,7 +124,9 @@ export async function issueChatAttachmentUploadUrl(
     objectId: newId(),
     extension,
   });
-  const presigned = await deps.objectStore.presignPut(objectKey, input.contentType, input.byteSize);
+  // 🔴 作るだけの書き込み（`If-None-Match: *` を署名に含める）。同じ URL でもう一度 PUT して、検査が CLEAN になった後に
+  //    中身を差し替えることができない（S3 が 412）。署名の有効期限も短い（`S3_PRESIGNED_URL_TTL_SECONDS`。既定 5 分）。
+  const presigned = await deps.objectStore.presignPut(objectKey, input.contentType, input.byteSize, { createOnly: true });
   const expiresAt = now.getTime() + CHAT_ATTACHMENT_TOKEN_TTL_MS;
   const uploadToken = deps.tokens.sign({
     tenantId: ctx.tenantId,
@@ -151,6 +153,8 @@ export async function issueChatAttachmentUploadUrl(
 export type ChatAttachmentSendDeps = {
   readonly objectStore: ObjectStore;
   readonly tokens: ChatAttachmentTokenCodec;
+  /** ✅ 2026-10-27（レビュー）: 送信の時点でもストレージ上限を確かめ直す（札を何枚も先に取って一度に送る抜け道を塞ぐ）。 */
+  readonly quotaDefaults: TenantQuotaDefaults;
 };
 
 /** 発言の行に書く添付（すべて札に焼き込んだ値）。 */
@@ -159,11 +163,15 @@ export type ResolvedChatAttachment = {
   readonly objectKey: string;
   readonly contentType: string;
   readonly byteSize: number;
+  /** 今日効いているストレージ上限（上書きを含む）。判定は送信のトランザクションの中。 */
+  readonly storageLimitBytes: bigint;
 };
 
 /**
  * 🔴 札を確かめ、実体がストレージに置かれていることを確かめる（トランザクションの外で呼ぶ。ネットワーク I/O があるため）。
- * 部屋が添えられる部屋かは、送信のトランザクションの中で `chatRoomAcceptsAttachments` を通す（`service.ts`）。
+ * ✅ 2026-10-27（Codex レビュー 2 回目）: 上限の**判定はここでしない**。送信のトランザクションの中で、テナントのストレージを
+ *    直列にしてから「二重送信か → 上限 → 発言の作成 → 加算」を 1 回で行う（`service.ts` の `sendWithAttachment`）。
+ *    ここで解くのは上限の値（設定）だけ。
  */
 export async function resolveChatAttachmentForSend(
   ctx: AuthenticatedTenantCtx,
@@ -176,15 +184,26 @@ export async function resolveChatAttachmentForSend(
   if (claims === null || !claimsMatch(claims, ctx, threadId)) throw new ValidationError([CHAT_ATTACHMENT_TOKEN_DETAIL]);
   const head = await deps.objectStore.head(claims.objectKey);
   // 🔴 署名に大きさと種類を焼き込んであるので一致するはず。違えば受け取らない（実体と行をずらさない）。
+  //    中身の差し替えは作るだけの書き込み（`If-None-Match: *`）が止める。ETag / 版を行に持たないのはそのため
+  //    （置かれた後に別の中身へ変わる経路が無い = 検査した中身と配る中身が同じ）。
   if (head === null || head.byteSize !== claims.byteSize || head.contentType !== claims.contentType) {
     throw new ChatAttachmentObjectMissingError();
   }
+  const { storageLimitBytes } = await resolveTenantStorageQuota(ctx, { now, defaults: deps.quotaDefaults });
   return {
     messageId: claims.messageId,
     objectKey: claims.objectKey,
     contentType: claims.contentType,
     byteSize: claims.byteSize,
+    storageLimitBytes,
   };
+}
+
+/**
+ * ✅ 2026-10-27: 送信のトランザクションの中の上限の判定（純粋）。🔴 呼ぶ前にテナントのストレージを直列にしてあること。
+ */
+export function chatAttachmentFitsStorage(input: { readonly usedBytes: bigint; readonly byteSize: number; readonly storageLimitBytes: bigint }): boolean {
+  return decideStorageUpload({ limitBytes: input.storageLimitBytes, usedBytes: input.usedBytes, requestedBytes: BigInt(input.byteSize) }).kind === 'ALLOW';
 }
 
 /** 札が「この人が、このテナントの、この部屋に」出したものか（キーの形も同じ値を指すこと）。 */

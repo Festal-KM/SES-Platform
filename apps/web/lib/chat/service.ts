@@ -35,11 +35,21 @@
 //      🔴 部屋の「最終更新」を進めない（進めると相手の一覧の並びで「何か送られた」と分かる。`CLEAN` になったときに
 //      検査の関数が進める）。監査は `message.create` に加えて `chat_attachment.upload`（種類と大きさだけ）。
 //      🔴 同じ札の二重送信は 1 行に収束する（発言 ID が同じ）。
-import { accountChatAttachmentStorage, withTenant, writeAuditLog, type AuthenticatedTenantCtx } from '@ses/db';
-import { InternalError, NotFoundError, requireFound, ValidationError } from '../api/errors';
+import {
+  accountChatAttachmentStorageInSend,
+  lockTenantStorageForChatSend,
+  releaseChatAttachmentOnDelete,
+  withTenant,
+  writeAuditLog,
+  type AuthenticatedTenantCtx,
+} from '@ses/db';
+import type { ObjectStore } from '@ses/connectors';
+import { InternalError, NotFoundError, requireFound, StorageLimitExceededError, ValidationError } from '../api/errors';
 import {
   CHAT_ATTACHMENT_AUDIT_ACTION_UPLOAD,
   CHAT_ATTACHMENT_ROOM_DETAIL,
+  ChatAttachmentObjectMissingError,
+  chatAttachmentFitsStorage,
   resolveChatAttachmentForSend,
   type ChatAttachmentSendDeps,
   type ResolvedChatAttachment,
@@ -90,7 +100,8 @@ export async function sendChatMessage(
     if (attachedProjectId !== null) await requirePastableProject(db, thread.partnerCompanyId, attachedProjectId);
     if (attachment !== null) {
       if (!chatRoomAcceptsAttachments(thread)) throw new ValidationError([CHAT_ATTACHMENT_ROOM_DETAIL]);
-      return sendWithAttachment(ctx, db, thread.id, input, attachment, attachedProjectId, sentAt, deps);
+      if (deps.attachments === undefined) throw new InternalError('添付の確認に要る依存が渡されていません。');
+      return sendWithAttachment(ctx, db, thread.id, input, attachment, attachedProjectId, sentAt, deps, deps.attachments);
     }
 
     const created = (await db.message.create({
@@ -137,20 +148,24 @@ export async function sendChatMessage(
     // 🔴 1 行入れて 1 行写せないことは起こりえない（起きたら不変条件が壊れている）。黙って空を返さない。
     return { message: requireFound(message ?? null) };
   });
-  // ⑧ ✅ 2026-10-27: 添付のバイト数を `UsageCounter(STORAGE_BYTES)` に加算する（CLAUDE.md §10.6）。
-  //    スキルシートの確定（`settleStorage`）と同じ形: 行の確定の**後**に、CAS（`attachment_storage_counted_at IS NULL`）が
-  //    成立したときだけ加算する。同じ札の二重送信は `ALREADY_SETTLED`（2 回目は数えない）、前回が加算の前に落ちていれば
-  //    やり直しで回収される。
-  if (attachment !== null) {
-    const outcome = await accountChatAttachmentStorage(ctx, { messageId: attachment.messageId, observedAt: sentAt });
-    if (outcome.kind === 'NOT_FOUND') throw new InternalError();
-  }
   return result;
 }
 
 type ServiceDb = Parameters<Parameters<typeof withTenant<void>>[1]>[0];
 
-/** ⑧ 添付つきの発言を作る（同じトランザクションの中）。 */
+/**
+ * ⑧ 添付つきの発言を作る（同じトランザクションの中）。✅ 2026-10-27（Codex レビュー 2 回目）で 1 トランザクションに揃えた:
+ *   1. 🔴 テナントのストレージを直列にする（`pg_advisory_xact_lock`。同じテナントの別の送信はここで待つ）と同時に使用量を読む
+ *   2. 🔴 同じ札の二重送信（この ID の発言が既にある）なら、その発言を返す。**上限を数え直さず、実体も消さない**
+ *   2b. 🔴 **鍵を取った後に実体があるかを確かめ直す**（無い・札と違うなら 409。実体を指さない発言を作らない）
+ *   3. 上限を超えるなら 429。✅ 2026-10-27（Codex レビュー 4 回目）: 🔴 **実体を消さない**。
+ *      署名は作るだけの書き込み（`If-None-Match: *`）なので、実体がある間は誰も同じキーへ置き直せない。したがってそのキーの
+ *      検査結果は常に同じ中身についてのものであり、後で上限が空いて同じ札（有効期間内）で送られても、検査した実体を指す。
+ *      消してしまうと、同じ署名 URL で別の中身を置き直され、古い中身の遅れた CLEAN がキーで当たる穴になる。
+ *      送られないまま残った実体は、日次の片付け（`cleanupAbandonedChatUploads`。札の有効期間 + 1 時間より古く、どの発言も
+ *      指していないもの）が消す。外部への削除の通信のあいだ鍵を持つことも無くなった。
+ *   4. 発言を作り、同じトランザクションで加算する（CAS。`accountChatAttachmentStorageInSend`）と監査
+ */
 async function sendWithAttachment(
   ctx: AuthenticatedTenantCtx,
   db: ServiceDb,
@@ -160,8 +175,26 @@ async function sendWithAttachment(
   attachedProjectId: string | null,
   sentAt: Date,
   deps: SendChatMessageDeps,
+  attachmentDeps: NonNullable<SendChatMessageDeps['attachments']>,
 ): Promise<SendChatMessageResult> {
-  // 🔴 `createMany`（ON CONFLICT DO NOTHING）: 同じ札の二重送信は発言 ID がぶつかって 0 件になる（例外でトランザクションを壊さない）。
+  const usedBytes = await lockTenantStorageForChatSend(db, { tenantId: ctx.tenantId, observedAt: sentAt });
+  const existing = (await db.message.findFirst({
+    where: { id: attachment.messageId, threadId, senderUserId: ctx.userId },
+    select: CHAT_MESSAGE_SELECT,
+  })) as ChatMessageRow | null;
+  if (existing !== null) {
+    const [replayed] = await projectChatMessages(ctx, db, [existing]);
+    return { message: requireFound(replayed ?? null) };
+  }
+  const head = await attachmentDeps.objectStore.head(attachment.objectKey);
+  if (head === null || head.byteSize !== attachment.byteSize || head.contentType !== attachment.contentType) {
+    throw new ChatAttachmentObjectMissingError();
+  }
+  if (!chatAttachmentFitsStorage({ usedBytes, byteSize: attachment.byteSize, storageLimitBytes: attachment.storageLimitBytes })) {
+    // 🔴 実体は消さない（上の 3.）。残った実体は日次の片付けが消す。
+    throw new StorageLimitExceededError();
+  }
+  // 🔴 `createMany`（ON CONFLICT DO NOTHING）: 別の人の行と ID がぶつかっても例外でトランザクションを壊さない（下で 400）。
   const inserted = await db.message.createMany({
     data: [
       {
@@ -189,6 +222,8 @@ async function sendWithAttachment(
   })) as ChatMessageRow | null;
   if (row === null) throw new ValidationError(['body.attachmentUploadToken']);
   if (inserted.count === 1) {
+    // 🔴 加算は同じトランザクション（直列にした鍵の内側）。CAS なので二重には数えない。
+    await accountChatAttachmentStorageInSend(db, { tenantId: ctx.tenantId, messageId: row.id, observedAt: sentAt });
     await writeAuditLog(db, {
       action: CHAT_MESSAGE_AUDIT_ACTION_CREATE,
       actorKind: 'USER',
@@ -284,7 +319,7 @@ async function requireOwnLiveMessage(
   return requireFound(
     await db.message.findFirst({
       where: ownLiveMessageWhere(ctx, threadId, messageId),
-      select: { id: true, body: true },
+      select: { id: true, body: true, attachmentKey: true },
     }),
   );
 }
@@ -324,15 +359,31 @@ export async function editChatMessage(
   });
 }
 
-/** ✅ 2026-10-16: 自分の発言を削除する（論理削除。本文を消し「削除されました」と出す）。監査ログに残す。 */
+/**
+ * ✅ 2026-10-27（紺野の決定 A）: 発言の削除に添付があるときの依存（実体を消すストレージ）。
+ *    🔴 添付のある発言を消すのに渡されていなければ、何も動かさずに 500（実体を残したまま列だけ消さない）。
+ */
+export type DeleteChatMessageDeps = SendChatMessageDeps & { readonly objectStore?: Pick<ObjectStore, 'delete'> };
+
+/**
+ * ✅ 2026-10-16: 自分の発言を削除する（論理削除。本文を消し「削除されました」と出す）。監査ログに残す。
+ * ✅ 2026-10-27（紺野の決定 A）: 添付があれば、**同じトランザクションで**添付の 4 列と計上の印を外し、計上済みなら
+ *    `UsageCounter(STORAGE_BYTES)` を 1 度だけ減らす（`releaseChatAttachmentOnDelete`。CAS なので 2 回目は何もしない）。
+ *    実体はコミットの**後**にストレージから消す。🔴 消せなかったときは削除を取り消さない（本文・添付を戻さない）。
+ *    実体だけが残り、日次の検算（`usage.storage-reconcile`）が「実測 > カウンタ」の乖離として A-005 に出す。
+ *    消した後は共有 URL（#51q）も一覧（#51r）も 404 / 載らない（列が NULL のため）。
+ */
 export async function deleteChatMessage(
   ctx: AuthenticatedTenantCtx,
   threadId: string,
   messageId: string,
-  deps: SendChatMessageDeps,
+  deps: DeleteChatMessageDeps,
 ): Promise<SendChatMessageResult> {
-  return withTenant(ctx, async (db) => {
+  const result = await withTenant(ctx, async (db) => {
     const before = await requireOwnLiveMessage(ctx, db, threadId, messageId);
+    if (before.attachmentKey !== null && deps.objectStore === undefined) {
+      throw new InternalError('添付の削除に要る依存が渡されていません。');
+    }
     // 🔴 削除も条件付き（#166 の 1）。同時に 2 回削除しても、監査ログは確定した 1 回だけに残る。
     const changed = await db.message.updateMany({
       where: ownLiveMessageWhere(ctx, threadId, messageId),
@@ -340,6 +391,13 @@ export async function deleteChatMessage(
       data: { body: null, deletedAt: deps.now(), attachedProjectId: null },
     });
     if (changed.count === 0) throw new NotFoundError();
+    // ✅ 2026-10-27: 添付と計上を外す（同じトランザクション）。
+    const released = await releaseChatAttachmentOnDelete(db, {
+      tenantId: ctx.tenantId,
+      messageId,
+      senderUserId: ctx.userId,
+      observedAt: deps.now(),
+    });
     const updated = (await db.message.findFirstOrThrow({
       where: { id: messageId, threadId },
       select: CHAT_MESSAGE_SELECT,
@@ -350,13 +408,26 @@ export async function deleteChatMessage(
       actorId: ctx.userId,
       targetType: CHAT_MESSAGE_AUDIT_TARGET_TYPE,
       targetId: messageId,
-      summary: { threadId, bodyLength: before.body?.length ?? 0 },
+      // 🔴 添付は「あった」ことと大きさだけ（キー・種類の名前・ファイル名を載せない）。
+      summary: {
+        threadId,
+        bodyLength: before.body?.length ?? 0,
+        ...(released === null ? {} : { hadAttachment: true, byteSize: Number(released.byteSize) }),
+      },
       ipAddress: deps.meta.ipAddress,
       deviceKind: ctx.deviceKind,
     });
     const [message] = await projectChatMessages(ctx, db, [updated]);
-    return { message: message as ChatMessageView };
+    return { message: message as ChatMessageView, released };
   });
+  if (result.released !== null && deps.objectStore !== undefined) {
+    try {
+      await deps.objectStore.delete(result.released.objectKey);
+    } catch {
+      // 🔴 ベストエフォート（上の関数の説明）。削除は確定しているので失敗を利用者の失敗にしない。残った実体は検算が拾う。
+    }
+  }
+  return { message: result.message };
 }
 
 /** ✅ 2026-10-16: 会話の書き出しの監査（誰がどの会話を持ち出したか）。 */

@@ -182,7 +182,7 @@ describe('スケジュール宣言（docs/05 §9.8 / §9.1）', () => {
       // 🔴 T-10-02: 計測の 4 本（docs/05 §9.8）の deps。埋め忘れるとコンパイルエラーになる
       //    （＝ 起動配線が「欠測を誰も見ていない / 月次原価が埋まらない」状態で立ち上がれない）。
       gapCheckLookbackDays: 7,
-      objectStore: { measureTenantUsage: async () => ({ byteSize: 0n, objectCount: 0 }) },
+      objectStore: { measureTenantUsage: async () => ({ byteSize: 0n, objectCount: 0 }), listTenantObjects: async () => [], delete: async () => undefined },
       billingTerms: async () => null,
       emailTenantsBillingPolicy: 'NOT_APPLICABLE',
       pricingRuleset: {

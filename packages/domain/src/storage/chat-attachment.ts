@@ -49,3 +49,12 @@ export function chatAttachmentKindOf(contentType: string): ChatAttachmentKind | 
 export function isChatAttachmentByteSize(value: number): boolean {
   return Number.isInteger(value) && value >= 1 && value <= CHAT_ATTACHMENT_MAX_BYTES;
 }
+
+/** ✅ 2026-10-27: アップロード札（#51p → #51）の有効期間（ミリ秒）。アップロードして、送信の取り消し待ちを経て送るまでに足りる長さ。 */
+export const CHAT_ATTACHMENT_UPLOAD_TOKEN_TTL_MS = 60 * 60 * 1000;
+
+/**
+ * ✅ 2026-10-27（レビュー）: 放置されたアップロード（PUT したが送らなかった）を片付けてよい古さ（ミリ秒）。
+ * 🔴 札の有効期間より必ず長い（札が生きている間は送られうるので消さない）。余裕を 1 時間とる。
+ */
+export const CHAT_ATTACHMENT_ABANDONED_AFTER_MS = CHAT_ATTACHMENT_UPLOAD_TOKEN_TTL_MS + 60 * 60 * 1000;

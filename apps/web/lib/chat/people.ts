@@ -17,7 +17,7 @@ import { countUnread, readThreadPrefs } from './read-state';
 import { t } from '@ses/i18n';
 import { lastMessageSnippet } from './thread-tree';
 import { readChatUserStatuses } from './user-status';
-import type { ChatMemberView, ChatRoomListItem, ChatThreadDetailView } from './views';
+import { chatMessageVisibleWhere, type ChatMemberView, type ChatRoomListItem, type ChatThreadDetailView } from './views';
 
 type TenantDb = Parameters<Parameters<typeof withTenant<void>>[1]>[0];
 
@@ -198,7 +198,8 @@ export async function readPeople(
     roomIds.length === 0
       ? []
       : await db.message.findMany({
-          where: { threadId: { in: roomIds } },
+          // ✅ 2026-10-27: 🔴 検査中の他人の添付の発言を冒頭に出さない（`chatMessageVisibleWhere`。RLS の二重）。
+          where: { threadId: { in: roomIds }, AND: [chatMessageVisibleWhere(ctx.userId)] },
           distinct: ['threadId'],
           orderBy: [{ threadId: 'asc' }, { sentAt: 'desc' }, { id: 'desc' }],
           select: { threadId: true, body: true, attachedProjectId: true },

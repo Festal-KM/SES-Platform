@@ -184,3 +184,17 @@ describe('MockMalwareScanner', () => {
     expect(await scanner.getResult('k1', null)).toBeNull();
   });
 });
+
+// ✅ 2026-10-27（Codex レビュー）: 作るだけの書き込み。
+describe('MockObjectStore: 作るだけの書き込み（createOnly）', () => {
+  it('返すヘッダに if-none-match: * が入り、同じキーへの 2 回目は拒まれる', async () => {
+    const { MockObjectStore } = await import('./object-store.js');
+    const store = new MockObjectStore();
+    const key = 't/01930000-0000-7000-8000-000000000001/chat/01930000-0000-7000-8000-0000000000c1/01930000-0000-7000-8000-0000000000d1/01930000-0000-7000-8000-0000000000a1.pdf';
+    const signed = await store.presignPut(key, 'application/pdf', 10, { createOnly: true });
+    expect(signed.headers['if-none-match']).toBe('*');
+    await expect(store.presignPut(key, 'application/pdf', 10, { createOnly: true })).rejects.toThrow(/上書きできません/);
+    expect(() => store.simulatePut(key, new Uint8Array(3), 'application/pdf', { createOnly: true })).toThrow(/上書きできません/);
+    expect((await store.listTenantObjects('01930000-0000-7000-8000-000000000001', 'chat')).map((object) => object.key)).toEqual([key]);
+  });
+});

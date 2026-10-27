@@ -26,7 +26,9 @@ export {
 
 // ✅ 2026-10-27: チャットの添付の受け付ける種類・大きさ（DB の CHECK と突き合わせる唯一の出所）。
 export {
+  CHAT_ATTACHMENT_ABANDONED_AFTER_MS,
   CHAT_ATTACHMENT_CONTENT_TYPES,
+  CHAT_ATTACHMENT_UPLOAD_TOKEN_TTL_MS,
   CHAT_ATTACHMENT_MAX_BYTES,
   CHAT_ATTACHMENT_TYPES,
   chatAttachmentExtensionOf,

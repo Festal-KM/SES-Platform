@@ -144,8 +144,25 @@ export type TenantStorageMeasurement = {
   readonly objectCount: number;
 };
 
+/**
+ * ✅ 2026-10-27（チャットのファイル）: `presignPut` の任意指定。
+ * 🔴 `createOnly` … 作るだけの書き込み（`If-None-Match: *` を署名に含める）。同じキーへの 2 回目の PUT は拒まれる
+ *    （検査が `CLEAN` になった後に中身を差し替えられない）。返すヘッダに `if-none-match: *` が入る。
+ */
+export type PresignPutOptions = {
+  readonly createOnly?: boolean;
+};
+
+/** ✅ 2026-10-27: プレフィックス配下の 1 オブジェクト（放置されたアップロードの片付け用）。 */
+export type StoredObjectSummary = {
+  readonly key: string;
+  readonly byteSize: number;
+  /** 最終更新。分からなければ `null`（🔴 片付けは `null` を「古い」とみなさない）。 */
+  readonly lastModified: Date | null;
+};
+
 export interface ObjectStore {
-  presignPut(key: string, contentType: string, maxBytes: number): Promise<PresignedUrl>;
+  presignPut(key: string, contentType: string, maxBytes: number, options?: PresignPutOptions): Promise<PresignedUrl>;
   presignGet(key: string, ttlSec: number, options?: PresignGetOptions): Promise<PresignedUrl>;
   /**
    * 🔴 T-10-09: **サーバ側で生成した実体**を置く（返却データの ZIP。docs/05 §9.6 `export.generate` / §14.1）。
@@ -160,6 +177,11 @@ export interface ObjectStore {
    *    `tenantId` はジョブ payload の検証済みの値だけを渡す（`CLAUDE.md` §3.1）。
    */
   measureTenantUsage(tenantId: string): Promise<TenantStorageMeasurement>;
+  /**
+   * ✅ 2026-10-27: `t/{tenantId}/{kindSegment}/` 配下のオブジェクトの一覧（放置されたチャットの添付の片付け。日次）。
+   *    🔴 `tenantId` はジョブ payload の検証済みの値だけを渡す。
+   */
+  listTenantObjects(tenantId: string, kindSegment: string): Promise<readonly StoredObjectSummary[]>;
   callCount(): number;
 }
 
