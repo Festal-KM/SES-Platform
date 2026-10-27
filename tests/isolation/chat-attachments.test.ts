@@ -110,17 +110,17 @@ async function send(ctx: AuthenticatedTenantCtx, threadId: string, token: string
   return sendChatMessage(ctx, threadId, { body, attachmentUploadToken: token }, { now, meta: { ipAddress: META.ipAddress }, attachments: { objectStore: store, tokens, quotaDefaults } });
 }
 
-/** モックのストレージを包んで、削除だけを差し替える（クラスのメソッドは展開で写らないので 1 つずつ渡す）。 */
-function storeWithDelete(deleteImpl: (key: string) => Promise<void>): ObjectStore {
+/** モックのストレージを包んで、`head` だけを差し替える（クラスのメソッドは展開で写らないので 1 つずつ渡す）。 */
+function storeWithHead(headImpl: ObjectStore['head']): ObjectStore {
   return {
     presignPut: (...args) => store.presignPut(...args),
     presignGet: (...args) => store.presignGet(...args),
     put: (...args) => store.put(...args),
-    head: (key) => store.head(key),
+    head: headImpl,
     measureTenantUsage: (tenantId) => store.measureTenantUsage(tenantId),
     listTenantObjects: (tenantId, kind) => store.listTenantObjects(tenantId, kind),
     callCount: () => store.callCount(),
-    delete: deleteImpl,
+    delete: (key) => store.delete(key),
   };
 }
 
@@ -532,9 +532,9 @@ describe('🔴 ⑬ Codex レビューの 4 点', () => {
     expect(rejected).toHaveLength(1);
     expect(rejected[0]?.reason).toMatchObject({ httpStatus: 429 });
     expect(await readStorageBytesUsed(host, clock)).toBe(used + 100n);
-    // 断られた側の実体だけが消えている。
+    // ✅ 2026-10-27（Codex 4 回目）: 断られた側の実体も消さない（日次の片付けが消す）。
     const heads = await Promise.all([store.head(keyOf(t1.uploadToken)), store.head(keyOf(t2.uploadToken))]);
-    expect(heads.filter((head) => head === null)).toHaveLength(1);
+    expect(heads.filter((head) => head === null)).toHaveLength(0);
   });
 
   it('🔴 ③ 同じ札を同時に送っても 1 行・1 回分だけ数え、実体は消さない（先に確定した側を後の側が壊さない）', async () => {
@@ -554,7 +554,7 @@ describe('🔴 ⑬ Codex レビューの 4 点', () => {
     expect(await readStorageBytesUsed(host, clock)).toBe(used + 100n);
   });
 
-  it('③ 札を何枚も先に取っても、送信の時点の上限で 429 にし、置かれた実体を消す', async () => {
+  it('③ 札を何枚も先に取っても、送信の時点の上限で 429 にする（置かれた実体は消さない）', async () => {
     const used = await readStorageBytesUsed(host, clock);
     const tight = quotaDefaultsWith({ storageLimitBytes: used + 150n });
     const issue = (size: number) =>
@@ -569,7 +569,7 @@ describe('🔴 ⑬ Codex レビューの 4 点', () => {
     const second = await issue(100);
     await send(host, roomId, first.uploadToken, '', tight);
     await expect(send(host, roomId, second.uploadToken, '', tight)).rejects.toMatchObject({ httpStatus: 429 });
-    expect(await store.head(keyOf(second.uploadToken))).toBeNull();
+    expect(await store.head(keyOf(second.uploadToken))).not.toBeNull();
     expect(await readStorageBytesUsed(host, clock)).toBe(used + 100n);
   });
 
@@ -622,20 +622,52 @@ describe('🔴 ⑬ Codex レビューの 4 点', () => {
   });
 });
 
-describe('🔴 ⑭ Codex レビュー 3 回目: 同じ札と上限の断り', () => {
+describe('🔴 ⑭ 同じ札と上限の断り（Codex レビュー 3・4 回目）', () => {
   const messageIdOf = (token: string) => tokens.verify(token, clock)?.messageId ?? ABSENT_ID;
 
-  it('上限で断られて実体が消えた札は、後で上限が空いても受け付けない（409。発言を作らない）', async () => {
+  it('上限で断っても実体は消さない。実体がある間は同じキーへ置き直せない。後で上限が空けば同じ札で送れて、検査した実体を指す', async () => {
+    const used = await readStorageBytesUsed(host, clock);
+    const ticket = await upload(host, roomId, 'application/pdf', 100);
+    const key = keyOf(ticket.uploadToken);
+    await expect(send(host, roomId, ticket.uploadToken, '', quotaDefaultsWith({ storageLimitBytes: used + 50n }))).rejects.toMatchObject({ httpStatus: 429 });
+    expect(await store.head(key)).not.toBeNull();
+    expect(await admin.message.count({ where: { id: messageIdOf(ticket.uploadToken) } })).toBe(0);
+    expect(await readStorageBytesUsed(host, clock)).toBe(used);
+    // 🔴 作るだけの書き込み: 実体がある間は同じキーへ別の中身を置けない（実装では S3 が 412）。
+    const mock = store as unknown as { simulatePut(key: string, body: Uint8Array, contentType: string, options?: { createOnly?: boolean }): void };
+    expect(() => mock.simulatePut(key, new Uint8Array(100), 'application/pdf', { createOnly: true })).toThrow(/上書きできません/);
+    const sent = await send(host, roomId, ticket.uploadToken);
+    expect(sent.message.id).toBe(messageIdOf(ticket.uploadToken));
+    expect((await admin.message.findUniqueOrThrow({ where: { id: sent.message.id } })).attachmentKey).toBe(key);
+    expect(await readStorageBytesUsed(host, clock)).toBe(used + 100n);
+  });
+
+  it('上限で断られたまま送られなかった実体は、日次の片付けが消す（札の有効期間 + 1 時間の後）', async () => {
     const used = await readStorageBytesUsed(host, clock);
     const ticket = await upload(host, roomId, 'application/pdf', 100);
     await expect(send(host, roomId, ticket.uploadToken, '', quotaDefaultsWith({ storageLimitBytes: used + 50n }))).rejects.toMatchObject({ httpStatus: 429 });
+    await cleanupAbandonedChatUploads(systemTenantCtx(TENANT_A, JOB), { now: () => new Date(), objectStore: store });
+    expect(await store.head(keyOf(ticket.uploadToken))).not.toBeNull();
+    await cleanupAbandonedChatUploads(systemTenantCtx(TENANT_A, JOB), { now: () => new Date(Date.now() + 3 * 60 * 60 * 1000), objectStore: store });
     expect(await store.head(keyOf(ticket.uploadToken))).toBeNull();
-    await expect(send(host, roomId, ticket.uploadToken)).rejects.toMatchObject({ httpStatus: 409 });
+  });
+
+  it('鍵の内側で実体を確かめ直す: 実体が無くなっていたら 409（発言を作らない・数えない）', async () => {
+    const used = await readStorageBytesUsed(host, clock);
+    const ticket = await upload(host, roomId, 'application/pdf', 100);
+    // 送信の外側の確認は通り、鍵の内側では無い（外側の確認の後に消えた）形を作る。
+    let heads = 0;
+    const vanishing = storeWithHead(async (key) => {
+      heads += 1;
+      return heads === 1 ? store.head(key) : null;
+    });
+    await expect(sendWithStore(host, ticket.uploadToken, QUOTA, vanishing)).rejects.toMatchObject({ httpStatus: 409 });
+    expect(heads).toBe(2);
     expect(await admin.message.count({ where: { id: messageIdOf(ticket.uploadToken) } })).toBe(0);
     expect(await readStorageBytesUsed(host, clock)).toBe(used);
   });
 
-  it('同じ札を「上限で断られる要求」と「通る要求」で同時に送っても、発言があるなら実体もあり、数え方も一致する', async () => {
+  it('同じ札を「上限で断られる要求」と「通る要求」で同時に送っても、発言は 1 つまでで、実体は残り、数え方も一致する', async () => {
     const used = await readStorageBytesUsed(host, clock);
     const ticket = await upload(host, roomId, 'application/pdf', 100);
     await Promise.allSettled([
@@ -643,50 +675,9 @@ describe('🔴 ⑭ Codex レビュー 3 回目: 同じ札と上限の断り', ()
       send(host, roomId, ticket.uploadToken),
     ]);
     const created = await admin.message.count({ where: { id: messageIdOf(ticket.uploadToken) } });
-    const object = await store.head(keyOf(ticket.uploadToken));
-    if (created === 1) {
-      expect(object).not.toBeNull();
-      expect(await readStorageBytesUsed(host, clock)).toBe(used + 100n);
-    } else {
-      expect(created).toBe(0);
-      expect(object).toBeNull();
-      expect(await readStorageBytesUsed(host, clock)).toBe(used);
-    }
-  });
-
-  it('断った後の実体の削除が遅れても、待っていた同じ札の要求は消される実体を指す発言を作らない', async () => {
-    const used = await readStorageBytesUsed(host, clock);
-    const ticket = await upload(host, roomId, 'application/pdf', 100);
-    let release: () => void = () => undefined;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const slowStore = storeWithDelete(async (key) => {
-      await gate;
-      await store.delete(key);
-    });
-    const rejected = sendWithStore(host, ticket.uploadToken, quotaDefaultsWith({ storageLimitBytes: used + 50n }), slowStore);
-    await new Promise((resolve) => setTimeout(resolve, 200));
-    const waiting = sendWithStore(host, ticket.uploadToken, QUOTA, store);
-    await new Promise((resolve) => setTimeout(resolve, 200));
-    release();
-    await expect(rejected).rejects.toMatchObject({ httpStatus: 429 });
-    await expect(waiting).rejects.toMatchObject({ httpStatus: 409 });
-    expect(await admin.message.count({ where: { id: messageIdOf(ticket.uploadToken) } })).toBe(0);
-    expect(await store.head(keyOf(ticket.uploadToken))).toBeNull();
-  });
-
-  it('断った後の実体の削除に失敗しても 429 は返し、残った実体は後で上限内なら正しく使われる', async () => {
-    const used = await readStorageBytesUsed(host, clock);
-    const ticket = await upload(host, roomId, 'application/pdf', 100);
-    const failingStore = storeWithDelete(async () => {
-      throw new Error('S3 が落ちている');
-    });
-    await expect(sendWithStore(host, ticket.uploadToken, quotaDefaultsWith({ storageLimitBytes: used + 50n }), failingStore)).rejects.toMatchObject({ httpStatus: 429 });
+    expect(created).toBeLessThanOrEqual(1);
     expect(await store.head(keyOf(ticket.uploadToken))).not.toBeNull();
-    const sent = await sendWithStore(host, ticket.uploadToken, QUOTA, store);
-    expect(sent.message.id).toBe(messageIdOf(ticket.uploadToken));
-    expect(await readStorageBytesUsed(host, clock)).toBe(used + 100n);
+    expect(await readStorageBytesUsed(host, clock)).toBe(used + (created === 1 ? 100n : 0n));
   });
 
   it('加算は送った本人の発言だけ（別の人の発言 ID を渡しても数えない）', async () => {

@@ -157,15 +157,13 @@ type ServiceDb = Parameters<Parameters<typeof withTenant<void>>[1]>[0];
  * ⑧ 添付つきの発言を作る（同じトランザクションの中）。✅ 2026-10-27（Codex レビュー 2 回目）で 1 トランザクションに揃えた:
  *   1. 🔴 テナントのストレージを直列にする（`pg_advisory_xact_lock`。同じテナントの別の送信はここで待つ）と同時に使用量を読む
  *   2. 🔴 同じ札の二重送信（この ID の発言が既にある）なら、その発言を返す。**上限を数え直さず、実体も消さない**
- *   2b. ✅ 2026-10-27（Codex レビュー 3 回目）: 🔴 **鍵を取った後に実体があるかを確かめ直す**。同じ札の別の要求が上限で断られて
- *      実体を消した後なら、ここで 409（消された実体を指す発言を作らない）
- *   3. 上限を超えるなら、🔴 **鍵を持ったまま**実体を消して 429（この時点でこのキーを指す発言は無く、鍵を離すまで作られない）。
- *      鍵を離してから消すと、待っていた同じ札の要求が「まだある実体」を見て発言を作り、その後で実体が消える。
- *      ⚠️ そのため削除の通信のあいだ鍵を持つ（同じテナントのチャットの送信だけが待つ。S3 の削除は通常すぐ終わる）。
- *      削除に失敗しても 429 は返し、実体は残る —— 残った実体は、後で同じ札が上限内で送られれば正しく使われ、
- *      送られなければ日次の片付けが消す（どちらでも「発言 ↔ 実体」は食い違わない）。
- *      ⚠️ 「断った札を二度と受け付けない」記録（墓標の表）は置いていない（新しい表は `CLAUDE.md` §4.1 の概念の追加になるため）。
- *      断られた後に同じ署名 URL（5 分）で置き直された実体は、新しい Put として検査され、上限内なら受け付けられる（害は無い）
+ *   2b. 🔴 **鍵を取った後に実体があるかを確かめ直す**（無い・札と違うなら 409。実体を指さない発言を作らない）
+ *   3. 上限を超えるなら 429。✅ 2026-10-27（Codex レビュー 4 回目）: 🔴 **実体を消さない**。
+ *      署名は作るだけの書き込み（`If-None-Match: *`）なので、実体がある間は誰も同じキーへ置き直せない。したがってそのキーの
+ *      検査結果は常に同じ中身についてのものであり、後で上限が空いて同じ札（有効期間内）で送られても、検査した実体を指す。
+ *      消してしまうと、同じ署名 URL で別の中身を置き直され、古い中身の遅れた CLEAN がキーで当たる穴になる。
+ *      送られないまま残った実体は、日次の片付け（`cleanupAbandonedChatUploads`。札の有効期間 + 1 時間より古く、どの発言も
+ *      指していないもの）が消す。外部への削除の通信のあいだ鍵を持つことも無くなった。
  *   4. 発言を作り、同じトランザクションで加算する（CAS。`accountChatAttachmentStorageInSend`）と監査
  */
 async function sendWithAttachment(
@@ -193,11 +191,7 @@ async function sendWithAttachment(
     throw new ChatAttachmentObjectMissingError();
   }
   if (!chatAttachmentFitsStorage({ usedBytes, byteSize: attachment.byteSize, storageLimitBytes: attachment.storageLimitBytes })) {
-    try {
-      await attachmentDeps.objectStore.delete(attachment.objectKey);
-    } catch {
-      // 消せなくても 429 は返す（残った実体は日次の片付け `cleanupAbandonedChatUploads` が拾う）。
-    }
+    // 🔴 実体は消さない（上の 3.）。残った実体は日次の片付けが消す。
     throw new StorageLimitExceededError();
   }
   // 🔴 `createMany`（ON CONFLICT DO NOTHING）: 別の人の行と ID がぶつかっても例外でトランザクションを壊さない（下で 400）。
