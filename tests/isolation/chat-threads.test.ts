@@ -436,9 +436,9 @@ describe('✅ 2026-10-26（#166 の 4・8）⑩b 基準の発言の後ろ（afte
     const ids = await allIds();
     expect(ids.length).toBeGreaterThanOrEqual(4);
     const seen: string[] = [];
-    let after = ids[0];
+    let after: string | undefined = ids[0];
     for (let guard = 0; guard < 20 && after !== undefined; guard += 1) {
-      const body = await okJson<WindowBody>(await listMessages(hostSales, THREAD_A_P1, `?limit=1&after=${after}`));
+      const body: WindowBody = await okJson<WindowBody>(await listMessages(hostSales, THREAD_A_P1, `?limit=1&after=${after}`));
       // 🔴 応答のキーは凍結（件数を返さない）。
       expect(Object.keys(body).sort()).toEqual(['hasMoreAfter', 'items', 'nextCursor']);
       seen.push(...idsOf(body));
