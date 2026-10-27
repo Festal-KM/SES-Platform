@@ -47,6 +47,12 @@ export function useChatMessages({
    * その間に届いた応答が行を戻さないように）。一度止めたら戻さない。
    */
   const stoppedRef = useRef(false);
+  /**
+   * ✅ 2026-10-27（Codex レビュー 5 回目）: 過去の読み込みの世代。直近のページで置き換えたら進める。
+   * 🔴 置き換えより前に始めた「以前のメッセージ」の応答は、行にもカーソルにも当てない
+   *    （古いページと古いカーソルで、置き換えた後の一覧を上書きしないため）。
+   */
+  const olderGenerationRef = useRef(0);
   const isLive = (): boolean => activeRef.current && !stoppedRef.current;
   function stop(): void {
     if (stoppedRef.current) return;
@@ -110,6 +116,7 @@ export function useChatMessages({
           } else {
             scrollToLatestOnRender.current = true;
           }
+          olderGenerationRef.current += 1;
           setItems(payload.items);
           setNextCursor(payload.nextCursor);
           return;
@@ -169,6 +176,7 @@ export function useChatMessages({
   }, [threadId]);
 
   async function loadOlder(): Promise<void> {
+    const generation = olderGenerationRef.current;
     if (nextCursor === null || loadingOlder) return;
     setLoadingOlder(true);
     setOlderFailed(false);
@@ -186,7 +194,7 @@ export function useChatMessages({
         }
         if (!response.ok) return 'FAILED' as const;
         const payload = (await response.json()) as MessagePageBody;
-        if (!isLive()) return 'LOADED' as const;
+        if (!isLive() || generation !== olderGenerationRef.current) return 'LOADED' as const;
         // 🔴 取得済みの**上**に足す（置き換えない）。同じ行が再び来たら 1 行に畳む。
         setItems((current) => {
           const seen = new Set(current.map((item) => item.id));
@@ -207,6 +215,7 @@ export function useChatMessages({
    * 見つかれば true。
    */
   async function loadOlderUntil(messageId: string): Promise<boolean> {
+    const generation = olderGenerationRef.current;
     let cursor = nextCursor;
     let loaded: readonly ChatMessageView[] = itemsRef.current;
     for (let page = 0; page < GAP_PAGES_MAX; page += 1) {
@@ -223,6 +232,7 @@ export function useChatMessages({
         }
         if (!response.ok || !isLive()) return false;
         const payload = (await response.json()) as MessagePageBody;
+        if (generation !== olderGenerationRef.current) return false;
         const seen = new Set(loaded.map((item) => item.id));
         loaded = [...payload.items.filter((item) => !seen.has(item.id)), ...loaded];
         setItems((current) => {
