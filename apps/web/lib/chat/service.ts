@@ -48,6 +48,7 @@ import { InternalError, NotFoundError, requireFound, StorageLimitExceededError, 
 import {
   CHAT_ATTACHMENT_AUDIT_ACTION_UPLOAD,
   CHAT_ATTACHMENT_ROOM_DETAIL,
+  ChatAttachmentObjectMissingError,
   chatAttachmentFitsStorage,
   resolveChatAttachmentForSend,
   type ChatAttachmentSendDeps,
@@ -156,7 +157,15 @@ type ServiceDb = Parameters<Parameters<typeof withTenant<void>>[1]>[0];
  * ⑧ 添付つきの発言を作る（同じトランザクションの中）。✅ 2026-10-27（Codex レビュー 2 回目）で 1 トランザクションに揃えた:
  *   1. 🔴 テナントのストレージを直列にする（`pg_advisory_xact_lock`。同じテナントの別の送信はここで待つ）と同時に使用量を読む
  *   2. 🔴 同じ札の二重送信（この ID の発言が既にある）なら、その発言を返す。**上限を数え直さず、実体も消さない**
- *   3. 上限を超えるなら、🔴 **鍵を持ったまま**実体を消して 429（この時点でこのキーを指す発言は無く、鍵を離すまで作られない）
+ *   2b. ✅ 2026-10-27（Codex レビュー 3 回目）: 🔴 **鍵を取った後に実体があるかを確かめ直す**。同じ札の別の要求が上限で断られて
+ *      実体を消した後なら、ここで 409（消された実体を指す発言を作らない）
+ *   3. 上限を超えるなら、🔴 **鍵を持ったまま**実体を消して 429（この時点でこのキーを指す発言は無く、鍵を離すまで作られない）。
+ *      鍵を離してから消すと、待っていた同じ札の要求が「まだある実体」を見て発言を作り、その後で実体が消える。
+ *      ⚠️ そのため削除の通信のあいだ鍵を持つ（同じテナントのチャットの送信だけが待つ。S3 の削除は通常すぐ終わる）。
+ *      削除に失敗しても 429 は返し、実体は残る —— 残った実体は、後で同じ札が上限内で送られれば正しく使われ、
+ *      送られなければ日次の片付けが消す（どちらでも「発言 ↔ 実体」は食い違わない）。
+ *      ⚠️ 「断った札を二度と受け付けない」記録（墓標の表）は置いていない（新しい表は `CLAUDE.md` §4.1 の概念の追加になるため）。
+ *      断られた後に同じ署名 URL（5 分）で置き直された実体は、新しい Put として検査され、上限内なら受け付けられる（害は無い）
  *   4. 発言を作り、同じトランザクションで加算する（CAS。`accountChatAttachmentStorageInSend`）と監査
  */
 async function sendWithAttachment(
@@ -178,6 +187,10 @@ async function sendWithAttachment(
   if (existing !== null) {
     const [replayed] = await projectChatMessages(ctx, db, [existing]);
     return { message: requireFound(replayed ?? null) };
+  }
+  const head = await attachmentDeps.objectStore.head(attachment.objectKey);
+  if (head === null || head.byteSize !== attachment.byteSize || head.contentType !== attachment.contentType) {
+    throw new ChatAttachmentObjectMissingError();
   }
   if (!chatAttachmentFitsStorage({ usedBytes, byteSize: attachment.byteSize, storageLimitBytes: attachment.storageLimitBytes })) {
     try {

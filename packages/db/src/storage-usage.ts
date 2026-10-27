@@ -377,6 +377,8 @@ export async function accountChatAttachmentStorageInSend(
        AND tenant_id = ${input.tenantId}::uuid
        AND attachment_key IS NOT NULL
        AND attachment_storage_counted_at IS NULL
+       -- ✅ 2026-10-27（Codex レビュー 3 回目）: 数えるのは送った本人の発言だけ（別の人の発言 ID を渡しても数えない）。
+       AND sender_user_id = app_actor_user_id()
     RETURNING attachment_byte_size::text AS byte_size`);
   const row = claimed[0];
   if (row === undefined) return false;
