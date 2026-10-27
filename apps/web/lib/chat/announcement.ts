@@ -58,7 +58,18 @@ async function writeAnnouncement(
     requireFound(await findChatThreadRow(db, threadId));
     // 🔴 ② この部屋の、消えていない、自分から読める発言だけ（`where` の threadId は「どの部屋の発言か」の指定。境界は RLS）。
     requireFound(
-      await db.message.findFirst({ where: { id: messageId, threadId, deletedAt: null, purgedAt: null }, select: { id: true } }),
+      await db.message.findFirst({
+        where: {
+          id: messageId,
+          threadId,
+          deletedAt: null,
+          purgedAt: null,
+          // ✅ 2026-10-27（チャットのファイル）: 🔴 検査が CLEAN でない添付の発言はアナウンスにできない（他の人には見えない発言を
+          //    部屋の上部に固定させない。送った本人からでも 404 = 読めない発言と同じ扱い）。
+          OR: [{ attachmentKey: null }, { attachmentScanStatus: 'CLEAN' }],
+        },
+        select: { id: true },
+      }),
     );
     const existing = await db.chatThreadAnnouncement.findFirst({ where: { threadId }, select: { messageId: true } });
     // 同じ発言がもうアナウンスなら何もしない（冪等。監査ログも増やさない）。

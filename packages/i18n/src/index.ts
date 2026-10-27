@@ -4747,6 +4747,8 @@ const ja = {
   'chat.attachment.remove': '添付を外す',
   'chat.attachment.scanning': 'ファイルを検査しています',
   'chat.attachment.blocked': 'このファイルは送れませんでした（安全性の検査で問題が見つかりました）',
+  // ✅ 2026-10-27（レビュー）: 検査そのものができなかった（UNSCANNABLE / FAILED）ときは「問題が見つかった」と書かない。
+  'chat.attachment.unscannable': 'このファイルは送れませんでした（ファイルを確認できませんでした。別の形式で送り直してください）',
   'chat.attachment.open': '開く',
   'chat.attachment.openNewTab': '別タブで開く',
   'chat.attachment.openFailed': 'ファイルを開けませんでした。もう一度お試しください。',

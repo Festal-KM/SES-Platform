@@ -32,12 +32,18 @@
 --    所有者（app_scan_probe）と EXECUTE の権限（app_tenant だけ）はそのまま残る。戻り値の列名 `skill_sheet_id` は
 --    呼び出し側（packages/db/src/file-scan.ts / scan-notice.ts）の互換のため変えない（チャットの添付では発言の ID が入る）。
 -- 🔴 判断事項 6: 運営者（app_platform）に新しい列を GRANT しない（CLAUDE.md §10.5。運営に要るのは件数・状態だけ）。
+-- 🔴 判断事項 7: ストレージの計測（CLAUDE.md §10.6）。`attachment_storage_counted_at` は「この添付のバイト数が
+--    `UsageCounter(STORAGE_BYTES)` に含まれているか」の状態（`skill_sheets.storage_counted_at` と同じ形）。
+--    加算・減算は CAS（IS NULL / IS NOT NULL の条件付き UPDATE）が成立したときだけ起きる（packages/db/src/storage-usage.ts）。
+-- 🔴 判断事項 8: 検査の状態を書き換えられるのは検査の関数（app_scan_probe）だけ。添付のキー・種類・大きさは
+--    作った後に変えられない（解約の削除スコープだけが消せる）。アプリに UPDATE の経路が無くても DB で止める（二重）。
 
 -- ----------------------------------------------------------------------------
 -- 1. 列と制約
 -- ----------------------------------------------------------------------------
 ALTER TABLE "messages" ADD COLUMN "attachment_content_type" TEXT;
 ALTER TABLE "messages" ADD COLUMN "attachment_byte_size" BIGINT;
+ALTER TABLE "messages" ADD COLUMN "attachment_storage_counted_at" TIMESTAMPTZ(3);
 
 -- 🔴 受け付ける種類は packages/domain の CHAT_ATTACHMENT_CONTENT_TYPES と同じ（tests/static/schema-enum-drift.test.ts が突き合わせる）。
 ALTER TABLE "messages" ADD CONSTRAINT "messages_attachment_content_type_check" CHECK ("attachment_content_type" IN ('image/png', 'image/jpeg', 'image/webp', 'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'text/csv', 'text/plain'));
@@ -49,6 +55,9 @@ ALTER TABLE "messages" ADD CONSTRAINT "messages_attachment_set_check" CHECK (
   ("attachment_key" IS NULL AND "attachment_scan_status" IS NULL AND "attachment_content_type" IS NULL AND "attachment_byte_size" IS NULL)
   OR ("attachment_key" IS NOT NULL AND "attachment_scan_status" IS NOT NULL AND "attachment_content_type" IS NOT NULL AND "attachment_byte_size" IS NOT NULL)
 );
+
+-- 計上済みの印は添付があるときだけ立つ（判断事項 7）。
+ALTER TABLE "messages" ADD CONSTRAINT "messages_attachment_storage_counted_check" CHECK ("attachment_storage_counted_at" IS NULL OR "attachment_key" IS NOT NULL);
 
 -- 検査の結果はオブジェクトキーでしか対象を引き当てられない（skill_sheets_object_key_key と同じ理由）。NULL は何件でもよい。
 CREATE UNIQUE INDEX "messages_attachment_key_key" ON "messages"("attachment_key");
@@ -84,6 +93,32 @@ $BODY$;
 CREATE TRIGGER messages_internal_only_attachment
   BEFORE INSERT OR UPDATE OF attachment_key, thread_id ON messages
   FOR EACH ROW EXECUTE FUNCTION messages_reject_partner_room_attachment();
+
+-- ----------------------------------------------------------------------------
+-- 2b. 検査の状態は検査の関数だけが変えられる・添付は作った後に変えられない（判断事項 8）
+-- ----------------------------------------------------------------------------
+-- 🔴 current_user は SECURITY DEFINER の関数の中では所有者（app_scan_probe）になる。トリガはそのロールで動く。
+CREATE FUNCTION messages_guard_attachment_update() RETURNS trigger
+LANGUAGE plpgsql SET search_path = public, pg_temp AS $BODY$
+BEGIN
+  IF app_purge_scope_on() THEN
+    RETURN NEW;
+  END IF;
+  IF NEW.attachment_key IS DISTINCT FROM OLD.attachment_key
+     OR NEW.attachment_content_type IS DISTINCT FROM OLD.attachment_content_type
+     OR NEW.attachment_byte_size IS DISTINCT FROM OLD.attachment_byte_size THEN
+    RAISE EXCEPTION 'messages_guard_attachment_update: 添付のキー・種類・大きさは後から変えられません（id=%）', OLD.id;
+  END IF;
+  IF NEW.attachment_scan_status IS DISTINCT FROM OLD.attachment_scan_status AND current_user <> 'app_scan_probe' THEN
+    RAISE EXCEPTION 'messages_guard_attachment_update: 検査の状態は検査の関数だけが変えられます（id=%）', OLD.id;
+  END IF;
+  RETURN NEW;
+END;
+$BODY$;
+
+CREATE TRIGGER messages_guard_attachment_update
+  BEFORE UPDATE OF attachment_key, attachment_scan_status, attachment_content_type, attachment_byte_size ON messages
+  FOR EACH ROW EXECUTE FUNCTION messages_guard_attachment_update();
 
 -- ----------------------------------------------------------------------------
 -- 3. CLEAN でない添付は送った本人にだけ見える（判断事項 3）

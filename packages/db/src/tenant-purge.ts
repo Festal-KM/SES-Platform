@@ -17,6 +17,7 @@
 // 🔴 `retention.delete`（`F-046`。Phase 2）も `PURGE_SPEC` を読むが、**1 エンジニア分に絞る述語**はこの spec に無い（T-10-09 の申し送り）。
 
 import { Prisma } from '@prisma/client';
+import { releaseChatAttachmentStorageForPurge } from './storage-usage.js';
 import {
   isPurgeRowsSpec,
   PURGE_SPEC,
@@ -323,6 +324,9 @@ export async function listPurgeObjectKeys(ctx: SystemTenantCtx): Promise<PurgeOb
  */
 export async function applyPurgeSpec(ctx: SystemTenantCtx, now: Date): Promise<TenantPurgeCounts> {
   return withPurgeScope(ctx, async (tx) => {
+    // ✅ 2026-10-27: チャットの添付の計上を外す（実体は ① で消してある。CAS なので再実行は 0）。
+    //    🔴 列の消去（下の `messages` の行）より先に行う —— 消した後ではキー・大きさが読めない。
+    await releaseChatAttachmentStorageForPurge(tx, ctx.tenantId, now);
     const counts: Record<string, number> = {};
     for (const spec of PURGE_SPEC.delete) {
       const statements = buildPurgeStatements(spec, ctx.tenantId, now);

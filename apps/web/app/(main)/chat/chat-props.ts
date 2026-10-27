@@ -148,6 +148,7 @@ export function chatAttachmentLabels(): ChatAttachmentLabels {
     remove: t('chat.attachment.remove'),
     scanning: t('chat.attachment.scanning'),
     blocked: t('chat.attachment.blocked'),
+    unscannable: t('chat.attachment.unscannable'),
     open: t('chat.attachment.open'),
     openNewTab: t('chat.attachment.openNewTab'),
     openFailed: t('chat.attachment.openFailed'),

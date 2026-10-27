@@ -26,6 +26,8 @@ export type ChatAttachmentLabels = ChatAttachmentFormatLabels & {
   readonly remove: string;
   readonly scanning: string;
   readonly blocked: string;
+  /** 検査そのものができなかった（UNSCANNABLE / FAILED）。「問題が見つかった」（INFECTED）と書き分ける。 */
+  readonly unscannable: string;
   readonly open: string;
   readonly openNewTab: string;
   readonly openFailed: string;
@@ -161,7 +163,7 @@ export function ChatMessageAttachment({
   if (attachment.scanStatus !== 'CLEAN') {
     return (
       <p className="m-0 text-xs text-danger" role="status" data-testid={`chat-attachment-blocked-${messageId}`}>
-        {labels.blocked}
+        {attachment.scanStatus === 'INFECTED' ? labels.blocked : labels.unscannable}
       </p>
     );
   }

@@ -25,6 +25,7 @@ const M_PDF = '01930000-0000-7000-8000-0000000000d2';
 const M_DOCX = '01930000-0000-7000-8000-0000000000d3';
 const M_SCANNING = '01930000-0000-7000-8000-0000000000d4';
 const M_INFECTED = '01930000-0000-7000-8000-0000000000d5';
+const M_FAILED = '01930000-0000-7000-8000-0000000000d6';
 
 function message(id: string, attachment: ChatAttachmentView, mine = false): ChatMessageView {
   return {
@@ -45,6 +46,7 @@ const MESSAGES = [
   message(M_DOCX, { kind: 'file', contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', byteSize: 10, scanStatus: 'CLEAN' }),
   message(M_SCANNING, { kind: 'pdf', contentType: 'application/pdf', byteSize: 1_258_291, scanStatus: 'SCANNING' }, true),
   message(M_INFECTED, { kind: 'file', contentType: 'text/plain', byteSize: 10, scanStatus: 'INFECTED' }, true),
+  message(M_FAILED, { kind: 'file', contentType: 'text/plain', byteSize: 10, scanStatus: 'UNSCANNABLE' }, true),
 ];
 
 function render(options: { readonly canPost: boolean; readonly canAttach: boolean }): string {
@@ -94,6 +96,12 @@ describe('③ ④ 発言の添付', () => {
     expect(html).toContain(`data-testid="chat-attachment-blocked-${M_INFECTED}"`);
     expect(html).toContain(t('chat.attachment.blocked'));
     expect(html).not.toContain(`data-testid="chat-attachment-open-${M_INFECTED}"`);
+  });
+
+  it('検査そのものができなかったもの（UNSCANNABLE / FAILED）は「問題が見つかった」と書かない', () => {
+    const failed = html.match(new RegExp(`data-testid="chat-attachment-blocked-${M_FAILED}"[^>]*>([^<]*)<`))?.[1];
+    expect(failed).toBe(t('chat.attachment.unscannable'));
+    expect(t('chat.attachment.unscannable')).not.toBe(t('chat.attachment.blocked'));
   });
 
   it('CLEAN の画像と PDF にはプレビューの枠、docx は札だけ。どれにも「開く」「別タブで開く」', () => {

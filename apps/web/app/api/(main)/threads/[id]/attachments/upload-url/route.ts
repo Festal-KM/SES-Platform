@@ -9,7 +9,7 @@ import { withApiRoute } from '../../../../../../../lib/api/withApiRoute';
 import { issueChatAttachmentUploadUrl } from '../../../../../../../lib/chat/attachments';
 import { CHAT_POST_ROLES } from '../../../../../../../lib/chat/policy';
 import { chatAttachmentUploadBodySchema, chatThreadParamsSchema } from '../../../../../../../lib/chat/schemas';
-import { chatAttachmentTokens, objectStore, storageRuntime } from '../../../../../../../lib/db/bootstrap';
+import { chatAttachmentTokens, objectStore, storageRuntime, tenantQuotaDefaults } from '../../../../../../../lib/db/bootstrap';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -26,6 +26,8 @@ export const POST = withApiRoute(
       objectStore: objectStore(),
       tokens: chatAttachmentTokens(),
       uploadMaxBytes: storageRuntime().uploadMaxBytes,
+      // 🔴 ストレージ上限の既定値（上書きを含めた解決は `issueChatAttachmentUploadUrl` の中）。
+      quotaDefaults: tenantQuotaDefaults(),
       now: () => new Date(),
     });
     return Response.json(ticket, { status: 201 });

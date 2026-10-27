@@ -11,9 +11,15 @@
 //   ⑥ 🔴 取引先がいる部屋には添えられない（アプリの 400 と DB のトリガ）
 //   ⑦ 検査の結果は messages.attachment_key にも適用される（ジョブのホスト文脈から。滞留の照会・隔離の周知先も）
 //   ⑧ 同じ札の二重送信は 1 行に収束する
+//   ⑨ ストレージ: 上限を超えるなら発行しない / 送信でカウンタがちょうど大きさだけ増え、二重送信では動かない /
+//      解約の削除で減る（再実行では動かない）
+//   ⑩ 🔴 検査の状態は検査の関数だけが変えられ、添付のキー・種類・大きさは作った後に変えられない（DB のトリガ）
+//   ⑪ 🔴 CLEAN でない添付の発言はアナウンスにできない（送った本人からでも 404）
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   applyFileScanResult,
+  applyPurgeSpec,
+  readStorageBytesUsed,
   configureTenantDb,
   disconnectTenantDb,
   listStalledScanTargets,
@@ -35,6 +41,7 @@ import {
   USER_B_HOST,
 } from './support/fixtures.js';
 import { startIsolationDatabase, type IsolationDatabase } from './support/postgres.js';
+import { quotaDefaultsWith } from './support/quota-defaults.js';
 
 const SETUP_TIMEOUT_MS = 600_000;
 const META = { deviceKind: 'desktop', ipAddress: '203.0.113.91' } as const;
@@ -66,6 +73,8 @@ const { CHAT_ATTACHMENT_LIST_ITEM_KEYS, CHAT_ATTACHMENT_VIEW_KEYS, CHAT_FORBIDDE
   '../../apps/web/lib/chat/views'
 );
 const { chatMessagePostBodySchema } = await import('../../apps/web/lib/chat/schemas');
+const { setChatAnnouncement } = await import('../../apps/web/lib/chat/announcement');
+const QUOTA = quotaDefaultsWith({ storageLimitBytes: 10n * 1024n * 1024n * 1024n });
 
 let database: IsolationDatabase;
 let admin: UnextendedClient;
@@ -81,7 +90,7 @@ let clock = new Date('2026-10-27T01:00:00.000Z');
 const now = () => clock;
 
 async function upload(ctx: AuthenticatedTenantCtx, threadId: string, contentType: 'application/pdf' | 'image/png' | 'text/plain' = 'application/pdf', byteSize = 1234) {
-  return issueChatAttachmentUploadUrl(ctx, threadId, { contentType, byteSize }, { objectStore: store, tokens, uploadMaxBytes: 20 * 1024 * 1024, now });
+  return issueChatAttachmentUploadUrl(ctx, threadId, { contentType, byteSize }, { objectStore: store, tokens, uploadMaxBytes: 20 * 1024 * 1024, quotaDefaults: QUOTA, now });
 }
 
 async function send(ctx: AuthenticatedTenantCtx, threadId: string, token: string, body = '') {
@@ -373,13 +382,82 @@ describe('🔴 ⑥ 取引先がいる部屋には添えられない', () => {
   });
 });
 
-describe('⑧ 同じ札の二重送信', () => {
-  it('1 行に収束し、監査も 1 回だけ', async () => {
+describe('⑧ ⑨ 同じ札の二重送信とストレージの計上', () => {
+  it('1 行に収束し、監査も 1 回だけ。カウンタはちょうど大きさだけ増え、二重送信では動かない', async () => {
+    const before = await readStorageBytesUsed(host, clock);
     const ticket = await upload(host, roomId, 'image/png', 100);
+    // 署名を出しただけでは数えない（アップロードされないことがある）。
+    expect(await readStorageBytesUsed(host, clock)).toBe(before);
     const first = await send(host, roomId, ticket.uploadToken);
+    expect(await readStorageBytesUsed(host, clock)).toBe(before + 100n);
+    expect((await admin.message.findUniqueOrThrow({ where: { id: first.message.id } })).attachmentStorageCountedAt).not.toBeNull();
     const second = await send(host, roomId, ticket.uploadToken);
     expect(second.message.id).toBe(first.message.id);
+    expect(await readStorageBytesUsed(host, clock)).toBe(before + 100n);
     expect(await admin.message.count({ where: { id: first.message.id } })).toBe(1);
     expect(await admin.auditLog.count({ where: { action: CHAT_ATTACHMENT_AUDIT_ACTION_UPLOAD, targetId: first.message.id } })).toBe(1);
+  });
+
+  it('🔴 ストレージ上限を超えるなら署名を発行しない（429）', async () => {
+    await expect(
+      issueChatAttachmentUploadUrl(host, roomId, { contentType: 'application/pdf', byteSize: 10 }, {
+        objectStore: store,
+        tokens,
+        uploadMaxBytes: 20 * 1024 * 1024,
+        quotaDefaults: quotaDefaultsWith({ storageLimitBytes: 1n }),
+        now,
+      }),
+    ).rejects.toMatchObject({ httpStatus: 429, name: 'StorageLimitExceededError' });
+  });
+});
+
+describe('🔴 ⑩ 添付の列は DB で守られる', () => {
+  let messageId: string;
+
+  beforeAll(async () => {
+    const ticket = await upload(host, roomId, 'application/pdf', 50);
+    messageId = (await send(host, roomId, ticket.uploadToken)).message.id;
+  });
+
+  it('送った本人でも検査の状態を書き換えられない（CLEAN にして見せる経路が無い）', async () => {
+    await expect(
+      withTenant(host, async (db) => db.message.updateMany({ where: { id: messageId }, data: { attachmentScanStatus: 'CLEAN' } })),
+    ).rejects.toThrow(/検査の状態は検査の関数だけが変えられます/);
+    expect((await admin.message.findUniqueOrThrow({ where: { id: messageId } })).attachmentScanStatus).toBe('SCANNING');
+  });
+
+  it('キー・種類・大きさは作った後に変えられない', async () => {
+    await expect(
+      withTenant(host, async (db) => db.message.updateMany({ where: { id: messageId }, data: { attachmentContentType: 'image/png' } })),
+    ).rejects.toThrow(/添付のキー・種類・大きさは後から変えられません/);
+    await expect(
+      withTenant(host, async (db) => db.message.updateMany({ where: { id: messageId }, data: { attachmentByteSize: 1n } })),
+    ).rejects.toThrow(/添付のキー・種類・大きさは後から変えられません/);
+  });
+
+  it('🔴 ⑪ CLEAN でない添付の発言はアナウンスにできない（送った本人からでも 404）', async () => {
+    await expect(
+      setChatAnnouncement(host, roomId, messageId, { now, meta: { ipAddress: META.ipAddress } }),
+    ).rejects.toMatchObject({ httpStatus: 404 });
+    expect(await admin.chatThreadAnnouncement.count({ where: { threadId: roomId } })).toBe(0);
+  });
+});
+
+// 🔴 最後に置く（テナント A の業務データを消す）。
+describe('⑨ 解約の削除で計上を外す', () => {
+  it('計上済みの添付の合計だけ減り、印が外れて列も消える。再実行では動かない', async () => {
+    const counted = await admin.message.findMany({
+      where: { tenantId: TENANT_A, attachmentStorageCountedAt: { not: null } },
+      select: { attachmentByteSize: true },
+    });
+    const total = counted.reduce((sum, row) => sum + (row.attachmentByteSize ?? 0n), 0n);
+    expect(total).toBeGreaterThan(0n);
+    const before = await readStorageBytesUsed(host, clock);
+    await applyPurgeSpec(systemTenantCtx(TENANT_A, JOB), clock);
+    expect(await readStorageBytesUsed(host, clock)).toBe(before - total);
+    expect(await admin.message.count({ where: { tenantId: TENANT_A, attachmentStorageCountedAt: { not: null } } })).toBe(0);
+    expect(await admin.message.count({ where: { tenantId: TENANT_A, attachmentKey: { not: null } } })).toBe(0);
+    await applyPurgeSpec(systemTenantCtx(TENANT_A, JOB), clock);
+    expect(await readStorageBytesUsed(host, clock)).toBe(before - total);
   });
 });

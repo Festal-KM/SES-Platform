@@ -1190,6 +1190,8 @@ model Message {
   attachmentContentType  String?   @map("attachment_content_type")
   /// ✅ 2026-10-27: 添付の大きさ（バイト。1〜20 MiB の CHECK）。添付の 4 列は「全部ある」か「全部ない」か（CHECK）
   attachmentByteSize     BigInt?   @map("attachment_byte_size")
+  /// ✅ 2026-10-27: 添付のバイト数が `UsageCounter(STORAGE_BYTES)` に含まれているか（CAS の状態。skill_sheets.storage_counted_at と同じ形）
+  attachmentStorageCountedAt DateTime? @map("attachment_storage_counted_at") @db.Timestamptz(3)
   reviewGateId           String?   @map("review_gate_id") @db.Uuid // 添付があるときのみ
   sentAt                 DateTime  @default(now()) @map("sent_at") @db.Timestamptz(3)
   purgedAt               DateTime? @map("purged_at") @db.Timestamptz(3) // PURGED で本文を削除（F-064 AC-2）

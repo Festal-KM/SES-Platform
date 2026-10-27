@@ -17,18 +17,19 @@
 //   ⑤ 🔴 **ファイル名を受け取らない・保存しない・監査に載せない**（`summary` は種類と大きさだけ）。
 //   ⑥ 🔴 **一覧は `CLEAN` だけ・新しい順・件数を返さない**。
 //   ⑦ 🔴 設定の初期化を判定に混ぜない —— 札の鍵・ストレージは呼び出し側（ルート）が deps で渡す（HANDOFF §3.1）。
-import { withTenant, type AuthenticatedTenantCtx } from '@ses/db';
+import { readStorageBytesUsed, resolveTenantStorageQuota, withTenant, type AuthenticatedTenantCtx, type TenantQuotaDefaults } from '@ses/db';
 import type { ObjectStore } from '@ses/connectors';
 import {
   buildChatAttachmentObjectKey,
   CHAT_ATTACHMENT_MAX_BYTES,
   chatAttachmentExtensionOf,
   chatAttachmentKindOf,
+  decideStorageUpload,
   parseChatAttachmentObjectKey,
   type ChatAttachmentContentType,
   type ScanStatus,
 } from '@ses/domain';
-import { ConflictError, NotFoundError, requireFound, UploadTooLargeError, ValidationError } from '../api/errors';
+import { ConflictError, NotFoundError, requireFound, StorageLimitExceededError, UploadTooLargeError, ValidationError } from '../api/errors';
 import { buildCursorPage, takeForCursorPage, type CursorPage } from '../api/pagination';
 import { issueDownloadUrl, type DownloadShareScope } from '../storage/download';
 import { CHAT_ATTACHMENT_TOKEN_TTL_MS, type ChatAttachmentTokenCodec, type ChatAttachmentUploadClaims } from './attachment-token';
@@ -75,6 +76,8 @@ export type ChatAttachmentUploadDeps = {
   readonly tokens: ChatAttachmentTokenCodec;
   /** `UPLOAD_MAX_BYTES`（既定 20 MB）。チャットの上限（20 MiB）と小さい方で止める。 */
   readonly uploadMaxBytes: number;
+  /** 🔴 ストレージ上限の既定値（実際の上限は `resolveTenantStorageQuota` が上書きを含めて解く。スキルシートの #18 と同じ）。 */
+  readonly quotaDefaults: TenantQuotaDefaults;
   readonly now: () => Date;
   /** 発言とオブジェクトの ID の採番（テストで差し替える）。 */
   readonly newId?: () => string;
@@ -104,6 +107,13 @@ export async function issueChatAttachmentUploadUrl(
   const thread = await withTenant(ctx, async (db) => requireFound(await findChatThreadRow(db, threadId)));
   if (!chatRoomAcceptsAttachments(thread)) throw new ValidationError([CHAT_ATTACHMENT_ROOM_DETAIL]);
 
+  // 🔴 ストレージ上限（docs/03 §4.5）。**超過していたら署名を発行しない**（`issueSkillSheetUploadUrl` と同じ判定・同じ 1 計測）。
+  const now = deps.now();
+  const { storageLimitBytes } = await resolveTenantStorageQuota(ctx, { now, defaults: deps.quotaDefaults });
+  const usedBytes = await readStorageBytesUsed(ctx, now);
+  const decision = decideStorageUpload({ limitBytes: storageLimitBytes, usedBytes, requestedBytes: BigInt(input.byteSize) });
+  if (decision.kind === 'BLOCK') throw new StorageLimitExceededError();
+
   const newId = deps.newId ?? (() => crypto.randomUUID());
   const messageId = newId();
   // ① キーはサーバが組む（ファイル名を含めない）。
@@ -115,7 +125,7 @@ export async function issueChatAttachmentUploadUrl(
     extension,
   });
   const presigned = await deps.objectStore.presignPut(objectKey, input.contentType, input.byteSize);
-  const expiresAt = deps.now().getTime() + CHAT_ATTACHMENT_TOKEN_TTL_MS;
+  const expiresAt = now.getTime() + CHAT_ATTACHMENT_TOKEN_TTL_MS;
   const uploadToken = deps.tokens.sign({
     tenantId: ctx.tenantId,
     threadId: thread.id,

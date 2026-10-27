@@ -35,7 +35,7 @@
 //      🔴 部屋の「最終更新」を進めない（進めると相手の一覧の並びで「何か送られた」と分かる。`CLEAN` になったときに
 //      検査の関数が進める）。監査は `message.create` に加えて `chat_attachment.upload`（種類と大きさだけ）。
 //      🔴 同じ札の二重送信は 1 行に収束する（発言 ID が同じ）。
-import { withTenant, writeAuditLog, type AuthenticatedTenantCtx } from '@ses/db';
+import { accountChatAttachmentStorage, withTenant, writeAuditLog, type AuthenticatedTenantCtx } from '@ses/db';
 import { InternalError, NotFoundError, requireFound, ValidationError } from '../api/errors';
 import {
   CHAT_ATTACHMENT_AUDIT_ACTION_UPLOAD,
@@ -82,7 +82,7 @@ export async function sendChatMessage(
     if (deps.attachments === undefined) throw new InternalError('添付の確認に要る依存が渡されていません。');
     attachment = await resolveChatAttachmentForSend(ctx, threadId, input.attachmentUploadToken, deps.attachments, sentAt);
   }
-  return withTenant(ctx, async (db) => {
+  const result = await withTenant(ctx, async (db) => {
     // ① 投稿先が見えるか（見えなければ 404。読みと同じ 1 実装）。
     const thread = requireFound(await findChatThreadRow(db, threadId));
     // ⑦ 貼る案件があれば、この部屋に貼れるか（貼れなければ 400。部屋が見えないときは上の 404 が先に返る）。
@@ -137,6 +137,15 @@ export async function sendChatMessage(
     // 🔴 1 行入れて 1 行写せないことは起こりえない（起きたら不変条件が壊れている）。黙って空を返さない。
     return { message: requireFound(message ?? null) };
   });
+  // ⑧ ✅ 2026-10-27: 添付のバイト数を `UsageCounter(STORAGE_BYTES)` に加算する（CLAUDE.md §10.6）。
+  //    スキルシートの確定（`settleStorage`）と同じ形: 行の確定の**後**に、CAS（`attachment_storage_counted_at IS NULL`）が
+  //    成立したときだけ加算する。同じ札の二重送信は `ALREADY_SETTLED`（2 回目は数えない）、前回が加算の前に落ちていれば
+  //    やり直しで回収される。
+  if (attachment !== null) {
+    const outcome = await accountChatAttachmentStorage(ctx, { messageId: attachment.messageId, observedAt: sentAt });
+    if (outcome.kind === 'NOT_FOUND') throw new InternalError();
+  }
+  return result;
 }
 
 type ServiceDb = Parameters<Parameters<typeof withTenant<void>>[1]>[0];
