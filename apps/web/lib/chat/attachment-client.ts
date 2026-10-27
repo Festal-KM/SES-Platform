@@ -72,6 +72,14 @@ export const CHAT_ATTACHMENT_ACCEPT = [
   ...CHAT_ATTACHMENT_TYPES.map((type) => `.${type.extension}`),
 ].join(',');
 
+/**
+ * ✅ 2026-10-27（デモで「ファイルを送れませんでした」）: ブラウザの `fetch` は `window` を `this` にして呼ばないと
+ * `TypeError: Illegal invocation` になる。fetch をそのままオブジェクトの値に入れて `deps.fetch(...)` で呼ぶと
+ * `this` が `deps` になり、要求を送る前に例外になる（Node のテストでは起きないので見逃した）。
+ * 🔴 画面から渡すときは必ずこれを使う（`tests/static/chat-browser-fetch.test.ts` が短縮記法の受け渡しを禁止する）。
+ */
+export const browserFetch: typeof fetch = (input, init) => fetch(input, init);
+
 export const chatAttachmentUploadApiPath = (threadId: string): string =>
   `/api/threads/${encodeURIComponent(threadId)}/attachments/upload-url`;
 export const chatAttachmentDownloadApiPath = (threadId: string, messageId: string): string =>
