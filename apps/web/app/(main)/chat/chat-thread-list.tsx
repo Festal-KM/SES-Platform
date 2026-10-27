@@ -495,7 +495,7 @@ export function ChatThreadList({
   return (
     <div className="flex min-h-0 flex-col" data-testid="chat-threads">
       {/* 🔴 `method="get"` —— 条件が URL になり、再読込・戻るで同じ一覧に戻る。開いている会話と絞り込みは引き継ぐ。 */}
-      <form method="get" action={CHAT_PATH} className="flex items-center gap-2 p-3" data-testid="chat-threads-search">
+      <form method="get" action={CHAT_PATH} className="flex shrink-0 items-center gap-2 px-3 py-2" data-testid="chat-threads-search">
         {paneState.thread === null ? null : <input type="hidden" name={CHAT_THREAD_PARAM} value={paneState.thread} />}
         {paneState.thread === null
           ? null
@@ -511,14 +511,15 @@ export function ChatThreadList({
           defaultValue={q ?? ''}
           placeholder={t('chat.threads.search.placeholder')}
           data-testid="chat-threads-q"
+          className="min-w-0 flex-1"
         />
-        <Button type="submit" variant="secondary" size="sm" data-testid="chat-threads-search-submit">
+        <Button type="submit" variant="secondary" size="sm" className="min-h-11 shrink-0 whitespace-nowrap md:min-h-8" data-testid="chat-threads-search-submit">
           {t('chat.threads.search.submit')}
         </Button>
         {canPost && people !== null ? (
           <Link
             href={chatHref({ filter: { kind: 'contacts' } })}
-            className={cn(SECONDARY_LINK_CLASSES, 'min-h-11 px-3 text-cell md:min-h-8')}
+            className={cn(SECONDARY_LINK_CLASSES, 'min-h-11 shrink-0 whitespace-nowrap px-3 text-cell md:min-h-8')}
             data-testid="chat-new-conversation"
           >
             {t('chat.people.newConversationShort')}

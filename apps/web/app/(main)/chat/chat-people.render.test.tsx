@@ -10,6 +10,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { t } from '@ses/i18n';
+import { ChatFavorites } from './chat-people-section';
 import type { ChatPeopleData } from '../../../lib/chat/people';
 import type { ChatThreadDetailView } from '../../../lib/chat/views';
 
@@ -224,5 +225,31 @@ describe('✅ 2026-10-26（#166 の気づき）取引先の人には、取引先
     expect(html).toContain(`chat-open-dm-${HOST_PERSON}`);
     expect(html).toContain(`chat-open-dm-${PARTNER_PERSON}`);
     expect(html).not.toContain(`chat-open-dm-${SELF}`);
+  });
+});
+
+
+describe('検索とお気に入りの幅', () => {
+  it('新規操作は縮めず折り返さない', () => {
+    const html = renderList(true);
+    const link = /<a[^>]*class="([^"]*)"[^>]*data-testid="chat-new-conversation"/.exec(html);
+    expect(link?.[1].split(' ')).toEqual(expect.arrayContaining(['shrink-0', 'whitespace-nowrap', 'min-h-11']));
+  });
+});
+
+
+describe('お気に入りの名前の識別', () => {
+  it('長い会社名を省略せず、幅を広げた項目を横スクロールで並べる', () => {
+    const name = '株式会社ダミーチャーリー 営業窓口';
+    const html = renderToStaticMarkup(createElement(ChatFavorites, {
+      favorites: [{ id: ROOM_DM, name, avatarClass: '', initials: 'ダ' }],
+      unreadCounts: {}, mutedIds: new Set<string>(), selectedThreadId: null,
+    }));
+    expect(html).toContain(name);
+    expect(html).toContain('min-w-32 shrink-0');
+    expect(html).toContain('overflow-x-auto');
+    expect(html).toContain('whitespace-nowrap text-center text-xs');
+    expect(html).not.toContain('truncate');
+    expect(html).not.toContain('grid-cols-5');
   });
 });

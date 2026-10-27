@@ -417,9 +417,29 @@ describe('⑥: 日付の区切り（定義書 §3.12。2026-10-13 追加）', ()
 
   it('🔴 円形（`rounded-full`）を使わない（§7.9: 円はアバターとカウンタのみ）', () => {
     const html = renderConversation();
-    const separator = /<li[^>]*data-testid="chat-day-separator-[^"]*"[^>]*>(.*?)<\/li>/s.exec(html);
+    const separator = /<div[^>]*data-testid="chat-day-separator-[^"]*"[^>]*>(.*?)<\/div>/s.exec(html);
     expect(separator).not.toBeNull();
     expect((separator as RegExpExecArray)[1]).not.toContain('rounded-full');
+  });
+
+  it('日付はその日の発言の前だけに表示し、本文に重ねない', () => {
+    const nextDay = { ...MESSAGE_OTHER, id: 'next-day', sentAt: '2026-10-01T03:00:00.000Z' };
+    const html = renderConversation({ initialMessages: [MESSAGE_OWN, nextDay] });
+    const groups = [...html.matchAll(/<li[^>]*data-chat-day="([^"]+)"[^>]*>(.*?)<\/ol><\/li>/gs)];
+    expect(groups).toHaveLength(2);
+    expect(groups[0]?.[2]).toContain(`data-testid="chat-message-${MESSAGE_OWN.id}"`);
+    expect(groups[0]?.[2]).not.toContain('chat-message-next-day');
+    expect(groups[1]?.[2]).toContain('data-testid="chat-message-next-day"');
+    for (const day of ['2026-09-30', '2026-10-01']) {
+      expect(classTokensOf(html, `chat-day-separator-${day}`)).toEqual(expect.arrayContaining(['bg-bg']));
+      expect(classTokensOf(html, `chat-day-separator-${day}`)).not.toContain('sticky');
+    }
+  });
+
+  it('検索の操作は縮めず折り返さず、スマホのタップ高さを保つ', () => {
+    const html = renderThreadList();
+    expect(classTokensOf(html, 'chat-threads-q')).toEqual(expect.arrayContaining(['min-w-0', 'flex-1']));
+    expect(classTokensOf(html, 'chat-threads-search-submit')).toEqual(expect.arrayContaining(['min-h-11', 'shrink-0', 'whitespace-nowrap']));
   });
 
   it('発言が無ければ区切りも出ない', () => {
@@ -884,6 +904,8 @@ describe('入力枠の操作（改訂 43）', () => {
     for (const id of ['body', 'format-toggle', 'mention', 'slash-toggle', 'template-toggle', 'submit']) {
       expect(box).toContain(`data-testid="chat-compose-${id}"`);
     }
+    expect(classTokensOf(html, 'chat-compose-box')).toEqual(expect.arrayContaining(['focus-within:ring-2', 'focus-within:ring-brand']));
+    expect(classTokensOf(html, 'chat-compose-body')).toContain('focus-visible:ring-0');
     expect(box).toContain('rows="1"');
     expect(box).not.toContain('data-testid="chat-compose-tab-write"');
     expect(box).toContain('h-11 w-11');

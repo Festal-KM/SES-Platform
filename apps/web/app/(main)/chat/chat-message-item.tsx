@@ -361,7 +361,7 @@ export function ChatMessageItem({ item, continued, conversation }: { readonly it
                 <time
                   dateTime={item.sentAt}
                   title={formatDateTimeJst(item.sentAt)}
-                  className="order-2 shrink-0 text-xs text-fg-placeholder md:order-3"
+                  className="order-2 shrink-0 text-xs text-fg-muted"
                 >
                   {formatChatTime(item.sentAt)}
                 </time>
@@ -437,17 +437,17 @@ export function ChatMessageItem({ item, continued, conversation }: { readonly it
                     // 🔴 読み上げでは誰の発言かを残す（見た目だけ省く）。
                     <span className="sr-only">{item.senderName ?? messages.unknownName}</span>
                   ) : (
-                    <p className="m-0 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                    <p className="m-0 flex flex-wrap items-baseline gap-x-3">
                       <span className="order-1 min-w-0 break-words text-body font-bold text-fg" data-testid={`chat-message-sender-${item.id}`}>
                         {item.senderName ?? messages.unknownName}
                       </span>
-                      <span className="order-3 flex w-full min-w-0 flex-wrap gap-x-2 gap-y-1 break-words text-xs text-fg-muted md:order-2 md:w-auto">
+                      <span className="order-3 block w-full min-w-0 break-words text-xs leading-tight text-fg">
                         <span>{item.senderCompanyName ?? messages.unknownName}</span>
-                        {item.own ? <span>{messages.own}</span> : null}
-                        {/* スマホでは補足情報を下段に揃え、長い会社名と状態も折り返す。 */}
+                        {item.own ? <span> · {messages.own}</span> : null}
+                        {/* 状態は会社と分け、名前や本文より控えめな文字と行間で残す。 */}
                         {item.senderStatus == null || item.senderStatus === '' ? null : (
-                          <span className="text-xs text-fg-muted" data-testid={`chat-message-status-${item.id}`}>
-                            {item.senderStatus}
+                          <span className="text-micro leading-tight text-fg-muted" data-testid={`chat-message-status-${item.id}`}>
+                            {' · '}{item.senderStatus}
                           </span>
                         )}
                       </span>
