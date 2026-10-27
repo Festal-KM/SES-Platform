@@ -2,7 +2,7 @@
 // ✅ 2026-10-27: `POST /api/threads/{id}/attachments/upload-url`（`docs/05` §6.5 #51p / `F-038` 改訂 12 ⑫）。
 //
 // 🔴 ガードは投稿（#51）と同じ 3 本: `requireRole(CHAT_POST_ROLES)`（閲覧専用は 403）+ `requireExecutable()`（停止中・解約中は 409）
-//    + `requireNotViewer()`。取引先がいる部屋は 400（`chatRoomAcceptsAttachments`）、見えない部屋は 404。
+//    + `requireNotViewer()`。~~取引先がいる部屋は 400~~（✅ 2026-10-27 #182: どの部屋でも添えられる。判定は `chatRoomAcceptsAttachments`）、見えない部屋は 404。
 // 🔴 キーはサーバが組み、札（`uploadToken`）で #51 に渡す。ここでは行を作らず監査も書かない（送信 #51 が書く）。
 import { requireExecutable, requireNotViewer, requireRole } from '../../../../../../../lib/api/guards';
 import { withApiRoute } from '../../../../../../../lib/api/withApiRoute';

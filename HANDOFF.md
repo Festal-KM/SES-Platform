@@ -178,6 +178,7 @@
 | 🔴 **CI が赤のとき `skipped` を見る** | `gh run view <id> --json jobs --jq '.jobs[].steps[] | "\(.number). \(.name) → \(.conclusion)"'`。**早いステップの赤は後続を全部 `skipped` にする**（§6-11 で 5 コミット分のテストが消えた）。`pnpm audit` は独立ジョブ（`Security audit`）に出したが、**`ci` ジョブ内の build / lint / typecheck は依然として直列**であり、build が落ちればテストは走らない。🔴 **「失敗 1 件」と出ていても、その後ろで何件の検査が消えたかは別に数える** |
 | 🔴 **`tailwind.css` の `@source '../../../packages/ui/src'` を消さない** | 消すと `@ses/ui` のスタイルが**テストは緑のまま見た目だけ**消える（実測の記録が同ファイルにある） |
 | **分離テストは専用の config** | `npx vitest run -c vitest.isolation.config.ts <file>`（既定の `vitest.config.ts` は `tests/isolation/**` を除外している） |
+| ✅ 2026-10-27 **分離テストが Node v22.11 で import 時に落ちることがある**（`undici` の zstd） | レビュー環境（Node v22.11）で `undici` の zstd 関連の import で失敗した報告がある。CI は **Node 24**（`.github/workflows/ci.yml`）。ローカルでは **Node 22.20 以上**（このリポジトリの作業では `~/.npm/_npx/…/node/bin` の v22.20.0 を `PATH` の先頭に置いて実行し、通っている）か Node 24 で回す。落ちたら Node の版を先に疑う |
 | **テストの基準値**（2026-10-02。run `36976938729` の実測） | `tests/static/` **1327** / `apps/web` **2602** / `packages` 2393 / `packages/i18n` 25 / **ユニット合計 393 ファイル 6779 件** / **分離 94 ファイル 2236 件** / **E2E 14 spec 67 ケース** |
 | 🔴 **E2E は「71 ケース」ではない** | 本ファイルと `SP-22` の文中にあった **71 は誤り**。`T-22-05` 直前の緑 run（`36630709885`）も **67**、`grep -cE "^\s*test\("` の宣言合計も **67** で一致する。**ケースが失われたのではなく、記録していた数が間違っていた**（2026-10-02 に実測で確認）。🔴 **基準値は「前に書いた数」ではなく「直近の緑 run の実測」を正とする** |
 
@@ -196,6 +197,7 @@
 - 🔴 **ロール別の出し分けは DOM から取り除く。** グレーアウト（`disabled` / `aria-disabled` / `opacity`）で残すのは分離の後退（`BR-44`）。
 - 🔴 **ホームに氏名を出さない。** 60 秒ポーリングで `engineer.view` の監査ログが毎分積まれる（`BR-27`）。
 - 🔴 **`Drawer` に台帳のエンジニア詳細とスキルシートを含めない。** 一覧をスクロールするだけで監査ログが膨張する。
+- ✅ **2026-10-27 チャットの添付は取引先がいる部屋でも送れる**（`CLAUDE.md` §3.3 改訂。紺野の決定・宮田の承認。#182）。取引先の部屋への添付を拒んでいたトリガ `messages_internal_only_attachment` は migration `20261027040000_chat_attachments_partner_rooms` で外した（マージ済みの `20261027010000` / `20261027030000` は書き換えていない）。🔴 共有 URL の分類 **`CHAT_ROOM`（ゲートを求めない）はチャットの添付専用**であり、使ってよいのは `apps/web/lib/chat/attachments.ts` だけ（型と分岐は `lib/storage/download.ts`）。`tests/static/chat-room-share-scope.test.ts` が固定する —— ほかの実体（スキルシート・契約書・返却データ）が名乗ると §3.3 のゲートを迂回できる。読めるかは従来どおり RLS（越境経路 3）、`CLEAN` でない添付は送った本人だけ。
 
 ### 3.4 安全網（刷新の土台。壊すと刷新そのものが成り立たない）
 

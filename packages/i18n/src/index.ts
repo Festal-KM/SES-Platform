@@ -4743,6 +4743,9 @@ const ja = {
   //    🔴 ファイル名は出さない（保存しない）。「PDF・1.2 MB」のように種類と大きさで出す。
   'chat.attachment.add': 'ファイルを添える',
   'chat.attachment.note': '個人情報（氏名・連絡先など）の扱いに注意してください',
+  // ✅ 2026-10-27（`CLAUDE.md` §3.3 改訂。#182）: 取引先がいる部屋でも送れるようにしたので、どの部屋でもこちらを常に出す。
+  //    🔴 スキルシートは提案（越境経路 2）で送る。チャット添付をスキルシートの抜け道にしない。
+  'chat.attachment.noteWithSkillSheet': '個人情報（氏名・連絡先など）の扱いに注意してください。スキルシートは提案から送ってください',
   'chat.attachment.selected': '添付',
   'chat.attachment.remove': '添付を外す',
   'chat.attachment.scanning': 'ファイルを検査しています',

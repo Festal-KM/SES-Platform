@@ -8,10 +8,11 @@
 // ============================================================================
 //   ① 🔴 **キーはサーバが組む**（`buildChatAttachmentObjectKey`）。利用者から受け取るのは種類と大きさだけで、
 //      送信には署名付きの札（`attachment-token.ts`）で渡す。札は部屋・送る人・テナントに縛る。
-//   ② 🔴 **取引先がいる部屋には添えられない**（`chatRoomAcceptsAttachments` の 1 か所 + DB のトリガ）。400 で拒む。
+//   ② ~~取引先がいる部屋には添えられない~~ → ✅ 2026-10-27（`CLAUDE.md` §3.3 改訂。#182）: どの部屋でも添えられる
+//      （判定は `chatRoomAcceptsAttachments` の 1 か所。DB のトリガは migration 20261027040000 で外した）。
 //   ③ 🔴 **共有 URL は `issueDownloadUrl` だけが出す**（`CLEAN` でなければ 409、記録の後に署名）。共有の分類は
-//      **部屋に取引先がいるか**で決める（社内だけの部屋 = 社内〔`OWNER_SCOPE`〕。取引先がいる部屋は境界の外として
-//      ゲートの PASS を要求する = いまは必ず止まる。後続の PR が決める）。
+//      **部屋に取引先がいるか**で決める（社内だけの部屋 = 社内〔`OWNER_SCOPE`〕。取引先がいる部屋 = `CHAT_ROOM`〔越境経路 3。
+//      ✅ 2026-10-27 の `CLAUDE.md` §3.3 改訂でゲートを求めない〕）。
 //   ④ 🔴 **見えない部屋・見えない発言・添付の無い発言はすべて 404**（存在を教えない。`docs/05` §4.8）。
 //      `CLEAN` でない添付は送った本人以外には RLS で行ごと見えない（→ 404）。本人には 409（`FILE_NOT_CLEAN`）。
 //   ⑤ 🔴 **ファイル名を受け取らない・保存しない・監査に載せない**（`summary` は種類と大きさだけ）。
@@ -232,15 +233,13 @@ export type ChatAttachmentDownloadDeps = {
 };
 
 /**
- * 🔴 共有の分類（部屋に取引先がいるか）。社内だけの部屋は社内（ゲート不要。テナントの外に出ない）。
- *    取引先がいる部屋は境界の外として扱い、ゲート（`CHAT_ATTACHMENT`）の PASS を要求する（いまは必ず止まる）。
+ * 🔴 共有の分類（部屋に取引先がいるか）。社内だけの部屋は社内（`OWNER_SCOPE`。テナントの外に出ない）。
+ * ~~取引先がいる部屋は境界の外としてゲート（`CHAT_ATTACHMENT`）の PASS を要求する~~ → ✅ 2026-10-27（`CLAUDE.md` §3.3 改訂。#182）:
+ *    取引先がいる部屋は `CHAT_ROOM`（越境経路 3 での受け渡し。ゲートを求めない）。読めるかは RLS（`ThreadParticipant` /
+ *    `ThreadMember`）が決め、`CLEAN` と監査は `issueDownloadUrl` が見る。
  */
-export function chatAttachmentShareScope(
-  thread: { readonly partnerCompanyId: string | null },
-  messageId: string,
-): DownloadShareScope {
-  if (chatRoomAcceptsAttachments(thread)) return { kind: 'OWNER_SCOPE' };
-  return { kind: 'EXTERNAL', gateTargetType: 'CHAT_ATTACHMENT', gateTargetId: messageId };
+export function chatAttachmentShareScope(thread: { readonly partnerCompanyId: string | null }): DownloadShareScope {
+  return thread.partnerCompanyId === null ? { kind: 'OWNER_SCOPE' } : { kind: 'CHAT_ROOM' };
 }
 
 /** `POST /api/threads/{id}/messages/{messageId}/attachment/download-url`（#51q）。 */
@@ -268,7 +267,7 @@ export async function issueChatAttachmentDownloadUrl(
       return {
         objectKey: row.attachmentKey,
         scanStatus: row.attachmentScanStatus as ScanStatus,
-        share: chatAttachmentShareScope(thread, messageId),
+        share: chatAttachmentShareScope(thread),
         // 🔴 ダウンロード名はファイル名を使わない（種類だけで組む）。開く（inline）は名前を付けない ＝ ブラウザがそのまま表示する。
         ...(disposition === 'attachment' && extension !== null ? { downloadFileName: `chat-file.${extension}` } : {}),
         audit: {

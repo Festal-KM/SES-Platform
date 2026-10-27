@@ -143,7 +143,8 @@ export type ChatConversationMessages = {
 export function chatAttachmentLabels(): ChatAttachmentLabels {
   return {
     add: t('chat.attachment.add'),
-    note: t('chat.attachment.note'),
+    // ✅ 2026-10-27（#182）: どの部屋でも「スキルシートは提案から」を添えて出す。
+    note: t('chat.attachment.noteWithSkillSheet'),
     selected: t('chat.attachment.selected'),
     remove: t('chat.attachment.remove'),
     scanning: t('chat.attachment.scanning'),

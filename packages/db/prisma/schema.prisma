@@ -1182,7 +1182,7 @@ model Message {
   senderPartnerCompanyId String?   @map("sender_partner_company_id") @db.Uuid
   body                   String? // 🔴 運営者に GRANT しない（§5.5）。🔴 T-10-09: PURGED で NULL（purged_at と対。CHECK messages_body_purged_check）
   /// ✅ 2026-10-27: `t/{tenantId}/chat/{threadId}/{messageId}/{uuid}.{ext}`（サーバが組む）。UNIQUE（検査の結果はキーで引き当てる）。
-  /// 🔴 取引先がいる部屋には書けない（トリガ messages_internal_only_attachment。migration 20261027010000）。
+  /// ✅ 2026-10-27: 取引先がいる部屋でも書ける（`CLAUDE.md` §3.3 改訂。#182）。拒んでいたトリガ messages_internal_only_attachment は migration 20261027040000 で外した。
   attachmentKey          String?   @unique @map("attachment_key") // 🔴 運営者に GRANT しない（§5.5）
   /// ScanStatus（§3.4 冒頭参照。CHECK。nullable）。🔴 `CLEAN` でない添付の発言は送った本人にしか見えない（RESTRICTIVE ポリシー）
   attachmentScanStatus   String?   @map("attachment_scan_status")

@@ -101,7 +101,7 @@ export async function sendChatMessage(
     if (attachment !== null) {
       if (!chatRoomAcceptsAttachments(thread)) throw new ValidationError([CHAT_ATTACHMENT_ROOM_DETAIL]);
       if (deps.attachments === undefined) throw new InternalError('添付の確認に要る依存が渡されていません。');
-      return sendWithAttachment(ctx, db, thread.id, input, attachment, attachedProjectId, sentAt, deps, deps.attachments);
+      return sendWithAttachment(ctx, db, thread, input, attachment, attachedProjectId, sentAt, deps, deps.attachments);
     }
 
     const created = (await db.message.create({
@@ -169,7 +169,7 @@ type ServiceDb = Parameters<Parameters<typeof withTenant<void>>[1]>[0];
 async function sendWithAttachment(
   ctx: AuthenticatedTenantCtx,
   db: ServiceDb,
-  threadId: string,
+  thread: { readonly id: string; readonly partnerCompanyId: string | null },
   input: ChatMessagePostBody,
   attachment: ResolvedChatAttachment,
   attachedProjectId: string | null,
@@ -177,6 +177,7 @@ async function sendWithAttachment(
   deps: SendChatMessageDeps,
   attachmentDeps: NonNullable<SendChatMessageDeps['attachments']>,
 ): Promise<SendChatMessageResult> {
+  const threadId = thread.id;
   const usedBytes = await lockTenantStorageForChatSend(db, { tenantId: ctx.tenantId, observedAt: sentAt });
   const existing = (await db.message.findFirst({
     where: { id: attachment.messageId, threadId, senderUserId: ctx.userId },
@@ -201,7 +202,8 @@ async function sendWithAttachment(
         id: attachment.messageId,
         tenantId: ctx.tenantId,
         threadId,
-        ownerPartnerCompanyId: null,
+        // 継承トリガが部屋の取引先で確定させる（アプリの値は一次的な整合にすぎない）。
+        ownerPartnerCompanyId: thread.partnerCompanyId,
         senderUserId: ctx.userId,
         senderPartnerCompanyId: ctx.partnerCompanyId,
         body: input.body,

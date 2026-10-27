@@ -287,22 +287,23 @@ describe('T-02-04: docs/05 §3.7 の新 9 表 + 当事者列', () => {
         ).rejects.toThrow(/messages_attachment_set_check/);
       });
 
-      it('✅ 2026-10-27: 取引先がいる部屋には 4 列そろった添付も書けない（トリガ messages_internal_only_attachment）', async () => {
-        await expect(
-          owner.message.create({
-            data: {
-              tenantId: TENANT_A,
-              ownerPartnerCompanyId: PARTNER_A1,
-              threadId,
-              senderUserId: randomUUID(),
-              body: 'x',
-              attachmentKey: `t/${TENANT_A}/chat/${threadId}/${randomUUID()}/${randomUUID()}.pdf`,
-              attachmentScanStatus: 'SCANNING',
-              attachmentContentType: 'application/pdf',
-              attachmentByteSize: 10n,
-            },
-          }),
-        ).rejects.toThrow(/取引先がいる部屋には添付を書けません/);
+      // ✅ 2026-10-27（`CLAUDE.md` §3.3 改訂。#182）: 取引先がいる部屋のトリガは migration 20261027040000 で外した。
+      it('✅ 2026-10-27: 取引先がいる部屋でも 4 列そろった添付は書ける（#182。トリガ messages_internal_only_attachment を外した）', async () => {
+        const created = await owner.message.create({
+          data: {
+            tenantId: TENANT_A,
+            ownerPartnerCompanyId: PARTNER_A1,
+            threadId,
+            senderUserId: randomUUID(),
+            body: 'x',
+            attachmentKey: `t/${TENANT_A}/chat/${threadId}/${randomUUID()}/${randomUUID()}.pdf`,
+            attachmentScanStatus: 'SCANNING',
+            attachmentContentType: 'application/pdf',
+            attachmentByteSize: 10n,
+          },
+        });
+        expect(created.attachmentScanStatus).toBe('SCANNING');
+        expect(created.ownerPartnerCompanyId).toBe(PARTNER_A1);
       });
 
       it('対照: 未指定（null）は成立する', async () => {
