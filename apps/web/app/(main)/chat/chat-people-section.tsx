@@ -38,12 +38,12 @@ export function ChatFavorites({
           {t('chat.people.favoritesEmpty')}
         </p>
       ) : (
-        // 名前を省略せず、幅が足りない分は横に送る。件数より相手の識別を優先する。
-        <ul className="m-0 flex list-none gap-2 overflow-x-auto px-2 pb-1" data-testid="chat-threads-pinned">
+        // 会社名をおおむね2行で読める幅を取り、欄の幅に応じて次の段に送る。
+        <ul className="m-0 grid grid-cols-[repeat(auto-fit,minmax(min(100%,10rem),1fr))] list-none gap-2 px-2 pb-1" data-testid="chat-threads-pinned">
           {favorites.map((item) => {
             const unread = unreadCounts[item.id] ?? 0;
             return (
-              <li key={item.id} className="min-w-32 shrink-0" data-testid={`chat-favorite-${item.id}`}>
+              <li key={item.id} className="min-w-0" data-testid={`chat-favorite-${item.id}`}>
                 <Link
                   href={chatHref({ thread: item.id })}
                   aria-current={item.id === selectedThreadId ? 'page' : undefined}
@@ -57,7 +57,7 @@ export function ChatFavorites({
                       <span className={cn(UNREAD_DOT_CLASSES, 'bg-danger')}>{unread > UNREAD_DOT_MAX ? `${String(UNREAD_DOT_MAX)}+` : String(unread)}</span>
                     ) : null}
                   </span>
-                  <span className="whitespace-nowrap text-center text-xs text-fg-muted">{nameOf(item.name)}</span>
+                  <span className="w-full break-words text-center text-xs text-fg-muted">{nameOf(item.name)}</span>
                 </Link>
               </li>
             );
@@ -98,6 +98,7 @@ function ContactRow({ contact }: { readonly contact: ChatContact }) {
 export function ChatContactsView({ people, children }: { readonly people: ChatPeopleData; readonly children?: React.ReactNode }) {
   return (
     <div className="flex flex-col" data-testid="chat-contacts">
+      <h3 className="m-0 px-3 py-2 text-body font-bold text-fg">{t('chat.people.contacts')}</h3>
       {children}
       {people.contacts.recent.length === 0 ? null : (
         <section data-testid="chat-contacts-recent">

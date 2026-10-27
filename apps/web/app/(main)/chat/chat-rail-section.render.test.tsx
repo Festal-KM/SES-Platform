@@ -2,6 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { ChatRailSection } from './chat-rail-section';
+import { ChatRail } from './chat-rail';
 
 describe('畳んだ左の列の節', () => {
   it.each([
@@ -21,5 +22,18 @@ describe('畳んだ左の列の節', () => {
     expect(html).not.toContain('aria-hidden="true" class="hidden');
     expect(html).toContain(`id="chat-rail-section-${sectionKey}" class="block md:in-[[data-collapsed=true]]:block"`);
     expect(html).toContain('印の行');
+  });
+});
+
+describe('会社の印', () => {
+  it('開いた列は社名だけ、畳んだ列では頭文字を残す', () => {
+    const html = renderToStaticMarkup(createElement(ChatRail, {
+      groups: [{ key: 'company-chat', counterpartyName: '株式会社ダミーチャーリー', chat: null, threads: [], fastReply: false }],
+      rooms: [], unreadCounts: {}, filter: { kind: 'all' }, showContacts: false,
+    }));
+    expect(html).toContain('data-testid="chat-rail-company-company-chat"');
+    expect(html).toContain('title="株式会社ダミーチャーリー"');
+    expect(html).toMatch(/<span aria-hidden="true" class="[^"]*hidden rounded-md bg-neutral-bg text-fg-muted md:in-\[\[data-collapsed=true\]\]:inline-flex">ダ<\/span>/);
+    expect(html).toContain('truncate md:in-[[data-collapsed=true]]:sr-only">ダミーチャーリー</span>');
   });
 });
