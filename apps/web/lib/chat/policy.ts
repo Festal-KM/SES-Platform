@@ -29,14 +29,14 @@ export function canPostChatMessage(role: TenantRole): boolean {
 }
 
 /**
- * ✅ 2026-10-27（`F-038` 改訂 12 ⑫ / `docs/05` §3.7.1「ファイル（社内だけの部屋）」）: この部屋にファイルを添えられるか。
+ * ✅ 2026-10-27（`F-038` 改訂 12 ⑫ / `docs/05` §3.7.1）: この部屋にファイルを添えられるか。
  *
- * 🔴 **アプリで「取引先がいる部屋には添えられない」を決めるのはこの 1 か所だけ**（もう 1 か所は DB のトリガ
- *    `messages_internal_only_attachment`。migration 20261027010000）。#51p（発行）・#51（送信）・画面の印の出し分けが
- *    すべてここを通る。取引先がいる部屋へ広げるときは、`CLAUDE.md` §3.3 のゲート（チャット添付）を配線したうえで
- *    この関数とトリガの 2 か所を直す（ほかに条件式を写さない）。
- * 🔴 部屋の取引先は RLS で読めた部屋の行から取る（リクエストから受けない）。
+ * ~~取引先がいる部屋には添えられない~~ → ✅ 2026-10-27: **どの部屋でも添えられる**（`CLAUDE.md` §3.3 でチャット添付を
+ * ゲートの対象から外した。紺野の決定・宮田の承認。#182）。DB のトリガ `messages_internal_only_attachment` も外した
+ * （migration 20261027040000）。誰が送れるか（ロール・閲覧専用）は API のガード、どの部屋に送れるかは RLS（経路 3）が決める。
+ * 🔴 判定の場所はこの 1 か所に残す（#51p・#51・画面の印の出し分けがここを通る。条件をほかに写さない）。
  */
 export function chatRoomAcceptsAttachments(thread: { readonly partnerCompanyId: string | null }): boolean {
-  return thread.partnerCompanyId === null;
+  void thread;
+  return true;
 }

@@ -8,7 +8,9 @@
 //   ③ 🔴 送った時点では部屋の最終更新が動かない（相手の一覧の並びで分からない）。CLEAN になったら動く
 //   ④ 共有 URL は CLEAN になってから・部屋を読める人だけ。発行のたびに監査ログが 1 行（種類と大きさだけ）
 //   ⑤ 🔴 他テナント・別の取引先・メンバーでない人（同じ会社の管理者を含む）は、一覧も URL も 404（無い ID と同じ）
-//   ⑥ 🔴 取引先がいる部屋には添えられない（アプリの 400 と DB のトリガ）
+//   ⑥ ~~取引先がいる部屋には添えられない~~ → ✅ 2026-10-27（`CLAUDE.md` §3.3 改訂。#182）: 取引先がいる部屋でも送れて、
+//      ゲートなしで開ける。🔴 別の取引先・他テナントは存在も一覧も URL も知り得ない（404）。検査中は送った本人だけ。
+//      閲覧専用は開けない（403）。検査・隔離の周知は取引先の部屋のキーにも効く
 //   ⑦ 検査の結果は messages.attachment_key にも適用される（ジョブのホスト文脈から。滞留の照会・隔離の周知先も）
 //   ⑧ 同じ札の二重送信は 1 行に収束する
 //   ⑨ ストレージ: 上限を超えるなら発行しない / 送信でカウンタがちょうど大きさだけ増え、二重送信では動かない /
@@ -39,11 +41,14 @@ import { createObjectStore, type ObjectStore } from '@ses/connectors';
 import { createUnextendedClient, type UnextendedClient } from '@ses/db/testing';
 import {
   PARTNER_A1,
+  PARTNER_A2,
   TENANT_A,
   TENANT_B,
   THREAD_A_P1,
+  THREAD_A_P2,
   USER_A_HOST,
   USER_A_PARTNER,
+  USER_A_PARTNER2,
   USER_B_HOST,
 } from './support/fixtures.js';
 import { startIsolationDatabase, type IsolationDatabase } from './support/postgres.js';
@@ -65,6 +70,7 @@ vi.mock('../../apps/web/lib/auth/session', () => ({
 }));
 
 const groupsRoute = await import('../../apps/web/app/api/(main)/threads/groups/route');
+const downloadRoute = await import('../../apps/web/app/api/(main)/threads/[id]/messages/[messageId]/attachment/download-url/route');
 const { listChatMessages } = await import('../../apps/web/lib/chat/read');
 const { deleteChatMessage, sendChatMessage } = await import('../../apps/web/lib/chat/service');
 const {
@@ -378,34 +384,89 @@ describe('⑦ 問題が見つかったファイル', () => {
   });
 });
 
-describe('🔴 ⑥ 取引先がいる部屋には添えられない', () => {
-  it('アプリは 400（発行しない）', async () => {
-    await expect(upload(host, THREAD_A_P1)).rejects.toMatchObject({ httpStatus: 400 });
-    await expect(upload(partnerA1, THREAD_A_P1)).rejects.toMatchObject({ httpStatus: 400 });
+describe('🔴 ⑥ 取引先がいる部屋（#182。ゲートなし）', () => {
+  let partnerA2: AuthenticatedTenantCtx;
+  let hostViewer: AuthenticatedTenantCtx;
+  let partnerMessageId: string;
+  let partnerKey: string;
+  const deps = () => ({ objectStore: store, ipAddress: META.ipAddress, now });
+
+  beforeAll(async () => {
+    const base = { lifecycleState: 'ACTIVE' as const, partnerSuspendedAt: null, twoFactor: 'NOT_ENROLLED' as const };
+    partnerA2 = await resolveTenantCtx({ ...base, tenantId: TENANT_A, partnerCompanyId: PARTNER_A2, userId: USER_A_PARTNER2, role: 'PARTNER_SALES' }, DEVICE);
+    hostViewer = await resolveTenantCtx({ ...base, tenantId: TENANT_A, partnerCompanyId: null, userId: USER_A_HOST, role: 'VIEWER' }, DEVICE);
+    const ticket = await upload(partnerA1, THREAD_A_P1, 'application/pdf', 64);
+    partnerKey = keyOf(ticket.uploadToken);
+    partnerMessageId = (await send(partnerA1, THREAD_A_P1, ticket.uploadToken, '取引先からの資料')).message.id;
   });
 
-  it('DB のトリガも拒む（アプリを迂回して添付の列を書いても入らない）', async () => {
-    const id = '01930000-0000-7000-8000-0000000009e5';
-    await expect(
-      withTenant(host, async (db) =>
-        db.message.create({
-          data: {
-            id,
-            tenantId: TENANT_A,
-            threadId: THREAD_A_P1,
-            ownerPartnerCompanyId: PARTNER_A1,
-            senderUserId: USER_A_HOST,
-            senderPartnerCompanyId: null,
-            body: 'x',
-            attachmentKey: `t/${TENANT_A}/chat/${THREAD_A_P1}/${id}/01930000-0000-7000-8000-0000000009e6.pdf`,
-            attachmentScanStatus: 'CLEAN',
-            attachmentContentType: 'application/pdf',
-            attachmentByteSize: 10n,
-          },
-        }),
-      ),
-    ).rejects.toThrow(/取引先がいる部屋には添付を書けません/);
-    expect(await admin.message.count({ where: { id } })).toBe(0);
+  it('取引先 A1 が自社の部屋に送れる（行は A1 の会社に属する）。検査中は送った本人だけに見える', async () => {
+    const row = await admin.message.findUniqueOrThrow({ where: { id: partnerMessageId } });
+    expect(row.ownerPartnerCompanyId).toBe(PARTNER_A1);
+    expect(row.attachmentScanStatus).toBe('SCANNING');
+    expect(await rawVisible(partnerA1, partnerMessageId)).toBe(1);
+    for (const other of [host, partnerA2, tenantB]) expect(await rawVisible(other, partnerMessageId)).toBe(0);
+    expect(await listedIds(host, THREAD_A_P1)).not.toContain(partnerMessageId);
+  });
+
+  it('検査の結果が取引先の部屋のキーにも適用され、CLEAN 後はホストと A1 が見えて、ゲートなしで開ける（発行ごとに監査 1 行）', async () => {
+    expect((await applyScan(partnerKey, 'CLEAN')).target).toBe('APPLIED');
+    expect(await listedIds(host, THREAD_A_P1)).toContain(partnerMessageId);
+    expect(await listedIds(partnerA1, THREAD_A_P1)).toContain(partnerMessageId);
+    expect((await listChatAttachments(host, THREAD_A_P1, {})).items.map((item) => item.messageId)).toContain(partnerMessageId);
+    expect((await listChatAttachments(partnerA1, THREAD_A_P1, {})).items.map((item) => item.messageId)).toContain(partnerMessageId);
+    const byHost = await issueChatAttachmentDownloadUrl(host, THREAD_A_P1, partnerMessageId, 'inline', deps());
+    expect(byHost.url).toContain(encodeURIComponent(partnerKey));
+    await issueChatAttachmentDownloadUrl(partnerA1, THREAD_A_P1, partnerMessageId, 'attachment', deps());
+    const audits = await admin.auditLog.findMany({ where: { action: CHAT_ATTACHMENT_AUDIT_ACTION_DOWNLOAD, targetId: partnerMessageId } });
+    expect(audits.map((row) => row.actorId).sort()).toEqual([USER_A_HOST, USER_A_PARTNER].sort());
+    for (const row of audits) expect(row.summary).toEqual({ contentType: 'application/pdf', byteSize: 64 });
+  });
+
+  it('🔴 別の取引先 A2・他テナントは、存在・一覧・URL のどれも知り得ない（無い ID と同じ 404）', async () => {
+    for (const outsider of [partnerA2, tenantB]) {
+      await expect(issueChatAttachmentDownloadUrl(outsider, THREAD_A_P1, partnerMessageId, 'inline', deps())).rejects.toMatchObject({ httpStatus: 404 });
+      await expect(listChatAttachments(outsider, THREAD_A_P1, {})).rejects.toMatchObject({ httpStatus: 404 });
+      await expect(issueChatAttachmentDownloadUrl(outsider, ABSENT_ID, ABSENT_ID, 'inline', deps())).rejects.toMatchObject({ httpStatus: 404 });
+      expect(await rawVisible(outsider, partnerMessageId)).toBe(0);
+    }
+    // A2 の部屋の ID と組み合わせても出ない。
+    await expect(issueChatAttachmentDownloadUrl(partnerA2, THREAD_A_P2, partnerMessageId, 'inline', deps())).rejects.toMatchObject({ httpStatus: 404 });
+    expect(await admin.auditLog.count({ where: { action: CHAT_ATTACHMENT_AUDIT_ACTION_DOWNLOAD, actorId: { in: [USER_A_PARTNER2, USER_B_HOST] } } })).toBe(0);
+  });
+
+  it('🔴 閲覧専用は開けない（403。監査も残らない）', async () => {
+    requireTenantCtxMock.mockResolvedValue(hostViewer);
+    const response = await downloadRoute.POST(
+      new Request(`https://app.test/api/threads/${THREAD_A_P1}/messages/${partnerMessageId}/attachment/download-url`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ disposition: 'inline' }),
+      }),
+      { params: Promise.resolve({ id: THREAD_A_P1, messageId: partnerMessageId }) },
+    );
+    expect(response.status).toBe(403);
+  });
+
+  it('ホストも取引先の部屋に送れて、CLEAN 後は A1 が開ける。A2 には見えない', async () => {
+    const ticket = await upload(host, THREAD_A_P1, 'text/plain', 12);
+    const id = (await send(host, THREAD_A_P1, ticket.uploadToken)).message.id;
+    expect(await rawVisible(partnerA1, id)).toBe(0);
+    expect((await applyScan(keyOf(ticket.uploadToken), 'CLEAN')).target).toBe('APPLIED');
+    expect(await rawVisible(partnerA1, id)).toBe(1);
+    expect((await issueChatAttachmentDownloadUrl(partnerA1, THREAD_A_P1, id, 'inline', deps())).url).toContain(encodeURIComponent(keyOf(ticket.uploadToken)));
+    expect(await rawVisible(partnerA2, id)).toBe(0);
+  });
+
+  it('隔離（INFECTED）は取引先の部屋のキーにも効き、送った本人にだけ届く。周知のメールは送らない', async () => {
+    const ticket = await upload(partnerA1, THREAD_A_P1, 'application/pdf', 20);
+    const id = (await send(partnerA1, THREAD_A_P1, ticket.uploadToken)).message.id;
+    expect((await applyScan(keyOf(ticket.uploadToken), 'INFECTED')).target).toBe('APPLIED');
+    expect(await rawVisible(host, id)).toBe(0);
+    const mine = (await listChatMessages(partnerA1, THREAD_A_P1, { limit: 50 })).items.find((item) => item.id === id);
+    expect(mine?.attachment?.scanStatus).toBe('INFECTED');
+    const notice = await readScanQuarantineNotice(systemTenantCtx(TENANT_A, JOB), { objectKey: keyOf(ticket.uploadToken) });
+    expect(notice?.recipients).toEqual([]);
   });
 
   it('社内だけの部屋でも、4 列の一部だけ・許可していない種類・上限を超える大きさは DB が拒む', async () => {

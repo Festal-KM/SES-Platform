@@ -77,8 +77,8 @@ export type ChatConversationProps = {
    */
   readonly announcement?: ChatAnnouncementView | null;
   /**
-   * ✅ 2026-10-27（改訂 44）: ファイルを添えられるか（投稿できる人で、取引先がいない部屋）。省略時は添えられない。
-   * 🔴 拒否の本体は API（#51p / #51 の `chatRoomAcceptsAttachments` と DB のトリガ）。ここは印の出し分けだけ。
+   * ✅ 2026-10-27（改訂 44）: ファイルを添えられるか（投稿できる人。✅ #182 で取引先がいる部屋でも添えられる）。省略時は添えられない。
+   * 🔴 拒否の本体は API（#51p / #51 のガードと `chatRoomAcceptsAttachments`）。ここは印の出し分けだけ。
    */
   readonly canAttach?: boolean;
 };
