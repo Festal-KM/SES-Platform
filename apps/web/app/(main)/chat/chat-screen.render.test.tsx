@@ -314,8 +314,10 @@ describe('🔴 ④: 自社 / 相手の弁別は `data-own` と面の色だけ（
     // 🔴 差は「面の色」1 語ずつ。寸法・角丸・寄せ・余白の差が 1 語でもあれば落ちる。
     // ✅ 2026-10-27（紺野「色分けとか、みづらい」）: 相手は「白に濃い枠」にした（自社の薄い青と、ひと目で分かる差）。
     //    差は依然として面（塗り・枠）の語だけ。寸法・角丸・寄せ・余白の差は 1 語も許さない。
-    expect(onlyOwn).toEqual(['bg-brand-bg']);
-    expect([...onlyOther].sort()).toEqual(['bg-bg', 'border', 'border-border-strong']);
+    // ✅ 2026-10-27（紺野「まだ区別しにくい」）: 自分の発言は濃い青に白い文字。相手は白に灰色の枠（同僚は薄い青に青い枠）。
+    //    差は依然として面（塗り・枠・その上の文字色）の語だけ。寸法・角丸・寄せ・余白の差は 1 語も許さない。
+    expect([...onlyOwn].sort()).toEqual(['bg-brand', 'text-brand-fg']);
+    expect([...onlyOther].sort()).toEqual(['bg-bg', 'border', 'border-border-strong', 'text-fg']);
     // 🔴 行（`<li>`）の側には色が 1 語も無い（面を 2 重に持たない）。
     for (const id of [MESSAGE_OWN.id, MESSAGE_OTHER.id]) {
       for (const token of classTokensOf(html, `chat-message-${id}`)) {

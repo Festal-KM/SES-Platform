@@ -54,7 +54,10 @@ type ChatMessageItemState = Pick<ChatConversationState,
  * 自社の吹き出し = 薄い青で塗る / 相手 = 白に濃い枠。アバターも 自社 = 青の塗り / 相手 = 灰色。
  * 🔴 色はトークンだけ（成功・警告などの状態色は使わない）。差は面と枠で付け、文字色は変えない（読みやすさを保つ）。
  */
-const OWN_SURFACE_CLASSES = 'bg-brand-bg';
+/** ✅ 2026-10-27（紺野「まだ区別しにくい」）: 自分の発言は濃い青に白い文字（LINE・Teams と同じ。ひと目で自分と分かる）。 */
+const MINE_SURFACE_CLASSES = 'bg-brand text-brand-fg';
+/** 同僚（自社の別の人）は薄い青に青い枠。 */
+const OWN_SURFACE_CLASSES = 'border border-info-border bg-brand-bg';
 const OTHER_SURFACE_CLASSES = 'border border-border-strong bg-bg';
 const OWN_AVATAR_CLASSES = 'bg-brand text-brand-fg';
 const OTHER_AVATAR_CLASSES = 'bg-neutral-bg text-fg';
@@ -149,7 +152,7 @@ export function ChatMessageItem({ item, continued, conversation }: { readonly it
               messages.purged
             )
           ) : (
-            <ChatMessageMarkdown text={shown} messageId={item.id} mentionNames={mentionCandidates} />
+            <ChatMessageMarkdown text={shown} messageId={item.id} mentionNames={mentionCandidates} tone={surfaceClass === MINE_SURFACE_CLASSES ? 'inverse' : 'normal'} />
           )}
         </div>
         )}
@@ -414,7 +417,7 @@ export function ChatMessageItem({ item, continued, conversation }: { readonly it
                         {time}
                       </p>
                     )}
-                    {renderBody(item, OWN_SURFACE_CLASSES)}
+                    {renderBody(item, MINE_SURFACE_CLASSES)}
                     {readReceiptId === item.id ? (
                       <span className="text-xs text-fg-muted" data-testid={`chat-message-read-${item.id}`}>
                         {messages.read}
@@ -478,7 +481,7 @@ export function ChatMessageItem({ item, continued, conversation }: { readonly it
                       🔴 上限幅（560）は `packages/ui` の定数から取る —— `max-w-*` は画面に書けない
                          （`ui-screen-width.test.ts` (c)）。**読める行長の規約**であり、画面ごとに
                          決め直すものではない。 */}
-                  {renderBody(item, item.own ? OWN_SURFACE_CLASSES : OTHER_SURFACE_CLASSES)}
+                  {renderBody(item, item.mine ? MINE_SURFACE_CLASSES : item.own ? OWN_SURFACE_CLASSES : OTHER_SURFACE_CLASSES)}
                   {readReceiptId === item.id ? (
                     <span className="text-xs text-fg-muted" data-testid={`chat-message-read-${item.id}`}>
                       {messages.read}
