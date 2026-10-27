@@ -46,7 +46,7 @@ import {
   type ChatThreadSort,
 } from './thread-tree';
 import { FAST_REPLY_WINDOW_DAYS, fastReplyGroupKeys } from './reply-speed';
-import { countUnread, readPositions, readThreadPrefs, type ChatThreadPrefs } from './read-state';
+import { countUnread, readMentionUnreadThreadIds, readPositions, readThreadPrefs, readViewerDisplayName, type ChatThreadPrefs } from './read-state';
 import { readPeople, readRoomDetail, type ChatPeopleData } from './people';
 import { readChatUserStatuses } from './user-status';
 import { readThreadAnnouncements } from './announcement-read';
@@ -671,6 +671,13 @@ export type ChatScreenData = {
    * 🔴 RLS（その部屋が読める）だけが決める（`lib/chat/announcement-read.ts` ①）。開いていない部屋のキーは入れない。
    */
   readonly announcements: Readonly<Record<string, ChatAnnouncementView | null>>;
+  /**
+   * ✅ 2026-10-27（F-038 ⑭ / AC-16）: 一覧（木と DM・グループ）の部屋のうち、未読の中に自分宛ての `@名前` がある部屋。
+   * 🔴 「ある / ない」だけ（件数・発言の ID を持たない）。`input.tree` を渡したときだけ読む（渡さなければ空）。
+   */
+  readonly mentionUnreadIds: readonly string[];
+  /** ✅ 2026-10-27: 自分の表示名（会話で自分宛ての発言に左の線を引く）。読めなければ `null`。 */
+  readonly viewerName: string | null;
 };
 
 /** 右に並べた会話 1 本ぶん。 */
@@ -718,6 +725,16 @@ async function readChatScreenInTenant(
     const treeRead = input.tree === undefined ? null : await readThreadTree(ctx, db, input.tree);
     const tree = treeRead?.tree ?? null;
     const people = treeRead === null ? null : await readPeople(ctx, db, treeRead.companyKeyOf);
+    // ✅ 2026-10-27（F-038 ⑭）: 一覧に出す部屋（木 + DM・グループ）を 1 回で見る。🔴 部屋の ID は RLS で読めた一覧からだけ取る。
+    const viewerName = await readViewerDisplayName(ctx, db);
+    const listedIds =
+      tree === null
+        ? []
+        : [
+            ...tree.groups.flatMap((group) => [...(group.chat === null ? [] : [group.chat.id]), ...group.threads.map((item) => item.id)]),
+            ...(people?.rooms ?? []).map((room) => room.id),
+          ];
+    const mentionUnreadIds = [...(await readMentionUnreadThreadIds(ctx, db, listedIds, viewerName))];
     const threads: ChatThreadListView =
       tree === null ? await readThreadPage(ctx, db, input.threadsQuery) : { items: [], nextCursor: null };
     if (input.threadId === null) {
@@ -733,6 +750,8 @@ async function readChatScreenInTenant(
         people,
         peerReadMessageIds: {},
         announcements: {},
+        mentionUnreadIds,
+        viewerName,
       };
     }
     const thread = await readThreadDetail(ctx, db, input.threadId);
@@ -749,6 +768,8 @@ async function readChatScreenInTenant(
         people,
         peerReadMessageIds: {},
         announcements: {},
+        mentionUnreadIds,
+        viewerName,
       };
     }
     const messages = await readMessagePage(ctx, db, input.threadId, input.messagesQuery);
@@ -785,6 +806,8 @@ async function readChatScreenInTenant(
       people,
       peerReadMessageIds: {},
       announcements,
+      mentionUnreadIds,
+      viewerName,
     };
   });
 }

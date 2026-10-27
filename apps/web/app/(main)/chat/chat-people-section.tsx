@@ -8,7 +8,8 @@
 import Link from 'next/link';
 import { t } from '@ses/i18n';
 import { Avatar, ROW_HOVER_CLASSES, cn } from '@ses/ui';
-import { UNREAD_DOT_CLASSES, UNREAD_DOT_MAX } from './chat-unread-dot';
+import { UNREAD_DOT_MAX } from './chat-unread-dot';
+import { ChatRailSection } from './chat-rail-section';
 import { displayInitials } from '../../../lib/format/initials';
 import type { ChatContact, ChatPeopleData } from '../../../lib/chat/people';
 import { chatHref } from '../../../lib/chat/screen-query';
@@ -30,41 +31,48 @@ export function ChatFavorites({
   readonly selectedThreadId: string | null;
 }) {
   const nameOf = (name: string | null) => name ?? t('chat.thread.unknownName');
-  return (
-    <section className={favorites.length === 0 ? 'flex items-baseline gap-2 px-3 py-2' : undefined} data-testid="chat-favorites">
-      <h3 className={favorites.length === 0 ? 'm-0 shrink-0 text-xs font-normal text-fg-muted' : 'm-0 px-3 pt-1 pb-1 text-xs font-normal text-fg-muted'}>{t('chat.people.favorites')}</h3>
-      {favorites.length === 0 ? (
+  if (favorites.length === 0) {
+    return (
+      <section className="flex items-baseline gap-2 px-3 py-2" data-testid="chat-favorites">
+        <h3 className="m-0 shrink-0 text-xs font-normal text-fg-muted">{t('chat.people.favorites')}</h3>
         <p className="m-0 text-xs text-fg-placeholder" data-testid="chat-favorites-empty">
           {t('chat.people.favoritesEmpty')}
         </p>
-      ) : (
-        // 会社名をおおむね2行で読める幅を取り、欄の幅に応じて次の段に送る。
-        <ul className="m-0 grid grid-cols-[repeat(auto-fit,minmax(min(100%,10rem),1fr))] list-none gap-2 px-2 pb-1" data-testid="chat-threads-pinned">
+      </section>
+    );
+  }
+  // ✅ 2026-10-27（紺野「お気に入りスペース広すぎる。トグル＋もっとすっきり」）: 見出しで開閉できるようにし（閉じた状態は
+  //    この端末に覚える。閉じていても未読の合計は見出しの横に出す）、中身は「小さなアイコン＋名前 1 行」の札を詰めて並べる。
+  const unreadTotal = favorites.reduce((sum, item) => sum + (mutedIds.has(item.id) ? 0 : (unreadCounts[item.id] ?? 0)), 0);
+  return (
+    <div data-testid="chat-favorites">
+      <ChatRailSection sectionKey="favorites" heading={t('chat.people.favorites')} unread={unreadTotal} inRail={false}>
+        <ul className="m-0 flex list-none flex-wrap gap-1 px-2 pb-2" data-testid="chat-threads-pinned">
           {favorites.map((item) => {
-            const unread = unreadCounts[item.id] ?? 0;
+            const unread = mutedIds.has(item.id) ? 0 : (unreadCounts[item.id] ?? 0);
             return (
-              <li key={item.id} className="min-w-0" data-testid={`chat-favorite-${item.id}`}>
+              <li key={item.id} className="w-36 min-w-0" data-testid={`chat-favorite-${item.id}`}>
                 <Link
                   href={chatHref({ thread: item.id })}
                   aria-current={item.id === selectedThreadId ? 'page' : undefined}
-                  className={cn('flex min-h-11 flex-col items-center gap-1 rounded-md px-2 py-1', ROW_HOVER_CLASSES)}
+                  title={nameOf(item.name)}
+                  className={cn('flex min-h-11 min-w-0 items-center gap-2 rounded-md px-2 md:min-h-8', ROW_HOVER_CLASSES)}
                   data-testid={`chat-thread-pinned-${item.id}`}
                 >
-                  {/* ✅ 2026-10-22: 未読は一覧の行と同じ、アバターの右上の赤丸。 */}
-                  <span className="relative">
-                    <Avatar size="md" initials={item.initials} title={nameOf(item.name)} className={item.avatarClass} />
-                    {unread > 0 && !mutedIds.has(item.id) ? (
-                      <span className={cn(UNREAD_DOT_CLASSES, 'bg-danger')}>{unread > UNREAD_DOT_MAX ? `${String(UNREAD_DOT_MAX)}+` : String(unread)}</span>
-                    ) : null}
-                  </span>
-                  <span className="w-full break-words text-center text-xs text-fg-muted">{nameOf(item.name)}</span>
+                  <Avatar size="sm" initials={item.initials} title={nameOf(item.name)} className={item.avatarClass} />
+                  <span className="min-w-0 truncate text-xs text-fg">{nameOf(item.name)}</span>
+                  {unread > 0 ? (
+                    <span className="shrink-0 rounded-full bg-danger px-1 text-xs font-semibold text-bg">
+                      {unread > UNREAD_DOT_MAX ? `${String(UNREAD_DOT_MAX)}+` : String(unread)}
+                    </span>
+                  ) : null}
                 </Link>
               </li>
             );
           })}
         </ul>
-      )}
-    </section>
+      </ChatRailSection>
+    </div>
   );
 }
 

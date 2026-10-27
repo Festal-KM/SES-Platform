@@ -4,7 +4,7 @@
 //    `noopener noreferrer nofollow`（既存の URL の扱いと同じ）。
 // 🔴 `data-testid="chat-message-link-<発言 ID>"` は従来どおりリンクに付ける（E2E と凍結の対象）。
 import type { ReactNode } from 'react';
-import { cn } from '@ses/ui';
+import { Button, cn } from '@ses/ui';
 import { parseChatMarkdown, type ChatBlock, type ChatInline } from '../../../lib/chat/markdown';
 
 export type ChatMessageMarkdownProps = {
@@ -15,6 +15,24 @@ export type ChatMessageMarkdownProps = {
   readonly mentionNames: readonly string[];
   /** ✅ 2026-10-27: 濃い青の吹き出し（自分の発言）では `inverse`。 */
   readonly tone?: Tone;
+  /**
+   * ✅ 2026-10-27（F-038 ⑬）: 引用の帯の語と、引用元へ移る操作。`onJump` が無ければ名前は文字のまま（プレビュー）。
+   * 🔴 移る先は開いている部屋の中だけ（呼び出し側の `jumpToQuoted`）。
+   */
+  readonly quote?: {
+    readonly labels: { readonly label: string; readonly jump: string; readonly unavailable: string };
+    readonly missing: boolean;
+    readonly onJump?: (targetMessageId: string) => void;
+  };
+};
+
+/**
+ * ✅ 2026-10-27（F-038 ⑬）: 引用の帯。吹き出しの色に関わらず明るい面に置く（名前の操作の文字色を吹き出しに合わせない）。
+ * 左の線は 2px（左端の強調だけ）。
+ */
+const QUOTE_BAND_CLASSES: Readonly<Record<Tone, string>> = {
+  normal: 'm-0 flex flex-col gap-1 rounded-md border-l-2 border-brand bg-bg-subtle px-2 py-1 text-fg',
+  inverse: 'm-0 flex flex-col gap-1 rounded-md border-l-2 border-brand-fg bg-bg px-2 py-1 text-fg',
 };
 
 /**
@@ -97,8 +115,43 @@ function renderLines(lines: readonly (readonly ChatInline[])[], messageId: strin
   });
 }
 
-function renderBlock(block: ChatBlock, messageId: string | null, key: string, tone: Tone): ReactNode {
+function renderBlock(block: ChatBlock, messageId: string | null, key: string, tone: Tone, quote: ChatMessageMarkdownProps['quote']): ReactNode {
   switch (block.kind) {
+    case 'messageQuote': {
+      const labels = quote?.labels;
+      const onJump = quote?.onJump;
+      return (
+        <blockquote
+          key={key}
+          aria-label={labels?.label}
+          className={QUOTE_BAND_CLASSES[tone]}
+          data-testid={messageId === null ? 'chat-compose-preview-quote' : `chat-message-quote-${messageId}`}
+        >
+          {onJump === undefined || messageId === null || labels === undefined ? (
+            <strong className="text-cell font-bold">{block.name}</strong>
+          ) : (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="min-h-11 w-fit px-1 font-bold md:min-h-8"
+              title={labels.jump}
+              aria-label={`${block.name} ${labels.jump}`}
+              onClick={() => onJump(block.messageId)}
+              data-testid={`chat-message-quote-jump-${messageId}`}
+            >
+              {block.name}
+            </Button>
+          )}
+          <span className="text-cell text-fg-muted">{block.lines.join(' ')}</span>
+          {quote?.missing === true && labels !== undefined ? (
+            <span role="status" className="text-xs text-fg-muted" data-testid={`chat-message-quote-missing-${messageId ?? 'preview'}`}>
+              {labels.unavailable}
+            </span>
+          ) : null}
+        </blockquote>
+      );
+    }
     case 'paragraph':
       return (
         <p key={key} className="m-0">
@@ -132,7 +185,7 @@ function renderBlock(block: ChatBlock, messageId: string | null, key: string, to
   }
 }
 
-export function ChatMessageMarkdown({ text, messageId, mentionNames, tone = 'normal' }: ChatMessageMarkdownProps) {
+export function ChatMessageMarkdown({ text, messageId, mentionNames, tone = 'normal', quote }: ChatMessageMarkdownProps) {
   const blocks = parseChatMarkdown(text, mentionNames);
-  return <>{blocks.map((block, index) => renderBlock(block, messageId, `b${String(index)}`, tone))}</>;
+  return <>{blocks.map((block, index) => renderBlock(block, messageId, `b${String(index)}`, tone, quote))}</>;
 }

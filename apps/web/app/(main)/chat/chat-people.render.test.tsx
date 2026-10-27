@@ -102,7 +102,9 @@ describe('③ お気に入り・未読・メンバー', () => {
     expect(html).toContain('よろしくお願いします');
     expect(html).toContain(`data-testid="chat-room-${ROOM_GROUP}"`);
     expect(html).toContain(`data-testid="chat-favorite-${ROOM_DM}"`);
-    expect(html).toContain('<section data-testid="chat-favorites">');
+    // ✅ 2026-10-27: お気に入りは見出しで開閉できる節（紺野「スペース広すぎる。トグル＋すっきり」）。
+    expect(html).toContain('<div data-testid="chat-favorites">');
+    expect(html).toContain('data-testid="chat-rail-section-toggle-favorites"');
     expect(html).not.toContain(`data-testid="chat-favorite-${ROOM_GROUP}"`);
     expect(html).toContain(`data-testid="chat-room-unread-${ROOM_DM}"`);
   });
@@ -241,17 +243,16 @@ describe('検索とお気に入りの幅', () => {
 
 
 describe('お気に入りの名前の識別', () => {
-  it('長い会社名を省略せず、欄の幅に応じてグリッドの段を増やす', () => {
+  it('✅ 2026-10-27: 小さなアイコン＋名前 1 行の札を詰めて並べる（長い名前は札の中で省略し、名前は title で読める）', () => {
     const name = '株式会社ダミーチャーリー 営業窓口';
     const html = renderToStaticMarkup(createElement(ChatFavorites, {
       favorites: [{ id: ROOM_DM, name, avatarClass: '', initials: 'ダ' }],
       unreadCounts: {}, mutedIds: new Set<string>(), selectedThreadId: null,
     }));
     expect(html).toContain(name);
-    expect(html).toContain('grid-cols-[repeat(auto-fit,minmax(min(100%,10rem),1fr))]');
+    expect(html).toContain(`title="${name}"`);
+    expect(html).toContain('flex list-none flex-wrap gap-1');
     expect(html).not.toContain('overflow-x-auto');
-    expect(html).toContain('w-full break-words text-center text-xs');
-    expect(html).not.toContain('truncate');
-    expect(html).not.toContain('grid-cols-5');
+    expect(html).not.toContain('grid-cols-');
   });
 });

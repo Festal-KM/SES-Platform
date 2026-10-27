@@ -81,6 +81,11 @@ export type ChatConversationProps = {
    * 🔴 拒否の本体は API（#51p / #51 のガードと `chatRoomAcceptsAttachments`）。ここは印の出し分けだけ。
    */
   readonly canAttach?: boolean;
+  /**
+   * ✅ 2026-10-27（F-038 ⑭）: 自分の表示名（`readChatScreen` の `viewerName`）。自分宛ての `@` を含む相手の発言に左の線を引く。
+   * 省略時は線を引かない。
+   */
+  readonly selfName?: string | null;
 };
 
 export function ChatConversation(props: ChatConversationProps) {

@@ -10,15 +10,20 @@ import { cn } from '@ses/ui';
 const STORAGE_PREFIX = 'ses.chat.rail.closed.';
 
 export type ChatRailSectionProps = {
-  /** 覚えておく鍵（`companies` / `projects` / `contacts`）。 */
-  readonly sectionKey: 'companies' | 'projects' | 'contacts';
+  /** 覚えておく鍵（`companies` / `projects` / `contacts` / ✅ 2026-10-27 `favorites`）。 */
+  readonly sectionKey: 'companies' | 'projects' | 'contacts' | 'favorites';
   readonly heading: string;
   /** 閉じているときに見出しの横に出す未読の件数（0 なら出さない）。 */
   readonly unread: number;
   readonly children: ReactNode;
+  /**
+   * ✅ 2026-10-27: 左の列の外（一覧の欄のお気に入り）で使うとき false。左の列を畳んだときの見え方の指定を付けず、
+   *    閉じた中身は描かない（一覧の中で表示を消すユーティリティを使わない。`chat-people.render.test.tsx` ②）。
+   */
+  readonly inRail?: boolean;
 };
 
-export function ChatRailSection({ sectionKey, heading, unread, children }: ChatRailSectionProps) {
+export function ChatRailSection({ sectionKey, heading, unread, children, inRail = true }: ChatRailSectionProps) {
   const [closed, setClosed] = useState(false);
   useEffect(() => {
     try {
@@ -44,7 +49,7 @@ export function ChatRailSection({ sectionKey, heading, unread, children }: ChatR
   const panelId = `chat-rail-section-${sectionKey}`;
   return (
     <section data-testid={`chat-rail-section-${sectionKey}`}>
-      <h3 className="m-0 md:in-[[data-collapsed=true]]:hidden">
+      <h3 className={inRail ? 'm-0 md:in-[[data-collapsed=true]]:hidden' : 'm-0'}>
         <button
           type="button"
           aria-label={heading}
@@ -66,9 +71,13 @@ export function ChatRailSection({ sectionKey, heading, unread, children }: ChatR
         </button>
       </h3>
       {/* 列を畳んだ間は節の開閉を適用せず、印と未読を残す。 */}
-      <div id={panelId} className={cn(closed ? 'hidden' : 'block', 'md:in-[[data-collapsed=true]]:block')}>
-        {children}
-      </div>
+      {inRail ? (
+        <div id={panelId} className={cn(closed ? 'hidden' : 'block', 'md:in-[[data-collapsed=true]]:block')}>
+          {children}
+        </div>
+      ) : closed ? null : (
+        <div id={panelId}>{children}</div>
+      )}
     </section>
   );
 }
