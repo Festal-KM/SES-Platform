@@ -7,6 +7,9 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { collectSourceFiles, repoRoot, toRepoRelative } from './support/ui-classes.js';
 
+/** 引用符の種類を問わない（'…' / "…" / `…`）。 */
+const CHAT_ROOM_LITERAL = /['"`]CHAT_ROOM['"`]/;
+
 const ALLOWED = new Set([
   // 型の宣言と、ゲートを求めない分岐。
   'apps/web/lib/storage/download.ts',
@@ -22,15 +25,15 @@ describe('🔴 共有の分類 CHAT_ROOM（ゲートなし）はチャットの�
 
   it('対照: 許可した 2 ファイルには現れる（検査が空振りしていない）', () => {
     for (const rel of ALLOWED) {
-      expect(readFileSync(path.join(repoRoot, rel), 'utf8')).toContain("'CHAT_ROOM'");
+      expect(readFileSync(path.join(repoRoot, rel), 'utf8')).toMatch(CHAT_ROOM_LITERAL);
     }
   });
 
-  it("'CHAT_ROOM' を書いてよいのは許可した 2 ファイルだけ", () => {
+  it('CHAT_ROOM の文字列（引用符の種類を問わない）を書いてよいのは許可した 2 ファイルだけ', () => {
     const offenders = files
       .map((file) => toRepoRelative(file))
       .filter((rel) => !ALLOWED.has(rel))
-      .filter((rel) => readFileSync(path.join(repoRoot, rel), 'utf8').includes("'CHAT_ROOM'"));
+      .filter((rel) => CHAT_ROOM_LITERAL.test(readFileSync(path.join(repoRoot, rel), 'utf8')));
     expect(offenders).toEqual([]);
   });
 });

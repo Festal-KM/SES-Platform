@@ -59,6 +59,8 @@ const META = { deviceKind: 'desktop', ipAddress: '203.0.113.91' } as const;
 const DEVICE = { deviceKind: META.deviceKind } as const;
 const USER_A_HOST2 = '01930000-0000-7000-8000-0000000009c1';
 const USER_A_HOST3 = '01930000-0000-7000-8000-0000000009c2';
+/** 取引先 A1 のもう 1 人（取引先を含むグループのメンバーではない人）。 */
+const USER_A_PARTNER_OTHER = '01930000-0000-7000-8000-0000000009c3';
 const ABSENT_ID = '01930000-0000-7000-8000-0000000009cf';
 const SECRET = Buffer.alloc(32, 3).toString('base64');
 const JOB = { queue: 'scan.apply-result', jobId: 'job-chat-attachments' } as const;
@@ -85,6 +87,8 @@ const { CHAT_ATTACHMENT_LIST_ITEM_KEYS, CHAT_ATTACHMENT_VIEW_KEYS, CHAT_FORBIDDE
   '../../apps/web/lib/chat/views'
 );
 const { chatMessagePostBodySchema } = await import('../../apps/web/lib/chat/schemas');
+const { readChatThreadForExport } = await import('../../apps/web/lib/chat/service');
+const { readMySavedList, saveChatMessage } = await import('../../apps/web/lib/chat/saved');
 const { setChatAnnouncement } = await import('../../apps/web/lib/chat/announcement');
 const { countUnread, markChatRead } = await import('../../apps/web/lib/chat/read-state');
 const { readChatScreen } = await import('../../apps/web/lib/chat/read');
@@ -208,7 +212,9 @@ afterAll(async () => {
   await admin?.auditLog.deleteMany({ where: { action: { in: [CHAT_ATTACHMENT_AUDIT_ACTION_UPLOAD, CHAT_ATTACHMENT_AUDIT_ACTION_DOWNLOAD] } } });
   await admin?.chatThread.deleteMany({ where: { kind: { in: ['DM', 'GROUP'] } } });
   await admin?.fileScanResult.deleteMany({ where: { tenantId: TENANT_A, objectVersionId: { in: ['v-CLEAN', 'v-INFECTED'] } } });
-  await admin?.user.deleteMany({ where: { id: { in: [USER_A_HOST2, USER_A_HOST3] } } });
+  await admin?.chatSavedMessage.deleteMany({});
+  await admin?.chatThreadAnnouncement.deleteMany({});
+  await admin?.user.deleteMany({ where: { id: { in: [USER_A_HOST2, USER_A_HOST3, USER_A_PARTNER_OTHER] } } });
   await disconnectTenantDb();
   await admin?.$disconnect();
   await database?.stop();
@@ -482,6 +488,93 @@ describe('🔴 ⑥ 取引先がいる部屋（#182。ゲートなし）', () => 
         data: { ...base, attachmentKey: key, attachmentScanStatus: 'CLEAN', attachmentContentType: 'application/pdf', attachmentByteSize: BigInt(20 * 1024 * 1024 + 1) },
       }),
     ).rejects.toThrow(/messages_attachment_byte_size_check/);
+  });
+});
+
+describe('🔴 ⑥b 取引先を含むグループ（人の段）と、取引先の部屋で検査中の添付が漏れないこと（レビュー）', () => {
+  let partnerA2: AuthenticatedTenantCtx;
+  let partnerA1Other: AuthenticatedTenantCtx;
+  let groupId: string;
+  let hostFileId: string;
+  let partnerFileId: string;
+  const deps = () => ({ objectStore: store, ipAddress: META.ipAddress, now });
+
+  beforeAll(async () => {
+    await admin.user.create({
+      data: { id: USER_A_PARTNER_OTHER, tenantId: TENANT_A, ownerPartnerCompanyId: PARTNER_A1, email: 'p1-other@attach.test', displayName: '取引先 その他', passwordHash: 'x' },
+    });
+    const base = { lifecycleState: 'ACTIVE' as const, partnerSuspendedAt: null, twoFactor: 'NOT_ENROLLED' as const };
+    partnerA2 = await resolveTenantCtx({ ...base, tenantId: TENANT_A, partnerCompanyId: PARTNER_A2, userId: USER_A_PARTNER2, role: 'PARTNER_SALES' }, DEVICE);
+    partnerA1Other = await resolveTenantCtx({ ...base, tenantId: TENANT_A, partnerCompanyId: PARTNER_A1, userId: USER_A_PARTNER_OTHER, role: 'PARTNER_SALES' }, DEVICE);
+    // ホストの営業（本人）+ 取引先 A1 の 1 人だけのグループ。
+    requireTenantCtxMock.mockResolvedValue(host);
+    const created = await groupsRoute.POST(
+      new Request('https://app.test/api/threads/groups', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ title: '取引先と資料の確認', userIds: [USER_A_PARTNER] }),
+      }),
+    );
+    expect([200, 201], await created.clone().text()).toContain(created.status);
+    groupId = ((await created.json()) as { id: string }).id;
+    const hostTicket = await upload(host, groupId, 'application/pdf', 21);
+    hostFileId = (await send(host, groupId, hostTicket.uploadToken)).message.id;
+    expect((await applyScan(keyOf(hostTicket.uploadToken), 'CLEAN')).target).toBe('APPLIED');
+    const partnerTicket = await upload(partnerA1, groupId, 'image/png', 22);
+    partnerFileId = (await send(partnerA1, groupId, partnerTicket.uploadToken)).message.id;
+    expect((await applyScan(keyOf(partnerTicket.uploadToken), 'CLEAN')).target).toBe('APPLIED');
+  });
+
+  it('メンバーは相手の会社の側のファイルも開ける（ホスト ↔ 取引先。ゲートなし）', async () => {
+    expect((await issueChatAttachmentDownloadUrl(partnerA1, groupId, hostFileId, 'inline', deps())).url).toBeTruthy();
+    expect((await issueChatAttachmentDownloadUrl(host, groupId, partnerFileId, 'inline', deps())).url).toBeTruthy();
+    expect((await listChatAttachments(partnerA1, groupId, {})).items.map((item) => item.messageId).sort()).toEqual([hostFileId, partnerFileId].sort());
+  });
+
+  it('🔴 メンバーでないホストの管理者・メンバーでない A1 の人・取引先 A2 は、一覧も URL も 404・行は 0・監査も残らない', async () => {
+    for (const outsider of [host3Admin, partnerA1Other, partnerA2]) {
+      await expect(listChatAttachments(outsider, groupId, {})).rejects.toMatchObject({ httpStatus: 404 });
+      for (const id of [hostFileId, partnerFileId]) {
+        await expect(issueChatAttachmentDownloadUrl(outsider, groupId, id, 'inline', deps())).rejects.toMatchObject({ httpStatus: 404 });
+        expect(await rawVisible(outsider, id)).toBe(0);
+      }
+    }
+    expect(
+      await admin.auditLog.count({
+        where: { action: CHAT_ATTACHMENT_AUDIT_ACTION_DOWNLOAD, actorId: { in: [USER_A_HOST3, USER_A_PARTNER_OTHER, USER_A_PARTNER2] } },
+      }),
+    ).toBe(0);
+  });
+
+  it('🔴 取引先の部屋で検査中の添付は、ほかのメンバーの検索・未読の数・一覧の冒頭・保存・アナウンス・書き出しのどれにも出ない', async () => {
+    // 検査中の発言を部屋でいちばん新しい発言にする（冒頭・検索に出るなら必ず出る形）。後の検査（公開位置）のために時計は戻す。
+    const savedClock = clock;
+    clock = new Date(Date.now() + 120_000);
+    const body = '検査中の取引先の本文ZQX';
+    const screenBefore = await readChatScreen(host, { threadId: null, threadsQuery: { limit: 50 }, messagesQuery: { limit: 50 }, tree: { sort: CHAT_THREAD_SORT_DEFAULT, q: null } });
+    const unreadBefore = await unreadOf(host, THREAD_A_P1);
+    const ticket = await upload(partnerA1, THREAD_A_P1, 'application/pdf', 23);
+    const scanningId = (await send(partnerA1, THREAD_A_P1, ticket.uploadToken, body)).message.id;
+    // 未読の数・一覧の冒頭
+    expect(await unreadOf(host, THREAD_A_P1)).toBe(unreadBefore);
+    const screen = await readChatScreen(host, { threadId: null, threadsQuery: { limit: 50 }, messagesQuery: { limit: 50 }, tree: { sort: CHAT_THREAD_SORT_DEFAULT, q: null } });
+    expect(screen.tree?.lastSnippets[THREAD_A_P1]).toBe(screenBefore.tree?.lastSnippets[THREAD_A_P1]);
+    // 検索
+    const searched = await readChatScreen(host, { threadId: null, threadsQuery: { limit: 50 }, messagesQuery: { limit: 50 }, tree: { sort: CHAT_THREAD_SORT_DEFAULT, q: 'ZQX' } });
+    expect(searched.tree?.messageHits.map((hit) => hit.messageId) ?? []).not.toContain(scanningId);
+    expect(JSON.stringify(searched)).not.toContain(body);
+    // 保存・アナウンス（読めない発言と同じ 404）
+    await expect(saveChatMessage(host, THREAD_A_P1, scanningId)).rejects.toMatchObject({ httpStatus: 404 });
+    expect((await readMySavedList(host)).items.map((item) => item.messageId)).not.toContain(scanningId);
+    await expect(setChatAnnouncement(host, THREAD_A_P1, scanningId, { now, meta: { ipAddress: META.ipAddress } })).rejects.toMatchObject({ httpStatus: 404 });
+    // 書き出し
+    const exported = await readChatThreadForExport(host, THREAD_A_P1, { now, meta: { ipAddress: META.ipAddress } });
+    expect(exported.map((message) => message.id)).not.toContain(scanningId);
+    // 送った本人には見える（対照）
+    expect(await listedIds(partnerA1, THREAD_A_P1)).toContain(scanningId);
+    // 取引先 A2 には何も無い
+    expect(await rawVisible(partnerA2, scanningId)).toBe(0);
+    clock = savedClock;
   });
 });
 
