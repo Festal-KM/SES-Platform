@@ -43,6 +43,10 @@ export const GET = withApiRoute(
   async ({ ctx, params, query }) => {
     const view = await listChatMessages(ctx, params.id, query);
     // 🔴 `{ items, nextCursor }` だけ。件数（`total`）を載せない（§4.8）。
+    //    ✅ 2026-10-26（#166 の 4・8）: `after` / `around` のときだけ `hasMoreAfter`（続きがあるか）を足す。
+    if ('hasMoreAfter' in view) {
+      return Response.json({ items: view.items, nextCursor: view.nextCursor, hasMoreAfter: view.hasMoreAfter });
+    }
     return Response.json({ items: view.items, nextCursor: view.nextCursor });
   },
 );

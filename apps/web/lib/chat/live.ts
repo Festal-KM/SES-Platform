@@ -36,6 +36,25 @@ export function mergeLatestMessages(
   return { items: [...current, ...added].sort(compareOldest), added };
 }
 
+/**
+ * ✅ 2026-10-26（#166 の 4）: 直近のページが手元の最後の発言と**つながっていない**か。
+ * 直近のページが満杯（`pageSize` 件）で、手元の発言と 1 件も重ならず、しかも全部が手元の最後より新しいなら、
+ * その間に取りこぼしがある（バックグラウンド中に `pageSize` 件を超えて届いた）。
+ * 🔴 そのまま足すと会話の途中が黙って抜ける。呼び出し側は手元の最後から `after` で読み足す。
+ */
+export function hasGapBefore(
+  current: readonly ChatMessageView[],
+  latest: readonly ChatMessageView[],
+  pageSize: number,
+): boolean {
+  const last = current.at(-1);
+  const oldest = latest[0];
+  if (last === undefined || oldest === undefined || latest.length < pageSize) return false;
+  const seen = new Set(current.map((item) => item.id));
+  if (latest.some((item) => seen.has(item.id))) return false;
+  return compareOldest(oldest, last) > 0;
+}
+
 /** 足した行のうち、相手（自分以外）の発言があるか。（「新しいメッセージがあります」を出すかどうか） */
 export function hasOthersMessage(added: readonly ChatMessageView[]): boolean {
   return added.some((item) => !item.mine);
@@ -56,8 +75,9 @@ export function withLatestReactions(
     // ✅ 2026-10-16: 編集・削除（本文・印）も取り直した値に揃える。並び（sentAt / id）は変えない。
     // ✅ 2026-10-26（Codex のレビュー）: 貼られた案件のカード（`attachedProject`）も取り直した値に揃える。
     //    🔴 公開を取り消されたら、開いたままの画面からも案件名・リンク・引用を消す（サーバは `{ visible: false }` を返している）。
+    // ✅ 2026-10-26（#164 の 5）: 保存済みの印と送信者のひとこと状態も揃える（別のタブで外した・状態を消した）。
     const pick = (m: ChatMessageView) =>
-      JSON.stringify([m.reactions ?? [], m.body, m.edited ?? false, m.deleted ?? false, m.attachedProject ?? null]);
+      JSON.stringify([m.reactions ?? [], m.body, m.edited ?? false, m.deleted ?? false, m.attachedProject ?? null, m.saved ?? false, m.senderStatus ?? null]);
     if (fresh === undefined || pick(fresh) === pick(item)) return item;
     changed = true;
     const next: ChatMessageView = {
@@ -66,6 +86,8 @@ export function withLatestReactions(
       body: fresh.body,
       edited: fresh.edited ?? false,
       deleted: fresh.deleted ?? false,
+      saved: fresh.saved ?? false,
+      senderStatus: fresh.senderStatus ?? null,
     };
     // 取り直した値にカードが無ければ、手元のカードも外す（前の名前・ID を残さない）。
     if (fresh.attachedProject === undefined) {
@@ -76,4 +98,30 @@ export function withLatestReactions(
     return { ...next, attachedProject: fresh.attachedProject };
   });
   return changed ? next : current;
+}
+
+/** ✅ 2026-10-26（#166 の 4）: 読み足しの 1 回ぶんの結果。 */
+export type GapChunk = { readonly items: readonly ChatMessageView[]; readonly hasMoreAfter: boolean };
+
+/**
+ * ✅ 2026-10-26（#166 の 4）: 手元の最後（`after`）から後ろを、`maxPages` 回まで読み足す。
+ * `complete` は「最新まで読み切れた」か。🔴 読み切れていないとき、呼び出し側は直近のページを**足さない**
+ * （足すと、読み足した分と直近のページの間が永久に抜ける。次の回に、新しい最後から続きを読む）。
+ * 1 回でも読めなければ `null`（今回は何も足さない）。
+ */
+export async function readGapAfter(
+  after: string,
+  fetchChunk: (after: string) => Promise<GapChunk | null>,
+  maxPages: number,
+): Promise<{ readonly items: readonly ChatMessageView[]; readonly complete: boolean } | null> {
+  const items: ChatMessageView[] = [];
+  let cursor: string | undefined = after;
+  for (let page = 0; page < maxPages && cursor !== undefined; page += 1) {
+    const chunk = await fetchChunk(cursor);
+    if (chunk === null) return null;
+    items.push(...chunk.items);
+    if (!chunk.hasMoreAfter) return { items, complete: true };
+    cursor = chunk.items.at(-1)?.id;
+  }
+  return { items, complete: false };
 }

@@ -54,6 +54,9 @@ function statusLine(userId: string, status: string | null | undefined) {
 export function ChatThreadPanel({ thread, canPost = false }: ChatThreadPanelProps) {
   // ✅ 2026-10-19（#128）: DM・グループは「誰が読めるか」（メンバー）を出す。会社の段（参加会社）は出さない。
   if (thread.members !== undefined) {
+    // ✅ 2026-10-26（#166 の気づき）: 取引先の人は、自社（ホスト）の人とだけ DM を作れる（取引先どうしは API が 400）。
+    //    🔴 押しても失敗する導線を置かない。読み手が取引先なら、取引先の同僚には「DM を開く」を出さない。
+    const viewerIsHost = thread.members.find((member) => member.self)?.isHost ?? true;
     return (
       <Card data-testid="chat-panel">
         <CardHeader>
@@ -69,7 +72,7 @@ export function ChatThreadPanel({ thread, canPost = false }: ChatThreadPanelProp
               const name = member.name ?? t('chat.thread.unknownName');
               return (
                 <li key={member.userId} data-testid={`chat-panel-member-${member.userId}`}>
-                  {canPost && !member.self ? (
+                  {canPost && !member.self && (viewerIsHost || member.isHost) ? (
                     <ChatOpenDmButton userId={member.userId} label={`${name} ${t('chat.people.openDm')}`} failedLabel={t('chat.people.openDmFailed')}>
                       <span className="flex min-w-0 flex-col items-start">
                         <span className="truncate text-body text-fg">{name}</span>

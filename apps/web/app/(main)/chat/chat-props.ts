@@ -13,6 +13,8 @@ import { PROJECT_REMOTE_MODE_MESSAGE_KEYS, PROJECT_STATUS_MESSAGE_KEYS } from '.
 
 /** 会話（中央）の島が使う語。 */
 export type ChatConversationMessages = {
+  /** ✅ 2026-10-26（#164 の 2）: 開いている間に読めなくなった（部屋から外れた等）ときの案内。 */
+  readonly unavailable?: string;
   readonly heading: string;
   readonly listLabel: string;
   readonly empty: string;
@@ -150,6 +152,7 @@ export function chatPaneDropMessages(): ChatPaneDropMessages {
 
 export function chatConversationMessages(): ChatConversationMessages {
   return {
+    unavailable: t('chat.thread.missing'),
     heading: t('chat.messages.heading'),
     listLabel: t('chat.messages.label'),
     empty: t('chat.messages.empty'),

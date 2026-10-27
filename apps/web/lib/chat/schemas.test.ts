@@ -118,7 +118,8 @@ describe('ページング（#50）', () => {
 
   it('🔴 検索・絞り込みの口を持たない（実体の無いタブを受けない）', () => {
     expect(Object.keys(chatThreadListQuerySchema.shape).sort()).toEqual(['cursor', 'limit']);
-    expect(Object.keys(chatMessageListQuerySchema.shape).sort()).toEqual(['cursor', 'limit']);
+    // ✅ 2026-10-26（#166 の 4・8）: `after` / `around` は「どこから読むか」の位置で、検索・絞り込みではない。
+    expect(Object.keys(chatMessageListQuerySchema.shape).sort()).toEqual(['after', 'around', 'cursor', 'limit']);
   });
 });
 

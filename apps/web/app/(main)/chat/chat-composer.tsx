@@ -447,10 +447,10 @@ export function ChatComposer({ conversation }: { readonly conversation: ChatComp
           {pendingSend === null ? null : (
             <div className="mb-2 flex flex-wrap items-center gap-2" aria-live="polite" data-testid="chat-compose-pending">
               <span className="text-body text-fg-muted">{messages.pending}</span>
-              <Button type="button" variant="secondary" size="sm" onClick={undoSend} data-testid="chat-compose-undo">
+              <Button type="button" variant="secondary" size="sm" className="min-h-11 md:min-h-8" onClick={undoSend} data-testid="chat-compose-undo">
                 {messages.undo}
               </Button>
-              <Button type="button" variant="ghost" size="sm" onClick={sendNow} data-testid="chat-compose-send-now">
+              <Button type="button" variant="ghost" size="sm" className="min-h-11 md:min-h-8" onClick={sendNow} data-testid="chat-compose-send-now">
                 {messages.sendNow}
               </Button>
             </div>

@@ -182,3 +182,47 @@ describe('✅ グループを作る（連絡先の入口 → 「新しいグル�
     expect(view(false, 'newgroup')).not.toContain('chat-new-group');
   });
 });
+
+describe('✅ 2026-10-26（#166 の 7）上限で読み切れなかった DM・グループと連絡先は、黙って消さず案内を出す', () => {
+  function render(filter: Parameters<typeof ChatThreadList>[0]['filter'], people: ChatPeopleData): string {
+    return renderToStaticMarkup(
+      createElement(ChatThreadList, { groups: [], selectedThreadId: null, nextCursor: null, people, canPost: true, filter }),
+    );
+  }
+
+  it('DM・グループの絞り込みで、切れていれば案内を出し、切れていなければ出さない', () => {
+    expect(render({ kind: 'dm' }, { ...PEOPLE, roomsTruncated: true })).toContain('data-testid="chat-rooms-truncated"');
+    expect(render({ kind: 'group' }, { ...PEOPLE, roomsTruncated: true })).toContain(t('chat.people.roomsTruncated'));
+    expect(render({ kind: 'dm' }, PEOPLE)).not.toContain('chat-rooms-truncated');
+  });
+
+  it('連絡先は、切れていれば案内を出す', () => {
+    expect(render({ kind: 'contacts' }, { ...PEOPLE, contactsTruncated: true })).toContain('data-testid="chat-contacts-truncated"');
+    expect(render({ kind: 'contacts' }, PEOPLE)).not.toContain('chat-contacts-truncated');
+  });
+});
+
+describe('✅ 2026-10-26（#166 の気づき）取引先の人には、取引先の同僚への「DM を開く」を出さない', () => {
+  const room = (selfIsHost: boolean): ChatThreadDetailView => ({
+    id: ROOM_GROUP, kind: 'GROUP', project: null, counterpartyName: null, participants: [],
+    members: [
+      { userId: SELF, name: '本人', companyName: selfIsHost ? '自社' : '株式会社ダミー', self: true, isHost: selfIsHost },
+      { userId: HOST_PERSON, name: '見本 太郎', companyName: '自社', self: false, isHost: true },
+      { userId: PARTNER_PERSON, name: '仮名 花子', companyName: '株式会社ダミー', self: false, isHost: false },
+    ],
+  } as ChatThreadDetailView);
+
+  it('読み手が取引先: ホストの人には出し、取引先の同僚には出さない', () => {
+    const html = renderToStaticMarkup(createElement(ChatThreadPanel, { thread: room(false), canPost: true }));
+    expect(html).toContain(`chat-open-dm-${HOST_PERSON}`);
+    expect(html).not.toContain(`chat-open-dm-${PARTNER_PERSON}`);
+    expect(html).toContain('仮名 花子');
+  });
+
+  it('読み手がホスト: 全員に出す（自分を除く）', () => {
+    const html = renderToStaticMarkup(createElement(ChatThreadPanel, { thread: room(true), canPost: true }));
+    expect(html).toContain(`chat-open-dm-${HOST_PERSON}`);
+    expect(html).toContain(`chat-open-dm-${PARTNER_PERSON}`);
+    expect(html).not.toContain(`chat-open-dm-${SELF}`);
+  });
+});

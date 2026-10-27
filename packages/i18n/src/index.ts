@@ -4541,6 +4541,9 @@ const ja = {
   'chat.people.recent': '最近やり取りした人',
   'chat.people.rooms': 'DM・グループ',
   'chat.people.roomsEmpty': 'DM・グループはまだありません。連絡先から相手を選ぶと始められます',
+  // ✅ 2026-10-26（#166 の 7）: 上限で読み切れなかったときの案内（黙って消さない）。
+  'chat.people.roomsTruncated': 'DM・グループが多いため、新しい 300 件だけを表示しています。ピン留めした会話はいつも表示されます。',
+  'chat.people.contactsTruncated': '連絡先が多いため、名前順の最初の 500 人だけを表示しています。',
   'chat.people.openDm': 'DM を開く',
   'chat.people.openDmFailed': 'DM を開けませんでした',
   'chat.people.memberUnit': '人',

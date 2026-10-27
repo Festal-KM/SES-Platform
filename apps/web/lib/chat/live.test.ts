@@ -1,7 +1,7 @@
 // apps/web/lib/chat/live.test.ts
 // `S-031` の新着の自動表示（`lib/chat/live.ts`）。
 import { describe, expect, it } from 'vitest';
-import { hasOthersMessage, mergeLatestMessages } from './live';
+import { hasGapBefore, hasOthersMessage, mergeLatestMessages, readGapAfter } from './live';
 import type { ChatMessageView } from './views';
 
 function message(id: string, sentAt: string, mine = false): ChatMessageView {
@@ -64,5 +64,73 @@ describe('withLatestReactions（2026-10-16）', () => {
     expect(next[0]?.attachedProject).toEqual({ visible: false });
     expect(JSON.stringify(next)).not.toContain('金融系 Web 基盤');
     expect(JSON.stringify(next)).not.toContain('"p1"');
+  });
+});
+
+describe('✅ 2026-10-26（#164 の 5）保存済みの印と送信者の状態も取り直した値に揃える', () => {
+  it('別のタブで保存を外した・状態を消したら、開いたままの画面からも消える', async () => {
+    const { withLatestReactions } = await import('./live');
+    const shown = { ...A, saved: true, senderStatus: '商談中' };
+    const fresh = { ...A, saved: false, senderStatus: null };
+    const next = withLatestReactions([shown], [fresh]);
+    expect(next[0]?.saved).toBe(false);
+    expect(next[0]?.senderStatus).toBeNull();
+    expect(JSON.stringify(next)).not.toContain('商談中');
+  });
+});
+
+describe('✅ 2026-10-26（#166 の 4）hasGapBefore: 直近のページが手元とつながっていないか', () => {
+  const D = message('d', '2026-10-14T04:00:00.000Z');
+  const E = message('e', '2026-10-14T05:00:00.000Z');
+  it('満杯で、1 件も重ならず、全部が手元より新しい → 取りこぼしあり', () => {
+    expect(hasGapBefore([A, B], [D, E], 2)).toBe(true);
+  });
+  it('重なりがあればつながっている（取りこぼし無し）', () => {
+    expect(hasGapBefore([A, B], [B, C], 2)).toBe(false);
+  });
+  it('満杯でなければ、全部取れている', () => {
+    expect(hasGapBefore([A, B], [D], 2)).toBe(false);
+  });
+  it('手元が空なら何も足さない（初回の読み込みは直近のページで足りる）', () => {
+    expect(hasGapBefore([], [D, E], 2)).toBe(false);
+  });
+  it('直近のページが手元より古い（並べ替え中の一時的な順序）なら取りこぼし扱いしない', () => {
+    expect(hasGapBefore([D, E], [A, C], 2)).toBe(false);
+  });
+});
+
+describe('✅ 2026-10-26（#166 の 4・レビュー）readGapAfter: 最新まで読み切れたかを返す', () => {
+  const chunk = (ids: readonly string[], hasMoreAfter: boolean) => ({
+    items: ids.map((id, index) => message(id, `2026-10-14T0${String(index + 4)}:00:00.000Z`)),
+    hasMoreAfter,
+  });
+  it('続きが無くなるまで読めたら complete', async () => {
+    const pages = [chunk(['d', 'e'], true), chunk(['f'], false)];
+    const result = await readGapAfter('c', async () => pages.shift() ?? null, 10);
+    expect(result?.complete).toBe(true);
+    expect(result?.items.map((item) => item.id)).toEqual(['d', 'e', 'f']);
+  });
+  it('🔴 上限で止まったら complete ではない（呼び出し側は直近のページを足さない）', async () => {
+    let calls = 0;
+    const result = await readGapAfter('c', async () => {
+      calls += 1;
+      return chunk([`x${String(calls)}`], true);
+    }, 3);
+    expect(calls).toBe(3);
+    expect(result?.complete).toBe(false);
+    expect(result?.items).toHaveLength(3);
+  });
+  it('1 回でも読めなければ null（今回は何も足さない）', async () => {
+    const pages = [chunk(['d'], true), null];
+    expect(await readGapAfter('c', async () => pages.shift() ?? null, 10)).toBeNull();
+  });
+  it('続きは、前の回の最後の発言から読む', async () => {
+    const seen: string[] = [];
+    const pages = [chunk(['d', 'e'], true), chunk(['f'], false)];
+    await readGapAfter('c', async (after) => {
+      seen.push(after);
+      return pages.shift() ?? null;
+    }, 10);
+    expect(seen).toEqual(['c', 'e']);
   });
 });

@@ -28,7 +28,7 @@ import { CHAT_MESSAGE_MAX_LENGTH } from '@ses/config';
 import { useEffect, useRef, useState } from 'react';
 import { CHAT_UNDO_SEND_MS, mergeLatestMessages } from '../../../lib/chat/live';
 import { applyChatFormat, insertChatMention, type ChatEdit, type ChatFormat } from '../../../lib/chat/markdown';
-import { CHAT_DRAFT_EVENT, chatDraftKey } from '../../../lib/chat/message-text';
+import { CHAT_DRAFT_EVENT, chatDraftKey, restoreUnsentText } from '../../../lib/chat/message-text';
 import { appendQuote, slashCommandRange } from '../../../lib/chat/project-card-text';
 import { chatReactionEmoji } from '../../../lib/chat/reactions';
 import { chatMessageApiPath, chatMessagesApiPath, chatReactionApiPath, chatSaveApiPath } from '../../../lib/chat/screen-query';
@@ -71,6 +71,13 @@ export function useChatConversation({
   //    同じガードを共有し「前の送信が終わるまで送れない」状態になる）。
   const [sendGuard] = useState(() => createSubmitGuard<'SENT' | 'MISSING' | 'FAILED' | 'PROJECT'>());
   const [items, setItems] = useState<readonly ChatMessageView[]>(initialMessages);
+  /**
+   * ✅ 2026-10-26（#164 の 2）: 開いている間に読めなくなった（部屋から外れた・公開が取り消された等）。
+   * 🔴 一度立てたら戻さない（再び読めるかは画面の読み直しで決める）。本文・下書き・送信待ちを残さない。
+   */
+  const [unavailable, setUnavailable] = useState(false);
+  /** ✅ 2026-10-26（#166 の 3）: この会話の列が実際に画面に見えているか（スマホで隠れた列・横スクロールの外は false）。 */
+  const [onScreen, setOnScreen] = useState(true);
   const [body, setBody] = useState('');
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<'NONE' | 'FAILED' | 'MISSING' | 'PROJECT'>('NONE');
@@ -112,10 +119,47 @@ export function useChatConversation({
     if (!awayFromLatest) setNewArrived(false);
   }, [awayFromLatest]);
 
-  const { nextCursor, loadingOlder, olderFailed, loadOlder, announcement, setAnnouncement,
+  // ✅ 2026-10-26（#166 の 3）: 列が見えているかを見張る。`display: none`（スマホで隠れた 2 列目以降）や
+  //    横スクロールの外では交差しないので false になる。見張れない環境（テスト・古いブラウザ）では見えている扱い。
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (element === null || typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver((entries) => {
+      const entry = entries[entries.length - 1];
+      if (entry !== undefined) setOnScreen(entry.isIntersecting);
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  /** ✅ 2026-10-26（#164 の 2）: 読めなくなった。🔴 手元の本文・下書き・送信待ち・貼る案件をすべて捨てる。 */
+  function markUnavailable(): void {
+    // ✅ 2026-10-26（レビュー）: 取得をその場で止める（送信の 404 から来たときも、届きかけの応答で行を戻さない）。
+    stopMessages();
+    if (pendingTimer.current !== null) window.clearTimeout(pendingTimer.current);
+    pendingTimer.current = null;
+    setUnavailable(true);
+    setItems([]);
+    itemsRef.current = [];
+    setBody('');
+    bodyRef.current = '';
+    setPendingSend(null);
+    setAttachedProject(null);
+    setEditingId(null);
+    setEditText('');
+    try {
+      window.sessionStorage.removeItem(chatDraftKey(threadId));
+      window.dispatchEvent(new Event(CHAT_DRAFT_EVENT));
+    } catch {
+      // 保存できない環境では何もしない。
+    }
+  }
+
+  const active = onScreen && !unavailable;
+  const { stopMessages, nextCursor, loadingOlder, olderFailed, loadOlder, loadOlderUntil, announcement, setAnnouncement,
     announcementNotLoaded, setAnnouncementNotLoaded, announcementFailed, changeAnnouncement } = useChatMessages({
     threadId, initialNextCursor, itemsRef, awayRef, scrollToLatestOnRender,
-    setItems, setNewArrived, initialAnnouncement,
+    setItems, setNewArrived, initialAnnouncement, active, onUnavailable: markUnavailable,
   });
 
   // 待っている送信は、画面を離れたら取りやめる（🔴 下書きは送れるまで消さないので、戻れば文章は残っている）。
@@ -282,7 +326,7 @@ export function useChatConversation({
   }
 
   const { markerId, readReceiptId, markUnread } = useChatRead({
-    initialMessages, lastReadMessageId, items, peerReadMessageId, awayFromLatest, threadId,
+    initialMessages, lastReadMessageId, items, peerReadMessageId, awayFromLatest, threadId, active,
   });
 
   // ✅ 2026-10-16: リアクションを付ける / 外す。🔴 手元で先に書き換えない（サーバの応答だけが正）。
@@ -368,13 +412,23 @@ export function useChatConversation({
    * ✅ 2026-10-26: 帯を押したら、その発言へ移る。🔴 読み込み済みのときだけ動かし、読み込んでいなければ「いつの発言か」を出す
    * （過去を勝手に読み込み続けない。読み込みは「以前のメッセージを読み込む」に任せる）。
    */
-  function jumpToAnnouncement(): void {
+  async function jumpToAnnouncement(): Promise<void> {
     if (announcement === null) return;
-    const loaded = items.some((item) => item.id === announcement.messageId);
-    const element = loaded ? scrollRef.current?.querySelector(`[data-testid="chat-message-${announcement.messageId}"]`) : null;
-    if (element instanceof HTMLElement) {
+    const targetId = announcement.messageId;
+    const scrollToTarget = (): boolean => {
+      const element = scrollRef.current?.querySelector(`[data-testid="chat-message-${targetId}"]`);
+      if (!(element instanceof HTMLElement)) return false;
       setAnnouncementNotLoaded(false);
       element.scrollIntoView({ block: 'center' });
+      return true;
+    };
+    if (items.some((item) => item.id === targetId) && scrollToTarget()) return;
+    // ✅ 2026-10-26（#166 の 8）: 読み込んでいない古い発言なら、そこまで過去を続けて読んでから移る。
+    if (await loadOlderUntil(targetId)) {
+      // 足した行が描かれてから移る。
+      window.requestAnimationFrame(() => {
+        if (!scrollToTarget()) setAnnouncementNotLoaded(true);
+      });
       return;
     }
     setAnnouncementNotLoaded(true);
@@ -451,8 +505,9 @@ export function useChatConversation({
     if (pendingTimer.current !== null) window.clearTimeout(pendingTimer.current);
     pendingTimer.current = null;
     if (pendingSend !== null) {
-      setBody(pendingSend.body);
-      setAttachedProject(pendingSend.project);
+      // ✅ 2026-10-26（#166 の 6）: 🔴 待っている間に書いた次の文章を上書きしない（両方残す）。
+      updateBody(restoreUnsentText(pendingSend.body, bodyRef.current));
+      setAttachedProject((current) => current ?? pendingSend.project);
     }
     setPendingSend(null);
     document.getElementById(composeId)?.focus();
@@ -499,16 +554,22 @@ export function useChatConversation({
     });
     setSending(false);
     // 🔴 送れなかった文章は入力欄に戻す（再送・修正ができるように）。
-    if (outcome !== 'SENT' && bodyRef.current === '') setBody(trimmed);
+    // ✅ 2026-10-26（#166 の 6）: 🔴 待っている間に次の文章を書いていても、送れなかった文章を捨てない（両方残す）。
+    if (outcome !== 'SENT' && outcome !== 'MISSING') updateBody(restoreUnsentText(trimmed, bodyRef.current));
     // ✅ 2026-10-23: 貼る案件も戻す。🔴 「貼れない案件」だったときだけは戻さない（同じ失敗を繰り返さない）。
     if (outcome !== 'SENT' && outcome !== 'PROJECT' && pending.project !== null) setAttachedProject((current) => current ?? pending.project);
-    if (outcome === 'MISSING') setSendError('MISSING');
+    // ✅ 2026-10-26（#164 の 2）: 🔴 送ろうとして 404 = 読めなくなった。戻した文章も含めて画面から消す。
+    if (outcome === 'MISSING') {
+      markUnavailable();
+      return;
+    }
     else if (outcome === 'FAILED') setSendError('FAILED');
     else if (outcome === 'PROJECT') setSendError('PROJECT');
   }
 
 
   return {
+    unavailable,
     layout,
     threadKind,
     title,

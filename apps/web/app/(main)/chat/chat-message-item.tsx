@@ -106,10 +106,10 @@ export function ChatMessageItem({ item, continued, conversation }: { readonly it
           />
           {editFailed ? <Alert variant="danger">{messages.editFailed}</Alert> : null}
           <div className="flex gap-2">
-            <Button type="button" variant="primary" size="sm" onClick={() => void saveEdit(item)} data-testid={`chat-message-save-${item.id}`}>
+            <Button type="button" variant="primary" size="sm" className="min-h-11 md:min-h-8" onClick={() => void saveEdit(item)} data-testid={`chat-message-save-${item.id}`}>
               {messages.save}
             </Button>
-            <Button type="button" variant="ghost" size="sm" onClick={() => setEditingId(null)}>
+            <Button type="button" variant="ghost" size="sm" className="min-h-11 md:min-h-8" onClick={() => setEditingId(null)}>
               {messages.cancel}
             </Button>
           </div>
@@ -193,7 +193,7 @@ export function ChatMessageItem({ item, continued, conversation }: { readonly it
             type="button"
             variant="ghost"
             size="sm"
-            className="w-fit"
+            className="min-h-11 w-fit md:min-h-8"
             onClick={() => toggleExpanded(item.id)}
             aria-expanded={open}
             data-testid={`chat-message-expand-${item.id}`}
@@ -276,6 +276,7 @@ export function ChatMessageItem({ item, continued, conversation }: { readonly it
                       setReactionPickerId(null);
                       void toggleReaction(item, kind);
                     }}
+                    className="h-11 w-11"
                     data-testid={`chat-message-reaction-pick-${item.id}-${kind}`}
                   />
                 ))}
@@ -285,6 +286,7 @@ export function ChatMessageItem({ item, continued, conversation }: { readonly it
                     type="button"
                     variant="ghost"
                     size="sm"
+                    className="min-h-11 md:min-h-8"
                     onClick={() => {
                       setReactionPickerId(null);
                       void toggleReaction(item, kind);
@@ -315,6 +317,7 @@ export function ChatMessageItem({ item, continued, conversation }: { readonly it
                 type="button"
                 variant="ghost"
                 size="sm"
+                className="min-h-11 md:min-h-8"
                 aria-pressed={announcement?.messageId === item.id}
                 onClick={() => void changeAnnouncement(announcement?.messageId === item.id ? 'DELETE' : 'PUT', item.id)}
                 data-testid={`chat-message-announce-${item.id}`}

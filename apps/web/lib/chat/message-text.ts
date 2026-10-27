@@ -96,3 +96,13 @@ export function hasChatDraft(threadId: string): boolean {
     return false;
   }
 }
+
+/**
+ * ✅ 2026-10-26（#166 の 6）: 送れなかった・取り消した文章を入力欄に戻す。
+ * 🔴 送信待ちの間に次の文章を書き始めていたら、どちらも消さない（戻す文章を先、書きかけを後に、空行で区切って並べる）。
+ */
+export function restoreUnsentText(unsent: string, typing: string): string {
+  if (unsent === '') return typing;
+  if (typing === '' || typing === unsent) return unsent;
+  return `${unsent}\n\n${typing}`;
+}

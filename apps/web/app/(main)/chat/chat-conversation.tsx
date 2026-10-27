@@ -113,6 +113,20 @@ export function ChatConversation(props: ChatConversationProps) {
     scrollToLatest,
     loadOlder,
   } = conversation;
+  // ✅ 2026-10-26（#164 の 2）: 開いている間に読めなくなったら、見出し（相手の名前）も本文も入力欄も描かない。
+  //    🔴 戻り道だけを置く（一覧から選び直す）。
+  if (conversation.unavailable) {
+    return (
+      <section data-testid="chat-conversation" data-thread-id={threadId} data-unavailable="true" className="flex min-h-0 flex-1 flex-col">
+        <div className="flex flex-col gap-3 p-4" role="status" data-testid="chat-conversation-unavailable">
+          <p className="m-0 text-body text-fg-muted">{messages.unavailable ?? messages.backToList}</p>
+          <Link href={chatHref({})} className={SECONDARY_LINK_CLASSES} data-testid="chat-conversation-unavailable-back">
+            {messages.backToList}
+          </Link>
+        </div>
+      </section>
+    );
+  }
 return (
     // ✅ **2026-10-13（`docs/design-system.md` §4.5）: ヘッダ 56 / 本文 / コンポーザー 64 の
     //    3 段にした。** 本文だけが伸び縮みし、上下 2 段は動かない。

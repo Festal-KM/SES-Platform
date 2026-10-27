@@ -49,6 +49,12 @@ export type ChatPeopleData = {
   readonly mutedIds: readonly string[];
   /** ✅ 2026-10-19: 部屋ごとの最後の発言の冒頭（一覧の 2 段目）。🔴 読めた発言だけ。 */
   readonly lastSnippets: Readonly<Record<string, string>>;
+  /**
+   * ✅ 2026-10-26（#166 の 7）: 上限（`CHAT_ROOMS_MAX` / `CHAT_CONTACTS_MAX`）で読み切れなかった部屋・人があるか。
+   * 黙って消さず、画面が「表示しきれない分がある」と出すため。🔴 件数は返さない。
+   */
+  readonly roomsTruncated?: boolean;
+  readonly contactsTruncated?: boolean;
 };
 
 export const CHAT_RECENT_CONTACTS = 5;
@@ -111,21 +117,40 @@ export async function readPeople(
   companyKeyOf: (partnerCompanyId: string | null) => string | null = () => null,
 ): Promise<ChatPeopleData> {
   // ① 母集団は C10 MEMBER（自分がメンバーの部屋だけ）。`where` は種類だけ。
-  const rows = (await db.chatThread.findMany({
+  const fetchedRooms = (await db.chatThread.findMany({
     where: { kind: { in: ['DM', 'GROUP'] } },
     select: ROOM_SELECT,
     orderBy: [{ lastMessageAt: { sort: 'desc', nulls: 'last' } }, { id: 'desc' }],
-    take: CHAT_ROOMS_MAX,
+    take: CHAT_ROOMS_MAX + 1,
   })) as readonly RoomRow[];
+  // ✅ 2026-10-26（#166 の 7）: 上限を超えた分は「表示しきれない」と画面に出す（黙って消さない）。
+  const roomsTruncated = fetchedRooms.length > CHAT_ROOMS_MAX;
+  const latestRooms = fetchedRooms.slice(0, CHAT_ROOMS_MAX);
+  // ✅ 2026-10-26（#166 の 7）: ピン留めした部屋は、古くて上限の外にあっても必ず出す。
+  //    🔴 ピン留めの行は本人の行だけ（C7）、部屋は C10 MEMBER（今もメンバーの部屋だけ）が決める。
+  const latestIds = new Set(latestRooms.map((row) => row.id));
+  const pinnedOutside = (await db.chatReadState.findMany({ where: { pinned: true }, select: { threadId: true } }))
+    .map((row) => row.threadId)
+    .filter((id) => !latestIds.has(id));
+  const pinnedRooms =
+    pinnedOutside.length === 0
+      ? []
+      : ((await db.chatThread.findMany({
+          where: { id: { in: pinnedOutside }, kind: { in: ['DM', 'GROUP'] } },
+          select: ROOM_SELECT,
+        })) as readonly RoomRow[]);
+  const rows = [...latestRooms, ...pinnedRooms];
   // ① 母集団は C8 DIRECTORY。
   // ✅ 2026-10-19（#137 レビュー）: 取引先の文脈では最初から自社（ホスト）の人だけを読む（同僚が多いとホストの人が
   //    上限の外に押し出される）。🔴 これは表示の絞り込みで、境界は C8 のまま（② の フィルタも残す）。
-  const people = (await db.user.findMany({
+  const fetchedPeople = (await db.user.findMany({
     where: { disabledAt: null, id: { not: ctx.userId }, ...(ctx.partnerCompanyId === null ? {} : { ownerPartnerCompanyId: null }) },
     select: { id: true, displayName: true, ownerPartnerCompanyId: true },
     orderBy: [{ displayName: 'asc' }, { id: 'asc' }],
-    take: CHAT_CONTACTS_MAX,
+    take: CHAT_CONTACTS_MAX + 1,
   })) as readonly UserRow[];
+  const contactsTruncated = fetchedPeople.length > CHAT_CONTACTS_MAX;
+  const people = fetchedPeople.slice(0, CHAT_CONTACTS_MAX);
   const users = await readUsers(db, [...rows.flatMap((row) => row.memberUserIds), ...people.map((person) => person.id)]);
   const nameOfCompany = await companyNamesOf(db, people.map((person) => person.ownerPartnerCompanyId));
 
@@ -196,6 +221,8 @@ export async function readPeople(
     pinnedIds: [...prefs.entries()].filter(([, value]) => value.pinned).map(([id]) => id),
     mutedIds: [...prefs.entries()].filter(([, value]) => value.muted).map(([id]) => id),
     lastSnippets: Object.fromEntries(lastMessages.map((message) => [message.threadId, lastMessageSnippet(message, t('chat.snippet.projectShared'))])),
+    roomsTruncated,
+    contactsTruncated,
   };
 }
 
