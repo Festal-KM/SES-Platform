@@ -111,6 +111,16 @@ export type ChatConversationMessages = {
   readonly announcementSetBySuffix: string;
   readonly announcementNotLoadedSuffix: string;
   readonly announcementFailed: string;
+  /** ✅ 2026-10-27（F-038 ⑬ ⑭）: 引用して返信と、自分宛ての発言の印。省略時は描かない（古い呼び出し・テストの互換）。 */
+  readonly quote?: {
+    readonly action: string;
+    readonly chipPrefix: string;
+    readonly remove: string;
+    readonly label: string;
+    readonly jump: string;
+    readonly unavailable: string;
+  };
+  readonly mentionToYou?: string;
   /** ✅ 2026-10-23: 行頭の「/」のメニューと、案件を貼る小窓。 */
   readonly slash: { readonly label: string; readonly project: string; readonly template: string };
   readonly pasteProject: {
@@ -309,6 +319,15 @@ export function chatConversationMessages(): ChatConversationMessages {
     announcementSetBySuffix: t('chat.announcement.setBySuffix'),
     announcementNotLoadedSuffix: t('chat.announcement.notLoadedSuffix'),
     announcementFailed: t('chat.announcement.failed'),
+    quote: {
+      action: t('chat.quote.action'),
+      chipPrefix: t('chat.quote.chipPrefix'),
+      remove: t('chat.quote.remove'),
+      label: t('chat.quote.label'),
+      jump: t('chat.quote.jump'),
+      unavailable: t('chat.quote.unavailable'),
+    },
+    mentionToYou: t('chat.mention.toYou'),
     slash: {
       label: t('chat.compose.slash.label'),
       project: t('chat.compose.slash.project'),

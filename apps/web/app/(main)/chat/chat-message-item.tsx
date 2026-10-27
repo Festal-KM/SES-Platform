@@ -47,6 +47,10 @@ type ChatMessageItemState = Pick<ChatConversationState,
   | 'saveEdit'
   | 'markUnread'
   | 'toggleExpanded'
+  | 'quoteMessage'
+  | 'jumpToQuoted'
+  | 'quoteMissingIds'
+  | 'mentionsMe'
 >;
 
 /**
@@ -97,7 +101,12 @@ export function ChatMessageItem({ item, continued, conversation }: { readonly it
     saveEdit,
     markUnread,
     toggleExpanded,
+    quoteMessage,
+    jumpToQuoted,
+    quoteMissingIds,
+    mentionsMe,
   } = conversation;
+  const quoteLabels = messages.quote;
   /**
    * 吹き出しと、その下の操作（続きを読む・コピー）。🔴 自分 / 相手の吹き出しの差は**面の色だけ**
    * （render テストの ④）なので、色は呼び出し側が渡す。
@@ -152,7 +161,22 @@ export function ChatMessageItem({ item, continued, conversation }: { readonly it
               messages.purged
             )
           ) : (
-            <ChatMessageMarkdown text={shown} messageId={item.id} mentionNames={mentionCandidates} tone={surfaceClass === MINE_SURFACE_CLASSES ? 'inverse' : 'normal'} />
+            <ChatMessageMarkdown
+              text={shown}
+              messageId={item.id}
+              mentionNames={mentionCandidates}
+              tone={surfaceClass === MINE_SURFACE_CLASSES ? 'inverse' : 'normal'}
+              {...(quoteLabels === undefined
+                ? {}
+                : {
+                    // ✅ 2026-10-27（F-038 ⑬）: 引用元へ移る（🔴 この部屋の中だけ。見つからなければ「この発言は表示できません」）。
+                    quote: {
+                      labels: quoteLabels,
+                      missing: quoteMissingIds.has(item.id),
+                      onJump: (targetId: string) => void jumpToQuoted(item.id, targetId),
+                    },
+                  })}
+            />
           )}
         </div>
         )}
@@ -262,6 +286,19 @@ export function ChatMessageItem({ item, continued, conversation }: { readonly it
                     className="h-11 w-11"
                     title={messages.remove} icon={<Icon name="chat-delete" />} />
                 </>
+            ) : null}
+            {/* ✅ 2026-10-27（F-038 ⑬）: 引用して返信（投稿できる人だけ。消えた発言は引用できない）。 */}
+            {canPost && quoteLabels !== undefined && item.deleted !== true && text !== '' ? (
+              <IconButton
+                type="button"
+                variant="ghost"
+                onClick={() => quoteMessage(item)}
+                data-testid={`chat-message-quote-action-${item.id}`}
+                aria-label={quoteLabels.action}
+                className="h-11 w-11"
+                title={quoteLabels.action}
+                icon={<Icon name="chat-quote" />}
+              />
             ) : null}
             {/* ✅ 2026-10-22（紺野「リアクションのスタンプとかもちゃんと入れて」）: 選択欄をやめ、押すと絵文字 12 種と語 4 種が並ぶ。
                 絵文字は読み上げ名（`aria-label`）を持つ。 */}
@@ -454,7 +491,13 @@ export function ChatMessageItem({ item, continued, conversation }: { readonly it
                     className={item.own ? OWN_AVATAR_CLASSES : OTHER_AVATAR_CLASSES}
                   />
                 )}
-                <div className="flex min-w-0 flex-1 flex-col gap-1">
+                {/* ✅ 2026-10-27（F-038 ⑭）: 自分宛ての `@` を含む相手の発言は左に線を引く（読み上げにも「自分宛て」を残す）。 */}
+                <div
+                  className={cn('flex min-w-0 flex-1 flex-col gap-1', mentionsMe(item) ? 'border-l-2 border-brand pl-2' : null)}
+                  data-mention={mentionsMe(item) ? 'true' : undefined}
+                  data-testid={mentionsMe(item) ? `chat-message-mention-${item.id}` : undefined}
+                >
+                  {mentionsMe(item) && messages.mentionToYou !== undefined ? <span className="sr-only">{messages.mentionToYou}</span> : null}
                   {continued ? (
                     // 🔴 読み上げでは誰の発言かを残す（見た目だけ省く）。
                     <span className="sr-only">{item.senderName ?? messages.unknownName}</span>

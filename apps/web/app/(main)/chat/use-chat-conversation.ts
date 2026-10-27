@@ -30,6 +30,8 @@ import { CHAT_UNDO_SEND_MS, mergeLatestMessages } from '../../../lib/chat/live';
 import { applyChatFormat, insertChatMention, type ChatEdit, type ChatFormat } from '../../../lib/chat/markdown';
 import { CHAT_DRAFT_EVENT, chatDraftKey, restoreUnsentText } from '../../../lib/chat/message-text';
 import { appendQuote, slashCommandRange } from '../../../lib/chat/project-card-text';
+import { buildQuotedBody, chatQuoteDraft, replyMaxLength, type ChatQuoteDraft } from '../../../lib/chat/quote';
+import { mentionsName } from '../../../lib/chat/mention';
 import { chatReactionEmoji } from '../../../lib/chat/reactions';
 import { chatMessageApiPath, chatMessagesApiPath, chatReactionApiPath, chatSaveApiPath } from '../../../lib/chat/screen-query';
 import { acceptChatAttachment, uploadChatAttachment } from '../../../lib/chat/attachment-client';
@@ -47,8 +49,13 @@ const UNREAD_MARKER_TOP_GAP_PX = 48;
 /** ✅ 2026-10-27: 添えるファイル（送るまで手元に持つ。🔴 名前は送らない・保存しない）。 */
 export type ChatPickedFile = { readonly file: File; readonly contentType: ChatAttachmentContentType };
 
-/** ✅ 2026-10-23: 送信待ちの中身（本文と、貼る案件）。✅ 2026-10-27: 添えるファイル。 */
-type PendingSend = { readonly body: string; readonly project: ChatPickedProject | null; readonly file: ChatPickedFile | null };
+/** ✅ 2026-10-23: 送信待ちの中身（本文と、貼る案件）。✅ 2026-10-27: 添えるファイル・引用（F-038 ⑬）。 */
+type PendingSend = {
+  readonly body: string;
+  readonly project: ChatPickedProject | null;
+  readonly file: ChatPickedFile | null;
+  readonly quote: ChatQuoteDraft | null;
+};
 
 /** 投稿の応答（`docs/05` §6.5 #51 の上位互換。`route.ts` の 🔴）。 */
 type SendResponseBody = { readonly message: ChatMessageView };
@@ -72,6 +79,7 @@ export function useChatConversation({
   mentionNames = [],
   announcement: initialAnnouncement = null,
   canAttach = false,
+  selfName = null,
 }: ChatConversationProps) {
   // 🔴 ガードは**インスタンスごと**に持つ（モジュール変数にすると、別のスレッドを開いた島が
   //    同じガードを共有し「前の送信が終わるまで送れない」状態になる）。
@@ -90,6 +98,9 @@ export function useChatConversation({
   // ✅ 2026-10-27（改訂 44）: 添えるファイルと、選んだファイルを受け付けなかったときの印。
   const [attachedFile, setAttachedFile] = useState<ChatPickedFile | null>(null);
   const [attachRejected, setAttachRejected] = useState(false);
+  // ✅ 2026-10-27（F-038 ⑬）: 入力欄で選んでいる引用と、引用元へ移れなかった発言（「この発言は表示できません」を出す）。
+  const [quoteDraft, setQuoteDraft] = useState<ChatQuoteDraft | null>(null);
+  const [quoteMissingIds, setQuoteMissingIds] = useState<ReadonlySet<string>>(() => new Set());
   // ✅ 2026-10-14（チャットレーン）: 会話の操作の改修。
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
@@ -155,6 +166,7 @@ export function useChatConversation({
     setPendingSend(null);
     setAttachedProject(null);
     setAttachedFile(null);
+    setQuoteDraft(null);
     setEditingId(null);
     setEditText('');
     try {
@@ -437,25 +449,63 @@ export function useChatConversation({
    */
   async function jumpToAnnouncement(): Promise<void> {
     if (announcement === null) return;
-    const targetId = announcement.messageId;
+    const found = await jumpToMessage(announcement.messageId);
+    setAnnouncementNotLoaded(!found);
+  }
+
+  /**
+   * この部屋の発言へ移る（アナウンスの帯・引用元）。移れたら `true`。
+   * 🔴 探すのは**開いているこの部屋の中だけ**（`loadOlderUntil` はこの部屋の過去を読むだけ。ほかの部屋を読みに行かない）。
+   */
+  async function jumpToMessage(targetId: string): Promise<boolean> {
     const scrollToTarget = (): boolean => {
       const element = scrollRef.current?.querySelector(`[data-testid="chat-message-${targetId}"]`);
       if (!(element instanceof HTMLElement)) return false;
-      setAnnouncementNotLoaded(false);
       element.scrollIntoView({ block: 'center' });
       return true;
     };
-    if (items.some((item) => item.id === targetId) && scrollToTarget()) return;
+    if (items.some((item) => item.id === targetId) && scrollToTarget()) return true;
     // ✅ 2026-10-26（#166 の 8）: 読み込んでいない古い発言なら、そこまで過去を続けて読んでから移る。
     if (await loadOlderUntil(targetId)) {
       // 足した行が描かれてから移る。
-      window.requestAnimationFrame(() => {
-        if (!scrollToTarget()) setAnnouncementNotLoaded(true);
+      return new Promise((resolve) => {
+        window.requestAnimationFrame(() => resolve(scrollToTarget()));
       });
-      return;
     }
-    setAnnouncementNotLoaded(true);
+    return false;
   }
+
+  /**
+   * ✅ 2026-10-27（F-038 ⑬）: 引用元へ移る。移れなければ、その引用の中に「この発言は表示できません」を出す
+   * （消えた・この部屋に無い・読めない を区別しない）。
+   */
+  async function jumpToQuoted(fromMessageId: string, targetId: string): Promise<void> {
+    const found = await jumpToMessage(targetId);
+    setQuoteMissingIds((current) => {
+      const next = new Set(current);
+      if (found) next.delete(fromMessageId);
+      else next.add(fromMessageId);
+      return next;
+    });
+  }
+
+  /** ✅ 2026-10-27（F-038 ⑬）: この発言を引用して入力欄に札を出す（送った時点の写し）。 */
+  function quoteMessage(item: ChatMessageView): void {
+    if (!canPost || item.body === null || item.deleted === true) return;
+    setQuoteDraft(
+      chatQuoteDraft({ id: item.id, senderName: item.senderName ?? (item.mine ? selfName : null), body: item.body }, messages.unknownName),
+    );
+    setComposeTab('write');
+    window.requestAnimationFrame(() => composeTextarea()?.focus());
+  }
+
+  /** ✅ 2026-10-27（F-038 ⑭）: 自分宛ての `@` を含む相手の発言か（左の線を引く）。判定はサーバの印と同じ関数。 */
+  function mentionsMe(item: ChatMessageView): boolean {
+    return !item.mine && item.deleted !== true && mentionsName(item.body, selfName);
+  }
+
+  /** 返信に書ける文字数（引用を選んでいれば、その分を引く）。 */
+  const composeMaxLength = replyMaxLength(CHAT_MESSAGE_MAX_LENGTH, quoteDraft);
 
   async function saveEdit(item: ChatMessageView): Promise<void> {
     const trimmed = editText.trim();
@@ -510,12 +560,13 @@ export function useChatConversation({
     const trimmed = body.trim();
     // ✅ 2026-10-23: 案件を貼っていれば本文は空でも送れる（カードだけの発言）。
     if (!canPost || (trimmed === '' && attachedProject === null && attachedFile === null) || sending || pendingSend !== null) return;
-    const next: PendingSend = { body: trimmed, project: attachedProject, file: canAttach ? attachedFile : null };
+    const next: PendingSend = { body: trimmed, project: attachedProject, file: canAttach ? attachedFile : null, quote: trimmed === '' ? null : quoteDraft };
     setSendError('NONE');
     setPendingSend(next);
     setBody('');
     setAttachedProject(null);
     setAttachedFile(null);
+    if (next.quote !== null) setQuoteDraft(null);
     setSlashRange(null);
     setPickerOpen(false);
     pendingTimer.current = window.setTimeout(() => {
@@ -533,6 +584,7 @@ export function useChatConversation({
       updateBody(restoreUnsentText(pendingSend.body, bodyRef.current));
       setAttachedProject((current) => current ?? pendingSend.project);
       setAttachedFile((current) => current ?? pendingSend.file);
+      setQuoteDraft((current) => current ?? pendingSend.quote);
     }
     setPendingSend(null);
     document.getElementById(composeId)?.focus();
@@ -567,7 +619,8 @@ export function useChatConversation({
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
-            body: trimmed,
+            // ✅ 2026-10-27（F-038 ⑬）: 引用は本文の頭に決まった形で置く（`lib/chat/quote.ts`）。
+            body: pending.quote === null ? trimmed : buildQuotedBody(pending.quote, trimmed),
             ...(pending.project === null ? {} : { projectId: pending.project.id }),
             ...(attachmentUploadToken === null ? {} : { attachmentUploadToken }),
           }),
@@ -601,6 +654,7 @@ export function useChatConversation({
     if (outcome !== 'SENT' && outcome !== 'PROJECT' && pending.project !== null) setAttachedProject((current) => current ?? pending.project);
     // ✅ 2026-10-27: 送れなかったファイルも戻す（選び直さずにもう一度送れる）。
     if (outcome !== 'SENT' && outcome !== 'MISSING' && pending.file !== null) setAttachedFile((current) => current ?? pending.file);
+    if (outcome !== 'SENT' && outcome !== 'MISSING' && pending.quote !== null) setQuoteDraft((current) => current ?? pending.quote);
     // ✅ 2026-10-26（#164 の 2）: 🔴 送ろうとして 404 = 読めなくなった。戻した文章も含めて画面から消す。
     if (outcome === 'MISSING') {
       markUnavailable();
@@ -701,6 +755,13 @@ export function useChatConversation({
     keyboardNav,
     changeAnnouncement,
     jumpToAnnouncement,
+    quoteDraft,
+    setQuoteDraft,
+    quoteMissingIds,
+    quoteMessage,
+    jumpToQuoted,
+    mentionsMe,
+    composeMaxLength,
     saveEdit,
     removeMessage,
     markUnread,

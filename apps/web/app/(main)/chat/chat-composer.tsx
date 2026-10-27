@@ -1,6 +1,5 @@
 'use client';
 
-import { CHAT_MESSAGE_MAX_LENGTH } from '@ses/config';
 import { Alert, Button, CHAT_COMPOSER_HEIGHT_CLASS, CHAT_COMPOSER_FOCUS_CLASSES, CHAT_COMPOSER_INPUT_FOCUS_CLASSES, Field, Icon, IconButton, Input, Select, Textarea, cn } from '@ses/ui';
 import { useRef } from 'react';
 
@@ -9,6 +8,7 @@ import { CHAT_ATTACHMENT_ACCEPT, chatAttachmentSummary } from '../../../lib/chat
 import { isSendKey } from '../../../lib/chat/layout';
 import { CHAT_FORMATS } from '../../../lib/chat/markdown';
 import { remainingChars } from '../../../lib/chat/message-text';
+import { chatQuoteChipText } from '../../../lib/chat/quote';
 import { chatHref, chatMessagesApiPath } from '../../../lib/chat/screen-query';
 import { ChatMessageMarkdown } from './chat-message-markdown';
 import { ChatProjectPicker } from './chat-project-picker';
@@ -63,6 +63,9 @@ type ChatComposerState = Pick<ChatConversationState,
   | 'submit'
   | 'undoSend'
   | 'sendNow'
+  | 'quoteDraft'
+  | 'setQuoteDraft'
+  | 'composeMaxLength'
 >;
 
 export function ChatComposer({ conversation }: { readonly conversation: ChatComposerState }) {
@@ -111,6 +114,9 @@ export function ChatComposer({ conversation }: { readonly conversation: ChatComp
     submit,
     undoSend,
     sendNow,
+    quoteDraft,
+    setQuoteDraft,
+    composeMaxLength,
   } = conversation;
   // ✅ 2026-10-27: ファイルを選ぶ欄（見えない。印のボタンから開く）。
   const fileInput = useRef<HTMLInputElement | null>(null);
@@ -274,6 +280,25 @@ export function ChatComposer({ conversation }: { readonly conversation: ChatComp
                   onClose={() => setPickerOpen(false)}
                 />
               ) : null}
+              {/* ✅ 2026-10-27（F-038 ⑬）: 引用する発言（送った時点の写し。外せる）。 */}
+              {quoteDraft === null || messages.quote === undefined ? null : (
+                <div className="flex items-center gap-2 border-b border-border px-3 py-1" data-testid="chat-compose-quote">
+                  <Icon name="chat-quote" className="text-fg-muted" />
+                  <span className="min-w-0 truncate text-xs text-fg" data-testid="chat-compose-quote-text">
+                    {chatQuoteChipText(quoteDraft, messages.quote.chipPrefix)}
+                  </span>
+                  <IconButton
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="ml-auto h-11 w-11 md:h-8 md:w-8"
+                    icon={<Icon name="x" />}
+                    aria-label={messages.quote.remove}
+                    onClick={() => setQuoteDraft(null)}
+                    data-testid="chat-compose-quote-remove"
+                  />
+                </div>
+              )}
               {/* ✅ 2026-10-23: 送信で一緒に送る案件（外せる）。 */}
               {attachedProject === null ? null : (
                 <div className="flex items-center gap-2 border-b border-border px-3 py-1" data-testid="chat-compose-attached-project">
@@ -320,7 +345,8 @@ export function ChatComposer({ conversation }: { readonly conversation: ChatComp
                   rows={1}
                   name="body"
                   value={body}
-                  maxLength={CHAT_MESSAGE_MAX_LENGTH}
+                  // ✅ 2026-10-27: 引用を選んでいれば、その分を引いた長さまで（送る本文が上限を超えない）。
+                  maxLength={composeMaxLength}
                   placeholder={title?.title ? `${title.title}${messages.composePlaceholderSuffix}` : messages.composePlaceholder}
                   // 書式を開いたときは、自動で伸びないブラウザでも複数行を見渡せる高さを確保する。
                   // 自動で伸びる場合も max-h-40 で止め、以降は欄の中でスクロールする。
@@ -496,7 +522,7 @@ export function ChatComposer({ conversation }: { readonly conversation: ChatComp
                 </Select>
                 {/* ✅ 2026-10-14: 残り文字数（残り 200 文字を切ったら出す）。 */}
                 {(() => {
-                  const remaining = remainingChars(body, CHAT_MESSAGE_MAX_LENGTH);
+                  const remaining = remainingChars(body, composeMaxLength);
                   return remaining === null ? null : (
                     <span className="ml-auto text-xs text-fg-muted" aria-live="polite" data-testid="chat-compose-remaining">
                       {`${messages.remainingBefore} ${String(remaining)} ${messages.remainingAfter}`}

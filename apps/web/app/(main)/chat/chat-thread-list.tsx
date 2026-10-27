@@ -88,6 +88,8 @@ export type ChatThreadListProps = {
   readonly pinnedIds?: readonly string[];
   readonly mutedIds?: readonly string[];
   readonly unreadCounts?: Readonly<Record<string, number>>;
+  /** ✅ 2026-10-27（F-038 ⑭）: 未読の中に自分宛ての `@` がある部屋（「ある / ない」だけ）。 */
+  readonly mentionUnreadIds?: readonly string[];
   /** 旧「未読のみ」（`unread=1`）。v2 では左の列の「未読」（`f=unread`）と同じ扱い。 */
   readonly unreadOnly?: boolean;
   readonly people?: ChatPeopleData | null;
@@ -165,6 +167,7 @@ type RowContext = {
   readonly listQuery: { readonly q: string | null; readonly sort: ChatThreadSort; readonly filter: ChatListFilter };
   readonly unreadCounts: Readonly<Record<string, number>>;
   readonly mutedIds: ReadonlySet<string>;
+  readonly mentionIds: ReadonlySet<string>;
   /** ✅ 2026-10-20: スワイプで出すピン留めの今の状態。 */
   readonly pinnedIds: ReadonlySet<string>;
   readonly lastSnippets: Readonly<Record<string, string>>;
@@ -272,6 +275,17 @@ function Row({ view, context }: { readonly view: RowView; readonly context: RowC
                 {view.counterpartyName}
               </span>
             )}
+            {/* ✅ 2026-10-27（F-038 ⑭）: 未読に自分宛ての `@` がある。🔴 ミュート中も出す（件数は出さない）。 */}
+            {context.mentionIds.has(view.id) ? (
+              <span
+                className={cn(TAG_CLASSES, 'bg-brand-bg font-bold text-brand')}
+                title={t('chat.mention.unread')}
+                data-testid={room ? `chat-room-mention-${view.id}` : `chat-thread-mention-${view.id}`}
+              >
+                <span aria-hidden="true">{t('chat.mention.mark')}</span>
+                <span className="sr-only">{t('chat.mention.unread')}</span>
+              </span>
+            ) : null}
             <ChatDraftMark threadId={view.id} label={t('chat.thread.draft')} />
           </span>
         </span>
@@ -444,6 +458,7 @@ export function ChatThreadList({
   truncated = false,
   messageHits = [],
   unreadCounts = {},
+  mentionUnreadIds = [],
   unreadOnly = false,
   pinnedIds = [],
   mutedIds = [],
@@ -468,6 +483,7 @@ export function ChatThreadList({
     listQuery: { q, sort, filter },
     unreadCounts: allUnread,
     mutedIds: allMuted,
+    mentionIds: new Set(mentionUnreadIds),
     pinnedIds: new Set([...pinnedIds, ...(people?.pinnedIds ?? [])]),
     lastSnippets: { ...lastSnippets, ...(people?.lastSnippets ?? {}) },
     now,

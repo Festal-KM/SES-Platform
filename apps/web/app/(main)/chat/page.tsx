@@ -237,6 +237,7 @@ export default async function ChatPage({
               groups={tree.groups}
               rooms={data.people?.rooms ?? []}
               unreadCounts={{ ...tree.unreadCounts, ...(data.people?.unreadCounts ?? {}) }}
+              mentionUnreadIds={data.mentionUnreadIds}
               filter={filter}
               showContacts={data.people !== null}
               showSaved={canPost}
@@ -261,6 +262,7 @@ export default async function ChatPage({
               saved={saved}
               templates={ownTemplates}
               unreadCounts={tree.unreadCounts}
+              mentionUnreadIds={data.mentionUnreadIds}
               pinnedIds={tree.pinnedIds}
               mutedIds={tree.mutedIds}
               people={data.people}
@@ -306,6 +308,7 @@ export default async function ChatPage({
                 {...(selected.kind === 'DM' ? { peerReadMessageId: data.peerReadMessageIds[selected.id] ?? null } : {})}
                 mentionNames={mentionNamesOf(selected)}
                 announcement={data.announcements[selected.id] ?? null}
+                selfName={data.viewerName}
                 canPost={canPost}
                 canAttach={canPost && attachableIds.has(selected.id)}
                 messages={conversationMessages}
@@ -357,6 +360,7 @@ export default async function ChatPage({
                   {...(pane.thread.kind === 'DM' ? { peerReadMessageId: data.peerReadMessageIds[pane.thread.id] ?? null } : {})}
                   mentionNames={mentionNamesOf(pane.thread)}
                   announcement={data.announcements[pane.thread.id] ?? null}
+                  selfName={data.viewerName}
                   canPost={canPost}
                   canAttach={canPost && attachableIds.has(pane.thread.id)}
                   messages={conversationMessages}
