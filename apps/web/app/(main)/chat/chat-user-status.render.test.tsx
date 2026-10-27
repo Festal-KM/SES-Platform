@@ -175,8 +175,15 @@ describe('④ 発言の名前の横の状態（どの部屋でも）', () => {
       }),
     );
     expect(html).toContain(`data-testid="chat-message-status-${WITH}"`);
-    expect(html).toContain(`class="text-xs text-fg-muted" data-testid="chat-message-status-${WITH}"`);
-    expect(html).toContain('flex-wrap items-baseline gap-x-3 gap-y-1');
+    // ✅ 2026-10-27: 区切りの「·」は目印の外。目印は状態の文字だけを持つ（E2E が文字と照合する）。
+    expect(html).toContain(`<span data-testid="chat-message-status-${WITH}">${STATUS}</span>`);
+    expect(html).toContain('class="text-micro leading-tight text-fg-muted"');
+    expect(html).toContain('flex-wrap items-baseline gap-x-3');
+    expect(html).toContain('order-2 shrink-0 text-xs text-fg-muted');
+    expect(html).toContain('order-3 block w-full min-w-0 break-words text-xs leading-tight text-fg');
+    expect(html).toContain(' · ');
+    expect(html).not.toContain('md:order-2');
+    expect(html).not.toContain('md:order-3');
     expect(html).toContain(STATUS);
     expect(html).not.toContain(`data-testid="chat-message-status-${WITHOUT}"`);
   });

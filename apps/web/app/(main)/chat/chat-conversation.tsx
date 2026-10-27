@@ -113,6 +113,13 @@ export function ChatConversation(props: ChatConversationProps) {
     scrollToLatest,
     loadOlder,
   } = conversation;
+  // 日付は発言の間だけに置き、スクロール中も本文に重ねない。
+  const entries = withUnreadMarker(withDaySeparators(items), markerId);
+  const days: { day: string; entries: (typeof entries)[number][] }[] = [];
+  for (const entry of entries) {
+    if (entry.kind === 'day') days.push({ day: entry.day, entries: [] });
+    else days.at(-1)?.entries.push(entry);
+  }
   // ✅ 2026-10-26（#164 の 2）: 開いている間に読めなくなったら、見出し（相手の名前）も本文も入力欄も描かない。
   //    🔴 戻り道だけを置く（一覧から選び直す）。
   if (conversation.unavailable) {
@@ -289,41 +296,37 @@ return (
           <ol
             aria-label={messages.listLabel}
             // ✅ 2026-10-22（Teams の参考）: 発言どうしの間隔を詰める。同じ人の続きは 4px、別の人の発言の前だけ 12px 空ける（li の mt）。
-            className="m-0 flex list-none flex-col gap-1 p-0"
+            className="m-0 flex shrink-0 list-none flex-col gap-1 p-0"
             data-testid="chat-messages"
             onMouseLeave={() => setHoveredId(null)}
           >
-            {withUnreadMarker(withDaySeparators(items), markerId).map((entry) => {
-              // ✅ 2026-10-16: 「ここから未読」の線。
-              if (entry.kind === 'unread') {
-                return (
-                  <li key="unread-marker" className="mt-1 flex items-center gap-3" data-testid="chat-unread-marker">
-                    <span aria-hidden="true" className="h-px flex-1 bg-brand" />
-                    <span className="text-xs font-medium text-brand">{messages.unreadFrom}</span>
-                    <span aria-hidden="true" className="h-px flex-1 bg-brand" />
-                  </li>
-                );
-              }
-              // ✅ 2026-10-13: **日付の区切り**（定義書 §3.12「中央・24h の pill・地 `bg-subtle`・12」）。
-              // 🔴 JST の暦日が変わる位置にだけ置く（`lib/chat/day-separators.ts`）。並び順は変えない。
-              // 🔴 radius は `rounded-md` —— `rounded-full` はアバターとカウンタにしか使えない
-              //    （`tests/static/design-tokens.test.ts` / `docs/04` §7.9）。
-              if (entry.kind === 'day') {
-                return (
-                  <li
-                    key={`day-${entry.day}`}
-                    // ✅ 2026-10-14: 読み進めても、いま読んでいる日付が上端に残る。
-                    className="sticky top-0 z-10 flex justify-center"
-                    data-testid={`chat-day-separator-${entry.day}`}
-                  >
-                    <time dateTime={entry.day} className="rounded-md bg-bg-subtle px-3 py-1 text-xs text-fg-muted">
-                      {entry.day}
-                    </time>
-                  </li>
-                );
-              }
-              return <ChatMessageItem key={entry.message.id} item={entry.message} continued={entry.continued && entry.message.id !== markerId} conversation={conversation} />;
-            })}
+            {days.map((entry) => (
+              <li key={entry.day} className="relative list-none" data-chat-day={entry.day}>
+                {/* ✅ 2026-10-27（紺野「色分けとか、みづらい」）: 日付は灰色の箱をやめ、線と文字にする（吹き出しと見間違えない）。 */}
+                <div className="flex items-center gap-3 py-2" data-testid={`chat-day-separator-${entry.day}`}>
+                  <span aria-hidden="true" className="h-px flex-1 bg-border" />
+                  <time dateTime={entry.day} className="text-xs font-medium text-fg-muted">
+                    {entry.day}
+                  </time>
+                  <span aria-hidden="true" className="h-px flex-1 bg-border" />
+                </div>
+                <ol className="m-0 flex list-none flex-col gap-1 p-0">
+                  {entry.entries.map((entry) => {
+                    if (entry.kind === 'unread') {
+                      return (
+                        <li key="unread-marker" className="mt-1 flex items-center gap-3" data-testid="chat-unread-marker">
+                          <span aria-hidden="true" className="h-px flex-1 bg-brand" />
+                          <span className="text-xs font-medium text-brand">{messages.unreadFrom}</span>
+                          <span aria-hidden="true" className="h-px flex-1 bg-brand" />
+                        </li>
+                      );
+                    }
+                    if (entry.kind !== 'message') return null;
+                    return <ChatMessageItem key={entry.message.id} item={entry.message} continued={entry.continued && entry.message.id !== markerId} conversation={conversation} />;
+                  })}
+                </ol>
+              </li>
+            ))}
           </ol>
         )}
       </div>

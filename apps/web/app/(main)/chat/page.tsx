@@ -45,6 +45,7 @@ import { ChatRail } from './chat-rail';
 import { ChatRailToggle } from './chat-rail-toggle';
 import { ChatToastHost } from './chat-toast-host';
 import { ChatAutoRefresh } from './chat-auto-refresh';
+import { ChatViewportHeight } from './chat-viewport-height';
 import { CHAT_THREAD_SORT_DEFAULT } from '../../../lib/chat/thread-tree';
 import { readMyChatUserStatus } from '../../../lib/chat/user-status';
 import { readMySavedList } from '../../../lib/chat/saved';
@@ -133,10 +134,10 @@ export default async function ChatPage({
   };
 
   return (
-    // ✅ 2026-10-22（紺野「全部スクロールじゃなくて、ウィンドウ内だけスクロールできるように」）: `md` 以上は画面の高さに収め、
-    //    一覧・会話・左の列が**それぞれの枠の中だけで**スクロールする（`CHAT_SCREEN_HEIGHT_CLASS`）。`md` 未満は従来どおり。
-    //    ✅ 同日（紺野「上に無駄なスペース使いすぎ」）: 上下の余白を 20px → 12px に詰める（会話に高さを回す）。
-    <main className={cn('py-3 md:flex md:flex-col', CHAT_SCREEN_HEIGHT_CLASS)}>
+    // スマホは上部の帯と下部ナビの実寸を引き、履歴だけをスクロールさせる。
+    // 共通の高さ定数は変更せず、PC は従来の計算を使う。
+    <main data-chat-screen className={cn('flex h-[var(--chat-mobile-height,100dvh)] flex-col py-3', CHAT_SCREEN_HEIGHT_CLASS)}>
+      <ChatViewportHeight />
       {/* 🔴 ✅ **2026-10-13: `main-min` から既定（`lg` で並置）に変えた。** `main-min` は
           「主カラムが 1320px に届くまで副カラムを下へ落とす」挙動であり、**基準の 1672px でも
           関連情報が会話の下に回り込んでいた**（実機の実測）。デザインシステム v1.0 §3.12 は
@@ -145,7 +146,7 @@ export default async function ChatPage({
           決まらず、会話の幅も足りなくなる）。対象と相手は各会話の見出しに出ている。 */}
       <PageBody
         widthClass="split"
-        className="md:min-h-0 md:flex-1"
+        className="min-h-0 flex-1 [&>div]:min-h-0"
         // ✅ 2026-10-19（v2）: 右の情報欄は既定で閉じる（左に絞り込みの列が増えたので、会話の幅を確保する）。
         //    会話の見出しの「情報」で開く（`info=1`）。
         aside={selected === null || tiled || !infoOpen ? undefined : <ChatThreadPanel thread={selected} canPost={canPost} />}
@@ -234,7 +235,7 @@ export default async function ChatPage({
           <div
             className={
               selected === null
-                ? 'w-full bg-bg md:w-96 md:shrink-0 md:overflow-y-auto overscroll-contain md:border-r md:border-border'
+                ? 'min-h-0 w-full flex-1 overflow-y-auto bg-bg md:w-96 md:flex-none md:shrink-0 overscroll-contain md:border-r md:border-border'
                 : 'hidden bg-bg md:block md:w-96 md:shrink-0 md:overflow-y-auto overscroll-contain md:border-r md:border-border'
             }
           >

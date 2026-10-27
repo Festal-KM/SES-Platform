@@ -1,7 +1,8 @@
 'use client';
 
 import { CHAT_MESSAGE_MAX_LENGTH } from '@ses/config';
-import { Alert, Button, CHAT_COMPOSER_HEIGHT_CLASS, Field, Icon, IconButton, Select, Textarea, cn } from '@ses/ui';
+import { Alert, Button, CHAT_COMPOSER_HEIGHT_CLASS, CHAT_COMPOSER_FOCUS_CLASSES, CHAT_COMPOSER_INPUT_FOCUS_CLASSES, Field, Icon, IconButton, Select, Textarea, cn } from '@ses/ui';
+
 import { isSendKey } from '../../../lib/chat/layout';
 import { CHAT_FORMATS } from '../../../lib/chat/markdown';
 import { remainingChars } from '../../../lib/chat/message-text';
@@ -109,9 +110,8 @@ export function ChatComposer({ conversation }: { readonly conversation: ChatComp
             event.preventDefault();
             submit();
           }}
-          // ✅ 2026-10-16（提案 I）: スマホでは画面ごとスクロールするので、入力欄を下端に貼り付ける（読み進めても書ける）。
-          //    `md` 以上は器の高さが決まっているので、貼り付けても位置は変わらない。地の色は重なりの下を隠すため。
-          className={`sticky bottom-0 shrink-0 border-t border-border bg-bg px-4 py-3 md:px-5 ${CHAT_COMPOSER_HEIGHT_CLASS}`}
+          // 会話の高さの中で入力欄の場所を確保し、履歴だけをスクロールさせる。
+          className={`shrink-0 border-t border-border bg-bg px-4 py-3 md:px-5 ${CHAT_COMPOSER_HEIGHT_CLASS}`}
           data-testid="chat-compose"
         >
           {/* ✅ 2026-10-22（紺野「こういうチャット枠が必要だよね」= GitHub のコメント欄）:
@@ -122,7 +122,7 @@ export function ChatComposer({ conversation }: { readonly conversation: ChatComp
           {/* ✅ 2026-10-22（紺野「スマホ版おわってる」・Teams の参考）: 入力欄は**普段は細い 1 行**。書式ボタンと「書く／プレビュー」は
               下の「書式」を押したときだけ出す（スマホで入力欄が画面の半分を占めていた）。見出し「メッセージ」は読み上げ用だけにした。 */}
           <Field as="div" label={messages.composeLabel} labelClassName="sr-only">
-            <div className="flex flex-col rounded-md border border-border-strong bg-bg" data-testid="chat-compose-box">
+            <div className={cn('flex flex-col rounded-md border border-border-strong bg-bg', CHAT_COMPOSER_FOCUS_CLASSES)} data-testid="chat-compose-box">
               {formatOpen ? (
               <div className="flex flex-wrap items-center gap-1 border-b border-border bg-bg-subtle px-2 py-1">
                 <Button
@@ -291,6 +291,7 @@ export function ChatComposer({ conversation }: { readonly conversation: ChatComp
                   // 自動で伸びる場合も max-h-40 で止め、以降は欄の中でスクロールする。
                   className={cn(
                     'overflow-y-auto overscroll-contain rounded-none border-0',
+                    CHAT_COMPOSER_INPUT_FOCUS_CLASSES,
                     'max-h-40 resize-none',
                     formatOpen ? 'min-h-20' : 'min-h-11',
                   )}

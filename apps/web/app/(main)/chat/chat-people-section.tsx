@@ -32,22 +32,22 @@ export function ChatFavorites({
   const nameOf = (name: string | null) => name ?? t('chat.thread.unknownName');
   return (
     <section className={favorites.length === 0 ? 'flex items-baseline gap-2 px-3 py-2' : undefined} data-testid="chat-favorites">
-      <h3 className={favorites.length === 0 ? 'm-0 shrink-0 text-xs font-normal text-fg-muted' : SECTION_LABEL_CLASSES}>{t('chat.people.favorites')}</h3>
+      <h3 className={favorites.length === 0 ? 'm-0 shrink-0 text-xs font-normal text-fg-muted' : 'm-0 px-3 pt-1 pb-1 text-xs font-normal text-fg-muted'}>{t('chat.people.favorites')}</h3>
       {favorites.length === 0 ? (
         <p className="m-0 text-xs text-fg-placeholder" data-testid="chat-favorites-empty">
           {t('chat.people.favoritesEmpty')}
         </p>
       ) : (
-        // ✅ 2026-10-22（Lark の参考）: スマホでは横 1 列にして、多いときは横に送る（縦に場所を取らない）。`md` 以上は 5 列のまま。
-        <ul className="m-0 flex list-none gap-1 overflow-x-auto px-2 pb-2 md:grid md:grid-cols-5 md:overflow-visible" data-testid="chat-threads-pinned">
+        // 名前を省略せず、幅が足りない分は横に送る。件数より相手の識別を優先する。
+        <ul className="m-0 flex list-none gap-2 overflow-x-auto px-2 pb-1" data-testid="chat-threads-pinned">
           {favorites.map((item) => {
             const unread = unreadCounts[item.id] ?? 0;
             return (
-              <li key={item.id} className="w-16 min-w-0 shrink-0 md:w-auto" data-testid={`chat-favorite-${item.id}`}>
+              <li key={item.id} className="min-w-32 shrink-0" data-testid={`chat-favorite-${item.id}`}>
                 <Link
                   href={chatHref({ thread: item.id })}
                   aria-current={item.id === selectedThreadId ? 'page' : undefined}
-                  className={cn('flex flex-col items-center gap-1 rounded-md py-1', ROW_HOVER_CLASSES)}
+                  className={cn('flex min-h-11 flex-col items-center gap-1 rounded-md px-2 py-1', ROW_HOVER_CLASSES)}
                   data-testid={`chat-thread-pinned-${item.id}`}
                 >
                   {/* ✅ 2026-10-22: 未読は一覧の行と同じ、アバターの右上の赤丸。 */}
@@ -57,7 +57,7 @@ export function ChatFavorites({
                       <span className={cn(UNREAD_DOT_CLASSES, 'bg-danger')}>{unread > UNREAD_DOT_MAX ? `${String(UNREAD_DOT_MAX)}+` : String(unread)}</span>
                     ) : null}
                   </span>
-                  <span className="w-full truncate text-center text-xs text-fg-muted">{nameOf(item.name)}</span>
+                  <span className="whitespace-nowrap text-center text-xs text-fg-muted">{nameOf(item.name)}</span>
                 </Link>
               </li>
             );
