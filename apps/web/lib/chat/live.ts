@@ -99,3 +99,29 @@ export function withLatestReactions(
   });
   return changed ? next : current;
 }
+
+/** ✅ 2026-10-26（#166 の 4）: 読み足しの 1 回ぶんの結果。 */
+export type GapChunk = { readonly items: readonly ChatMessageView[]; readonly hasMoreAfter: boolean };
+
+/**
+ * ✅ 2026-10-26（#166 の 4）: 手元の最後（`after`）から後ろを、`maxPages` 回まで読み足す。
+ * `complete` は「最新まで読み切れた」か。🔴 読み切れていないとき、呼び出し側は直近のページを**足さない**
+ * （足すと、読み足した分と直近のページの間が永久に抜ける。次の回に、新しい最後から続きを読む）。
+ * 1 回でも読めなければ `null`（今回は何も足さない）。
+ */
+export async function readGapAfter(
+  after: string,
+  fetchChunk: (after: string) => Promise<GapChunk | null>,
+  maxPages: number,
+): Promise<{ readonly items: readonly ChatMessageView[]; readonly complete: boolean } | null> {
+  const items: ChatMessageView[] = [];
+  let cursor: string | undefined = after;
+  for (let page = 0; page < maxPages && cursor !== undefined; page += 1) {
+    const chunk = await fetchChunk(cursor);
+    if (chunk === null) return null;
+    items.push(...chunk.items);
+    if (!chunk.hasMoreAfter) return { items, complete: true };
+    cursor = chunk.items.at(-1)?.id;
+  }
+  return { items, complete: false };
+}

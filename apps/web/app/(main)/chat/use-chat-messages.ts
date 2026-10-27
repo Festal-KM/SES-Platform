@@ -2,13 +2,12 @@
 
 import { useEffect, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from 'react';
 import { CHAT_MESSAGE_PAGE_SIZE } from '@ses/config';
-import { CHAT_POLL_INTERVAL_MS, hasGapBefore, hasOthersMessage, mergeLatestMessages, withLatestReactions } from '../../../lib/chat/live';
+import { CHAT_POLL_INTERVAL_MS, hasGapBefore, hasOthersMessage, mergeLatestMessages, readGapAfter, withLatestReactions, type GapChunk } from '../../../lib/chat/live';
 import { chatAnnouncementApiPath, chatMessagesApiPath } from '../../../lib/chat/screen-query';
 import type { ChatAnnouncementView, ChatMessageView } from '../../../lib/chat/views';
 import { createSubmitGuard } from '../../../lib/forms/submit-guard';
 
 type MessagePageBody = { readonly items: readonly ChatMessageView[]; readonly nextCursor: string | null };
-type MessageWindowBody = MessagePageBody & { readonly hasMoreAfter: boolean };
 
 /** ✅ 2026-10-26（#166 の 4）: 取りこぼしを読み足すときの 1 回の件数と、読み足す回数の上限（無限に回さない）。 */
 const GAP_PAGE_SIZE = 200;
@@ -43,6 +42,17 @@ export function useChatMessages({
   activeRef.current = active;
   const onUnavailableRef = useRef(onUnavailable);
   onUnavailableRef.current = onUnavailable;
+  /**
+   * ✅ 2026-10-26（レビュー）: 読めなくなったら**その場で**止める（`active` は次の描画まで変わらないので、
+   * その間に届いた応答が行を戻さないように）。一度止めたら戻さない。
+   */
+  const stoppedRef = useRef(false);
+  const isLive = (): boolean => activeRef.current && !stoppedRef.current;
+  function stop(): void {
+    if (stoppedRef.current) return;
+    stoppedRef.current = true;
+    onUnavailableRef.current();
+  }
   // ✅ 2026-10-26: アナウンス（帯）。🔴 手元で先に書き換えない（サーバの応答だけが正）。
   const [announcement, setAnnouncement] = useState<ChatAnnouncementView | null>(initialAnnouncement);
   /** ✅ 2026-10-26（Codex のレビュー）: アナウンスの操作の世代（古い読み直しの応答を捨てるため）。 */
@@ -58,7 +68,7 @@ export function useChatMessages({
   useEffect(() => {
     let active = true;
     const poll = async (): Promise<void> => {
-      if (document.visibilityState !== 'visible' || !activeRef.current) return;
+      if (document.visibilityState !== 'visible' || !isLive()) return;
       try {
         // ✅ 2026-10-26（Codex のレビュー）: アナウンスは発言の取得とは切り離して読み直す。
         //    🔴 404（部屋から外れた・見えなくなった）なら帯を消す —— 前に見えていた本文を画面に残さない。
@@ -78,10 +88,10 @@ export function useChatMessages({
           })
           .catch(() => undefined);
         const response = await fetch(chatMessagesApiPath(threadId), { cache: 'no-store' });
-        if (!active || !activeRef.current) return;
+        if (!active || !isLive()) return;
         // ✅ 2026-10-26（#164 の 2）: 🔴 404 = 部屋から外れた・見えなくなった。手元の本文を残さない。
         if (response.status === 404) {
-          onUnavailableRef.current();
+          stop();
           return;
         }
         if (!response.ok) return;
@@ -89,28 +99,32 @@ export function useChatMessages({
         // ✅ 2026-10-26（#166 の 4）: 直近のページが手元とつながっていなければ、手元の最後から後ろを読み足す。
         //    🔴 そのまま足すと会話の途中が黙って抜ける（過去の読み込みでも埋められない）。
         let latest = payload.items;
-        if (hasGapBefore(itemsRef.current, payload.items, CHAT_MESSAGE_PAGE_SIZE)) {
-          const gap: ChatMessageView[] = [];
-          let after = itemsRef.current.at(-1)?.id;
-          for (let page = 0; page < GAP_PAGES_MAX && after !== undefined; page += 1) {
-            const more = await fetch(
-              `${chatMessagesApiPath(threadId)}?after=${encodeURIComponent(after)}&limit=${String(GAP_PAGE_SIZE)}`,
-              { cache: 'no-store' },
-            );
-            if (!active || !activeRef.current) return;
-            if (more.status === 404) {
-              onUnavailableRef.current();
-              return;
-            }
-            // 読み足せなければ、今回は足さない（途中の抜けた状態を見せない）。次の回にやり直す。
-            if (!more.ok) return;
-            const chunk = (await more.json()) as MessageWindowBody;
-            gap.push(...chunk.items);
-            if (!chunk.hasMoreAfter) break;
-            after = chunk.items.at(-1)?.id;
+        const last = itemsRef.current.at(-1)?.id;
+        if (last !== undefined && hasGapBefore(itemsRef.current, payload.items, CHAT_MESSAGE_PAGE_SIZE)) {
+          let missing = false;
+          const gap = await readGapAfter(
+            last,
+            async (after): Promise<GapChunk | null> => {
+              const more = await fetch(
+                `${chatMessagesApiPath(threadId)}?after=${encodeURIComponent(after)}&limit=${String(GAP_PAGE_SIZE)}`,
+                { cache: 'no-store' },
+              );
+              if (more.status === 404) missing = true;
+              // 読み足せなければ、今回は足さない（途中の抜けた状態を見せない）。次の回にやり直す。
+              return more.ok ? ((await more.json()) as GapChunk) : null;
+            },
+            GAP_PAGES_MAX,
+          );
+          if (!active || !isLive()) return;
+          if (missing) {
+            stop();
+            return;
           }
-          latest = [...gap, ...payload.items];
+          if (gap === null) return;
+          // 🔴 最新まで読み切れなければ、直近のページは足さない（間が永久に抜けるため）。次の回に続きを読む。
+          latest = gap.complete ? [...gap.items, ...payload.items] : gap.items;
         }
+        if (!isLive()) return;
         // ✅ 2026-10-16: 手元の発言のリアクションも取り直した値に揃える。
         const refreshed = withLatestReactions(itemsRef.current, latest);
         const merged = mergeLatestMessages(refreshed, latest);
@@ -153,12 +167,12 @@ export function useChatMessages({
           },
         );
         if (response.status === 404) {
-          onUnavailableRef.current();
+          stop();
           return 'LOADED' as const;
         }
         if (!response.ok) return 'FAILED' as const;
         const payload = (await response.json()) as MessagePageBody;
-        if (!activeRef.current) return 'LOADED' as const;
+        if (!isLive()) return 'LOADED' as const;
         // 🔴 取得済みの**上**に足す（置き換えない）。同じ行が再び来たら 1 行に畳む。
         setItems((current) => {
           const seen = new Set(current.map((item) => item.id));
@@ -183,17 +197,17 @@ export function useChatMessages({
     let loaded: readonly ChatMessageView[] = itemsRef.current;
     for (let page = 0; page < GAP_PAGES_MAX; page += 1) {
       if (loaded.some((item) => item.id === messageId)) return true;
-      if (cursor === null || !activeRef.current) return false;
+      if (cursor === null || !isLive()) return false;
       try {
         const response = await fetch(
           `${chatMessagesApiPath(threadId)}?cursor=${encodeURIComponent(cursor)}&limit=${String(GAP_PAGE_SIZE)}`,
           { cache: 'no-store' },
         );
         if (response.status === 404) {
-          onUnavailableRef.current();
+          stop();
           return false;
         }
-        if (!response.ok || !activeRef.current) return false;
+        if (!response.ok || !isLive()) return false;
         const payload = (await response.json()) as MessagePageBody;
         const seen = new Set(loaded.map((item) => item.id));
         loaded = [...payload.items.filter((item) => !seen.has(item.id)), ...loaded];
@@ -235,6 +249,6 @@ export function useChatMessages({
     }
   }
 
-  return { nextCursor, loadingOlder, olderFailed, loadOlder, loadOlderUntil, announcement, setAnnouncement,
+  return { stopMessages: () => { stoppedRef.current = true; }, nextCursor, loadingOlder, olderFailed, loadOlder, loadOlderUntil, announcement, setAnnouncement,
     announcementNotLoaded, setAnnouncementNotLoaded, announcementFailed, changeAnnouncement };
 }

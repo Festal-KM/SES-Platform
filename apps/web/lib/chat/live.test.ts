@@ -1,7 +1,7 @@
 // apps/web/lib/chat/live.test.ts
 // `S-031` の新着の自動表示（`lib/chat/live.ts`）。
 import { describe, expect, it } from 'vitest';
-import { hasGapBefore, hasOthersMessage, mergeLatestMessages } from './live';
+import { hasGapBefore, hasOthersMessage, mergeLatestMessages, readGapAfter } from './live';
 import type { ChatMessageView } from './views';
 
 function message(id: string, sentAt: string, mine = false): ChatMessageView {
@@ -96,5 +96,41 @@ describe('✅ 2026-10-26（#166 の 4）hasGapBefore: 直近のページが手�
   });
   it('直近のページが手元より古い（並べ替え中の一時的な順序）なら取りこぼし扱いしない', () => {
     expect(hasGapBefore([D, E], [A, C], 2)).toBe(false);
+  });
+});
+
+describe('✅ 2026-10-26（#166 の 4・レビュー）readGapAfter: 最新まで読み切れたかを返す', () => {
+  const chunk = (ids: readonly string[], hasMoreAfter: boolean) => ({
+    items: ids.map((id, index) => message(id, `2026-10-14T0${String(index + 4)}:00:00.000Z`)),
+    hasMoreAfter,
+  });
+  it('続きが無くなるまで読めたら complete', async () => {
+    const pages = [chunk(['d', 'e'], true), chunk(['f'], false)];
+    const result = await readGapAfter('c', async () => pages.shift() ?? null, 10);
+    expect(result?.complete).toBe(true);
+    expect(result?.items.map((item) => item.id)).toEqual(['d', 'e', 'f']);
+  });
+  it('🔴 上限で止まったら complete ではない（呼び出し側は直近のページを足さない）', async () => {
+    let calls = 0;
+    const result = await readGapAfter('c', async () => {
+      calls += 1;
+      return chunk([`x${String(calls)}`], true);
+    }, 3);
+    expect(calls).toBe(3);
+    expect(result?.complete).toBe(false);
+    expect(result?.items).toHaveLength(3);
+  });
+  it('1 回でも読めなければ null（今回は何も足さない）', async () => {
+    const pages = [chunk(['d'], true), null];
+    expect(await readGapAfter('c', async () => pages.shift() ?? null, 10)).toBeNull();
+  });
+  it('続きは、前の回の最後の発言から読む', async () => {
+    const seen: string[] = [];
+    const pages = [chunk(['d', 'e'], true), chunk(['f'], false)];
+    await readGapAfter('c', async (after) => {
+      seen.push(after);
+      return pages.shift() ?? null;
+    }, 10);
+    expect(seen).toEqual(['c', 'e']);
   });
 });

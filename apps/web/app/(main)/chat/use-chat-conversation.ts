@@ -134,6 +134,8 @@ export function useChatConversation({
 
   /** ✅ 2026-10-26（#164 の 2）: 読めなくなった。🔴 手元の本文・下書き・送信待ち・貼る案件をすべて捨てる。 */
   function markUnavailable(): void {
+    // ✅ 2026-10-26（レビュー）: 取得をその場で止める（送信の 404 から来たときも、届きかけの応答で行を戻さない）。
+    stopMessages();
     if (pendingTimer.current !== null) window.clearTimeout(pendingTimer.current);
     pendingTimer.current = null;
     setUnavailable(true);
@@ -154,7 +156,7 @@ export function useChatConversation({
   }
 
   const active = onScreen && !unavailable;
-  const { nextCursor, loadingOlder, olderFailed, loadOlder, loadOlderUntil, announcement, setAnnouncement,
+  const { stopMessages, nextCursor, loadingOlder, olderFailed, loadOlder, loadOlderUntil, announcement, setAnnouncement,
     announcementNotLoaded, setAnnouncementNotLoaded, announcementFailed, changeAnnouncement } = useChatMessages({
     threadId, initialNextCursor, itemsRef, awayRef, scrollToLatestOnRender,
     setItems, setNewArrived, initialAnnouncement, active, onUnavailable: markUnavailable,
