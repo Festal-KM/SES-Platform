@@ -80,6 +80,8 @@ describe('🔴 ① 閲覧専用には「DM を開く」を描かない', () => {
       createElement(ChatThreadList, { groups: [], selectedThreadId: null, nextCursor: null, people: PEOPLE, canPost: true, filter: { kind: 'contacts' } }),
     );
     expect(contacts).toContain('data-testid="chat-contacts"');
+    expect(contacts).not.toContain('data-testid="chat-favorites"');
+    expect(contacts).toMatch(/<\/form><div[^>]*><div[^>]*data-testid="chat-contacts"><h3[^>]*>連絡先<\/h3>/);
     expect(contacts).toContain(`data-testid="chat-contact-link-${HOST_PERSON}"`);
     expect(contacts).toContain(`data-testid="chat-contact-link-${PARTNER_PERSON}"`);
     expect(contacts).toContain(`f=person.${PARTNER_PERSON}`);
@@ -239,16 +241,16 @@ describe('検索とお気に入りの幅', () => {
 
 
 describe('お気に入りの名前の識別', () => {
-  it('長い会社名を省略せず、幅を広げた項目を横スクロールで並べる', () => {
+  it('長い会社名を省略せず、欄の幅に応じてグリッドの段を増やす', () => {
     const name = '株式会社ダミーチャーリー 営業窓口';
     const html = renderToStaticMarkup(createElement(ChatFavorites, {
       favorites: [{ id: ROOM_DM, name, avatarClass: '', initials: 'ダ' }],
       unreadCounts: {}, mutedIds: new Set<string>(), selectedThreadId: null,
     }));
     expect(html).toContain(name);
-    expect(html).toContain('min-w-32 shrink-0');
-    expect(html).toContain('overflow-x-auto');
-    expect(html).toContain('whitespace-nowrap text-center text-xs');
+    expect(html).toContain('grid-cols-[repeat(auto-fit,minmax(min(100%,10rem),1fr))]');
+    expect(html).not.toContain('overflow-x-auto');
+    expect(html).toContain('w-full break-words text-center text-xs');
     expect(html).not.toContain('truncate');
     expect(html).not.toContain('grid-cols-5');
   });

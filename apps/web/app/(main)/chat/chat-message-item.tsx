@@ -452,12 +452,11 @@ export function ChatMessageItem({ item, continued, conversation }: { readonly it
                       <span className="order-1 min-w-0 break-words text-body font-bold text-fg" data-testid={`chat-message-sender-${item.id}`}>
                         {item.senderName ?? messages.unknownName}
                       </span>
-                      <span className="order-3 block w-full min-w-0 break-words text-xs leading-tight text-fg">
-                        <span>{item.senderCompanyName ?? messages.unknownName}</span>
-                        {item.own ? <span> · {messages.own}</span> : null}
-                        {/* 状態は会社と分け、名前や本文より控えめな文字と行間で残す。 */}
+                      <span className="order-3 flex w-full min-w-0 flex-wrap gap-x-1 break-words text-xs leading-tight text-fg">
+                        <span>{item.senderCompanyName ?? messages.unknownName}{item.own ? <span> · {messages.own}</span> : null}</span>
+                        {/* 状態は塊の前で折り返す。会社と同じ文字サイズで、名前より控えめに残す。 */}
                         {item.senderStatus == null || item.senderStatus === '' ? null : (
-                          <span className="text-micro leading-tight text-fg-muted">
+                          <span className="min-w-0 break-words text-xs leading-tight text-fg-muted">
                             {' · '}
                             {/* 🔴 区切りの「·」は目印の外に置く（状態の文字だけを持つ。E2E が本文と照合する）。 */}
                             <span data-testid={`chat-message-status-${item.id}`}>{item.senderStatus}</span>

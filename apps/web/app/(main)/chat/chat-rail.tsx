@@ -27,7 +27,7 @@ export type ChatRailProps = {
   readonly showSaved?: boolean;
 };
 
-/** 会社と案件だけに無彩色の印を置く。固定フィルタは文字で見分ける。 */
+/** 会社の印は列を畳んだときだけ残す。開いた列では社名で見分ける。 */
 type MarkKind = 'all' | 'unread' | 'dm' | 'group' | 'saved' | 'company' | 'project' | 'contacts';
 const MARK_CLASSES: Readonly<Record<MarkKind, string>> = {
   all: 'hidden md:in-[[data-collapsed=true]]:inline-flex',
@@ -35,7 +35,7 @@ const MARK_CLASSES: Readonly<Record<MarkKind, string>> = {
   dm: 'hidden md:in-[[data-collapsed=true]]:inline-flex',
   group: 'hidden md:in-[[data-collapsed=true]]:inline-flex',
   saved: 'hidden md:in-[[data-collapsed=true]]:inline-flex',
-  company: 'inline-flex rounded-md bg-neutral-bg text-fg-muted',
+  company: 'hidden rounded-md bg-neutral-bg text-fg-muted md:in-[[data-collapsed=true]]:inline-flex',
   project: 'inline-flex rounded-md bg-neutral-bg text-fg-muted',
   contacts: 'hidden md:in-[[data-collapsed=true]]:inline-flex',
 };
