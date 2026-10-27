@@ -304,3 +304,12 @@ describe('🔴 mockEmail（T-09-07。docs/05 §13.2 / §10.6）: 台本はモッ
     ).toThrow(MockEmailScriptNotApplicableError);
   });
 });
+
+// ✅ 2026-10-27: デモの worker のモックは enqueue を受けないので、組み立て経由のモックは知らないキーを CLEAN と答える。
+describe('createMalwareScanner(mock): 知らないキーは既定（CLEAN）で答える', () => {
+  it('enqueue していないキーでも CLEAN が返る（戻すとデモで添付が永久に「検査中」になる）', async () => {
+    const { createMalwareScanner } = await import('./index');
+    const scanner = createMalwareScanner('mock');
+    expect((await scanner.getResult('t/00000000-0000-0000-0000-000000000000/chat/x/y/z.png', null))?.status).toBe('CLEAN');
+  });
+});
