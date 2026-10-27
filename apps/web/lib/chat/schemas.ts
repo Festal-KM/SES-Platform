@@ -12,6 +12,7 @@ import { assertNoIsolationKeys, type AssertNoIsolationKeys } from '../api/isolat
 import { cursorPageQuerySchema, idCursorPageQuerySchema } from '../api/pagination';
 import { optionalFilter } from '../api/query-filters';
 import { isChatThreadCursor } from './thread-cursor';
+import { CHAT_ATTACHMENT_CONTENT_TYPES, CHAT_ATTACHMENT_MAX_BYTES, type ChatAttachmentContentType } from '@ses/domain';
 import { CHAT_REACTIONS } from './views';
 
 /**
@@ -75,6 +76,9 @@ export const chatMessageBodySchema = z.object({
 
 export type ChatMessageBody = z.infer<typeof chatMessageBodySchema>;
 
+/** ✅ 2026-10-27: 添付の札の長さの上限（`attachment-token.ts` の検証でも使う。🔴 ここはクライアントも読むので `node:crypto` を持ち込まない）。 */
+export const CHAT_ATTACHMENT_TOKEN_MAX_LENGTH = 2048;
+
 /**
  * ✅ 2026-10-23（紺野）: `POST /api/threads/{id}/messages`（#51）の body。本文に加えて、**貼る案件の ID を 1 つ**受ける。
  *
@@ -87,12 +91,43 @@ export const chatMessagePostBodySchema = z
   .object({
     body: z.string().trim().max(CHAT_MESSAGE_MAX_LENGTH).default(''),
     projectId: z.uuid().optional(),
+    // ✅ 2026-10-27（`F-038` 改訂 12 ⑫）: #51p が出した**署名付きの札**だけを受ける（キー・種類・大きさは札の中。
+    //    🔴 `attachmentKey` は相変わらず受けない —— キーを利用者に指させない）。札の確認はサーバ（`attachments.ts`）。
+    attachmentUploadToken: z.string().min(1).max(CHAT_ATTACHMENT_TOKEN_MAX_LENGTH).optional(),
   })
-  .refine((value) => value.body.length > 0 || value.projectId !== undefined, { path: ['body'] });
+  .refine(
+    (value) => value.body.length > 0 || value.projectId !== undefined || value.attachmentUploadToken !== undefined,
+    { path: ['body'] },
+  );
 
 export type ChatMessagePostBody = z.infer<typeof chatMessagePostBodySchema>;
 export type ChatMessagePostBodyIsolationGuard = AssertNoIsolationKeys<ChatMessagePostBody>;
-assertNoIsolationKeys(['body', 'projectId'], 'chatMessagePostBodySchema');
+assertNoIsolationKeys(['body', 'projectId', 'attachmentUploadToken'], 'chatMessagePostBodySchema');
+
+/**
+ * ✅ 2026-10-27: `POST /api/threads/{id}/attachments/upload-url`（#51p）。種類と大きさだけを受ける。
+ * 🔴 ファイル名を受け取らない（保存しない）。キー・部屋の取引先・テナントは受け取らない（サーバが決める）。
+ */
+export const chatAttachmentUploadBodySchema = z
+  .object({
+    contentType: z.enum(CHAT_ATTACHMENT_CONTENT_TYPES as unknown as [ChatAttachmentContentType, ...ChatAttachmentContentType[]]),
+    byteSize: z.number().int().min(1).max(CHAT_ATTACHMENT_MAX_BYTES),
+  })
+  .strict();
+export type ChatAttachmentUploadBody = z.infer<typeof chatAttachmentUploadBodySchema>;
+export type ChatAttachmentUploadBodyIsolationGuard = AssertNoIsolationKeys<ChatAttachmentUploadBody>;
+assertNoIsolationKeys(Object.keys(chatAttachmentUploadBodySchema.shape), 'chatAttachmentUploadBodySchema');
+
+/** ✅ 2026-10-27: `POST /api/threads/{id}/messages/{messageId}/attachment/download-url`（#51q）。開く（inline）か保存（attachment）か。 */
+export const chatAttachmentDownloadBodySchema = z.object({ disposition: z.enum(['inline', 'attachment']) }).strict();
+export type ChatAttachmentDownloadBody = z.infer<typeof chatAttachmentDownloadBodySchema>;
+export type ChatAttachmentDownloadBodyIsolationGuard = AssertNoIsolationKeys<ChatAttachmentDownloadBody>;
+assertNoIsolationKeys(Object.keys(chatAttachmentDownloadBodySchema.shape), 'chatAttachmentDownloadBodySchema');
+
+/** ✅ 2026-10-27: `GET /api/threads/{id}/attachments`（#51r）。カーソル（発言の ID）だけ。 */
+export const chatAttachmentListQuerySchema = idCursorPageQuerySchema;
+export type ChatAttachmentListQuery = z.infer<typeof chatAttachmentListQuerySchema>;
+export type ChatAttachmentListQueryIsolationGuard = AssertNoIsolationKeys<ChatAttachmentListQuery>;
 
 /** 案件名の絞り込み語の上限（案件一覧のフリーワードと同じ 200 文字）。 */
 const CHAT_PROJECT_CANDIDATE_Q_MAX_LENGTH = 200;

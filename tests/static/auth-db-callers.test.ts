@@ -319,6 +319,8 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
     'apps/web/lib/storage/download.ts',
     // 🔴 T-10-09: 返却データ（#78）。**同じ関数**を通す（監査の commit 後にしか署名しない順序を返却だけ別に書かない）。
     'apps/web/lib/data-exports/service.ts',
+    // ✅ 2026-10-27: チャットの添付（社内だけの部屋。docs/05 §6.5 #51q）。**同じ関数**を通す（CLEAN の判定と監査の commit 後の署名を写さない）。
+    'apps/web/lib/chat/attachments.ts',
   ],
 
   // --- 🔴 T-04-03: 運用メールと Webhook 受信（docs/05 §8.5 / §9.4）--------------------------

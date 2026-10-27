@@ -62,6 +62,9 @@ const EXEMPT_ROUTES: Readonly<Record<string, string>> = {
   //    （`F-004 AC-8` / `F-064 AC-5`）、**本人の資格情報を管理できなくすると返却作業そのものが
   //    できなくなる**（パスワードを変えられない / 表示名を直せない）。`SUSPENDED` も同じで、
   //    止めるべきは提案の送信・承認・契約書の送付である（`CLAUDE.md` §4.2 `Tenant` の規則）。
+  // ✅ 2026-10-27（チャットのファイル）: 共有 URL の発行は「閲覧」の一部（#51q。スキルシートの #20 と同じ判断）。
+  'apps/web/app/api/(main)/threads/[id]/messages/[messageId]/attachment/download-url/route.ts':
+    '添付の共有 URL の発行（docs/05 §6.5 #51q）。閲覧の一部であり業務データを変えない（監査ログに 1 行残るだけ）。SUSPENDED でも閲覧はでき、CLOSING でも社内の取り出しは止めない（スキルシートの #20 が requireExecutable を掛けないのと同じ）。POST なのは本文で開き方を受けるため。',
   'apps/web/app/api/(main)/settings/account/route.ts':
     '本人の表示名・役職の変更（S-048）。業務データを変えない。CLOSING でも本人の情報は直せなければ返却作業ができない。',
   'apps/web/app/api/(main)/settings/account/password/route.ts':

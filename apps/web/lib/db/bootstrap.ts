@@ -69,6 +69,7 @@ import type {
   ProviderSpendRuntime,
 } from '../admin-monitoring/runtime';
 import { createCandidateReference, type CandidateReference } from '../anonymize/reference';
+import { createChatAttachmentTokenCodec, type ChatAttachmentTokenCodec } from '../chat/attachment-token';
 import { configureAccountMailQueue, PendingAccountMailQueue } from '../jobs/account-mail';
 import { configureDomainJobQueue, PendingDomainJobQueue } from '../jobs/domain-jobs';
 import { configureGateRunJobQueue } from '../jobs/gate-run-queue';
@@ -153,6 +154,11 @@ let cachedS3ClientEnv: Parameters<typeof createS3Api>[0] | null = null;
  *    同じ規律。`CLAUDE.md` §3.5「ログ・エラー・監査ログに絶対に出さない」）。
  */
 let cachedCandidateReference: CandidateReference | null = null;
+/**
+ * ✅ 2026-10-27: チャットの添付のアップロード札（`lib/chat/attachment-token.ts`）。鍵は `AUTH_SECRET` から HKDF で用途を分けて導く。
+ * 🔴 保持するのは鍵ではなく「鍵を閉じ込めた関数」（`cachedCandidateReference` と同じ規律）。
+ */
+let cachedChatAttachmentTokens: ChatAttachmentTokenCodec | null = null;
 /**
  * 🔴 T-10-03: 利用量の上限（`S-038` #69 が残量を組み立てるために読む値。docs/02 `F-027` / docs/05 §5.8）。
  *    出所は `packages/config` だけ（プラン別の上書きが入るまでの既定値。docs/05 §7.12 ⑧）。
@@ -351,6 +357,8 @@ export function ensureDbConfigured(): void {
   //    起動時に落ちる。「既定の鍵で続行」は、参照子が全環境で同じ = 案件スコープの意味が
   //    消えた状態を本番へ持ち込む（`CLAUDE.md` §11.1 と同じ壊れ方）。
   cachedCandidateReference = createCandidateReference(env.ANON_REFERENCE_HMAC_SECRET);
+  // ✅ 2026-10-27: チャットの添付の札（`#51p` が出し、`#51` が確かめる）。🔴 未設定でのフォールバックを持たない。
+  cachedChatAttachmentTokens = createChatAttachmentTokenCodec(env.AUTH_SECRET);
   // 🔴 T-10-03: 上限値（金額を含まない）。ワーカーの `usageLimits` と同じキーから読む。
   cachedUsageLimitsRuntime = {
     warnPercent: env.QUOTA_WARNING_THRESHOLD_PERCENT,
@@ -601,6 +609,18 @@ export function candidateReference(): CandidateReference {
     throw new Error('匿名候補の参照子が解決されていません（bootstrap の不変条件違反）。');
   }
   return cachedCandidateReference;
+}
+
+/**
+ * ✅ 2026-10-27: チャットの添付の札の署名・検証（`docs/05` §6.5 #51p / #51）。🔴 鍵は返らない。
+ *    呼び出し元はチャットのルート（#51p の発行・#51 の確認）だけ。サービス層には deps で渡す（設定の初期化を判定に混ぜない）。
+ */
+export function chatAttachmentTokens(): ChatAttachmentTokenCodec {
+  ensureDbConfigured();
+  if (cachedChatAttachmentTokens === null) {
+    throw new Error('チャットの添付の札が解決されていません（bootstrap の不変条件違反）。');
+  }
+  return cachedChatAttachmentTokens;
 }
 
 /**
