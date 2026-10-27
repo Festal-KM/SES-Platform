@@ -47,6 +47,16 @@ type ChatMessageItemState = Pick<ChatConversationState,
   | 'toggleExpanded'
 >;
 
+/**
+ * ✅ 2026-10-27（紺野「色分けとか、みづらいんだよな単純に」）: 自社と相手を、ひと目で分かる差にする。
+ * 自社の吹き出し = 薄い青で塗る / 相手 = 白に濃い枠。アバターも 自社 = 青の塗り / 相手 = 灰色。
+ * 🔴 色はトークンだけ（成功・警告などの状態色は使わない）。差は面と枠で付け、文字色は変えない（読みやすさを保つ）。
+ */
+const OWN_SURFACE_CLASSES = 'bg-brand-bg';
+const OTHER_SURFACE_CLASSES = 'border border-border-strong bg-bg';
+const OWN_AVATAR_CLASSES = 'bg-brand text-brand-fg';
+const OTHER_AVATAR_CLASSES = 'bg-neutral-bg text-fg';
+
 export function ChatMessageItem({ item, continued, conversation }: { readonly item: ChatMessageView; readonly continued: boolean; readonly conversation: ChatMessageItemState }) {
   const {
     layout,
@@ -86,7 +96,7 @@ export function ChatMessageItem({ item, continued, conversation }: { readonly it
    * 吹き出しと、その下の操作（続きを読む・コピー）。🔴 自分 / 相手の吹き出しの差は**面の色だけ**
    * （render テストの ④）なので、色は呼び出し側が渡す。
    */
-  function renderBody(item: ChatMessageView, surfaceClass: 'bg-brand-bg' | 'bg-bg-subtle') {
+  function renderBody(item: ChatMessageView, surfaceClass: string) {
     const text = item.body;
     const long = text !== null && isLongMessage(text);
     const open = expanded.has(item.id);
@@ -396,7 +406,7 @@ export function ChatMessageItem({ item, continued, conversation }: { readonly it
                         {time}
                       </p>
                     )}
-                    {renderBody(item, 'bg-brand-bg')}
+                    {renderBody(item, OWN_SURFACE_CLASSES)}
                     {readReceiptId === item.id ? (
                       <span className="text-xs text-fg-muted" data-testid={`chat-message-read-${item.id}`}>
                         {messages.read}
@@ -430,6 +440,7 @@ export function ChatMessageItem({ item, continued, conversation }: { readonly it
                     size="md"
                     initials={displayInitials(item.senderName ?? item.senderCompanyName ?? '?')}
                     title={item.senderName ?? messages.unknownName}
+                    className={item.own ? OWN_AVATAR_CLASSES : OTHER_AVATAR_CLASSES}
                   />
                 )}
                 <div className="flex min-w-0 flex-1 flex-col gap-1">
@@ -458,7 +469,7 @@ export function ChatMessageItem({ item, continued, conversation }: { readonly it
                       🔴 上限幅（560）は `packages/ui` の定数から取る —— `max-w-*` は画面に書けない
                          （`ui-screen-width.test.ts` (c)）。**読める行長の規約**であり、画面ごとに
                          決め直すものではない。 */}
-                  {renderBody(item, item.own ? 'bg-brand-bg' : 'bg-bg-subtle')}
+                  {renderBody(item, item.own ? OWN_SURFACE_CLASSES : OTHER_SURFACE_CLASSES)}
                   {readReceiptId === item.id ? (
                     <span className="text-xs text-fg-muted" data-testid={`chat-message-read-${item.id}`}>
                       {messages.read}

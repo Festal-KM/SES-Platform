@@ -312,8 +312,10 @@ describe('🔴 ④: 自社 / 相手の弁別は `data-own` と面の色だけ（
     const onlyOwn = own.filter((token) => !other.includes(token));
     const onlyOther = other.filter((token) => !own.includes(token));
     // 🔴 差は「面の色」1 語ずつ。寸法・角丸・寄せ・余白の差が 1 語でもあれば落ちる。
+    // ✅ 2026-10-27（紺野「色分けとか、みづらい」）: 相手は「白に濃い枠」にした（自社の薄い青と、ひと目で分かる差）。
+    //    差は依然として面（塗り・枠）の語だけ。寸法・角丸・寄せ・余白の差は 1 語も許さない。
     expect(onlyOwn).toEqual(['bg-brand-bg']);
-    expect(onlyOther).toEqual(['bg-bg-subtle']);
+    expect([...onlyOther].sort()).toEqual(['bg-bg', 'border', 'border-border-strong']);
     // 🔴 行（`<li>`）の側には色が 1 語も無い（面を 2 重に持たない）。
     for (const id of [MESSAGE_OWN.id, MESSAGE_OTHER.id]) {
       for (const token of classTokensOf(html, `chat-message-${id}`)) {
@@ -431,8 +433,9 @@ describe('⑥: 日付の区切り（定義書 §3.12。2026-10-13 追加）', ()
     expect(groups[0]?.[2]).not.toContain('chat-message-next-day');
     expect(groups[1]?.[2]).toContain('data-testid="chat-message-next-day"');
     for (const day of ['2026-09-30', '2026-10-01']) {
-      expect(classTokensOf(html, `chat-day-separator-${day}`)).toEqual(expect.arrayContaining(['bg-bg']));
+      // ✅ 2026-10-27: 日付は箱ではなく線と文字（吹き出しと見間違えない）。貼り付けない（本文に重ねない）。
       expect(classTokensOf(html, `chat-day-separator-${day}`)).not.toContain('sticky');
+      expect(classTokensOf(html, `chat-day-separator-${day}`)).not.toContain('bg-bg-subtle');
     }
   });
 

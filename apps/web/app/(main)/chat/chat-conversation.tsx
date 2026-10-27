@@ -302,13 +302,13 @@ return (
           >
             {days.map((entry) => (
               <li key={entry.day} className="relative list-none" data-chat-day={entry.day}>
-                <div
-                  className="flex justify-center bg-bg py-1"
-                  data-testid={`chat-day-separator-${entry.day}`}
-                >
-                  <time dateTime={entry.day} className="rounded-md bg-bg-subtle px-3 py-1 text-xs text-fg-muted">
+                {/* ✅ 2026-10-27（紺野「色分けとか、みづらい」）: 日付は灰色の箱をやめ、線と文字にする（吹き出しと見間違えない）。 */}
+                <div className="flex items-center gap-3 py-2" data-testid={`chat-day-separator-${entry.day}`}>
+                  <span aria-hidden="true" className="h-px flex-1 bg-border" />
+                  <time dateTime={entry.day} className="text-xs font-medium text-fg-muted">
                     {entry.day}
                   </time>
+                  <span aria-hidden="true" className="h-px flex-1 bg-border" />
                 </div>
                 <ol className="m-0 flex list-none flex-col gap-1 p-0">
                   {entry.entries.map((entry) => {
