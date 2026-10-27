@@ -394,7 +394,7 @@ export {
   SIDEBAR_WIDTH_PX,
   TITLE_BLOCK_MIN_HEIGHT_CLASS,
 } from './lib/layout-tokens.js';
-// 🔴 一覧の行の操作（146 × 32）と行の hover の 1 実装（面と状態は部品側が持つ）。
-export { ROW_ACTION_LINK_CLASSES, ROW_HOVER_CLASSES } from './lib/control-classes.js';
 // ✅ 2026-10-27: チャットの入力欄の枠（`S-031` だけ）。
 export { CHAT_COMPOSER_FOCUS_CLASSES, CHAT_COMPOSER_INPUT_FOCUS_CLASSES } from './lib/chat-composer-classes.js';
+// 🔴 一覧の行の操作（146 × 32）と行の hover の 1 実装（面と状態は部品側が持つ）。
+export { ROW_ACTION_LINK_CLASSES, ROW_HOVER_CLASSES } from './lib/control-classes.js';
