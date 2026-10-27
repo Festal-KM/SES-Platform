@@ -586,7 +586,7 @@ const SCAN_PROBE_EXPECTED_GRANTS = [
   { table_name: 'messages', column_name: 'attachment_scan_status', privilege_type: 'UPDATE' },
   { table_name: 'messages', column_name: 'id', privilege_type: 'SELECT' },
   { table_name: 'messages', column_name: 'sent_at', privilege_type: 'SELECT' },
-  // ✅ 2026-10-27（レビュー）: CLEAN になった発言を公開した時点の位置へ置き直す（app_apply_scan_status）。
+  // ✅ 2026-10-27（レビュー。migration 20261027030000）: CLEAN になった発言を公開した時点の位置へ置き直す（app_apply_scan_status）。
   { table_name: 'messages', column_name: 'sent_at', privilege_type: 'UPDATE' },
   { table_name: 'messages', column_name: 'tenant_id', privilege_type: 'SELECT' },
   { table_name: 'messages', column_name: 'thread_id', privilege_type: 'SELECT' },
