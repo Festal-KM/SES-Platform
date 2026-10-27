@@ -457,8 +457,10 @@ export function ChatMessageItem({ item, continued, conversation }: { readonly it
                         {item.own ? <span> · {messages.own}</span> : null}
                         {/* 状態は会社と分け、名前や本文より控えめな文字と行間で残す。 */}
                         {item.senderStatus == null || item.senderStatus === '' ? null : (
-                          <span className="text-micro leading-tight text-fg-muted" data-testid={`chat-message-status-${item.id}`}>
-                            {' · '}{item.senderStatus}
+                          <span className="text-micro leading-tight text-fg-muted">
+                            {' · '}
+                            {/* 🔴 区切りの「·」は目印の外に置く（状態の文字だけを持つ。E2E が本文と照合する）。 */}
+                            <span data-testid={`chat-message-status-${item.id}`}>{item.senderStatus}</span>
                           </span>
                         )}
                       </span>
