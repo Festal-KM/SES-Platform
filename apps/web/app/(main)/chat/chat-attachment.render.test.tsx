@@ -1,7 +1,7 @@
 // ✅ 2026-10-27（紺野。`docs/04` §S-031 改訂 44 / `F-038` 改訂 12 ⑫）: ファイル（社内だけの部屋から）の描画テスト。
 // 🔴 固定すること:
 //   ① 添えられる部屋では入力欄にファイルの印と「個人情報（氏名・連絡先など）の扱いに注意してください」を常に出す
-//   ② 🔴 取引先がいる部屋（canAttach = false）・閲覧専用にはファイルの印も注意書きも描かない
+//   ② 🔴 添えられない人（canAttach = false。閲覧専用）にはファイルの印も注意書きも描かない（✅ 2026-10-27 #182: 取引先がいる部屋でも添えられる）
 //   ③ 送った本人に届いた「検査中」は「ファイルを検査しています」と種類・大きさ、問題ありは送れなかった旨（開く導線なし）
 //   ④ CLEAN の画像・PDF はプレビューの枠、そのほかは札だけ。どれにも「開く」「別タブで開く」
 //   ⑤ 閲覧専用（開けない人）には「開く」を描かず、プレビューも取りに行かない
@@ -69,16 +69,17 @@ describe('① ② 入力欄のファイルの印と注意書き', () => {
     expect(html).toContain('data-testid="chat-compose-attach"');
     expect(html).toContain(`aria-label="${t('chat.attachment.add')}"`);
     expect(html).toContain('data-testid="chat-compose-attach-note"');
-    expect(html).toContain(t('chat.attachment.note'));
+    // ✅ 2026-10-27（#182）: 「スキルシートは提案から」を添えた注意書き。
+    expect(html).toContain(t('chat.attachment.noteWithSkillSheet'));
     expect(html).toContain('type="file"');
     // 選んでいないので「添付: …」の札は無い。
     expect(html).not.toContain('data-testid="chat-compose-attached-file"');
   });
 
-  it('🔴 取引先がいる部屋では印も注意書きも描かない（押して断られる導線を置かない）', () => {
+  it('🔴 添えられない人（閲覧専用など）には印も注意書きも描かない（押して断られる導線を置かない）', () => {
     const html = render({ canPost: true, canAttach: false });
     expect(html).not.toContain('data-testid="chat-compose-attach"');
-    expect(html).not.toContain(t('chat.attachment.note'));
+    expect(html).not.toContain(t('chat.attachment.noteWithSkillSheet'));
     expect(html).not.toContain('type="file"');
   });
 });
@@ -120,6 +121,24 @@ describe('③ ④ 発言の添付', () => {
     expect(html).not.toMatch(/<img[^>]*src=/);
     expect(html).not.toContain('<object');
     expect(html).not.toContain('s3');
+  });
+});
+
+describe('✅ 2026-10-27（#182）取引先がいる部屋', () => {
+  it('会社グループでも印と注意書きを出す（投稿できる人）', () => {
+    const html = renderToStaticMarkup(
+      createElement(ChatConversation, {
+        threadId: THREAD,
+        threadKind: 'COMPANY',
+        initialMessages: [],
+        initialNextCursor: null,
+        canPost: true,
+        canAttach: true,
+        messages: chatConversationMessages(),
+      }),
+    );
+    expect(html).toContain('data-testid="chat-compose-attach"');
+    expect(html).toContain(t('chat.attachment.noteWithSkillSheet'));
   });
 });
 
