@@ -11,6 +11,7 @@
 //    読めない案件の名前を探れない。
 // 🔴 **会社の ID を外へ出さない。** まとめる鍵（`groupKey`）は `read.ts` が渡し、出力の型には載せない。
 // 🔴 本モジュールは `@ses/db` / `@ses/i18n` / React に依存しない。
+import { chatOwnText } from './quote';
 import type { ChatThreadListItem } from './views';
 
 /** 並べ方。`recent` = 更新があったものが上（既定）/ `company` = 相手の会社名順。 */
@@ -170,7 +171,8 @@ export function lastMessageSnippet(
   projectSharedLabel: string,
 ): string {
   if ((message.body ?? '').trim() === '' && message.attachedProjectId != null) return projectSharedLabel;
-  return messageSnippet(message.body ?? '', '', 60);
+  // ✅ 2026-10-27: 引用（F-038 ⑬）の見出しと写しは出さず、その人が書いた部分だけ。
+  return messageSnippet(chatOwnText(message.body ?? ''), '', 60);
 }
 
 export function messageSnippet(body: string, q: string, radius = 40): string {

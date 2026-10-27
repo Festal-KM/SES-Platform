@@ -24,6 +24,7 @@
 // 🔴 純粋関数のみ（`@ses/db` / `@ses/i18n` / 現在時刻に依存しない）。クライアントの島が
 //    **型だけ**を読めるようにするためである（`tests/static/client-db-boundary.test.ts`）。
 import { chatAttachmentKindOf, type ChatAttachmentKind, type ScanStatus } from '@ses/domain';
+import { chatOwnText } from './quote';
 import { messageSnippet } from './thread-tree';
 
 /** `chat_threads.kind`（CHECK の 4 値。DM / GROUP は 2026-10-16・#128）。 */
@@ -177,7 +178,7 @@ export const CHAT_ANNOUNCEMENT_SNIPPET_LENGTH = 60;
 /** アナウンスの帯に出す本文の冒頭（改行・連続した空白は 1 つの空白にする）。🔴 本文が無ければ `null`。 */
 export function chatAnnouncementSnippet(body: string | null): string | null {
   if (body === null) return null;
-  return messageSnippet(body, '', CHAT_ANNOUNCEMENT_SNIPPET_LENGTH);
+  return messageSnippet(chatOwnText(body), '', CHAT_ANNOUNCEMENT_SNIPPET_LENGTH);
 }
 
 /** `chat_thread_announcements` の行と、固定した発言の行（RLS 越しに読めたもの）を写す。 */
