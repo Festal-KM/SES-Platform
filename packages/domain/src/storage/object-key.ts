@@ -18,6 +18,8 @@ export const OBJECT_KIND_SEGMENTS = {
   skillSheet: 'skill-sheets',
   /** 🔴 T-10-09: 返却データ（docs/05 §14.1 `t/{tenantId}/exports/{exportRequestId}/{uuid}.zip`）。 */
   export: 'exports',
+  /** ✅ 2026-10-27: チャットの添付（docs/05 §14.1 `t/{tenantId}/chat/{threadId}/{messageId}/{uuid}.{ext}`）。 */
+  chat: 'chat',
 } as const;
 
 /** UUID（v4 / v7 のいずれでも通る一般形）。`tenantId` / `engineerId` / `{uuid}` に使う。 */
@@ -262,4 +264,64 @@ export function parseSkillSheetObjectKey(objectKey: string): SkillSheetObjectKey
   // 🔴 規約の唯一の出所は `buildSkillSheetObjectKey` である。再構成が一致しないキー
   //    （大文字の拡張子など、組み立て側では作れない形）は通さない。
   return buildSkillSheetObjectKey(parts) === objectKey ? parts : null;
+}
+
+export type ChatAttachmentObjectKeyInput = {
+  readonly tenantId: string;
+  readonly threadId: string;
+  /** 🔴 サーバが先に採番した発言の ID（この ID で発言の行を作る）。 */
+  readonly messageId: string;
+  /** 🔴 推測不能にするための UUID（呼び出し側が採番して渡す）。 */
+  readonly objectId: string;
+  /** 種類（MIME）から決めた拡張子（`chatAttachmentExtensionOf`）。 */
+  readonly extension: string;
+};
+
+/**
+ * ✅ 2026-10-27: チャットの添付のオブジェクトキー（docs/05 §14.1）。
+ *
+ * ```
+ * t/{tenantId}/chat/{threadId}/{messageId}/{uuid}.{ext}
+ * ```
+ *
+ * 🔴 キーは**サーバが組む**（入力で受けない）。`tenantId` は認証コンテキスト、`threadId` は RLS で読めた部屋、
+ *    `messageId` はサーバが採番した値だけを渡す。ファイル名はキーに含めない。
+ */
+export function buildChatAttachmentObjectKey(input: ChatAttachmentObjectKeyInput): string {
+  assertUuid('tenantId', input.tenantId);
+  assertUuid('threadId', input.threadId);
+  assertUuid('messageId', input.messageId);
+  assertUuid('objectId', input.objectId);
+  if (!EXTENSION_PATTERN.test(input.extension)) {
+    throw new InvalidObjectKeyPartError('extension', input.extension);
+  }
+  return [
+    TENANT_PREFIX,
+    input.tenantId,
+    OBJECT_KIND_SEGMENTS.chat,
+    input.threadId,
+    input.messageId,
+    `${input.objectId}.${input.extension}`,
+  ].join('/');
+}
+
+/**
+ * ✅ 2026-10-27: チャットの添付のキーを構成要素に分解する（形が合わなければ `null`）。
+ *
+ * 🔴 用途は照合だけである（送信のときに、署名した札のキーが ctx のテナント・経路の部屋と一致するか /
+ *    スキャンの隔離の周知でチャットの添付かを見分ける）。ここから得た値を分離キーとして使ってはならない。
+ */
+export function parseChatAttachmentObjectKey(objectKey: string): ChatAttachmentObjectKeyInput | null {
+  if (!isTenantScopedObjectKey(objectKey)) return null;
+  const segments = objectKey.split('/');
+  if (segments.length !== 6) return null;
+  const [, tenantId, kind, threadId, messageId, fileName] = segments as [string, string, string, string, string, string];
+  if (kind !== OBJECT_KIND_SEGMENTS.chat) return null;
+  if (!UUID_PATTERN.test(threadId) || !UUID_PATTERN.test(messageId)) return null;
+  const extension = objectKeyExtensionOf(fileName);
+  if (extension === null) return null;
+  const objectId = fileName.slice(0, fileName.length - extension.length - 1);
+  if (!UUID_PATTERN.test(objectId)) return null;
+  const parts: ChatAttachmentObjectKeyInput = { tenantId, threadId, messageId, objectId, extension };
+  return buildChatAttachmentObjectKey(parts) === objectKey ? parts : null;
 }

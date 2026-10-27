@@ -147,7 +147,14 @@ export const PURGE_SPEC = {
     // ⚠️ 根拠文は匿名化済みの入力から生成される（§3.2）。個人情報を含まない設計だが、候補について述べた自由文であり既定〔削除〕。
     { table: 'match_candidates', columns: ['rationale'], provisional: 'ISSUE-67' },
     // --- チャット ---------------------------------------------------------------------------
-    { table: 'messages', columns: ['body', 'attachment_key'], objectKeyColumns: ['attachment_key'], purgedAtColumn: 'purged_at' },
+    // ✅ 2026-10-27（チャットのファイル）: 添付の 4 列は「全部ある」か「全部ない」か（CHECK `messages_attachment_set_check`。
+    //    migration 20261027010000）なので、種類・大きさ・検査の状態も一緒に消す（キーだけ消すと CHECK に当たって削除が巻き戻る）。
+    {
+      table: 'messages',
+      columns: ['body', 'attachment_key', 'attachment_scan_status', 'attachment_content_type', 'attachment_byte_size'],
+      objectKeyColumns: ['attachment_key'],
+      purgedAtColumn: 'purged_at',
+    },
     // ✅ 2026-10-19 チャットレーン: ひとこと状態は本人が書く自由文で、個人の事情（「通院のため」等）が書かれうる。
     //    発言の本文（messages.body）と同じく〔削除〕に置く。行は残しても空文字なので画面には出ない（読む側が空を「無し」と扱う）。
     { table: 'chat_user_statuses', columns: [{ name: 'text', erase: 'EMPTY_TEXT' }] },
