@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from 'react';
 import { CHAT_MESSAGE_PAGE_SIZE } from '@ses/config';
-import { applyLatestMessages, CHAT_POLL_INTERVAL_MS, gapAnchor, hasGapBefore, hasOthersMessage, readGapAfter, type GapChunk } from '../../../lib/chat/live';
+import { applyLatestMessages, CHAT_POLL_INTERVAL_MS, gapAnchor, hasGapBefore, hasOthersMessage, mustReplaceWithLatest, readGapAfter, type GapChunk } from '../../../lib/chat/live';
 import { chatAnnouncementApiPath, chatMessagesApiPath } from '../../../lib/chat/screen-query';
 import type { ChatAnnouncementView, ChatMessageView } from '../../../lib/chat/views';
 import { createSubmitGuard } from '../../../lib/forms/submit-guard';
@@ -102,6 +102,18 @@ export function useChatMessages({
         // ✅ 2026-10-27（Codex レビュー 3 回目）: つながりの判定と読み足しの起点は、**取り直す前の**手元の行で決める
         //    （位置が動いた行〔検査が CLEAN になった添付〕を重なりの証拠にも起点にも使わない。`lib/chat/live.ts`）。
         const before = itemsRef.current;
+        // ✅ 2026-10-27（Codex レビュー 4 回目）: 手元の行がすべて位置を動かしていて、つながりを確かめられない。
+        //    🔴 足し合わせず直近のページで置き換え、過去は `nextCursor` から読み直させる（間を黙って落とさない）。
+        if (mustReplaceWithLatest(before, payload.items, CHAT_MESSAGE_PAGE_SIZE)) {
+          if (awayRef.current) {
+            if (hasOthersMessage(payload.items)) setNewArrived(true);
+          } else {
+            scrollToLatestOnRender.current = true;
+          }
+          setItems(payload.items);
+          setNextCursor(payload.nextCursor);
+          return;
+        }
         const anchor = gapAnchor(before, payload.items);
         if (anchor !== undefined && hasGapBefore(before, payload.items, CHAT_MESSAGE_PAGE_SIZE)) {
           let missing = false;

@@ -1,7 +1,7 @@
 // apps/web/lib/chat/live.test.ts
 // `S-031` の新着の自動表示（`lib/chat/live.ts`）。
 import { describe, expect, it } from 'vitest';
-import { applyLatestMessages, gapAnchor, hasGapBefore, hasOthersMessage, mergeLatestMessages, readGapAfter, withLatestReactions } from './live';
+import { applyLatestMessages, gapAnchor, hasGapBefore, hasOthersMessage, mergeLatestMessages, mustReplaceWithLatest, readGapAfter, withLatestReactions } from './live';
 import type { ChatMessageView } from './views';
 
 function message(id: string, sentAt: string, mine = false): ChatMessageView {
@@ -202,5 +202,32 @@ describe('🔴 位置が動いた行があっても取りこぼさない', () =>
     const atApply = [older, LOCAL_A, LOCAL_B];
     const applied = applyLatestMessages(atApply, [NEW_C, NEW_D, MOVED]);
     expect(applied.items.map((item) => item.id)).toEqual(['o', 'b', 'c', 'd', 'a']);
+  });
+});
+
+// ✅ 2026-10-27（Codex レビュー 4 回目）: 手元の行がすべて位置を動かしたとき。
+describe('🔴 手元の行がすべて動いたら、足し合わせずに置き換える', () => {
+  const ONLY_A = message('a', '2026-10-27T01:00:00.000Z', true);
+  const MOVED_A = { ...ONLY_A, sentAt: '2026-10-27T09:00:00.000Z' };
+  const page = [message('x', '2026-10-27T08:00:00.000Z'), MOVED_A];
+
+  it('手元が検査中の添付 1 件だけで、それが多くの新着の後に CLEAN になった → つながりも起点も無いので置き換える', () => {
+    expect(hasGapBefore([ONLY_A], page, 2)).toBe(false);
+    expect(gapAnchor([ONLY_A], page)).toBeUndefined();
+    expect(mustReplaceWithLatest([ONLY_A], page, 2)).toBe(true);
+  });
+
+  it('直近のページが満杯でなければ（会話の全部が入っている）置き換えない', () => {
+    expect(mustReplaceWithLatest([ONLY_A], [MOVED_A], 2)).toBe(false);
+  });
+
+  it('位置が動いていない手元の行が 1 つでもあれば置き換えない（読み足しで埋める）', () => {
+    const local = [ONLY_A, message('b', '2026-10-27T02:00:00.000Z')];
+    expect(mustReplaceWithLatest(local, page, 2)).toBe(false);
+    expect(gapAnchor(local, page)).toBe('b');
+  });
+
+  it('手元が空なら置き換えの対象ではない（ふつうに足す）', () => {
+    expect(mustReplaceWithLatest([], page, 2)).toBe(false);
   });
 });

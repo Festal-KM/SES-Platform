@@ -98,6 +98,21 @@ export function hasGapBefore(
 }
 
 /**
+ * ✅ 2026-10-27（Codex レビュー 4 回目）: 手元の行が**すべて**位置を動かした（例: 手元が検査中の添付 1 件だけで、それが多くの
+ * 新着の後に CLEAN になった）ため、つながりを示す行も読み足しの起点も無いか。
+ * 直近のページが満杯なら、その手前に手元に無い発言がありうる。🔴 このときは足し合わせず、手元を直近のページで**置き換え**、
+ * 過去は `nextCursor` から読み直させる（間を黙って落とさない）。直近のページが満杯でなければ会話の全部が入っているので足してよい。
+ */
+export function mustReplaceWithLatest(
+  current: readonly ChatMessageView[],
+  latest: readonly ChatMessageView[],
+  pageSize: number,
+): boolean {
+  if (current.length === 0 || latest.length < pageSize) return false;
+  return stableOverlap(current, latest).localStable.length === 0;
+}
+
+/**
  * ✅ 2026-10-27: 取りこぼしを読み足す起点（`after` に渡す ID）。位置が動いていない手元の最後の行。無ければ `undefined`。
  */
 export function gapAnchor(current: readonly ChatMessageView[], latest: readonly ChatMessageView[]): string | undefined {
