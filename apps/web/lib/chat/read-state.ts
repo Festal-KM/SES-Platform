@@ -8,9 +8,10 @@
 //    **認証コンテキスト**から取る（リクエスト入力から受けない。CLAUDE.md §3.1）。
 // 🔴 指定された発言は「このスレッドの、読める発言」でなければ 404（不存在・他社・別スレッドを区別しない）。
 // 🔴 監査ログに書かない（チャットの閲覧は記録の対象外。CLAUDE.md §3.5 / BR-27）。
-import { withTenant, type AuthenticatedTenantCtx } from '@ses/db';
+import { freeWordFilter, withTenant, type AuthenticatedTenantCtx } from '@ses/db';
 import { requireFound } from '../api/errors';
 import { findChatThreadRow } from './read';
+import { mentionsName, chatMentionNeedle } from './mention';
 import { chatMessageVisibleWhere } from './views';
 
 /** トランザクションの中の DB（`read.ts` と同じ取り出し方）。 */
@@ -131,6 +132,19 @@ export async function readPositions(
   );
 }
 
+/** スレッドごとに「既読位置より後ろ」の条件（読んでいない部屋は部屋全体）。 */
+function afterReadPositionBranches(threadIds: readonly string[], positions: ReadonlyMap<string, ReadPosition | null>) {
+  return threadIds.map((threadId) => {
+    const position = positions.get(threadId) ?? null;
+    return position === null
+      ? { threadId }
+      : {
+          threadId,
+          OR: [{ sentAt: { gt: position.sentAt } }, { sentAt: position.sentAt, id: { gt: position.id } }],
+        };
+  });
+}
+
 /**
  * スレッドごとの未読の件数（**自分以外**の発言で、既読位置より後ろのもの）。
  * 🔴 数えるのは `messages` の RLS（C6）越し —— 読めない発言は数に入らない。
@@ -141,16 +155,7 @@ export async function countUnread(
   threadIds: readonly string[],
 ): Promise<ReadonlyMap<string, number>> {
   if (threadIds.length === 0) return new Map();
-  const positions = await readPositions(db, threadIds);
-  const branches = threadIds.map((threadId) => {
-    const position = positions.get(threadId) ?? null;
-    return position === null
-      ? { threadId }
-      : {
-          threadId,
-          OR: [{ sentAt: { gt: position.sentAt } }, { sentAt: position.sentAt, id: { gt: position.id } }],
-        };
-  });
+  const branches = afterReadPositionBranches(threadIds, await readPositions(db, threadIds));
   const groups = await db.message.groupBy({
     by: ['threadId'],
     // ✅ 2026-10-27: 🔴 検査中の他人の添付の発言を数えない（`chatMessageVisibleWhere`。RLS の二重）。
@@ -199,4 +204,52 @@ export async function setChatThreadPrefs(
     });
     return { pinned: row.pinned, muted: row.muted };
   });
+}
+
+/** 自分の表示名（`users` の C8。🔴 利用者 ID は認証コンテキストから）。読めなければ `null`。 */
+export async function readViewerDisplayName(ctx: AuthenticatedTenantCtx, db: Pick<TenantDb, 'user'>): Promise<string | null> {
+  const me = await db.user.findFirst({ where: { id: ctx.userId }, select: { displayName: true } });
+  return me?.displayName ?? null;
+}
+
+/** 自分宛ての `@` を探すときに読む発言の上限（未読のうち `@自分` を含む候補。超えた分は見ない）。 */
+export const CHAT_MENTION_SCAN_MAX = 500;
+
+/**
+ * ✅ 2026-10-27（F-038 ⑭ / AC-16）: 未読の中に自分宛ての `@名前` がある部屋（一覧の「@」の印）。
+ *
+ * 🔴 返すのは「ある / ない」だけ（部屋の ID の集合）。件数・発言の ID は返さない。
+ * 🔴 母集団は未読の数（`countUnread`）と同じ —— `messages` の RLS（C6 / C10）越し・自分以外の発言・既読位置より後ろ・
+ *    検査中の他人の添付を除く（`chatMessageVisibleWhere`）。それに「消えていない」と `@自分の表示名` を足すだけ。
+ *    `where` に境界（テナント・取引先・メンバー）を書き足さない。
+ * 🔴 自分の表示名は認証コンテキストの利用者 ID から引く（入力から受けない）。判定は `mention.ts` の 1 実装
+ *    （引用の写しにある `@` は数えない）。DB の照合（`freeWordFilter`）は候補を絞るだけで、最後は同じ関数で確かめる。
+ * 🔴 ミュートした部屋も印は付ける（画面が決める）。
+ * 呼び出しは 1 回で全部の部屋を見る（部屋ごとに問い合わせない）。
+ */
+export async function readMentionUnreadThreadIds(
+  ctx: AuthenticatedTenantCtx,
+  db: Pick<TenantDb, 'message' | 'chatReadState'>,
+  threadIds: readonly string[],
+  /** 自分の表示名（`readViewerDisplayName` で認証コンテキストから引いたもの）。 */
+  viewerName: string | null,
+): Promise<ReadonlySet<string>> {
+  const needle = chatMentionNeedle(viewerName);
+  if (threadIds.length === 0 || needle === null) return new Set();
+  const branches = afterReadPositionBranches(threadIds, await readPositions(db, threadIds));
+  const candidates = await db.message.findMany({
+    where: {
+      senderUserId: { not: ctx.userId },
+      deletedAt: null,
+      purgedAt: null,
+      // 候補を絞るだけ（大小を区別しない照合。検索の述語は `@ses/db` の 1 実装から取る）。区別は下の `mentionsName` が付ける。
+      body: freeWordFilter(needle),
+      OR: branches,
+      AND: [chatMessageVisibleWhere(ctx.userId)],
+    },
+    select: { threadId: true, body: true },
+    orderBy: [{ sentAt: 'desc' }, { id: 'desc' }],
+    take: CHAT_MENTION_SCAN_MAX,
+  });
+  return new Set(candidates.filter((message) => mentionsName(message.body, viewerName)).map((message) => message.threadId));
 }
