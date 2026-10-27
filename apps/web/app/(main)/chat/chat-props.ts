@@ -8,6 +8,7 @@ import { t } from '@ses/i18n';
 import type { ChatFormat } from '../../../lib/chat/markdown';
 import type { ChatProjectCardLabels } from '../../../lib/chat/project-card-text';
 import type { ChatReactionKind } from '../../../lib/chat/views';
+import type { ChatAttachmentLabels } from './chat-attachment';
 import { PREFECTURE_MESSAGE_KEYS } from '../../../lib/format/prefectures';
 import { PROJECT_REMOTE_MODE_MESSAGE_KEYS, PROJECT_STATUS_MESSAGE_KEYS } from '../../../lib/projects/labels';
 
@@ -134,7 +135,48 @@ export type ChatConversationMessages = {
     readonly open: string;
     readonly quote: string;
   };
+  /** ✅ 2026-10-27（`docs/04` §S-031 改訂 44）: ファイル（社内だけの部屋から）。 */
+  readonly attachment: ChatAttachmentLabels;
 };
+
+/** ✅ 2026-10-27: ファイルの語（会話の島と右の欄の一覧が同じものを使う）。 */
+export function chatAttachmentLabels(): ChatAttachmentLabels {
+  return {
+    add: t('chat.attachment.add'),
+    note: t('chat.attachment.note'),
+    selected: t('chat.attachment.selected'),
+    remove: t('chat.attachment.remove'),
+    scanning: t('chat.attachment.scanning'),
+    blocked: t('chat.attachment.blocked'),
+    open: t('chat.attachment.open'),
+    openNewTab: t('chat.attachment.openNewTab'),
+    openFailed: t('chat.attachment.openFailed'),
+    unsupported: t('chat.attachment.unsupported'),
+    uploadFailed: t('chat.attachment.uploadFailed'),
+    imageAlt: t('chat.attachment.imageAlt'),
+    pdfTitle: t('chat.attachment.pdfTitle'),
+    filesHeading: t('chat.attachment.files.heading'),
+    filesEmpty: t('chat.attachment.files.empty'),
+    filesLoading: t('chat.attachment.files.loading'),
+    filesFailed: t('chat.attachment.files.failed'),
+    filesMore: t('chat.attachment.files.more'),
+    types: {
+      image: t('chat.attachment.type.image'),
+      pdf: t('chat.attachment.type.pdf'),
+      docx: t('chat.attachment.type.docx'),
+      xlsx: t('chat.attachment.type.xlsx'),
+      csv: t('chat.attachment.type.csv'),
+      txt: t('chat.attachment.type.txt'),
+      other: t('chat.attachment.type.other'),
+    },
+    units: {
+      byte: t('chat.attachment.unit.byte'),
+      kilo: t('chat.attachment.unit.kilo'),
+      mega: t('chat.attachment.unit.mega'),
+    },
+    separator: t('chat.attachment.separator'),
+  };
+}
 
 /** ✅ 2026-10-23: 値 → 語の写像を、島に渡せる素の記録にする（島は `t()` を呼ばない）。 */
 function resolvedLabels(keys: Readonly<Record<string, Parameters<typeof t>[0]>>): Readonly<Record<string, string>> {
@@ -298,5 +340,6 @@ export function chatConversationMessages(): ChatConversationMessages {
       none: t('projects.detail.valueNone'),
       yearsOrMore: t('projects.list.requirements.yearsOrMore'),
     },
+    attachment: chatAttachmentLabels(),
   };
 }

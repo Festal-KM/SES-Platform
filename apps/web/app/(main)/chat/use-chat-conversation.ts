@@ -32,6 +32,8 @@ import { CHAT_DRAFT_EVENT, chatDraftKey, restoreUnsentText } from '../../../lib/
 import { appendQuote, slashCommandRange } from '../../../lib/chat/project-card-text';
 import { chatReactionEmoji } from '../../../lib/chat/reactions';
 import { chatMessageApiPath, chatMessagesApiPath, chatReactionApiPath, chatSaveApiPath } from '../../../lib/chat/screen-query';
+import { acceptChatAttachment, uploadChatAttachment } from '../../../lib/chat/attachment-client';
+import type { ChatAttachmentContentType } from '@ses/domain';
 import { chatAnnouncementSnippet, type ChatMessageView, type ChatReactionKind, type ChatReactionSummary } from '../../../lib/chat/views';
 import { createSubmitGuard } from '../../../lib/forms/submit-guard';
 import type { ChatConversationProps } from './chat-conversation';
@@ -42,8 +44,11 @@ import { useChatRead } from './use-chat-read';
 /** 開いたときに「ここから未読」の線を会話の上端からどれだけ下に置くか（直前の発言が少し見える）。 */
 const UNREAD_MARKER_TOP_GAP_PX = 48;
 
-/** ✅ 2026-10-23: 送信待ちの中身（本文と、貼る案件）。 */
-type PendingSend = { readonly body: string; readonly project: ChatPickedProject | null };
+/** ✅ 2026-10-27: 添えるファイル（送るまで手元に持つ。🔴 名前は送らない・保存しない）。 */
+export type ChatPickedFile = { readonly file: File; readonly contentType: ChatAttachmentContentType };
+
+/** ✅ 2026-10-23: 送信待ちの中身（本文と、貼る案件）。✅ 2026-10-27: 添えるファイル。 */
+type PendingSend = { readonly body: string; readonly project: ChatPickedProject | null; readonly file: ChatPickedFile | null };
 
 /** 投稿の応答（`docs/05` §6.5 #51 の上位互換。`route.ts` の 🔴）。 */
 type SendResponseBody = { readonly message: ChatMessageView };
@@ -66,10 +71,11 @@ export function useChatConversation({
   ownTemplates = [],
   mentionNames = [],
   announcement: initialAnnouncement = null,
+  canAttach = false,
 }: ChatConversationProps) {
   // 🔴 ガードは**インスタンスごと**に持つ（モジュール変数にすると、別のスレッドを開いた島が
   //    同じガードを共有し「前の送信が終わるまで送れない」状態になる）。
-  const [sendGuard] = useState(() => createSubmitGuard<'SENT' | 'MISSING' | 'FAILED' | 'PROJECT'>());
+  const [sendGuard] = useState(() => createSubmitGuard<'SENT' | 'MISSING' | 'FAILED' | 'PROJECT' | 'ATTACHMENT'>());
   const [items, setItems] = useState<readonly ChatMessageView[]>(initialMessages);
   /**
    * ✅ 2026-10-26（#164 の 2）: 開いている間に読めなくなった（部屋から外れた・公開が取り消された等）。
@@ -80,7 +86,10 @@ export function useChatConversation({
   const [onScreen, setOnScreen] = useState(true);
   const [body, setBody] = useState('');
   const [sending, setSending] = useState(false);
-  const [sendError, setSendError] = useState<'NONE' | 'FAILED' | 'MISSING' | 'PROJECT'>('NONE');
+  const [sendError, setSendError] = useState<'NONE' | 'FAILED' | 'MISSING' | 'PROJECT' | 'ATTACHMENT'>('NONE');
+  // ✅ 2026-10-27（改訂 44）: 添えるファイルと、選んだファイルを受け付けなかったときの印。
+  const [attachedFile, setAttachedFile] = useState<ChatPickedFile | null>(null);
+  const [attachRejected, setAttachRejected] = useState(false);
   // ✅ 2026-10-14（チャットレーン）: 会話の操作の改修。
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
@@ -145,6 +154,7 @@ export function useChatConversation({
     bodyRef.current = '';
     setPendingSend(null);
     setAttachedProject(null);
+    setAttachedFile(null);
     setEditingId(null);
     setEditText('');
     try {
@@ -264,6 +274,19 @@ export function useChatConversation({
     const rest = consumeSlash();
     updateBody(rest === '' ? text : `${rest.trimEnd()}\n${text}`);
     composeTextarea()?.focus();
+  }
+
+  /** ✅ 2026-10-27: ファイルを選んだ（種類・大きさを確かめる。受け付けなければ添えずに理由を出す）。 */
+  function pickFile(file: File | null): void {
+    if (file === null) return;
+    const contentType = acceptChatAttachment(file);
+    if (contentType === null) {
+      setAttachRejected(true);
+      return;
+    }
+    setAttachRejected(false);
+    if (sendError === 'ATTACHMENT') setSendError('NONE');
+    setAttachedFile({ file, contentType });
   }
 
   /** ✅ 2026-10-23: 案件カードの「条件を引用」。入力欄の末尾に引用を足す。 */
@@ -486,12 +509,13 @@ export function useChatConversation({
   function submit(): void {
     const trimmed = body.trim();
     // ✅ 2026-10-23: 案件を貼っていれば本文は空でも送れる（カードだけの発言）。
-    if (!canPost || (trimmed === '' && attachedProject === null) || sending || pendingSend !== null) return;
-    const next: PendingSend = { body: trimmed, project: attachedProject };
+    if (!canPost || (trimmed === '' && attachedProject === null && attachedFile === null) || sending || pendingSend !== null) return;
+    const next: PendingSend = { body: trimmed, project: attachedProject, file: canAttach ? attachedFile : null };
     setSendError('NONE');
     setPendingSend(next);
     setBody('');
     setAttachedProject(null);
+    setAttachedFile(null);
     setSlashRange(null);
     setPickerOpen(false);
     pendingTimer.current = window.setTimeout(() => {
@@ -508,6 +532,7 @@ export function useChatConversation({
       // ✅ 2026-10-26（#166 の 6）: 🔴 待っている間に書いた次の文章を上書きしない（両方残す）。
       updateBody(restoreUnsentText(pendingSend.body, bodyRef.current));
       setAttachedProject((current) => current ?? pendingSend.project);
+      setAttachedFile((current) => current ?? pendingSend.file);
     }
     setPendingSend(null);
     document.getElementById(composeId)?.focus();
@@ -528,11 +553,27 @@ export function useChatConversation({
     setSendError('NONE');
     const outcome = await sendGuard.run(async () => {
       try {
+        // ✅ 2026-10-27: ファイルがあれば先に置いて札を受け取る（#51p → ストレージ）。置けなければ送らない。
+        let attachmentUploadToken: string | null = null;
+        if (pending.file !== null) {
+          const uploaded = await uploadChatAttachment(
+            { threadId, contentType: pending.file.contentType, body: pending.file.file },
+            { fetch },
+          );
+          if (!uploaded.ok) return uploaded.reason === 'MISSING' ? ('MISSING' as const) : ('ATTACHMENT' as const);
+          attachmentUploadToken = uploaded.uploadToken;
+        }
         const response = await fetch(chatMessagesApiPath(threadId), {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(pending.project === null ? { body: trimmed } : { body: trimmed, projectId: pending.project.id }),
+          body: JSON.stringify({
+            body: trimmed,
+            ...(pending.project === null ? {} : { projectId: pending.project.id }),
+            ...(attachmentUploadToken === null ? {} : { attachmentUploadToken }),
+          }),
         });
+        // ✅ 2026-10-27: 添付つきで断られた（部屋が変わった・札の期限切れなど）。
+        if (attachmentUploadToken !== null && (response.status === 400 || response.status === 409)) return 'ATTACHMENT' as const;
         // 🔴 404 = スレッドが見えなくなった（不存在・退出・他社化を区別しない。`docs/05` §4.8）。
         if (response.status === 404) return 'MISSING' as const;
         // ✅ 2026-10-23: 400 で `body.projectId` = この部屋に貼れない案件（理由はサーバが書き分けない）。
@@ -558,6 +599,8 @@ export function useChatConversation({
     if (outcome !== 'SENT' && outcome !== 'MISSING') updateBody(restoreUnsentText(trimmed, bodyRef.current));
     // ✅ 2026-10-23: 貼る案件も戻す。🔴 「貼れない案件」だったときだけは戻さない（同じ失敗を繰り返さない）。
     if (outcome !== 'SENT' && outcome !== 'PROJECT' && pending.project !== null) setAttachedProject((current) => current ?? pending.project);
+    // ✅ 2026-10-27: 送れなかったファイルも戻す（選び直さずにもう一度送れる）。
+    if (outcome !== 'SENT' && outcome !== 'MISSING' && pending.file !== null) setAttachedFile((current) => current ?? pending.file);
     // ✅ 2026-10-26（#164 の 2）: 🔴 送ろうとして 404 = 読めなくなった。戻した文章も含めて画面から消す。
     if (outcome === 'MISSING') {
       markUnavailable();
@@ -565,6 +608,7 @@ export function useChatConversation({
     }
     else if (outcome === 'FAILED') setSendError('FAILED');
     else if (outcome === 'PROJECT') setSendError('PROJECT');
+    else if (outcome === 'ATTACHMENT') setSendError('ATTACHMENT');
   }
 
 
@@ -605,6 +649,11 @@ export function useChatConversation({
     setPickerOpen,
     attachedProject,
     setAttachedProject,
+    canAttach,
+    attachedFile,
+    setAttachedFile,
+    attachRejected,
+    pickFile,
     composeTab,
     setComposeTab,
     headerMenuOpen,

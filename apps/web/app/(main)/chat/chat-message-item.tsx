@@ -9,11 +9,13 @@ import { CHAT_REACTION_EMOJI_KINDS, CHAT_REACTION_WORD_KINDS, type ChatMessageVi
 import { formatDateTimeJst } from '../../../lib/format/datetime';
 import { displayInitials } from '../../../lib/format/initials';
 import { ChatMessageMarkdown } from './chat-message-markdown';
+import { ChatMessageAttachment } from './chat-attachment';
 import { ChatProjectCard } from './chat-project-card';
 import type { ChatConversationState } from './use-chat-conversation';
 
 type ChatMessageItemState = Pick<ChatConversationState,
   | 'layout'
+  | 'threadId'
   | 'canPost'
   | 'messages'
   | 'copiedId'
@@ -60,6 +62,7 @@ const OTHER_AVATAR_CLASSES = 'bg-neutral-bg text-fg';
 export function ChatMessageItem({ item, continued, conversation }: { readonly item: ChatMessageView; readonly continued: boolean; readonly conversation: ChatMessageItemState }) {
   const {
     layout,
+    threadId,
     canPost,
     messages,
     copiedId,
@@ -158,6 +161,11 @@ export function ChatMessageItem({ item, continued, conversation }: { readonly it
             labels={messages.projectCard}
             {...(canPost ? { onQuote: quoteIntoCompose } : {})}
           />
+        )}
+        {/* ✅ 2026-10-27（改訂 44）: 添えたファイル。🔴 `CLEAN` でないものは送った本人にしか届かない（サーバが決める）。
+            開く導線は投稿できる人（＝ダウンロードできる人）にだけ描く。 */}
+        {item.attachment == null ? null : (
+          <ChatMessageAttachment threadId={threadId} messageId={item.id} attachment={item.attachment} labels={messages.attachment} canOpen={canPost} />
         )}
         {text === null ? null : (item.reactions ?? []).length > 0 || item.edited === true || item.saved === true ? (
           // ✅ 2026-10-16: 付いているリアクションの数と「編集済み」は**常に見せる**（中身の一部なので隠さない）。

@@ -39,6 +39,7 @@ import { canPostChatMessage } from '../../../lib/chat/policy';
 import { conversationLayoutFor, conversationTitleFor } from '../../../lib/chat/layout';
 import { canAddPane, withPaneClosed, type ChatPaneState } from '../../../lib/chat/panes';
 import { readChatScreen } from '../../../lib/chat/read';
+import { listChatAttachments, readAttachableThreadIds } from '../../../lib/chat/attachments';
 import { CHAT_PATH, chatHref, chatScreenQuerySchema, parseChatFilter } from '../../../lib/chat/screen-query';
 import { ChatResizablePane } from './chat-resizable-pane';
 import { ChatRail } from './chat-rail';
@@ -55,7 +56,7 @@ import { PageHeading } from '../_shell/page-heading';
 import { ChatStatusSection } from './chat-status-section';
 import { ChatConversation } from './chat-conversation';
 import { ChatPaneDropZone } from './chat-pane-drop-zone';
-import { chatConversationMessages, chatPaneDropMessages } from './chat-props';
+import { chatAttachmentLabels, chatConversationMessages, chatPaneDropMessages } from './chat-props';
 import { ChatThreadList } from './chat-thread-list';
 import { ChatThreadPanel } from './chat-thread-panel';
 
@@ -101,14 +102,22 @@ export default async function ChatPage({
     panes: selected === null ? [] : data.panes.map((pane) => pane.requestedThreadId),
   };
   const tiled = data.panes.length > 0;
+  const infoOpen = query.info === '1';
   const conversationMessages = chatConversationMessages();
   const canPost = canPostChatMessage(ctx.role);
+  // ✅ 2026-10-27（改訂 44）: 開いている部屋のうちファイルを添えられる部屋（取引先がいない部屋）。印は投稿できる人にだけ出す。
+  const attachableIds = await readAttachableThreadIds(ctx, [
+    ...(selected === null ? [] : [selected.id]),
+    ...data.panes.flatMap((pane) => (pane.thread === null ? [] : [pane.thread.id])),
+  ]);
+  // ✅ 2026-10-27: 右の欄の「ファイル」（開いているときだけ読む。`CLEAN` だけ・新しい順）。
+  const panelFiles =
+    selected !== null && !tiled && infoOpen && attachableIds.has(selected.id) ? await listChatAttachments(ctx, selected.id, {}) : null;
   // ✅ 2026-10-19（#128 §7.1 ①）: 自分のひとこと状態（入口の初期値）。閲覧専用には入口を描かないので読まない。
   const myStatus = canPost ? await readMyChatUserStatus(ctx) : '';
   // ✅ 2026-10-14: 会話を開く・閉じる URL に一覧の検索語と並べ方を引き継ぐ（開くたびに検索が消えない）。
   // ✅ 2026-10-19（v2）: 左の列の絞り込み（`f=`）。旧「未読のみ」（`unread=1`）は「未読」の絞り込みとして読む。
   const filter = query.f === undefined && query.unread === '1' ? parseChatFilter('unread') : parseChatFilter(query.f);
-  const infoOpen = query.info === '1';
   // ✅ 2026-10-22（紺野）: 自分の定型文（入力欄の選択肢と管理画面）と、保存済み（左の列で選んだときだけ読む）。
   //    閲覧専用は書けないので読まない。🔴 どちらも本人の行だけ（RLS）。
   const ownTemplates = canPost ? await readMyChatTemplates(ctx) : [];
@@ -149,7 +158,13 @@ export default async function ChatPage({
         className="min-h-0 flex-1 [&>div]:min-h-0"
         // ✅ 2026-10-19（v2）: 右の情報欄は既定で閉じる（左に絞り込みの列が増えたので、会話の幅を確保する）。
         //    会話の見出しの「情報」で開く（`info=1`）。
-        aside={selected === null || tiled || !infoOpen ? undefined : <ChatThreadPanel thread={selected} canPost={canPost} />}
+        aside={selected === null || tiled || !infoOpen ? undefined : <ChatThreadPanel
+              thread={selected}
+              canPost={canPost}
+              {...(panelFiles === null
+                ? {}
+                : { files: { items: panelFiles.items, nextCursor: panelFiles.nextCursor, labels: chatAttachmentLabels(), canOpen: canPost } })}
+            />}
       >
         {/* 見出し・説明・器を縦に積み、器（Card）が残りの高さを全部使う。 */}
         <div className="flex h-full min-h-0 flex-col">
@@ -292,6 +307,7 @@ export default async function ChatPage({
                 mentionNames={mentionNamesOf(selected)}
                 announcement={data.announcements[selected.id] ?? null}
                 canPost={canPost}
+                canAttach={canPost && attachableIds.has(selected.id)}
                 messages={conversationMessages}
                 {...(tiled ? { closeHref: chatHref({ ...withPaneClosed(paneState, selected.id), ...listQuery }) } : {})}
                 {...(tiled
@@ -342,6 +358,7 @@ export default async function ChatPage({
                   mentionNames={mentionNamesOf(pane.thread)}
                   announcement={data.announcements[pane.thread.id] ?? null}
                   canPost={canPost}
+                  canAttach={canPost && attachableIds.has(pane.thread.id)}
                   messages={conversationMessages}
                   closeHref={chatHref({ ...withPaneClosed(paneState, pane.thread.id), ...listQuery })}
                 />
