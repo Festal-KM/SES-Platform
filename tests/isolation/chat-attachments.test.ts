@@ -15,6 +15,8 @@
 //      解約の削除で減る（再実行では動かない）
 //   ⑩ 🔴 検査の状態は検査の関数だけが変えられ、添付のキー・種類・大きさは作った後に変えられない（DB のトリガ）
 //   ⑪ 🔴 CLEAN でない添付の発言はアナウンスにできない（送った本人からでも 404）
+//   ⑫ ✅ 決定 A: 本人が発言を削除したら添付も消える（実体の削除・列を外す・カウンタを 1 度だけ減らす・URL / 一覧から消える）。
+//      二重削除は何もしない。他人は削除も、削除済みの発言の添付を外すこともできない
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   applyFileScanResult,
@@ -60,7 +62,7 @@ vi.mock('../../apps/web/lib/auth/session', () => ({
 
 const groupsRoute = await import('../../apps/web/app/api/(main)/threads/groups/route');
 const { listChatMessages } = await import('../../apps/web/lib/chat/read');
-const { sendChatMessage } = await import('../../apps/web/lib/chat/service');
+const { deleteChatMessage, sendChatMessage } = await import('../../apps/web/lib/chat/service');
 const {
   CHAT_ATTACHMENT_AUDIT_ACTION_DOWNLOAD,
   CHAT_ATTACHMENT_AUDIT_ACTION_UPLOAD,
@@ -440,6 +442,95 @@ describe('🔴 ⑩ 添付の列は DB で守られる', () => {
       setChatAnnouncement(host, roomId, messageId, { now, meta: { ipAddress: META.ipAddress } }),
     ).rejects.toMatchObject({ httpStatus: 404 });
     expect(await admin.chatThreadAnnouncement.count({ where: { threadId: roomId } })).toBe(0);
+  });
+});
+
+describe('⑫ 本人が発言を削除したら添付も消える（決定 A）', () => {
+  let messageId: string;
+  let objectKey: string;
+  const deletedKeys: string[] = [];
+  const spyStore = {
+    delete: async (key: string) => {
+      deletedKeys.push(key);
+      await store.delete(key);
+    },
+  };
+  const deleteDeps = () => ({ now, meta: { ipAddress: META.ipAddress }, objectStore: spyStore });
+
+  beforeAll(async () => {
+    const ticket = await upload(host, roomId, 'application/pdf', 70);
+    objectKey = keyOf(ticket.uploadToken);
+    messageId = (await send(host, roomId, ticket.uploadToken, '消す予定')).message.id;
+    expect((await applyScan(objectKey, 'CLEAN')).target).toBe('APPLIED');
+  });
+
+  it('🔴 他人（同じ部屋のメンバー）は削除できない（404）。何も動かない', async () => {
+    const before = await readStorageBytesUsed(host, clock);
+    await expect(deleteChatMessage(host2, roomId, messageId, deleteDeps())).rejects.toMatchObject({ httpStatus: 404 });
+    expect(deletedKeys).toEqual([]);
+    expect(await readStorageBytesUsed(host, clock)).toBe(before);
+    expect((await admin.message.findUniqueOrThrow({ where: { id: messageId } })).attachmentKey).toBe(objectKey);
+  });
+
+  it('🔴 削除していない発言の添付は、本人でも外せない（DB のトリガ）', async () => {
+    await expect(
+      withTenant(host, async (db) =>
+        db.message.updateMany({
+          where: { id: messageId },
+          data: { attachmentKey: null, attachmentScanStatus: null, attachmentContentType: null, attachmentByteSize: null, attachmentStorageCountedAt: null },
+        }),
+      ),
+    ).rejects.toThrow(/添付のキー・種類・大きさは後から変えられません/);
+  });
+
+  it('削除すると実体を消し、列と計上の印を外し、カウンタをちょうど大きさだけ減らす。監査は「あった」と大きさだけ', async () => {
+    const before = await readStorageBytesUsed(host, clock);
+    const result = await deleteChatMessage(host, roomId, messageId, deleteDeps());
+    expect(result.message.deleted).toBe(true);
+    expect(result.message.attachment ?? null).toBeNull();
+    expect(deletedKeys).toEqual([objectKey]);
+    expect(await readStorageBytesUsed(host, clock)).toBe(before - 70n);
+    const row = await admin.message.findUniqueOrThrow({ where: { id: messageId } });
+    expect([row.attachmentKey, row.attachmentScanStatus, row.attachmentContentType, row.attachmentByteSize, row.attachmentStorageCountedAt]).toEqual([
+      null,
+      null,
+      null,
+      null,
+      null,
+    ]);
+    const audit = await admin.auditLog.findFirstOrThrow({ where: { action: 'message.delete', targetId: messageId } });
+    expect(audit.summary).toEqual({ threadId: roomId, bodyLength: '消す予定'.length, hadAttachment: true, byteSize: 70 });
+    expect(JSON.stringify(audit)).not.toContain(objectKey);
+  });
+
+  it('削除後は共有 URL も一覧も出ない（404 / 載らない）', async () => {
+    const deps = { objectStore: store, ipAddress: META.ipAddress, now };
+    await expect(issueChatAttachmentDownloadUrl(host, roomId, messageId, 'inline', deps)).rejects.toMatchObject({ httpStatus: 404 });
+    await expect(issueChatAttachmentDownloadUrl(host2, roomId, messageId, 'inline', deps)).rejects.toMatchObject({ httpStatus: 404 });
+    expect((await listChatAttachments(host2, roomId, {})).items.map((item) => item.messageId)).not.toContain(messageId);
+  });
+
+  it('二重削除は何もしない（404。実体の削除もカウンタも動かない）', async () => {
+    const before = await readStorageBytesUsed(host, clock);
+    await expect(deleteChatMessage(host, roomId, messageId, deleteDeps())).rejects.toMatchObject({ httpStatus: 404 });
+    expect(deletedKeys).toEqual([objectKey]);
+    expect(await readStorageBytesUsed(host, clock)).toBe(before);
+  });
+
+  it('🔴 削除済みの発言でも、送った本人以外は添付を外せない（DB のトリガ）', async () => {
+    const ticket = await upload(host, roomId, 'image/png', 30);
+    const other = (await send(host, roomId, ticket.uploadToken)).message.id;
+    expect((await applyScan(keyOf(ticket.uploadToken), 'CLEAN')).target).toBe('APPLIED');
+    await admin.message.update({ where: { id: other }, data: { deletedAt: clock, body: null } });
+    await expect(
+      withTenant(host2, async (db) =>
+        db.message.updateMany({
+          where: { id: other },
+          data: { attachmentKey: null, attachmentScanStatus: null, attachmentContentType: null, attachmentByteSize: null, attachmentStorageCountedAt: null },
+        }),
+      ),
+    ).rejects.toThrow(/添付のキー・種類・大きさは後から変えられません|検査の状態は検査の関数だけ/);
+    expect((await admin.message.findUniqueOrThrow({ where: { id: other } })).attachmentKey).not.toBeNull();
   });
 });
 

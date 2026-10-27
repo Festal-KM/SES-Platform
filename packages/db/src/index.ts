@@ -535,6 +535,9 @@ export {
   releaseSkillSheetStorage,
   // ✅ 2026-10-27: チャットの添付の加算（#51 の送信の確定後。CAS）。減算は解約の削除（tenant-purge.ts）が内部で行う。
   accountChatAttachmentStorage,
+  // ✅ 2026-10-27（決定 A）: 本人の発言の削除で添付と計上を外す（論理削除と同じトランザクション）。
+  releaseChatAttachmentOnDelete,
+  type ReleasedChatAttachment,
 } from './storage-usage.js';
 export type { SkillSheetStorageInput, StorageAccountingOutcome } from './storage-usage.js';
 // 🔴 T-10-02: 計測の突き合わせ・連続性の検査・検算・月次集計（docs/05 §9.8 / §5.9 / `F-026 AC-3`〜`AC-5`）。

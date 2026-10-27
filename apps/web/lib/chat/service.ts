@@ -35,7 +35,8 @@
 //      🔴 部屋の「最終更新」を進めない（進めると相手の一覧の並びで「何か送られた」と分かる。`CLEAN` になったときに
 //      検査の関数が進める）。監査は `message.create` に加えて `chat_attachment.upload`（種類と大きさだけ）。
 //      🔴 同じ札の二重送信は 1 行に収束する（発言 ID が同じ）。
-import { accountChatAttachmentStorage, withTenant, writeAuditLog, type AuthenticatedTenantCtx } from '@ses/db';
+import { accountChatAttachmentStorage, releaseChatAttachmentOnDelete, withTenant, writeAuditLog, type AuthenticatedTenantCtx } from '@ses/db';
+import type { ObjectStore } from '@ses/connectors';
 import { InternalError, NotFoundError, requireFound, ValidationError } from '../api/errors';
 import {
   CHAT_ATTACHMENT_AUDIT_ACTION_UPLOAD,
@@ -284,7 +285,7 @@ async function requireOwnLiveMessage(
   return requireFound(
     await db.message.findFirst({
       where: ownLiveMessageWhere(ctx, threadId, messageId),
-      select: { id: true, body: true },
+      select: { id: true, body: true, attachmentKey: true },
     }),
   );
 }
@@ -324,15 +325,31 @@ export async function editChatMessage(
   });
 }
 
-/** ✅ 2026-10-16: 自分の発言を削除する（論理削除。本文を消し「削除されました」と出す）。監査ログに残す。 */
+/**
+ * ✅ 2026-10-27（紺野の決定 A）: 発言の削除に添付があるときの依存（実体を消すストレージ）。
+ *    🔴 添付のある発言を消すのに渡されていなければ、何も動かさずに 500（実体を残したまま列だけ消さない）。
+ */
+export type DeleteChatMessageDeps = SendChatMessageDeps & { readonly objectStore?: Pick<ObjectStore, 'delete'> };
+
+/**
+ * ✅ 2026-10-16: 自分の発言を削除する（論理削除。本文を消し「削除されました」と出す）。監査ログに残す。
+ * ✅ 2026-10-27（紺野の決定 A）: 添付があれば、**同じトランザクションで**添付の 4 列と計上の印を外し、計上済みなら
+ *    `UsageCounter(STORAGE_BYTES)` を 1 度だけ減らす（`releaseChatAttachmentOnDelete`。CAS なので 2 回目は何もしない）。
+ *    実体はコミットの**後**にストレージから消す。🔴 消せなかったときは削除を取り消さない（本文・添付を戻さない）。
+ *    実体だけが残り、日次の検算（`usage.storage-reconcile`）が「実測 > カウンタ」の乖離として A-005 に出す。
+ *    消した後は共有 URL（#51q）も一覧（#51r）も 404 / 載らない（列が NULL のため）。
+ */
 export async function deleteChatMessage(
   ctx: AuthenticatedTenantCtx,
   threadId: string,
   messageId: string,
-  deps: SendChatMessageDeps,
+  deps: DeleteChatMessageDeps,
 ): Promise<SendChatMessageResult> {
-  return withTenant(ctx, async (db) => {
+  const result = await withTenant(ctx, async (db) => {
     const before = await requireOwnLiveMessage(ctx, db, threadId, messageId);
+    if (before.attachmentKey !== null && deps.objectStore === undefined) {
+      throw new InternalError('添付の削除に要る依存が渡されていません。');
+    }
     // 🔴 削除も条件付き（#166 の 1）。同時に 2 回削除しても、監査ログは確定した 1 回だけに残る。
     const changed = await db.message.updateMany({
       where: ownLiveMessageWhere(ctx, threadId, messageId),
@@ -340,6 +357,13 @@ export async function deleteChatMessage(
       data: { body: null, deletedAt: deps.now(), attachedProjectId: null },
     });
     if (changed.count === 0) throw new NotFoundError();
+    // ✅ 2026-10-27: 添付と計上を外す（同じトランザクション）。
+    const released = await releaseChatAttachmentOnDelete(db, {
+      tenantId: ctx.tenantId,
+      messageId,
+      senderUserId: ctx.userId,
+      observedAt: deps.now(),
+    });
     const updated = (await db.message.findFirstOrThrow({
       where: { id: messageId, threadId },
       select: CHAT_MESSAGE_SELECT,
@@ -350,13 +374,26 @@ export async function deleteChatMessage(
       actorId: ctx.userId,
       targetType: CHAT_MESSAGE_AUDIT_TARGET_TYPE,
       targetId: messageId,
-      summary: { threadId, bodyLength: before.body?.length ?? 0 },
+      // 🔴 添付は「あった」ことと大きさだけ（キー・種類の名前・ファイル名を載せない）。
+      summary: {
+        threadId,
+        bodyLength: before.body?.length ?? 0,
+        ...(released === null ? {} : { hadAttachment: true, byteSize: Number(released.byteSize) }),
+      },
       ipAddress: deps.meta.ipAddress,
       deviceKind: ctx.deviceKind,
     });
     const [message] = await projectChatMessages(ctx, db, [updated]);
-    return { message: message as ChatMessageView };
+    return { message: message as ChatMessageView, released };
   });
+  if (result.released !== null && deps.objectStore !== undefined) {
+    try {
+      await deps.objectStore.delete(result.released.objectKey);
+    } catch {
+      // 🔴 ベストエフォート（上の関数の説明）。削除は確定しているので失敗を利用者の失敗にしない。残った実体は検算が拾う。
+    }
+  }
+  return { message: result.message };
 }
 
 /** ✅ 2026-10-16: 会話の書き出しの監査（誰がどの会話を持ち出したか）。 */

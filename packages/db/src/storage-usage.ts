@@ -36,7 +36,7 @@ import { Prisma } from '@prisma/client';
 import { usagePeriodKey } from '@ses/domain';
 import type { AuthenticatedTenantCtx } from './context.js';
 import { uuidV7 } from './uuid.js';
-import { runInTenantTransaction } from './with-tenant.js';
+import { runInTenantTransaction, type TenantTransactionClient, type withTenant } from './with-tenant.js';
 
 /** 本モジュールが触る唯一の metric（docs/05 §3.8 の値集合）。 */
 const STORAGE_METRIC = 'STORAGE_BYTES';
@@ -316,4 +316,62 @@ export async function releaseChatAttachmentStorageForPurge(
   const total = released.reduce((sum, row) => sum + BigInt(row.byte_size), 0n);
   if (total > 0n) await applyStorageDelta(tx, tenantId, -total, observedAt);
   return total;
+}
+
+/** `withTenant` が `fn` に渡すクライアント（生 SQL を型から除いたもの）。 */
+type WithTenantDb = Parameters<Parameters<typeof withTenant<unknown>>[1]>[0];
+
+/** 削除した発言から外した添付（実体はトランザクションの後で消す）。 */
+export type ReleasedChatAttachment = {
+  readonly objectKey: string;
+  readonly byteSize: bigint;
+  /** この呼び出しでカウンタを減らしたか（計上済みだったか）。 */
+  readonly decremented: boolean;
+};
+
+/**
+ * ✅ 2026-10-27（紺野の決定 A）: 送った本人が発言を削除したとき、**同じトランザクションの中で**添付の 4 列と計上の印を外し、
+ * 計上済みなら `UsageCounter(STORAGE_BYTES)` をその大きさだけ減らす。返したキーの実体は呼び出し側がコミットの後に消す。
+ *
+ * 🔴 呼べるのは `apps/web/lib/chat/service.ts` の削除だけ（`tests/static/auth-db-callers.test.ts`）。
+ * 🔴 生 SQL はこの関数の固定文だけ。`withTenant` が渡すクライアントは実行時には同じトランザクション（`runInTenantTransaction`
+ *    の `tx`）であり、型だけが生 SQL を隠している。ここで型を戻すのは、論理削除と同じトランザクションで減算するためである
+ *    （別のトランザクションにすると、列を消した後に落ちたとき減算の根拠〔印と大きさ〕が失われる）。
+ * 🔴 対象は「送った本人の、削除済みの、添付がある発言」だけ（`FOR UPDATE` で並行の削除を直列にする。2 回目は `null`）。
+ *    列を外せるのは DB のトリガ `messages_guard_attachment_update` の狭い例外（削除済み・本人・すべて NULL にするだけ）。
+ */
+export async function releaseChatAttachmentOnDelete(
+  db: WithTenantDb,
+  input: { readonly tenantId: string; readonly messageId: string; readonly senderUserId: string; readonly observedAt: Date },
+): Promise<ReleasedChatAttachment | null> {
+  const tx = db as unknown as TenantTransactionClient;
+  if (typeof tx.$queryRaw !== 'function') {
+    throw new Error('releaseChatAttachmentOnDelete: トランザクションのクライアントではありません。');
+  }
+  const rows = await tx.$queryRaw<{ key: string; byte_size: string; counted: boolean }[]>(Prisma.sql`
+    WITH target AS (
+      SELECT id, attachment_key, attachment_byte_size, attachment_storage_counted_at
+        FROM messages
+       WHERE id = ${input.messageId}::uuid
+         AND tenant_id = ${input.tenantId}::uuid
+         AND sender_user_id = ${input.senderUserId}::uuid
+         AND deleted_at IS NOT NULL
+         AND attachment_key IS NOT NULL
+       FOR UPDATE)
+    UPDATE messages m
+       SET attachment_key = NULL,
+           attachment_scan_status = NULL,
+           attachment_content_type = NULL,
+           attachment_byte_size = NULL,
+           attachment_storage_counted_at = NULL
+      FROM target
+     WHERE m.id = target.id
+    RETURNING target.attachment_key AS key,
+              target.attachment_byte_size::text AS byte_size,
+              (target.attachment_storage_counted_at IS NOT NULL) AS counted`);
+  const row = rows[0];
+  if (row === undefined) return null;
+  const byteSize = BigInt(row.byte_size);
+  if (row.counted) await applyStorageDelta(tx, input.tenantId, -byteSize, input.observedAt);
+  return { objectKey: row.key, byteSize, decremented: row.counted };
 }

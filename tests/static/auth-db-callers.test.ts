@@ -308,6 +308,8 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
   readStorageBytesUsed: ['apps/web/lib/skill-sheets/service.ts', 'apps/web/lib/chat/attachments.ts'],
   accountSkillSheetStorage: ['apps/web/lib/skill-sheets/service.ts'],
   accountChatAttachmentStorage: ['apps/web/lib/chat/service.ts'],
+  // ✅ 2026-10-27（決定 A）: 本人の発言の削除で添付と計上を外す（論理削除と同じトランザクション）。
+  releaseChatAttachmentOnDelete: ['apps/web/lib/chat/service.ts'],
   releaseSkillSheetStorage: ['apps/web/lib/skill-sheets/service.ts'],
   // 🔴 T-05-07: ダウンロード用の署名（docs/05 §14.2 / §16.1 / K-7）。
   //    **`ObjectStore.presignGet` を呼んでよいのは `lib/storage/download.ts` だけ**である ——
