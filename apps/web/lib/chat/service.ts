@@ -29,8 +29,22 @@
 //   ⑦ ✅ 2026-10-23（紺野）: 🔴 **案件を貼る（`projectId`）ときは、貼れるかを同じトランザクションで確かめる**
 //      （送る人が RLS で読める・部屋に取引先がいればその取引先に公開中。`project-cards.ts` の ②）。
 //      満たさなければ理由を書き分けずに 400。部屋の取引先は RLS で読めた部屋の行から取る（リクエストから受けない）。
-import { withTenant, writeAuditLog, type AuthenticatedTenantCtx } from '@ses/db';
-import { NotFoundError, requireFound } from '../api/errors';
+//   ⑧ ✅ 2026-10-27（`F-038` 改訂 12 ⑫）: 🔴 **ファイルは #51p の札（`attachmentUploadToken`）でだけ受ける**。札を確かめ、
+//      実体が置かれていることを確かめ（トランザクションの外）、部屋が添えられる部屋か（`chatRoomAcceptsAttachments`。
+//      取引先がいれば 400。DB のトリガも拒む）を同じトランザクションで確かめてから、札の発言 ID で `SCANNING` の行を作る。
+//      🔴 部屋の「最終更新」を進めない（進めると相手の一覧の並びで「何か送られた」と分かる。`CLEAN` になったときに
+//      検査の関数が進める）。監査は `message.create` に加えて `chat_attachment.upload`（種類と大きさだけ）。
+//      🔴 同じ札の二重送信は 1 行に収束する（発言 ID が同じ）。
+import { accountChatAttachmentStorage, withTenant, writeAuditLog, type AuthenticatedTenantCtx } from '@ses/db';
+import { InternalError, NotFoundError, requireFound, ValidationError } from '../api/errors';
+import {
+  CHAT_ATTACHMENT_AUDIT_ACTION_UPLOAD,
+  CHAT_ATTACHMENT_ROOM_DETAIL,
+  resolveChatAttachmentForSend,
+  type ChatAttachmentSendDeps,
+  type ResolvedChatAttachment,
+} from './attachments';
+import { chatRoomAcceptsAttachments } from './policy';
 import { CHAT_MESSAGE_SELECT, findChatThreadRow, projectChatMessages } from './read';
 import { summarizeReactions, type ChatReactionKind, type ChatReactionSummary } from './views';
 import { requirePastableProject } from './project-cards';
@@ -46,6 +60,8 @@ export const CHAT_MESSAGE_AUDIT_TARGET_TYPE = 'Message';
 export type SendChatMessageDeps = {
   readonly now: () => Date;
   readonly meta: { readonly ipAddress: string | null };
+  /** ✅ 2026-10-27: 添付の札の確認（札を受けたときだけ要る。無いのに札が来たら 500 にする —— 黙って添付を捨てない）。 */
+  readonly attachments?: ChatAttachmentSendDeps;
 };
 
 /** 投稿 1 件の結果（🔴 作成した 1 件だけを返す。会話全体を返さない）。 */
@@ -60,12 +76,22 @@ export async function sendChatMessage(
   deps: SendChatMessageDeps,
 ): Promise<SendChatMessageResult> {
   const sentAt = deps.now();
-  return withTenant(ctx, async (db) => {
+  // ⑧ 札の確認と実体の確認（ネットワーク I/O があるのでトランザクションの外）。
+  let attachment: ResolvedChatAttachment | null = null;
+  if (input.attachmentUploadToken !== undefined) {
+    if (deps.attachments === undefined) throw new InternalError('添付の確認に要る依存が渡されていません。');
+    attachment = await resolveChatAttachmentForSend(ctx, threadId, input.attachmentUploadToken, deps.attachments, sentAt);
+  }
+  const result = await withTenant(ctx, async (db) => {
     // ① 投稿先が見えるか（見えなければ 404。読みと同じ 1 実装）。
     const thread = requireFound(await findChatThreadRow(db, threadId));
     // ⑦ 貼る案件があれば、この部屋に貼れるか（貼れなければ 400。部屋が見えないときは上の 404 が先に返る）。
     const attachedProjectId = input.projectId ?? null;
     if (attachedProjectId !== null) await requirePastableProject(db, thread.partnerCompanyId, attachedProjectId);
+    if (attachment !== null) {
+      if (!chatRoomAcceptsAttachments(thread)) throw new ValidationError([CHAT_ATTACHMENT_ROOM_DETAIL]);
+      return sendWithAttachment(ctx, db, thread.id, input, attachment, attachedProjectId, sentAt, deps);
+    }
 
     const created = (await db.message.create({
       data: {
@@ -111,6 +137,86 @@ export async function sendChatMessage(
     // 🔴 1 行入れて 1 行写せないことは起こりえない（起きたら不変条件が壊れている）。黙って空を返さない。
     return { message: requireFound(message ?? null) };
   });
+  // ⑧ ✅ 2026-10-27: 添付のバイト数を `UsageCounter(STORAGE_BYTES)` に加算する（CLAUDE.md §10.6）。
+  //    スキルシートの確定（`settleStorage`）と同じ形: 行の確定の**後**に、CAS（`attachment_storage_counted_at IS NULL`）が
+  //    成立したときだけ加算する。同じ札の二重送信は `ALREADY_SETTLED`（2 回目は数えない）、前回が加算の前に落ちていれば
+  //    やり直しで回収される。
+  if (attachment !== null) {
+    const outcome = await accountChatAttachmentStorage(ctx, { messageId: attachment.messageId, observedAt: sentAt });
+    if (outcome.kind === 'NOT_FOUND') throw new InternalError();
+  }
+  return result;
+}
+
+type ServiceDb = Parameters<Parameters<typeof withTenant<void>>[1]>[0];
+
+/** ⑧ 添付つきの発言を作る（同じトランザクションの中）。 */
+async function sendWithAttachment(
+  ctx: AuthenticatedTenantCtx,
+  db: ServiceDb,
+  threadId: string,
+  input: ChatMessagePostBody,
+  attachment: ResolvedChatAttachment,
+  attachedProjectId: string | null,
+  sentAt: Date,
+  deps: SendChatMessageDeps,
+): Promise<SendChatMessageResult> {
+  // 🔴 `createMany`（ON CONFLICT DO NOTHING）: 同じ札の二重送信は発言 ID がぶつかって 0 件になる（例外でトランザクションを壊さない）。
+  const inserted = await db.message.createMany({
+    data: [
+      {
+        id: attachment.messageId,
+        tenantId: ctx.tenantId,
+        threadId,
+        ownerPartnerCompanyId: null,
+        senderUserId: ctx.userId,
+        senderPartnerCompanyId: ctx.partnerCompanyId,
+        body: input.body,
+        attachedProjectId,
+        attachmentKey: attachment.objectKey,
+        attachmentScanStatus: 'SCANNING',
+        attachmentContentType: attachment.contentType,
+        attachmentByteSize: BigInt(attachment.byteSize),
+        sentAt,
+      },
+    ],
+    skipDuplicates: true,
+  });
+  const row = (await db.message.findFirst({
+    // 🔴 送った本人の、この部屋の発言だけ（別の部屋・別の人の行は返さない）。
+    where: { id: attachment.messageId, threadId, senderUserId: ctx.userId },
+    select: CHAT_MESSAGE_SELECT,
+  })) as ChatMessageRow | null;
+  if (row === null) throw new ValidationError(['body.attachmentUploadToken']);
+  if (inserted.count === 1) {
+    await writeAuditLog(db, {
+      action: CHAT_MESSAGE_AUDIT_ACTION_CREATE,
+      actorKind: 'USER',
+      actorId: ctx.userId,
+      targetType: CHAT_MESSAGE_AUDIT_TARGET_TYPE,
+      targetId: row.id,
+      summary: {
+        threadId,
+        bodyLength: input.body.length,
+        ...(attachedProjectId === null ? {} : { attachedProjectId }),
+      },
+      ipAddress: deps.meta.ipAddress,
+      deviceKind: ctx.deviceKind,
+    });
+    // 🔴 中身・ファイル名・キーを載せない（種類と大きさだけ）。
+    await writeAuditLog(db, {
+      action: CHAT_ATTACHMENT_AUDIT_ACTION_UPLOAD,
+      actorKind: 'USER',
+      actorId: ctx.userId,
+      targetType: CHAT_MESSAGE_AUDIT_TARGET_TYPE,
+      targetId: row.id,
+      summary: { contentType: attachment.contentType, byteSize: attachment.byteSize },
+      ipAddress: deps.meta.ipAddress,
+      deviceKind: ctx.deviceKind,
+    });
+  }
+  const [message] = await projectChatMessages(ctx, db, [row]);
+  return { message: requireFound(message ?? null) };
 }
 
 /**

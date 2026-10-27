@@ -61,6 +61,7 @@ import {
   COMPANY_ROOM_KINDS,
   chatThreadDetailView,
   chatThreadListItem,
+  isChatMessageVisibleToViewer,
   type ChatMessageRow,
   type ChatAnnouncementView,
   type ChatMessageView,
@@ -88,7 +89,10 @@ const CHAT_THREAD_SELECT = {
   lastMessageAt: true,
 } as const;
 
-/** 🔴 `messages` の `select`。**`attachmentKey` / `attachmentScanStatus` / `reviewGateId` を読まない。** */
+/**
+ * 🔴 `messages` の `select`。**`attachmentKey` / `reviewGateId` を読まない。**
+ * ✅ 2026-10-27: 添えたファイルの種類・大きさ・検査の状態だけを読む（キーは共有 URL の発行〔#51q〕だけが読む）。
+ */
 export const CHAT_MESSAGE_SELECT = {
   id: true,
   senderUserId: true,
@@ -101,6 +105,9 @@ export const CHAT_MESSAGE_SELECT = {
   purgedAt: true,
   // ✅ 2026-10-23: 貼った案件の ID（カードは読む人の RLS で読み直す。応答には ID を直接載せない）。
   attachedProjectId: true,
+  attachmentContentType: true,
+  attachmentByteSize: true,
+  attachmentScanStatus: true,
 } as const;
 
 export type SelectedChatThreadRow = ChatThreadRow & { readonly partnerCompanyId: string };
@@ -432,7 +439,7 @@ async function readThreadDetail(
 }
 
 /** 送信者の表示名（`users` の C8 DIRECTORY。読めなければ `null`）。 */
-async function resolveSenderNames(
+export async function resolveSenderNames(
   db: Pick<TenantDb, 'user'>,
   userIds: readonly string[],
 ): Promise<ReadonlyMap<string, string>> {
@@ -453,8 +460,11 @@ export async function projectChatMessages(
     TenantDb,
     'user' | 'partnerCompany' | 'tenant' | 'chatMessageReaction' | 'chatSavedMessage' | 'chatUserStatus' | 'project' | 'projectRequirement'
   >,
-  rows: readonly ChatMessageRow[],
+  allRows: readonly ChatMessageRow[],
 ): Promise<readonly ChatMessageView[]> {
+  // ✅ 2026-10-27（AC-14）: 🔴 `CLEAN` でない添付の発言は送った本人にだけ写す。本体は RLS の RESTRICTIVE ポリシーであり、
+  //    ここは写しの段の二重の守り（RLS が静かに緩んでも応答に出さない）。
+  const rows = allRows.filter((row) => isChatMessageVisibleToViewer(row, ctx.userId));
   if (rows.length === 0) return [];
   // ✅ 2026-10-16: リアクション。🔴 RLS が「発言が読める」ときだけ行を返す（migration 20261016010000）。
   const reactionRows = await db.chatMessageReaction.findMany({

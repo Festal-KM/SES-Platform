@@ -12,6 +12,9 @@ import {
   CHAT_ANNOUNCEMENT_SNIPPET_LENGTH,
   CHAT_ANNOUNCEMENT_VIEW_KEYS,
   chatAttachedProjectView,
+  chatAttachmentView,
+  CHAT_ATTACHMENT_VIEW_KEYS,
+  isChatMessageVisibleToViewer,
   CHAT_HIDDEN_PROJECT_CARD_KEYS,
   CHAT_PROJECT_REQUIREMENT_KEYS,
   CHAT_VISIBLE_PROJECT_CARD_KEYS,
@@ -343,5 +346,37 @@ describe('chatAnnouncementView（アナウンスの帯）', () => {
     const long = 'あ'.repeat(CHAT_ANNOUNCEMENT_SNIPPET_LENGTH + 10);
     expect(chatAnnouncementSnippet(long)).toBe(`${'あ'.repeat(CHAT_ANNOUNCEMENT_SNIPPET_LENGTH)}…`);
     expect(chatAnnouncementSnippet(null)).toBeNull();
+  });
+});
+
+// ✅ 2026-10-27（`F-038` 改訂 12 ⑫ / AC-14）: 添えたファイルの写し。
+describe('添えたファイル（chatAttachmentView / isChatMessageVisibleToViewer）', () => {
+  const VIEWER = '01930000-0000-7000-8000-0000000000e9';
+  const WITH_FILE: ChatMessageRow = {
+    ...MESSAGE_ROW,
+    attachmentContentType: 'application/pdf',
+    attachmentByteSize: 2048n,
+    attachmentScanStatus: 'CLEAN',
+  };
+
+  it('種類・大きさ・検査の状態だけを出す（キー・ファイル名・URL のキーを持たない）', () => {
+    const view = chatMessageView(WITH_FILE, { senderName: null, senderCompanyName: null, viewerPartnerCompanyId: null, viewerUserId: VIEWER });
+    expect(view.attachment).toEqual({ kind: 'pdf', contentType: 'application/pdf', byteSize: 2048, scanStatus: 'CLEAN' });
+    expect(Object.keys(view.attachment ?? {}).sort()).toEqual([...CHAT_ATTACHMENT_VIEW_KEYS].sort());
+  });
+
+  it('添付の無い発言・消えた発言は null', () => {
+    expect(chatAttachmentView(MESSAGE_ROW)).toBeNull();
+    expect(chatAttachmentView({ ...WITH_FILE, deletedAt: new Date() })).toBeNull();
+    expect(chatAttachmentView({ ...WITH_FILE, purgedAt: new Date() })).toBeNull();
+  });
+
+  it('🔴 CLEAN でない添付の発言は送った本人にだけ返す。CLEAN・添付なしは誰にでも', () => {
+    const scanning = { ...WITH_FILE, attachmentScanStatus: 'SCANNING' };
+    expect(isChatMessageVisibleToViewer(scanning, VIEWER)).toBe(false);
+    expect(isChatMessageVisibleToViewer(scanning, MESSAGE_ROW.senderUserId)).toBe(true);
+    expect(isChatMessageVisibleToViewer({ ...WITH_FILE, attachmentScanStatus: 'INFECTED' }, VIEWER)).toBe(false);
+    expect(isChatMessageVisibleToViewer(WITH_FILE, VIEWER)).toBe(true);
+    expect(isChatMessageVisibleToViewer(MESSAGE_ROW, VIEWER)).toBe(true);
   });
 });

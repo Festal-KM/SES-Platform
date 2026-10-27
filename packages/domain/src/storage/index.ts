@@ -6,6 +6,10 @@ export {
   buildSkillSheetObjectKey,
   // 🔴 T-10-09: 返却データ（ZIP）のキー（docs/05 §14.1 `exports/`）。
   buildDataExportObjectKey,
+  // ✅ 2026-10-27: チャットの添付（社内だけの部屋。docs/05 §14.1 `chat/`）。
+  buildChatAttachmentObjectKey,
+  parseChatAttachmentObjectKey,
+  type ChatAttachmentObjectKeyInput,
   // 🔴 T-10-02: 検算（`usage.storage-reconcile`）が走査するテナントのプレフィックス。
   buildTenantObjectPrefix,
   InvalidObjectKeyPartError,
@@ -19,3 +23,17 @@ export {
   type SkillSheetObjectKeyInput,
   type SkillSheetObjectKeyParts,
 } from './object-key.js';
+
+// ✅ 2026-10-27: チャットの添付の受け付ける種類・大きさ（DB の CHECK と突き合わせる唯一の出所）。
+export {
+  CHAT_ATTACHMENT_CONTENT_TYPES,
+  CHAT_ATTACHMENT_MAX_BYTES,
+  CHAT_ATTACHMENT_TYPES,
+  chatAttachmentExtensionOf,
+  chatAttachmentKindOf,
+  isChatAttachmentByteSize,
+  isChatAttachmentContentType,
+  type ChatAttachmentContentType,
+  type ChatAttachmentExtension,
+  type ChatAttachmentKind,
+} from './chat-attachment.js';

@@ -76,6 +76,11 @@ export type ChatConversationProps = {
    * 🔴 読めるかは RLS（その部屋が読める人だけ）が決める。開いている間は新着と同じ間隔で読み直す。
    */
   readonly announcement?: ChatAnnouncementView | null;
+  /**
+   * ✅ 2026-10-27（改訂 44）: ファイルを添えられるか（投稿できる人で、取引先がいない部屋）。省略時は添えられない。
+   * 🔴 拒否の本体は API（#51p / #51 の `chatRoomAcceptsAttachments` と DB のトリガ）。ここは印の出し分けだけ。
+   */
+  readonly canAttach?: boolean;
 };
 
 export function ChatConversation(props: ChatConversationProps) {

@@ -31,7 +31,7 @@
 //    `app_tenant_id()` として課される（`file-scan.ts` / `storage-usage.ts` と同じ規律）。
 
 import { Prisma } from '@prisma/client';
-import { isScanStatus, type ScanStatus } from '@ses/domain';
+import { isScanStatus, parseChatAttachmentObjectKey, type ScanStatus } from '@ses/domain';
 import type { SystemTenantCtx, TenantRole } from './context.js';
 import { resolveRecipientClass } from './recipient.js';
 import { runInTenantTransaction } from './with-tenant.js';
@@ -128,6 +128,11 @@ export async function readScanQuarantineNotice(
         ownerPartnerCompanyId,
         scanStatus: row.scan_status,
       };
+
+      // ✅ 2026-10-27（チャットのファイル。docs/04 §S-031 改訂 44）: チャットの添付の隔離は、**送った本人にだけ画面で**
+      //    知らせる（「このファイルは送れませんでした」）。メールは送らない —— 管理者へ配る周知のテンプレートは
+      //    スキルシートの文面であり、チャットの発言の存在を本人以外に知らせることにもなる（AC-14）。
+      if (parseChatAttachmentObjectKey(input.objectKey) !== null) return { target, recipients: [] };
 
       // 🔴 母集団は `memberships`（C5 PARTY）で確定させる（`users` から数え上げない。
       //    docs/05 §6.6 #83 の 🔴 と同じ理由 —— `users` は C8 DIRECTORY であり、

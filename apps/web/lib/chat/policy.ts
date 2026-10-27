@@ -27,3 +27,16 @@ export const CHAT_POST_ROLES: readonly TenantRole[] = [
 export function canPostChatMessage(role: TenantRole): boolean {
   return CHAT_POST_ROLES.includes(role);
 }
+
+/**
+ * ✅ 2026-10-27（`F-038` 改訂 12 ⑫ / `docs/05` §3.7.1「ファイル（社内だけの部屋）」）: この部屋にファイルを添えられるか。
+ *
+ * 🔴 **アプリで「取引先がいる部屋には添えられない」を決めるのはこの 1 か所だけ**（もう 1 か所は DB のトリガ
+ *    `messages_internal_only_attachment`。migration 20261027010000）。#51p（発行）・#51（送信）・画面の印の出し分けが
+ *    すべてここを通る。取引先がいる部屋へ広げるときは、`CLAUDE.md` §3.3 のゲート（チャット添付）を配線したうえで
+ *    この関数とトリガの 2 か所を直す（ほかに条件式を写さない）。
+ * 🔴 部屋の取引先は RLS で読めた部屋の行から取る（リクエストから受けない）。
+ */
+export function chatRoomAcceptsAttachments(thread: { readonly partnerCompanyId: string | null }): boolean {
+  return thread.partnerCompanyId === null;
+}

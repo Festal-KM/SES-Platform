@@ -94,6 +94,7 @@ import {
   PanelLeft,
   PanelLeftClose,
   PanelLeftOpen,
+  Paperclip,
   Pencil,
   Pin,
   ScrollText,
@@ -191,6 +192,7 @@ export const ICONS = {
   'chat-open-beside': Columns2, // 右に並べて開く
   'chat-rail-close': PanelLeftClose, // 左の絞り込みの列を畳む
   'chat-rail-open': PanelLeftOpen, // 左の絞り込みの列を開く
+  'chat-attach': Paperclip, // ファイルを添える（社内だけの部屋。2026-10-27）
 } as const;
 
 /** 🔴 写像に無い名前は**型エラー**になる（`docs/05` §17.7.1 (i)①）。 */

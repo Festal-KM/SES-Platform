@@ -303,8 +303,11 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
   //    ⚠️ 保持期間の削除ジョブ（`retention.delete`。SP-16）が同じ減算を使うときは、
   //       `apps/worker/src/jobs/retention-delete.ts` をここに足す（順序 ①S3 → ②減算 → ③行 を
   //       ジョブ側でも守ること）。**「どこからでも足し引きできる」状態にしない。**
-  readStorageBytesUsed: ['apps/web/lib/skill-sheets/service.ts'],
+  // ✅ 2026-10-27（チャットのファイル）: #51p の上限判定（`lib/chat/attachments.ts`）と #51 の加算（`lib/chat/service.ts`）。
+  //    減算は解約の削除（`packages/db/src/tenant-purge.ts` の内部）だけで、`apps/**` からは呼べない。
+  readStorageBytesUsed: ['apps/web/lib/skill-sheets/service.ts', 'apps/web/lib/chat/attachments.ts'],
   accountSkillSheetStorage: ['apps/web/lib/skill-sheets/service.ts'],
+  accountChatAttachmentStorage: ['apps/web/lib/chat/service.ts'],
   releaseSkillSheetStorage: ['apps/web/lib/skill-sheets/service.ts'],
   // 🔴 T-05-07: ダウンロード用の署名（docs/05 §14.2 / §16.1 / K-7）。
   //    **`ObjectStore.presignGet` を呼んでよいのは `lib/storage/download.ts` だけ**である ——
@@ -319,6 +322,8 @@ const ALLOWED_CALLERS: Readonly<Record<string, readonly string[]>> = {
     'apps/web/lib/storage/download.ts',
     // 🔴 T-10-09: 返却データ（#78）。**同じ関数**を通す（監査の commit 後にしか署名しない順序を返却だけ別に書かない）。
     'apps/web/lib/data-exports/service.ts',
+    // ✅ 2026-10-27: チャットの添付（社内だけの部屋。docs/05 §6.5 #51q）。**同じ関数**を通す（CLEAN の判定と監査の commit 後の署名を写さない）。
+    'apps/web/lib/chat/attachments.ts',
   ],
 
   // --- 🔴 T-04-03: 運用メールと Webhook 受信（docs/05 §8.5 / §9.4）--------------------------

@@ -16,13 +16,14 @@
 //   ④ 🔴 **未読を作らない。** `messages` に既読の列が無い（`packages/db/prisma/schema.prisma` の
 //      `Message`）。実体の無い数を画面に出すと「見たのに消えない」を作る（サイドバーのバッジを
 //      置かなかったのと同じ判断）。**列を足すのはモデルの変更であり本タスクの範囲外。**
-//   ⑤ 🔴 **添付を持たない。** `CLAUDE.md` §3.4 が「ウイルススキャンが `CLEAN` になるまで共有 URL を
-//      発行しない」と定めており、スキャンの配線（`file_scan_results` / `CHAT_ATTACHMENT` のゲート）
-//      まで含めると別タスクになる。**口（`attachmentKey`）を型に持たせない** —— 持たせると
-//      「スキャン前のキーを返す」経路が生まれる。
+//   ⑤ 🔴 **添付のキーを持たない。** ✅ 2026-10-27（`F-038` 改訂 12 ⑫）: 社内だけの部屋の添付は
+//      `attachment`（種類・大きさ・検査の状態だけ）で表す。**オブジェクトキー・ファイル名・共有 URL を型に持たせない**
+//      —— 共有 URL は押すたびに #51q（`issueDownloadUrl`）が出す。🔴 `CLEAN` でない添付の発言は送った本人にしか
+//      届かない（RLS の RESTRICTIVE ポリシー + `isChatMessageVisibleToViewer`）。
 //
 // 🔴 純粋関数のみ（`@ses/db` / `@ses/i18n` / 現在時刻に依存しない）。クライアントの島が
 //    **型だけ**を読めるようにするためである（`tests/static/client-db-boundary.test.ts`）。
+import { chatAttachmentKindOf, type ChatAttachmentKind, type ScanStatus } from '@ses/domain';
 import { messageSnippet } from './thread-tree';
 
 /** `chat_threads.kind`（CHECK の 4 値。DM / GROUP は 2026-10-16・#128）。 */
@@ -114,7 +115,41 @@ export type ChatMessageView = {
    * 読みの経路は必ず埋める。省略可なのは手で組むテスト用の値のため。
    */
   readonly attachedProject?: ChatAttachedProjectView | null;
+  /**
+   * ✅ 2026-10-27（`F-038` 改訂 12 ⑫）: 添えたファイル（社内だけの部屋）。無い・発言が消えた（削除・保持期限）なら `null`。
+   * 🔴 種類・大きさ・検査の状態だけ（キー・ファイル名・URL を載せない）。`CLEAN` でないものは送った本人にしか届かない。
+   * 読みの経路は必ず埋める。省略可なのは手で組むテスト用の値のため。
+   */
+  readonly attachment?: ChatAttachmentView | null;
 };
+
+/** ✅ 2026-10-27: 添えたファイル（`ChatMessageView.attachment`）。 */
+export type ChatAttachmentView = {
+  /** 出し方の分類（画像は縮めて出す / PDF は埋め込み / そのほかは札）。 */
+  readonly kind: ChatAttachmentKind;
+  readonly contentType: string;
+  readonly byteSize: number;
+  /** ウイルス検査の状態。🔴 `CLEAN` 以外が届くのは送った本人だけ。 */
+  readonly scanStatus: ScanStatus;
+};
+
+export const CHAT_ATTACHMENT_VIEW_KEYS = ['kind', 'contentType', 'byteSize', 'scanStatus'] as const;
+
+/**
+ * ✅ 2026-10-27（`docs/05` §6.5 #51r）: 部屋の「ファイル」の一覧の 1 行（`CLEAN` のものだけ・新しい順）。
+ * 🔴 キー・ファイル名・URL・送った人の利用者 ID を載せない。件数は返さない。
+ */
+export type ChatAttachmentListItem = {
+  readonly messageId: string;
+  readonly kind: ChatAttachmentKind;
+  readonly contentType: string;
+  readonly byteSize: number;
+  /** 送った人の表示名（`users` の C8 で読めなければ `null`）。 */
+  readonly senderName: string | null;
+  readonly sentAt: string;
+};
+
+export const CHAT_ATTACHMENT_LIST_ITEM_KEYS = ['messageId', 'kind', 'contentType', 'byteSize', 'senderName', 'sentAt'] as const;
 
 /**
  * ✅ 2026-10-26（紺野の決定 2026-10-22）: 部屋のアナウンス（LINE のアナウンス。1 部屋 1 件。`chat_thread_announcements`）。
@@ -279,6 +314,8 @@ export const CHAT_MESSAGE_VIEW_KEYS = [
   'deleted',
   'saved',
   'attachedProject',
+  // ✅ 2026-10-27: 添えたファイル（種類・大きさ・検査の状態だけ）。
+  'attachment',
 ] as const;
 
 /** ✅ 2026-10-23: 案件カード（読めたとき）のキー集合。🔴 分離テストが応答と突き合わせる。 */
@@ -443,7 +480,38 @@ export type ChatMessageRow = {
   readonly purgedAt?: Date | null;
   /** ✅ 2026-10-23: 貼った案件の ID（読みの経路は必ず埋める）。🔴 応答には載せない（カードの可否は `deps` が決める）。 */
   readonly attachedProjectId?: string | null;
+  /** ✅ 2026-10-27: 添えたファイルの種類・大きさ・検査の状態（読みの経路は必ず埋める）。🔴 キーは読まない。 */
+  readonly attachmentContentType?: string | null;
+  readonly attachmentByteSize?: bigint | number | null;
+  readonly attachmentScanStatus?: string | null;
 };
+
+/**
+ * ✅ 2026-10-27（AC-14）: この発言を読み手に返してよいか。🔴 `CLEAN` でない添付の発言は送った本人だけ。
+ *    本体は RLS の RESTRICTIVE ポリシー（migration 20261027010000）であり、これは写しの段の二重の守り。
+ */
+export function isChatMessageVisibleToViewer(
+  row: Pick<ChatMessageRow, 'senderUserId' | 'attachmentContentType' | 'attachmentScanStatus'>,
+  viewerUserId: string,
+): boolean {
+  if (row.attachmentContentType == null && row.attachmentScanStatus == null) return true;
+  return row.attachmentScanStatus === 'CLEAN' || row.senderUserId === viewerUserId;
+}
+
+/** ✅ 2026-10-27: 添えたファイルの写し（無い・発言が消えたなら `null`）。 */
+export function chatAttachmentView(
+  row: Pick<ChatMessageRow, 'body' | 'deletedAt' | 'purgedAt' | 'attachmentContentType' | 'attachmentByteSize' | 'attachmentScanStatus'>,
+): ChatAttachmentView | null {
+  if (row.attachmentContentType == null || row.attachmentByteSize == null || row.attachmentScanStatus == null) return null;
+  if (row.deletedAt != null || row.purgedAt != null) return null;
+  return {
+    // 🔴 受け付けない種類は DB の CHECK が入れさせないが、万一の値は「札」として出す（画像として埋め込まない）。
+    kind: chatAttachmentKindOf(row.attachmentContentType) ?? 'file',
+    contentType: row.attachmentContentType,
+    byteSize: Number(row.attachmentByteSize),
+    scanStatus: row.attachmentScanStatus as ScanStatus,
+  };
+}
 
 export type ChatMessageDeps = {
   /** 送信者の表示名（読めなければ `null`）。 */
@@ -508,5 +576,6 @@ export function chatMessageView(row: ChatMessageRow, deps: ChatMessageDeps): Cha
     deleted: row.deletedAt != null,
     saved: deps.saved ?? false,
     attachedProject: chatAttachedProjectView(row, deps.attachedProject),
+    attachment: chatAttachmentView(row),
   };
 }

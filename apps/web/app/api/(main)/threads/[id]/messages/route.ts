@@ -16,7 +16,7 @@
 //     `requireNotViewer()`（二重の網）。
 //   - 🔴 **`audit` オプションを使わない** —— 記録は `sendChatMessage` の業務トランザクション内で
 //     書く（404 では残さない。`service.ts` の ⑤）。
-//   - 🔴 **添付の口が無い**（`chatMessagePostBodySchema` は `{ body, projectId? }` だけ）。理由は `schemas.ts` の 🔴。
+//   - ✅ 2026-10-27: 添付は #51p の札（`attachmentUploadToken`）でだけ受ける（キーは受けない）。社内だけの部屋のみ（`service.ts` の ⑧）。
 //   - ✅ 2026-10-23: 🔴 **`projectId`（案件を貼る）は貼れるかをサーバが決める**（`service.ts` の ⑦）。貼れなければ 400。
 import { requireExecutable, requireNotViewer, requireRole } from '../../../../../../lib/api/guards';
 import { withApiRoute } from '../../../../../../lib/api/withApiRoute';
@@ -29,6 +29,7 @@ import {
   chatThreadParamsSchema,
 } from '../../../../../../lib/chat/schemas';
 import { sendChatMessage } from '../../../../../../lib/chat/service';
+import { chatAttachmentTokens, objectStore } from '../../../../../../lib/db/bootstrap';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -63,6 +64,8 @@ export const POST = withApiRoute(
     const result = await sendChatMessage(ctx, params.id, body, {
       now: () => new Date(),
       meta: { ipAddress: meta.ipAddress },
+      // ✅ 2026-10-27: 札を受けたときだけ使う（本文だけの投稿ではストレージに触れない）。
+      ...(body.attachmentUploadToken === undefined ? {} : { attachments: { objectStore: objectStore(), tokens: chatAttachmentTokens() } }),
     });
     // 🔴 `docs/05` §6.5 #51 の `{ id }` の上位互換。画面が吹き出しを 1 つ足すために、
     //    **投稿した 1 件の写しだけ**を返す（会話全体を返さない = 再取得で 1 ページ目に戻らない）。

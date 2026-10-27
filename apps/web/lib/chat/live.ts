@@ -77,7 +77,7 @@ export function withLatestReactions(
     //    🔴 公開を取り消されたら、開いたままの画面からも案件名・リンク・引用を消す（サーバは `{ visible: false }` を返している）。
     // ✅ 2026-10-26（#164 の 5）: 保存済みの印と送信者のひとこと状態も揃える（別のタブで外した・状態を消した）。
     const pick = (m: ChatMessageView) =>
-      JSON.stringify([m.reactions ?? [], m.body, m.edited ?? false, m.deleted ?? false, m.attachedProject ?? null, m.saved ?? false, m.senderStatus ?? null]);
+      JSON.stringify([m.reactions ?? [], m.body, m.edited ?? false, m.deleted ?? false, m.attachedProject ?? null, m.saved ?? false, m.senderStatus ?? null, m.attachment ?? null]);
     if (fresh === undefined || pick(fresh) === pick(item)) return item;
     changed = true;
     const next: ChatMessageView = {
@@ -88,6 +88,8 @@ export function withLatestReactions(
       deleted: fresh.deleted ?? false,
       saved: fresh.saved ?? false,
       senderStatus: fresh.senderStatus ?? null,
+      // ✅ 2026-10-27: 添付の検査の状態（送った本人の「検査中」→ プレビュー）も揃える。
+      ...(fresh.attachment === undefined ? {} : { attachment: fresh.attachment }),
     };
     // 取り直した値にカードが無ければ、手元のカードも外す（前の名前・ID を残さない）。
     if (fresh.attachedProject === undefined) {

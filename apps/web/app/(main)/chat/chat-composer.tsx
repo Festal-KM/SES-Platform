@@ -1,7 +1,10 @@
 'use client';
 
 import { CHAT_MESSAGE_MAX_LENGTH } from '@ses/config';
-import { Alert, Button, CHAT_COMPOSER_HEIGHT_CLASS, CHAT_COMPOSER_FOCUS_CLASSES, CHAT_COMPOSER_INPUT_FOCUS_CLASSES, Field, Icon, IconButton, Select, Textarea, cn } from '@ses/ui';
+import { Alert, Button, CHAT_COMPOSER_HEIGHT_CLASS, CHAT_COMPOSER_FOCUS_CLASSES, CHAT_COMPOSER_INPUT_FOCUS_CLASSES, Field, Icon, IconButton, Input, Select, Textarea, cn } from '@ses/ui';
+import { useRef } from 'react';
+
+import { CHAT_ATTACHMENT_ACCEPT, chatAttachmentSummary } from '../../../lib/chat/attachment-client';
 
 import { isSendKey } from '../../../lib/chat/layout';
 import { CHAT_FORMATS } from '../../../lib/chat/markdown';
@@ -35,6 +38,11 @@ type ChatComposerState = Pick<ChatConversationState,
   | 'setPickerOpen'
   | 'attachedProject'
   | 'setAttachedProject'
+  | 'canAttach'
+  | 'attachedFile'
+  | 'setAttachedFile'
+  | 'attachRejected'
+  | 'pickFile'
   | 'composeTab'
   | 'setComposeTab'
   | 'mentionOpen'
@@ -78,6 +86,11 @@ export function ChatComposer({ conversation }: { readonly conversation: ChatComp
     setPickerOpen,
     attachedProject,
     setAttachedProject,
+    canAttach,
+    attachedFile,
+    setAttachedFile,
+    attachRejected,
+    pickFile,
     composeTab,
     setComposeTab,
     mentionOpen,
@@ -99,6 +112,8 @@ export function ChatComposer({ conversation }: { readonly conversation: ChatComp
     undoSend,
     sendNow,
   } = conversation;
+  // ✅ 2026-10-27: ファイルを選ぶ欄（見えない。印のボタンから開く）。
+  const fileInput = useRef<HTMLInputElement | null>(null);
   return (<>
       {/* 🔴 コンポーザー（64）。会話の下端に固定され、本文だけがその上で伸び縮みする。 */}
       {canPost ? (
@@ -278,6 +293,26 @@ export function ChatComposer({ conversation }: { readonly conversation: ChatComp
                   />
                 </div>
               )}
+              {/* ✅ 2026-10-27（改訂 44）: 一緒に送るファイル（種類・大きさ ×）。🔴 ファイル名は出さない（保存しない）。 */}
+              {attachedFile === null || !canAttach ? null : (
+                <div className="flex items-center gap-2 border-b border-border px-3 py-1" data-testid="chat-compose-attached-file">
+                  <Icon name="chat-attach" className="text-fg-muted" />
+                  <span className="shrink-0 text-xs text-fg-muted">{messages.attachment.selected}</span>
+                  <span className="min-w-0 truncate text-xs font-medium text-fg">
+                    {chatAttachmentSummary({ contentType: attachedFile.contentType, byteSize: attachedFile.file.size }, messages.attachment)}
+                  </span>
+                  <IconButton
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="ml-auto h-11 w-11 md:h-8 md:w-8"
+                    icon={<Icon name="x" />}
+                    aria-label={messages.attachment.remove}
+                    onClick={() => setAttachedFile(null)}
+                    data-testid="chat-compose-attached-file-remove"
+                  />
+                </div>
+              )}
               {composeTab === 'write' ? (
                 <Textarea
                   id={composeId}
@@ -372,6 +407,35 @@ export function ChatComposer({ conversation }: { readonly conversation: ChatComp
                   trackSlash(next, next.length);
                   composeTextarea()?.focus();
                 }} data-testid="chat-compose-slash-toggle" />
+                {/* ✅ 2026-10-27（改訂 44）: ファイルを添える。🔴 取引先がいる部屋・閲覧専用には描かない（押して断られる導線を置かない）。 */}
+                {canAttach ? (
+                  <>
+                    <IconButton
+                      type="button"
+                      variant={attachedFile === null ? 'ghost' : 'secondary'}
+                      className="h-11 w-11"
+                      icon={<Icon name="chat-attach" />}
+                      aria-label={messages.attachment.add}
+                      title={messages.attachment.add}
+                      onClick={() => fileInput.current?.click()}
+                      data-testid="chat-compose-attach"
+                    />
+                    <Input
+                      ref={fileInput}
+                      type="file"
+                      accept={CHAT_ATTACHMENT_ACCEPT}
+                      className="sr-only"
+                      tabIndex={-1}
+                      aria-hidden="true"
+                      onChange={(event) => {
+                        pickFile(event.target.files?.[0] ?? null);
+                        // 同じファイルを選び直しても変化として届くよう、選択を空に戻す。
+                        event.target.value = '';
+                      }}
+                      data-testid="chat-compose-attach-input"
+                    />
+                  </>
+                ) : null}
                 <IconButton type="button" variant={templateOpen ? 'secondary' : 'ghost'} className="h-11 w-11" icon={<Icon name="chat-template" />} aria-label={messages.templateLabel} title={messages.templateLabel} aria-expanded={templateOpen} aria-controls={`chat-compose-template-${threadId}`} onClick={() => setTemplateOpen((open) => !open)} data-testid="chat-compose-template-toggle" />
                 {/* ✅ 2026-10-14: 送信に失敗したら、書いた文章を残したまま、その場で送り直せる
                     （🔴 二重送信の防止は `createSubmitGuard` のまま。見えなくなったスレッドには再送を出さない）。 */}
@@ -444,6 +508,17 @@ export function ChatComposer({ conversation }: { readonly conversation: ChatComp
           </Field>
           {/* 誰に見えるか（取引先との部屋では大事な情報なので、小さく常に出す）。 */}
           <p className="m-0 mt-1 text-xs text-fg-muted">{threadKind === 'DM' || threadKind === 'GROUP' ? messages.composeMemberHint : messages.composeHint}</p>
+          {/* ✅ 2026-10-27（改訂 44）: 🔴 ファイルを添えられる部屋では、選んでいなくても常に出す。 */}
+          {canAttach ? (
+            <p className="m-0 mt-1 text-xs text-fg-muted" data-testid="chat-compose-attach-note">
+              {messages.attachment.note}
+            </p>
+          ) : null}
+          {canAttach && attachRejected ? (
+            <p className="m-0 mt-1 text-xs text-danger" role="status" data-testid="chat-compose-attach-rejected">
+              {messages.attachment.unsupported}
+            </p>
+          ) : null}
           {/* ✅ 2026-10-14: 送信の取り消し（押してから数秒は送らずに待つ）。 */}
           {pendingSend === null ? null : (
             <div className="mb-2 flex flex-wrap items-center gap-2" aria-live="polite" data-testid="chat-compose-pending">
@@ -462,7 +537,9 @@ export function ChatComposer({ conversation }: { readonly conversation: ChatComp
                 ? messages.composeThreadMissing
                 : sendError === 'PROJECT'
                   ? messages.pasteProject.notPastable
-                  : messages.composeFailed}
+                  : sendError === 'ATTACHMENT'
+                    ? messages.attachment.uploadFailed
+                    : messages.composeFailed}
             </Alert>
           )}
 
