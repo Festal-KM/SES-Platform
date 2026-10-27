@@ -198,6 +198,7 @@
 - 🔴 **ホームに氏名を出さない。** 60 秒ポーリングで `engineer.view` の監査ログが毎分積まれる（`BR-27`）。
 - 🔴 **`Drawer` に台帳のエンジニア詳細とスキルシートを含めない。** 一覧をスクロールするだけで監査ログが膨張する。
 - ✅ **2026-10-27 チャットの添付は取引先がいる部屋でも送れる**（`CLAUDE.md` §3.3 改訂。紺野の決定・宮田の承認。#182）。取引先の部屋への添付を拒んでいたトリガ `messages_internal_only_attachment` は migration `20261027040000_chat_attachments_partner_rooms` で外した（マージ済みの `20261027010000` / `20261027030000` は書き換えていない）。🔴 共有 URL の分類 **`CHAT_ROOM`（ゲートを求めない）はチャットの添付専用**であり、使ってよいのは `apps/web/lib/chat/attachments.ts` だけ（型と分岐は `lib/storage/download.ts`）。`tests/static/chat-room-share-scope.test.ts` が固定する —— ほかの実体（スキルシート・契約書・返却データ）が名乗ると §3.3 のゲートを迂回できる。読めるかは従来どおり RLS（越境経路 3）、`CLEAN` でない添付は送った本人だけ。
+- ⏳ **2026-10-27 チャットの引用して返信・自分宛ての @ の印（軽い版。DB を変えない。PR 前のブランチ `chat/quote-mention`）**。引用は本文の頭の決まった形の文字列（`apps/web/lib/chat/quote.ts`。見出しは本文の 1 行目だけ）、@ の印は `readChatScreen` の `mentionUnreadIds`（「ある / ない」だけ）。🔴 本文の照合は `@ses/db` の `freeWordFilter` で候補を絞り `lib/chat/mention.ts` で確かめる（`search-sql-single-path.test.ts` が `contains` の直書きを落とす）。🔴 分離テスト `chat-mentions.test.ts` は**実時刻で送る**（過去の時刻で送ると、シードの発言の既読位置より前に並んで未読にならない）。
 
 ### 3.4 安全網（刷新の土台。壊すと刷新そのものが成り立たない）
 
