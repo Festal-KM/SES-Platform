@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from 'react';
 import { CHAT_MESSAGE_PAGE_SIZE } from '@ses/config';
-import { CHAT_POLL_INTERVAL_MS, hasGapBefore, hasOthersMessage, mergeLatestMessages, readGapAfter, withLatestReactions, type GapChunk } from '../../../lib/chat/live';
+import { applyLatestMessages, CHAT_POLL_INTERVAL_MS, gapAnchor, hasGapBefore, hasOthersMessage, readGapAfter, type GapChunk } from '../../../lib/chat/live';
 import { chatAnnouncementApiPath, chatMessagesApiPath } from '../../../lib/chat/screen-query';
 import type { ChatAnnouncementView, ChatMessageView } from '../../../lib/chat/views';
 import { createSubmitGuard } from '../../../lib/forms/submit-guard';
@@ -99,14 +99,14 @@ export function useChatMessages({
         // ✅ 2026-10-26（#166 の 4）: 直近のページが手元とつながっていなければ、手元の最後から後ろを読み足す。
         //    🔴 そのまま足すと会話の途中が黙って抜ける（過去の読み込みでも埋められない）。
         let latest = payload.items;
-        // ✅ 2026-10-27: 先に手元の行を取り直した値に揃える（位置が動いた行があれば並べ直す）。
-        //    🔴 取りこぼしの判定と「手元の最後」は、並べ直した後の行で行う。
-        const base = withLatestReactions(itemsRef.current, payload.items);
-        const last = base.at(-1)?.id;
-        if (last !== undefined && hasGapBefore(base, payload.items, CHAT_MESSAGE_PAGE_SIZE)) {
+        // ✅ 2026-10-27（Codex レビュー 3 回目）: つながりの判定と読み足しの起点は、**取り直す前の**手元の行で決める
+        //    （位置が動いた行〔検査が CLEAN になった添付〕を重なりの証拠にも起点にも使わない。`lib/chat/live.ts`）。
+        const before = itemsRef.current;
+        const anchor = gapAnchor(before, payload.items);
+        if (anchor !== undefined && hasGapBefore(before, payload.items, CHAT_MESSAGE_PAGE_SIZE)) {
           let missing = false;
           const gap = await readGapAfter(
-            last,
+            anchor,
             async (after): Promise<GapChunk | null> => {
               const more = await fetch(
                 `${chatMessagesApiPath(threadId)}?after=${encodeURIComponent(after)}&limit=${String(GAP_PAGE_SIZE)}`,
@@ -129,18 +129,17 @@ export function useChatMessages({
         }
         if (!isLive()) return;
         // ✅ 2026-10-16: 手元の発言のリアクションも取り直した値に揃える。
-        const refreshed = withLatestReactions(base, latest);
-        const merged = mergeLatestMessages(refreshed, latest);
-        if (merged.added.length === 0) {
-          if (refreshed !== itemsRef.current) setItems(refreshed);
-          return;
+        // ✅ 2026-10-27: 🔴 当てる時点の手元に当てる（読み足しを待つ間に「以前のメッセージ」が読み込まれても落とさない）。
+        //    新着の有無（知らせ・スクロール）は、いまの手元で見積もる。
+        const preview = applyLatestMessages(itemsRef.current, latest);
+        if (preview.added.length > 0) {
+          if (awayRef.current) {
+            if (hasOthersMessage(preview.added)) setNewArrived(true);
+          } else {
+            scrollToLatestOnRender.current = true;
+          }
         }
-        if (awayRef.current) {
-          if (hasOthersMessage(merged.added)) setNewArrived(true);
-        } else {
-          scrollToLatestOnRender.current = true;
-        }
-        setItems(merged.items);
+        setItems((current) => applyLatestMessages(current, latest).items);
       } catch {
         // 取れなければ次の回に任せる（画面は再読込でも最新になる）。
       }

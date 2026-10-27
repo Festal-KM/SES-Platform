@@ -41,28 +41,79 @@ export function mergeLatestMessages(
     return { ...item, sentAt: fresh.sentAt };
   });
   const seen = new Set(current.map((item) => item.id));
-  const added = latest.filter((item) => !seen.has(item.id));
+  // 🔴 取り直した行どうしの重なり（読み足した分と直近のページ）も 1 行に畳む。
+  const added = latest.filter((item) => {
+    if (seen.has(item.id)) return false;
+    seen.add(item.id);
+    return true;
+  });
   if (added.length === 0) return { items: moved ? [...base].sort(compareOldest) : current, added };
   return { items: [...base, ...added].sort(compareOldest), added };
+}
+
+/**
+ * ✅ 2026-10-27（Codex レビュー 3 回目）: 位置（sentAt）が動いた行を除いた、つながりの判定に使える行。
+ * 検査が CLEAN になった添付の発言は公開した時点（最後尾）へ移る。手元にある行が直近のページの末尾に移って現れても、
+ * それは「つながっている」証拠にならない（その前に届いた発言を取りこぼしている）。
+ */
+function stableOverlap(
+  current: readonly ChatMessageView[],
+  latest: readonly ChatMessageView[],
+): { readonly localStable: readonly ChatMessageView[]; readonly latestStable: readonly ChatMessageView[] } {
+  const localById = new Map(current.map((item) => [item.id, item]));
+  const latestById = new Map(latest.map((item) => [item.id, item]));
+  return {
+    localStable: current.filter((item) => {
+      const fresh = latestById.get(item.id);
+      return fresh === undefined || fresh.sentAt === item.sentAt;
+    }),
+    latestStable: latest.filter((item) => {
+      const local = localById.get(item.id);
+      return local === undefined || local.sentAt === item.sentAt;
+    }),
+  };
 }
 
 /**
  * ✅ 2026-10-26（#166 の 4）: 直近のページが手元の最後の発言と**つながっていない**か。
  * 直近のページが満杯（`pageSize` 件）で、手元の発言と 1 件も重ならず、しかも全部が手元の最後より新しいなら、
  * その間に取りこぼしがある（バックグラウンド中に `pageSize` 件を超えて届いた）。
- * 🔴 そのまま足すと会話の途中が黙って抜ける。呼び出し側は手元の最後から `after` で読み足す。
+ * 🔴 そのまま足すと会話の途中が黙って抜ける。呼び出し側は `gapAnchor` から `after` で読み足す。
+ * ✅ 2026-10-27: 🔴 位置が動いた行（`stableOverlap`）は重なりの証拠にも「手元の最後」にも使わない。`current` は
+ *    **取り直す前の**手元の行を渡す（並べ直した後の行を渡すと、動いた行が手元の最後に見えて取りこぼしを見逃す）。
  */
 export function hasGapBefore(
   current: readonly ChatMessageView[],
   latest: readonly ChatMessageView[],
   pageSize: number,
 ): boolean {
-  const last = current.at(-1);
-  const oldest = latest[0];
-  if (last === undefined || oldest === undefined || latest.length < pageSize) return false;
-  const seen = new Set(current.map((item) => item.id));
-  if (latest.some((item) => seen.has(item.id))) return false;
+  if (latest.length < pageSize) return false;
+  const { localStable, latestStable } = stableOverlap(current, latest);
+  const last = localStable.at(-1);
+  const oldest = latestStable[0];
+  if (last === undefined || oldest === undefined) return false;
+  const seen = new Set(localStable.map((item) => item.id));
+  if (latestStable.some((item) => seen.has(item.id))) return false;
   return compareOldest(oldest, last) > 0;
+}
+
+/**
+ * ✅ 2026-10-27: 取りこぼしを読み足す起点（`after` に渡す ID）。位置が動いていない手元の最後の行。無ければ `undefined`。
+ */
+export function gapAnchor(current: readonly ChatMessageView[], latest: readonly ChatMessageView[]): string | undefined {
+  return stableOverlap(current, latest).localStable.at(-1)?.id;
+}
+
+/**
+ * ✅ 2026-10-27（Codex レビュー 3 回目）: 取り直した行を手元に当てる（中身・位置を揃え、足りない行を足し、並べ直す）。
+ * 🔴 画面は `setItems((current) => applyLatestMessages(current, latest).items)` の形で**当てる時点の手元**に当てる
+ *    （読み足しの待ち時間に「以前のメッセージ」が読み込まれても、その行を落とさない）。
+ */
+export function applyLatestMessages(
+  current: readonly ChatMessageView[],
+  latest: readonly ChatMessageView[],
+): { readonly items: readonly ChatMessageView[]; readonly added: readonly ChatMessageView[] } {
+  return mergeLatestMessages(withLatestReactions(current, latest), latest);
 }
 
 /** 足した行のうち、相手（自分以外）の発言があるか。（「新しいメッセージがあります」を出すかどうか） */

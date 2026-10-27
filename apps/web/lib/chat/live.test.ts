@@ -1,7 +1,7 @@
 // apps/web/lib/chat/live.test.ts
 // `S-031` の新着の自動表示（`lib/chat/live.ts`）。
 import { describe, expect, it } from 'vitest';
-import { hasGapBefore, hasOthersMessage, mergeLatestMessages, readGapAfter, withLatestReactions } from './live';
+import { applyLatestMessages, gapAnchor, hasGapBefore, hasOthersMessage, mergeLatestMessages, readGapAfter, withLatestReactions } from './live';
 import type { ChatMessageView } from './views';
 
 function message(id: string, sentAt: string, mine = false): ChatMessageView {
@@ -155,17 +155,52 @@ describe('位置（sentAt）が動いた行', () => {
     expect(withNew.added.map((item) => item.id)).toEqual(['c']);
   });
 
-  it('並べ直した後の最後の行で取りこぼしを判定する（動いた行が最後になる）', () => {
-    const base = withLatestReactions([A, B, C], [MOVED_A]);
-    expect(base.at(-1)?.id).toBe('a');
-    const newer = message('d', '2026-10-14T05:00:00.000Z');
-    expect(hasGapBefore(base, [newer], 1)).toBe(true);
-    expect(hasGapBefore(base, [MOVED_A], 1)).toBe(false);
-  });
-
   it('位置が変わらなければ同じ配列を返す（再描画を起こさない）', () => {
     const current = [A, B];
     expect(withLatestReactions(current, [A, B])).toBe(current);
     expect(mergeLatestMessages(current, [A, B]).items).toBe(current);
+  });
+});
+
+// ✅ 2026-10-27（Codex レビュー 3 回目）: 動いた行があるときの取りこぼし。
+describe('🔴 位置が動いた行があっても取りこぼさない', () => {
+  // 手元 [A(添付・検査中), B]。その後 C, D が届き、A が CLEAN になって最後尾へ移った。直近のページ（2 件）は [D, A']。
+  const LOCAL_A = message('a', '2026-10-27T01:00:00.000Z', true);
+  const LOCAL_B = message('b', '2026-10-27T02:00:00.000Z');
+  const NEW_C = message('c', '2026-10-27T03:00:00.000Z');
+  const NEW_D = message('d', '2026-10-27T04:00:00.000Z');
+  const MOVED = { ...LOCAL_A, sentAt: '2026-10-27T05:00:00.000Z' };
+
+  it('直近のページに手元の行（動いたもの）が含まれていても、つながっていないと判定し、起点は動いていない手元の最後（B）', () => {
+    expect(hasGapBefore([LOCAL_A, LOCAL_B], [NEW_D, MOVED], 2)).toBe(true);
+    expect(gapAnchor([LOCAL_A, LOCAL_B], [NEW_D, MOVED])).toBe('b');
+  });
+
+  it('B から読み足した行と直近のページを当てると、C を落とさず (sentAt, id) の順に並ぶ', async () => {
+    const gap = await readGapAfter(
+      'b',
+      async (after) => {
+        expect(after).toBe('b');
+        return { items: [NEW_C, NEW_D, MOVED], hasMoreAfter: false };
+      },
+      10,
+    );
+    expect(gap?.complete).toBe(true);
+    const latest = [...(gap?.items ?? []), NEW_D, MOVED];
+    const applied = applyLatestMessages([LOCAL_A, LOCAL_B], latest);
+    expect(applied.items.map((item) => item.id)).toEqual(['b', 'c', 'd', 'a']);
+    expect(applied.added.map((item) => item.id)).toEqual(['c', 'd']);
+  });
+
+  it('動いた行が無く重なっていれば、従来どおりつながっている', () => {
+    expect(hasGapBefore([LOCAL_A, LOCAL_B], [LOCAL_B, NEW_C], 2)).toBe(false);
+  });
+
+  it('🔴 読み足しを待つ間に「以前のメッセージ」が読み込まれても、当てる時点の手元に当てるので古い行を落とさない', () => {
+    const older = message('o', '2026-10-26T00:00:00.000Z');
+    // 読み足しを始めた時点の手元は [A, B]。当てる時点の手元は [O, A, B]（過去を読み込んだ）。
+    const atApply = [older, LOCAL_A, LOCAL_B];
+    const applied = applyLatestMessages(atApply, [NEW_C, NEW_D, MOVED]);
+    expect(applied.items.map((item) => item.id)).toEqual(['o', 'b', 'c', 'd', 'a']);
   });
 });
