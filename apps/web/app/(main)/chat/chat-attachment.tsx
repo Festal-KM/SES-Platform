@@ -14,7 +14,7 @@
 //   ⑥ 別タブは `noopener` で開く（開いた先から元の画面を操作させない）。
 import { Button, CHAT_ATTACHMENT_IMAGE_CLASS, CHAT_ATTACHMENT_PDF_CLASS, CHAT_BUBBLE_MAX_WIDTH_CLASS, Icon, cn } from '@ses/ui';
 import { useEffect, useState } from 'react';
-import { chatAttachmentListApiPath, chatAttachmentSummary, fetchChatAttachmentUrl, type ChatAttachmentFormatLabels } from '../../../lib/chat/attachment-client';
+import { chatAttachmentListApiPath, chatAttachmentSummary, fetchChatAttachmentUrl, type ChatAttachmentFormatLabels, browserFetch } from '../../../lib/chat/attachment-client';
 import type { ChatAttachmentListItem, ChatAttachmentView } from '../../../lib/chat/views';
 import { formatDateTimeJst } from '../../../lib/format/datetime';
 
@@ -57,7 +57,7 @@ function ChatAttachmentOpenActions({
   const [failed, setFailed] = useState(false);
   async function openHere(): Promise<void> {
     setFailed(false);
-    const url = await fetchChatAttachmentUrl({ threadId, messageId, disposition: 'attachment' }, { fetch });
+    const url = await fetchChatAttachmentUrl({ threadId, messageId, disposition: 'attachment' }, { fetch: browserFetch });
     if (url === null) {
       setFailed(true);
       return;
@@ -70,7 +70,7 @@ function ChatAttachmentOpenActions({
     //    開いた先から元の画面を触らせない（opener を外す = noopener と同じ）。
     const tab = window.open('', '_blank');
     if (tab !== null) tab.opener = null;
-    const url = await fetchChatAttachmentUrl({ threadId, messageId, disposition: 'inline' }, { fetch });
+    const url = await fetchChatAttachmentUrl({ threadId, messageId, disposition: 'inline' }, { fetch: browserFetch });
     if (url === null) {
       tab?.close();
       setFailed(true);
@@ -114,7 +114,7 @@ function ChatAttachmentPreview({
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
     let active = true;
-    void fetchChatAttachmentUrl({ threadId, messageId, disposition: 'inline' }, { fetch }).then((next) => {
+    void fetchChatAttachmentUrl({ threadId, messageId, disposition: 'inline' }, { fetch: browserFetch }).then((next) => {
       if (active) setUrl(next);
     });
     return () => {

@@ -32,7 +32,7 @@ import { CHAT_DRAFT_EVENT, chatDraftKey, restoreUnsentText } from '../../../lib/
 import { appendQuote, slashCommandRange } from '../../../lib/chat/project-card-text';
 import { chatReactionEmoji } from '../../../lib/chat/reactions';
 import { chatMessageApiPath, chatMessagesApiPath, chatReactionApiPath, chatSaveApiPath } from '../../../lib/chat/screen-query';
-import { acceptChatAttachment, uploadChatAttachment } from '../../../lib/chat/attachment-client';
+import { acceptChatAttachment, uploadChatAttachment, browserFetch } from '../../../lib/chat/attachment-client';
 import type { ChatAttachmentContentType } from '@ses/domain';
 import { chatAnnouncementSnippet, type ChatMessageView, type ChatReactionKind, type ChatReactionSummary } from '../../../lib/chat/views';
 import { createSubmitGuard } from '../../../lib/forms/submit-guard';
@@ -558,7 +558,7 @@ export function useChatConversation({
         if (pending.file !== null) {
           const uploaded = await uploadChatAttachment(
             { threadId, contentType: pending.file.contentType, body: pending.file.file },
-            { fetch },
+            { fetch: browserFetch },
           );
           if (!uploaded.ok) return uploaded.reason === 'MISSING' ? ('MISSING' as const) : ('ATTACHMENT' as const);
           attachmentUploadToken = uploaded.uploadToken;
