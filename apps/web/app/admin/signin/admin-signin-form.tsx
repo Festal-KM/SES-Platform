@@ -32,6 +32,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Button, Field, FieldError, Input } from '@ses/ui';
 import { OtpauthQr } from '../../_components/otpauth-qr';
+import { NonproductionAccountPicker, type RoleAccountOptions } from '../../_components/nonproduction-account-picker';
 
 export type AdminSignInFormMessages = {
   readonly emailLabel: string;
@@ -72,14 +73,17 @@ const TOO_MANY_REQUESTS = 429;
 export function AdminSignInForm({
   messages,
   initialStage = 'credentials',
+  roleAccounts,
 }: {
   messages: AdminSignInFormMessages;
   initialStage?: AdminSignInStage;
+  roleAccounts?: RoleAccountOptions;
 }) {
   const [stage, setStage] = useState<AdminSignInStage>(initialStage);
   const [state, setState] = useState<FormState>('idle');
   const [error, setError] = useState<string | null>(null);
   const [enrollment, setEnrollment] = useState<Enrollment | null>(null);
+  const [entryMethod, setEntryMethod] = useState<'account' | 'email'>(roleAccounts ? 'account' : 'email');
 
   const beginTwoFactor = useCallback(async (): Promise<void> => {
     setStage('twoFactor');
@@ -239,8 +243,12 @@ export function AdminSignInForm({
     );
   }
 
+  if (roleAccounts && entryMethod === 'account') return <NonproductionAccountPicker options={roleAccounts} realm="platform" onManual={() => setEntryMethod('email')}
+    onAuthenticated={async () => { await beginTwoFactor(); }} />;
+
   return (
     <form method="post" onSubmit={onSubmitCredentials} noValidate data-testid="admin-signin-form">
+      {roleAccounts ? <Button type="button" variant="secondary" className="mb-6 w-full" onClick={() => setEntryMethod('account')}>{roleAccounts.messages.accountMethod}</Button> : null}
       {errorBlock}
       <Field className="mb-4" label={messages.emailLabel}>
         <Input
