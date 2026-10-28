@@ -2,7 +2,8 @@
 // GitHub EnvironmentごとのOIDCで実行する。アプリの秘密値は取得しない。
 import { appendFileSync } from 'node:fs';
 import { taskDefinition } from '../infra/aws/tasks.mjs';
-import { releaseImage, releaseRecord } from './aws/release.mjs';
+import { releaseImage, releaseRecord, releaseServicesReady } from './aws/release.mjs';
+import { verifyDemoSignIn } from './aws/smoke-demo.mjs';
 import { assertAccount, aws, stackOutputs, withJsonFile, HOSTS } from './aws/common.mjs';
 const delay = () => new Promise((done) => setTimeout(done, 10_000));
 function report(value) {
@@ -73,11 +74,12 @@ try {
     await delay();
     const services = aws(['ecs', 'describe-services', '--cluster', prefix, '--services', `${prefix}-web`, `${prefix}-worker`]).services;
     if (services.some(service => service.deployments.some(deployment => deployment.rolloutState === 'FAILED'))) throw new Error('ECS配備が失敗しました。旧版への復旧状態を確認してください');
-    if (services.length === 2 && services.every(service => service.taskDefinition === definitions[service.serviceName.endsWith('-web') ? 'web' : 'worker'] && service.deployments.length === 1 && service.runningCount === service.desiredCount && service.pendingCount === 0)) { stable = true; break; }
+    if (releaseServicesReady(services, definitions)) { stable = true; break; }
   }
   if (!stable) throw new Error('サービスの安定を確認できません。旧版への自動復旧やログを確認してください');
   const response = await fetch(`https://${HOSTS[environment]}/signin`, { redirect: 'manual', signal: globalThis.AbortSignal.timeout(30_000) });
   if (response.status !== 200) throw new Error('公開HTTPSのログイン画面が正常応答しません');
+  if (environment === 'demo') await verifyDemoSignIn();
   // 本番昇格に使うのは、デモへの反映・公開HTTPS検査を通過した固定digestだけ。
   withJsonFile({ ...record, verifiedAt: new Date().toISOString() }, (file) => aws(['s3', 'cp', file,
     `s3://${foundation.FilesBucket}/releases/${commit}.json`, '--sse', 'aws:kms', '--sse-kms-key-id', foundation.StorageKeyArn, '--only-show-errors'], { json: false }));

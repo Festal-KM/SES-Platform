@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { releaseDeliveryTemplate } from './release-delivery.mjs';
 import { foundationTemplate } from './foundation.mjs';
 import { taskDefinition } from './tasks.mjs';
-import { releaseImage, releaseRecord } from '../../scripts/aws/release.mjs';
+import { releaseImage, releaseRecord, releaseServicesReady } from '../../scripts/aws/release.mjs';
 const digest = `sha256:${'a'.repeat(64)}`;
 const descriptor = { environment: 'demo', image: releaseImage('demo', digest), runtimeSecretArn: 'arn:aws:secretsmanager:ap-northeast-1:117425831827:secret:/ses-platform-demo/runtime-abc', runtimeKeys: ['APP_ENV', 'DATABASE_URL'] };
 test('アプリの実行ロールから配備証跡とビルド元へアクセスできない', () => {
@@ -40,4 +40,13 @@ test('不正なdigest・他環境のイメージと秘密値・アプリへの�
   assert.throws(() => taskDefinition({ ...descriptor, role: 'web', runtimeKeys: ['DB_ADMIN_PASSWORD'] }));
   assert.throws(() => releaseRecord({ commit: 'main', digest, buildId: 'ses-platform-demo:fixture' }));
   assert.equal(releaseRecord({ commit: 'a'.repeat(40), digest, buildId: 'ses-platform-demo:fixture' }).digest, digest);
+});
+test('workerを含めてECSの配備完了を確認し、旧版や起動途中を成功にしない', () => {
+  const definitions = { web: 'web:2', worker: 'worker:2' };
+  const services = ['web', 'worker'].map(role => ({ serviceName: `ses-platform-demo-${role}`, taskDefinition: definitions[role],
+    deployments: [{ rolloutState: 'COMPLETED' }], runningCount: 1, desiredCount: 1, pendingCount: 0 }));
+  assert.equal(releaseServicesReady(services, definitions), true);
+  for (const invalid of [
+    { deployments: [{ rolloutState: 'IN_PROGRESS' }] }, { taskDefinition: 'worker:1' }, { runningCount: 0 }, { pendingCount: 1 },
+  ]) assert.equal(releaseServicesReady([services[0], { ...services[1], ...invalid }], definitions), false);
 });
