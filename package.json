@@ -10,7 +10,8 @@
   "scripts": {
     "build": "pnpm -r run build",
     "lint": "eslint .",
-    "typecheck": "tsc -p tsconfig.tests.json && pnpm -r run typecheck",
+    "typecheck": "tsc -p tsconfig.tests.json && pnpm -r run typecheck && pnpm typecheck:web-tests",
+    "typecheck:web-tests": "node scripts/typecheck-web-tests.mjs",
     "test": "vitest run",
     "test:unit": "vitest run",
     "test:smoke": "vitest run -c vitest.smoke.config.ts",

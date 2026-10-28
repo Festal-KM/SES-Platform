@@ -60,9 +60,8 @@
 //      🔴 **同じアイコンを別の意味で使い回していない**（§3.1。17 + 6 = 23 個すべてが 1 項目に固定）。
 //
 // 🔴 これ以外を足すときは `docs/04` の改訂（= 人間の判断。`CLAUDE.md` §8.6）を経る。
+import { createElement } from 'react';
 import {
-  createElement } from 'react';
-  import {
   Archive,
   AtSign,
   Bell,

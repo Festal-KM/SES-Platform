@@ -25,5 +25,6 @@
     "plugins": [{ "name": "next" }]
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules", ".next"]
+  // 本体とテストを別のTypeScript実行で全数検査する。テストはtypecheck:web-testsが担当する。
+  "exclude": ["node_modules", ".next", "**/*.test.ts", "**/*.test.tsx"]
 }
