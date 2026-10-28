@@ -298,10 +298,10 @@ const SIDEBAR_TOGGLE_ID = 'ses-sidebar-form';
  * ⚠️ 原寸は 257 × 80（透明部分を切り落とした実寸）。`h-9`（36px）で**幅は 116px** になり、
  *    展開時の内寸 184px（208 − 左右 12）にトグル 32 + gap 8 と並べても収まる（実測 164px）。
  */
-function BrandLogo({ src, alt }: { readonly src: string; readonly alt: string }) {
+export function BrandLogo({ src, alt, context = 'navigation' }: { readonly src: string; readonly alt: string; readonly context?: 'navigation' | 'authentication' }) {
   // 🔴 `packages/ui` は `next/*` に依存しない（`docs/05` §2.3.1）ので `next/image` を使わない。
   // 🔴 `block` にするのは、インライン画像の行下がり（descender 分の余白）で帯の中心がずれるため。
-  return <img className="block h-9 w-auto" src={src} alt={alt} width={257} height={80} />;
+  return <img className={context === 'authentication' ? 'block h-12 w-auto' : 'block h-9 w-auto'} src={src} alt={alt} width={257} height={80} />;
 }
 
 /**

@@ -23,7 +23,7 @@ try {
   // 依存のインストール・ビルドにDBの秘密値を渡さない。
   run('corepack', ['enable']);
   run('pnpm', ['install', '--frozen-lockfile', '--store-dir', '/app/.pnpm-store'], process.env, '依存のインストール');
-  run('pnpm', ['-r', '--workspace-concurrency=1', '--filter', '@ses/worker...', '--filter', '@ses/ui...', 'run', 'build'], process.env, '共有パッケージとワーカーのビルド');
+  run('pnpm', ['-r', '--workspace-concurrency=1', '--filter', '@ses/worker...', '--filter', '@ses/ui...', '--filter', '@ses/i18n...', 'run', 'build'], process.env, '共有パッケージとワーカーのビルド');
   run('pnpm', ['--filter', '@ses/web', 'run', 'build'], { ...process.env, NODE_ENV: 'production', NODE_OPTIONS: '--max-old-space-size=4096' }, 'AWS上の画面確認用ビルド');
   const { loadAppEnv } = await import('../packages/config/dist/index.js');
   const runtime = loadAppEnv(Object.fromEntries(Object.entries(env).filter(([, value]) => value !== '')));
@@ -43,6 +43,9 @@ try {
     writeFileSync(`${root}/.aws-development-seeded`, 'demo\n', { mode: 0o600 });
   }
   console.log('開発アプリの起動準備が完了しました');
+  const accountSeed = new URL(env.DATABASE_URL);
+  accountSeed.username = env.POSTGRES_USER; accountSeed.password = env.POSTGRES_PASSWORD;
+  run(process.execPath, ['packages/db/dist/seed/role-accounts.js'], { ...process.env, APP_ENV: 'development', SEED_DATABASE_URL: accountSeed.toString() }, 'ロール別合成アカウントの確認');
 } catch (error) {
   console.error(error.message);
   process.exitCode = 1;

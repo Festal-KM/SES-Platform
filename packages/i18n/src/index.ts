@@ -30,6 +30,26 @@ export type Locale = (typeof LOCALES)[number];
 export const DEFAULT_LOCALE: Locale = 'ja';
 
 const ja = {
+  'auth.accounts.role': 'ロール',
+  'auth.accounts.account': 'アカウント',
+  'auth.accounts.company': 'テナント',
+  'auth.accounts.standard': '通常の画面確認',
+  'auth.accounts.twoFactor': '2FAの検証',
+  'auth.accounts.submit': 'このアカウントでログイン',
+  'auth.accounts.submitting': '認証中…',
+  'auth.accounts.error': 'このアカウントでログインできません。別のアカウントを選ぶか、管理者に確認してください。',
+  'auth.accounts.emailMethod': 'メールアドレスでログイン',
+  'auth.accounts.accountMethod': 'アカウント選択に戻る',
+  'auth.accounts.platformLink': '運営コンソールにログイン',
+  'auth.accounts.tenantLink': '利用者のログインに戻る',
+  'auth.accounts.role.OWNER': '自社オーナー',
+  'auth.accounts.role.ADMIN': '自社管理者',
+  'auth.accounts.role.SALES': '自社営業',
+  'auth.accounts.role.VIEWER': '閲覧専用',
+  'auth.accounts.role.PARTNER_ADMIN': '取引先管理者',
+  'auth.accounts.role.PARTNER_SALES': '取引先営業',
+  'auth.accounts.role.PLATFORM_OWNER': '運営管理者',
+  'auth.accounts.role.PLATFORM_SUPPORT': '運営サポート',
   // --- プロダクト（docs/04 U-01。表示箇所はヘッダとサインイン系の画面に限る）---
   'product.name': PRODUCT_NAME,
   // 🔴 狭い場所（サイドバーのロゴ）で使う短い呼び名。`glossary.ts` の 🔴 を参照。
