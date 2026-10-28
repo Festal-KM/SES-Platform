@@ -142,8 +142,8 @@ export function ProjectSummaryPanel({
       {/* 公開先列の凍結IDは選択中の案件へ移す。取引先にはIDも公開先情報も出さない。 */}
       <div
         className="flex shrink-0 flex-col gap-2 p-4"
-        data-testid={row.visibility === null ? undefined : `project-list-visibility-${row.id}`}
-        title={row.visibility ?? undefined}
+        data-testid={tab === 'BASIC' && row.visibility !== null ? `project-list-visibility-${row.id}` : undefined}
+        title={tab === 'BASIC' ? row.visibility ?? undefined : undefined}
       >
         <h2 className="m-0 min-w-0 text-lg font-bold text-fg" data-testid="project-list-panel-name">
           {row.name}

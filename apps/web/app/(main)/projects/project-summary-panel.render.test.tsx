@@ -300,3 +300,12 @@ describe('案件の要点パネル（`docs/04` §7.1 の幅クラス B の副カ
     expect(html).not.toContain('data-testid="project-list-panel-candidates"');
   });
 });
+
+
+describe('公開先の凍結IDの移行', () => {
+  it('ホストの基本情報だけに残し、コピー面や取引先には出さない', () => {
+    expect(render({ tab: 'BASIC' })).toContain('data-testid="project-list-visibility-' + row().id + '"');
+    expect(render({ tab: 'COPY' })).not.toContain('project-list-visibility-');
+    expect(render({ row: row({ visibility: null }) })).not.toContain('project-list-visibility-');
+  });
+});
